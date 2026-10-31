@@ -35,9 +35,6 @@ const buildPoolConfig = (configPool = {}, env = process.env) => {
         if (override !== undefined) pool[key] = override;
     }
 
-    // Sequelize requires min <= max. When conflicting inputs are supplied, keep the
-    // requested max and fall back to the safe default min rather than creating an
-    // invalid pool that fails later and obscures the configuration error.
     if (pool.min > pool.max) pool.min = DEFAULT_POOL.min;
 
     return pool;

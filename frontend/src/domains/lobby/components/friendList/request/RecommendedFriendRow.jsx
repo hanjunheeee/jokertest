@@ -20,12 +20,6 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
-/**
- * F-19(AC-01): 접속 상태는 세 값이다 — ONLINE · OFFLINE · UNKNOWN.
- *
- * 예전에는 boolean 하나뿐이라 presence 행이 없는 계정(=모름)을 "오프라인"으로 **단정**했다.
- * 서버가 UNKNOWN을 구분해 내려주므로 화면도 그대로 구분해 표시한다.
- */
 export const RECOMMENDED_FRIEND_STATUS_TEXT = Object.freeze({
   ONLINE: "접속 중",
   OFFLINE: "오프라인",
@@ -54,13 +48,6 @@ function RecommendedFriendStatus({ status }) {
   )
 }
 
-/**
- * 추천 친구 row 오른쪽의 차단 버튼과 친구 신청 버튼입니다.
- *
- * F-19(AC-04): 차단 버튼은 예전에 **아무 동작도 하지 않았다**. 이제 상대 UUID로 실제 차단
- * API를 호출한다 — 요청 거절(requestId 기반)과는 완전히 다른 동작이며, 서로 바꿔 쓰지
- * 않는다(IncomingFriendRow 주석 참고).
- */
 function RecommendedFriendActions({ id, name, onSend, onBlock, sent, blocking }) {
   const sendButtonClass = sent
     ? `${RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS} ${RECOMMENDED_FRIEND_SENT_BUTTON_CLASS}`
@@ -106,7 +93,6 @@ function RecommendedFriendActions({ id, name, onSend, onBlock, sent, blocking })
   )
 }
 
-// 친구 검색 결과에서 추천 친구 한 명과 신청 버튼을 보여주는 row입니다.
 export default function RecommendedFriendRow({
   id,
   name,
@@ -118,7 +104,6 @@ export default function RecommendedFriendRow({
   accountProfilePhotoId,
   accountProfileBorderId,
 }) {
-  // F-19(AC-01): 검색 결과도 실제 계정 사진·테두리를 그린다(기본 초상 고정이 아니다).
   const { portraitSrc, frameSrc } = resolveAccountProfileAssets({ accountProfilePhotoId, accountProfileBorderId })
 
   return (

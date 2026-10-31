@@ -1,4 +1,3 @@
-/** 로비 설정 화면 public 에셋 경로 (frontend/public 기준) */
 export const SETTING_ASSETS = {
   bgVideo: "/bg/로비 설정창 영상2.mp4".normalize("NFD"),
   bg: "/bg/로비 설정 뒷배경.png".normalize("NFD"),

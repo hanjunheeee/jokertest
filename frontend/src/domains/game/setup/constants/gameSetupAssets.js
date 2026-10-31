@@ -1,4 +1,3 @@
-/** 인게임 UI 설정 화면 public 에셋 (frontend/public 기준) */
 export const GAME_SETUP_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
   frame: "/frame/인게임 설정 프레임_.png",

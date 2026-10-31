@@ -12,7 +12,6 @@ const DEFAULT_PHOTO_CLASS =
 const DEFAULT_FRAME_CLASS =
   "pointer-events-none absolute inset-0 z-[2] h-full w-full select-none object-contain"
 
-/** shopItem 프로필 프레임 + 프로필 사진을 겹쳐 표시합니다. */
 export default function PlayerProfilePortrait({
   photoSrc: photoSrcProp,
   frameSrc: frameSrcProp,

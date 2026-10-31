@@ -14,7 +14,6 @@ test("isInGameNightTurnActor: 현재 턴 역할과 내 직업이 다르면 false
   assert.equal(isInGameNightTurnActor("JOKER", "DOCTOR"), false)
   assert.equal(isInGameNightTurnActor("DOCTOR", "JOKER"), false)
   assert.equal(isInGameNightTurnActor("GUARD", "CITIZEN"), false)
-  // 죽은 역할의 턴이어도 판정 규칙은 같다 — 생존 여부는 이 함수가 보지 않는다.
   assert.equal(isInGameNightTurnActor("WITCH_HUNTER", "GUARD"), false)
 })
 

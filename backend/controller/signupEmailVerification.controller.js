@@ -1,9 +1,5 @@
 'use strict';
 
-// F-31a: 가입 이메일 인증 HTTP 경계. find-id·password-reset과 같은 원칙 — 응답은 항상
-// no-store이고, 실패는 고정된 코드·형태로만 응답한다(원본 오류는 안전한 오류 경계로
-// 넘긴다). 검증된 입력은 auth.routes.js의 검증 미들웨어가 이미 res.locals에 채워 뒀다.
-
 const signupEmailVerificationService = require('../service/signupEmailVerification.service');
 
 exports.requestSignupCode = async (req, res, next) => {

@@ -1,6 +1,3 @@
-/**
- * 인게임 배경 — DAY/기타는 낮, NIGHT는 밤 이미지로 crossfade.
- */
 import { motion } from "framer-motion"
 import { INGAME_ASSETS } from "../constants/ingameAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"

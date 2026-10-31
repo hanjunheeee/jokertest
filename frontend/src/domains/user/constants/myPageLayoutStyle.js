@@ -1,5 +1,3 @@
-// 마이페이지 레이아웃 + 피의 기록·운명의 가면 프레임 스타일
-
 export const MY_PAGE_UI_FADE = {
   duration: 0.7,
   ease: [0.22, 1, 0.36, 1],
@@ -28,7 +26,6 @@ export const MY_PAGE_ACTION_BUTTON_CLASS = "relative block w-[clamp(6.25rem,10cq
 export const MY_PAGE_ACTION_BUTTON_IMG_CLASS = "block h-auto w-full select-none"
 export const MY_PAGE_ACTION_BUTTON_TEXT_CLASS = "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.05cqw,0.92rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
 
-// 피의 기록 프레임
 export const BLOOD_RECORD_TEXT_SHADOW = "0 1px 2px rgba(255,255,255,0.35), 0 1px 3px rgba(0,0,0,0.5)"
 
 export const BLOOD_RECORD_CONTENT_INSET = {
@@ -38,17 +35,11 @@ export const BLOOD_RECORD_CONTENT_INSET = {
   right: "15%",
 }
 
-// F-30 AC-06: leading-none은 한 줄로 끝나는 짧은 문자열을 전제한 값이다 — 확대 글자·좁은
-// 화면에서 "전체 판수"가 두 줄로 접히면 줄끼리 붙어 읽을 수 없게 된다. 정상 줄 높이로 바꾸고
-// (leading-snug) 폭이 모자랄 때 줄바꿈될 수 있게 한다(min-w-0). break-keep은 한국어 단어
-// 가운데가 아니라 띄어쓰기에서만 접히게 한다. 천 단위 구분·tabular-nums·app-text-scaled와
-// 기본 글자 크기는 그대로다.
 export const BLOOD_RECORD_ROW_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:3.6cqi] min-w-0 break-keep font-bold leading-snug text-[#3d1810]"
 export const BLOOD_RECORD_ROW_VALUE_CLASS = "font-subheading app-text-scaled [--app-text-size:3.8cqi] min-w-0 break-keep text-right font-bold leading-snug tracking-wide text-[#2a0e08] tabular-nums"
 
 export const BLOOD_RECORD_FRAME_IMG_CLASS = "block h-auto w-full shrink-0 select-none"
 
-// 운명의 가면 프레임
 export const FATE_MASK_UI_FADE = {
   duration: 0.7,
   ease: [0.22, 1, 0.36, 1],

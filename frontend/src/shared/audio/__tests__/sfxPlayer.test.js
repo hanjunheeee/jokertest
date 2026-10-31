@@ -2,18 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
-// ---------------------------------------------------------------------------
-// F-16 공통 효과음 재생기 계약 시험.
-//
-// 재생기는 DOM·store·소켓을 모르고 전부 주입받으므로, 이 파일은 **실제 production 재생기
-// 코드**를 그대로 돌린다(핸들러를 복제하거나 소스를 정규식으로 훑지 않는다). 시계·타이머·
-// 로더·매체만 시험이 소유해서 비동기 실패를 결정적으로 재현한다.
-//
-// 중요(AC-02): 아래 "정상 재생" 시험들은 시험 전용 fixture manifest를 쓴다. fixture와 가짜
-// 매체는 **배포용 자산 검토도, 실제 청음도 아니다.** 실제 배포 manifest(SFX_MANIFEST)는
-// 자산이 하나도 제공되지 않아 전 항목이 무음이며, 그 사실 자체를 아래에서 따로 검사한다.
-// ---------------------------------------------------------------------------
-
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true, url: "http://127.0.0.1:5183" })
 
 function installDomGlobal(name, value) {
@@ -46,13 +34,8 @@ const { useSettingsStore, buildDefaultSoundVolumes, SFX_MUTED_DEFAULT } = await 
   "../../../domains/settings/store/settingsStore.js"
 )
 
-// ---------------------------------------------------------------------------
-// 시험 장비
-// ---------------------------------------------------------------------------
-
 const GOOD_HASH = "sha256-fixture-ok"
 
-/** 검토를 통과한 것으로 취급하는 fixture 자산(시험 전용). */
 function approvedEntry(overrides = {}) {
   return {
     scope: SFX_SCOPE.GAME,
@@ -82,7 +65,6 @@ const FIXTURE_MANIFEST = {
   "test-embedded": approvedEntry({ audioMode: "embedded" }),
 }
 
-/** 수동으로 굴리는 타이머. 실제 시간에 의존하지 않고 3초 제한·watchdog을 정확히 재현한다. */
 function createClock() {
   let currentTime = 0
   let nextId = 1
@@ -97,7 +79,6 @@ function createClock() {
     clearTimer(id) {
       timers.delete(id)
     },
-    /** ms만큼 시간을 진행시키며 그 사이 만기된 타이머를 순서대로 실행한다. */
     advance(ms) {
       const target = currentTime + ms
       let guard = 0
@@ -115,7 +96,6 @@ function createClock() {
   }
 }
 
-/** 실제 Audio 대신 쓰는 기록용 매체. 시험이 ended/error/reject를 직접 일으킨다. */
 function createMediaRecorder(options = {}) {
   const created = []
   const factory = (src) => {
@@ -157,7 +137,6 @@ function createMediaRecorder(options = {}) {
       resolvePlay: () => resolvePlay?.(),
       rejectPlay: () => rejectPlay?.(new Error("autoplay blocked")),
     }
-    // 아무도 reject를 잡지 않는 unhandled rejection을 막는다(시험 러너 보호).
     playPromise.catch(() => {})
     created.push(media)
     return media
@@ -168,7 +147,6 @@ function createMediaRecorder(options = {}) {
 
 const DEFAULT_SETTINGS = { masterVolume: 100, sfxVolume: 80, sfxMuted: false, notifications: {} }
 
-/** 재생기 하나와 그것을 조종하는 손잡이들을 함께 만든다. */
 function makePlayer(overrides = {}) {
   const clock = createClock()
   const createMedia = overrides.createMedia ?? createMediaRecorder()
@@ -230,7 +208,6 @@ const gameEvent = (eventId, extra = {}) => ({
   ...extra,
 })
 
-/** 대기 중인 로드를 성공시키고, 뒤이은 promise 체인이 전부 돌 때까지 기다린다. */
 async function settleLoads(harness, index = 0) {
   harness.loads[index]?.resolve({ sha256: GOOD_HASH, src: "/fixture/ok.wav" })
   await flush()
@@ -239,10 +216,6 @@ async function settleLoads(harness, index = 0) {
 async function flush() {
   for (let i = 0; i < 8; i += 1) await Promise.resolve()
 }
-
-// ---------------------------------------------------------------------------
-// AC-02 · 실제 배포 manifest — 2026-09-22 운영자 AUDIO-01 완화: 별도 효과음은 자작 합성 승인 자산이다
-// ---------------------------------------------------------------------------
 
 test("AC-02 배포 manifest의 별도 효과음은 전부 자작 합성 승인 자산이고, 경로·해시는 생성 스크립트의 실제 값이다", () => {
   const kinds = Object.keys(SFX_MANIFEST)
@@ -259,7 +232,6 @@ test("AC-02 배포 manifest의 별도 효과음은 전부 자작 합성 승인 �
     assert.equal(typeof entry.usageTerms, "string")
     assert.equal(checkSfxAssetAllowed(entry).allowed, true, `${kind}가 허용되지 않는다`)
   }
-  // 무음 목록은 실제 manifest에서 파생된다 — 내장음(embedded) 항목만 남는다.
   assert.deepEqual(listSilencedSfxKinds().map((x) => x.kind), kinds.filter((kind) => SFX_MANIFEST[kind].audioMode === "embedded"))
 })
 
@@ -297,10 +269,6 @@ test("AC-02 해시가 검토 기록과 다르면 로드 후에도 매체를 만�
   assert.ok(h.player.getSilenceLog().some((r) => r.reason === SFX_SUPPRESSED_REASON.ASSET_HASH_MISMATCH))
 })
 
-// ---------------------------------------------------------------------------
-// AC-03 · Master × SFX 볼륨과 음소거
-// ---------------------------------------------------------------------------
-
 test("AC-03 gain은 Master × SFX의 곱이고 음소거면 유효 gain이 0이다", () => {
   const h = makePlayer({ settings: { masterVolume: 50, sfxVolume: 40 } })
   assert.equal(h.player.getMix().gain, 0.2)
@@ -309,11 +277,9 @@ test("AC-03 gain은 Master × SFX의 곱이고 음소거면 유효 gain이 0이�
   h.setSettings({ sfxMuted: true })
   assert.deepEqual(h.player.getMix(), { gain: 0, muted: true })
 
-  // 음소거 중 볼륨을 바꿔도 음소거는 유지된다.
   h.setSettings({ masterVolume: 100, sfxVolume: 100 })
   assert.deepEqual(h.player.getMix(), { gain: 0, muted: true })
 
-  // 해제하면 그때의 최신 곱이 적용된다.
   h.setSettings({ sfxMuted: false })
   assert.deepEqual(h.player.getMix(), { gain: 1, muted: false })
 })
@@ -337,7 +303,6 @@ test("AC-03 settingsStore가 sfxMuted를 저장·복원·초기화한다", () =>
   store.setSfxMuted(true)
   assert.equal(useSettingsStore.getState().sfxMuted, true)
 
-  // 비boolean은 상태를 오염시키지 않는다.
   useSettingsStore.getState().setSfxMuted("true")
   assert.equal(useSettingsStore.getState().sfxMuted, true)
   useSettingsStore.getState().setSfxMuted(null)
@@ -347,7 +312,6 @@ test("AC-03 settingsStore가 sfxMuted를 저장·복원·초기화한다", () =>
   assert.equal(useSettingsStore.getState().sfxMuted, SFX_MUTED_DEFAULT)
   assert.deepEqual(useSettingsStore.getState().volumes, buildDefaultSoundVolumes())
 
-  // 저장 대상에 실제로 들어간다 — 새로고침 후 복원의 근거다.
   const raw = dom.window.localStorage.getItem("settings-storage")
   assert.ok(raw !== null)
   assert.equal(Object.hasOwn(JSON.parse(raw).state, "sfxMuted"), true)
@@ -376,10 +340,6 @@ test("AC-03 재생 중 볼륨/음소거 변경이 활성 매체에 즉시 반영
   assert.equal(h.media[0].muted, true)
   assert.deepEqual(seen.at(-1), { gain: 0, muted: true })
 })
-
-// ---------------------------------------------------------------------------
-// AC-04 · 중복·복원·범위
-// ---------------------------------------------------------------------------
 
 test("AC-04 같은 사건을 로드 중에 다시 보내도 매체는 최대 하나다", async () => {
   const h = makePlayer()
@@ -412,7 +372,6 @@ test("AC-04 복원(origin=restore)은 소리를 내지 않고 표식도 남기�
   assert.equal(restored.reason, SFX_SUPPRESSED_REASON.RESTORE_ORIGIN)
   assert.equal(h.loads.length, 0)
 
-  // 같은 사건이 나중에 실제 live로 오면 그때가 최초다.
   assert.equal(h.player.dispatch(gameEvent("r-1")).status, "accepted")
 })
 
@@ -424,7 +383,6 @@ test("AC-04 mute/알림 off로 억제된 유효 사건은 설정을 켜도 다�
   assert.equal(h.player.dispatch(gameEvent("late-1")).reason, SFX_SUPPRESSED_REASON.DUPLICATE)
   assert.equal(h.media.length, 0)
 
-  // 새로운 사건만 대상이 된다.
   assert.equal(h.player.dispatch(gameEvent("late-2")).status, "accepted")
 })
 
@@ -460,7 +418,6 @@ test("AC-04 게임 전환 중 도착한 늦은 로드는 이전 게임의 매체
 
   assert.equal(h.media.length, 0)
   assert.equal(await pending.completion, SFX_COMPLETION.STOPPED)
-  // 종료된 범위(game-1)의 사건은 이후 범위 검사에서 거부된다.
   assert.equal(h.player.dispatch(gameEvent("game-swap")).reason, SFX_SUPPRESSED_REASON.GAME_MISMATCH)
 })
 
@@ -477,10 +434,6 @@ test("AC-04 UI 연타는 cooldown으로 억제되고 큐에 쌓이지 않는다"
   assert.equal(h.media.length, 1, "연타로 소리가 쌓였다")
 })
 
-// ---------------------------------------------------------------------------
-// AC-05 · 수신자 범위와 내장음 소유권
-// ---------------------------------------------------------------------------
-
 test("AC-05 서버가 허용한 계정이 아니면 재생하지 않는다", () => {
   const h = makePlayer()
   const result = h.player.dispatch(gameEvent("other-1", { accountId: "acct-other" }))
@@ -493,7 +446,6 @@ test("AC-05 익명(로그아웃) 범위에서는 서버 사건을 받아들이�
   const result = h.player.dispatch(gameEvent("anon-1"))
   assert.equal(result.reason, SFX_SUPPRESSED_REASON.ANONYMOUS_SCOPE)
 
-  // 익명 UI는 별도 런타임 범위를 쓴다 — 계정이 없다고 거부하지 않는다.
   assert.equal(h.player.dispatch({ kind: "test-ui", eventId: "anon-ui", origin: "live" }).status, "accepted")
 })
 
@@ -534,18 +486,12 @@ test("AC-05 manifest가 embedded로 표시한 사건에는 별도 음을 내지 
   assert.equal(h.media.length, 0)
 })
 
-// ---------------------------------------------------------------------------
-// F-27c(AC-04) · night-success-video — 배포 manifest의 밤 성공 사건 역할 영상 내장음 항목
-// ---------------------------------------------------------------------------
-
 test("F-27c(AC-04) night-success-video는 GAME 범위·embedded·5개 URL 선택표로 배포 manifest에 등록돼 있다", () => {
   const entry = SFX_MANIFEST["night-success-video"]
   assert.ok(entry, "night-success-video kind가 배포 manifest에 없다")
   assert.equal(entry.scope, SFX_SCOPE.GAME)
   assert.equal(entry.notificationKey, null)
   assert.equal(entry.audioMode, "embedded")
-  // 별도 효과음 재생 승인 근거(src/sha256)는 여전히 null이다 — embeddedVideos의 승인은 영상
-  // 파일 자체에 대한 것이고, 이 kind로 잘라낸 별도 재생을 허용하는 근거가 아니다.
   assert.equal(entry.src, null)
   assert.equal(entry.sha256, null)
 
@@ -556,12 +502,9 @@ test("F-27c(AC-04) night-success-video는 GAME 범위·embedded·5개 URL 선택
   for (const [key, src] of Object.entries(table)) {
     assert.equal(typeof src, "string", `${key} 경로가 문자열이 아니다`)
     assert.ok(src.startsWith("/video-direction/"), `${key} 경로가 /video-direction/ 아래가 아니다: ${src}`)
-    // F-27d: 선택표는 stacked MP4(위 절반 색·아래 절반 마스크)를 가리킨다 — VP9 알파 WebM은
-    // 더 이상 참조하지 않는다(브라우저 공통 재생, canvas 합성으로 알파를 되살린다).
     assert.ok(src.endsWith("-stacked.mp4"), `${key} 경로가 -stacked.mp4가 아니다: ${src}`)
     assert.equal(src.endsWith(".webm"), false, `${key} 경로가 .webm을 요청했다: ${src}`)
   }
-  // INVESTIGATE-TARGET·CONFIRM-TARGET은 전용 영상이 없다 — 표에 없어야 임시 연출로 넘어간다.
   assert.equal(table["INVESTIGATE-TARGET"], undefined)
   assert.equal(table["CONFIRM-TARGET"], undefined)
 })
@@ -596,16 +539,10 @@ test("AC-05 claimAudio는 mix를 매체에 적용하고 cleanup 뒤에는 건드
 
 test("AC-05 내장음의 최대 2초 제한은 별도 SFX에만 적용된다", () => {
   const h = makePlayer()
-  // 길이가 제한을 넘는 사건도 embedded claim 자체는 성립한다(승인 MOV는 4~5초다).
   const claim = h.player.claimAudio(gameEvent("mov-long", { kind: "test-too-long" }), { mode: "embedded" })
   assert.equal(claim.status, "claimed")
-  // 같은 사건의 별도 재생은 여전히 막힌다.
   assert.equal(h.player.dispatch(gameEvent("mov-long", { kind: "test-too-long" })).reason, SFX_SUPPRESSED_REASON.DUPLICATE)
 })
-
-// ---------------------------------------------------------------------------
-// AC-06 · 실패 격리와 유한 정착
-// ---------------------------------------------------------------------------
 
 test("AC-06 정상 경로는 played로 정착하고 활성 매체를 남기지 않는다", async () => {
   const h = makePlayer()
@@ -660,7 +597,6 @@ test("AC-06 자동재생 거절(play reject)은 failed로 끝나고 클릭 재�
   await flush()
 
   assert.equal(await result.completion, SFX_COMPLETION.FAILED)
-  // 다음 클릭으로 재시도하지 않는다 — 같은 사건은 이미 처리 표식이 선점돼 있다.
   assert.equal(h.player.dispatch(gameEvent("ar-1")).reason, SFX_SUPPRESSED_REASON.DUPLICATE)
   assert.equal(h.media.length, 1)
 })
@@ -671,7 +607,6 @@ test("AC-06 play가 영원히 pending이고 ended도 오지 않으면 watchdog�
   await settleLoads(h)
   assert.equal(h.media.length, 1)
 
-  // 검토 길이(500ms) + watchdog(1000ms)
   h.clock.advance(1500)
   assert.equal(await result.completion, SFX_COMPLETION.TIMED_OUT)
   assert.equal(h.media[0].pauseCalls >= 1, true)
@@ -716,7 +651,6 @@ test("AC-06 잘못된 입력은 매체를 만들지 않고 억제 이유를 돌�
 test("AC-06 dispatch는 completion을 기다리지 않고 동기로 돌아온다", () => {
   const h = makePlayer({ loadAsset: () => new Promise(() => {}) })
   const result = h.player.dispatch(gameEvent("sync-1"))
-  // 로드가 영원히 pending인데도 호출은 이미 끝나 있다.
   assert.equal(result.status, "accepted")
   assert.ok(result.completion instanceof Promise)
 })
@@ -812,14 +746,6 @@ test("AC-06 playback watchdog installation failure settles before play",async()=
   assert.equal(h.media[0].playCalls,0);assert.ok(h.media[0].pauseCalls>=1)
 })
 
-// ---------------------------------------------------------------------------
-// F-17(SFX-DEFER-17) · 새 시스템 알림 kind가 기존 계정 사건 계약을 그대로 따른다.
-//
-// 아래 "재생됨" 확인은 여전히 fixture manifest + 가짜 매체다 — 배포 자산 검토도 실제
-// 청음도 아니다. 배포 manifest의 system-notification이 여전히 미검토라는 사실은 위
-// "AC-02 배포 manifest의 모든 항목은 아직 미검토이고…"가 전 항목에 대해 이미 강제한다.
-// ---------------------------------------------------------------------------
-
 const accountEvent = (eventId, extra = {}) => ({
   kind: "test-account",
   eventId,
@@ -839,8 +765,6 @@ test("F-17 배포 manifest의 system-notification은 계정 범위·시스템 �
 test("F-17 안정 알림 ID는 계정 범위에서 한 번만 처리되고 복원 봉투는 표식을 남기지 않는다", async () => {
   const h = makePlayer()
 
-  // 복원(origin=restore)은 재생도 표식도 만들지 않는다 — 그래서 F-17 store가 snapshot에서
-  // 본 원본 키를 따로 기억해야 한다(재생기에만 맡기면 뒤이은 live가 울린다).
   const restored = h.player.dispatch(accountEvent("notification:n1", { origin: "restore" }))
   assert.equal(restored.reason, SFX_SUPPRESSED_REASON.RESTORE_ORIGIN)
   assert.equal(h.media.length, 0)
@@ -850,7 +774,6 @@ test("F-17 안정 알림 ID는 계정 범위에서 한 번만 처리되고 복�
   await settleLoads(h)
   assert.equal(h.media.length, 1)
 
-  // 같은 안정 ID의 재전달은 중복이다.
   assert.equal(h.player.dispatch(accountEvent("notification:n1")).reason, SFX_SUPPRESSED_REASON.DUPLICATE)
   assert.equal(h.media.length, 1)
 })
@@ -878,12 +801,10 @@ test("F-17 알림 off로 억제된 사건도 표식을 소모해 설정을 다�
     origin: "live",
   })
 
-  // 설정이 켜져 있는 동안은 정상 재생된다(대조군).
   assert.equal(h.player.dispatch(notified("notification:n3")).status, "accepted")
   await settleLoads(h)
   assert.equal(h.media.length, 1)
 
-  // 설정을 끈 상태에서 온 **새** 사건은 억제되지만 표식은 소모된다.
   h.setSettings({ notifications: { "friend-invite": false } })
   assert.equal(
     h.player.dispatch(notified("notification:n4")).reason,
@@ -904,7 +825,6 @@ test("F-17 시스템 알림의 로드가 영원히 정착하지 않아도 comple
   const result = h.player.dispatch(accountEvent("notification:pending"))
   assert.equal(result.status, "accepted")
 
-  // 호출자는 completion을 기다리지 않지만(A-06), 기다리더라도 제한 시간 안에 정착한다.
   h.clock.advance(SFX_LOAD_TIMEOUT_MS + 1)
   await flush()
   assert.equal(

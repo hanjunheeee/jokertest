@@ -1,28 +1,3 @@
-/**
- * UI-08 이식분 고정 테스트.
- *
- * - AC-01: 이식 대상 9개 파일이 모두 존재하고, 경로 별칭(@/) import가 남아 있지 않으며,
- *          원격 본문과의 차이가 허용된 것(별칭 치환·주석·로컬 계약)뿐이다.
- *          여기서 "허용된 차이"는 다음 넷 중 하나로만 인정한다.
- *            (a) 주석·빈 줄
- *            (b) import: 가져오는 이름과 가리키는 파일이 상대편과 같은 것 — 즉 차이가 경로
- *                치환뿐인 것. 이름이 늘거나 새 import가 생기면 (d)로 설명해야 한다.
- *            (c) 같은 hunk 안에서 내용이 같고 들여쓰기만 다른 줄과 1:1로 짝지어지는 줄
- *            (d) 파일별 로컬 계약 허용 목록에 이유와 함께 적힌 줄, 그리고 그 줄이 연 블록
- *          "상대편 파일 어딘가에 같은 문자열이 있으면 면제"나 "import 줄은 전부 면제" 같은
- *          넓은 예외를 두지 않는다 — 그런 예외는 실제 계약 차이(예: 새 import, 새로 추가된
- *          마크업 한 줄)까지 함께 통과시켜 이 테스트가 아무것도 고정하지 못하게 만든다.
- * - AC-02: 이식한 컴포넌트가 라우트 → 페이지 → 부모 → 자식으로 실제 화면 트리에 이어져 있다.
- * - AC-03: 지정된 5개 테스트가 npm test의 실행 대상 집합에 실제로 들어 있다.
- * - AC-04: 방 목록 행이 방 코드를 표시하고, 방코드 입력이 로컬 훅의 정규화 결과를 제출한다.
- *
- * 이 저장소의 테스트는 `node --test`로 돌고 JSX를 변환하지 않으므로 .jsx는 import할 수 없다
- * (frontend/package.json의 test 스크립트). 그래서 화면 파일은 이미 저장소에 있는 방식
- * (app/routes/__tests__/podiumRoute.test.js와 동일)으로 소스 문자열을 읽어 연결을 확인하고,
- * 값이 실제로 어떻게 변하는지는 진짜 훅(useRoomCodeInput)을 렌더링해 확인한다.
- * 두 방식을 잇기 위해, 아래 하니스가 재현하는 연결(칸 value·onChange·제출 가드)이 실제
- * RoomCodeInput·RoomInvitePage·useRoomInvitePage 소스와 같은지도 함께 고정한다.
- */
 import test from "node:test"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
@@ -41,17 +16,13 @@ import { resolveRoomListRowCode } from "../utils/resolveRoomListRowCode.js"
 import { ROOM_CODE_LENGTH } from "../../matching/utils/roomCode.js"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-// frontend/src (이 파일: src/domains/game/mode/__tests__/)
 const srcRoot = path.resolve(here, "..", "..", "..", "..")
-// 저장소 최상위 (frontend/src → frontend → repo)
 const repoRoot = path.resolve(srcRoot, "..", "..")
 
-/** frontend/src 기준 경로의 파일 본문을 읽는다. */
 function readSrc(relativePath) {
   return readFileSync(path.join(srcRoot, relativePath), "utf8")
 }
 
-/** 파일 본문이 주어진 패턴을 모두 담고 있는지 확인한다(연결 근거). */
 function assertWires(relativePath, patterns) {
   const source = readSrc(relativePath)
   for (const [pattern, why] of patterns) {
@@ -61,9 +32,6 @@ function assertWires(relativePath, patterns) {
 
 const roomListRowSource = readSrc("domains/game/mode/components/roomList/RoomListRow.jsx")
 
-// ── AC-01: 이식 대상 파일의 존재와 경로 별칭 제거 ────────────────────────────
-
-/** UI-08에서 원격 표현을 가져오기로 한 파일들(요구사항의 예상 범위). */
 const PORTED_FILES = [
   "domains/game/mode/components/roomList/RoomListRow.jsx",
   "domains/game/mode/components/roomList/RoomListShell.jsx",
@@ -84,8 +52,6 @@ test("AC-01: 이식 대상 9개 파일이 모두 존재한다", () => {
 })
 
 test("AC-01: 이식한 파일에는 경로 별칭(@/) import가 남아 있지 않다", () => {
-  // 이 파일들의 import 체인은 node --test에서 그대로 따라갈 수 있어야 한다 —
-  // 별칭은 vite만 해석하므로 하나라도 남으면 순수 JS 테스트가 체인 중간에서 끊긴다.
   for (const relativePath of PORTED_FILES) {
     const source = readSrc(relativePath)
     assert.ok(
@@ -94,15 +60,6 @@ test("AC-01: 이식한 파일에는 경로 별칭(@/) import가 남아 있지 �
     )
   }
 })
-
-// ── AC-01: 원격 본문과의 차이가 허용된 것뿐인지 ───────────────────────────────
-//
-// "허용된 차이"는 요구사항이 정한 세 가지다.
-//   (1) 경로 별칭(@/) → 상대 경로 치환
-//   (2) 로컬 훅·API 계약을 유지하기 위해 필요한 부분 — 파일별로 아래에 이유와 함께 적는다
-//   (3) 그 이유를 적은 주석
-// 이 테스트는 원격 본문을 직접 읽어(git show/diff) 바뀐 줄을 한 줄씩 위 셋 중 하나로
-// 분류하고, 어디에도 속하지 않는 줄이 하나라도 남으면 그 줄을 그대로 찍고 실패한다.
 
 const REMOTE_REF = "origin/feature/ui-Phase1complete"
 
@@ -114,7 +71,6 @@ function git(args) {
   })
 }
 
-/** 원격 ref가 이 저장소에 있는지 — 없으면 비교 근거를 만들 수 없으므로 그대로 실패시킨다. */
 function assertRemoteRefExists() {
   let resolved = ""
   try {
@@ -125,12 +81,6 @@ function assertRemoteRefExists() {
   assert.match(resolved, /^[0-9a-f]{40}$/, `${REMOTE_REF}가 커밋을 가리키지 않는다`)
 }
 
-/**
- * 별칭(@/)·상대 경로를 "frontend/src 기준 경로" 하나로 맞춘다. 확장자는 비교에서 뺀다 —
- * 별칭을 상대 경로로 바꿀 때 node가 해석할 수 있도록 `.jsx`를 붙인 곳이 있기 때문이다
- * (예: 원격 `@/shared/ui/PublicAsset` → 로컬 `../../../../shared/ui/PublicAsset.jsx`).
- * 패키지 이름(react 등)은 그대로 둔다.
- */
 function resolveModuleTarget(module, fileRelativeToSrc) {
   const posixFile = fileRelativeToSrc.split(path.sep).join("/")
   if (module.startsWith("@/")) return module.slice(2)
@@ -142,11 +92,6 @@ function resolveModuleTarget(module, fileRelativeToSrc) {
 
 const withoutExtension = (target) => target.replace(/\.jsx?$/, "")
 
-/**
- * import 문 하나를 "무엇을(clause) 어디에서(module)"로 쪼갠다.
- * key는 그 둘만으로 만든다 — 별칭이든 상대 경로든 같은 파일에서 같은 이름을 가져오면 같은 key다.
- * 즉 key가 같으면 그 import의 차이는 경로 치환뿐이고, key가 다르면 가져오는 대상이 실제로 달라졌다.
- */
 function makeImportStatement(text, fileRelativeToSrc) {
   const module = text.match(/["']([^"']+)["']\s*$/)?.[1] ?? ""
   const clause = text
@@ -159,12 +104,6 @@ function makeImportStatement(text, fileRelativeToSrc) {
   return { text, module, clause, target, key: `${clause}|${withoutExtension(target)}` }
 }
 
-/**
- * 파일 안의 import를 문장 단위로 모은다. 여러 줄로 쓴 `import { … } from "…"`는 한 문장으로
- * 합쳐서 판정한다 — 줄 단위로 보면 `import {` 나 멤버 한 줄만 떼어 보게 돼 무엇이 달라졌는지
- * 알 수 없기 때문이다.
- * 반환: byLine(줄 번호 → 문장 번호), statements(문장 목록)
- */
 function collectImports(source, fileRelativeToSrc) {
   const byLine = new Map()
   const statements = []
@@ -182,7 +121,6 @@ function collectImports(source, fileRelativeToSrc) {
       pending.numbers.push(lineNumber)
     }
 
-    // `from "…"`(또는 side-effect import)가 나오기 전까지는 같은 문장이 이어진다.
     const ends = /\bfrom\s+["'][^"']+["']/.test(line) || /^import\s+["'][^"']+["']/.test(line)
     if (!ends) return
 
@@ -200,7 +138,6 @@ function collectImports(source, fileRelativeToSrc) {
   return { byLine, statements }
 }
 
-/** `git diff -U0`을 읽어 hunk별로 사라진 줄·새로 생긴 줄을 줄 번호와 함께 모은다. */
 function diffHunksAgainstRemote(repoRelativePath) {
   const output = git(["diff", "-U0", REMOTE_REF, "--", repoRelativePath])
   const hunks = []
@@ -233,15 +170,6 @@ function diffHunksAgainstRemote(repoRelativePath) {
   return hunks
 }
 
-/**
- * 같은 hunk 안에서 "내용은 그대로고 들여쓰기만 바뀐" 줄끼리 1:1로 짝지어 표시한다
- * (fragment로 감싸면서 한 단계 밀린 마크업이 여기 해당한다).
- *
- * 짝짓기를 hunk 안으로 한정하고 1:1로 소비하는 이유는, "상대편 어딘가에 같은 문자열이 있으면
- * 면제"로 두면 흔한 한 줄(`/>`, `</span>`)이 파일 어디에나 있어서 실제 추가·삭제까지 함께
- * 빠져나가기 때문이다. 들여쓰기까지 똑같은 줄은 짝짓지 않는다 — 그건 밀린 줄이 아니라 자리를
- * 옮긴 줄이라 따로 설명해야 한다.
- */
 function markReindentedLines(hunk) {
   const reindented = new Set()
   const removedByText = new Map()
@@ -266,29 +194,12 @@ function markReindentedLines(hunk) {
   return reindented
 }
 
-/**
- * F-15(AC-02) "텍스트 크기"가 인정하는 단 하나의 표현 변경 — 원래 font-size 값을 그대로
- * 둔 채 배율 유틸리티로 옮긴 것.
- *
- *   text-[clamp(1.05rem,1.5vw,1.28rem)]
- *   → app-text-scaled [--app-text-size:clamp(1.05rem,1.5vw,1.28rem)]
- *
- * 크기 값이 아닌 `text-[#f5e8c8]`(색)·`[text-shadow:…]`는 대상이 아니다.
- */
 const F15_FONT_SIZE_UTILITY = /text-\[(clamp\([^\]]*\)|[0-9.]+(?:rem|px|em))\]/g
 
 function toF15ScaledTypography(text) {
   return text.replace(F15_FONT_SIZE_UTILITY, "app-text-scaled [--app-text-size:$1]")
 }
 
-/**
- * 같은 hunk 안에서 "F-15 배율 전환만" 일어난 줄끼리 1:1로 짝지어 표시한다.
- *
- * 지운 줄에 위 변환을 적용한 결과가 새 줄과 **글자 하나까지** 같을 때만 짝이 된다 — 크기
- * 값이 달라지거나(예: clamp 경계 축소) 같은 줄의 다른 부분이 함께 바뀌면 짝이 만들어지지
- * 않고 그대로 "설명되지 않은 차이"로 남는다. 들여쓰기 짝짓기(markReindentedLines)와 같은
- * 이유로 hunk 안으로 한정하고 1:1로 소비한다.
- */
 function markF15ScaledTypographyLines(hunk) {
   const scaled = new Set()
   const removedByScaledText = new Map()
@@ -312,17 +223,6 @@ function markF15ScaledTypographyLines(hunk) {
   return scaled
 }
 
-/**
- * 파일별로 "로컬 훅·API 계약을 지키느라 원격과 달라진" 줄과 그 이유다.
- * 여기 적히지 않은 변경은 이 테스트에서 그대로 실패한다.
- *
- * 패턴을 대는 대상은 두 가지다.
- *  - import 줄: 여러 줄로 쓴 import를 한 줄로 합친 문장 전체(`import { A, B } from "…"`)
- *  - 그 밖의 줄: trim한 줄 하나
- * 여기서 설명된 줄이 블록을 열면(`{`·`(`가 남으면) 그 블록이 닫힐 때까지가 같은 문장으로
- * 함께 설명된 것으로 본다 — 설명된 변경이 여러 줄로 늘어나며 생긴 닫는 줄까지 일일이
- * 패턴으로 적게 하면, 정작 무엇이 달라졌는지가 목록에서 안 보이기 때문이다.
- */
 const ALLOWED_LOCAL_CONTRACT_DIFFS = {
   "domains/game/mode/components/roomList/RoomListRow.jsx": [
     [/^const \{ stage, current, max, title/, "AC-04: 코드 표시를 room 객체 전체로 계산한다"],
@@ -427,9 +327,6 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
         " — 개수가 원격과 같다는 것은 아래 '마크업 구조는 원격과 같다' 테스트가 확인한다",
     ],
   ],
-  // F-20: 이 패널은 이제 생성(create_room)과 대기방 설정 편집(update_room_settings) 두 모드를
-  // 함께 담당한다. 아래 근거는 그 계약에서 곧바로 나오는 차이만 면제한다 — 마크업 구조가
-  // 원격과 같다는 사실은 별도 테스트가 계속 확인한다.
   "domains/game/setup/components/GameSetupPanel.jsx": [
     [
       /roomSettingsForm\.js"$/,
@@ -487,20 +384,12 @@ const ALLOWED_LOCAL_CONTRACT_DIFFS = {
   "domains/game/setup/hooks/useSetupContentScrollOnRoleModeChange.js": [],
 }
 
-/**
- * 그 줄에서 열린 채로 남은 괄호 수다(`{`·`(`는 +1, `}`·`)`는 -1).
- *
- * 설명된 변경이 블록을 열면 그 블록이 닫힐 때까지를 같은 문장으로 본다. 문자열 안의 괄호까지
- * 세는 거친 계산이지만, 이 셈이 어긋나 봐야 면제가 일찍 끝나(=설명되지 않은 줄로 보고됨)
- * 실패하는 쪽이라 판정을 느슨하게 만들지 않는다. 면제는 깊이가 0으로 돌아오면 반드시 끝난다.
- */
 function openBracketDelta(text) {
   const opened = (text.match(/[({]/g) ?? []).length
   const closed = (text.match(/[)}]/g) ?? []).length
   return opened - closed
 }
 
-/** 주석·빈 줄인지. 여러 줄 주석은 앞뒤 줄을 이어 봐야 하므로 상태를 들고 판정한다. */
 function makeCommentClassifier() {
   let inBlockComment = false
 
@@ -548,11 +437,8 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
 
     for (const { sign, pick, imports, counterpartKeys } of sides) {
       const isComment = makeCommentClassifier()
-      // 여러 줄로 쓴 대입문(`const X =` 다음 줄에 값)은 앞 줄과 한 몸이라 함께 판정한다.
       let previousLineContinues = false
-      // 설명된 줄이 연 블록이 아직 닫히지 않은 만큼(닫히면 면제도 끝난다).
       let openDepth = 0
-      // 여러 줄 import는 문장 하나로 보고하므로, 같은 문장을 줄 수만큼 찍지 않는다.
       const reportedStatements = new Set()
 
       for (const hunk of hunks) {
@@ -566,9 +452,6 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
 
           if (isComment(text)) continue
 
-          // import는 줄이 아니라 문장으로 판정한다. 상대편에 "같은 이름을 같은 파일에서"
-          // 가져오는 import가 있으면 그 차이는 별칭→상대 경로 치환뿐이다. 가져오는 대상이
-          // 실제로 달라졌으면(이름 추가·새 import) 아래 허용 목록에 이유가 있어야 한다.
           const statementIndex = imports.byLine.get(lineNumber)
           if (statementIndex !== undefined) {
             const statement = imports.statements[statementIndex]
@@ -604,7 +487,6 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
       }
     }
 
-    // 허용 목록이 실제 차이보다 넓어지지 않게, 적어 둔 이유가 모두 쓰였는지도 확인한다.
     for (const [, why] of allowed) {
       assert.ok(
         usedReasons.has(`${relativePath}::${why}`),
@@ -617,8 +499,6 @@ test("AC-01: 이식한 9개 파일의 원격 대비 차이는 허용된 것뿐�
 })
 
 test("AC-01: F-15 배율 전환 면제는 '값 보존 + 그 밖은 그대로'일 때만 성립한다", () => {
-  // 위 면제가 "이 파일들의 font-size 변경은 전부 봐준다"가 되면 이 테스트가 아무것도
-  // 고정하지 못한다 — 면제 조건을 직접 흔들어 실제로 걸러내는지 확인한다.
   const base = '  "font-subheading text-[clamp(1.02rem,1.38vw,1.16rem)] font-bold text-[#2a1810]"'
   const converted =
     '  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold text-[#2a1810]"'
@@ -629,31 +509,23 @@ test("AC-01: F-15 배율 전환 면제는 '값 보존 + 그 밖은 그대로'일
       added: added.map((text, index) => ({ lineNumber: 20 + index, text })),
     })
 
-  // (1) 값을 그대로 옮긴 전환만 짝지어진다 — 색(text-[#2a1810])은 건드리지 않은 채로 남는다.
   assert.deepEqual([...mark([base], [converted])].sort(), ["+20", "-10"])
 
-  // (2) 크기 값이 달라지면(clamp 경계 축소·기본 크기 변경) 짝이 되지 않는다.
   const shrunk = converted.replace("clamp(1.02rem,1.38vw,1.16rem)", "clamp(0.9rem,1.38vw,1.16rem)")
   assert.deepEqual([...mark([base], [shrunk])], [])
 
-  // (3) 전환과 함께 같은 줄의 다른 부분이 바뀌면 짝이 되지 않는다.
   assert.deepEqual([...mark([base], [converted.replace("font-bold", "font-black")])], [])
   assert.deepEqual([...mark([base], [converted.replace("text-[#2a1810]", "text-[#8c1c13]")])], [])
 
-  // (4) 크기가 아닌 유틸리티(색)만 있는 줄은 애초에 전환 대상이 아니다.
   const colorOnly = '  "font-subheading text-[#2a1810]"'
   assert.deepEqual([...mark([colorOnly], ['  "font-subheading app-text-scaled text-[#2a1810]"'])], [])
 
-  // (5) 짝 없는 추가·삭제는 1:1 소비 뒤에도 남는다(같은 전환 두 줄 중 하나만 추가된 경우).
   const other = base.replace("1.02rem", "1.2rem")
   const marked = mark([base, other], [converted])
   assert.deepEqual([...marked].sort(), ["+20", "-10"])
 })
 
 test("AC-01: 방코드 모달의 마크업 구조는 원격과 같다", () => {
-  // 위 허용 목록에서 닫는 `</span>` 한 줄을 "fragment 때문에 hunk가 갈라진 것"으로 설명했다.
-  // 그 설명이 맞으려면 span 자체가 늘거나 줄지 않아야 한다 — 여기서 그것을 확인한다.
-  // (fragment `<>`와 오류 문구 `<p>`는 로컬 복사 계약이 더한 것이라 개수 비교에서 빼지 않는다.)
   const relativePath = "domains/game/matching/components/RoomCodeViewModal.jsx"
   const local = readSrc(relativePath)
   const remote = git([`show`, `${REMOTE_REF}:frontend/src/${relativePath}`])
@@ -666,8 +538,6 @@ test("AC-01: 방코드 모달의 마크업 구조는 원격과 같다", () => {
 })
 
 test("AC-01: 이식한 파일의 상대 경로 import는 실제 파일을 가리킨다", () => {
-  // 별칭을 상대 경로로 바꾸는 일은 "다르게 쓰기"가 아니라 "같은 파일을 가리키게 하기"다.
-  // 가리키는 파일이 없으면 치환이 잘못된 것이므로, 위 key 비교와 별개로 여기서 확인한다.
   for (const relativePath of PORTED_FILES) {
     const { statements } = collectImports(readSrc(relativePath), relativePath)
     for (const statement of statements) {
@@ -680,9 +550,6 @@ test("AC-01: 이식한 파일의 상대 경로 import는 실제 파일을 가리
   }
 })
 
-// ── AC-03: 지정된 5개 테스트가 실행 대상에 들어 있는지 ────────────────────────
-
-/** 성공 조건이 "수정 없이 통과한다"고 지정한 테스트들. */
 const DESIGNATED_TESTS = [
   "domains/game/mode/hooks/__tests__/useRoomCodeInput.test.js",
   "domains/game/matching/utils/__tests__/roomCode.test.js",
@@ -691,7 +558,6 @@ const DESIGNATED_TESTS = [
   "domains/game/setup/hooks/__tests__/useRoleCompositionState.test.js",
 ]
 
-// package.json이 정한 실행 대상 glob(src, **, __tests__, *.test.js)을 실제 파일 목록으로 펼친다.
 function expandTestGlob(frontendRoot, pattern) {
   const segments = pattern.split("/")
   assert.deepEqual(
@@ -720,13 +586,11 @@ test("AC-03: 지정된 5개 테스트가 npm test의 실행 대상에 들어 있
   const frontendRoot = path.join(srcRoot, "..")
   const testScript = JSON.parse(readFileSync(path.join(frontendRoot, "package.json"), "utf8")).scripts
     .test
-  // 실행 대상은 test 스크립트의 `--test` 뒤 glob이 전부다 — 그 glob을 여기서 그대로 펼친다.
   const globMatch = testScript.match(/--test\s+(\S+)\s*$/)
   assert.ok(globMatch, `test 스크립트에서 실행 대상 glob을 찾지 못했다: ${testScript}`)
 
   const runSet = expandTestGlob(frontendRoot, globMatch[1])
 
-  // 이 테스트 자신이 그 집합 안에 있어야, 위 계산이 실제 실행 경로와 같다는 근거가 된다.
   assert.ok(runSet.has(fileURLToPath(import.meta.url)), "이 테스트 자신이 실행 대상에 없다")
 
   for (const relativePath of DESIGNATED_TESTS) {
@@ -742,7 +606,6 @@ test("AC-03: 지정된 5개 테스트가 npm test의 실행 대상에 들어 있
 })
 
 test("AC-03: 지정된 5개 테스트는 이번 작업에서 수정하지 않았다", () => {
-  // 기대값을 고쳐 통과시키지 않았다는 근거다. 슬라이스 시작 커밋과 비교한다.
   const base = "feed38e"
   try {
     git(["cat-file", "-e", `${base}^{commit}`])
@@ -760,8 +623,6 @@ test("AC-03: 지정된 5개 테스트는 이번 작업에서 수정하지 않았
 
   assert.equal(changed, "", `지정된 테스트가 수정됐다:\n${changed}`)
 })
-
-// ── AC-02: 라우트 → 페이지 → 부모 → 자식 연결 ────────────────────────────────
 
 test("AC-02: 라우터가 이식한 화면 3개(멀티플레이·방코드·게임 설정)를 그린다", () => {
   assertWires("app/routes/index.jsx", [
@@ -820,10 +681,7 @@ test("AC-02: 게임 설정 화면이 페이지→패널→일반 탭→역할 �
   assertWires("domains/game/setup/components/GameSetupPanel.jsx", [
     [/import GeneralGameSetupTab from "\.\/GeneralGameSetupTab\.jsx"/, "일반 탭을 import하지 않는다"],
     [/<GeneralGameSetupTab[\s\S]*?roleComposition=\{roleComposition\}/, "역할 구성 상태를 일반 탭에 넘기지 않는다"],
-    // F-20 AC-03: 같은 버튼이 생성(create_room)과 저장(update_room_settings) 두 제출을 담당하게
-    // 되어 핸들러 이름이 모드 중립(handleSubmitClick)으로 바뀌었다. 연결 자체는 그대로 확인한다.
     [/<GameSetupCreateButton[\s\S]*?onClick=\{handleSubmitClick\}/, "제출 버튼이 handleSubmitClick에 연결돼 있지 않다"],
-    // 이식한 스크롤 훅이 실제 본문 ref에 연결돼 있어야 모드 전환 시 스크롤이 맞는다.
     [
       /useSetupContentScrollOnRoleModeChange\(setupContentRef, roleComposition\.mode, activeTab\)/,
       "스크롤 훅을 호출하지 않는다",
@@ -835,7 +693,6 @@ test("AC-02: 게임 설정 화면이 페이지→패널→일반 탭→역할 �
     [/<RoleCompositionSection[\s\S]*?mode=\{roleComposition\.mode\}/, "역할 구성 구역에 모드를 넘기지 않는다"],
   ])
   assertWires("domains/game/setup/components/RoleCompositionSection.jsx", [
-    // 스크롤 훅이 클래스가 아니라 이 표식으로 대상을 찾는다.
     [/data-setup-role-composition\b/, "스크롤 훅이 찾는 표식이 없다"],
     [/data-setup-role-composition-summary/, "요약 표식이 없다"],
   ])
@@ -856,15 +713,12 @@ test("AC-02: 방코드 보기 모달이 매칭 화면에 연결돼 있다", () =
   ])
 })
 
-// ── AC-04: 방 목록 행의 방 코드(입장 코드 필요) 표시 ──────────────────────────
-
 test("코드 방 배지 스타일 상수가 실제로 존재한다", () => {
   assert.equal(typeof ROOM_LIST_ROW_LOCK_BADGE_CLASS, "string")
   assert.ok(ROOM_LIST_ROW_LOCK_BADGE_CLASS.length > 0, "배지 클래스가 비어 있다")
 })
 
 test("행은 방이 코드 값을 실어 주면 그 코드 값을 표시한다", () => {
-  // 행이 실제로 그리는 값을 계산하는 함수를 그대로 부른다(재현이 아니라 같은 코드다).
   const shown = resolveRoomListRowCode({ accessType: "code", code: "AB2C3D" })
 
   assert.equal(shown.visible, true, "코드 방인데 배지를 그리지 않는다")
@@ -874,8 +728,6 @@ test("행은 방이 코드 값을 실어 주면 그 코드 값을 표시한다",
 })
 
 test("코드 값 표시는 서버가 준 문자열을 가공하지 않는다", () => {
-  // 서버 비교는 대소문자를 구분한다(matching/utils/roomCode.js 주석). 목록이 케이스를
-  // 바꿔 보여주면 사용자가 그대로 옮겨 적었을 때 반드시 참가에 실패한다.
   assert.equal(resolveRoomListRowCode({ accessType: "code", code: "aB2c3D" }).value, "aB2c3D")
 })
 
@@ -907,8 +759,6 @@ test("행이 그 계산 결과를 배지와 aria-label에 그대로 연결한다
     /\{rowCode\.visible \? \(\s*\n\s*<span className=\{ROOM_LIST_ROW_LOCK_BADGE_CLASS\}>\{rowCode\.label\}<\/span>/,
     "배지가 계산된 코드 라벨을 그리지 않는다",
   )
-  // 배지가 들어 있는 오버레이는 aria-hidden이라, 이 문구가 빠지면 스크린리더에서는
-  // 코드 방인지도, 코드 값도 알 방법이 사라진다.
   assert.match(
     roomListRowSource,
     /rowCode\.ariaText \? `, \$\{rowCode\.ariaText\}` : ""/,
@@ -917,9 +767,6 @@ test("행이 그 계산 결과를 배지와 aria-label에 그대로 연결한다
 })
 
 test("행의 코드 표시는 서버가 목록에 실어 주지 않은 값을 만들어 내지 않는다", () => {
-  // 표시 규칙이 값을 지어내지 않는다는 것과, 지금 공개 목록 payload에 코드 값이 없다는 것은
-  // 서로 다른 사실이다. 앞은 위 테스트가, 뒤는 서버 목록 계약이 정한다 — 목록 계약이 바뀌어
-  // 코드 값이 실려 오면 그때부터 행은 값을 그대로 보여준다.
   const listContract = readFileSync(
     path.join(srcRoot, "..", "..", "backend", "socket", "matchmaking.js"),
     "utf8",
@@ -929,7 +776,6 @@ test("행의 코드 표시는 서버가 목록에 실어 주지 않은 값을 �
     ?.split("\nfunction ")[0]
   assert.ok(builder, "공개 목록 payload를 만드는 함수를 찾지 못했다")
   assert.ok(!/^\s*code:/m.test(builder), "공개 목록 payload가 코드 값을 싣는다")
-  // 더미 목록도 같은 계약을 따른다(코드 값 없이 accessType만).
   assert.ok(
     !/\bcode:/.test(readSrc("domains/game/mode/constants/multiplayRooms.js")),
     "더미 목록이 코드 값을 담는다",
@@ -937,8 +783,6 @@ test("행의 코드 표시는 서버가 목록에 실어 주지 않은 값을 �
 })
 
 test("코드 방을 고르면 입장 버튼이 코드 입력 경로로 넘긴다", () => {
-  // 행의 "코드" 표시가 실제 입장 흐름으로 이어지는 지점이다 — 코드 방을 고르면
-  // 버튼이 잠기는 대신 코드 입력 화면으로 방 id를 들고 넘어간다.
   assertWires("domains/game/mode/components/roomList/RoomListShell.jsx", [
     [/const selectedRoomNeedsCode = selectedRoom\?\.accessType === "code"/, "코드 방 판정이 없다"],
     [/if \(selectedRoomNeedsCode\) onJoinByCode\?\.\(selectedRoom\.id\)/, "코드 방 입장이 코드 화면으로 가지 않는다"],
@@ -956,8 +800,6 @@ test("선택된 행은 별도 오버레이 대신 프레임 강조 클래스를 
   )
   assert.ok(ROOM_LIST_ROW_FRAME_CLASS.includes("transition-[filter]"), "강조 전환이 없다")
 })
-
-// ── AC-04: 코드 입력이 로컬 훅의 정규화 결과를 제출한다 ───────────────────────
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
@@ -982,12 +824,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const { fireEvent, render } = await import("@testing-library/react")
 const { ROOM_CODE_INPUT_ATTRIBUTES, useRoomCodeInput } = await import("../hooks/useRoomCodeInput.js")
 
-/**
- * RoomInvitePage의 입력→제출 경로와 같은 모양의 하니스다. 페이지와 RoomCodeInput은 .jsx라
- * node --test에서 import할 수 없으므로, 두 파일이 하는 일(훅이 돌려준 char를 칸 value로 그리고,
- * 칸 이벤트를 훅 핸들러로 넘기고, 길이가 다 찼을 때만 제출한다)만 같은 순서로 재현한다.
- * 아래 "하니스와 실제 소스가 같은 연결을 쓴다" 테스트가 이 재현이 실제 파일과 어긋나면 깨진다.
- */
 function JoinHarness({ submitted }) {
   const [roomCode, setRoomCode] = useState("")
 
@@ -999,7 +835,6 @@ function JoinHarness({ submitted }) {
     readOnly: false,
   })
 
-  // useRoomInvitePage.joinRoom과 같은 길이 가드다(자릿수가 다 차기 전에는 보내지 않는다).
   const joinRoom = () => {
     if (roomCode.length < ROOM_CODE_LENGTH) return
     submitted.push({ roomCode })
@@ -1044,8 +879,6 @@ function type(cell, char) {
 }
 
 test("하니스와 실제 소스가 같은 연결을 쓴다(RoomCodeInput·페이지 제출)", () => {
-  // (1) 실제 입력칸은 훅이 돌려준 char를 그대로 value로 그린다 — 화면에 보이는 값의 출처가
-  //     하니스와 같다는 뜻이다.
   assertWires("domains/game/mode/components/RoomCodeInput.jsx", [
     [/const \{ inputRefs, getChars, handleChange, handleKeyDown, handlePaste \} =\s*\n?\s*useRoomCodeInput\(/, "훅에서 같은 값을 받지 않는다"],
     [/const chars = getChars\(\)/, "표시할 char를 훅에서 얻지 않는다"],
@@ -1058,14 +891,11 @@ test("하니스와 실제 소스가 같은 연결을 쓴다(RoomCodeInput·페�
     [/ref=\{\(el\) => \{ inputRefs\.current\[index\] = el \}\}/, "칸 ref가 훅으로 가지 않는다"],
   ])
 
-  // (2) 실제 페이지는 훅 상태(roomCode)를 프레임에 주고, "참여하기"를 joinRoom에 건다.
   assertWires("domains/game/mode/pages/RoomInvitePage.jsx", [
     [/const \{ uiVisible, roomCode, setRoomCode, joinRoom, goBackToModeSelect \} = useRoomInvitePage\(\)/, "페이지가 훅 상태를 쓰지 않는다"],
     [/label="참여하기"[\s\S]*?onClick=\{joinRoom\}/, "참여하기 버튼이 joinRoom에 연결돼 있지 않다"],
   ])
 
-  // (3) 실제 제출은 길이 가드 뒤 입력값을 그대로 소켓 payload의 roomCode로 싣는다.
-  //     하니스의 가드(ROOM_CODE_LENGTH)와 같은 자릿수인지도 함께 고정한다.
   const invitePageHook = readSrc("domains/game/mode/hooks/useRoomInvitePage.js")
   const guard = invitePageHook.match(/if \(roomCode\.length < (\d+)\) return/)
   assert.ok(guard, "제출 길이 가드가 없다")
@@ -1124,7 +954,6 @@ test("자릿수가 덜 찬 코드는 제출되지 않는다", () => {
 test("쓸 수 없는 문자는 칸에도 제출값에도 남지 않는다", () => {
   const { cells, displayed, submit, submitted, unmount } = setup()
 
-  // 문자 집합([A-Za-z0-9]) 밖의 값은 칸을 채우지 못하므로 코드가 완성되지 않는다.
   for (const char of ["가", "_", " ", "-", "!"]) type(cells[0], char)
 
   assert.equal(displayed(), "", "허용되지 않은 문자가 칸에 남았다")

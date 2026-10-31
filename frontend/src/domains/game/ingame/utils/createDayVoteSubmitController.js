@@ -1,18 +1,7 @@
 import { computeDayVoteSubmitPatch, INITIAL_DAY_VOTE_SUBMIT_STATE } from "./computeDayVoteSubmitPatch.js"
 
-/** useInGameNightActionSubmit의 SUBMIT_TIMEOUT_MS와 동일한 값(§11-3). */
 export const DAY_VOTE_ACK_TIMEOUT_MS = 5000
 
-/**
- * DAY 투표 제출의 경쟁 조건 방어를 전담하는 프레임워크 무관 컨트롤러. socket 하나에 바인딩되는
- * 1회용 객체다 — socket이 바뀌면 이 컨트롤러를 재사용하지 않고 dispose() 후 새로 만든다
- * (그 배선은 useInGameDayVoteSubmit의 책임).
- *
- * settle-once: 각 submit()은 자기 세대(requestGeneration)와 자기만의 settled 플래그를 갖는다.
- * emitWithAck의 resolve/reject와 timeout 중 먼저 도착한 하나만 상태를 바꾸고, 이후 도착하는
- * 모든 콜백(늦은 resolve, 늦은 timeout, 중복 resolve)은 no-op이다. invalidate()/dispose()는
- * generation을 올려 그 시점 이후의 모든 정착 시도를 무효화한다.
- */
 export function createDayVoteSubmitController({ emitWithAck, timeoutMs = DAY_VOTE_ACK_TIMEOUT_MS, onStateChange, onAccepted }) {
   let state = INITIAL_DAY_VOTE_SUBMIT_STATE
   let submitting = false
@@ -67,16 +56,6 @@ export function createDayVoteSubmitController({ emitWithAck, timeoutMs = DAY_VOT
         })
       }, timeoutMs)
 
-      /**
-       * F-16(AC-01): 성공으로 **정착한 뒤에만** 사건 봉투를 알린다.
-       *
-       * settleOnce가 실제로 상태를 바꿨을 때만(= settled가 이 호출로 true가 됐을 때만)
-       * 부르므로, 늦은 resolve·중복 resolve·timeout 뒤 도착·무효화된 세대는 전부 조용히
-       * 빠진다. catch/error/timeout 경로에서는 애초에 호출하지 않는다.
-       *
-       * onAccepted가 던져도 투표 성공 판정이 실패로 바뀌지 않는다(AC-06) — 소리는 업무
-       * 경로의 선행 조건이 아니다.
-       */
       const notifyAccepted = (ackResult) => {
         if (ackResult?.ok !== true) return
         const sfxEvent = ackResult.sfxEvent
@@ -84,7 +63,6 @@ export function createDayVoteSubmitController({ emitWithAck, timeoutMs = DAY_VOT
         try {
           onAccepted?.(sfxEvent, { gameId, dayIndex })
         } catch {
-          // 무시한다 — 아래 상태는 이미 정착했다.
         }
       }
 

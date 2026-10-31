@@ -30,12 +30,6 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { useEmojiPaletteStore } from "@/domains/user/store/emojiPalette.store.js"
 import { EMOTICON_STORE_ITEMS, getStoreItemById } from "@/domains/store/constants/storeItems.js"
-// F-33 E-2(설계도 §2-2): 마이페이지 이모티콘 관리 화면. 왼쪽은 보유 목록(검색 + 등급
-// 드롭다운 + 3열 플레이트 격자), 오른쪽은 8칸 방사형 팔레트, 아래는 저장/취소다.
-//
-// 편집 상태는 이 화면이 아니라 emojiPalette.store.js가 소유한다 — 저장이 409로 거부되면
-// store가 서버의 현재 값으로 slots·selectedSlots를 함께 갱신하는데, 화면이 별도 useState로
-// 편집 값을 들고 있으면 그 갱신이 화면에 반영되지 않아 둘이 어긋난다.
 
 const EMOTICON_CATEGORY = "이모티콘"
 const GRADE_FILTERS = ["전체", "기본", "상점"]
@@ -46,7 +40,6 @@ const SAVE_FAILURE_MESSAGES = {
   NOT_READY: "팔레트를 아직 불러오지 못했습니다.",
 }
 
-/** itemId를 상점 카탈로그의 이모티콘 항목으로 바꾼다. */
 const emoticonItemOf = (itemId) => {
   if (typeof itemId !== "string" || itemId.length === 0) return null
   const item = getStoreItemById(itemId)

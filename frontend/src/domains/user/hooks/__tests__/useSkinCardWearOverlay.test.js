@@ -3,7 +3,6 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 
-// renderHook은 DOM 전역이 필요하다. 설치 방식은 기존 훅 테스트(useLibraryTab.test.js)와 동일하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {

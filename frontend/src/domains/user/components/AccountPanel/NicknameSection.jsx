@@ -9,12 +9,7 @@ import AccountPanelFormActions from "@/domains/user/components/AccountPanel/Acco
 import UserIcon from "@/domains/user/components/AccountPanel/UserIcon.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
-// 닉네임 변경 입력칸과 제출 버튼을 묶은 섹션입니다.
 export default function NicknameSection({ nickname, setNickname, nicknameMsg, nicknameLoading, onSubmit }) {
-  // F-16(AC-01): 확인음의 단일 소유자는 이 form submit이다 — ConfirmButton은 type="submit"이라
-  // generic capture에서 제외되므로 클릭·Enter 어느 쪽이든 소리는 한 번이다. 요청 중
-  // (nicknameLoading)에는 버튼이 disabled라 submit 자체가 일어나지 않지만, 핸들러가 없는
-  // 경우에도 소리를 내지 않도록 여기서 한 번 더 막는다. 기존 입력 검증은 onSubmit의 몫이다.
   const handleSubmit = (event) => {
     if (typeof onSubmit !== "function") return
     dispatchUiSfx("ui-confirm", event)
@@ -26,7 +21,6 @@ export default function NicknameSection({ nickname, setNickname, nicknameMsg, ni
       <h3 className={ACCOUNT_PANEL_FORM_HEADING_CLASS}>닉네임 변경</h3>
 
       <form onSubmit={handleSubmit} className={ACCOUNT_PANEL_FORM_CLASS}>
-        {/* 새 닉네임을 입력하는 칸입니다. */}
         <div className={ACCOUNT_PANEL_INPUT_WRAP_CLASS}>
           <AuthInputSlot
             name="nickname"

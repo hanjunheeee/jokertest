@@ -1,4 +1,3 @@
-/** 상점 화면 public 에셋 경로 (frontend/public 기준) */
 export const STORE_ASSETS = {
   bg: "/bg/상점 뒷배경3.PNG",
   entryVideo: "/bg/상점 진입 영상.mp4",

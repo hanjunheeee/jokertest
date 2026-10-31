@@ -1,11 +1,5 @@
 'use strict';
 
-// F-08 backend/db/backfillEconomy.js 단위 시험(CODEX-2 AC-03 대응). 실제 MySQL 없이도
-// 배치(batch)·체크포인트(checkpoint)·재시도 안전(retry-safe)·멱등(idempotent) 계약을
-// 검증하기 위해, economy.service.test.js와 같은 방식으로 Sequelize 모델 호출 계약만
-// 흉내 내는 인메모리 fake db를 주입한다. 실제 MySQL 위에서의 검증은
-// backend/tests/db/f08-economy.integration.test.js가 맡는다(F01_TEST_DATABASE_URL 필요).
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -114,7 +108,6 @@ const createFakeDb = ({ userUuids = [] } = {}) => {
     };
 };
 
-// F-33 E-1: 기본 지급 이모티콘 8종(docs/design/F-33-emoticon.md §0).
 const BASIC_EMOTICON_IDS = [
     'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
     'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
@@ -215,8 +208,6 @@ test('재시도 안전(retry-safe): 계속 실패하는 계정은 failures에 �
     assert.equal(result.failures[0].userId, uuids[1]);
     assert.match(result.failures[0].message, /영구 실패 계정/);
 
-    // 실패한 계정과 무관하게 앞뒤 계정은 정상 처리되어야 한다(한 계정의 실패가 배치
-    // 전체를 막지 않는다).
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[0]).length, 25);
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[2]).length, 25);
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === uuids[1]).length, 0, '계속 실패한 계정은 부분 지급 없이 0건으로 남아야 한다');

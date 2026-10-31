@@ -1,13 +1,5 @@
 'use strict';
 
-// F-05 소셜 계정 공통 기반 — 격리 DB 검증. f01~f04와 같은 원칙을 따른다:
-// F01_TEST_DATABASE_URL이 없거나 연결에 실패하면 실패가 아니라 t.skip으로 "미검증"을
-// 남긴다(.env.test의 더미 DATABASE_URL은 이 용도로 재사용하지 않는다).
-//
-// AC-01(유일 제약)·AC-02(NOT NULL 비밀번호)·AC-03(최초 가입 보완/재로그인 재사용)·
-// AC-04(이메일 자동 병합 금지, 명시적 연결)·AC-05(state 만료·위조·재사용·취소·이메일
-// 미제공/충돌)를 실제 MySQL 격리 DB와 실제 트랜잭션 경로로 검증한다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -24,33 +16,12 @@ const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
-// F-08 CODEX-2(AC-03) 대응: socialAuthService.completeSocialSignup이 이제 계정 생성
-// 트랜잭션 안에서 economyService.ensureDefaultEntitlements를 호출해 economy_wallets/
-// economy_entitlements/economy_ledger_entries/economy_loadouts에 직접 INSERT한다 —
-// 이 스위트가 그 테이블 없이 마이그레이션을 적용하면 실제 가입 완료 호출이 "테이블
-// 없음"으로 실패한다(buildManagedSchema는 이 테이블을 이제 기본으로 관리 목록에 포함하므로
-// — isolatedTestDb.js 참고 — 따로 넘길 필요는 없지만, MIGRATIONS 체인에는 명시적으로
-// 넣어야 실제로 테이블이 만들어진다).
 const addEconomy = require('../../db/migrations/0006-add-economy');
-// Current auth services create EconomyLoadout rows, including its persisted CAS revision.
 const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
-// F-14(AC-01) 반송 대응: backend/models/economy/economy.model.js의 EconomyLoadout이 이제
-// selected_skin_noble/clown/guard/doctor/witch_hunter 5개 컬럼을 명시적으로 선언한다 —
-// 이 스위트가 실제 가입 완료 경로로 만드는 EconomyLoadout 행도 그 컬럼을 SELECT하므로,
-// 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
 const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
-// F-29b: completeSocialSignup이 이제 has_local_password:false를 명시적으로 저장한다 — 이
-// 스위트가 실제로 만드는 User 행이 그 컬럼을 필요로 하므로 0015를 적용 배열에 넣는다.
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
-// F-31(AC-02/AC-06): 이메일 미제공 소셜 가입은 이제 email=null인 intent로 남는다 — 이
-// 스위트는 자체 MIGRATIONS 목록을 쓰므로 social_signup_intents.email을 nullable로 바꾸는
-// 0017과, 그 뒤 자체 인증이 쓰는 인증 상태 테이블(0016)을 명시적으로 포함한다.
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 const addSocialSignupEmail = require('../../db/migrations/0017-social-signup-email');
-// F-05 R-IMPL(CODEX-2/VERIFY-10): 관리 목록·드롭 순서·대상 DB 확인은
-// backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 f01~f05·user.accountPaths가
-// 항상 같은 정의를 쓰게 한다(이 스위트가 만드는 social 테이블을 다른 스위트가 몰라
-// resetSchema()가 거부하던 결함의 근본 원인).
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
@@ -91,10 +62,6 @@ const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
-// backend/models과 service/repository는 require 캐시 싱글턴이라, 파일 맨 위에서 맞춰둔
-// process.env.DATABASE_URL(F01_TEST_DATABASE_URL)로 처음 require되는 이 시점에 격리 DB에
-// 연결된다 — 실제 프로덕션 경로(socialAuth.service → user.repositories → Sequelize,
-// auth.service.issueSessionForUser)를 그대로 태운다(A-04).
 const db = require('../../models');
 const authService = require('../../service/auth.service');
 const socialAuthService = require('../../service/socialAuth.service');
@@ -121,17 +88,12 @@ const createLocalUser = async (label) => {
     return { uuid, email };
 };
 
-// authService.login()은 sessionId를 직접 돌려주지 않고 발급한 accessToken(JWT) 안에만
-// 싣는다(auth.service.js issueSessionForUser 참고) — 명시적 연결(link)이 요구하는
-// sessionId는 여기서 그 토큰을 디코드해 꺼낸다.
 const sessionIdOf = (loginResult) => jwt.decode(loginResult.token).sessionId;
 
 const issueLoginState = async (browserFingerprint = `fp-${crypto.randomUUID()}`) => {
     const { state } = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint });
     return { state, browserFingerprint };
 };
-
-// ── AC-01: (provider, subject) 유일 제약 ─────────────────────────────────────
 
 test('AC-01: 같은 (provider, subject) 조합으로 두 번째 identity를 만들면 거부된다', async (t) => {
     if (unavailable(t)) return;
@@ -152,8 +114,6 @@ test('AC-01: 같은 (provider, subject) 조합으로 두 번째 identity를 만�
     const rows = await db.ExternalIdentity.findAll({ where: { provider: 'google', subject } });
     assert.equal(rows.length, 1, 'DB 유일 제약이 실제로 두 번째 행 생성을 막아야 한다');
 });
-
-// ── AC-02: 비밀번호 없는 최초 가입, NOT NULL은 유지되지만 계정마다 다른 값 ────────
 
 test('AC-02: 소셜 가입 완료는 임의의 공용 비밀번호 없이 NOT NULL 제약을 만족시키고, 계정마다 다른 해시를 만든다', async (t) => {
     if (unavailable(t)) return;
@@ -188,17 +148,10 @@ test('AC-02: 소셜 가입 완료는 임의의 공용 비밀번호 없이 NOT NU
     assert.notEqual(stored1.password_hash, stored2.password_hash,
         '서로 다른 소셜 계정이 같은(공용) 비밀번호 해시를 공유하면 안 된다(AC-02)');
 
-    // 빈 비밀번호는 자격 불일치(401)가 아니라 필수 입력 누락으로 400을 반환한다 — 이는
-    // 이 슬라이스가 새로 만든 규칙이 아니라 auth.service.js login()의 기존 계약이다
-    // (DB 조회 전에 거부, backend/__tests__/auth.login.regression.test.js "빈 로그인
-    // payload는 DB 조회 없이 400이다"). 재검토 지적: 이전 버전은 이 케이스도 401을
-    // 기대해 실패했다.
     await assert.rejects(
         authService.login({ email: email1, password: '' }, REQ_INFO),
         (error) => error.status === 400,
     );
-    // 소셜 전용 계정은 로그인 화면의 비밀번호 로그인 경로로 뚫리면 안 된다 — 흔히 쓰이는
-    // 값이나 다른 계정의 실제 비밀번호로 시도해도 authService.login이 401로 실패해야 한다.
     for (const guess of ['password', '12345678', PASSWORD]) {
         await assert.rejects(
             authService.login({ email: email1, password: guess }, REQ_INFO),
@@ -212,12 +165,6 @@ test('AC-02: completeSocialSignup은 계정마다 crypto.randomBytes로 서로 �
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
-    // bcrypt는 매 호출마다 새 salt를 쓰므로, 같은 평문을 넣어도 저장된 해시는 항상 다르게
-    // 나온다 — 그래서 "해시가 다르다"는 사실만으로는 서로 다른 평문(공용/예측 가능한
-    // 비밀번호 부재)을 증명하지 못한다(재검토 지적). crypto.randomBytes(32)를 스파이해
-    // completeSocialSignup이 실제로 매 계정마다 새로운 32바이트 원문을 만드는지 소스
-    // 수준에서 직접 확인한다 — 이 파일은 socialAuth.service.js와 같은 crypto 모듈
-    // 인스턴스를 공유하므로 스파이가 실제 호출을 그대로 가로챈다.
     const original = crypto.randomBytes;
     const generatedSecrets = [];
     t.mock.method(crypto, 'randomBytes', (...args) => {
@@ -240,16 +187,11 @@ test('AC-02: completeSocialSignup은 계정마다 crypto.randomBytes로 서로 �
     });
     await socialAuthService.completeSocialSignup({ intentToken: callback2.intentToken, nickname: '소셜닉4', birthDate: '1990-01-04', reqInfo: REQ_INFO });
 
-    // state/intent 토큰 발급도 같은 함수를 32바이트로 쓰므로 여러 값이 잡히지만, 그중
-    // 어떤 두 값도 겹치지 않아야 한다 — 하나라도 겹치면 예측 가능하거나 재사용된 원문이
-    // 섞여 있다는 뜻이다.
     assert.ok(generatedSecrets.length >= 2, 'crypto.randomBytes(32) 호출을 잡아내지 못했습니다');
     const unique = new Set(generatedSecrets.map((buf) => buf.toString('hex')));
     assert.equal(unique.size, generatedSecrets.length,
         '생성된 32바이트 원문 중 중복이 있으면 안 된다(공용/예측 가능한 비밀번호 없음)');
 });
-
-// ── AC-03: 최초 가입 보완 필요, 재로그인은 기존 계정 재사용 ──────────────────────
 
 test('AC-03: 최초 소셜 로그인은 가입 보완을 요구하고, 재로그인은 동일 계정을 조회해 재사용한다', async (t) => {
     if (unavailable(t)) return;
@@ -286,8 +228,6 @@ test('AC-03: 최초 소셜 로그인은 가입 보완을 요구하고, 재로그
     assert.equal(await db.User.count({ where: { email } }), 1, '재로그인이 users 행을 또 만들면 안 된다');
 });
 
-// ── AC-04: 이메일 자동 병합 금지, 명시적 연결만 허용 ─────────────────────────────
-
 test('AC-04: 동일 이메일 소셜 로그인은 기존 계정에 자동 병합되지 않고, 로그인 후 명시적 연결만 허용된다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -297,8 +237,6 @@ test('AC-04: 동일 이메일 소셜 로그인은 기존 계정에 자동 병합
     const provider = 'google';
     const subject = `sub-${crypto.randomUUID()}`;
 
-    // 자동 병합 금지: 같은 이메일로 처음 보는 identity가 콜백에 들어와도 거부되고, users/
-    // external_identities 어느 쪽도 만들어지지 않는다.
     const attempt = await issueLoginState();
     await assert.rejects(
         socialAuthService.handleOAuthCallback({
@@ -310,15 +248,11 @@ test('AC-04: 동일 이메일 소셜 로그인은 기존 계정에 자동 병합
     assert.equal(await db.User.count({ where: { email: local.email } }), 1);
     assert.equal(await db.ExternalIdentity.count({ where: { provider, subject } }), 0);
 
-    // EMAIL_CONFLICT로 계정 생성이 실패해도 state 소비 자체는 이미 커밋되어 유지된다 —
-    // 그렇지 않으면 같은 state로 다시 시도(재생)할 수 있다(재검토 지적, AC-05와 공유되는
-    // 결함).
     await assert.rejects(
         socialAuthService.consumeOAuthState(attempt.state, { browserFingerprint: attempt.browserFingerprint, purpose: 'login' }),
         (error) => error.status === 409 && error.code === 'STATE_REUSED',
     );
 
-    // 명시적 연결(D-01 승인 절차): 로그인한 사용자가 purpose="link" state를 발급받아 연결한다.
     const loginResult = await authService.login({ email: local.email, password: PASSWORD }, REQ_INFO);
     const sessionId = sessionIdOf(loginResult);
     const linkFingerprint = `fp-${crypto.randomUUID()}`;
@@ -331,8 +265,6 @@ test('AC-04: 동일 이메일 소셜 로그인은 기존 계정에 자동 병합
     });
     assert.equal(linked.user_id, loginResult.user.uuid);
 
-    // 연결 이후에는 같은 identity로 로그인하면(자동 병합이 아니라 방금 명시적으로 연결한
-    // 결과로) 같은 계정이 재사용된다.
     const relogin = await issueLoginState();
     const reloginCallback = await socialAuthService.handleOAuthCallback({
         provider, subject, email: local.email,
@@ -341,7 +273,6 @@ test('AC-04: 동일 이메일 소셜 로그인은 기존 계정에 자동 병합
     assert.equal(reloginCallback.status, 'LOGIN');
     assert.equal(reloginCallback.user.uuid, loginResult.user.uuid);
 
-    // 이미 다른 계정에 연결된 identity를 또 다른 계정에 연결하려 하면 거부된다.
     const other = await createLocalUser('ac04other');
     const otherLogin = await authService.login({ email: other.email, password: PASSWORD }, REQ_INFO);
     const otherSessionId = sessionIdOf(otherLogin);
@@ -363,11 +294,6 @@ test('AC-04: 로그아웃(세션 폐기) 이후에는 그 세션이 발급한 li
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
-    // 재검토 지적: linkExternalIdentity는 전달된 userId만 신뢰했다 — 시작 세션(state 발급
-    // 시점)과 콜백 시점(state 소비 시점) 모두 유효한 인증이었는지 보장하는 실행 경로가
-    // 없었다. 이제 link state는 특정 세션(sessionId)에 결합되고, 소비 시점에 그 세션이
-    // 여전히 활성 상태인지 다시 확인한다 — 로그아웃(세션 폐기)이 그 사이에 있었다면
-    // state 자체가 유효해도 연결이 거부되어야 한다.
     const local = await createLocalUser('ac04logout');
     const provider = 'kakao';
     const subject = `sub-${crypto.randomUUID()}`;
@@ -379,8 +305,6 @@ test('AC-04: 로그아웃(세션 폐기) 이후에는 그 세션이 발급한 li
         purpose: 'link', userId: loginResult.user.uuid, sessionId, browserFingerprint,
     });
 
-    // 실제 로그아웃과 같은 방식으로 이 세션을 폐기한다(auth.service.js/user.controller.js의
-    // logout()이 쓰는 것과 같은 저장소 함수, user.repositories.js recordLogout 참고).
     await userRepository.recordLogout(loginResult.user.uuid, sessionId);
 
     await assert.rejects(
@@ -393,8 +317,6 @@ test('AC-04: 로그아웃(세션 폐기) 이후에는 그 세션이 발급한 li
     assert.equal(await db.ExternalIdentity.count({ where: { provider, subject } }), 0,
         '폐기된 세션으로는 연결이 실제로 만들어지면 안 된다');
 
-    // 로그아웃 시점에 발급 자체를 거부하는 경로도 함께 확인한다 — 이미 폐기된 세션으로는
-    // link state 발급조차 되지 않아야 한다(AC-04, "시작 세션의 유효한 인증").
     await assert.rejects(
         socialAuthService.issueOAuthState({
             purpose: 'link', userId: loginResult.user.uuid, sessionId, browserFingerprint: `fp-${crypto.randomUUID()}`,
@@ -402,8 +324,6 @@ test('AC-04: 로그아웃(세션 폐기) 이후에는 그 세션이 발급한 li
         (error) => error.status === 401 && error.code === 'SESSION_INVALID',
     );
 });
-
-// ── AC-05: state 만료/위조/재사용, 취소, 이메일 미제공/충돌 ──────────────────────
 
 test('AC-05: 만료된 state는 거부된다', async (t) => {
     if (unavailable(t)) return;
@@ -488,8 +408,6 @@ test('AC-05: 사용자가 취소하면 즉시 거부되고 아무 것도 생성�
     const beforeUsers = await db.User.count();
     const beforeIdentities = await db.ExternalIdentity.count();
 
-    // 제공자는 사용자가 동의 화면에서 취소했을 때도 원래 발급했던 state를 그대로
-    // 리다이렉트에 실어 돌려준다 — 취소 콜백도 실제 발급된 state/지문을 들고 온다.
     const { state, browserFingerprint } = await issueLoginState();
 
     await assert.rejects(
@@ -503,18 +421,12 @@ test('AC-05: 사용자가 취소하면 즉시 거부되고 아무 것도 생성�
     assert.equal(await db.User.count(), beforeUsers);
     assert.equal(await db.ExternalIdentity.count(), beforeIdentities);
 
-    // 재검토 지적: 취소는 이전에 state 검증·소비 전에 반환되어, 취소된 콜백 이후에도
-    // 같은 state를 재사용(재생)할 수 있었다. 지금은 취소 여부 판정보다 소비가 먼저
-    // 커밋되므로 같은 state를 다시 쓰면 거부되어야 한다.
     await assert.rejects(
         socialAuthService.consumeOAuthState(state, { browserFingerprint, purpose: 'login' }),
         (error) => error.status === 409 && error.code === 'STATE_REUSED',
     );
 });
 
-// F-31 AC-02: 이전에는 EMAIL_MISSING으로 거부했다. 이제는 거부 대신 email=null인 가입
-// intent를 만들어 자체 메일 인증으로 보완하게 한다 — 다만 인증을 마치기 전 단계에서
-// 계정·identity·세션이 만들어지지 않는다는 기존 단언과 state 재사용 금지는 그대로 지킨다.
 test('AC-05: 제공자가 이메일을 주지 않으면 계정 없이 자체 인증이 필요한 intent만 남고, 소비된 state는 재사용할 수 없다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -542,8 +454,6 @@ test('AC-05: 제공자가 이메일을 주지 않으면 계정 없이 자체 인
     assert.equal(await db.ExternalIdentity.count(), beforeIdentities);
     assert.equal(await db.UserSession.count(), beforeSessions, '인증 완료 전에는 세션을 발급하면 안 된다');
 
-    // 재검토 지적: 이메일 미제공으로 계정 생성이 실패하면 이전 버전은 state 소비까지
-    // 같은 트랜잭션으로 묶어 롤백해, 같은 state를 다시 시도(재생)할 수 있었다.
     await assert.rejects(
         socialAuthService.consumeOAuthState(state, { browserFingerprint, purpose: 'login' }),
         (error) => error.status === 409 && error.code === 'STATE_REUSED',

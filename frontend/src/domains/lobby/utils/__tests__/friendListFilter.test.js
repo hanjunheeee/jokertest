@@ -21,10 +21,8 @@ test("검색어에 따라 표시되는 친구가 달라진다", () => {
 
   assert.deepEqual(shownForGwang.map((friend) => friend.id), ["f-3"])
 
-  // 대소문자가 달라도 같은 결과가 나와야 합니다.
   assert.deepEqual(shownForHarle.map((friend) => friend.id), ["f-2"])
 
-  // 검색어가 달라지면 표시 항목도 달라집니다.
   assert.notDeepEqual(shownForGwang, shownForHarle)
 })
 

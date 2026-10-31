@@ -7,9 +7,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-15(AC-02) 반송 수정: 이전 라운드는 "설정 화면의 라벨·제목"과 index.css 소스 검사만
-// 근거로 냈다. 이 시험은 설정 화면이 아닌 실제 화면 컴포넌트를 그대로 마운트해서, 설정
-// 입력 → store → App의 CSS 변수 → 렌더된 텍스트까지 실제 생산 경로가 이어지는지 확인한다.
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -31,11 +28,6 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// FriendListRow → useFriendStore → friend.api.js → shared/api/client.js → shared/env.js가
-// import.meta.env(Vite 빌드타임 치환)를 읽는다 — Node 러너에는 그 값이 없어 import 자체가
-// 터진다. 이 저장소의 기존 관례(profileEquipment.publicDisplay.test.js·client.test.js)대로
-// 외부 환경값을 담은 env.js 하나만 갈아끼우고, 확인 대상인 컴포넌트·store·훅·CSS는 전부
-// 실제 코드 그대로 쓴다(이 시험은 네트워크를 호출하지 않는다).
 mock.module("../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://test-api.local", DISCORD_SUPPORT_URL: undefined },
 })
@@ -54,7 +46,6 @@ const { GENERAL_SETTING_TEXT_SIZE } = await import(
   "../../domains/settings/constants/generalSettings.js"
 )
 
-// 설정 화면이 아닌 실제 소비자들 — 로비 친구 목록 행, 명예의 전당 헤더, 공용 슬라이더·드롭다운.
 const { default: FriendListRow } = await import(
   "../../domains/lobby/components/friendList/list/FriendListRow.jsx"
 )
@@ -73,7 +64,6 @@ function appTextSizeValue(className) {
   return match[1]
 }
 
-/** 렌더된 요소가 공용 배율 유틸리티를 쓰고, 원래 크기 값을 한 글자도 바꾸지 않았는지. */
 function assertScaledConsumer(element, originalFontSize, label) {
   const classNames = element.className.split(/\s+/)
 
@@ -94,15 +84,6 @@ function assertScaledConsumer(element, originalFontSize, label) {
   assert.equal(element.style.fontSize, "", `${label}: 인라인 font-size로 덮어쓰면 안 된다`)
 }
 
-/**
- * 클래스와 설정 배율에서 예상 px 값을 계산한다. 실제 CSS 계산값 검증이 아니다.
- *
- * .app-text-scaled는 font-size: calc(var(--app-text-size) * var(--app-text-scale, 1))이므로,
- * 요소가 실제로 달고 있는 --app-text-size와 App이 documentElement에 써 넣은 배율을 읽어
- * 곱하면 브라우저가 계산할 값과 같다(px 단위 항에 대해). jsdom은 clamp()·cqi를 계산하지
- * 않으므로 px 단위 소비자로 확인하고, clamp 소비자는 배율이 곱해지는 형태까지만 본다 —
- * 실제 픽셀 확인은 operator의 Chrome 검증 몫이다.
- */
 function expectedFontSizePxFromWiring(element) {
   const declared = appTextSizeValue(element.className)
   const match = declared.match(/^([0-9.]+)px$/)
@@ -114,7 +95,6 @@ function expectedFontSizePxFromWiring(element) {
   return Number(match[1]) * Number(scaleText)
 }
 
-/** App.jsx와 같은 훅으로 배율을 반영하면서 실제 소비자들을 함께 마운트한다. */
 function ScaleHarness() {
   useAppTextScaleSync()
 
@@ -131,8 +111,6 @@ function ScaleHarness() {
       ariaLabel: "예시 슬라이더",
     }),
     React.createElement(Dropdown, { value: "선택값", inputFieldSrc: "/x.png" }),
-    // 설정 입력(실제 "텍스트 크기" 슬라이더)도 같은 트리에 둔다 — 입력부터 소비자까지
-    // 한 번의 마운트 안에서 이어지는지 확인하기 위해서다.
     React.createElement(GeneralSettingsTab),
   )
 }
@@ -178,12 +156,10 @@ test("F-15(AC-02): 텍스트 크기를 최소·기본·최대로 바꾸면 렌�
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.max)
   const atMax = expectedFontSizePxFromWiring(statusText)
 
-  // 기본값에서는 원래 크기(10px)가 그대로여야 한다 — 저장한 적 없는 사용자에게 변화가 없다.
   assert.equal(atDefault, 10, "기본값에서 원래 크기가 보존되어야 한다")
   assert.ok(atMin < atDefault, `최솟값에서 작아져야 한다 — ${atMin} vs ${atDefault}`)
   assert.ok(atMax > atDefault, `최댓값에서 커져야 한다 — ${atMax} vs ${atDefault}`)
 
-  // 같은 요소가 계속 마운트된 상태에서 변했다(다시 마운트해서 얻은 결과가 아니다).
   assert.equal(getByText("오프라인"), statusText)
 })
 
@@ -196,7 +172,6 @@ test("F-15(AC-02): 배율은 좁은 범위로 제한되어 레이아웃을 흔�
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.max)
   const atMax = expectedFontSizePxFromWiring(statusText)
 
-  // 부동소수 오차만 허용한다(px 기준 1e-9).
   assert.ok(
     atMin >= 10 * 0.7 - 1e-9 && atMax <= 10 * 1.3 + 1e-9,
     `배율 범위를 벗어났다 — ${atMin}~${atMax}`,
@@ -215,7 +190,6 @@ test("F-15(AC-02/AC-06): 설정 초기화는 배율을 기본값으로 되돌리
   })
   assert.equal(expectedFontSizePxFromWiring(statusText), 10, "초기화 후 원래 크기로 돌아와야 한다")
 
-  // 새로고침 복원: 저장된 값으로 store를 다시 세우면 같은 배율이 즉시 반영된다.
   setTextSize(container, GENERAL_SETTING_TEXT_SIZE.min)
   const atMin = expectedFontSizePxFromWiring(statusText)
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -244,23 +218,7 @@ test("F-15(AC-02): 배율은 documentElement 변수 하나로만 전달되고 �
   }
 })
 
-// ── 누락 소비자 회귀 방지 ──────────────────────────────────────────────
-//
-// "설정을 바꿔도 안 변하는 텍스트"가 다시 생기지 않도록, 소스 전체를 훑어 명시적
-// font-size 선언이 모두 배율 경로를 지나는지 확인한다. 남겨둔 예외는 아래 한 곳뿐이며,
-// 조용히 빠뜨리는 대신 시험이 그 경계를 강제한다.
-//
-// 인게임 화면(domains/game/ingame/**)의 "임의값 font-size 선언"은 일반 "텍스트 크기"에서
-// 제외한다:
-//   - 인게임 채팅은 자체 설정("채팅 글자 크기", --ingame-chat-text-scale)을 쓰므로 두 배율이
-//     겹쳐 곱해지면 안 된다.
-//   - 그 밖의 인게임 텍스트는 고정 크기 프레임(카드·투표·타임바) 안에 맞춰 놓은 값이라
-//     일반 배율로 함께 키우면 레이아웃이 넘친다. 인게임 표시 설정은 인게임 설정 패널이 맡는다.
-// 다만 표준 토큰(text-xs·text-sm)은 @theme에서 배율을 받으므로 인게임에서 그 토큰을 쓰는
-// 몇 곳(액션 패널 등)도 함께 따라온다 — 상속 본문과 같은 성격이라 그대로 둔다.
 const GENERAL_TEXT_SCALE_EXCLUDED_PREFIX = "domains/game/ingame/"
-// variant 접두사(placeholder: 등)가 붙은 선언도 놓치지 않도록 앞을 고정하지 않는다.
-// "app-text-scaled"·"[--app-text-size:...]"에는 "text-[" 가 없어 스스로 걸리지 않는다.
 const EXPLICIT_FONT_SIZE = /text-\[(?:clamp\(|[0-9.]+(?:rem|px|em|vw|vh|vmin|vmax|cqi|cqw|cqh|cqb|cqmin|cqmax)\])/
 
 function sourceFiles() {

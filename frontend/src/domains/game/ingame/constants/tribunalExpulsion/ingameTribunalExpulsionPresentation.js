@@ -1,20 +1,11 @@
-/** TRIBUNAL GUILTY 추방 연출 — public/bg/게임 추방 연출2.mp4
- *
- * shell은 absolute — ViewportShell 게임 열(.viewport-shell__game) 안에만 깔린다.
- * 영상 크기 80%는 좌우 배너를 제외한 **게임 화면** 기준(뷰포트 vw/svh 아님).
- */
-
 export const INGAME_TRIBUNAL_EXPULSION_VIDEO_URL = "/bg/게임 추방 연출2.mp4"
 
 export const INGAME_TRIBUNAL_EXPULSION_UNKNOWN_NICKNAME = "한 플레이어"
 
-/** 영상 종료 후 마지막 프레임 유지(ms) */
 export const INGAME_TRIBUNAL_EXPULSION_HOLD_MS = 450
 
-/** 영상 위 어둡게 페이드아웃(ms) */
 export const INGAME_TRIBUNAL_EXPULSION_FADE_MS = 1600
 
-/** 안내 문구 표시 후 자동 종료(ms) — 탭/클릭으로도 종료 */
 export const INGAME_TRIBUNAL_EXPULSION_MESSAGE_AUTO_MS = 3200
 
 export const INGAME_TRIBUNAL_EXPULSION_BACKDROP_CLASS =

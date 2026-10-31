@@ -1,13 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-// F-12(A-07) 명시적 백필·복구 CLI. 배포 전부터 이미 조건을 만족해 있던 계정과,
-// evaluateAndGrantForUser 호출 도중(소켓 fire-and-forget 실패 등) 지급을 놓친 계정을 새
-// 게임/투표/페이지 방문 없이 재처리한다. migrate-db.js와 같은 이유로 models/index.js가
-// DATABASE_URL로 만든 연결을 재사용하고, 끝나면 반드시 닫는다.
-//
-// 사용법: node backend/scripts/backfill-achievements.js
-
 const achievementRecoveryService = require('../services/achievementRecoveryService');
 
 const main = async () => {

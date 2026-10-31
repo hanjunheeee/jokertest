@@ -3,10 +3,6 @@ import test from "node:test"
 import { readFileSync } from "node:fs"
 import { JSDOM } from "jsdom"
 
-// 2026-09-22 운영자 AUDIO-01 완화: 라이선스가 확인된 배경음(CC0 Death Waltz)은 재생한다. 이 시험은 실제 재생
-// 경로(useBgmAutoplay·useAudioControl)가 **설정의 Master × 배경음** 볼륨만 따르고, 효과음 설정과 섞이지
-// 않으며, 볼륨 0이면 무음인 것을 확인한다. F-15(AC-05)의 "설정 초기화가 재생을 되살리지 않는다"는
-// "초기화는 기본 볼륨(80)으로 되돌릴 뿐 재생 여부(play 호출)는 바꾸지 않는다"로 읽는다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -38,8 +34,6 @@ const { useSettingsStore, buildDefaultSoundVolumes } = await import(
   "../../../domains/settings/store/settingsStore.js"
 )
 
-/** audio 요소가 실제로 소리를 낼 수 있었는지 추적하는 대역 — play()가 한 번이라도
- *  불렸는지, 최종 volume·muted가 무엇인지 본다. */
 function createFakeMedia() {
   return {
     volume: 0.6,
@@ -181,7 +175,6 @@ test("useAudioControl은 설정의 배경음 볼륨을 슬라이더로 보이고
   assert.equal(media.muted, false)
 })
 
-// F-15(AC-05): 설정 초기화는 볼륨을 기본값으로 되돌릴 뿐, 재생을 새로 시작하지 않는다.
 test("설정 초기화는 배경음 볼륨을 기본값(80)으로 되돌리지만 play()를 다시 부르지 않는다", () => {
   resetVolumes()
   const media = createFakeMedia()
@@ -195,9 +188,6 @@ test("설정 초기화는 배경음 볼륨을 기본값(80)으로 되돌리지�
   assert.equal(media.playCallCount, 1, "초기화가 재생을 새로 시작하면 안 된다")
 })
 
-// 재생 경로의 마지막 조각 — 차단 중에는 audio 요소 자체를 렌더하지 않는다. 두 배경
-// 컴포넌트를 마운트하려면 라우터·에셋 트리 전체를 끌고 와야 해서, 이 저장소의 기존
-// 관례(routes/__tests__/podiumRoute.test.js)처럼 소스 배선을 직접 확인한다.
 test("GlobalBgmLayer는 MUSIC_PLAYBACK_ENABLED일 때만 audio 요소를 렌더한다", () => {
   const source = readFileSync(new URL("../../ui/GlobalBgmLayer.jsx", import.meta.url), "utf8")
 

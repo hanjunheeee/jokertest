@@ -4,8 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// 이 저장소의 node:test 실행에는 기본 JSX 로더가 없다 — testSupport/jsxNodeLoaderHooks.mjs가
-// 만든 module.register() ESM 훅을 재사용해 실제 SettingChatTab.jsx를 그대로 마운트한다.
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,

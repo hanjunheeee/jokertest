@@ -14,7 +14,6 @@ function freshArgs(overrides = {}) {
     currentAuthUuid: "user-a",
     requestSocket: socket,
     currentSocket: socket,
-    // F-23(AC-05/AC-06): 기존 네 축이 전부 같은 채로 지나갈 수 있는 세 전이를 덮는 축이다.
     requestIdentityGeneration: 3,
     currentIdentityGeneration: 3,
     requestMembershipId: "mem-1",
@@ -60,11 +59,6 @@ test("requestSocket과 currentSocket이 다르면(socket 인스턴스가 교체)
     true,
   )
 })
-
-// ── F-23(AC-05/AC-06): 기존 네 축이 전부 같은 채로 지나가는 세 전이 ──────────────
-//
-// 아래 세 경우는 uuid·gameId·socket 객체·epoch가 모두 그대로다. 각 축을 하나씩만 바꿔
-// 독립적으로 stale이 되는지 확인한다(다른 축에 얹혀 통과하지 않는다).
 
 test("계정 A→B→A: uuid는 원래대로 돌아와도 인증 전이 세대가 다르면 true를 반환한다", () => {
   assert.equal(

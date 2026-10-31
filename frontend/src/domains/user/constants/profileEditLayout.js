@@ -87,22 +87,11 @@ export const PROFILE_EDIT_CLOSE_BTN_CLASS =
 export const PROFILE_EDIT_CLOSE_BTN_IMG_CLASS =
   "block h-auto w-[clamp(2.1rem,3.8vw,2.65rem)] select-none"
 
-// 프로필 수정 — 선택지 catalog
-
 const PROFILE_PHOTO_BASE = "/shopItem/player-profile/"
 const PROFILE_BORDER_BASE = "/shopItem/player- profileborder/"
 
-// F-13 AC-01/AC-02 대응 — 서버 카탈로그(backend/economy/catalog.js PROFILE_PHOTO_NAMES)의
-// player-profile-{name} itemId 규칙과 정확히 같은 파일명 대응이다. profileBorderAssetSrcForItemId와
-// 같은 이유(A-10 관례)로, 사진도 이제 클라이언트가 임의로 정하지 않고 서버가 확정한
-// itemId에서만 표시 자산을 유도한다 — 편집기가 실제로 서버에 저장을 요청할 값(itemId)과
-// 화면에 그릴 자산(src)을 하나의 이름 목록에서 함께 유도해 둘이 어긋나지 않게 한다.
-// 이름 문자열은 정규화 전(NFC 소스 그대로) 상태로만 취급하고, 자산 경로를 만드는 마지막
-// 순간에만 normalize("NFD")한다 — 이미 NFD로 정규화된 문자열에서 접두사를 다시 잘라내면
-// (한글 자모 분해로 바이트 경계가 달라져) 비교·슬라이스가 깨질 수 있기 때문이다.
 const PROFILE_PHOTO_ITEM_ID_PREFIX = "player-profile-"
 
-/** 무료로 제공되는 프로필 이미지 표시 순서(더미친구 제외). */
 const PROFILE_PHOTO_NAMES_IN_DISPLAY_ORDER = [
   "금빛가면", "마인", "사냥꾼", "기사", "붉은기운", "악당", "영애", "수녀",
   "영주", "화관쓴소녀", "암살자", "역병의사", "그림자", "음유시인", "드워프", "귀부인",
@@ -112,16 +101,10 @@ const photoAssetSrcForName = (name) => `${PROFILE_PHOTO_BASE}프로필-${name}.p
 
 export const PROFILE_EDIT_FREE_PHOTOS = PROFILE_PHOTO_NAMES_IN_DISPLAY_ORDER.map(photoAssetSrcForName)
 
-/** 서버 카탈로그와 같은 기본 지급 사진 itemId(backend DEFAULT_PROFILE_PHOTO_ID). */
 export const DEFAULT_PROFILE_PHOTO_ITEM_ID = `${PROFILE_PHOTO_ITEM_ID_PREFIX}금빛가면`
 
-/** backend economy.service.getWalletSummary가 돌려주는 entitlement.itemType 값
- *  (backend/economy/catalog.js ITEM_TYPES.PROFILE_PHOTO). */
 export const PROFILE_PHOTO_ITEM_TYPE = "PROFILE_PHOTO"
 
-/** 서버 entitlement/loadout의 사진 itemId를 실제 표시 자산 경로로 바꾼다. itemId가 사진
- *  규칙을 따르지 않으면(알 수 없는 값) null을 돌려준다 — 호출부가 기본 사진으로 대체한다.
- *  @param {string | null | undefined} itemId @returns {string | null} */
 export const profilePhotoAssetSrcForItemId = (itemId) => {
   if (typeof itemId !== "string" || !itemId.startsWith(PROFILE_PHOTO_ITEM_ID_PREFIX)) return null
   const name = itemId.slice(PROFILE_PHOTO_ITEM_ID_PREFIX.length)
@@ -129,36 +112,17 @@ export const profilePhotoAssetSrcForItemId = (itemId) => {
   return photoAssetSrcForName(name)
 }
 
-/** 편집기 사진 그리드가 그릴 {itemId, src} 목록 — PROFILE_EDIT_FREE_PHOTOS와 같은 표시
- *  순서를 유지한다. 현재 카탈로그의 사진 16종은 전부 defaultGrant(무료 기본 지급)이라
- *  모든 계정이 항상 전부 소유하지만, 앞으로 구매·업적으로만 얻는 사진이 카탈로그에
- *  추가되면 이 목록 대신 entitlements에서 유도한 소유 목록으로 바꿔야 한다(border 탭과
- *  같은 패턴, A-07). */
 export const PROFILE_EDIT_PHOTO_OPTIONS = PROFILE_PHOTO_NAMES_IN_DISPLAY_ORDER.map((name) => ({
   itemId: `${PROFILE_PHOTO_ITEM_ID_PREFIX}${name}`,
   src: photoAssetSrcForName(name),
 }))
 
-// F-12(AC-06) 재검토 대응 — 서버 카탈로그(backend/economy/catalog.js)의 profile-border-{tier}
-// itemId 규칙과 정확히 같은 파일명 대응이다. 기본 지급(평민)·구매 테두리(남작~황제)·업적
-// 지급 직업 테두리(귀족~마녀사냥꾼) 모두 같은 `프로필프레임-{tier}.png` 자산 하나로
-// 귀결되므로, 예전처럼 정적 배열로 다시 나열하지 않고 서버가 돌려준 itemId에서 직접
-// 유도한다(A-10) — noble(귀족)을 포함해 서버가 실제로 소유했다고 응답한 어떤 티어든 같은
-// 규칙으로 자산을 찾는다.
 const PROFILE_BORDER_ITEM_ID_PREFIX = "profile-border-"
 
-/** 서버 카탈로그(backend/economy/catalog.js DEFAULT_PROFILE_BORDER_ID)와 같은 기본 지급
- *  테두리 itemId. 프론트·백엔드가 별도 런타임이라 문자열을 다시 적는다(catalog.js의 기존
- *  관례와 같음). */
 export const DEFAULT_PROFILE_BORDER_ITEM_ID = `${PROFILE_BORDER_ITEM_ID_PREFIX}평민`
 
-/** backend economy.service.getWalletSummary가 돌려주는 entitlement.itemType 값
- *  (backend/economy/catalog.js ITEM_TYPES.PROFILE_BORDER). */
 export const PROFILE_BORDER_ITEM_TYPE = "PROFILE_BORDER"
 
-/** 서버 entitlement/loadout의 itemId를 실제 표시 자산 경로로 바꾼다. itemId가 테두리
- *  규칙을 따르지 않으면(알 수 없는 값) null을 돌려준다 — 호출부가 기본 테두리로 대체한다.
- *  @param {string | null | undefined} itemId @returns {string | null} */
 export const profileBorderAssetSrcForItemId = (itemId) => {
   if (typeof itemId !== "string" || !itemId.startsWith(PROFILE_BORDER_ITEM_ID_PREFIX)) return null
   const tier = itemId.slice(PROFILE_BORDER_ITEM_ID_PREFIX.length)
@@ -174,7 +138,6 @@ export const PROFILE_EDIT_TABS = [
   { id: PROFILE_EDIT_TAB_BORDER, label: "테두리 수정" },
 ]
 
-// F-12(AC-06): 테두리 그리드의 로딩/오류/빈 소유 목록 상태 표시(계획 메모 실행 순서 (2)).
 export const PROFILE_EDIT_GRID_STATUS_TEXT_CLASS =
   "flex flex-col items-center gap-[0.5rem] px-[0.5rem] py-[1rem] text-center font-body app-text-scaled [--app-text-size:0.85rem] text-[#5c554d]"
 

@@ -12,11 +12,6 @@ import {
 } from "../../constants/actions/ingameCornerActionLayout.js"
 import { INGAME_PHASE_ACTION_ATTR } from "../timebar/InGamePhaseActionRow.jsx"
 
-/**
- * V-2: timebar 아래에 있던 투표 현황·기권·건너뛰기를 화면 우측 하단으로 옮긴다.
- *
- * 낮 집계·밤 종료 등 나머지 대상 없는 행동은 InGamePhaseActionRow(시간bar 아래)에 남는다.
- */
 export default function InGameCornerActionPanel({ onVoteStatusClick }) {
   const ctx = useContext(InGameActionContext)
   if (!ctx) return null

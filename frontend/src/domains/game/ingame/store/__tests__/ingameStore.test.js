@@ -15,9 +15,6 @@ function seedState(overrides = {}) {
   return state
 }
 
-// [테스트 이름, store를 세팅하는 함수, applyPhaseChanged에 넘길 payload]
-// 전부 "무시되어야 하는" 입력이다 — 무시란 예외 없이 조용히 넘어가고, store의 최상위
-// 참조와 그 안의 game state 참조가 호출 전후로 완전히 동일하게 유지된다는 뜻이다.
 const ignoredCases = [
   ["payload가 undefined면 무시되고 예외가 없다", () => seedState(), undefined],
   ["payload가 null이면 무시되고 예외가 없다", () => seedState(), null],
@@ -72,8 +69,6 @@ test("applyPhaseChanged: 올바른 {gameId, phase:'NIGHT', dayIndex:0}만 반영
   assert.deepEqual(storeAfter.state.players, seeded.players)
   assert.deepEqual(storeAfter.state.self, seeded.self)
 })
-
-// --- applyNightResultAppliedPayload ---
 
 function seedNightState(overrides = {}) {
   return seedState({
@@ -138,7 +133,6 @@ test("applyNightResultAppliedPayload: 종료 payload의 players 스냅샷은 can
       players: [
         { uuid: "p1", isAlive: false },
         { uuid: "p2", isAlive: false },
-        // p3는 의도적으로 생략 — 기존 alive:true가 유지되어야 한다.
       ],
     }),
   )
@@ -204,8 +198,6 @@ test("applyNightResultAppliedPayload: 비종료 결과의 dayIndex가 현재 이
   assert.equal(useInGameStore.getState(), before)
 })
 
-// --- dayPhase(낮 하위 구간) ---
-
 test("applyPhaseChanged: 첫 DAY 진입은 dayPhase를 DAY_DISCUSSION으로 세팅한다", () => {
   seedState()
   useInGameStore.getState().applyPhaseChanged({ gameId: "game-1", phase: "DAY", dayIndex: 1 })
@@ -255,7 +247,6 @@ function dayPhaseChangedPayload(overrides = {}) {
   return { gameId: "game-1", dayIndex: 1, dayPhase: "DAY_VOTE", round: 1, ...overrides }
 }
 
-// [테스트 이름, store를 세팅하는 함수, applyDayPhaseChanged에 넘길 값] — 전부 참조 보존 no-op이어야 한다.
 const ignoredDayPhaseCases = [
   ["parsed가 null이면 무시된다", () => seedDayDiscussionState(), null],
   ["parsed가 배열이면 무시된다", () => seedDayDiscussionState(), ["game-1", "DAY_VOTE"]],
@@ -328,8 +319,6 @@ test("applyDayVoteResolvedToPhase: TRIBUNAL/NIGHT 전이는 dayPhase를 null로 
   assert.equal(useInGameStore.getState().state.dayPhase, null)
 })
 
-// --- applySessionSnapshot ---
-
 function seedSnapshotState(overrides = {}) {
   return seedState({
     phase: "ROLE_REVEAL",
@@ -364,9 +353,6 @@ function validSnapshotResponse(overrides = {}) {
   }
 }
 
-// store-wiring 수준 거부 레시피: useInGameStore.getState()는 액션 함수를 담고 있어
-// structuredClone이 던지므로, 참조 동일성·구독 알림 횟수는 살아있는 참조로 직접 확인하고
-// deep equality는 직렬화 가능한 {gameId, state, error} 투영만 별도로 clone해 비교한다.
 function assertSnapshotRejected(response) {
   const before = useInGameStore.getState()
   const preCall = structuredClone({ gameId: before.gameId, state: before.state, error: before.error })
@@ -406,9 +392,6 @@ test("applySessionSnapshot: 유효한 스냅샷은 정확히 한 번의 상태 �
   assert.equal(after.error, null)
   assert.equal(after.state.phase, "ROLE_REVEAL")
   assert.equal(after.state.dayIndex, 0)
-  // F-21(AC-03/AC-06): 스냅샷 복원은 생존과 **참여**를 분리해 되살린다 — 사망했지만 아직
-  // 참여 중인 참가자와 빠진 참가자를 새로고침 뒤에도 구별할 수 있어야 하기 때문이다(그 값이
-  // 없으면 추방 목록과 보드 사망 표시가 갈라진다). 값을 싣지 않은 스냅샷은 "참여 중"이다.
   assert.deepEqual(after.state.players, [
     { uuid: "p1", nickname: "P1", alive: true, isConnected: true, isParticipating: true },
     { uuid: "p2", nickname: "P2", alive: true, isConnected: true, isParticipating: true },
@@ -472,18 +455,6 @@ test("applySessionSnapshot: dayVoteResolution/tribunal outcome이 서로 모순�
   )
 })
 
-// ---------------------------------------------------------------------------
-// F-23(AC-05 보수) · commitWithReceipt — **수신 증거가 지금도 현재 범위인가**
-//
-// 공개 사망·재판 결과는 그대로 승패(winResult)를 실을 수 있다. 그런데 그 커밋 경로는 예전에
-// 넘겨받은 수신 범위를 "누가 받았는지"의 기록으로만 쓰고, **커밋하는 그 순간에도 그 범위가
-// 현재인지**는 묻지 않았다 — 캡처 뒤 내 소속이나 판이 바뀌어도 그대로 반영됐다.
-//
-// 아래 두 시험은 그 경계를 양쪽에서 고정한다: 현재 범위의 증거는 예전과 똑같이 커밋되고,
-// 지나간 범위의 같은 증거는 store를 한 글자도 바꾸지 않는다.
-// ---------------------------------------------------------------------------
-
-/** 본인(p1)이 소속 식별자를 갖는 진행 중 세션. 소속 축이 실제로 움직일 수 있어야 한다. */
 function seedSeatedState({ membershipId = "mem-a", phase = "DAY", dayIndex = 1 } = {}) {
   return seedState({
     phase,
@@ -496,7 +467,6 @@ function seedSeatedState({ membershipId = "mem-a", phase = "DAY", dayIndex = 1 }
   })
 }
 
-/** parsePlayerEliminatedPayload가 통과시킨 뒤의 값과 같은 모양(끊김 사망이 승패를 확정한 경우). */
 function parsedTerminalElimination() {
   return {
     gameId: "game-1",
@@ -525,7 +495,6 @@ test("commitWithReceipt: 소속이 교체된 뒤 도착한 같은 수신 증거�
   seedSeatedState({ membershipId: "mem-a" })
   const receipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
 
-  // 같은 판·같은 계정이지만 내 자리가 바뀌었다(이탈→재입장). 캡처한 증거는 여기서 지나간다.
   seedSeatedState({ membershipId: "mem-after" })
 
   const before = useInGameStore.getState()
@@ -545,9 +514,6 @@ test("commitWithReceipt: 소속이 교체된 뒤 도착한 같은 수신 증거�
 })
 
 test("commitWithReceipt: 같은 자리로 되돌아온 A→B→A 뒤에도 그 사이의 수신 증거는 거절되고, 새 증거는 정상 커밋된다", () => {
-  // 이 시험이 따로 있는 이유: 값 비교만으로는 이 구간이 드러나지 않는다. 이탈→재입장을 지나면
-  // 소속 식별자는 원래 값으로 **돌아오므로**, 캡처 당시와 커밋 시점의 membershipId·gameId·
-  // 계정이 전부 같다. 그 사이에 실제로 두 번 전이했다는 사실을 아는 값은 전이 세대뿐이다.
   seedSeatedState({ membershipId: "mem-a" })
   const staleReceipt = readInGameReceiptScope({ accountId: "p1", identityGeneration: 0 })
 
@@ -564,7 +530,6 @@ test("commitWithReceipt: 같은 자리로 되돌아온 A→B→A 뒤에도 그 �
   assert.equal(useInGameStore.getState(), before, "왕복 이전에 캡처된 증거가 그대로 커밋됐다")
   assert.equal(useInGameStore.getState().state.winResult ?? null, null)
 
-  // 같은 사건이라도 **지금 자리에서** 캡처한 증거는 그대로 커밋된다(영구 차단이 아니다).
   useInGameStore.getState().applyPlayerEliminated(parsedTerminalElimination(), current)
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "현재 범위의 증거까지 막혔다")
   assert.deepEqual(useInGameStore.getState().state.winResult, { winner: "JOKER" })

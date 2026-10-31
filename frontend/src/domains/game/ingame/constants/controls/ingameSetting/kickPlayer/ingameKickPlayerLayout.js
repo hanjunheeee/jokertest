@@ -1,6 +1,3 @@
-/**
- * 플레이어 추방 모달 레이아웃 — 투표현황창 프레임.png 기준 (ingameVoteLayout과 동일 shell).
- */
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 export {

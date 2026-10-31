@@ -1,4 +1,3 @@
-/** 기억의 서고 — 공통 public 에셋 경로 (frontend/public 기준) */
 export const LIBRARY_ASSETS = {
   bg: "/bg/기억의 서고 뒷배경.png".normalize("NFD"),
   bookFrame: "/frame/library/기억의 서고 책 리소스.png".normalize("NFD"),

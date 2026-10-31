@@ -13,7 +13,6 @@ import {
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import SignupScrollArea from "@/domains/auth/components/SignupScrollArea.jsx"
 
-// 닉네임 입력칸 앞에 보여줄 사용자 아이콘입니다(SignupForm/SignupFields.jsx와 같은 모양).
 function UserIcon() {
   return (
     <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -23,7 +22,6 @@ function UserIcon() {
   )
 }
 
-// 생년월일 입력칸 앞에 보여줄 달력 아이콘입니다.
 function CalendarIcon() {
   return (
     <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -33,23 +31,8 @@ function CalendarIcon() {
   )
 }
 
-// useSocialSignup의 status 중, 이 계정 정보 보완으로는 더 이상 진행할 수 없는(재시도가
-// 아니라 로그인 화면으로 돌아가야 하는) 상태들입니다 — 가입 자격 만료·이미 처리된 요청
-// (중복 제출)·기존 이메일과의 충돌입니다.
 const BLOCKED_STATUSES = new Set(["expired", "cancelled", "conflict"])
 
-// F-06/F-07 AC-02: Google·Discord 최초 로그인이 SIGNUP_REQUIRED로 끝나면 LoginPage가 이
-// 화면을 렌더링해 닉네임·생년월일을 받아 가입을 완료합니다(어느 제공자였는지는 화면에
-// 노출하지 않습니다 — intentToken은 프론트에서 불투명한 값입니다). 로딩/만료/충돌/재시도
-// 같은 상태 전이 로직 자체는
-// useSocialSignup(F-05, useSocialSignup.test.js로 이미 검증됨)이 갖고 있고, 이 컴포넌트는
-// 그 status를 화면에 옮겨 그리기만 합니다. AuthScene이 children을 하나의 <form>으로
-// 감싸므로(AuthFrame.jsx), 여기서는 중첩 <form>을 만들지 않고 제출 버튼을 직접
-// onClick으로 처리합니다.
-//
-// F-31 AC-02: 제공자가 이메일을 검증해 주지 못한 가입이면(서버 intent 조회 결과가
-// emailVerificationRequired:true) 이메일 입력과 공용 인증 UI(SignupEmailVerification)를
-// 함께 보여주고, 인증을 마치기 전에는 제출을 막습니다.
 export default function SocialSignupForm({ intentToken, onCancel }) {
   const {
     status, errorMessage, submit,
@@ -65,8 +48,6 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
 
   const handleSubmit = async () => {
     if (isSubmitting) return
-    // 서버 intent 조회 전(또는 자체 인증 미완료)에는 제출 자체를 막습니다 — 버튼의
-    // disabled를 우회해도 이 검사가 최종 방어선입니다(최종 판정은 여전히 서버가 합니다).
     if (!canSubmit) return
     if (!birthDate) {
       setLocalError("생년월일을 입력해주세요.")
@@ -93,8 +74,6 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
     )
   }
 
-  // 조회 자체가 실패했고 더 진행할 수 없는(위 BLOCKED에 해당하지 않는) 경우 — 통신 실패
-  // 등이라 같은 intentToken으로 다시 시도할 수 있습니다.
   if (intentStatus === "error") {
     return (
       <div className="mt-8 flex flex-1 flex-col items-center gap-4 text-center">
@@ -133,9 +112,6 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
 
         {emailVerificationRequired && (
           <>
-            {/* 완료 요청 중에는 입력 변경을 막습니다 — 제출한 주소와 화면 값이 어긋나
-                사용자가 "다른 주소로 가입됐다"고 오해하지 않게 합니다(AuthInputSlot은
-                disabled를 받지 않으므로 변경 핸들러에서 직접 막습니다). */}
             <AuthInputSlot
               type="email"
               name="email"

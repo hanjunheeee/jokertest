@@ -1,7 +1,5 @@
-/** 금지된 기록 — spread별 id·우측 페이지(잠금/해금) 메타. 본문은 md 원고에서 로드합니다. */
 import { FORBIDDEN_RECORDS_REWARD_ASSETS } from "../../constants/forbiddenRecords/assets.js"
 
-/** API 연동 전 더미 해금 보상 (모든 도전과제 공통) */
 export const FORBIDDEN_RECORDS_DUMMY_UNLOCK_REWARDS = [
   { icon: FORBIDDEN_RECORDS_REWARD_ASSETS.gold50, count: 50 },
   { icon: FORBIDDEN_RECORDS_REWARD_ASSETS.diamond10, count: 50 },
@@ -14,8 +12,6 @@ export const FORBIDDEN_RECORDS_SPREAD_META = [
       locked: true,
       unlockCondition: "게임 3회 완료",
       unlockProgress: "1/3회 완료",
-      // F-12: 서버 진행률(current/threshold)로 이 문구를 다시 만들 때 붙이는 꼬리말이다
-      // ("{current}/{threshold}" + progressUnit) — 최초 더미 문구의 표현을 그대로 보존한다.
       progressUnit: "회 완료",
       unlockRewards: FORBIDDEN_RECORDS_DUMMY_UNLOCK_REWARDS,
     },

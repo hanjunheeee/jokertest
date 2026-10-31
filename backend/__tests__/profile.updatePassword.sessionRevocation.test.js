@@ -1,7 +1,4 @@
 process.env.JWT_SECRET = "profile-password-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱합니다(연결은 하지 않습니다).
-// npm test는 --env-file=.env.test로 이 값을 주지만, 파일 하나만 직접 실행할 때도
-// 동작하도록 없을 때만 더미 값을 채웁니다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const test         = require("node:test");
@@ -21,27 +18,15 @@ const socketLayer  = require("../socket/socket");
 const { Op } = db.Sequelize;
 
 const TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-1" });
-// F-04 AC-05 재검토 지적: 세션 fixture가 session-1 하나뿐이면 "전체 세션 폐기"를 증명하지
-// 못한다(하나짜리 목록은 우연히 다 지워져도 "전체"와 "하나"를 구분할 수 없다). 다른
-// 기기/브라우저에서 로그인한 두 번째 온라인 세션을 별도 토큰으로 둔다.
 const SESSION_2_TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-2" });
 const CURRENT_PASSWORD = "current-pw-123";
 const ACCOUNT_EMAIL = "account-holder@example.com";
 
-// auth.service.js의 hashRefreshToken과 같은 계산(sha256 hex)을 그대로 재현한다 — 그 함수는
-// export되지 않으므로, 세션의 refresh_token_hash를 미리 "이 원문을 넣으면 나올 값"으로
-// 심어 두려면 여기서도 같은 공식을 써야 한다.
 const RAW_REFRESH_TOKEN = "test-raw-refresh-token-before-password-change";
 const REFRESH_TOKEN_HASH = crypto.createHash("sha256").update(RAW_REFRESH_TOKEN).digest("hex");
 const RAW_REFRESH_TOKEN_2 = "test-raw-refresh-token-2-before-password-change";
 const REFRESH_TOKEN_HASH_2 = crypto.createHash("sha256").update(RAW_REFRESH_TOKEN_2).digest("hex");
 
-// 이 파일은 시험마다 실제 앱 서버를 새로 띄운다(listen(0)). 전역 fetch(undici)는 같은
-// origin의 keep-alive 연결을 전역 풀에 남겨 재사용하는데, 전체 직렬 실행처럼 CPU가 붐비면
-// 이전 시험의 서버가 닫히는 중인 소켓을 다음 요청이 집어 "fetch failed"로 떨어질 수 있다.
-// 그래서 요청마다 Connection: close로 연결 재사용을 막고, 종료 시 남은 연결을 모두 끊은 뒤
-// close를 기다린다. 포트가 Fetch 표준의 "bad port"이면 undici가 요청을 거부하므로 다시 고른다
-// (discordOAuth.service.test.js의 listenOnFetchablePort와 같은 목록).
 const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
     101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
     514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
@@ -82,10 +67,6 @@ const patchPassword = (base, body) =>
 const getProfile = (base) =>
     fetch(`${base}/user/me/profile`, { headers: { cookie: `accessToken=${TOKEN}`, Connection: "close" } });
 
-// transaction은 work가 끝까지 성공해야만 staged 변경을 committed 상태(passwordHash,
-// sessions)에 반영한다. work가 던지면 staged는 버려져 아무 것도 committed에 닿지 않는다 —
-// 그래야 "폐기가 실패하면 비밀번호도 커밋되지 않는다(원자성, F-03 A-04)"와 "성공하면 같은
-// 세션이 다음 요청부터 거부된다(재로그인 요구, AC-04)"를 둘 다 관찰할 수 있다.
 const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
     const original = {
         transaction:  db.sequelize.transaction,
@@ -103,10 +84,6 @@ const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
             refresh_token_hash: REFRESH_TOKEN_HASH, refresh_previous_hash: null,
             refresh_token_expires_at: FUTURE_EXPIRY,
         }],
-        // 다른 기기/브라우저에서 로그인한 두 번째 온라인 세션. markOnlineSessionsOffline은
-        // is_online===true인 모든 세션을 user_id로만 걸러 폐기하므로(id를 지정하지 않는다),
-        // 이 fixture가 있어야 "session-1만 우연히 지워졌다"가 아니라 "이 사용자의 모든 기존
-        // 세션이 폐기됐다"를 구분해서 증명할 수 있다.
         ["session-2", {
             id: "session-2", user_id: "uuid-1", is_online: true, revoked_at: null,
             refresh_token_hash: REFRESH_TOKEN_HASH_2, refresh_previous_hash: null,
@@ -119,16 +96,11 @@ const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
 
     db.sequelize.transaction = async (work) => {
         staged = { passwordHash: null, revokedIds: [], newSessions: [] };
-        // profile.controller.js가 유저 행을 FOR UPDATE로 잠근 채 비밀번호를 확인한다
-        // (F-03 R-IMPL #7: 동시 로그인과의 직렬화) — LOCK.UPDATE 참조가 필요하다.
         const tx = { id: "tx-1", LOCK: { UPDATE: "UPDATE" } };
         const result = await work(tx);
         if (staged.passwordHash !== null) passwordHash = staged.passwordHash;
         for (const id of staged.revokedIds) {
             const session = sessions.get(id);
-            // markOnlineSessionsOffline은 is_online과 revoked_at을 함께 기록한다 — 이 자리에서
-            // is_online만 내리면 revoked_at을 읽는 auth.service.refresh()의 "revoked" 판정을
-            // 이 fake가 실제로는 절대 재현하지 못하는 채로 통과시킨 것처럼 보이게 된다.
             if (session) { session.is_online = false; session.revoked_at = new Date(); }
         }
         for (const session of staged.newSessions) sessions.set(session.id, session);
@@ -160,9 +132,6 @@ const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
 
     db.UserSession = {
         findOne: async ({ where }) => {
-            // auth.service.refresh()의 findSessionForRefresh가 쓰는 모양이다 — 제시된 해시가
-            // 현재/직전 갱신 자격 중 하나와 일치하는 세션을 찾는다(revoked_at 여부는 여기서
-            // 거르지 않는다 — 실제 DB도 폐기된 행을 지우지 않고 남겨 둔다).
             if (where[Op.or]) {
                 const hash = where[Op.or][0]?.refresh_token_hash;
                 for (const session of sessions.values()) {
@@ -260,8 +229,6 @@ test("F-04 AC-04: 새 비밀번호가 8자 미만이면 트랜잭션을 열지 �
 });
 
 test("F-04 AC-04: 새 비밀번호가 bcrypt 72바이트를 넘으면 400으로 거부된다", async (t) => {
-    // 한글은 UTF-8로 글자당 3바이트라, 25자만 되어도 75바이트로 72바이트 한도를 넘는다.
-    // 문자 수 상한(64)만 검사했다면 이 값은 통과했을 것이다.
     const tooManyBytes = "가".repeat(25);
     const { calls, sessions, getPasswordHash } = setupFakeDb(t);
     const base = await startServer(t);
@@ -277,10 +244,6 @@ test("F-04 AC-04: 새 비밀번호가 bcrypt 72바이트를 넘으면 400으로 
 });
 
 test("현재 비밀번호가 틀리면 트랜잭션은 열리지만(동시 로그인과의 잠금 직렬화) 아무 것도 쓰지 않는다", async (t) => {
-    // F-03 R-IMPL #7: login()도 같은 유저 행을 FOR UPDATE로 잠그고 최신 password_hash로
-    // 비교해야 하므로, 비밀번호 확인 자체가 이 잠금 안에서 일어나야 한다 — "확인이 트랜잭션
-    // 밖에서 끝난다"는 이전 가정은 그 직렬화를 무력화한다. 대신 확인만으로는 어떤 UPDATE도
-    // 실행되지 않아야 한다(원자성 유지).
     const { calls } = setupFakeDb(t);
     const base = await startServer(t);
 
@@ -314,10 +277,6 @@ test("F-04 AC-05: 비밀번호 변경 이후 같은 세션의 갱신 토큰으�
     const changeRes = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: "new-pw-456" });
     assert.equal(changeRes.status, 200);
 
-    // auth.service.refresh()는 HTTP 미들웨어(verifyToken)와는 다른 경로(POST /auth/refresh)로
-    // 들어오므로, 액세스 토큰 거부(위 테스트)와 별개로 직접 확인해야 한다. 세션이 이미 이
-    // 요청 이전에 revoked_at을 갖게 됐으므로 findSessionForRefresh가 세션을 찾아도
-    // "revoked"로 판정해 거부해야 한다.
     await assert.rejects(
         () => authService.refresh(RAW_REFRESH_TOKEN),
         (error) => {
@@ -334,8 +293,6 @@ test("F-04 AC-05: 비밀번호 변경 이후 같은 세션의 소켓 인증도 �
     const changeRes = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: "new-pw-456" });
     assert.equal(changeRes.status, 200);
 
-    // socket.js의 authenticateSocket은 HTTP의 verifyToken과 같은 sessionLifecycle.resolveSession을
-    // 쓴다(F-03 AC-05) — 그래도 배선이 실수로 갈라지지 않았는지 소켓 경로에서 직접 확인한다.
     let passedToNext = "not-called";
     const fakeSocket = { handshake: { headers: { cookie: `accessToken=${TOKEN}` } } };
     await socketLayer.__testables.authenticateSocket(fakeSocket, (err) => { passedToNext = err; });
@@ -345,10 +302,6 @@ test("F-04 AC-05: 비밀번호 변경 이후 같은 세션의 소켓 인증도 �
 });
 
 test("F-04 AC-05: 비밀번호 변경 이후에는 변경에 쓰이지 않은 다른 기존 세션(다른 기기)의 accessToken도 거부된다", async (t) => {
-    // 재검토 지적: 세션 fixture가 session-1 하나뿐이면 "전체 폐기"와 "이 요청에 쓰인 세션만
-    // 폐기"를 구분할 수 없다. 비밀번호 변경 요청 자체는 session-1의 쿠키로 보내고, 그 요청과
-    // 아무 관련 없는 session-2(다른 기기에서 로그인해 둔 세션)의 토큰으로도 이후 보호 요청이
-    // 막히는지 직접 확인한다.
     setupFakeDb(t);
     const base = await startServer(t);
 
@@ -365,13 +318,6 @@ test("F-04 AC-05: 비밀번호 변경 이후에는 변경에 쓰이지 않은 �
 });
 
 test("F-04 AC-05: 비밀번호 변경 이전부터 이미 연결되어 있던 소켓은 새 인증 시도가 아니라 다음 보호 이벤트에서 즉시 차단된다", async (t) => {
-    // 재검토 지적: 위 소켓 테스트는 "비밀번호 변경 이후 새로 authenticateSocket을 호출하면
-    // 거부된다"만 증명했다 — 이는 신규 연결 시도를 막을 뿐, 비밀번호 변경 *이전부터* 이미
-    // 연결되어 handshake를 통과해 둔 소켓이 계속 살아남아 보호 기능을 쓰는 경우는 별개다.
-    // socket.js의 wrapSocketWithSessionGuard가 바로 그 경우를 막는 배선이다(연결 이후 이벤트마다
-    // resolveSession을 다시 검사) — 여기서는 handshake를 통과한 것처럼 socket.data.user를
-    // 미리 채워 둔 소켓에 보호 이벤트 리스너를 등록한 뒤, 비밀번호를 변경하고, 그 다음에야
-    // 이 기존 소켓에서 이벤트를 발생시켜 리스너가 차단되는지 본다.
     setupFakeDb(t);
     const base = await startServer(t);
 
@@ -379,8 +325,6 @@ test("F-04 AC-05: 비밀번호 변경 이전부터 이미 연결되어 있던 �
     const emitted = [];
     let disconnectedWithForce = null;
     const fakeSocket = {
-        // authenticateSocket이 handshake 시점에 이미 채워 뒀을 값 — 비밀번호 변경 이전에
-        // 연결이 성사된 상태를 흉내낸다.
         data: { user: { uuid: "uuid-1", sessionId: "session-1", role: "USER" } },
         on(event, listener) { listeners[event] = listener; },
         emit(event, payload) { emitted.push({ event, payload }); },
@@ -391,14 +335,11 @@ test("F-04 AC-05: 비밀번호 변경 이전부터 이미 연결되어 있던 �
     let protectedActionCalled = false;
     fakeSocket.on("send_chat_message", () => { protectedActionCalled = true; });
 
-    // 소켓은 비밀번호 변경 *이전에* 이미 이 보호 이벤트를 등록해 뒀다.
     assert.equal(typeof listeners.send_chat_message, "function");
 
     const changeRes = await patchPassword(base, { currentPassword: CURRENT_PASSWORD, newPassword: "new-pw-456" });
     assert.equal(changeRes.status, 200);
 
-    // 비밀번호 변경 이후, 이미 연결되어 있던 바로 그 소켓에서 보호 이벤트가 발생한다 — 새로
-    // authenticateSocket을 태우지 않는다(신규 연결이 아니라 기존 연결의 후속 이벤트).
     await listeners.send_chat_message();
 
     assert.equal(protectedActionCalled, false, "비밀번호 변경으로 폐기된 세션의 소켓에서는 보호 이벤트 리스너가 실행되면 안 됩니다");

@@ -1,11 +1,5 @@
 'use strict';
 
-// F-12 achievementRecoveryService.js 단위 시험. A-07(새 경기·페이지 방문 없이 과거·신규
-// 지급 누락을 재처리)의 순회·오류 격리·요약 집계를 실제 MySQL 없이 fake db/
-// achievementService로 검증한다. achievementService.evaluateAndGrantForUser 자체의
-// 원자성·멱등성은 achievementService.test.js가 이미 검증하므로, 여기서는 이 서비스가
-// "누구를 평가할지"와 "한 계정의 실패가 나머지를 막지 않는지"만 확인한다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -54,7 +48,6 @@ test('신규로 지급된 업적이 있는 계정만 summary.grants에 담긴다
                     { id: 'record-2-extra-mask', achieved: false, granted: false },
                 ];
             }
-            // user-b: 이미 예전에 지급됐던 업적 — 이번 호출에서는 granted:false.
             return [{ id: 'record-1-masquerade', achieved: true, granted: false }];
         },
     };

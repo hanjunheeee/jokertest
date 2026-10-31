@@ -8,7 +8,6 @@ const POOL_KEYS = ["max", "min", "idle", "acquire"];
 test("환경변수가 없으면 네 값 모두 명시된 유효값을 갖는다", () => {
     const pool = buildPoolConfig({}, {});
 
-    // Sequelize 암묵적 기본값에 기대지 않고 네 값을 직접 명시했는지 확인합니다.
     assert.deepEqual(Object.keys(pool).sort(), [...POOL_KEYS].sort());
 
     for (const key of POOL_KEYS) {
@@ -46,8 +45,6 @@ test("환경변수를 일부만 주면 나머지는 기본값을 유지한다", 
 test("유효하지 않은 환경변수 값은 무시하고 기본값을 유지한다", () => {
     const defaults = buildPoolConfig({}, {});
 
-    // 환경변수는 항상 문자열이라 이런 값들이 실제로 들어올 수 있습니다.
-    // 하나라도 통과하면 풀 설정에 NaN이나 음수가 섞여 AC-06이 깨집니다.
     const pool = buildPoolConfig({}, {
         DB_POOL_MAX:     "abc",
         DB_POOL_MIN:     "-1",
@@ -74,8 +71,6 @@ test("min은 0으로 덮어쓸 수 있고 충돌하는 min/max는 유효한 풀�
 });
 
 test("생성된 Sequelize 인스턴스에 풀 설정이 실제로 반영된다", () => {
-    // buildPoolConfig가 옳아도 Sequelize가 options.pool을 버리면 AC-02가 깨지므로,
-    // 살아 있는 인스턴스에서 적용된 값을 직접 읽어 확인합니다.
     const db       = require("../models");
     const applied  = db.sequelize.options.pool;
     const expected = buildPoolConfig({}, process.env);

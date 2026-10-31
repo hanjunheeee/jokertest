@@ -1,9 +1,5 @@
 'use strict';
 
-// F-32a(AC-05) globalErrorHandler의 신규 상품·충전 범위 분기 단위 시험. express 없이 req/res 대역으로
-// 분기 자체를 검사한다(같은 분기를 실제 HTTP 경로로 지나는 시험은 topup.route.test.js·
-// topup.security.test.js). 시험의 secret 표식은 실행마다 고유한 가짜 값이다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -158,7 +154,6 @@ test('인증 오류 의미 유지: 401(ACCESS_TOKEN_EXPIRED 포함)·정지 계�
     assert.equal(plain.body.code, undefined);
     assert.ok(!JSON.stringify(plain.body).includes(MARK));
 
-    // 정지 안내는 고정 문구로만 나간다 — 접두어 뒤의 원문(사유 등)은 응답에 싣지 않는다.
     const banned = run(createError('정지된 계정입니다. 사유: 시험', 403), '/economy/topup/orders').res;
     assert.equal(banned.statusCode, 403);
     assert.equal(banned.body.message, '정지된 계정입니다.');

@@ -3,7 +3,6 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 
-// renderHook은 DOM 전역이 필요하다. 설치 방식은 기존 훅 테스트(useLibraryTab.test.js)와 동일하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {
@@ -22,10 +21,6 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// F-14(AC-01/AC-02/AC-05) 대응: useSkinCardWearSelection이 이제 economy.store.js·
-// auth.store.js를 confirmLoadout에서 직접 부른다 — profileCustomization.store.test.js와
-// 같은 이유로, 실제 fetch/localStorage를 태우지 않도록 API 경계와 auth store를
-// mock.module로 먼저 대체한 뒤에 이 hook을 불러와야 한다.
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
 let currentUser = { uuid: "user-1" }
@@ -80,13 +75,6 @@ function resetEconomy() {
   postImpl = async () => { throw new Error("api.post stub not set") }
   currentUser = { uuid: "user-1" }
   useEconomyStore.getState().reset()
-  // F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — 실제 화면에서는 Overlay가
-  // 열리자마자 fetchSummary로 authoritative revision을 먼저 읽어 두므로(SkinCardWearOverlay.jsx
-  // 열림 effect), confirmLoadout이 호출될 때 store.equip()은 revision을 이미 알고 있는 채로
-  // 시작한다. 이 파일은 훅만 단독으로 렌더해 그 Overlay 마운트 단계를 거치지 않으므로, 여기서
-  // 같은 전제를 직접 만들어 둔다 — 그러지 않으면 매 equip() 호출이 먼저 authoritative GET을
-  // 시도하게 되어(economy.store.js sendLoadoutWrite의 requireKnownRevision), 아래 테스트들이
-  // 검증하려는 "명시적 거부/전송 불확실 직후 첫 POST" 시나리오가 흐트러진다.
   useEconomyStore.setState((state) => ({ loadout: { ...state.loadout, revision: "known-rev" } }))
 }
 
@@ -107,7 +95,6 @@ test("처음 열면 첫 직업 탭의 기본 스킨이 선택되고 스킨 미�
   assert.equal(result.current.previewMode, SKIN_CARD_WEAR_PREVIEW_MODE_SKIN)
   assert.equal(result.current.selectedItemId, getDefaultSkinIdForJob(FIRST_JOB_ID))
 
-  // 목록은 현재 직업의 스킨만 담고, 미리보기는 그 스킨의 서 있는 일러스트를 가리켜야 합니다.
   assert.deepEqual(
     result.current.listItems.map((item) => item.id),
     getSkinItemsForJob(FIRST_JOB_ID).map((item) => item.id),
@@ -160,7 +147,6 @@ test("카드 보기로 전환하면 플레이어 카드 목록과 카드 미리�
     getPlayerCardItems().map((item) => item.id),
   )
 
-  // 카드 미리보기는 카드 프레임과 현재 직업 스킨의 클로즈업을 함께 보여줍니다.
   assert.equal(result.current.preview.mode, "card")
   assert.equal(
     result.current.preview.frameSrc,
@@ -178,7 +164,6 @@ test("카드 보기에서 소유한 카드를 고르면 draft 카드 프레임�
     (item) => item.id !== SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID,
   )
   assert.ok(otherCard, "기본 카드 말고도 고를 카드가 있어야 한다")
-  // F-14(AC-02): 기본 카드가 아닌 프리미엄 카드는 entitlements에 있어야만 선택할 수 있다.
   useEconomyStore.setState({ entitlements: [{ itemId: otherCard.id, itemType: "PLAYER_CARD_FRAME" }] })
 
   const { result } = renderSelection()
@@ -189,8 +174,6 @@ test("카드 보기에서 소유한 카드를 고르면 draft 카드 프레임�
   assert.equal(result.current.draftCardFrameId, otherCard.id)
   assert.equal(result.current.preview.frameSrc, otherCard.frameSrc)
 })
-
-// ── F-14 AC-02: 소유권 게이트 ────────────────────────────────────────────────
 
 test("F-14 AC-02: 기본 스킨·기본 카드는 entitlements 없이도 항상 owned:true다", () => {
   resetEconomy()
@@ -268,8 +251,6 @@ test("resetDraft는 적용된 구성으로 탭·선택·draft를 되돌린다", 
   assert.equal(result.current.selectedItemId, getDefaultSkinIdForJob(FIRST_JOB_ID))
 })
 
-// ── F-14 AC-01/AC-02/AC-05: confirmLoadout ──────────────────────────────────
-
 function stubWalletAndEntitlements(loadoutOverrides = {}) {
   getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
     ? { balanceGold: 0, balanceDiamond: 0 }
@@ -305,7 +286,6 @@ test("F-14 AC-01: 바뀐 슬롯만 골라 equip을 호출하고 성공하면 SUC
   act(() => result.current.selectItem(otherSkin))
 
   const otherCard = getPlayerCardItems().find((item) => item.id !== SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
-  // F-14(AC-02): 프리미엄 카드는 entitlements에 있어야만 선택할 수 있다.
   act(() => { useEconomyStore.setState({ entitlements: [{ itemId: otherCard.id, itemType: "PLAYER_CARD_FRAME" }] }) })
   act(() => result.current.togglePreviewMode())
   act(() => result.current.selectItem(otherCard))
@@ -353,7 +333,6 @@ test("F-14 AC-02/AC-05: 명시적 거부(code 있음)는 초안을 유지한 채
   assert.equal(outcome.ok, false)
   assert.equal(result.current.confirmStatus, SKIN_CARD_WEAR_CONFIRM_STATUS.ERROR)
   assert.equal(result.current.confirmError, "보유하지 않은 상품은 장착할 수 없습니다.")
-  // 거부돼도 사용자가 고른 초안은 그대로 남아야 재시도·수정이 가능하다.
   assert.equal(result.current.draftSkinsByJob[FIRST_JOB_ID], otherSkin.id)
 })
 
@@ -398,7 +377,6 @@ test("F-14 AC-03: 저장 도중 계정이 전환되면 stale로만 보고하고 
   act(() => result.current.selectItem(otherSkin))
 
   postImpl = async () => {
-    // equip 응답을 기다리는 동안 계정이 전환됐다고 가정한다.
     setCurrentUser({ uuid: "user-2" })
     return { loadout: {} }
   }
@@ -412,7 +390,6 @@ test("F-14 AC-03: 저장 도중 계정이 전환되면 stale로만 보고하고 
   })
 
   assert.deepEqual(outcome, { ok: false, stale: true })
-  // 이전 계정의 화면에 성공도 실패도 잘못 표시하면 안 된다(A-04) — SAVING에서 확정되지 않은 채 남는다.
   assert.equal(result.current.confirmStatus, SKIN_CARD_WEAR_CONFIRM_STATUS.SAVING)
 })
 

@@ -6,9 +6,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-// F-32c AC-06: production build를 이 시험 안에서 실제로 실행하고, 그 실행이 새로 만든 산출물만 검사한다
-// (기존 dist를 검사해 통과할 수 없다). 서버 전용 secret이 번들에 새지 않는지를 합성 표식으로 확인한다 —
-// 실제 secret은 읽지도 복사하지도 않는다. 검출 시에는 값 대신 파일명만 보고한다.
 const frontendDir = fileURLToPath(new URL("../../../../../", import.meta.url))
 const SYNTHETIC_SECRET = "test_sk_f32c_synthetic_marker_0123456789"
 const SECRET_KEY_SHAPE = /(?:test|live)_sk_[A-Za-z0-9_=+/-]{8,}/
@@ -18,7 +15,6 @@ const walk = (dir) => readdirSync(dir).flatMap((name) => {
   return statSync(full).isDirectory() ? walk(full) : [full]
 })
 
-// 산출물 전체에서 표식 원문·Base64(표식 단독, 토스 Basic 인증 형식 "표식:")와 secret 키 형식을 찾아 파일명만 돌려준다.
 function findSecretLeaks(dir) {
   const needles = [
     SYNTHETIC_SECRET,

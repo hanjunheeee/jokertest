@@ -1,14 +1,5 @@
 process.env.JWT_SECRET = "topup-route-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-
-// F-32a 재화 상품 목록·다이아 충전 HTTP 계약 시험. 실제 economy router·인증 미들웨어·오류 처리기를
-// 마운트하고 서비스 계층은 스텁한다(economy.route.test.js와 같은 패턴). 그래서 이 파일이 확인하는
-// 것은 **라우트 계층의 책임**뿐이다: 인증 게이트, 필드 허용 목록·타입 검사, 인증 uuid만 계정 입력으로
-// 쓰는지, 공개 응답 필드, 오류 코드 → 고정 상태 매핑. 다이아 지급·잔액 무결성·상품 스냅샷·동시성은
-// 서비스 스텁으로 판정할 수 없으므로 실제 DB 시험(tests/db/f32a-topup.integration.test.js)이 검사한다.
-//
-// 시험에 나오는 상품·금액 수치는 자동 시험용 임시값이며 최종 상품표가 아니다.
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -17,11 +8,6 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 const jwt          = require("jsonwebtoken");
 
-// 이 스위트의 앱 서버는 전역 fetch로 호출된다. 이 장비의 Windows 동적 포트 범위(1024..15000)에는
-// Fetch 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 undici가 연결 시도조차 하지 않고
-// "TypeError: fetch failed (cause: bad port)"로 거부한다 — 2026-09-23 백엔드 전체 실행에서 이
-// 파일의 서버가 6667/6668/6669/6679를 받아 5건이 그렇게 실패했다. 공용 helper로 Fetch가 허용하는
-// 고포트에 실제 bind한다(금지 목록·OS 포트 범위를 건드리지 않고, 여전히 실제 loopback TCP다).
 const { listenOnFetchablePort } = require("../tests/helpers/fetchablePort");
 
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
@@ -97,7 +83,6 @@ const request = async (base, path, { method = "GET", token, body, rawBody } = {}
     return { status: res.status, json, headers: res.headers };
 };
 
-// 시험 전용 상품·주문 값(임시값).
 const TEST_PRODUCT = { productId: "test-topup-1", kind: "DIAMOND_TOPUP", displayName: "시험 상품", payCurrency: "KRW", payAmount: 1000, grantCurrency: "DIAMOND", grantAmount: 100, bonusAmount: 10, version: 1 };
 const ORDER_ID = "11111111-2222-4333-8444-555555555555";
 
@@ -107,8 +92,6 @@ const ENDPOINTS = [
     ["POST", `/economy/topup/orders/${ORDER_ID}/confirm`, { paymentKey: "pay_key_1", amount: 1000 }],
     ["GET", `/economy/topup/orders/${ORDER_ID}`],
 ];
-
-// ── 인증 게이트 ─────────────────────────────────────────────────────────────────────
 
 for (const [method, path, body] of ENDPOINTS) {
     test(`미인증: ${method} ${path.replace(ORDER_ID, ":orderId")}은 accessToken 쿠키가 없으면 401이고 서비스를 호출하지 않는다`, async (t) => {
@@ -146,7 +129,6 @@ for (const [method, path, body] of ENDPOINTS) {
 }
 
 test("정지된 계정은 인증 계층의 403(정지 안내)이 유지되고 서비스를 호출하지 않는다", async (t) => {
-    // 원래 함수는 stubAuthGate가 바꾸기 전에 붙잡아 두어야 t.after 순서와 무관하게 정확히 복원된다.
     const originals = { checkActiveBan: userRepository.checkActiveBan, markOnlineSessionsOffline: userRepository.markOnlineSessionsOffline };
     stubAuthGate(t);
     userRepository.checkActiveBan = async () => ({ reason: "시험 사유" });
@@ -185,8 +167,6 @@ test("기존 계정별 경로의 requireSelf는 그대로 403(ECONOMY_FORBIDDEN)
     assert.equal(res.status, 403);
     assert.equal(res.json.code, "ECONOMY_FORBIDDEN");
 });
-
-// ── GET /economy/currency-products ──────────────────────────────────────────────────
 
 test("상품 목록: 공개 필드만 직렬화한다(서비스가 내부 필드를 실어 와도 싣지 않는다)", async (t) => {
     stubAuthGate(t);
@@ -235,8 +215,6 @@ test("상품 목록: DB 조회 실패는 빈 목록이 아니라 5xx다", async 
     assert.equal(res.json.code, "SERVER_ERROR");
     assert.equal(res.json.products, undefined);
 });
-
-// ── POST /economy/topup/orders ──────────────────────────────────────────────────────
 
 test("주문 생성: 인증 uuid와 productId·version만 서비스로 전달하고 공개 필드만 응답한다", async (t) => {
     stubAuthGate(t);
@@ -318,8 +296,6 @@ test("주문 생성: 서비스 오류 코드는 고정 상태로 매핑되고 �
         }
     }
 });
-
-// ── POST /economy/topup/orders/:orderId/confirm ─────────────────────────────────────
 
 test("confirm: 경로 orderId·인증 uuid·본문 paymentKey/amount만 서비스로 전달하고 GRANTED는 잔액만 싣는다", async (t) => {
     stubAuthGate(t);
@@ -460,8 +436,6 @@ test("타인 계정 주문: 요청마다 그 요청의 인증 uuid가 서비스�
     assert.deepEqual(stub.callsOf("confirmTopupOrder").map((call) => call.args[0].userId), [USER_B]);
     assert.deepEqual(stub.callsOf("getTopupOrder").map((call) => call.args[0].userId), [USER_B, USER_A]);
 });
-
-// ── GET /economy/topup/orders/:orderId ──────────────────────────────────────────────
 
 test("주문 조회: 공개 필드만 싣고 GRANTED에서만 balanceDiamond를 싣는다(결제키·임대는 싣지 않는다)", async (t) => {
     stubAuthGate(t);

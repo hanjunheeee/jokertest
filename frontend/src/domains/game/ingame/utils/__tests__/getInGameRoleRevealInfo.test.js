@@ -92,8 +92,6 @@ test("getInGameRoleRevealInfo: 각 역할은 서로 다른 roleName/description�
   assert.equal(names.size, roles.length, "역할별 roleName은 서로 달라야 한다")
 })
 
-// ── F-14(AC-01/AC-04, R-IMPL P1 수정): 본인 역할 구매 스킨 standing 자산 ──────────────
-
 test("getInGameRoleRevealInfo: self.accountSkinId가 있으면 정확히 그 구매 스킨의 standing 자산을 반환한다(추측 없음)", () => {
   const purchasedSkinId = "player-skin-경비원1-바이올렛" // GUARD 직업(guard 탭)의 실제 구매 가능 스킨 id
   const self = buildSelf({ role: "GUARD", team: "CITIZEN", accountSkinId: purchasedSkinId })
@@ -146,8 +144,6 @@ test("getInGameRoleRevealInfo: self 객체에 다른 참가자의 직업별 장�
     role: "CITIZEN",
     team: "CITIZEN",
     accountSkinId: "basic-skin-귀족1",
-    // 서버는 절대 이 필드를 self에 실어 보내지 않지만(buildViewerRoleFields), 방어적으로
-    // payload가 오염되어도 view-model이 그 맵을 그대로 통과시키지 않는지 확인한다.
     accountSkinsByJob: { noble: "player-skin-귀족1-블러드", clown: "player-skin-광대1-테스트" },
   })
 

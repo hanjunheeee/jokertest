@@ -1,27 +1,6 @@
 process.env.JWT_SECRET = "discord-auth-route-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 process.env.FRONTEND_URL = process.env.FRONTEND_URL || "https://frontend.example.test";
-
-// F-07 AC-01/AC-02/AC-03/AC-04 — Discord OAuth 시작·콜백 라우트의 서버 계약 HTTP 통합
-// 테스트입니다. googleAuth.route.test.js(F-06)와 같은 구조로, socialAuth.service.js(F-05)의
-// state·트랜잭션 로직 자체와 discordOAuth.service.js의 실제 Discord 네트워크 교환은 여기서
-// 다시 검증하지 않고 스텁으로 대체합니다(discordOAuth.service.js 자체의 실제 네트워크
-// 왕복은 discordOAuth.service.test.js가 로컬 fixture 서버로 검증합니다) — 이 파일은 그 위
-// 계층, 즉 "버튼 클릭이 시작 라우트를 부르고, 콜백이 결과에 따라 올바른 쿠키·리다이렉트로
-// 이어지는지"와 "state 소비·제공자 호출·계정 판정의 순서·재사용 방지·rememberMe 보존이
-// 실제로 그 순서대로 이어지는지"(R-IMPL #2/#3)를 검증합니다.
-//
-// F-07 고유: user.controller.js가 oauthAttempt 쿠키에 provider를 함께 서명해, Google 시작
-// 시도의 쿠키가 이 콜백에서 받아들여지지 않는지(제공자 바인딩)도 이 파일에서 검증합니다.
-//
-// AC-04: GET /auth/discord/link·/auth/discord/link/callback(로그인 후 명시적 연결)도 이
-// 파일에서 같은 원칙(스텁 기반 컨트롤러 계약 테스트)으로 검증합니다 — verifyToken이 거치는
-// sessionLifecycle.resolveSession은 userRepository.findActiveSession/checkActiveBan만 거치므로
-// (socialAuth.route.test.js와 같은 패턴), 그 둘만 스텁하면 실제 미들웨어 체인을 그대로 태우면서
-// "인증된 사용자만 연결을 시작·완료할 수 있다"를 검증할 수 있습니다. 실제 DB·실제
-// discordOAuthService까지 전부 실제로 태운 링크 왕복의 더 강한 증거는
-// backend/tests/db/f07-discord-oauth.integration.test.js에 있습니다.
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -41,9 +20,6 @@ const SOCIAL_KEYS  = ["issueOAuthState", "consumeOAuthState", "resolveOAuthAccou
 const DISCORD_KEYS = ["buildAuthorizationUrl", "exchangeCodeForProfile"];
 const REPO_KEYS     = ["findActiveSession", "checkActiveBan"];
 
-// verifyToken(auth.middleware.js) → sessionLifecycle.resolveSession은 userRepository를 통해서만
-// 세션 상태를 읽는다(socialAuth.route.test.js와 같은 패턴) — 이 둘만 스텁하면 "지금 유효한
-// 세션"을 실제 미들웨어 체인을 그대로 태우면서 재현할 수 있다.
 const stubAuthGate = (t, { sessionActive = true } = {}) => {
     const originals = Object.fromEntries(REPO_KEYS.map((key) => [key, userRepository[key]]));
     userRepository.findActiveSession = async (id, userId) =>
@@ -84,9 +60,6 @@ const startServer = async (t) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-// fetch(redirect:"manual")는 Node(undici)에서도 명세대로 opaqueredirect를 돌려줘 status/
-// header를 읽을 수 없다 — Location·Set-Cookie를 직접 확인해야 하므로 http.request로 리다
-// 이렉트를 그대로 받는다(따라가지 않는다).
 const rawGet = (base, path, { cookie } = {}) => new Promise((resolve, reject) => {
     const url = new URL(path, base);
     const req = http.request(url, { method: "GET", headers: cookie ? { cookie } : {} }, (res) => {
@@ -106,12 +79,8 @@ const decodedAttemptCookie = (headers) => {
     return jwt.verify(token, process.env.JWT_SECRET);
 };
 
-// 실제 discordAuthStart가 세팅하는 것과 같은 형태의 서명된 시도 쿠키를 만든다 — 컨트롤러의
-// jwt.verify 검증 경로를 값 그대로 믿어주는 스텁이 아니라 실제로 태운다.
 const loginAttemptCookie = (fp, rememberMe, provider = "discord") =>
     `oauthAttempt=${jwt.sign({ fp, rememberMe, purpose: "login", provider }, process.env.JWT_SECRET, { expiresIn: 600 })}`;
-
-// ── GET /auth/discord (AC-01: 시작) ──────────────────────────────────────────
 
 test("GET /auth/discord은 state를 발급해 Discord 인가 URL로 302 리다이렉트하고 서명된 oauthAttempt 쿠키를 세팅한다", async (t) => {
     const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {
@@ -158,8 +127,6 @@ test("rememberMe를 지정하지 않으면 oauthAttempt 쿠키에 rememberMe:fal
     const decoded = decodedAttemptCookie(res.headers);
     assert.equal(decoded.rememberMe, false);
 });
-
-// ── GET /auth/discord/callback (AC-01/AC-02: 재로그인·가입 보완, R-IMPL #2/#3: 순서·이중발급) ──
 
 test("재로그인(LOGIN) 콜백은 state를 먼저 소비한 뒤 제공자를 불러 세션 쿠키를 세팅하고 /lobby로 리다이렉트한다(AC-01, R-IMPL #3 순서)", async (t) => {
     const callOrder = [];
@@ -296,8 +263,6 @@ for (const rememberMe of [false, true]) {
     });
 }
 
-// ── AC-04/R-IMPL #3: 취소·잘못된 state·재사용·이메일 충돌, 순서·재생 방지 ─────────
-
 test("사용자가 Discord 동의 화면에서 취소하면(error 파라미터) state는 소비되지만 코드 교환은 호출되지 않는다", async (t) => {
     const discord = stubModule(t, discordOAuthService, DISCORD_KEYS, {
         exchangeCodeForProfile: async () => { throw new Error("취소된 콜백에서는 호출되면 안 됩니다"); },
@@ -378,16 +343,6 @@ test("기존 이메일과의 충돌(EMAIL_CONFLICT)은 제공자 교환 이후 �
     assert.equal(findSetCookie(res.headers, "accessToken"), undefined);
 });
 
-// CODEX-1 재검토 지적(AC-03): discordOAuth.service.js의 verified:false → email:null 자체는
-// discordOAuth.service.test.js가 검증하고, EMAIL_MISSING을 던지는 socialAuthService.
-// resolveOAuthAccount 자체는 f05-social-auth.integration.test.js(provider='google')가
-// 실제 DB로 검증한다 — 이 파일에는 그 둘을 "discordOAuth.service.js가 null을 반환한 뒤
-// 컨트롤러가 그 null을 그대로 공통 서비스로 넘겨 EMAIL_MISSING으로 거부하는" 실행 경로
-// 자체를 잇는 테스트가 빠져 있었다. 아래는 그 경로를 이 컨트롤러 계약 수준에서 고정한다 —
-// discordOAuthService 스텁이 실제 verified:false 응답과 같은 모양(email:null)을 돌려주고,
-// socialAuthService 스텁은 그 null을 그대로 받았는지 단언한 뒤 실제 resolveOAuthAccount와
-// 같은 오류(EMAIL_MISSING)를 던진다. 실제 DB·실제 discordOAuthService까지 전부 실제로 태운
-// 같은 경로의 더 강한 증거는 backend/tests/db/f07-discord-oauth.integration.test.js에 있다.
 test("이메일을 받지 못하면(email:null) 컨트롤러가 그 값을 그대로 공통 서비스에 넘기고, EMAIL_MISSING으로 거부되어 세션 쿠키 없이 리다이렉트된다(AC-03)", async (t) => {
     const discord = stubModule(t, discordOAuthService, DISCORD_KEYS, {
         exchangeCodeForProfile: async () => ({ subject: "sub-unverified", email: null }),
@@ -471,8 +426,6 @@ test("oauthAttempt 쿠키가 없거나 위조되면 fingerprint 없이 state 소
     assert.equal(discord.calls.length, 0);
 });
 
-// ── F-07 고유: 제공자 바인딩 — 다른 제공자로 시작한 시도의 쿠키를 받아들이지 않는다 ────
-
 test("Google 시작 시도의 oauthAttempt 쿠키(provider:google)는 Discord 콜백에서 fp 없이 취급되어 Discord를 부르지 않는다(제공자 바인딩)", async (t) => {
     const discord = stubModule(t, discordOAuthService, DISCORD_KEYS, {
         exchangeCodeForProfile: async () => { throw new Error("호출되면 안 됩니다"); },
@@ -495,8 +448,6 @@ test("Google 시작 시도의 oauthAttempt 쿠키(provider:google)는 Discord �
     assert.equal(discord.calls.length, 0, "provider가 일치하지 않으면 Discord 코드 교환을 시도하면 안 됩니다");
 });
 
-// ── AC-03: 클라이언트 비밀키는 환경변수로만 주입된다 ─────────────────────────
-
 test("DISCORD_CLIENT_SECRET 환경변수가 없으면 코드 교환이 하드코딩된 값 없이 설정 오류로 거부된다", async (t) => {
     const originalId     = process.env.DISCORD_CLIENT_ID;
     const originalSecret = process.env.DISCORD_CLIENT_SECRET;
@@ -515,14 +466,6 @@ test("DISCORD_CLIENT_SECRET 환경변수가 없으면 코드 교환이 하드코
         (error) => error.code === "DISCORD_OAUTH_NOT_CONFIGURED",
     );
 });
-
-// ── GET /auth/discord/link, /auth/discord/link/callback (AC-04: 로그인 후 명시적 연결) ──
-//
-// CODEX-1 재검토 지적: 이 라우트 자체가 등록되어 있지 않아 "로그인 후 명시적 연결"이 실행
-// 가능한 경로로 존재하지 않았다. 아래는 그 라우트가 (1) 인증을 강제하고, (2) 클라이언트가
-// 아니라 discordOAuthService가 검증한 subject/email만 socialAuthService.linkExternalIdentity에
-// 넘기며, (3) 취소·재사용·이미 연결된 identity를 자동 병합 없이 거부하는지 컨트롤러 계약
-// 수준에서 고정한다.
 
 test("GET /auth/discord/link은 인증 없이 호출하면 401이고 state는 발급되지 않는다", async (t) => {
     const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {});
@@ -562,12 +505,6 @@ test("GET /auth/discord/link은 인증된 사용자의 uuid/sessionId로 purpose
     assert.equal(decoded.purpose, "link");
     assert.equal(decoded.provider, "discord");
 });
-
-// CODEX-2 재검토 지적 #2/#3: discordLinkCallback은 이제 state 소비를 제공자 호출보다 먼저
-// 커밋하고, 그 소비 결과(userId/sessionId)가 지금 인증된 사용자와 일치하는지도 Discord를
-// 부르기 전에 확인한다 — 그래서 아래 테스트들은 socialAuthService.linkExternalIdentity가
-// 아니라 consumeOAuthState(먼저 호출)·linkExternalIdentityForValidatedSession(그 다음에만
-// 호출)을 스텁한다.
 
 test("GET /auth/discord/link/callback 성공 시 state 소비가 코드 교환보다 먼저 일어나고, 서버가 검증한 subject/email만 linkExternalIdentityForValidatedSession에 전달하며 세션 쿠키 변경 없이 성공 리다이렉트한다(AC-04, R-IMPL #3 순서)", async (t) => {
     stubAuthGate(t);

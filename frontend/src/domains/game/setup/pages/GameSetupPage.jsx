@@ -1,14 +1,3 @@
-// 파일 역할: GameSetupPage.jsx - 라우터에서 렌더링되는 페이지입니다.
-/**
- * 인게임 설정(게임 만들기) 화면.
- *
- * 배경·설정 패널·공통 버튼만 조합합니다.
- *
- * F-24(AC-04/AC-05/RESTORE-24): 폼의 **출발점**은 useGameSetupPage가 정합니다 — 이 계정이
- * "다음 게임 동일 설정 유지"를 켜 뒀으면 그때 저장된 복원 원본에서, 아니면 항목 정의의
- * 기본값에서 시작합니다. 복원에 실패하면 기본값으로 시작하되 그 사실을 화면에 남깁니다
- * (조용히 덮고 "복원됐다"고 보이게 하지 않습니다).
- */
 import GameSetupBackground from "../components/GameSetupBackground.jsx"
 import GameSetupPanel from "../components/GameSetupPanel.jsx"
 import GameSetupPageControls from "../components/GameSetupPageControls.jsx"

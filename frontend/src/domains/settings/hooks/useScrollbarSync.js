@@ -1,4 +1,3 @@
-// 파일 역할: useScrollbarSync.js - React 상태와 부수효과를 묶는 커스텀 훅입니다.
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 
 function measureSettingRows(listEl) {
@@ -18,7 +17,6 @@ function measureSettingRows(listEl) {
 export function useScrollbarSync(activeTab, visible) {
   const listRef = useRef(null)
 
-  // 커스텀 스크롤바가 실제 설정 행 높이에 맞춰 차지할 위치와 높이입니다.
   const [scrollbarBox, setScrollbarBox] = useState(null)
 
   const syncScrollbarHeight = useCallback(() => {

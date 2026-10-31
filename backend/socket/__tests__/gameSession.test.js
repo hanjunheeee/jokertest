@@ -1,8 +1,3 @@
-// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 문자열로 파싱한다(연결을 실제로
-// 시도하지는 않는다 — 이 파일은 db.* 를 갈아끼우지 않지만 voteParticipationRepository를 통해
-// 성공 스텁으로 우회하므로 실제 DB에 닿지 않는다). npm test(--env-file=.env.test) 밖에서 이
-// 파일만 직접 실행하면 그 값이 비어 있어 require 자체가 죽으므로, 다른 스위트
-// (gameResultPersistence.test.js 등)와 같은 더미 폴백을 둔다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -11,23 +6,16 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
-// CO S-1(AC-02): 게임 시작 경로가 계정 전적 저장소도 호출한다 — 대역이 없으면 이 순수 단위
-// 스위트가 실제 MySQL 접속을 시도한다(economyService 대역과 같은 이유). 전적은 이 파일의
-// 검증 대상이 아니므로 전원 0판 0%로 고정한다.
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
 })
-// 게임 시작·방 소멸에서 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
-// 요구한다. 대역이 없으면 이 스위트가 실제 DB 접속을 시도해 AccessDenied 로그를 남긴다
-// (단언은 실패하지 않지만 "SQL 경계를 건드리지 않는다"는 전제가 깨진다).
 matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 const {
     callAsPromise,
     createFakeSocket,
     createFakeIo,
     validSettingsPayload,
-    // F-20(AC-04): start_game은 roomId·expectedSettingsVersion을 필수로 요구한다.
     startPayload,
     countingCallback,
     setupReadyRoomForStart,
@@ -51,16 +39,6 @@ const {
     resolveChatRecipientSockets,
 } = gameSessionSocketLayer.__testables
 
-/**
- * 이 파일의 압도적 다수 기존 테스트는 재접속 권한 자체를 검증 대상으로 삼지 않고, 오직
- * createFakeSocket(uuid)의 기본 규약(socket.id === `sock-${uuid}`)만 따르는 단일 소켓으로
- * 핸들러를 직접 호출한다. 그런 테스트마다 일일이 registry에 { uuid → socketId }를 채워주는
- * 대신, 그 규약을 그대로 따르는 "기본값 있는 Map"을 매 테스트마다 새로 설치한다 — 진짜
- * Map을 감싼 Proxy이므로 isCurrentSocketForUuid의 `registry instanceof Map` 검사를 그대로
- * 통과하고, 명시적으로 .set()한 uuid는 override를, 그 외 uuid는 `sock-${uuid}` 기본값을
- * 반환한다. 재접속 권한 자체(교체/거부/멱등 rebind)를 검증하는 테스트는 이 기본값에 기대지
- * 않고 실제 Map을 직접 만들어 setOnlineUsersRegistry로 명시적으로 주입한다.
- */
 function createConventionFollowingRegistry() {
     const overrides = new Map()
     return new Proxy(overrides, {
@@ -73,25 +51,13 @@ function createConventionFollowingRegistry() {
     })
 }
 
-// 이 파일은 game-core/gameSession.js(고유 registry)와 matchmaking.js(고유 registry),
-// socket/gameSession.js(고유 onlineUsersRegistry)까지 셋 다 실제로 구동하므로, 세 모듈의
-// registry를 각각 초기화해야 테스트 간 상태 누수가 없다(matchmaking.test.js의 기존 관례와 동일).
 test.beforeEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
     gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
-    // F-11: 이 파일은 실제 DB 없이 소켓 계층만 태우는 순수 단위 테스트다. handleSubmitDayVote는
-    // 비기권 투표의 성공 ack 전에 투표 참여 저장을 await하므로(A-03), 실제 저장소(db.VoteParticipation,
-    // 실제 DB 연결이 필요)를 즉시 성공하는 스텁으로 갈아끼운다 — 이 스위트가 검증하는 것은 ack
-    // 타이밍·payload 계약이지 저장소 자체가 아니다. 실제 DB 왕복 검증은
-    // backend/tests/voteParticipation.persistence.test.js가 담당한다.
     gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests(async () => ({ recorded: true }))
 })
-// registry 불일치를 의도적으로 재현하는 테스트(SESSION_NOT_FOUND/NOT_A_PARTICIPANT 케이스)가
-// 이 파일의 마지막 테스트로 실행되더라도 손상된 singleton 상태가 남지 않게 afterEach에서도
-// 정리한다. 테스트 본문이 예외를 던져도 node:test는 afterEach를 실행하므로 이 정리는
-// 실패한 테스트 뒤에도 보장된다.
 test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
@@ -103,16 +69,10 @@ function makePlayer(uuid, nickname = `nick-${uuid}`) {
     return { uuid, nickname, isReady: true }
 }
 
-// F-11: socket.trigger()는 등록된 리스너의 반환값(Promise)을 그대로 넘겨주지 않으므로,
-// handleSubmitDayVote처럼 async인 핸들러를 socket.trigger로 배선 검증할 때는 콜백이 실제로
-// 호출될 때까지 매크로태스크 한 틱을 기다려야 한다(테스트가 주입하는 스텁 저장소는 즉시
-// resolve하는 Promise이므로 microtask 큐만 한 번 비워도 충분하지만, setImmediate로 여유를
-// 둔다 — gameResultPersistence.test.js의 flushAsync와 동일한 관례).
 function flushAsync() {
     return new Promise((resolve) => setImmediate(resolve))
 }
 
-/** game-core가 받는 room 형태를 흉내낸다(소켓 계층 테스트에서는 matchmaking을 거치지 않고 직접 커밋한다). */
 function makeRoom({ id = 'room-1', players, jokerCount = 1 } = {}) {
     const playerList = players ?? [makePlayer('p1'), makePlayer('p2')]
     return {
@@ -122,7 +82,6 @@ function makeRoom({ id = 'room-1', players, jokerCount = 1 } = {}) {
     }
 }
 
-/** game-core를 직접 구동해 2인 GameSession을 커밋하고, 두 uuid에 대응하는 fake socket도 채널에 join된 상태로 준비한다. */
 function commitTwoPlayerSession({ roomId = 'room-1', uuidA = 'p1', uuidB = 'p2' } = {}) {
     const room = makeRoom({ id: roomId, players: [makePlayer(uuidA), makePlayer(uuidB)] })
     const prepared = gameSessionCore.prepareGameSession(room)
@@ -132,19 +91,12 @@ function commitTwoPlayerSession({ roomId = 'room-1', uuidA = 'p1', uuidB = 'p2' 
     const socketB = createFakeSocket(uuidB)
     socketA.rooms.add(prepared.session.channelId)
     socketB.rooms.add(prepared.session.channelId)
-    // 실제로는 matchmaking.js의 handleStartGame이 게임 시작 시 심어주는 ABA 방지 결합
-    // (socket.data.activeGameId)이다 — 이 헬퍼는 matchmaking을 거치지 않고 game-core를
-    // 직접 구동하므로 그 결합을 여기서 직접 재현한다(onDisconnect가 이 값을 읽는다).
     socketA.data.activeGameId = prepared.session.id
     socketB.data.activeGameId = prepared.session.id
     const io = createFakeIo([socketA, socketB])
 
     return { session: prepared.session, socketA, socketB, io }
 }
-
-// ---------------------------------------------------------------------------
-// onDisconnect — 무동작 회귀
-// ---------------------------------------------------------------------------
 
 test('onDisconnect: 어떤 활성 GameSession에도 속하지 않은 uuid는 아무 것도 바꾸지 않는다', async () => {
     const socket = createFakeSocket('lonely-uuid')
@@ -155,10 +107,6 @@ test('onDisconnect: 어떤 활성 GameSession에도 속하지 않은 uuid는 아
     assert.equal(io.broadcasts.length, 0)
     assert.equal(socket.rooms.size, 0)
 })
-
-// ---------------------------------------------------------------------------
-// onDisconnect — 정상 케이스
-// ---------------------------------------------------------------------------
 
 test('onDisconnect: 진행 중 세션은 종료 방송·registry/channel 정리 없이 재접속 유예만 시작한다', async () => {
     const { session, socketA, socketB, io } = commitTwoPlayerSession()
@@ -176,10 +124,6 @@ test('onDisconnect: 진행 중 세션은 종료 방송·registry/channel 정리 
 })
 
 test('onDisconnect: room broadcast와 channel 제거 없이 참가자 소켓의 기존 세션 routing을 보존한다', async () => {
-    // 같은 채널에 소켓이 2개 있는 상태(재접속 전환 중 등)를 가정한다. fake io.to().emit()은
-    // 소켓별 전달을 시뮬레이션하지 않고 broadcasts 배열에 한 건만 기록하는 구조이므로, 이
-    // 테스트가 실제로 증명하는 것은 "단일 room 방송 + 채널에 있던 소켓 전부가 제거됨"까지다
-    // — "두 소켓이 실제로 수신했다"는 주장은 하지 않는다.
     const { session, socketA, socketB, io } = commitTwoPlayerSession()
 
     await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
@@ -189,10 +133,6 @@ test('onDisconnect: room broadcast와 channel 제거 없이 참가자 소켓의 
     assert.equal(socketA.rooms.has(session.channelId), true)
     assert.equal(socketB.rooms.has(session.channelId), true)
 })
-
-// ---------------------------------------------------------------------------
-// onDisconnect — 알림/channel 정리 양방향 실패 격리
-// ---------------------------------------------------------------------------
 
 test('onDisconnect: 유예 시작 경로는 io.to를 호출하지 않아 방송 계층 장애와 독립적이다', async () => {
     const { session, socketA, socketB, io } = commitTwoPlayerSession()
@@ -220,10 +160,6 @@ test('onDisconnect: 유예 시작 경로는 io.in을 호출하지 않아 channel
     assert.equal(io.broadcasts.some((b) => b.event === 'game_ended'), false)
 })
 
-// ---------------------------------------------------------------------------
-// onDisconnect — 소켓 계층 중복 disconnect 격리
-// ---------------------------------------------------------------------------
-
 test('onDisconnect: 같은 uuid로 연속 2회 호출해도 유예 run은 하나고 종료 방송은 없다', async () => {
     const { session, socketA, io } = commitTwoPlayerSession()
 
@@ -238,12 +174,6 @@ test('onDisconnect: 같은 uuid로 연속 2회 호출해도 유예 run은 하나
     assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
 })
 
-// ---------------------------------------------------------------------------
-// acknowledge_role_reveal (handleAcknowledgeRoleReveal) — ROLE_REVEAL → DAY 1 전이
-// (게임의 첫 진행 단계는 밤이 아니라 낮이다 — 마지막 유효 확인 하나가 초기 DAY로 전이시킨다)
-// ---------------------------------------------------------------------------
-
-/** game-core를 직접 구동해 N인 GameSession을 커밋하고, 각 uuid에 대응하는 fake socket도 채널에 join된 상태로 준비한다. */
 function commitSessionWithPlayers(uuids, { roomId = 'room-ack' } = {}) {
     const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)) })
     const prepared = gameSessionCore.prepareGameSession(room)
@@ -252,7 +182,6 @@ function commitSessionWithPlayers(uuids, { roomId = 'room-ack' } = {}) {
     const sockets = uuids.map((uuid) => {
         const s = createFakeSocket(uuid)
         s.rooms.add(prepared.session.channelId)
-        // commitTwoPlayerSession과 동일한 이유로 ABA 방지 결합을 직접 재현한다.
         s.data.activeGameId = prepared.session.id
         return s
     })
@@ -275,7 +204,6 @@ test('acknowledge_role_reveal: 나머지 1명도 확인하면 콜백은 ok:true�
     const { session, sockets, io } = commitSessionWithPlayers(['q1', 'q2'])
 
     handleAcknowledgeRoleReveal(io, sockets[0], 'q1', { gameId: session.id }, countingCallback().callback)
-    // 첫 확인만으로는 아직 전이하지 않는다 — 마지막 유효 확인 하나만이 초기 DAY를 연다.
     assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 0)
     assert.equal(session.phase, 'ROLE_REVEAL')
     assert.equal(session.dayIndex, 0)
@@ -291,7 +219,6 @@ test('acknowledge_role_reveal: 나머지 1명도 확인하면 콜백은 ok:true�
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)
 
-    // 전이 이후의 재확인은 INVALID_PHASE로 막히고 DAY를 다시 초기화하지도, 재방송하지도 않는다.
     const late = countingCallback()
     handleAcknowledgeRoleReveal(io, sockets[0], 'q1', { gameId: session.id }, late.callback)
     assert.deepEqual(late.getResponse(), { ok: false, code: 'INVALID_PHASE', message: '요청을 처리할 수 없습니다.' })
@@ -354,11 +281,6 @@ test('acknowledge_role_reveal: 한 명이 유예 중이어도 연결된 참가�
     assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 0)
 })
 
-// ---------------------------------------------------------------------------
-// cast_tribunal_vote (handleCastTribunalVote)
-// ---------------------------------------------------------------------------
-
-/** DAY→TRIBUNAL 전이가 끝난 3인 세션을 커밋하고, 각 uuid에 대응하는 fake socket도 채널에 join된 상태로 준비한다. */
 function commitTribunalReadySession({ roomId = 'room-tribunal', uuidA = 'w1', uuidB = 'w2', uuidC = 'w3', defendantUuid = 'w3' } = {}) {
     const room = makeRoom({ id: roomId, players: [makePlayer(uuidA), makePlayer(uuidB), makePlayer(uuidC)] })
     const prepared = gameSessionCore.prepareGameSession(room)
@@ -393,8 +315,6 @@ test('cast_tribunal_vote: 성공 ack는 정확히 {ok, gameId, dayIndex, vote, s
 
     handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, callback)
 
-    // F-16(AC-01): 성공 ack에 개인 사건 봉투가 하나 더 붙는다. 봉투에는 투표 내용
-    // (GUILTY/NOT_GUILTY)이 들어가지 않는다 — 소리로 표를 알려주지 않는다(AC-05).
     assert.deepEqual(getResponse(), {
         ok: true,
         gameId: session.id,
@@ -552,31 +472,20 @@ test('acknowledge_role_reveal: core가 NOT_A_PARTICIPANT를 반환하는 registr
     assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
 })
 
-// ---------------------------------------------------------------------------
-// 통합 테스트: 정리 후 새 게임 시작 가능
-// ---------------------------------------------------------------------------
-
 test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uuid를 포함한 새 Room에서 다시 게임을 시작할 수 있다', async () => {
     matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
-    // F-13(AC-05): economy.service.js도 userRepository와 같은 이유로 fake가 필요하다.
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
-        // F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 getGameStartLoadouts를
-        // 부른다 — 이 fake가 없으면 실제 handleStartGame 경로를 타는 이 파일의 통합 시험들이
-        // INTERNAL_ERROR로 죽는다.
         getGameStartLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, {
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
-        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 이 대역이
-        // 없으면 위 getGameStartLoadouts와 똑같은 이유로 실제 시작 경로가 INTERNAL_ERROR가 된다.
         getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
 
-    // --- Room A: host + joiner, 최소 인원/전원 준비/전원 channel 가입까지 setupReadyRoomForStart로 충족 ---
     const hostSocketA = createFakeSocket('uuid-cleanup-host')
     const ioA = createFakeIo([hostSocketA])
     const { joinerSocket: joinerSocketA, room: roomA } = await setupReadyRoomForStart(ioA, 'uuid-cleanup-host', 'uuid-cleanup-joiner', readyRoomHandlers)
@@ -585,9 +494,6 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     await handleStartGame(ioA, hostSocketA, 'uuid-cleanup-host', startPayload(roomA), cbA)
     assert.equal(getResponseA().ok, true) // Room A → GameSession 커밋 성공
 
-    // F-21(AC-03): 명시적 이탈은 더 이상 **세션 전체**를 지우지 않는다 — 이탈자 개인만 그 판에서
-    // 빠진다(추방과 정확히 같은 경계를 쓴다). 2인 세션에서는 그 사망이 곧 승패를 확정하므로
-    // 세션은 ENDED로 남고, 잔류자가 결과를 확인하고 나갈 때 비로소 registry에서 사라진다.
     handleLeaveGameSession(
         ioA,
         joinerSocketA,
@@ -597,11 +503,9 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     )
 
     const afterLeave = gameSessionCore.__getStateSnapshotForTests()
-    // 이탈한 계정의 소속만 풀린다 — 이것이 "다시 새 게임을 시작할 수 있다"의 실제 근거다.
     assert.equal(afterLeave.playerSession.some(([uuid]) => uuid === 'uuid-cleanup-joiner'), false)
     assert.equal(afterLeave.playerSession.some(([uuid]) => uuid === 'uuid-cleanup-host'), true)
 
-    // 잔류자가 결과 화면에서 나가면 그때 세션이 실제로 정리된다(ENDED 개인 detach 경로).
     handleLeaveGameSession(
         ioA,
         hostSocketA,
@@ -615,7 +519,6 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     assert.equal(snapshot.playerSession.length, 0)
     assert.equal(snapshot.roomGameSession.length, 0)
 
-    // --- Room B: 정리된 uuid('uuid-cleanup-joiner')를 포함해 최소 인원/준비/channel 가입을 처음부터 다시 충족 ---
     const hostSocketB = createFakeSocket('uuid-cleanup-host2')
     const ioB = createFakeIo([hostSocketB])
     const { room: roomB } = await setupReadyRoomForStart(ioB, 'uuid-cleanup-host2', 'uuid-cleanup-joiner', readyRoomHandlers)
@@ -627,27 +530,6 @@ test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uu
     assert.notEqual(getResponseB().code, 'PLAYER_ALREADY_IN_SESSION')
 })
 
-// ---------------------------------------------------------------------------
-// submit_night_action (handleSubmitNightAction) — NIGHT 행동 제출
-// ---------------------------------------------------------------------------
-
-/**
- * 테스트 전용 NIGHT 픽스처: 참가자 전원의 canonical 역할 확인으로 초기 DAY(dayIndex 1)까지
- * 전이시킨 뒤, NIGHT 규칙을 격리해 검증하기 위해 세션을 "그 밤"(기본값은 첫 밤 — NIGHT,
- * dayIndex 0) 상태로 직접 되돌린다. game-core/__tests__/gameSession.test.js의 동명 헬퍼와
- * 계약이 같다(공유 테스트 헬퍼 파일을 새로 추가할 수 없는 이번 슬라이스의 허용 파일 목록
- * 제약상 이 파일에도 동일하게 둔다 — assertNoForbiddenPrivateData 등과 같은 이유다).
- *
- * ROLE_REVEAL → 전원 확인 → 초기 DAY 전이 자체는 위 acknowledge_role_reveal 절이 별도로
- * 검증한다 — 이 헬퍼는 밤 행동 제출·밤 판정·JOKER 비밀 채팅·NIGHT 스냅샷처럼 NIGHT 위에서만
- * 성립하는 규칙들을 dayIndex 경계(0 = 마녀사냥꾼 비활성)까지 포함해 재현하기 위한 픽스처
- * 조립이며, production 진입 순서를 흉내내지 않는다.
- *
- * 되돌릴 때는 phase/dayIndex만이 아니라 밤 제출·판정 상태(nightActions/nightResolution)와 지난
- * 낮/재판 기록(dayVotes/dayVoteResolution/tribunal)까지 전부 신선한 값으로 함께 맞춘다 —
- * production이 매 NIGHT 진입에서 보장하는 상태와 같은 모양이어야, 이 픽스처 위의 테스트가 초기
- * DAY가 남긴 잔여 상태에 의존하거나 그것 때문에 조용히 어긋나지 않는다.
- */
 function ackAllAndRewindToFirstNight(session, { dayIndex = 0 } = {}) {
     for (const uuid of session.players.keys()) {
         gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
@@ -661,7 +543,6 @@ function ackAllAndRewindToFirstNight(session, { dayIndex = 0 } = {}) {
     session.tribunal = null
 }
 
-/** game-core를 직접 구동해 playerCount=10·jokerCount=1 세션을 커밋하고 첫 밤(NIGHT, dayIndex 0) 픽스처로 만든다. 5개 역할 전부가 정확히 1명씩(CITIZEN은 6명) 배정된다. */
 function commitFullRoleSessionAtNight({ id = 'room-full', gameIdFn } = {}) {
     const players = Array.from({ length: 10 }, (_, i) => makePlayer(`fp-${id}-${i}`))
     const room = makeRoom({ id, players, jokerCount: 1 })
@@ -681,7 +562,6 @@ function commitFullRoleSessionAtNight({ id = 'room-full', gameIdFn } = {}) {
     }
 }
 
-/** playerCount=3·jokerCount=2 세션을 커밋하고 첫 밤(NIGHT, dayIndex 0) 픽스처로 만든다 — JOKER 2명 + CITIZEN 1명. */
 function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
     const players = [makePlayer(`ja-${id}`), makePlayer(`jb-${id}`), makePlayer(`jc-${id}`)]
     const room = makeRoom({ id, players, jokerCount: 2 })
@@ -700,8 +580,6 @@ function throwingCallback(message) {
         throw new Error(message)
     }
 }
-
-// --- 기본 계약: malformed payload / callback 부재 / 브로드캐스트 없음 ---
 
 test('submit_night_action: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight()
@@ -770,11 +648,6 @@ test('submit_night_action: 성공/실패 어느 경로에서도 브로드캐스�
     assert.equal(io.broadcasts.length, 0)
 })
 
-// --- JOKER no-op 계약: 소켓 계층 외부 callback 테스트 ---
-// client가 실제로 받는 ack만 검증한다. nightActions 내부 상태 차이(엔트리 없음 vs 실제 target
-// 저장)는 game-core/__tests__/gameSession.test.js의 core 직접 호출 테스트가 전담한다 — 이
-// 테스트 파일에서는 그 상태를 assertion하지 않는다.
-
 test('submit_night_action(JOKER): 자기 자신·다른 JOKER·CITIZEN 세 대상 모두 외부 ack가 정확히 {ok:true}다(추가 키·gameId 없음)', () => {
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
     const [actor, teammate] = jokerUuids
@@ -804,15 +677,10 @@ test('submit_night_action(JOKER, 오라클 방지 회귀): 자기 자신·다른
     const citizenResult = countingCallback()
     handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: citizenUuid }, citizenResult.callback)
 
-    // client 쪽에서 이 세 응답만으로는 대상이 자기 자신인지, 다른 JOKER인지, 시민인지 전혀
-    // 구분할 수 없다는 것이 이 테스트의 핵심 — deepEqual로 세 payload가 구조적으로 완전히
-    // 동일함을 직접 증명한다.
     assert.deepEqual(self.getResponse(), teammateResult.getResponse())
     assert.deepEqual(teammateResult.getResponse(), citizenResult.getResponse())
     assert.deepEqual(self.getResponse(), { ok: true })
 })
-
-// --- 로그 비밀성: registry 불일치 경로 ---
 
 test('로그 비밀성(registry 불일치): console.error 인자가 정확히 {code, uuid, gameId:undefined}뿐이고 원본 Error가 아니다', (t) => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight()
@@ -830,8 +698,6 @@ test('로그 비밀성(registry 불일치): console.error 인자가 정확히 {c
     assert.equal(loggedObj.uuid, doctorUuid)
     assert.equal(loggedObj.gameId, undefined)
 })
-
-// --- 로그 비밀성: 일반 예외 경로 ---
 
 test('로그 비밀성(일반 예외): 의도적으로 민감한 문자열을 담은 Error를 던져도 로그·ack 어디에도 새지 않고 gameId는 undefined다', (t) => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight()
@@ -858,8 +724,6 @@ test('로그 비밀성(일반 예외): 의도적으로 민감한 문자열을 �
     assert.equal(JSON.stringify(getResponse()).includes('SECRET'), false)
 })
 
-// --- 로그 비밀성: callback 전달 실패 경로 ---
-
 test('로그 비밀성(callback 전달 실패, 성공 응답 전달 중): gameId는 core가 반환한 canonical session.id고, 이미 반영된 Map 쓰기는 롤백되지 않는다', (t) => {
     const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
     const errorSpy = t.mock.method(console, 'error', () => {})
@@ -882,7 +746,6 @@ test('로그 비밀성(callback 전달 실패, 성공 응답 전달 중): gameId
     assert.equal(serialized.includes('stack leak'), false)
     assert.equal(serialized.includes('role=DOCTOR'), false)
 
-    // callback이 throw하기 이전에 이미 일어난 Map 쓰기는 그대로 유지된다.
     assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
     assert.equal(io.broadcasts.length, 0)
 })
@@ -891,7 +754,6 @@ test('로그 비밀성(callback 전달 실패, 실패 응답 전달 중): gameId
     const { session, guardUuid } = commitFullRoleSessionAtNight()
     const errorSpy = t.mock.method(console, 'error', () => {})
 
-    // GUARD 자기 자신 대상 → INVALID_TARGET(실패).
     assert.doesNotThrow(() =>
         handleSubmitNightAction(createFakeSocket(guardUuid), guardUuid, { gameId: session.id, targetId: guardUuid }, throwingCallback('SECRET-FAIL role=GUARD')),
     )
@@ -901,8 +763,6 @@ test('로그 비밀성(callback 전달 실패, 실패 응답 전달 중): gameId
     assert.equal(loggedObj.gameId, undefined)
     assert.equal(JSON.stringify(errorSpy.mock.calls[0].arguments).includes('SECRET-FAIL'), false)
 })
-
-// --- 로그 비밀성: 일반 예외 + callback 전달 실패 중첩 경로 ---
 
 test('로그 비밀성(중첩): submitNightAction과 callback이 동시에 throw해도 정확히 2건의 고정 구조 로그만 남고 gameId는 둘 다 undefined다', (t) => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight()
@@ -929,8 +789,6 @@ test('로그 비밀성(중첩): submitNightAction과 callback이 동시에 throw
     }
 })
 
-// --- 로그 비밀성: 개행·초장문 gameId + callback throw ---
-
 test('로그 비밀성(개행·초장문 gameId): malformed payload의 gameId에 개행·10만자 문자열이 있어도 로그·ack 어디에도 새지 않는다', (t) => {
     const { doctorUuid } = commitFullRoleSessionAtNight()
     const errorSpy = t.mock.method(console, 'error', () => {})
@@ -940,8 +798,6 @@ test('로그 비밀성(개행·초장문 gameId): malformed payload의 gameId에
         handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: longInjection, targetId: null }, throwingCallback('late leak')),
     )
 
-    // gameId가 문자열이긴 하지만(payload 자체는 형태상 유효) 실제 세션과 일치하지 않으므로
-    // core에서 STALE_SESSION_MISMATCH로 실패한다 — 실패 경로이므로 gameId는 undefined다.
     assert.equal(errorSpy.mock.calls.length, 1)
     const [, loggedObj] = errorSpy.mock.calls[0].arguments
     assert.equal(loggedObj.gameId, undefined)
@@ -951,9 +807,6 @@ test('로그 비밀성(개행·초장문 gameId): malformed payload의 gameId에
     assert.equal(serialized.includes('role=JOKER'), false)
     assert.equal(serialized.includes('xxxxx'), false)
 })
-
-// --- 9라운드 회귀: 검증을 통과한 client 원본 gameId(공백·개행 포함)라도 외부 ack에는 절대
-// 노출되지 않고, callback 실패 로그에는 core가 반환한 canonical session.id만 남는다 ---
 
 test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 세션과 일치하면 정상 저장 성공이고, 외부 ack는 정확히 {ok:true}뿐이다(gameId 키 없음)', () => {
     const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc', gameIdFn: () => 'abc' })
@@ -994,19 +847,12 @@ test('9라운드 회귀: JOKER no-op 성공에서도 callback이 throw하면 CAL
     assert.equal(loggedObj.gameId, 'abc')
 })
 
-// ---------------------------------------------------------------------------
-// submit_joker_chat_message (handleSubmitJokerChatMessage) — NIGHT 단계 JOKER 전용 채팅
-// ---------------------------------------------------------------------------
-
-/** game-core를 직접 구동해 첫 밤(NIGHT, dayIndex 0) JOKER 전용 채팅 테스트용 세션 + fake socket/io를 준비한다. jokerCount만큼 JOKER, 나머지는 CITIZEN으로 배정된다. */
 function commitJokerChatSessionWithSockets(uuids, { roomId = 'room-jc', jokerCount = 2, gameIdFn } = {}) {
     const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
     const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
     gameSessionCore.commitGameSession(candidate.session)
     const session = candidate.session
-    // JOKER 비밀 채팅은 NIGHT 전용 경로다 — 전원 확인이 도달시키는 초기 DAY가 아니라 첫 밤
-    // 픽스처에서 구동한다.
     ackAllAndRewindToFirstNight(session)
     const sockets = uuids.map((uuid) => {
         const s = createFakeSocket(uuid)
@@ -1388,7 +1234,6 @@ test('submit_joker_chat_message: 다른 GameSession의 JOKER 소켓에는 전달
     gameSessionCore.commitGameSession(candidateB.session)
     const sessionA = candidateA.session
     const sessionB = candidateB.session
-    // 두 세션 모두 JOKER 비밀 채팅이 성립하는 첫 밤 상태로 맞춘다(commitJokerChatSessionWithSockets와 동일한 픽스처 계약).
     ackAllAndRewindToFirstNight(sessionA)
     ackAllAndRewindToFirstNight(sessionB)
 
@@ -1535,22 +1380,9 @@ test('submit_joker_chat_message: deps.idFn이 앞뒤 공백이 있는 유효 문
     assert.equal(delivered.payload.messageId, 'msg-1')
 })
 
-// ---------------------------------------------------------------------------
-// submit_game_chat_message (handleSubmitGameChatMessage) — 공개 DAY 채팅 / 사망자 전용 채팅
-// 소켓 계층의 실제 함수를 그대로 구동한다(handleSubmitGameChatMessage ·
-// resolveChatRecipientSockets · registerGameHandlers 배선). game-core도 mock하지 않고 canonical
-// registry를 그대로 쓰므로, 라우팅·전달 건수·payload는 전부 실제 계약이 만들어낸 값이다.
-// ---------------------------------------------------------------------------
-
 const DAY_CHAT_EVENT = 'day_chat_message_received'
 const DEAD_CHAT_EVENT = 'dead_chat_message_received'
 
-/**
- * 공개/사망자 채팅 테스트용 세션 + fake socket/io를 준비한다. jokerCount 1 + randomFn:()=>0
- * 고정 셔플이라 JOKER 배정이 결정적이다. deadUuids로 넘긴 참가자는 canonical roster에서 사망
- * 처리하고 phase는 인자로 맞춘다 — game-core의 채널 라우팅은 이 둘(생존 여부·phase)만 보므로,
- * 밤 판정을 전부 재현하지 않고도 실제 라우팅 규칙을 그대로 구동할 수 있다.
- */
 function commitGameChatSessionWithSockets(uuids, { roomId = 'room-gc', phase = 'DAY', deadUuids = [], jokerCount = 1 } = {}) {
     const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
@@ -1571,7 +1403,6 @@ function commitGameChatSessionWithSockets(uuids, { roomId = 'room-gc', phase = '
     return { session, io, sockets, socketByUuid, jokerUuid }
 }
 
-/** 그 소켓이 그 이벤트를 받은 횟수(수신자별 정확한 전달 건수 검증용). */
 function deliveredCount(socket, event) {
     return socket.emitted.filter((e) => e.event === event).length
 }
@@ -1596,15 +1427,12 @@ test('submit_game_chat_message: 생존 발신자의 DAY는 사망자를 포함�
         assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1, `${uuid}는 정확히 1건 받아야 한다`)
         assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
     }
-    // 사망자는 관전자로서 같은 공개 메시지를 받는다(발행만 막힌다).
     assert.equal(deliveredCount(socketByUuid.get('gcs1d'), DAY_CHAT_EVENT), 1, '사망자도 공개 DAY 메시지를 받는다')
     assert.equal(deliveredCount(socketByUuid.get('gcs1d'), DEAD_CHAT_EVENT), 0)
-    // 개별 소켓 emit만 쓴다 — io 전역/room 브로드캐스트로 새어나가지 않는다.
     assert.equal(io.broadcasts.length, 0)
     for (const s of socketByUuid.values()) {
         assert.equal(s.emitted.every((e) => e.broadcastTo === undefined), true)
     }
-    // 유도된 채널의 rate limit만 소비된다.
     assert.deepEqual([...session.dayChatRateLimit.keys()], [actor])
     assert.equal(session.deadChatRateLimit.size, 0)
 })
@@ -1630,7 +1458,6 @@ test('submit_game_chat_message: 공개 payload는 정확히 7개 키뿐이고 �
         'sentAt',
         'text',
     ])
-    // 모든 값이 canonical 서버 상태에서 왔다(클라이언트 payload에서 온 값이 아니다).
     assert.equal(payload.gameId, session.id)
     assert.equal(payload.senderUuid, actor)
     assert.equal(payload.nickname, session.players.get(actor).nickname)
@@ -1676,8 +1503,6 @@ test('submit_game_chat_message: payload에 채널·발신자·닉네임을 위�
     )
 
     assert.deepEqual(getResponse(), { ok: true })
-    // 위조한 channel:'DEAD'와 수신자 지정은 전부 무시된다 — 생존자는 언제나 DAY로만 라우팅되고,
-    // 수신자는 canonical roster에서만 유도된다(지정된 한 명이 아니라 참가자 전원).
     assert.equal(deliveredCount(socketByUuid.get('gcs3d'), DEAD_CHAT_EVENT), 0)
     for (const uuid of ['gcs3a', 'gcs3b', 'gcs3c', 'gcs3d']) {
         assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1)
@@ -1698,7 +1523,6 @@ test('submit_game_chat_message: payload에 채널·발신자·닉네임을 위�
     assert.equal(payload.text, '위조 시도')
     assert.notEqual(payload.messageId, 'forged-message-id')
     assert.notEqual(payload.sentAt, 1)
-    // 위조된 값들은 canonical 상태에도 남지 않는다.
     assert.deepEqual([...session.dayChatRateLimit.keys()], [actor])
     assert.equal(session.deadChatRateLimit.size, 0)
 })
@@ -1711,8 +1535,6 @@ test('submit_game_chat_message: prepare~commit 사이에 prepared 번들이 변�
     const actor = 'gcsIa'
     const errorSpy = t.mock.method(console, 'error', () => {})
 
-    // production prepare를 그대로 구동한 뒤, 핸들러가 받는 번들만 손댄다(중간자 변조 재현).
-    // commit이 쓰는 값은 모듈 사설 능력 기록이므로 이 변조는 전달되지 않고 요청 전체가 거부된다.
     const tamperingPrepare = (uuid, gameId, text, options) => {
         const prepared = gameSessionCore.prepareGameChatMessage(uuid, gameId, text, options)
         if (!prepared.ok) return prepared
@@ -1737,7 +1559,6 @@ test('submit_game_chat_message: prepare~commit 사이에 prepared 번들이 변�
         [{ code: 'STALE_CHAT_REQUEST', uuid: actor, gameId: session.id }],
     )
 
-    // 변조하지 않은 같은 요청은 정상적으로 전달된다(양성 대조).
     const clean = countingCallback()
     handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '원문' }, clean.callback)
     assert.deepEqual(clean.getResponse(), { ok: true })
@@ -1764,26 +1585,11 @@ test('submit_game_chat_message: 사망 발신자는 NOT_ELIGIBLE로 거부되고
     assert.equal(io.broadcasts.length, 0)
 })
 
-/**
- * F-23(AC-04) 계약 변경: **canonical 소켓 하나에만** 전달한다.
- *
- * 이전 계약은 "같은 uuid의 소켓이 여럿이면 각각 1건씩"이었다. 그 계약은 같은 계정의 **교체된
- * 옛 소켓**이 채널에 남아 있는 동안 그 판의 공개 상태를 계속 받는 통로였다 — 재접속으로
- * registry가 새 소켓을 가리킨 뒤에도, 옛 소켓의 채널 가입이 (비동기 leave가 끝나기 전까지)
- * 그대로 남아 있기 때문이다.
- *
- * 이 저장소의 모든 명령 핸들러는 이미 isCurrentSocketForUuid로 비-canonical 소켓을 거부한다
- * (그 소켓으로는 투표도 채팅 전송도 나가기도 할 수 없다). 수신만 열어 두면 "아무 것도 할 수
- * 없지만 모든 것을 보는" 연결이 남는데, 그것이 AC-04가 막으려는 구독 그 자체다. 이제 전달도
- * 같은 기준을 쓴다.
- */
 test('submit_game_chat_message: 같은 uuid라도 canonical이 아닌 소켓은 받지 않고, canonical 소켓은 정확히 1건씩 받는다', () => {
     const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs5a', 'gcs5b', 'gcs5c'], {
         roomId: 'room-gcs-5',
         phase: 'DAY',
     })
-    // 같은 참가자의 두 번째 소켓(다른 socket id)도 같은 channel에 들어와 있다 — 그러나 registry가
-    // 가리키는 canonical 소켓은 여전히 `sock-gcs5b`다.
     const secondSocket = createFakeSocket('gcs5b', { id: 'sock-gcs5b-2' })
     secondSocket.rooms.add(session.channelId)
     io.sockets.sockets.set(secondSocket.id, secondSocket)
@@ -1798,7 +1604,6 @@ test('submit_game_chat_message: 같은 uuid라도 canonical이 아닌 소켓은 
     }
     assert.equal(deliveredCount(secondSocket, DAY_CHAT_EVENT), 0,
         'canonical이 아닌 같은 계정의 소켓이 공개 채팅을 받았다')
-    // 전체 전달 건수가 canonical 수신 소켓 수와 정확히 같다 — 어느 소켓도 두 번 받지 않는다.
     const total = [...io.sockets.sockets.values()].reduce((sum, s) => sum + deliveredCount(s, DAY_CHAT_EVENT), 0)
     assert.equal(total, 3)
 })
@@ -1850,9 +1655,7 @@ test('resolveChatRecipientSockets: 채널별 canonical 수신자만 돌려주고
     const dayIds = resolveChatRecipientSockets(mergedIo, session, gameSessionCore.CHAT_CHANNELS.DAY).map((s) => s.id)
     const deadIds = resolveChatRecipientSockets(mergedIo, session, gameSessionCore.CHAT_CHANNELS.DEAD).map((s) => s.id)
 
-    // DAY는 관전 중인 사망자까지 포함하되, 연결 끊김(gcs8b)·channel 밖(gcs8d)은 그대로 제외된다.
     assert.deepEqual(dayIds, ['sock-gcs8a', 'sock-gcs8c'])
-    // 퇴역한 DEAD 채널과 알 수 없는 채널은 빈 배열이다(fail-closed) — 발신자 포함 검사가 반드시 실패한다.
     assert.deepEqual(deadIds, [])
     for (const channel of [null, undefined, '', 'day', 'UNKNOWN', 42]) {
         assert.deepEqual(resolveChatRecipientSockets(mergedIo, session, channel), [])
@@ -1871,7 +1674,6 @@ test('submit_game_chat_message: 사망이 확정되면 같은 발신자의 다�
     assert.equal(deliveredCount(socketByUuid.get('gcs9b'), DAY_CHAT_EVENT), 1)
     assert.equal(deliveredCount(socketByUuid.get('gcs9d'), DAY_CHAT_EVENT), 1, '사망자도 관전자로서 받는다')
 
-    // 밤 판정으로 발신자가 사망하고 phase가 넘어간다.
     session.players.get(actor).alive = false
     session.phase = 'NIGHT'
 
@@ -1945,9 +1747,6 @@ test('submit_game_chat_message: 수신자 해석·messageId 생성 실패는 전
     const actor = 'gcsCa'
     const errorSpy = t.mock.method(console, 'error', () => {})
 
-    // messageId는 game-core의 prepare가 만드는 canonical 값이라(commit이 대조하는 능력에 함께
-    // 묶인다) 그 실패는 prepare 단계의 실패다 — 아직 canonical session.id를 모르는 시점이므로
-    // 다른 prepare 실패와 동일하게 gameId: undefined로 기록된다.
     const cases = [
         [{ resolveRecipientSockets: () => { throw new Error('resolve 실패(테스트 주입)') } }, 'RECIPIENT_RESOLVE_ERROR', session.id],
         [{ resolveRecipientSockets: () => [] }, 'SENDER_NOT_IN_RECIPIENTS', session.id],
@@ -1983,7 +1782,6 @@ test('submit_game_chat_message: 브로드캐스트되는 messageId는 game-core�
     })
 
     assert.deepEqual(getResponse(), { ok: true })
-    // 모든 수신자가 정확히 같은 canonical messageId 하나를 받는다.
     for (const uuid of ['gcsHa', 'gcsHb', 'gcsHc']) {
         const [payload] = deliveredPayloads(socketByUuid.get(uuid), DAY_CHAT_EVENT)
         assert.equal(payload.messageId, 'msg-canonical')
@@ -1998,14 +1796,12 @@ test('submit_game_chat_message: commit 실패는 전달 없이 끝나고, 요청
     const actor = 'gcsDa'
     const errorSpy = t.mock.method(console, 'error', () => {})
 
-    // (1) 그 사이 게임이 끝났다 — UI가 반응해야 하는 상황이라 code를 그대로 전달한다.
     const ended = countingCallback()
     handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: 'x' }, ended.callback, {
         commit: () => ({ ok: false, code: 'GAME_ALREADY_ENDED' }),
     })
     assert.deepEqual(ended.getResponse(), { ok: false, code: 'GAME_ALREADY_ENDED', message: '요청을 처리할 수 없습니다.' })
 
-    // (2) 준비된 그 요청이 아니다(경쟁·변조) — 내부 코드는 감추고 INTERNAL_ERROR로 정규화한다.
     const stale = countingCallback()
     handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: 'y' }, stale.callback, {
         commit: () => ({ ok: false, code: 'STALE_CHAT_REQUEST' }),
@@ -2016,7 +1812,6 @@ test('submit_game_chat_message: commit 실패는 전달 없이 끝나고, 요청
         [{ code: 'STALE_CHAT_REQUEST', uuid: actor, gameId: session.id }],
     )
 
-    // 어느 쪽도 전달되지 않았고 rate limit도 소비되지 않았다.
     for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0)
     assert.equal(session.dayChatRateLimit.size, 0)
     assert.equal(session.deadChatRateLimit.size, 0)
@@ -2068,7 +1863,6 @@ test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지�
     })
     const jokerSocket = socketByUuid.get(jokerUuid)
 
-    // 살아있는 동안에는 JOKER 채널의 수신자다(양성 대조).
     assert.deepEqual(
         resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.JOKER).map((s) => s.id),
         [jokerSocket.id],
@@ -2076,7 +1870,6 @@ test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지�
 
     session.players.get(jokerUuid).alive = false
 
-    // 사망해도 JOKER 채널의 수신자로 남고 제출도 그대로 통과한다.
     assert.deepEqual(
         resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.JOKER).map((s) => s.id),
         [jokerSocket.id],
@@ -2090,7 +1883,6 @@ test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지�
     }
     assert.deepEqual([...session.jokerChatRateLimit.keys()], [jokerUuid])
 
-    // 반면 공개 채팅은 사망으로 막힌다 — 사망한 광대에게 열린 발신 경로는 팀 채널 하나뿐이다.
     const publicChat = countingCallback()
     handleSubmitGameChatMessage(io, jokerSocket, jokerUuid, { gameId: session.id, text: '사망자 대화' }, publicChat.callback)
 
@@ -2102,32 +1894,16 @@ test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지�
     assert.equal(session.deadChatRateLimit.size, 0)
 })
 
-// ---------------------------------------------------------------------------
-// leave_game_session (handleLeaveGameSession) — 명시적 이탈
-// ---------------------------------------------------------------------------
-
-/**
- * matchmaking.js의 실제 handleCreateRoom/handleJoinRoomByCode/handleSetReady/handleStartGame을
- * 실제로 구동해 2인 GameSession을 시작한다(game-core를 직접 커밋하는 다른 헬퍼들과 달리, 이
- * 절은 activeGameId/activeRoomId 결합과 matchmaking Room 정리까지 실제 production 코드
- * 경로로 검증해야 하므로 matchmaking을 우회하지 않는다).
- */
 async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
     matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
-    // F-13(AC-05): economy.service.js도 userRepository와 같은 이유로 fake가 필요하다.
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
-        // F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 getGameStartLoadouts를
-        // 부른다 — 이 fake가 없으면 실제 handleStartGame 경로를 타는 이 파일의 통합 시험들이
-        // INTERNAL_ERROR로 죽는다.
         getGameStartLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, {
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
-        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 이 대역이
-        // 없으면 위 getGameStartLoadouts와 똑같은 이유로 실제 시작 경로가 INTERNAL_ERROR가 된다.
         getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
@@ -2173,64 +1949,42 @@ test('leave_game_session: 명시적 이탈은 ack {ok:true}이고 이탈자만 �
     handleLeaveGameSession(io, createFakeSocket('leave-ok-host'), 'leave-ok-host', { gameId }, callback)
 
     assert.deepEqual(getResponse(), { ok: true })
-    // 개인 이탈은 판을 지우는 사건이 아니다 — 남은 참가자의 세션은 그대로 살아 있다.
     assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
-    // 이탈자의 사망은 추방과 같은 규칙으로 정확히 한 번 공개된다.
     const eliminated = io.broadcasts.filter((b) => b.event === 'player_eliminated')
     assert.equal(eliminated.length, 1)
     assert.equal(eliminated[0].payload.victimUuid, 'leave-ok-host')
-    // 참여 상태 변화도 생존과 별개의 사건으로 한 번 전달된다.
     const participation = io.broadcasts.filter((b) => b.event === 'session_participation_changed')
     assert.equal(participation.length, 1)
     assert.equal(participation[0].payload.departedUuid, 'leave-ok-host')
-    // 잔류자는 채널에 남는다(결과 화면까지 방송을 계속 받아야 한다).
     assert.equal(joinerSocket.rooms.has(channelId), true)
 
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
-    // roster는 유지된다 — 전적 레코드와 snapshot의 명단이 판마다 달라지면 안 된다.
     const stored = snapshot.gameSessions.find(([id]) => id === gameId)
     assert.notEqual(stored, undefined)
     assert.equal(stored[1].players.length, 2)
-    // 소속이 풀리는 것은 이탈자뿐이다.
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-host'), false)
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-joiner'), true)
 })
 
-// ---------------------------------------------------------------------------
-// F-23(AC-04/AC-06) — 이탈 커밋 직후의 전달 경계와 실패 ACK
-// ---------------------------------------------------------------------------
-
 test('F-23(AC-04): 이탈 커밋 직후 첫 공개 사건부터 이탈자의 실제 수신은 0이고, 잔류자는 정상 수신한다', async () => {
     const { io, joinerSocket, gameId, channelId } =
         await startRealTwoPlayerSession('leave-deliver-host', 'leave-deliver-joiner')
-    // 실제 registry가 가리키는 canonical 소켓을 그대로 쓴다(관례상 `sock-${uuid}`).
     const leaverSocket = io.sockets.sockets.get('sock-leave-deliver-host')
     assert.ok(leaverSocket, '이탈자 소켓이 io에 등록돼 있어야 한다')
 
-    /**
-     * **채널에서 떼는 일을 붙잡아 둔다.**
-     *
-     * 실제 adapter의 leave는 비동기다. 그 완료 전에 커밋 직후의 공개 사건이 먼저 나가는
-     * 구간이 존재하고, 그 구간이 바로 "이미 빠진 참가자가 그 판의 공개 상태를 계속 받는"
-     * 자리다. 여기서는 leave를 영영 끝내지 않아 그 최악의 구간을 고정한다.
-     */
     leaverSocket.leave = () => new Promise(() => {})
 
-    // 커밋 뒤에도 그 판을 가리킬 수 있도록 **살아 있는 세션 객체**를 미리 잡아 둔다
-    // (상태 스냅샷은 players가 배열이라 프로덕션 경계의 입력이 될 수 없다).
     const session = gameSessionCore.getActiveSessionForDeparture('leave-deliver-host', gameId)
     assert.ok(session, '전제: 이탈 전에는 활성 세션이 있어야 한다')
 
     const receivedBefore = leaverSocket.received.length
     handleLeaveGameSession(io, leaverSocket, 'leave-deliver-host', { gameId }, countingCallback().callback)
 
-    // 커밋 직후의 공개 사건(사망·참여 변화)은 이미 나갔다 — 그 어느 것도 이탈자에게 닿지 않아야 한다.
     assert.equal(leaverSocket.rooms.has(channelId), true, '전제: leave가 아직 끝나지 않아 채널에 남아 있다')
     assert.equal(
         leaverSocket.received.length, receivedBefore,
         '이탈 커밋 직후의 공개 사건이 이탈자에게 전달됐다',
     )
-    // 잔류자는 같은 사건을 실제로 받는다(양성 대조 — fixture가 아무에게도 안 보내는 것이 아니다).
     assert.ok(
         joinerSocket.received.some((entry) => entry.event === 'player_eliminated'),
         '잔류자가 공개 사망 사건을 받지 못했다',
@@ -2240,7 +1994,6 @@ test('F-23(AC-04): 이탈 커밋 직후 첫 공개 사건부터 이탈자의 실
         '잔류자가 참여 변화 사건을 받지 못했다',
     )
 
-    // 이후의 어떤 공개 방송도 마찬가지다 — 프로덕션 방송 경계를 그대로 쓴다.
     gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId })
     assert.equal(
         leaverSocket.received.filter((e) => e.event === 'probe_after_departure').length, 0,
@@ -2256,7 +2009,6 @@ test('F-23(AC-06): 이탈 커밋이 실제로 실패하면 성공 ACK로 바꾸�
     const { io, gameId } = await startRealTwoPlayerSession('leave-fail-host', 'leave-fail-joiner')
     const socket = io.sockets.sockets.get('sock-leave-fail-host')
 
-    // core 커밋이 던지는 상황을 재현한다 — applyParticipantDeparture는 INTERNAL_ERROR를 돌려준다.
     const originalCommit = gameSessionCore.commitParticipantDeparture
     gameSessionCore.commitParticipantDeparture = () => { throw new Error('커밋 실패(테스트 주입)') }
     try {
@@ -2269,12 +2021,10 @@ test('F-23(AC-06): 이탈 커밋이 실제로 실패하면 성공 ACK로 바꾸�
         gameSessionCore.commitParticipantDeparture = originalCommit
     }
 
-    // 서버 상태는 그대로다 — 아직 참여 중이다.
     const stored = gameSessionCore.__getStateSnapshotForTests().gameSessions.find(([id]) => id === gameId)[1]
     const me = stored.players.find(([uuid]) => uuid === 'leave-fail-host')[1]
     assert.notEqual(me.isParticipating, false, '실패했는데 참여가 종료됐다')
 
-    // 정상 재시도는 멱등 성공으로 이어진다.
     const { callback: retryCallback, getResponse: getRetry } = countingCallback()
     handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, retryCallback)
     assert.deepEqual(getRetry(), { ok: true }, '재시도가 성공하지 않았다')
@@ -2318,8 +2068,6 @@ test('leave_game_session: 명시적 이탈 성공 뒤 같은 Socket의 disconnec
 test('leave_game_session: disconnect가 먼저 처리된 뒤 도착한 명시적 이탈 요청도 사망은 한 번뿐이고 이탈 ack는 여전히 {ok:true}다(F-21 AC-05)', async () => {
     const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-b-host', 'leave-overlap-b-joiner')
 
-    // disconnect는 세션을 끝내지 않고 재접속 유예만 건다 — 그 뒤 도착한 명시적 이탈이
-    // 실제 개인 전이를 수행하고, 남아 있던 유예는 함께 정리돼 두 번째 사망을 만들지 않는다.
     await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-b-host')
     const { callback, getResponse } = countingCallback()
     handleLeaveGameSession(io, createFakeSocket('leave-overlap-b-host'), 'leave-overlap-b-host', { gameId }, callback)
@@ -2338,8 +2086,6 @@ test('leave_game_session(ABA, 동일 Socket): 세션 A 종료 뒤 같은 Socket�
     handleLeaveGameSession(io, createFakeSocket('aba-same-host'), 'aba-same-host', { gameId: gameIdA }, countingCallback().callback)
     assert.equal(hostSocket.data.activeGameId, gameIdA) // 이탈 성공 후에도 결합은 지워지지 않고 A를 가리킨다
 
-    // setupReadyRoomForStart는 io.sockets.sockets에 이미 등록된 `sock-${hostUuid}` 소켓을
-    // 재사용하므로, 아래 두 번째 세션도 동일한 hostSocket 인스턴스로 시작된다.
     const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
     const { room: roomB } = await setupReadyRoomForStart(io, 'aba-same-host', 'aba-same-joinerB', readyRoomHandlers)
     const { callback, getResponse } = countingCallback()
@@ -2365,9 +2111,6 @@ test('leave_game_session(ABA, 다른 Socket): 세션 A 종료 후 같은 uuid가
     handleLeaveGameSession(io, createFakeSocket(targetUuid), targetUuid, { gameId: gameIdA }, countingCallback().callback)
     assert.equal(staleSocket.data.activeGameId, gameIdA)
 
-    // 같은 uuid가 다른(새) Socket으로 새 Room에 참가해 세션 B를 시작한다. setupReadyRoomForStart는
-    // joiner 소켓을 매번 새로 만들고 같은 키로 io.sockets.sockets에 등록하므로, 이전 staleSocket은
-    // 더 이상 io에 등록돼 있지 않은 "낡은" 소켓이 된다(실제로는 재연결로 교체되는 상황과 동등).
     const hostSocketB = createFakeSocket('aba-cross-host-b')
     io.sockets.sockets.set(hostSocketB.id, hostSocketB)
     const { joinerSocket: freshSocket, room: roomB } = await setupReadyRoomForStart(io, 'aba-cross-host-b', targetUuid, readyRoomHandlers)
@@ -2377,7 +2120,6 @@ test('leave_game_session(ABA, 다른 Socket): 세션 A 종료 후 같은 uuid가
     const gameIdB = getResponse().gameId
     assert.notEqual(gameIdB, gameIdA)
 
-    // 낡은 Socket(staleSocket)의 지연 disconnect가 뒤늦게 도착한다.
     await gameSessionSocketLayer.onDisconnect(io, staleSocket, targetUuid)
 
     const endedB = io.broadcasts.filter((b) => b.event === 'game_ended' && b.payload.gameId === gameIdB)
@@ -2411,7 +2153,6 @@ test('leave_game_session: callback이 throw해도 개인 이탈 커밋·공개 �
         }),
     )
 
-    // ACK throw는 이미 기록된 성공을 실패로 바꾸지 않는다 — 커밋도 방송도 그대로 끝난다.
     assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-cbthrow-host'), false)
@@ -2429,10 +2170,6 @@ test('leave_game_session: registerGameHandlers로 실제 배선하면 socket.tri
     assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
     assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
 })
-
-// ---------------------------------------------------------------------------
-// leave_game_session — matchmaking Room 정리(cleanupRoomStateForSessionParticipants)
-// ---------------------------------------------------------------------------
 
 function seedLegacyRoomDuringSession(io, socket, uuid, roomId, { otherPlayers = [] } = {}) {
     const players = new Map([
@@ -2496,9 +2233,6 @@ test('세션 종료 시 한 참가자의 Socket leave 실패가 다른 참가자
         throw new Error('leave 실패(테스트 주입)')
     }
 
-    // F-21(AC-03): 세션 전체 정리는 이제 **마지막 참가자의 detach**에서 일어난다. 첫 이탈은
-    // 개인 전이(2인 세션이라 승패까지 확정)이고, 잔류자가 결과 화면에서 나갈 때 종료 정리가
-    // 실행된다 — 이 시험이 지키려는 것은 그 정리 도중의 leave 실패 격리다.
     assert.doesNotThrow(() => handleLeaveGameSession(io, createFakeSocket('cleanup-iso-host'), 'cleanup-iso-host', { gameId }, countingCallback().callback))
     assert.doesNotThrow(() => handleLeaveGameSession(io, joinerSocket, 'cleanup-iso-joiner', { gameId }, countingCallback().callback))
 
@@ -2515,7 +2249,6 @@ test('세션 종료 정리는 세션 진행 중 만든 Room/queue만 제거하�
     const { io, hostSocket, gameId } = await startRealTwoPlayerSession('cleanup-scope-host', 'cleanup-scope-joiner')
     matchmaking.__seedMatchmakingQueueForTests('cleanup-scope-host', { uuid: 'cleanup-scope-host', nickname: 'x', socketId: hostSocket.id })
 
-    // 완전히 무관한 다른 세션이 이미 진행 중이다 — 이번 종료 정리가 여기 영향을 주면 안 된다.
     const { gameId: otherGameId } = await startRealTwoPlayerSession('cleanup-scope-other-host', 'cleanup-scope-other-joiner')
 
     handleLeaveGameSession(io, createFakeSocket('cleanup-scope-host'), 'cleanup-scope-host', { gameId }, countingCallback().callback)
@@ -2526,7 +2259,6 @@ test('세션 종료 정리는 세션 진행 중 만든 Room/queue만 제거하�
     const otherSnapshot = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(otherSnapshot.gameSessions.some(([id]) => id === otherGameId), true)
 
-    // 종료 이후에 새로 만든 Room은 이번 정리 대상이 아니다(애초에 존재하지 않았으므로).
     const afterRoom = await callAsPromise(handleCreateRoom, io, hostSocket, 'cleanup-scope-host', validSettingsPayload())
     assert.equal(afterRoom.ok, true)
     const afterSnapshot = matchmaking.__getStateSnapshotForTests()
@@ -2545,29 +2277,19 @@ test('세션 종료 직후 참가자별로 새 방 생성과 새 방 코드 참�
     assert.ok(joinerSocket.emitted.some((e) => e.event === 'room_joined'))
 })
 
-// ---------------------------------------------------------------------------
-// resolve_night (handleResolveNight) — NIGHT 결과 적용 + DAY 전이
-// ---------------------------------------------------------------------------
-
 for (const lateExit of ['leave', 'disconnect']) {
     test(`BUG-090: ENDED ${lateExit} cleanup preserves an early leaver's next room`, async () => {
         const { session, sockets, io } = commitSessionWithPlayers(['late-a', 'late-b'])
         session.phase = 'ENDED'
         matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
-    // F-13(AC-05): economy.service.js도 userRepository와 같은 이유로 fake가 필요하다.
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
-        // F-14(AC-01/AC-04): captureRoomStartProfiles(게임 시작 직전 스냅샷)는 getGameStartLoadouts를
-        // 부른다 — 이 fake가 없으면 실제 handleStartGame 경로를 타는 이 파일의 통합 시험들이
-        // INTERNAL_ERROR로 죽는다.
         getGameStartLoadouts: async (userIds) =>
             Object.fromEntries(userIds.map((id) => [id, {
                 profilePhotoId: null, profileBorderId: null, cardFrameId: null,
                 skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
             }])),
-        // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다 — 이 대역이
-        // 없으면 위 getGameStartLoadouts와 똑같은 이유로 실제 시작 경로가 INTERNAL_ERROR가 된다.
         getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
     })
         handleLeaveGameSession(io, sockets[0], 'late-a', { gameId: session.id }, countingCallback().callback)
@@ -2601,7 +2323,6 @@ test('BUG-090: late ENDED cleanup does not invalidate an early leaver pending ro
     assert.ok(matchmaking.__getStateSnapshotForTests().gameRooms.some(([id]) => id === next.room.roomId))
 })
 
-/** 3인(JOKER 1 + CITIZEN 2) 세션을 커밋해 첫 밤(NIGHT, dayIndex 0) 픽스처로 만들고 fake socket/io를 채널에 join된 상태로 준비한다. */
 function commitTrioSessionWithSocketsAtNight({ id = 'room-rn' } = {}) {
     const uuids = [`${id}-a`, `${id}-b`, `${id}-c`]
     const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
@@ -2621,10 +2342,6 @@ function commitTrioSessionWithSocketsAtNight({ id = 'room-rn' } = {}) {
     return { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid }
 }
 
-/**
- * 비-JOKER 한 명이 제거되어도 생존 JOKER 1명 < 생존 비-JOKER 2명이므로
- * 승리 조건이 성립하지 않는 4인 세션을 첫 밤(NIGHT, dayIndex 0) 픽스처로 만든다.
- */
 function commitFourPlayerSessionWithSocketsAtNight({ id = 'room-rn-four' } = {}) {
     const uuids = [`${id}-a`, `${id}-b`, `${id}-c`, `${id}-d`]
     const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
@@ -2660,15 +2377,6 @@ function commitFourPlayerSessionWithSocketsAtNight({ id = 'room-rn-four' } = {})
     }
 }
 
-/**
- * 8인·jokerCount 1 세션(JOKER 1 / DOCTOR 1 / GUARD 1 / CITIZEN 5)을 첫 밤(NIGHT, dayIndex 0)
- * 픽스처로 만들고 fake socket/io를 채널에 join된 상태로 준비한다. 위 4인 픽스처는
- * getSpecialRoleBudget(4)가 {0,0,0}이라 DOCTOR/GUARD가 아예 배정되지 않아, "사망한 행동
- * 보유자"를 다루는 테스트에 쓸 수 없다(8인부터 DOCTOR·GUARD가 각 1명씩 생긴다).
- *
- * 역할별 uuid를 배정 결과에서 직접 찾아 돌려준다 — 셔플이 바뀌어도 테스트가 조용히
- * 무의미해지지 않도록 uuid 위치가 아니라 역할로 지목하기 위함이다.
- */
 function commitEightPlayerSessionWithSocketsAtNight({ id = 'room-rn-eight' } = {}) {
     const uuids = Array.from({ length: 8 }, (_, i) => `${id}-${i}`)
     const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
@@ -2729,7 +2437,6 @@ test('resolve_night: 사망한 행동 보유자가 미제출이어도 판정은 
     assert.deepEqual(getResponse(), { ok: true })
     assert.equal(session.phase, 'DAY')
     assert.equal(session.players.get(victimUuid).alive, false)
-    // 사망자도 공개 결과 방송의 수신자에서 빠지지 않는다(관전은 계속된다).
     for (const uuid of uuids) {
         const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
         assert.equal(delivered.length, 1, `${uuid}가 정확히 1건을 받지 않았다`)
@@ -2740,8 +2447,6 @@ test('resolve_night: 사망한 GUARD에게는 night_action_result(개인 조사 
     const { session, io, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
         commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-guard' })
     assert.equal(session.players.get(guardUuid).role, 'GUARD')
-    // 생존 상태로 조사를 제출해 둔 뒤 판정 전에 사망시킨다 — 엔트리는 남아 있지만 개인
-    // 결과는 만들어지지 않아야 한다.
     gameSessionCore.submitNightAction(guardUuid, session.id, citizenUuids[0])
     gameSessionCore.submitNightAction(jokerUuid, session.id, null)
     gameSessionCore.submitNightAction(doctorUuid, session.id, null)
@@ -2768,7 +2473,6 @@ test('resolve_night: 보호로 막힌 암살 — night_action_result는 광대�
 
     assert.deepEqual(getResponse(), { ok: true })
 
-    // 실패 통지는 광대에게만, 정확히 1건이다 — 보호자·대상·사유는 payload 어디에도 없다.
     const jokerDelivered = socketByUuid.get(jokerUuid).emitted.filter((e) => e.event === 'night_action_result')
     assert.equal(jokerDelivered.length, 1)
     assert.deepEqual(jokerDelivered[0].payload, {
@@ -2784,14 +2488,12 @@ test('resolve_night: 보호로 막힌 암살 — night_action_result는 광대�
         },
     })
 
-    // 의사·경비원·시민 전원에게는 개인 결과가 하나도 가지 않는다(경비원은 SKIP이었다).
     for (const uuid of uuids) {
         if (uuid === jokerUuid) continue
         const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_action_result')
         assert.deepEqual(delivered, [], `${uuid}에게 개인 결과가 전달됐다`)
     }
 
-    // 공개적으로는 사망 없는 밤이다 — 전원이 동일한 night_result_applied 1건만 받는다.
     for (const uuid of uuids) {
         const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
         assert.equal(delivered.length, 1)
@@ -2816,8 +2518,6 @@ test('resolve_night: 보호 안 된 유효 희생자 — night_result_applied가
     assert.equal(session.dayIndex, 1)
     assert.equal(session.players.get(victimUuid).alive, false)
 
-    // 이번 밤은 JOKER의 암살이 실제로 alive→dead를 만들었으므로 공개 reveal은 정확히 한 건
-    // ({victimUuid, source:'JOKER'})이고, 방송 payload도 그 목록을 그대로 실어 나른다.
     const expectedPayload = gameSessionCore.buildNightResultAppliedPayload(session, victimUuid, [
         { victimUuid, source: 'JOKER' },
     ])
@@ -2924,20 +2624,8 @@ test('resolve_night: 한 recipient의 night_result_applied emit이 throw해도 �
     assert.equal(otherDelivered.length, 1)
 })
 
-// ---------------------------------------------------------------------------
-// resolve_night — 승리 조건 충족 시 ENDED 종료(terminal payload)
-// ---------------------------------------------------------------------------
-
 test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희생자로 반영되면 phase ENDED와 canonical winResult로 종료되고, 참가자 전원이 night_result_applied를 정확히 1건씩 수신하며 payload가 canonical game-core 빌더 결과와 완전히 일치한다', () => {
-    // JOKER는 실제 submit_night_action 경로로는 다른 JOKER(자기 자신 포함)를 대상으로 지정할 수
-    // 없으므로(오라클 방지 no-op), "NIGHT 희생자가 마지막 JOKER인" 시나리오는 이미 존재하는
-    // '오염된 resolution' 테스트와 동일한 deps.prepare 주입 기법으로 결정적으로 재현한다 — 승리
-    // 판정 자체는 commitNightResolution이 커밋한 victim을 그대로 소비하므로 이 경로로도 실제
-    // 판정 로직을 정확히 구동한다.
     const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-term-citizen' })
-    // F-25b(A-03): commit은 내부 준비 대장에 등재된 resolution만 받아들이므로, 손으로 만든
-    // fixture도 **테스트 전용 등록**으로 출처를 붙인다(production 우회가 아니다 — 등록 값은
-    // 실제 준비와 동일하게 등록 시점의 세션 상태로 고정되고, 오염 fixture는 그대로 걸린다).
     const deps = {
         prepare: () => ({
             ok: true,
@@ -2960,11 +2648,6 @@ test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희�
     assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
     assert.equal(session.players.get(jokerUuid).alive, false)
 
-    // canonical sourcing: 소켓 계층이 방송한 payload는 game-core의 두 빌더를 커밋 이후 session에
-    // 그대로 적용한 결과와 완전히 동일해야 한다(별도 파생·가공 없음).
-    // 주입된 resolution에는 assassinationTargetId도 witchHunterExecutionTargetId도 없으므로
-    // resolveNightDeathSource가 귀속을 하나도 찾지 못한다 — 공개 출처는 "밤사이 사망"만 뜻하는
-    // UNKNOWN_NIGHT다(사망 자체는 실제로 일어났으므로 목록이 비어 있지는 않다).
     const expectedPayload = {
         ...gameSessionCore.buildNightResultAppliedPayload(session, jokerUuid, [
             { victimUuid: jokerUuid, source: 'UNKNOWN_NIGHT' },
@@ -2988,7 +2671,6 @@ test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희�
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
         const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'privateResults', 'ballotSnapshot', 'nightActions']) {
             assert.equal(serialized.includes(forbidden), false)
@@ -3009,8 +2691,6 @@ test('resolve_night 종료(JOKER 승리): NIGHT 희생으로 parity(생존 JOKER
     assert.deepEqual(session.winResult, { winner: 'JOKER' })
     assert.equal(session.players.get(victimUuid).alive, false)
 
-    // 종료 payload에도 그 밤의 공개 reveal이 그대로 함께 실린다 — JOKER 암살이 만든 사망이므로
-    // 출처는 JOKER 하나뿐이다.
     const expectedPayload = {
         ...gameSessionCore.buildNightResultAppliedPayload(session, victimUuid, [
             { victimUuid, source: 'JOKER' },
@@ -3030,7 +2710,6 @@ test('resolve_night 종료(JOKER 승리): NIGHT 희생으로 parity(생존 JOKER
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
         const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'privateResults', 'ballotSnapshot', 'nightActions']) {
             assert.equal(serialized.includes(forbidden), false)
@@ -3058,17 +2737,12 @@ test('불변성: NIGHT 종료 payload를 캡처해 중첩 필드를 변형해도
     assert.equal(rebuilt.players.length, session.players.size)
 })
 
-// ---------------------------------------------------------------------------
-// F-25b(AC-05) — 수동 resolve_night와 공통 밤 최종화 경계
-// ---------------------------------------------------------------------------
-
 test('AC-05(F-25b): 결과 전달 도중 같은 밤의 resolve_night가 재진입해도 두 번째는 거부되고 수신자별 결과가 늘지 않는다', () => {
     const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
         commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-reentry' })
     const [victimUuid] = citizenUuids
     gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
 
-    // 첫 수신자의 결과 전달이 같은 경계를 다시 부른다(이탈 커밋이 타이머를 깨우는 등의 재진입 재현).
     const reentrantSocket = socketByUuid.get(uuids[0])
     const reentryResponses = []
     const originalEmit = reentrantSocket.emit.bind(reentrantSocket)
@@ -3102,7 +2776,6 @@ test('AC-05/A-08(F-25b): 준비 이후 이탈이 그 판을 끝내면 밤 커밋
     const [victimUuid] = citizenUuids
     gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
 
-    // 준비는 정상 경로로 만들고, 그 직후 유일한 광대의 이탈이 먼저 판을 끝낸다.
     const deps = {
         prepare: (uuid, gameId) => {
             const prepared = gameSessionCore.prepareNightResolution(uuid, gameId)
@@ -3121,7 +2794,6 @@ test('AC-05/A-08(F-25b): 준비 이후 이탈이 그 판을 끝내면 밤 커밋
     })
     assert.equal(session.phase, 'ENDED')
     assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
-    // 이탈이 확정한 사망만 남는다 — 밤은 새 사망도 새 방송도 만들지 않았다.
     assert.equal(session.players.get(victimUuid).alive, true)
     assert.equal(session.nightResolution, null)
     for (const uuid of uuids) {
@@ -3138,11 +2810,9 @@ test('AC-05(F-25b): 이전 밤의 준비로는 다음 밤을 확정할 수 없�
     const stalePrepared = gameSessionCore.prepareNightResolution(jokerUuid, session.id)
     assert.equal(stalePrepared.ok, true)
 
-    // 그 밤을 정상적으로 끝낸다.
     handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
     assert.equal(session.phase, 'DAY')
 
-    // 다음 밤으로 되돌린 뒤, 이전 밤의 준비를 그대로 다시 들이민다.
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
@@ -3155,7 +2825,6 @@ test('AC-05(F-25b): 이전 밤의 준비로는 다음 밤을 확정할 수 없�
         prepare: () => stalePrepared,
     })
 
-    // 오래된 준비는 내부 상태 신호이므로 코드를 그대로 노출하지 않는다.
     assert.deepEqual(getResponse(), {
         ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.',
     })
@@ -3168,26 +2837,6 @@ test('AC-05(F-25b): 이전 밤의 준비로는 다음 밤을 확정할 수 없�
     )
 })
 
-// ---------------------------------------------------------------------------
-// cast_day_vote (handleSubmitDayVote) — DAY 투표/기권 제출
-// ---------------------------------------------------------------------------
-
-/**
- * 3인 NIGHT 세션을 무득표로 판정해 DAY(dayIndex 1, 전원 alive)까지 전이하고, fake socket/io를
- * 재사용한다. 낮은 DAY_DISCUSSION으로 시작하므로 advanceToVote일 때는 생존자 전원의
- * ready_for_day_vote까지 돌려 투표가 열린 상태(DAY_VOTE)로 넘긴다 — 투표 제출/판정을 검증하는
- * 기존 테스트들이 보는 출발점이 그대로 유지된다.
- *
- * 픽스처 진행 과정에서 쌓인 emit 로그(night_result_applied·day_phase_changed)는 반환 직전에
- * 비운다 — 이 헬퍼를 쓰는 테스트들은 "자기가 호출한 핸들러가 무엇을 방송했는가"만 세므로
- * 준비 단계의 방송이 그 카운트에 섞이면 안 된다.
- *
- * @param {object} options - 픽스처 옵션
- * @param {string} options.id - room/세션 식별자 접두사
- * @param {boolean} options.advanceToVote - true면 DAY_VOTE까지, false면 DAY_DISCUSSION에서 멈춘다
- * @flow 밤을 무득표로 판정해 낮으로 넘긴 뒤, advanceToVote면 생존자 전원의 준비를 돌리고,
- *       마지막으로 io/socket의 emit 로그를 비운다.
- */
 function commitTrioSessionWithSocketsAtDay({ id = 'room-dv', advanceToVote = true } = {}) {
     const { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id })
     gameSessionCore.submitNightAction(jokerUuid, session.id, null)
@@ -3203,10 +2852,6 @@ function commitTrioSessionWithSocketsAtDay({ id = 'room-dv', advanceToVote = tru
     for (const socket of sockets) socket.emitted.length = 0
     return { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid }
 }
-
-// ---------------------------------------------------------------------------
-// ready_for_day_vote (handleAcknowledgeDayVoteReady) — DAY_DISCUSSION → DAY_VOTE 전이
-// ---------------------------------------------------------------------------
 
 test('ready_for_day_vote: 마지막 준비에서만 day_phase_changed가 채널에 정확히 1회 방송되고 payload에 참가자 식별 정보가 없다', () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-1', advanceToVote: false })
@@ -3303,13 +2948,6 @@ test('cast_day_vote: 토론 중(DAY_DISCUSSION) 제출은 INVALID_DAY_PHASE로 �
     assert.equal(io.broadcasts.length, 0)
 })
 
-/**
- * F-16(AC-01/AC-04): cast_day_vote 성공 ack의 계약을 검증한다.
- *
- * ack는 ok와 개인 사건 봉투(sfxEvent) 두 키만 담는다. 봉투에는 투표 대상·역할이 들어가지
- * 않고(AC-05), eventId는 (게임, 날짜, 라운드, actor, revision)에서만 유도된다 — 시각·난수를
- * 쓰지 않으므로 같은 실제 사건은 언제 다시 만들어도 같은 문자열이다(AC-04).
- */
 function assertDayVoteAck(response, { session, actor, round = 1, revision }) {
     assert.deepEqual(Object.keys(response).sort(), ['ok', 'sfxEvent'])
     assert.equal(response.ok, true)
@@ -3322,7 +2960,6 @@ function assertDayVoteAck(response, { session, actor, round = 1, revision }) {
         round,
         origin: 'live',
     })
-    // 봉투에 투표 대상이 새어나가지 않는다.
     assert.equal(Object.hasOwn(response.sfxEvent, 'targetId'), false)
 }
 
@@ -3345,7 +2982,6 @@ test('cast_day_vote: 기권(targetId:null) 제출은 ack {ok:true}이고 dayVote
 
     handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: null }, callback)
 
-    // 기권도 실제 제출이다 — 최초 제출이므로 revision 1이다.
     assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
     assert.equal(session.dayVotes.get(actor), null)
     assert.equal(session.dayVotes.has(actor), true)
@@ -3360,17 +2996,14 @@ test('cast_day_vote(F-16): 같은 대상 재제출은 같은 eventId, 대상 변
     await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, first.callback)
     assertDayVoteAck(first.getResponse(), { session, actor, revision: 1 })
 
-    // 같은 대상 재요청 — 실제 변경이 아니므로 revision이 오르지 않는다(중복 재생 0).
     const again = countingCallback()
     await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, again.callback)
     assert.equal(again.getResponse().sfxEvent.eventId, first.getResponse().sfxEvent.eventId)
 
-    // B→C는 실제 변경이다.
     const changed = countingCallback()
     await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetC }, changed.callback)
     assertDayVoteAck(changed.getResponse(), { session, actor, revision: 2 })
 
-    // C→B도 다시 실제 변경이다 — uuid+target 키였다면 첫 번째와 같은 ID로 묻혔을 사건이다.
     const back = countingCallback()
     await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, back.callback)
     assertDayVoteAck(back.getResponse(), { session, actor, revision: 3 })
@@ -3382,7 +3015,6 @@ test('cast_day_vote(F-16): 실패한 제출은 사건 메타데이터를 만들�
     const [actor] = uuids
     const { callback, getResponse } = countingCallback()
 
-    // 자기 자신에게 투표(SELF_TARGET_NOT_ALLOWED) — dayVotes도 dayVoteSfx도 불변이어야 한다.
     handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: actor }, callback)
 
     assert.equal(getResponse().ok, false)
@@ -3455,9 +3087,6 @@ test('cast_day_vote: gameId가 비문자열이거나 targetId가 null/문자열�
 test('cast_day_vote: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 INTERNAL_ERROR로 정규화된다', () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-8' })
     const [actor, target] = uuids
-    // actor를 registry상 현재 canonical socket으로 먼저 확립한 뒤(재접속 권한 가드 통과),
-    // game-core 세션만 별도로 지워 registry 불일치(SESSION_NOT_FOUND)를 재현한다 — 그래야 이
-    // 테스트가 의도한 "더 깊은" 핸들러 경로(가드 통과 이후 core 호출 정규화)를 실제로 구동한다.
     gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
     const { callback, getResponse } = countingCallback()
 
@@ -3510,8 +3139,6 @@ test('cast_day_vote: 교차 세션 요청(다른 GameSession의 gameId)은 거�
     const [, targetB] = dayB.uuids
     const { callback, getResponse } = countingCallback()
 
-    // actorA(세션 A 소속)가 세션 B의 gameId로 요청 — playerSession상 actorA의 활성 세션은 A이므로
-    // STALE_SESSION_MISMATCH로 거부된다.
     handleSubmitDayVote(dayA.io, dayA.socketByUuid.get(actorA), actorA, { gameId: dayB.session.id, targetId: targetB }, callback)
 
     assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SESSION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
@@ -3544,10 +3171,6 @@ test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger�
     assert.equal(session.dayVotes.get(actor), target)
 })
 
-// ---------------------------------------------------------------------------
-// resolve_day_vote (handleResolveDayVote) — DAY 투표 판정
-// ---------------------------------------------------------------------------
-
 test('resolve_day_vote: TRIBUNAL 판정 ack가 정확히 {ok:true, gameId, dayIndex, outcome:"TRIBUNAL", tribunalTargetUuid}이고 phase가 TRIBUNAL로 전이된다', () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-1' })
     const [a, b, c] = uuids
@@ -3568,10 +3191,6 @@ test('resolve_day_vote: TRIBUNAL 판정 ack가 정확히 {ok:true, gameId, dayIn
     assert.equal(session.phase, 'TRIBUNAL')
 })
 
-// 1라운드 동점은 core 계약상 TIE가 아니라 REVOTE이고 phase가 DAY에 남는다(판정 6.4).
-// 3인 세션은 순환 투표에서 생존자 전원이 동점자가 되어 2라운드에 후보가 남지 않으므로,
-// 재투표는 전원 기권(ABSTAINED)으로 종결되며 그때 비로소 NIGHT로 전이한다.
-// 소켓 계층의 ack 형태(round는 싣지 않는다)와 "참가자당 방송 1건" 계약은 두 라운드 모두 동일하다.
 test('resolve_day_vote: 1라운드 동점 ack의 outcome은 "REVOTE"이고 phase는 DAY에 남으며, 재투표 종결 시에만 NIGHT로 전이한다', () => {
     const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-2' })
     const [a, b, c] = uuids
@@ -3602,7 +3221,6 @@ test('resolve_day_vote: 1라운드 동점 ack의 outcome은 "REVOTE"이고 phase
         assert.equal(socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved').length, 1)
     }
 
-    // 2라운드: 동점자(=생존자 전원)가 후보에서 빠졌으므로 기권만 가능하다.
     for (const uuid of uuids) {
         handleSubmitDayVote(io, socketByUuid.get(uuid), uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
     }
@@ -3668,8 +3286,6 @@ test('resolve_day_vote: 이미 판정된 dayIndex 재요청은 멱등하게 동�
     }
 
     handleResolveDayVote(io, socketByUuid.get(a), a, { gameId: session.id, dayIndex: session.dayIndex }, countingCallback().callback)
-    // 전이 이후 새 NIGHT에서 실제로 행동을 제출해, 지연된 중복 재요청이 이 진행 상태를
-    // 되돌리지 않는지 확인할 수 있는 상태를 만든다.
     gameSessionCore.submitNightAction(jokerUuid, session.id, null)
     const countBroadcasts = () =>
         [a, b, c]
@@ -3688,8 +3304,6 @@ test('resolve_day_vote: 이미 판정된 dayIndex 재요청은 멱등하게 동�
         tribunalTargetUuid: null,
     })
     assert.equal(countBroadcasts(), countAfterFirst)
-    // 지연된 중복 요청은 alreadyResolved로 멱등 처리되어 commit을 다시 타지 않으므로, 새
-    // NIGHT에서 이미 제출된 행동이 지워지지 않는다.
     assert.equal(session.nightActions.size, 1)
 })
 
@@ -3717,10 +3331,6 @@ test('resolve_day_vote: registerGameHandlers로 실제 배선하면 socket.trigg
     assert.equal(turnStarts.length, 1)
     assert.equal(turnStarts[0].payload.role, 'JOKER')
 })
-
-// ---------------------------------------------------------------------------
-// resolve_tribunal_vote (handleResolveTribunalVote) — tribunal_resolved 판정
-// ---------------------------------------------------------------------------
 
 test('handleResolveTribunalVote: 성공 시 commit 이후 canonical에서 빌드한 payload로 ACK와 broadcast 1회(tribunal_resolved 계약)', () => {
     const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-1', uuidA: 'r1', uuidB: 'r2', uuidC: 'r3', defendantUuid: 'r3' })
@@ -3823,18 +3433,11 @@ test('resolve_tribunal_vote: 중복 resolve 시 broadcast 증가분 0', () => {
     const { callback, getResponse } = countingCallback()
     gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketB, 'w2', { gameId: session.id, dayIndex: session.dayIndex }, callback)
 
-    // NOT_GUILTY(무죄)는 아무도 죽지 않아 승리 조건이 성립하지 않으므로, 첫 번째 resolve가 이미
-    // phase를 TRIBUNAL 밖(NIGHT)으로 옮겨놨다 — 두 번째 요청은 TRIBUNAL_ALREADY_RESOLVED가
-    // 아니라 INVALID_PHASE로 거부된다(prepareTribunalVoteResolution의 phase 검사가 먼저 걸림).
     assert.equal(session.phase, 'NIGHT')
     assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PHASE', message: '요청을 처리할 수 없습니다.' })
     const countAfter = socketA.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length
     assert.equal(countAfter, countBefore)
 })
-
-// ---------------------------------------------------------------------------
-// resolve_tribunal_vote — 승리 없음(no-winner) TRIBUNAL 판정 → NIGHT 전이
-// ---------------------------------------------------------------------------
 
 test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은 phase가 NIGHT로 전이하고, 참가자 전원이 tribunal_vote_resolved를 정확히 1건씩 수신하며 payload가 canonical public 상태와 일치한다', () => {
     const { session, socketA, socketB, socketC } = commitTribunalReadySession({
@@ -3846,7 +3449,6 @@ test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은
     })
     const io = createFakeIo([socketA, socketB, socketC])
     const dayIndexBefore = session.dayIndex
-    // 기본 3인 fixture에서 무죄(NOT_GUILTY)는 아무도 죽지 않아 항상 승리 조건 미충족이다.
     handleCastTribunalVote(io, socketA, 'x1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
     handleCastTribunalVote(io, socketB, 'x2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
     const { callback, getResponse } = countingCallback()
@@ -3881,7 +3483,6 @@ test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
         const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid', 'privateResults', 'nightActions']) {
             assert.equal(serialized.includes(forbidden), false)
@@ -3889,16 +3490,6 @@ test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은
     }
 })
 
-// ---------------------------------------------------------------------------
-// resolve_tribunal_vote — 승리 조건 충족 시 ENDED 종료(terminal payload)
-// ---------------------------------------------------------------------------
-
-/**
- * 결정적 역할 배정으로 TRIBUNAL 판정 직전(투표 미제출) 상태까지 세션을 구성한다.
- * commitTribunalReadySession(위)은 기본 Math.random으로 역할을 배정해 defendantUuid를
- * 특정 역할로 고정할 수 없으므로, 승리 시나리오를 결정적으로 재현하기 위해 buildSessionCandidate에
- * randomFn을 주입하는 별도 헬퍼를 둔다. jokerCount와 defendantRole로 CITIZEN/JOKER 승리를 통제한다.
- */
 function commitDeterministicTribunalReadySession({ id, uuids, jokerCount, defendantRole }) {
     const room = makeRoom({ id, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
@@ -3945,8 +3536,6 @@ test('resolve_tribunal_vote 종료(CITIZEN 승리): 피고인이 마지막 생�
     const { callback, getResponse } = countingCallback()
     gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketByUuid.get(voterUuids[0]), voterUuids[0], { gameId: session.id, dayIndex: session.dayIndex }, callback)
 
-    // ACK 계약: 현재 production 코드는 terminal이어도 phase/players/winResult를 ACK에 포함하지
-    // 않는다 — 이 여섯 키만 정확히 담아야 한다(그 이상도 이하도 아님).
     assert.deepEqual(getResponse(), {
         ok: true,
         gameId: session.id,
@@ -3977,7 +3566,6 @@ test('resolve_tribunal_vote 종료(CITIZEN 승리): 피고인이 마지막 생�
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
         const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid']) {
             assert.equal(serialized.includes(forbidden), false)
@@ -4031,7 +3619,6 @@ test('resolve_tribunal_vote 종료(JOKER 승리): 피고인이 비-JOKER고 처�
         assert.equal(delivered.length, 1)
         assert.deepEqual(delivered[0].payload, expectedPayload)
 
-        // 종료 payload의 winResult.reveals는 의도된 전원 정체 공개라 금지어 검사에서 뺀다(2026-09-22).
         const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
         for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid']) {
             assert.equal(serialized.includes(forbidden), false)
@@ -4069,22 +3656,6 @@ test('불변성: TRIBUNAL 종료 payload를 캡처해 중첩 필드를 변형해
     assert.equal(rebuilt.players.length, session.players.size)
 })
 
-// ---------------------------------------------------------------------------
-// get_session_snapshot (handleGetSessionSnapshot) — 인증된 재접속 스냅샷 조회
-// ---------------------------------------------------------------------------
-
-/** votesByUuid(uuid→targetUuid|null) 전원 제출 후 DAY 투표 판정을 core로 직접 커밋한다 — 이
- * 이벤트 자체가 테스트 대상이므로 DAY/TRIBUNAL 진행은 다른 핸들러를 거치지 않고 core로
- * 직접 전진시킨다(commitDeterministicTribunalReadySession과 달리 실제 NIGHT를 거쳐야
- * session.nightResolution이 채워지므로 이 방식을 쓴다).
- *
- * 낮은 DAY_DISCUSSION으로 시작하므로 아직 토론 중이면 생존자 전원의 준비를 먼저 돌려
- * 투표를 연다(재투표 라운드에서 다시 호출되면 이미 DAY_VOTE이므로 그대로 제출로 넘어간다).
- *
- * @param {object} session - 진행 중인 세션
- * @param {object} votesByUuid - uuid → targetUuid|null 투표 맵
- * @flow 토론 중이면 준비로 DAY_VOTE까지 전진시킨 뒤, 전원 제출하고 판정을 커밋한다.
- */
 function resolveDayVotesDirect(session, votesByUuid) {
     if (session.dayPhase === 'DAY_DISCUSSION') {
         for (const player of session.players.values()) {
@@ -4099,7 +3670,6 @@ function resolveDayVotesDirect(session, votesByUuid) {
     return gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
 }
 
-/** votesByUuid(uuid→'GUILTY'|'NOT_GUILTY') 전원 제출 후 TRIBUNAL 판정을 core로 직접 커밋한다. */
 function resolveTribunalVotesDirect(session, votesByUuid) {
     for (const [voterUuid, vote] of Object.entries(votesByUuid)) {
         gameSessionCore.submitTribunalVote(voterUuid, session.id, session.dayIndex, vote)
@@ -4109,18 +3679,11 @@ function resolveTribunalVotesDirect(session, votesByUuid) {
     return gameSessionCore.commitTribunalVoteResolution(prepared.session, prepared.resolution)
 }
 
-/** JOKER 전용 밤 행동(target 없으면 SKIP)을 제출하고 판정을 core로 직접 커밋한다. */
 function resolveJokerOnlyNightDirect(session, jokerUuid, targetUuid) {
     gameSessionCore.submitNightAction(jokerUuid, session.id, targetUuid)
     const prepared = gameSessionCore.prepareNightResolution(jokerUuid, session.id)
     return gameSessionCore.commitNightResolution(prepared.session, prepared.resolution)
 }
-
-// -- 경로 인식(path-aware) 재귀 비밀 데이터 검사기 --------------------------------------------
-// backend/game-core/__tests__/gameSession.test.js의 동일한 검사기와 설계가 같다(Codex P1 지적:
-// 키 이름만으로 전역 예외 처리하지 않는다 — 명시적으로 승인된 스키마 경로에서만 값 비교를
-// 건너뛴다). 공유 테스트 헬퍼 파일을 새로 추가할 수 없는 이번 슬라이스의 허용 파일 목록
-// 제약상 이 파일에도 동일하게 둔다.
 
 const FORBIDDEN_PRIVATE_KEYS = new Set([
     'role', 'team', 'allies',
@@ -4128,11 +3691,6 @@ const FORBIDDEN_PRIVATE_KEYS = new Set([
     'nightTargetUuid', 'dayVoteTargetUuid', 'tribunalVoteUuid', 'tribunalVote',
 ])
 
-// nightResult.deathReveals.*.source는 game-core 쪽 동일 검사기와 같은 이유로 명시 승인한다 —
-// 공개 사망 출처 열거값('JOKER'/'WITCH_HUNTER'/'UNKNOWN_NIGHT')은 "어떤 공개 사건이 이 죽음을
-// 만들었는가"만 뜻하고 특정 참가자의 role 배정을 뜻하지 않는데, 문자열로는 다른 참가자의 role
-// 값과 겹칠 수 있다. victimUuid는 이미 공개된 사망자 식별자다(players.*.uuid /
-// nightResult.victimUuid와 동일).
 const APPROVED_PUBLIC_VALUE_PATHS = new Set([
     'players.*.uuid',
     'nightResult.victimUuid',
@@ -4156,7 +3714,6 @@ function assertNoForbiddenPrivateData(value, secretValues, path = [], insideSelf
     }
     if (value !== null && typeof value === 'object') {
         for (const [key, val] of Object.entries(value)) {
-            // 판이 끝난 뒤의 전원 정체 공개(winResult.reveals, 2026-09-22)는 self와 같이 role/team이 허용된다.
             const nextInsideSelf = insideSelf || (path.length === 0 && key === 'self')
                 || (path.length === 1 && path[0] === 'winResult' && key === 'reveals')
             assert.ok(
@@ -4187,8 +3744,6 @@ test('get_session_snapshot: 재접속으로 교체된 낡은 socket은 STALE_SOC
     const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-stale' })
     const [uuid] = uuids
     const staleSocket = socketByUuid.get(uuid)
-    // 같은 uuid로 새 소켓이 재접속해 registry의 canonical socketId를 교체한 상황을 재현한다
-    // (이 파일의 관례대로, 재접속 권한 자체를 검증할 때만 convention proxy 대신 실제 Map을 쓴다).
     const freshSocket = createFakeSocket(uuid, { id: `${staleSocket.id}-fresh` })
     gameSessionSocketLayer.setOnlineUsersRegistry(new Map([[uuid, freshSocket.id]]))
     const spy = t.mock.method(gameSessionCore, 'getSessionSnapshotForPlayer', () => {
@@ -4412,11 +3967,6 @@ test('get_session_snapshot: self 블록은 요청자 본인의 정보만 담고,
     assert.notEqual(jokerAck.getResponse().self.uuid, citizenAck.getResponse().self.uuid)
 })
 
-// F-27b(AC-01): 아래 여섯 개의 top-level 키 잠금에 presentationWaiting이 더해졌다. 값은
-// boolean 하나뿐이고(계약·역할·수신자 수·토큰은 어디에도 실리지 않는다), 복원할 것이 없는
-// 단계에서도 **항상 실린다** — 키를 생략하면 "대기가 아니다"와 "이 서버는 대기를 모른다"가
-// 같은 모양이 되어 클라이언트가 기존 대기를 보존할지 지울지 정할 수 없다(nightSuccessRecovery의
-// 빈 배열 계약과 같은 이유다).
 test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소켓 계층 ack에도 nightResult/dayVoteResolution/tribunal/winResult가 전부 포함되고 비밀 데이터가 없다', () => {
     const { session, io, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-sock-tribunal-end' })
     const [citizenA, citizenB, citizenC] = citizenUuids
@@ -4446,7 +3996,6 @@ test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소�
     )
     assert.equal(snapshot.winResult.winner, 'CITIZEN')
     assert.ok(Array.isArray(snapshot.winResult.reveals) && snapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
-    // 종료된 판에는 진행할 단계가 없다 — kind만 NONE이고 수는 담기지 않는다.
     assert.deepEqual(snapshot.progress, { kind: 'NONE', doneCount: null, requiredCount: null })
     assert.equal(snapshot.tribunal.executedUuid, jokerUuid)
     assertNoForbiddenPrivateData(snapshot, collectOtherPlayerRoleSecrets(session, citizenA))
@@ -4457,15 +4006,12 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     const { session, io, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-sock-progress' })
     const [citizenA, citizenB, citizenC] = citizenUuids
 
-    // --- 1) 활성 NIGHT ---
     const nightAck = countingCallback()
     handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, nightAck.callback)
     const nightSnapshot = nightAck.getResponse()
     assert.equal(nightSnapshot.ok, true)
     assert.deepEqual(Object.keys(nightSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
     assert.equal(nightSnapshot.phase, 'NIGHT')
-    // F-21(AC-03): 밤의 공개 진행은 **수를 담지 않는다**. 행동자 수·제출자 수가 실리면 그 값
-    // 자체가 생존한 특수 직업의 존재를 알려준다(밤 턴 payload가 생존 정보를 싣지 않는 것과 같은 계약).
     assert.deepEqual(nightSnapshot.progress, { kind: 'NIGHT', doneCount: null, requiredCount: null })
     assertNoForbiddenPrivateData(nightSnapshot, collectOtherPlayerRoleSecrets(session, jokerUuid))
 
@@ -4473,11 +4019,9 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     assert.deepEqual(nightOutcome, { ok: true, victimUuid: citizenA, terminal: null })
     assert.equal(session.phase, 'DAY')
 
-    // --- 2) 활성 DAY ---
     const dayAck = countingCallback()
     handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, dayAck.callback)
     const daySnapshot = dayAck.getResponse()
-    // 낮 스냅샷에만 dayPhase가 실린다 — 재접속 클라이언트가 토론/투표를 구분해야 하기 때문이다.
     assert.deepEqual(
         Object.keys(daySnapshot).sort(),
         ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'],
@@ -4495,7 +4039,6 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     assert.equal(session.phase, 'TRIBUNAL')
     assert.equal(session.tribunal.defendantUuid, citizenB)
 
-    // --- 3) 활성 TRIBUNAL(판정 전) ---
     const tribunalAck = countingCallback()
     handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, tribunalAck.callback)
     const tribunalSnapshot = tribunalAck.getResponse()
@@ -4511,8 +4054,6 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.players.get(citizenB).alive, true)
 
-    // --- 4) post-tribunal NIGHT(필수 회귀) — dayVoteResolution/tribunal의 dayIndex가 여전히
-    // session.dayIndex와 수치상 일치해도 phase가 NIGHT이면 제외돼야 한다.
     assert.equal(session.dayVoteResolution.dayIndex, session.dayIndex)
     assert.equal(session.tribunal.dayIndex, session.dayIndex)
     const postTribunalAck = countingCallback()
@@ -4523,7 +4064,6 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'dayVoteResolution'), false)
     assert.equal(Object.hasOwn(postTribunalSnapshot, 'tribunal'), false)
 
-    // --- 5) night-kill ENDED(필수 회귀, JOKER 승리) ---
     const nightKillOutcome = resolveJokerOnlyNightDirect(session, jokerUuid, citizenC)
     assert.deepEqual(nightKillOutcome, { ok: true, victimUuid: citizenC, terminal: { winner: 'JOKER' } })
     assert.equal(session.phase, 'ENDED')
@@ -4549,7 +4089,6 @@ test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT
 })
 
 
-// Chrome regression: a dead participant refreshing must not destroy the running game.
 for (const phase of ['DAY', 'TRIBUNAL', 'NIGHT']) {
     test('F13 dead participant disconnect retains session and authenticated reconnect in ' + phase, async () => {
         const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'dead-reconnect-' + phase })
@@ -4590,22 +4129,10 @@ for (const phase of ['DAY', 'TRIBUNAL', 'NIGHT']) {
     })
 }
 
-// ---------------------------------------------------------------------------
-// F-23(AC-05) — 사망해도 참가자 신분은 유지된다: 공개 수신 · 행동 거부 · 이탈 후 차단
-//
-// 위 회귀는 "재접속이 판을 부수지 않는다"까지만 본다. 여기서는 그 뒤를 잇는다 — 교체 연결이
-// **다음 공개 판정을 실제로 받고**(방송 시도 기록이 아니라 수신자의 실제 수신으로 센다),
-// 그러면서도 생존이 필요한 행동은 전부 거부되며, 명시적 이탈을 커밋한 뒤에는 더 받지 않는다.
-//
-// 4인 시민 fixture로는 "능력 거부"를 증명할 수 없다(DOCTOR·GUARD가 아예 배정되지 않는다).
-// 그래서 8인 fixture를 쓰고, 사망시키는 대상도 **능력 보유자(GUARD)**로 고른다.
-// ---------------------------------------------------------------------------
-
 test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판정을 실제로 받고, 낮·재판·밤 행동은 모두 거부된다', async () => {
     const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
         commitEightPlayerSessionWithSocketsAtNight({ id: 'room-ac05-dead' })
 
-    // --- 1) 실제 밤 판정으로 능력 보유자(GUARD)를 확정 사망시킨다 ---
     gameSessionCore.submitNightAction(jokerUuid, session.id, guardUuid)
     gameSessionCore.submitNightAction(guardUuid, session.id, null)
     gameSessionCore.submitNightAction(doctorUuid, session.id, null)
@@ -4613,7 +4140,6 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
     assert.equal(session.players.get(guardUuid).alive, false, '전제: 실제 판정으로 사망이 확정돼야 한다')
     assert.equal(session.phase, 'DAY')
 
-    // --- 2) 끊김 → 교체 연결. 유예도 종료 방송도 없고 잔류자 routing은 그대로다 ---
     const oldSocket = socketByUuid.get(guardUuid)
     oldSocket.data.activeGameId = session.id
     oldSocket.connected = false
@@ -4644,7 +4170,6 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
     const aliveUuids = uuids.filter((uuid) => session.players.get(uuid).alive)
     assert.equal(aliveUuids.length, 7, '전제: 사망자 한 명을 제외한 7명이 살아 있어야 한다')
 
-    // --- 3) 낮 투표: 사망자는 제출할 수 없고, 판정 방송은 실제로 받는다 ---
     for (const uuid of aliveUuids) {
         handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, countingCallback().callback)
     }
@@ -4661,10 +4186,8 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
     assert.equal(deadVoteAck.getResponse().ok, false, '사망자의 낮 투표가 받아들여졌다')
     assert.equal(session.dayVotes.size, votesBefore, '사망자의 낮 투표가 표 집계를 바꿨다')
 
-    // 생존자들의 실제 제출·판정으로 다음 공개 사건을 만든다(방송을 손으로 쏘지 않는다).
     const defendant = citizenUuids[1]
     for (const uuid of aliveUuids) {
-        // 피고 본인은 자기를 찍을 수 없다 — 기권으로 제출해 생존자 전원의 제출을 채운다.
         handleSubmitDayVote(
             io, socketByUuid.get(uuid), uuid,
             { gameId: session.id, targetId: uuid === defendant ? null : defendant },
@@ -4687,7 +4210,6 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
         '양성 대조: 정상 잔류자도 받지 못했다면 이 계수가 무의미하다',
     )
 
-    // --- 4) 재판 투표: 사망자는 표를 넣을 수 없고, 판정 방송은 실제로 받는다 ---
     const tribunalVotesBefore = session.tribunal.votes.size
     const deadTribunalAck = countingCallback()
     handleCastTribunalVote(
@@ -4721,7 +4243,6 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
     )
     assert.equal(socketByUuid.get(witness).countReceived('tribunal_vote_resolved'), 1)
 
-    // --- 5) 밤 능력: 사망한 GUARD의 제출은 거부되고 행동 Map은 불변이다 ---
     const nightActionsBefore = session.nightActions.size
     const deadNightAck = countingCallback()
     handleSubmitNightAction(
@@ -4736,8 +4257,6 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
     )
     assert.equal(session.nightActions.size, nightActionsBefore, '사망자의 밤 행동이 행동 Map을 바꿨다')
 
-    // --- 6) 명시적 이탈: 그 순간부터 같은 참가자의 실제 수신이 끊긴다 ---
-    // 채널에서 떼는 일을 영영 붙잡아 둬, "이미 빠졌는데 아직 채널에 남아 있는" 최악의 구간을 고정한다.
     replacement.leave = () => new Promise(() => {})
     const receivedBeforeLeave = replacement.received.length
     handleLeaveGameSession(io, replacement, guardUuid, { gameId: session.id }, countingCallback().callback)
@@ -4750,13 +4269,11 @@ test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판�
         '양성 대조: 잔류자가 참여 변화 사건을 받지 못했다',
     )
 
-    // 이후의 공개 방송도 마찬가지다 — 프로덕션 방송 경계를 그대로 쓴다.
     const beforeProbe = replacement.countReceived('probe_after_departure')
     gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId: session.id })
     assert.equal(replacement.countReceived('probe_after_departure'), beforeProbe, '이탈자가 이후 공개 방송을 받았다')
     assert.equal(socketByUuid.get(witness).countReceived('probe_after_departure'), 1, '잔류자가 이후 공개 방송을 받지 못했다')
 
-    // roster·역할·사망 원인은 그대로 보존되고, 잔류 세션도 살아 있다.
     assert.equal(session.players.get(guardUuid).role, 'GUARD', '이탈이 roster의 역할을 지웠다')
     assert.equal(session.players.get(guardUuid).alive, false)
     assert.equal(session.players.get(guardUuid).isParticipating, false)

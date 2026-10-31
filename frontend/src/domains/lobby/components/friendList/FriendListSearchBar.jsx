@@ -7,7 +7,6 @@ import {
 } from "@/domains/lobby/constants/friendListStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-// 프레임 이미지 위에 실제 검색 input을 겹쳐서 보여줍니다.
 function FriendSearchInput({ label, placeholder, value, onChange, onKeyDown }) {
   return (
     <div className="relative w-full">
@@ -30,7 +29,6 @@ function FriendSearchInput({ label, placeholder, value, onChange, onKeyDown }) {
   )
 }
 
-// 친구 목록 패널에서 친구 검색 제목과 검색 입력창을 보여주는 컴포넌트입니다.
 export default function FriendListSearchBar({
   label = "친구 검색",
   placeholder = "검색할 친구 닉네임 입력",
@@ -40,7 +38,6 @@ export default function FriendListSearchBar({
   onSubmit,
 }) {
   const handleKeyDown = (event) => {
-    // Enter 키를 누르면 검색을 실행합니다.
     if (event.key === "Enter") onSubmit?.()
   }
 

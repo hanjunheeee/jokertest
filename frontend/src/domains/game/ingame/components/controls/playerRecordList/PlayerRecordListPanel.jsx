@@ -1,6 +1,3 @@
-/**
- * 인게임 플레이어별 전적목록 패널.
- */
 import SidePanel from "../SidePanel.jsx"
 import PlayerRecordListContent from "./PlayerRecordListContent.jsx"
 

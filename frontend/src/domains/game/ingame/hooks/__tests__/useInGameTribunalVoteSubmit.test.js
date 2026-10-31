@@ -39,11 +39,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
 
-// useInGameTribunalVoteSubmit이 module 최상단에서 import하는 socketClient(getSocket/subscribeSocket)를
-// 실제 mount 테스트에서 제어 가능한 fake로 교체한다. mock.module은 아직 로드되지 않은 specifier에만
-// 적용되므로, hook 모듈은 정적 import가 아니라 이 mock 등록 이후의 동적 import로 가져온다 — 기존
-// 테스트가 참조하는 buildLatestTribunalVoteContext/useInGameTribunalVoteSubmit 바인딩 자체는 정적
-// import였을 때와 동일하게 동작한다.
 let currentFakeSocket = null
 const fakeSocketSubscribers = new Set()
 
@@ -133,12 +128,6 @@ mock.module(
 
 const { buildLatestTribunalVoteContext, useInGameTribunalVoteSubmit } = await import("../useInGameTribunalVoteSubmit.js")
 
-// useInGameTribunalVoteSubmit()을 실제 함수 컴포넌트 안에서 렌더해 real hook closure(submitTribunalVote
-// 등)를 얻는다. renderToStaticMarkup은 effect를 실행하지 않으므로 controller 인스턴스는 생성되지
-// 않지만(그래서 아래 테스트는 controller.submit 자체가 아니라 submitTribunalVote 클로저가 무엇을
-// 읽는지를 검증한다), hook 본문(모든 selector·useState·useRef 초기화·반환된 submitTribunalVote
-// 클로저)은 실제 프로덕션 코드 그대로 실행된다 — buildLatestTribunalVoteContext처럼 별도로 추출한
-// 순수 함수가 아니라 useInGameTribunalVoteSubmit 자체를 mount하는 것이 핵심이다.
 function mountTribunalVoteSubmitHook() {
   let captured
   function Harness() {
@@ -196,23 +185,12 @@ function publishCanonicalStoreSnapshot() {
   })
 }
 
-// buildLatestTribunalVoteContext는 useInGameTribunalVoteSubmit이 controller에 넘기는
-// getLatestContext(() => buildLatestTribunalVoteContext())의 실제 구현체다. gameId/dayIndex/
-// phase/defendantUuid뿐 아니라 actor identity(state.self.uuid)와 그 참가자의 alive까지 전부
-// 단일 useInGameStore.getState() 스냅샷에서 산출해야 한다 — React가 이 hook을 아직 리렌더하지
-// 않은 구간(store 변경 ~ 다음 렌더 사이)에 ack가 settle되더라도 항상 최신 store 값을 반영하기
-// 위해서다. 아래 테스트들은 이 함수가 어떤 React 렌더도 거치지 않고 zustand store 변경을 즉시
-// 반영하는지 검증한다 — ref 기반(참가자 snapshot) 구현이었다면 렌더가 없는 한 이전 값을 계속
-// 돌려줬을 것이다.
-
 test("buildLatestTribunalVoteContext: 어떤 렌더도 없이 defendantUuid가 A→B로 바뀌면 즉시 새 값을 반영한다", () => {
   seedStore()
 
   const requestTimeSnapshot = buildLatestTribunalVoteContext()
   assert.equal(requestTimeSnapshot.defendantUuid, "defendant-a")
 
-  // 렌더를 전혀 트리거하지 않고 store만 직접 mutate한다 — 소켓 이벤트 핸들러가 리렌더 전에
-  // day_vote_resolved/night_result_applied 등을 반영하는 경우와 동일한 타이밍이다.
   seedStore({ tribunal: { defendantUuid: "defendant-b" } })
 
   const settleTimeSnapshot = buildLatestTribunalVoteContext()
@@ -247,8 +225,6 @@ test("buildLatestTribunalVoteContext: isDefendant/actorUuid는 항상 최신 sta
   assert.equal(buildLatestTribunalVoteContext().isDefendant, true)
   assert.equal(buildLatestTribunalVoteContext().actorUuid, "juror-1")
 
-  // 로컬 플레이어가 이전/이후 피고인 어느 쪽도 아닌 채로 피고인이 바뀌는 경우: isDefendant는
-  // 계속 false로 불변이지만 defendantUuid 원본 값은 정확히 갱신되어야 한다.
   seedStore({
     tribunal: { defendantUuid: "defendant-other" },
     self: { uuid: "juror-2" },
@@ -264,10 +240,6 @@ test("buildLatestTribunalVoteContext: alive는 참가자 snapshot이 아니라 s
   seedStore({ players: [{ uuid: "juror-1", alive: true }], self: { uuid: "juror-1" } })
   assert.equal(buildLatestTribunalVoteContext().alive, true)
 
-  // 렌더를 거치지 않고 players[].alive만 store에서 직접 바꾼다 — night_result_applied 등
-  // 소켓 핸들러가 리렌더 전에 store를 갱신하는 것과 동일한 타이밍이다. 이것이 정확히 "settle
-  // 시점에 alive가 최신 render snapshot이 아니라 최신 store 값을 반영해야 한다"는 요구사항의
-  // 재현이다.
   useInGameStore.setState((current) => ({
     gameId: current.gameId,
     state: {
@@ -308,18 +280,6 @@ test("buildLatestTribunalVoteContext: self.uuid에 대응하는 players 항목�
   assert.equal(buildLatestTribunalVoteContext().alive, false)
 })
 
-// ---------------------------------------------------------------------------
-// useInGameTribunalVoteSubmit (실제 hook mount) — submit 시점 canonical actor 캡처
-// ---------------------------------------------------------------------------
-//
-// submitTribunalVote는 gameId/dayIndex/defendantUuid는 렌더 시점 값(사용자가 화면에서 본 값)을
-// 그대로 쓰지만, actorUuid("누가 제출하는가")만은 호출 시점에 useInGameStore.getState()를 직접
-// 호출해 캡처해야 한다 — self가 렌더 이후·다음 리렌더 이전에 바뀌면 render selector 값(actorUuid)은
-// 아직 stale하기 때문이다. 아래 테스트는 useInGameTribunalVoteSubmit 자체를 real 컴포넌트 안에서
-// mount해 얻은 실제 submitTribunalVote 클로저를 호출하고, 그 호출이 useInGameStore.getState()를
-// 통해 최신(canonical) self.uuid를 읽는지 검증한다. 이전 구현(render-value actorUuid를 그대로
-// 넘기던 버전)이었다면 이 클로저는 submitTribunalVote 호출 중 getState()를 전혀 호출하지 않았을
-// 것이므로 capturedActorUuidsAtCall이 비어 있어 이 테스트가 실패했을 것이다.
 test("useInGameTribunalVoteSubmit: submitTribunalVote는 렌더 시점이 아니라 호출 시점에 useInGameStore.getState()의 canonical self.uuid를 동기 캡처한다", () => {
   seedStore({
     self: { uuid: "juror-1" },
@@ -331,9 +291,6 @@ test("useInGameTribunalVoteSubmit: submitTribunalVote는 렌더 시점이 아니
 
   const hookResult = mountTribunalVoteSubmitHook()
 
-  // 렌더 이후, 다음 리렌더가 일어나기 전에 store의 self가 교체된다(예: 재연결로 세션 identity가
-  // 바뀌는 경우) — 이 hook은 아직 리렌더되지 않았으므로 render selector 기반 actorUuid는 여전히
-  // "juror-1"이다.
   seedStore({
     self: { uuid: "juror-2" },
     players: [
@@ -414,16 +371,6 @@ test("useInGameTribunalVoteSubmit: 유효하지 않은 vote 값이면 submitTrib
   assert.equal(callCount, 0)
 })
 
-// ---------------------------------------------------------------------------
-// useInGameTribunalVoteSubmit (실제 hook mount, effect 포함) — settle 시점 stale ack 방어
-// ---------------------------------------------------------------------------
-//
-// 위 mountTribunalVoteSubmitHook(renderToStaticMarkup)은 effect를 실행하지 않으므로 controller가
-// 생성되지 않고, 실제 요청 제출·ack settle을 검증할 수 없다. 아래는 react-test-renderer + act로
-// effect가 실제로 실행되는 mount를 만들어 controller가 생성되고, 실제 submitTribunalVote 호출이
-// 진짜 socket 요청(emitWithAck)을 보내고, 그 요청이 살아있는 도중 store의 self 또는 players[].alive가
-// 바뀐 뒤 도착한 성공/실패 ack가 hook의 실제 status/submittedVote/error에 반영되지 않는지 검증한다.
-
 function createFakeConnectedSocket() {
   let resolveAck
   let rejectAck
@@ -447,18 +394,11 @@ function createFakeConnectedSocket() {
 }
 
 async function flushMicrotasks() {
-  // ack promise 체인(.then) 여러 겹이 풀리도록 여러 번 양보한다.
   for (let i = 0; i < 5; i++) {
     await Promise.resolve()
   }
 }
 
-// renderCount는 hook 본문이 실제로 몇 번 실행(=React가 몇 번 렌더)됐는지를 직접 센다. store만
-// mutate하고 act로 감싸지 않으면 React의 rerender와 그에 이은 context-change effect(invalidate)는
-// 아직 실행되지 않는다 — 아래 stale ack 테스트들은 ack settle 시점까지 renderCount가 그대로임을
-// 명시적으로 확인해, ack가 거부된 이유가 controller의 getLatestContext 기반 isContextStale
-// 검사 때문인지(맞음) hook의 invalidate effect가 generation을 먼저 무효화했기 때문인지(아님)를
-// 구분한다.
 async function mountRealTribunalVoteSubmitHook() {
   const controllerProbe = beginControllerProbe()
   const renderCount = { current: 0 }
@@ -519,8 +459,6 @@ test("useInGameTribunalVoteSubmit(실제 mount): 제출 중 players[].alive가 �
       controllerProbe.invalidateCalls.length,
   }
 
-  // act로 감싸지 않고 store만 직접 mutate한다 — React rerender/context-change effect가 아직
-  // 이 hook에 반영되지 않았음을 renderCount로 증명한다.
   mutateCanonicalStoreWithoutNotify((state) => {
     const actor = state.players.find(
       (player) => player.uuid === "juror-1",
@@ -535,8 +473,6 @@ test("useInGameTribunalVoteSubmit(실제 mount): 제출 중 players[].alive가 �
     "store mutate 직후에는 아직 리렌더가 일어나지 않았어야 한다",
   )
 
-  // act로 감싸지 않은 채 성공 ack를 도착시키고 promise chain만 흘려보낸다 — React rerender와
-  // 그에 이은 invalidate effect는 여전히 실행되지 않는다.
   fakeSocket.resolveAck({ ok: true, gameId: "g1", dayIndex: 2, vote: "GUILTY" })
   await fakeSocket.ackPromise
   await flushMicrotasks()
@@ -573,7 +509,6 @@ test("useInGameTribunalVoteSubmit(실제 mount): 제출 중 players[].alive가 �
   assert.equal(hook.getCaptured().status, "submitting")
   assert.notEqual(hook.getCaptured().submittedVote, "GUILTY")
 
-  // 이제 React 업데이트(및 context-change effect에 따른 invalidate)를 flush한다.
   await act(async () => {
     publishCanonicalStoreSnapshot()
     await Promise.resolve()
@@ -711,10 +646,6 @@ test("useInGameTribunalVoteSubmit(실제 mount): 제출 중 state.self.uuid가 �
       controllerProbe.invalidateCalls.length,
   }
 
-  // actor 자체가 교체된다(예: 재연결로 세션 identity가 바뀌는 경우) — gameId/dayIndex/phase/
-  // defendantUuid/alive는 요청 시점과 동일하게 유지되지만 self.uuid만 바뀐다.
-  // act로 감싸지 않고 store만 직접 mutate한다 — React rerender/context-change effect가 아직
-  // 이 hook에 반영되지 않았음을 renderCount로 증명한다.
   mutateCanonicalStoreWithoutNotify((state) => {
     assert.ok(state.self)
     state.self.uuid = "juror-2"

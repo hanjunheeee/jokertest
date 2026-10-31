@@ -22,7 +22,6 @@ import MotionBackButton from "../../../shared/ui/MotionBackButton.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "../../../shared/constants/navigationLayout.js"
 import { UI_REVEAL_TRANSITION } from "../../../shared/constants/pageTransitions.js"
 
-/** 로비 — 명예의 전당 */
 export default function PodiumPage() {
   const navigate = useNavigate()
   const topThree = useMemo(() => getPodiumTopThree(PODIUM_RANKING_DUMMY), [])

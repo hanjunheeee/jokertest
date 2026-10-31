@@ -1,25 +1,5 @@
 'use strict';
 
-// F-19 backend/db/migrations/0013-f19-friends-invites.js 단위 시험.
-//
-// notifications.migration.test.js·economy.migration.test.js와 같은 관례로, 실제 MySQL 없이
-// DDL·재실행 안전성·verify의 거부 조건을 결정론적으로 검증한다. 실제 MySQL 위의 유일 제약·
-// 트랜잭션·권한은 backend/tests/db/f19-friends-invites.integration.test.js가 검증한다.
-//
-// ── 이 파일이 노리는 회귀 ────────────────────────────────────────────────────
-// 이전 판은 game_invites.creation_seq를 `autoIncrement: true, unique: '<인덱스 이름>'`으로
-// 선언하고 "createTable의 unique 옵션이 그 인덱스를 만든다"고 적어 두었다. 실제로는 만들지
-// 않았다 — 그래서 실제 MySQL에서 CREATE TABLE 자체가
-//
-//     Incorrect table definition; there can be only one auto column and it must be defined as a key
-//
-// 로 실패했고, 0013을 적용하는 모든 격리 DB 스위트(138건)가 함께 죽었다.
-//
-// 그 실패는 "설치된 sequelize가 무엇을 생성하는가"에 달려 있으므로, 아래 첫 절은 fake가
-// 아니라 **실제 설치본의 mysql query generator**로 SQL을 렌더링해 대조한다. 연결은 열지
-// 않는다(sequelize.query를 가로채 문자열만 모은다). 두 번째 절은 fake queryInterface로
-// 멱등성·부분 스키마·verify 거부 조건을 본다.
-
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test';
 
 const test = require('node:test');
@@ -36,17 +16,6 @@ const SEQ_UNIQUE_INDEX = migration.INVITE_SEQ_UNIQUE_INDEX;
 const PAIR_COLUMN = migration.PENDING_PAIR_COLUMN;
 const PAIR_INDEX = migration.PENDING_PAIR_INDEX;
 
-// ---------------------------------------------------------------------------
-// 1) 실제 sequelize mysql generator가 만드는 CREATE TABLE
-// ---------------------------------------------------------------------------
-
-/**
- * 실제 mysql 방언으로 up()을 렌더링하고 실행된 SQL 문자열을 모두 모은다.
- *
- * 연결하지 않는다 — Sequelize 생성자는 URL을 파싱만 하고, 여기서 sequelize.query를 교체해
- * 실제 전송 대신 문자열을 기록한다. createTable은 이 교체된 query를 호출하므로
- * queryInterface → query-generator 경로는 실제 코드 그대로다.
- */
 const renderUpSql = async () => {
     const sequelize = new Sequelize('mysql://renderer:renderer@127.0.0.1:3306/renderer', { logging: false });
     const realQueryInterface = sequelize.getQueryInterface();
@@ -57,8 +26,6 @@ const renderUpSql = async () => {
         return [[], {}];
     };
 
-    // createTable이 선언한 uniqueKeys를 그대로 기억해 showIndex로 되돌려준다 — 그래야
-    // "생성 DDL이 이미 만든 키는 addIndex로 다시 만들지 않는다"는 분기가 실제로 돌아간다.
     const indexesByTable = new Map();
     const addedIndexes = [];
 
@@ -108,14 +75,11 @@ test('실제 mysql generator: game_invites의 CREATE TABLE 한 문장 안에 cre
 
     assert.match(create, /`creation_seq` BIGINT NOT NULL auto_increment/, 'creation_seq는 AUTO_INCREMENT여야 한다');
 
-    // 핵심 회귀: 이 UNIQUE 절이 **같은 문장 안에** 있어야 InnoDB가 CREATE를 받아준다.
-    // 뒤늦은 addIndex로는 이 검사를 통과할 수 없다(테이블이 애초에 만들어지지 않는다).
     assert.ok(
         create.includes(`UNIQUE \`${SEQ_UNIQUE_INDEX}\` (\`creation_seq\`)`),
         `CREATE TABLE에 UNIQUE ${SEQ_UNIQUE_INDEX} (creation_seq)가 없습니다:\n${create}`,
     );
 
-    // UUID 기본 키와 외래 키는 그대로 보존한다.
     assert.ok(create.includes('PRIMARY KEY (`id`)'), 'UUID 기본 키가 유지돼야 한다');
     assert.match(create, /`id` CHAR\(36\) BINARY NOT NULL/);
     assert.ok(create.includes('FOREIGN KEY (`sender_id`) REFERENCES `users` (`uuid`)'));
@@ -125,8 +89,6 @@ test('실제 mysql generator: game_invites의 CREATE TABLE 한 문장 안에 cre
 test('실제 mysql generator: AUTO_INCREMENT 컬럼이 같은 문장에서 어떤 키에도 덮이지 않는 CREATE TABLE은 하나도 없다', async () => {
     const { sql } = await renderUpSql();
 
-    // MySQL 규칙을 그대로 옮긴 검사다: auto_increment 컬럼은 그 문장에서 선언된 키
-    // (PRIMARY KEY / UNIQUE / KEY) 중 하나의 선두여야 한다.
     for (const statement of sql.filter((item) => item.includes('CREATE TABLE'))) {
         const autoColumns = [...statement.matchAll(/`([a-z_]+)` [A-Z()0-9 ]*?NOT NULL auto_increment/g)]
             .map((match) => match[1]);
@@ -139,9 +101,6 @@ test('실제 mysql generator: AUTO_INCREMENT 컬럼이 같은 문장에서 어�
 });
 
 test('실제 mysql generator: 컬럼 정의의 unique 문자열만으로는 키가 생기지 않는다(이 회귀의 근본 원인 고정)', async () => {
-    // 이 시험은 "왜 uniqueKeys 옵션이 필요한가"를 가정이 아니라 실제 설치본으로 증명한다.
-    // 설치된 sequelize가 언젠가 문자열 unique를 CREATE TABLE에 반영하게 바뀌면 여기가 깨지고,
-    // 그때 마이그레이션의 주석과 구현을 다시 판단하게 된다.
     const sequelize = new Sequelize('mysql://renderer:renderer@127.0.0.1:3306/renderer', { logging: false });
     const queryInterface = sequelize.getQueryInterface();
     const sql = [];
@@ -159,7 +118,6 @@ test('실제 mysql generator: 컬럼 정의의 unique 문자열만으로는 키�
         '설치된 sequelize가 문자열 unique를 DDL에 반영한다면 마이그레이션 주석을 갱신해야 한다',
     );
 
-    // 같은 컬럼을 uniqueKeys로 넘기면 키가 생긴다 — 0013이 쓰는 경로다.
     sql.length = 0;
     await queryInterface.createTable('probe_table', {
         id: { type: Sequelize.UUID, primaryKey: true, allowNull: false },
@@ -176,7 +134,6 @@ test('실제 mysql generator: 새로 만든 테이블에는 creation_seq 유일 
         0,
         '생성 DDL이 이미 만든 키를 다시 만들려 하면 실제 MySQL에서 중복 인덱스 오류가 난다',
     );
-    // 나머지 인덱스는 여전히 addIndex 경로로 붙는다.
     for (const name of [
         'game_invites_sender_key_unique', 'game_invites_receiver_seq_idx',
         'game_invites_receiver_status_idx', 'game_invites_room_idx',
@@ -184,10 +141,6 @@ test('실제 mysql generator: 새로 만든 테이블에는 creation_seq 유일 
         assert.ok(addedIndexes.some((index) => index.name === name), `${name}이 만들어져야 한다`);
     }
 });
-
-// ---------------------------------------------------------------------------
-// 2) fake queryInterface — 멱등성 · 부분 스키마 · verify 거부 조건
-// ---------------------------------------------------------------------------
 
 const FakeSequelize = {
     UUID: 'UUID',
@@ -198,25 +151,9 @@ const FakeSequelize = {
     NOW: 'NOW',
 };
 
-/**
- * 0013이 실제로 쓰는 것만 인메모리로 흉내 낸다. describeTable·showIndex·FK 조회는 up()이
- * 선언한 것에서 파생시켜, "up이 만든 모양을 verify가 통과시킨다"가 대역의 가정이 아니라
- * 실제 대조가 되게 한다.
- *
- * removeIndex는 **InnoDB 규칙을 그대로 옮겨** 거부한다: 어떤 외래 키 컬럼을 선두로 덮는
- * 인덱스가 그것 하나뿐이면 떼지 못한다. 그래야 "받침을 먼저 세운다"는 순서 계약이 이 대역에서
- * 실제로 강제된다 — 실측 실패(.pluto/monitor/BD-focused-2026-09-13T08-11-19.923Z.log)를
- * MySQL 없이 재현하는 근거다.
- */
 const createFakeQueryInterface = () => {
     const tables = new Map();
 
-    // friend_requests는 0013 이전부터 있던 테이블이다. 예전 UNIQUE(3컬럼)와 기존 행을
-    // 세워 두고, 교체가 이력을 지우지 않는지 본다.
-    //
-    // 두 UUID 컬럼의 외래 키를 0001과 똑같이 선언해 둔다. requester_id의 받침은 예전 3컬럼
-    // UNIQUE **하나뿐**이고(그 선두가 requester_id다), receiver_id는 그 UNIQUE의 두 번째
-    // 컬럼이라 받침이 되지 못해 MySQL이 자동 인덱스를 만든다 — 그 상태를 그대로 세운다.
     tables.set(FRIEND_REQUESTS, {
         columns: {
             id: { type: 'INTEGER', primaryKey: true, allowNull: false },
@@ -232,8 +169,6 @@ const createFakeQueryInterface = () => {
                 unique: true,
                 fields: ['requester_id', 'receiver_id', 'status'].map((attribute) => ({ attribute })),
             },
-            // MySQL이 receiver_id 외래 키를 위해 자동으로 만든 인덱스. 이름이 컬럼 이름과
-            // 같은 것도 실제 MySQL의 관례다 — 그래서 이 이름에 계약을 걸 수 없다.
             { name: 'receiver_id', unique: false, fields: [{ attribute: 'receiver_id' }] },
         ],
         rows: [],
@@ -251,7 +186,6 @@ const createFakeQueryInterface = () => {
         getDialect: () => 'mysql',
         async query(sql) {
             const statement = String(sql);
-            // 0013이 원시 SQL로 하는 일은 둘뿐이다: generated 컬럼 추가와 중복 PENDING 정리.
             if (statement.includes(`ADD COLUMN ${PAIR_COLUMN}`)) {
                 tables.get(FRIEND_REQUESTS).columns[PAIR_COLUMN] = { type: 'STRING(73)', allowNull: true };
                 return [[], {}];
@@ -270,10 +204,8 @@ const createFakeQueryInterface = () => {
         },
     };
 
-    // addIndex/removeIndex가 일어난 순서. "받침을 먼저 세우고 그 다음에 뗀다"를 assert한다.
     const operations = [];
 
-    /** 이 컬럼을 선두로 덮는 인덱스 이름들 — InnoDB의 외래 키 받침 판정 그대로다. */
     const supportingIndexNames = (table, column) => table.indexes
         .filter((index) => (index.fields ?? [])
             .map((field) => (typeof field === 'string' ? field : field.attribute))[0] === column)
@@ -307,9 +239,6 @@ const createFakeQueryInterface = () => {
             const target = table.indexes.find((index) => index.name === indexName);
             if (!target) return;
 
-            // 실제 MySQL과 같은 이유로 거부한다: 외래 키 컬럼의 받침이 이 인덱스 하나뿐이면
-            // DROP INDEX 자체가 실패한다. 대역이 이것을 조용히 허용하면 순서 결함이 DB에
-            // 닿기 전까지 드러나지 않는다.
             for (const [column, definition] of Object.entries(table.columns)) {
                 if (!definition.references) continue;
                 const supporters = supportingIndexNames(table, column);
@@ -331,7 +260,6 @@ const createFakeQueryInterface = () => {
                 type: String(definition.type),
                 allowNull: definition.allowNull !== false,
                 primaryKey: definition.primaryKey === true,
-                // 실제 mysql describeTable과 같은 자리에 같은 이름으로 돌려준다.
                 autoIncrement: definition.autoIncrement === true,
                 defaultValue: definition.defaultValue ?? null,
             }]));
@@ -419,7 +347,6 @@ test('up(): 재실행해도 테이블·인덱스를 중복 생성하지 않고 �
     qi._tables.get(FRIEND_BLOCKS).rows.push({ id: 1 });
     const indexCountBefore = qi._tables.get(GAME_INVITES).indexes.length;
 
-    // fake는 중복 createTable/addIndex를 에러로 막는다 — 통과하면 멱등하다는 뜻이다.
     await assert.doesNotReject(() => applyUp(qi));
     await assert.doesNotReject(() => migration.verify(qi));
 
@@ -433,7 +360,6 @@ test('up(): creation_seq 키가 빠진 채 이미 존재하는 game_invites에�
     const qi = createFakeQueryInterface();
     await applyUp(qi);
 
-    // 부분 스키마 재현: 키만 사라진 상태(예전 판이 만든 테이블·손으로 만든 테이블).
     const table = qi._tables.get(GAME_INVITES);
     table.indexes = table.indexes.filter((index) => index.name !== SEQ_UNIQUE_INDEX);
     table.rows.push({ id: 'invite-1', creation_seq: 7, status: 'ACCEPTED' });
@@ -469,15 +395,6 @@ test('up(): friend_requests의 예전 3컬럼 UNIQUE를 PENDING 전용 계정쌍
     await assert.doesNotReject(() => migration.verify(qi));
 });
 
-// ---------------------------------------------------------------------------
-// 3) 외래 키 받침 인덱스 — 실측 두 번째 blocker의 회귀
-// ---------------------------------------------------------------------------
-//
-// 실측 실패: Cannot drop index 'friend_requests_requester_receiver_status': needed in a
-// foreign key constraint (.pluto/monitor/BD-focused-2026-09-13T08-11-19.923Z.log).
-// 예전 3컬럼 UNIQUE가 requester_id 외래 키의 유일한 받침이었는데 받침을 세우지 않고 떼려
-// 했기 때문이다. 아래 시험들은 그 순서와 fail-closed verify를 고정한다.
-
 const SUPPORT_INDEXES = migration.REQUEST_FK_SUPPORT_INDEXES;
 const REQUESTER_SUPPORT = migration.REQUEST_REQUESTER_SUPPORT_INDEX;
 
@@ -487,7 +404,6 @@ test('up(): 예전 UNIQUE를 떼기 전에 두 외래 키의 비유일 받침 �
 
     const requests = qi._tables.get(FRIEND_REQUESTS);
 
-    // 두 받침이 실제로 있고, 비유일이며, 해당 컬럼이 선두다.
     for (const [column, indexName] of Object.entries(SUPPORT_INDEXES)) {
         const support = requests.indexes.find((index) => index.name === indexName);
         assert.ok(support, `${indexName} 받침 인덱스가 있어야 한다`);
@@ -499,7 +415,6 @@ test('up(): 예전 UNIQUE를 떼기 전에 두 외래 키의 비유일 받침 �
         );
     }
 
-    // 핵심: 순서다. 두 받침 addIndex가 모두 legacy removeIndex보다 **앞**에 있어야 한다.
     const requestOps = qi._operations.filter((entry) => entry.table === FRIEND_REQUESTS);
     const legacyRemoval = requestOps.findIndex((entry) => entry.op === 'removeIndex');
     assert.ok(legacyRemoval >= 0, '예전 UNIQUE 제거가 실제로 일어나야 한다');
@@ -513,7 +428,6 @@ test('up(): 예전 UNIQUE를 떼기 전에 두 외래 키의 비유일 받침 �
         );
     }
 
-    // 외래 키는 그대로 남는다 — 인덱스를 떼기 위해 제약을 희생하지 않았다.
     const references = await qi.getForeignKeyReferencesForTable(FRIEND_REQUESTS);
     for (const column of Object.keys(SUPPORT_INDEXES)) {
         assert.ok(
@@ -526,20 +440,16 @@ test('up(): 예전 UNIQUE를 떼기 전에 두 외래 키의 비유일 받침 �
 });
 
 test('받침을 세우지 않고 예전 UNIQUE를 떼려 하면 대역이 실제 MySQL과 같은 이유로 거부한다', async () => {
-    // 이 시험은 위 순서 계약이 "있으면 좋은 것"이 아니라 **없으면 반드시 깨진다**는 것을
-    // 증명한다. 대역의 거부가 실제 MySQL 메시지와 같은 조건에서 나오는지도 함께 고정한다.
     const qi = createFakeQueryInterface();
     const requests = qi._tables.get(FRIEND_REQUESTS);
     const legacyName = requests.indexes[0].name;
 
-    // 받침을 세우지 않은 상태 = up이 고치기 전의 상태.
     await assert.rejects(
         () => qi.removeIndex(FRIEND_REQUESTS, legacyName),
         /Cannot drop index '.*': needed in a foreign key constraint/,
         'requester_id의 받침이 이것뿐이면 떼지 못해야 한다',
     );
 
-    // 받침을 세우면 같은 제거가 성공한다 — 외래 키를 끄거나 떼지 않았다.
     await migration.ensureRequestForeignKeySupportIndexes(qi);
     await assert.doesNotReject(() => qi.removeIndex(FRIEND_REQUESTS, legacyName));
     assert.equal(
@@ -557,13 +467,11 @@ test('ensureRequestForeignKeySupportIndexes(): 재실행하면 아무것도 새�
     const firstRun = await migration.ensureRequestForeignKeySupportIndexes(qi);
     assert.deepEqual(firstRun.sort(), Object.values(SUPPORT_INDEXES).sort());
 
-    // 대역의 addIndex는 같은 이름을 다시 만들면 던진다 — 빈 배열이면 호출조차 없었다는 뜻이다.
     const secondRun = await migration.ensureRequestForeignKeySupportIndexes(qi);
     assert.deepEqual(secondRun, [], '멱등해야 한다');
 });
 
 test('verify(): 외래 키 받침 인덱스가 없거나 유일이거나 선두가 아니면 각각 거부한다', async () => {
-    // (1) 받침이 아예 없는 스키마 — 예전 UNIQUE는 떼였는데 받침을 세우지 않은 부분 적용.
     {
         const qi = createFakeQueryInterface();
         await applyUp(qi);
@@ -575,7 +483,6 @@ test('verify(): 외래 키 받침 인덱스가 없거나 유일이거나 선두�
         );
     }
 
-    // (2) 이름은 맞지만 유일 제약이 된 경우 — 계정별 요청 이력이 한 건으로 제한된다.
     {
         const qi = createFakeQueryInterface();
         await applyUp(qi);
@@ -583,7 +490,6 @@ test('verify(): 외래 키 받침 인덱스가 없거나 유일이거나 선두�
         await assert.rejects(() => migration.verify(qi), /비유일 받침 인덱스여야 합니다/);
     }
 
-    // (3) 컬럼은 들어 있지만 선두가 아닌 경우 — InnoDB는 이것을 받침으로 쓰지 않는다.
     {
         const qi = createFakeQueryInterface();
         await applyUp(qi);
@@ -593,7 +499,6 @@ test('verify(): 외래 키 받침 인덱스가 없거나 유일이거나 선두�
         await assert.rejects(() => migration.verify(qi), /선두 컬럼으로 덮지 않습니다/);
     }
 
-    // (4) 받침은 멀쩡한데 외래 키가 사라진 경우 — 인덱스를 떼려고 제약을 희생한 상태다.
     {
         const qi = createFakeQueryInterface();
         await applyUp(qi);
@@ -609,7 +514,6 @@ test('up(): 받침 인덱스가 이미 있는 DB에 재실행해도 중복 생�
     const indexCountBefore = qi._tables.get(FRIEND_REQUESTS).indexes.length;
     qi._tables.get(FRIEND_REQUESTS).rows.push({ id: 1, status: 'DECLINED' });
 
-    // 대역이 중복 addIndex를 에러로 막으므로 통과 자체가 멱등성의 증거다.
     await assert.doesNotReject(() => applyUp(qi));
     assert.equal(qi._tables.get(FRIEND_REQUESTS).indexes.length, indexCountBefore);
     assert.equal(qi._tables.get(FRIEND_REQUESTS).rows.length, 1, '재실행이 이력을 지우면 안 된다');
@@ -617,37 +521,14 @@ test('up(): 받침 인덱스가 이미 있는 DB에 재실행해도 중복 생�
     await assert.doesNotReject(() => migration.verify(qi));
 });
 
-// ---------------------------------------------------------------------------
-// 4) 기동 sync()가 뗀 제약을 되살리지 않는가
-// ---------------------------------------------------------------------------
-//
-// 마이그레이션이 예전 UNIQUE를 떼어도, **모델이 같은 인덱스를 계속 선언하고 있으면** 다음
-// 기동에서 그대로 되살아난다. backend/index.js는 부팅마다 db.sequelize.sync({force:false})를
-// 부르고, sequelize 6.37.8의 Model.sync는 force/alter와 무관하게 언제나 아래를 실행한다
-// (backend/node_modules/sequelize/lib/model.js:988-1000):
-//
-//     const existingIndexes = await this.queryInterface.showIndex(tableName, options);
-//     const missingIndexes = this._indexes.filter(
-//         (item1) => !existingIndexes.some((item2) => item1.name === item2.name));
-//     for (const index of missingIndexes) await this.queryInterface.addIndex(...);
-//
-// 즉 "모델이 선언했는데 같은 **이름**의 인덱스가 DB에 없으면 만든다". 0013이 뗀 인덱스는
-// 정확히 그 조건에 들어맞으므로, 모델 선언을 그대로 두면 운영 DB에서 거절→재신청→재거절이
-// 다시 막힌다(AC-05 마이그레이션 계약이 부팅 한 번으로 무효가 된다).
-//
-// 아래 두 시험은 그 경로를 DB 없이 고정한다: 실제 모델 선언과, 실제 sync 규칙을 그대로 옮긴
-// 계산을 0013 적용 후 스키마에 적용해 본다.
-
 const modelsDb = require('../models');
 
-/** sequelize Model.sync의 missing index 계산 그대로 — 이름 일치만 본다. */
 const syncMissingIndexes = (modelIndexes, existingIndexes) => modelIndexes
     .filter((declared) => !existingIndexes.some((existing) => existing.name === declared.name));
 
 const fieldNamesOf = (index) => (index.fields ?? [])
     .map((field) => (typeof field === 'string' ? field : (field.attribute ?? field.name)));
 
-/** 예전 제약과 같은 것인가 — 이름이 아니라 "유일 + 세 컬럼"으로만 판정한다. */
 const isLegacyRequestUnique = (index) => index.unique === true
     && fieldNamesOf(index).length === 3
     && ['requester_id', 'receiver_id', 'status'].every((column) => fieldNamesOf(index).includes(column));
@@ -662,9 +543,6 @@ test('FriendRequest 모델은 0013이 뗀 예전 3컬럼 UNIQUE를 더 이상 �
         '모델이 선언하고 있으면 sync()가 부팅마다 다시 만들어 0013의 교체가 무효가 된다',
     );
 
-    // 새 유일성은 generated 컬럼(PENDING일 때만 값이 있음) 위에 있어 모델로는 표현할 수
-    // 없다 — 그래서 friend_requests의 유일성은 0013이 유일한 소유자다. 모델이 이 테이블에
-    // 어떤 유일 인덱스도 선언하지 않는다는 것이 그 계약의 다른 면이다.
     assert.deepEqual(
         declared.filter((index) => index.unique === true).map((index) => index.name),
         [],
@@ -685,8 +563,6 @@ test('0013 적용 후 기동 sync()는 friend_requests에 예전 유일 제약�
         'sync()가 다시 만들면 거절 후 재신청이 운영에서 계속 막힌다',
     );
 
-    // sync가 실제로 만들 인덱스를 전부 반영해도 계약이 유지되는지까지 본다 — 다른 이름의
-    // 유일 인덱스가 같은 컬럼 조합을 덮는 우회도 여기서 걸린다.
     const requests = qi._tables.get(FRIEND_REQUESTS);
     for (const index of wouldAdd) {
         requests.indexes.push({
@@ -704,9 +580,6 @@ test('0013 적용 후 기동 sync()는 friend_requests에 예전 유일 제약�
 });
 
 test('0013이 만든 스키마에는 세 신규 모델이 선언한 인덱스가 이름까지 모두 존재한다', async () => {
-    // 같은 결함의 일반형을 막는다: 모델과 마이그레이션의 인덱스 **이름**이 어긋나면 sync가
-    // 부팅마다 같은 컬럼을 덮는 인덱스를 하나 더 만든다. 이름이 정확히 일치할 때만 sync가
-    // 아무것도 하지 않는다(Model.sync의 missing 계산은 이름 비교뿐이다).
     const qi = createFakeQueryInterface();
     await applyUp(qi);
 
@@ -725,9 +598,6 @@ test('0013이 만든 스키마에는 세 신규 모델이 선언한 인덱스가
 });
 
 test('up(): 예전 UNIQUE의 이름이 0001의 것이든 sync가 만든 것이든 똑같이 제거한다', async () => {
-    // 0001-legacy-baseline은 friend_requests_requester_receiver_status로, sync()는
-    // friend_requests_requester_id_receiver_id_status로 같은 제약을 만든다. 제거 판정이
-    // 이름에 걸려 있으면 둘 중 하나가 살아남는다.
     const qi = createFakeQueryInterface();
     const requests = qi._tables.get(FRIEND_REQUESTS);
     requests.indexes = requests.indexes.map((index) => (

@@ -1,22 +1,3 @@
-/**
- * F-20: 대기방 **설정 변경**(update_room_settings) 요청의 canonical 검증·계약 모듈.
- *
- * 방 생성(create_room)과 굳이 분리한 이유는 두 요청이 서로 다른 사실을 말하기 때문이다:
- *   - 생성은 "이런 방을 새로 만들어 달라"이고, 서버 소유 필드가 아예 존재하지 않는다.
- *   - 수정은 "지금 존재하는 **그** 방을, 내가 본 **그** 버전에서 바꿔 달라"이므로
- *     식별자(roomId)·재시도 키(requestId)·기대 버전(expectedSettingsVersion)이 입력의
- *     일부이고, 편집이 허용되지 않는 설정(D-12의 세 규칙)은 입력으로 받지 않는다.
- *
- * 값 자체의 허용 목록은 생성 검증(createRoomValidation)과 역할 구성 검증(roleComposition)을
- * 그대로 재사용한다 — 두 경로가 갈리면 "만들 때는 되는데 바꿀 때는 안 되는" 설정이 생긴다.
- *
- * 계약 요약
- * - 최상위 허용 목록 밖의 키가 하나라도 있으면 거부한다(조용히 버리지 않는다).
- * - lightsOut·soulBetting·voteReveal은 **입력으로 받지 않는다**. 서버가 기존 값을 보존한다.
- * - 관전자 관련 필드(allowSpectators 등)는 허용 목록에 없으므로 자동으로 거부된다(AC-06).
- * - 검증을 통과하면 클라이언트 객체를 저장하지 않고 새 복사본만 돌려준다.
- */
-
 const {
     validateRoleNightActionTimes,
     ROLE_NIGHT_ACTION_TIME_KEYS,
@@ -33,14 +14,12 @@ const {
 
 const ALLOWED_ACCESS_TYPES = Object.freeze(['open', 'code'])
 
-/** 소켓 이벤트 이름의 단일 원천. frontend/src/domains/game/setup/constants/gameSetupSocket.js와 같은 값이어야 한다. */
 const ROOM_SETTINGS_EVENTS = Object.freeze({
     UPDATE_ROOM_SETTINGS: 'update_room_settings',
     GET_ROOM_SETTINGS_UPDATE_RESULT: 'get_room_settings_update_result',
     ROOM_SETTINGS_UPDATED: 'room_settings_updated',
 })
 
-/** 실패 사유 코드의 단일 원천(클라이언트 분기용 안정 식별자). */
 const ROOM_SETTINGS_ERROR_CODES = Object.freeze({
     INVALID_REQUEST: 'INVALID_REQUEST',
     STALE_SOCKET: 'STALE_SOCKET',
@@ -56,13 +35,6 @@ const ROOM_SETTINGS_ERROR_CODES = Object.freeze({
     INTERNAL_ERROR: 'INTERNAL_ERROR',
 })
 
-/**
- * F-20에서 방장이 편집할 수 있는 설정 필드. 이 목록이 곧
- *   (1) 수정 요청이 실을 수 있는 설정 입력,
- *   (2) 공개 목록 설정 요약,
- *   (3) F-24의 "다음 방 설정 복원" 입력
- * 세 곳의 공통 원천이다. roleCounts/roleNightActionTimes는 CUSTOM·부분 지정일 때만 존재한다.
- */
 const EDITABLE_ROOM_SETTING_KEYS = Object.freeze([
     'maxPlayers',
     'jokerCount',
@@ -74,13 +46,8 @@ const EDITABLE_ROOM_SETTING_KEYS = Object.freeze([
     'roleNightActionTimes',
 ])
 
-/**
- * D-12의 추가 규칙 세 가지. F-20 편집 대상이 아니며 수정 요청으로 바뀌지 않는다 —
- * 서버가 기존 값을 그대로 보존한다(A-06). 생성 경로의 검증·기본값 계약은 그대로다.
- */
 const PRESERVED_ROOM_SETTING_KEYS = Object.freeze(['lightsOut', 'soulBetting', 'voteReveal'])
 
-/** update_room_settings payload의 최상위 허용 키 전체. 이 밖의 키는 거부 사유다. */
 const UPDATE_REQUEST_TOP_LEVEL_KEYS = Object.freeze([
     'roomId',
     'requestId',
@@ -89,22 +56,12 @@ const UPDATE_REQUEST_TOP_LEVEL_KEYS = Object.freeze([
     ...EDITABLE_ROOM_SETTING_KEYS,
 ])
 
-// 식별자 길이 상한. 요청 결과 기록의 키가 되므로 상한이 없으면 한 계정이 임의 길이 문자열로
-// 서버 메모리를 늘릴 수 있다. UUID(36자)·nanoid류를 모두 담고도 넉넉한 값이다.
 const MAX_IDENTIFIER_LENGTH = 128
 
 function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/**
- * 비어 있지 않고 길이가 제한된 문자열인지. 공백만 있는 값도 식별자가 아니다.
- *
- * 저장 요청(update_room_settings)과 결과 조회(get_room_settings_update_result)는 **같은 키**를
- * 만드는 같은 식별자를 다룬다 — 두 경로가 서로 다른 기준을 쓰면 저장에서는 거부된 값이
- * 조회에서는 통과해, 어느 쪽도 만들 수 없는 키를 묻는 요청이 정상 응답을 받는다.
- * 값 자체는 보정하지 않는다(trim하지 않는다) — 통과한 식별자는 받은 그대로 키가 된다.
- */
 function isIdentifier(value) {
     return typeof value === 'string' && value.length > 0 && value.length <= MAX_IDENTIFIER_LENGTH
         && value.trim().length > 0
@@ -114,15 +71,6 @@ function fail(code, message) {
     return { ok: false, code, message }
 }
 
-/**
- * 저장된 room.settings에서 **편집 가능한 필드만** 골라 새 객체로 만든다.
- *
- * 저장 값을 그대로 spread하지 않는 것이 핵심이다 — 예전 데이터에 관전자 키나 알 수 없는
- * 필드가 섞여 있어도 이 경계를 지나면 사라진다(AC-06). 중첩 객체(roleCounts·
- * roleNightActionTimes)도 허용 키만 복사한 새 객체를 만든다.
- *
- * @param {unknown} settings - 신뢰하지 않는(또는 구버전) 저장 설정
- */
 function buildEditableSettingsView(settings) {
     const source = isPlainObject(settings) ? settings : {}
     const view = {}
@@ -149,10 +97,6 @@ function buildEditableSettingsView(settings) {
     return view
 }
 
-/**
- * 참가자에게 내려줄 설정 응답. 편집 가능한 필드 + 서버가 보존하는 D-12 세 값이다.
- * 원본 room.settings를 그대로 내보내지 않는 유일한 경계다(AC-06).
- */
 function buildRoomSettingsView(settings) {
     const source = isPlainObject(settings) ? settings : {}
     const view = buildEditableSettingsView(source)
@@ -162,19 +106,6 @@ function buildRoomSettingsView(settings) {
     return view
 }
 
-/**
- * 저장된 room.settings에 허용 목록 밖의 키가 남아 있는가(최상위 + 중첩).
- *
- * 왜 필요한가: 응답 경계(buildRoomSettingsView)는 나가는 값만 거른다 — 서버가 **들고 있는**
- * 값은 그대로다. 실제로 값이 달라지는 저장은 아래 커밋에서 새 객체를 만들어 자연히 걸러지지만,
- * 값이 같은 저장(changed:false)은 커밋 자체를 하지 않으므로 예전 데이터에 섞인 관전자 키가
- * 저장값에 계속 남는다. 그 한 경우만 정확히 짚어내기 위한 술어다(AC-06).
- *
- * 오염이 없으면 false를 돌려주므로 정상 방의 저장 객체는 건드려지지 않는다 — 같은 값을
- * 새 객체로 다시 만들어 키 순서만 바꾸는 무의미한 교체를 피하기 위한 조건이다.
- *
- * @param {unknown} settings - 저장된(신뢰하지 않는) 설정 객체
- */
 function settingsContainNonAllowlistedKeys(settings) {
     if (!isPlainObject(settings)) return false
     for (const key of Object.keys(settings)) {
@@ -193,10 +124,6 @@ function settingsContainNonAllowlistedKeys(settings) {
     return false
 }
 
-/**
- * 같은 requestId로 들어온 재시도가 **정말 같은 요청**인지 판정하기 위한 결정적 지문.
- * 키 순서에 흔들리지 않도록 허용 목록 순서로만 직렬화한다.
- */
 function fingerprintUpdateSettings(accessType, settings) {
     const parts = [`accessType=${accessType}`]
     for (const key of EDITABLE_ROOM_SETTING_KEYS) {
@@ -221,37 +148,15 @@ function fingerprintUpdateSettings(accessType, settings) {
     return parts.join('|')
 }
 
-/**
- * **요청 전체**의 정규화 지문. 같은 requestId로 들어온 재시도가 정말 같은 요청인지 판정한다.
- *
- * expectedSettingsVersion을 포함하는 이유: 그 값은 "내가 어느 버전을 보고 눌렀는가"라는
- * 승인된 요청의 일부이지 전송 부수 정보가 아니다. 설정 값만으로 지문을 만들면
- *   v1 저장 성공 → 같은 requestId·같은 설정·expectedSettingsVersion=2 재전달
- * 이 "같은 요청의 멱등 재시도"로 통과해, 서버가 v1 결과를 v2 요청의 답으로 돌려준다.
- * 진짜 재시도(같은 버전·같은 값)는 지문이 그대로라 여전히 멱등이다.
- *
- * fingerprintUpdateSettings와 분리해 둔 이유: 그쪽은 "지금 저장된 설정과 달라지는가"
- * (changed 판정)를 묻는 서로 다른 질문이고, 그 비교에는 버전이 들어가면 안 된다.
- */
 function fingerprintUpdateRequest(expectedSettingsVersion, accessType, settings) {
     return `v=${expectedSettingsVersion}|${fingerprintUpdateSettings(accessType, settings)}`
 }
 
-/**
- * update_room_settings payload를 검증합니다. 보정 없이 거부만 합니다.
- *
- * @param {unknown} payload - 클라이언트가 보낸 값(신뢰하지 않음)
- * @returns {{ok:true,value:{roomId:string,requestId:string,expectedSettingsVersion:number,
- *            accessType:string,settings:object}}|{ok:false,code:string,message:string}}
- * @flow 형태 → 최상위 허용 목록 → 식별자/버전 → 값 허용 목록 → 역할 구성 순으로 검사한다.
- */
 function validateUpdateRoomSettingsPayload(payload) {
     if (!isPlainObject(payload)) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '잘못된 요청입니다.')
     }
 
-    // 허용 목록 밖의 최상위 키는 조용히 무시하지 않고 거부한다 — 무시하면 클라이언트는
-    // "관전자 설정을 보냈다"고 믿는데 서버는 다르게 해석하는 상태가 된다(AC-06).
     for (const key of Object.keys(payload)) {
         if (!UPDATE_REQUEST_TOP_LEVEL_KEYS.includes(key)) {
             return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '변경할 수 없는 설정이 포함되어 있습니다.')
@@ -277,8 +182,6 @@ function validateUpdateRoomSettingsPayload(payload) {
     if (!isIdentifier(requestId)) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '요청 식별자가 올바르지 않습니다.')
     }
-    // 버전은 서버가 1부터 발급하므로 양의 안전한 정수만 의미가 있다. 0/음수/실수/문자열은
-    // "내가 본 버전"을 표현하지 못하므로 그 자체로 잘못된 요청이다.
     if (!Number.isSafeInteger(expectedSettingsVersion) || expectedSettingsVersion < 1) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '설정 버전 값이 올바르지 않습니다.')
     }
@@ -309,8 +212,6 @@ function validateUpdateRoomSettingsPayload(payload) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, roleTimes.message)
     }
 
-    // 생성 경로와 **같은** 순서로 역할 구성을 검증한다(F0991 → F0386). 그래야 광대 상한
-    // 2명 같은 역할 계약이 수정 경로에서도 똑같이 집행된다.
     const roleComposition = validateCreateRoomRoleComposition(payload, { maxPlayers, jokerCount })
     if (!roleComposition.ok) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, roleComposition.message)
@@ -324,8 +225,6 @@ function validateUpdateRoomSettingsPayload(payload) {
         nightActionTime,
         ...roleComposition.value,
     }
-    // 지정이 없으면 키 자체를 만들지 않는다(생성 검증과 같은 이유) — 빈 객체를 저장하면
-    // "전 직업 폴백"과 "지정했지만 비어 있음"이 구별되지 않는다.
     if (roleTimes.value !== undefined) settings.roleNightActionTimes = roleTimes.value
 
     return {
@@ -353,6 +252,5 @@ module.exports = {
     PRESERVED_ROOM_SETTING_KEYS,
     UPDATE_REQUEST_TOP_LEVEL_KEYS,
     MAX_IDENTIFIER_LENGTH,
-    // 저장·조회 두 경로가 같은 식별자 계약을 쓰도록 술어 자체를 공유한다(사본 금지).
     isRoomSettingsIdentifier: isIdentifier,
 }

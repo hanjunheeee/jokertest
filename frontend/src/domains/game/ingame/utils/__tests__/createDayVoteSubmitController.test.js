@@ -14,7 +14,6 @@ function createDeferred() {
   return { promise, resolve, reject }
 }
 
-/** emitWithAck 호출마다 별도로 resolve/reject를 제어할 수 있는 deferred를 큐에 쌓는 mock이다. */
 function createEmitWithAckMock() {
   const calls = []
   function emitWithAck(payload) {
@@ -26,7 +25,6 @@ function createEmitWithAckMock() {
   return emitWithAck
 }
 
-/** emitWithAck 프로미스의 then/catch 체인이 실행되도록 microtask 큐를 두 차례 비운다. */
 function flush() {
   return Promise.resolve().then(() => Promise.resolve())
 }
@@ -211,44 +209,32 @@ test("socket 교체: 이전 controller를 dispose()한 뒤 새 controller로만 
   const emitWithAckA = createEmitWithAckMock()
   const emitWithAckB = createEmitWithAckMock()
 
-  // 1. socket A용 controller A를 만들고 첫 submit을 호출한다(A 요청 진행 중 상태).
   const controllerA = createDayVoteSubmitController({ emitWithAck: emitWithAckA, timeoutMs: 1000, onStateChange: () => {} })
   controllerA.submit({ gameId: "g1", dayIndex: 1, targetId: "a-target" })
   assert.equal(emitWithAckA.calls.length, 1)
 
-  // 2. controller A를 dispose()한다.
   controllerA.dispose()
 
-  // 3~4. socket B용 controller B를 만들고 새 submit을 수행한다 — 새 제출은 B로만 emit된다.
   const controllerB = createDayVoteSubmitController({ emitWithAck: emitWithAckB, timeoutMs: 1000, onStateChange: () => {} })
   controllerB.submit({ gameId: "g1", dayIndex: 1, targetId: "b-target" })
   assert.equal(emitWithAckB.calls.length, 1)
 
-  // 5. socket A의 emitWithAck 호출 수는 교체 후 추가로 늘지 않는다.
   assert.equal(emitWithAckA.calls.length, 1)
 
-  // 6. socket A 요청의 늦은 성공 resolve는 controller B state에 no-op이다.
   emitWithAckA.calls[0].deferred.resolve({ ok: true })
   await flush()
   assert.equal(controllerB.getState().hasSubmitted, false)
 
-  // 7. controller B의 정상 resolve만 hasSubmitted/lastSubmittedTargetId를 변경한다.
   emitWithAckB.calls[0].deferred.resolve({ ok: true })
   await flush()
   assert.deepEqual(controllerB.getState(), { status: "idle", error: null, hasSubmitted: true, lastSubmittedTargetId: "b-target" })
 
-  // A는 dispose(), B는 정상 resolve로 각 타이머가 해제됐다. 이후 시간을 진행해도
-  // controller B의 성공 상태는 바뀌지 않는다.
   t.mock.timers.tick(1000)
   assert.deepEqual(controllerB.getState(), { status: "idle", error: null, hasSubmitted: true, lastSubmittedTargetId: "b-target" })
 
-  // 8. dispose() 이후 controller A에 submit해도 socket A의 emitWithAck가 호출되지 않는다.
   controllerA.submit({ gameId: "g1", dayIndex: 1, targetId: "a-target-2" })
   assert.equal(emitWithAckA.calls.length, 1)
 
-  // 9. (hook 배선 시뮬레이션) controllerRef.current가 없는 교체 순간은 optional chaining으로
-  // submit 자체가 호출되지 않으므로, 두 controller 모두 이 시점까지 추가 emit이 없었음을
-  // 재확인하는 것으로 대신한다(hook 자체는 §6.5에 따라 별도 단위 테스트 대상이 아니다).
   assert.equal(emitWithAckA.calls.length, 1)
   assert.equal(emitWithAckB.calls.length, 1)
 })

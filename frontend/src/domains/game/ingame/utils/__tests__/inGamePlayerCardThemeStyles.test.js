@@ -10,7 +10,6 @@ import {
 import { buildInGamePlayerNameplateStyle } from "../buildInGamePlayerNameplateStyle.js"
 import { resolveInGamePlayerCardThemeStyles } from "../resolveInGamePlayerCardThemeStyles.js"
 
-/** 로컬 store가 내려주는 colorIndex 하나만으로 카드 스타일을 만든다 — 카드가 쓰는 유일한 색 입력. */
 const COLOR_INDEXES = Array.from({ length: INGAME_PLAYER_THEME_PALETTE_SIZE }, (_, i) => i)
 
 test("resolveInGamePlayerCardThemeStyles가 colorIndex마다 다른 색을 돌려준다", () => {
@@ -36,7 +35,6 @@ test("buildInGamePlayerNameplateStyle이 colorIndex마다 다른 명판 스타�
   })
 
   styleList.forEach((style, colorIndex) => {
-    // inset은 colorIndex와 무관하게 유지되고 색만 바뀐다.
     assert.equal(style.bottom, INGAME_PLAYER_NAMEPLATE_INSET.bottom)
     assert.equal(style.left, INGAME_PLAYER_NAMEPLATE_INSET.left)
     assert.equal(style.right, INGAME_PLAYER_NAMEPLATE_INSET.right)

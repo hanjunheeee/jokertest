@@ -10,7 +10,6 @@ import {
 } from "../../constants/board/ingamePlayerCardOverlayLayout.js"
 import { INGAME_CARD_MENU_ITEM_KINDS } from "../../hooks/useInGamePlayerCardMenu.js"
 
-/** 이 오버레이 전체를 가리키는 표식. 시험·e2e가 "메뉴가 떴는가"를 DOM 하나로 판정한다. */
 export const INGAME_PLAYER_CARD_MENU_ATTR = "data-ingame-player-card-menu"
 
 function resolveOverlayButtonAsset(kind) {
@@ -42,12 +41,6 @@ function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason 
   )
 }
 
-/**
- * 플레이어 카드 좌클릭 행동 오버레이.
- *
- * 카드 하단 드롭다운 대신 카드 위에 어두운 scrim과 이미지 버튼을 겹친다.
- * 열림·닫힘·항목 계산·제출은 useInGamePlayerCardMenu가 소유한다.
- */
 export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
   const visibleItems = items.filter((item) => item.visible !== false)
   const hasSingleCardAction = visibleItems.some(

@@ -19,11 +19,8 @@ import {
 import InGamePhaseActionRow from "./InGamePhaseActionRow.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/** 시간흐름 바 위 단계 노드 하나 — 활성 단계면 위에 지시 화살표를 추가로 그림 */
 function TimebarNode({
-  // src: 노드에 그릴 단계 아이콘 이미지 경로
   src,
-  // active: 현재 진행 중인 단계인지 여부 — true면 강조 스타일 + 화살표 표시
   active,
 }) {
   return (
@@ -48,24 +45,9 @@ function TimebarNode({
   )
 }
 
-/**
- * 인게임 우측 상단 시간흐름 바 (낮 상태 prototype)
- * 좌측 일차·단계 노드·지시화살표 + 프레임 아래 현재 상태 문구 한 줄
- *
- * 이 컴포넌트는 문구를 직접 파생하지 않는다 — 호출부가 canonical state에서
- * selectInGameTimebarStatusMessage로 계산해 넘긴다(스토어·소켓을 여기서 읽지 않는다).
- * @param {number} day 현재 게임 일차 — 좌측 "제 N일" 라벨
- * @param {string} activePhaseId 강조할 단계 노드 id
- * @param {string|null} statusMessage 프레임 아래에 띄울 현재 상태 문구(없으면 줄 자체를 그리지 않음)
- * @param {string} className 배치 클래스
- * @flow statusMessage가 비어 있으면(ENDED 등) 문구 줄을 렌더하지 않아 기존 표시·레이아웃이 그대로 유지된다.
- */
 export default function InGameTimebar({
-  // day: 현재 게임 일차 — 좌측 "제 N일" 라벨에 표시
   day = INGAME_TIMEBAR_PREVIEW_DAY,
-  // activePhaseId: 현재 활성화된 단계(낮/투표 등)의 id — 해당 노드만 강조 표시
   activePhaseId = INGAME_DAY_TIMEBAR_ACTIVE_PHASE,
-  // statusMessage: 현재 phase·밤 역할 턴 상태 문구 — 기본값 null이면 지금까지와 완전히 동일한 화면
   statusMessage = null,
   className = INGAME_TIMEBAR_POSITION_CLASS,
 }) {
@@ -110,9 +92,6 @@ export default function InGameTimebar({
         <p className={INGAME_TIMEBAR_STATUS_CLASS}>{statusMessage}</p>
       ) : null}
 
-      {/* V-2: 제어 패널이 사라지면서 대상 없는 행동 버튼(준비·집계·판정·밤
-          종료)이 이 줄로 옮겨왔다. 값은 이 컴포넌트가 InGameActionContext에서 직접 읽으므로
-          시간바는 조작 계약을 알지 않는다 — 그릴 것이 없는 단계에서는 스스로 null이 된다. */}
       <InGamePhaseActionRow />
     </div>
   )

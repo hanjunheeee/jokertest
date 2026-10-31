@@ -37,9 +37,6 @@ export default function InvitedGuestsJobChallenges({ challenges, targetAchieveme
                 cleared={challenge.cleared}
                 current={challenge.current}
                 threshold={challenge.threshold}
-                // F-17(AC-02): 클리어·미클리어 **양쪽 행 모두**에 대상 표시를 전달한다 —
-                // 방금 달성한 업적은 클리어 행으로 렌더되므로, 미클리어 행에만 붙이면
-                // 정작 알림이 가리킨 행이 표시되지 않는다.
                 targeted={targetAchievementId !== null && challenge.id === targetAchievementId}
                 onOpenProfileBorderZoom={setProfileBorderZoomItem}
               />

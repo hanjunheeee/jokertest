@@ -2,7 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { attachVideoIntroWatch } from "../useVideoIntro.js"
 
-// <video> 대역 — 이벤트 등록·발화와 pause/currentTime만 흉내낸다.
 function makeVideo({ duration = NaN, currentTime = 0, readyState = 0 } = {}) {
   const listeners = new Map()
   return {

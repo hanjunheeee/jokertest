@@ -30,8 +30,6 @@ test('충돌 시 기존 방을 덮어쓰지 않는다', () => {
 })
 
 test('socket.join 대기 중 생성된 다른 방도 코드 비교 대상에 포함된다', () => {
-    // generateUniqueRoomCode는 호출 시점의 Map을 그대로 스캔하므로, 호출 직전에 다른
-    // 방이 새로 커밋됐다면 그 방의 코드와도 자연히 비교된다(별도 캐시를 갖지 않음).
     const existing = new Map()
     const first = generateUniqueRoomCode(existing, { generator: () => 'CCCCCC' })
     existing.set('room-1', { code: first })

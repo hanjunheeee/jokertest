@@ -36,7 +36,6 @@ function baseContext(overrides = {}) {
 }
 
 async function flushMicrotasks() {
-  // ack promise 체인(.then) 여러 겹이 풀리도록 여러 번 양보한다.
   for (let i = 0; i < 5; i++) {
     await Promise.resolve()
   }
@@ -81,8 +80,6 @@ test("createTribunalVoteSubmitController: 요청 후 피고인이 바뀌면(A→
 
   controller.submit({ gameId: "g1", dayIndex: 2, vote: "GUILTY", defendantUuid: "defendant-a", actorUuid: "juror-1" })
 
-  // 로컬 플레이어가 이전/이후 피고인 어느 쪽도 아니므로 isDefendant는 계속 false로 불변이지만,
-  // defendantUuid 자체는 A에서 B로 바뀌었다 — 이 전환을 감지해야 한다.
   setContext(baseContext({ defendantUuid: "defendant-b" }))
 
   socket.resolveAck({ ok: true, gameId: "g1", dayIndex: 2, vote: "GUILTY" })
@@ -142,9 +139,6 @@ test("createTribunalVoteSubmitController: 요청 후 actor(self)가 바뀌면 �
 
   controller.submit({ gameId: "g1", dayIndex: 2, vote: "GUILTY", defendantUuid: "defendant-a", actorUuid: "juror-1" })
 
-  // 로컬 세션의 actor 자체가 바뀐 경우(예: state.self.uuid 교체) — gameId/dayIndex/phase/
-  // defendantUuid/alive는 전부 요청 시점과 동일하게 유지되지만 actorUuid만 달라졌다. alive
-  // boolean만으로는 이 전환을 감지하지 못하므로 actorUuid 동일성 비교가 반드시 필요하다.
   setContext(baseContext({ actorUuid: "juror-2" }))
 
   socket.resolveAck({ ok: true, gameId: "g1", dayIndex: 2, vote: "GUILTY" })

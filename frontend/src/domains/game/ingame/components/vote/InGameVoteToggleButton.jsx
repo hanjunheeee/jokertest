@@ -7,7 +7,6 @@ import {
 } from "../../constants/vote/ingameVoteLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-/** 인게임 화면 — 투표현황 팝업 열기 버튼 */
 export default function InGameVoteToggleButton({
   onClick,
   className = INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS,

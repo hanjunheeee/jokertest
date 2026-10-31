@@ -26,7 +26,6 @@ import {
   INGAME_CHAT_TEXT_SCALED_FONT_SIZE,
 } from "../ingameChatLayout.js"
 
-/** `text-[...]` 유틸리티의 인자 부분만 떼어낸다 — 중첩 괄호가 있어 끝까지 짝을 센다. */
 function fontSizeArgument(className) {
   const start = className.indexOf("text-[clamp(")
   assert.notEqual(start, -1, `타이포 클래스에 clamp() font-size가 없습니다: ${className}`)
@@ -43,7 +42,6 @@ function fontSizeArgument(className) {
   assert.fail(`닫히지 않은 text-[...]: ${className}`)
 }
 
-/** clamp(a,b,c)의 세 항을 최상위 콤마 기준으로 나눈다(calc(...) 안의 콤마는 무시). */
 function clampTerms(fontSizeArg) {
   const inner = fontSizeArg.slice("clamp(".length, -1)
   const terms = []
@@ -69,7 +67,6 @@ function toPercent(value) {
   return Number.parseFloat(value)
 }
 
-/** top+height가 없으면 100-bottom-height를 top으로 취급해 세로 구간 [start, end]를 얻는다 */
 function verticalBand(inset) {
   const height = toPercent(inset.height)
   if (inset.top != null) {
@@ -79,15 +76,6 @@ function verticalBand(inset) {
   const start = 100 - toPercent(inset.bottom) - height
   return { start, end: start + height }
 }
-
-// ── 채팅 clamp 식의 단일 출처 ────────────────────────────────────────────────
-//
-// textarea는 타이포 클래스만으로 크기를 받지 못해 상속 16px로 떨어진다(884c3555가 고친
-// 결함). 그래서 같은 clamp 식을 인라인 font-size로도 얹는데, 이전 구현은 그 값을 클래스
-// 문자열에서 정규식으로 되파싱했다(`inputClass.match(/text-\[(clamp\([^\]]+\))\]/)`).
-// 값 안에 `]`가 없다는 가정과 유틸리티 순서에 기대는 형태라, 타이포 클래스를 조금만 손대면
-// 조용히 undefined가 되어 16px 결함이 되살아난다. 아래 시험이 "클래스 리터럴과 상수가 같은
-// 문자열"임을 강제해 되파싱 없이도 두 경로가 어긋나지 않게 한다.
 
 test("F-15(AC-02): 타이포 클래스가 공유 clamp 상수를 그대로 담는다(board)", () => {
   assert.ok(
@@ -114,8 +102,6 @@ test("F-15(AC-02): getInGameChatScaledFontSize가 variant별 상수를 돌려준
 })
 
 test("F-15(AC-02): 공유 clamp 상수는 실제 측정된 크기를 유지한다(16px 결함 복원 금지)", () => {
-  // operator가 실제 Chrome에서 잰 값의 근거가 되는 항들이다 — 한 글자라도 바뀌면
-  // 재측정 없이는 증거가 무효가 된다.
   for (const [fontSize, terms] of [
     [INGAME_CHAT_TEXT_SCALED_FONT_SIZE, ["0.72rem", "3.2cqi", "0.92rem"]],
     [INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE, ["0.95rem", "4.15cqi", "1.28rem"]],
@@ -127,7 +113,6 @@ test("F-15(AC-02): 공유 clamp 상수는 실제 측정된 크기를 유지한�
     ])
   }
 
-  // 상속 16px로 떨어지는 형태(단위 없는 값·빈 문자열)가 아니어야 한다.
   assert.ok(INGAME_CHAT_TEXT_SCALED_FONT_SIZE.startsWith("clamp("))
   assert.ok(INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE.startsWith("clamp("))
 })
@@ -195,7 +180,6 @@ test("클로즈업 상태·오류 문구 inset은 메시지 목록·입력줄 in
   )
 })
 
-// F-15(AC-02): 채팅 글자 크기 설정(0~100, 기본값 100)을 실제 폰트 배율로 바꾸는 함수.
 test("getInGameChatTextScale: 기본값(100)은 배율 1이다 — 저장한 적 없으면 기존 화면과 같아야 한다", () => {
   assert.equal(getInGameChatTextScale(100), 1)
 })
@@ -217,9 +201,6 @@ test("getInGameChatTextScale: 값이 작을수록 배율도 단조 감소한다(
   assert.equal(scale100, 1)
 })
 
-// F-15(AC-02): 배율 적용 타이포는 clamp의 최소·선호·최대 세 항에 모두 같은 배율을
-// 곱한다 — 이전 구현처럼 선호값만 바꾸고 경계를 버리면 배율을 낮춰도 원래 min에 걸려
-// 실제로 작아지지 않는 구간이 생긴다.
 test("배율 타이포는 clamp의 세 항을 모두 유지한다 — 최소·최대 경계를 버리지 않는다", () => {
   for (const variant of ["board", "closeup"]) {
     const terms = clampTerms(fontSizeArgument(getInGameChatScaledTypographyClass(variant)))
@@ -266,7 +247,6 @@ test("배율 타이포는 font-size 말고는 기본 타이포와 완전히 같�
   }
 })
 
-// 배율 변수가 없으면 fallback 1 → calc(x*1) === x라 기존 화면과 동일하다.
 test("getInGameChatTextScaleStyle: 기본값(100)은 배율 변수 1을 내려준다", () => {
   const style = getInGameChatTextScaleStyle(100)
   assert.equal(style[INGAME_CHAT_TEXT_SCALE_CSS_VAR], "1")
@@ -281,8 +261,6 @@ test("getInGameChatTextScaleStyle: 저장된 적 없는(숫자 아님) 값은 �
   assert.equal(getInGameChatTextScaleStyle(undefined)[INGAME_CHAT_TEXT_SCALE_CSS_VAR], "1")
 })
 
-// 채팅 본문·발신자·시각·입력·placeholder가 모두 같은 배율 타이포를 쓴다 — 하나라도
-// 기본 타이포(배율 없음)를 그대로 쓰면 그 요소만 설정에 반응하지 않는다.
 test("채팅 텍스트 클래스는 보드·클로즈업 모두 배율 타이포를 쓴다", () => {
   const getters = [
     getInGameChatMessageBodyClass,
@@ -310,7 +288,6 @@ test("채팅 텍스트 클래스는 보드·클로즈업 모두 배율 타이포
   }
 })
 
-// F-15(AC-02): "채팅 시간 표시"가 켜졌을 때 쓰는 시각 표기 클래스.
 test("getInGameChatMessageTimeClass: 보드·클로즈업 모두 non-empty 클래스를 돌려주고 서로 다르다", () => {
   const board = getInGameChatMessageTimeClass("board")
   const closeup = getInGameChatMessageTimeClass("closeup")

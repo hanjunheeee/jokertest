@@ -14,10 +14,6 @@ import {
 
 const HIDDEN_VIDEO_STYLE = Object.freeze({ display: "none" })
 
-/**
- * stacked MP4(위 절반 색·아래 절반 마스크)를 숨긴 video + canvas로 재생한다(F-27d).
- * 공개 사망 연출 등 알파 합성이 필요한 단일 영상 재생에 쓴다.
- */
 export default function InGameStackedAlphaVideo({
   playbackKey,
   src,
@@ -166,7 +162,6 @@ export default function InGameStackedAlphaVideo({
         video.pause()
         video.currentTime = 0
       } catch {
-        // 메타데이터가 없으면 currentTime 대입이 던질 수 있다 — 재생 시도는 계속한다.
       }
     }
 
@@ -202,7 +197,6 @@ export default function InGameStackedAlphaVideo({
       try {
         videoRef.current?.pause?.()
       } catch {
-        // 정리 경로가 던져서는 안 된다.
       }
     }
   }, [playbackKey, src, runPlayback, scheduleFrame, settleOnce])

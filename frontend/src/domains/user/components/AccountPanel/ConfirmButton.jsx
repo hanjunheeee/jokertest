@@ -13,10 +13,8 @@ export default function ConfirmButton({ label, disabled }) {
       disabled={disabled}
       className={ACCOUNT_PANEL_CONFIRM_BTN_CLASS}
     >
-      {/* 확인 버튼 배경 이미지입니다. */}
       <PublicAsset src={ACCOUNT_PANEL_CONFIRM_BTN_SRC} alt="" className={ACCOUNT_PANEL_CONFIRM_BTN_IMG_CLASS} />
 
-      {/* 버튼 이미지 위에 얹는 글자입니다. */}
       <span className={ACCOUNT_PANEL_CONFIRM_BTN_TEXT_CLASS}>
         {label}
       </span>

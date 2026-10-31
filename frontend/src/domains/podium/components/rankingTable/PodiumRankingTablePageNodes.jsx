@@ -4,7 +4,6 @@ import {
   PODIUM_TABLE_PAGE_NODES_WRAP_CLASS,
 } from "../../constants/podiumLayoutStyle.js"
 
-/** 랭킹 테이블 하단 — 튜토리얼과 동일한 원형 노드 페이지 UI */
 export default function PodiumRankingTablePageNodes({
   pageCount,
   activePage,

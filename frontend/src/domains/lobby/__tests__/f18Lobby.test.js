@@ -4,17 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-18 로비 통합 시험 (AC-01 · AC-02 · AC-03 · AC-04 · AC-05).
-//
-// 실제 LobbyPage를 그대로 마운트해서 하나의 렌더 경로에서 확인한다 — 로비 오른쪽 큰
-// Discord 버튼의 제거, 왼쪽 메뉴의 고객센터 유지, 지원 링크 미설정 계약, 명예의 전당 진입
-// 제거. 화면 조각을 따로 만들어 흉내내지 않는다.
-//
-// AC-03 주의: 이 저장소에는 아직 실제 Discord 지원 URL(VITE_DISCORD_SUPPORT_URL)이 제공되지
-// 않았다. 그래서 env 경계는 **미설정(undefined)** 그대로 두고, "미설정이면 외부 목적지를
-// 만들지 않는다"는 계약만 실제 resolver·훅·nav를 통과시켜 고정한다. 실제 지원 URL로의
-// 도착 확인은 값이 제공되기 전까지 미검증으로 남는다(AC-03 자체가 그렇게 규정한다) —
-// 여기서 그럴듯한 초대 URL을 지어내 "검증됨"처럼 보이게 만들지 않는다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -35,12 +24,9 @@ installDomGlobal("Event", dom.window.Event)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
 installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
-// jsdom은 ResizeObserver/IntersectionObserver를 구현하지 않는다 — 로비의 스크롤바·패널이
-// 이를 쓰므로 콜백 없이 무시하는 최소 스텁만 채운다(SkinCardWearOverlay 통합 시험과 같은 관례).
 installDomGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })
 installDomGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} })
 
-// 외부 이동이 실제로 일어나는지 세기 위한 경계다(미설정이면 0회여야 한다).
 let windowOpenCalls = []
 dom.window.open = (...args) => { windowOpenCalls.push(args); return null }
 installDomGlobal("open", dom.window.open)
@@ -51,11 +37,9 @@ register(new URL("../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs
 
 const { mock } = await import("node:test")
 
-// import.meta.env 경계만 테스트 설정으로 바꾼다 — resolver·훅·nav·모달·store는 전부 실제 코드다.
 mock.module("../../../shared/env.js", {
   namedExports: {
     API_BASE_URL: "http://localhost:4000",
-    // D-06의 실제 지원 URL이 아직 제공되지 않았다(미제공 상태 그대로).
     DISCORD_SUPPORT_URL: undefined,
   },
 })
@@ -103,8 +87,6 @@ const ENTITLEMENTS = [
   { itemId: BORDER_NEXT, itemType: "PROFILE_BORDER" },
 ]
 
-// F-30: 명성은 응답에서 제거됐고(AC-04), 표시 판수와 원시 승률이 같은 모집단의 두 필드로
-// 내려온다(AC-02) — user.store가 둘 다 표시 가능한 값인지 검사하므로 유효한 값이어야 한다.
 const PROFILE_RESPONSE = {
   nickname: "테스터",
   title: "가면의 손님",
@@ -148,7 +130,6 @@ function installDefaultApi(loadout = serverLoadout()) {
 function resetAll() {
   windowOpenCalls = []
   dom.window.localStorage.clear()
-  // 재방문으로 두어 인트로 없이 로비 UI가 바로 드러나게 한다(useLobbyIntro의 실제 계약).
   dom.window.localStorage.setItem(LOBBY_INTRO_SESSION_KEY, "1")
   useAuthStore.setState({ isLoggedIn: true, user: { uuid: USER_UUID }, loggedOutIntentionally: false })
   useEconomyStore.getState().reset()
@@ -182,7 +163,6 @@ async function mountLobby() {
       ),
     )
   })
-  // 프로필 조회가 끝나야 배너가 실제로 드러난다.
   await waitFor(() => assert.ok(view.queryByRole("button", { name: "마이페이지" })))
   return view
 }
@@ -204,7 +184,6 @@ test("F-18 AC-01: 로비 오른쪽의 독립 Discord 버튼이 더 이상 렌더
     "제거 대상인 로비 오른쪽 Discord 버튼(LobbyDiscordButton)이 아직 보입니다.",
   )
 
-  // 왼쪽 메뉴의 고객센터는 남아 있어야 한다(AC-02) — 둘을 한 번에 확인한다.
   assert.equal(view.queryAllByLabelText("고객센터").length, 1)
 })
 
@@ -216,19 +195,16 @@ test("F-18 AC-02: 고객센터는 왼쪽 메뉴 목록의 마지막 항목 하�
   const supportElements = within(nav).queryAllByLabelText("고객센터")
   assert.equal(supportElements.length, 1, "고객센터 진입 요소가 중복되었습니다.")
 
-  // 메뉴 항목 순서상 마지막이어야 한다.
   const menuChildren = Array.from(nav.children)
   assert.equal(menuChildren.length, LOBBY_MENU_ITEMS.length)
   assert.equal(menuChildren[menuChildren.length - 1], supportElements[0])
 
-  // 프레임 이미지와 Discord 로고가 같은 하나의 요소의 자식이다.
   const images = Array.from(supportElements[0].querySelectorAll("img")).map((img) => img.getAttribute("src"))
   assert.deepEqual(images, [
     publicAsset(LOBBY_MENU_BUTTONS.customerSupport),
     publicAsset(LOBBY_ASSETS.discordLogo),
   ])
 
-  // 로비 어디에도 별도의 고객센터 버튼·링크가 새로 생기지 않았다.
   assert.equal(view.queryAllByLabelText("고객센터").length, 1)
   assert.equal(view.queryAllByText("고객센터").length, 0, "별도의 고객센터 텍스트 버튼이 생겼습니다.")
 })
@@ -281,17 +257,13 @@ test("F-18 AC-05: 로비 메뉴에 명예의 전당 진입(버튼·이동·접�
   assert.equal(within(nav).queryAllByText("명예의 전당").length, 0)
   assert.equal(nav.querySelectorAll('a[href="/podium"]').length, 0)
 
-  // 명예의 전당 메뉴 이미지가 화면 어디에도 남아 있지 않다(숨긴 요소·빈 슬롯 금지).
   const hallOfFameSrc = publicAsset(LOBBY_MENU_BUTTONS.hallOfFame)
   assert.equal(view.container.querySelectorAll(`img[src="${hallOfFameSrc}"]`).length, 0)
 
-  // 키보드 포커스 대상도 메뉴 항목 수만큼만 있어야 한다(잔여 tabIndex 없음).
   const focusables = nav.querySelectorAll("button, a, [tabindex]")
   assert.equal(focusables.length, LOBBY_MENU_ITEMS.length)
 })
 
-// F-30 AC-04: 로비 배너는 실제 서버 응답을 그대로 태운 경로다 — 닉네임은 남고 명성은
-// 이름도 값도 없어야 한다(응답에서 지웠어도 화면이 옛 필드를 읽고 있으면 여기서 드러난다).
 test("F-30 AC-04: 실제 로비 배너에 닉네임이 그려지고 명성 이름·값은 어디에도 없다", async () => {
   resetAll()
   const view = await mountLobby()

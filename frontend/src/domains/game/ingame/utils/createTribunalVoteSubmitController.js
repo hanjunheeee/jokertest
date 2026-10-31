@@ -6,19 +6,6 @@ const TIMEOUT_PATCH = { status: "idle", submittedVote: null, error: "요청 시�
 const NO_ACK_PATCH = { status: "idle", submittedVote: null, error: "요청에 응답하지 않습니다. 다시 시도해주세요." }
 const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제출하지 못했습니다. 다시 시도해주세요." }
 
-/**
- * TRIBUNAL 투표 제출의 경쟁 조건 방어를 전담하는 프레임워크 무관 컨트롤러. createDayVoteSubmitController와
- * 달리 socket identity를 직접 캡처한다(getSocket을 매 submit()마다 호출해 요청 시점 소켓을 고정) —
- * settle 시 성공·실패 ack(및 malformed 성공 ack) 모두 (1) generation 일치 (2) 소켓 identity 동일·
- * connected===true (3) 최신 컨텍스트(gameId/dayIndex/phase/생존 상태/정확한 defendantUuid/정확한
- * actorUuid) 전부 요청 시점 값과 일치할 때만 반영된다. 성공 ack는 추가로 (4) ack가 echo한
- * gameId/dayIndex가 요청과 일치해야 한다. defendantUuid와 actorUuid는 요청 시점에 submit()으로
- * 캡처해 latest.defendantUuid/latest.actorUuid와 정확히 동일성 비교한다 — isDefendant boolean만으로는
- * 로컬 플레이어가 이전/이후 피고인 어느 쪽도 아닌 채로 피고인이 바뀐 경우를 감지하지 못하고,
- * alive boolean만으로는 로컬 세션의 actor 자체가 바뀐(예: state.self.uuid 교체) 경우를 감지하지
- * 못하기 때문이다. isContextStale은 성공·실패 두 settle 경로 모두가 공유하므로 이 재검증은 둘
- * 다에 항상 적용된다.
- */
 export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIBUNAL_VOTE_ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {
   let state = INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE
   let submitting = false
@@ -81,12 +68,6 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIB
         setState(patch)
       }
 
-      /**
-       * F-16(AC-01): 기존 settleSuccess의 소켓 identity·컨텍스트·ack echo 검사를 **전부 통과해
-       * 실제로 정착한 뒤에만** 사건 봉투를 알린다. 실패·timeout·malformed ack 경로는
-       * settleFailure를 타므로 여기 도달하지 않는다. onAccepted가 던져도 이미 정착한 제출
-       * 성공을 되돌리지 않는다(AC-06).
-       */
       const settleSuccess = (patch, ackGameId, ackDayIndex, sfxEvent) => {
         if (settled) return
         if (isSocketStale()) return
@@ -100,7 +81,6 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIB
           try {
             onAccepted?.(sfxEvent, { gameId, dayIndex })
           } catch {
-            // 무시한다 — 상태는 이미 정착했다.
           }
         }
       }

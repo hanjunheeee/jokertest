@@ -1,6 +1,3 @@
-// 공용 밤 행동 리졸버 계약: resolveRoleNightAction의 시나리오 × 역할 표 · 역할별 정책(다수결/
-// 만장일치) · prepareNightResolution을 통과하는 통합 경로(중복 역할 세션).
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -20,20 +17,9 @@ test.afterEach(() => {
     gameSession.__resetStateForTests()
 })
 
-// ---------------------------------------------------------------------------
-// 리졸버 단위 테스트 — registry를 건드리지 않는 순수 계산이므로 최소 session 모양만 조립한다.
-// (players/nightActions/dayIndex 셋이 이 함수가 읽는 전부다. 커밋된 세션을 쓰면 역할 배정이
-// 셔플에 좌우돼 "어떤 제출이 어떤 결과를 만드는가"를 좁게 고정할 수 없다.)
-// ---------------------------------------------------------------------------
-
 const T1 = 'target-1'
 const T2 = 'target-2'
 
-/**
- * actors: [{ role, alive?, target? }] — target을 생략하면 미제출(nightActions에 entry 없음),
- * null을 주면 SKIP이다. 대상(T1/T2)은 참가자로도 함께 등재한다(리졸버는 읽지 않지만, 세션
- * 모양을 실제와 어긋나게 두지 않기 위함).
- */
 function synthNightSession(actors, { dayIndex = 2 } = {}) {
     const players = new Map()
     const nightActions = new Map()
@@ -50,9 +36,6 @@ function synthNightSession(actors, { dayIndex = 2 } = {}) {
 
 const RESOLVER_ROLES = ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']
 
-// AC-02의 5개 시나리오. 네 역할 모두 같은 기대값을 갖는다 — 2명이 갈린 경우는 JOKER의 다수결로도
-// 동률이라 null이고, 나머지 셋은 만장일치가 깨져 null이다. 두 정책이 갈리는 지점(3명 2:1)은
-// 아래 정책별 테스트에서 따로 고정한다.
 const RESOLVER_SCENARIOS = [
     {
         name: '동일 대상 지목 → 그 대상',
@@ -90,8 +73,6 @@ for (const role of RESOLVER_ROLES) {
     }
 }
 
-// --- 정책 표: 역할별 분기가 아니라 이 표 하나가 상충 처리를 가른다 ---
-
 test('NIGHT_ACTION_RESOLUTION_POLICY: JOKER만 PLURALITY이고 나머지 셋은 UNANIMOUS다', () => {
     assert.deepEqual({ ...NIGHT_ACTION_RESOLUTION_POLICY }, {
         JOKER: 'PLURALITY',
@@ -128,8 +109,6 @@ test('resolveRoleNightAction: DOCTOR 3명이 2:1로 갈리면 다수여도 null�
     assert.equal(resolveRoleNightAction(session, 'DOCTOR'), null)
 })
 
-// --- 경계: 행위자가 없는 역할 / 미제출 / dayIndex 비활성 ---
-
 test('resolveRoleNightAction: 그 역할의 생존 행위자가 하나도 없으면 null이다', () => {
     const session = synthNightSession([{ role: 'DOCTOR', target: T1, alive: false }])
     assert.equal(resolveRoleNightAction(session, 'DOCTOR'), null)
@@ -164,12 +143,6 @@ test('collectRoleNightSubmissions: 그 역할의 생존 행위자만, 미제출�
         { actorUuid: 'a-1', target: null },
     ])
 })
-
-// ---------------------------------------------------------------------------
-// 통합 경로 — 실제로 커밋된 중복 역할 세션이 prepareNightResolution을 통과할 때의 계약.
-// ---------------------------------------------------------------------------
-
-// --- AC-03: DOCTOR 2명 ---
 
 test('AC-03: DOCTOR 2명이 같은 대상을 보호하면 그 대상만 protectedTargetIds에 담기고 암살이 막힌다', () => {
     const { session, roleUuids, jokerUuids, citizenUuids } = nightSessionWithDuplicateRole({
@@ -208,9 +181,6 @@ test('AC-03: DOCTOR 2명이 서로 다른 대상을 보호하면 보호 결과�
     assert.equal(prepared.resolution.pendingEliminationTargetId, first, '보호가 없으니 암살이 성사된다')
 })
 
-// --- AC-04: WITCH_HUNTER 2명 (dayIndex 2 · 대상은 사망자여야 한다) ---
-
-/** WH 2명 + JOKER 1명 세션을 둘째 밤으로 세우고, 확인 대상이 될 사망자 둘을 만든다. */
 function witchHunterPairNight(id) {
     const fixture = nightSessionWithDuplicateRole({
         id,
@@ -237,7 +207,6 @@ test('AC-04: WITCH_HUNTER 2명이 같은 대상을 확인하면 canonical 단일
     for (const whUuid of roleUuids) {
         assert.deepEqual(prepared.resolution.privateResults.get(whUuid), expected)
     }
-    // 값은 같아도 객체는 수신자마다 따로다 — 한 수신자 경로의 오염이 나머지에 전파되지 않는다.
     assert.notEqual(
         prepared.resolution.privateResults.get(roleUuids[0]),
         prepared.resolution.privateResults.get(roleUuids[1]),
@@ -258,8 +227,6 @@ test('AC-04: WITCH_HUNTER 2명이 서로 다른 대상을 확인하면 어느 �
         assert.equal(prepared.resolution.privateResults.has(whUuid), false)
     }
 })
-
-// --- GUARD도 같은 리팩터링을 받는다(AC-01 회귀) ---
 
 test('AC-01: GUARD 2명이 같은 대상을 조사하면 둘 다 같은 결과를 받고, 갈리면 둘 다 받지 못한다', () => {
     const same = nightSessionWithDuplicateRole({ id: 'room-dup-guard-same', role: 'GUARD' })
@@ -289,8 +256,6 @@ test('AC-01: GUARD 2명이 같은 대상을 조사하면 둘 다 같은 결과�
         assert.equal(splitPrepared.resolution.privateResults.has(guardUuid), false)
     }
 })
-
-// --- AC-06: 역할 보유자 1명 / 사망으로 eligible actor에서 빠지는 경우 ---
 
 test('AC-06: 역할 보유자가 1명이면 그 제출이 그대로 확정된다', () => {
     const { session, roleUuids, jokerUuids, citizenUuids } = nightSessionWithDuplicateRole({
@@ -322,11 +287,9 @@ test('AC-06: 상충하던 DOCTOR 한 명이 사망하면 남은 생존자의 제
     submitNightAction(dyingDoctor, session.id, otherTarget)
     submitNightAction(jokerUuids[0], session.id, survivorTarget)
 
-    // 상충 상태에서는 보호가 없다.
     const before = prepareNightResolution(jokerUuids[0], session.id)
     assert.equal(before.resolution.protectedTargetIds.size, 0)
 
-    // 그 의사가 사망하면 잔여 entry는 남아 있어도 판정에서 빠진다.
     session.players.get(dyingDoctor).alive = false
     assert.equal(session.nightActions.get(dyingDoctor), otherTarget, '잔여 엔트리 자체는 지워지지 않는다')
 

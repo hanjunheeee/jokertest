@@ -1,24 +1,8 @@
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다) —
-// 이 파일은 아래에서 userRepository의 모든 메서드를 인메모리 가짜로 바꿔치기하므로 실제
-// 쿼리는 절대 실행되지 않는다(backend/.env.test와 같은 원칙, socialAuth.route.test.js 참고).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
-
-// F-06 CODEX-1 재검토 지적 AC-04: googleAuth.route.test.js는 socialAuthService 자체를
-// 스텁으로 대체해 그 위 라우트 계층(순서·쿠키·리다이렉트)만 검증한다 — consumeOAuthState의
-// 실제 동시 재사용 방지와 resolveOAuthAccount의 실제 자동 병합 금지 로직 자체는 그 파일에서
-// 증명되지 않는다(스텁이 시나리오를 그대로 재현할 뿐, 서비스 코드 자체를 태우지 않는다).
-// backend/tests/db/f05-social-auth.integration.test.js가 실제 MySQL로 이 계약을 증명하지만
-// F01_TEST_DATABASE_URL이 없는 환경(이 저장소의 기본 상태)에서는 skip된다.
-//
-// 이 파일은 socialAuthService.consumeOAuthState/resolveOAuthAccount를 스텁으로 바꾸지
-// 않고 그대로 호출한다 — 대신 userRepository만 인메모리 가짜로 교체해, 실제 Sequelize의
-// FOR UPDATE 행 잠금이 만드는 "같은 행을 잠근 트랜잭션은 커밋할 때까지 직렬화된다"는
-// 계약을 재현한다. 이렇게 하면 DB 없이도 서비스 코드 자체(잠금 획득 순서, consumed_at
-// 확인 순서, 이메일 충돌 판정)를 실제로 실행해 검증할 수 있다.
 
 const userRepository = require("../repositories/user.repositories");
 const authService    = require("../service/auth.service");
@@ -26,10 +10,6 @@ const socialAuthService = require("../service/socialAuth.service");
 
 const hashValue = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 
-// 실제 DB의 SELECT ... FOR UPDATE를 흉내 낸다: 같은 키에 대한 두 번째 잠금 요청은 첫 번째
-// 트랜잭션이 끝날 때까지(성공이든 실패든) 대기했다가 그제서야 순서를 얻는다 — SELECT가
-// 끝나는 즉시 풀리는 게 아니라 트랜잭션 커밋/롤백 시점에 풀린다는 점이 중요하다(그래야
-// "조회 → 검증 → 갱신"이 하나의 원자적 구간이 된다).
 const createRowLocks = () => {
     const tails = new Map();
     return {
@@ -106,8 +86,6 @@ const createFakeUserRepository = () => {
             const uuid = usersByEmail.get(email);
             return uuid ? { ...usersByUuid.get(uuid) } : null;
         },
-        // 테스트 준비용 헬퍼(실제 repository 계약에는 없다) — 이메일 충돌 시나리오를 위해
-        // "이미 비밀번호로 가입된 계정"을 미리 심어 둔다.
         __seedExistingUser(user) {
             usersByUuid.set(user.uuid, user);
             usersByEmail.set(user.email, user.uuid);
@@ -156,8 +134,6 @@ const issueState = async (fake, { purpose = "login", browserFingerprint = "fp-1"
     return { rawState, browserFingerprint };
 };
 
-// ── AC-04/R-IMPL #3: 실제 consumeOAuthState의 동시 재사용 방지 ──────────────────
-
 test("동시에 들어온 같은 state 소비 요청은 실제 consumeOAuthState 기준으로 하나만 성공하고 나머지는 STATE_REUSED로 거부된다", async (t) => {
     const fake = withFakeRepository(t);
     const { rawState, browserFingerprint } = await issueState(fake);
@@ -189,8 +165,6 @@ test("정상 소비 이후 같은 state를 순차적으로 다시 쓰면 실제 
         (error) => error.status === 409 && error.code === "STATE_REUSED",
     );
 });
-
-// ── AC-04/D-01: 실제 resolveOAuthAccount의 자동 병합 금지 ───────────────────────
 
 test("같은 이메일의 기존 계정이 있으면 실제 resolveOAuthAccount가 EMAIL_CONFLICT로 거부하고 자동으로 병합·세션 발급하지 않는다", async (t) => {
     const fake = withFakeRepository(t);

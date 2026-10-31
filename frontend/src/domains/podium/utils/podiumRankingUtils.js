@@ -1,4 +1,3 @@
-/** 테이블 첫 순위 · 페이지당 5+5열 = 10명 */
 export const PODIUM_TABLE_START_RANK = 4
 export const PODIUM_TABLE_RANKS_PER_PAGE = 10
 export const PODIUM_TABLE_LEFT_COLUMN_SIZE = 5
@@ -13,7 +12,6 @@ export function getPodiumTablePageCount(rankingLength) {
   return Math.ceil(tableEntryCount / PODIUM_TABLE_RANKS_PER_PAGE)
 }
 
-/** activePage 0 → 4~13위, 1 → 14~23위 … */
 export function splitPodiumTablePage(ranking, activePage = 0) {
   const pageStartRank = PODIUM_TABLE_START_RANK + activePage * PODIUM_TABLE_RANKS_PER_PAGE
   const pageEndRank = pageStartRank + PODIUM_TABLE_RANKS_PER_PAGE - 1

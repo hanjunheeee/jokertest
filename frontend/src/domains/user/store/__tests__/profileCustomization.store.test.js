@@ -1,10 +1,6 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 
-// F-12(AC-06) 재검토 대응: profileCustomization.store.js가 이제 economy.store.js·
-// auth.store.js를 모듈 로드 시점에 구독한다(서버 loadout 반영, 계정 전환 초기화) —
-// economy.store.test.js와 같은 이유로, 실제 fetch/localStorage를 태우지 않도록 API
-// 경계와 auth store를 mock.module로 먼저 대체한 뒤에 이 store를 불러와야 한다.
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
 let currentUser = { uuid: "user-1" }
@@ -112,8 +108,6 @@ test("reset은 적용된 커스터마이징을 기본값으로 되돌린다", ()
   assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
   assert.equal(selectedBorderItemId, DEFAULT_PROFILE_BORDER_ITEM_ID)
 })
-
-// ── AC-06(A-12): economy store의 loadout 변화를 실제 표시에 반영 ────────────────────────
 
 test("economy store의 fetchSummary가 loadout을 채우면 사진·테두리 표시가 자동으로 반영된다(편집기를 열지 않아도, F-13 AC-04)", async () => {
   resetStores()

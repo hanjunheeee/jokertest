@@ -1,4 +1,3 @@
-/** 명예의 전당 — public 에셋 경로 */
 export const PODIUM_ASSETS = {
   background: "/bg/명예의 전당 뒷배경.png".normalize("NFD"),
   headerPlate: "/frame/탑레벨 프레임_1_.png",

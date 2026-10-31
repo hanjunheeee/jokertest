@@ -3,7 +3,6 @@ import {
   INVITED_GUESTS_CURRENCY_ASSETS,
 } from "../../constants/invitedGuests/assets.js"
 
-/** 직업별 도전과제 (난이도 오름차순) */
 export const INVITED_GUESTS_JOB_CHALLENGES = {
   noble: [
     {

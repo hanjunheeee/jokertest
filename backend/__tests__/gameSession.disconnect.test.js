@@ -1,8 +1,3 @@
-// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지
-// 않는다). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어
-// require 자체가 죽으므로, 같은 저장소의 다른 스위트(gameResultPersistence.test.js·
-// socket/__tests__/gameSession.test.js·matchmaking.test.js)와 **같은 관례**로 더미 폴백을 둔다.
-// 이미 설정돼 있으면 덮지 않으므로 공식 명령의 동작은 그대로다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -30,13 +25,6 @@ const {
     handleGetSessionSnapshot,
 } = gameSessionSocketLayer.__testables
 
-/**
- * 재접속 유예(disconnect grace) 전용 테스트 파일. 이 파일의 모든 시나리오는 "끊긴 참가자가
- * 돌아오지 않은 채 시간이 흘렀다"를 결정적으로 재현해야 하므로, 실시간 타이머 대신 수동
- * 시계(createManualClock — gameSession.nightTurns.test.js와 같은 계약)만 쓴다.
- */
-
-/** gameSession.test.js/nightTurns.test.js의 동명 헬퍼와 계약이 같다(socket.id === `sock-${uuid}` 규약). */
 function createConventionFollowingRegistry() {
     const overrides = new Map()
     return new Proxy(overrides, {
@@ -58,12 +46,9 @@ test.beforeEach(() => {
 test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
-    // 유예 타이머까지 함께 해제한다 — 수동 시계라 실제로 새어나가지는 않지만, 다음 테스트가
-    // 이전 테스트의 run을 상속하지 않게 하려는 것이 목적이다.
     gameSessionSocketLayer.__resetStateForTests()
 })
 
-/** nightTurns.test.js의 동명 헬퍼와 계약이 같다(만료 시각이 이른 타이머부터, 동시각이면 등록 순서대로). */
 function createManualClock(startMs = 1_000_000) {
     let now = startMs
     let nextId = 1
@@ -109,7 +94,6 @@ function makeRoom({ id, players, jokerCount = 1 }) {
     return { id, players: new Map(players.map((p) => [p.uuid, p])), settings: { jokerCount } }
 }
 
-/** 전원 역할 확인 후 지정한 밤으로 되돌린다(nightTurns.test.js의 동명 헬퍼와 같은 계약). */
 function ackAllAndRewindToNight(session, dayIndex) {
     for (const uuid of session.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
     session.phase = 'NIGHT'
@@ -121,11 +105,6 @@ function ackAllAndRewindToNight(session, dayIndex) {
     session.tribunal = null
 }
 
-/**
- * playerCount=10·jokerCount=1 세션을 밤(dayIndex 2 — WITCH_HUNTER까지 활동 가능)으로 만든다.
- * 인원이 넉넉해 한 명이 끊김으로 죽어도 어느 진영도 승리하지 않는다 — "다른 참가자의 게임이
- * 그대로 이어진다"를 검증하려면 사망이 곧 종료가 되지 않는 구성이어야 한다.
- */
 function commitFullRoleSessionAtNight({ id = 'room-grace', dayIndex = 2 } = {}) {
     const players = Array.from({ length: 10 }, (_, i) => makePlayer(`gp-${id}-${i}`))
     const candidate = gameSessionCore.__testables.buildSessionCandidate(makeRoom({ id, players }), {
@@ -138,7 +117,6 @@ function commitFullRoleSessionAtNight({ id = 'room-grace', dayIndex = 2 } = {}) 
     return { session, jokerUuid: byRole('JOKER'), doctorUuid: byRole('DOCTOR') }
 }
 
-/** playerCount=3·jokerCount=1 세션을 첫 밤으로 만든다 — 비-JOKER 한 명이 죽으면 곧바로 JOKER 승리가 성립하는 구성. */
 function commitTrioSessionAtNight({ id = 'room-grace-win' } = {}) {
     const players = ['a', 'b', 'c'].map((suffix) => makePlayer(`gw-${id}-${suffix}`))
     const candidate = gameSessionCore.__testables.buildSessionCandidate(makeRoom({ id, players }), { randomFn: () => 0 })
@@ -150,7 +128,6 @@ function commitTrioSessionAtNight({ id = 'room-grace-win' } = {}) {
     return { session, jokerUuid, nonJokerUuids }
 }
 
-/** 참가자 전원의 fake socket을 채널에 넣고 배선까지 마친 io를 돌려준다. */
 function wireSession(session) {
     const sockets = new Map()
     const io = createFakeIo([])
@@ -170,7 +147,6 @@ function wireSession(session) {
     return { io, sockets, submit }
 }
 
-/** 그 uuid의 소켓을 "끊긴" 상태로 만든다 — isUuidConnected가 보는 유일한 신호다. */
 function disconnectSocket(sockets, uuid) {
     sockets.get(uuid).connected = false
 }
@@ -184,10 +160,6 @@ function turnEventLog(io) {
         .filter((b) => b.event === 'night_turn_started' || b.event === 'night_turn_ended')
         .map((b) => [b.event, b.payload.role])
 }
-
-// ---------------------------------------------------------------------------
-// AC-03 — 끊김 사망 공개 메시지에 role이 없다
-// ---------------------------------------------------------------------------
 
 test('AC-03: 유예 만료 사망 방송은 끊김 전용 공개 계약이고 어디에도 role·밤 사망 원인이 없다', () => {
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac03' })
@@ -218,7 +190,6 @@ test('AC-03: 유예 만료 사망 방송은 끊김 전용 공개 계약이고 �
     assert.equal(Object.hasOwn(session, 'nightResult'), false)
     for (const player of payload.players) assert.deepEqual(Object.keys(player).sort(), ['alive', 'uuid'])
 
-    // role/team/executedRole 같은 비밀 키도, 다른 참가자의 role 값도 payload 어디에도 없다.
     assert.equal(JSON.stringify(payload).includes('role'), false)
     assertNoForbiddenPrivateData(payload, collectOtherPlayerRoleSecrets(session, doctorUuid))
 })
@@ -243,10 +214,6 @@ test('AC-02: 자기 NIGHT 턴 도중 끊기면 새 제한시간이 아니라 이
     assert.equal(eliminationBroadcasts(io).length, 1)
 })
 
-// ---------------------------------------------------------------------------
-// AC-05 — 재접속과 만료의 경합
-// ---------------------------------------------------------------------------
-
 test('AC-05: 만료 전에 재접속(스냅샷 요청)하면 유예가 취소되고 사망도 중복 진행도 일어나지 않는다', () => {
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac05-cancel' })
     const { io, sockets, submit } = wireSession(session)
@@ -259,12 +226,10 @@ test('AC-05: 만료 전에 재접속(스냅샷 요청)하면 유예가 취소되
     beginDisconnectGrace(io, session, doctorUuid, clock)
     assert.notEqual(getDisconnectGraceRun(session.id, doctorUuid), undefined)
 
-    // 같은 tick에 돌아온다 — 새 소켓이 붙고(연결 복구) 곧바로 스냅샷을 요청한다.
     sockets.get(doctorUuid).connected = true
     const { callback, getResponse } = countingCallback()
     handleGetSessionSnapshot(io, sockets.get(doctorUuid), doctorUuid, { gameId: session.id }, callback)
     assert.equal(getResponse().ok, true)
-    // 취소는 "연결돼 있어서 죽지 않았다"가 아니라 유예 자체가 사라졌다는 뜻이다.
     assert.equal(getDisconnectGraceRun(session.id, doctorUuid), undefined)
 
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS * 2)
@@ -272,7 +237,6 @@ test('AC-05: 만료 전에 재접속(스냅샷 요청)하면 유예가 취소되
     assert.equal(session.players.get(doctorUuid).alive, true)
     assert.equal(eliminationBroadcasts(io).length, 0)
     assert.equal(gameSessionCore.isForfeitedFromSession(session.id, doctorUuid), false)
-    // DOCTOR 턴은 정확히 한 번만 닫힌다(기권으로 끝난 뒤 다음 턴으로 넘어간다).
     assert.equal(turnEventLog(io).filter(([event, role]) => event === 'night_turn_ended' && role === 'DOCTOR').length, 1)
 })
 
@@ -286,7 +250,6 @@ test('AC-05: 만료가 먼저 도착하면 사망은 정확히 한 번이고, �
 
     disconnectSocket(sockets, doctorUuid)
     const run = beginDisconnectGrace(io, session, doctorUuid, clock)
-    // 같은 (세션, 참가자)에 유예를 다시 걸어도 run은 하나뿐이다(낡은 소켓의 지연 disconnect).
     assert.equal(beginDisconnectGrace(io, session, doctorUuid, clock), run)
 
     clock.advance(gameSessionCore.NIGHT_TURN_DURATION_MS)
@@ -299,10 +262,8 @@ test('AC-05: 만료가 먼저 도착하면 사망은 정확히 한 번이고, �
     assert.equal(endedDoctorTurns.length, 1)
     const turnsAfterExpiry = turnEventLog(io)
 
-    // 뒤늦게 도착한 재접속 취소와, 이미 떨어져 나간 run의 만료 콜백은 둘 다 아무 것도 하지 않는다.
     assert.equal(cancelDisconnectGrace(session.id, doctorUuid), false)
     expireDisconnectGrace(run)
-    // core 계약도 같은 결과를 구조적으로 보장한다 — 이미 죽은 참가자는 다시 죽지 않는다.
     assert.deepEqual(gameSessionCore.commitDisconnectElimination(session, doctorUuid), {
         ok: false,
         code: 'ALREADY_ELIMINATED',
@@ -312,10 +273,6 @@ test('AC-05: 만료가 먼저 도착하면 사망은 정확히 한 번이고, �
     assert.deepEqual(turnEventLog(io), turnsAfterExpiry)
     assert.equal(session.phase, 'NIGHT') // 남은 참가자의 밤은 그대로 이어진다
 })
-
-// ---------------------------------------------------------------------------
-// AC-01/AC-04/AC-08 — 세션 유지 · 승리 종료 · 배제된 uuid 거부
-// ---------------------------------------------------------------------------
 
 test('AC-01: 진행 중(NIGHT) 세션에서 한 명이 끊겨도 세션은 종료되지 않고 유예만 걸린다', async () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac01' })
@@ -331,7 +288,6 @@ test('AC-01: 진행 중(NIGHT) 세션에서 한 명이 끊겨도 세션은 종�
 
     const snapshot = gameSessionCore.__getStateSnapshotForTests()
     assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), true)
-    // 남은 참가자는 그대로 세션에 묶여 있고 채널에서 쫓겨나지도 않는다.
     for (const [uuid, socket] of sockets) {
         assert.equal(socket.rooms.has(session.channelId), true, `${uuid}가 채널에서 제거됐다`)
         assert.equal(snapshot.playerSession.some(([playerUuid]) => playerUuid === uuid), true)
@@ -344,7 +300,6 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
     const clock = createManualClock()
     const [victimUuid, survivorUuid] = nonJokerUuids
 
-    // 한 명은 이미 밤 이전에 죽어 있는 상태로 둔다 — 남은 비-JOKER가 끊기면 곧바로 동수가 된다.
     session.players.get(survivorUuid).alive = false
 
     disconnectSocket(sockets, victimUuid)
@@ -356,9 +311,6 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
 
     const [eliminated] = eliminationBroadcasts(io)
     assert.equal(eliminated.payload.phase, 'ENDED')
-    // 종료 payload의 공개 winResult는 canonical { winner }에 판 종료 뒤 전원 정체 공개(reveals,
-    // 2026-09-22 계약 — gameSession.js buildPublicWinResult)를 붙인다. 승자와 각 참가자의
-    // 역할·생사·사망 사유가 세션 최종 상태와 정확히 같아야 한다.
     const expectedReveals = [...session.players.values()].map((player) => ({
         uuid: player.uuid,
         nickname: player.nickname,
@@ -375,7 +327,6 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
     const victimReveal = eliminated.payload.winResult.reveals.find((reveal) => reveal.uuid === victimUuid)
     assert.equal(victimReveal.alive, false)
     assert.equal(victimReveal.deathReason, 'DISCONNECT')
-    // reveals 밖(판 진행 중 공개 필드)에는 여전히 역할 정보가 새지 않는다.
     const serialized = JSON.stringify(eliminated.payload, (key, value) => (key === 'reveals' ? undefined : value))
     assert.equal(serialized.includes('role'), false)
 })
@@ -390,7 +341,6 @@ test('AC-08: 유예 만료로 배제된 uuid는 같은 uuid로 돌아와도 스�
     expireDisconnectGrace(run)
     assert.equal(gameSessionCore.isForfeitedFromSession(session.id, doctorUuid), true)
 
-    // 같은 uuid로 다시 접속한다(새 소켓, 같은 socket.id 규약).
     const rejoinSocket = createFakeSocket(doctorUuid)
     io.sockets.sockets.set(rejoinSocket.id, rejoinSocket)
 
@@ -411,33 +361,24 @@ test('MM1 AC-05: 인게임 차단 게이트는 기존 게임으로의 재접속(
     const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'mm1-resync' })
     const { io, sockets } = wireSession(session)
 
-    // 배제되지 않은 참가자가 끊겼다가 같은 uuid의 새 소켓으로 돌아온다(유예는 만료시키지 않는다).
     disconnectSocket(sockets, doctorUuid)
     const rejoinSocket = createFakeSocket(doctorUuid)
     io.sockets.sockets.set(rejoinSocket.id, rejoinSocket)
 
     await gameSessionSocketLayer.resyncSessionRouting(rejoinSocket, doctorUuid)
 
-    // 재접속은 create/join 핸들러를 전혀 거치지 않으므로 ALREADY_IN_GAME 게이트의 영향을
-    // 받지 않는다 — 활성 gameId를 가졌다는 바로 그 사실이 여기서는 통과의 근거다.
     assert.equal(rejoinSocket.data.activeGameId, session.id)
     assert.equal(rejoinSocket.rooms.has(session.channelId), true)
     assert.deepEqual(rejoinSocket.emitted, [])
 
-    // 같은 시점, 같은 uuid의 create_room은 여전히 차단된다 — 두 경로가 서로 독립임을 보인다.
     const { callback, getResponse } = countingCallback()
     matchmaking.__testables.handleCreateRoom(io, rejoinSocket, doctorUuid, validSettingsPayload(), callback)
     assert.equal(getResponse().code, 'ALREADY_IN_GAME')
 
-    // 그 거부가 방금 되돌린 재접속 라우팅을 손상시키지 않는다.
     assert.equal(rejoinSocket.data.activeGameId, session.id)
     assert.equal(rejoinSocket.rooms.has(session.channelId), true)
     assert.deepEqual(matchmaking.__getStateSnapshotForTests().gameRooms, [])
 })
-
-// ---------------------------------------------------------------------------
-// AC-06 — 새로고침 복원(기존 스냅샷 계약으로 phase/self 복원, 채널은 S4 selector가 유도)
-// ---------------------------------------------------------------------------
 
 test('AC-06: 재접속 스냅샷은 phase·자기 역할·생존 상태를 복원하고 중복 chatChannels 계약을 만들지 않는다', () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight({ id: 'ac06' })
@@ -526,10 +467,6 @@ test('AC-02: ROLE_REVEAL과 TRIBUNAL도 각각 다음 top-level phase 진입 경
     assert.equal(tribunal.session.players.get(tribunal.doctorUuid).alive, false)
 })
 
-// ---------------------------------------------------------------------------
-// F-27a(AC-04) — 연출 대기 중 참가자가 재접속해도 대기 게이트가 멈추거나 재시작되지 않는다
-// ---------------------------------------------------------------------------
-
 test('F-27a(AC-04): 대기 중 수신자가 끊기면 남은 기다림에서 빠지고, 남은 수신자의 완료 ACK만으로 해제된다', async () => {
     const { session, jokerUuid } = commitFullRoleSessionAtNight({ id: 'f27a-ac04-reconnect' })
     const targetUuid = [...session.players.values()].find((p) => p.role === 'CITIZEN').uuid
@@ -546,18 +483,14 @@ test('F-27a(AC-04): 대기 중 수신자가 끊기면 남은 기다림에서 빠
     const killEventId = [...run.wait.waiting.keys()][0]
     assert.deepEqual([...run.wait.waiting.get(killEventId).keys()].sort(), [jokerUuid, targetUuid].sort())
 
-    // 대상자가 끊긴다 — 실제 onDisconnect 경로를 태운다(AC-01 시험과 같은 방식: connected만
-    // false로 바꾸고 namespace에서는 빼지 않는다 — 등록된 소유권 검사가 그대로 통과한다).
     disconnectSocket(sockets, targetUuid)
     await gameSessionSocketLayer.onDisconnect(io, sockets.get(targetUuid), targetUuid)
 
-    // 끊긴 수신자는 더 이상 기다림의 대상이 아니다 — 대기 자체는 멈추지도 재시작되지도 않는다.
     assert.equal(run.wait, gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id).wait,
         '재평가가 대기 토큰을 새로 만들지 않는다')
     assert.deepEqual([...run.wait.waiting.get(killEventId).keys()], [jokerUuid], '끊긴 대상자가 대기에서 제외됐다')
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '남은 수신자가 아직 완료하지 않아 대기는 계속된다')
 
-    // 남은 수신자(jokerUuid)의 완료 ACK만으로 대기가 해제되고 다음 역할이 시작된다.
     const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
     const { callback, getResponse } = countingCallback()
     sockets.get(jokerUuid).trigger('acknowledge_night_action_success', {
@@ -566,7 +499,6 @@ test('F-27a(AC-04): 대기 중 수신자가 끊기면 남은 기다림에서 빠
     assert.deepEqual(getResponse(), { ok: true, duplicate: false })
 
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '해제 뒤 다음 역할이 정상 시작됐다')
-    // 끊긴 참가자의 재접속 유예는 대기 해제와 무관하게 그대로 살아 있다(취소되지 않았다).
     assert.notEqual(getDisconnectGraceRun(session.id, targetUuid), undefined)
 })
 
@@ -580,7 +512,6 @@ test('F-27a(AC-04): 대기의 남은 유일한 수신자까지 끊기면 재접�
     assert.deepEqual(submit(jokerUuid, targetUuid), { ok: true })
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '전제: 실제 연출 대기 중이다')
 
-    // 대상자에 이어 행위자까지 끊긴다 — 이제 이 사건을 기다릴 적격 수신자가 하나도 남지 않는다.
     disconnectSocket(sockets, targetUuid)
     await gameSessionSocketLayer.onDisconnect(io, sockets.get(targetUuid), targetUuid)
     disconnectSocket(sockets, jokerUuid)

@@ -149,17 +149,14 @@ function mountLiveOverlayStack() {
 test("오버레이 순서: 역할 공개 → 진입 연출 → 역할 턴 안내 순으로만 열린다", () => {
   const { result, unmount } = mountLiveOverlayStack()
 
-  // 1) 역할 공개가 가장 먼저다.
   assert.equal(result.current.roleReveal.open, true)
   assert.equal(result.current.phaseEntrance.open, false)
   assert.equal(result.current.nightTurn.open, false)
 
-  // canonical하게 밤에 들어가도 앞 순서가 떠 있는 동안에는 아무것도 앞지르지 못한다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.phaseEntrance.open, false, "역할 공개가 먼저다")
   assert.equal(result.current.nightTurn.open, false)
 
-  // 2) 역할 공개를 닫으면 진입 연출("밤이 되었습니다")이 뜬다.
   act(() => {
     result.current.roleReveal.close()
   })
@@ -171,7 +168,6 @@ test("오버레이 순서: 역할 공개 → 진입 연출 → 역할 턴 안내
     "밤 진입 연출이 닫히기 전에는 역할 턴 안내가 뜨지 않는다",
   )
 
-  // 3) 진입 연출을 닫아야 비로소 역할 턴 안내가 뜬다.
   act(() => {
     result.current.phaseEntrance.confirm()
   })
@@ -205,7 +201,6 @@ test("역할 턴 안내를 닫아도 다음 역할이 이어지지 않고 소켓
   assert.equal(fake.emitCalls.length, emitsBefore, "닫기는 어떤 emit도 하지 않는다")
   assert.equal(fake.emitWithAckCalls.length, acksBefore, "닫기는 역할 확인 ack도 보내지 않는다")
 
-  // 닫은 뒤 같은 밤이 반복 관측돼도 의사·경비원·마녀사냥꾼 안내가 이어지지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.nightTurn.open, false)
@@ -242,11 +237,8 @@ test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () =
     "utf8",
   )
 
-  // 페이지는 자체 역할 턴 상태를 만들지 않고 useInGameOverlayStack 하나만 쓴다.
   assert.match(pageSource, /useInGameOverlayStack\(\)/)
   assert.match(pageSource, /nightTurn/)
-  // F-27b(AC-01): 열림의 출처는 여전히 컨트롤러 하나이고, 비수신자 대기 중에만 그 위에
-  // 그리지 않는다는 억제 조건이 곱해진다(페이지가 자기 턴 상태를 만드는 것이 아니다).
   assert.match(pageSource, /open=\{nightTurn\.open && !nightPresentationWaitOpen\}/)
   assert.match(pageSource, /announcement=\{nightTurn\.announcement\}/)
   assert.match(pageSource, /onClose=\{nightTurn\.close\}/)
@@ -257,7 +249,6 @@ test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () =
   )
   assert.match(stackSource, /useInGameNightTurnAnnouncement/)
 
-  // 로컬 큐를 되살릴 수 있는 예전 API는 어디에도 남아 있지 않아야 한다.
   const controllerSource = readFileSync(
     fileURLToPath(new URL("../useInGameNightTurnAnnouncement.js", import.meta.url)),
     "utf8",

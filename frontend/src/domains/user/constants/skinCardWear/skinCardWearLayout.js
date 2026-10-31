@@ -1,7 +1,6 @@
 import { buildInGamePlayerThemeStyles } from "../../../game/ingame/constants/ingamePlayerTheme.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../shared/constants/customScrollbarStyles.js"
 
-/** 스킨&카드 착용 — 플레이어 카드 미리보기 닉네임 (하얀색) */
 export const SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_THEME = {
   styles: buildInGamePlayerThemeStyles("#ffffff"),
 }
@@ -11,7 +10,6 @@ export const SKIN_CARD_WEAR_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
-/** 스킨/카드 미리보기 콘텐츠 전환 */
 export const SKIN_CARD_WEAR_PREVIEW_MOTION = {
   initial: { opacity: 0, scale: 0.98, y: 6 },
   animate: { opacity: 1, scale: 1, y: 0 },
@@ -29,13 +27,11 @@ export const SKIN_CARD_WEAR_BACKDROP_CLASS =
 export const SKIN_CARD_WEAR_PANEL_WRAP_CLASS =
   "pointer-events-none fixed inset-0 z-[56] flex items-center justify-center p-[clamp(0.5rem,2vw,1.25rem)]"
 
-/** 프레임 + 하단 적용 버튼 */
 export const SKIN_CARD_WEAR_PANEL_STACK_CLASS =
   "pointer-events-auto flex w-[min(62rem,96vw)] max-w-[68rem] flex-col items-center gap-[clamp(0.55rem,1.1vh,0.8rem)]"
 
 export const SKIN_CARD_WEAR_PANEL_CLASS = "relative w-full"
 
-/** 스킨카드 팝업 프레임(1376x777) 안쪽 safe area — prototype/스킨카드 팝업 레이아웃.png 기준 */
 export const SKIN_CARD_WEAR_PANEL_INNER_PAD = {
   paddingTop: "9.6%",
   paddingBottom: "5.5%",
@@ -49,14 +45,12 @@ export const SKIN_CARD_WEAR_PANEL_FRAME_CLASS =
 export const SKIN_CARD_WEAR_PANEL_CONTENT_CLASS =
   "absolute inset-0 flex min-h-0 flex-col overflow-visible"
 
-/** 좌측 목록 ~36% / 우측 미리보기 ~64% */
 export const SKIN_CARD_WEAR_PANEL_GRID_CLASS =
   "grid min-h-0 flex-1 w-full overflow-visible grid-cols-[minmax(0,0.68fr)_minmax(0,1.32fr)]"
 
 export const SKIN_CARD_WEAR_LIST_COLUMN_CLASS =
   "flex min-h-0 flex-col overflow-visible bg-transparent pt-[clamp(0.82rem,1.75vh,1.05rem)] -translate-y-[clamp(0.18rem,0.45vh,0.32rem)]"
 
-/** 프레임 좌상단 찢어진 종이 영역 */
 export const SKIN_CARD_WEAR_LIST_TITLE_ANCHOR_CLASS =
   "pointer-events-none absolute left-[clamp(1.92rem,5.35%,2.62rem)] top-[clamp(1.98rem,5.35%,2.38rem)] z-30"
 
@@ -69,7 +63,6 @@ export const SKIN_CARD_WEAR_LIST_SCROLL_WRAP_CLASS =
 export const SKIN_CARD_WEAR_LIST_BODY_CLASS =
   `h-full min-h-0 overflow-y-auto overscroll-contain pl-[clamp(0.35rem,0.75vw,0.55rem)] pr-[clamp(0.08rem,0.18vw,0.12rem)] py-[clamp(0.28rem,0.55vh,0.42rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
-/** shared Scrollbar — 목록·미리보기 구분선 쪽으로 배치 */
 export const SKIN_CARD_WEAR_LIST_SCROLLBAR_CLASS =
   "right-[clamp(-1.68rem,-1.15vw,-1.32rem)] !translate-x-0"
 
@@ -100,7 +93,6 @@ export const SKIN_CARD_WEAR_LIST_ITEM_KIND_CLASS =
 export const SKIN_CARD_WEAR_LIST_ITEM_EQUIPPED_CHECK_CLASS =
   "pointer-events-none ml-auto shrink-0 block h-[clamp(0.95rem,1.25vw,1.08rem)] w-[clamp(0.95rem,1.25vw,1.08rem)] select-none object-contain"
 
-/** 목록 아이템 종류 라벨 (노란색 텍스트) */
 export const SKIN_CARD_WEAR_ITEM_KIND_LABEL = {
   basic: "기본 스킨",
   premium: "스킨",
@@ -113,7 +105,6 @@ export const SKIN_CARD_WEAR_PREVIEW_COLUMN_CLASS =
 export const SKIN_CARD_WEAR_JOB_TABS_ROW_CLASS =
   "flex max-w-full flex-nowrap items-stretch justify-start gap-[clamp(0.1rem,0.28vw,0.2rem)]"
 
-/** 우측 컬럼 상단 — 패널 content 기준 절대 배치 */
 export const SKIN_CARD_WEAR_JOB_TABS_ANCHOR_CLASS =
   "pointer-events-auto absolute left-[calc(41%+1.15rem)] top-[clamp(2.35rem,4.1vh,2.65rem)] z-30 max-w-[calc(59%-0.4rem)]"
 
@@ -129,7 +120,6 @@ export const SKIN_CARD_WEAR_PREVIEW_CARD_STAGE_CLASS =
 export const SKIN_CARD_WEAR_PREVIEW_STANDING_WRAP_CLASS =
   "relative flex h-full w-full translate-x-[clamp(1.45rem,3.2vw,2.15rem)] translate-y-[clamp(0.25rem,0.65vh,0.45rem)] items-end justify-center"
 
-/** 미리보기 콘텐츠 공통 — 짙은 검정 아우라 + 바닥 그림자 (투명 PNG·카드 실루엣용) */
 export const SKIN_CARD_WEAR_PREVIEW_AURA_FILTER =
   "[filter:drop-shadow(0_0_8px_rgba(0,0,0,0.78))_drop-shadow(0_0_20px_rgba(0,0,0,0.5))_drop-shadow(0_0_34px_rgba(0,0,0,0.28))_drop-shadow(0_10px_18px_rgba(0,0,0,0.52))]"
 
@@ -137,7 +127,6 @@ export const SKIN_CARD_WEAR_PREVIEW_STANDING_CLASS =
   "block h-[108%] max-h-none w-auto max-w-none select-none object-contain object-bottom " +
   SKIN_CARD_WEAR_PREVIEW_AURA_FILTER
 
-/** 카드 미리보기 — 인게임 명패보다 한 단계 크게 (cqi는 InGamePlayerCard container 기준) */
 export const SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_TEXT_CLASS =
   "[&_p]:!app-text-scaled [--app-text-size:clamp(1.05rem,8.5cqi,1.42rem)]"
 

@@ -4,7 +4,6 @@ import {
   FRIEND_ROW_FAVORITE_STAR_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
 
-/** 기본 탭 친구 row — 즐겨찾기 별 토글 (프론트 store만) */
 export default function FriendListFavoriteStar({ active = false, onToggle }) {
   const starClass = active
     ? FRIEND_ROW_FAVORITE_STAR_ACTIVE_CLASS

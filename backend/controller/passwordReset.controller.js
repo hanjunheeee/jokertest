@@ -1,9 +1,5 @@
 'use strict';
 
-// F-29b: 비밀번호 재설정 HTTP 경계. find-id(accountRecovery.controller.js)와 같은 원칙 —
-// 원본 오류(SQL·스택·입력값)를 절대 로깅하거나 next(error)로 넘기지 않는다. 모든 응답에
-// no-store를 적용해 토큰이 담긴 응답이 캐시에 남지 않게 한다.
-
 const passwordResetService = require('../service/passwordReset.service');
 
 exports.requestPasswordReset = async (req, res) => {
@@ -12,7 +8,6 @@ exports.requestPasswordReset = async (req, res) => {
         const { email } = res.locals.passwordResetInput;
         await passwordResetService.requestPasswordReset({ email });
     } catch {
-        // 계정 없음·소셜 전용·발송 실패·예외·설정 누락 전부 같은 공통 응답으로 수렴한다.
     }
     return res.status(200).json({ ok: true });
 };

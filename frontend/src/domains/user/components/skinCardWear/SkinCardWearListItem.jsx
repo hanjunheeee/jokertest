@@ -23,9 +23,6 @@ export default function SkinCardWearListItem({
   item,
   selected,
   equipped,
-  // F-14(AC-02, R-IMPL P1 "actual list ownership contract"): 미보유 항목은 disabled 처리해
-  // 선택 자체가 불가능해야 한다(네이티브 button[disabled]은 클릭 이벤트를 아예 발생시키지
-  // 않는다) — useSkinCardWearSelection.js의 selectItem 방어선과 함께 이중으로 막는다.
   owned = true,
   onSelect,
 }) {

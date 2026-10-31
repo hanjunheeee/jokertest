@@ -5,22 +5,6 @@ const BASIC_STANDING_DIR = "/shopItem/basic/jobs-standing"
 const BASIC_CLOSEUP_DIR = "/shopItem/basic/jobs-closeup"
 const PLAYER_CARD_ALIVE_DIR = "/shopItem/player-card/playerframe-alive"
 
-/** @typedef {'skin' | 'card'} SkinCardWearItemType */
-/** @typedef {'basic' | 'premium' | 'card'} SkinCardWearItemSource */
-
-/**
- * @typedef {Object} SkinCardWearCatalogItem
- * @property {string} id
- * @property {SkinCardWearItemType} itemType
- * @property {SkinCardWearItemSource} source
- * @property {string | null} jobId
- * @property {string} name
- * @property {string} listIcon
- * @property {string} [standingSrc]
- * @property {string} [closeupSrc]
- * @property {string} [frameSrc]
- */
-
 const JOB_GRADE_TO_ID = {
   귀족: "noble",
   광대: "clown",
@@ -53,7 +37,6 @@ const PLAYER_CARD_VARIANTS = [
   "왕관",
 ]
 
-/** @param {string} stem */
 function resolveBasicJobId(stem) {
   if (stem.startsWith("귀족")) return "noble"
   if (stem.startsWith("광대")) return "clown"
@@ -63,12 +46,10 @@ function resolveBasicJobId(stem) {
   return null
 }
 
-/** @param {string} stem */
 function resolveBasicCloseupSrc(stem) {
   return `${BASIC_CLOSEUP_DIR}/${stem}_클로즈업.png`.normalize("NFD")
 }
 
-/** @param {string} stem @returns {SkinCardWearCatalogItem} */
 function createBasicSkinItem(stem) {
   const standingSrc = `${BASIC_STANDING_DIR}/${stem}.png`.normalize("NFD")
   const closeupSrc = resolveBasicCloseupSrc(stem)
@@ -85,7 +66,6 @@ function createBasicSkinItem(stem) {
   }
 }
 
-/** @param {import("../../../store/constants/storeItems.js").StoreItem} item @returns {SkinCardWearCatalogItem} */
 function mapPremiumSkinItem(item) {
   return {
     id: item.id,
@@ -99,7 +79,6 @@ function mapPremiumSkinItem(item) {
   }
 }
 
-/** @param {string} variant @returns {SkinCardWearCatalogItem} */
 function createPlayerCardItem(variant) {
   const frameSrc =
     `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(${variant}).png`.normalize("NFD")
@@ -128,31 +107,26 @@ export const SKIN_CARD_WEAR_CATALOG = [
 
 export const SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID = "player-card-베이스"
 
-/** @param {string} id @returns {SkinCardWearCatalogItem | undefined} */
 export function getSkinCardWearItemById(id) {
   return SKIN_CARD_WEAR_CATALOG.find((item) => item.id === id)
 }
 
-/** @param {string} jobId @returns {SkinCardWearCatalogItem[]} */
 export function getSkinItemsForJob(jobId) {
   return SKIN_CARD_WEAR_CATALOG.filter(
     (item) => item.itemType === "skin" && item.jobId === jobId,
   )
 }
 
-/** @returns {SkinCardWearCatalogItem[]} */
 export function getPlayerCardItems() {
   return SKIN_CARD_WEAR_CATALOG.filter((item) => item.itemType === "card")
 }
 
-/** @param {string} jobId @returns {string | undefined} */
 export function getDefaultSkinIdForJob(jobId) {
   return SKIN_CARD_WEAR_CATALOG.find(
     (item) => item.itemType === "skin" && item.source === "basic" && item.jobId === jobId,
   )?.id
 }
 
-/** @returns {Record<string, string>} */
 export function buildDefaultSkinsByJob() {
   return Object.fromEntries(
     SKIN_CARD_WEAR_JOB_TABS.flatMap(({ id }) => {
@@ -162,14 +136,6 @@ export function buildDefaultSkinsByJob() {
   )
 }
 
-/**
- * @param {Object} params
- * @param {SkinCardWearCatalogItem | undefined} params.selectedItem
- * @param {string} params.activeJobId
- * @param {'skin' | 'card'} params.previewMode
- * @param {Record<string, string>} params.draftSkinsByJob
- * @param {string} params.draftCardFrameId
- */
 export function resolveSkinCardWearPreview({
   selectedItem,
   activeJobId,
@@ -209,12 +175,6 @@ export function resolveSkinCardWearPreview({
   }
 }
 
-/**
- * @param {Record<string, string>} draftSkinsByJob
- * @param {string} draftCardFrameId
- */
-
-/** @param {SkinCardWearCatalogItem} item */
 export function isSkinCardWearItemEquipped(item, appliedSkinsByJob, appliedCardFrameId) {
   if (item.itemType === "card") return appliedCardFrameId === item.id
   if (item.itemType === "skin" && item.jobId) return appliedSkinsByJob[item.jobId] === item.id

@@ -20,8 +20,6 @@ function baseSettings(overrides = {}) {
     return { maxPlayers: 8, jokerCount: 2, ...overrides }
 }
 
-// ── 모드 해석 ───────────────────────────────────────────────────────────────
-
 test('resolveRoleCompositionMode: 모드가 없는 구버전 settings는 AUTO로 해석된다', () => {
     assert.equal(resolveRoleCompositionMode(undefined), ROLE_COMPOSITION_MODES.AUTO)
     assert.equal(resolveRoleCompositionMode(null), ROLE_COMPOSITION_MODES.AUTO)
@@ -36,8 +34,6 @@ test('resolveRoleCompositionMode: 알 수 없는 모드 값은 null(거부 대�
         assert.equal(resolveRoleCompositionMode({ roleCompositionMode: invalid }), null, `${String(invalid)}는 거부돼야 함`)
     }
 })
-
-// ── roleCounts 자체 검증 ────────────────────────────────────────────────────
 
 test('validateCustomRoleCounts: 유효한 구성은 방어적 canonical 복사본을 돌려준다', () => {
     const source = customCounts()
@@ -83,11 +79,8 @@ test('validateCustomRoleCounts: JOKER=0 · JOKER>=정원 · 합계>정원은 거
         validateCustomRoleCounts({ JOKER: 2, DOCTOR: 2, GUARD: 1, WITCH_HUNTER: 0 }, 4).reason,
         'FIXED_ROLES_EXCEED_SLOTS',
     )
-    // 합계가 정확히 정원과 같은 구성(시민 0명)은 허용된다.
     assert.equal(validateCustomRoleCounts({ JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }, 4).ok, true)
 })
-
-// ── 특수직업 인원 상한(판정 2.2) ───────────────────────────────────────────
 
 test('MAX_SPECIAL_ROLE_COUNT: 특수직업 공통 상한은 2명이다', () => {
     assert.equal(MAX_SPECIAL_ROLE_COUNT, 2)
@@ -107,8 +100,6 @@ test('validateCustomRoleCounts: 어떤 특수직업도 3명 이상이면 거부�
 })
 
 test('validateCustomRoleCounts: 시민 수는 어떤 경우에도 거부 사유가 아니다(시민 0명 허용)', () => {
-    // 고정 역할 합이 정확히 정원과 같아 시민이 0명이 되는 구성도, 시민이 8명 남는 구성도
-    // 똑같이 통과한다 — CITIZEN에는 상한도 하한도 없다.
     assert.equal(validateCustomRoleCounts({ JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 }, 8).ok, true)
     assert.equal(validateCustomRoleCounts({ JOKER: 1, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }, 10).ok, true)
 })
@@ -127,7 +118,6 @@ test('validateCreateRoomRoleComposition: AUTO에서 광대 3명은 상한 메시
     )
     assert.equal(result.ok, false)
     assert.equal(result.message, `역할별 인원은 최대 ${MAX_SPECIAL_ROLE_COUNT}명까지 지정할 수 있습니다.`)
-    // 상한 안(2명)이면 그대로 통과한다.
     assert.equal(validateCreateRoomRoleComposition({ roleCompositionMode: 'auto' }, baseSettings()).ok, true)
 })
 
@@ -149,8 +139,6 @@ test('resolveRoleComposition: 시작 시점에도 상한을 다시 강제한다(
     }
     assert.equal(resolveRoleComposition(custom, 8).reason, 'ROLE_COUNT_ABOVE_LIMIT')
 })
-
-// ── create_room 병합 검증 ──────────────────────────────────────────────────
 
 test('validateCreateRoomRoleComposition: 모드가 없으면 AUTO로 해석되고 roleCounts를 만들지 않는다', () => {
     const result = validateCreateRoomRoleComposition({ maxPlayers: 8, jokerCount: 2 }, baseSettings())
@@ -189,17 +177,12 @@ test('validateCreateRoomRoleComposition: 알 수 없는 모드 값은 거부한�
     assert.equal(result.ok, false)
 })
 
-// ── 실제 인원 기준 해석 ────────────────────────────────────────────────────
-
 test('resolveRoleComposition: AUTO는 기존 computeRoleComposition 결과와 동일하다', () => {
-    // jokerCount는 특수직업 상한(MAX_SPECIAL_ROLE_COUNT=2) 안의 값만 쓴다 — 3명 이상은 AUTO에서도
-    // 거부되므로(아래 상한 테스트) 여기서 쓰면 "AUTO 계산이 동일하다"는 계약을 검증할 수 없다.
     for (const [playerCount, jokerCount] of [[4, 1], [6, 2], [8, 2], [10, 2]]) {
         const resolved = resolveRoleComposition({ jokerCount }, playerCount)
         assert.equal(resolved.ok, true)
         assert.deepEqual(resolved.composition, computeRoleComposition(playerCount, jokerCount))
     }
-    // settings 자체가 없는 구버전 방(랜덤 매칭)도 jokerCount 0의 AUTO로 해석된다.
     assert.deepEqual(resolveRoleComposition(undefined, 5).composition, computeRoleComposition(5, 0))
 })
 
@@ -213,7 +196,6 @@ test('resolveRoleComposition: CUSTOM은 실제 인원에서 CITIZEN을 파생한
 
     assert.equal(resolved.ok, true)
     assert.deepEqual(resolved.composition, { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 0, CITIZEN: 3 })
-    // 정원(8)이 아니라 실제 인원(7)으로 계산된다 — 인원이 줄면 시민만 줄어든다.
     assert.equal(resolveRoleComposition(settings, 5).composition.CITIZEN, 1)
 })
 
@@ -252,8 +234,6 @@ test('resolveRoleComposition: AUTO에서 jokerCount가 실제 인원 이상이�
     assert.equal(resolveRoleComposition({ jokerCount: 3 }, 3).reason, 'JOKER_COUNT_TOO_HIGH')
     assert.equal(resolveRoleComposition({ jokerCount: 1.5 }, 8).reason, 'INVALID_JOKER_COUNT')
 })
-
-// ── commit 경계용 재검증 ───────────────────────────────────────────────────
 
 test('validateResolvedComposition: 합계·JOKER 일치·키 구성을 모두 확인한다', () => {
     const valid = { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 0, CITIZEN: 4 }

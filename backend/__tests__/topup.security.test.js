@@ -1,14 +1,6 @@
 process.env.JWT_SECRET = "topup-security-test-secret";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
-// F-32a(AC-05) secret 노출 시험. 실행마다 고유한 **가짜** secret 표식을 만들어
-//   1) 정상 주문 응답, 표식이 실린 어댑터·DB·JSON 파서 오류가 실제 HTTP 경로(실제 router·인증·오류
-//      처리기·morgan 접근 로그)를 지날 때 개발·운영 응답과 캡처한 로그에 표식이 남지 않는지,
-//   2) 서버 전용 환경변수에 같은 표식을 넣고 실제 프런트 production build를 돌렸을 때 산출물에
-//      표식이 남지 않는지
-// 를 검사한다. 검사한 표식과 해당 실행·빌드 범위의 증거일 뿐 코드 전체의 부재 증명이 아니다.
-// 표식은 요청 URL에는 넣지 않는다(morgan은 URL을 그대로 기록한다) — 본문·오류에만 싣는다.
-
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
 const crypto       = require("node:crypto");
@@ -28,8 +20,6 @@ const userRepository = require("../repositories/user.repositories");
 const currencyProductsService = require("../service/currencyProducts.service");
 const topupService = require("../service/topup.service");
 const { createTossAdapter } = require("../payments/tossAdapter");
-// topup.route.test.js와 같은 이유 — 이 파일의 앱 서버도 전역 fetch로 호출되므로 Fetch 금지 포트를
-// 배정받지 않도록 같은 공용 helper로 bind한다(같은 원인의 인접 fixture).
 const { listenOnFetchablePort } = require("../tests/helpers/fetchablePort");
 
 const RUN = crypto.randomBytes(8).toString("hex");
@@ -63,7 +53,6 @@ const stubAuthGate = (t) => {
     t.after(() => Object.assign(userRepository, originals));
 };
 
-/** 서비스 함수를 시험이 정한 동작으로 바꾼다(t.after에서 복원). */
 const stubServices = (t, behaviors) => {
     const targets = {
         listCurrencyProducts: currencyProductsService,
@@ -76,7 +65,6 @@ const stubServices = (t, behaviors) => {
     t.after(() => { for (const [key, owner] of Object.entries(targets)) owner[key] = originals[key]; });
 };
 
-/** 콘솔 출력과 morgan 접근 로그를 한 배열에 모은다. */
 const captureLogs = (t) => {
     const lines = [];
     const names = ["log", "info", "warn", "error", "debug"];
@@ -94,7 +82,6 @@ const startServer = async (t, accessLog) => {
     app.use(express.json());
     app.use(cookieParser());
     app.use("/economy", require("../routes/economy.routes"));
-    // 신규 범위 밖의 경로 — 기존 일반 오류 분기가 그대로인지 확인하는 대조군.
     app.get("/other-area/boom", () => { throw new Error("outside-scope-boom"); });
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
@@ -121,7 +108,6 @@ const assertNoNeedle = (haystack, label) => {
     }
 };
 
-// 표식을 message·stack·중첩 객체·헤더·SQL 어디에나 실은 오류들.
 const adapterError = () => Object.assign(new Error(`adapter failed ${SECRET} Authorization: Basic ${BASIC_SECRET_COLON}`), {
     status: 502,
     code: "PROVIDER_ERROR_X",
@@ -159,7 +145,6 @@ for (const nodeEnv of ["development", "production", "test"]) {
         for (const [failureName, makeFailure] of Object.entries(FAILURES)) {
             failure = makeFailure;
             for (const [method, requestPath, body] of CASES) {
-                // 쿼리·후행 슬래시·대소문자 변형은 같은 안전 오류 분기를 타야 한다(표식은 URL에 넣지 않는다).
                 for (const variant of [requestPath, `${requestPath}/`, `${requestPath}?x=1`, requestPath.toUpperCase().replace(ORDER_ID.toUpperCase(), ORDER_ID)]) {
                     const res = await call(base, variant, { method, body });
                     const label = `${failureName} ${method} ${variant}`;
@@ -266,7 +251,6 @@ test("실제 어댑터의 전송 오류·응답에 표식이 있어도 승인 �
     const adapter = createTossAdapter({
         transport: async () => { throw Object.assign(new Error(`socket hang up ${SECRET} ${BASIC_SECRET_COLON}`), { config: { headers: { Authorization: `Basic ${BASIC_SECRET_COLON}` } } }); },
     });
-    // 서비스 스텁이 실제 어댑터를 호출하고, 결과가 승인 불명이면 재시도 가능한 오류로 바꾼다.
     stubServices(t, {
         listCurrencyProducts: async () => [],
         createTopupOrder: async () => { throw new Error("호출되면 안 된다"); },
@@ -286,8 +270,6 @@ test("실제 어댑터의 전송 오류·응답에 표식이 있어도 승인 �
     assertNoNeedle(res.text, "응답");
     assertNoNeedle(logs.join("\n") + accessLog.join(""), "로그");
 });
-
-// ── 프런트 production build 산출물 ─────────────────────────────────────────────────────
 
 const listFiles = (directory) => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name);
@@ -311,7 +293,6 @@ test("서버 전용 secret 환경변수를 준 프런트 production build 산출
     );
     assert.equal(build.status, 0, `frontend build 실패(status=${build.status}): ${String(build.stderr).slice(-1500)}`);
 
-    // 빈 디렉터리·기존 산출물로 통과하지 못하게 실제 생성 파일을 먼저 확인한다.
     const files = listFiles(outDir);
     assert.ok(files.some((file) => path.basename(file) === "index.html"), "index.html이 생성되어야 한다");
     assert.ok(files.some((file) => file.endsWith(".js")), "번들 JS가 생성되어야 한다");

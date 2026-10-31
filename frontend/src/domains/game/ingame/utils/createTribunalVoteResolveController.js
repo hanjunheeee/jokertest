@@ -43,13 +43,6 @@ function computeResolveAckPatch(response) {
   return { status: "idle", error: message, outcome: null, counts: null, executedUuid: null }
 }
 
-/**
- * TRIBUNAL 판정 요청(resolve_tribunal_vote)의 경쟁 조건 방어를 전담하는 프레임워크 무관
- * 컨트롤러. createTribunalVoteSubmitController와 동일한 계약(socket identity 캡처, generation,
- * 요청 시점 context vs settle 시점 최신 context 비교)을 따르되, 판정은 게임당 한 번만
- * 유효하므로 성공 시 status를 'resolved'로 잠그고 이후 resolve() 호출은 전부 no-op이다
- * (제출과 달리 재판정을 허용하지 않는다).
- */
 export function createTribunalVoteResolveController({ getSocket, timeoutMs = TRIBUNAL_VOTE_RESOLVE_ACK_TIMEOUT_MS, onStateChange, getLatestContext }) {
   let state = INITIAL_TRIBUNAL_VOTE_RESOLVE_STATE
   let resolving = false

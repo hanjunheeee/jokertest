@@ -122,13 +122,11 @@ export const EMOTICON_PALETTE_WHEEL_WRAP_CLASS =
 export const EMOTICON_PALETTE_FRAME_IMG_CLASS =
   "pointer-events-none absolute inset-0 z-[1] block h-full w-full select-none object-fill"
 
-/** palette-frame.png 실측 — 흐름에 남는 자식이 없으므로 aspect-ratio로 높이를 만든다. */
 export const EMOTICON_PALETTE_FRAME_WIDTH = 769
 export const EMOTICON_PALETTE_FRAME_HEIGHT = 738
 export const EMOTICON_PALETTE_FRAME_ASPECT_RATIO =
   `${EMOTICON_PALETTE_FRAME_WIDTH} / ${EMOTICON_PALETTE_FRAME_HEIGHT}`
 
-/** 8칸 방사형 배치의 칸 중심 좌표(%). 슬롯 번호·인덱스 대응은 emoticonPaletteSlots.js 참고. */
 export const EMOTICON_PALETTE_SLOT_POSITIONS = [
   { top: "15%", left: "50%" }, // 1번 — 12시
   { top: "26%", left: "74%" }, // 2번 — 1~2시

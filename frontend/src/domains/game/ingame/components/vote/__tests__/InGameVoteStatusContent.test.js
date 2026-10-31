@@ -1,14 +1,3 @@
-/**
- * CN V-2 AC-04 — 투표 현황 창이 **서버가 말한 집계**만 보여준다.
- *
- * 예전 이 화면은 ingameVotePreviewData.js의 DUMMY_VOTE_COUNTS를 참가자 수만큼 잘라 개인별
- * 득표 행을 그렸다. 그 숫자는 서버가 준 적이 없는 값이라, 화면이 사실이 아닌 집계를 단언하고
- * 있었다(제출 버튼도 아무 데도 연결되지 않은 no-op이었다).
- *
- *   · dayVoteResolution이 있으면 그 네 값(득표·기권·결과·재판 대상)을 그대로 그린다
- *   · 없으면 "집계 전"이라고만 말한다(0으로 꾸며내지 않는다)
- *   · 더미 상수를 다시 import하지 않는다(원문 정적 검사)
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -66,7 +55,6 @@ const { useInGameStore } = await import("../../../store/ingameStore.js")
 
 const GAME_ID = "cn-v2-vote-status"
 
-/** canonical store에 낮 투표 집계를 심는다(없으면 dayVoteResolution 자체를 두지 않는다). */
 function seedState(dayVoteResolution) {
   act(() => {
     useInGameStore.setState({
@@ -145,17 +133,13 @@ test("AC-04: dayVoteResolution이 없으면 '집계 전'만 그리고 어떤 숫
 test("AC-04: 생산 원문이 더미 득표 상수를 더 이상 import하지 않는다", async () => {
   const { readFile } = await import("node:fs/promises")
   const source = await readFile(new URL("../InGameVoteStatusContent.jsx", import.meta.url), "utf8")
-  // 주석은 제외한다 — 이 파일의 주석은 "더미를 왜 제거했는가"를 기록하므로 그 이름이 남아
-  // 있는 것이 정상이고, 검사 대상은 실제로 실행되는 코드다.
   const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "")
 
   assert.doesNotMatch(code, /DUMMY_VOTE_COUNTS/, "더미 득표 상수가 아직 쓰인다")
   assert.doesNotMatch(code, /ingameVotePreviewData/, "더미 데이터 모듈을 아직 import한다")
   assert.doesNotMatch(code, /isVoteStatusLeader|resolveVoteStatusLeaderVoteCount/,
     "더미 데이터 헬퍼가 아직 쓰인다")
-  // 검사기 자신의 대조 — 주석 제거가 실제 코드까지 지워 버리면 위 세 단언이 무의미해진다.
   assert.match(code, /useInGameStore/, "주석 제거가 실제 코드까지 지웠다")
-  // 그 모듈 자체도 저장소에 남아 있지 않다(다른 소비처가 없어 함께 삭제했다).
   const { access } = await import("node:fs/promises")
   await assert.rejects(
     () => access(new URL("../../../constants/vote/ingameVotePreviewData.js", import.meta.url)),

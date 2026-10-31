@@ -1,23 +1,5 @@
 'use strict';
 
-// F-19 친구 즐겨찾기·차단·게임 초대 — 실제 격리 MySQL DB에서 AC-02~AC-07과 A-04/A-05/
-// A-09/A-10을 검증한다. 라우터 → verifyToken → 컨트롤러 → friendService/gameInviteService →
-// 실제 저장소 → 실제 SQL까지 전부 진짜 코드로 태운다. fake db로는 증명할 수 없는 것들이
-// 여기 있다:
-//   - 0013이 건 pending_pair_key 유일 인덱스가 **교차 방향** 동시 신청을 하나로 좁히는가,
-//     그러면서 거절→재신청→재거절의 terminal 이력은 몇 개든 남기는가(AC-05 마이그레이션)
-//   - 같은 creation_key 재시도가 진짜로 한 행·한 알림·한 사건으로 끝나는가(A-05)
-//   - 차단이 PENDING 요청·초대만 CANCELLED로 바꾸고 Friendship·즐겨찾기 원본은 남기는가,
-//     해제해도 되살아나지 않는가(AC-05)
-//   - 남의 차단을 지우는 DELETE가 정말 0행을 건드리는가(AC-04)
-//   - 수락 결정(ACCEPTED/UNCONFIRMED)과 publication 영수증(PUBLISHED)이 **다른 사실**로
-//     따로 확정되는가, 두 번째 잠금 전 차단이 커밋되면 역사적 결정은 남고 입장만
-//     INTERRUPTED가 되는가(A-10)
-//
-// backend/tests/helpers/isolatedTestDb.js의 관리 목록·대상 DB 확인 원칙을 따른다.
-// F01_TEST_DATABASE_URL이 없으면 각 테스트는 실패로 표시하지 않고 명시적으로 skip한다
-// (f01~f17과 같은 관례 — skip은 통과가 아니라 **미검증**이다).
-
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f19-friends-invites-test-secret';
@@ -46,11 +28,6 @@ const {
 
 const { MIGRATIONS } = require('../../scripts/migrate-db');
 
-// 0013 "직전" 상태를 세우는 시험들이 공유하는 위치 계산. 예전에는 0013이 MIGRATIONS의
-// 마지막 원소였기 때문에 `MIGRATIONS.slice(0, -1)`이 곧 "0013 앞까지"였다. F-29a가 뒤에
-// 0014-find-id-requests를 추가하면서 그 전제가 깨졌다(마지막 원소가 더 이상 0013이 아니다) —
-// 이름으로 0013의 실제 위치를 찾아 앞부분만 자르면, 이후 마이그레이션이 몇 개가 더 추가돼도
-// 이 시험들을 고치지 않아도 된다.
 const F19_MIGRATION_INDEX = MIGRATIONS.findIndex((migration) => migration.name === '0013-f19-friends-invites');
 if (F19_MIGRATION_INDEX === -1) {
     throw new Error('MIGRATIONS 목록에서 0013-f19-friends-invites를 찾을 수 없습니다.');
@@ -92,7 +69,6 @@ const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
-/** 이력(schema_migrations)을 뺀 데이터 테이블. dropOrder의 "자식 → 부모" 순서를 그대로 쓴다. */
 const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
 
 const db = require('../../models');
@@ -107,28 +83,14 @@ test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
 
-// ---------------------------------------------------------------------------
-// 시험 장비
-// ---------------------------------------------------------------------------
-
-/** 서버 시각. 만료 판정을 결정적으로 재현하기 위해 시험이 소유한다. */
 let clockMs = Date.UTC(2026, 8, 13, 0, 0, 0);
 const nowFn = () => new Date(clockMs);
 
-/** 서버가 보낸 소켓 사건 전부(대상·이름·payload). 소리·중복 판정의 증거다. */
 let emitted = [];
 const recordingEmit = (userId, event, payload) => {
     emitted.push({ userId, event, payload });
 };
 
-/**
- * matchmaking.js가 런타임에 주입하는 방 접근자의 시험 대역.
- *
- * **새 registry를 만드는 것이 아니다** — 실제 코드에서도 초대 서비스는 방 상태를 소유하지
- * 않고 주입된 접근자로만 읽는다(gameInvite.service.js::__setRoomAccessForRuntime). 이 시험은
- * 그 경계를 그대로 쓰고, 실제 Map 소유자의 입장 상태 기계는 backend/socket/__tests__/
- * matchmaking.gameInvite.test.js가 담당한다.
- */
 const roomAccess = {
     bootEpoch: 'boot-f19-test',
     rooms: new Map(),
@@ -152,35 +114,8 @@ const placeInRoom = (uuid, roomId, overrides = {}) => {
     roomAccess.userRoom.set(uuid, roomId);
 };
 
-// ---------------------------------------------------------------------------
-// 고정 장비 — 스키마 재구축과 데이터 격리를 분리한다
-// ---------------------------------------------------------------------------
-//
-// ── 실측 ────────────────────────────────────────────────────────────────────
-// 이전 판은 26 케이스 전부가 setUp에서 관리 스키마를 통째로 드롭하고 13개 마이그레이션을
-// 다시 적용했다. 보호된 격리 MySQL 실측(.pluto/monitor/BD-db-suite-2026-09-13T08-49-32.388Z.log):
-// 26 PASS · 총 106615ms. 케이스별로는 앞의 15건이 2.4~3.0초, 뒤의 11건이 4.9~6.9초다 —
-// **본문이 더 무거워진 것이 아니라 같은 setUp이 느려졌다**(예: 3계정·단정 4개뿐인
-// "친구가 아니거나 차단 관계면 초대가 만들어지지 않는다"가 6144ms, 4계정·라우터 서버까지
-// 띄우는 "요청 당사자만 결과를 읽고"가 2772ms). 반복되는 드롭/CREATE 자체가 비용을 키운다.
-//
-// ── 그래서 두 가지 setUp을 둔다 ──────────────────────────────────────────────
-//   setUpFreshSchema(t) — 마이그레이션·DDL·기동 sync 케이스. 스키마 계약 자체가 대상이라
-//                         매번 전체 드롭 + 전체 이관을 그대로 한다.
-//   setUpBareSchema(t)  — 0013 직전 상태를 케이스가 직접 세우는 한 건 전용.
-//   setUp(t)            — 일반 서비스 케이스. 이미 완전히 이관된 스키마 위에서 데이터만 비운다.
-//
-// 일반 케이스는 스키마를 **신뢰하지 않는다**. 매번 (1) 승인된 전용 DB인지 (2) 관리 목록 밖
-// 테이블이 없는지 (3) 관리 테이블이 전부 존재하는지를 확인하고(resetManagedData가 셋 다
-// 담당한다), 그 위에 (4) 남은 행이 한 건도 없는지 (5) 0013의 컬럼·인덱스·외래 키 계약이
-// 그대로인지를 직접 단정한다. FOREIGN_KEY_CHECKS는 끄지 않는다 — 자식 → 부모 순서의 DELETE는
-// 제약을 그대로 지킨다. 스키마를 건드릴 수 있는 케이스는 자기 뒤를 'dirty'로 표시하므로
-// 다음 일반 케이스가 흔적을 물려받지 않고 스스로 전체 재구축으로 되돌아간다.
-
-/** 'unknown' = 아직 안 세움 · 'migrated' = 완전히 이관됨 · 'dirty' = DDL 케이스가 지나갔음 */
 let schemaState = 'unknown';
 
-/** setUp이 실제로 쓴 시간. 추측이 아니라 측정으로 보고하기 위한 장치다. */
 const fixtureCost = { rebuilds: 0, cleans: 0, schemaMs: 0, dataMs: 0 };
 
 const resetRuntimeFixtures = () => {
@@ -195,7 +130,6 @@ const resetRuntimeFixtures = () => {
     notificationService.__internal.__setDepsForTests({ emitToUser: recordingEmit, now: nowFn });
 };
 
-/** 관리 스키마를 통째로 드롭하고 마이그레이션 전부를 처음부터 적용한다. */
 const rebuildSchema = async () => {
     const startedAt = performance.now();
     await resetSchema();
@@ -205,7 +139,6 @@ const rebuildSchema = async () => {
     schemaState = 'migrated';
 };
 
-/** 케이스별 setUp/본문 소요를 TAP 진단으로 남긴다. */
 const beginCase = (t, mode, setupMs) => {
     const startedAt = performance.now();
     t.after(() => {
@@ -215,17 +148,14 @@ const beginCase = (t, mode, setupMs) => {
     });
 };
 
-/** 마이그레이션·DDL·기동 sync 케이스 전용. 전체 재구축하고, 뒤를 dirty로 남긴다. */
 const setUpFreshSchema = async (t) => {
     const startedAt = performance.now();
     await rebuildSchema();
-    // 이 케이스는 ALTER/DROP INDEX/sync로 스키마를 직접 바꿀 수 있다.
     schemaState = 'dirty';
     resetRuntimeFixtures();
     beginCase(t, 'fresh-schema', performance.now() - startedAt);
 };
 
-/** 0013 이전 상태를 케이스가 직접 세우는 경우 — 드롭만 하고 이관은 케이스의 몫이다. */
 const setUpBareSchema = async (t) => {
     const startedAt = performance.now();
     await resetSchema();
@@ -234,7 +164,6 @@ const setUpBareSchema = async (t) => {
     beginCase(t, 'bare-schema', performance.now() - startedAt);
 };
 
-/** 일반 서비스 케이스. 이미 이관된 스키마 위에서 데이터만 비우고 격리를 실제로 확인한다. */
 const setUp = async (t) => {
     const startedAt = performance.now();
     let mode = 'clean-data';
@@ -247,8 +176,6 @@ const setUp = async (t) => {
         const result = await resetManagedData(sequelize, TEST_DB_URL, {
             managedTables: MANAGED_TABLES,
             dropOrder: DROP_ORDER,
-            // 이력 행은 남긴다 — 지우면 다음 applyMigrations가 이미 있는 테이블에 다시
-            // 이관을 시도하게 되고, "재실행 이력은 한 건"이라는 계약도 관찰할 수 없다.
             keepTables: [migrationRunner.META_TABLE],
         });
         if (!result.cleaned) {
@@ -260,15 +187,11 @@ const setUp = async (t) => {
         }
     }
 
-    // 격리 확인 1 — 앞 케이스의 행이 한 건도 넘어오지 않았다. 넘어왔다면 이 케이스의
-    // "행이 하나뿐이다" 류 단정은 전부 의미를 잃으므로 통과시키지 않는다.
     assert.deepEqual(
         await findNonEmptyManagedTables(sequelize, DATA_TABLES), [],
         '앞 케이스의 행이 남아 있으면 이 케이스의 단정은 의미가 없다',
     );
 
-    // 격리 확인 2 — 공유하는 스키마가 0013의 컬럼·인덱스·외래 키 계약을 그대로 만족한다.
-    // 스키마를 만지는 케이스가 남긴 흔적 위에서 서비스 단정을 하지 않기 위한 fail-closed다.
     await addF19FriendsInvites.verify(sequelize.getQueryInterface());
 
     resetRuntimeFixtures();
@@ -289,14 +212,6 @@ test.afterEach(() => {
     notificationService.__internal.__setDepsForTests(null);
 });
 
-/**
- * 실제 production hashPassword로 **프로세스당 한 번만** 만든 bcrypt 해시를 공유한다.
- *
- * 강도를 낮추지 않는다 — 같은 함수·같은 cost·같은 값이고, 계정마다 똑같은 평문을 다시
- * 해싱하던 중복 계산만 없앤다. 이 스위트의 어떤 단정도 비밀번호 검증을 지나지 않는다
- * (접근 토큰은 generateToken이 직접 만든다). 로그인 경로를 검증하는 스위트는 계속
- * 자기 해시를 직접 만들어야 한다.
- */
 let sharedPasswordHash = null;
 const testPasswordHash = async () => {
     if (sharedPasswordHash === null) sharedPasswordHash = await hashPassword('correct-horse-battery-1');
@@ -317,11 +232,6 @@ const createLocalUser = async (label) => {
     return uuid;
 };
 
-// F-29b(0015) 회귀 대응: 0013 직전 상태(F19_MIGRATION_INDEX 이전)를 세우는 두 이관 시험은
-// users에 has_local_password가 아직 없는 스키마 위에서 사용자를 만든다. 위 createLocalUser는
-// db.User.create(런타임 모델, defaultValue: true 포함)를 쓰므로 그 시점에는 없는 컬럼을
-// INSERT하려다 "Unknown column" 오류가 난다 — 이 두 시험만 그 시점에 실제로 존재하는
-// 컬럼만 raw SQL로 직접 넣는다(모델 기본값에 기대지 않는다).
 const createLocalUserBeforeReset = async (label) => {
     const uuid = crypto.randomUUID();
     const nickname = `${label}${uuid.slice(0, Math.max(1, 8 - label.length))}`.slice(0, 8);
@@ -364,7 +274,6 @@ const authFetch = (base, uuid, path, init = {}) =>
         },
     });
 
-/** 실제 신청 → 수락 경로로 친구 관계를 만든다(잠금·알림 경계를 그대로 탄다). */
 const befriend = async (a, b) => {
     const request = await friendService.sendFriendRequest(a, b);
     await friendService.acceptRequest(b, request.id);
@@ -374,10 +283,6 @@ const befriend = async (a, b) => {
 const countRows = async (model, where) => await model.count({ where });
 
 const eventsNamed = (name) => emitted.filter((entry) => entry.event === name);
-
-// ---------------------------------------------------------------------------
-// AC-05 마이그레이션 — 이력 보존과 유일 제약 교체
-// ---------------------------------------------------------------------------
 
 test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 건만 남긴다', async (t) => {
     if (unavailable(t)) return;
@@ -394,7 +299,6 @@ test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 
         invites: await countRows(db.GameInvite, {}),
     };
 
-    // 같은 명령을 다시 돌린다 — up은 멱등이어야 하고 verify가 컬럼·인덱스 계약까지 대조한다.
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const [historyRows] = await sequelize.query(
@@ -414,7 +318,6 @@ test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 
         '재실행이 기존 행을 건드리면 안 된다',
     );
 
-    // 세 테이블이 실제로 존재하고 관리 목록에 등록돼 있다.
     const tables = await sequelize.getQueryInterface().showAllTables();
     for (const table of ['friend_favorites', 'friend_blocks', 'game_invites']) {
         assert.ok(tables.includes(table), `${table}이 실제로 만들어져야 한다`);
@@ -422,16 +325,6 @@ test('AC-05: 0013 재실행은 스키마·행을 그대로 두고 이력을 한 
     }
 });
 
-/**
- * 실제 MySQL이 만든 game_invites의 creation_seq 계약.
- *
- * 이 시험이 지키는 것은 "auto_increment 컬럼은 같은 CREATE TABLE 안에서 키에 덮여야 한다"는
- * InnoDB 규칙이다. 그것을 어겼을 때 MySQL은 테이블을 만들지 않고
- * "Incorrect table definition; there can be only one auto column and it must be defined as a
- * key"로 실패하며, 0013을 적용하는 **모든** 격리 DB 스위트가 setUp에서 함께 죽는다.
- * DDL 문자열 자체는 backend/__tests__/f19FriendsInvites.migration.test.js가 실제 sequelize
- * generator로 대조하고, 여기서는 실제로 만들어진 스키마와 실제 순번 발급을 확인한다.
- */
 test('A-09: 실제 MySQL의 creation_seq는 AUTO_INCREMENT이고 이름 있는 유일 키가 덮는다', async (t) => {
     if (unavailable(t)) return;
     await setUpFreshSchema(t);
@@ -452,8 +345,6 @@ test('A-09: 실제 MySQL의 creation_seq는 AUTO_INCREMENT이고 이름 있는 �
         ['creation_seq'],
     );
 
-    // 그 키가 CREATE TABLE과 같은 DDL에 들어 있었다는 것은 테이블이 존재한다는 사실 자체가
-    // 증명한다(뒤늦게 붙였다면 CREATE가 실패했다). 실제 발급도 확인한다.
     const a = await createLocalUser('seq-a');
     const b = await createLocalUser('seq-b');
     const makeRow = async (key) => await db.GameInvite.create({
@@ -487,11 +378,9 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
         created_at: nowFn(), expires_at: new Date(clockMs + 60_000),
     });
 
-    // (1) AUTO_INCREMENT만 사라진 스키마 — 이름·타입은 그대로다.
     await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL');
     await assert.rejects(() => addF19FriendsInvites.verify(queryInterface), /AUTO_INCREMENT가 아닙니다/);
 
-    // (2) AUTO_INCREMENT는 복원하고 보조 키로 유지하여, 이름 있는 유일 키 누락만 독립 검증한다.
     await sequelize.query('ALTER TABLE game_invites ADD INDEX f19_seq_guard (creation_seq)');
     await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL AUTO_INCREMENT');
     await sequelize.query('ALTER TABLE game_invites DROP INDEX game_invites_creation_seq_unique');
@@ -500,7 +389,6 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
         /game_invites_creation_seq_unique 인덱스가 없습니다/,
     );
 
-    // (3) up을 다시 돌리면 빠진 키만 보탠다 — 테이블을 다시 만들지도, 행을 지우지도 않는다.
     await addF19FriendsInvites.up(queryInterface, Sequelize, sequelize);
     const restored = (await queryInterface.showIndex('game_invites'))
         .find((index) => index.name === 'game_invites_creation_seq_unique');
@@ -509,47 +397,22 @@ test('A-09: verify는 실제 MySQL에서 깨진 creation_seq 계약을 통과시
 
     await sequelize.query('ALTER TABLE game_invites DROP INDEX f19_seq_guard');
     await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL');
-    // (4) 컬럼 자체의 AUTO_INCREMENT는 조용히 되돌리지 않는다 — verify가 계속 거부해야
-    //     "인덱스만 붙였으니 통과"라는 잘못된 성공이 생기지 않는다.
     await assert.rejects(() => addF19FriendsInvites.verify(queryInterface), /AUTO_INCREMENT가 아닙니다/);
 
-    // (5) 컬럼까지 계약대로 되돌리면 통과하고, 순번 발급도 이어진다.
     await sequelize.query('ALTER TABLE game_invites MODIFY COLUMN creation_seq BIGINT NOT NULL AUTO_INCREMENT');
     await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
     assert.equal(await countRows(db.GameInvite, {}), 1);
 });
 
-/**
- * 실측 두 번째 blocker의 실제 MySQL 회귀.
- *
- * 0001의 friend_requests는 requester_id·receiver_id에 각각 users.uuid 외래 키를 갖고, 그
- * 위의 UNIQUE(requester_id, receiver_id, status)가 **requester_id 외래 키의 유일한 받침**이다.
- * 받침을 먼저 세우지 않고 그 UNIQUE를 떼면 MySQL이 거부하고 0013이 failed로 멈춘다:
- *
- *   Cannot drop index 'friend_requests_requester_receiver_status': needed in a foreign key constraint
- *
- * (실측: .pluto/monitor/BD-focused-2026-09-13T08-11-19.923Z.log — 이 스위트의 setUp이 통째로
- * 죽었다.) 그래서 이 시험은 0013 **이전까지만** 적용해 예전 UNIQUE가 실제로 존재하는 상태를
- * 세우고, 그 위에서 0013이 처음 돌 때 인덱스가 갈아타는지·외래 키와 모든 행이 남는지를 본다.
- * FOREIGN_KEY_CHECKS를 끄거나 제약을 떼는 우회는 어디에도 없다.
- */
 test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 인덱스로 갈아타고 두 외래 키·모든 행을 보존한다', async (t) => {
     if (unavailable(t)) return;
     await setUpBareSchema(t);
 
-    // (1) 0013 직전 상태. F19_MIGRATION_INDEX(파일 상단)가 0013의 실제 위치를 찾아 그 앞까지만
-    // 적용한다 — "0013이 목록의 마지막"이라는 전제 대신 "0013까지 적용한 상태"를 기준으로 삼는다.
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, F19_MIGRATION_INDEX) });
 
     const queryInterface = sequelize.getQueryInterface();
     const leftmostOf = (index) => (index.fields ?? []).map((field) => field.attribute ?? field)[0];
 
-    // 예전 UNIQUE가 실제로 있고, 그것이 외래 키의 **유일한 받침**이라는 전제를 실측한다.
-    //
-    // 받침이 하나뿐인지를 인덱스 이름으로 추론하지 않는다 — MySQL이 외래 키용 인덱스를 언제
-    // 자동 생성하는지는 CREATE TABLE과 ADD INDEX의 순서에 따라 달라진다. 대신 실제 MySQL에게
-    // 직접 물어본다: 받침 없이 예전 UNIQUE를 떼려 하면 거부하는가. 이것이 실측 실패를 그대로
-    // 재현하는 조건이고, 거부되므로 스키마는 이 확인으로 바뀌지 않는다.
     {
         const before = await queryInterface.showIndex('friend_requests');
         const legacy = addF19FriendsInvites.findLegacyRequestUniqueIndexes(before);
@@ -571,8 +434,6 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
         );
     }
 
-    // (2) 보존 대상 행을 실제로 심는다. 예전 UNIQUE가 아직 살아 있으므로 같은 방향의 terminal
-    //     중복은 아직 만들 수 없다 — 그것이 바로 0013이 푸는 문제다.
     const u1 = await createLocalUserBeforeReset('fk-1');
     const u2 = await createLocalUserBeforeReset('fk-2');
     const u3 = await createLocalUserBeforeReset('fk-3');
@@ -580,14 +441,10 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
     const declined = await db.FriendRequest.create({ requester_id: u1, receiver_id: u2, status: 'DECLINED' });
     const keptPending = await db.FriendRequest.create({ requester_id: u1, receiver_id: u3, status: 'PENDING' });
     const otherPending = await db.FriendRequest.create({ requester_id: u2, receiver_id: u3, status: 'PENDING' });
-    // {u1,u3} 계정쌍의 교차 방향 PENDING — 예전 UNIQUE는 이것을 막지 못했다. 0013은 더 이른
-    //     id만 유효 대기로 남기고 나머지를 **지우지 않고** CANCELLED로 확정한다.
     const crossPending = await db.FriendRequest.create({ requester_id: u3, receiver_id: u1, status: 'PENDING' });
 
-    // (3) 0013을 처음 적용한다. 받침을 먼저 세우지 않았다면 여기서 위 오류로 멈춘다.
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
-    // (4) 인덱스가 갈아탔다: 예전 UNIQUE는 없고, 계정쌍 유일 키와 두 받침이 있다.
     const after = await queryInterface.showIndex('friend_requests');
     assert.equal(
         addF19FriendsInvites.findLegacyRequestUniqueIndexes(after).length, 0,
@@ -603,7 +460,6 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
         assert.equal(leftmostOf(support), column, `${indexName}의 선두 컬럼은 ${column}이어야 한다`);
     }
 
-    // (5) 두 외래 키가 그대로 남았다 — 인덱스를 떼려고 제약을 희생하지 않았다.
     const references = await queryInterface.getForeignKeyReferencesForTable('friend_requests');
     for (const column of Object.keys(addF19FriendsInvites.REQUEST_FK_SUPPORT_INDEXES)) {
         assert.ok(
@@ -613,7 +469,6 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
             `${column} → users.uuid 외래 키가 보존돼야 한다`,
         );
     }
-    // 외래 키가 실제로 강제되는지 값으로도 확인한다(이름만 남은 제약이 아니다).
     await assert.rejects(
         () => db.FriendRequest.create({
             requester_id: crypto.randomUUID(), receiver_id: u1, status: 'PENDING',
@@ -621,7 +476,6 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
         '없는 계정의 요청은 외래 키가 막아야 한다',
     );
 
-    // (6) 행은 한 건도 사라지지 않았고, 교차 중복만 사유를 남긴 채 CANCELLED로 확정됐다.
     assert.equal(await countRows(db.FriendRequest, {}), 4, '이관이 행을 지우면 안 된다');
     const statusOf = async (id) => (await db.FriendRequest.findByPk(id)).status;
     assert.equal(await statusOf(declined.id), 'DECLINED', 'terminal 이력은 그대로다');
@@ -636,8 +490,6 @@ test('AC-05: 실제 MySQL 전체 마이그레이션은 예전 UNIQUE를 받침 �
 
     await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
 
-    // (7) 새 계약이 실제로 발효됐다: 같은 방향의 terminal 중복은 이제 허용되고,
-    //     같은 계정쌍의 교차 PENDING은 DB가 막는다.
     await assert.doesNotReject(
         () => db.FriendRequest.create({ requester_id: u1, receiver_id: u2, status: 'DECLINED' }),
         '거절 후 재신청·재거절 이력이 두 행으로 남을 수 있어야 한다',
@@ -655,15 +507,11 @@ test('AC-05: 받침 인덱스는 실제 MySQL에서 외래 키가 요구하는 �
     const queryInterface = sequelize.getQueryInterface();
     const supportIndex = addF19FriendsInvites.REQUEST_REQUESTER_SUPPORT_INDEX;
 
-    // (1) 0013 적용 후 requester_id 외래 키를 받치는 것은 이 인덱스뿐이다 — 그래서 MySQL이
-    //     그냥 떼지 못한다. 이 거부가 곧 "받침이 실제로 제 역할을 하고 있다"는 증거다.
     await assert.rejects(
         () => sequelize.query(`ALTER TABLE friend_requests DROP INDEX ${supportIndex}`),
         /needed in a foreign key constraint/,
     );
 
-    // (2) 받침 누락 자체를 독립 검증하려면 임시 guard로 외래 키를 받쳐 둔 뒤 떼야 한다
-    //     (A-09 시험의 f19_seq_guard와 같은 관례).
     await sequelize.query('ALTER TABLE friend_requests ADD INDEX f19_fk_guard (requester_id)');
     await sequelize.query(`ALTER TABLE friend_requests DROP INDEX ${supportIndex}`);
     await assert.rejects(
@@ -672,7 +520,6 @@ test('AC-05: 받침 인덱스는 실제 MySQL에서 외래 키가 요구하는 �
         'guard가 있어 외래 키는 멀쩡하더라도 계약된 받침이 없으면 통과시키지 않는다',
     );
 
-    // (3) up을 다시 돌리면 빠진 받침만 메운다. 행도 예전 UNIQUE도 건드리지 않는다.
     const a = await createLocalUser('sup-a');
     const b = await createLocalUser('sup-b');
     await friendService.sendFriendRequest(a, b);
@@ -698,10 +545,6 @@ test('AC-05: 기동 sync()는 0013이 뗀 예전 UNIQUE를 실제 MySQL에서 �
 
     assert.equal(await legacyCount(), 0, '마이그레이션 직후에는 예전 UNIQUE가 없다');
 
-    // backend/index.js가 부팅마다 하는 일을 이 테이블 하나에 대해서만 그대로 재현한다.
-    // 전체 db.sequelize.sync()를 부르지 않는 이유는 관리 목록에 없는 테이블을 만들어 다른
-    // 격리 스위트의 resetManagedSchema를 깨뜨릴 수 있기 때문이다(isolatedTestDb.js 주석).
-    // 검증 대상인 "모델 선언 → 없는 인덱스 생성" 경로는 Model.sync가 그대로 소유한다.
     await db.FriendRequest.sync();
 
     assert.equal(
@@ -710,7 +553,6 @@ test('AC-05: 기동 sync()는 0013이 뗀 예전 UNIQUE를 실제 MySQL에서 �
         '모델이 예전 UNIQUE를 선언하고 있으면 sync가 다시 만들어 AC-05 계약이 부팅 한 번에 무효가 된다',
     );
 
-    // 인덱스 이름 대조만으로는 부족하다 — 실제 값으로도 새 계약이 살아 있는지 본다.
     const a = await createLocalUser('sync-a');
     const b = await createLocalUser('sync-b');
 
@@ -734,33 +576,16 @@ test('AC-05: 기동 sync()는 0013이 뗀 예전 UNIQUE를 실제 MySQL에서 �
     await assert.doesNotReject(() => addF19FriendsInvites.verify(queryInterface));
 });
 
-// ── 여기부터는 스키마를 만지지 않는 일반 서비스 케이스다 ──────────────────────
-// 위의 스키마 케이스들을 한 덩어리로 모아 둔 것은 순서에 의존하는 단정이 있어서가 아니다
-// (모든 케이스는 자기 setUp만으로 자립한다). setUpFreshSchema가 지나간 직후의 첫 일반
-// 케이스는 스키마를 신뢰할 수 없어 한 번 더 전체 재구축을 하는데, DDL 케이스를 일반 케이스
-// 사이사이에 흩어 두면 그 재구축이 그만큼 여러 번 일어난다. 새 케이스를 넣을 때도 이 경계를
-// 지켜, 스키마 케이스는 위쪽 덩어리에 붙여라.
-
-/**
- * 데이터 격리 자체를 실제 SQL로 검증한다.
- *
- * 일반 케이스의 setUp은 이제 스키마를 다시 만들지 않고 행만 비운다. 그 정리가 진짜로
- * **모든** 관리 테이블을 비우는지, 그러면서 스키마·외래 키·이관 이력은 남기는지가 나머지
- * 25개 케이스의 단정이 의미를 갖는 전제다. "비웠다"는 주장 대신 (1) 실제로 행을 만들고
- * (2) 정리하고 (3) 다시 COUNT로 읽어 대조한다.
- */
 test('격리: 데이터 정리는 모든 관리 테이블의 행을 실제로 비우고 스키마·외래 키·이관 이력은 남긴다', async (t) => {
     if (unavailable(t)) return;
     await setUp(t);
 
-    // (1) 한 케이스가 남길 수 있는 것을 실제 경로로 전부 만든다.
     const a = await createLocalUser('iso-a');
     const b = await createLocalUser('iso-b');
     await befriend(a, b);
     await friendService.setFriendFavorite(a, b, true);
     placeInRoom(a, 'room-iso');
     await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'iso' });
-    // 차단은 초대를 CANCELLED로 확정한다 — 행은 남으므로 정리 대상으로 그대로 쓸 수 있다.
     await friendService.blockUser(a, b);
 
     const populated = [
@@ -776,7 +601,6 @@ test('격리: 데이터 정리는 모든 관리 테이블의 행을 실제로 �
         );
     }
 
-    // (2) 일반 케이스의 setUp이 쓰는 바로 그 정리를 실행한다.
     const result = await resetManagedData(sequelize, TEST_DB_URL, {
         managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER,
         keepTables: [migrationRunner.META_TABLE],
@@ -787,10 +611,8 @@ test('격리: 데이터 정리는 모든 관리 테이블의 행을 실제로 �
         '관리 테이블 하나라도 빼놓으면 다음 케이스가 남은 행을 물려받는다',
     );
 
-    // (3) 실제로 한 건도 남지 않았다.
     assert.deepEqual(await findNonEmptyManagedTables(sequelize, DATA_TABLES), []);
 
-    // 스키마·이관 이력은 그대로다 — 정리는 드롭이 아니다.
     const [history] = await sequelize.query(
         `SELECT COUNT(*) AS applied_count FROM ${migrationRunner.META_TABLE} WHERE status = 'applied'`,
     );
@@ -800,13 +622,11 @@ test('격리: 데이터 정리는 모든 관리 테이블의 행을 실제로 �
     );
     await assert.doesNotReject(() => addF19FriendsInvites.verify(sequelize.getQueryInterface()));
 
-    // 외래 키는 여전히 강제된다 — FOREIGN_KEY_CHECKS를 끄지 않았다는 값 수준의 증거다.
     await assert.rejects(
         () => db.FriendRequest.create({ requester_id: crypto.randomUUID(), receiver_id: b, status: 'PENDING' }),
         '정리 뒤에도 없는 계정의 요청은 외래 키가 막아야 한다',
     );
 
-    // 같은 스키마 위에서 실제 서비스 경로를 곧바로 다시 쓸 수 있다.
     const c = await createLocalUser('iso-c');
     const d = await createLocalUser('iso-d');
     await befriend(c, d);
@@ -823,7 +643,6 @@ test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으
     const first = await friendService.sendFriendRequest(a, b);
     await friendService.declineRequest(b, first.id);
 
-    // 예전 UNIQUE(requester_id, receiver_id, status)였다면 여기서 두 번째 DECLINED가 막혔다.
     const second = await friendService.sendFriendRequest(a, b);
     await friendService.declineRequest(b, second.id);
 
@@ -834,7 +653,6 @@ test('AC-05: 거절 → 재신청 → 재거절이 terminal 이력을 두 행으
     assert.equal(declined.length, 2, '같은 방향의 거절 이력이 두 행 남아야 한다');
     assert.notEqual(declined[0].id, declined[1].id);
 
-    // terminal 행이 둘이어도 새 PENDING은 여전히 하나만 가능하다.
     const third = await friendService.sendFriendRequest(a, b);
     assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 1);
     assert.ok(Number.isInteger(third.id));
@@ -849,8 +667,6 @@ test('AC-05: 교차 방향 동시 신청은 유효 PENDING 하나로 좁혀진�
 
     await friendService.sendFriendRequest(a, b);
 
-    // B→A 반대 방향 신청. 예전 제약은 방향이 달라 통과시켰고, 그러면 양쪽이 각자 수락해
-    // Friendship이 두 행 생길 수 있었다.
     await assert.rejects(
         () => friendService.sendFriendRequest(b, a),
         (error) => error.status === 409,
@@ -859,10 +675,6 @@ test('AC-05: 교차 방향 동시 신청은 유효 PENDING 하나로 좁혀진�
 
     assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 1);
 });
-
-// ---------------------------------------------------------------------------
-// AC-02 — 요청 결과 조회(응답 유실 재확인)
-// ---------------------------------------------------------------------------
 
 test('AC-02: 요청 당사자만 결과를 읽고 남의 요청 id는 결과에 없다', async (t) => {
     if (unavailable(t)) return;
@@ -878,7 +690,6 @@ test('AC-02: 요청 당사자만 결과를 읽고 남의 요청 id는 결과에 
     const theirs = await friendService.sendFriendRequest(c, d);
     await friendService.acceptRequest(b, mine.id);
 
-    // 수신자 B가 자기 요청과 남의 요청을 섞어 묻는다.
     const response = await authFetch(base, b, `/friends/requests/results?ids=${mine.id},${theirs.id}`);
     assert.equal(response.status, 200);
     const body = await response.json();
@@ -887,14 +698,9 @@ test('AC-02: 요청 당사자만 결과를 읽고 남의 요청 id는 결과에 
     assert.equal(body.data[0].request_id, mine.id);
     assert.equal(body.data[0].status, 'ACCEPTED');
 
-    // 제3자는 같은 id로 물어도 아무것도 보지 못한다.
     const outsider = await authFetch(base, c, `/friends/requests/results?ids=${mine.id}`);
     assert.deepEqual((await outsider.json()).data, []);
 });
-
-// ---------------------------------------------------------------------------
-// AC-03 — 계정별 서버 즐겨찾기
-// ---------------------------------------------------------------------------
 
 test('AC-03: 같은 PUT을 두 번 보내도 행은 하나이고 다른 접속에서 그대로 복원된다', async (t) => {
     if (unavailable(t)) return;
@@ -910,20 +716,16 @@ test('AC-03: 같은 PUT을 두 번 보내도 행은 하나이고 다른 접속�
     });
 
     assert.equal((await put(true)).status, 200);
-    // 응답 유실 재전송. toggle이 아니라 "원하는 값 저장"이라 결과가 뒤집히지 않는다.
     assert.equal((await put(true)).status, 200);
 
     assert.equal(await countRows(db.FriendFavorite, { owner_id: a, friend_id: b }), 1);
 
-    // 다른 브라우저·재접속을 흉내낸 새 요청에서도 서버 값이 그대로 복원된다.
     const restored = await (await authFetch(base, a, '/friends/favorites')).json();
     assert.deepEqual(restored.data, [b]);
 
-    // 친구 목록 응답의 isFavorite도 같은 서버 값을 따른다.
     const friends = await (await authFetch(base, a, '/friends')).json();
     assert.equal(friends.data.find((friend) => friend.id === b).isFavorite, true);
 
-    // false 저장도 멱등이다.
     assert.equal((await put(false)).status, 200);
     assert.equal((await put(false)).status, 200);
     assert.equal(await countRows(db.FriendFavorite, { owner_id: a, friend_id: b }), 0);
@@ -941,30 +743,22 @@ test('AC-03: 친구가 아닌 계정은 즐겨찾기할 수 없고 다른 계정
 
     await authFetch(base, a, `/friends/favorites/${b}`, { method: 'PUT', body: JSON.stringify({ favorite: true }) });
 
-    // C는 A의 친구가 아니다 — 즐겨찾기 대상이 될 수 없다.
     const notFriend = await authFetch(base, a, `/friends/favorites/${c}`, {
         method: 'PUT', body: JSON.stringify({ favorite: true }),
     });
     assert.equal(notFriend.status, 404);
 
-    // C가 같은 경로로 저장해도 owner_id는 인증 uuid라 A의 행을 건드리지 못한다.
     await authFetch(base, c, `/friends/favorites/${b}`, { method: 'PUT', body: JSON.stringify({ favorite: false }) });
     assert.equal(await countRows(db.FriendFavorite, { owner_id: a, friend_id: b }), 1, 'A의 즐겨찾기는 그대로여야 한다');
 
-    // C의 조회에는 A의 값이 보이지 않는다.
     assert.deepEqual((await (await authFetch(base, c, '/friends/favorites')).json()).data, []);
 
-    // boolean이 아닌 값은 서버가 임의로 해석하지 않는다.
     const bad = await authFetch(base, a, `/friends/favorites/${b}`, {
         method: 'PUT', body: JSON.stringify({ favorite: 'yes' }),
     });
     assert.equal(bad.status, 400);
     assert.equal(await countRows(db.FriendFavorite, { owner_id: a, friend_id: b }), 1);
 });
-
-// ---------------------------------------------------------------------------
-// AC-04 — 차단·해제·목록과 양방향 거부
-// ---------------------------------------------------------------------------
 
 test('AC-04: 차단하면 양방향 친구 신청이 거부되고 해제 권한은 소유자에게만 있다', async (t) => {
     if (unavailable(t)) return;
@@ -980,33 +774,24 @@ test('AC-04: 차단하면 양방향 친구 신청이 거부되고 해제 권한�
     });
     assert.equal(blocked.status, 200);
 
-    // 어느 방향이든 거부한다. 누가 차단했는지는 응답에 드러나지 않는다(같은 문구·같은 상태).
     await assert.rejects(() => friendService.sendFriendRequest(a, b), (error) => error.status === 403);
     await assert.rejects(() => friendService.sendFriendRequest(b, a), (error) => error.status === 403);
     assert.equal(await countRows(db.FriendRequest, {}), 0, '거부된 신청은 행을 만들지 않는다');
 
-    // 차단 목록은 소유자만 본다.
     const mine = await (await authFetch(base, a, '/friends/blocks')).json();
     assert.deepEqual(mine.data.map((row) => row.id), [b]);
     assert.deepEqual((await (await authFetch(base, b, '/friends/blocks')).json()).data, []);
 
-    // 제3자도, 차단당한 당사자도 이 차단을 지울 수 없다 — WHERE에 인증 owner가 강제된다.
     assert.equal((await authFetch(base, c, `/friends/blocks/${b}`, { method: 'DELETE' })).status, 404);
     assert.equal((await authFetch(base, b, `/friends/blocks/${b}`, { method: 'DELETE' })).status, 404);
     assert.equal(await countRows(db.FriendBlock, { owner_id: a, blocked_id: b }), 1);
 
-    // 소유자 A만 해제할 수 있다.
     assert.equal((await authFetch(base, a, `/friends/blocks/${b}`, { method: 'DELETE' })).status, 200);
     assert.equal(await countRows(db.FriendBlock, { owner_id: a, blocked_id: b }), 0);
 
-    // 해제 뒤에는 다시 신청할 수 있다.
     const request = await friendService.sendFriendRequest(a, b);
     assert.ok(Number.isInteger(request.id));
 });
-
-// ---------------------------------------------------------------------------
-// AC-05 — 차단 무효화와 보존 경계
-// ---------------------------------------------------------------------------
 
 test('AC-05: 차단은 PENDING 요청·초대만 무효화하고 친구 관계·즐겨찾기 원본은 보존한다', async (t) => {
     if (unavailable(t)) return;
@@ -1021,38 +806,30 @@ test('AC-05: 차단은 PENDING 요청·초대만 무효화하고 친구 관계·
     await befriend(a, c);
     await friendService.setFriendFavorite(a, b, true);
 
-    // A가 대기방에서 B를 초대한다.
     placeInRoom(a, 'room-invalidate');
     await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'key-1' });
 
-    // C→A로 아직 처리되지 않은 친구 요청도 하나 둔다(다른 계정쌍은 영향을 받으면 안 된다).
     const unrelated = await friendService.sendFriendRequest(c, b);
 
     const friendshipsBefore = await countRows(db.Friendship, {});
     assert.equal(await countRows(db.GameInvite, { status: 'PENDING' }), 1);
 
-    // A가 B를 차단한다.
     await authFetch(base, a, '/friends/blocks', { method: 'POST', body: JSON.stringify({ targetId: b }) });
 
-    // 초대는 CANCELLED + 사유 + revision 상승. 행은 지워지지 않는다.
     const invite = await db.GameInvite.findOne({ where: { sender_id: a, receiver_id: b } });
     assert.equal(invite.status, 'CANCELLED');
     assert.equal(invite.end_reason, 'BLOCKED');
     assert.equal(invite.revision, 2);
 
-    // 친구 관계 행과 즐겨찾기 원본은 그대로다.
     assert.equal(await countRows(db.Friendship, {}), friendshipsBefore);
     assert.equal(await countRows(db.FriendFavorite, { owner_id: a, friend_id: b }), 1);
 
-    // 다른 계정쌍(C→B)의 PENDING 요청은 건드리지 않는다.
     await unrelated.reload();
     assert.equal(unrelated.status, 'PENDING');
 
-    // 차단 중에는 일반 친구 목록에서 상대가 빠진다(관계는 살아 있지만 표시하지 않는다).
     const duringBlock = await (await authFetch(base, a, '/friends')).json();
     assert.deepEqual(duringBlock.data.map((friend) => friend.id), [c]);
 
-    // 차단 관계에서는 기존 초대의 수락도 거부된다.
     await assert.rejects(
         () => gameInviteService.recordAcceptDecision({
             receiverId: b, inviteId: invite.id, attemptId: 'attempt-blocked', bootEpoch: roomAccess.bootEpoch,
@@ -1060,7 +837,6 @@ test('AC-05: 차단은 PENDING 요청·초대만 무효화하고 친구 관계·
         (error) => error.status === 409 || error.status === 403,
     );
 
-    // 해제해도 CANCELLED는 되살아나지 않고, 친구 관계만 다시 보인다.
     await authFetch(base, a, `/friends/blocks/${b}`, { method: 'DELETE' });
     await invite.reload();
     assert.equal(invite.status, 'CANCELLED', '해제만으로 초대가 PENDING으로 돌아오면 안 된다');
@@ -1089,16 +865,11 @@ test('AC-05: 차단은 PENDING 친구 요청을 CANCELLED로 확정하고 행을
     assert.ok(pending.responded_at !== null);
     assert.equal(await countRows(db.FriendRequest, {}), 1, '이력 행은 보존한다');
 
-    // 해제 후에도 CANCELLED 그대로 — 처리 버튼이 되살아나지 않는다.
     await authFetch(base, a, `/friends/blocks/${b}`, { method: 'DELETE' });
     await pending.reload();
     assert.equal(pending.status, 'CANCELLED');
     assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 0);
 });
-
-// ---------------------------------------------------------------------------
-// AC-06 / AC-07 — 초대 생성·멱등·알림·커서
-// ---------------------------------------------------------------------------
 
 test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만들고 같은 키 재시도는 늘리지 않는다', async (t) => {
     if (unavailable(t)) return;
@@ -1113,14 +884,12 @@ test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만�
     const first = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'key-idem' });
     assert.equal(first.created, true);
 
-    // 초대 payload에는 **수락 전 방 코드·방 id가 없다**(AC-06).
     assert.equal(Object.hasOwn(first.invite, 'roomId'), false);
     assert.equal(Object.hasOwn(first.invite, 'roomCode'), false);
     assert.equal(first.invite.receiverId, b);
     assert.equal(first.invite.status, 'PENDING');
     assert.equal(typeof first.invite.creationSeq, 'string', 'BIGINT 순번은 문자열로 나가야 한다');
 
-    // 초대 행과 알림 행이 같은 트랜잭션에서 함께 확정됐다.
     assert.equal(await countRows(db.GameInvite, {}), 1);
     const inviteNotificationWhere = {
         user_id: b, source_key: notificationService.gameInviteSourceKey(first.invite.inviteId),
@@ -1130,7 +899,6 @@ test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만�
     assert.equal(notification.source_key, notificationService.gameInviteSourceKey(first.invite.inviteId));
     assert.deepEqual(notification.target, { kind: 'game-invite', inviteId: first.invite.inviteId });
 
-    // 신규 수신 사건은 한 번. notification_created에는 초대 sfxEvent를 싣지 않는다(A-06).
     const received = eventsNamed('game_invite_received');
     assert.equal(received.length, 1);
     assert.equal(received[0].userId, b);
@@ -1144,7 +912,6 @@ test('AC-06/AC-07: 초대 생성은 행·알림·신규 사건을 하나씩 만�
     assert.equal(created.length, 1);
     assert.equal(Object.hasOwn(created[0].payload, 'sfxEvent'), false, '초대 알림에는 소리 봉투가 없다');
 
-    // 같은 생성 키의 재시도 — 같은 행을 돌려주고 아무 사건도 다시 만들지 않는다.
     emitted = [];
     const retry = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'key-idem' });
     assert.equal(retry.created, false);
@@ -1185,13 +952,11 @@ test('AC-04/AC-06: 친구가 아니거나 차단 관계면 초대가 만들어�
     await befriend(a, b);
     placeInRoom(a, 'room-deny');
 
-    // 친구가 아닌 계정.
     await assert.rejects(
         () => gameInviteService.createInvite({ senderId: a, receiverId: stranger, creationKey: 'k1' }),
         (error) => error.status === 403,
     );
 
-    // 차단 관계(반대 방향 차단이어도 막는다).
     await friendService.blockUser(b, a);
     await assert.rejects(
         () => gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'k2' }),
@@ -1208,7 +973,6 @@ test('AC-06: 발송자에게 현재 방이 없으면 초대를 만들지 않는�
     const a = await createLocalUser('nor-a');
     const b = await createLocalUser('nor-b');
     await befriend(a, b);
-    // placeInRoom을 부르지 않는다 — registry가 이 계정의 방을 모른다.
 
     await assert.rejects(
         () => gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'k' }),
@@ -1226,9 +990,6 @@ test('AC-06: 잠금을 잡은 뒤 발송자의 방이 바뀌면 초대를 만들
     await befriend(a, b);
     placeInRoom(a, 'room-mid');
 
-    // registry는 소켓 콜백이 동기적으로 바꾸는 메모리 상태라, 이 서비스가 await할 때마다
-    // 값이 달라질 수 있다. 트랜잭션 **안에서** 발송자가 방을 나가는 순간을 재현한다 —
-    // preflight 값 하나를 권한 근거로 쓰면 여기서 없는 방의 초대가 만들어진다.
     const originalAvailability = roomAccess.describeReceiverAvailability;
     roomAccess.describeReceiverAvailability = () => {
         roomAccess.userRoom.delete(a);
@@ -1259,8 +1020,6 @@ test('AC-06: 같은 방으로 아직 살아 있는 초대가 있으면 새 키�
     const first = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'send-1' });
     assert.equal(first.created, true);
 
-    // 생성 키 멱등성은 "같은 논리 발송의 재시도"만 덮는다. 사용자가 새 키로 한 번 더
-    // 누르면(연타·다른 탭) 키 검사만으로는 두 번째 행·두 번째 알림·두 번째 소리가 생긴다.
     emitted = [];
     const second = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'send-2' });
 
@@ -1270,7 +1029,6 @@ test('AC-06: 같은 방으로 아직 살아 있는 초대가 있으면 새 키�
     assert.equal(await countRows(db.Notification, { user_id: b, type: 'game-invite' }), 1);
     assert.equal(eventsNamed('game_invite_received').length, 0, '두 번째 소리가 나면 안 된다');
 
-    // 끝난 뒤에는 같은 방이어도 **새 논리 발송**이 정상적으로 만들어진다.
     await gameInviteService.declineInvite(b, first.invite.inviteId);
     emitted = [];
     const third = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'send-3' });
@@ -1290,10 +1048,6 @@ test('AC-04/AC-06: 차단과 초대 생성이 겹쳐도 차단된 쌍에 PENDING
     await befriend(a, b);
     placeInRoom(a, 'room-race');
 
-    // 두 경로가 같은 정렬 계정 잠금을 잡으므로 직렬화된다. 결과는 둘 중 하나여야 한다:
-    //   - 초대가 먼저 → 차단 트랜잭션이 같은 트랜잭션에서 CANCELLED로 확정한다.
-    //   - 차단이 먼저 → 초대 생성이 403으로 거부된다.
-    // "차단이 있는데 PENDING 초대가 살아 있다"는 어느 순서로도 나오면 안 된다.
     await Promise.allSettled([
         gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'race-key' }),
         friendService.blockUser(b, a),
@@ -1316,8 +1070,6 @@ test('AC-04/AC-05: 차단과 해제가 겹쳐도 취소된 요청이 PENDING으�
     await friendService.sendFriendRequest(a, b);
     assert.equal(await countRows(db.FriendRequest, { status: 'PENDING' }), 1);
 
-    // 해제도 차단과 **같은 정렬 계정 잠금**에 참여한다. 잠금 밖이면 "차단 트랜잭션이
-    // PENDING을 CANCELLED로 바꾸는 사이에 해제가 끝나는" 창이 생긴다.
     await friendService.blockUser(b, a);
     await Promise.allSettled([
         friendService.unblockUser(b, a),
@@ -1330,7 +1082,6 @@ test('AC-04/AC-05: 차단과 해제가 겹쳐도 취소된 요청이 PENDING으�
     );
     assert.equal(await countRows(db.FriendRequest, { status: 'CANCELLED' }), 1, '이력 행은 지우지 않는다');
 
-    // 남의 차단은 어느 경로로도 해제되지 않는다.
     await assert.rejects(() => friendService.unblockUser(a, b), (error) => error.status === 404);
 });
 
@@ -1340,13 +1091,6 @@ test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번�
 
     const a = await createLocalUser('cur-a');
     const b = await createLocalUser('cur-b');
-    // 두 번째 초대는 **다른 발송자가 다른 방에서** 보낸다.
-    //
-    // 같은 발송자·같은 방으로 두 번 만들면 createInvite의 live-PENDING 중복 방지가 (옳게)
-    // 첫 행을 그대로 돌려준다 — 두 변수가 같은 행을 가리키게 되어 "두 번째를 거절"이 첫
-    // 초대까지 끝내고, 이 시험이 요구하는 서로 다른 두 행 자체가 서지 않는다. 중복 방지를
-    // 끄는 대신, 실제로 두 행이 생기는 정당한 상황(친구 두 명이 각자 자기 방으로 초대)을
-    // 쓴다.
     const s = await createLocalUser('cur-s');
     await befriend(a, b);
     await befriend(s, b);
@@ -1356,7 +1100,6 @@ test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번�
     const first = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'c1' });
     const second = await gameInviteService.createInvite({ senderId: s, receiverId: b, creationKey: 'c2' });
 
-    // 커서 계약을 관찰하려면 **서로 다른 두 행**이고 뒤엣것의 순번이 더 커야 한다.
     assert.equal(first.created, true);
     assert.equal(second.created, true);
     assert.notEqual(
@@ -1368,7 +1111,6 @@ test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번�
         '나중에 만든 초대의 생성 순번이 더 커야 한다',
     );
 
-    // **뒤에 만든 행만** 거절해 종료시킨다 — 앞의 PENDING은 그대로 살아 있어야 한다.
     await gameInviteService.declineInvite(b, second.invite.inviteId);
 
     const snapshot = await gameInviteService.getReceiverSnapshot(b);
@@ -1380,7 +1122,6 @@ test('AC-07: snapshot 커서는 종료된 초대까지 포함한 최대 순번�
     );
     assert.equal(gameInviteService.compareSeq(snapshot.cursor, first.invite.creationSeq) > 0, true);
 
-    // 제3자는 이 초대의 존재조차 알 수 없다.
     const outsider = await createLocalUser('cur-c');
     await assert.rejects(
         () => gameInviteService.getInviteForUser(outsider, first.invite.inviteId),
@@ -1399,7 +1140,6 @@ test('AC-06: 만료는 서버 시각으로 조회 경계에서 멱등하게 확�
 
     const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'e1' });
 
-    // 서버 시각만 앞당긴다(클라이언트 시계는 어디에도 쓰이지 않는다).
     clockMs += gameInviteService.INVITE_TTL_MS + 1000;
 
     const snapshot = await gameInviteService.getReceiverSnapshot(b);
@@ -1410,12 +1150,10 @@ test('AC-06: 만료는 서버 시각으로 조회 경계에서 멱등하게 확�
     assert.equal(row.end_reason, 'EXPIRED');
     assert.equal(row.revision, 2, '만료 확정도 revision을 올린다');
 
-    // 다시 조회해도 한 번 더 바뀌지 않는다(멱등).
     await gameInviteService.getReceiverSnapshot(b);
     await row.reload();
     assert.equal(row.revision, 2);
 
-    // 만료된 초대는 수락 결정으로 넘어가지 않는다.
     await assert.rejects(
         () => gameInviteService.recordAcceptDecision({
             receiverId: b, inviteId: invite.inviteId, attemptId: 'a1', bootEpoch: roomAccess.bootEpoch,
@@ -1439,21 +1177,15 @@ test('AC-06: 거절은 멱등이고 이미 수락된 초대를 뒤집지 않는�
     assert.equal(declined.status, 'DECLINED');
     assert.equal(declined.revision, 2);
 
-    // 응답 유실 후 다시 눌러도 오류가 아니라 현재 상태를 그대로 돌려준다.
     const again = await gameInviteService.declineInvite(b, invite.inviteId);
     assert.equal(again.status, 'DECLINED');
     assert.equal(again.revision, 2, '멱등 거절이 revision을 더 올리면 안 된다');
 
-    // 발송자는 남의 초대를 거절할 수 없다.
     await assert.rejects(
         () => gameInviteService.declineInvite(a, invite.inviteId),
         (error) => error.status === 404,
     );
 });
-
-// ---------------------------------------------------------------------------
-// AC-06 · A-10 — 수락 결정과 publication 영수증은 서로 다른 사실이다
-// ---------------------------------------------------------------------------
 
 test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t) => {
     if (unavailable(t)) return;
@@ -1472,19 +1204,16 @@ test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t)
     assert.equal(decision.ok, true);
     assert.equal(decision.roomId, 'room-accept');
 
-    // 1단계 직후: 역사적 결정은 durable하지만 **입장은 아직 없다**.
     let row = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
     assert.equal(row.status, 'ACCEPTED');
     assert.equal(row.attempt_id, 'attempt-1');
     assert.equal(row.entry_outcome, 'UNCONFIRMED');
 
-    // 같은 시도의 재조회는 성공으로 이어간다(응답 유실 재시도).
     const resumed = await gameInviteService.recordAcceptDecision({
         receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-1', bootEpoch: roomAccess.bootEpoch,
     });
     assert.equal(resumed.resumed, true);
 
-    // 2단계: publish()가 성공해야만 PUBLISHED가 된다.
     let publishCalls = 0;
     const finalized = await gameInviteService.finalizeAcceptedEntry({
         receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-1', bootEpoch: roomAccess.bootEpoch,
@@ -1497,7 +1226,6 @@ test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t)
     row = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
     assert.equal(row.entry_outcome, 'PUBLISHED');
 
-    // 결과 재조회는 durable 상태만 돌려준다 — 현재 소속 판정은 호출자(matchmaking)의 몫이다.
     const outcome = await gameInviteService.getAttemptOutcome({
         receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-1',
     });
@@ -1505,13 +1233,11 @@ test('A-10: 수락 결정과 영수증이 두 단계로 확정된다', async (t)
     assert.equal(outcome.roomId, 'room-accept');
     assert.equal(outcome.bootEpoch, roomAccess.bootEpoch);
 
-    // 다른 시도 id로 물으면 입장을 주장하지 않는다.
     const stale = await gameInviteService.getAttemptOutcome({
         receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-other',
     });
     assert.equal(stale.staleAttempt, true);
 
-    // 확정된 영수증은 보상으로 덮이지 않는다(PUBLISHED는 역사다).
     assert.equal(
         await gameInviteService.recordEntryInterrupted({
             inviteId: invite.inviteId, attemptId: 'attempt-1', reason: 'LATE',
@@ -1526,15 +1252,6 @@ test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 �
     if (unavailable(t)) return;
     await setUp(t);
 
-    // ── 재현하는 결함 ───────────────────────────────────────────────────────
-    // 예전 recordEntryInterrupted는 (1) 비잠금 SELECT로 attempt_id와 entry_outcome을
-    // 확인하고 (2) 그 뒤 row.update()를 불렀다. 두 문장 사이에 확정 트랜잭션이 PUBLISHED를
-    // 커밋하면, (1)에서 읽은 UNCONFIRMED를 근거로 (2)가 그 영수증을 INTERRUPTED로 덮었다 —
-    // 실제로 방에 들어간 참가자의 입장이 "중단됨"으로 기록된다.
-    //
-    // 아래는 그 창을 **결정적으로** 만든다: 확정 쓰기를 열린 트랜잭션 안에 두고 커밋하지
-    // 않은 채 보상을 시작한다. READ COMMITTED의 비잠금 SELECT는 이 시점에 UNCONFIRMED를
-    // 읽는다. 조건부 UPDATE는 대신 행 잠금을 기다렸다가 **커밋된 값**으로 조건을 평가한다.
     const a = await createLocalUser('race-a');
     const b = await createLocalUser('race-b');
     await befriend(a, b);
@@ -1551,7 +1268,6 @@ test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 �
         { where: { id: invite.inviteId }, transaction: tx },
     );
 
-    // 비잠금 읽기는 아직 UNCONFIRMED를 본다 — 예전 구현이 근거로 삼던 바로 그 값이다.
     const dirtyView = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
     assert.equal(
         dirtyView.entry_outcome, 'UNCONFIRMED',
@@ -1570,7 +1286,6 @@ test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 �
     let row = await db.GameInvite.findOne({ where: { id: invite.inviteId } });
     assert.equal(row.entry_outcome, 'PUBLISHED', '보상이 확정된 publication 영수증을 덮었다');
 
-    // 대조군 (1) — 실제로 아직 UNCONFIRMED인 시도는 정상적으로 보상된다.
     const { invite: second } = await gameInviteService.createInvite({
         senderId: a, receiverId: b, creationKey: 'race-2',
     });
@@ -1589,7 +1304,6 @@ test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 �
     assert.equal(row.end_reason, 'JOIN_TIMEOUT');
     assert.equal(row.status, 'ACCEPTED', '역사적 수락 결정은 보상으로 되돌리지 않는다');
 
-    // 대조군 (2) — 같은 보상이 두 번 와도 한 번만 확정한다(멱등).
     assert.equal(
         await gameInviteService.recordEntryInterrupted({
             inviteId: second.inviteId, attemptId: 'attempt-live', reason: 'OTHER',
@@ -1601,7 +1315,6 @@ test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 �
         '두 번째 보상이 사유를 덮어쓰면 최초 중단 원인을 잃는다',
     );
 
-    // 대조군 (3) — 교체된 새 attempt를 옛 보상이 건드리지 않는다.
     await db.GameInvite.update(
         { attempt_id: 'attempt-new', entry_outcome: 'UNCONFIRMED' },
         { where: { id: second.inviteId } },
@@ -1617,7 +1330,6 @@ test('A-10/RESULT-3: 보상은 확정 커밋과 겹쳐도 PUBLISHED를 덮지 �
         '옛 시도의 보상이 새 시도의 결과를 확정해 버리면 안 된다',
     );
 
-    // attempt를 증명하지 못하는 호출은 아무것도 쓰지 않는다.
     assert.equal(
         await gameInviteService.recordEntryInterrupted({ inviteId: second.inviteId, reason: 'NO_ATTEMPT' }),
         false,
@@ -1641,7 +1353,6 @@ test('A-10/상태표 5: 두 번째 잠금 전에 차단이 커밋되면 역사�
         receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-int', bootEpoch: roomAccess.bootEpoch,
     });
 
-    // 결정과 확정 사이에 차단이 커밋된다.
     await friendService.blockUser(a, b);
 
     let publishCalls = 0;
@@ -1696,7 +1407,6 @@ test('A-11: 옛 boot epoch의 초대는 수락 결정 자체가 거부되고 CAN
 
     const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'boot' });
 
-    // 서버가 재시작됐다 — 옛 방 인스턴스는 복원되지 않는다.
     await assert.rejects(
         () => gameInviteService.recordAcceptDecision({
             receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-boot', bootEpoch: 'boot-different',
@@ -1725,7 +1435,6 @@ test('AC-06: 방이 사라지면 그 방의 PENDING 초대가 종료된다', asy
 
     const gone = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'g1' });
 
-    // 다른 방의 초대는 영향을 받지 않아야 한다.
     placeInRoom(a, 'room-alive');
     const alive = await gameInviteService.createInvite({ senderId: a, receiverId: c, creationKey: 'g2' });
 
@@ -1740,7 +1449,6 @@ test('AC-06: 방이 사라지면 그 방의 PENDING 초대가 종료된다', asy
     const aliveRow = await db.GameInvite.findOne({ where: { id: alive.invite.inviteId } });
     assert.equal(aliveRow.status, 'PENDING');
 
-    // 상태 변경 통지에는 소리 봉투가 없다(신규 수신이 아니다).
     const updates = eventsNamed('game_invite_updated');
     assert.ok(updates.length > 0);
     for (const update of updates) {
@@ -1762,8 +1470,6 @@ test('review5 RR: block committed after initial read must prevent finalization',
     const repository = require('../../repositories/friend.repositories');
     const original = repository.lockAccountsInOrder;
     let held = false;
-    // Pause after the real transaction's initial consistent read; another real
-    // transaction commits the block before the finalizer obtains account locks.
     repository.lockAccountsInOrder = async function(...args) {
         if (!held) {
             held = true;
@@ -1789,8 +1495,6 @@ test('review5 RR: block committed after initial read must prevent finalization',
 test('review5 migration: preserve existing CANCELLED history when normalizing cross pending', async (t) => {
     if (unavailable(t)) return;
     await setUpBareSchema(t);
-    // AC-05 시험과 같은 이유로 "마지막 원소"가 아니라 F19_MIGRATION_INDEX(0013의 실제 위치)로
-    // 0013 직전 상태를 세운다.
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS.slice(0, F19_MIGRATION_INDEX) });
     const a = await createLocalUserBeforeReset('mh-a');
     const b = await createLocalUserBeforeReset('mh-b');

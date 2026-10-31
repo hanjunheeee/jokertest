@@ -1,8 +1,3 @@
-// F-07 — discordOAuth.service.js의 실제 네트워크 왕복을 검증하는 어댑터 테스트다.
-// googleOAuth.service.test.js(F-06)와 같은 구조다: exchangeCodeForProfile 자체는 스텁으로
-// 바꾸지 않고, fetch의 목적지만 로컬 fixture 서버로 돌려 실제 요청 본문·헤더 구성과
-// 실패·타임아웃 처리를 검증한다.
-
 const test  = require("node:test");
 const assert = require("node:assert/strict");
 const http  = require("node:http");
@@ -11,15 +6,10 @@ const { once } = require("node:events");
 process.env.DISCORD_CLIENT_ID     = process.env.DISCORD_CLIENT_ID     || "adapter-test-client-id";
 process.env.DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "adapter-test-client-secret";
 process.env.DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI  || "https://backend.example.test/auth/discord/callback";
-// AC-04 R-IMPL #2: 로그인 후 명시적 연결(link)은 로그인과 다른 콜백으로 Discord Developer
-// Portal에 등록되어야 한다 — 같은 값을 쓰면 실제 Discord는 그 한 콜백으로만 돌려주므로
-// link로 시작한 왕복도 로그인 콜백(purpose:link를 거부한다)으로 떨어진다.
 process.env.DISCORD_LINK_REDIRECT_URI = process.env.DISCORD_LINK_REDIRECT_URI || "https://backend.example.test/auth/discord/link/callback";
 
 const discordOAuthService = require("../service/discordOAuth.service");
 
-// Fetch 표준의 "bad port" 목록 — undici(전역 fetch)는 이 포트로의 요청을 "bad port"로
-// 거부한다. listen(0)이 우연히 이 중 하나를 받으면 시험이 불안정하게 실패하므로 다시 고른다.
 const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
     101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
     514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
@@ -34,7 +24,6 @@ const listenOnFetchablePort = async (server) => {
     }
 };
 
-// Discord의 token/@me 엔드포인트를 흉내 내는 실제 로컬 HTTP 서버를 띄운다.
 const startMockDiscord = async (t, { tokenHandler, meHandler }) => {
     const server = http.createServer((req, res) => {
         const chunks = [];
@@ -70,16 +59,9 @@ const withFetchRedirectedTo = (t, base) => {
 };
 
 const jsonHandler = (status, body) => (req, res) => {
-    // 매 시험이 listen(0)으로 새 서버·새 포트를 열었다 닫는다. undici(전역 fetch)가 직전
-    // 시험의 keep-alive 연결을 재사용하려 들면, 그 사이 서버가 닫혀 "fetch failed"로 불안정
-    // 실패할 수 있다(격리된 시험 자체 안에서만 벌어지는 재사용이며, 다른 시험 파일과는
-    // 무관하다 — 파일마다 별도 프로세스로 돈다). 응답마다 Connection: close를 실어
-    // 클라이언트가 이 연결을 다음 시험으로 넘겨 재사용하지 않게 한다.
     res.writeHead(status, { "content-type": "application/json", "Connection": "close" });
     res.end(JSON.stringify(body));
 };
-
-// ── 정상 왕복 ─────────────────────────────────────────────────────────────────
 
 test("실제 네트워크 왕복으로 code를 교환해 검증된 subject/email을 반환하고, 요청 본문·헤더가 계약대로 구성된다", async (t) => {
     let tokenRequest = null;
@@ -123,9 +105,6 @@ test("verified가 false면 이메일을 검증되지 않은 값으로 취급해 
     assert.equal(profile.email, null);
 });
 
-// F-31 AC-01: 자체 메일 인증을 건너뛰는 유일한 근거는 "서버가 조회한 Discord 프로필의
-// verified가 boolean true"다 — 그 외(누락·문자열 'true'·truthy 값·이메일 미제공)는 전부
-// null로 넘겨 자체 인증 분기로 보내야 한다(googleOAuth.service.test.js와 같은 계약).
 for (const [label, profileBody] of [
     ["verified 누락", { id: "discord-missing", email: "missing-flag@example.com" }],
     ["verified가 문자열 'true'", { id: "discord-string", email: "string-flag@example.com", verified: "true" }],
@@ -145,8 +124,6 @@ for (const [label, profileBody] of [
         assert.equal(profile.email, null, "boolean true가 아닌 인증 표시는 이메일을 통과시키면 안 됩니다");
     });
 }
-
-// ── 실패 상태코드·잘못된 응답 ────────────────────────────────────────────────
 
 test("토큰 엔드포인트가 실패 상태코드를 반환하면 DISCORD_TOKEN_EXCHANGE_FAILED로 거부된다", async (t) => {
     const base = await startMockDiscord(t, {
@@ -200,8 +177,6 @@ test("프로필 응답에 id가 없으면 DISCORD_PROFILE_INVALID로 거부된�
     );
 });
 
-// ── 타임아웃 (R-IMPL #3: 무기한 대기 금지) ───────────────────────────────────
-
 test("Discord 토큰 엔드포인트 응답이 지연되면 무기한 대기하지 않고 유한한 시간 안에 DISCORD_OAUTH_TIMEOUT으로 실패한다", async (t) => {
     const originalTimeoutMs = process.env.DISCORD_OAUTH_TIMEOUT_MS;
     process.env.DISCORD_OAUTH_TIMEOUT_MS = "150";
@@ -211,7 +186,6 @@ test("Discord 토큰 엔드포인트 응답이 지연되면 무기한 대기하�
     });
 
     const base = await startMockDiscord(t, {
-        // 응답을 절대 보내지 않는다 — 연결만 열어 둔 채 hang.
         tokenHandler: () => {},
         meHandler: jsonHandler(200, { id: "should-not-reach" }),
     });
@@ -249,8 +223,6 @@ test("Discord 프로필 엔드포인트 응답이 지연되면 유한한 시간 
     assert.ok(elapsedMs < 5000, `타임아웃 설정(150ms)보다 한참 오래 걸리면 안 됩니다(실측 ${elapsedMs}ms)`);
 });
 
-// ── AC-05: 클라이언트 비밀키는 환경변수로만 주입된다 ─────────────────────────
-
 test("DISCORD_CLIENT_SECRET 환경변수가 없으면 코드 교환이 하드코딩된 값 없이 설정 오류로 거부된다", async (t) => {
     const originalId     = process.env.DISCORD_CLIENT_ID;
     const originalSecret = process.env.DISCORD_CLIENT_SECRET;
@@ -285,8 +257,6 @@ test("DISCORD_CLIENT_ID/REDIRECT_URI가 설정되어 있으면 인가 URL에 하
     assert.match(url, /redirect_uri=https/);
     assert.match(url, /state=state-abc/);
 });
-
-// ── CODEX-2 재검토 지적 #2: 연결(link)은 로그인과 별개의 redirect_uri를 써야 한다 ────────
 
 test("purpose:link로 인가 URL을 만들면 DISCORD_REDIRECT_URI가 아니라 DISCORD_LINK_REDIRECT_URI가 실린다(AC-04)", async (t) => {
     const loginUrl = discordOAuthService.buildAuthorizationUrl("state-login", { purpose: "login" });

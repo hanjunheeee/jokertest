@@ -1,8 +1,5 @@
 'use strict';
 
-// F-33 E-1 서버 카탈로그 계약: docs/design/F-33-emoticon.md §0의 이모티콘 23종(기본 지급 8 +
-// 상점 판매 15)만 등록되고, F-09의 표시용 4종(emoticon-웃음/울음/화남/박수)은 없어야 한다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 

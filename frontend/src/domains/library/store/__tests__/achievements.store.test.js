@@ -1,11 +1,6 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 
-// roleStatistics.store.test.js/economy.store.test.js와 같은 패턴 — API 경계와 auth store를
-// mock.module로 대체해 achievements.store.js가 실제 fetch를 내보내지 않게 한다.
-// achievements.store.js도 모듈 로드 시점에 useAuthStore.subscribe(...)를 부르므로, 실제
-// zustand store처럼 subscribe(listener)가 (state, prevState)로 리스너를 부르는 최소한의
-// 흉내를 낸다.
 let getMyAchievementsImpl = async () => { throw new Error("getMyAchievementsApi stub not set") }
 let currentUser = { uuid: "user-1" }
 const authListeners = new Set()
@@ -85,11 +80,6 @@ test("retry는 fetchAchievements를 다시 실행한다", async () => {
   assert.equal(useAchievementsStore.getState().status, "success")
 })
 
-// CODEX-4 재검토(AC-06): 이전 버전의 fetchAchievements는 아무것도 반환하지 않아,
-// useAchievements.js가 "이번 호출이 실제로 성공했는지"를 판단하려면 나중에 전역 status를
-// 다시 읽는 수밖에 없었다 — 그러면 겹친 호출 중 폐기된 쪽이 다른(나중) 호출의 성공을
-// 자신의 것으로 착각할 수 있었다. fetchAchievements가 그 순간 자신이 직접 판정한
-// generation/token 일치 여부를 outcome으로 돌려주는지 직접 검증한다.
 test("fetchAchievements는 성공하면 outcome:'success'를 반환한다", async () => {
   resetStore()
   getMyAchievementsImpl = async () => SAMPLE_ACHIEVEMENTS
@@ -121,8 +111,6 @@ test("세대가 바뀌어 폐기된 호출은 outcome:'stale'을 반환하고 st
   assert.deepEqual(outcome, { outcome: "stale" })
   assert.equal(useAchievementsStore.getState().status, "idle", "폐기된 호출은 status를 바꾸면 안 된다")
 })
-
-// ── A-08: 로그아웃/계정 전환 시 상태 격리, 지연 응답 경합 ───────────────────────
 
 test("로그아웃하면 업적 상태가 초기화된다", async () => {
   resetStore()
@@ -191,10 +179,6 @@ test("A→B→A overlap discards older same-generation failure", async () => {
   assert.equal(state.error, null)
 })
 
-// CODEX-2 재검토(AC-06): useAchievements가 재마운트마다 다시 조회하도록 바뀌면서, 같은
-// 세대(계정 전환 없이) 안에서도 fetchAchievements가 겹쳐 호출될 수 있게 됐다 —
-// requestToken이 "가장 나중에 시작된 호출"만 반영하는지 확인한다(roleStatistics.store.js의
-// requestTokens와 같은 이유).
 test("같은 세대 안에서 겹친 fetchAchievements 중 먼저 시작됐지만 늦게 끝나는 응답은 버려진다", async () => {
   resetStore()
   const gate = createDeferred()

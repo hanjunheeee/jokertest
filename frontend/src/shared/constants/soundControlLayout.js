@@ -1,11 +1,6 @@
-// SoundControl의 크기와 위치를 정하는 Tailwind class 모음입니다.
-// 컴포넌트 파일에서는 렌더링 흐름만 보이도록 스타일 문자열을 이 파일로 분리했습니다.
-
-/** 페이지 우하단 사운드 조절바 wrapper — 로비·매칭·설정 등 공통 */
 export const PAGE_SOUND_CONTROL_AREA_CLASS =
   "absolute bottom-4 right-4 z-30 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6"
 
-/** 본문 UI(z-30) 위에 올리는 사운드 조절바 — 기억의 서고·마이페이지 계열 */
 export const PAGE_SOUND_CONTROL_ELEVATED_AREA_CLASS =
   "pointer-events-auto absolute bottom-4 right-4 z-40 flex flex-col items-end gap-[clamp(0.75rem,1.6vh,1.25rem)] sm:bottom-6 sm:right-6"
 
@@ -20,10 +15,8 @@ export const SOUND_CONTROL_CLASSES = {
   sliderKnotImage: "block h-auto w-full select-none",
 }
 
-// 슬라이더 knob 이미지가 바 끝에 딱 붙지 않도록 양쪽 여백을 둡니다.
 const KNOT_INSET_PERCENT = { start: 20, end: 8 }
 
-// 볼륨 값(0~1)을 slider bar 위의 left 퍼센트 위치로 변환합니다.
 export function getSliderKnotLeftPercent(value) {
   const travel = 100 - KNOT_INSET_PERCENT.start - KNOT_INSET_PERCENT.end
   return KNOT_INSET_PERCENT.start + value * travel

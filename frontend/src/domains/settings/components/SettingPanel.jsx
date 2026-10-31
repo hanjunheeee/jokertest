@@ -1,4 +1,3 @@
-// 파일 역할: SettingPanel.jsx - 화면을 구성하는 컴포넌트입니다.
 import { motion } from "framer-motion"
 import { useState } from "react"
 import SettingContentArea from "./SettingContentArea.jsx"
@@ -9,7 +8,6 @@ const PANEL_CLASS =
   "absolute left-1/2 top-[clamp(6rem,15vh,8rem)] z-20 w-[min(56rem,88vw)] -translate-x-1/2"
 
 export default function SettingPanel({ visible }) {
-  // 현재 선택된 설정 탭 id입니다.
   const [activeTab, setActiveTab] = useState("general")
 
   return (

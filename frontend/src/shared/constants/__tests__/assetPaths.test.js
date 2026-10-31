@@ -1,9 +1,3 @@
-/**
- * 새로 들여온 에셋 경로 상수가 frontend/public 실존 파일을 가리키는지 전수 검증합니다.
- *
- * 상수는 macOS 체크아웃을 위해 NFD로 적혀 있고 publicAsset()이 요청 직전에 NFC로
- * 되돌리므로, 비교도 publicAsset()과 같은 NFC 기준으로 합니다.
- */
 import assert from "node:assert/strict"
 import { readdirSync, statSync } from "node:fs"
 import { dirname, join, relative, sep } from "node:path"

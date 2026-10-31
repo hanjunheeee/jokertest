@@ -36,15 +36,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook, cleanup } = await import("@testing-library/react")
 
-// 이 파일의 시험들은 각자 마지막에 unmount한다. 다만 단언이 먼저 실패하면 그 줄에 닿지 못해
-// 훅이 마운트된 채로 남고, 그 훅은 이후 시험의 setFakeSocket에 반응해 **남의 소켓으로** 요청을
-// 보낸다 — 실패 하나가 뒤따르는 시험들의 요청 수를 전부 오염시킨다. 실패를 그 시험 안에 가둔다.
 test.afterEach(() => cleanup())
 
-// useInGameSessionSnapshotSync이 module 최상단에서 import하는 socketClient(getSocket/subscribeSocket)를
-// 실제 mount 테스트에서 제어 가능한 fake로 교체한다. mock.module은 아직 로드되지 않은 specifier에만
-// 적용되므로, hook 모듈(과 auth.store.js — window가 있어야 안전하게 초기화되는 persist 스토어를
-// 담고 있어 JSDOM 전역 설치 이후로 import를 미룬다)은 이 mock 등록 이후의 동적 import로 가져온다.
 let currentFakeSocket = null
 const fakeSocketSubscribers = new Set()
 
@@ -59,15 +52,11 @@ function fakeSubscribeSocket(callback) {
   }
 }
 
-// 구독자에게 알려 리렌더를 유도하는 정상 경로. setSocket(newSocket)이 실제로 소켓을 교체하는
-// 경로와 동일하다.
 function setFakeSocket(next) {
   currentFakeSocket = next
   for (const callback of [...fakeSocketSubscribers]) callback()
 }
 
-// 구독자에게 알리지 않고 getSocket()의 반환값만 바꾼다 — setSocket(newSocket)이 모듈 싱글턴을
-// 교체한 직후, 아직 React가 리렌더링해 이 훅의 effect가 재실행되기 전인 순간을 재현한다.
 function setFakeSocketWithoutNotify(next) {
   currentFakeSocket = next
 }
@@ -92,9 +81,6 @@ function createFakeSessionSnapshotSocket() {
   const offCalls = []
   const connectHandlers = new Set()
   const emitWithAckCalls = []
-  // F-26(AC-01): 복원된 성공 사건의 완료(completeNightSuccess)는 ack 요청이 아니라 평범한
-  // emit으로 나간다. 이 자리가 없으면 "복원 항목을 그 화면이 실제로 완료할 수 있는가"를
-  // 검사할 수 없다(전송 실패로만 끝난다).
   const emitCalls = []
 
   const socket = {
@@ -137,16 +123,6 @@ async function flushMicrotasks() {
   }
 }
 
-/**
- * F-26(AC-04): connect 사건을 흘려보내고 **그 사건이 예약한 microtask까지** 실행한다.
- *
- * 훅은 connect에서 요청 세대만 즉시 올리고, 요청 범위 캡처·전송은 microtask로 미룬다 — 같은
- * connect를 구독하는 useGameSessionSocketEvents가 noteInGameConnectionRebound로 연결 세대를
- * 올리기 때문이다(등록 순서에 따라 옛 세대로 요청이 나가는 것을 막는 유일한 방법이다). 그래서
- * "connect 뒤에 요청이 나갔는가"를 보는 시험은 그 microtask 경계를 함께 지나야 한다.
- *
- * @param {Function} [mutate] connect 직전에 소켓 상태를 바꾸는 작업(id 재발급·connected 등).
- */
 async function emitConnect(fake, mutate = null) {
   await act(async () => {
     if (mutate) mutate()
@@ -189,11 +165,6 @@ function seedAuth(uuid) {
   useAuthStore.setState({ user: { uuid }, isLoggedIn: true, loggedOutIntentionally: false })
 }
 
-/**
- * F-23(SPLIT-1): 같은 판·같은 계정에서 **내 소속만** 바꾼다(이탈→재입장과 같은 전이다).
- * 실제 store 액션 경로(setState)로 바꿔 store가 소유한 전이 관측을 그대로 통과시킨다 —
- * 값을 몰래 mutate하면 그 전이 자체가 일어나지 않은 것이 되어 시험이 무력해진다.
- */
 function setMyMembership(membershipId) {
   useInGameStore.setState((s) => ({
     state: { ...s.state, players: s.state.players.map((p) => ({ ...p, membershipId })) },
@@ -203,7 +174,6 @@ function setMyMembership(membershipId) {
 const readMyMembership = () =>
   useInGameStore.getState().state?.players?.[0]?.membershipId ?? null
 
-/** 공개 결과 하나가 실린 정상 응답(수신 증거가 실제로 만들어지는지 보기 위한 fixture). */
 function buildSnapshotResponseWithNightResult({ gameId, playerUuid = "player-1", dayIndex = 1 }) {
   return {
     ...buildValidSnapshotResponse({ gameId, playerUuid, phase: "DAY", dayIndex }),
@@ -215,14 +185,6 @@ function buildSnapshotResponseWithNightResult({ gameId, playerUuid = "player-1",
   }
 }
 
-// applySessionSnapshot 호출을 실제 구현을 그대로 위임하며 세면서, 이후 캡처하는 wrapper가
-// 이전 wrapper를 감싸는 형태로 쌓여도(파일 안 여러 테스트가 각자 wrapApplySessionSnapshot을
-// 부르므로) 실제 병합 로직은 항상 정확히 한 번만 실행된다 — 각 테스트는 자기 자신의 calls
-// 배열만 관찰한다.
-//
-// F-23(SPLIT-1): wrapper는 호출부가 넘긴 **수신 문맥까지** 원래 액션에 그대로 전달해야 한다.
-// 그러지 않으면 wrapper를 끼운 시험에서만 store가 문맥 없이 적용하게 되어, 실제 화면과 다른
-// 경로를 검사하게 된다(공개 결과의 수신 증거가 시험에서만 사라진다).
 function wrapApplySessionSnapshot() {
   const calls = []
   const original = useInGameStore.getState().applySessionSnapshot
@@ -235,7 +197,6 @@ function wrapApplySessionSnapshot() {
   return calls
 }
 
-/** 그 시험이 관찰할 수 있는 "바뀌면 안 되는 것" 전부를 한 번에 찍어 둔다. */
 function snapshotStoreFacts() {
   const { state, snapshotSeq, snapshotResultOwner, gameId } = useInGameStore.getState()
   return { state, snapshotSeq, snapshotResultOwner, gameId }
@@ -292,9 +253,6 @@ test("의존성이 바뀌지 않은 리렌더는 리스너를 추가하거나 �
   setFakeSocket(fake.socket)
 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
-  // F-27b(AC-01): connect 하나에 **읽기 전용 관측** 둘이 더해진다(night_presentation_wait·
-  // night_turn_started). 관측은 화면 상태를 만들지 않고 게임·밤별 순번만 세지만, 리스너가
-  // 리렌더마다 늘어나면 안 된다는 계약은 그대로다.
   assert.deepEqual(fake.onCalls.map((c) => c.event).sort(),
     ["connect", "night_presentation_wait", "night_turn_started"])
   assert.equal(fake.emitWithAckCalls.length, 1)
@@ -357,8 +315,6 @@ test("manager 수준의 reconnect 리스너는 등록되지 않으며, connect 1
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   await emitConnect(fake)
 
-  // 이 훅이 구독하는 이름은 정확히 셋뿐이다 — 요청 세대를 여는 connect와, 조회 경합을 재는
-  // 읽기 전용 관측 둘. manager 수준의 'reconnect' 같은 다른 이름은 어느 것도 없다.
   assert.deepEqual(
     [...new Set(fake.onCalls.map((c) => c.event))].sort(),
     ["connect", "night_presentation_wait", "night_turn_started"],
@@ -442,7 +398,6 @@ test("ok:false ack도 store를 참조 수준에서 전혀 바꾸지 않는다", 
 test("타임아웃/오류로 요청이 실패해도 이후 재연결은 정상적으로 다시 요청하고 성공할 수 있다", async (t) => {
   seedStore({ gameId: "g1" })
   seedAuth("user-a")
-  // ack 창의 만료를 재현하려면 이 시험이 시계를 쥐고 있어야 한다(rejectAsAckTimeout 참고).
   const clock = installRetryClock()
   t.after(() => clock.restore())
   const fake = createFakeSessionSnapshotSocket()
@@ -477,7 +432,6 @@ test("이전 요청이 응답하지 않아도(영구 미응답) 재연결 시 �
   const applyCalls = wrapApplySessionSnapshot()
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   assert.equal(fake.emitWithAckCalls.length, 1)
-  // 요청 1(v1)은 절대 resolve/reject하지 않는다.
 
   await emitConnect(fake)
   assert.equal(fake.emitWithAckCalls.length, 2, "미응답 요청이 있어도 재연결은 새 요청(v2)을 막지 않아야 한다")
@@ -588,9 +542,6 @@ test("요청 이후 인증 계정(uuid)이 socket・store 교체보다 먼저 �
 
   const authState = useAuthStore.getState()
   const originalUuid = authState.user.uuid
-  // setState를 거치지 않고 기존 user 객체를 직접 mutate한다 — 구독자에게 알리지 않으므로 이
-  // 훅은 리렌더되지 않고 여전히 이전 epoch("user-a" 요청)를 들고 있다. 프로덕션에서 로그인/
-  // 로그아웃이 socket 교체·store 초기화보다 먼저 동기적으로 반영되는 순간을 재현한다.
   authState.user.uuid = "user-b"
 
   await act(async () => {
@@ -599,7 +550,6 @@ test("요청 이후 인증 계정(uuid)이 socket・store 교체보다 먼저 �
   })
   assert.equal(applyCalls.length, 0, "리렌더/epoch 무효화가 전혀 없었는데도 인증 계정 불일치만으로 거부되어야 한다")
 
-  // 이제 실제 setState로 구독자에게 알려 리렌더를 유도한다.
   await act(async () => {
     useAuthStore.setState({ ...useAuthStore.getState(), user: { ...authState.user } })
     await flushMicrotasks()
@@ -631,8 +581,6 @@ test("socket 인스턴스가 리렌더 전에 교체되면, epoch가 그대로�
 
   const fakeB = createFakeSessionSnapshotSocket()
   fakeB.socket.connected = true
-  // 구독자에게 알리지 않고 getSocket()의 반환값만 B로 바꾼다 — setSocket(B)가 모듈 싱글턴을
-  // 교체한 직후, 아직 이 훅의 effect가 재실행되지 않은 순간을 재현한다.
   setFakeSocketWithoutNotify(fakeB.socket)
 
   await act(async () => {
@@ -645,11 +593,6 @@ test("socket 인스턴스가 리렌더 전에 교체되면, epoch가 그대로�
   hook.unmount()
 })
 
-// ── F-23(AC-05/AC-06): 기존 네 축이 전부 같은 채로 지나가는 세 전이 ──────────────
-//
-// 아래 세 경우는 gameId·계정 uuid·socket **객체**가 모두 그대로다. 각 축을 하나씩만 움직여,
-// 옛 응답이 거부되면서도 현재 신원의 요청은 영구히 막히지 않는지 함께 본다.
-
 test("F-23: 계정 A→B→A를 지나온 옛 응답은 거부되고, 현재 신원의 새 요청은 정상 반영된다", async () => {
   seedStore({ gameId: "g1", playerUuid: "player-1" })
   seedAuth("user-a")
@@ -661,7 +604,6 @@ test("F-23: 계정 A→B→A를 지나온 옛 응답은 거부되고, 현재 신
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const pendingFromA = fake.emitWithAckCalls[0]
 
-  // 같은 배치 안에서 A→B→A. 계정 **값**은 원래대로 돌아오지만 전이 세대는 두 번 올랐다.
   await act(async () => {
     useAuthStore.setState((s) => ({
       user: { uuid: "user-b" }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
@@ -696,7 +638,6 @@ test("F-23: 계정 A→B→A를 지나온 옛 응답은 거부되고, 현재 신
 test("F-23: 같은 판에서 내 소속만 교체되면(이탈→재입장) 그 사이 도착한 옛 응답은 반영되지 않는다", async () => {
   seedStore({ gameId: "g1", playerUuid: "player-1" })
   seedAuth("player-1")
-  // 요청을 보내는 시점의 내 소속.
   useInGameStore.getState().state.players[0].membershipId = "mem-1"
 
   const fake = createFakeSessionSnapshotSocket()
@@ -707,7 +648,6 @@ test("F-23: 같은 판에서 내 소속만 교체되면(이탈→재입장) 그 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const pending = fake.emitWithAckCalls[0]
 
-  // 구독자에게 알리지 않고 소속만 바꾼다 — 리렌더도 epoch 무효화도 없는 순간을 재현한다.
   useInGameStore.getState().state.players[0].membershipId = "mem-2"
 
   await act(async () => {
@@ -735,7 +675,6 @@ test("F-23: 같은 Socket 객체가 재연결되어 id만 바뀌면 그 이전 �
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const pending = fake.emitWithAckCalls[0]
 
-  // 객체 동일성은 그대로 유지되고 id만 바뀐다(실제 Socket.IO 재연결의 모습).
   fake.socket.id = "sock-2"
 
   await act(async () => {
@@ -755,8 +694,6 @@ test("cleanup은 이 훅이 등록한 리스너만 정확한 참조로 제거하
   fake.socket.connected = true
   setFakeSocket(fake.socket)
 
-  // 다른 기능(예: 채팅/게임 이벤트)이 이미 같은 socket에 등록해둔, 이 슬라이스와 무관한
-  // 리스너들을 시뮬레이션한다.
   const unrelatedChatHandler = () => {}
   const unrelatedGameHandler = () => {}
   fake.socket.on("joker_chat_message", unrelatedChatHandler)
@@ -765,8 +702,6 @@ test("cleanup은 이 훅이 등록한 리스너만 정확한 참조로 제거하
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const ownHandler = [...fake.connectHandlers][0]
   assert.ok(ownHandler)
-  // F-27b(AC-01): 관측 리스너 둘도 **자기가 등록한 그 참조로만** 해제돼야 한다 — 남의
-  // night_turn_started 구독(useGameSessionSocketEvents·성공 연출 훅)을 건드리면 안 된다.
   const handlerFor = (event) => fake.onCalls.find((c) => c.event === event)?.handler
   const waitHandler = handlerFor("night_presentation_wait")
   const turnHandler = handlerFor("night_turn_started")
@@ -830,12 +765,6 @@ test("빈 인게임 store에 활성 게임이 없다는 응답이 오면 missing
   hook.unmount()
 })
 
-// ── F-23(SPLIT-1): 값이 원래대로 돌아오는 전이와 요청 재개 ────────────────────
-//
-// 아래 시험들이 함께 고정하는 것은 두 가지다. 옛 응답은 **아무것도** 바꾸지 못하고(state 참조·
-// snapshotSeq·수신 증거·bootstrapStatus), 그러면서도 현재 신원의 요청은 반드시 재개된다.
-// 앞의 것만 지키면 화면이 영영 확인 중에 갇히고, 뒤의 것만 지키면 옛 사실이 내려앉는다.
-
 test("F-23(SPLIT-1): 소속 A→B→A 왕복을 지나온 옛 응답은 아무것도 바꾸지 못하고, 현재 신원의 요청은 재개된다", async () => {
   seedStore({ gameId: "g1", playerUuid: "player-1" })
   seedAuth("player-1")
@@ -851,7 +780,6 @@ test("F-23(SPLIT-1): 소속 A→B→A 왕복을 지나온 옛 응답은 아무�
   const pendingFromA = fake.emitWithAckCalls[0]
   assert.ok(pendingFromA, "전제: 첫 요청이 나가야 한다")
 
-  // 같은 act 배치 안에서 A→B→A. 값은 원래대로 돌아오지만 전이는 두 번 일어났다.
   await act(async () => {
     setMyMembership("mem-b")
     setMyMembership("mem-a")
@@ -872,7 +800,6 @@ test("F-23(SPLIT-1): 소속 A→B→A 왕복을 지나온 옛 응답은 아무�
   assert.equal(applyCalls.length, 0, "왕복을 지나온 옛 응답이 반영됐다")
   assertStoreFactsUnchanged(before, "A→B→A를 지나온 옛 응답")
 
-  // 현재 신원의 요청은 정상 반영되고, 그 결과에는 이 신원의 수신 증거가 붙는다.
   await act(async () => {
     fake.emitWithAckCalls[1].resolve(buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 4 }))
     await flushMicrotasks()
@@ -900,7 +827,6 @@ test("F-23(SPLIT-1): 연결이 끊긴 뒤 도착한 응답은 반영되지 않�
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   const pending = fake.emitWithAckCalls[0]
 
-  // 끊김: 객체도 id도 그대로일 수 있지만 이 연결은 이미 죽었다.
   fake.socket.connected = false
   const before = snapshotStoreFacts()
   await act(async () => {
@@ -910,7 +836,6 @@ test("F-23(SPLIT-1): 연결이 끊긴 뒤 도착한 응답은 반영되지 않�
   assert.equal(applyCalls.length, 0, "끊긴 연결에서 온 응답이 반영됐다")
   assertStoreFactsUnchanged(before, "끊긴 연결의 응답")
 
-  // 실제 재연결: 새 id가 발급되고 그 연결에서 다시 요청한다.
   await emitConnect(fake, () => {
     fake.socket.connected = true
     fake.socket.id = "sock-2"
@@ -940,11 +865,8 @@ test("F-23(SPLIT-1): 전송 자체가 동기 예외로 실패해도 같은 세�
 
     const hook = renderHook(() => useInGameSessionSnapshotSync())
 
-    // F-26(AC-01): 아무 것도 나가지 못한 시도는 남은 예산으로 다시 묻는다 — 그 동안은 아직
-    // 실패가 아니다(첫 실패에서 굳으면 뒤이은 성공이 이미 내려간 결론을 뒤집는다).
     assert.equal(hook.result.current, "checking", "재시도가 남았는데 첫 실패로 확정됐다")
 
-    // 그래도 **유한하다**(이 시험의 원래 계약이다) — 예산이 끝나면 반드시 내려온다.
     for (let i = 0; i < 30; i += 1) await clock.advance(250)
     assert.equal(hook.result.current, "failed", "동기 전송 예외가 확인 중으로 남았다")
     assert.equal(useInGameStore.getState().gameId, null)
@@ -990,7 +912,6 @@ test("F-23(SPLIT-1): 빈 store bootstrap은 요청 계정과 다른 본인을 �
 
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   await act(async () => {
-    // 서버가 돌려준 self가 이 요청을 보낸 계정이 아니다 — 남의 세션을 내 화면으로 복원하지 않는다.
     fake.emitWithAckCalls[0].resolve(buildValidSnapshotResponse({
       gameId: "g-other", playerUuid: "player-9", phase: "ROLE_REVEAL",
     }))
@@ -1002,17 +923,6 @@ test("F-23(SPLIT-1): 빈 store bootstrap은 요청 계정과 다른 본인을 �
   hook.unmount()
 })
 
-/**
- * F-23(AC-05): **다른 소속을 주장하는 응답은 복원 권위가 아니다.**
- *
- * 스냅샷 응답은 roster의 membershipId로 자기가 어느 자리의 사실인지를 말한다. 지금 화면이
- * 이미 소속을 알고 있는데 응답이 그와 다른 소속을 주장하면, 같은 판·같은 계정이라도 이
- * 화면이 앉아 있는 자리의 사실이 아니다(이탈→재입장으로 생긴 다른 참여 기록이다). 그대로
- * 반영하면 관측 기준이 남의 소속으로 채택되고 공개 결과의 수신 증거까지 거기 붙는다.
- *
- * "모른다"는 "다르다"가 아니다 — membershipId를 싣지 않는 응답은 이 검사에 걸리지 않는다
- * (기존 호환 계약). 아래 양성 대조가 그 경계를 함께 고정한다.
- */
 test("F-23(AC-05): 기존 non-null 소속과 다른 소속을 주장하는 응답은 복원 권위로 승격되지 않는다", () => {
   seedStore({ gameId: "g1", playerUuid: "player-1" })
   seedAuth("player-1")
@@ -1031,7 +941,6 @@ test("F-23(AC-05): 기존 non-null 소속과 다른 소속을 주장하는 응�
   assertStoreFactsUnchanged(before, "다른 소속을 주장하는 응답")
   assert.equal(readMyMembership(), "mem-a", "다른 소속을 주장하는 응답이 현재 소속을 덮었다")
 
-  // 양성 대조 1: 같은 소속을 주장하는 응답은 그대로 반영되고 그 신원의 수신 증거가 붙는다.
   const mine = buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 4 })
   mine.players = mine.players.map((p) => ({ ...p, membershipId: "mem-a" }))
   useInGameStore.getState().applySessionSnapshot(mine, receipt)
@@ -1054,7 +963,6 @@ test("F-23(AC-05): 소속을 싣지 않은(모른다고 말하는) 응답은 이
   })
   const seqBefore = useInGameStore.getState().snapshotSeq
 
-  // players[].membershipId 자체가 없는 응답이다(구버전 스냅샷).
   useInGameStore.getState().applySessionSnapshot(
     buildSnapshotResponseWithNightResult({ gameId: "g1", dayIndex: 5 }), receipt,
   )
@@ -1063,12 +971,6 @@ test("F-23(AC-05): 소속을 싣지 않은(모른다고 말하는) 응답은 이
   assert.equal(useInGameStore.getState().snapshotSeq, seqBefore + 1)
 })
 
-/**
- * F-23(SPLIT-1): 재결속 보류는 **열리고 반드시 닫힌다.**
- *
- * 열리지 않으면 신원 전이로 연출 큐가 버려지는 순간 잔존 ENDED로 결과 화면에 들어가고,
- * 닫히지 않으면 화면이 영영 인게임에 갇힌다. 두 사실을 한 시험에서 함께 고정한다.
- */
 test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 실패여도 반드시 닫는다", async (t) => {
   seedStore({ gameId: "g1", playerUuid: "player-1" })
   seedAuth("player-1")
@@ -1092,7 +994,6 @@ test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 �
   await rejectAsAckTimeout(clock, fake.emitWithAckCalls[1])
   assert.equal(getInGameSnapshotRebindPending(), false, "응답이 끝났는데 보류가 남아 화면이 갇힌다")
 
-  // 정상 응답으로 끝나는 경우도 같다.
   await emitConnect(fake, () => { fake.socket.id = "sock-3" })
   assert.equal(getInGameSnapshotRebindPending(), true)
   await act(async () => {
@@ -1101,20 +1002,17 @@ test("F-23(SPLIT-1): 실제 재연결은 재결속 보류를 열고, 응답이 �
   })
   assert.equal(getInGameSnapshotRebindPending(), false)
 
-  // 보류 중에 화면이 사라져도 그 보류를 다음 화면으로 넘기지 않는다.
   await emitConnect(fake, () => { fake.socket.id = "sock-4" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 아직 응답을 기다리는 중이어야 한다")
   hook.unmount()
   assert.equal(getInGameSnapshotRebindPending(), false, "언마운트가 보류를 다음 화면으로 넘겼다")
 })
 
-/** 결과 화면으로 넘어가는 근거(useInGameResultNavigation이 보는 두 값)를 그대로 읽는다. */
 function hasResultNavigationBasis() {
   const { state } = useInGameStore.getState()
   return state?.phase === "ENDED" && Boolean(state?.winResult)
 }
 
-/** 종료가 확정된 판을 들고 있는 화면을 만든다(재결속 전에 이미 갖고 있던 옛 사실). */
 function seedEndedStore({ gameId = "g1", playerUuid = "player-1", dayIndex = 1 } = {}) {
   seedStore({ gameId, playerUuid, phase: "ENDED", dayIndex })
   useInGameStore.setState((s) => ({ state: { ...s.state, winResult: { winner: "CITIZEN" } } }))
@@ -1128,14 +1026,6 @@ function endedSnapshotResponse({ gameId = "g1", playerUuid = "player-1", dayInde
   }
 }
 
-/**
- * F-23(SPLIT-1): **현재 연결에서 정상 공개 종료를 받는다** — 실제 수신 경로와 같은 인자로.
- *
- * 프로덕션에서 이 호출을 만드는 것은 useGameSessionSocketEvents의 handleNightResultApplied이고,
- * 그때 두 번째 인자로 그 순간의 수신 범위(계정 축 + store·연결 축)가 함께 들어간다. 시험이 그
- * 인자를 빼고 부르면 store는 "누가 받았는지 모르는" 종료 결과로 적어 두게 되어, 이 파일이
- * 검사하려는 "어느 범위에서 받았는가"가 시험에서만 사라진다.
- */
 function deliverTerminalNightResult({ gameId, accountId, playerUuid = "player-1", dayIndex = 1 }) {
   const receipt = readInGameReceiptScope({
     accountId,
@@ -1151,17 +1041,6 @@ function deliverTerminalNightResult({ gameId, accountId, playerUuid = "player-1"
   }, receipt)
 }
 
-/**
- * F-23(SPLIT-1): **실패는 성공이 아니다.**
- *
- * 재결속 구간에서 현재 신원의 스냅샷을 끝내 받지 못했는데 보류만 풀면, 화면은 이전 신원·
- * 이전 연결이 받아 둔 잔존 ENDED·winResult를 그대로 이동 근거로 삼는다(InGamePage →
- * useInGameResultNavigation) — 이 보류가 막으려던 바로 그 결함이 실패 경로로 되살아난다.
- *
- * 그래서 "보류가 풀렸다"와 "이동 근거가 남아 있다"가 **동시에** 성립하면 안 된다. 어느 쪽으로
- * 구현하든(보류 유지 또는 잔존 상태 무효화) 이 한 줄이 결함을 잡는다. 동시에 영구히 갇혀서도
- * 안 되므로, 다음 연결의 정상 스냅샷에서 이동 근거가 복원되는 것까지 같은 시험에 고정한다.
- */
 test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 이동 근거가 남지 않는다", async (t) => {
   seedEndedStore()
   seedAuth("player-1")
@@ -1191,7 +1070,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 거부되면 잔존 ENDED의 결과 
     "종료 잠금 자체는 서버가 확정한 사실이다 — 실패했다고 되돌리지 않는다",
   )
 
-  // 영구 무효가 아니다: 다음 연결의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
   await emitConnect(fake, () => { fake.socket.id = "sock-3" })
   await act(async () => {
     fake.emitWithAckCalls[2].resolve(endedSnapshotResponse())
@@ -1237,10 +1115,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패 응답(ok:false)으로 끝나
   hook.unmount()
 })
 
-/**
- * 반대 방향의 방어다. 재결속을 짊어지지 않은 평범한 첫 동기화가 실패했다고 해서, 방금 받은
- * 정상 종료 결과를 지우면 안 된다 — 그 state는 이전 신원의 잔존물이 아니라 지금 신원의 사실이다.
- */
 test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 신원의 종료 결과를 지우지 않는다", async (t) => {
   seedEndedStore()
   seedAuth("player-1")
@@ -1255,8 +1129,6 @@ test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 �
   assert.equal(fake.emitWithAckCalls.length, 1, "전제: 마운트가 한 번 물어야 한다")
   assert.equal(getInGameSnapshotRebindPending(), false, "전제: 마운트 자체는 전이가 아니다")
 
-  // 예산까지 다 쓴 뒤의 끝맺기다 — 이 시험이 보는 것은 그 자리에서 무엇을 지우는가이므로,
-  // 아직 다시 물을 수 있는 이른 거부로는 그 자리에 닿지 못한다.
   await rejectAsAckTimeout(clock, fake.emitWithAckCalls[0])
 
   assert.equal(hasResultNavigationBasis(), true, "재결속과 무관한 조회 실패가 현재 종료 결과를 지웠다")
@@ -1264,22 +1136,9 @@ test("F-23(SPLIT-1): 재결속이 아닌 평범한 동기화 실패는 현재 �
   hook.unmount()
 })
 
-/**
- * F-23(SPLIT-1): **같은 실패인데 결말이 갈린다 — 그 결과를 어디서 받았는가.**
- *
- * 재결속 스냅샷이 실패했을 때 걷어내야 하는 것은 "이전 신원·이전 연결이 받아 둔 잔존
- * 종료 상태"뿐이다. 그런데 재결속 구간은 시간이 걸리고, 그 사이에 **현재 연결**이 정상 공개
- * 종료(night_result_applied)를 직접 받아 둘 수 있다 — 그 결과는 확인하지 못한 잔존물이
- * 아니라 지금 이 화면의 사실이므로, 뒤이은 스냅샷 실패로 지워지면 결과 화면에 영영 가지
- * 못한다(막으려던 결함을 고치다 반대쪽으로 넘어가는 자리다).
- *
- * 두 경우를 **같은 실패 경로로 나란히** 통과시켜, 판정 기준이 "실패했는가"가 아니라
- * "어느 범위에서 받았는가"임을 한 시험에 고정한다.
- */
 test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDED는 제거되고, 현재 연결에서 받은 종료 결과는 보존된다", async (t) => {
   const clock = installRetryClock()
   t.after(() => clock.restore())
-  // ── (가) 이전 연결이 받아 둔 잔존 ENDED ──────────────────────────────────────
   seedEndedStore({ gameId: "g-stale" })
   seedAuth("player-1")
   const stale = createFakeSessionSnapshotSocket()
@@ -1303,7 +1162,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   )
   staleHook.unmount()
 
-  // ── (나) 재결속 중에 **현재 연결**이 직접 받은 정상 종료 결과 ─────────────────
   seedStore({ gameId: "g-live", playerUuid: "player-1", phase: "NIGHT", dayIndex: 1 })
   seedAuth("player-1")
   const live = createFakeSessionSnapshotSocket()
@@ -1316,15 +1174,11 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
   assert.equal(live.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
 
-  // 아직 그 스냅샷을 기다리는 동안, 이 연결의 정상 공개 종료가 도착한다. 실제 수신 경로가
-  // 부르는 바로 그 store 액션을 **같은 인자로** 쓴다 — 값을 직접 주입하거나 수신 범위를 빼고
-  // 부르면 그 기록이 남지 않아 이 시험이 검사하려는 것을 건너뛴다.
   act(() => {
     deliverTerminalNightResult({ gameId: "g-live", accountId: "player-1" })
   })
   assert.equal(hasResultNavigationBasis(), true, "전제: 이 연결의 정상 종료 결과가 반영돼야 한다")
 
-  // 그리고 (가)와 **똑같은** 실패가 그 재결속 요청에 도착한다.
   await rejectAsAckTimeout(clock, live.emitWithAckCalls[1])
 
   assert.equal(getInGameSnapshotRebindPending(), false, "보류가 남아 화면이 영영 갇힌다")
@@ -1335,22 +1189,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷 실패 — 이전 범위의 잔존 ENDE
   liveHook.unmount()
 })
 
-/**
- * F-23(SPLIT-1): **인증 왕복은 store도 연결도 건드리지 않는다 — 그래서 계정 축이 필요하다.**
- *
- * 같은 화면이 판과 연결을 그대로 들고 있는 채로 인증만 A→B→A로 왕복하는 구간이 있다. 이때
- * store가 소유한 관측은 하나도 움직이지 않는다: gameId·roster·내 소속은 그대로이고(소속 전이
- * 세대가 세는 self.uuid는 마지막으로 적용된 snapshot의 본인이지 인증 계정이 아니다), 소켓 객체와
- * sid도 그대로다. 계정 값 자체도 원래대로 돌아온다.
- *
- * 그래서 계정 축(accountId·인증 전이 세대)을 함께 적어 두고 함께 대조하지 않으면, **이전 계정이**
- * 받아 둔 종료 결과가 "지금 이 화면이 직접 받은 사실"로 통과한다 — 현재 신원의 스냅샷이
- * 실패했는데도 보류가 풀리고, 화면은 남의 판 결과로 넘어간다.
- *
- * 같은 파일의 "현재 연결에서 받은 종료 결과는 보존된다"(위)와 이 시험은 **같은 실패 경로**를
- * 쓴다. 판정 기준이 "실패했는가"도 "연결이 바뀌었는가"도 아니라 "그 결과를 받은 범위가 아직
- * 현재인가"임을 두 시험이 함께 고정한다.
- */
 test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정이 받아 둔 종료 결과는 이동 근거로 남지 않는다", async (t) => {
   seedStore({ gameId: "g-auth", playerUuid: "player-1", phase: "NIGHT", dayIndex: 1 })
   seedAuth("player-1")
@@ -1364,15 +1202,12 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   assert.equal(fake.emitWithAckCalls.length, 1, "전제: 마운트가 한 번 물어야 한다")
 
-  // 계정 A가 **이 연결에서** 정상 공개 종료를 받는다(실제 수신 경로와 같은 인자다).
   act(() => {
     deliverTerminalNightResult({ gameId: "g-auth", accountId: "player-1" })
   })
   assert.equal(hasResultNavigationBasis(), true, "전제: 계정 A의 종료 결과가 반영돼야 한다")
   const generationBefore = useAuthStore.getState().identityGeneration
 
-  // A→B→A. 실제 인증 전이(login)로 왕복시킨다 — 계정 값은 원래대로 돌아오고 판·소속·소켓 객체·
-  // sid·연결 상태는 하나도 바뀌지 않는다. 전이 **횟수**만이 이 구간을 남긴다.
   await act(async () => {
     useAuthStore.getState().login({ uuid: "player-2" })
     useAuthStore.getState().login({ uuid: "player-1" })
@@ -1387,7 +1222,6 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 인증 왕복이 재결속 보류를 열어야 한다")
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 현재 신원의 스냅샷을 다시 물어야 한다")
 
-  // 그 요청이 실패한다 — 현재 신원의 사실을 끝내 확인하지 못했다(예산까지 다 쓴 뒤다).
   await rejectAsAckTimeout(clock, fake.emitWithAckCalls[1])
 
   assert.equal(
@@ -1402,7 +1236,6 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
     "종료 잠금 자체는 서버가 확정한 사실이다 — 실패했다고 되돌리지 않는다",
   )
 
-  // 영구 무효가 아니다: 현재 신원의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
   await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   await act(async () => {
     fake.emitWithAckCalls[2].resolve(endedSnapshotResponse({ gameId: "g-auth" }))
@@ -1413,20 +1246,6 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   hook.unmount()
 })
 
-/**
- * F-23(AC-05 보수): **끝맺기도 요청의 범위에 묶인다 — 세대 ref만으로는 부족하다.**
- *
- * 재결속 보류를 끝맺는 두 함수는 요청 세대(epochVersionRef)만 확인했다. 그 값은 effect가 다시
- * 돌아야 오르므로, **신원이 전이했지만 아직 React가 리렌더하지 않은 창**에서는 옛 값 그대로다.
- * 그 창에 도착한 **옛 요청의 stale 응답**은 그래서 "내 세대다"라고 판정하고, 현재 신원이 짊어진
- * 재결속 보류를 풀면서 현재 범위의 종료 결과까지 무효화할 수 있었다.
- *
- * 그 창을 그대로 재현한다. 같은 판에서 내 소속만 바뀌는 전이(이탈→재입장)를 **리렌더 없이**
- * 일으키고(같은 파일의 다른 시험들과 같은 기법이다 — 값만 바꾸면 훅의 deps는 아무것도 움직이지
- * 않는다), 그 창에 옛 요청의 실패 응답을 떨어뜨린다. 옛 응답은 보류도 종료 결과도 건드리지
- * 못해야 하고, 뒤이어 React가 그 전이를 따라잡아 보낸 **현재 요청**은 정상적으로 끝맺어야 한다
- * (앞만 지키면 화면이 영영 갇히고, 뒤만 지키면 옛 응답이 현재 상태를 바꾼다).
- */
 test("F-23(AC-05 보수): 재결속 중 effect 이전의 신원 전이 — 옛 요청의 stale 응답은 보류도 종료 결과도 바꾸지 못한다", async () => {
   seedEndedStore({ gameId: "g-rebind" })
   seedAuth("player-1")
@@ -1441,21 +1260,13 @@ test("F-23(AC-05 보수): 재결속 중 effect 이전의 신원 전이 — 옛 �
   const hook = renderHook(() => useInGameSessionSnapshotSync())
   assert.equal(getInGameSnapshotRebindPending(), false, "전제: 마운트 자체는 전이가 아니다")
 
-  // 실제 재연결이 재결속 보류를 연다 — 이 요청이 곧 "옛 요청"이 된다.
   await emitConnect(fake, () => { fake.socket.id = "sock-2" })
   assert.equal(getInGameSnapshotRebindPending(), true, "전제: 재연결이 재결속 보류를 열어야 한다")
   assert.equal(fake.emitWithAckCalls.length, 2, "전제: 그 연결이 현재 신원의 스냅샷을 물어야 한다")
   const staleRequest = fake.emitWithAckCalls[1]
 
-  // 그 응답을 기다리는 동안 소속이 바뀐다. 훅의 deps(socket·gameId·계정·인증 세대·소속 전이
-  // 세대)는 하나도 움직이지 않으므로 effect는 아직 돌지 않았고, 요청 세대도 그대로다 —
-  // 바로 이 창이 결함이 살던 자리다.
   useInGameStore.getState().state.players[0].membershipId = "mem-2"
 
-  // 보류는 **최종값이 아니라 전이 기록**으로 본다. 옛 응답이 보류를 풀면 그 store 변경이
-  // 곧바로 새 effect를 돌려 보류를 다시 올리므로, 나중에 읽은 최종값은 양쪽이 똑같이 true다 —
-  // 그 값에 기대면 "풀렸다가 되돌아온" 경로가 조용히 통과한다. 옛 응답은 이 값을 한 번도
-  // 건드리지 않아야 한다.
   const pendingTransitions = []
   const unsubscribePending = subscribeInGameSnapshotRebindPending(
     () => pendingTransitions.push(getInGameSnapshotRebindPending()),
@@ -1479,8 +1290,6 @@ test("F-23(AC-05 보수): 재결속 중 effect 이전의 신원 전이 — 옛 �
   assertStoreFactsUnchanged(before, "전이 이전 범위의 옛 응답")
   assert.equal(fake.emitWithAckCalls.length, 2, "옛 응답이 아무것도 바꾸지 않았다면 새 요청도 없다")
 
-  // 이제 React가 그 전이를 따라잡는다(store의 전이 관측을 지나는 정상 커밋이다) — 현재 범위의
-  // 요청이 새로 나가고, 그 응답이 보류를 끝맺는다.
   await act(async () => {
     setMyMembership("mem-2")
     await flushMicrotasks()
@@ -1507,7 +1316,6 @@ test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권�
   useInGameStore.setState({
     gameId: null, state: null, error: null, snapshotSeq: 0, snapshotResultOwner: null,
   })
-  // 빈 store에서 만든 정상 문맥에 "그 사이 이미 소속이 붙었다"는 사실만 얹는다.
   const receipt = {
     ...readInGameReceiptScope({ accountId: "player-1", identityGeneration: null }),
     membershipId: "mem-already-seated",
@@ -1522,18 +1330,9 @@ test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권�
   assertStoreFactsUnchanged(before, "이미 소속을 가진 요청의 bootstrap 응답")
 })
 
-// ---------------------------------------------------------------------------
-// F-25b(AC-06) — 재접속 스냅샷이 임시 사망을 최종 사망으로 보여주지 않는다
-//
-// 실제 소비 경로 그대로다: get_session_snapshot ack → requestSnapshot의 신원·소속·연결 세대
-// 검사 → applySessionSnapshot → applySessionSnapshotPure의 isAlive→alive 변환 → InGamePage의
-// selectInGameDeadParticipantChoice와 행동 패널의 resolveInGameSelfAliveForControls.
-// ---------------------------------------------------------------------------
-
 const { selectInGameDeadParticipantChoice } = await import("../../utils/selectInGameDeadParticipantChoice.js")
 const { resolveInGameSelfAliveForControls } = await import("../../utils/selectInGameSelfAlive.js")
 
-/** 그 밤의 스냅샷 하나를 실제 ack 경로로 흘려보내고, 복원된 canonical state를 돌려준다. */
 async function restoreFromSnapshot(response, { gameId = "g1", playerUuid = "player-1" } = {}) {
   seedStore({ gameId, playerUuid, nickname: "Alice" })
   seedAuth(playerUuid)
@@ -1552,8 +1351,6 @@ async function restoreFromSnapshot(response, { gameId = "g1", playerUuid = "play
 }
 
 test("F-25b(AC-06): 치료 가능성이 해소되지 않은 밤의 스냅샷은 본인을 생존으로 복원하고 사망 선택창을 열지 않는다", async () => {
-  // 서버가 임시 사망 상태를 공개 스냅샷에 담지 않는다는 계약의 소비 쪽 — isAlive:true이고
-  // 현재 밤의 확정 nightResult가 없다.
   const state = await restoreFromSnapshot({
     ...buildValidSnapshotResponse({ gameId: "g1", playerUuid: "player-1", phase: "NIGHT", dayIndex: 0 }),
     nightResult: null,
@@ -1583,7 +1380,6 @@ test("F-25b(AC-06): 치료가 성공한 밤의 최종 스냅샷은 victimUuid가
 
 test("F-25b(AC-06) 대조군: 미치료 밤이 최종 확정된 뒤의 스냅샷에서만 본인이 사망으로 복원되고 선택창이 열린다", async () => {
   const response = buildSnapshotResponseWithNightResult({ gameId: "g1", playerUuid: "player-1", dayIndex: 1 })
-  // 확정된 밤이므로 roster도 사망을 반영한다(서버 buildSessionSnapshot의 isAlive).
   response.players = response.players.map((p) => ({ ...p, isAlive: false }))
 
   const state = await restoreFromSnapshot(response)
@@ -1594,17 +1390,8 @@ test("F-25b(AC-06) 대조군: 미치료 밤이 최종 확정된 뒤의 스냅샷
   assert.equal(resolveInGameSelfAliveForControls(state, null), false)
 })
 
-// ---------------------------------------------------------------------------
-// F-26(AC-01/AC-02/AC-04) — 미완료 성공 사건의 복원과 재가입 보류
-//
-// 이 훅은 복원 payload를 만들지 않는다. 서버 응답의 nightSuccessRecovery를 store의 두 복원
-// 액션에 그대로 넘기고, 그 검증·중복 판정·결속은 store가 소유한다(live 수신과 같은 한 곳이다).
-// 아래 시험들은 그 경계를 실제 ack 경로로만 통과시킨다.
-// ---------------------------------------------------------------------------
-
 const readSuccessQueue = () => useInGameStore.getState().nightSuccessQueue
 
-/** 지금 이 순간의 인증 축(production 호출부와 같은 두 값). */
 function readCurrentAuthScopeForTest() {
   const auth = useAuthStore.getState()
   return {
@@ -1613,7 +1400,6 @@ function readCurrentAuthScopeForTest() {
   }
 }
 
-/** 서버가 복원해 주는 한 사건의 제한 payload(TARGET 전용은 targetId를 담지 않는다). */
 function recoveryPayload({
   gameId = "g1", nightDayIndex = 0, eventId = "ev-recover-1", type = "KILL", perspectives = ["TARGET"],
 } = {}) {
@@ -1622,7 +1408,6 @@ function recoveryPayload({
   return payload
 }
 
-/** 정상 응답 + 복원 배열. 응답 자체는 기존 fixture를 그대로 쓴다(키만 하나 더 붙는다). */
 function snapshotWithRecovery(recovery, { gameId = "g1", playerUuid = "player-1", phase = "NIGHT", dayIndex = 0 } = {}) {
   return {
     ...buildValidSnapshotResponse({ gameId, playerUuid, phase, dayIndex }),
@@ -1630,7 +1415,6 @@ function snapshotWithRecovery(recovery, { gameId = "g1", playerUuid = "player-1"
   }
 }
 
-/** 같은 판을 들고 있는 화면 + 그 계정으로 로그인 + 연결된 소켓 한 벌. */
 function openConnectedHook({ gameId = "g1", playerUuid = "player-1", empty = false } = {}) {
   if (empty) useInGameStore.setState({ gameId: null, state: null, error: null })
   else seedStore({ gameId, playerUuid })
@@ -1655,11 +1439,9 @@ test("F-26(AC-01): 기존 판의 재접속 응답에 실린 미완료 사건이 
 
   assert.equal(useInGameStore.getState().snapshotSeq, seqBefore + 1, "전제: 그 응답은 실제로 반영돼야 한다")
   assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId])
-  // 허용 필드만 복사된다 — TARGET 전용 항목에 targetId가 생기지 않는다.
   assert.deepEqual(Object.keys(readSuccessQueue()[0]).sort(),
     ["eventId", "gameId", "nightDayIndex", "perspectives", "type"])
 
-  // 같은 응답을 다시 받아도(재조회·중복 전달) 큐는 늘지 않는다.
   await act(async () => { fake.socket.triggerConnect() })
   await act(async () => {
     fake.emitWithAckCalls[1].resolve(snapshotWithRecovery([payload]))
@@ -1683,9 +1465,6 @@ test("F-26(AC-01): 빈 store bootstrap도 같은 경로로 복원한다(복원 �
   assert.equal(useInGameStore.getState().gameId, "g1", "전제: 빈 store 복원 자체가 성공해야 한다")
   assert.deepEqual(readSuccessQueue().map((e) => e.eventId), [payload.eventId])
 
-  // 복원 항목의 소유 범위는 **복원 뒤의 현재 범위**다 — 그래야 그 화면이 완료할 수 있다.
-  // 완료는 수락 당시의 범위와 **모든 축**이 같아야 한다 — 계정 축은 실제 인증 store에서 읽는다
-  // (production 소비처도 같은 두 값을 넘긴다).
   const scope = readInGameReceiptScope(readCurrentAuthScopeForTest())
   const outcome = useInGameStore.getState().completeNightSuccess(payload.eventId, scope)
   assert.equal(outcome.status, "sent", `복원된 사건을 완료할 수 없었다: ${JSON.stringify(outcome)}`)
@@ -1703,7 +1482,6 @@ test("F-26(AC-01): 복원 배열이 하나라도 어긋나면 snapshot 전체가
     "not-an-array",
     [recoveryPayload(), { gameId: "g1" }],
     [recoveryPayload({ gameId: "g-other" })],
-    // 다른 밤의 사건은 이 화면의 수명 밖이다.
     [recoveryPayload({ nightDayIndex: 7 })],
   ]) {
     const { fake, hook } = openConnectedHook()
@@ -1725,7 +1503,6 @@ test("F-26(AC-01): 수신 문맥 없이 부른 복원(직접 호출)은 상태�
   seedAuth("player-1")
   const payload = recoveryPayload()
 
-  // 계정 축을 모르는 커밋이다 — 그런 응답으로 개인 사건을 되돌려주지 않는다(fail-closed).
   const seqBefore = useInGameStore.getState().snapshotSeq
   act(() => {
     useInGameStore.getState().applySessionSnapshot(snapshotWithRecovery([payload]))
@@ -1742,13 +1519,10 @@ test("F-26(AC-02): 로컬 완료 기록이 같은 범위의 늦은 복원보다 
     fake.emitWithAckCalls[0].resolve(snapshotWithRecovery([payload]))
     await flushMicrotasks()
   })
-  // 완료는 수락 당시의 범위와 **모든 축**이 같아야 한다 — 계정 축은 실제 인증 store에서 읽는다
-  // (production 소비처도 같은 두 값을 넘긴다).
   const scope = readInGameReceiptScope(readCurrentAuthScopeForTest())
   assert.equal(useInGameStore.getState().completeNightSuccess(payload.eventId, scope).status, "sent")
   assert.deepEqual(readSuccessQueue(), [])
 
-  // 그 뒤에 도착한(보류됐던) 같은 사건의 복원은 재삽입되지 않는다.
   await act(async () => { fake.socket.triggerConnect() })
   await act(async () => {
     fake.emitWithAckCalls[1].resolve(snapshotWithRecovery([payload]))
@@ -1769,7 +1543,6 @@ test("F-26(AC-04): 새 밤으로 들어가는 복원은 이전 밤의 큐를 비
   })
   assert.equal(readSuccessQueue().length, 1)
 
-  // 같은 밤의 재적용(복원 배열 없음)은 큐를 비우지 않는다.
   await act(async () => { fake.socket.triggerConnect() })
   await act(async () => {
     fake.emitWithAckCalls[1].resolve(buildValidSnapshotResponse({ gameId: "g1", phase: "NIGHT", dayIndex: 0 }))
@@ -1777,7 +1550,6 @@ test("F-26(AC-04): 새 밤으로 들어가는 복원은 이전 밤의 큐를 비
   })
   assert.equal(readSuccessQueue().length, 1, "같은 밤 재적용이 큐를 비웠다")
 
-  // 다음 밤으로 들어가면 이전 밤의 사건은 이 밤으로 넘어오지 않는다.
   await act(async () => { fake.socket.triggerConnect() })
   await act(async () => {
     fake.emitWithAckCalls[2].resolve(buildValidSnapshotResponse({ gameId: "g1", phase: "NIGHT", dayIndex: 1 }))
@@ -1800,7 +1572,6 @@ test("F-26(AC-01): SESSION_ROUTING_PENDING은 빈 복원 성공이 아니다 —
   assertStoreFactsUnchanged(before, "재가입 보류 응답")
   assert.deepEqual(readSuccessQueue(), [], "보류 응답이 큐를 만들었다")
 
-  // 250ms 뒤 같은 연결에서 재조회가 나간다(새 connect 없이 이 훅이 스스로 묻는다).
   await act(async () => {
     await new Promise((resolve) => { setTimeout(resolve, 400) })
     await flushMicrotasks()
@@ -1836,17 +1607,6 @@ test("F-26(AC-01): 언마운트·새 세대는 예약된 재조회를 취소한�
     "언마운트 뒤에도 예약된 재조회가 요청을 보냈다")
 })
 
-// ---------------------------------------------------------------------------
-// F-26(AC-01/AC-06) · 재조회 예산을 **가짜 시계**로 본다
-//
-// 이 훅의 재조회는 250ms 간격 · 총 5초 · 최대 20회다. 실제 타이머로는 두 가지를 볼 수 없다:
-//   · 상한(20회)까지 도는 데 실제로 5초가 걸린다.
-//   · **예약과 실행 사이에 시간이 더 흘렀다**(탭 비활성화·긴 동기 작업·디버거 정지)를 만들 수
-//     없다 — 바로 그 창이 타이머 콜백의 deadline 재검사가 막는 자리다.
-//
-// 가로채는 것은 재조회 간격(250ms)의 setTimeout과 Date.now뿐이다. 다른 지연은 실제 타이머로
-// 그대로 흘려보내 React·testing-library의 스케줄을 건드리지 않는다.
-// ---------------------------------------------------------------------------
 function installRetryClock() {
   const realSetTimeout = globalThis.setTimeout
   const realClearTimeout = globalThis.clearTimeout
@@ -1868,7 +1628,6 @@ function installRetryClock() {
   }
   Date.now = () => now
 
-  /** 지금 시각 기준으로 만기된 예약을 **등록 순서가 아니라 만기 순서로** 하나씩 실행한다. */
   async function fireDue() {
     for (;;) {
       let dueId = null
@@ -1889,14 +1648,11 @@ function installRetryClock() {
   }
 
   return {
-    /** 시계를 ms만큼 진행시키고 그 사이 만기된 재조회를 실행한다. */
     async advance(ms) {
       now += ms
       await fireDue()
     },
-    /** 예약을 **실행하지 않은 채** 시계만 민다(만기된 타이머가 뒤늦게 깨어나는 창을 만든다). */
     skip(ms) { now += ms },
-    /** 지금 예약돼 있는 재조회 타이머 수(동시 1요청 계약의 관측점이기도 하다). */
     pending: () => scheduled.size,
     restore() {
       globalThis.setTimeout = realSetTimeout
@@ -1907,19 +1663,7 @@ function installRetryClock() {
   }
 }
 
-/**
- * F-26(AC-01): **ack 창이 만료되어 도착한 거부** — 실제 timeout을 그대로 재현한다.
- *
- * 그냥 reject를 떨어뜨리는 것은 "예산 안에서 **일찍** 거부됐다"는 다른 사건이다(그 경로는 같은
- * 연결에서 남은 예산으로 다시 묻는다 — 이 파일 끝의 두 시험이 그것을 고정한다). 진짜 timeout은
- * 그 시도의 ack 창(= 남은 예산 전체)이 다 흐른 뒤에만 도착하므로, 시계를 예산 밖으로 민 뒤에
- * 거부해야 두 사건이 섞이지 않는다. 아래 시험들이 검사하는 것은 **끝맺기** 쪽이다.
- *
- * @param {ReturnType<typeof installRetryClock>} clock 이 시험이 쥐고 있는 가짜 시계
- * @param {{reject: Function}} request 그 시도의 ack 요청
- */
 async function rejectAsAckTimeout(clock, request) {
-  // 총 예산(5초) 밖으로 민다 — 이 시점에는 그 시도의 ack 창도 함께 만료돼 있다.
   clock.skip(6000)
   await act(async () => {
     request.reject(new Error("operation has timed out"))
@@ -1927,10 +1671,6 @@ async function rejectAsAckTimeout(clock, request) {
   })
 }
 
-/**
- * 전송 자체가 실패하는(아무 것도 나가지 않는) 연결. `attempts`가 **시도 횟수**를 세고,
- * `failing = false`로 바꾸면 그 다음 시도부터 평범한 ack 요청이 된다.
- */
 function createFailingTransportSocket({ id = "sock-1" } = {}) {
   const fake = createFakeSessionSnapshotSocket()
   fake.socket.connected = true
@@ -1960,7 +1700,6 @@ test("F-26(AC-06): 예약된 재조회는 실행 시점에 예산을 다시 검�
       "재시도 예산이 남았는데 첫 전송 실패가 곧바로 실패로 확정됐다")
     assert.equal(clock.pending(), 1, "전제: 남은 예산으로 재조회가 예약돼야 한다")
 
-    // 예약은 그대로 둔 채 시계만 예산 밖으로 민다 — 그 뒤에 타이머가 깨어난다.
     clock.skip(6000)
     await clock.advance(0)
 
@@ -1984,7 +1723,6 @@ test("F-26(AC-06): 같은 연결의 재조회는 최대 20회까지만 나가고
     const hook = renderHook(() => useInGameSessionSnapshotSync())
 
     assert.equal(fake.attempts, 1)
-    // 상한을 넘겨 가며 시계를 민다 — 상한이 실제로 존재한다면 어느 시점부터 시도가 멈춘다.
     for (let i = 0; i < 30; i += 1) await clock.advance(250)
 
     assert.equal(fake.attempts, 20, "재조회 상한(최초 시도 포함 20회)이 지켜지지 않았다")
@@ -2009,7 +1747,6 @@ test("F-26(AC-01): 일시적인 전송 실패 뒤 다음 재조회가 성공하�
     assert.equal(fake.attempts, 1)
     assert.equal(fake.emitWithAckCalls.length, 0, "전제: 첫 시도는 아무 것도 보내지 못했다")
 
-    // 전송 경로가 회복된다 — 다음 예약이 깨어나면 평범한 조회가 나간다.
     fake.failing = false
     await clock.advance(250)
     assert.equal(fake.attempts, 2, "전송 실패 뒤 예약된 재조회가 나가지 않았다")
@@ -2035,19 +1772,6 @@ test("F-26(AC-01): 일시적인 전송 실패 뒤 다음 재조회가 성공하�
   }
 })
 
-// ---------------------------------------------------------------------------
-// F-26(AC-01/AC-06) · **예산 안에서 일찍 도착한 비동기 거부**
-//
-// 전송이 동기 예외로 죽는 경우(위 createFailingTransportSocket)와 달리, 요청은 나갔는데 ack
-// 창이 다 흐르기 전에 Promise가 거부되는 경우가 있다 — 연결이 닫히는 중이라 emit이 실패하거나,
-// 직렬화·어댑터 오류이거나, 서버가 ack를 오류로 돌려주는 경우다. 그 거부를 timeout과 같이
-// 취급해 그 자리에서 끝맺으면 예산이 몇 초 남았는데도 이 연결은 다시 묻지 않는다.
-//
-// 그래서 두 축을 함께 고정한다: (i) 예산이 남았으면 실패로 굳지 않고 다시 묻는다, (ii) 그래도
-// **유한하다** — 거부가 계속되면 예산·상한 안에서 끝나고 전송 횟수가 상한을 넘지 않는다.
-// ---------------------------------------------------------------------------
-
-/** 그 시도의 ack가 창이 다 흐르기 전에 거부된다(timeout이 아니다 — 시계를 밀지 않는다). */
 async function rejectEarly(request) {
   await act(async () => {
     request.reject(new Error("connection closed before ack"))
@@ -2058,7 +1782,6 @@ async function rejectEarly(request) {
 test("F-26(AC-01): 예산 안에서 일찍 거부된 전송은 실패로 굳지 않고, 다음 시도의 성공이 그대로 복원한다", async (t) => {
   const clock = installRetryClock()
   t.after(() => clock.restore())
-  // 빈 store로 연다 — bootstrapStatus가 'checking'에서 시작하므로 "실패로 굳었는가"가 보인다.
   const { fake, hook } = openConnectedHook({ empty: true })
   assert.equal(fake.emitWithAckCalls.length, 1, "전제: 마운트가 한 번 물어야 한다")
 
@@ -2068,7 +1791,6 @@ test("F-26(AC-01): 예산 안에서 일찍 거부된 전송은 실패로 굳지 
     "예산이 남았는데 이른 비동기 거부가 곧바로 실패로 확정됐다")
   assert.equal(clock.pending(), 1, "이른 비동기 거부 뒤 같은 연결의 재조회가 예약되지 않았다")
 
-  // 다음 시도가 나가고, 이번에는 평범하게 성공한다.
   await clock.advance(250)
   assert.equal(fake.emitWithAckCalls.length, 2, "예약된 재조회가 나가지 않았다")
   assert.deepEqual(fake.emitWithAckCalls[1].payload, {}, "빈 store의 재조회는 gameId 없이 묻는다")
@@ -2094,8 +1816,6 @@ test("F-26(AC-06): 이른 비동기 거부가 예산이 다할 때까지 이어�
   t.after(() => clock.restore())
   const { fake, hook } = openConnectedHook({ empty: true })
 
-  // 나가는 요청마다 창이 흐르기 전에 거부된다 — 재시도가 살아 있는 한 이 순환은 계속된다.
-  // 상한이 없다면 이 반복은 40회를 다 돌고 시도 수도 그만큼 늘어난다.
   for (let i = 0; i < 40; i += 1) {
     const attempt = fake.emitWithAckCalls[i]
     if (attempt) await rejectEarly(attempt)

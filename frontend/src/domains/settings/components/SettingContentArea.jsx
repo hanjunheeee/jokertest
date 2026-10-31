@@ -1,4 +1,3 @@
-// 파일 역할: SettingContentArea.jsx - 화면을 구성하는 컴포넌트입니다.
 import GeneralSettingsTab from "@/domains/settings/components/tabs/GeneralSettingsTab.jsx"
 import SoundSettingsTab from "@/domains/settings/components/tabs/SoundSettingsTab.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
@@ -15,7 +14,6 @@ function SettingTabContent({ activeTab }) {
   return null
 }
 
-/** 선택된 설정 탭의 본문과 커스텀 스크롤바를 렌더링합니다. */
 export default function SettingContentArea({ activeTab, visible }) {
   const { listRef, scrollbarBox } = useScrollbarSync(activeTab, visible)
 

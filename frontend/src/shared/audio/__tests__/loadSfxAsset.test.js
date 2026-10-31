@@ -2,20 +2,8 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 
-// ---------------------------------------------------------------------------
-// F-16 AC-02 · 자산 로더 계약.
-//
-// "허용 metadata만으로 파일 일치를 보장하지 않으므로, 로드한 데이터의 해시가 검토 기록과
-// 일치한 뒤에만 매체에 전달한다"를 **실제 production 로더 코드**로 검증한다. fetch·digest·
-// Blob·ObjectURL만 주입해, 바이트가 다른 fixture가 실제로 차단되는지를 확인한다.
-//
-// 이 시험은 실제 배포 자산의 이용 조건 검토도, 청음도 아니다 — 그 둘은 외부 입력 의존으로
-// 여전히 미제공이다.
-// ---------------------------------------------------------------------------
-
 const { createSfxAssetLoader, toHex } = await import("../loadSfxAsset.js")
 
-/** node의 실제 SHA-256으로 digest를 대신한다(브라우저 crypto.subtle과 같은 알고리즘). */
 const nodeDigest = async (bytes) => {
   const hash = createHash("sha256")
   hash.update(Buffer.from(new Uint8Array(bytes)))
@@ -66,20 +54,17 @@ test("AC-02 검토 해시와 실제 바이트가 일치하면 그 바이트로 �
 
   assert.equal(loaded.sha256, entry.sha256)
   assert.equal(loaded.src, "blob:fixture/0")
-  // 검증한 바로 그 바이트로 blob을 만들었는지 — 원래 URL을 다시 받아오지 않는다.
   assert.deepEqual(new Uint8Array(created[0].blob.bytes), new Uint8Array(bytesOf(APPROVED_BYTES)))
   assert.equal(created[0].blob.type, "audio/wav")
 })
 
 test("AC-02 실제 바이트가 다르면 매체 소스를 아예 만들지 않는다", async () => {
-  // 경로·검토 기록은 그대로인데 서버가 내려주는 내용만 바뀐 상황이다.
   const { loader, created } = makeLoader({ body: TAMPERED_BYTES })
 
   const loaded = await loader(entry, alive)
 
   assert.notEqual(loaded.sha256, entry.sha256)
   assert.equal(loaded.sha256, sha256Of(TAMPERED_BYTES))
-  // 불일치면 blob URL 자체가 없다 — 검증되지 않은 바이트로는 소스가 존재하지 않는다.
   assert.equal(loaded.src, null)
   assert.equal(created.length, 0)
 })
@@ -104,7 +89,6 @@ test("AC-04 범위가 이미 바뀐 뒤에는 네트워크 요청조차 시작�
 test("AC-04 받아오는 도중 범위가 바뀌면 blob URL을 만들지 않는다", async () => {
   const { loader, created } = makeLoader()
   let calls = 0
-  // 첫 확인(요청 전)은 통과하고, 두 번째 확인(응답 후)에서 취소된 상태가 된다.
   const control = {
     isCancelled: () => {
       calls += 1

@@ -1,4 +1,3 @@
-// 파일 역할: SettingTabs.jsx - 화면을 구성하는 컴포넌트입니다.
 import { SETTING_ASSETS } from "../constants/settingAssets.js"
 import { SETTING_TABS } from "../constants/settingTabs.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -15,7 +14,6 @@ const TAB_LABEL_CLASS =
 const TAB_NAV_CLASS =
   "mb-[clamp(0.55rem,1.3vh,0.75rem)] flex items-center justify-center gap-[clamp(0.48rem,1.08vw,0.75rem)]"
 
-/** 설정 탭 버튼 한 개입니다. */
 function SettingTabButton({ tab, active, onSelect }) {
   return (
     <button
@@ -34,7 +32,6 @@ function SettingTabButton({ tab, active, onSelect }) {
   )
 }
 
-/** 일반/사운드 탭 선택 영역입니다. */
 export default function SettingTabs({ activeTab, onSelect }) {
   return (
     <nav className={TAB_NAV_CLASS} aria-label="설정 탭">

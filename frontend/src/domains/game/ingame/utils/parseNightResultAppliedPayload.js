@@ -1,18 +1,5 @@
 import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
 
-/**
- * night_result_applied 방송을 검증·정규화한다. 신뢰하지 않는 외부 입력이므로 top-level 형태,
- * gameId 일치, dayIndex 단조성, canonical roster 정합성(누락/추가/중복 uuid), victim/alive
- * 일관성을 전부 통과해야만 정규화된 payload를 돌려준다 — 하나라도 위반하면 null(완전한
- * no-op)이다. canonicalPlayerIds는 호출부가 현재 store의 participant uuid 집합을 넘긴다.
- *
- * previouslyDeadUuids는 이번 밤 이전에 이미 사망한 참가자 uuid 집합이다(예: 첫 DAY/TRIBUNAL
- * 사이클의 처형자, 이전 밤의 희생자). buildNightResultAppliedPayload는 매번 전체 roster의
- * alive 상태를 보내므로, 두 번째 이후 밤부터는 payload.players에 과거 사망자가 계속 포함된다
- * — victimUuid 하나만으로 사망자 수를 검증하면(과거엔 "사망자는 항상 0명 또는 victimUuid
- * 하나"라고 가정했다) 과거 사망자가 남아있는 정상적인 두 번째 밤 결과가 거부된다. 지정하지
- * 않으면 빈 Set으로 취급한다(첫 밤 시나리오와 호환).
- */
 export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, canonicalPlayerIds, previouslyDeadUuids }) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null
 
@@ -21,9 +8,6 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
   if (!gameId || payloadGameId !== gameId) return null
   if (!(canonicalPlayerIds instanceof Set) || canonicalPlayerIds.size === 0) return null
 
-  // 게임 종료(ENDED) payload는 DAY 전이 없이 도착할 수 있다(승리 조건이 밤 사망 직후 확정되면
-  // dayIndex가 증가하지 않고 그대로 유지된다) — 아래 "phase !== 'DAY'" 조기 반환이 이 payload를
-  // 걸러내기 전에 먼저 검증·통과시켜야 한다(순서 주의).
   if (phase === "ENDED") {
     if (!Number.isInteger(payloadDayIndex)) return null
     if (typeof dayIndex !== "number" || payloadDayIndex !== dayIndex) return null
@@ -81,7 +65,6 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
     normalizedPlayers.push({ uuid: player.uuid, alive: player.alive })
   }
 
-  // 개수와 부분집합 관계가 함께 성립하면 집합이 정확히 동일하다는 뜻이다(누락/추가 둘 다 차단).
   if (seenUuids.size !== canonicalPlayerIds.size) return null
   for (const uuid of seenUuids) {
     if (!canonicalPlayerIds.has(uuid)) return null

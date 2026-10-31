@@ -20,7 +20,6 @@ import FriendListFilterResults from "@/domains/lobby/components/friendList/list/
 import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendListSearchBar.jsx"
 import FriendListFolder from "@/domains/lobby/components/friendList/list/FriendListFolder.jsx"
 
-// 일반/오프라인/즐겨찾기 그룹을 폴더로 보여줍니다.
 function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends, invite, block }) {
   return (
     <>
@@ -51,7 +50,6 @@ function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends
   )
 }
 
-// 친구 목록 탭에서 검색바와 친구 그룹 3개를 보여주는 컴포넌트입니다.
 export default function FriendListTabContent({
   onlineFriends = [],
   offlineFriends = [],
@@ -79,7 +77,6 @@ export default function FriendListTabContent({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      {/* 조회 실패를 빈 목록으로 위장하지 않는다 — 사실과 재시도를 함께 보여준다(AC-02). */}
       {friendsError !== null ? (
         <p role="status" data-friend-list-error="true" className={`px-2 ${FRIEND_LIST_STATUS_ERROR_CLASS}`}>
           {friendsError}

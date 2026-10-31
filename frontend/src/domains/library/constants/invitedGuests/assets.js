@@ -1,4 +1,3 @@
-/** 초대받은 자들 — public 에셋 경로 */
 export const INVITED_GUESTS_ASSETS = {
   jobTabActive: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
   jobTabInactive: "/button/버튼(미선택).png",
@@ -19,7 +18,6 @@ export const INVITED_GUESTS_ASSETS = {
     "/shopItem/player- profileborder/프로필프레임-마녀사냥꾼.png".normalize("NFD"),
 }
 
-/** 도전과제 보상 — 인게임 재화 아이콘 */
 export const INVITED_GUESTS_CURRENCY_ASSETS = {
   gold50: "/shopItem/ingame-money/coin/금화-50.png".normalize("NFD"),
   diamond10: "/shopItem/ingame-money/diamond/다이아-10.png".normalize("NFD"),
@@ -27,7 +25,6 @@ export const INVITED_GUESTS_CURRENCY_ASSETS = {
 
 const PROFILE_BORDER_BASE = "/shopItem/player- profileborder/"
 
-/** [DEV] 랭킹 더미 — 프로필 테두리 풀 */
 export const INVITED_GUESTS_DUMMY_PROFILE_BORDERS = [
   `${PROFILE_BORDER_BASE}프로필프레임-공작.png`,
   `${PROFILE_BORDER_BASE}프로필프레임-후작.png`,

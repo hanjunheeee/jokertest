@@ -1,10 +1,8 @@
-// 파일 역할: GameSetupPageControls.jsx - 화면을 구성하는 컴포넌트입니다.
 import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
-/** 게임 만들기 화면의 사운드 버튼과 뒤로가기 버튼입니다. */
 export default function GameSetupPageControls({ visible, onBack }) {
   return (
     <>

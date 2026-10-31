@@ -1,5 +1,3 @@
-// 생성 파일 — 직접 고치지 말 것. scripts/gen-sfx.mjs가 frontend/public/sfx/*.wav와 함께 만든다.
-// 각 항목의 sha256은 그 파일의 실제 바이트 해시다(sfxManifest가 로드 시 대조한다).
 export const SFX_GENERATED_ASSETS = Object.freeze({
   "ui-click": { src: "/sfx/ui-click.wav", sha256: "9dcfa1c260496e21f5efb41dc52a79a07b733edf587f0a7b34c835ab40eb39b8", durationMs: 90 },
   "ui-confirm": { src: "/sfx/ui-confirm.wav", sha256: "863cee6b6ec2e0de1cfb471f8feabe1c39d89a18e8e53f08a04c758c29f06e90", durationMs: 260 },

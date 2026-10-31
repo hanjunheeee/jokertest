@@ -1,27 +1,15 @@
 'use strict';
 
-// F-02: 회원가입 입력 검증. frontend/src/domains/auth/validation/signupValidation.js와
-// 규칙(길이·문자셋·날짜 파싱)을 동일하게 유지해야 한다 — 두 파일은 모듈 시스템이 달라(ESM/
-// CommonJS) 코드를 그대로 공유할 수 없으므로, tests/fixtures/f02-signup-validation.json의
-// 같은 벡터를 양쪽 테스트가 돌려 판정이 갈리지 않는지 확인한다.
-
 const NICKNAME_MIN_LENGTH = 2;
 const NICKNAME_MAX_LENGTH = 8;
 const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/;
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 64;
-// bcrypt는 72바이트를 넘는 입력을 조용히 잘라서 해시한다 — 문자 수 상한(64)만으로는
-// 멀티바이트 문자(한글 등)가 섞인 입력이 72바이트를 넘는 경우를 걸러내지 못해, 사용자가
-// 입력한 값과 실제로 해시되는 값이 달라질 수 있다.
 const PASSWORD_MAX_BYTES = 72;
 
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-// 'YYYY-MM-DD'를 로컬 타임존과 무관하게 UTC 자정 Date로 만든다. new Date(str)의 브라우저/
-// 서버별 파싱차이나 new Date(y,m,d)의 로컬 타임존 조합을 쓰면 실행 위치에 따라 하루가 밀릴
-// 수 있어, Date.UTC로만 만들고 그 결과를 다시 UTC 필드로 되읽어 2월 30일 같은 존재하지
-// 않는 날짜(달력 롤오버)를 걸러낸다.
 const parseIsoDateUtc = (value) => {
     if (typeof value !== 'string') return null;
     const match = ISO_DATE_PATTERN.exec(value);
@@ -57,8 +45,6 @@ const validateNickname = (nickname) => {
     return { ok: true, value: trimmed };
 };
 
-// 반환값은 UTC 자정 Date다 — 그대로 users.birth_date(Sequelize DATE, 기본 timezone
-// '+00:00')에 저장하면 삽입·조회 모두 같은 UTC 오프셋을 거치므로 날짜가 하루 밀리지 않는다.
 const validateBirthDate = (birthDate) => {
     if (typeof birthDate !== 'string' || !birthDate.trim()) {
         return { ok: false, message: '생년월일을 입력해주세요.' };
@@ -93,9 +79,6 @@ const validatePasswordConfirm = (password, passwordConfirm) => {
     return { ok: true };
 };
 
-// 요청 바디에서 허용된 필드(email/password/passwordConfirm/nickname/birthDate)만 꺼내
-// 검증한다. role/status/email_verified 같은 관리 필드가 실려 와도 이 함수의 반환값에는
-// 절대 담기지 않는다 — auth.service.js의 signup은 이 value만 사용해 저장 payload를 만든다.
 const validateSignupPayload = (payload) => {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
         return { ok: false, message: '요청 형식이 올바르지 않습니다.', status: 400 };

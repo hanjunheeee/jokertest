@@ -1,18 +1,5 @@
 'use strict';
 
-// CO S-1(AC-01): getAccountRecordSummaries — 인게임 전적 목록이 쓰는 "계정 총 판수·승률"의
-// 유일한 원천을 실제 격리 MySQL에서 검증한다.
-//
-// 인메모리 fake db로는 확정할 수 없는 것만 여기서 본다: user_id IN (...) 일괄 조회가 여러
-// 계정을 정말 한 번에 갈라 돌려주는지, settings(JSON) JOIN 필터가 실제 왕복에서도
-// development·test 출처를 걸러내는지, MySQL이 TINYINT로 돌려주는 won/is_alive가 정규화를
-// 거쳐 집계까지 도달하는지, 그리고 역할이 여럿인 계정의 승률이 **역할별 승률의 평균이 아니라
-// 판수 가중 합산**인지.
-//
-// roleStatistics.mysql.test.js와 같은 원칙을 따른다: F01_TEST_DATABASE_URL 전용 격리 MySQL,
-// backend/tests/helpers/isolatedTestDb.js의 관리 목록·대상 DB 확인. 값이 없으면 실패로
-// 표시하지 않고 명시적으로 skip하며 **미검증**임을 남긴다.
-
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 
@@ -60,8 +47,6 @@ const unavailable = (t) => {
     return false;
 };
 
-// require 캐시 싱글턴이라, 파일 맨 위에서 맞춰둔 process.env.DATABASE_URL로 처음 require되는
-// 이 시점에 격리 DB에 연결된다(roleStatistics.mysql.test.js와 같은 이유·같은 자리).
 const db = require('../../models');
 const gameResultRepository = require('../gameResult.repositories');
 const { hashPassword } = require('../../utils/hash');
@@ -113,7 +98,6 @@ const makeEndedSession = (playersMap, overrides = {}) => ({
     ...overrides,
 });
 
-/** 승패가 확정된 한 판을 실제 저장 경로로 심는다(winner와 team이 같으면 승리다). */
 const seedFinishedGame = async (uuid, role, { winner = 'CITIZEN', gameSource = 'production' } = {}) => {
     const session = makeEndedSession(new Map([makePlayer(uuid, role, true)]), {
         winResult: { winner },
@@ -124,8 +108,6 @@ const seedFinishedGame = async (uuid, role, { winner = 'CITIZEN', gameSource = '
     return session.id;
 };
 
-// ── AC-01 ────────────────────────────────────────────────────────────────────
-
 test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정도 판수 가중 합산으로 {3, 67}을 돌려준다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -135,16 +117,13 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
     const excludedOnly = await createLocalUser('excl');   // development·test 출처만 있음
     const leaver = await createLocalUser('leav');         // 중단 경기의 이탈자(잔류자 대조용)
 
-    // 집계에 들어가야 하는 3판(2승) — 시민 1승 1패, 광대 1승.
     await seedFinishedGame(withRecords, 'CITIZEN', { winner: 'CITIZEN' });
     await seedFinishedGame(withRecords, 'CITIZEN', { winner: 'JOKER' });
     await seedFinishedGame(withRecords, 'JOKER', { winner: 'JOKER' });
 
-    // 집계에서 빠져야 하는 판들 — 하나라도 새어 들어오면 아래 {3, 67}이 깨진다.
     await seedFinishedGame(withRecords, 'CITIZEN', { winner: 'CITIZEN', gameSource: 'development' });
     await seedFinishedGame(withRecords, 'CITIZEN', { winner: 'CITIZEN', gameSource: 'test' });
 
-    // 중단 경기의 잔류자(won=null). 이탈자만 패배로 확정되고 잔류자는 미확정으로 남는다.
     const abortedSession = makeEndedSession(new Map([
         makePlayer(withRecords, 'CITIZEN', true),
         makePlayer(leaver, 'CITIZEN', true),
@@ -155,7 +134,6 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
     });
     assert.equal(abortedRow.won, null, '잔류자의 승패는 미확정(null)이어야 이 시험이 그 제외를 검증한다');
 
-    // 5개 고정 역할 밖의 옛 역할 코드가 남아 있는 행(정책이 모르는 역할은 세지 않는다).
     const legacyGameId = crypto.randomUUID();
     await db.GameResult.create({
         id: legacyGameId,
@@ -180,7 +158,6 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
         death_reason: null,
     });
 
-    // excludedOnly에는 제외 출처의 판만 있다.
     await seedFinishedGame(excludedOnly, 'CITIZEN', { winner: 'CITIZEN', gameSource: 'development' });
     await seedFinishedGame(excludedOnly, 'GUARD', { winner: 'CITIZEN', gameSource: 'test' });
 
@@ -211,11 +188,8 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
         'development·test 출처의 판만 있는 계정은 0판이어야 한다',
     );
 
-    // 역할별 승률의 평균(50% + 100% ÷ 2 = 75%)이 아니라 판수 가중 합산(2/3 = 67%)이다.
     assert.notEqual(summaries.get(withRecords).winRate, 75, '역할별 승률 평균으로 계산하면 안 된다');
 
-    // 같은 계정을 서고 통계(역할별)로 물어도 판수·승수 합계가 정확히 일치해야 한다 — 두 화면이
-    // 같은 계정에 대해 다른 전적을 말하면 둘 중 하나는 반드시 거짓이다.
     const roleStats = await gameResultRepository.getMyRoleStatistics(withRecords);
     const roleGames = roleStats.reduce((sum, entry) => sum + entry.games, 0);
     const roleWins = roleStats.reduce((sum, entry) => sum + entry.wins, 0);
@@ -244,8 +218,6 @@ test('AC-01: 빈 목록은 DB를 건드리지 않고 빈 Map을 돌려주고, �
     const uuid = await createLocalUser('dup');
     await seedFinishedGame(uuid, 'DOCTOR', { winner: 'CITIZEN' });
 
-    // 저장 경로도 game_result_players를 읽는다(most_played_role 갱신) — 이 시험이 세려는 것은
-    // 조회 함수 자신의 왕복뿐이므로 시드가 끝난 지점에서 다시 0부터 센다.
     queries = 0;
     const summaries = await gameResultRepository.getAccountRecordSummaries([uuid, uuid, uuid]);
     assert.equal(queries, 1, '중복이 있어도 조회는 한 번이어야 한다');

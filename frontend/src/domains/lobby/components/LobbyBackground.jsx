@@ -8,7 +8,6 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-/** 로비 배경 PNG + 인트로 영상 */
 export default function LobbyBackground({ bgVideoRef, uiVisible, onSkipIntro }) {
   return (
     <>

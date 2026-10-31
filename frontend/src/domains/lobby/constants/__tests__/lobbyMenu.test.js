@@ -7,7 +7,6 @@ function findMenuItem(id) {
 }
 
 test("로비 메뉴에 게임 플레이·상점·도서관·설정 항목이 모두 있다", () => {
-  // F-18(AC-05): 포디움(명예의 전당)만 빠지고 나머지 메뉴의 라벨·이미지 계약은 그대로다.
   const expectedLabels = {
     gameplay: "게임플레이",
     store: "상점",
@@ -21,14 +20,12 @@ test("로비 메뉴에 게임 플레이·상점·도서관·설정 항목이 모
     assert.ok(item, `로비 메뉴에 ${id} 항목이 없습니다.`)
     assert.equal(item.label, label)
 
-    // 메뉴 버튼 이미지가 비어 있으면 화면에 아무것도 그려지지 않습니다.
     assert.equal(typeof item.src, "string")
     assert.ok(item.src.length > 0, `${id} 메뉴 버튼 이미지 경로가 비어 있습니다.`)
   }
 })
 
 test("F-18 AC-05: 명예의 전당 메뉴 항목이 로비 메뉴 목록에 남아 있지 않다", () => {
-  // 렌더 입력 배열 자체에서 사라져야 숨은 버튼·빈 슬롯·키보드 포커스 항목이 남지 않는다.
   assert.equal(findMenuItem("hallOfFame"), undefined, "hallOfFame 메뉴 항목이 아직 남아 있습니다.")
   assert.equal(
     LOBBY_MENU_ITEMS.some((item) => item.label === "명예의 전당"),

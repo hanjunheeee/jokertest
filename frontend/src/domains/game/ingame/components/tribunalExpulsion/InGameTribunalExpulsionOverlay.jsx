@@ -11,10 +11,6 @@ import {
   INGAME_TRIBUNAL_EXPULSION_VIDEO_WRAP_CLASS,
 } from "../../constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
 
-/**
- * TRIBUNAL GUILTY 추방 연출 — 게임 열 기준 영상(80%) → 마지막 프레임 고정 → 어둡게 페이드 → 신라문화체 안내.
- * InGamePage(relative) 안에서 absolute로 그려져 좌우 배너를 침범하지 않는다.
- */
 export default function InGameTribunalExpulsionOverlay({
   open = false,
   presentationId = null,

@@ -5,14 +5,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// mergeInvitedGuestsSpreads.js/pages.js는 JSX가 없는 순수 .js라 실제로 실행해 검증한다 —
-// 더미 대체 제거(AC-06)와 랭킹 전체 목록 보존(AC-03/A-10)의 핵심 로직이 여기 있다.
-//
-// F-18(AC-06): InvitedGuestsSpread.jsx/InvitedGuestsMasteryRanking.jsx는 예전에 "이 저장소의
-// node:test로는 .jsx를 마운트할 수 없다"는 이유로 소스 텍스트 배선 검사로 대체돼 있었다.
-// testSupport/jsxNodeLoaderHooks.mjs가 그 제약을 없앴으므로, 명예의 전당 진입을 끊은 뒤에도
-// 기억의 서고의 직업별 판수·승률·랭킹이 계속 동작하는지를 **실제 소비처를 jsdom에 마운트해**
-// 확인하는 검증을 이 파일 아래쪽에 보완한다. 기존 소스 배선 검사는 잃지 않도록 그대로 남긴다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -40,8 +32,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 register(new URL("../../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
-// 서버 조회(/user/me/role-statistics · /user/role-statistics/ranking · 업적)만 경계에서
-// 갈아끼운다 — store·merge·탭·표는 전부 실제 production 코드가 돈다.
 let myRoleStatisticsHandler = async () => []
 let roleRankingHandler = async () => ({ ranking: [] })
 let achievementsHandler = async () => []
@@ -70,13 +60,10 @@ const bigRanking = (n) => Array.from({ length: n }, (_, i) => ({
   rank: i + 1, uuid: `u${i}`, nickname: `닉${i}`, profile_image_url: null, games: 10 + i, wins: i, winRate: i / (10 + i),
 }))
 
-// ── AC-06: 다른 직업 데이터로 대체하는 noble 폴백이 완전히 제거됐다 ──────────────
-
 test("mergeInvitedGuestsSpreads: clown 상태가 비어 있어도 noble(귀족) 데이터로 대체되지 않는다", () => {
   const jobState = {
     byJobKey: {
       noble: { status: "success", myStats: { games: 50, wins: 40, survivalCount: 20, winRate: 0.8 }, ranking: bigRanking(3), error: null },
-      // clown은 아예 요청 전(idle) — 기본값으로 채워진다.
     },
   }
 
@@ -100,8 +87,6 @@ test("mergeInvitedGuestsSpreads: 0판(games:0)인 내 전적은 다른 직업 �
   assert.deepEqual(guardPage.left.myStats, { playCount: 0, winRate: "0%", survivalCount: 0 })
   assert.deepEqual(guardPage.right.ranking, [])
 })
-
-// ── AC-03/A-10: 랭킹은 상위 5명으로 잘리지 않고 전체가 그대로 전달된다 ───────────
 
 test("mergeInvitedGuestsSpreads: 서버가 돌려준 랭킹 전체가 잘리지 않고 그대로 나간다(예전 5명 상한 없음)", () => {
   const jobState = {
@@ -142,8 +127,6 @@ test("mergeInvitedGuestsSpreads: jobState 없이 불러도(=INVITED_GUESTS_PAGES
   }
 })
 
-// ── AC-06: pages.js가 더 이상 [DEV] 더미 상태를 import하지 않는다 ───────────────
-
 test("pages.js는 더 이상 invitedGuestsDevState([DEV] 더미)를 import하지 않는다", async () => {
   const source = await readFile(new URL("../../../content/invitedGuests/pages.js", import.meta.url), "utf8")
   assert.equal(/^import .*invitedGuestsDevState/m.test(source), false)
@@ -156,17 +139,12 @@ test("getInvitedGuestsPage(pageIndex, jobState)로 특정 직업의 런타임 �
   assert.equal(page.left.myStats.playCount, 5)
 })
 
-// ── AC-03/AC-06: InvitedGuestsSpread.jsx/InvitedGuestsMasteryRanking.jsx 소스 배선 ──
-// (JSX 파일이라 렌더할 수 없다 — 실제 마운트 검증은 K0145/X0566 anchor 파일의 소스에서
-// 요청·재시도·페이지 이동이 실제로 연결돼 있는지를 텍스트로 확인한다.)
-
 test("InvitedGuestsSpread.jsx: roleStatistics.store를 구독해 선택한 직업을 요청하고, 재시도 버튼이 retryJob을 부른다", async () => {
   const source = await readFile(new URL("../InvitedGuestsSpread.jsx", import.meta.url), "utf8")
 
   assert.equal(source.includes("useRoleStatisticsStore"), true)
   assert.equal(source.includes("requestJob"), true)
   assert.equal(source.includes("retryJob"), true)
-  // getInvitedGuestsPage가 실제로 jobState를 넘겨 받는지(더 이상 인자 없이 부르지 않는지).
   assert.equal(/getInvitedGuestsPage\(jobIndex,\s*\{\s*byJobKey\s*\}\)/.test(source), true)
 })
 
@@ -178,15 +156,10 @@ test("InvitedGuestsMasteryRanking.jsx: 전달받은 ranking 전체 길이를 기
   assert.equal(source.includes("ranking.length"), true, "잘리지 않은 전체 길이를 기준으로 페이지 수를 계산해야 한다")
 })
 
-// ── F-18 AC-06: 실제 서고 소비처를 마운트한 통합 검증 ──────────────────────────────
-// 명예의 전당(/podium) 진입을 끊어도 기억의 서고의 직업별 판수·승률·랭킹은 그대로
-// 동작해야 한다. 아래는 소스 텍스트가 아니라 실제 렌더 결과로 그것을 확인한다.
-
 const { render, act, cleanup, waitFor, fireEvent } = await import("@testing-library/react")
 const { default: InvitedGuestsSpread } = await import("../InvitedGuestsSpread.jsx")
 const { useRoleStatisticsStore } = await import("../../../store/roleStatistics.store.js")
 
-/** "나의 직업 전적" 표에서 label 행의 전체 텍스트를 돌려준다(예: "승률60%"). */
 function statRowText(container, label) {
   const labelCell = [...container.querySelectorAll("td")].find((td) => td.textContent === label)
   return labelCell ? labelCell.parentElement.textContent : null
@@ -219,7 +192,6 @@ test("F-18 AC-06: 초대받은 자들에 들어가면 선택한 직업의 전적
 
   const view = await mountSpread()
 
-  // 응답이 오기 전에는 다른 직업 값이나 더미가 아니라 로딩 문구가 보인다.
   assert.ok(
     view.container.textContent.includes("전적을 불러오는 중입니다"),
     "조회 중에는 로딩 상태가 보여야 한다(더미로 채우지 않는다).",

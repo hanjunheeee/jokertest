@@ -6,7 +6,6 @@ const rejectedCodes = new Set([
   "ITEM_NOT_PURCHASABLE", "INVALID_CURRENCY", "AMOUNT_OUT_OF_RANGE", "ITEM_ALREADY_OWNED",
   "INSUFFICIENT_BALANCE", "BALANCE_LIMIT_EXCEEDED", "REFERENCE_EVENT_CONFLICT",
 ])
-// F-32c: 골드 구매의 알려진 거부. HTTP status·ok:false·code가 모두 맞을 때만 확정 거부로 본다.
 const goldRejectedStatus = {
   INSUFFICIENT_DIAMOND: 400, BALANCE_LIMIT_EXCEEDED: 400, INVALID_GOLD_PURCHASE_REQUEST: 400,
   UNKNOWN_GOLD_PURCHASE_FIELD: 400, PRODUCT_NOT_FOUND: 404, PRODUCT_STOPPED: 409, REFERENCE_EVENT_CONFLICT: 409,
@@ -19,7 +18,6 @@ const validVersion = (value) => Number.isSafeInteger(value) && value > 0
 const isGoldResultMissing = (error) =>
   error?.status === 404 && error?.success === false && error?.code === "PURCHASE_RESULT_NOT_FOUND"
 
-// 저장된 기록을 읽는다. kind가 없으면 기존 itemIds 기록이고, GOLD는 itemIds:[]와 상품·버전을 함께 보존한다.
 const restore = (saved) => {
   if (Object.hasOwn(saved, "kind")) {
     if (saved.kind !== "GOLD" || !goldStatuses.includes(saved.status) || !validText(saved.productId, 64)
@@ -37,8 +35,6 @@ const restore = (saved) => {
   return { ...saved, status: unresolved(saved.status) ? "unknown" : saved.status }
 }
 
-// Persist the original request before sending it. Account changes invalidate late UI responses,
-// while the old account retains its request for reconciliation on its next login.
 export function createPurchaseController({ storage, post, postGold, lookup, refresh, randomId }) {
   let account = null
   let generation = 0
@@ -95,7 +91,6 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
             update({ ...request, status: "unknown", error: "아직 구매 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인해 주세요." })
             return
           }
-          // A missing result is not a definite rejection. Replay the exact same request key.
         }
       }
       await post({ items: ids.map(itemId => ({ itemId })), referenceEventId: request.referenceEventId })
@@ -105,14 +100,11 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
     } catch (error) {
       if (!current()) return
       const state = { ...request, status: rejectedCodes.has(error.code) ? "rejected" : "unknown", error: error.message ?? "구매 결과를 확인하지 못했습니다." }
-      // If persistence itself fails after sending, keep the original persisted pending request.
       try { update(state) } catch { store.setState({ ...request, status: "unknown", error: "구매 결과 저장에 실패했습니다. 결과 확인을 눌러 주세요." }, true) }
     } finally {
       if (current()) busy = false
     }
   }
-  // F-32c: 골드 구매. 요청(kind·상품·버전·referenceEventId)을 먼저 저장하고, 미확정 요청은 명시적
-  // check/retry에서만 다룬다 — 단순 호출이나 상품 선택 변경은 원래 요청을 바꾸거나 재전송하지 않는다.
   const runGold = async (mode, product) => {
     if (!account || busy) return
     const previous = store.getState()
@@ -141,7 +133,6 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       if (recovering) {
         try { result = await lookup(request.referenceEventId, "GOLD") } catch (error) {
           if (!current()) return
-          // 정상적인 "결과 없음" 응답이 확인된 명시적 retry만 원래 요청을 다시 보낼 수 있다.
           if (mode === "check" || !isGoldResultMissing(error)) {
             update({ ...request, status: "unknown", error: "아직 구매 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인해 주세요." })
             return
@@ -168,7 +159,6 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       if (current()) busy = false
     }
   }
-  // 변경된 가격을 사용자가 다시 확인한 뒤에만 새 요청을 만들 수 있게 priceChanged를 해제한다.
   const acceptPriceChange = () => {
     if (busy || store.getState().status !== "priceChanged") return
     try { update({ ...idle }) } catch {

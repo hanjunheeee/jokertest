@@ -9,7 +9,6 @@ import {
 import { resolveInGameChatPlayerColor } from "../resolveInGameChatPlayerColor.js"
 import { useSettingsStore } from "../../../../../settings/store/settingsStore.js"
 
-/** 로컬 store가 내려주는 colorIndex 하나만으로 채팅 행 색을 만든다 — 행이 쓰는 유일한 색 입력. */
 const COLOR_INDEXES = Array.from({ length: INGAME_PLAYER_THEME_PALETTE_SIZE }, (_, i) => i)
 
 function setNicknameColorEnabled(enabled) {
@@ -18,9 +17,6 @@ function setNicknameColorEnabled(enabled) {
   }))
 }
 
-// F-15(AC-02/AC-04): resolveInGameChatPlayerColor는 이제 "닉네임 색상 표시" 설정이 켜져
-// 있을 때만 색을 적용한다 — 대부분의 시험은 이 설정을 켠 채로 기존 색 계산 계약을 그대로
-// 검증하고, 별도 시험에서 설정이 꺼진/저장된 적 없는 경우를 확인한다.
 test.beforeEach(() => {
   setNicknameColorEnabled(true)
 })
@@ -70,8 +66,6 @@ test("colorIndex가 유효한 비음수 정수가 아니면 테마가 없다(색
   }
 })
 
-// F-15(AC-02/AC-04): "닉네임 색상 표시" 체크박스가 실제 채팅 렌더링을 가린다 — 꺼져 있으면
-// 유효한 themeStyles가 있어도 색을 적용하지 않는다.
 test("닉네임 색상 표시가 꺼져 있으면 유효한 themeStyles가 있어도 색·그림자를 적용하지 않는다", () => {
   setNicknameColorEnabled(false)
   const theme = resolveInGamePlayerThemeByColorIndex(0)
@@ -107,8 +101,6 @@ test("닉네임 색상 표시가 켜져 있으면 textShadow도 함께 돌려준
   assert.equal(style.textShadow, "0 1px 2px rgba(0,0,0,0.85)")
 })
 
-// F-15(AC-04): 색의 유일한 입력은 공개 colorIndex뿐이다 — 이 함수는 themeStyles.color 외의
-// 어떤 값도 받지 않으므로, 비밀 진영·직업 정보를 전달할 방법 자체가 없다.
 test("같은 colorIndex는 항상 같은 색이다 — 함수는 themeStyles.color 외의 입력을 받지 않는다", () => {
   const theme = resolveInGamePlayerThemeByColorIndex(3)
 

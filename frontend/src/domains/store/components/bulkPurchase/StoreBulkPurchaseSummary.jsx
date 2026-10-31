@@ -14,7 +14,6 @@ import {
   STORE_BULK_PURCHASE_TOTAL_ROW_CLASS,
 } from "../../constants/storeBulkPurchaseLayout.js"
 
-/** 일괄구매 확인 — 합계·구매 버튼 */
 export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onConfirm, purchaseState = { status: "idle" }, onCheck, onRetry }) {
   return (
     <aside className={STORE_BULK_PURCHASE_SUMMARY_CLASS} aria-label="구매 합계">
@@ -41,8 +40,6 @@ export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onCon
         style={{ outline: "none" }}
         aria-label="구매하기"
         onClick={onConfirm}
-        // F-16(AC-01): 구매 확정은 "확인"이다. 아래 disabled 조건(준비중 가격·처리중·확인됨·
-        // 차단됨)에서는 런타임의 capture가 disabled 제어를 제외하므로 소리도 0이다.
         data-sfx-kind="ui-confirm"
         disabled={hasPendingPrice || ["pending", "unknown", "confirmed", "blocked"].includes(purchaseState.status)}
       >

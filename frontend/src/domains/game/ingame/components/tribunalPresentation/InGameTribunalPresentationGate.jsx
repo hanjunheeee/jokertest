@@ -11,10 +11,6 @@ import {
 import { resolveInGameTribunalPresentationNotice } from "../../utils/resolveInGameTribunalPresentationNotice.js"
 import InGameTribunalPresentationOverlay from "./InGameTribunalPresentationOverlay.jsx"
 
-/**
- * TRIBUNAL 미확정 구간에서 최후의 반론 연출을 띄운다.
- * InGameActionProvider·InGamePlayerSessionProvider 안에서만 사용한다.
- */
 export default function InGameTribunalPresentationGate() {
   const ctx = useContext(InGameActionContext)
   const phase = useInGameStore((s) => s.state?.phase ?? null)
@@ -50,7 +46,6 @@ export default function InGameTribunalPresentationGate() {
 
   const voteButtonsEnabled = Boolean(ctx?.tribunalVoteControlsEnabled)
 
-  // DEV 임시 — InGamePhaseActionRow와 동일 라벨·활성 조건(개발 끝나면 삭제)
   const devResolveLabel = ctx?.gameState?.tribunal?.resolved === true
     ? TRIBUNAL_RESOLVE_DONE_LABEL
     : ctx?.tribunalResolveLocked

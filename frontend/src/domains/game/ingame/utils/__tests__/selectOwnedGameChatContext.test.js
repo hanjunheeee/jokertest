@@ -41,7 +41,6 @@ test("selectOwnedGameChatContext: 밤의 생존자는 자기 역할 채널을 �
 })
 
 test("selectOwnedGameChatContext: self.uuid가 인증 uuid와 다르면(계정 전환 직후 남은 상태) 전부 null이다", () => {
-  // 이전 계정(ME)의 게임 상태가 store에 남아 있는데 지금 로그인한 계정은 다른 사람이다.
   assert.deepEqual(selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState() }, "another-account"), EMPTY)
 })
 
@@ -66,7 +65,6 @@ test("selectOwnedGameChatContext: state가 없거나 self가 없으면 전부 nu
 })
 
 test("selectOwnedGameChatContext: 생존 여부를 알 수 없으면 소유자여도 두 채널이 모두 null이다", () => {
-  // roster에 self가 없어 canonical alive를 유도할 수 없는 상태(fail-closed).
   const state = { ...buildState(), players: [{ uuid: OTHER, nickname: "Other", alive: true }] }
   assert.deepEqual(selectOwnedGameChatContext({ gameId: GAME_ID, state }, ME), {
     gameId: GAME_ID,

@@ -21,7 +21,6 @@ function splitBodyParagraphs(body) {
     .filter(Boolean)
 }
 
-/** 금지된 기록 — 좌측 반페이지 */
 export default function ForbiddenRecordsLeftPage({ pageIndex = 0 }) {
   const { left } = getForbiddenRecordsPage(pageIndex)
   const paragraphs = splitBodyParagraphs(left.body)

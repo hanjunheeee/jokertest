@@ -3,9 +3,6 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 
-// renderHook(@testing-library/react)이 내부적으로 document를 참조하므로, 이 저장소의 node:test
-// 실행(순수 node:test, jsdom 환경 아님)에서는 mount 전에 최소 DOM 전역을 설치해야 한다 —
-// 기존 훅 테스트(useSkinCardWearSelection.test.js)의 설치 관례를 그대로 따른다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {
@@ -33,11 +30,6 @@ const ROSTER = [
   { uuid: "p3", nickname: "P3", alive: true },
 ]
 
-/**
- * 종료된 세션의 store 상태를 세운다. winResult는 이 저장소의 game-core가 실제로 만드는
- * 형태({ winner }) 그대로다 — evaluateWinCondition → finalizeGameSession → buildSessionSnapshot
- * 경로 어디에서도 다른 필드가 붙지 않는다.
- */
 function seedEndedStore({ winner = "JOKER", selfTeam = "JOKER", selfUuid = "p1", winResult } = {}) {
   act(() => {
     useInGameStore.setState({

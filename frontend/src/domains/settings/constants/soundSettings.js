@@ -1,4 +1,3 @@
-/** 사운드 탭 — 볼륨 슬라이더 항목 */
 export const SOUND_SETTING_VOLUMES = [
   {
     id: "master-volume",

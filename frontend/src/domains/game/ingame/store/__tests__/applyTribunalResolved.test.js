@@ -89,8 +89,6 @@ test("applyTribunalResolvedPure: 승리 없음(비종료) 판정은 phase를 TRI
   assert.equal(result.state.tribunal.resolved, true)
 })
 
-// --- 종료(ENDED) 판정 ---
-
 function terminalTribunalPayload(overrides = {}) {
   return {
     gameId: "g1",
@@ -203,7 +201,6 @@ test("applyTribunalResolvedPure: 종료 payload에서 canonical uuid 하나가 �
     current,
     terminalTribunalPayload({
       players: [{ uuid: "d1", isAlive: false }],
-      // p2는 의도적으로 생략 — 부분 반영 없이 전체 payload가 거부되어야 한다.
     }),
   )
 
@@ -241,7 +238,6 @@ test("applyTribunalResolvedPure: 종료 payload의 players에 uuid가 중복되�
         { uuid: "d1", isAlive: false },
         { uuid: "d1", isAlive: true },
       ],
-      // p2는 의도적으로 생략 — 중복 검출이 누락 검사보다 먼저 전체 payload를 거부해야 한다.
     }),
   )
 
@@ -275,8 +271,6 @@ test("applyTribunalResolvedPure: ENDED 확정 이후 도착하는 비종료·종
   const afterAnotherTerminal = applyTribunalResolvedPure(merged, terminalTribunalPayload({ winResult: { winner: "JOKER" } }))
   assert.equal(afterAnotherTerminal, merged)
 })
-
-// --- 승리 없음(no-winner) 전이: TRIBUNAL → NIGHT ---
 
 function nightTribunalPayload(overrides = {}) {
   return {
@@ -346,9 +340,6 @@ test("applyTribunalResolvedPure: NIGHT 전이 이후 재도착하는 NIGHT/TRIBU
   assert.equal(merged.state.phase, "NIGHT")
   assert.equal(merged.state.tribunal, null)
 
-  // NIGHT 전이 이후 current.state.tribunal이 null이 됐으므로, 동일 defendantUuid를 요구하는
-  // 위쪽 공용 검사(current.state.tribunal?.defendantUuid !== payload.defendantUuid)에서 이미
-  // 자연히 거부된다.
   const afterDuplicateNight = applyTribunalResolvedPure(merged, nightTribunalPayload())
   assert.equal(afterDuplicateNight, merged)
 

@@ -1,7 +1,3 @@
-// F-32 BQ: 상점의 재화 거래 내역(서버 원장 최근 50건). 기존 본인 조회
-// GET /economy/accounts/:userId/transactions를 그대로 쓴다 — 잔액은 여기서 합산하지 않고 지갑 조회
-// (economy.store.js fetchSummary)가 맡는다. 계정이 바뀌면 목록·오류·진행 요청을 버리고(generation),
-// 같은 계정 안에서는 가장 늦게 시작한 조회의 응답만 반영한다(seq).
 import { createStore } from "zustand/vanilla"
 import { useStore } from "zustand"
 import { api } from "../../../shared/api/client.js"
@@ -18,8 +14,6 @@ const isText = (value, max) => typeof value === "string" && value.length > 0 && 
 const isEntryId = (value) => (Number.isSafeInteger(value) && value > 0) || (typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value))
 const brokenResponse = () => new Error("거래 내역 응답이 올바르지 않습니다.")
 
-// 서버 원장 행을 검사한다. 한 행이라도 계약 밖이면 목록 전체를 오류로 본다(일부만 보여 주지 않는다).
-// BIGINT id는 숫자로 바꾸지 않고 받은 값(안전한 정수 또는 숫자 문자열)을 그대로 식별자로 쓴다.
 export const parseTransactions = (body) => {
   if (!body || !Array.isArray(body.transactions) || body.transactions.length > HISTORY_LIMIT) throw brokenResponse()
   const seen = new Set()
@@ -50,7 +44,6 @@ const activate = (id) => {
 }
 useAuthStore.subscribe((state) => activate(state.user?.uuid ?? null))
 
-/** 현재 계정의 최근 원장을 다시 읽는다. 실패·깨진 응답은 error(재시도 가능)이며 빈 내역으로 바꾸지 않는다. */
 const load = () => {
   if (!account) return Promise.resolve()
   const started = generation
@@ -71,7 +64,6 @@ const load = () => {
   )
 }
 
-/** 아직 한 번도 조회하지 않았을 때만 조회한다(성공 복귀 처리 뒤 진입 조회 보완용). */
 const loadIfIdle = () => (store.getState().status === "idle" ? load() : Promise.resolve())
 
 export const currencyHistory = { store, load, loadIfIdle }

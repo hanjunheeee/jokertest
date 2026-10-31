@@ -1,12 +1,5 @@
 'use strict';
 
-// F-32a topup.service.js 단위 시험. 인메모리 fake db(tests/helpers/fakeTopupDb.js)와 가짜 결제 어댑터
-// (tests/helpers/fakeTossAdapter.js)로 상태 전이·대조 순서·복구 경로·롤백의 **논리**를 검증한다.
-// 행 잠금·동시성·실제 유일 인덱스는 이 파일이 확인하지 못한다 — 실제 MySQL은
-// backend/tests/db/f32a-topup.integration.test.js가 검사한다.
-//
-// 시험의 상품 수치(1000원 → 100 + 보너스 10 = 110 다이아)는 자동 시험용 임시값이며 최종 상품표가 아니다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -60,8 +53,6 @@ const waitFor = async (probe) => {
     throw new Error('waitFor: 시간 초과');
 };
 
-// ── 주문 생성 ───────────────────────────────────────────────────────────────────────
-
 test('주문 생성: DB 상품 스냅샷을 CREATED로 저장하고 서버 생성 orderId·공개 clientKey를 돌려준다', async () => {
     const ctx = setUp();
     const created = await topup.createTopupOrder({ userId: USER_A, productId: 'test-topup-1', version: 1 }, ctx.deps);
@@ -114,8 +105,6 @@ test('주문 생성: DB 조회 오류는 삼키지 않는다', async () => {
     await assert.rejects(topup.createTopupOrder({ userId: USER_A, productId: 'test-topup-1', version: 1 }, ctx.deps), { code: 'ER_INJECTED' });
 });
 
-// ── 정상 승인·스냅샷 ─────────────────────────────────────────────────────────────────
-
 test('정상 승인: 스냅샷 합계(110)를 원장 1건·GRANTED로 지급하고, 반복 확인은 제공자를 다시 부르지 않는다', async () => {
     const ctx = setUp();
     const order = await newOrder(ctx);
@@ -156,8 +145,6 @@ test('스냅샷: 주문 뒤 상품 가격·지급량·버전 변경과 삭제에
     assert.deepEqual(await confirm(ctx, second), { status: 'GRANTED', balanceDiamond: 220 });
     assert.equal(ctx.db.order(second.orderId).grant_amount, 100);
 });
-
-// ── 대조 순서: 외부 호출 전에 거부 ────────────────────────────────────────────────────────
 
 test('소유권·존재·금액·입력 형식은 외부 호출 전에 거부되고 주문 상태를 바꾸지 않는다', async () => {
     const ctx = setUp();
@@ -202,12 +189,10 @@ test('결제키: 다른 주문이 점유한 키·이미 저장된 키와 다른 
     assert.deepEqual([ctx.db.order(second.orderId).status, ctx.db.order(second.orderId).payment_key], ['CREATED', null]);
     assert.equal(ctx.db.orders().filter((row) => row.payment_key === first.paymentKey).length, 1);
 
-    // GRANTED 재요청도 소유권·금액·결제키를 먼저 비교한다
     await assert.rejects(confirm(ctx, first, { userId: USER_B }), { code: 'NOT_OWNER' });
     await assert.rejects(confirm(ctx, first, { amount: 999 }), { code: 'AMOUNT_MISMATCH' });
     await assert.rejects(confirm(ctx, first, { paymentKey: 'pay_other' }), { code: 'PAYMENT_KEY_MISMATCH', status: 409 });
 
-    // 키가 저장된 CONFIRMING 주문에 다른 키
     await assert.rejects(confirm(ctx, waiting), { code: 'PAYMENT_PROCESSING' });
     const callsBefore = ctx.fake.calls.length;
     await assert.rejects(confirm(ctx, waiting, { paymentKey: 'pay_swapped' }), { code: 'PAYMENT_KEY_MISMATCH' });
@@ -224,8 +209,6 @@ test('결제키가 다른 주문용으로 등록되어 있으면 제공자가 �
     assert.equal(ctx.db.order(target.orderId).status, 'FAILED');
     assertNothingGranted(ctx, target);
 });
-
-// ── 실패·취소·변조·입금 대기 ─────────────────────────────────────────────────────────
 
 test('제공자 응답 변조(금액·주문·결제키)는 지급하지 않고 FAILED(PAYMENT_MISMATCH)다', async () => {
     for (const scenario of ['tamper-amount', 'tamper-order', 'tamper-key']) {
@@ -285,8 +268,6 @@ test('설정 미비: 승인 호출은 CONFIG_MISSING이고 주문·지급이 바
     assert.equal((await confirm(ctx, order)).status, 'GRANTED');
 });
 
-// ── 복구 ─────────────────────────────────────────────────────────────────────────────
-
 test('응답 유실(제공자는 승인): CONFIRMING으로 남고, 새 서비스 인스턴스의 조회가 제공자 조회로 복구해 1회 지급한다', async () => {
     const ctx = setUp();
     const order = await newOrder(ctx, { scenario: 'lost-response' });
@@ -297,7 +278,6 @@ test('응답 유실(제공자는 승인): CONFIRMING으로 남고, 새 서비스
     assert.equal(ctx.fake.providerState(order.paymentKey), 'DONE');
     assertNothingGranted(ctx, order);
 
-    // 서비스 모듈을 새로 로드 — 메모리 상태에 의존하지 않는다
     const resolved = require.resolve('./topup.service');
     delete require.cache[resolved];
     const freshService = require('./topup.service');
@@ -308,7 +288,6 @@ test('응답 유실(제공자는 승인): CONFIRMING으로 남고, 새 서비스
     assert.equal(ctx.fake.callsOf('confirm').length, 1, '복구는 승인을 다시 하지 않고 조회한다');
     assert.equal(ctx.fake.callsOf('get').length, 1);
 
-    // 재확인도 같은 결과(추가 지급 없음)
     assert.deepEqual(await freshService.confirmTopupOrder({ userId: USER_A, orderId: order.orderId, paymentKey: order.paymentKey, amount: 1000 }, ctx.deps), { status: 'GRANTED', balanceDiamond: 110 });
     assert.equal(ctx.db.ledger().length, 1);
 });
@@ -415,8 +394,6 @@ test('조회 복구: 임대가 만료된 CONFIRMING은 이어받고, 유효한 �
     assert.equal(ctx.db.order(noConfig.orderId).lease_token, null, '설정이 없으면 임대도 잡지 않는다');
 });
 
-// ── 임대 ─────────────────────────────────────────────────────────────────────────────
-
 test('외부 승인 대기 중: 유효 임대가 있어 중복 confirm은 제공자를 다시 부르지 않고, 해제되면 1회 지급된다', async () => {
     const ctx = setUp();
     const order = await newOrder(ctx);
@@ -447,7 +424,6 @@ test('임대를 잃은 이전 처리자는 새 처리자의 결과를 덮지 못
     await hold.entered;
     const firstToken = ctx.db.order(order.orderId).lease_token;
 
-    // 임대가 만료되고 다른 처리자가 이어받는다(같은 결제키의 제공자 호출은 같은 장벽에서 대기)
     ctx.clock.ms += topup.LEASE_MS + 1000;
     const successor = confirm(ctx, order).then((value) => ({ value }), (error) => ({ error }));
     await waitFor(() => ctx.db.order(order.orderId).lease_token !== firstToken);
@@ -459,8 +435,6 @@ test('임대를 잃은 이전 처리자는 새 처리자의 결과를 덮지 못
     assert.equal(ctx.db.ledger().length, 1);
     assert.equal(ctx.db.diamond(USER_A), 110);
 });
-
-// ── 지급 트랜잭션 ─────────────────────────────────────────────────────────────────────
 
 test('지급은 주문 GRANTED 갱신과 같은 트랜잭션이다 — 주문 갱신이 실패하면 원장·지갑도 롤백된다', async () => {
     const ctx = setUp();

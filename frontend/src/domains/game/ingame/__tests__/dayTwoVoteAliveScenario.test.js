@@ -4,21 +4,12 @@ import React from "react"
 import { act, renderHook } from "@testing-library/react"
 import { JSDOM } from "jsdom"
 
-// 이 시나리오는 실제 화면과 같은 방식으로 세션 컨텍스트를 만들기 위해
-// buildInGamePreviewPlayers를 쓴다. 그 안의 초상·프레임 픽커는 "@/shared/..." Vite alias로 PNG
-// 에셋을 끌어오므로 node --test가 해석하지 못한다 — 여기서 보는 계약은 생존 게이트뿐이라 두
-// 픽커를 통째로 대체한다(buildInGamePreviewPlayers.test.js와 동일한 관례: mock.module 등록
-// 이후 동적 import로 대상 모듈을 가져온다. 정적 import는 mock 등록보다 먼저 평가되므로 이
-// 아래 프로젝트 모듈은 반드시 동적으로 가져와야 한다).
 mock.module("../utils/pickInGameJobPortrait.js", {
   namedExports: { pickInGameJobPortrait: (index) => `portrait-${index}` },
 })
 mock.module("../utils/pickInGamePlayerFrame.js", {
   namedExports: {
     pickInGamePlayerFrame: (index) => `frame-${index}`,
-    // F-14: mergeSourcePlayerWithPreview.js가 이 모듈에서 resolveAccountCardFrameSrc도
-    // import한다 — 이 파일이 모듈 전체를 대체하므로 실제로 안 쓰더라도(이 시나리오는 계정
-    // 카드 프레임을 주입하지 않는다) named export 자체는 있어야 import가 깨지지 않는다.
     resolveAccountCardFrameSrc: () => null,
   },
 })
@@ -32,14 +23,6 @@ const { buildInGamePreviewPlayers } = await import("../utils/buildInGamePreviewP
 const { mergeSourcePlayerWithPreview } = await import("../utils/mergeSourcePlayerWithPreview.js")
 const { selectInGameSelfAlive } = await import("../utils/selectInGameSelfAlive.js")
 const { INGAME_PREVIEW_PLAYER_COUNT } = await import("../constants/board/ingamePlayerBoard.js")
-
-// ---------------------------------------------------------------------------
-// AC-03 · 1일차 재판 → 밤 판정 → 2일차 낮 통합 시나리오
-//
-// canonical 이벤트를 순서대로 store에 태운 뒤, 계정별로 조작 패널을 렌더해 2일차 낮
-// 투표를 실제로 수행할 수 있는지 본다. 생존 계정은 투표가 서버로 나가고(cast_day_vote),
-// 1일차에 처형된 계정과 그 밤에 사망한 계정은 UI 게이트에서 막혀 아무것도 나가지 않는다.
-// ---------------------------------------------------------------------------
 
 const GAME_ID = "game-1"
 const EXECUTED_UUID = "u3" // 1일차 재판에서 처형된다.
@@ -68,7 +51,6 @@ function ensureClientEnvironment() {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
 }
 
-/** 제출이 실제로 서버로 나갔는지 관찰하기 위한 최소 socket 스텁. */
 function createFakeSocket() {
   const emitted = []
   const socket = {
@@ -111,7 +93,6 @@ function seedStartedSession(selfUuid) {
   })
 }
 
-/** 1일차 낮 투표 → 재판 처형 → 밤 사망 → 2일차 낮 투표까지의 canonical 이벤트 순서. */
 const DAY_TWO_EVENT_STEPS = [
   ["1일차 낮 진입", (store) => store.applyPhaseChanged({ gameId: GAME_ID, phase: "DAY", dayIndex: 1 })],
   ["1일차 투표 개시", (store) => store.applyDayPhaseChanged({ gameId: GAME_ID, dayIndex: 1, dayPhase: "DAY_VOTE" })],
@@ -152,11 +133,6 @@ function runDayTwoEventSequence() {
   }
 }
 
-/**
- * InGamePlayerSessionProvider가 store에서 세션 컨텍스트를 만드는 방식(useInGamePlayerSession)을
- * 그대로 재현한다 — .jsx 컴포넌트를 이 테스트에서 직접 렌더할 수 없어 같은 유틸 조합으로 만든다.
- * 서버 상태가 검증을 통과하지 못하면 실제 화면과 동일하게 preview(더미) 목록으로 떨어진다.
- */
 function buildSessionContextFromStore() {
   const { sourcePlayers, localPlayerId } = buildPlayerSessionSourceFromGameState(useInGameStore.getState().state)
   const previewPlayers = buildInGamePreviewPlayers(sourcePlayers?.length ?? INGAME_PREVIEW_PLAYER_COUNT)
@@ -177,10 +153,6 @@ function renderPanel(contextValue) {
   return renderHook(() => useInGameActionPanel(), { wrapper: Wrapper })
 }
 
-/**
- * InGameActionPanel의 투표 버튼 disabled 규칙을 그대로 따라 "화면에서 투표를 수행"한다.
- * 버튼이 잠겨 있으면 제출 함수를 호출하지 않는다 — 실제 사용자가 할 수 있는 일만 한다.
- */
 async function voteThroughUi(rendered, targetId) {
   await act(async () => {
     rendered.result.current.setSelectedDayVoteTargetId(targetId)
@@ -207,7 +179,6 @@ test("2일차 낮: 생존 계정은 투표를 수행해 cast_day_vote가 서버�
 
   assert.equal(selectInGameSelfAlive(useInGameStore.getState().state), true)
   assert.equal(rendered.result.current.dayVoteControlsEnabled, true)
-  // 사망자는 투표 대상 목록에서도 빠진다 — 남은 생존자(u4)만 고를 수 있다.
   assert.deepEqual(
     rendered.result.current.dayVoteTargets.map((target) => target.id),
     ["u4"],
@@ -256,9 +227,6 @@ test("2일차 낮: 서버 상태가 세션 목록으로 변환되지 못해 프�
   seedStartedSession(NIGHT_VICTIM_UUID)
   runDayTwoEventSequence()
 
-  // themeIndex가 없는 상태(예: 표시 색상을 잇지 못한 복원 경로)에서는
-  // buildPlayerSessionSourceFromGameState가 fail-closed로 preview 목록을 돌려준다 — 그러면
-  // 세션 컨텍스트에는 본인 항목 자체가 없어 예전 게이트는 생존으로 취급했다.
   const state = useInGameStore.getState().state
   useInGameStore.setState({
     state: {
@@ -286,7 +254,6 @@ test("2일차 낮: 서버 상태가 세션 목록으로 변환되지 못해 프�
 })
 
 test("단계별 생존 상태: 각 이벤트 직후 계정별 self 생존 판정이 기대와 일치한다", () => {
-  // [단계 이름, 그 직후의 계정별 기대 생존 상태] — 어긋남이 생기면 어느 전이에서 갈렸는지 특정된다.
   const expectedAfterStep = [
     { u1: true, u2: true, u3: true, u4: true }, // 1일차 낮 진입
     { u1: true, u2: true, u3: true, u4: true }, // 1일차 투표 개시

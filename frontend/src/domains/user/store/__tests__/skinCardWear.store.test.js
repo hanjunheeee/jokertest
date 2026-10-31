@@ -1,10 +1,6 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 
-// F-14(AC-01/AC-03) 대응: skinCardWear.store.js가 이제 economy.store.js·auth.store.js를
-// 모듈 로드 시점에 구독한다(서버 loadout 반영, 계정 전환 초기화) — profileCustomization.
-// store.test.js와 같은 이유로, 실제 fetch/localStorage를 태우지 않도록 API 경계와 auth
-// store를 mock.module로 먼저 대체한 뒤에 이 store를 불러와야 한다.
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
 let currentUser = { uuid: "user-1" }
@@ -57,7 +53,6 @@ test("초기 착용 상태는 직업별 기본 스킨과 기본 플레이어 카
 
   assert.deepEqual(skinsByJob, buildDefaultSkinsByJob())
   assert.equal(cardFrameId, SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
-  // 직업 탭마다 기본 스킨이 하나씩 있어야 목록·미리보기가 빈 상태로 열리지 않습니다.
   assert.equal(skinsByJob.noble, getDefaultSkinIdForJob("noble"))
   assert.equal(skinsByJob.witchHunter, getDefaultSkinIdForJob("witchHunter"))
 })
@@ -104,8 +99,6 @@ test("reset은 적용된 착용 구성을 기본값으로 되돌린다", () => {
   assert.equal(cardFrameId, SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID)
 })
 
-// ── F-14 AC-01: economy store의 loadout 변화를 실제 착용 상태에 반영 ────────────────────
-
 test("economy store의 fetchSummary가 selectedSkinsByJob/selectedCardFrameId를 채우면 착용 상태가 자동으로 반영된다(오버레이를 열지 않아도)", async () => {
   resetStores()
   getImpl = async (endpoint) => (endpoint.endsWith("/wallet")
@@ -123,8 +116,6 @@ test("economy store의 fetchSummary가 selectedSkinsByJob/selectedCardFrameId를
   const { skinsByJob, cardFrameId } = useSkinCardWearStore.getState()
   assert.equal(cardFrameId, "player-card-보석")
   assert.equal(skinsByJob.clown, "basic-skin-광대2")
-  // 서버가 null로 응답한(미장착) 직업은 그 직업의 기본 스킨으로 대체되어야 한다 — 목록이
-  // 빈 값으로 열리면 안 된다.
   assert.equal(skinsByJob.noble, getDefaultSkinIdForJob("noble"))
   assert.equal(skinsByJob.guard, getDefaultSkinIdForJob("guard"))
 })

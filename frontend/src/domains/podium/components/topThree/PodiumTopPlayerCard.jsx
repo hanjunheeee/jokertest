@@ -25,7 +25,6 @@ const NICKNAME_CLASS_BY_RANK = {
   3: PODIUM_TOP_PLAYER_NICKNAME_RANK3_CLASS,
 }
 
-/** 1~3위 — 프로필(뒤) + 랭킹 프레임(앞) + 명패 위 닉네임 */
 export default function PodiumTopPlayerCard({ rank, profileSrc, nickname }) {
   return (
     <article className={CARD_CLASS_BY_RANK[rank]}>

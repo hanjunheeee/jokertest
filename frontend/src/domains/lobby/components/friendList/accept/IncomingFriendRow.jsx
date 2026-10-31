@@ -15,11 +15,6 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
-/**
- * 받은 친구 요청 한 명을 보여주고 차단/수락 버튼을 제공합니다.
- *
- * F-19(AC-04): 차단은 상대 UUID로 동작하고, 수락은 요청 id로 동작한다 — 서로 다른 작업이다.
- */
 export default function IncomingFriendRow({
   requestId,
   requesterId,
@@ -37,8 +32,6 @@ export default function IncomingFriendRow({
     <li
       className={RECOMMENDED_FRIEND_ROW_CLASS}
       data-request-id={requestId}
-      // F-17(AC-02): 알림에서 이 요청을 보러 들어온 경우 그 행을 가리킨다. 표시만 바꾸고
-      // 수락을 대신 수행하지 않는다.
       data-notification-target={targeted ? "true" : undefined}
       aria-current={targeted ? "true" : undefined}
     >
@@ -67,7 +60,6 @@ export default function IncomingFriendRow({
               title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다`}
               aria-disabled={processing}
               disabled={processing}
-              // 거절과 달리 요청 id가 아니라 **상대 UUID**로 동작한다.
               data-block-target={requesterId}
               onClick={() => { if (!processing) onBlock(requesterId) }}
               style={{ outline: "none" }}

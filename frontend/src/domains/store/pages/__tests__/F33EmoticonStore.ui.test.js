@@ -4,9 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-33 E-1: 실제 router·StorePage·StorePanel·그리드·상세·구매 컨트롤러·economy 스토어를 jsdom에 마운트해
-// 이모티콘 탭(상점 15종)·구매·일괄구매·기본 8종 그리드 제외를 검증한다. 대체하는 것은 외부 경계뿐이다 —
-// env.js(API_BASE_URL)와 전역 fetch(서버 응답). 패턴은 F32CurrencyPurchase.ui.test.js와 같다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -42,7 +39,6 @@ mock.module("../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "", DISCORD_SUPPORT_URL: undefined },
 })
 
-// ── 서버(fetch) 경계 ──────────────────────────────────────────────────────────────
 let routes = []
 let calls = []
 const json = (status, body) => {
@@ -73,7 +69,6 @@ const LOADOUT = {
   selectedProfilePhotoId: null, selectedProfileBorderId: null, selectedCardFrameId: null, selectedSkinsByJob: null, revision: "r1",
 }
 
-// 설계도 §0 — 한국어 제목(상품명)과 itemId.
 const BASIC_EMOTICONS = [
   ["emoji-basic-reject", "거절"], ["emoji-basic-tears", "눈물"], ["emoji-basic-anger", "분노"],
   ["emoji-basic-love", "사랑"], ["emoji-basic-grin", "씨익"], ["emoji-basic-hello", "안녕"],
@@ -101,7 +96,6 @@ const setUser = async (user) => act(async () => {
   useAuthStore.setState({ isLoggedIn: Boolean(user), user, loggedOutIntentionally: false })
 })
 
-// 기본 8종을 이미 소유한 계정(서버 getWalletSummary가 기본 지급을 끝낸 상태)을 기본으로 둔다.
 async function newWorld({ gold = 10000, entitlements = BASIC_OWNED } = {}) {
   routes = []; calls = []
   await setUser(null)
@@ -125,7 +119,6 @@ async function mountStore({ path = "/store", strict = false } = {}) {
   if (skip) await act(async () => { fireEvent.click(skip) })
   return view
 }
-// 라우트·인트로 없이 실제 StorePanel만 MemoryRouter(useLocation 컨텍스트) 아래 직접 마운트한다.
 async function mountStorePanel() {
   let view
   await act(async () => {
@@ -135,9 +128,7 @@ async function mountStorePanel() {
 }
 const text = (view) => view.container.textContent
 const click = (view, name) => act(async () => { fireEvent.click(view.getByRole("button", { name })) })
-// 상점 진입이 부른 economy.store fetchSummary(/wallet + /entitlements)가 끝나 소유 목록이 채워질 때까지 기다린다.
 const waitEconomyReady = () => waitFor(() => assert.equal(useEconomyStore.getState().status, "ready"))
-// 그리드의 상품 칸(aria-pressed 버튼) 중 이름이 정확히 name인 칸.
 const slotButtons = (view) => Array.from(view.container.querySelectorAll("button[aria-pressed]"))
   .filter((el) => el.querySelector("img") && !el.textContent.includes("일괄구매"))
 const findSlot = (view, name) => {
@@ -173,7 +164,6 @@ test("storeItems: EMOTICON_STORE_ITEMS는 설계도 §0의 23종이고 기본 8�
     assert.equal(Number(item.priceAmount), 500)
     assert.notEqual(item.tag, "기본 지급")
   }
-  // 표시용 더미 4종은 사라졌다.
   assert.equal(STORE_ITEMS.some((item) => item.id.startsWith("emoticon-")), false)
 })
 
@@ -196,7 +186,6 @@ test("AC-05: 이모티콘 탭에는 상점 15종만 보이고 기본 8종·다�
 test("AC-05(StorePanel 직접 마운트): 이모티콘 탭에는 상점 15종만 보이고 모두 구매 가능하다", async () => {
   await newWorld()
   const view = await mountStorePanel()
-  // StorePanel 자신의 진입 효과가 fetchSummary(/wallet + /entitlements)를 부른다.
   await waitEconomyReady()
   assert.ok(calls.some((call) => call.method === "GET" && WALLET.test(call.path)), "StorePanel이 지갑을 조회한다")
   assert.ok(calls.some((call) => call.method === "GET" && ENTITLEMENTS.test(call.path)), "StorePanel이 소유 목록을 조회한다")

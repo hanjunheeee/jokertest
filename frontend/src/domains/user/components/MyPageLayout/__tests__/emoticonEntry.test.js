@@ -5,19 +5,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-33 E-2(설계도 §2-2) — **계약 변경**: F-13은 이모티콘 "진입 버튼만" 두고 클릭해도 아무
-// 일도 일어나지 않는 상태를 이 파일의 시험으로 고정했다(의도된 걸림돌). E-2가 그 뒤의
-// 화면(/mypage/emoticons)을 실제로 만들었으므로, "기능 부재"를 고정하던 단언
-// (assert.doesNotMatch(source, /Emoticon.*Overlay|Emoticon.*Panel|emoticonOpen/i),
-//  no-op 기본값 단언, MyPageLayout이 콜백을 넘기지 않는다는 단언 중 '미연결'의 근거였던 것)
-// 은 "이동한다"는 새 계약으로 다시 쓴다. 이모티콘 이동과 무관한 레이아웃·오버레이 단언
-// (ProfileEditOverlay·SkinCardWearOverlay)은 그대로 둔다.
-//
-// 버튼의 실행 본문은 소스 정규식이 아니라 실제 jsdom 렌더 + 클릭으로 검증한다 —
-// frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가 이미 만든
-// module.register() ESM 훅을 재사용한다. useNavigate는 MemoryRouter 안에서 실제
-// react-router-dom 구현을 그대로 쓰고, 이동 결과는 라우터의 현재 위치로 확인한다(navigate를
-// 대역으로 바꾸면 "그 함수를 불렀다"만 증명하고 실제 이동 경로는 증명하지 못한다).
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true, url: "http://localhost/" })
 function installDomGlobal(name, value) {
   Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
@@ -43,13 +30,11 @@ const { default: EmoticonEntryButton } = await import("../EmoticonEntryButton.js
 const buttonUrl = new URL("../EmoticonEntryButton.jsx", import.meta.url)
 const layoutUrl = new URL("../../MyPageLayout.jsx", import.meta.url)
 
-/** 지금 라우터가 가리키는 경로를 화면에 그대로 찍는다 — 이동을 값으로 확인하기 위한 표식. */
 function LocationProbe() {
   const location = useLocation()
   return React.createElement("span", { "data-testid": "location" }, location.pathname)
 }
 
-/** MyPageLayout이 실제로 쓰는 방식(props 없음)으로 버튼을 라우터 아래 마운트한다. */
 const renderInRouter = (props) => render(
   React.createElement(
     MemoryRouter,
@@ -96,7 +81,6 @@ test("EmoticonEntryButton은 기존 MyPageFramedButton만 재사용한다(자체
   const source = await readFile(buttonUrl, "utf8")
   assert.match(source, /import MyPageFramedButton from ".\/MyPageFramedButton\.jsx"/)
   assert.match(source, /<MyPageFramedButton label="이모티콘" onClick=\{handleClick\} \/>/)
-  // 팔레트 화면 자체는 별도 라우트(EmoticonPalettePage)가 맡는다 — 이 버튼은 이동만 한다.
   assert.doesNotMatch(source, /useState/)
   assert.doesNotMatch(source, /Modal|Overlay|Panel|Grid/)
 })
@@ -118,7 +102,5 @@ test("MyPageLayout은 프로필 수정·스킨카드 장착의 기존 오버레�
   const source = await readFile(layoutUrl, "utf8")
   assert.match(source, /<ProfileEditOverlay open=\{profileEditOpen\} onClose=\{\(\) => setProfileEditOpen\(false\)\} \/>/)
   assert.match(source, /<SkinCardWearOverlay open=\{skinCardWearOpen\} onClose=\{\(\) => setSkinCardWearOpen\(false\)\} \/>/)
-  // 이모티콘은 오버레이가 아니라 별도 화면(/mypage/emoticons)이다 — 레이아웃에 전용
-  // 오버레이·패널 상태가 생기면 두 진입 경로가 갈라진다.
   assert.doesNotMatch(source, /Emoticon.*Overlay|Emoticon.*Panel|emoticonOpen/i)
 })

@@ -1,8 +1,3 @@
-// 2026-09-22: 창 폭(vw)이 아니라 게임 열(container-type: inline-size, 최대 1192px)의 폭(cqw)으로 잰다 —
-// 넓은 모니터에서 카드·패널이 열보다 크게 잡히고 작은 창에서 잘리던 원인이다.
-/**
- * 인게임 좌측 슬라이드 패널 — 전적목록·설정 등 공통 shell·헤더 레이아웃.
- */
 export const INGAME_SIDE_PANEL_TRANSITION = {
   duration: 0.35,
   ease: [0.22, 1, 0.36, 1],

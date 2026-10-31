@@ -7,10 +7,6 @@ import { fileURLToPath } from "node:url"
 const routesFile = join(dirname(fileURLToPath(import.meta.url)), "..", "index.jsx")
 const source = readFileSync(routesFile, "utf8")
 
-// 소스 문자열에서 "코드"인 위치만 true인 마스크를 만든다.
-// 문자열 리터럴(', ", `)과 주석(//, /* */) 안의 문자는 전부 false로 표시해서,
-// 그 안에 우연히 등장하는 {, }, [, ], "children:" 같은 텍스트가
-// 실제 구문 경계 판단(중괄호/대괄호 깊이, 키 탐색)에 섞여 들어가지 않게 한다.
 function computeCodeMask(src) {
   const mask = new Array(src.length).fill(true)
   let i = 0
@@ -71,7 +67,6 @@ function computeCodeMask(src) {
   return mask
 }
 
-// mask가 true인(실제 코드) 위치에서만 target을 찾는다. fromIndex부터 검색한다.
 function indexOfInCode(src, mask, target, fromIndex) {
   let searchFrom = fromIndex
   while (searchFrom <= src.length - target.length) {
@@ -83,7 +78,6 @@ function indexOfInCode(src, mask, target, fromIndex) {
   return -1
 }
 
-// idx를 감싸는 가장 안쪽 객체 리터럴의 여는 중괄호 위치를 문자열/주석을 건너뛰며 뒤로 찾는다.
 function findEnclosingObjectStart(src, mask, idx) {
   let depth = 0
   for (let i = idx - 1; i >= 0; i -= 1) {
@@ -97,7 +91,6 @@ function findEnclosingObjectStart(src, mask, idx) {
   throw new Error("감싸는 객체의 여는 중괄호를 찾지 못했습니다.")
 }
 
-// bracketStart(여는 대괄호)에 대응하는 닫는 대괄호 위치를 문자열/주석을 건너뛰며 앞으로 찾는다.
 function findMatchingBracket(src, mask, bracketStart) {
   let depth = 0
   for (let i = bracketStart; i < src.length; i += 1) {
@@ -111,11 +104,6 @@ function findMatchingBracket(src, mask, bracketStart) {
   throw new Error("children 배열의 닫는 대괄호를 찾지 못했습니다.")
 }
 
-// objStart(여는 중괄호)가 여는 객체 리터럴의 "직접" 속성(중첩 객체 안이 아닌, depth === 1)으로
-// 등장하는 "children:"의 위치만 찾는다. 예를 들어
-//   { element: <ProtectedRoute />, meta: { children: [decoy] }, children: [...] }
-// 처럼 형제 속성 값 안에 우연히 중첩된 children:은 depth === 2에서 발견되므로 무시하고,
-// 실제 objStart 객체의 직접 속성인 마지막 children:만 반환한다. 찾지 못하면 -1.
 function findDirectChildrenKeyIndex(src, mask, objStart) {
   const key = "children:"
   let depth = 0
@@ -150,12 +138,6 @@ function findDirectChildrenKeyIndex(src, mask, objStart) {
   throw new Error("감싸는 객체의 닫는 중괄호를 찾지 못했습니다.")
 }
 
-// 주석(//, /* */)만 코드가 아닌 것으로 표시하고, 문자열 리터럴 내용은 실제 코드로 취급한다.
-// computeCodeMask는 중괄호/대괄호 깊이 계산을 위해 문자열 내용까지 마스킹하지만,
-// "/podium" 같은 실제 경로 등록은 원래 문자열 리터럴 안에 있으므로 그 마스크를 그대로
-// 매치 검증에 쓰면 정상 등록까지 걸러진다. 반면 주석 속 가짜 경로 문자열은 걸러야 하므로
-// 주석만 구분해서 마스킹하는 전용 마스크를 둔다. 문자열 내부는 "//","/*" 같은 주석 시작
-// 기호로 오인하지 않도록 건너뛰되 mask는 true(코드)로 유지한다.
 function computeCommentMask(src) {
   const mask = new Array(src.length).fill(true)
   let i = 0
@@ -208,8 +190,6 @@ function computeCommentMask(src) {
   return mask
 }
 
-// regex가 str 안에서 매치되더라도, 그 매치 구간이 주석(코드가 아닌 위치)에 걸쳐 있으면
-// 인정하지 않는다. 즉 "실제 코드"(문자열 리터럴 포함)로 등장하는 매치만 성공으로 친다.
 function assertMatchInCode(str, regex, message) {
   const mask = computeCommentMask(str)
   const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`
@@ -235,10 +215,6 @@ function assertMatchInCode(str, regex, message) {
   assert.fail(message || `코드 영역에서 패턴을 찾지 못했습니다: ${regex}`)
 }
 
-// "element: <ProtectedRoute />"를 가진 라우트 객체를 찾아, 그 객체 리터럴 안에서만
-// children: 배열을 잘라낸다. 단순히 "<ProtectedRoute 다음에 나오는 첫 children:"이 아니라,
-// element: <ProtectedRoute />와 같은 객체({...}) 소속의 "직접" children:만 인정한다
-// (형제 속성 값 안에 중첩된 children:은 findDirectChildrenKeyIndex가 depth로 걸러낸다).
 export function extractProtectedRouteChildrenBlock(src) {
   const mask = computeCodeMask(src)
 
@@ -263,10 +239,6 @@ export function extractProtectedRouteChildrenBlock(src) {
   return src.slice(bracketStart, bracketEnd + 1)
 }
 
-// F-18(AC-05): /podium 진입은 비활성화됐다. index.jsx는 더 이상 PodiumPage를 import하지
-// 않고, 보호 구간 안의 /podium은 <Navigate to="/lobby" replace />로 등록된다. podium 도메인
-// 소스 자체는 보존되므로(AC-06), "파일이 없다"가 아니라 "라우터가 더 이상 그리지 않는다"를
-// 검사한다.
 const PODIUM_REDIRECT_PATTERN =
   /\{\s*path:\s*"\/podium",\s*element:\s*<Navigate\s+to="\/lobby"\s+replace\s*\/>\s*\}/
 
@@ -303,7 +275,6 @@ test("/podium 비활성 등록은 ProtectedRoute 밖(로그인 전 접근 가능
   const podiumOccurrences = source.split('"/podium"').length - 1
   assert.equal(podiumOccurrences, 1, "/podium 경로가 중복 등록되어 있습니다.")
 
-  // 보호 경계를 옮기지 않았는지: 미인증 사용자는 여전히 ProtectedRoute가 먼저 가로챈다.
   assert.equal(
     /element:\s*<PodiumPage\s*\/>/.test(source),
     false,
@@ -430,8 +401,6 @@ test("assertMatchInCode는 주석 안에만 있는 가짜 경로 등록을 실�
 })
 
 test("보호 라우트 밖에 등록된 /podium 리다이렉트는 ProtectedRoute 자식 검사에서 인정되지 않는다", () => {
-  // F-18(AC-05): "리다이렉트를 만들었다"만으로는 부족하다 — 보호 경계 밖에 두면 미인증
-  // 사용자가 /login을 거치지 않고 곧장 /lobby로 튕겨 나간다.
   const outsideProtectedRouteSource = `
     export const router = createBrowserRouter([
       {

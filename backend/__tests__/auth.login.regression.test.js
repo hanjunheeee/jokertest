@@ -16,16 +16,12 @@ const REPO_KEYS = [
     "updateUser", "markOnlineSessionsOffline", "createUserSession",
 ];
 
-// AC-01/AC-03 변경이 login의 부작용 순서를 건드리지 않았는지 확인하는 기준선입니다.
-// 리포지토리 함수를 전부 가짜로 바꾸고 호출 순서와 인자를 기록합니다.
 const stubRepo = (t, overrides = {}) => {
     const originals = Object.fromEntries(REPO_KEYS.map((key) => [key, userRepository[key]]));
     const calls     = [];
     const record    = (name, result) => (...args) => { calls.push({ name, args }); return result; };
 
     const defaults = {
-        // login() 전체가 하나의 트랜잭션으로 묶인다(F-03 R-IMPL #7: 비밀번호 변경과의
-        // 직렬화). work를 즉시 동기 호출하는 가짜 트랜잭션이라 호출 순서 검증은 그대로 유효하다.
         withTransaction:           (work) => work({ id: "tx-1", LOCK: { UPDATE: "UPDATE" } }),
         findByEmail:               record("findByEmail", null),
         checkActiveBan:            record("checkActiveBan", null),
@@ -67,13 +63,11 @@ test("정상 로그인은 세션을 만들고 sessionId가 담긴 토큰을 발�
     assert.equal(decoded.role, "USER");
     assert.ok(decoded.sessionId, "토큰에 sessionId가 없으면 세션 검증이 조용히 무력화됩니다");
 
-    // 토큰의 sessionId와 저장된 세션 PK가 같아야 미들웨어 조회가 성립합니다.
     const sessionArg = calls.find((call) => call.name === "createUserSession").args[0];
     assert.equal(sessionArg.id, decoded.sessionId);
     assert.equal(sessionArg.user_id, "uuid-1");
     assert.equal(sessionArg.is_online, true);
 
-    // 기존 세션 정리 → 새 세션 생성 순서가 뒤집히면 방금 만든 세션이 즉시 내려갑니다.
     assert.deepEqual(names(), [
         "findByEmail", "checkActiveBan", "createLoginHistory",
         "updateUser", "markOnlineSessionsOffline", "createUserSession",
@@ -93,12 +87,8 @@ test("F-03 AC-01: 로그인 유지를 선택하면 액세스 토큰은 짧게 �
     );
     const decoded = jwt.verify(result.token, process.env.JWT_SECRET);
 
-    // 액세스 토큰 자체를 30일로 늘리면 만료 전까지 갱신 경로(폐기·재사용 감지)가 한 번도
-    // 실행되지 않는다 — 그래서 로그인 유지 여부와 무관하게 액세스 토큰은 짧게 산다.
     assert.equal(decoded.exp - decoded.iat, ACCESS_TOKEN_SHORT_TTL_SECONDS);
 
-    // 30일 절대 만료는 refreshToken(원문)과 그 해시가 담당한다. 원문은 응답으로만 나가고
-    // DB에는 해시만 저장된다(A-03).
     assert.ok(result.refreshToken, "로그인 유지 시 갱신 자격이 발급되어야 합니다");
 
     const sessionArg = calls.find((call) => call.name === "createUserSession").args[0];
@@ -190,12 +180,6 @@ test("5회째 실패는 계정을 잠그고 423을 반환한다", async (t) => {
     assert.equal(update.failed_login_count, 5);
     assert.ok(update.locked_until instanceof Date);
 });
-
-// ── F-03 AC-02: 실제 Express HTTP 경로의 Set-Cookie 계약 ────────────────────────
-// 위 테스트들은 authService.login()이 돌려주는 값만 확인한다 — 실제로 브라우저가 받는
-// Set-Cookie 헤더(Max-Age·Expires·HttpOnly·SameSite·Secure)는 user.controller.js가
-// res.cookie()/res.clearCookie()로 만든다. cookieOptions.test.js는 옵션 객체만 검사하므로
-// 여기서는 실제 Express 앱을 띄우고 fetch로 로그인/갱신 라우트를 호출해 진짜 헤더를 읽는다.
 
 const express      = require("express");
 const cookieParser = require("cookie-parser");

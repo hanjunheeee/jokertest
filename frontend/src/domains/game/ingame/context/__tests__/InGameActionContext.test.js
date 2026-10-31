@@ -1,22 +1,3 @@
-/**
- * CM V-1 AC-05 — useInGameActionPanel이 **단일 인스턴스**로 불려, 컨트롤 패널과 플레이어 카드
- * 메뉴가 같은 선택 상태·같은 제출 상태를 공유한다.
- *
- * 컨텍스트 헬퍼·store·라운드 계산을 mock하지 않는다. 대역은 바깥 경계뿐이다 — 소켓 전송,
- * HTTP, 효과음 런타임, 자산 선택.
- *
- *   (1) Provider가 주는 값이 두 소비 위치에서 **같은 참조**다(setter까지 toBe).
- *   (a)(b) 낮: 행동 줄에서 고른 대상과 메뉴에서 고른 대상이 한 칸을 공유한다(양방향).
- *   (c)(d) 밤: 같은 계약을 밤 대상 선택에서도 본다(양방향).
- *   (e)(f) 재판: 한쪽의 제출 진행·완료 상태가 다른 쪽에 그대로 보인다(양방향).
- *   (g) 각 단계의 전송은 정확히 1회다.
- *
- * V-2(AC-05): 두 소비처 중 하나였던 컨트롤 패널(InGameActionPanel)이 삭제됐다. 그 자리를
- * 이어받은 것은 시간흐름 바 안의 **단계 행동 줄**(InGamePhaseActionRow)이라, fiber 조회
- * 대상만 그것으로 바꾼다. 패널이 DOM으로 보여 주던 선택값·제출 상태는 그 줄이 그리지 않으므로
- * (대상 선택은 전적으로 카드 메뉴의 몫이다), 그 단언들은 **실제 소비 Context가 읽은 값**
- * 비교로 옮겼다 — DOM 한 겹을 거치지 않을 뿐 검증하는 계약은 같다.
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -123,7 +104,6 @@ const ROSTER = [
   { uuid: "u3", nickname: "C", themeIndex: 2 },
 ]
 
-/** 소켓 전송 경계만 흉내낸다 — ack는 시험이 손에 쥐고 원할 때 정착시킨다. */
 function createControlledSocket() {
   const sent = []
   const pending = []
@@ -193,10 +173,6 @@ function findButtonIn(root, label) {
   return [...root.querySelectorAll("button")].find((node) => node.textContent.trim() === label) ?? null
 }
 
-/**
- * 메뉴 항목은 잠겼을 때 라벨 뒤에 사유 문구를 함께 그린다("유죄전송 중입니다") — 정확 일치로
- * 찾으면 **잠긴 항목만** 못 찾아서, 잠김을 보려는 시험이 조용히 통과하거나 엉뚱하게 깨진다.
- */
 function findMenuItem(menu, label) {
   if (!menu) return null
   return [...menu.querySelectorAll("button")].find((node) => node.textContent.trim().startsWith(label)) ?? null
@@ -246,16 +222,6 @@ async function openCardMenu(container, nickname) {
   return menu
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 실제 소비처가 읽은 값 — 별도 Probe가 아니라 커밋된 트리의 그 컴포넌트에서 읽는다
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Probe를 끼워 넣어 두 자리의 컨텍스트 값을 비교하면 "Provider가 같은 값을 준다"까지만
- * 보인다 — 정작 **컨트롤 패널과 카드 메뉴 호스트가 그 값을 읽었는가**는 보이지 않는다(둘 중
- * 하나가 제 훅을 따로 부르고 있어도 Probe끼리는 여전히 같다). 그래서 커밋된 fiber 트리에서
- * 그 두 컴포넌트를 직접 찾아, 그들이 자기 렌더에서 실제로 읽은 컨텍스트 값을 꺼낸다.
- */
 function currentFiberRoot(container) {
   const key = Object.keys(container).find((name) => name.startsWith("__reactContainer$"))
   assert.notEqual(key, undefined, "렌더 컨테이너에서 React 루트를 찾지 못했다")
@@ -270,7 +236,6 @@ function walkFibers(rootFiber, visit) {
     if (!fiber) continue
     visit(fiber)
     if (fiber.child) stack.push(fiber.child)
-    // 루트의 형제는 이 트리 바깥이다 — 루트에서만 형제를 따라가지 않는다.
     if (fiber !== rootFiber && fiber.sibling) stack.push(fiber.sibling)
   }
 }
@@ -291,7 +256,6 @@ function countFibersByType(rootFiber, type) {
   return count
 }
 
-/** 이 fiber가 **자기 렌더에서** 읽은 context 값. 읽은 기록이 없으면 시험을 실패시킨다. */
 function readConsumedContext(fiber, context, where) {
   let dependency = fiber?.dependencies?.firstContext ?? null
   while (dependency) {
@@ -301,7 +265,6 @@ function readConsumedContext(fiber, context, where) {
   assert.fail(`${where}가 InGameActionContext를 읽은 기록이 커밋된 트리에 없다`)
 }
 
-/** 실제 단계 행동 줄·실제 카드 메뉴 호스트(보드)가 각각 읽은 조작 컨텍스트 값. */
 function consumedActionContexts(container) {
   const rootFiber = currentFiberRoot(container)
   const rowFiber = findFiberByType(rootFiber, InGamePhaseActionRow)
@@ -319,7 +282,6 @@ const SHARED_FUNCTION_FIELDS = [
   "submitDayVote", "submitNightAction", "submitTribunalVote",
 ]
 
-/** 두 실제 소비처가 같은 객체·같은 setter를 읽었는지 확인하고 그 값을 돌려준다. */
 function assertSharedActionContext(container, when) {
   const consumed = consumedActionContexts(container)
   assert.notEqual(consumed.row, null, `${when}: 단계 행동 줄이 읽은 컨텍스트 값이 없다`)
@@ -333,11 +295,6 @@ function assertSharedActionContext(container, when) {
   return consumed.cardMenu
 }
 
-/**
- * 보드 카드의 선택 강조(theme stroke). 강조는 공유 선택값(selectedDayVoteTargetId /
- * selectedNightTargetId)에서만 나오므로, 행동 줄 경로가 고른 대상이 **보드 쪽 DOM**에
- * 나타났는지를 이 값으로 본다.
- */
 function cardStrokeTransform(container, nickname) {
   const card = container.querySelector(`[${INGAME_E2E_ATTRS.playerNickname}="${nickname}"]`)
   assert.notEqual(card, null, `${nickname} 카드를 실제 보드에서 찾지 못했다`)
@@ -353,10 +310,6 @@ test.afterEach(() => {
   currentSocket = null
   for (const cb of [...socketSubscribers]) cb()
 })
-
-// ═══════════════════════════════════════════════════════════════════════════
-// (1) 단일 인스턴스 — 두 소비 위치가 같은 참조를 본다
-// ═══════════════════════════════════════════════════════════════════════════
 
 test("AC-05: InGameActionProvider가 준 값은 두 소비 위치에서 같은 객체이고 setter까지 같은 참조다", () => {
   const transport = createControlledSocket()
@@ -395,7 +348,6 @@ test("AC-05: 실제 페이지에서 조작 훅 인스턴스는 하나뿐이고, 
   seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" })
   const view = await mountInGamePage(transport.socket)
 
-  // 훅을 부르는 자리(Provider)가 실제 페이지 트리에 정확히 하나다 — 둘이면 선택 상태가 갈린다.
   assert.equal(countFibersByType(currentFiberRoot(view.container), InGameActionProvider), 1,
     "실제 페이지 트리에 조작 Provider가 하나가 아니다(useInGameActionPanel이 여러 번 불린다)")
 
@@ -403,10 +355,6 @@ test("AC-05: 실제 페이지에서 조작 훅 인스턴스는 하나뿐이고, 
   assert.equal(shared.selectedDayVoteTargetId, null, "전제: 아직 아무 대상도 고르지 않았다")
   assert.equal(transport.sentFor("cast_day_vote").length, 0, "관찰만 했는데 전송이 일어났다")
 })
-
-// ═══════════════════════════════════════════════════════════════════════════
-// (a)(b) 낮 · (c)(d) 밤 — 선택 상태 한 칸을 공유한다
-// ═══════════════════════════════════════════════════════════════════════════
 
 test("AC-05(a/b): 낮 — 행동 줄 경로에서 고른 대상과 카드 메뉴에서 고른 대상이 한 칸을 공유한다", async () => {
   const transport = createControlledSocket()
@@ -416,9 +364,6 @@ test("AC-05(a/b): 낮 — 행동 줄 경로에서 고른 대상과 카드 메뉴
   const strokeBeforeB = cardStrokeTransform(view.container, "B")
   const strokeBeforeC = cardStrokeTransform(view.container, "C")
 
-  // (a) 행동 줄 → 메뉴: 행동 줄이 **읽은 그 setter**로 고른 대상이 공유 선택 칸에 들어가고,
-  //     카드 메뉴 소비 경로가 그 값을 그대로 읽는다. setter를 시험이 직접 만들지 않고 커밋된
-  //     트리의 소비처가 읽은 것을 쓰므로, 인스턴스가 둘로 갈리면 여기서 먼저 드러난다.
   const beforePick = consumedActionContexts(view.container)
   await act(async () => { beforePick.row.setSelectedDayVoteTargetId("u2") })
 
@@ -430,8 +375,6 @@ test("AC-05(a/b): 낮 — 행동 줄 경로에서 고른 대상과 카드 메뉴
   assert.equal(cardStrokeTransform(view.container, "C"), strokeBeforeC,
     "고르지 않은 카드까지 선택 강조가 바뀌었다")
 
-  // (b) 메뉴 → 행동 줄: 메뉴가 다른 대상을 고르면 **같은 칸**이 덮인다(인스턴스가 둘이면 행동
-  //     줄 소비 경로는 여전히 u2를 본다).
   const menu = await openCardMenu(view.container, "C")
   await act(async () => {
     fireEvent.mouseDown(findMenuItem(menu, INGAME_CARD_MENU_DAY_VOTE_LABEL))
@@ -457,7 +400,6 @@ test("AC-05(c/d): 밤 — 행동 줄 경로의 대상 선택과 카드 메뉴의
   const strokeBeforeB = cardStrokeTransform(view.container, "B")
   const strokeBeforeC = cardStrokeTransform(view.container, "C")
 
-  // (c) 행동 줄 → 메뉴
   const beforePick = consumedActionContexts(view.container)
   await act(async () => { beforePick.row.setSelectedNightTargetId("u2") })
 
@@ -469,7 +411,6 @@ test("AC-05(c/d): 밤 — 행동 줄 경로의 대상 선택과 카드 메뉴의
   assert.equal(cardStrokeTransform(view.container, "C"), strokeBeforeC,
     "고르지 않은 카드까지 선택 강조가 바뀌었다")
 
-  // (d) 메뉴 → 행동 줄
   const menu = await openCardMenu(view.container, "C")
   await act(async () => {
     fireEvent.mouseDown(findMenuItem(menu, "암살"))
@@ -486,10 +427,6 @@ test("AC-05(c/d): 밤 — 행동 줄 경로의 대상 선택과 카드 메뉴의
     .selectedNightTargetId, "u3", "메뉴가 고른 밤 대상이 공유 선택 칸에 남지 않았다")
   await act(async () => { transport.settle("submit_night_action", { ok: true }) })
 })
-
-// ═══════════════════════════════════════════════════════════════════════════
-// (e)(f) 재판 — 제출 진행·완료 상태를 공유한다
-// ═══════════════════════════════════════════════════════════════════════════
 
 test("AC-05(e): 재판 — 카드 메뉴에서 제출하면 행동 줄 소비 경로가 '제출 중'을, ACK 뒤에는 '제출함'을 본다", async () => {
   const transport = createControlledSocket()
@@ -514,7 +451,6 @@ test("AC-05(e): 재판 — 카드 메뉴에서 제출하면 행동 줄 소비 �
   })
   assert.equal(transport.sentFor("cast_tribunal_vote").length, 1, "(g) 재판 전송이 늘어났다")
 
-  // 완료 상태도 **한 칸**이다 — 카드 메뉴 소비 경로가 같은 값을 읽고, 항목이 함께 잠긴다.
   const afterAck = assertSharedActionContext(view.container, "메뉴 제출의 ACK 뒤")
   assert.equal(afterAck.tribunalVoteStatus, "submitted",
     "메뉴가 낸 제출의 완료 상태가 공유 컨텍스트에 없다")
@@ -547,7 +483,6 @@ test("AC-05(f): 재판 — 행동 줄 경로에서 제출하면 카드 메뉴 �
   assert.match(menu.textContent, new RegExp(INGAME_CARD_MENU_DISABLED_REASONS.submitting),
     "행동 줄 경로의 제출 진행 상태가 메뉴의 사유 문구에 보이지 않는다")
 
-  // 잠긴 항목을 눌러도 전송이 늘지 않는다.
   await act(async () => { fireEvent.click(guiltyItem) })
   assert.equal(transport.sentFor("cast_tribunal_vote").length, 1, "잠긴 메뉴 항목이 제출을 보냈다")
 
@@ -559,7 +494,6 @@ test("AC-05(f): 재판 — 행동 줄 경로에서 제출하면 카드 메뉴 �
     transport.settle("cast_tribunal_vote", { ok: true, gameId: GAME_ID, dayIndex: 1, vote: "NOT_GUILTY" })
   })
 
-  // ACK 뒤의 **완료** 상태도 두 경로가 같은 값으로 본다.
   const afterAck = assertSharedActionContext(view.container, "행동 줄 경로 제출의 ACK 뒤")
   assert.equal(afterAck.tribunalVoteStatus, "submitted",
     "행동 줄 경로가 낸 제출의 완료 상태가 공유 컨텍스트에 없다")

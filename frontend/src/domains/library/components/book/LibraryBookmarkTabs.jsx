@@ -13,7 +13,6 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
-/** 책 프레임 우측 책갈피 — 목차 전환 */
 export default function LibraryBookmarkTabs({ activeTabId, onTabChange }) {
   const forbiddenTab = getLibraryTab("forbiddenRecords")
   const invitedTab = getLibraryTab("invitedGuests")

@@ -1,12 +1,5 @@
 'use strict';
 
-// F-11 투표 참여 영속 집계 — 실제 격리 MySQL DB에서 AC-01~AC-05를 검증한다.
-//
-// roleStatistics.mysql.test.js/f01~f09 DB 통합 시험과 같은 원칙(F01_TEST_DATABASE_URL 전용
-// 격리 MySQL, backend/tests/helpers/isolatedTestDb.js의 관리 목록·대상 DB 확인)을 따른다.
-// F01_TEST_DATABASE_URL이 없으면 각 테스트는 실패로 표시하지 않고 명시적으로 skip하며
-// "미검증"임을 로그에 남긴다 — 격리 DB를 구할 수 없다고 통과를 꾸미지 않는다.
-
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 
@@ -62,8 +55,6 @@ const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
-// require 캐시 싱글턴이라, 파일 맨 위에서 맞춰둔 process.env.DATABASE_URL로 처음
-// require되는 이 시점에 격리 DB에 연결된다(roleStatistics.mysql.test.js와 같은 이유).
 const db = require('../models');
 const gameResultRepository = require('../repositories/gameResult.repositories');
 const voteParticipationRepository = require('../repositories/voteParticipation.repositories');
@@ -94,15 +85,12 @@ const createLocalUser = async (label) => {
     return uuid;
 };
 
-// ── game-core로 실제 DAY_VOTE 상태까지 진행시킨 세션을 조립한다 ─────────────────
-
 const makeRoom = (id, uuids, jokerCount = 1) => ({
     id,
     players: new Map(uuids.map((uuid) => [uuid, { uuid, nickname: `n-${uuid.slice(0, 6)}`, isReady: true }])),
     settings: { jokerCount },
 });
 
-/** N인 세션을 커밋하고 전원 ROLE_REVEAL 확인 + DAY_VOTE 준비를 마쳐 투표 제출 가능 상태로 만든다. */
 const createRunningSessionAtDayVote = (uuids, { jokerCount = 1 } = {}) => {
     const room = makeRoom(crypto.randomUUID(), uuids, jokerCount);
     const prepared = gameSessionCore.prepareGameSession(room, { randomFn: () => 0 });
@@ -113,21 +101,14 @@ const createRunningSessionAtDayVote = (uuids, { jokerCount = 1 } = {}) => {
     return session;
 };
 
-// 실제 Socket.IO의 namespace registry(io.sockets.sockets)와 같은 자리를 가진 io 대역이다.
-// 서버의 canonical 판정은 onlineUsers가 가리키는 id뿐 아니라 **그 id로 namespace를 조회한
-// 객체가 바로 이 소켓인지**까지 묻는다(backend/socket/gameSession.js의 isCurrentSocketForUuid).
-// 예전 대역의 소켓은 어느 registry에도 없었으므로 지금 계약에서는 정상 연결이 아니다 —
-// 기대값을 낮추는 대신 아래 connectSocket이 **누락된 등록 절차**를 실제 경로대로 채운다.
 const fakeIo = { sockets: { sockets: new Map() }, to: () => ({ emit: () => {} }) };
 
-/** 이 계정의 연결을 namespace registry에 등록한다(실제 연결 성립과 같은 사실을 만든다). */
 const connectSocket = (uuid, id = `sock-${uuid}`) => {
     const socket = {
         id,
         data: { user: { uuid } },
         connected: true,
         rooms: new Set(),
-        // io가 소유한 registry와 **같은 객체**여야 한다(교체·제거가 그대로 판정에 반영된다).
         nsp: fakeIo.sockets,
         emit() {},
         to: () => ({ emit: () => {} }),
@@ -136,7 +117,6 @@ const connectSocket = (uuid, id = `sock-${uuid}`) => {
     return socket;
 };
 
-/** 지금 그 계정의 연결(없으면 undefined) — 요청마다 새 객체를 만들지 않는다. */
 const socketFor = (uuid) => fakeIo.sockets.sockets.get(`sock-${uuid}`);
 
 const registerOnline = (uuids) => {
@@ -160,17 +140,10 @@ const submitVote = async (session, actor, targetId) => {
 
 const countVoteParticipations = async (gameId) => db.VoteParticipation.count({ where: { game_id: gameId } });
 
-/**
- * F-16(AC-01): cast_day_vote 성공 ack는 ok와 개인 사건 봉투(sfxEvent) 두 키를 담는다.
- * 이 스위트의 관심은 DB 저장 계약이므로 봉투의 세부 규칙은 socket/__tests__가 맡고,
- * 여기서는 "성공 ack이고 정확히 그 두 키뿐"임만 확인한다(추가 필드 누출 방어).
- */
 const assertVoteAckOk = (response, message) => {
     assert.deepEqual(Object.keys(response).sort(), ['ok', 'sfxEvent'], message);
     assert.equal(response.ok, true, message);
 };
-
-// ── AC-01/AC-03: 실제 소켓 경로 — 정상 투표는 저장되고, 기권은 저장되지 않는다 ─────
 
 test('AC-01/AC-03: 정상 대상 투표는 성공 ack 전에 vote_participations에 저장되고, 기권은 사건을 만들지 않는다', async (t) => {
     if (unavailable(t)) return;
@@ -192,8 +165,6 @@ test('AC-01/AC-03: 정상 대상 투표는 성공 ack 전에 vote_participations
     assert.equal(await db.VoteParticipation.count({ where: { game_id: session.id, user_id: c } }), 0, '기권자 c의 사건은 저장되면 안 된다');
 });
 
-// ── AC-02: 같은 요청의 중복 제출·네트워크 재시도는 한 번만 반영된다 ────────────────
-
 test('AC-02: 같은 (game_id, day_index, user_id) 재제출은 한 번만 반영된다(응답 유실 후 재시도와 동일한 모양)', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -204,9 +175,7 @@ test('AC-02: 같은 (game_id, day_index, user_id) 재제출은 한 번만 반영
 
     const first = await submitVote(session, a, b);
     assertVoteAckOk(first);
-    // 클라이언트가 첫 ack를 못 받았다고 믿고 똑같은 요청을 재시도하는 상황을 흉내낸다.
     const retry = await submitVote(session, a, b);
-    // F-16: 같은 대상 재시도이므로 eventId도 첫 제출과 같아야 한다(중복 재생 0).
     assertVoteAckOk(retry);
     assert.equal(retry.sfxEvent.eventId, first.sfxEvent.eventId);
 
@@ -230,8 +199,6 @@ test('AC-02: 실제 DB 경합(동시 요청)에서도 같은 집계 키는 정�
     assert.equal(await db.VoteParticipation.count({ where: { game_id: gameId } }), 1);
 });
 
-// ── AC-03: 재투표는 같은 day_index에 귀속되어 새 사건을 만들지 않는다 ─────────────
-
 test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day_index당 사건 수는 라운드 1에서 확정된 그대로다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -241,7 +208,6 @@ test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day
     registerOnline([a, b, c]);
     const dayIndexBefore = session.dayIndex;
 
-    // 순환 동점: a→b, b→c, c→a. 셋 다 비기권이므로 라운드 1에서 3건이 저장된다.
     await submitVote(session, a, b);
     await submitVote(session, b, c);
     await submitVote(session, c, a);
@@ -254,21 +220,14 @@ test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day
     assert.equal(session.phase, 'DAY', 'REVOTE는 phase를 DAY에 남긴다');
     assert.equal(session.dayIndex, dayIndexBefore, '재투표는 day_index를 바꾸지 않는다');
 
-    // 3인 세션의 순환 동점은 라운드 2에서 생존자 전원이 후보에서 제외되므로 전원 기권만 가능하다
-    // (backend/game-core/__tests__/gameSession.dayVote.test.js의 기존 계약과 동일).
     for (const uuid of [a, b, c]) {
         const response = await submitVote(session, uuid, null);
         assertVoteAckOk(response);
     }
 
-    // 라운드 2는 전원 기권이므로 새 사건이 생기지 않는다 — 총 사건 수는 라운드 1의 3건 그대로다.
     assert.equal(await countVoteParticipations(session.id), 3, '재투표(같은 day_index)는 이미 기록된 사건 수를 넘지 않는다');
 });
 
-// F-11 CODEX-1 재검토(AC-03): 최초 라운드에서 기권했던 참가자가 재투표에서 비기권으로
-// 돌아서는 경우다 — A-01은 "최초 일반 낮 투표"의 유효한 비기권 참여만을 세고
-// "재판·재투표 자체는 새 사건을 만들지 않는다"고 정의하므로, 이 뒤늦은 비기권은 새 사건을
-// 만들면 안 된다.
 test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 비기권으로 돌아서도 새 사건이 생기지 않는다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -277,8 +236,6 @@ test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 
     const session = createRunningSessionAtDayVote([a, b, c]);
     registerOnline([a, b, c]);
 
-    // 라운드 1: a→b, b는 기권, c→a. b와 a가 1표씩 받아 동점 → REVOTE(a, b가 다음 라운드
-    // 대상에서 제외된다). b는 기권이므로 이 라운드에서 사건이 생기지 않는다.
     await submitVote(session, a, b);
     const bAbstainResponse = await submitVote(session, b, null);
     assertVoteAckOk(bAbstainResponse);
@@ -291,11 +248,8 @@ test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 
     const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution);
     assert.equal(committed.ok, true);
 
-    // 라운드 2: a와 b가 대상에서 제외되었으므로 유일한 유효 대상은 c다. b는 이제 기권이 아닌
-    // c에게 투표한다 — 최초 라운드가 아니므로 이 제출은 새 사건을 만들면 안 된다.
     const bRevoteResponse = await submitVote(session, b, c);
     assertVoteAckOk(bRevoteResponse, '재투표 제출 자체는 ack가 성공해야 한다');
-    // F-16: 재투표는 별도 라운드 범위다 — F-11의 DB 집계 기여가 없더라도 사건은 있다.
     assert.equal(bRevoteResponse.sfxEvent.round, 2);
     await submitVote(session, a, c);
 
@@ -328,8 +282,6 @@ test('AC-03: TRIBUNAL 전이는 그 낮의 비기권 사건 수를 바꾸지 않
     assert.equal(await countVoteParticipations(session.id), 2, 'TRIBUNAL 전이 자체는 낮 투표 사건을 새로 만들거나 지우지 않는다');
 });
 
-// ── 재접속: 영속 계정 ID(uuid) 기준이므로 소켓이 바뀌어도 같은 계정은 같은 사건으로 묶인다 ──
-
 test('재접속: 같은 계정이 새 소켓으로 재제출해도 집계 키는 uuid 기준이라 사건이 늘지 않는다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -340,8 +292,6 @@ test('재접속: 같은 계정이 새 소켓으로 재제출해도 집계 키는
 
     await submitVote(session, a, b);
 
-    // 재접속을 흉내낸다 — 옛 연결이 namespace에서 빠지고, 같은 uuid가 새 소켓 id로 등록되며,
-    // 그 새 연결로 같은 대상에 재제출한다(실제 재접속이 registry에 남기는 사실 그대로다).
     fakeIo.sockets.sockets.delete(`sock-${a}`);
     gameSessionSocket.setOnlineUsersRegistry(new Map([[a, `sock-${a}-reconnected`], [b, `sock-${b}`]]));
     const reconnected = connectSocket(a, `sock-${a}-reconnected`);
@@ -353,8 +303,6 @@ test('재접속: 같은 계정이 새 소켓으로 재제출해도 집계 키는
 
     assert.equal(await countVoteParticipations(session.id), 1, '연결이 바뀌어도 같은 계정의 같은 날 사건은 하나여야 한다');
 });
-
-// ── A-03: 저장 실패는 재시도 가능한 실패로 전달되고, 메모리 투표는 재시도를 막지 않는다 ──
 
 test('저장 실패는 VOTE_PERSIST_FAILED로 ack되고, 메모리 투표는 남아 있어 재시도가 거절되지 않는다', async (t) => {
     if (unavailable(t)) return;
@@ -378,8 +326,6 @@ test('저장 실패는 VOTE_PERSIST_FAILED로 ack되고, 메모리 투표는 남
     assertVoteAckOk(retried, '저장이 복구되면 같은 요청의 재시도는 거절되지 않고 성공해야 한다');
     assert.equal(await countVoteParticipations(session.id), 1, '재시도 성공 후에도 사건은 하나여야 한다');
 });
-
-// ── AC-03/A-04: 중단된 경기·개발 경기는 업적 집계(F-12 연결점)에서 제외된다 ─────────
 
 test('AC-03/A-04: 중단된 경기에 속한 사건은 countEligibleDayVoteParticipations에서 제외된다', async (t) => {
     if (unavailable(t)) return;
@@ -414,8 +360,6 @@ test('A-04: 개발 경기에 속한 사건은 countEligibleDayVoteParticipations
     assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(a), 0, '개발 경기의 사건은 업적 집계에서 제외되어야 한다');
 });
 
-// ── AC-04/A-05: 과거 무기록은 0으로 간주되고 임의로 생성되지 않는다 ───────────────
-
 test('AC-04/A-05: 사건이 하나도 없는 계정은 0을 돌려받는다(과거 무기록을 임의로 만들지 않는다)', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -423,8 +367,6 @@ test('AC-04/A-05: 사건이 하나도 없는 계정은 0을 돌려받는다(과�
     const userWithNoEvents = await createLocalUser('vp8none');
     assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(userWithNoEvents), 0);
 });
-
-// ── AC-05: F-12가 소비할 조회 연결점 — 정상 확정된 운영 경기의 사건은 정확히 집계된다 ──
 
 test('AC-05: 정상 확정된 운영 경기의 비기권 투표는 F-12 조회 연결점(countEligibleDayVoteParticipations)에서 정확히 집계된다', async (t) => {
     if (unavailable(t)) return;
@@ -446,13 +388,10 @@ test('AC-05: 정상 확정된 운영 경기의 비기권 투표는 F-12 조회 �
     assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(c), 0, '기권자는 애초에 사건이 없다');
 });
 
-// ── AC-01: 스키마 자체 — 재실행 안전한 마이그레이션과 유일 제약 ────────────────────
-
 test('AC-01: vote_participations 마이그레이션은 재실행해도 안전하고(0008), (game_id, day_index, user_id) 유일 제약을 실제 DB가 강제한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
-    // 이미 적용된 마이그레이션을 다시 적용해도 스킵되고 에러가 없어야 한다(재실행 안전성).
     const again = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
     assert.deepEqual(again.applied, []);
 

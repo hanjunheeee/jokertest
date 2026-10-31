@@ -1,14 +1,9 @@
-// backend/models는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지 않는다).
-// 이 파일만 직접 실행해도 되도록 같은 디렉터리의 다른 스위트와 같은 관례로 더미 폴백을 둔다
-// (값은 .env.test와 동일하며, 이미 설정돼 있으면 덮지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const matchmaking = require('../matchmaking')
-// CO S-1(AC-02): 게임 시작 경로가 계정 전적 저장소도 호출한다 — 대역이 없으면 이 순수 단위
-// 스위트가 실제 MySQL 접속을 시도한다(economyService 대역과 같은 이유).
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
@@ -16,16 +11,10 @@ matchmaking.__setGameResultRepositoryForTests({
 matchmaking.__setUserRepositoryForTests({
     findByUuid: async (uuid) => ({ nickname: `user-${uuid}` }),
 })
-// F-13(AC-05): economy.service.js도 실제 호출 시 backend/models(실제 DB)가 필요해
-// userRepository와 같은 이유로 fake를 주입한다.
 matchmaking.__setEconomyServiceForTests({
     getPublicProfileLoadouts: async (userIds) =>
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
 })
-// 방이 소멸할 때 fire-and-forget으로 도는 초대 정리(gameInvite.service)는 실제 MySQL을
-// 요구한다. 대역을 주입하지 않으면 이 순수 단위 시험이 실제 DB 접속을 시도해
-// AccessDenied 로그를 남긴다 — 단언은 실패하지 않지만 "SQL을 건드리지 않는다"는 이
-// 스위트의 전제가 사실이 아니게 된다. 호출 자체는 기록해 두고 시험이 확인할 수 있게 한다.
 const cancelledInviteRooms = []
 matchmaking.__setGameInviteServiceForTests({
     cancelPendingInvitesForRoom: async (roomId, reason) => { cancelledInviteRooms.push({ roomId, reason }) },
@@ -111,7 +100,6 @@ test('방 목록은 open/code 방을 모두 반환하고 핵심 내부 정보는
         assert.equal(Object.hasOwn(room, 'hostUuid'), false)
         assert.equal(Object.hasOwn(room, 'socketId'), false)
         assert.equal(Object.hasOwn(room, 'stage'), false)
-        // 준비 상태·시작 가능 여부는 참가자 전용 정보라 공개 목록에는 노출하지 않는다(확정 사항).
         assert.equal(Object.hasOwn(room, 'isReady'), false)
         assert.equal(Object.hasOwn(room, 'canStart'), false)
     }
@@ -148,7 +136,6 @@ test('join_public_room은 open 방에 참가시키고 실시간 목록 인원을
     assert.ok(joinedEvent)
     assert.equal(joinedEvent.payload.players.length, 2)
     assert.equal(Object.hasOwn(joinedEvent.payload, 'roomCode'), true)
-    // 참가 응답에는 준비 상태·시작 가능 여부가 포함되어야 한다(공개 목록과는 다른 계약).
     assert.ok(joinedEvent.payload.players.every((player) => typeof player.isReady === 'boolean'))
     assert.equal(typeof joinedEvent.payload.canStart, 'boolean')
     assert.equal(io.emitted.at(-1).event, 'public_rooms_updated')
@@ -178,7 +165,6 @@ test('방 목록 status는 현재 인원이 정원에 도달하면 full로 계�
 })
 
 test('join_public_room: 잘못된 형태의 payload는 구조분해 예외 없이 명시적으로 거부한다', async () => {
-    // null/문자열/배열/roomId 없는 객체 각각에 대해 예외 없이 room_join_failed만 응답해야 한다.
     const cases = [null, 'not-an-object', [], {}, { roomId: 123 }, { roomId: '' }]
 
     for (const payload of cases) {
@@ -203,8 +189,6 @@ test('방 삭제 후 public_rooms_updated 방송에서 해당 방이 사라진�
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, '방 삭제 후 목록 방송이 있어야 합니다')
     assert.equal(broadcast.payload.rooms.some((room) => room.id === created.room.roomId), false)
-    // 초대 정리는 주입한 대역으로만 흘러야 한다 — 실제 SQL 경계를 이 스위트가 건드리지 않는다.
-    // cancelInvitesForRoomAsync는 fire-and-forget(Promise.resolve().then)이라 한 틱 뒤에 도달한다.
     await Promise.resolve()
     assert.ok(
         cancelledInviteRooms.some((entry) => entry.roomId === created.room.roomId),
@@ -223,7 +207,6 @@ test('참가자 disconnect 후 public_rooms_updated 방송에 인원 감소가 �
 
     io.emitted.length = 0
     matchmaking.onDisconnect(io, joiner, 'disconnect-broadcast-joiner')
-    // disconnect는 이제 재접속 유예 예약이다 — 재접속 확인 없이 유예가 끝난 경우를 재현한다.
     matchmaking.__flushRoomRetentionForTests()
 
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')

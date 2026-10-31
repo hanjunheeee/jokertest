@@ -1,16 +1,11 @@
 'use strict';
 
-// F-29a: 아이디 찾기 검증(findIdValidation.js)과 마스킹(maskEmail.js) 순수 함수 시험.
-// DB·HTTP 경계는 findId.api.test.js가 다루고, 여기서는 판정 로직 자체만 검사한다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { maskEmail, FALLBACK_MASK } = require('../utils/maskEmail');
 const { validateFindIdPayload } = require('../validation/findIdValidation');
 const { validateNickname } = require('../validation/signupValidation');
-
-// ── maskEmail ────────────────────────────────────────────────────────────────
 
 test('로컬 파트 길이 1은 *로만 가려진다', () => {
     assert.equal(maskEmail('a@b.co'), '*@b***.co');
@@ -51,8 +46,6 @@ test('@ 없음, 빈 로컬/도메인 등 파싱할 수 없는 문자열은 고�
     assert.equal(maskEmail(undefined), FALLBACK_MASK);
     assert.equal(maskEmail(12345), FALLBACK_MASK);
 });
-
-// ── validateFindIdPayload: 닉네임 ────────────────────────────────────────────
 
 test('9자 닉네임은 조회에서는 허용된다(가입 8자 상한과 다름)', () => {
     const result = validateFindIdPayload({ nickname: '아홉글자닉네임임', birthDate: '2000-01-01' });
@@ -100,8 +93,6 @@ test('닉네임이 문자열이 아니거나 지나치게 길면 거부된다', 
     assert.equal(validateFindIdPayload({ nickname: 123, birthDate: '2000-01-01' }).ok, false);
     assert.equal(validateFindIdPayload({ nickname: 'a'.repeat(201), birthDate: '2000-01-01' }).ok, false);
 });
-
-// ── validateFindIdPayload: 생년월일 ──────────────────────────────────────────
 
 test('윤년의 2월 29일은 통과한다', () => {
     const result = validateFindIdPayload({ nickname: '닉네임', birthDate: '2000-02-29' });

@@ -1,9 +1,7 @@
-// 게임 모드 선택 계열 화면의 공통 배경 에셋입니다.
 export const MODE_SCREEN_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
 }
 
-// 각 모드 카드에 사용할 프레임 이미지입니다.
 const MODE_FRAMES = {
   singlePlay: "/frame/gameMode/싱글플레이 프레임.png",
   multiPlay: "/frame/gameMode/멀티플레이 프레임.png",
@@ -12,7 +10,6 @@ const MODE_FRAMES = {
   findGame: "/frame/gameMode/게임 찾기 프레임.png",
 }
 
-// 게임 모드 선택 화면에 보여줄 카드 데이터입니다.
 export const GAME_MODES = [
   {
     id: "single",

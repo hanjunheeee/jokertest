@@ -9,7 +9,6 @@ import {
 } from "../../constants/podiumLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
-/** 랭킹테이블 프레임 안 2열 (좌 5명 · 우 5명) */
 export default function PodiumRankingTable({
   leftRanking,
   rightRanking,

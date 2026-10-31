@@ -1,13 +1,8 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 
-// economy.store.test.js와 같은 패턴 — API 경계와 auth store를 mock.module로 대체해
-// roleStatistics.store.js가 실제 fetch를 내보내지 않게 한다. roleStatistics.store.js도
-// 모듈 로드 시점에 useAuthStore.subscribe(...)를 부르므로, 실제 zustand store처럼
-// subscribe(listener)가 (state, prevState)로 리스너를 부르는 최소한의 흉내를 낸다.
 let getMyRoleStatisticsImpl = async () => { throw new Error("getMyRoleStatisticsApi stub not set") }
 let getRoleRankingImpl = async () => { throw new Error("getRoleRankingApi stub not set") }
-// F-12: requestJob이 이제 직업 도전과제 클리어 표시를 위해 업적 상태도 함께 불러온다.
 let getMyAchievementsImpl = async () => []
 let currentUser = { uuid: "user-1" }
 const authListeners = new Set()
@@ -115,8 +110,6 @@ test("0판 직업은 빈 랭킹(success, ranking:[])으로 남는다 — 실패�
   assert.equal(state.myStats.games, 0)
 })
 
-// ── F-12 AC-01/AC-06: 직업 도전과제 진행률을 업적 조회에서 함께 채운다 ────────
-
 test("requestJob: 업적 조회 결과가 id별 achieved·current·threshold·granted로 그대로 보존된다(CODEX-2 재검토 — granted를 버리지 않는다)", async () => {
   resetStore()
   getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
@@ -124,7 +117,6 @@ test("requestJob: 업적 조회 결과가 id별 achieved·current·threshold·gr
   getMyAchievementsImpl = async () => [
     { id: "noble-win-10", achieved: true, current: 12, threshold: 10, granted: true },
     { id: "noble-win-20", achieved: false, current: 12, threshold: 20, granted: false },
-    // achieved:true지만 아직 지급 이력이 없는(지급 대기/실패) 경우도 있을 수 있다(AC-06).
     { id: "record-1-masquerade", achieved: true, current: 5, threshold: 3, granted: false },
   ]
 
@@ -153,8 +145,6 @@ test("requestJob: 업적을 하나도 달성하지 못했어도 진행률(curren
     { "noble-win-10": { achieved: false, current: 2, threshold: 10, granted: false } },
   )
 })
-
-// ── A-08: 로그아웃/계정 전환/직업 변경 시 상태 격리 ─────────────────────────────
 
 test("로그아웃하면 모든 직업의 전적·랭킹이 초기화된다", async () => {
   resetStore()

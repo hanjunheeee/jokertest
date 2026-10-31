@@ -9,7 +9,6 @@ function startedPayload(overrides = {}) {
   return { gameId: GAME_ID, dayIndex: 1, role: "DOCTOR", deadline: DEADLINE, ...overrides }
 }
 
-// 전부 null(완전한 no-op)이어야 하는 입력이다.
 const rejected = [
   ["payload가 undefined면", undefined],
   ["payload가 null이면", null],
@@ -68,9 +67,6 @@ test("parseNightTurnStartedPayload: 백엔드 NIGHT_TURN_ORDER의 네 역할을 
 })
 
 test("parseNightTurnStartedPayload: 아직 능력이 없는 역할의 턴도 그대로 통과시킨다", () => {
-  // WITCH_HUNTER는 dayIndex 1 미만에서 행동할 수 없지만 서버는 그 턴도 똑같이 돌린다.
-  // "그 밤에 안내할 수 있는 턴인가"는 selectInGameNightTurnRole이 dayIndex로 따로 판정하므로,
-  // 파서가 여기서 미리 걸러 canonical 상태 자체를 비워두면 안 된다.
   const parsed = parseNightTurnStartedPayload({
     payload: startedPayload({ role: "WITCH_HUNTER", dayIndex: 0 }),
     gameId: GAME_ID,
@@ -80,8 +76,6 @@ test("parseNightTurnStartedPayload: 아직 능력이 없는 역할의 턴도 그
 })
 
 test("parseNightTurnStartedPayload: 생존 정보를 요구하지 않는다 — 죽은 역할의 턴이 산 역할의 턴과 구별되지 않는다", () => {
-  // 백엔드 buildNightTurnStartedPayload는 생존 여부를 payload에 담지 않는다(부채널 차단).
-  // 파서가 생존·자격을 요구하면 그 순간 죽은 직업의 턴만 조용히 걸러진다.
   const parsed = parseNightTurnStartedPayload({ payload: startedPayload(), gameId: GAME_ID, dayIndex: 1 })
   assert.deepEqual(Object.keys(parsed).sort(), ["dayIndex", "deadline", "gameId", "role"])
 })

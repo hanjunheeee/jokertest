@@ -30,9 +30,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
 
-// 훅이 최상단에서 import하는 socketClient를 제어 가능한 fake로 바꾼다(소켓 세대 축을 테스트에서
-// 직접 움직이기 위해서다). mock.module은 아직 로드되지 않은 specifier에만 적용되므로 훅·store
-// 모듈은 이 등록 이후에 동적 import한다.
 let currentFakeSocket = null
 const fakeSocketSubscribers = new Set()
 
@@ -68,11 +65,6 @@ const GAME_ID = "game-1"
 const SELF_UUID = "uuid-self"
 const OTHER_UUID = "uuid-other"
 
-/**
- * 이 파일의 모든 테스트는 실제 store·실제 인증 store·실제 훅만 쓴다(정상 경로). canonical
- * 상태는 언제나 store의 실제 액션(setGamePayload/applySessionSnapshot)으로만 움직인다 —
- * 훅 내부 상태를 직접 건드리는 경로는 하나도 없다.
- */
 function createFakeSocket() {
   const handlers = new Map()
   const emitCalls = []
@@ -128,7 +120,6 @@ function buildPlayers() {
   ]
 }
 
-/** canonical state 하나를 만든다. nightTurnRole은 서버가 역할 턴을 명시하는 경우를 나타낸다. */
 function buildState({ phase, dayIndex, nightTurnRole }) {
   return {
     id: GAME_ID,
@@ -151,7 +142,6 @@ function applyCanonicalState({ phase, dayIndex, nightTurnRole, gameId = GAME_ID 
   })
 }
 
-/** 재접속 스냅샷 정상 경로(get_session_snapshot 응답 → applySessionSnapshot). */
 function applySnapshot({ phase, dayIndex }) {
   act(() => {
     useInGameStore.getState().applySessionSnapshot({
@@ -168,10 +158,6 @@ function applySnapshot({ phase, dayIndex }) {
   })
 }
 
-/**
- * 정상 경로의 마운트 상태를 만든다: 게임 시작 직후(ROLE_REVEAL)에 인게임 화면이 이미 떠 있는
- * 상태 — 실제 InGamePage가 마운트되는 시점과 같다. 이 시점에는 역할 턴이 없어 안내도 없다.
- */
 function mountAtRoleReveal({ hold = false } = {}) {
   const fake = createFakeSocket()
   setFakeSocket(fake.socket)
@@ -229,15 +215,12 @@ test("광대 안내를 닫아도 이후 역할 안내가 저절로 뜨지 않고
   assert.equal(result.current.open, false, "닫은 안내는 사라진다")
   assert.equal(result.current.announcement, null)
 
-  // 닫은 뒤 리렌더·상태 재관측이 반복돼도 다음 역할이 로컬로 등장하지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
 
   assert.equal(result.current.open, false, "의사·경비원·마녀사냥꾼 안내가 로컬로 이어지지 않는다")
   assert.equal(result.current.announcement, null)
 
-  // canonical 역할 턴은 여전히 JOKER이고, 밤 행동 UI 판정(InGameActionPanel이 그대로 쓰는
-  // getInGameNightActionType — ingameActionPanel.js)도 광대 행동을 계속 허용한다.
   const { self, dayIndex } = useInGameStore.getState().state
   assert.equal(getInGameNightActionType(self.role, dayIndex), "ASSASSINATE")
 
@@ -255,7 +238,6 @@ test("같은 턴에서 반복되는 canonical 갱신은 안내를 다시 열지 
   })
   assert.equal(result.current.open, false)
 
-  // 같은 밤·같은 턴의 roster/연결 상태 갱신과 스냅샷 재적용이 반복돼도 다시 열리지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   applySnapshot({ phase: "NIGHT", dayIndex: 1 })
   applySnapshot({ phase: "NIGHT", dayIndex: 1 })
@@ -275,7 +257,6 @@ test("canonical 역할 턴이 DOCTOR로 바뀌면 의사 안내가 정확히 한
     result.current.close()
   })
 
-  // 서버발 canonical 턴 변경만이 다음 안내를 연다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
 
   assert.equal(result.current.open, true)
@@ -285,7 +266,6 @@ test("canonical 역할 턴이 DOCTOR로 바뀌면 의사 안내가 정확히 한
   act(() => {
     result.current.close()
   })
-  // 같은 DOCTOR 턴이 다시 관측돼도 두 번째로 열리지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
   assert.equal(result.current.open, false)
 
@@ -348,8 +328,6 @@ test("서버가 시작한 역할 턴은 로컬 행동 가능 여부와 무관하
   resetStores()
   const { result, unmount } = mountAtRoleReveal()
 
-  // 역할 턴 진행은 서버가 단독으로 결정한다. 프런트의 행동 가능 조건으로 서버 이벤트를
-  // 다시 거르면 서버와 화면이 어긋나므로 첫 밤의 방송도 그대로 안내한다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
 
   assert.equal(result.current.open, true)
@@ -359,7 +337,6 @@ test("서버가 시작한 역할 턴은 로컬 행동 가능 여부와 무관하
     result.current.close()
   })
 
-  // 같은 서버 턴의 중복 갱신은 다시 열지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 0, nightTurnRole: "WITCH_HUNTER" })
   assert.equal(result.current.open, false)
 
@@ -373,10 +350,8 @@ test("앞 순서 오버레이(진입 연출)가 떠 있는 동안에는 뜨지 �
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.open, false, "'밤이 되었습니다'가 떠 있는 동안에는 뜨지 않는다")
 
-  // 대기 중에 같은 턴이 여러 번 관측돼도 소비되지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
 
-  // rerender는 이미 act로 감싸여 있다(중첩 act를 피한다).
   rerender({ hold: false })
 
   assert.equal(result.current.open, true, "진입 연출이 닫히면 반드시 뜬다")
@@ -400,7 +375,6 @@ test("안내를 닫아도 소켓 emit(밤 행동·역할 확인 등)이 전혀 �
 
   assert.equal(fake.emitCalls.length, emitsBefore, "닫기는 어떤 emit도 하지 않는다")
   assert.equal(fake.emitWithAckCalls.length, acksBefore, "닫기는 역할 확인 ack도 보내지 않는다")
-  // 이 훅은 canonical store도 건드리지 않는다.
   assert.equal(useInGameStore.getState().state.phase, "NIGHT")
   assert.equal(useInGameStore.getState().state.dayIndex, 1)
 
@@ -414,7 +388,6 @@ test("이전 날짜의 늦은 닫기 콜백은 새 안내를 대신 닫지 않�
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   const staleClose = result.current.close
 
-  // 다음 밤으로 넘어가면 새 identity의 안내가 뜬다.
   applyCanonicalState({ phase: "DAY", dayIndex: 2 })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 2 })
   assert.equal(result.current.open, true)
@@ -435,7 +408,6 @@ test("이전 계정·이전 게임의 늦은 닫기 콜백은 아무 일도 하�
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   const staleClose = result.current.close
 
-  // 다른 계정으로 바뀌면 그 세대의 대기·표시 상태는 전부 무효가 된다.
   act(() => {
     useAuthStore.setState({ user: { uuid: "uuid-other-account" } })
   })
@@ -514,7 +486,6 @@ test("StrictMode의 이중 실행에도 같은 턴이 다시 열리지 않는다
   })
   assert.equal(result.current.open, false)
 
-  // 닫은 뒤 같은 턴이 다시 관측돼도(중복 방송·리렌더·이중 실행) 재오픈되지 않는다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.open, false)
 
@@ -530,7 +501,6 @@ test("이미 진행 중인 밤으로의 스냅샷 복원은 baseline만 세우�
   assert.equal(result.current.open, false, "복원은 '방금 턴이 바뀐 것'이 아니다")
   assert.equal(result.current.announcement, null)
 
-  // 복원 이후의 실시간 canonical 변경은 정상적으로 안내한다.
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" })
   assert.equal(result.current.open, true)
   assert.equal(messageOf(result), "의사의 시간입니다")

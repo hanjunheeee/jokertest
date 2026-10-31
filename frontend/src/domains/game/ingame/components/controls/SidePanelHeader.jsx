@@ -1,6 +1,3 @@
-/**
- * 인게임 좌측 슬라이드 패널 — 탑레벨 프레임 헤더 (타이틀 + 부제)
- */
 import { INGAME_SIDE_PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
 import {
   INGAME_SIDE_PANEL_HEADER_PLATE_CLASS,

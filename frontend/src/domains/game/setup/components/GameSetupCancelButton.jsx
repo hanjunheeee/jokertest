@@ -5,7 +5,6 @@ import {
 } from "../constants/gameSetupFormActions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/** 설정 편집 취소 — 버튼(취소 및 부정).png */
 export default function GameSetupCancelButton({
   onClick,
   disabled = false,

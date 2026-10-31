@@ -1,9 +1,6 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 
-// 초상·프레임 픽커는 "@/shared/..." Vite alias로 PNG 에셋을 끌어오므로 node --test가 해석하지
-// 못한다. 이 테스트가 보는 계약은 themeIndex 배정뿐이라 두 픽커를 통째로 대체한다(다른 훅
-// 테스트의 mock.module 관례와 동일 — 등록 이후 동적 import로 대상 모듈을 가져온다).
 mock.module("../pickInGameJobPortrait.js", {
   namedExports: { pickInGameJobPortrait: (index) => `portrait-${index}` },
 })

@@ -4,13 +4,6 @@ import { JSDOM } from "jsdom"
 import { register } from "node:module"
 import React from "react"
 
-// F-13 AC-02 재검토 전용 회귀 — 기존 profileBorder.integration.test.js가 미리보기·취소·
-// 확인·저장 거부·중복 확인 방지·계정 전환 차단(A-08)을 이미 폭넓게 검증하므로 여기서는
-// 그 시나리오를 다시 반복하지 않는다. 이 파일은 그 스위트에 없던 한 가지만 고정한다:
-// "응답 유실(전송 불확실)은 서버 상태 재조회로 확정한다"는 계획 메모 지시(economy.store.js의
-// purchase()가 이미 구현한 confirmedRejection/unknown 구분을 useProfileBorderEditor.handleConfirm
-// 에도 그대로 적용한 부분) — useMyProfile.roleStatistics.test.js와 같은 이유로 renderHook은
-// DOM 전역이 필요하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {
@@ -29,22 +22,10 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// F-13 AC-03(CODEX-4): "실제 옵션 렌더링 근거"를 남기려면 ProfileEditOptionGrid.jsx를 이
-// 저장소의 node:test 실행에서 실제로 import·마운트할 수 있어야 한다 — 이 파일은 .js라
-// vite alias·JSX 변환을 직접 풀 수 없는(이 저장소 관례) 제약이 있다. 이미
-// frontend/.../ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs가 이 제약을 없애는
-// module.register() ESM 훅(TypeScript transpileModule 변환 + "@/" alias 해석, production
-// 코드 변경 없음)을 만들어 뒀으므로 새 하네스를 또 만들지 않고 그대로 재사용한다.
 register(new URL("../../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
-// F-13 AC-03(CODEX-2) — 업적 조회 성공에서 economy 갱신을 유발하는 실제 연결(useAchievements.js의
-// syncEconomyIfSuccess)을 직접 fetchSummary를 호출해 흉내내지 않고 실제 훅을 마운트해
-// 증명하려면, 그 훅이 실제로 부르는 진입점(getMyAchievementsApi)만 useAchievements.test.js와
-// 동일한 방식으로 가로챈다 — achievements.api.js는 @/shared/api/client 별칭을 쓰므로(이
-// 저장소의 node:test 실행에서 별칭이 해석되지 않는다) 그 안쪽이 아니라 이 모듈 전체를
-// 대체한다.
 let getMyAchievementsImpl = async () => { throw new Error("getMyAchievementsApi stub not set") }
 let currentUser = { uuid: "user-1" }
 const authListeners = new Set()
@@ -92,10 +73,6 @@ const { default: ProfileEditOptionGrid } = await import("../ProfileEditOptionGri
 const { PROFILE_EDIT_PHOTO_OPTIONS, PROFILE_EDIT_TAB_BORDER, PROFILE_PHOTO_ITEM_TYPE } =
   await import("../../../constants/profileEditLayout.js")
 
-// F-13 AC-03 재검토(CODEX-5): ownedPhotoOptions는 이제 정적 배열이 아니라 서버
-// entitlements에서 유도되므로(ownedBorderOptions와 같은 계약), 실제 계정이 보유한 사진
-// entitlement 행을 흉내낼 공용 fixture가 필요하다 — 지금 카탈로그의 16종은 전부 기본 지급
-// (defaultGrant:true)이므로 "모든 계정이 항상 전부 보유"를 흉내낼 때는 이 전체 목록을 쓴다.
 const allDefaultPhotoEntitlements = PROFILE_EDIT_PHOTO_OPTIONS.map(({ itemId }) => ({ itemId, itemType: PROFILE_PHOTO_ITEM_TYPE }))
 
 function resetStores() {
@@ -117,9 +94,6 @@ function readyLoadout(loadout) {
 
 test("F-13 AC-02: 서버가 명시적으로 거부(code 있음)하면 재조회 없이 오류만 보여주고 이전 장착 상태를 유지한다", async () => {
   resetStores()
-  // fetchSummary()는 한 번 호출될 때마다 /wallet과 /entitlements 두 endpoint를 함께
-  // 부른다(Promise.all) — "재조회 횟수"를 정확히 세려면 fetchSummary당 딱 한 번만 불리는
-  // /wallet endpoint만 센다(entitlements까지 세면 fetchSummary 한 번이 +2로 잡혀 어긋난다).
   let walletCalls = 0
   getImpl = async (endpoint) => {
     if (endpoint.endsWith("/wallet")) walletCalls += 1
@@ -163,11 +137,6 @@ test("F-13 AC-02: 응답을 잃어버리면(code 없는 오류) 성공/실패를
 
 test("F-13 AC-02: 응답 유실 뒤 실제로는 서버에 저장이 성공해 있었다면, 재조회로 그 실제 값을 반영한다", async () => {
   resetStores()
-  // CODEX-1 재검토: 이전 버전은 최초 조회부터 목표 장착값(귀족)을 돌려줘 저장이 아무것도
-  // 바꾸지 않은 채로 "성공"처럼 보였다(borderChanged가 애초에 false가 되어 confirm이
-  // postImpl조차 호출하지 않고 즉시 종료됨). 최초 조회(1회차)는 이전 장착값(평민)을,
-  // confirm 실패 후의 재조회(2회차부터)는 서버가 실제로 확정한 새 값(귀족)을 돌려주게 해
-  // "재조회가 실제로 상태를 바꿨다"를 증명한다.
   let entitlementsCalls = 0
   getImpl = async (endpoint) => {
     if (endpoint.endsWith("/wallet")) return walletOk
@@ -254,13 +223,6 @@ test("F-13 AC-02(CODEX-1): 저장 응답을 기다리는 동안 편집기를 닫
 })
 
 test("F-13 AC-02(CODEX-4): 저장 응답을 기다리는 동안 편집기를 닫고 다시 열지 않으면, 뒤늦게 도착한 성공 응답을 취소로 취급하지 않고 실제로 서버에 확정된 값을 store에 그대로 반영하며 onClose를 다시 부르지 않는다", async () => {
-  // CODEX-4 반송 근거: "close without reopen" 시나리오 자체가 시험에 없었고, "서버가 실제로
-  // 확정한 저장을 취소처럼 취급하면 안 된다"(진짜 서버 상태를 일관되게 보존)는 지시를
-  // 검증할 증거가 없었다. economy.store.js의 equipProfile은 계정 세대(requestGeneration)만
-  // 검사하므로(같은 계정 안에서 편집기를 닫기만 한 것은 세대를 바꾸지 않는다) 뒤늦은 성공은
-  // store.loadout에 실제로 반영되어야 한다 — 이 훅의 세션 무효화(editorSessionRef)는 오직
-  // "지금 화면(이 훅 인스턴스)"의 UI 상태(confirmStatus/onClose)만 억제할 뿐, 이미 서버에
-  // 커밋된 진실 자체를 감추거나 되돌리지 않는다.
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   let resolvePost
@@ -331,16 +293,6 @@ test("F-13 AC-02(CODEX-4): 저장 응답을 기다리는 동안 편집기를 닫
 })
 
 test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편집기를 닫았다 다시 열어 세션 B가 새로 저장을 시작하면, A의 뒤늦은 완료(성공)는 진행 중인 B의 saving 상태·초안·편집기를 전혀 건드리지 않고 오직 B 자신의 완료만 B를 정착시킨다", async () => {
-  // CODEX-2 반송 근거: useProfileBorderEditor.handleConfirm의 isStale() 분기가 한때
-  // setConfirmStatus("idle")을 실행해, 이미 폐기된 세션(A)의 응답이 새로 연 세션(B)의
-  // 진행 중인 saving 상태를 실수로 idle로 되돌릴 수 있었다(B가 저장을 시작조차 하지 않은
-  // 채로 남는 회귀). 위 CODEX-1 테스트는 B가 아직 아무 것도 시작하지 않은 상태만 검증했다
-  // — 이 테스트는 B도 실제로 handleConfirm을 호출해 saving 중인 상태에서 A의 응답이
-  // 도착하는, 지시서가 명시한 정확한 시나리오를 고정한다. economy.store.js의 equipProfile은
-  // 계정 세대(requestGeneration)만 검사하므로(같은 계정 안에서의 편집기 재오픈은 세대가
-  // 바뀌지 않는다) A의 성공은 store.loadout 자체는 정상적으로 반영한다 — 이 테스트가
-  // 검증하는 것은 store가 아니라 "지금 화면(이 훅 인스턴스)의 UI 상태"가 A가 아니라
-  // 오직 B에 의해서만 정착되어야 한다는 것이다.
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   const postDeferreds = []
@@ -353,7 +305,6 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
 
-  // 세션 A: 귀족으로 확정 시도, 응답 대기 상태로 둔다.
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
   let confirmAPromise
   act(() => { confirmAPromise = result.current.handleConfirm() })
@@ -365,18 +316,12 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(result.current.draftBorderItemId, "profile-border-평민", "B의 초안은 실제 장착값으로 리셋되어야 한다")
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
-  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 된다(핵심 시나리오: "session B
-  // save pending"). 다만 economy.store.js의 profileQueue가 겹치는 확정을 실제 전송 순서로
-  // 직렬화하므로("A committed before B can be sent"), B의 실제 네트워크 POST는 A가
-  // settle되기 전까지 큐에서 대기한다 — 그래서 이 시점엔 아직 postDeferreds가 A 하나뿐이다.
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
   assert.equal(result.current.confirmStatus, "saving", "B가 시작한 저장은 saving 상태여야 한다")
   assert.equal(postDeferreds.length, 1, "B의 실제 전송은 A가 settle되기 전까지 큐에서 대기한다(직렬화)")
 
-  // A의 응답이 이제 뒤늦게 성공으로 도착한다 — 이미 폐기된 세션의 완료다. A가 settle되어야
-  // 비로소 B의 실제 POST가 큐에서 나간다.
   await act(async () => {
     postDeferreds[0].resolve({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
     await confirmAPromise
@@ -391,7 +336,6 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(closeCount, 0, "A의 완료는 B 세션의 편집기를 닫으면 안 된다")
   assert.equal(result.current.draftBorderItemId, "profile-border-남작", "A의 완료가 B의 진행 중인 초안을 되돌리면 안 된다")
 
-  // B의 응답이 도착(성공)하면 그제서야 B 자신이 정착한다.
   await act(async () => {
     postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
     await confirmBPromise
@@ -403,18 +347,6 @@ test("F-13 AC-02(CODEX-2): 세션 A가 저장 응답을 기다리는 동안 편�
 })
 
 test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 확정을 실제 전송 순서로 직렬화하므로 '완료 순서 역전'은 같은 세션 안에서 더 이상 재현될 수 없음을 먼저 확인하고, 유일하게 가능한 순서(A settle → B 실제 전송 → B 완료)에서 A의 완료가 이미 확정된 B의 값을 store에서 되돌리지 않는다는 것도 확인한다", async () => {
-  // CODEX-5 반송 근거(원문): 완료 순서가 뒤집혀도(B가 먼저 확정되고 A가 그 뒤에 뒤늦게
-  // 성공으로 도착해도) 최신 시도(B)의 값이 지켜져야 한다는 계약을 검증했다. 그 뒤 운영자
-  // 설계 감사(2026-09-11 22:12)로 economy.store.js가 겹치는 확정을 profileQueue로 실제
-  // 전송 순서까지 직렬화하도록 바뀌었다 — "A committed before B can be sent"(economy.store.js
-  // 주석) 그 자체가 이제 A의 실제 네트워크 POST가 settle되기 전까지 B의 실제 POST조차 나갈
-  // 수 없다는 뜻이다. 그래서 "B가 A보다 먼저 완료"라는 원래 시나리오는 같은 계정·같은
-  // 클라이언트 세션 안에서는 더 이상 재현할 수 없다(그 자체가 이 직렬화 설계의 목적이다).
-  // 이 시험은 그 사실을 먼저 직접 증명한 뒤(잠시 기다려도 B의 실제 POST가 나가지 않는다),
-  // 유일하게 가능한 순서에서도 A의 완료가 이미 확정된 B를 덮어쓰지 않는다는 계약이 여전히
-  // 성립함을 확인한다 — 덧붙여 A가 자기 자신의 확정으로 먼저 성공하는 순간 store가 즉시
-  // A의 값을 반영한다는 것(economy.store.js의 applyLoadoutResult는 attemptSeq가 아니라
-  // 계정만 확인한다)과, 그 값이 나중에 B의 완료로 정상적으로 대체된다는 것까지 함께 고정한다.
   resetStores()
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   const postDeferreds = []
@@ -427,7 +359,6 @@ test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 �
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
 
-  // 세션 A: 귀족으로 확정 시도, 응답 대기 상태로 둔다.
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
   let confirmAPromise
   act(() => { confirmAPromise = result.current.handleConfirm() })
@@ -436,9 +367,6 @@ test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 �
   rerender({ open: false }) // A의 응답을 기다리지 않고 닫음
   rerender({ open: true }) // 세션 B 시작
 
-  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 되지만, 실제 POST는 A가
-  // settle되기 전까지 나가지 않는다. 잠시 기다려 봐도 postDeferreds는 여전히 A 하나뿐이어야
-  // 한다 — "B가 A보다 먼저 완료"는 이제 물리적으로 불가능하다.
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
@@ -447,7 +375,6 @@ test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 �
   }
   assert.equal(postDeferreds.length, 1, "A가 settle되기 전에는 B의 실제 POST가 나갈 수 없다(완료 순서 역전이 구조적으로 불가능함을 직접 확인)")
 
-  // 유일하게 가능한 순서대로 A를 먼저 settle시킨다 — 그제서야 B의 실제 POST가 큐에서 나간다.
   await act(async () => {
     postDeferreds[0]({ loadout: { selectedProfileBorderId: "profile-border-귀족" } })
     await confirmAPromise
@@ -463,7 +390,6 @@ test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 �
   )
   assert.equal(closeCount, 0, "A의 완료는 아직 진행 중인 B 세션의 편집기를 닫으면 안 된다")
 
-  // B가 이제 정상적으로 완료(성공)된다 — 마지막으로 확정된 값(B)이 최종 장착 상태여야 한다.
   await act(async () => {
     postDeferreds[1]({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
     await confirmBPromise
@@ -478,19 +404,6 @@ test("F-13 AC-02(CODEX-5, 직렬화 큐 재검증): profileQueue가 겹치는 �
 })
 
 test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫았다 다시 열어 세션 B가 저장을 시작하면, 그 뒤 도착하는 A의 거부(전송 불확실)는 재조회·오류 표시 없이 조용히 무시되고, 뒤이어 실제로 전송되는 B의 확정이 정상적으로 완료된다", async () => {
-  // 계획 메모 지시 시나리오 — "A pending -> close/reopen -> B saving -> A late reject/refresh
-  // completion -> B success"를 실제 훅으로 끝까지 재현한다. A의 거부는 editorSessionRef가
-  // 이미 무효화한 뒤 도착하므로 isStale()이 fetchSummary 호출 자체를 막아야 한다(재조회조차
-  // 시도하면 안 된다 — 이미 위 CODEX-4 시험이 단일 세션 안에서는 고정했지만, 여기서는 그
-  // 사이 실제로 다른 세션(B)이 준비된 뒤에도 똑같이 성립하는지 확인한다).
-  //
-  // F-13 AC-02(운영자 지시, 2026-09-11 22:12) 재검토 — economy.store.js의 profileQueue가
-  // 겹치는 확정을 실제 전송 순서로 직렬화하므로, B의 실제 POST는 A가 settle(이 시험에서는
-  // 거부로 settle)되기 전까지 나갈 수 없다 — 그래서 원래 시나리오의 "B가 먼저 확정된 뒤 A의
-  // 거부가 뒤늦게 도착한다"는 순서는 이제 재현할 수 없다(A는 항상 B보다 먼저 settle된다).
-  // 이 시험은 그 대신 "A가 거부로 settle된 뒤에야 B의 실제 POST가 나가고, A의 거부 자체는
-  // (이미 무효화된 세션이므로) 재조회·오류 표시 없이 조용히 무시된 채로 B가 정상적으로
-  // 완료된다"는, 직렬화된 설계에서 유일하게 가능한 순서를 검증한다.
   resetStores()
   let walletCalls = 0
   getImpl = async (endpoint) => {
@@ -508,7 +421,6 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
   const walletCallsBeforeConfirm = walletCalls
 
-  // 세션 A: 귀족으로 확정 시도, 응답 대기.
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
   let confirmAPromise
   act(() => { confirmAPromise = result.current.handleConfirm() })
@@ -517,15 +429,11 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
   rerender({ open: false }) // 닫음
   rerender({ open: true }) // 세션 B 시작
 
-  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 되지만, 실제 POST는 A가
-  // settle되기 전까지 큐에서 대기한다.
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
   assert.equal(postDeferreds.length, 1, "B의 실제 전송은 A가 settle되기 전까지 나가지 않는다(직렬화)")
 
-  // A의 저장이 거부(code 없음, 전송 불확실)로 도착한다 — 이미 폐기된 세션(editorSessionRef
-  // 무효화)의 응답이라 isStale()이 재조회·오류 표시를 막는다.
   await act(async () => {
     postDeferreds[0].reject(new TypeError("network disconnected"))
     await confirmAPromise
@@ -538,14 +446,12 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
   )
   assert.equal(result.current.confirmError, null, "폐기된 세션의 거부가 지금 화면(B)에 오류를 남기면 안 된다")
 
-  // A가 settle(거부)된 뒤에야 B의 실제 POST가 큐에서 나간다.
   for (let i = 0; i < 10 && postDeferreds.length < 2; i += 1) {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   }
   assert.equal(postDeferreds.length, 2, "A가 settle된 뒤에야 B의 실제 POST가 나가야 한다")
   assert.equal(result.current.confirmStatus, "saving", "B의 실제 POST가 이제 막 나갔을 뿐 아직 응답을 받지 못했으므로 saving 상태여야 한다")
 
-  // B의 응답이 도착(성공)하면 정상적으로 완료된다.
   await act(async () => {
     postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
     await confirmBPromise
@@ -562,19 +468,6 @@ test("F-13 AC-02(CODEX-5): 세션 A가 저장 응답 대기 중 편집기를 닫
 })
 
 test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편집기를 닫았다 다시 열어 세션 B가 저장을 시작하면, A의 거부(전송 불확실)로 큐가 전진해 B의 실제 POST가 막 나간 직후(B가 아직 saving 중일 때)에도 B의 saving 상태·초안·편집기·재조회를 전혀 건드리지 않는다", async () => {
-  // CODEX-6 반송 근거: 위 CODEX-5 시험은 A의 뒤늦은 거부가 "B가 이미 확정된 뒤"에만
-  // 도착하는 순서만 검증했다 — 계획 메모가 명시한 "session B save pending"(B가 아직
-  // saving 중일 때 A의 거부가 도착) 순서는 어느 시험도 재현하지 않았다. isStale()이
-  // editorSessionRef만으로 판정되므로 이 순서 자체는 위 CODEX-2(A의 성공 버전)와 동일한
-  // 보호를 받아야 하지만, "A의 응답이 거부(재조회 시도)"라는 점에서 그 재조회 시도조차
-  // B의 saving을 건드리면 안 된다는 것을 별도로 고정해야 한다.
-  //
-  // F-13 AC-02(운영자 지시, 2026-09-11 22:12) 재검토 — economy.store.js의 profileQueue가
-  // 겹치는 확정을 실제 전송 순서로 직렬화하므로, "A와 B 둘 다 실제 네트워크 요청이 동시에
-  // 미해결 상태"는 더 이상 재현할 수 없다(B의 실제 POST는 A가 settle되어야 나간다). 대신
-  // A의 거부로 큐가 전진해 B의 실제 POST가 막 나간 바로 그 시점(B는 여전히 자기 자신의
-  // 응답을 기다리는 saving 상태)에, A의 거부가 B의 saving·초안·편집기·재조회를 전혀
-  // 건드리지 않는다는 것을 확인한다.
   resetStores()
   let walletCalls = 0
   getImpl = async (endpoint) => {
@@ -592,7 +485,6 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
   const walletCallsBeforeConfirm = walletCalls
 
-  // 세션 A: 귀족으로 확정 시도, 응답 대기 상태로 둔다.
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
   let confirmAPromise
   act(() => { confirmAPromise = result.current.handleConfirm() })
@@ -602,16 +494,12 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
   rerender({ open: true }) // 즉시 다시 연다 — 세션 B 시작(초안이 실제 장착값으로 리셋됨)
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
-  // 세션 B: 남작으로 확정 시도 — 화면은 즉시 saving 상태가 된다(핵심 시나리오: "session B
-  // save pending"). 실제 POST는 A가 settle되기 전까지 큐에서 대기한다(직렬화).
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
   assert.equal(result.current.confirmStatus, "saving", "B가 시작한 저장은 saving 상태여야 한다")
   assert.equal(postDeferreds.length, 1, "B의 실제 전송은 A가 settle되기 전까지 큐에서 대기한다(직렬화)")
 
-  // A의 저장이 거부(code 없음, 전송 불확실)로 도착한다 — 이 거부로 큐가 전진해 B의 실제
-  // POST가 나간다. B는 아직 완료되지 않았다(B의 POST는 여전히 응답 대기 중이다).
   await act(async () => {
     postDeferreds[0].reject(new TypeError("network disconnected"))
     await confirmAPromise
@@ -631,7 +519,6 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
   assert.equal(closeCount, 0, "A의 뒤늦은 거부가 아직 진행 중인 B의 편집기를 닫으면 안 된다")
   assert.equal(result.current.draftBorderItemId, "profile-border-남작", "A의 뒤늦은 거부가 B의 진행 중인 초안을 되돌리면 안 된다")
 
-  // B의 응답이 이제 도착(성공)하면 그제서야 B 자신이 정상적으로 정착한다.
   await act(async () => {
     postDeferreds[1].resolve({ loadout: { selectedProfileBorderId: "profile-border-남작" } })
     await confirmBPromise
@@ -643,15 +530,7 @@ test("F-13 AC-02(CODEX-6): 세션 A가 저장 응답을 기다리는 동안 편�
 })
 
 test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummary)가 아직 끝나지 않은 상태에서 편집기를 닫았다 다시 열어 세션 B가 저장을 시작해 먼저 확정되면, A가 시작한(더 먼저 시작된) 재조회가 뒤늦게 끝나도 이미 확정된 B의 값과 화면을 덮어쓰지 않는다", async () => {
-  // CODEX-6 반송 근거: "earlier refresh completion" — 지금까지의 시험은 A 자신의 응답
-  // (성공이든 거부든)이 뒤늦게 도착하는 경우만 다뤘다. 이 시험은 A가 아직 유효한 세션일
-  // 때 스스로 시작시킨 재조회(fetchSummary, 응답 유실 뒤 서버 상태 확인)가 세션이 무효화된
-  // *이후에도* 계속 진행 중이다가, 더 최신 시도(B)가 이미 확정된 뒤에야 뒤늦게 끝나는
-  // 순서를 재현한다 — economy.store.js의 loadoutAttemptSeq 가드(store 레벨)와 훅의
-  // isStale()(세션 레벨)이 함께 이 순서에서도 성립하는지 훅을 통해 끝까지 확인한다.
   resetStores()
-  // 마운트 시 최초 조회는 즉시 풀리는 값으로 둔다 — 아래에서 제어할 deferred는 오직 A의
-  // 거부가 유발하는 재조회(fetchSummary) 한 번뿐이어야 한다.
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   const postDeferreds = []
   postImpl = () => new Promise((resolve, reject) => { postDeferreds.push({ resolve, reject }) })
@@ -663,8 +542,6 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
 
-  // 최초 조회가 끝난 뒤부터는 GET을 제어 가능한 deferred로 바꿔, A의 거부가 유발하는
-  // 재조회만 붙잡아둘 수 있게 한다.
   const walletDeferreds = []
   getImpl = (endpoint) => new Promise((resolve) => {
     if (endpoint.endsWith("/wallet")) {
@@ -672,22 +549,16 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
     } else {
       walletDeferreds.push(() => resolve({
         entitlements: [{ itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" }],
-        // A가 시작한 재조회가 실제로 돌려주는(오래된) 값 — B가 확정한 값과 달라야
-        // "덮어쓰지 않는다"를 의미 있게 증명할 수 있다.
         loadout: { selectedProfileBorderId: "profile-border-평민" },
       }))
     }
   })
 
-  // 세션 A: 귀족으로 확정 시도 — 응답은 거부(전송 불확실)라 자체적으로 재조회를 시작한다.
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
   let confirmAPromise
   act(() => { confirmAPromise = result.current.handleConfirm() })
   assert.equal(postDeferreds.length, 1)
   await act(async () => { postDeferreds[0].reject(new TypeError("network disconnected")) })
-  // handleConfirm의 catch가 isStale()을 먼저 확인하지만(아직 유효한 세션이므로 통과),
-  // confirmedRejection이 아니라서 fetchSummary()를 실제로 호출한다 — 그 안의
-  // Promise.all(api.get, api.get)이 등록될 때까지 매크로태스크 경계로 넘겨준다.
   for (let i = 0; i < 10 && walletDeferreds.length < 2; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -698,7 +569,6 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
   rerender({ open: true }) // 세션 B 시작(초안이 실제 장착값으로 리셋됨)
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
-  // 세션 B: 남작으로 확정 시도, 먼저 확정된다(A의 재조회는 여전히 응답 대기 중이다).
   act(() => result.current.setDraftBorderItemId("profile-border-남작"))
   let confirmBPromise
   act(() => { confirmBPromise = result.current.handleConfirm() })
@@ -710,7 +580,6 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
   assert.equal(useEconomyStore.getState().loadout.selectedProfileBorderId, "profile-border-남작")
   assert.equal(closeCount, 1, "B 자신의 완료는 정상적으로 편집기를 닫아야 한다")
 
-  // A가 더 먼저 시작시킨 재조회가 이제야(B가 확정된 뒤에) 끝난다 — B보다 오래된 정보다.
   await act(async () => {
     walletDeferreds.forEach((resolve) => resolve())
     await confirmAPromise
@@ -728,8 +597,6 @@ test("F-13 AC-02(CODEX-6): 세션 A의 거부로 시작된 재조회(fetchSummar
 
 test("F-13 AC-02 CODEX-7: B가 saving인 동안 A의 재조회 완료는 B 상태와 초안을 유지하고 B만 닫는다", async () => {
   resetStores()
-  // 마운트 시 최초 조회는 즉시 풀리는 값으로 둔다 — 아래에서 제어할 deferred는 오직 A의
-  // 거부가 유발하는 재조회(fetchSummary) 한 번뿐이어야 한다.
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-평민" })(endpoint)
   const postDeferreds = []
   postImpl = () => new Promise((resolve, reject) => { postDeferreds.push({ resolve, reject }) })
@@ -741,8 +608,6 @@ test("F-13 AC-02 CODEX-7: B가 saving인 동안 A의 재조회 완료는 B 상�
   )
   await waitFor(() => assert.equal(result.current.borderListStatus, "ready"))
 
-  // 최초 조회가 끝난 뒤부터는 GET을 제어 가능한 deferred로 바꿔, A의 거부가 유발하는
-  // 재조회만 붙잡아둘 수 있게 한다.
   const walletDeferreds = []
   getImpl = (endpoint) => new Promise((resolve) => {
     if (endpoint.endsWith("/wallet")) {
@@ -750,22 +615,16 @@ test("F-13 AC-02 CODEX-7: B가 saving인 동안 A의 재조회 완료는 B 상�
     } else {
       walletDeferreds.push(() => resolve({
         entitlements: [{ itemId: "profile-border-귀족", itemType: "PROFILE_BORDER" }],
-        // A가 시작한 재조회가 실제로 돌려주는(오래된) 값 — B가 확정한 값과 달라야
-        // "덮어쓰지 않는다"를 의미 있게 증명할 수 있다.
         loadout: { selectedProfileBorderId: "profile-border-평민" },
       }))
     }
   })
 
-  // 세션 A: 귀족으로 확정 시도 — 응답은 거부(전송 불확실)라 자체적으로 재조회를 시작한다.
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
   let confirmAPromise
   act(() => { confirmAPromise = result.current.handleConfirm() })
   assert.equal(postDeferreds.length, 1)
   await act(async () => { postDeferreds[0].reject(new TypeError("network disconnected")) })
-  // handleConfirm의 catch가 isStale()을 먼저 확인하지만(아직 유효한 세션이므로 통과),
-  // confirmedRejection이 아니라서 fetchSummary()를 실제로 호출한다 — 그 안의
-  // Promise.all(api.get, api.get)이 등록될 때까지 매크로태스크 경계로 넘겨준다.
   for (let i = 0; i < 10 && walletDeferreds.length < 2; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -776,7 +635,6 @@ test("F-13 AC-02 CODEX-7: B가 saving인 동안 A의 재조회 완료는 B 상�
   rerender({ open: true }) // 세션 B 시작(초안이 실제 장착값으로 리셋됨)
   assert.equal(result.current.confirmStatus, "idle", "B는 아직 아무 것도 시작하지 않았으므로 idle이어야 한다")
 
-  // B를 실제 saving 상태에 두고 A의 GET 응답부터 완료시킨다.
   act(() => {
     result.current.setDraftPhotoItemId("player-profile-기사")
     result.current.setDraftBorderItemId("profile-border-남작")
@@ -825,8 +683,6 @@ test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계�
 
   let confirmPromise
   act(() => { confirmPromise = result.current.handleConfirm() })
-  // 계정 전환 이후에는(B 계정) 실제로 다른 값을 돌려주게 만든다 — A의 폐기된 재조회 결과가
-  // 실수로 반영되면 A가 보던 값(평민)이 B 화면에 남게 된다.
   getImpl = async (endpoint) => readyLoadout({ selectedProfileBorderId: "profile-border-브론즈" })(endpoint)
   setCurrentUser({ uuid: "user-2" }) // 저장·재조회가 끝나기 전에 계정 전환 — economy store가 reset되고 generation이 올라간다
 
@@ -834,9 +690,6 @@ test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계�
 
   assert.equal(result.current.confirmStatus, "idle")
   assert.equal(useEconomyStore.getState().requestGeneration >= 1, true, "계정 전환은 generation을 올려 이전 계정 응답을 무효화한다")
-  // CODEX-4 반송 근거: notEqual만으로는 "A의 값(평민)만 아니면 무엇이든 통과"하므로, B 계정의
-  // 실제 서버 값이 반영됐는지는 증명하지 못한다(예: 빈 값·undefined·엉뚱한 다른 계정 값도
-  // 전부 통과해버린다) — B 계정이 실제로 응답한 정확한 값(브론즈)과 정확히 같아야 한다.
   assert.equal(
     useEconomyStore.getState().loadout.selectedProfileBorderId,
     "profile-border-브론즈",
@@ -846,9 +699,6 @@ test("F-13 AC-02/AC-04/A-08: 응답 유실 재조회를 기다리는 동안 계�
 
 test("F-13 AC-04: 편집기를 닫고 다른 계정으로 전환한 뒤 다시 열면, 이전 계정의 캐시가 아니라 새 계정이 실제로 서버에서 조회한 장착값·보유 목록으로 복원된다", async () => {
   resetStores()
-  // CODEX-4 반송 근거: 이 시험은 테두리 복원만 검증했고 사진 복원은 다루지 않았다 —
-  // 사진 16종은 모두 기본 지급이라 보유 목록 자체는 계정마다 같지만, "지금 선택된" 사진
-  // (loadout.selectedProfilePhotoId)은 계정마다 다를 수 있으므로 그 복원도 별도로 고정한다.
   const dataByUser = {
     "user-1": {
       loadout: { selectedProfilePhotoId: "player-profile-기사", selectedProfileBorderId: "profile-border-평민" },
@@ -964,13 +814,6 @@ test("F-13 AC-03: 구매 직후(economy store의 purchase가 이미 entitlements
 })
 
 test("F-13 AC-03(CODEX-2): 실제 useAchievements 훅을 마운트해 실제 업적 조회 성공(그 훅 내부의 syncEconomyIfSuccess)이 economy를 갱신하면, 열려 있는 편집기의 선택 목록에도 즉시 반영된다 — fetchSummary를 직접 호출해 흉내내지 않는다", async () => {
-  // CODEX-2 반송 근거: 이전 버전은 useAchievements.js를 전혀 마운트하지 않고
-  // useEconomyStore.getState().fetchSummary()를 테스트가 직접 호출해 "업적 → economy 갱신"
-  // 연결 자체를 증명하지 못했다(그 연결이 끊어져도 이 직접 호출만으로는 테스트가 여전히
-  // 통과한다). 이제 실제 useAchievements 훅을 renderHook으로 마운트하고, 그 훅이 실제로
-  // 호출하는 getMyAchievementsApi(mock.module로 전송만 가로챈다, 위 useAchievements.test.js와
-  // 동일한 관례)가 성공 응답을 돌려주게 해, 훅 내부의 실제 syncEconomyIfSuccess가 스스로
-  // economy store를 갱신하는지를 검증한다.
   resetStores()
   let entitlementsCalls = 0
   getImpl = async (endpoint) => {
@@ -1006,24 +849,14 @@ test("F-13 AC-03(CODEX-2): 실제 useAchievements 훅을 마운트해 실제 업
 })
 
 test("F-13 AC-03(설계 감사, 2026-09-11): 편집기 마운트가 시작시킨(더 오래된) 초기 조회가 실제 useAchievements 성공이 유발한(더 최신) 조회보다 늦게 응답해도, 방금 획득한 테두리가 선택 목록에서 다시 사라지지 않는다", async () => {
-  // 리뷰 지적 근거: "economy.store.js의 fetchSummary에는 조회 간 순서 검사가 없어 획득 전
-  // 지연 응답이 새 소유품·잔액을 덮어쓰고 선택지를 다시 제거할 수 있다." economy.store.test.js
-  // 가 이미 store 레벨에서 이 레이스(summaryRequestSeq 가드)를 직접 호출로 증명하고,
-  // 바로 위 CODEX-2 시험이 useAchievements 훅의 실제 연결을 증명하지만, 둘을 합쳐 "실제 훅
-  // 배선 위에서 진짜 레이스(마운트가 시작한 오래된 조회가 achievements 갱신보다 늦게 응답)"
-  // 까지 증명한 시험은 없었다 — 이 시험이 그 공백을 메운다.
   resetStores()
   const initialGetDeferreds = []
-  // 편집기 마운트가 스스로 시작시키는 초기 fetchSummary를 붙잡아둔다(아직 획득 전 — 평민만
-  // 보유한 오래된 응답을 나중에 돌려주기 위해).
   getImpl = (endpoint) => new Promise((resolve) => { initialGetDeferreds.push({ endpoint, resolve }) })
 
   const editor = renderHook(() => useProfileBorderEditor({ open: true, onClose: () => {} }))
   await waitFor(() => assert.equal(initialGetDeferreds.length, 2))
   assert.equal(editor.result.current.borderListStatus, "loading", "초기 조회가 아직 응답하지 않았으므로 loading이어야 한다")
 
-  // 실제 업적 조회 성공(useAchievements 내부의 syncEconomyIfSuccess)이 스스로 유발하는
-  // 새 fetchSummary는 초기 조회보다 먼저 응답한다(신선한 값 — 광대 테두리 포함).
   getMyAchievementsImpl = async () => ([
     { id: "invited-guests-노블-win-10", current: 10, threshold: 10, achieved: true, granted: true },
   ])
@@ -1043,8 +876,6 @@ test("F-13 AC-03(설계 감사, 2026-09-11): 편집기 마운트가 시작시킨
     ["profile-border-광대", "profile-border-평민"],
   ), { timeout: 1000 })
 
-  // 편집기 마운트가 시작시켰던(더 오래된) 초기 조회가 이제야 획득 전의 오래된 값으로
-  // 응답한다 — 이미 반영된 신선한 소유 목록을 되돌리면 안 된다.
   await act(async () => {
     initialGetDeferreds.forEach(({ endpoint, resolve }) => resolve(endpoint.endsWith("/wallet")
       ? walletOk
@@ -1060,12 +891,6 @@ test("F-13 AC-03(설계 감사, 2026-09-11): 편집기 마운트가 시작시킨
 })
 
 test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사진 탭은 16종 실제 이미지 전부를, 테두리 탭은 방금 업적으로 획득한 테두리를 실제 DOM 옵션으로 보여준다 — 훅 필드가 아니라 렌더된 화면 자체를 검증한다", async () => {
-  // CODEX-4 반송 근거: 지금까지의 AC-03 시험은 useProfileBorderEditor 훅이 돌려주는
-  // ownedBorderOptions 배열(필드)만 확인했을 뿐, 실제 화면(ProfileEditOptionGrid.jsx)이 그
-  // 값을 옵션으로 그리는지는 증명하지 않았다 — 사진 탭의 "실제 옵션 렌더링 근거"도 전혀
-  // 없었다(정적 PROFILE_EDIT_PHOTO_OPTIONS를 실제로 그리는지 확인한 적이 없다). 이 시험은
-  // 실제 훅 + 실제 컴포넌트 + 실제 업적 성공 이벤트를 전부 연결해 최종 DOM의 <img src>까지
-  // 확인한다.
   resetStores()
   let entitlementsCalls = 0
   getImpl = async (endpoint) => {
@@ -1103,7 +928,6 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
     onRetryLoadBorders: editor.result.current.retryLoadBorders,
   }))
 
-  // 사진 탭 — 정적이지만 실제로 16종 전부가, 실제 자산 경로로 렌더되는지 확인한다.
   const photoGrid = renderGrid()
   const photoImgs = [...photoGrid.container.querySelectorAll("img")]
   assert.equal(photoImgs.length, PROFILE_EDIT_PHOTO_OPTIONS.length, "사진 옵션이 서버 카탈로그 16종과 어긋나면 안 된다")
@@ -1115,7 +939,6 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
   assert.ok(selectedPhotoButton?.querySelector("img"), "현재 선택된 사진 옵션이 실제로 선택 표시되어야 한다")
   photoGrid.unmount()
 
-  // 테두리 탭 — 업적 성공 이전에는 아직 광대를 보유하지 않았다.
   act(() => editor.result.current.setActiveTab(PROFILE_EDIT_TAB_BORDER))
   const beforeGrid = renderGrid()
   assert.equal(beforeGrid.container.querySelectorAll("img").length, 1, "업적 획득 전에는 평민 테두리 하나만 실제 옵션으로 보여야 한다")
@@ -1134,12 +957,6 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
 })
 
 test("F-13 AC-03(CODEX-5): 사진 탭도 테두리 탭과 같은 계약을 따른다 — 정적 목록이 아니라 실제 entitlements에서 보유한 사진만 실제 DOM 옵션으로 보이고, 보유하지 않은 사진은 보이지 않는다", async () => {
-  // CODEX-5 반송 근거: 이전까지 사진 탭은 항상 PROFILE_EDIT_PHOTO_OPTIONS 정적 배열
-  // 16종 전부를 그렸다 — 실제 서버가 응답한 entitlements와 무관했다(계정이 일부만
-  // 보유해도, 심지어 하나도 보유하지 않아도 16장이 그대로 보였다). 이 시험은 계정이
-  // 카탈로그 16종 중 일부만 실제로 보유한 상태를 흉내내, 실제 렌더된 DOM이 보유한
-  // 사진만 옵션으로 보여주는지 확인한다(보유하지 않은 사진은 옵션 자체가 존재하지
-  // 않아야 한다).
   resetStores()
   const ownedPhotoIds = ["player-profile-기사", "player-profile-드워프"]
   const unownedPhotoIds = PROFILE_EDIT_PHOTO_OPTIONS

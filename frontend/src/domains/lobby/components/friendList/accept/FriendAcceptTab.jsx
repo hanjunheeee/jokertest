@@ -22,9 +22,6 @@ import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendLis
 import IncomingFriendRow from "@/domains/lobby/components/friendList/accept/IncomingFriendRow.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-// 받은 친구 요청을 한 번에 모두 수락하는 버튼입니다.
-// F-19(AC-02): 처리 중에는 비활성이다 — 연타가 같은 요청을 두 번 처리하지 않게 하는 첫
-// 방어선이고, 실제 중복 방지는 useFriendListSync의 요청 단위 잠금이 담당한다.
 function AcceptAllButton({ onClick, running }) {
   return (
     <button
@@ -46,13 +43,6 @@ function AcceptAllButton({ onClick, running }) {
   )
 }
 
-/**
- * F-19(AC-02): 전체 수락 결과를 성공·실패·확정 못 함으로 **나누어** 안내한다.
- *
- * 모든 호출이 정착하기 전에는 아무 완료 안내도 하지 않는다(running). 정착한 뒤에는 세 수를
- * 각각 보여주고, 목록 재조회가 실패했으면 그 사실을 처리 결과와 **별도로** 알린다 —
- * 재조회 실패가 "수락이 실패했다"로 읽히면 안 된다.
- */
 export function buildAcceptAllSummary(result) {
   if (result === null || result === undefined) return null
   if (result.running) return "받은 요청을 하나씩 처리하는 중입니다…"
@@ -80,7 +70,6 @@ function FriendAcceptAllStatus({ result }) {
   )
 }
 
-// 받은 친구 요청 목록을 다시 가져오는 새로고침 버튼입니다.
 function FriendAcceptRefreshButton({ onClick }) {
   return (
     <button
@@ -99,7 +88,6 @@ function FriendAcceptRefreshButton({ onClick }) {
   )
 }
 
-// 받은 친구 요청 탭 상단의 전부 수락/새로고침 버튼 영역입니다.
 function FriendAcceptToolbar({ onAcceptAll, onRefresh, acceptAllRunning }) {
   return (
     <div className={FRIEND_ACCEPT_TOOLBAR_CLASS}>
@@ -109,7 +97,6 @@ function FriendAcceptToolbar({ onAcceptAll, onRefresh, acceptAllRunning }) {
   )
 }
 
-// 받은 친구 요청이 없을 때 보여주는 빈 상태 문구입니다.
 function FriendAcceptEmptyState({ isFiltering }) {
   const message = isFiltering
     ? FRIEND_LIST_FILTER_MESSAGES.noResults
@@ -122,7 +109,6 @@ function FriendAcceptEmptyState({ isFiltering }) {
   )
 }
 
-// 받은 친구 요청 목록을 렌더링합니다.
 function FriendAcceptRequestList({
   incomingRequests, isFiltering, onAccept, onBlock, processingRequestIds, targetRequestId,
 }) {
@@ -135,8 +121,6 @@ function FriendAcceptRequestList({
           <IncomingFriendRow
             key={request.request_id || request.id}
             requestId={request.request_id}
-            // F-19(AC-04): 차단은 요청 id가 아니라 상대 UUID로 동작한다 — 서버가 내려주는
-            // 신청자 uuid를 그대로 넘긴다.
             requesterId={request.id}
             name={request.name}
             accountProfilePhotoId={request.accountProfilePhotoId}
@@ -152,12 +136,6 @@ function FriendAcceptRequestList({
   )
 }
 
-/**
- * F-17(AC-02): 알림에서 지정한 요청이 실제 받은 요청 목록에 더 이상 없을 때의 안내.
- *
- * 이미 수락·거절된(또는 취소된) 요청이라는 뜻이다 — 그 요청을 다시 만들거나 자동으로
- * 수락하지 않는다. 사용자가 "왜 아무 것도 강조되지 않는지" 알 수 있게 사실만 알린다.
- */
 function FriendAcceptTargetMissingNotice() {
   return (
     <p
@@ -170,7 +148,6 @@ function FriendAcceptTargetMissingNotice() {
   )
 }
 
-// 받은 친구 요청을 검색하고 수락하는 탭 화면입니다.
 export default function FriendAcceptTab({
   onBack,
   incomingRequests = [],
@@ -191,11 +168,6 @@ export default function FriendAcceptTab({
 
   const visibleRequests = isFiltering ? filteredItems : incomingRequests
 
-  // 대상 존재 여부는 **필터 이전의 실제 목록**으로 판단한다 — 검색어 때문에 잠시 가려진
-  // 요청을 "이미 처리됨"으로 잘못 안내하지 않기 위해서다.
-  //
-  // F-19(AC-02): 정상 조회가 끝난 뒤에만 "대상 없음"으로 확정한다. 조회가 실패했거나 아직
-  // 끝나지 않았으면 목록이 비어 있다는 사실이 "그 요청이 처리됐다"는 증거가 아니다.
   const targetMissing =
     incomingLoaded &&
     incomingError === null &&

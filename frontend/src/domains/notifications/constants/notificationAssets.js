@@ -1,4 +1,3 @@
-/** 알림 모달 public 에셋 (frontend/public 기준) */
 export const NOTIFICATION_ASSETS = {
   popupFrame: "/frame/매칭 팝업 프레임.png",
   closeButton: "/button/팝업 닫기 버튼.png",

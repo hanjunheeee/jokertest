@@ -1,6 +1,3 @@
-// 아래에서 backend/socket/matchmaking을 require해 이벤트명·오류 코드 상수의 단일 원천을
-// 대조한다. 그 체인이 backend/models를 끌고 오며 require 시점에 DATABASE_URL을 **파싱만**
-// 한다(연결은 시도하지 않는다). 이 파일만 직접 실행해도 되도록 같은 관례의 더미 폴백을 둔다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -46,7 +43,6 @@ test('정상 요청은 명시한 필드만 담은 새 설정 객체를 만든다
         nightActionTime: 90,
         roleCompositionMode: 'auto',
     })
-    // D-12의 세 값은 입력으로 받지 않으므로 결과에도 없다(서버가 기존 값을 보존한다).
     for (const key of ['lightsOut', 'soulBetting', 'voteReveal']) {
         assert.equal(Object.hasOwn(result.value.settings, key), false)
     }
@@ -103,7 +99,6 @@ test('값의 허용 목록은 생성 검증과 같다 — 목록 밖 값은 보�
 test('광대 수는 정원보다 적어야 하고, 역할 계약의 2명 상한이 수정 경로에도 집행된다', () => {
     assert.equal(validateUpdateRoomSettingsPayload(
         validPayload({ maxPlayers: 4, jokerCount: 4 })).ok, false)
-    // ALLOWED_JOKER_COUNT는 1~4를 허용하지만 그 뒤의 역할 구성 검증이 3명 이상을 거부한다.
     assert.equal(validateUpdateRoomSettingsPayload(
         validPayload({ maxPlayers: 8, jokerCount: 3 })).ok, false)
     assert.equal(validateUpdateRoomSettingsPayload(
@@ -122,7 +117,6 @@ test('CUSTOM 역할 구성은 canonical 복사본으로만 저장되고 AUTO는 
     const auto = validateUpdateRoomSettingsPayload(validPayload({ roleCompositionMode: 'auto' }))
     assert.equal(Object.hasOwn(auto.value.settings, 'roleCounts'), false)
 
-    // AUTO + roleCounts는 계약 위반이다(조용히 버리면 지정이 반영됐다고 믿게 된다).
     assert.equal(validateUpdateRoomSettingsPayload(validPayload({
         roleCompositionMode: 'auto', roleCounts: { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 },
     })).ok, false)
@@ -155,10 +149,8 @@ test('설정 뷰는 허용 필드만 새 객체로 옮기고 관전자·알 수 
     const editable = buildEditableSettingsView(stored)
     assert.equal(JSON.stringify(editable).includes('pectator'), false)
     assert.equal(Object.hasOwn(editable, 'legacyJunk'), false)
-    // 중첩 객체도 허용 키만 옮긴다.
     assert.deepEqual(editable.roleCounts, { JOKER: 1, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 })
     assert.deepEqual(editable.roleNightActionTimes, { JOKER: 30 })
-    // 편집 요약에는 D-12 세 값이 없다.
     for (const key of ['lightsOut', 'soulBetting', 'voteReveal']) {
         assert.equal(Object.hasOwn(editable, key), false)
     }
@@ -168,7 +160,6 @@ test('설정 뷰는 허용 필드만 새 객체로 옮기고 관전자·알 수 
     assert.equal(full.lightsOut, true)
     assert.equal(full.voteReveal, true)
 
-    // 원본을 나중에 바꿔도 뷰는 따라 바뀌지 않는다.
     stored.roleCounts.JOKER = 99
     assert.equal(editable.roleCounts.JOKER, 1)
 })
@@ -192,7 +183,6 @@ test('지문은 같은 설정을 같은 값으로, 다른 설정을 다른 값�
         maxPlayers: 6, jokerCount: 2, roleCompositionMode: 'auto',
         dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90,
     }))
-    // "지정 안 함"과 "빈 객체로 지정"은 구별되지 않아도 되지만, 지정한 값이 다르면 달라야 한다.
     assert.notEqual(
         fingerprintUpdateSettings('open', { roleNightActionTimes: { JOKER: 30 } }),
         fingerprintUpdateSettings('open', { roleNightActionTimes: { JOKER: 60 } }),

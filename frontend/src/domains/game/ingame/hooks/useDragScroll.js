@@ -1,11 +1,5 @@
-// 파일 역할: useDragScroll.js - React 상태와 부수효과를 묶는 커스텀 훅입니다.
 import { useEffect } from "react"
 
-/**
- * overflow 컨테이너 — 포인터 드래그로 세로 스크롤
- *
- * @param {React.RefObject<HTMLElement|null>} scrollRef
- */
 export function useDragScroll(scrollRef) {
   useEffect(() => {
     const scrollEl = scrollRef.current

@@ -1,20 +1,3 @@
-/**
- * 역할 구성(자동 / 직접 지정) 설정 구역.
- *
- * 일반 탭 목록 아래에 붙는 controlled component다 — 상태는 상위(GameSetupPanel)의
- * useRoleCompositionState가 소유하고, 여기서는 표시와 입력 전달만 한다.
- * 행 스타일·에셋은 기존 설정 행(SetupStepperRow/SetupCheckboxRow)과 동일하게 쓴다.
- *
- * props
- * - mode: "auto" | "custom"
- * - onSelectMode: 모드 변경 콜백
- * - roleCounts: { JOKER, DOCTOR, GUARD, WITCH_HUNTER }
- * - onChangeRoleCount: (roleKey, next) => void
- * - maxPlayers: 현재 정원(파생 CITIZEN 수·검증 기준)
- * - citizenCount: 정원 기준 파생 시민 수(계산 불가면 null)
- * - fixedRoleCount: 지정한 고정 역할 인원 합
- * - validation: { ok } | { ok:false, message }
- */
 import {
   CITIZEN_ROLE_LABEL,
   CUSTOM_ROLE_KEYS,
@@ -31,11 +14,9 @@ const MODE_OPTIONS = ROLE_COMPOSITION_MODE_OPTIONS.map(({ mode, label }) => ({ v
 const SUMMARY_CLASS =
   "flex shrink-0 flex-col items-center gap-[clamp(0.1rem,0.25vh,0.2rem)] border-b border-[#8b7355]/35 py-[clamp(0.15rem,0.32vh,0.26rem)] text-center last:border-b-0"
 
-/** 합계·정원 등 파생 수치 한 줄 */
 const SUMMARY_LINE_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#2a1810]"
 
-/** 검증 실패 안내 — 양피지 테마 위에서 읽히도록 붉은 계열만 다르게 쓴다. */
 const SUMMARY_ERROR_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#8c1c13]"
 
@@ -52,8 +33,6 @@ export default function RoleCompositionSection({
   const isCustom = mode === ROLE_COMPOSITION_MODES.CUSTOM
 
   return (
-    // data-setup-role-composition / -summary는 useSetupContentScrollOnRoleModeChange가
-    // 모드 전환 후 스크롤을 맞출 때 찾는 표식입니다 — 클래스 이름에 기대지 않도록 별도 속성을 씁니다.
     <div
       data-setup-role-composition
       className="flex flex-col gap-[clamp(2rem,2.1vh,2.5rem)]"
@@ -85,7 +64,6 @@ export default function RoleCompositionSection({
 
           <div className={SUMMARY_CLASS} data-setup-role-composition-summary>
             <p className={SUMMARY_LINE_CLASS}>
-              {/* CITIZEN은 입력 항목이 아니라 남은 자리에서 파생되는 값이다. */}
               {CITIZEN_ROLE_LABEL}: {citizenCount === null ? "-" : `${citizenCount}명`} (자동 계산)
             </p>
             <p className={SUMMARY_LINE_CLASS}>

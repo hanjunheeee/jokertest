@@ -1,11 +1,5 @@
 import { sanitizeJokerChatText } from "./sanitizeJokerChatText.js"
 
-/**
- * 서버가 보낸 joker_chat_message 브로드캐스트 payload를 network 모델로 검증·변환한다.
- * 반환 객체는 정확히 {gameId, senderUuid, text, id, sentAt} 5개 키만 갖는다 — 원본 payload에
- * role/team/nickname 등 추가 키가 있어도 반환값에는 절대 포함되지 않는다(스프레드를 쓰지 않고
- * 필드를 하나씩 명시적으로 골라 새 객체를 만든다).
- */
 export function parseJokerChatBroadcastPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null
 

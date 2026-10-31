@@ -1,10 +1,6 @@
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
-// F-02 AC-05: 가입 입력 단계에서 이메일 중복을 미리 확인하는 checkEmailAvailability가
-// findByEmail 결과를 available:boolean으로 정확히 뒤집어 돌려주는지 확인한다. 실제 최종
-// 판정(가입 제출 단계)은 auth.service.js의 signup() + user.repositories.js의 유일 제약
-// 변환이 맡으므로, 여기서는 db를 스텁해 이 함수 자체의 판정만 확인한다.
 const db          = require("../models");
 const authService = require("../service/auth.service");
 

@@ -2,13 +2,6 @@ import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 
-// F-03 R-IMPL #6: useSocket의 HTTP refresh 성공 + Socket UNAUTHORIZED가 반복되는 경우
-// reauthExhausted가 절대 설정되지 않아 무한 재시도로 이어지던 결함을 고친 테스트다.
-// "@/..." Vite 별칭은 node:test의 mock.module이 해석하지 못해(플레인 Node에는 그 별칭
-// 매핑이 없다), useSocket.js/client.js를 실제 코드로 테스트하려면 그 두 파일과 이 파일
-// 모두가 이 경계(env.js 등)를 상대 경로로 가리켜야 한다 — 그래서 useSocket.js를 상대
-// import로 바꿨다(경계 분리, "Vite env라서 테스트 불가"를 우회하지 않고 해소).
-
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true, url: "http://localhost/" });
 for (const [name, value] of Object.entries({
   window: dom.window,
@@ -22,11 +15,6 @@ for (const [name, value] of Object.entries({
   Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-
-// jsdom의 Location.replace는 스펙을 따라 configurable:false라 가로챌 수 없다(재정의
-// 시도 시 TypeError). 실제 navigation은 jsdom이 "Not implemented"로 조용히 무시하므로,
-// 아래 테스트는 window.location.replace 호출 자체 대신 관찰 가능한(모킹 가능한) 부작용인
-// logout() 호출 여부로 "사용자 상태 정리"를 검증한다.
 
 mock.module("../../env.js", {
   namedExports: { API_BASE_URL: "http://test-api.local" },
@@ -45,7 +33,6 @@ mock.module("../../api/client.js", {
   },
 });
 
-// 이 훅이 만든 마지막 fake socket을 테스트가 즉시 붙잡아 이벤트를 직접 발화시킬 수 있게 한다.
 const createdSockets = [];
 const createFakeSocket = () => {
   const listeners = new Map();
@@ -65,7 +52,6 @@ const createFakeSocket = () => {
     disconnect() {
       socket.disconnectCallCount += 1;
     },
-    // 테스트 전용: 등록된 리스너를 직접 호출해 서버가 보낸 것처럼 이벤트를 흉내낸다.
     fire(event, ...args) {
       (listeners.get(event) || []).forEach((cb) => cb(...args));
     },
@@ -91,7 +77,6 @@ mock.module("../../../domains/auth/store/auth.store.js", {
 const { act, renderHook } = await import("@testing-library/react");
 const { useSocket } = await import("../useSocket.js");
 
-// 매 테스트가 독립적으로 소켓 하나만 보게 리셋한다.
 const resetAll = () => {
   createdSockets.length = 0;
   setSocketCalls.length = 0;
@@ -145,7 +130,6 @@ test("F-03 R-IMPL #6: 갱신은 매번 성공하는데 소켓이 계속 UNAUTHOR
 
   const socket = createdSockets[0];
 
-  // 갱신은 계속 성공하는데도 handshake는 계속 UNAUTHORIZED로 실패하는 상황을 반복 재현한다.
   for (let i = 0; i < 5; i += 1) {
     await act(async () => {
       socket.fire("connect_error", { message: "UNAUTHORIZED" });
@@ -171,9 +155,6 @@ test("F-03 R-IMPL #11: 정상 연결을 사이에 둔 3회 이상의 독립적�
 
   const socket = createdSockets[0];
 
-  // 독립적인 만료→갱신→재연결 성공 사이클을 3번 반복한다. HTTP 갱신 성공만으로는 카운터가
-  // 리셋되지 않으므로(위 R-IMPL #6 시험), 매번 실제 "connect" 성공까지 나야 다음 사이클이
-  // 이전 실패 횟수와 누적되지 않는다.
   for (let i = 0; i < 3; i += 1) {
     await act(async () => {
       socket.fire("connect_error", { message: "UNAUTHORIZED" });

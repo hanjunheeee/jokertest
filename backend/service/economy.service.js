@@ -1,40 +1,5 @@
 'use strict';
 
-// F-08 지갑·거래·카탈로그·소유권 서비스. 구매·기본 지급·QA/보상 지급을 모두 같은
-// applyLedgerTransaction 하나로 처리해 지갑 잔액과 거래 원장 합계가 항상 같게 만든다
-// (AC-01). db는 concurrency.service.js와 같은 방식으로 테스트가 주입할 수 있게
-// 마지막 인자로 받는다 — 기본값은 실제 backend/models다.
-//
-// 동시성(AC-01): purchaseItem은 지갑 행을 SELECT ... FOR UPDATE로 잠근 뒤에야 이미
-// 보유 중인지 확인한다. 그래서 같은 계정으로 동시에 두 번 구매 요청이 들어와도(서로 다른
-// 브라우저 = 서로 다른 referenceEventId) 두 번째 요청은 첫 번째 커밋이 끝나 잠금이
-// 풀린 뒤에야 진행되고, 그 시점엔 이미 소유 중이라는 것을 보고 즉시 거부된다 — 잠금보다
-// 먼저 소유 여부를 확인하면 이 보장이 깨진다.
-//
-// 재처리 방지(AC-02)/계정 격리(AC-06) — R-IMPL(2026-09-10) 반송 수정:
-// 이전 버전은 reference_event_id만으로(계정 무관) 전역 조회해 기존 원장 행을 그대로
-// 돌려줬다. 그러면 (a) 다른 계정이 남의 참조 사건 ID를 그대로 제출하면 그 계정의 원장
-// 행을 조회해 돌려받고(계정 간 정보 노출, AC-06 위반), (b) 같은 계정이 같은 키를 다른
-// 내용(다른 상품·다른 금액)으로 재전송해도 예전 결과를 "성공"으로 잘못 돌려줬다. 지금은
-// (user_id, reference_event_id) 조합으로만 조회·유일 제약을 걸고, 기존 행을 찾으면 반드시
-// 지금 요청과 같은 조작(reason·itemId·currency·amount)인지 확인한다 — 같은 계정이 같은
-// 키를 다른 내용으로 재사용하면 이전 결과를 노출하지 않고 일반화된 409로 거부한다(payload
-// mismatch, no disclosure). 다른 계정이 같은 키 문자열을 쓰는 것은 애초에 "재사용"이 아니라
-// 완전히 독립된 요청으로 취급된다(조회 자체가 계정 범위이므로).
-//
-// 이 재확인은 지갑 잠금을 잡은 "뒤에", 소유 여부·잔액 검증보다 "먼저" 한 번 더 실행된다
-// (recheck-after-lock). 그래야 동시에 들어온 같은 키 재시도가 서로 경합해도, 늦게 잠금을
-// 얻은 쪽은 소유권/잔액을 다시 따지지 않고 먼저 커밋된 원래 결과를 그대로 돌려받는다 —
-// 순서가 반대(소유권 검사가 먼저)면 늦은 쪽이 "이미 보유함"으로 잘못 거부될 수 있다.
-
-// F-09 CODEX-2 재검토(AC-03) 대응: getCatalogItem만은 구조 분해로 캡처하지 않고 catalog
-// 모듈 객체를 통해서만 호출한다(catalog.getCatalogItem(...)) — 구조 분해로 지역 변수에
-// 캡처하면 그 값은 require 시점의 함수 참조로 고정되어, 시험이 나중에
-// catalogModule.getCatalogItem = fn으로 몽키패치해도 이 파일은 여전히 원래 함수를 쓴다.
-// AC-03(혼합 재화)은 "운영 가격 데이터를 변경하지 않고" 격리된 시험용 상품(DIAMOND 가격)을
-// 검증해야 하므로, catalog.js의 ALL_ITEMS에 실제 항목을 추가하는 대신 시험이 이 함수를
-// 일시적으로 교체할 수 있어야 한다 — 프로퍼티 접근(catalog.getCatalogItem)이라야 그 교체가
-// 이 파일에도 실제로 반영된다.
 const crypto = require('crypto');
 const catalog = require('../economy/catalog');
 const {
@@ -47,12 +12,6 @@ const { createError } = require('../utils/appError');
 
 const FREE_CARD_FRAME_ID = 'player-card-베이스';
 
-// F-14(AC-01/AC-02): frontend skinCardWearCatalog.js의 SKIN_CARD_WEAR_JOB_TABS(noble/clown/
-// guard/doctor/witchHunter) 5개 직업 탭과 1:1 대응하는 장착 슬롯. 카탈로그의 실제 구매 가능
-// 스킨(backend/economy/catalog.js SKIN_STANDING_STEMS)은 `player-skin-{stem}` id를 쓰고,
-// stem은 항상 해당 직업의 한글 이름으로 시작한다(경비원1-바이올렛 등) — 그 접두어가
-// JOB_SKIN_ID_PREFIX_BY_SLOT다. 이 접두어 검증이 없으면 한 직업에서 구매한 스킨을 다른
-// 직업 슬롯에 장착해 "그 역할에만 있어야 할 외형"이 엉뚱한 역할에 붙는 것을 막지 못한다.
 const SKIN_ITEM_ID_PREFIX = 'player-skin-';
 
 const JOB_SKIN_ID_PREFIX_BY_SLOT = Object.freeze({
@@ -63,11 +22,6 @@ const JOB_SKIN_ID_PREFIX_BY_SLOT = Object.freeze({
     JOB_SKIN_WITCH_HUNTER: '마녀사냥꾼',
 });
 
-// F-14(AC-02) 반송 대응: 이전에는 "basic-skin-{직업}로 시작하면 무료"라는 접두어 허용을 썼는데,
-// 그러면 basic-skin-귀족garbage처럼 실제로 존재하지 않는 id도 통과했다. frontend
-// skinCardWearCatalog.js BASIC_SKIN_STEMS가 실제로 만드는 9개 id만 정확히 나열한 허용 목록
-// (exact allowlist)으로 바꿔, 카탈로그에 없는(구매 대상도 아닌) 무료 기본 스킨은 항상
-// 소유권 검사를 그대로 통과해야만(=애초에 존재하지 않으므로 통과할 수 없음) 장착된다.
 const FREE_JOB_SKIN_IDS_BY_SLOT = Object.freeze({
     JOB_SKIN_NOBLE: Object.freeze(['basic-skin-귀족1', 'basic-skin-귀족2', 'basic-skin-귀족3']),
     JOB_SKIN_CLOWN: Object.freeze(['basic-skin-광대1', 'basic-skin-광대2']),
@@ -78,9 +32,6 @@ const FREE_JOB_SKIN_IDS_BY_SLOT = Object.freeze({
 
 const isFreeJobSkin = (slot, itemId) => (FREE_JOB_SKIN_IDS_BY_SLOT[slot] ?? []).includes(itemId);
 
-// F-08 요구사항: GOLD·DIAMOND 두 재화 모두 정수 잔액을 갖는다(초기값 0/0). 현재 구매
-// 가능한 코스메틱은 모두 GOLD로만 판매한다(현금 충전·재화 패키지 판매는 이 슬라이스
-// 범위 밖) — purchaseItem은 항상 CURRENCIES.GOLD로 applyLedgerTransaction을 호출한다.
 const CURRENCIES = Object.freeze({ GOLD: 'GOLD', DIAMOND: 'DIAMOND' });
 
 const CURRENCY_TO_WALLET_COLUMN = Object.freeze({
@@ -88,10 +39,6 @@ const CURRENCY_TO_WALLET_COLUMN = Object.freeze({
     DIAMOND: 'balance_diamond',
 });
 
-// MySQL INTEGER(부호 있는 32비트, 최대 약 21억)의 실제 컬럼 범위보다 충분히 작게 잡아,
-// 잔액 갱신(currentBalance + amount)이 오버플로되지 않게 두 번 확인한다: 요청 자체의
-// amount가 이 범위를 벗어나면 지갑을 건드리기 전에 즉시 거부하고, 갱신 후 잔액도 이
-// 범위를 넘으면 마찬가지로 거부한다.
 const MAX_BALANCE = 1_000_000_000;
 
 const isValidCurrency = (currency) => Object.prototype.hasOwnProperty.call(CURRENCY_TO_WALLET_COLUMN, currency);
@@ -119,9 +66,6 @@ const SLOT_TO_LOADOUT_COLUMN = {
     JOB_SKIN_WITCH_HUNTER: 'selected_skin_witch_hunter',
 };
 
-// F-14: 서버 loadout 컬럼 ↔ frontend skinCardWearCatalog.js job id. getWalletSummary·
-// getGameStartLoadouts가 selectedSkinsByJob/skinsByJob 객체를 조립할 때 이 표 하나로만
-// 컬럼 이름을 정한다(다른 곳에 문자열을 다시 나열하지 않는다).
 const JOB_SKIN_COLUMN_BY_JOB_ID = Object.freeze({
     noble: 'selected_skin_noble',
     clown: 'selected_skin_clown',
@@ -130,7 +74,6 @@ const JOB_SKIN_COLUMN_BY_JOB_ID = Object.freeze({
     witchHunter: 'selected_skin_witch_hunter',
 });
 
-/** @param {{ [column: string]: string | null } | null | undefined} loadout */
 const buildSkinsByJob = (loadout) => Object.fromEntries(
     Object.entries(JOB_SKIN_COLUMN_BY_JOB_ID).map(([jobId, column]) => [jobId, loadout?.[column] ?? null]),
 );
@@ -142,20 +85,11 @@ const economyModels = (db) => ({
     EconomyEntitlement: db.sequelize.models.EconomyEntitlement,
     EconomyLoadout: db.sequelize.models.EconomyLoadout,
     EconomyPurchaseRequest: db.sequelize.models.EconomyPurchaseRequest,
-    // F-33 E-2: 이모티콘 팔레트(0019-add-emoji-palettes). economy.model.js가
-    // sequelize.define으로만 등록하므로(파일 하나당 모델 하나만 db에 실린다) 다른
-    // economy 모델과 같은 방식으로 db.sequelize.models에서 꺼낸다.
     EconomyEmojiPalette: db.sequelize.models.EconomyEmojiPalette,
 });
 
 const defaultDb = () => require('../models');
 
-/** 지갑 행이 없으면 두 재화 모두 잔액 0으로 만들어 둔다 — 독립 호출(잠금 트랜잭션 밖)에서는
- *  미리 실행해 잠금 트랜잭션 안에서는 항상 SELECT ... FOR UPDATE만 하면 되게 한다.
- *
- *  CODEX-2(AC-03) 대응: 신규 가입처럼 부모 트랜잭션(externalTransaction)이 주어지면 그
- *  안에서 실행해야 한다 — 아직 커밋되지 않은 신규 계정 uuid를 그 트랜잭션 밖에서(다른
- *  커넥션으로) 참조하면 FK 제약을 볼 수 없어 실패한다. */
 const ensureWalletRow = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
     try {
@@ -168,8 +102,6 @@ const ensureWalletRow = async (db, userId, externalTransaction = null) => {
     }
 };
 
-/** 기존 원장 행이 지금 요청과 같은 조작인지 확인한다 — 같지 않으면 같은 참조 사건 ID가
- *  다른 내용으로 재사용된 것이다(AC-02 payload mismatch). */
 const payloadMatches = (entry, { reason, itemId, currency, amount }) =>
     entry.reason === reason
     && (entry.item_id ?? null) === (itemId ?? null)
@@ -179,18 +111,6 @@ const payloadMatches = (entry, { reason, itemId, currency, amount }) =>
 const referenceEventConflictError = () =>
     createError('참조 사건 ID가 이미 다른 요청에 사용되었습니다.', 409, 'REFERENCE_EVENT_CONFLICT');
 
-/**
- * 지갑 잠금 → (다시 한번) 재처리 방지 확인 → (필요하면) 소유 여부 확인 → 잔액 검증 →
- * 지갑 갱신 → 원장 기록 → (필요하면) 소유권 부여를 하나의 트랜잭션으로 실행한다. amount는
- * 양수(지급)/음수(차감) 모두 가능하다.
- *
- * CODEX-2(AC-03) 대응: options.transaction으로 이미 열려 있는 부모 트랜잭션(예: 회원가입의
- * userRepository.withTransaction)을 받으면 새 트랜잭션을 열지 않고 그 트랜잭션 위에서
- * 그대로 실행한다 — 신규 계정처럼 아직 커밋되지 않은 행을 참조해야 하는 호출부가 별도
- * 트랜잭션을 열면(경쟁하는 트랜잭션) 그 계정 행을 보지 못해 FK 제약에 걸리거나, 부모가
- * 실패해도 이미 커밋되어 버려 원자성이 깨진다("accept the parent transaction rather than
- * opening a competing transaction before the new user commits").
- */
 const applyLedgerTransaction = async (db, {
     userId, reason, currency, amount, itemId = null, itemType = null, referenceEventId, entitlementSource = null,
 }, { transaction: externalTransaction = null } = {}) => {
@@ -207,8 +127,6 @@ const applyLedgerTransaction = async (db, {
     const models = economyModels(db);
     const payload = { reason, itemId, currency, amount };
 
-    // 계정 범위 사전 조회(최적화) — 대부분의 재전송은 이 단계에서 잡힌다. 진짜 동시
-    // 요청처럼 이 조회를 둘 다 통과하는 경우는 아래 잠금 안 재확인이 마저 처리한다.
     const preExisting = await models.EconomyLedgerEntry.findOne({
         where: { user_id: userId, reference_event_id: referenceEventId },
         ...(externalTransaction ? { transaction: externalTransaction } : {}),
@@ -227,9 +145,6 @@ const applyLedgerTransaction = async (db, {
             lock: t.LOCK.UPDATE,
         });
 
-        // 잠금을 잡은 뒤 재확인(recheck-after-lock) — 소유권/잔액 검증보다 먼저 한다.
-        // 동시에 들어온 같은 키 재시도가 이 지갑 잠금 뒤에서 대기했다면, 앞선 요청이
-        // 이미 커밋한 결과를 그대로 돌려받아야 한다(소유권 재검사로 잘못 거부되면 안 됨).
         const committed = await models.EconomyLedgerEntry.findOne({
             where: { user_id: userId, reference_event_id: referenceEventId },
             transaction: t,
@@ -326,20 +241,6 @@ const applyLedgerTransaction = async (db, {
     }
 };
 
-/** 선택값이 없는(null) 계정에만 금빛가면/평민 기본값을 채운다(A-04) — 기존 유효 선택은
- *  절대 덮어쓰지 않는다.
- *
- *  R-IMPL(2026-09-10, AC-03 재검토): 이전 버전은 findOrCreate로 읽은 스냅샷("아직
- *  null")을 근거로 loadout 인스턴스를 무조건 update(patch)했다 — 그 읽기와 쓰기 사이에
- *  동시 equipItem 요청이 끼어들어 같은 컬럼에 유효한 선택을 먼저 커밋하면, 이 무조건
- *  쓰기가 그 값을 되돌려 덮어썼다(read-then-blind-write 경쟁 상태). 지금은 WHERE 절에
- *  "지금도 컬럼이 null"이라는 조건을 실은 모델 수준 UPDATE로 바꿨다 — 이 조건부 UPDATE는
- *  단일 SQL 문이라 원자적이므로, 그 사이 다른 트랜잭션이 이미 값을 넣었다면 0행에
- *  적용되어 그 값을 그대로 둔다(컬럼별로 각각 조건부라 두 컬럼이 독립적으로 안전하다).
- *
- *  CODEX-2(AC-03) 대응: externalTransaction이 주어지면(신규 가입 등) 그 트랜잭션 안에서
- *  실행한다 — applyLedgerTransaction과 같은 이유(부모 트랜잭션 재사용, 경쟁 트랜잭션
- *  금지). */
 const ensureDefaultLoadout = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
     const txOptions = externalTransaction ? { transaction: externalTransaction } : {};
@@ -350,11 +251,6 @@ const ensureDefaultLoadout = async (db, userId, externalTransaction = null) => {
         ...txOptions,
     });
 
-    // F-13 AC-02 설계 감사 — 실제로 값을 바꾸는 조건부 UPDATE 문 안에서만 revision도 함께
-    // 새로 발급한다(같은 단일 SQL 문이라 값과 revision이 항상 같은 문장에서 원자적으로
-    // 바뀐다). WHERE 절의 IS NULL 조건 때문에 이미 값이 채워진(정정할 것이 없는) 행은 0행이
-    // 영향받아 revision도 그대로다 — 정정 없는 반복 호출(매 GET마다 실행됨)만으로 revision이
-    // 계속 바뀌어 불필요한 CAS 충돌을 만드는 일이 없다.
     await models.EconomyLoadout.update(
         { selected_profile_photo_id: DEFAULT_PROFILE_PHOTO_ID, revision: crypto.randomUUID() },
         { where: { user_id: userId, selected_profile_photo_id: null }, ...txOptions },
@@ -367,18 +263,6 @@ const ensureDefaultLoadout = async (db, userId, externalTransaction = null) => {
     return models.EconomyLoadout.findOne({ where: { user_id: userId }, ...txOptions });
 };
 
-/** 기본 프로필 16종 + 평민 테두리 1종을 중복 없이 지급한다(AC-03). 지갑/소유품 조회
- *  (getWalletSummary)·장착(equipItem) 경로가 이 함수를 호출해 지연 지급을 보장하고,
- *  회원가입 경로(auth.service.js signup·socialAuth.service.js completeSocialSignup)는
- *  계정 생성 트랜잭션 안에서 직접 호출해 신규 계정이 커밋되는 순간 이미 지급이 끝나
- *  있게 한다(CODEX-2 재검토: "lazy grant on wallet/equip is NOT signup/backfill" — 지연
- *  지급은 신규 가입을 대신하지 못하므로, 가입 자체가 이 함수를 명시적으로 호출해야 한다).
- *  기존 계정(이 슬라이스 이전에 만들어진 계정) 이관은 backend/db/backfillEconomy.js가
- *  같은 함수를 배치로 호출한다. 이미 지급된 항목은 원장의 (user_id, reference_event_id)
- *  유일 제약으로 조용히 건너뛴다(재실행/재호출 모두 멱등).
- *
- *  externalTransaction이 주어지면(회원가입 트랜잭션 등) 그 안에서 실행한다 —
- *  applyLedgerTransaction/ensureDefaultLoadout 참고. */
 const ensureDefaultEntitlements = async (userId, db = defaultDb(), { transaction: externalTransaction = null } = {}) => {
     for (const item of listDefaultGrantItems()) {
         const referenceEventId = `default-grant:${userId}:${item.id}`;
@@ -401,8 +285,6 @@ const ensureDefaultEntitlements = async (userId, db = defaultDb(), { transaction
     return ensureDefaultLoadout(db, userId, externalTransaction);
 };
 
-/** 자기 계정의 지갑·소유품·장착 상태를 한 번에 돌려준다. 매 호출마다 기본 지급을
- *  보장해 신규·기존 계정을 같은 경로로 처리한다. */
 const getWalletSummary = async (userId, db = defaultDb()) => {
     await ensureDefaultEntitlements(userId, db);
     const models = economyModels(db);
@@ -426,12 +308,7 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
             selectedProfilePhotoId: loadout?.selected_profile_photo_id ?? null,
             selectedProfileBorderId: loadout?.selected_profile_border_id ?? null,
             selectedCardFrameId: loadout?.selected_card_frame_id ?? null,
-            // F-14(AC-01): 직업별 장착 스킨. 값이 없는 직업은 null — frontend
-            // skinCardWear.store.js가 그 직업의 기본 스킨으로 대체해 표시한다.
             selectedSkinsByJob: buildSkinsByJob(loadout),
-            // F-13 AC-02: 클라이언트가 다음 equipProfileAppearance 호출에 expectedRevision으로
-            // 그대로 되돌려 보낼 CAS 토큰. ensureDefaultEntitlements가 이미 위에서 실행됐으므로
-            // 이 시점의 loadout 행은 항상 존재하고 revision도 항상 채워져 있다.
             revision: loadout?.revision ?? null,
         },
     };
@@ -456,50 +333,18 @@ const listTransactions = async (userId, { limit = 50 } = {}, db = defaultDb()) =
     }));
 };
 
-// F-09 개별·일괄 구매 공통 처리. ─────────────────────────────────────────────
-//
-// 하나의 요청 식별자(referenceEventId)가 여러 상품을 가리킬 수 있으므로, 상품별 원장
-// 유일 키는 `${referenceEventId}::item::${itemId}`로 파생한다 — itemId 중복은 이미
-// 앞에서 거부하므로 이 파생 키는 같은 번들 안에서 항상 서로 다르고, 같은 번들을
-// 재시도하면 항상 같은 값으로 재계산되어 applyLedgerTransaction 자체의 재처리 방지도
-// 그대로 작동한다(이중 방어).
 const derivePurchaseItemReferenceEventId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;
 
-/** 구매 요청 전체(품목 id 목록)를 정렬해 정규화한다 — 같은 참조 사건 ID의 재시도가
- *  요청 순서만 다른 경우도 "같은 요청"으로 인정하고, 실제로 다른 상품 구성이면 충돌로
- *  거부한다(AC-04 payload mismatch, F0367 payloadMatches와 같은 목적). */
 const normalizePurchaseRequestPayload = (items) => ({ itemIds: items.map((entry) => entry.itemId).slice().sort() });
 
 const purchasePayloadsEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-// 개별 구매(purchaseItem)가 기존에 쓰던 것과 같은 오류(코드 REFERENCE_EVENT_CONFLICT)를
-// 그대로 재사용한다 — 참조 사건 ID 재사용이 다른 내용과 충돌한다는 개념은 원장 한 줄이든
-// 구매 요청 번들이든 동일하므로, 새 코드를 만들지 않고 기존 소비자(라우트·프론트
-// pendingPurchases 판정)와의 호환을 그대로 유지한다.
 const purchaseRequestConflictError = referenceEventConflictError;
 
-/** 원장 행을 GET /economy/purchases 응답·serializeLedgerEntry와 같은 모양의 평범한
- *  객체로 남긴다 — result_json에 그대로 저장해도, 나중에 그 JSON을 그대로 읽어도 항상
- *  같은 필드 이름(snake_case)을 쓰게 해 idempotent 여부와 무관하게 호출부가 같은 코드로
- *  처리할 수 있게 한다. */
 const snapshotLedgerEntry = (ledgerEntry) => (
     typeof ledgerEntry.get === 'function' ? ledgerEntry.get({ plain: true }) : ledgerEntry
 );
 
-/**
- * 개별·일괄 구매의 공통 원자적 처리. items는 [{ itemId }, ...] 형태이며 1개면 개별
- * 구매, 2개 이상이면 일괄 구매다(AC-01/AC-02). 클라이언트가 보낸 가격·재화는 절대
- * 읽지 않는다 — 모든 상품은 catalog.getCatalogItem으로만 조회한다(AC-04).
- *
- * 구현 계약(작업 지시서 계획 메모): 빈 목록·중복 상품·존재하지 않거나 구매 불가능한
- * 상품은 지갑을 건드리기 전에 즉시 거부한다. 통과한 상품들은 지갑 잠금 → 재처리 방지
- * 재확인 → 상품별 applyLedgerTransaction(같은 외부 트랜잭션 t 위에서 실행, 품목별 독립
- * 커밋 없음)을 순서대로 실행하고, 하나라도 실패하면(존재 여부·이미 보유·잔액 부족 등)
- * 그 오류가 트랜잭션 전체를 롤백시켜 앞서 처리된 품목의 차감·지급도 함께 되돌아간다.
- * 모든 품목이 성공하면 그 결과를 EconomyPurchaseRequest 한 행으로 같은 트랜잭션에서
- * 커밋해, 이후 같은 참조 사건 ID로 조회·재시도하면(getPurchaseResult, 또는 이 함수를
- * 같은 인자로 재호출) 새로 차감하지 않고 이미 커밋된 결과를 그대로 돌려준다(AC-04).
- */
 const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb()) => {
     if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
@@ -519,21 +364,12 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     const payload = normalizePurchaseRequestPayload(items);
     const models = economyModels(db);
 
-    // 재처리 방지 조회(AC-04)는 카탈로그 검증보다 먼저 한다 — 이미 커밋된 요청을 같은
-    // 참조 사건 ID로 재시도했다면, 그 사이 카탈로그 상태가 바뀌었더라도(상품이 나중에
-    // purchasable:false로 바뀌는 등) 항상 기존 커밋 결과를 그대로 복원해야 한다
-    // (CODEX-1 AC-04 재검토: "카탈로그 검증이 기존 성공 조회보다 먼저"였던 순서를
-    // 뒤집음 — 이미 커밋된 요청을 다시 카탈로그 규칙으로 거부하면 멱등성 계약이 깨진다).
-    // 카탈로그 검증은 이 조회를 통과해 "완전히 새로운 요청"으로 판명된 뒤에만 실행한다.
     const preExisting = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
     if (preExisting) {
         if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseRequestConflictError();
         return { idempotent: true, kind: preExisting.kind, results: preExisting.result_json };
     }
 
-    // 카탈로그 조회·구매 가능 여부 확인은 지갑을 건드리기 전에 끝낸다 — 표시용
-    // 이모티콘처럼 존재하지 않거나 purchasable:false인 상품이 하나라도 섞여 있으면
-    // 트랜잭션을 열지도 않고 즉시 거부한다(AC-05, 부작용 없음).
     const resolvedItems = itemIds.map((itemId) => {
         const catalogItem = catalog.getCatalogItem(itemId);
         if (!catalogItem || catalogItem.purchasable !== true) {
@@ -545,13 +381,8 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     await ensureWalletRow(db, userId);
 
     const runWrite = async (t) => {
-        // 지갑 행을 한 번만 잠그면 GOLD·DIAMOND 두 컬럼 모두 이 트랜잭션 동안 안전하다
-        // (한 행에 두 재화 컬럼이 함께 있다, economy.model.js 참고).
         await models.EconomyWallet.findOne({ where: { user_id: userId }, transaction: t, lock: t.LOCK.UPDATE });
 
-        // 잠금 뒤 재확인(recheck-after-lock) — applyLedgerTransaction과 같은 이유로,
-        // 동시에 들어온 같은 참조 사건 ID 재시도가 이 지갑 잠금 뒤에서 대기했다면 먼저
-        // 커밋된 결과를 그대로 돌려받아야 한다.
         const committed = await models.EconomyPurchaseRequest.findOne({
             where: { user_id: userId, reference_event_id: referenceEventId },
             transaction: t,
@@ -564,8 +395,6 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
         const results = [];
         for (const catalogItem of resolvedItems) {
             // eslint-disable-next-line no-await-in-loop -- 같은 외부 트랜잭션 t 위에서
-            // 순서대로 실행해야 한다(품목별 독립 커밋 금지) — Promise.all로 병렬화하면
-            // 같은 지갑 행에 대한 경합이 생기고 트랜잭션 경계도 흐트러진다.
             const outcome = await applyLedgerTransaction(db, {
                 userId,
                 reason: 'PURCHASE',
@@ -619,22 +448,11 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     }
 };
 
-/** 개별 구매 — purchaseItems(품목 1개)에 위임하고, 기존 라우트(POST /economy/purchase)와
- *  호환되도록 결과 모양(`{ idempotent, ledgerEntry }`)을 그대로 유지한다. results[0]은
- *  snapshotLedgerEntry가 만든 평범한 객체라 economy.routes.js의 serializeLedgerEntry가
- *  기존과 동일하게 동작한다. */
 const purchaseItem = async ({ userId, itemId, referenceEventId }, db = defaultDb()) => {
     const result = await purchaseItems({ userId, items: [{ itemId }], referenceEventId }, db);
     return { idempotent: result.idempotent, ledgerEntry: result.results[0] };
 };
 
-/** 커밋 후 응답 유실을 복구한다(AC-04) — 인증된 본인 계정 범위에서만 조회한다. 구매가
- *  실제로 커밋된 경우에만 EconomyPurchaseRequest 행이 존재하므로, 이 함수가 null을
- *  돌려주는 것은 "아직 커밋된 적 없음"(요청이 아예 도달하지 않았거나, 도달했어도
- *  커밋 전 오류로 롤백됨)을 뜻한다 — 그 두 경우를 이 함수 하나로는 구분하지 않는다.
- *  호출부(라우트)는 원래 요청이 명시적으로 거부 응답을 받았는지 여부로 그 둘을 구분한다
- *  — 명시적 거부를 받았다면 애초에 이 함수를 부를 필요가 없고, 응답을 못 받았을
- *  때만(타임아웃·연결 단절) 이 함수로 확인한다. */
 const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => {
     if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
@@ -645,16 +463,10 @@ const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => 
     return { kind: existing.kind, results: existing.result_json, createdAt: existing.created_at };
 };
 
-// F-32b 골드 구매(다이아 → 골드). 상품은 게임 서버가 요청 시점에 DB에서 읽은 값만 신뢰한다.
-// 다이아 차감·골드 지급(재화 원장 2행)·구매 요청 1행이 하나의 READ COMMITTED 부모 트랜잭션에서
-// 함께 커밋되거나 함께 롤백된다. 구매 요청 행(kind 'GOLD')이 최초 처리 결과의 유일한 근거라,
-// 같은 참조 사건 ID의 재시도·결과 조회는 현재 지갑·현재 상품표를 다시 보지 않고 그 저장 결과를 돌려준다.
 const GOLD_PURCHASE_KIND = 'GOLD';
 const GOLD_PURCHASE_REASON = 'GOLD_PURCHASE';
 const GOLD_PURCHASE_MAX_ATTEMPTS = 3;
 
-// 재화 원장의 (user_id, reference_event_id) 유일 키는 STRING(150)이다 — 클라이언트 키 길이와
-// 무관하게 항상 고정 길이가 되도록 SHA-256으로 파생하고 접미사로 두 행을 구분한다.
 const deriveGoldPurchaseReferenceEventId = (referenceEventId, leg) =>
     `gold:${crypto.createHash('sha256').update(referenceEventId).digest('hex')}:${leg}`;
 
@@ -685,9 +497,7 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
     const models = economyModels(db);
     const payload = { type: GOLD_PURCHASE_REASON, productId, version };
 
-    // 같은 키의 저장 요청은 종류·상품·버전이 같을 때만 저장 결과로 복구하고, 다르면 충돌이다.
     const consumeStored = (stored) => {
-        // MySQL JSON 컬럼은 키 순서를 다시 정렬해 돌려주므로 문자열 비교가 아니라 필드별로 비교한다.
         const storedPayload = typeof stored.payload_json === 'string' ? JSON.parse(stored.payload_json) : stored.payload_json;
         if (stored.kind !== GOLD_PURCHASE_KIND
             || storedPayload?.type !== payload.type
@@ -702,18 +512,12 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
         ...(transaction ? { transaction } : {}),
     });
 
-    // 이미 커밋된 요청은 상품 조회보다 먼저 복구한다 — 그 사이 상품이 바뀌거나 판매가 중지돼도
-    // 최초 결과가 그대로여야 한다.
     const preExisting = await findStored(null);
     if (preExisting) return consumeStored(preExisting);
 
-    // 순환 참조를 피하려고(currencyProducts.service가 MAX_BALANCE를 이 파일에서 가져온다) 실행
-    // 시점에 불러온다. 라우트 시험이 함수를 바꿔 끼워도 반영되게 모듈 객체로 호출한다.
     const currencyProductsService = require('./currencyProducts.service');
 
     const runOnce = () => models.sequelize.transaction({ isolationLevel: 'READ COMMITTED' }, async (t) => {
-        // PRODUCT_* 오류는 잠시 보관한다 — 잠금 뒤에 같은 요청이 먼저 커밋됐는지 확인해야 하기
-        // 때문이다. DB 조회 실패 같은 그 밖의 오류는 상품 오류로 바꾸지 않고 그대로 던진다.
         let product = null;
         let productError = null;
         try {
@@ -727,8 +531,6 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
             else throw error;
         }
 
-        // 지갑이 이미 있으면 바로 UPDATE 잠금만 잡는다 — 중복 INSERT 실패가 남기는 공유 잠금 때문에
-        // 동시 요청끼리 잠금 승격 deadlock이 나는 것을 피한다. 없을 때만 만들고 다시 잠근다.
         const lockWallet = () => models.EconomyWallet.findOne({
             where: { user_id: userId },
             transaction: t,
@@ -740,12 +542,10 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
             wallet = await lockWallet();
         }
 
-        // 잠금 뒤 재확인 — 앞선 동시 요청이 이미 커밋했다면 그 결과를 소비한다.
         const committed = await findStored(t);
         if (committed) return consumeStored(committed);
         if (productError) throw productError;
 
-        // 클라이언트가 보낸 금액·수량은 이 함수에 도달하지 않는다 — 가격·지급량은 서버 상품 값뿐이다.
         const payAmount = product.payAmount;
         const grantTotal = product.grantAmount + product.bonusAmount;
         if (wallet.balance_diamond < payAmount) {
@@ -766,8 +566,6 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
             amount: grantTotal,
             referenceEventId: deriveGoldPurchaseReferenceEventId(referenceEventId, 'gold'),
         }, { transaction: t });
-        // 구매 요청이 없는데 원장 행이 이미 있다면 저장소가 어긋난 상태다 — 원장 함수의 중복 반환을
-        // 신규 성공으로 취급하지 않고 전체를 롤백한다.
         if (diamondOutcome.idempotent || goldOutcome.idempotent) {
             throw createError('골드 구매 원장 상태가 일치하지 않습니다.', 500, 'GOLD_PURCHASE_LEDGER_INCONSISTENT');
         }
@@ -800,7 +598,6 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
         };
     });
 
-    // 실제 deadlock은 부모 트랜잭션 전체가 롤백된 뒤 처음부터 다시 실행한다(최대 3회).
     for (let attempt = 1; ; attempt += 1) {
         try {
             // eslint-disable-next-line no-await-in-loop -- 시도는 순서대로여야 한다.
@@ -808,7 +605,6 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
         } catch (error) {
             if (isDeadlockError(error) && attempt < GOLD_PURCHASE_MAX_ATTEMPTS) continue;
             if (error?.code === 'DUPLICATE_PURCHASE_REQUEST') {
-                // 롤백된 뒤 커밋된 행을 계정·키로 다시 읽는다 — 같은 내용이면 저장 결과, 다르면 충돌.
                 // eslint-disable-next-line no-await-in-loop
                 const existing = await findStored(null);
                 if (existing) return consumeStored(existing);
@@ -818,10 +614,6 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
     }
 };
 
-/** QA/운영 보상 지급 — role 검사는 라우트 계층 책임이다(실제 계정 데이터 기준, 라우트
- *  참고). currency는 GOLD/DIAMOND 중 하나를 명시해야 하며 기본값은 GOLD다. amount는
- *  1 이상의 정수만 허용한다(음수·0 지급은 이 경로의 목적이 아니다) — 상한·안전 정수
- *  검증은 applyLedgerTransaction이 공통으로 담당한다. */
 const grantReward = async ({ userId, amount, currency = CURRENCIES.GOLD, reason = 'REWARD', referenceEventId }, db = defaultDb()) => {
     if (!isValidCurrency(currency)) {
         throw createError('알 수 없는 재화입니다.', 400, 'INVALID_CURRENCY');
@@ -832,11 +624,6 @@ const grantReward = async ({ userId, amount, currency = CURRENCIES.GOLD, reason 
     return applyLedgerTransaction(db, { userId, reason, currency, amount, referenceEventId });
 };
 
-// F-12(A-03): achievementService.js가 업적 보상(재화)을 지급할 때 쓰는 통로. grantReward와
-// 거의 같지만 외부(호출부가 이미 열어 둔) 트랜잭션 위에서 실행할 수 있어야 한다 — 업적
-// 달성 행(achievement_grants) 삽입과 재화 지급이 하나의 트랜잭션으로 원자적이어야
-// 하기 때문이다(전부 성공하거나 전부 롤백). reason은 항상 'ACHIEVEMENT_REWARD'로 고정해
-// 이 통로로 들어온 원장 항목을 다른 지급 경로와 구분할 수 있게 한다.
 const grantAchievementCurrency = async (
     { userId, currency, amount, referenceEventId },
     db = defaultDb(),
@@ -855,11 +642,6 @@ const grantAchievementCurrency = async (
     );
 };
 
-// F-12(A-03): 업적 보상(직업 테두리 등 아이템) 지급 통로. ensureDefaultEntitlements와 같은
-// 트릭(currency는 항상 필요하므로 GOLD 0원 원장 항목에 아이템 소유권을 얹는다)을 쓰되,
-// 이미 보유 중인 경우(A-03: "기존 테두리 보유가 거래 전체 실패를 일으키면 안 된다")
-// ITEM_ALREADY_OWNED를 거래 실패로 취급하지 않고 이미 만족된 상태로 삼켜, 바깥
-// 트랜잭션(achievement_grants 삽입 포함)이 이 이유만으로 롤백되지 않게 한다.
 const grantAchievementItem = async (
     { userId, itemId, itemType, referenceEventId },
     db = defaultDb(),
@@ -882,19 +664,6 @@ const grantAchievementItem = async (
     }
 };
 
-/** 소유권·아이템 종류를 검증한 뒤에만 장착한다(AC-05). itemId가 카탈로그에 없는
- *  임의 문자열(파일 경로 등)이면 ITEM_TYPE_MISMATCH로 거부되고, 카탈로그에 있어도
- *  보유하지 않았으면 ITEM_NOT_OWNED(403)로 거부된다.
- *
- *  F-14(AC-01, R-IMPL P1 "coherent persisted write ordering") — equipProfileAppearance와
- *  같은 EconomyLoadout 행·같은 revision 컬럼을 갱신하므로, 이 함수도 같은 CAS 계약을
- *  따른다: expectedRevision을 보내면 SELECT ... FOR UPDATE 행 잠금 안에서 지금 행의
- *  revision과 정확히 같을 때만 커밋하고, 다르면(다른 확정이 그 사이 먼저 커밋됐다면)
- *  어떤 컬럼도 건드리지 않고 즉시 409(SKIN_REVISION_CONFLICT)로 거부한다 — 지연되거나
- *  응답 순서가 뒤바뀐 요청이 더 최신 저장을 조용히 덮어쓰는 일이 구조적으로 불가능하다.
- *  expectedRevision을 아직 모르는 호출자(레거시 내부 호출·이 값을 넘기지 않는 기존
- *  테스트)와의 호환을 위해 이 값은 선택이다 — 생략하면 CAS 비교 없이 이전과 동일하게
- *  즉시 커밋한다(잠금 자체는 항상 걸어 동시 갱신을 직렬화한다). */
 const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaultDb()) => {
     const expectedType = SLOT_TO_ITEM_TYPE[slot];
     const column = SLOT_TO_LOADOUT_COLUMN[slot];
@@ -905,12 +674,6 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
         throw createError('itemId가 필요합니다.', 400, 'INVALID_ITEM_ID');
     }
 
-    // R-IMPL(2026-09-10, AC-03 재검토): 기본 지급은 지금까지 getWalletSummary(지갑/소유품
-    // 조회 GET) 경로를 탄 계정에만 보장됐다 — 신규 가입 직후든 이관된 기존 계정이든, 그
-    // GET을 한 번도 거치지 않고 곧바로 기본 프로필/테두리를 장착하려 하면 실제로는 아직
-    // 그 항목을 보유하지 않은 상태라 ITEM_NOT_OWNED로 잘못 거부됐다. 별도의 가입 훅을
-    // 추가하는 대신, 장착도 "계정이 경제 시스템을 처음 건드리는 지점"이 될 수 있다는
-    // 전제로 여기서도 같은 지급을 보장한다 — 멱등하므로 반복 호출해도 안전하다.
     await ensureDefaultEntitlements(userId, db);
 
     const isFreeCardFrame = slot === 'PLAYER_CARD_FRAME' && itemId === FREE_CARD_FRAME_ID;
@@ -923,9 +686,6 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
 
-        // F-14(AC-02): 직업 스킨 슬롯은 카탈로그 종류(SKIN) 일치만으로는 부족하다 — 다른
-        // 직업에서 구매한 스킨을 이 슬롯에 장착하려는 요청도 같은 코드로 거부한다(한 슬롯에
-        // 그 직업 접두어로 시작하는 itemId만 허용).
         const requiredPrefix = JOB_SKIN_ID_PREFIX_BY_SLOT[slot];
         if (requiredPrefix && !itemId.startsWith(`${SKIN_ITEM_ID_PREFIX}${requiredPrefix}`)) {
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
@@ -944,9 +704,6 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
 
     const hasExpectedRevision = typeof expectedRevision === 'string' && expectedRevision.length > 0;
 
-    // equipProfileAppearance와 같은 이유로 행 잠금 "안에서" 비교·갱신을 함께 한다(A-01) —
-    // 겹치는 두 확정(다른 슬롯의 equipItem, 또는 equipProfileAppearance)이 동시에 같은
-    // 행을 노려도 완전히 직렬화된다.
     return db.sequelize.transaction(async (t) => {
         const loadout = await models.EconomyLoadout.findOne({
             where: { user_id: userId },
@@ -967,48 +724,6 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
     });
 };
 
-// F-13 AC-02 설계 감사(운영자, 2026-09-11) — CODEX-9가 도입했던 clientIntentAt(클라이언트
-// 벽시계 시각) + lastProfileEquipIntentAtByUser(인메모리 Map) 높은-수위 표시 방식은 세 가지로
-// 깨져 있어 제거됐다: (1) Date.now()는 전순서가 아니다 — 같은 밀리초 충돌·시계 역행/오차가
-// 정당한 요청을 잃거나 거부한다. (2) Map 갱신이 트랜잭션 커밋보다 먼저 실행돼 롤백에도
-// 의도가 전진했다(Map이 DB와 원자적이지 않음). (3) 인메모리 값은 프로세스 재시작·다중
-// 인스턴스에서 사라진다 — 영속적 장착 보장의 근거가 될 수 없다.
-//
-// 그 뒤를 이은 "행 잠금만으로 충분하다"는 설계(순수 SELECT ... FOR UPDATE 직렬화 + 프런트
-// loadoutAttemptSeq 로컬 판단)는 겹치는 확정 요청의 실제 DB 커밋 순서가 클라이언트의 "시작
-// 순서"와 정확히 일치한다는 것을 서버가 스스로 증명하지 못한다는 잔여 위험을 문서화된 채로
-// 남겼다(진짜 네트워크 재정렬 시 화면과 DB 최종값이 일시적으로 어긋날 수 있음) — 사람의
-// 운영자 감사가 이 잔여 위험을 받아들이지 않고, corrections가 제시한 두 대안 중 "서버가
-// 발급하는 영속 revision을 행 잠금 아래 CAS로 비교한다"는 쪽을 채택하도록 지시했다. 지금의
-// 설계는 그 지시를 그대로 구현한다:
-//   - EconomyLoadout 행에 서버 전용 revision 컬럼(0010-add-economy-loadout-revision.js)을
-//     두고, 성공적으로 커밋될 때마다 crypto.randomUUID()로 새 값을 발급한다(순서 비교가
-//     아니라 동일성 비교만 한다 — A-10: 값이 같아도 명시적 재저장은 항상 새 UUID를 받는다,
-//     이것이 ABA 공격을 차단한다).
-//   - 클라이언트는 자신이 마지막으로 읽은 revision을 expectedRevision으로 함께 보낸다.
-//     이 함수는 SELECT ... FOR UPDATE 행 잠금을 잡은 뒤, 지금 행의 revision이 요청의
-//     expectedRevision과 정확히 같을 때만 갱신을 커밋한다 — 다르면(다른 확정이 그 사이
-//     먼저 커밋됐다면) 어떤 컬럼도 건드리지 않고 즉시 409로 거부한다(PROFILE_REVISION_CONFLICT).
-//     이 비교는 클라이언트의 "시작 순서" 추측이 아니라 서버가 실제로 무엇을 커밋했는지를
-//     직접 보증하므로, 진짜 네트워크 재정렬이 있어도 잘못된 값이 조용히 덮어써지는 일이
-//     구조적으로 불가능하다(불일치는 항상 거부되지, 결코 통과되지 않는다).
-//   - 거부된 클라이언트는 authoritative GET(현재 loadout+revision)으로 재조정한다 —
-//     요청한 슬롯이 이미 서버 값과 같으면 그 상태를 그대로 받아들이고, 다르면 최신 revision
-//     으로 같은 의도를 다시 보낸다(economy.store.js의 equipProfile 참고).
-//   - equipItem(카드 프레임 등 일반 장착)도 같은 행을 갱신할 때마다 revision을 함께 새로
-//     발급한다 — 그래야 그 경로로 행이 바뀐 뒤에는 프로필 편집기가 들고 있던 이전 revision이
-//     자동으로 무효화된다.
-
-/** F-13 AC-01/AC-02: 프로필 사진·테두리를 하나의 확정으로 함께 저장한다. photoItemId·
- *  borderItemId 각각은 넘기지 않으면(undefined) 그 슬롯을 건드리지 않는다 — 사진만
- *  바뀐 확인은 photoItemId만 보내면 된다. 두 슬롯 모두 equipItem과 같은 카탈로그 조회·
- *  소유권 검사(ITEM_TYPE_MISMATCH/ITEM_NOT_OWNED)를 거치며, 검증은 어떤 컬럼도 갱신하기
- *  전에 전부 끝낸다 — 한쪽이라도 실패하면 loadout.update가 아예 호출되지 않아 이전 상태가
- *  그대로 유지된다(부분 저장 없음). expectedRevision이 지금 행의 revision과 다르면(다른
- *  확정이 그 사이 먼저 커밋됐다면) 컬럼을 전혀 건드리지 않고 409로 거부한다(A-01) — 값과
- *  새 revision을 함께 바꾸는 곳은 이 함수 끝의 단일 loadout.update(updates) 한 번뿐이라,
- *  DB에는 하나의 UPDATE 문으로만 반영된다(부분 커밋 없음). 겹치는 두 확정 요청은 아래
- *  행 잠금으로 완전히 직렬화된다(동시 갱신 없음). */
 const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expectedRevision }, db = defaultDb()) => {
     const slots = [
         ['PROFILE_PHOTO', photoItemId],
@@ -1027,9 +742,6 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
         throw createError('expectedRevision이 필요합니다.', 400, 'MISSING_EXPECTED_REVISION');
     }
 
-    // equipItem과 같은 이유(R-IMPL 2026-09-10) — 아직 getWalletSummary를 거치지 않은
-    // 계정이 곧바로 프로필을 확정하려 해도 기본 지급이 먼저 보장돼야 ITEM_NOT_OWNED로
-    // 잘못 거부되지 않는다.
     await ensureDefaultEntitlements(userId, db);
     const models = economyModels(db);
 
@@ -1042,7 +754,6 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
         // eslint-disable-next-line no-await-in-loop -- 슬롯이 최대 2개뿐이고, 두 검증 모두
-        // 실제 컬럼을 갱신하기 전에 순서대로 끝나야 한다(부분 검증 후 병렬 갱신 금지).
         const owned = await models.EconomyEntitlement.findOne({ where: { user_id: userId, item_id: itemId } });
         if (!owned) {
             throw createError('보유하지 않은 상품은 장착할 수 없습니다.', 403, 'ITEM_NOT_OWNED');
@@ -1050,19 +761,11 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
         updates[column] = itemId;
     }
 
-    // 행이 없으면 미리 만들어 둔다(잠금 트랜잭션 안에서는 findOrCreate 대신 조회만 하면
-    // 되게 한다 — ensureWalletRow와 같은 관례).
     await models.EconomyLoadout.findOrCreate({
         where: { user_id: userId },
         defaults: { user_id: userId, revision: crypto.randomUUID() },
     });
 
-    // 여기서부터 실제 컬럼을 바꾸는 지점까지를 SELECT ... FOR UPDATE로 잠근 트랜잭션 안에
-    // 둔다 — applyLedgerTransaction의 지갑 잠금과 같은 이유다. 겹치는 두 확정 요청이 동시에
-    // 이 함수를 호출해도, 뒤에 도착한 쪽은 앞선 트랜잭션이 커밋(또는 롤백)해 잠금을 놓을
-    // 때까지 완전히 기다렸다가에야 자신의 갱신을 시작한다(동시 갱신 없음, 전부-아니면-무).
-    // expectedRevision 비교도 이 잠금 "안에서" 한다(A-01) — 잠금 밖에서 비교하면 비교와
-    // 실제 커밋 사이에 다른 트랜잭션이 끼어들 수 있어 CAS가 무의미해진다.
     return db.sequelize.transaction(async (t) => {
         const loadout = await models.EconomyLoadout.findOne({
             where: { user_id: userId },
@@ -1071,8 +774,6 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
         });
 
         if (loadout.revision !== expectedRevision) {
-            // 컬럼을 전혀 건드리지 않고 즉시 거부한다 — 던지면 이 트랜잭션 콜백 전체가
-            // 롤백되므로(Sequelize 계약) 부분 갱신이 남을 수 없다.
             throw createError(
                 '프로필이 다른 곳에서 이미 변경되었습니다. 최신 상태를 다시 불러온 뒤 다시 시도하세요.',
                 409,
@@ -1080,19 +781,11 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
             );
         }
 
-        // A-10(ABA 방지): 요청한 슬롯 값이 지금 행의 값과 우연히 같아도(예: A→B→A) 이 저장은
-        // 사용자의 명시적 재확정이므로 항상 새 UUID를 받는다 — "값이 같으니 실질적으로
-        // 아무 것도 안 바뀌었다"고 판단해 revision 발급을 건너뛰면, 이전에 발급됐다가 아직
-        // 완료되지 않은 다른 요청의 revision이 우연히 다시 유효해질 수 있다.
         await loadout.update({ ...updates, revision: crypto.randomUUID() }, { transaction: t });
         return loadout;
     });
 };
 
-/** F-13 AC-05 전제: 대기방·인게임에서 타인에게도 공개할 사진·테두리 itemId만 돌려준다
- *  (지갑·소유 목록 등 비공개 경제 정보는 절대 포함하지 않는다). 대상 계정에 기본 지급이
- *  아직 안 되어 있어도 조회 전에 보장한다 — 신규 계정이 방에 들어오자마자 loadout이
- *  비어 있는 채로 노출되는 것을 막는다. */
 const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
     const uniqueUserIds = [...new Set(userIds)].filter((id) => typeof id === 'string' && id.length > 0);
     if (uniqueUserIds.length === 0) return {};
@@ -1112,16 +805,6 @@ const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
     return byUserId;
 };
 
-/** F-14(AC-04) 전제: 게임 시작 시점에만 쓰는 내부 전용 조회다 — 공개(사진·테두리·카드
- *  프레임)와 비공개(직업별 스킨 선택 skinsByJob) 정보를 함께 돌려주지만, 이 함수 자체는
- *  어떤 것이 공개이고 어떤 것이 비공개인지 판단하지 않는다. 그 판단은 호출부의 책임이다:
- *  matchmaking.js captureRoomStartProfiles는 profilePhotoId/profileBorderId/cardFrameId만
- *  room.players의 공개 필드로 옮기고, skinsByJob은 세션 내부 필드(accountSkinsByJob)에만
- *  담아 game-core/gameSession.js buildViewerRoleFields가 뷰어 자신의 실제 역할에 해당하는
- *  값 하나만 골라내게 한다(다른 참가자에게는 절대 그대로 노출하지 않는다) — skinsByJob
- *  전체를 공개 목록(getPublicProfileLoadouts)에 옮기면 특정 참가자가 어떤 직업 스킨들을
- *  가졌는지 전원에게 드러나고, 인게임에 실제로 그 중 하나만 렌더되는 순간 나머지 참가자가
- *  "렌더된 스킨 = 그 직업"이라는 등식으로 역할을 역산할 수 있다(AC-04 위반). */
 const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
     const uniqueUserIds = [...new Set(userIds)].filter((id) => typeof id === 'string' && id.length > 0);
     if (uniqueUserIds.length === 0) return {};
@@ -1150,25 +833,10 @@ const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
     return byUserId;
 };
 
-// ---------------------------------------------------------------------------
-// F-33 E-2 이모티콘 팔레트(설계도 §2-2)
-// ---------------------------------------------------------------------------
-//
-// economy_emoji_palettes(0019)의 8칸을 읽고 쓴다. 저장은 economy_loadouts와 같은 CAS
-// 계약을 따르되, 행 잠금 뒤 비교하는 equipProfileAppearance와 달리 "WHERE user_id AND
-// revision = expectedRevision" 조건부 UPDATE의 영향 행 수로 판정한다 — 비교와 쓰기가 단일
-// SQL 문 안에서 원자적으로 끝나므로 그 사이에 다른 트랜잭션이 끼어들 수 없다. revision은
-// 항상 새 UUID라 값이 그대로여도 UPDATE는 반드시 행을 바꾼다(affected가 "일치했는가"와
-// 같은 뜻이 된다).
-
 const EMOJI_PALETTE_SLOT_COLUMNS = Object.freeze([
     'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6', 'slot_7', 'slot_8',
 ]);
 
-/** 행이 없는 계정이 처음 조회할 때 채우는 기본 8종 — 설계도 §0 순서(거절·눈물·분노·사랑·
- *  씨익·안녕·항복·헤롱) 그대로다. 카탈로그를 조회해 defaultGrant를 추리지 않는다: 그 목록에는
- *  프로필 사진·테두리도 섞여 있고 순서도 보장되지 않는데, 팔레트 기본 배치는 설계도가 순서까지
- *  고정한 값이기 때문이다. */
 const DEFAULT_EMOJI_PALETTE_SLOTS = Object.freeze([
     'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
     'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
@@ -1190,8 +858,6 @@ const listOwnedEmoticons = async (models, userId, transaction = null) => {
     return rows.map((row) => row.item_id);
 };
 
-/** slots 형식 검증(AC-05). DB를 건드리기 전에 끝난다 — null은 "빈 칸"이라는 정상 값이고,
- *  중복 검사에서도 제외한다(빈 칸은 여러 개일 수 있다). */
 const assertValidEmojiSlots = (slots) => {
     const invalid = () => createError('slots가 올바르지 않습니다.', 400, 'INVALID_SLOTS');
     if (!Array.isArray(slots) || slots.length !== EMOJI_PALETTE_SLOT_COLUMNS.length) throw invalid();
@@ -1200,11 +866,6 @@ const assertValidEmojiSlots = (slots) => {
     if (new Set(filled).size !== filled.length) throw invalid();
 };
 
-/** F-33 AC-01: 행이 없는 계정은 기본 8종을 채운 행을 그 자리에서 만들어 돌려준다.
- *
- *  equipItem과 같은 이유로 ensureDefaultEntitlements를 먼저 보장한다 — 아직 지갑·장착 조회를
- *  한 번도 거치지 않은 계정은 기본 이모티콘 8종 소유 행이 없어서, owned가 비어 보이고 곧이어
- *  저장하면 기본 배치 그대로인데도 NOT_OWNED로 거부된다. 멱등하므로 반복 호출해도 안전하다. */
 const getEmojiPalette = async (userId, db = defaultDb()) => {
     await ensureDefaultEntitlements(userId, db);
     const models = economyModels(db);
@@ -1221,9 +882,6 @@ const getEmojiPalette = async (userId, db = defaultDb()) => {
     };
 };
 
-/** F-33 AC-02~AC-05: 형식 검증 → 소유 검증 → revision CAS 조건부 UPDATE를 하나의
- *  트랜잭션으로 실행한다. 어느 단계에서 던지든 UPDATE 자체가 실행되지 않거나 롤백되므로
- *  팔레트는 호출 전과 완전히 같은 상태로 남는다(부분 저장 없음). */
 const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = defaultDb()) => {
     if (typeof expectedRevision !== 'string' || expectedRevision.length === 0) {
         throw createError('expectedRevision이 필요합니다.', 400, 'MISSING_EXPECTED_REVISION');
@@ -1240,9 +898,6 @@ const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = d
             transaction: t,
         });
 
-        // 소유 검증은 CAS UPDATE보다 먼저 한다 — 위반이면 UPDATE가 아예 실행되지 않고
-        // 트랜잭션 전체가 롤백되므로, 방금 findOrCreate로 만들어진 기본 행이 있었더라도
-        // 컬럼 값은 호출 전과 같다(AC-04).
         const owned = new Set(await listOwnedEmoticons(models, userId, t));
         if (slots.some((value) => value !== null && !owned.has(value))) {
             throw createError('소유하지 않은 이모티콘입니다.', 400, 'NOT_OWNED');
@@ -1258,9 +913,6 @@ const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = d
         });
         if (affected === 1) return { slots: [...slots], revision };
 
-        // AC-03: 영향 행 0 = 그 사이 다른 저장이 먼저 커밋됐다. 현재 값을 **잠금 읽기**로
-        // 다시 읽는다 — REPEATABLE READ에서 일반 SELECT는 이 트랜잭션이 이미 세운 스냅샷을
-        // 돌려주므로 승자가 방금 커밋한 최신 값을 놓친다(동시 저장 시험이 이것을 잡는다).
         const current = await models.EconomyEmojiPalette.findOne({
             where: { user_id: userId },
             transaction: t,
@@ -1295,22 +947,11 @@ module.exports = {
     equipProfileAppearance,
     getPublicProfileLoadouts,
     getGameStartLoadouts,
-    // F-33 E-2: emojiPalette.controller.js가 부르는 팔레트 조회·저장. 기본 8종 배치는
-    // E-3(인게임 팔레트)도 같은 함수로 읽는다.
     getEmojiPalette,
     saveEmojiPalette,
     DEFAULT_EMOJI_PALETTE_SLOTS,
-    // F-14(AC-01, R-IMPL2 "실제 endpoint가 authoritative loadout을 돌려줘야 한다") —
-    // economy.routes.js가 POST /economy/equip 응답에 selectedSkinsByJob을 실을 때 이 함수를
-    // 그대로 재사용한다(요청 필드를 되짚어 재구성하지 않고, equipItem이 실제로 돌려준 loadout
-    // 행에서 직접 읽는다).
     buildSkinsByJob,
-    // F-32a: 충전 서비스(topup.service.js)가 주문 GRANTED 갱신과 같은 부모 트랜잭션에서 다이아
-    // 원장을 기록할 때 쓴다. 함수 본문은 그대로이며 __internal에도 계속 노출된다.
-    // MAX_BALANCE는 상품 검증(currencyProducts.service.js)이 지급 합계 한도를 같은 값으로
-    // 대조하도록 공개한다.
     applyLedgerTransaction,
     MAX_BALANCE,
-    // 테스트 전용 — 낮은 레벨 원장 적용 로직을 직접 검증할 때 사용한다.
     __internal: { applyLedgerTransaction, ensureWalletRow, ensureDefaultLoadout },
 };

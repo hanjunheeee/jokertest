@@ -1,12 +1,5 @@
 'use strict';
 
-// F-12 achievementDefinitions.js 단위 시험. 실제 MySQL 없이도 AC-01(프론트 22개 id·순서
-// 보존)·A-02(정확한 보상량, 아이콘 파일명 숫자를 count로 쓰지 않음)를 검증한다. 기대값은
-// 작업 지시서의 프론트 발췌(frontend/src/domains/library/content/forbiddenRecords/
-// spreadMeta.js의 FORBIDDEN_RECORDS_SPREAD_META, frontend/src/domains/library/content/
-// invitedGuests/jobChallenges.js의 INVITED_GUESTS_JOB_CHALLENGES)에서 그대로 옮겨 적은
-// 것이다 — 이 시험이 실패하도록 기대값을 바꾸지 않는다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -19,13 +12,9 @@ const {
     getAchievementDefinition,
 } = require('./achievementDefinitions');
 
-// CODEX-1 재검토(AC-01): 위 EXPECTED_* 배열은 손으로 옮겨 적은 값이라 프론트 원본이 바뀌어도
-// 조용히 어긋날 수 있다 — 아래 테스트들은 실제 frontend/ 소스 파일을 동적 import로 직접 읽어
-// 대조해, "22개 원문·순서 보존"을 손으로 옮겨 적은 사본이 아니라 진짜 소스에 근거해 검증한다.
 const FRONTEND_SPREAD_META_PATH = path.join(__dirname, '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'forbiddenRecords', 'spreadMeta.js');
 const FRONTEND_JOB_CHALLENGES_PATH = path.join(__dirname, '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'invitedGuests', 'jobChallenges.js');
 
-// spreadMeta.js FORBIDDEN_RECORDS_SPREAD_META와 같은 순서·id·조건.
 const EXPECTED_FORBIDDEN_RECORDS = [
     { id: 'record-1-masquerade', metric: 'COMPLETED_GAMES', threshold: 3 },
     { id: 'record-2-extra-mask', metric: 'VOTE_PARTICIPATIONS', threshold: 10 },
@@ -36,8 +25,6 @@ const EXPECTED_FORBIDDEN_RECORDS = [
     { id: 'record-7-erased-night', metric: 'WINS', threshold: 30 },
 ];
 
-// jobChallenges.js INVITED_GUESTS_JOB_CHALLENGES와 같은 순서(noble/clown/doctor/guard/
-// witchHunter × win-10/20/30)·id·role·보상.
 const EXPECTED_JOB_ACHIEVEMENTS = [
     { id: 'noble-win-10', role: 'CITIZEN', threshold: 10 },
     { id: 'noble-win-20', role: 'CITIZEN', threshold: 20 },
@@ -126,8 +113,6 @@ test('A-02: 직업별 30승 테두리 itemId가 서로 다르고 직업 수(5개
 test('getAchievementDefinition: 존재하지 않는 id는 undefined다', () => {
     assert.equal(getAchievementDefinition('no-such-id'), undefined);
 });
-
-// ── AC-01 CODEX-1 재검토: 손으로 옮긴 기대값이 아니라 실제 frontend 소스와 직접 대조 ──
 
 test('AC-01: 실제 frontend/spreadMeta.js의 FORBIDDEN_RECORDS_SPREAD_META 7개 id·순서가 백엔드 정의와 정확히 일치한다', async () => {
     const mod = await import(pathToFileURL(FRONTEND_SPREAD_META_PATH).href);

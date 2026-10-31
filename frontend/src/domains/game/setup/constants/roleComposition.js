@@ -1,21 +1,7 @@
-/**
- * 방 생성 화면의 역할 구성(AUTO/CUSTOM) 계약 상수.
- *
- * backend/game-core/roleComposition.js의 ROLE_COMPOSITION_MODES/CUSTOM_ROLE_KEYS와 값이
- * 일치해야 한다 — 이 저장소에는 백엔드/프런트가 공유하는 상수 모듈이 없어 수동으로
- * 동기화한다(ingameRoleRevealData.js와 동일한 관례).
- */
-
-/** 서버 settings.roleCompositionMode에 그대로 실리는 값 */
 export const ROLE_COMPOSITION_MODES = Object.freeze({ AUTO: "auto", CUSTOM: "custom" })
 
-/**
- * 방장이 직접 개수를 지정할 수 있는 역할. CITIZEN은 의도적으로 없다 — 시작 시점의 실제
- * 인원에서 파생되는 값이라 클라이언트가 보내지 않는다(서버도 받지 않는다).
- */
 export const CUSTOM_ROLE_KEYS = Object.freeze(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
 
-/** 표시용 역할 이름 — ingame의 INGAME_ROLE_REVEAL_DISPLAY와 같은 명칭을 쓴다. */
 export const CUSTOM_ROLE_LABELS = Object.freeze({
   JOKER: "광대",
   DOCTOR: "의사",
@@ -23,26 +9,13 @@ export const CUSTOM_ROLE_LABELS = Object.freeze({
   WITCH_HUNTER: "마녀사냥꾼",
 })
 
-/** 파생 표시에만 쓰는 CITIZEN 라벨(입력 항목이 아니다). */
 export const CITIZEN_ROLE_LABEL = "시민"
 
-/**
- * 특수직업(광대·의사·경비원·마녀사냥꾼) 공통 인원 상한. backend/game-core/roleComposition.js의
- * MAX_SPECIAL_ROLE_COUNT와 같은 값이어야 한다(수동 동기화). 시민은 정원에서 파생되는 잔여
- * 인원이라 상한이 없다(0명도 정상이다).
- */
 export const MAX_SPECIAL_ROLE_COUNT = 2
 
-/**
- * CUSTOM에서 지정할 수 있는 광대 수 상한. 서버가 AUTO/CUSTOM 두 경로 모두에서 위 상한을
- * 집행하므로 프런트도 같은 값을 쓴다 — backend/utils/createRoomValidation.js의
- * ALLOWED_JOKER_COUNT(1~4)는 payload 형태 검증일 뿐이고, 3명 이상은 그 뒤의 역할 구성 검증
- * (validateCreateRoomRoleComposition)에서 거부된다.
- */
 export const MIN_CUSTOM_JOKER_COUNT = 1
 export const MAX_CUSTOM_JOKER_COUNT = MAX_SPECIAL_ROLE_COUNT
 
-/** CUSTOM으로 전환했을 때의 초기값. 광대 1명 외 고정 역할은 0명에서 시작한다. */
 export const DEFAULT_CUSTOM_ROLE_COUNTS = Object.freeze({
   JOKER: 1,
   DOCTOR: 0,
@@ -50,7 +23,6 @@ export const DEFAULT_CUSTOM_ROLE_COUNTS = Object.freeze({
   WITCH_HUNTER: 0,
 })
 
-/** AUTO/CUSTOM 선택 행에 표시할 라벨(선택지 순서 = 인덱스) */
 export const ROLE_COMPOSITION_MODE_OPTIONS = Object.freeze([
   { mode: ROLE_COMPOSITION_MODES.AUTO, label: "자동" },
   { mode: ROLE_COMPOSITION_MODES.CUSTOM, label: "직접 지정" },

@@ -1,4 +1,3 @@
-// 파일 역할: GeneralSettingsTab.jsx - 화면을 구성하는 컴포넌트입니다.
 import { useState } from "react"
 import TutorialGuideOverlay from "@/shared/ui/tutorialGuide/TutorialGuideOverlay.jsx"
 import {
@@ -14,17 +13,11 @@ import RangeSlider from "@/shared/ui/RangeSlider"
 import { useFullscreen } from "@/shared/hooks/useFullscreen.js"
 import { useSettingsStore } from "../../store/settingsStore.js"
 
-// F-15(AC-01): 귓속말 알림 항목은 설정 화면에서 완전히 뺀다 — 나머지 알림(친구 초대·게임
-// 초대·시스템 알림)은 그대로 GENERAL_SETTING_CHECKBOXES 정의를 따른다.
 const HIDDEN_NOTIFICATION_IDS = new Set(["whisper"])
 
 const ROW_CLASS =
   "flex shrink-0 items-center justify-between gap-[clamp(1rem,2.5vw,2rem)] border-b border-[#c4a574]/35 py-[clamp(0.35rem,0.85vh,0.5rem)]"
 
-// F-15(AC-02): GENERAL_SETTING_TEXT_SIZE("텍스트 크기") 설정의 실제 적용 대상 — 앱 전체의
-// 명시적 font-size 선언과 같은 방식(app-text-scaled + --app-text-size)을 쓴다. 원래 clamp
-// 값을 그대로 두고 index.css의 .app-text-scaled가 --app-text-scale을 곱하므로 경계와 기본
-// 크기가 보존된다(index.css 주석 참고).
 const SECTION_TITLE_CLASS =
   "shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-black tracking-wide text-[#3d2a1c]/72 first:pt-0"
 
@@ -80,9 +73,6 @@ export default function GeneralSettingsTab() {
       return
     }
     if (id === "reset-settings") {
-      // F-15(AC-05): 이 store는 볼륨·체크·텍스트 크기만 초기화한다 — 배경음 볼륨은 기본값으로
-      // 돌아가지만 재생 여부는 바뀌지 않는다(useBgmAutoplay는 볼륨만 구독하고 play()는 마운트 때
-      // 한 번만 부른다).
       resetSettings()
     }
   }

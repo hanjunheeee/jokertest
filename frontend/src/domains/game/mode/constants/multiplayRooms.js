@@ -1,9 +1,3 @@
-/**
- * 공개방 목록 API가 붙기 전까지 화면 확인에 쓰는 더미 방 목록입니다.
- * accessType: "open"(코드 없이 입장) | "code"(입장 코드 필요, 코드 값 자체는 여기 담지 않음)
- * status: "waiting" | "in_progress" 만 저장합니다. 마감(full) 여부는 저장하지 않고
- * current >= max로 항상 파생 계산합니다 (frontend/src/domains/game/mode/utils/deriveRoomDisplayStatus.js 참고).
- */
 export const DUMMY_MULTIPLAY_ROOMS = [
   { id: "room-1", stage: 1, current: 2, max: 5, title: "누구든 들어와 방", accessType: "open", status: "waiting" },
   { id: "room-2", stage: 1, current: 4, max: 8, title: "초보 환영", accessType: "open", status: "waiting" },

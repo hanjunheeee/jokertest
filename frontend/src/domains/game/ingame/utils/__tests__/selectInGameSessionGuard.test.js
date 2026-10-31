@@ -5,8 +5,6 @@ import {
   shouldRedirectOutOfInGame,
 } from "../selectInGameSessionGuard.js"
 
-// 새로고침 직후의 실제 store 모양 — useInGameSessionSnapshotSync.test.js의
-// "빈 인게임 store로 새로고침하면 …" 시험이 세우는 것과 같다(gameId·state 모두 null).
 const EMPTY_AFTER_REFRESH = { gameId: null, gameState: null }
 const VALID_SESSION = { gameId: "g1", gameState: { id: "g1", phase: "NIGHT", dayIndex: 0 } }
 

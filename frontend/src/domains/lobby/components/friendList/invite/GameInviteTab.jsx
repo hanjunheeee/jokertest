@@ -1,13 +1,3 @@
-/**
- * F-19(AC-06/AC-07) 게임 초대 탭.
- *
- * 기존 친구 패널 **안에서** 받은 초대를 보여주고 수락·거절한다. 새 모달이나 새 진입점을
- * 만들지 않는다 — 로비와 대기방이 같은 패널을 재사용하므로 이 탭도 두 화면에서 그대로 뜬다.
- *
- * 이 컴포넌트는 **이동하지 않는다.** 수락 결과에 따른 대기방 이동의 소유자는 앱 전역
- * useFriendSocketEvents 한 곳뿐이다(AC-06) — 여기서 navigate하면 같은 수락에 두 번 이동하는
- * 경로가 생긴다.
- */
 import {
   FRIEND_ACCEPT_BACK_BUTTON_CLASS,
   FRIEND_ACCEPT_EMPTY_CLASS,
@@ -34,7 +24,6 @@ import BackButton from "@/shared/ui/BackButton.jsx"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/** 종료된 초대에 왜 처리할 수 없는지 사실만 적는다 — 되살리거나 자동 수락하지 않는다. */
 export const INVITE_ENDED_REASON_TEXT = Object.freeze({
   DECLINED: "이미 거절한 초대입니다.",
   EXPIRED: "초대 시간이 지났습니다.",
@@ -62,8 +51,6 @@ function GameInviteRow({ invite, onAccept, onDecline, processing, error, targete
       className={RECOMMENDED_FRIEND_ROW_CLASS}
       data-invite-id={invite.inviteId}
       data-invite-status={invite.status}
-      // F-17 관례: 알림에서 이 초대를 보러 들어온 경우 그 행을 가리킨다. 표시만 바꾸고
-      // 수락·거절을 대신 수행하지 않는다.
       data-notification-target={targeted ? "true" : undefined}
       aria-current={targeted ? "true" : undefined}
     >
@@ -120,10 +107,6 @@ function GameInviteRow({ invite, onAccept, onDecline, processing, error, targete
   )
 }
 
-/**
- * 알림에서 지정한 초대가 목록에 더 이상 없을 때의 안내(F-17 관례와 같다).
- * 정상 조회가 끝난 뒤에만 확정한다 — 조회 실패를 "처리됨"으로 읽지 않는다.
- */
 function GameInviteTargetMissingNotice() {
   return (
     <p role="status" data-invite-target-missing="true" className={FRIEND_ACCEPT_EMPTY_CLASS}>
@@ -163,7 +146,6 @@ export default function GameInviteTab({
         </button>
       </div>
 
-      {/* 조회 실패를 빈 목록으로 위장하지 않는다. */}
       {error !== null ? (
         <p role="status" data-invite-list-error="true" className={FRIEND_ACCEPT_EMPTY_CLASS}>
           {error}

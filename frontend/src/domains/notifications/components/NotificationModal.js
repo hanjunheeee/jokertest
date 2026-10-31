@@ -1,14 +1,3 @@
-// 파일 역할: NotificationModal.js - F-17 알림 목록 모달입니다.
-//
-// 매칭 팝업 프레임(매칭 팝업 프레임.png) + 입력창 슬롯(입력창1.png) + 액션 버튼
-// (버튼(수락 및 긍정)) 셸을 쓴다.
-//
-// JSX가 아니라 createElement로 쓰여 있는 이유: 이 저장소의 프런트엔드 시험은 변환기 없이
-// node --test로 곧장 돌아가므로, 실제 화면 DOM을 검증해야 하는 컴포넌트는 시험이 그대로
-// import할 수 있는 .js여야 한다.
-//
-// 이 컴포넌트는 소켓을 구독하지 않는다(수신은 useNotificationSocketEvents가 소유한다).
-// 모달을 열면 표시 중인 미확인 알림은 즉시 읽음 처리된다(AC-02).
 import { createElement, useEffect, useLayoutEffect, useRef } from "react"
 
 import { publicAsset } from "../../../shared/utils/publicAsset.js"
@@ -37,7 +26,6 @@ import {
 import NotificationModalShell from "./NotificationModalShell.js"
 import NotificationScrollArea from "./NotificationScrollArea.jsx"
 
-/** 버튼(미선택)·버튼(수락 및 긍정) 위에 라벨을 얹는 공통 액션 버튼 */
 function renderActionButton({ key, label, onClick, disabled, actionAttr, variant = "primary", pending = false }) {
   const isPrimary = variant === "primary"
 
@@ -73,10 +61,6 @@ function renderActionButton({ key, label, onClick, disabled, actionAttr, variant
   )
 }
 
-/**
- * 항목 하나. 이동 버튼은 읽음 확정 후에만 화면을 전환한다 — 읽음 실패를 성공처럼
- * 보이게 해서도 안 된다(A-06).
- */
 function NotificationItem({ item, pending, error, onRead, onOpenTarget, onClearError }) {
   const unread = !item.readAt
   const path = buildNotificationTargetPath(item.target)
@@ -140,10 +124,6 @@ function NotificationItem({ item, pending, error, onRead, onOpenTarget, onClearE
   )
 }
 
-/**
- * 조회 상태를 화면 한 종류로 확정한다. 로딩·실패를 "빈 목록"으로 위장하지 않는다(AC-06).
- * 목록일 때만 왼쪽 정렬 스크롤 영역을 쓰므로 렌더 전에 한 번 계산해 둔다.
- */
 function resolveBodyState(status, visibleCount) {
   if (status === "error") return "error"
   if (status === "idle" || status === "loading") return "loading"
@@ -151,7 +131,6 @@ function resolveBodyState(status, visibleCount) {
   return "list"
 }
 
-/** 확정된 상태별 본문. 상태 판정은 resolveBodyState 하나만 한다(두 곳에서 갈리지 않게). */
 function renderBody({ state, error, visible, onRetry, itemProps }) {
   if (state === "error") {
     return createElement(
@@ -190,12 +169,6 @@ function renderBody({ state, error, visible, onRetry, itemProps }) {
   )
 }
 
-/**
- * @param {object} props
- * @param {boolean} props.open
- * @param {() => void} props.onClose
- * @param {(path: string) => void} props.onNavigate 앱 내부 경로로 이동한다(라우터는 호출부가 소유).
- */
 export default function NotificationModal({ open, onClose, onNavigate }) {
   const status = useNotificationsStore((state) => state.status)
   const error = useNotificationsStore((state) => state.error)
@@ -222,7 +195,6 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
       try {
         previous.focus()
       } catch {
-        // noop
       }
     }
     return undefined

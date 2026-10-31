@@ -1,6 +1,3 @@
-/**
- * 친구 초대 팝업 shell — document.body portal, 투표현황창 프레임.
- */
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { FRIEND_INVITE_MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"

@@ -26,9 +26,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
 
-// 훅이 최상단에서 import하는 socketClient를 제어 가능한 fake로 교체한다(useInGameGameChatSession
-// 테스트와 동일한 관례) — mock.module은 아직 로드되지 않은 specifier에만 적용되므로 훅 모듈은
-// 등록 이후 동적 import로 가져온다.
 let currentFakeSocket = null
 const fakeSocketSubscribers = new Set()
 
@@ -83,17 +80,14 @@ function createFakeSocket() {
   return socket
 }
 
-/** gameId만 store에 심는다 — 이 훅은 store에서 gameId 하나만 읽는다. */
 function seedStore(gameId = GAME_ID) {
   useInGameStore.setState({ gameId, state: null, error: null })
 }
 
-/** 그 밤(dayIndex)의 개인 결과 방송 payload. */
 function nightActionResultPayload(dayIndex, extra = {}) {
   return { gameId: GAME_ID, dayIndex, result: `night-${dayIndex}`, ...extra }
 }
 
-/** 그 밤을 낮(dayIndex + 1)으로 적용하는 방송 payload. */
 function nightResultAppliedPayload(nightDayIndex) {
   return { gameId: GAME_ID, phase: "DAY", dayIndex: nightDayIndex + 1, victimUuid: null }
 }
@@ -148,7 +142,6 @@ test("이미 낮으로 적용된 밤의 늦은 개인 결과는 폐기된다", (
 
   act(() => socket.trigger("night_action_result", nightActionResultPayload(1)))
   act(() => socket.trigger("night_result_applied", nightResultAppliedPayload(1)))
-  // 같은 밤(dayIndex 1)의 중복·지연 도착 — 값이 달라도 덮어쓰지 않는다.
   act(() => socket.trigger("night_action_result", nightActionResultPayload(1, { result: "late" })))
 
   assert.equal(view.result.current.nightActionResult.result, "night-1")
@@ -202,20 +195,11 @@ test("phase가 DAY가 아닌 night_result_applied(종료 방송)는 상태도 �
   act(() => socket.trigger("night_result_applied", { gameId: GAME_ID, phase: "ENDED", dayIndex: 2 }))
 
   assert.equal(view.result.current.nightActionResult.result, "night-1")
-  // 폐기 기준이 갱신되지 않았으므로 같은 밤의 결과가 여전히 반영된다.
   act(() => socket.trigger("night_action_result", nightActionResultPayload(1, { result: "still-open" })))
   assert.equal(view.result.current.nightActionResult.result, "still-open")
 
   view.unmount()
 })
-
-// ---------------------------------------------------------------------------
-// F-25b(AC-05) — 자동 밤 최종화의 결과도 같은 수신 경로로 소비된다
-//
-// 서버에서 밤을 확정하는 경계는 하나(finalizeNightForSession)이고, 수동 요청이 있었든 마지막
-// 역할 턴이 끝나 자동으로 확정됐든 방송되는 세 사건은 같다. 그래서 이 훅은 **요청을 보낸 적이
-// 없어도** 같은 방송을 그대로 소비해야 한다.
-// ---------------------------------------------------------------------------
 
 test("F-25b(AC-05): 요청을 보낸 적이 없어도 자동 최종화가 방송한 세 사건이 같은 경로로 소비된다", () => {
   const { socket, view } = renderResolveNight()
@@ -238,11 +222,9 @@ test("F-25b(AC-05): 자동 최종화가 이미 끝난 밤의 늦은 개인 결�
   const { socket, view } = renderResolveNight()
 
   act(() => socket.trigger("night_result_applied", nightResultAppliedPayload(1)))
-  // 그 밤은 이미 낮으로 적용됐다 — 뒤늦게 도착한 같은 밤의 개인 결과는 화면에 남지 않는다.
   act(() => socket.trigger("night_action_result", nightActionResultPayload(1, { result: "late" })))
   assert.equal(view.result.current.nightActionResult, null)
 
-  // 다음 밤의 결과는 정상적으로 반영된다(폐기 기준이 그 밤에만 적용된다).
   act(() => socket.trigger("night_action_result", nightActionResultPayload(2)))
   assert.equal(view.result.current.nightActionResult.result, "night-2")
 

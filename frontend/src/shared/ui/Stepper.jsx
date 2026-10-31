@@ -1,20 +1,7 @@
-/**
- * 좌우 화살표로 options 배열 인덱스를 바꾸는 스테퍼
- * SetupStepperRow, GeneralSettingsTab 등에서 에셋·스타일 주입해 사용
- *
- * props
- * - options: 표시 문자열 배열 (또는 숫자+단위 조합)
- * - index / defaultIndex: 제어·비제어 모드 (index 있으면 제어)
- * - onIndexChange: 인덱스 변경 시 호출
- * - ariaLabel: 좌·우 버튼 접근성 접두
- * - inputFieldSrc, arrowSrc: 가운데 필드·화살표 PNG
- * - valueClassName, valueWidthClassName, buttonClassName 등: 호출부 커스텀 스타일
- */
 import { useState } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
-/** 화살표·입력창 이미지로 옵션 목록을 순환하는 스테퍼 */
 export default function Stepper({
   options, // 화면에 순서대로 보여줄 문자열(혹은 숫자+단위) 배열
   defaultIndex = 0, // 비제어 모드일 때 최초로 보여줄 인덱스
@@ -29,10 +16,6 @@ export default function Stepper({
   arrowWrapClassName = "block",
   arrowImageClassName = "block h-auto w-full select-none",
 }) {
-  // useState(초기값)은 [현재값, 값을 바꾸는 함수] 쌍을 반환하는 훅입니다.
-  // 값을 바꾸는 함수를 호출하면 컴포넌트가 다시 렌더링되어 화면이 최신 상태로 갱신됩니다.
-  // internalIndex는 "비제어 모드"(부모가 index를 넘기지 않았을 때)에서 이 컴포넌트가
-  // 스스로 기억하는 현재 인덱스입니다.
   const [internalIndex, setInternalIndex] = useState(defaultIndex)
   const isControlled = controlledIndex !== undefined // index prop 있으면 부모가 상태 소유
   const index = isControlled ? controlledIndex : internalIndex // 표시·조작에 쓸 현재 인덱스
@@ -40,13 +23,6 @@ export default function Stepper({
   const atMin = index === 0 // 첫 옵션이면 감소 버튼 비활성
   const atMax = index === options.length - 1 // 마지막 옵션이면 증가 버튼 비활성
 
-  /**
-   * 화살표 클릭 시 인덱스 계산·클램프 후 내부 state 또는 onIndexChange로 반영.
-   *
-   * F-16(AC-01): 이 스테퍼는 **실제로 값이 바뀐 경우에만** 소리를 낸다. 두 화살표는
-   * data-sfx-owner="explicit" 표식을 달아 바깥 capture에서 제외되므로, 경계(disabled)
-   * 에서도·clamp 때문에 값이 그대로인 경우에도 소리가 0이다.
-   */
   const updateIndex = (next, event) => {
     const resolved = typeof next === "function" ? next(index) : next
     const clamped = Math.max(0, Math.min(options.length - 1, resolved))

@@ -7,8 +7,6 @@ import {
 } from "../../constants/profileEditLayout.js"
 import { useProfileBorderEditor } from "./useProfileBorderEditor.js"
 import ProfileEditPanel from "./ProfileEditPanel.jsx"
-// 상대 경로로 둔다 — 이 오버레이는 node:test가 실제로 마운트하는 대상이고(`__tests__/
-// profileBorder.integration.test.js`), `@/` 별칭은 vite만 해석할 수 있다.
 import { dispatchUiSfx } from "../../../../shared/hooks/useSfxRuntime.js"
 
 export default function ProfileEditOverlay({ open, onClose }) {
@@ -30,16 +28,11 @@ export default function ProfileEditOverlay({ open, onClose }) {
     handleConfirm,
   } = useProfileBorderEditor({ open, onClose })
 
-  /**
-   * F-16(AC-01): backdrop·패널 닫기 버튼은 explicit 표식으로 일반 capture에서 제외한다.
-   * Escape는 별도 키보드 리스너에서 취소음을 한 번 보낸다.
-   */
   const handleClose = () => {
     dispatchUiSfx("ui-cancel")
     onClose()
   }
 
-  /** 저장(확인)은 클릭과 같은 task에서 소리를 내고, 업무 경로는 원래대로 진행한다(AC-06). */
   const handleConfirmWithSfx = () => handleConfirm({ onChanged: () => dispatchUiSfx("ui-confirm") })
 
   useEffect(() => {

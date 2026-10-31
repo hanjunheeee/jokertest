@@ -1,4 +1,3 @@
-// 파일 역할: RoomInvitePage.jsx - 라우터에서 렌더링되는 페이지입니다.
 import { motion } from "framer-motion"
 import LabelledActionButton from "@/domains/game/mode/components/LabelledActionButton.jsx"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
@@ -15,7 +14,6 @@ import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-// 방코드를 입력해서 비밀 연회장에 참여하는 페이지입니다.
 export default function RoomInvitePage() {
   const { uiVisible, roomCode, setRoomCode, joinRoom, goBackToModeSelect } = useRoomInvitePage()
 

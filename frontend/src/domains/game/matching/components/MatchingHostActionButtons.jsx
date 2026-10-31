@@ -1,7 +1,3 @@
-/**
- * 방장 전용 — 좌측 상단 [방 설정 변경]·[참가자 추방] 이미지 버튼(가로 1줄).
- * 수락(설정) / 취소(추방) 리소스는 MatchingPopupPanel 하단 버튼과 동일하다.
- */
 import { motion } from "framer-motion"
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import {

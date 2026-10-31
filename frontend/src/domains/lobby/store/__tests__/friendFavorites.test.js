@@ -1,10 +1,6 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 
-// F-19(AC-03): 즐겨찾기는 더 이상 프론트 로컬 Set이 아니다 — **서버가 소유한 계정별 값**이다.
-// 그래서 이 스위트도 "동기 toggle"이 아니라 실제 저장 경계(setFriendFavoriteApi)를 대역으로
-// 두고 서버 확정 응답만 상태를 바꾸는지 확인한다. store가 모듈을 불러올 때 실제 서버 요청이
-// 나가지 않도록 API 경계를 상대 경로로 대체한다.
 let favoriteCalls = []
 let favoriteResponder = async (friendId, favorite) => ({ friendId, favorite })
 let favoriteIdsResponder = async () => []
@@ -34,7 +30,6 @@ const FRIENDS = [
   { id: "f-2", name: "광대", online: false },
 ]
 
-// useFriendListSync가 화면에 넘기는 것과 같은 경로로 그룹을 만듭니다.
 function groupWithCurrentFavorites() {
   const { friends, favoriteFriendIds } = useFriendStore.getState()
   return groupFriends(applyFriendFavoriteFlags(friends, favoriteFriendIds))
@@ -44,7 +39,6 @@ function idsOf(friends) {
   return friends.map((friend) => friend.id)
 }
 
-/** 로그인 계정을 세운다 — store의 계정 경계가 anonymous로 판정해 저장을 거르지 않게. */
 function signIn(uuid) {
   useAuthStore.setState({ isLoggedIn: true, user: { uuid } })
   useFriendStore.getState().syncAccount()
@@ -73,7 +67,6 @@ test("AC-03: 서버가 확정한 즐겨찾기만 그룹 소속을 바꾼다", as
 
   const afterAdd = groupWithCurrentFavorites()
   assert.deepEqual(idsOf(afterAdd.favoriteFriends), ["f-1"])
-  // 즐겨찾기로 옮겨간 친구는 일반 온라인 그룹에서 빠져야 합니다.
   assert.deepEqual(idsOf(afterAdd.onlineFriends), [])
 
   await useFriendStore.getState().setFavorite("f-1", false)
@@ -135,7 +128,6 @@ test("AC-03: 저장이 실패하면 별 상태를 바꾸지 않고 오류만 남
 test("AC-03: 서버가 요청과 다른 값을 확정하면 서버 값을 따른다", async () => {
   signIn("account-a")
   useFriendStore.setState({ friends: FRIENDS })
-  // 서버가 (예: 경합으로) false를 확정한 경우 — 요청한 true를 믿지 않는다.
   favoriteResponder = async () => ({ friendId: "f-1", favorite: false })
 
   await useFriendStore.getState().setFavorite("f-1", true)
@@ -149,11 +141,9 @@ test("AC-03: 서버 조회로 복원되고, 계정이 바뀌면 이전 계정 �
   assert.deepEqual((await useFriendStore.getState().fetchFavorites()).ok, true)
   assert.deepEqual([...useFriendStore.getState().favoriteFriendIds].sort(), ["f-1", "f-2"])
 
-  // A → B 전환: A의 즐겨찾기는 B의 화면에 남지 않는다.
   signIn("account-b")
   assert.deepEqual([...useFriendStore.getState().favoriteFriendIds], [])
 
-  // 로그아웃도 마찬가지다.
   favoriteIdsResponder = async () => ["f-3"]
   await useFriendStore.getState().fetchFavorites()
   assert.deepEqual([...useFriendStore.getState().favoriteFriendIds], ["f-3"])

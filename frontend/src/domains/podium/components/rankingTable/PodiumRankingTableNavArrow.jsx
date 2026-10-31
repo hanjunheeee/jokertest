@@ -7,7 +7,6 @@ import {
 } from "../../constants/podiumLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
-/** 랭킹 테이블 좌/우 페이지 화살표 */
 export default function PodiumRankingTableNavArrow({
   direction = "prev",
   disabled = false,

@@ -4,13 +4,8 @@ import { resolveInGamePlayerThemeEmphasized } from "../constants/ingamePlayerThe
 import { buildInGamePreviewPlayers } from "../utils/buildInGamePreviewPlayers.js"
 import { mergeSourcePlayerWithPreview } from "../utils/mergeSourcePlayerWithPreview.js"
 
-/** 백엔드 연동 전 — 첫 슬롯을 로컬 플레이어로 간주 */
 export const INGAME_LOCAL_PLAYER_ID = "player-slot-1"
 
-/**
- * 인게임 플레이어 세션 — 서버 상태가 있으면 기존 카드 UI에 맞는 플레이어 목록으로 변환합니다.
- * UI는 판정 로직을 알지 않고, alive/connected/deathReason만 status로 매핑합니다.
- */
 export function useInGamePlayerSession(options = INGAME_PREVIEW_PLAYER_COUNT) {
   const normalizedOptions =
     typeof options === "number" ? { playerCount: options } : options

@@ -1,7 +1,3 @@
-/**
- * 게임 시작 버튼 클릭 후 시작이 불가할 때 이유를 알려 주는 모달.
- * 양피지 모달.png + 확인 버튼(수락 및 긍정).png 공용 파치먼트 셸을 쓴다.
- */
 import { useRef } from 'react'
 import InGameParchmentModalBase from '@/domains/game/ingame/components/parchment/InGameParchmentModalBase.js'
 import { INGAME_PARCHMENT_CONFIRM_LABEL } from '@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js'

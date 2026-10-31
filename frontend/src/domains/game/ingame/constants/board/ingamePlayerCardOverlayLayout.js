@@ -1,4 +1,3 @@
-/** 카드 전체를 덮는 행동 오버레이 — 초상·프레임 위 중앙 정렬 */
 export const INGAME_PLAYER_CARD_OVERLAY_WRAP_CLASS =
   "pointer-events-auto absolute inset-0 z-30 flex flex-col items-center justify-center px-[8%]"
 

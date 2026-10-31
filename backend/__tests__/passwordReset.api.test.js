@@ -1,14 +1,5 @@
-// F-29b: 비밀번호 재설정 API — AC-01(계정 존재 여부와 무관한 동일 응답 형태), AC-02/AC-03
-// (유효·만료·사용된·소셜 전용 토큰의 상태 전이), AC-06(no-store, 원문 미노출)을 실제
-// auth.routes.js·passwordReset.controller.js·passwordReset.service.js 코드로 검증한다.
-// DB는 userRepository와 db.PasswordResetToken을 인메모리 가짜로 대체한다(F-29b는 DB 접근
-// 경로 자체를 실제 MySQL로 별도 검증하는 tests/db/f29b-password-reset.integration.test.js가
-// 있다 — 이 파일은 제한기·검증·응답 계약·상태 전이에 집중한다).
 process.env.JWT_SECRET = process.env.JWT_SECRET || "password-reset-api-test-secret";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-// 이 파일의 여러 케이스가 같은 프로세스(같은 auth.routes.js 모듈, 같은 메모리 카운터)를
-// 공유한다 — f29a-find-id 스위트와 같은 이유로 한도를 넉넉히 올려 제한기 자체 검증과
-// 분리한다(전용 케이스가 따로 작은 한도로 직접 검증한다).
 process.env.PASSWORD_RESET_REQUEST_IP_MAX = "1000";
 process.env.PASSWORD_RESET_REQUEST_EMAIL_MAX = "1000";
 process.env.PASSWORD_RESET_CHECK_IP_MAX = "1000";
@@ -30,11 +21,6 @@ const hashToken = (raw) => crypto.createHash("sha256").update(raw).digest("hex")
 const tokenUrlOf = (mail) => new URL(mail.params.resetUrl);
 const tokenOf = (mail) => tokenUrlOf(mail).searchParams.get("token");
 
-/**
- * db.PasswordResetToken을 최소 in-memory 모델로 대체한다. 서비스가 실제로 쓰는 연산
- * (findOne where token_hash, create, update where user_id/used/revoked_at 또는 where id)만
- * 구현한다.
- */
 const stubPasswordResetTokenModel = (t) => {
     const original = db.PasswordResetToken;
     let nextId = 1;
@@ -70,7 +56,6 @@ const stubPasswordResetTokenModel = (t) => {
     return rows;
 };
 
-/** userRepository를 인메모리 가짜로 대체한다(F-03 회귀 시험과 같은 패턴). */
 const stubUserRepository = (t, { users = [] } = {}) => {
     const originals = {
         withTransaction: userRepository.withTransaction,
@@ -139,8 +124,6 @@ const postConfirm = (base, body) => fetch(`${base}/auth/password-reset/confirm`,
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
 });
 
-// ── AC-01: 계정 존재 여부와 무관하게 같은 응답 형태 ──────────────────────────────
-
 test("AC-01: 존재하는 로컬 이메일과 존재하지 않는 이메일의 request 응답이 동일하다", async (t) => {
     stubPasswordResetTokenModel(t);
     const user = localUser();
@@ -183,8 +166,6 @@ test("AC-01: 잘못된 입력(body)은 계정 조회 없이 400 INVALID_INPUT이
     assert.equal(byUuid.size, 0);
 });
 
-// ── AC-05: 소셜 전용 계정 ────────────────────────────────────────────────────
-
 test("AC-05: 소셜 전용 계정(has_local_password=false)은 공통 200을 받고 안내 메일만 나가며 토큰은 발급되지 않는다", async (t) => {
     const rows = stubPasswordResetTokenModel(t);
     const socialUser = localUser({ has_local_password: false });
@@ -202,8 +183,6 @@ test("AC-05: 소셜 전용 계정(has_local_password=false)은 공통 200을 받
     assert.equal(memory.outbox[0].template, "SOCIAL_LOGIN_GUIDE");
     assert.equal(memory.outbox[0].to, socialUser.email);
 });
-
-// ── AC-02/AC-03: 발급 → verify → confirm 상태 전이 ───────────────────────────
 
 test("AC-02/AC-03: 발급된 토큰은 verify에서 VALID이고, confirm 성공 후에는 USED로 거부된다", async (t) => {
     const rows = stubPasswordResetTokenModel(t);
@@ -296,8 +275,6 @@ test("AC-05: 소셜 전용 계정으로 발급된(방어용) 유효 토큰의 co
     assert.equal(rows[0].used, false);
 });
 
-// ── 입력 검증 경계 ────────────────────────────────────────────────────────────
-
 test("verify/confirm: 형식이 잘못된 토큰은 DB 조회 없이 거부된다", async (t) => {
     stubPasswordResetTokenModel(t);
     stubUserRepository(t, { users: [] });
@@ -329,8 +306,6 @@ test("confirm: 새 비밀번호가 정책을 어기면 토큰 상태를 바꾸�
     assert.equal(rows[0].used, false, "정책 위반은 토큰을 소비하면 안 된다");
 });
 
-// ── AC-06: 응답에 원문이 없고 no-store가 적용된다 ─────────────────────────────
-
 test("AC-06: 모든 재설정 응답에 no-store가 적용되고 토큰 원문이 응답에 그대로 노출되지 않는다", async (t) => {
     stubPasswordResetTokenModel(t);
     const user = localUser();
@@ -353,14 +328,6 @@ test("AC-06: 모든 재설정 응답에 no-store가 적용되고 토큰 원문�
     assert.equal(JSON.stringify(confirmBody).includes(rawToken), false);
 });
 
-// ── AC-06: 실제 backend/index.js의 콘솔·접근 로그(morgan 포함)에도 원문이 없다 ─────
-//
-// 위 시험들은 이 파일 안의 최소 express 앱(auth 라우터만 마운트)에 대한 "응답 본문"만
-// 검사한다 — index.js 자신이 붙이는 morgan 접근 로그·console 출력까지는 검증하지 못한다.
-// backend/__tests__/dbStartup.test.js의 "정상 기동 후 REST 요청과 소켓 핸드셰이크가
-// 동작한다" 시험과 같은 방식으로 실제 index.js를 이 프로세스 안에서 기동하고(db.sequelize.sync만
-// 대체), stdout·console 출력을 가로채 재설정 왕복 전체에서 원문·전체 이메일·새 비밀번호가
-// 어디에도 없는지, morgan의 safe-url 마스킹이 실제로 적용되는지 확인한다.
 test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그에 원문·이메일·새 비밀번호가 남지 않는다", async (t) => {
     stubPasswordResetTokenModel(t);
     const user = localUser();
@@ -392,10 +359,6 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
     const originalStdoutWrite = process.stdout.write.bind(process.stdout);
     const originalConsoleLog = console.log;
     const originalConsoleError = console.error;
-    // 가로채되 삼키지 않는다("tap") — 그대로 삼키면 node:test 자신의 TAP 리포터가 이 시험
-    // 실행 창과 겹쳐 비동기로 내보내는 **다른 시험**의 결과 줄까지 함께 사라진다(실제로
-    // 처음 구현에서 이 문제로 옆 시험 결과가 리포터 출력에서 누락됐다). 원래 함수도 그대로
-    // 호출해 실제 stdout·콘솔 동작은 바꾸지 않고, 우리는 사본만 따로 기록한다.
     process.stdout.write = (chunk, ...rest) => {
         capturedStdout.push(String(chunk));
         return originalStdoutWrite(chunk, ...rest);
@@ -436,7 +399,6 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
     const confirmRes = await postConfirm(base, { token: rawToken, newPassword });
     assert.equal(confirmRes.status, 200);
 
-    // 쿼리 토큰이 실린 존재하지 않는 하위 경로도 접근 로그에 흔적을 남긴다.
     await fetch(`${base}/auth/password-reset/does-not-exist?token=${encodeURIComponent(rawToken)}`);
 
     restoreConsole();
@@ -454,14 +416,7 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
     }
 });
 
-// ── 제한기(rate limiter) ─────────────────────────────────────────────────────
-
 test("제한기: 대상 이메일별 한도를 넘으면 429 RATE_LIMITED다", async (t) => {
-    // 이 케이스만 별도 프로세스처럼 작은 한도로 검증하고 싶지만 라우터는 모듈 로드 시점에
-    // 제한기를 한 번만 만든다 — 파일 전체가 위에서 이미 넉넉한 한도(1000)로 올려뒀으므로,
-    // 여기서는 rateLimit.js 자체의 429 동작을 createRateLimiter 단위로 직접 재현한다
-    // (rateLimit.js의 순수 로직 시험과 같은 방식 — 전체 라우터 한도를 이 파일 안에서
-    // 되돌릴 수 없기 때문).
     const { createRateLimiter } = require("../middleware/rateLimit");
     let now = 0;
     const limiter = createRateLimiter({ windowMs: 60_000, max: 3, keyOf: () => "email:fixed", now: () => now });

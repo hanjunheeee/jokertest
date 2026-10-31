@@ -12,7 +12,6 @@ import {
   PODIUM_TABLE_TBODY_OFFSET_CLASS,
 } from "../../constants/podiumLayoutStyle.js"
 
-/** 4~13위 — 좌/우 열 랭킹 테이블 (초대받은 자들과 동일 컬럼) */
 export default function PodiumRankingTableColumn({ ranking }) {
   return (
     <div className={PODIUM_TABLE_COLUMN_CLASS}>

@@ -6,7 +6,6 @@ import {
 } from "../constants/gameResultLayout.js"
 import { resolveGameResultWinningTeamLabel } from "../constants/gameResultLabels.js"
 
-/** @param {"CITIZEN" | "JOKER" | null | undefined} winningTeam */
 export default function GameResultWinningTeamBadge({ winningTeam }) {
   const label = resolveGameResultWinningTeamLabel(winningTeam)
   if (!label) return null

@@ -1,5 +1,3 @@
-// 낮/재판 계약: submitDayVote와 낮 투표 판정 · 동점 재투표 · 낮 하위 페이즈 · submitTribunalVote와 재판 판정.
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -44,23 +42,12 @@ const {
     sourcedNightResolution,
 } = require('./gameSession.testUtils')
 
-// 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
-// 각 테스트가 이전 테스트가 남긴 상태의 영향을 받지 않도록 매번 초기화한다.
 test.beforeEach(() => {
     gameSession.__resetStateForTests()
 })
-// registry 불일치를 의도적으로 재현하는 테스트(예: __deleteGameSessionOnlyForTests)가 이
-// 파일의 마지막 테스트로 실행되더라도, beforeEach만으로는 "다음 테스트 시작 전"에만
-// 정리된다 — afterEach로 테스트가 끝난 직후에도 즉시 정리해 손상된 singleton 상태가
-// 파일 실행 종료 후까지 남지 않게 한다. 테스트 본문에서 예외가 나도 node:test는 afterEach를
-// 실행하므로 이 정리는 실패한 테스트 뒤에도 보장된다.
 test.afterEach(() => {
     gameSession.__resetStateForTests()
 })
-
-// ---------------------------------------------------------------------------
-// submitTribunalVote
-// ---------------------------------------------------------------------------
 
 test('submitTribunalVote: 생존한 비-피고인 참가자의 GUILTY 제출은 성공하고 votes에 기록된다', () => {
     const { session } = setupTribunalReadySession()
@@ -209,10 +196,6 @@ test('submitTribunalVote: 중복 제출은 TRIBUNAL_VOTE_ALREADY_SUBMITTED이고
     assert.equal(session.tribunal.votes.get('t1'), 'GUILTY')
     assert.equal(session.tribunal.votes.size, 1)
 })
-
-// ---------------------------------------------------------------------------
-// submitDayVote — DAY 투표/기권 제출
-// ---------------------------------------------------------------------------
 
 test('submitDayVote: 세션 생성 직후 dayVotes는 빈 Map이다', () => {
     const room = makeRoom({ id: 'room-dv-fresh' })
@@ -419,16 +402,8 @@ test('submitDayVote: 서로 다른 GameSession은 독립된 dayVotes Map을 가�
     assert.notEqual(dayA.session.dayVotes, dayB.session.dayVotes)
 })
 
-// ---------------------------------------------------------------------------
-// prepareDayVoteResolution / commitDayVoteResolution / buildDayVoteResolvedPayload — DAY 투표 판정
-// ---------------------------------------------------------------------------
-
-// 1라운드 동점은 더 이상 즉시 TIE가 아니라 REVOTE다(판정 6.4) — phase는 DAY에 머무르고
-// 라운드만 올라간다. 재요청 멱등성은 라운드가 넘어가기 전까지만 유효하므로 여기서는
-// commit 이전(같은 라운드) 시점에 확인한다.
 test('commitDayVoteResolution: 1라운드 동점은 REVOTE이고 phase를 DAY에 남긴 채 라운드와 제외 집합만 바꾼다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-tie-1' })
-    // 3자 순환 투표(A→B, B→C, C→A)는 각 대상이 1표씩 얻어 동점이 된다.
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
     submitDayVote(uuidC, session.id, uuidA)
@@ -450,14 +425,10 @@ test('commitDayVoteResolution: 1라운드 동점은 REVOTE이고 phase를 DAY에
     assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuidA, uuidB, uuidC].sort())
     assert.equal(session.dayVotes.size, 0)
 
-    // REVOTE는 판정 멱등성의 창을 라운드 단위로 좁힌다 — 1라운드 판정 직후 도착한 중복 요청은
-    // alreadyResolved 성공이 아니라 "2라운드 표가 아직 없다"는 ACTIONS_PENDING을 받는다.
-    // 라운드가 다르면 다른 판정이므로 의도된 동작이다.
     const stale = prepareDayVoteResolution(uuidB, session.id, session.dayIndex)
     assert.deepEqual(stale, { ok: false, code: 'ACTIONS_PENDING' })
 })
 
-// 같은 resolution을 두 번 commit해도 라운드가 두 번 오르거나 2라운드 표가 지워지지 않는다.
 test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_VOTE_RESOLUTION_MISMATCH이고 라운드·표가 불변이다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-revote-recommit' })
     submitDayVote(uuidA, session.id, uuidB)
@@ -467,7 +438,6 @@ test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     commitDayVoteResolution(prepared.session, prepared.resolution)
 
-    // 2라운드가 열린 뒤 한 표를 넣어 "재-commit이 표를 지우는지"까지 관찰 가능하게 만든다.
     submitDayVote(uuidA, session.id, null)
     assert.equal(session.dayVotes.size, 1)
 
@@ -479,14 +449,9 @@ test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_
     assert.equal(session.phase, 'DAY')
 })
 
-// F-21(AC-03): 커밋 직전 재검증은 집계 수치만이 아니라 **동률 후보 집합**까지 본다.
-// outcome·대상·표수·기권 수가 모두 같으면서 공동 최다 득표자만 달라지는 표 변화가 가능한데,
-// 재투표 제외 목록은 바로 그 집합에서 나온다 — 준비된 목록을 그대로 커밋하면 지금의 동률과
-// **다른 후보**가 다음 라운드에서 배제된다.
 test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합이 달라진 준비 결과는 커밋되지 않는다', () => {
     const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-tie-set' })
 
-    // 1) A·C 동점(각 2표, 기권 0)으로 재투표 판정을 준비한다.
     submitDayVote(uuidA, session.id, uuidC)
     submitDayVote(uuidB, session.id, uuidC)
     submitDayVote(uuidC, session.id, uuidA)
@@ -495,7 +460,6 @@ test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합�
     assert.equal(prepared.resolution.outcome, 'REVOTE')
     assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidC].sort())
 
-    // 2) 커밋 전에 표가 바뀌어 **B·D 동점**이 됐다 — 집계 수치(4표·기권 0)와 outcome·대상은 그대로다.
     submitDayVote(uuidA, session.id, uuidD)
     submitDayVote(uuidB, session.id, uuidD)
     submitDayVote(uuidC, session.id, uuidB)
@@ -504,13 +468,11 @@ test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합�
     const committed = commitDayVoteResolution(prepared.session, prepared.resolution)
 
     assert.deepEqual(committed, { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' })
-    // 아무 것도 바뀌지 않는다 — 라운드도, 제외 집합도, 표도 그대로다.
     assert.equal(session.dayVoteResolution, null)
     assert.equal(session.dayVoteRound ?? 1, 1)
     assert.equal(session.dayVotes.size, 4)
     assert.equal(session.phase, 'DAY')
 
-    // 지금의 표로 다시 준비하면 지금의 동률 후보가 배제된다.
     const reprepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     assert.deepEqual(reprepared.resolution.revoteExcludedUuids, [uuidB, uuidD].sort())
     assert.equal(commitDayVoteResolution(reprepared.session, reprepared.resolution).ok, true)
@@ -520,7 +482,6 @@ test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합�
 test('commitDayVoteResolution: 집계도 동률 집합도 그대로인 **표 교환**은 커밋되지 않는다', () => {
     const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-ballot-swap' })
 
-    // 1) A→B, B→A, C→D, D→C. 득표는 A·B·C·D 각 1표씩이라 4자 동률 → 1라운드 REVOTE.
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidA)
     submitDayVote(uuidC, session.id, uuidD)
@@ -529,10 +490,6 @@ test('commitDayVoteResolution: 집계도 동률 집합도 그대로인 **표 교
     assert.equal(prepared.resolution.outcome, 'REVOTE')
     const preparedTie = [...prepared.resolution.revoteExcludedUuids].sort()
 
-    // 2) 커밋 전에 표가 **서로 교환**된다: A→C, B→D, C→A, D→B.
-    //    네 표가 전부 달라졌는데도 득표(각 1표)·총 투표 수·기권 수·동률 후보 집합이 모두 같다.
-    //    집계에서 파생된 값만 대조하는 재검증은 이 변화를 하나도 보지 못한다.
-    //    (자기 자신 지목은 SELF_TARGET_NOT_ALLOWED로 애초에 저장되지 않으므로 쓰지 않는다.)
     assert.equal(submitDayVote(uuidA, session.id, uuidC).ok, true)
     assert.equal(submitDayVote(uuidB, session.id, uuidD).ok, true)
     assert.equal(submitDayVote(uuidC, session.id, uuidA).ok, true)
@@ -548,14 +505,12 @@ test('commitDayVoteResolution: 집계도 동률 집합도 그대로인 **표 교
         '이 시험이 의도한 경계가 아니다 — 동률 집합까지 같아야 표 대조만이 유일한 방어가 된다',
     )
 
-    // 3) 그래도 옛 판정은 커밋되지 않는다 — 준비된 **표 자체**가 지금의 표와 다르기 때문이다.
     const committed = commitDayVoteResolution(prepared.session, prepared.resolution)
     assert.deepEqual(committed, { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' })
     assert.equal(session.dayVoteResolution, null)
     assert.equal(session.dayVoteRound ?? 1, 1)
     assert.equal(session.phase, 'DAY')
 
-    // 4) 지금의 표로 준비한 판정은 그대로 커밋된다(방어가 정상 경로를 막지 않는다).
     assert.equal(commitDayVoteResolution(nowPrepared.session, nowPrepared.resolution).ok, true)
 })
 
@@ -566,7 +521,6 @@ test('commitDayVoteResolution: ballotSnapshot이 없는 resolution은 커밋되�
     submitDayVote(uuidC, session.id, uuidB)
 
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    // prepare가 항상 만드는 값이다 — 없다는 것은 이 함수가 소비해서는 안 되는 값이라는 뜻이다.
     const forged = { ...prepared.resolution }
     delete forged.ballotSnapshot
 
@@ -590,7 +544,6 @@ test('buildDayVoteResolvedPayload/스냅샷 어디에도 준비된 표 내용이
     assert.equal(Object.hasOwn(payload, 'ballotSnapshot'), false)
     assert.equal(JSON.stringify(payload).includes('ballotSnapshot'), false)
 
-    // 재접속 스냅샷도 마찬가지다 — 남의 표는 어느 경계에도 나타나지 않는다.
     const snapshot = getSessionSnapshotForPlayer(uuidC, session.id).snapshot
     assert.equal(JSON.stringify(snapshot).includes('ballotSnapshot'), false)
 })
@@ -666,7 +619,6 @@ test('prepareDayVoteResolution: 사망한 참가자는 eligible voter에서 제�
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dead-voter-1' })
     session.players.get(uuidC).alive = false
 
-    // uuidC는 사망했으므로 투표하지 않아도(ACTIONS_PENDING 아님) 판정이 진행된다.
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidA)
 
@@ -674,7 +626,6 @@ test('prepareDayVoteResolution: 사망한 참가자는 eligible voter에서 제�
 
     assert.equal(prepared.ok, true)
     assert.equal(prepared.resolution.publicVoteCount, 2)
-    // 생존 2인이 서로를 지목해 동점이고, 1라운드 동점이므로 outcome은 REVOTE다(집계 수치 계약은 불변).
     assert.equal(prepared.resolution.outcome, 'REVOTE')
 })
 
@@ -683,7 +634,6 @@ test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
     submitDayVote(uuidC, session.id, uuidA)
-    // 제출 이후 대상이 사망 상태로 바뀐 경계 상황을 재현한다.
     session.players.get(uuidB).alive = false
 
     const result = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
@@ -691,9 +641,6 @@ test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가
     assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' })
 })
 
-// REVOTE는 phase를 DAY에 남기고, 그 뒤 밤으로 보내는 결과(ABSTAINED·TIE)만 NIGHT를 노출한다.
-// 3인 순환 동점은 생존자 전원이 동점자이므로 2라운드에 후보가 남지 않아 전원 기권 → ABSTAINED로
-// 종결된다(판정 6.5의 "재동점이어도 3라운드로 가지 않는다"를 인원 하한에서 확인).
 test('buildDayVoteResolvedPayload: REVOTE 이후에는 phase가 DAY, 재투표 종결(ABSTAINED) 이후에는 NIGHT를 노출한다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-payload-phase-1' })
     submitDayVote(uuidA, session.id, uuidB)
@@ -709,7 +656,6 @@ test('buildDayVoteResolvedPayload: REVOTE 이후에는 phase가 DAY, 재투표 �
     assert.equal(revotePayload.round, 1)
     assert.deepEqual(revotePayload.revoteExcludedUuids.sort(), [uuidA, uuidB, uuidC].sort())
 
-    // 2라운드: 생존자 전원이 후보에서 빠졌으므로 남은 선택지는 기권뿐이다.
     submitDayVote(uuidA, session.id, null)
     submitDayVote(uuidB, session.id, null)
     submitDayVote(uuidC, session.id, null)
@@ -726,27 +672,16 @@ test('buildDayVoteResolvedPayload: REVOTE 이후에는 phase가 DAY, 재투표 �
     assert.deepEqual(finalPayload.revoteExcludedUuids, [])
 })
 
-// ---------------------------------------------------------------------------
-// 동점 재투표(판정 6.4 / 6.5) — 4인 픽스처
-//
-// 3인 픽스처는 순환 투표에서 생존자 전원이 동점자가 되어 2라운드에 후보가 남지 않는다.
-// "동점자만 제외하고 나머지 후보로 다시 투표한다"는 규칙 자체를 보려면 동점자보다 생존자가
-// 많아야 하므로, 여기서는 4인 세션을 쓴다.
-// ---------------------------------------------------------------------------
-
 test('submitDayVote: 재투표 라운드에서 동점자였던 플레이어에게 투표하면 TARGET_EXCLUDED_FROM_REVOTE이고 dayVotes는 불변이다', () => {
     const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-excluded')
     const before = new Map(session.dayVotes)
 
-    // 동점자 A·C는 여전히 생존·참가자지만 이번 라운드의 후보가 아니다.
     assert.deepEqual(submitDayVote(uuidB, session.id, uuidA), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
     assert.deepEqual(submitDayVote(uuidD, session.id, uuidC), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
     assert.deepEqual(session.dayVotes, before)
 
-    // 제외된 A·C 본인은 투표권을 잃지 않는다 — 후보 자격만 잃는다.
     assert.deepEqual(submitDayVote(uuidA, session.id, uuidB), { ok: true })
     assert.equal(session.dayVotes.get(uuidA), uuidB)
-    // 기권도 그대로 가능하다.
     assert.deepEqual(submitDayVote(uuidC, session.id, null), { ok: true })
     assert.equal(session.dayVotes.get(uuidC), null)
 })
@@ -776,7 +711,6 @@ test('재투표도 동점이면 outcome은 TIE이고 처형 없이 NIGHT로 진�
     const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-tie')
     const aliveBefore = new Map([...session.players].map(([uuid, p]) => [uuid, p.alive]))
 
-    // B와 D가 2표씩 — 2라운드 동점이다.
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidD)
     submitDayVote(uuidC, session.id, uuidD)
@@ -784,7 +718,6 @@ test('재투표도 동점이면 outcome은 TIE이고 처형 없이 NIGHT로 진�
 
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
 
-    // 2라운드 이후의 동률은 REVOTE가 아니라 기존 TIE 계약이다.
     assert.equal(prepared.resolution.outcome, 'TIE')
     assert.equal(prepared.resolution.round, 2)
     assert.equal(prepared.resolution.tribunalTargetUuid, null)
@@ -807,7 +740,6 @@ test('enterDayPhase: 재투표로 올라간 라운드와 제외 집합은 다음
     commitDayVoteResolution(tiePrepared.session, tiePrepared.resolution)
     assert.equal(session.phase, 'NIGHT')
 
-    // 밤을 판정해 다음 낮으로 넘어간다(아무도 지목하지 않아 사망자는 없다).
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
     for (const uuid of getEligibleNightActorUuids(session)) submitNightAction(uuid, session.id, null)
     const nightPrepared = prepareNightResolution(jokerUuid, session.id)
@@ -816,17 +748,11 @@ test('enterDayPhase: 재투표로 올라간 라운드와 제외 집합은 다음
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayVoteRound, 1)
     assert.equal(session.dayVoteExcludedUuids.size, 0)
-    // 새 낮은 토론부터 시작하므로 지난 낮의 준비도 이월되지 않는다.
     assert.equal(session.dayPhase, 'DAY_DISCUSSION')
     assert.equal(session.dayVoteReadyUuids.size, 0)
     advanceDayToVotePhase(session)
-    // 지난 낮에 제외됐던 A도 다시 후보가 된다.
     assert.deepEqual(submitDayVote(uuidB, session.id, uuidA), { ok: true })
 })
-
-// ---------------------------------------------------------------------------
-// 낮 하위 페이즈(DAY_DISCUSSION → DAY_VOTE) — acknowledgeDayVoteReady / getDayPhase
-// ---------------------------------------------------------------------------
 
 test('DAY_PHASES: 두 하위 구간 값이 요구서의 이름과 정확히 일치하고 동결돼 있다', () => {
     assert.deepEqual(DAY_PHASES, { DISCUSSION: 'DAY_DISCUSSION', VOTE: 'DAY_VOTE' })
@@ -838,7 +764,6 @@ test('enterDayPhase: 첫 낮도 밤을 넘긴 낮도 항상 DAY_DISCUSSION에서
     assert.equal(session.dayPhase, 'DAY_DISCUSSION')
     assert.equal(session.dayVoteReadyUuids.size, 0)
 
-    // 밤→낮 경로도 동일한 canonical 헬퍼 하나만 쓰므로 같은 초기 상태가 된다.
     advanceDayToVotePhase(session)
     session.phase = 'NIGHT'
     const readyMapRef = session.dayVoteReadyUuids
@@ -865,7 +790,6 @@ test('submitDayVote: 토론 중 제출은 INVALID_DAY_PHASE로 거부되고 dayV
     assert.deepEqual(submitDayVote(uuidA, session.id, null), { ok: false, code: 'INVALID_DAY_PHASE' })
     assert.equal(session.dayVotes.size, 0)
 
-    // 투표 구간이 열리면 같은 제출이 그대로 통과한다(positive control).
     advanceDayToVotePhase(session)
     assert.deepEqual(submitDayVote(uuidA, session.id, uuidB), { ok: true })
     assert.equal(session.dayVotes.get(uuidA), uuidB)
@@ -899,9 +823,7 @@ test('acknowledgeDayVoteReady: 생존자 전원이 모여야 전이하고, 마�
     assert.equal(third.transitioned, true)
     assert.deepEqual([third.readyCount, third.requiredCount], [3, 3])
     assert.equal(session.dayPhase, 'DAY_VOTE')
-    // 전이 이후 준비 기록은 의미가 없으므로 비워진다.
     assert.equal(session.dayVoteReadyUuids.size, 0)
-    // 투표 상태(라운드·제외 목록·표)는 전이가 건드리지 않는다.
     assert.equal(session.dayVoteRound, 1)
     assert.equal(session.dayVoteExcludedUuids.size, 0)
     assert.equal(session.dayVotes.size, 0)
@@ -963,10 +885,8 @@ test('재투표(요구 3): REVOTE는 DAY_VOTE 안의 반복이라 준비를 다�
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayPhase, 'DAY_VOTE')
     assert.equal(session.dayVoteRound, 2)
-    // 준비 없이 곧바로 2라운드 제출이 통과한다.
     assert.deepEqual(submitDayVote(uuidB, session.id, uuidD), { ok: true })
     assert.deepEqual(submitDayVote(uuidD, session.id, uuidB), { ok: true })
-    // 제외 규칙(joker-A 5번)도 그대로다.
     assert.deepEqual(submitDayVote(uuidA, session.id, uuidC), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
 })
 
@@ -1017,7 +937,6 @@ test('처형 직후 승리 재평가(요구 5): 광대 처형은 밤에 들어�
     assert.equal(session.phase, 'ENDED')
     assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
     assert.equal(session.players.get(jokerUuid).alive, false)
-    // 밤을 거치지 않았다 — TRIBUNAL→NIGHT 전이가 하는 nightActions 교체가 일어나지 않았다.
     assert.equal(session.nightActions, nightActionsBefore)
 })
 
@@ -1045,7 +964,6 @@ test('buildDayPhaseChangedPayload: 재투표가 열린 낮에는 현재 라운�
 test('buildSessionSnapshot: dayPhase는 DAY에서만 실리고 hasActedThisPhase는 하위 구간별 제출을 따른다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dp-snapshot', advanceToVote: false })
 
-    // 토론: hasActedThisPhase는 "준비를 눌렀는가"다.
     const discussion = getSessionSnapshotForPlayer(uuidA, session.id).snapshot
     assert.equal(discussion.dayPhase, 'DAY_DISCUSSION')
     assert.equal(discussion.self.hasActedThisPhase, false)
@@ -1053,7 +971,6 @@ test('buildSessionSnapshot: dayPhase는 DAY에서만 실리고 hasActedThisPhase
     assert.equal(getSessionSnapshotForPlayer(uuidA, session.id).snapshot.self.hasActedThisPhase, true)
     assert.equal(getSessionSnapshotForPlayer(uuidB, session.id).snapshot.self.hasActedThisPhase, false)
 
-    // 투표: hasActedThisPhase는 다시 "표를 냈는가"로 돌아간다(준비 기록은 비워졌다).
     acknowledgeDayVoteReady(uuidB, session.id)
     acknowledgeDayVoteReady(uuidC, session.id)
     const vote = getSessionSnapshotForPlayer(uuidA, session.id).snapshot
@@ -1063,7 +980,6 @@ test('buildSessionSnapshot: dayPhase는 DAY에서만 실리고 hasActedThisPhase
     assert.equal(getSessionSnapshotForPlayer(uuidA, session.id).snapshot.self.hasActedThisPhase, true)
     assertNoForbiddenPrivateData(vote, collectOtherPlayerRoleSecrets(session, uuidA))
 
-    // 낮을 벗어나면 키 자체가 없다.
     session.phase = 'NIGHT'
     assert.equal(Object.hasOwn(getSessionSnapshotForPlayer(uuidA, session.id).snapshot, 'dayPhase'), false)
     session.phase = 'TRIBUNAL'
@@ -1083,10 +999,6 @@ test('buildSessionSnapshot: ROLE_REVEAL/ENDED 스냅샷에도 dayPhase 키가 �
     assert.equal(Object.hasOwn(getSessionSnapshotForPlayer('dps1', session.id).snapshot, 'dayPhase'), false)
 })
 
-// ---------------------------------------------------------------------------
-// prepareTribunalVoteResolution / commitTribunalVoteResolution / buildTribunalVoteResolvedPayload
-// ---------------------------------------------------------------------------
-
 test('resolveTribunalVote: 미제출 유효 투표자가 있으면 거부', () => {
     const { session } = setupTribunalReadySession({ uuids: ['ta1', 'ta2', 'ta3'], defendantUuid: 'ta3' })
     submitTribunalVote('ta1', session.id, session.dayIndex, 'GUILTY')
@@ -1097,10 +1009,6 @@ test('resolveTribunalVote: 미제출 유효 투표자가 있으면 거부', () =
 })
 
 test('resolveTribunalVote: 모든 유효 표 제출 후 유죄 판결', () => {
-    // playerCount=4·jokerCount=1·randomFn:()=>0 고정 셔플(JOKER는 두 번째 참가자로 배정) —
-    // 피고인(tb4)을 CITIZEN으로 골라 처형 이후에도 승리 조건이 성립하지 않게(생존 JOKER 1명 <
-    // 생존 CITIZEN 2명) 한다. 기본 3인 fixture는 어떤 피고인이 유죄여도 항상 한쪽이 승리해버려
-    // 이 테스트의 원래 목적(유죄 판결 집계 자체)을 검증할 수 없다.
     const { session } = setupTribunalReadySession({
         uuids: ['tb1', 'tb2', 'tb3', 'tb4'],
         defendantUuid: 'tb4',
@@ -1134,8 +1042,6 @@ test('resolveTribunalVote: 유죄 피고인은 정확히 한 번 사망', () => 
 test('resolveTribunalVote: 동률은 무죄', () => {
     const { session } = setupTribunalReadySession({ uuids: ['td1', 'td2', 'td3', 'td4'], defendantUuid: 'td4' })
     castAllVotes(session, { td1: 'GUILTY', td2: 'NOT_GUILTY', td3: 'NOT_GUILTY' })
-    // eligible voters(td1,td2,td3) 중 GUILTY 1 vs NOT_GUILTY 2 — 무죄 사례도 겸해 확인 후,
-    // 동률 자체는 counts 비교로 별도 확인한다.
     const prepared = prepareTribunalVoteResolution('td1', session.id, session.dayIndex)
     assert.equal(prepared.resolution.outcome, 'NOT_GUILTY')
 
@@ -1150,9 +1056,6 @@ test('resolveTribunalVote: 동률은 무죄', () => {
 })
 
 test('commitTribunalVoteResolution: 마지막 생존 JOKER를 처형하면 CITIZEN 승리로 종료된다', () => {
-    // uuids=['cj1','cj2','cj3']·jokerCount 1(makeRoom 기본값)·randomFn:()=>0 고정 셔플에서
-    // JOKER는 항상 두 번째 참가자(cj2)로 배정된다(commitNightResolution 승리 테스트의
-    // nightSessionOf3와 동일한 셔플 규칙).
     const { session, defendantUuid } = setupTribunalReadySession({
         uuids: ['cj1', 'cj2', 'cj3'],
         defendantUuid: 'cj2',
@@ -1171,8 +1074,6 @@ test('commitTribunalVoteResolution: 마지막 생존 JOKER를 처형하면 CITIZ
 })
 
 test('commitTribunalVoteResolution: 비-JOKER를 처형해 생존 JOKER와 생존 비-JOKER가 동수가 되면 JOKER 승리로 종료된다', () => {
-    // 같은 고정 셔플에서 cj3(세 번째 참가자)은 항상 CITIZEN이다 — 처형 후 생존 JOKER 1명 ===
-    // 생존 비-JOKER 1명(cp2 본인) → parity로 JOKER 승리.
     const { session, defendantUuid } = setupTribunalReadySession({
         uuids: ['cp1', 'cp2', 'cp3'],
         defendantUuid: 'cp3',
@@ -1191,8 +1092,6 @@ test('commitTribunalVoteResolution: 비-JOKER를 처형해 생존 JOKER와 생�
 })
 
 test('commitTribunalVoteResolution: 승리 조건 미충족이면 phase가 NIGHT로 전이하고 dayIndex는 그대로 유지되며 TRIBUNAL 판정 기록은 남는다', () => {
-    // 4인·jokerCount 1 고정 셔플: JOKER는 cn2, 나머지는 CITIZEN이다. cn4(CITIZEN) 처형 후에도
-    // 생존 JOKER 1명 < 생존 비-JOKER 2명(cn1, cn3)이라 승리 조건이 성립하지 않는다.
     const { session } = setupTribunalReadySession({
         uuids: ['cn1', 'cn2', 'cn3', 'cn4'],
         defendantUuid: 'cn4',
@@ -1206,8 +1105,6 @@ test('commitTribunalVoteResolution: 승리 조건 미충족이면 phase가 NIGHT
 
     assert.deepEqual(result, { ok: true, terminal: null })
     assert.equal(session.phase, 'NIGHT')
-    // TRIBUNAL→NIGHT 전이는 dayIndex를 바꾸지 않는다(dayIndex 증가는 오직
-    // commitNightResolution의 NIGHT→DAY 전이에서만 일어난다).
     assert.equal(session.dayIndex, dayIndexBefore)
     assert.equal(session.tribunal.resolved, true)
     assert.equal(session.tribunal.outcome, 'GUILTY')
@@ -1216,8 +1113,6 @@ test('commitTribunalVoteResolution: 승리 조건 미충족이면 phase가 NIGHT
 })
 
 test('commitTribunalVoteResolution: NOT_GUILTY로 승리 조건 미충족이면 아무도 죽지 않은 채 phase가 NIGHT로 전이한다', () => {
-    // 4인 고정 셔플에서 무죄(NOT_GUILTY)면 아무도 죽지 않아 생존 JOKER 1명 < 생존 비-JOKER
-    // 3명이라 승리 조건이 성립하지 않는다.
     const { session } = setupTribunalReadySession({
         uuids: ['ng1', 'ng2', 'ng3', 'ng4'],
         defendantUuid: 'ng4',
@@ -1240,10 +1135,6 @@ test('commitTribunalVoteResolution: 승리 조건 미충족 전이는 지난 밤
         defendantUuid: 'rs4',
         randomFn: () => 0,
     })
-    // 지난(첫) 밤에서 남은 것처럼 nightActions/nightResolution을 오염시켜 둔다 —
-    // setupTribunalReadySession은 ROLE_REVEAL→NIGHT→DAY→TRIBUNAL 전체 흐름을 실제로 거치지
-    // 않고 phase를 직접 TRIBUNAL로 꽂아 넣으므로, "두 번째 밤" 시나리오를 재현하려면 첫 밤의
-    // 잔여물을 여기서 직접 흉내내야 한다.
     session.nightActions.set('rs2', 'rs1') // rs2(JOKER)가 과거에 rs1을 지목했던 잔여 기록
     session.nightResolution = {
         gameId: session.id,
@@ -1275,13 +1166,10 @@ test('commitTribunalVoteResolution: 승리 조건 미충족 전이 이후 새 �
     commitTribunalVoteResolution(prepared.session, prepared.resolution)
     assert.equal(session.phase, 'NIGHT')
 
-    // nightResolution이 되돌려지지 않았다면 NIGHT_ALREADY_RESOLVED로 즉시 막혔을 제출이다.
     const submitResult = submitNightAction('fn2', session.id, 'fn1')
     assert.deepEqual(submitResult, { ok: true, gameId: session.id })
     assert.equal(session.nightActions.get('fn2'), 'fn1')
 
-    // fn2(JOKER)만 이 밤의 유일한 eligible actor다(CITIZEN 3명은 애초에 밤 행동이 없음) — 전원
-    // 제출을 마쳤으므로 prepareNightResolution은 ACTIONS_PENDING이 아니라 성공해야 한다.
     const prepareResult = prepareNightResolution('fn1', session.id)
     assert.equal(prepareResult.ok, true)
 })
@@ -1292,11 +1180,6 @@ test('resolveTribunalVote: 판정 후 submit/resolve mutation 잠금', () => {
     const prepared = prepareTribunalVoteResolution('tf1', session.id, session.dayIndex)
     commitTribunalVoteResolution(prepared.session, prepared.resolution)
 
-    // 무죄 판정(NOT_GUILTY, 3인 기본 fixture 1:1 표결)은 아무도 죽지 않아 승리 조건이
-    // 성립하지 않으므로 phase가 TRIBUNAL을 벗어나 NIGHT로 전이한다 — 세 진입점 모두 "phase가
-    // 더 이상 TRIBUNAL이 아니다"라는 동일한 근거로 막히지만, 각자의 검증 순서에 따라 서로
-    // 다른 코드를 반환한다(TRIBUNAL_ALREADY_RESOLVED는 phase가 TRIBUNAL로 남아있을 때만
-    // 도달하는 코드라 더 이상 나오지 않는다).
     assert.equal(session.phase, 'NIGHT')
     assert.deepEqual(prepareTribunalVoteResolution('tf1', session.id, session.dayIndex), {
         ok: false,
@@ -1325,11 +1208,6 @@ test('resolveTribunalVote: 변조된 executedUuid는 commit이 거부하고 아�
 })
 
 test('resolveTribunalVote: 승리 없는 TRIBUNAL 판정이 NIGHT로 전이한 이후 재-commit(지연된 중복 요청)은 거부되고 상태가 바뀌지 않는다', () => {
-    // 4인 비종결 fixture: 처형 이후에도 게임이 NIGHT로 이어진다. 첫 commit이 이미 phase를
-    // TRIBUNAL 밖(NIGHT)으로 옮겨놨으므로, 동일 resolution으로 재commit을 시도하면 phase 검사가
-    // tribunal.resolved 검사보다 먼저 실행되어 TRIBUNAL_ALREADY_RESOLVED가 아니라
-    // TRIBUNAL_RESOLUTION_MISMATCH로 거부된다 — 코드가 무엇이든 "재-commit이 거부되고
-    // 아무 상태도 바뀌지 않는다"는 사실 자체가 이 테스트의 핵심이다.
     const { session } = setupTribunalReadySession({
         uuids: ['th1', 'th2', 'th3', 'th4'],
         defendantUuid: 'th4',
@@ -1376,7 +1254,6 @@ test('resolveTribunalVote: prepare 후 canonical 변경 시 원본 resolution co
     castAllVotes(session, { tj1: 'GUILTY', tj2: 'NOT_GUILTY' })
     const first = prepareTribunalVoteResolution('tj1', session.id, session.dayIndex)
 
-    // 표를 뒤바꾼 뒤 재-prepare하면 pending 레코드가 갱신되어 이전 resolution 참조는 우회 불가.
     session.tribunal.votes.set('tj1', 'NOT_GUILTY')
     session.tribunal.votes.set('tj2', 'GUILTY')
     prepareTribunalVoteResolution('tj2', session.id, session.dayIndex)
@@ -1391,7 +1268,6 @@ test('resolveTribunalVote: 집계 동일 투표 교환 시 stale commit 거부',
     castAllVotes(session, { tk1: 'GUILTY', tk2: 'NOT_GUILTY' })
     const prepared = prepareTribunalVoteResolution('tk1', session.id, session.dayIndex)
 
-    // 총 개수는 동일(GUILTY 1, NOT_GUILTY 1)하지만 투표자별 표를 서로 교환한다.
     session.tribunal.votes.set('tk1', 'NOT_GUILTY')
     session.tribunal.votes.set('tk2', 'GUILTY')
 
@@ -1426,12 +1302,9 @@ test('buildTribunalVoteResolvedPayload: 공개 payload 화이트리스트 (GUILT
     assert.deepEqual(Object.keys(guiltyPayload.counts).sort(), ['guilty', 'notGuilty'])
     assert.equal(guiltyPayload.outcome, 'GUILTY')
     assert.equal(guiltyPayload.executedUuid, 'tm3')
-    // 처형된 참가자의 role은 스펙상 공개 정보다(판정 6.6/8.2).
     assert.equal(guiltyPayload.executedRole, guiltySetup.session.players.get('tm3').role)
     assert.equal(JSON.stringify(guiltyPayload).includes('ballotSnapshot'), false)
     assert.equal(JSON.stringify(guiltyPayload).includes('voterUuid'), false)
-    // role이 새는 유일한 경로는 executedRole(처형자 본인) 하나뿐이다 — 다른 참가자의 role은
-    // payload 어디에도 담기지 않는다. executedRole을 지운 사본에 'role' 문자열이 남는지로 확인한다.
     const { executedRole: _executedRole, ...guiltyWithoutExecutedRole } = guiltyPayload
     assert.equal(JSON.stringify(guiltyWithoutExecutedRole).includes('role'), false)
 
@@ -1442,7 +1315,6 @@ test('buildTribunalVoteResolvedPayload: 공개 payload 화이트리스트 (GUILT
     const notGuiltyPayload = buildTribunalVoteResolvedPayload(notGuiltySetup.session)
 
     assert.equal(notGuiltyPayload.outcome, 'NOT_GUILTY')
-    // 처형이 없으면 executedUuid와 executedRole이 함께 null이다.
     assert.equal(notGuiltyPayload.executedUuid, null)
     assert.equal(notGuiltyPayload.executedRole, null)
 })

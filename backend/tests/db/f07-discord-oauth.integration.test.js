@@ -1,30 +1,5 @@
 'use strict';
 
-// F-07 AC-02/AC-03/AC-04 — Discord 로그인의 "실제" 신규 계정 생성·가입 완료·기존 identity
-// 조회·이메일 미제공 거부·명시적 연결을 스텁이 아니라 실제 격리 DB + 실제
-// discordOAuth.service.js(fetch 목적지만 로컬 Discord fixture로 리다이렉트, 나머지 로직은
-// 전혀 스텁하지 않음) + 실제 Express 라우터(auth.routes.js, 아무것도 스텁하지 않음)로
-// 검증한다. F01_TEST_DATABASE_URL이 없으면 f01~f05와 같은 원칙으로 skip한다("미검증"으로
-// 남긴다, 실패로 위장하지 않는다).
-//
-// CODEX-1 재검토 지적(AC-02/AC-03/AC-04):
-// - AC-02: backend/__tests__/discordAuth.route.test.js는 socialAuthService.resolveOAuthAccount를
-//   스텁으로 대체해 컨트롤러 계약(순서·쿠키·리다이렉트)만 검증한다 — 실제 Discord 신규 계정
-//   생성·가입 완료·기존 identity 조회 근거가 없었다.
-// - AC-03: discordOAuth.service.js가 이메일을 null로 반환한 뒤 공통 서비스가 EMAIL_MISSING으로
-//   거부하는 실행 경로를 실제로 잇는 테스트가 없었다(discordOAuth.service.test.js는
-//   exchangeCodeForProfile 단독만, discordAuth.route.test.js는 resolveOAuthAccount를 스텁해
-//   실제 거부 로직을 태우지 않는다).
-// - AC-04: auth.routes.js에 명시적 연결(link) 라우트가 아예 등록되어 있지 않아, 로그인 후
-//   동의·제공자 소유권 검증을 통한 실제 연결 경로 자체가 존재하지 않았다.
-//
-// backend/tests/db/f05-social-auth.integration.test.js는 이 실행 경로 자체(provider가
-// 무엇이든 동일하게 동작하는 공통 계약)를 이미 실제 DB로 검증하지만, provider 값으로
-// 'google'/'kakao'만 쓰고 'discord'는 한 번도 쓰지 않는다 — 이 파일은 그 틈을 discord로 직접
-// 메운다. 그리고 AC-04 지적에 따라 backend/routes/auth.routes.js·backend/controller/
-// user.controller.js에 새로 추가한 GET /auth/discord/link·/auth/discord/link/callback도
-// 아무것도 스텁하지 않은 실제 HTTP 왕복으로 검증한다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -39,13 +14,7 @@ process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://frontend.example
 process.env.DISCORD_CLIENT_ID     = process.env.DISCORD_CLIENT_ID     || 'f07-integration-client-id';
 process.env.DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || 'f07-integration-client-secret';
 process.env.DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI  || 'https://backend.example.test/auth/discord/callback';
-// R-IMPL #2(AC-04): 연결(link)은 로그인과 별도로 등록된 콜백을 쓴다 — 같은 값을 쓰면 실제
-// Discord는 그 한 콜백으로만 돌려주므로 link로 시작한 왕복도 로그인 콜백(purpose:link를
-// 거부한다)으로 떨어진다(discordOAuth.service.js resolveRedirectUri 참고).
 process.env.DISCORD_LINK_REDIRECT_URI = process.env.DISCORD_LINK_REDIRECT_URI || 'https://backend.example.test/auth/discord/link/callback';
-// F-31 AC-02: verified:false는 이제 거부가 아니라 자체 메일 인증(F-31a)으로 이어진다 —
-// 이 스위트가 실제 발송·확인 HTTP까지 돌리므로 그 설정도 함께 갖춘다(auth.routes.js는
-// require 시점에 제한기 설정을 읽으므로 반드시 라우터 require보다 먼저 세팅해야 한다).
 process.env.SIGNUP_EMAIL_HMAC_SECRET = process.env.SIGNUP_EMAIL_HMAC_SECRET || 'f07-signup-email-hmac-secret';
 process.env.SIGNUP_EMAIL_HOUR_MAX = '1000';
 process.env.SIGNUP_EMAIL_DAY_MAX = '1000';
@@ -59,32 +28,13 @@ const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
-// F-08 CODEX-2(AC-03) 대응: socialAuthService.completeSocialSignup(Discord 가입 완료도
-// 공통 함수를 그대로 탄다)이 이제 계정 생성 트랜잭션 안에서
-// economyService.ensureDefaultEntitlements를 호출한다 — f05-social-auth.integration.test.js와
-// 같은 이유로 addEconomy를 마이그레이션 체인에 편입한다(관리 목록은 isolatedTestDb.js가
-// 이제 기본으로 포함한다).
 const addEconomy = require('../../db/migrations/0006-add-economy');
-// Current auth services create EconomyLoadout rows, including its persisted CAS revision.
 const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
-// F-14(AC-01) 반송 대응: backend/models/economy/economy.model.js의 EconomyLoadout이 이제
-// selected_skin_noble/clown/guard/doctor/witch_hunter 5개 컬럼을 명시적으로 선언한다 —
-// completeSocialSignup(Discord)이 실제로 만드는 EconomyLoadout 행도 그 컬럼을 SELECT하므로,
-// 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
 const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
-// F-29b: completeSocialSignup(Discord 가입 완료도 공통 함수를 그대로 탄다)이 이제
-// has_local_password:false를 명시적으로 저장한다 — 0015를 적용 배열에 넣는다.
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
-// F-31(AC-02/AC-06): 제공자가 이메일을 검증해 주지 못한 Discord 가입은 이제 자체 메일
-// 인증으로 보완된다 — 이 스위트는 자체 MIGRATIONS 목록을 쓰므로, 그 인증 상태 테이블(0016)과
-// social_signup_intents.email을 nullable로 바꾸는 변경(0017)을 명시적으로 포함해야 한다.
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 const addSocialSignupEmail = require('../../db/migrations/0017-social-signup-email');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
-// 이 스위트의 fixture·앱 서버는 전역 fetch로 호출된다. Windows 동적 포트 범위(1024..15000)에는
-// Fetch 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 fetch가 "bad port"로 거부한다
-// (2026-09-22 전체 실행에서 fixture가 127.0.0.1:2049를 받아 실패했다) — 공용 helper로 Fetch가
-// 허용하는 고포트에 실제 bind한다.
 const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail];
@@ -125,9 +75,6 @@ const resetSchema = async () => {
     await resetManagedSchema(sequelize, TEST_DB_URL, { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER });
 };
 
-// backend/models과 service/repository는 require 캐시 싱글턴이라, 파일 맨 위에서 맞춰둔
-// process.env.DATABASE_URL(F01_TEST_DATABASE_URL)로 처음 require되는 이 시점에 격리 DB에
-// 연결된다(f05-social-auth.integration.test.js와 같은 원칙).
 const db = require('../../models');
 const authService = require('../../service/auth.service');
 const discordOAuthService = require('../../service/discordOAuth.service');
@@ -143,11 +90,6 @@ test.after(async () => {
 const REQ_INFO = { ip: '127.0.0.1', userAgent: 'f07-discord-integration' };
 const PASSWORD = 'correct-horse-battery-2';
 
-// ── 로컬 Discord fixture 서버 — discordOAuth.service.test.js와 같은 패턴, 프로필만 매 테스트가 지정한다 ──
-
-// tokenRequests: 실제 토큰 교환 요청 본문을 순서대로 모아 둔다 — AC-04 링크 테스트가
-// "인가 URL 발급 때와 정확히 같은 redirect_uri로 교환했는지"를 실제 네트워크 요청에서
-// 확인하는 데 쓴다(R-IMPL #2, CODEX-2 재검토 지적).
 const startMockDiscord = async (t, { profile }) => {
     const tokenRequests = [];
     const server = http.createServer((req, res) => {
@@ -185,8 +127,6 @@ const withFetchRedirectedTo = (t, base) => {
     t.after(() => { globalThis.fetch = originalFetch; });
 };
 
-// ── 실제 Express 서버 — auth.routes.js를 아무것도 스텁하지 않고 그대로 마운트한다 ──────
-
 const startServer = async (t) => {
     const app = express();
     app.use(express.json());
@@ -215,13 +155,6 @@ const rawGet = (base, path, { cookie } = {}) => new Promise((resolve, reject) =>
     req.end();
 });
 
-// R-IMPL(b8bde586) 재검토 지적: rawGet(node:http)의 응답은 IncomingHttpHeaders라
-// headers['set-cookie']가 문자열 배열이지만, 아래 fetch(가입 완료 요청)의 response.headers는
-// WHATWG Headers라 대괄호 인덱싱이 항상 undefined다 — HTTP 200과 실제 계정/식별자 생성에도
-// 불구하고 281·285행의 쿠키 assertion이 그 자리에서 실패했다. Set-Cookie를 쉼표로 split하면
-// Expires 값 자체에 쉼표가 들어 있어(예: "Expires=Wed, 21 Oct 2026 07:28:00 GMT") 쿠키 하나를
-// 둘로 잘못 쪼갠다 — 대신 WHATWG Headers가 제공하는 getSetCookie()(합치지 않고 배열 그대로
-// 반환)를 우선 쓰고, 없으면(node:http 형태) 기존 대괄호 인덱싱으로 되돌아간다.
 const setCookies = (headers) => {
     if (typeof headers.getSetCookie === 'function') return headers.getSetCookie();
     const raw = headers['set-cookie'] ?? [];
@@ -230,8 +163,6 @@ const setCookies = (headers) => {
 const findSetCookie = (headers, name) => setCookies(headers).filter((c) => c.startsWith(`${name}=`)).at(-1);
 const cookieHeader = (raw) => raw.split(';')[0];
 
-// ── setCookies 헬퍼 자체의 회귀 — node:http/WHATWG Headers 두 형태 모두, 그리고 Expires의
-// 쉼표를 쿠키 경계로 오인하지 않는지 — DB 없이 바로 실행된다(스킵되지 않는다).
 test('setCookies는 node:http 헤더와 fetch(WHATWG) Headers 양쪽에서 여러 Set-Cookie를 배열로 읽고, Expires의 쉼표를 쿠키 경계로 쪼개지 않는다', () => {
     const expiresCookie = 'sessionId=abc; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/';
     const otherCookie = 'refreshToken=xyz; HttpOnly';
@@ -246,12 +177,8 @@ test('setCookies는 node:http 헤더와 fetch(WHATWG) Headers 양쪽에서 여�
     assert.deepEqual(setCookies(fetchHeaders), [expiresCookie, otherCookie]);
     assert.equal(findSetCookie(fetchHeaders, 'sessionId'), expiresCookie);
 
-    // 단일 Set-Cookie만 있는 node:http 응답은 배열이 아니라 문자열로 올 수 있다 — 그 경우도
-    // 빈 배열로 조용히 삼키지 않고 1개짜리 배열로 정규화해야 한다.
     assert.deepEqual(setCookies({ 'set-cookie': otherCookie }), [otherCookie]);
 
-    // Set-Cookie가 전혀 없는 응답은 여전히 빈 배열이어야 한다(기존 쿠키 부재 assertion을
-    // 깨뜨리지 않는다).
     assert.deepEqual(setCookies({}), []);
     assert.deepEqual(setCookies(new Headers()), []);
 });
@@ -266,18 +193,6 @@ const createLocalUser = async (label) => {
 
 const stateOf = (headers) => new URL(headers.location).searchParams.get('state');
 
-// ── AC-02: 실제 신규 Discord 계정 생성 → 가입 완료 → 재로그인은 기존 identity를 재사용한다 ──
-//
-// R-IMPL 재검토 지적: 이전 회차의 가입 완료 닉네임(`f07가입${subject.slice(-6)}`)이 11자여서
-// 승인된 닉네임 상한(2~8자, backend/validation/signupValidation.js NICKNAME_MAX_LENGTH)을
-// 넘겨 완료 요청 자체가 400으로 실패했다 — "가입 완료" 계약을 증명하지 못하고 있었다. 아래는
-// (1) 2~8자 유효 닉네임(`f0` + subject 뒤 6자, 항상 8자)으로 고치고, (2) 예상 밖 상태코드가
-// 나오면 응답 본문을 함께 실어 원인을 바로 알 수 있게 하고, (3) 콜백이 SIGNUP_REQUIRED에서
-// 다시 세팅하는 서명된 가입 보완 쿠키(rememberMe 포함, user.controller.js
-// googleAuthCallback/discordAuthCallback 주석 참고)를 실제로 완료 요청까지 들고 가서
-// rememberMe:false/true 양쪽과, 검증 실패 후 같은 쿠키로 재시도해도 rememberMe가 조용히
-// 사라지지 않는지(completeSocialSignup 주석 — "재시도 가능한 실패에도 쿠키가 사라지면
-// 안 된다")까지 실제 HTTP·DB로 검증한다.
 for (const rememberMe of [false, true]) {
     test(`AC-02(rememberMe=${rememberMe}): 실제 HTTP 왕복 — 신규 Discord 계정은 가입 보완을 요구하고, 서명된 가입 보완 쿠키가 재시도까지 rememberMe 선택을 그대로 들고 가며, 가입 완료 후 재로그인은 같은 계정을 재사용한다(실제 DB, 스텁 없음)`, async (t) => {
         if (unavailable(t)) return;
@@ -290,15 +205,12 @@ for (const rememberMe of [false, true]) {
         withFetchRedirectedTo(t, fixtureBase);
         const base = await startServer(t);
 
-        // 1) 시작 — 실제 state를 실제 DB(oauth_states)에 발급한다.
         const startRes = await rawGet(base, `/auth/discord?rememberMe=${rememberMe}`);
         assert.equal(startRes.statusCode, 302);
         const state = stateOf(startRes.headers);
         const attemptCookie = findSetCookie(startRes.headers, 'oauthAttempt');
         assert.ok(attemptCookie);
 
-        // 2) 콜백 — 실제 discordOAuthService(fixture로 리다이렉트된 fetch)가 검증한 subject/email로
-        // 실제 socialAuthService.resolveOAuthAccount가 SIGNUP_REQUIRED를 반환해야 한다.
         const callbackRes = await rawGet(base, `/auth/discord/callback?code=real-code-1&state=${state}`, {
             cookie: cookieHeader(attemptCookie),
         });
@@ -309,16 +221,12 @@ for (const rememberMe of [false, true]) {
         assert.ok(intentToken, 'SIGNUP_REQUIRED면 intentToken이 실려야 한다');
         assert.equal(await db.User.count({ where: { email } }), 0, '가입 보완 전에는 아직 계정이 생기면 안 된다');
 
-        // SIGNUP_REQUIRED가 다시 세팅한 가입 보완용 서명 쿠키 — rememberMe 선택이 여기 실려
-        // 있고, 완료 요청까지 그대로 들고 가야 한다.
         const signupAttemptCookie = findSetCookie(callbackRes.headers, 'oauthAttempt');
         assert.ok(signupAttemptCookie, 'SIGNUP_REQUIRED는 rememberMe를 들고 갈 서명된 가입 보완 쿠키를 다시 세팅해야 한다');
         const signupCookieHeader = cookieHeader(signupAttemptCookie);
 
         const nickname = `f0${subject.slice(-6)}`; // 항상 8자 — 승인된 닉네임 상한(2~8자) 안.
 
-        // 3) 재시도: 먼저 닉네임 검증 실패(1자, 최소 2자 미달)로 거부되게 하고, 같은 가입
-        // 보완 쿠키로 다시 제출해도 rememberMe 선택이 살아있는지 확인한다.
         const rejectedRes = await fetch(`${base}/auth/social/signup/complete`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', cookie: signupCookieHeader },
@@ -327,8 +235,6 @@ for (const rememberMe of [false, true]) {
         assert.equal(rejectedRes.status, 400, `닉네임 검증 실패는 400이어야 합니다: ${await rejectedRes.text()}`);
         assert.equal(await db.User.count({ where: { email } }), 0, '검증 실패 재시도 전에는 계정이 생기면 안 된다');
 
-        // 4) 가입 완료 — 같은 가입 보완 쿠키로 재시도한다. 실제 POST /auth/social/signup/complete로
-        // 실제 users/external_identities 행을 만든다.
         const completeRes = await fetch(`${base}/auth/social/signup/complete`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', cookie: signupCookieHeader },
@@ -346,8 +252,6 @@ for (const rememberMe of [false, true]) {
         assert.ok(identity, '실제 external_identities 행(provider=discord)이 생성되어야 한다');
         assert.equal(identity.user_id, newUuid);
 
-        // rememberMe 선택이 재시도를 거치고도 조용히 사라지지 않고 그대로 세션 발급에
-        // 반영되어야 한다(가입 보완 쿠키는 계정 생성 성공 전까지 지워지지 않는다).
         const completeAccessCookie = findSetCookie(completeRes.headers, 'accessToken');
         const completeRefreshCookie = findSetCookie(completeRes.headers, 'refreshToken');
         if (rememberMe) {
@@ -358,8 +262,6 @@ for (const rememberMe of [false, true]) {
             assert.doesNotMatch(completeAccessCookie, /Max-Age/i, 'rememberMe:false는 세션 쿠키(비영속)여야 한다');
         }
 
-        // 5) 재로그인 — 같은 Discord subject로 전체 HTTP 왕복을 다시 돌리면, 새 계정을 만들지
-        // 않고 방금 만든 계정으로 즉시 로그인되어야 한다(기존 identity 조회).
         const start2 = await rawGet(base, '/auth/discord?rememberMe=false');
         const state2 = stateOf(start2.headers);
         const attemptCookie2 = findSetCookie(start2.headers, 'oauthAttempt');
@@ -375,12 +277,6 @@ for (const rememberMe of [false, true]) {
     });
 }
 
-// ── AC-03 → F-31 AC-02: discordOAuth.service.js의 email:null은 이제 거부가 아니라 자체 메일 인증으로 이어진다 ──
-//
-// 이전 회차는 verified:false가 EMAIL_MISSING으로 끝나는 것을 고정했다. F-31부터는 같은 입력이
-// SIGNUP_REQUIRED + email=null intent로 끝나고, 기존 F-31a 발송·확인 HTTP로 받은 증명을
-// 제출해야만 계정이 만들어진다. "인증 완료 전에는 사용자·identity·세션이 생기지 않는다"는
-// 이전 단언은 그 단계에 그대로 보존한다.
 test('F-31 AC-02: 검증되지 않은 이메일(verified:false)은 intent만 남기고, 증명 없는 완료는 거절되며, 기존 발송·확인 API로 받은 증명으로만 단일 계정이 만들어진다(실제 DB, 스텁 없음)', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -431,7 +327,6 @@ test('F-31 AC-02: 검증되지 않은 이메일(verified:false)은 intent만 남
     const email = `f07-self-${crypto.randomUUID()}@example.com`;
     const nickname = `f0${subject.slice(-6)}`;
 
-    // 증명 없이(인증됐다는 주장만 실어) 완료를 시도하면 거절되고 아무 것도 생기지 않는다.
     const noProofRes = await postComplete({ intentToken, nickname, birthDate: '1996-05-05', email, email_verified: true, verified: true });
     const noProofBody = await noProofRes.json();
     assert.equal(noProofRes.status, 401, JSON.stringify(noProofBody));
@@ -439,7 +334,6 @@ test('F-31 AC-02: 검증되지 않은 이메일(verified:false)은 intent만 남
     assert.equal(await db.User.count(), beforeUsers);
     assert.equal((await intentRow.reload()).consumed_at, null, '거절된 완료는 intent를 소비하면 안 된다');
 
-    // 기존 F-31a 발송·확인 API로 증명을 받는다(재구현 없음).
     const codeRes = await fetch(`${base}/auth/signup/email-code`, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }),
     });
@@ -465,8 +359,6 @@ test('F-31 AC-02: 검증되지 않은 이메일(verified:false)은 intent만 남
     assert.equal(await db.User.count(), beforeUsers + 1);
     assert.equal(await db.ExternalIdentity.count({ where: { provider: 'discord', subject } }), 1);
 });
-
-// ── F-31 AC-05: 기존 identity는 제공자 이메일이 없어도 추가 인증 없이 같은 계정으로 로그인되고 email_verified가 바뀌지 않는다 ──
 
 test('F-31 AC-05: email_verified=false인 기존 Discord identity 계정은 제공자 이메일 미제공 재로그인에서도 자체 인증 없이 같은 UUID로 로그인되고 값이 보존된다(실제 DB, 스텁 없음)', async (t) => {
     if (unavailable(t)) return;
@@ -494,8 +386,6 @@ test('F-31 AC-05: email_verified=false인 기존 Discord identity 계정은 제�
     assert.equal(after.email_verified, false, '로그인이 email_verified를 허위로 true로 바꾸면 안 된다');
 });
 
-// ── AC-04 전제: 실제 Discord 이메일이 기존 로컬 계정과 같아도 자동 병합되지 않는다 ────────
-
 test('AC-04 전제: 실제 discordOAuthService가 반환한 이메일이 기존 로컬 계정과 같으면 자동 병합 없이 EMAIL_CONFLICT로 거부된다(실제 DB, 스텁 없음)', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -520,8 +410,6 @@ test('AC-04 전제: 실제 discordOAuthService가 반환한 이메일이 기존 
     assert.equal(await db.User.count({ where: { email: local.email } }), 1);
 });
 
-// ── AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 연결된다 ──────────────
-
 test('AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 연결되고, 서버가 검증한 subject/email만 저장된다(실제 DB, 스텁 없음)', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -532,8 +420,6 @@ test('AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 �
     const accessTokenCookie = `accessToken=${loginResult.token}`;
 
     const subject = `discord-link-${crypto.randomUUID()}`;
-    // 로컬 계정과 다른 이메일을 일부러 쓴다 — 연결이 이메일 일치가 아니라 명시적 동의(로그인
-    // 상태에서 이 왕복을 직접 시작)로만 이루어진다는 것을 보인다.
     const discordEmail = `discord-only-${crypto.randomUUID()}@example.com`;
     const { base: fixtureBase, tokenRequests } = await startMockDiscord(t, { profile: { id: subject, email: discordEmail, verified: true } });
     withFetchRedirectedTo(t, fixtureBase);
@@ -544,10 +430,6 @@ test('AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 �
     const state = stateOf(startRes.headers);
     const attemptCookie = findSetCookie(startRes.headers, 'oauthAttempt');
 
-    // CODEX-2 재검토 지적 #2: 연결 시작이 실제로 내보낸 redirect_uri를 그대로 따라가 실제
-    // 제공자 왕복이 끊기지 않는지 확인한다 — 로그인용 DISCORD_REDIRECT_URI를 그대로 썼다면
-    // 실제 Discord는 로그인 콜백으로 돌려주므로(그 콜백은 purpose:link를 거부한다) 이 값은
-    // 반드시 DISCORD_LINK_REDIRECT_URI와 같아야 하고, 로그인용 값과는 달라야 한다.
     const emittedRedirectUri = new URL(startRes.headers.location).searchParams.get('redirect_uri');
     assert.equal(emittedRedirectUri, process.env.DISCORD_LINK_REDIRECT_URI,
         'AC-04: 연결 시작은 실제로 DISCORD_LINK_REDIRECT_URI를 인가 URL에 실어야 한다');
@@ -560,8 +442,6 @@ test('AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 �
     assert.equal(callbackRes.statusCode, 302);
     assert.equal(callbackRes.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkSuccess=discord`);
 
-    // 실제 토큰 교환 요청이 인가 URL 발급 때와 정확히 같은 redirect_uri를 썼는지 확인한다
-    // (OAuth 명세 — 둘이 다르면 실제 Discord는 invalid_grant로 거부한다).
     assert.equal(tokenRequests.length, 1);
     assert.equal(new URLSearchParams(tokenRequests[0]).get('redirect_uri'), emittedRedirectUri,
         'AC-04: 토큰 교환은 인가 URL 발급 때와 정확히 같은 redirect_uri를 써야 한다(R-IMPL #2)');
@@ -571,8 +451,6 @@ test('AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 �
     assert.equal(identity.user_id, local.uuid);
     assert.equal(identity.email_snapshot, discordEmail);
 
-    // 연결 이후에는 같은 Discord 식별자로 재로그인하면(자동 병합이 아니라 방금 명시적으로
-    // 연결한 결과로) 같은 계정이 재사용된다.
     const relogin = await rawGet(base, '/auth/discord');
     const reloginState = stateOf(relogin.headers);
     const reloginAttempt = findSetCookie(relogin.headers, 'oauthAttempt');

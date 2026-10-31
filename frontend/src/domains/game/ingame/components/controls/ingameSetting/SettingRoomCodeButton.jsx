@@ -1,6 +1,3 @@
-/**
- * 인게임 설정 패널 — 방 코드 보기(모든 참가자 공통, 우측 하단 고정)
- */
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
   INGAME_SETTING_ROOM_CODE_BTN_CLASS,

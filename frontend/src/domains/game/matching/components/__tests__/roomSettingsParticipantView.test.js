@@ -1,21 +1,3 @@
-/**
- * F-20 AC-03: 방장이 실제로 편집·저장한 설정이 **비방장 참가자 store**와 공개 목록 행까지
- * 이어지는지를 한 경로로 고정한다.
- *
- * 응답 객체를 읽어 보는 것으로는 "참가자가 그 값을 실제로 볼 수 있는가"를 말할 수 없다.
- * 이 시험은 다음을 전부 실제 코드로 잇는다:
- *
- *   방장의 실제 스테퍼·체크박스·역할 구성 클릭(jsdom, 실제 GameSetupPanel)
- *     → buildUpdateRoomSettingsPayload
- *     → 실제 백엔드 handleUpdateRoomSettings
- *     → 서버가 **참가자 소켓에 실제로 emit한** room_settings_updated 사건
- *     → 실제 useMatchingRoom 구독 → 실제 matchingStore
- *     → 실제 GameMatchingPage/useMatchingPage가 구독하는 동일한 DOM 트리
- *     → 실제 get_public_rooms → 실제 RoomListRow DOM
- *
- * 소켓은 모듈 목업이 아니라 실제 socketClient.setSocket으로 대역 인스턴스를 꽂는다 —
- * 실제 페이지의 Vite 환경 경계를 위해 공식 npm test와 같은 --experimental-test-module-mocks가 필요하다.
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -47,9 +29,6 @@ register(new URL(
   import.meta.url,
 ))
 
-// Operator: run with the package's --experimental-test-module-mocks flag.
-// Only the Vite environment and external HTTP boundary are replaced; the actual
-// page, page hook, room hook, store and settings panel all remain production code.
 mock.module("../../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },
 })
@@ -92,7 +71,6 @@ const { createFakeSocket, createFakeIo, validSettingsPayload } = matchmakingFixt
 const { handleCreateRoom, handleJoinRoomByCode, handleUpdateRoomSettings, handleGetCurrentRoom, handleGetPublicRooms } =
   matchmaking.__testables
 
-/** 방장 + 비방장 참가자 한 명으로 실제 방을 만든다. */
 async function createRoomWithParticipant(settingsOverrides) {
   matchmaking.__resetStateForTests()
   const io = createFakeIo([])
@@ -138,7 +116,6 @@ async function clickByAriaLabel(container, ariaLabel) {
   await act(async () => { button.click() })
 }
 
-/** 비방장 참가자의 실제 대기방 훅을 마운트하고 서버가 준 현재 방으로 검증을 끝낸다. */
 async function mountParticipantRoom(currentRoom) {
   useMatchingStore.getState().clearRoom()
   useAuthStore.setState({ user: { uuid: "p1" }, isLoggedIn: true })
@@ -188,16 +165,11 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
     maxPlayers: 8, jokerCount: 2, nightActionTime: 90,
   })
 
-  // 참가자는 저장 **이전**의 방을 보고 있다.
   const before = await new Promise((resolve) => handleGetCurrentRoom("p1", resolve))
   const { socket: clientSocket } = await mountParticipantRoom(before.room)
   const beforeStore = useMatchingStore.getState()
   assert.equal(beforeStore.accessType, "open")
   assert.equal(beforeStore.settings.maxPlayers, 8)
-  // 여기서 전역 cleanup을 부르면 참가자 훅까지 함께 언마운트돼 이후 사건을 받지 못한다 —
-  // 각 트리는 자기 container로만 조회하므로 남겨 둔다.
-
-  // ── 방장의 실제 편집 ────────────────────────────────────────────────────
   const hostCurrent = await new Promise((resolve) => handleGetCurrentRoom("host-a", resolve))
   const formState = buildRoomSettingsFormState({
     accessType: hostCurrent.room.accessType, settings: hostCurrent.room.settings,
@@ -205,18 +177,15 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   assert.equal(formState.ok, true, formState.code)
   const { container, getSubmitted } = await mountPanel(formState)
 
-  // 일반 탭: 입장 방식 → 코드, 정원 8 → 6, 역할 구성 자동 → 직접 지정(의사 1명 추가).
   await clickByAriaLabel(container, "코드로만 참가")
   await clickByAriaLabel(container, "최대 플레이어 수 감소")
   await clickByAriaLabel(container, "최대 플레이어 수 감소")
   await clickByAriaLabel(container, "역할 구성 증가") // 자동 → 직접 지정
   await clickByAriaLabel(container, "의사 인원 증가")
 
-  // 회의&투표 탭: 토론 60 → 90, 밤 90 → 60, 광대 밤 시간만 따로 30초로.
   await clickTab(container, "회의&투표")
   await clickByAriaLabel(container, "낮 토론 시간 조절 증가")
   await clickByAriaLabel(container, "밤 행동 시간 조절 감소")
-  // Unspecified role time now follows the overall 90 -> 60 change. One click reaches 30.
   const jokerTimeRow = container.querySelector('[aria-label="광대 밤 시간 조절 감소"]').parentElement
   assert.ok(jokerTimeRow.textContent.includes("60초"), "미지정 광대 시간이 전체 밤 60초를 따라오지 않았다")
   await clickByAriaLabel(container, "광대 밤 시간 조절 감소")
@@ -245,14 +214,12 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   assert.equal(saved.ok, true, saved.message)
   assert.equal(saved.changed, true)
 
-  // ── 서버가 참가자 소켓에 실제로 보낸 사건을 그대로 클라이언트 훅에 전달한다 ──
   const broadcast = guestSocket.emitted
     .slice(guestEmitsBefore)
     .find((entry) => entry.event === SOCKET_EVENTS.ROOM_SETTINGS_UPDATED)
   assert.ok(broadcast, "서버가 참가자에게 설정 변경 사건을 보내지 않았다")
   await act(async () => { clientSocket.trigger(SOCKET_EVENTS.ROOM_SETTINGS_UPDATED, broadcast.payload) })
 
-  // ── 비방장 참가자 store(실제 대기 페이지 훅) ─────────────────────────────
   const stored = useMatchingStore.getState()
   assert.equal(stored.accessType, "code")
   assert.equal(stored.settings.maxPlayers, 6)
@@ -264,7 +231,6 @@ test("AC-03 · 방장이 두 탭과 직접 지정 구성을 편집·저장하면
   assert.equal(participantPageView.container.querySelector("[aria-label='현재 방 설정']"), null,
     "서버 방송 뒤에도 읽기 전용 설정 UI가 나타나면 안 된다")
 
-  // ── 같은 저장이 공개 목록 행에도 그대로 나타난다 ────────────────────────
   const list = await new Promise((resolve) => handleGetPublicRooms(resolve))
   const listed = list.rooms.find((entry) => entry.id === room.roomId)
   assert.ok(listed, "저장한 방이 공개 목록에 없다")

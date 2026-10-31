@@ -9,7 +9,6 @@ import {
 } from "@/shared/ui/profileBorderZoom/profileBorderZoomLayout.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
-/** 프로필 테두리 클로즈업 — 전역 오버레이 */
 export default function ProfileBorderZoomOverlay({ open, item, onClose }) {
   const [mounted, setMounted] = useState(false)
 
@@ -22,7 +21,6 @@ export default function ProfileBorderZoomOverlay({ open, item, onClose }) {
 
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return
-      // F-16(AC-01): 열린 상태에서 실제로 onClose를 부르는 경로만 취소음.
       dispatchUiSfx("ui-cancel", event)
       onClose()
     }

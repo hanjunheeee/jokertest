@@ -3,8 +3,6 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 
-// 이 훅은 React state만 쓰고 DOM에 의존하지 않지만, renderHook을 쓰려면 DOM 전역이
-// 필요하다. 설치 방식은 기존 훅 테스트(useRoleCompositionState.test.js)와 동일하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {

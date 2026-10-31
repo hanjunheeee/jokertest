@@ -1,12 +1,10 @@
 import { buildInGamePreviewPlayers } from "../../utils/buildInGamePreviewPlayers.js"
 
-/** dev 프리뷰 — 피고(defendant) 플레이어 카드 데이터 */
 export function buildTribunalPresentationPreviewDefendant() {
   const players = buildInGamePreviewPlayers(5)
   return players[1]
 }
 
-/** dev 프리뷰 — split 이후 채팅 패널 더미 메시지 */
 export function buildTribunalPresentationPreviewChatMessages() {
   const players = buildInGamePreviewPlayers(5)
   const now = Date.now()

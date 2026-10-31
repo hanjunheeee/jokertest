@@ -1,6 +1,3 @@
-// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지
-// 않는다). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어
-// require 자체가 죽으므로, 짝이 되는 gameSession.dayTimers.test.js와 같은 더미 폴백을 둔다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -9,8 +6,6 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
-// F-25b(AC-05): 저장 실패→재시도를 실제 저장 경계 위에서 재현하려면 이 모듈의 함수를 대역으로
-// 갈아끼워야 한다(kickPlayers.test.js의 기존 관례와 같은 방식 — 시험 끝에 원본으로 되돌린다).
 const gameResultRepository = require('../../repositories/gameResult.repositories')
 const { createFakeSocket, createFakeIo, countingCallback } = require('./testHelpers/matchmakingFixtures')
 
@@ -22,13 +17,6 @@ const {
 } = gameSessionSocketLayer.__testables
 const { NIGHT_TURN_ORDER, NIGHT_TURN_DURATION_MS } = gameSessionCore
 
-/**
- * 밤 턴 엔진 전용 테스트 파일. 기존 gameSession.test.js와 분리한 이유는 이 파일의 모든
- * 테스트가 주입된 수동 시계(createManualClock) 위에서만 성립하기 때문이다 — 실시간 타이머에
- * 기대는 테스트와 한 파일에 섞이면 "시간이 흐르지 않았다"는 단언의 의미가 흐려진다.
- */
-
-/** gameSession.test.js의 동명 헬퍼와 계약이 같다(공유 테스트 헬퍼 파일을 새로 만들 수 없어 동일하게 둔다). */
 function createConventionFollowingRegistry() {
     const overrides = new Map()
     return new Proxy(overrides, {
@@ -50,24 +38,15 @@ test.beforeEach(() => {
 test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
-    // 진행 중인 턴 시퀀스의 대기 타이머까지 해제한다(수동 시계라 실제로 새어나가지는 않지만,
-    // 다음 테스트가 이전 테스트의 run을 상속하지 않게 하려는 것이 목적이다).
     gameSessionSocketLayer.__resetStateForTests()
 })
 
-/**
- * setTimeout/clearTimeout/Date.now를 대신하는 수동 시계. advance(ms)로 명시적으로 진행시키기
- * 전에는 어떤 타이머도 실행되지 않으므로, "시간 만료로 끝나지 않았다"를 단언할 수 있다.
- * 만료 시각이 이른 타이머부터 순서대로 실행하고, 콜백 안에서 새로 걸린 타이머도 같은 advance
- * 구간 안에 들어오면 함께 실행한다.
- */
 function createManualClock(startMs = 1_000_000) {
     let now = startMs
     let nextId = 1
     const timers = new Map()
     return {
         now: () => now,
-        // startNightTurnSequence의 deps 이름과 맞춘 별칭 — 시계 객체를 그대로 spread해서 주입한다.
         nowFn: () => now,
         setTimeoutFn(fn, delayMs) {
             const id = nextId++
@@ -111,7 +90,6 @@ function makeRoom({ id = 'room-1', players, jokerCount = 1, settings = {} } = {}
     }
 }
 
-/** gameSession.test.js의 동명 헬퍼와 계약이 같다 — 전원 역할 확인 후 지정한 밤 상태로 되돌린다. */
 function ackAllAndRewindToNight(session, dayIndex) {
     for (const uuid of session.players.keys()) {
         gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
@@ -125,12 +103,6 @@ function ackAllAndRewindToNight(session, dayIndex) {
     session.tribunal = null
 }
 
-/**
- * playerCount=10·jokerCount=1 세션을 커밋해 밤 상태로 만든다(5개 역할 전부 1명씩, CITIZEN 6명).
- * dayIndex 기본값이 2인 이유: WITCH_HUNTER의 nightActionMinDayIndex가 2라서, 그보다 이른 밤에는
- * 네 번째 턴에 생존 actor가 존재할 수 없다 — "네 직업 턴이 모두 참여 가능한 밤"을 만들려면
- * 이 경계를 넘겨야 한다.
- */
 function commitFullRoleSessionAtNight({ id = 'room-turns', dayIndex = 2, settings = {} } = {}) {
     const players = Array.from({ length: 10 }, (_, i) => makePlayer(`fp-${id}-${i}`))
     const room = makeRoom({ id, players, jokerCount: 1, settings })
@@ -149,16 +121,12 @@ function commitFullRoleSessionAtNight({ id = 'room-turns', dayIndex = 2, setting
     }
 }
 
-/** playerCount=3·jokerCount=2 세션을 밤 상태로 만든다 — 한 역할(JOKER)에 생존 actor가 2명인 구성. */
 function commitJokerTrioSessionAtNight({ id = 'room-turns-joker', dayIndex = 0, keepComposition = false } = {}) {
     const players = [makePlayer(`ja-${id}`), makePlayer(`jb-${id}`), makePlayer(`jc-${id}`)]
     const room = makeRoom({ id, players, jokerCount: 2 })
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
     gameSessionCore.commitGameSession(candidate.session)
     const session = candidate.session
-    // 2026-09-22: 구성이 0인 역할은 턴이 돌지 않게 됐다(getNightTurnOrder). 이 헬퍼로 턴 역학(제출·기권·
-    // 타이머)을 보는 기존 시험들은 네 턴이 전부 도는 구조를 전제하므로, 구성 정보가 없는 구버전
-    // 세션으로 만든다. 구성 0 건너뛰기 자체는 keepComposition:true로 만든 세션의 시험이 본다.
     if (!keepComposition) delete session.roleComposition
     ackAllAndRewindToNight(session, dayIndex)
     const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
@@ -166,18 +134,6 @@ function commitJokerTrioSessionAtNight({ id = 'room-turns-joker', dayIndex = 0, 
     return { session, jokerUuids, citizenUuid }
 }
 
-/**
- * F-27a: 진행 중인 연출 대기(있다면)를 즉시 해제한다.
- *
- * 완료 ACK를 대신 보내지 않는다 — releaseNightPresentationWait를 직접 호출해 "상한이 지금
- * 막 지났다"와 똑같은 해제만 수행한다(그 함수 자체가 실제 ACK 경로·상한 타이머 콜백이
- * 공유하는 유일한 해제 경계다). 그래서 이 드레인을 거친 수신 기록은 completed:false로
- * 남는다 — 대기 자체가 아니라 턴 순서·판정 결과를 보는 기존 시험 대부분과, completed:false
- * 상태를 전제로 하는 F-26 복원 시험 양쪽 모두가 그대로 성립한다. 사건이 없거나 현재 적격
- * 수신자가 없는 대기는 activateNightPresentationWait가 이미 즉시 해제했을 것이므로 이 함수는
- * 아무 것도 하지 않는다. 해제가 다음 역할에서 새 대기를 만들 수 있으므로 대기가 남아 있는
- * 동안 반복한다.
- */
 function drainPresentationWait(session) {
     for (let guard = 0; guard < 20; guard += 1) {
         const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
@@ -186,7 +142,6 @@ function drainPresentationWait(session) {
     }
 }
 
-/** 세션 참가자 전원의 fake socket을 만들고 registerGameHandlers로 실제 이벤트 배선까지 마친 io를 돌려준다. */
 function wireSession(session) {
     const sockets = new Map()
     const io = createFakeIo([])
@@ -198,17 +153,6 @@ function wireSession(session) {
         gameSessionSocketLayer.registerGameHandlers(io, socket, uuid)
         sockets.set(uuid, socket)
     }
-    /**
-     * 배선된 submit_night_action 이벤트로 제출한다(targetId === null이면 건너뛰기).
-     *
-     * F-27a: 제출로 그 역할의 턴이 끝나면 서버는 실제 연출 대기 상태에 들어간다(사건이 있고
-     * 현재 적격 수신자가 있을 때만). 이 헬퍼를 쓰는 기존 시험 대부분은 대기 자체가 아니라
-     * 턴 순서·판정 결과를 보므로, 기본값(autoDrainWait:true)은 drainPresentationWait로 그
-     * 대기를 곧바로 풀어 예전과 같은 "제출 즉시 다음 역할"의 관측 결과를 유지한다(게이트를
-     * 끄는 것이 아니라 상한이 막 지난 것과 같은 실제 해제 경계를 대신 불러 주는 것이다). 대기
-     * 자체를 검사하는 시험은 { autoDrainWait: false }로 이 편의를 끄고 직접 ACK·상한·재접속을
-     * 구동한다.
-     */
     const submit = (uuid, targetId, { autoDrainWait = true } = {}) => {
         const { callback, getResponse } = countingCallback()
         sockets.get(uuid).trigger('submit_night_action', { gameId: session.id, targetId }, callback)
@@ -218,7 +162,6 @@ function wireSession(session) {
     return { io, sockets, submit }
 }
 
-/** io.broadcasts에서 밤 턴 이벤트만 뽑아 [event, role] 쌍으로 요약한다. */
 function turnEventLog(io) {
     return io.broadcasts
         .filter((b) => b.event === 'night_turn_started' || b.event === 'night_turn_ended')
@@ -229,10 +172,6 @@ function turnBroadcasts(io) {
     return io.broadcasts.filter((b) => b.event === 'night_turn_started' || b.event === 'night_turn_ended')
 }
 
-// ---------------------------------------------------------------------------
-// AC-01 — 턴 순서와 deadline
-// ---------------------------------------------------------------------------
-
 test('night turn: 한 밤 동안 광대→의사→경비원→WITCH_HUNTER 순서로 각 턴마다 started/ended가 정확히 한 번씩 방송된다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight()
     const { io, submit } = wireSession(session)
@@ -240,7 +179,6 @@ test('night turn: 한 밤 동안 광대→의사→경비원→WITCH_HUNTER 순�
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
 
-    // 각 역할의 유일한 생존 actor가 건너뛰기로 제출하면 그 턴이 끝나고 다음 턴이 시작된다.
     for (const uuid of [jokerUuid, doctorUuid, guardUuid, witchHunterUuid]) {
         assert.deepEqual(submit(uuid, null), { ok: true })
     }
@@ -255,7 +193,6 @@ test('night turn: 한 밤 동안 광대→의사→경비원→WITCH_HUNTER 순�
         ['night_turn_started', 'WITCH_HUNTER'],
         ['night_turn_ended', 'WITCH_HUNTER'],
     ])
-    // 순서 상수 자체가 이 기대값의 유일한 출처임을 고정한다.
     assert.deepEqual([...NIGHT_TURN_ORDER], ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
 })
 
@@ -264,9 +201,6 @@ test('night turn: 모든 night_turn_started payload가 deadline을 포함하고 
     const { io, submit } = wireSession(session)
     const clock = createManualClock(5_000_000)
     const startedAt = clock.now()
-    // F-25b: 마지막 턴이 끝나면 그 밤이 자동으로 최종화돼 DAY로 넘어가며 dayIndex가 하나
-    // 오른다 — 턴 payload가 실어야 하는 값은 **그 턴이 속한 밤**의 dayIndex이므로 시작 전에
-    // 붙잡아 둔다(판정 후의 session.dayIndex와 비교하면 기대값 자체가 달라진다).
     const nightDayIndex = session.dayIndex
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
@@ -277,16 +211,11 @@ test('night turn: 모든 night_turn_started payload가 deadline을 포함하고 
     for (const broadcast of started) {
         assert.equal(broadcast.roomId, session.channelId)
         assert.deepEqual(Object.keys(broadcast.payload).sort(), ['dayIndex', 'deadline', 'gameId', 'role'])
-        // 제출은 시계를 진행시키지 않으므로 네 턴 모두 같은 시각에 시작됐다.
         assert.equal(broadcast.payload.deadline, startedAt + NIGHT_TURN_DURATION_MS)
         assert.equal(broadcast.payload.gameId, session.id)
         assert.equal(broadcast.payload.dayIndex, nightDayIndex)
     }
 })
-
-// ---------------------------------------------------------------------------
-// AC-02 — 현재 턴이 아닌 직업의 제출 거부
-// ---------------------------------------------------------------------------
 
 test('night turn: 현재 턴이 아닌 직업의 제출은 NOT_YOUR_TURN으로 거부되고 nightActions에 기록되지 않는다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } = commitFullRoleSessionAtNight()
@@ -295,7 +224,6 @@ test('night turn: 현재 턴이 아닌 직업의 제출은 NOT_YOUR_TURN으로 �
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
 
-    // 지금은 JOKER 턴이다 — 나머지 세 직업의 제출은 전부 거부된다.
     for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
         assert.deepEqual(submit(uuid, null), {
             ok: false,
@@ -305,11 +233,8 @@ test('night turn: 현재 턴이 아닌 직업의 제출은 NOT_YOUR_TURN으로 �
     }
     assert.equal(session.nightActions.size, 0)
 
-    // 밤 행동이 아예 없는 역할은 턴과 무관하게 기존 NOT_ELIGIBLE 그대로다(턴 검사가 역할 자격
-    // 판정을 가리지 않는다).
     assert.equal(submit(citizenUuid, null).code, 'NOT_ELIGIBLE')
 
-    // 현재 턴 주인의 제출만 통과한다.
     assert.deepEqual(submit(jokerUuid, null), { ok: true })
     assert.equal(session.nightActions.size, 1)
 })
@@ -322,7 +247,6 @@ test('night turn: 턴이 넘어가면 직전 턴 주인의 뒤늦은 제출이 �
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuid, null)
 
-    // 이제 DOCTOR 턴이다.
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
     assert.equal(submit(jokerUuid, doctorUuid).code, 'NOT_YOUR_TURN')
 })
@@ -331,14 +255,9 @@ test('night turn: 턴 시퀀스가 돌고 있지 않으면 어떤 직업의 제�
     const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
     const { submit } = wireSession(session)
 
-    // startNightTurnSequence를 호출하지 않았다 — 턴 상태가 없으므로 기존 규칙만 적용된다.
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
     assert.deepEqual(submit(doctorUuid, citizenUuid), { ok: true })
 })
-
-// ---------------------------------------------------------------------------
-// 생존 직업 턴은 전원 제출로 즉시, 또는 제한시간 만료로 끝난다
-// ---------------------------------------------------------------------------
 
 test('night turn: 생존자가 있는 턴은 제한시간 직전까지는 끝나지 않는다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
@@ -367,7 +286,6 @@ test('night turn: 그 역할 생존자 전원이 제출을 마치는 순간, 시
     const beforeNow = clock.now()
     submit(jokerUuids[1], null)
 
-    // 시계를 단 1ms도 진행시키지 않았는데 종료 방송이 이미 나갔다.
     assert.equal(clock.now(), beforeNow)
     assert.deepEqual(turnEventLog(io).slice(0, 3), [
         ['night_turn_started', 'JOKER'],
@@ -383,28 +301,21 @@ test('night turn: JOKER 동료 지목은 기록 없는 no-op이라 전원 제출
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
 
-    // 두 JOKER가 서로를 지목한다 — 응답은 ok지만 nightActions에는 아무 것도 남지 않는다.
     assert.deepEqual(submit(jokerUuids[0], jokerUuids[1]), { ok: true })
     assert.deepEqual(submit(jokerUuids[1], jokerUuids[0]), { ok: true })
     assert.equal(session.nightActions.size, 0)
     assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER']])
 
-    // 정식 제출(건너뛰기)로 채워야 비로소 끝난다.
     submit(jokerUuids[0], null)
     submit(jokerUuids[1], null)
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
 })
-
-// ---------------------------------------------------------------------------
-// AC-04 — 생존자가 없는 직업의 턴은 제한시간의 20~60% 무작위 지연 후 끝난다
-// ---------------------------------------------------------------------------
 
 test('night turn: 생존자가 없는 직업의 턴은 지연 시각 직전에는 끝나지 않고 그 시각에 끝난다', () => {
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight()
     session.players.get(doctorUuid).alive = false
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
-    // 0.5 → 비율 0.2 + 0.5*0.4 = 0.4
     const expectedDelay = Math.floor(NIGHT_TURN_DURATION_MS * 0.4)
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
@@ -426,7 +337,6 @@ test('night turn: 무인 턴 지연은 난수값과 무관하게 항상 턴 제�
     const lower = NIGHT_TURN_DURATION_MS * 0.2
     const upper = NIGHT_TURN_DURATION_MS * 0.6
 
-    // 경계값과 범위 밖 입력(음수·1 초과·NaN)까지 포함해 비율이 절대 구간을 벗어나지 않음을 고정한다.
     for (const r of [0, 0.0001, 0.25, 0.5, 0.75, 0.9999, 1, -3, 7, NaN]) {
         const delay = computeEmptyTurnDelayMs(NIGHT_TURN_DURATION_MS, () => r)
         assert.ok(delay >= Math.floor(lower) && delay <= upper, `r=${r} → ${delay}ms가 20~60% 범위를 벗어났다`)
@@ -437,7 +347,6 @@ test('night turn: 무인 턴 지연은 난수값과 무관하게 항상 턴 제�
 })
 
 test('night turn: dayIndex 때문에 아직 능력이 없는 WITCH_HUNTER 턴도 무인 턴과 같은 지연 경로로 끝난다', () => {
-    // 첫 밤(dayIndex 0)에는 WITCH_HUNTER가 살아 있어도 행동 자격이 없다(nightActionMinDayIndex: 2).
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({ dayIndex: 0 })
     assert.equal(session.players.get(witchHunterUuid).alive, true)
     const { io, submit } = wireSession(session)
@@ -453,18 +362,6 @@ test('night turn: dayIndex 때문에 아직 능력이 없는 WITCH_HUNTER 턴도
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '마지막 턴이 끝나면 턴 상태가 정리된다')
 })
 
-// ---------------------------------------------------------------------------
-// AC-05 — 죽은 직업 턴과 산 직업 턴의 payload가 구별 불가능하다
-// ---------------------------------------------------------------------------
-
-/**
- * payload 키를 camelCase·snake_case 경계로 잘라 소문자 단어 목록으로 만든다.
- *
- * 부분 문자열이 아니라 단어 단위로 비교하는 것이 핵심이다 — 'deadline'은 'dead'를 품고 있지만
- * AC-01이 명시적으로 요구하는 필드이고 생존 여부와 아무 관계가 없다. 부분 문자열로 검사하면
- * 이 정상 필드가 위반으로 잡히고, 반대로 'aliveCount' 같은 진짜 누출 필드는 단어 경계가 '_'가
- * 아니라 대문자라 놓치게 된다.
- */
 function payloadKeyWords(key) {
     return key
         .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -473,10 +370,6 @@ function payloadKeyWords(key) {
         .map((word) => word.toLowerCase())
 }
 
-/**
- * 턴 payload에 등장해서는 안 되는 단어들. 생존 여부 그 자체(alive/dead)와, 생존 여부에서
- * 파생되어 간접적으로 전멸을 알려주는 값(그 턴의 actor 수·남은 제출 수·종료 사유)을 모두 막는다.
- */
 const ALIVENESS_LEAKING_WORDS = new Set([
     'alive', 'dead', 'alives', 'deads',
     'actor', 'actors', 'participant', 'participants',
@@ -501,18 +394,14 @@ test('night turn: 죽은 직업과 산 직업의 턴 방송이 같은 이벤트�
     const deadEnded = byKey.get('night_turn_ended:DOCTOR')
     for (const b of [aliveStarted, deadStarted, aliveEnded, deadEnded]) assert.ok(b, '네 방송이 모두 존재한다')
 
-    // 같은 channel로, 같은 필드 집합으로 나간다.
     assert.equal(deadStarted.roomId, aliveStarted.roomId)
     assert.equal(deadEnded.roomId, aliveEnded.roomId)
     assert.deepEqual(Object.keys(deadStarted.payload).sort(), Object.keys(aliveStarted.payload).sort())
     assert.deepEqual(Object.keys(deadEnded.payload).sort(), Object.keys(aliveEnded.payload).sort())
 
-    // role만 다르고 나머지 값은 완전히 동일하다 — 참가자 수·남은 제출 수·종료 사유처럼 생존
-    // 여부에서 파생되는 값이 payload에 전혀 없다는 뜻이다.
     assert.deepEqual({ ...deadStarted.payload, role: 'X' }, { ...aliveStarted.payload, role: 'X' })
     assert.deepEqual({ ...deadEnded.payload, role: 'X' }, { ...aliveEnded.payload, role: 'X' })
 
-    // 두 경로 모두 payload에 생존 관련 어떤 키도 담지 않는다.
     for (const b of [aliveStarted, deadStarted, aliveEnded, deadEnded]) {
         for (const key of Object.keys(b.payload)) {
             const leaked = payloadKeyWords(key).filter((word) => ALIVENESS_LEAKING_WORDS.has(word))
@@ -522,8 +411,6 @@ test('night turn: 죽은 직업과 산 직업의 턴 방송이 같은 이벤트�
 })
 
 test('night turn: payload 키 단어 분해가 deadline은 통과시키고 생존 파생 필드는 잡아낸다', () => {
-    // 이 검사 자체가 오탐/미탐 없이 동작한다는 것을 고정한다 — AC-05의 단언이 의미를 가지려면
-    // 검사기가 정상 필드(deadline)를 걸지 않으면서 누출 필드는 표기법과 무관하게 잡아야 한다.
     const leaks = (key) => payloadKeyWords(key).some((word) => ALIVENESS_LEAKING_WORDS.has(word))
 
     for (const key of ['gameId', 'dayIndex', 'role', 'deadline']) {
@@ -534,14 +421,6 @@ test('night turn: payload 키 단어 분해가 deadline은 통과시키고 생�
     }
 })
 
-/**
- * 한 밤을 끝까지 돌리고 그동안의 턴 방송을 모두 담아 돌려준다. deadRoles에 든 역할은 그 역할의
- * 참가자를 전부 사망 처리한 뒤 시작하므로 무인 턴이 되고, 그 턴은 지연 타이머로만 끝난다.
- *
- * 생존 actor가 있는 턴은 제출로 끝내므로 시계가 전혀 흐르지 않는다 — 그래서 deadRoles를 바꿔도
- * 그보다 앞선 턴들의 시작 시각이 달라지지 않고, 두 실행의 같은 역할 턴을 같은 시각 기준으로
- * 비교할 수 있다(이 성질이 아래 대조 테스트의 전제다).
- */
 function runNightCapturingTurnBroadcasts({ id, deadRoles = [], startMs = 1_000_000 } = {}) {
     const fixture = commitFullRoleSessionAtNight({ id })
     const { session } = fixture
@@ -559,7 +438,6 @@ function runNightCapturingTurnBroadcasts({ id, deadRoles = [], startMs = 1_000_0
 
     for (const role of NIGHT_TURN_ORDER) {
         if (gameSessionCore.getCurrentNightTurnRole(session) !== role) break
-        // 무인 턴은 제출할 사람이 없으므로 지연 타이머가 끝내도록 시계를 진행시킨다.
         if (deadRoles.includes(role)) clock.advance(NIGHT_TURN_DURATION_MS)
         else submit(uuidByRole[role], null)
     }
@@ -567,11 +445,6 @@ function runNightCapturingTurnBroadcasts({ id, deadRoles = [], startMs = 1_000_0
 }
 
 test('night turn: 같은 역할의 턴 방송은 그 역할의 전멸 여부와 무관하게 완전히 동일하다', () => {
-    // AC-05의 가장 강한 형태 — 같은 밤을 두 번 돌리되 한 번은 그 역할이 살아 있고 한 번은
-    // 전멸한 상태로 돌린다. 두 실행에서 그 역할의 턴 방송이 (세션마다 다른 gameId를 빼면)
-    // 완전히 같은 객체라면, payload의 어떤 필드도 어떤 값도 생존 여부의 함수가 아니라는 뜻이다.
-    // 앞선 테스트가 "산 역할 vs 죽은 역할"을 비교하느라 role을 가려야 했던 것과 달리, 여기서는
-    // 역할을 고정하고 생존 여부만 바꾸므로 가릴 필드가 없다.
     for (const role of NIGHT_TURN_ORDER) {
         const aliveRun = runNightCapturingTurnBroadcasts({ id: `alive-${role}` })
         const deadRun = runNightCapturingTurnBroadcasts({ id: `dead-${role}`, deadRoles: [role] })
@@ -583,8 +456,6 @@ test('night turn: 같은 역할의 턴 방송은 그 역할의 전멸 여부와 
             assert.ok(fromAlive, `${role}이 살아 있을 때 ${event}가 방송된다`)
             assert.ok(fromDead, `${role}이 전멸했을 때도 ${event}가 똑같이 방송된다`)
 
-            // gameId는 세션마다 다른 식별자라 두 실행에서 다를 수밖에 없다 — 각자 자기 세션의
-            // id인지만 확인하고 대조에서는 같은 값으로 가린다.
             assert.equal(fromAlive.payload.gameId, aliveRun.session.id)
             assert.equal(fromDead.payload.gameId, deadRun.session.id)
             assert.equal(fromDead.roomId, deadRun.session.channelId)
@@ -601,7 +472,6 @@ test('night turn: 같은 역할의 턴 방송은 그 역할의 전멸 여부와 
 test('night turn: 턴 payload 빌더는 생존 정보를 인자로 받지 않는다', () => {
     const { session } = commitFullRoleSessionAtNight()
 
-    // 같은 (session, role, deadline)이면 그 역할의 생존자를 전부 죽여도 payload가 바뀌지 않는다.
     const before = gameSessionCore.buildNightTurnStartedPayload(session, 'DOCTOR', 12345)
     const beforeEnded = gameSessionCore.buildNightTurnEndedPayload(session, 'DOCTOR')
     for (const player of session.players.values()) {
@@ -613,10 +483,6 @@ test('night turn: 턴 payload 빌더는 생존 정보를 인자로 받지 않는
     assert.deepEqual(before, { gameId: session.id, dayIndex: session.dayIndex, role: 'DOCTOR', deadline: 12345 })
     assert.deepEqual(beforeEnded, { gameId: session.id, dayIndex: session.dayIndex, role: 'DOCTOR' })
 })
-
-// ---------------------------------------------------------------------------
-// AC-06 — 건너뛰기가 정식 제출로 계산된다
-// ---------------------------------------------------------------------------
 
 test('night turn: 건너뛰기(targetId null)는 nightActions에 정식으로 기록되고 전원 제출 판정에 포함된다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
@@ -654,26 +520,17 @@ test('night turn: 건너뛰기와 실제 지목이 섞여도 전원 제출로 �
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
 })
 
-// ---------------------------------------------------------------------------
-// S1-2 AC-01 — 제한시간이 만료되면 미제출 생존자가 기권으로 기록되고 다음 턴으로 넘어간다
-// ---------------------------------------------------------------------------
-
 test('night turn: 제한시간이 만료되면 미제출 생존자만 기권으로 기록되고 다음 턴이 시작된다', () => {
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    // 두 JOKER 중 한 명만 실제로 지목하고, 나머지 한 명은 아무 것도 제출하지 않는다.
     assert.deepEqual(submit(jokerUuids[0], citizenUuid), { ok: true })
 
     clock.advance(NIGHT_TURN_DURATION_MS)
-    // F-27a: 만료로 그 역할이 끝나면 실제 KILL 사건이 있어 연출 대기가 열린다 — submit()이
-    // 아니라 clock.advance로 끝났으므로 자동 드레인을 거치지 않는다. 여기서 명시적으로
-    // 드레인해 이 시험의 관심사(기권 기록·다음 턴 시작)를 그대로 관측한다.
     drainPresentationWait(session)
 
-    // 이미 제출한 표는 기권으로 덮이지 않고, 미제출자만 SKIP(null)으로 기록된다.
     assert.equal(session.nightActions.get(jokerUuids[0]), citizenUuid)
     assert.equal(session.nightActions.has(jokerUuids[1]), true, '미제출 생존자가 기권으로 기록됐다')
     assert.equal(session.nightActions.get(jokerUuids[1]), null)
@@ -701,8 +558,6 @@ test('night turn: 아무도 제출하지 않은 채 만료되면 그 역할 생�
 })
 
 test('night turn: 사망한 actor는 만료 기권 대상이 아니다(기록도 남지 않는다)', () => {
-    // 기권은 "그 역할의 생존 actor 중 미제출자"에게만 기록된다 — 사망자에게 기권을 남기면
-    // 밤 판정의 제출 완료 기준(생존 actor)과 실제 기록이 어긋난다.
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     session.players.get(jokerUuids[1]).alive = false
     const { io } = wireSession(session)
@@ -716,8 +571,6 @@ test('night turn: 사망한 actor는 만료 기권 대상이 아니다(기록도
 })
 
 test('night turn: 만료로 끝난 턴의 방송도 전원 제출로 끝난 턴과 완전히 같은 payload를 쓴다', () => {
-    // 종료 "사유"가 payload로 새어나가지 않는다는 기존 계약(S1-1)이 만료 경로에도 그대로
-    // 적용되는지 고정한다 — 만료로 끝났다는 사실이 곧 "그 역할에 굼뜬 생존자가 있다"는 신호다.
     const expired = commitJokerTrioSessionAtNight({ id: 'expired-turn' })
     const wiredExpired = wireSession(expired.session)
     const expiredClock = createManualClock()
@@ -743,10 +596,6 @@ test('night turn: 만료로 끝난 턴의 방송도 전원 제출로 끝난 턴�
     }
 })
 
-// ---------------------------------------------------------------------------
-// S1-2 AC-05 — 전원 제출이면 제한시간을 기다리지 않고 즉시 다음 턴으로 간다
-// ---------------------------------------------------------------------------
-
 test('night turn: 전원 제출로 턴이 끝난 뒤에는 그 턴의 만료 타이머가 발화하지 않는다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     const { io, submit } = wireSession(session)
@@ -756,13 +605,11 @@ test('night turn: 전원 제출로 턴이 끝난 뒤에는 그 턴의 만료 타
     const beforeNow = clock.now()
     for (const jokerUuid of jokerUuids) submit(jokerUuid, null)
 
-    // 시계를 1ms도 진행시키지 않았는데 이미 다음 턴이다.
     assert.equal(clock.now(), beforeNow)
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
     const endedCountBefore = turnEventLog(io).filter(([event, role]) => event === 'night_turn_ended' && role === 'JOKER').length
     assert.equal(endedCountBefore, 1)
 
-    // 원래 만료 시각을 한참 지나도 JOKER 턴이 두 번 끝나지 않는다(예약 타이머가 해제됐다).
     clock.advance(NIGHT_TURN_DURATION_MS * 3)
     const endedCountAfter = turnEventLog(io).filter(([event, role]) => event === 'night_turn_ended' && role === 'JOKER').length
     assert.equal(endedCountAfter, 1, '만료 타이머가 이미 끝난 턴을 다시 끝내지 않는다')
@@ -782,11 +629,6 @@ test('night turn: 한 밤의 모든 턴을 전원 제출로 끝내면 시계 없
     assert.equal(clock.pendingCount(), 0, '남아있는 예약 타이머가 없다')
 })
 
-// ---------------------------------------------------------------------------
-// S1-2 AC-04 — 직업별 밤 제한시간이 실제 턴 길이로 쓰이고, 없으면 nightActionTime으로 폴백한다
-// ---------------------------------------------------------------------------
-
-/** 이 세션 설정에서 각 역할의 턴에 적용되는 제한시간(ms)을 소켓 계층 해석기로 직접 구한다. */
 function appliedDurationMs(session, role) {
     return resolveNightTurnDurationMs({ durationMs: null, session }, role)
 }
@@ -799,7 +641,6 @@ test('night turn: 직업별 밤 시간이 있으면 그 값이, 없으면 nightA
 
     assert.equal(appliedDurationMs(session, 'JOKER'), 30_000)
     assert.equal(appliedDurationMs(session, 'GUARD'), 120_000)
-    // 지정하지 않은 두 직업은 전체 밤 행동 시간으로 폴백한다.
     assert.equal(appliedDurationMs(session, 'DOCTOR'), 60_000)
     assert.equal(appliedDurationMs(session, 'WITCH_HUNTER'), 60_000)
 })
@@ -821,8 +662,6 @@ test('night turn: 직업별로 다른 제한시간이 night_turn_started의 dead
     const startedAt = clock.now()
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    // 제출은 시계를 진행시키지 않으므로 네 턴 모두 같은 시각에 시작한다 — deadline의 차이는
-    // 오직 그 직업에 적용된 제한시간의 차이뿐이다.
     for (const uuid of [jokerUuid, doctorUuid, guardUuid, witchHunterUuid]) submit(uuid, null)
 
     const deadlineByRole = new Map(
@@ -854,7 +693,6 @@ test('night turn: 직업별 제한시간이 실제 만료 시각을 결정한다
 })
 
 test('night turn: deps.turnDurationMs를 주면 세션 설정보다 우선해 모든 턴에 쓰인다', () => {
-    // 테스트 전용 주입 통로가 설정보다 우선한다는 계약을 고정한다(주입하지 않으면 설정을 읽는다).
     const { session } = commitFullRoleSessionAtNight({
         id: 'explicit-duration',
         settings: { nightActionTime: 60, roleNightActionTimes: { JOKER: 30 } },
@@ -867,10 +705,6 @@ test('night turn: deps.turnDurationMs를 주면 세션 설정보다 우선해 �
     assert.equal(started.payload.deadline, clock.now() + 5_000)
 })
 
-// ---------------------------------------------------------------------------
-// S1-2 AC-06 — 무인 턴 지연은 "그 직업에 적용되는" 제한시간의 20~60%다
-// ---------------------------------------------------------------------------
-
 test('night turn: 무인 턴 지연은 전체 밤 시간이 아니라 그 직업에 적용된 제한시간을 기준으로 계산된다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid } = commitFullRoleSessionAtNight({
         id: 'empty-turn-per-role',
@@ -880,8 +714,6 @@ test('night turn: 무인 턴 지연은 전체 밤 시간이 아니라 그 직업
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
 
-    // 0.5 → 비율 0.2 + 0.5*0.4 = 0.4. GUARD의 제한시간은 120초이므로 48초여야 한다
-    // (전체 nightActionTime 30초를 기준으로 삼았다면 12초에 끝났을 것이다).
     const expectedDelay = Math.floor(120_000 * 0.4)
     assert.equal(expectedDelay, 48_000)
 
@@ -901,8 +733,6 @@ test('night turn: 무인 턴 지연은 전체 밤 시간이 아니라 그 직업
 })
 
 test('night turn: 무인 턴 지연 비율은 어떤 제한시간에서도 20~60% 구간을 벗어나지 않는다', () => {
-    // computeEmptyTurnDelayMs 자체의 경계는 위(S1-1 AC-04)에서 고정했다. 여기서는 직업별
-    // 제한시간이 켜졌을 때 그 기준값이 무엇이든 비율 계약이 유지되는지를 본다.
     for (const durationMs of [30_000, 60_000, 90_000, 120_000]) {
         for (const r of [0, 0.25, 0.5, 0.75, 1, -3, 7, NaN]) {
             const delay = computeEmptyTurnDelayMs(durationMs, () => r)
@@ -914,27 +744,8 @@ test('night turn: 무인 턴 지연 비율은 어떤 제한시간에서도 20~60
     }
 })
 
-// ---------------------------------------------------------------------------
-// S1-4 — 은폐 회귀 고정
-//
-// 이 아래의 테스트들은 "관전자(이벤트 스트림 수신자) 관점에서 어느 직업이 전멸했는지 알 수
-// 없다"는 은폐 원칙을 회귀 테스트로 못박는다. 위쪽 S1-1/S1-2 테스트가 개별 방송 하나하나를
-// 검사했다면, 여기서는 한 직업의 턴 구간 "전체 스트림"을 통째로 대조한다 — 이후 슬라이스가
-// 턴 중간에 새로운 이벤트를 하나 끼워 넣기만 해도(payload가 아무리 결백해도) 잡힌다.
-// ---------------------------------------------------------------------------
-
-/** 이 파일이 은폐 대상으로 삼는 방송들. 턴 구간 스트림을 잘라내는 기준점이기도 하다. */
 const NIGHT_TURN_EVENTS = ['night_turn_started', 'night_turn_ended']
 
-/**
- * fake io의 room 브로드캐스트에 "그 시점의 수동 시계 값"을 함께 기록하도록 감싼다.
- *
- * 기존 io.broadcasts는 순서만 남기므로 "무인 턴이 몇 ms 뒤에 끝났는가"를 사후에 읽을 수 없다.
- * 지연 길이를 computeEmptyTurnDelayMs로 미리 계산해 두고 그 시각에 맞춰 advance하는 방식은
- * 검증하려는 계산식을 기대값으로 되쓰는 셈이라, 여기서는 실제 발화 시각을 직접 재는 쪽을 쓴다.
- *
- * 프로덕션은 emit 시점에 run.io.to(...)를 매번 조회하므로 io 객체의 to를 바꿔 끼우면 그대로 걸린다.
- */
 function stampBroadcastTimes(io, clock) {
     const stamped = []
     const originalTo = io.to.bind(io)
@@ -950,22 +761,6 @@ function stampBroadcastTimes(io, clock) {
     return stamped
 }
 
-/**
- * 한 밤을 지정한 역할의 턴까지 진행시키고, 그 턴을 mode에 따라 끝낸 뒤 "그 턴 구간에 나간
- * 모든 room 브로드캐스트"를 순서대로 돌려준다.
- *
- * mode
- *  - 'wiped'   그 역할이 전멸한 상태(무인 턴). 무작위 지연 타이머만이 턴을 끝낸다.
- *  - 'skipped' 그 역할 생존자가 전원 건너뛰기로 제출. 전원 제출 판정으로 즉시 끝난다.
- *  - 'expired' 그 역할 생존자가 아무도 제출하지 않음. 제한시간 만료 → 전원 기권 기록 후 끝난다.
- *
- * 대상 역할보다 앞선 턴은 세 mode 모두 즉시 제출로 끝낸다 — 제출은 시계를 진행시키지 않으므로
- * 대상 턴의 시작 시각이 mode와 무관하게 같고, 그래서 deadline까지 포함해 스트림을 통째로
- * 대조할 수 있다(가릴 필드가 gameId·channel 뿐이라는 것이 이 러너의 존재 이유다).
- *
- * 구간을 payload.role로 거르지 않고 started~ended 사이를 통째로 자르는 것이 핵심이다 — role
- * 필드가 없는 새 이벤트(예: 기권 알림)가 한쪽 경로에만 추가돼도 그 차이가 그대로 드러난다.
- */
 function captureRoleTurnStream(role, mode, { id, startMs = 1_000_000, randomFn = () => 0.5 } = {}) {
     const fixture = commitFullRoleSessionAtNight({ id: id ?? `conceal-${mode}-${role}` })
     const { session } = fixture
@@ -991,8 +786,6 @@ function captureRoleTurnStream(role, mode, { id, startMs = 1_000_000, randomFn =
     const turnStartedAt = clock.now()
     const durationMs = appliedDurationMs(session, role)
     if (mode === 'skipped') assert.deepEqual(submit(uuidByRole[role], null), { ok: true })
-    // 'wiped'는 지연 타이머가, 'expired'는 만료 타이머가 끝낸다. 어느 쪽이든 발화 시각은
-    // 제한시간 안이므로 같은 폭만큼 흘려보내면 두 경로 모두 정확히 한 번 끝난다.
     else clock.advance(durationMs)
 
     const startedIndex = stamped.findIndex((b) => b.event === 'night_turn_started' && b.payload.role === role)
@@ -1012,12 +805,6 @@ function captureRoleTurnStream(role, mode, { id, startMs = 1_000_000, randomFn =
     }
 }
 
-/**
- * 전원 생존 상태에서 아무도 제출하지 않고 제한시간을 넘겨, 만료 기권 경로로만 한 턴을 끝낸다.
- * captureRoleTurnStream의 'expired' mode를 부르는 이름 있는 통로이며, 기권이 실제로 기록됐는지
- * (즉 정말 그 경로를 탔는지)까지 확인해 준다 — 확인 없이 mode 이름만 믿으면 조용히 다른 경로로
- * 끝난 스트림을 비교하게 된다.
- */
 function runNightWithForcedAbstentions(role, options = {}) {
     const captured = captureRoleTurnStream(role, 'expired', options)
     const actorUuids = [...captured.session.players.values()].filter((p) => p.role === role).map((p) => p.uuid)
@@ -1028,15 +815,6 @@ function runNightWithForcedAbstentions(role, options = {}) {
     return captured
 }
 
-/**
- * 서로 다른 두 세션의 스트림을 대조할 수 있도록, 세션마다 다를 수밖에 없는 식별자만 자리표시자로
- * 바꾼다. 시각(at)은 값이 아니라 "언제 나갔는가"라 payload 대조 대상이 아니므로 여기서 떨어진다
- * — 턴 길이는 payload 동일성이 아니라 20~60% 규칙(아래 별도 테스트)이 지킨다.
- *
- * deadline은 일부러 남긴다. 두 실행의 대상 턴이 같은 시각에 시작하므로 같은 값이어야 하고,
- * 만약 무인 턴만 deadline을 지연 시각으로 바꿔 잡으면 그것이 곧 전멸 신호이기 때문이다.
- * 반대로 여기서 너무 많이 지우면 대조가 공허해지는데, 그것은 아래 음성 대조 테스트가 잡는다.
- */
 function normalizeTurnEventStream(stream, session) {
     return stream.map(({ roomId, event, payload }) => {
         assert.equal(roomId, session.channelId, `${event}는 세션 channel로 나간다`)
@@ -1053,29 +831,13 @@ function normalizeTurnEventStream(stream, session) {
     })
 }
 
-/** canonical UUID(세션 식별자) — 값 검사에서 불투명 식별자로 취급해 건너뛴다. */
 const UUID_VALUE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/**
- * 값 자리에 들어오면 곧바로 종료 사유·전멸 여부를 알려주는 단어들. 키 이름만 검사하는
- * ALIVENESS_LEAKING_WORDS로는 endReason을 reason으로 잡을 수 있어도, 예컨대 status: 'EMPTY'는
- * 놓치기 때문에 값 쪽에도 같은 크기의 그물이 필요하다.
- */
 const ALIVENESS_LEAKING_VALUE_WORDS = new Set([
     'alive', 'dead', 'wiped', 'empty', 'none', 'nobody', 'noone',
     'timeout', 'timedout', 'timed', 'expired', 'abstain', 'abstained', 'skip', 'skipped', 'auto',
 ])
 
-/**
- * payload 하나에서 생존/인원수를 시사하는 부분을 모두 찾아 사람이 읽을 수 있는 문장 목록으로
- * 돌려준다(없으면 빈 배열). 키 이름·값의 형태·값의 단어를 모두 본다 —
- *
- *  - 키 이름: aliveCount·actorUuids·endReason 류(ALIVENESS_LEAKING_WORDS, 표기법 무관)
- *  - 값의 형태: 배열/객체는 그 턴의 인원 구성을, 불리언은 전멸 플래그를 담는 그릇이다.
- *    현재 계약의 payload 값은 문자열(gameId·role)과 정수(dayIndex·deadline)뿐이므로,
- *    그 밖의 형태가 나타났다는 것 자체가 새 정보가 실렸다는 뜻이다.
- *  - 값의 단어: 'EMPTY'·'TIMEOUT'처럼 이름은 결백하고 값이 말해 버리는 경우.
- */
 function detectAliveLeak(payload) {
     const findings = []
     for (const [key, value] of Object.entries(payload)) {
@@ -1096,13 +858,6 @@ function detectAliveLeak(payload) {
     return findings
 }
 
-/**
- * 두 턴 스트림이 관전자에게 구별 불가능함을 단언한다. 세 겹으로 본다 —
- * (1) 이벤트의 종류와 순서, (2) payload의 완전한 동일성, (3) 어느 쪽에도 생존 정보가 없을 것.
- *
- * (3)이 따로 필요한 이유: 두 스트림이 똑같이 생존 정보를 담고 있으면 (2)는 통과해 버린다.
- * 지금은 두 경로가 같은 빌더를 쓰므로 그런 필드는 양쪽에 동시에 생긴다 — (2)만으로는 못 잡는다.
- */
 function assertConcealedStreamsMatch(left, right, label) {
     assert.deepEqual(left.map((e) => e.event), right.map((e) => e.event), `${label}: 이벤트 종류·순서가 다르다`)
     assert.deepEqual(left, right, `${label}: 턴 구간 스트림이 다르다`)
@@ -1111,14 +866,7 @@ function assertConcealedStreamsMatch(left, right, label) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// S1-4 AC-01 — 전멸 턴과 기권 턴의 이벤트 스트림이 구별되지 않는다
-// ---------------------------------------------------------------------------
-
 test('night turn: [은폐] 전멸한 직업의 턴 스트림이 전원 건너뛰기 턴·전원 기권 만료 턴과 완전히 같다', () => {
-    // 요구 1의 직접 대응 — "직업 X 전멸 상태의 밤 이벤트 스트림"과 "X 생존 상태에서 전원이
-    // 기권한 밤 이벤트 스트림"을 나란히 놓는다. 기권에는 두 갈래가 있어 둘 다 대조한다:
-    // 명시적 건너뛰기 제출(즉시 종료)과 무제출 만료(자동 기권 기록 후 종료).
     for (const role of NIGHT_TURN_ORDER) {
         const wiped = captureRoleTurnStream(role, 'wiped', { id: `wiped-${role}` })
         const skipped = captureRoleTurnStream(role, 'skipped', { id: `skipped-${role}` })
@@ -1136,36 +884,25 @@ test('night turn: [은폐] 전멸한 직업의 턴 스트림이 전원 건너뛰
             `${role}: 전멸 vs 전원 기권(만료)`,
         )
 
-        // 턴 구간뿐 아니라 그 밤 전체의 이벤트 흐름도 같다 — 전멸한 직업의 턴이 통째로
-        // 생략되거나 순서가 밀리지 않는다.
         assert.deepEqual(turnEventLog(wiped.io), turnEventLog(skipped.io), `${role}: 밤 전체 이벤트 흐름`)
         assert.deepEqual(turnEventLog(wiped.io), turnEventLog(expired.io), `${role}: 밤 전체 이벤트 흐름(만료)`)
 
-        // 턴 구간에 나간 방송은 정확히 started·ended 둘뿐이다(사이에 낀 다른 방송이 없다).
         assert.deepEqual(wipedStream.map((e) => e.event), NIGHT_TURN_EVENTS, `${role}: 전멸 턴 구간 방송`)
     }
 })
 
 test('night turn: [은폐] 전멸 여부는 개별 소켓 emit으로도 새지 않는다', () => {
-    // 스트림 대조는 room 브로드캐스트만 본다. 같은 정보가 "그 직업 조합에게만 가는 개별 emit"
-    // 형태로 나가면 대조는 통과하면서 은폐는 깨진다 — 그래서 소켓 쪽도 함께 잠근다.
     const wiped = captureRoleTurnStream('GUARD', 'wiped', { id: 'sockets-wiped' })
     const skipped = captureRoleTurnStream('GUARD', 'skipped', { id: 'sockets-skipped' })
 
     for (const [label, captured] of [['전멸', wiped], ['건너뛰기', skipped]]) {
         for (const socket of captured.sockets.values()) {
-            // F-23(AC-04): 공용 fixture가 이제 방송을 실제 수신자에게도 전달한다(viaBroadcast로
-            // 표시). 이 시험이 잡으려는 것은 **표적 개별 전달**이므로 방송 도착분은 제외한다 —
-            // 채널 전체에 똑같이 간 방송은 어떤 직업 조합도 드러내지 않는다(위 스트림 대조가
-            // 그 동일성을 이미 확인한다).
             const targetedTurnEmits = socket.emitted
                 .filter((e) => NIGHT_TURN_EVENTS.includes(e.event) && e.viaBroadcast !== true)
             assert.deepEqual(targetedTurnEmits, [], `${label}: 턴 이벤트가 개별 소켓으로 나갔다(${socket.id})`)
         }
     }
 
-    // 그리고 방송으로 도착한 턴 스트림 자체도 소켓마다 완전히 같아야 한다 — 어느 한 소켓만
-    // 더 받거나 덜 받으면 그 차이가 곧 직업 조합의 누출이다.
     for (const [label, captured] of [['전멸', wiped], ['건너뛰기', skipped]]) {
         const streams = [...captured.sockets.values()].map((socket) => ({
             id: socket.id,
@@ -1179,11 +916,6 @@ test('night turn: [은폐] 전멸 여부는 개별 소켓 emit으로도 새지 �
     }
 })
 
-// ---------------------------------------------------------------------------
-// S1-4 AC-02 — 죽은 직업 턴의 실제 길이가 제한시간의 20~60%다(여러 회 반복)
-// ---------------------------------------------------------------------------
-
-/** 고정 시드 xorshift32 — 매 실행 같은 표본을 쓰되 값은 고르게 퍼지게 한다. */
 function createSeededRandom(seed) {
     let state = seed >>> 0
     return () => {
@@ -1196,17 +928,9 @@ function createSeededRandom(seed) {
     }
 }
 
-/**
- * 무인 턴 하나를 실제로 돌리고, 시작 방송부터 종료 방송까지 흐른 시각을 재서 돌려준다.
- * 기대값을 computeEmptyTurnDelayMs로 되계산하지 않고 방송 시각을 직접 읽는다 — 계산식이 아니라
- * "관전자가 보는 턴 길이"가 검증 대상이기 때문이다.
- *
- * randomFn을 주지 않으면 프로덕션 기본값(Math.random)이 그대로 쓰인다.
- */
 function measureEmptyTurnLength({ id, randomFn = null, nightActionTime = null } = {}) {
     const settings = nightActionTime === null ? {} : { nightActionTime }
     const { session, jokerUuid } = commitFullRoleSessionAtNight({ id, settings })
-    // 첫 턴(JOKER)을 무인 턴으로 만든다 — 앞선 제출 없이 곧바로 측정 대상 턴이 시작된다.
     session.players.get(jokerUuid).alive = false
     const { io } = wireSession(session)
     const clock = createManualClock()
@@ -1214,8 +938,6 @@ function measureEmptyTurnLength({ id, randomFn = null, nightActionTime = null } 
 
     const durationMs = appliedDurationMs(session, 'JOKER')
     startNightTurnSequence(io, session, randomFn === null ? { ...clock } : { ...clock, randomFn })
-    // 지연은 제한시간 안에서 끝나므로 제한시간만큼만 흘려보내면 반드시 발화한다. 반대로 여기서
-    // 끝나지 않는다면 그것 자체가 규칙 위반이므로 아래 단언이 잡는다.
     clock.advance(durationMs)
 
     const started = stamped.find((b) => b.event === 'night_turn_started' && b.payload.role === 'JOKER')
@@ -1226,7 +948,6 @@ function measureEmptyTurnLength({ id, randomFn = null, nightActionTime = null } 
 
 test('night turn: [은폐] 무인 턴의 실제 길이가 주입 난수 표본 전체에서 제한시간의 20~60%다', () => {
     const nextRandom = createSeededRandom(0x5eed_1234)
-    // 경계(0·1)와 그 바로 안쪽, 그리고 고른 무작위 표본을 함께 돌린다.
     const samples = [0, Number.EPSILON, 0.5, 1 - Number.EPSILON, 1, ...Array.from({ length: 20 }, () => nextRandom())]
 
     const observed = []
@@ -1239,8 +960,6 @@ test('night turn: [은폐] 무인 턴의 실제 길이가 주입 난수 표본 �
         observed.push(delayMs)
     })
 
-    // 범위 안이기만 하면 되는 게 아니라 실제로 흩어져 있어야 한다 — 언제나 같은 길이라면 그
-    // 상수 자체가 "이 길이 = 전멸"이라는 신호가 된다.
     assert.equal(observed.length, samples.length)
     assert.ok(new Set(observed).size >= 10, `관측된 길이가 ${new Set(observed).size}종뿐이라 사실상 고정값이다`)
     assert.equal(Math.min(...observed), Math.floor(NIGHT_TURN_DURATION_MS * 0.2), 'r=0에서 하한을 실제로 찍는다')
@@ -1248,8 +967,6 @@ test('night turn: [은폐] 무인 턴의 실제 길이가 주입 난수 표본 �
 })
 
 test('night turn: [은폐] 난수원을 주입하지 않은 무인 턴도 반복 실행 내내 20~60%를 지킨다', () => {
-    // 위 테스트는 randomFn을 주입해 경계를 훑는다. 여기서는 주입 없이 프로덕션 기본 난수원
-    // (Math.random)으로 돌려, 주입 통로가 아니라 실제로 쓰이는 경로가 범위를 지키는지 본다.
     const observed = []
     for (let index = 0; index < 16; index += 1) {
         const { durationMs, delayMs } = measureEmptyTurnLength({ id: `empty-real-${index}` })
@@ -1281,37 +998,7 @@ test('night turn: [은폐] 직업별 제한시간을 바꿔도 무인 턴의 실
     }
 })
 
-// ---------------------------------------------------------------------------
-// S1-4 AC-03 — 과거 conceal 회귀 재발 방지
-//
-// 8/27에는 짝을 이루는 두 개의 conceal 슬라이스가 있었고, 아래 테스트들은 그 둘이 세운 규칙을
-// 지금의 턴 엔진 어휘로 다시 못박는다.
-//
-//  (1) 20260827-joker-night-turn-conceal — "행동 역할 보유자가 사망하면 그 역할의 밤 턴 안내가
-//      더 이상 나오지 않는다. 관찰자는 '안내가 사라짐 = 그 역할 사망'을 추론할 수 있다."
-//      → 턴 연출은 보유자 생사와 무관하게 항상 같은 순서·리듬으로 재생돼야 한다. 단 밤 판정은
-//        무변경 — 죽은 보유자는 여전히 제출 대상이 아니다(생존 필터는 교착 방지의 핵심이라
-//        되돌리면 안 된다).
-//
-//  (2) 20260827-joker-night-turn-conceal-fix — (1)이 턴 진행에 시간 경과 요소를 넣으면서 생긴
-//      회귀: "살아있는 역할의 턴까지 제출 없이 자동으로 다음 턴으로 넘어감(광대가 제출하기
-//      전에 '가드의 시간입니다'로 진행됨 — 제출 불가)."
-//      → 보유자가 살아있는 역할의 턴은 그 역할의 제출이 있을 때까지 진행하지 않는다. 시간
-//        기반 진행은 오직 보유자가 전원 사망한 역할의 턴에만 허용된다.
-//
-// 그 뒤 S1-2가 "제한시간 만료 → 미제출 생존자 기권"을 더했으므로, (2)의 규칙은 지금 엔진에서
-// "생존자가 있는 턴은 무인 턴 지연(제한시간의 20~60%)이 다 지나도 끝나지 않고, 오직 전원
-// 제출이나 제한시간 만료로만 끝난다"로 읽힌다 — 아래 첫 테스트가 정확히 그 형태다.
-//
-// 이어지는 테스트들은 payload가 결백해도 남는 부채널(종료 타이밍·deadline 해석·타이머의 존재
-// 여부)을 지킨다. 위 스트림 대조가 payload의 "내용"을 지키는 것과 짝이다.
-// ---------------------------------------------------------------------------
-
 test('night turn: [conceal 회귀 8/27-fix] 생존자가 있는 직업의 턴은 무인 턴 지연이 다 지나도 제출 없이는 넘어가지 않는다', () => {
-    // 8/27 회귀 그 자체 — 제출 전에 다음 턴 안내로 넘어가 버려 아무도 행동할 수 없었다.
-    // randomFn을 1로 고정해 무인 턴 지연이 상한(제한시간의 60%)이 되게 한 뒤, 그 상한을 지나
-    // 만료 직전까지 시계를 밀어도 턴이 그대로인지 본다. 회귀가 살아 있다면 지연 시각에 턴이
-    // 끝나면서 그 뒤의 제출이 NOT_YOUR_TURN으로 거부된다.
     for (const role of NIGHT_TURN_ORDER) {
         const fixture = commitFullRoleSessionAtNight({ id: `regress-alive-${role}` })
         const { session } = fixture
@@ -1345,17 +1032,12 @@ test('night turn: [conceal 회귀 8/27-fix] 생존자가 있는 직업의 턴은
         assert.equal(endedCount(), 0, `${role}: 만료 직전인데 턴이 끝났다`)
         assert.equal(session.nightActions.has(actorUuid), false, `${role}: 만료 전에 기권으로 기록됐다`)
 
-        // 그래서 제한시간이 다 가기 전에 도착한 제출이 정상적으로 받아들여진다 — 회귀의 증상
-        // ("제출 불가")이 사라졌다는 것을 거부 코드가 아니라 성공 응답으로 확인한다.
         assert.deepEqual(submit(actorUuid, null), { ok: true }, `${role}: 뒤늦은 제출이 거부됐다`)
         assert.equal(endedCount(), 1, `${role}: 제출로 턴이 끝난다`)
     }
 })
 
 test('night turn: [conceal 회귀 8/27] 보유자가 전멸한 직업의 턴 안내도 같은 자리에서 그대로 재생된다', () => {
-    // 8/27 첫 슬라이스의 증상 그대로 — GUARD 보유자가 죽으면 "경호원의 시간입니다"가 아예
-    // 나오지 않아 관찰자가 사망 역할을 알아냈다. 지금 엔진에서 그 안내의 원천은
-    // night_turn_started 방송 하나뿐이므로, 그 방송이 같은 순서·같은 payload로 나가는지 본다.
     const drive = ({ id, deadRole }) => {
         const fixture = commitFullRoleSessionAtNight({ id })
         const { session } = fixture
@@ -1383,7 +1065,6 @@ test('night turn: [conceal 회귀 8/27] 보유자가 전멸한 직업의 턴 안
     for (const deadRole of NIGHT_TURN_ORDER) {
         const wipedIo = drive({ id: `regress-announce-${deadRole}`, deadRole })
 
-        // 안내가 "사라지지" 않는다 — 그 역할의 시작 방송이 같은 순서 자리에 그대로 있다.
         const log = turnEventLog(wipedIo)
         assert.deepEqual(log, baselineLog, `${deadRole} 전멸 시 턴 안내 순서가 달라졌다`)
         const announcementIndex = (entries) =>
@@ -1395,8 +1076,6 @@ test('night turn: [conceal 회귀 8/27] 보유자가 전멸한 직업의 턴 안
             `${deadRole} 전멸 시 안내가 나오는 자리가 밀렸다`,
         )
 
-        // 안내의 내용도 같다(gameId만 세션마다 다르다) — 문구를 만들 재료가 role·dayIndex·
-        // deadline뿐이므로, 이 동일성이 곧 "같은 안내가 같은 리듬으로 재생된다"는 뜻이다.
         for (const event of NIGHT_TURN_EVENTS) {
             const fromWiped = wipedIo.broadcasts.find((b) => b.event === event && b.payload.role === deadRole)
             const fromAlive = baselineIo.broadcasts.find((b) => b.event === event && b.payload.role === deadRole)
@@ -1411,9 +1090,6 @@ test('night turn: [conceal 회귀 8/27] 보유자가 전멸한 직업의 턴 안
 })
 
 test('night turn: [conceal 회귀 8/27] 은폐를 위해 판정을 되돌리지 않는다 — 죽은 보유자는 제출 대상에서 빠진 채 밤이 끝난다', () => {
-    // 8/27 두 슬라이스가 공통으로 걸어 둔 금지선 — 생존 필터(교착 방지)는 건드리지 않는다.
-    // 연출만 재생하면 되므로 죽은 보유자에게 기권이 기록되거나 그의 제출을 기다리는 일이
-    // 있어서는 안 된다(그러면 밤이 영영 끝나지 않는다).
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({
         id: 'regress-no-deadlock',
     })
@@ -1438,10 +1114,6 @@ test('night turn: [conceal 회귀 8/27] 은폐를 위해 판정을 되돌리지 
 })
 
 test('night turn: [conceal 회귀 8/27] 아직 능력이 없는 WITCH_HUNTER의 턴이 전멸 턴과 구별되지 않는다', () => {
-    // 8/27 규칙 3("그 밤에만 성립하는 WITCH_HUNTER 조건은 유지")은 지금 엔진에서
-    // nightActionMinDayIndex=2로 남아 있다. 조건을 유지하되 그 사실이 새면 안 된다 — "오늘 WH
-    // 턴이 짧았다"가 곧 "WH가 죽었다"로 읽히면 은폐가 무의미해지므로, 자격 없는 산 WH의 턴과
-    // 전멸한 WH의 턴이 관전자에게 같은 모양이어야 한다.
     const capture = ({ id, dayIndex, wipe }) => {
         const fixture = commitFullRoleSessionAtNight({ id, dayIndex })
         const { session } = fixture
@@ -1469,7 +1141,6 @@ test('night turn: [conceal 회귀 8/27] 아직 능력이 없는 WITCH_HUNTER의 
         }
     }
 
-    // dayIndex 0: WH는 살아 있지만 이번 밤 행동 자격이 없다. dayIndex 2 + 전멸: 보유자가 없다.
     const ineligible = capture({ id: 'regress-wh-ineligible', dayIndex: 0, wipe: false })
     const wipedOut = capture({ id: 'regress-wh-wiped', dayIndex: 2, wipe: true })
 
@@ -1481,15 +1152,11 @@ test('night turn: [conceal 회귀 8/27] 아직 능력이 없는 WITCH_HUNTER의 
 })
 
 test('night turn: [conceal 회귀] 무인 턴이 즉시 끝나지 않는다(공집합 전원제출 판정 회귀)', () => {
-    // 회귀의 정체: 전원 제출 판정이 "미제출 생존자가 없다"를 그대로 참으로 읽으면, 생존 actor가
-    // 0명인 턴은 시작하자마자 완료로 판정돼 즉시 끝난다. payload는 완벽히 결백한데 종료 시점
-    // 하나만으로 전멸이 드러난다.
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight({ id: 'conceal-instant-end' })
     session.players.get(doctorUuid).alive = false
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
 
-    // r=0이면 지연은 하한(제한시간의 20%)이다 — 회귀가 살아 있다면 이 하한조차 기다리지 않는다.
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0 })
     const lowerBoundDelay = Math.floor(NIGHT_TURN_DURATION_MS * 0.2)
 
@@ -1508,8 +1175,6 @@ test('night turn: [conceal 회귀] 무인 턴이 즉시 끝나지 않는다(공�
 })
 
 test('night turn: [conceal 회귀] 무인 턴의 deadline이 지연 시각이 아니라 제한시간 기준이다', () => {
-    // 회귀의 정체: 무인 턴은 지연 뒤에 끝나므로 deadline도 그 시각으로 맞추고 싶어진다. 그러면
-    // 클라이언트 타이머가 남은 시간을 그대로 보여 주고, 관전자는 deadline만 보고 전멸을 안다.
     const { session, jokerUuid, doctorUuid } = commitFullRoleSessionAtNight({ id: 'conceal-deadline' })
     session.players.get(doctorUuid).alive = false
     const { io, submit } = wireSession(session)
@@ -1530,9 +1195,6 @@ test('night turn: [conceal 회귀] 무인 턴의 deadline이 지연 시각이 �
 })
 
 test('night turn: [conceal 회귀] 무인 턴에도 타이머가 정확히 하나 걸려 있다', () => {
-    // 회귀의 정체: 무인 턴을 "끝낼 사람이 없으니 타이머도 필요 없다"고 처리하면 대기 타이머의
-    // 개수가 곧 전멸 신호가 된다. 서버 내부 상태이긴 하지만, 이 차이는 곧 종료 방식의 차이로
-    // 이어지므로 관전자에게 드러난다.
     const pendingTimersOnFirstTurn = (wipe) => {
         const { session, jokerUuid } = commitFullRoleSessionAtNight({ id: `conceal-timer-${wipe ? 'wiped' : 'alive'}` })
         if (wipe) session.players.get(jokerUuid).alive = false
@@ -1549,12 +1211,6 @@ test('night turn: [conceal 회귀] 무인 턴에도 타이머가 정확히 하�
 })
 
 test('night turn: [conceal 회귀] 밤 전체를 통틀어 방송 개수·순서·필드 집합이 전멸 조합과 무관하다', () => {
-    // 회귀의 정체: 턴 하나만 보면 결백해도, 전멸한 직업이 늘어날수록 방송이 하나씩 줄거나
-    // 순서가 밀리면 전체 스트림의 모양만으로 몇 개 직업이 전멸했는지 셀 수 있다.
-    //
-    // 밤을 끝까지 몰아붙이는 방식이 위 runNightCapturingTurnBroadcasts와 다르다: 전멸 직업이
-    // 연달아 있으면 한 번의 advance가 여러 무인 턴을 한꺼번에 끝내므로, NIGHT_TURN_ORDER를 한
-    // 칸씩 따라가는 대신 "지금 턴이 무엇인가"를 매번 다시 읽어야 마지막 턴까지 닿는다.
     const driveWholeNight = ({ id, deadRoles = [] }) => {
         const fixture = commitFullRoleSessionAtNight({ id })
         const { session } = fixture
@@ -1570,7 +1226,6 @@ test('night turn: [conceal 회귀] 밤 전체를 통틀어 방송 개수·순서
         const clock = createManualClock()
         startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
 
-        // 매 회차가 현재 턴을 반드시 끝내므로 최대 턴 수만큼 돌면 시퀀스가 끝난다.
         for (let guard = 0; guard <= NIGHT_TURN_ORDER.length; guard += 1) {
             const role = gameSessionCore.getCurrentNightTurnRole(session)
             if (role === null) break
@@ -1610,18 +1265,12 @@ test('night turn: [conceal 회귀] 밤 전체를 통틀어 방송 개수·순서
     }
 })
 
-// ---------------------------------------------------------------------------
-// S1-4 AC-04 — 음성 대조: 생존 정보를 넣으면 위 가드가 실제로 실패한다
-// ---------------------------------------------------------------------------
-
-/** 스트림 사본의 마지막 이벤트(night_turn_ended — endNightTurn이 payload를 만드는 지점) payload에 필드를 심는다. */
 function withInjectedField(stream, key, value) {
     return stream.map((entry, index) =>
         index === stream.length - 1 ? { ...entry, payload: { ...entry.payload, [key]: value } } : { ...entry, payload: { ...entry.payload } },
     )
 }
 
-/** withInjectedField로 심은 필드를 도로 뺀다(같은 자리에서 되돌리는지 확인하기 위한 짝). */
 function withoutField(stream, key) {
     return stream.map((entry) => {
         const payload = { ...entry.payload }
@@ -1631,9 +1280,6 @@ function withoutField(stream, key) {
 }
 
 test('night turn: [음성 대조] payload에 생존 정보를 넣으면 은폐 가드가 실패하고, 빼면 다시 통과한다', () => {
-    // 성공 조건의 "의도적으로 payload에 생존 정보를 넣어 실패를 1회 확인 후 되돌린다"를
-    // 프로덕션을 건드리지 않고 테스트 안에서 수행한다 — 방송에서 뽑아낸 진짜 스트림의 사본에
-    // 생존 정보를 심고, 같은 가드에 먹여 실패를 확인한 뒤 되돌려 통과를 확인한다.
     const wiped = captureRoleTurnStream('DOCTOR', 'wiped', { id: 'negative-wiped' })
     const skipped = captureRoleTurnStream('DOCTOR', 'skipped', { id: 'negative-skipped' })
     const clean = normalizeTurnEventStream(wiped.stream, wiped.session)
@@ -1646,22 +1292,18 @@ test('night turn: [음성 대조] payload에 생존 정보를 넣으면 은폐 �
         ['actorUuids', []],
         ['endReason', 'EMPTY'],
         ['remainingSubmissions', 0],
-        // 키 이름만으로는 결백해 보이는 필드 — 값의 형태·단어로 잡아야 한다.
         ['isRoleWipedOut', true],
         ['status', 'TIMED_OUT'],
     ]
     for (const [key, value] of injections) {
         const polluted = withInjectedField(clean, key, value)
 
-        // (1) 한쪽에만 심으면 스트림 대조가 두 경로를 구별해 낸다.
         assert.throws(
             () => assertConcealedStreamsMatch(polluted, reference, `${key} 주입`),
             assert.AssertionError,
             `${key}를 심었는데 스트림 대조가 통과했다`,
         )
 
-        // (2) 양쪽에 똑같이 심어 대조를 통과시켜도 누출 가드가 잡는다 — 실제 회귀는 두 경로가
-        //     같은 빌더를 쓰는 채로 필드가 늘어나는 모양이므로 이쪽이 진짜 방어선이다.
         assert.throws(
             () => assertConcealedStreamsMatch(polluted, withInjectedField(reference, key, value), `${key} 양측 주입`),
             assert.AssertionError,
@@ -1669,15 +1311,12 @@ test('night turn: [음성 대조] payload에 생존 정보를 넣으면 은폐 �
         )
         assert.ok(detectAliveLeak(polluted.at(-1).payload).length > 0, `${key}를 누출로 지목하지 못했다`)
 
-        // (3) 도로 빼면 다시 통과한다 — 가드가 주입에만 반응했고 다른 이유로 깨진 게 아니다.
         assert.deepEqual(withoutField(polluted, key), clean, `${key} 제거가 원래 스트림을 되돌린다`)
         assertConcealedStreamsMatch(withoutField(polluted, key), reference, `${key} 제거 후`)
     }
 })
 
 test('night turn: [음성 대조] 누출 탐지기가 정상 payload는 통과시키고 생존 정보만 잡는다', () => {
-    // 탐지기 자체의 오탐/미탐을 고정한다. 오탐이 있으면 위 테스트들이 상시 빨간불이 되고,
-    // 미탐이 있으면 음성 대조가 통과만 하는 장식이 된다.
     const cleanPayloads = [
         { gameId: '11111111-2222-4333-8444-555555555555', dayIndex: 2, role: 'WITCH_HUNTER', deadline: 1_060_000 },
         { gameId: '11111111-2222-4333-8444-555555555555', dayIndex: 0, role: 'JOKER' },
@@ -1700,16 +1339,6 @@ test('night turn: [음성 대조] 누출 탐지기가 정상 payload는 통과�
     }
 })
 
-// ---------------------------------------------------------------------------
-// F-25b — 마지막 역할 턴이 끝난 밤의 자동 최종화
-//
-// 여기서 쓰는 입력은 전부 registerGameHandlers가 배선한 **실제 submit_night_action**과 실제
-// 턴 타이머다. 자동 최종화(advanceNightTurn → finalizeNightForSession)와 수동
-// resolve_night(handleResolveNight → 같은 finalizeNightForSession)가 같은 밤을 두 번
-// 확정하지 못한다는 것이 이 절의 핵심이다.
-// ---------------------------------------------------------------------------
-
-/** 실제 사망 확정·승패 평가·종료 확정 지점의 호출 횟수를 센다(export 교체로는 셀 수 없다). */
 function captureCommitEvents() {
     const events = []
     gameSessionCore.__setNightCommitObserverForTests((event, detail) => events.push({ event, ...detail }))
@@ -1720,7 +1349,6 @@ function captureCommitEvents() {
     }
 }
 
-/** 수신자별 night_result_applied 전달 건수를 uuid → 건수로 모은다. */
 function nightResultDeliveryCounts(sockets) {
     const counts = new Map()
     for (const [uuid, socket] of sockets) {
@@ -1738,15 +1366,12 @@ test('AC-01(F-25b): 광대 턴이 끝난 시점에는 대상이 여전히 canoni
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     assert.deepEqual(submit(jokerUuid, citizenUuid), { ok: true })
 
-    // 광대 턴은 끝났고 의사 턴이 진행 중이다 — 치료 가능성이 아직 열려 있다.
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
     assert.equal(session.players.get(citizenUuid).alive, true)
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.nightResolution, null)
     assert.equal(Object.hasOwn(session, 'winResult'), false)
     assert.deepEqual(observed.events, [])
-    // 기록 저장은 저장소 호출보다 한 단계 앞선 **레코드 조립**에서부터 시작되지 않았다 —
-    // 이 통로가 실제 조립에서는 울린다는 양성 대조는 아래 저장 재시도 시험이 함께 본다.
     assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 0, '경기 기록 조립이 시작되면 안 된다')
     for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 0)
 })
@@ -1794,13 +1419,11 @@ test('AC-03(F-25b): 치료되지 않은 밤은 마지막 턴 종료 뒤 사망 1
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
     submit(doctorUuid, null)
-    // 의사 턴이 끝났지만 아직 최종 사망은 없다 — 치료 가능성만 닫혔다(A-06).
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'GUARD')
     assert.equal(session.players.get(citizenUuid).alive, true)
     assert.deepEqual(observed.events, [])
 
     submit(guardUuid, citizenUuid)
-    // 경비원 턴까지 끝나도 마찬가지다.
     assert.equal(session.players.get(citizenUuid).alive, true)
     assert.deepEqual(observed.events, [])
 
@@ -1819,7 +1442,6 @@ test('AC-03(F-25b): 치료되지 않은 밤은 마지막 턴 종료 뒤 사망 1
     const applied = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_result_applied')
     assert.equal(applied.payload.victimUuid, citizenUuid)
     assert.deepEqual(applied.payload.deathReveals, [{ victimUuid: citizenUuid, source: 'JOKER' }])
-    // 경비원은 그 밤의 개인 결과를 그대로 받는다(공통 최종화가 개인 결과 전달도 소유한다).
     const guardResult = sockets.get(guardUuid).emitted.find((e) => e.event === 'night_action_result')
     assert.equal(guardResult.payload.actionType, 'INVESTIGATE')
     assert.equal(guardResult.payload.targetId, citizenUuid)
@@ -1863,7 +1485,6 @@ test('AC-05(F-25b): 네 역할이 끝나기 전의 수동 resolve_night는 ACTIO
     const { callback, getResponse } = countingCallback()
     handleResolveNight(io, sockets.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
 
-    // 미완료 역할을 수동 판정이 건너뛰지 않는다.
     assert.deepEqual(getResponse(), {
         ok: false, code: 'ACTIONS_PENDING', message: '요청을 처리할 수 없습니다.',
     })
@@ -1872,7 +1493,6 @@ test('AC-05(F-25b): 네 역할이 끝나기 전의 수동 resolve_night는 ACTIO
     assert.deepEqual(observed.events, [])
     for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 0)
 
-    // 남은 턴이 정상 진행되면 자동 최종화가 그 밤을 한 번만 확정한다.
     submit(doctorUuid, null)
     submit(guardUuid, null)
     submit(witchHunterUuid, null)
@@ -1894,7 +1514,6 @@ test('AC-03/AC-05(F-25b): 마지막 턴이 제출 없이 만료돼도(전원 기
     submit(jokerUuid, citizenUuid)
     submit(doctorUuid, null)
     submit(guardUuid, null)
-    // 마녀사냥꾼 턴만 남기고 시계를 만료까지 돌린다.
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
     assert.equal(session.phase, 'NIGHT')
     assert.deepEqual(observed.events, [])
@@ -1906,7 +1525,6 @@ test('AC-03/AC-05(F-25b): 마지막 턴이 제출 없이 만료돼도(전원 기
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 1)
     assert.equal(observed.winEvaluations('NIGHT'), 1)
     for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
-    // 확정된 밤의 턴 시퀀스는 남아 있지 않다.
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
 })
 
@@ -1921,8 +1539,6 @@ test('A-12(F-25b): 유효한 진행 세션의 수신자가 0명이어도 밤 커
     submit(jokerUuid, citizenUuid)
     submit(doctorUuid, null)
     submit(guardUuid, null)
-    // 마지막 턴이 끝나기 직전에 모든 연결이 사라진다 — 전달할 상대가 없다는 이유로 이미
-    // 시작된 밤의 확정을 생략하면 그 판은 영영 밤에 갇힌다.
     io.sockets.sockets.clear()
 
     clock.advance(NIGHT_TURN_DURATION_MS)
@@ -1933,14 +1549,12 @@ test('A-12(F-25b): 유효한 진행 세션의 수신자가 0명이어도 밤 커
     assert.equal(observed.winEvaluations('NIGHT'), 1)
 })
 
-/** 비-광대 하나가 더 죽으면 광대 동수로 끝나는 3인 밤(playerCount=3·jokerCount=1). */
 function commitLastNightSessionAtNight({ id = 'room-turns-last', dayIndex = 2 } = {}) {
     const players = [makePlayer(`ln-${id}-a`), makePlayer(`ln-${id}-b`), makePlayer(`ln-${id}-c`)]
     const room = makeRoom({ id, players, jokerCount: 1 })
     const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0.999 })
     gameSessionCore.commitGameSession(candidate.session)
     const session = candidate.session
-    // 턴 역학 시험용 구버전(구성 없음) 세션 — commitJokerTrioSessionAtNight의 주석 참고(2026-09-22).
     delete session.roleComposition
     ackAllAndRewindToNight(session, dayIndex)
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
@@ -1948,7 +1562,6 @@ function commitLastNightSessionAtNight({ id = 'room-turns-last', dayIndex = 2 } 
     return { session, jokerUuid, targetUuid }
 }
 
-/** 현재 턴부터 밤이 끝날 때까지 몰아붙인다 — 광대만 대상을 지목하고 나머지는 전원 건너뛴다. */
 function driveNightToFinalization(session, submit, clock, jokerUuid, targetUuid) {
     for (let guard = 0; guard <= NIGHT_TURN_ORDER.length; guard += 1) {
         const role = gameSessionCore.getCurrentNightTurnRole(session)
@@ -1964,15 +1577,11 @@ function driveNightToFinalization(session, submit, clock, jokerUuid, targetUuid)
     }
 }
 
-/** 보류된 promise 연쇄(저장 시도 → 성공/실패 처리)를 전부 소진시킨다. */
 async function settlePendingWork() {
     for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setImmediate(resolve))
 }
 
 test('AC-05(F-25b): 저장이 한 번 실패한 뒤 재시도해도 같은 밤의 사망·경기 기록 조립·보상 평가가 두 번 일어나지 않는다', async () => {
-    // 이 시험이 답하는 질문: "저장 실패 뒤의 재시도가 같은 밤의 사망·보상·기록을 두 번 만드는가."
-    // 레코드는 **조립 지점**에서 세고(RESULT_RECORD_BUILD_STARTED), 재시도가 쓰는 값이 처음 것과
-    // 같은 객체인지까지 본다 — 두 번 조립되면 ended_at·roster·통계 delta가 갈릴 수 있기 때문이다.
     const { session, jokerUuid, targetUuid } = commitLastNightSessionAtNight({ id: 'f25b-persist-retry' })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
@@ -2007,7 +1616,6 @@ test('AC-05(F-25b): 저장이 한 번 실패한 뒤 재시도해도 같은 밤�
         assert.equal(persistCalls.length, 1, '첫 저장 시도가 실패했다')
         assert.equal(evaluatedUuids.length, 0, '저장을 확인하기 전에는 보상 평가가 시작되지 않는다')
 
-        // 재시도(최초 실패 → 1초 뒤)를 수동 시계로 깨운다.
         clock.advance(1_000)
         await settlePendingWork()
 
@@ -2020,7 +1628,6 @@ test('AC-05(F-25b): 저장이 한 번 실패한 뒤 재시도해도 같은 밤�
         assert.deepEqual([...evaluatedUuids].sort(), [...participantUuids].sort(), '보상 평가는 원 참가자마다 1회다')
         for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
 
-        // 같은 판의 늦은 종결 훅도 새 레코드를 조립하지 않는다(중복 저장·중복 보상이 없다).
         gameSessionSocketLayer.__testables.persistTerminalSession(session, { completed: true })
         await settlePendingWork()
 
@@ -2035,14 +1642,12 @@ test('AC-05(F-25b): 저장이 한 번 실패한 뒤 재시도해도 같은 밤�
 })
 
 test('AC-01(F-25b): 무인 턴만으로 진행되는 밤도 마지막 무인 턴이 끝나기 전까지는 아무 것도 확정하지 않는다', () => {
-    // dayIndex 0이라 WITCH_HUNTER는 아직 활동할 수 없고, 나머지 세 역할은 전원 기권으로 만료된다.
     const { session } = commitFullRoleSessionAtNight({ id: 'f25b-empty-turns', dayIndex: 0 })
     const { io, sockets } = wireSession(session)
     const clock = createManualClock()
     const observed = captureCommitEvents()
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    // 세 번째 턴까지는 어떤 확정도 없다.
     clock.advance(NIGHT_TURN_DURATION_MS * 3)
     assert.equal(session.phase, 'NIGHT')
     assert.deepEqual(observed.events, [])
@@ -2055,18 +1660,6 @@ test('AC-01(F-25b): 무인 턴만으로 진행되는 밤도 마지막 무인 턴
     for (const count of nightResultDeliveryCounts(sockets).values()) assert.equal(count, 1)
 })
 
-// ---------------------------------------------------------------------------
-// F-25 — 역할 확정 직후의 내부 연출 계약과 즉시 통과 대기
-//
-// 이 절이 검사하는 것은 **서버 내부 사실**뿐이다. 새 개인 소켓 메시지·전달 영수증·재생 완료
-// ACK는 어느 것도 이번 조각에 없으므로(각각 F-26a/F-26b), 여기서 관측하는 끝점은 소켓 계층의
-// 반환값과 run 상태다. 공개 night_turn_started/ended의 이름·키·개수가 그대로라는 것도 함께 본다.
-//
-// 관측 지점은 **실제 night_turn_ended 방송 중**이다 — fixture의 receiveBroadcast가 현재
-// socket.emit에 위임하므로, 그 emit을 감싸면 종료 방송이 나가는 바로 그 동기 구간에 들어간다.
-// deliver가 수신자 예외를 삼키므로 관측자는 **기록만** 하고 단언은 전부 바깥에서 한다.
-// ---------------------------------------------------------------------------
-
 const {
     buildNightPresentationContract,
     releaseNightPresentationWait,
@@ -2077,7 +1670,6 @@ const {
     stopDayPhaseTimer,
 } = gameSessionSocketLayer.__testables
 
-/** night_turn_ended가 실제로 나가는 동기 구간에 관측자를 끼워 넣는다(기록 전용). */
 function observeNightTurnEnds(sockets, observe) {
     const socket = [...sockets.values()][0]
     const originalEmit = socket.emit.bind(socket)
@@ -2087,7 +1679,6 @@ function observeNightTurnEnds(sockets, observe) {
     }
 }
 
-/** playerCount=4·jokerCount=2 — 한 역할에 생존 행위자가 둘인 구성(다수결 성공/동률 재현용). */
 function commitDualJokerSessionAtNight({ id = 'room-dual-joker', dayIndex = 2 } = {}) {
     const players = Array.from({ length: 4 }, (_, i) => makePlayer(`dj-${id}-${i}`))
     const room = makeRoom({ id, players, jokerCount: 2 })
@@ -2133,7 +1724,6 @@ test('AC-01(F-25): 네 역할이 각각 종료 방송 중 PRESENTATION_WAIT를 �
 
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
 
-    // 각 역할의 제출 구간은 SUBMITTING이고 타이머가 정확히 하나다.
     const expectedOrder = ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']
     const submissions = [[jokerUuid, citizenUuid], [doctorUuid, citizenUuid], [guardUuid, citizenUuid], [witchHunterUuid, null]]
     for (let i = 0; i < submissions.length; i += 1) {
@@ -2158,13 +1748,10 @@ test('AC-01(F-25): 네 역할이 각각 종료 방송 중 PRESENTATION_WAIT를 �
         assert.equal(entry.nightResolution, null, '대기 중에는 밤이 확정되지 않는다')
         assert.equal(entry.commitEvents, 0, '대기 중에는 사망·승패·종료가 하나도 시작되지 않는다')
     }
-    // 대기 중에는 **다음** 역할의 시작 방송이 아직 없다(즉시 통과는 방송 뒤에 일어난다).
     assert.deepEqual(seen.map((entry) => entry.startedCount), [1, 2, 3, 4])
-    // 같은 밤 안에서 대기 토큰은 확정 revision과 함께 단조 증가하고 서로 다르다.
     assert.deepEqual(seen.map((entry) => entry.waitRevision), [1, 2, 3, 4])
     assert.equal(new Set(seen.map((entry) => entry.waitId)).size, 4)
 
-    // 즉시 통과 뒤 다음 역할이 곧바로 시작됐고, 마지막 역할 뒤에는 밤이 최종화됐다.
     assert.deepEqual(turnEventLog(io), [
         ['night_turn_started', 'JOKER'], ['night_turn_ended', 'JOKER'],
         ['night_turn_started', 'DOCTOR'], ['night_turn_ended', 'DOCTOR'],
@@ -2199,14 +1786,11 @@ test('AC-01/AC-04(F-25): 종료 방송 중의 재진입(중복 종료·제출·�
         const { callback, getResponse } = countingCallback()
         handleResolveNight(io, sockets.get(doctorUuid), doctorUuid, { gameId: session.id }, callback, { prepare: countingPrepare })
         reentry.push({
-            // 이미 연출 대기로 넘어간 턴을 다시 닫으려는 호출은 아무 것도 하지 않는다.
             duplicateEnd: endNightTurn(run, 'JOKER'),
-            // 대기 중 제출은 core 호출 전에 끊긴다 — 다음 역할(의사)의 제출도 마찬가지다.
             sameRoleSubmit: submit(jokerUuid, citizenUuid),
             nextRoleSubmit: submit(doctorUuid, citizenUuid),
             resolveResponse: getResponse(),
             finalizeOutcome: finalizeNightForSession(io, session),
-            // 이 토큰으로 대기를 닫는 것은 정상 경로 하나뿐이다 — 같은 토큰의 두 번째 호출은 no-op.
             staleRelease: releaseNightPresentationWait(run, { ...staleToken, waitId: 'forged' }),
             stageAfter: run.stage,
             startedCount: io.broadcasts.filter((b) => b.event === 'night_turn_started').length,
@@ -2234,7 +1818,6 @@ test('AC-01/AC-04(F-25): 종료 방송 중의 재진입(중복 종료·제출·�
     assert.equal(attempt.commitEvents, 0)
     assert.equal(observed.countOf('RESULT_RECORD_BUILD_STARTED'), 0, '경기 기록 조립도 시작되지 않는다')
 
-    // 대기가 닫힌 뒤에는 정상 진행이 그대로 이어지고, 밤은 정확히 한 번 확정된다.
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
     submit(doctorUuid, null)
     submit(guardUuid, null)
@@ -2299,10 +1882,8 @@ test('AC-02(F-25): 킬과 치료가 서로 다른 ID의 두 사건으로 남고,
     assert.equal(heal.recoveryStates[citizenUuid], 'RECOVERED')
     assert.notEqual(heal.events[0].eventId, kill.events[0].eventId, '킬과 치료는 서로 다른 사건이다')
 
-    // 첫 계약은 **그 시점의** 사실로 남는다(뒤의 치료가 소급되지 않는다).
     assert.deepEqual(kill.events.map((event) => event.type), ['KILL'])
     assert.equal(kill.recoveryStates[citizenUuid], 'PENDING_RECOVERY')
-    // canonical 누적 사건은 두 건 모두 유지된다.
     assert.deepEqual(canonical.get('JOKER').events, [{ type: 'KILL', targetId: citizenUuid }])
     assert.deepEqual(canonical.get('DOCTOR').events, [
         { type: 'KILL', targetId: citizenUuid },
@@ -2312,7 +1893,6 @@ test('AC-02(F-25): 킬과 치료가 서로 다른 ID의 두 사건으로 남고,
         ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'].map((role) => canonical.get(role).recoveryState),
         ['PENDING_RECOVERY', 'RECOVERED', 'RECOVERED', 'RECOVERED'],
     )
-    // 대기 구간 어디에서도 최종 사망·승패·확정이 시작되지 않았다.
     for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
         assert.equal(canonical.get(role).alive, true, `${role} 대기 중 대상은 여전히 생존이다`)
         assert.equal(canonical.get(role).phase, 'NIGHT')
@@ -2320,7 +1900,6 @@ test('AC-02(F-25): 킬과 치료가 서로 다른 ID의 두 사건으로 남고,
         assert.equal(canonical.get(role).commitEvents, 0)
     }
 
-    // 최종 결과: 생존 확정, 사망 0회, 밤 승패 평가 1회, 수신자별 최종 결과 1건.
     assert.equal(session.players.get(citizenUuid).alive, true)
     assert.equal([...session.players.values()].filter((p) => p.alive).length, aliveBefore)
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
@@ -2343,7 +1922,6 @@ test('AC-02(F-25): 반환된 계약을 변형해도 보관 계약·다음 반환
         if (payload.role !== 'JOKER') return
         const handed = run.wait.contract
         const originalEventId = handed.events[0].eventId
-        // 받은 값을 전부 헤집는다.
         handed.events[0].targetId = 'tampered-target'
         handed.events[0].actorUuids.push('intruder')
         handed.events[0].recipients.push({ uuid: 'intruder', membershipId: null, socketId: null, perspectives: ['USER'] })
@@ -2352,7 +1930,6 @@ test('AC-02(F-25): 반환된 계약을 변형해도 보관 계약·다음 반환
         handed.step.status = 'TAMPERED'
         handed.events.push({ eventId: 'forged' })
 
-        // 같은 확정을 다시 물으면 처음 그대로다(ID도 바뀌지 않는다).
         const again = buildNightPresentationContract(run, { role: 'JOKER', revision: run.wait.revision })
         const progress = gameSessionCore.getNightProgress(session)
         observedResult = {
@@ -2375,7 +1952,6 @@ test('AC-02(F-25): 반환된 계약을 변형해도 보관 계약·다음 반환
     assert.deepEqual(again.events[0].recipients[0].perspectives.filter((p) => p === 'GHOST'), [])
     assert.equal(again.recoveryStates[citizenUuid], 'PENDING_RECOVERY')
     assert.deepEqual(again.step, { role: 'JOKER', targetId: citizenUuid, status: 'RESOLVED' })
-    // core의 진행 자료도 그대로다.
     assert.deepEqual(observedResult.coreEvents, [{ type: 'KILL', targetId: citizenUuid }])
     assert.equal(observedResult.coreRecoveryState, 'PENDING_RECOVERY')
 
@@ -2409,7 +1985,6 @@ test('AC-03(F-25): 치료되지 않은 대상은 회복 대기→사망 후보�
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
     submit(doctorUuid, null)
-    // 마녀사냥꾼은 확정 전이라 아직 생존자인 대상을 지목할 수 없다(경비원은 가능하다).
     submit(guardUuid, citizenUuid)
 
     assert.equal(contracts.get('JOKER').recoveryStates[citizenUuid], 'PENDING_RECOVERY')
@@ -2420,7 +1995,6 @@ test('AC-03(F-25): 치료되지 않은 대상은 회복 대기→사망 후보�
     assert.equal(contracts.get('GUARD').events[0].type, 'INVESTIGATE')
     assert.equal(contracts.get('GUARD').events[0].targetId, citizenUuid)
 
-    // 마녀사냥꾼의 확인 대상은 사망자여야 한다 — 아직 확정 전이라 거부된다.
     assert.deepEqual(submit(witchHunterUuid, citizenUuid), {
         ok: false, code: 'TARGET_NOT_DEAD', message: '요청을 처리할 수 없습니다.',
     })
@@ -2472,17 +2046,13 @@ test('AC-05(F-25): 유효 제출자와 대상자만 수신 대상이고, 기권�
     const target = kill.recipients.find((r) => r.uuid === citizenUuid)
     assert.deepEqual(target.perspectives, ['TARGET'])
     assert.equal(target.socketId, sockets.get(citizenUuid).id)
-    // 소켓 객체·session·Map 같은 가변 참조는 담기지 않는다(식별자만).
     assert.deepEqual(Object.keys(target).sort(), ['membershipId', 'perspectives', 'socketId', 'uuid'])
 
-    // 기권한 세 역할은 사건도 수신 대상도 없지만 완료 revision은 그대로 오른다.
     for (const role of ['DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
         assert.deepEqual(contracts.get(role).events, [], `${role}: 기권은 사건을 만들지 않는다`)
     }
     assert.deepEqual(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'].map((r) => contracts.get(r).revision), [1, 2, 3, 4])
 
-    // F-26a: 이 밤에 새로 생기는 개인 메시지는 night_action_success뿐이고, 그 수신자는 유효
-    // 제출자·대상자(광대·시민)뿐이다 — 기권한 세 역할은 어떤 관점으로도 받지 않는다.
     const received = new Set()
     for (const socket of sockets.values()) for (const entry of socket.emitted) received.add(entry.event)
     assert.deepEqual([...received].sort(), [
@@ -2493,7 +2063,6 @@ test('AC-05(F-25): 유효 제출자와 대상자만 수신 대상이고, 기권�
         const count = socket.emitted.filter((e) => e.event === 'night_action_success').length
         assert.equal(count, [jokerUuid, citizenUuid].includes(uuid) ? 1 : 0, `${uuid}: 성공 사건 수신 건수`)
     }
-    // 공개 턴 payload에는 사건·대상·수신자 정보가 없다.
     for (const broadcast of turnBroadcasts(io)) {
         const keys = Object.keys(broadcast.payload).sort()
         assert.deepEqual(
@@ -2519,7 +2088,6 @@ test('AC-05/AC-06(F-25): 의사의 자기 치료는 한 수신 항목에 사용�
     observeNightTurnEnds(sockets, (payload) => contracts.set(payload.role, run.wait.contract))
 
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    // 광대가 의사를 지목하고, 의사는 자기 자신을 치료한다(회복 차단이 적용되지 않는 유일한 역할).
     submit(jokerUuid, doctorUuid)
     submit(doctorUuid, doctorUuid)
     submit(guardUuid, null)
@@ -2550,7 +2118,6 @@ test('AC-05(F-25): 회복 차단된 행위자는 사용자 자격을 얻지 못�
     observeNightTurnEnds(sockets, (payload) => contracts.set(payload.role, run.wait.contract))
 
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    // 광대가 경비원을 지목한다 — 의사가 기권하면 경비원의 행동은 그 밤 집계에서 빠진다.
     submit(jokerUuid, guardUuid)
     submit(doctorUuid, null)
     assert.deepEqual(submit(guardUuid, citizenUuid), { ok: true })
@@ -2566,7 +2133,6 @@ test('AC-05(F-25): 회복 차단된 행위자는 사용자 자격을 얻지 못�
 test('AC-05(F-25): 후보를 구한 뒤 자격을 잃은 연결은 수신 대상에서 빠지고 교체된 현재 연결이 대신 들어온다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
         commitFullRoleSessionAtNight({ id: 'f25-eligibility' })
-    // 이 시험만 registry를 직접 조작하므로 wireSession **전에** 평범한 Map으로 갈아끼운다.
     const registry = new Map([...session.players.keys()].map((uuid) => [uuid, `sock-${uuid}`]))
     gameSessionSocketLayer.setOnlineUsersRegistry(registry)
     const { io, sockets, submit } = wireSession(session)
@@ -2576,7 +2142,6 @@ test('AC-05(F-25): 후보를 구한 뒤 자격을 잃은 연결은 수신 대상
     const contracts = new Map()
     observeNightTurnEnds(sockets, (payload) => contracts.set(payload.role, run.wait.contract))
 
-    // 대상자의 연결이 교체된다 — 옛 소켓은 채널에 그대로 남아 있지만 더 이상 canonical이 아니다.
     const replacement = createFakeSocket(citizenUuid, { id: 'sock-citizen-new' })
     replacement.rooms.add(session.channelId)
     replacement.data.activeGameId = session.id
@@ -2586,7 +2151,6 @@ test('AC-05(F-25): 후보를 구한 뒤 자격을 잃은 연결은 수신 대상
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
     submit(doctorUuid, null)
-    // 경비원은 제출 **전에** 채널에서 빠진다 — 유효 행동 근거는 남지만 수신 대상은 아니다.
     sockets.get(guardUuid).rooms.delete(session.channelId)
     submit(guardUuid, citizenUuid)
     submit(witchHunterUuid, null)
@@ -2608,7 +2172,6 @@ test('AC-05(F-25): 마녀사냥꾼의 확인 대상이 확정 사망자여도 �
         commitFullRoleSessionAtNight({ id: 'f25-dead-target', dayIndex: 2 })
     const { io, sockets, submit } = wireSession(session)
 
-    // 첫 밤: 광대가 시민을 지목하고 나머지는 기권 → 그 시민이 canonical 사망으로 확정된다.
     const firstClock = createManualClock()
     startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
@@ -2618,7 +2181,6 @@ test('AC-05(F-25): 마녀사냥꾼의 확인 대상이 확정 사망자여도 �
     assert.equal(session.players.get(citizenUuid).alive, false)
     stopDayPhaseTimer(session.id)
 
-    // 같은 세션의 다음 밤으로 되돌린다(dayIndex는 이미 올라 있어 마녀사냥꾼이 활동할 수 있다).
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
@@ -2686,7 +2248,6 @@ test('AC-05/AC-06(F-25): 복수 행위자의 다수결 성공은 제출자 전�
 })
 
 test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업도 같은 대기를 거치고 밤 타이머를 남기지 않는다', () => {
-    // dayIndex 0이라 마녀사냥꾼은 아직 활동할 수 없다(무인 턴) — 나머지 셋은 전원 기권으로 만료된다.
     const { session } = commitFullRoleSessionAtNight({ id: 'f25-exceptions', dayIndex: 0 })
     const { io, sockets } = wireSession(session)
     const clock = createManualClock()
@@ -2717,7 +2278,6 @@ test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업�
     }
     assert.deepEqual(seen.map((entry) => entry.revision), [1, 2, 3, 4])
     assert.equal(seen[3].status, 'NO_ACTOR', '아직 능력이 없는 마녀사냥꾼은 무행위자다')
-    // 세 역할은 전원 기권 만료, 마지막은 무인 턴 — 그래도 밤은 정확히 한 번 확정된다.
     assert.equal(session.phase, 'DAY')
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
     assert.equal(observed.winEvaluations('NIGHT'), 1)
@@ -2726,7 +2286,6 @@ test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업�
 })
 
 test('AC-06(F-25, 2026-09-22 개정): 구성이 없는 구버전 세션에서는 존재하지 않는 직업의 턴도 완료 계약을 남기고 순서를 건너뛰지 않는다', () => {
-    // playerCount=3·jokerCount=2 — 특수 직업 중 최소 둘은 이 판에 존재하지 않는다(구성 정보 없음).
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'f25-no-role' })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
@@ -2735,7 +2294,6 @@ test('AC-06(F-25, 2026-09-22 개정): 구성이 없는 구버전 세션에서는
     const contracts = new Map()
     observeNightTurnEnds(sockets, (payload) => contracts.set(payload.role, run.wait.contract))
 
-    // 전원 기권으로 진행시킨다 — 이 시험의 관심은 사망이 아니라 "없는 직업의 턴도 확정된다"이다.
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     for (const jokerUuid of jokerUuids) submit(jokerUuid, null)
     clock.advance(NIGHT_TURN_DURATION_MS * 4)
@@ -2767,7 +2325,6 @@ test('AC-04(F-25): 이전 밤·정리된 run의 대기 토큰은 현재 진행�
     submit(jokerUuid, citizenUuid)
     assert.ok(jokerToken)
 
-    // 이미 닫힌 토큰을 다시 써도 다음 역할이 앞당겨지지 않는다.
     const startedBefore = io.broadcasts.filter((b) => b.event === 'night_turn_started').length
     assert.equal(releaseNightPresentationWait(run, jokerToken), false)
     assert.equal(io.broadcasts.filter((b) => b.event === 'night_turn_started').length, startedBefore)
@@ -2778,7 +2335,6 @@ test('AC-04(F-25): 이전 밤·정리된 run의 대기 토큰은 현재 진행�
     submit(witchHunterUuid, null)
     assert.equal(session.phase, 'DAY')
 
-    // 밤이 끝나 정리된 run에는 어떤 토큰도 통하지 않는다(새 밤을 진행시키지 않는다).
     const dayIndexAfter = session.dayIndex
     assert.equal(releaseNightPresentationWait(run, jokerToken), false)
     assert.equal(session.phase, 'DAY')
@@ -2786,21 +2342,12 @@ test('AC-04(F-25): 이전 밤·정리된 run의 대기 토큰은 현재 진행�
     assert.equal(clock.pendingCount(), 0)
 })
 
-// ---------------------------------------------------------------------------
-// F-26a — 역할별 성공 사건의 서버 생성·수신자별 payload
-//
-// F-25의 내부 연출 계약(run.wait.contract)은 이미 사건·수신자를 확정한다. 이 절은 그 계약이
-// 실제 night_action_success 개별 emit으로 이어지는지, 그리고 그 payload가 허용 키만 갖는지를
-// 검사한다 — wireSession이 실제로 배선한 submit_night_action을 그대로 쓴다.
-// ---------------------------------------------------------------------------
-
 test('AC-01(F-26a): 역할별 성공 사건은 능력 사용자·대상자에게만 전달되고 다른 역할·비참가자는 0건이다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
         commitFullRoleSessionAtNight({ id: 'f26a-ac01' })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
 
-    // 같은 채널에 남아 있지만 이 판의 참가자는 아닌 소켓(비참가자 음성 대조).
     const outsider = createFakeSocket('f26a-ac01-outsider')
     outsider.rooms.add(session.channelId)
     io.sockets.sockets.set(outsider.id, outsider)
@@ -2829,7 +2376,6 @@ test('AC-01(F-26a): 계약 수신자 목록은 계산 시점의 사실이다 —
     const citizenSocket = sockets.get(citizenUuid)
     const originalEmit = jokerSocket.emit.bind(jokerSocket)
     jokerSocket.emit = (event, payload) => {
-        // 첫 수신자(행위자)가 성공 사건을 받는 바로 그 순간, 다음 수신자(대상자)를 채널에서 뗀다.
         if (event === 'night_action_success') citizenSocket.rooms.delete(session.channelId)
         return originalEmit(event, payload)
     }
@@ -2865,16 +2411,12 @@ test('AC-02(F-26a): 대상 전용 성공 사건 payload는 허용 키만 가지�
     assert.deepEqual(targetPayload.perspectives, ['TARGET'])
     assert.equal(targetPayload.type, 'INVESTIGATE')
     assert.equal(targetPayload.gameId, session.id)
-    // 밤이 이미 자동 최종화돼 session.dayIndex가 올라갔을 수 있으므로(네 역할이 모두 끝난
-    // 밤이라 마지막 제출 직후 확정된다), payload는 **그 사건이 실제로 생성된 밤**의 번호를
-    // 담아야 한다 — 확정 후 오른 dayIndex와 비교하지 않는다.
     assert.equal(targetPayload.nightDayIndex, nightDayIndex)
     const serializedTarget = JSON.stringify(targetPayload)
     assert.equal(serializedTarget.includes(guardUuid), false, '조사자 uuid가 담기지 않는다')
     assert.equal(serializedTarget.includes('role'), false, '조사 결과(대상의 실제 역할)가 담기지 않는다')
     assert.equal(citizenSocket.countReceived('night_action_result'), 0, '대상자는 기존 조사 결과 경로도 받지 않는다')
 
-    // 조사자(USER) 쪽 payload에는 targetId가 붙지만, 그것도 조사 결과(role)는 아니다.
     const guardSocket = sockets.get(guardUuid)
     const guardPayload = guardSocket.emitted.find((e) => e.event === 'night_action_success').payload
     assert.deepEqual(Object.keys(guardPayload).sort(), ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'targetId', 'type'])
@@ -2908,10 +2450,7 @@ test('AC-03(F-26a): 시간 만료로 기권 처리된 행위자도 사용자 사
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     submit(jokerUuids[0], otherUuids[0])
-    // 두 번째 광대는 제출하지 않은 채 제한시간을 넘긴다 — expireNightTurnWithAbstentions가 기권으로 기록한다.
     clock.advance(NIGHT_TURN_DURATION_MS)
-    // F-27a: 실제 KILL 사건이 있는 턴이 clock.advance로 끝났다 — submit()의 자동 드레인을
-    // 거치지 않았으므로 명시적으로 드레인해 이 시험의 수신 범위 단언을 그대로 관측한다.
     drainPresentationWait(session)
 
     assert.equal(sockets.get(jokerUuids[0]).countReceived('night_action_success'), 1)
@@ -2924,7 +2463,6 @@ test('AC-04(F-26a): 사망한 대상자가 연결 중이면 확정 성공 사건
         commitFullRoleSessionAtNight({ id: 'f26a-ac04', dayIndex: 2 })
     const { io, sockets, submit } = wireSession(session)
 
-    // 첫 밤: 광대가 시민을 지목하고 나머지는 기권 → 그 시민이 canonical 사망으로 확정된다.
     const firstClock = createManualClock()
     startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
@@ -2934,7 +2472,6 @@ test('AC-04(F-26a): 사망한 대상자가 연결 중이면 확정 성공 사건
     assert.equal(session.players.get(citizenUuid).alive, false)
     stopDayPhaseTimer(session.id)
 
-    // 같은 세션의 다음 밤으로 되돌린다(dayIndex는 이미 올라 있어 마녀사냥꾼이 활동할 수 있다).
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
@@ -2950,8 +2487,6 @@ test('AC-04(F-26a): 사망한 대상자가 연결 중이면 확정 성공 사건
     assert.equal(citizenSocket.connected, true)
     assert.equal(session.players.get(citizenUuid).alive, false, '수신 확인이 생존 상태를 바꾸지 않는다')
 
-    // citizenSocket은 첫 밤 KILL의 TARGET으로도 이미 한 번 받았으므로, 이 절의 관심사인
-    // CONFIRM만 따로 골라 확인한다.
     const confirmEntries = citizenSocket.emitted.filter((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM')
     assert.equal(confirmEntries.length, 1, '사망했지만 연결·참여가 유지되는 대상자는 CONFIRM 성공 사건을 받는다')
     assert.deepEqual(confirmEntries[0].payload.perspectives, ['TARGET'])
@@ -2960,7 +2495,6 @@ test('AC-04(F-26a): 사망한 대상자가 연결 중이면 확정 성공 사건
     for (const uuid of [doctorUuid, guardUuid]) {
         assert.equal(sockets.get(uuid).countReceived('night_action_success'), 0, `${uuid}: 무관 참가자는 받지 않는다`)
     }
-    // jokerUuid는 첫 밤 KILL의 USER라 총 수신은 1(둘째 밤에는 기권했다) — CONFIRM은 없다.
     assert.equal(sockets.get(jokerUuid).countReceived('night_action_success'), 1)
     assert.equal(sockets.get(jokerUuid).emitted.some((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM'), false)
     assert.equal(sockets.get(witchHunterUuid).countReceived('night_action_success'), 1, '마녀사냥꾼 본인은 CONFIRM의 USER 관점으로 받는다')
@@ -2985,8 +2519,6 @@ test('AC-04(F-26a): 같은 대상이 연결이 끊긴 상태라면 성공 사건
     session.nightResolution = null
     sockets.get(citizenUuid).connected = false // 대상자의 연결이 끊긴 상태
 
-    // 첫 밤 KILL의 TARGET으로 이미 한 번 받은 뒤의 기준선 — 둘째 밤에는 그 위로 CONFIRM이
-    // 늘어나지 않아야 한다(연결이 끊겼으므로).
     const before = sockets.get(citizenUuid).countReceived('night_action_success')
 
     const clock = createManualClock()
@@ -3099,14 +2631,6 @@ test('AC-06(F-26a): 같은 역할의 사건이라도 밤이 다르면 사건 ID�
     assert.equal(firstKillPayload.nightDayIndex < secondConfirmPayload.nightDayIndex, true)
 })
 
-// ---------------------------------------------------------------------------
-// F-26b · 밤 성공 사건 소비 완료 ACK(acknowledge_night_action_success)
-//
-// 등록된 실제 리스너(wireSession → registerGameHandlers)를 통해서만 요청한다 — 서버 핸들러를
-// 직접 호출하면 등록부 배선이 빠져도 시험이 통과하므로 그 경로를 대체하지 않는다.
-// ---------------------------------------------------------------------------
-
-/** 등록된 acknowledge_night_action_success 리스너로 완료 요청을 보내고 ack 응답을 돌려준다. */
 function ackSuccess(sockets, uuid, payload) {
     const { callback, getResponse } = countingCallback()
     sockets.get(uuid).trigger('acknowledge_night_action_success', payload, callback)
@@ -3141,7 +2665,6 @@ test('AC-05(F-26b): 완료 ACK은 서버 기록을 정확히 한 번 바꾸고, 
 
     const second = ackSuccess(sockets, jokerUuid, payload)
     assert.deepEqual(second, { ok: true, duplicate: true })
-    // 완료 상태는 여전히 true 하나뿐이다 — 중복 요청이 완료 변경을 반복하지 않는다.
     assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, true)
 })
 
@@ -3159,8 +2682,6 @@ test('AC-03/AC-05(F-26b): 광대가 의사를 공격하고 의사가 자신을 �
 
     const jokerEvents = sockets.get(jokerUuid).emitted.filter((e) => e.event === 'night_action_success')
     assert.equal(jokerEvents.length, 1)
-    // 의사도 광대의 공격 TARGET이라 KILL 사건 하나를 함께 받는다(F-26a AC-04) — 자기 치료
-    // 단언은 HEAL 사건 하나로만 좁혀서 본다.
     const doctorHealEvents = sockets.get(doctorUuid).emitted
         .filter((e) => e.event === 'night_action_success' && e.payload.type === 'HEAL')
     assert.equal(doctorHealEvents.length, 1, '자기 치료는 한 소켓에 정확히 한 번만 전달돼야 한다(USER·TARGET 합쳐진 recipient)')
@@ -3176,7 +2697,6 @@ test('AC-03/AC-05(F-26b): 광대가 의사를 공격하고 의사가 자신을 �
 
     assert.deepEqual(ackSuccess(sockets, jokerUuid, killPayload), { ok: true, duplicate: false })
     assert.deepEqual(ackSuccess(sockets, doctorUuid, healPayload), { ok: true, duplicate: false })
-    // HEAL은 관점 수(USER·TARGET)만큼 중복 완료되지 않는다 — 같은 요청의 재전달만 duplicate다.
     assert.deepEqual(ackSuccess(sockets, doctorUuid, healPayload), { ok: true, duplicate: true })
 })
 
@@ -3197,23 +2717,16 @@ test('AC-05(F-26b): 형태 오류·비수신자·변조된 사건 ID·다른 게
         gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
     }
 
-    // 형태 오류.
     assert.equal(ackSuccess(sockets, jokerUuid, {}).code, 'INVALID_PAYLOAD')
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, nightDayIndex: -1 }).code, 'INVALID_PAYLOAD')
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, eventId: '' }).code, 'INVALID_PAYLOAD')
 
-    // 이 사건을 전달받지 않은 경비원(비수신자) — citizenUuid는 이 KILL의 TARGET이라 정당한
-    // 수신자이므로(F-26a AC-04) 비수신자 사례로 쓸 수 없다.
     assert.equal(ackSuccess(sockets, guardUuid, payload).code, 'NOT_ELIGIBLE')
 
-    // 변조된 사건 ID.
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, eventId: 'tampered-event-id' }).code, 'STALE_EVENT')
 
-    // 다른 게임.
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, gameId: 'game-other' }).code, 'NOT_ELIGIBLE')
 
-    // 옛 소켓 — 재연결로 같은 id의 **다른 객체**가 등록되면, 옛 객체도 이 사건을 실제로 받지
-    // 않은 새 객체도 완료할 수 없다(원래 전달받은 바로 그 소켓 객체만 완료할 수 있다).
     const reconnected = createFakeSocket(jokerUuid, { id: sockets.get(jokerUuid).id })
     io.sockets.sockets.set(reconnected.id, reconnected)
     gameSessionSocketLayer.registerGameHandlers(io, reconnected, jokerUuid)
@@ -3222,8 +2735,6 @@ test('AC-05(F-26b): 형태 오류·비수신자·변조된 사건 ID·다른 게
     reconnected.trigger('acknowledge_night_action_success', payload, reconnectedAck.callback)
     assert.equal(reconnectedAck.getResponse().code, 'NOT_ELIGIBLE', '이 사건을 실제로 받지 않은 새 연결이 완료를 통과했다')
 
-    // 위 모든 거부는 완료 기록을 바꾸지 않았다 — 실제 원래 수신자가 있는 세션의 기록은 여전히
-    // completed:false다.
     const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
     assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, false)
 })
@@ -3246,8 +2757,6 @@ test('AC-05(F-26b) 전이: 다음 밤이 시작되면 이전 밤의 완료 수�
     }
     gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
 
-    // 다음 밤으로 강제 진입한다(F-26a AC-06 시험과 같은 관례 — 네 역할 전원 제출이 이미 자동
-    // 최종화를 돌려 dayIndex를 올려 놓았다).
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
@@ -3289,12 +2798,6 @@ test('AC-05(F-26b): finalizeGameSessionEnd는 완료 수신 보관함을 지우�
     assert.equal(ack.code, 'STALE_EVENT')
 })
 
-// frontend/src/domains/game/ingame/store/ingameStore.js::completeNightSuccess가 실제로 emit하는
-// payload 모양은 정확히 {gameId, nightDayIndex, eventId}다(같은 파일의 socket.emit 호출부 참고).
-// 아래 두 시험은 그 계약을 서버 쪽에서 지킨다 — 여분 필드 거부와 콜백 생략 허용은 프런트
-// 시험(frontend/.../__tests__/nightPrivateResult.test.js)이 검사하는 emit 쪽 모양과 항상 같은
-// 세 필드를 가리켜야 한다.
-
 test('AC-05(F-26b): 콜백이 없어도 검증·최초 완료 기록은 그대로 수행되고, 응답만 생략된다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid } =
         commitFullRoleSessionAtNight({ id: 'f26b-ac05-nocallback', dayIndex: 2 })
@@ -3312,16 +2815,12 @@ test('AC-05(F-26b): 콜백이 없어도 검증·최초 완료 기록은 그대�
         gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
     }
 
-    // 콜백을 아예 넘기지 않는다 — 계획 계약(U-01)은 "callback은 선택적이며 함수인 경우만
-    // 응답한다"다. 검증·최초 완료 기록은 응답 여부와 무관하게 그대로 일어나야 한다.
     assert.doesNotThrow(() => sockets.get(jokerUuid).trigger('acknowledge_night_action_success', payload))
 
     const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
     assert.equal(stored.byEvent.get(payload.eventId).get(jokerUuid).completed, true,
         '콜백 없는 요청도 최초 완료를 기록해야 한다')
 
-    // 같은 사건의 재요청(이번엔 콜백 있음)은 이미 기록된 완료를 duplicate:true로 돌려줘야 한다 —
-    // 콜백 생략이 완료 판정 자체를 건너뛴 것이 아님을 확인한다.
     assert.deepEqual(ackSuccess(sockets, jokerUuid, payload), { ok: true, duplicate: true })
 })
 
@@ -3342,13 +2841,10 @@ test('AC-05(F-26b): gameId·nightDayIndex·eventId 외의 여분 필드가 있�
         gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId,
     }
 
-    // uuid·membershipId처럼 이 요청이 절대 싣지 않는 필드가 하나라도 섞이면 거부한다.
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, uuid: jokerUuid }).code, 'INVALID_PAYLOAD')
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, membershipId: 'mem-x' }).code, 'INVALID_PAYLOAD')
     assert.equal(ackSuccess(sockets, jokerUuid, { ...payload, extra: true }).code, 'INVALID_PAYLOAD')
 
-    // 여분 필드 없는 정상 요청은 그대로 통과한다 — 위 거부가 필드 이름이 아니라 세 필드
-    // 자체를 막은 것이 아님을 함께 확인한다.
     assert.deepEqual(ackSuccess(sockets, jokerUuid, payload), { ok: true, duplicate: false })
 })
 
@@ -3371,12 +2867,8 @@ test('AC-05(F-26b) 전이: DAY n+1로 넘어간 뒤에도 그 밤의 사건을 �
     assert.equal(session.phase, 'DAY', '전제: 자동 최종화가 다음 낮으로 넘어가야 한다')
     assert.equal(session.dayIndex, payload.nightDayIndex + 1, '전제: 낮 번호가 그 밤의 다음 번호여야 한다')
 
-    // 밤이 끝나 DAY n+1로 넘어간 채로도(보관함은 아직 그 밤의 것 그대로) 완료할 수 있다.
     assert.deepEqual(ackSuccess(sockets, jokerUuid, payload), { ok: true, duplicate: false })
 
-    // 이제 보관함은 건드리지 않은 채로 session만 두 밤 더 지난 것처럼 되돌린다 — 보관함
-    // 존재 여부만으로는 걸리지 않는, phase/dayIndex 수명 검사 자체를 겨냥한 시험이다(같은
-    // eventId를 다시 쓴다 — 이미 완료된 기록이라도 수명 검사가 store 조회보다 먼저 막아야 한다).
     session.phase = 'NIGHT'
     session.dayIndex = payload.nightDayIndex + 2
 
@@ -3384,25 +2876,12 @@ test('AC-05(F-26b) 전이: DAY n+1로 넘어간 뒤에도 그 밤의 사건을 �
     assert.equal(staleAck.code, 'STALE_EVENT', '수명 밖(두 밤 뒤)의 완료 요청이 통과했다')
 })
 
-// ---------------------------------------------------------------------------
-// F-26 · 새로고침·재접속 복원(get_session_snapshot의 nightSuccessRecovery)
-//
-// 여기서도 요청은 등록된 실제 리스너로만 보낸다(wireSession → registerGameHandlers). 복원은 새
-// 사건을 만들지 않는다 — **이미 전달된 뒤 완료 ACK를 받지 못한** 수신 기록의 보관 payload를 그대로
-// 되돌려주는 것뿐이고, 그 수명은 기존 완료 창에서 ENDED만 제외한 NIGHT n·DAY n+1·TRIBUNAL n+1이다.
-// ---------------------------------------------------------------------------
-
-/** 등록된 get_session_snapshot 리스너로 조회하고 ack 응답을 돌려준다. */
 function getSnapshot(socket, payload = {}) {
     const { callback, getResponse } = countingCallback()
     socket.trigger('get_session_snapshot', payload, callback)
     return getResponse()
 }
 
-/**
- * 같은 계정의 **새 canonical 연결**을 만든다(새로고침). 규약상 id는 `sock-<uuid>`이므로 같은 id로
- * 등록하면 namespace의 그 자리가 새 객체로 교체되고, 옛 객체는 그 즉시 canonical이 아니다.
- */
 function reconnectSocket(io, session, uuid, { joinChannel = true } = {}) {
     const next = createFakeSocket(uuid)
     if (joinChannel) next.rooms.add(session.channelId)
@@ -3412,7 +2891,6 @@ function reconnectSocket(io, session, uuid, { joinChannel = true } = {}) {
     return next
 }
 
-/** 광대가 시민을 공격해 KILL 성공 사건이 나간 직후의 밤(같은 밤이 계속된다)을 만든다. */
 function startNightWithKill(id) {
     const ctx = commitFullRoleSessionAtNight({ id, dayIndex: 2 })
     const wired = wireSession(ctx.session)
@@ -3434,7 +2912,6 @@ test('AC-01(F-26): 전달된 성공 사건의 제한 payload가 수신 기록에
         '전달한 그 payload가 필드별로 보관돼야 복원할 자료가 있다')
     assert.notEqual(jokerRecord.payload, successPayload, '보관본은 전달본과 같은 참조여서는 안 된다')
 
-    // 새로고침: 같은 계정의 새 연결이 canonical이 된다.
     const reconnected = reconnectSocket(io, session, jokerUuid)
     const response = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(response.ok, true, JSON.stringify(response))
@@ -3443,7 +2920,6 @@ test('AC-01(F-26): 전달된 성공 사건의 제한 payload가 수신 기록에
     assert.notEqual(response.nightSuccessRecovery[0], jokerRecord.payload,
         '응답이 보관본 참조를 그대로 내보냈다(응답 변형이 보관본을 오염시킨다)')
 
-    // 대상자(TARGET)도 자기 사건을 복원받고, 그 payload에는 targetId가 없다.
     const targetReconnected = reconnectSocket(io, session, citizenUuid)
     const targetResponse = getSnapshot(targetReconnected, { gameId: session.id })
     assert.equal(targetResponse.nightSuccessRecovery.length, 1)
@@ -3451,7 +2927,6 @@ test('AC-01(F-26): 전달된 성공 사건의 제한 payload가 수신 기록에
         ['eventId', 'gameId', 'nightDayIndex', 'perspectives', 'type'])
     assert.deepEqual(targetResponse.nightSuccessRecovery[0].perspectives, ['TARGET'])
 
-    // 복원은 현재 연결로 기록을 다시 결속한다 — 그 연결의 완료 ACK가 통과한다.
     const ack = countingCallback()
     reconnected.trigger('acknowledge_night_action_success', {
         gameId: session.id, nightDayIndex: successPayload.nightDayIndex, eventId: successPayload.eventId,
@@ -3466,18 +2941,14 @@ test('AC-02(F-26): 이미 완료된 사건은 재접속 조회에 실리지 않�
         gameId: session.id, nightDayIndex: successPayload.nightDayIndex, eventId: successPayload.eventId,
     }
 
-    // 클라이언트가 완료를 보냈고 서버는 기록했다 — 응답이 유실되어 클라이언트만 그것을 모른다.
     assert.deepEqual(ackSuccess(sockets, jokerUuid, ackPayload), { ok: true, duplicate: false })
 
     const reconnected = reconnectSocket(io, session, jokerUuid)
     const response = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(response.ok, true)
-    // 복원할 것이 없어도 키는 **항상** 실린다(빈 배열) — 완료된 사건이 그 배열에 없다는 것이
-    // 이 시험의 사실이다.
     assert.deepEqual(response.nightSuccessRecovery, [],
         '서버가 완료를 기록한 사건이 다시 복원 목록에 실렸다')
 
-    // 대조군: ACK가 서버에 아예 도착하지 않은 대상자는 그대로 복원 대상이다.
     const citizenUuid = [...session.players.keys()]
         .find((uuid) => (gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
             .byEvent.get(successPayload.eventId).has(uuid) && uuid !== jokerUuid))
@@ -3490,7 +2961,6 @@ test('AC-02(F-26): 전송 예외는 기록을 지우지 않고 결속만 풀며,
     const ctx = commitFullRoleSessionAtNight({ id: 'f26-ac02-delivery-error', dayIndex: 2 })
     const { session, jokerUuid, citizenUuid } = ctx
     const { io, sockets, submit } = wireSession(session)
-    // 광대에게 보내는 성공 사건 전송이 예외를 던진다(기록은 이미 만들어진 뒤다).
     sockets.get(jokerUuid).emitShouldThrowOn = 'night_action_success'
 
     const clock = createManualClock()
@@ -3506,12 +2976,10 @@ test('AC-02(F-26): 전송 예외는 기록을 지우지 않고 결속만 풀며,
     assert.equal(record.socketId, null)
     assert.ok(record.payload, '복원 payload가 사라졌다')
 
-    // 결속이 없는 기록은 어떤 완료도 통과시키지 않는다.
     const nightDayIndex = record.payload.nightDayIndex
     assert.equal(ackSuccess(sockets, jokerUuid, { gameId: session.id, nightDayIndex, eventId }).code,
         'NOT_ELIGIBLE', '전달받지 못한 연결의 완료가 통과했다')
 
-    // 새 연결의 복원이 그 기록을 다시 결속하고, 그 뒤에는 완료할 수 있다.
     const reconnected = reconnectSocket(io, session, jokerUuid)
     const response = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(response.nightSuccessRecovery.length, 1, '전송에 실패한 사건이 복원되지 않았다')
@@ -3527,7 +2995,6 @@ test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재�
         commitFullRoleSessionAtNight({ id: 'f26-ac03-dead-target', dayIndex: 2 })
     const { io, sockets, submit } = wireSession(session)
 
-    // 첫 밤: 광대가 시민을 죽인다(실제 KILL 판정 → canonical alive=false).
     const firstClock = createManualClock()
     startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
@@ -3537,7 +3004,6 @@ test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재�
     assert.equal(session.players.get(citizenUuid).alive, false, '전제: 대상자가 실제로 사망해야 한다')
     gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
 
-    // 다음 밤: 마녀사냥꾼이 그 사망자를 확인한다 — 연결 중이므로 CONFIRM을 실제로 수신한다.
     session.phase = 'NIGHT'
     session.nightActions = new Map()
     session.nightResolution = null
@@ -3554,12 +3020,10 @@ test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재�
     const confirmPayload = confirmEntry.payload
     const nightDayIndex = confirmPayload.nightDayIndex
 
-    // 그 밤이 끝나 DAY n+1로 넘어갔다(자동 최종화). ACK는 아직 보내지 않았다.
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, nightDayIndex + 1)
     gameSessionSocketLayer.__testables.stopDayPhaseTimer(session.id)
 
-    // 단절 → 같은 소속의 새 canonical 연결로 재접속한다(사망 상태 그대로다).
     sockets.get(citizenUuid).connected = false
     const reconnected = reconnectSocket(io, session, citizenUuid)
     const response = getSnapshot(reconnected, { gameId: session.id })
@@ -3575,14 +3039,12 @@ test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재�
         { gameId: session.id, nightDayIndex, eventId: confirmPayload.eventId }, ack.callback)
     assert.deepEqual(ack.getResponse(), { ok: true, duplicate: false }, '복원 뒤 최초 완료가 거부됐다')
 
-    // TRIBUNAL n+1에서도 같은 창이다 — 아직 완료하지 않은 다른 수신자(마녀사냥꾼)로 확인한다.
     session.phase = 'TRIBUNAL'
     const hunterReconnected = reconnectSocket(io, session, witchHunterUuid)
     const tribunalResponse = getSnapshot(hunterReconnected, { gameId: session.id })
     assert.equal(tribunalResponse.nightSuccessRecovery.length, 1, 'TRIBUNAL n+1 복원이 막혔다')
     assert.deepEqual(tribunalResponse.nightSuccessRecovery[0].perspectives, ['USER'])
 
-    // ENDED와 다음 NIGHT은 복원 대상이 아니다.
     session.phase = 'ENDED'
     assert.deepEqual(getSnapshot(hunterReconnected, { gameId: session.id }).nightSuccessRecovery,
         [], '결과가 확정된 판에서 성공 사건이 복원됐다')
@@ -3595,7 +3057,6 @@ test('AC-03(F-26): 사망해 연결이 끊겼던 대상자도 다음 낮에 재�
 test('AC-03(F-26): 재가입이 끝나지 않은 조회는 SESSION_ROUTING_PENDING이고, 그 조회가 시작한 재동기화 뒤에 복원된다', async () => {
     const { session, io, jokerUuid, successPayload } = startNightWithKill('f26-ac03-pending')
 
-    // 새 연결이 아직 판 채널에 들어가지 않았다 — 이 순간에는 수신 자격을 확인할 수 없다.
     const reconnected = reconnectSocket(io, session, jokerUuid, { joinChannel: false })
     const pending = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(pending.ok, false)
@@ -3604,7 +3065,6 @@ test('AC-03(F-26): 재가입이 끝나지 않은 조회는 SESSION_ROUTING_PENDI
     assert.equal(Object.hasOwn(pending, 'nightSuccessRecovery'), false)
     assert.equal(Object.hasOwn(pending, 'phase'), false, '보류 응답이 snapshot 본문을 실었다')
 
-    // 그 보류가 시작한 재동기화가 채널 재가입을 끝낸다.
     await Promise.resolve()
     await Promise.resolve()
     assert.equal(reconnected.rooms.has(session.channelId), true, '보류 응답이 재가입을 시작하지 않았다')
@@ -3619,7 +3079,6 @@ test('AC-04(F-26): 다른 밤의 사건은 복원되지 않는다(보관함 교�
     const { session, io, submit, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, successPayload } =
         startNightWithKill('f26-ac04-stale-night')
 
-    // 그 밤을 끝내고 다음 밤을 시작한다 — 보관함이 통째로 교체된다.
     submit(doctorUuid, null)
     submit(guardUuid, null)
     submit(witchHunterUuid, null)
@@ -3640,7 +3099,6 @@ test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접
     const { session, io, jokerUuid, doctorUuid, guardUuid, witchHunterUuid, citizenUuid, successPayload } =
         startNightWithKill('f26-ac05-recipients')
 
-    // KILL의 수신자는 광대(USER)와 시민(TARGET)뿐이다.
     for (const uuid of [jokerUuid, citizenUuid]) {
         const socket = reconnectSocket(io, session, uuid)
         assert.equal(getSnapshot(socket, { gameId: session.id }).nightSuccessRecovery.length, 1,
@@ -3653,7 +3111,6 @@ test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접
         assert.deepEqual(response.nightSuccessRecovery, [],
             `${uuid}: 이 사건의 수신자가 아닌 참가자에게 복원 목록이 실렸다`)
     }
-    // 비참가자는 애초에 snapshot 자체를 받지 못한다(기존 계약 그대로다).
     const outsider = createFakeSocket('f26-ac05-outsider')
     io.sockets.sockets.set(outsider.id, outsider)
     gameSessionSocketLayer.registerGameHandlers(io, outsider, 'f26-ac05-outsider')
@@ -3663,17 +3120,6 @@ test('AC-05(F-26): 그 사건의 수신자가 아닌 역할·기권자는 재접
     assert.ok(successPayload.eventId)
 })
 
-// ---------------------------------------------------------------------------
-// F-27a · 연출 대기 게이트의 실제 해제 조건(완료 ACK·오류·건너뛰기·미응답 상한)
-//
-// 이 절부터 activateNightPresentationWait가 실제로 상한 타이머를 걸고, 완료 ACK 또는 그 상한
-// 경과만이 대기를 닫는다. wireSession의 submit()은 기본적으로 그 대기를 실제 해제 경계
-// (releaseNightPresentationWait — 상한이 막 지난 것과 동일한 호출)로 곧바로 흘려보내므로,
-// 대기 자체의 차단·해제 조건을 보는 시험은 { autoDrainWait: false }로 그 편의를 끄고 여기서
-// 직접 ACK·상한·재접속을 구동한다.
-// ---------------------------------------------------------------------------
-
-/** run의 현재 연출 대기 토큰(없으면 null). */
 function currentWait(session) {
     return gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)?.wait ?? null
 }
@@ -3684,10 +3130,6 @@ test('AC-01(F-27a): 성공 사건 발생 뒤 서버는 실제 대기에 들어�
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
 
-    // 낮 타이머(startDayPhaseTimer)는 finalizeNightForSession이 deps 없이 부르므로 실제
-    // 진행 경로에서는 전역 setTimeout을 쓴다(밤 턴의 가짜 시계와는 별개다) — "실제 진행
-    // 경로에서 낮 타이머가 예약되지 않았다"를 검증하려면 그 전역을 직접 가로채야 한다.
-    // 시험 전용 주입 지점을 새로 만들지 않고 전역 자체를 관찰·복원한다.
     const originalSetTimeout = globalThis.setTimeout
     const dayTimerCalls = []
     let fakeTimerId = 1
@@ -3702,15 +3144,12 @@ test('AC-01(F-27a): 성공 사건 발생 뒤 서버는 실제 대기에 들어�
         const wait = currentWait(session)
         assert.ok(wait, '전제: 실제 KILL 사건이 연출 대기를 연다')
         assert.equal(wait.active, true)
-        // 대기 중에는 run.stage가 직접 PRESENTATION_WAIT임을 확인한다 — isNightPresentationWaitActive
-        // 같은 간접 판정이 아니라 제출·수동 판정·최종화가 실제로 검사하는 바로 그 필드다.
         assert.equal(gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id).stage,
             NIGHT_TURN_STAGES.PRESENTATION_WAIT, '대기 중 run.stage는 PRESENTATION_WAIT다')
         assert.equal(clock.pendingCount(), 1, '상한 타이머가 정확히 하나 걸려 있다')
         assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '대기 중에는 다음 역할이 시작되지 않는다')
         assert.equal(session.phase, 'NIGHT')
         assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER'], ['night_turn_ended', 'JOKER']])
-        // (i) 대기 중(ACK 전·상한 전)에는 실제 낮 타이머 예약이 0건이다.
         assert.equal(dayTimerCalls.length, 0, '대기 중에는 낮 타이머가 예약되지 않는다')
 
         const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
@@ -3722,33 +3161,27 @@ test('AC-01(F-27a): 성공 사건 발생 뒤 서버는 실제 대기에 들어�
             return getResponse()
         }
 
-        // 상한 직전까지 시계를 진행시켜도(둘 다 아직 완료하지 않았으므로) 대기는 풀리지 않는다.
         const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
         clock.advance(run.presentationWaitTimeoutMs - 1)
         assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
         assert.equal(currentWait(session), wait, '같은 토큰이 그대로 유지된다')
         assert.equal(dayTimerCalls.length, 0, '상한 직전까지도 낮 타이머는 예약되지 않는다')
 
-        // 한 명만 완료해도 아직 풀리지 않는다.
         assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: false })
         assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '수신자 2명 중 1명만 완료했다')
         assert.equal(gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
             .byEvent.get(killEntry.payload.eventId).get(citizenUuid).completed, false)
         assert.equal(dayTimerCalls.length, 0)
 
-        // 나머지 한 명까지 완료해야 비로소 풀린다 — 이 해제는 DOCTOR 턴을 열 뿐, 아직 밤이
-        // 끝나지 않았으므로 낮 타이머는 여전히 예약되지 않는다.
         assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
         assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '두 수신자 모두 완료한 뒤에야 다음 역할이 시작된다')
         assert.equal(currentWait(session), null)
         assert.equal(dayTimerCalls.length, 0, 'JOKER 대기 해제는 낮 타이머를 만들지 않는다')
 
-        // 남은 세 역할은 실제 사건이 없어(전원 건너뜀) 즉시 해제된다 — 그 밤을 끝까지 몰아붙인다.
         submit(doctorUuid, null)
         submit(guardUuid, null)
         submit(witchHunterUuid, null)
 
-        // (ii) 마지막 역할의 대기가 해제되어 밤이 최종화된 뒤에야 낮 타이머가 실제로 예약된다.
         assert.equal(session.phase, 'DAY', '전제: 밤이 끝나 낮으로 넘어갔다')
         assert.equal(dayTimerCalls.length, 1, '밤이 최종화된 뒤에야 낮 타이머가 정확히 한 번 예약된다')
     } finally {
@@ -3773,11 +3206,8 @@ test('AC-01/AC-02(F-27a): 아무도 완료 보고를 하지 않으면 상한이 
 
     clock.advance(1)
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '상한이 지나면 진행 해제로 다음 역할이 시작된다')
-    // 해제된 대기의 상한 타이머는 취소된다 — 유일하게 남은 타이머는 방금 시작된 DOCTOR
-    // 제출 구간의 새 타이머다(대기 타이머가 이중으로 남지 않았다는 근거).
     assert.equal(clock.pendingCount(), 1, '해제된 대기의 상한 타이머는 남지 않고 다음 역할의 제출 타이머만 남는다')
 
-    // 위조된(또는 이미 해제된) 토큰으로 같은 run을 다시 해제하려 해도 두 번째 진행은 없다.
     assert.equal(releaseNightPresentationWait(run, { run, forged: true }), false)
     assert.equal(turnEventLog(io).filter(([event, role]) => event === 'night_turn_started' && role === 'DOCTOR').length, 1,
         '다음 역할이 두 번 시작되지 않았다')
@@ -3881,11 +3311,9 @@ test('AC-03(F-27a): 이미 해제된 사건의 중복·지연 완료 보고는 �
     assert.deepEqual(ackOf(citizenUuid, citizenEntry), { ok: true, duplicate: false })
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '해제로 DOCTOR 턴이 시작됐다')
 
-    // 같은 밤: 이미 해제된 사건의 중복 보고는 duplicate:true뿐이고 어떤 진행도 다시 만들지 않는다.
     assert.deepEqual(ackOf(jokerUuid, killEntry), { ok: true, duplicate: true })
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR')
 
-    // 나머지 세 역할을 전원 기권으로 넘겨 다음 밤을 연다 — 완료 수신 보관함이 통째로 교체된다.
     submit(doctorUuid, null)
     submit(guardUuid, null)
     submit(witchHunterUuid, null)
@@ -3897,7 +3325,6 @@ test('AC-03(F-27a): 이미 해제된 사건의 중복·지연 완료 보고는 �
     const nextClock = createManualClock()
     startNightTurnSequence(io, session, { ...nextClock, randomFn: () => 0.5 })
 
-    // 지난 밤 사건에 대한 지연 보고는 다음 밤에서 STALE_EVENT이고, 진행 중인 새 턴을 건드리지 않는다.
     assert.equal(ackOf(citizenUuid, citizenEntry).code, 'STALE_EVENT')
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'JOKER', '다음 밤의 진행은 옛 밤의 지연 보고로 바뀌지 않는다')
 })
@@ -3912,15 +3339,12 @@ test('AC-03(F-27a): 상한으로 해제된 사건의 뒤늦은 최초 완료 보
 
     const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
     const run = gameSessionSocketLayer.__testables.__getNightTurnRunForTests(session.id)
-    // 아무도 완료 보고를 하지 않은 채 상한이 지나 JOKER의 KILL 대기가 풀린다.
     clock.advance(run.presentationWaitTimeoutMs)
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', '전제: 상한으로 풀려 DOCTOR 턴이 시작됐다')
     const stored = gameSessionSocketLayer.__testables.__getNightSuccessReceiptsForTests(session)
     assert.equal(stored.byEvent.get(killEntry.payload.eventId).get(jokerUuid).completed, false,
         '전제: 상한으로 풀린 사건은 아무도 완료 보고를 하지 않았다')
 
-    // DOCTOR가 같은 대상을 실제로 치료해 두 번째(다른) 사건의 대기를 연다 — 이 대기는 이
-    // 시험 동안 계속 열어 둔다.
     assert.deepEqual(submit(doctorUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
     const otherWait = currentWait(session)
     assert.ok(otherWait, '전제: DOCTOR의 HEAL 사건이 실제 대기를 연다')
@@ -3928,15 +3352,12 @@ test('AC-03(F-27a): 상한으로 해제된 사건의 뒤늦은 최초 완료 보
     const pendingBefore = clock.pendingCount()
     const startedCountBefore = turnEventLog(io).filter(([event]) => event === 'night_turn_started').length
 
-    // JOKER의 KILL은 상한으로 풀렸을 뿐 아무도 완료 보고를 하지 않았다 — 그 사건의 뒤늦은
-    // '최초' 완료 보고가 지금(DOCTOR의 대기가 열려 있는 동안) 도착한다.
     const { callback, getResponse } = countingCallback()
     sockets.get(jokerUuid).trigger('acknowledge_night_action_success',
         { gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId: killEntry.payload.eventId }, callback)
     assert.deepEqual(getResponse(), { ok: true, duplicate: false }, '늦은 최초 보고는 기록만 되고 거부되지 않는다')
     assert.equal(stored.byEvent.get(killEntry.payload.eventId).get(jokerUuid).completed, true)
 
-    // 지금 진행 중인 다른 사건(DOCTOR의 HEAL)의 대기 토큰·상한 타이머·진행 횟수는 그대로다.
     assert.equal(currentWait(session), otherWait, '다른 사건의 대기 토큰이 바뀌지 않았다')
     assert.equal(currentWait(session).timerId, otherTimerId, '다른 사건의 상한 타이머가 재예약되지 않았다')
     assert.equal(clock.pendingCount(), pendingBefore, '가짜 시계의 예약 타이머 개수가 그대로다')
@@ -3960,28 +3381,21 @@ test('AC-04(F-27a): 대기 중 재접속(새 canonical 소켓)은 상한 만료 
     const timerIdBefore = before.timerId
     const pendingBefore = clock.pendingCount()
 
-    // 광대가 재접속한다(새로고침) — 새 canonical 소켓이 생긴다.
     const reconnected = reconnectSocket(io, session, jokerUuid)
     const snapshot = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(snapshot.ok, true, JSON.stringify(snapshot))
     const killPayload = snapshot.nightSuccessRecovery.find((p) => p.type === 'KILL')
     assert.ok(killPayload, '진행 중인 KILL 사건이 복원됐다')
 
-    // 재접속이 대기를 멈추거나 재시작하지 않았다 — 같은 토큰, 같은 상한 타이머(재예약 없음 —
-    // (a) 예약 횟수는 타이머 id가 그대로라는 사실로, 가짜 시계의 예약 개수가 바뀌지 않았다는
-    // 사실로 확인한다).
     assert.equal(currentWait(session), before)
     assert.equal(currentWait(session).timerId, timerIdBefore, '재접속이 상한 타이머를 취소·재예약하지 않았다')
     assert.equal(clock.pendingCount(), pendingBefore, '가짜 시계의 예약 개수가 재접속으로 바뀌지 않았다')
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null)
 
-    // (a) 상한 만료 시각이 재접속으로 늦춰지지 않았음을 행동으로 확인한다 — 원래 만료 1ms
-    // 전까지는 재접속 뒤에도 여전히 풀리지 않는다.
     clock.advance(timeoutMs - 1)
     assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '만료 1ms 전에는 아직 풀리지 않는다(만료 시각이 그대로다)')
     assert.equal(currentWait(session), before, '아직 같은 토큰이다')
 
-    // 새 연결에서 보낸 완료 보고가(상한 전에) 정상적으로 통과한다.
     const ack1 = countingCallback()
     reconnected.trigger('acknowledge_night_action_success',
         { gameId: session.id, nightDayIndex: killPayload.nightDayIndex, eventId: killPayload.eventId }, ack1.callback)
@@ -4010,23 +3424,18 @@ test('AC-04(F-27a): 단절로 기다릴 대상에서 빠진 수신자는 재접�
     assert.deepEqual([...currentWait(session).waiting.get(eventId).keys()].sort(), [jokerUuid, citizenUuid].sort(),
         '전제: 두 수신자 모두 기다림 대상이다')
 
-    // 대상자(citizenUuid)가 실제로 끊긴다(등록된 onDisconnect 경로 — AC-01 계열 시험과 같은 방식).
     sockets.get(citizenUuid).connected = false
     await gameSessionSocketLayer.onDisconnect(io, sockets.get(citizenUuid), citizenUuid)
     assert.deepEqual([...currentWait(session).waiting.get(eventId).keys()], [jokerUuid],
         '끊긴 대상자가 기다림 대상에서 빠졌다')
 
-    // 같은 계정이 새 소켓으로 재접속한다(새로고침).
     const reconnected = reconnectSocket(io, session, citizenUuid)
     const snapshot = getSnapshot(reconnected, { gameId: session.id })
     assert.equal(snapshot.ok, true, JSON.stringify(snapshot))
 
-    // 재접속만으로는 다시 기다림 대상에 들어오지 않는다 — 여전히 jokerUuid뿐이다.
     assert.deepEqual([...currentWait(session).waiting.get(eventId).keys()], [jokerUuid],
         '재접속이 끊겼던 수신자를 기다림 대상으로 되돌렸다')
 
-    // 남은 유일한 대상(jokerUuid)의 완료 보고만으로 해제된다 — citizenUuid의 재접속 뒤 완료
-    // 여부와 무관하다.
     const ack = countingCallback()
     sockets.get(jokerUuid).trigger('acknowledge_night_action_success',
         { gameId: session.id, nightDayIndex: killEntry.payload.nightDayIndex, eventId }, ack.callback)
@@ -4040,8 +3449,6 @@ test('AC-05(F-27a): 마지막 역할의 연출 대기도 완료 보고가 오기
         commitFullRoleSessionAtNight({ id: 'f27a-ac05-last', dayIndex: 2 })
     const { io, sockets, submit } = wireSession(session)
 
-    // 첫 밤: 광대가 시민을 죽인다(실제 사망 확정) — 이 밤의 대기 자체는 이 시험의 관심사가
-    // 아니므로 기본 드레인(상한이 막 지난 것과 동일한 해제)으로 넘긴다.
     const firstClock = createManualClock()
     startNightTurnSequence(io, session, { ...firstClock, randomFn: () => 0.5 })
     submit(jokerUuid, citizenUuid)
@@ -4052,9 +3459,6 @@ test('AC-05(F-27a): 마지막 역할의 연출 대기도 완료 보고가 오기
     assert.equal(session.phase, 'DAY')
     stopDayPhaseTimer(session.id)
 
-    // 둘째 밤: 마녀사냥꾼이 그 사망자를 확인한다 — 마지막 역할의 실제 CONFIRM 사건이다.
-    // 관찰은 여기서부터 시작한다 — 첫 밤의 사망 확정·승패 평가가 이 시험의 "0회" 단언에
-    // 섞이지 않게 하기 위함이다.
     const observed = captureCommitEvents()
     session.phase = 'NIGHT'
     session.nightActions = new Map()
@@ -4066,14 +3470,12 @@ test('AC-05(F-27a): 마지막 역할의 연출 대기도 완료 보고가 오기
     submit(guardUuid, null)
     assert.deepEqual(submit(witchHunterUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
 
-    // 대기 중에는 자동 최종화도 수동 판정도 결과를 확정하지 못한다.
     assert.equal(session.phase, 'NIGHT')
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED') + observed.countOf('GAME_FINALIZED'), 0)
     const { callback, getResponse } = countingCallback()
     handleResolveNight(io, sockets.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
     assert.deepEqual(getResponse(), { ok: false, code: 'ACTIONS_PENDING', message: '요청을 처리할 수 없습니다.' })
 
-    // 두 수신자(마녀사냥꾼·시민)가 완료 보고를 마치면 그제서야 정확히 한 번 최종화된다.
     const confirmEntry = sockets.get(witchHunterUuid).emitted.find((e) => e.event === 'night_action_success')
     const citizenConfirmEntry = sockets.get(citizenUuid).emitted
         .find((e) => e.event === 'night_action_success' && e.payload.type === 'CONFIRM')
@@ -4085,7 +3487,6 @@ test('AC-05(F-27a): 마지막 역할의 연출 대기도 완료 보고가 오기
     }
 
     assert.equal(session.phase, 'DAY', '해제 뒤 결과 단계(낮)로 정확히 한 번 진행했다')
-    // 이 밤은 확인(CONFIRM)뿐이라 새 사망은 없다 — "정확히 한 번"의 근거는 승패 평가 1회다.
     assert.equal(observed.winEvaluations('NIGHT'), 1, '해제 뒤 승패 평가가 정확히 한 번 실행됐다')
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0, '이 밤은 새 사망이 없다')
     assert.equal(observed.countOf('GAME_FINALIZED'), 0, '아직 경기가 끝나지 않았다')
@@ -4122,8 +3523,6 @@ test('AC-05(F-27a): 마지막 밤이 경기 종료(ENDED)로 끝나는 경우에
         }
         assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'DOCTOR', `${mode}: 해제 뒤 다음 역할이 시작됐다`)
 
-        // 남은 턴은 광대만 실제로 지목하고 나머지는 전원 건너뛴다 — 그 밤이 끝날 때까지
-        // 몰아붙인다(F-25b 절의 기존 헬퍼를 그대로 재사용한다).
         driveNightToFinalization(session, submit, clock, jokerUuid, targetUuid)
 
         assert.equal(session.phase, 'ENDED', `${mode}: 광대 동수로 그 밤에 종료된다`)
@@ -4145,7 +3544,6 @@ test('AC-06(F-27a): 연출 대기 알림은 비수신자에게만 gameId·nightD
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     assert.deepEqual(submit(jokerUuid, citizenUuid, { autoDrainWait: false }), { ok: true })
 
-    // 비수신자(의사·경비원·마녀사냥꾼)만 waiting:true를 받는다. 수신자(광대·시민)는 받지 않는다.
     for (const uuid of [doctorUuid, guardUuid, witchHunterUuid]) {
         const entries = sockets.get(uuid).emitted.filter((e) => e.event === 'night_presentation_wait')
         assert.equal(entries.length, 1, `${uuid}: 비수신자는 대기 알림을 정확히 한 번 받아야 한다`)
@@ -4158,7 +3556,6 @@ test('AC-06(F-27a): 연출 대기 알림은 비수신자에게만 gameId·nightD
             `${uuid}: 대기의 수신자 본인은 대기 알림을 받지 않는다`)
     }
 
-    // 완료 보고로 해제하면 같은 비수신자에게 waiting:false가 정확히 한 번 더 간다(새 계정은 추가되지 않는다).
     const killEntry = sockets.get(jokerUuid).emitted.find((e) => e.event === 'night_action_success')
     const citizenEntry = sockets.get(citizenUuid).emitted.find((e) => e.event === 'night_action_success')
     for (const [uuid, entry] of [[jokerUuid, killEntry], [citizenUuid, citizenEntry]]) {
@@ -4190,7 +3587,6 @@ test('AC-06(F-27a): 사건이 없는 턴은 통지 없이 즉시 해제되고, �
     }
 })
 
-// ── 2026-09-22 운영자 결정: 방 설정의 역할 구성이 0인 역할은 밤 턴이 돌지 않는다 ─────────────
 test('구성 0 역할(광대 2·귀족 1 판의 의사·경비원·마녀사냥꾼)은 night_turn_started/ended가 0회이고, 판정 자료에는 NO_ROLE로 남으며, 광대 턴만 돈 뒤 밤이 정상 확정된다', () => {
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'comp-zero-skip', keepComposition: true })
     assert.deepEqual(gameSessionCore.getNightTurnOrder(session), ['JOKER'], '구성이 있는 역할만 턴 순서에 남는다')

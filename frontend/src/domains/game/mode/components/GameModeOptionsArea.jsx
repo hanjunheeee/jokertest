@@ -1,8 +1,6 @@
-// 파일 역할: GameModeOptionsArea.jsx - 화면을 구성하는 컴포넌트입니다.
 import { GAME_MODES } from "@/domains/game/mode/constants/modeAssets.js"
 import ModeOptionCard from "@/domains/game/mode/components/ModeOptionCard.jsx"
 
-/** 싱글/멀티/비밀 연회장 모드 카드를 배치합니다. */
 export default function GameModeOptionsArea({ onModeSelect }) {
   return (
     <div

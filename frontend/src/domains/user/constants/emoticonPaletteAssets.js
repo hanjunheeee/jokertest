@@ -1,4 +1,3 @@
-/** 마이페이지 이모티콘 관리(/mypage/emoticons) — public 에셋 경로 */
 export const EMOTICON_PALETTE_ASSETS = {
   paletteFrame: "/frame/emoji/palette-frame.png",
   plate: "/frame/emoji/plate.png",

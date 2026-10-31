@@ -57,7 +57,6 @@ test("live REVOTE resets selection/submission and ignores delayed previous-round
     })
     assert.equal(hook.result.current.dayVoteHasSubmitted, false)
     assert.equal(hook.result.current.dayVoteResolveStatus, "idle")
-    // A duplicate first-round broadcast must not clear an in-flight second vote.
     act(() => hook.result.current.setSelectedDayVoteTargetId("p4"))
     act(() => hook.result.current.submitDayVote())
     act(() => { for (const fn of listeners.get("day_vote_resolved") ?? []) fn(revote) })

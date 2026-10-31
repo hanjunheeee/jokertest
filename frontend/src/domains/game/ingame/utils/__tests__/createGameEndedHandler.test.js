@@ -53,11 +53,8 @@ test("getCurrentGameId는 호출 시점에 지연 조회된다 — 생성 시점
     finalize: finalize.fn,
   })
 
-  // 핸들러 생성 이후 현재 gameId가 바뀐다(새 GameSession 시작을 흉내낸다).
   currentGameId = "game-b"
 
-  // 생성 시점 값("game-a")을 캡처했다면 이 호출도 무시돼야 하지만, 최신 값을 읽는다면
-  // "game-b"와 일치해 정상 처리되어야 한다.
   handler({ gameId: "game-b", reason: "PARTICIPANT_LEFT" })
 
   assert.equal(finalize.calls.length, 1)

@@ -1,5 +1,3 @@
-/** 최후의 반론 연출 — framer-motion variant */
-
 export const INGAME_TRIBUNAL_PRESENTATION_CARD_MOTION = {
   hidden: { opacity: 0, scale: 1.55, y: "-8%" },
   visible: {

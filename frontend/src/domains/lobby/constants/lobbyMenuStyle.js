@@ -1,10 +1,7 @@
-// 로비 메뉴 전체 위치와 간격입니다.
 export const LOBBY_MENU_NAV_CLASS = "mt-[clamp(1.25rem,3.5vh,2.5rem)] flex translate-x-[clamp(0.1rem,1.0vw,-0.1rem)] translate-y-[clamp(1.25rem,3.5vh,2.75rem)] flex-col items-center gap-[clamp(0.85rem,2.2vh,1.35rem)]"
 
-// 로비 메뉴 버튼과 이미지에 들어가는 공통 스타일입니다.
 export const LOBBY_MENU_BTN_CLASS = "interactive-scale lobby-menu-btn block leading-none"
 
-// 고객센터 + 디스코드를 하나의 로비 메뉴 버튼으로 묶을 때 쓰는 스타일입니다.
 export const LOBBY_MENU_CUSTOMER_BTN_CLASS =
   `${LOBBY_MENU_BTN_CLASS} flex items-center justify-center gap-[clamp(0.35rem,0.75vw,0.55rem)]`
 

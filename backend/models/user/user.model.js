@@ -17,9 +17,6 @@ module.exports = (sequelize, DataTypes) => {
     locked_until: { type: DataTypes.DATE },
     last_login_at: { type: DataTypes.DATE },
     birth_date: { type: DataTypes.DATE },
-    // F-29b §2-3a: 소셜 전용 계정(로컬 비밀번호 없음) 판정. 기본값 true — 로컬 가입은 항상
-    // true로 남고, 소셜 가입 완료(completeSocialSignup)만 명시적으로 false를 저장한다.
-    // 명시적 연결(identity 추가)·비밀번호 변경·재설정 성공은 이 값을 건드리지 않는다.
     has_local_password: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   }, {
     tableName: 'users',
@@ -35,7 +32,6 @@ module.exports = (sequelize, DataTypes) => {
     User.hasMany(models.LoginHistory, { foreignKey: 'user_id', sourceKey: 'uuid' });
     User.hasMany(models.PasswordResetToken, { foreignKey: 'user_id', sourceKey: 'uuid' });
     User.hasMany(models.UserSession, { foreignKey: 'user_id', sourceKey: 'uuid' });
-    // F-05: 한 계정에 여러 소셜 identity(구글/카카오 등)가 연결될 수 있다(AC-04 명시적 연결).
     User.hasMany(models.ExternalIdentity, { foreignKey: 'user_id', sourceKey: 'uuid' });
 
     User.hasMany(models.FriendRequest, { as: 'SentRequests', foreignKey: 'requester_id', sourceKey: 'uuid' });

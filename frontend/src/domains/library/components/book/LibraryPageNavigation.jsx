@@ -8,7 +8,6 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
-/** 기억의 서고 — spread 하단 이전/다음 페이지 버튼 */
 export default function LibraryPageNavigation({
   canGoPrev = false,
   canGoNext = false,

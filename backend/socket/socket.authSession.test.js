@@ -1,12 +1,3 @@
-// AC-03/AC-05/AC-06 — socket disconnect가 인증(HTTP 쿠키) 세션을 건드리지 않는지 확인합니다.
-//
-// 새로고침은 서버에게 socket disconnect + 새 connect로만 보입니다. 예전에는 disconnect
-// 처리(handleDisconnect)가 userRepository.recordLogout(uuid)까지 호출해 user_sessions의
-// is_online을 내렸고, verifyToken은 그 세션을 "이미 내려간 세션"으로 보고 401을 돌려줬습니다.
-// 즉 새로고침 한 번으로 로그아웃되는 상태였습니다. 이 파일은 그 회귀를 막습니다.
-//
-// 기존 socket/__tests__/socket.test.js는 disconnect 배선(gameSession 정리 순서)만 다루고
-// 인증 세션 축은 비어 있어, 같은 경로를 인증 관점에서 다시 검증하는 파일을 따로 둡니다.
 process.env.JWT_SECRET = "socket-auth-session-test-secret";
 
 const test         = require("node:test");
@@ -28,7 +19,6 @@ const { createFakeSocket, createFakeIo } = require("./__tests__/testHelpers/matc
 const UUID = "auth-session-uuid";
 const SESSION_ID = "auth-session-1";
 
-// index.js와 같은 순서로 미들웨어를 붙여 실제 요청 경로 그대로 상태 코드를 확인합니다.
 const startServer = async (t) => {
     const app = express();
     app.use(express.json());
@@ -44,12 +34,6 @@ const startServer = async (t) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-/**
- * user_sessions를 흉내내는 메모리 저장소를 db에 꽂습니다. 세션 한 건을 "진짜 행"처럼
- * 들고 있어야 disconnect가 is_online을 바꿨는지/안 바꿨는지를 그대로 관찰할 수 있습니다.
- * presence(OnlinePresence)와 친구 조회도 실제 presenceService 경로를 그대로 태우기 위해
- * 여기서 함께 대체합니다 — 그래야 "presence는 내려가고 인증 세션은 그대로"를 한 번에 봅니다.
- */
 const stubAuthStorage = (t) => {
     const originals = {
         UserSession:    db.UserSession,
@@ -87,11 +71,6 @@ const stubAuthStorage = (t) => {
 const authGet = (base, path, token) =>
     fetch(`${base}${path}`, { headers: { cookie: `accessToken=${token}` } });
 
-/**
- * 실제 Socket.IO 서버 없이 disconnect 배선만 구동합니다. registerConnectionHandlers가 아니라
- * registerDisconnectHandler를 직접 부르는 이유는 socket.test.js와 같습니다 — connection
- * 경로의 부수효과를 떠안지 않고 disconnect만 태우기 위함입니다.
- */
 const runDisconnect = async (uuid) => {
     const handlers = {};
     const fakeSocket = {
@@ -102,13 +81,11 @@ const runDisconnect = async (uuid) => {
     };
     const fakeIo = { sockets: { sockets: new Map([[fakeSocket.id, fakeSocket]]) }, to: () => ({ emit() {} }) };
 
-    // handleDisconnect는 "지금 registry에 등록된 canonical 소켓"일 때만 본문을 실행한다.
     socketLayer.__getOnlineUsersForTests().set(uuid, fakeSocket.id);
 
     socketLayer.__testables.registerDisconnectHandler(fakeIo, fakeSocket, uuid);
     handlers.disconnect();
 
-    // 핸들러는 promise를 await 없이 띄우므로 부수효과가 끝날 때까지 이벤트 루프를 흘려보낸다.
     for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
 };
 
@@ -121,9 +98,6 @@ const resetSocketRegistries = () => {
 
 test.beforeEach(resetSocketRegistries);
 test.after(resetSocketRegistries);
-
-// ── F-03 AC-03/AC-05: authenticateSocket이 HTTP verifyToken과 같은 sessionLifecycle을
-// 공유해, 폐기된 세션·정지된 계정을 동일하게 거부하는지 확인합니다. ─────────────────────
 
 const fakeHandshakeSocket = (token) => ({ handshake: { headers: { cookie: `accessToken=${token}` } }, data: {} });
 
@@ -171,8 +145,6 @@ test("AC-06: socket disconnect는 auth session의 is_online을 바꾸지 않는�
     await runDisconnect(UUID);
 
     assert.equal(session.is_online, true, "disconnect가 인증 세션을 내리면 새로고침만으로 로그아웃됩니다");
-    // 같은 disconnect로 presence는 정상적으로 내려가야 한다 — 인증 세션과 presence는
-    // 서로 다른 저장소이고, 이 변경으로 친구 목록의 온라인 표시까지 멈추면 안 된다.
     assert.deepEqual(presenceWrites.map((row) => row.status), ["OFFLINE"]);
     assert.equal(presenceWrites[0].user_id, UUID);
 });
@@ -206,11 +178,6 @@ test("AC-05: disconnect가 여러 번 반복돼도 인증 세션은 그대로다
     assert.equal(session.is_online, true);
 });
 
-// ── AC-09: 중복 로그인 ───────────────────────────────────────────────────────
-// 새로고침(AC-05)과 달리, 같은 계정으로 다른 기기·브라우저에서 접속하면 이전 접속은
-// 즉시 끊겨야 한다. 두 경로가 같은 disconnect 배선을 공유하므로 함께 고정해 둔다.
-
-/** force_disconnect 수신과 강제 종료 호출을 관찰할 수 있는 최소 fake socket. */
 const makeSocket = (id) => ({
     id,
     data: { user: { uuid: UUID } },
@@ -235,8 +202,6 @@ test("AC-09: 같은 계정으로 새 소켓이 접속하면 이전 소켓에 for
 
     await socketLayer.__testables.handleConnection(io, fresh, UUID);
 
-    // registry가 먼저 새 소켓으로 바뀌어야, 곧 이어질 이전 소켓의 disconnect 처리가
-    // 자신을 canonical로 오인해 새 세션의 상태까지 무너뜨리는 일이 없다.
     assert.equal(onlineUsers.get(UUID), fresh.id);
     assert.deepEqual(existing.emitted.map((entry) => entry.event), ["force_disconnect"]);
     assert.equal(existing.data.forcedLogout, true);
@@ -260,9 +225,6 @@ test("AC-09: force_disconnect 안내에는 토큰·쿠키 같은 값이 들어�
     assert.equal(/token|cookie|password/i.test(JSON.stringify(payload)), false);
 });
 
-// ── F-03 AC-05/AC-09: 이미 연결된 소켓의 후속 보호 동작도 세션 폐기를 즉시 반영한다 ──────
-
-/** wrapSocketWithSessionGuard가 감싸는 socket.on을 흉내내는 최소 fake socket. */
 const makeGuardedSocket = (uuid) => {
     const handlers = {};
     return {
@@ -312,7 +274,6 @@ test("F-03 AC-09: disconnect 이벤트는 세션 재검증 없이 그대로 등�
 
     let ran = false;
     socket.on("disconnect", () => { ran = true; });
-    // db.UserSession을 일부러 깨서, 재검증을 시도했다면 여기서 던졌을 것임을 보장한다.
     db.UserSession = { findOne: async () => { throw new Error("재검증이 호출되면 안 됩니다"); } };
     await socket._handlers.disconnect();
 
@@ -334,17 +295,10 @@ test("AC-09/AC-06: 강제 종료된 이전 소켓의 disconnect는 새 세션의
     await socketLayer.__testables.handleConnection(io, fresh, UUID); // 여기서 existing.forcedLogout = true
     await socketLayer.__testables.handleDisconnect(io, existing, UUID);
 
-    // ONLINE 한 번만 기록돼야 한다 — 강제 종료된 소켓이 OFFLINE을 덧쓰면 방금 로그인한
-    // 기기가 친구 목록에서 곧바로 오프라인으로 보인다.
     assert.deepEqual(presenceWrites.map((row) => row.status), ["ONLINE"]);
     assert.equal(onlineUsers.get(UUID), fresh.id);
     assert.equal(session.is_online, true);
 });
-
-// ── F-29b AC-04: 클라이언트 이벤트 없이도 연결별 주기 검사가 세션 폐기를 반영한다 ──────
-// 비밀번호 재설정으로 세션이 폐기돼도, 그 소켓이 아무 이벤트를 보내지 않으면
-// wrapSocketWithSessionGuard(이벤트 가로채기)만으로는 절대 감지되지 않는다 — 독립 타이머가
-// 필요한 이유다.
 
 test("F-29b AC-04: 유효한 검사 이후 클라이언트 이벤트 없이 세션이 폐기되면 다음 검사에서 강제 종료된다", async (t) => {
     const { session } = stubAuthStorage(t);
@@ -437,8 +391,6 @@ test("F-29b AC-04: 주기 검사 중 예외가 발생해도 연결을 유지하�
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    // 계약: 재검증이 예외로 실패해도 연결을 열어 둔 채로 두지 않는다 — 실패 판정(ok:false)과
-    // 같은 결과(안내 후 강제 종료)여야 한다.
     assert.deepEqual(socket.emitted.map((e) => e.event), ["force_disconnect"], "검사 예외에서도 연결을 종료해야 합니다");
     assert.equal(socket.disconnectCalls, 1);
 
@@ -448,10 +400,6 @@ test("F-29b AC-04: 주기 검사 중 예외가 발생해도 연결을 유지하�
 });
 
 test("F-29b AC-04: registerConnectionHandlers를 거치면 주기 검사가 실제로 시작되고 disconnect에서 정리된다", async (t) => {
-    // 위의 F-29b AC-04 시험들은 startSessionRevocationWatcher를 직접 호출한다 — 그 함수
-    // 자체의 동작은 증명하지만, 실제 연결 진입점(registerConnectionHandlers)이 그 함수를
-    // 실제로 호출해 배선했는지는 증명하지 못한다. 이 시험은 registerConnectionHandlers를
-    // 실제로 거쳐 그 배선 자체를 검증한다.
     const { session } = stubAuthStorage(t);
     t.mock.timers.enable({ apis: ["setInterval"] });
 
@@ -462,7 +410,6 @@ test("F-29b AC-04: registerConnectionHandlers를 거치면 주기 검사가 실�
     const io = createFakeIo([fakeSocket]);
 
     socketLayer.__testables.registerConnectionHandlers(io, fakeSocket);
-    // handleConnection의 비동기 부수효과(presence 등)가 끝나도록 흘려보낸다.
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -471,18 +418,12 @@ test("F-29b AC-04: registerConnectionHandlers를 거치면 주기 검사가 실�
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(disconnectCalls, 0, "registerConnectionHandlers를 거친 연결도 유효한 첫 검사에서 종료되면 안 됩니다");
 
-    // 클라이언트 이벤트를 이 소켓에 한 번도 보내지 않은 채(이벤트 가드는 관여하지 않는다)
-    // 세션만 폐기된 상태를 흉내낸다 — registerConnectionHandlers가 실제로 주기 검사를
-    // 시작했을 때만 다음 tick에서 감지된다. 배선이 빠졌다면(예: watcher를 만들기만 하고
-    // 등록하지 않았다면) 이 assert가 실패한다.
     session.is_online = false;
     t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(disconnectCalls, 1, "registerConnectionHandlers로 시작된 주기 검사가 세션 폐기를 반영하지 못했습니다");
 
-    // disconnect 이벤트가 실제로 sessionWatcher.stop()까지 정리하는지 — 정리되지 않으면
-    // 아래에서 세션을 다시 폐기 상태로 두고 더 tick했을 때 추가 disconnect가 발생한다.
     session.is_online = true;
     fakeSocket.trigger("disconnect");
     await new Promise((resolve) => setImmediate(resolve));

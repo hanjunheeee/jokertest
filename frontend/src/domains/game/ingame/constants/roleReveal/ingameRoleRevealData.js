@@ -1,6 +1,3 @@
-// game-core/gameSession.js의 ROLE_DEFINITIONS(team)와 값이 일치해야 한다 — 이 저장소에는
-// 백엔드/프런트가 공유하는 상수 모듈이 없어 수동으로 동기화한다(buildPlayerSessionSourceFromGameState.js와
-// 동일한 관례).
 const INGAME_ROLE_REVEAL_DISPLAY = Object.freeze({
   JOKER: Object.freeze({
     name: "광대",
@@ -29,7 +26,6 @@ const INGAME_ROLE_REVEAL_DISPLAY = Object.freeze({
   }),
 })
 
-/** role → { name, teamLabel, description } 표시 메타데이터. 알 수 없는 role이면 null. */
 export function getInGameRoleRevealDisplay(role) {
   return INGAME_ROLE_REVEAL_DISPLAY[role] ?? null
 }

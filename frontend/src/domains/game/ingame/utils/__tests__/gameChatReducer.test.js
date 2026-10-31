@@ -6,12 +6,10 @@ const GAME = "game-1"
 const ACCOUNT_A = "account-a"
 const ACCOUNT_B = "account-b"
 
-/** 지금 소유자(gameId + 인증 계정)를 확정한 상태에서 시작한다. */
 function seeded(gameId = GAME, authUuid = ACCOUNT_A) {
   return gameChatReducer(initialGameChatState(), { type: "CONTEXT_CHANGED", gameId, authUuid })
 }
 
-/** 액션마다 소유자를 일일이 적지 않도록 기본 신원을 채워 넣는다(명시하면 그 값이 이긴다). */
 function apply(state, action) {
   return gameChatReducer(state, { gameId: GAME, authUuid: ACCOUNT_A, ...action })
 }
@@ -23,7 +21,6 @@ function message(id, text = "hi") {
 const EMPTY_CHANNEL = { messages: [], draft: "", status: "idle", error: null, generation: 0, pendingToken: null }
 const MASKED = { draft: "", messages: [], status: "idle", error: null, generation: null }
 
-/** SEND → ACK 한 왕복을 그대로 재현한다(제출 시점의 세대·토큰을 캡처해 응답에 되돌려준다). */
 function sendThenAck(state, { channel, requestToken, ok, message: msg, requestDraft, authUuid = ACCOUNT_A }) {
   const generation = state[channel].generation
   const sent = apply(state, { type: "SEND", authUuid, channel, requestToken })
@@ -112,7 +109,6 @@ test("gameChatReducer: 한 채널의 status/error는 다른 채널로 절대 새
   assert.equal(state.DEAD.error, null)
   assert.equal(state.DEAD.status, "idle")
 
-  // 이번엔 반대 방향 — DEAD가 전송 중이어도 DAY의 오류/상태는 그대로다.
   state = apply(state, { type: "SEND", channel: "DEAD", requestToken: "DEAD:1" })
   assert.equal(state.DEAD.status, "sending")
   assert.equal(state.DAY.status, "idle")
@@ -136,10 +132,6 @@ test("gameChatReducer: 응답을 기다리는 동안 초안이 바뀌었으면 �
 
   assert.equal(state.DAY.draft, "다음 문장")
 })
-
-// ---------------------------------------------------------------------------
-// 세대(generation) · 요청 토큰(pendingToken) — 늦은/오래된 응답 무시
-// ---------------------------------------------------------------------------
 
 test("gameChatReducer: INVALIDATE 이후 도착한 ACK는 세대가 달라 아무 것도 바꾸지 않는다", () => {
   let state = seeded()
@@ -179,12 +171,10 @@ test("gameChatReducer: 같은 채널의 더 오래된 응답은 더 새로운 �
   const firstGeneration = state.DAY.generation
   state = apply(state, { type: "SEND", channel: "DAY", requestToken: "DAY:1" })
 
-  // 무효화 → 새 요청. 이제 진행 중인 요청은 DAY:2뿐이다.
   state = gameChatReducer(state, { type: "INVALIDATE" })
   state = apply(state, { type: "DRAFT", channel: "DAY", draft: "두 번째" })
   state = apply(state, { type: "SEND", channel: "DAY", requestToken: "DAY:2" })
 
-  // 뒤늦게 도착한 첫 요청의 성공 응답(세대·토큰 둘 다 어긋난다).
   const afterStaleAck = apply(state, {
     type: "ACK",
     channel: "DAY",
@@ -195,7 +185,6 @@ test("gameChatReducer: 같은 채널의 더 오래된 응답은 더 새로운 �
   })
   assert.equal(afterStaleAck, state)
 
-  // 세대만 맞고 토큰이 어긋난 응답도 마찬가지로 무시된다(중복 ack 방어).
   const afterDuplicateAck = apply(state, {
     type: "ACK",
     channel: "DAY",
@@ -206,7 +195,6 @@ test("gameChatReducer: 같은 채널의 더 오래된 응답은 더 새로운 �
   })
   assert.equal(afterDuplicateAck, state)
 
-  // 진행 중인 요청의 응답만 반영된다.
   const applied = apply(state, {
     type: "ACK",
     channel: "DAY",
@@ -237,7 +225,6 @@ test("gameChatReducer: 같은 ACK가 두 번 도착해도 두 번째는 아무 �
   const first = gameChatReducer(state, ack)
   assert.equal(first.DEAD.draft, "")
 
-  // 두 번째 도착: pendingToken이 이미 해제됐으므로 무시된다.
   state = apply(first, { type: "DRAFT", channel: "DEAD", draft: "다음 문장" })
   const second = gameChatReducer(state, ack)
   assert.equal(second, state)
@@ -275,11 +262,6 @@ test("gameChatReducer: 알 수 없는 채널의 액션은 어떤 상태도 바�
   }
 })
 
-// ---------------------------------------------------------------------------
-// 신원(gameId + 인증 계정) — 소유자가 바뀌면 이전 소유자의 상태는 하나도 남지 않는다
-// ---------------------------------------------------------------------------
-
-/** 두 채널 모두에 메시지·초안·오류·진행 중 요청이 쌓인 상태를 만든다. */
 function seededWithContent(gameId = GAME, authUuid = ACCOUNT_A) {
   let state = seeded(gameId, authUuid)
   for (const channel of ["DAY", "DEAD"]) {
@@ -317,7 +299,6 @@ test("gameChatReducer: 계정 A로 되돌아와도 이전 상태는 되살아나
   assert.deepEqual(backToA.DAY, EMPTY_CHANNEL)
   assert.deepEqual(backToA.DEAD, EMPTY_CHANNEL)
 
-  // 되돌아온 뒤에도 이전 계정 시절의 진행 중 요청 토큰은 유효하지 않다(늦은 ACK 방어).
   const staleAck = gameChatReducer(backToA, {
     type: "ACK",
     gameId: GAME,
@@ -342,7 +323,6 @@ test("gameChatReducer: 인증 계정이 없어지면(로그아웃·계정 무효
     assert.deepEqual(loggedOut.DAY, EMPTY_CHANNEL)
     assert.deepEqual(loggedOut.DEAD, EMPTY_CHANNEL)
 
-    // 소유자가 없는 동안에는 어떤 액션도 상태에 닿지 못한다.
     for (const action of [
       { type: "RECEIVE", channel: "DAY", message: message("m") },
       { type: "DRAFT", channel: "DAY", draft: "x" },
@@ -382,14 +362,10 @@ test("gameChatReducer: 다른 계정·다른 게임의 늦은 ACK는 무시된�
     requestDraft: "이전 문장",
   }
 
-  // (1) 이전 계정이 보낸 요청의 응답
   assert.equal(gameChatReducer(state, { ...baseAck, gameId: GAME, authUuid: ACCOUNT_B }), state)
-  // (2) 이전 게임에서 보낸 요청의 응답
   assert.equal(gameChatReducer(state, { ...baseAck, gameId: "previous-game", authUuid: ACCOUNT_A }), state)
-  // (3) 계정 정보가 아예 없는 응답
   assert.equal(gameChatReducer(state, { ...baseAck, gameId: GAME, authUuid: null }), state)
 
-  // 같은 신원의 응답만 반영된다(양성 대조).
   const applied = gameChatReducer(state, { ...baseAck, gameId: GAME, authUuid: ACCOUNT_A })
   assert.equal(applied.DAY.draft, "")
 })
@@ -398,7 +374,6 @@ test("gameChatReducer: 계정이 바뀐 뒤 도착한 수신 메시지는 어느
   const withA = seededWithContent()
   const withB = gameChatReducer(withA, { type: "CONTEXT_CHANGED", gameId: GAME, authUuid: ACCOUNT_B })
 
-  // 이전 계정 맥락으로 도착한 메시지 — 지금 소유자는 B다.
   const staleReceive = gameChatReducer(withB, {
     type: "RECEIVE",
     gameId: GAME,
@@ -409,7 +384,6 @@ test("gameChatReducer: 계정이 바뀐 뒤 도착한 수신 메시지는 어느
   assert.equal(staleReceive, withB)
   assert.deepEqual(withB.DAY.messages, [])
 
-  // 새 소유자 맥락의 메시지만 반영된다(양성 대조).
   const accepted = gameChatReducer(withB, {
     type: "RECEIVE",
     gameId: GAME,
@@ -428,10 +402,6 @@ test("gameChatReducer: 같은 신원의 CONTEXT_CHANGED는 상태를 초기화�
 
   assert.equal(gameChatReducer(state, { type: "CONTEXT_CHANGED", gameId: GAME, authUuid: ACCOUNT_A }), state)
 })
-
-// ---------------------------------------------------------------------------
-// selectGameChatView — 접근할 수 없는 채널·다른 소유자의 상태 마스킹
-// ---------------------------------------------------------------------------
 
 test("selectGameChatView: gameId가 다르거나 보기 채널이 없으면 어떤 초안·메시지도 노출하지 않는다", () => {
   let state = seeded()
@@ -454,11 +424,9 @@ test("selectGameChatView: gameId가 다르거나 보기 채널이 없으면 어�
 test("selectGameChatView: 인증 계정이 어긋나면 gameId·채널이 같아도 전부 마스킹된다", () => {
   const state = seededWithContent()
 
-  // 같은 게임·같은 채널이지만 지금 로그인된 계정이 다르다 — 이전 계정의 상태는 보이지 않는다.
   assert.deepEqual(selectGameChatView(state, GAME, ACCOUNT_B, "DAY"), MASKED)
   assert.deepEqual(selectGameChatView(state, GAME, ACCOUNT_B, "DEAD"), MASKED)
 
-  // 소유자 본인에게는 그대로 보인다(양성 대조).
   assert.equal(selectGameChatView(state, GAME, ACCOUNT_A, "DAY").draft, "DAY 초안")
 })
 
@@ -490,7 +458,6 @@ test("selectGameChatView: 접근할 수 없는 채널의 status/error/전송 중
   })
   state = apply(state, { type: "SEND", channel: "DAY", requestToken: "DAY:2" })
 
-  // 사망해서 볼 수 있는 채널이 DEAD가 되면, DAY의 오류도 "전송 중" 표시도 노출되지 않는다.
   const deadView = selectGameChatView(state, GAME, ACCOUNT_A, "DEAD")
   assert.deepEqual(deadView.messages, [])
   assert.equal(deadView.draft, "")

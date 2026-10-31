@@ -8,14 +8,12 @@ import {
 import StoreBulkPurchasePanel from "./StoreBulkPurchasePanel.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
-/** 일괄구매 확인 — 상점 UI 위 오버레이 */
 export default function StoreBulkPurchaseOverlay({ open, items, deadPreviewIds, onClose, onConfirm, purchaseState, onCheck, onRetry }) {
   useEffect(() => {
     if (!open) return undefined
 
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return
-      // F-16(AC-01): 열려 있을 때 실제로 onClose를 부르는 이 경로만 취소음을 낸다.
       dispatchUiSfx("ui-cancel", event)
       onClose()
     }

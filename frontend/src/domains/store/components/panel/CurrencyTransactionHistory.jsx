@@ -1,7 +1,5 @@
 import { currencyHistory, HISTORY_LIMIT, useCurrencyHistory } from "../../store/currencyHistory.store.js"
 
-// F-32 BQ: 서버 원장의 최근 거래(최대 50건)를 서버가 준 순서 그대로 보여 준다. 잔액은 원장을 합산해
-// 만들지 않는다 — 현재 잔액은 상단 재화 표시(지갑 조회)가 맡고, 여기서는 각 행의 거래 후 잔액만 보인다.
 const REASON_LABELS = { DIAMOND_TOPUP: "다이아 충전", GOLD_PURCHASE: "골드 구매" }
 const CURRENCY_LABELS = { DIAMOND: "다이아", GOLD: "골드" }
 const boxClass = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"

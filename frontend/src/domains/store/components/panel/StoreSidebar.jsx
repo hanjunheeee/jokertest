@@ -8,7 +8,6 @@ import {
   STORE_SIDEBAR_WRAP_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
-// 사이드바 카테고리 한 줄입니다.
 function CategoryRow({ label, selected, onSelect }) {
   return (
     <button
@@ -23,7 +22,6 @@ function CategoryRow({ label, selected, onSelect }) {
   )
 }
 
-// 카테고리 섹션 제목입니다.
 function CategoryHeader() {
   return (
     <div className={STORE_SIDEBAR_HEADER_WRAP_CLASS}>
@@ -32,7 +30,6 @@ function CategoryHeader() {
   )
 }
 
-// 상점의 카테고리 필터를 보여주는 사이드바입니다.
 export default function StoreSidebar({ categories, activeCategory, onSelectCategory }) {
   return (
     <div className={STORE_SIDEBAR_WRAP_CLASS} aria-label="카테고리">

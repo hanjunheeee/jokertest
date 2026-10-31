@@ -2,17 +2,6 @@ import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
-// F-06 AC-02/AC-04 — LoginPage.jsx가 socialIntent/socialError 쿼리를 화면 모드로 옮기는
-// 로직의 흐름 테스트입니다.
-//
-// 이 저장소의 node:test 실행(`node --experimental-test-module-mocks --test
-// src/**/__tests__/*.test.js`)에는 JSX 변환기가 없어 LoginPage.jsx·SocialSignupForm.jsx를
-// 직접 렌더링해 검증할 수 없습니다(useLoginPage.js 상단 주석과 같은 제약, `*.test.jsx`도
-// test 스크립트의 glob(`*.test.js`)에 걸리지 않습니다). 그래서 쿼리→화면모드 판정과 오류
-// 코드 매핑이라는 실제 "흐름" 로직은 JSX 없는 useLoginPage.js에 순수 함수로 분리해 뒀고
-// (resolveSocialLoginView/mapSocialErrorCode), 이 파일이 그 함수를 직접 검증합니다.
-// 실제 화면 렌더링은 `npm run build`(vite, JSX 컴파일 확인)로 별도 확인합니다.
-
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true })
 for (const [name, value] of Object.entries({
   window: dom.window,
@@ -27,20 +16,12 @@ for (const [name, value] of Object.entries({
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// useLoginPage.js는 "@/shared/api/client"처럼 Vite 전용 별칭을 쓰는 auth.api.js를
-// import한다 — 플레인 node:test에는 그 별칭을 풀어줄 번들러가 없으므로, 실제 auth.api.js/
-// auth.store.js/react-router-dom을 그대로 불러오면 모듈 해석 자체가 실패한다. 이 파일은
-// mapSocialErrorCode/resolveSocialLoginView라는 순수 함수만 쓰고 어떤 API도 실제로
-// 호출하지 않으므로, useLoginPage.test.js와 같은 방식으로 최소한의 빈 mock만 등록해 import
-// 자체가 성립하게 한다.
 mock.module("../../api/auth.api.js", {
   namedExports: {
     getMeApi: async () => ({}),
     signupApi: async () => ({}),
     loginApi: async () => ({}),
     checkEmailApi: async () => ({ available: true }),
-    // F-31b: useLoginPage.js가 이제 이 두 함수도 import한다 — 이 파일은 그 함수를 실제로
-    // 호출하지 않지만, import 자체가 성립하려면 목 모듈에도 이름이 있어야 한다.
     requestSignupCodeApi: async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 }),
     verifySignupCodeApi: async () => ({ ok: true, signupProof: "unused-in-this-test" }),
   },
@@ -57,8 +38,6 @@ mock.module("react-router-dom", {
 
 const { mapSocialErrorCode, resolveSocialLoginView, SOCIAL_ERROR_MESSAGES, DEFAULT_SOCIAL_ERROR_MESSAGE } =
   await import("../../hooks/useLoginPage.js")
-
-// ── AC-04: socialError 코드는 유한 목록으로 미리 매핑되어야 한다(경계 매핑) ────────
 
 test("정의된 모든 socialError 코드는 비어있지 않은 안내 문구로 매핑된다", () => {
   const codes = Object.keys(SOCIAL_ERROR_MESSAGES)
@@ -86,8 +65,6 @@ test("주요 실패 코드는 서로 다른 문구로 매핑된다(하나의 뭉
   assert.equal(cancelled, SOCIAL_ERROR_MESSAGES.OAUTH_CANCELLED)
 })
 
-// ── F-07: Discord 전용 코드도 Google과 동일한 계약으로 매핑되어야 한다 ────────────
-
 test("Discord 전용 오류 코드(DISCORD_*)는 Google과 구분되는 문구로 매핑된다", () => {
   const googleTimeout = mapSocialErrorCode("GOOGLE_OAUTH_TIMEOUT")
   const discordTimeout = mapSocialErrorCode("DISCORD_OAUTH_TIMEOUT")
@@ -106,8 +83,6 @@ test("제공자 공용 코드(OAUTH_CANCELLED/EMAIL_MISSING/PROVIDER_INVALID)는
     assert.doesNotMatch(message, /Discord/, `${code}는 Discord 전용 문구를 담으면 안 됩니다`)
   }
 })
-
-// ── AC-02: /login?socialIntent=... / socialError=... 쿼리를 화면 모드로 옮긴다 ─────────
 
 test("socialIntent가 있으면 소셜 가입 보완 화면 모드가 된다", () => {
   const view = resolveSocialLoginView({ socialIntent: "intent-1", socialError: null })
@@ -134,11 +109,6 @@ test("둘 다 없으면 기본 로그인 화면 모드가 된다", () => {
 test("빈 문자열 쿼리값은 없는 것과 같이 취급한다(URLSearchParams.get은 없는 키도 빈 문자열이 아니라 null을 준다는 것과는 별개로, 방어적으로도 안전해야 한다)", () => {
   assert.deepEqual(resolveSocialLoginView({ socialIntent: "", socialError: "" }), { mode: "default" })
 })
-
-// ── R-IMPL 재현(Chrome 09:56:37Z, /login?socialError=__proto__ → React #31): 일반 객체를
-// 대괄호 표기법으로 색인하면 own property가 아닌 상속 키까지 값으로 튀어나올 수 있다.
-// mapSocialErrorCode는 이제 own-property만 신뢰해야 하고, 그 값은 항상 문자열이어야
-// 한다(객체/함수가 그대로 나오면 JSX 렌더링에서 다시 React #31로 이어진다). ────────────
 
 test("__proto__ 코드는 Object.prototype이 아니라 기본 문구로 매핑된다(own-property가 아님)", () => {
   const message = mapSocialErrorCode("__proto__")

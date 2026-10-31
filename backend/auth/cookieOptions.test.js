@@ -27,8 +27,6 @@ test("갱신 자격 쿠키는 항상 절대 만료(30일)의 persistent cookie�
     assert.equal(options.maxAge, PERSISTENT_SESSION_MAX_AGE_MS);
 });
 
-// ── F-03 R-IMPL #4: 절대 30일 기한 캡 ─────────────────────────────────────────
-
 test("absoluteExpiresAt이 주어지면 세션·갱신 쿠키 Max-Age가 남은 시간으로 캡된다(회전이 30일을 연장하지 않는다)", () => {
     const now = Date.now();
     const remainingMs = 3 * 24 * 60 * 60 * 1000; // 3일 남음

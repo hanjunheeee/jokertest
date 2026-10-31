@@ -6,7 +6,6 @@ import {
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
-// 회원가입 폼 스크롤 영역 — 네이티브 스크롤바는 숨기고 shared Scrollbar(세로)를 겹칩니다.
 export default function SignupScrollArea({ children }) {
   const scrollRef = useRef(null)
 

@@ -1,22 +1,10 @@
 'use strict';
 
-// F-01 재검토 대응 — migrationRunner의 실패 처리 경로를 실제 MySQL 없이(이 환경은 격리
-// MySQL 자격 증명을 구할 수 없다 — docs/requirements/2026-09-09-f01-migration-runbook.md §7)
-// 결정론적으로 검증한다. 특히 이전 회차 검토에서 빠졌다고 지적된 "이력 쓰기(schema_migrations
-// 기록) 자체가 실패하는 시나리오"를 다룬다 — migration.up()의 DDL은 성공했는데 그 결과를
-// 기록하는 UPDATE 쿼리 자체가 실패하는 경우로, DDL 실패(poison migration)와는 다른 경로다.
-//
-// migrationRunner.js는 sequelize.query(sql, {replacements})와 sequelize.getQueryInterface()만
-// 사용하므로, 이 두 메서드만 흉내낸 순수 JS 객체로 실제 MySQL 없이 전체 상태 전이를
-// 검증할 수 있다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const migrationRunner = require('../db/migrationRunner');
 
-// schema_migrations를 메모리 배열로 흉내내는 fake sequelize. failOn(sql, replacements)이
-// true를 돌려주면 해당 쿼리가 실제 DB 장애처럼 예외를 던진다 — "이력 쓰기 실패" 주입에 쓴다.
 const createFakeSequelize = ({ failOn = () => false } = {}) => {
     const rows = [];
     const queryInterface = { showAllTables: async () => ['schema_migrations'] };
@@ -79,8 +67,6 @@ const makeMigration = (name, { up, verify } = {}) => ({
 
 const findRowByName = (rows, name) => rows.find((r) => r.name === name);
 
-// ── 정상 경로 ──────────────────────────────────────────────────────────────────
-
 test('applyMigrations: up()만 성공하면 applied로 기록된다', async () => {
     const { sequelize, rows } = createFakeSequelize();
     const migration = makeMigration('m1');
@@ -102,8 +88,6 @@ test('applyMigrations: 이미 applied인 마이그레이션은 up()을 다시 �
     assert.deepEqual(applied, []);
     assert.equal(calls, 1, 'up()은 최초 1번만 호출돼야 한다');
 });
-
-// ── DDL 자체 실패 ────────────────────────────────────────────────────────────────
 
 test('applyMigrations: up()이 던지면 failed로 기록되고 에러가 전파된다', async () => {
     const { sequelize, rows } = createFakeSequelize();
@@ -134,8 +118,6 @@ test('applyMigrations: failed 이력이 있으면 무조건 재적용을 차단�
     );
     assert.equal(calls, 1, '실패 이력이 있으면 up()을 다시 호출하면 안 된다');
 });
-
-// ── 이력 쓰기 실패 (이전 회차 검토에서 누락 지적) ───────────────────────────────────────
 
 test('applyMigrations: DDL은 성공했지만 applied 기록(UPDATE)이 실패하면 failed로 안전하게 귀결된다', async () => {
     let ddlRan = false;
@@ -195,7 +177,6 @@ test('applyMigrations: applied 기록도, 그 뒤 failed 기록도 모두 실패
 
 test('applyMigrations: running으로 멈춘 이력이 있으면 재적용을 막고 up()을 다시 부르지 않는다', async () => {
     const { sequelize, rows } = createFakeSequelize();
-    // 크래시로 running에 멈춘 상태를 직접 시뮬레이션한다.
     rows.push({ name: 'm1', checksum: 'whatever', status: 'running', started_at: new Date(0), finished_at: null, error_message: null });
     let calls = 0;
     const migration = makeMigration('m1', { up: async () => { calls += 1; } });
@@ -206,8 +187,6 @@ test('applyMigrations: running으로 멈춘 이력이 있으면 재적용을 막
     );
     assert.equal(calls, 0, 'running으로 멈춘 이력이 있으면 up()을 아예 호출하면 안 된다');
 });
-
-// ── resolveFailure ───────────────────────────────────────────────────────────────
 
 test('resolveFailure: confirmRecovered 없이는 failed 이력도 지울 수 없다', async () => {
     const { sequelize, rows } = createFakeSequelize();
@@ -257,8 +236,6 @@ test('resolveFailure: 존재하지 않는 이력은 에러다', async () => {
         /찾을 수 없습니다/,
     );
 });
-
-// ── 체크섬 무결성 ─────────────────────────────────────────────────────────────────
 
 test('applyMigrations: 이미 applied된 마이그레이션 파일이 수정되면(체크섬 불일치) 에러다', async () => {
     const { sequelize, rows } = createFakeSequelize();

@@ -4,7 +4,6 @@ import {
 import { buildInGamePlayerNameplateStyle } from "../../utils/buildInGamePlayerNameplateStyle.js"
 import { resolveInGamePlayerCardThemeStyles } from "../../utils/resolveInGamePlayerCardThemeStyles.js"
 
-/** 플레이어 카드 명패 닉네임 */
 export default function InGamePlayerNameplate({
   nickname = "",
   theme = null,

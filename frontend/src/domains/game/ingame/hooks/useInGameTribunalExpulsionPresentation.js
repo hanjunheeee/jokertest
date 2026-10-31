@@ -19,10 +19,6 @@ import {
   resolveInGameTribunalExpulsionNickname,
 } from "../constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
 
-/**
- * TRIBUNAL GUILTY(가면무도회 추방) 연출 큐 — tribunal_vote_resolved만 독립 구독한다.
- * canonical store는 즉시 NIGHT로 넘어가도, 이 연출이 끝날 때까지 진입 연출·결과 이동을 지연한다.
- */
 export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
   const players = useInGameStore((s) => s.state?.players ?? null)

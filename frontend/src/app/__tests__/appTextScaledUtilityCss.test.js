@@ -9,25 +9,9 @@ import {
   SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_TEXT_CLASS,
 } from "../../domains/user/constants/skinCardWear/skinCardWearLayout.js"
 
-/**
- * F-15(AC-02) 반송 수정 — "실제로 방출되는 CSS"를 확인하는 시험.
- *
- * 이전 회차는 소스 문자열만 검사해서 다음 결함을 통째로 놓쳤다.
- *   index.css가 app-text-scaled를 `@layer utilities { .app-text-scaled { … } }`,
- *   즉 **Tailwind가 모르는 손수 클래스**로 선언하고 있었다. 그래서 스킨&카드 미리보기
- *   명패가 쓰는 후보 `[&_p]:!app-text-scaled`는 아무 CSS도 만들지 못하고 조용히 버려졌고
- *   (빌드 산출물에 `[&_p]` 선택자 0건), 명패 <p>는 인게임용 고정 clamp를 그대로 썼다.
- *
- * 소스에는 클래스 이름이 멀쩡히 적혀 있으므로 문자열 검사로는 영원히 잡히지 않는다.
- * 그래서 여기서는 프로젝트가 실제로 쓰는 Tailwind 컴파일러(tailwindcss@4)에 진짜
- * index.css 선언을 넣고, 후보를 넣었을 때 나오는 CSS를 본다.
- */
-
 const INDEX_CSS_PATH = fileURLToPath(new URL("../index.css", import.meta.url))
 const INDEX_CSS = readFileSync(INDEX_CSS_PATH, "utf8")
 
-/** index.css에서 app-text-scaled 선언 블록만 떼어낸다 — 폰트 @import·@theme 같은 외부
- *  의존 없이 "이 선언이 variant를 만들 수 있는 형태인가"만 컴파일로 확인하기 위해서다. */
 function appTextScaledDeclaration(css) {
   const utility = css.match(/@utility\s+app-text-scaled\s*\{[^}]*\}/)
   if (utility) return utility[0]
@@ -38,22 +22,12 @@ function appTextScaledDeclaration(css) {
   assert.fail("index.css에서 app-text-scaled 선언을 찾지 못했습니다")
 }
 
-/**
- * 실제 Tailwind 컴파일러로 후보 목록을 CSS로 만든다.
- *
- * `tailwindcss/utilities.css`의 내용은 `@tailwind utilities;` 한 줄뿐이라 그대로 적는다 —
- * @import 해석기(loadStylesheet)를 흉내낼 필요가 없다. 후보는 build()에 직접 넘기므로
- * 파일 스캔(@source)도 일어나지 않는다.
- */
 async function buildCss(declaration, candidates) {
   const compiler = await compile(`@tailwind utilities;\n${declaration}\n`)
   return compiler.build(candidates)
 }
 
-/** 선택자에 자손 p가 붙은 규칙의 본문을 찾는다(공백·이스케이프 형태에 기대지 않는다). */
 function ruleTargetingDescendantParagraph(css) {
-  // Tailwind 4 emits native nesting: .escaped-utility { & p { declarations } }.
-  // Retain the outer selector when identifying the inner descendant rule.
   const stack = []
   let start = 0
   for (let i = 0; i < css.length; i++) {
@@ -97,8 +71,6 @@ test("F-15(AC-02): [&_p]:!app-text-scaled가 실제로 자손 p 규칙을 방출
 })
 
 test("F-15(AC-02): 이전의 손수 @layer utilities 형태였다면 이 검사가 실패한다(부정 예)", async () => {
-  // 반송된 바로 그 형태. 같은 컴파일러·같은 후보인데 자손 p 규칙이 나오지 않는다 —
-  // 이 시험이 결함을 실제로 잡는다는 증거다.
   const handWritten = `@layer utilities {\n  .app-text-scaled {\n    font-size: calc(var(--app-text-size, 1rem) * var(--app-text-scale, 1));\n  }\n}`
   const css = await buildCss(handWritten, ["[&_p]:!app-text-scaled"])
 
@@ -110,8 +82,6 @@ test("F-15(AC-02): 이전의 손수 @layer utilities 형태였다면 이 검사�
 })
 
 test("F-15(AC-02): 스킨&카드 미리보기 명패 래퍼가 자손 p 규칙과 원래 크기를 함께 싣는다", () => {
-  // 생산자: 래퍼가 --app-text-size를 설정하고(상속되는 사용자 지정 속성),
-  // 소비자: [&_p]:!app-text-scaled 규칙이 InGamePlayerNameplate의 <p>에서 그 값을 읽는다.
   assert.ok(
     SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_TEXT_CLASS.includes("[&_p]:!app-text-scaled"),
     "자손 p에 규칙을 걸지 않으면 명패는 인게임용 고정 크기를 쓴다",
@@ -123,7 +93,6 @@ test("F-15(AC-02): 스킨&카드 미리보기 명패 래퍼가 자손 p 규칙�
     "F-15 이전 크기(clamp(1.05rem,8.5cqi,1.42rem))가 한 글자도 바뀌면 안 된다",
   )
 
-  // cqi가 기준삼는 container가 같은 래퍼여야 F-15 이전과 같은 크기로 계산된다.
   assert.ok(
     SKIN_CARD_WEAR_PREVIEW_CARD_WRAP_CLASS.includes("[container-type:inline-size]"),
     "container가 없으면 8.5cqi가 다른 기준으로 계산돼 기하가 달라진다",

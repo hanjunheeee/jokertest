@@ -13,9 +13,6 @@ import { resolveInGamePlayerCardThemeStyles } from "../../utils/resolveInGamePla
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/**
- * 인게임 플레이어 카드 — 배경 + 계정 프로필(ingame 사각형) + 상태 UI + 프레임 + 닉네임
- */
 export default function InGamePlayerCard({
   portraitSrc,
   frameSrc = INGAME_PLAYER_ASSETS.cardFrame,

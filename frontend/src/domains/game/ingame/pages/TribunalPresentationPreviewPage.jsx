@@ -1,6 +1,3 @@
-/**
- * dev 전용 — 최후의 반론 연출 프리뷰 (/dev/tribunal-presentation)
- */
 import { useCallback, useMemo, useState } from "react"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameBackground from "../components/InGameBackground.jsx"

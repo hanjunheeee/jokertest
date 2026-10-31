@@ -12,9 +12,6 @@ import {
 import { INVITED_GUESTS_TABLE_SECTION_CLASS } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
 import { INVITED_GUESTS_MASTERY_RANKING_LIMIT } from "../../../../../domains/library/content/invitedGuests/jobSpreadMeta.js"
 
-// F-10 AC-03/AC-06: ranking은 더 이상 상위 5명으로 잘려서 들어오지 않는다(전체 적격 사용자).
-// 화면 안에서 페이지를 넘겨 전체를 탐색할 수 있게 한다 — 한 페이지당 행 수는 기존에 쓰던
-// "상위 5명" 상한(INVITED_GUESTS_MASTERY_RANKING_LIMIT)을 그대로 재사용한다.
 export default function InvitedGuestsMasteryRanking({ ranking, hideHeader = false }) {
   const [page, setPage] = useState(0)
   const pageCount = Math.max(1, Math.ceil(ranking.length / INVITED_GUESTS_MASTERY_RANKING_LIMIT))

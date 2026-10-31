@@ -6,11 +6,6 @@ import {
   resolveDiscordLinkMessage,
 } from "../useDiscordAccountLink.js"
 
-// F-07 AC-04/D-01: useLoginPage.js의 mapSocialErrorCode/resolveSocialLoginView와 같은
-// 이유로, DiscordAccountLink.jsx(JSX라 이 저장소의 node:test로 직접 렌더링할 수 없음)에서
-// 뽑아낸 순수 로직만 여기서 검증합니다. 이 파일은 "@/" alias나 react-router-dom을 전혀
-// import하지 않으므로 다른 훅 테스트처럼 module.register 우회가 필요 없습니다.
-
 test("resolveDiscordLinkMessage: socialLinkSuccess가 있으면 success 메시지를 돌려준다", () => {
   const message = resolveDiscordLinkMessage({ socialLinkSuccess: "discord", socialLinkError: null })
   assert.deepEqual(message, { type: "success", text: "Discord 계정이 연결되었습니다." })

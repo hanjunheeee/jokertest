@@ -1,6 +1,3 @@
-/**
- * 인게임 설정 — 채팅 / 사운드 / 방관리 탭 선택
- */
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
   INGAME_SETTING_TAB_BUTTON_CLASS,

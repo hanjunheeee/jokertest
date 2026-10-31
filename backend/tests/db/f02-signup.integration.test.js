@@ -1,78 +1,24 @@
 'use strict';
 
-// F-02 AC-05/AC-06 격리 DB 검증 — 실제 MySQL 격리 DB에서만 의미 있는 두 가지를 확인한다:
-//   1) AC-05: 같은 이메일로 동시에 가입을 시도하면 DB 유일 제약에 의해 하나만 성공하고
-//      나머지는 409를 받는다(서비스 계층의 사전 findByEmail만으로는 경합을 못 막는다).
-//   2) AC-06: 관리 필드(role/status/email_verified)를 얹어 가입해도 저장되지 않고,
-//      가입 후 같은 자격증명으로 재로그인이 성공한다.
-//
-// backend/tests/db/f01-migrations.integration.test.js와 같은 원칙을 따른다: 전용 격리
-// DB(F01_TEST_DATABASE_URL)가 없거나 연결에 실패하면 실패로 표시하지 않고 t.skip으로
-// "미검증"임을 남긴다 — .env.test의 더미 DATABASE_URL은 이 용도로 재사용하지 않는다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
-// F01_TEST_DATABASE_URL이 없을 때도 아래 backend/models require가 살아있는 문법의 URL을
-// 필요로 한다(Sequelize 생성자가 문자열을 파싱하기 때문 — 실제 연결은 시도하지 않는다).
-// .env.test가 로드되지 않는 방식(예: node --test 직접 실행)으로 이 파일이 돌아가면
-// process.env.DATABASE_URL이 아예 비어 있어 require 시점에 예외로 죽어, 아래
-// unavailable(t)의 "미검증" skip에 도달하기도 전에 파일 전체가 실패로 보였다.
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 
-// AC-06은 가입 후 authService.login()까지 실제로 호출해 재로그인 성공을 확인한다.
-// login()은 generateToken()(backend/utils/jwt.js)을 거치는데, 이 함수는 JWT_SECRET이
-// 없으면 조용히 넘어가지 않고 즉시 예외를 던진다(auth.middleware.js 검증 쪽에 기본값이
-// 없어 로그인은 되는데 이후 인증이 전부 401 나는 혼란을 막기 위한 설계). .env.test에는
-// JWT_SECRET이 없으므로, backend/__tests__/auth.login.regression.test.js와 같은 방식으로
-// 이 파일 전용 더미 값을 여기서 직접 채운다 — 그래야 격리 DB가 있는 환경에서 AC-06의
-// 재로그인 단계가 서명 키 부재로 실패하지 않는다.
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f02-signup-integration-test-secret';
 
 const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
 const baseline = require('../../db/migrations/0001-legacy-baseline');
 const expandNicknameSnapshot = require('../../db/migrations/0002-expand-nickname-snapshot');
-// F-03: AC-06가 authService.login()을 실제로 호출하고, login()은 항상
-// userRepository.createUserSession(...)에 refresh_token_hash 등 0003이 추가한 컬럼을
-// (rememberMe가 아니면 null로) 실어 INSERT한다. 이 fixture가 0003을 적용하지 않으면 그
-// 컬럼들이 실제 DB에 없어 "Unknown column" 오류로 로그인 자체가 실패한다(R-IMPL #2).
 const addRefreshTokenRotation = require('../../db/migrations/0003-add-refresh-token-rotation');
-// F-03 R-IMPL #11: refresh_token_history는 user_sessions의 자식 테이블이다. 같은 격리
-// DB를 공유하는 f01/f03 DB 스위트와 관리 테이블/삭제 순서를 일관되게 맞추지 않으면,
-// 이 테이블을 모르는 스위트의 resetSchema()가 "F-01이 모르는 테이블"로 오판해 거부한다.
 const addRefreshTokenHistory = require('../../db/migrations/0004-add-refresh-token-history');
-// F-05 R-IMPL(CODEX-2/VERIFY-10): external_identities/oauth_states/social_signup_intents도
-// 같은 격리 DB를 공유한다. 관리 목록·드롭 순서·대상 DB 확인은
-// backend/tests/helpers/isolatedTestDb.js에 공통으로 모아 다섯 스위트가 항상 같은 정의를
-// 쓰게 한다.
 const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
-// F-08 CODEX-2(AC-03) 대응: authService.signup()이 이제 계정 생성 트랜잭션 안에서
-// economyService.ensureDefaultEntitlements를 호출해 economy_wallets/economy_entitlements/
-// economy_ledger_entries/economy_loadouts에 직접 INSERT한다 — 이 스위트가 authService.signup을
-// 실제로 여러 번 호출하므로(AC-05 동시 가입, AC-06 관리 필드 무시 등) 그 테이블이 실제로
-// 존재해야 한다(buildManagedSchema는 이 테이블을 이제 기본으로 관리 목록에 포함하므로 —
-// isolatedTestDb.js 참고 — 따로 넘길 필요는 없지만, MIGRATIONS 체인에는 명시적으로
-// 넣어야 실제로 테이블이 만들어진다).
 const addEconomy = require('../../db/migrations/0006-add-economy');
-// Current auth services create EconomyLoadout rows, including its persisted CAS revision.
 const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout-revision');
-// F-14(AC-01) 반송 대응: backend/models/economy/economy.model.js의 EconomyLoadout이 이제
-// selected_skin_noble/clown/guard/doctor/witch_hunter 5개 컬럼을 명시적으로 선언한다 —
-// authService.signup이 만드는 EconomyLoadout 행을 이 스위트가 실제 SELECT/INSERT로 건드리는
-// 이상, 0011이 빠지면 그 컬럼이 없는 실제 DB에서 "Unknown column" 오류로 깨진다.
 const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
-// F-29b: User 모델이 이제 has_local_password를 정의한다(기본값 true) — 이 스위트가 실제
-// authService.signup()으로 만드는 모든 User 행이 그 컬럼을 INSERT하므로, 0015가 빠지면
-// "Unknown column" 오류로 깨진다. backfill이 참조하는 external_identities/
-// social_signup_intents가 필요하므로 addSocialAuth(0005, 아래에서 이미 require됨)도 함께
-// 적용 배열에 넣는다(이전에는 buildManagedSchema의 관리 테이블 목록에만 쓰이고 실제로는
-// 적용되지 않았다).
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
-// F-31a: authService.signup()이 이제 signupProof를 소비하려면 signup_email_verifications가
-// 실제로 있어야 한다 — 이 스위트가 실제 signup을 여러 번 호출하므로(동시 가입, 관리 필드
-// 무시 등) 이 마이그레이션도 체인에 명시적으로 넣는다.
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 const { prepareSignupProof } = require('../helpers/signupProof');
@@ -121,10 +67,6 @@ const VALID_SIGNUP_BASE = {
     birthDate: '2000-01-01',
 };
 
-// backend/models와 auth.service.js/user.repositories.js는 require 캐시 싱글턴이라, 파일
-// 맨 위에서 이미 맞춰둔 process.env.DATABASE_URL(F01_TEST_DATABASE_URL)로 처음 require되는
-// 이 시점에 격리 DB에 연결된다 — 실제 저장 경로(auth.service → user.repositories → Sequelize)를
-// 그대로 태운다.
 const db = require('../../models');
 const authService = require('../../service/auth.service');
 const signupEmailVerificationService = require('../../service/signupEmailVerification.service');
@@ -132,28 +74,9 @@ const userRepository = require('../../repositories/user.repositories');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const { hashPassword } = require('../../utils/hash');
 
-// db(backend/models)는 require 캐시 싱글턴이라 db.sequelize는 이 파일의 네 테스트가
-// 전부 공유한다. 이전 회차는 테스트마다 개별적으로 t.after(() => db.sequelize.close())를
-// 등록했는데, node:test는 한 파일의 테스트를 순차 실행하므로 첫 테스트가 끝나며 연결을
-// 닫아버리면 이후 테스트는 전부 "연결 종료" 오류로 실패했다(재검토 지적). 파일 전체에서
-// 정확히 한 번만, 모든 테스트가 끝난 뒤에 닫는다.
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
-
-// ── AC-04(F-31a)/AC-05 ────────────────────────────────────────────────────
-//
-// F-31a 도입 이전에는 이 자리에서 "두 요청이 findByEmail 사전 조회를 모두 마친 뒤에야
-// 다음 단계로 넘어가게" 강제하는 인위적 장벽으로 같은 이메일 동시 가입의 DB 유일 제약을
-// 검증했다. authService.signup()이 이제 계정 생성보다 먼저 signup_email_verifications
-// 행을 잠가 가입 증명을 소비하므로(F-31a AC-04), 그 장벽을 잠금 *뒤에* 두면 두 트랜잭션이
-// 서로의 진행을 기다리며 교착된다(하나가 잠금을 쥔 채 상대가 도착하길 기다리지만, 상대는
-// 그 잠금이 풀리기 전에는 자신의 findByEmail 단계에 도달할 수 없다). 그래서:
-//   - "같은 증명으로 동시 제출"은 서비스 계층(authService.signup)에서 인위적 장벽 없이
-//     자연스러운 DB 행 잠금만으로 검증한다(F-31a AC-04) — 정확히 하나만 성공하고
-//     나머지는 SIGNUP_PROOF_INVALID다.
-//   - "같은 이메일 DB 유일 제약" 자체(F-02 AC-05)는 증명 소비를 우회해 저장소 계층
-//     (userRepository.createUser)을 직접 동시 호출하는 방식으로 유지한다.
 
 test('AC-04(F-31a, 서비스 동시성): 같은 signupProof로 동시에 signup을 호출하면 하나만 성공하고 나머지는 SIGNUP_PROOF_INVALID다', async (t) => {
     if (unavailable(t)) return;
@@ -163,12 +86,6 @@ test('AC-04(F-31a, 서비스 동시성): 같은 signupProof로 동시에 signup�
     const email = 'concurrent-signup@example.com';
     const { signupProof } = await prepareSignupProof(email);
 
-    // 재검토 지적: 결과(하나 성공·하나 실패)만으로는 두 요청이 실제로 증명 행 잠금을
-    // 다퉜음을 보이지 못한다(한쪽이 다른 쪽이 시작하기도 전에 이미 끝났어도 같은 결과가
-    // 나온다) — 위 주석대로 잠금 *뒤*에 장벽을 두면 서로의 진행을 기다리며 교착되므로,
-    // 잠금을 실제로 시도하기 *직전*(consumeSignupProof 진입 시점)에 2자 장벽을 둔다.
-    // 이 지점은 아직 어떤 DB 잠금도 쥐지 않은 상태라, 둘 다 도착한 뒤 함께 풀려나도
-    // 교착이 생기지 않는다 — 이후 실제 FOR UPDATE 다툼은 평소대로 DB가 직렬화한다.
     const originalConsumeSignupProof = signupEmailVerificationService.consumeSignupProof;
     let arrivals = 0;
     let releaseBarrier;
@@ -228,8 +145,6 @@ test('AC-05(저장소 동시성): 저장소 계층에서 같은 이메일로 동
     assert.equal(Number(rows[0].cnt), 1, 'users 테이블에는 정확히 한 행만 남아야 한다');
 });
 
-// ── AC-06 ───────────────────────────────────────────────────────────────────
-
 test('AC-06: role/status/email_verified를 실어 보내도 저장되지 않고, 가입 후 재로그인이 성공한다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -237,10 +152,6 @@ test('AC-06: role/status/email_verified를 실어 보내도 저장되지 않고,
 
     const email = 'ac06-signup@example.com';
     const { signupProof } = await prepareSignupProof(email);
-    // F-31a: email_verified는 이제 클라이언트 입력과 무관하게 서버가 실제 인증 결과로
-    // 채운다 — 요청에 false를 실어도(관리 필드 조작 시도와 구분해 정상적으로 "아직
-    // 인증 안 됨"을 주장하는 값이어도) 실제 저장값은 항상 true다(가입 자체가 이미 이메일
-    // 인증 증명을 소비했기 때문).
     const created = await authService.signup({
         ...VALID_SIGNUP_BASE,
         email,
@@ -268,11 +179,6 @@ test('AC-06: role/status/email_verified를 실어 보내도 저장되지 않고,
     assert.ok(token, '재로그인은 토큰을 발급해야 한다');
 });
 
-// F-02는 신규 가입 닉네임을 2~8자로 제한하지만, 이 제한 이전에 만들어진 계정의 경기 기록은
-// 30자를 넘는 nickname_snapshot(F-01이 0002-expand-nickname-snapshot.js로 50자까지 확장)을
-// 그대로 담고 있을 수 있다. F-02가 손댄 저장 경로(가입) 위에서 이 확장이 여전히 유효한지,
-// 즉 긴 nickname_snapshot이 실제 경기 기록 저장 경로에서 잘리지 않는지 이 슬라이스 자신의
-// 증거로도 남긴다(F-01의 별도 스위트를 인용하는 것과 별개로).
 test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에서 잘리지 않는다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -285,10 +191,6 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
     const longNicknameSnapshot = '가'.repeat(45); // 30자 초과, F-01이 확장한 50자 이내
     const gameId = '55555555-5555-5555-5555-555555555555';
 
-    // 이전 회차는 db.GameResult.create/db.GameResultPlayer.create를 직접 호출해 실제 경기
-    // 기록이 저장되는 경로(gameResult.repositories.persistGameResult, 소켓 계층이 경기 종료
-    // 시 실제로 부르는 함수)를 우회했다 — f01-migrations.integration.test.js의 AC-04와 같은
-    // 원칙으로, 여기서도 실제 저장소 함수를 그대로 태운다(재검토 지적).
     const session = {
         id: gameId,
         roomId: null,
@@ -312,13 +214,6 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
     assert.equal(rows[0].nickname_snapshot, longNicknameSnapshot, '45자 nickname_snapshot이 잘리지 않고 그대로 저장·복원되어야 한다');
 });
 
-// ── AC-03 ───────────────────────────────────────────────────────────────────
-
-// validateBirthDate/parseIsoDateUtc의 단위 테스트는 파싱 로직 자체가 시간대에 무관함을
-// 증명하지만, 실제 저장소 왕복(가입 → DB 저장 → 조회 복원)까지 같은 결론이 나오는지는
-// 별도로 확인해야 한다. mysql2 드라이버는 DATETIME 컬럼을 읽을 때 Node 프로세스의 로컬
-// 시간대(process.env.TZ)를 사용해 Date 객체를 만들므로, 서버가 UTC가 아닌 시간대에서
-// 돌아가도 하루가 밀리지 않는지를 실제로 TZ를 바꿔가며 확인한다.
 test('AC-03: birth_date는 서버 시간대와 무관하게 저장·복원된다', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
@@ -334,7 +229,6 @@ test('AC-03: birth_date는 서버 시간대와 무관하게 저장·복원된다
     const { signupProof } = await prepareSignupProof(email);
     const created = await authService.signup({ ...VALID_SIGNUP_BASE, email, nickname: 'AC03생일', birthDate: '2000-06-15', signupProof });
 
-    // UTC 기준으로 자정을 넘어 날짜가 바뀌는 방향(양쪽)의 시간대에서 모두 확인한다.
     const timezones = ['UTC', 'Pacific/Kiritimati', 'America/Los_Angeles'];
     for (const tz of timezones) {
         process.env.TZ = tz;

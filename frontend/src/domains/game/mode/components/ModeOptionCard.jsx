@@ -1,4 +1,3 @@
-// 파일 역할: ModeOptionCard.jsx - 화면을 구성하는 컴포넌트입니다.
 import {
   MODE_CARD_BUTTON_CLASS,
   MODE_CARD_FRAME_IMAGE_CLASS,
@@ -8,7 +7,6 @@ import ModeOptionCardComingSoon from "@/domains/game/mode/components/ModeOptionC
 import ModeOptionCardOverlay from "@/domains/game/mode/components/ModeOptionCardOverlay.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-// 게임 모드 선택 화면에서 하나의 선택 카드를 보여줍니다.
 export default function ModeOptionCard({
   label,
   title,

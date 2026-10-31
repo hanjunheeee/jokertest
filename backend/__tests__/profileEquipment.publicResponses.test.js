@@ -1,19 +1,5 @@
 process.env.JWT_SECRET = "profile-equipment-public-responses-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-
-// F-13 AC-01/AC-02/AC-05 — backend/routes/economy.routes.js의 POST /economy/equip-profile
-// HTTP 계약 시험. economy.route.test.js와 같은 패턴(discordAuth.route.test.js 근거)을 그대로
-// 따른다 — economyService.equipProfileAppearance 자체의 검증 순서·소유권 판정은
-// backend/service/economy.service.test.js가 fake db로 이미 검증하므로, 여기서는 라우트
-// 계층의 책임만 확인한다: 인증 게이트, 알 수 없는 필드 거부(CODEX-2 관례), 본인 계정으로만
-// 확정되는지(요청 본문에 userId를 실을 방법 자체가 없음), 성공 응답이 loadout 외 다른
-// 정보(지갑·소유 목록 등)를 흘리지 않는지.
-//
-// backend/socket/__tests__/matchmaking.test.js가 "다른 계정에게 공개되는" 경로(room.players)의
-// 안전성을 이미 못박고 있고, backend/service/economy.service.test.js가 getPublicProfileLoadouts
-// 자체의 안전성을 이미 못박고 있다 — 이 파일은 그 둘과 겹치지 않는, 아직 테스트가 없던
-// "본인 확정 HTTP 응답" 경로 하나만 추가로 고정한다(중복 방지).
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -97,8 +83,6 @@ test("POST /economy/equip-profile: 문서화되지 않은 필드(userId 등)가 
     const res = await request(base, "/economy/equip-profile", {
         method: "POST",
         token: tokenFor(USER_A),
-        // userId를 실어 다른 계정을 지목하려는 시도 — ALLOWED_EQUIP_PROFILE_FIELDS 밖이라
-        // 서비스에 닿기 전에 거부되어야 한다(다른 계정을 대상으로 지정할 방법 자체가 없음).
         body: { photoItemId: "player-profile-기사", userId: "uuid-user-b" },
     });
     assert.equal(res.status, 400);
@@ -121,14 +105,6 @@ test("POST /economy/equip-profile: photoItemId/borderItemId가 문자열이 아�
     assert.equal(calls.length, 0);
 });
 
-// F-13 AC-02(운영자 설계 감사, 2026-09-11) — expectedRevision은 economy.routes.js의
-// equip-profile 핸들러가 서비스 호출 전에 검증하는 필수 필드가 됐다(서버 발급 영속
-// revision을 CAS로 비교하는 계약, economy.service.js의 equipProfileAppearance 참고).
-// 이 시험이 CAS 도입 이전에 작성돼 expectedRevision을 실은 적이 없어, 실제로는 항상
-// MISSING_EXPECTED_REVISION(400)으로 서비스에 닿기도 전에 거부되고 있었다 — 이 파일이
-// 검증하려던 인증 게이트·거부 전파·응답 직렬화는 실제로 한 번도 통과된 적이 없었다는
-// 뜻이다. 그 결함 자체를 고정하는 시험을 추가하고, 나머지는 실제 계약대로
-// expectedRevision을 실어 본래 의도한 경로(서비스까지 도달)를 검증하게 한다.
 test("POST /economy/equip-profile: expectedRevision이 없거나 빈 문자열이면 서비스 호출 전에 400(MISSING_EXPECTED_REVISION)으로 거부된다", async (t) => {
     stubAuthGate(t);
     const { calls } = stubService(t);
@@ -191,10 +167,6 @@ test("POST /economy/equip-profile: 소유하지 않은 상품이면 서비스가
     assert.equal(res.json.code, "ITEM_NOT_OWNED");
 });
 
-// F-13 AC-02: 서비스가 CAS 충돌(409)로 거부해도 라우트는 그 status·code를 그대로 전파해야
-// 한다 — economy.store.js의 authoritative GET 재조정이 이 정확한 code(PROFILE_REVISION_CONFLICT)
-// 로만 트리거되므로(economy.store.js의 equipProfile 참고), 라우트가 이를 다른 status로
-// 뭉개면 클라이언트 재조정 자체가 작동하지 않는다.
 test("POST /economy/equip-profile: 서버 CAS 충돌(409)이면 서비스가 던진 오류를 그대로 응답한다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
@@ -214,8 +186,6 @@ test("POST /economy/equip-profile: 서버 CAS 충돌(409)이면 서비스가 던
 test("POST /economy/equip-profile: 성공 응답은 loadout 네 필드(revision 포함)만 담고 지갑·소유 목록 등 다른 정보를 흘리지 않는다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
-        // 서비스가 실수로 다른 필드(지갑 등)를 함께 돌려줘도 라우트의 serializeLoadout이
-        // 딱 정해진 필드만 골라 응답해야 한다 — 그 안전판을 증명하기 위해 fake만 여분 필드를 싣는다.
         equipProfileAppearance: async () => ({
             selected_profile_photo_id: "player-profile-기사",
             selected_profile_border_id: "profile-border-귀족",

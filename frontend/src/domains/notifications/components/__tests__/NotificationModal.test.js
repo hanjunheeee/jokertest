@@ -3,15 +3,6 @@ import assert from "node:assert/strict"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
 
-// ---------------------------------------------------------------------------
-// F-17 알림 모달·진입 버튼 DOM 시험.
-//
-// 문자열 배선 검사를 하지 않는다 — **실제 컴포넌트**를 JSDOM에 렌더해서 매칭 팝업 프레임 셸
-// (NotificationModalShell → 확인 버튼)이 실제로 그려지는지,
-// 상태별 화면(로딩/실패+재시도/빈 상태/목록)이 구분되는지, 읽음·이동·닫기가 실제 DOM
-// 조작으로 동작하는지를 확인한다(InvitedGuestsChallengeRow·파치먼트 시험과 같은 관례).
-// ---------------------------------------------------------------------------
-
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   pretendToBeVisual: true,
   url: "http://127.0.0.1:5183",
@@ -80,7 +71,6 @@ function notification(overrides = {}) {
   }
 }
 
-/** 모달 열 때 일괄 읽음·삭제가 실제 네트워크로 나가지 않게 기본 mock을 깔아 둔다. */
 function setNotificationsApiForTests(overrides = {}) {
   __setNotificationsApiForTests({
     markNotificationReadApi: async (id) => {
@@ -102,7 +92,6 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-/** 실제 React 루트에 렌더한다. 반환한 unmount는 t.after에서 부른다. */
 function mount(element) {
   const container = document.createElement("div")
   document.body.appendChild(container)
@@ -136,10 +125,6 @@ test.beforeEach(() => {
 test.afterEach(() => {
   __setNotificationsApiForTests(null)
 })
-
-// ---------------------------------------------------------------------------
-// AC-06: 기존 모달 셸 리소스 + 상태별 화면
-// ---------------------------------------------------------------------------
 
 test("AC-06: 모달은 매칭 팝업 프레임 셸(dialog·backdrop·확인 버튼)로 그려진다", (t) => {
   const view = mount(React.createElement(NotificationModal, { open: true, onClose: () => {} }))
@@ -179,7 +164,6 @@ test("AC-06: 로딩·실패·빈 상태·목록이 서로 다른 화면으로 �
   const view = mount(React.createElement(NotificationModal, { open: true, onClose: () => {} }))
   t.after(view.unmount)
 
-  // 조회 시작 전: idle도 로딩 화면으로 취급한다(빈 상태가 아니다).
   assert.ok(view.container.querySelector('[data-notification-state="loading"]'))
 
   const pending = useNotificationsStore.getState().loadSnapshot()
@@ -193,7 +177,6 @@ test("AC-06: 로딩·실패·빈 상태·목록이 서로 다른 화면으로 �
   assert.match(errorState.textContent, /조회 실패/)
   assert.equal(view.container.querySelector('[data-notification-state="empty"]'), null)
 
-  // 재시도 버튼이 실제 GET을 다시 실행한다.
   const retry = view.container.querySelector('[data-notification-action="retry-list"]')
   await act(async () => {
     retry.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))
@@ -256,21 +239,11 @@ test("AC-06: 실패 → 재시도 성공 → 빈 상태 → live 행 도착 순�
   assert.equal(view.container.querySelectorAll("[data-notification-id]").length, 1)
 })
 
-// ---------------------------------------------------------------------------
-// AC-06: 긴 목록 레이아웃 — 실제 외부 Chrome(1920x855)에서 재현된 결함의 회귀 시험.
-//
-// 재현된 것: 알림이 많을 때 안쪽 영역 전체가 스크롤되고, 초점이 닫기 버튼으로 가면
-// 제목과 가장 새 알림이 화면 밖으로 밀려났다. JSDOM에는 레이아웃 엔진이 없으므로 픽셀이
-// 아니라 **그 결함을 가능하게 한 구조**를 고정한다: 스크롤 상자가 목록 하나뿐이고,
-// 제목·닫기 버튼이 그 밖의 형제다.
-// ---------------------------------------------------------------------------
-
 function manyNotifications(count) {
   return Array.from({ length: count }, (_, index) => notification({
     id: `n${index}`,
     sourceKey: `system:seed:${index}`,
     title: `알림 ${index}`,
-    // 최신순 정렬이므로 index가 클수록 오래된 것이 된다 → 목록 첫 행이 가장 새 알림이다.
     createdAt: new Date(Date.UTC(2026, 8, 13, 0, 0, count - index)).toISOString(),
   }))
 }
@@ -289,20 +262,16 @@ test("AC-06(Chrome 회귀): 긴 목록에서도 제목·닫기 버튼은 스크�
   const confirm = view.container.querySelector('[aria-label="닫기"]')
   assert.ok(content && scrollWrap && scroll && heading && confirm)
 
-  // 1) 제목·닫기는 프레임 위, 목록만 안쪽 영역 — 닫기가 목록과 같이 스크롤되지 않는다.
   assert.equal(scrollWrap.parentElement, content)
   assert.equal(confirm.closest('[data-notification-content="true"]'), null, "닫기는 본문 스크롤 영역 밖(프레임 위)에 있다")
   assert.equal(scroll.contains(heading), false)
   assert.equal(scroll.contains(confirm), false, "닫기 버튼이 목록과 함께 스크롤되면 화면 밖으로 밀린다")
 
-  // 2) 6건 전부가 스크롤 영역 **안에** 있다(목록은 잘리지 않고 접근 가능하다).
   const rows = view.container.querySelectorAll("[data-notification-id]")
   assert.equal(rows.length, 6)
   for (const row of rows) assert.equal(scroll.contains(row), true)
   assert.equal(scroll.getAttribute("data-notification-scroll"), "list")
 
-  // 3) 스크롤하는 상자는 목록 영역뿐이다. min-h-0이 없으면 flex 항목이 줄어들지 못해
-  //    예전처럼 바깥이 다시 넘친다.
   assert.ok(scrollWrap.className.includes("flex-1"), "스크롤 래퍼가 남은 높이를 채운다")
   for (const required of ["min-h-0", "overflow-y-auto"]) {
     assert.ok(scroll.className.includes(required), `목록 영역에 ${required}가 필요하다`)
@@ -314,12 +283,9 @@ test("AC-06(Chrome 회귀): 긴 목록에서도 제목·닫기 버튼은 스크�
     "안쪽 영역이 다시 스크롤 상자가 되면 초점 이동이 내용 전체를 끌어내린다",
   )
 
-  // 4) 안쪽 영역은 프레임 inset 위에 absolute로 올라간다.
   assert.ok(content.className.includes("absolute"), "본문은 프레임 inset 위에 배치된다")
   assert.ok(content.className.includes("overflow-hidden"), "본문 영역 자체는 스크롤하지 않는다")
 
-  // 5) 초점은 모달 안(닫기 버튼)으로 들어오되, 그 버튼은 스크롤되지 않는 영역에 있다 —
-  //    이것이 scrollTop 270 결함의 직접 원인이었다.
   assert.equal(document.activeElement, confirm)
   assert.equal(scroll.scrollTop, 0, "열자마자 목록은 맨 위(가장 새 알림)를 보여준다")
   assert.equal(rows[0].textContent.includes("알림 0"), true, "첫 행이 가장 새 알림이다")
@@ -460,10 +426,6 @@ test("읽은 메시지 삭제는 미확인 알림은 남긴다", async (t) => {
   assert.equal(useNotificationsStore.getState().items[0].id, "unread-1")
 })
 
-// ---------------------------------------------------------------------------
-// AC-02: 이동·읽음
-// ---------------------------------------------------------------------------
-
 test("AC-02: 모달을 열면 표시된 미확인 알림이 모두 읽음 처리된다", async (t) => {
   const rows = [
     notification({ id: "n1" }),
@@ -538,7 +500,6 @@ test("AC-02/A-06: 읽음이 실패하면 오류·재시도가 보이고 이동�
     "실패를 성공으로 위장하지 않는다",
   )
 
-  // 재시도가 성공하면 읽음이 확정된다.
   shouldFail = false
   const retry = view.container.querySelector('[data-notification-action="retry-read"]')
   await act(async () => {
@@ -602,10 +563,6 @@ test("AC-02: 해석할 수 없는 대상에는 이동 버튼 자체가 없다(�
   assert.equal(view.container.querySelector("[data-notification-action]"), null, "액션 버튼이 없어야 한다")
 })
 
-// ---------------------------------------------------------------------------
-// AC-06: 닫기 경로
-// ---------------------------------------------------------------------------
-
 test("AC-06: 확인 버튼·backdrop·Escape 모두 닫기를 부르고, 조회 실패 중에도 닫힌다", async (t) => {
   setNotificationsApiForTests({
     fetchNotificationsApi: async () => { throw new Error("조회 실패") },
@@ -663,10 +620,6 @@ test("AC-05: 계정이 바뀌면 열려 있던 모달의 내용이 비워진다"
   assert.equal(view.container.querySelectorAll("[data-notification-id]").length, 0)
   assert.equal(useNotificationsStore.getState().open, false)
 })
-
-// ---------------------------------------------------------------------------
-// AC-01/AC-04: 진입 버튼의 미확인 표시
-// ---------------------------------------------------------------------------
 
 test("AC-01: 진입 버튼의 미확인 수가 실제 목록을 따라 갱신된다", async (t) => {
   setNotificationsApiForTests({ fetchNotificationsApi: async () => [] })
@@ -730,10 +683,6 @@ test("AC-01: 진입 버튼 클릭이 모달 열기 핸들러를 실제로 부른
   assert.equal(opened, 1)
 })
 
-// ---------------------------------------------------------------------------
-// AC-02: 대상 해석(순수 매핑)
-// ---------------------------------------------------------------------------
-
 test("AC-02: 대상 경로는 확인된 세 형태만 만들고 나머지는 null이다", () => {
   assert.equal(buildNotificationTargetPath({ kind: "friend-request", requestId: 7 }), "/lobby?notificationRequestId=7")
   assert.equal(
@@ -769,7 +718,6 @@ test("AC-02: 22개 업적 id 전부가 서고의 실제 탭·페이지·직업�
   assert.deepEqual(resolveAchievementLocation("noble-win-10"), {
     tabId: "invitedGuests", pageIndex: 0, jobIndex: 0,
   })
-  // 기본(0번) 직업이 아닌 마녀사냥꾼도 정확한 jobIndex로 간다.
   assert.deepEqual(resolveAchievementLocation("witch-hunter-win-30"), {
     tabId: "invitedGuests", pageIndex: 0, jobIndex: 4,
   })

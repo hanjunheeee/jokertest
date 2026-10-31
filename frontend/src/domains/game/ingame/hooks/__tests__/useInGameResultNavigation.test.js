@@ -3,8 +3,6 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 
-// renderHook(@testing-library/react)이 내부적으로 document를 참조하므로, mount 전에 최소 DOM
-// 전역을 설치한다 — useGameSessionSocketEvents.nightTurn.test.js와 동일한 설치 관례다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {
@@ -22,7 +20,6 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// 라우터 없이 훅만 마운트하므로 useNavigate를 기록용 fake로 교체한다(nightTurn 테스트와 동일 관례).
 const navigateCalls = []
 mock.module("react-router-dom", {
   namedExports: { useNavigate: () => (...args) => navigateCalls.push(args) },

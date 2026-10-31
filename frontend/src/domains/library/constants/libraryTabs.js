@@ -1,6 +1,5 @@
 import { LIBRARY_ASSETS } from "./libraryAssets.js"
 
-/** 기억의 서고 목차(탭) 정의 */
 export const LIBRARY_TABS = {
   forbiddenRecords: {
     id: "forbiddenRecords",
@@ -23,12 +22,10 @@ export const LIBRARY_TAB_LIST = [
 
 export const DEFAULT_LIBRARY_TAB = LIBRARY_TABS.forbiddenRecords.id
 
-/** id로 목차 정보를 찾습니다. */
 export function getLibraryTab(tabId) {
   return LIBRARY_TAB_LIST.find((tab) => tab.id === tabId) ?? LIBRARY_TABS.forbiddenRecords
 }
 
-/** 현재 탭이 아닌 다른 목차를 반환합니다. */
 export function getOtherLibraryTab(activeTabId) {
   return LIBRARY_TAB_LIST.find((tab) => tab.id !== activeTabId) ?? LIBRARY_TABS.invitedGuests
 }

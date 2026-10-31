@@ -1,10 +1,5 @@
 const SECTION_HEADING_PATTERN = /^###\s+/m
 
-/**
- * 금지된 기록 md 원고를 spread 좌측 본문 단위로 파싱합니다.
- * @param {string} raw
- * @returns {{ title: string, body: string }[]}
- */
 export function parseForbiddenRecordsScript(raw) {
   return raw
     .trim()
@@ -19,10 +14,6 @@ export function parseForbiddenRecordsScript(raw) {
     })
 }
 
-/**
- * @param {{ title: string, body: string }[]} sections
- * @param {{ id: string, right: object }[]} spreadMeta
- */
 export function mergeForbiddenRecordsSpreads(sections, spreadMeta) {
   if (sections.length !== spreadMeta.length) {
     throw new Error(

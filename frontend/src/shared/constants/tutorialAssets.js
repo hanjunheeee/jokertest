@@ -1,4 +1,3 @@
-/** 게임 플레이 튜토리얼 가이드 슬라이드 (public/tutorial) */
 export const TUTORIAL_GUIDE_SLIDES = [
   "/tutorial/1페이지.png",
   "/tutorial/2페이지.png",

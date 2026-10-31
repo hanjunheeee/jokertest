@@ -1,4 +1,3 @@
-/** 결과창 진입 전 승/패 연출 영상 — 재생 실패·지연 시 탈출용 상한(ms) */
 export const GAME_RESULT_INTRO_FALLBACK_TIMEOUT_MS = 20000
 
 export const GAME_RESULT_INTRO_SKIP_LABEL = "건너뛰기"

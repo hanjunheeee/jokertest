@@ -2,8 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
-// persist가 localStorage에 실제로 쓰는지/복원하는지 검증하려면 진짜 localStorage 전역이
-// 필요하다 — 설치 방식은 기존 훅 시험(useSoundSettings.test.js)과 동일하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -19,8 +17,6 @@ installDomGlobal("localStorage", dom.window.localStorage)
 
 const STORE_URL = new URL("../settingsStore.js", import.meta.url).href
 
-/** 모듈을 새로 평가해 "새로고침 뒤 처음 store를 만드는 시점"을 흉내낸다 — 같은
- *  localStorage를 공유하는 완전히 새 zustand store 인스턴스를 얻는다. */
 async function freshSettingsModule() {
   return import(`${STORE_URL}?case=${Math.random()}`)
 }
@@ -86,7 +82,6 @@ test("F-15(AC-06): 새로고침 후(새 store 인스턴스) 저장된 값을 복
   useSettingsStore.getState().setChatCheck("show-time", true)
   useSettingsStore.getState().setChatTextSize(42)
 
-  // 짧은 대기로 persist의 비동기 저장이 끝나길 기다린다.
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   const restored = await freshSettingsModule()
@@ -133,8 +128,6 @@ test("F-15(AC-06): 범위를 벗어나거나 잘못된 타입의 값은 검증 �
   assert.deepEqual(state.chatChecks, {}, "boolean이 아닌 값은 걸러내야 한다")
 })
 
-// F-15(AC-06): 볼륨은 슬라이더 정의(SOUND_SETTING_VOLUMES)의 타입·범위를 지켜야 한다 —
-// 손상된 값이 그대로 복원되면 슬라이더·사운드 경로에 범위 밖 값이 흘러든다.
 test("F-15(AC-06): 저장된 볼륨의 타입·범위를 검증한다(범위 밖은 보정, 잘못된 타입·모르는 id는 버림)", async () => {
   const [first, second, third] = SOUND_SETTING_VOLUMES
 
@@ -206,10 +199,6 @@ test("F-15(AC-06): 저장된 채팅 글자 크기도 범위를 벗어나면 보�
   )
 })
 
-// F-15(AC-06) 반송 수정: 이전 구현은 Number(value) 변환으로 타입을 검증했다. Number(null),
-// Number(""), Number("   "), Number([]) 는 모두 0이고 Number([50]) 은 50이라, 손상된 값이
-// "유효한 숫자"로 통과해 볼륨이 0으로 떨어지거나 엉뚱한 값으로 바뀌었다. 아래 두 시험은
-// 그 결함을 직접 재현한다(수정 전에는 실패한다).
 const INVALID_PERSISTED_NUMBERS = [
   ["null", null],
   ["빈 문자열", ""],
@@ -251,7 +240,6 @@ test("F-15(AC-06): 볼륨 맵이 배열이면 통째로 버리고, 현재값이 
     sanitizePersistedVolumes([{ [first.id]: 1 }], buildDefaultSoundVolumes()),
     buildDefaultSoundVolumes(),
   )
-  // 현재 상태 쪽이 손상된 경우에도 0이 아니라 슬라이더 정의의 기본값으로 되돌린다.
   assert.deepEqual(
     sanitizePersistedVolumes({}, { [first.id]: null }),
     buildDefaultSoundVolumes(),
@@ -316,8 +304,6 @@ test("F-15(AC-06): 저장된 텍스트 크기·채팅 크기가 null·빈 문자
 test("F-15(AC-06): JSON이 Infinity로 파싱되는 값(1e999)도 유효한 숫자로 받지 않는다", async () => {
   const [first] = SOUND_SETTING_VOLUMES
 
-  // JSON.parse는 1e999를 Infinity로 만든다 — 실제 복원 경로에서 무한값을 재현할 수 있는
-  // 유일한 방법이라 손으로 만든 raw JSON을 쓴다.
   localStorage.setItem(
     "settings-storage",
     `{"state":{"volumes":{"${first.id}":1e999},"generalTextSize":1e999},"version":0}`,
@@ -353,14 +339,10 @@ test("F-15(AC-06): 채팅 글자 크기 저장 범위는 실제 인게임 슬라
   assert.equal(CHAT_TEXT_SIZE_STORAGE_RANGE.max, INGAME_SETTING_CHAT_SLIDER.max)
 })
 
-// F-15(AC-06): 기기 저장이 실패(용량 초과·프라이빗 모드)해도 화면은 계속 동작하되,
-// 저장에 성공한 것처럼 두지 않는다.
 test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패를 기록한다(성공으로 표시하지 않음)", async () => {
   const fresh = await freshSettingsModule()
   fresh.clearSettingsStorageWriteError()
 
-  // jsdom의 Storage는 setItem을 직접 덮어써도 반영되지 않는 경우가 있어, 전역 자체를
-  // "쓰기만 실패하는" 대역으로 바꾼다(읽기·삭제는 실제 저장소로 위임).
   const realLocalStorage = globalThis.localStorage
   const originalWarn = console.warn
   console.warn = () => {}
@@ -376,7 +358,6 @@ test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패�
     fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.max)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    // 저장은 실패했지만 이번 세션 상태는 그대로 쓸 수 있어야 한다.
     assert.equal(
       fresh.useSettingsStore.getState().generalTextSize,
       GENERAL_SETTING_TEXT_SIZE.max,
@@ -391,19 +372,11 @@ test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패�
     console.warn = originalWarn
   }
 
-  // 다시 쓰기에 성공하면 실패 기록이 지워진다.
   fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.defaultValue)
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(fresh.getSettingsStorageWriteError(), null)
 })
 
-// ── 저장소를 아예 쓸 수 없는 환경 ───────────────────────────────────────────
-//
-// 반송 지적: resolveBrowserStorage가 localStorage getter 예외를 잡아 메모리 저장소로
-// 조용히 넘어가, 새로고침 후 설정이 사라지는데도 getSettingsStorageWriteError()는 계속
-// null이었다 — "기기에 저장됐다"는 거짓 표시다. fallback으로 계속 동작하되 사실은 보고한다.
-
-/** globalThis.localStorage를 "접근하면 던지는" 속성으로 바꾼다(프라이빗 모드·정책 차단). */
 function installThrowingLocalStorageGetter(error) {
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,
@@ -424,20 +397,16 @@ test("F-15(AC-06): localStorage 접근 자체가 막히면 fallback으로 동작
   try {
     const fresh = await freshSettingsModule()
 
-    // (1) fallback은 그대로 쓸 수 있다 — 화면이 죽지 않는다.
     assert.equal(
       fresh.useSettingsStore.getState().generalTextSize,
       GENERAL_SETTING_TEXT_SIZE.defaultValue,
     )
-    // (2) 저장소를 쓸 수 없다는 사실이 기존 오류 채널로 보고된다.
     assert.notEqual(
       fresh.getSettingsStorageWriteError(),
       null,
       "메모리로 조용히 넘어가면 저장된 것처럼 보인다",
     )
 
-    // (3) 기록을 지운 뒤 다시 저장해도 다시 보고된다 — 이번 세션 동안 한 번도 기기에
-    //     남지 않으므로 "저장됨"(null)으로 되돌아가면 안 된다.
     fresh.clearSettingsStorageWriteError()
     fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.max)
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -485,7 +454,6 @@ test("F-15(AC-06): 저장값 읽기가 막히면 기본값으로 시작하되 �
     console.warn = originalWarn
   }
 
-  // 저장소가 정상으로 돌아오면 쓰기가 성공하고 실패 기록이 지워진다(정상 복구).
   fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.min)
   await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -495,11 +463,6 @@ test("F-15(AC-06): 저장값 읽기가 막히면 기본값으로 시작하되 �
     GENERAL_SETTING_TEXT_SIZE.min,
   )
 })
-
-// ── 손상된 체크박스 맵 복원 ─────────────────────────────────────────────────
-//
-// 반송 지적: sanitizeBooleanMap이 배열을 거르지 않고 화이트리스트도 없어서, []는 {}로
-// [true,false]는 {0:true,1:false}로 통과했고 모르는 키가 상태에 그대로 남았다.
 
 test("F-15(AC-06): 저장 허용 체크박스 id는 실제 정의와 같다", () => {
   assert.deepEqual(
@@ -514,7 +477,6 @@ test("F-15(AC-06): 저장 허용 체크박스 id는 실제 정의와 같다", ()
   )
 })
 
-/** 체크박스 맵이 아닌 값들 — 어느 것도 "고른 적 있음"으로 통과하면 안 된다. */
 const NON_MAP_PERSISTED_CHECKS = [[], [true], [true, false], "true", 0, 1, true, false]
 
 test("F-15(AC-06): 배열·원시값으로 저장된 chatChecks는 통째로 거부한다", async () => {
@@ -552,8 +514,6 @@ test("F-15(AC-06): 배열·원시값으로 저장된 generalChecks는 기본값�
 })
 
 test("F-15(AC-06): chatChecks는 알려진 id만 남기고, 유효한 false는 그대로 복원한다", async () => {
-  // 객체 리터럴의 `__proto__`는 own 속성이 되지 않으므로 저장된 JSON 문자열을 그대로 쓴다 —
-  // 실제 손상된 localStorage 내용과 같은 형태로 검증한다.
   localStorage.setItem(
     "settings-storage",
     '{"state":{"chatChecks":{"show-time":true,"nickname-color":false,' +
@@ -630,14 +590,12 @@ test("F-15(AC-02/AC-05): resetSettings는 volumes·generalChecks·generalTextSiz
   assert.equal(state.generalTextSize, GENERAL_SETTING_TEXT_SIZE.defaultValue)
   assert.equal(state.chatChecks, null)
   assert.equal(state.chatTextSize, null)
-  // 화면 탐색 상태(현재 열린 인게임 설정 탭)는 환경설정이 아니므로 초기화 대상이 아니다.
   assert.equal(state.inGameSettingTab, "sound")
 })
 
 test("F-15(AC-05): resetSettings는 음악 재생 정책(MUSIC_PLAYBACK_ENABLED)을 건드리지 않는다 — 정책은 상수이지 설정이 아니다", async () => {
   const { MUSIC_PLAYBACK_ENABLED } = await import("../../../../shared/constants/bgmAssets.js")
 
-  // 2026-09-22 운영자 AUDIO-01 완화로 true가 됐다. 값이 무엇이든 설정 초기화가 이 상수를 읽거나 바꾸지 않는다.
   assert.equal(typeof MUSIC_PLAYBACK_ENABLED, "boolean")
 
   const beforeKeys = Object.keys(useSettingsStore.getState())

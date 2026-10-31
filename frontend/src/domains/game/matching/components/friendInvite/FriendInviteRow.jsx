@@ -1,6 +1,3 @@
-/**
- * 친구 초대 팝업 — 친구 한 줄 (전적 목록과 같은 닉네임·전적 + 행별 초대 버튼)
- */
 import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { FRIEND_INVITE_MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
 import { FRIEND_INVITE_MODAL_COPY } from "../../constants/friendInviteModalCopy.js"

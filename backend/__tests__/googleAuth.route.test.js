@@ -1,22 +1,6 @@
 process.env.JWT_SECRET = "google-auth-route-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 process.env.FRONTEND_URL = process.env.FRONTEND_URL || "https://frontend.example.test";
-
-// F-06 AC-01/AC-02/AC-03/AC-04 — Google OAuth 시작·콜백 라우트의 서버 계약 HTTP 통합
-// 테스트입니다.
-//
-// socialAuth.service.js(F-05)의 state·트랜잭션 로직 자체와 googleOAuth.service.js의 실제
-// Google 네트워크 교환은 여기서 다시 검증하지 않고 스텁으로 대체합니다(googleOAuth.service.js
-// 자체의 실제 네트워크 왕복은 googleOAuth.service.test.js가 로컬 fixture 서버로 검증합니다) —
-// 이 파일은 그 위 계층, 즉 "버튼 클릭이 시작 라우트를 부르고, 콜백이 결과에 따라 올바른
-// 쿠키·리다이렉트로 이어지는지"와 "state 소비·제공자 호출·계정 판정의 순서·재사용 방지·
-// rememberMe 보존이 실제로 그 순서대로 이어지는지"(R-IMPL #2/#3)를 검증합니다.
-//
-// R-IMPL #2: 로그인 상태 유지 선택(rememberMe)과 state에 결합되는 browserFingerprint는 더
-// 이상 평문 쿠키(oauthFp/oauthRememberMe)가 아니라, 서버가 서명한 단일 JWT 쿠키
-// (oauthAttempt)에 담긴다 — 아래 loginAttemptCookie()가 실제 jsonwebtoken으로 이 쿠키를
-// 만들어, 컨트롤러의 서명 검증 경로 자체를 실제로 태운다(값을 그대로 믿어주는 스텁이 아님).
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -61,9 +45,6 @@ const startServer = async (t) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-// fetch(redirect:"manual")는 Node(undici)에서도 명세대로 opaqueredirect를 돌려줘 status/
-// header를 읽을 수 없다 — Location·Set-Cookie를 직접 확인해야 하므로 http.request로 리다
-// 이렉트를 그대로 받는다(따라가지 않는다).
 const rawGet = (base, path, { cookie } = {}) => new Promise((resolve, reject) => {
     const url = new URL(path, base);
     const req = http.request(url, { method: "GET", headers: cookie ? { cookie } : {} }, (res) => {
@@ -75,9 +56,6 @@ const rawGet = (base, path, { cookie } = {}) => new Promise((resolve, reject) =>
 });
 
 const setCookies = (headers) => headers["set-cookie"] ?? [];
-// 같은 쿠키 이름에 clearCookie 뒤 다시 cookie()를 호출하면(예: SIGNUP_REQUIRED 분기) 응답에
-// 같은 이름의 Set-Cookie가 두 번 실린다 — 브라우저는 마지막 값을 최종 상태로 반영하므로,
-// 첫 번째가 아니라 마지막 일치 항목을 최종 상태로 취급해야 한다.
 const findSetCookie = (headers, name) => setCookies(headers).filter((c) => c.startsWith(`${name}=`)).at(-1);
 const decodedAttemptCookie = (headers) => {
     const raw = findSetCookie(headers, "oauthAttempt");
@@ -86,13 +64,8 @@ const decodedAttemptCookie = (headers) => {
     return jwt.verify(token, process.env.JWT_SECRET);
 };
 
-// 실제 googleAuthStart가 세팅하는 것과 같은 형태의 서명된 시도 쿠키를 만든다 — 컨트롤러의
-// jwt.verify 검증 경로를 값 그대로 믿어주는 스텁이 아니라 실제로 태운다. provider는 F-07이
-// 추가한 제공자 바인딩 필드다 — 기본값 "google"로 이 파일의 기존 회귀를 그대로 보존한다.
 const loginAttemptCookie = (fp, rememberMe, provider = "google") =>
     `oauthAttempt=${jwt.sign({ fp, rememberMe, purpose: "login", provider }, process.env.JWT_SECRET, { expiresIn: 600 })}`;
-
-// ── GET /auth/google (AC-01: 시작) ───────────────────────────────────────────
 
 test("GET /auth/google은 state를 발급해 Google 인가 URL로 302 리다이렉트하고 서명된 oauthAttempt 쿠키를 세팅한다", async (t) => {
     const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {
@@ -118,9 +91,6 @@ test("GET /auth/google은 state를 발급해 Google 인가 URL로 302 리다이�
     assert.ok(attemptCookieRaw, "oauthAttempt 쿠키가 세팅되어야 합니다");
     assert.match(attemptCookieRaw, /HttpOnly/i);
 
-    // R-IMPL #2: 쿠키는 값을 그대로 믿는 평문이 아니라 서버 서명이다 — 여기서 실제로
-    // jwt.verify해 payload가 issueOAuthState에 넘긴 fp와 정확히 같은지, rememberMe가
-    // 조작 없이 그대로 담겼는지 확인한다.
     const decoded = decodedAttemptCookie(res.headers);
     assert.equal(decoded.purpose, "login");
     assert.equal(decoded.provider, "google");
@@ -142,8 +112,6 @@ test("rememberMe를 지정하지 않으면 oauthAttempt 쿠키에 rememberMe:fal
     const decoded = decodedAttemptCookie(res.headers);
     assert.equal(decoded.rememberMe, false);
 });
-
-// ── GET /auth/google/callback (AC-01/AC-02: 재로그인·가입 보완, R-IMPL #2/#3: 순서·이중발급) ──
 
 test("재로그인(LOGIN) 콜백은 state를 먼저 소비한 뒤 제공자를 불러 세션 쿠키를 세팅하고 /lobby로 리다이렉트한다(AC-01, R-IMPL #3 순서)", async (t) => {
     const callOrder = [];
@@ -190,7 +158,6 @@ test("재로그인(LOGIN) 콜백은 state를 먼저 소비한 뒤 제공자를 �
     assert.equal(resolveArgs.cancelled, false);
     assert.equal(resolveArgs.rememberMe, false);
 
-    // 왕복 전용 쿠키는 콜백 한 번으로 지워져야 한다.
     assert.match(findSetCookie(res.headers, "oauthAttempt"), /^oauthAttempt=;/);
 });
 
@@ -279,8 +246,6 @@ for (const rememberMe of [false, true]) {
         assert.equal(decoded.rememberMe, rememberMe);
     });
 }
-
-// ── AC-04/R-IMPL #3: 취소·잘못된 state·재사용·이메일 충돌, 순서·재생 방지 ─────────
 
 test("사용자가 Google 동의 화면에서 취소하면(error 파라미터) state는 소비되지만 코드 교환은 호출되지 않는다", async (t) => {
     const google = stubModule(t, googleOAuthService, GOOGLE_KEYS, {
@@ -419,8 +384,6 @@ test("oauthAttempt 쿠키가 없거나 위조되면 fingerprint 없이 state 소
     assert.equal(google.calls.length, 0);
 });
 
-// ── F-07 고유: 제공자 바인딩 — 다른 제공자로 시작한 시도의 쿠키를 받아들이지 않는다 ────
-
 test("Discord 시작 시도의 oauthAttempt 쿠키(provider:discord)는 Google 콜백에서 fp 없이 취급되어 Google을 부르지 않는다(제공자 바인딩)", async (t) => {
     const google = stubModule(t, googleOAuthService, GOOGLE_KEYS, {
         exchangeCodeForProfile: async () => { throw new Error("호출되면 안 됩니다"); },
@@ -442,8 +405,6 @@ test("Discord 시작 시도의 oauthAttempt 쿠키(provider:discord)는 Google �
     assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/login?socialError=STATE_MISSING`);
     assert.equal(google.calls.length, 0, "provider가 일치하지 않으면 Google 코드 교환을 시도하면 안 됩니다");
 });
-
-// ── AC-03: 클라이언트 비밀키는 환경변수로만 주입된다 ─────────────────────────
 
 test("GOOGLE_CLIENT_SECRET 환경변수가 없으면 코드 교환이 하드코딩된 값 없이 설정 오류로 거부된다", async (t) => {
     const originalId     = process.env.GOOGLE_CLIENT_ID;

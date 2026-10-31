@@ -1,14 +1,5 @@
 'use strict';
 
-// F-32a 다이아 충전 서버 — 실제 MySQL 격리 DB + 실제 Express router·서비스·모델 + 제어 가능한 가짜
-// 결제 어댑터(backend/tests/helpers/fakeTossAdapter.js). f01~f31과 같은 원칙: F01_TEST_DATABASE_URL이
-// 없으면 t.skip으로 "미검증"을 남기고, 설정된 DB에 연결하지 못하면 실패다. 실제 토스 API·실제
-// 테스트 결제는 호출하지 않는다(외부 입력 — 미검증). 외부 상품 작성자는 별도 연결(`sequelize`)로
-// 모사한다 — 실제 외부 등록 서버와의 통합이 아니다.
-//
-// 이 파일의 상품 수치(1000원 → 100 + 보너스 10 = 110 다이아 등)는 **자동 시험용 임시값**이며 최종
-// 상품 정책이 아니다.
-
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32a-topup-integration-test-secret';
@@ -16,7 +7,6 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32a-topup-integration-test-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-// 이 파일 아래쪽에서 `http`는 fetch 헬퍼 이름으로 쓰이므로 node 내장 모듈은 다른 이름으로 받는다.
 const nodeHttp = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -33,10 +23,6 @@ const addSocialAuth = require('../../db/migrations/0005-add-social-auth');
 const addCurrencyProductsTopupOrders = require('../../db/migrations/0018-add-currency-products-topup-orders');
 const { buildManagedSchema, resetManagedSchema, resetManagedData } = require('../helpers/isolatedTestDb');
 const { createFakeTossAdapter, installFakeAdapter, FAKE_CLIENT_KEY } = require('../helpers/fakeTossAdapter');
-// 이 스위트의 앱 서버는 전역 fetch로 호출된다. Windows 동적 포트 범위(1024..15000)에는 Fetch
-// 금지 포트가 섞여 있어 listen(0)이 그중 하나를 뽑으면 fetch가 "bad port"로 거부한다
-// (2026-09-22 전체 실행에서 앱 서버가 127.0.0.1:6697을 받아 실패했다) — 공용 helper로 Fetch가
-// 허용하는 고포트에 실제 bind한다.
 const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
@@ -63,7 +49,6 @@ const unavailable = (t) => {
     return false;
 };
 
-// 앱이 쓰는 연결(모델 로더의 싱글턴)은 첫 require 시점의 DATABASE_URL — 위에서 맞춘 격리 DB다.
 const db = require('../../models');
 const userRepository = require('../../repositories/user.repositories');
 const topupService = require('../../service/topup.service');
@@ -73,8 +58,6 @@ test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
 
-// ── 스키마·픽스처 ───────────────────────────────────────────────────────────────────
-
 let schemaReady = false;
 
 const rebuildSchema = async () => {
@@ -83,7 +66,6 @@ const rebuildSchema = async () => {
     schemaReady = true;
 };
 
-/** 첫 케이스는 전체 재구축, 이후는 승인된 격리 DB 확인을 거친 데이터 정리(스키마·이력 유지). */
 const setUp = async () => {
     if (!schemaReady) return rebuildSchema();
     const result = await resetManagedData(sequelize, TEST_DB_URL, {
@@ -137,7 +119,6 @@ const http = (base) => async (path, { method = 'GET', user, body, signal } = {})
     return { status: res.status, json, headers: res.headers };
 };
 
-/** 서버·인증·가짜 어댑터를 한 번에 세운다. */
 const boot = async (t, adapterOptions) => {
     stubAuthGate(t);
     const fake = installFakeAdapter(t, createFakeTossAdapter(adapterOptions));
@@ -155,8 +136,6 @@ const boot = async (t, adapterOptions) => {
         listOpen: (user, query = '?state=open') => call(`/economy/topup/orders${query}`, { user }),
     };
 };
-
-// ── 외부 상품 작성자 모사(별도 연결의 raw SQL) ─────────────────────────────────────────
 
 const TEST_PRODUCT = Object.freeze({
     product_id: 'test-topup-1', kind: 'DIAMOND_TOPUP', display_name: '시험용 다이아 상품(임시값)',
@@ -183,8 +162,6 @@ const updateProductAtomically = (productId, fields) => sequelize.query(
     { replacements: { pay_amount: 1000, grant_amount: 100, bonus_amount: 10, status: 'ON_SALE', ...fields, productId } },
 );
 
-// ── DB 검사(앱과 다른 연결) ────────────────────────────────────────────────────────────
-
 const one = async (sql, replacements) => {
     const [rows] = await sequelize.query(sql, { replacements });
     return rows[0] ?? null;
@@ -205,7 +182,6 @@ const ledgerEntry = (userId, orderId) => one(
     { userId, ref: `topup:${orderId}` },
 );
 
-/** 주문 하나와 그에 대응하는 제공자 쪽 결제를 만든다(사용자가 결제창에서 인증을 마친 상태). */
 const orderWithPayment = async (ctx, user, { scenario = 'approve', amount = 1000 } = {}) => {
     const created = await ctx.createOrder(user, { productId: TEST_PRODUCT.product_id, version: 1 });
     assert.equal(created.status, 201, JSON.stringify(created.json));
@@ -215,7 +191,6 @@ const orderWithPayment = async (ctx, user, { scenario = 'approve', amount = 1000
     return { orderId, paymentKey };
 };
 
-/** 별도 연결이 주문 행 잠금을 바로 얻을 수 있는지 — 외부 승인 대기 중 잠금이 없다는 근거(A-05). */
 const assertOrderRowLockable = async (orderId) => {
     await sequelize.transaction(async (transaction) => {
         await sequelize.query('SET SESSION innodb_lock_wait_timeout = 2', { transaction });
@@ -231,11 +206,6 @@ const assertOrderRowLockable = async (orderId) => {
     });
 };
 
-/**
- * 앱의 싱글턴(models/index.js)과 **별개의 새 Sequelize 연결**(같은 격리 테스트 DB)로 모델을 다시
- * 초기화해 db 핸들을 만든다. 서비스에 deps.db로 넘기면 메모리 상태·연결 풀·모델 인스턴스를 앱과
- * 공유하지 않는 "새 프로세스" 서비스 인스턴스가 된다 — 복구가 DB에 영속된 값만으로 이어지는지 본다.
- */
 const openSeparateDb = async (t) => {
     const separate = new Sequelize(TEST_DB_URL, { logging: false });
     t.after(() => separate.close());
@@ -265,20 +235,16 @@ const openSeparateDb = async (t) => {
     return handle;
 };
 
-// ═══ AC-06(상품 계약): 외부 작성자의 커밋이 서버 재시작 없이 반영된다 ═══════════════════
-
 test('AC-06: 별도 연결의 상품 등록·수정·판매 중지·삭제가 서버 재시작 없이 목록·주문에 반영된다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
     const ctx = await boot(t);
     const user = await createUser('prod');
 
-    // 빈 상품표
     const empty = await ctx.listProducts(user);
     assert.equal(empty.status, 200);
     assert.deepEqual(empty.json, { ok: true, products: [] });
 
-    // 등록 → 다음 조회에 반영(공개 필드만)
     await insertProduct();
     await insertProduct({ product_id: 'test-gold-1', kind: 'GOLD_PURCHASE', pay_currency: 'DIAMOND', pay_amount: 50, grant_currency: 'GOLD', grant_amount: 500, bonus_amount: 0, sort_order: 5 });
     const listed = await ctx.listProducts(user);
@@ -290,12 +256,10 @@ test('AC-06: 별도 연결의 상품 등록·수정·판매 중지·삭제가 �
     assert.deepEqual((await ctx.listProducts(user, '?kind=DIAMOND_TOPUP')).json.products.map((p) => p.productId), ['test-topup-1']);
     assert.deepEqual((await ctx.listProducts(user, '?kind=GOLD_PURCHASE')).json.products.map((p) => p.productId), ['test-gold-1']);
 
-    // 골드 구매 상품은 충전 주문의 근거가 될 수 없다
     const goldOrder = await ctx.createOrder(user, { productId: 'test-gold-1', version: 1 });
     assert.equal(goldOrder.status, 404);
     assert.equal(goldOrder.json.code, 'PRODUCT_NOT_FOUND');
 
-    // 가격·지급량·version을 한 문장으로 수정 → 다음 조회에 반영, 오래된 version은 거부 + 현재 상품
     await updateProductAtomically('test-topup-1', { pay_amount: 2000, grant_amount: 250, bonus_amount: 30 });
     const changed = (await ctx.listProducts(user, '?kind=DIAMOND_TOPUP')).json.products[0];
     assert.deepEqual([changed.payAmount, changed.grantAmount, changed.bonusAmount, changed.version], [2000, 250, 30, 2]);
@@ -311,14 +275,12 @@ test('AC-06: 별도 연결의 상품 등록·수정·판매 중지·삭제가 �
     assert.equal(fresh.json.amount, 2000);
     assert.equal(fresh.json.clientKey, FAKE_CLIENT_KEY);
 
-    // 판매 중지 → 목록에서 빠지고 주문 거부
     await updateProductAtomically('test-topup-1', { pay_amount: 2000, grant_amount: 250, bonus_amount: 30, status: 'STOPPED' });
     assert.deepEqual((await ctx.listProducts(user, '?kind=DIAMOND_TOPUP')).json.products, []);
     const stopped = await ctx.createOrder(user, { productId: 'test-topup-1', version: 3 });
     assert.equal(stopped.status, 409);
     assert.equal(stopped.json.code, 'PRODUCT_STOPPED');
 
-    // 삭제 → 주문 거부(이미 만든 주문은 남는다 — 스냅샷 시험이 별도로 검사)
     await sequelize.query("DELETE FROM economy_currency_products WHERE product_id = 'test-topup-1'");
     const gone = await ctx.createOrder(user, { productId: 'test-topup-1', version: 3 });
     assert.equal(gone.status, 404);
@@ -357,7 +319,6 @@ test('AC-06: 잘못된 통화 조합·0/음수 수량·음수 보너스·한도 
         const res = await ctx.createOrder(user, { productId, version: 1 });
         assert.ok([404, 409].includes(res.status), `${productId}: ${res.status}`);
         assert.ok(['PRODUCT_NOT_FOUND', 'PRODUCT_STOPPED'].includes(res.json.code), `${productId}: ${res.json.code}`);
-        // 잘못된 행에 대해 성공 주문이 만들어지면 안 된다
         assert.notEqual(res.status, 201, productId);
     }
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_topup_orders', {})).n), 0);
@@ -380,8 +341,6 @@ test('AC-06: 상품 조회 DB 오류는 빈 목록이 아니라 5xx다', async (
     assert.equal(res.json.products, undefined);
 });
 
-// ═══ AC-01: 정상 승인 → 정확히 1회 지급, 지급량은 서버 상품표 스냅샷 ═══════════════════
-
 test('AC-01: 정상 승인 뒤 다이아가 스냅샷 합계(110)만큼 정확히 1회 지급되고 원장·주문·응답이 일치한다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -391,7 +350,6 @@ test('AC-01: 정상 승인 뒤 다이아가 스냅샷 합계(110)만큼 정확�
 
     const { orderId, paymentKey } = await orderWithPayment(ctx, user);
 
-    // 승인 전: 스냅샷만 저장되고 원장 0건·증분 0
     const before = await orderRow(orderId);
     assert.deepEqual(
         [before.status, before.product_id, before.version, before.pay_amount, before.grant_amount, before.bonus_amount, before.payment_key],
@@ -419,11 +377,9 @@ test('AC-01: 정상 승인 뒤 다이아가 스냅샷 합계(110)만큼 정확�
         ['DIAMOND_TOPUP', 'DIAMOND', 110, 110, null, `topup:${orderId}`],
     );
 
-    // 제공자 호출은 1회, 멱등키는 주문에서 복원되는 값
     assert.equal(ctx.fake.callsOf('confirm').length, 1);
     assert.equal(ctx.fake.callsOf('confirm')[0].idempotencyKey, `topup-confirm:${orderId}`);
 
-    // 조회·재확인은 저장된 결과이고 추가 지급·제공자 호출이 없다
     const fetched = await ctx.getOrder(user, orderId);
     assert.equal(fetched.json.status, 'GRANTED');
     assert.equal(fetched.json.balanceDiamond, 110);
@@ -434,7 +390,6 @@ test('AC-01: 정상 승인 뒤 다이아가 스냅샷 합계(110)만큼 정확�
     assert.equal(await diamondBalance(user), 110);
     assert.equal(ctx.fake.callsOf('confirm').length, 1);
 
-    // 기존 본인 지갑 조회에도 반영된다
     const wallet = await ctx.call(`/economy/accounts/${user}/wallet`, { user });
     assert.equal(wallet.json.balanceDiamond, 110);
 });
@@ -450,7 +405,6 @@ test('AC-01(A-03): 주문 뒤 상품 가격·지급량·version 변경과 삭제
     const second = await orderWithPayment(ctx, user);
 
     await updateProductAtomically('test-topup-1', { pay_amount: 5000, grant_amount: 500, bonus_amount: 99 });
-    // 새 가격으로는 승인 대조가 거부된다
     const wrongAmount = await ctx.confirm(user, first.orderId, first.paymentKey, 5000);
     assert.equal(wrongAmount.status, 400);
     assert.equal(wrongAmount.json.code, 'AMOUNT_MISMATCH');
@@ -465,8 +419,6 @@ test('AC-01(A-03): 주문 뒤 상품 가격·지급량·version 변경과 삭제
     assert.equal(await diamondBalance(user), 220);
     assert.equal((await orderRow(second.orderId)).grant_amount, 100);
 });
-
-// ═══ AC-02: 변조·타인·복귀·실패·취소는 미지급 ═════════════════════════════════════════
 
 const assertNothingGranted = async (user, orderId) => {
     assert.equal(await ledgerCount(user, orderId), 0, '원장이 없어야 한다');
@@ -539,7 +491,6 @@ test('AC-02: 결제키·주문 변조 — 다른 주문이 점유한 키, 이미
     const second = await orderWithPayment(ctx, user);
     const third = await orderWithPayment(ctx, user);
 
-    // (1) 첫 주문이 GRANTED가 된 뒤 그 결제키를 둘째 주문에 끼워 넣는다
     assert.equal((await ctx.confirm(user, first.orderId, first.paymentKey, 1000)).status, 200);
     const conflict = await ctx.confirm(user, second.orderId, first.paymentKey, 1000);
     assert.deepEqual([conflict.status, conflict.json.code], [409, 'PAYMENT_KEY_CONFLICT']);
@@ -547,13 +498,11 @@ test('AC-02: 결제키·주문 변조 — 다른 주문이 점유한 키, 이미
     assert.equal(await ledgerCount(user, second.orderId), 0);
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_topup_orders WHERE payment_key = :key', { key: first.paymentKey })).n), 1);
 
-    // (2) 제공자에 등록된 결제키가 다른 주문(third)용이다 — 둘째 주문에 제출하면 제공자가 거절 → 미지급
     const wrongOrder = await ctx.confirm(user, second.orderId, third.paymentKey, 1000);
     assert.deepEqual([wrongOrder.status, wrongOrder.json.code], [402, 'PAYMENT_FAILED']);
     assert.equal((await orderRow(second.orderId)).status, 'FAILED');
     assert.equal(await ledgerCount(user, second.orderId), 0);
 
-    // (3) 이미 GRANTED인 주문도 소유권·금액·결제키를 먼저 비교한다
     const otherUser = await createUser('key2');
     const regrantOther = await ctx.confirm(otherUser, first.orderId, first.paymentKey, 1000);
     assert.equal(regrantOther.json.code, 'NOT_OWNER');
@@ -562,7 +511,6 @@ test('AC-02: 결제키·주문 변조 — 다른 주문이 점유한 키, 이미
     assert.equal(await ledgerCount(user, first.orderId), 1);
     assert.equal(await diamondBalance(user), 110, '첫 주문의 110만 지급되어 있어야 한다');
 
-    // (4) 키가 저장된 CONFIRMING(입금 대기) 주문에 다른 키를 제출
     const waiting = await orderWithPayment(ctx, user, { scenario: 'waiting' });
     assert.equal((await ctx.confirm(user, waiting.orderId, waiting.paymentKey, 1000)).status, 503);
     const callsBefore = ctx.fake.calls.length;
@@ -610,7 +558,6 @@ test('AC-02: 실패·취소·만료·입금 대기·미등록 결제는 미지�
         assert.equal(ctx.fake.calls.length, callsBefore, `${scenario}: 종단 상태는 제공자를 다시 부르지 않는다`);
     }
 
-    // 입금 대기 — 승인 전이므로 지급하지 않고 CONFIRMING으로 남는다
     const waiting = await orderWithPayment(ctx, user, { scenario: 'waiting' });
     const res = await ctx.confirm(user, waiting.orderId, waiting.paymentKey, 1000);
     assert.deepEqual([res.status, res.json.code], [503, 'PAYMENT_PROCESSING']);
@@ -618,14 +565,11 @@ test('AC-02: 실패·취소·만료·입금 대기·미등록 결제는 미지�
     assert.equal((await ctx.getOrder(user, waiting.orderId)).json.status, 'CONFIRMING');
     await assertNothingGranted(user, waiting.orderId);
 
-    // 제공자에 없는 결제키
     const created = await ctx.createOrder(user, { productId: 'test-topup-1', version: 1 });
     const unknown = await ctx.confirm(user, created.json.orderId, 'pay_never_registered', 1000);
     assert.deepEqual([unknown.status, unknown.json.code], [402, 'PAYMENT_FAILED']);
     await assertNothingGranted(user, created.json.orderId);
 });
-
-// ═══ AC-05: 설정 미비·live 키 ═══════════════════════════════════════════════════════════
 
 test('AC-05: 결제 설정이 없으면(가짜 어댑터) 주문·승인이 CONFIG_MISSING으로 실패하고 주문·지급이 바뀌지 않는다', async (t) => {
     if (unavailable(t)) return;
@@ -648,7 +592,6 @@ test('AC-05: 결제 설정이 없으면(가짜 어댑터) 주문·승인이 CONF
     assert.equal(ctx.fake.calls.length, 0);
     await assertNothingGranted(user, orderId);
 
-    // 설정이 복구되면 같은 주문이 정상 진행된다
     ctx.fake.setConfigMissing(false);
     assert.equal((await ctx.confirm(user, orderId, paymentKey, 1000)).json.status, 'GRANTED');
 });
@@ -683,15 +626,12 @@ test('AC-05: 실제 어댑터 — 키 누락·live 키는 CONFIG_MISSING이고, 
     assert.equal(created.json.clientKey, clientKey);
     assert.ok(!JSON.stringify(created.json).includes('secret'));
 
-    // secret이 없으면 승인 호출은 설정 미비로 실패하고 주문·지급은 그대로다
     const { orderId } = created.json;
     const res = await call(`/economy/topup/orders/${orderId}/confirm`, { method: 'POST', user, body: { paymentKey: 'pay_real_key', amount: 1000 } });
     assert.deepEqual([res.status, res.json.code], [503, 'CONFIG_MISSING']);
     assert.deepEqual([(await orderRow(orderId)).status, (await orderRow(orderId)).payment_key], ['CREATED', null]);
     await assertNothingGranted(user, orderId);
 });
-
-// ═══ AC-03: DB 지급 실패·응답 유실 → 확인 중/지급 대기 → 복구 → 1회 지급 ═════════════════
 
 test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으로 남고, 새 서비스 인스턴스의 조회·재확인이 복구해 한 번만 지급한다', async (t) => {
     if (unavailable(t)) return;
@@ -701,7 +641,6 @@ test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으�
     const user2 = await createUser('lost2');
     await insertProduct();
 
-    // (a) 조회로 복구 — 서비스 인스턴스를 새로 만들어 메모리 상태에 의존하지 않음을 확인한다
     const a = await orderWithPayment(ctx, user, { scenario: 'lost-response' });
     const lost = await ctx.confirm(user, a.orderId, a.paymentKey, 1000);
     assert.deepEqual([lost.status, lost.json.code], [503, 'PAYMENT_PROCESSING']);
@@ -710,7 +649,6 @@ test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으�
     assert.equal(ctx.fake.providerState(a.paymentKey), 'DONE', '제공자는 이미 승인했다');
     await assertNothingGranted(user, a.orderId);
 
-    // 새 Sequelize 연결·새 모델 인스턴스로 만든 서비스 — 앱의 연결과 메모리를 공유하지 않는다.
     const separate = await openSeparateDb(t);
     const view = await topupService.getTopupOrder({ userId: user, orderId: a.orderId }, { db: separate });
     assert.equal(view.status, 'GRANTED');
@@ -720,7 +658,6 @@ test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으�
     assert.equal(ctx.fake.callsOf('confirm').length, 1, '복구는 다시 승인하지 않고 조회한다');
     assert.equal(ctx.fake.callsOf('get').length, 1);
 
-    // (b) 재확인(confirm)으로 복구
     const b = await orderWithPayment(ctx, user2, { scenario: 'lost-response' });
     assert.equal((await ctx.confirm(user2, b.orderId, b.paymentKey, 1000)).status, 503);
     const retry = await ctx.confirm(user2, b.orderId, b.paymentKey, 1000);
@@ -730,7 +667,6 @@ test('AC-03: 제공자는 승인했지만 응답이 유실되면 CONFIRMING으�
     assert.equal((await ctx.confirm(user2, b.orderId, b.paymentKey, 1000)).json.balanceDiamond, 110);
     assert.equal(await diamondBalance(user2), 110, '반복 확인이 다시 지급하면 안 된다');
 
-    // (c) 재확인(confirm)을 새 연결의 서비스 인스턴스로 복구 — 결제키는 DB에 영속된 값으로만 이어진다
     const user3 = await createUser('lost3');
     const c = await orderWithPayment(ctx, user3, { scenario: 'lost-response' });
     assert.equal((await ctx.confirm(user3, c.orderId, c.paymentKey, 1000)).status, 503);
@@ -769,7 +705,6 @@ test('AC-03: 승인 뒤 원장 생성이 실패하면 PENDING_GRANT로 남고(�
     };
     t.after(() => { db.EconomyLedgerEntry.create = original; });
 
-    // (a) 지급 실패 → PENDING_GRANT → 조회가 이어서 지급
     const a = await orderWithPayment(ctx, user);
     armed = 1;
     const deferred = await ctx.confirm(user, a.orderId, a.paymentKey, 1000);
@@ -783,7 +718,6 @@ test('AC-03: 승인 뒤 원장 생성이 실패하면 PENDING_GRANT로 남고(�
     assert.equal(await diamondBalance(user), 110);
     assert.equal(ctx.fake.callsOf('confirm').length, 1);
 
-    // (b) 지급 실패 → 같은 confirm 재시도가 이어서 지급(제공자를 다시 부르지 않는다)
     const b = await orderWithPayment(ctx, user2);
     armed = 1;
     assert.equal((await ctx.confirm(user2, b.orderId, b.paymentKey, 1000)).json.status, 'PENDING_GRANT');
@@ -860,8 +794,6 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     await insertProduct();
     const { orderId, paymentKey } = await orderWithPayment(ctx, user);
 
-    // 서비스가 지급(원장 + GRANTED)을 커밋하고 돌아온 **직후, 응답이 나가기 전**에 멈추는 관찰 지점.
-    // 라우터는 topupService를 모듈 객체로 호출하므로 이 감싸기가 실제 confirm 경로에 그대로 끼어든다.
     const originalConfirm = topupService.confirmTopupOrder;
     let markCommitted;
     let openResponse;
@@ -880,7 +812,6 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
         method: 'POST', user, body: { paymentKey, amount: 1000 }, signal: controller.signal,
     }).then((res) => ({ res }), (error) => ({ aborted: error.name }));
 
-    // 지급이 이미 커밋된 상태에서(응답은 아직 없다) 클라이언트가 연결을 끊는다.
     assert.deepEqual(await grantCommitted, { status: 'GRANTED', balanceDiamond: 110 });
     const committed = await orderRow(orderId);
     assert.equal(committed.status, 'GRANTED', '응답을 받기 전에 이미 GRANTED가 커밋되어 있다');
@@ -894,7 +825,6 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     openResponse(); // 서버는 끊어진 연결에 응답을 쓴다
     topupService.confirmTopupOrder = originalConfirm;
 
-    // 응답 유실 뒤에도 커밋된 지급은 대기로 되돌아가지 않고, 재조회·재확인은 새 지급 없이 같은 결과를 준다.
     assert.equal(await ledgerCount(user, orderId), 1);
     assert.equal(await diamondBalance(user), 110);
     assert.equal((await orderRow(orderId)).status, 'GRANTED');
@@ -904,7 +834,6 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     const reconfirmed = await ctx.confirm(user, orderId, paymentKey, 1000);
     assert.deepEqual(reconfirmed.json, { ok: true, status: 'GRANTED', balanceDiamond: 110 });
 
-    // 새 연결의 서비스 인스턴스에서도 같은 결과다.
     const separate = await openSeparateDb(t);
     const viaFreshConnection = await topupService.getTopupOrder({ userId: user, orderId }, { db: separate });
     assert.deepEqual([viaFreshConnection.status, viaFreshConnection.balanceDiamond], ['GRANTED', 110]);
@@ -919,8 +848,6 @@ test('AC-03: 지급이 커밋된 뒤 HTTP 응답이 유실되어도 이미 커�
     assert.equal(ctx.fake.callsOf('get').length, 0, 'GRANTED 주문은 제공자를 다시 부르지 않는다');
 });
 
-// ═══ AC-04: 중복·동시 확인은 지급 1회, 외부 승인 중 DB 잠금 없음 ═══════════════════════════
-
 test('AC-04(A-05): 외부 승인이 대기 중일 때 별도 연결이 주문 행 잠금을 얻고, 중복 confirm은 제공자를 다시 부르지 않으며, 해제 뒤 지급은 1회다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -933,13 +860,11 @@ test('AC-04(A-05): 외부 승인이 대기 중일 때 별도 연결이 주문 �
     const first = ctx.confirm(user, orderId, paymentKey, 1000);
     await hold.entered;
 
-    // 외부 호출 중: 열린 DB 잠금이 없다
     await assertOrderRowLockable(orderId);
     const mid = await orderRow(orderId);
     assert.equal(mid.status, 'CONFIRMING');
     assert.ok(mid.lease_token && mid.lease_expires_at, '처리 임대가 저장되어 있다');
 
-    // 같은 주문의 두 번째 confirm·조회는 유효 임대 때문에 진행하지 않는다
     const dup = await ctx.confirm(user, orderId, paymentKey, 1000);
     assert.deepEqual([dup.status, dup.json.code], [503, 'PAYMENT_PROCESSING']);
     assert.equal((await ctx.getOrder(user, orderId)).json.status, 'CONFIRMING');
@@ -950,7 +875,6 @@ test('AC-04(A-05): 외부 승인이 대기 중일 때 별도 연결이 주문 �
     const firstRes = await first;
     assert.deepEqual(firstRes.json, { ok: true, status: 'GRANTED', balanceDiamond: 110 });
 
-    // 해제 뒤 confirm·조회를 동시에 재시도해도 원장·잔액은 그대로다
     const results = await Promise.all([
         ctx.confirm(user, orderId, paymentKey, 1000), ctx.confirm(user, orderId, paymentKey, 1000),
         ctx.getOrder(user, orderId), ctx.getOrder(user, orderId),
@@ -960,7 +884,6 @@ test('AC-04(A-05): 외부 승인이 대기 중일 때 별도 연결이 주문 �
     assert.equal(await diamondBalance(user), 110);
     assert.equal(ctx.fake.callsOf('confirm').length, 1);
 
-    // 원장 유일 제약이 실제로 중복 행을 막는다(서비스 논리가 아니라 DB 제약)
     await assert.rejects(
         () => sequelize.query(
             `INSERT INTO economy_ledger_entries (user_id, reason, item_id, currency, amount, balance_after, reference_event_id, created_at)
@@ -1004,7 +927,6 @@ test('AC-04: 서로 다른 두 주문이 같은 paymentKey를 제출하면 키�
     const userB = await createUser('kB');
     await insertProduct();
 
-    // (a) 결정적: 첫 주문이 제공자 대기 중일 때 둘째 주문이 같은 키를 제출
     const a = await orderWithPayment(ctx, userA);
     const b = await ctx.createOrder(userB, { productId: 'test-topup-1', version: 1 });
     const hold = ctx.fake.hold(a.paymentKey);
@@ -1019,7 +941,6 @@ test('AC-04: 서로 다른 두 주문이 같은 paymentKey를 제출하면 키�
     assert.equal((await orderRow(b.json.orderId)).status, 'CREATED');
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_topup_orders WHERE payment_key = :key', { key: a.paymentKey })).n), 1);
 
-    // (b) 동시 제출: 누가 이기든 키 점유 ≤ 1, 지급 ≤ 1, 진 쪽에는 원장이 없다
     const c = await createOrderRaw(ctx, userA);
     const d = await createOrderRaw(ctx, userB);
     const sharedKey = `pay_${crypto.randomBytes(8).toString('hex')}`;
@@ -1045,7 +966,6 @@ test('AC-04: 임대가 만료된 CONFIRMING(처리자 중단)은 조회가 이�
     const user = await createUser('lease');
     await insertProduct();
 
-    // (a) 처리자가 승인 호출 전에 중단된 상태를 직접 만든다 → 조회가 저장된 결제키로 이어서 승인·지급
     const a = await orderWithPayment(ctx, user);
     await sequelize.query(
         `UPDATE economy_topup_orders SET status = 'CONFIRMING', payment_key = :key, lease_token = 'dead-handler',
@@ -1058,7 +978,6 @@ test('AC-04: 임대가 만료된 CONFIRMING(처리자 중단)은 조회가 이�
     assert.equal(ctx.fake.callsOf('get').length, 1, '중단 뒤에는 먼저 제공자 상태를 조회한다');
     assert.equal(ctx.fake.callsOf('confirm').length, 1);
 
-    // (b) 유효한 임대가 남은 CONFIRMING은 조회가 건드리지 않는다
     const b = await orderWithPayment(ctx, user);
     await sequelize.query(
         `UPDATE economy_topup_orders SET status = 'CONFIRMING', payment_key = :key, lease_token = 'live-handler',
@@ -1070,7 +989,6 @@ test('AC-04: 임대가 만료된 CONFIRMING(처리자 중단)은 조회가 이�
     assert.equal((await ctx.confirm(user, b.orderId, b.paymentKey, 1000)).json.code, 'PAYMENT_PROCESSING');
     assert.equal(ctx.fake.calls.length, callsBefore);
 
-    // (c) 이전 처리자(H1)가 제공자 응답을 기다리는 동안 임대를 다른 처리자가 가져갔다 → H1은 결과를 덮지 못한다
     const c = await orderWithPayment(ctx, user);
     const hold = ctx.fake.hold(c.paymentKey);
     const h1 = ctx.confirm(user, c.orderId, c.paymentKey, 1000);
@@ -1087,11 +1005,8 @@ test('AC-04: 임대가 만료된 CONFIRMING(처리자 중단)은 조회가 이�
     assert.equal(await ledgerCount(user, c.orderId), 0);
 });
 
-// ═══ BQ §2-6a: 진행 중 주문 발견(읽기 전용) → 단건 조회 복구 → 골드 구매 ═══════════════════
-
 const OPEN_ORDER_KEYS = ['amount', 'createdAt', 'orderId', 'orderName', 'status'];
 
-/** 별도 연결로 주문 행을 직접 넣는다 — 상태·생성 시각을 시험이 정한다(결제키·임대 없음). */
 const insertOrderRow = async (userId, { orderId, status, createdAt, payAmount = 1000 }) => {
     await sequelize.query(
         `INSERT INTO economy_topup_orders
@@ -1102,7 +1017,6 @@ const insertOrderRow = async (userId, { orderId, status, createdAt, payAmount = 
     return orderId;
 };
 
-/** 부작용 검사용 전체 상태 — 주문 전 행·지갑·원장. */
 const economyState = async () => {
     const pick = async (sql) => JSON.parse(JSON.stringify((await sequelize.query(sql))[0]));
     return {
@@ -1120,7 +1034,6 @@ test('BQ §2-6a: 발견은 자기 계정의 CONFIRMING·PENDING_GRANT만 최신�
     const other = await createUser('oth');
     await insertProduct();
 
-    // owner: 진행 주문 7건(서로 다른 created_at) + 결제 전·종결 주문. other: 같은 상태 혼합.
     const at = (minute) => `2026-09-22 01:${String(minute).padStart(2, '0')}:00`;
     const openIds = [];
     for (let i = 0; i < 7; i += 1) {
@@ -1153,20 +1066,16 @@ test('BQ §2-6a: 발견은 자기 계정의 CONFIRMING·PENDING_GRANT만 최신�
     });
     assert.ok(!JSON.stringify(listed.json).includes(other), '다른 계정 주문·식별자는 나오지 않는다');
 
-    // 다른 계정: 자기 진행 주문 1건만
     const otherListed = await ctx.listOpen(other);
     assert.deepEqual(otherListed.json.orders.map((o) => o.orderId), [otherOpen]);
 
-    // 읽기 전용: 주문·지갑·원장·제공자 호출 불변
     assert.deepEqual(await economyState(), before, '발견 전후 주문·지갑·원장이 같아야 한다');
     assert.equal(ctx.fake.calls.length, callsBefore, '발견은 결제 어댑터를 부르지 않는다');
 
-    // 최신 5건이 종결되면 다음 진입에서 남은 오래된 주문이 발견된다(페이지 없음)
     await sequelize.query("UPDATE economy_topup_orders SET status = 'FAILED' WHERE order_id IN (:ids)", { replacements: { ids: openIds.slice(2) } });
     const next = await ctx.listOpen(owner);
     assert.deepEqual(next.json.orders.map((o) => o.orderId), [openIds[1], openIds[0]]);
 
-    // 진행 주문이 없으면 빈 배열(no-store 유지)
     await sequelize.query("UPDATE economy_topup_orders SET status = 'GRANTED' WHERE user_id = :owner AND status IN ('CONFIRMING','PENDING_GRANT')", { replacements: { owner } });
     const empty = await ctx.listOpen(owner);
     assert.deepEqual([empty.status, empty.json], [200, { ok: true, orders: [] }]);
@@ -1190,7 +1099,6 @@ test('BQ §2-6a: 발견은 인증 필수이고 state 누락·다른 값·배열�
         assert.equal(res.headers.get('cache-control'), 'no-store');
     }
 
-    // 계정 식별자를 쿼리로 보내도 인증 계정 기준이다
     const other = await createUser('dis2');
     await insertProduct();
     await insertOrderRow(other, { orderId: `x-${other.slice(0, 12)}`, status: 'PENDING_GRANT', createdAt: '2026-09-22 02:00:00' });
@@ -1217,10 +1125,8 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     await insertProduct();
     await insertProduct({ product_id: 'test-gold-1', kind: 'GOLD_PURCHASE', pay_currency: 'DIAMOND', pay_amount: 30, grant_currency: 'GOLD', grant_amount: 100, bonus_amount: 10, sort_order: 5 });
 
-    // (a) 승인 응답 유실 → CONFIRMING, 원장 0
     const lost = await orderWithPayment(ctx, user, { scenario: 'lost-response' });
     assert.equal((await ctx.confirm(user, lost.orderId, lost.paymentKey, 1000)).json.code, 'PAYMENT_PROCESSING');
-    // (b) 지급 쓰기 실패 → PENDING_GRANT, 원장 0
     let armed = 0;
     const originalCreate = db.EconomyLedgerEntry.create;
     db.EconomyLedgerEntry.create = async function injected(...args) {
@@ -1228,7 +1134,6 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
         return originalCreate.apply(this, args);
     };
     t.after(() => { db.EconomyLedgerEntry.create = originalCreate; });
-    // 두 주문의 created_at이 겹치지 않게 1초 뒤에 만든다(최신순 판정 근거)
     await new Promise((resolve) => setTimeout(resolve, 1100));
     const pending = await orderWithPayment(ctx, user);
     armed = 1;
@@ -1236,14 +1141,12 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     assert.equal(await diamondBalance(user), 0);
     assert.equal(await topupLedgerTotal(), 0);
 
-    // 발견: 최신(PENDING_GRANT)이 먼저, 부작용 없음
     const callsBefore = ctx.fake.calls.length;
     const found = await ctx.listOpen(user);
     assert.deepEqual(found.json.orders.map((o) => [o.orderId, o.status]), [[pending.orderId, 'PENDING_GRANT'], [lost.orderId, 'CONFIRMING']]);
     assert.equal(ctx.fake.calls.length, callsBefore);
     assert.equal(await diamondBalance(user), 0);
 
-    // 발견된 orderId로 기존 단건 GET → 지급 완료(중복 GET·confirm은 추가 지급 없음)
     for (const { orderId } of found.json.orders) {
         const view = await ctx.getOrder(user, orderId);
         assert.equal(view.json.status, 'GRANTED', JSON.stringify(view.json));
@@ -1258,7 +1161,6 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     assert.equal(await diamondBalance(user), 220);
     assert.deepEqual((await ctx.listOpen(user)).json.orders, [], '지급된 주문은 더 발견되지 않는다');
 
-    // 골드 구매(D30 → G100+10)
     const referenceEventId = `bq-gold-${crypto.randomBytes(6).toString('hex')}`;
     const bought = await ctx.call('/economy/gold-purchases', { method: 'POST', user, body: { productId: 'test-gold-1', version: 1, referenceEventId } });
     assert.deepEqual([bought.status, bought.json], [200, { ok: true, balanceGold: 110, balanceDiamond: 190 }]);
@@ -1284,7 +1186,6 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     assert.equal(transactions.json.transactions.filter((e) => e.reason === 'DIAMOND_TOPUP').length, 2);
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_purchase_requests WHERE user_id = :user', { user })).n), 1, '구매 요청 1행');
 
-    // 과거 구매 결과는 최초 스냅샷이다 — 이후 지갑이 바뀌어도 그대로(현재 잔액은 wallet으로 확정)
     const later = await orderWithPayment(ctx, user);
     assert.equal((await ctx.confirm(user, later.orderId, later.paymentKey, 1000)).json.balanceDiamond, 300);
     const result = await ctx.call(`/economy/purchases/${encodeURIComponent(referenceEventId)}`, { user });
@@ -1292,13 +1193,10 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     assert.deepEqual([result.json.balanceGold, result.json.balanceDiamond], [110, 190]);
     assert.deepEqual((await ctx.call(`/economy/accounts/${user}/wallet`, { user })).json, { balanceGold: 110, balanceDiamond: 300 });
 
-    // 타인의 원장·지갑·발견은 보이지 않는다
     assert.equal((await ctx.call(`/economy/accounts/${user}/transactions`, { user: stranger })).status, 403);
     assert.equal((await ctx.call(`/economy/accounts/${user}/wallet`, { user: stranger })).status, 403);
     assert.deepEqual((await ctx.listOpen(stranger)).json, { ok: true, orders: [] });
 });
-
-// ═══ AC-06: 마이그레이션 — 반복 적용·부분 실패 복구·기존 경제 데이터 보존 ═══════════════════
 
 const snapshotEconomy = async () => {
     const tables = ['users', 'economy_wallets', 'economy_ledger_entries', 'economy_entitlements', 'economy_loadouts'];
@@ -1319,12 +1217,6 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     assert.ok(index0018 > 0, 'CLI MIGRATIONS에 0018이 등록되어 있어야 한다');
     assert.equal(MIGRATIONS[index0018 - 1].name, '0017-social-signup-email');
 
-    // F-33 E-2: 0018 뒤에 0019(economy_emoji_palettes)가 등록되면서 "0018이 목록의 마지막"이라는
-    // 가정은 더 이상 성립하지 않는다. 이 케이스가 실제로 확인하려는 것은 **0017 → 0018 경계**이므로,
-    // 마지막 원소라는 위치 가정 대신 0018까지의 명시적 목록(upTo0018)으로 그 경계를 그대로 재현한다.
-    // 그러면 0018만 새로 적용됨·기존 데이터 보존·재실행 없음·부분 실패 복구를 예전과 똑같이 본다.
-    // 0018 이후의 나머지(after0018)는 이 케이스 끝에서 전체 목록으로 따로 적용해, 최신 전체 목록에
-    // 대한 보장(새 적용 목록·재실행 없음·기존 데이터 보존)도 함께 남긴다 — 커버리지가 줄지 않는다.
     const upTo0018 = MIGRATIONS.slice(0, index0018 + 1);
     const after0018 = MIGRATIONS.slice(index0018 + 1);
     assert.equal(upTo0018[upTo0018.length - 1].name, addCurrencyProductsTopupOrders.name, 'upTo0018의 마지막은 0018이다');
@@ -1335,7 +1227,6 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     const queryInterface = sequelize.getQueryInterface();
     assert.ok(!(await queryInterface.showAllTables()).includes('economy_topup_orders'), '0017 상태에는 신규 테이블이 없다');
 
-    // 기존 경제 데이터(지갑·원장·소유품·장착)
     const userId = await createUser('keep');
     await sequelize.query('INSERT INTO economy_wallets (user_id, balance_gold, balance_diamond, created_at, updated_at) VALUES (:u, 500, 7, NOW(), NOW())', { replacements: { u: userId } });
     await sequelize.query("INSERT INTO economy_ledger_entries (user_id, reason, item_id, currency, amount, balance_after, reference_event_id, created_at) VALUES (:u, 'TEST_SEED', NULL, 'GOLD', 500, 500, 'seed-keep', NOW())", { replacements: { u: userId } });
@@ -1347,27 +1238,22 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     assert.deepEqual(applied.applied, [addCurrencyProductsTopupOrders.name], '0018만 새로 적용되어야 한다');
     assert.deepEqual(await snapshotEconomy(), before, '기존 경제 데이터는 값과 건수가 그대로여야 한다');
 
-    // 운영 상품은 삽입하지 않는다
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_currency_products', {})).n), 0);
     assert.equal(Number((await one('SELECT COUNT(*) AS n FROM economy_topup_orders', {})).n), 0);
 
-    // CLI 목록 재실행: 오류·중복 없음
     assert.deepEqual((await migrationRunner.applyMigrations({ sequelize, migrations: upTo0018 })).applied, []);
 
-    // up·verify 직접 반복
     await addCurrencyProductsTopupOrders.up(queryInterface, Sequelize, sequelize);
     await addCurrencyProductsTopupOrders.verify(queryInterface, Sequelize, sequelize);
     await addCurrencyProductsTopupOrders.up(queryInterface, Sequelize, sequelize);
     await addCurrencyProductsTopupOrders.verify(queryInterface, Sequelize, sequelize);
     assert.deepEqual(await snapshotEconomy(), before);
 
-    // 부분 DDL 실패: 테이블은 있고 결제키 유일 인덱스가 빠진 상태 → verify는 거부, up이 복구
     await queryInterface.removeIndex('economy_topup_orders', addCurrencyProductsTopupOrders.PAYMENT_KEY_UNIQUE_INDEX);
     await assert.rejects(addCurrencyProductsTopupOrders.verify(queryInterface), /economy_topup_orders_payment_key_unique/);
     await addCurrencyProductsTopupOrders.up(queryInterface, Sequelize, sequelize);
     await addCurrencyProductsTopupOrders.verify(queryInterface);
 
-    // 실제 DB 제약: 결제키 유일(NULL은 여러 개 허용), order_id 기본키, users FK, 상품 FK 없음
     const insertOrder = (orderId, paymentKey, uid = userId) => sequelize.query(
         `INSERT INTO economy_topup_orders (order_id, user_id, product_id, version, pay_amount, grant_amount, bonus_amount, order_name, status, payment_key, created_at, updated_at)
          VALUES (:orderId, :uid, 'gone-product', 1, 1000, 100, 10, 'n', 'CREATED', :paymentKey, NOW(), NOW())`,
@@ -1376,8 +1262,6 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     await insertOrder('order-null-1', null);
     await insertOrder('order-null-2', null);
     await insertOrder('order-key-1', 'same-key');
-    // Sequelize는 원본 DB 오류를 감싸고 최상위 message를 'Validation error'로 바꾸므로 오류 객체의
-    // 이름과 원본(parent/original)의 code·message를 검사한다.
     const assertWrappedDbError = async (run, { name, code, messagePattern }) => {
         let caught = null;
         try { await run(); } catch (err) { caught = err; }
@@ -1408,11 +1292,6 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
     const foreignKeys = await queryInterface.getForeignKeyReferencesForTable('economy_topup_orders');
     assert.deepEqual(foreignKeys.map((fk) => [fk.columnName, fk.referencedTableName, fk.referencedColumnName]), [['user_id', 'users', 'uuid']]);
 
-    // ── 최신 전체 목록(0018 이후가 더 있는 현재 상태)도 같은 보장을 지킨다 ──────────────
-    //
-    // 위에서 0018까지만 적용한 상태이므로, 여기서 전체 CLI 목록을 적용하면 0018 이후의
-    // 나머지만 새로 적용되어야 한다. "0018이 마지막"이라는 위치 가정을 걷어낸 자리를 이
-    // 명시적 검증이 대신한다 — 목록이 더 길어져도 이 단언은 기대값을 목록에서 유도한다.
     assert.ok(after0018.length > 0, '0018 이후에 등록된 마이그레이션이 있어야 이 구간이 의미를 갖는다(현재 0019)');
     const tail = await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
     assert.deepEqual(tail.applied, after0018.map((m) => m.name), '0018 이후의 나머지 마이그레이션만 새로 적용되어야 한다');
@@ -1420,7 +1299,6 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
         (await queryInterface.showAllTables()).includes('economy_emoji_palettes'),
         '0019가 실제로 적용되어 economy_emoji_palettes가 생겨야 한다',
     );
-    // 전체 목록 재실행도 오류·중복 없이 비어 있고, 기존 경제 데이터는 여전히 그대로다.
     assert.deepEqual((await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS })).applied, []);
     assert.deepEqual(await snapshotEconomy(), before, '나머지 마이그레이션 적용 후에도 기존 경제 데이터는 값과 건수가 그대로여야 한다');
 });

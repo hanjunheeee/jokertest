@@ -14,7 +14,6 @@ const SEND_TIMEOUT_MS = 5000
 
 const INITIAL_STATE = { gameId: null, messages: [], draft: "", status: "idle", error: null }
 
-/** NIGHT 단계 JOKER 전용 실시간 채팅 세션. gameId 전환 원자성은 jokerChatReducer가 소유한다. */
 export function useInGameJokerChatSession({ getPlayerById } = {}) {
   const [state, dispatch] = useReducer(jokerChatReducer, INITIAL_STATE)
   const externalGameId = useInGameStore((s) => s.gameId)
@@ -32,8 +31,6 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     }
   }, [])
 
-  // 진행 중이던 전송 요청을 무효화하고 잠금을 즉시 해제한다(disconnect·gameId 변경·socket
-  // 교체·unmount 네 지점 모두 이 함수 하나만 거친다).
   const invalidate = () => {
     versionRef.current += 1
     sendingRef.current = false

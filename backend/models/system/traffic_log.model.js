@@ -13,7 +13,6 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   TrafficLog.associate = (models) => {
-    // 다른 모델과 관계 없는 독립적인 통계용 로그 테이블
   };
 
   return TrafficLog;

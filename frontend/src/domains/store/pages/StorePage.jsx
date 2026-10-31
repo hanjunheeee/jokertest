@@ -1,4 +1,3 @@
-// 파일 역할: StorePage.jsx - 라우터에서 렌더링되는 페이지입니다.
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import SettingIntroSkipLayer from "@/domains/settings/components/SettingIntroSkipLayer.jsx"
@@ -14,15 +13,6 @@ import { publicAsset } from "@/shared/utils/publicAsset.js"
 import { BG_FADE_TRANSITION, UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
 
-/** 로비에서 진입하는 상점 화면 — 진입 영상 1회 재생 후 UI 표시.
- *
- * F-09 R-IMPL(AC-06 재검토): 실제 브라우저 확인에서 서버는 구매·재로그인 후에도 실제
- * 잔액(예: 8500 GOLD/1000 DIAMOND)을 정확히 돌려줬지만, 화면에는 끝까지 더미 값
- * (12,450/320)만 보였다 — StoreCurrencyBalance가 인증된 서버 잔액을 아예 받지 못했기
- * 때문이다(그 컴포넌트의 기본값이 더미였다). StorePanel이 마운트 시 이미
- * useEconomyStore.fetchSummary()를 호출하므로(서버 재조회, F-08부터 존재), 여기서는 같은
- * 스토어를 구독해 그 결과(잔액·로딩/실패 상태)를 StoreCurrencyBalance에 그대로 전달한다 —
- * 중복 fetch를 만들지 않는다. */
 export default function StorePage() {
   const navigate = useNavigate()
   const { bgVideoRef, introDone, skipIntro } = useVideoIntro()

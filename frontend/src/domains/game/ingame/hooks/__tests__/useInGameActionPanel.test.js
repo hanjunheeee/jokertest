@@ -14,10 +14,6 @@ import {
 } from "../useInGameActionPanel.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 
-// ---------------------------------------------------------------------------
-// computeDayVoteResolveAckPatch
-// ---------------------------------------------------------------------------
-
 test("computeDayVoteResolveAckPatch: {ok:true, outcome, tribunalTargetUuid}이면 {status:'resolved', error:null, resolution}을 반환한다", () => {
   assert.deepEqual(
     computeDayVoteResolveAckPatch({ ok: true, gameId: "g1", dayIndex: 1, outcome: "TRIBUNAL", tribunalTargetUuid: "u1" }),
@@ -52,10 +48,6 @@ test("computeDayVoteResolveAckPatch: 응답이 없어도(undefined) 실패로 �
   assert.equal(result.resolution, null)
   assert.equal(typeof result.error, "string")
 })
-
-// ---------------------------------------------------------------------------
-// shouldApplyDayVoteResolvedPayload — 활성 dayIndex가 정수일 때만 정확히 일치해야 통과한다
-// ---------------------------------------------------------------------------
 
 test("shouldApplyDayVoteResolvedPayload: gameId와 dayIndex가 모두 정확히 일치하면 true다", () => {
   assert.equal(
@@ -94,10 +86,6 @@ test("shouldApplyDayVoteResolvedPayload: payload가 없거나 객체가 아니�
     false,
   )
 })
-
-// ---------------------------------------------------------------------------
-// parseDayVoteResolvedPayload — outcome/phase/집계값 계약 전체를 검증하는 parser
-// ---------------------------------------------------------------------------
 
 function baseGameId() {
   return "g1"
@@ -327,10 +315,6 @@ test("parseDayVoteResolvedPayload: TRIBUNAL인데 유효표가 하나도 없이 
   assert.equal(parseDayVoteResolvedPayload({ payload, gameId: "g1", dayIndex: 1 }), null)
 })
 
-// ---------------------------------------------------------------------------
-// computeDayVoteResolveInvalidatePatch
-// ---------------------------------------------------------------------------
-
 test("computeDayVoteResolveInvalidatePatch: mounted면 {status:'idle', error:null, resolution:null}을 반환한다", () => {
   assert.deepEqual(computeDayVoteResolveInvalidatePatch(true), { status: "idle", error: null, resolution: null })
 })
@@ -338,10 +322,6 @@ test("computeDayVoteResolveInvalidatePatch: mounted면 {status:'idle', error:nul
 test("computeDayVoteResolveInvalidatePatch: unmounted면 null을 반환해 state를 건드리지 않음을 나타낸다", () => {
   assert.equal(computeDayVoteResolveInvalidatePatch(false), null)
 })
-
-// ---------------------------------------------------------------------------
-// useInGameActionPanel — DAY phase 렌더링 회귀 테스트 (TDZ ReferenceError 방지)
-// ---------------------------------------------------------------------------
 
 test("useInGameActionPanel: DAY phase 상태에서 실제로 렌더링해도 dayVoteControlsEnabled 계산 중 ReferenceError 없이 완료된다", () => {
   useInGameStore.setState({
@@ -373,10 +353,6 @@ test("useInGameActionPanel: DAY phase 상태에서 실제로 렌더링해도 day
   })
   assert.equal(typeof captured.dayVoteControlsEnabled, "boolean")
 })
-
-// ---------------------------------------------------------------------------
-// useInGameActionPanel — ENDED phase 계약 테스트
-// ---------------------------------------------------------------------------
 
 let actionPanelTestDom = null
 
@@ -497,9 +473,6 @@ test("useInGameActionPanel: ENDED면 이전이라면 컨트롤을 열어줬을 r
     localPlayerId: "p1",
   })
 
-  // NIGHT_ACTION_MIN_DAY_INDEX상 JOKER·dayIndex 2는 밤 행동 자격 자체는 만족해
-  // nightActionType은 여전히 계산되지만(role/dayIndex만 보고 phase는 보지 않음),
-  // nightActionsLocked를 비롯한 잠금은 ENDED로 인해 그대로 유지돼야 한다.
   assert.equal(captured.nightActionType, "ASSASSINATE")
   assert.equal(captured.nightActionsLocked, true)
   assert.equal(captured.dayVoteControlsEnabled, false)
@@ -528,7 +501,6 @@ test("useInGameActionPanel: 비종료 phase(DAY)에서 투표 페이즈·생존 
 
   assert.equal(captured.dayVoteControlsEnabled, true)
   assert.equal(captured.dayVoteResolveControlsEnabled, true)
-  // 투표가 열린 뒤에는 준비 버튼이 닫힌다(토론 전용 컨트롤).
   assert.equal(captured.dayReadyControlsEnabled, false)
 })
 
@@ -604,10 +576,6 @@ test("useInGameActionPanel: 토론 페이즈여도 사망자에게는 준비 버
   assert.equal(captured.dayVoteControlsEnabled, false)
 })
 
-// ---------------------------------------------------------------------------
-// 밤 행동 생존 게이트 — 사망자는 제출 UI 대상에서 빠진다(서버의 ACTOR_NOT_ALIVE와 짝)
-// ---------------------------------------------------------------------------
-
 test("useInGameActionPanel: NIGHT에서 본인이 사망 상태면 nightActionsLocked가 true이고 nightActionAlive는 false다", () => {
   useInGameStore.setState({
     gameId: "game-1",
@@ -627,8 +595,6 @@ test("useInGameActionPanel: NIGHT에서 본인이 사망 상태면 nightActionsL
     localPlayerId: "p1",
   })
 
-  // 역할·dayIndex상 자격 자체는 그대로 계산되지만(phase/생존은 보지 않는다), 생존 게이트가
-  // 제출을 막는다 — 서버 game-core의 ACTOR_NOT_ALIVE 거부를 UI에서 미리 반영한 것이다.
   assert.equal(captured.nightActionType, "ASSASSINATE")
   assert.equal(captured.nightActionAlive, false)
   assert.equal(captured.nightActionsLocked, true)
@@ -671,8 +637,6 @@ test("useInGameActionPanel: 세션 컨텍스트가 비어 있으면 생존 게�
     error: null,
   })
 
-  // localSessionPlayer가 undefined인 경우 — dayVoteControlsEnabled와 동일하게 생존으로 취급해
-  // 컨텍스트 지연 로딩이 조작을 잠가버리지 않게 한다.
   const captured = renderActionPanelProbe()
 
   assert.equal(captured.nightActionAlive, true)

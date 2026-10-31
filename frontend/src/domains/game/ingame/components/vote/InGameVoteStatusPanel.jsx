@@ -18,14 +18,12 @@ import InGameVoteStatusContent from "./InGameVoteStatusContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
-/** 인게임 투표현황 팝업 — 중앙 모달 */
 export default function InGameVoteStatusPanel({ open, onClose }) {
   useEffect(() => {
     if (!open) return undefined
 
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return
-      // F-16(AC-01): 열린 상태에서 실제로 닫는 경로만 취소음.
       dispatchUiSfx("ui-cancel", event)
       onClose()
     }

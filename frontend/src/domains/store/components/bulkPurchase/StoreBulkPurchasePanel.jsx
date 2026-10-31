@@ -12,7 +12,6 @@ import { calculateBulkPurchaseTotal } from "../../utils/calculateBulkPurchaseTot
 import StoreBulkPurchaseItemList from "./StoreBulkPurchaseItemList.jsx"
 import StoreBulkPurchaseSummary from "./StoreBulkPurchaseSummary.jsx"
 
-/** 일괄구매 확인 팝업 본문 */
 export default function StoreBulkPurchasePanel({ items, deadPreviewIds, onClose, onConfirm, purchaseState, onCheck, onRetry }) {
   const { total, hasPendingPrice } = calculateBulkPurchaseTotal(items)
 
@@ -22,8 +21,6 @@ export default function StoreBulkPurchasePanel({ items, deadPreviewIds, onClose,
         type="button"
         aria-label="일괄구매 확인 닫기"
         onClick={onClose}
-        // F-16(AC-01): 닫기 버튼의 의미는 취소다. backdrop·Escape와 같은 의미이고, 셋은 서로
-        // 다른 물리 입력이라 각각 한 번씩 난다.
         data-sfx-kind="ui-cancel"
         className={STORE_BULK_PURCHASE_CLOSE_BTN_CLASS}
         style={{ outline: "none" }}

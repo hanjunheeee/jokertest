@@ -5,7 +5,6 @@ import {
 } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-/** 로비 Discord 버튼 — 고객센터 메뉴 옆 등에서 재사용 */
 export default function LobbyDiscordButton({
   onClick = () => {},
   className = LOBBY_DISCORD_BTN_CLASS,

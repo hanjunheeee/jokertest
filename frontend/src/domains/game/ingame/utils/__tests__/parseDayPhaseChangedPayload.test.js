@@ -9,7 +9,6 @@ function validPayload(overrides = {}) {
   return { gameId: "game-1", dayIndex: 2, dayPhase: "DAY_VOTE", round: 1, ...overrides }
 }
 
-// [테스트 이름, payload, 컨텍스트 override] — 전부 null(완전한 no-op)이어야 하는 입력이다.
 const rejectedCases = [
   ["payload가 undefined면 거부된다", undefined, {}],
   ["payload가 null이면 거부된다", null, {}],

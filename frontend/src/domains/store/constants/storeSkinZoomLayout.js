@@ -3,11 +3,9 @@ export const STORE_SKIN_ZOOM_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
-/** 상점 UI 위를 덮는 딤 배경 */
 export const STORE_SKIN_ZOOM_BACKDROP_CLASS =
   "fixed inset-0 z-40 cursor-default border-0 bg-[#1a0f0a]/62 p-0 backdrop-blur-[4px]"
 
-/** 중앙 팝업 정렬 wrapper — 클릭은 패널·닫기 버튼만 받습니다 */
 export const STORE_SKIN_ZOOM_PANEL_WRAP_CLASS =
   "pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-[clamp(1rem,3vw,2rem)]"
 

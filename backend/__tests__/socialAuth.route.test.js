@@ -1,27 +1,5 @@
 process.env.JWT_SECRET = "social-auth-route-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
-// npm test는 --env-file=.env.test로 이 값을 주지만, 파일 하나만 직접 실행할 때도 동작하도록
-// 없을 때만 더미 값을 채운다(profile.updatePassword.sessionRevocation.test.js와 동일).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-
-// F-05 AC-04/AC-06 — 서버 라우트·쿠키 계약 HTTP 통합 테스트.
-//
-// backend/tests/db/f05-social-auth.integration.test.js는 socialAuth.service.js의 트랜잭션
-// 로직을 격리 DB로 검증한다(이 저장소에서는 F01_TEST_DATABASE_URL이 없어 skip될 수 있다).
-// 이 파일은 그와 다른 층을 검증한다 — completeSocialSignupApi(프론트)가 실제로 호출하는
-// POST /auth/social/signup/complete 라우트가 존재하고, Set-Cookie 계약(login 컨트롤러와
-// 동일한 원칙)을 지키는지 확인한다. socialAuth.service.js 자체의 트랜잭션/state 로직은
-// 여기서 다시 검증하지 않고 스텁으로 대체한다(auth.login.regression.test.js·
-// profile.updatePassword.sessionRevocation.test.js와 같은 패턴).
-//
-// R-IMPL(운영자 코드 검토): POST /auth/social/link·/auth/social/link/state는 이전 회차에
-// 등록되어 있었으나, 인증된 사용자라도 요청 본문의 provider/subject/email은 서버가 검증한
-// 적 없는 클라이언트 주장일 뿐이었다 — state·세션 검증을 통과해도 그 값 자체의 진위는
-// 증명되지 않아, 로그인한 사용자가 임의의 소셜 identity를 자기 계정에 선점할 수 있었다.
-// 이번 회차는 그 두 라우트를 auth.routes.js에서 제거했다(내부 전용 서비스 계약으로만
-// 남김). 아래 테스트는 "제거됨"을 회귀로 고정한다 — 인증·유효 state가 있어도 조작한
-// provider/subject로는 이 경로를 통해 identity를 만들 수 없음을(라우트 자체가 없어 서비스
-// 계층에 도달조차 하지 않음을) 검증한다.
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -38,9 +16,6 @@ const socialAuthService = require("../service/socialAuth.service");
 const REPO_KEYS = ["findActiveSession", "checkActiveBan"];
 const SERVICE_KEYS = ["completeSocialSignup", "getSocialSignupIntent", "issueOAuthState", "linkExternalIdentity"];
 
-// verifyToken(auth.middleware.js) → sessionLifecycle.resolveSession은 userRepository를
-// 통해서만 세션 상태를 읽는다. 이 두 함수만 스텁하면 "지금 유효한 세션"과 "이미 폐기된
-// 세션"을 실제 미들웨어 체인을 그대로 태우면서 재현할 수 있다.
 const stubAuthGate = (t, { sessionActive = true } = {}) => {
     const originals = Object.fromEntries(REPO_KEYS.map((key) => [key, userRepository[key]]));
     userRepository.findActiveSession = async (id, userId) =>
@@ -87,8 +62,6 @@ const postJson = (base, path, body, extraHeaders = {}) =>
         body:    JSON.stringify(body ?? {}),
     });
 
-// ── POST /auth/social/signup/complete ────────────────────────────────────────
-
 test("가입 완료 성공 시 accessToken 세션 쿠키를 발급하고 이전 영속 refreshToken 쿠키를 지운다", async (t) => {
     stubSocialAuthService(t, {
         completeSocialSignup: async () => ({
@@ -120,10 +93,6 @@ test("가입 완료 성공 시 accessToken 세션 쿠키를 발급하고 이전 
     assert.match(refreshCookie, /^refreshToken=;/, "삭제 쿠키는 값이 비어 있어야 합니다");
     assert.match(refreshCookie, /Expires=/i);
 });
-
-// ── F-06 R-IMPL #2: googleAuthCallback이 SIGNUP_REQUIRED에서 다시 서명해 둔 oauthAttempt
-// 쿠키로 rememberMe 선택이 이 완료 단계까지 보존되는지 검증한다. 요청 본문에 rememberMe를
-// 실어도 무시되어야 한다 — 서버가 로그인 시작 시점에 서명한 값만 신뢰한다.
 
 const signAttempt = (payload, ttlSeconds = 1800) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ttlSeconds });
 
@@ -216,10 +185,6 @@ test("가입 자격이 만료되면(INTENT_EXPIRED) 서비스 오류의 status·
     assert.equal(findSetCookie(res, "accessToken"), undefined, "실패 시 세션 쿠키를 발급하면 안 됩니다");
 });
 
-// ── CODEX-1 재검토 지적 AC-02: 실패해도 재시도 가능한 오류는 oauthAttempt 쿠키를 지우면
-// 안 된다. 이전 버전은 서비스 호출 전에 무조건 지워, 닉네임 중복(409) 같은 재시도 가능한
-// 실패 뒤 같은 화면에서 다시 제출하면 rememberMe:true로 시작한 선택이 false로 떨어졌다.
-
 test("닉네임 중복(재시도 가능한 실패)이 나면 oauthAttempt 쿠키를 지우지 않아 재시도에서도 rememberMe가 보존된다(CODEX-1 AC-02)", async (t) => {
     stubSocialAuthService(t, {
         completeSocialSignup: async () => {
@@ -262,12 +227,6 @@ test("가입 완료에 성공하면 그제서야 oauthAttempt 쿠키를 지운�
     assert.match(clearedAttempt, /^oauthAttempt=;/, "삭제 쿠키는 값이 비어 있어야 합니다");
 });
 
-// ── F-31 AC-03: 클라이언트는 "이미 인증됐다"를 주장할 수 없다 ────────────────────
-//
-// 완료 컨트롤러가 요청 본문에서 꺼내는 값은 intentToken·nickname·birthDate·email·
-// signupProof뿐이다 — email_verified/emailVerified/verified/provider/subject/rememberMe를
-// 실어도 서비스 입력에 닿지 않아야 한다(인증 생략 판정은 서버가 잠근 intent.email만 본다).
-
 test("완료 요청에 email_verified·verified·provider·subject·rememberMe를 주입해도 서비스 입력에 전달되지 않는다(AC-03)", async (t) => {
     const { calls } = stubSocialAuthService(t, {
         completeSocialSignup: async () => ({
@@ -283,7 +242,6 @@ test("완료 요청에 email_verified·verified·provider·subject·rememberMe�
         birthDate: "2000-01-01",
         email: "claimed@example.com",
         signupProof: "proof-1",
-        // 아래는 전부 클라이언트의 권한 주장이다 — 서비스에 닿으면 안 된다.
         email_verified: true,
         emailVerified: true,
         verified: true,
@@ -331,8 +289,6 @@ test("서비스가 증명을 거부하면(SIGNUP_PROOF_REQUIRED/INVALID) 401 cod
     }
 });
 
-// ── F-31 AC-02: POST /auth/social/signup/intent (비소비 조회) ────────────────────
-
 test("intent 조회는 intentToken만 서비스에 넘기고 emailVerificationRequired만 no-store로 응답한다(AC-02)", async (t) => {
     const { calls } = stubSocialAuthService(t, {
         getSocialSignupIntent: async () => ({ emailVerificationRequired: true }),
@@ -341,7 +297,6 @@ test("intent 조회는 intentToken만 서비스에 넘기고 emailVerificationRe
 
     const res = await postJson(base, "/auth/social/signup/intent", {
         intentToken: "intent-1",
-        // 조회 응답을 조작하려는 주장들 — 컨트롤러가 꺼내지도 않아야 한다.
         emailVerificationRequired: false,
         email_verified: true,
         provider: "google",
@@ -373,8 +328,6 @@ test("만료·소비된 intent 조회는 서비스 오류의 status·code가 그
     assert.equal(res.status, 409);
     assert.equal(body.code, "INTENT_CONSUMED");
 });
-
-// ── POST /auth/social/link/state, POST /auth/social/link (R-IMPL: 라우트 제거됨) ─────
 
 test("인증 없이 링크 state 발급을 요청해도 라우트가 없어 404이고 서비스는 호출되지 않는다", async (t) => {
     const { calls } = stubSocialAuthService(t);

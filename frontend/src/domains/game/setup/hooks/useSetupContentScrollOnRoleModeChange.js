@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef } from "react"
 
 const ROLE_MODE_SCROLL_DURATION_MS = 240
-/** summary가 프레임 안에 들어오도록 — 값을 키울수록 더 아래로 스크롤 (92px보다 아래) */
 const ROLE_MODE_SCROLL_SAFE_BOTTOM_PX = 220
 
 function easeOutCubic(progress) {
@@ -82,10 +81,6 @@ function animateScrollTop(container, targetTop, duration = ROLE_MODE_SCROLL_DURA
   }
 }
 
-/**
- * 역할 구성(AUTO ↔ CUSTOM) 전환 시 설정 목록 스크롤을 역할 구성 구역으로 맞추고,
- * 높이가 줄어든 뒤 scrollTop이 범위를 벗어나지 않게 clamp합니다.
- */
 export function useSetupContentScrollOnRoleModeChange(containerRef, roleMode, activeTab) {
   const prevRoleModeRef = useRef(roleMode)
   const skipInitialRef = useRef(true)

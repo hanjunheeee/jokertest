@@ -1,30 +1,11 @@
 'use strict';
 
-// F-19 게임 초대 서비스 — 실제 초대 생성·조회·수락 결정·거절·만료의 SQL 경계다.
-//
-// 이 모듈이 소유하는 것과 소유하지 않는 것을 분명히 나눈다(A-10):
-//
-//   소유한다  : GameInvite 행의 status/revision/decided_at(역사적 수락 결정),
-//               entry_outcome(역사적 publication 영수증), 수신자 snapshot과 커서.
-//   소유 안 함: gameRooms/playerRoom(현재 canonical membership), socket.join,
-//               예약(admission reservation). 전부 matchmaking.js의 것이다.
-//
-// 그래서 "입장 성공"은 이 모듈 혼자 판정할 수 없다 — 확정 영수증(PUBLISHED)과 현재 소속이
-// **함께** 확인될 때만 성공이다. 그 조합 판정은 matchmaking.js가 한다.
-//
-// 방 정보는 새 registry를 만들지 않고 matchmaking.js가 주입한 접근자로만 읽는다
-// (__setRoomAccessForRuntime). 이 방향(matchmaking → service)만 존재하므로 require 순환이
-// 생기지 않는다.
-
 const crypto = require('node:crypto');
 
 const friendRepository = require('../repositories/friend.repositories');
 const notificationService = require('./notification.service');
 const { createError } = require('../utils/appError');
 
-// '../models'는 require 시점에 DATABASE_URL을 파싱한다 — notification.service.js의 buildDeps와
-// 같은 이유로 getter로 감싸 실제 접근 시점까지 미룬다(overrides.db가 있으면 아예 require하지
-// 않는다).
 const buildDeps = (overrides = {}) => ({
     get db() { return overrides.db ?? require('../models'); },
     get emitToUser() {
@@ -41,7 +22,6 @@ const buildDeps = (overrides = {}) => ({
 
 let deps = buildDeps();
 
-/** 초대 유효 시간. 서버 시각으로만 판단한다(클라이언트 시계를 신뢰하지 않는다). */
 const INVITE_TTL_MS = 3 * 60 * 1000;
 
 const INVITE_STATUS = Object.freeze({
@@ -52,17 +32,12 @@ const INVITE_STATUS = Object.freeze({
     CANCELLED: 'CANCELLED',
 });
 
-/** entry_outcome — 역사적 publication 영수증. status와 **다른 사실**이다. */
 const ENTRY_OUTCOME = Object.freeze({
     UNCONFIRMED: 'UNCONFIRMED',
     PUBLISHED: 'PUBLISHED',
     INTERRUPTED: 'INTERRUPTED',
 });
 
-// ── matchmaking이 주입하는 방 접근자 ─────────────────────────────────────────
-//
-// 기본값은 "아무 방도 없다"이다. 주입이 없으면 초대는 만들어지지 않는다 — 방 권한을
-// 알 수 없는 상태에서 초대를 발급하지 않기 위해서다.
 const NO_ROOM_ACCESS = Object.freeze({
     bootEpoch: 'unbound',
     describeRoomForInvite: () => null,
@@ -72,22 +47,10 @@ const NO_ROOM_ACCESS = Object.freeze({
 
 let roomAccess = NO_ROOM_ACCESS;
 
-/** matchmaking.js 전용: canonical registry 접근자를 주입한다(새 registry를 만들지 않는다). */
 function __setRoomAccessForRuntime(access) {
     roomAccess = access ?? NO_ROOM_ACCESS;
 }
 
-// ── 공개 형태 ────────────────────────────────────────────────────────────────
-
-/**
- * 소켓·응답으로 나가는 초대 형태.
- *
- * **수락 전 방 코드/방 id를 넣지 않는다**(AC-06) — 초대를 받은 사실만으로 코드 참가 경로에
- * 우회 입장할 수 있으면 초대 권한 검사가 무의미해진다. 수신자가 알아야 하는 것은 inviteId와
- * 누가 불렀는지, 언제까지인지뿐이다.
- *
- * creation_seq는 BIGINT라 JS number로 옮기면 정밀도를 잃을 수 있어 **문자열**로 내보낸다.
- */
 const toPublicInvite = (row, senderNickname = null) => {
     if (row === null || row === undefined) return null;
     const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;
@@ -107,7 +70,6 @@ const toPublicInvite = (row, senderNickname = null) => {
     };
 };
 
-/** 두 문자열 순번을 비교한다(BIGINT 정밀도를 잃지 않도록 자릿수 우선 비교). */
 const compareSeq = (left, right) => {
     const a = String(left ?? '0').replace(/^0+(?=\d)/, '');
     const b = String(right ?? '0').replace(/^0+(?=\d)/, '');
@@ -115,14 +77,6 @@ const compareSeq = (left, right) => {
     return a < b ? -1 : a > b ? 1 : 0;
 };
 
-// ── 내부 도우미 ──────────────────────────────────────────────────────────────
-
-/**
- * 수신자 User 행을 잠근다(A-09).
- *
- * 초대 **생성**과 **snapshot 조회**가 같은 잠금을 공유해야 "커서 이하 id가 뒤늦게 커밋되는"
- * 창이 사라진다. 상태 변경(수락·거절·만료·차단 무효화)도 같은 잠금에 참여한다.
- */
 const lockReceiver = async (db, receiverId, transaction) => {
     return await db.User.findOne({
         where: { uuid: receiverId },
@@ -132,19 +86,11 @@ const lockReceiver = async (db, receiverId, transaction) => {
     });
 };
 
-/** 이 계정쌍이 지금 서로 초대를 주고받을 수 있는가. 어느 방향의 차단이든 막는다(AC-04). */
 const isBlockedBetween = async (uuidA, uuidB, options = {}) => {
     const blocks = await friendRepository.findBlocksBetween(uuidA, uuidB, options);
     return blocks.length > 0;
 };
 
-/**
- * 만료 시각이 지난 이 수신자의 PENDING 초대를 EXPIRED로 확정한다(멱등).
- *
- * 조회·수락·거절 경계에서 모두 같은 함수를 부른다 — 그래야 "화면에는 살아 있는데 서버는
- * 만료"라는 어긋남이 생기지 않는다. revision을 함께 올려 지연 도착한 생성 사건이 이
- * terminal 상태를 되살리지 못하게 한다(A-06).
- */
 const expireDueInvitesForReceiver = async (db, receiverId, now, transaction) => {
     const [affected] = await db.GameInvite.update(
         {
@@ -165,23 +111,6 @@ const expireDueInvitesForReceiver = async (db, receiverId, now, transaction) => 
     return affected ?? 0;
 };
 
-// ── AC-06: 초대 생성 ─────────────────────────────────────────────────────────
-
-/**
- * 실제 초대를 만든다.
- *
- * 권한 근거는 전부 서버가 확인한다(A-05):
- *   - 발송자의 **현재** 방 소속과 방 인스턴스(주입된 registry에서 읽는다)
- *   - 친구 관계와 양방향 차단 없음
- *   - 수신자 계정 활성 상태
- *   - 수신자가 지금 초대를 받을 수 있는 상태(활성 게임·다른 방·전환 중이 아님)
- *
- * creationKey는 **발송 계정에 귀속된** 멱등 키다. 같은 키로 다시 오면 기존 행을 그대로
- * 돌려주고 신규 수신 사건(game_invite_received·notification_created)을 재발행하지 않는다.
- * 같은 키에 다른 대상·다른 방을 실어 보내면 성공이 아니라 409 충돌이다.
- *
- * 생성 시점에는 방 자리를 예약하지 않는다 — 예약은 수락 처리 중에만 짧게 생긴다.
- */
 async function createInvite({ senderId, receiverId, creationKey }) {
     const { db, now } = deps;
 
@@ -196,16 +125,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     }
     const normalizedKey = creationKey.trim();
 
-    /**
-     * 발송자의 **현재** 방을 registry에서 다시 읽는다(A-05).
-     *
-     * registry는 소켓 콜백이 동기적으로 바꾸는 메모리 상태라, 이 서비스가 await할 때마다
-     * 값이 달라질 수 있다 — 방을 나갔거나, 방이 삭제/시작됐거나, 다른 방으로 옮겼을 수 있다.
-     * 그래서 트랜잭션 **전에 한 번** 본 값을 권한 근거로 쓰지 않고, 계정 잠금을 잡은 뒤와
-     * 실제 INSERT 직전에 같은 방 인스턴스인지 다시 확인한다.
-     *
-     * @param {{roomId:string, roomInstanceId:string}|null} expected 같아야 하는 이전 관측값
-     */
     const requireSenderRoom = (expected = null) => {
         const currentId = roomAccess.getRoomIdForUser(senderId);
         const current = currentId ? roomAccess.describeRoomForInvite(currentId) : null;
@@ -218,7 +137,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
         return current;
     };
 
-    // 잠금을 잡기 전의 빠른 거부. **권한 근거가 아니다** — 아래 잠금 안에서 다시 본다.
     requireSenderRoom();
 
     const createdAt = now();
@@ -226,9 +144,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     const bootEpoch = roomAccess.bootEpoch;
 
     const result = await db.sequelize.transaction(async (t) => {
-        // 계정쌍을 바꾸는 작업은 정규화 UUID 순서로 두 계정을 잠근다(AC-04의 잠금 순서 —
-        // blockUser·unblockUser·acceptRequest·recordAcceptDecision과 같다). 이 잠금에는
-        // 수신자 행이 반드시 포함되므로 snapshot 커서 계약(A-09)도 그대로 만족한다.
         const locked = await friendRepository.lockAccountsInOrder([senderId, receiverId], { transaction: t });
         const lockedByUuid = new Map(locked.filter(Boolean).map((row) => [row.uuid, row]));
         if (!lockedByUuid.get(senderId)) throw createError('사용자를 찾을 수 없습니다.', 404);
@@ -236,17 +151,13 @@ async function createInvite({ senderId, receiverId, creationKey }) {
         if (!receiver) throw createError('초대할 사용자를 찾을 수 없습니다.', 404);
         if (receiver.status !== 'ACTIVE') throw createError('초대할 수 없는 계정입니다.', 403);
 
-        // 잠금을 기다리는 동안 발송자가 방을 옮겼을 수 있다 — 여기서 확정한 방이 근거다.
         const room = requireSenderRoom();
 
-        // 같은 생성 키의 재시도인지 먼저 본다 — 아래 검사들이 그 사이 상태 변화로 실패해도
-        // 이미 성공했던 요청의 재시도는 같은 결과를 돌려줘야 한다.
         const existing = await db.GameInvite.findOne({
             where: { sender_id: senderId, creation_key: normalizedKey },
             transaction: t,
         });
         if (existing) {
-            // 같은 키에 다른 대상·다른 방을 실어 보낸 요청은 "성공한 재시도"가 아니다.
             if (existing.receiver_id !== receiverId || existing.room_id !== room.roomId) {
                 throw createError('같은 생성 키로 다른 초대를 보낼 수 없습니다.', 409);
             }
@@ -257,19 +168,11 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             throw createError('차단된 사용자에게는 게임 초대를 보낼 수 없습니다.', 403);
         }
 
-        // 친구 관계도 **잠금 안에서** 읽는다. 잠금 밖 조회는 "친구 끊김 커밋 → 초대 생성"의
-        // 교차를 막지 못한다(계정 잠금은 관계를 바꾸는 쪽도 함께 잡는다).
         const friendship = await friendRepository.findExistingFriendship(senderId, receiverId, { transaction: t });
         if (!friendship || friendship.status !== 'ACCEPTED') {
             throw createError('친구만 게임에 초대할 수 있습니다.', 403);
         }
 
-        // 같은 방 인스턴스로 아직 살아 있는 초대가 있으면 새로 만들지 않는다.
-        //
-        // 생성 키 멱등성은 "같은 논리 발송의 재시도"만 덮는다. 사용자가 새 키로 한 번 더
-        // 누르면(연타·다른 탭) 그건 다른 논리 발송이라 키 검사만으로는 두 번째 행·두 번째
-        // 알림·두 번째 소리가 생긴다. 유효한 PENDING이 이미 있으면 그 행을 그대로 돌려주고
-        // 아무 사건도 다시 발행하지 않는다.
         const livePending = await db.GameInvite.findOne({
             where: {
                 sender_id: senderId,
@@ -296,8 +199,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             where: { uuid: senderId }, attributes: ['nickname'], transaction: t,
         });
 
-        // 마지막 await 뒤에도 같은 방 인스턴스인지 다시 확인한다 — 여기까지 오는 동안
-        // 방 삭제·시작·이탈이 registry에 반영됐을 수 있다.
         requireSenderRoom(room);
 
         const invite = await db.GameInvite.create({
@@ -314,8 +215,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             expires_at: expiresAt,
         }, { transaction: t });
 
-        // F-17 관례: 원본 행과 알림 행을 같은 트랜잭션에서 확정한다. 알림 삽입이 실패하면
-        // 초대도 함께 롤백된다 — "초대는 갔는데 알림만 없는" 상태가 남지 않는다.
         const notificationResult = await notificationService.createGameInviteNotification({
             receiverId,
             inviteId: invite.id,
@@ -332,8 +231,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
 
     const publicInvite = toPublicInvite(result.invite, result.senderNickname);
 
-    // 커밋 이후에만 전달한다. 같은 생성 키의 재시도(created=false)는 아무 사건도 다시
-    // 발행하지 않는다 — 그래야 재시도가 소리를 한 번 더 내지 않는다(A-05/A-06).
     if (result.created) {
         emitInviteReceived(receiverId, publicInvite);
         if (result.notification !== null) {
@@ -344,13 +241,6 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     return { invite: publicInvite, created: result.created };
 }
 
-/**
- * 신규 수신 사건 하나를 수신자에게만 전달한다.
- *
- * sfxEvent의 eventId는 **초대 id 기반의 안정 문자열**이다 — 같은 초대를 다시 전달해도 같은
- * 문자열이라 수신 측이 중복 재생을 판정할 수 있다. 실제 소리 적격성(커서 이후인가, 최신
- * 상태가 PENDING인가)은 수신 클라이언트의 한 경계가 판정한다(A-06).
- */
 function emitInviteReceived(receiverId, publicInvite) {
     try {
         const emit = deps.emitToUser;
@@ -369,7 +259,6 @@ function emitInviteReceived(receiverId, publicInvite) {
     }
 }
 
-/** 상태 변경을 수신자·발송자에게 알린다(소리 없음 — 신규 수신이 아니다). */
 function emitInviteUpdated(userIds, publicInvite) {
     const emit = deps.emitToUser;
     if (typeof emit !== 'function') return;
@@ -382,17 +271,6 @@ function emitInviteUpdated(userIds, publicInvite) {
     }
 }
 
-// ── AC-07: snapshot + 커서 ───────────────────────────────────────────────────
-
-/**
- * 수신자의 초대 snapshot과 소리 커서를 **같은 읽기 경계**에서 계산한다(A-09).
- *
- * 커서는 종료된 행까지 포함한 수신자 전체 최대 creation_seq다. PENDING만의 최댓값을 쓰면
- * 이미 끝난 과거 초대가 "커서 이후"로 보여 새 사건으로 오인된다.
- *
- * 수신자 User 행 잠금을 먼저 잡으므로, 이 시점 이후에 커밋되는 초대는 반드시 커서보다 큰
- * 순번을 갖는다 — 즉 "커서 이하인데 나중에 도착하는" 사건이 존재하지 않는다.
- */
 async function getReceiverSnapshot(receiverId) {
     const { db, now } = deps;
     if (typeof receiverId !== 'string' || receiverId.length === 0) {
@@ -424,7 +302,6 @@ async function getReceiverSnapshot(receiverId) {
     });
 }
 
-/** 초대 하나를 당사자에게만 돌려준다. 제3자는 존재 여부도 알 수 없다(404). */
 async function getInviteForUser(viewerId, inviteId) {
     const { db, now } = deps;
     if (typeof inviteId !== 'string' || inviteId.length === 0) {
@@ -442,7 +319,6 @@ async function getInviteForUser(viewerId, inviteId) {
             throw createError('초대를 찾을 수 없습니다.', 404);
         }
 
-        // 조회 경계에서도 만료를 멱등하게 확정한다 — 화면과 서버의 상태가 갈리지 않게.
         if (row.status === INVITE_STATUS.PENDING && row.expires_at.getTime() <= now().getTime()) {
             await lockReceiver(db, row.receiver_id, t);
             await expireDueInvitesForReceiver(db, row.receiver_id, now(), t);
@@ -452,8 +328,6 @@ async function getInviteForUser(viewerId, inviteId) {
         return toPublicInvite(row);
     });
 }
-
-// ── AC-06: 거절 ──────────────────────────────────────────────────────────────
 
 async function declineInvite(receiverId, inviteId) {
     const { db, now } = deps;
@@ -466,8 +340,6 @@ async function declineInvite(receiverId, inviteId) {
         });
         if (!row) throw createError('초대를 찾을 수 없습니다.', 404);
         if (row.receiver_id !== receiverId) throw createError('초대를 찾을 수 없습니다.', 404);
-        // 이미 끝난 초대의 거절은 **멱등**이다 — 응답이 유실돼 다시 눌러도 오류가 아니라
-        // 현재 상태를 그대로 돌려준다. 단 이미 수락된 초대를 거절로 뒤집지는 않는다.
         if (row.status !== INVITE_STATUS.PENDING) {
             return { row, changed: false };
         }
@@ -487,14 +359,6 @@ async function declineInvite(receiverId, inviteId) {
     return publicInvite;
 }
 
-// ── AC-05: 차단·방 상실에 따른 무효화 ────────────────────────────────────────
-
-/**
- * 이 계정쌍의 PENDING 초대를 전부 CANCELLED로 확정한다(AC-05).
- *
- * **호출자의 트랜잭션 안에서** 실행된다(friend.service.blockUser). 행을 지우지 않고 사유와
- * revision만 남기므로, 차단을 해제해도 PENDING으로 되돌아가지 않는다.
- */
 async function cancelPendingInvitesBetween(uuidA, uuidB, reason, options = {}) {
     const db = options.db ?? deps.db;
     const { Op } = db.Sequelize;
@@ -525,12 +389,6 @@ async function cancelPendingInvitesBetween(uuidA, uuidB, reason, options = {}) {
     return rows.map((row) => row.id);
 }
 
-/**
- * 방이 사라졌거나(삭제·시작) 발송자가 소속을 잃었을 때 그 방의 PENDING 초대를 종료한다.
- *
- * 이 보상은 **지연 실행**이고 실패해도 된다 — 입장 검사는 언제나 현재 방 상태로 다시
- * 하므로(matchmaking.js), 보상이 실패해도 이미 사라진 방으로 입장할 수는 없다.
- */
 async function cancelPendingInvitesForRoom(roomId, reason) {
     const { db, now } = deps;
     if (typeof roomId !== 'string' || roomId.length === 0) return [];
@@ -558,19 +416,6 @@ async function cancelPendingInvitesForRoom(roomId, reason) {
     return rows.map((row) => row.id);
 }
 
-// ── AC-06: 수락 결정(첫 트랜잭션) ────────────────────────────────────────────
-
-/**
- * 역사적 수락 결정을 선형화한다(A-10의 1단계).
- *
- * 여기까지 성공하면 status=ACCEPTED + attempt_id + entry_outcome=UNCONFIRMED가 durable하다.
- * **이 시점에는 아직 어떤 Map에도, 어떤 실제 방송 room에도 들어가 있지 않다.**
- *
- * 만료 판정은 이 결정 시점에 한 번만 한다 — 이미 ACCEPTED로 확정된 초대를 나중에 EXPIRED로
- * 되돌리지 않는다.
- *
- * @returns {{ok:true, invite:object, roomId:string, roomInstanceId:string}}
- */
 async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch }) {
     const { db, now } = deps;
 
@@ -579,7 +424,6 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
         if (!row0) throw createError('초대를 찾을 수 없습니다.', 404);
         if (row0.receiver_id !== receiverId) throw createError('초대를 찾을 수 없습니다.', 404);
 
-        // 정렬 계정 잠금 → 초대 행 잠금 순서를 지킨다(차단 트랜잭션과 같은 순서).
         await friendRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
         await expireDueInvitesForReceiver(db, receiverId, now(), t);
 
@@ -588,7 +432,6 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
         });
         if (!row) throw createError('초대를 찾을 수 없습니다.', 404);
 
-        // 같은 시도의 재조회는 성공으로 이어간다(응답 유실 재시도).
         if (row.status === INVITE_STATUS.ACCEPTED && row.attempt_id === attemptId) {
             return {
                 ok: true, invite: toPublicInvite(row), roomId: row.room_id,
@@ -599,7 +442,6 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
             return { rejection: createError('이미 처리된 초대입니다.', 409, row.status) };
         }
         if (row.boot_epoch !== bootEpoch) {
-            // 서버가 재시작됐다 — 옛 방 인스턴스는 복원되지 않으므로 입장 근거가 없다(A-11).
             await row.update({
                 status: INVITE_STATUS.CANCELLED, end_reason: 'SERVER_RESTARTED',
                 decided_at: now(), revision: row.revision + 1,
@@ -623,29 +465,10 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
             roomInstanceId: row.room_instance_id, resumed: false,
         };
     });
-    // Persist terminal expiry/cancellation before reporting a business rejection.
-    // SQL and commit failures still reject the transaction without claiming a decision.
     if (decision.rejection) throw decision.rejection;
     return decision;
 }
 
-// ── AC-06: 확정(두 번째 finalization 트랜잭션) ───────────────────────────────
-
-/**
- * publication 영수증을 확정한다(A-10의 2단계).
- *
- * 같은 User→invite 잠금을 **다시** 잡고, 그 안에서 최종 차단·권한·attempt를 확인한 뒤
- * 호출자가 넘긴 동기 publish()를 실행한다. publish()는 room.players·playerRoom·메모리
- * 영수증을 await 없이 한꺼번에 기록해야 한다 — 그 사이에 다른 콜백이 끼어들면 정원·소속
- * 검사가 무의미해진다.
- *
- * publish 이후 영수증 쓰기가 실패하면 unpublish()를 **동기적으로** 불러 방금 넣은 두 Map을
- * 되돌린다. 그 보상까지 실패해도 마지막 durable 상태(UNCONFIRMED)는 보존하고, stale Map은
- * DB와 무관하게 제거한다.
- *
- * @param {() => {ok:boolean, code?:string}} publish 동기 커밋 콜백
- * @param {() => void} unpublish 동기 보상 콜백
- */
 async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoch, publish, unpublish }) {
     const { db, now } = deps;
     let publishedInTransaction = false;
@@ -665,7 +488,6 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
             if (row.attempt_id !== attemptId) return { ok: false, code: 'STALE_ATTEMPT', published: false };
             if (row.boot_epoch !== bootEpoch) return { ok: false, code: 'SERVER_RESTARTED', published: false };
             if (row.status !== INVITE_STATUS.ACCEPTED) return { ok: false, code: 'NOT_ACCEPTED', published: false };
-            // 같은 시도가 이미 확정됐으면 그대로 성공이다(응답 유실 재시도).
             if (row.entry_outcome === ENTRY_OUTCOME.PUBLISHED) {
                 return { ok: true, invite: toPublicInvite(row), alreadyPublished: true };
             }
@@ -679,14 +501,11 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
                 return { ok: false, code: 'ACCOUNT_UNAVAILABLE', published: false };
             }
 
-            // 두 번째 잠금 전에 차단이 커밋됐으면 **역사적 ACCEPTED는 유지**하고 entry만
-            // INTERRUPTED로 끝낸다 — 결정 자체를 되돌리지 않는다(A-10).
             if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
                 await row.update({ entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'BLOCKED_BEFORE_ENTRY' }, { transaction: t });
                 return { ok: false, code: 'BLOCKED', published: false };
             }
 
-            // ── 여기부터 await 없는 동기 구간 ────────────────────────────────
             const committed = publish();
             if (!committed || committed.ok !== true) {
                 const code = committed?.code ?? 'ROOM_STATE_CHANGED';
@@ -703,7 +522,6 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
             return { ok: true, invite: toPublicInvite(row), alreadyPublished: false };
         });
     } catch (error) {
-        // 커밋 실패·영수증 쓰기 실패 — Map만 먼저 반영된 상태를 남기지 않는다.
         if (publishedInTransaction) {
             try { unpublish?.(); } catch (compensationError) {
                 console.error('[초대 입장 보상 실패]', compensationError);
@@ -714,12 +532,6 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
     }
 }
 
-/**
- * 시도 결과를 다시 묻는다(응답 유실 후 재조회).
- *
- * **현재 소속은 여기서 알 수 없다.** durable 상태만 돌려주고, 성공 판정은 호출자가 현재
- * canonical membership과 대조해서 한다(A-10).
- */
 async function getAttemptOutcome({ receiverId, inviteId, attemptId }) {
     const { db } = deps;
     const row = await db.GameInvite.findOne({ where: { id: inviteId } });
@@ -738,37 +550,10 @@ async function getAttemptOutcome({ receiverId, inviteId, attemptId }) {
     };
 }
 
-/**
- * 확정 실패를 durable 상태에 기록한다(보상). 실패해도 던지지 않는다 — 이미 제거된 stale
- * Map을 DB 결과에 따라 되살리지 않기 위해서다.
- *
- * ── 왜 조건부 UPDATE인가 (RESULT-3/CODEX-3) ─────────────────────────────────
- * 예전 구현은 행을 읽어 attempt_id와 entry_outcome을 **확인한 뒤** row.update()를 불렀다.
- * 두 문장 사이에는 잠금도 트랜잭션도 없어서, 그 사이에 finalizeAcceptedEntry가 PUBLISHED를
- * 커밋하거나 새 수락 시도가 attempt_id를 교체하면 보상이 그것을 덮어썼다:
- *
- *   보상: SELECT → (UNCONFIRMED, 내 attempt) 확인
- *   확정:                          UPDATE entry_outcome='PUBLISHED' COMMIT
- *   보상:                                                UPDATE entry_outcome='INTERRUPTED'
- *   ⇒ 실제로 입장한 참가자의 영수증이 INTERRUPTED로 뒤집힌다.
- *
- * 그래서 확인과 쓰기를 **한 문장**으로 합친다. WHERE에 id·attempt_id와 허용된 이전
- * 결과(UNCONFIRMED)를 모두 넣으면 MySQL이 그 행을 잠근 상태에서 조건을 평가하므로 중간에
- * 끼어들 창이 없다. PUBLISHED·다른 attempt·이미 INTERRUPTED인 행은 0행이 되어 그대로 남는다.
- *
- * 0행일 때만 이유를 알아보려고 한 번 더 읽는다 — 그 읽기는 보고용이며 판단에 쓰지 않는다.
- *
- * @returns {Promise<boolean>} 이 호출이 실제로 INTERRUPTED를 확정했는가
- */
 async function recordEntryInterrupted({ inviteId, attemptId, reason }) {
     const { db } = deps;
-    // attempt 소유를 증명하지 못하는 호출은 아무것도 쓰지 않는다. (undefined를 WHERE에
-    // 그대로 넣으면 조건이 통째로 사라져 남의 attempt까지 덮을 수 있다.)
     if (typeof attemptId !== 'string' || attemptId.length === 0) return false;
     try {
-        // 확인과 쓰기를 하나의 조건부 UPDATE로 합친다(check-then-act 제거).
-        // 허용된 이전 결과는 UNCONFIRMED뿐이다 — PUBLISHED는 역사이고, 이미 INTERRUPTED인
-        // 행은 다시 쓸 필요가 없다.
         const [affected] = await db.GameInvite.update(
             { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: reason ?? 'INTERRUPTED' },
             {

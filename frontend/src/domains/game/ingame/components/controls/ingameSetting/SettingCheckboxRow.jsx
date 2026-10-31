@@ -1,6 +1,3 @@
-/**
- * 인게임 설정 — 체크박스 행
- */
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
   INGAME_SETTING_CHECKBOX_CLASS,

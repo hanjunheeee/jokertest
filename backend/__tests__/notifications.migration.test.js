@@ -1,18 +1,5 @@
 'use strict';
 
-// F-17 backend/db/migrations/0012-add-notifications.js 단위 시험.
-//
-// economy.migration.test.js와 같은 이유·같은 관례로(이 환경은 격리 MySQL 자격 증명을 항상
-// 구할 수 없다) 실제 MySQL 없이 DDL·재실행 안전성·verify의 거부 조건을 결정론적으로
-// 검증한다. 실제 MySQL 위에서의 유일 제약·트랜잭션·권한은
-// backend/tests/db/f17-notifications.integration.test.js가(F01_TEST_DATABASE_URL이 있을 때)
-// 검증한다.
-//
-// 이 파일이 특별히 노리는 회귀는 R-IMPL #4다: 예전 verify는 인덱스의 **이름과 unique
-// 플래그만** 봤으므로, `UNIQUE(id)`에 notifications_user_source_unique라는 이름만 붙여 둔
-// 불일치 스키마가 "적용됨"으로 통과했다. 그 상태에서는 같은 계정·같은 원본 사건의 알림이
-// 둘 이상 쌓여 AC-03이 깨진다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -22,11 +9,6 @@ const TABLE = addNotifications.TABLE_NAMES.NOTIFICATIONS;
 const UNIQUE_INDEX_NAME = addNotifications.UNIQUE_INDEX_NAME;
 const LIST_INDEX_NAME = addNotifications.LIST_INDEX_NAME;
 
-// 0012가 실제로 쓰는 queryInterface 메서드만 인메모리로 흉내 낸다. describeTable·showIndex·
-// getForeignKeyReferencesForTable은 **up()이 선언한 것에서 파생**시킨다 — 그래야 "up이 만든
-// 모양을 verify가 통과시킨다"는 것이 시험 대역의 가정이 아니라 실제 대조가 된다.
-// rows는 "이미 쌓인 사용자 알림"을 세워 두고, 재실행·verify 실패가 데이터를 건드리지
-// 않는지 확인하는 데 쓴다.
 const createFakeQueryInterface = () => {
     const tables = new Map();
     return {
@@ -44,7 +26,6 @@ const createFakeQueryInterface = () => {
             table.indexes.push({
                 name: options.name,
                 unique: options.unique === true,
-                // MySQL showIndex와 같은 모양으로 돌려주려고 attribute 객체로 보관한다.
                 fields: fields.map((field) => ({ attribute: field, order: 'ASC' })),
             });
         },
@@ -94,7 +75,6 @@ const FakeSequelize = {
     NOW: 'NOW',
 };
 
-/** up()을 적용하고, "이미 쌓인 알림" 한 행을 세워 둔다. */
 const applyWithExistingRow = async () => {
     const qi = createFakeQueryInterface();
     await addNotifications.up(qi, FakeSequelize);
@@ -110,8 +90,6 @@ const applyWithExistingRow = async () => {
 
 const indexNamed = (qi, name) => qi._tables.get(TABLE).indexes.find((index) => index.name === name);
 const fieldsOf = (index) => index.fields.map((field) => field.attribute);
-
-// ── up() ────────────────────────────────────────────────────────────────────
 
 test('up(): notifications 테이블과 (user_id, source_key) 유일 인덱스·(user_id, created_at) 목록 인덱스를 만든다', async () => {
     const qi = createFakeQueryInterface();
@@ -139,7 +117,6 @@ test('up(): notifications 테이블과 (user_id, source_key) 유일 인덱스·(
 test('up(): 재실행해도 테이블·인덱스를 중복 생성하지 않고 기존 알림 행을 보존한다', async () => {
     const qi = await applyWithExistingRow();
 
-    // fake는 중복 createTable/addIndex를 에러로 막는다 — 통과하면 멱등하다는 뜻이다.
     await assert.doesNotReject(() => addNotifications.up(qi, FakeSequelize));
     await assert.doesNotReject(() => addNotifications.verify(qi));
 
@@ -160,8 +137,6 @@ test('up(): 테이블은 있고 인덱스만 없는 중간 실패 상태를 복�
     assert.equal(qi._tables.get(TABLE).rows.length, 1);
 });
 
-// ── verify(): 불일치 스키마를 통과시키지 않는다 ────────────────────────────────
-
 test('verify(): 테이블이 없으면 실패한다', async () => {
     const qi = createFakeQueryInterface();
     await assert.rejects(() => addNotifications.verify(qi), /notifications/);
@@ -170,7 +145,6 @@ test('verify(): 테이블이 없으면 실패한다', async () => {
 test('verify(): 이름은 같지만 UNIQUE(id)인 인덱스를 통과시키지 않는다(R-IMPL #4)', async () => {
     const qi = await applyWithExistingRow();
 
-    // 같은 이름으로 id 하나만 덮는 유일 인덱스 — 이름·unique 플래그만 보면 구별되지 않는다.
     const table = qi._tables.get(TABLE);
     table.indexes = table.indexes.map((index) => (
         index.name === UNIQUE_INDEX_NAME
@@ -183,7 +157,6 @@ test('verify(): 이름은 같지만 UNIQUE(id)인 인덱스를 통과시키지 �
         /기대 \[user_id, source_key\], 실제 \[id\]/,
     );
 
-    // 실패가 테이블·데이터를 건드리지 않는다(운영 복구를 삭제로 처리하지 않는다).
     assert.ok(qi._tables.has(TABLE));
     assert.equal(qi._tables.get(TABLE).rows.length, 1);
 });
@@ -257,8 +230,6 @@ test('verify(): 컬럼이 빠진 예전 스키마를 통과시키지 않는다',
     await assert.rejects(() => addNotifications.verify(qi), /누락된 컬럼: \[source_key\]/);
     assert.ok(qi._tables.has(TABLE), 'verify 실패가 테이블을 드롭하면 안 된다');
 });
-
-// ── down() ──────────────────────────────────────────────────────────────────
 
 test('down(): 존재할 때만 드롭하고, 이미 없는 상태에서 다시 불러도 안전하다', async () => {
     const qi = createFakeQueryInterface();

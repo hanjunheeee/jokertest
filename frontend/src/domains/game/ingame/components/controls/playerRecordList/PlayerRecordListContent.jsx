@@ -1,7 +1,3 @@
-// 파일 역할: PlayerRecordListContent.jsx - 화면을 구성하는 컴포넌트입니다.
-/**
- * 플레이어별 전적목록 — 본문 (헤더 + 스크롤 목록)
- */
 import { useRef } from "react"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import { getPlayerRecordListFallbackProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
@@ -32,10 +28,6 @@ export default function PlayerRecordListContent() {
         >
           {players.map((player, index) => {
             const fallbackProfile = getPlayerRecordListFallbackProfileAssets(index)
-            // CO S-1(AC-05): 전적은 슬롯 index가 아니라 **그 플레이어 자신**에게서만 온다.
-            // 예전에는 index로 더미 배열을 찾아 남의 자리 숫자를 그렸다. 서버가 조회하지 못한
-            // 참가자는 두 키가 아예 없으므로(own-property 계약) 값을 넘기지 않고, 행이
-            // "조회 실패"라고 말하게 둔다 — 0판 0%로 꾸미지 않는다.
             const hasRecord =
               Object.hasOwn(player, "accountTotalGames") && Object.hasOwn(player, "accountWinRate")
 

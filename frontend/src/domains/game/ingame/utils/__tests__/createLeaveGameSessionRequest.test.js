@@ -3,14 +3,6 @@ import assert from "node:assert/strict"
 
 import { createLeaveGameSessionRequest } from "../createLeaveGameSessionRequest.js"
 
-/**
- * F-21(AC-05): 명시적 이탈 요청의 **ack 소유권** 계약.
- *
- * gameId만 비교하던 시절에는 같은 판이 유지되는 한 어떤 ack도 "내 것"이었다. 그런데 응답을
- * 기다리는 사이에 계정이 바뀌거나(A→B→A), 연결이 교체되거나, 같은 판에 다시 들어와 새 소속이
- * 생길 수 있다 — 그때 도착한 옛 ack로 화면을 끝내면 지금 진행 중인 판이 남의 요청 결과로
- * 정리된다. 네 축을 모두 다시 확인해야 한다.
- */
 function harness(overrides = {}) {
   const emitted = []
   const finalized = []
@@ -21,7 +13,6 @@ function harness(overrides = {}) {
     membershipId: "mem-1",
     ...overrides,
   }
-  // 실제 Socket.IO처럼 id를 갖는다 — 재연결은 **객체를 바꾸지 않고** id만 바꾼다.
   const socket = { id: "sock-1", emit: (event, payload, ack) => emitted.push({ event, payload, ack }) }
   const state = { socket, identityGeneration: 1 }
 
@@ -76,7 +67,6 @@ test("AC-05: A→B→A로 돌아와도 옛 ack는 되살아나지 않는다(소�
   h.request()
   h.current.accountId = "acct-2"
   h.current.accountId = "acct-1"
-  // 같은 계정으로 돌아왔지만 같은 판에 다시 들어와 새 소속을 받았다.
   h.current.membershipId = "mem-2"
   h.emitted[0].ack({ ok: true })
 
@@ -87,8 +77,6 @@ test("AC-05: A→B→A인데 **소속도 소켓도 그대로**여도 옛 ack는 
   const h = harness()
   h.request()
 
-  // 로그아웃 → 다른 계정 로그인 → 다시 원래 계정. 값으로만 비교하면 accountId도 membershipId도
-  // 소켓 객체도 전부 원래대로라 네 검사가 모두 통과한다 — 전이 **횟수**만이 그 구간을 드러낸다.
   h.state.identityGeneration = 2
   h.state.identityGeneration = 3
   h.state.identityGeneration = 4
@@ -102,8 +90,6 @@ test("AC-05: **같은 Socket 객체가 재연결**돼도(id만 교체) 그 이�
   const h = harness()
   h.request()
 
-  // socket.io는 재연결에서 같은 Socket 인스턴스를 재사용하고 id만 새로 받는다.
-  // 객체 동일성 검사(getSocket() !== socket)만으로는 이 구간을 전혀 구별하지 못한다.
   h.socket.id = "sock-2"
   h.emitted[0].ack({ ok: true })
 
@@ -149,7 +135,6 @@ test("AC-05: 연결이 없거나 판이 없으면 요청 자체가 나가지 않
 test("AC-05: 계정·소속 접근자를 주지 않아도 기존 gameId 계약은 그대로 동작한다", () => {
   const emitted = []
   const finalized = []
-  // getSocket은 프로덕션과 마찬가지로 **같은 참조**를 돌려준다(모듈 싱글턴).
   const socket = { emit: (event, payload, ack) => emitted.push({ event, payload, ack }) }
   const request = createLeaveGameSessionRequest({
     getSocket: () => socket,

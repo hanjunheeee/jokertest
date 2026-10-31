@@ -1,7 +1,3 @@
-// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 문자열로 파싱한다(연결을 실제로
-// 시도하지는 않는다). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이
-// 비어 있어 require 자체가 죽으므로 더미 폴백을 둔다(roleStatistics.integration.test.js와
-// 같은 관례).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "achievement-controller-test-secret";
 
@@ -25,8 +21,6 @@ const callController = async (fn, req) => {
     await fn(req, res, (err) => { throw err; });
     return { status, body };
 };
-
-// ── A-09: 인증 경계 — 본인 업적은 req.user.uuid에서만 계정을 가져온다 ─────────
 
 test("A-09: 다른 계정의 user_id를 body/query에 실어도 achievementService는 req.user.uuid만 받는다", async (t) => {
     const originalGetStatusForUser = achievementService.getStatusForUser;
@@ -76,8 +70,6 @@ test("achievementService가 실패하면 next(error)로 전달된다", async (t)
     assert.equal(caught.message, "db down");
 });
 
-// ── A-09/AC-06: 실제 HTTP 라우터 — 인증 경계가 진짜로 연결되어 있는가 ────────────
-
 const { generateToken } = require("../utils/jwt");
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
 
@@ -97,8 +89,6 @@ const startRouteServer = async (t) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-// user.accountPaths.test.js/roleStatistics.integration.test.js와 같은 관례 — verifyToken이
-// 실제로 거치는 세션/밴 조회만 가짜로 바꾸고, 나머지(JWT 서명 검증 등)는 진짜 코드를 태운다.
 const stubAuthDb = (t) => {
     const original = { UserSession: db.UserSession, UserBan: db.UserBan };
     db.UserSession = { findOne: async () => ({ id: "route-session-1", user_id: "route-u1", is_online: true }) };
@@ -109,10 +99,6 @@ const stubAuthDb = (t) => {
     });
 };
 
-// achievementService.getStatusForUser는 gameResult.repositories.js/voteParticipation.repositories.js를
-// 거쳐 실제 db.GameResultPlayer/db.VoteParticipation을 조회하고(AC-02), 영속 지급 이력
-// (AC-06)을 위해 db.AchievementGrant도 직접 조회한다 — 라우트 경계만 확인하는 이 시험에서는
-// 셋 다 빈 결과를 주는 최소 스텁으로 대체한다.
 const stubProgressDb = (t) => {
     const original = { GameResultPlayer: db.GameResultPlayer, VoteParticipation: db.VoteParticipation, AchievementGrant: db.AchievementGrant };
     db.GameResultPlayer = { findAll: async () => [] };

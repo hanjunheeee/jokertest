@@ -9,7 +9,6 @@ import {
 const ME = "me-uuid"
 const OTHER = "other-uuid"
 
-/** phase와 본인 생존 여부만 바꿔가며 판정하기 위한 최소 canonical state. */
 function buildState({ phase = "DAY", alive = true, role = "CITIZEN" } = {}) {
   return {
     id: "game-1",
@@ -70,7 +69,6 @@ test("사망자 TRIBUNAL/ROLE_REVEAL: 채팅이 열리지 않는다", () => {
 })
 
 test("생존 여부를 알 수 없으면 보기·전송 모두 null이다(fail-closed)", () => {
-  // roster에 self가 없어 canonical alive를 유도할 수 없는 상태.
   const state = { ...buildState({ phase: "NIGHT" }), players: [{ uuid: OTHER, nickname: "Other", alive: true }] }
   assert.equal(resolveInGameChatViewChannel(state), null)
   assert.equal(resolveInGameChatSendChannel(state), null)

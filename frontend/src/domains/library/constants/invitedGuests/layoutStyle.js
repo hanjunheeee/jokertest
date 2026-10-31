@@ -6,7 +6,6 @@ const INVITED_GUESTS_SPREAD_BOTTOM_INSET = "pb-[clamp(0.75rem,1.75vh,1.15rem)]"
 const INVITED_GUESTS_LEFT_PAGE_SHIFT = "-translate-y-[clamp(0.12rem,0.45vh,0.32rem)]"
 const INVITED_GUESTS_RIGHT_PAGE_SHIFT = "translate-y-[clamp(0.08rem,0.3vh,0.2rem)]"
 
-/** spread — 2행 grid로 좌·우 하단(전적 / 도전과제) Y 끝 정렬 */
 export const INVITED_GUESTS_SPREAD_GRID_CLASS =
   `grid min-h-0 w-full flex-1 grid-cols-2 grid-rows-[minmax(0,1fr)_auto] overflow-visible ${INVITED_GUESTS_SPREAD_BOTTOM_INSET}`
 
@@ -23,7 +22,6 @@ export const INVITED_GUESTS_SPREAD_RIGHT_UPPER_CELL_CLASS = "relative z-20 min-h
 
 export const INVITED_GUESTS_SPREAD_RIGHT_LOWER_CELL_CLASS = "self-end shrink-0"
 
-/** 좌·우 spread — 상단(직업 소개 / 랭킹) */
 export const INVITED_GUESTS_SPREAD_UPPER_SECTION_CLASS =
   "flex shrink-0 flex-col gap-[clamp(0.35rem,0.75vh,0.5rem)]"
 

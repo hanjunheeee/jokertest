@@ -80,7 +80,6 @@ function buildPodiumRankingEntry(rank) {
   }
 }
 
-/** [DEV] API 연동 전 — 전체 순위 더미 (30위까지) */
 export const PODIUM_RANKING_DUMMY = Array.from({ length: 30 }, (_, index) =>
   buildPodiumRankingEntry(index + 1),
 )

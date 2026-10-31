@@ -1,8 +1,3 @@
-/**
- * 인게임 투표현황 팝업·열기 버튼 레이아웃.
- *
- * prototype 투표현황창.png — 중앙 모달
- */
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 export const INGAME_VOTE_PANEL_TRANSITION = {
@@ -28,7 +23,6 @@ export const INGAME_VOTE_PANEL_INNER_CLASS =
 export const INGAME_VOTE_FRAME_IMAGE_CLASS =
   "pointer-events-none relative z-[1] block h-auto w-full select-none"
 
-/** 프레임 PNG 내부 콘텐츠 inset — 타이틀 플레이트·본문·하단 버튼 */
 export const INGAME_VOTE_PANEL_INSET = {
   paddingTop: "clamp(5.2rem, 16.2cqi, 6.55rem)",
   paddingBottom: "clamp(1.95rem, 6.2cqi, 2.55rem)",
@@ -42,7 +36,6 @@ export const INGAME_VOTE_CLOSE_BTN_CLASS =
 export const INGAME_VOTE_CLOSE_BTN_IMG_CLASS =
   "block h-auto w-[clamp(3rem,9.5cqi,3.9rem)] select-none"
 
-/** 타이틀 플레이트 — 프레임 상단 장식 영역 */
 export const INGAME_VOTE_TITLE_CLASS =
   "pointer-events-none absolute left-1/2 top-[clamp(2.15rem,6.2cqi,2.65rem)] z-[2] w-[clamp(9rem,36cqi,12rem)] -translate-x-1/2 text-center font-display text-[clamp(1.32rem,4.95cqi,1.72rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
@@ -51,7 +44,6 @@ export const INGAME_VOTE_SUBTITLE_CLASS =
 
 export const INGAME_VOTE_SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 
-/** 집계 본문 — 라운드 집계 dl */
 export const INGAME_VOTE_STATUS_SECTION_CLASS =
   "flex min-h-0 flex-1 flex-col gap-3 px-3 py-3 text-[clamp(1.2rem,4.2cqi,1.5rem)] text-[#f8ead2]"
 
@@ -62,7 +54,6 @@ export const INGAME_VOTE_STATUS_TERM_CLASS =
 
 export const INGAME_VOTE_STATUS_VALUE_CLASS = "font-semibold"
 
-/** 아직 집계되지 않았을 때 — 본문 영역 중앙 */
 export const INGAME_VOTE_STATUS_UNRESOLVED_WRAP_CLASS =
   `${INGAME_VOTE_SCROLL_WRAP_CLASS} flex items-center justify-center`
 
@@ -116,7 +107,6 @@ export const INGAME_VOTE_SUBMIT_BTN_IMG_CLASS =
 export const INGAME_VOTE_SUBMIT_BTN_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center pb-[2%] pt-[clamp(0.12rem,0.45cqi,0.18rem)] font-subheading text-[clamp(1.08rem,3.8cqi,1.35rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-/** timebar 아래(소형) — InGameCornerActionPanel이 크기를 덮어쓸 때의 기본값 */
 export const INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS = "relative shrink-0 self-end"
 
 export const INGAME_VOTE_TOGGLE_BTN_CLASS =

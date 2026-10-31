@@ -8,14 +8,6 @@ import { fileURLToPath } from "node:url"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-18 AC-05/AC-06 통합 시험.
-//
-// 두 가지를 한 파일에서 고정한다.
-//   (1) 실제 app/routes/index.jsx가 내보내는 **그 라우터**와 실제 ProtectedRoute를 렌더해
-//       /podium 진입이 인증 상태에 따라 어떻게 처리되는지 — 라우터 정의를 시험 안에서
-//       복제하지 않는다(복제하면 production이 바뀌어도 시험은 통과한다).
-//   (2) podium 도메인 소스와 이미지가 **삭제되지 않고 그대로 보존**되어 있는지 —
-//       진입만 끊고 자산은 남긴다는 것이 AC-06의 요구다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -39,21 +31,15 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 installDomGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })
 installDomGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} })
 
-// ProtectedRoute는 인증되지 않은 진입에 alert로 안내한다(렌더 후 useEffect). jsdom의 기본
-// alert는 "not implemented"를 던지므로, 실제 컴포넌트를 그대로 마운트하기 위해 조용한
-// 스텁으로 바꾼다 — 호출 여부 자체는 이 시험의 대상이 아니다.
 installDomGlobal("alert", () => {})
 dom.window.alert = () => {}
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// 이 저장소 관례: "@/" alias 해석 + JSX 변환 ESM 훅을 재사용한다(production 무변경).
 register(new URL("../../domains/game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 const { mock } = await import("node:test")
 
-// import.meta.env는 Vite 빌드타임 치환이라 plain Node에서 해석되지 않는다 — 경계 모듈
-// 하나만 갈아끼우고 나머지 라우터·페이지·가드는 전부 실제 코드로 돌린다.
 mock.module("../../shared/env.js", {
   namedExports: {
     API_BASE_URL: "http://localhost:4000",
@@ -61,7 +47,6 @@ mock.module("../../shared/env.js", {
   },
 })
 
-// 라우트가 렌더되며 실제로 부르는 서버 호출만 경계에서 막는다(네트워크 없음).
 mock.module("../../shared/api/client.js", {
   namedExports: {
     api: {
@@ -117,8 +102,6 @@ test("F-18 AC-05: 로그인한 사용자가 /podium으로 직접 들어오면 �
 
   assert.equal(router.state.historyAction, "REPLACE", "리다이렉트는 뒤로가기 반복을 만들지 않도록 replace여야 한다")
 
-  // podium 화면 자체가 그려지지 않았음을 실제 DOM으로 확인한다 — PodiumBackground가 그리는
-  // 배경 이미지가 어디에도 없어야 한다.
   const { PODIUM_ASSETS } = await import("../../domains/podium/constants/podiumAssets.js")
   const { publicAsset } = await import("../../shared/utils/publicAsset.js")
   const podiumBackgroundSrc = publicAsset(PODIUM_ASSETS.background)
@@ -163,22 +146,13 @@ test("F-18 AC-05: 로그인하지 않은 사용자의 /podium 진입은 보호 �
   )
 })
 
-// ---------------------------------------------------------------------------
-// AC-06 — podium 소스·이미지 보존
-//
-// 기준 커밋 11e95027(F-18 착수 시점 HEAD)에서 확인한 Git 추적 목록과 blob 식별값을 여기에
-// 고정한다. 실행 시점의 Git HEAD를 다시 읽지 않으므로, "현재 상수/현재 트리"를 함께 줄여서
-// 검사를 통과시키는 우회가 불가능하다.
-// ---------------------------------------------------------------------------
 const srcDir = fileURLToPath(new URL("../../", import.meta.url))
 const publicDir = fileURLToPath(new URL("../../../public/", import.meta.url))
 
-/** git이 blob에 붙이는 식별값과 같은 방식으로 파일 내용을 해시한다. */
 function gitBlobSha1(bytes) {
   return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex")
 }
 
-/** 기준 커밋의 podium 도메인 Git 추적 소스 17개 (src/ 기준 상대 경로 → blob sha1). */
 const PODIUM_SOURCE_BASELINE = {
   "domains/podium/__tests__/podiumConstants.test.js": "106825165ca1f81808d0b8c31968433479814846",
   "domains/podium/components/PodiumBackground.jsx": "4b5848597e210e97680568cf8b90ee3588cf5115",
@@ -199,7 +173,6 @@ const PODIUM_SOURCE_BASELINE = {
   "domains/podium/utils/podiumRankingUtils.js": "b76d81bc811ba8fa2692d1292966f7711365ae6a",
 }
 
-/** 기준 커밋에서 확인한 36개 에셋 (public/ 기준 NFC 경로 → blob sha1). */
 const PODIUM_ASSET_BASELINE = {
   "/bg/명예의 전당 뒷배경.png": "3550882cabaf54f8aec0c87bdb09d9be901d6be6",
   "/frame/탑레벨 프레임_1_.png": "b2688ea74ba91c3f6115fee0050721867eb9ded6",
@@ -265,8 +238,6 @@ test("F-18 AC-06: 명예의 전당이 쓰는 이미지 36개가 실제 파일로
   const { LOBBY_MENU_BUTTONS } = await import("../../domains/lobby/constants/lobbyAssets.js")
   const { publicAsset } = await import("../../shared/utils/publicAsset.js")
 
-  // production과 **같은** 정규화 경로(publicAsset: NFC + encodeURI)로 실제 요청 경로를
-  // 만든다. 상수 문자열 자체는 NFD라 그대로 파일 경로로 쓰면 ENOENT가 난다.
   const declared = [
     PODIUM_ASSETS.background,
     PODIUM_ASSETS.headerPlate,
@@ -282,8 +253,6 @@ test("F-18 AC-06: 명예의 전당이 쓰는 이미지 36개가 실제 파일로
   const resolved = new Set(declared.map((src) => decodeURI(publicAsset(src)).normalize("NFC")))
   const baselineKeys = new Set(Object.keys(PODIUM_ASSET_BASELINE).map((key) => key.normalize("NFC")))
 
-  // 상수에서 항목을 지워 검사 대상을 함께 줄이는 우회를 막는다 — 기준 목록과 **정확히**
-  // 같은 집합이어야 한다.
   assert.equal(resolved.size, 36, "현재 상수가 선언하는 고유 에셋 수가 기준(36)과 다릅니다.")
   for (const key of baselineKeys) {
     assert.ok(resolved.has(key), `기준 에셋이 더 이상 선언되지 않습니다: ${key}`)

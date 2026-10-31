@@ -1,5 +1,3 @@
-// 밤 행동 제출 계약: isEligibleForNightAction 자격표 · submitNightAction 전 경로 · 사망 행위자/대상 규칙.
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -32,26 +30,12 @@ const {
     castAllVotes,
 } = require('./gameSession.testUtils')
 
-// 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
-// 각 테스트가 이전 테스트가 남긴 상태의 영향을 받지 않도록 매번 초기화한다.
 test.beforeEach(() => {
     gameSession.__resetStateForTests()
 })
-// registry 불일치를 의도적으로 재현하는 테스트(예: __deleteGameSessionOnlyForTests)가 이
-// 파일의 마지막 테스트로 실행되더라도, beforeEach만으로는 "다음 테스트 시작 전"에만
-// 정리된다 — afterEach로 테스트가 끝난 직후에도 즉시 정리해 손상된 singleton 상태가
-// 파일 실행 종료 후까지 남지 않게 한다. 테스트 본문에서 예외가 나도 node:test는 afterEach를
-// 실행하므로 이 정리는 실패한 테스트 뒤에도 보장된다.
 test.afterEach(() => {
     gameSession.__resetStateForTests()
 })
-
-// ---------------------------------------------------------------------------
-// submitNightAction — NIGHT 행동 제출
-// ---------------------------------------------------------------------------
-
-// --- isEligibleForNightAction: 5개 역할 × dayIndex 0/1/2 표 ---
-// WITCH_HUNTER는 production 첫 밤(dayIndex 1)까지 비활성이고 둘째 밤(dayIndex 2)부터 활성이다.
 
 const eligibilityTable = [
     ['JOKER', 0, true],
@@ -76,8 +60,6 @@ for (const [role, dayIndex, expected] of eligibilityTable) {
         assert.equal(isEligibleForNightAction(role, dayIndex), expected)
     })
 }
-
-// --- 기본 계약 ---
 
 test('submitNightAction: 정상 targetId 제출은 nightActions에 저장되고 core는 {ok:true, gameId:session.id}를 반환한다', () => {
     const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
@@ -164,10 +146,6 @@ test('submitNightAction: WITCH_HUNTER는 dayIndex 1까지 NOT_ELIGIBLE이고 day
     assert.equal(session.nightActions.get(witchHunterUuid), citizenUuid)
 })
 
-// 위 테스트는 dayIndex를 손으로 세팅하지만, 판정 4.2.1이 물어보는 것은 "production이 실제로
-// 걷는 경로에서 첫 밤에 WH가 막히는가"다. ackAllAndRewindToFirstNight이 첫 밤을 인위적으로
-// dayIndex 0으로 되돌려 이 버그를 오래 가려왔으므로, 여기서는 어떤 상태도 손으로 만들지 않고
-// ROLE_REVEAL → DAY(1) → NIGHT(1) → DAY(2) → NIGHT(2)를 전부 core API로만 통과한다.
 test('submitNightAction: production 경로(ROLE_REVEAL→DAY→NIGHT)의 첫 밤에 WITCH_HUNTER는 NOT_ELIGIBLE이고 둘째 밤에는 허용된다', () => {
     const players = Array.from({ length: 10 }, (_, i) => makePlayer(`prod-wh-${i}`))
     const room = makeRoom({ id: 'room-prod-first-night', players, jokerCount: 1 })
@@ -180,12 +158,10 @@ test('submitNightAction: production 경로(ROLE_REVEAL→DAY→NIGHT)의 첫 밤
     const guardUuid = byRole('GUARD')
     const witchHunterUuid = byRole('WITCH_HUNTER')
 
-    // ROLE_REVEAL(dayIndex 0) → 전원 확인 → 첫 낮(dayIndex 1)
     for (const uuid of session.players.keys()) acknowledgeRoleReveal(uuid, session.id)
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)
 
-    // 전원 기권으로 처형 없이 첫 밤(dayIndex 1)에 진입한다(그 전에 토론→투표 전환이 필요하다).
     const abstainAll = () => {
         for (const [uuid, player] of session.players) {
             if (player.alive) acknowledgeDayVoteReady(uuid, session.id)
@@ -201,15 +177,12 @@ test('submitNightAction: production 경로(ROLE_REVEAL→DAY→NIGHT)의 첫 밤
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.dayIndex, 1)
 
-    // 첫 밤: WH는 행동할 수 없다(판정 4.2.1).
     const victimUuid = [...session.players.values()].find(
         (p) => p.role === 'CITIZEN' && p.alive,
     ).uuid
     assert.deepEqual(submitNightAction(witchHunterUuid, session.id, victimUuid), { ok: false, code: 'NOT_ELIGIBLE' })
     assert.equal(session.nightActions.has(witchHunterUuid), false)
 
-    // 첫 밤 판정으로 사망자가 생기고 둘째 낮(dayIndex 2)으로 넘어간다 — WH가 제출하지 않아도
-    // 밤이 막히지 않는다는 것까지 여기서 함께 확인된다.
     submitNightAction(jokerUuid, session.id, victimUuid)
     submitNightAction(doctorUuid, session.id, null)
     submitNightAction(guardUuid, session.id, null)
@@ -220,15 +193,12 @@ test('submitNightAction: production 경로(ROLE_REVEAL→DAY→NIGHT)의 첫 밤
     assert.equal(session.dayIndex, 2)
     assert.equal(session.players.get(victimUuid).alive, false)
 
-    // 둘째 밤(dayIndex 2): 이제 WH는 사망자를 지목할 수 있다.
     abstainAll()
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.dayIndex, 2)
     assert.deepEqual(submitNightAction(witchHunterUuid, session.id, victimUuid), { ok: true, gameId: session.id })
     assert.equal(session.nightActions.get(witchHunterUuid), victimUuid)
 })
-
-// --- WITCH_HUNTER 대상 규칙(판정 4.2.2): 사망자만 지목할 수 있다 ---
 
 test('submitNightAction: WITCH_HUNTER가 사망자를 지목하면 저장되고, 생존자를 지목하면 TARGET_NOT_DEAD로 거부된다', () => {
     const { session, witchHunterUuid, citizenUuid, doctorUuid } = commitFullRoleSessionAtNight()
@@ -293,7 +263,6 @@ test('submitNightAction: session.phase가 NIGHT가 아니면(ROLE_REVEAL) INVALI
     const room = makeRoom({ id: 'room-rr', players, jokerCount: 1 })
     const candidate = buildSessionCandidate(room)
     commitGameSession(candidate.session)
-    // ROLE_REVEAL 확인을 하지 않아 phase가 그대로 ROLE_REVEAL이다.
     const session = candidate.session
     const [uuid, player] = [...session.players.entries()].find(([, p]) => p.role !== 'JOKER')
 
@@ -347,10 +316,6 @@ test('submitNightAction: 커밋 직후 nightActions는 항상 빈 Map이다', ()
     assert.equal(candidate.session.nightActions instanceof Map, true)
     assert.equal(candidate.session.nightActions.size, 0)
 })
-
-// --- JOKER no-op 계약: core 직접 호출 테스트 ---
-// 반환값과 nightActions Map을 함께 검증한다. 소켓 계층의 외부 ack만 보는 테스트는
-// backend/socket/__tests__/gameSession.test.js에 있다(core 반환값과 client ack는 다른 계층).
 
 test('submitNightAction(JOKER no-op): 자기 자신을 대상으로 제출(사전 제출 없음) → {ok:true, gameId} + Map 완전 no-op', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
@@ -429,8 +394,6 @@ test('submitNightAction(JOKER): 존재하지 않는 uuid를 대상으로 제출�
     assert.equal(session.nightActions.has(actor), false)
 })
 
-// --- 검증 순서 precedence ---
-
 test('precedence: registry 불일치(SESSION_NOT_FOUND)는 phase보다 먼저 걸린다', () => {
     const { session, doctorUuid } = commitFullRoleSessionAtNight()
     __deleteGameSessionOnlyForTests(session.id)
@@ -447,7 +410,6 @@ test('precedence: phase 오류는 eligibility보다 먼저 걸린다(CITIZEN이�
     commitGameSession(candidate.session)
     const session = candidate.session
     const citizenUuid = [...session.players.entries()].find(([, p]) => p.role === 'CITIZEN')[0]
-    // ROLE_REVEAL 확인을 하지 않아 phase는 여전히 ROLE_REVEAL이다.
 
     const result = submitNightAction(citizenUuid, session.id, null)
 
@@ -466,9 +428,6 @@ test('precedence: gameId(공백만 있어 trim 후 빈 문자열)는 session 존
     const result = submitNightAction('no-such-uuid-at-all', '   ', null)
     assert.deepEqual(result, { ok: false, code: 'INVALID_GAME_ID' })
 })
-
-// --- 9라운드 회귀: 검증을 통과한 client 원본 gameId(공백·개행 포함)라도 core가 반환하는
-// gameId는 client 원본이 아니라 registry의 canonical session.id다 ---
 
 test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 세션과 일치하면 제출은 성공하고, core가 반환하는 gameId는 원본이 아닌 canonical session.id다', () => {
     const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc', gameIdFn: () => 'abc' })
@@ -490,10 +449,6 @@ test('9라운드 회귀: JOKER no-op 성공에서도 core가 반환하는 gameId
     assert.deepEqual(result, { ok: true, gameId: 'abc' })
     assert.equal(session.nightActions.has(actor), false)
 })
-
-// ---------------------------------------------------------------------------
-// 밤 페이즈 사망자 — 교착 방지(생존 행동 보유자 기준 판정) + 사망자 제출/지목 거부
-// ---------------------------------------------------------------------------
 
 test('getEligibleNightActorUuids: 사망한 DOCTOR는 목록에서 빠지고 생존한 JOKER/GUARD만 남는다', () => {
     const { session, jokerUuid, doctorUuid, guardUuid } = commitFullRoleSessionAtNight({ id: 'room-dead-eligible' })
@@ -571,7 +526,6 @@ test('제출 후 사망한 JOKER의 잔여 엔트리는 암살 집계에 반영�
     submitNightAction(jokerUuid, session.id, citizenUuid)
     submitNightAction(doctorUuid, session.id, null)
     submitNightAction(guardUuid, session.id, null)
-    // 제출은 그대로 남아 있지만, 판정 시점의 canonical 생존 상태가 집계의 유일한 기준이다.
     session.players.get(jokerUuid).alive = false
     assert.equal(session.nightActions.get(jokerUuid), citizenUuid, '잔여 엔트리 자체는 지워지지 않는다')
 
@@ -589,8 +543,6 @@ test('밤 시작 전 사망 end-to-end: 재판에서 처형된 DOCTOR가 제출�
     const doctorUuid = byRole('DOCTOR')
     const jokerUuid = byRole('JOKER')
     const guardUuid = byRole('GUARD')
-    // 피고인을 실제 밤 행동 보유 역할(DOCTOR)로 고정한다 — 역할 배정이 바뀌어 이 테스트가
-    // 조용히 무의미해지지 않도록 uuid가 아니라 역할로 지목한다.
     session.dayVoteResolution.tribunalTargetUuid = doctorUuid
     session.tribunal = { candidateId: doctorUuid, dayIndex: session.dayIndex, defendantUuid: doctorUuid, votes: new Map() }
     castAllVotes(
@@ -607,7 +559,6 @@ test('밤 시작 전 사망 end-to-end: 재판에서 처형된 DOCTOR가 제출�
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.players.get(doctorUuid).alive, false)
 
-    // 사망한 DOCTOR는 제출할 수 없고, 제출하지 않아도 밤이 막히지 않는다.
     const victimUuid = uuids.find(
         (uuid) => ![doctorUuid, jokerUuid, guardUuid].includes(uuid) && session.players.get(uuid).alive,
     )

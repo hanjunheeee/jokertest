@@ -67,7 +67,6 @@ export const PODIUM_TABLE_COLUMNS_CLASS =
 export const PODIUM_TABLE_COLUMN_CLASS =
   "min-h-0 min-w-0 [&_th:nth-child(2)]:pl-[clamp(0.45rem,0.9vw,0.65rem)] [&_th:nth-child(3)]:pl-[clamp(0.45rem,0.9vw,0.65rem)] [&_td:nth-child(2)]:pl-[clamp(0.45rem,0.9vw,0.65rem)] [&_td:nth-child(3)]:pl-[clamp(0.45rem,0.9vw,0.65rem)] [&_td:nth-child(2)]:w-[clamp(3rem,4.1vw,3.55rem)] [&_td:nth-child(2)_div]:h-[clamp(2.6rem,3.75vw,3.25rem)] [&_td:nth-child(2)_div]:w-[clamp(2.6rem,3.75vw,3.25rem)] [&_td:nth-child(2)_img:first-child]:h-[70%] [&_td:nth-child(2)_img:first-child]:w-[70%]"
 
-/** thead 유지 — tbody 행만 아래로 */
 export const PODIUM_TABLE_TBODY_OFFSET_CLASS =
   "[&>tr:first-child>td]:pt-[clamp(1.25rem,2.5vh,1.7rem)]"
 

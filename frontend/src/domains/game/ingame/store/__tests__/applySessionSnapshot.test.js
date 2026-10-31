@@ -55,9 +55,6 @@ function baseResponse(overrides = {}) {
   }
 }
 
-// pure-function 수준 거부 레시피: 호출 전 current를 독립적으로 clone해두고, 호출 후
-// (a) 참조 동일성과 (b) clone과의 deep equality를 함께 검증한다 — 거부 경로가 current를
-// 제자리에서 바꾼 뒤 그 참조를 그대로 돌려주는 경우까지 잡아낸다.
 function assertRejected(current, response) {
   const preCall = structuredClone(current)
   const result = applySessionSnapshotPure(current, response)
@@ -65,8 +62,6 @@ function assertRejected(current, response) {
   assert.equal(result.state, current.state)
   assert.deepStrictEqual(result, preCall)
 }
-
-// --- 정상 반영: phase별 ---
 
 test("applySessionSnapshotPure: 유효한 ROLE_REVEAL 스냅샷을 반영하고 phase별 결과 필드를 모두 null로 비운다", () => {
   const current = baseCurrent()
@@ -79,8 +74,6 @@ test("applySessionSnapshotPure: 유효한 ROLE_REVEAL 스냅샷을 반영하고 
   assert.equal(result.state.id, "game-1")
   assert.equal(result.state.phase, "ROLE_REVEAL")
   assert.equal(result.state.dayIndex, 0)
-  // F-21(AC-03): isParticipating은 새로 승인된 **공개** 필드다. 스냅샷에 그 키가 없는
-  // 구버전 응답은 "참여 중"으로 본다(그 서버에는 아직 이탈 개념이 없었다).
   assert.deepEqual(result.state.players, [
     { uuid: "p1", nickname: "P1", alive: true, isConnected: true, isParticipating: true },
     { uuid: "p2", nickname: "P2", alive: true, isConnected: true, isParticipating: true },
@@ -137,11 +130,6 @@ test("applySessionSnapshotPure: 유효한 NIGHT 스냅샷을 반영한다(nightR
   assert.equal(result.state.nightResult, null)
 })
 
-// F-26(AC-04): 아래 DAY 스냅샷 fixture들은 **실제 날짜 전이**를 쓴다(NIGHT n → DAY n+1).
-// 예전에는 같은 날짜의 NIGHT → DAY로 적어 두었는데 서버는 그런 전이를 만들지 않는다 —
-// enterDayPhase가 날짜를 올리고, 그 낮의 nightResult.dayIndex도 올라간 날짜와 같다
-// (game-core buildSessionSnapshot 참고). 검증 목적(DAY 스냅샷의 nightResult·deathReveals 반영)은
-// 그대로 두고 날짜만 현실화한다 — 같은 날짜의 역행은 이제 시간을 거스르는 응답으로 거부된다.
 test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영하고 희생자 alive를 false로 표시한다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
   const response = baseResponse({
@@ -162,11 +150,6 @@ test("applySessionSnapshotPure: 유효한 DAY 스냅샷은 nightResult를 반영
   assert.equal(result.state.dayVoteResolution, null)
   assert.equal(result.state.tribunal, null)
 })
-
-// ── F-23(AC-05): 공개 밤 사망 연출(deathReveals)의 스냅샷 복구 ──────────────────
-//
-// 서버는 예전부터 이 필드를 스냅샷에 실었지만 store가 버려서, 연출이 재생되기 전에
-// 새로고침·재연결한 참가자는 그 밤의 공개 사망을 끝내 보지 못했다.
 
 test("F-23(AC-05) DAY 스냅샷의 공개 deathReveals를 정규화해 그대로 옮긴다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
@@ -196,13 +179,9 @@ test("F-23(AC-05) 허용되지 않은 source·roster 밖 uuid·형태가 틀린 
       dayIndex: 2, victimUuid: "p3",
       deathReveals: [
         { victimUuid: "p3", source: "WITCH_HUNTER" },
-        // roster 밖 — 화면이 닉네임조차 만들 수 없다.
         { victimUuid: "outsider", source: "JOKER" },
-        // 허용 목록 밖 source.
         { victimUuid: "p2", source: "MADE_UP" },
-        // 형태가 틀린 원소.
         null,
-        // 살해자 identity 같은 예상치 못한 필드는 통과하지 않는다.
         { victimUuid: "p2", source: "OTHER", killerUuid: "p1" },
       ],
     },
@@ -248,13 +227,6 @@ test("F-23(AC-05) 복원된 deathReveals는 원본 응답과 독립이다(응답
   assert.deepEqual(result.state.nightResult.deathReveals, [{ victimUuid: "p3", source: "JOKER" }])
 })
 
-// ── F-26(AC-04): **시간을 거스르는 스냅샷은 적용하지 않는다** ────────────────────
-//
-// 조회를 보낸 뒤 진행이 다음 밤으로 넘어가면, 보류돼 있던 이전 밤의 응답이 기존 검사(같은 판·
-// 같은 인원·앞서지 않은 참여 세대·앞서지 않은 개인 순서)를 **전부 만족한 채** 늦게 도착할 수
-// 있다. 그 응답이 반영되면 화면이 지나간 밤으로 되돌아가고, 같은 커밋이 그 밤의 성공 사건까지
-// 되살린다. 날짜와 같은 날짜 안의 단계 순서가 그것을 가르는 유일한 값이다.
-
 test("F-26(AC-04): 현재보다 과거 날짜의 스냅샷은 거부된다 — store는 완전히 변경되지 않는다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 3 })
   assertRejected(current, baseResponse({ phase: "NIGHT", dayIndex: 2 }))
@@ -286,7 +258,6 @@ test("F-26(AC-04): 같은 날짜의 단계 역행(NIGHT→DAY/TRIBUNAL·TRIBUNAL
 })
 
 test("F-26(AC-04): 앞으로 가는 전이와 같은 단계 재적용은 그대로 허용된다(양성 대조)", () => {
-  // NIGHT n → DAY n+1: 서버가 실제로 만드는 전이다(enterDayPhase가 날짜를 올린다).
   const toNextDay = applySessionSnapshotPure(
     baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
     baseResponse({ phase: "DAY", dayIndex: 3, dayPhase: "DAY_DISCUSSION" }),
@@ -294,7 +265,6 @@ test("F-26(AC-04): 앞으로 가는 전이와 같은 단계 재적용은 그대�
   assert.equal(toNextDay.state.phase, "DAY")
   assert.equal(toNextDay.state.dayIndex, 3)
 
-  // 같은 날짜 안의 정상 진행(DAY → TRIBUNAL → NIGHT).
   const toTribunal = applySessionSnapshotPure(
     baseCurrent({ phase: "DAY", dayIndex: 2 }),
     baseResponse({
@@ -311,7 +281,6 @@ test("F-26(AC-04): 앞으로 가는 전이와 같은 단계 재적용은 그대�
   )
   assert.equal(toNight.state.phase, "NIGHT")
 
-  // 같은 단계·같은 날짜의 재적용(멱등 복원)은 막지 않는다.
   const reapplied = applySessionSnapshotPure(
     baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
     baseResponse({ phase: "NIGHT", dayIndex: 2 }),
@@ -319,7 +288,6 @@ test("F-26(AC-04): 앞으로 가는 전이와 같은 단계 재적용은 그대�
   assert.equal(reapplied.state.phase, "NIGHT")
   assert.equal(reapplied.state.dayIndex, 2)
 
-  // 밤 킬로 곧바로 끝난 판은 날짜가 오르지 않는다 — 그 ENDED 복원도 허용된다.
   const ended = applySessionSnapshotPure(
     baseCurrent({ phase: "NIGHT", dayIndex: 2 }),
     baseResponse({ phase: "ENDED", dayIndex: 2, winResult: { winner: "JOKER" } }),
@@ -343,7 +311,6 @@ test("ENDED 스냅샷의 공개 winResult.reveals는 store에 보존된다", () 
 })
 
 test("F-26(AC-04): 현재 날짜를 모르는 화면(구버전 state)은 이 축으로 판단하지 않는다", () => {
-  // bootstrapSessionSnapshotPure가 쓰는 최소 seed가 바로 이 모양이다(날짜가 없다).
   const seed = {
     gameId: "game-1",
     state: {
@@ -432,8 +399,6 @@ test("applySessionSnapshotPure: 이미 ENDED인 store에 동일 phase의 ENDED �
   assert.equal(result.state.phase, "ENDED")
 })
 
-// --- dayPhase(낮 하위 구간) 반영 ---
-
 test("applySessionSnapshotPure: DAY_VOTE 스냅샷은 dayPhase를 그대로 복원한다(재접속해도 투표 화면이 유지된다)", () => {
   const current = baseCurrent({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_DISCUSSION" })
   const response = baseResponse({ phase: "DAY", dayIndex: 1, dayPhase: "DAY_VOTE" })
@@ -454,8 +419,6 @@ test("applySessionSnapshotPure: 낮이 아닌 스냅샷은 dayPhase를 null로 �
   assert.notEqual(result, current)
   assert.equal(result.state.dayPhase, null)
 })
-
-// --- 거부: 구조/신원/roster/self ---
 
 const rejectionCases = [
   [
@@ -700,8 +663,6 @@ for (const [label, buildCurrent, buildResponse] of rejectionCases) {
   })
 }
 
-// --- 공개 roster에 섞여 들어온 비공개 필드 ---
-
 test("applySessionSnapshotPure: 공개 roster 항목에 비공개 필드(role 등)가 섞여 있어도 store에는 절대 복사되지 않는다", () => {
   const current = baseCurrent()
   const response = baseResponse({
@@ -712,12 +673,8 @@ test("applySessionSnapshotPure: 공개 roster 항목에 비공개 필드(role �
 
   assert.notEqual(result, current)
   const p2 = result.state.players.find((p) => p.uuid === "p2")
-  // F-21: isParticipating이 승인 목록에 더해졌다 — 이 단언의 핵심(role/team/임의 필드가
-  // 절대 복사되지 않는다)은 그대로다. membershipId는 응답에 그 키가 있을 때만 생긴다.
   assert.deepEqual(Object.keys(p2).sort(), ["alive", "isConnected", "isParticipating", "nickname", "uuid"])
 })
-
-// --- 방어적 복사 ---
 
 test("applySessionSnapshotPure: 반영 이후 원본 response의 중첩 구조를 변형해도 store 결과가 영향받지 않는다", () => {
   const current = baseCurrent({ phase: "NIGHT", dayIndex: 1 })
@@ -776,8 +733,6 @@ test("applySessionSnapshotPure: tribunal/winResult/dayVoteResolution 응답 객�
   assert.deepStrictEqual(result.state, expected)
 })
 
-// --- 멱등 재적용 ---
-
 test("applySessionSnapshotPure: 구조적으로 동등한 ENDED 스냅샷을 두 번 연속 적용해도 값이 동일하다(참조는 매번 새로 생성됨)", () => {
   const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
   const buildEndedResponse = () =>
@@ -798,8 +753,6 @@ test("applySessionSnapshotPure: 구조적으로 동등한 ENDED 스냅샷을 두
   assert.deepStrictEqual(resultA.state, resultB.state)
 })
 
-// --- themeIndex(표시 색상) 이어받기 ---
-
 test("applySessionSnapshotPure: 스냅샷에 없는 themeIndex를 기존 store roster에서 uuid로 이어받는다", () => {
   const current = baseCurrent({
     players: [
@@ -808,7 +761,6 @@ test("applySessionSnapshotPure: 스냅샷에 없는 themeIndex를 기존 store r
       { uuid: "p3", nickname: "P3", alive: true, themeIndex: 9 },
     ],
   })
-  // 응답 roster 순서가 뒤바뀌어도 uuid 기준으로 이어받는다.
   const response = baseResponse({ players: [...basePlayers()].reverse() })
 
   const result = applySessionSnapshotPure(current, response)
@@ -834,8 +786,6 @@ test("applySessionSnapshotPure: 기존 roster에 유효한 themeIndex가 없으�
   assert.equal(Object.hasOwn(result.state.players[1], "themeIndex"), false)
   assert.equal(result.state.players[2].themeIndex, 9)
 })
-
-// --- winResult 검증 패리티 ---
 
 function applySessionSnapshotAcceptsWinResult(winResultValue) {
   const current = baseCurrent({ phase: "TRIBUNAL", dayIndex: 1 })
@@ -948,12 +898,6 @@ test('F14 real QA roster: unequipped null cards coexist with a purchased card', 
   assert.deepEqual(result.state.players.map(p=>p.accountCardFrameId),response.players.map(p=>p.accountCardFrameId))
 })
 
-// ── CO S-1(AC-04): 계정 전적(accountTotalGames·accountWinRate) 검증·복사 ──────────
-//
-// 서버는 두 값을 조회한 참가자에게만 싣는다(own-property 계약) — 그래서 "없음"은 정상이고,
-// "있는데 모양이 틀림"은 응답 전체를 믿을 수 없다는 뜻이다(다른 모든 필드와 같은 원자적 거부).
-
-/** 응답 roster에 계정 전적을 얹는다(index별로 서로 다른 값을 주고, undefined면 키 자체를 뺀다). */
 function playersWithRecords(records) {
   return basePlayers().map((player, index) => (
     records[index] === undefined ? player : { ...player, ...records[index] }
@@ -965,7 +909,6 @@ test('CO S-1(AC-04): 정수이며 범위 안인 계정 전적만 own-property로
   const response = baseResponse({
     players: playersWithRecords([
       { accountTotalGames: 3, accountWinRate: 67 },
-      // 0판 0%와 100%는 모두 유효한 경계값이다 — 거부하면 안 된다.
       { accountTotalGames: 0, accountWinRate: 0 },
       undefined, // 조회 실패: 서버가 두 키를 아예 싣지 않은 참가자
     ]),
@@ -1036,7 +979,6 @@ test('CO S-1(AC-04): bootstrapSessionSnapshotPure도 같은 규칙을 그대로 
   assert.equal(accepted.state.players[1].accountTotalGames, 0)
   assert.equal(Object.hasOwn(accepted.state.players[2], 'accountTotalGames'), false)
 
-  // 거부는 patch===seed로 나타나므로 bootstrap의 답은 null이다(부분 하이드레이션 없음).
   for (const bad of [-1, 1.5, '3', null, NaN]) {
     assert.equal(
       bootstrapSessionSnapshotPure(baseResponse({ players: playersWithRecords([{ accountTotalGames: bad, accountWinRate: 50 }]) })),

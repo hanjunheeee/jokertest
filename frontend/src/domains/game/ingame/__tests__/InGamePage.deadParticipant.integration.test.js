@@ -1,11 +1,3 @@
-/**
- * F-23(AC-06): 확정 사망한 참가자의 "관전 계속하기 / 게임 나가기"를 **실제 화면 경로**로 검증한다.
- *
- * 실제로 쓰는 것: app/routes의 실제 router(→ ProtectedRoute → InGamePage), 실제 useInGameExit,
- * 실제 ingameStore/matchingStore/auth store, 실제 useGameSessionSocketEvents 수신 경로.
- * 대역으로 바꾸는 것은 **바깥 경계뿐**이다 — 소켓 전송, HTTP, 효과음, 자산 선택. 페이지나
- * 훅 자체를 성공 대역으로 바꾸지 않는다(그러면 "화면이 동작한다"가 대역의 사실이 된다).
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -30,7 +22,6 @@ installDomGlobal("Event", dom.window.Event)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
 installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
-// 공용 Scrollbar(useScrollbarThumb)가 요구한다 — 이 시험이 보는 것은 치수가 아니다.
 installDomGlobal("ResizeObserver", class {
   observe() {}
   unobserve() {}
@@ -48,11 +39,6 @@ const recordAlert = (message) => alerts.push(message)
 installDomGlobal("alert", recordAlert)
 dom.window.alert = recordAlert
 
-// ── 나가기 확인 대화상자 ─────────────────────────────────────────────────────
-//
-// useInGameExit은 호출 시점에 **window.confirm**을 읽는다(bare confirm이 아니다) — jsdom의
-// 기본 구현은 "not implemented"라 undefined를 돌려주고, 그러면 모든 나가기가 조용히
-// 취소된다. 그래서 globalThis와 dom.window 양쪽에 같은 함수를 심는다.
 let confirmAnswer = true
 const confirmCalls = []
 const recordConfirm = (message) => {
@@ -62,9 +48,6 @@ const recordConfirm = (message) => {
 installDomGlobal("confirm", recordConfirm)
 dom.window.confirm = recordConfirm
 
-// ── 나가기 ACK timeout ───────────────────────────────────────────────────────
-// 실제 8초를 기다리지 않고 timeout 경로를 결정적으로 돌기 위해 window.setTimeout만 가로챈다.
-// 판정 로직은 프로덕션 그대로다(시간만 시험이 흘려 준다).
 const scheduledTimeouts = []
 const nativeSetTimeout = dom.window.setTimeout.bind(dom.window)
 const nativeClearTimeout = dom.window.clearTimeout.bind(dom.window)
@@ -73,7 +56,6 @@ installDomGlobal("__fireExitTimeouts", () => {
   for (const entry of due) if (!entry.cancelled) entry.fn()
 })
 dom.window.setTimeout = (fn, delay, ...rest) => {
-  // 나가기 상한(8초)만 시험이 소유한다 — 애니메이션 등 짧은 지연은 실제 타이머로 둔다.
   if (delay >= 1000) {
     const entry = { fn, cancelled: false, id: Symbol("exit-timeout") }
     scheduledTimeouts.push(entry)
@@ -92,7 +74,6 @@ dom.window.clearTimeout = (id) => {
 
 register(new URL("./testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
-// ── 바깥 경계 대역 ───────────────────────────────────────────────────────────
 mock.module("../utils/pickInGameJobPortrait.js", {
   namedExports: { pickInGameJobPortrait: (index) => `dummy-portrait-${index}` },
 })
@@ -109,14 +90,10 @@ mock.module("@/shared/hooks/useSfxRuntime.js", {
     dispatchSfxEvent: () => {},
     dispatchUiSfx: () => {},
     useSfxRuntime: () => {},
-    // F-27c(AC-03): InGameNightSuccessPresentation.jsx가 직접 소비한다 — 런타임이 없을 때와
-    // 같은 무음 fallback 값을 흉내낸다(getSfxMix의 no-runtime 응답과 동일).
     getSfxMix: () => ({ gain: 0, muted: true }),
     subscribeSfxMix: () => () => {},
   },
 })
-// import.meta.env는 Vite 빌드타임 치환이라 plain Node에서 해석되지 않는다 — 경계 모듈
-// 하나만 갈아끼우고 나머지 라우터·페이지·가드는 전부 실제 코드로 돌린다(f18PodiumRoute와 같은 관례).
 mock.module("../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "http://localhost:4000", DISCORD_SUPPORT_URL: undefined },
 })
@@ -134,10 +111,6 @@ mock.module("@/shared/api/client.js", {
   },
 })
 
-/**
- * 소켓 전송만 흉내낸다. emit 기록과 ack 응답 시점을 시험이 통제하고, 서버가 보낸 사건은
- * 실제 프런트 리스너(useGameSessionSocketEvents 등)로 그대로 흘려보낸다.
- */
 function createFakeSocket(id = "sock-1") {
   const listeners = new Map()
   const emitted = []
@@ -165,16 +138,7 @@ function createFakeSocket(id = "sock-1") {
       for (const handler of [...(listeners.get(event) ?? [])]) handler(payload)
     },
     countEmits(event) { return emitted.filter((e) => e.event === event).length },
-    /** 이 연결에 실제로 등록된 구독 사건 이름들(소켓 소비 목록 감사용). */
     subscribedEvents() { return [...listeners.keys()] },
-    /**
-     * 가장 **최근에** 나간 그 이벤트의 ack를 꺼낸다.
-     *
-     * 뒤에서부터 찾는 것이 중요하다 — /ingame에는 재접속 동기화
-     * (useInGameSessionSnapshotSync)가 마운트 시점에 이미 get_session_snapshot 하나를
-     * 띄워 둔다. 앞에서부터 찾으면 시험이 방금 누른 버튼의 요청이 아니라 그 배경 요청에
-     * 응답하게 되어, 실제로는 아무 답도 받지 못한 화면을 검사하게 된다.
-     */
     takeAck(event) {
       for (let i = pendingAcks.length - 1; i >= 0; i -= 1) {
         if (pendingAcks[i].event === event) return pendingAcks.splice(i, 1)[0]
@@ -200,14 +164,10 @@ mock.module("@/shared/socket/socketClient.js", {
 const { render, act, cleanup, waitFor } = await import("@testing-library/react")
 const { RouterProvider } = await import("react-router-dom")
 const { router } = await import("../../../../app/routes/index.jsx")
-// SPLIT-1(AC-02): 라우트 선언에서 "인증 보호 구간"을 식별하려면 그 가드 컴포넌트 자체가
-// 필요하다 — 문자열이 아니라 실제 element 타입으로 대조한다.
 const { default: ProtectedRoute } = await import("../../../../shared/ui/ProtectedRoute.jsx")
 const { useInGameStore } = await import("../store/ingameStore.js")
 const { useMatchingStore } = await import("../../matching/store/matchingStore.js")
 const { useAuthStore } = await import("../../../auth/store/auth.store.js")
-// SPLIT-1(AC-02): 소켓 사건 이름을 상수 표로 쓰는 전송·구독 지점을 **실제 값으로** 풀기 위해
-// 그 표들을 그대로 가져온다(시험 안에 값을 다시 적으면 두 목록이 갈릴 수 있다).
 const { SOCKET_EVENTS } = await import("../../setup/constants/gameSetupSocket.js")
 const { ROOM_LIST_SOCKET_EVENTS } = await import("../../mode/constants/roomListSocket.js")
 const { KICK_EVENTS } = await import("../hooks/useKickPlayerRequest.js")
@@ -275,9 +235,6 @@ async function mountInGame() {
     view = render(React.createElement(RouterProvider, { router }))
   })
   await act(async () => { await router.navigate("/ingame") })
-  // 실제 진입 흐름과 같다: 자기 역할 공개(및 뒤이은 DAY/NIGHT 진입 연출)를 사용자가 확인해
-  // 닫는다. 이 연출들이 떠 있는 동안에는 사망 선택이 뜨지 않는 것이 설계이므로, 시험도
-  // 그 순서를 건너뛰지 않고 실제로 닫는다.
   await dismissParchmentOverlays(view.container)
   return view
 }
@@ -287,7 +244,6 @@ function findButton(container, label) {
     .find((node) => node.textContent.trim() === label) ?? null
 }
 
-/** 화면에 떠 있는 양피지 모달(역할 공개·진입 연출)의 "확인"을 차례로 눌러 닫는다. */
 async function dismissParchmentOverlays(container) {
   for (let i = 0; i < 5; i += 1) {
     const confirmButton = findButton(container, "확인")
@@ -300,12 +256,6 @@ function choicePanel(container) {
   return container.querySelector(`[aria-label='${CHOICE_LABEL}']`)
 }
 
-/**
- * 같은 판·같은 계정에서 **내 소속만** 교체한다(이탈→재입장과 같은 전이다).
- *
- * 실제 store 경로(setState)로 바꾼다 — 값을 몰래 mutate하면 store가 소유한 전이 관측 자체가
- * 일어나지 않아 "왕복을 지나왔다"는 사실이 시험에서 사라진다.
- */
 function swapMyMembership(next) {
   useInGameStore.setState((s) => ({
     state: {
@@ -326,17 +276,8 @@ test.afterEach(async () => {
   useMatchingStore.getState().clearRoom()
 })
 
-/**
- * F-23(SPLIT-1/AC-02): **외부 관전 진입 라우트가 없다**는 사실을 실제 라우터 선언에서 본다.
- *
- * 화면 문자열만 검사하면 "그 버튼이 지금 렌더되지 않는다"까지만 알 수 있고, 주소를 직접 쳐서
- * 들어가는 경로가 남아 있어도 통과한다. 여기서는 실제 router 객체의 선언된 경로를 전부 펼쳐
- * 관전 전용 경로가 없음을 고정하고, 동시에 정상 참가 화면 세 개는 보호 라우트 **아래에**
- * 그대로 남아 있는지 함께 본다(제거가 정상 진입까지 지우지 않았다).
- */
 test("F-23(SPLIT-1/AC-02): 실제 라우터에 외부 관전 경로가 없고 정상 참가 경로는 보호 아래 그대로다", () => {
   const collectPaths = (routes, guarded = false) => routes.flatMap((route) => {
-    // ProtectedRoute를 element로 갖는 레이아웃 라우트 아래가 곧 "인증 보호 구간"이다.
     const isGuard = route.element?.type === ProtectedRoute
     const here = route.path ? [{ path: route.path, guarded }] : []
     return [...here, ...collectPaths(route.children ?? [], guarded || isGuard)]
@@ -345,11 +286,9 @@ test("F-23(SPLIT-1/AC-02): 실제 라우터에 외부 관전 경로가 없고 �
   const declared = collectPaths(router.routes)
   assert.ok(declared.length > 0, "라우터에서 경로를 하나도 읽지 못했다(이 검사가 무력하다)")
 
-  // 관전 전용 진입 경로가 하나도 없다.
   const spectatorRoutes = declared.filter(({ path }) => /spectat|watch-only|observer|관전/i.test(path))
   assert.deepEqual(spectatorRoutes, [], `외부 관전 라우트가 남아 있다: ${JSON.stringify(spectatorRoutes)}`)
 
-  // 정상 참가 화면은 보호 라우트 아래에 그대로 선언돼 있다.
   for (const path of ["/game-setup", "/game-matching", "/ingame"]) {
     const found = declared.find((route) => route.path === path)
     assert.ok(found, `${path} 경로가 사라졌다`)
@@ -357,85 +296,30 @@ test("F-23(SPLIT-1/AC-02): 실제 라우터에 외부 관전 경로가 없고 �
   }
 })
 
-// ── F-23(SPLIT-1/AC-02): 생산 원문 전체 잠금 ────────────────────────────────
-//
-// 라우트 이름만 보면 "다른 이름의 관전 버튼·모달·상태"가 남아 있어도 통과한다. 그래서 실제
-// 생산 원문(frontend/src·backend의 .js/.jsx/.ts/.tsx/.mjs/.cjs, 시험 제외)을 **한 줄도
-// 빼놓지 않고** 읽어 /spectat|관전/i의 출현 자체를 파일 단위 허용 목록으로 묶는다.
-// 확장자를 js·jsx로 좁히면 같은 디렉터리에 .ts/.mjs로 추가된 관전 진입이 감사 밖으로
-// 빠져나간다(CODEX-9 AC-02/SPLIT-1 지적) — 수집 확장자는 아래 isProductionSourceFileName이
-// 소유하고, 그 판정 자체를 양성·음성 대조로 먼저 고정한다.
-//
-// 왜 어휘 **출현**까지 묶는가(이전 판의 "주석은 무조건 통과"와 다른 점):
-//   - 허용 목록 밖 파일에서는 주석이든 코드든 한 줄이라도 나오면 실패한다. 관전 기능을
-//     되살리는 변경은 대개 그 파일에 설명 주석부터 남기므로, 주석을 전부 눈감으면 감사가
-//     "새 관전 화면이 생겼다"는 가장 이른 신호를 놓친다.
-//   - 허용 목록 안에서도 그 줄은 **주석이거나** 확정 사망한 기존 참가자의 UI 문구
-//     ("관전 계속하기", A-01 보존 대상)여야 한다. 식별자·라우트 path·소켓 사건 이름·
-//     객체(store) 키에 나타나면 실패한다 — 아래 classifySpectatorLine이 그 네 자리를
-//     각각 이름 붙여 구분하고, 양성 대조로 검출력을 먼저 고정한다.
-//
-// 이 잠금이 아래 두 좁은 검사(collectRenderedComponents의 **InGamePage 직계 JSX** 목록,
-// shapeOf의 **두 store 최상위 키** 목록)를 대체하는 근거:
-//   (a) 범위 — 두 검사는 파일 하나의 직계 JSX와 store 두 개의 1단계 키만 본다. 하위
-//       컴포넌트가 자기 안에서 여는 모달, 로비·대기방 등 다른 화면의 진입 버튼, 중첩 객체
-//       안의 상태 키는 구조상 그 범위 밖이다. 이 잠금은 같은 저장소의 **모든** 생산 원문을
-//       읽으므로 화면·컴포넌트 깊이와 무관하게 잡는다(파일이 몇 단계 아래에 있든 같다).
-//   (b) 보강 — 중첩 상태는 원문 검사만으로는 값까지 보지 못하므로, 아래 시험이 실제 마운트
-//       뒤 두 store의 **전체 상태 트리**를 재귀로 훑어 키 이름까지 함께 검사한다.
-//   (c) 보존 — 두 좁은 검사는 그대로 남긴다. 그것들은 "관전"이라는 낱말과 무관하게 목록이
-//       늘거나 주는 변화를 잡는 구조 잠금이고, 이 어휘 잠금과 서로를 대체하지 않는다.
 const PRODUCTION_SOURCE_ROOTS = ["frontend/src", "backend"]
-// backend/tests도 시험 전용 디렉터리다(그 안의 helpers/isolatedTestDb.js는 생산 원문이 아니다).
 const SKIPPED_DIRECTORY_NAMES = new Set([
   "node_modules", "__tests__", "tests", "dist", "build", "coverage", ".git",
 ])
-/** 생산 원문으로 읽어야 하는 확장자 — js·jsx만 보면 .ts/.tsx/.mjs/.cjs가 감사 밖이 된다. */
 const PRODUCTION_SOURCE_EXTENSION = /\.(?:jsx?|tsx?|mjs|cjs)$/
-/** __tests__ 밖에 놓인 시험 파일도 생산 원문이 아니다(backend/socket/socket.authSession.test.js). */
 const TEST_SOURCE_FILENAME = /\.(?:test|spec)\.(?:jsx?|tsx?|mjs|cjs)$/
 
 function isProductionSourceFileName(name) {
   return PRODUCTION_SOURCE_EXTENSION.test(name) && !TEST_SOURCE_FILENAME.test(name)
 }
-// 반려가 지정한 그대로다 — 이 두 낱말이 어느 자리에든 나오면 일단 잡고, 자리에 따라 판정한다.
 const SPECTATOR_VOCABULARY = /spectat|관전/i
 
-// ── 코드/주석 분리: 파일 전체를 훑는 문자 단위 상태 기계 ────────────────────
-//
-// 예전 판은 줄 하나를 보고 "이 줄은 주석인가"를 휴리스틱으로 판정했다(classifySpectatorLine
-// 계열). 규칙을 아무리 덧붙여도 줄 안에서 주석이 **끝난 뒤에 붙은 코드**가 계속 빠져나갔다 —
-// 마지막까지 남은 구멍이 `' * 설명 */ const spectator = true'`였다(블록 주석 본문처럼 생겨
-// 통째로 주석으로 통과했다, CODEX-11 지적). 줄 단위 규칙을 더 고치는 대신 **방식을 바꾼다**:
-// 파일 전체 문자열을 한 문자씩 읽어 상태를 옮기고, 그 문자가 코드인지 주석인지를 위치
-// 하나하나에 대해 정한다. 줄 하나를 통째로 어느 한쪽에 몰아주는 판정 자체가 사라진다.
-//
-// 산출물은 길이가 원문과 정확히 같은 두 본문이다(줄 번호·열 위치가 보존된다):
-//   - code     : 주석 자리를 공백으로 지운 **코드 전용 본문**
-//   - comments : 코드 자리를 공백으로 지운 **주석 전용 본문**
-//
-// 문자열·템플릿 리터럴·JSX 텍스트는 **지우지 않는다** — 화면 문구도 잠금 대상이기 때문이다
-// (`aria-label="관전자 허용"`이나 JSX 본문 "관전 계속하기"가 코드 본문에 그대로 남아야 한다).
-// 정규식 리터럴도 코드로 남긴다: `/spectat|관전/i` 안의 슬래시를 주석 시작으로 오인하면 그
-// 뒤에 오는 코드가 통째로 숨는다.
-
-/** 이 문자 뒤의 `/`는 나눗셈이 아니라 정규식 리터럴의 시작이다. */
 const REGEX_LITERAL_PRECEDING_CHAR = /[([{,;:=!&|?+\-*%~^<>]$/
-/** 이 낱말 뒤의 `/`도 마찬가지다(`return /re/.test(x)`). */
 const REGEX_LITERAL_PRECEDING_WORD =
   /(?:^|[^\w$])(?:return|typeof|instanceof|in|of|new|delete|void|do|else|case|yield|await)$/
 
 function splitSourceIntoCodeAndComments(source) {
   const code = []
   const comments = []
-  // 두 본문은 같은 길이를 유지한다 — 한쪽이 문자를 가져가면 다른 쪽은 공백을 받는다.
-  // 줄바꿈만 양쪽에 그대로 들어가 줄 번호가 어긋나지 않는다.
   const takeAsCode = (ch) => { code.push(ch); comments.push(ch === "\n" ? "\n" : " ") }
   const takeAsComment = (ch) => { comments.push(ch); code.push(ch === "\n" ? "\n" : " ") }
 
   let index = 0
   let state = "code"
-  // 직전까지 읽은 코드 문자들의 꼬리(공백 제외). `/`가 정규식인지 나눗셈인지 가른다.
   let codeTail = ""
   const rememberCodeChar = (ch) => {
     if (/\s/.test(ch)) return
@@ -447,7 +331,6 @@ function splitSourceIntoCodeAndComments(source) {
     const next = source[index + 1]
 
     if (state === "line-comment") {
-      // 줄 주석은 줄바꿈에서 끝난다. 그 줄바꿈 자체는 코드 쪽 구조다.
       if (char === "\n") { state = "code"; takeAsCode(char) } else takeAsComment(char)
       index += 1
       continue
@@ -471,8 +354,6 @@ function splitSourceIntoCodeAndComments(source) {
       state = "block-comment"; takeAsComment("/"); takeAsComment("*"); index += 2; continue
     }
 
-    // 문자열·템플릿 리터럴: 닫는 따옴표까지 통째로 코드다. 안쪽의 `//`나 `/*`는 주석이 아니다
-    // ("https://…" 같은 값이 그 줄의 코드를 통째로 지우지 않는다).
     if (char === '"' || char === "'" || char === "`") {
       takeAsCode(char)
       index += 1
@@ -492,7 +373,6 @@ function splitSourceIntoCodeAndComments(source) {
       continue
     }
 
-    // 정규식 리터럴: 직전 코드 문자가 값이 올 자리를 여는 것이면 `/`는 나눗셈이 아니다.
     if (char === "/"
       && (codeTail === ""
         || REGEX_LITERAL_PRECEDING_CHAR.test(codeTail)
@@ -526,7 +406,6 @@ function splitSourceIntoCodeAndComments(source) {
   return { code: code.join(""), comments: comments.join("") }
 }
 
-/** 그 본문에서 관전 어휘가 나온 줄 번호들. */
 function vocabularyLineNumbers(body) {
   const lines = []
   body.split(/\r?\n/).forEach((line, index) => {
@@ -535,40 +414,19 @@ function vocabularyLineNumbers(body) {
   return lines
 }
 
-/**
- * 관전 어휘가 나타나도 되는 **파일 전부**(현재 10개)와 그 이유.
- *
- * 이 목록은 "이 파일에는 관전 기능이 있다"가 아니라 "이 파일에는 관전을 **제거했다는 기록**
- * 또는 사망 참가자 선택 문구가 있다"는 뜻이다. 목록 밖 파일에 한 줄이라도 나오면 실패하고,
- * 목록 안 파일에서 출현이 아예 사라져도 실패한다(정책 기록·보존 UI가 조용히 지워지는 것을
- * 막는다 — 특히 사망 참가자 선택은 A-01이 보존을 명시한다).
- */
 const SPECTATOR_SOURCE_ALLOWLIST = [
-  // 사망 참가자 선택 UI 본문 — 유일하게 코드(JSX 텍스트) 출현이 허용되는 파일이다.
   "frontend/src/domains/game/ingame/components/deadChoice/InGameDeadParticipantChoice.jsx",
-  // 그 선택을 띄우는 페이지·판정기(주석으로 "외부 관전이 아니다"를 기록한다).
   "frontend/src/domains/game/ingame/pages/InGamePage.jsx",
   "frontend/src/domains/game/ingame/utils/selectInGameDeadParticipantChoice.js",
-  // 인게임 방관리 행 정의 — "관전자 허용" 체크박스를 제거했다는 기록이 주석으로 남는다.
   "frontend/src/domains/game/ingame/constants/controls/ingameSetting/ingameSettingData.js",
-  // 폼·역할 구성 정제 — 허용 목록 밖 키(관전자 키 포함)를 만들지 않는다는 정책 주석.
   "frontend/src/domains/game/setup/utils/roomSettingsForm.js",
   "frontend/src/domains/game/setup/hooks/useRoleCompositionState.js",
-  // 서버 정제 경계·사망자 수신 정책 주석.
   "backend/utils/updateRoomSettingsValidation.js",
   "backend/socket/matchmaking.js",
   "backend/socket/gameSession.js",
   "backend/game-core/gameSession.js",
 ]
 
-/**
- * **코드 전용 본문**에 관전 어휘가 남아도 되는 줄 전부. 지금 실제로 남아 있는 허용 출현만
- * 담는다 — 확정 사망한 기존 참가자의 선택 버튼 문구 하나뿐이다(A-01 보존 대상).
- *
- * 이 목록과 실제 수집 결과가 **완전히 같아야** 통과한다. 새 코드 출현이 하나라도 생기면
- * (라우트·사건 이름·식별자·객체 키·화면 문구 어느 자리든) 그 줄이 목록에 없어 실패하고,
- * 반대로 여기 적힌 보존 문구가 사라져도 실패한다.
- */
 const EXPECTED_CODE_SPECTATOR_LINES = [
   {
     file: "frontend/src/domains/game/ingame/components/deadChoice/InGameDeadParticipantChoice.jsx",
@@ -598,15 +456,6 @@ async function collectProductionSources() {
   return files
 }
 
-/**
- * 원문 하나를 코드/주석으로 가르고, 양쪽에서 관전 어휘가 나온 자리를 따로 돌려준다.
- *
- * - codeHits    : 코드 전용 본문의 출현. `text`는 **그 줄의 코드 부분만** trim한 값이라
- *                 같은 줄 끝에 붙은 주석 문구가 기대 목록을 흔들지 않는다.
- * - commentHits : 주석 전용 본문의 출현(허용 목록 파일에서만 허용된다).
- * - rawLines    : 원문 줄에서 어휘가 보이는 줄 번호. codeHits ∪ commentHits와 같아야 한다 —
- *                 스캐너가 출현을 어느 쪽에도 넣지 않고 삼키는 일을 막는 불변식이다.
- */
 function auditSpectatorSource(source, file) {
   const { code, comments } = splitSourceIntoCodeAndComments(source)
   const codeLines = code.split(/\r?\n/)
@@ -616,38 +465,30 @@ function auditSpectatorSource(source, file) {
   return { code, comments, codeHits, commentHits, rawLines: vocabularyLineNumbers(source) }
 }
 
-/**
- * 상태 기계 대조용 표본. 줄 단위 휴리스틱이 놓쳤던 자리들을 한 파일 안에 모아 둔다 —
- * 특히 3·4·14줄이 "주석이 끝난 뒤에 붙은 코드"다.
- */
 const SCANNER_PROBE_SOURCE = [
-  /*  1 */ "/**",
-  /*  2 */ " * 관전 진입은 제거했다.",
-  /*  3 */ " * 설명 */ const spectator = true",
-  /*  4 */ "/* x */ const allowSpectators = false",
-  /*  5 */ 'const url = "https://example.test" // 관전 메모',
-  /*  6 */ 'const label = "관전자 허용"',
-  /*  7 */ "const re = /spectat|관전/i",
-  /*  8 */ "          관전 계속하기",
-  /*  9 */ "const t = `관전 ${count}`",
-  /* 10 */ "{/* 관전 계속하기는 보존한다 */}",
-  /* 11 */ "const ready = true /* 관전자 허용은 제거했다 */",
-  /* 12 */ "/* 여기서 열고",
-  /* 13 */ "   관전 설명을 적고",
-  /* 14 */ "*/ const spectatorMode = true",
+  "/**",
+  " * 관전 진입은 제거했다.",
+  " * 설명 */ const spectator = true",
+  "/* x */ const allowSpectators = false",
+  'const url = "https://example.test" // 관전 메모',
+  'const label = "관전자 허용"',
+  "const re = /spectat|관전/i",
+  "          관전 계속하기",
+  "const t = `관전 ${count}`",
+  "{/* 관전 계속하기는 보존한다 */}",
+  "const ready = true /* 관전자 허용은 제거했다 */",
+  "/* 여기서 열고",
+  "   관전 설명을 적고",
+  "*/ const spectatorMode = true",
 ].join("\n")
 
 test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 파일과 자리가 잠긴다", async () => {
-  // (1) 상태 기계 자신의 대조. "주석이 끝난 뒤에 붙은 코드"를 실제로 코드로 읽는지, 문자열·
-  //     템플릿·JSX 텍스트·정규식을 지우지 않는지, 진짜 주석은 주석으로 두는지를 한 번에 본다.
   const probe = auditSpectatorSource(SCANNER_PROBE_SOURCE, "probe.ts")
   assert.deepEqual(
     probe.codeHits.map((hit) => `${hit.line}:${hit.text}`),
     [
-      // 여러 줄 블록 주석을 닫은 **바로 뒤**의 코드 — 예전 줄 단위 판정의 마지막 구멍이다.
       "3:const spectator = true",
       "4:const allowSpectators = false",
-      // 문자열 리터럴(화면 문구)·정규식·JSX 텍스트·템플릿 리터럴은 코드로 남는다.
       '6:const label = "관전자 허용"',
       "7:const re = /spectat|관전/i",
       "8:관전 계속하기",
@@ -661,17 +502,14 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
     [2, 5, 10, 11, 13],
     "주석 전용 본문이 실제 주석 출현과 다르다",
   )
-  // 어떤 출현도 양쪽 중 어디에도 들어가지 않고 사라지지 않는다.
   assert.deepEqual(
     [...new Set([...probe.codeHits, ...probe.commentHits].map((hit) => hit.line))].sort((a, b) => a - b),
     probe.rawLines,
     "원문에 보이는 출현이 코드·주석 어느 쪽에도 담기지 않았다",
   )
-  // 두 본문은 원문을 문자 단위로 나눠 가진다(줄 번호·열 위치가 보존된다).
   assert.equal(probe.code.length, SCANNER_PROBE_SOURCE.length)
   assert.equal(probe.comments.length, SCANNER_PROBE_SOURCE.length)
 
-  // (1c) 수집 확장자. js·jsx만 모으면 같은 디렉터리의 .ts/.tsx/.mjs/.cjs가 감사 밖이 된다.
   assert.deepEqual(
     ["a.ts", "b.tsx", "c.mjs", "d.cjs", "e.js", "f.jsx", "g.test.ts", "h.spec.tsx",
       "i.test.js", "j.test.jsx", "k.md", "l.json", "m.d.ts"].filter(isProductionSourceFileName),
@@ -679,7 +517,6 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
     "생산 원문 수집 확장자가 js·jsx로 좁아졌거나 시험 파일을 걸러내지 못했다",
   )
 
-  // (2) 감사 범위. 실제로 수백 개 파일을 읽었고, 두 루트와 핵심 파일이 그 안에 있다.
   const sources = await collectProductionSources()
   assert.ok(sources.length > 300, `생산 원문을 충분히 읽지 못했다(${sources.length}개 — 이 감사가 무력하다)`)
   for (const root of PRODUCTION_SOURCE_ROOTS) {
@@ -698,7 +535,6 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
   ]) {
     assert.ok(sources.some((entry) => entry.file === covered), `${covered}가 감사 범위 밖이다`)
   }
-  // 허용 목록에 적힌 파일이 전부 실재한다(오타로 잠금이 헐거워지지 않는다).
   assert.equal(new Set(SPECTATOR_SOURCE_ALLOWLIST).size, 10, "허용 목록의 파일 수가 10개가 아니다")
 
   const audited = sources.map(({ file, source }) => ({
@@ -707,8 +543,6 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
   const codeHits = audited.flatMap((entry) => entry.codeHits)
   const commentHits = audited.flatMap((entry) => entry.commentHits)
 
-  // (2a) 스캐너가 출현을 삼키지 않았다 — 원문 줄에서 보이는 어휘는 전부 코드나 주석 중
-  //      한쪽에 담겼다. 이 불변식이 깨지면 아래 "0개" 단언들이 조용히 통과할 수 있다.
   for (const entry of audited) {
     const covered = [...new Set([...entry.codeHits, ...entry.commentHits].map((hit) => hit.line))]
       .sort((a, b) => a - b)
@@ -717,8 +551,6 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
     assert.equal(entry.code.length, entry.source.length, "코드 본문의 길이가 원문과 다르다")
   }
 
-  // (3) **코드 전용 본문**의 출현이 기대 목록과 정확히 같다. 새 코드 출현이 하나라도 생기면
-  //     (자리가 어디든, 어느 파일이든) 목록에 없어 실패하고, 보존 문구가 사라져도 실패한다.
   const codeOccurrences = codeHits
     .map(({ file, text }) => ({ file, text }))
     .sort((a, b) => `${a.file}${a.text}`.localeCompare(`${b.file}${b.text}`))
@@ -730,8 +562,6 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
       codeHits.map((h) => `${h.file}:${h.line} ${h.text}`).join("\n")}`,
   )
 
-  // (4) 주석 안의 관전 어휘는 **허용 목록 파일에서만** 허용된다. 목록 밖 파일에서는 주석
-  //     한 줄이라도 실패한다 — 관전 기능을 되살리는 변경은 대개 설명 주석부터 남긴다.
   const strayComments = commentHits.filter((hit) => !SPECTATOR_SOURCE_ALLOWLIST.includes(hit.file))
   assert.deepEqual(
     strayComments, [],
@@ -739,7 +569,6 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
       strayComments.map((h) => `${h.file}:${h.line}`).join("\n")}`,
   )
 
-  // (5) 출현 **파일 집합**이 허용 목록과 정확히 같다(정책 기록이 조용히 지워져도 실패한다).
   assert.deepEqual(
     [...new Set([...codeHits, ...commentHits].map((hit) => hit.file))].sort(),
     [...SPECTATOR_SOURCE_ALLOWLIST].sort(),
@@ -747,45 +576,22 @@ test("F-23(SPLIT-1/AC-02): 생산 원문 전체에서 관전 어휘의 출현 �
   )
 })
 
-// ── F-23(SPLIT-1/AC-02): 라우트 path·백엔드 수신 사건 전수 열거 ─────────────
-//
-// 위 어휘 잠금은 "관전"이라는 낱말이 원문 어디에 남았는가만 본다. 진입은 낱말 없이도 만들 수
-// 있으므로, 주소로 열리는 **path 전부**와 서버가 받아 주는 **사건 이름 전부**를 각각 열거해
-// 그 목록 자체를 고정하고, 그 안에 관전 계열 이름이 하나도 없음을 함께 단언한다.
-
-/** 백엔드가 실제로 수신 등록하는 사건 전부(backend/socket의 socket.on/io.on). */
 const BACKEND_SOCKET_ON_EVENTS_LOCK = [
-  // 연결 수명(backend/socket/socket.js)
   "connection", "disconnect", "notifications_ready",
-  // 대기방·방 설정·초대(backend/socket/matchmaking.js)
   "accept_game_invite", "create_room", "delete_room", "get_current_room",
   "get_game_invite_result", "get_public_rooms", "get_room_settings_update_result",
   "join_matchmaking", "join_public_room", "join_room_by_code", "kick_room_player",
   "leave_matchmaking", "leave_room", "set_ready", "start_game", "update_room_settings",
-  // 진행 중 게임(backend/socket/gameSession.js)
   "acknowledge_night_action_success", "acknowledge_role_reveal", "cast_day_vote",
   "cast_tribunal_vote", "get_kick_result",
   "get_session_snapshot", "kick_game_player", "leave_game_session", "ready_for_day_vote",
-  // E-3(F-33): send_emoji — 본인 팔레트 한 칸을 그 판의 참가자 전원에게 보여 달라는 요청이다.
-  // 소유·배치 판정의 근거는 게임 시작 때 캡처한 세션 캐시라 이 사건이 DB를 다시 읽지 않는다.
   "resolve_day_vote", "resolve_night", "resolve_tribunal_vote", "send_emoji",
   "submit_game_chat_message",
   "submit_joker_chat_message", "submit_night_action",
 ]
 
-/** 이름만 바꾼 관전 진입까지 잡기 위해 넓힌 어휘(경로·사건 이름 검사 전용). */
 const SPECTATOR_NAME_VOCABULARY = /spectat|관전|watch|observ|viewer|onlook/i
 
-/**
- * F-23(AC-02 보수): 문자 offset → 1-기반 줄 번호.
- *
- * 아래 수집기들은 예전에 **줄 단위**로 정규식을 돌렸다(`source.split(/\r?\n/).forEach(...)`).
- * 그 방식은 인자가 다음 줄로 넘어가는 호출을 통째로 놓친다 — 이 저장소에 실제로 그런 모양이
- * 여럿 있다(backend/socket/matchmaking.js의 `channelMembership.emitToChannel(` 줄바꿈 뒤
- * `io, room.id, 'player_joined_room',`이 대표적이다). 그래서 수집을 **파일 전체 본문** 기준으로
- * 바꾸고, 근거로 남길 줄 번호만 이 표로 되돌린다(stripComments가 위치를 보존하므로 한 줄짜리
- * 호출의 줄 번호는 예전과 정확히 같다).
- */
 function makeLineLookup(text) {
   const starts = [0]
   for (let i = 0; i < text.length; i += 1) if (text[i] === "\n") starts.push(i + 1)
@@ -801,17 +607,14 @@ function makeLineLookup(text) {
   }
 }
 
-/** 여러 줄에 걸친 인자는 한 줄로 눌러 기록한다(잠금 문자열이 줄바꿈에 흔들리지 않게 한다). */
 function normalizeExpr(expr) {
   return expr.replace(/\s+/g, " ").trim()
 }
 
-/** 그 원문의 `.on(` 수신 등록에서 사건 이름을 실제 값으로 푼다(상수 표 참조 포함). */
 function collectSocketOnEventNames(sources, tables) {
   const resolved = []
   const unresolved = []
   for (const { file, source } of sources) {
-    // 여러 줄 호출을 놓치지 않도록 **본문 전체**를 한 번에 훑는다(위 makeLineLookup 참고).
     const body = stripComments(source)
     const lineOf = makeLineLookup(body)
     const re = /\.on\(\s*([^,)]+)/g
@@ -831,33 +634,16 @@ function collectSocketOnEventNames(sources, tables) {
   return { resolved, unresolved }
 }
 
-/**
- * F-23(AC-02 보수): 서버가 **보내는** 사건 이름을 찾는 호출 모양.
- *
- * 위 `.on(` 감사는 서버가 **받는** 이름만 고정한다. 관전 전용 상태를 밖으로 흘리는 통로는
- * 수신이 아니라 **송신**이므로, 서버가 보낼 수 있는 이름도 전수로 고정해야 한다.
- * 직접 전송·방 방송·namespace 방송은 결국 전부 `.emit(`으로 끝나고(io.emit · socket.emit ·
- * io.to(ch).emit · socket.to(ch).emit · nsp.to(ch).emit · operator.except(x).emit),
- * 그 위에 이 저장소가 쓰는 방송 래퍼 네 가지가 사건 이름을 인자로 받는다.
- */
 const SERVER_EMIT_PATTERNS = [
   /\.emit\(\s*([^,)]+)/g,
-  // emitToChannel(io, channelId, '사건', …) — `channelMembership.` 접두도 같이 잡는다.
   /(?<!function\s)\bemitToChannel\(\s*[^,()]+,\s*[^,()]+,\s*([^,)]+)/g,
-  // emitToGameChannel(io, session, '사건', …)
   /(?<!function\s)\bemitToGameChannel\(\s*[^,()]+,\s*[^,()]+,\s*([^,)]+)/g,
-  // emitNightTurnEvent(run, '사건', …) · emitDayPhaseEvent(run, '사건', …)
   /(?<!function\s)\bemit(?:NightTurn|DayPhase)Event\(\s*[^,()]+,\s*([^,)]+)/g,
-  // emitToUser(uuid, '사건', payload) — 서비스·컨트롤러의 개인 전송기.
   /(?<!function\s)\bemitToUser\(\s*[^,()]+,\s*([^,)]+)/g,
-  // emitFriendEventSafely(uuid, '사건', payload, code) — friend.controller의 안전 전송 래퍼.
   /(?<!function\s)\bemitFriendEventSafely\(\s*[^,()]+,\s*([^,)]+)/g,
-  // `const emit = deps.emitToUser`로 받은 지역 별칭: emit(uuid, '사건', payload).
-  // 알림·업적·초대 서비스가 이 모양으로 개인 전송을 한다(점 접두가 없는 호출만 잡는다).
   /(?<![.\w$])emit\(\s*[^,()]+,\s*([^,)]+)/g,
 ]
 
-/** 서버 원문에서 **송신** 사건 이름을 모은다(변수로 받는 자리는 unresolved로 남긴다). */
 function collectServerEmitEventNames(sources, tables) {
   const resolved = []
   const unresolved = []
@@ -887,8 +673,6 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
   const { readFile } = await import("node:fs/promises")
   const { createRequire } = await import("node:module")
 
-  // (1) app/routes/index.jsx의 **모든** path. 원문 선언과 실행 중 라우터가 같은 집합이어야
-  //     한다 — 한쪽에만 있으면 그 열거는 실제로 열리는 화면을 대표하지 못한다.
   const routerSource = stripComments(
     await readFile(new URL("frontend/src/app/routes/index.jsx", REPO_ROOT), "utf8"))
   const declaredPaths = [...routerSource.matchAll(/path\s*:\s*"([^"]*)"/g)].map((m) => m[1])
@@ -900,16 +684,12 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
   const spectatorPaths = declaredPaths.filter((path) => SPECTATOR_NAME_VOCABULARY.test(path))
   assert.deepEqual(spectatorPaths, [],
     `관전 계열 이름의 라우트가 있다: ${spectatorPaths.join(", ")}`)
-  // 리다이렉트 목적지도 함께 본다(경로 선언 없이 다른 화면으로 보내는 우회를 막는다).
   const redirectTargets = [...routerSource.matchAll(/<Navigate\s+to="([^"]+)"/g)].map((m) => m[1])
   assert.deepEqual(redirectTargets, ["/lobby"], "리다이렉트 목적지가 바뀌었다")
-  // 검출기 대조: 관전 경로가 실제로 있으면 위 필터가 잡는다.
   assert.deepEqual(
     ["/lobby", "/spectate", "/watch/:roomId"].filter((path) => SPECTATOR_NAME_VOCABULARY.test(path)),
     ["/spectate", "/watch/:roomId"], "관전 계열 경로 이름을 검출하지 못했다")
 
-  // (2) backend/socket의 **모든** 수신 등록. 상수 표 참조는 실제 백엔드 모듈에서 값을 읽어
-  //     푼다(시험 안에 값을 다시 적으면 두 목록이 갈릴 수 있다).
   const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
   const tables = {
     KICK_EVENTS: backendRequire("./kickReceiptStore").KICK_EVENTS,
@@ -919,30 +699,25 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
   assert.equal(tables.ROOM_SETTINGS_EVENTS.UPDATE_ROOM_SETTINGS, "update_room_settings",
     "설정 사건 표를 읽지 못했다")
 
-  // 검출기 대조: 다른 이름의 관전 수신·상수 표 참조를 실제로 잡아내는지 먼저 고정한다.
-  //
-  // F-23(AC-02 보수): **여러 줄에 걸친 호출**을 함께 넣는다. 예전 수집기는 줄 단위 정규식이라
-  // 인자가 다음 줄로 넘어가면 그 등록을 통째로 놓쳤다 — 관전 수신을 한 줄 띄워 적기만 해도
-  // 이 감사가 조용히 비어 버린다. 줄 번호는 **호출이 시작된 줄**로 남아야 근거가 된다.
   const probe = collectSocketOnEventNames([{
     file: "probe.js",
     source: [
-      /* 1 */ "socket.on('spectator_joined', handler)",
-      /* 2 */ "socket.on(KICK_EVENTS.KICK_ROOM_PLAYER, handler)",
-      /* 3 */ "socket.on(eventName, handler)",
-      /* 4 */ "// socket.on('commented_out', handler)",
-      /* 5 */ "socket.on(",
-      /* 6 */ "    'spectator_state_multiline',",
-      /* 7 */ "    handler,",
-      /* 8 */ ")",
-      /* 9 */ "socket.on(",
-      /* 10 */ "    KICK_EVENTS.KICK_ROOM_PLAYER,",
-      /* 11 */ "    handler,",
-      /* 12 */ ")",
-      /* 13 */ "socket.on(",
-      /* 14 */ "    lateEventName,",
-      /* 15 */ "    handler,",
-      /* 16 */ ")",
+      "socket.on('spectator_joined', handler)",
+      "socket.on(KICK_EVENTS.KICK_ROOM_PLAYER, handler)",
+      "socket.on(eventName, handler)",
+      "// socket.on('commented_out', handler)",
+      "socket.on(",
+      "    'spectator_state_multiline',",
+      "    handler,",
+      ")",
+      "socket.on(",
+      "    KICK_EVENTS.KICK_ROOM_PLAYER,",
+      "    handler,",
+      ")",
+      "socket.on(",
+      "    lateEventName,",
+      "    handler,",
+      ")",
     ].join("\n"),
   }], tables)
   assert.deepEqual(probe.resolved.map((entry) => `${entry.where} ${entry.name}`),
@@ -978,60 +753,32 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
     `관전 계열 이름의 서버 수신 사건이 있다: ${spectatorEvents.map((e) => `${e.where} ${e.name}`).join(", ")}`)
 })
 
-/**
- * F-23(AC-02 보수): 서버가 **보내는** 사건 이름 전부.
- *
- * 위 BACKEND_SOCKET_ON_EVENTS_LOCK은 서버가 **받는** 이름만 고정한다. 관전 전용 상태를 밖으로
- * 흘리는 통로는 수신이 아니라 송신이므로, 이 목록이 없으면 "서버가 관전 전용 사건을 보내지
- * 않는다"가 어디에서도 고정되지 않는다(프런트 구독 잠금은 **프런트가 듣는 것**만 본다 —
- * 서버가 보내는데 프런트가 아직 듣지 않는 사건은 그 잠금 밖이다).
- */
 const SERVER_EMIT_EVENTS_LOCK = [
-  // 연결 수명·계정 경계(backend/socket/socket.js)
   "force_disconnect", "friend_status_change",
-  // 대기방·매칭·방 설정(backend/socket/matchmaking.js)
   "host_changed", "match_found", "matchmaking_disabled", "matchmaking_queued",
   "player_joined_room", "player_left_room", "player_ready_changed", "public_rooms_updated",
   "room_deleted", "room_join_failed", "room_joined", "room_kicked", "room_settings_updated",
   "game_started",
-  // 진행 중 게임(backend/socket/gameSession.js)
   "day_phase_changed", "day_vote_resolved",
-  // E-3(F-33): emoji_shown — send_emoji가 통과했을 때 emitToGameChannel 하나로 세션 채널에
-  // 나가는 공개 방송이다(죽은 참가자 포함, 이탈자 제외). { gameId, uuid, itemId, sentAt }뿐이라
-  // 역할·소유 목록은 싣지 않는다.
   "emoji_shown",
   "game_ended", "game_kicked", "game_phase_changed",
   "joker_chat_message", "night_action_result", "night_action_success", "night_actions_resolved",
   "night_presentation_wait", "night_result_applied", "night_turn_ended", "night_turn_started", "player_eliminated",
   "session_participation_changed", "session_self_progress", "tribunal_vote_resolved",
-  // 개인 전송기(emitToUser 계열) — 친구·초대·알림·업적·전적 커밋 뒤 캐시 무효화
   "account_cache_invalidated", "achievement_granted", "friend_relation_invalidated",
   "friend_request_accepted", "friend_request_declined", "friend_request_received",
   "game_invite_received", "game_invite_updated", "notification_created",
 ]
 
-/**
- * 사건 이름을 변수로 받아 보내는 서버 측 간접 전송 지점 전부.
- * 각 지점이 무엇을 전달하는지는 아래 시험이 그 호출부에서 확인한다.
- */
 const SERVER_INDIRECT_EMIT_SITES_LOCK = [
-  // friend.controller의 안전 전송 래퍼 — 자기 호출 지점의 리터럴만 넘긴다(아래에서 확인).
   "backend/controller/friend.controller.js:101 event",
-  // 채널 방송 경계 — emitToChannel(io, channelId, event, …)의 event 파라미터를 그대로 넘긴다.
   "backend/socket/channelMembership.js:209 event",
   "backend/socket/channelMembership.js:267 event",
   "backend/socket/channelMembership.js:275 event",
-  // 게임 방송 경계·밤 턴·낮 페이즈 래퍼 — 전부 호출 지점의 리터럴을 받아 넘긴다.
-  // (F-27a: 아래 세 줄 번호는 같은 세 지점이 그대로 밀린 값이다 — 연출 대기의 실제 활성화·
-  //  재평가·비수신자 통지 경계(activateNightPresentationWait 등)가 그 앞에 들어갔다. 지점이
-  //  새로 생긴 것이 아니라 위치만 바뀌었다는 사실은 이 잠금이 여전히 9개라는 것으로 확인한다.)
   "backend/socket/gameSession.js:477 event",
   "backend/socket/gameSession.js:1249 event",
-  // (2026-09-22: 구성 0 역할의 턴 건너뛰기가 advanceNightTurn 앞에 들어가 아래 두 지점이 21줄 밀렸다.)
   "backend/socket/gameSession.js:2182 event",
-  // 게임 채팅 — CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다(아래에서 그 표를 확인한다).
   "backend/socket/gameSession.js:3469 eventName",
-  // 개인 전송기 — emitToUser(uuid, event, payload)의 event 파라미터.
   "backend/socket/socket.js:27 event",
 ]
 
@@ -1043,30 +790,28 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
     ROOM_SETTINGS_EVENTS: backendRequire("../utils/updateRoomSettingsValidation").ROOM_SETTINGS_EVENTS,
   }
 
-  // 검출기 대조부터. 직접 전송·방 방송·namespace 방송·방송 래퍼·개인 전송기를 전부,
-  // 그리고 **여러 줄에 걸친 호출**까지 실제로 잡아내는지 먼저 고정한다.
   const probe = collectServerEmitEventNames([{
     file: "probe.js",
     source: [
-      /*  1 */ "io.emit('spectator_rooms_updated', payload)",
-      /*  2 */ "socket.emit('spectator_joined', payload)",
-      /*  3 */ "io.to(channelId).emit('spectator_state', payload)",
-      /*  4 */ "socket.to(channelId).emit('spectator_left', payload)",
-      /*  5 */ "nsp.to(channelId).except(skip).emit('spectator_relay', payload)",
-      /*  6 */ "targetSocket.emit(KICK_EVENTS.ROOM_KICKED, kickedEvent)",
-      /*  7 */ "channelMembership.emitToChannel(",
-      /*  8 */ "    io, room.id, 'spectator_multiline',",
-      /*  9 */ "    { player }, null,",
-      /* 10 */ ")",
-      /* 11 */ "emitToGameChannel(io, session, 'spectator_game_multiline', payload)",
-      /* 12 */ "emitNightTurnEvent(run, 'night_turn_started', payload)",
-      /* 13 */ "emitDayPhaseEvent(run, 'day_phase_changed', payload)",
-      /* 14 */ "emitToUser(receiverId, 'spectator_notice', payload)",
-      /* 15 */ "// io.emit('commented_out', payload)",
-      /* 16 */ "recipientSocket.emit(",
-      /* 17 */ "    eventName,",
-      /* 18 */ "    outbound,",
-      /* 19 */ ")",
+      "io.emit('spectator_rooms_updated', payload)",
+      "socket.emit('spectator_joined', payload)",
+      "io.to(channelId).emit('spectator_state', payload)",
+      "socket.to(channelId).emit('spectator_left', payload)",
+      "nsp.to(channelId).except(skip).emit('spectator_relay', payload)",
+      "targetSocket.emit(KICK_EVENTS.ROOM_KICKED, kickedEvent)",
+      "channelMembership.emitToChannel(",
+      "    io, room.id, 'spectator_multiline',",
+      "    { player }, null,",
+      ")",
+      "emitToGameChannel(io, session, 'spectator_game_multiline', payload)",
+      "emitNightTurnEvent(run, 'night_turn_started', payload)",
+      "emitDayPhaseEvent(run, 'day_phase_changed', payload)",
+      "emitToUser(receiverId, 'spectator_notice', payload)",
+      "// io.emit('commented_out', payload)",
+      "recipientSocket.emit(",
+      "    eventName,",
+      "    outbound,",
+      ")",
     ].join("\n"),
   }], tables)
   assert.deepEqual(
@@ -1090,7 +835,6 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
     "관전 계열 송신 이름을 검출하지 못했다",
   )
 
-  // 실제 백엔드 생산 원문 전체(backend/, 시험 제외).
   const backendSources = (await collectProductionSources())
     .filter(({ file }) => file.startsWith("backend/"))
   assert.ok(backendSources.length > 40, `백엔드 원문을 충분히 읽지 못했다(${backendSources.length}개)`)
@@ -1107,10 +851,6 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
   assert.deepEqual(spectatorEmits, [],
     `관전 계열 이름의 서버 송신 사건이 있다: ${spectatorEmits.map((e) => `${e.where} ${e.name}`).join(", ")}`)
 
-  // 간접 지점이 실제로 무엇을 전달하는지 출처에서 확인한다(조용히 넘기지 않는다).
-  //
-  // (a) 게임 채팅의 eventName은 CHAT_EVENT_BY_CHANNEL 표에서만 인덱싱된다 — 낮·사망 두
-  //     채널뿐이고, 사망 채널은 **기존 사망 참가자**의 것이다(외부 관전자 채널이 아니다).
   const gameSessionSource = backendSources
     .find(({ file }) => file === "backend/socket/gameSession.js").source
   const chatEventMap = /CHAT_EVENT_BY_CHANNEL\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/.exec(gameSessionSource)
@@ -1121,10 +861,6 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
     "서버 채팅 송신 사건이 바뀌었다",
   )
 
-  // (b) 나머지 간접 지점은 전부 "호출 지점이 준 이름을 그대로 넘기는 경계"다. 그 경계가 새
-  //     이름을 만들지 않는다는 근거는 **호출 지점들이 위 목록에 잡혀 있다**는 사실이다.
-  //     player_joined_room은 matchmaking.js에서 오직 **여러 줄 emitToChannel 호출**로만
-  //     나가므로(1807·3712행), 줄 단위 수집기로 퇴화하면 이 단언이 먼저 깨진다.
   const whereOf = (name) => resolved.filter((entry) => entry.name === name).map((entry) => entry.where)
   assert.ok(
     whereOf("player_joined_room").some((where) => where.startsWith("backend/socket/matchmaking.js")),
@@ -1149,58 +885,22 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
   )
 })
 
-// ── F-23(SPLIT-1/AC-02): 구조적 목록 감사 ───────────────────────────────────
-//
-// 위 어휘 감사는 "관전/spectator"라는 **낱말**이 실행 코드에 남았는지만 본다. 다른 이름
-// (watch·live·observe·viewer 또는 아무 이름)으로 만든 외부 관전 진입은 그 검사를 그대로
-// 통과하므로, 그것만으로는 "다른 이름의 UI·라우트·모달·상태 연결이 없다"를 증명하지 못한다
-// (CODEX-3 AC-02/SPLIT-1 지적). 아래 세 시험은 낱말이 아니라 **연결의 목록 자체**를 잠근다:
-//
-//   (1) 실제 router.routes의 전체 경로·인증 경계·element 배선 → 주소로 열 수 있는 화면 전부
-//   (2) 생산 원문의 client→server 전송 / server→client 구독 사건 → 입장 액션과 상태 연결 전부
-//   (3) InGamePage가 실제로 마운트하는 컴포넌트와 두 store의 상태 모양 → 오버레이·모달·상태
-//
-// 어느 목록에든 항목이 하나라도 늘면(그 이름이 무엇이든) 이 시험들이 깨진다. 반대로 정상
-// 참가 경로·사망 참가자 선택이 사라지면 같은 목록이 줄어 역시 깨진다.
-
-/**
- * 주석(정책 기록·예시 코드)을 지운 원문. 감사 대상은 실행되는 코드뿐이다.
- * 블록 주석은 **줄 수를 유지한 채** 비운다 — 아래 감사가 근거로 남기는 file:line이 어긋나면
- * 추적이 불가능해진다.
- */
-// 위 어휘 잠금과 **같은 상태 기계**를 쓴다. 정규식으로 주석을 지우는 두 번째 구현을 따로
-// 두면 두 감사의 "주석이란 무엇인가"가 서로 달라지고, 한쪽에만 생긴 구멍을 알아채지 못한다.
 function stripComments(source) {
   return splitSourceIntoCodeAndComments(source).code
 }
 
-/** 사건 이름을 상수로 쓰는 전송·구독 지점을 실제 값으로 풀기 위한 표들. */
 const EVENT_CONSTANT_TABLES = { SOCKET_EVENTS, ROOM_LIST_SOCKET_EVENTS, KICK_EVENTS }
 
-// 소켓에 닿는 길은 결국 `<socket>.emit/emitWithAck`과 `<socket>.on/off` 뿐이다. 지역 래퍼
-// (useFriendSocketEvents.js:151 `function emitWithAck(socket, event, payload, timeoutMs)`)를
-// 거치는 호출도 그 래퍼 호출 지점에서 한 번 더 읽어 실제 사건 이름을 확보한다.
 const EVENT_REF_PATTERNS = [
   { kind: "emit", re: /\.(?:emit|emitWithAck)\(\s*([^,)]+)/g },
-  // 래퍼 **호출**만 본다 — `function emitWithAck(socket, event, …)` 선언 자체는 전송 지점이
-  // 아니므로 제외한다(그 선언이 무엇을 전달하는지는 아래 간접 지점 감사가 따라간다).
   { kind: "emit", re: /(?<![.\w$])(?<!function\s)emitWithAck\(\s*[A-Za-z_$][\w$]*\s*,\s*([^,)]+)/g },
   { kind: "on", re: /\.(?:on|off)\(\s*([^,)]+)/g },
 ]
 
-/**
- * 생산 원문에서 소켓 사건 참조를 모은다.
- *
- * 문자열 리터럴과 상수 표 참조(`SOCKET_EVENTS.CREATE_ROOM`, 삼항의 양쪽 모두)는 실제 값으로
- * 풀고, 변수로 전달되는 간접 지점은 `unresolved`로 남긴다 — 그 지점들은 아래 시험이 목록으로
- * 고정하고 전달되는 값의 출처까지 함께 검사한다(조용히 넘기지 않는다).
- */
 function collectSocketEventRefs(sources) {
   const resolved = { emit: new Map(), on: new Map() }
   const unresolved = []
   for (const { file, source } of sources) {
-    // 위 collectSocketOnEventNames와 **같은 이유**로 본문 전체를 한 번에 훑는다 — 줄 단위
-    // 정규식은 인자가 다음 줄로 넘어가는 socket.on/emit 호출을 통째로 놓친다.
     const body = stripComments(source)
     const lineOf = makeLineLookup(body)
     for (const { kind, re } of EVENT_REF_PATTERNS) {
@@ -1209,8 +909,6 @@ function collectSocketEventRefs(sources) {
       while ((match = re.exec(body)) !== null) {
         const expr = normalizeExpr(match[1])
         const where = `${file}:${lineOf(match.index)}`
-        // 표 참조가 있으면 그것만 쓴다 — 삼항 조건의 비교 문자열("GAME")을 사건 이름으로
-        // 오인하지 않기 위함이다(useKickPlayerRequest.js:354가 실제로 그 모양이다).
         const fromTables = [...expr.matchAll(/\b([A-Z][A-Z0-9_]*)\.([A-Za-z_]\w*)/g)]
           .map(([, table, key]) => EVENT_CONSTANT_TABLES[table]?.[key])
           .filter((value) => typeof value === "string")
@@ -1231,7 +929,6 @@ function collectSocketEventRefs(sources) {
   return { resolved, unresolved }
 }
 
-/** 그 원문이 실제로 렌더하는 컴포넌트 이름들(대문자로 시작하는 JSX 태그). */
 function collectRenderedComponents(source) {
   const body = stripComments(source)
   return {
@@ -1244,10 +941,6 @@ function collectRenderedComponents(source) {
   }
 }
 
-/**
- * 선언된 라우트 전부. 실제 router 객체에서 읽고, ProtectedRoute를 element로 가진 레이아웃
- * 라우트 아래를 "인증 보호 구간"으로 표시한다.
- */
 function flattenRoutes(routes, ProtectedRouteType, guarded = false) {
   return routes.flatMap((route) => {
     const isGuard = route.element?.type === ProtectedRouteType
@@ -1261,23 +954,13 @@ function flattenRoutes(routes, ProtectedRouteType, guarded = false) {
   })
 }
 
-/**
- * app/routes/index.jsx의 **전체** 라우트 배선 잠금.
- *
- * path → (JSX element 식별자, 그 식별자의 import 출처, 인증 보호 여부). 근거는 실제 원문이다
- * (frontend/src/app/routes/index.jsx:24 `export const router = createBrowserRouter([`,
- *  같은 파일 33행 `element: <ProtectedRoute />`의 children이 35~50행).
- */
 const ROUTE_WIRING_LOCK = {
   "/": { component: "LoginPage", from: "@/domains/auth/pages/LoginPage", guarded: false },
   "/login": { component: "LoginPage", from: "@/domains/auth/pages/LoginPage", guarded: false },
-  // F-29a: 아이디 찾기는 로그인 전에도 접근해야 하므로 ProtectedRoute 밖(비보호)이다.
   "/find-id": { component: "FindIdPage", from: "@/domains/auth/pages/FindIdPage", guarded: false },
-  // F-29c: 비밀번호 재설정 요청·링크 도착 화면도 같은 이유로 ProtectedRoute 밖(비보호)이다.
   "/password-reset/request": { component: "PasswordResetRequestPage", from: "@/domains/auth/pages/PasswordResetPage", guarded: false },
   "/password-reset": { component: "PasswordResetPage", from: "@/domains/auth/pages/PasswordResetPage", guarded: false },
   "/mypage": { component: "MyPage", from: "@/domains/user/pages/MyPage", guarded: true },
-  // F-33 E-2: 마이페이지 이모티콘 관리 화면. 보호 라우트 안이다(본인 팔레트만 다룬다).
   "/mypage/emoticons": { component: "EmoticonPalettePage", from: "@/domains/user/pages/EmoticonPalettePage", guarded: true },
   "/account": { component: "AccountPage", from: "@/domains/user/pages/AccountPage", guarded: true },
   "/lobby": { component: "LobbyPage", from: "@/domains/lobby/pages/LobbyPage", guarded: true },
@@ -1291,11 +974,9 @@ const ROUTE_WIRING_LOCK = {
   "/setting": { component: "SettingPage", from: "@/domains/settings/pages/SettingPage.jsx", guarded: true },
   "/store": { component: "StorePage", from: "@/domains/store/pages/StorePage.jsx", guarded: true },
   "/library": { component: "LibraryPage", from: "@/domains/library/pages/LibraryPage.jsx", guarded: true },
-  // F-18에서 명예의 전당 진입만 막은 리다이렉트다(관전 진입이 아니다 — 대상은 /lobby).
   "/podium": { component: "Navigate", from: "react-router-dom", guarded: true },
 }
 
-/** 라우트 element가 아닌, 라우터 파일이 쓰는 나머지 import 식별자. */
 const ROUTER_NON_ELEMENT_IMPORTS = ["createBrowserRouter", "ViewportShell", "ProtectedRoute"]
 
 test("F-23(SPLIT-1/AC-02): 실제 router.routes의 전체 경로·element·인증 경계가 잠긴다(다른 이름의 진입 화면도 없다)", async () => {
@@ -1304,8 +985,6 @@ test("F-23(SPLIT-1/AC-02): 실제 router.routes의 전체 경로·element·인�
       new URL("frontend/src/app/routes/index.jsx", REPO_ROOT), "utf8"),
   )
 
-  // (1) 원문 선언과 실행 중 라우터가 같은 경로 집합을 갖는다. 어느 한쪽에만 있는 경로는
-  //     "원문에는 없는데 열리는 화면" 또는 "죽은 선언"이라 둘 다 감사를 무력화한다.
   const declaredInSource = [...routerSource.matchAll(/\{\s*path:\s*"([^"]+)",\s*element:\s*<([A-Za-z_$][\w$]*)/g)]
     .map(([, path, component]) => ({ path, component }))
   const runtime = flattenRoutes(router.routes, ProtectedRoute)
@@ -1322,7 +1001,6 @@ test("F-23(SPLIT-1/AC-02): 실제 router.routes의 전체 경로·element·인�
     "선언된 라우트 목록이 잠금과 다르다 — 새 진입 경로가 생겼거나 정상 경로가 사라졌다",
   )
 
-  // (2) 경로별 element 식별자와 그 import 출처, 인증 보호 여부가 전부 잠금과 같다.
   const importSourceOf = new Map([
     ...[...routerSource.matchAll(/^import\s+([A-Za-z_$][\w$]*)\s+from\s+"([^"]+)"/gm)]
       .map(([, name, from]) => [name, from]),
@@ -1336,13 +1014,10 @@ test("F-23(SPLIT-1/AC-02): 실제 router.routes의 전체 경로·element·인�
     const live = runtimePaths.find((entry) => entry.path === path)
     assert.equal(live.guarded, expected.guarded, `${path}의 인증 보호 여부가 바뀌었다`)
     assert.equal(live.hasElement, true, `${path}에 element가 없다`)
-    // 지연 로딩·loader로 다른 화면을 끌어오는 우회 경로도 없다.
     assert.equal(live.lazy, false, `${path}가 lazy로 다른 화면을 끌어온다`)
     assert.equal(live.loader, false, `${path}에 loader가 붙었다`)
   }
 
-  // (3) 라우터 파일이 import하는 식별자는 위 화면들과 레이아웃·보호 라우트뿐이다. 다른 이름의
-  //     화면 모듈이 하나라도 배선되면(라우트로든 조건 분기로든) 이 단언이 먼저 깨진다.
   assert.deepEqual(
     [...importSourceOf.keys()].sort(),
     [...new Set([
@@ -1352,8 +1027,6 @@ test("F-23(SPLIT-1/AC-02): 실제 router.routes의 전체 경로·element·인�
     "라우터가 잠금 밖의 화면 모듈을 import한다",
   )
 
-  // (4) 경로 없는 라우트(레이아웃)는 ViewportShell과 ProtectedRoute 둘뿐이고, catch-all이 없다.
-  //     no-match 경로가 없으므로 선언되지 않은 주소는 어떤 화면에도 닿지 않는다.
   const layouts = runtime.filter((entry) => entry.layout === true)
   assert.equal(layouts.length, 2, "레이아웃 라우트 수가 바뀌었다(ViewportShell·ProtectedRoute)")
   assert.equal(layouts.filter((entry) => entry.isGuard).length, 1, "인증 보호 레이아웃이 하나가 아니다")
@@ -1361,8 +1034,6 @@ test("F-23(SPLIT-1/AC-02): 실제 router.routes의 전체 경로·element·인�
 })
 
 test("F-23(SPLIT-1/AC-02): 비로그인 /ingame 직접 진입은 로그인으로 돌아가고 인게임 화면을 그리지 않는다", async () => {
-  // 인증 경계가 선언만 되어 있고 실제로는 통과시키는 경우를 배제한다 — 주소를 직접 쳤을 때의
-  // 실제 결과를 본다(ProtectedRoute.jsx:62 `return <Navigate to="/login" replace />`).
   useAuthStore.setState({
     isLoggedIn: false, user: null, loggedOutIntentionally: false, identityGeneration: 1,
   })
@@ -1381,47 +1052,30 @@ test("F-23(SPLIT-1/AC-02): 비로그인 /ingame 직접 진입은 로그인으로
   assert.ok(alerts.includes("로그인이 필요한 페이지입니다!"), "보호 라우트의 안내가 없다")
 })
 
-/**
- * client→server 전송 사건 전체(= 사용자가 서버에 요청할 수 있는 모든 액션).
- *
- * 로비 방 목록·입장 액션(`get_public_rooms`/`join_public_room`/`join_room_by_code`/
- * `join_matchmaking`/`accept_game_invite`), 설정(`update_room_settings` 등), 인게임 진입·
- * 재접속(`get_session_snapshot`)이 모두 이 목록 안에 있고, **관전 입장에 해당하는 액션은
- * 어떤 이름으로도 없다**. 항목이 늘면 이 단언이 깨진다.
- */
 const CLIENT_EMIT_EVENTS_LOCK = [
   "accept_game_invite", "acknowledge_night_action_success", "acknowledge_role_reveal",
   "cast_day_vote", "cast_tribunal_vote",
   "create_room", "delete_room", "get_current_room",
-  // F-23(AC-02 보수): 초대 ACK 유실 재조회. useFriendSocketEvents.js:239의 emitWithAck 호출이
-  // **여러 줄**이라 줄 단위 수집기가 통째로 놓치고 있던 액션이다(그래서 예전 잠금에 없었다).
   "get_game_invite_result",
   "get_kick_result", "get_public_rooms",
   "get_room_settings_update_result", "get_session_snapshot", "join_matchmaking",
   "join_public_room", "join_room_by_code", "kick_game_player", "kick_room_player",
   "leave_game_session", "leave_matchmaking", "leave_room", "notifications_ready",
   "ready_for_day_vote", "resolve_day_vote", "resolve_night", "resolve_tribunal_vote",
-  // E-3(F-33 AC-03): useInGameEmojiSend가 보내는 유일한 전송이다(팔레트 칸 하나 = 요청 하나).
   "send_emoji",
   "set_ready", "start_game", "submit_game_chat_message", "submit_joker_chat_message",
   "submit_night_action", "update_room_settings",
 ]
 
-/** server→client 구독 사건 전체(= 화면 상태로 들어오는 모든 서버 사실). */
 const CLIENT_SUBSCRIBE_EVENTS_LOCK = [
   "account_cache_invalidated", "achievement_granted", "connect", "connect_error",
   "day_phase_changed", "day_vote_resolved", "disconnect",
-  // E-3(F-33 AC-04): useGameSessionSocketEvents가 구독한다 — 등록 범위 + 현재 gameId 일치를
-  // 모두 통과한 방송만 말풍선 store로 들어간다.
   "emoji_shown",
   "force_disconnect",
   "friend_relation_invalidated", "friend_request_accepted", "friend_request_declined",
   "friend_request_received", "friend_status_change", "game_ended", "game_invite_received",
   "game_invite_updated", "game_kicked", "game_phase_changed", "game_started", "host_changed",
   "joker_chat_message", "night_action_result", "night_action_success", "night_actions_resolved",
-  // F-27b(AC-01): 이 밤의 연출을 하나도 받지 않는 참가자의 대기 알림. 세 키(gameId·
-  // nightDayIndex·waiting)뿐이라 역할·대상·사건 ID를 싣지 않는다 — 대기 화면은 진행 안내
-  // 문구 하나만 그린다.
   "night_presentation_wait",
   "night_result_applied",
   "night_turn_ended", "night_turn_started", "notification_created", "player_eliminated",
@@ -1430,11 +1084,6 @@ const CLIENT_SUBSCRIBE_EVENTS_LOCK = [
   "session_participation_changed", "session_self_progress", "tribunal_vote_resolved",
 ]
 
-/**
- * 사건 이름을 변수로 받아 전달하는 간접 지점 전체. 각 지점이 무엇을 전달하는지는 아래 시험이
- * 출처까지 따라가 확인한다 — 새 간접 지점이 생기면(관전 사건을 몰래 실어 보내는 통로가 되므로)
- * 이 목록이 먼저 깨진다.
- */
 const INDIRECT_EVENT_SITES_LOCK = [
   "frontend/src/domains/game/ingame/utils/attachGameChatListener.js:35 on:eventName",
   "frontend/src/domains/game/ingame/utils/attachGameChatListener.js:36 on:eventName",
@@ -1442,36 +1091,29 @@ const INDIRECT_EVENT_SITES_LOCK = [
 ]
 
 test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다른 이름의 관전 입장·상태 연결도 없다)", async () => {
-  // 검출기 자신의 대조부터. 관전을 다른 이름으로 만든 전송·구독·상수 표를 실제로 잡아내는지,
-  // 그리고 주석 속 예시 코드를 사건으로 오인하지 않는지 함께 고정한다(후자는 실재하는 경우다:
-  // parsePlayerEliminatedPayload.js:5의 `io.to(channel).emit('player_eliminated', ...)`).
-  //
-  // F-23(AC-02 보수): 여기에도 **여러 줄에 걸친 호출**을 넣는다. 줄 단위 수집기는 인자가
-  // 다음 줄로 넘어가는 전송·구독을 전부 놓쳤고, 그러면 아래의 "목록이 잠금과 같다"는 단언이
-  // 관전 전송을 한 줄 띄워 적은 코드 앞에서 조용히 통과한다.
   const probe = collectSocketEventRefs([{
     file: "probe.js",
     source: [
-      /*  1 */ 'socket.emit("join_as_watcher", { roomId })',
-      /*  2 */ 'socket.on("viewer_state_changed", handler)',
-      /*  3 */ 'socket.emit(WATCH_EVENTS.ENTER, {})',
-      /*  4 */ 'socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, cb)',
-      /*  5 */ "/**",
-      /*  6 */ " * io.to(channel).emit('player_eliminated', payload)",
-      /*  7 */ " */",
-      /*  8 */ '// socket.on("commented_out_event", handler)',
-      /*  9 */ "socket.emit(",
-      /* 10 */ '    "join_as_watcher_multiline",',
-      /* 11 */ "    { roomId },",
-      /* 12 */ ")",
-      /* 13 */ "socket.on(",
-      /* 14 */ '    "viewer_state_multiline",',
-      /* 15 */ "    handler,",
-      /* 16 */ ")",
-      /* 17 */ "socket.emit(",
-      /* 18 */ "    lateEventName,",
-      /* 19 */ "    {},",
-      /* 20 */ ")",
+      'socket.emit("join_as_watcher", { roomId })',
+      'socket.on("viewer_state_changed", handler)',
+      'socket.emit(WATCH_EVENTS.ENTER, {})',
+      'socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, cb)',
+      "/**",
+      " * io.to(channel).emit('player_eliminated', payload)",
+      " */",
+      '// socket.on("commented_out_event", handler)',
+      "socket.emit(",
+      '    "join_as_watcher_multiline",',
+      "    { roomId },",
+      ")",
+      "socket.on(",
+      '    "viewer_state_multiline",',
+      "    handler,",
+      ")",
+      "socket.emit(",
+      "    lateEventName,",
+      "    {},",
+      ")",
     ].join("\n"),
   }])
   assert.deepEqual([...probe.resolved.emit.keys()].sort(),
@@ -1483,11 +1125,9 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
   assert.deepEqual(probe.unresolved.map((entry) => `${entry.where} ${entry.kind}:${entry.expr}`),
     ["probe.js:3 emit:WATCH_EVENTS.ENTER", "probe.js:17 emit:lateEventName"],
     "모르는 상수 표 참조·여러 줄 간접 전송을 간접 지점으로 남기지 못했다")
-  // 여러 줄 호출의 근거 줄 번호는 **호출이 시작된 줄**이다(줄 번호가 어긋나면 추적이 불가능하다).
   assert.deepEqual(probe.resolved.emit.get("join_as_watcher_multiline"), ["probe.js:9"])
   assert.deepEqual(probe.resolved.on.get("viewer_state_multiline"), ["probe.js:13"])
 
-  // 실제 생산 원문 전체(frontend/src, 시험 제외).
   const frontendSources = (await collectProductionSources())
     .filter(({ file }) => file.startsWith("frontend/src/"))
   assert.ok(frontendSources.length > 200, `프런트 원문을 충분히 읽지 못했다(${frontendSources.length}개)`)
@@ -1503,9 +1143,6 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
     "사건 이름을 변수로 받는 간접 전송·구독 지점이 새로 생겼다",
   )
 
-  // 간접 지점이 실제로 무엇을 전달하는지 출처에서 확인한다.
-  // (a) 게임 채팅 수신기는 useInGameGameChatSession.js:17-20의 표만 전달한다 — 낮·사망 채널
-  //     둘뿐이고, 사망 채널은 기존 사망 참가자용이다(외부 관전자 채널이 아니다).
   const chatSessionSource = frontendSources.find(({ file }) =>
     file === "frontend/src/domains/game/ingame/hooks/useInGameGameChatSession.js").source
   const chatEventMap = /RECEIVE_EVENT_BY_CHANNEL\s*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/.exec(chatSessionSource)
@@ -1515,7 +1152,6 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
     ["day_chat_message_received", "dead_chat_message_received"],
     "게임 채팅 수신기가 전달하는 사건이 바뀌었다",
   )
-  // (b) 친구/초대 래퍼는 자기 호출 지점의 리터럴만 전달한다 — 그 값들은 위 전송 목록 안에 있다.
   for (const forwarded of ["accept_game_invite", "get_current_room"]) {
     assert.ok(
       resolved.emit.get(forwarded)?.some((where) =>
@@ -1524,7 +1160,6 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
     )
   }
 
-  // 그리고 실제 /ingame 마운트에서 이 연결에 등록된 구독·전송이 위 목록 안에만 있다.
   seedLiveGame({ selfAlive: true })
   await mountInGame()
   const live = currentSocket
@@ -1535,82 +1170,39 @@ test("F-23(SPLIT-1/AC-02): 소켓 전송·구독 사건 목록이 잠긴다(다�
   const unexpectedEmits = [...new Set(live.emitted.map((entry) => entry.event))]
     .filter((event) => !CLIENT_EMIT_EVENTS_LOCK.includes(event))
   assert.deepEqual(unexpectedEmits, [], "인게임 진입이 목록 밖의 요청을 보냈다")
-  // 이 감사가 실제로 살아 있는 연결을 본다는 대조: 재접속 동기화 요청이 실제로 나갔다.
   assert.equal(live.countEmits("get_session_snapshot") > 0, true,
     "재접속 스냅샷 조회가 나가지 않았다(이 감사가 죽은 연결을 보고 있다)")
 })
 
-/** InGamePage.jsx가 실제로 마운트하는 컴포넌트 전부(오버레이·모달·패널 포함). */
 const PAGE_MOUNT_LOCK = [
-  // CM V-1: 조작 훅 값을 컨트롤 패널과 플레이어 카드 메뉴가 **함께** 보게 하는 통로와 그
-  // 유일한 소유자다. Provider JSX(<InGameActionContext.Provider>)를 쓰는 파일은 이 페이지
-  // 하나뿐이라 이 목록에만 들어간다.
   "InGameActionContext", "InGameActionProvider",
   "InGameBackground", "InGameChatShell", "InGameDeadParticipantChoice",
-  // F-27b(AC-01) InGameNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 뜨는
-  // 고정 문구 화면이다. 역할·대상·사건 ID를 props로도 DOM으로도 받지 않고, 버튼·타이머·ACK·
-  // 오디오를 만들지 않는다(해제 권한은 전적으로 서버에 있다).
   "InGameNightPresentationWait",
   "InGameNightPrivateResultOverlay", "InGameNightSuccessPresentation",
   "InGameNightTurnAnnouncementOverlay", "InGamePhaseEntranceOverlay", "InGamePlayerBoard",
   "InGamePlayerSessionProvider", "InGameRoleRevealOverlay", "InGameTimebar",
   "InGameCornerActionPanel",
   "InGameTopControls", "InGameVoteStatusPanel", "PlayerRecordListPanel", "SettingPanel",
-  // V-2(AC-03): 카드 메뉴의 방장 추방 확인 대화. InGameActionProvider가 이 파일 안에서
-  // 직접 마운트한다 — 방장 여부·전송 중 여부·확인 입구가 전부 그 Provider의 컨텍스트 값에
-  // 있어야 카드 메뉴가 볼 수 있기 때문이다(설정 → 방관리 모달과 같은 본문을 재사용한다).
   "SettingKickPlayerModalContent",
 ]
 
-/**
- * CM V-1: 플레이어 보드가 마운트하는 것 전부. 카드와 **카드 좌클릭 메뉴**가 그 둘이다 —
- * 메뉴가 사라지면(또는 보드가 목록 밖의 것을 함께 그리면) 이 정확 비교가 먼저 깨진다.
- *
- * E-3(F-33 AC-03/AC-04): 여기에 이모티콘 두 개가 더해진다. 팔레트는 **본인 카드 우클릭**으로만
- * 열리는 8칸 방사형 입력이고(타인 카드는 열지 않는다), 말풍선은 emoji_shown을 받은 카드 위에
- * 3초간 뜨는 표시 전용 컴포넌트다. 둘 다 좌클릭 메뉴와 독립된 렌더 자리라 기존 메뉴 경로를
- * 대체하지 않는다.
- */
 const BOARD_MOUNT_LOCK = [
   "InGamePlayerCard", "InGamePlayerCardMenu", "InGameEmojiPalette", "InGameEmojiBubble",
 ]
 
-/**
- * CM V-1: 진행 UI 묶음(InGamePlayArea)이 마운트하는 것 전부. 이 파일도 보드와 컨트롤 패널을
- * 함께 마운트하는 실제 소비 경로라, 조작 Provider가 빠지면 두 자식이 보는 컨텍스트가 null이
- * 된다. 이 파일에는 Provider JSX가 없으므로(named import한 컴포넌트를 쓸 뿐) InGameActionContext는
- * 목록에 들어가지 않는다.
- */
 const PLAY_AREA_MOUNT_LOCK = [
   "InGamePlayerSessionProvider", "InGameActionProvider", "InGameTimebar",
   "InGamePlayerBoard", "InGameChatShell",
 ]
 
-/**
- * V-2(AC-01/AC-05): 시간흐름 바가 마운트하는 것 전부.
- *
- * 제어 패널이 사라지면서 **대상 없는 행동 버튼**(준비·집계·판정·밤 종료)이 이 바 아래 줄로
- * 옮겨왔다. 기권·건너뛰기·투표 현황은 InGameCornerActionPanel(우측 하단)이 맡는다.
- * TimebarNode는 import가 아니라 **이 파일 안의 로컬 함수 선언**이라 아래 import 포함 검사에서만
- * 예외로 둔다(선언 존재는 따로 단언한다).
- */
 const TIMEBAR_MOUNT_LOCK = [
   "PublicAsset", "TimebarNode", "InGamePhaseActionRow",
 ]
 
-/** 네 소유 파일이 합쳐서 마운트하는 이름 전부. InGamePlayerCardMenu가 여기 포함된다. */
 const INGAME_MOUNT_LOCK = [...new Set([
   ...PAGE_MOUNT_LOCK, ...BOARD_MOUNT_LOCK, ...PLAY_AREA_MOUNT_LOCK, ...TIMEBAR_MOUNT_LOCK,
 ])]
 
-/**
- * CM V-1(AC-06): InGamePage.jsx가 **정말로** InGameActionProvider를 선언하고, 그것이
- * InGamePlayerSessionProvider 자손으로서 컨트롤 패널과 플레이어 보드를 함께 감싸는지 확인한다.
- *
- * 이 하나만 정규식이 아니라 AST로 본다. 위 마운트 목록은 "이름이 나타난다"까지만 보증하는데,
- * 이 계약의 핵심은 **포함 관계**(패널과 보드가 같은 Provider 아래 있는가)라서 이름 목록으로는
- * 표현할 수 없기 때문이다. 나머지 import 연결 검사는 기존 for-loop를 그대로 쓴다.
- */
 async function auditInGameActionProviderTree(pageSource) {
   const { default: ts } = await import("typescript")
   const sourceFile = ts.createSourceFile(
@@ -1666,29 +1258,13 @@ async function auditInGameActionProviderTree(pageSource) {
     providesContext: providerDeclaration !== null
       && collectTags(providerDeclaration).includes("InGameActionContext.Provider"),
     underSessionProvider: actionProvider !== null,
-    // V-2: 조작 값을 읽는 자리가 컨트롤 패널에서 **시간바 안의 단계 행동 줄**로 옮겨졌다.
-    // 그 줄은 시간바의 자식이므로, Provider가 감싸야 하는 것은 이제 시간바다.
     wrapsTimebar: wrapped.includes("InGameTimebar"),
     wrapsPlayerBoard: wrapped.includes("InGamePlayerBoard"),
   }
 }
 
-/**
- * 두 store의 상태 모양(데이터 키·액션 이름) — 관전 상태가 다른 이름으로도 없어야 한다.
- *
- * F-23(AC-05/SPLIT-1) snapshotResultOwner: 방금 복원된 **공개 밤 결과의 수신 증거**다. 어느
- * 계정·어느 소속·어느 연결에서 검증한 응답으로 그 값이 들어왔는지를 직렬화 가능한 세대와 id
- * 문자열로만 적어 둔다(소켓 객체 참조는 들어가지 않는다 — 아래 deepKeyPaths가 순회할 수 있어야
- * 한다). 공개 사망 연출은 이 증거가 지금 범위와 정확히 같을 때만 만들어지므로, 이전 신분이
- * 남긴 state.nightResult가 새 신분의 연출로 재등록되지 않는다. 진입 경로가 아니라 **수신
- * 기록**이라 관전 자격과는 무관하다.
- */
 const INGAME_STORE_DATA_KEYS = [
   "error", "gameId", "hostUuid",
-  // F-27b(AC-01) nightPresentationWait: 그 밤의 연출을 받지 않는 참가자의 대기 상태다.
-  // { gameId, nightDayIndex, scope } 뿐이라 역할·대상·사건 ID는 담지 않는다. 진입 자격이
-  // 아니라 **서버가 소유한 순간 상태의 사본**이고, 해제는 서버 알림·다음 역할 턴 시작·밤
-  // 이탈·판 교체·신원/연결 전이로만 일어난다.
   "nightPresentationWait",
   "nightPrivateResult", "nightSuccessQueue", "snapshotResultOwner",
   "snapshotSeq", "state",
@@ -1698,38 +1274,17 @@ const MATCHING_STORE_DATA_KEYS = [
   "roomCode", "roomId", "roomInstanceId", "roomRevision", "settings", "settingsVersion",
 ]
 
-/**
- * 객체 트리의 **모든** 키 경로(중첩 객체·배열 포함). 최상위 키만 보는 검사가 놓치는
- * `state.self.*`·`players[i].*` 같은 중첩 자리까지 이름을 훑기 위한 것이다.
- */
 function deepKeyPaths(value, path = "$") {
   if (Array.isArray(value)) return value.flatMap((item, index) => deepKeyPaths(item, `${path}[${index}]`))
   if (value === null || typeof value !== "object") return []
   return Object.entries(value).flatMap(([key, child]) => [`${path}.${key}`, ...deepKeyPaths(child, `${path}.${key}`)])
 }
 
-/**
- * 아래 두 검사(직계 JSX 마운트 목록 · store 최상위 키 목록)의 범위 한계와 그 보완.
- *
- * collectRenderedComponents는 InGamePage.jsx **한 파일의 직계 JSX**만 보고, shapeOf는 두
- * store의 **1단계 키**만 본다. 하위 컴포넌트가 자기 안에서 여는 모달, 다른 화면의 진입
- * 버튼, 중첩 객체 안의 상태 키는 구조상 그 두 검사의 범위 밖이다(CODEX-5의 AC-02/SPLIT-1
- * 지적이 가리킨 공백이 정확히 이것이다).
- *
- * 그 공백은 이 파일 위쪽의 **생산 원문 전체 잠금**이 덮는다 — frontend/src·backend의 모든
- * 비시험 js/jsx를 한 줄씩 읽어 관전 어휘의 출현 파일과 자리를 고정하므로, 화면·컴포넌트
- * 깊이와 무관하게 잡힌다. 그리고 이름이 아니라 **연결의 목록**은 라우트 path 전수·서버 수신
- * 사건 전수·클라이언트 전송/구독 전수 잠금이 각각 고정한다.
- *
- * 여기서는 그 둘로도 값까지는 보지 못하는 **중첩 상태**를 실제 마운트 뒤 재귀로 훑어 덧댄다.
- * 아래 두 좁은 검사는 그대로 보존한다(관전과 무관한 목록 증감을 잡는 구조 잠금이다).
- */
 test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양이 잠긴다(관전 모달·상태가 다른 이름으로도 없다)", async () => {
   const { readFile } = await import("node:fs/promises")
   const pageSource = await readFile(
     new URL("frontend/src/domains/game/ingame/pages/InGamePage.jsx", REPO_ROOT), "utf8")
 
-  // 수집기 대조: 주석이 아닌 실제 마운트를 잡고, 주석 속 예시는 잡지 않는다.
   const probe = collectRenderedComponents([
     'import WatchEntryModal from "./WatchEntryModal.jsx"',
     "{/* <HiddenOverlay /> 는 주석이다 */}",
@@ -1741,19 +1296,14 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
   const { rendered, imported } = collectRenderedComponents(pageSource)
   assert.deepEqual(rendered.sort(), [...PAGE_MOUNT_LOCK].sort(),
     "인게임 화면의 마운트 목록이 바뀌었다 — 새 오버레이·모달이 붙었거나 기존 화면이 사라졌다")
-  // 마운트되는 이름은 모두 이 파일이 실제로 import한 것이다(전역·동적 주입이 없다).
-  // 유일한 예외는 이 파일이 **직접 선언**하는 InGameActionProvider다 — 그 선언과 포함 관계는
-  // 아래 AST 감사가 따로, 더 강하게 본다(이름만 보는 이 for-loop보다 좁은 검사다).
   const DECLARED_IN_PAGE = ["InGameActionProvider"]
   for (const name of rendered) {
     if (DECLARED_IN_PAGE.includes(name)) continue
     assert.ok(imported.includes(name), `${name}이 import 없이 마운트된다`)
   }
-  // 사망 참가자 선택은 보존 대상이다(A-01) — 목록에서 빠지면 위 단언이 먼저 깨진다.
   assert.ok(rendered.includes("InGameDeadParticipantChoice"),
     "기존 사망 참가자의 계속 보기 선택창이 사라졌다")
 
-  // ── CM V-1(AC-06): 보드·진행 묶음 소유 파일과 합집합 잠금 ────────────────────
   const boardSource = await readFile(
     new URL("frontend/src/domains/game/ingame/components/board/InGamePlayerBoard.jsx", REPO_ROOT), "utf8")
   const board = collectRenderedComponents(boardSource)
@@ -1772,13 +1322,11 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     assert.ok(playArea.imported.includes(name), `진행 UI 묶음이 ${name}을 import 없이 마운트한다`)
   }
 
-  // ── V-2(AC-01/AC-05): 시간흐름 바 소유 파일 ──────────────────────────────────
   const timebarSource = await readFile(
     new URL("frontend/src/domains/game/ingame/components/timebar/InGameTimebar.jsx", REPO_ROOT), "utf8")
   const timebar = collectRenderedComponents(timebarSource)
   assert.deepEqual(timebar.rendered.sort(), [...TIMEBAR_MOUNT_LOCK].sort(),
     "시간흐름 바의 마운트 목록이 바뀌었다 — 단계 행동 줄이 빠졌거나 다른 것이 붙었다")
-  // TimebarNode는 같은 파일의 로컬 함수 선언이라 import 목록에 없다(그 선언 자체를 본다).
   assert.match(timebarSource, /function TimebarNode\b/,
     "TimebarNode 로컬 선언이 사라졌다(import로 바뀌었다면 이 잠금의 근거가 달라진다)")
   for (const name of timebar.rendered) {
@@ -1796,7 +1344,6 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
   assert.ok(combined.includes("InGamePhaseActionRow"),
     "단계 행동 줄이 인게임 마운트 목록에서 사라졌다 — 제어 패널을 대체하는 유일한 자리다")
 
-  // 포함 관계는 이름 목록으로 표현할 수 없다 — 실제 AST로 본다.
   const providerAudit = await auditInGameActionProviderTree(pageSource)
   assert.deepEqual(providerAudit, {
     declared: true,
@@ -1820,26 +1367,14 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     "인게임 store의 상태 키가 바뀌었다")
   assert.deepEqual(matchingShape.data, [...MATCHING_STORE_DATA_KEYS].sort(),
     "대기방 store의 상태 키가 바뀌었다")
-  // 액션 이름에도 관전 진입·전환에 해당하는 것이 없다(있으면 아래 개수·목록이 달라진다).
   assert.deepEqual(ingameShape.actions, [
     "applyDayPhaseChanged", "applyDayVoteResolvedToPhase", "applyNightResultAppliedPayload",
     "applyNightTurnEnded", "applyNightTurnStarted", "applyParticipationChanged",
     "applyPhaseChanged", "applyPlayerEliminated", "applySelfProgress", "applySessionSnapshot",
     "applyTribunalResolved", "bootstrapSessionSnapshot", "clearGame", "clearNightPrivateResult",
-    // F-26b(AC-05) completeNightSuccess: 밤 성공 사건 대기 큐 소비 완료를 서버로 정확히 한 번
-    // 전송한다. 관전 진입·전환이 아니며 phase·roster·참여는 건드리지 않는다.
     "completeNightSuccess",
-    // F-23(SPLIT-1) invalidateUnconfirmedTerminalResult: 신원·연결이 바뀐 뒤 현재 신원의
-    // 스냅샷을 끝내 받지 못했을 때, 이전 신원이 받아 둔 잔존 종료 상태에서 **결과 이동
-    // 근거(winResult)만** 걷어낸다. 관전 진입·전환이 아니며 phase·roster·참여는 건드리지
-    // 않는다 — 현재 연결의 정상 스냅샷이 ENDED를 다시 실으면 그대로 복원된다.
     "invalidateUnconfirmedTerminalResult",
-    // F-27b(AC-01) receiveNightPresentationWait: 그 밤의 연출을 받지 않는 참가자에게만 오는
-    // 대기 알림을 화면 상태로 반영한다. 큐·ACK·오디오를 만들지 않고 phase·roster·참여도
-    // 건드리지 않는다 — 대기의 시작과 끝은 전적으로 서버가 소유한다.
     "receiveNightPresentationWait",
-    // F-26b(AC-01) receiveNightSuccess: 서버가 개별 전송한 역할별 성공 사건을 대기 큐에 수락한다.
-    // 관전 진입·전환이 아니며 phase·roster·참여는 건드리지 않는다.
     "receiveNightSuccess",
     "setGameError", "setGamePayload", "setNightPrivateResult",
   ], "인게임 store의 액션 목록이 바뀌었다")
@@ -1848,14 +1383,9 @@ test("F-23(SPLIT-1/AC-02): 인게임 마운트 목록과 두 store 상태 모양
     "startSearch", "stopSearch", "updateHost",
   ], "대기방 store의 액션 목록이 바뀌었다")
 
-  // ── 중첩 상태 보완 ────────────────────────────────────────────────────────
-  // 위 shapeOf는 1단계 키만 본다. 실제 /ingame을 마운트한 뒤 두 store의 **전체 상태 트리**를
-  // 재귀로 훑어, 중첩된 자리에 관전 계열 키가 없다는 사실까지 같은 시험에서 고정한다.
-  // 검출기 대조부터 — 중첩·배열 안의 키를 실제로 잡는다.
   assert.deepEqual(
     deepKeyPaths({ room: { spectators: [{ watchOnly: true }] } })
       .filter((path) => SPECTATOR_NAME_VOCABULARY.test(path)),
-    // 배열 원소 자체는 키가 아니므로 경로로 세지 않는다 — 그 **안의 키**가 잡혀야 한다.
     ["$.room.spectators", "$.room.spectators[0].watchOnly"],
     "중첩·배열 안의 관전 계열 키를 검출하지 못했다",
   )
@@ -1886,13 +1416,10 @@ test("F-23(AC-06): 생존 중인 참가자에게는 사망 선택이 보이지 �
 })
 
 test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택이 뜨고, 계속 보기는 서버 요청 0회다", async () => {
-  // 밤에서 시작해 실제 밤 판정 방송으로 낮에 들어가며 사망이 확정되는 정상 순서를 쓴다.
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 0 })
   const { container } = await mountInGame()
   const socket = currentSocket
 
-  // 실제 수신 경로(useGameSessionSocketEvents → parseNightResultAppliedPayload → store)로
-  // canonical 사망을 확정한다. deathReveals는 비운다 — 이 시험의 대상은 연출이 아니라 선택창이다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "DAY", dayIndex: 1,
@@ -1901,7 +1428,6 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
       deathReveals: [],
     })
   })
-  // 낮 진입 연출이 새로 뜬다 — 실제 사용자가 그러듯 확인해 닫은 뒤에 선택을 받는다.
   await dismissParchmentOverlays(container)
 
   assert.equal(
@@ -1912,7 +1438,6 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
   assert.ok(findButton(container, "관전 계속하기"), "관전 계속하기 버튼이 없다")
   assert.ok(findButton(container, "게임 나가기"), "게임 나가기 버튼이 없다")
 
-  // 계속 보기: 네트워크 요청 0, 소속·참여 자격·역할 그대로, 선택창만 접힌다.
   const emitsBefore = socket.emitted.length
   const roleBefore = useInGameStore.getState().state.self.role
   await act(async () => { findButton(container, "관전 계속하기").click() })
@@ -1922,29 +1447,16 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
   const seated = useInGameStore.getState().state.players.find((p) => p.uuid === SELF)
   assert.equal(seated.membershipId, MY_MEMBERSHIP, "계속 보기로 소속이 바뀌었다")
   assert.equal(seated.isParticipating, true, "계속 보기로 참여 자격이 바뀌었다")
-  // 계속 보기는 **로컬 선택**이다 — 역할이 관전자 같은 다른 값으로 바뀌면 안 된다.
   assert.equal(useInGameStore.getState().state.self.role, roleBefore, "계속 보기가 역할을 바꿨다")
   assert.equal(useInGameStore.getState().state.self.uuid, SELF, "계속 보기가 신원을 바꿨다")
 
-  // 전제: 지금은 토론 구간이고, 그 구간의 화면만 떠 있다.
-  //
-  // V-2(AC-01/AC-05): 구간별 DOM의 근거가 제어 패널의 "투표 대상 선택" 캡션에서 시간바 아래
-  // **단계 행동 줄**로 옮겨졌다(패널은 삭제됐다). 보는 것은 그대로다 — 이 구간에서만 그려지는
-  // 실제 DOM이 있고, 다른 구간의 것은 없다.
   const dayVoteOnlyControl = () =>
     container.querySelector('[data-ingame-phase-action="dayVoteAbstain"]')
   assert.equal(useInGameStore.getState().state.dayPhase, "DAY_DISCUSSION")
   assert.ok(findButton(container, "투표 시작 준비"), "전제: 토론 구간 화면이어야 한다")
   assert.equal(dayVoteOnlyControl(), null, "토론 구간인데 투표 구간 전용 컨트롤이 떠 있다")
 
-  // 계속 보기 뒤에도 공개 진행은 계속 들어오고 화면이 실제로 갱신된다.
-  //
-  // "선택창이 다시 뜨지 않는다"만으로는 갱신을 증명하지 못한다 — 사건을 통째로 무시해도 그
-  // 단언은 통과한다. 그래서 store의 낮 하위 구간과 **그 구간에서만 그려지는 DOM**을 함께 본다.
   await act(async () => {
-    // 실제 서버가 보내는 그대로다(game-core/gameSession.js::buildDayPhaseChangedPayload):
-    // gameId·dayIndex·dayPhase·round 네 필드뿐이고, round는 파서가 요구하는 필수 값이다
-    // (빠지면 parseDayPhaseChangedPayload가 null을 돌려줘 이 사건이 통째로 무시된다).
     socket.deliver("day_phase_changed", {
       gameId: GAME_ID, dayIndex: 1, dayPhase: "DAY_VOTE", round: 1,
     })
@@ -1960,7 +1472,6 @@ test("F-23(AC-06): 실제 밤 판정 사건으로 확정 사망하면 두 선택
   ))
   assert.equal(findButton(container, "투표 시작 준비"), null, "이전 구간 화면이 그대로 남아 있다")
 
-  // 그리고 상단 나가기 수단은 그대로 남아 있다.
   assert.ok(container.querySelector("button[aria-label='게임 나가기']"), "상단 나가기 버튼이 사라졌다")
 })
 
@@ -1969,8 +1480,6 @@ test("F-25b(AC-02/AC-04): 치료가 성공한 밤의 결과를 받으면 사망 
   const { container } = await mountInGame()
   const socket = currentSocket
 
-  // 서버 공통 최종화가 보내는 그대로다 — 치료가 성공한 밤이라 victimUuid가 null이고
-  // roster의 누구도 사망으로 바뀌지 않으며 winResult도 없다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "DAY", dayIndex: 1,
@@ -1997,8 +1506,6 @@ test("F-25b(AC-04) 대조군: 같은 마지막 밤이 치료 없이 종결되면
   const socket = currentSocket
   assert.equal(router.state.location.pathname, "/ingame", "전제: 아직 진행 중이다")
 
-  // 미치료로 그 밤이 종결된 경우 — 공통 최종화가 terminal 필드를 함께 싣는다.
-  // 공개 사망은 본인이 아니므로 사망 연출 큐가 이동을 붙잡지 않는다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 0,
@@ -2028,7 +1535,6 @@ test("F-23(AC-06): 나가기 성공 ACK는 정확히 한 번 정리하고 로비
   assert.equal(confirmCalls.length, 1, "확인 대화상자가 한 번 떠야 한다")
   assert.equal(socket.countEmits("leave_game_session"), 1)
 
-  // pending 동안의 추가 클릭은 확인조차 다시 묻지 않고 전송도 0이다.
   await act(async () => { container.querySelector("button[aria-label='게임 나가기']").click() })
   assert.equal(confirmCalls.length, 1, "pending 중에 확인 대화상자가 다시 떴다")
   assert.equal(socket.countEmits("leave_game_session"), 1, "pending 중 중복 전송이 일어났다")
@@ -2040,15 +1546,11 @@ test("F-23(AC-06): 나가기 성공 ACK는 정확히 한 번 정리하고 로비
   assert.equal(useMatchingStore.getState().isInRoom, false)
   await waitFor(() => assert.equal(router.state.location.pathname, "/multiplay"))
 
-  // 뒤늦은 중복 ACK는 아무 일도 하지 않는다(정리·이동은 이미 한 번 끝났다).
   await act(async () => { pending.ack({ ok: true }) })
   assert.equal(router.state.location.pathname, "/multiplay")
 })
 
 test("F-23(AC-06 보수): 언마운트 뒤 도착한 늦은 성공 ACK는 store를 정리하지도 이동하지도 않는다", async () => {
-  // CODEX-9(AC-06) 회귀. useInGameExit의 cleanup은 진행 중이던 요청을 만료시키지 않았고,
-  // 성공 경로(finalize→settle)에는 mounted 검사가 없었다. 그래서 화면이 사라진 뒤 같은 신원으로
-  // 늦게 도착한 성공 ACK가 **이미 없는 화면**의 store 정리와 navigate를 실행할 수 있었다.
   seedLiveGame({ selfAlive: false })
   const view = await mountInGame()
   const socket = currentSocket
@@ -2057,8 +1559,6 @@ test("F-23(AC-06 보수): 언마운트 뒤 도착한 늦은 성공 ACK는 store�
   assert.equal(socket.countEmits("leave_game_session"), 1, "전제: 나가기 요청이 실제로 나가야 한다")
   const pending = socket.takeAck("leave_game_session")
 
-  // 응답이 오기 전에 화면이 사라진다. 신원·게임·소속은 하나도 바뀌지 않았다 —
-  // createLeaveGameSessionRequest의 기존 신원 가드는 전부 통과하는 상태다.
   await act(async () => { view.unmount() })
   const pathAfterUnmount = router.state.location.pathname
   const stateBefore = useInGameStore.getState().state
@@ -2071,7 +1571,6 @@ test("F-23(AC-06 보수): 언마운트 뒤 도착한 늦은 성공 ACK는 store�
   assert.equal(router.state.location.pathname, pathAfterUnmount,
     "언마운트 뒤 늦은 성공 ACK가 화면을 이동시켰다")
 
-  // 중복으로 한 번 더 도착해도 같다(만료된 시도는 끝까지 아무 일도 하지 않는다).
   await act(async () => { pending.ack({ ok: true }) })
   assert.equal(useInGameStore.getState().gameId, GAME_ID)
   assert.equal(router.state.location.pathname, pathAfterUnmount)
@@ -2104,7 +1603,6 @@ test("F-23(AC-06): 실패 ACK는 이동 0이고 재시도를 열어 둔다", asy
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "실패했는데 인게임 store가 정리됐다")
   assert.ok(choicePanel(container).textContent.includes("실패"), "실패 안내가 없다")
 
-  // 명시적 재시도는 확인을 다시 묻지 않고 같은 요청을 한 번 더 보낸다.
   await act(async () => { findButton(container, "다시 시도").click() })
   assert.equal(confirmCalls.length, 1, "재시도가 확인 대화상자를 다시 띄웠다")
   assert.equal(socket.countEmits("leave_game_session"), 2)
@@ -2122,20 +1620,17 @@ test("F-23(AC-06): ACK 유실은 성공이 아니며, 권위 있는 확인 뒤�
   await act(async () => { findButton(container, "게임 나가기").click() })
   socket.takeAck("leave_game_session") // 영영 응답하지 않는다.
 
-  // 유한 상한이 지난다 — 성공으로도 실패로도 단정하지 않는다.
   await act(async () => { globalThis.__fireExitTimeouts() })
 
   assert.equal(router.state.location.pathname, "/ingame", "ACK 없음만으로 로비로 이동했다")
   assert.equal(useInGameStore.getState().gameId, GAME_ID)
   assert.ok(choicePanel(container).textContent.includes("확인하지 못했습니다"), "미확정 안내가 없다")
 
-  // 권위 확인 1: 전송 오류·SESSION_NOT_FOUND는 성공 근거가 아니다.
   await act(async () => { findButton(container, "나가기 결과 확인").click() })
   const firstCheck = socket.takeAck("get_session_snapshot")
   await act(async () => { firstCheck.ack({ ok: false, code: "SESSION_NOT_FOUND" }) })
   assert.equal(router.state.location.pathname, "/ingame", "SESSION_NOT_FOUND를 성공으로 바꿨다")
 
-  // 권위 확인 2: 이 판에서 이미 빠졌다는 서버의 답만이 정리 근거다.
   await act(async () => { findButton(container, "나가기 결과 확인").click() })
   const secondCheck = socket.takeAck("get_session_snapshot")
   await act(async () => { secondCheck.ack({ ok: false, code: "FORFEITED_FROM_SESSION" }) })
@@ -2170,13 +1665,6 @@ test("F-23(AC-06): 권위 확인이 '아직 참여 중'이면 정리하지 않�
   assert.ok(findButton(container, "다시 시도"), "재시도 수단이 열리지 않았다")
 })
 
-// ── F-23(SPLIT-2): 계속 보기 뒤의 상단 나가기와 복구 수단 ─────────────────────
-//
-// 아래 시험들이 고정하는 것은 "계속 보기를 골랐다"와 "나가기 결과를 알 수 없다"가 **다른
-// 사실**이라는 점이다. 앞의 선택이 뒤의 안내를 지워버리면, 사용자는 화면이 왜 그대로인지
-// 알 수 없고 다시 시도할 수단도 없다.
-
-/** 확정 사망 → 계속 보기 → 상단 나가기까지 진행한 공통 출발점. */
 async function arriveAtTopExitAfterKeepWatching() {
   seedLiveGame({ selfAlive: false })
   const view = await mountInGame()
@@ -2201,14 +1689,12 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기가 실패하면 안내�
   const pending = socket.takeAck("leave_game_session")
   await act(async () => { pending.ack({ ok: false, code: "INTERNAL_ERROR" }) })
 
-  // 계속 보기를 골랐어도 실패 안내는 보여야 한다(이것이 이 슬라이스가 고친 결함이다).
   const panel = choicePanel(container)
   assert.ok(panel, "계속 보기 뒤라는 이유로 나가기 실패 안내가 통째로 사라졌다")
   assert.ok(panel.textContent.includes("실패"), "실패 안내 문구가 없다")
   assert.equal(router.state.location.pathname, "/ingame", "실패했는데 로비로 이동했다")
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "실패했는데 인게임 store가 정리됐다")
 
-  // 복구 버튼이 실제로 조작 가능해야 한다 — 다른 오버레이 안이나 inert 본문 아래가 아니다.
   const retry = findButton(container, "다시 시도")
   assert.ok(retry, "재시도 수단이 열리지 않았다")
   assert.equal(retry.disabled, false, "재시도 버튼이 비활성이다")
@@ -2229,8 +1715,6 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기가 실패하면 안내�
 test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 미확정 안내와 결과 확인이 보이고, 권위 확인으로만 정리한다", async () => {
   const { container, socket } = await arriveAtTopExitAfterKeepWatching()
 
-  // 배경 스냅샷 동기화와 나가기 확인은 **서로 다른 요청**이다. 이 시험이 답하는 것은
-  // 나가기 쪽이므로, 배경 요청이 이미 하나 떠 있다는 사실부터 확인해 둔다.
   assert.ok(socket.countEmits("get_session_snapshot") >= 1,
     "전제: 재접속 동기화가 배경에서 이미 한 번 조회한다")
   socket.takeAck("leave_game_session") // 영영 응답하지 않는다.
@@ -2246,7 +1730,6 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 �
   assert.ok(resolve, "결과 확인 수단이 열리지 않았다")
   assert.equal(resolve.closest("[inert]"), null, "결과 확인 버튼이 inert 영역 안에 있다")
 
-  // 확인 1: 서버 오류는 성공 근거가 아니다.
   const emitsBeforeCheck = socket.countEmits("get_session_snapshot")
   await act(async () => { resolve.click() })
   assert.equal(socket.countEmits("get_session_snapshot"), emitsBeforeCheck + 1,
@@ -2256,7 +1739,6 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 �
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "INTERNAL_ERROR를 성공으로 바꿨다")
   assert.equal(router.state.location.pathname, "/ingame")
 
-  // 확인 2: 이 판에서 이미 빠졌다는 서버의 답만이 정리 근거다.
   await act(async () => { findButton(container, "나가기 결과 확인").click() })
   const secondCheck = socket.takeAck("get_session_snapshot")
   await act(async () => { secondCheck.ack({ ok: false, code: "FORFEITED_FROM_SESSION" }) })
@@ -2264,7 +1746,6 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 �
   assert.equal(useInGameStore.getState().gameId, null, "권위 확인 뒤에도 정리되지 않았다")
   await waitFor(() => assert.equal(router.state.location.pathname, "/multiplay"))
 
-  // 정리가 끝난 뒤 배경 스냅샷의 지연 성공이 게임을 되살리지 않는다.
   const lateBackground = socket.takeAck("get_session_snapshot")
   if (lateBackground) {
     await act(async () => {
@@ -2280,15 +1761,6 @@ test("F-23(SPLIT-2): 계속 보기 뒤 상단 나가기의 ACK가 유실되면 �
   assert.equal(useInGameStore.getState().gameId, null, "정리 뒤 도착한 배경 스냅샷이 게임을 되살렸다")
 })
 
-/**
- * F-23(AC-06): **안내에도 닫는 길이 있어야 한다.**
- *
- * 계속 보기를 고른 뒤 상단 나가기가 실패하면 같은 창이 이유와 복구 수단을 띄운다(위 시험).
- * 그런데 그 창의 "관전 계속하기"가 선택 범위만 저장하면, 복구 필요 여부는 그대로 참이라
- * 창도 본문 inert도 풀리지 않는다 — 버튼은 눌리는데 아무 일도 일어나지 않고 화면이 잠긴다.
- * 재시도를 미루고 계속 관전하는 것은 사용자의 정당한 선택이므로, 그 선택이 실제로 화면을
- * 되돌려 주어야 한다. 동시에 재시도 경로는 살아 있어야 한다.
- */
 test("F-23(AC-06): 나가기 실패 상태에서도 관전 계속하기가 창을 닫고 관전을 이어가며, 재시도 경로는 남는다", async () => {
   const { container, socket } = await arriveAtTopExitAfterKeepWatching()
 
@@ -2307,12 +1779,10 @@ test("F-23(AC-06): 나가기 실패 상태에서도 관전 계속하기가 창�
   const topExit = container.querySelector("button[aria-label='게임 나가기']")
   assert.ok(topExit, "상단 나가기 버튼이 사라졌다")
   assert.equal(topExit.closest("[inert]"), null, "창을 닫았는데 게임 표면이 inert로 잠긴 채다")
-  // 접은 것은 안내뿐이다 — 이탈은 일어나지 않았고 이 판에 그대로 남아 있다.
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "안내를 접었더니 인게임 store가 정리됐다")
   assert.equal(router.state.location.pathname, "/ingame")
   assert.equal(myMembership(), MY_MEMBERSHIP, "안내를 접는 것이 소속을 바꿨다")
 
-  // 재시도 경로 보존: 상단 나가기가 **새 시도**를 열면 안내와 복구 버튼이 다시 뜬다.
   await act(async () => { topExit.click() })
   assert.equal(socket.countEmits("leave_game_session"), 2, "접은 뒤 상단 나가기가 새 요청을 보내지 못했다")
 
@@ -2325,14 +1795,6 @@ test("F-23(AC-06): 나가기 실패 상태에서도 관전 계속하기가 창�
   assert.ok(findButton(container, "다시 시도"), "새 시도의 복구 버튼이 없다")
 })
 
-/**
- * F-23(SPLIT-2): **소속 왕복은 effect보다 먼저 지나간다.**
- *
- * 소속 전이는 store의 set에서 동기적으로 일어나고, 그것을 보는 effect는 그 뒤 커밋에서야
- * 돈다. 그래서 A→B→A 직후 **effect가 돌기 전에** 도착한 옛 성공 ACK는, 계정·게임·소켓·소속
- * **값**이 전부 원래대로라 기존 값 비교를 모두 통과했다 — 지금 참가 중인 판이 이미 지나간
- * 소속의 요청 결과로 정리됐다. 판정 기준은 요청 자체에 묶여야 한다.
- */
 test("F-23(SPLIT-2): 소속 A→B→A 직후(효과 실행 전) 도착한 옛 성공 ACK는 현재 판을 정리하지 못한다", async () => {
   seedLiveGame({ selfAlive: false })
   const { container } = await mountInGame()
@@ -2342,7 +1804,6 @@ test("F-23(SPLIT-2): 소속 A→B→A 직후(효과 실행 전) 도착한 옛 �
   assert.equal(socket.countEmits("leave_game_session"), 1, "전제: 요청이 나가야 한다")
   const stale = socket.takeAck("leave_game_session")
 
-  // 한 배치 안에서 전이 두 번과 옛 ACK가 함께 지나간다(effect는 이 act가 끝나야 돈다).
   await act(async () => {
     swapMyMembership("mem-self-2")
     swapMyMembership(MY_MEMBERSHIP)
@@ -2357,13 +1818,6 @@ test("F-23(SPLIT-2): 소속 A→B→A 직후(효과 실행 전) 도착한 옛 �
   assert.equal(router.state.location.pathname, "/ingame", "옛 ACK로 로비로 이동했다")
 })
 
-/**
- * F-23(SPLIT-2): **상한을 넘긴 시도는 만료된다.**
- *
- * 미확정으로 끝맺은 뒤에도 그 시도의 토큰이 살아 있으면, 늦게 도착한 ACK가 여전히 "지금
- * 화면이 기다리는 응답"으로 통과해 화면을 성공(정리·이동)이나 실패로 뒤집는다. 미확정은
- * 권위 있는 확인으로만 끝난다.
- */
 test("F-23(SPLIT-2): 상한을 넘겨 미확정으로 끝난 시도의 늦은 ACK는 화면을 뒤집지 못한다", async () => {
   seedLiveGame({ selfAlive: false })
   const { container } = await mountInGame()
@@ -2387,7 +1841,6 @@ test("F-23(SPLIT-2): 상한을 넘겨 미확정으로 끝난 시도의 늦은 AC
     "늦은 ACK가 미확정 안내를 덮었다",
   )
 
-  // 그리고 결말은 여전히 권위 확인으로만 난다.
   await act(async () => { findButton(container, "나가기 결과 확인").click() })
   const check = socket.takeAck("get_session_snapshot")
   await act(async () => { check.ack({ ok: false, code: "FORFEITED_FROM_SESSION" }) })
@@ -2396,26 +1849,17 @@ test("F-23(SPLIT-2): 상한을 넘겨 미확정으로 끝난 시도의 늦은 AC
   await waitFor(() => assert.equal(router.state.location.pathname, "/multiplay"))
 })
 
-/**
- * F-23(SPLIT-1): **재결속 중에는 결과 화면으로 넘어가지 않는다.**
- *
- * 재연결은 연결 축의 전이다. 그 순간 스냅샷 재조회가 시작되면 identityRebindPending이
- * 올라가고, 그 구간에는 잔존 ENDED로 결과 화면에 들어가면 안 된다. 보류는 유한해야 한다 —
- * 그 연결의 스냅샷이 도착하면 풀린다.
- */
 test("F-23(SPLIT-1): 재연결 후 재결속이 끝나기 전에는 결과 화면으로 넘어가지 않는다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
   await mountInGame()
   const socket = currentSocket
 
-  // 재연결을 먼저 걸어 재결속 보류를 연다.
   await act(async () => {
     socket.id = "sock-2"
     socket.deliver("connect")
   })
   assert.equal(router.state.location.pathname, "/ingame")
 
-  // 그 밤의 판정이 곧 승패를 확정한다 — 공개 사망 연출 없이 ENDED만 반영된다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
@@ -2432,7 +1876,6 @@ test("F-23(SPLIT-1): 재연결 후 재결속이 끝나기 전에는 결과 화�
     "재결속이 끝나기 전에 잔존 ENDED로 결과 화면에 들어갔다",
   )
 
-  // 이 연결의 스냅샷이 도착하면 보류가 풀린다(무한 보류가 아니다).
   const resync = socket.takeAck("get_session_snapshot")
   assert.ok(resync, "재연결이 현재 신원의 스냅샷을 다시 묻지 않았다")
   await act(async () => {
@@ -2453,27 +1896,11 @@ test("F-23(SPLIT-1): 재연결 후 재결속이 끝나기 전에는 결과 화�
   ))
 })
 
-/**
- * F-23(SPLIT-1): **재결속 스냅샷이 실패해도 옛 신원의 종료 상태로 화면이 떠나지 않는다.**
- *
- * 위 시험은 스냅샷이 **도착하는** 경로를 고정한다. 정작 이 보류가 막으려던 결함이 되살아나는
- * 자리는 실패 경로다 — 현재 신원의 스냅샷을 적용하지 못했는데 보류만 풀면, 화면은 이전
- * 연결이 받아 둔 잔존 ENDED·winResult를 그대로 이동 근거로 삼는다.
- *
- * 동시에 사용자를 인게임에 영구히 가두어서도 안 된다. 그래서 실패 뒤 이동 0회와, 그 다음
- * 연결의 정상 스냅샷에서 이동이 **재개**되는 것을 한 시험에 함께 고정한다.
- *
- * 공개 사망 연출(kill reveal)은 제거됐다 — 이전 연결에서 받은 종료를 재연결 전에 확정하고,
- * 같은 act 안에서 재연결해 이동 effect보다 재결속 보류가 먼저 올라가게 한다. 재연결 **뒤**
- * 현재 연결에서 받은 종료는 별도 시험(F-23 SPLIT-1/AC-05)이 본다.
- */
 test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 화면에 넘어가지 않고, 다음 정상 스냅샷에서 이동이 재개된다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
   await mountInGame()
   const socket = currentSocket
 
-  // 이전 연결(sock-1)에서 종료를 받은 직후 곧바로 재연결 — 같은 act 안에서 이동 effect보다
-  // 재결속 보류가 먼저 올라가야 한다(공개 사망 연출 없이도 잔존 ENDED만으로는 넘어가지 않게).
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
@@ -2490,7 +1917,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
   assert.equal(router.state.location.pathname, "/ingame", "전제: 재결속 중에는 넘어가지 않는다")
 
-  // 그 연결의 스냅샷이 **실패한다**(서버 오류 응답).
   const failed = socket.takeAck("get_session_snapshot")
   assert.ok(failed, "전제: 재연결이 현재 신원의 스냅샷을 다시 물어야 한다")
   await act(async () => { failed.ack({ ok: false, code: "INTERNAL_ERROR" }) })
@@ -2499,7 +1925,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 
     router.state.location.pathname, "/ingame",
     "재결속 스냅샷이 실패했는데 잔존 ENDED로 결과 화면에 들어갔다",
   )
-  // 실패 직후의 한 틱만 보고 통과시키지 않는다 — 이후 렌더에서도 이동이 없어야 한다.
   await act(async () => { await Promise.resolve() })
   assert.equal(router.state.location.pathname, "/ingame", "뒤이은 렌더에서 결과 화면으로 넘어갔다")
   assert.equal(
@@ -2508,7 +1933,6 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 
   )
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "실패가 세션 자체를 지웠다")
 
-  // 다음 연결의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다(영구히 갇히지 않는다).
   await act(async () => {
     socket.id = "sock-3"
     socket.deliver("connect")
@@ -2533,23 +1957,11 @@ test("F-23(SPLIT-1): 재결속 스냅샷이 실패하면 잔존 ENDED로 결과 
   ))
 })
 
-/**
- * F-23(SPLIT-1/AC-05): **재결속 중이라고 해서 이 연결이 직접 받은 종료까지 잃지는 않는다.**
- *
- * 위 시험은 "이전 연결이 받아 둔 잔존 ENDED로는 떠나지 않는다"를 고정한다. 그 방어가
- * 수신 범위를 보지 않으면 곧바로 반대쪽으로 넘어간다 — 재연결한 **바로 그 연결**에서 정상
- * 공개 종료(night_result_applied)를 받았는데 뒤이어 그 재결속 스냅샷이 실패하면, 방금 받은
- * 정상 결과까지 함께 지워져 화면이 결과로 가지 못한다.
- *
- * 그래서 실제 라우터·페이지 위에서 "재연결 → 현재 연결의 정상 공개 종료 → 스냅샷 실패 →
- * 결과 화면으로 **이동한다**"를 그대로 고정한다.
- */
 test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 재결속 스냅샷이 실패해도 결과 화면으로 이어진다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
   await mountInGame()
   const socket = currentSocket
 
-  // 실제 재연결(같은 객체·새 sid). 여기서부터가 재결속 구간이다.
   await act(async () => {
     socket.id = "sock-2"
     socket.deliver("connect")
@@ -2558,8 +1970,6 @@ test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 �
   const pending = socket.takeAck("get_session_snapshot")
   assert.ok(pending, "전제: 재연결이 현재 신원의 스냅샷을 다시 물어야 한다")
 
-  // 그 스냅샷을 기다리는 동안 **이 연결에서** 정상 공개 종료가 도착한다.
-  // 이 판정에는 공개 사망이 없어 연출 큐가 생기지 않는다 — 이동을 붙잡는 조건은 재결속뿐이다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
@@ -2578,7 +1988,6 @@ test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 �
     "전제: 재결속이 끝나기 전에는 아직 기다린다",
   )
 
-  // 그리고 그 재결속 스냅샷이 실패한다.
   await act(async () => { pending.ack({ ok: false, code: "INTERNAL_ERROR" }) })
 
   assert.ok(
@@ -2591,23 +2000,11 @@ test("F-23(SPLIT-1): 재연결 뒤 현재 연결에서 받은 정상 종료는 �
   ))
 })
 
-/**
- * F-23(SPLIT-1): **인증 왕복도 같은 경합이다 — 실제 화면에서 이동 0회.**
- *
- * 위 두 시험의 전이는 연결 교체(재연결)였다. 인증 A→B→A 왕복은 그 축을 하나도 건드리지
- * 않는다: 같은 판·같은 소속·같은 소켓 객체·같은 sid이고 계정 값마저 원래대로 돌아온다. 그래도
- * 그 사이에 오간 것은 **다른 계정의 화면**이므로, 이전 계정이 받아 둔 종료 결과를 현재 신원의
- * 스냅샷으로 확인하지 못한 채 결과 화면으로 넘어가면 안 된다.
- *
- * 실제 router·ProtectedRoute·InGamePage·store 위에서 그 순서를 그대로 재현하고 **이동 0회**를
- * 고정한다. 기존 단언(연결 교체 경합·현재 연결 종료 보존)은 그대로 둔다.
- */
 test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이전 계정의 종료 결과로 결과 화면에 넘어가지 않는다", async () => {
   seedLiveGame({ selfAlive: true, phase: "NIGHT", dayIndex: 1 })
   await mountInGame()
   const socket = currentSocket
 
-  // 계정 A가 **이 연결에서** 종료를 받는다 — 곧바로 인증 왕복을 이어 붙여 이동을 막는다.
   await act(async () => {
     socket.deliver("night_result_applied", {
       gameId: GAME_ID, phase: "ENDED", dayIndex: 1,
@@ -2626,18 +2023,13 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   assert.equal(useInGameStore.getState().state.phase, "ENDED", "전제: 종료가 반영돼야 한다")
   assert.equal(router.state.location.pathname, "/ingame", "전제: 확인 전에는 넘어가지 않는다")
 
-  // A→B→A. 계정 값은 원래대로 돌아오지만 전이 세대는 두 번 올랐다. 판·소속·소켓 객체·sid·
-  // 연결 상태는 하나도 바뀌지 않는다 — 이 시험이 보는 축은 계정뿐이다.
   assert.equal(myMembership(), MY_MEMBERSHIP, "전제: 소속은 그대로다")
   assert.equal(socket.id, "sock-1", "전제: 연결은 교체되지 않는다")
-  // 왕복 그 자체로도 넘어가지 않는다 — 전이로 연출 큐가 버려진 렌더에서 잔존 종료 결과가
-  // 곧바로 이동 근거가 되면, 뒤이은 확인은 아무것도 막을 수 없다.
   assert.equal(
     router.state.location.pathname, "/ingame",
     "인증 왕복 직후의 렌더에서 이전 계정의 종료 결과로 결과 화면에 들어갔다",
   )
 
-  // 그 왕복이 만든 현재 신원의 스냅샷 요청이 실패한다.
   const failed = socket.takeAck("get_session_snapshot")
   assert.ok(failed, "전제: 인증 왕복이 현재 신원의 스냅샷을 다시 물어야 한다")
   await act(async () => { failed.ack({ ok: false, code: "INTERNAL_ERROR" }) })
@@ -2646,7 +2038,6 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
     router.state.location.pathname, "/ingame",
     "인증이 왕복하고 스냅샷도 실패했는데 이전 계정의 종료 결과로 결과 화면에 들어갔다",
   )
-  // 실패 직후의 한 틱만 보고 통과시키지 않는다 — 이후 렌더에서도 이동이 없어야 한다.
   await act(async () => { await Promise.resolve() })
   assert.equal(router.state.location.pathname, "/ingame", "뒤이은 렌더에서 결과 화면으로 넘어갔다")
   assert.equal(
@@ -2655,7 +2046,6 @@ test("F-23(SPLIT-1): 인증 A→B→A 왕복 뒤 스냅샷이 실패하면 이�
   )
   assert.equal(useInGameStore.getState().gameId, GAME_ID, "실패가 세션 자체를 지웠다")
 
-  // 영구히 갇히지 않는다: 현재 신원의 정상 스냅샷이 종료 결과를 다시 실으면 이동이 재개된다.
   await act(async () => {
     socket.id = "sock-2"
     socket.deliver("connect")
@@ -2687,7 +2077,6 @@ test("F-23(SPLIT-2): 계정이 왕복한 뒤에는 이전 신원의 계속 보�
   await act(async () => { findButton(container, "관전 계속하기").click() })
   assert.equal(choicePanel(container), null, "전제: 선택이 실제로 접혀야 한다")
 
-  // A→B→A. 계정 값은 원래대로 돌아오지만 전이 세대는 두 번 올랐다.
   await act(async () => {
     useAuthStore.setState((s) => ({
       user: { uuid: OTHER }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,
@@ -2712,7 +2101,6 @@ test("F-23(AC-06): 계정이 바뀐 뒤 도착한 옛 ACK는 새 화면을 바�
   await act(async () => { findButton(container, "게임 나가기").click() })
   const stale = socket.takeAck("leave_game_session")
 
-  // A→B→A. 계정 값은 원래대로 돌아오지만 전이 세대는 두 번 올랐다.
   await act(async () => {
     useAuthStore.setState((s) => ({
       user: { uuid: OTHER }, isLoggedIn: true, identityGeneration: s.identityGeneration + 1,

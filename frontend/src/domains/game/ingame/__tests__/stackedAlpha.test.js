@@ -1,12 +1,7 @@
-/**
- * F-27d(AC-02): composeStackedAlpha 순수 합성 함수 시험 — DOM·JSDOM 설정 없이 plain Node로
- * 돈다(nightSuccessPresentation.test.js의 무거운 JSDOM 부트스트랩과 분리).
- */
 import test from "node:test"
 import assert from "node:assert/strict"
 import { composeStackedAlpha } from "../utils/composeStackedAlpha.js"
 
-/** 2x1 RGBA 픽셀 하나를 만든다 — 색 채널은 임의로, 마스크 채널은 검사 대상 밝기로 고정한다. */
 function colorPixels() {
   return new Uint8ClampedArray([10, 20, 30, 255, 200, 150, 100, 255])
 }

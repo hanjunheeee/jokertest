@@ -1,10 +1,5 @@
 'use strict';
 
-// F-02 AC-01/AC-03/AC-04: 닉네임 길이·문자셋, 생년월일 유효성, 비밀번호 길이 검증이
-// tests/fixtures/f02-signup-validation.json의 벡터에 대해 정확히 판정하는지 확인한다.
-// frontend/src/domains/auth/validation/__tests__/signupValidation.test.js가 같은 벡터를
-// 프론트 검증 모듈로 돌려, 두 쪽이 같은 값에 같은 판정을 내리는지(AC-01) 나눠서 증명한다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -23,8 +18,6 @@ const {
 
 const FIXTURE_PATH = path.join(__dirname, '..', '..', '..', 'tests', 'fixtures', 'f02-signup-validation.json');
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
-
-// ── AC-01: 닉네임 1/9자 거부, 2/8자 허용, 한글/영문/숫자만 허용 ──────────────────────
 
 test('AC-01: fixture 경계값과 동일한 min/max를 사용한다', () => {
     assert.equal(NICKNAME_MIN_LENGTH, fixture.nickname.minLength);
@@ -51,8 +44,6 @@ test('AC-01: 1자/9자 경계는 거부, 2자/8자 경계는 허용된다', () =
     assert.equal(validateNickname('가나').ok, true);
     assert.equal(validateNickname('일이삼사오육칠팔').ok, true);
 });
-
-// ── AC-03: 생년월일 필수/형식/미래 날짜 거부, 시간대 무관 저장 ──────────────────────
 
 test('AC-03: fixture의 유효한 생년월일은 모두 통과하고 UTC Date를 돌려준다', () => {
     for (const value of fixture.birthDate.valid) {
@@ -89,11 +80,8 @@ test('AC-03: 파싱된 날짜는 UTC 자정을 가리켜 시간대 차이로 하
     assert.equal(parsed.getUTCMonth(), 5);
     assert.equal(parsed.getUTCDate(), 15);
     assert.equal(parsed.getUTCHours(), 0);
-    // ISO 문자열로 되읽어도(복원) 같은 날짜가 나와야 한다 — 로컬 타임존 변환을 거치지 않았다는 증거.
     assert.equal(parsed.toISOString().slice(0, 10), '2000-06-15');
 });
-
-// ── AC-04: 비밀번호 8~64자, 비밀번호 확인 불일치 거부 ────────────────────────────
 
 test('AC-04: fixture의 유효한 비밀번호는 모두 통과한다', () => {
     for (const value of fixture.password.valid) {
@@ -108,8 +96,6 @@ test('AC-04: fixture의 무효한 비밀번호는 모두 거부된다', () => {
 });
 
 test('F-04 AC-04: bcrypt 72바이트를 넘는 비밀번호는 거부된다(멀티바이트 문자 포함)', () => {
-    // 한글은 UTF-8로 글자당 3바이트라, 문자 수 상한(64)만으로는 25자짜리 한글 비밀번호가
-    // 75바이트로 72바이트 한도를 넘는 경우를 걸러내지 못한다.
     assert.equal(validatePassword('가'.repeat(25)).ok, false);
     assert.equal(validatePassword('가'.repeat(24)).ok, true);
 });
@@ -118,8 +104,6 @@ test('AC-04: 비밀번호와 비밀번호 확인이 다르면 거부된다', () 
     assert.equal(validatePasswordConfirm('pw12345678', 'pw12345678').ok, true);
     assert.equal(validatePasswordConfirm('pw12345678', 'different').ok, false);
 });
-
-// ── AC-06: 관리 필드는 검증 결과 value에 담기지 않는다 ──────────────────────────
 
 test('AC-06: role/status/email_verified가 섞인 요청도 value에는 허용된 필드만 남는다', () => {
     const result = validateSignupPayload({

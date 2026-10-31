@@ -9,9 +9,6 @@ const userRepository = require("../repositories/user.repositories");
 const authService    = require("../service/auth.service");
 const { REFRESH_TOKEN_GRACE_MS } = require("../auth/cookieOptions");
 
-// auth.service.js는 원문 자격을 sha256 해시로 바꿔서만 대조한다(hashRefreshToken은 export되지
-// 않는다 — A-03이 요구하는 "원문 미저장"을 모듈 경계에서도 지키기 위함). 테스트는 같은
-// 알고리즘으로 직접 해시를 계산해 세션에 미리 심어 둔다.
 const hashOf = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 
 const REPO_KEYS = [
@@ -111,7 +108,6 @@ test("현재 해시와 일치하면 회전에 성공하고 새 액세스·갱신
     assert.notEqual(rotateCall.args[1].newHash, hashOf("raw-current"));
     assert.ok(rotateCall.args[1].previousExpiresAt instanceof Date);
 
-    // 새로 발급된 원문 자격이 그대로 해시로 저장되면 안 된다(A-03).
     assert.notEqual(rotateCall.args[1].newHash, result.refreshToken);
     assert.equal(rotateCall.args[1].newHash, hashOf(result.refreshToken));
 
@@ -143,10 +139,6 @@ test("F-03 R-IMPL #8: grace 재시도(회전 응답 유실·동시 요청)는 �
     assert.ok(result.refreshToken,
         "회전 응답 자체가 유실되면(첫 응답을 못 받음) grace 재시도가 유일한 복구 수단이다 — " +
         "refreshToken이 없으면 브라우저에 최신 갱신 자격이 남지 않아 grace 종료 후 재사용으로 폐기된다(R-IMPL #8)");
-    // 이 fixture의 current 해시("raw-new-from-winner")는 실제 회전 결과가 아니라 임의로
-    // 지어낸 값이라, 여기서는 복구 값이 "그" 값과 우연히 같아야 한다고 단언하지 않는다 —
-    // 정확한 재현 여부(실제 회전이 만들었던 값과 정확히 같은 값이 나오는지)는 아래
-    // "응답 유실 후 재시도로 복구한 자격은..." 테스트가 실제 회전→복구 왕복으로 확인한다.
     assert.equal(calls.find((c) => c.name === "applyRefreshRotation"), undefined,
         "grace 재시도는 회전(applyRefreshRotation)을 또 실행하면 안 됩니다 — 이미 회전된 결과를 재계산할 뿐입니다");
     assert.equal(calls.find((c) => c.name === "markOnlineSessionsOffline"), undefined,
@@ -181,16 +173,12 @@ test("F-03 R-IMPL #8: 응답 유실 후 재시도로 복구한 자격은 grace�
         },
     });
 
-    // 실제 회전이 한 번 일어난다 — 이 응답 자체가 유실됐다고 가정하고 버린다.
     const lostResponse = await authService.refresh("raw-current");
-    // 클라이언트는 여전히 이전 자격만 갖고 있어 같은 값으로 재시도한다 → 복구.
     const recovered = await authService.refresh("raw-current");
     assert.equal(recovered.refreshToken, lostResponse.refreshToken);
 
-    // grace가 실제로 지났다.
     session.refresh_previous_expires_at = new Date(Date.now() - 1_000);
 
-    // 복구된 자격으로의 다음 회전은 fresh match로 정상 성공해야 한다.
     const next = await authService.refresh(recovered.refreshToken);
     assert.ok(next.accessToken);
     assert.ok(next.refreshToken);
@@ -200,10 +188,6 @@ test("F-03 R-IMPL #8: 응답 유실 후 재시도로 복구한 자격은 grace�
 });
 
 test("현재 해시와 매치한 요청만 실제로 회전하고, 방금 만든 previous_hash로는 새 세션을 또 잠그지 않는다", async (t) => {
-    // 3개 이상 동시 요청 시나리오의 핵심 불변식: 어느 한 요청이 회전(previous_hash 세팅)한
-    // 뒤에도, 그 previous_hash를 아직 못 받은 3번째 요청이 "원래" old-old 해시로 다시 오면
-    // grace 매치가 유지돼야 한다 — 즉 previous_hash는 딱 한 번의 회전으로만 갱신되고,
-    // grace 재시도가 그것을 또 앞으로 밀지 않는다는 사실을 이 테스트가 직접 확인한다.
     const rotatedSession = baseSession({
         refresh_token_hash: hashOf("raw-current"),
         refresh_previous_hash: null,
@@ -260,8 +244,6 @@ test("정지 감지 시 401/409가 아니라 403이며, 이 계정의 모든 세
         "정지된 계정에 새 갱신 자격을 발급하면 안 됩니다");
 });
 
-// ── F-03 R-IMPL #4: 절대 30일 기한 캡 ─────────────────────────────────────────
-
 test("절대 기한이 임박하면 새 액세스 토큰의 exp가 기본 TTL 대신 남은 시간만큼만 발급된다", async (t) => {
     const remainingMs = 5_000; // 절대 만료까지 5초 남음(기본 15분보다 훨씬 짧다)
     const session = baseSession({
@@ -276,8 +258,6 @@ test("절대 기한이 임박하면 새 액세스 토큰의 exp가 기본 TTL �
     const ttlSeconds = decoded.exp - decoded.iat;
     assert.ok(ttlSeconds <= 5, `절대 기한(5초 남음)을 넘는 TTL이 발급되면 안 됩니다: ${ttlSeconds}`);
     assert.ok(ttlSeconds >= 1, `절대 기한 이내에서는 굳이 즉시 만료시킬 필요가 없습니다: ${ttlSeconds}`);
-    // exp(초 단위, 내림)가 실제 절대 기한(ms)을 절대 넘지 않아야 한다 — 반올림으로 경계를
-    // 넘기면 이론상 만료된 세션의 access token이 살아있는 상태가 될 수 있다.
     assert.ok(decoded.exp * 1000 <= session.refresh_token_expires_at.getTime(),
         "exp(초 반올림 포함)가 절대 기한을 넘으면 안 됩니다");
 });

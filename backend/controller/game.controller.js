@@ -1,8 +1,5 @@
 const gameResultRepository = require("../repositories/gameResult.repositories");
 
-// 저장된 전적 한 건을 그대로 돌려주는 읽기 전용 엔드포인트입니다. 진행 중인 세션의
-// 스냅샷(get_session_snapshot)과 달리 비밀 정보 게이트가 없습니다 — 이미 끝난 판이라
-// role/team은 전원에게 공개된 사실이고, 응답에는 DB에 저장된 값 외에 아무 것도 없습니다.
 exports.getGameResult = async (req, res, next) => {
     try {
         const gameId = typeof req.params.gameId === "string" ? req.params.gameId.trim() : "";

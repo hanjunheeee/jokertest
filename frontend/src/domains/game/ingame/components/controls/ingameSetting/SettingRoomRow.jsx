@@ -1,6 +1,3 @@
-/**
- * 인게임 설정 — 방관리 행 (제목·설명 + 액션 링크 또는 체크박스)
- */
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
   INGAME_SETTING_CHECKBOX_CLASS,

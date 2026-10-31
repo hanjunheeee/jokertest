@@ -4,9 +4,6 @@ import {
   getInGameTribunalPresentationChatPanelStyle,
 } from "../../constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 
-/**
- * 최후의 반론 split 레이아웃 — 우측 정면(클로즈업) 채팅 패널.
- */
 export default function InGameTribunalPresentationChatPanel({
   draft,
   messages,

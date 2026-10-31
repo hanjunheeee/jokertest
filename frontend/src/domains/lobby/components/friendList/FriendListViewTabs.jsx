@@ -7,7 +7,6 @@ import {
 } from "@/domains/lobby/constants/friendListStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-// 친구 목록에서 "친구 추가", "요청 수락" 같은 탭 하나를 그리는 버튼입니다.
 function FriendListTabButton({ label, active, onClick }) {
   const buttonImage = active
     ? FRIEND_LIST_ASSETS.tabButtonActive
@@ -33,9 +32,6 @@ function FriendListTabButton({ label, active, onClick }) {
   )
 }
 
-// 친구 목록 패널에서 화면을 바꾸는 탭 목록입니다.
-// F-19: 게임 초대와 차단 목록 진입을 같은 탭 줄에 둔다 — 로비와 대기방이 같은 패널을
-// 재사용하므로 두 화면 모두 같은 진입점을 갖는다(새 모달을 만들지 않는다).
 export default function FriendListViewTabs({
   activeView, onRequestClick, onAcceptClick, onInviteClick, onBlockClick, inviteCount = 0,
 }) {

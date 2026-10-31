@@ -26,9 +26,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
 
-// 훅이 최상단에서 import하는 socketClient를 제어 가능한 fake로 교체한다(useInGameSessionSnapshotSync
-// 테스트와 동일한 관례) — mock.module은 아직 로드되지 않은 specifier에만 적용되므로 훅 모듈은
-// 등록 이후 동적 import로 가져온다.
 let currentFakeSocket = null
 const fakeSocketSubscribers = new Set()
 
@@ -96,17 +93,12 @@ function createFakeChatSocket() {
 const GAME_ID = "game-1"
 const ME = "me-uuid"
 const OTHER = "other-uuid"
-// 같은 기기에서 갈아끼우는 다른 인증 계정(게임 참가자 목록과는 무관한 축이다 — 계정만
-// 바뀌어도 이 화면의 채팅 상태 소유자가 달라진다는 것을 보이기 위해 self는 그대로 둔다).
 const ANOTHER_ACCOUNT = "another-account"
 
-/** 인증 계정을 갈아끼운다 — 제출 시점에 캡처한 계정과 응답 시점의 계정을 비교하는 경로 검증용. */
 function seedAuth(uuid) {
   useAuthStore.setState({ user: uuid === null ? null : { uuid }, isLoggedIn: uuid !== null, loggedOutIntentionally: false })
 }
 
-// selfUuid는 store가 들고 있는 게임 상태의 주인이다 — 기본값은 인증 계정과 같지만, "계정만
-// 갈아끼우고 이전 계정의 게임 상태가 남아 있는" 순간을 재현할 때는 둘을 일부러 어긋나게 둔다.
 function seedStore({ phase = "DAY", alive = true, team = "CITIZEN", authUuid = ME, selfUuid = ME } = {}) {
   seedAuth(authUuid)
   useInGameStore.setState({
@@ -156,7 +148,6 @@ test("생존자의 DAY: send는 submit_game_chat_message를 정확히 1회, payl
   assert.equal(fake.emitWithAckCalls.length, 1)
   assert.equal(fake.emitWithAckCalls[0].event, "submit_game_chat_message")
   assert.deepEqual(Object.keys(fake.emitWithAckCalls[0].payload).sort(), ["gameId", "text"])
-  // 채널·발신자·닉네임은 payload에 없고, text는 서버와 동일한 규칙으로 trim된 값이다.
   assert.deepEqual(fake.emitWithAckCalls[0].payload, { gameId: GAME_ID, text: "안녕하세요" })
 
   hook.unmount()
@@ -296,11 +287,9 @@ test("사망자는 NIGHT에 보지도 보내지도 못한다(밤 사망자 채�
   act(() => hook.result.current.setDraft("밤의 사망자 대화"))
   act(() => hook.result.current.send())
 
-  // 밤의 사망자에게는 열린 채널이 없다 — 입력은 반영되지 않고 emit도 일어나지 않는다.
   assert.equal(fake.emitWithAckCalls.length, 0)
   assert.equal(hook.result.current.draft, "")
 
-  // 낮에 오간 DEAD 메시지가 방송돼도 밤 동안은 화면에 남지 않는다(수신 게이팅).
   const dead = broadcast({ channel: "DEAD", id: "night-dead" })
   act(() => fake.socket.trigger(dead.event, dead.payload))
   assert.deepEqual(hook.result.current.messages, [])
@@ -324,7 +313,6 @@ test("socket이 교체되면 이전 socket의 수신 리스너가 남지 않고,
   assert.equal(first.socket.listenerCount("dead_chat_message_received"), 0)
   assert.equal(second.socket.listenerCount("day_chat_message_received"), 1)
 
-  // 교체된(죽은) socket으로 도착하는 메시지는 더 이상 반영되지 않는다.
   const stale = broadcast({ channel: "DAY", id: "stale-socket" })
   act(() => first.socket.trigger(stale.event, stale.payload))
   assert.deepEqual(hook.result.current.messages, [])
@@ -351,10 +339,6 @@ test("반복 렌더는 수신 리스너를 누적 등록하지 않는다(중복 
   hook.unmount()
 })
 
-// ---------------------------------------------------------------------------
-// 늦은 응답 방어 — 제출 시점에 캡처한 맥락이 하나라도 달라지면 그 응답은 아무 것도 바꾸지 않는다
-// ---------------------------------------------------------------------------
-
 test("DAY→NIGHT 이후 도착한 DAY 응답은 아무 것도 바꾸지 않는다(초안 유지·오류 없음)", async () => {
   seedStore({ phase: "DAY", alive: true })
   const fake = createFakeChatSocket()
@@ -373,7 +357,6 @@ test("DAY→NIGHT 이후 도착한 DAY 응답은 아무 것도 바꾸지 않는�
     await flushMicrotasks()
   })
 
-  // 화면이 밤의 역할 채널로 전환됐으므로 DAY 초안은 현재 화면에서 마스킹되고 늦은 응답도 반영되지 않는다.
   assert.equal(hook.result.current.draft, "")
   assert.equal(hook.result.current.error, null)
   assert.equal(hook.result.current.status, "idle")
@@ -399,8 +382,6 @@ test("생존→사망 이후 도착한 DAY 실패 응답은 사망자 화면에 
     await flushMicrotasks()
   })
 
-  // 사망자도 낮에는 같은 DAY 내역을 보지만 발행 권한만 잃는다. 늦은 실패 응답은 오류를 만들지
-  // 않고, 사용자가 작성하던 DAY 초안은 보존된다.
   assert.equal(hook.result.current.error, null)
   assert.equal(hook.result.current.status, "idle")
   assert.equal(hook.result.current.draft, "생전에 보낸 문장")
@@ -417,13 +398,11 @@ test("이전 계정으로 보낸 요청의 응답은 계정이 바뀐 뒤에는 
   act(() => hook.result.current.setDraft("이전 계정의 문장"))
   act(() => hook.result.current.send())
 
-  // 계정이 바뀌고, store도 새 계정이 소유한 게임 상태로 갱신된다(계정 전환 이후의 정상 상태).
   await act(async () => {
     seedStore({ phase: "DAY", alive: true, authUuid: ANOTHER_ACCOUNT, selfUuid: ANOTHER_ACCOUNT })
     await flushMicrotasks()
   })
 
-  // 계정이 바뀌는 순간 이전 계정의 초안은 이미 사라져 있다(소유자 전환) — 새 계정이 자기 초안을 쓴다.
   assert.equal(hook.result.current.draft, "")
   act(() => hook.result.current.setDraft("새 계정의 문장"))
 
@@ -432,7 +411,6 @@ test("이전 계정으로 보낸 요청의 응답은 계정이 바뀐 뒤에는 
     await flushMicrotasks()
   })
 
-  // 이전 계정의 성공 응답은 새 계정의 초안을 비우지도, 상태·오류를 건드리지도 못한다.
   assert.equal(hook.result.current.draft, "새 계정의 문장")
   assert.equal(hook.result.current.status, "idle")
   assert.equal(hook.result.current.error, null)
@@ -447,12 +425,10 @@ test("계정만 바뀌고 store에 이전 계정의 게임 상태가 남아 있�
 
   const hook = renderChat()
 
-  // 인증 계정만 갈아끼운다 — store의 gameId·self(생존/phase)는 아직 이전 계정(ME)의 것이다.
   act(() => {
     seedAuth(ANOTHER_ACCOUNT)
   })
 
-  // 새 계정은 이전 계정의 게임에 묶인 채팅 화면을 얻지 못한다(소유권 없음 → fail-closed).
   act(() => hook.result.current.setDraft("새 계정이 이전 게임에 쓰는 문장"))
   act(() => hook.result.current.send())
 
@@ -475,16 +451,12 @@ test("계정이 바뀐 뒤 이전 계정의 socket으로 늦게 도착한 메시
 
   const hook = renderChat()
 
-  // 같은 socket을 쓰는 채로 계정이 B로 바뀌고, store도 B가 소유한 게임 상태로 갱신됐다
-  // (소유권 게이팅만으로는 걸러지지 않는 상황 — 리스너가 어느 계정의 연결인지가 유일한 근거다).
   act(() => seedStore({ phase: "DAY", alive: true, authUuid: ANOTHER_ACCOUNT, selfUuid: ANOTHER_ACCOUNT }))
 
-  // 이 socket은 여전히 이전 계정(ME)으로 인증된 연결이다 — 그 연결로 오는 메시지는 B의 것이 아니다.
   const late = broadcast({ channel: "DAY", id: "late-1", text: "이전 계정의 메시지" })
   act(() => fake.socket.trigger(late.event, late.payload))
   assert.deepEqual(hook.result.current.messages, [])
 
-  // 새 계정의 메시지는 새 socket(useSocket이 계정 전환 때 새로 만드는 연결)에서만 받는다.
   const next = createFakeChatSocket()
   act(() => setFakeSocket(next.socket))
   const fresh = broadcast({ channel: "DAY", id: "fresh-1", text: "새 계정의 메시지" })
@@ -507,7 +479,6 @@ test("같은 채널의 더 오래된 응답은 더 새로운 요청의 초안·�
   act(() => hook.result.current.setDraft("첫 번째"))
   act(() => hook.result.current.send())
 
-  // 첫 요청이 아직 응답을 기다리는 동안 phase가 오갔다 — 무효화로 전송 잠금이 풀린다.
   await act(async () => {
     seedStore({ phase: "NIGHT", alive: true })
     await flushMicrotasks()
@@ -521,13 +492,11 @@ test("같은 채널의 더 오래된 응답은 더 새로운 요청의 초안·�
   act(() => hook.result.current.send())
   assert.equal(fake.emitWithAckCalls.length, 2)
 
-  // 이제서야 첫 요청의 늦은 성공 응답이 도착한다.
   await act(async () => {
     fake.emitWithAckCalls[0].resolve({ ok: true })
     await flushMicrotasks()
   })
 
-  // 더 새로운 요청이 진행 중이므로 오래된 성공 응답이 초안을 지우거나 상태를 되돌리지 못한다.
   assert.equal(hook.result.current.draft, "두 번째")
   assert.equal(hook.result.current.status, "sending")
 
@@ -573,9 +542,6 @@ test("DAY 오류가 남아있는 상태로 사망하면 오류는 지워지고 D
   })
   assert.equal(hook.result.current.error, "요청을 처리할 수 없습니다.")
 
-  // 사망 전이는 낮에서 관측한다 — 밤에는 사망자에게 열린 채널이 아예 없어 전송 계약을 볼 수
-  // 없다(밤 차단은 "사망자는 NIGHT에 보지도 보내지도 못한다"가 따로 고정한다). 낮의 DEAD 전송
-  // 가능 여부는 이 슬라이스에서 바뀌지 않았다.
   await act(async () => {
     seedStore({ phase: "DAY", alive: false })
     await flushMicrotasks()

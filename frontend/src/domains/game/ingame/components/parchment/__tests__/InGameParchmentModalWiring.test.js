@@ -7,28 +7,11 @@ import { cleanup, fireEvent, render } from "@testing-library/react"
 import InGamePhaseEntranceOverlay from "../../phaseEntrance/InGamePhaseEntranceOverlay.js"
 import { getInGameParchmentModalVariant } from "../../../constants/parchment/ingameParchmentModalVariants.js"
 
-// ---------------------------------------------------------------------------
-// AC-02 · 새로 이식된 양피지 모달 셸이 실제 화면 트리에 연결돼 있는가
-//
-// 이 저장소의 node:test 실행에는 JSX 로더가 없다. 그래서 두 가지를 나눠 증명한다.
-//
-// (1) 실제 렌더 — InGamePhaseEntranceOverlay → InGameParchmentModalBase →
-//     InGameParchmentPanelBase / InGameParchmentConfirmButton 체인은 전부 .js(createElement)라
-//     변환기 없이 그대로 마운트할 수 있다. 그래서 이 오버레이 하나는 "새 셸이 그리는 진짜
-//     DOM"(backdrop·dialog·양피지 배경·확인 버튼)과 열림·확인·닫힘 세 경로를 실물로 검증한다.
-//     세 오버레이가 공유하는 것이 바로 이 셸이므로, 셸 자체의 동작은 여기서 한 번 고정된다.
-//
-// (2) 소스 배선 — InGamePage.jsx와 두 .jsx 오버레이는 렌더할 수 없으므로, production 소스에서
-//     "페이지가 세 오버레이를 각각 정확히 한 번 마운트하고 오버레이 상태를 그대로 넘긴다" ·
-//     "세 오버레이가 각자 어느 셸에 어떤 variantKey로 물려 있다"를 확인한다.
-// ---------------------------------------------------------------------------
-
 const pageUrl = new URL("../../../pages/InGamePage.jsx", import.meta.url)
 const roleRevealUrl = new URL("../../roleReveal/InGameRoleRevealOverlay.jsx", import.meta.url)
 const nightTurnUrl = new URL("../../nightTurn/InGameNightTurnAnnouncementOverlay.jsx", import.meta.url)
 const phaseEntranceUrl = new URL("../../phaseEntrance/InGamePhaseEntranceOverlay.js", import.meta.url)
 
-/** 양피지 셸이 실제로 그리는 public 에셋(URL 인코딩을 되돌린 원본 경로로 비교한다). */
 const PARCHMENT_IMAGE_PATH = "/frame/양피지 모달.png"
 const CONFIRM_BUTTON_IMAGE_PATH = "/button/버튼(수락 및 긍정).png"
 
@@ -46,7 +29,6 @@ function ensureClientEnvironment() {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
 }
 
-/** src 속성을 사람이 읽는 원본 경로로 되돌린다(publicAsset은 NFC 정규화 + encodeURI를 한다). */
 function decodeAssetSrc(src) {
   return decodeURI(src ?? "").normalize("NFC")
 }
@@ -71,12 +53,10 @@ test("DAY/NIGHT 진입 오버레이는 새 파치먼트 셸이 그리는 backdro
     assert.notEqual(dialog, null, "셸의 dialog 레이어가 없다")
     assert.equal(dialog.getAttribute("aria-label"), variant.dialogLabel)
 
-    // 양피지 배경 — 이 이식의 핵심 에셋이 진짜 <img src>까지 이어지는지 본다.
     const parchmentImage = dialog.querySelector('img[aria-hidden="true"]')
     assert.notEqual(parchmentImage, null, "양피지 배경 이미지가 없다")
     assert.equal(decodeAssetSrc(parchmentImage.getAttribute("src")), PARCHMENT_IMAGE_PATH.normalize("NFC"))
 
-    // 진입 문구와 공용 확인 버튼(이미지 + 라벨)이 같은 양피지 안에 있다.
     assert.equal(dialog.textContent.includes("낮이 되었습니다"), true)
     const confirmButton = dialog.querySelector('button[aria-label="확인"]')
     assert.notEqual(confirmButton, null, "공용 확인 버튼이 없다")
@@ -136,9 +116,6 @@ test("InGamePage는 새 셸을 쓰는 세 오버레이를 각각 정확히 한 �
     {
       tag: "InGameNightTurnAnnouncementOverlay",
       importPath: "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx",
-      // F-27b(AC-01): 열림 상태의 출처는 여전히 오버레이 스택 하나뿐이고, 거기에 **비수신자
-      // 대기 중에는 그 위에 그리지 않는다**는 억제 조건 하나만 곱해진다(페이지가 자기 안내
-      // 상태를 따로 만들지 않는다는 계약은 그대로다).
       props: [
         /open=\{nightTurn\.open && !nightPresentationWaitOpen\}/,
         /announcement=\{nightTurn\.announcement\}/,
@@ -161,7 +138,6 @@ test("InGamePage는 새 셸을 쓰는 세 오버레이를 각각 정확히 한 �
     },
   ]
 
-  // 세 오버레이의 열림 상태는 모두 이 훅 하나가 정한다 — 페이지가 각자 따로 판정하지 않는다.
   assert.match(source, /useInGameOverlayStack\(\)/)
   assert.match(source, /const \{ roleReveal, phaseEntrance, nightTurn, interactionBlocked \} =/)
 
@@ -182,10 +158,6 @@ test("InGamePage는 새 셸을 쓰는 세 오버레이를 각각 정확히 한 �
     }
   }
 
-  // F-27b(AC-01, CODEX 반려 수정): 비수신자 대기 중에는 역할 공개를 **마운트하지 않는다**.
-  // open만 false로 내리면 퇴장 애니메이션(AnimatePresence) 동안 역할명·진영·동료 목록이 DOM에
-  // 남는다 — 대기 화면이 그 위를 덮어도 그 문자열은 이미 이 화면의 것이다. 열림 상태의 출처는
-  // 그대로 오버레이 스택 하나이고(위 props 잠금), 여기서는 그 위의 억제 조건만 잠근다.
   assert.match(source, /\{nightPresentationWaitOpen \? null : \(\s*<InGameRoleRevealOverlay/)
 })
 
@@ -224,7 +196,6 @@ test("세 오버레이는 각자 새 파치먼트 셸에 물려 있고, 셸이 �
     assert.match(source, wiring.variantUse, `${wiring.variantKey}: variantKey 배선이 없다`)
     assert.match(source, wiring.dismiss, `${wiring.variantKey}: 닫기 콜백이 셸로 이어지지 않는다`)
 
-    // variantKey 오타는 셸이 던지므로(getInGameParchmentModalVariant), 실제 표에서 확인한다.
     const variant = getInGameParchmentModalVariant(wiring.variantKey)
     assert.equal(typeof variant.backdropLabel, "string")
     assert.equal(typeof variant.dialogLabel, "string")

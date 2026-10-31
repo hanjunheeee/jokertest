@@ -4,9 +4,6 @@ import { isJokerNightChatEligible } from "../utils/isJokerNightChatEligible.js"
 import { useInGameGameChatSession } from "./useInGameGameChatSession.js"
 import { useInGameJokerChatSession } from "./useInGameJokerChatSession.js"
 
-/**
- * InGameChatShell·TRIBUNAL 연출 등에서 공유하는 채팅 UI props.
- */
 export function useInGameChatShellProps() {
   const { getPlayerById } = useInGamePlayerSessionContext()
   const gameState = useInGameStore((s) => s.state)

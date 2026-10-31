@@ -8,13 +8,9 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
 
-/** 아이콘 버튼 하나를 그리는 내부 헬퍼 (설정·마이크가 이 컴포넌트를 재사용) */
 function ControlButton({
-  // ariaLabel: 스크린리더용 버튼 설명
   ariaLabel,
-  // src: 버튼에 그릴 아이콘 이미지 경로
   src,
-  // onClick: 버튼 클릭 시 호출되는 콜백
   onClick,
   sfxOwner,
   imgClassName = INGAME_CONTROL_BTN_IMG_CLASS,
@@ -33,24 +29,15 @@ function ControlButton({
   )
 }
 
-/** 자기 역할 공개(직업 모달) 버튼 아이콘 */
 export const INGAME_ROLE_REVEAL_BUTTON_SRC = "/button/직업모달 표시버튼2.png".normalize("NFD")
 
 export const INGAME_ROLE_REVEAL_BUTTON_LABEL = "내 역할 보기"
 
-/** 인게임 좌측 상단 — 나가기·햄버거(전적목록)·설정·내 역할 보기 버튼 */
 export default function InGameTopControls({
-  // onExitClick: 나가기 버튼 클릭 시 호출되는 콜백 — 확인 후 leave_game_session을 전송함
   onExitClick,
-  // onMenuClick: 햄버거 버튼 클릭 시 호출되는 콜백 — 플레이어별 전적목록 패널을 염
   onMenuClick,
-  // onSettingsClick: 설정 버튼 클릭 시 호출되는 콜백 — 인게임 설정 패널을 염
   onSettingsClick,
-  // onOpenRoleReveal: 자기 역할 공개 오버레이를 다시 여는 콜백 — V-2에서 제어 패널이 사라지며
-  // 이 줄로 옮겨왔다. 열림 상태의 소유자는 여전히 useInGameOverlayStack 하나다.
   onOpenRoleReveal,
-  // roleRevealAvailable: 공개할 역할 정보가 실제로 있는가. 없으면 버튼 자체를 그리지 않는다
-  // (누를 수는 있는데 아무 일도 일어나지 않는 버튼을 남기지 않는다).
   roleRevealAvailable = false,
   className = INGAME_TOP_CONTROLS_POSITION_CLASS,
 }) {

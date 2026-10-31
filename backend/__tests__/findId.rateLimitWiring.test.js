@@ -1,10 +1,5 @@
 process.env.JWT_SECRET = "find-id-ratelimit-wiring-test-secret";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-// F-29a(AC-05) 배선 전용 시험 — createRateLimiter 자체의 로직은 rateLimit.test.js가 순수
-// 단위로, 정상/실패 응답 계약은 findId.api.test.js가 넉넉한 한도로 검증한다. 이 파일은 그
-// 둘 사이의 빈틈, 즉 auth.routes.js가 실제로 제한기를 IP→검증→대상 순서로 연결했는지를
-// 낮은 한도로 실제 HTTP 요청을 보내 확인한다. auth.routes.js가 require 시점에 환경변수를
-// 읽으므로, 라우터를 require하기 전에 이 파일 전용 한도를 설정해야 한다.
 process.env.FIND_ID_IP_MAX = "1000"; // IP 제한은 이 파일에서 검증하지 않는다 — 간섭을 없앤다.
 process.env.FIND_ID_TARGET_MAX = "2";
 process.env.FIND_ID_WINDOW_MS = "600000";
@@ -67,8 +62,6 @@ test("검증에 실패한 요청은 대상 제한기에 도달하지 않으므�
     stubDb(t);
     const base = await startServer(t);
 
-    // 형식이 잘못된 요청을 여러 번 보낸다 — 전부 400이고, 검증 미들웨어가 대상 제한기
-    // 이전에 응답을 끝내므로 아래 대상 카운터에 영향을 주면 안 된다.
     for (let i = 0; i < 5; i += 1) {
         const invalid = await postJson(base, { nickname: "a", birthDate: "not-a-date" });
         assert.equal(invalid.status, 400);

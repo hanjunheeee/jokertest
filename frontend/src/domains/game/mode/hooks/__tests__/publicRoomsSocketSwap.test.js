@@ -1,14 +1,3 @@
-/**
- * F-20(AC-03): 공개 방 목록이 **실제 소켓 교체**를 따라가는지에 대한 회귀.
- *
- * 설정 변경의 마지막 소비처는 이 목록이다. 그런데 목록 훅은 마운트 시점의 소켓 하나에
- * 붙어 있었고, 그 뒤 계정 재연결·재로그인으로 소켓 인스턴스가 **교체되면** 새 소켓의
- * 방송을 구독하지 않았다. 그러면 방장이 정원·입장 방식을 바꿔도 목록은 옛 값에 머물고,
- * 반대로 이미 남이 된 옛 소켓의 늦은 방송·늦은 조회 응답은 그대로 목록을 덮었다.
- *
- * 실제 usePublicRooms를 그대로 마운트한다. 소켓만 대역인데 모듈을 목업하지 않고 **실제
- * socketClient.setSocket**으로 꽂으므로 `--experimental-test-module-mocks` 없이 돈다.
- */
 import test from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -45,7 +34,6 @@ const { useMatchingStore } = await import("../../../matching/store/matchingStore
 const { usePublicRooms } = await import("../usePublicRooms.js")
 const { ROOM_LIST_SOCKET_EVENTS } = await import("../../constants/roomListSocket.js")
 
-/** emitWithAck 응답을 붙잡아 두라는 표식. */
 const HOLD = Symbol("hold")
 
 function createFakeSocket(id) {
@@ -55,7 +43,6 @@ function createFakeSocket(id) {
     connected: true,
     emitted: [],
     holds: [],
-    /** (event, payload) => 응답값 | HOLD. 시험이 매 순간 갈아끼운다. */
     answer: () => HOLD,
     on(event, handler) {
       if (!listeners.has(event)) listeners.set(event, new Set())
@@ -87,7 +74,6 @@ function createFakeSocket(id) {
   return socket
 }
 
-/** 목록 응답 한 건. 설정 요약 값(정원·입장 방식)이 실제로 화면까지 오는지 보려고 함께 싣는다. */
 function room(id, { current = 1, max = 8, accessType = "open" } = {}) {
   return { id, title: `방 ${id}`, current, max, accessType, status: "waiting" }
 }
@@ -98,7 +84,6 @@ function mount() {
   return renderHook(() => usePublicRooms(), { wrapper })
 }
 
-/** effect·마이크로태스크가 전부 흐르게 한다. */
 async function settle() {
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
@@ -119,7 +104,6 @@ test("AC-03 · 소켓이 교체되면 새 소켓으로 목록을 다시 조회�
   await settle()
   assert.deepEqual(result.current.rooms.map((r) => r.id), ["r1"], "최초 조회가 반영되지 않았다")
 
-  // 계정 재연결로 소켓 인스턴스가 통째로 교체된다.
   const socketB = createFakeSocket("B")
   socketB.answer = () => ({ ok: true, rooms: [room("r1", { max: 6 }), room("r2")] })
   await act(async () => { setSocket(socketB) })
@@ -130,7 +114,6 @@ test("AC-03 · 소켓이 교체되면 새 소켓으로 목록을 다시 조회�
   assert.deepEqual(result.current.rooms.map((r) => r.id), ["r1", "r2"])
   assert.equal(result.current.rooms[0].max, 6, "새 소켓의 조회 결과가 반영되지 않았다")
 
-  // 새 소켓의 설정 변경 방송이 실제로 화면 데이터까지 와야 한다.
   await act(async () => {
     socketB.trigger(ROOM_LIST_SOCKET_EVENTS.PUBLIC_ROOMS_UPDATED,
       { rooms: [room("r1", { max: 10, accessType: "code" })] })
@@ -155,7 +138,6 @@ test("AC-03 · 교체된 옛 소켓의 늦은 조회 응답과 늦은 방송은 
   await settle()
   assert.deepEqual(result.current.rooms.map((r) => r.id), ["new"])
 
-  // (a) cleanup 이후 옛 소켓의 방송은 해제된 리스너로 전달되지 않는다.
   await act(async () => {
     socketA.trigger(ROOM_LIST_SOCKET_EVENTS.PUBLIC_ROOMS_UPDATED,
       { rooms: [room("stale-broadcast", { max: 10 })] })
@@ -163,7 +145,6 @@ test("AC-03 · 교체된 옛 소켓의 늦은 조회 응답과 늦은 방송은 
   assert.deepEqual(result.current.rooms.map((r) => r.id), ["new"],
     "남이 된 옛 소켓의 방송이 현재 목록을 덮었다")
 
-  // (b) 옛 소켓이 붙잡고 있던 조회 응답이 이제야 도착한다.
   await act(async () => {
     socketA.release(ROOM_LIST_SOCKET_EVENTS.GET_PUBLIC_ROOMS,
       { ok: true, rooms: [room("stale-ack", { max: 10 })] })
@@ -215,7 +196,6 @@ test("AC-03 · 소켓이 교체되면 자기 소켓의 리스너만 걷고 입�
   const { result } = mount()
   await settle()
 
-  // 옛 소켓으로 입장을 요청해 잠금이 걸린 상태를 만든다.
   await act(async () => { result.current.joinPublicRoom("r1") })
   assert.equal(result.current.isJoining, true)
   assert.equal(socketA.countOf(ROOM_LIST_SOCKET_EVENTS.JOIN_PUBLIC_ROOM), 1)
@@ -232,7 +212,6 @@ test("AC-03 · 소켓이 교체되면 자기 소켓의 리스너만 걷고 입�
   }
   assert.equal(socketA.listenerCount("connect"), 0, "옛 소켓의 connect 리스너가 남았다")
 
-  // 새 소켓에서는 입장이 정상적으로 다시 동작한다(잠금을 풀어 막아 둔 것이 아니다).
   await act(async () => { result.current.joinPublicRoom("r1") })
   assert.equal(socketB.countOf(ROOM_LIST_SOCKET_EVENTS.JOIN_PUBLIC_ROOM), 1)
   assert.equal(result.current.isJoining, true)
@@ -246,7 +225,6 @@ test("AC-03 · 입장 성공·실패는 그대로 동작한다", async () => {
   const { result } = mount()
   await settle()
 
-  // 실패: 잠금이 풀리고 안내가 뜬다.
   await act(async () => { result.current.joinPublicRoom("r1") })
   await act(async () => {
     socket.trigger(ROOM_LIST_SOCKET_EVENTS.ROOM_JOIN_FAILED, { message: "정원이 가득 찼습니다." })
@@ -254,7 +232,6 @@ test("AC-03 · 입장 성공·실패는 그대로 동작한다", async () => {
   assert.equal(result.current.isJoining, false)
   assert.deepEqual(alerts, ["정원이 가득 찼습니다."])
 
-  // 성공: 잠금이 풀리고 matchingStore에 방이 들어간다.
   await act(async () => { result.current.joinPublicRoom("r1") })
   await act(async () => {
     socket.trigger(ROOM_LIST_SOCKET_EVENTS.ROOM_JOINED,

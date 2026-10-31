@@ -1,21 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-// F-08 기존 계정 기본 지급 백필 CLI(CODEX-2 AC-03 대응). backfillEconomy.js의
-// backfillDefaultEntitlements를 사람이 명시적으로 실행하는 진입점이다 — 이 파일을
-// require만 해서는 아무 것도 실행되지 않는다(require.main === module일 때만 동작),
-// backend/index.js를 비롯한 어떤 기동 경로도 이 CLI를 자동으로 실행하지 않는다
-// ("Do not automatically run production backfill or arbitrary startup sync").
-//
-// 사용법:
-//   node backend/db/backfillEconomy.cli.js run --confirm
-//   node backend/db/backfillEconomy.cli.js run --confirm --start-after-uuid <uuid> --batch-size 200
-//
-// --confirm 없이는 실행되지 않는다(운영 DB에 실수로 쏘는 것을 막기 위함,
-// backend/scripts/migrate-db.js의 resolve-failure --confirm과 같은 원칙). 중간에
-// 중단되면 마지막으로 출력된 체크포인트 uuid를 --start-after-uuid로 넘겨 재개한다 —
-// backfillDefaultEntitlements 자체가 멱등이므로 겹쳐 재실행해도 중복 지급되지 않는다.
-
 const path = require('path');
 
 const parseArgs = (argv) => {
@@ -75,9 +60,6 @@ const main = async () => {
         return;
     }
 
-    // models/index.js는 require 시점에 DATABASE_URL로 연결을 만든다 — 대상 DB를 바꾸려면
-    // 이 스크립트를 실행하기 전에 DATABASE_URL(및 필요하면 NODE_ENV)을 설정하면 된다
-    // (backend/scripts/migrate-db.js와 같은 원칙).
     const db = require(path.join(__dirname, '..', 'models'));
 
     let exitCode = 1;

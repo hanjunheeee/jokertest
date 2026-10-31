@@ -55,10 +55,6 @@ function TribunalVoteButton({ label, assetSrc, disabled, onClick, motionDelay })
   )
 }
 
-/**
- * 최후의 반론(TRIBUNAL) — 피고 카드·유/무죄 버튼 전면 연출 → 좌측 이동 + 우측 채팅 split.
- * 게임 열(absolute) 안에서만 그려져 좌우 배너를 침범하지 않는다.
- */
 export default function InGameTribunalPresentationOverlay({
   open = false,
   defendant = null,
@@ -69,7 +65,6 @@ export default function InGameTribunalPresentationOverlay({
   onVoteGuilty,
   onVoteNotGuilty,
   chatProps = null,
-  /** DEV 임시 — 개발 끝나면 삭제 */
   devResolveLabel = null,
   devResolveEnabled = false,
   onDevResolve = null,
@@ -185,7 +180,6 @@ export default function InGameTribunalPresentationOverlay({
               </div>
             </div>
 
-            {/* DEV 임시: 연출 하단 고정 — 카드·투표 UI와 무관(개발 끝나면 삭제) */}
             {devResolveLabel ? (
               <div className={INGAME_TRIBUNAL_PRESENTATION_DEV_RESOLVE_WRAP_CLASS}>
                 <button

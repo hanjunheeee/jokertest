@@ -4,7 +4,6 @@ import { LIBRARY_BG_IMAGE_CLASS } from "../../../domains/library/constants/libra
 import { BG_FADE_TRANSITION } from "../../../shared/constants/pageTransitions.js"
 import { publicAsset } from "../../../shared/utils/publicAsset.js"
 
-/** 기억의 서고 페이지 뒷배경 */
 export default function LibraryBackground() {
   return (
     <motion.img

@@ -1,12 +1,3 @@
-// F-06 R-IMPL #3 — googleOAuth.service.js의 실제 네트워크 왕복을 검증하는 어댑터 테스트다.
-//
-// backend/__tests__/googleAuth.route.test.js는 googleOAuthService 자체를 스텁으로 대체해
-// 그 위 라우트 계층(순서·rememberMe·리다이렉트)만 검증한다 — 그 파일만으로는 exchangeCodeFor
-// Profile이 실제로 Google에 어떤 요청을 보내는지, 실패 상태코드를 어떻게 다루는지, 응답이
-// 지연될 때 정말로 포기하는지는 증명하지 못한다. 이 파일은 exports.exchangeCodeForProfile
-// 자체를 스텁으로 바꾸지 않고 그대로 호출한다 — 대신 fetch의 목적지만 로컬 HTTP 서버
-// (진짜 TCP/HTTP 왕복)로 돌려, 실제 요청 본문·헤더 구성과 실패·타임아웃 처리를 검증한다.
-
 const test  = require("node:test");
 const assert = require("node:assert/strict");
 const http  = require("node:http");
@@ -18,8 +9,6 @@ process.env.GOOGLE_REDIRECT_URI  = process.env.GOOGLE_REDIRECT_URI  || "https://
 
 const googleOAuthService = require("../service/googleOAuth.service");
 
-// Fetch 표준의 "bad port" 목록 — undici(전역 fetch)는 이 포트로의 요청을 "bad port"로
-// 거부한다. listen(0)이 우연히 이 중 하나를 받으면 시험이 불안정하게 실패하므로 다시 고른다.
 const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
     101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,
     514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049,
@@ -34,7 +23,6 @@ const listenOnFetchablePort = async (server) => {
     }
 };
 
-// Google의 token/userinfo 엔드포인트를 흉내 내는 실제 로컬 HTTP 서버를 띄운다.
 const startMockGoogle = async (t, { tokenHandler, userinfoHandler }) => {
     const server = http.createServer((req, res) => {
         const chunks = [];
@@ -54,9 +42,6 @@ const startMockGoogle = async (t, { tokenHandler, userinfoHandler }) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-// exchangeCodeForProfile 자체는 건드리지 않고, 그 안에서 호출하는 global fetch의 목적지만
-// (하드코딩된 실제 Google URL → 로컬 fixture 서버로) 바꾼다 — method/headers/body/signal은
-// 그대로 전달되므로 실제 HTTP 요청 형태를 있는 그대로 검증할 수 있다.
 const withFetchRedirectedTo = (t, base) => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (url, init) => {
@@ -76,8 +61,6 @@ const jsonHandler = (status, body) => (req, res) => {
     res.writeHead(status, { "content-type": "application/json" });
     res.end(JSON.stringify(body));
 };
-
-// ── 정상 왕복 ─────────────────────────────────────────────────────────────────
 
 test("실제 네트워크 왕복으로 code를 교환해 검증된 subject/email을 반환하고, 요청 본문·헤더가 계약대로 구성된다", async (t) => {
     let tokenRequest = null;
@@ -121,10 +104,6 @@ test("email_verified가 false면 이메일을 검증되지 않은 값으로 취�
     assert.equal(profile.email, null);
 });
 
-// F-31 AC-01: 자체 메일 인증을 건너뛰는 유일한 근거는 "서버가 조회한 Google userinfo의
-// email_verified가 boolean true"다 — 그 외(누락·문자열 'true'·truthy 값·이메일 미제공)는
-// 전부 null로 넘겨 자체 인증 분기로 보내야 한다. null이 곧 "자체 인증 필요"라는 뜻이므로
-// (socialAuth.service.js resolveOAuthAccount), 여기서 새는 값은 그대로 인증 생략이 된다.
 for (const [label, userinfo] of [
     ["email_verified 누락", { sub: "sub-missing", email: "missing-flag@example.com" }],
     ["email_verified가 문자열 'true'", { sub: "sub-string", email: "string-flag@example.com", email_verified: "true" }],
@@ -144,8 +123,6 @@ for (const [label, userinfo] of [
         assert.equal(profile.email, null, "boolean true가 아닌 인증 표시는 이메일을 통과시키면 안 됩니다");
     });
 }
-
-// ── 실패 상태코드·잘못된 응답 ────────────────────────────────────────────────
 
 test("토큰 엔드포인트가 실패 상태코드를 반환하면 GOOGLE_TOKEN_EXCHANGE_FAILED로 거부된다", async (t) => {
     const base = await startMockGoogle(t, {
@@ -199,8 +176,6 @@ test("프로필 응답에 sub가 없으면 GOOGLE_PROFILE_INVALID로 거부된�
     );
 });
 
-// ── 타임아웃 (R-IMPL #3: 무기한 대기 금지) ───────────────────────────────────
-
 test("Google 토큰 엔드포인트 응답이 지연되면 무기한 대기하지 않고 유한한 시간 안에 GOOGLE_OAUTH_TIMEOUT으로 실패한다", async (t) => {
     const originalTimeoutMs = process.env.GOOGLE_OAUTH_TIMEOUT_MS;
     process.env.GOOGLE_OAUTH_TIMEOUT_MS = "150";
@@ -210,7 +185,6 @@ test("Google 토큰 엔드포인트 응답이 지연되면 무기한 대기하�
     });
 
     const base = await startMockGoogle(t, {
-        // 응답을 절대 보내지 않는다 — 연결만 열어 둔 채 hang.
         tokenHandler: () => {},
         userinfoHandler: jsonHandler(200, { sub: "should-not-reach" }),
     });

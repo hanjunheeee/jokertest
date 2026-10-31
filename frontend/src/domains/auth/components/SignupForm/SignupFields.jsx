@@ -12,7 +12,6 @@ import {
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import { useEmailAvailabilityCheck } from "@/domains/auth/hooks/useLoginPage.js"
 
-// 닉네임 입력칸 앞에 보여줄 사용자 아이콘입니다.
 function UserIcon() {
   return (
     <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -22,7 +21,6 @@ function UserIcon() {
   )
 }
 
-// 생년월일 입력칸 앞에 보여줄 달력 아이콘입니다.
 function CalendarIcon() {
   return (
     <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -32,7 +30,6 @@ function CalendarIcon() {
   )
 }
 
-// 이메일 중복 확인 결과 메시지입니다. status가 idle이면 아무것도 보여주지 않습니다.
 function EmailCheckMessage({ status }) {
   let message = null
   let toneClass = ""
@@ -60,15 +57,11 @@ function EmailCheckMessage({ status }) {
   )
 }
 
-// 회원가입에 필요한 이메일/비밀번호/닉네임/생년월일 입력칸 묶음입니다.
 export default function SignupFields({ formData, handleInputChange }) {
-  // 상태 로직은 useLoginPage.js의 useEmailAvailabilityCheck가 갖고 있습니다 — 이메일이
-  // 바뀌면 이전 확인 결과가 자동으로 무효화됩니다.
   const { status: emailCheckStatus, check: handleCheckEmail } = useEmailAvailabilityCheck(formData.email)
 
   return (
     <>
-      {/* 회원가입에 사용할 이메일 입력칸입니다. */}
       <AuthInputSlot
         type="email"
         name="email"
@@ -80,7 +73,6 @@ export default function SignupFields({ formData, handleInputChange }) {
         compact
       />
 
-      {/* 입력 단계 이메일 중복 확인입니다. 최종 판정은 가입 제출 시 서버가 다시 내립니다. */}
       <div className={SIGNUP_EMAIL_CHECK_BLOCK_CLASS}>
         <AuthImageButton
           type="button"
@@ -95,7 +87,6 @@ export default function SignupFields({ formData, handleInputChange }) {
         <EmailCheckMessage status={emailCheckStatus} />
       </div>
 
-      {/* 새 비밀번호 입력칸입니다. passwordToggle로 보기/숨기기 버튼을 켭니다. */}
       <AuthInputSlot
         name="password"
         value={formData.password}
@@ -107,7 +98,6 @@ export default function SignupFields({ formData, handleInputChange }) {
         compact
       />
 
-      {/* 비밀번호 확인 입력칸입니다. */}
       <AuthInputSlot
         name="passwordConfirm"
         value={formData.passwordConfirm}
@@ -119,7 +109,6 @@ export default function SignupFields({ formData, handleInputChange }) {
         compact
       />
 
-      {/* 게임에서 사용할 닉네임 입력칸입니다. */}
       <AuthInputSlot
         type="text"
         name="nickname"
@@ -130,7 +119,6 @@ export default function SignupFields({ formData, handleInputChange }) {
         compact
       />
 
-      {/* 생년월일 입력칸입니다. */}
       <AuthInputSlot
         type="date"
         name="birthDate"

@@ -4,7 +4,6 @@ import {
   STORE_SLOT_NAME_WRAP_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
-/** @param {string} name */
 function splitStoreSlotName(name) {
   const dashIndex = name.indexOf("-")
   if (dashIndex === -1) {
@@ -17,7 +16,6 @@ function splitStoreSlotName(name) {
   }
 }
 
-/** 상품 슬롯 이름 — 직업(보조) + 상품명(강조), 최대 두 줄 */
 export default function StoreItemSlotName({ children }) {
   const name = String(children)
   const { primary, secondary } = splitStoreSlotName(name)

@@ -1,15 +1,3 @@
-/**
- * CM V-1 AC-04 — 플레이어 카드 좌클릭 메뉴의 **보드 통합** 계약.
- *
- * 실제 InGamePage를 그대로 마운트한다(실제 store·실제 조작 훅·실제 보드).
- * 대역은 바깥 경계뿐이다 — 소켓 전송, HTTP, 효과음 런타임, 자산 선택.
- *
- * V-2(AC-05): 비교 대상이던 컨트롤 패널(InGameActionPanel)이 삭제됐다. 같은 페이로드 계약을
- * 패널 경로와의 대조가 아니라 **고정 리터럴**로 못박아 그대로 지킨다.
- *
- *   · 카드 좌클릭 → 메뉴 열림 → "투표" → cast_day_vote가 **정확히 그 페이로드**로 한 번 나간다
- *   · 카드 우클릭(contextmenu)으로는 메뉴가 열리지 않는다
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -113,7 +101,6 @@ const ROSTER = [
   { uuid: "u3", nickname: "C", themeIndex: 2 },
 ]
 
-/** 소켓 **전송 경계**만 흉내낸다. ack가 필요한 요청만 즉시 정착시킨다. */
 function createFrontSocket() {
   const sent = []
   const socket = {
@@ -130,8 +117,6 @@ function createFrontSocket() {
       sent.push({ event, payload })
       if (event === "cast_day_vote") return Promise.resolve({ ok: true })
       if (event === "submit_night_action") return Promise.resolve({ ok: true })
-      // 재접속 스냅샷 조회처럼 이 시험이 답하지 않는 요청은 미정착으로 남긴다
-      // (실제 화면도 응답이 올 때까지 그대로 기다린다).
       return new Promise(() => {})
     },
   }
@@ -167,7 +152,6 @@ function findButtonIn(root, label) {
   return [...root.querySelectorAll("button")].find((node) => node.textContent.trim() === label) ?? null
 }
 
-/** 마운트 직후 자동으로 뜨는 진입·역할 공개 창을 실제 확인 버튼으로 닫는다. */
 async function dismissEntranceOverlays(container) {
   for (let i = 0; i < 5; i += 1) {
     const confirmButton = findButtonIn(container, "확인")
@@ -176,7 +160,6 @@ async function dismissEntranceOverlays(container) {
   }
 }
 
-/** 실제 InGamePage를 data router 위에 마운트한다(useInGameExit의 useBlocker가 그것을 요구한다). */
 async function mountInGamePage(socket) {
   currentSocket = socket
   for (const cb of [...socketSubscribers]) cb()
@@ -212,9 +195,6 @@ test.afterEach(() => {
 })
 
 test("AC-04: 카드 좌클릭 메뉴의 투표가 계약된 cast_day_vote 페이로드를 정확히 한 번 보낸다", async () => {
-  // V-2(AC-05): 제어 패널(aside[aria-label="게임 조작"])은 삭제됐다 — 예전 (1)단계의 "기존
-  // 경로와 비교"는 비교 대상 자체가 없어졌다. 페이로드 계약은 그대로이므로 아래 고정
-  // 리터럴이 그 계약을 직접 잠근다(패널 DOM에 의존하지 않는 더 강한 단언이다).
   const menuRun = createFrontSocket()
   seedDayVoteSession()
   const view = await mountInGamePage(menuRun.socket)
@@ -234,7 +214,6 @@ test("AC-04: 카드 좌클릭 메뉴의 투표가 계약된 cast_day_vote 페이
     "아직 투표하지 않은 카드에는 투표취소가 함께 뜨면 안 된다",
   )
   await act(async () => {
-    // 정상 클릭의 mousedown이 "바깥 클릭 취소"로 처리되면 이 제출 자체가 사라진다.
     fireEvent.mouseDown(voteItem)
     fireEvent.click(voteItem)
   })
@@ -255,7 +234,6 @@ test("AC-04: 카드 우클릭(contextmenu)으로는 메뉴가 열리지 않는�
   assert.equal(menuIsOpen(view.container), false, "우클릭으로 메뉴가 열렸다")
   assert.equal(run.sentFor("cast_day_vote").length, 0, "우클릭이 무언가를 전송했다")
 
-  // 같은 카드의 좌클릭은 그대로 열린다(우클릭 무시가 좌클릭까지 막지 않는다).
   await act(async () => {
     fireEvent.mouseDown(slot)
     fireEvent.click(slot)

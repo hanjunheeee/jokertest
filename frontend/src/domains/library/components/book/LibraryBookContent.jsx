@@ -14,7 +14,6 @@ import {
   LIBRARY_BOOK_SPREAD_CLASS,
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 
-/** 현재 목차에 맞는 책 본문 */
 export default function LibraryBookContent({
   activeTabId,
   pageIndex = 0,
@@ -43,8 +42,6 @@ export default function LibraryBookContent({
             targetAchievementId={targetAchievementId}
           />
         ) : (
-          // F-17(AC-02): 직업 선택은 이제 LibraryPage가 소유한다 — URL 대상이 특정 직업을
-          // 가리키는데 spread가 자체 상태로 0을 계속 들고 있으면 대상 직업이 열리지 않는다.
           <InvitedGuestsSpread
             jobIndex={jobIndex}
             onJobChange={onJobChange}

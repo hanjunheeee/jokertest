@@ -4,13 +4,6 @@ import { readFile } from "node:fs/promises"
 
 const pageUrl = new URL("../GameResultPage.jsx", import.meta.url)
 
-/**
- * GameResultPage.jsx는 .jsx라서 이 저장소의 node:test 실행에는 로더가 없어 직접 렌더링할 수 없다
- * (InGamePage.productionSource.test.js와 동일한 제약). 대신 raw source 검증으로 "실데이터가
- * 미리보기보다 우선하고, 미리보기는 ?outcome= 게이트 + 진행 중 게임 없음 조건 뒤에만 쓰이며,
- * 그릴 것이 없으면 로비로 돌아가고, 로비 복귀는 기존 로컬 종료 경로를 쓴다"는 배선을 증명한다.
- */
-
 test("GameResultPage는 실데이터 훅(useGameResultData)을 쓴다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.match(source, /import \{ useGameResultData \} from "\.\.\/hooks\/useGameResultData\.js"/)
@@ -19,7 +12,6 @@ test("GameResultPage는 실데이터 훅(useGameResultData)을 쓴다", async ()
 
 test("결과 화면은 더미 훅이 아니라 실데이터 view model을 GameResultShell에 넘긴다", async () => {
   const source = await readFile(pageUrl, "utf8")
-  // live가 없을 때만 preview로 내려가므로, 실데이터가 있으면 항상 실데이터가 그려진다.
   assert.match(source, /const view = live \?\? \(previewRequested \? preview : null\)/)
   assert.match(source, /<GameResultShell \{\.\.\.view\} \/>/)
 })
@@ -39,30 +31,17 @@ test("진행 중인 게임이 store에 남아 있으면 ?outcome= 미리보기�
   assert.match(source, /const previewRequested =\s*\n?\s*!hasLiveSession &&/)
 })
 
-/**
- * F-24(AC-01, A-14): 이 계약은 "그릴 게 없으면 조용히 로비로 replace"에서 바뀌었다.
- *
- * 예전 동작은 결과·코드를 확인할 수 없는 상황에서 화면에 아무것도 그리지 않고 즉시 로비로
- * 보냈다. 그러면 "코드를 확인할 수 없음"이라는 실패 경로 자체가 사용자 눈에 한 번도 닿지
- * 않는다 — A-14가 명시적으로 금지하는 동작이다. 로비 복귀 경로(/multiplay replace)는 그대로
- * 쓰되, **그 이동이 언제 일어나는가**를 아래에서 더 좁게 잠근다: 확인 중에는 아무것도 단정하지
- * 않고, 확인이 끝나 결과가 없으면 안내를 그리며, 이동은 오직 사용자의 클릭에서만 일어난다.
- */
 test("그릴 결과가 없으면 확인 불가 안내를 그리고, 로비 복귀(/multiplay replace)는 사용자 클릭에서만 일어난다", async () => {
   const source = await readFile(pageUrl, "utf8")
 
-  // 1) 확인이 끝나기 전에는 결과도 확인 불가도 아니다(성급히 쫓아내지 않는다).
   assert.match(source, /if \(!view && bootstrapPending\) return null/)
   assert.match(source, /const bootstrapPending = bootstrapStatus === "checking" && !holdExpired/)
 
-  // 2) 확인이 끝났는데 결과가 없으면 **안내와 코드 확인 불가 진입을 그린다**.
   assert.match(source, /RESULT_UNAVAILABLE_TITLE/)
   assert.match(source, /RESULT_UNAVAILABLE_BODY/)
-  // 2026-09-22 운영자 지시: 결과 화면의 방 코드 보기·확인 불가 UI는 삭제됐다(코드는 대기방에서만 본다).
   assert.doesNotMatch(source, /방 코드/)
   assert.doesNotMatch(source, /RoomCodeViewModal/)
 
-  // 3) 이동 경로는 하나뿐이고, 그것은 effect의 자동 replace가 아니라 클릭 핸들러다.
   const navigationLines = source.split("\n").filter((line) => line.includes('navigate("/multiplay"'))
   assert.equal(
     navigationLines.length, 1,
@@ -89,12 +68,9 @@ test("GameResultShell은 정확히 한 번, 고른 view model 하나만 받아 �
 
 test("결과 페이지 컴포넌트·에셋 계약(outcome/players/mvp)은 이 페이지에서 재가공되지 않는다", async () => {
   const source = await readFile(pageUrl, "utf8")
-  // view model 조립은 전부 훅/순수 함수 쪽에 있다 — 페이지가 shape을 다시 손대면 계약이 갈라진다.
   assert.doesNotMatch(source, /players\s*[:=]/)
   assert.doesNotMatch(source, /mvp\s*[:=]/)
 })
-
-// --- 로비 복귀: 결과 화면 전용 경로를 새로 만들지 않고 로컬 기존 종료 경로를 쓴다 ---
 
 test("로비 복귀 버튼은 로컬 기존 종료 경로(useInGameExit)의 requestExit에 물려 있다", async () => {
   const source = await readFile(pageUrl, "utf8")
@@ -136,7 +112,6 @@ test("매칭 복귀는 전용 훅(useGameResultReturnToMatching)에 묶이고 le
 
 test("로비 버튼은 연출 영상이 끝난 뒤 결과 화면과 함께 렌더된다", async () => {
   const source = await readFile(pageUrl, "utf8")
-  // introComplete가 true일 때만 결과 UI + 로비 버튼이 함께 마운트된다.
   assert.ok(source.indexOf("<LabelledActionButton") > source.indexOf("if (!introComplete)"))
 })
 

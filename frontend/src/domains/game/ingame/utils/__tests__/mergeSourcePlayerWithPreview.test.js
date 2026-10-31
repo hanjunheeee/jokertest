@@ -86,7 +86,6 @@ test("connected:true, alive:false는 DEAD로 계산된다", () => {
   assert.equal(result.status, INGAME_PLAYER_STATUS.DEAD)
 })
 
-// F-13(AC-05): 계정 프로필 이미지(사진·테두리) — role/team/isAlly와 같은 조건부 복사 관례.
 test("입력 player에 accountProfilePhotoId/accountProfileBorderId가 있으면 출력에도 같은 값이 있다", () => {
   const result = mergeSourcePlayerWithPreview(
     {
@@ -145,8 +144,6 @@ test("유효한 accountProfileBorderId가 있어도 인게임 카드에는 accou
   assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
 })
 
-// ── F-14(AC-01/AC-04): 장착한 플레이어 카드 프레임(accountCardFrameId) ─────────────────
-
 test("유효한 accountCardFrameId가 있으면 preview의 더미 frameSrc 대신 실제 장착 카드 프레임으로 바뀐다", () => {
   const result = mergeSourcePlayerWithPreview(
     { id: "u1", name: "A", connected: true, alive: true, accountCardFrameId: "player-card-왕관" },
@@ -186,8 +183,6 @@ test("accountCardFrameId가 있어도 portraitSrc는 ingame 사각형 자산으�
   assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
   assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png".normalize("NFC"))
 })
-
-// ── CO S-1(AC-05): 계정 전적(총 판수·승률) ──────────────────────────────────────
 
 test("계정 전적이 있으면 그대로 복사된다(0판 0%도 서버가 말한 사실이므로 옮긴다)", () => {
   const withRecord = mergeSourcePlayerWithPreview(

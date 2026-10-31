@@ -6,9 +6,6 @@ import {
 } from "../../constants/myPageLayoutStyle.js"
 
 export default function FateMaskDescription({ description }) {
-  // prefix: 강조 단어 앞 문장입니다.
-  // highlight: 노란색으로 강조할 역할 이름입니다.
-  // suffix: 강조 단어 뒤 문장입니다.
   const { prefix, highlight, suffix } = description
 
   return (

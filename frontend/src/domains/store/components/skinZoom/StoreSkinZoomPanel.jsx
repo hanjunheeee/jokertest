@@ -8,7 +8,6 @@ import {
 import { getStoreSkinZoomIcon } from "../../constants/storeItems.js"
 import StoreSkinZoomIllustration from "./StoreSkinZoomIllustration.jsx"
 
-/** 스킨 확대 팝업 — 프레임·전신 일러스트·닫기 버튼 */
 export default function StoreSkinZoomPanel({ item, onClose }) {
   return (
     <div className={STORE_SKIN_ZOOM_PANEL_CLASS}>

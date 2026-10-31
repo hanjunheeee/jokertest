@@ -30,12 +30,6 @@ const CHAT_ROOT_BOARD_CLASS =
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
 
-/**
- * 인게임 채팅 UI — 보드·클로즈업 공통.
- * variant는 Context로 하위(Input·SendButton·MessageRow)에 전달합니다.
- * @param {"board" | "closeup" | "tribunal"} [variant]
- * @param {(() => void) | null} [onOpenCloseup] board — 빈 프레임 클릭 시 클로즈업
- */
 export default function InGameChatContent({
   variant = "board",
   draft,
@@ -47,10 +41,8 @@ export default function InGameChatContent({
   error = null,
   truncateDraftOnInput = true,
 }) {
-  // 프레임 크기 계산이 끝나서 채팅 UI를 보여줘도 되는지 표시합니다.
   const [layoutReady, setLayoutReady] = useState(false)
 
-  // 메시지 줄맞춤 계산에 쓰는 실제 입력칸 너비입니다.
   const [textFieldWidth, setTextFieldWidth] = useState(0)
   const inputWrapRef = useRef(null)
   const isBoard = variant === "board"
@@ -92,7 +84,6 @@ export default function InGameChatContent({
   }
 
   return (
-    /** board | closeup — 하위 채팅 컴포넌트들이 현재 표시 모드를 알 수 있게 넘깁니다. */
     <InGameChatVariantContext.Provider value={variant}>
       <div
         className={isBoard ? CHAT_ROOT_BOARD_CLASS : CHAT_ROOT_CLASS}

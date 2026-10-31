@@ -34,9 +34,6 @@ export default function SkinCardWearPanel({
   onTogglePreviewMode,
   onClose,
   onConfirm,
-  // F-14(AC-05): 저장 요청의 로딩·실패·재시도 상태. "saving"|"error"|"uncertain"|"success"|
-  // "idle"(useSkinCardWearSelection.js SKIN_CARD_WEAR_CONFIRM_STATUS) — onConfirm 자체가
-  // 재시도 핸들러다(같은 draft로 다시 확인을 누르면 confirmLoadout이 다시 호출된다).
   confirmStatus = "idle",
   confirmError = null,
 }) {

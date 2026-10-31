@@ -1,14 +1,5 @@
 process.env.JWT_SECRET = "economy-route-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-
-// F-08 backend/routes/economy.routes.js HTTP 계약 시험. 실제 경제 로직(잠금·재처리 방지
-// 키·카탈로그 가격)은 backend/service/economy.service.test.js가 fake db로 이미 검증하므로,
-// 여기서는 economyService 자체를 스텁하고(discordAuth.route.test.js와 같은 패턴) 라우트
-// 계층의 책임만 확인한다: 인증 게이트, 본인 계정만 접근 가능(AC-06), 요청 필드 검증,
-// 서비스 오류 코드 → HTTP 상태 매핑. sessionLifecycle.resolveSession은
-// userRepository.findActiveSession/checkActiveBan만 거치므로 그 둘만 스텁하면 실제
-// verifyToken 미들웨어 체인을 그대로 태울 수 있다(discordAuth.route.test.js와 같은 근거).
 
 const test         = require("node:test");
 const assert       = require("node:assert/strict");
@@ -23,11 +14,6 @@ const economyService  = require("../service/economy.service");
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan", "findByUuid"];
 
-// R-IMPL(2026-09-10, 반송): 관리자 전용 지급 경로는 더 이상 JWT의 req.user.role을 그대로
-// 믿지 않고, 매 요청마다 실제 계정 행(userRepository.findByUuid)을 다시 읽어 그 시점의
-// role로 판정한다("Existing permission identity must be verified from real server
-// session/account data"). accountsByUuid가 없는 uuid는 계정이 존재하지 않는 것으로
-// 취급된다(기본값은 role: "USER").
 const stubAuthGate = (t, { accountsByUuid = {} } = {}) => {
     const originals = Object.fromEntries(REPO_KEYS.map((key) => [key, userRepository[key]]));
     userRepository.findActiveSession = async (id, userId) => ({ id, user_id: userId, is_online: true, revoked_at: null, refresh_token_expires_at: null });
@@ -80,8 +66,6 @@ const request = async (base, path, { method = "GET", token, body } = {}) => {
     return { status: res.status, json };
 };
 
-// ── AC-06: 인증/본인 계정 검증 ──────────────────────────────────────────────
-
 test("AC-06: accessToken 쿠키가 없으면 401로 거부된다", async (t) => {
     stubAuthGate(t);
     const base = await startServer(t);
@@ -122,12 +106,6 @@ test("AC-06: 본인 계정 조회는 200으로 허용된다", async (t) => {
     assert.equal(res.json.balanceGold, 42);
     assert.equal(res.json.balanceDiamond, 7, 'F-08 요구사항: DIAMOND 잔액도 응답에 포함되어야 한다');
 });
-
-// ── AC-04: 구매 요청은 itemId·referenceEventId만 서비스로 전달한다 ─────────
-// CODEX-2 재검토: "서비스에는 문서화된 필드만 전달된다"는 것만으로는 부족했다 — 이전
-// 버전은 price·balance 같은 변조 필드를 조용히 무시하고도 201을 돌려줬는데, 무시와
-// 거부는 다르다. 지금은 문서화된 필드(itemId/referenceEventId) 밖의 값이 하나라도
-// 있으면 서비스를 호출하기 전에 400으로 거부해야 한다.
 
 test("AC-04(CODEX-2): 구매 요청에 price·balance 등 알 수 없는 필드가 포함되면 서비스 호출 전에 400으로 거부된다", async (t) => {
     stubAuthGate(t);
@@ -190,8 +168,6 @@ test("구매 요청에 itemId가 없으면 400으로 거부된다", async (t) =>
     assert.equal(res.status, 400);
 });
 
-// ── AC-05: 장착 요청은 서비스의 소유권/종류 거부를 그대로 상태 코드로 반영한다 ─
-
 test("AC-05: 소유하지 않은 상품 장착은 서비스가 던진 403을 그대로 응답한다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
@@ -224,10 +200,6 @@ test("AC-05: 임의 파일 경로를 itemId로 보내면 서비스가 던진 400
     assert.equal(res.json.code, "ITEM_TYPE_MISMATCH");
 });
 
-// F-14(AC-01, R-IMPL2 "MUST CLOSE UNVERSIONED PUBLIC WRITE") — expectedRevision이 없거나
-// 빈 문자열이면 서비스를 호출하기도 전에 400(MISSING_EXPECTED_REVISION)으로 거부해, 버전
-// 없는 덮어쓰기가 DB에 닿을 방법 자체를 없앤다(equip-profile과 동일한 계약,
-// profileEquipment.publicResponses.test.js의 대응 시험과 같은 근거).
 test("POST /economy/equip: expectedRevision이 없거나 빈 문자열이면 서비스 호출 전에 400(MISSING_EXPECTED_REVISION)으로 거부된다", async (t) => {
     stubAuthGate(t);
     const { calls } = stubService(t);
@@ -252,9 +224,6 @@ test("POST /economy/equip: expectedRevision이 없거나 빈 문자열이면 서
     assert.equal(calls.filter((c) => c.name === "equipItem").length, 0, "expectedRevision 검증에 실패하면 서비스가 아예 호출되면 안 된다");
 });
 
-// F-14(AC-01, R-IMPL2 "MUST CLOSE STALE CONFLICT REPLAY") — economy.store.js의 authoritative
-// GET 재조정은 이 정확한 code(SKIN_REVISION_CONFLICT)로만 트리거되므로, 라우트가 이를 다른
-// status로 뭉개면 클라이언트 쪽 충돌 처리 자체가 작동하지 않는다.
 test("POST /economy/equip: 서버 CAS 충돌(409)이면 서비스가 던진 오류를 그대로 응답한다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
@@ -271,11 +240,6 @@ test("POST /economy/equip: 서버 CAS 충돌(409)이면 서비스가 던진 오�
     assert.equal(res.json.code, "SKIN_REVISION_CONFLICT");
 });
 
-// F-14(AC-01, R-IMPL2 "Return authoritative full loadout INCLUDING selectedSkinsByJob and
-// revision from actual endpoint, rather than reconstructing selected field from request") —
-// 응답은 서비스가 실제로 돌려준 loadout 행(selected_skin_* 5개 컬럼)에서 selectedSkinsByJob을
-// 조립해야 한다. 요청 필드(slot/itemId)를 되짚어 재구성한 값이 아니라는 것을 증명하기 위해,
-// 요청한 슬롯(guard) 외의 다른 직업 값(noble)도 서비스 반환값 그대로 실리는지 함께 확인한다.
 test("POST /economy/equip: 성공 응답은 서비스가 실제로 돌려준 loadout 행에서 selectedSkinsByJob·revision을 그대로 조립한다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
@@ -307,16 +271,6 @@ test("POST /economy/equip: 성공 응답은 서비스가 실제로 돌려준 loa
     assert.equal(res.json.loadout.revision, "server-rev-2");
 });
 
-// ── 관리자 전용 지급 경로 ────────────────────────────────────────────────────
-// R-IMPL(2026-09-10): 권한은 토큰이 아니라 실제 계정 행(userRepository.findByUuid)의
-// role로 판정된다 — 아래 테스트들은 토큰의 role 클레임과 DB의 실제 role을 일부러 다르게
-// 둬서, 라우트가 토큰이 아니라 DB 값을 본다는 것을 직접 증명한다.
-//
-// R-IMPL(2026-09-10, AC-04 재검토): 클라이언트는 더 이상 amount·currency를 직접 보낼 수
-// 없다 — reason은 backend/economy/catalog.js의 REWARD_CATALOG 키여야 하고, 실제 지급
-// 금액·재화는 항상 그 카탈로그 값이다(구매 경로가 itemId로 카탈로그 가격을 찾는 것과
-// 같은 패턴). 아래 테스트들은 이 계약으로 갱신됐다.
-
 test("일반 USER 권한은 관리자 지급 경로를 사용할 수 없다", async (t) => {
     stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "USER" } } });
     stubService(t);
@@ -332,9 +286,6 @@ test("일반 USER 권한은 관리자 지급 경로를 사용할 수 없다", as
 });
 
 test("토큰 클레임이 QA/ADMIN이어도 실제 계정의 현재 role이 아니면 거부된다(토큰이 아니라 DB를 신뢰한다)", async (t) => {
-    // 토큰은 발급 당시 role=QA를 실어 나르지만, 그 뒤 권한이 회수되어 실제 계정은
-    // 지금 USER다 — 이 라우트는 토큰이 아니라 실제 계정 행을 다시 조회해야 이 회수를
-    // 반영할 수 있다.
     stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "USER" } } });
     stubService(t);
     const base = await startServer(t);
@@ -357,8 +308,6 @@ test("QA 권한은 관리자 지급 경로를 사용할 수 있다 — 실제 �
 
     const res = await request(base, "/economy/admin/grant", {
         method: "POST",
-        // 토큰 자체는 role을 USER로 실어도(또는 아무 값이어도) 실제 계정 행이 QA이므로
-        // 통과해야 한다 — 판정 기준이 토큰이 아니라 DB임을 반대 방향으로도 증명한다.
         token: tokenFor(USER_A, "USER"),
         body: { userId: USER_B, reason: "QA_TEST_GRANT_GOLD", referenceEventId: "grant-1" },
     });
@@ -385,10 +334,6 @@ test("ADMIN 권한도 관리자 지급 경로를 사용할 수 있다", async (t
     assert.equal(lastCall("grantReward").args[0].amount, 1000, 'amount는 서버 카탈로그(QA_TEST_GRANT_DIAMOND) 값이어야 한다');
 });
 
-// CODEX-2 재검토: 이전 버전은 amount·currency가 함께 와도 "무시하고 카탈로그 값을
-// 쓴다"는 이유로 201을 기대했다 — 하지만 무시는 거부가 아니다. 문서화된 필드
-// (userId/reason/referenceEventId) 밖의 값이 하나라도 있으면 grantReward를 호출하기
-// 전에 400으로 거부해야 한다.
 test("AC-04(CODEX-2): amount·currency·balance 등 알 수 없는 필드가 있으면 관리자 지급 요청도 서비스 호출 전에 400으로 거부된다", async (t) => {
     stubAuthGate(t, { accountsByUuid: { [USER_A]: { uuid: USER_A, role: "ADMIN" } } });
     const { calls } = stubService(t);
@@ -438,8 +383,6 @@ test("AC-04(R-IMPL): 보상 카탈로그에 없는 reason은 400으로 거부되
     assert.equal(res.json.code, "UNKNOWN_REWARD_REASON");
     assert.equal(calls.filter((c) => c.name === "grantReward").length, 0);
 });
-
-// ── F-32b: POST /economy/gold-purchases ─────────────────────────────────────
 
 const goldBody = (extra = {}) => ({ productId: "gold-1", version: 1, referenceEventId: "gold-ref-1", ...extra });
 

@@ -1,10 +1,5 @@
 'use strict';
 
-// F-32a 단위 시험용 인메모리 fake db. 실제 DB 없이 currencyProducts.service.js·topup.service.js의
-// **논리**(상태 전이·대조 순서·복구 경로·롤백)를 검증하기 위한 것이다 — 행 잠금·동시성·실제
-// 유일 인덱스는 흉내내지 않는다(그것은 tests/db/f32a-topup.integration.test.js가 실제 MySQL로
-// 검사한다). 트랜잭션은 undo 로그로 롤백을 흉내낸다.
-
 const uniqueError = (message) => Object.assign(new Error(message), { name: 'SequelizeUniqueConstraintError' });
 
 const matches = (row, where = {}) => Object.entries(where).every(([key, expected]) => row[key] === expected);
@@ -63,7 +58,6 @@ const createFakeTopupDb = () => {
         async findOne({ where = {} } = {}) {
             return [...orderRows.values()].find((row) => matches(row, where)) ?? null;
         },
-        // 모델 수준 Model.update(values, {where}) — releaseLease가 쓴다.
         async update(patch, { where }) {
             const targets = [...orderRows.values()].filter((row) => matches(row, where));
             for (const row of targets) Object.assign(row, patch);
@@ -123,7 +117,6 @@ const createFakeTopupDb = () => {
         EconomyCurrencyProduct,
         EconomyTopupOrder,
         EconomyLedgerEntry,
-        // ── 시험 제어·관찰 ──
         hooks,
         addProduct: (row) => { productRows.set(row.product_id, { ...row }); },
         updateProduct: (productId, patch) => { Object.assign(productRows.get(productId), patch); },

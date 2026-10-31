@@ -1,4 +1,3 @@
-// 로비 화면의 주요 public 에셋 경로입니다.
 export const LOBBY_ASSETS = {
   bgVideo: "/bg/대기실 배경 영상5.mp4",
   bgImage: "/bg/로비 뒷배경.png".normalize("NFD"),
@@ -9,8 +8,6 @@ export const LOBBY_ASSETS = {
   notificationEntryButton: "/button/알림 버튼.png",
 }
 
-// 아래 파일들은 저장소에서 macOS의 분해형 유니코드(NFD) 이름으로 저장되어 있습니다.
-// Linux/Docker에서도 실제 파일명과 정확히 일치하도록 요청 경로를 NFD로 통일합니다.
 export const LOBBY_MENU_BUTTONS = {
   gameplay: "/button/lobby-menu/게임플레이_3.png".normalize("NFD"),
   settings: "/button/lobby-menu/설정_3.png".normalize("NFD"),

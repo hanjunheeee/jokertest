@@ -12,8 +12,6 @@ import {
   resolveRoomCodeCopy,
 } from "../roomCode.js"
 
-// 서버(backend/utils/roomCode.js)가 실제로 뽑아 쓰는 문자 집합입니다.
-// 이 집합에서 나온 코드는 전부 "복사 가능"으로 판정돼야 합니다.
 const SERVER_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 test("ROOM_CODE_LENGTH와 ROOM_CODE_PATTERN이 서로 어긋나지 않는다", () => {
@@ -24,7 +22,6 @@ test("ROOM_CODE_LENGTH와 ROOM_CODE_PATTERN이 서로 어긋나지 않는다", (
 })
 
 test("ROOM_CODE_PATTERN은 g 플래그가 없어 같은 값을 몇 번 검사해도 결과가 같다", () => {
-  // g 플래그가 붙으면 lastIndex가 남아 두 번째 test가 false를 돌려주는 고전적인 버그가 생긴다.
   assert.equal(ROOM_CODE_PATTERN.global, false)
   assert.equal(ROOM_CODE_PATTERN.test("AB2C3D"), true)
   assert.equal(ROOM_CODE_PATTERN.test("AB2C3D"), true)
@@ -41,14 +38,12 @@ test("normalizeRoomCode는 문자열이 아닌 값을 빈 문자열로 바꾼다
 })
 
 test("normalizeRoomCode는 정상 코드를 조금도 가공하지 않는다", () => {
-  // 표시값과 복사값이 갈라지지 않으려면 자르기·대문자화 같은 가공이 없어야 한다.
   for (const code of ["AB2C3D", "abc123", "aB3xY9", "000000", "zzzzzz"]) {
     assert.equal(normalizeRoomCode(code), code)
   }
 })
 
 test("isValidRoomCode는 서버가 만들 수 있는 모든 문자를 통과시킨다", () => {
-  // 문자 집합 전체를 6자씩 훑어 알파벳이 섞인 코드가 걸러지지 않는지 확인한다.
   for (let i = 0; i < SERVER_CHARS.length; i += 1) {
     const code = Array.from(
       { length: ROOM_CODE_LENGTH },
@@ -60,7 +55,6 @@ test("isValidRoomCode는 서버가 만들 수 있는 모든 문자를 통과시�
 })
 
 test("isValidRoomCode는 숫자만 있는 코드도 그대로 통과시킨다", () => {
-  // 숫자 전용 코드를 막아버리면 기존 동작이 회귀한다.
   assert.equal(isValidRoomCode("123456"), true)
 })
 
@@ -110,11 +104,7 @@ test("resolveRoomCodeCopy는 형식이 깨진 코드도 ok를 주지 않는다",
   }
 })
 
-// ── 입력 정규화 (useRoomCodeInput이 쓰는 함수들) ───────────────────────────────
-
 test("normalizeRoomCodeChar는 영문자를 숫자와 똑같이 통과시킨다", () => {
-  // 이 슬라이스가 고친 버그의 핵심이다. 예전 sanitizeChar는 /\D/를 지워
-  // 영문자를 전부 빈 문자열로 만들었고, 그래서 방코드를 아예 칠 수 없었다.
   for (const char of "ABCDEFGHJKLMNPQRSTUVWXYZ") {
     assert.equal(normalizeRoomCodeChar(char), char, `영문자가 걸러짐: ${char}`)
   }
@@ -127,14 +117,11 @@ test("normalizeRoomCodeChar는 숫자 한 글자 입력을 그대로 통과시�
 })
 
 test("normalizeRoomCodeChar는 대소문자를 바꾸지 않는다", () => {
-  // 서버는 room.code === 입력값으로 정확히 비교하므로, 화면이 케이스를 바꾸면
-  // 사용자가 친 값과 서버로 나가는 값이 달라진다.
   assert.equal(normalizeRoomCodeChar("a"), "a")
   assert.equal(normalizeRoomCodeChar("A"), "A")
 })
 
 test("normalizeRoomCodeChar는 여러 글자가 들어오면 마지막 글자만 남긴다", () => {
-  // 이미 글자가 있는 칸에 타이핑하면 브라우저가 "기존 글자 + 새 글자"를 함께 준다.
   assert.equal(normalizeRoomCodeChar("AB"), "B")
   assert.equal(normalizeRoomCodeChar("2X"), "X")
   assert.equal(normalizeRoomCodeChar("A-"), "A") // 쓸 수 없는 문자를 걷어낸 뒤의 마지막 글자
@@ -148,7 +135,6 @@ test("normalizeRoomCodeChar는 쓸 수 없는 값에 대해 빈 문자열을 준
 })
 
 test("normalizeRoomCodeText는 영문자가 섞인 방코드를 그대로 보존한다", () => {
-  // 붙여넣기 경로의 회귀 방지. 예전 sanitizeCode는 여기서 영문자를 전부 날렸다.
   assert.equal(normalizeRoomCodeText("AB2C3D"), "AB2C3D")
   assert.equal(normalizeRoomCodeText("ZZZZZZ"), "ZZZZZZ")
   assert.equal(normalizeRoomCodeText("aB2c3D"), "aB2c3D") // 케이스 보존
@@ -159,7 +145,6 @@ test("normalizeRoomCodeText는 숫자 전용 코드를 그대로 통과시킨다
 })
 
 test("normalizeRoomCodeText는 구분자·공백을 걷어내고 붙여넣기를 살려낸다", () => {
-  // "AB2-C3D"처럼 사람이 읽기 좋게 꾸민 코드를 복사해 와도 입력되게 한다.
   assert.equal(normalizeRoomCodeText("AB2-C3D"), "AB2C3D")
   assert.equal(normalizeRoomCodeText(" AB2C3D "), "AB2C3D")
   assert.equal(normalizeRoomCodeText("AB2 C3D"), "AB2C3D")
@@ -178,8 +163,6 @@ test("normalizeRoomCodeText는 문자열이 아닌 값에도 터지지 않는다
 })
 
 test("normalizeRoomCodeText가 통과시킨 6자 값은 isValidRoomCode도 통과한다", () => {
-  // 입력 필터와 복사 검증이 서로 다른 규칙을 갖게 되면 "칠 수는 있는데 복사는 안 되는"
-  // 코드가 생긴다. 두 함수가 같은 문자 집합을 쓰는지 확인한다.
   for (const raw of ["AB2C3D", "abc123", "123456", "AB2-C3D", "aB2c3D"]) {
     const normalized = normalizeRoomCodeText(raw)
     if (normalized.length !== ROOM_CODE_LENGTH) continue
@@ -189,7 +172,6 @@ test("normalizeRoomCodeText가 통과시킨 6자 값은 isValidRoomCode도 통�
 })
 
 test("복사 실패 안내 문구는 비어 있지 않다", () => {
-  // 문구가 비면 role="alert" 영역이 아무것도 읽어주지 않아 오류 노출이 사라진다.
   for (const [key, message] of Object.entries(ROOM_CODE_COPY_ERRORS)) {
     assert.equal(typeof message, "string", `${key} 문구가 문자열이 아님`)
     assert.ok(message.trim().length > 0, `${key} 문구가 비어 있음`)

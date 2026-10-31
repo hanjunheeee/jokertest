@@ -1,27 +1,14 @@
-// AC-06 — 기존 테이블들의 스키마가 이번 변경(신규 모델 3개 추가)으로 바뀌지 않았는지
-// 회귀 검사합니다. 기존 각 모델의 컬럼 목록·타입·기본키·NOT NULL을 스냅샷으로 고정해
-// 두고, 신규 모델이 기존 정의를 덮어쓰거나(모델 이름 충돌) 관계 추가가 기존 테이블에
-// 컬럼을 만드는 경우를 잡습니다.
-//
-// 관계 컬럼은 항상 자식 테이블에 생기므로, User.hasMany(GameResultPlayer)를 추가해도
-// users에는 컬럼이 생기지 않아야 합니다. 그 점을 이 스냅샷으로 증명합니다.
-
 const test   = require('node:test');
 const assert = require('node:assert/strict');
 
 const { db, modelNames, attributesOf, typeNameOf } = require('./testHelpers/schemaMeta');
 
-// 이번 슬라이스 이전부터 있던 모델들. tableName과 컬럼 시그니처를 그대로 고정합니다.
-// notNull에 없는 컬럼은 NULL 허용이어야 합니다. 단 pk와 timestampManaged
-// (sequelize가 timestamps 옵션으로 직접 채우는 컬럼)는 dialect·옵션이 nullability를
-// 결정하므로 타입과 존재만 확인합니다.
 const EXISTING_TABLES = [
     {
         model: 'User',
         tableName: 'users',
         pk: ['uuid'],
         timestampManaged: ['created_at', 'updated_at', 'deleted_at'],
-        // F-29b(§2-3a): has_local_password가 추가됐다 — NOT NULL, 기본값 true.
         notNull: ['password_hash', 'nickname', 'email', 'has_local_password'],
         columns: {
             uuid:               'UUID',
@@ -44,9 +31,6 @@ const EXISTING_TABLES = [
         },
     },
     {
-        // F-03: 회전형 갱신 자격 컬럼 5개(refresh_token_hash 등)가 추가됐다
-        // (backend/db/migrations/0003-add-refresh-token-rotation.js). 모두 nullable이라
-        // 기존 세션 행에는 영향이 없다.
         model: 'UserSession',
         tableName: 'user_sessions',
         pk: ['id'],
@@ -128,8 +112,6 @@ const EXISTING_TABLES = [
         model: 'PasswordResetToken',
         tableName: 'password_reset_tokens',
         pk: ['id'],
-        // F-29b: token은 더 이상 필수가 아니다(신규 발급은 해시만 쓴다) — token_hash·
-        // revoked_at이 추가됐고 둘 다 nullable이다.
         notNull: ['user_id', 'expired_at'],
         columns: {
             id:         'INTEGER',
@@ -146,9 +128,6 @@ const EXISTING_TABLES = [
         model: 'AccountFindRequest',
         tableName: 'account_find_requests',
         pk: ['id'],
-        // F-29a(0014-find-id-requests, 설계도 §2-6): 아이디 찾기는 이메일을 아직 모르는
-        // 상태에서 조회 사건을 기록해야 해서 email을 의도적으로 nullable로 바꿨다 — 더 이상
-        // NOT NULL이 아니다.
         notNull: [],
         columns: {
             id:           'INTEGER',
@@ -207,32 +186,13 @@ const EXISTING_TABLES = [
 
 const NEW_MODELS = [
     'GameResult', 'GameResultPlayer', 'ConcurrentSnapshot',
-    // F-05: 소셜 계정 공통 기반(0005-add-social-auth 마이그레이션).
     'ExternalIdentity', 'OAuthState', 'SocialSignupIntent',
-    // F-08: 지갑·거래·소유권·장착. backend/models/economy/economy.model.js는 파일 하나에
-    // 모델 4개(EconomyWallet/EconomyLedgerEntry/EconomyEntitlement/EconomyLoadout)를
-    // 정의하지만, models/index.js 로더는 파일이 반환한 모델 하나만 db[name]에 등록한다
-    // (economy.model.js 상단 주석 참고) — 그래서 여기 보이는 건 EconomyLedgerEntry뿐이다.
     'EconomyLedgerEntry',
-    // F-11: 투표 참여 영속 집계(0008-add-vote-participations 마이그레이션).
     'VoteParticipation',
-    // F-12: 업적 지급 이력(0009-add-achievement-grants 마이그레이션).
     'AchievementGrant',
-    // F-17: 계정별 알림 원본(0012-add-notifications 마이그레이션). users를 참조하는 자식
-    // 테이블이며 users에 컬럼을 추가하지 않는다(아래 "신규 관계는 users에 컬럼을 만들지
-    // 않는다" 시험이 그 경계를 계속 지킨다).
     'Notification',
-    // F-19: 즐겨찾기·차단·게임 초대(0013-f19-friends-invites 마이그레이션). 셋 다 users를
-    // 참조하는 자식 테이블이며 users에도 friendships/friend_requests에도 컬럼을 추가하지
-    // 않는다 — friend_requests에 늘어난 것은 status에서 파생되는 generated 컬럼 하나뿐이고
-    // 그것은 모델이 아니라 마이그레이션이 소유한다.
     'FriendFavorite', 'FriendBlock', 'GameInvite',
-    // F-31a: 가입 이메일 인증 상태(0016-signup-email-verification 마이그레이션). users를
-    // 참조하는 FK가 없는 독립 테이블이며 User 모델에 컬럼·관계를 추가하지 않는다.
     'SignupEmailVerification',
-    // F-32a: 재화 상품표와 다이아 충전 주문(0018-add-currency-products-topup-orders 마이그레이션).
-    // 주문만 users를 참조하는 자식 테이블이며 User 모델에 컬럼·관계를 추가하지 않는다.
-    // 상세 컬럼·인덱스 계약은 f32a.migration.test.js가 검사한다.
     'EconomyCurrencyProduct', 'EconomyTopupOrder',
 ];
 
@@ -280,10 +240,6 @@ for (const table of EXISTING_TABLES) {
     });
 }
 
-// F-31(AC-02/AC-06): social_signup_intents.email만 nullable로 바뀌었다 — 제공자가 이메일을
-// 검증해 주지 못한 가입의 intent는 email=null로 저장된다. 타입(STRING(100))과 나머지
-// 컬럼의 NOT NULL·유일 제약은 그대로여야 한다. 실제 DB 쪽 변경은 0017 마이그레이션이
-// 적용하며 backend/tests/db/f31-social-email.integration.test.js가 describeTable로 확인한다.
 test('social_signup_intents: email만 nullable이고 나머지 제약·타입은 그대로다', () => {
     const attributes = attributesOf(db.SocialSignupIntent);
     assert.equal(db.SocialSignupIntent.tableName, 'social_signup_intents');
@@ -297,8 +253,6 @@ test('social_signup_intents: email만 nullable이고 나머지 제약·타입은
 });
 
 test('신규 관계는 users에 컬럼을 만들지 않는다', () => {
-    // hasMany는 자식 테이블에만 외래키를 만듭니다. users에 game_result 관련 컬럼이
-    // 생겼다면 관계가 반대로 정의된 것입니다.
     const columns = Object.keys(attributesOf(db.User));
     const leaked  = columns.filter((column) => /game_result|concurrent/i.test(column));
     assert.deepEqual(leaked, []);

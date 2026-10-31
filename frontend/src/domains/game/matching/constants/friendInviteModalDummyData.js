@@ -1,7 +1,3 @@
-/**
- * 친구 초대 팝업 UI 미리보기용 더미 친구 목록.
- * prototype/친구초대 팝업.png 예시 — 백엔드 연동 전까지만 사용한다.
- */
 export const FRIEND_INVITE_DUMMY_FRIENDS = [
   {
     id: "dummy-friend-1",

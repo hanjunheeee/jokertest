@@ -3,8 +3,6 @@ import { getPlayerRecordListProfileAssets } from "@/domains/game/ingame/constant
 import { pickInGameJobPortrait } from "@/domains/game/ingame/utils/pickInGameJobPortrait.js"
 import { pickInGamePlayerFrame } from "@/domains/game/ingame/utils/pickInGamePlayerFrame.js"
 
-/** @typedef {"win" | "lose"} GameResultOutcome */
-
 export const GAME_RESULT_OUTCOMES = ["win", "lose"]
 
 const PREVIEW_PLAYERS_BASE = [
@@ -27,7 +25,6 @@ const players = PREVIEW_PLAYERS_BASE.map((player, index) => ({
   cardStatus: index % 4 === 0 ? INGAME_PLAYER_STATUS.DEAD : INGAME_PLAYER_STATUS.ALIVE,
 }))
 
-/** 개발용 기본 outcome — URL `?outcome=win|lose`로 전환 */
 export const GAME_RESULT_PREVIEW = {
   outcome: "lose",
   winningTeam: "JOKER",

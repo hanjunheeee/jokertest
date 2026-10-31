@@ -1,19 +1,7 @@
 process.env.JWT_SECRET = "find-id-api-test-secret";
-// models/index.js는 require 시점에 DATABASE_URL을 파싱한다(연결은 시도하지 않는다).
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
-// F-29a(AC-05)의 요청 빈도 제한은 rateLimit.test.js가 순수 로직으로 따로 검증한다. 이
-// 파일은 여러 케이스가 같은 Node 프로세스(같은 auth.routes.js 모듈 인스턴스, 같은 메모리
-// 카운터)를 공유하므로, 기본값(IP 10회/대상 5회)에 걸려 뒤쪽 케이스가 429로 오염되지
-// 않도록 이 파일 전용으로 한도를 넉넉히 올려 둔다 — auth.routes.js가 require 시점에 이
-// 값을 읽으므로 라우터를 require하기 전에 설정해야 한다.
 process.env.FIND_ID_IP_MAX = "1000";
 process.env.FIND_ID_TARGET_MAX = "1000";
-
-// F-29a AC-01/AC-02/AC-03/AC-04 — POST /auth/find-id 서버 라우트·응답 계약 HTTP 통합 시험.
-//
-// socialAuth.route.test.js와 같은 패턴이다: 실제 authRouter를 임시 HTTP 서버에 마운트하고,
-// DB 경계(db.User.findOne / db.AccountFindRequest.create)만 시험 데이터로 대체한다. 검증
-// 미들웨어·제한기·서비스·컨트롤러는 전부 실제 코드가 돈다.
 
 const test         = require("node:test");
 const { mock }     = require("node:test");
@@ -41,8 +29,6 @@ const startServer = async (t) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-// db.User.findOne / db.AccountFindRequest.create만 갈아끼운다 — accountRecovery.service.js가
-// 실제로 부르는 두 진입점이다.
 const stubDb = (t, { findOneImpl = async () => null, createImpl = async () => ({ id: 1 }) } = {}) => {
     const originalFindOne = db.User.findOne;
     const originalCreate = db.AccountFindRequest.create;
@@ -69,8 +55,6 @@ const postJson = (base, path, body, extraHeaders = {}) =>
 
 const VALID_NICKNAME = "찾을닉네임";
 const VALID_BIRTH_DATE = "2000-01-15";
-
-// ── AC-01: 정상 매치 ──────────────────────────────────────────────────────────
 
 test("닉네임·생년월일이 일치하면 200과 마스킹된 이메일 힌트만 응답한다(허용 키 외 없음)", async (t) => {
     const { createCalls, findOneCalls } = stubDb(t, {
@@ -120,8 +104,6 @@ test("시(時)만 다른 같은 UTC 날짜는 일치로, 하루 전/후 날짜�
     assert.equal((await dayAfter.json()).ok, false);
 });
 
-// ── AC-02: 세 가지 실패 원인이 전부 같은 응답 ─────────────────────────────────
-
 test("계정 없음·생년월일 불일치·생년월일 미등록은 완전히 같은 응답을 돌려준다(AC-02)", async (t) => {
     const accountMissing = () => {
         stubDb(t, { findOneImpl: async () => null });
@@ -153,8 +135,6 @@ test("계정 없음·생년월일 불일치·생년월일 미등록은 완전히
         assert.deepEqual(r.body, { ok: false, code: "NOT_FOUND" });
     }
 });
-
-// ── AC-03: 민감정보 미노출, DB 예외 은닉, 세션 부작용 없음 ────────────────────
 
 test("DB 조회 기록(create) 실패는 원본 오류를 감추고 고정된 500으로 응답한다", async (t) => {
     stubDb(t, {
@@ -213,8 +193,6 @@ test("쿼리스트링·후행 슬래시가 붙은 /auth/find-id 변형도 잘못
     const consoleErrorMock = mock.method(console, "error", () => {});
     t.after(() => consoleErrorMock.mock.restore());
 
-    // 파싱 실패 시 err.message에 실릴 원문 조각 — 원래 originalUrl 완전일치 검사는 이
-    // 변형들에서 걸러내지 못하고 일반 오류 처리로 빠져 이 값이 응답·로그에 노출될 수 있었다.
     const sensitiveFragment = "leaked-secret-fragment-9f3c";
     const malformedBody = `{not-valid-json,"nickname":"${sensitiveFragment}"`;
 
@@ -251,8 +229,6 @@ test("마스킹 힌트는 인증 토큰으로 쓸 수 없다 — 그 값을 acce
     const meRes = await fetch(`${base}/auth/me`, { headers: { cookie: `accessToken=${maskedEmail}` } });
     assert.equal(meRes.status, 401);
 });
-
-// ── AC-04: 입력 검증(8자 초과 허용, 형식 오류 거부) — 검증 실패는 DB에 닿지 않는다 ──
 
 test("형식이 잘못된 입력(짧은 닉네임/이상한 날짜)은 400이고 DB를 전혀 건드리지 않는다", async (t) => {
     const { findOneCalls, createCalls } = stubDb(t);

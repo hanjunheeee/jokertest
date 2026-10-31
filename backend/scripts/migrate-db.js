@@ -1,18 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-// F-01 명시적 마이그레이션 명령. `db.sequelize.sync({force:false})`가 컬럼 변경을
-// 못 하는 문제(0002가 다루는 nickname_snapshot 확장 같은 것)를 sequelize-cli 없이
-// 해결하기 위해, 이 저장소의 모델 로더(backend/models/index.js)가 만든 연결을 그대로
-// 재사용해 마이그레이션을 적용한다. 대상 DB는 기존과 동일하게 DATABASE_URL(.env 또는
-// 환경변수)로 고른다 — 격리 테스트 DB를 상대할 때도 같은 방식으로 DATABASE_URL만
-// 바꾸면 된다.
-//
-// 사용법:
-//   node backend/scripts/migrate-db.js status
-//   node backend/scripts/migrate-db.js migrate
-//   node backend/scripts/migrate-db.js resolve-failure --name <migration-name> --confirm
-
 const path = require('path');
 
 const migrationRunner = require('../db/migrationRunner');
@@ -21,44 +9,20 @@ const expandNicknameSnapshot = require('../db/migrations/0002-expand-nickname-sn
 const addRefreshTokenRotation = require('../db/migrations/0003-add-refresh-token-rotation');
 const addRefreshTokenHistory = require('../db/migrations/0004-add-refresh-token-history');
 const addSocialAuth = require('../db/migrations/0005-add-social-auth');
-// 소셜 가입과 기본 지급에 필요한 스키마를 실제 배포 명령에서도 순서대로 적용한다.
 const addEconomy = require('../db/migrations/0006-add-economy');
 
 const addEconomyPurchaseRequests = require('../db/migrations/0007-add-economy-purchase-requests');
-// F-11: 투표 참여 영속 집계 테이블도 실제 배포 명령에서 순서대로 적용한다.
 const addVoteParticipations = require('../db/migrations/0008-add-vote-participations');
-// F-12: 업적 지급 이력 테이블도 실제 배포 명령에서 순서대로 적용한다.
 const addAchievementGrants = require('../db/migrations/0009-add-achievement-grants');
-// F-13: 프로필 장착 CAS(compare-and-swap)에 쓰는 영속 revision 컬럼도 실제 배포 명령에서
-// 순서대로 적용한다(economy.service.js의 equipProfileAppearance 참고).
 const addEconomyLoadoutRevision = require('../db/migrations/0010-add-economy-loadout-revision');
-// F-14: 직업별 장착 스킨 컬럼도 실제 배포 명령에서 순서대로 적용한다(economy.service.js의
-// equipItem 확장 슬롯 참고).
 const addEconomyLoadoutJobSkins = require('../db/migrations/0011-add-economy-loadout-job-skins');
-// F-17: 알림 원본 테이블과 (user_id, source_key) 유일 제약도 실제 배포 명령에서 순서대로
-// 적용한다(notification.service.js의 중복 방지 근거 — AC-03).
 const addNotifications = require('../db/migrations/0012-add-notifications');
-// F-19: 즐겨찾기·차단·게임 초대 테이블과 friend_requests의 PENDING 유일 제약 교체도 실제
-// 배포 명령에서 순서대로 적용한다(gameInvite.service.js·friend.service.js의 멱등·권한 근거).
 const addF19FriendsInvites = require('../db/migrations/0013-f19-friends-invites');
-// F-29a: account_find_requests.email을 nullable로 바꿔, 아이디 찾기가 이메일을 아직 모르는
-// 상태에서도 조회 사건을 기록할 수 있게 한다(accountRecovery.service.js의 findId 참고).
 const addFindIdRequests = require('../db/migrations/0014-find-id-requests');
-// F-29b: 비밀번호 재설정 토큰 해시 전환 + users.has_local_password(§2-3a) 추가·backfill.
 const addPasswordResetTokens = require('../db/migrations/0015-password-reset-tokens');
-// F-31a: 가입 이메일 인증(인증번호·가입 증명) 상태 테이블도 실제 배포 명령에서 순서대로
-// 적용한다(signupEmailVerification.service.js가 이 테이블에 직접 INSERT/UPDATE한다).
 const addSignupEmailVerification = require('../db/migrations/0016-signup-email-verification');
-// F-31: social_signup_intents.email을 nullable로 바꾼다 — 제공자가 이메일을 검증해 주지
-// 못한 소셜 가입도 자체 메일 인증으로 보완할 수 있게 하는 스키마 변경이다
-// (socialAuth.service.js resolveOAuthAccount/completeSocialSignup 참고).
 const addSocialSignupEmail = require('../db/migrations/0017-social-signup-email');
-// F-32a: 재화 상품표와 다이아 충전 주문 테이블도 실제 배포 명령에서 순서대로 적용한다
-// (currencyProducts.service.js·topup.service.js가 이 테이블을 읽고 쓴다). 운영 상품은
-// 이 마이그레이션이 넣지 않는다.
 const addCurrencyProductsTopupOrders = require('../db/migrations/0018-add-currency-products-topup-orders');
-// F-33 E-2: 이모티콘 팔레트(8칸) 테이블도 실제 배포 명령에서 순서대로 적용한다
-// (economy.service.js의 getEmojiPalette/saveEmojiPalette가 이 테이블을 읽고 쓴다).
 const addEmojiPalettes = require('../db/migrations/0019-add-emoji-palettes');
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes];
 
@@ -87,9 +51,6 @@ const runStatus = async (db) => {
     console.log('마이그레이션 상태:');
     printStatusTable(rows);
     const hasFailed = rows.some((r) => r.status === 'failed');
-    // running은 지금 이 프로세스가 만든 상태가 아니므로(각 명령은 매번 새로 락을 걸고
-    // 끝나면 반드시 applied/failed로 정리한다) 여기 보인다는 것은 이전 실행이 크래시했거나
-    // 이력 쓰기 자체가 실패해 멈춘 흔적이다 — failed와 같은 수준으로 취급한다.
     const hasStuckRunning = rows.some((r) => r.status === 'running');
     if (hasFailed) {
         console.log('\n실패 이력이 있습니다. docs/requirements/2026-09-09-f01-migration-runbook.md의 복구 절차를 먼저 수행하세요.');
@@ -158,8 +119,6 @@ const main = async () => {
         return;
     }
 
-    // models/index.js는 require 시점에 DATABASE_URL로 연결을 만든다 — 대상 DB를 바꾸려면
-    // 이 스크립트를 실행하기 전에 DATABASE_URL(및 필요하면 NODE_ENV)을 설정하면 된다.
     const db = require(path.join(__dirname, '..', 'models'));
 
     let exitCode = 1;

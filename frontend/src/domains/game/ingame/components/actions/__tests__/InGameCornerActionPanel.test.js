@@ -1,6 +1,3 @@
-/**
- * CN V-2 — 화면 우측 하단 투표 현황·기권·건너뛰기 버튼.
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"

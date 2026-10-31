@@ -1,25 +1,13 @@
-// F-02: 회원가입 입력 검증. backend/validation/signupValidation.js와 규칙(길이·문자셋·
-// 날짜 파싱)을 동일하게 유지해야 한다 — 모듈 시스템이 달라(ESM/CommonJS) 코드를 그대로
-// 공유할 수 없으므로, tests/fixtures/f02-signup-validation.json의 같은 벡터를 양쪽
-// 테스트가 돌려 판정이 갈리지 않는지 확인한다.
-
 export const NICKNAME_MIN_LENGTH = 2
 export const NICKNAME_MAX_LENGTH = 8
 export const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/
 
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 64
-// bcrypt는 72바이트를 넘는 입력을 조용히 잘라서 해시한다 — 문자 수 상한(64)만으로는
-// 멀티바이트 문자(한글 등)가 섞인 입력이 72바이트를 넘는 경우를 걸러내지 못해, 사용자가
-// 입력한 값과 실제로 해시되는 값이 달라질 수 있다.
 export const PASSWORD_MAX_BYTES = 72
 
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
-// 'YYYY-MM-DD'를 로컬 타임존과 무관하게 UTC 자정 Date로 만든다. new Date(str)의 브라우저별
-// 파싱 차이나 new Date(y,m,d)의 로컬 타임존 조합을 쓰면 실행 위치에 따라 하루가 밀릴 수
-// 있어, Date.UTC로만 만들고 그 결과를 다시 UTC 필드로 되읽어 2월 30일 같은 존재하지 않는
-// 날짜(달력 롤오버)를 걸러낸다.
 export function parseIsoDateUtc(value) {
   if (typeof value !== "string") return null
   const match = ISO_DATE_PATTERN.exec(value)
@@ -95,8 +83,6 @@ export function validatePasswordConfirm(password, passwordConfirm) {
   return { ok: true }
 }
 
-// 회원가입 폼 전체를 검증한다. 하나라도 실패하면 첫 문제만 돌려준다 — 필드마다 하나씩
-// alert로 보여주는 기존 방식(useLoginPage.handleSubmit)과 맞춘다.
 export function validateSignupForm({ email, password, passwordConfirm, nickname, birthDate }) {
   const emailResult = validateEmail(email)
   if (!emailResult.ok) return emailResult

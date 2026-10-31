@@ -28,17 +28,12 @@ import {
   invitedGuestsRevealTransition,
 } from "../../../../domains/library/constants/invitedGuests/entranceMotion.js"
 
-// F-10: 로딩·에러·빈 랭킹 상태 문구. 기존 표 텍스트 톤(font-subheading, #1a1008)을 그대로 쓴다.
 const INVITED_GUESTS_STATE_MESSAGE_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]/80"
 const INVITED_GUESTS_STATE_RETRY_BUTTON_CLASS =
   "mt-1 underline underline-offset-2 text-[#1a1008]"
 
-/** 초대받은 자들 — 좌·우 페이지 스프레드 (하단 행 Y 정렬) */
 export default function InvitedGuestsSpread({
-  // F-17(AC-02): 알림에서 특정 직업 도전과제로 들어올 수 있어야 하므로, 직업 선택을
-  // 바깥(LibraryPage)에서 받을 수 있게 열어 둔다. 넘어오지 않으면 기존처럼 이 컴포넌트가
-  // 자체 상태로 0번 직업부터 보여준다.
   jobIndex: controlledJobIndex,
   onJobChange,
   targetAchievementId = null,
@@ -48,7 +43,6 @@ export default function InvitedGuestsSpread({
   const setJobIndex = onJobChange ?? setUncontrolledJobIndex
   const rightColumnRef = useRef(null)
 
-  // F-10 AC-03: 직업별 내 전적·전체 랭킹은 계정마다 다른 런타임 값이다(더미로 대체하지 않는다).
   const byJobKey = useRoleStatisticsStore((state) => state.byJobKey)
   const requestJob = useRoleStatisticsStore((state) => state.requestJob)
   const retryJob = useRoleStatisticsStore((state) => state.retryJob)
@@ -57,22 +51,16 @@ export default function InvitedGuestsSpread({
   const isReady = page.ready
   const jobKey = page.jobKey
 
-  // 탭을 처음 선택했을 때만 요청한다 — 이미 성공/로딩/에러 상태인 직업을 매 렌더마다
-  // 다시 부르지 않는다(재시도는 사용자가 retryJob을 직접 호출한다).
   useEffect(() => {
     if (!jobKey) return undefined
     if (byJobKey[jobKey]?.status === "idle") requestJob(jobKey)
     return undefined
   }, [jobKey, byJobKey, requestJob])
 
-  // F-17(AC-02): 새 업적 알림으로 이 직업에 들어오면 이미 성공 상태로 캐시된 값이라도
-  // 다시 읽어온다 — 그러지 않으면 "방금 지급받은 업적"이 예전 조회 결과(미클리어)로
-  // 보인다. 조회는 부작용이 없으므로(A-09) 안전하다.
   useEffect(() => {
     if (!targetAchievementId || !jobKey) return undefined
     retryJob(jobKey)
     return undefined
-    // jobKey가 대상 직업으로 바뀐 뒤 한 번만 갱신한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetAchievementId, jobKey])
 

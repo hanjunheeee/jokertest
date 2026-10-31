@@ -6,8 +6,6 @@ import {
   isSelfTargetAllowedForNightAction,
 } from "../ingameActionPanel.js"
 
-// 백엔드 isEligibleForNightAction(backend/game-core/gameSession.js)과 동일한 표 —
-// 두 표가 나중에 어긋나지 않는지 회귀 방지.
 const eligibilityTable = [
   ["JOKER", 0, "ASSASSINATE"],
   ["JOKER", 1, "ASSASSINATE"],

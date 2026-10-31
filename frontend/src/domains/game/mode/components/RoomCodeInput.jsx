@@ -1,12 +1,8 @@
-// 파일 역할: RoomCodeInput.jsx - 화면을 구성하는 컴포넌트입니다.
 import {
   ROOM_CODE_INPUT_ATTRIBUTES,
   useRoomCodeInput,
 } from "../hooks/useRoomCodeInput.js"
 
-// 방코드 6자리를 한 칸씩 입력하는 UI입니다.
-// 칸이 받는 문자 집합과 모바일 키보드 종류(ROOM_CODE_INPUT_ATTRIBUTES)는 값을 걸러내는
-// 훅과 한곳에서 정합니다 — 여기서 따로 적으면 "키보드엔 있는데 입력은 안 되는 글자"가 생깁니다.
 export default function RoomCodeInput({
   value,
   onChange,

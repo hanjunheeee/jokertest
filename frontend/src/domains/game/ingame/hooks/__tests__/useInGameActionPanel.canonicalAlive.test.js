@@ -7,18 +7,6 @@ import { InGamePlayerSessionContext } from "../../components/InGamePlayerSession
 import { useInGameActionPanel } from "../useInGameActionPanel.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 
-// ---------------------------------------------------------------------------
-// AC-02 · 낮 투표 UI 활성/비활성은 서버 canonical 생존 상태를 따른다
-//
-// 기존 게이트는 세션 컨텍스트의 status(isSessionPlayerAlive)만 봤다. 그 목록은
-// buildPlayerSessionSourceFromGameState가 fail-closed로 preview(더미) 목록을 돌려주는 구간에서
-// canonical과 어긋날 수 있어, 서버상 사망한 본인에게 투표 UI가 열려 있었다. 여기서는
-// store의 players[].alive만 바꿔가며 dayVoteControlsEnabled가 그 값을 따라가는지 본다.
-//
-// 기존 useInGameActionPanel.test.js는 건드리지 않는다 — 회귀가 나면 어느 쪽 전제가 깨졌는지
-// 파일 단위로 곧바로 갈린다.
-// ---------------------------------------------------------------------------
-
 let canonicalAliveTestDom = null
 
 function ensureClientEnvironment() {
@@ -46,7 +34,6 @@ function renderPanel(contextValue = {}) {
   return captured
 }
 
-/** DAY_VOTE로 고정된 store 상태. selfAlive만 바꿔가며 게이트를 관찰한다. */
 function seedDayVoteState({ selfUuid = "p1", selfAlive = true } = {}) {
   useInGameStore.setState({
     gameId: "game-1",
@@ -90,7 +77,6 @@ test("canonical alive=true면 낮 투표 UI가 활성화된다(positive control)
 })
 
 test("canonical alive=false면 세션 컨텍스트가 생존이라고 말해도 낮 투표 UI가 비활성화된다", () => {
-  // 프리뷰(더미)가 섞이는 경로의 재현 — 세션 목록은 살아있다고 하지만 서버는 사망으로 본다.
   seedDayVoteState({ selfAlive: false })
 
   const captured = renderPanel(ALIVE_SESSION_CONTEXT)
@@ -124,10 +110,6 @@ test("canonical alive=false면 세션 컨텍스트가 비어 있어도 낮 투�
   assert.equal(captured.dayVoteControlsEnabled, false)
 })
 
-// ---------------------------------------------------------------------------
-// canonical 판정 불가(null) — 기존 폴백을 그대로 승계한다
-// ---------------------------------------------------------------------------
-
 test("canonical 판정 불가(self.uuid 없음)면 세션 컨텍스트가 비었을 때 기존 폴백대로 열린다", () => {
   useInGameStore.setState({
     gameId: "game-1",
@@ -154,10 +136,6 @@ test("canonical 판정 불가(roster에 alive 필드 없음)면 세션 컨텍스
 
   assert.equal(captured.dayVoteControlsEnabled, false)
 })
-
-// ---------------------------------------------------------------------------
-// 세 게이트(낮 투표·낮 준비·밤 행동)가 같은 판정원을 쓴다
-// ---------------------------------------------------------------------------
 
 test("canonical alive=false면 낮 준비 버튼도 함께 잠긴다(투표와 같은 판정원)", () => {
   useInGameStore.setState({

@@ -23,9 +23,7 @@ const verifyRequests = []
 const loggedInUsers = []
 const navigations = []
 
-// completeSocialSignupApi 응답/거부는 테스트마다 바꿔 끼울 수 있게 함수 참조로 둡니다.
 let completeImpl = async () => ({ user: { uuid: "u-1", nickname: "소셜닉" } })
-// F-31: 서버 intent 조회 기본값은 "제공자가 이메일을 검증해 준 가입"(자체 인증 불필요)입니다.
 let intentImpl = async () => ({ emailVerificationRequired: false })
 let requestCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
 let verifyCodeImpl = async () => ({ ok: true, signupProof: "social-proof-1" })
@@ -87,8 +85,6 @@ test.beforeEach(() => {
   verifyCodeImpl = async () => ({ ok: true, signupProof: "social-proof-1" })
 })
 
-// 서버 intent 조회가 끝난 뒤의 훅을 돌려줍니다 — 조회 전에는 제출이 막히므로(F-31 AC-02)
-// 대부분의 케이스는 ready 상태에서 시작해야 합니다.
 const mountReady = async (intentToken) => {
   let hook
   await act(async () => {
@@ -175,8 +171,6 @@ test("생년월일 없이도 요청을 보낼 수 있다", async () => {
   hook.unmount()
 })
 
-// ── F-31 AC-02: 자체 메일 인증이 필요한 intent ───────────────────────────────
-
 test("emailVerificationRequired:true면 인증 전 제출이 막히고, 인증 후에는 email·signupProof가 완료 요청에 실린다", async () => {
   intentImpl = async () => ({ emailVerificationRequired: true })
   verifyCodeImpl = async () => ({ ok: true, signupProof: "social-proof-xyz" })
@@ -185,7 +179,6 @@ test("emailVerificationRequired:true면 인증 전 제출이 막히고, 인증 �
   assert.equal(hook.result.current.emailVerificationRequired, true)
   assert.equal(hook.result.current.canSubmit, false, "인증 전에는 제출할 수 없어야 한다")
 
-  // 인증하지 않은 채 제출하면 완료 API를 부르지 않는다.
   await act(async () => {
     await hook.result.current.submit(VALID_FIELDS)
   })
@@ -244,8 +237,6 @@ test("인증 완료 후 이메일을 바꾸면 인증이 초기화되어 다시 
   hook.unmount()
 })
 
-// 재검토 지적(F-31 AC-04 a): 같은 배치 안의 A→B→A는 렌더 시점 값 비교로는 드러나지 않는다 —
-// 이메일 변경 핸들러가 전이마다 동기적으로 인증을 폐기해야 한다.
 test("같은 배치 안에서 이메일을 A→B→A로 바꿔도 기존 인증이 폐기되고 완료 제출이 막힌다", async () => {
   intentImpl = async () => ({ emailVerificationRequired: true })
 
@@ -270,8 +261,6 @@ test("같은 배치 안에서 이메일을 A→B→A로 바꿔도 기존 인증�
   hook.unmount()
 })
 
-// ── 재검토 지적(F-31 AC-02): 완료 응답의 세대 검사와 계약 밖 user ─────────────────────
-
 test("완료 요청 중 취소(언마운트)되면 늦게 도착한 완료 응답은 login·navigate를 호출하지 않는다", async () => {
   let resolveComplete
   completeImpl = () => new Promise((resolve) => { resolveComplete = resolve })
@@ -281,7 +270,6 @@ test("완료 요청 중 취소(언마운트)되면 늦게 도착한 완료 응�
   act(() => { pendingSubmit = hook.result.current.submit(VALID_FIELDS) })
   assert.equal(completeRequests.length, 1)
 
-  // LoginPage의 취소는 socialIntent 쿼리를 지워 이 화면을 언마운트한다.
   hook.unmount()
 
   await act(async () => {
@@ -388,8 +376,6 @@ test("서버가 증명을 거부하면(SIGNUP_PROOF_INVALID) 증명이 폐기되
   hook.unmount()
 })
 
-// ── F-31 AC-02: intent 조회 상태 ────────────────────────────────────────────
-
 test("intent 조회 전에는 제출이 막히고 완료 API를 부르지 않는다", async () => {
   let resolveIntent
   intentImpl = () => new Promise((resolve) => { resolveIntent = resolve })
@@ -415,7 +401,6 @@ test("intent 조회가 계약 밖 응답을 돌려주면 인증 불필요로 단
   assert.equal(hook.result.current.emailVerificationRequired, false)
   assert.equal(hook.result.current.canSubmit, false)
 
-  // 재시도하면 같은 intentToken으로 다시 조회한다.
   intentImpl = async () => ({ emailVerificationRequired: true })
   await act(async () => { hook.result.current.retryIntent() })
   assert.equal(hook.result.current.intentStatus, "ready")
@@ -435,8 +420,6 @@ test("intent 조회가 INTENT_CONSUMED로 실패하면 cancelled 상태가 된�
   assert.equal(hook.result.current.status, "cancelled")
   hook.unmount()
 })
-
-// ── AC-05: 서버가 돌려준 code에 따라 상태가 갈린다 ────────────────────────────
 
 test("서버가 INTENT_EXPIRED를 돌려주면 expired 상태가 된다", async () => {
   completeImpl = async () => {

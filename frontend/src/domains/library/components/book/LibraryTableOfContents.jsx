@@ -12,7 +12,6 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
-/** 책 프레임 상단 중앙 — 현재 목차 표시 */
 export default function LibraryTableOfContents({ activeTabId }) {
   const activeTab = getLibraryTab(activeTabId)
 

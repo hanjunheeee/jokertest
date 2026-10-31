@@ -21,7 +21,6 @@ import GameResultPlayerList from "./GameResultPlayerList.jsx"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
-/** 게임 결과 화면 — 배경 + 승패 배너 + 플레이어 목록 + MVP */
 export default function GameResultShell({
   outcome,
   winningTeam,

@@ -1,5 +1,3 @@
-// ── StorePanel ──────────────────────────────────────────────
-
 export const STORE_PANEL_CLASS =
   "absolute left-1/2 top-[44%] z-20 w-[min(62rem,85vw)] -translate-x-1/2 -translate-y-1/2"
 
@@ -25,8 +23,6 @@ export const STORE_PANEL_SCROLL_AREA_CLASS = "min-h-0 flex-1 overflow-y-auto ove
 export const STORE_PANEL_SIDEBAR_CLASS =
   "w-[26%] min-w-[9.25rem] shrink-0 pl-[clamp(0.9rem,1.4vw,1.1rem)]"
 
-// ── StoreItemGrid ───────────────────────────────────────────
-
 export const STORE_SLOT_IMAGE_WRAP_CLASS =
   "my-[clamp(0.15rem,0.35vh,0.25rem)] flex h-[clamp(5.5rem,9vw,7.5rem)] w-full items-center justify-center"
 
@@ -51,22 +47,17 @@ export const STORE_SLOT_TOP_CLASS =
 export const STORE_SLOT_NAME_WRAP_CLASS =
   "flex min-h-[clamp(2.35rem,4.2vh,2.75rem)] w-full flex-col items-center justify-center gap-[clamp(0.05rem,0.15vh,0.1rem)] rounded-sm border border-[#2a1810]/12 bg-[#1a0f0a]/10 px-[clamp(0.3rem,0.55vw,0.45rem)] py-[clamp(0.2rem,0.45vh,0.3rem)] text-center [box-shadow:inset_0_1px_0_rgba(245,240,230,0.14)]"
 
-/** `-` 위 직업 접두 (예: 경비원) */
 export const STORE_SLOT_NAME_JOB_CLASS =
   "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,0.92vw,0.82rem)] font-bold leading-snug text-[#5c554d]"
 
-/** 상품명 본문 — 스킨명·단일 이름 */
 export const STORE_SLOT_NAME_TITLE_CLASS =
   "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.12vw,1rem)] font-extrabold leading-snug text-[#140c08]"
 
-/** @deprecated STORE_SLOT_NAME_JOB_CLASS / STORE_SLOT_NAME_TITLE_CLASS 사용 */
 export const STORE_SLOT_NAME_LINE_CLASS = STORE_SLOT_NAME_TITLE_CLASS
 
-/** @deprecated StoreItemSlotName + STORE_SLOT_NAME_LINE_CLASS 사용 */
 export const STORE_SLOT_NAME_TEXT_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08] whitespace-nowrap"
 
-/** @deprecated StoreItemSlotName 사용 */
 export const STORE_SLOT_NAME_CLASS =
   "line-clamp-1 w-full px-1 text-center font-subheading app-text-scaled [--app-text-size:clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08]"
 
@@ -124,8 +115,6 @@ export const STORE_PREVIEW_TOGGLE_BTN_CLASS =
 export const STORE_PREVIEW_TOGGLE_IMG_CLASS =
   "interactive-scale-sm block h-full w-full select-none object-contain"
 
-// ── StoreSidebar ──────────────────────────────────────────────
-
 export const STORE_SIDEBAR_WRAP_CLASS =
   "flex h-full w-full flex-col gap-[clamp(0.75rem,1.6vh,1.05rem)] px-[clamp(0.25rem,0.65vw,0.45rem)] py-[clamp(0.25rem,0.65vh,0.4rem)] font-subheading"
 
@@ -146,8 +135,6 @@ export const STORE_CATEGORY_ROW_CLASS =
 
 export const STORE_CATEGORY_ROW_SELECTED_CLASS =
   "bg-[#1a0f0a]/32 text-white [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
-
-// ── StoreSelectedItemDetail ───────────────────────────────────
 
 export const STORE_DETAIL_SECTION_CLASS =
   "mt-auto mb-[clamp(0.85rem,1.8vh,1.2rem)] shrink-0 rounded-md bg-[#1a0f0a]/22 px-[clamp(0.4rem,0.8vw,0.55rem)] py-[clamp(0.4rem,0.85vh,0.55rem)] [box-shadow:inset_0_1px_0_rgba(245,240,230,0.10),_0_6px_18px_rgba(0,0,0,0.16)]"
@@ -204,8 +191,6 @@ export const STORE_PURCHASE_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.75rem,1.05vw,0.88rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 export const STORE_PURCHASE_BTN_IMAGE_CLASS = "block h-auto w-full select-none"
-
-// ── StoreCurrencyBalance ──────────────────────────────────────
 
 export const STORE_CURRENCY_POSITION_CLASS =
   "absolute right-[2.5%] top-[2.5%] z-30 sm:right-[3%] sm:top-[3%]"

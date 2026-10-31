@@ -8,12 +8,6 @@ import {
 import { GAME_RESULT_BG_CLASS, GAME_RESULT_PAGE_CLASS } from "../constants/gameResultLayout.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 
-/**
- * 게임 결과창 진입 전 승/패 연출 영상 — ended 시 onComplete, 오류·지연 시 건너뛰기.
- * 상점·설정 진입 영상처럼 viewport-shell 중앙 게임 열 안에서만 재생한다.
- * @param {"win" | "lose"} outcome
- * @param {() => void} onComplete
- */
 export default function GameResultIntroVideo({ outcome = "win", onComplete }) {
   const videoRef = useRef(null)
   const [showSkip, setShowSkip] = useState(false)
@@ -28,7 +22,6 @@ export default function GameResultIntroVideo({ outcome = "win", onComplete }) {
         video.pause()
         video.currentTime = 0
       } catch {
-        // metadata 전 currentTime 대입 실패는 무시
       }
       const playResult = video.play()
       if (playResult && typeof playResult.then === "function") {

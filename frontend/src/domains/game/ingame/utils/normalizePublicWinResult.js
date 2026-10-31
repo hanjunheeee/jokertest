@@ -1,12 +1,3 @@
-/**
- * 공개 winResult — canonical { winner }에 선택적 전원 정체 공개(reveals)·mvp를 붙인 형태.
- *
- * 서버(game-core buildPublicWinResult)가 ENDED 스냅샷·terminal payload에 실어 보낸다.
- * store에는 winner만 남기면 결과 화면(buildGameResultViewModel)이 참가자 명단을 그릴 수 없으므로,
- * applySessionSnapshot·parseNightResultAppliedPayload·applyTribunalResolved·
- * parsePlayerEliminatedPayload가 모두 이 정규화기를 공유한다.
- */
-
 const KNOWN_WINNERS = new Set(["CITIZEN", "JOKER"])
 const KNOWN_TEAMS = new Set(["CITIZEN", "JOKER"])
 
@@ -46,15 +37,10 @@ function normalizeWinResultMvp(rawMvp) {
   return { uuid: rawMvp.uuid }
 }
 
-/**
- * @param {unknown} raw 서버가 내려준 winResult 원본
- * @returns {{ winner: "CITIZEN"|"JOKER", reveals?: object[], mvp?: { uuid: string } } | null}
- */
 export function normalizePublicWinResult(raw) {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null
   if (!KNOWN_WINNERS.has(raw.winner)) return null
 
-  /** @type {{ winner: "CITIZEN"|"JOKER", reveals?: object[], mvp?: { uuid: string } }} */
   const winResult = { winner: raw.winner }
 
   const reveals = normalizeRoleReveals(raw.reveals)

@@ -1,28 +1,11 @@
 'use strict';
 
-// F-19 AC-06 — 초대 수락 → 실제 대기방 입장의 상태·fault 표를 실제 matchmaking 경로로
-// 검증한다.
-//
-// 여기서 확인하는 것은 **입장 계약**이다(A-10):
-//   1) 역사적 수락 결정 · 2) 역사적 publication 영수증 · 3) 현재 canonical membership
-// 이 셋은 서로 다른 사실이고, 성공 입장은 (2)와 (3)이 함께 있을 때만 인정한다.
-//
-// gameInvite 서비스는 호출할 때마다 실제 MySQL 트랜잭션을 연다. DB 없이 이 상태 기계를
-// 결정적으로 재현하기 위해 matchmaking.__setGameInviteServiceForTests로 참조만 교체한다
-// (userRepositoryRef·economyServiceRef와 완전히 같은 관례). 교체한 것은 **SQL 경계뿐**이고,
-// 예약·정원·두 Map·socket 채널·ready/start 협조·get_current_room은 전부 실제 코드다.
-
-// backend/models는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지 않는다).
-// 이 파일은 SQL 경계를 전부 대역으로 교체하므로 실제 쿼리는 한 번도 실행되지 않는다 —
-// f17/friend.service.test.js와 같은 관례로, 파일 하나만 실행해도 되도록 자립시킨다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const matchmaking = require('../matchmaking')
-// CO S-1(AC-02): 게임 시작 경로가 계정 전적 저장소도 호출한다 — 대역이 없으면 이 순수 단위
-// 스위트가 실제 MySQL 접속을 시도한다(economyService 대역과 같은 이유).
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
@@ -39,7 +22,6 @@ matchmaking.__setEconomyServiceForTests({
             profilePhotoId: null, profileBorderId: null, cardFrameId: null,
             skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
         }])),
-    // E-3(F-33 AC-01): 같은 캡처 경계가 참가자별 이모티콘 팔레트도 함께 읽는다.
     getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
 })
 
@@ -61,7 +43,6 @@ const {
     createFakeSocket,
     createFakeIo,
     validSettingsPayload,
-    // F-20(AC-04): set_ready/start_game은 roomId·expectedSettingsVersion을 필수로 요구한다.
     readyPayload,
     startPayload,
 } = require('./testHelpers/matchmakingFixtures')
@@ -78,14 +59,6 @@ const GUEST = 'guest-uuid'
 const OTHER = 'other-uuid'
 const INVITE_ID = 'invite-1'
 
-/**
- * 초대 SQL 경계의 시험 대역.
- *
- * 실제 서비스와 같은 계약만 지킨다: getAttemptOutcome은 초대가 가리키는 방·boot을 알려주고,
- * recordAcceptDecision은 역사적 결정을 확정하며, finalizeAcceptedEntry는 잠금 안에서
- * 동기 publish()를 부른 뒤 durable 영수증을 쓴다. 각 단계마다 gate를 끼워 그 사이에
- * 방 삭제·정원 경합·세션 종료·canonical 교체가 끼어드는 순간을 결정적으로 만든다.
- */
 function createInviteServiceStub({ roomId, roomInstanceId, bootEpoch, gates = {} } = {}) {
     const state = {
         status: 'PENDING',
@@ -146,27 +119,15 @@ function createInviteServiceStub({ roomId, roomInstanceId, bootEpoch, gates = {}
                 return { ok: false, code: committed.code, published: false }
             }
 
-            // publish 직후 · durable 영수증 직전에서 멈춘다. 두 Map에는 들어갔지만 영수증은
-            // 아직 없는 구간을 결정적으로 재현한다(원격 SQL이 아직 응답하지 않은 상태).
             if (gates.afterPublish) await gates.afterPublish
 
             if (gates.receiptShouldFail) {
-                // 영수증 쓰기/커밋 실패 — 방금 넣은 두 Map을 **동기적으로** 되돌려야 한다.
                 unpublish()
                 return { ok: false, code: 'RECEIPT_FAILED', published: true, unknown: true }
             }
             state.entryOutcome = 'PUBLISHED'
             return { ok: true, alreadyPublished: false }
         },
-        /**
-         * 실제 서비스의 **조건부 UPDATE 술어를 그대로** 옮긴다(review5 #2).
-         *
-         * gameInvite.service.js::recordEntryInterrupted는 한 문장으로
-         *   WHERE id=? AND attempt_id=? AND entry_outcome='UNCONFIRMED'
-         * 를 쓰고 영향받은 행 수를 돌려준다. 예전 대역은 attempt 소유와 UNCONFIRMED를
-         * 확인하지 않고 무조건 INTERRUPTED를 적어서, 실제로는 **0행이라 아무것도 기록되지
-         * 않는** 경우(결정이 아직 attempt_id를 설치하기 전)를 성공으로 위장했다.
-         */
         async recordEntryInterrupted({ attemptId, reason }) {
             state.interruptions.push({ attemptId, reason })
             if (typeof attemptId !== 'string' || attemptId.length === 0) return false
@@ -185,11 +146,6 @@ function createInviteServiceStub({ roomId, roomInstanceId, bootEpoch, gates = {}
     return service
 }
 
-/**
- * 방장이 방 하나를 만들고, 초대 대역이 그 방을 가리키게 맞춘다.
- * maxPlayers는 실제 검증 범위(4~10)를 지켜야 하므로, "가득 찬 방"은 정원 축소가 아니라
- * 실제 참가자로 채워서 만든다(fillWith).
- */
 async function setupRoomWithInvite(t, {
     maxPlayers = 4, gates = {}, fillWith = [], allReady = false, guestSocketOptions = {},
 } = {}) {
@@ -243,10 +199,6 @@ test.afterEach(() => {
     matchmaking.__setGameInviteServiceForTests(null)
 })
 
-// ---------------------------------------------------------------------------
-// 정상 경로
-// ---------------------------------------------------------------------------
-
 test('AC-06: 수락이 확정되면 두 Map·실제 채널·성공 ACK가 함께 성립하고 예약은 남지 않는다', async (t) => {
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t)
 
@@ -262,7 +214,6 @@ test('AC-06: 수락이 확정되면 두 Map·실제 채널·성공 ACK가 함께
     assert.equal(snapshot.roomAdmissionAttempts.length, 0, '확정 뒤에는 미확정 시도가 남지 않는다')
     assert.equal(guestSocket.rooms.has(room.roomId), true)
 
-    // 초대 수락은 room_joined를 발행하지 않는다 — 이동 소유자는 클라이언트 한 경계뿐이다.
     assert.equal(guestSocket.emitted.some((e) => e.event === 'room_joined'), false)
     assert.equal(guestSocket.emitted.some((e) => e.event === 'player_joined_room' && e.broadcastTo === room.roomId), true)
 })
@@ -276,10 +227,6 @@ test('AC-06: 확정 뒤 get_current_room은 정상 소속을 돌려준다(pendin
     assert.equal(current.pending, undefined)
     assert.equal(current.room.roomId, room.roomId)
 })
-
-// ---------------------------------------------------------------------------
-// 상태표 (1) 최초 검증 실패 — 아무 흔적도 남기지 않는다
-// ---------------------------------------------------------------------------
 
 test('상태표 1: 방이 이미 사라졌으면 예약도 만들지 않고 실패 ACK만 남는다', async (t) => {
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t)
@@ -298,7 +245,6 @@ test('상태표 1: 방이 이미 사라졌으면 예약도 만들지 않고 실�
 
 test('상태표 1: 이미 다른 방에 소속돼 있으면 거부된다', async (t) => {
     const { io, guestSocket, room } = await setupRoomWithInvite(t)
-    // 게스트가 먼저 일반 코드 참가로 그 방에 들어간 상태를 만든다.
     await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
 
     const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
@@ -307,7 +253,6 @@ test('상태표 1: 이미 다른 방에 소속돼 있으면 거부된다', async
 })
 
 test('상태표 1: 정원이 이미 찼으면 예약 없이 ROOM_FULL이다', async (t) => {
-    // 정원 4를 실제 참가자 4명(host + 3)으로 채운다 — 정원 자체는 서버 허용 범위를 지킨다.
     const { io, guestSocket, service } = await setupRoomWithInvite(t, {
         maxPlayers: 4, fillWith: ['filler-1', 'filler-2', 'filler-3'],
     })
@@ -318,10 +263,6 @@ test('상태표 1: 정원이 이미 찼으면 예약 없이 ROOM_FULL이다', as
     assert.equal(service.state.decisionCalls, 0)
 })
 
-// ---------------------------------------------------------------------------
-// 예약이 살아 있는 동안의 협조(정원·ready·start·get_current_room)
-// ---------------------------------------------------------------------------
-
 test('AC-06: 예약 중에는 인원 한 자리를 차지해 마지막 자리 일반 입장이 거부된다', async (t) => {
     const beforeDecision = deferred()
     const { io, guestSocket, room } = await setupRoomWithInvite(t, {
@@ -330,14 +271,12 @@ test('AC-06: 예약 중에는 인원 한 자리를 차지해 마지막 자리 �
     })
 
     const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
-    // 예약이 잡힐 때까지 microtask를 흘린다.
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
 
     const reserved = matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts
     assert.equal(reserved.length, 1)
     assert.equal(reserved[0][1].phase, 'reserved')
 
-    // 정원 4인 방에 확정 3명 + 예약 1명 → 마지막 자리 일반 입장은 거부돼야 한다.
     const otherSocket = createFakeSocket(OTHER)
     io.sockets.sockets.set(otherSocket.id, otherSocket)
     await handleJoinRoomByCode(io, otherSocket, OTHER, room.roomCode)
@@ -365,14 +304,11 @@ test('AC-06: 예약만 있는 계정의 get_current_room은 room:null·pending:t
 
 test('AC-06: 예약 중에는 canStart=false이고 start_game이 ADMISSION_IN_PROGRESS로 거부된다', async (t) => {
     const beforeDecision = deferred()
-    // 광대 1 설정에서 시작하려면 실제 인원이 2명 이상이어야 한다 — 예약 때문이 아니라
-    // 인원 조건 때문에 거부되는 경우와 구분하려고 filler를 함께 준비시킨다.
     const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
         maxPlayers: 4, fillWith: ['filler-1'], allReady: true,
         gates: { beforeDecision: beforeDecision.promise },
     })
 
-    // 예약이 없을 때는 실제로 시작 가능한 상태였음을 먼저 확인한다.
     assert.equal((await callAsPromise(handleGetCurrentRoom, HOST)).room.canStart, true)
 
     const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
@@ -394,7 +330,6 @@ test('AC-06: 영수증 미확정 publication 상태의 계정은 ready를 바꿀
     const { io, guestSocket, room } = await setupRoomWithInvite(t, { gates: { beforeFinalize: beforeFinalize.promise } })
 
     const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
-    // finalize 직전까지 microtask를 흘린다(publish는 아직 실행되지 않았다 — phase는 reserved).
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
 
     const ready = await callAsPromise(handleSetReady, io, guestSocket, GUEST, readyPayload(room))
@@ -402,16 +337,11 @@ test('AC-06: 영수증 미확정 publication 상태의 계정은 ready를 바꿀
 
     beforeFinalize.resolve()
     await accepting
-    // 확정 이후에는 정상적으로 바뀐다.
     const readyAfter = await callAsPromise(handleSetReady, io, guestSocket, GUEST, readyPayload(room))
     assert.equal(readyAfter.ok, true)
     assert.equal(matchmaking.__getStateSnapshotForTests().gameRooms.find(([id]) => id === room.roomId)[1]
         .players.find(([uuid]) => uuid === GUEST)[1].isReady, true)
 })
-
-// ---------------------------------------------------------------------------
-// 상태표 (3)(5) 결정 이후 · 확정 이전의 무효화
-// ---------------------------------------------------------------------------
 
 test('상태표 3: 결정 이후 방이 삭제되면 뒤늦은 publication이 0이고 예약도 사라진다', async (t) => {
     const beforeFinalize = deferred()
@@ -454,10 +384,6 @@ test('상태표 5: 두 번째 잠금에서 차단이 확인되면 역사적 ACCE
     assert.equal(guestSocket.rooms.has(room.roomId), false)
 })
 
-// ---------------------------------------------------------------------------
-// 상태표 (6) Map publication 이후 영수증 실패 — 동기 보상
-// ---------------------------------------------------------------------------
-
 test('상태표 6: 영수증 확정 실패는 두 Map을 동기 제거하고 성공 ACK를 내지 않는다', async (t) => {
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t, { gates: { receiptShouldFail: true } })
 
@@ -474,10 +400,6 @@ test('상태표 6: 영수증 확정 실패는 두 Map을 동기 제거하고 성
     assert.equal(snapshot.roomAdmissionAttempts.length, 0)
 })
 
-// ---------------------------------------------------------------------------
-// 상태표 (4) disconnect · canonical 교체
-// ---------------------------------------------------------------------------
-
 test('상태표 4: 결정 중 disconnect하면 자기 예약이 즉시 사라지고 publication이 0이다', async (t) => {
     const beforeFinalize = deferred()
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
@@ -490,7 +412,6 @@ test('상태표 4: 결정 중 disconnect하면 자기 예약이 즉시 사라지
     guestSocket.connected = false
     matchmaking.onDisconnect(io, guestSocket, GUEST)
     assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
-    // 확정되지 않은 입장에는 재접속 유예가 없다.
     assert.deepEqual(matchmaking.__getPendingRoomRemovalsForTests(), [])
 
     beforeFinalize.resolve()
@@ -520,10 +441,6 @@ test('상태표 4: canonical 소켓이 교체되면 미확정 채널을 복구�
     assert.equal(ack.ok, false)
 })
 
-// ---------------------------------------------------------------------------
-// 세션 종료 정리 — playerRoom이 없어도 예약을 즉시 무효화한다
-// ---------------------------------------------------------------------------
-
 test('AC-06: 세션 종료 정리는 playerRoom이 없는 예약도 즉시 무효화한다', async (t) => {
     const beforeFinalize = deferred()
     const { io, guestSocket } = await setupRoomWithInvite(t, { gates: { beforeFinalize: beforeFinalize.promise } })
@@ -539,10 +456,6 @@ test('AC-06: 세션 종료 정리는 playerRoom이 없는 예약도 즉시 무�
     const ack = await accepting
     assert.equal(ack.ok, false)
 })
-
-// ---------------------------------------------------------------------------
-// 중복 요청 · 결과 재조회
-// ---------------------------------------------------------------------------
 
 test('AC-06: 처리 중 같은 초대를 다시 수락하면 두 번째는 REQUEST_IN_PROGRESS로 거부된다', async (t) => {
     const beforeDecision = deferred()
@@ -571,7 +484,6 @@ test('AC-06: 결과 재조회는 durable 영수증과 현재 소속이 모두 �
     assert.equal(entered.entered, true)
     assert.equal(entered.room.roomId, room.roomId)
 
-    // 확정 영수증(PUBLISHED)은 역사로 남지만 현재 소속이 사라지면 성공이 아니다(A-10).
     matchmaking.__removeRoomForTests(room.roomId)
     const afterGone = await callAsPromise(
         handleGetGameInviteResult, GUEST, { inviteId: INVITE_ID, attemptId: ack.attemptId },
@@ -591,10 +503,6 @@ test('AC-06: 다른 시도 id로 물으면 staleAttempt로 답하고 입장을 �
     assert.equal(result.staleAttempt, true)
     assert.equal(result.entered, false)
 })
-
-// ---------------------------------------------------------------------------
-// boot epoch — 재시작을 넘는 재실행 금지(A-11)
-// ---------------------------------------------------------------------------
 
 test('A-11: 옛 boot epoch의 초대는 같은 코드의 새 방으로 입장하지 못한다', async (t) => {
     const hostSocket = createFakeSocket(HOST)
@@ -622,8 +530,6 @@ test('A-11: 옛 boot epoch의 초대는 같은 코드의 새 방으로 입장하
 
 test('A-11: 같은 roomId라도 방 인스턴스가 다르면 입장하지 않는다', async (t) => {
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t)
-    // 초대가 기억한 인스턴스와 현재 방의 인스턴스를 어긋나게 만든다(방이 사라졌다가
-    // 같은 식별자로 다시 생긴 상황의 재현).
     const original = service.getAttemptOutcome
     service.getAttemptOutcome = async (args) => {
         const result = await original.call(service, args)
@@ -639,10 +545,6 @@ test('A-11: 같은 roomId라도 방 인스턴스가 다르면 입장하지 않�
         .gameRooms.find(([id]) => id === room.roomId)[1].players.some(([uuid]) => uuid === GUEST), false)
 })
 
-// ---------------------------------------------------------------------------
-// 입력 검증
-// ---------------------------------------------------------------------------
-
 test('AC-06: 잘못된 payload는 어떤 상태도 바꾸지 않고 거부된다', async (t) => {
     const { io, guestSocket } = await setupRoomWithInvite(t)
 
@@ -654,22 +556,11 @@ test('AC-06: 잘못된 payload는 어떤 상태도 바꾸지 않고 거부된다
     assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
 })
 
-// ---------------------------------------------------------------------------
-// 상태표 4 · JOIN_TIMEOUT 뒤 늦게 성공한 채널 가입
-//
-// 제한 시간은 **애플리케이션 대기의 상한**일 뿐이다 — 어댑터의 socket.join은 그 뒤에
-// 성공할 수 있다. 그대로 두면 두 Map에는 없는데 실제 방송 room에만 남아 다른 참가자의
-// 사건을 계속 받는 "유령 청취자"가 된다. 반대로 무조건 leave하면 그 사이에 정상 경로로
-// 다시 들어온 **더 새로운 소속**의 채널을 끊는다. 세 경우를 모두 확인한다.
-// ---------------------------------------------------------------------------
-
-/** 늦은 join 완료 → 정리 콜백까지 실제로 돌게 이벤트 루프를 몇 틱 흘린다. */
 async function drainTicks(times = 4) {
     for (let i = 0; i < times; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 test('상태표 4: JOIN_TIMEOUT 뒤 늦게 성공한 채널 가입은 정리된다', async (t) => {
-    // 실제 5초를 기다리지 않고 같은 timeout 경로를 돈다(판정 로직은 프로덕션 그대로).
     matchmaking.__setAdmissionTimeoutsForTests({ step: 40, total: 4000 })
     t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
 
@@ -682,11 +573,9 @@ test('상태표 4: JOIN_TIMEOUT 뒤 늦게 성공한 채널 가입은 정리된�
     assert.equal(ack.ok, false)
     assert.equal(ack.unknown, true, 'timeout은 실패가 아니라 모름이다')
 
-    // 아직 가입 자체가 끝나지 않았다 — 어디에도 없다.
     assert.equal(guestSocket.rooms.has(room.roomId), false)
     assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
 
-    // 이제 어댑터가 늦게 성공한다.
     joinGate.resolve()
     await drainTicks()
 
@@ -715,8 +604,6 @@ test('상태표 4: 늦은 가입 정리가 그 사이 확정된 새 소속을 �
     const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
     assert.equal(ack.ok, false)
 
-    // timeout 뒤, 늦은 완료가 오기 전에 같은 계정이 정상 경로로 그 방의 확정 참가자가 됐다.
-    // 여기서는 정리 판정이 실제로 보는 사실 하나(canonical membership)만 세운다.
     matchmaking.__seedPlayerRoomForTests(GUEST, room.roomId)
 
     joinGate.resolve()
@@ -737,7 +624,6 @@ test('상태표 4: 소켓이 교체된 뒤의 늦은 가입은 새 소켓의 채
     const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
     assert.equal(ack.ok, false)
 
-    // 재접속으로 canonical 소켓이 바뀌었다 — 옛 소켓의 늦은 완료는 옛 소켓만 정리한다.
     const replacement = createFakeSocket(GUEST, { id: 'sock-guest-2' })
     io.sockets.sockets.set(replacement.id, replacement)
     await replacement.join(room.roomId)
@@ -751,9 +637,6 @@ test('상태표 4: 소켓이 교체된 뒤의 늦은 가입은 새 소켓의 채
 })
 
 test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛 소켓의 늦은 가입은 정리된다', async (t) => {
-    // CODEX-2 보수 회귀. 예전 판정은 playerRoom.get(uuid) === roomId만 보고 물러났다 —
-    // 그 소속을 만든 것이 **교체 소켓**인데도 옛 소켓의 채널이 그대로 남아, 두 연결이
-    // 같은 방 방송을 받는 유령 청취자가 생겼다.
     matchmaking.__setAdmissionTimeoutsForTests({ step: 40, total: 4000 })
     t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
 
@@ -766,7 +649,6 @@ test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛
     assert.equal(ack.ok, false)
     assert.equal(ack.unknown, true)
 
-    // 재접속한 새 소켓이 정상 경로로 그 방의 확정 참가자가 됐다 — 소속도 새 소켓의 것이다.
     const replacement = createFakeSocket(GUEST, { id: 'sock-guest-2' })
     io.sockets.sockets.set(replacement.id, replacement)
     await replacement.join(room.roomId)
@@ -791,21 +673,11 @@ test('상태표 4: 교체 소켓이 같은 방의 확정 참가자가 돼도 옛
 })
 
 test('AC-04(보수): 실패 정리의 늦은 소유권 재검사는 같은 채널에 정상 재소속한 소켓의 가입을 복원한다', async (t) => {
-    // CODEX-9(AC-04) 회귀. 실패 정리가 detachSocketFromChannel에 넘기는 ownsChannel 콜백이
-    // **이후 null로 바뀌는 joinedRoomId 변수**를 참조하면, leave가 끝난 뒤의 소유권 재검사가
-    // isAccountSeatedInRoom(uuid, null)을 묻게 되어 언제나 거짓이다 — 그 사이 같은 채널에
-    // 정상 입장한 소켓의 가입을 되돌려 주지 못하고(channelMembership의 restoreIfSuperseded가
-    // 열리지 않는다), 서버가 참가자로 인정하는 계정이 그 방의 방송을 받지 못한 채 남는다.
-    //
-    // publish 이전에 막는다(blockBeforeEntry) — 그래야 removePublishedAdmission 경로가 돌지
-    // 않는다. 그 경로는 attempt.roomId(끝까지 안 바뀌는 값)로 정리하므로 같은 복원을 대신
-    // 해 주고, 그러면 이 시험이 보려는 joinedRoomId 콜백의 결함이 가려진다.
     const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
         gates: { blockBeforeEntry: true },
     })
     t.after(() => channelMembership.__resetChannelExclusionsForTests())
 
-    // leave의 **완료 시점**을 시험이 쥔다. 이 시험의 대상은 완료 뒤의 재검사다.
     const leaveGate = deferred()
     const originalLeave = guestSocket.leave.bind(guestSocket)
     guestSocket.leave = async (channelId) => {
@@ -821,14 +693,12 @@ test('AC-04(보수): 실패 정리의 늦은 소유권 재검사는 같은 채�
         '전제: 실패한 시도는 소속을 남기지 않는다',
     )
 
-    // 정리가 끝나기 전에 **같은 소켓이 정상 경로로** 그 방의 확정 참가자가 된다.
     await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
     assert.equal(
         matchmaking.__getStateSnapshotForTests().playerRoom.find(([uuid]) => uuid === GUEST)?.[1],
         room.roomId, '전제: 정상 입장이 성립해야 한다',
     )
 
-    // 늦은 leave가 끝난다 — 이 leave는 방금 성립한 새 소속의 채널 가입까지 함께 떼어 간다.
     leaveGate.resolve()
     await drainTicks()
 
@@ -841,7 +711,6 @@ test('AC-04(보수): 실패 정리의 늦은 소유권 재검사는 같은 채�
         '정상 참가자가 전달 제외에 남았다',
     )
 
-    // 그리고 실제 방송이 그 소켓에 닿는다 — 가입 기록만 보고 수신을 주장하지 않는다.
     const before = guestSocket.countReceived('player_ready_changed')
     await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(room))
     assert.equal(
@@ -850,33 +719,10 @@ test('AC-04(보수): 실패 정리의 늦은 소유권 재검사는 같은 채�
     )
 })
 
-// ---------------------------------------------------------------------------
-// review5 #1 · 기한 경과와 publication 소유권
-//
-// 시도의 기한(ADMISSION_TOTAL_TIMEOUT_MS)은 **애플리케이션 대기의 상한**이다. Date.now()가
-// 그 값을 넘는 순간은 정확하지만, withAdmissionTimeout의 setTimeout은 이벤트 루프가 밀리면
-// 그보다 늦게 실행된다. 그 창에 들어오는 get_current_room·ready·start·인원 판정이 전부
-// getAdmissionAttempt를 지나므로, 기한 경과 처리가 "토큰만 버리는" 것이면:
-//
-//   · 영수증 없는 publication이 **정상 소속**으로 보이고,
-//   · 그 소속을 되돌릴 소유자가 사라져 뒤이은 timeout 정리가 아무것도 하지 못한다.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// F-23(AC-04) — durable 확정 **이전**의 입장자는 그 방의 방송을 한 번도 받지 않는다
-// ---------------------------------------------------------------------------
-
-/** 이 소켓이 실제로 받은(방송 포함) 그 이벤트의 건수. 방송 시도 기록과 구분된다. */
 function received(socket, event) {
     return socket.received.filter((entry) => entry.event === event).length
 }
 
-/**
- * 방 채널 방송을 **프로덕션 경계 그대로** 낸다.
- *
- * 시험이 io.to(room).emit을 직접 부르면 그것은 어떤 제외도 지나지 않는 원시 방송이라,
- * "제외가 동작하는가"를 전혀 검사하지 못한다 — 모든 방 방송이 실제로 지나는 그 함수를 쓴다.
- */
 const channelMembership = require('../channelMembership')
 function broadcastThroughProductionBoundary(io, roomId, event, payload) {
     channelMembership.emitToChannel(io, roomId, event, payload)
@@ -896,16 +742,13 @@ test('F-23(AC-04): join 완료 → publish 전 → 영수증 대기 구간의 �
     const accepting = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
     await drainTicks()
 
-    // ① join은 끝났지만 publish 전이다.
     assert.equal(guestSocket.rooms.has(room.roomId), true, '전제: 채널에는 이미 가입돼 있다')
     broadcastThroughProductionBoundary(io, room.roomId, 'probe_before_publish', { roomId: room.roomId })
-    // 프로덕션 방송 경계를 거치는 실제 사건도 함께 낸다.
     await callAsPromise(handleSetReady, io, hostSocket, HOST, readyPayload(room))
 
     beforeFinalize.resolve()
     await drainTicks()
 
-    // ② publish는 끝났지만 durable 영수증은 아직 없다.
     assert.equal(
         matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts[0]?.[1].phase, 'published',
         '전제: publish까지 진행된 상태여야 한다',
@@ -916,19 +759,16 @@ test('F-23(AC-04): join 완료 → publish 전 → 영수증 대기 구간의 �
     assert.equal(received(guestSocket, 'probe_before_publish'), 0, 'publish 전 방송이 확정 전 입장자에게 닿았다')
     assert.equal(received(guestSocket, 'probe_after_publish'), 0, '영수증 대기 중 방송이 확정 전 입장자에게 닿았다')
     assert.equal(received(guestSocket, 'player_ready_changed'), 0, '확정 전 입장자가 준비 변경을 받았다')
-    // 양성 대조 — 정상 참가자는 같은 방송을 실제로 받는다(fixture가 그냥 아무에게도 안 보내는 것이 아니다).
     assert.equal(received(peerSocket, 'probe_before_publish'), 1, '정상 참가자가 방송을 받지 못했다')
     assert.equal(received(peerSocket, 'probe_after_publish'), 1, '정상 참가자가 방송을 받지 못했다')
     assert.ok(received(peerSocket, 'player_ready_changed') >= 1, '정상 참가자가 준비 변경을 받지 못했다')
 
-    // ③ durable 확정 이후에는 정상 수신이 시작된다.
     afterPublish.resolve()
     const ack = await accepting
     assert.equal(ack.ok, true, ack.message)
 
     broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_confirm', { roomId: room.roomId })
     assert.equal(received(guestSocket, 'probe_after_confirm'), 1, '확정된 참가자가 방송을 받지 못했다')
-    // 확정 전 구간의 사건은 소급해서 도착하지 않는다.
     assert.equal(received(guestSocket, 'probe_before_publish'), 0)
     assert.equal(received(guestSocket, 'probe_after_publish'), 0)
 })
@@ -944,7 +784,6 @@ test('F-23(AC-04): 영수증 실패로 끝난 시도는 성공 ACK도 없고, �
     broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_failure', { roomId: room.roomId })
     assert.equal(received(guestSocket, 'probe_after_failure'), 0, '실패한 입장자가 방송을 받았다')
 
-    // 폐기된 옛 토큰이 남아 있으면 같은 소켓의 **정상** 입장이 영구히 차단된다.
     const joined = await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
     assert.equal(joined?.ok ?? true, true, `정상 재입장이 거부됐다: ${JSON.stringify(joined)}`)
     broadcastThroughProductionBoundary(io, room.roomId, 'probe_after_rejoin', { roomId: room.roomId })
@@ -958,7 +797,6 @@ test('review5 #1: 영수증이 지연되는 동안 기한이 지나도 미확정
     matchmaking.__setAdmissionTimeoutsForTests({ step: 200, total: 200 })
     t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
 
-    // 영수증 직전에서 멈춘다 — 두 Map에는 들어갔지만 durable 영수증은 아직 없다.
     const afterPublish = deferred()
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
         gates: { afterPublish: afterPublish.promise },
@@ -971,7 +809,6 @@ test('review5 #1: 영수증이 지연되는 동안 기한이 지나도 미확정
     assert.equal(published.roomAdmissionAttempts[0]?.[1].phase, 'published', 'publish까지 진행돼야 한다')
     assert.equal(published.playerRoom.find(([uuid]) => uuid === GUEST)?.[1], room.roomId)
 
-    // 원격 SQL이 아직 응답하지 않은 채 기한만 지났다(가상 시계 전진).
     matchmaking.__expireAdmissionAttemptForTests(GUEST)
 
     const current = await callAsPromise(handleGetCurrentRoom, GUEST)
@@ -980,13 +817,11 @@ test('review5 #1: 영수증이 지연되는 동안 기한이 지나도 미확정
         '영수증 없는 입장을 정상 소속으로 답하면 화면이 확정되지 않은 입장을 확정된 것으로 표시한다',
     )
 
-    // 기한이 지났다는 이유로 토큰만 버리면 이 publication을 되돌릴 소유자가 사라진다.
     assert.equal(
         matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 1,
         '미확정 publication의 소유권은 기한이 지나도 남아 있어야 되돌릴 수 있다',
     )
 
-    // 이제 실제 RECEIPT_TIMEOUT이 정착한다 — 미확정 소속은 반드시 회수돼야 한다.
     const ack = await accepting
     assert.equal(ack.ok, false)
     assert.equal(ack.unknown, true, 'timeout은 실패가 아니라 모름이다')
@@ -1014,12 +849,10 @@ test('review5 #1: 늦게 도착한 옛 시도의 보상이 그 사이 확정된 
         gates: { afterPublish: afterPublish.promise, receiptShouldFail: true },
     })
 
-    // 옛 시도는 publish까지 갔다가 RECEIPT_TIMEOUT으로 끝난다 — 소속은 회수된다.
     const ack = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
     assert.equal(ack.ok, false)
     assert.equal(matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST), undefined)
 
-    // 그 뒤 같은 계정이 **정상 경로로** 같은 방의 확정 참가자가 됐다.
     await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
     assert.equal(
         matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
@@ -1028,7 +861,6 @@ test('review5 #1: 늦게 도착한 옛 시도의 보상이 그 사이 확정된 
     hostSocket.emitted.length = 0
     guestSocket.left.length = 0
 
-    // 이제서야 옛 시도의 서비스가 깨어나 unpublish를 부른다(늦게 끝난 원격 트랜잭션).
     afterPublish.resolve()
     await drainTicks()
 
@@ -1049,18 +881,6 @@ test('review5 #1: 늦게 도착한 옛 시도의 보상이 그 사이 확정된 
     )
 })
 
-/**
- * F-21(AC-05/AC-06) 소유권 경계의 고정.
- *
- * "실패한 초대 시도의 채널 정리가 그 사이 정상 입장한 **새 소속**의 채널을 뗀다"는 지적을
- * 실제 경로로 재현하려 한 시험이다. 재현되지 않는다 — 그 이유를 여기서 고정한다:
- * handleAcceptGameInvite는 계정 단위 전이 잠금(pendingRoomTransitions)을 **핸들러 전체**
- * 동안 쥐고 있고(finally에서만 놓는다), 다른 입장 생산자는 전부 그 잠금을 먼저 본다.
- * 그래서 publish와 실패 정리 사이에 같은 계정의 새 소속이 성립할 수 없다.
- *
- * 이 시험은 그 잠금 자체를 단언한다 — 잠금이 사라지면(또는 정리가 잠금 밖으로 나가면) 여기서
- * 먼저 깨진다. 정리 경로의 소유권 검사(isAccountSeatedInRoom)는 그 경우를 대비한 방어다.
- */
 test('F-21(AC-05/AC-06): 초대 수락이 진행 중인 계정은 새 소속을 만들 수 없다(실패 정리가 겨눌 새 소속이 없다)', async (t) => {
     const afterPublish = deferred()
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
@@ -1074,18 +894,15 @@ test('F-21(AC-05/AC-06): 초대 수락이 진행 중인 계정은 새 소속을 
         'publish까지는 가야 이 시험이 의미를 갖는다',
     )
 
-    // 원격 영수증을 기다리는 동안 그 미확정 소속이 회수됐다(명시적 이탈).
     matchmaking.__testables.removeFromRoom(io, guestSocket, GUEST)
     assert.equal(matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST), undefined)
     guestSocket.emitted.length = 0
 
-    // 그래도 같은 계정은 새 소속을 만들 수 없다 — 시도는 아직 끝나지 않았다.
     await handleJoinRoomByCode(io, guestSocket, GUEST, room.roomCode)
     const failed = guestSocket.emitted.find((e) => e.event === 'room_join_failed')
     assert.equal(failed?.payload?.code, ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS)
     assert.equal(matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST), undefined)
 
-    // 이제 옛 시도가 실패로 끝난다. 겨눌 새 소속이 없으므로 정리는 자기 잔여물만 건드린다.
     afterPublish.resolve()
     const ack = await accepting
     await drainTicks()
@@ -1097,20 +914,10 @@ test('F-21(AC-05/AC-06): 초대 수락이 진행 중인 계정은 새 소속을 
     assert.equal(service.state.entryOutcome, 'INTERRUPTED', '실패한 시도의 durable 상태는 그대로 맞춘다')
 })
 
-// ---------------------------------------------------------------------------
-// review5 #2 · 늦게 커밋된 수락 결정의 정직한 정착
-//
-// recordEntryInterrupted는 id + attempt_id + entry_outcome='UNCONFIRMED' 한 문장이다(경합
-// 보호). 그래서 **결정이 아직 attempt_id를 설치하기 전**에 부르면 0행이라 아무것도 적히지
-// 않는다. 그 뒤 늦은 결정이 커밋되면 ACCEPTED/UNCONFIRMED가 영구히 남는다 — 아무도 입장하지
-// 않았는데 "입장 결과 미확정"으로 굳는다.
-// ---------------------------------------------------------------------------
-
 test('review5 #2: 결정이 늦게 커밋되면 실패한 시도를 뒤늦게라도 정직하게 정착시킨다', async (t) => {
     matchmaking.__setAdmissionTimeoutsForTests({ step: 60, total: 60 })
     t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
 
-    // 결정이 잠금을 얻거나 커밋하기 **전에** 멈춘다.
     const beforeDecision = deferred()
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
         gates: { beforeDecision: beforeDecision.promise },
@@ -1120,12 +927,10 @@ test('review5 #2: 결정이 늦게 커밋되면 실패한 시도를 뒤늦게라
     assert.equal(ack.ok, false)
     assert.equal(ack.unknown, true)
 
-    // 이 시점의 보상은 조건부 UPDATE가 0행이다 — 아직 attempt_id가 설치되지 않았다.
     assert.equal(service.state.attemptId, null)
     assert.equal(service.state.entryOutcome, null)
     assert.equal(matchmaking.__getStateSnapshotForTests().roomAdmissionAttempts.length, 0)
 
-    // 이제 원격 트랜잭션이 늦게 깨어나 결정을 커밋한다.
     beforeDecision.resolve()
     await drainTicks(8)
 
@@ -1135,7 +940,6 @@ test('review5 #2: 결정이 늦게 커밋되면 실패한 시도를 뒤늦게라
         '늦게 커밋된 결정이 ACCEPTED/UNCONFIRMED로 영구히 남으면 아무도 입장하지 않은 시도가 미확정으로 굳는다',
     )
 
-    // 입장을 지어내지 않는다 — 어떤 Map에도, 어떤 채널에도 들어가지 않았다.
     const after = matchmaking.__getStateSnapshotForTests()
     assert.equal(after.playerRoom.find(([u]) => u === GUEST), undefined)
     assert.equal(
@@ -1156,7 +960,6 @@ test('review5 #2: 늦은 보상이 더 새로운 시도나 확정된 영수증�
     const first = await callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
     assert.equal(first.ok, false)
 
-    // 옛 결정이 깨어나기 전에, 같은 초대가 **새 시도**로 확정 입장까지 마쳤다.
     service.state.status = 'PENDING'
     service.state.attemptId = null
     service.state.entryOutcome = null
@@ -1166,7 +969,6 @@ test('review5 #2: 늦은 보상이 더 새로운 시도나 확정된 영수증�
     assert.equal(service.state.entryOutcome, 'PUBLISHED')
     const newAttemptId = service.state.attemptId
 
-    // 이제 옛 결정이 늦게 깨어난다.
     beforeDecision.resolve()
     await drainTicks(8)
 
@@ -1181,16 +983,6 @@ test('review5 #2: 늦은 보상이 더 새로운 시도나 확정된 영수증�
     )
 })
 
-/**
- * F-21(AC-06): **늦은 성공**도 publication 소유권을 물어야 한다.
- *
- * 영수증이 확정된 뒤 성공을 주장하기 전의 검사는 방 참조·playerRoom·participants.has(uuid)
- * 세 가지였다. 그 셋은 **같은 계정이 그 사이 같은 방에 다시 앉은 경우에도 전부 통과한다** —
- * 이 시도가 넣은 소속이 제거되고 새 소속이 생긴 상태다. 그때 성공을 주장하면
- *   · 옛 초대가 만든 결과라고 거짓말하고,
- *   · 이미 사라진 player 객체로 player_joined_room을 방송한다.
- * 소속 식별자(publicationMembershipId)만이 그 둘을 구별한다.
- */
 test('F-21(AC-06): 영수증 확정 뒤 소속이 **다른 membership**으로 바뀌었으면 성공을 주장하지 않는다', async (t) => {
     const afterPublish = deferred()
     const { io, guestSocket, room, service } = await setupRoomWithInvite(t, {
@@ -1200,15 +992,11 @@ test('F-21(AC-06): 영수증 확정 뒤 소속이 **다른 membership**으로 �
     const pending = callAsPromise(handleAcceptGameInvite, io, guestSocket, GUEST, { inviteId: INVITE_ID })
     await drainTicks(8)
 
-    // publish는 끝났다 — 이 시도가 발급한 소속이 들어가 있다.
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, seatedRoom] = snapshot.gameRooms.find(([id]) => id === room.roomId)
     const publishedMembershipId = seatedRoom.players.find(([u]) => u === GUEST)?.[1]?.membershipId
     assert.ok(publishedMembershipId, 'publish가 소속 식별자를 발급하지 않았다')
 
-    // 영수증을 기다리는 사이 그 소속이 제거되고 같은 계정이 **새 소속으로** 다시 앉았다.
-    // (실제 경로에서는 계정 단위 전이 잠금이 이 구간을 막는다 — 이 시험은 그 잠금이 사라졌을
-    //  때 늦은 성공 분기가 스스로 버티는지를 본다.)
     matchmaking.__seedRoomForTests({
         id: room.roomId,
         instanceId: seatedRoom.instanceId,
@@ -1227,11 +1015,9 @@ test('F-21(AC-06): 영수증 확정 뒤 소속이 **다른 membership**으로 �
 
     assert.equal(response.ok, false, '옛 초대가 남의 소속을 자기 성공으로 주장했다')
     assert.equal(response.unknown, true)
-    // 이미 사라진 소속으로 입장을 방송하지도 않는다.
     const joined = io.broadcasts.slice(beforeBroadcasts).filter((b) => b.event === 'player_joined_room')
     assert.deepEqual(joined, [])
     assert.equal(guestSocket.emitted.filter((e) => e.event === 'player_joined_room').length, 0)
-    // 그 사이 성립한 새 소속은 그대로 살아 있다(옛 정리가 지우지 않는다).
     assert.equal(
         matchmaking.__getStateSnapshotForTests().playerRoom.find(([u]) => u === GUEST)?.[1], room.roomId,
     )

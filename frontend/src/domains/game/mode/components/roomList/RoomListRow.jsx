@@ -1,6 +1,3 @@
-// 파일 역할: RoomListRow.jsx - 화면을 구성하는 컴포넌트입니다.
-// 이식한 화면 파일은 경로 별칭(@/) 대신 상대 경로를 씁니다 — node --test로 도는 순수 JS
-// 테스트가 별칭을 해석하지 못해, 같은 import 체인을 테스트에서 그대로 따라갈 수 없기 때문입니다.
 import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
   ROOM_LIST_ROW_BOTTOM_ROW_CLASS,
@@ -26,21 +23,16 @@ import { resolveRoomListRowCode } from "../../utils/resolveRoomListRowCode.js"
 import { summarizeRoomListSettings } from "../../utils/summarizeRoomListSettings.js"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
-// 더미 stage 값을 aria-label에만 씁니다(실제 게임 모드 체계가 아직 없어 임시 라벨).
 const STAGE_LABELS = { 1: "1단계", 2: "2단계", 3: "3단계" }
 
-// 공개 방 목록에서 방 하나를 보여주는 표시 전용 row입니다.
-// room.displayStatus는 상위(RoomListShell)에서 deriveRoomDisplayStatus로 미리 계산해 내려줍니다.
 export default function RoomListRow({ room, selected, onSelect }) {
   const { stage, current, max, title, displayStatus, settings } = room
-  // F-20(AC-03): 서버가 승인한 직업 구성·제한시간 요약. 값이 없으면 아무것도 그리지 않는다.
   const settingsSummary = summarizeRoomListSettings(settings)
   const settingsLine = [settingsSummary.roles, settingsSummary.times].filter(Boolean).join(" / ")
 
   const isFull = displayStatus === "full"
   const isInProgress = displayStatus === "in_progress"
   const isJoinable = !isFull && !isInProgress
-  // 코드 방 배지에 무엇을 그릴지(코드 값 / "코드")는 utils/resolveRoomListRowCode.js가 정합니다.
   const rowCode = resolveRoomListRowCode(room)
   const stageLabel = STAGE_LABELS[stage]
   const statusLabel = isInProgress ? "진행중" : isFull ? "마감" : null

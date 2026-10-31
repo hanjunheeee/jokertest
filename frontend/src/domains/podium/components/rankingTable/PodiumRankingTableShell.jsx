@@ -11,7 +11,6 @@ import {
   PODIUM_TABLE_ROW_CLASS,
 } from "../../constants/podiumLayoutStyle.js"
 
-/** 랭킹 테이블 + 좌우 화살표 + 하단 노드 */
 export default function PodiumRankingTableShell({ ranking }) {
   const [activePage, setActivePage] = useState(0)
   const pageCount = useMemo(() => getPodiumTablePageCount(ranking.length), [ranking.length])

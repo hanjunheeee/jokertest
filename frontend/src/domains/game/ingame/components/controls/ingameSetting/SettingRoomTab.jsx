@@ -1,16 +1,8 @@
-/**
- * 인게임 설정 — 방관리 탭 (방장 전용)
- *
- * F-24(AC-01/AC-04/AC-05): 이 탭의 두 항목은 더 이상 지역 상태에만 머무르지 않는다.
- *   - "다음 게임 동일 설정 유지"는 useNextRoomSettings를 통해 현재 계정의 영속 저장소로 간다.
- *   - "방 코드 보기"는 설정 패널 우측 하단 공통 버튼(SettingRoomCodeButton)으로 이동했다.
- */
 import { INGAME_SETTING_ROOM_ROWS } from "../../../constants/controls/ingameSetting/ingameSettingData.js"
 import { INGAME_SETTING_TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import { useNextRoomSettings } from "../../../hooks/useNextRoomSettings.js"
 import SettingRoomRow from "./SettingRoomRow.jsx"
 
-/** 안내·재시도 줄의 스타일. 행 아래에 붙어 실패 사유를 읽어 준다. */
 const NOTICE_CLASS =
   "mt-[0.45rem] px-[0.6rem] text-left font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.88rem)] leading-snug text-[#f0e0c8]/80"
 const ERROR_CLASS = `${NOTICE_CLASS} text-[#ffb3a7]`
@@ -45,12 +37,9 @@ export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
               title={row.title}
               description={row.description}
               variant="checkbox"
-              // 체크 상태의 원천은 영속 저장소다 — 쓰기·재읽기 확인이 끝나야 켜진 것으로
-              // 보인다. 화면만 먼저 켜 두면 실패한 저장이 성공처럼 보인다(A-11).
               checked={row.id === "keep-settings-next-game" ? enabled : row.defaultChecked}
               onChange={(next) => {
                 if (row.id !== "keep-settings-next-game") return
-                // 켜기와 끄기의 조건이 다르다(AC-05) — 원본이 없어도 **끄기**는 열어 둔다.
                 if (next ? !canToggle : !canDisable) return
                 setKeepSettings(next)
               }}

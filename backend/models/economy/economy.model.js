@@ -1,26 +1,5 @@
 'use strict';
 
-// F-08 지갑·거래 원장·소유권(entitlement)·장착(loadout) 4개 모델을 한 파일에 정의한다.
-// models/index.js의 로더(backend/models/index.js readModels)는 파일 하나당 모델 하나만
-// db[model.name]에 등록하므로(require(file)(sequelize, DataTypes) → 단일 반환값), 이
-// 파일은 EconomyLedgerEntry만 반환하고 나머지 세 모델은 sequelize.define으로만 등록한다.
-// sequelize.define은 반환값과 무관하게 항상 sequelize.models[name]에 등록되므로, 이
-// 파일 밖에서는 db.EconomyLedgerEntry 또는 db.sequelize.models.EconomyWallet /
-// .EconomyEntitlement / .EconomyLoadout으로 접근한다(backend/service/economy.service.js
-// 참고). 네 모델 모두 users.uuid를 참조하고, FK 대상 모델(User)은 로더 실행 순서상 이
-// 파일보다 늦게(또는 먼저) 로드될 수 있어 sequelize.define 시점이 아니라
-// associate(models) 훅에서만 User를 참조한다.
-//
-// R-IMPL(2026-09-10, F-08 반송): 실제 DDL은 이 정의가 아니라
-// backend/db/migrations/0006-add-economy.js가 책임진다(마이그레이션 관례 준수) — 이
-// 파일은 그 결과 스키마와 항상 같은 모양을 유지해야 한다. 두 가지를 함께 고쳤다:
-// (1) GOLD·DIAMOND 두 재화 모두 정수 잔액을 갖는다(balance_diamond 추가). (2)
-// reference_event_id의 재처리 방지 유일 제약을 전역이 아니라 (user_id, reference_event_id)
-// 복합 유일 인덱스로 바꿨다 — 이전에는 다른 계정이 남의 참조 사건 ID를 그대로 제출하면
-// applyLedgerTransaction의 전역 조회가 그 계정의 원장 행을 찾아 그대로 돌려줬다(AC-02/
-// AC-06 위반: 크로스 계정 정보 노출 + 엉뚱한 "성공" 응답). 조회·유일 제약 모두 계정
-// 범위로 좁혀야 같은 문자열을 서로 다른 계정이 각자 독립적으로 재사용해도 안전하다.
-
 module.exports = (sequelize, DataTypes) => {
     const EconomyWallet = sequelize.define('EconomyWallet', {
         user_id: {
@@ -45,12 +24,6 @@ module.exports = (sequelize, DataTypes) => {
         updatedAt: 'updated_at',
     });
 
-    // 원장은 불변 이력이다 — updated_at을 두지 않는다. reference_event_id는 (user_id,
-    // reference_event_id) 복합 유일 제약으로 재처리 방지 키 역할을 한다(F-08 AC-02):
-    // 같은 계정이 같은 참조 사건 ID로 지급/구매를 재전송해도 두 번째 INSERT는 유일 제약에
-    // 걸려 실패하고, 서비스 계층이 그 실패를 "이미 처리됨"으로 해석해 기존 결과를 그대로
-    // 돌려준다. 계정 범위로 좁혀서, 서로 다른 계정이 우연히(또는 악의적으로) 같은 문자열을
-    // 제출해도 서로의 원장에 영향을 주지 않는다(AC-06).
     const EconomyLedgerEntry = sequelize.define('EconomyLedgerEntry', {
         id: {
             type: DataTypes.BIGINT,
@@ -129,8 +102,6 @@ module.exports = (sequelize, DataTypes) => {
         ],
     });
 
-    // 선택된 장착값. 값이 없으면(null) A-04에 따라 서비스 계층이 금빛가면/평민 기본값을
-    // 채운다 — 기존에 유효한 선택이 있으면 절대 덮어쓰지 않는다.
     const EconomyLoadout = sequelize.define('EconomyLoadout', {
         user_id: {
             type: DataTypes.UUID,
@@ -149,9 +120,6 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(120),
             allowNull: true,
         },
-        // F-14(AC-01): 직업별 장착 스킨. 값이 없으면(null) 프론트가 그 직업의 기본 스킨으로
-        // 대체해 표시한다(skinCardWear.store.js) — selected_card_frame_id와 같은 이유로 서비스
-        // 계층이 백필하지 않는다(0011-add-economy-loadout-job-skins 참고).
         selected_skin_noble: {
             type: DataTypes.STRING(191),
             allowNull: true,
@@ -172,13 +140,6 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(191),
             allowNull: true,
         },
-        // F-13 AC-02 설계 감사(운영자, 2026-09-11) — 서버가 매 성공적 장착 확정마다 새로
-        // 발급하는 CAS(compare-and-swap) 토큰. 클라이언트는 자신이 마지막으로 읽은 값을
-        // expectedRevision으로 함께 보내야 하고, 서버는 SELECT ... FOR UPDATE 행 잠금 안에서
-        // 그 값이 지금 행의 값과 같을 때만 갱신을 커밋한다(economy.service.js의
-        // equipProfileAppearance 참고). 애플리케이션 코드가 매 생성·갱신마다 crypto.randomUUID()
-        // 로 명시적으로 채운다 — Sequelize defaultValue를 쓰지 않는 이유는 단일 DEFAULT 값이
-        // 모든 신규 행에 같은 문자열을 채워 CAS 비교를 무의미하게 만들기 때문이다.
         revision: {
             type: DataTypes.STRING(36),
             allowNull: false,
@@ -190,13 +151,6 @@ module.exports = (sequelize, DataTypes) => {
         updatedAt: 'updated_at',
     });
 
-    // F-09 개별·일괄 구매 결과 복구용 영속 레코드. (user_id, reference_event_id) 복합
-    // 유일 인덱스로 요청 단위 재처리 방지 키 역할을 한다 — economy_ledger_entries의 같은
-    // 패턴을 그대로 따르되, 이 테이블은 "품목 하나"가 아니라 "구매 요청 하나 전체"(단일
-    // 또는 일괄)의 정규화된 요청 내용(payload_json)과 커밋된 결과(result_json)를 묶어
-    // 저장한다. 이 행은 구매가 실제로 커밋될 때만(지갑 차감·원장 기록·소유권 부여와 같은
-    // 트랜잭션 안에서) 만들어지므로, 이 행이 존재한다는 것 자체가 "그 요청은 이미 커밋된
-    // 성공"이라는 뜻이다(economy.service.js getPurchaseResult 참고, F-09 AC-04).
     const EconomyPurchaseRequest = sequelize.define('EconomyPurchaseRequest', {
         id: {
             type: DataTypes.BIGINT,
@@ -234,12 +188,6 @@ module.exports = (sequelize, DataTypes) => {
         ],
     });
 
-    // F-33 E-2(설계도 §2-2): 계정별 이모티콘 팔레트 8칸. 실제 DDL은
-    // backend/db/migrations/0019-add-emoji-palettes.js가 책임지고, 이 정의는 그 결과
-    // 스키마와 항상 같은 모양을 유지한다. 빈 칸은 NULL이다(슬롯을 비워 둘 수 있다).
-    // revision은 economy_loadouts와 같은 CAS 토큰이라 Sequelize defaultValue를 두지
-    // 않는다 — 모든 신규 행이 같은 문자열을 공유하면 CAS 비교가 무의미해지므로,
-    // 행을 만드는 서비스 코드가 매번 crypto.randomUUID()로 채운다.
     const EconomyEmojiPalette = sequelize.define('EconomyEmojiPalette', {
         user_id: {
             type: DataTypes.UUID,

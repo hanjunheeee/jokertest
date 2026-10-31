@@ -4,7 +4,6 @@ import {
   INVITED_GUESTS_STANDING_IMAGE_WRAP_RAISED_CLASS,
 } from "../../constants/invitedGuests/layoutStyle.js"
 
-/** 직업별 정적 소개 (설명·전신샷) */
 export const INVITED_GUESTS_JOB_CATALOG = {
   noble: {
     jobName: "귀족",

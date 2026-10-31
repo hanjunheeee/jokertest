@@ -1,25 +1,14 @@
 import { useCallback, useMemo, useState } from "react"
 import { INGAME_CHAT_INPUT_MAX_LENGTH } from "../constants/chat/ingameChatAssets.js"
 
-/**
- * 인게임 채팅 — draft·messages (보드·클로즈업 공유).
- * @param {{
- *   localPlayerId?: string,
- *   getPlayerById?: (id: string) => { nickname?: string } | null,
- *   serverEvents?: Object[],
- *   onSendText?: (text: string) => void,
- * }} [options]
- */
 export function useInGameChatSession({
   localPlayerId = null,
   getPlayerById = null,
   serverEvents = null,
   onSendText = null,
 } = {}) {
-  // 입력 중인 채팅 문장입니다.
   const [draft, setDraft] = useState("")
 
-  // 서버가 아직 없을 때 화면에서만 보여줄 임시 채팅 목록입니다.
   const [localMessages, setLocalMessages] = useState([])
 
   const serverMessages = useMemo(() => {

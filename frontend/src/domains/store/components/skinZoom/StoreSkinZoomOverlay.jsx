@@ -6,18 +6,14 @@ import {
   STORE_SKIN_ZOOM_TRANSITION,
 } from "../../constants/storeSkinZoomLayout.js"
 import StoreSkinZoomPanel from "./StoreSkinZoomPanel.jsx"
-// 다른 상점 오버레이와 달리 이 파일에는 `@/` 별칭 import가 없었다 — node:test에서 그대로
-// 로드될 수 있도록 상대 경로를 유지한다.
 import { dispatchUiSfx } from "../../../../shared/hooks/useSfxRuntime.js"
 
-/** 스킨 상품 전신 확대 — 상점 UI 위 오버레이 */
 export default function StoreSkinZoomOverlay({ open, item, onClose }) {
   useEffect(() => {
     if (!open) return undefined
 
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return
-      // F-16(AC-01): 열린 상태에서 실제로 닫는 경로만 취소음.
       dispatchUiSfx("ui-cancel", event)
       onClose()
     }

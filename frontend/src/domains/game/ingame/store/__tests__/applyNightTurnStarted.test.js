@@ -3,13 +3,9 @@ import assert from "node:assert/strict"
 import { useInGameStore } from "../ingameStore.js"
 import { selectInGameNightTurnRole } from "../../utils/selectInGameNightTurnRole.js"
 
-// payload 검증 자체는 parseNightTurnStartedPayload의 테스트가 다룬다 — 여기서는 검증을 통과한
-// 값이 store에 어떻게 반영되고 언제 참조 보존 no-op이 되는지만 본다.
-
 const GAME_ID = "game-1"
 const DEADLINE = 1_700_000_030_000
 
-/** 밤(NIGHT)에 들어와 있는 canonical state를 세팅한다. */
 function seedNight({ dayIndex = 1, ...overrides } = {}) {
   const state = {
     id: GAME_ID,
@@ -35,9 +31,6 @@ function endedPayload(overrides = {}) {
   return { gameId: GAME_ID, dayIndex: 1, role: "DOCTOR", ...overrides }
 }
 
-// ── applyNightTurnStarted ───────────────────────────────────────────────────────
-
-// 전부 "무시되어야 하는" 입력이다 — store 최상위 참조와 game state 참조가 그대로 유지된다.
 const ignoredApplies = [
   ["parsed가 undefined면", () => seedNight(), undefined],
   ["parsed가 null이면", () => seedNight(), null],
@@ -74,7 +67,6 @@ test("applyNightTurnStarted: 유효한 턴은 nightTurnRole/nightTurnDeadline에
   const { state } = useInGameStore.getState()
   assert.equal(state.nightTurnRole, "DOCTOR")
   assert.equal(state.nightTurnDeadline, DEADLINE)
-  // 다른 canonical 필드는 건드리지 않는다 — 역할 턴은 밤 안의 하위 전이다.
   assert.equal(state.phase, "NIGHT")
   assert.equal(state.dayIndex, 1)
 })
@@ -109,8 +101,6 @@ test("applyNightTurnStarted: 턴이 실제로 바뀌면 새 참조를 만든다"
 })
 
 test("applyNightTurnStarted: 죽은 역할의 턴도 산 역할의 턴과 똑같이 반영된다", () => {
-  // u2(DOCTOR 자리)가 죽어 있든 말든 store는 생존을 보지 않는다 — 모든 참가자 화면이 같은
-  // canonical 턴을 보고 같은 안내를 연다.
   seedNight()
   useInGameStore.getState().applyNightTurnStarted(startedPayload({ role: "DOCTOR" }))
   const deadRoleTurn = useInGameStore.getState().state.nightTurnRole
@@ -157,8 +147,6 @@ test("applyNightTurnEnded: 이미 지워진 턴의 중복 종료는 참조 보�
   useInGameStore.getState().applyNightTurnEnded(endedPayload())
   assert.equal(useInGameStore.getState(), before)
 })
-
-// ── 밤을 벗어날 때의 정리 ────────────────────────────────────────────────────────
 
 test("밤 결과 적용(NIGHT→DAY)이 역할 턴을 비운다 — 지난 밤의 턴이 다음 밤으로 이월되지 않는다", () => {
   seedNight({ dayIndex: 1 })

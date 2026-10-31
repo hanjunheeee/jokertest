@@ -1,7 +1,3 @@
-// 파일 역할: InGamePlayerStatusOverlay.jsx - 화면을 구성하는 컴포넌트입니다.
-/**
- * 플레이어 카드 Status UI — alive면 렌더 없음, dead/disconnected dim + 배지
- */
 import {
   INGAME_PLAYER_STATUS_BADGE_CLASS,
   INGAME_PLAYER_STATUS_OVERLAY_INSET,

@@ -1,11 +1,5 @@
 'use strict';
 
-// F-32a(AC-06) 신규 스키마·마이그레이션 단위 시험. 실제 모델 메타데이터(로더에 등록된 두 모델)와
-// queryInterface 대역으로 0018의 DDL·부분 실패 복구·verify 거부를 검사한다. 실제 DB에서의 반복 적용과
-// 기존 경제 데이터 보존은 tests/db/f32a-topup.integration.test.js가 검사한다.
-//
-// 시험에 나오는 상품 수치는 자동 시험용 임시값이며 최종 상품표가 아니다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Sequelize } = require('sequelize');
@@ -16,8 +10,6 @@ const migration = require('../db/migrations/0018-add-currency-products-topup-ord
 const { TABLE_NAMES } = migration;
 const PRODUCTS = TABLE_NAMES.CURRENCY_PRODUCTS;
 const ORDERS = TABLE_NAMES.TOPUP_ORDERS;
-
-// ── queryInterface 대역: createTable이 받은 정의에서 describeTable·showIndex 결과를 파생한다 ──
 
 const describeType = (type) => {
     const key = type.key ?? String(type);
@@ -82,8 +74,6 @@ const createFakeQueryInterface = ({ users = true } = {}) => {
 
 const applyUp = (qi) => migration.up(qi, Sequelize);
 
-// ── 로더에 등록된 두 모델 ──────────────────────────────────────────────────────────────
-
 test('로더가 EconomyCurrencyProduct·EconomyTopupOrder를 각각 한 번 등록한다', () => {
     const names = modelNames();
     assert.equal(names.filter((name) => name === 'EconomyCurrencyProduct').length, 1);
@@ -109,7 +99,6 @@ test('상품 모델의 컬럼·타입·기본키·NOT NULL·기본값이 계약�
     assert.deepEqual(Object.keys(attributes).sort(), Object.keys(PRODUCT_COLUMNS).sort());
     for (const [column, type] of Object.entries(PRODUCT_COLUMNS)) {
         assert.equal(typeNameOf(attributes[column]), type, `${column} 타입`);
-        // 시각 컬럼의 NULL 허용은 sequelize가 timestamps 옵션으로 정한다 — 타입·존재만 확인한다.
         if (column === 'created_at' || column === 'updated_at') continue;
         assert.equal(attributes[column].allowNull, false, `${column}은 NOT NULL`);
     }
@@ -158,8 +147,6 @@ test('연관 실행이 기존 users 컬럼을 바꾸지 않는다', () => {
     assert.equal(typeNameOf(attributesOf(db.User).uuid), 'UUID');
 });
 
-// ── 모델과 마이그레이션이 같은 모양이다 ─────────────────────────────────────────────────
-
 for (const [tableName, modelName] of [[PRODUCTS, 'EconomyCurrencyProduct'], [ORDERS, 'EconomyTopupOrder']]) {
     test(`${tableName}: 마이그레이션 up()이 만든 컬럼이 모델과 컬럼·타입·NULL 허용·기본키·기본값에서 일치한다`, async () => {
         const qi = createFakeQueryInterface();
@@ -181,8 +168,6 @@ for (const [tableName, modelName] of [[PRODUCTS, 'EconomyCurrencyProduct'], [ORD
         }
     });
 }
-
-// ── up: 생성·멱등·부분 실패 복구 ──────────────────────────────────────────────────────
 
 test('up은 두 테이블과 결제키 유일 인덱스를 만들고 verify가 통과한다(운영 상품·행은 넣지 않는다)', async () => {
     const qi = createFakeQueryInterface();
@@ -233,8 +218,6 @@ test('기존 테이블이 이미 있으면 다시 만들지 않는다', async ()
 test('down은 지원하지 않는다(결제 이력을 지우는 파괴적 변경)', async () => {
     await assert.rejects(migration.down(), /지원하지 않습니다/);
 });
-
-// ── verify가 잘못된 스키마를 거부한다 ───────────────────────────────────────────────────
 
 const builtSchema = async () => {
     const qi = createFakeQueryInterface();

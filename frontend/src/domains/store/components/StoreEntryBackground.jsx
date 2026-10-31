@@ -1,7 +1,6 @@
 import { STORE_ASSETS } from "../constants/storeAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
-/** 상점 진입 인트로 배경 영상 */
 export default function StoreEntryBackground({ videoRef }) {
   return (
     <video

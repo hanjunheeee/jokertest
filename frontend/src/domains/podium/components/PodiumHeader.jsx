@@ -6,7 +6,6 @@ import {
 } from "../constants/podiumLayoutStyle.js"
 import PublicAsset from "../../../shared/ui/PublicAsset.jsx"
 
-/** 명예의 전당 — 상단 타이틀 (탑레벨 프레임) */
 export default function PodiumHeader() {
   return (
     <header className={PODIUM_HEADER_WRAP_CLASS}>

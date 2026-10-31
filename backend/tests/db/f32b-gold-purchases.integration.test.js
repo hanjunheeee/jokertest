@@ -1,10 +1,5 @@
 'use strict';
 
-// F-32b 골드 구매 서버 — 실제 MySQL 격리 DB + 실제 Express router·서비스·모델. f32a와 같은 원칙:
-// F01_TEST_DATABASE_URL이 없으면 t.skip으로 "미검증"을 남기고, 설정된 DB에 연결하지 못하면 실패다.
-// 상품 수치(다이아 30 → 골드 100 + 보너스 10 등)는 **자동 시험용 임시값**이며 최종 상품 정책이 아니다.
-// 외부 상품 작성자는 시험 자신의 별도 연결(`sequelize`)로 모사한다.
-
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32b-gold-purchases-integration-test-secret';
@@ -58,8 +53,6 @@ test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
 });
 
-// ── 스키마·픽스처 ───────────────────────────────────────────────────────────────────
-
 let schemaReady = false;
 
 const rebuildSchema = async () => {
@@ -99,10 +92,6 @@ const stubAuthGate = (t) => {
     t.after(() => Object.assign(userRepository, originals));
 };
 
-/**
- * 서버를 세운다. dropResponses.on이 true인 동안 POST /economy/gold-purchases는 서비스가 커밋한 뒤
- * 응답 직전에 소켓을 끊는다 — 커밋 후 응답 유실(AC-04)을 만든다.
- */
 const boot = async (t) => {
     stubAuthGate(t);
     const dropResponses = { on: false };
@@ -136,8 +125,6 @@ const boot = async (t) => {
         result: (user, ref) => call(`/economy/purchases/${encodeURIComponent(ref)}`, { user }),
     };
 };
-
-// ── 외부 상품 작성자·DB 검사자(앱과 다른 연결) ─────────────────────────────────────────
 
 const GOLD_PRODUCT = Object.freeze({
     product_id: 'test-gold-1', kind: 'GOLD_PURCHASE', display_name: '시험용 골드 상품(임시값)',
@@ -181,7 +168,6 @@ const requestCount = (userId) => count('SELECT COUNT(*) AS n FROM economy_purcha
 const ledgerRows = (userId) => rows('SELECT * FROM economy_ledger_entries WHERE user_id = :userId ORDER BY id', { userId });
 const entitlementCount = (userId) => count('SELECT COUNT(*) AS n FROM economy_entitlements WHERE user_id = :userId', { userId });
 
-/** 지갑·원장·구매 요청·소유권을 한 번에 본 상태 — 거절·롤백 뒤 "요청 전과 동일"을 비교한다. */
 const snapshot = async (userId) => ({
     wallet: await wallet(userId),
     ledger: (await ledgerRows(userId)).map((r) => [String(r.id), r.currency, r.amount, r.balance_after]),
@@ -192,7 +178,6 @@ const snapshot = async (userId) => ({
 const ref = (label) => `${label}-${crypto.randomBytes(6).toString('hex')}`;
 const REQ = (referenceEventId, extra = {}) => ({ productId: GOLD_PRODUCT.product_id, version: 1, referenceEventId, ...extra });
 
-/** 모델 create를 시험 동안만 바꿔 끼운다 — failOn(callIndex, options)이 참이면 던진다. */
 const injectCreateFailure = (t, model, failOn) => {
     const original = model.create;
     let calls = 0;
@@ -201,7 +186,6 @@ const injectCreateFailure = (t, model, failOn) => {
         calls += 1;
         if (failOn(calls, options)) {
             observed.push({ call: calls, transaction: options?.transaction });
-            // 실패 지점에서 같은 트랜잭션으로 선행 쓰기가 이미 적용됐는지 본다.
             const [inTx] = await db.sequelize.query(
                 'SELECT balance_diamond, balance_gold FROM economy_wallets WHERE user_id = :userId',
                 { replacements: { userId: values.user_id }, transaction: options.transaction },
@@ -215,8 +199,6 @@ const injectCreateFailure = (t, model, failOn) => {
     t.after(restore);
     return { restore, observed };
 };
-
-// ═══ AC-01 · AC-06 일부: 정상 구매 ═════════════════════════════════════════════════════
 
 test('AC-01: 정상 골드 구매는 서버 상품표 값으로 다이아를 줄이고 골드를 늘리며 구매 요청 1행·재화 원장 2행을 남긴다', async (t) => {
     if (unavailable(t)) return;
@@ -257,8 +239,6 @@ test('AC-05: 인증이 없으면 401이고 서비스·DB에 아무것도 남지 
     assert.equal(await count('SELECT COUNT(*) AS n FROM economy_purchase_requests', {}), 0);
 });
 
-// ═══ AC-02: 거절·롤백 ═══════════════════════════════════════════════════════════════════
-
 test('AC-02: 다이아가 부족하면 400 INSUFFICIENT_DIAMOND로 거절되고 잔액·원장·구매 요청이 그대로다(지갑 없는 계정 포함)', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -273,7 +253,6 @@ test('AC-02: 다이아가 부족하면 400 INSUFFICIENT_DIAMOND로 거절되고 
     assert.equal(res.json.code, 'INSUFFICIENT_DIAMOND');
     assert.deepEqual(await snapshot(poor), before);
 
-    // 지갑 행이 아직 없는 계정: 거절되고 지갑 행도 남지 않는다(부모 트랜잭션 전체 롤백).
     const noWallet = await createUser('nowal');
     const rejected = await ctx.buy(noWallet, REQ(ref('ac02b')));
     assert.equal(rejected.status, 400);
@@ -291,7 +270,6 @@ test('AC-02: 두 번째 원장 쓰기·구매 요청 쓰기가 실패하면 선�
     const before = await snapshot(user);
     const key = ref('ac02-roll');
 
-    // (a) 두 번째 EconomyLedgerEntry.create 실패
     const ledgerFail = injectCreateFailure(t, db.EconomyLedgerEntry, (n) => n === 2);
     const first = await ctx.buy(user, REQ(key));
     assert.equal(first.status, 500);
@@ -301,7 +279,6 @@ test('AC-02: 두 번째 원장 쓰기·구매 요청 쓰기가 실패하면 선�
     ledgerFail.restore();
     assert.deepEqual(await snapshot(user), before, '별도 연결에서는 기준선 그대로');
 
-    // (b) EconomyPurchaseRequest.create 실패
     const requestFail = injectCreateFailure(t, db.sequelize.models.EconomyPurchaseRequest, () => true);
     const second = await ctx.buy(user, REQ(key));
     assert.equal(second.status, 500);
@@ -309,7 +286,6 @@ test('AC-02: 두 번째 원장 쓰기·구매 요청 쓰기가 실패하면 선�
     requestFail.restore();
     assert.deepEqual(await snapshot(user), before);
 
-    // 실패 해제 뒤 같은 키 재시도는 정상적으로 한 번만 커밋된다.
     const retry = await ctx.buy(user, REQ(key));
     assert.equal(retry.status, 200);
     assert.deepEqual(retry.json, { ok: true, balanceGold: 130, balanceDiamond: 70 });
@@ -332,8 +308,6 @@ test('AC-02: 골드 한도를 넘는 지급은 400 BALANCE_LIMIT_EXCEEDED이고 
     assert.equal(res.json.code, 'BALANCE_LIMIT_EXCEEDED');
     assert.deepEqual(await snapshot(user), before);
 });
-
-// ═══ AC-03: 중복·동시 ═══════════════════════════════════════════════════════════════════
 
 test('AC-03: 같은 요청을 순차·병렬로 여러 번 보내도 차감·지급·원장이 정확히 1회다', async (t) => {
     if (unavailable(t)) return;
@@ -361,9 +335,6 @@ test('AC-03: 같은 요청을 순차·병렬로 여러 번 보내도 차감·지
     assert.equal((await ledgerRows(user)).length, 4);
 });
 
-// 지갑 행이 아직 없는 계정은 다이아 잔액이 0이라 구매가 성공할 수 없다(다이아를 얻는 경로는 모두 지갑 행을
-// 만든다). 그래서 계획이 허용하는 두 번째 방식을 택한다: 같은 키의 순차·병렬 중복 요청이 모두
-// INSUFFICIENT_DIAMOND로 끝나고, 지갑 최초 생성 경합에서도 지갑·원장·구매 요청에 중복·부분 효과가 없다.
 test('AC-03: 지갑 행이 없는 계정의 같은 키 순차·병렬 중복 요청은 모두 INSUFFICIENT_DIAMOND이고 지갑·원장·구매 요청에 어떤 효과도 남지 않는다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
@@ -383,7 +354,6 @@ test('AC-03: 지갑 행이 없는 계정의 같은 키 순차·병렬 중복 요
     assert.deepEqual(second, first, '순차 재시도는 같은 거절이다');
     assert.deepEqual(await snapshot(user), empty);
 
-    // 지갑 최초 생성 경합: 병렬 2회(같은 키)와 병렬 2회(서로 다른 키)
     const parKey = ref('nw-par');
     const same = await Promise.all([ctx.buy(user, REQ(parKey)), ctx.buy(user, REQ(parKey))]);
     const different = await Promise.all([ctx.buy(user, REQ(ref('nw-a'))), ctx.buy(user, REQ(ref('nw-b')))]);
@@ -453,15 +423,12 @@ test('AC-03: 같은 키를 다른 상품·버전이나 기존 SINGLE/BULK 요청
     const after = await snapshot(user);
     assert.deepEqual({ ...after, requests: after.requests - 2 }, afterFirst, '재화·원장에는 추가 효과가 없다');
 
-    // 같은 문자열 키를 다른 계정이 쓰면 서로 독립이다.
     const other = await createUser('oth');
     await seedWallet(other, { diamond: 30, gold: 0 });
     const independent = await ctx.buy(other, REQ(key));
     assert.equal(independent.status, 200);
     assert.deepEqual(independent.json, { ok: true, balanceGold: 110, balanceDiamond: 0 });
 });
-
-// ═══ AC-04: 응답 유실·복구 ═════════════════════════════════════════════════════════════
 
 test('AC-04: 응답이 유실돼도 같은 POST 재시도·GET 조회는 최초 결과를 돌려주고, 이후 지갑·상품표가 바뀌어도 변하지 않는다', async (t) => {
     if (unavailable(t)) return;
@@ -472,7 +439,6 @@ test('AC-04: 응답이 유실돼도 같은 POST 재시도·GET 조회는 최초 
     await seedWallet(user, { diamond: 100, gold: 20 });
     const key = ref('lost');
 
-    // 응답 유실: 서비스는 커밋하지만 클라이언트는 응답을 받지 못한다.
     ctx.dropResponses.on = true;
     await assert.rejects(() => ctx.buy(user, REQ(key)));
     ctx.dropResponses.on = false;
@@ -490,7 +456,6 @@ test('AC-04: 응답이 유실돼도 같은 POST 재시도·GET 조회는 최초 
     assert.deepEqual(fetched.json.results.map((r) => [r.currency, r.amount, r.balanceAfter, r.reason]),
         [['DIAMOND', -30, 70, 'GOLD_PURCHASE'], ['GOLD', 110, 130, 'GOLD_PURCHASE']]);
 
-    // 그 사이 다른 거래로 지갑이 바뀌고, 상품 가격·버전 변경 → 판매 중지 → 삭제가 이어진다.
     await sequelize.query('UPDATE economy_wallets SET balance_diamond = 5, balance_gold = 9999 WHERE user_id = :userId', { replacements: { userId: user } });
     const expectedRetry = { ok: true, balanceGold: 130, balanceDiamond: 70 };
     const stages = [
@@ -511,7 +476,6 @@ test('AC-04: 응답이 유실돼도 같은 POST 재시도·GET 조회는 최초 
     assert.equal(await requestCount(user), 1);
     assert.equal((await ledgerRows(user)).length, 2);
 
-    // 미커밋 키·타 계정 조회는 404이고 부작용이 없다.
     const stranger = await createUser('strg');
     assert.equal((await ctx.result(user, ref('never'))).status, 404);
     assert.equal((await ctx.result(stranger, key)).status, 404);
@@ -540,7 +504,6 @@ test('AC-04(AC-06 회귀): 기존 SINGLE·BULK 결과 조회는 ok·잔액 필�
     assert.equal(res.json.kind, 'SINGLE');
     assert.deepEqual(Object.keys(res.json).sort(), ['createdAt', 'kind', 'results']);
 
-    // BULK: 실제 POST /economy/purchases/bulk가 커밋한 구매 요청을 조회한다.
     const buyer = await createUser('bulk');
     await seedWallet(buyer, { diamond: 0, gold: 1000 });
     const bulkKey = ref('bulk');
@@ -562,8 +525,6 @@ test('AC-04(AC-06 회귀): 기존 SINGLE·BULK 결과 조회는 ok·잔액 필�
         assert.equal(field in bulkResult.json, false, `BULK 응답에 ${field}가 없다`);
     }
 });
-
-// ═══ AC-05: 변조·상품 검증·상품 변경 반영 ═══════════════════════════════════════════════
 
 test('AC-05: 클라이언트의 금액·수량 참고 필드는 무시되고 서버 상품표 값(-30/+110)만 반영되며, 그 밖의 미지 필드는 거절된다', async (t) => {
     if (unavailable(t)) return;
@@ -637,7 +598,6 @@ test('AC-05: 잘못된 버전·판매 중지·다른 종류·잘못된 행은 �
     }
     assert.deepEqual(await snapshot(user), before);
 
-    // 별도 연결로 가격·지급량을 바꾸면(version+1) 재시작 없이 새 값이 소비된다.
     await updateProduct('test-gold-1', { pay_amount: 40, grant_amount: 200, bonus_amount: 5 });
     const oldVersion = await ctx.buy(user, REQ(ref('old')));
     assert.equal(oldVersion.status, 409);
@@ -646,8 +606,6 @@ test('AC-05: 잘못된 버전·판매 중지·다른 종류·잘못된 행은 �
     assert.equal(fresh.status, 200, JSON.stringify(fresh.json));
     assert.deepEqual(fresh.json, { ok: true, balanceGold: 205, balanceDiamond: 160 });
 });
-
-// ═══ AC-06: 기존 계약 재사용 ═══════════════════════════════════════════════════════════
 
 test('AC-06: 골드 구매 서비스는 기존 원장·지갑 계약을 재사용한다(재화 원장 reason·참조 키 파생·itemId 없음)', async (t) => {
     if (unavailable(t)) return;
@@ -663,7 +621,6 @@ test('AC-06: 골드 구매 서비스는 기존 원장·지갑 계약을 재사�
     const digest = crypto.createHash('sha256').update(key).digest('hex');
     assert.deepEqual(ledger.map((r) => r.reference_event_id).sort(), [`gold:${digest}:diamond`, `gold:${digest}:gold`]);
     assert.ok(ledger.every((r) => r.item_id === null));
-    // 같은 지갑으로 기존 grantReward 경로가 그대로 동작한다.
     const grant = await economyService.grantReward({ userId: user, amount: 5, currency: 'GOLD', referenceEventId: ref('grant') });
     assert.equal(grant.idempotent, false);
     assert.deepEqual(await wallet(user), { gold: 115, diamond: 70 });

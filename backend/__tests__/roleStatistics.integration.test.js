@@ -1,7 +1,3 @@
-// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 문자열로 파싱한다(연결을 실제로
-// 시도하지는 않는다 — 이 파일은 db.* 를 전부 가짜로 교체한다, gameResultPersistence.test.js와
-// 같은 관례). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어
-// 있어 require 자체가 죽으므로 더미 폴백을 둔다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 process.env.JWT_SECRET = process.env.JWT_SECRET || "role-statistics-integration-test-secret";
 
@@ -20,22 +16,11 @@ const gameSessionCore         = require("../game-core/gameSession");
 
 const { buildGameResultRecord } = gameSessionCore;
 
-// F-13(AC-05, 운영자 확장 승인): getRoleRanking이 이제 economyService.getPublicProfileLoadouts로
-// 계정 프로필(사진·테두리)을 함께 조회한다 — 그 함수는 실제 backend/models(Economy* 테이블)에
-// 접근하는데, 이 파일은 GameResultPlayer/GameResult/User만 가짜로 바꿔두므로(위 setupFixtureDb)
-// 그대로 두면 실제 DB 연결을 시도해 실패한다. matchmaking.test.js와 같은 이유로 fake를
-// 주입한다 — 기본값은 모든 uuid에 대해 사진·테두리 모두 미지정(null)으로 응답한다.
 gameResultRepository.__setEconomyServiceForTests({
     getPublicProfileLoadouts: async (userIds) =>
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
 });
 
-// ── 픽스처 DB: game_result_players(+소속 game_results.settings) · users를 메모리에 둔다 ──
-//
-// F-10의 새 조회(getMyRoleStatistics/getRoleRanking/getHighestWinRateRole)는 이미 커밋된
-// 행만 읽는(트랜잭션 밖) 순수 조회이므로, gameResultPersistence.test.js처럼 저장 트랜잭션
-// 전체를 흉내내지 않고 "이미 저장되어 있다고 가정한 committed 상태"만 세팅한다 — 저장
-// 트랜잭션·멱등성 자체는 이미 그 파일이 검증한다(F0241/X0085 공용 경로).
 const setupFixtureDb = (t) => {
     const original = {
         GameResultPlayer: db.GameResultPlayer,
@@ -48,12 +33,6 @@ const setupFixtureDb = (t) => {
     let users = new Map();
 
     db.GameResultPlayer = {
-        // F-30 AC-02: 실제 조회 옵션을 그대로 재현한다.
-        //   - where.won: { [Op.ne]: null } 이 실제로 실려 오는지(리포지토리가 이 조건을 빼면
-        //     잔류자 미확정 행이 판수에 섞인다 — 대역이 무조건 걸러주면 그 회귀를 못 잡는다).
-        //   - include required:true: 소속 game_results 행이 없는 참가 행은 JOIN에서 빠진다.
-        //   - completed: 업적 기준(isAchievementRewardEligibleGame)과의 차이를 비교할 수 있게
-        //     함께 싣는다 — F-30 표시 모집단은 completed를 조건으로 쓰지 않는다.
         findAll: async ({ where, include }) => {
             const gameById = games;
             const excludesNullWon = where.won !== undefined;
@@ -94,8 +73,6 @@ const setupFixtureDb = (t) => {
     });
 
     return {
-        // completed는 F-12 업적 자격 게이트가 쓰는 값이다. F-30 표시 모집단은 이것을 조건으로
-        // 쓰지 않으므로 기본값을 true로 두되, 중단 경기 fixture가 명시적으로 false를 줄 수 있다.
         addGame: (gameId, settings, { completed = true } = {}) => games.set(gameId, { settings, completed }),
         addPlayer: (row) => players.push(row),
         addUser: (uuid, fields) => users.set(uuid, { uuid, ...fields }),
@@ -106,7 +83,6 @@ const setupFixtureDb = (t) => {
 const productionGame = (v = 1) => ({ v, value: "production" });
 const developmentGame = (v = 1) => ({ v, value: "development" });
 
-// 실제 buildGameResultRecord가 만드는 것과 같은 모양의 참가 행을 만든다.
 const playerRow = (gameId, userId, role, won, isAlive = true) => ({
     game_id: gameId, user_id: userId, role, won, is_alive: isAlive,
 });
@@ -121,8 +97,6 @@ const callController = async (fn, req) => {
     await fn(req, res, (err) => { throw err; });
     return { status, body };
 };
-
-// ── AC-01/AC-02: 내 전적 집계·고정 매핑 ─────────────────────────────────────────
 
 test("AC-01/AC-02: 5개 직업이 항상 채워지고, 판을 하지 않은 직업은 games:0이다", async (t) => {
     const fixture = setupFixtureDb(t);
@@ -162,8 +136,6 @@ test("AC-02: 컨트롤러 응답의 role은 고정 5개 한국어 이름과 함�
     ]);
 });
 
-// ── A-09: 인증 경계 — 내 전적은 req.user.uuid에서만 계정을 가져온다 ──────────────
-
 test("A-09: 다른 계정의 user_id를 body/query에 실어도 내 전적은 req.user.uuid만 본다", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("g1", { gameSource: productionGame() });
@@ -188,8 +160,6 @@ test("AC-03: 알 수 없는 role은 400으로 거부되고 쿼리에 그대로 �
     assert.equal(body.success, false);
 });
 
-// ── AC-03/A-04/A-10: 랭킹 — 전체 목록·정렬·10판 미만 제외 ───────────────────────
-
 test("AC-03: 최소 10판 미만 사용자는 랭킹에서 빠지고, 나머지는 승률↓판수↓UUID↑로 전체가 나간다", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("g1", { gameSource: productionGame() });
@@ -211,13 +181,6 @@ test("AC-03: 최소 10판 미만 사용자는 랭킹에서 빠지고, 나머지�
     assert.equal(ranking[0].profile_image_url, "/b.png");
 });
 
-// F-13 AC-05(CODEX-5 재검토) — 위 파일 상단의 __setEconomyServiceForTests fake는 모든
-// uuid에 항상 null만 돌려주므로, 지금까지 어떤 테스트도 getRoleRanking이 실제로 서로 다른
-// accountProfilePhotoId/accountProfileBorderId를 랭킹 각 행에 실어 보내는지 증명하지
-// 못했다("장착 POST만 검사하고 공개 응답 검증은 부족하다"는 반송 지적). 이 시험만 실제
-// non-null 값을 돌려주는 fake로 바꿔 넣어(t.after로 원래 fake 복원) 계정별로 다른 값이
-// 실제 랭킹 응답에 그대로 실리는지, 그리고 순위·승률 등 기존 계산은 전혀 건드리지 않는지
-// 확인한다.
 test("F-13 AC-05: getRoleRanking은 계정별로 서로 다른 실제 장착 사진·테두리를 랭킹 각 행에 싣는다(순위·승률 계산은 그대로다)", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("g1", { gameSource: productionGame() });
@@ -270,8 +233,6 @@ test("A-10: 랭킹 응답은 화면이 페이지를 넘기기 전에 잘리지 �
     assert.equal(ranking.length, 8, "기존 상위 5명 상한(INVITED_GUESTS_MASTERY_RANKING_LIMIT)으로 잘리면 안 된다");
 });
 
-// ── AC-05/A-06/A-07: 정상 과거 경기 소급 포함, 개발 경기 제외 ────────────────────
-
 test("AC-05: settings.gameSource가 아예 없는(이 기능 이전) 과거 경기는 운영 기록으로 소급 집계된다", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("legacy-1", {}); // gameSource 필드 자체가 없다 — 식별 근거 없음(A-07)
@@ -310,8 +271,6 @@ test("AC-05: 중단 경기의 이탈자 패배 전적은 유지되고 won=null �
     assert.equal(stayerStats.find((s) => s.role === "CITIZEN").games, 0, "잔류자의 미확정 전적은 판수에 들어가면 안 된다");
 });
 
-// ── AC-04/A-05: 운명의 가면 — 최고 승률, 최다 플레이 아님, 0판 null ─────────────
-
 test("AC-04: 운명의 가면은 최다 플레이가 아니라 최소 1판 이상 최고 승률 직업이다", async (t) => {
     const fixture = setupFixtureDb(t);
     fixture.addGame("g1", { gameSource: productionGame() });
@@ -327,8 +286,6 @@ test("AC-04: 전적이 전혀 없으면 null이다(더미로 대체하지 않는
     const result = await gameResultRepository.getHighestWinRateRole("nobody");
     assert.equal(result, null);
 });
-
-// ── A-11: 프로필 응답 — most_played_role 보존 + highest_win_rate_role 별도 추가 ──
 
 test("A-11: getMyProfile은 most_played_role을 그대로 유지하면서 highest_win_rate_role을 별도 필드로 추가한다", async (t) => {
     const fixture = setupFixtureDb(t);
@@ -365,13 +322,6 @@ test("A-11: 전적이 없는 계정은 highest_win_rate_role이 null이다", asy
     assert.equal(body.data.highest_win_rate_role, null);
 });
 
-// ── F-30 AC-02/AC-03/AC-04: 표시 전체 판수·승률의 모집단과 명성 제거 ──────────────
-
-/**
- * 프로필 조회의 사용자 쪽 절반만 고정한다. 원본 UserStat.total_games를 일부러 표시값과 다른
- * 수(999)로 둬서, 응답의 total_games가 **전적 조회 모집단**에서만 나오는지(원본을 그대로
- * 흘려보내지 않는지) 같은 시험에서 함께 확인할 수 있게 한다.
- */
 const stubProfileUser = (t, overrides = {}) => {
     const original = userRepository.getMyProfile;
     userRepository.getMyProfile = async (uuid) => (uuid === "u1"
@@ -398,7 +348,6 @@ test("F-30 AC-02: 표시 판수·승률은 계정 전체 유효 종료 경기의
     const fixture = setupFixtureDb(t);
     stubProfileUser(t);
 
-    // 서로 다른 경기 ID를 쓴다 — 한 경기에 같은 계정이 여러 번 참가하는 모양을 만들지 않는다.
     fixture.addGame("g1", { gameSource: productionGame() });
     fixture.addGame("g2", { gameSource: productionGame() });
     fixture.addGame("g3", { gameSource: productionGame() });
@@ -410,11 +359,9 @@ test("F-30 AC-02: 표시 판수·승률은 계정 전체 유효 종료 경기의
 
     assert.equal(data.total_games, 3);
     assert.equal(data.account_win_rate, 2 / 3);
-    // 최고 승률 직업은 광대(1/1=100%)다 — 계정 승률과 서로 독립이어야 한다.
     assert.equal(data.highest_win_rate_role, "광대");
     assert.notEqual(data.account_win_rate, 1, "특정 직업의 최고 승률을 계정 승률로 쓰면 안 된다");
     assert.notEqual(data.account_win_rate, 0.75, "직업별 승률의 평균(0.5·1.0)을 계정 승률로 쓰면 안 된다");
-    // 원본 UserStats.total_games(999)를 그대로 흘려보내지 않는다.
     assert.notEqual(data.total_games, 999);
 });
 
@@ -429,8 +376,6 @@ test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 
     fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", false));
     fixture.addPlayer(playerRow("g3", "u1", "JOKER", true));
 
-    // 중단 경기(completed=false)의 이탈자는 패배가 확정된다 — 표시 모집단은 completed를
-    // 조건으로 쓰지 않으므로 이 한 판이 들어와 4판·2승이 된다.
     fixture.addGame("abort-1", { gameSource: productionGame() }, { completed: false });
     fixture.addPlayer(playerRow("abort-1", "u1", "GUARD", false, false));
 
@@ -438,7 +383,6 @@ test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 
     assert.equal(data.total_games, 4);
     assert.equal(data.account_win_rate, 1 / 2);
 
-    // 여기부터는 전부 불변이어야 한다.
     fixture.addPlayer(playerRow("abort-1", "u1", "DOCTOR", null, true));      // 잔류자(미확정)
     fixture.addGame("dev-1", { gameSource: developmentGame() });
     fixture.addPlayer(playerRow("dev-1", "u1", "JOKER", true));               // 개발 경기 승리
@@ -449,7 +393,6 @@ test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 
     assert.equal(data.total_games, 4, "잔류자·개발 경기·타 계정·JOIN 대상 없는 행이 표시 판수에 섞였다");
     assert.equal(data.account_win_rate, 1 / 2);
 
-    // settings.gameSource가 아예 없는 과거 경기는 운영 기록으로 소급 집계된다(A-06/A-07).
     fixture.addGame("legacy-1", {});
     fixture.addPlayer(playerRow("legacy-1", "u1", "CITIZEN", true));
 
@@ -484,7 +427,6 @@ test("F-30 AC-03: 전적이 전혀 없는 계정은 0판·승률 0이다(원본 
 
 test("F-30 AC-04: 프로필 응답에 reputation 키 자체가 없고 나머지 필드는 그대로다", async (t) => {
     const fixture = setupFixtureDb(t);
-    // 원본에 명성이 남아 있는 계정이어도 응답에는 실리지 않아야 한다.
     stubProfileUser(t, { reputation: 1280 });
     fixture.addGame("g1", { gameSource: productionGame() });
     fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));
@@ -538,8 +480,6 @@ test("F-30 AC-03: 사용자가 없으면 여전히 404이고 전적 집계로 �
     assert.equal(body.success, false);
 });
 
-// ── 저장 레코드 → 표시 모집단 왕복 ───────────────────────────────────────────────
-
 test("F-30 AC-02: buildGameResultRecord가 만든 정상·중단 레코드가 표시 판수·승률에 그대로 반영된다", async (t) => {
     const fixture = setupFixtureDb(t);
     stubProfileUser(t);
@@ -571,7 +511,6 @@ test("F-30 AC-02: buildGameResultRecord가 만든 정상·중단 레코드가 �
         for (const player of record.players) fixture.addPlayer(player);
     }
 
-    // u1: 정상 승리 1 + 중단 이탈 패배 1 = 2판 1승. u2(중단 잔류자, won=null)는 0판이다.
     const data = await getMyProfileData();
     assert.equal(data.total_games, 2);
     assert.equal(data.account_win_rate, 0.5);
@@ -579,8 +518,6 @@ test("F-30 AC-02: buildGameResultRecord가 만든 정상·중단 레코드가 �
     const stayerStats = await gameResultRepository.getMyRoleStatistics("u2");
     assert.equal(stayerStats.reduce((sum, entry) => sum + entry.games, 0), 0, "중단 잔류자는 표시 판수가 0이어야 한다");
 });
-
-// ── 저장→조회 왕복: buildGameResultRecord가 만든 settings.gameSource를 그대로 읽는다 ──
 
 test("저장 레코드의 settings.gameSource가 조회 경로의 개발 경기 판정에 그대로 쓰인다", async (t) => {
     const fixture = setupFixtureDb(t);
@@ -598,8 +535,6 @@ test("저장 레코드의 settings.gameSource가 조회 경로의 개발 경기 
     const stats = await gameResultRepository.getMyRoleStatistics("u1");
     assert.equal(stats.find((s) => s.role === "CITIZEN").games, 0, "개발 경기 출처가 저장→조회 왕복 후에도 제외되어야 한다");
 });
-
-// ── A-09/AC-06: 실제 HTTP 라우터 — 인증 경계가 진짜로 연결되어 있는가 ────────────
 
 const { generateToken } = require("../utils/jwt");
 const { notFoundHandler, globalErrorHandler } = require("../middleware/errorHandler");
@@ -620,8 +555,6 @@ const startRouteServer = async (t) => {
     return `http://127.0.0.1:${server.address().port}`;
 };
 
-// user.accountPaths.test.js와 같은 관례 — verifyToken이 실제로 거치는 세션/밴 조회만 가짜로
-// 바꾸고, 나머지(JWT 서명 검증 등)는 진짜 코드를 그대로 태운다.
 const stubAuthDb = (t) => {
     const original = { UserSession: db.UserSession, UserBan: db.UserBan };
     db.UserSession = { findOne: async () => ({ id: "route-session-1", user_id: "route-u1", is_online: true }) };

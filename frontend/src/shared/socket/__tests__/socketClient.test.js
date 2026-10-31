@@ -2,8 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { getSocket, setSocket, subscribeSocket } from "../socketClient.js"
 
-// socketClient는 모듈 싱글턴(_socket)을 쓰므로, 각 테스트가 서로의 상태에 영향을 주지
-// 않도록 매번 null로 되돌린다.
 test.beforeEach(() => setSocket(null))
 test.after(() => setSocket(null))
 

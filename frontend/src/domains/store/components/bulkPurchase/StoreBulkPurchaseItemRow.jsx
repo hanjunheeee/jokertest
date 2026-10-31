@@ -12,7 +12,6 @@ import {
   STORE_BULK_PURCHASE_ITEM_ROW_CLASS,
 } from "../../constants/storeBulkPurchaseLayout.js"
 
-/** 일괄구매 확인 — 선택 상품 한 줄 */
 export default function StoreBulkPurchaseItemRow({ item, displayIcon = item.icon }) {
   return (
     <div className={STORE_BULK_PURCHASE_ITEM_ROW_CLASS}>

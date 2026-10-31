@@ -7,10 +7,6 @@ function resolveIntervalMs(value = process.env.CONCURRENT_SNAPSHOT_INTERVAL_MS) 
     return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_SNAPSHOT_INTERVAL_MS
 }
 
-/**
- * 라이브 registry 두 개에서 현재값을 즉시 파생한다. 이 모듈은 접속자·로비·게임 상태를
- * 소유하거나 증감하지 않는다.
- */
 function getCurrentSnapshot(onlineUsers, gameSnapshot) {
     if (!(onlineUsers instanceof Map)) throw new TypeError('onlineUsers must be a Map')
     if (!(gameSnapshot?.participantUuids instanceof Set)) {
@@ -39,7 +35,6 @@ async function captureConcurrentSnapshot({
 } = {}) {
     try {
         const current = getCurrentSnapshot(onlineUsers, getGameSnapshot())
-        // 기본 경로는 DB3가 등록한 기존 모델을 직접 사용한다. 테스트만 model을 주입한다.
         const ConcurrentSnapshot = model ?? require('../models').ConcurrentSnapshot
         await ConcurrentSnapshot.create({ captured_at: now(), ...current })
         return true

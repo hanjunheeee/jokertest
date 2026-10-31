@@ -1,4 +1,3 @@
-// 파일 역할: InGamePlayerFrameStroke.jsx - 화면을 구성하는 컴포넌트입니다.
 import { publicAsset } from "@/shared/utils/publicAsset"
 
 function buildFrameMaskStyle(frameSrc) {
@@ -16,9 +15,6 @@ function buildFrameMaskStyle(frameSrc) {
   }
 }
 
-/**
- * 프레임 PNG 실루엣 stroke — mask 레이어를 살짝 키워 뒤에 깔고, 위에 원본 프레임을 올립니다.
- */
 export default function InGamePlayerFrameStroke({ frameSrc, color, scale = 1.026 }) {
   return (
     <div

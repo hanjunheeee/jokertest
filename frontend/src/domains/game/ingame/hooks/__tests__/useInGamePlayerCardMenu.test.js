@@ -1,15 +1,3 @@
-/**
- * CM V-1 — 플레이어 카드 좌클릭 메뉴의 항목 계산·제출·닫힘 계약.
- *
- *   AC-01 단계·역할·대상 조합별 표시/활성/비활성 사유 문구
- *   AC-02 항목 실행 시 setSelected* 선행 + submit* 정확히 1회
- *   AC-03 바깥 클릭·Esc·단계 전환·조작 차단에서 닫히거나 열리지 않음
- *
- * AC-01은 순수 계산이라 컨텍스트 값을 직접 주입해 행렬을 훑는다. AC-02/AC-03은 **제출과
- * 닫힘**이라 가짜 setter·submit spy를 쓰지 않는다 — 실제 useInGameActionPanel·실제 zustand
- * store·실제 세션 Provider·실제 InGamePlayerBoard를 마운트하고, 대역은 소켓 전송 하나뿐이다
- * (emitWithAck가 시험이 소유한 Promise를 돌려준다).
- */
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
@@ -45,7 +33,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 register(new URL("../../__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
 
-// 바깥 경계(자산 선택)만 대역한다 — 초상·프레임 픽커는 Vite alias로 PNG를 끌어온다.
 mock.module("../../utils/pickInGameJobPortrait.js", {
   namedExports: { pickInGameJobPortrait: (index) => `portrait-${index}` },
 })
@@ -57,10 +44,6 @@ mock.module("../../utils/pickInGamePlayerFrame.js", {
     resolveAccountCardFrameSrc: () => null,
   },
 })
-// E-3(F-33 AC-03): 보드가 인게임 이모티콘 팔레트 사본을 읽으려고 emojiPalette.store를 import
-// 하면서 그 그래프가 HTTP 경계(shared/api/client.js → shared/env.js의 import.meta.env)에 닿는다.
-// 이 시험의 관심사는 카드 **좌클릭 메뉴**이므로, 네트워크 경계 모듈 하나만 갈아끼워 조회가
-// 결정적으로 실패하게 둔다(store가 그 거부를 스스로 잡아 gameStatus='error'로 끝낸다).
 mock.module("../../../../user/api/emojiPalette.api.js", {
   namedExports: {
     getEmojiPaletteApi: async () => { throw new Error("network disabled in test") },
@@ -98,11 +81,6 @@ const ROSTER = [
   { uuid: "u4", nickname: "D", themeIndex: 3 },
 ]
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AC-01 · 표시 / 활성 / 비활성 사유
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** 컨텍스트 값의 기본형 — 모든 게이트가 닫힌 상태에서 시작해 시험이 필요한 축만 연다. */
 function makeActionContext(overrides = {}) {
   return {
     gameState: null,
@@ -419,14 +397,6 @@ test("AC-01: 컨텍스트 Provider가 없으면(값 null) 항목을 만들지 �
   rendered.unmount()
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AC-02 / AC-03 · 실제 훅·실제 store·실제 보드로 보는 제출과 닫힘
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * 소켓 **전송 경계**만 대역한다. ack는 시험이 손에 쥔 Promise라 "전송 중" 구간을 원하는
- * 만큼 붙잡아 둘 수 있다 — 그 구간에서 항목이 잠기는지, 풀린 뒤 재제출이 열리는지 본다.
- */
 function createControlledSocket() {
   const sent = []
   const pending = []
@@ -480,9 +450,6 @@ function seedSession({
         ...(nightTurnRole ? { nightTurnRole } : {}),
         ...(dayVoteRound ? { dayVoteRound } : {}),
         players: ROSTER.map((player) => ({ ...player, alive: !deadUuids.includes(player.uuid) })),
-        // role/team 조합과 JOKER의 allies own-property 계약은 실제
-        // buildPlayerSessionSourceFromGameState가 검증한다 — 어기면 세션이 더미 preview로
-        // 떨어져 "실제 명단으로 렌더했다"가 거짓이 된다.
         self: {
           uuid: SELF_UUID,
           nickname: "A",
@@ -496,7 +463,6 @@ function seedSession({
   })
 }
 
-/** 실제 조작 훅을 한 번 부르고 그 값을 실제 컨텍스트로 흘려보내는 하니스(가짜 값 없음). */
 function ActionHarness({ interactionBlocked = false, children }) {
   const actionPanelValue = useInGameActionPanel({ interactionBlocked })
   return React.createElement(InGameActionContext.Provider, { value: actionPanelValue }, children)
@@ -522,11 +488,6 @@ function menuNode(container) {
   return container.querySelector(`[${INGAME_PLAYER_CARD_MENU_ATTR}]`)
 }
 
-/**
- * 열림 여부는 **boolean으로** 단언한다 — DOM 노드를 assert.equal에 그대로 넘기면 실패할 때
- * node:test가 jsdom 트리 전체를 직렬화하려다 메모리를 다 쓰고, 정작 어느 단언이 깨졌는지
- * 읽을 수 없게 된다.
- */
 function menuIsOpen(container) {
   return menuNode(container) !== null
 }
@@ -537,7 +498,6 @@ function menuButton(container, label) {
   return [...menu.querySelectorAll("button")].find((node) => node.textContent.startsWith(label)) ?? null
 }
 
-/** 실제 사용자가 하는 그대로 — 카드 위에서 mousedown → click 순서로 연다. */
 function openCardMenu(container, nickname) {
   const slot = slotOf(container, nickname)
   if (menuIsOpen(container)) return slot
@@ -571,7 +531,6 @@ test("AC-02: 낮 투표 항목을 실제로 클릭하면 선택값이 먼저 서
   assert.deepEqual(sent[0].payload, { gameId: GAME_ID, dayIndex: 1, targetId: "u2" })
   assert.equal(menuIsOpen(view.container), false, "제출 뒤 메뉴가 닫히지 않았다")
 
-  // ACK가 정착하면 다시 열 수 있고, 다른 대상으로 바꾼 재투표도 그 대상으로 한 번만 나간다.
   await act(async () => { transport.settleAll({ ok: true }) })
   openCardMenu(view.container, "C")
   await act(async () => { fireEvent.click(menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)) })
@@ -701,7 +660,6 @@ test("AC-02: 밤 — 취소하기 뒤 같은 대상에 다시 행동하면 submi
   await act(async () => { fireEvent.click(menuButton(view.container, "암살")) })
   assert.equal(transport.sentFor("submit_night_action").length, 1, "첫 밤 행동이 1회 나가지 않았다")
 
-  // ACK 전(전송 중)에는 **같은 대상**의 항목이 잠기고, 눌러도 전송이 늘지 않는다.
   openCardMenu(view.container, "B")
   const lockedItem = menuButton(view.container, "암살")
   assert.notEqual(lockedItem, null, "전송 중에 밤 항목이 사라졌다")
@@ -790,7 +748,6 @@ test("AC-02/AC-03: 게이트가 닫힌 뒤 보관해 둔 재판 handler를 불�
   act(() => menuApi.openMenu("u2"))
   const staleHandler = menuApi.getItems("u2").find((item) => item.vote === "GUILTY").onSelect
 
-  // 판이 밤으로 넘어간다 — 보관된 handler는 이미 지난 국면의 것이다.
   act(() => {
     useInGameStore.getState().applyTribunalResolved({
       gameId: GAME_ID, dayIndex: 1, phase: "NIGHT", defendantUuid: "u2",
@@ -806,12 +763,6 @@ test("AC-02/AC-03: 게이트가 닫힌 뒤 보관해 둔 재판 handler를 불�
   view.unmount()
 })
 
-/**
- * 위 시험은 **단계가 바뀌어 메뉴가 닫힌** 뒤의 handler를 본다. 그것만으로는 "세대가 올라서
- * 막혔다"와 "게이트를 다시 봤다"를 구분할 수 없다 — 여기서는 TRIBUNAL 단계도 피고도 메뉴
- * 세대도 **그대로 둔 채** 지금의 게이트만 닫는다(본인이 사망 판정돼 재판 투표 자격을 잃는다).
- * 보관해 둔 handler가 캡처 시점의 값으로 판단하면 이 조건에서 표가 나간다.
- */
 test("AC-02/AC-03: 단계·메뉴 세대는 그대로인데 현재 게이트만 false가 되면 보관한 재판 handler가 제출 0회다", async () => {
   const transport = createControlledSocket()
   setSocket(transport.socket)
@@ -833,8 +784,6 @@ test("AC-02/AC-03: 단계·메뉴 세대는 그대로인데 현재 게이트만 
   assert.equal(guiltyItem.enabled, true, "전제: 캡처 시점에는 항목이 활성이어야 한다")
   const staleHandler = guiltyItem.onSelect
 
-  // 단계·피고는 그대로 두고 **생존 판정만** 뒤집는다 — 이 축은 메뉴의 닫힘 범위(9축)에 없어
-  // 메뉴는 열린 채로, 세대도 오르지 않은 채로 남는다.
   act(() => {
     useInGameStore.setState((s) => ({
       state: {
@@ -860,13 +809,6 @@ test("AC-02/AC-03: 단계·메뉴 세대는 그대로인데 현재 게이트만 
   view.unmount()
 })
 
-/**
- * 항목을 **실제로 눌러 pending을 세운 직후** 취소 사건을 같은 틱에 적용한다.
- *
- * 낮·밤 제출은 선택 state가 반영된 다음 커밋의 effect가 내보낸다 — 그 사이에 들어온 취소는
- * 보관하던 제출을 통째로 버려야 한다. pending 없이 닫힘만 보는 시험은 이 구간을 전혀 지나가지
- * 않으므로, 여기서는 반드시 클릭으로 pending을 세운 뒤에 취소한다.
- */
 const PENDING_CANCEL_ROUTES = [
   ["Esc", () => { fireEvent.keyDown(document, { key: "Escape" }) }],
   ["바깥 mousedown", () => { fireEvent.mouseDown(document.body) }],
@@ -897,7 +839,6 @@ test("AC-03: 낮 투표 pending을 세운 직후 취소 사건이 오면 제출�
       fireEvent.click(voteItem)
       cancel()
     })
-    // 취소 뒤의 커밋·effect까지 전부 흘려보낸다(늦게 나가는 제출도 여기서 드러난다).
     await act(async () => {})
 
     assert.equal(transport.sentFor("cast_day_vote").length, 0,
@@ -970,10 +911,6 @@ test("AC-03: 단계·낮 하위 구간·밤 역할 턴·투표 라운드·신원
   const transport = createControlledSocket()
   setSocket(transport.socket)
 
-  // phase는 실제 reducer(낮 투표 무승부 → 그날 밤)로 넘긴다. 나머지 축은 그 전이를 만드는
-  // reducer가 이 방향으로 존재하지 않으므로(예: DAY_VOTE→DAY_DISCUSSION) canonical state를
-  // 직접 옮긴다 — 이 시험이 보는 것은 "canonical 축이 바뀌면 메뉴가 닫힌다"이지 reducer의
-  // 입력 검증이 아니다.
   const transitions = [
     ["phase", () => seedSession({ phase: "DAY", dayPhase: "DAY_VOTE" }),
       () => useInGameStore.getState().applyDayVoteResolvedToPhase(GAME_ID, 1, { outcome: "TIE" })],
@@ -1045,7 +982,6 @@ test("AC-03: 카드가 초점을 가진 채 Enter·Space를 누르면 열리고,
   act(() => { fireEvent.keyDown(slot, { key: " " }) })
   assert.equal(menuIsOpen(view.container), true, "Space로 메뉴가 열리지 않았다")
 
-  // 메뉴 항목에서 버블링된 Space는 슬롯의 열기 처리가 가로채지 않는다(닫고 다시 여는 튐 방지).
   const voteItem = menuButton(view.container, INGAME_CARD_MENU_DAY_VOTE_LABEL)
   act(() => { fireEvent.keyDown(voteItem, { key: " " }) })
   assert.equal(menuIsOpen(view.container), true)
@@ -1061,7 +997,6 @@ test("AC-03: 메뉴가 열린 카드 위의 mousedown은 바깥 클릭으로 처
   act(() => { fireEvent.mouseDown(slot) })
   assert.equal(menuIsOpen(view.container), true, "자기 카드 위 mousedown이 메뉴를 닫았다")
 
-  // 다른 카드 위의 mousedown은 바깥이다 — 먼저 닫고 그 카드의 메뉴가 열린다.
   const other = slotOf(view.container, "C")
   act(() => {
     fireEvent.mouseDown(other)

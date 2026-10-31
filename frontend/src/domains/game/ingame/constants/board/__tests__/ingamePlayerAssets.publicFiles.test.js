@@ -10,14 +10,9 @@ import {
   INGAME_PLAYER_DEAD_FRAME_VARIANTS,
 } from "../ingamePlayerAssets.js"
 
-// __tests__ → board → constants → ingame → game → domains → src → frontend
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = path.resolve(HERE, "../../../../../../..", "public")
 
-/**
- * 실제 디렉터리 엔트리를 코드포인트까지 드러내 실패 원인을 보여준다 — 한글 파일명은
- * NFC/NFD가 눈으로 구분되지 않아서, 없다는 사실만으로는 오타인지 정규화 차이인지 모른다.
- */
 function describeDirectory(dir) {
   if (!fs.existsSync(dir)) return `(디렉터리 없음: ${dir})`
   return fs
@@ -26,7 +21,6 @@ function describeDirectory(dir) {
     .join("\n")
 }
 
-/** 브라우저는 URL을 정확히 일치하는 파일로만 해석하므로 정규화 관대 비교를 하지 않는다. */
 function assertPublicAssetExists(assetPath) {
   assert.ok(assetPath.startsWith("/"), `public 에셋 경로는 /로 시작해야 한다: ${assetPath}`)
 

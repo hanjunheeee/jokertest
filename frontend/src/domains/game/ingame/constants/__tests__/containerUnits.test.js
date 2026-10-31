@@ -2,9 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 
-// 2026-09-22: 게임 열은 container-type: inline-size(최대 1192px)라 창 폭(vw)으로 잰 크기는 넓은
-// 모니터에서 열보다 커지고 작은 창에서 잘린다. 아래 상수 파일은 cqw/cqi만 쓴다(한 번 고친 것이
-// 되돌아오지 않게 잠근다).
 const FILES = [
   "../board/ingamePlayerBoard.js",
   "../controls/ingameSidePanelLayout.js",

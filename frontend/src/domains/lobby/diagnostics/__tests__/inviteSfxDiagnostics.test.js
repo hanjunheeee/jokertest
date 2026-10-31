@@ -1,19 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-// ---------------------------------------------------------------------------
-// F-19 AC-07 · 초대 수신음 QA 진단의 **경계** 시험.
-//
-// 여기서 확인하는 것은 진단이 무엇을 보여주는가가 아니라 "무엇을 하지 않는가"다:
-//   · production 번들에서는 QA 표식이 있어도 켜지지 않는다.
-//   · 개발 번들이어도 표식이 없으면 켜지지 않고, 기록 자체를 만들지 않는다.
-//   · 계정이 바뀌면 이전 계정의 관찰을 통째로 버리고, 범위 밖 관찰은 식별자를 담지 않는다.
-//   · 기록이 던져도 호출자(초대 수락·거절 경로)로 전파되지 않는다.
-//   · "적격 판정"과 "실제 청음"을 절대 합산하지 않는다.
-//
-// 실제 훅·store를 통과하는 흐름은 friendInviteRuntime.test.js가 마운트한 채로 확인한다.
-// ---------------------------------------------------------------------------
-
 const {
   INVITE_SFX_DIAGNOSTICS_LIMIT,
   INVITE_SFX_QA_FLAG,
@@ -43,10 +30,7 @@ function resetAll() {
 test.beforeEach(resetAll)
 test.afterEach(resetAll)
 
-// ── 켜지는 조건 ─────────────────────────────────────────────────────────────
-
 test("AC-07: 실제 번들 기본값(개발 플래그 없음)에서는 꺼져 있다", () => {
-  // 기본 접근자는 import.meta.env를 읽는다 — vite 밖에서는 undefined라 production과 같다.
   assert.equal(isInviteSfxDiagnosticsEnabled(), false)
 })
 
@@ -79,8 +63,6 @@ test("AC-07: 개발 번들 + QA 표식일 때만 켜진다", () => {
   assert.equal(isInviteSfxDiagnosticsEnabled(), false)
 })
 
-// ── 계정 경계 ───────────────────────────────────────────────────────────────
-
 test("AC-07: 계정이 바뀌면 이전 계정의 관찰을 통째로 버린다", () => {
   useEnv(true, QUERY)
   syncInviteSfxDiagnosticsAccount("account-a")
@@ -96,7 +78,6 @@ test("AC-07: 계정이 바뀌면 이전 계정의 관찰을 통째로 버린다"
   )
   assert.equal(getInviteSfxDiagnosticsAccount(), "account-b")
 
-  // 로그아웃도 같다.
   syncInviteSfxDiagnosticsAccount(null)
   assert.equal(getInviteSfxDiagnosticsAccount(), null)
   assert.deepEqual(getInviteSfxObservations(), [])
@@ -117,20 +98,16 @@ test("AC-07: 현재 계정 밖의 관찰은 사실만 남기고 식별자를 담
   assert.equal(entry.reason, "account-mismatch", "사실 자체는 남아야 증거가 된다")
 })
 
-// ── 적격 판정 ≠ 실제 청음 ───────────────────────────────────────────────────
-
 test("AC-07: 적격 판정과 실제 청음을 합산하지 않는다", async () => {
   useEnv(true, QUERY)
   syncInviteSfxDiagnosticsAccount("account-a")
 
-  // 미검토 자산: 판정은 적격이지만 재생기가 매체를 만들기 전에 거부한다.
   const unreviewed = recordInviteSfxObservation(() => ({
     phase: "received", accountId: "account-a", inviteId: "invite-1", eligible: true,
     dispatchStatus: "suppressed", dispatchReason: "asset-unreviewed",
   }))
   trackInviteSfxCompletion(unreviewed, Promise.resolve("stopped"))
 
-  // 승인 자산이었다면 실제로 끝까지 재생된다.
   const played = recordInviteSfxObservation(() => ({
     phase: "received", accountId: "account-a", inviteId: "invite-2", eligible: true,
     dispatchStatus: "accepted", dispatchReason: null,
@@ -163,8 +140,6 @@ test("AC-07: 무음 사유별 집계가 그대로 보존된다", () => {
   assert.deepEqual(summary.suppressedByReason, { "at-or-below-cursor": 2, "already-consumed": 1 })
 })
 
-// ── 업무 경로를 막지 않는다 ─────────────────────────────────────────────────
-
 test("AC-07: 기록이 던져도 호출자에게 전파되지 않는다", () => {
   useEnv(true, QUERY)
   syncInviteSfxDiagnosticsAccount("account-a")
@@ -174,7 +149,6 @@ test("AC-07: 기록이 던져도 호출자에게 전파되지 않는다", () => 
   })
   assert.deepEqual(getInviteSfxObservations(), [])
 
-  // 구독자가 던져도 마찬가지다.
   subscribeInviteSfxObservations(() => { throw new Error("listener broke") })
   assert.doesNotThrow(() => {
     recordInviteSfxObservation(() => ({ phase: "received", accountId: "account-a", eligible: true }))

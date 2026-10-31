@@ -2,7 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { attachJokerChatListener } from "../attachJokerChatListener.js"
 
-/** 프런트 전용 최소 fake socket — on/off/trigger만 지원한다(백엔드 test helper는 별도 런타임이라 재사용하지 않음). */
 function createFakeSocket() {
   const listeners = new Map()
   return {

@@ -1,8 +1,5 @@
 'use strict';
 
-// F-32a currencyProducts.service.js 단위 시험 — 행 검증·목록 순서·주문용 조회. 인메모리 fake db 사용
-// (실제 DB 반영 시험은 tests/db/f32a-topup.integration.test.js). 상품 수치는 자동 시험용 임시값이다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -60,7 +57,6 @@ test('목록: 판매 중이고 유효한 행만 sort_order·product_id 순으로
     db.addProduct({ ...ROW, product_id: 'first', sort_order: 0 });
     db.addProduct({ ...ROW, product_id: 'gold', kind: 'GOLD_PURCHASE', pay_currency: 'DIAMOND', grant_currency: 'GOLD', sort_order: 2 });
     db.addProduct({ ...ROW, product_id: 'stopped', status: 'STOPPED' });
-    // 어긋난 값이 product_id 자체인 행도 있으므로 overrides가 마지막에 와야 한다.
     for (const [label, overrides] of Object.entries(INVALID_ROWS)) db.addProduct({ ...ROW, product_id: `bad-${label}`, ...overrides });
 
     const all = await products.listCurrencyProducts({}, db);

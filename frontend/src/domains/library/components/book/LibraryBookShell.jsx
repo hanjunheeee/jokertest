@@ -16,7 +16,6 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
-/** 기억의 서고 — 책 프레임 + 목차 + 책갈피 + 본문 */
 export default function LibraryBookShell({
   activeTabId,
   onTabChange,
@@ -25,7 +24,6 @@ export default function LibraryBookShell({
   canGoNext = false,
   onPrevPage,
   onNextPage,
-  // F-17(AC-02): 알림이 가리키는 업적과 그 업적이 속한 직업 선택. 표시 위치만 정한다.
   jobIndex,
   onJobChange,
   targetAchievementId = null,

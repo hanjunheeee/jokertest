@@ -4,7 +4,6 @@ import { PODIUM_BG_IMAGE_CLASS } from "../constants/podiumLayoutStyle.js"
 import { BG_FADE_TRANSITION } from "../../../shared/constants/pageTransitions.js"
 import { publicAsset } from "../../../shared/utils/publicAsset.js"
 
-/** 명예의 전당 페이지 뒷배경 */
 export default function PodiumBackground() {
   return (
     <motion.img

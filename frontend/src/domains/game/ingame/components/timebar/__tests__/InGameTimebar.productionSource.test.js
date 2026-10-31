@@ -5,12 +5,6 @@ import { readFile } from "node:fs/promises"
 const componentUrl = new URL("../InGameTimebar.jsx", import.meta.url)
 const pageUrl = new URL("../../../pages/InGamePage.jsx", import.meta.url)
 
-/**
- * InGameTimebar.jsx·InGamePage.jsx는 .jsx라서 이 저장소의 node:test 실행에는 로더가 없어 직접
- * 렌더링할 수 없다(InGameActionPanel.productionSource.test.js와 동일한 제약). raw source
- * 검증으로 상태 문구 배선과 실제 화면 트리 연결을 증명한다.
- */
-
 test("statusMessage prop을 받아 전용 스타일 상수로 그대로 렌더한다", async () => {
   const source = await readFile(componentUrl, "utf8")
   assert.match(source, /statusMessage = null/)
@@ -60,7 +54,6 @@ test("AC-02: InGamePage가 InGameBackground를 실제 화면 트리에 그린다
   const source = await readFile(pageUrl, "utf8")
   assert.match(source, /import InGameBackground from "\.\.\/components\/InGameBackground\.jsx"/)
   assert.match(source, /<InGameBackground \/>/)
-  // 배경은 InGameBackground 하나가 담당한다 — 페이지가 배경 이미지를 직접 그리지 않는다.
   assert.doesNotMatch(source, /INGAME_ASSETS\.bg/)
   assert.doesNotMatch(source, /motion\.img/)
 })
@@ -77,8 +70,6 @@ test("AC-02: InGamePage가 타임바에 canonical state에서 파생한 statusMe
   )
 })
 
-// 리다이렉트 규칙 자체는 selectInGameSessionGuard.test.js가 실제 값으로 검증한다. 여기서는
-// 페이지가 그 규칙을 직접 다시 쓰지 않고 그대로 호출해 쓴다는 배선만 확인한다.
 test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함수에 그대로 넘긴다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.match(source, /const snapshotSyncStatus = useInGameSessionSnapshotSync\(\)/)
@@ -91,22 +82,15 @@ test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함�
     /if \(!shouldRedirectOutOfInGame\(\{ snapshotSyncStatus, gameId, gameState \}\)\) return/,
   )
   assert.match(source, /\[gameId, gameState, navigate, snapshotSyncStatus\]/)
-  // 페이지가 "checking" 판단을 따로 복제해두면 두 곳이 어긋날 수 있다 — 판단은 guard 한 곳뿐이다.
   assert.doesNotMatch(source, /=== "checking"/)
 })
 
-// UI-13에서는 이 세 배선(원격 은닉 릴·개인 결과·사망 연출)이 아직 들어오지 않았음을 확인했다.
-// 그중 개인 결과·사망 연출은 UI-14가 로컬 계약(store nightPrivateResult, night_result_applied·
-// 재판 처형 사망자)으로 들여오는 것이 요구사항이라, 같은 관심사(페이지에 무엇이 배선돼 있는가)를
-// 그대로 두고 기대값만 이 슬라이스의 계약으로 옮긴다. 원격 은닉 릴(statusRole)은 여전히 금지다 —
-// 밤 턴 은닉 계산은 로컬이 다르게 푸는 문제라 어느 슬라이스에서도 가져오지 않는다.
 test("원격 은닉 릴 배선은 들어오지 않고, 개인 결과·밤 성공 연출은 로컬 훅으로 배선된다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.doesNotMatch(source, /statusRole/)
   assert.doesNotMatch(source, /InGameKillRevealOverlay/)
   assert.doesNotMatch(source, /useInGameKillReveal/)
 
-  // F-23(SPLIT-1): 신원 재결속 보류와 F-27b 밤 성공 연출 보류만 결과 이동을 미룬다.
   assert.match(
     source,
     /useInGameResultNavigation\(\{\s*hold: identityRebindPending\s*\|\| nightSuccessPresentation\.open \|\| nightSuccessPresentation\.pending,\s*\}\)/,

@@ -6,7 +6,6 @@ import {
   INGAME_CORNER_ACTION_BTN_WRAP_CLASS,
 } from "../../constants/actions/ingameCornerActionLayout.js"
 
-/** 이미지 위에 라벨을 얹는 인게임 행동 버튼(기권·건너뛰기 등) */
 export default function InGameImageActionButton({
   src,
   label,

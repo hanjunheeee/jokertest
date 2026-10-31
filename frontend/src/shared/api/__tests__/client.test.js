@@ -1,10 +1,6 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
-// F-03: apiClient의 401 갱신 재시도(A-07)와 refreshAccessToken()의 in-flight 공유(동시
-// 요청이 갱신 자격을 불필요하게 여러 번 회전시키지 않는다)를 실제 코드로 검증한다.
-// client.js는 "@/..." 대신 상대 경로로 env.js를 가져오도록 바뀌었다(F-03 R-IMPL #6) — 이
-// mock.module이 그 상대 경로와 같은 대상을 가리켜야 가로챌 수 있다.
 mock.module("../../env.js", {
   namedExports: { API_BASE_URL: "http://test-api.local" },
 });
@@ -85,8 +81,6 @@ test("apiClient: ACCESS_TOKEN_EXPIRED 401은 갱신 성공 시 원 요청을 정
 test("apiClient: 갱신이 실패하면 재시도하지 않고 401 처리(handleApiResponse)로 흘려보낸다", async () => {
   fetchCalls.length = 0;
   fetchImpl = async (url) => {
-    // refreshAccessToken()은 response.ok(HTTP 상태)만 본다 — 200 body의 success:false가
-    // 아니라 실제 비-2xx 상태여야 "갱신 실패"를 재현한다.
     if (url === "http://test-api.local/auth/refresh") return jsonResponse(401, { success: false });
     return jsonResponse(401, { success: false, code: "ACCESS_TOKEN_EXPIRED", message: "만료" });
   };

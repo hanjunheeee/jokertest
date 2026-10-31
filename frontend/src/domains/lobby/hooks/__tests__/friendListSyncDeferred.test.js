@@ -2,24 +2,6 @@ import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
-// ---------------------------------------------------------------------------
-// F-19 AC-02 · useFriendListSync의 **지연 응답** 소유 대조.
-//
-// 실제 훅을 React에 마운트하고 실제 friend.store를 쓴다. 네트워크 경계(friend.api.js)만
-// 대역이고, 응답이 언제 도착하는지는 시험이 문(gate)으로 직접 정한다.
-//
-// 재현하는 사건 순서는 하나다 — **A → B → A**:
-//
-//   1) A에서 요청 7을 수락한다. 응답이 아직 오지 않았다(요청 7 잠김).
-//   2) 계정이 B로 바뀌었다가 다시 A로 돌아온다. 잠금·집계는 그때마다 통째로 버려진다.
-//   3) 돌아온 A에서 같은 요청 7에 **새 작업**이 걸린다(다시 잠김).
-//   4) 이제 (1)의 응답이 도착한다.
-//
-// 예전 구현은 (4)의 `finally`가 무조건 unlockRequests(7)이라 (3)의 잠금을 풀어 버렸다.
-// 그러면 같은 요청에 두 번째 수락이 나갈 수 있다. 전체 수락도 마찬가지로 결과 조회를
-// 기다린 뒤 세대를 다시 보지 않고 재조회를 시작하고 잠금을 풀었다.
-// ---------------------------------------------------------------------------
-
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   pretendToBeVisual: true,
   url: "http://127.0.0.1:5183/lobby",
@@ -37,8 +19,6 @@ installDomGlobal("Node", dom.window.Node)
 installDomGlobal("Event", dom.window.Event)
 installDomGlobal("localStorage", dom.window.localStorage)
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
-
-// ── 네트워크 경계 대역 ───────────────────────────────────────────────────────
 
 const calls = { friends: 0, incoming: 0, favorites: 0, accept: 0, decline: 0, results: 0 }
 let friendsResponder = async () => []
@@ -77,7 +57,6 @@ function flush(times = 8) {
   })()
 }
 
-/** 수동으로 열 수 있는 문 — 응답 도착 시점을 시험이 소유한다. */
 function gate() {
   let open
   let fail
@@ -86,7 +65,6 @@ function gate() {
   return { promise, open, fail }
 }
 
-/** 실제 훅을 마운트하고 반환값을 밖으로 노출한다(패널이 하는 배선 그대로). */
 let sync = null
 function Harness() {
   sync = useFriendListSync(true)
@@ -107,7 +85,6 @@ async function mountHook() {
   }
 }
 
-/** 앱의 auth 구독이 하는 일과 같다: 계정을 바꾸고 store를 그 계정으로 맞춘다. */
 function signIn(uuid) {
   useAuthStore.setState(
     uuid === null ? { isLoggedIn: false, user: null } : { isLoggedIn: true, user: { uuid } },
@@ -115,7 +92,6 @@ function signIn(uuid) {
   useFriendStore.getState().syncAccount()
 }
 
-/** 마운트한 뒤의 계정 전환은 실제 렌더 갱신까지 함께 정착시킨다. */
 async function switchAccount(uuid) {
   await act(async () => { signIn(uuid); await flush() })
 }
@@ -135,15 +111,10 @@ function resetAll() {
 test.beforeEach(resetAll)
 test.afterEach(resetAll)
 
-// ---------------------------------------------------------------------------
-// 단건 수락·거절
-// ---------------------------------------------------------------------------
-
 test("AC-02: A→B→A 사이에 도착한 옛 수락 응답이 새 작업의 잠금을 풀지 않는다", async () => {
   signIn(ACCOUNT_A)
   const mounted = await mountHook()
 
-  // (1) A의 첫 수락 — 응답을 붙잡아 둔다.
   const oldCall = gate()
   acceptResponder = async () => { await oldCall.promise; return {} }
   let firstDone = false
@@ -151,12 +122,10 @@ test("AC-02: A→B→A 사이에 도착한 옛 수락 응답이 새 작업의 �
   await act(async () => { await flush() })
   assert.deepEqual([...useFriendStore.getState().processingRequestIds], [7])
 
-  // (2) 계정이 B로 갔다가 다시 A로 돌아온다.
   await switchAccount(ACCOUNT_B)
   assert.equal(useFriendStore.getState().processingRequestIds.size, 0, "계정이 바뀌면 잠금을 버린다")
   await switchAccount(ACCOUNT_A)
 
-  // (3) 돌아온 A에서 같은 요청에 새 작업이 걸린다 — 이쪽도 붙잡아 둔다.
   const newCall = gate()
   acceptResponder = async () => { await newCall.promise; return {} }
   const second = sync.handleAcceptRequest(7)
@@ -165,7 +134,6 @@ test("AC-02: A→B→A 사이에 도착한 옛 수락 응답이 새 작업의 �
   const friendsBefore = calls.friends
   const incomingBefore = calls.incoming
 
-  // (4) 이제 **옛** 응답이 도착한다.
   await act(async () => { oldCall.open(); await first; await flush() })
 
   assert.equal(firstDone, true, "옛 작업은 끝나야 한다 — 조용히 사라지는 것이 아니다")
@@ -176,7 +144,6 @@ test("AC-02: A→B→A 사이에 도착한 옛 수락 응답이 새 작업의 �
   assert.equal(calls.friends, friendsBefore, "옛 계정의 완료가 목록을 다시 읽으면 안 된다")
   assert.equal(calls.incoming, incomingBefore)
 
-  // 새 작업이 끝나면 정상적으로 풀린다.
   await act(async () => { newCall.open(); await second; await flush() })
   assert.equal(useFriendStore.getState().processingRequestIds.size, 0)
   await mounted.unmount()
@@ -200,7 +167,6 @@ test("AC-02: A→B→A 사이에 실패한 옛 거절 응답도 새 작업의 �
   await act(async () => { await flush() })
   const incomingBefore = calls.incoming
 
-  // 옛 시도가 **실패**로 끝난다 — 실패 갈래도 같은 소유 대조를 지나야 한다.
   await act(async () => { oldCall.fail(new Error("network down")); await first; await flush() })
 
   assert.deepEqual([...useFriendStore.getState().processingRequestIds], [11])
@@ -213,7 +179,6 @@ test("AC-02: A→B→A 사이에 실패한 옛 거절 응답도 새 작업의 �
 
 test("AC-02: 같은 계정에서 정상적으로 끝난 수락은 잠금을 제대로 푼다", async () => {
   signIn(ACCOUNT_A)
-  // 패널이 열리며 도는 실제 조회가 목록을 세운다(setState로 심으면 그 조회가 곧 덮는다).
   incomingResponder = async () => [{ request_id: 3 }]
   const mounted = await mountHook()
   assert.deepEqual(useFriendStore.getState().incomingRequests.map((r) => r.request_id), [3])
@@ -226,16 +191,11 @@ test("AC-02: 같은 계정에서 정상적으로 끝난 수락은 잠금을 제�
   await mounted.unmount()
 })
 
-// ---------------------------------------------------------------------------
-// 전체 수락 — 결과 조회를 기다린 뒤에도 세대를 다시 본다
-// ---------------------------------------------------------------------------
-
 test("AC-02: 결과 조회를 기다리는 사이 계정이 바뀌면 재조회도 집계도 새 계정에 적용하지 않는다", async () => {
   signIn(ACCOUNT_A)
   incomingResponder = async () => [{ request_id: 1 }, { request_id: 2 }]
   const mounted = await mountHook()
 
-  // 하나는 응답 유실, 하나는 성공 — 결과 조회 경로를 실제로 태운다.
   acceptResponder = async (id) => {
     if (id === 1) throw new Error("network down")
     return {}
@@ -248,7 +208,6 @@ test("AC-02: 결과 조회를 기다리는 사이 계정이 바뀌면 재조회�
   assert.equal(calls.results, 1, "응답을 못 받은 요청은 서버에 되물어야 한다")
   assert.equal(useFriendStore.getState().acceptAllResult.running, true)
 
-  // 되묻는 **동안** 계정이 바뀐다.
   await switchAccount(ACCOUNT_B)
   const friendsBefore = calls.friends
   const incomingBefore = calls.incoming
@@ -280,7 +239,6 @@ test("AC-02: 전체 수락이 도는 동안 A→B→A로 돌아와 잠근 요청
   await switchAccount(ACCOUNT_B)
   await switchAccount(ACCOUNT_A)
 
-  // 돌아온 A에서 같은 요청에 단건 수락을 건다.
   const newCall = gate()
   acceptResponder = async () => { await newCall.promise; return {} }
   const single = sync.handleAcceptRequest(5)
@@ -308,7 +266,6 @@ test("AC-02: 같은 계정의 전체 수락은 독립 처리 결과와 재조회
     if (id === 3) throw new Error("network down")
     return {}
   }
-  // 3번은 응답만 유실됐고 서버는 실제로 수락했다. 2번은 서버가 거부를 확정했다.
   resultsResponder = async () => [
     { request_id: 2, status: "DECLINED" },
     { request_id: 3, status: "ACCEPTED" },
@@ -346,9 +303,6 @@ test("AC-02: 결과 조회까지 실패하면 성공으로도 실패로도 단�
 })
 
 test("AC-02: 전체 수락의 재조회가 더 최신 **실패**에 밀리면 재조회 오류를 그대로 안내한다", async () => {
-  // CODEX-2 보수 회귀. friend.store는 claimSeq가 밀리면 무조건 { ok: true }를 돌려줬다.
-  // 그러면 순번을 차지한 더 최신 조회가 실패했을 때도 전체 수락은 "재조회까지 성공"으로
-  // 안내해, 사용자는 낡은 목록을 최신으로 믿게 된다.
   signIn(ACCOUNT_A)
   incomingResponder = async () => [{ request_id: 4 }]
   const mounted = await mountHook()
@@ -360,7 +314,6 @@ test("AC-02: 전체 수락의 재조회가 더 최신 **실패**에 밀리면 �
   const bulk = sync.handleAcceptAll()
   await act(async () => { await flush() })
 
-  // 전체 수락의 친구 재조회가 도는 **사이에** 더 나중에 시작한 조회가 실패하며 순번을 차지한다.
   friendsResponder = async () => { throw new Error("network down") }
   await act(async () => { await useFriendStore.getState().fetchFriends(); await flush() })
   assert.equal(useFriendStore.getState().friendsError, "network down")

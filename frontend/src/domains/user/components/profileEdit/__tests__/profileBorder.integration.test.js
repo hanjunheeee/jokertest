@@ -2,8 +2,6 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
 
-// F-12(AC-06) 재검토 대응 — useAchievements.test.js와 같은 이유로 renderHook은 DOM
-// 전역이 필요하다(useMyProfile.roleStatistics.test.js 관례).
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {
@@ -22,18 +20,6 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// 이 훅이 ProfileEditOverlay.jsx가 실제로 그대로 쓰는 편집 로직이다 — Overlay 자체는
-// MyPageLayout.jsx(이 슬라이스 범위 밖)에서 ".jsx"로 import되어 확장자를 바꿀 수 없고,
-// node:test는 JSX 구문을 파싱하지 못한다(이 저장소 관례, ForbiddenRecordsUnlockCondition.js
-// 참고). 이 훅을 직접 렌더 테스트하는 것이 곧 실제 편집 동작(소유 목록 유도, equipProfile
-// 호출 계약, 실패·재시도, 중복 확인 방지)을 검증하는 것이다.
-//
-// F-13 재검토: 사진도 더 이상 프론트 전용 무료 편집이 아니다 — 사진·테두리 모두
-// equipProfile(POST /economy/equip-profile) 하나로 확정되고, 바뀐 슬롯만 요청에 실린다.
-//
-// economy.store.js·profileCustomization.store.js는 실제 코드를 그대로 쓰고(둘 다 F-12
-// 잠금 계약의 일부), API 경계와 auth store만 economy.store.test.js와 같은 방식으로
-// mock.module로 대체한다.
 let getImpl = async () => { throw new Error("api.get stub not set") }
 let postImpl = async () => { throw new Error("api.post stub not set") }
 let currentUser = { uuid: "user-1" }
@@ -287,7 +273,6 @@ test("AC-02: 변경 사항을 확인하지 않고 닫으면(취소) 실제 장�
 
   act(() => result.current.setDraftPhotoItemId("player-profile-드워프"))
   act(() => result.current.setDraftBorderItemId("profile-border-귀족"))
-  // handleConfirm을 호출하지 않고 초안만 바꾼 채로 끝난다(Escape·배경 클릭과 같은 취소 경로).
 
   assert.equal(calls, 0, "확인을 누르지 않았으면 서버에 어떤 요청도 가면 안 된다")
   assert.equal(useProfileCustomizationStore.getState().selectedPhotoItemId, "player-profile-금빛가면", "취소했으면 실제 장착 사진이 바뀌면 안 된다")

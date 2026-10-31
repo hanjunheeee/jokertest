@@ -1,15 +1,10 @@
 'use strict';
 
-// F-29a(AC-05): createRateLimiter 고정 창 요청 빈도 제한기 시험. 가짜 시계를 주입해
-// 창 경계·초과·회복을 결정론적으로 재현한다. HTTP 배선(auth.routes.js가 이 미들웨어를
-// 실제로 연결했는지)은 findId.api.test.js가 다룬다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createRateLimiter } = require('../middleware/rateLimit');
 
-// 실제 Express 미들웨어 시그니처(req, res, next)를 흉내 낸 최소 스텁.
 const fakeRes = () => {
     const res = {
         statusCode: null,
@@ -121,7 +116,6 @@ test('성공·계정 없음·날짜 불일치 이후에도(호출부가 매번 �
     let now = 6_000_000;
     const limiter = createRateLimiter({ windowMs: 60_000, max: 3, keyOf: (req) => req.key, now: () => now });
 
-    // 세 번은 통과(성공/실패 결과와 무관 — 미들웨어 자체는 결과를 모른다), 네 번째는 막힌다.
     for (let i = 0; i < 3; i += 1) assert.equal(callLimiter(limiter, {}).nextCalled, true);
     const fourth = callLimiter(limiter, {});
     assert.equal(fourth.nextCalled, false);

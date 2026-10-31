@@ -1,14 +1,8 @@
 'use strict';
 
-// F-29b: 비밀번호 재설정 메일 전송 경계. 서버는 절대 공급자 응답 본문·예외 원문을 로깅하지
-// 않는다(AC-06) — 실패는 언제나 {ok:false}로 정규화된다. 링크 원문은 메일 내용에만 담기고
-// 함수 반환값에는 포함되지 않는다.
-
 const https = require('https');
 const { URL } = require('url');
 
-// F-31a: SIGNUP_CODE는 가입 이메일 인증번호 안내다. 인증번호 원문은 이 템플릿의 렌더링
-// 결과(메일 본문)와 params에만 존재한다 — sendMail의 반환값에는 절대 포함되지 않는다.
 const TEMPLATES = new Set(['PASSWORD_RESET', 'SOCIAL_LOGIN_GUIDE', 'SIGNUP_CODE']);
 
 const renderTemplate = (template, params = {}) => {
@@ -38,11 +32,6 @@ const renderTemplate = (template, params = {}) => {
     throw new Error('알 수 없는 메일 목적입니다.');
 };
 
-/**
- * HTTPS 게이트웨이로 실제 메일을 보낸다. 설정(gatewayUrl/gatewayToken/from) 누락, 대상이
- * HTTPS가 아님, 시간 초과, 비정상 응답, 네트워크 예외는 모두 {ok:false}로 정규화되며
- * 공급자 응답 본문·예외 스택은 어디에도 로깅하지 않는다(AC-06).
- */
 const createHttpMailAdapter = ({
     gatewayUrl = process.env.PASSWORD_RESET_MAIL_GATEWAY_URL,
     gatewayToken = process.env.PASSWORD_RESET_MAIL_GATEWAY_TOKEN,
@@ -116,10 +105,6 @@ const createHttpMailAdapter = ({
     return { sendMail };
 };
 
-/**
- * 테스트 전용 인메모리 어댑터. 인스턴스별 outbox를 가지며, 실패·예외를 한 번만 주입할 수
- * 있다. 시험은 outbox에서 링크 원문(resetUrl)을 직접 읽어 verify/confirm을 검증한다.
- */
 const createMemoryMailAdapter = () => {
     const outbox = [];
     let nextFailure = null; // 'result' | 'throw' | null

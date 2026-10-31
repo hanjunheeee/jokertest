@@ -2,10 +2,6 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { resolveDiscordSupportUrl } from "../discordSupport.js"
 
-// F-07 AC-05: 고객센터 Discord 초대 URL은 백엔드 OAuth 앱 자격(DISCORD_CLIENT_ID/
-// DISCORD_CLIENT_SECRET/DISCORD_REDIRECT_URI)과 분리된 별도 공개 설정이어야 한다. 이
-// 테스트는 그 값의 검증 규칙(미설정=사용 불가, 안전하지 않은 스킴/도메인 거부)을 고정한다.
-
 test("설정되지 않았으면(undefined) 사용 불가로 취급한다 — 추측한 URL을 대신 쓰지 않는다", () => {
   assert.equal(resolveDiscordSupportUrl(undefined), null)
   assert.equal(resolveDiscordSupportUrl(""), null)
@@ -35,9 +31,6 @@ test("Discord 초대 도메인이 아닌 목적지는 거부된다(피싱 목적
 test("파싱할 수 없는 문자열은 거부된다", () => {
   assert.equal(resolveDiscordSupportUrl("not a url"), null)
 })
-
-// F-18 AC-03: 이제 로비 고객센터 버튼이 이 판정 결과를 실제 목적지로 쓰므로, 같은 Discord
-// 호스트 안에서도 "지원 목적지"가 아닌 경로는 걸러야 한다.
 
 test("서버 지원 채널 URL(discord.com/channels/<serverId>/<channelId>)은 그대로 통과한다", () => {
   assert.equal(

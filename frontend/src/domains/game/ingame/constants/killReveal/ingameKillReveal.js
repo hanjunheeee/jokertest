@@ -1,45 +1,15 @@
-/**
- * 사망 공개 연출(kill reveal) 상수.
- *
- * 문구는 전부 공개 정보만 쓴다 — 누가 죽였는지(살해자 identity)는 어떤 출처에서도 노출하지
- * 않고, JOKER는 "광대들"이라는 진영 단위 표현만 사용한다.
- */
-
-/**
- * 공개 사망 연출 stacked MP4 — (귀족시점)사망 이펙트와 동일 자산을 재사용한다.
- * night-success-kill-target-stacked.mp4 (F-27d stacked-alpha 포맷).
- */
 export const INGAME_KILL_ANIMATION_VIDEO_URL = "/video-direction/night-success-kill-target-stacked.mp4"
 
-/** 닉네임을 찾지 못했을 때 쓰는 대체 표기 — uuid는 절대 화면에 내보내지 않는다. */
 export const INGAME_KILL_REVEAL_UNKNOWN_NICKNAME = "한 플레이어"
 
-/** 넘기기 버튼 문구 — 재생 오류·워치독 타임아웃처럼 영상이 멈췄을 때 계속 진행하는 버튼이다. */
 export const INGAME_KILL_REVEAL_SKIP_LABEL = "건너뛰기"
 
-/** 다시 재생 버튼 문구 — play() 호출이 reject됐을 때만 노출된다(재생 자체를 다시 시도). */
-/**
- * 자동재생이 거부된 상태(retry)에서 **연출 패널 자체**를 누르면 다시 재생한다. 예전에는
- * "다시 재생" 버튼을 따로 그렸는데 운영자가 UI 문제로 삭제를 지시했다(2026-09-22) — 남는 버튼은
- * 건너뛰기뿐이다. 시험은 이 속성으로 재시도 표면을 찾는다.
- */
 export const INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR = "data-ingame-kill-reveal-retry"
 
-/** 영상 재생/오류와 무관하게 화면이 영원히 막히지 않도록 하는 상한 시간(ms) */
 export const INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS = 12000
 
-/**
- * 낮 재판 처형의 공개 사망 출처.
- *
- * 서버의 밤 공개 출처 열거(PUBLIC_NIGHT_DEATH_SOURCES → normalizeInGameNightDeathReveals)에는
- * 없는 값이다 — 처형은 밤 판정이 아니라 tribunal_vote_resolved의 executedUuid로 오는 별도
- * 사건이라, 밤 reveal 정규화를 통과시키지 않고 이 상수로만 표시 계층에서 구분한다.
- */
 export const INGAME_KILL_REVEAL_TRIBUNAL_SOURCE = "TRIBUNAL"
 
-/**
- * 공개 사망 출처별 문구. 알 수 없는 출처는 null을 돌려준다(호출부가 연출을 그리지 않는다).
- */
 export function buildInGameKillRevealMessage(source, victimNickname) {
   const nickname =
     typeof victimNickname === "string" && victimNickname.length > 0
@@ -49,16 +19,10 @@ export function buildInGameKillRevealMessage(source, victimNickname) {
   if (source === "JOKER") return `광대들이 ${nickname} 님을 죽였습니다.`
   if (source === "WITCH_HUNTER") return `마녀사냥꾼이 ${nickname} 님을 처단했습니다.`
   if (source === "OTHER" || source === "UNKNOWN_NIGHT") return `${nickname} 님이 밤사이 사망했습니다.`
-  // 처형은 전원이 보고 있던 공개 판정이라 출처를 감출 것이 없다(누가 유죄를 던졌는지는
-  // 이 문구 어디에도 담기지 않는다).
   if (source === INGAME_KILL_REVEAL_TRIBUNAL_SOURCE) return `${nickname} 님이 처형되었습니다.`
   return null
 }
 
-/**
- * 공개 roster에서 희생자 닉네임을 찾는다. 찾지 못하면 "한 플레이어"를 돌려준다 —
- * uuid를 대신 보여주지 않는다.
- */
 export function resolveInGameKillRevealNickname(players, victimUuid) {
   if (!Array.isArray(players)) return INGAME_KILL_REVEAL_UNKNOWN_NICKNAME
   if (typeof victimUuid !== "string" || victimUuid.length === 0) {
@@ -73,18 +37,15 @@ export function resolveInGameKillRevealNickname(players, victimUuid) {
   return found.nickname
 }
 
-/** 오버레이 레이아웃 — DAY/ENDED UI 위를 완전히 덮는 차단 레이어다. */
 export const INGAME_KILL_REVEAL_BACKDROP_CLASS =
   "fixed inset-0 z-[70] bg-black/92"
 
 export const INGAME_KILL_REVEAL_PANEL_WRAP_CLASS =
   "fixed inset-0 z-[71] flex flex-col items-center justify-center gap-4 px-[clamp(0.75rem,4vw,2rem)] py-[clamp(1rem,4vh,2rem)]"
 
-/** @deprecated 직접 <video> 표시용 — stacked canvas 합성에는 CANVAS_CLASS를 쓴다. */
 export const INGAME_KILL_REVEAL_VIDEO_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 bg-black object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
 
-/** stacked MP4 canvas 합성 표시용 — bg-black 없음(알파가 canvas에 그려진다). */
 export const INGAME_KILL_REVEAL_CANVAS_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
 

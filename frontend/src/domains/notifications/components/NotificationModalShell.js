@@ -1,4 +1,3 @@
-// 파일 역할: NotificationModalShell.js - 알림 모달 전용 셸(매칭 팝업 프레임 + 우상단 닫기).
 import { createElement, useEffect, useState } from "react"
 
 import { dispatchUiSfx } from "../../../shared/hooks/useSfxRuntime.js"
@@ -62,10 +61,6 @@ function renderCloseButton({ onDismiss, closeButtonRef }) {
   )
 }
 
-/**
- * 알림 모달 셸 — backdrop + 매칭 팝업 프레임 + 제목 + 본문(children) + 우상단 닫기.
- * 표시 전용: store·소켓을 직접 건드리지 않는다.
- */
 export default function NotificationModalShell({
   onDismiss,
   closeButtonRef,

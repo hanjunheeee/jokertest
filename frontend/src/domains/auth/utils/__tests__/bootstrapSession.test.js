@@ -3,8 +3,6 @@ import assert from "node:assert/strict"
 import { create } from "zustand"
 import { bootstrapSession, resolveProtectedRouteState } from "../bootstrapSession.js"
 
-// auth.store.js와 같은 계약(login/logout/adoptRole/setSessionBootstrap/identityGeneration)만 가진
-// 최소 store — persist 미들웨어(localStorage)를 이 시험에 끌어들이지 않는다.
 function makeStore(initial = {}) {
   return create((set) => ({
     isLoggedIn: false, user: null, identityGeneration: 0, sessionBootstrap: "idle", ...initial,

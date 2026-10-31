@@ -7,28 +7,10 @@ const PLAYER_SKIN_CLOSEUP_ASSET_DIR = "/shopItem/player-skin/jobs-closeup"
 
 export const STORE_PRICE_PENDING = "준비중"
 
-/** @typedef {Object} StoreItem
- * @property {string} id
- * @property {string} category
- * @property {string} name
- * @property {string} icon
- * @property {string} [iconDead]
- * @property {string} [iconZoom]
- * @property {string} priceAmount
- * @property {string} grade
- * @property {string} description
- * @property {string | null} tag
- */
-
-/** @param {string} jobWithVariant 직업+변형 접두 (예: "경비원1", "마녀사냥꾼") */
 function parseSkinJobBase(jobWithVariant) {
   return jobWithVariant.replace(/\d+$/, "")
 }
 
-/** @param {string} closeupFileStem 확장자 제외 클로즈업 파일명 (예: "경비원1-바이올렛_클로즈업")
- *  @param {number} [price=500]
- *  @returns {StoreItem}
- */
 function createSkinStoreItem(closeupFileStem, price = 500) {
   const standingStem = closeupFileStem.replace(/_클로즈업$/, "")
   const dashIndex = standingStem.indexOf("-")
@@ -50,10 +32,6 @@ function createSkinStoreItem(closeupFileStem, price = 500) {
   }
 }
 
-/** @param {string} tier 파일명 접두 등급 (예: "남작")
- *  @param {number} price
- *  @returns {StoreItem}
- */
 function createProfileBorderItem(tier, price) {
   return {
     id: `profile-border-${tier}`,
@@ -67,10 +45,6 @@ function createProfileBorderItem(tier, price) {
   }
 }
 
-/** @param {string} variant 파일명 괄호 안 이름 (예: "가면")
- *  @param {number} [price=500]
- *  @returns {StoreItem}
- */
 function createPlayerCardItem(variant, price = 500) {
   return {
     id: `player-card-${variant}`,
@@ -118,10 +92,6 @@ export const SKIN_STORE_ITEMS = [
   "주치의-미스테리_클로즈업",
 ].map((closeupFileStem) => createSkinStoreItem(closeupFileStem))
 
-/** @param {"gold" | "diamond"} currencyKey
- *  @param {number} amount
- *  @returns {StoreItem}
- */
 function createIngameMoneyItem(currencyKey, amount) {
   const config =
     currencyKey === "gold"
@@ -142,14 +112,11 @@ function createIngameMoneyItem(currencyKey, amount) {
   }
 }
 
-/** 그리드 4열 기준 — 1행 금화(오름차순), 2행 다이아(오름차순) */
 export const INGAME_MONEY_STORE_ITEMS = [
   ...[50, 100, 200, 500].map((amount) => createIngameMoneyItem("gold", amount)),
   ...[10, 50, 100, 300].map((amount) => createIngameMoneyItem("diamond", amount)),
 ]
 
-// F-33 E-1: 이모티콘 23종(docs/design/F-33-emoticon.md §0). id는 서버 catalog.js와 같은 itemId다.
-// 상점 15종 가격은 서버 EMOTICON_PRICE_GOLD_PLACEHOLDER와 같은 임시값이다(최종 상품표 아님).
 export const EMOTICON_PRICE_GOLD_PLACEHOLDER = 500
 
 const BASIC_EMOTICONS = [
@@ -175,7 +142,6 @@ export const EMOTICON_STORE_ITEMS = [
     grade: "기본",
     description: `기본 이모티콘 「${name}」. 모든 계정에 기본 지급됩니다.`,
     tag: "기본 지급",
-    // 서버 catalog.js의 defaultGrant:true·purchasable:false와 같다 — 구매·일괄구매 대상이 아니다.
     defaultGrant: true,
   })),
   ...SHOP_EMOTICONS.map(([slug, name]) => ({
@@ -190,7 +156,6 @@ export const EMOTICON_STORE_ITEMS = [
   })),
 ]
 
-/** 등록된 전체 상품 — 카테고리별 배열을 여기에 합칩니다. */
 export const STORE_ITEMS = [
   ...SKIN_STORE_ITEMS,
   ...PROFILE_BORDER_STORE_ITEMS,
@@ -199,33 +164,25 @@ export const STORE_ITEMS = [
   ...EMOTICON_STORE_ITEMS,
 ]
 
-/** @deprecated STORE_ITEMS 사용 */
 export const STORE_GRID_ITEMS = STORE_ITEMS
 
-/** @param {StoreItem} item
- *  @param {boolean} [showDeadPreview=false]
- */
 export function getStoreItemDisplayIcon(item, showDeadPreview = false) {
   if (showDeadPreview && item.iconDead) return item.iconDead
   return item.icon
 }
 
-/** @param {StoreItem} item */
 export function isPlayerCardStoreItem(item) {
   return item.category === "플레이어 카드" && Boolean(item.iconDead)
 }
 
-/** @param {StoreItem} item */
 export function isSkinStoreItem(item) {
   return item.category === "스킨"
 }
 
-/** @param {StoreItem} item */
 export function isProfileBorderStoreItem(item) {
   return item.category === "프로필 테두리"
 }
 
-/** @param {StoreItem} item */
 export function getStoreProfileBorderZoomItem(item) {
   return {
     icon: item.icon,
@@ -233,34 +190,27 @@ export function getStoreProfileBorderZoomItem(item) {
   }
 }
 
-/** @param {StoreItem} item */
 export function getStoreSkinZoomIcon(item) {
   return item.iconZoom ?? item.icon
 }
 
-/** @param {StoreItem | { priceAmount: string }} item */
 export function isStorePricePending(item) {
   return item.priceAmount === STORE_PRICE_PENDING
 }
 
-/** 상점 그리드에 노출하지 않는 상품(기본 지급 이모티콘 등) */
 export const isDefaultGrantStoreItem = (item) => item?.defaultGrant === true
 
-/** @param {string | null} category */
 export function getStoreItemsByCategory(category) {
   const byCategory = !category
     ? STORE_ITEMS
     : STORE_ITEMS.filter((item) => item.category === category)
-  // 기본 지급 이모티콘 8종은 팔레트·소유 목록용 카탈로그에만 두고 상점 그리드에서는 숨긴다.
   return byCategory.filter((item) => !isDefaultGrantStoreItem(item))
 }
 
-/** @param {string} itemId */
 export function getStoreItemById(itemId) {
   return STORE_ITEMS.find((item) => item.id === itemId)
 }
 
-/** @param {string} itemId */
 export function getStoreDummyItemInfo(itemId) {
   return getStoreItemById(itemId) ?? STORE_ITEMS[0]
 }

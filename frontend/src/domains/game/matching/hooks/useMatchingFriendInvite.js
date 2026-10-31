@@ -1,12 +1,6 @@
 import { useCallback, useMemo, useState } from "react"
 import { FRIEND_INVITE_DUMMY_FRIENDS } from "../constants/friendInviteModalDummyData.js"
 
-/**
- * F-19: 대기방 친구 초대 팝업 UI 상태.
- *
- * 현재는 prototype/친구초대 팝업.png 미리보기용 더미 데이터만 쓴다.
- * friend.store·gameInvite.store 연동은 이후 단계에서 이 훅에 붙인다.
- */
 export function useMatchingFriendInvite({ roomId = null } = {}) {
   const [modalOpen, setModalOpen] = useState(false)
   const [invitingIds, setInvitingIds] = useState(() => {

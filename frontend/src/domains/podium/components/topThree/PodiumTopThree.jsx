@@ -1,7 +1,6 @@
 import PodiumTopPlayerCard from "./PodiumTopPlayerCard.jsx"
 import { PODIUM_TOP_THREE_WRAP_CLASS } from "../../constants/podiumLayoutStyle.js"
 
-/** 1~3위 포디움 — 2위(좌) · 1위(중앙) · 3위(우) */
 export default function PodiumTopThree({ entries }) {
   const byRank = Object.fromEntries(entries.map((entry) => [entry.rank, entry]))
 

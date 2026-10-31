@@ -8,14 +8,11 @@ import {
 } from "../reduceInGameKillReveal.js"
 import { buildInGameKillRevealQueueItems } from "../buildInGameKillRevealQueueItems.js"
 
-// 로컬 payload 기준의 재료. night_result_applied의 deathReveals와 tribunal_vote_resolved의
-// executedUuid가 같은 큐로 들어온다(useInGameKillReveal 참고).
 const GAME_ID = "game-kill-1"
 const AUTH_UUID = "uuid-self"
 const EPOCH = "socket-1#0"
 const SCOPE = `${GAME_ID}|${AUTH_UUID}|${EPOCH}`
 
-/** 실제 훅과 같은 경로로 항목을 만든다 — id 형식이 갈리면 중복 재생 방지가 무너진다. */
 function nightItems(dayIndex, deathReveals) {
   return buildInGameKillRevealQueueItems({
     gameId: GAME_ID,
@@ -25,7 +22,6 @@ function nightItems(dayIndex, deathReveals) {
   })
 }
 
-/** 재판 처형 항목 — useInGameKillReveal이 만드는 id 형식과 같다. */
 function tribunalItem(dayIndex, victimUuid) {
   return {
     id: `${GAME_ID}|${dayIndex}|${victimUuid}|TRIBUNAL|${AUTH_UUID}|${EPOCH}`,
@@ -71,7 +67,6 @@ test("AC-03: 사망자 2명 — payload 순서대로 하나씩 재생되고, 마
   assert.equal(first.queue.length, 1, "두 번째는 대기한다")
   assert.equal(hasPendingInGameKillReveal(first), true)
 
-  // 첫 연출이 끝나면 같은 전이에서 곧바로 두 번째가 승격된다(사이에 다른 화면이 끼지 않는다).
   const second = consumeInGameKillReveal(first, first.active.id)
   assert.equal(second.active.victimUuid, "victim-2")
   assert.deepEqual(second.queue, [])
@@ -110,8 +105,6 @@ test("AC-03: 재판 처형도 같은 큐로 들어가고, 밤 사망과 id가 �
 })
 
 test("AC-03: 재판 사망자 0명 — 처형 없는 판정은 큐에 아무것도 넣지 않고 이동도 막지 않는다", () => {
-  // 무죄·기권 판정에는 executedUuid가 없어 훅이 항목을 아예 만들지 않는다(useInGameKillReveal
-  // 참고). reducer 입장에서는 "빈 items"가 그 상태다.
   const next = reduceInGameKillReveal(INITIAL_IN_GAME_KILL_REVEAL, { scope: SCOPE, items: [], hold: false })
   assert.equal(next.active, null)
   assert.deepEqual(next.queue, [])
@@ -119,7 +112,6 @@ test("AC-03: 재판 사망자 0명 — 처형 없는 판정은 큐에 아무것�
 })
 
 test("AC-03: 재판 처형 + 그 밤의 사망 2명 — 도착 순서대로 재생되고 마지막까지 보류한다", () => {
-  // 같은 낮·밤 사이클에서 나올 수 있는 두 사망이다(처형은 낮, 나머지는 그 밤의 판정).
   const executed = tribunalItem(2, "victim-1")
   const night = nightItems(2, [{ victimUuid: "victim-2", source: "WITCH_HUNTER" }])
 
@@ -130,7 +122,6 @@ test("AC-03: 재판 처형 + 그 밤의 사망 2명 — 도착 순서대로 재�
   })
   assert.equal(first.active.source, "TRIBUNAL")
 
-  // 밤 결과가 도착해도 재생 중인 처형 연출을 밀어내지 않고 뒤에 줄을 선다.
   const queued = reduceInGameKillReveal(first, { scope: SCOPE, items: night, hold: false })
   assert.equal(queued.active.victimUuid, "victim-1")
   assert.deepEqual(queued.queue.map((item) => item.victimUuid), ["victim-2"])
@@ -191,7 +182,6 @@ test("scope(게임·계정·소켓 세대)가 바뀌면 이전 세션의 큐를 
 })
 
 test("roster에 없는 희생자는 호출부가 걸러낸 뒤에도 큐의 순서를 흔들지 않는다", () => {
-  // 훅은 canonical roster로 한 번 거른 뒤 넘긴다 — 걸러진 결과가 그대로 순서를 유지하는지만 본다.
   const canonical = new Set(["victim-2"])
   const filtered = nightItems(2, [
     { victimUuid: "victim-1", source: "JOKER" },

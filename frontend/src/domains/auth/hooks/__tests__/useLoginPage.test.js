@@ -27,18 +27,11 @@ const signupCodeVerifications = []
 const loggedInUsers = []
 const navigations = []
 
-// checkEmailApi 응답은 테스트마다 바꿔 끼울 수 있게 함수 참조로 둡니다(기본은 항상 사용 가능).
 let checkEmailImpl = async () => ({ available: true })
-// F-31b: signupApi·requestSignupCodeApi·verifySignupCodeApi도 같은 방식으로 테스트마다
-// 응답/실패를 바꿔 끼웁니다. 기본값은 "발송→확인→가입"이 전부 성공하는 정상 경로입니다.
 let signupApiImpl = async () => ({ success: true, message: "회원가입이 완료되었습니다." })
 let requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
 let verifySignupCodeImpl = async () => ({ ok: true, signupProof: "proof-token-1" })
 
-// 서버 오류를 흉내 낼 때 씁니다 — 실제로는 response.js가 code·resendAfterSec·
-// attemptsRemaining을 Error에 실어 던지지만(이 파일은 auth.api.js 자체를 mock.module로
-// 갈아끼우므로 그 변환 계층을 통과하지 않습니다), 여기서는 이미 변환된 모양의 Error를
-// 직접 만들어 훅이 그 필드만 보고 올바르게 분기하는지 검증합니다.
 const apiError = (message, extra = {}) => Object.assign(new Error(message), extra)
 
 mock.module("../../api/auth.api.js", {
@@ -206,8 +199,6 @@ test("생년월일이 미래 날짜면 회원가입 요청을 보내지 않는�
   hook.unmount()
 })
 
-// F-31b: 이메일 인증이 끝나야 가입 제출이 가능해졌으므로, "유효한 입력"만으로는 더 이상
-// 충분하지 않다 — 발송→번호 입력→확인을 먼저 통과시킨다.
 const completeSignupEmailVerification = async (hook, { code = "123456" } = {}) => {
   await act(async () => {
     await hook.result.current.handleRequestSignupCode()
@@ -264,9 +255,6 @@ test("유효한 회원가입 입력은 이메일 인증 완료 후 signupApi를 
   hook.unmount()
 })
 
-// 재검토 지적(AC-02): isSubmitting state만으로는 같은 틱의 연속 호출을 막지 못한다 — 두
-// 호출 모두 리렌더 전 클로저를 보므로 state 검사를 통과할 수 있다. submitInFlightRef 같은
-// 동기 잠금이 있어야 실제로 막힌다.
 test("AC-02: 같은 틱에 제출을 두 번 호출해도 가입 API 호출은 정확히 1회다", async () => {
   signupRequests.length = 0
   signupCodeRequests.length = 0
@@ -285,8 +273,6 @@ test("AC-02: 같은 틱에 제출을 두 번 호출해도 가입 API 호출은 �
   assert.equal(hook.result.current.canSubmitSignup, true)
 
   await act(async () => {
-    // 같은 틱에 handleSubmit을 두 번 호출한다 — 두 호출 모두 아직 리렌더되지 않은 같은
-    // 클로저에서 시작되므로, state가 아니라 동기 ref로만 막을 수 있는 경합이다.
     await Promise.all([
       hook.result.current.handleSubmit({ preventDefault() {} }),
       hook.result.current.handleSubmit({ preventDefault() {} }),
@@ -296,8 +282,6 @@ test("AC-02: 같은 틱에 제출을 두 번 호출해도 가입 API 호출은 �
   assert.equal(signupRequests.length, 1, "동시 제출이어도 가입 API는 한 번만 호출되어야 한다")
   hook.unmount()
 })
-
-// ── F-31b AC-01: 인증 완료 전 제출 차단 ──────────────────────────────────────────
 
 test("AC-01: 이메일 인증을 완료하지 않으면 강제로 handleSubmit을 호출해도 signupApi를 부르지 않는다", async () => {
   signupRequests.length = 0
@@ -317,8 +301,6 @@ test("AC-01: 이메일 인증을 완료하지 않으면 강제로 handleSubmit�
   assert.equal(hook.result.current.isSignupMode, true)
   hook.unmount()
 })
-
-// ── F-31b AC-03: 재발송 대기·만료·오입력 초과·요청 제한·통신 실패 상태 ────────────────
 
 test("AC-03: 재발송 대기 중에는 재발송 API를 다시 부르지 않는다", async () => {
   signupCodeRequests.length = 0
@@ -421,8 +403,6 @@ test("AC-03: 네트워크/미확인 실패는 재시도 안내를 보여주고 �
   hook.unmount()
 })
 
-// 재검토 지적(AC-03): 5xx 응답에 익숙한 code(예: RATE_LIMITED)가 실려 와도, 그 code가
-// 약속한 status(429)와 다르면 확정된 사유로 단정하면 안 되고 통신 실패로 처리해야 한다.
 test("AC-03: 발송이 5xx와 함께 익숙한 code를 실어 보내도 확정 사유로 단정하지 않고 통신 실패로 처리한다", async () => {
   requestSignupCodeImpl = async () => { throw apiError("서버 오류", { code: "RATE_LIMITED", status: 500 }) }
   const hook = renderHook(() => useLoginPage())
@@ -464,8 +444,6 @@ test("AC-03: 확인이 5xx와 함께 익숙한 code를 실어 보내도 확정 �
   hook.unmount()
 })
 
-// ── F-31b AC-04: 이메일 변경 시 인증 상태 초기화 ─────────────────────────────────
-
 test("AC-04: 인증 완료 후 이메일을 바꾸면 인증 상태가 초기화되고 재제출이 막힌다", async () => {
   requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
   verifySignupCodeImpl = async () => ({ ok: true, signupProof: "proof-token-2" })
@@ -484,8 +462,6 @@ test("AC-04: 인증 완료 후 이메일을 바꾸면 인증 상태가 초기화
   hook.unmount()
 })
 
-// 재검토 지적(F-31 AC-04 a): 렌더 시점의 값 비교만으로는 같은 배치 안에서 A→B→A로 되돌아간
-// 변경을 "변화 없음"으로 본다. 변경 핸들러가 전이마다 동기적으로 폐기해야 한다.
 test("AC-04: 같은 배치 안에서 이메일을 A→B→A로 바꿔도 기존 인증이 폐기되고 가입 제출이 막힌다", async () => {
   signupRequests.length = 0
   alertMessages.length = 0
@@ -500,7 +476,6 @@ test("AC-04: 같은 배치 안에서 이메일을 A→B→A로 바꿔도 기존 
   const originalEmail = hook.result.current.formData.email
 
   act(() => {
-    // 리렌더 없이 같은 클로저에서 두 번 — 최종 값은 원래 주소(A)로 돌아온다.
     hook.result.current.handleInputChange({ target: { name: "email", value: "other@example.com" } })
     hook.result.current.handleInputChange({ target: { name: "email", value: originalEmail } })
   })
@@ -542,8 +517,6 @@ test("AC-04: 발송 중에 이메일을 바꾸면 늦게 도착한 발송 응답
   hook.unmount()
 })
 
-// ── F-31b AC-05: 가입 증명은 훅 상태에만 존재한다 ────────────────────────────────
-
 test("AC-05: 인증 완료 후에도 formData·훅 반환값 어디에도 signupProof 원문이 그대로 노출되지 않는다", async () => {
   requestSignupCodeImpl = async () => ({ ok: true, resendAfterSec: 60, expiresInSec: 600 })
   verifySignupCodeImpl = async () => ({ ok: true, signupProof: "super-secret-proof" })
@@ -556,8 +529,6 @@ test("AC-05: 인증 완료 후에도 formData·훅 반환값 어디에도 signup
   assert.equal(JSON.stringify(hook.result.current.signupEmailVerification).includes("super-secret-proof"), false)
   hook.unmount()
 })
-
-// ── AC-05: 입력 단계 이메일 중복 확인, 확인 후 이메일 변경 시 무효화 ────────────────
 
 test("AC-05: 사용 가능한 이메일을 확인하면 available 상태가 된다", async () => {
   checkEmailRequests.length = 0
@@ -601,7 +572,6 @@ test("AC-05: 확인 이후 이메일을 바꾸면 이전 확인 결과가 무효
   })
   assert.equal(hook.result.current.status, "available")
 
-  // 이메일을 바꿔 다시 렌더한다 — checkEmailApi를 다시 호출하지 않아도 이전 결과는 사라져야 한다.
   hook.rerender({ email: "changed@example.com" })
   assert.equal(hook.result.current.status, "idle", "이메일이 바뀌면 이전 확인 결과가 무효화되어야 한다")
   assert.equal(checkEmailRequests.length, 1, "재확인을 누르기 전에는 새로 조회하지 않아야 한다")
@@ -658,9 +628,6 @@ test("AC-05: 이전 이메일의 뒤늦은 응답이 최신 확인 상태를 덮
 })
 
 test("AC-05: 같은 이메일로 두 번 연달아 확인해도 먼저 보낸 요청의 뒤늦은 응답이 최신 상태를 덮어쓰지 않는다", async () => {
-  // 위 테스트는 이메일이 바뀌는 경우를 다룬다. 여기서는 이메일이 전혀 바뀌지 않는(더블 클릭
-  // 같은) 경우를 다룬다 — 이전 구현은 "가장 마지막 요청"을 이메일 문자열로만 식별해서, 같은
-  // 이메일의 두 요청은 값이 똑같아 오래된 응답이 걸러지지 않았다(재검토 지적).
   checkEmailRequests.length = 0
   let resolveFirst
   const firstPending = new Promise((resolve) => { resolveFirst = resolve })

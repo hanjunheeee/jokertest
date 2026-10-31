@@ -7,10 +7,6 @@ import {
 } from "../resolveAccountProfileAssets.js"
 import { PLAYER_PROFILE_ASSETS } from "../../constants/playerProfileAssets.js"
 
-// F-13 AC-05 — 서버 사진·테두리 itemId를 실제 public 자산 경로로 바꾸는 계약(A-03)을 고정한다.
-// 이 함수가 로비·마이페이지·친구·서고·대기방·인게임 등 모든 표시 경로가 공유하는 유일한
-// "asset id -> src" 변환 지점이므로, 여기서 규칙이 깨지면 모든 화면이 동시에 어긋난다.
-
 test("유효한 player-profile-* itemId는 실제 사진 자산 경로로 바뀐다", () => {
   assert.equal(
     resolveAccountProfilePhotoSrc("player-profile-기사"),

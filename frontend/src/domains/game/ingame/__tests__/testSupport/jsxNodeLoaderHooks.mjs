@@ -3,16 +3,8 @@ import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 
-// Test-only JSX transformation uses pure JavaScript TypeScript transpilation.
-// Native Oxc transforms in async loader workers intermittently exited with
-// Windows access violation 0xC0000005 after assertions had passed.
-// Keep production Vite configuration unchanged and retain actual component tests.
 const SRC_ROOT = fileURLToPath(new URL("../../../../../", import.meta.url))
 
-// path.extname()은 마지막 "."부터를 확장자로 본다 — "auth.store"처럼 실제 확장자가 없는
-// 파일 basename에 점이 포함되면(이 저장소의 *.store.js 관례) extname이 ".store"처럼 잘못
-// 잡혀 실제 확장자(.js/.jsx) 보완을 건너뛰는 버그가 있었다(F-13 CODEX-4에서 발견 — auth.store
-// import가 "존재하지 않음"으로 실패). 이미 .js/.jsx로 끝나는지만 명시적으로 검사한다.
 function withResolvedJsExtension(target) {
   if (/\.(jsx|js)$/.test(target)) return target
   for (const ext of [".jsx", ".js"]) {
@@ -25,21 +17,11 @@ function resolveAliasedPath(specifier) {
   return withResolvedJsExtension(path.join(SRC_ROOT, specifier.slice(2)))
 }
 
-// F-13(CODEX-4): "@/" alias가 아닌 평범한 상대 경로(예: "../../../shared/ui/PublicAsset",
-// 이 저장소의 일부 .jsx가 확장자 없이 쓴다)도 vite dev/build에서는 암묵적으로 .jsx/.js를
-// 찾아주지만, Node ESM 기본 리졸버는 확장자 없는 상대 지정자를 해석하지 못해
-// ERR_MODULE_NOT_FOUND로 죽는다 — "@/" 전용이던 확장자 보완을 상대 경로에도 그대로
-// 적용한다(이미 확장자가 있거나 패키지 지정자면 손대지 않는다).
 function resolveExtensionlessRelativePath(specifier, parentURL) {
   const parentPath = fileURLToPath(parentURL)
   return withResolvedJsExtension(path.join(path.dirname(parentPath), specifier))
 }
 
-// F-18: vite의 `?raw` import(예: library/content/forbiddenRecords/pages.js가 읽는 .md 원고)를
-// 지원한다. Node ESM 기본 리졸버는 "?raw"를 파일명의 일부로 보아 ENOENT로 죽고, 설령 풀리더라도
-// .md는 "Unknown file extension"이 된다 — vite와 같은 의미(파일 내용을 문자열 default export)로
-// 직접 해석한다. 이게 없으면 실제 라우터를 import하는 시험이 이 한 줄 때문에 페이지 전체를
-// 흉내 내야 하고, 그러면 "실제 production을 렌더한다"는 목적이 사라진다.
 const RAW_QUERY = "?raw"
 
 function resolveRawSpecifierPath(specifier, parentURL) {

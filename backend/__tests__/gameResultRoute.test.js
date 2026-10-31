@@ -1,8 +1,6 @@
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
-// verifyToken(JWT·세션·밴 조회)은 이 AC의 관심사가 아니므로 라우터가 아니라 컨트롤러를
-// 직접 태웁니다. 라우터는 컨트롤러를 그 경로에 붙였는지만 따로 확인합니다.
 const db             = require("../models");
 const gameController = require("../controller/game.controller");
 const gameRouter     = require("../routes/game.routes");
@@ -68,7 +66,6 @@ test("AC-06: 단건 조회가 게임 헤더와 참가자 필드를 정확히 반
     assert.equal(status, 200);
     assert.equal(body.success, true);
     assert.equal(seen[0].where.id, "game-42");
-    // 참가자는 헤더와 같은 왕복에서 join으로 함께 읽는다.
     assert.equal(seen[0].include.length, 1);
 
     assert.equal(body.data.game_id, "game-42");
@@ -135,7 +132,6 @@ test("AC-06: GET /:gameId 라우트가 인증 뒤에 컨트롤러를 붙인다",
     assert.ok(layer, "GET /:gameId 라우트가 등록돼 있어야 한다");
     assert.equal(layer.route.methods.get, true);
 
-    // Layer가 실제 핸들러를 어느 속성에 담는지는 express 버전마다 다르므로 둘 다 본다.
     const handlers = layer.route.stack.map((entry) => entry.handle ?? entry.handler);
     assert.equal(handlers.length, 2, "인증 미들웨어와 컨트롤러 두 개가 붙어 있어야 한다");
     assert.equal(handlers[0], verifyToken, "인증이 컨트롤러보다 먼저 와야 한다");

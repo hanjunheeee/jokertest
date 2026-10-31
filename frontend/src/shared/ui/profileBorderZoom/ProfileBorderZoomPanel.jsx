@@ -8,7 +8,6 @@ import {
   PROFILE_BORDER_ZOOM_TITLE_CLASS,
 } from "@/shared/ui/profileBorderZoom/profileBorderZoomLayout.js"
 
-/** 프로필 테두리 클로즈업 팝업 — 프레임·닫기 버튼 */
 export default function ProfileBorderZoomPanel({ item, onClose }) {
   return (
     <div className={PROFILE_BORDER_ZOOM_PANEL_CLASS}>

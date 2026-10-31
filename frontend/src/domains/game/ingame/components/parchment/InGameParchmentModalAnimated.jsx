@@ -1,8 +1,5 @@
-// 파일 역할: InGameParchmentModalAnimated.jsx - 애니메이션 파치먼트 모달 셸입니다.
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { useEffect } from "react"
-// 상대 경로로 둔다 — 이 셸은 node:test가 실제로 마운트하는 대상이고(`__tests__/
-// InGameParchmentModalWiring.test.js`), `@/` 별칭은 vite만 해석할 수 있어 그 실행을 막는다.
 import { dispatchUiSfx } from "../../../../../shared/hooks/useSfxRuntime.js"
 import { INGAME_PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
 import { getInGameParchmentModalMotionPreset } from "../../constants/parchment/ingameParchmentModalMotion.js"
@@ -16,7 +13,6 @@ function useParchmentModalEscape(onDismiss, open) {
 
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return
-      // F-16(AC-01): InGameParchmentModalBase와 같은 계약 — 열려 있고 실제로 닫히는 경로만.
       dispatchUiSfx("ui-cancel", event)
       onDismiss()
     }
@@ -26,12 +22,6 @@ function useParchmentModalEscape(onDismiss, open) {
   }, [open, onDismiss])
 }
 
-/**
- * 애니메이션 파치먼트 모달 — 역할 공개·밤 역할 턴 안내가 이 셸을 쓴다.
- * variant.animation에 따라 패널 등장 모션이 달라진다.
- *
- * 표시 전용이다: 소켓 emit·store 변경·phase 전이를 일절 하지 않는다.
- */
 export default function InGameParchmentModalAnimated({
   open,
   variantKey,

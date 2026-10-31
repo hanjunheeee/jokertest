@@ -1,8 +1,3 @@
-// backend/models(→Sequelize)는 require 시점에 DATABASE_URL을 **파싱만** 한다(연결은 시도하지
-// 않는다). npm test(--env-file=.env.test) 밖에서 이 파일만 직접 실행하면 그 값이 비어 있어
-// require 자체가 죽으므로, 같은 디렉터리의 다른 스위트(gameSession.test.js·matchmaking.test.js·
-// matchmaking.gameInvite.test.js)와 **같은 관례**로 더미 폴백을 둔다. 이미 설정돼 있으면 덮지
-// 않으므로 공식 명령의 동작은 그대로다.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -10,8 +5,6 @@ const assert = require('node:assert/strict')
 
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../matchmaking')
-// CO S-1(AC-02): 게임 시작 경로가 계정 전적 저장소도 호출한다 — 대역이 없으면 이 순수 단위
-// 스위트가 실제 MySQL 접속을 시도한다(economyService 대역과 같은 이유).
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
@@ -32,17 +25,6 @@ const {
 } = matchmaking.__testables
 const { ALREADY_IN_GAME_MESSAGE } = matchmaking
 
-/**
- * 인게임(활성 GameSession 소속) 계정의 방 생성·참가 차단 전용 스펙.
- *
- * matchmaking.test.js와 파일을 나눈 이유: 이 파일의 모든 시나리오는 matchmaking registry와
- * game-core의 세션 registry를 함께 세팅해야 하고(그래서 beforeEach가 두 모듈을 모두 초기화한다),
- * 기존 파일의 셋업은 세션 상태를 전혀 다루지 않는다.
- *
- * 응답 형식의 원본은 코드가 ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME, 문구가
- * matchmaking.ALREADY_IN_GAME_MESSAGE다 — 이 파일은 문구를 복붙하지 않고 그 상수를 참조한다.
- */
-
 let findByUuidCalls = 0
 const fakeUserRepository = {
     async findByUuid(uuid) {
@@ -50,8 +32,6 @@ const fakeUserRepository = {
         return { uuid, nickname: `nick-${uuid}` }
     },
 }
-// F-13(AC-05): economy.service.js도 실제 호출 시 backend/models(실제 DB)가 필요해
-// userRepository와 같은 이유로 fake를 주입한다.
 const fakeEconomyService = {
     async getPublicProfileLoadouts(userIds) {
         return Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }]))
@@ -73,7 +53,6 @@ test.afterEach(() => {
     matchmaking.__setRandomMatchmakingEnabledForTests(null)
 })
 
-/** 인게임이 아닌 계정으로 실제 방을 하나 만들어 두고 그 payload를 돌려준다. */
 async function createRoomAsFreeAccount(io, uuid, overrides = {}) {
     const socket = createFakeSocket(uuid)
     io.sockets.sockets.set(socket.id, socket)
@@ -85,10 +64,6 @@ async function createRoomAsFreeAccount(io, uuid, overrides = {}) {
 function joinFailures(socket) {
     return socket.emitted.filter((e) => e.event === 'room_join_failed')
 }
-
-// ---------------------------------------------------------------------------
-// AC-01 — create_room
-// ---------------------------------------------------------------------------
 
 test('AC-01: 활성 게임에 속한 계정의 create_room은 ALREADY_IN_GAME으로 거부된다', async () => {
     const session = seedActiveGameForAccount(['ac01-a', 'ac01-b'])
@@ -105,15 +80,12 @@ test('AC-01: 활성 게임에 속한 계정의 create_room은 ALREADY_IN_GAME으
         gameId: session.id,
     })
 
-    // 예약(pendingRoomTransitions)·Socket room 가입·Map 커밋 어느 것도 일어나지 않는다 —
-    // 게이트가 그 모든 것보다 앞선 동기 구간에 있으므로 되돌릴 상태 자체가 생기지 않는다.
     const snapshot = matchmaking.__getStateSnapshotForTests()
     assert.deepEqual(snapshot.gameRooms, [])
     assert.deepEqual(snapshot.playerRoom, [])
     assert.deepEqual(snapshot.pendingRoomTransitions, [])
     assert.deepEqual(socket.joined, [])
     assert.deepEqual(socket.emitted, [])
-    // 사용자 조회(await)에 닿기 전에 막힌다.
     assert.equal(findByUuidCalls, 0)
 })
 
@@ -123,17 +95,12 @@ test('AC-01: 설정 payload가 유효해도(검증 실패와 무관하게) 인�
     const socket = createFakeSocket('ac01v-a')
     const io = createFakeIo([socket])
 
-    // 정원·광대 수까지 모두 유효한 payload다 — 사유가 입력 검증 실패로 오인될 여지가 없다.
     const response = await callAsPromise(
         handleCreateRoom, io, socket, 'ac01v-a', validSettingsPayload({ maxPlayers: 6, jokerCount: 1 }),
     )
 
     assert.equal(response.code, 'ALREADY_IN_GAME')
 })
-
-// ---------------------------------------------------------------------------
-// AC-02 — join_room_by_code
-// ---------------------------------------------------------------------------
 
 test('AC-02: 활성 게임에 속한 계정의 join_room_by_code는 ALREADY_IN_GAME으로 거부된다', async () => {
     const io = createFakeIo([])
@@ -149,7 +116,6 @@ test('AC-02: 활성 게임에 속한 계정의 join_room_by_code는 ALREADY_IN_G
         { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
     ])
 
-    // 방에도, 역방향 매핑에도, 예약에도 흔적이 없다.
     const snapshot = matchmaking.__getStateSnapshotForTests()
     const [, seededRoom] = snapshot.gameRooms.find(([id]) => id === room.roomId)
     assert.deepEqual(seededRoom.players.map(([uuid]) => uuid), ['ac02-host'])
@@ -157,10 +123,6 @@ test('AC-02: 활성 게임에 속한 계정의 join_room_by_code는 ALREADY_IN_G
     assert.deepEqual(snapshot.pendingRoomTransitions, [])
     assert.deepEqual(socket.joined, [])
 })
-
-// ---------------------------------------------------------------------------
-// AC-03 — join_public_room / join_matchmaking
-// ---------------------------------------------------------------------------
 
 test('AC-03: 활성 게임에 속한 계정의 join_public_room은 ALREADY_IN_GAME으로 한 번만 거부된다', async () => {
     const io = createFakeIo([])
@@ -172,7 +134,6 @@ test('AC-03: 활성 게임에 속한 계정의 join_public_room은 ALREADY_IN_GA
 
     await handleJoinPublicRoom(io, socket, 'ac03-joiner', { roomId: room.roomId })
 
-    // 차단되면 handleJoinRoomByCode 위임 자체를 하지 않으므로 실패가 두 번 나가지 않는다.
     assert.deepEqual(joinFailures(socket).map((e) => e.payload), [
         { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
     ])
@@ -187,7 +148,6 @@ test('AC-03: 없는 roomId로 들어와도 인게임 계정에게는 ROOM_NOT_FO
 
     await handleJoinPublicRoom(io, socket, 'ac03n-a', { roomId: 'no-such-room' })
 
-    // 게이트가 방 조회보다 앞에 있어야만 사용자가 실제로 해결해야 하는 사유가 안정적으로 간다.
     assert.equal(joinFailures(socket)[0].payload.code, 'ALREADY_IN_GAME')
 })
 
@@ -200,7 +160,6 @@ test('AC-03: 활성 게임에 속한 계정의 join_matchmaking은 큐에 들어
 
     await handleJoinMatchmaking(io, socket, 'ac03m-a')
 
-    // 이 경로는 원래 중복 소속을 조용히 무시했지만, 인게임 거부만은 명시적으로 알린다.
     assert.deepEqual(joinFailures(socket).map((e) => e.payload), [
         { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id },
     ])
@@ -209,10 +168,6 @@ test('AC-03: 활성 게임에 속한 계정의 join_matchmaking은 큐에 들어
     assert.deepEqual(matchmaking.__getStateSnapshotForTests().matchmakingQueue, [])
     assert.equal(findByUuidCalls, 0)
 })
-
-// ---------------------------------------------------------------------------
-// AC-04 — 단일 형식
-// ---------------------------------------------------------------------------
 
 test('AC-04: 네 경로가 모두 같은 code/message/gameId로 ALREADY_IN_GAME을 알린다', async () => {
     matchmaking.__setRandomMatchmakingEnabledForTests(true)
@@ -228,24 +183,16 @@ test('AC-04: 네 경로가 모두 같은 code/message/gameId로 ALREADY_IN_GAME�
 
     const expectedPayload = { code: 'ALREADY_IN_GAME', message: ALREADY_IN_GAME_MESSAGE, gameId: session.id }
 
-    // join 계열 세 경로: 기존 계약 그대로 room_join_failed 이벤트 하나씩, 페이로드는 완전히 동일.
     const failures = joinFailures(socket)
     assert.equal(failures.length, 3)
     for (const failure of failures) assert.deepEqual(failure.payload, expectedPayload)
-    // room_join_failed 외의 다른 이벤트는 하나도 나가지 않았다(예: matchmaking_queued).
     assert.equal(socket.emitted.length, 3)
 
-    // create_room만 채널이 ack callback이다 — 채널은 각자의 기존 계약을 따르되 code/message
-    // 쌍 자체는 join 계열과 글자 하나까지 같다.
     assert.deepEqual(ackResponse, { ok: false, ...expectedPayload })
     const { ok, ...ackPayload } = ackResponse
     assert.equal(ok, false)
     assert.deepEqual(ackPayload, failures[0].payload)
 })
-
-// ---------------------------------------------------------------------------
-// AC-06 — 게임에 소속되지 않은 계정의 기존 동작
-// ---------------------------------------------------------------------------
 
 test('AC-06: 게임 미소속 계정의 create_room은 기존대로 성공하고 예약도 해제된다', async () => {
     const socket = createFakeSocket('ac06-host')
@@ -283,27 +230,22 @@ test('AC-06: 게이트 추가로 기존 실패 코드가 뒤바뀌지 않는다'
     const io = createFakeIo([])
     const { room } = await createRoomAsFreeAccount(io, 'ac06f-host')
 
-    // 이미 대기방에 있는 계정(인게임 아님) → 여전히 ALREADY_IN_ROOM
     const hostRetrySocket = createFakeSocket('ac06f-host', { id: 'sock-ac06f-host-2' })
     await handleJoinRoomByCode(io, hostRetrySocket, 'ac06f-host', room.roomCode)
     assert.equal(joinFailures(hostRetrySocket)[0].payload.code, 'ALREADY_IN_ROOM')
 
-    // 어느 방과도 맞지 않는 코드 → 여전히 ROOM_CODE_MISMATCH
     const strangerSocket = createFakeSocket('ac06f-stranger')
     await handleJoinRoomByCode(io, strangerSocket, 'ac06f-stranger', 'ZZZZZZ')
     assert.equal(joinFailures(strangerSocket)[0].payload.code, 'ROOM_CODE_MISMATCH')
 
-    // 코드 없이 들어온 요청 → 여전히 CODE_REQUIRED
     const emptyCodeSocket = createFakeSocket('ac06f-empty')
     await handleJoinRoomByCode(io, emptyCodeSocket, 'ac06f-empty', '   ')
     assert.equal(joinFailures(emptyCodeSocket)[0].payload.code, 'CODE_REQUIRED')
 
-    // 없는 공개 방 → 여전히 ROOM_NOT_FOUND
     const publicSocket = createFakeSocket('ac06f-public')
     await handleJoinPublicRoom(io, publicSocket, 'ac06f-public', { roomId: 'gone' })
     assert.equal(joinFailures(publicSocket)[0].payload.code, 'ROOM_NOT_FOUND')
 
-    // payload 형태 자체가 잘못된 요청 → 여전히 INVALID_REQUEST(게이트보다 앞선다)
     const badPayloadSocket = createFakeSocket('ac06f-bad')
     await handleJoinPublicRoom(io, badPayloadSocket, 'ac06f-bad', null)
     assert.equal(joinFailures(badPayloadSocket)[0].payload.code, 'INVALID_REQUEST')
@@ -354,9 +296,6 @@ test('AC-06: 게임 미소속 계정은 매칭 큐에 기존대로 등록된다'
 })
 
 test('AC-06: 유예 만료로 배제된 계정은 새 방을 만들 수 있다', async () => {
-    // 배제된 계정은 원래 세션에 다시 들어갈 수 없는데(resyncSessionRouting이 거부) playerSession
-    // 매핑은 그 세션이 끝날 때까지 남는다 — 활성 소속으로 취급하면 돌아갈 곳도 새로 만들 곳도
-    // 없는 상태로 묶이므로, 게이트는 배제된 계정을 인게임으로 보지 않는다.
     const session = seedActiveGameForAccount(
         ['ff-1', 'ff-2', 'ff-3', 'ff-4', 'ff-5'],
         { roomId: 'room-forfeit' },
@@ -374,7 +313,6 @@ test('AC-06: 유예 만료로 배제된 계정은 새 방을 만들 수 있다',
 
     assert.equal(response.ok, true)
 
-    // 반면 같은 세션의 배제되지 않은 참가자는 여전히 차단된다.
     const stillPlayingUuid = [...session.players.keys()].find((uuid) => uuid !== victimUuid)
     const peerSocket = createFakeSocket(stillPlayingUuid)
     const peerResponse = await callAsPromise(
@@ -392,8 +330,6 @@ test('AC-06: 게임이 끝나 세션 정리가 완료된 계정은 다시 방을
     const blocked = await callAsPromise(handleCreateRoom, io, socket, 'ac06e-a', validSettingsPayload())
     assert.equal(blocked.code, 'ALREADY_IN_GAME')
 
-    // 이탈로 세션 정리가 끝나면 playerSession 매핑이 사라지고 게이트도 함께 풀린다 —
-    // 종료된 게임의 잔재 때문에 계정이 영구히 방 생성 불가 상태에 빠지지 않는다.
     assert.equal(gameSessionCore.endGameSessionForPlayer('ac06e-a', 'PLAYER_LEFT').ok, true)
 
     const allowed = await callAsPromise(handleCreateRoom, io, socket, 'ac06e-a', validSettingsPayload())

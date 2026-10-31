@@ -5,7 +5,6 @@ import {
 } from "@/domains/lobby/constants/friendListStyle.js"
 import FriendListRow from "@/domains/lobby/components/friendList/list/FriendListRow.jsx"
 
-// 기본 탭에서 검색어에 맞는 친구 목록을 검색창 아래에 보여줍니다.
 export default function FriendListFilterResults({ friends, invite = null, block = null }) {
   if (friends.length === 0) {
     return (

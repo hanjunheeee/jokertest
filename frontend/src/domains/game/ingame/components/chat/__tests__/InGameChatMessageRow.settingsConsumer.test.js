@@ -4,9 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-15: node:test 실행에는 기본 JSX 로더가 없다 — 다른 F-15 시험(GeneralSettingsTab.test.js,
-// SettingChatTab.test.js)과 같은 jsxNodeLoaderHooks.mjs를 재사용해 실제 컴포넌트를 그대로
-// 마운트한다.
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -49,9 +46,6 @@ const { INGAME_PLAYER_THEME_PALETTE } = await import("../../../constants/ingameP
 
 const theme0 = resolveInGamePlayerThemeByColorIndex(0)
 
-/** jsdom의 CSSOM은 대입한 색 문자열을 그대로 돌려주지 않을 수 있다(예: #hex → rgb(...)
- *  정규화). 정확한 직렬화 포맷에 기대지 않도록, 같은 document에서 같은 값을 대입한
- *  결과와 비교해 "실제로 이 색이 적용됐는가"만 확인한다. */
 function normalizedColor(color) {
   const probe = document.createElement("span")
   probe.style.color = color
@@ -84,9 +78,6 @@ test.beforeEach(() => {
   useSettingsStore.setState({ chatChecks: null, chatTextSize: null })
 })
 
-// F-15(AC-02/AC-04): 이전 구현은 resolveInGameChatPlayerColor 내부에서 getState()만
-// 읽어, 이미 마운트된 메시지 행이 설정 변경에 반응해 다시 그려지지 않는 버그가 있었다.
-// 이 시험은 컴포넌트를 다시 마운트하지 않고 store만 바꿔 실제로 다시 그려지는지 확인한다.
 test("마운트된 채로 닉네임 색상 표시를 켜면 같은 메시지가 다시 그려져 색이 적용된다", () => {
   useSettingsStore.setState({ chatChecks: { "nickname-color": false } })
   const { container } = renderRow()
@@ -117,7 +108,6 @@ test("마운트된 채로 닉네임 색상 표시를 끄면 같은 메시지가 
   assert.equal(senderSpanAfter.style.color, "")
 })
 
-// F-15(AC-02): 채팅 시간 표시 — sentAt이 있을 때만, 설정이 켜져 있을 때만 보인다.
 test("채팅 시간 표시가 꺼져 있으면 sentAt이 있어도 시각이 보이지 않는다", () => {
   useSettingsStore.setState({ chatChecks: { "show-time": false } })
   const sentAt = Date.UTC(2026, 0, 1, 9, 5)
@@ -150,9 +140,6 @@ test("sentAt이 없으면 채팅 시간 표시가 켜져 있어도 시각을 그
   assert.equal(queryByText(/^\d{2}:\d{2}$/), null)
 })
 
-// F-15(AC-02): 채팅 글자 크기 — 보드·클로즈업 둘 다, 행에 실린 배율 변수가 즉시 바뀌고
-// 발신자·본문·시각 span의 타이포 클래스가 그 변수를 clamp 세 항에 곱해 쓴다. 인라인
-// font-size로 덮어쓰지 않으므로 원래 clamp의 최소·최대 경계가 그대로 남는다.
 for (const variant of ["board", "closeup"]) {
   test(`마운트된 채로 채팅 글자 크기를 낮추면 ${variant} variant의 같은 메시지 글자 배율이 즉시 줄어든다`, () => {
     useSettingsStore.setState({ chatTextSize: 100 })
@@ -169,8 +156,6 @@ for (const variant of ["board", "closeup"]) {
     const scaleAfter = Number(rowAfter.style.getPropertyValue(INGAME_CHAT_TEXT_SCALE_CSS_VAR))
     assert.ok(scaleAfter < 1 && scaleAfter > 0, `배율이 줄어야 한다: ${scaleAfter}`)
 
-    // 본문 폰트 크기는 여전히 clamp(min,선호,max) 세 항을 모두 가진 클래스가 정하고,
-    // 각 항에 같은 배율 변수가 곱해져 있다(경계를 버리지 않는다).
     const bodySpan = container.querySelector("li > span:last-child")
     assert.equal(bodySpan.style.fontSize, "", "인라인 font-size로 clamp를 덮어쓰면 안 된다")
     const fontSizeUtility = bodySpan.className.match(/text-\[clamp\((.+?)\)\]\s/)
@@ -195,12 +180,6 @@ test("채팅 글자 크기 기본값(100)이면 배율 1이라 기존 화면과 
   assert.equal(bodySpan.style.fontSize, "")
 })
 
-// F-15: InGameChatMessageList가 각 메시지의 sentAt을 InGameChatMessageRow로 그대로 넘긴다
-// (toJokerChatUiMessage가 이미 만드는 canonical sentAt — 렌더 시점에 새로 지어내지 않는다).
-// F-15(AC-04): 닉네임 색은 서버가 배정한 공개 colorIndex(themeIndex) 하나에서만 나온다 —
-// 같은 참가자에게 비밀 진영(team)·직업(role)·아군 여부(isAlly)만 다르게 준 두 세션이
-// 같은 색을 그려야 한다. 여기서는 세션 훅(useInGamePlayerSession)과 실제 매퍼
-// (mergeSourcePlayerWithPreview)를 그대로 통과시켜, 색 생성 근거까지 포함해 검증한다.
 function renderRowWithSessionPlayer(player) {
   const { result } = renderHook(() =>
     useInGamePlayerSession({ sourcePlayers: [player], playerCount: 1 }),
@@ -258,7 +237,6 @@ test("비밀 진영·직업이 달라도 같은 colorIndex면 닉네임 색이 �
   const citizenColor = citizen.senderColor
   citizen.unmount()
 
-  // 역할 정보가 아예 없는 payload(다른 참가자 시점)도 같은 색이어야 한다.
   const hidden = renderRowWithSessionPlayer({ ...BASE_SESSION_PLAYER })
 
   assert.equal(mafiaColor, normalizedColor(INGAME_PLAYER_THEME_PALETTE[3].color))

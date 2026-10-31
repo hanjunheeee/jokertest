@@ -6,19 +6,6 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import path from "node:path"
 import { JSDOM } from "jsdom"
 
-// F-04 AC-03 재검토 지적("현재 닉네임의 UI 즉시 갱신... 실행 경로나 수동 검증 근거는
-// 여전히 없다") 대응.
-//
-// useNicknameForm.js는 store/api를 "@/domains/..." alias로 import하는데, 이 저장소의
-// frontend test 스크립트(package.json "test": "node --experimental-test-module-mocks
-// --test ...")는 vite 없이 순수 Node ESM resolver만 쓰므로 그 alias를 풀지 못한다
-// (이전 회차에서 mock.module + 직접 import 시도가 ERR_MODULE_NOT_FOUND로 재현됨).
-// useNicknameForm.js의 import를 상대 경로로 바꾸는 것은 이번 슬라이스 수정 범위
-// (F0541/F0573/X0026/X0064/F0542/F0574와 그 import/helper/관련 테스트 파일) 밖이라
-// 손대지 않는다. 대신 Node 20.6+가 제공하는 module.register()로 "이 테스트 파일 안에서만"
-// "@/" -> frontend/src 매핑 훅을 등록해, useNicknameForm.js를 스텁이나 우회 없이 실제로
-// import하고 실행한다 — 이 훅은 이 파일 밖(package.json, useNicknameForm.js)에는 아무
-// 흔적도 남기지 않는다.
 const SRC_DIR_HREF = pathToFileURL(path.join(import.meta.dirname, "..", "..", "..", "..") + path.sep).href
 
 const loaderSource = `
@@ -44,7 +31,6 @@ export async function resolve(specifier, context, nextResolve) {
 
 register("data:text/javascript," + encodeURIComponent(loaderSource), import.meta.url)
 
-// renderHook은 DOM 전역이 필요하다. 설치 방식은 기존 훅 테스트(useMyProfile.test.js)와 동일하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {
@@ -63,9 +49,6 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
-// 실제 서버 요청이 나가지 않도록 API 경계만 대체한다(useMyProfile.test.js와 같은 원칙).
-// updateNicknameApi 호출 이력을 기록해 "성공 시 정확히 trim된 새 닉네임으로 한 번 호출한다"까지
-// 확인한다.
 let updateNicknameCalls = []
 let updateNicknameShouldFail = false
 
@@ -91,7 +74,6 @@ const { useAuthStore } = await import("../../../auth/store/auth.store.js")
 const { useUserProfileStore } = await import("../../store/user.store.js")
 const { useMyProfile } = await import("../useMyProfile.js")
 
-// F-30: reputation은 응답에서 제거됐고, 표시 판수·승률은 같은 모집단의 두 필드다.
 const BASE_PROFILE_ROW = {
   nickname: "변경전닉",
   title: "신참",
@@ -139,16 +121,10 @@ test("AC-03: 닉네임 변경 성공 시 재요청 없이 auth store와 마이�
 
   assert.deepEqual(updateNicknameCalls, ["변경후닉"], "trim된 새 닉네임으로 정확히 한 번만 API를 호출해야 합니다")
 
-  // useNicknameForm.js의 성공 분기(storeLogin + patchProfile)가 실제로 auth store를 갱신했는지 확인.
   assert.equal(useAuthStore.getState().user.nickname, "변경후닉", "auth store의 현재 사용자 닉네임이 즉시 갱신되어야 합니다")
 
-  // 같은 patchProfile 호출이 useMyProfile이 읽는 캐시도 갱신했으므로, 별도 재요청 없이도
-  // 마이페이지의 "현재 닉네임 표시"(profile.nickname)가 같은 렌더 사이클에서 새 값으로 바뀐다.
-  // getMyProfileApi가 위에서 던지도록 스텁해 뒀으므로, 재요청이 있었다면 이 assert 전에
-  // unhandled rejection으로 먼저 드러난다.
   await waitFor(() => assert.equal(profileResult.current.profile.nickname, "변경후닉"))
 
-  // F-30 AC-04: 닉네임만 바뀐다 — 판수·승률·칭호는 같은 캐시 patch로 흔들리면 안 된다.
   assert.deepEqual(profileResult.current.stats, EXPECTED_STATS)
   assert.equal(profileResult.current.profile.title, "신참")
 })
@@ -167,7 +143,6 @@ test("AC-03: 닉네임 변경 실패 시 auth store와 마이페이지 표시 �
 
   assert.equal(useAuthStore.getState().user.nickname, "변경전닉", "실패 시 auth store는 바뀌면 안 됩니다")
   assert.equal(profileResult.current.profile.nickname, "변경전닉", "실패 시 마이페이지 표시도 바뀌면 안 됩니다")
-  // 실패는 닉네임뿐 아니라 판수·승률·칭호도 그대로 두어야 한다.
   assert.deepEqual(profileResult.current.stats, EXPECTED_STATS)
   assert.equal(profileResult.current.profile.title, "신참")
 })

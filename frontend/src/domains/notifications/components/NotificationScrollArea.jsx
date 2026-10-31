@@ -8,7 +8,6 @@ import {
 } from "@/domains/notifications/constants/notificationLayoutStyle.js"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
-/** 알림 모달 본문 스크롤 — 네이티브 스크롤바는 숨기고 shared Scrollbar를 겹칩니다. */
 export default function NotificationScrollArea({ bodyState, centered = false, children }) {
   const scrollRef = useRef(null)
 

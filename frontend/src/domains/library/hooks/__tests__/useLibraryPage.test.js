@@ -3,9 +3,6 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 
-// content/index.js는 .md?raw 원고를 불러오는데, 이는 Vite 전용 문법이라 node --test에서는
-// 그대로 실행할 수 없다(ERR_UNKNOWN_FILE_EXTENSION). 훅의 페이지 수 계산 로직만 검증하면
-// 되므로, 다른 훅 테스트(friendFavorites.test.js)와 같은 방식으로 콘텐츠 경계를 모킹한다.
 const FORBIDDEN_RECORDS_PAGE_COUNT = 3
 
 mock.module("../../content/index.js", {
@@ -14,7 +11,6 @@ mock.module("../../content/index.js", {
   },
 })
 
-// renderHook은 DOM 전역이 필요하다. 설치 방식은 기존 훅 테스트(useSoundSettings.test.js)와 동일하다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
 function installDomGlobal(name, value) {

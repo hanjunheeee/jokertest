@@ -4,7 +4,6 @@ import LoginFields from "@/domains/auth/components/LoginForm/LoginFields.jsx"
 import LoginOptions from "@/domains/auth/components/LoginForm/LoginOptions.jsx"
 import SocialLoginButtons from "@/domains/auth/components/LoginForm/SocialLoginButtons.jsx"
 
-// 로그인 화면의 form 내용을 조립하는 컴포넌트입니다.
 export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup }) {
   return (
     <>
@@ -18,7 +17,6 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
         <LoginFields formData={formData} onChange={onChange} />
         <LoginOptions rememberMe={rememberMe} onRememberMeChange={onRememberMeChange} />
 
-        {/* 기본 로그인 제출 버튼입니다. */}
         <AuthImageButton
           type="submit"
           src="/button/버튼 프레임2.png"

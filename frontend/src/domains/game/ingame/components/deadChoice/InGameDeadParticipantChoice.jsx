@@ -1,17 +1,3 @@
-/**
- * F-23(AC-06): 확정 사망한 **참가자**에게 "관전 계속하기 / 게임 나가기"를 묻는 오버레이.
- *
- * 이것은 외부 관전자 기능이 아니다 — 계속 보기를 골라도 서버에 아무 요청도 보내지 않고,
- * 소속·역할·채널 가입은 그대로다(A-04). 바뀌는 것은 이 화면이 선택창을 접는다는 사실뿐이고,
- * 이후에도 상단 "게임 나가기" 버튼으로 언제든 같은 이탈 경로를 쓸 수 있다.
- *
- * 나가기의 진행 상태(pending·실패·결과 미확정)는 전부 useInGameExit이 소유한다. 이 컴포넌트는
- * 그 값을 그리기만 하고 스스로 성공을 단정하지 않는다 — 미확정에서 로비로 보내지 않는다.
- *
- * z 단계는 사망 연출(z-[70]/[71])보다 아래, 진입 연출·역할 턴 안내(z-[60]/[61])보다 위다 —
- * 자기 사망 연출이 재생되는 동안에는 그 위를 덮지 않고, 연출이 끝난 뒤 선택을 받는다.
- */
-
 const OVERLAY_CLASS =
   "absolute inset-0 z-[68] flex items-center justify-center bg-black/70 px-6"
 
@@ -27,7 +13,6 @@ const PRIMARY_BUTTON_CLASS = `${BUTTON_BASE_CLASS} bg-amber-500/90 text-black ho
 
 const SECONDARY_BUTTON_CLASS = `${BUTTON_BASE_CLASS} bg-neutral-700 text-white hover:bg-neutral-600`
 
-/** 나가기 상태별 안내 문구. 미확정은 "실패"가 아니라 "확인 필요"로 말한다. */
 function exitNotice(exitStatus, exitErrorCode) {
   if (exitStatus === "pending") return "나가는 중입니다…"
   if (exitStatus === "failed") {
@@ -87,8 +72,6 @@ export default function InGameDeadParticipantChoice({
           </button>
         </div>
 
-        {/* 실패·미확정에서만 열리는 복구 수단. 미확정은 "다시 보내기"가 아니라 **권위 있는
-            확인**이 먼저다 — 서버가 이미 커밋했을 수 있으므로 무턱대고 다시 보내지 않는다. */}
         {exitStatus === "failed" ? (
           <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={onRetry}>
             다시 시도

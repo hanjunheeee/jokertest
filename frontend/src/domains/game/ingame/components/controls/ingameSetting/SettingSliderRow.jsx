@@ -1,6 +1,3 @@
-/**
- * 인게임 설정 — 슬라이더 행 (라벨 · 슬라이더 · 숫자)
- */
 import {
   INGAME_SETTING_ROW_VALUE_CLASS,
   INGAME_SETTING_SLIDER_CONTROL_CLASS,

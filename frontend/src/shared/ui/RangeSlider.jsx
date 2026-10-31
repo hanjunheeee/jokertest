@@ -1,16 +1,3 @@
-/**
- * 이미지 트랙·노브 range 슬라이더 — min~max 숫자 선택
- * (현재 import처 없음, 설정·볼륨 등 확장용 공통 컴포넌트)
- *
- * props
- * - value, min, max, onChange: 슬라이더 값
- * - ariaLabel: 접근성
- * - trackSrc, knobSrc: 트랙·노브 PNG (기본 rangeSliderAssets)
- * - controlClassName, valueClassName: 루트·상단 숫자 스타일
- * - wrapClassName, trackLaneClassName, trackClassName, knobClassName: 트랙·노브 레이아웃 오버라이드
- *
- * 스타일은 constants/rangeSliderStyles.js 참고
- */
 import { RANGE_SLIDER_ASSETS } from "@/shared/constants/rangeSliderAssets.js"
 import {
   RANGE_SLIDER_CONTROL_CLASS,
@@ -23,13 +10,11 @@ import {
 } from "@/shared/constants/rangeSliderStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/** value를 0~1 비율로 — 노브 left calc용 */
 function rangeRatio(value, min, max) {
   if (max === min) return 0 // 구간 없으면 시작 위치
   return (value - min) / (max - min)
 }
 
-/** 투명 input[type=range]로 조작하고 이미지 노브만 따라 움직이는 슬라이더 */
 export default function RangeSlider({
   value, // 현재 선택된 값 — 부모가 소유하는 제어 컴포넌트라 이 값을 그대로 보여줌
   min, // 선택 가능한 최솟값
@@ -80,8 +65,6 @@ export default function RangeSlider({
             max={max}
             value={value}
             aria-label={ariaLabel}
-            // 사용자가 슬라이더를 드래그/클릭할 때마다 실행. input 값은 문자열이라
-            // Number()로 변환한 뒤 부모가 넘겨준 onChange 콜백으로 전달
             onChange={(event) => onChange(Number(event.target.value))}
             className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
           />

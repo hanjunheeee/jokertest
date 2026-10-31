@@ -1,6 +1,3 @@
-/**
- * 친구 초대 팝업 본문 — 스크롤 친구 목록
- */
 import { useRef } from "react"
 import { FRIEND_INVITE_MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
 import {

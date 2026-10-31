@@ -1,6 +1,3 @@
-/** 금지된 기록 spread — 좌·우 페이지 전환/등장 모션 */
-
-/** 좌측 원고 — 페이지 넘김마다 아래에서 스르륵 올라옴 */
 export const FORBIDDEN_STORY_REVEAL_INITIAL = {
   opacity: 0,
   y: 28,
@@ -28,7 +25,6 @@ export const FORBIDDEN_STORY_BODY_TRANSITION = {
 
 export const FORBIDDEN_STORY_PARAGRAPH_STAGGER = 0.05
 
-/** 우측 잠금 — 핏자국이 중앙에서 스멀스멀 퍼지는 연출 */
 export const FORBIDDEN_BLOOD_SPREAD_INITIAL = {
   opacity: 0,
   scale: 0.90,
@@ -46,7 +42,6 @@ export const FORBIDDEN_BLOOD_SPREAD_TRANSITION = {
 
 export const FORBIDDEN_BLOOD_SPREAD_ORIGIN = "center"
 
-/** 해금 조건·진행도 — 핏자국이 퍼진 뒤 서서히 드러남 */
 export const FORBIDDEN_UNLOCK_REVEAL_INITIAL = {
   opacity: 0,
   y: 12,

@@ -31,7 +31,6 @@ function InvitedGuestsJobTabButton({ label, active, onClick }) {
   )
 }
 
-/** 초대받은 자들 — 좌측 상단 직업 서브탭 */
 export default function InvitedGuestsJobTabs({
   tabs,
   activeIndex,

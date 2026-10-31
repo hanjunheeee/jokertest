@@ -8,12 +8,6 @@ import { getPlayerRecordListProfileAssets } from "../../../ingame/constants/cont
 import { pickInGameJobPortrait } from "../../../ingame/utils/pickInGameJobPortrait.js"
 import { pickJobPortrait } from "../../../../../shared/utils/pickJobPortrait.js"
 
-// --- 이 저장소의 백엔드가 실제로 만드는 winResult ---
-//
-// game-core/gameSession.js의 canonical session.winResult는 { winner }만 갖지만, 공개
-// 스냅샷·terminal payload는 buildPublicWinResult로 reveals를 붙인다. store에는
-// normalizePublicWinResult가 winner와 유효한 reveals/mvp를 보존한다 — reveals가 없으면
-// 아래 로컬 winResult 계약처럼 players는 비어 있다.
 const LOCAL_WIN_RESULT_CITIZEN = { winner: "CITIZEN" }
 const LOCAL_WIN_RESULT_JOKER = { winner: "JOKER" }
 
@@ -66,12 +60,6 @@ test("winner가 CITIZEN/JOKER가 아니면 winningTeam은 null이고 승리로 �
   assert.equal(result.outcome, "lose")
 })
 
-// --- 정체 공개(reveals)를 싣는 계약에서의 동작 ---
-//
-// 아래는 reveals를 함께 내려주는 공개 winResult 계약(결과 화면이 전제하는 형태)에 대한
-// 회귀 검사다.
-
-// 정체 공개를 싣는 5인 명단(광대 1 + 시민 진영 4).
 function baseReveals() {
   return [
     { uuid: "u-joker", nickname: "밀런", role: "JOKER", team: "JOKER", alive: true },
@@ -183,8 +171,6 @@ test("profilePhotoSrc·profileBorderSrc는 전적목록과 같은 shopItem 프�
   )
 })
 
-// --- reveals 누락·본인 미포함 ---
-
 test("reveals가 없으면 players는 빈 배열이고 outcome·winningTeam은 lose/null이다", () => {
   const result = buildGameResultViewModel({ winner: "CITIZEN", reveals: [], mvp: null }, "u-doctor")
 
@@ -234,8 +220,6 @@ test("본인이 reveals에 없으면 lose다(명단 자체는 그대로 그린�
 test("selfUuid가 null이면 lose다", () => {
   assert.equal(buildGameResultViewModel(winResultOf("CITIZEN"), null).outcome, "lose")
 })
-
-// --- mvp ---
 
 test("mvp가 null이면 null을 그대로 돌려준다(패널이 렌더되지 않는다)", () => {
   assert.equal(buildGameResultViewModel(winResultOf("JOKER"), "u-joker").mvp, null)

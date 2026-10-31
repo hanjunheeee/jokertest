@@ -1,8 +1,3 @@
-/**
- * 인게임 투표현황 팝업 에셋.
- *
- * prototype 투표현황창.png
- */
 export const INGAME_VOTE_ASSETS = {
   panelFrame: "/frame/투표현황창 프레임.png".normalize("NFD"),
   closeButton: "/button/팝업 닫기 버튼.png",

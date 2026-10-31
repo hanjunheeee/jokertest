@@ -13,7 +13,6 @@ import { useState } from "react"
 import FriendListRow from "@/domains/lobby/components/friendList/list/FriendListRow.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-// 접고 펼치는 친구 그룹의 바깥 박스입니다.
 function FriendListFolderSection({ children, className = "" }) {
   return (
     <section className={`${FRIEND_FOLDER_SECTION_CLASS} ${className}`}>
@@ -23,7 +22,6 @@ function FriendListFolderSection({ children, className = "" }) {
   )
 }
 
-// 친구 그룹을 열고 닫는 헤더 버튼입니다.
 function FriendListFolderHeader({ label, open, onToggle }) {
   const folderIcon = open ? FRIEND_LIST_ASSETS.folderOpen : FRIEND_LIST_ASSETS.folderClosed
   const chevronIcon = open ? FRIEND_LIST_ASSETS.chevronUp : FRIEND_LIST_ASSETS.chevronDown
@@ -42,9 +40,6 @@ function FriendListFolderHeader({ label, open, onToggle }) {
   )
 }
 
-// 펼쳐진 폴더 안에 친구 row들을 렌더링합니다.
-// F-19(AC-04/AC-06): 초대·차단 콜백은 폴더·즐겨찾기·검색 결과 **모든** 목록에 같은 방식으로
-// 전달된다 — 한 곳만 빠지면 그 화면에서는 친구를 초대하거나 차단할 방법이 없어진다.
 function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLASS, invite, block }) {
   return (
     <ul className={listClassName}>
@@ -67,7 +62,6 @@ function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLAS
   )
 }
 
-// 온라인 친구, 오프라인 친구처럼 접고 펼칠 수 있는 친구 그룹입니다.
 export default function FriendListFolder({
   label,
   friends,

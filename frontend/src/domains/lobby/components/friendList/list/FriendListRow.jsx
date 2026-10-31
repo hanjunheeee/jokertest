@@ -22,7 +22,6 @@ import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
 import { useGameInviteStore } from "@/domains/lobby/store/gameInvite.store.js"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
-// 친구가 현재 접속 중인지 오프라인인지 보여줍니다.
 function FriendOnlineStatus({ online }) {
   const statusText = online ? "접속 중" : "오프라인"
   const statusColorClass = online ? "text-amber-100/85" : "text-white/35"
@@ -46,13 +45,6 @@ function FriendOnlineStatus({ online }) {
   )
 }
 
-/**
- * F-19(AC-06): 대기방에서만 나타나는 초대 버튼.
- *
- * 로비에는 초대할 방 자체가 없으므로 onInvite를 받지 않고(버튼도 없다), 대기방에서도
- * **방 검증이 끝나기 전에는** 비활성이다. 비활성 상태를 눌러도 호출 경계에서 다시 막고,
- * 그 뒤에도 서버가 발송자의 실제 방 소속을 다시 확인한다 — 세 겹 모두 필요하다.
- */
 function FriendInviteButton({ id, name, onInvite, disabled, sending, disabledReason }) {
   return (
     <button
@@ -75,13 +67,6 @@ function FriendInviteButton({ id, name, onInvite, disabled, sending, disabledRea
   )
 }
 
-/**
- * F-19(AC-04): **이미 친구인 사람**을 차단하는 유일한 진입점.
- *
- * 친구 추가 탭의 검색은 이미 친구인 계정을 후보에서 제외하므로, 이 버튼이 없으면 친구가
- * 된 뒤에는 차단할 방법이 화면에 전혀 없었다(받은 요청 탭의 차단은 아직 친구가 아닌 상대만
- * 다룬다). 해제는 기존 차단 목록 탭에서 한다.
- */
 function FriendBlockButton({ id, name, onBlock, processing }) {
   return (
     <button
@@ -104,9 +89,6 @@ function FriendBlockButton({ id, name, onBlock, processing }) {
   )
 }
 
-// 친구 목록에서 친구 한 명을 보여주는 row 컴포넌트입니다.
-// F-13(AC-05): accountProfilePhotoId/accountProfileBorderId는 친구 목록 API가 실제로
-// 내려주는 값이다 — resolveAccountProfileAssets가 없는 값만 기본 자산으로 대체한다.
 export default function FriendListRow({
   id,
   name,
@@ -119,14 +101,11 @@ export default function FriendListRow({
   onBlock = null,
   blocking = false,
 }) {
-  // F-19(AC-03): 별 상태의 출처는 **서버에서 복원한** 즐겨찾기 집합이다. 저장이 확정되기
-  // 전에는 값이 바뀌지 않고, 실패하면 이전 값이 그대로 남는다(성공으로 위장하지 않는다).
   const isFavorite = useFriendStore((state) => state.favoriteFriendIds.has(id))
   const isSavingFavorite = useFriendStore((state) => state.favoritePendingIds.has(id))
   const favoriteError = useFriendStore((state) => state.favoriteErrors[id] ?? null)
   const setFavorite = useFriendStore((state) => state.setFavorite)
 
-  // 초대 발송 진행·실패는 초대 store가 소유한다(친구 목록 상태와 섞지 않는다).
   const isSendingInvite = useGameInviteStore((state) => state.sendingReceiverIds.has(id))
   const sendError = useGameInviteStore((state) => state.sendErrors[id] ?? null)
 
@@ -142,7 +121,6 @@ export default function FriendListRow({
       <div className={FRIEND_ROW_CONTENT_CLASS}>
         <FriendListFavoriteStar
           active={isFavorite}
-          // toggle 명령이 아니라 **원하는 값**을 보낸다 — 재전송이 상태를 뒤집지 않는다.
           onToggle={() => { if (!isSavingFavorite) setFavorite(id, !isFavorite) }}
         />
         <PlayerProfilePortrait

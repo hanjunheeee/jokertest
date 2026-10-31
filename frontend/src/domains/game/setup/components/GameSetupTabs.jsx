@@ -11,7 +11,6 @@ const TAB_LABEL_CLASS =
 const TAB_NAV_CLASS =
   "mb-[clamp(0.15rem,0.35vh,0.25rem)] flex shrink-0 flex-nowrap items-center justify-center gap-[clamp(0.25rem,0.5vw,0.4rem)] overflow-visible -translate-y-[clamp(0.6rem,1.6vh,0.95rem)]"
 
-/** 상단 탭 버튼 한 개입니다. */
 function GameSetupTabButton({ tab, active, onSelect }) {
   return (
     <button
@@ -31,7 +30,6 @@ function GameSetupTabButton({ tab, active, onSelect }) {
   )
 }
 
-/** 일반 / 회의&투표 탭 선택 영역입니다. */
 export default function GameSetupTabs({ activeTab, onSelect }) {
   return (
     <nav className={TAB_NAV_CLASS} aria-label="인게임 설정 탭">

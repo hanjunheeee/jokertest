@@ -1,4 +1,3 @@
-// 파일 역할: LoginPage.jsx - 라우터에서 렌더링되는 페이지입니다.
 import { useSearchParams } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import LoginForm from "@/domains/auth/components/LoginForm.jsx"
@@ -22,17 +21,12 @@ export default function LoginPage() {
     canSubmitSignup,
   } = useLoginPage()
 
-  // F-06 AC-02/AC-04: Google 콜백(user.controller.js googleAuthCallback)은 신규 계정이면
-  // ?socialIntent=<token>으로, 실패하면 ?socialError=<code>로 이 페이지에 돌아온다 —
-  // resolveSocialLoginView(useLoginPage.js)가 그 쿼리를 화면 모드로 번역한다.
   const [searchParams, setSearchParams] = useSearchParams()
   const socialView = resolveSocialLoginView({
     socialIntent: searchParams.get("socialIntent"),
     socialError: searchParams.get("socialError"),
   })
 
-  // 소셜 가입 보완을 취소하거나 오류 안내를 닫으면, 다음에 같은 화면으로 돌아와도 지난
-  // 시도의 쿼리가 남아있지 않도록 지운다.
   const clearSocialParams = () => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
@@ -59,7 +53,6 @@ export default function LoginPage() {
           </p>
         )}
 
-        {/* 현재 모드에 따라 로그인 폼과 회원가입 폼 중 하나를 보여줍니다. */}
         {isSignupMode ? (
           <SignupForm
           formData={formData}

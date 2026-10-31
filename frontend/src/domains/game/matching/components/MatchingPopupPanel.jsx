@@ -1,20 +1,3 @@
-/**
- * 매칭 팝업 패널 (prototype: 매칭 팝업 프레임.png)
- * GameMatchingPage 중앙 — 방코드 보기·본문·하단 액션 버튼
- *
- * props
- * - visible: true면 입장 연출 후 클릭 허용 (부모 uiVisible과 동기)
- * - slots: 파티 슬롯 실데이터 또는 더미 — MatchingPopupContent·MatchingPartySlots로 전달
- * - onRoomCodeView: "방코드 보기" 클릭 시 호출 (부모에서 모달 열기)
- * - isHost: true면 게임시작·방 삭제 표시, false면 방 나가기 표시(준비 버튼은 방장·비방장 공통)
- * - isReady, isSettingReady, onToggleReady: 본인 준비 상태·요청 중 여부·토글 콜백(공통)
- * - isStarting: 시작 요청 진행 중 여부(중복 클릭 방지용 비활성화)
- * - isRoomVerified: 서버 기준 현재 Room 상태 재확인이 끝났는지(준비 버튼 비활성화 조건)
- * - onStartGame, onDeleteRoom: 방장 전용 콜백
- * - onLeaveRoom: 비방장 전용 콜백
- *
- * 에셋·카피·스타일은 constants/gameMatchingAssets.js, matchingPopupStyles.js 참고
- */
 import { motion } from "framer-motion"
 import {
   GAME_MATCHING_ASSETS,
@@ -38,7 +21,6 @@ const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
 const PANEL_WRAP_CLASS =
   "absolute left-1/2 top-[48%] z-20 flex w-[min(58rem,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col items-center origin-center scale-[0.92]"
 
-/** 프레임·방코드 보기·본문·게임시작/방삭제 버튼을 묶는 매칭 팝업 */
 export default function MatchingPopupPanel({
   visible,
   slots,
@@ -149,7 +131,6 @@ export default function MatchingPopupPanel({
                 </button>
               </>
             ) : (
-              // 비방장: 준비 완료/취소 버튼 + 방 나가기 버튼 표시
               <>
                 <button
                   type="button"

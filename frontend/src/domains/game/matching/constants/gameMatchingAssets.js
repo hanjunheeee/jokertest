@@ -1,9 +1,3 @@
-/**
- * @file gameMatchingAssets.js
- * @desc GameMatchingPage(매칭 대기 화면)에서 쓰는 이미지 경로·UI 문구·더미 데이터 모음.
- */
-
-/** 게임 매칭 화면 public 에셋 (frontend/public 기준) */
 export const GAME_MATCHING_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
   popupFrame: "/frame/매칭 팝업 프레임.png",
@@ -15,14 +9,11 @@ export const GAME_MATCHING_ASSETS = {
   roomCodeShareFrame: "/frame/방코드 발송 프레임.png",
 }
 
-/** 미구현 (TODO: 서버 발급 방 코드) — RoomCodeViewModal·방코드 보기용 더미 */
 export const MATCHING_ROOM_CODE_DUMMY = "123456"
 
-/** MatchingPopupPanel·MatchingPopupContent UI 문구 */
 export const MATCHING_POPUP_COPY = {
   title: "멀티 플레이 매칭",
   prompt: "무도회 속에 숨어든 광대를 찾아 떠나시겠습니까?",
-  /** 결과 화면 → 매칭: 방장이 새 방을 만들 때까지(비방장 대기) */
   awaitingHostRoom: "방장이 새 방을 만드는 중입니다. 잠시만 기다려 주세요.",
   partyLabel: "파티 인원",
   startGame: "게임시작",
@@ -38,10 +29,8 @@ export const MATCHING_POPUP_COPY = {
   kickParticipant: "참가자 추방",
 }
 
-/** 매칭 방 최대 인원 — 슬롯 그리드·더미 배열 상한 */
 export const MATCHING_MAX_PLAYERS = 10
 
-/** prototype 더미 — 현재 4인, 2명 준비 / 2명 미준비 (최대 10명까지 확장) */
 export const MATCHING_PARTY_SLOTS_DUMMY = [
   { id: 1, ready: true },
   { id: 2, ready: true },
@@ -49,7 +38,6 @@ export const MATCHING_PARTY_SLOTS_DUMMY = [
   { id: 4, ready: false },
 ]
 
-/** 10인 2행 그리드 확인용 더미 */
 export const MATCHING_PARTY_SLOTS_DUMMY_10 = [
   { id: 1, ready: true },
   { id: 2, ready: true },

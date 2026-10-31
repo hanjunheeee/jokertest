@@ -32,12 +32,9 @@ import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 
-// F-09: 일반 구매 경로와 연결하지 않는 카테고리 — "인게임 재화"는 정적 카탈로그(준비중)만 보여준다.
-// F-33 E-1: "이모티콘"은 상점 15종을 일반 구매·일괄구매로 판다(기본 지급 8종은 그리드에서 제외).
 const NON_PURCHASABLE_CATEGORIES = new Set(["인게임 재화"])
 const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(category)
 
-// 상점 메인 패널입니다. 상품 그리드, 선택 상품 상세, 사이드 필터를 조합합니다.
 export default function StorePanel({ visible = true }) {
   const { categories, activeCategory, selectCategory } = useStoreCategoryFilter()
   const visibleItems = useMemo(

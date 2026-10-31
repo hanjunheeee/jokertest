@@ -4,14 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-33 E-2 AC-09~AC-12 — 실제 EmoticonPalettePage·emojiPalette.store·emojiPalette.api·
-// apiClient·storeItems를 jsdom에 마운트해 슬롯 선택→교체→저장/취소를 화면으로 검증한다.
-// 대체하는 것은 바깥 경계뿐이다: env.js(API_BASE_URL)와 전역 fetch(서버 응답).
-// F33EmoticonStore.ui.test.js와 같은 패턴이다.
-//
-// emojiPalette.api.js를 대역으로 바꾸지 않는 이유: 409 REVISION_MISMATCH의 revision·slots는
-// shared/api/response.js의 toApiError가 Error에 실어야만 store까지 도달한다 — api 모듈을
-// 대역으로 바꾸면 그 연결(AC-03의 프런트 쪽 절반)이 시험에서 통째로 사라진다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -42,7 +34,6 @@ mock.module("../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "", DISCORD_SUPPORT_URL: undefined },
 })
 
-// ── 서버(fetch) 경계 ──────────────────────────────────────────────────────────────
 const json = (status, body) => {
   const response = { ok: status >= 200 && status < 300, status, json: async () => body, headers: { get: () => null } }
   response.clone = () => response
@@ -67,7 +58,6 @@ const { MemoryRouter } = await import("react-router-dom")
 const { default: EmoticonPalettePage } = await import("../EmoticonPalettePage.jsx")
 const { useEmojiPaletteStore } = await import("../../store/emojiPalette.store.js")
 
-// 설계도 §0 순서(거절·눈물·분노·사랑·씨익·안녕·항복·헤롱)와 한국어 제목.
 const DEFAULT_SLOTS = [
   "emoji-basic-reject", "emoji-basic-tears", "emoji-basic-anger", "emoji-basic-love",
   "emoji-basic-grin", "emoji-basic-hello", "emoji-basic-surrender", "emoji-basic-dizzy",
@@ -108,7 +98,6 @@ const mountReady = async ({ slots = DEFAULT_SLOTS, revision = "r1", owned = OWNE
 }
 
 const slotButton = (view, oneBased) => view.getByRole("button", { name: `${oneBased}번 슬롯` })
-/** 슬롯 칸이 지금 무엇을 보여 주는지 — 이모티콘 이름(img alt) 또는 빈 칸 문구. */
 const slotContent = (view, oneBased) => {
   const image = slotButton(view, oneBased).querySelector("img")
   return image ? image.getAttribute("alt") : slotButton(view, oneBased).textContent
@@ -118,13 +107,10 @@ const click = (view, element) => act(async () => { fireEvent.click(element) })
 
 test.afterEach(() => cleanup())
 
-// ---------------------------------------------------------------------------
-
 test("AC-09: 팔레트 슬롯을 고른 뒤 왼쪽 목록 항목을 클릭하면 그 슬롯이 새 이모티콘으로 바뀐다", async () => {
   newWorld()
   const view = await mountReady()
 
-  // 처음에는 서버가 준 기본 8종이 순서대로 보인다.
   for (let index = 0; index < 8; index += 1) {
     assert.equal(slotContent(view, index + 1), DEFAULT_NAMES[index])
   }
@@ -222,14 +208,12 @@ test("초기화에 실패하면 에러 문구·다시 시도 버튼이 보이고
   assert.ok(retry)
   assert.deepEqual(unhandled, [], "진입 효과의 거부가 처리되지 않은 채로 남으면 안 된다")
 
-  // 편집·저장 경로가 실제로 막혀 있다.
   assert.equal(slotButton(view, 1).disabled, true)
   assert.equal(view.getByRole("button", { name: "저장" }).disabled, true)
   await click(view, slotButton(view, 1))
   await click(view, view.getByRole("button", { name: "저장" }))
   assert.equal(putCalls().length, 0, "불러오지 못한 상태에서는 저장 요청이 나가면 안 된다")
 
-  // 다시 시도하면 실제로 다시 읽는다.
   routeGet({ ok: true, slots: DEFAULT_SLOTS, revision: "r1", owned: OWNED })
   await click(view, retry)
   await waitFor(() => assert.equal(useEmojiPaletteStore.getState().status, "ready"))
@@ -246,13 +230,11 @@ test("AC-03(화면): 저장이 409 REVISION_MISMATCH로 거부되면 팔레트�
   const serverSlots = [...DEFAULT_SLOTS].reverse()
   handleRequest = async ({ method }) => {
     if (method !== "PUT") throw new Error(`unexpected ${method}`)
-    // 실제 apiClient → handleErrorResponse → toApiError 경로를 그대로 지난다.
     return json(409, { ok: false, code: "REVISION_MISMATCH", message: "충돌", revision: "r2", slots: serverSlots })
   }
   await click(view, view.getByRole("button", { name: "저장" }))
   await waitFor(() => assert.ok(useEmojiPaletteStore.getState().conflict))
 
-  // 상태값이 아니라 실제로 그려진 8칸의 아이콘으로 확인한다.
   const serverNames = [...DEFAULT_NAMES].reverse()
   for (let index = 0; index < 8; index += 1) {
     assert.equal(slotContent(view, index + 1), serverNames[index], "충돌 뒤에는 서버의 현재 팔레트가 보여야 한다")
@@ -285,6 +267,5 @@ test("카탈로그에 없는 itemId가 섞여 와도 예외 없이 그려지고,
   assert.doesNotMatch(view.container.textContent, /emoji-unknown-xyz/)
   assert.equal(slotButton(view, 4).querySelector("img"), null, "알 수 없는 itemId의 아이콘에 손대면 안 된다")
   assert.match(slotContent(view, 4), /비어 있음/)
-  // 나머지 칸은 정상이다 — 한 칸의 미등록 값이 화면 전체를 무너뜨리지 않는다.
   assert.equal(slotContent(view, 1), "거절")
 })

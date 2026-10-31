@@ -1,7 +1,5 @@
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../shared/constants/customScrollbarStyles.js"
 
-// 기억의 서고 — 책 프레임·공통 페이지 레이아웃
-
 export const LIBRARY_PAGE_ROOT_CLASS = "relative h-svh w-full overflow-hidden bg-black"
 
 export const LIBRARY_BG_IMAGE_CLASS =
@@ -49,7 +47,6 @@ export const LIBRARY_BOOK_PAGE_SCROLL_CLASS =
 
 export const LIBRARY_BOOK_LEFT_PAGE_CLASS = LIBRARY_BOOK_PAGE_SCROLL_CLASS
 
-// spread 하단 — 이전/다음 페이지 버튼
 export const LIBRARY_PAGE_NAV_BAR_CLASS =
   "relative z-20 flex shrink-0 w-full"
 

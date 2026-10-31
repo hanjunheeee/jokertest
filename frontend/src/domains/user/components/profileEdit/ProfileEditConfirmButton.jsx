@@ -7,8 +7,6 @@ import {
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
-// F-12(AC-06): disabled는 서버 equip 요청이 진행 중일 때(confirmStatus:"saving") true다 —
-// 클릭을 막아 중복 확인(동일 장착 요청 이중 전송)을 방지한다.
 export default function ProfileEditConfirmButton({ onClick, disabled = false }) {
   return (
     <footer className={PROFILE_EDIT_FOOTER_CLASS}>

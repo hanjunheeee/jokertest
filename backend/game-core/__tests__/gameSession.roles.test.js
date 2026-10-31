@@ -1,5 +1,3 @@
-// 역할 배정/구성 계약: assignRoles · computeRoleComposition · canonical 역할 모델 · CUSTOM 구성 · game_started themeIndex.
-
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -27,28 +25,15 @@ const {
     countRoles,
 } = require('./gameSession.testUtils')
 
-// 이 파일의 테스트들은 모듈 싱글턴인 gameSessions/playerSession/roomGameSession을 공유하므로,
-// 각 테스트가 이전 테스트가 남긴 상태의 영향을 받지 않도록 매번 초기화한다.
 test.beforeEach(() => {
     gameSession.__resetStateForTests()
 })
-// registry 불일치를 의도적으로 재현하는 테스트(예: __deleteGameSessionOnlyForTests)가 이
-// 파일의 마지막 테스트로 실행되더라도, beforeEach만으로는 "다음 테스트 시작 전"에만
-// 정리된다 — afterEach로 테스트가 끝난 직후에도 즉시 정리해 손상된 singleton 상태가
-// 파일 실행 종료 후까지 남지 않게 한다. 테스트 본문에서 예외가 나도 node:test는 afterEach를
-// 실행하므로 이 정리는 실패한 테스트 뒤에도 보장된다.
 test.afterEach(() => {
     gameSession.__resetStateForTests()
 })
 
-// ---------------------------------------------------------------------------
-// assignRoles
-// ---------------------------------------------------------------------------
-
 test('assignRoles: 고정 randomFn을 주입하면 예측 가능한 순서로 섞이고 jokerCount만큼 JOKER가 배정된다', () => {
     const players = [makePlayer('a'), makePlayer('b'), makePlayer('c'), makePlayer('d')]
-    // randomFn이 항상 0을 반환하면 Fisher–Yates가 매 단계 첫 번째 원소와 자기 자신을 그대로 둔다
-    // (j = Math.floor(0 * (i+1)) = 0이므로 result[i]와 result[0]을 swap) — 결정적 순서를 만든다.
     const assigned = assignRoles(players, 2, () => 0)
 
     assert.equal(assigned.length, 4)
@@ -99,10 +84,6 @@ test('assignRoles: 10명·jokerCount 1이면 DOCTOR/GUARD/WITCH_HUNTER가 각 1�
     assert.deepEqual(countByRole(assigned), computeRoleComposition(10, 1))
 })
 
-// ---------------------------------------------------------------------------
-// computeRoleComposition / getSpecialRoleBudget — 슬롯 절삭 알고리즘
-// ---------------------------------------------------------------------------
-
 test('getSpecialRoleBudget: 인원 구간별 특수 시민 역할 상한이 확정된 구성표와 일치한다', () => {
     for (const playerCount of [2, 3, 4, 5]) {
         assert.deepEqual(getSpecialRoleBudget(playerCount), { DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 })
@@ -116,10 +97,6 @@ test('getSpecialRoleBudget: 인원 구간별 특수 시민 역할 상한이 확�
     assert.deepEqual(getSpecialRoleBudget(10), { DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
 })
 
-// computeRoleComposition이 기대하는 값을 테스트 코드가 독립적으로(순차 Math.min으로) 다시
-// 계산해 구현과 비교한다 — 슬롯 절삭 우선순위(DOCTOR → GUARD → WITCH_HUNTER)까지 통째로
-// deepEqual로 고정하므로 "GUARD > 0이면 DOCTOR도 budget만큼 배정돼 있어야 한다" 같은 개별
-// 관계를 따로 검사할 필요가 없다.
 function expectedComposition(playerCount, jokerCount) {
     const budget = getSpecialRoleBudget(playerCount)
     let remaining = playerCount - jokerCount
@@ -139,7 +116,6 @@ test('computeRoleComposition: 2~10명 × 모든 유효 jokerCount(0..playerCount
             const result = computeRoleComposition(playerCount, jokerCount)
             const expected = expectedComposition(playerCount, jokerCount)
 
-            // 독립적으로 재계산한 기대 composition과 완전히 일치(절삭 우선순위 포함).
             assert.deepEqual(result, expected, `playerCount=${playerCount}, jokerCount=${jokerCount}`)
 
             const sum = result.JOKER + result.DOCTOR + result.GUARD + result.WITCH_HUNTER + result.CITIZEN
@@ -153,7 +129,6 @@ test('computeRoleComposition: 2~10명 × 모든 유효 jokerCount(0..playerCount
             assert.ok(result.GUARD <= budget.GUARD)
             assert.ok(result.WITCH_HUNTER <= budget.WITCH_HUNTER)
 
-            // non-JOKER 인원이 1명 이상이면 시민 진영(CITIZEN 또는 특수 역할)도 최소 1명이다.
             const nonJokerCount = playerCount - jokerCount
             const citizenTeamCount = result.CITIZEN + result.DOCTOR + result.GUARD + result.WITCH_HUNTER
             if (nonJokerCount >= 1) assert.ok(citizenTeamCount >= 1)
@@ -168,10 +143,6 @@ test('computeRoleComposition: 8명·jokerCount 7(socket 계층 상한 밖) — D
     const result = computeRoleComposition(8, 7)
     assert.deepEqual(result, { JOKER: 7, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 0 })
 })
-
-// ---------------------------------------------------------------------------
-// ROLE_DEFINITIONS / GAME_ROLES / ROLE_TEAMS — canonical 역할 모델
-// ---------------------------------------------------------------------------
 
 test('GAME_ROLES: 정확히 5개 역할이 자기 자신 값으로 매핑되고, 기존 JOKER/CITIZEN 값은 유지된다', () => {
     assert.deepEqual(Object.keys(GAME_ROLES).sort(), ['CITIZEN', 'DOCTOR', 'GUARD', 'JOKER', 'WITCH_HUNTER'])
@@ -197,8 +168,6 @@ test('ROLE_DEFINITIONS: nightActionMinDayIndex가 WITCH_HUNTER 첫날밤 비활�
     assert.equal(ROLE_DEFINITIONS.CITIZEN.nightActionMinDayIndex, null)
     assert.equal(ROLE_DEFINITIONS.DOCTOR.nightActionMinDayIndex, 0)
     assert.equal(ROLE_DEFINITIONS.GUARD.nightActionMinDayIndex, 0)
-    // production의 첫 밤은 dayIndex 1이다(ROLE_REVEAL 0 → 첫 DAY 1 → 그 밤도 1). 따라서
-    // "첫 밤 불가, 둘째 밤부터 가능"은 2로 표현된다.
     assert.equal(ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex, 2)
 })
 
@@ -228,7 +197,6 @@ test('ROLE_DEFINITIONS: 바깥 객체와 각 역할 정의 모두 개별적으�
     }
 
     const before = { ...ROLE_DEFINITIONS.WITCH_HUNTER }
-    // non-strict 모드에서는 조용히 무시되므로 throw 여부가 아니라 값 불변을 확인한다.
     ROLE_DEFINITIONS.WITCH_HUNTER.nightActionMinDayIndex = 0
     ROLE_DEFINITIONS.WITCH_HUNTER.targetMustBeAlive = true
     ROLE_DEFINITIONS.JOKER.team = 'CITIZEN'
@@ -250,17 +218,12 @@ test('공개 payload 화이트리스트: game-started 타인 player 키 무변�
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
     const payload = buildGameStartedPayload(candidate.session, 'u1')
     for (const player of payload.state.players) {
-        // themeIndex는 표시 색상 배정이라 공개 필드다(role/team과 달리 비밀이 아니다).
-        // F-21(AC-01/AC-03): isAlive·isParticipating·membershipId는 새로 승인된 **공개** 필드다
-        // (생존/참여/소속은 전원이 같은 답을 봐야 하는 값이다). role/team은 여전히 없다.
         assert.deepEqual(
             Object.keys(player).sort(),
             ['isAlive', 'isParticipating', 'membershipId', 'nickname', 'themeIndex', 'uuid'],
         )
     }
 })
-
-// --- game_started players[].themeIndex — 표시 색상 배정 ---
 
 test('game_started themeIndex: 뷰어가 달라도 uuid→themeIndex 매핑이 완전히 동일하다', () => {
     const room = makeRoom()
@@ -298,16 +261,10 @@ test('game_started themeIndex: session.id가 다르면 배정 순서도 달라�
         return buildGameStartedPayload(candidate.session, 'u1').state.players.map((p) => p.themeIndex)
     }
 
-    // 두 세션의 참가자 구성은 같고 session.id만 다르다 — 배정이 id에서 유도된다는 최소 증거다.
     assert.notDeepEqual(buildFor('game-theme-a'), buildFor('game-theme-b'))
 })
 
-// ---------------------------------------------------------------------------
-// CUSTOM 역할 구성(roleCompositionMode: 'custom')
-// ---------------------------------------------------------------------------
-
 test('CUSTOM: 지정한 고정 역할 수가 정확히 그대로 배정되고 나머지 인원이 CITIZEN이 된다', () => {
-    // 7명 · JOKER 2 · DOCTOR 1 · GUARD 1 · WITCH_HUNTER 1 → CITIZEN 2명
     const room = makeCustomRoom({
         players: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'].map((uuid) => makePlayer(uuid)),
         roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
@@ -316,8 +273,6 @@ test('CUSTOM: 지정한 고정 역할 수가 정확히 그대로 배정되고 �
 
     assert.equal(prepared.ok, true)
     assert.deepEqual(countRoles(prepared.session), { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1, CITIZEN: 2 })
-    // AUTO(computeRoleComposition)였다면 7명·JOKER 2에서 WITCH_HUNTER는 0명이었을 것이다 —
-    // 즉 이 구성은 자동 계산으로는 나올 수 없는 CUSTOM 전용 결과다.
     assert.equal(computeRoleComposition(7, 2).WITCH_HUNTER, 0)
     assert.equal(prepared.session.players.size, 7)
 })
@@ -340,7 +295,6 @@ test('CUSTOM: session.jokerCount와 resolvedComposition.JOKER는 같은 값에�
     assert.equal(prepared.session.jokerCount, 2)
     assert.equal(prepared.session.roleComposition.JOKER, prepared.session.jokerCount)
     assert.deepEqual(prepared.session.roleComposition, { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 2 })
-    // 세션이 들고 있는 구성은 방어적 복사본이다 — settings.roleCounts를 나중에 바꿔도 안 바뀐다.
     room.settings.roleCounts.JOKER = 9
     assert.equal(prepared.session.roleComposition.JOKER, 2)
 })
@@ -369,15 +323,10 @@ test('CUSTOM: JOKER 수가 실제 참가 인원 이상이면 준비 단계에서
     const prepared = prepareGameSession(room)
 
     assert.equal(prepared.ok, false)
-    // jokerCount >= players.length는 validateSessionInput이 먼저 잡는다(둘 다 거부이며,
-    // 어느 쪽이든 registry를 건드리지 않는다는 계약은 동일하다).
     assert.equal(prepared.code, 'INVALID_SESSION_INPUT')
     assert.equal(gameSession.__getStateSnapshotForTests().gameSessions.length, 0)
 })
 
-// 특수직업 상한(판정 2.2): 광대·의사·경비원·마녀사냥꾼 어느 것도 3명 이상으로는 시작할 수 없다.
-// roleComposition은 "저장된 값을 신뢰하지 않는다"는 원칙이므로 create_room 검증을 통과했더라도
-// 시작 시점에 다시 거부된다.
 for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']) {
     test(`CUSTOM: ${role} 3명은 상한(2명)을 넘어 시작 단계에서 ROLE_COUNT_ABOVE_LIMIT으로 거부된다`, () => {
         const room = makeCustomRoom({
@@ -460,7 +409,6 @@ test('CUSTOM: 원본 players/settings 객체를 변형하지 않는다', () => {
         assert.equal(Object.hasOwn(player, 'role'), false)
         assert.equal(Object.hasOwn(player, 'alive'), false)
     }
-    // room.players의 원소도 그대로다(세션은 복사본을 들고 있다).
     for (const player of room.players.values()) {
         assert.equal(Object.hasOwn(player, 'role'), false)
     }
@@ -472,7 +420,6 @@ test('CUSTOM: commit 검증은 조작된 역할 분포를 거부한다', () => {
         roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
     })
     const prepared = buildSessionCandidate(room)
-    // 실제 배정을 몰래 바꾼다 — DOCTOR였던 참가자를 CITIZEN으로.
     const doctor = [...prepared.session.players.values()].find((p) => p.role === 'DOCTOR')
     doctor.role = 'CITIZEN'
 
@@ -489,8 +436,6 @@ test('CUSTOM: commit 검증은 역할 교체로 어긋난 두 역할을 모두 �
     const doctor = [...prepared.session.players.values()].find((p) => p.role === 'DOCTOR')
     doctor.role = 'CITIZEN'
 
-    // 어긋난 역할을 하나만 보고하면 GAME_ROLES 키 순서상 앞선 CITIZEN만 나오고 조작된
-    // DOCTOR는 메시지에서 사라진다 — 진단이 키 순서에 좌우되지 않아야 한다.
     assert.throws(() => commitGameSession(prepared.session), (error) => {
         assert.match(error.message, /실제 DOCTOR 수\(0\)가 기대값\(1\)과 불일치/)
         assert.match(error.message, /실제 CITIZEN 수\(2\)가 기대값\(1\)과 불일치/)
@@ -505,17 +450,14 @@ test('CUSTOM: commit 검증은 조작된 session.roleComposition을 거부한다
         roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 },
     })
 
-    // 1) 합계가 인원과 맞지 않는 구성
     const totalMismatch = buildSessionCandidate(room)
     totalMismatch.session.roleComposition = { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1, CITIZEN: 5 }
     assert.throws(() => commitGameSession(totalMismatch.session), /session\.roleComposition\(TOTAL_MISMATCH\)/)
 
-    // 2) session.jokerCount와 구성의 JOKER가 갈린 경우
     const jokerMismatch = buildSessionCandidate(room)
     jokerMismatch.session.roleComposition = { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1, CITIZEN: 0 }
     assert.throws(() => commitGameSession(jokerMismatch.session), /session\.roleComposition\(JOKER_COUNT_MISMATCH\)/)
 
-    // 3) CITIZEN 키가 빠진 불완전한 구성
     const missingKey = buildSessionCandidate(room)
     missingKey.session.roleComposition = { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 }
     assert.throws(() => commitGameSession(missingKey.session), /session\.roleComposition\(UNEXPECTED_KEYS\)/)
@@ -532,16 +474,9 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
     commitGameSession(prepared.session)
 
     const payload = buildGameStartedPayload(prepared.session, 'c1')
-    // 비밀은 **세션에 실제로 배정된 구성**(session.roleComposition)이다 — 그 값은 payload 어디에도
-    // 없어야 한다. 이름이 어디에도 나타나지 않는다는 것만으로는 그 사실을 말하지 못하므로,
-    // 키 자체의 부재와 값의 부재를 나눠 확인한다.
     assert.equal(Object.hasOwn(payload.state, 'roleComposition'), false)
     assert.equal(Object.hasOwn(payload.state, 'roleCounts'), false)
 
-    // F-24(AC-04): state.roomSettingsSource는 **방장이 정한 방 설정**의 허용 목록 사본이다.
-    // 그 값은 대기방에서 이미 전원에게 공개돼 있던 설정이고(buildRoomPayload의 settings),
-    // 여기서 새로 드러나는 비밀이 아니다. 대신 그 안에 들어가는 것이 방 설정뿐이라는 사실을
-    // 못박는다 — 배정 결과가 섞여 들어오면 그때는 실제 유출이다.
     assert.deepEqual(payload.state.roomSettingsSource.settings.roleCounts, room.settings.roleCounts)
     assert.notDeepEqual(
         payload.state.roomSettingsSource.settings.roleCounts,
@@ -550,17 +485,13 @@ test('CUSTOM: 커밋된 세션의 공개 payload에는 역할 구성이 노출�
     )
     assert.equal(Object.hasOwn(payload.state.roomSettingsSource.settings.roleCounts, 'CITIZEN'), false)
 
-    // 그 밖의 어디에도 역할 구성 이름이 없다 — 복원 원본 안쪽만 예외다.
     const withoutRestoreSource = JSON.stringify({
         ...payload,
         state: { ...payload.state, roomSettingsSource: undefined },
     })
     assert.equal(withoutRestoreSource.includes('roleComposition'), false)
     assert.equal(withoutRestoreSource.includes('roleCounts'), false)
-    // 다른 참가자 목록에는 여전히 role/team이 없다(themeIndex는 비밀이 아닌 표시 색상이다).
     for (const player of payload.state.players) {
-        // F-21(AC-01/AC-03): isAlive·isParticipating·membershipId는 새로 승인된 **공개** 필드다
-        // (생존/참여/소속은 전원이 같은 답을 봐야 하는 값이다). role/team은 여전히 없다.
         assert.deepEqual(
             Object.keys(player).sort(),
             ['isAlive', 'isParticipating', 'membershipId', 'nickname', 'themeIndex', 'uuid'],

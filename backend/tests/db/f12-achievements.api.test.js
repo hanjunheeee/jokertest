@@ -1,15 +1,5 @@
 'use strict';
 
-// F-12 22개 업적 조회 API — 실제 격리 MySQL DB에서 AC-01/AC-06/A-09를 검증한다. 라우터→
-// verifyToken→컨트롤러→achievementService.getStatusForUser→실제 저장소 조회까지 전부
-// 실제 코드로 태운다. f12-achievements.integration.test.js가 evaluateAndGrantForUser(지급
-// 경로)를 직접 검증하는 것과 달리, 이 파일은 "조회 API가 반복 호출돼도 지급하지 않는다"는
-// A-09 계약을 실제 DB의 achievement_grants 행 수로 확인한다(fake db로는 실제 유일 제약·
-// 트랜잭션 위에서의 조회 전용성을 증명할 수 없다).
-//
-// backend/tests/helpers/isolatedTestDb.js의 관리 목록·대상 DB 확인 원칙을 따른다.
-// F01_TEST_DATABASE_URL이 없으면 각 테스트는 실패로 표시하지 않고 명시적으로 skip한다.
-
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f12-achievements-api-test-secret';
@@ -148,8 +138,6 @@ test('AC-01/AC-06: 실제 DB 기준 진행률 3승을 쌓으면 기록 1(게임 
     await setUp();
 
     const userId = await createLocalUser('api1');
-    // persistGameResult만 직접 호출한다(소켓 계층의 evaluateAchievementsForUsers를 거치지
-    // 않는다) — 아직 achievementService.evaluateAndGrantForUser가 실행된 적이 없다.
     await persistWins(userId, 'CITIZEN', 3);
 
     const base = await startRouteServer(t);
@@ -159,9 +147,6 @@ test('AC-01/AC-06: 실제 DB 기준 진행률 3승을 쌓으면 기록 1(게임 
 
     assert.equal(body.data.length, 22);
     const record1 = body.data.find((a) => a.id === 'record-1-masquerade');
-    // CODEX-1 재검토(AC-06): achieved(진행률 조건 충족)와 granted(실제 지급 이력)를 구분한다
-    // — 게임/투표 이벤트가 아직 한 번도 evaluateAndGrantForUser를 트리거하지 않았으므로
-    // achievement_grants 행이 없고, granted는 false·grantedAt은 null이어야 한다.
     assert.deepEqual(record1, { id: 'record-1-masquerade', achieved: true, current: 3, threshold: 3, granted: false, grantedAt: null });
 });
 
@@ -171,7 +156,6 @@ test('AC-06: 실제로 지급된 업적은 조회에서 granted:true와 grantedA
 
     const userId = await createLocalUser('api1b');
     await persistWins(userId, 'CITIZEN', 3);
-    // 게임 종료 이벤트가 트리거하는 실제 지급 경로를 흉내낸다.
     await achievementService.evaluateAndGrantForUser(userId);
 
     const base = await startRouteServer(t);
@@ -195,7 +179,6 @@ test('A-09: 조회 API를 반복 호출해도 achievement_grants 행이 생기�
     for (let i = 0; i < 3; i += 1) {
         const res = await fetch(`${base}/user/me/achievements`, { headers: { cookie: `accessToken=${tokenFor(userId)}` } });
         assert.equal(res.status, 200);
-        // Consume each response before the next request; do not leave connection cleanup to GC.
         const body = await res.json();
         assert.equal(body.data.length, 22);
     }

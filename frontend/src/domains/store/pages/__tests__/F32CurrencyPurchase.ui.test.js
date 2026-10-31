@@ -4,9 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-32c: 실제 router·ProtectedRoute·StorePage·StorePanel·그리드·상세·구매 컨트롤러·스토어·client.js·
-// response.js를 jsdom에 마운트해 다이아 충전·골드 구매 흐름을 검증한다. 대체하는 것은 외부 경계뿐이다 —
-// env.js(API_BASE_URL), 전역 fetch(서버 응답), 토스 SDK(window.TossPayments), 타이머.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
   pretendToBeVisual: true,
@@ -42,7 +39,6 @@ mock.module("../../../../shared/env.js", {
   namedExports: { API_BASE_URL: "", DISCORD_SUPPORT_URL: undefined },
 })
 
-// ── 서버(fetch) 경계 ──────────────────────────────────────────────────────────────
 let routes = []
 let calls = []
 let events = []
@@ -77,7 +73,6 @@ const BULK_POST = /\/economy\/purchases\/bulk$/
 const TRANSACTIONS = /\/economy\/accounts\/[^/]+\/transactions$/
 const OPEN_ORDERS = /\/economy\/topup\/orders\?state=open$/
 
-// 임시 가격·지급량은 시험 데이터에만 둔다.
 const DIAMOND_PRODUCT = {
   productId: "dia-100", kind: "DIAMOND_TOPUP", displayName: "다이아 100", payCurrency: "KRW", payAmount: 1100,
   grantCurrency: "DIAMOND", grantAmount: 100, bonusAmount: 10, version: 1,
@@ -101,7 +96,6 @@ const sdkFactory = (clientKey) => ({
     requestPayment: async (args) => { events.push("SDK"); sdkCalls.push({ clientKey, customerKey, args }); return sdkBehavior(args) },
   }),
 })
-// 골드 구매 성공 픽스처: 서버가 커밋한 두 잔액을 world에 반영해 뒤이은 지갑 조회도 같은 값을 돌려준다.
 const goldCommitted = (balanceGold, balanceDiamond) => {
   world.gold = balanceGold
   world.diamond = balanceDiamond
@@ -127,7 +121,6 @@ const setUser = async (user) => act(async () => {
   useAuthStore.setState({ isLoggedIn: Boolean(user), user, loggedOutIntentionally: false })
 })
 
-// 새 문서·새 세션을 모사한다: 계정을 비워 모든 스토어를 초기화하고 저장소를 준비한 뒤 로그인한다.
 async function newWorld({ diamond = 100, gold = 1000, storage = {}, products = [DIAMOND_PRODUCT, GOLD_PRODUCT] } = {}) {
   routes = []; calls = []; events = []; sdkCalls = []
   world = { diamond, gold, products, transactions: [], openOrders: [] }
@@ -140,7 +133,6 @@ async function newWorld({ diamond = 100, gold = 1000, storage = {}, products = [
   route("GET", ENTITLEMENTS, () => json(200, { entitlements: ENTITLEMENTS_LIST, loadout: LOADOUT }))
   route("GET", PRODUCTS_URL, () => json(200, { ok: true, products: world.products }))
   route("POST", ORDERS, () => json(201, { ok: true, orderId: "ORDER_0001", amount: 1100, orderName: "다이아 100", clientKey: CLIENT_KEY }))
-  // F-32 BQ: 기본은 빈 원장·진행 주문 없음 — 기존 케이스가 의도치 않은 복구를 시작하지 않는다.
   route("GET", TRANSACTIONS, () => json(200, { transactions: world.transactions }))
   route("GET", OPEN_ORDERS, () => json(200, { ok: true, orders: world.openOrders }))
   await setUser({ uuid: "user-1", nickname: "테스터" })
@@ -178,7 +170,6 @@ test.afterEach(async () => {
   await setUser(null) // 진행 중 타이머·요청의 늦은 결과를 계정 무효화로 정리한다
 })
 
-// ── AC-01 ────────────────────────────────────────────────────────────────────────
 test("AC-01: 서버 상품표를 순서·가격·지급량 그대로 보여 주고 주문→SDK→복귀 후 confirm 순서로 호출한다", async () => {
   await newWorld()
   route("POST", CONFIRM, () => { world.diamond = 210; return json(200, { ok: true, status: "GRANTED", balanceDiamond: 210 }) })
@@ -213,7 +204,6 @@ test("AC-01: 서버 상품표를 순서·가격·지급량 그대로 보여 주�
   assert.deepEqual(order, ["POST /economy/topup/orders", "SDK", "POST /economy/topup/orders/ORDER_0001/confirm"])
 })
 
-// ── AC-02 ────────────────────────────────────────────────────────────────────────
 test("AC-02: ready 잔액은 서버 확인 전에 변하지 않고 GRANTED 응답 뒤에만 갱신된다", async () => {
   await newWorld()
   const confirm = deferred()
@@ -320,7 +310,6 @@ test("AC-03: StrictMode·재마운트에도 같은 복귀의 confirm과 진입 �
   await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
   assert.equal(posts(CONFIRM).length, 1)
   assert.equal(count("GET", WALLET), 1)
-  // 같은 URL로 다시 마운트해도 같은 처리를 재사용한다.
   cleanup()
   await mountStore({ path: RETURN, strict: true })
   await flush()
@@ -333,7 +322,6 @@ test("AC-03: 같은 주문의 confirm이 진행 중이면 paymentKey·amount만 
   route("POST", CONFIRM, () => { world.diamond = 210; return confirm.promise })
   const view = await mountStore({ path: RETURN })
   await waitFor(() => assert.equal(posts(CONFIRM).length, 1))
-  // 같은 orderId, 다른 paymentKey·amount의 두 번째 복귀를 confirm 보류 중에 넣는다(search 변경 효과 경로).
   await goToReturn("/store?topup=success&paymentKey=pay_key_2&orderId=ORDER_0001&amount=1200")
   await flush()
   assert.equal(posts(CONFIRM).length, 1, "진행 중인 같은 주문에는 두 번째 confirm을 보내지 않는다")
@@ -367,7 +355,6 @@ test("BQ AC-01: 이전 계정의 성공 복귀 확인이 늦게 끝나도 새 �
   const historyOf = (uuid) => count("GET", new RegExp(`/economy/accounts/${uuid}/transactions$`))
   await mountStore({ path: RETURN })
   await waitFor(() => assert.equal(posts(CONFIRM).length, 1))
-  // 같은 복귀 URL에서 계정 B로 전환 — B도 성공 복귀라 첫 확인 종료 전에는 원장을 조회하지 않는다.
   await setUser({ uuid: "user-2", nickname: "둘째" })
   await waitFor(() => assert.equal(posts(CONFIRM).length, 2))
   await flush()
@@ -380,7 +367,6 @@ test("BQ AC-01: 이전 계정의 성공 복귀 확인이 늦게 끝나도 새 �
   assert.equal(historyOf("user-2"), 1, "B의 진입 원장 조회는 B의 첫 확인 종료 뒤 1회만")
 })
 
-// ── AC-03 ────────────────────────────────────────────────────────────────────────
 test("AC-03: 충전 버튼 연속 클릭·동시 호출에도 주문 생성은 1회만 처리된다", async () => {
   await newWorld()
   const order = deferred()
@@ -413,7 +399,6 @@ const startPolling = async (confirmResponse, { diamond = 100 } = {}) => {
   return view
 }
 const tick = async (ms) => { await act(async () => { mock.timers.tick(ms) }); await flush() }
-// mock 타이머가 켜져 있으면 RTL waitFor는 종료 시 setTimeout(0)을 기다리며 멈춘다 — flush를 반복해 확인한다.
 const until = async (check) => {
   let last
   for (let i = 0; i < 30; i += 1) {
@@ -526,7 +511,6 @@ test("AC-03: 실패 복귀·SDK 취소는 취소로, SDK 로딩 실패는 재시
   assert.equal(posts(ORDERS).length, 2)
 })
 
-// ── AC-04 ────────────────────────────────────────────────────────────────────────
 test("AC-04: 주문 생성이 CONFIG_MISSING이면 설정 대기로 잠기고, 목록 새로고침 성공 뒤 다음 명시적 클릭에서만 다시 주문한다", async () => {
   await newWorld()
   route("POST", ORDERS, () => apiError(503, "CONFIG_MISSING"))
@@ -612,7 +596,6 @@ test("AC-01: 충전 상품 버전이 바뀌면 자동 주문 없이 목록을 �
   assert.equal(sdkCalls.length, 0)
 })
 
-// ── AC-05 ────────────────────────────────────────────────────────────────────────
 async function mountGold() {
   await newWorld()
   const view = await mountStore()
@@ -649,7 +632,6 @@ test("AC-05: 서버 가격·지급량을 그대로 표시하고 골드 POST는 p
 
 test("AC-05: 골드 구매 전에 시작한 늦은 지갑 조회가 구매 성공 뒤 잔액을 되돌리지 못한다", async () => {
   const view = await mountGold()
-  // 구매 전 지갑 응답(late)과 구매 뒤 현재 지갑 재조회 응답(fresh)을 따로 보류한다.
   const lateWallet = deferred()
   const freshWallet = deferred()
   const walletResponses = [lateWallet, freshWallet]
@@ -730,7 +712,6 @@ test("AC-05: 결과 404는 unknown이며 상품 선택·단순 클릭은 재전�
   await flush()
   assert.equal(posts(GOLD_POST).length, 1)
 
-  // 미지의 404(코드 없음)는 재전송 허가가 아니다.
   route("GET", PURCHASE_GET, () => json(404, { ok: false, code: "NOT_FOUND", message: "?" }))
   await click(view, "다시 시도")
   await flush()
@@ -855,7 +836,6 @@ test("회귀: 기존 스킨 상품은 기존 일괄구매 POST로 구매한다",
   assert.equal(posts(ORDERS).length, 0)
 })
 
-// ── AC-05: 저장 왕복(실제 createPurchaseController + localStorage) ─────────────────
 function makeController(idPrefix = "r") {
   const goldPosts = [], lookups = [], refreshes = [], legacyPosts = []
   const behavior = {
@@ -898,7 +878,6 @@ test("저장 왕복: pending·unknown GOLD 기록은 blocked 없이 unknown으�
   inFlight.resolve({ balanceGold: 1, balanceDiamond: 2 })
   await running
 
-  // 응답 유실로 unknown이 저장된 경우
   dom.window.localStorage.clear()
   const lost = makeController()
   lost.behavior.postGold = async () => { throw new Error("lost") }
@@ -975,7 +954,6 @@ test("저장 왕복: kind 없는 기존 기록은 복구되고 잘못된 kind·�
   assert.equal(makeController().controller.store.getState().status, "unknown")
 })
 
-// ── F-32 BQ: 진행 중 주문 발견(§2-6a)·거래 내역·현재 지갑 재조회 ─────────────────────────
 const openOrder = (orderId, status, minute = 0, amount = 1100) => ({
   orderId, status, amount, orderName: "다이아 100", createdAt: `2026-09-22T01:0${minute}:00.000Z`,
 })
@@ -987,7 +965,6 @@ const orderGets = (orderId) => calls.filter((call) => call.method === "GET" && c
 const feedbackText = (view) => view.queryByTestId("topup-feedback")?.textContent ?? ""
 const historyRows = (view) => Array.from(view.container.querySelectorAll('[data-testid="currency-transaction"]'))
 const currentOrderId = () => currencyPurchase.store.getState().order?.orderId ?? null
-// 서버 지급을 모사한다 — 잔액과 충전 원장을 함께 커밋한다.
 const grantTopup = (orderId, total = 110) => {
   world.diamond += total
   world.transactions = [ledger(world.transactions.length + 1, "DIAMOND_TOPUP", "DIAMOND", total, world.diamond, `topup:${orderId}`), ...world.transactions]
@@ -1018,7 +995,6 @@ test("BQ §2-6a: 복귀 URL·저장소 없이 진입하면 발견 1회 → 최�
   await tick(1)
   assert.equal(orderGets("ORDER_OPEN_1"), 1)
   await untilBalance(view, DIAMOND_LABEL, "유료 재화 110")
-  // 첫 주문이 끝나면 다음 주문으로 넘어간다(별도 예산, 다시 2초 뒤).
   await until(() => assert.equal(currentOrderId(), "ORDER_OPEN_0"))
   assert.equal(orderGets("ORDER_OPEN_0"), 0)
   await tick(2000)
@@ -1360,7 +1336,6 @@ test("BQ AC-02: 골드 결과 조회의 잔액은 최초 구매 스냅샷 — �
   await click(view, "골드 구매")
   await waitText(view, /골드 구매 결과 확인이 필요합니다/)
   const original = posts(GOLD_POST)[0].body
-  // 그 사이 다른 정상 거래로 현재 지갑이 바뀌었다(구매 결과는 최초 값 그대로).
   world.gold = 1500
   world.diamond = 50
   world.transactions = [
@@ -1381,7 +1356,6 @@ test("BQ AC-02: 골드 결과 조회의 잔액은 최초 구매 스냅샷 — �
   assert.equal(storePurchase.store.getState().referenceEventId, original.referenceEventId)
   assert.equal(posts(GOLD_POST).length, 1)
 
-  // 재조회 실패는 잔액 재시도로 남고 구매 완료를 뒤집지 않는다.
   route("GET", WALLET, () => json(500, { ok: false }))
   route("POST", GOLD_POST, () => goldCommitted(1600, 43))
   world.gold = 1500

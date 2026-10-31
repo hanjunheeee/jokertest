@@ -1,9 +1,5 @@
 'use strict';
 
-// F-32a(AC-05) 토스 어댑터 단위 시험. 실제 토스 API는 호출하지 않는다 — HTTP 전송 함수를 대역으로
-// 끼워 키 검증(누락·live·혼합·형식)과 제공자 응답 판정(DONE만 승인)을 검사한다. 실제 테스트 키
-// 세트의 유효성·실제 테스트 결제는 이 시험이 확인하지 않는다(미검증, 외부 입력).
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -29,8 +25,6 @@ const doneBody = (overrides = {}) => JSON.stringify({
 });
 
 const CONFIRM_REQUEST = { paymentKey: 'pay_key_1', orderId: 'order-0001', amount: 1000 };
-
-// ── 키 검증: 외부 호출 전에 거부한다 ───────────────────────────────────────────────────
 
 const BAD_CONFIGS = [
     ['키가 둘 다 없다', {}],
@@ -83,8 +77,6 @@ test('환경은 호출 시점에 읽는다 — 키가 사라지면 이후 호출
     assert.equal(requests.length, 1);
 });
 
-// ── 정상 승인: 고정 주소·본문·Basic 인증·주문별 멱등키 ────────────────────────────────
-
 test('정상 승인: 고정 승인 주소·POST·본문·Basic 인증(secret+":")·주문별 멱등키를 보낸다', async () => {
     const { transport, requests } = makeTransport(async () => ({ status: 200, bodyText: doneBody() }));
     const adapter = createTossAdapter({ getEnv: () => VALID_ENV, transport });
@@ -136,8 +128,6 @@ test('결제 조회: 저장 결제키로 GET하고 Basic 인증을 보낸다(멱
 test('결제키의 특수문자는 URL에서 인코딩된다', () => {
     assert.equal(paymentUrl('a/b?c'), 'https://api.tosspayments.com/v1/payments/a%2Fb%3Fc');
 });
-
-// ── DONE만 승인 ─────────────────────────────────────────────────────────────────────
 
 const STATUS_CASES = [
     ['ABORTED', 'FAILED'], ['EXPIRED', 'EXPIRED'], ['CANCELED', 'CANCELED'], ['PARTIAL_CANCELED', 'CANCELED'],
@@ -192,8 +182,6 @@ test('조회 응답의 결제키가 요청과 다르면 성공으로 판정하�
     assert.equal(result.outcome, 'MISMATCH');
 });
 
-// ── 오류: 확정 거절 vs 승인 불명 ────────────────────────────────────────────────────
-
 test('제공자의 확정 거절(HTTP 4xx + 오류 코드)은 REJECTED와 안정적인 코드만 돌려준다', async () => {
     const { transport } = makeTransport(async () => ({
         status: 400, bodyText: JSON.stringify({ code: 'REJECT_CARD_PAYMENT', message: '한도 초과 (개인정보가 담길 수 있는 원문)' }),
@@ -240,8 +228,6 @@ for (const [label, respond] of UNCERTAIN_CASES) {
     });
 }
 
-// ── secret·요청·응답 원문이 결과에 남지 않는다 ─────────────────────────────────────────────
-
 test('결과 객체·오류 어디에도 secret, Basic 값, 요청·응답·오류 원문이 없다', async () => {
     const leak = `LEAK_${RUN}`;
     const basic = Buffer.from(`${SECRET_KEY}:`).toString('base64');
@@ -267,7 +253,6 @@ test('결과 객체·오류 어디에도 secret, Basic 값, 요청·응답·오�
         }
     }
 
-    // CONFIG_MISSING 오류에도 입력 키가 담기지 않는다.
     const badSecret = `live_sk_${leak}0000000`;
     const adapter = createTossAdapter({ getEnv: () => ({ TOSS_TEST_CLIENT_KEY: CLIENT_KEY, TOSS_TEST_SECRET_KEY: badSecret }) });
     const error = await adapter.confirmPayment(CONFIRM_REQUEST).catch((e) => e);

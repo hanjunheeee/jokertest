@@ -2,22 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
-// ---------------------------------------------------------------------------
-// F-17 로비 소비처 시험(R-IMPL #3).
-//
-// 실제 상태 소유자(useLobbyNotificationPanels)와 실제 알림 모달·진입 버튼을 JSDOM에
-// 마운트해서, 문자열 배선이 아니라 **실제 DOM 전이**로 확인한다:
-//   - 모달 열림 여부의 소유자가 store라서 계정 전환이 실제 dialog를 닫는가
-//   - 계정이 바뀐 뒤 해소된 이전 계정의 PATCH가 이동을 일으키지 않는가
-//   - **같은** notificationRequestId로 다시 들어올 때 닫아 둔 친구 패널이 다시 열리는가
-//
-// 알려진 한계(정직하게 기록한다): LobbyPage.jsx·LobbyFriendArea.jsx·FriendListPanel.jsx는
-// JSX라서 이 저장소의 node --test 러너가 직접 import할 수 없다. 그래서 이 시험은 그 세
-// 파일이 주고받는 **상태 소유자와 알림 컴포넌트**를 실제로 마운트하고, 친구 패널은 받은
-// props(열림·대상 id)를 DOM 속성으로 드러내는 대역으로 둔다. JSX 소비처 자체의 연결은
-// 빌드와 외부 Chrome 확인이 담당한다.
-// ---------------------------------------------------------------------------
-
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   pretendToBeVisual: true,
   url: "http://127.0.0.1:5183/lobby",
@@ -85,11 +69,6 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-/**
- * LobbyPage가 하는 배선을 그대로 한다: 라우터 질의와 navigate를 훅에 넘기고, 훅이 돌려준
- * 상태를 실제 알림 컴포넌트와 친구 패널 대역에 연결한다. navigate는 실제 라우터처럼 경로의
- * 질의를 반영한다 — 같은 대상으로 다시 이동하면 질의 값은 **바뀌지 않는다**.
- */
 function LobbyConsumer({ initialSearch = "", navigations }) {
   const [search, setSearch] = useState(initialSearch)
   const searchParams = useMemo(() => new URLSearchParams(search), [search])
@@ -174,10 +153,6 @@ test.afterEach(() => {
   __setNotificationsApiForTests(null)
 })
 
-// ---------------------------------------------------------------------------
-// 열림 상태의 단일 소유자(R-IMPL #3)
-// ---------------------------------------------------------------------------
-
 test("AC-01: 진입 버튼이 실제 모달을 열고 닫기 버튼이 실제로 닫는다", async (t) => {
   __setNotificationsApiForTests({ fetchNotificationsApi: async () => [] })
   const view = mount(React.createElement(LobbyConsumer, { navigations: [] }))
@@ -207,8 +182,6 @@ test("AC-05/R-IMPL#3: 로그아웃 없는 A→B 직접 전환이 열려 있던 �
   assert.ok(dialog(view))
   assert.equal(view.container.querySelectorAll("[data-notification-id]").length, 1)
 
-  // 예전 구현은 열림 여부를 LobbyPage 지역 상태로 들고 있어서, store가 목록과 open을
-  // 비워도 화면의 모달은 그대로 열려 있었다.
   await act(async () => {
     useAuthStore.setState({ isLoggedIn: true, user: { uuid: ACCOUNT_B }, loggedOutIntentionally: false })
     useNotificationsStore.getState().syncAccount()
@@ -237,7 +210,6 @@ test("AC-05/R-IMPL#3: 계정이 바뀐 뒤 해소된 A의 PATCH는 이동을 일
   t.after(view.unmount)
 
   await click(view.container.querySelector("[data-notification-entry]"))
-  // 읽음이 아직 정착하지 않은 상태에서 대상 이동을 누른다.
   await click(view.container.querySelector('[data-notification-action="open-target"]'))
   assert.deepEqual(navigations, [], "읽음 확정 전에는 이동하지 않는다")
 
@@ -257,10 +229,6 @@ test("AC-05/R-IMPL#3: 계정이 바뀐 뒤 해소된 A의 PATCH는 이동을 일
   assert.equal(friendPanelOpen(view), "false")
 })
 
-// ---------------------------------------------------------------------------
-// 같은 대상으로의 재진입(R-IMPL #3)
-// ---------------------------------------------------------------------------
-
 test("AC-02/R-IMPL#3: 같은 notificationRequestId로 다시 들어오면 닫아 둔 친구 패널이 다시 열린다", async (t) => {
   const row = friendNotification()
   __setNotificationsApiForTests({
@@ -275,7 +243,6 @@ test("AC-02/R-IMPL#3: 같은 notificationRequestId로 다시 들어오면 닫아
   const view = mount(React.createElement(LobbyConsumer, { navigations }))
   t.after(view.unmount)
 
-  // 1) 알림에서 대상으로 이동 → 친구 패널이 열린다.
   await click(view.container.querySelector("[data-notification-entry]"))
   await click(view.container.querySelector('[data-notification-action="open-target"]'))
 
@@ -284,12 +251,9 @@ test("AC-02/R-IMPL#3: 같은 notificationRequestId로 다시 들어오면 닫아
   assert.equal(friendPanelOpen(view), "true")
   assert.equal(friendPanelTarget(view), "42")
 
-  // 2) 사용자가 패널을 닫는다.
   await click(view.container.querySelector('[data-action="close-friend-panel"]'))
   assert.equal(friendPanelOpen(view), "false")
 
-  // 3) **같은** 알림으로 다시 들어온다 — URL 질의는 그대로라 searchParams가 바뀌지 않는다.
-  //    예전 구현은 대상 id가 바뀌지 않으면 effect가 다시 돌지 않아 패널이 열리지 않았다.
   await click(view.container.querySelector("[data-notification-entry]"))
   await click(view.container.querySelector('[data-notification-action="open-target"]'))
 

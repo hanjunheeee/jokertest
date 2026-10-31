@@ -1,11 +1,5 @@
 'use strict';
 
-// F-05 R-IMPL(CODEX-2/VERIFY-10): backend/tests/helpers/isolatedTestDb.js가 하는 안전
-// 확인(전용 테스트 DB 대상인지, 관리 목록 밖 테이블이 없는지)이 실제로 destructive
-// drop보다 먼저 실행되고, 어느 하나라도 걸리면 drop이 단 한 번도 호출되지 않는지를
-// 실제 MySQL 없이(스텁 sequelize) 검증한다 — 이 파일은 격리 DB 유무와 무관하게 항상
-// 실행된다.
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -21,8 +15,6 @@ const {
 const [APPROVED_DB_NAME] = ALLOWED_DATABASE_NAMES;
 const APPROVED_URL = `mysql://user:pass@127.0.0.1:3306/${APPROVED_DB_NAME}`;
 
-// showAllTables/dropTable 호출을 모두 기록하는 스텁. query()는 DATABASE()를 흉내낸다 —
-// 실제 드라이버처럼 [rows] 형태로 돌려준다.
 const makeStubSequelize = ({ connectedDatabaseName, existingTables = [] }) => {
     const dropCalls = [];
     let showAllTablesCalls = 0;
@@ -41,8 +33,6 @@ const makeStubSequelize = ({ connectedDatabaseName, existingTables = [] }) => {
         get showAllTablesCalls() { return showAllTablesCalls; },
     };
 };
-
-// ── assertDedicatedTestDatabase ──────────────────────────────────────────────
 
 test('승인되지 않은 DB 이름을 가리키는 URL은 DATABASE() 조회조차 하지 않고 즉시 거부된다', async () => {
     const sequelize = {
@@ -76,8 +66,6 @@ test('URL과 실제 연결된 DATABASE()가 둘 다 승인된 이름과 일치�
     const sequelize = makeStubSequelize({ connectedDatabaseName: APPROVED_DB_NAME });
     await assert.doesNotReject(() => assertDedicatedTestDatabase(sequelize, APPROVED_URL));
 });
-
-// ── resetManagedSchema: 세 가지 거부 경로 모두 drop을 단 한 번도 호출하지 않는다 ──────
 
 const SCHEMA = buildManagedSchema({
     baseline: { TABLE_ORDER: ['users', 'user_sessions'] },
@@ -117,8 +105,6 @@ test('관리 목록에 없는 미지의 테이블이 있으면 resetManagedSchem
     assert.deepEqual(sequelize.dropCalls, []);
 });
 
-// F-05가 만든 세 테이블도 미지의 테이블로 취급되면 안 된다 — 이것이 CODEX-2/VERIFY-10이
-// 지적한 21개 실패의 직접 원인이었다.
 test('F-05 social 테이블(external_identities 등)은 미지의 테이블로 취급되지 않는다', async () => {
     const sequelize = makeStubSequelize({
         connectedDatabaseName: APPROVED_DB_NAME,
@@ -126,8 +112,6 @@ test('F-05 social 테이블(external_identities 등)은 미지의 테이블로 �
     });
     await assert.doesNotReject(() => resetManagedSchema(sequelize, APPROVED_URL, SCHEMA));
 });
-
-// ── resetManagedSchema 정상 경로: 존재하는 테이블만, FK 자식 우선 순서로 drop한다 ──────
 
 test('정상 경로에서는 실제로 존재하는 테이블만 자식(FK 참조)부터 users까지 순서대로 drop된다', async () => {
     const sequelize = makeStubSequelize({
@@ -142,7 +126,6 @@ test('정상 경로에서는 실제로 존재하는 테이블만 자식(FK 참�
         'user_sessions', 'users',
         'schema_migrations',
     ]);
-    // users(부모)는 그것을 참조하는 모든 자식 테이블보다 반드시 나중에 drop되어야 한다.
     const usersIndex = sequelize.dropCalls.indexOf('users');
     for (const child of ['external_identities', 'oauth_states', 'social_signup_intents', 'refresh_token_history', 'user_sessions']) {
         assert.ok(sequelize.dropCalls.indexOf(child) < usersIndex, `${child}는 users보다 먼저 drop되어야 합니다`);
@@ -158,9 +141,6 @@ test('존재하지 않는 관리 테이블은 drop을 시도하지 않는다', a
     assert.deepEqual(sequelize.dropCalls, ['users']);
 });
 
-// F-32a(AC-06): 기본 관리 목록은 0018의 두 테이블을 알고 있어야 한다 — 모르면 f32a 스위트가
-// 남긴 테이블을 다른 스위트가 "모르는 테이블"로 오판해 거부한다. 주문은 users를 참조하므로
-// users보다 먼저 드롭된다.
 test('F-32a: 기본 관리 목록은 상품·주문 테이블을 알고 있고 주문은 users보다 먼저 drop된다', async () => {
     assert.ok(SCHEMA.managedTables.includes('economy_currency_products'));
     assert.ok(SCHEMA.managedTables.includes('economy_topup_orders'));
@@ -197,13 +177,6 @@ test('F-32a: EMPTY_TABLES override를 주면 두 테이블은 관리 목록에 �
     assert.ok(!minimal.dropOrder.includes('economy_topup_orders'));
 });
 
-// ── resetManagedData: 스키마를 두고 행만 비우는 경로도 같은 안전 확인을 먼저 지난다 ────
-//
-// F-19 검증 시간 보수로 추가된 경로다. 드롭보다 덜 파괴적으로 보이지만 "전용 테스트 DB의
-// 모든 행을 지운다"는 점에서 위험도는 같으므로, 대상 DB 확인·미지 테이블 거부가 DELETE보다
-// 반드시 먼저 실행되는지를 resetManagedSchema와 똑같이 검증한다.
-
-// DELETE/SELECT를 기록하는 스텁. rowCounts는 COUNT(*) UNION 응답을 흉내낸다.
 const makeDataStubSequelize = ({ connectedDatabaseName, existingTables = [], rowCounts = {} }) => {
     const deleteCalls = [];
     const countQueries = [];
@@ -232,10 +205,6 @@ const makeDataStubSequelize = ({ connectedDatabaseName, existingTables = [], row
     };
 };
 
-// 위의 SCHEMA는 economy/notifications/f19 인자를 생략해 **실제** 마이그레이션 모듈의 테이블
-// 이름까지 관리 목록에 넣는다(isolatedTestDb.js가 기본값으로 require한다). resetManagedData는
-// "관리 테이블이 전부 존재한다"를 요구하므로, 여기서는 그 확장 목록을 모두 빈 객체로 덮어
-// 스텁이 흉내낼 수 있는 최소 스키마만 남긴다.
 const EMPTY_TABLES = { TABLE_NAMES: {} };
 const DATA_SCHEMA = buildManagedSchema({
     baseline: { TABLE_ORDER: ['users', 'user_sessions'] },
@@ -253,11 +222,6 @@ const DATA_SCHEMA = buildManagedSchema({
 
 const ALL_MANAGED = [...DATA_SCHEMA.managedTables];
 
-// F-33 E-2: economy_emoji_palettes(0019)는 addEconomy(0006) 모듈이 아니라 별도
-// 마이그레이션이 만드는 테이블이라, buildManagedSchema가 **어떤 addEconomy가 넘어오든**
-// (여기서는 EMPTY_TABLES 스텁) 무조건 economy 묶음에 넣는다. 그 무조건 추가가 최소 스키마
-// 시나리오에서도 실제로 관리 목록·드롭 순서에 반영되는지를 값으로 고정한다 — 빠지면 f33
-// 스위트가 남긴 테이블을 다른 스위트가 "모르는 테이블"로 오판해 거부한다.
 test('최소 스키마(addEconomy 스텁)에서도 economy_emoji_palettes가 관리 목록과 드롭 순서에 들어간다', () => {
     assert.deepEqual(DATA_SCHEMA.managedTables, [
         'users', 'user_sessions', 'refresh_token_history',
@@ -266,8 +230,6 @@ test('최소 스키마(addEconomy 스텁)에서도 economy_emoji_palettes가 관
         'signup_email_verifications',
         'schema_migrations',
     ]);
-    // 드롭 순서는 "자식 → 부모"다 — economy_emoji_palettes는 users를 참조하므로 users보다
-    // 앞에 있어야 FK 제약에 걸리지 않는다.
     assert.deepEqual(DATA_SCHEMA.dropOrder, [
         'signup_email_verifications',
         'economy_emoji_palettes',
@@ -305,8 +267,6 @@ test('관리 목록에 없는 미지의 테이블이 있으면 resetManagedData�
     assert.deepEqual(sequelize.deleteCalls, []);
 });
 
-// 데이터만 비우는 경로는 "스키마가 이미 완전하다"를 전제로 한다. 하나라도 없으면 그 전제가
-// 깨진 것이므로 DELETE로 얼버무리지 않고 호출부에 전체 재구축을 되돌려 준다.
 test('관리 테이블이 하나라도 없으면 resetManagedData는 DELETE 없이 cleaned=false를 돌려준다', async () => {
     const sequelize = makeDataStubSequelize({
         connectedDatabaseName: APPROVED_DB_NAME,
@@ -327,10 +287,7 @@ test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식
 
     assert.equal(result.cleaned, true);
     assert.deepEqual(sequelize.deleteCalls, [
-        // F-31a: signup_email_verifications(0016)는 users를 참조하지 않는 독립 테이블이라
-        // isolatedTestDb.js의 dropOrder 맨 앞에 온다(어디서 비워도 FK 제약에 걸리지 않는다).
         'signup_email_verifications',
-        // F-33 E-2: economy_emoji_palettes(0019)도 관리 테이블이라 함께 비워진다.
         'economy_emoji_palettes',
         'external_identities', 'oauth_states', 'social_signup_intents',
         'refresh_token_history',
@@ -340,7 +297,6 @@ test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식
         !sequelize.deleteCalls.includes('schema_migrations'),
         'keepTables로 지정한 이력 테이블은 비우지 않아야 한다',
     );
-    // FOREIGN_KEY_CHECKS를 끄지 않고도 제약을 지킬 수 있는 근거가 이 순서다.
     const usersIndex = sequelize.deleteCalls.indexOf('users');
     for (const child of ['economy_emoji_palettes', 'external_identities', 'oauth_states', 'social_signup_intents', 'refresh_token_history', 'user_sessions']) {
         assert.ok(sequelize.deleteCalls.indexOf(child) < usersIndex, `${child}는 users보다 먼저 비워져야 합니다`);
@@ -359,8 +315,6 @@ test('식별자로 쓸 수 없는 테이블 이름은 DB 조회 이전에 거부
         /식별자로 쓸 수 없는 테이블 이름입니다/,
     );
 });
-
-// ── findNonEmptyManagedTables: 케이스 간 데이터 누수 검사 ────────────────────────
 
 test('findNonEmptyManagedTables는 행이 남은 테이블만 한 번의 질의로 돌려준다', async () => {
     const sequelize = makeDataStubSequelize({

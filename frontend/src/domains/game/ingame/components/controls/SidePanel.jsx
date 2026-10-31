@@ -1,6 +1,3 @@
-/**
- * 인게임 좌측 슬라이드 패널 shell — 프레임·backdrop·닫기·본문 inset.
- */
 import { AnimatePresence, motion } from "framer-motion"
 import { INGAME_SIDE_PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
 import {

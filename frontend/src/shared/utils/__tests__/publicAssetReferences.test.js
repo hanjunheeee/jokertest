@@ -1,42 +1,3 @@
-/**
- * frontend/src 전체에서 publicAsset(...) 호출과 에셋 상수가 참조하는 public 경로를
- * 모두 모아 frontend/public에 실제로 존재하는지 검사합니다.
- *
- * 이전 라운드(리터럴을 `'`/`"`로만, 이미 존재하는 최상위 디렉터리로만, 중첩 호출 없는
- * publicAsset(...) 인자만 스캔) 검토에서 아래 4가지가 조용히 빠져나간다는 지적을 받았다:
- *   1) frontend/public에 없는 최상위 디렉터리를 참조하면 정규식이 애초에 매치하지 않아
- *      "없음"이 아니라 "안 봄"이 된다.
- *   2) 선행 슬래시가 없는 경로("button/x.png")도 매치하지 않는다.
- *   3) 백틱(`) 정적 리터럴(보간 없음)은 원래 정규식이 따옴표만 받아 놓친다.
- *   4) publicAsset(fn(x)) 처럼 인자 안에 괄호가 있는 호출은 CALL_RE가 못 잡는다.
- *   5) publicAsset(변수) 형태의 "변수"가 상수도 아니고 리터럴도 아니면(진짜 런타임 값)
- *      아무 데도 안 걸리고 조용히 통과한다.
- *
- * 이 파일은 위 5개를 각각 이렇게 닫는다:
- *   1,2,3 — checkAssetPathExists()가 따옴표 3종(', ", `)을 모두 훑고, 선행 슬래시를
- *     보정하고, "최상위 디렉터리 자체가 없음"과 "디렉터리는 있는데 파일이 없음"을 구분해
- *     실패시킨다(PUBLIC_TOP_DIRS로 매치 대상을 제한하지 않는다).
- *   4 — extractCallArgs()가 괄호 깊이를 직접 세어 인자를 잘라낸다(정규식 lookahead 아님).
- *   5 — publicAsset(...) 호출 인자를 classifyCallArg()로 분류한다. 인자가 리터럴이거나,
- *     "같은 파일의 최상위 const" 또는 "로컬/@ import된 파일"에 뿌리를 둔 단순
- *     식별자.프로퍼티/[첨자] 체인(함수 호출 없음)이면 "covered"(그 파일의 리터럴은 이
- *     테스트의 일반 스캔이 어차피 훑는다). 그 외(진짜 지역 변수·prop·함수 호출)는
- *     KNOWN_DYNAMIC_PUBLIC_ASSET_CALL_ARGS에 "왜 안전한지" 근거와 함께 등록돼 있지
- *     않으면 실패한다 — 새로 생기는 미등록 동적 인자는 자동으로 테스트를 깨뜨린다.
- *
- * 백틱 템플릿(`${DIR}/파일.png`)의 보간이 "같은 파일 또는 로컬 import된 파일의 최상위
- * const"로 해석되면 그 값을 재구성해 존재를 검사한다(resolveExprToLiteral). 함수
- * 파라미터 보간(`${variant}`, `${config.folder}` 등)처럼 정적으로 못 푸는 경우는
- * frontend/src를 뒤져 정확히 TEMPLATE_VERIFIED_BY_IMPORT_FILES에 나열된 파일(storeItems.js,
- * skinCardWearCatalog.js, forbiddenRecords/assets.js, pickInGamePlayerFrame.js)에만 있고,
- * 이 파일들은 아래에서 실제로 동적 import해(또는 함수를 직접 호출해) 계산된 진짜 문자열
- * 값으로 검증한다(정규식 재현이 아니라 Node가 직접 실행). 그 외 파일에서 새로 이런 템플릿이
- * 생기면(TEMPLATE_VERIFIED_BY_IMPORT_FILES에 없으면) 테스트가 실패해 사람이 봐야 한다.
- *
- * __tests__ 디렉터리·*.test.js는 스캔에서 뺀다 — 목(mock) 값으로 존재하지 않는 경로를
- * 일부러 쓰는 테스트가 있어서(예: profileCustomization.store.test.js의 임의 photoSrc),
- * 그 값들을 "실제 에셋 참조"로 검증하면 거짓 실패가 난다.
- */
 import assert from "node:assert/strict"
 import fs from "node:fs"
 import path from "node:path"
@@ -44,9 +5,7 @@ import test from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-// __tests__ → utils → shared → src
 const SRC_DIR = path.resolve(HERE, "..", "..", "..")
-// src → frontend → public
 const PUBLIC_DIR = path.resolve(HERE, "..", "..", "..", "..", "public")
 
 const MEDIA_EXT_RE = "png|jpe?g|gif|webp|svg|mp4|webm|mp3|wav|ogg"
@@ -82,7 +41,6 @@ const PUBLIC_TOP_DIRS = fs
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
 
-/** file(절대경로) → stripComments된 원문 (게으르게도 채워짐 — cross-file 해석용) */
 const fileContents = new Map()
 for (const file of SOURCE_FILES) {
   fileContents.set(file, stripComments(fs.readFileSync(file, "utf8")))
@@ -98,10 +56,6 @@ function getFileContent(file) {
     return null
   }
 }
-
-// ---------------------------------------------------------------------------
-// 리터럴/템플릿 문자열 토크나이저 — 따옴표 3종(', ", `)을 동일하게 다룬다.
-// ---------------------------------------------------------------------------
 
 function readStringLiteralAt(content, i) {
   const quote = content[i]
@@ -141,7 +95,6 @@ function findStringLiterals(content) {
   return out
 }
 
-/** 백틱 raw 내용을 정적 조각(parts)과 보간식(exprs)으로 나눈다. 중첩 중괄호를 지원한다. */
 function splitTemplateLiteral(raw) {
   const parts = []
   const exprs = []
@@ -182,10 +135,6 @@ function unescapeLiteral(s) {
   })
 }
 
-// ---------------------------------------------------------------------------
-// import 맵 + 최상위 const 리터럴 해석 (같은 파일 → import된 로컬 파일, 얕은 재귀)
-// ---------------------------------------------------------------------------
-
 function resolveModuleSpecifier(spec, fromFile) {
   let base
   if (spec.startsWith(".")) base = path.resolve(path.dirname(fromFile), spec)
@@ -206,7 +155,6 @@ function resolveModuleSpecifier(spec, fromFile) {
 
 const importMapCache = new Map()
 
-/** file → Map(localName → { file: 절대경로|null, imported: string }) */
 function parseImportMap(file) {
   if (importMapCache.has(file)) return importMapCache.get(file)
 
@@ -240,7 +188,6 @@ function topLevelConstRegex(name) {
   return new RegExp(`^(?:export\\s+)?const\\s+${name}\\s*=\\s*`, "m")
 }
 
-/** content[index..]에서 값(문자열/템플릿)을 읽어 리터럴 문자열로 돌려준다. 아니면 null. */
 function resolveValueAt(content, index, file) {
   let i = index
   while (i < content.length && /\s/.test(content[i])) i++
@@ -266,7 +213,6 @@ function findTopLevelConstLiteral(file, name) {
   return resolveValueAt(content, m.index + m[0].length, file)
 }
 
-/** `${expr}` 보간식을 리터럴 문자열로 해석한다 — 단순 식별자와 리터럴만 지원한다. */
 function resolveExprToLiteral(expr, file, visited = new Set()) {
   const trimmed = expr.trim()
   if (/^["'`]/.test(trimmed)) return resolveValueAt(trimmed, 0, file)
@@ -290,10 +236,6 @@ function resolveIdentifierLiteral(name, file, visited) {
   return null
 }
 
-// ---------------------------------------------------------------------------
-// 존재 검사 — 최상위 디렉터리 없음 / 파일 없음을 구분해 실패시킨다
-// ---------------------------------------------------------------------------
-
 function looksLikeAssetPath(str) {
   if (typeof str !== "string" || !str) return false
   if (str.includes("://")) return false
@@ -307,7 +249,6 @@ function describeDirectory(dir) {
   return fs.readdirSync(dir).join("\n")
 }
 
-/** PUBLIC_TOP_DIRS로 매치 대상을 제한하지 않는다 — 없는 최상위 디렉터리도 그대로 검사해 실패시킨다. */
 function checkAssetPathExists(rawPath, sourceDescription, failures) {
   const withSlash = rawPath.startsWith("/") ? rawPath : `/${rawPath}`
   const normalized = withSlash.normalize("NFC")
@@ -333,10 +274,6 @@ function assertNoFailures(failures, label) {
   assert.equal(failures.length, 0, `[${label}] ${failures.length}건 실패\n\n${failures.join("\n\n")}`)
 }
 
-// ---------------------------------------------------------------------------
-// balanced-paren 호출 인자 추출 — publicAsset(fn(x)) 같은 중첩 호출도 정확히 자른다
-// ---------------------------------------------------------------------------
-
 function extractCallArgs(content, calleeName) {
   const results = []
   const calleeRe = new RegExp(`\\b${calleeName}\\s*\\(`, "g")
@@ -355,20 +292,11 @@ function extractCallArgs(content, calleeName) {
   return results
 }
 
-// ---------------------------------------------------------------------------
-// 1) 일반 스캔 — 모든 .js/.jsx의 리터럴·정적 백틱·해석 가능한 동적 템플릿
-// ---------------------------------------------------------------------------
-
-/** 함수 파라미터 보간이 있어 텍스트 기반으로 못 푸는 템플릿이 사는 파일 — 아래 "동적 import
- *  실값 검증"에서 실제로 import해 계산된 값으로 별도 검증한다. 새 파일에서 같은 패턴이
- *  생기면(여기 없으면) 일반 스캔이 실패로 잡는다 — 조용히 넘어가지 않는다. */
 const TEMPLATE_VERIFIED_BY_IMPORT_FILES = new Set(
   [
     "domains/store/constants/storeItems.js",
     "domains/user/constants/skinCardWear/skinCardWearCatalog.js",
     "domains/library/constants/forbiddenRecords/assets.js",
-    // F-14(AC-01/AC-04): resolveAccountCardFrameSrc(itemId)의 variant는 함수 인자라
-    // 정적으로 못 푼다 — 아래 "동적 import 실값 검증"에서 실제로 호출해 검사한다.
     "domains/game/ingame/utils/pickInGamePlayerFrame.js",
   ].map((rel) => path.join(SRC_DIR, ...rel.split("/"))),
 )
@@ -431,10 +359,6 @@ for (const file of SOURCE_FILES) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 2) publicAsset(...) 호출 인자 분류 — 리터럴 / covered(상수 참조) / dynamic(허용목록 필요)
-// ---------------------------------------------------------------------------
-
 const MEMBER_CHAIN_RE =
   /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\[\]()]*\])*$/
 
@@ -455,8 +379,6 @@ function classifyCallArg(argText, file) {
   return { kind: "dynamic" }
 }
 
-/** 정적으로 못 푸는 publicAsset(...) 인자 — 왜 안전한지 근거를 남겨야 등록할 수 있다.
- *  file은 SRC_DIR 기준 상대경로. 새 동적 인자가 생기면 여기 없는 한 테스트가 실패한다. */
 const KNOWN_DYNAMIC_PUBLIC_ASSET_CALL_ARGS = [
   {
     file: "shared/ui/tutorialGuide/TutorialGuideOverlay.jsx",
@@ -585,10 +507,6 @@ for (const file of SOURCE_FILES) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 3) 동적 import 실값 검증 — 함수 파라미터 보간은 Node가 실제로 실행한 값으로 검사한다
-// ---------------------------------------------------------------------------
-
 function collectStringLeaves(value, out = [], depth = 0, seen = new Set()) {
   if (depth > 8 || value == null) return out
   if (typeof value === "string") {
@@ -661,7 +579,6 @@ const forbiddenRecordsFailures = []
           `함수 이름이 바뀌었으면 이 테스트도 같이 고쳐야 한다.`,
       )
     } else {
-      // 소스 주석: "1-based spread 번호 (1~7)" — 그 범위를 그대로 실행해 실제 값을 검사한다.
       for (let page = 1; page <= 7; page++) {
         const value = moduleNs.getForbiddenRecordsChallengeClearIllust(page)
         checkAssetPathExists(
@@ -676,10 +593,6 @@ const forbiddenRecordsFailures = []
   }
 }
 
-// F-14(AC-01/AC-04): pickInGamePlayerFrame.js의 resolveAccountCardFrameSrc(itemId)는 variant를
-// 함수 인자로 받는다 — 실제 구매 가능한 카드 프레임 9종(베이스 + backend/economy/catalog.js
-// PLAYER_CARD_VARIANTS 8종)으로 직접 호출해 계산된 진짜 경로가 frontend/public에 존재하는지
-// 검사한다.
 const PICK_IN_GAME_PLAYER_FRAME_VARIANTS = ["베이스", "가고일", "가면", "그레이", "모래시계", "보석", "사슬", "악마", "왕관"]
 const pickInGamePlayerFrameFailures = []
 {
@@ -705,10 +618,6 @@ const pickInGamePlayerFrameFailures = []
     pickInGamePlayerFrameFailures.push(`동적 import 실패: ${relativeToSrc(file)} — ${err.message}`)
   }
 }
-
-// ---------------------------------------------------------------------------
-// 테스트
-// ---------------------------------------------------------------------------
 
 test("frontend/public 디렉터리를 찾는다", () => {
   assert.ok(fs.existsSync(PUBLIC_DIR), `public 디렉터리가 없다: ${PUBLIC_DIR}`)
@@ -759,8 +668,6 @@ test("forbiddenRecords/assets.js — getForbiddenRecordsChallengeClearIllust(1~7
 test("pickInGamePlayerFrame.js — resolveAccountCardFrameSrc(player-card-*) 9종 실값을 검증한다", () => {
   assertNoFailures(pickInGamePlayerFrameFailures, "resolveAccountCardFrameSrc 실값")
 })
-
-// --- 아래는 위 4가지 수정이 실제로 동작함을 코드베이스 상태와 무관하게 증명하는 합성 테스트 ---
 
 test("[합성] 존재하지 않는 최상위 디렉터리 참조는 조용히 무시되지 않고 실패로 잡힌다", () => {
   const failures = []

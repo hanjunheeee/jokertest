@@ -1,6 +1,3 @@
-/**
- * 친구 초대 팝업 레이아웃 — 투표현황창 프레임.png (prototype/친구초대 팝업.png)
- */
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 export {
@@ -26,7 +23,6 @@ export const FRIEND_INVITE_MODAL_SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 export const FRIEND_INVITE_MODAL_SCROLL_CLASS =
   `h-full min-h-0 overflow-y-auto overscroll-contain pr-[clamp(0.35rem,1.2cqi,0.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
-/** 전적 목록(ingamePlayerRecordListLayout)과 같은 행 구조 */
 export const FRIEND_INVITE_ROW_CLASS =
   "relative w-full list-none border-b border-[#3a2818]/70 py-[clamp(0.38rem,0.9vh,0.52rem)] last:border-b-0"
 

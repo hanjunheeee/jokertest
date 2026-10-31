@@ -5,15 +5,10 @@ import { pickInGameJobPortrait } from "../../ingame/utils/pickInGameJobPortrait.
 import { pickJobPortrait } from "../../../../shared/utils/pickJobPortrait.js"
 import { GAME_RESULT_JOB_LABELS } from "../constants/gameResultLabels.js"
 
-/**
- * null·배열이 아닌 순수 객체인지 판정한다.
- * @param {unknown} value 검사할 값
- */
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
-/** @param {unknown} reveal */
 function resolveRevealCardStatus(reveal) {
   if (!isPlainObject(reveal) || reveal.alive !== false) {
     return INGAME_PLAYER_STATUS.ALIVE
@@ -22,21 +17,6 @@ function resolveRevealCardStatus(reveal) {
   return INGAME_PLAYER_STATUS.DEAD
 }
 
-/**
- * store의 winResult와 본인 uuid를 결과 페이지(GameResultShell)가 소비하는 view model로 바꾼다.
- *
- * 총함수(total)다 — winResult가 비어 있거나 형태가 어긋나도 throw하지 않고 빈 결과를 돌려준다.
- * "결과가 없으니 로비로 돌려보낸다"는 판단은 호출부(useGameResultData/GameResultPage)의 몫이고,
- * 이 순수 함수는 판단하지 않는다.
- *
- * selfTeam은 reveals에 본인이 없을 때 승패를 판정하기 위한 fallback이다 — reveals에 본인이
- * 있으면 그 team이 우선한다. 참가자 명단은 winResult.reveals만으로 만들며, 서버가 주지 않은
- * 다른 참가자의 역할은 추론하지 않는다.
- *
- * @param {unknown} winResult 서버가 내려준 { winner } (원격 계약에서는 reveals·mvp도 포함)
- * @param {string|null} selfUuid 본인 참가자 uuid(모르면 null)
- * @param {"CITIZEN"|"JOKER"|null} [selfTeam] 본인 진영(reveals에 본인이 없을 때만 쓰인다)
- */
 export function buildGameResultViewModel(winResult, selfUuid, selfTeam = null) {
   const reveals = Array.isArray(winResult?.reveals) ? winResult.reveals : []
   const winningTeam =

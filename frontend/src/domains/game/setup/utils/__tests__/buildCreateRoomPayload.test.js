@@ -43,7 +43,6 @@ test("모든 체크박스/숫자 설정이 payload 필드로 정확히 변환된
 })
 
 test("역할 구성 상태가 없으면 AUTO로 취급하고 기존 jokerCount 계약을 그대로 유지한다", () => {
-  // 역할 구성 UI를 건드리지 않은 사용자의 payload는 기존과 동일한 필드 + 명시적 auto 표기다.
   const payload = buildCreateRoomPayload(state())
   assert.equal(payload.roleCompositionMode, "auto")
   assert.equal(payload.jokerCount, 2)
@@ -64,8 +63,6 @@ test("서버 권한 필드(uuid, hostUuid, title 등)를 생성하지 않는다"
   }
 })
 
-// ── CUSTOM 역할 구성 ────────────────────────────────────────────────────────
-
 test("CUSTOM payload는 허용된 4개 역할 수만 담고 jokerCount를 roleCounts.JOKER와 일치시킨다", () => {
   const payload = buildCreateRoomPayload(
     state({
@@ -79,7 +76,6 @@ test("CUSTOM payload는 허용된 4개 역할 수만 담고 jokerCount를 roleCo
   assert.equal(payload.roleCompositionMode, "custom")
   assert.deepEqual(payload.roleCounts, { JOKER: 3, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
   assert.deepEqual(Object.keys(payload.roleCounts), ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
-  // ranges["joker-count"]가 2였더라도 CUSTOM에서는 roleCounts.JOKER가 canonical이다.
   assert.equal(payload.jokerCount, 3)
 })
 
@@ -88,7 +84,6 @@ test("CUSTOM payload에 CITIZEN이나 서버 권한 필드가 섞이지 않는�
     state({
       roleComposition: {
         mode: "custom",
-        // 상태에 CITIZEN/서버 소유 필드가 잘못 섞여 있어도 payload로 새어 나가면 안 된다.
         roleCounts: { JOKER: 2, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 5, hostUuid: "x" },
       },
     }),
@@ -124,7 +119,6 @@ test("CUSTOM에서 AUTO로 되돌아가면 이전 custom 필드가 payload에 �
   )
   assert.equal(Object.hasOwn(custom, "roleCounts"), true)
 
-  // 같은 roleCounts 상태를 그대로 들고 있어도 모드가 auto면 payload에는 실리지 않는다.
   const backToAuto = buildCreateRoomPayload(
     state({
       roleComposition: { mode: "auto", roleCounts: { JOKER: 3, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 } },
@@ -135,9 +129,6 @@ test("CUSTOM에서 AUTO로 되돌아가면 이전 custom 필드가 payload에 �
   assert.equal(backToAuto.jokerCount, 2) // AUTO는 다시 기존 스테퍼 값을 쓴다
 })
 
-// ── 직업별 밤 제한시간 ───────────────────────────────────────────────────────
-
-/** 설정 화면이 실제로 만들어내는 초기 ranges 상태(스테퍼 항목의 기본값)를 그대로 재현한다. */
 function meetingTabRanges() {
   const ranges = {}
   for (const item of MEETING_GAME_SETUP) {
@@ -147,7 +138,6 @@ function meetingTabRanges() {
 }
 
 test("직업별 밤 시간 스테퍼가 없으면 payload에 roleNightActionTimes를 만들지 않는다", () => {
-  // 필드가 없어야 서버가 nightActionTime으로 폴백한다 — 빈 객체를 보내면 안 된다.
   const payload = buildCreateRoomPayload(state())
   assert.equal(Object.hasOwn(payload, "roleNightActionTimes"), false)
 })
@@ -171,7 +161,6 @@ test("설정 화면의 직업별 스테퍼 값이 역할 키로 그대로 전달
     GUARD: 120,
     WITCH_HUNTER: 90,
   })
-  // 전체 밤 행동 시간 필드는 그대로 남는다(지정하지 않은 직업의 폴백 대상이다).
   assert.equal(payload.nightActionTime, 90)
 })
 

@@ -36,11 +36,6 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
 
-// useInGameRoleReveal이 (내부의 useInGameRoleRevealAck를 통해) module 최상단에서 import하는
-// socketClient(getSocket/subscribeSocket)를 실제 mount 테스트에서 제어 가능한 fake로 교체한다.
-// 이 훅의 열림 상태는 socket과 무관하므로, socket이 아예 없는(getSocket → null) 상태를
-// 그대로 둔다 — acknowledge_role_reveal 자동 발사는 소켓이 없으면 조용히 아무 것도 하지
-// 않고 물러난다(useInGameRoleRevealAck.js 참고).
 mock.module("../../../../../shared/socket/socketClient.js", {
   namedExports: {
     getSocket: () => null,
@@ -145,13 +140,11 @@ test("같은 identity에서의 phase·roster·connectivity 갱신은 닫힌 오�
   })
   assert.equal(hook.result.current.open, false)
 
-  // phase 전이 (self 참조는 그대로 유지된 채 다른 필드만 바뀜 — applyPhaseChanged와 동일한 형태)
   act(() => {
     useInGameStore.setState((current) => ({ state: { ...current.state, phase: "NIGHT" } }))
   })
   assert.equal(hook.result.current.open, false, "phase 갱신은 재오픈을 트리거하면 안 된다")
 
-  // roster(connectivity) 갱신
   act(() => {
     useInGameStore.setState((current) => ({
       state: {
@@ -175,7 +168,6 @@ test("같은 identity에서의 반복된 스냅샷 적용(self가 새 객체로 
   })
   assert.equal(hook.result.current.open, false)
 
-  // get_session_snapshot 재적용 — 내용은 동일하지만 self가 매번 새 객체로 만들어진다.
   act(() => {
     useInGameStore.setState((current) => ({
       state: {
@@ -228,7 +220,6 @@ test("다른 gameId로 바뀌면 새 reveal identity로 취급해 닫혀 있어�
   assert.equal(hook.result.current.open, false)
 
   act(() => {
-    // 같은 인증 계정(player-1)이 새 게임(g2)에 들어간 상황을 재현한다.
     seedStore({ gameId: "g2", playerUuid: "player-1", nickname: "Alice", role: "CITIZEN" })
   })
 

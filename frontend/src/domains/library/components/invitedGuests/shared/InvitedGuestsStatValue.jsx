@@ -21,7 +21,6 @@ function renderStatContent(value) {
   return <span className={INVITED_GUESTS_STAT_NUMBER_CLASS}>{number}</span>
 }
 
-/** 초대받은 자들 — 전적·랭킹 수치 (칩 옵션, 승률 % 분리) */
 export default function InvitedGuestsStatValue({ value, chip = false }) {
   const content = renderStatContent(value)
 

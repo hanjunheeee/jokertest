@@ -2,7 +2,6 @@ import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 
-// 화면 가장자리의 고정 요소들을 담당합니다.
 export default function AuthSceneChrome() {
   return (
     <>

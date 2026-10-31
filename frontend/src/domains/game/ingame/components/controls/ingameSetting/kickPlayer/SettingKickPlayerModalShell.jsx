@@ -1,10 +1,3 @@
-/**
- * 플레이어 추방 모달 shell — document.body portal, 투표현황창 프레임.
- *
- * 본문(목록·확인·결과)은 children으로 받는다. 인게임 설정(SettingKickPlayerModal)과
- * 대기방(GameMatchingPage)이 **같은** 프레임·닫기·배경을 쓰도록 분리했다 — 상태·소켓
- * 계약은 각 화면이 소유하고, 여기는 시각적 껍데기만 담당한다.
- */
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { INGAME_KICK_PLAYER_MODAL_ASSETS } from "../../../../constants/controls/ingameSetting/kickPlayer/ingameKickPlayerAssets.js"

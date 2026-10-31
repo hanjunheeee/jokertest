@@ -1,6 +1,5 @@
 import { isStorePricePending } from "../constants/storeItems.js"
 
-/** @param {import("../constants/storeItems.js").StoreItem[]} items */
 export function calculateBulkPurchaseTotal(items) {
   let total = 0
   let hasPendingPrice = false

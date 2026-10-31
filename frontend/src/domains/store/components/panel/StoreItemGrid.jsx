@@ -30,7 +30,6 @@ import {
   STORE_SLOT_TOP_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
-// 일괄구매 모드 토글 버튼입니다.
 function StoreBulkPurchaseButton({ active, onToggle }) {
   return (
     <button
@@ -50,7 +49,6 @@ function StoreBulkPurchaseButton({ active, onToggle }) {
   )
 }
 
-// 아이템 그리드에 들어가는 상품 한 칸입니다.
 function StoreItemSlot({
   item,
   icon,
@@ -79,10 +77,6 @@ function StoreItemSlot({
       >
         <div className={`${STORE_SLOT_CARD_CLASS} ${selected ? STORE_SLOT_CARD_SELECTED_CLASS : ""}`}>
           {owned ? (
-            // F-09 R-IMPL(AC-06 재검토): 재로그인 후 실제로 서버가 돌려준 소유권
-            // (useEconomyStore.entitlements)을 화면에서 확인할 수 있는 유일한 지점이다 —
-            // 이게 없으면 지갑/소유품 조회 결과가 실제로 화면에 반영됐는지 아무도 눈으로
-            // 확인할 수 없다.
             <span
               className="absolute left-1 top-1 z-10 rounded-sm bg-[#2a1810]/78 px-1.5 py-0.5 app-text-scaled [--app-text-size:clamp(0.6rem,0.82vw,0.68rem)] font-bold text-[#f5f0e6]"
               aria-hidden="true"
@@ -99,7 +93,6 @@ function StoreItemSlot({
 
           <div className={`${STORE_SLOT_PRICE_CLASS} ${selected ? STORE_SLOT_PRICE_SELECTED_CLASS : ""}`}>
             {item.kind ? (
-              // F-32c: 서버 상품표의 결제 통화·금액을 그대로 보여 준다(원화는 원 단위, 다이아는 다이아 아이콘).
               item.payCurrency === "DIAMOND" ? (
                 <>
                   <PublicAsset
@@ -189,7 +182,6 @@ function StoreItemSlot({
   )
 }
 
-/** 상점 상단의 판매 상품 그리드입니다. */
 export default function StoreItemGrid({
   items,
   selectedItemId,
@@ -213,10 +205,6 @@ export default function StoreItemGrid({
 
   const handleSelectItem = (item) => {
     if (selectionDisabled) return
-    // F-09 R-IMPL(AC-06 재검토): 이미 보유한 상품은 일괄구매 선택 대상에서 제외한다 —
-    // 서버(purchaseItems)도 기보유 상품을 ITEM_ALREADY_OWNED로 거부하지만, 화면에서부터
-    // 선택 자체를 막아야 "보유중" 표시와 실제 동작이 일치한다.
-    // 재화 상품(item.kind)은 일괄구매 대상이 아니다.
     if (bulkMode && !item.kind && !ownedItemIds.has(item.id)) {
       onBulkSelectionChange?.(item.id)
     }

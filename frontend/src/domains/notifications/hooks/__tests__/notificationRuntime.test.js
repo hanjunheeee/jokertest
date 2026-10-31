@@ -2,25 +2,6 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
 
-// ---------------------------------------------------------------------------
-// F-17 알림 **상태 저장소와 F-16 재생기** 계약 시험.
-//
-// 실제 production store(notifications.store.js)와 실제 재생기(createSfxPlayer)를 그대로
-// 돌린다 — 소스를 정규식으로 훑지 않는다. 네트워크(api 모듈)와 매체·타이머만 시험이
-// 소유해서 순서·실패를 결정적으로 재현한다.
-//
-// 범위를 정확히 적는다(R-IMPL #5): **이 파일은 useNotificationSocketEvents를 마운트하지
-// 않는다.** 아래 receiveLiveEnvelope는 훅이 아니라, 훅과 같은 순서로 store·재생기를 부르는
-// 시험용 호출자다 — 그래서 이 파일로는 접속 수명(connect/disconnect·늦은 ACK·소켓 교체·
-// cleanup)을 증명할 수 없다. 그것은 실제 훅을 React 루트에 마운트하는
-// ./notificationSocketEvents.test.js가 담당한다.
-//
-// 중요(A-07): "재생됐다"를 확인하는 시험들은 **시험 전용 fixture manifest**와 가짜 매체를
-// 쓴다. 이것은 배포 자산 검토도, 실제 청음도 아니다. 실제 배포 manifest(SFX_MANIFEST)의
-// system-notification은 여전히 미검토라 매체를 만들지 않는다는 것 자체를 아래에서 따로
-// 검사한다(sfxPlayer.test.js와 같은 구분).
-// ---------------------------------------------------------------------------
-
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   pretendToBeVisual: true,
   url: "http://127.0.0.1:5183",
@@ -62,10 +43,6 @@ const {
   checkSfxAssetAllowed,
 } = await import("../../../../shared/audio/sfxManifest.js")
 
-// ---------------------------------------------------------------------------
-// 시험 장비
-// ---------------------------------------------------------------------------
-
 const ACCOUNT_A = "11111111-1111-4111-8111-111111111111"
 const ACCOUNT_B = "22222222-2222-4222-8222-222222222222"
 
@@ -85,7 +62,6 @@ function notification(overrides = {}) {
   }
 }
 
-/** 서버가 시스템 알림에만 싣는 봉투 형태 그대로. */
 function systemEnvelope(row, accountId = ACCOUNT_A) {
   return { kind: "system-notification", eventId: `notification:${row.id}`, accountId, origin: "live" }
 }
@@ -100,12 +76,10 @@ function logout() {
   useNotificationsStore.getState().syncAccount()
 }
 
-/** 재생기 내부의 비동기 로드(→ 매체 생성 → play)가 끝날 때까지 흘려보낸다. */
 function flushAsync() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-/** 해소를 시험이 직접 쥐는 promise. */
 function deferred() {
   let resolve
   let reject
@@ -120,8 +94,6 @@ test.beforeEach(() => {
   __setNotificationsApiForTests(null)
   useNotificationsStore.getState().__resetForTests()
   useAuthStore.setState({ isLoggedIn: false, user: null, loggedOutIntentionally: false })
-  // 설정은 **매번 전부** 기본값으로 되돌린다 — 한 시험이 중간에 실패해 mute나 볼륨을
-  // 되돌리지 못하면 뒤따르는 시험이 "재생 0회"를 잘못된 이유로 통과하게 된다.
   useSettingsStore.setState({
     generalChecks: buildDefaultGeneralChecks(),
     volumes: buildDefaultSoundVolumes(),
@@ -133,15 +105,10 @@ test.afterEach(() => {
   __setNotificationsApiForTests(null)
 })
 
-// ---------------------------------------------------------------------------
-// 병합(A-04) — 오래된 GET이 최신 상태를 되돌리지 못한다
-// ---------------------------------------------------------------------------
-
 test("A-04: union 병합은 기존 행을 지우지 않고 read_at을 null로 되돌리지 않는다", () => {
   const live = notification({ id: "id-live", sourceKey: "friend-request:9:received" })
   const readLocally = notification({ id: "id-read", readAt: "2026-09-13T01:00:00.000Z" })
 
-  // 오래된 GET 결과: live 행을 모르고, 읽은 행도 아직 미확인으로 알고 있다.
   const staleSnapshot = [notification({ id: "id-read", readAt: null })]
 
   const merged = mergeNotifications([live, readLocally], staleSnapshot)
@@ -161,10 +128,6 @@ test("A-04: 양쪽에 read_at이 있으면 먼저 찍힌 시각을 유지한다(
   )
   assert.equal(merged[0].readAt, "2026-09-13T01:00:00.000Z")
 })
-
-// ---------------------------------------------------------------------------
-// 복원(AC-06 / A-04)
-// ---------------------------------------------------------------------------
 
 test("AC-06: 조회 실패는 빈 목록이 아니라 error 상태로 남고, 재시도가 실제로 다시 조회한다", async () => {
   loginAs(ACCOUNT_A)
@@ -208,7 +171,6 @@ test("A-04: 복원 전에 도착한 live는 버퍼에 모였다가 복원과 함
   loginAs(ACCOUNT_A)
   const early = notification({ id: "early", sourceKey: "friend-request:7:received", type: "friend-request" })
 
-  // 아직 loadSnapshot을 부르지 않았다(리스너만 먼저 달린 상태).
   const result = useNotificationsStore.getState().receiveLiveNotification(ACCOUNT_A, early)
   assert.deepEqual(result, { applied: false, reason: "buffered" })
 
@@ -224,10 +186,6 @@ test("A-04: 복원 전에 도착한 live는 버퍼에 모였다가 복원과 함
   )
 })
 
-// ---------------------------------------------------------------------------
-// 복원 경계(R-IMPL #5) — 복원이 진행 중인 동안 알림 사건은 소리 후보가 아니다
-// ---------------------------------------------------------------------------
-
 test("R-IMPL#5: 복원이 진행 중이면 아직 못 본 업적·친구 수신 사건도 소리 후보가 아니다", async () => {
   loginAs(ACCOUNT_A)
   const slow = deferred()
@@ -235,9 +193,6 @@ test("R-IMPL#5: 복원이 진행 중이면 아직 못 본 업적·친구 수신 
 
   const loading = useNotificationsStore.getState().loadSnapshot()
 
-  // 예전 구현은 snapshotLoaded=false면 아무 키나 최초 처리로 인정했다 — 그래서 복원이
-  // 끝나기 전에 도착한 기존 업적·친구 수신 사건이 소리를 냈고, 곧 도착한 snapshot이 같은
-  // 사건을 담고 있어도 이미 울린 뒤였다.
   assert.equal(
     useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:record-1-masquerade:granted"),
     false,
@@ -252,7 +207,6 @@ test("R-IMPL#5: 복원이 진행 중이면 아직 못 본 업적·친구 수신 
   slow.resolve([])
   await loading
 
-  // 복원이 끝난 뒤 **새** 사건은 정상적으로 최초 처리다(경계가 사건을 영구히 삼키지 않는다).
   assert.equal(
     useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:record-1-masquerade:granted"),
     true,
@@ -266,11 +220,8 @@ test("R-IMPL#5: 알림 행이 없는 기존 친구 수락·거절 사건은 복�
 
   const loading = useNotificationsStore.getState().loadSnapshot()
 
-  // 서버는 수락·거절로 알림 행을 만들지 않는다 — 복원이 그 사건을 알 길이 없으므로 여기서
-  // 삼키면 그대로 잃는다(F-16 회귀).
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), true)
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:declined"), true)
-  // 단, 같은 사건은 두 번째부터 막힌다.
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), false)
 
   slow.resolve([])
@@ -288,11 +239,8 @@ test("CODEX-2: 복원이 실패로 끝나도 알림 행 기반 사건은 소리 
   const result = await useNotificationsStore.getState().loadSnapshot()
   assert.equal(result.ok, false)
   assert.equal(useNotificationsStore.getState().snapshotLoaded, false)
-  // 실패한 조회는 복원을 **해소하지 못한다**. 예전 구현은 여기서 경계를 내려서, 서버 목록을
-  // 한 번도 받지 못한 채 과거 업적·친구 수신 사건이 다시 울렸다.
   assert.equal(useNotificationsStore.getState().restorePending, true)
 
-  // 못 받은 목록의 부재를 "새 사건"의 증거로 쓰지 않는다.
   assert.equal(
     useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:noble-win-10:granted"),
     false,
@@ -303,21 +251,16 @@ test("CODEX-2: 복원이 실패로 끝나도 알림 행 기반 사건은 소리 
     false,
     "조회 실패 후 과거 친구 수신 사건도 마찬가지다",
   )
-  // 같은 사건이 늦게 반복 배달돼도 계속 거절한다(표식을 소모하지 않았으므로 상태도 그대로).
   assert.equal(
     useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "achievement:noble-win-10:granted"),
     false,
   )
   assert.equal(useNotificationsStore.getState().soundSeen.size, 0)
 
-  // 알림 행이 없는 기존 F-16 제어 사건은 조회 실패와 무관하게 최초 소리를 잃지 않는다 —
-  // 복원이 그 사건을 알 길이 없으므로 여기서 삼키면 그대로 잃는다.
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), true)
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:declined"), true)
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, "friend-request:5:accepted"), false)
 
-  // 재시도가 성공하면 경계가 해소된다. snapshot이 담고 있던 과거 키는 계속 무음이고,
-  // 진짜 새 사건만 한 번 울린다.
   __setNotificationsApiForTests({
     fetchNotificationsApi: async () => [
       notification({
@@ -373,10 +316,6 @@ test("AC-03: 같은 봉투를 live 전후·조회 전후로 반복해도 행이 
   assert.equal(selectUnreadCount(useNotificationsStore.getState().items, buildDefaultGeneralChecks()), 1)
 })
 
-// ---------------------------------------------------------------------------
-// 읽음(AC-02)
-// ---------------------------------------------------------------------------
-
 test("AC-02: 읽음은 서버가 확정한 행으로만 반영되고 미확인 수가 줄어든다", async () => {
   loginAs(ACCOUNT_A)
   const a = notification({ id: "a", createdAt: "2026-09-13T00:00:02.000Z" })
@@ -423,11 +362,6 @@ test("AC-02: 읽음 실패는 성공으로 위장하지 않고 항목별 오류�
   )
 })
 
-// ---------------------------------------------------------------------------
-// 읽음 확정(AC-02 / R-IMPL #2) — 확정 증거가 없는 응답을 성공으로 돌려주지 않는다
-// ---------------------------------------------------------------------------
-
-/** 확정되지 않은 PATCH 응답들. 어느 것도 "읽음 성공"이 아니다. */
 const UNCONFIRMED_RESPONSES = [
   { label: "null 응답", make: () => null },
   { label: "undefined 응답", make: () => undefined },
@@ -510,25 +444,20 @@ test("A-04: GET 시작 → live 수신 → 읽음 성공 → 오래된 GET 완�
   __setNotificationsApiForTests({
     fetchNotificationsApi: async () => {
       fetchCount += 1
-      // 두 번째(느린) 조회만 시험이 직접 해소한다.
       if (fetchCount === 2) return late.promise
       return [persisted]
     },
     markNotificationReadApi: async () => ({ ...persisted, readAt: "2026-09-13T03:00:00.000Z" }),
   })
 
-  // 첫 복원으로 snapshotLoaded를 세운다.
   await useNotificationsStore.getState().loadSnapshot()
 
-  // 이제 느린 GET을 시작한다(아직 해소하지 않는다).
   const slow = useNotificationsStore.getState().loadSnapshot()
 
-  // 그 사이 live가 오고, 읽음이 성공한다.
   const liveRow = notification({ id: "live", sourceKey: "friend-request:3:received", type: "friend-request" })
   useNotificationsStore.getState().receiveLiveNotification(ACCOUNT_A, liveRow)
   await useNotificationsStore.getState().markRead("persisted")
 
-  // 이제서야 오래된 GET이 "live 행을 모르고 persisted도 미확인"인 결과로 끝난다.
   late.resolve([notification({ id: "persisted", readAt: null })])
   await slow
 
@@ -539,10 +468,6 @@ test("A-04: GET 시작 → live 수신 → 읽음 성공 → 오래된 GET 완�
     "오래된 GET이 읽음을 미확인으로 되돌리면 안 된다",
   )
 })
-
-// ---------------------------------------------------------------------------
-// 계정 경계(A-05)
-// ---------------------------------------------------------------------------
 
 test("A-05: 로그아웃하면 목록·미확인 수·소리 표식이 화면과 캐시에서 사라진다", async () => {
   loginAs(ACCOUNT_A)
@@ -565,7 +490,6 @@ test("A-05: 로그인 boolean이 유지되는 A→B 직접 전환에서도 A의 
   __setNotificationsApiForTests({ fetchNotificationsApi: async () => [notification({ id: "a-only" })] })
   await useNotificationsStore.getState().loadSnapshot()
 
-  // 로그아웃 없이 곧바로 B로 바뀐다(isLoggedIn은 계속 true).
   loginAs(ACCOUNT_B)
 
   assert.deepEqual(useNotificationsStore.getState().items, [])
@@ -608,10 +532,6 @@ test("A-05: 다른 계정 앞으로 온 live 사건은 목록에도 소리에도
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_B, SYSTEM_SOURCE_KEY), false)
 })
 
-// ---------------------------------------------------------------------------
-// 표시 설정(AC-04 / A-03)
-// ---------------------------------------------------------------------------
-
 test("AC-04: 설정을 꺼도 보관 목록은 그대로이고 표시·미확인 수에서만 빠진다", async () => {
   loginAs(ACCOUNT_A)
   const friend = notification({ id: "f", type: "friend-request", sourceKey: "friend-request:1:received" })
@@ -635,7 +555,6 @@ test("AC-04: 설정을 꺼도 보관 목록은 그대로이고 표시·미확인
   const visible = selectVisibleNotifications(items(), systemOff)
   assert.deepEqual(visible.map((item) => item.id), ["f"], "업적·시스템이 함께 숨는다")
 
-  // 다시 켜면 숨겼던 행이 read_at과 함께 그대로 돌아온다.
   assert.equal(selectVisibleNotifications(items(), allOn).length, 3)
 })
 
@@ -650,7 +569,6 @@ test("A-03: 숨긴 상태로 받은 사건도 소리 처리 이력은 소모되�
 
   const row = notification({ id: "hidden" })
   useNotificationsStore.getState().receiveLiveNotification(ACCOUNT_A, row)
-  // 설정 off여도 최초 처리에서 표식을 소모한다(재생기의 억제와 별개다).
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, row.sourceKey), true)
 
   useSettingsStore.setState({ generalChecks: buildDefaultGeneralChecks() })
@@ -661,13 +579,8 @@ test("A-03: 숨긴 상태로 받은 사건도 소리 처리 이력은 소모되�
   )
 })
 
-// ---------------------------------------------------------------------------
-// F-16 공통 재생기 연결(AC-07)
-// ---------------------------------------------------------------------------
-
 const GOOD_HASH = "sha256-f17-fixture-ok"
 
-/** 시험 전용 승인 fixture — 배포 자산 검토가 아니다. */
 function approvedSystemManifest() {
   return {
     "system-notification": {
@@ -686,7 +599,6 @@ function approvedSystemManifest() {
   }
 }
 
-/** 재생 시도를 기록하는 가짜 매체. 실제 소리를 내지 않는다. */
 function createRecordingRuntime({ manifest, loadAsset } = {}) {
   const playCalls = []
   const created = []
@@ -739,11 +651,6 @@ function createRecordingRuntime({ manifest, loadAsset } = {}) {
   return { player, playCalls, created, timers }
 }
 
-/**
- * store·재생기를 훅과 **같은 순서**(목록 반영 → 계정/origin 대조 → 원본 키 소모 →
- * dispatch)로 부르는 시험용 호출자다. **실제 훅이 아니다** — 접속 수명과 실제 dispatch
- * 배선은 notificationSocketEvents.test.js가 실제 훅을 마운트해서 확인한다.
- */
 function receiveLiveEnvelope(player, accountId, payload) {
   const store = useNotificationsStore.getState()
   const applied = store.receiveLiveNotification(accountId, payload.notification)
@@ -785,7 +692,6 @@ test("AC-07: 승인 fixture에서 새 시스템 알림의 최초 live만 재생�
   await flushAsync()
   assert.equal(playCalls.length, 1)
 
-  // 같은 봉투를 다시 전달해도(재전달·리렌더) 추가 재생이 없다.
   assert.equal(receiveLiveEnvelope(player, ACCOUNT_A, payload).reason, "already-handled")
   assert.equal(receiveLiveEnvelope(player, ACCOUNT_A, { ...payload }).reason, "already-handled")
   await flushAsync()
@@ -799,7 +705,6 @@ test("AC-07: 조회·복원·읽음·재접속은 재생 0회다", async (t) => 
   const { player, playCalls } = createRecordingRuntime()
   t.after(() => player.dispose())
 
-  // 복원(GET)으로 사건을 처음 본다 — 소리는 나지 않는다.
   __setNotificationsApiForTests({
     fetchNotificationsApi: async () => [row],
     markNotificationReadApi: async () => ({ ...row, readAt: "2026-09-13T03:00:00.000Z" }),
@@ -807,18 +712,15 @@ test("AC-07: 조회·복원·읽음·재접속은 재생 0회다", async (t) => 
   await useNotificationsStore.getState().loadSnapshot()
   assert.equal(playCalls.length, 0)
 
-  // 읽음도 소리를 만들지 않는다.
   await useNotificationsStore.getState().markRead(row.id)
   assert.equal(playCalls.length, 0)
 
-  // 재접속: 복원을 다시 하고 그 사이 같은 사건이 다시 전달돼도 무음이다.
   useNotificationsStore.getState().beginResync()
   const duringResync = receiveLiveEnvelope(player, ACCOUNT_A, { notification: row, sfxEvent: systemEnvelope(row) })
   assert.equal(duringResync.reason, "buffered", "재접속 중 사건은 복원으로 취급한다")
   await useNotificationsStore.getState().loadSnapshot()
   assert.equal(playCalls.length, 0)
 
-  // 복원이 끝난 뒤 같은 사건이 늦게 도착해도 무음이다.
   const lateLive = receiveLiveEnvelope(player, ACCOUNT_A, { notification: row, sfxEvent: systemEnvelope(row) })
   assert.equal(lateLive.reason, "already-handled")
   await flushAsync()
@@ -832,7 +734,6 @@ test("AC-07: 다른 계정 앞으로 온 봉투와 계정 전환 뒤의 늦은 �
   t.after(() => player.dispose())
 
   const row = notification({ id: "sys-other" })
-  // 서버가 B 계정이라고 표시한 봉투 — A 화면에서 처리되지 않는다.
   const wrong = receiveLiveEnvelope(player, ACCOUNT_A, {
     notification: row,
     sfxEvent: systemEnvelope(row, ACCOUNT_B),
@@ -840,7 +741,6 @@ test("AC-07: 다른 계정 앞으로 온 봉투와 계정 전환 뒤의 늦은 �
   assert.equal(wrong.reason, "account-mismatch")
   assert.equal(playCalls.length, 0)
 
-  // 계정이 B로 바뀐 뒤 A 앞으로 온 사건이 늦게 도착해도 마찬가지다.
   loginAs(ACCOUNT_B)
   await primeLoadedSnapshot([])
   const stale = receiveLiveEnvelope(player, ACCOUNT_A, { notification: row, sfxEvent: systemEnvelope(row) })
@@ -868,7 +768,6 @@ test("AC-07: 알림 off와 mute는 재생 0회이고, 설정을 다시 켜도 �
   assert.equal(offResult.result.reason, SFX_SUPPRESSED_REASON.NOTIFICATION_DISABLED)
   assert.equal(playCalls.length, 0)
 
-  // 다시 켜도 같은 사건은 새 사건이 아니다.
   useSettingsStore.setState({ generalChecks: buildDefaultGeneralChecks() })
   player.refreshMix()
   assert.equal(
@@ -877,11 +776,8 @@ test("AC-07: 알림 off와 mute는 재생 0회이고, 설정을 다시 켜도 �
   )
   assert.equal(playCalls.length, 0)
 
-  // mute는 목록·읽음 수에는 영향을 주지 않는다(대조).
   useSettingsStore.setState({ sfxMuted: true })
   player.refreshMix()
-  // **다른 원본 사건**이어야 한다 — 같은 source_key를 쓰면 위에서 이미 소모한 표식에 걸려
-  // mute가 아니라 중복으로 억제되고, 이 대조 시험이 의미를 잃는다.
   const mutedRow = notification({ id: "sys-muted", sourceKey: "system:muted-check:v1" })
   const mutedResult = receiveLiveEnvelope(player, ACCOUNT_A, {
     notification: mutedRow,
@@ -924,10 +820,6 @@ test("A-07(2026-09-22 개정): 배포 manifest의 system-notification 항목은 
   assert.equal(checkSfxAssetAllowed(entry).allowed, true)
 })
 
-// ---------------------------------------------------------------------------
-// SFX 실패·영구 대기가 업무 경로를 막지 않는다(A-06)
-// ---------------------------------------------------------------------------
-
 test("A-06: SFX 로드가 영원히 정착하지 않아도 읽음 API와 목록 갱신은 독립적으로 끝난다", async (t) => {
   loginAs(ACCOUNT_A)
   const row = notification({ id: "pending-sfx" })
@@ -938,7 +830,6 @@ test("A-06: SFX 로드가 영원히 정착하지 않아도 읽음 API와 목록 
   })
   await useNotificationsStore.getState().loadSnapshot()
 
-  // 영원히 정착하지 않는 로더.
   const { player, playCalls } = createRecordingRuntime({ loadAsset: () => new Promise(() => {}) })
   t.after(() => player.dispose())
 
@@ -946,7 +837,6 @@ test("A-06: SFX 로드가 영원히 정착하지 않아도 읽음 API와 목록 
   assert.equal(result.result.status, "accepted")
   assert.equal(playCalls.length, 0)
 
-  // completion을 기다리지 않고 읽음이 정상적으로 완료된다.
   const read = await useNotificationsStore.getState().markRead(row.id)
   assert.equal(read.ok, true)
   assert.equal(selectUnreadCount(useNotificationsStore.getState().items, buildDefaultGeneralChecks()), 0)
@@ -972,7 +862,6 @@ test("A-06: 로드 reject·해시 불일치·play 실패가 나도 목록 반영
     const result = receiveLiveEnvelope(player, ACCOUNT_A, { notification: row, sfxEvent: systemEnvelope(row) })
     assert.equal(result.result.status, "accepted", failure.label)
 
-    // 소리 결과와 무관하게 목록·읽음은 끝난다.
     assert.ok(useNotificationsStore.getState().items.some((item) => item.id === row.id), failure.label)
     const read = await useNotificationsStore.getState().markRead(row.id)
     assert.equal(read.ok, true, failure.label)
@@ -992,8 +881,6 @@ test("A-06: 재생기 자체가 던져도 알림 목록 반영은 계속된다",
   }
 
   const row = notification({ id: "throwing" })
-  // 실제 훅은 dispatchSfxEvent(절대 던지지 않는 래퍼)를 쓰지만, 여기서는 목록 반영이
-  // dispatch **이전에** 끝난다는 순서 자체를 확인한다.
   assert.throws(() => receiveLiveEnvelope(throwingPlayer, ACCOUNT_A, {
     notification: row,
     sfxEvent: systemEnvelope(row),
@@ -1004,10 +891,6 @@ test("A-06: 재생기 자체가 던져도 알림 목록 반영은 계속된다",
   )
 })
 
-// ---------------------------------------------------------------------------
-// 친구·업적 소유권(AC-07) — 한 사건에 소리가 두 번 나지 않는다
-// ---------------------------------------------------------------------------
-
 test("AC-07: 친구 요청의 목록 반영이 친구 사건의 최초 소리를 먼저 소모하지 않는다", async () => {
   loginAs(ACCOUNT_A)
   await primeLoadedSnapshot([])
@@ -1015,17 +898,14 @@ test("AC-07: 친구 요청의 목록 반영이 친구 사건의 최초 소리를
   const sourceKey = "friend-request:42:received"
   const row = notification({ id: "friend-row", type: "friend-request", sourceKey })
 
-  // 서버는 친구 알림에 sfxEvent를 싣지 않는다 — 목록만 바뀐다.
   const applied = useNotificationsStore.getState().receiveLiveNotification(ACCOUNT_A, row)
   assert.equal(applied.applied, true)
 
-  // 뒤이어 도착한 friend_request_received(소리 소유자)는 여전히 최초 처리여야 한다.
   assert.equal(
     useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, sourceKey),
     true,
     "목록 upsert가 친구 사건의 최초 소리를 먹으면 안 된다",
   )
-  // 그리고 두 번째부터는 막힌다.
   assert.equal(useNotificationsStore.getState().consumeSoundEvent(ACCOUNT_A, sourceKey), false)
 })
 
@@ -1041,10 +921,6 @@ test("AC-07: 복원으로 본 업적 지급은 재접속 뒤 achievement_granted
   )
 })
 
-// ---------------------------------------------------------------------------
-// 준비 신호(AC-07)
-// ---------------------------------------------------------------------------
-
 test("AC-07: ready ACK 실패는 재시도 상태로만 남고 조회·읽음을 잠그지 않는다", async () => {
   loginAs(ACCOUNT_A)
   const row = notification({ id: "ready-row" })
@@ -1056,7 +932,6 @@ test("AC-07: ready ACK 실패는 재시도 상태로만 남고 조회·읽음을
 
   useNotificationsStore.getState().setReadyState("retry")
 
-  // 준비 신호가 실패한 상태에서도 조회·읽음은 정상이다.
   const reloaded = await useNotificationsStore.getState().loadSnapshot()
   assert.equal(reloaded.ok, true)
   const read = await useNotificationsStore.getState().markRead(row.id)

@@ -1,25 +1,5 @@
 'use strict';
 
-// F-32a 다이아 충전 주문·승인·지급. 설계는 docs/design/F-32-diamond-topup-gold-purchase.md §2-3,
-// 외부 작성자·복구 계약은 docs/requirements/f32a-currency-products-contract.md에 있다.
-//
-// 상태: CREATED → CONFIRMING → PENDING_GRANT → GRANTED. 제공자가 확인한 실패는 FAILED /
-// CANCELED / EXPIRED(미지급, 종단). 승인 결과를 알 수 없으면(전송 오류·timeout·5xx·입금
-// 대기) CONFIRMING으로 남고 같은 주문의 재확인·재조회가 저장된 결제키로 제공자 상태를 다시
-// 확인해 이어 간다.
-//
-// 단일 지급의 근거는 셋이다 — 주문 order_id 기본키, 결제키 payment_key 고유 인덱스,
-// 원장 (user_id, reference_event_id='topup:{orderId}') 고유 인덱스. 제공자의 멱등키 유효기간이
-// 지나도 이 셋이 지급을 한 번으로 묶는다.
-//
-// DB 잠금은 외부 승인 호출 동안 잡지 않는다: ① 짧은 트랜잭션(주문 행 잠금)에서 소유권·금액·
-// 결제키를 대조하고 CONFIRMING + 임대(lease_token/lease_expires_at)를 저장·커밋한 뒤 ② 잠금
-// 밖에서 제공자를 호출하고 ③ 결과를 임대 토큰 조건으로 저장(늦은 이전 처리자가 새 결과를 덮지
-// 못한다)하고 ④ 별도 트랜잭션에서 주문 잠금 → 원장 함수 → GRANTED를 한 번에 커밋한다.
-//
-// 어댑터(backend/payments/tossAdapter.js)는 호출 시점에 모듈 객체에서 읽는다 — 시험이
-// 가짜 어댑터를 끼울 수 있게 하되 운영 환경변수로 구현을 고르는 경로는 없다.
-
 const crypto = require('crypto');
 const { createError } = require('../utils/appError');
 const currencyProducts = require('./currencyProducts.service');
@@ -58,7 +38,6 @@ const notOwner = () => createError('다른 계정의 주문에는 접근할 수 
 const processingError = () => createError('결제 확인이 진행 중입니다. 잠시 후 다시 조회하세요.', 503, 'PAYMENT_PROCESSING');
 const paymentFailed = () => createError('결제가 완료되지 않았습니다.', 402, 'PAYMENT_FAILED');
 
-/** 원본 오류 대신 안전한 코드만 로그에 남긴다(메시지·SQL·스택은 남기지 않는다). */
 const logDeferred = (event, orderId, error) => {
     const code = typeof error?.code === 'string' && SAFE_LOG_CODE.test(error.code) ? error.code : 'UNKNOWN';
     console.warn(`[topup] ${event} order=${orderId} code=${code}`);
@@ -69,7 +48,6 @@ const expectString = (value, pattern, makeError) => {
     return value;
 };
 
-/** 주문의 서버 저장 값에서 공개 가능한 조회 결과를 만든다(결제키·임대는 포함하지 않는다). */
 const toOrderView = (order, balanceDiamond = null) => ({
     orderId: order.order_id,
     status: order.status,
@@ -91,7 +69,6 @@ const loadGrantedBalance = async (db, order, transaction) => {
     return entry ? entry.balance_after : null;
 };
 
-/** 실패한 처리자가 잡고 있던 임대를 돌려준다(best-effort — 실패해도 임대는 만료된다). */
 const releaseLease = async (db, orderId, leaseToken) => {
     try {
         await orderModel(db).update(
@@ -103,12 +80,6 @@ const releaseLease = async (db, orderId, leaseToken) => {
     }
 };
 
-// ── 주문 생성 ───────────────────────────────────────────────────────────────
-
-/**
- * DB 상품의 유효성·판매 상태·버전을 확인하고 주문 스냅샷을 CREATED로 저장한다. 클라이언트가
- * 보낸 금액·지급량은 받지 않는다. 결제 설정이 없으면 주문을 만들기 전에 CONFIG_MISSING이다.
- */
 const createTopupOrder = async ({ userId, productId, version }, deps = {}) => {
     const db = dbOf(deps);
     const adapter = adapterOf(deps);
@@ -137,14 +108,6 @@ const createTopupOrder = async ({ userId, productId, version }, deps = {}) => {
     return { orderId, amount: product.payAmount, orderName: product.displayName, clientKey };
 };
 
-// ── 짧은 트랜잭션: 소유권·금액·결제키 대조와 임대 확보 ────────────────────────────────
-
-/**
- * 주문 행을 잠그고 결정을 돌려준다. paymentKey·amount가 있으면(confirm) 소유권·금액·결제키를
- * 외부 호출 전에 대조하고, 없으면(조회 복구) 저장된 결제키를 쓴다.
- * 결정: GRANTED | TERMINAL | PENDING_GRANT | BUSY(다른 처리자의 유효 임대) | IDLE(결제키 없는
- * CREATED — 조회는 부작용이 없다) | CLAIMED(임대를 얻었으니 제공자 확인을 이어 간다).
- */
 const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = null, amount = null }) => {
     const now = nowOf(deps);
     return db.sequelize.transaction(async (t) => {
@@ -173,7 +136,6 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
             && new Date(order.lease_expires_at) > now;
         if (leaseValid) return { kind: 'BUSY', order };
 
-        // 여기서부터는 제공자를 호출해야 한다 — 설정이 없으면 주문 상태를 바꾸기 전에 거부한다.
         adapter.assertConfigured();
 
         if (!order.payment_key) {
@@ -185,8 +147,6 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
             }
         }
 
-        // 이전 처리자가 승인을 시도했을 수 있으면(CONFIRMING) 새로 승인하지 않고 먼저 제공자의
-        // 상태를 조회한다.
         const mode = order.status === ORDER_STATUS.CONFIRMING ? 'recover' : 'first';
         const leaseToken = crypto.randomUUID();
         try {
@@ -206,12 +166,6 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
     });
 };
 
-// ── 잠금 밖: 제공자 확인 ────────────────────────────────────────────────────────────
-
-/**
- * 요청당 외부 호출은 최대 세 번이다. first: 승인 1회(+이미 처리됨이면 조회 1회). recover:
- * 조회 1회, 아직 승인 전(IN_PROGRESS)이면 같은 멱등키로 승인 1회.
- */
 const askProvider = async (adapter, order, mode) => {
     const request = { paymentKey: order.payment_key, orderId: order.order_id, amount: order.pay_amount };
     let result;
@@ -229,7 +183,6 @@ const askProvider = async (adapter, order, mode) => {
     return result;
 };
 
-/** DONE 응답이 주문 스냅샷(식별자·금액·통화)과 일치하는지 대조한다. */
 const paymentMatchesOrder = (payment, order) => Boolean(payment)
     && payment.orderId === order.order_id
     && payment.paymentKey === order.payment_key
@@ -244,10 +197,6 @@ const FAILURE_STATUS_BY_OUTCOME = Object.freeze({
     EXPIRED: ORDER_STATUS.EXPIRED,
 });
 
-/**
- * 제공자 결과를 임대 토큰 조건으로 저장한다. 임대를 잃었으면(다른 처리자가 이어받음) 아무것도
- * 덮어쓰지 않고 { lost: true }다.
- */
 const persistProviderResult = async (db, deps, { order, leaseToken, nextStatus, failureCode = null }) => {
     const now = nowOf(deps);
     return db.sequelize.transaction(async (t) => {
@@ -267,8 +216,6 @@ const persistProviderResult = async (db, deps, { order, leaseToken, nextStatus, 
         return { lost: false };
     });
 };
-
-// ── 지급: 주문 잠금 → 원장 함수 → GRANTED 를 한 트랜잭션으로 ─────────────────────────────
 
 const grantPendingOrder = async (db, deps, orderId) => {
     const now = nowOf(deps);
@@ -296,7 +243,6 @@ const grantPendingOrder = async (db, deps, orderId) => {
     });
 };
 
-/** 지급을 시도하되 실패하면 PENDING_GRANT를 유지한다(같은 confirm·조회가 이어서 끝낸다). */
 const tryGrant = async (db, deps, orderId) => {
     try {
         return await grantPendingOrder(db, deps, orderId);
@@ -306,10 +252,6 @@ const tryGrant = async (db, deps, orderId) => {
     }
 };
 
-/**
- * CLAIMED 결정 뒤의 제공자 확인 → 결과 저장 → 지급. 돌려주는 status는 GRANTED |
- * PENDING_GRANT | CONFIRMING(결과 불명·입금 대기·임대 상실) | FAILED/CANCELED/EXPIRED(종단).
- */
 const processClaimed = async (db, adapter, deps, claimed) => {
     const { order, leaseToken, mode } = claimed;
 
@@ -334,7 +276,6 @@ const processClaimed = async (db, adapter, deps, claimed) => {
         nextStatus = FAILURE_STATUS_BY_OUTCOME[result.outcome];
         failureCode = typeof result.code === 'string' && SAFE_LOG_CODE.test(result.code) ? result.code : 'PAYMENT_FAILED';
     } else {
-        // PENDING·UNKNOWN: 결과를 알 수 없다 — 실패로 단정하지 않고 다음 확인이 이어 가도록 임대만 돌려준다.
         await releaseLease(db, order.order_id, leaseToken);
         return { status: ORDER_STATUS.CONFIRMING };
     }
@@ -343,7 +284,6 @@ const processClaimed = async (db, adapter, deps, claimed) => {
     try {
         persisted = await persistProviderResult(db, deps, { order, leaseToken, nextStatus, failureCode });
     } catch (error) {
-        // 승인 사실을 저장하지 못했다 — CONFIRMING으로 남고 다음 조회가 제공자 상태로 복구한다.
         await releaseLease(db, order.order_id, leaseToken);
         throw error;
     }
@@ -353,13 +293,6 @@ const processClaimed = async (db, adapter, deps, claimed) => {
     return tryGrant(db, deps, order.order_id);
 };
 
-// ── 공개 API ───────────────────────────────────────────────────────────────────────
-
-/**
- * 결제 승인 확인. 소유권·금액·결제키를 외부 호출 전에 대조한다. 결과: { status: 'GRANTED',
- * balanceDiamond } 또는 { status: 'PENDING_GRANT' }. 결과 불명·다른 처리자 진행 중은 재시도
- * 가능한 PAYMENT_PROCESSING(503), 확인된 실패·취소는 PAYMENT_FAILED(402).
- */
 const confirmTopupOrder = async ({ userId, orderId, paymentKey, amount }, deps = {}) => {
     const db = dbOf(deps);
     const adapter = adapterOf(deps);
@@ -396,11 +329,6 @@ const confirmTopupOrder = async ({ userId, orderId, paymentKey, amount }, deps =
     throw processingError();
 };
 
-/**
- * 주문 조회. 단순 조회(CREATED)에는 승인·지급 부작용이 없다. PENDING_GRANT는 지급을 이어서
- * 끝내고, 임대가 만료된 CONFIRMING은 저장된 결제키로 제공자 상태를 다시 확인해 복구한다.
- * 소유가 아닌 주문은 NOT_OWNER, 없으면 ORDER_NOT_FOUND다.
- */
 const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
     const db = dbOf(deps);
     const adapter = adapterOf(deps);
@@ -418,7 +346,6 @@ const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
             if (decision.kind === 'CLAIMED') await processClaimed(db, adapter, deps, decision);
             else if (decision.kind === 'PENDING_GRANT') await tryGrant(db, deps, orderId);
         } catch (error) {
-            // 결제 설정이 없으면 복구를 미루고 저장된 상태를 그대로 보여 준다. 그 밖의 오류(DB 등)는 그대로 던진다.
             if (error?.code !== 'CONFIG_MISSING') throw error;
         }
     }
@@ -432,11 +359,6 @@ const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
 const OPEN_ORDER_STATUSES = [ORDER_STATUS.CONFIRMING, ORDER_STATUS.PENDING_GRANT];
 const OPEN_ORDER_LIMIT = 5;
 
-/**
- * F-32 §2-6a 진행 중 주문 발견. 인증 계정의 CONFIRMING·PENDING_GRANT 주문만 최신순 최대 5건을
- * 공개 필드 다섯 개로 돌려준다. 읽기 전용이다 — 상태 변경·지급·결제 어댑터 호출은 하지 않고,
- * 지급을 이어 가는 것은 기존 getTopupOrder(주문 단건 조회)뿐이다. DB 오류는 그대로 던진다.
- */
 const listOpenTopupOrders = async ({ userId }, deps = {}) => {
     if (typeof userId !== 'string' || userId.length === 0) {
         throw createError('로그인이 필요합니다.', 401);

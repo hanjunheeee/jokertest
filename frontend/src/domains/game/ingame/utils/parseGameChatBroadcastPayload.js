@@ -1,15 +1,5 @@
 import { sanitizeJokerChatText } from "./sanitizeJokerChatText.js"
 
-/**
- * 서버가 보낸 day_chat_message_received / dead_chat_message_received payload를 network 모델로
- * 검증·변환한다. 반환 객체는 정확히 {gameId, id, senderUuid, nickname, text, sentAt, dayIndex}
- * 7개 키만 갖는다 — 원본 payload에 role/team/alive/allies 같은 추가 키가 섞여 있어도 반환값에는
- * 절대 포함되지 않는다(스프레드를 쓰지 않고 필드를 하나씩 명시적으로 골라 새 객체를 만든다).
- *
- * text는 서버와 동일한 정규화 규칙(sanitizeJokerChatText — 세 채널 공용)을 통과해야 하고,
- * 정규화 결과가 원문과 정확히 같아야 한다. 서버가 이미 정규화한 텍스트만 보내므로, 다르다면
- * 신뢰할 수 없는 경로에서 온 payload라는 뜻이라 통째로 폐기한다.
- */
 export function parseGameChatBroadcastPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null
 

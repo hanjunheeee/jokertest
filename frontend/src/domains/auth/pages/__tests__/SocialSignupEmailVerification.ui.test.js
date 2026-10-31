@@ -4,11 +4,6 @@ import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
 
-// F-31(AC-02/AC-03/AC-04): 실제 LoginPage.jsx·SocialSignupForm.jsx·useSocialSignup.js·
-// useSignupEmailVerification.js·SignupEmailVerification.jsx·auth.api.js·client.js·response.js·
-// auth.store.js·unauthorized.js를 jsdom에 마운트해 소셜 가입 보완의 자체 메일 인증 흐름을
-// 검증한다. SignupEmailVerification.ui.test.js와 같은 패턴 — HTTP 경계는 env.js(API_BASE_URL)와
-// 전역 fetch에서만 갈아끼우고 그 외에는 실제 코드가 돈다.
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/login",
   pretendToBeVisual: true,
@@ -40,8 +35,6 @@ dom.window.alert = (message) => alertMessages.push(message)
 globalThis.alert = dom.window.alert
 
 register(new URL("../../../game/ingame/__tests__/testSupport/jsxNodeLoaderHooks.mjs", import.meta.url))
-
-// ── 번호·증명 비영속성 계측: 저장소·쿠키·콘솔 기록을 감시한다 ─────────────────────
 
 const storageWrites = []
 const originalSetItem = dom.window.Storage.prototype.setItem
@@ -115,7 +108,6 @@ const { useAuthStore } = await import("../../store/auth.store.js")
 const { setUnauthorizedHandler } = await import("../../../../shared/api/response.js")
 const { handleAuthUnauthorized } = await import("../../api/unauthorized.js")
 
-// main.jsx와 같은 실제 배선 — SIGNUP_PROOF_* 401이 로그아웃 처리를 타지 않는지까지 본다.
 setUnauthorizedHandler(handleAuthUnauthorized)
 
 test.beforeEach(() => {
@@ -171,8 +163,6 @@ function fillProfile(view) {
   fireEvent.change(q(view, 'input[name="nickname"]'), { target: { value: "소셜닉" } })
   fireEvent.change(q(view, 'input[name="birthDate"]'), { target: { value: "2000-01-01" } })
 }
-
-// ── 조회 지연·실패·계약 밖 응답 ─────────────────────────────────────────────────
 
 test("AC-02: 서버 intent 조회가 끝나기 전에는 제출이 막히고, 조회 body에는 intentToken만 실린다", async () => {
   let resolveIntent
@@ -249,8 +239,6 @@ test("AC-02: 조회 응답을 기다리는 중 취소하면 늦은 응답이 폼
   assert.equal(q(view, 'input[name="nickname"]'), null, "늦은 응답이 가입 보완 화면을 되살리면 안 된다")
 })
 
-// ── AC-01: 제공자 검증 intent는 메일 인증 없이 완료된다 ─────────────────────────────
-
 test("AC-01: 제공자 검증 intent는 메일 API 없이 완료되고 email·signupProof·권한 주장을 보내지 않는다", async () => {
   fetchHandler = makeRouter({
     "POST /auth/social/signup/intent": () => jsonResponse(200, { success: true, data: { emailVerificationRequired: false } }),
@@ -267,7 +255,6 @@ test("AC-01: 제공자 검증 intent는 메일 API 없이 완료되고 email·si
   assert.ok(view.container.textContent.includes("LOBBY_STUB"), "성공하면 로비로 이동해야 한다")
 })
 
-// 설계도 계약: 예상 밖 완료 응답은 성공도 특정 실패도 아니다 — 통신 실패로 안내한다.
 for (const [label, data] of [["user 없음", {}], ["user 빈 객체", { user: {} }], ["user 빈 배열", { user: [] }]]) {
   test(`AC-02: 완료 200 응답이 ${label}이면 가입 완료로 처리하지 않고 통신 실패로 안내한다`, async () => {
     fetchHandler = makeRouter({
@@ -284,11 +271,7 @@ for (const [label, data] of [["user 없음", {}], ["user 빈 객체", { user: {}
   })
 }
 
-// ── AC-02/AC-04: 자체 인증 전체 사건 ───────────────────────────────────────────────
-
 test("AC-02/AC-04: 미인증 제출 차단→발송→60초 대기→오답 남은 횟수→정답→주소 변경 초기화→재인증→완료", async (t) => {
-  // 가짜 시계를 현재 시각에서 시작한다 — 기본값(1970-01-01)이면 생년월일 2000-01-01이
-  // "미래 날짜"로 판정되어 완료 제출이 검증 단계에서 막힌다.
   t.mock.timers.enable({ apis: ["setInterval", "Date"], now: Date.now() })
   const SECRET_CODE = "864209"
   const FIRST_PROOF = "social-first-proof-1a2b"
@@ -305,12 +288,10 @@ test("AC-02/AC-04: 미인증 제출 차단→발송→60초 대기→오답 남�
   fillProfile(view)
   fireEvent.change(q(view, 'input[name="email"]'), { target: { value: EMAIL } })
 
-  // 미인증 제출 차단
   assert.equal(submitButton(view).disabled, true)
   await act(async () => { fireEvent.click(submitButton(view)) })
   assert.equal(callsTo("/auth/social/signup/complete").length, 0)
 
-  // 발송 → 60초 대기
   await act(async () => { fireEvent.click(sendButton(view)) })
   assert.deepEqual(JSON.parse(callsTo("/auth/signup/email-code")[0].options.body), { email: EMAIL })
   assert.equal(sendButton(view).textContent, "재발송 (60초)")
@@ -318,31 +299,26 @@ test("AC-02/AC-04: 미인증 제출 차단→발송→60초 대기→오답 남�
   act(() => { t.mock.timers.tick(60000) })
   assert.equal(sendButton(view).textContent, "재발송")
 
-  // 오답 → 남은 횟수
   fireEvent.change(codeInput(view), { target: { value: "000000" } })
   await act(async () => { fireEvent.click(verifyButton(view)) })
   assert.match(notice(view), /남은 시도 4회/)
   assert.equal(submitButton(view).disabled, true)
 
-  // 정답
   verifyResponse = () => jsonResponse(200, { ok: true, signupProof: FIRST_PROOF })
   fireEvent.change(codeInput(view), { target: { value: SECRET_CODE } })
   await act(async () => { fireEvent.click(verifyButton(view)) })
   assert.equal(submitButton(view).disabled, false)
 
-  // 주소 변경 → 초기화
   fireEvent.change(q(view, 'input[name="email"]'), { target: { value: SECOND_EMAIL } })
   assert.equal(submitButton(view).disabled, true)
   assert.equal(codeInput(view), null, "주소가 바뀌면 번호 입력 단계로 돌아가 인증을 다시 받아야 한다")
 
-  // 재인증
   verifyResponse = () => jsonResponse(200, { ok: true, signupProof: SECOND_PROOF })
   await act(async () => { fireEvent.click(sendButton(view)) })
   fireEvent.change(codeInput(view), { target: { value: SECRET_CODE } })
   await act(async () => { fireEvent.click(verifyButton(view)) })
   assert.equal(submitButton(view).disabled, false)
 
-  // 완료
   await act(async () => { fireEvent.click(submitButton(view)) })
   const completes = callsTo("/auth/social/signup/complete")
   assert.equal(completes.length, 1)

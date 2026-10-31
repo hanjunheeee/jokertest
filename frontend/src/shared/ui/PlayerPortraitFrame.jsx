@@ -1,11 +1,6 @@
 import { getPlayerPortraitVariant } from "../constants/playerPortraitLayout.js"
 import PublicAsset from "./PublicAsset.jsx"
 
-/**
- * Player Portrait Mask — 배경 + 초상 클리핑 영역.
- *
- * 겉 장식 프레임 PNG는 부모(InGamePlayerCard 등)에서 별도로 올립니다.
- */
 export default function PlayerPortraitFrame({
   variant = "ingameCard", // playerPortraitLayout.js의 PLAYER_PORTRAIT_VARIANTS 키 — 배경/초상 inset·클리핑 방식을 결정
   src,

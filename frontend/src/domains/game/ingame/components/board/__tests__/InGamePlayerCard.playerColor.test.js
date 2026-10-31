@@ -6,14 +6,6 @@ const cardUrl = new URL("../InGamePlayerCard.jsx", import.meta.url)
 const boardUrl = new URL("../InGamePlayerBoard.jsx", import.meta.url)
 const nameplateUrl = new URL("../InGamePlayerNameplate.jsx", import.meta.url)
 
-/**
- * 이 스위트는 "카드 테두리·명패 색은 세션 테마(서버 colorIndex)에서만 온다"는 배선을 지킨다.
- * InGamePlayerCard.jsx는 .jsx이고 @/shared/ui/PublicAsset 같은 vite alias를 타고 들어가
- * 이 저장소의 node:test 실행에서는 렌더는커녕 resolve조차 되지 않으므로(다른
- * InGameActionPanel.*.test.js와 동일한 제약), 여기서도 raw source 검증으로 실제 production
- * 배선을 증명한다.
- */
-
 test("보드는 세션 플레이어의 theme을 카드에 그대로 넘긴다", async () => {
   const source = await readFile(boardUrl, "utf8")
   assert.match(source, /theme=\{player\.theme\}/)

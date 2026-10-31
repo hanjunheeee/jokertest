@@ -1,4 +1,3 @@
-// 파일 역할: InGameChatSendButton.jsx - 화면을 구성하는 컴포넌트입니다.
 import { INGAME_CHAT_ASSETS } from "../../constants/chat/ingameChatAssets.js"
 import {
   getInGameChatSendButtonClass,
@@ -7,7 +6,6 @@ import {
 import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-/** 인게임 채팅 보내기 버튼 — 입력창과 분리 배치 */
 export default function InGameChatSendButton({
   onSend,
   className = "",
