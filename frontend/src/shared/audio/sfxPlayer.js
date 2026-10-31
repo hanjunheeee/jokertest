@@ -1,20 +1,6 @@
-/**
- * F-16 공통 효과음 재생기.
- *
- * 이 모듈은 DOM·store·소켓을 직접 알지 않는다 — 필요한 것(설정 접근자, 범위 접근자,
- * 자산 로더, 매체 factory, 시계·타이머)을 전부 주입받는다. 그래서 계약 시험이 실제
- * 재생기 코드를 그대로 돌릴 수 있다(핸들러 복제 없이).
- *
- * 계약 요약
- *  - dispatch(event) → { status, reason, completion } 을 **동기**로 돌려준다.
- *    status=accepted|suppressed. accepted는 "청음 성공"이 아니라 "재생 시도를 시작했다"는
- *    뜻이다. completion은 played|failed|timed-out|stopped 중 하나로 유한 시간 안에 정착한다.
- *    호출자는 completion을 기다리지 않는다(AC-06).
- *  - 입력 오류·복원(origin=restore)·계정/게임 불일치·알림 off·mute·미검토 자산·중복은
- *    **매체를 만들기 전에** 거부한다.
- *  - getMix()/subscribeMix()/claimAudio()는 F-27 영상 내장음이 같은 볼륨·mute·중복 키를
- *    쓰게 하기 위한 공통 API다(AC-03/AC-05).
- */
+// sfxPlayer.js: 소리 재생에 사용하는 실행·설정·공통 코드를 정의한다.
+// 모듈 사용처: frontend/src/shared/hooks/useSfxRuntime.js
+
 import {
   SFX_LOAD_TIMEOUT_MS,
   SFX_PLAYBACK_WATCHDOG_MS,
@@ -26,7 +12,7 @@ import {
   verifyLoadedSfxAsset,
 } from "./sfxManifest.js"
 
-/** completion이 가질 수 있는 값. 전부 "정착"이며 그 뒤로 다시 바뀌지 않는다. */
+// SFX_COMPLETION: 호출한 freeze에서 받은 처리 결과
 export const SFX_COMPLETION = Object.freeze({
   PLAYED: "played",
   FAILED: "failed",
@@ -34,14 +20,18 @@ export const SFX_COMPLETION = Object.freeze({
   STOPPED: "stopped",
 })
 
+// SETTLED_STOPPED: 호출한 resolve에서 받은 처리 결과
 const SETTLED_STOPPED = Promise.resolve(SFX_COMPLETION.STOPPED)
 
-/** 억제 응답. completion은 "이미 정착한 stopped"다(계획 메모의 공통 신규 API 절). */
+// 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+// reason: 이 결과가 나온 이유
 function suppressed(reason) {
   return { status: "suppressed", reason, completion: SETTLED_STOPPED }
 }
 
-/** 어떤 주입 콜백이 던져도 재생기 바깥으로 나가지 않게 감싼다(AC-06 격리). */
+// 효과음 관련 작업에서 오류가 나면 지정한 기본값을 대신 돌려줘요.
+// fn: 함수 값
+// fallback: 대체 값
 function guard(fn, fallback) {
   try {
     return fn()
@@ -50,28 +40,35 @@ function guard(fn, fallback) {
   }
 }
 
+// 전달받은 백분율을 검사·변환해 이후 코드에서 일관된 형태로 사용하게 한다.
+// value: 현재 다루는 값
 function clampPercent(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return 0
   return Math.min(100, Math.max(0, value))
 }
 
-/**
- * dispatch/claimAudio 입력 형태 검증. 신뢰하지 않는 값이 그대로 키·로그로 흘러가지 않게
- * 문자열 타입과 비어 있지 않음을 여기서 확정한다.
- */
+// 이벤트를 검사하고, 조건에 맞지 않는 요청이나 상태를 다음 처리 전에 걸러 낸다.
+// event: 발생한 이벤트
 function validateEvent(event) {
   if (event === null || typeof event !== "object" || Array.isArray(event)) return null
+  // kind: 현재 항목의 종류
+  // eventId: 발생한 이벤트에서 꺼낸 이벤트 ID 항목
   const { kind, eventId } = event
   if (typeof kind !== "string" || kind.trim().length === 0) return null
   if (typeof eventId !== "string" || eventId.trim().length === 0) return null
 
+  // origin: 출처 값
   const origin = event.origin === "restore" ? "restore" : event.origin === "live" ? "live" : null
   if (origin === null) return null
 
+  // audioMode: 조건에 따라 선택한 값
   const audioMode =
     event.audioMode === "embedded" ? "embedded" : event.audioMode === undefined || event.audioMode === "separate" ? "separate" : null
   if (audioMode === null) return null
 
+  // value: 현재 다루는 값
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+  // value: 현재 다루는 값
   const optionalId = (value) => (typeof value === "string" && value.trim().length > 0 ? value : null)
 
   return {
@@ -85,22 +82,16 @@ function validateEvent(event) {
   }
 }
 
-/**
- * createSfxPlayer.
- *
- * @param {object} io
- * @param {object} io.manifest            사건 kind → 자산 항목(sfxManifest 형태)
- * @param {() => object} io.getSettings   { masterVolume, sfxVolume, sfxMuted, notifications }
- * @param {(fn:Function) => Function} [io.subscribeSettings] 변경 통지(해제 함수를 돌려준다)
- * @param {() => object} io.getScope      { accountId, gameId, roomId } — 현재 인증 계정/게임/방
- * @param {(entry:object, ctl:object) => Promise<{sha256:string, src:string}>} io.loadAsset
- * @param {(src:string) => object} io.createMedia
- * @param {() => number} [io.now]
- * @param {(fn:Function, ms:number) => any} [io.setTimer]
- * @param {(handle:any) => void} [io.clearTimer]
- * @param {(record:object) => void} [io.onSilence] 무음 사유 기록(선택)
- */
+// 현재 설정·계정·게임 소속과 리소스 로더를 연결해 효과음 재생기를 만든다. 재생 가능 여부와 음량을 확인하고 취소·실패·완료 상태를 관리한다.
+// io: 방 참가자 전체나 특정 사용자에게 소켓 이벤트를 보내는 서버 객체
 export function createSfxPlayer(io) {
+  // manifest: 데이터를 계산·선택한 값에서 꺼낸 manifest 항목
+  // getSettings: 데이터를 계산·선택한 값에서 꺼낸 getSettings 항목
+  // subscribeSettings: 데이터를 계산·선택한 값에서 꺼낸 subscribeSettings 항목
+  // getScope: 데이터를 계산·선택한 값에서 꺼낸 유효 범위 항목
+  // loadAsset: 데이터를 계산·선택한 값에서 꺼낸 불러오기 파일 자원 항목
+  // createMedia: 데이터를 계산·선택한 값에서 꺼낸 createMedia 항목
+  // onSilence: 데이터를 계산·선택한 값에서 꺼낸 onSilence 항목
   const {
     manifest,
     getSettings,
@@ -115,54 +106,66 @@ export function createSfxPlayer(io) {
   } = io ?? {}
 
   let disposed = false
-  // 범위(계정·게임·방)가 바뀔 때마다 오른다. 늦게 도착한 로드·재생 콜백은 자신이 캡처한
-  // 세대와 비교해 스스로 무효가 된다.
+  // generation: 변경 확인 번호 값
   let generation = 0
-  /** 처리 표식. 활성 범위 동안 유지하고 소켓 재연결·리렌더로 지우지 않는다(AC-04). */
+  // handled: 키별 데이터를 보관하는 Map
   const handled = new Map()
-  /** 현재 재생 중인 별도 SFX는 항상 최대 하나다. */
+  // active: 현재 사용 중인 값
   let active = null
   let lastUiPlayAt = Number.NEGATIVE_INFINITY
 
+  // mixListeners: 중복 없는 항목을 보관하는 Set
   const mixListeners = new Set()
-  /** 내장음(embedded) claim이 붙여 둔 매체들 — mix 변경을 함께 받는다. */
+  // embeddedClaims: 중복 없는 항목을 보관하는 Set
   const embeddedClaims = new Set()
 
+  // silenceLog: 처리에 필요한 항목 목록
   const silenceLog = []
   const SILENCE_LOG_LIMIT = 200
 
+  // lastScope: 마지막 유효 범위 처리 결과
   let lastScope = readScope()
+  // currentMix: 호출한 computeMix에서 받은 처리 결과
   let currentMix = computeMix()
 
-  // --- 범위 -----------------------------------------------------------------
 
+  // 저장된 데이터나 현재 상태에서 유효 범위를 찾아 호출한 코드가 사용할 수 있게 한다.
   function readScope() {
+    // scope: 유효 범위 처리 결과
     const scope = guard(() => getScope?.(), null)
     if (scope === null || typeof scope !== "object") return { accountId: null, gameId: null, roomId: null }
+      // value: 현재 다루는 값
+    // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+    // value: 현재 다루는 값
     const pick = (value) => (typeof value === "string" && value.trim().length > 0 ? value : null)
     return { accountId: pick(scope.accountId), gameId: pick(scope.gameId), roomId: pick(scope.roomId) }
   }
 
+  // 기록을 현재 저장된 상태에 반영한다.
+  // reason: 이 결과가 나온 이유
+  // event: 발생한 이벤트
   function record(reason, event, extra) {
+    // entry: 항목를 묶은 객체
     const entry = { reason, kind: event?.kind ?? null, eventId: event?.eventId ?? null, at: guard(now, 0), ...extra }
     silenceLog.push(entry)
     if (silenceLog.length > SILENCE_LOG_LIMIT) silenceLog.shift()
-    // 기록 구독자가 던져도 재생 판단에 영향을 주지 않는다.
     if (typeof onSilence === "function") guard(() => onSilence(entry), undefined)
   }
 
-  /**
-   * 범위 변경을 반영한다. 계정이 바뀌면 모든 처리 표식을 버리고, 게임/방만 바뀌면 그
-   * 범위의 표식만 버린다 — 종료된 범위의 늦은 사건은 이후 범위 검사에서 거부된다.
-   */
+  // 사용자의 유효 범위를 받아 소리 재생 상태와 화면에 반영한다.
   function syncScope() {
     if (disposed) return
+    // next: 다음 처리로 넘길 함수
     const next = readScope()
+    // accountChanged: 계정 변경된 값
     const accountChanged = next.accountId !== lastScope.accountId
+    // gameChanged: 게임 변경된 값
     const gameChanged = next.gameId !== lastScope.gameId
+    // roomChanged: 방 변경된 값
     const roomChanged = next.roomId !== lastScope.roomId
     if (!accountChanged && !gameChanged && !roomChanged) return
 
+    // previous: 마지막 유효 범위 처리 결과
     const previous = lastScope
     lastScope = next
     generation += 1
@@ -175,32 +178,39 @@ export function createSfxPlayer(io) {
       if (roomChanged && previous.roomId !== null) dropKeysWithSegment(`room:${previous.roomId}`)
     }
 
-    // 진행 중이던 로드·재생을 즉시 중단한다. 늦은 resolve는 위 generation 증가로 이미 무효다.
     stopActive(SFX_COMPLETION.STOPPED)
   }
 
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
   function dropKeysWithSegment(segment) {
+    // key: 조회·저장에 쓸 키
     for (const key of [...handled.keys()]) {
       if (key.includes(`|${segment}|`)) handled.delete(key)
     }
   }
 
-  // --- 볼륨/mute 공통 API ----------------------------------------------------
 
+  // 현재 입력과 저장된 상태를 바탕으로 혼합 음량을 계산·선택한다.
   function computeMix() {
+    // settings: 현재 설정
     const settings = guard(() => getSettings?.(), null) ?? {}
     const master = clampPercent(settings.masterVolume) / 100
+    // sfx: 효과음 값
     const sfx = clampPercent(settings.sfxVolume) / 100
+    // muted: 음소거 비교 결과
     const muted = settings.sfxMuted === true
+    // gain: 음량 계수 값
     const gain = master * sfx
     return { gain: muted ? 0 : gain, muted }
   }
 
-  /** { gain, muted } — sfxMuted면 유효 gain은 0이다. F-27 영상 내장음도 이 값을 쓴다. */
+  // 저장된 데이터나 현재 상태에서 혼합 음량을 찾아 호출한 코드가 사용할 수 있게 한다.
   function getMix() {
     return { ...currentMix }
   }
 
+  // 혼합 음량에 필요한 이벤트 처리·구독을 연결하거나 해제한다.
+  // listener: 이벤트나 상태 변경을 받을 함수
   function subscribeMix(listener) {
     if (typeof listener !== "function") return () => {}
     mixListeners.add(listener)
@@ -209,12 +219,18 @@ export function createSfxPlayer(io) {
     }
   }
 
+  // media: 미디어 값
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+  // media: 미디어 값
   function silenceMedia(media) {
     guard(() => { media.muted = true }, undefined)
     guard(() => { media.volume = 0 }, undefined)
     guard(() => media.pause?.(), undefined)
   }
 
+  // 혼합 음량 변환 미디어를 현재 저장된 상태에 반영한다.
+  // media: 미디어 값
+  // mix: 혼합 음량 값
   function applyMixToMedia(media, mix) {
     try {
       media.muted = true
@@ -228,34 +244,39 @@ export function createSfxPlayer(io) {
     }
   }
 
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
   function refreshMix() {
     if (disposed) return
+    // next: 다음 처리로 넘길 함수
     const next = computeMix()
     if (next.gain === currentMix.gain && next.muted === currentMix.muted) return
     currentMix = next
+    // playing: 현재 사용 중인 값
     const playing = active
     if (playing?.media && !applyMixToMedia(playing.media, currentMix)) {
       record("mix-apply-failed", playing.event, {stage:"mix"})
       playing.settle(SFX_COMPLETION.FAILED)
     }
     for (const claim of [...embeddedClaims]) claim.refresh(currentMix)
+    // listener: 이벤트나 상태 변경을 받을 함수
     for (const listener of [...mixListeners]) guard(() => listener(getMix()), undefined)
   }
 
+  // unsubscribeSettings: 조건에 따라 선택한 값
   const unsubscribeSettings =
     typeof subscribeSettings === "function" ? guard(() => subscribeSettings(refreshMix), null) : null
 
-  // --- 검증 ------------------------------------------------------------------
 
-  /** 범위 검사 — 서버 사건의 계정은 현재 인증 계정과 반드시 일치해야 한다. */
+  // 유효 범위를 확인해, 현재 요청에 사용할 수 있는 상태인지 판단한다.
+  // entry: 항목 값
+  // event: 발생한 이벤트
   function checkScope(entry, event) {
+    // scope: 마지막 유효 범위 처리 결과
     const scope = lastScope
     if (entry.scope === SFX_SCOPE.UI) {
-      // 익명 UI는 별도 런타임 범위(anon)를 쓴다 — 계정이 없다고 거부하지 않는다.
       return { ok: true, prefix: `ui|${scope.accountId ?? "anon"}` }
     }
 
-    // 서버 사건은 익명 범위에서 받아들이지 않는다.
     if (scope.accountId === null) return { ok: false, reason: SFX_SUPPRESSED_REASON.ANONYMOUS_SCOPE }
     if (event.accountId === null) return { ok: false, reason: SFX_SUPPRESSED_REASON.MISSING_SCOPE }
     if (event.accountId !== scope.accountId) return { ok: false, reason: SFX_SUPPRESSED_REASON.ACCOUNT_MISMATCH }
@@ -276,71 +297,76 @@ export function createSfxPlayer(io) {
       return { ok: true, prefix: `acct:${scope.accountId}|room:${scope.roomId}` }
     }
 
-    // 계정 전역 사건(친구·업적)
     return { ok: true, prefix: `acct:${scope.accountId}` }
   }
 
+  // 다음 단계에서 사용할 키를 필요한 항목으로 구성한다.
+  // event: 발생한 이벤트
   function buildKey(prefix, event) {
     return `${prefix}|${event.kind}|${event.eventId}|`
   }
 
-  /**
-   * 매체를 만들기 전까지의 공통 관문. dispatch와 claimAudio가 **같은** 중복 키를 선점하도록
-   * 여기 한 곳에 모은다(AC-05의 이중 claim 계약).
-   *
-   * @returns {{ ok:true, entry:object, event:object, key:string, generation:number } | { ok:false, reason:string }}
-   */
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
   function admit(rawEvent) {
     if (disposed) return { ok: false, reason: SFX_SUPPRESSED_REASON.DISPOSED }
 
+    // event: 발생한 이벤트
     const event = validateEvent(rawEvent)
     if (event === null) return { ok: false, reason: SFX_SUPPRESSED_REASON.INVALID_EVENT }
 
+    // entry: 항목 처리 결과
     const entry = lookupSfxAsset(manifest, event.kind)
     if (entry === null) return { ok: false, reason: SFX_SUPPRESSED_REASON.UNKNOWN_KIND, event }
 
-    // 재접속·스냅샷 복원은 새 사건이 아니다(A-05). 표식도 남기지 않는다 — 나중에 같은
-    // 사건이 live로 오면 그때가 최초다.
     if (event.origin !== "live") return { ok: false, reason: SFX_SUPPRESSED_REASON.RESTORE_ORIGIN, event }
 
-    // 범위가 바뀐 직후일 수 있으므로 검사 직전에 한 번 맞춘다.
     syncScope()
+    // scopeCheck: 호출한 checkScope에서 받은 처리 결과
     const scopeCheck = checkScope(entry, event)
     if (!scopeCheck.ok) return { ok: false, reason: scopeCheck.reason, event }
 
+    // key: 조회·저장에 쓸 키
     const key = buildKey(scopeCheck.prefix, event)
     if (handled.has(key)) return { ok: false, reason: SFX_SUPPRESSED_REASON.DUPLICATE, event }
 
-    // 유효한 사건이다 — 비동기 로드보다 **먼저** 표식을 선점한다. 이후 어떤 이유로 억제되든
-    // (mute·알림 off·미검토 자산) 이 사건은 나중에 설정을 바꿔도 다시 재생되지 않는다(AC-04).
     handled.set(key, true)
     return { ok: true, entry, event, key, generation }
   }
 
-  // --- 재생 ------------------------------------------------------------------
 
+  // 더는 사용하지 않을 활성을 정리하거나 해제한다.
+  // reason: 이 결과가 나온 이유
   function stopActive(reason) {
     if (active === null) return
+    // current: 현재 사용 중인 값
     const current = active
     active = null
     current.settle(reason)
   }
 
+  // 재생을 시작하거나 현재 진행 상태에 맞춰 다음 단계로 넘긴다.
+  // entry: 항목 값
+  // event: 발생한 이벤트
   function startPlayback(entry, event, capturedGeneration) {
+    // settled: 완료된 작업의 처리 결과
     let settled = false
+    // media: 미디어 값
     let media = null
+    // loadTimer: 타이머 값
     let loadTimer = null
     let watchdog = null
     let detachListeners = null
-    // 로더가 검증한 바이트로 만든 임시 소스(blob URL 등)의 해제 함수. 어떤 정착 경로로 끝나도
-    // cleanup이 반드시 호출한다 — 해제하지 않으면 문서 수명 동안 URL이 남는다.
+    // 로더가 검증한 바이트로 만든 임시 소스(blob URL 등)의 해제 함수.
     let releaseSrc = null
+    // resolveCompletion: 완료 값
     let resolveCompletion
+    // completion: Promise 객체
     const completion = new Promise((resolve) => {
       resolveCompletion = resolve
     })
 
-    const cleanup = () => {
+      // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+      const cleanup = () => {
       if (loadTimer !== null) {
         guard(() => clearTimer(loadTimer), undefined)
         loadTimer = null
@@ -357,19 +383,23 @@ export function createSfxPlayer(io) {
         guard(() => media.pause(), undefined)
         media = null
       }
-      // 매체를 먼저 멈춘 뒤에 소스를 해제한다.
       if (releaseSrc !== null) {
+        // release: 해제 값
         const release = releaseSrc
         releaseSrc = null
         guard(release, undefined)
       }
     }
 
+    // handle: 처리를 묶은 객체
     const handle = {
       event,
-      get media() {
+          // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+          get media() {
         return media
       },
+      // 결과 확정을 시작하거나 현재 진행 상태에 맞춰 다음 단계로 넘긴다.
+      // result: 이번 처리 결과
       settle(result) {
         if (settled) return
         settled = true
@@ -379,13 +409,12 @@ export function createSfxPlayer(io) {
       },
     }
 
+    // 유효 기간·소속이 지난을 확인해, 현재 요청에 사용할 수 있는 상태인지 판단한다.
     const isStale = () => settled || disposed || capturedGeneration !== generation
 
-    // 이전 활성 SFX를 멈추고 이 사건이 단일 활성 자리를 가져간다. 억제된 소리는 큐에 쌓지 않는다.
     stopActive(SFX_COMPLETION.STOPPED)
     active = handle
 
-    // 로드가 영원히 정착하지 않아도 completion은 유한 시간 안에 끝난다.
     loadTimer = guard(() => setTimer(() => handle.settle(SFX_COMPLETION.TIMED_OUT), SFX_LOAD_TIMEOUT_MS), null)
     if (loadTimer == null || settled) {
       record("timer-install-failed", event, {stage:"load"})
@@ -393,7 +422,9 @@ export function createSfxPlayer(io) {
       return completion
     }
 
-    const loadControl = { isCancelled: () => isStale() }
+    // loadControl: 불러오기 조작를 묶은 객체
+    const loadControl = { /* 소리 재생 정보를 확인해, 현재 요청에 사용할 수 있는 상태인지 판단한다. */ isCancelled: /* 소리 재생에서 Cancelled 조건을 확인한다. | 관련 함수: isStale (frontend/src/shared/audio/sfxPlayer.js) */ () => isStale() }
+    // loading: 불러오는 중 값
     let loading
     try {
       loading = Promise.resolve(loadAsset(entry, loadControl))
@@ -404,7 +435,7 @@ export function createSfxPlayer(io) {
 
     loading.then(
       (loaded) => {
-        // 로더가 임시 소스를 만들었다면, 이 사건이 이미 무효가 됐더라도 반드시 해제한다.
+        // release: 조건에 따라 선택한 값
         const release = typeof loaded?.release === "function" ? loaded.release : null
         if (isStale()) {
           if (release !== null) guard(release, undefined)
@@ -413,6 +444,7 @@ export function createSfxPlayer(io) {
         }
         // 이 시점부터는 cleanup이 해제를 책임진다(아래 실패 경로들도 settle→cleanup을 거친다).
         releaseSrc = release
+        // verified: 요청·현재 상태의 검사 결과
         const verified = verifyLoadedSfxAsset(entry, loaded)
         if (!verified.ok) {
           record(verified.reason, event, { stage: "verify" })
@@ -432,6 +464,7 @@ export function createSfxPlayer(io) {
       },
     )
 
+    // 미디어를 시작하거나 현재 진행 상태에 맞춰 다음 단계로 넘긴다.
     function startMedia(src) {
       try {
         media = createMedia(src)
@@ -450,12 +483,16 @@ export function createSfxPlayer(io) {
         return
       }
 
+      // 사용자의 종료된을 받아 소리 재생 상태와 화면에 반영한다.
       const onEnded = () => handle.settle(SFX_COMPLETION.PLAYED)
+      // 사용자의 오류를 받아 소리 재생 상태와 화면에 반영한다.
       const onError = () => handle.settle(SFX_COMPLETION.FAILED)
       if (typeof media.addEventListener === "function") {
+        // target: 대상 값
         const target = media
         guard(() => target.addEventListener("ended", onEnded), undefined)
         guard(() => target.addEventListener("error", onError), undefined)
+        // 더는 사용하지 않을 소리 재생 정보를 정리하거나 해제한다.
         detachListeners = () => {
           guard(() => target.removeEventListener?.("ended", onEnded), undefined)
           guard(() => target.removeEventListener?.("error", onError), undefined)
@@ -469,7 +506,6 @@ export function createSfxPlayer(io) {
         }, undefined)
       }
 
-      // ended가 아예 오지 않아도(잠긴 탭·매체 버그) 유한 시간에 정리한다.
       watchdog = guard(
         () => setTimer(() => handle.settle(SFX_COMPLETION.TIMED_OUT), entry.durationMs + SFX_PLAYBACK_WATCHDOG_MS),
         null,
@@ -493,7 +529,6 @@ export function createSfxPlayer(io) {
         playResult.then(
           () => {},
           () => {
-            // 자동재생 거절 포함. 다음 클릭으로 재시도하지 않는다 — 이 사건은 여기서 끝난다.
             record("play-rejected", event, { stage: "play" })
             handle.settle(SFX_COMPLETION.FAILED)
           },
@@ -504,42 +539,40 @@ export function createSfxPlayer(io) {
     return completion
   }
 
-  // --- 공개 API ---------------------------------------------------------------
 
-  /**
-   * 사건 하나를 재생한다. 동기 반환이며 호출자는 completion을 기다리지 않는다.
-   * @param {{kind:string, eventId:string, accountId?:string, gameId?:string, roomId?:string,
-   *          origin:'live'|'restore', audioMode?:'separate'|'embedded'}} rawEvent
-   */
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
   function dispatch(rawEvent) {
+    // admitted: 호출한 admit에서 받은 처리 결과
     const admitted = admit(rawEvent)
     if (!admitted.ok) {
       record(admitted.reason, admitted.event ?? rawEvent, { stage: "admit" })
       return suppressed(admitted.reason)
     }
+    // entry: 호출한 admit에서 받은 처리 결과에서 꺼낸 항목 항목
+    // event: 발생한 이벤트
+    // capturedGeneration: 호출한 admit에서 받은 처리 결과에서 꺼낸 변경 확인 번호 항목
     const { entry, event, generation: capturedGeneration } = admitted
 
-    // 자산 미검토는 음소거·알림 설정과 독립된 배포 제한이다. 다른 무음 조건이
-    // 겹쳐도 이 사유를 먼저 남겨 누락된 자산 검토가 설정에 가려지지 않게 한다.
+    // allowed: 허용 처리 결과
     const allowed = checkSfxAssetAllowed(entry)
     if (!allowed.allowed) {
-      // AC-02: 미확인 자산은 매체를 만들지 않고 무음 사유만 남긴다.
       record(allowed.reason, event, { stage: "manifest", note: entry.silenceReason ?? null })
       return suppressed(allowed.reason)
     }
 
 
-    // 내장음이 소유한 사건에는 별도 음을 내지 않는다(AC-05). 표식은 이미 선점했으므로
-    // 뒤늦은 separate dispatch도 중복으로 막힌다.
+    // 내장음이 소유한 사건에는 별도 음을 내지 않는다.
     if (event.audioMode === "embedded" || entry.audioMode === "embedded") {
       record(SFX_SUPPRESSED_REASON.EMBEDDED_OWNED, event, { stage: "ownership" })
       return suppressed(SFX_SUPPRESSED_REASON.EMBEDDED_OWNED)
     }
 
-    // 알림 설정이 꺼진 사건은 재생하지 않는다.
     if (typeof entry.notificationKey === "string") {
+      // settings: 현재 설정
       const settings = guard(() => getSettings?.(), null) ?? {}
+      // notifications: 현재 설정에서 읽은 notifications 항목
       const notifications = settings.notifications
+      // enabled: 사용 가능; 원본 목록에서 선택한 값
       const enabled = notifications?.[entry.notificationKey]
       if (enabled === false) {
         record(SFX_SUPPRESSED_REASON.NOTIFICATION_DISABLED, event, { stage: "settings" })
@@ -554,6 +587,7 @@ export function createSfxPlayer(io) {
 
 
     if (entry.scope === SFX_SCOPE.UI) {
+      // at: 호출한 guard에서 받은 처리 결과
       const at = guard(now, 0)
       if (at - lastUiPlayAt < SFX_UI_COOLDOWN_MS) {
         record(SFX_SUPPRESSED_REASON.COOLDOWN, event, { stage: "cooldown" })
@@ -562,31 +596,30 @@ export function createSfxPlayer(io) {
       lastUiPlayAt = at
     }
 
+    // completion: 호출한 startPlayback에서 받은 처리 결과
     const completion = startPlayback(entry, event, capturedGeneration)
     return { status: "accepted", reason: null, completion }
   }
 
-  /**
-   * F-27 영상 내장음용 소유권 선점(AC-05). 별도 dispatch와 **같은** 중복 키를 쓰므로
-   * 한 사건에 별도 음과 내장음이 둘 다 나는 일이 없다.
-   *
-   * 최대 2초 제한·manifest 자산 검토는 적용하지 않는다 — 그 자산은 승인된 MOV이고,
-   * 실제 변환·청음·동기 연결은 F-27 담당이다. 여기서 제공하는 것은 볼륨/mute 적용과
-   * cleanup 계약뿐이다.
-   *
-   * @returns {{ status:'claimed'|'suppressed', reason:string|null, attach:(media:object)=>boolean, release:()=>void }}
-   */
+  // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+  // options: 선택 설정
   function claimAudio(rawEvent, options) {
+    // mode: 모드를 계산·선택한 값
     const mode = options?.mode ?? "embedded"
+    // admitted: 호출한 admit에서 받은 처리 결과
     const admitted = admit(mode === "embedded" ? { ...rawEvent, audioMode: "embedded" } : rawEvent)
     if (!admitted.ok) {
       record(admitted.reason, admitted.event ?? rawEvent, { stage: "claim" })
-      return { status: "suppressed", reason: admitted.reason, attach: () => false, release: () => {} }
+      return { status: "suppressed", reason: admitted.reason, /* 연결에 필요한 이벤트 처리·구독을 연결하거나 해제한다. */ attach: /* 소리 재생의 연결에 연결할 처리·구독을 관리한다. */ () => false, /* 더는 사용하지 않을 해제를 정리하거나 해제한다. */ release: () => {
+} }
     }
 
     let released = false
     let attached = null
+    // owner: 작업 소유자를 묶은 객체
     const owner = {
+      // 소리 재생에서 호출받은 입력을 정리하고, 이 함수의 계산 결과를 호출한 쪽에 전달한다.
+      // mix: 혼합 음량 값
       refresh(mix) {
         if (attached && !applyMixToMedia(attached, mix)) {
           record("mix-apply-failed", admitted.event, {stage:"embedded"})
@@ -595,6 +628,7 @@ export function createSfxPlayer(io) {
       },
       release,
     }
+    // 더는 사용하지 않을 해제를 정리하거나 해제한다.
     function release() {
       if (released) return
       released = true
@@ -608,7 +642,8 @@ export function createSfxPlayer(io) {
     return {
       status: "claimed",
       reason: null,
-      // A claim owns one media. Reattaching that media is idempotent; a second is rejected.
+      // 연결에 필요한 이벤트 처리·구독을 연결하거나 해제한다.
+      // media: 미디어 값
       attach(media) {
         syncScope()
         if (disposed || released || admitted.generation !== generation || media === null || typeof media !== "object") return false
@@ -625,6 +660,7 @@ export function createSfxPlayer(io) {
     }
   }
 
+  // 이전에 저장된 소리 재생 기록을 비워 새 상태로 시작할 수 있게 한다.
   function dispose() {
     if (disposed) return
     disposed = true
@@ -643,7 +679,7 @@ export function createSfxPlayer(io) {
     syncScope,
     refreshMix,
     dispose,
-    /** 무음 사유 기록 — 시험·증거 수집용이며 재생 판단에 쓰이지 않는다. */
+    // 저장된 데이터나 현재 상태에서 소리 재생 정보를 찾아 호출한 코드가 사용할 수 있게 한다.
     getSilenceLog: () => [...silenceLog],
   }
 }
