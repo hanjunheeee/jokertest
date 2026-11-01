@@ -32,8 +32,9 @@ const GRID_CLASS = [
 // 칸 하나 공통 (가로 스크롤 없게 min-w-0), 판·채팅만 줄어들 수 있게 min-h-0 따로 붙임
 const SLOT_CLASS = "relative min-w-0"
 
-// 낮은 화면에서 입력 중: 진행 바·세로 판을 잠깐 접어 채팅 목록 자리 냄 (타이머는 키보드 내리면 다시 보임, 가로는 판이 왼쪽이라 둠)
-const TYPING_TIME_CLASS = "hidden"
+// 낮은 화면에서 입력 중: 세로는 진행 바·판을 잠깐 접어 채팅 목록 자리 냄 (키보드 내리면 다시 보임)
+// 가로는 판이 왼쪽이고 접힌 진행 바가 오른쪽 위 한 줄이라 둘 다 둠 (가로는 늘 높이가 낮아 입력만 해도 접혀 버림)
+const TYPING_TIME_CLASS = "hidden land:block"
 const TYPING_BOARD_CLASS = "hidden land:block"
 
 // 화면 (맞는 판이 아니면 아무것도 안 그림, 밖으로 보내기는 훅이 함)

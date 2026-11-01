@@ -5,7 +5,7 @@ import { GAME_MATCHING_ASSETS } from "@/domains/game/matching/constants/gameMatc
 import { FRAME_VARIANTS, POPUP_CLOSE_BUTTON } from "@/domains/game/matching/constants/roomCodeViewModal.js"
 import { useRoomCodeCopy } from "@/domains/game/matching/hooks/useRoomCodeCopy.js"
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
-import { FOOTER_INSET, INPUT_INSET } from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
+import { FOOTER_INSET, IMG_CLASS, INPUT_INSET } from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
 import {
   ROOM_CODE_COPY_ERRORS,
   ROOM_CODE_COPY_RESULTS,
@@ -50,7 +50,7 @@ export default function RoomCodeSheet({ open, onClose, roomCode }) {
         <PublicAsset
           src={GAME_MATCHING_ASSETS.roomCodeShareFrame}
           alt="초대 방코드"
-          className="pointer-events-none block h-auto w-full select-none drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+          className={IMG_CLASS}
         />
         <button
           type="button"

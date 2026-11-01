@@ -7,19 +7,21 @@ import {
     CHAT_MOTION,
     SPLIT_TRANSITION,
 } from "@/domains/game/ingame/constants/tribunalPresentation/ingameTribunalPresentationMotion.js"
+import { useHudInset } from "../../../hooks/overlays/useHudInset.js"
 import { useTribunalIntro } from "../../../hooks/overlays/useTribunalIntro.js"
 import DefendantCard from "./DefendantCard.jsx"
 import TribunalChat from "./TribunalChat.jsx"
 import TribunalActions from "./TribunalActions.jsx"
 
 // intro는 카드 가운데 크게, split은 세로면 위 줄(카드 왼쪽·버튼 오른쪽), 가로 폰이면 왼쪽 칸
+// 가로 폰 왼쪽 칸은 키보드로 높이가 모자라면 안에서 스크롤 (가운데 맞춤이 위로 넘쳐 잘리지 않게 center-safe)
 const STAGE_CLASS = {
     intro: "flex h-full flex-col items-center justify-center gap-4 px-4",
     split: "mx-auto flex h-full w-full flex-col gap-3 px-3 pb-3 pt-2 land:flex-row land:items-stretch md:max-w-[46rem] md:px-8 md:pb-6",
 }
 const TOP_CLASS = {
     intro: "flex w-full flex-col items-center gap-4",
-    split: "flex w-full shrink-0 flex-row items-center gap-3 land:w-[34%] land:flex-col land:justify-center md:justify-center",
+    split: "flex w-full shrink-0 flex-row items-center gap-3 land:w-[34%] land:min-h-0 land:flex-col land:justify-center-safe land:overflow-y-auto md:justify-center",
 }
 const CARD_CLASS = {
     intro: "w-[min(56vw,16rem,36svh)] land:w-[min(26vw,46svh)]",
@@ -42,6 +44,8 @@ export default function TribunalOverlay({
 }) {
     const reduced = useReducedMotion()
     const layoutPhase = useTribunalIntro(defendant?.id ?? null)
+    // 위 줄·진행 바 아래부터 그림 (데스크톱처럼 덮개 너머로 보이게), 잴 칸 없으면 safe area 여백 그대로
+    const hudInset = useHudInset()
     if (!defendant) return null
 
     const showChat = layoutPhase === "split" && chatProps
@@ -53,6 +57,7 @@ export default function TribunalOverlay({
             role="presentation"
             data-ingame-tribunal-presentation=""
             data-ingame-tribunal-layout={layoutPhase}
+            style={hudInset > 0 ? { paddingTop: hudInset } : undefined}
         >
             <motion.div
                 className="absolute inset-0 bg-black/62"
