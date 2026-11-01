@@ -150,7 +150,7 @@ const createF29RecoveryFixture = async (t, options = {}) => {
     const cleanup = async () => {
         if (io) {
             await new Promise((resolve) => io.close(resolve));
-            require('../../service/concurrency.service').stopConcurrentSnapshotScheduler();
+            require('../../services/presence/concurrency').stopConcurrentSnapshotScheduler();
         }
         await new Promise((resolve) => server.close(resolve));
         mailAdapterModule.createHttpMailAdapter = originalCreateHttpMailAdapter;

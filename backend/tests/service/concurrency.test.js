@@ -1,11 +1,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const concurrency = require('../../service/concurrency.service')
+const concurrency = require('../../services/presence/concurrency')
 const gameSessionCore = require('../../game-core/gameSession')
 const gameSessionSocket = require('../../socket/gameSession')
 const socketModule = require('../../socket/socket')
-const presenceService = require('../../service/presence.service')
+const presenceService = require('../../services/presence/status')
 const userRepository = require('../../repositories/user.repositories')
 
 function resetAll() {

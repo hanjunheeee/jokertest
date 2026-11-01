@@ -4,10 +4,10 @@ const { Server } = require("socket.io");
 const cookie = require("cookie");
 
 const sessionLifecycle = require("../auth/sessionLifecycle");
-const presenceService = require("../service/presence.service");
+const presenceService = require("../services/presence/status");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
-const concurrencyService = require("../service/concurrency.service");
+const concurrencyService = require("../services/presence/concurrency");
 const { logRejection } = require("./common/isolate");
 // 접속 목록·io·사용자 전송은 emitter (서비스가 socket.js 안 거치고 보내게)
 const { onlineUsers, setIo, emitToUser } = require("./emitter");

@@ -35,7 +35,7 @@ async function captureConcurrentSnapshot({
 } = {}) {
     try {
         const current = getCurrentSnapshot(onlineUsers, getGameSnapshot())
-        const ConcurrentSnapshot = model ?? require('../models').ConcurrentSnapshot
+        const ConcurrentSnapshot = model ?? require('../../../models').ConcurrentSnapshot
         await ConcurrentSnapshot.create({ captured_at: now(), ...current })
         return true
     } catch (error) {

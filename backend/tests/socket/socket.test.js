@@ -6,7 +6,7 @@ const matchmaking = require('../../socket/matchmaking')
 const gameSessionSocketLayer = require('../../socket/gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const sessionLifecycle = require('../../auth/sessionLifecycle')
-const presenceService = require('../../service/presence.service')
+const presenceService = require('../../services/presence/status')
 const { createFakeSocket, createFakeIo } = require('../helpers/matchmakingFixtures')
 
 test('disconnect 시 registerDisconnectHandler가 gameSession.onDisconnect를 실제로 호출한다 (DB 접근 없음)', (t) => {
