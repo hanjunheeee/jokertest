@@ -4,8 +4,10 @@
 // routes/user.routes.js가 /me/emoji-palette에 부름 (경제 서비스는 모듈 객체로)
 const economyService = require('../../services/economy');
 
+// 저장 본문에 받는 필드
 const ALLOWED_SAVE_FIELDS = new Set(['slots', 'expectedRevision']);
 
+// 오류를 ok·code·message 모양으로, revision 충돌이면 지금 팔레트도 같이 보냄 (화면이 바로 맞춤)
 const respondWithError = (res, error) => {
     const status = typeof error?.status === 'number' ? error.status : 500;
     const body = {
@@ -20,6 +22,7 @@ const respondWithError = (res, error) => {
     res.status(status).json(body);
 };
 
+// 내 팔레트 칸·revision·가진 이모티콘
 exports.getEmojiPalette = async (req, res) => {
     try {
         const { slots, revision, owned } = await economyService.getEmojiPalette(req.user.uuid);
@@ -29,6 +32,7 @@ exports.getEmojiPalette = async (req, res) => {
     }
 };
 
+// 모르는 필드 400 → 저장 (칸 모양·보유·revision 확인은 서비스 몫)
 exports.saveEmojiPalette = async (req, res) => {
     try {
         const body = req.body ?? {};

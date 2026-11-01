@@ -1,15 +1,15 @@
-// 인증 경로 요청 수 제한 만드는 함수 파일, 가입 코드·아이디 찾기·비번 재설정 제한 정의
-// routes/auth.routes.js가 맨 위 실행 중 불러 인스턴스 만듦 (카운터는 라우트 쪽에 두기, 시험이 라우트 캐시 지우고 다시 부름)
+// 인증 요청 수 제한 만드는 파일, 가입 인증번호·아이디 찾기·비번 재설정 제한 정의
+// routes/auth.routes.js가 불러올 때 한 번 만듦 (시험은 라우트를 다시 불러 새 카운터 받음)
 const crypto = require("crypto");
 
-// 양의 정수 아니면 기본값 (config 쪽과 달리 안 던짐)
+// 양의 정수 아니면 기본값 (가입 인증 config와 달리 안 던짐)
 const toPositiveInt = (value, fallback) => {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// 가입 코드 제한 4개 (ip 시간·하루, email 시간·하루)
-// email 키는 검사가 채운 res.locals를 읽음 → 라우트에서 검사 뒤에 두기
+// 가입 인증번호 제한 4개 (ip 시간·하루, 주소 시간·하루), 주소 키는 해시로 (원문 안 남기기)
+// 주소 키는 검사가 채운 res.locals를 읽음 → 라우트에서 검사 뒤에 두기
 // createRateLimiter는 라우트가 넘김 (미들웨어끼리 안 부르기)
 const buildSignupCodeRateLimiters = (codeConfig, createRateLimiter) => {
     const codeIpHourLimiter = createRateLimiter({
@@ -40,7 +40,7 @@ const buildSignupCodeRateLimiters = (codeConfig, createRateLimiter) => {
     };
 };
 
-// 아이디 찾기 제한 2개 (ip, 닉네임 대상), env는 부르는 때 읽음
+// 아이디 찾기 제한 2개 (ip, 찾는 닉네임), env는 부르는 때 읽음, 닉네임 키도 해시로
 const buildFindIdRateLimiters = (env, createRateLimiter) => {
     const findIdIpLimiter = createRateLimiter({
         windowMs: toPositiveInt(env.FIND_ID_WINDOW_MS, 600000),
@@ -56,7 +56,7 @@ const buildFindIdRateLimiters = (env, createRateLimiter) => {
     return { ip: findIdIpLimiter, target: findIdTargetLimiter };
 };
 
-// 비번 재설정 제한 3개 (요청 ip, 요청 email, 확인 ip)
+// 비번 재설정 제한 3개 (요청 ip, 요청 주소, 확인 ip)
 // 확인 ip는 인스턴스 하나를 verify·confirm 둘이 같이 씀 (둘로 나누면 한도 두 배)
 const buildPasswordResetRateLimiters = (env, createRateLimiter) => {
     const resetRequestIpLimiter = createRateLimiter({
@@ -65,6 +65,7 @@ const buildPasswordResetRateLimiters = (env, createRateLimiter) => {
         keyOf:    (req) => `ip:${req.ip}`,
     });
 
+    // 대소문자만 다른 주소도 한 키로 셈
     const resetEmailLimiter = createRateLimiter({
         windowMs: toPositiveInt(env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
         max:      toPositiveInt(env.PASSWORD_RESET_REQUEST_EMAIL_MAX, 3),

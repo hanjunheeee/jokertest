@@ -30,6 +30,7 @@ exports.getTransactions = async (req, res, next) => {
 };
 
 // POST /equip: 칸 하나 장착 (검사 순서: 칸·아이템 → revision)
+// revision은 다른 창에서 먼저 바꾼 장착을 덮어쓰지 않게 받음
 exports.equipItem = async (req, res, next) => {
     try {
         const { slot, itemId, expectedRevision } = req.body ?? {};
@@ -49,6 +50,7 @@ exports.equipProfile = async (req, res, next) => {
     try {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_EQUIP_PROFILE_FIELDS, "UNKNOWN_EQUIP_PROFILE_FIELD");
+        // 사진·테두리는 안 보내도 됨, 보내면 문자열만
         const { photoItemId, borderItemId, expectedRevision } = body;
         if (photoItemId !== undefined && typeof photoItemId !== "string") {
             throw createError("photoItemId는 문자열이어야 합니다.", 400, "INVALID_EQUIP_PROFILE_REQUEST");

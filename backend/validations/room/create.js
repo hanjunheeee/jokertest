@@ -1,18 +1,24 @@
+// 방 만들기 설정 검사 파일, 고를 수 있는 값 표 + 방 만들기 요청 검사 (직업별 밤 시간 포함)
+// socket/matchmaking/join/create.js가 부름 (역할 구성은 거기서 따로), 값 표는 updateSettings.js도 같이 씀
 const ALLOWED_ACCESS_TYPES = ['open', 'code']
 
+// 고를 수 있는 값 (그 밖 숫자는 거절)
 const ALLOWED_MAX_PLAYERS = Object.freeze([4, 5, 6, 7, 8, 9, 10])
 const ALLOWED_JOKER_COUNT = Object.freeze([1, 2, 3, 4])
 const ALLOWED_DAY_DISCUSSION_TIME = Object.freeze([30, 60, 90, 120, 150])
 const ALLOWED_DAY_VOTE_TIME = Object.freeze([30, 60, 90])
 const ALLOWED_NIGHT_ACTION_TIME = Object.freeze([30, 60, 90, 120])
 
+// 직업별 밤 시간 정할 수 있는 역할 (시민은 밤 행동 없음), 값은 전체 밤 시간과 같은 표
 const ROLE_NIGHT_ACTION_TIME_KEYS = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
 const ALLOWED_ROLE_NIGHT_ACTION_TIME = ALLOWED_NIGHT_ACTION_TIME
 
+// 참·거짓 값인지
 function isBoolean(value) {
     return typeof value === 'boolean'
 }
 
+// 없으면 통과, 있으면 아는 역할·허용 값만 새 객체로 옮김 (받은 객체 그대로 안 씀)
 function validateRoleNightActionTimes(raw) {
     if (raw === undefined) return { ok: true, value: undefined }
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -32,6 +38,7 @@ function validateRoleNightActionTimes(raw) {
     return { ok: true, value }
 }
 
+// 칸마다 허용 값인지 보고, 맞으면 공개 방식 · 설정 둘로 나눠 돌려줌
 function validateCreateRoomPayload(payload) {
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
         return { ok: false, message: '잘못된 요청입니다.' }
@@ -59,6 +66,7 @@ function validateCreateRoomPayload(payload) {
     if (!ALLOWED_JOKER_COUNT.includes(jokerCount)) {
         return { ok: false, message: '광대 플레이어 수가 올바르지 않습니다.' }
     }
+    // 광대가 정원 이상이면 시민 쪽 자리가 없음
     if (jokerCount >= maxPlayers) {
         return { ok: false, message: '광대 수는 최대 플레이어 수보다 적어야 합니다.' }
     }
@@ -77,6 +85,7 @@ function validateCreateRoomPayload(payload) {
     const roleTimes = validateRoleNightActionTimes(roleNightActionTimes)
     if (!roleTimes.ok) return roleTimes
 
+    // 받은 본문 말고 검사한 칸만 새로 담음, 직업별 밤 시간은 보냈을 때만
     const settings = {
         maxPlayers,
         jokerCount,

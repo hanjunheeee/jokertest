@@ -16,6 +16,7 @@ const {
 const { serializeLedgerEntry } = require("./serializers");
 
 // POST /purchase: 아이템 하나 구매 (새로 사면 201, 같은 참조 id 다시 오면 200)
+// 참조 id는 같은 구매가 두 번 와도 한 번만 사게 받음
 exports.purchaseItem = async (req, res, next) => {
     try {
         const body = req.body ?? {};
@@ -59,7 +60,7 @@ exports.purchaseItems = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-// GET /purchases/:referenceEventId: 커밋된 구매 결과 (없으면 404, 골드 구매면 잔액까지)
+// GET /purchases/:referenceEventId: 응답 못 받은 구매 다시 확인용 (없으면 404, 골드 구매면 잔액까지)
 exports.getPurchaseResult = async (req, res, next) => {
     try {
         const result = await economyService.getPurchaseResult(req.user.uuid, req.params.referenceEventId);
@@ -67,6 +68,7 @@ exports.getPurchaseResult = async (req, res, next) => {
             throw createError("해당 참조 사건 ID로 커밋된 구매 결과가 없습니다.", 404, "PURCHASE_RESULT_NOT_FOUND");
         }
         const body = { kind: result.kind, results: result.results.map(serializeLedgerEntry), createdAt: result.createdAt };
+        // 골드 구매는 장부 두 줄(다이아 빠짐·골드 들어옴)의 잔액을 같이 보냄
         if (result.kind === "GOLD") {
             const diamondEntry = result.results.find((entry) => entry.currency === "DIAMOND");
             const goldEntry = result.results.find((entry) => entry.currency === "GOLD");
@@ -86,6 +88,7 @@ exports.purchaseGold = async (req, res, next) => {
         const body = { ...(req.body ?? {}) };
         for (const field of IGNORED_GOLD_PURCHASE_REFERENCE_FIELDS) delete body[field];
         rejectUnknownFields(body, ALLOWED_GOLD_PURCHASE_FIELDS, "UNKNOWN_GOLD_PURCHASE_FIELD");
+        // 길이 상한은 DB 칸 크기 (상품 id 64, 참조 id 150)
         const { productId, version, referenceEventId } = body;
         if (typeof productId !== "string" || productId.length === 0 || productId.length > 64
             || !isPositiveSafeInteger(version)
@@ -106,6 +109,7 @@ exports.grantReward = async (req, res, next) => {
         if (typeof userId !== "string" || typeof referenceEventId !== "string") {
             throw createError("userId와 referenceEventId가 필요합니다.", 400, "INVALID_GRANT_REQUEST");
         }
+        // 카탈로그에 없는 사유는 거절 (본문으로 금액 못 정하게)
         const rewardEntry = typeof reason === "string" ? getRewardCatalogEntry(reason) : undefined;
         if (!rewardEntry) {
             throw createError("존재하지 않는 보상 사유입니다.", 400, "UNKNOWN_REWARD_REASON");

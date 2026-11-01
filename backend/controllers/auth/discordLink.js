@@ -1,11 +1,11 @@
 // 디스코드 계정 연결 컨트롤러 파일, 시작 · 콜백
-// 로그인한 사람만, 연결 결과는 계정 화면으로 돌려보냄
+// routes/auth.routes.js가 verifyToken 뒤에 부름, 결과는 계정 화면(/account)으로 돌려보냄
 const socialAuthService = require("../../services/auth/social");
 const discordOAuthService = require("../../services/auth/oauth/discord");
 const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions } = require('./cookies');
 const { verifyOAuthAttempt, ATTEMPT_TTL_SECONDS } = require("../../services/auth/social");
 
-// 연결용 state 발급 → 시도 쿠키 → 인가 주소로
+// 지금 세션에 묶인 연결용 state 발급 → 시도 쿠키 → 인가 주소로
 exports.discordLinkStart = async (req, res, next) => {
     try {
         const { state, attemptToken } = await socialAuthService.startDiscordLink({
@@ -19,8 +19,9 @@ exports.discordLinkStart = async (req, res, next) => {
     }
 };
 
-// state 소비 → 세션 같은지 → 취소 확인 → 프로필 → 연결
+// state 소비 → 세션 같은지 → 취소 확인 → 프로필 → 연결 (흐름은 서비스 몫)
 exports.discordLinkCallback = async (req, res, next) => {
+    // 시도 쿠키는 이 콜백에서만 쓰고 바로 지움 (성공·실패 상관없이)
     const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
     res.clearCookie(OAUTH_ATTEMPT_COOKIE, attemptCookieOptions(ATTEMPT_TTL_SECONDS));
 
@@ -32,6 +33,7 @@ exports.discordLinkCallback = async (req, res, next) => {
 
         return res.redirect(`${frontendBase}/account?socialLinkSuccess=discord`);
     } catch (error) {
+        // 코드 없는 오류만 로그 (예상한 오류는 code만 화면으로)
         if (!error?.code) {
             console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
         }

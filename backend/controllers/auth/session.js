@@ -1,9 +1,9 @@
 // 세션 컨트롤러 파일, 내 정보 · 로그아웃 · refresh
-// refresh 실패(401·403)면 세션 쿠키 지움
+// routes/auth.routes.js가 부름, refresh 실패(401·403)면 세션 쿠키 지움
 const authService       = require("../../services/auth/account");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearSessionCookie } = require("../../utils/auth/cookieOptions");
 
-// 토큰 속 uuid·role만
+// 내 정보: DB 안 읽고 토큰 속 uuid·role만 (세션 확인은 verifyToken에서 끝남)
 exports.me = async (req, res, next) => {
     try {
         res.status(200).json({
@@ -18,7 +18,7 @@ exports.me = async (req, res, next) => {
     }
 };
 
-// 로그아웃 기록 뒤 세션 쿠키 지움
+// 로그아웃: 기록 남기고 그 세션 끊은 뒤 access·refresh 쿠키 둘 다 지움
 exports.logout = async (req, res, next) => {
     try {
         await authService.logout({ uuid: req.user.uuid, sessionId: req.user.sessionId });
@@ -29,7 +29,7 @@ exports.logout = async (req, res, next) => {
     }
 };
 
-// refresh 쿠키로 새 access(+새 refresh) 쿠키
+// refresh 쿠키로 새 access·refresh 쿠키 (refresh는 로그인 유지 때만 있어서 access도 유지 옵션)
 exports.refresh = async (req, res, next) => {
     try {
         const { accessToken, refreshToken, refreshTokenExpiresAt } = await authService.refresh(req.cookies.refreshToken);
@@ -41,6 +41,7 @@ exports.refresh = async (req, res, next) => {
 
         res.status(200).json({ success: true });
     } catch (error) {
+        // 없음·폐기·만료·재사용·정지면 쿠키 지움 (다시 로그인하게)
         if (error?.status === 401 || error?.status === 403) {
             clearSessionCookie(res);
         }

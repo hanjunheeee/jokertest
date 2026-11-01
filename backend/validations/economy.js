@@ -26,7 +26,7 @@ const rejectUnknownFields = (body, allowedFields, errorCode) => {
     }
 };
 
-// 숫자형 · 안전한 정수 · 0보다 큰지
+// 숫자형 · 안전한 정수 · 0보다 큰지 (문자열 "1"·소수·아주 큰 수 거절)
 const isPositiveSafeInteger = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 
 module.exports = {

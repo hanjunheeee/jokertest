@@ -24,11 +24,12 @@ exports.listCurrencyProducts = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-// POST /topup/orders: 충전 주문 만들기 (201)
+// POST /topup/orders: 충전 주문 만들기 (201, clientKey는 결제창 띄우는 공개 키)
 exports.createOrder = async (req, res, next) => {
     try {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_TOPUP_ORDER_FIELDS, "UNKNOWN_TOPUP_ORDER_FIELD");
+        // 길이 상한은 DB 칸 크기 (상품 id 64)
         const { productId, version } = body;
         if (typeof productId !== "string" || productId.length === 0 || productId.length > 64 || !isPositiveSafeInteger(version)) {
             throw createError("productId와 version이 필요합니다.", 400, "INVALID_TOPUP_ORDER_REQUEST");
@@ -44,11 +45,12 @@ exports.createOrder = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-// POST /topup/orders/:orderId/confirm: 결제 승인 → 지급 끝났으면 잔액, 아니면 지급 대기
+// POST /topup/orders/:orderId/confirm: 결제 승인 → 지급 끝났으면 잔액, 아니면 지급 대기 (화면이 주문 조회로 이어 감)
 exports.confirmOrder = async (req, res, next) => {
     try {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_TOPUP_CONFIRM_FIELDS, "UNKNOWN_TOPUP_CONFIRM_FIELD");
+        // 길이 상한은 DB 칸 크기 (결제키 200)
         const { paymentKey, amount } = body;
         if (typeof paymentKey !== "string" || paymentKey.length === 0 || paymentKey.length > 200 || !isPositiveSafeInteger(amount)) {
             throw createError("paymentKey와 amount가 필요합니다.", 400, "INVALID_TOPUP_CONFIRM_REQUEST");
@@ -64,7 +66,7 @@ exports.confirmOrder = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-// GET /topup/orders?state=open: 열린 주문 목록 (캐시 안 함)
+// GET /topup/orders?state=open: 멈춘 지급 이어 끝낼 열린 주문 목록 (다른 브라우저·다시 로그인 때, 캐시 안 함)
 exports.listOpenOrders = async (req, res, next) => {
     try {
         if (req.query.state !== "open") {
@@ -85,7 +87,7 @@ exports.listOpenOrders = async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-// GET /topup/orders/:orderId: 주문 하나
+// GET /topup/orders/:orderId: 주문 하나 (내 주문인지는 서비스가 봄)
 exports.getOrder = async (req, res, next) => {
     try {
         const order = await topupService.getTopupOrder({ userId: req.user.uuid, orderId: req.params.orderId });
