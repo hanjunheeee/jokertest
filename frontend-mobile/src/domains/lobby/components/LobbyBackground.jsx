@@ -22,20 +22,15 @@ export default function LobbyBackground({ bgVideoRef, uiVisible, onSkipIntro }) 
                 aria-hidden="true"
                 className={`${LAYER_CLASS} z-[1] transition-opacity duration-500 ${uiVisible ? "opacity-0" : ""}`}
             />
-            {/* 글자 대비용 위·아래 어둡게 (영상 끝난 뒤에만) */}
-            {uiVisible ? (
-                <div
-                    aria-hidden="true"
-                    className="pointer-events-none fixed inset-0 z-[2] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.55)_0%,rgba(0,0,0,0)_22%,rgba(0,0,0,0)_70%,rgba(0,0,0,0.6)_100%)]"
-                />
-            ) : (
+            {/* 보이기 전엔 화면 전체가 건너뛰기 버튼 (데스크톱처럼 위·아래 어둡게 덮지 않음) */}
+            {!uiVisible ? (
                 <button
                     type="button"
                     aria-label="인트로 건너뛰기"
                     onClick={onSkipIntro}
                     className="fixed inset-0 z-20 cursor-pointer border-0 bg-transparent p-0"
                 />
-            )}
+            ) : null}
         </>
     )
 }

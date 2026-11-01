@@ -1,17 +1,19 @@
-// 요청 수락 탭 (검색·전부 수락·결과 안내·오류·대상 없음 안내·불러오는 중·신청 목록)
+// 요청 수락 탭 (검색·전부 수락·결과 안내·오류·대상 없음 안내·신청 목록·뒤로)
 // SheetBody가 accept 탭일 때 그림
 import { FILTER_MSGS, FILTER_SEARCH, FRIEND_LIST_FILTER_FIELDS } from "@/domains/lobby/constants/friendListFilter.js"
+import { ACCEPT_EMPTY_CLASS } from "@/domains/lobby/constants/friendListStyle.js"
 import { useFriendListLocalFilter } from "@/domains/lobby/hooks/useFriendListLocalFilter.js"
 import { buildAcceptAllSummary } from "@/domains/lobby/utils/friend/acceptAll.js"
-import { LIST_CLASS } from "../sheetStyle.js"
+import { SCROLL_CLASS } from "../sheetStyle.js"
 import SearchBar from "../parts/SearchBar.jsx"
-import Notice from "../parts/Notice.jsx"
+import BackRow from "../parts/BackRow.jsx"
 import AcceptToolbar from "./AcceptToolbar.jsx"
 import RequestRow from "./RequestRow.jsx"
 
-// 검색은 이 탭 안에서만 거름, 대상 신청 없음 안내는 목록을 제대로 받았을 때만 보임 (데스크톱 FriendAcceptTab과 같음)
+// 데스크톱 FriendAcceptTab과 같은 순서·문구, 검색은 이 탭 안에서만 거름
+// 대상 신청 없음 안내는 목록 오류가 없을 때만 (데스크톱 패널처럼 받았는지는 따로 안 봄)
 export default function AcceptTab({
-  incomingRequests, incomingError, loaded, processingRequestIds, acceptAllResult,
+  onBack, incomingRequests, incomingError, processingRequestIds, acceptAllResult,
   onAccept, onBlock, onAcceptAll, onRefresh, targetRequestId,
 }) {
   const { query, setQuery, isFiltering, filteredItems } = useFriendListLocalFilter(
@@ -20,9 +22,8 @@ export default function AcceptTab({
   )
   const visible = isFiltering ? filteredItems : incomingRequests
   const summary = buildAcceptAllSummary(acceptAllResult)
-  const targetMissing = loaded && incomingError === null && targetRequestId != null
+  const targetMissing = incomingError === null && targetRequestId != null
     && !incomingRequests.some((request) => request.request_id === targetRequestId)
-  const emptyText = isFiltering ? FILTER_MSGS.noResults : loaded ? FILTER_MSGS.noIncomingRequests : "받은 요청을 불러오는 중입니다."
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -33,20 +34,28 @@ export default function AcceptTab({
         onChange={(event) => setQuery(event.target.value)}
       />
       <AcceptToolbar running={acceptAllResult?.running === true} onAcceptAll={onAcceptAll} onRefresh={onRefresh} />
-      <div className={LIST_CLASS}>
+      <div className={SCROLL_CLASS}>
         {summary !== null ? (
-          <Notice tone="info" data-accept-all-status="true">
-            {summary}
-            {acceptAllResult.refreshError ? <span className="block">{acceptAllResult.refreshError}</span> : null}
-          </Notice>
+          <div role="status" data-accept-all-status="true" className={ACCEPT_EMPTY_CLASS}>
+            <p>{summary}</p>
+            {acceptAllResult.refreshError !== null && acceptAllResult.refreshError !== undefined ? (
+              <p data-accept-all-refresh-error="true">{acceptAllResult.refreshError}</p>
+            ) : null}
+          </div>
         ) : null}
-        {incomingError !== null ? <Notice tone="error" data-incoming-error="true">{incomingError}</Notice> : null}
+        {incomingError !== null ? (
+          <p role="status" data-incoming-error="true" className={ACCEPT_EMPTY_CLASS}>{incomingError}</p>
+        ) : null}
         {targetMissing ? (
-          <Notice data-notification-target-missing="true">알림에서 찾던 친구 요청은 이미 처리되었습니다.</Notice>
+          <p role="status" data-notification-target-missing="true" className={ACCEPT_EMPTY_CLASS}>
+            알림에서 찾던 친구 요청은 이미 처리되었습니다.
+          </p>
         ) : null}
-        {visible.length === 0 ? <Notice>{emptyText}</Notice> : (
-          <ul aria-label="받은 친구 요청">
-            {visible.map((request) => (
+        <ul className="mt-2">
+          {visible.length === 0 ? (
+            <li className={ACCEPT_EMPTY_CLASS}>{isFiltering ? FILTER_MSGS.noResults : FILTER_MSGS.noIncomingRequests}</li>
+          ) : (
+            visible.map((request) => (
               <RequestRow
                 key={request.request_id || request.id}
                 request={request}
@@ -55,10 +64,11 @@ export default function AcceptTab({
                 onAccept={onAccept}
                 onBlock={onBlock}
               />
-            ))}
-          </ul>
-        )}
+            ))
+          )}
+        </ul>
       </div>
+      <BackRow onBack={onBack} />
     </div>
   )
 }

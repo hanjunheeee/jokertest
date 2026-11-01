@@ -4,17 +4,18 @@ import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.j
 import RowShell from "../parts/RowShell.jsx"
 import IconAction from "../parts/IconAction.jsx"
 
-// 처리 중이면 두 버튼 다 잠금, 알림에서 찾던 신청은 테두리로 표시 (데스크톱 IncomingFriendRow와 같음)
+// 처리 중이면 두 버튼 다 잠금, 알림에서 찾던 신청은 aria-current로 표시 (데스크톱 IncomingFriendRow와 같음)
 export default function RequestRow({ request, processing, targeted, onAccept, onBlock }) {
   const { request_id: requestId, id: requesterId, name } = request
 
   const actions = (
     <>
-      {/* 신청자 id가 있을 때만 차단 버튼 */}
-      {typeof requesterId === "string" ? (
+      {/* 차단 처리 함수와 신청자 id가 있을 때만 차단 버튼 */}
+      {onBlock !== null && typeof requesterId === "string" ? (
         <IconAction
           src={FRIEND_LIST_ASSETS.friendBlockButton}
           label={`${name} 차단`}
+          title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다`}
           disabled={processing}
           data-block-target={requesterId}
           onClick={() => onBlock(requesterId)}
@@ -25,7 +26,7 @@ export default function RequestRow({ request, processing, targeted, onAccept, on
         label={`${name} 수락`}
         disabled={processing}
         data-accept-request={requestId}
-        onClick={() => onAccept(requestId)}
+        onClick={() => onAccept?.(requestId)}
       />
     </>
   )

@@ -6,7 +6,6 @@ import { useBlockActions } from "@/domains/lobby/hooks/friendPanel/useBlockActio
 import { usePanelInvites } from "@/domains/lobby/hooks/friendPanel/usePanelInvites.js"
 import { useFriendListSync } from "@/domains/lobby/hooks/useFriendListSync.js"
 import { parseFriendRequestTargetId, parseInviteTargetId } from "@/domains/lobby/hooks/useLobbyNotificationPanels.js"
-import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
 
 // 훅 부르는 순서(탭 → 목록 동기화 → 차단 → 초대)는 데스크톱 FriendListPanel과 같게 둠 (효과 실행 순서)
 export function useFriendsSheet({ open, onClose, roomId = null, isRoomVerified = false }) {
@@ -19,10 +18,6 @@ export function useFriendsSheet({ open, onClose, roomId = null, isRoomVerified =
   const sync = useFriendListSync(open)
   const { blockingIds, handleBlockUser, handleUnblockUser } = useBlockActions()
   const { invite, inviteList } = usePanelInvites({ open, roomId, isRoomVerified })
-
-  // 첫 응답(성공·실패)이 반영됐는지로 불러오는 중을 가름 (스토어에 따로 상태 칸이 없음)
-  const friendsLoaded = useFriendStore((state) => state.appliedResult.friends !== null)
-  const incomingLoaded = useFriendStore((state) => state.appliedResult.incoming !== null)
 
   // 탭 바꾸기, 차단 탭은 열 때마다 서버 목록을 다시 받음
   const selectView = (next) => {
@@ -43,8 +38,6 @@ export function useFriendsSheet({ open, onClose, roomId = null, isRoomVerified =
     targetRequestId,
     targetInviteId,
     sync,
-    friendsLoaded,
-    incomingLoaded,
     block: { onBlock: handleBlockUser, onUnblock: handleUnblockUser, blockingIds },
     invite,
     inviteList,

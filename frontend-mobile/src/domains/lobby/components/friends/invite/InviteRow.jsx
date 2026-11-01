@@ -2,11 +2,11 @@
 // InviteTab이 초대마다 그림
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 import { describeState } from "@/domains/lobby/utils/gameInvite/inviteState.js"
-import { DETAIL_ERROR_CLASS, DETAIL_MUTED_CLASS } from "../sheetStyle.js"
+import { STATUS_DETAIL_ERROR_CLASS, STATUS_DETAIL_MUTED_CLASS } from "@/domains/lobby/constants/friendListStyle.js"
 import RowShell from "../parts/RowShell.jsx"
 import IconAction from "../parts/IconAction.jsx"
 
-// 끝난 초대는 버튼 대신 이유 문구, 알림에서 찾던 초대는 테두리로 표시 (데스크톱 GameInviteRow와 같음)
+// 끝난 초대는 버튼 대신 이유 문구, 알림에서 찾던 초대는 aria-current로 표시 (데스크톱 GameInviteRow와 같음)
 export default function InviteRow({ invite, processing, error, targeted, onAccept, onDecline }) {
   const state = describeState(invite)
   const { inviteId } = invite
@@ -41,9 +41,9 @@ export default function InviteRow({ invite, processing, error, targeted, onAccep
         "data-notification-target": targeted ? "true" : undefined,
       }}
     >
-      {state.actionable ? null : <p data-invite-ended="true" className={DETAIL_MUTED_CLASS}>{state.text}</p>}
+      {state.actionable ? null : <p data-invite-ended="true" className={STATUS_DETAIL_MUTED_CLASS}>{state.text}</p>}
       {error !== null && error !== undefined ? (
-        <p role="status" data-invite-error={inviteId} className={DETAIL_ERROR_CLASS}>{error}</p>
+        <p role="status" data-invite-error={inviteId} className={STATUS_DETAIL_ERROR_CLASS}>{error}</p>
       ) : null}
     </RowShell>
   )

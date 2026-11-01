@@ -21,7 +21,7 @@ export default function NotificationButton({ open, onOpen }) {
             onClick={onOpen}
             data-notification-entry="true"
             data-notification-unread-count={String(unread)}
-            className="relative flex h-12 w-14 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 transition-transform duration-200 active:scale-95 md:h-16 md:w-20"
+            className="interactive-scale relative flex h-12 w-14 shrink-0 items-center justify-center md:h-16 md:w-20"
         >
             <PublicAsset src={LOBBY_ASSETS.notificationEntryButton} alt="" className="block h-auto w-full select-none" />
             <CountBadge count={unread} />

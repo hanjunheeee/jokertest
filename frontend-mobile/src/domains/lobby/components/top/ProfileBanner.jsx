@@ -5,12 +5,13 @@ import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import {
     BANNER_FRAME_IMG_CLASS,
     LOBBY_TEXT_PANEL_INSET,
+    TEXT_ALIGN_LEFT_CLASS,
     TEXT_SHADOW,
 } from "@/domains/user/constants/myPageBannerStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import BannerPortrait from "@m/shared/ui/portrait/BannerPortrait.jsx"
 
-// 배너 본체는 버튼 하나, 톱니는 그 위에 겹친 따로 버튼 (안쪽에 버튼 넣지 않기)
+// 배너 본체는 버튼 하나 (누름 움직임은 데스크톱 interactive-scale), 톱니는 그 위에 겹친 따로 버튼 (안쪽에 버튼 넣지 않기)
 // 톱니 그림은 데스크톱 자리(위 14.5%·오른쪽 17%·폭 7.8cqi)의 가운데에 두고 누르는 칸만 44px로 키움
 export default function ProfileBanner({ profile, onMyPage, onAccount }) {
     return (
@@ -19,13 +20,14 @@ export default function ProfileBanner({ profile, onMyPage, onAccount }) {
                 type="button"
                 aria-label="마이페이지"
                 onClick={onMyPage}
-                className="relative block w-full cursor-pointer border-0 bg-transparent p-0 transition-transform duration-200 ease-out active:scale-[0.98]"
+                className="interactive-scale relative block w-full"
             >
                 <PublicAsset src={MY_PAGE_ASSETS.myPageButtonFrame} alt="" className={BANNER_FRAME_IMG_CLASS} />
                 <BannerPortrait />
                 <span className="pointer-events-none absolute flex items-center" style={LOBBY_TEXT_PANEL_INSET}>
+                    {/* 데스크톱 BannerTextPanel처럼 긴 이름은 줄바꿈, 글자만 폰에서 읽히게 키움 */}
                     <span
-                        className="relative left-[-4%] max-w-full truncate font-subheading app-text-scaled [--app-text-size:max(0.85rem,5cqi)] font-bold leading-tight text-[#ebe2cc]"
+                        className={`relative ${TEXT_ALIGN_LEFT_CLASS} max-w-full [overflow-wrap:anywhere] font-subheading app-text-scaled [--app-text-size:max(0.85rem,5cqi)] font-bold leading-tight text-[#ebe2cc]`}
                         style={{ textShadow: TEXT_SHADOW }}
                     >
                         {profile.nickname}
@@ -42,7 +44,7 @@ export default function ProfileBanner({ profile, onMyPage, onAccount }) {
                 <PublicAsset
                     src={LOBBY_ASSETS.settingsGear}
                     alt=""
-                    className="block aspect-square w-[7.8cqi] min-w-4 select-none object-contain transition-transform duration-200 group-active:scale-90"
+                    className="interactive-scale-sm aspect-square w-[7.8cqi] min-w-4 select-none object-contain"
                 />
             </button>
         </div>

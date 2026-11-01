@@ -16,13 +16,13 @@ export default function CandidateRow({ candidate, sent, blocking, onSend, onBloc
         label={`${name} 차단`}
         disabled={blocking}
         data-block-target={id}
-        onClick={() => onBlock(id)}
+        onClick={() => onBlock?.(id)}
       />
       <IconAction
         src={FRIEND_LIST_ASSETS.friendRequestButton}
         label={sent ? "신청 완료" : `${name}에게 친구 신청`}
         dim={sent}
-        onClick={() => { if (!sent) onSend(id) }}
+        onClick={() => { if (!sent) onSend?.(id) }}
       />
     </>
   )
