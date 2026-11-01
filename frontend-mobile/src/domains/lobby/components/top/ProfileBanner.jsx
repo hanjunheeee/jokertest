@@ -1,5 +1,7 @@
 // 내 프로필 배너 (배너 틀·초상·닉네임, 누르면 마이페이지, 톱니는 계정 화면)
 // 로비 TopBar가 씀
+import { useEffect } from "react"
+import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
 import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import {
@@ -14,6 +16,11 @@ import BannerPortrait from "@m/shared/ui/portrait/BannerPortrait.jsx"
 // 배너 본체는 버튼 하나 (누름 움직임은 데스크톱 interactive-scale), 톱니는 그 위에 겹친 따로 버튼 (안쪽에 버튼 넣지 않기)
 // 톱니 그림은 데스크톱 자리(위 14.5%·오른쪽 17%·폭 7.8cqi)의 가운데에 두고 누르는 칸만 44px로 키움
 export default function ProfileBanner({ profile, onMyPage, onAccount }) {
+    // 처음 그릴 때 지갑 요약 받기, 장착 초상이 이 응답으로 꾸미기 스토어에 들어옴 (데스크톱 BannerProfilePortrait와 같음)
+    useEffect(() => {
+        useEconomyStore.getState().fetchSummary()
+    }, [])
+
     return (
         <div className="relative w-full leading-none [container-type:inline-size]">
             <button
