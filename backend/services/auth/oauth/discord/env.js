@@ -3,7 +3,7 @@
 const { createError } = require("../../../../utils/appError");
 
 // 요청 시간 제한 (환경변수 없으면 8초)
-const DISCORD_REQUEST_TIMEOUT_MS = () => Number(process.env.DISCORD_OAUTH_TIMEOUT_MS) || 8000;
+const REQUEST_TIMEOUT_MS = () => Number(process.env.DISCORD_OAUTH_TIMEOUT_MS) || 8000;
 
 // fetch 시간 초과·중단 오류인지
 const isTimeoutError = (error) => error?.name === "TimeoutError" || error?.name === "AbortError";
@@ -22,7 +22,7 @@ const resolveRedirectUri = (purpose) =>
     purpose === "link" ? readRequiredEnv("DISCORD_LINK_REDIRECT_URI") : readRequiredEnv("DISCORD_REDIRECT_URI");
 
 module.exports = {
-    DISCORD_REQUEST_TIMEOUT_MS,
+    REQUEST_TIMEOUT_MS,
     isTimeoutError,
     readRequiredEnv,
     resolveRedirectUri,

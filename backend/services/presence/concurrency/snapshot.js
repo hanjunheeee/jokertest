@@ -1,6 +1,6 @@
 // 동시 접속 스냅샷 파일, 지금 접속 수 세기 + 한 줄 저장
 // 주기 켜기(scheduler)가 부르고 시험도 바로 부름
-const concurrentSnapshotRepository = require('../../../repositories/presence')
+const snapshotRepository = require('../../../repositories/presence')
 
 // 접속 Map·판 참가자 Set으로 로비/게임 중 수 나눠 셈
 function getCurrentSnapshot(onlineUsers, gameSnapshot) {
@@ -24,7 +24,7 @@ function getCurrentSnapshot(onlineUsers, gameSnapshot) {
 }
 
 // 저장 실패해도 던지지 않고 false (주기 작업이 안 멈추게)
-async function captureConcurrentSnapshot({
+async function captureSnapshot({
     onlineUsers,
     getGameSnapshot,
     model,
@@ -32,7 +32,7 @@ async function captureConcurrentSnapshot({
 } = {}) {
     try {
         const current = getCurrentSnapshot(onlineUsers, getGameSnapshot())
-        await concurrentSnapshotRepository.saveSnapshot({ captured_at: now(), ...current }, { model })
+        await snapshotRepository.saveSnapshot({ captured_at: now(), ...current }, { model })
         return true
     } catch (error) {
         console.error('[동시 접속 스냅샷 저장 실패]', { code: 'CONCURRENT_SNAPSHOT_FAILED' })
@@ -42,5 +42,5 @@ async function captureConcurrentSnapshot({
 
 module.exports = {
     getCurrentSnapshot,
-    captureConcurrentSnapshot,
+    captureSnapshot,
 }

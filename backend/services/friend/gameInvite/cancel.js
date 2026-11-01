@@ -4,7 +4,7 @@
 // 컨트롤러·친구 차단·방 나가기가 부름
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
-const { lockReceiver, expireDueInvitesForReceiver } = require('./guards');
+const { lockReceiver, expireDueInvites } = require('./guards');
 const { INVITE_STATUS } = require('./constants');
 const { toPublicInvite } = require('./view');
 const { emitInviteUpdated } = require('./notify');
@@ -16,7 +16,7 @@ async function declineInvite(receiverId, inviteId) {
     const { db, now } = getDeps();
     const decided = await withTransaction(db, async (t) => {
         await lockReceiver(db, receiverId, t);
-        await expireDueInvitesForReceiver(db, receiverId, now(), t);
+        await expireDueInvites(db, receiverId, now(), t);
 
         const row = await gameInviteRepository.lockInvite(db, inviteId, t);
         if (!row) throw createError('초대를 찾을 수 없습니다.', 404);

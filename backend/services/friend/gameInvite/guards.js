@@ -19,7 +19,7 @@ const isBlockedBetween = async (uuidA, uuidB, options = {}) => {
 };
 
 // 시간 지난 대기 초대를 만료로 바꾸고 바뀐 수
-const expireDueInvitesForReceiver = async (db, receiverId, now, transaction) => {
+const expireDueInvites = async (db, receiverId, now, transaction) => {
     const [affected] = await gameInviteRepository.expireDue(db, {
         receiverId, now, expiredStatus: INVITE_STATUS.EXPIRED, pendingStatus: INVITE_STATUS.PENDING,
     }, transaction);
@@ -29,5 +29,5 @@ const expireDueInvitesForReceiver = async (db, receiverId, now, transaction) => 
 module.exports = {
     lockReceiver,
     isBlockedBetween,
-    expireDueInvitesForReceiver,
+    expireDueInvites,
 };

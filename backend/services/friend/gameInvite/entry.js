@@ -5,7 +5,7 @@
 const friendRepository = require('../../../repositories/friend/relation');
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
-const { expireDueInvitesForReceiver, isBlockedBetween, lockReceiver } = require('./guards');
+const { expireDueInvites, isBlockedBetween, lockReceiver } = require('./guards');
 const { INVITE_STATUS, ENTRY_OUTCOME } = require('./constants');
 const { toPublicInvite } = require('./view');
 const gameInviteRepository = require('../../../repositories/friend/gameInvite');
@@ -21,7 +21,7 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
         if (row0.receiver_id !== receiverId) throw createError('초대를 찾을 수 없습니다.', 404);
 
         await friendRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
-        await expireDueInvitesForReceiver(db, receiverId, now(), t);
+        await expireDueInvites(db, receiverId, now(), t);
 
         const row = await gameInviteRepository.lockInvite(db, inviteId, t);
         if (!row) throw createError('초대를 찾을 수 없습니다.', 404);

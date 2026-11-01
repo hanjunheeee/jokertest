@@ -1,7 +1,7 @@
 // Discord OAuth 흐름 파일, 인가 주소 만들기 · 인가 코드 → 토큰 → 프로필
 // 오류 코드·문구는 그대로 (컨트롤러가 code로 화면 돌려보냄)
 const { createError } = require("../../../../utils/appError");
-const { readRequiredEnv, resolveRedirectUri, DISCORD_REQUEST_TIMEOUT_MS, isTimeoutError } = require('./env');
+const { readRequiredEnv, resolveRedirectUri, REQUEST_TIMEOUT_MS, isTimeoutError } = require('./env');
 const { DISCORD_AUTH_ENDPOINT, DISCORD_TOKEN_ENDPOINT, DISCORD_USERINFO_ENDPOINT } = require('./constants');
 
 // state를 붙여 인가 주소 만듦
@@ -43,7 +43,7 @@ exports.exchangeCodeForProfile = async (code, { purpose = "login" } = {}) => {
                 redirect_uri:  redirectUri,
                 grant_type:    "authorization_code",
             }),
-            signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS()),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS()),
         });
     } catch (error) {
         if (isTimeoutError(error)) {
@@ -63,7 +63,7 @@ exports.exchangeCodeForProfile = async (code, { purpose = "login" } = {}) => {
     try {
         profileResponse = await fetch(DISCORD_USERINFO_ENDPOINT, {
             headers: { authorization: `Bearer ${tokenBody.access_token}` },
-            signal: AbortSignal.timeout(DISCORD_REQUEST_TIMEOUT_MS()),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS()),
         });
     } catch (error) {
         if (isTimeoutError(error)) {

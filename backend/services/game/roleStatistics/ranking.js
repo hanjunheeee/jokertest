@@ -15,8 +15,8 @@ function buildRoleRanking(statsForRole, { minGames = RANKING_MIN_GAMES } = {}) {
 }
 
 // 한 사람 직업 중 승률 가장 높은 것 하나, 같으면 승수·판 수·직업 순서
-function selectMaskOfFateRole(statsByRoleForUser, { minGames = MASK_OF_FATE_MIN_GAMES, roleOrder = ROLE_CODES } = {}) {
-    const eligible = (statsByRoleForUser ?? []).filter((entry) => ROLE_CODES.includes(entry.role) && entry.games >= minGames)
+function selectMaskOfFateRole(statsForUser, { minGames = MASK_OF_FATE_MIN_GAMES, roleOrder = ROLE_CODES } = {}) {
+    const eligible = (statsForUser ?? []).filter((entry) => ROLE_CODES.includes(entry.role) && entry.games >= minGames)
     if (eligible.length === 0) return null
 
     const fixedIndex = (role) => {

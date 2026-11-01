@@ -4,7 +4,7 @@
 // 조회 전에 만료 정리부터 함
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
-const { lockReceiver, expireDueInvitesForReceiver } = require('./guards');
+const { lockReceiver, expireDueInvites } = require('./guards');
 const { INVITE_STATUS } = require('./constants');
 const { toPublicInvite } = require('./view');
 const gameInviteRepository = require('../../../repositories/friend/gameInvite');
@@ -19,7 +19,7 @@ async function getReceiverSnapshot(receiverId) {
 
     return await withTransaction(db, async (t) => {
         await lockReceiver(db, receiverId, t);
-        await expireDueInvitesForReceiver(db, receiverId, now(), t);
+        await expireDueInvites(db, receiverId, now(), t);
 
         const rows = await gameInviteRepository.listForReceiverWithSender(db, { receiverId, status: INVITE_STATUS.PENDING }, t);
 
@@ -48,7 +48,7 @@ async function getInviteForUser(viewerId, inviteId) {
 
         if (row.status === INVITE_STATUS.PENDING && row.expires_at.getTime() <= now().getTime()) {
             await lockReceiver(db, row.receiver_id, t);
-            await expireDueInvitesForReceiver(db, row.receiver_id, now(), t);
+            await expireDueInvites(db, row.receiver_id, now(), t);
             await gameInviteRepository.reloadInvite(row, t);
         }
 

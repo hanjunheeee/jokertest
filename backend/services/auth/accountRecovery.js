@@ -2,7 +2,7 @@
 
 const db = require('../../models');
 const { maskEmail } = require('../../utils/auth/maskEmail');
-const accountFindRequestRepository = require('../../repositories/auth/accountFindRequest');
+const findRequestRepository = require('../../repositories/auth/accountFindRequest');
 const userLookup = require('../../repositories/user/lookup');
 
 const NOT_FOUND_RESULT = Object.freeze({ ok: false, code: 'NOT_FOUND' });
@@ -14,7 +14,7 @@ const sameUtcCalendarDay = (a, b) => (
 );
 
 const findId = async ({ nickname, birthDate, ipAddress }) => {
-    await accountFindRequestRepository.recordFindId(ipAddress);
+    await findRequestRepository.recordFindId(ipAddress);
 
     const user = await userLookup.findForFindId(db, nickname);
 

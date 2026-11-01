@@ -24,7 +24,7 @@ const profilePhotoItems = PROFILE_PHOTO_NAMES.map((name) => ({
     purchasable: false,
 }));
 
-const PURCHASABLE_BORDER_PRICES = {
+const BORDER_PRICES = {
     남작: 200,
     자작: 300,
     백작: 400,
@@ -33,7 +33,7 @@ const PURCHASABLE_BORDER_PRICES = {
     황제: 1000,
 };
 
-const JOB_PROFILE_BORDER_NAMES = ['귀족', '광대', '주치의', '경비원', '마녀사냥꾼'];
+const JOB_BORDER_NAMES = ['귀족', '광대', '주치의', '경비원', '마녀사냥꾼'];
 
 const profileBorderItems = [
     {
@@ -43,14 +43,14 @@ const profileBorderItems = [
         defaultGrant: true,
         purchasable: false,
     },
-    ...Object.entries(PURCHASABLE_BORDER_PRICES).map(([tier, priceGold]) => ({
+    ...Object.entries(BORDER_PRICES).map(([tier, priceGold]) => ({
         id: `profile-border-${tier}`,
         type: ITEM_TYPES.PROFILE_BORDER,
         priceGold,
         defaultGrant: false,
         purchasable: true,
     })),
-    ...JOB_PROFILE_BORDER_NAMES.map((name) => ({
+    ...JOB_BORDER_NAMES.map((name) => ({
         id: `profile-border-${name}`,
         type: ITEM_TYPES.PROFILE_BORDER,
         priceGold: 0,

@@ -1,7 +1,7 @@
 // Google OAuth 흐름 파일, 인가 주소 만들기 · 인가 코드 → 토큰 → 프로필
 // 오류 코드·문구는 그대로 (컨트롤러가 code로 화면 돌려보냄)
 const { createError } = require("../../../../utils/appError");
-const { readRequiredEnv, GOOGLE_REQUEST_TIMEOUT_MS, isTimeoutError } = require('./env');
+const { readRequiredEnv, REQUEST_TIMEOUT_MS, isTimeoutError } = require('./env');
 const { GOOGLE_AUTH_ENDPOINT, GOOGLE_TOKEN_ENDPOINT, GOOGLE_USERINFO_ENDPOINT } = require('./constants');
 
 // state를 붙여 인가 주소 만듦
@@ -43,7 +43,7 @@ exports.exchangeCodeForProfile = async (code) => {
                 redirect_uri:  redirectUri,
                 grant_type:    "authorization_code",
             }),
-            signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS()),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS()),
         });
     } catch (error) {
         if (isTimeoutError(error)) {
@@ -63,7 +63,7 @@ exports.exchangeCodeForProfile = async (code) => {
     try {
         profileResponse = await fetch(GOOGLE_USERINFO_ENDPOINT, {
             headers: { authorization: `Bearer ${tokenBody.access_token}` },
-            signal: AbortSignal.timeout(GOOGLE_REQUEST_TIMEOUT_MS()),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS()),
         });
     } catch (error) {
         if (isTimeoutError(error)) {

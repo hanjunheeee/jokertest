@@ -8,7 +8,7 @@ const { normalizeEmail } = require('../../../validations/auth/signupEmailVerific
 const { requireConfig } = require('./config');
 const { PURPOSE } = require('./constants');
 const { generateNumericCode, hashCode } = require('./codes');
-const signupVerificationRepository = require('../../../repositories/auth/signupEmailVerification');
+const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
 const { isUniqueConstraintName } = require('../../../repositories/common');
 
 // 행 잠금 → 대기 시간 확인 → 새 세대 코드 저장 → 메일, 동시에 행 만들다 겹치면 처음부터 다시
@@ -19,11 +19,11 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
     const nowMs = now().getTime();
 
     const outcome = await userRepository.withTransaction(async (transaction) => {
-        let row = await signupVerificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
+        let row = await verificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 
         if (!row) {
             try {
-                row = await signupVerificationRepository.createVerification({
+                row = await verificationRepository.createVerification({
                     email: normalizedEmail, purpose: PURPOSE, generation: 0, attempts: 0,
                 }, transaction);
             } catch (error) {
@@ -49,7 +49,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         const existingUser = await userRepository.findByEmail(normalizedEmail, { transaction, logging: false });
 
         if (existingUser) {
-            await signupVerificationRepository.updateVerification(row.id, {
+            await verificationRepository.updateVerification(row.id, {
                 generation: nextGeneration,
                 code_hash: null,
                 code_expires_at: null,
@@ -73,7 +73,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         const codeHash = hashCode(normalizedEmail, nextGeneration, code, config.hmacSecret);
         const codeExpiresAt = new Date(nowMs + config.codeTtlMs);
 
-        await signupVerificationRepository.updateVerification(row.id, {
+        await verificationRepository.updateVerification(row.id, {
             generation: nextGeneration,
             code_hash: codeHash,
             code_expires_at: codeExpiresAt,

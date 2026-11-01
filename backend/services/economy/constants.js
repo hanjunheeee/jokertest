@@ -17,7 +17,7 @@ const FREE_CARD_FRAME_ID = 'player-card-베이스';
 const SKIN_ITEM_ID_PREFIX = 'player-skin-';
 
 // 직업 스킨 칸마다 스킨 id에 들어가는 직업 이름
-const JOB_SKIN_ID_PREFIX_BY_SLOT = Object.freeze({
+const JOB_NAME_BY_SLOT = Object.freeze({
     JOB_SKIN_NOBLE: '귀족',
     JOB_SKIN_CLOWN: '광대',
     JOB_SKIN_GUARD: '경비원',
@@ -26,7 +26,7 @@ const JOB_SKIN_ID_PREFIX_BY_SLOT = Object.freeze({
 });
 
 // 직업마다 안 사도 쓰는 기본 스킨
-const FREE_JOB_SKIN_IDS_BY_SLOT = Object.freeze({
+const FREE_SKINS_BY_SLOT = Object.freeze({
     JOB_SKIN_NOBLE: Object.freeze(['basic-skin-귀족1', 'basic-skin-귀족2', 'basic-skin-귀족3']),
     JOB_SKIN_CLOWN: Object.freeze(['basic-skin-광대1', 'basic-skin-광대2']),
     JOB_SKIN_GUARD: Object.freeze(['basic-skin-경비원1', 'basic-skin-경비원2']),
@@ -38,7 +38,7 @@ const FREE_JOB_SKIN_IDS_BY_SLOT = Object.freeze({
 const CURRENCIES = Object.freeze({ GOLD: 'GOLD', DIAMOND: 'DIAMOND' });
 
 // 통화마다 지갑 잔액 컬럼
-const CURRENCY_TO_WALLET_COLUMN = Object.freeze({
+const CURRENCY_TO_COLUMN = Object.freeze({
     GOLD: 'balance_gold',
     DIAMOND: 'balance_diamond',
 });
@@ -71,7 +71,7 @@ const SLOT_TO_LOADOUT_COLUMN = {
 };
 
 // 직업 id마다 스킨 컬럼 (게임 시작 로드아웃용)
-const JOB_SKIN_COLUMN_BY_JOB_ID = Object.freeze({
+const JOB_TO_SKIN_COLUMN = Object.freeze({
     noble: 'selected_skin_noble',
     clown: 'selected_skin_clown',
     guard: 'selected_skin_guard',
@@ -89,12 +89,12 @@ const GOLD_PURCHASE_REASON = 'GOLD_PURCHASE';
 const GOLD_PURCHASE_MAX_ATTEMPTS = 3;
 
 // 이모티콘 칸 4개 컬럼
-const EMOJI_PALETTE_SLOT_COLUMNS = Object.freeze([
+const EMOJI_SLOT_COLUMNS = Object.freeze([
     'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6', 'slot_7', 'slot_8',
 ]);
 
 // 팔레트 처음 값 (빈 칸 4개)
-const DEFAULT_EMOJI_PALETTE_SLOTS = Object.freeze([
+const DEFAULT_EMOJI_SLOTS = Object.freeze([
     'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
     'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
 ]);
@@ -102,17 +102,17 @@ const DEFAULT_EMOJI_PALETTE_SLOTS = Object.freeze([
 module.exports = {
     FREE_CARD_FRAME_ID,
     SKIN_ITEM_ID_PREFIX,
-    JOB_SKIN_ID_PREFIX_BY_SLOT,
-    FREE_JOB_SKIN_IDS_BY_SLOT,
+    JOB_NAME_BY_SLOT,
+    FREE_SKINS_BY_SLOT,
     CURRENCIES,
-    CURRENCY_TO_WALLET_COLUMN,
+    CURRENCY_TO_COLUMN,
     MAX_BALANCE,
     SLOT_TO_ITEM_TYPE,
     SLOT_TO_LOADOUT_COLUMN,
-    JOB_SKIN_COLUMN_BY_JOB_ID,
+    JOB_TO_SKIN_COLUMN,
     GOLD_PURCHASE_KIND,
     GOLD_PURCHASE_REASON,
     GOLD_PURCHASE_MAX_ATTEMPTS,
-    EMOJI_PALETTE_SLOT_COLUMNS,
-    DEFAULT_EMOJI_PALETTE_SLOTS,
+    EMOJI_SLOT_COLUMNS,
+    DEFAULT_EMOJI_SLOTS,
 };

@@ -5,7 +5,7 @@
 const account = require('./account');
 const social = require('./social');
 // 시험 손잡이 __testables는 가입 인증·비번 재설정 둘 다 있어 겹침 → 하위 입구에서만
-const { __testables: signupEmailVerificationTestables, ...signupEmailVerification } = require('./signupEmailVerification');
+const { __testables: signupTestables, ...signupEmailVerification } = require('./signupEmailVerification');
 const { __testables: passwordResetTestables, ...passwordReset } = require('./passwordReset');
 const { findId } = require('./accountRecovery');
 // 구글·디스코드는 함수 이름이 같아 펼치지 않고 묶음으로

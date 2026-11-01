@@ -7,7 +7,7 @@ const mailAdapter = require('../../../utils/adapters/mail');
 const { withDeadlockRetry } = require('./retry');
 const { generateRawToken, hashToken, buildResetUrl } = require('./tokens');
 const { TOKEN_TTL_MS } = require('./constants');
-const passwordResetTokenRepository = require('../../../repositories/auth/passwordResetToken');
+const resetTokenRepository = require('../../../repositories/auth/passwordResetToken');
 
 // 소셜 전용 계정이면 소셜 로그인 안내 메일, 아니면 재설정 메일
 exports.requestPasswordReset = async ({ email }, { mailAdapter: injectedMailAdapter } = {}) => {
@@ -22,10 +22,10 @@ exports.requestPasswordReset = async ({ email }, { mailAdapter: injectedMailAdap
             return { socialOnly: true, toEmail: user.email };
         }
 
-        await passwordResetTokenRepository.revokeOpenTokens(user.uuid, transaction);
+        await resetTokenRepository.revokeOpenTokens(user.uuid, transaction);
 
         const rawToken = generateRawToken();
-        await passwordResetTokenRepository.createToken({
+        await resetTokenRepository.createToken({
             user_id: user.uuid,
             token: null,
             token_hash: hashToken(rawToken),

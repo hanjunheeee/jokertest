@@ -53,11 +53,11 @@ exports.refresh = async (rawRefreshToken) => {
         }, { expiresIn: cappedTtlSeconds });
 
         if (isGraceMatch) {
-            const recoveredRawRefreshToken = deriveRotatedRefreshToken(rawRefreshToken, session.id);
+            const recoveredRawToken = deriveRotatedRefreshToken(rawRefreshToken, session.id);
             return {
                 type: "ok",
                 accessToken,
-                refreshToken: recoveredRawRefreshToken,
+                refreshToken: recoveredRawToken,
                 refreshTokenExpiresAt: session.refresh_token_expires_at,
             };
         }

@@ -8,14 +8,14 @@ const { validatePassword } = require('../../../validations/auth/signup');
 const { validateResetToken } = require('../../../validations/auth/passwordReset');
 const { hashToken } = require('./tokens');
 const { withDeadlockRetry } = require('./retry');
-const passwordResetTokenRepository = require('../../../repositories/auth/passwordResetToken');
+const resetTokenRepository = require('../../../repositories/auth/passwordResetToken');
 
 // 토큰 모양 → 없음·폐기 → 사용됨 → 만료 순으로 확인
 exports.verifyPasswordReset = async (rawToken) => {
     const tokenResult = validateResetToken(rawToken);
     if (!tokenResult.ok) return { ok: false, code: 'INVALID' };
 
-    const row = await passwordResetTokenRepository.findByHash(hashToken(rawToken));
+    const row = await resetTokenRepository.findByHash(hashToken(rawToken));
 
     if (!row || row.revoked_at) return { ok: false, code: 'INVALID' };
     if (row.used) return { ok: false, code: 'USED' };
@@ -36,7 +36,7 @@ exports.confirmPasswordReset = async (rawToken, newPassword) => {
     const tokenHash = hashToken(rawToken);
 
     const outcome = await withDeadlockRetry(async (transaction) => {
-        const tokenRow = await passwordResetTokenRepository.lockByHash(tokenHash, transaction);
+        const tokenRow = await resetTokenRepository.lockByHash(tokenHash, transaction);
         if (!tokenRow || tokenRow.revoked_at) return { code: 'INVALID' };
         if (tokenRow.used) return { code: 'USED' };
         if (tokenRow.expired_at <= new Date()) return { code: 'EXPIRED' };
@@ -47,14 +47,14 @@ exports.confirmPasswordReset = async (rawToken, newPassword) => {
         if (!user) return { code: 'INVALID' };
         if (user.has_local_password === false) return { code: 'SOCIAL_ONLY' };
 
-        await passwordResetTokenRepository.markUsed(tokenRow.id, transaction);
+        await resetTokenRepository.markUsed(tokenRow.id, transaction);
 
         const password_hash = await hashPassword(passwordResult.value);
         await userRepository.updateUser(user.uuid, { password_hash }, { transaction, logging: false });
 
         await userRepository.markOnlineSessionsOffline(user.uuid, { transaction, logging: false });
 
-        await passwordResetTokenRepository.revokeOpenTokens(user.uuid, transaction);
+        await resetTokenRepository.revokeOpenTokens(user.uuid, transaction);
 
         return { code: 'OK' };
     });

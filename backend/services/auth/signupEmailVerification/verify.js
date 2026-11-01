@@ -7,7 +7,7 @@ const { normalizeEmail } = require('../../../validations/auth/signupEmailVerific
 const { requireConfig } = require('./config');
 const { PURPOSE } = require('./constants');
 const { hashCode, generateProof, hashProof } = require('./codes');
-const signupVerificationRepository = require('../../../repositories/auth/signupEmailVerification');
+const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
 
 // 맞으면 증명 발급, 틀리면 횟수 올리고 남은 횟수 알려 줌
 exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = {}) => {
@@ -16,7 +16,7 @@ exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = 
     const nowMs = now().getTime();
 
     return userRepository.withTransaction(async (transaction) => {
-        const row = await signupVerificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
+        const row = await verificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 
         if (!row || !row.code_hash || row.code_consumed_at) {
             return { ok: false, code: 'CODE_INVALID' };
@@ -31,7 +31,7 @@ exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = 
         const presentedHash = hashCode(normalizedEmail, row.generation, code, config.hmacSecret);
         if (presentedHash !== row.code_hash) {
             const nextAttempts = row.attempts + 1;
-            await signupVerificationRepository.updateVerification(row.id, { attempts: nextAttempts }, transaction);
+            await verificationRepository.updateVerification(row.id, { attempts: nextAttempts }, transaction);
             if (nextAttempts >= config.maxAttempts) {
                 return { ok: false, code: 'TOO_MANY_ATTEMPTS' };
             }
@@ -42,7 +42,7 @@ exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = 
         const proofHash = hashProof(normalizedEmail, row.generation, proof, config.hmacSecret);
         const proofExpiresAt = new Date(nowMs + config.proofTtlMs);
 
-        await signupVerificationRepository.updateVerification(row.id, {
+        await verificationRepository.updateVerification(row.id, {
             code_consumed_at: new Date(nowMs),
             proof_hash: proofHash,
             proof_expires_at: proofExpiresAt,
@@ -62,7 +62,7 @@ exports.consumeSignupProof = async ({ email, signupProof }, { transaction, now =
     const normalizedEmail = normalizeEmail(email);
     const nowMs = now().getTime();
 
-    const row = await signupVerificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
+    const row = await verificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 
     if (!row || !row.proof_hash || row.proof_consumed_at) {
         return { ok: false, code: 'SIGNUP_PROOF_INVALID' };
@@ -76,7 +76,7 @@ exports.consumeSignupProof = async ({ email, signupProof }, { transaction, now =
         return { ok: false, code: 'SIGNUP_PROOF_INVALID' };
     }
 
-    await signupVerificationRepository.updateVerification(row.id, { proof_consumed_at: new Date(nowMs) }, transaction);
+    await verificationRepository.updateVerification(row.id, { proof_consumed_at: new Date(nowMs) }, transaction);
 
     return { ok: true };
 };

@@ -4,16 +4,16 @@
 // 상품 버전 확인은 재화 상품 서비스, 돈 움직임은 장부 거래
 const crypto = require('crypto');
 const { createError } = require('../../utils/appError');
-const { defaultDb, purchaseRequestConflictError, snapshotLedgerEntry } = require('./helpers');
+const { defaultDb, purchaseConflictError, snapshotLedgerEntry } = require('./helpers');
 const { CURRENCIES, GOLD_PURCHASE_REASON, GOLD_PURCHASE_KIND, GOLD_PURCHASE_MAX_ATTEMPTS } = require('./constants');
 const { ensureWalletRow, applyLedgerTransaction } = require('./ledger');
 const { economyModels } = require('../../repositories/economy/models');
 const walletRepository = require('../../repositories/economy/wallet');
-const purchaseRequestRepository = require('../../repositories/economy/purchaseRequest');
+const requestRepository = require('../../repositories/economy/purchaseRequest');
 const { withTransaction, isUniqueConstraintName, isDeadlockError } = require('../../repositories/common');
 
 // 다이아 빼기·골드 넣기 두 장부 참조 id (요청 id 해시)
-const deriveGoldPurchaseReferenceEventId = (referenceEventId, leg) =>
+const deriveLegReferenceId = (referenceEventId, leg) =>
     `gold:${crypto.createHash('sha256').update(referenceEventId).digest('hex')}:${leg}`;
 
 // 저장된 구매 결과에서 응답 모양
@@ -49,11 +49,11 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
             || storedPayload?.type !== payload.type
             || storedPayload?.productId !== payload.productId
             || storedPayload?.version !== payload.version) {
-            throw purchaseRequestConflictError();
+            throw purchaseConflictError();
         }
         return goldPurchaseResultOf(stored);
     };
-    const findStored = (transaction) => purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId }, transaction);
+    const findStored = (transaction) => requestRepository.findRequestByReference(models, { userId, referenceEventId }, transaction);
 
     const preExisting = await findStored(null);
     if (preExisting) return consumeStored(preExisting);
@@ -96,14 +96,14 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
             reason: GOLD_PURCHASE_REASON,
             currency: CURRENCIES.DIAMOND,
             amount: -payAmount,
-            referenceEventId: deriveGoldPurchaseReferenceEventId(referenceEventId, 'diamond'),
+            referenceEventId: deriveLegReferenceId(referenceEventId, 'diamond'),
         }, { transaction: t });
         const goldOutcome = await applyLedgerTransaction(db, {
             userId,
             reason: GOLD_PURCHASE_REASON,
             currency: CURRENCIES.GOLD,
             amount: grantTotal,
-            referenceEventId: deriveGoldPurchaseReferenceEventId(referenceEventId, 'gold'),
+            referenceEventId: deriveLegReferenceId(referenceEventId, 'gold'),
         }, { transaction: t });
         if (diamondOutcome.idempotent || goldOutcome.idempotent) {
             throw createError('골드 구매 원장 상태가 일치하지 않습니다.', 500, 'GOLD_PURCHASE_LEDGER_INCONSISTENT');
@@ -111,7 +111,7 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
 
         const results = [snapshotLedgerEntry(diamondOutcome.ledgerEntry), snapshotLedgerEntry(goldOutcome.ledgerEntry)];
         try {
-            await purchaseRequestRepository.createRequest(models, {
+            await requestRepository.createRequest(models, {
                 user_id: userId,
                 reference_event_id: referenceEventId,
                 kind: GOLD_PURCHASE_KIND,

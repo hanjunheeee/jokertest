@@ -3,8 +3,8 @@
 // 장부 거래 파일, 지갑 행 보장 + 잔액 바꾸고 장부 쓰기 한 트랜잭션
 // 구매·지급·충전이 다 이 함수로 돈 움직임 (같은 참조 id는 한 번만)
 const { createError } = require('../../utils/appError');
-const { isValidCurrency, isBoundedAmount, payloadMatches, referenceEventConflictError } = require('./helpers');
-const { CURRENCY_TO_WALLET_COLUMN, MAX_BALANCE } = require('./constants');
+const { isValidCurrency, isBoundedAmount, payloadMatches, referenceConflictError } = require('./helpers');
+const { CURRENCY_TO_COLUMN, MAX_BALANCE } = require('./constants');
 const { economyModels } = require('../../repositories/economy/models');
 const walletRepository = require('../../repositories/economy/wallet');
 const ledgerRepository = require('../../repositories/economy/ledger');
@@ -40,7 +40,7 @@ const applyLedgerTransaction = async (db, {
 
     const preExisting = await ledgerRepository.findByReference(models, { userId, referenceEventId }, externalTransaction);
     if (preExisting) {
-        if (!payloadMatches(preExisting, payload)) throw referenceEventConflictError();
+        if (!payloadMatches(preExisting, payload)) throw referenceConflictError();
         return { idempotent: true, ledgerEntry: preExisting };
     }
 
@@ -51,7 +51,7 @@ const applyLedgerTransaction = async (db, {
 
         const committed = await ledgerRepository.findByReference(models, { userId, referenceEventId }, t);
         if (committed) {
-            if (!payloadMatches(committed, payload)) throw referenceEventConflictError();
+            if (!payloadMatches(committed, payload)) throw referenceConflictError();
             return { idempotent: true, ledgerEntry: committed };
         }
 
@@ -62,7 +62,7 @@ const applyLedgerTransaction = async (db, {
             }
         }
 
-        const column = CURRENCY_TO_WALLET_COLUMN[currency];
+        const column = CURRENCY_TO_COLUMN[currency];
         const newBalance = wallet[column] + amount;
         if (newBalance < 0) {
             throw createError('잔액이 부족합니다.', 400, 'INSUFFICIENT_BALANCE');
@@ -109,7 +109,7 @@ const applyLedgerTransaction = async (db, {
     const resolveDuplicate = async (transactionForLookup) => {
         const existing = await ledgerRepository.findByReference(models, { userId, referenceEventId }, transactionForLookup);
         if (!existing) return null;
-        if (!payloadMatches(existing, payload)) throw referenceEventConflictError();
+        if (!payloadMatches(existing, payload)) throw referenceConflictError();
         return { idempotent: true, ledgerEntry: existing };
     };
 

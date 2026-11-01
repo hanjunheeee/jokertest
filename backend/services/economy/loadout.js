@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb, buildSkinsByJob, isFreeJobSkin } = require('./helpers');
-const { SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_SKIN_ID_PREFIX_BY_SLOT, SKIN_ITEM_ID_PREFIX } = require('./constants');
+const { SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_NAME_BY_SLOT, SKIN_ITEM_ID_PREFIX } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
 const { economyModels } = require('../../repositories/economy/models');
 const entitlementRepository = require('../../repositories/economy/entitlement');
@@ -36,7 +36,7 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
 
-        const requiredPrefix = JOB_SKIN_ID_PREFIX_BY_SLOT[slot];
+        const requiredPrefix = JOB_NAME_BY_SLOT[slot];
         if (requiredPrefix && !itemId.startsWith(`${SKIN_ITEM_ID_PREFIX}${requiredPrefix}`)) {
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }

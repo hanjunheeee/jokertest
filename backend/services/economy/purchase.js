@@ -4,19 +4,19 @@
 // 같은 참조 id 요청은 처음 결과 그대로 (중복 결제 막기)
 const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
-const { defaultDb, purchasePayloadsEqual, purchaseRequestConflictError, snapshotLedgerEntry } = require('./helpers');
+const { defaultDb, purchasePayloadsEqual, purchaseConflictError, snapshotLedgerEntry } = require('./helpers');
 const { CURRENCIES } = require('./constants');
 const { ensureWalletRow, applyLedgerTransaction } = require('./ledger');
 const { economyModels } = require('../../repositories/economy/models');
 const walletRepository = require('../../repositories/economy/wallet');
-const purchaseRequestRepository = require('../../repositories/economy/purchaseRequest');
+const requestRepository = require('../../repositories/economy/purchaseRequest');
 const { withTransaction, isUniqueConstraintName } = require('../../repositories/common');
 
 // 묶음 안 아이템마다 장부 참조 id
-const derivePurchaseItemReferenceEventId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;
+const deriveItemReferenceId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;
 
 // 아이템 순서 상관없이 같은 요청으로 보게 정렬
-const normalizePurchaseRequestPayload = (items) => ({ itemIds: items.map((entry) => entry.itemId).slice().sort() });
+const normalizePayload = (items) => ({ itemIds: items.map((entry) => entry.itemId).slice().sort() });
 
 // 구매 요청 행 먼저 확인 → 지갑 잠금 → 아이템마다 장부 거래, 다 되거나 다 안 되거나
 const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb()) => {
@@ -35,12 +35,12 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     }
 
     const kind = items.length > 1 ? 'BULK' : 'SINGLE';
-    const payload = normalizePurchaseRequestPayload(items);
+    const payload = normalizePayload(items);
     const models = economyModels(db);
 
-    const preExisting = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId });
+    const preExisting = await requestRepository.findRequestByReference(models, { userId, referenceEventId });
     if (preExisting) {
-        if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseRequestConflictError();
+        if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseConflictError();
         return { idempotent: true, kind: preExisting.kind, results: preExisting.result_json };
     }
 
@@ -57,9 +57,9 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     const runWrite = async (t) => {
         await walletRepository.lockWallet(models, userId, t);
 
-        const committed = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId }, t);
+        const committed = await requestRepository.findRequestByReference(models, { userId, referenceEventId }, t);
         if (committed) {
-            if (!purchasePayloadsEqual(committed.payload_json, payload)) throw purchaseRequestConflictError();
+            if (!purchasePayloadsEqual(committed.payload_json, payload)) throw purchaseConflictError();
             return { idempotent: true, kind: committed.kind, results: committed.result_json };
         }
 
@@ -73,7 +73,7 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
                 amount: -catalogItem.priceGold,
                 itemId: catalogItem.id,
                 itemType: catalogItem.type,
-                referenceEventId: derivePurchaseItemReferenceEventId(referenceEventId, catalogItem.id),
+                referenceEventId: deriveItemReferenceId(referenceEventId, catalogItem.id),
                 entitlementSource: 'PURCHASE',
             }, { transaction: t });
             results.push(snapshotLedgerEntry(outcome.ledgerEntry));
@@ -81,7 +81,7 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
 
         let purchaseRequest;
         try {
-            purchaseRequest = await purchaseRequestRepository.createRequest(models, {
+            purchaseRequest = await requestRepository.createRequest(models, {
                 user_id: userId,
                 reference_event_id: referenceEventId,
                 kind,
@@ -102,9 +102,9 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     };
 
     const resolveDuplicateRequest = async () => {
-        const existing = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId });
+        const existing = await requestRepository.findRequestByReference(models, { userId, referenceEventId });
         if (!existing) return null;
-        if (!purchasePayloadsEqual(existing.payload_json, payload)) throw purchaseRequestConflictError();
+        if (!purchasePayloadsEqual(existing.payload_json, payload)) throw purchaseConflictError();
         return { idempotent: true, kind: existing.kind, results: existing.result_json };
     };
 
@@ -131,7 +131,7 @@ const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => 
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
     }
     const models = economyModels(db);
-    const existing = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId });
+    const existing = await requestRepository.findRequestByReference(models, { userId, referenceEventId });
     if (!existing) return null;
     return { kind: existing.kind, results: existing.result_json, createdAt: existing.created_at };
 };

@@ -5,7 +5,7 @@
 const { createError } = require('../../../utils/appError');
 const { KINDS, STATUSES } = require('./constants');
 const { normalizeProductRow, toPublicProduct, isNonEmptyString } = require('./normalize');
-const currencyProductRepository = require('../../../repositories/economy/currencyProduct');
+const productRepository = require('../../../repositories/economy/currencyProduct');
 
 // db 안 넘기면 진짜 models (부를 때 require)
 const defaultDb = () => require('../../../models');
@@ -15,7 +15,7 @@ const listCurrencyProducts = async ({ kind } = {}, db = defaultDb()) => {
     if (kind !== undefined && !Object.prototype.hasOwnProperty.call(KINDS, kind)) {
         throw createError('알 수 없는 상품 종류입니다.', 400, 'INVALID_PRODUCT_KIND');
     }
-    const rows = await currencyProductRepository.listByStatus(db, { status: STATUSES.ON_SALE, kind });
+    const rows = await productRepository.listByStatus(db, { status: STATUSES.ON_SALE, kind });
     return rows
         .map(normalizeProductRow)
         .filter((product) => product && product.status === STATUSES.ON_SALE)
@@ -28,7 +28,7 @@ const getCurrencyProduct = async ({ productId, version, kind }, db = defaultDb()
     const notFound = () => createError('상품을 찾을 수 없습니다.', 404, 'PRODUCT_NOT_FOUND');
     if (!isNonEmptyString(productId, 64)) throw notFound();
 
-    const row = await currencyProductRepository.findProduct(db, productId, transaction);
+    const row = await productRepository.findProduct(db, productId, transaction);
     const product = normalizeProductRow(row);
     if (!product) throw notFound();
     if (kind !== undefined && product.kind !== kind) throw notFound();

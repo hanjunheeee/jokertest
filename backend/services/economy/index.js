@@ -2,7 +2,7 @@
 
 // 경제 카테고리 입구, 옛 economy.service 이름 23개 + __internal + 상품·충전 이름 내보냄
 // routes·컨트롤러·친구·업적·인증·충전·socket이 이 입구로 부름 (시험이 이 객체 함수를 갈아끼움)
-const { CURRENCIES, FREE_CARD_FRAME_ID, SLOT_TO_ITEM_TYPE, DEFAULT_EMOJI_PALETTE_SLOTS, MAX_BALANCE } = require('./constants');
+const { CURRENCIES, FREE_CARD_FRAME_ID, SLOT_TO_ITEM_TYPE, DEFAULT_EMOJI_SLOTS, MAX_BALANCE } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
 const { getWalletSummary, listTransactions } = require('./wallet');
 const { purchaseItem, purchaseItems, getPurchaseResult } = require('./purchase');
@@ -37,7 +37,7 @@ module.exports = {
     getGameStartLoadouts,
     getEmojiPalette,
     saveEmojiPalette,
-    DEFAULT_EMOJI_PALETTE_SLOTS,
+    DEFAULT_EMOJI_SLOTS,
     buildSkinsByJob,
     applyLedgerTransaction,
     MAX_BALANCE,
