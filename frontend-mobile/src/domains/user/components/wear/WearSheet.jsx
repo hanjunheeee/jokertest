@@ -14,7 +14,7 @@ const confirmLabelOf = (status) => {
   return "적용"
 }
 
-// 세로: 탭·미리보기 위, 목록 아래 / 폰 가로: 미리보기 왼쪽, 탭·목록 오른쪽
+// 세로: 직업 탭·미리보기 위, 목록 아래 / 폰 가로: 데스크톱처럼 목록 왼쪽, 탭·미리보기 오른쪽
 export default function WearSheet({ open, onClose }) {
   const wear = useWearSheet({ open, onClose })
   const isSaving = wear.confirmStatus === "saving"
@@ -22,25 +22,18 @@ export default function WearSheet({ open, onClose }) {
 
   return (
     <FullSheet open={open} onClose={onClose} label="스킨&카드 착용" title="스킨&카드 목록">
-      <div className="flex min-h-0 flex-1 flex-col land:flex-row land:gap-3 land:px-4 land:pt-2" inert={isSaving} aria-disabled={isSaving}>
-        <div className="contents land:flex land:w-[42%] land:min-h-0 land:flex-col land:pb-2">
-          <Preview preview={wear.preview} disabled={isSaving} onToggle={wear.togglePreviewMode} />
+      <div className="flex min-h-0 flex-1 flex-col land:flex-row-reverse land:gap-3 land:px-4 land:pt-1" inert={isSaving} aria-disabled={isSaving}>
+        <div className="contents land:flex land:w-[52%] land:min-h-0 land:flex-col land:pb-2">
+          <JobTabs tabs={wear.jobTabs} activeIndex={wear.activeJobIndex} onSelect={wear.setActiveJobIndex} />
+          <Preview preview={wear.preview} onToggle={wear.togglePreviewMode} />
         </div>
-        <div className="flex min-h-0 flex-1 flex-col land:min-w-0">
-          <JobTabs
-            tabs={wear.jobTabs}
-            activeIndex={wear.activeJobIndex}
-            onSelect={wear.setActiveJobIndex}
-            disabled={isSaving}
-          />
-          <ItemGrid
-            items={wear.listItems}
-            selectedItemId={wear.selectedItemId}
-            appliedSkinsByJob={wear.appliedSkinsByJob}
-            appliedCardFrameId={wear.appliedCardFrameId}
-            onSelectItem={wear.handleSelectItem}
-          />
-        </div>
+        <ItemGrid
+          items={wear.listItems}
+          selectedItemId={wear.selectedItemId}
+          appliedSkinsByJob={wear.appliedSkinsByJob}
+          appliedCardFrameId={wear.appliedCardFrameId}
+          onSelectItem={wear.handleSelectItem}
+        />
       </div>
       <ConfirmBar
         label={confirmLabelOf(wear.confirmStatus)}

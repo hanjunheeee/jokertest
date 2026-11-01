@@ -6,19 +6,26 @@ import Preview from "@m/domains/user/components/profileEdit/Preview.jsx"
 import Tabs from "@m/domains/user/components/profileEdit/Tabs.jsx"
 import ConfirmBar from "@m/domains/user/components/wear/ConfirmBar.jsx"
 import FullSheet from "@m/domains/user/components/wear/FullSheet.jsx"
-// 허용 목록에 있는 로직 훅이지만 components 아래 하위 폴더라 gitignore식 부정 패턴이 못 풀어 줌 (eslint 설정 문제)
+// components 아래 있지만 화면 없는 로직 훅이라 eslint 경계 허용 목록(DESKTOP_UI_ALLOW)에 넣어 두고 부름
 import { useProfileBorderEditor } from "@/domains/user/components/profileEdit/useProfileBorderEditor.js"
 import {
+  ERROR_TEXT_CLASS,
   borderAssetSrcForItemId,
   photoAssetSrcForItemId,
 } from "@/domains/user/constants/profileEditLayout.js"
 import { PLAYER_PROFILE_ASSETS } from "@/shared/constants/playerProfileAssets.js"
+import { STORE_ASSETS } from "@/shared/constants/storeAssets.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
-// 데스크톱처럼 밝은 양피지색 판, 세로: 미리보기 위·목록 아래 / 폰 가로: 미리보기 왼쪽·목록 오른쪽
+// 판·테두리·선 색은 데스크톱 프로필 편집 창(PANEL_CLASS·HEADER_CLASS·FOOTER_CLASS) 값
+const SHEET_CLASS = "border-[#b83232]/40 bg-[#f5f0e6]"
+const LINE_CLASS = "border-[#2a1810]/14"
+
+// 세로: 미리보기 위·목록 아래 / 폰 가로: 미리보기 왼쪽·목록 오른쪽
 export default function ProfileEditSheet({ open, onClose }) {
   const editor = useProfileBorderEditor({ open, onClose })
   const { handleConfirm } = editor
+  const saving = editor.confirmStatus === "saving"
   const draftPhoto = photoAssetSrcForItemId(editor.draftPhotoItemId) ?? PLAYER_PROFILE_ASSETS.defaultPhoto
   const draftFrame = borderAssetSrcForItemId(editor.draftBorderItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder
 
@@ -34,7 +41,8 @@ export default function ProfileEditSheet({ open, onClose }) {
       onClose={onClose}
       label="프로필 수정"
       header={<Tabs activeTab={editor.activeTab} onTabChange={editor.setActiveTab} />}
-      className="bg-[#f5f0e6]"
+      className={SHEET_CLASS}
+      headerClassName={LINE_CLASS}
     >
       <div className="flex min-h-0 flex-1 flex-col land:flex-row">
         <div className="land:flex land:w-[38%] land:items-center land:justify-center land:border-r land:border-[#2a1810]/12">
@@ -43,11 +51,15 @@ export default function ProfileEditSheet({ open, onClose }) {
         <OptionGrid editor={editor} />
       </div>
       <ConfirmBar
-        label={editor.confirmStatus === "saving" ? "저장 중…" : "수정하기"}
-        saving={editor.confirmStatus === "saving"}
+        label={saving ? "저장 중…" : "수정하기"}
+        ariaLabel="수정하기"
+        saving={saving}
         error={editor.confirmError}
         onConfirm={confirmWithSfx}
-        className="border-[#2a1810]/14 bg-[#efe7d6]"
+        src={STORE_ASSETS.purchaseButton}
+        errorClass={ERROR_TEXT_CLASS}
+        errorRole={null}
+        className={LINE_CLASS}
       />
     </FullSheet>
   )

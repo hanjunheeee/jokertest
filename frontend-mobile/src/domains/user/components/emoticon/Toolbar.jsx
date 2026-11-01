@@ -1,6 +1,7 @@
 // 보유 이모티콘 검색·등급 거르기 줄 (검색칸 틀 그림 + 보이는 틀 위에 겹친 투명 select)
 // EmoticonPalettePage가 씀
 import { EMOTICON_PALETTE_ASSETS } from "@/domains/user/constants/emoticonPaletteAssets.js"
+import { FILTER_CHEVRON_CLASS } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { GRADE_FILTERS } from "@/domains/user/constants/emoticonPaletteText.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
@@ -36,7 +37,7 @@ export default function Toolbar({ page }) {
           <span className="min-w-0 flex-1 truncate font-subheading text-sm font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]">
             {page.gradeFilter}
           </span>
-          <PublicAsset src={EMOTICON_PALETTE_ASSETS.chevronDown} alt="" className="ml-1 h-3 w-3 shrink-0 select-none" />
+          <PublicAsset src={EMOTICON_PALETTE_ASSETS.chevronDown} alt="" className={FILTER_CHEVRON_CLASS} />
         </div>
         <select
           aria-label="이모티콘 등급 필터"

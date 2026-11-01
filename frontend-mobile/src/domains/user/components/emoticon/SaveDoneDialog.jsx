@@ -2,14 +2,34 @@
 // EmoticonPalettePage가 씀
 import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
-import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
-import { BTN_ASSET, PARCHMENT_CONFIRM_LABEL } from "@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js"
-import { IMG_URL } from "@/domains/game/ingame/constants/parchment/ingameParchmentLayout.js"
-import { SAVE_SUCCESS_MSG } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
+import {
+  BTN_ASSET,
+  CONFIRM_BTN_CLASS_RAISED_FOCUS,
+  IMG_CLASS as BTN_IMG_CLASS,
+  LABEL_CLASS as BTN_LABEL_CLASS,
+  PARCHMENT_CONFIRM_LABEL,
+} from "@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js"
+import {
+  CONTENT_CLASS,
+  FRAME_CLASS,
+  IMG_CLASS,
+  IMG_URL,
+} from "@/domains/game/ingame/constants/parchment/ingameParchmentLayout.js"
+import { getInGameParchmentModalVariant } from "@/domains/game/ingame/constants/parchment/ingameParchmentModalVariants.js"
+import {
+  SAVE_SUCCESS_MSG,
+  SAVE_SUCCESS_MSG_CLASS,
+} from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-// 데스크톱 양피지 창(InGameParchmentModalBase)은 화면 부품이라 못 불러서 같은 그림으로 다시 그림
+// 덮개·감싸개·이름은 데스크톱 양피지 창 종류(emoticonPaletteSave) 그대로
+const VARIANT = getInGameParchmentModalVariant("emoticonPaletteSave")
+
+// 확인 버튼은 데스크톱 최대 폭으로 고정해 높이 44px 넘김
+const CONFIRM_CLASS = `${CONFIRM_BTN_CLASS_RAISED_FOCUS} !w-[9.3rem]`
+
+// 데스크톱 양피지 창(InGameParchmentModalBase)은 화면 부품이라 못 불러서 같은 상수로 다시 그림
 export default function SaveDoneDialog({ open, onDismiss }) {
   const confirmRef = useRef(null)
 
@@ -28,27 +48,36 @@ export default function SaveDoneDialog({ open, onDismiss }) {
 
   if (!open) return null
 
+  // 화면 틀(.mobile-shell) 밖 body로 꺼내야 fixed가 화면 기준
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-center justify-center px-4" data-emoticon-palette-save-success="">
+    <div data-emoticon-palette-save-success="">
       <button
         type="button"
-        aria-label="팔레트 저장 안내 닫기"
+        aria-label={VARIANT.backdropLabel}
+        className={VARIANT.backdropClass}
         data-sfx-kind="ui-cancel"
         onClick={onDismiss}
-        className="absolute inset-0 border-0 bg-black/70 p-0"
       />
-      <div role="dialog" aria-modal="true" aria-label="팔레트 저장" className="relative aspect-[3/2] w-[min(100%,26rem,120svh)]">
-        <PublicAsset src={IMG_URL} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-[16%] py-[15%] text-center">
-          <p role="status" className="font-subheading text-lg font-bold leading-snug text-[#3a1a0c]">{SAVE_SUCCESS_MSG}</p>
-          <ImageButton
-            look="plain"
-            label={PARCHMENT_CONFIRM_LABEL}
-            src={BTN_ASSET}
-            onClick={onDismiss}
-            buttonRef={confirmRef}
-            className="w-[min(60%,9rem)]"
-          />
+      <div className={VARIANT.wrapClass}>
+        <div role="dialog" aria-modal="true" aria-label={VARIANT.dialogLabel} className={VARIANT.panelClass}>
+          <div className={FRAME_CLASS}>
+            <PublicAsset src={IMG_URL} alt="" aria-hidden="true" draggable={false} className={IMG_CLASS} />
+            <div className={CONTENT_CLASS} data-parchment-content="true">
+              <p role="status" className={SAVE_SUCCESS_MSG_CLASS}>{SAVE_SUCCESS_MSG}</p>
+              <button
+                ref={confirmRef}
+                type="button"
+                aria-label={PARCHMENT_CONFIRM_LABEL}
+                className={CONFIRM_CLASS}
+                style={{ outline: "none" }}
+                data-sfx-kind="ui-confirm"
+                onClick={onDismiss}
+              >
+                <PublicAsset src={BTN_ASSET} alt="" draggable={false} className={BTN_IMG_CLASS} />
+                <span className={BTN_LABEL_CLASS}>{PARCHMENT_CONFIRM_LABEL}</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>,

@@ -8,12 +8,16 @@ import Grid from "@m/domains/user/components/emoticon/Grid.jsx"
 import SaveDoneDialog from "@m/domains/user/components/emoticon/SaveDoneDialog.jsx"
 import Status from "@m/domains/user/components/emoticon/Status.jsx"
 import Toolbar from "@m/domains/user/components/emoticon/Toolbar.jsx"
-import TopBar from "@m/domains/user/components/emoticon/TopBar.jsx"
 import Wheel from "@m/domains/user/components/emoticon/Wheel.jsx"
+import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
+import TopBar from "@m/shared/ui/top/TopBar.jsx"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import { UI_FADE } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { useEmoticonPalettePage } from "@/domains/user/hooks/useEmoticonPalettePage.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+
+// 위 줄: 데스크톱 화면 위층(뒤로 + 소리 조절)과 같은 두 가지, 제목 없음
+const BAR_CLASS = "relative z-10 flex h-14 shrink-0 items-center gap-2 px-3 land:h-12"
 
 // 세로: 바퀴 위·목록 아래(목록만 스크롤), 폰 가로·태블릿 가로: 바퀴 왼쪽·목록 오른쪽
 export default function EmoticonPalettePage() {
@@ -32,7 +36,7 @@ export default function EmoticonPalettePage() {
       />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black/35" />
 
-      <TopBar title="이모티콘 팔레트" onBack={() => navigate("/mypage")} />
+      <TopBar onBack={() => navigate("/mypage")} className={BAR_CLASS} right={<SoundMenu look="user" />} />
 
       <motion.main
         initial={{ opacity: 0 }}
