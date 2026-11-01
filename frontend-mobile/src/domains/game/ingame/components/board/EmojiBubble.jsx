@@ -1,5 +1,5 @@
-// 이모티콘 말풍선: 카드 윗부분에 잠깐 뜨는 받은 이모티콘
-// CardSlot이 씀, 띄우기·지우기는 데스크톱 이모티콘 말풍선 스토어가 맡음
+// 이모티콘 말풍선: 카드 위에 잠깐 뜨는 받은 이모티콘
+// CardSlot이 씀, 띄우기·지우기(3초)는 데스크톱 이모티콘 말풍선 스토어가 맡음
 import { findInGameEmoticonItem } from "@/domains/game/ingame/utils/findInGameEmoticonItem.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
@@ -7,9 +7,9 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 const BUBBLE_SRC = "/frame/emoji/speech-bubble.png"
 const BUBBLE_ATTR = "data-ingame-emoji-bubble"
 
-// 판 위쪽이 잘리지 않게 카드 안쪽 위에 겹쳐 띄움, 작은 카드라 데스크톱보다 큰 비율
+// 자리·크기는 데스크톱 그대로 (카드 바로 위 가운데, 카드 폭 42%·최대 4.5rem)
 const WRAP_CLASS =
-    "pointer-events-none absolute left-1/2 top-0 z-30 w-[68%] -translate-x-1/2 -translate-y-[28%]"
+    "pointer-events-none absolute bottom-full left-1/2 z-30 w-[min(4.5rem,42%)] -translate-x-1/2 -translate-y-1"
 
 const ICON_WRAP_CLASS = "absolute inset-0 flex items-center justify-center p-[22%] pb-[32%]"
 

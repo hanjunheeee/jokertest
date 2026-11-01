@@ -8,7 +8,7 @@ export function boardColumns(count) {
 
 // 판 바깥: 폭 기준 컨테이너, 카드 상한은 기기별 (가로 폰은 높이 19svh로 묶여 두 줄이 화면에 들어감)
 export const BOARD_ROOT_CLASS =
-    "relative w-full select-none px-2 pb-1 pt-3 [container-type:inline-size] [--card-gap:0.375rem] [--card-cap:min(5.5rem,19svh)] md:[--card-cap:min(7.5rem,19svh)] lg:[--card-cap:min(8.5rem,19svh)]"
+    "relative w-full select-none px-2 pb-1 [container-type:inline-size] [--card-gap:0.375rem] [--card-cap:min(5.5rem,19svh)] md:[--card-cap:min(7.5rem,19svh)] lg:[--card-cap:min(8.5rem,19svh)]"
 
 // 판 폭에서 좌우 여백·사이 간격 빼고 열 수로 나눔, 상한 넘지 않음
 export const CARD_WIDTH =
@@ -18,10 +18,12 @@ export const CARD_WIDTH =
 export const BOARD_ROW_CLASS =
     "mx-auto flex flex-wrap justify-center gap-x-[var(--card-gap)] gap-y-2"
 
+// 위 여백은 첫 줄 카드 위로 뜨는 말풍선 높이만큼 (데스크톱 말풍선 폭 min(4.5rem,42%) × 그림 비율 189/179 + 0.25rem)
 export const BOARD_ROW_STYLE = {
     maxWidth: `calc(var(--cols) * ${CARD_WIDTH} + (var(--cols) - 1) * var(--card-gap))`,
+    paddingTop: `calc(min(4.5rem, 0.42 * ${CARD_WIDTH}) * 1.06 + 0.25rem)`,
 }
 
-// 카드 칸: 누름 자리(44px 이상)·길게 누름 때 iOS 그림 메뉴 막기
+// 카드 칸: 누름 자리(44px 이상)·길게 누름 때 iOS 그림 메뉴 막기, 눌림 모양은 데스크톱처럼 없음
 export const SLOT_CLASS =
-    "relative shrink-0 cursor-pointer touch-manipulation rounded-md border-0 bg-transparent p-0 outline-none [-webkit-touch-callout:none] focus-visible:ring-2 focus-visible:ring-[#f3d28d] active:scale-[0.97] transition-transform"
+    "relative shrink-0 cursor-pointer touch-manipulation rounded-md border-0 bg-transparent p-0 outline-none [-webkit-touch-callout:none] focus-visible:ring-2 focus-visible:ring-[#f3d28d]"

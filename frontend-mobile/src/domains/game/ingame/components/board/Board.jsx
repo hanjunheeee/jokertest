@@ -8,12 +8,11 @@ import { isInGameSelfPlayer } from "@/domains/game/ingame/utils/isInGameSelfPlay
 import { useBoardEmoji } from "@m/domains/game/ingame/hooks/board/useBoardEmoji.js"
 import { useCardSheet } from "@m/domains/game/ingame/hooks/board/useCardSheet.js"
 import { BOARD_ROOT_CLASS, BOARD_ROW_CLASS, BOARD_ROW_STYLE, boardColumns } from "./boardStyle.js"
-import { resolveCardMark } from "./cardMarks.js"
 import CardSheet from "./CardSheet.jsx"
 import CardSlot from "./CardSlot.jsx"
 import EmojiPalette from "./EmojiPalette.jsx"
 
-// 카드 탭은 시트, 내 카드 길게 누르기는 팔레트 (내 판일 때만)
+// 카드 탭은 시트, 내 카드 길게 누르기(데스크톱 우클릭)는 팔레트 (내 판일 때만)
 export default function Board() {
     const { players, localPlayerId } = useInGamePlayerSessionContext()
     const actionCtx = useContext(InGameActionContext)
@@ -22,25 +21,20 @@ export default function Board() {
     const emoji = useBoardEmoji()
     const sheetPlayer = players.find((player) => player.id === sheet.targetId) ?? null
 
-    // 시트에서 이모티콘 누르면 시트 닫고 팔레트
-    const openEmojiFromSheet = () => {
-        sheet.close()
-        emoji.openPalette()
-    }
-
     return (
         <section aria-label="플레이어 카드" className={BOARD_ROOT_CLASS} style={{ "--cols": boardColumns(players.length) }}>
             <div className={BOARD_ROW_CLASS} style={BOARD_ROW_STYLE}>
                 {players.map((player) => {
                     const isSelf = isInGameSelfPlayer(player.id, localPlayerId)
-                    const { highlight, mark } = resolveCardMark(actionCtx, player.id)
+                    // 고른 투표·밤 대상이면 강조 (데스크톱과 같은 조건)
+                    const highlight = player.id === actionCtx?.selectedDayVoteTargetId
+                        || player.id === actionCtx?.selectedNightTargetId
                     return (
                         <CardSlot
                             key={player.id}
                             player={player}
                             isSelf={isSelf}
                             highlight={highlight}
-                            mark={mark}
                             emoji={emojiByUuid[player.id] ?? null}
                             anchorRef={(node) => sheet.registerAnchor(player.id, node)}
                             onTap={() => sheet.open(player.id)}
@@ -49,15 +43,7 @@ export default function Board() {
                     )
                 })}
             </div>
-            <CardSheet
-                player={sheetPlayer}
-                isSelf={sheetPlayer ? isInGameSelfPlayer(sheetPlayer.id, localPlayerId) : false}
-                items={sheet.items}
-                canSendEmoji={emoji.canOpen}
-                onOpenEmoji={openEmojiFromSheet}
-                onClose={sheet.close}
-                panelRef={sheet.menuRef}
-            />
+            <CardSheet player={sheetPlayer} items={sheet.items} onClose={sheet.close} panelRef={sheet.menuRef} />
             <EmojiPalette open={emoji.open} slots={emoji.slots} onClose={emoji.closePalette} />
         </section>
     )

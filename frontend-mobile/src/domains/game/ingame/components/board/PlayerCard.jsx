@@ -1,5 +1,5 @@
 // 플레이어 카드 그림: 초상·상태 표시·테마 테두리·카드 틀·이름판·"나" 표시
-// CardSlot·PlayerSummary가 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
+// CardSlot이 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
 import {
     FRAME_IMG_CLASS,
     FRAME_SHADOW_LAYER_CLASS,
@@ -16,12 +16,12 @@ import Nameplate from "./Nameplate.jsx"
 import StatusOverlay from "./StatusOverlay.jsx"
 
 const SELF_BADGE_CLASS =
-    "absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#f3d28d] bg-[#3a1a0c] px-1.5 py-0.5 text-[0.6rem] font-semibold leading-none tracking-wide text-[#ffe2ad] shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+    "absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#f3d28d] bg-[#3a1a0c] px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-[#ffe2ad] shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
 
-// 내 카드는 금색 테두리 빛 (데스크톱 ring과 같은 색, 작은 카드라 네모 빛으로)
-const SELF_GLOW_CLASS = "rounded-md shadow-[0_0_0_2px_rgba(243,210,141,0.8),0_0_10px_rgba(243,210,141,0.45)]"
+// 내 카드 금색 고리 (데스크톱 InGamePlayerCard와 같은 class)
+const SELF_RING_CLASS = "ring-2 ring-[#f3d28d]/80 ring-offset-2 ring-offset-black/40 rounded-full"
 
-// 틀 비율은 그림이 정함 (폭은 className으로), 시트 안 작은 카드는 시험 표시를 안 붙임 (판 카드와 겹치지 않게)
+// 틀 비율은 그림이 정함 (폭은 className으로)
 export default function PlayerCard({
     portraitSrc,
     frameSrc = INGAME_PLAYER_ASSETS.cardFrame,
@@ -30,7 +30,6 @@ export default function PlayerCard({
     theme = null,
     voteHighlight = false,
     isSelf = false,
-    withE2e = true,
     className = "",
 }) {
     const styles = resolveInGamePlayerCardThemeStyles(theme, voteHighlight)
@@ -39,10 +38,10 @@ export default function PlayerCard({
 
     return (
         <div
-            className={`relative [container-type:inline-size] ${className}`}
-            {...(withE2e ? buildPlayerCardE2eAttrs({ nickname, status, isSelf }) : {})}
+            className={`relative shrink-0 [container-type:inline-size] ${className}`}
+            {...buildPlayerCardE2eAttrs({ nickname, status, isSelf })}
         >
-            <div className={`relative w-full overflow-visible ${isSelf ? SELF_GLOW_CLASS : ""}`}>
+            <div className={`relative w-full overflow-visible ${isSelf ? SELF_RING_CLASS : ""}`}>
                 <div className="absolute z-[1] overflow-hidden" style={portraitInset}>
                     {portraitSrc ? <PublicAsset src={portraitSrc} alt="" className={portraitImageClass} /> : null}
                 </div>
