@@ -1,8 +1,8 @@
 import { computeDayVoteSubmitPatch, INITIAL_DAY_VOTE_SUBMIT_STATE } from "./computeDayVoteSubmitPatch.js"
 
-export const DAY_VOTE_ACK_TIMEOUT_MS = 5000
+export const ACK_TIMEOUT_MS = 5000
 
-export function createDayVoteSubmitController({ emitWithAck, timeoutMs = DAY_VOTE_ACK_TIMEOUT_MS, onStateChange, onAccepted }) {
+export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIMEOUT_MS, onStateChange, onAccepted }) {
   let state = INITIAL_DAY_VOTE_SUBMIT_STATE
   let submitting = false
   let generation = 0

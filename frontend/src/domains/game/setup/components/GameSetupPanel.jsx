@@ -18,13 +18,13 @@ import { useNightTimeEdits } from "../hooks/useNightTimeEdits.js"
 import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
 import {
   NON_EDITABLE_SETUP_ITEM_IDS,
-  mergeSpecifiedRoleNightActionTimes,
+  mergeSpecifiedRoleTimes,
 } from "../utils/roomSettingsForm.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
 import GameSetupCancelButton from "./GameSetupCancelButton.jsx"
 import {
-  GAME_SETUP_FORM_ACTIONS_ROW_CLASS,
-  GAME_SETUP_FORM_ACTIONS_SINGLE_CLASS,
+  FORM_ACTIONS_ROW_CLASS,
+  FORM_ACTIONS_SINGLE_CLASS,
 } from "../constants/gameSetupFormActions.js"
 import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
@@ -78,7 +78,7 @@ export default function GameSetupPanel({
         checks,
         ranges,
         roleComposition: composition,
-        specifiedRoleNightActionTimes: mergeSpecifiedRoleNightActionTimes(
+        specifiedRoleNightActionTimes: mergeSpecifiedRoleTimes(
           initialFormState?.specifiedRoleNightActionTimes ?? [], editedRoleTimeIds,
         ),
       })
@@ -89,7 +89,7 @@ export default function GameSetupPanel({
         checks,
         ranges,
         roleComposition: composition,
-        specifiedRoleNightActionTimes: mergeSpecifiedRoleNightActionTimes(
+        specifiedRoleNightActionTimes: mergeSpecifiedRoleTimes(
           initialFormState?.specifiedRoleNightActionTimes, editedRoleTimeIds,
         ),
       }),
@@ -143,7 +143,7 @@ export default function GameSetupPanel({
           </div>
         </div>
 
-        <div className={onCancel ? GAME_SETUP_FORM_ACTIONS_ROW_CLASS : GAME_SETUP_FORM_ACTIONS_SINGLE_CLASS}>
+        <div className={onCancel ? FORM_ACTIONS_ROW_CLASS : FORM_ACTIONS_SINGLE_CLASS}>
           <GameSetupCreateButton
             onClick={handleSubmitClick}
             disabled={isCreating || submitDisabled || !roleComposition.validation.ok}

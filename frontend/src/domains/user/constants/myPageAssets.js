@@ -1,4 +1,4 @@
-import { MY_PAGE_BANNER_FRAME_IMAGE_CLASS } from "./myPageBannerStyle.js"
+import { BANNER_FRAME_IMG_CLASS } from "./myPageBannerStyle.js"
 
 export const MY_PAGE_ASSETS = {
   bg: "/bg/마이페이지 뒷배경.png".normalize("NFD"),
@@ -11,7 +11,7 @@ export const MY_PAGE_PROFILE_BANNER_DEFAULTS = {
   showText: true,
   showProfilePortrait: true,
   bannerSrc: MY_PAGE_ASSETS.myPageButtonFrame,
-  bannerImageClassName: MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
+  bannerImageClassName: BANNER_FRAME_IMG_CLASS,
 }
 
 export const BLOOD_RECORD_STATS = []

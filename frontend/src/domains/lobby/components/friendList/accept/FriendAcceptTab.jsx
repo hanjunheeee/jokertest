@@ -1,7 +1,7 @@
 // 받은 친구 신청 탭 (검색·전부 수락·오류·대상 없음 안내·신청 목록·뒤로)
 // FriendListPanelContent가 accept 탭일 때 그림
-import { FRIEND_ACCEPT_BACK_BUTTON_CLASS, FRIEND_ACCEPT_EMPTY_CLASS, FRIEND_ACCEPT_TAB_CLASS } from "../../../constants/friendListStyle.js"
-import { FRIEND_LIST_FILTER_FIELDS, FRIEND_LIST_FILTER_SEARCH } from "../../../constants/friendListFilter.js"
+import { ACCEPT_BACK_BTN_CLASS, ACCEPT_EMPTY_CLASS, FRIEND_ACCEPT_TAB_CLASS } from "../../../constants/friendListStyle.js"
+import { FRIEND_LIST_FILTER_FIELDS, FILTER_SEARCH } from "../../../constants/friendListFilter.js"
 import { useFriendListLocalFilter } from "../../../hooks/useFriendListLocalFilter.js"
 import BackButton from "../../../../../shared/ui/BackButton.jsx"
 import FriendListSearchBar from "../FriendListSearchBar.jsx"
@@ -42,8 +42,8 @@ export default function FriendAcceptTab({
   return (
     <div className={FRIEND_ACCEPT_TAB_CLASS}>
       <FriendListSearchBar
-        label={FRIEND_LIST_FILTER_SEARCH.acceptTab.label}
-        placeholder={FRIEND_LIST_FILTER_SEARCH.acceptTab.placeholder}
+        label={FILTER_SEARCH.acceptTab.label}
+        placeholder={FILTER_SEARCH.acceptTab.placeholder}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
@@ -54,7 +54,7 @@ export default function FriendAcceptTab({
       />
       <FriendAcceptAllStatus result={acceptAllResult} />
       {incomingError !== null ? (
-        <p role="status" data-incoming-error="true" className={FRIEND_ACCEPT_EMPTY_CLASS}>
+        <p role="status" data-incoming-error="true" className={ACCEPT_EMPTY_CLASS}>
           {incomingError}
         </p>
       ) : null}
@@ -71,7 +71,7 @@ export default function FriendAcceptTab({
         size="compact"
         ariaLabel="친구 목록으로 돌아가기"
         onClick={onBack}
-        className={FRIEND_ACCEPT_BACK_BUTTON_CLASS}
+        className={ACCEPT_BACK_BTN_CLASS}
       />
     </div>
   )

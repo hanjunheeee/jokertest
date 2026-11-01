@@ -5,7 +5,7 @@ import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { readInGameReceiptScope, useInGameStore } from "../../store/ingameStore.js"
 import { EXIT_STATUS } from "../../constants/ingameExit.js"
 import { askSnapshot } from "../../socket/session.js"
-import { isExitRequestScopeCurrent } from "./scope.js"
+import { isRequestScopeCurrent } from "./scope.js"
 import { startPending } from "./leave.js"
 
 // 결과 조회 보내기 (기다리는 중이거나 끝났으면 막기, 연결·판 없으면 결과 모름)
@@ -30,7 +30,7 @@ export function lookupExitOutcome(ctx) {
     ctx.mountedRef.current
     && !ctx.settledRef.current
     && ctx.requestTokenRef.current === requestToken
-    && isExitRequestScopeCurrent(requestedScope)
+    && isRequestScopeCurrent(requestedScope)
 
   startPending(ctx, isThisAttempt)
 

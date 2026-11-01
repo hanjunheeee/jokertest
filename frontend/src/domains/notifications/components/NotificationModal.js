@@ -5,7 +5,7 @@ import { createElement, useRef } from "react"
 import { useNotificationsStore } from "../store/notifications.store.js"
 import { resolveBodyState, selectVisibleNotifications } from "../utils/visibleNotifications.js"
 import { useSettingsStore } from "../../settings/store/settingsStore.js"
-import { NOTIFICATION_MODAL_BODY_COLUMN_CLASS } from "../constants/notificationLayoutStyle.js"
+import { MODAL_BODY_COLUMN_CLASS } from "../constants/notificationLayoutStyle.js"
 import { useRestoreFocus } from "../hooks/notificationModal/useRestoreFocus.js"
 import { useAutoMarkRead } from "../hooks/notificationModal/useAutoMarkRead.js"
 import NotificationModalShell from "./NotificationModalShell.js"
@@ -63,7 +63,7 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
     },
     createElement(
       "div",
-      { className: NOTIFICATION_MODAL_BODY_COLUMN_CLASS },
+      { className: MODAL_BODY_COLUMN_CLASS },
       createElement(
         NotificationScrollArea,
         {

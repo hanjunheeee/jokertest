@@ -4,8 +4,8 @@ import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalSt
 import { InGameActionContext } from "../context/InGameActionContext.jsx"
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
 import {
-  getInGameIdentityScopeVersion,
-  subscribeInGameIdentityScope,
+  getIdentityScopeVersion,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -21,7 +21,7 @@ export {
   INGAME_CARD_MENU_DISABLED_REASONS,
   INGAME_CARD_MENU_ITEM_KINDS,
   INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL,
-  INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL,
+  NIGHT_FALLBACK_LABEL,
 } from "../constants/board/playerCardMenu.js"
 export { buildInGamePlayerCardMenuItems }
 
@@ -33,7 +33,7 @@ export function useInGamePlayerCardMenu() {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
 
   const [openPlayerId, setOpenPlayerId] = useState(null)

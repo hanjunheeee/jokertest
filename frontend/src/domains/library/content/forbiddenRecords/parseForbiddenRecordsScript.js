@@ -14,7 +14,7 @@ export function parseForbiddenRecordsScript(raw) {
     })
 }
 
-export function mergeForbiddenRecordsSpreads(sections, spreadMeta) {
+export function mergeSpreads(sections, spreadMeta) {
   if (sections.length !== spreadMeta.length) {
     throw new Error(
       `금지된 기록 원고 spread 수(${sections.length})와 메타 spread 수(${spreadMeta.length})가 일치하지 않습니다.`,

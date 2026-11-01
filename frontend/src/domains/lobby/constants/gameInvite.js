@@ -8,7 +8,7 @@ export const INVITE_ACCEPT_TIMEOUT_MS = 15000;
 export const INVITE_VERIFY_TIMEOUT_MS = 5000;
 
 // 끝난 초대 상태별 안내 문구
-export const INVITE_ENDED_REASON_TEXT = Object.freeze({
+export const ENDED_REASON_TEXT = Object.freeze({
     DECLINED: "이미 거절한 초대입니다.",
     EXPIRED: "초대 시간이 지났습니다.",
     ACCEPTED: "이미 수락한 초대입니다.",

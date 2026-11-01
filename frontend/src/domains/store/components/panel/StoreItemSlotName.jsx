@@ -1,7 +1,7 @@
 import {
-  STORE_SLOT_NAME_JOB_CLASS,
-  STORE_SLOT_NAME_TITLE_CLASS,
-  STORE_SLOT_NAME_WRAP_CLASS,
+  SLOT_NAME_JOB_CLASS,
+  SLOT_NAME_TITLE_CLASS,
+  SLOT_NAME_WRAP_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
 function splitStoreSlotName(name) {
@@ -21,14 +21,14 @@ export default function StoreItemSlotName({ children }) {
   const { primary, secondary } = splitStoreSlotName(name)
 
   return (
-    <div className={STORE_SLOT_NAME_WRAP_CLASS}>
+    <div className={SLOT_NAME_WRAP_CLASS}>
       {secondary ? (
         <>
-          <p className={STORE_SLOT_NAME_JOB_CLASS}>{primary}</p>
-          <p className={STORE_SLOT_NAME_TITLE_CLASS}>{secondary}</p>
+          <p className={SLOT_NAME_JOB_CLASS}>{primary}</p>
+          <p className={SLOT_NAME_TITLE_CLASS}>{secondary}</p>
         </>
       ) : (
-        <p className={STORE_SLOT_NAME_TITLE_CLASS}>{primary}</p>
+        <p className={SLOT_NAME_TITLE_CLASS}>{primary}</p>
       )}
     </div>
   )

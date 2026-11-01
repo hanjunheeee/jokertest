@@ -1,8 +1,8 @@
 // 친구 목록 탭들의 검색 줄 (라벨 + 입력칸, 엔터로 검색)
 // 친구 목록·받은 신청·친구 추가 탭이 씀
 import {
-  FRIEND_SEARCH_LABEL_CLASS,
-  FRIEND_SEARCH_ZONE_CLASS,
+  SEARCH_LABEL_CLASS,
+  SEARCH_ZONE_CLASS,
 } from "../../constants/friendListStyle.js"
 import FriendSearchInput from "./FriendSearchInput.jsx"
 
@@ -20,8 +20,8 @@ export default function FriendListSearchBar({
   }
 
   return (
-    <section className={`${FRIEND_SEARCH_ZONE_CLASS} ${className}`} aria-label={label}>
-      <p className={FRIEND_SEARCH_LABEL_CLASS}>{label}</p>
+    <section className={`${SEARCH_ZONE_CLASS} ${className}`} aria-label={label}>
+      <p className={SEARCH_LABEL_CLASS}>{label}</p>
       <FriendSearchInput
         label={label}
         placeholder={placeholder}

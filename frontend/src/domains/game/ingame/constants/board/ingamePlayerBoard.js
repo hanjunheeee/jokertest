@@ -1,22 +1,22 @@
 import {
   INGAME_PLAYER_LAYOUT_10,
-  INGAME_PLAYER_LAYOUTS_BY_COUNT,
+  LAYOUTS_BY_COUNT,
 } from "./ingamePlayerLayouts.js"
 
 export {
   INGAME_PLAYER_LAYOUT_10,
-  INGAME_PLAYER_LAYOUTS_BY_COUNT,
+  LAYOUTS_BY_COUNT,
 } from "./ingamePlayerLayouts.js"
 
 export const INGAME_PREVIEW_PLAYER_COUNT = 10
 
-export const INGAME_PLAYER_BOARD_POSITION_CLASS =
+export const POSITION_CLASS =
   "absolute inset-0 z-10 pointer-events-none [perspective:1800px]"
 
-export const INGAME_PLAYER_SLOT_BASE_WIDTH =
+export const SLOT_BASE_WIDTH =
   "clamp(6.2rem, 13.65cqw, 9.75rem)"
 
-export const INGAME_PLAYER_SLOT_ZONES = {
+export const SLOT_ZONES = {
   top: {
     transformOrigin: "50% 100%",
     scale: 0.94,
@@ -50,7 +50,7 @@ export const INGAME_PLAYER_SLOT_ZONES = {
   },
 }
 
-function deriveInGamePlayerSlotTransform(zone, left) {
+function deriveSlotTransform(zone, left) {
   if (zone === "top") {
     const derived = {}
     if (Math.abs(left - 50) >= 28) {
@@ -63,10 +63,10 @@ function deriveInGamePlayerSlotTransform(zone, left) {
   return {}
 }
 
-export function resolveInGamePlayerSlotPreset(slot) {
+export function resolveSlotPreset(slot) {
   const { zone, left, top, ...overrides } = slot
-  const profile = INGAME_PLAYER_SLOT_ZONES[zone] ?? INGAME_PLAYER_SLOT_ZONES.bottom
-  const derived = deriveInGamePlayerSlotTransform(zone, left)
+  const profile = SLOT_ZONES[zone] ?? SLOT_ZONES.bottom
+  const derived = deriveSlotTransform(zone, left)
 
   return {
     left,
@@ -79,20 +79,20 @@ export function resolveInGamePlayerSlotPreset(slot) {
   }
 }
 
-export const INGAME_PLAYER_SLOT_PRESETS_10 =
-  INGAME_PLAYER_LAYOUT_10.map(resolveInGamePlayerSlotPreset)
+export const SLOT_PRESETS_10 =
+  INGAME_PLAYER_LAYOUT_10.map(resolveSlotPreset)
 
-export function getInGamePlayerSlotPresets(
+export function getSlotPresets(
   playerCount = INGAME_PREVIEW_PLAYER_COUNT,
 ) {
   const layout =
-    INGAME_PLAYER_LAYOUTS_BY_COUNT[playerCount] ??
+    LAYOUTS_BY_COUNT[playerCount] ??
     INGAME_PLAYER_LAYOUT_10.slice(0, playerCount)
 
-  return layout.map(resolveInGamePlayerSlotPreset)
+  return layout.map(resolveSlotPreset)
 }
 
-export function buildInGamePlayerSlotStyle(preset) {
+export function buildSlotStyle(preset) {
   const {
     left,
     top,
@@ -109,7 +109,7 @@ export function buildInGamePlayerSlotStyle(preset) {
     left: `${left}%`,
     top: `${top}%`,
     zIndex,
-    width: INGAME_PLAYER_SLOT_BASE_WIDTH,
+    width: SLOT_BASE_WIDTH,
     transform: `translate(-50%, -50%) scale(${scale}) rotate(${rotate}deg) rotateX(${rotateX}deg) skew(${skewX}deg, ${skewY}deg)`,
     transformOrigin,
     transformStyle: "preserve-3d",

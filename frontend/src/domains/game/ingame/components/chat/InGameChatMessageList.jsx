@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react"
 import { useDragScroll } from "../../hooks/useDragScroll.js"
 import {
-  INGAME_CHAT_MESSAGE_LIST_INNER_CLASS,
-  INGAME_CHAT_MESSAGE_LIST_SCROLL_CLASS,
-  INGAME_CHAT_MESSAGE_LIST_SCROLL_WRAP_CLASS,
-  INGAME_CHAT_MESSAGE_LIST_SPACER_CLASS,
+  MSG_LIST_INNER_CLASS,
+  MSG_LIST_SCROLL_CLASS,
+  MSG_LIST_SCROLL_WRAP_CLASS,
+  MSG_LIST_SPACER_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import InGameChatMessageRow from "./InGameChatMessageRow.jsx"
 
@@ -26,18 +26,18 @@ export default function InGameChatMessageList({
   }, [messages])
 
   return (
-    <div className={INGAME_CHAT_MESSAGE_LIST_SCROLL_WRAP_CLASS}>
+    <div className={MSG_LIST_SCROLL_WRAP_CLASS}>
       <div
         ref={scrollRef}
-        className={`${INGAME_CHAT_MESSAGE_LIST_SCROLL_CLASS} ${className}`.trim()}
+        className={`${MSG_LIST_SCROLL_CLASS} ${className}`.trim()}
       >
         <ul
-          className={INGAME_CHAT_MESSAGE_LIST_INNER_CLASS}
+          className={MSG_LIST_INNER_CLASS}
           aria-readonly="true"
           role="log"
           aria-label="채팅 내역"
         >
-          <li aria-hidden className={INGAME_CHAT_MESSAGE_LIST_SPACER_CLASS} />
+          <li aria-hidden className={MSG_LIST_SPACER_CLASS} />
           {messages.map((message) => (
             <InGameChatMessageRow
               key={message.id}

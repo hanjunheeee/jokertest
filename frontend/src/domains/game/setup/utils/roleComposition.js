@@ -27,7 +27,7 @@ export function deriveCitizenCount(maxPlayers, roleCounts) {
   return citizen < 0 ? null : citizen
 }
 
-export const ROLE_COMPOSITION_ERROR_MESSAGES = Object.freeze({
+export const ERROR_MSGS = Object.freeze({
   INVALID_MAX_PLAYERS: "최대 플레이어 수가 올바르지 않습니다.",
   ROLE_COUNTS_NOT_OBJECT: "역할 구성 값이 올바르지 않습니다.",
   UNKNOWN_ROLE_KEY: "지정할 수 없는 역할이 포함되어 있습니다.",
@@ -42,7 +42,7 @@ export const ROLE_COMPOSITION_ERROR_MESSAGES = Object.freeze({
 export function validateRoleComposition({ mode, roleCounts, maxPlayers }) {
   if (mode !== ROLE_COMPOSITION_MODES.CUSTOM) return { ok: true }
 
-  const fail = (code) => ({ ok: false, code, message: ROLE_COMPOSITION_ERROR_MESSAGES[code] })
+  const fail = (code) => ({ ok: false, code, message: ERROR_MSGS[code] })
 
   if (!Number.isInteger(maxPlayers) || maxPlayers < 1) return fail("INVALID_MAX_PLAYERS")
   if (typeof roleCounts !== "object" || roleCounts === null || Array.isArray(roleCounts)) {

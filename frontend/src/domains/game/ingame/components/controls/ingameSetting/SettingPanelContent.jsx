@@ -1,7 +1,7 @@
 import { useRef } from "react"
 import {
-  INGAME_SETTING_SCROLL_CLASS,
-  INGAME_SETTING_SCROLL_WRAP_CLASS,
+  SCROLL_CLASS,
+  SCROLL_WRAP_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import { useInGameSettingIsHost } from "../../../hooks/useInGameSettingIsHost.js"
 import { useInGameSettingPanel } from "../../../hooks/useInGameSettingPanel.js"
@@ -49,8 +49,8 @@ export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }
 
       <SettingTabs tabs={visibleTabs} activeTab={activeTab} onSelect={setActiveTab} />
 
-      <div className={`${INGAME_SETTING_SCROLL_WRAP_CLASS} w-full min-w-0 pb-[clamp(2.35rem,7vh,3rem)]`}>
-        <div ref={scrollRef} className={INGAME_SETTING_SCROLL_CLASS}>
+      <div className={`${SCROLL_WRAP_CLASS} w-full min-w-0 pb-[clamp(2.35rem,7vh,3rem)]`}>
+        <div ref={scrollRef} className={SCROLL_CLASS}>
           <SettingTabPanel
             activeTab={activeTab}
             onOpenKickPlayer={onOpenKickPlayer}

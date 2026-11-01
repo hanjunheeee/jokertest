@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import NewPasswordForm from "@/domains/auth/components/recovery/NewPasswordForm.jsx"
 import ResetNotice from "@/domains/auth/components/recovery/ResetNotice.jsx"
-import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { RESET_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 import { useResetPage } from "@/domains/auth/hooks/recovery/useResetPage.js"
 
@@ -20,14 +20,14 @@ function noticeFor(reset, { goToLogin, goToRequest }) {
       return { role: "status", className: VERIFYING_TEXT_CLASS, text: "링크를 확인하고 있어요" }
     case "verifyFailed":
       return {
-        role: "alert", className: AUTH_RECOVERY_ALERT_CLASS, text: reset.verifyFailedMessage,
+        role: "alert", className: RECOVERY_ALERT_CLASS, text: reset.verifyFailedMessage,
         actionLabel: "다시 확인", onAction: reset.retryVerify,
       }
     case "linkInvalid":
       // 만료·사용됨이 아니면 전부 잘못된 링크 문구
       return {
         role: "alert",
-        className: AUTH_RECOVERY_ALERT_CLASS,
+        className: RECOVERY_ALERT_CLASS,
         text: reset.linkInvalidReason === "EXPIRED" ? RESET_TEXT.linkExpired
           : reset.linkInvalidReason === "USED" ? RESET_TEXT.linkUsed
           : RESET_TEXT.linkInvalid,
@@ -36,12 +36,12 @@ function noticeFor(reset, { goToLogin, goToRequest }) {
       }
     case "socialOnly":
       return {
-        role: "alert", className: AUTH_RECOVERY_ALERT_CLASS, text: RESET_TEXT.socialOnly,
+        role: "alert", className: RECOVERY_ALERT_CLASS, text: RESET_TEXT.socialOnly,
         actionLabel: "로그인으로 이동", onAction: goToLogin,
       }
     case "done":
       return {
-        role: "status", className: `${AUTH_RECOVERY_ALERT_CLASS} text-center`, text: RESET_TEXT.done,
+        role: "status", className: `${RECOVERY_ALERT_CLASS} text-center`, text: RESET_TEXT.done,
         actionLabel: "로그인으로 이동", onAction: goToLogin,
       }
     default:

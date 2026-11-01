@@ -2,14 +2,14 @@
 // 밤 성공 연출(InGameNightSuccessPresentation)이 영상 자료가 있을 때 띄움, 재생은 useNightSuccessKillVideo
 import { useNightSuccessKillVideo } from "../../hooks/useNightSuccessKillVideo.js"
 import {
-  INGAME_NIGHT_SUCCESS_HIDDEN_VIDEO_STYLE,
-  INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS,
+  HIDDEN_VIDEO_STYLE,
+  ROLE_VIDEO_CLASS,
 } from "../../constants/ingameNightSuccess.js"
 import {
-  INGAME_KILL_REVEAL_BACKDROP_CLASS,
-  INGAME_KILL_REVEAL_PANEL_WRAP_CLASS,
+  REVEAL_BACKDROP_CLASS,
+  REVEAL_PANEL_WRAP_CLASS,
   INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR,
-  INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS,
+  REVEAL_SKIP_BTN_CLASS,
   INGAME_KILL_REVEAL_SKIP_LABEL,
 } from "../../constants/killReveal/ingameKillReveal.js"
 
@@ -19,11 +19,11 @@ export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
   } = useNightSuccessKillVideo({ eventId, src, finish })
 
   return (
-    <div className={INGAME_KILL_REVEAL_BACKDROP_CLASS} data-ingame-night-success-kill="">
-      <div className={INGAME_KILL_REVEAL_PANEL_WRAP_CLASS}>
+    <div className={REVEAL_BACKDROP_CLASS} data-ingame-night-success-kill="">
+      <div className={REVEAL_PANEL_WRAP_CLASS}>
         <canvas
           ref={canvasRef}
-          className={INGAME_NIGHT_SUCCESS_ROLE_VIDEO_CLASS}
+          className={ROLE_VIDEO_CLASS}
           data-ingame-night-success-canvas=""
         />
         <video
@@ -34,7 +34,7 @@ export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
           preload="auto"
           onEnded={handleEnded}
           onError={handleError}
-          style={INGAME_NIGHT_SUCCESS_HIDDEN_VIDEO_STYLE}
+          style={HIDDEN_VIDEO_STYLE}
           aria-hidden="true"
           data-ingame-night-success-source-video=""
         />
@@ -50,14 +50,14 @@ export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") handleRetry() }}
               className="absolute inset-0 cursor-pointer"
             />
-            <button type="button" className={`${INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} relative z-10`} onClick={handleSkip}>
+            <button type="button" className={`${REVEAL_SKIP_BTN_CLASS} relative z-10`} onClick={handleSkip}>
               {INGAME_KILL_REVEAL_SKIP_LABEL}
             </button>
           </>
         ) : null}
         {/* 시간 안에 안 끝나면 건너뛰기만 */}
         {status === "watchdog" ? (
-          <button type="button" className={INGAME_KILL_REVEAL_SKIP_BUTTON_CLASS} onClick={handleSkip}>
+          <button type="button" className={REVEAL_SKIP_BTN_CLASS} onClick={handleSkip}>
             {INGAME_KILL_REVEAL_SKIP_LABEL}
           </button>
         ) : null}

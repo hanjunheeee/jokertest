@@ -4,15 +4,15 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
-import { getInGamePhaseEntranceMessage } from "../constants/phaseEntrance/ingamePhaseEntrance.js"
+import { getEntranceMsg } from "../constants/phaseEntrance/ingamePhaseEntrance.js"
 import {
   buildInGamePhaseEntranceIdentity,
-  buildInGamePhaseEntranceScope,
+  buildEntranceScope,
 } from "../utils/buildInGamePhaseEntranceIdentity.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
 import {
-  confirmInGamePhaseEntrance,
-  INITIAL_IN_GAME_PHASE_ENTRANCE,
+  confirmPhaseEntrance,
+  INITIAL_PHASE_ENTRANCE,
   reduceInGamePhaseEntrance,
 } from "../utils/reduceInGamePhaseEntrance.js"
 import { onConnect } from "../socket/connection.js"
@@ -33,10 +33,10 @@ export function useInGamePhaseEntrance({ hold = false } = {}) {
   }, [socket])
 
   const epochKey = `${getInGameSocketEpochId(socket)}#${connectSeq}`
-  const scope = buildInGamePhaseEntranceScope({ gameId, authUuid, epochKey })
+  const scope = buildEntranceScope({ gameId, authUuid, epochKey })
   const identity = buildInGamePhaseEntranceIdentity(scope, phase, dayIndex)
 
-  const [presentation, setPresentation] = useState(INITIAL_IN_GAME_PHASE_ENTRANCE)
+  const [presentation, setPresentation] = useState(INITIAL_PHASE_ENTRANCE)
   const lastSnapshotSeqRef = useRef(snapshotSeq)
 
   useEffect(() => {
@@ -52,14 +52,14 @@ export function useInGamePhaseEntrance({ hold = false } = {}) {
   const activePhase = presentation.active?.phase ?? null
 
   const confirm = useCallback(() => {
-    setPresentation((current) => confirmInGamePhaseEntrance(current, activeIdentity))
+    setPresentation((current) => confirmPhaseEntrance(current, activeIdentity))
   }, [activeIdentity])
 
   return {
     open: presentation.active !== null,
     phase: activePhase,
     dayIndex: presentation.active?.dayIndex ?? null,
-    message: getInGamePhaseEntranceMessage(activePhase),
+    message: getEntranceMsg(activePhase),
     identity: activeIdentity,
     confirm,
     armed: presentation.pending !== null || presentation.active !== null,

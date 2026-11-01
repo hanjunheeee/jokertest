@@ -7,7 +7,7 @@ import SocialSignupFields from "@/domains/auth/components/SocialSignupForm/Socia
 import SignupScrollArea from "@/domains/auth/components/SignupScrollArea.jsx"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import { SOCIAL_SIGNUP_TEXT } from "@/domains/auth/constants/socialMessages.js"
-import { SIGNUP_FORM_BODY_CLASS, SIGNUP_HEADER_TEXT_CLASS } from "@/domains/auth/constants/signupLayoutStyle.js"
+import { SIGNUP_FORM_BODY_CLASS, HEADER_TEXT_CLASS } from "@/domains/auth/constants/signupLayoutStyle.js"
 import { useSocialSignup } from "@/domains/auth/hooks/useSocialSignup.js"
 
 // 더 진행할 수 없는 가입 상태 (만료·취소·이미 있는 이메일)
@@ -62,7 +62,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
   return (
     <div className={SIGNUP_FORM_BODY_CLASS}>
       <header className="shrink-0 text-center">
-        <p className={SIGNUP_HEADER_TEXT_CLASS}>
+        <p className={HEADER_TEXT_CLASS}>
           {emailVerificationRequired
             ? "소셜 계정으로 처음 오셨네요. 이메일 인증과 닉네임·생년월일이 필요해요"
             : "소셜 계정으로 처음 오셨네요. 닉네임과 생년월일을 알려주세요"}

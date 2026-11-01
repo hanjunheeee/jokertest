@@ -10,9 +10,9 @@ import {
   parseDayVoteResolvedPayload,
 } from "../../utils/dayVoteResolve.js"
 import {
-  DAY_VOTE_RESOLVE_NO_ACK_MESSAGE,
-  DAY_VOTE_RESOLVE_OFFLINE_MESSAGE,
-  DAY_VOTE_RESOLVE_TIMEOUT_MS,
+  NO_ACK_MSG,
+  OFFLINE_MSG,
+  TIMEOUT_MS,
 } from "../../constants/actions/dayVoteResolve.js"
 import { onDisconnect } from "../../socket/connection.js"
 import { emitResolveDayVote, onDayVoteResolved } from "../../socket/day.js"
@@ -88,7 +88,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
     if (ackingRef.current || status !== "idle") return
     const requestSocket = getSocket()
     if (!requestSocket || !requestSocket.connected) {
-      setError(DAY_VOTE_RESOLVE_OFFLINE_MESSAGE)
+      setError(OFFLINE_MSG)
       return
     }
     if (!gameId || !Number.isInteger(dayIndex)) return
@@ -112,7 +112,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
       requestDayIndex !== useInGameStore.getState().state?.dayIndex ||
       requestRound !== getDayVoteRound(useInGameStore.getState().state)
 
-    emitResolveDayVote(requestSocket, DAY_VOTE_RESOLVE_TIMEOUT_MS, requestGameId, requestDayIndex)
+    emitResolveDayVote(requestSocket, TIMEOUT_MS, requestGameId, requestDayIndex)
       .then((response) => {
         if (isStale()) return
         const patch = computeDayVoteResolveAckPatch(response)
@@ -123,7 +123,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
       .catch(() => {
         if (!isStale()) {
           setStatus("idle")
-          setError(DAY_VOTE_RESOLVE_NO_ACK_MESSAGE)
+          setError(NO_ACK_MSG)
         }
       })
       .finally(() => {

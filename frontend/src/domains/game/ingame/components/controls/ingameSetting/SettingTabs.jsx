@@ -1,33 +1,33 @@
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
-  INGAME_SETTING_TAB_BUTTON_CLASS,
-  INGAME_SETTING_TAB_IMAGE_CLASS,
-  INGAME_SETTING_TAB_LABEL_ACTIVE_CLASS,
-  INGAME_SETTING_TAB_LABEL_CLASS,
-  INGAME_SETTING_TAB_LABEL_INACTIVE_CLASS,
-  INGAME_SETTING_TAB_NAV_CLASS,
+  TAB_BTN_CLASS,
+  TAB_IMG_CLASS,
+  TAB_LABEL_ACTIVE_CLASS,
+  TAB_LABEL_CLASS,
+  TAB_LABEL_INACTIVE_CLASS,
+  TAB_NAV_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 function SettingTabButton({ tab, active, onSelect }) {
   const labelColorClass = active
-    ? INGAME_SETTING_TAB_LABEL_ACTIVE_CLASS
-    : INGAME_SETTING_TAB_LABEL_INACTIVE_CLASS
+    ? TAB_LABEL_ACTIVE_CLASS
+    : TAB_LABEL_INACTIVE_CLASS
 
   return (
     <button
       type="button"
       onClick={() => onSelect(tab.id)}
-      className={INGAME_SETTING_TAB_BUTTON_CLASS}
+      className={TAB_BTN_CLASS}
       aria-pressed={active}
       style={{ outline: "none" }}
     >
       <PublicAsset
         src={active ? INGAME_SETTING_ASSETS.tabActive : INGAME_SETTING_ASSETS.tabInactive}
         alt=""
-        className={INGAME_SETTING_TAB_IMAGE_CLASS}
+        className={TAB_IMG_CLASS}
       />
-      <span className={`${INGAME_SETTING_TAB_LABEL_CLASS} ${labelColorClass}`.trim()}>
+      <span className={`${TAB_LABEL_CLASS} ${labelColorClass}`.trim()}>
         {tab.label}
       </span>
     </button>
@@ -36,7 +36,7 @@ function SettingTabButton({ tab, active, onSelect }) {
 
 export default function SettingTabs({ tabs, activeTab, onSelect }) {
   return (
-    <nav className={INGAME_SETTING_TAB_NAV_CLASS} aria-label="인게임 설정 탭">
+    <nav className={TAB_NAV_CLASS} aria-label="인게임 설정 탭">
       {tabs.map((tab) => (
         <SettingTabButton
           key={tab.id}

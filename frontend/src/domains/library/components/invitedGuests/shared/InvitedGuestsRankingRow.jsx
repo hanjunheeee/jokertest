@@ -1,12 +1,12 @@
 import InvitedGuestsRankingProfile from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsRankingProfile.jsx"
 import InvitedGuestsStatValue from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsStatValue.jsx"
 import {
-  getInvitedGuestsRankCellClass,
-  INVITED_GUESTS_TABLE_NICKNAME_CELL_CLASS,
-  INVITED_GUESTS_TABLE_NUM_CELL_CLASS,
-  INVITED_GUESTS_TABLE_PROFILE_CELL_CLASS,
-  INVITED_GUESTS_TABLE_ROW_CLASS,
-  INVITED_GUESTS_TABLE_WINRATE_CELL_CLASS,
+  getRankCellClass,
+  TABLE_NICKNAME_CELL_CLASS,
+  TABLE_NUM_CELL_CLASS,
+  TABLE_PROFILE_CELL_CLASS,
+  TABLE_ROW_CLASS,
+  TABLE_WINRATE_CELL_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/tableStyle.js"
 
 export default function InvitedGuestsRankingRow({
@@ -18,16 +18,16 @@ export default function InvitedGuestsRankingRow({
   winRate,
 }) {
   return (
-    <tr className={INVITED_GUESTS_TABLE_ROW_CLASS}>
-      <td className={getInvitedGuestsRankCellClass(rank)}>{rank}</td>
-      <td className={INVITED_GUESTS_TABLE_PROFILE_CELL_CLASS}>
+    <tr className={TABLE_ROW_CLASS}>
+      <td className={getRankCellClass(rank)}>{rank}</td>
+      <td className={TABLE_PROFILE_CELL_CLASS}>
         <InvitedGuestsRankingProfile profileSrc={profileSrc} profileBorderSrc={profileBorderSrc} />
       </td>
-      <td className={INVITED_GUESTS_TABLE_NICKNAME_CELL_CLASS}>{nickname}</td>
-      <td className={INVITED_GUESTS_TABLE_NUM_CELL_CLASS}>
+      <td className={TABLE_NICKNAME_CELL_CLASS}>{nickname}</td>
+      <td className={TABLE_NUM_CELL_CLASS}>
         <InvitedGuestsStatValue value={playCount} />
       </td>
-      <td className={INVITED_GUESTS_TABLE_WINRATE_CELL_CLASS}>
+      <td className={TABLE_WINRATE_CELL_CLASS}>
         <InvitedGuestsStatValue value={winRate} />
       </td>
     </tr>

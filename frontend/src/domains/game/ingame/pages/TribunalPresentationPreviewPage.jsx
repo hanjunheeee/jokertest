@@ -3,20 +3,20 @@ import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionPr
 import InGameBackground from "../components/InGameBackground.jsx"
 import InGameTribunalPresentationOverlay from "../components/tribunalPresentation/InGameTribunalPresentationOverlay.jsx"
 import {
-  buildTribunalPresentationPreviewChatMessages,
-  buildTribunalPresentationPreviewDefendant,
+  buildPreviewChatMsgs,
+  buildPreviewDefendant,
 } from "../constants/tribunalPresentation/tribunalPresentationPreviewFixture.js"
 
-const PREVIEW_REPLAY_BTN_CLASS =
+const REPLAY_BTN_CLASS =
   "absolute bottom-[clamp(0.85rem,3vh,1.25rem)] left-1/2 z-[60] -translate-x-1/2 cursor-pointer rounded border border-[#6b4321] bg-[#e2c78f] px-5 py-2 font-subheading text-sm font-bold text-[#3a1a0c] shadow-[0_4px_14px_rgba(0,0,0,0.45)] transition hover:bg-[#f0dcae]"
 
 export default function TribunalPresentationPreviewPage() {
   const [replayKey, setReplayKey] = useState(0)
   const [draft, setDraft] = useState("")
   const [previewMessages, setPreviewMessages] = useState(() =>
-    buildTribunalPresentationPreviewChatMessages(),
+    buildPreviewChatMsgs(),
   )
-  const defendant = useMemo(() => buildTribunalPresentationPreviewDefendant(), [replayKey])
+  const defendant = useMemo(() => buildPreviewDefendant(), [replayKey])
 
   const chatProps = useMemo(
     () => ({
@@ -47,7 +47,7 @@ export default function TribunalPresentationPreviewPage() {
 
   const replay = useCallback(() => {
     setDraft("")
-    setPreviewMessages(buildTribunalPresentationPreviewChatMessages())
+    setPreviewMessages(buildPreviewChatMsgs())
     setReplayKey((current) => current + 1)
   }, [])
 
@@ -72,7 +72,7 @@ export default function TribunalPresentationPreviewPage() {
         />
       </InGamePlayerSessionProvider>
 
-      <button type="button" className={PREVIEW_REPLAY_BTN_CLASS} onClick={replay}>
+      <button type="button" className={REPLAY_BTN_CLASS} onClick={replay}>
         다시 보기
       </button>
     </div>

@@ -1,14 +1,14 @@
 import { useRef } from "react"
-import { resolveGameResultPlayerListFrame } from "../constants/gameResultAssets.js"
+import { resolvePlayerListFrame } from "../constants/gameResultAssets.js"
 import {
-  GAME_RESULT_FRAME_IMAGE_FILL_CLASS,
-  GAME_RESULT_FRAME_SHADOW_LAYER_FILL_CLASS,
-  GAME_RESULT_PLAYER_LIST_INSET_CLASS,
-  GAME_RESULT_PLAYER_LIST_SCROLL_CLASS,
-  GAME_RESULT_PLAYER_LIST_SCROLL_WRAP_CLASS,
-  GAME_RESULT_PLAYER_LIST_SCROLLBAR_CLASS,
-  GAME_RESULT_PLAYER_LIST_TITLE_CLASS,
-  GAME_RESULT_PLAYER_LIST_WRAP_CLASS,
+  FRAME_IMG_FILL_CLASS,
+  FRAME_SHADOW_LAYER_FILL_CLASS,
+  PLAYER_LIST_INSET_CLASS,
+  PLAYER_LIST_SCROLL_CLASS,
+  PLAYER_LIST_SCROLL_WRAP_CLASS,
+  PLAYER_LIST_SCROLLBAR_CLASS,
+  PLAYER_LIST_TITLE_CLASS,
+  PLAYER_LIST_WRAP_CLASS,
 } from "../constants/gameResultLayout.js"
 import GameResultPlayerRow from "./GameResultPlayerRow.jsx"
 import GameResultWinningTeamBadge from "./GameResultWinningTeamBadge.jsx"
@@ -22,33 +22,33 @@ export default function GameResultPlayerList({
   selfUuid = null,
 }) {
   const scrollRef = useRef(null)
-  const playerListFrameSrc = resolveGameResultPlayerListFrame(outcome)
+  const playerListFrameSrc = resolvePlayerListFrame(outcome)
 
   return (
     <section
-      className={GAME_RESULT_PLAYER_LIST_WRAP_CLASS}
+      className={PLAYER_LIST_WRAP_CLASS}
       aria-label="가면무도회 참가자 정체"
     >
       <PublicAsset
         src={playerListFrameSrc}
         alt=""
         aria-hidden="true"
-        className={GAME_RESULT_FRAME_SHADOW_LAYER_FILL_CLASS}
+        className={FRAME_SHADOW_LAYER_FILL_CLASS}
       />
       <PublicAsset
         src={playerListFrameSrc}
         alt=""
-        className={GAME_RESULT_FRAME_IMAGE_FILL_CLASS}
+        className={FRAME_IMG_FILL_CLASS}
       />
 
-      <div className={GAME_RESULT_PLAYER_LIST_INSET_CLASS}>
-        <h2 className={GAME_RESULT_PLAYER_LIST_TITLE_CLASS}>가면무도회 참가자 정체</h2>
+      <div className={PLAYER_LIST_INSET_CLASS}>
+        <h2 className={PLAYER_LIST_TITLE_CLASS}>가면무도회 참가자 정체</h2>
         <GameResultWinningTeamBadge winningTeam={winningTeam} />
 
-        <div className={GAME_RESULT_PLAYER_LIST_SCROLL_WRAP_CLASS}>
+        <div className={PLAYER_LIST_SCROLL_WRAP_CLASS}>
           <ul
             ref={scrollRef}
-            className={GAME_RESULT_PLAYER_LIST_SCROLL_CLASS}
+            className={PLAYER_LIST_SCROLL_CLASS}
           >
             {players.map((player) => (
               <GameResultPlayerRow
@@ -62,7 +62,7 @@ export default function GameResultPlayerList({
           <Scrollbar
             scrollRef={scrollRef}
             alwaysVisible
-            className={GAME_RESULT_PLAYER_LIST_SCROLLBAR_CLASS}
+            className={PLAYER_LIST_SCROLLBAR_CLASS}
           />
         </div>
       </div>

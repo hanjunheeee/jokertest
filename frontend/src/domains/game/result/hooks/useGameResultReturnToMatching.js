@@ -7,12 +7,12 @@ import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { useNextRoomSettingsStore } from "@/domains/game/setup/store/nextRoomSettingsStore.js"
 import {
-  CREATE_ROOM_ERROR_MESSAGES,
+  CREATE_ROOM_ERROR_MSGS,
   CURRENT_ROOM_MAX_POLL_ATTEMPTS,
   CURRENT_ROOM_POLL_INTERVAL_MS,
 } from "@/domains/game/shared/constants/gameSetupSocket.js"
 import { resolveNextGameCreateRoomPayload } from "@/domains/game/setup/utils/resolveNextGameCreateRoomPayload.js"
-import { persistPartyRejoinGameId } from "@/domains/game/shared/utils/partyMatchingRejoin.js"
+import { persistRejoinGameId } from "@/domains/game/shared/utils/partyMatchingRejoin.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { askRoom, createRoom } from "@/domains/game/shared/socket/room.js"
 import { askSnapshot } from "../socket/room.js"
@@ -49,7 +49,7 @@ export function useGameResultReturnToMatching() {
 
     const socket = getSocket()
     if (!socket || !accountId) {
-      window.alert(CREATE_ROOM_ERROR_MESSAGES.NETWORK)
+      window.alert(CREATE_ROOM_ERROR_MSGS.NETWORK)
       return
     }
 
@@ -104,7 +104,7 @@ export function useGameResultReturnToMatching() {
           return
         }
 
-        window.alert(CREATE_ROOM_ERROR_MESSAGES.NETWORK)
+        window.alert(CREATE_ROOM_ERROR_MSGS.NETWORK)
         return
       }
 
@@ -122,7 +122,7 @@ export function useGameResultReturnToMatching() {
           // 판 id를 못 받으면 기억 없이 대기방으로 감
         }
       }
-      if (partyGameId) persistPartyRejoinGameId(accountId, partyGameId)
+      if (partyGameId) persistRejoinGameId(accountId, partyGameId)
       navigate("/game-matching", {
         replace: true,
         state: {

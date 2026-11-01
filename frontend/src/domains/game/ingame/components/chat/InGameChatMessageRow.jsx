@@ -3,7 +3,7 @@ import {
   getInGameChatMessageSenderClass,
   getInGameChatMessageTimeClass,
   getInGameChatTextScaleStyle,
-  INGAME_CHAT_MESSAGE_ROW_CLASS,
+  MSG_ROW_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import {
   INGAME_SETTING_CHAT_CHECKBOXES,
@@ -11,10 +11,10 @@ import {
 } from "../../constants/controls/ingameSetting/ingameSettingData.js"
 import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
-import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
+import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import {
   resolveInGameChatPlayerColor,
-  selectChatNicknameColorEnabled,
+  selectNicknameColorEnabled,
 } from "./resolveInGameChatPlayerColor.js"
 
 const SHOW_TIME_SETTING_ID = "show-time"
@@ -22,7 +22,7 @@ const SHOW_TIME_DEFAULT_CHECKED =
   INGAME_SETTING_CHAT_CHECKBOXES.find(({ id }) => id === SHOW_TIME_SETTING_ID)?.defaultChecked ??
   false
 
-function selectChatShowTimeEnabled(state) {
+function selectShowTimeEnabled(state) {
   return state.chatChecks?.[SHOW_TIME_SETTING_ID] ?? SHOW_TIME_DEFAULT_CHECKED
 }
 
@@ -47,12 +47,12 @@ export default function InGameChatMessageRow({
   textFieldWidth = 0,
   sentAt = null,
 }) {
-  const variant = useInGameChatVariant()
+  const variant = useChatVariant()
   const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
   const themeStyles = playerId ? getThemeStylesByPlayerId(playerId) : null
 
-  const nicknameColorEnabled = useSettingsStore(selectChatNicknameColorEnabled)
-  const showTimeEnabled = useSettingsStore(selectChatShowTimeEnabled)
+  const nicknameColorEnabled = useSettingsStore(selectNicknameColorEnabled)
+  const showTimeEnabled = useSettingsStore(selectShowTimeEnabled)
   const chatTextSize = useSettingsStore(selectChatTextSize)
 
   const { style: themedTextStyle, className: themedTextClass } = resolveInGameChatPlayerColor(
@@ -72,7 +72,7 @@ export default function InGameChatMessageRow({
       : 0
 
   return (
-    <li className={INGAME_CHAT_MESSAGE_ROW_CLASS} style={chatTextScaleStyle}>
+    <li className={MSG_ROW_CLASS} style={chatTextScaleStyle}>
       {formattedTime ? (
         <span className={getInGameChatMessageTimeClass(variant)}>{formattedTime}</span>
       ) : null}

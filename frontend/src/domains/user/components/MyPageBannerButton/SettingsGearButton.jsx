@@ -1,8 +1,8 @@
 import { LOBBY_ASSETS } from "../../../../shared/constants/lobbyAssets.js"
 import {
   LOBBY_SETTINGS_GEAR_LAYOUT,
-  MY_PAGE_BANNER_SETTINGS_BTN_CLASS,
-  MY_PAGE_BANNER_SETTINGS_GEAR_IMG_CLASS,
+  SETTINGS_BTN_CLASS,
+  SETTINGS_GEAR_IMG_CLASS,
 } from "../../constants/myPageBannerStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
@@ -15,7 +15,7 @@ export default function SettingsGearButton({ onClick }) {
         event.stopPropagation()
         onClick?.()
       }}
-      className={MY_PAGE_BANNER_SETTINGS_BTN_CLASS}
+      className={SETTINGS_BTN_CLASS}
       style={{
         top: LOBBY_SETTINGS_GEAR_LAYOUT.top,
         right: LOBBY_SETTINGS_GEAR_LAYOUT.right,
@@ -23,7 +23,7 @@ export default function SettingsGearButton({ onClick }) {
         height: LOBBY_SETTINGS_GEAR_LAYOUT.size,
       }}
     >
-      <PublicAsset src={LOBBY_ASSETS.settingsGear} alt="" className={MY_PAGE_BANNER_SETTINGS_GEAR_IMG_CLASS} />
+      <PublicAsset src={LOBBY_ASSETS.settingsGear} alt="" className={SETTINGS_GEAR_IMG_CLASS} />
     </button>
   )
 }

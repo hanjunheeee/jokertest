@@ -2,10 +2,10 @@
 // FriendListRow가 이름 아래에 그림
 import { FRIEND_LIST_ASSETS } from "../../../../constants/friendListAssets.js"
 import {
-  FRIEND_ROW_OFFLINE_OVERLAY_CLASS,
-  FRIEND_ROW_STATUS_BADGE_CLASS,
-  FRIEND_ROW_STATUS_TEXT_CLASS,
-  FRIEND_ROW_STATUS_WRAP_CLASS,
+  ROW_OFFLINE_OVERLAY_CLASS,
+  ROW_STATUS_BADGE_CLASS,
+  ROW_STATUS_TEXT_CLASS,
+  ROW_STATUS_WRAP_CLASS,
 } from "../../../../constants/friendListStyle.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
@@ -15,18 +15,18 @@ export default function FriendOnlineStatus({ online }) {
   const statusColorClass = online ? "text-amber-100/85" : "text-white/35"
 
   return (
-    <div className={FRIEND_ROW_STATUS_WRAP_CLASS}>
-      <span className={FRIEND_ROW_STATUS_BADGE_CLASS}>
+    <div className={ROW_STATUS_WRAP_CLASS}>
+      <span className={ROW_STATUS_BADGE_CLASS}>
         <PublicAsset
           src={FRIEND_LIST_ASSETS.onlineBadge}
           alt=""
           className="h-full w-full select-none"
         />
         {!online ? (
-          <span className={FRIEND_ROW_OFFLINE_OVERLAY_CLASS} aria-hidden="true" />
+          <span className={ROW_OFFLINE_OVERLAY_CLASS} aria-hidden="true" />
         ) : null}
       </span>
-      <span className={`${FRIEND_ROW_STATUS_TEXT_CLASS} ${statusColorClass}`}>
+      <span className={`${ROW_STATUS_TEXT_CLASS} ${statusColorClass}`}>
         {statusText}
       </span>
     </div>

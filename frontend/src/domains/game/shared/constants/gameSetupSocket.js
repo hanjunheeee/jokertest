@@ -40,6 +40,6 @@ export const CURRENT_ROOM_TIMEOUT_MS = 5000
 export const CURRENT_ROOM_POLL_INTERVAL_MS = 700
 export const CURRENT_ROOM_MAX_POLL_ATTEMPTS = 4
 
-export const CREATE_ROOM_ERROR_MESSAGES = {
+export const CREATE_ROOM_ERROR_MSGS = {
   NETWORK: "네트워크 상태를 확인한 뒤 다시 시도해주세요.",
 }

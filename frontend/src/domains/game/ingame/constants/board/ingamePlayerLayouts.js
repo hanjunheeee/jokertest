@@ -68,7 +68,7 @@ export const INGAME_PLAYER_LAYOUT_10 = [
   { left: 82, top: 77, zone: "bottom", rotate: -3 },
 ]
 
-export const INGAME_PLAYER_LAYOUTS_BY_COUNT = {
+export const LAYOUTS_BY_COUNT = {
   4: INGAME_PLAYER_LAYOUT_4,
   5: INGAME_PLAYER_LAYOUT_5,
   6: INGAME_PLAYER_LAYOUT_6,

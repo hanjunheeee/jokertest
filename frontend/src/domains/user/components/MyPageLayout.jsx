@@ -12,9 +12,9 @@ import ProfileEditOverlay from "./profileEdit/ProfileEditOverlay.jsx"
 import SkinCardWearOverlay from "./skinCardWear/SkinCardWearOverlay.jsx"
 import { MY_PAGE_PROFILE_BANNER_DEFAULTS } from "../constants/myPageAssets.js"
 import {
-  MY_PAGE_ACTION_BUTTONS_WRAP_CLASS,
-  MY_PAGE_BANNER_WRAP_CLASS,
-  MY_PAGE_CENTER_STACK_CLASS,
+  ACTION_BTNS_WRAP_CLASS,
+  BANNER_WRAP_CLASS,
+  CENTER_STACK_CLASS,
   MY_PAGE_MAIN_CLASS,
   MY_PAGE_ROOT_CLASS,
   MY_PAGE_UI_FADE,
@@ -31,7 +31,7 @@ export default function MyPageLayout() {
 
   return (
     <div className={MY_PAGE_ROOT_CLASS}>
-      <div className={MY_PAGE_ACTION_BUTTONS_WRAP_CLASS}>
+      <div className={ACTION_BTNS_WRAP_CLASS}>
         <AccountManageButton onClick={goToAccount} />
         <ProfileEditButton onClick={() => setProfileEditOpen(true)} />
         <SkinCardWearButton onClick={() => setSkinCardWearOpen(true)} />
@@ -62,7 +62,7 @@ export default function MyPageLayout() {
       <SkinCardWearOverlay open={skinCardWearOpen} onClose={() => setSkinCardWearOpen(false)} />
 
       {!loading && profile ? (
-        <div className={MY_PAGE_BANNER_WRAP_CLASS}>
+        <div className={BANNER_WRAP_CLASS}>
           <MyPageBannerButton {...MY_PAGE_PROFILE_BANNER_DEFAULTS} profile={profile} />
         </div>
       ) : null}
@@ -74,7 +74,7 @@ export default function MyPageLayout() {
         transition={MY_PAGE_UI_FADE}
       >
         {!loading && profile ? (
-          <div className={MY_PAGE_CENTER_STACK_CLASS}>
+          <div className={CENTER_STACK_CLASS}>
             {description ? <FateMaskFooter description={description} /> : null}
             <MyPageSummaryPanel stats={stats} />
           </div>

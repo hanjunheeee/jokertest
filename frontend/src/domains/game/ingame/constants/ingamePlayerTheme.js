@@ -3,10 +3,10 @@
 export {
   INGAME_PLAYER_THEME_PALETTE,
   INGAME_PLAYER_THEME_PALETTE_SIZE,
-  INGAME_PLAYER_THEME_TEXT_RENDER_CLASS,
-  INGAME_PLAYER_THEME_TEXT_SHADOW,
-  buildInGamePlayerThemeStyles,
+  THEME_TEXT_RENDER_CLASS,
+  THEME_TEXT_SHADOW,
+  buildThemeStyles,
   resolveInGamePlayerTheme,
   resolveInGamePlayerThemeByColorIndex,
-  resolveInGamePlayerThemeEmphasized,
+  resolveThemeEmphasized,
 } from "../../../../shared/constants/ingamePlayerTheme.js"

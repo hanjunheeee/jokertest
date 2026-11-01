@@ -2,10 +2,10 @@
 // FriendListFolder가 폴더 맨 위에 그림
 import { FRIEND_LIST_ASSETS } from "../../../../constants/friendListAssets.js"
 import {
-  FRIEND_FOLDER_CHEVRON_CLASS,
-  FRIEND_FOLDER_HEADER_CLASS,
-  FRIEND_FOLDER_ICON_CLASS,
-  FRIEND_FOLDER_LABEL_CLASS,
+  FOLDER_CHEVRON_CLASS,
+  FOLDER_HEADER_CLASS,
+  FOLDER_ICON_CLASS,
+  FOLDER_LABEL_CLASS,
 } from "../../../../constants/friendListStyle.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
@@ -18,12 +18,12 @@ export default function FriendListFolderHeader({ label, open, onToggle }) {
     <button
       type="button"
       onClick={onToggle}
-      className={FRIEND_FOLDER_HEADER_CLASS}
+      className={FOLDER_HEADER_CLASS}
       style={{ outline: "none" }}
     >
-      <PublicAsset src={folderIcon} alt="" className={FRIEND_FOLDER_ICON_CLASS} />
-      <span className={FRIEND_FOLDER_LABEL_CLASS}>{label}</span>
-      <PublicAsset src={chevronIcon} alt="" className={FRIEND_FOLDER_CHEVRON_CLASS} />
+      <PublicAsset src={folderIcon} alt="" className={FOLDER_ICON_CLASS} />
+      <span className={FOLDER_LABEL_CLASS}>{label}</span>
+      <PublicAsset src={chevronIcon} alt="" className={FOLDER_CHEVRON_CLASS} />
     </button>
   )
 }

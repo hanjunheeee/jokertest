@@ -1,6 +1,6 @@
 // 낮 투표 판정 계산: 판정 응답·무효화 조각, 판정 방송 검사 (상태를 안 건드리는 순수 계산)
 // 행동 패널(입구 useInGameActionPanel.js가 다시 내보냄)과 판 진행 이벤트 훅이 사용
-import { DAY_VOTE_RESOLVE_FAILED_MESSAGE } from "../constants/actions/dayVoteResolve.js"
+import { FAILED_MSG } from "../constants/actions/dayVoteResolve.js"
 import { parseDayVoteRoundFields } from "./dayVoteRound.js"
 
 const RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED", "REVOTE"])
@@ -17,7 +17,7 @@ export function computeDayVoteResolveAckPatch(response) {
       resolution: { outcome: response.outcome ?? null, tribunalTargetUuid: response.tribunalTargetUuid ?? null },
     }
   }
-  return { status: "idle", error: response?.message ?? DAY_VOTE_RESOLVE_FAILED_MESSAGE, resolution: null }
+  return { status: "idle", error: response?.message ?? FAILED_MSG, resolution: null }
 }
 
 // 방송이 지금 판·지금 낮 것인지

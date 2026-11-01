@@ -9,7 +9,7 @@ import { useMatchingFriendInvite } from "./useMatchingFriendInvite.js"
 import { useSettingsEdit } from "./useSettingsEdit.js"
 import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
-import { clearPartyRejoinGameId, readPartyRejoinGameId } from "../../shared/utils/partyMatchingRejoin.js"
+import { clearRejoinGameId, readRejoinGameId } from "../../shared/utils/partyMatchingRejoin.js"
 import { buildSlots } from "../utils/chunkPlayerSlots.js"
 import { leaveRoom } from "../socket/room.js"
 
@@ -19,7 +19,7 @@ export function useMatchingPage() {
   const myUuid = useAuthStore((s) => s.user?.uuid)
 
   // 결과 화면에서 왔거나 새로고침 전에 기다리던 판이 있으면 파티 방 기다림
-  const storedGameId = readPartyRejoinGameId(myUuid)
+  const storedGameId = readRejoinGameId(myUuid)
   const awaiting =
     location.state?.awaitRoomAfterGameResult === true || Boolean(storedGameId)
   const endedGameId = typeof location.state?.endedGameId === "string"
@@ -93,7 +93,7 @@ export function useMatchingPage() {
   const handleBack = () => {
     leaveRoom()
     clearRoom()
-    clearPartyRejoinGameId(myUuid)
+    clearRejoinGameId(myUuid)
     navigate("/multiplay")
   }
 

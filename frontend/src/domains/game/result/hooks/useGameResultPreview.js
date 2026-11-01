@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom"
 import {
   GAME_RESULT_OUTCOMES,
   GAME_RESULT_PREVIEW,
-  getGameResultMvpPlayer,
+  getMvpPlayer,
 } from "../constants/gameResultPreviewData.js"
 
 export function useGameResultPreview() {
@@ -16,7 +16,7 @@ export function useGameResultPreview() {
       : GAME_RESULT_PREVIEW.outcome
 
     const players = GAME_RESULT_PREVIEW.players
-    const mvp = getGameResultMvpPlayer(players, GAME_RESULT_PREVIEW.mvpPlayerId)
+    const mvp = getMvpPlayer(players, GAME_RESULT_PREVIEW.mvpPlayerId)
 
     return {
       outcome,

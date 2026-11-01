@@ -1,11 +1,11 @@
 import {
-  INGAME_VOTE_SCROLL_WRAP_CLASS,
-  INGAME_VOTE_STATUS_ROW_CLASS,
-  INGAME_VOTE_STATUS_SECTION_CLASS,
-  INGAME_VOTE_STATUS_TERM_CLASS,
-  INGAME_VOTE_STATUS_UNRESOLVED_CLASS,
-  INGAME_VOTE_STATUS_UNRESOLVED_WRAP_CLASS,
-  INGAME_VOTE_STATUS_VALUE_CLASS,
+  SCROLL_WRAP_CLASS,
+  STATUS_ROW_CLASS,
+  STATUS_SECTION_CLASS,
+  STATUS_TERM_CLASS,
+  STATUS_UNRESOLVED_CLASS,
+  STATUS_UNRESOLVED_WRAP_CLASS,
+  STATUS_VALUE_CLASS,
 } from "../../constants/vote/ingameVoteLayout.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 
@@ -24,8 +24,8 @@ export default function InGameVoteStatusContent() {
   if (!dayVoteResolution) {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className={INGAME_VOTE_STATUS_UNRESOLVED_WRAP_CLASS}>
-          <p className={INGAME_VOTE_STATUS_UNRESOLVED_CLASS} data-testid="vote-status-unresolved">
+        <div className={STATUS_UNRESOLVED_WRAP_CLASS}>
+          <p className={STATUS_UNRESOLVED_CLASS} data-testid="vote-status-unresolved">
             {INGAME_VOTE_STATUS_UNRESOLVED_LABEL}
           </p>
         </div>
@@ -42,29 +42,29 @@ export default function InGameVoteStatusContent() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className={INGAME_VOTE_SCROLL_WRAP_CLASS}>
-        <dl className={INGAME_VOTE_STATUS_SECTION_CLASS} aria-label="낮 투표 집계">
-          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
-            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>득표</dt>
-            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-public-vote-count">
+      <div className={SCROLL_WRAP_CLASS}>
+        <dl className={STATUS_SECTION_CLASS} aria-label="낮 투표 집계">
+          <div className={STATUS_ROW_CLASS}>
+            <dt className={STATUS_TERM_CLASS}>득표</dt>
+            <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-public-vote-count">
               {publicVoteCount ?? "-"}
             </dd>
           </div>
-          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
-            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>기권</dt>
-            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-public-abstain-count">
+          <div className={STATUS_ROW_CLASS}>
+            <dt className={STATUS_TERM_CLASS}>기권</dt>
+            <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-public-abstain-count">
               {publicAbstainCount ?? "-"}
             </dd>
           </div>
-          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
-            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>결과</dt>
-            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-outcome">
+          <div className={STATUS_ROW_CLASS}>
+            <dt className={STATUS_TERM_CLASS}>결과</dt>
+            <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-outcome">
               {outcome === null ? "-" : (OUTCOME_LABELS[outcome] ?? outcome)}
             </dd>
           </div>
-          <div className={INGAME_VOTE_STATUS_ROW_CLASS}>
-            <dt className={INGAME_VOTE_STATUS_TERM_CLASS}>재판 대상</dt>
-            <dd className={INGAME_VOTE_STATUS_VALUE_CLASS} data-testid="vote-status-tribunal-target">
+          <div className={STATUS_ROW_CLASS}>
+            <dt className={STATUS_TERM_CLASS}>재판 대상</dt>
+            <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-tribunal-target">
               {tribunalTargetUuid ?? "없음"}
             </dd>
           </div>

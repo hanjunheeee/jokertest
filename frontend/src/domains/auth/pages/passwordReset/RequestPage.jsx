@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import ResetRequestForm from "@/domains/auth/components/recovery/ResetRequestForm.jsx"
-import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { REQUEST_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 import { useResetRequest } from "@/domains/auth/hooks/recovery/useResetRequest.js"
 
@@ -26,7 +26,7 @@ export function PasswordResetRequestPage() {
       <div className="mt-6 flex flex-1 flex-col gap-2">
         {request.status === "sent" ? (
           <div className="flex flex-col items-center gap-3 text-center">
-            <p role="status" className={`${AUTH_RECOVERY_ALERT_CLASS} text-center`}>
+            <p role="status" className={`${RECOVERY_ALERT_CLASS} text-center`}>
               {REQUEST_TEXT.sent}
             </p>
             <button type="button" onClick={request.handleResend} className="auth-text-link">다시 보내기</button>

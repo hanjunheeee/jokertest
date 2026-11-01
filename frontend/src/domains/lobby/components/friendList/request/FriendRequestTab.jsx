@@ -1,8 +1,8 @@
 // 친구 추가 탭 (닉네임 검색·검색 결과·뒤로)
 // FriendListPanelContent가 request 탭일 때 그림
 import {
-  FRIEND_REQUEST_BACK_BUTTON_CLASS,
-  FRIEND_REQUEST_TAB_CLASS,
+  REQUEST_BACK_BTN_CLASS,
+  REQUEST_TAB_CLASS,
 } from "../../../constants/friendListStyle.js"
 import { useFriendSearch } from "../../../hooks/useFriendSearch.js"
 import BackButton from "../../../../../shared/ui/BackButton.jsx"
@@ -24,7 +24,7 @@ export default function FriendRequestTab({ onBack, onBlock, blockingIds = new Se
   } = useFriendSearch()
 
   return (
-    <div className={FRIEND_REQUEST_TAB_CLASS}>
+    <div className={REQUEST_TAB_CLASS}>
       <FriendListSearchBar
         label="친구 검색"
         placeholder="검색할 친구 닉네임 입력"
@@ -46,7 +46,7 @@ export default function FriendRequestTab({ onBack, onBlock, blockingIds = new Se
         size="compact"
         ariaLabel="친구 목록으로 돌아가기"
         onClick={onBack}
-        className={FRIEND_REQUEST_BACK_BUTTON_CLASS}
+        className={REQUEST_BACK_BTN_CLASS}
       />
     </div>
   )

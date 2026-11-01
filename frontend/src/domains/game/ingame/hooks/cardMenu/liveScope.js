@@ -1,7 +1,7 @@
 // 카드 메뉴 지금 범위 읽기: 판·계정·신원·단계·날짜·회차·밤 차례
 // 카드 메뉴 훅의 고르기·제출 직전 확인이 사용
 import { useAuthStore } from "../../../../auth/store/auth.store.js"
-import { getInGameIdentityScopeVersion, useInGameStore } from "../../store/ingameStore.js"
+import { getIdentityScopeVersion, useInGameStore } from "../../store/ingameStore.js"
 import { getDayVoteRound } from "../../utils/dayVoteRound.js"
 import { selectInGameNightTurnRole } from "../../utils/selectInGameNightTurnRole.js"
 
@@ -14,7 +14,7 @@ export function readMenuScope() {
     gameId: store.gameId ?? null,
     authUuid: auth.user?.uuid ?? null,
     identityGeneration: auth.identityGeneration ?? null,
-    identityScopeVersion: getInGameIdentityScopeVersion(),
+    identityScopeVersion: getIdentityScopeVersion(),
     phase: liveGameState?.phase ?? null,
     dayPhase: liveGameState?.dayPhase ?? null,
     dayIndex: liveGameState?.dayIndex ?? null,

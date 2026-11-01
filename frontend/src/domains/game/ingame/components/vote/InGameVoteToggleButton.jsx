@@ -1,18 +1,18 @@
 import { INGAME_VOTE_ASSETS } from "@/domains/game/ingame/constants/vote/ingameVoteAssets.js"
 import {
-  INGAME_VOTE_TOGGLE_BTN_CLASS,
-  INGAME_VOTE_TOGGLE_BTN_IMG_CLASS,
-  INGAME_VOTE_TOGGLE_BTN_LABEL_CLASS,
-  INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS,
+  TOGGLE_BTN_CLASS,
+  TOGGLE_BTN_IMG_CLASS,
+  TOGGLE_BTN_LABEL_CLASS,
+  TOGGLE_BTN_WRAP_CLASS,
 } from "../../constants/vote/ingameVoteLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 export default function InGameVoteToggleButton({
   onClick,
-  className = INGAME_VOTE_TOGGLE_BTN_WRAP_CLASS,
-  buttonClassName = INGAME_VOTE_TOGGLE_BTN_CLASS,
-  imgClassName = INGAME_VOTE_TOGGLE_BTN_IMG_CLASS,
-  labelClassName = INGAME_VOTE_TOGGLE_BTN_LABEL_CLASS,
+  className = TOGGLE_BTN_WRAP_CLASS,
+  buttonClassName = TOGGLE_BTN_CLASS,
+  imgClassName = TOGGLE_BTN_IMG_CLASS,
+  labelClassName = TOGGLE_BTN_LABEL_CLASS,
 }) {
   return (
     <div className={className}>

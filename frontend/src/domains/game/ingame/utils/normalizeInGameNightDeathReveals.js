@@ -1,11 +1,11 @@
-export const INGAME_NIGHT_DEATH_SOURCES = Object.freeze([
+export const DEATH_SOURCES = Object.freeze([
   "JOKER",
   "WITCH_HUNTER",
   "OTHER",
   "UNKNOWN_NIGHT",
 ])
 
-const KNOWN_SOURCES = new Set(INGAME_NIGHT_DEATH_SOURCES)
+const KNOWN_SOURCES = new Set(DEATH_SOURCES)
 
 export function normalizeInGameNightDeathReveals(rawReveals) {
   if (!Array.isArray(rawReveals)) return []

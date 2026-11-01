@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { resolveGameResultIntroVideo } from "../constants/gameResultAssets.js"
 import {
-  GAME_RESULT_INTRO_FALLBACK_TIMEOUT_MS,
-  GAME_RESULT_INTRO_SKIP_BUTTON_CLASS,
-  GAME_RESULT_INTRO_SKIP_LABEL,
+  FALLBACK_TIMEOUT_MS,
+  SKIP_BTN_CLASS,
+  SKIP_LABEL,
 } from "../constants/gameResultIntro.js"
 import { GAME_RESULT_BG_CLASS, GAME_RESULT_PAGE_CLASS } from "../constants/gameResultLayout.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
@@ -33,7 +33,7 @@ export default function GameResultIntroVideo({ outcome = "win", onComplete }) {
 
     const watchdog = setTimeout(() => {
       if (!cancelled) setShowSkip(true)
-    }, GAME_RESULT_INTRO_FALLBACK_TIMEOUT_MS)
+    }, FALLBACK_TIMEOUT_MS)
 
     return () => {
       cancelled = true
@@ -57,10 +57,10 @@ export default function GameResultIntroVideo({ outcome = "win", onComplete }) {
       {showSkip ? (
         <button
           type="button"
-          className={GAME_RESULT_INTRO_SKIP_BUTTON_CLASS}
+          className={SKIP_BTN_CLASS}
           onClick={onComplete}
         >
-          {GAME_RESULT_INTRO_SKIP_LABEL}
+          {SKIP_LABEL}
         </button>
       ) : null}
     </div>

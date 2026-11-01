@@ -26,7 +26,7 @@ export function watchConnection() {
 export const getSocketEpoch = () => epoch
 
 // 같은 소켓 객체가 다시 연결돼도 세대를 올림 (connect 받은 훅이 부름)
-export function noteInGameConnectionRebound() {
+export function noteConnectionRebound() {
   epoch += 1
   cancelRecords()
 }

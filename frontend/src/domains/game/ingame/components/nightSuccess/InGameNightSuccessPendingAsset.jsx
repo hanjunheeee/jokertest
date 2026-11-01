@@ -3,7 +3,7 @@
 import InGameParchmentModalBase from "../parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "../parchment/InGameParchmentConfirmButton.js"
 import { buildPendingAssetLabel } from "../../constants/ingameNightSuccess.js"
-import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../../constants/nightPrivateResult/ingameNightPrivateResult.js"
+import { PRIVATE_RESULT_MSG_CLASS } from "../../constants/nightPrivateResult/ingameNightPrivateResult.js"
 
 export default function InGameNightSuccessPendingAsset({ type, eventId, onFinish }) {
   const label = buildPendingAssetLabel(type)
@@ -18,7 +18,7 @@ export default function InGameNightSuccessPendingAsset({ type, eventId, onFinish
       focusKey={eventId}
       wrapperProps={{ "data-ingame-night-success-pending": "" }}
     >
-      <p className={INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS}>{label}</p>
+      <p className={PRIVATE_RESULT_MSG_CLASS}>{label}</p>
       <InGameParchmentConfirmButton label="확인" onClick={() => onFinish("COMPLETED")} />
     </InGameParchmentModalBase>
   )

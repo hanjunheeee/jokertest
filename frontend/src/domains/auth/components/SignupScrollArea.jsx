@@ -1,7 +1,7 @@
 import { useRef } from "react"
 import {
-  SIGNUP_SCROLL_AREA_CLASS,
-  SIGNUP_SCROLL_WRAP_CLASS,
+  SCROLL_AREA_CLASS,
+  SCROLL_WRAP_CLASS,
   SIGNUP_SCROLLBAR_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
@@ -10,11 +10,11 @@ export default function SignupScrollArea({ children }) {
   const scrollRef = useRef(null)
 
   return (
-    <div className={SIGNUP_SCROLL_WRAP_CLASS}>
+    <div className={SCROLL_WRAP_CLASS}>
       <div
         ref={scrollRef}
         data-signup-scroll-area=""
-        className={`${SIGNUP_SCROLL_AREA_CLASS} flex flex-col gap-1.5`}
+        className={`${SCROLL_AREA_CLASS} flex flex-col gap-1.5`}
         role="region"
         aria-label="회원가입 입력"
       >

@@ -2,10 +2,10 @@ import { useEffect } from "react"
 import {
   LOBBY_BANNER_PROFILE_LAYOUT,
   LOBBY_BANNER_PROFILE_PHOTO_INSET,
-  MY_PAGE_BANNER_PROFILE_FRAME_CLASS,
-  MY_PAGE_BANNER_PROFILE_IMAGE_CLASS,
-  MY_PAGE_BANNER_PROFILE_IMAGE_WRAP_CLASS,
-  MY_PAGE_BANNER_PROFILE_WRAP_CLASS,
+  PROFILE_FRAME_CLASS,
+  PROFILE_IMG_CLASS,
+  PROFILE_IMG_WRAP_CLASS,
+  PROFILE_WRAP_CLASS,
 } from "../../constants/myPageBannerStyle.js"
 import { useProfileCustomizationStore } from "../../store/profileCustomization.store.js"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
@@ -27,11 +27,11 @@ export default function BannerProfilePortrait({
   const frameSrc = frameSrcProp ?? storeFrame ?? PLAYER_PROFILE_ASSETS.defaultBorder
 
   return (
-    <div className={MY_PAGE_BANNER_PROFILE_WRAP_CLASS} style={LOBBY_BANNER_PROFILE_LAYOUT}>
-      <div className={MY_PAGE_BANNER_PROFILE_IMAGE_WRAP_CLASS} style={LOBBY_BANNER_PROFILE_PHOTO_INSET}>
-        <PublicAsset src={photoSrc} alt="" className={MY_PAGE_BANNER_PROFILE_IMAGE_CLASS} />
+    <div className={PROFILE_WRAP_CLASS} style={LOBBY_BANNER_PROFILE_LAYOUT}>
+      <div className={PROFILE_IMG_WRAP_CLASS} style={LOBBY_BANNER_PROFILE_PHOTO_INSET}>
+        <PublicAsset src={photoSrc} alt="" className={PROFILE_IMG_CLASS} />
       </div>
-      <PublicAsset src={frameSrc} alt="" className={MY_PAGE_BANNER_PROFILE_FRAME_CLASS} />
+      <PublicAsset src={frameSrc} alt="" className={PROFILE_FRAME_CLASS} />
     </div>
   )
 }

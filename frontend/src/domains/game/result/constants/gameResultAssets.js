@@ -22,13 +22,13 @@ export function resolveGameResultIntroVideo(outcome) {
   return outcome === "lose" ? GAME_RESULT_ASSETS.introLose : GAME_RESULT_ASSETS.introWin
 }
 
-export function resolveGameResultPlayerListFrame(outcome) {
+export function resolvePlayerListFrame(outcome) {
   return outcome === "lose"
     ? GAME_RESULT_ASSETS.playerListFrameLose
     : GAME_RESULT_ASSETS.playerListFrameWin
 }
 
-export function resolveGameResultMvpNameplateFrame(outcome) {
+export function resolveMvpNameplateFrame(outcome) {
   return outcome === "lose"
     ? GAME_RESULT_ASSETS.mvpNameplateFrameLose
     : GAME_RESULT_ASSETS.mvpNameplateFrameWin

@@ -4,12 +4,12 @@ import { AnimatePresence, motion } from "framer-motion"
 import { createPortal } from "react-dom"
 import { TUTORIAL_GUIDE_SLIDES } from "@/shared/constants/tutorialAssets.js"
 import {
-  TUTORIAL_GUIDE_BACKDROP_CLASS,
-  TUTORIAL_GUIDE_PANEL_CLASS,
-  TUTORIAL_GUIDE_SHELL_CLASS,
-  TUTORIAL_GUIDE_SLIDE_IMAGE_CLASS,
-  TUTORIAL_GUIDE_SLIDE_WRAP_CLASS,
-  TUTORIAL_GUIDE_TRANSITION,
+  BACKDROP_CLASS,
+  PANEL_CLASS,
+  SHELL_CLASS,
+  SLIDE_IMG_CLASS,
+  SLIDE_WRAP_CLASS,
+  GUIDE_TRANSITION,
 } from "@/shared/ui/tutorialGuide/tutorialGuideLayout.js"
 import TutorialGuideControls from "@/shared/ui/tutorialGuide/TutorialGuideControls.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset"
@@ -34,32 +34,32 @@ export default function TutorialGuideOverlay({
           <motion.button
             type="button"
             aria-label="튜토리얼 닫기"
-            className={TUTORIAL_GUIDE_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={TUTORIAL_GUIDE_TRANSITION}
+            transition={GUIDE_TRANSITION}
             onClick={onClose}
           />
 
-          <div className={TUTORIAL_GUIDE_SHELL_CLASS}>
+          <div className={SHELL_CLASS}>
             <motion.div
               role="dialog"
               aria-modal="true"
               aria-label={ariaLabel}
-              className={TUTORIAL_GUIDE_PANEL_CLASS}
+              className={PANEL_CLASS}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
-              transition={TUTORIAL_GUIDE_TRANSITION}
+              transition={GUIDE_TRANSITION}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className={TUTORIAL_GUIDE_SLIDE_WRAP_CLASS}>
+              <div className={SLIDE_WRAP_CLASS}>
                 <img
                   src={publicAsset(slides[pageIndex])}
                   alt={`튜토리얼 ${pageIndex + 1}페이지`}
-                  className={TUTORIAL_GUIDE_SLIDE_IMAGE_CLASS}
+                  className={SLIDE_IMG_CLASS}
                   draggable={false}
                 />
               </div>

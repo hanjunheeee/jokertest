@@ -1,14 +1,14 @@
 import forbiddenRecordsScript from "./기억의서고-금지된기록-스크립트.md?raw"
 import {
-  mergeForbiddenRecordsSpreads,
+  mergeSpreads,
   parseForbiddenRecordsScript,
 } from "./parseForbiddenRecordsScript.js"
 import { FORBIDDEN_RECORDS_SPREAD_META } from "./spreadMeta.js"
 
-const forbiddenRecordsSections = parseForbiddenRecordsScript(forbiddenRecordsScript)
+const sections = parseForbiddenRecordsScript(forbiddenRecordsScript)
 
-export const FORBIDDEN_RECORDS_PAGES = mergeForbiddenRecordsSpreads(
-  forbiddenRecordsSections,
+export const FORBIDDEN_RECORDS_PAGES = mergeSpreads(
+  sections,
   FORBIDDEN_RECORDS_SPREAD_META,
 )
 

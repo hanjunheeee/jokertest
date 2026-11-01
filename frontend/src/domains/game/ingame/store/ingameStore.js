@@ -30,10 +30,10 @@ adoptIdentityScope(null, null)
 watchStore(useInGameStore)
 watchAuth()
 
-export { getInGameIdentityScopeVersion, subscribeInGameIdentityScope } from "./ingame/identityScope.js"
-export { noteInGameConnectionRebound } from "./ingame/connectionScope.js"
+export { getIdentityScopeVersion, subscribeIdentityScope } from "./ingame/identityScope.js"
+export { noteConnectionRebound } from "./ingame/connectionScope.js"
 export { readInGameReceiptScope } from "./ingame/receiptScope.js"
 export { isTerminalResultFromOtherAccount } from "./ingame/terminalScope.js"
 export { readNightSuccessReceiptScope } from "./ingame/nightSuccessRecords.js"
 export { selectInGameState, selectNightPresentationWait, selectNightSuccessQueue } from "./ingame/initialState.js"
-export { isCurrentGameKickEvent, isSameInGameReceiptScope } from "../utils/store/scope.js"
+export { isCurrentGameKickEvent, isSameReceiptScope } from "../utils/store/scope.js"

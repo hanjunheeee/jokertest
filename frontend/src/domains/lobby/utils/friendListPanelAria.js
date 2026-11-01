@@ -1,4 +1,4 @@
-export function getFriendPanelAriaLabel(view) {
+export function getAriaLabel(view) {
   if (view === "request") return "친구 신청"
   if (view === "accept") return "친구 수락"
   if (view === "invite") return "게임 초대"

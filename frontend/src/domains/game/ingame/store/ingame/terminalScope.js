@@ -1,7 +1,7 @@
 // 종료 결과 범위: 승패 결과가 어느 계정·연결에서 확정됐는지 적어 둠
 // 스토어 감시가 적고, 종료 결과 무효화 액션·결과 화면 이동 훅이 확인함
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
-import { isSameInGameReceiptScope, readSelfMembershipId } from "../../utils/store/scope.js"
+import { isSameReceiptScope, readSelfMembershipId } from "../../utils/store/scope.js"
 import { getStore } from "./storeRef.js"
 import { getMembershipEpoch } from "./identityScope.js"
 import { getSocketEpoch } from "./connectionScope.js"
@@ -29,7 +29,7 @@ function buildScope(receipt, gameId, state) {
 function isScopeCurrent(recorded, currentScope, current) {
   if (recorded === null || typeof recorded !== "object") return false
   if (recorded.accountId === null || recorded.identityGeneration === null) return false
-  if (!isSameInGameReceiptScope(recorded, currentScope)) return false
+  if (!isSameReceiptScope(recorded, currentScope)) return false
   return isReceiptCurrent(recorded, current)
 }
 

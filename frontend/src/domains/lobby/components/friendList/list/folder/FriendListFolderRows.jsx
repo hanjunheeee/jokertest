@@ -1,10 +1,10 @@
 // 펼친 친구 폴더 안의 친구 줄 목록
 // FriendListFolder가 열렸을 때 그림
-import { FRIEND_FOLDER_LIST_CLASS } from "../../../../constants/friendListStyle.js"
+import { FOLDER_LIST_CLASS } from "../../../../constants/friendListStyle.js"
 import FriendListRow from "../FriendListRow.jsx"
 
 // 초대·차단 묶음이 없으면 그 버튼을 안 보임
-export default function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLASS, invite, block }) {
+export default function FriendListFolderRows({ friends, listClassName = FOLDER_LIST_CLASS, invite, block }) {
   return (
     <ul className={listClassName}>
       {friends.map((friend) => (

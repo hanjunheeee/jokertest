@@ -1,6 +1,6 @@
 const CHALLENGE_CLEAR_ILLUST_DIR = "/frame/library/challenge-illust"
 
-export const FORBIDDEN_RECORDS_ASSETS = {
+export const FORBIDDEN_ASSETS = {
   bloodStain: "/frame/library/핏자국 리소스.png".normalize("NFD"),
 }
 

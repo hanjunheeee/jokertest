@@ -1,6 +1,6 @@
 import { createElement, useEffect } from "react"
 import { dispatchUiSfx } from "../../../../../shared/hooks/useSfxRuntime.js"
-import { INGAME_PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
+import { PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
 import { getInGameParchmentModalVariant } from "../../constants/parchment/ingameParchmentModalVariants.js"
 import InGameParchmentConfirmButton from "./InGameParchmentConfirmButton.js"
 import InGameParchmentPanelBase from "./InGameParchmentPanelBase.js"
@@ -20,7 +20,7 @@ function useParchmentModalEscape(onDismiss, active = true) {
   }, [active, onDismiss])
 }
 
-function useParchmentModalConfirmFocus(focusOnMount, confirmButtonRef, focusKey) {
+function useConfirmFocus(focusOnMount, confirmButtonRef, focusKey) {
   useEffect(() => {
     if (!focusOnMount) return
     confirmButtonRef?.current?.focus()
@@ -30,7 +30,7 @@ function useParchmentModalConfirmFocus(focusOnMount, confirmButtonRef, focusKey)
 export default function InGameParchmentModalBase({
   variantKey,
   onDismiss,
-  confirmLabel = INGAME_PARCHMENT_CONFIRM_LABEL,
+  confirmLabel = PARCHMENT_CONFIRM_LABEL,
   confirmButtonRef,
   focusKey,
   showConfirm = true,
@@ -41,7 +41,7 @@ export default function InGameParchmentModalBase({
   const variant = getInGameParchmentModalVariant(variantKey)
 
   useParchmentModalEscape(onDismiss, Boolean(onDismiss))
-  useParchmentModalConfirmFocus(variant.focusConfirmOnMount, confirmButtonRef, focusKey)
+  useConfirmFocus(variant.focusConfirmOnMount, confirmButtonRef, focusKey)
 
   return createElement(
     "div",

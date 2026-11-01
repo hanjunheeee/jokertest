@@ -1,10 +1,10 @@
 import {
   INGAME_PLAYER_ASSETS,
-  INGAME_PLAYER_FRAME_IMAGE_CLASS,
-  INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS,
+  FRAME_IMG_CLASS,
+  FRAME_SHADOW_LAYER_CLASS,
 } from "../../constants/board/ingamePlayerAssets.js"
 import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
-import { buildInGamePlayerCardE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
+import { buildPlayerCardE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
 import InGamePlayerFrameStroke from "./InGamePlayerFrameStroke.jsx"
 import InGamePlayerNameplate from "./InGamePlayerNameplate.jsx"
 import InGamePlayerStatusOverlay from "./status/InGamePlayerStatusOverlay.jsx"
@@ -29,7 +29,7 @@ export default function InGamePlayerCard({
   return (
     <div
       className={`relative shrink-0 [container-type:inline-size] ${className}`}
-      {...buildInGamePlayerCardE2eAttrs({ nickname, status, isSelf })}
+      {...buildPlayerCardE2eAttrs({ nickname, status, isSelf })}
     >
       <div
         className={`relative w-full overflow-visible ${isSelf ? "ring-2 ring-[#f3d28d]/80 ring-offset-2 ring-offset-black/40 rounded-full" : ""}`}
@@ -56,13 +56,13 @@ export default function InGamePlayerCard({
           <PublicAsset
             src={displayFrameSrc}
             alt=""
-            className={INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS}
+            className={FRAME_SHADOW_LAYER_CLASS}
             aria-hidden="true"
           />
           <PublicAsset
             src={displayFrameSrc}
             alt=""
-            className={INGAME_PLAYER_FRAME_IMAGE_CLASS}
+            className={FRAME_IMG_CLASS}
           />
         </div>
 

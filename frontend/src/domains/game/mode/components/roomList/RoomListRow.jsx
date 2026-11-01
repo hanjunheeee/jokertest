@@ -1,22 +1,22 @@
 import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
   ROOM_LIST_ROW_BOTTOM_ROW_CLASS,
-  ROOM_LIST_ROW_BUTTON_BASE_CLASS,
-  ROOM_LIST_ROW_BUTTON_DISABLED_CLASS,
-  ROOM_LIST_ROW_BUTTON_INTERACTIVE_CLASS,
+  ROW_BTN_BASE_CLASS,
+  ROW_BTN_DISABLED_CLASS,
+  ROW_BTN_INTERACTIVE_CLASS,
   ROOM_LIST_ROW_CLASS,
-  ROOM_LIST_ROW_COUNT_CLASS,
-  ROOM_LIST_ROW_DIM_OVERLAY_CLASS,
+  ROW_COUNT_CLASS,
+  ROW_DIM_OVERLAY_CLASS,
   ROOM_LIST_ROW_FRAME_CLASS,
   ROOM_LIST_ROW_FRAME_SELECTED_CLASS,
   ROOM_LIST_ROW_HEADER_DIVIDER_CLASS,
   ROOM_LIST_ROW_HEADER_ROW_CLASS,
   ROOM_LIST_ROW_LOCK_BADGE_CLASS,
-  ROOM_LIST_ROW_OVERLAY_CLASS,
+  ROW_OVERLAY_CLASS,
   ROOM_LIST_ROW_SETTINGS_CLASS,
-  ROOM_LIST_ROW_STATUS_BADGE_FULL_CLASS,
-  ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS,
-  ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS,
+  ROW_STATUS_BADGE_FULL_CLASS,
+  ROW_STATUS_BADGE_IN_PROGRESS_CLASS,
+  ROW_STATUS_BADGE_WRAP_CLASS,
   ROOM_LIST_ROW_TITLE_CLASS,
 } from "../../constants/roomListLayout.js"
 import { resolveRoomListRowCode } from "../../utils/resolveRoomListRowCode.js"
@@ -50,8 +50,8 @@ export default function RoomListRow({ room, selected, onSelect }) {
         }${settingsSummary.ariaText ? `, ${settingsSummary.ariaText}` : ""}${
           statusLabel ? `, ${statusLabel}` : ""
         }`}
-        className={`${ROOM_LIST_ROW_BUTTON_BASE_CLASS} ${
-          isJoinable ? ROOM_LIST_ROW_BUTTON_INTERACTIVE_CLASS : ROOM_LIST_ROW_BUTTON_DISABLED_CLASS
+        className={`${ROW_BTN_BASE_CLASS} ${
+          isJoinable ? ROW_BTN_INTERACTIVE_CLASS : ROW_BTN_DISABLED_CLASS
         }`}
       >
         <PublicAsset
@@ -60,18 +60,18 @@ export default function RoomListRow({ room, selected, onSelect }) {
           className={`${ROOM_LIST_ROW_FRAME_CLASS}${selected ? ` ${ROOM_LIST_ROW_FRAME_SELECTED_CLASS}` : ""}`}
         />
 
-        <div className={ROOM_LIST_ROW_OVERLAY_CLASS} aria-hidden="true">
+        <div className={ROW_OVERLAY_CLASS} aria-hidden="true">
           <div className={ROOM_LIST_ROW_HEADER_ROW_CLASS}>
             <span className={ROOM_LIST_ROW_TITLE_CLASS}>{title}</span>
             {showStatusBadges ? (
-              <span className={ROOM_LIST_ROW_STATUS_BADGE_WRAP_CLASS}>
+              <span className={ROW_STATUS_BADGE_WRAP_CLASS}>
                 {rowCode.visible ? (
                   <span className={ROOM_LIST_ROW_LOCK_BADGE_CLASS}>{rowCode.label}</span>
                 ) : null}
                 {isInProgress ? (
-                  <span className={ROOM_LIST_ROW_STATUS_BADGE_IN_PROGRESS_CLASS}>진행중</span>
+                  <span className={ROW_STATUS_BADGE_IN_PROGRESS_CLASS}>진행중</span>
                 ) : null}
-                {isFull ? <span className={ROOM_LIST_ROW_STATUS_BADGE_FULL_CLASS}>마감</span> : null}
+                {isFull ? <span className={ROW_STATUS_BADGE_FULL_CLASS}>마감</span> : null}
               </span>
             ) : null}
           </div>
@@ -82,13 +82,13 @@ export default function RoomListRow({ room, selected, onSelect }) {
             {settingsLine ? (
               <span className={ROOM_LIST_ROW_SETTINGS_CLASS}>{settingsLine}</span>
             ) : null}
-            <span className={ROOM_LIST_ROW_COUNT_CLASS}>
+            <span className={ROW_COUNT_CLASS}>
               {current}/{max}
             </span>
           </div>
         </div>
 
-        {isFull || isInProgress ? <div className={ROOM_LIST_ROW_DIM_OVERLAY_CLASS} /> : null}
+        {isFull || isInProgress ? <div className={ROW_DIM_OVERLAY_CLASS} /> : null}
       </button>
     </li>
   )

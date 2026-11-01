@@ -1,19 +1,19 @@
 import { SKIN_CARD_WEAR_ASSETS } from "../../constants/skinCardWear/skinCardWearAssets.js"
 import {
-  SKIN_CARD_WEAR_CLOSE_BTN_CLASS,
-  SKIN_CARD_WEAR_CLOSE_BTN_IMG_CLASS,
-  SKIN_CARD_WEAR_CONFIRM_BTN_CLASS,
-  SKIN_CARD_WEAR_CONFIRM_BTN_IMAGE_CLASS,
-  SKIN_CARD_WEAR_CONFIRM_BTN_LABEL_CLASS,
-  SKIN_CARD_WEAR_CONFIRM_WRAP_CLASS,
-  SKIN_CARD_WEAR_PANEL_CLASS,
-  SKIN_CARD_WEAR_PANEL_CONTENT_CLASS,
-  SKIN_CARD_WEAR_PANEL_FRAME_CLASS,
-  SKIN_CARD_WEAR_PANEL_GRID_CLASS,
-  SKIN_CARD_WEAR_PANEL_INNER_PAD,
-  SKIN_CARD_WEAR_PANEL_STACK_CLASS,
-  SKIN_CARD_WEAR_LIST_TITLE_ANCHOR_CLASS,
-  SKIN_CARD_WEAR_LIST_TITLE_CLASS,
+  CLOSE_BTN_CLASS,
+  CLOSE_BTN_IMG_CLASS,
+  CONFIRM_BTN_CLASS,
+  CONFIRM_BTN_IMG_CLASS,
+  CONFIRM_BTN_LABEL_CLASS,
+  CONFIRM_WRAP_CLASS,
+  PANEL_CLASS,
+  PANEL_CONTENT_CLASS,
+  PANEL_FRAME_CLASS,
+  PANEL_GRID_CLASS,
+  PANEL_INNER_PAD,
+  PANEL_STACK_CLASS,
+  LIST_TITLE_ANCHOR_CLASS,
+  LIST_TITLE_CLASS,
 } from "../../constants/skinCardWear/skinCardWearLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 import SkinCardWearJobTabs from "./SkinCardWearJobTabs.jsx"
@@ -41,15 +41,15 @@ export default function SkinCardWearPanel({
   const hasFailed = confirmStatus === "error" || confirmStatus === "uncertain"
 
   return (
-    <div className={SKIN_CARD_WEAR_PANEL_STACK_CLASS}>
-      <div className={SKIN_CARD_WEAR_PANEL_CLASS}>
+    <div className={PANEL_STACK_CLASS}>
+      <div className={PANEL_CLASS}>
         <PublicAsset
           src={SKIN_CARD_WEAR_ASSETS.popupFrame}
           alt=""
-          className={SKIN_CARD_WEAR_PANEL_FRAME_CLASS}
+          className={PANEL_FRAME_CLASS}
         />
 
-        <h2 className={`${SKIN_CARD_WEAR_LIST_TITLE_ANCHOR_CLASS} ${SKIN_CARD_WEAR_LIST_TITLE_CLASS}`}>
+        <h2 className={`${LIST_TITLE_ANCHOR_CLASS} ${LIST_TITLE_CLASS}`}>
           스킨&카드 목록
         </h2>
 
@@ -58,24 +58,24 @@ export default function SkinCardWearPanel({
           aria-label="스킨&카드 착용 닫기"
           data-sfx-owner="explicit"
           onClick={onClose}
-          className={SKIN_CARD_WEAR_CLOSE_BTN_CLASS}
+          className={CLOSE_BTN_CLASS}
           style={{ outline: "none" }}
         >
           <PublicAsset
             src={SKIN_CARD_WEAR_ASSETS.popupCloseButton}
             alt=""
-            className={SKIN_CARD_WEAR_CLOSE_BTN_IMG_CLASS}
+            className={CLOSE_BTN_IMG_CLASS}
           />
         </button>
 
-        <div className={SKIN_CARD_WEAR_PANEL_CONTENT_CLASS} style={SKIN_CARD_WEAR_PANEL_INNER_PAD} inert={isSaving} aria-disabled={isSaving}>
+        <div className={PANEL_CONTENT_CLASS} style={PANEL_INNER_PAD} inert={isSaving} aria-disabled={isSaving}>
           <SkinCardWearJobTabs
             tabs={jobTabs}
             activeIndex={activeJobIndex}
             onSelect={onJobSelect}
           />
 
-          <div className={SKIN_CARD_WEAR_PANEL_GRID_CLASS}>
+          <div className={PANEL_GRID_CLASS}>
             <SkinCardWearList
               items={listItems}
               selectedItemId={selectedItemId}
@@ -93,7 +93,7 @@ export default function SkinCardWearPanel({
         </div>
       </div>
 
-      <div className={SKIN_CARD_WEAR_CONFIRM_WRAP_CLASS}>
+      <div className={CONFIRM_WRAP_CLASS}>
         {hasFailed ? (
           <p role="alert" aria-live="assertive" style={{ color: "#ff6b6b", margin: 0 }}>
             {confirmError}
@@ -105,15 +105,15 @@ export default function SkinCardWearPanel({
           onClick={onConfirm}
           disabled={isSaving}
           aria-busy={isSaving}
-          className={SKIN_CARD_WEAR_CONFIRM_BTN_CLASS}
+          className={CONFIRM_BTN_CLASS}
           style={{ outline: "none", opacity: isSaving ? 0.6 : 1, cursor: isSaving ? "not-allowed" : "pointer" }}
         >
           <PublicAsset
             src={SKIN_CARD_WEAR_ASSETS.confirmButton}
             alt=""
-            className={SKIN_CARD_WEAR_CONFIRM_BTN_IMAGE_CLASS}
+            className={CONFIRM_BTN_IMG_CLASS}
           />
-          <span className={SKIN_CARD_WEAR_CONFIRM_BTN_LABEL_CLASS}>
+          <span className={CONFIRM_BTN_LABEL_CLASS}>
             {isSaving ? "저장 중..." : hasFailed ? "다시 시도" : "적용"}
           </span>
         </button>

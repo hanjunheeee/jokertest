@@ -2,7 +2,7 @@
 // 판 진행 이벤트 훅(useGameSessionSocketEvents)이 정해진 순서로 부름
 import { useEffect, useState } from "react"
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
-import { noteInGameConnectionRebound, useInGameStore } from "../../store/ingameStore.js"
+import { noteConnectionRebound, useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
 import { createSelfDisconnectHandler } from "../../utils/createSelfDisconnectHandler.js"
 import { onConnect, onDisconnect } from "../../socket/connection.js"
@@ -15,7 +15,7 @@ export function useConnectSeq(socket) {
     if (!socket) return undefined
     const handleConnect = () => {
       setSeq((current) => current + 1)
-      noteInGameConnectionRebound()
+      noteConnectionRebound()
       useInGameEmojiBubbleStore.getState().clearAllActiveEmoji()
     }
     return onConnect(socket, handleConnect)

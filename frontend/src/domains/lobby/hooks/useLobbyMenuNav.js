@@ -6,7 +6,7 @@ import { LOBBY_MENU_ROUTES } from "@/domains/lobby/constants/lobbyMenu.js"
 import { resolveDiscordSupportUrl } from "@/shared/discordSupport.js"
 import { DISCORD_SUPPORT_URL } from "@/shared/env.js"
 
-export const LOBBY_CUSTOMER_SUPPORT_MENU_ID = "customerSupport"
+export const CUSTOMER_SUPPORT_MENU_ID = "customerSupport"
 
 export function useLobbyMenuNav() {
   const navigate = useNavigate()
@@ -16,7 +16,7 @@ export function useLobbyMenuNav() {
   const supportUrl = useMemo(() => resolveDiscordSupportUrl(DISCORD_SUPPORT_URL), [])
 
   const handleMenuClick = async (itemId) => {
-    if (itemId === LOBBY_CUSTOMER_SUPPORT_MENU_ID) return
+    if (itemId === CUSTOMER_SUPPORT_MENU_ID) return
 
     setActiveMenu(itemId)
 

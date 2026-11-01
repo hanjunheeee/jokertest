@@ -3,8 +3,8 @@ import { VIEWPORT_BANNER_ASSETS } from "@/shared/layouts/constants/viewportBanne
 import {
     GAME_VIEWPORT_MAX_WIDTH_PX,
     GAME_VIEWPORT_MAX_WIDTH_VAR,
-    VIEWPORT_SHELL_COLUMN_GAP_PX,
-    VIEWPORT_SHELL_COLUMN_GAP_VAR,
+    SHELL_COLUMN_GAP_PX,
+    SHELL_COLUMN_GAP_VAR,
 } from "@/shared/layouts/constants/viewportLayout"
 import PublicAsset from "@/shared/ui/PublicAsset";
 
@@ -14,7 +14,7 @@ export default function ViewportShell() {
       className="viewport-shell"
       style={{
         [GAME_VIEWPORT_MAX_WIDTH_VAR]: `${GAME_VIEWPORT_MAX_WIDTH_PX}px`,
-        [VIEWPORT_SHELL_COLUMN_GAP_VAR]: `${VIEWPORT_SHELL_COLUMN_GAP_PX}px`,
+        [SHELL_COLUMN_GAP_VAR]: `${SHELL_COLUMN_GAP_PX}px`,
       }}
     >
       <aside className="viewport-shell__banner viewport-shell__banner--left" aria-label="좌측 배너 영역">

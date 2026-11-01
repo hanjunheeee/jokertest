@@ -2,36 +2,36 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../constants/storeItems.js"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
-  STORE_BULK_PURCHASE_ITEM_IMAGE_CLASS,
-  STORE_BULK_PURCHASE_ITEM_IMAGE_WRAP_CLASS,
-  STORE_BULK_PURCHASE_ITEM_INFO_CLASS,
-  STORE_BULK_PURCHASE_ITEM_NAME_CLASS,
-  STORE_BULK_PURCHASE_ITEM_PRICE_AMOUNT_CLASS,
-  STORE_BULK_PURCHASE_ITEM_PRICE_CLASS,
-  STORE_BULK_PURCHASE_ITEM_PRICE_ICON_CLASS,
-  STORE_BULK_PURCHASE_ITEM_ROW_CLASS,
+  ITEM_IMG_CLASS,
+  ITEM_IMG_WRAP_CLASS,
+  ITEM_INFO_CLASS,
+  ITEM_NAME_CLASS,
+  ITEM_PRICE_AMOUNT_CLASS,
+  ITEM_PRICE_CLASS,
+  ITEM_PRICE_ICON_CLASS,
+  ITEM_ROW_CLASS,
 } from "../../constants/storeBulkPurchaseLayout.js"
 
 export default function StoreBulkPurchaseItemRow({ item, displayIcon = item.icon }) {
   return (
-    <div className={STORE_BULK_PURCHASE_ITEM_ROW_CLASS}>
-      <div className={STORE_BULK_PURCHASE_ITEM_IMAGE_WRAP_CLASS}>
-        <PublicAsset src={displayIcon} alt="" className={STORE_BULK_PURCHASE_ITEM_IMAGE_CLASS} />
+    <div className={ITEM_ROW_CLASS}>
+      <div className={ITEM_IMG_WRAP_CLASS}>
+        <PublicAsset src={displayIcon} alt="" className={ITEM_IMG_CLASS} />
       </div>
 
-      <div className={STORE_BULK_PURCHASE_ITEM_INFO_CLASS}>
-        <p className={STORE_BULK_PURCHASE_ITEM_NAME_CLASS}>{item.name}</p>
-        <div className={STORE_BULK_PURCHASE_ITEM_PRICE_CLASS}>
+      <div className={ITEM_INFO_CLASS}>
+        <p className={ITEM_NAME_CLASS}>{item.name}</p>
+        <div className={ITEM_PRICE_CLASS}>
           {isStorePricePending(item) ? (
-            <span className={STORE_BULK_PURCHASE_ITEM_PRICE_AMOUNT_CLASS}>{item.priceAmount}</span>
+            <span className={ITEM_PRICE_AMOUNT_CLASS}>{item.priceAmount}</span>
           ) : (
             <>
               <PublicAsset
                 src={STORE_ASSETS.currencyIcon}
                 alt=""
-                className={STORE_BULK_PURCHASE_ITEM_PRICE_ICON_CLASS}
+                className={ITEM_PRICE_ICON_CLASS}
               />
-              <span className={STORE_BULK_PURCHASE_ITEM_PRICE_AMOUNT_CLASS}>{item.priceAmount}</span>
+              <span className={ITEM_PRICE_AMOUNT_CLASS}>{item.priceAmount}</span>
             </>
           )}
         </div>

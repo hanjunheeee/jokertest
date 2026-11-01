@@ -3,8 +3,8 @@
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../../auth/store/auth.store.js"
 import {
-  getInGameIdentityScopeVersion,
-  isSameInGameReceiptScope,
+  getIdentityScopeVersion,
+  isSameReceiptScope,
   readInGameReceiptScope,
   useInGameStore,
 } from "../../store/ingameStore.js"
@@ -53,7 +53,7 @@ export function openAttempt(ctx, { requestEpochVersion, attemptBudget, retry }) 
   // 이 시도의 세대·범위가 판단 때도 그대로여야 기다림을 풂
   const ownsCurrentScope = (scopeAtDecision) =>
     ctx.epochVersionRef.current === requestEpochVersion
-    && isSameInGameReceiptScope(receiptContext, scopeAtDecision)
+    && isSameReceiptScope(receiptContext, scopeAtDecision)
 
   const finishRebindApplied = (scopeAtDecision) => {
     if (!ownsCurrentScope(scopeAtDecision)) return
@@ -142,7 +142,7 @@ export function openAttempt(ctx, { requestEpochVersion, attemptBudget, retry }) 
       gameId: useInGameStore.getState().gameId,
       authUuid: auth.accountId,
       identityGeneration: auth.identityGeneration,
-      identityScopeVersion: getInGameIdentityScopeVersion(),
+      identityScopeVersion: getIdentityScopeVersion(),
     }
   }
 

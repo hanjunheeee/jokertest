@@ -1,4 +1,4 @@
-const INGAME_ROLE_REVEAL_DISPLAY = Object.freeze({
+const ROLE_REVEAL_DISPLAY = Object.freeze({
   JOKER: Object.freeze({
     name: "광대",
     teamLabel: "광대 진영",
@@ -26,6 +26,6 @@ const INGAME_ROLE_REVEAL_DISPLAY = Object.freeze({
   }),
 })
 
-export function getInGameRoleRevealDisplay(role) {
-  return INGAME_ROLE_REVEAL_DISPLAY[role] ?? null
+export function getRoleRevealDisplay(role) {
+  return ROLE_REVEAL_DISPLAY[role] ?? null
 }

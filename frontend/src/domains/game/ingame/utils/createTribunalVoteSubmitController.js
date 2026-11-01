@@ -3,13 +3,13 @@
 import { emitTribunalVote } from "../socket/tribunal.js"
 import { computeTribunalVoteAckPatch, INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE } from "./computeTribunalVoteSubmitPatch.js"
 
-export const TRIBUNAL_VOTE_ACK_TIMEOUT_MS = 5000
+export const ACK_TIMEOUT_MS = 5000
 
 const TIMEOUT_PATCH = { status: "idle", submittedVote: null, error: "요청 시간이 초과되었습니다." }
 const NO_ACK_PATCH = { status: "idle", submittedVote: null, error: "요청에 응답하지 않습니다. 다시 시도해주세요." }
 const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제출하지 못했습니다. 다시 시도해주세요." }
 
-export function createTribunalVoteSubmitController({ getSocket, timeoutMs = TRIBUNAL_VOTE_ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {
+export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {
   let state = INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE
   let submitting = false
   let generation = 0

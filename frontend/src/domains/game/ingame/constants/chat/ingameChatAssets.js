@@ -1,10 +1,10 @@
-export const INGAME_CHAT_FRAME_ASPECT = 851 / 638
+export const FRAME_ASPECT = 851 / 638
 
 export const INGAME_CHAT_FRAME_SCALE = 1
 
-export const INGAME_CHAT_INPUT_MAX_LENGTH = 150
+export const INPUT_MAX_LENGTH = 150
 
-export const INGAME_CHAT_MAX_MESSAGE_LENGTH = INGAME_CHAT_INPUT_MAX_LENGTH
+export const MAX_MSG_LENGTH = INPUT_MAX_LENGTH
 
 export const INGAME_CHAT_ASSETS = {
   frame: "/frame/ingame-chatting/인게임-채팅창프레임2.png",

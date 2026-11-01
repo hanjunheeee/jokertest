@@ -4,20 +4,20 @@ import { dispatchUiSfx } from "../../../shared/hooks/useSfxRuntime.js"
 import { publicAsset } from "../../../shared/utils/publicAsset.js"
 import { NOTIFICATION_ASSETS } from "../constants/notificationAssets.js"
 import {
-  NOTIFICATION_MODAL_BACKDROP_CLASS,
-  NOTIFICATION_MODAL_CLOSE_BTN_CLASS,
-  NOTIFICATION_MODAL_CLOSE_BTN_IMG_CLASS,
-  NOTIFICATION_MODAL_CONTENT_CLASS,
-  NOTIFICATION_MODAL_CONTENT_INSET,
-  NOTIFICATION_MODAL_FALLBACK_CONTENT_CLASS,
-  NOTIFICATION_MODAL_FALLBACK_FRAME_CLASS,
-  NOTIFICATION_MODAL_FRAME_IMG_CLASS,
-  NOTIFICATION_MODAL_PANEL_CLASS,
-  NOTIFICATION_MODAL_TITLE_CLASS,
-  NOTIFICATION_MODAL_WRAP_CLASS,
+  MODAL_BACKDROP_CLASS,
+  MODAL_CLOSE_BTN_CLASS,
+  MODAL_CLOSE_BTN_IMG_CLASS,
+  MODAL_CONTENT_CLASS,
+  MODAL_CONTENT_INSET,
+  MODAL_FALLBACK_CONTENT_CLASS,
+  MODAL_FALLBACK_FRAME_CLASS,
+  MODAL_FRAME_IMG_CLASS,
+  MODAL_PANEL_CLASS,
+  MODAL_TITLE_CLASS,
+  MODAL_WRAP_CLASS,
 } from "../constants/notificationLayoutStyle.js"
 
-function useNotificationModalEscape(onDismiss, active = true) {
+function useEscape(onDismiss, active = true) {
   useEffect(() => {
     if (!active || !onDismiss) return undefined
 
@@ -32,7 +32,7 @@ function useNotificationModalEscape(onDismiss, active = true) {
   }, [active, onDismiss])
 }
 
-function useNotificationModalCloseFocus(closeButtonRef, focusKey) {
+function useCloseFocus(closeButtonRef, focusKey) {
   useEffect(() => {
     closeButtonRef?.current?.focus()
   }, [focusKey, closeButtonRef])
@@ -47,7 +47,7 @@ function renderCloseButton({ onDismiss, closeButtonRef }) {
       type: "button",
       ref: closeButtonRef,
       "aria-label": "닫기",
-      className: NOTIFICATION_MODAL_CLOSE_BTN_CLASS,
+      className: MODAL_CLOSE_BTN_CLASS,
       "data-sfx-kind": "ui-cancel",
       style: { outline: "none" },
       onClick: onDismiss,
@@ -56,7 +56,7 @@ function renderCloseButton({ onDismiss, closeButtonRef }) {
       src: publicAsset(NOTIFICATION_ASSETS.closeButton),
       alt: "",
       draggable: false,
-      className: NOTIFICATION_MODAL_CLOSE_BTN_IMG_CLASS,
+      className: MODAL_CLOSE_BTN_IMG_CLASS,
     }),
   )
 }
@@ -70,17 +70,17 @@ export default function NotificationModalShell({
 }) {
   const [frameFailed, setFrameFailed] = useState(false)
 
-  useNotificationModalEscape(onDismiss, Boolean(onDismiss))
-  useNotificationModalCloseFocus(closeButtonRef, focusKey)
+  useEscape(onDismiss, Boolean(onDismiss))
+  useCloseFocus(closeButtonRef, focusKey)
 
   const contentNode = createElement(
     "div",
     {
       className: frameFailed
-        ? NOTIFICATION_MODAL_FALLBACK_CONTENT_CLASS
-        : NOTIFICATION_MODAL_CONTENT_CLASS,
+        ? MODAL_FALLBACK_CONTENT_CLASS
+        : MODAL_CONTENT_CLASS,
       "data-notification-content": "true",
-      ...(frameFailed ? {} : { style: NOTIFICATION_MODAL_CONTENT_INSET }),
+      ...(frameFailed ? {} : { style: MODAL_CONTENT_INSET }),
     },
     children,
   )
@@ -88,22 +88,22 @@ export default function NotificationModalShell({
   const panelInner = frameFailed
     ? createElement(
         "div",
-        { className: NOTIFICATION_MODAL_FALLBACK_FRAME_CLASS, "data-notification-fallback": "true" },
+        { className: MODAL_FALLBACK_FRAME_CLASS, "data-notification-fallback": "true" },
         renderCloseButton({ onDismiss, closeButtonRef }),
         contentNode,
       )
     : createElement(
         "div",
-        { className: NOTIFICATION_MODAL_PANEL_CLASS },
+        { className: MODAL_PANEL_CLASS },
         createElement("img", {
           src: publicAsset(NOTIFICATION_ASSETS.popupFrame),
           alt: "",
           "aria-hidden": "true",
           draggable: false,
-          className: NOTIFICATION_MODAL_FRAME_IMG_CLASS,
+          className: MODAL_FRAME_IMG_CLASS,
           onError: () => setFrameFailed(true),
         }),
-        createElement("p", { className: NOTIFICATION_MODAL_TITLE_CLASS, "data-notification-heading": "true" }, "알림"),
+        createElement("p", { className: MODAL_TITLE_CLASS, "data-notification-heading": "true" }, "알림"),
         renderCloseButton({ onDismiss, closeButtonRef }),
         contentNode,
       )
@@ -114,13 +114,13 @@ export default function NotificationModalShell({
     createElement("button", {
       type: "button",
       "aria-label": "알림 닫기",
-      className: NOTIFICATION_MODAL_BACKDROP_CLASS,
+      className: MODAL_BACKDROP_CLASS,
       "data-sfx-kind": "ui-cancel",
       onClick: onDismiss,
     }),
     createElement(
       "div",
-      { className: NOTIFICATION_MODAL_WRAP_CLASS },
+      { className: MODAL_WRAP_CLASS },
       createElement(
         "div",
         {

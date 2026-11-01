@@ -1,7 +1,7 @@
 // 다음 게임 설정 유지 켜기(저장)·끄기(지우기)·실패한 저장 다시 하기 액션
 // store/nextRoomSettingsStore가 create 안에 펼쳐 넣음
 // 계정이 바뀌거나 선택 세대가 바뀌면 그사이 끝난 저장 결과는 반영 안 함
-import { NEXT_ROOM_SETTINGS_STATUS as STATUS } from "../../constants/nextRoomSettings.js"
+import { SETTINGS_STATUS as STATUS } from "../../constants/nextRoomSettings.js"
 import { sanitizeRestoreSource } from "../../utils/roomSettingsSourceSanitize.js"
 import {
   buildDisabledRecord,

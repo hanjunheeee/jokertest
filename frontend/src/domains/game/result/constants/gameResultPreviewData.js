@@ -33,6 +33,6 @@ export const GAME_RESULT_PREVIEW = {
   mvpPlayerId: "p3",
 }
 
-export function getGameResultMvpPlayer(players, mvpPlayerId) {
+export function getMvpPlayer(players, mvpPlayerId) {
   return players.find((player) => player.id === mvpPlayerId) ?? players[0]
 }

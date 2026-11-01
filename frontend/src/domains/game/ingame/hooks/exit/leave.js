@@ -4,8 +4,8 @@ import { getSocket } from "@/shared/socket/socketClient.js"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 import { createLeaveGameSessionRequest } from "../../utils/createLeaveGameSessionRequest.js"
-import { EXIT_STATUS, IN_GAME_EXIT_ACK_TIMEOUT_MS } from "../../constants/ingameExit.js"
-import { isExitRequestScopeCurrent, readExitScopeNow, readMembershipId } from "./scope.js"
+import { EXIT_STATUS, EXIT_ACK_TIMEOUT_MS } from "../../constants/ingameExit.js"
+import { isRequestScopeCurrent, readExitScopeNow, readMembershipId } from "./scope.js"
 
 // 기다림 시작: 이번 시도가 그대로인데 시간이 지나면 결과 모름으로 두고 시도 번호를 올림
 export function startPending(ctx, isThisAttempt) {
@@ -18,14 +18,14 @@ export function startPending(ctx, isThisAttempt) {
     ctx.pendingRef.current = false
     ctx.setStatus(EXIT_STATUS.UNRESOLVED, "NO_ACK")
     ctx.bumpAttempt()
-  }, IN_GAME_EXIT_ACK_TIMEOUT_MS)
+  }, EXIT_ACK_TIMEOUT_MS)
 }
 
 // 나가기 요청 만들기: 응답이 이번 시도·지금 범위 것일 때만 끝내거나 실패로 둠
 function buildLeave(ctx, requestToken, requestScope) {
   const isCurrent = () => ctx.mountedRef.current
     && ctx.requestTokenRef.current === requestToken
-    && isExitRequestScopeCurrent(requestScope)
+    && isRequestScopeCurrent(requestScope)
 
   return createLeaveGameSessionRequest({
     getSocket,
@@ -55,7 +55,7 @@ export function sendLeave(ctx) {
   startPending(ctx, () => ctx.mountedRef.current
     && !ctx.settledRef.current
     && ctx.requestTokenRef.current === requestToken
-    && isExitRequestScopeCurrent(requestScope))
+    && isRequestScopeCurrent(requestScope))
 
   let sent = false
   try {

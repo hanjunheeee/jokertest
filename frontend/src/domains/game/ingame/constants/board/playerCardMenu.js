@@ -13,7 +13,7 @@ export const INGAME_CARD_MENU_ITEM_KINDS = Object.freeze({
 export const INGAME_CARD_MENU_DAY_VOTE_LABEL = "투표하기"
 export const INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL = "투표취소"
 export const INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL = "취소하기"
-export const INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL = "밤 행동"
+export const NIGHT_FALLBACK_LABEL = "밤 행동"
 
 export const INGAME_CARD_MENU_DISABLED_REASONS = Object.freeze({
   selfDead: "사망한 플레이어는 행동할 수 없습니다",

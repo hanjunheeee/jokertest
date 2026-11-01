@@ -1,13 +1,13 @@
 import { motion } from "framer-motion"
 import { GAME_RESULT_ASSETS } from "../constants/gameResultAssets.js"
 import {
-  GAME_RESULT_CONTENT_DROP_ANIMATE,
-  GAME_RESULT_CONTENT_DROP_INITIAL,
-  GAME_RESULT_CONTENT_DROP_TRANSITION,
-  GAME_RESULT_INNER_REVEAL_ANIMATE,
-  GAME_RESULT_INNER_REVEAL_DELAYS,
-  GAME_RESULT_INNER_REVEAL_INITIAL,
-  GAME_RESULT_INNER_REVEAL_TRANSITION,
+  CONTENT_DROP_ANIMATE,
+  CONTENT_DROP_INIT,
+  CONTENT_DROP_TRANSITION,
+  INNER_REVEAL_ANIMATE,
+  INNER_REVEAL_DELAYS,
+  INNER_REVEAL_INIT,
+  INNER_REVEAL_TRANSITION,
 } from "../constants/gameResultEntranceMotion.js"
 import {
   GAME_RESULT_BODY_CLASS,
@@ -45,16 +45,16 @@ export default function GameResultShell({
 
       <motion.div
         className={GAME_RESULT_SHELL_CLASS}
-        initial={GAME_RESULT_CONTENT_DROP_INITIAL}
-        animate={GAME_RESULT_CONTENT_DROP_ANIMATE}
-        transition={GAME_RESULT_CONTENT_DROP_TRANSITION}
+        initial={CONTENT_DROP_INIT}
+        animate={CONTENT_DROP_ANIMATE}
+        transition={CONTENT_DROP_TRANSITION}
       >
         <motion.div
-          initial={GAME_RESULT_INNER_REVEAL_INITIAL}
-          animate={GAME_RESULT_INNER_REVEAL_ANIMATE}
+          initial={INNER_REVEAL_INIT}
+          animate={INNER_REVEAL_ANIMATE}
           transition={{
-            ...GAME_RESULT_INNER_REVEAL_TRANSITION,
-            delay: GAME_RESULT_INNER_REVEAL_DELAYS.banner,
+            ...INNER_REVEAL_TRANSITION,
+            delay: INNER_REVEAL_DELAYS.banner,
           }}
         >
           <GameResultBanner outcome={outcome} />
@@ -62,11 +62,11 @@ export default function GameResultShell({
 
         <div className={GAME_RESULT_BODY_CLASS}>
           <motion.div
-            initial={GAME_RESULT_INNER_REVEAL_INITIAL}
-            animate={GAME_RESULT_INNER_REVEAL_ANIMATE}
+            initial={INNER_REVEAL_INIT}
+            animate={INNER_REVEAL_ANIMATE}
             transition={{
-              ...GAME_RESULT_INNER_REVEAL_TRANSITION,
-              delay: GAME_RESULT_INNER_REVEAL_DELAYS.playerList,
+              ...INNER_REVEAL_TRANSITION,
+              delay: INNER_REVEAL_DELAYS.playerList,
             }}
           >
             <GameResultPlayerList
@@ -78,11 +78,11 @@ export default function GameResultShell({
           </motion.div>
           {mvp ? (
             <motion.div
-              initial={GAME_RESULT_INNER_REVEAL_INITIAL}
-              animate={GAME_RESULT_INNER_REVEAL_ANIMATE}
+              initial={INNER_REVEAL_INIT}
+              animate={INNER_REVEAL_ANIMATE}
               transition={{
-                ...GAME_RESULT_INNER_REVEAL_TRANSITION,
-                delay: GAME_RESULT_INNER_REVEAL_DELAYS.mvp,
+                ...INNER_REVEAL_TRANSITION,
+                delay: INNER_REVEAL_DELAYS.mvp,
               }}
             >
               <GameResultMvpPanel outcome={outcome} mvp={mvp} />

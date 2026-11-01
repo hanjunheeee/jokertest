@@ -4,11 +4,11 @@ export {
   NIGHT_TIME_ID_TO_ROLE,
   NON_EDITABLE_SETUP_ITEM_IDS,
   OVERALL_NIGHT_ACTION_TIME_ID,
-  ROOM_SETTINGS_FORM_ERROR_CODES,
+  ERROR_CODES,
 } from "../constants/roomSettingsForm.js"
-export { buildDefaultSetupFormState, buildRoomSettingsFormState } from "./roomSettingsForm/formState.js"
+export { buildDefaultFormState, buildRoomSettingsFormState } from "./roomSettingsForm/formState.js"
 export { buildUpdateRoomSettingsPayload } from "./roomSettingsForm/updatePayload.js"
 export {
-  collectSpecifiedRoleNightActionTimes,
-  mergeSpecifiedRoleNightActionTimes,
+  collectSpecifiedRoleTimes,
+  mergeSpecifiedRoleTimes,
 } from "./roomSettingsForm/nightTimes.js"

@@ -7,8 +7,8 @@ import SignupEmailVerification from "@/domains/auth/components/SignupEmailVerifi
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_HINT_TEXT_CLASS,
-  SIGNUP_SUBMIT_BUTTON_CLASS,
-  SIGNUP_SUBMIT_BUTTON_WRAP_CLASS,
+  SUBMIT_BTN_CLASS,
+  SUBMIT_BTN_WRAP_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 
 // 보내는 중엔 입력 바꾸기를 무시함 (칸은 안 잠금)
@@ -77,14 +77,14 @@ export default function SocialSignupFields({
 
       {visibleError && <p role="alert" className="px-2 text-[11px] text-red-400">{visibleError}</p>}
 
-      <div className={SIGNUP_SUBMIT_BUTTON_WRAP_CLASS}>
+      <div className={SUBMIT_BTN_WRAP_CLASS}>
         <AuthImageButton
           type="button"
           onClick={onSubmit}
           disabled={!canSubmit}
           src={LOGIN_ASSETS.signupButton}
           label={isSubmitting ? "처리 중..." : "가입 완료"}
-          className={SIGNUP_SUBMIT_BUTTON_CLASS}
+          className={SUBMIT_BTN_CLASS}
         />
       </div>
 

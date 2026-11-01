@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 
-const VIDEO_HOLD_BEFORE_END_SEC = 0.04
+const HOLD_BEFORE_END_SEC = 0.04
 
-export const VIDEO_INTRO_LOAD_TIMEOUT_MS = 3000
+export const LOAD_TIMEOUT_MS = 3000
 
 function holdOnCurrentFrame(video) {
   try {
@@ -11,7 +11,7 @@ function holdOnCurrentFrame(video) {
   }
 }
 
-export function attachVideoIntroWatch(video, onDone, { timeoutMs = VIDEO_INTRO_LOAD_TIMEOUT_MS, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
+export function attachVideoIntroWatch(video, onDone, { timeoutMs = LOAD_TIMEOUT_MS, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout } = {}) {
   let done = false
   let timerId = null
   const finish = () => {
@@ -27,7 +27,7 @@ export function attachVideoIntroWatch(video, onDone, { timeoutMs = VIDEO_INTRO_L
     const { duration, currentTime } = video
     if (!duration || !Number.isFinite(duration)) return
     const remaining = duration - currentTime
-    if (remaining <= VIDEO_HOLD_BEFORE_END_SEC) finish()
+    if (remaining <= HOLD_BEFORE_END_SEC) finish()
   }
   const onMetadata = () => {
     if (timerId !== null) clearTimeoutFn(timerId)

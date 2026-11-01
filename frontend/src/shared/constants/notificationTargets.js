@@ -1,27 +1,27 @@
 // 알림을 눌렀을 때 갈 주소와 그 주소에 싣는 쿼리 이름, 대상 이름표
 // notifications 알림 항목, lobby 알림 패널, library 화면이 씀
-export const NOTIFICATION_FRIEND_REQUEST_PARAM = "notificationRequestId"
+export const FRIEND_REQUEST_PARAM = "notificationRequestId"
 
-export const NOTIFICATION_ACHIEVEMENT_PARAM = "achievementId"
+export const ACHIEVEMENT_PARAM = "achievementId"
 
-export const NOTIFICATION_GAME_INVITE_PARAM = "gameInviteId"
+export const GAME_INVITE_PARAM = "gameInviteId"
 
 export function buildNotificationTargetPath(target) {
   if (target === null || typeof target !== "object" || Array.isArray(target)) return null
 
   if (target.kind === "friend-request") {
     if (!Number.isInteger(target.requestId)) return null
-    return `/lobby?${NOTIFICATION_FRIEND_REQUEST_PARAM}=${encodeURIComponent(String(target.requestId))}`
+    return `/lobby?${FRIEND_REQUEST_PARAM}=${encodeURIComponent(String(target.requestId))}`
   }
 
   if (target.kind === "game-invite") {
     if (typeof target.inviteId !== "string" || target.inviteId.length === 0) return null
-    return `/lobby?${NOTIFICATION_GAME_INVITE_PARAM}=${encodeURIComponent(target.inviteId)}`
+    return `/lobby?${GAME_INVITE_PARAM}=${encodeURIComponent(target.inviteId)}`
   }
 
   if (target.kind === "achievement") {
     if (typeof target.achievementId !== "string" || target.achievementId.length === 0) return null
-    return `/library?${NOTIFICATION_ACHIEVEMENT_PARAM}=${encodeURIComponent(target.achievementId)}`
+    return `/library?${ACHIEVEMENT_PARAM}=${encodeURIComponent(target.achievementId)}`
   }
 
   if (target.kind === "settings") return "/setting"

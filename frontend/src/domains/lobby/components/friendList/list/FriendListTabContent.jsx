@@ -1,12 +1,12 @@
 // 친구 목록 탭 (검색창·목록 오류·검색 결과 또는 폴더 세 개)
 // FriendListPanelContent가 list 탭일 때 그림
 import {
-  FRIEND_LIST_STATUS_ERROR_CLASS,
+  STATUS_ERROR_CLASS,
   FRIEND_LIST_TAB_CLASS,
 } from "../../../constants/friendListStyle.js"
 import {
   FRIEND_LIST_FILTER_FIELDS,
-  FRIEND_LIST_FILTER_SEARCH,
+  FILTER_SEARCH,
 } from "../../../constants/friendListFilter.js"
 import { mergeFriendGroups } from "../../../utils/filterFriendListItems.js"
 import { useFriendListLocalFilter } from "../../../hooks/useFriendListLocalFilter.js"
@@ -38,13 +38,13 @@ export default function FriendListTabContent({
   return (
     <div className={FRIEND_LIST_TAB_CLASS}>
       <FriendListSearchBar
-        label={FRIEND_LIST_FILTER_SEARCH.listTab.label}
-        placeholder={FRIEND_LIST_FILTER_SEARCH.listTab.placeholder}
+        label={FILTER_SEARCH.listTab.label}
+        placeholder={FILTER_SEARCH.listTab.placeholder}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
       {friendsError !== null ? (
-        <p role="status" data-friend-list-error="true" className={`px-2 ${FRIEND_LIST_STATUS_ERROR_CLASS}`}>
+        <p role="status" data-friend-list-error="true" className={`px-2 ${STATUS_ERROR_CLASS}`}>
           {friendsError}
           {onRetry !== null ? (
             <button type="button" onClick={onRetry} className="ml-2 underline" style={{ outline: "none" }}>

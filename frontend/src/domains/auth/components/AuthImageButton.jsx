@@ -2,7 +2,7 @@ import PublicAsset from "@/shared/ui/PublicAsset";
 
 const AUTH_BTN_IMG_CLASS = "block h-auto w-full select-none"
 
-const AUTH_BTN_INTERACTION_CLASS =
+const BTN_INTERACTION_CLASS =
   "transition-transform duration-200 ease-out hover:scale-[1.05] active:scale-[0.95] disabled:hover:scale-100 disabled:active:scale-100"
 
 const VISIBLE_LABEL_ALIGN_CLASS = {
@@ -22,7 +22,7 @@ export default function AuthImageButton({
   visibleLabelClassName = "text-sm",
   visibleLabelAlign = "center",
   inline = false,
-  interactionClassName = AUTH_BTN_INTERACTION_CLASS,
+  interactionClassName = BTN_INTERACTION_CLASS,
   ...rest
 }) {
   return (

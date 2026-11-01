@@ -6,7 +6,7 @@ import {
   EMPTY_NIGHT_SUCCESS_QUEUE,
   NIGHT_SUCCESS_OUTCOMES,
 } from "../../constants/store/ingameStore.js"
-import { isSameInGameReceiptScope, readSelfMembershipId } from "../../utils/store/scope.js"
+import { isSameReceiptScope, readSelfMembershipId } from "../../utils/store/scope.js"
 import { isValidWait } from "../../utils/store/nightPresentationWait.js"
 import { emitNightSuccessAck } from "../../socket/night.js"
 import { records } from "./nightSuccessRecords.js"
@@ -60,7 +60,7 @@ export const nightResultActions = (set) => ({
       if (existing !== null
         && existing.gameId === payload.gameId
         && existing.nightDayIndex === payload.nightDayIndex
-        && isSameInGameReceiptScope(existing.scope, receiptScope)) {
+        && isSameReceiptScope(existing.scope, receiptScope)) {
         return current
       }
       return {
@@ -79,7 +79,7 @@ export const nightResultActions = (set) => ({
     const record = records.get(eventId)
     if (!record || record.completed) return { status: "noop" }
     if (receiptScope === null || typeof receiptScope !== "object") return { status: "noop" }
-    if (!isSameInGameReceiptScope(record.scope, receiptScope)) return { status: "noop" }
+    if (!isSameReceiptScope(record.scope, receiptScope)) return { status: "noop" }
 
     // 지금 범위일 때만 대기열에서 뺌
     let removed = false

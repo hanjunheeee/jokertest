@@ -1,7 +1,7 @@
-import { resolveInGamePlayerThemeEmphasized } from "../../../../shared/constants/ingamePlayerTheme.js"
+import { resolveThemeEmphasized } from "../../../../shared/constants/ingamePlayerTheme.js"
 
 export function resolveInGamePlayerCardThemeStyles(theme, voteHighlight = false) {
   return theme && voteHighlight
-    ? resolveInGamePlayerThemeEmphasized(theme.paletteIndex).styles
+    ? resolveThemeEmphasized(theme.paletteIndex).styles
     : theme?.styles
 }

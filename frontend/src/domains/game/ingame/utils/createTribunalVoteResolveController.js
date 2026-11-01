@@ -2,7 +2,7 @@
 // 재판 판정 훅(useInGameTribunalVoteResolve)이 사용, 보내기는 socket/tribunal.js가 맡음
 import { emitResolveTribunal } from "../socket/tribunal.js"
 
-export const TRIBUNAL_VOTE_RESOLVE_ACK_TIMEOUT_MS = 5000
+export const ACK_TIMEOUT_MS = 5000
 
 export const INITIAL_TRIBUNAL_VOTE_RESOLVE_STATE = {
   status: "idle",
@@ -47,7 +47,7 @@ function computeResolveAckPatch(response) {
   return { status: "idle", error: message, outcome: null, counts: null, executedUuid: null }
 }
 
-export function createTribunalVoteResolveController({ getSocket, timeoutMs = TRIBUNAL_VOTE_RESOLVE_ACK_TIMEOUT_MS, onStateChange, getLatestContext }) {
+export function createTribunalVoteResolveController({ getSocket, timeoutMs = ACK_TIMEOUT_MS, onStateChange, getLatestContext }) {
   let state = INITIAL_TRIBUNAL_VOTE_RESOLVE_STATE
   let resolving = false
   let generation = 0

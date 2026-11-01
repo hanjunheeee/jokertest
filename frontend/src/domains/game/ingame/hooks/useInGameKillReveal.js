@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
-  getInGameIdentityScopeVersion,
-  isSameInGameReceiptScope,
+  getIdentityScopeVersion,
+  isSameReceiptScope,
   readInGameReceiptScope,
-  subscribeInGameIdentityScope,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -19,9 +19,9 @@ import {
   reduceInGameKillReveal,
 } from "../utils/reduceInGameKillReveal.js"
 import {
-  buildInGameKillRevealMessage,
-  INGAME_KILL_REVEAL_TRIBUNAL_SOURCE,
-  resolveInGameKillRevealNickname,
+  buildRevealMsg,
+  TRIBUNAL_SOURCE,
+  resolveRevealNickname,
 } from "../constants/killReveal/ingameKillReveal.js"
 import { onConnect } from "../socket/connection.js"
 import { onDeathResults } from "../socket/session.js"
@@ -39,7 +39,7 @@ export function useInGameKillReveal({ hold = false } = {}) {
     return (s.state?.players ?? []).find((player) => player.uuid === me)?.membershipId ?? null
   })
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
   const snapshotNightResult = useInGameStore((s) => s.state?.nightResult ?? null)
   const snapshotResultOwner = useInGameStore((s) => s.snapshotResultOwner)
@@ -71,7 +71,7 @@ export function useInGameKillReveal({ hold = false } = {}) {
     if (!scope || !snapshotNightResult) return NO_SNAPSHOT_ITEMS
     if (!snapshotResultOwner) return NO_SNAPSHOT_ITEMS
     if (snapshotResultOwner.snapshotSeq !== snapshotSeq) return NO_SNAPSHOT_ITEMS
-    if (!isSameInGameReceiptScope(snapshotResultOwner, readInGameReceiptScope({
+    if (!isSameReceiptScope(snapshotResultOwner, readInGameReceiptScope({
       accountId: authUuid, identityGeneration,
     }))) {
       return NO_SNAPSHOT_ITEMS
@@ -96,7 +96,7 @@ export function useInGameKillReveal({ hold = false } = {}) {
     const registeredScope = scope
     const registeredReceipt = readScopeNow()
     const isCurrentReceipt = () =>
-      scopeRef.current === registeredScope && isSameInGameReceiptScope(registeredReceipt, readScopeNow())
+      scopeRef.current === registeredScope && isSameReceiptScope(registeredReceipt, readScopeNow())
 
     const enqueue = (items) => {
       if (items.length === 0) return
@@ -138,7 +138,7 @@ export function useInGameKillReveal({ hold = false } = {}) {
       const canonicalPlayerIds = new Set((store.state.players ?? []).map((p) => p.uuid))
       if (!canonicalPlayerIds.has(payload.executedUuid)) return
 
-      const source = INGAME_KILL_REVEAL_TRIBUNAL_SOURCE
+      const source = TRIBUNAL_SOURCE
       enqueue([
         {
           id: `${store.gameId}|${payload.dayIndex}|${payload.executedUuid}|${source}|${authUuid}|${epochKey}`,
@@ -154,8 +154,8 @@ export function useInGameKillReveal({ hold = false } = {}) {
   const visible = presentation.scope === scope ? presentation : INITIAL_IN_GAME_KILL_REVEAL
 
   const activeItem = visible.active
-  const nickname = resolveInGameKillRevealNickname(players, activeItem?.victimUuid ?? null)
-  const message = activeItem ? buildInGameKillRevealMessage(activeItem.source, nickname) : null
+  const nickname = resolveRevealNickname(players, activeItem?.victimUuid ?? null)
+  const message = activeItem ? buildRevealMsg(activeItem.source, nickname) : null
 
   const consume = useCallback((targetId) => {
     if (capturedScope === null) return
@@ -167,11 +167,11 @@ export function useInGameKillReveal({ hold = false } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capturedScope])
 
-  const hasUnqueuedSnapshotReveal = snapshotItems.some((item) => !visible.seenIds.includes(item.id))
+  const hasUnqueuedSnapReveal = snapshotItems.some((item) => !visible.seenIds.includes(item.id))
 
   return {
     open: activeItem !== null,
-    pending: hasPendingInGameKillReveal(visible) || hasUnqueuedSnapshotReveal,
+    pending: hasPendingInGameKillReveal(visible) || hasUnqueuedSnapReveal,
     revealId: activeItem?.id ?? null,
     message,
     consume,

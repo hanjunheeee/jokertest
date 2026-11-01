@@ -2,10 +2,10 @@
 // 채팅 입력칸(InGameChatInput)이 사용, 줄 재기는 utils/textareaLines.js
 import { useEffect, useLayoutEffect, useState } from "react"
 import {
-  getFullTextVisualLineCount,
-  getTextareaCaretVisualLineIndex,
+  getVisualLineCount,
+  getCaretLineIndex,
   getTextareaLineHeight,
-  scrollTextareaToCaretLine,
+  scrollToCaretLine,
 } from "../utils/textareaLines.js"
 
 export function useChatInputViewport(textareaRef, { value, hasText, chatTextScale }) {
@@ -26,9 +26,9 @@ export function useChatInputViewport(textareaRef, { value, hasText, chatTextScal
     }
 
     const lineHeight = getTextareaLineHeight(textarea)
-    const visualLineCount = getFullTextVisualLineCount(textarea, lineHeight)
+    const visualLineCount = getVisualLineCount(textarea, lineHeight)
     const visualMultiLine = visualLineCount >= 2
-    const caretLineIndex = getTextareaCaretVisualLineIndex(textarea, lineHeight)
+    const caretLineIndex = getCaretLineIndex(textarea, lineHeight)
     const onLastVisualLine = caretLineIndex >= visualLineCount - 1
 
     setIsVisualMultiLine(visualMultiLine)
@@ -46,7 +46,7 @@ export function useChatInputViewport(textareaRef, { value, hasText, chatTextScal
     }
 
     if (visualMultiLine) {
-      scrollTextareaToCaretLine(textarea, lineHeight)
+      scrollToCaretLine(textarea, lineHeight)
       return
     }
 

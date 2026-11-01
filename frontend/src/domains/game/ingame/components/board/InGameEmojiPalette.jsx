@@ -5,17 +5,17 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { useInGameEmojiSend } from "../../hooks/useInGameEmojiSend.js"
 import { findInGameEmoticonItem } from "../../utils/findInGameEmoticonItem.js"
 
-export const INGAME_EMOJI_PALETTE_FRAME_SRC = "/frame/emoji/palette-frame.png"
+export const FRAME_SRC = "/frame/emoji/palette-frame.png"
 
 export const INGAME_EMOJI_PALETTE_ATTR = "data-ingame-emoji-palette"
 
-export const INGAME_EMOJI_PALETTE_LABEL = "이모티콘 팔레트"
+export const PALETTE_LABEL = "이모티콘 팔레트"
 
 export const INGAME_EMOJI_PALETTE_SLOT_COUNT = 8
 
 export const INGAME_EMOJI_PALETTE_FRAME_WIDTH = 769
 export const INGAME_EMOJI_PALETTE_FRAME_HEIGHT = 738
-export const INGAME_EMOJI_PALETTE_ASPECT_RATIO =
+export const ASPECT_RATIO =
   `${INGAME_EMOJI_PALETTE_FRAME_WIDTH} / ${INGAME_EMOJI_PALETTE_FRAME_HEIGHT}`
 
 const SLOT_POSITIONS = [
@@ -32,7 +32,7 @@ const SLOT_POSITIONS = [
 const PALETTE_WRAP_CLASS =
   "absolute left-1/2 top-1/2 z-40 w-[min(13rem,72vw)] -translate-x-1/2 -translate-y-1/2"
 
-const PALETTE_FRAME_IMAGE_CLASS =
+const FRAME_IMG_CLASS =
   "pointer-events-none absolute inset-0 z-[1] block h-full w-full select-none object-fill"
 
 const SLOT_BUTTON_CLASS =
@@ -80,17 +80,17 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
     <div
       ref={rootRef}
       role="group"
-      aria-label={INGAME_EMOJI_PALETTE_LABEL}
+      aria-label={PALETTE_LABEL}
       className={PALETTE_WRAP_CLASS}
-      style={{ aspectRatio: INGAME_EMOJI_PALETTE_ASPECT_RATIO }}
+      style={{ aspectRatio: ASPECT_RATIO }}
       onClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.preventDefault()}
       {...{ [INGAME_EMOJI_PALETTE_ATTR]: "true" }}
     >
       <PublicAsset
-        src={INGAME_EMOJI_PALETTE_FRAME_SRC}
+        src={FRAME_SRC}
         alt=""
-        className={PALETTE_FRAME_IMAGE_CLASS}
+        className={FRAME_IMG_CLASS}
         aria-hidden="true"
       />
       {Array.from({ length: INGAME_EMOJI_PALETTE_SLOT_COUNT }, (_, index) => {

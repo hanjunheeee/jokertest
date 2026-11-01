@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
-  getInGameIdentityScopeVersion,
+  getIdentityScopeVersion,
   readInGameReceiptScope,
-  subscribeInGameIdentityScope,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -34,7 +34,7 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
     return (s.state?.players ?? []).find((player) => player.uuid === me)?.membershipId ?? null
   })
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 

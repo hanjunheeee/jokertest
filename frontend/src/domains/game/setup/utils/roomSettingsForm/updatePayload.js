@@ -1,7 +1,7 @@
 // 설정 편집 폼 값 → 방 설정 바꾸기 요청 payload
 // matching/hooks/room/useSettingsSave가 씀
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../../constants/roleComposition.js"
-import { collectSpecifiedRoleNightActionTimes } from "./nightTimes.js"
+import { collectSpecifiedRoleTimes } from "./nightTimes.js"
 
 export function buildUpdateRoomSettingsPayload({
   checks,
@@ -32,7 +32,7 @@ export function buildUpdateRoomSettingsPayload({
   }
 
   // 직업별 밤 시간은 있을 때만 실음
-  const roleNightActionTimes = collectSpecifiedRoleNightActionTimes(ranges, specifiedRoleNightActionTimes)
+  const roleNightActionTimes = collectSpecifiedRoleTimes(ranges, specifiedRoleNightActionTimes)
   if (roleNightActionTimes !== null) payload.roleNightActionTimes = roleNightActionTimes
 
   if (mode === ROLE_COMPOSITION_MODES.AUTO) {

@@ -1,9 +1,9 @@
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
-  PROFILE_EDIT_TAB_BTN_CLASS,
-  PROFILE_EDIT_TAB_BTN_IMAGE_CLASS,
-  PROFILE_EDIT_TAB_BTN_LABEL_CLASS,
-  PROFILE_EDIT_TAB_BTN_LABEL_INACTIVE_CLASS,
+  TAB_BTN_CLASS,
+  TAB_BTN_IMG_CLASS,
+  TAB_BTN_LABEL_CLASS,
+  TAB_BTN_LABEL_INACTIVE_CLASS,
   PROFILE_EDIT_TABS,
   PROFILE_EDIT_TABS_CLASS,
 } from "../../constants/profileEditLayout.js"
@@ -21,16 +21,16 @@ export default function ProfileEditTabs({ activeTab, onTabChange }) {
             type="button"
             role="tab"
             aria-selected={isActive}
-            className={PROFILE_EDIT_TAB_BTN_CLASS}
+            className={TAB_BTN_CLASS}
             style={{ outline: "none" }}
             onClick={() => onTabChange(tab.id)}
           >
             <PublicAsset
               src={isActive ? STORE_ASSETS.purchaseButton : STORE_ASSETS.inactiveButton}
               alt=""
-              className={PROFILE_EDIT_TAB_BTN_IMAGE_CLASS}
+              className={TAB_BTN_IMG_CLASS}
             />
-            <span className={isActive ? PROFILE_EDIT_TAB_BTN_LABEL_CLASS : PROFILE_EDIT_TAB_BTN_LABEL_INACTIVE_CLASS}>
+            <span className={isActive ? TAB_BTN_LABEL_CLASS : TAB_BTN_LABEL_INACTIVE_CLASS}>
               {tab.label}
             </span>
           </button>

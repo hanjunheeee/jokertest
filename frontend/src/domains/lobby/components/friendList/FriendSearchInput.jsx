@@ -2,8 +2,8 @@
 // FriendListSearchBar가 라벨 아래에 그림
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
 import {
-  FRIEND_SEARCH_INPUT_CLASS,
-  FRIEND_SEARCH_INPUT_FRAME_CLASS,
+  SEARCH_INPUT_CLASS,
+  SEARCH_INPUT_FRAME_CLASS,
 } from "../../constants/friendListStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
@@ -14,7 +14,7 @@ export default function FriendSearchInput({ label, placeholder, value, onChange,
       <PublicAsset
         src={FRIEND_LIST_ASSETS.searchInput}
         alt=""
-        className={FRIEND_SEARCH_INPUT_FRAME_CLASS}
+        className={SEARCH_INPUT_FRAME_CLASS}
         aria-hidden="true"
       />
       <input
@@ -24,7 +24,7 @@ export default function FriendSearchInput({ label, placeholder, value, onChange,
         onChange={onChange}
         onKeyDown={onKeyDown}
         aria-label={label}
-        className={FRIEND_SEARCH_INPUT_CLASS}
+        className={SEARCH_INPUT_CLASS}
       />
     </div>
   )

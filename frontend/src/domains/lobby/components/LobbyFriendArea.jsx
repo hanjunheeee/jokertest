@@ -1,6 +1,6 @@
 import {
-  LOBBY_LEFT_CONTROLS_CLASS,
-  LOBBY_RIGHT_CONTROLS_CLASS,
+  LEFT_CONTROLS_CLASS,
+  RIGHT_CONTROLS_CLASS,
 } from "@/shared/constants/lobbyLayoutStyle.js"
 import FriendListPanel from "@/domains/lobby/components/friendList/FriendListPanel.jsx"
 import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
@@ -21,11 +21,11 @@ export default function LobbyFriendArea({
 }) {
   return (
     <>
-      <div className={LOBBY_LEFT_CONTROLS_CLASS}>
+      <div className={LEFT_CONTROLS_CLASS}>
         <NotificationEntryButton open={notificationsOpen} onOpen={onOpenNotifications} />
       </div>
 
-      <div className={LOBBY_RIGHT_CONTROLS_CLASS}>
+      <div className={RIGHT_CONTROLS_CLASS}>
         <FriendListToggleButton open={friendListOpen} onOpen={onOpenFriendList} />
         <SoundControl />
       </div>

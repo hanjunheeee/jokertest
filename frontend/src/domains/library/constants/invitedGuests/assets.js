@@ -25,7 +25,7 @@ export const INVITED_GUESTS_CURRENCY_ASSETS = {
 
 const PROFILE_BORDER_BASE = "/shopItem/player- profileborder/"
 
-export const INVITED_GUESTS_DUMMY_PROFILE_BORDERS = [
+export const DUMMY_PROFILE_BORDERS = [
   `${PROFILE_BORDER_BASE}프로필프레임-공작.png`,
   `${PROFILE_BORDER_BASE}프로필프레임-후작.png`,
   `${PROFILE_BORDER_BASE}프로필프레임-백작.png`,

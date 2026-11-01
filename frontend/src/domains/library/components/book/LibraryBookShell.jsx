@@ -4,15 +4,15 @@ import LibraryBookContent from "../../../../domains/library/components/book/Libr
 import LibraryBookmarkTabs from "../../../../domains/library/components/book/LibraryBookmarkTabs.jsx"
 import LibraryTableOfContents from "../../../../domains/library/components/book/LibraryTableOfContents.jsx"
 import {
-  LIBRARY_BOOK_DROP_ANIMATE,
-  LIBRARY_BOOK_DROP_INITIAL,
-  LIBRARY_BOOK_DROP_TRANSITION,
+  BOOK_DROP_ANIMATE,
+  BOOK_DROP_INIT,
+  BOOK_DROP_TRANSITION,
 } from "../../../../domains/library/constants/libraryEntranceMotion.js"
 import {
-  LIBRARY_BOOK_FRAME_CLASS,
-  LIBRARY_BOOK_SHELL_CLASS,
-  LIBRARY_BOOK_SHELL_OFFSET_CLASS,
-  LIBRARY_BOOK_STAGE_CLASS,
+  BOOK_FRAME_CLASS,
+  BOOK_SHELL_CLASS,
+  BOOK_SHELL_OFFSET_CLASS,
+  BOOK_STAGE_CLASS,
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
@@ -29,18 +29,18 @@ export default function LibraryBookShell({
   targetAchievementId = null,
 }) {
   return (
-    <div className={LIBRARY_BOOK_STAGE_CLASS}>
+    <div className={BOOK_STAGE_CLASS}>
       <motion.div
-        className={LIBRARY_BOOK_SHELL_CLASS}
-        initial={LIBRARY_BOOK_DROP_INITIAL}
-        animate={LIBRARY_BOOK_DROP_ANIMATE}
-        transition={LIBRARY_BOOK_DROP_TRANSITION}
+        className={BOOK_SHELL_CLASS}
+        initial={BOOK_DROP_INIT}
+        animate={BOOK_DROP_ANIMATE}
+        transition={BOOK_DROP_TRANSITION}
       >
-        <div className={`relative ${LIBRARY_BOOK_SHELL_OFFSET_CLASS}`}>
+        <div className={`relative ${BOOK_SHELL_OFFSET_CLASS}`}>
           <PublicAsset
             src={LIBRARY_ASSETS.bookFrame}
             alt=""
-            className={LIBRARY_BOOK_FRAME_CLASS}
+            className={BOOK_FRAME_CLASS}
           />
           <LibraryTableOfContents activeTabId={activeTabId} />
           <LibraryBookmarkTabs activeTabId={activeTabId} onTabChange={onTabChange} />

@@ -3,14 +3,14 @@
 import { createElement } from "react"
 
 import { useNotificationsStore } from "../../store/notifications.store.js"
-import { NOTIFICATION_ERROR_CLASS, NOTIFICATION_MODAL_FOOTER_CLASS } from "../../constants/notificationLayoutStyle.js"
+import { ERROR_CLASS, MODAL_FOOTER_CLASS } from "../../constants/notificationLayoutStyle.js"
 import { renderActionButton } from "./renderActionButton.js"
 
 // 누를 때 지난 삭제 오류를 먼저 지우고 지우기 시작
 export function renderFooter({ disabled, pending, error }) {
   return createElement(
     "div",
-    { className: NOTIFICATION_MODAL_FOOTER_CLASS, "data-notification-footer": "true" },
+    { className: MODAL_FOOTER_CLASS, "data-notification-footer": "true" },
     renderActionButton({
       key: "delete-read",
       label: "읽은 메시지 삭제",
@@ -27,7 +27,7 @@ export function renderFooter({ disabled, pending, error }) {
       ? createElement(
           "p",
           {
-            className: NOTIFICATION_ERROR_CLASS,
+            className: ERROR_CLASS,
             role: "alert",
             "data-notification-delete-error": "true",
           },

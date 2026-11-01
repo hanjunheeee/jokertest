@@ -11,7 +11,7 @@ import {
   INGAME_CARD_MENU_DISABLED_REASONS as REASONS,
   INGAME_CARD_MENU_ITEM_KINDS as KINDS,
   INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL,
-  INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL,
+  NIGHT_FALLBACK_LABEL,
   CARD_MENU_SCOPE_FIELDS,
 } from "../constants/board/playerCardMenu.js"
 import { isInGameSelfPlayer } from "./isInGameSelfPlayer.js"
@@ -73,7 +73,7 @@ function nightItem(ctx, targetId, selfAlive) {
       disabledReason({ selfAlive, inTargets: true, submitting }))
   }
   const enabled = ctx.nightActionsLocked !== true && !submitting && inTargets
-  return item(KINDS.NIGHT_ACTION, ctx.nightActionLabel || INGAME_CARD_MENU_NIGHT_FALLBACK_LABEL, enabled,
+  return item(KINDS.NIGHT_ACTION, ctx.nightActionLabel || NIGHT_FALLBACK_LABEL, enabled,
     disabledReason({ selfAlive, inTargets, submitting }))
 }
 

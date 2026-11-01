@@ -1,5 +1,5 @@
 import { useAuthStore } from "../../../auth/store/auth.store.js"
-import { INGAME_SETTING_PREVIEW_AS_HOST } from "../constants/controls/ingameSetting/ingameSettingData.js"
+import { PREVIEW_AS_HOST } from "../constants/controls/ingameSetting/ingameSettingData.js"
 import { useInGameStore } from "../store/ingameStore.js"
 
 export function useInGameSettingIsHost() {
@@ -9,5 +9,5 @@ export function useInGameSettingIsHost() {
 
   if (hostUuid && authUuid) return authUuid === hostUuid
   if (gameId) return false
-  return INGAME_SETTING_PREVIEW_AS_HOST
+  return PREVIEW_AS_HOST
 }

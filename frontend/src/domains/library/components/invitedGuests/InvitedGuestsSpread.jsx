@@ -11,21 +11,21 @@ import { getInvitedGuestsPage } from "../../../../domains/library/content/invite
 import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../../shared/constants/jobSpreadMeta.js"
 import { useRoleStatisticsStore } from "../../../../domains/library/store/roleStatistics.store.js"
 import {
-  INVITED_GUESTS_JOB_TITLE_CLASS,
-  INVITED_GUESTS_JOB_TABS_ANCHOR_CLASS,
-  INVITED_GUESTS_SPREAD_GRID_CLASS,
-  INVITED_GUESTS_SPREAD_LEFT_UPPER_CELL_CLASS,
-  INVITED_GUESTS_SPREAD_RIGHT_COLUMN_CLASS,
-  INVITED_GUESTS_SPREAD_RIGHT_LOWER_CELL_CLASS,
-  INVITED_GUESTS_SPREAD_RIGHT_UPPER_CELL_CLASS,
-  INVITED_GUESTS_SPREAD_UPPER_SECTION_CLASS,
-  INVITED_GUESTS_TABLE_SECTION_CLASS,
+  JOB_TITLE_CLASS,
+  JOB_TABS_ANCHOR_CLASS,
+  SPREAD_GRID_CLASS,
+  SPREAD_LEFT_UPPER_CELL_CLASS,
+  SPREAD_RIGHT_COLUMN_CLASS,
+  SPREAD_RIGHT_LOWER_CELL_CLASS,
+  SPREAD_RIGHT_UPPER_CELL_CLASS,
+  SPREAD_UPPER_SECTION_CLASS,
+  TABLE_SECTION_CLASS,
 } from "../../../../domains/library/constants/invitedGuests/layoutStyle.js"
 import {
-  INVITED_GUESTS_REVEAL_ANIMATE,
-  INVITED_GUESTS_REVEAL_DELAYS,
-  INVITED_GUESTS_REVEAL_INITIAL,
-  invitedGuestsRevealTransition,
+  REVEAL_ANIMATE,
+  REVEAL_DELAYS,
+  REVEAL_INIT,
+  revealTransition,
 } from "../../../../domains/library/constants/invitedGuests/entranceMotion.js"
 
 // 직업을 고를 때마다 칸마다 key를 바꿔 등장 움직임을 다시 보임
@@ -88,17 +88,17 @@ export default function InvitedGuestsSpread({
   )
 
   return (
-    <div className={INVITED_GUESTS_SPREAD_GRID_CLASS}>
-      <div className={INVITED_GUESTS_SPREAD_LEFT_UPPER_CELL_CLASS}>
+    <div className={SPREAD_GRID_CLASS}>
+      <div className={SPREAD_LEFT_UPPER_CELL_CLASS}>
         {leftContent && (
           <motion.div
             key={`invited-left-upper-${jobIndex}`}
-            className={INVITED_GUESTS_SPREAD_UPPER_SECTION_CLASS}
-            initial={INVITED_GUESTS_REVEAL_INITIAL}
-            animate={INVITED_GUESTS_REVEAL_ANIMATE}
-            transition={invitedGuestsRevealTransition(INVITED_GUESTS_REVEAL_DELAYS.leftUpper)}
+            className={SPREAD_UPPER_SECTION_CLASS}
+            initial={REVEAL_INIT}
+            animate={REVEAL_ANIMATE}
+            transition={revealTransition(REVEAL_DELAYS.leftUpper)}
           >
-            <h2 className={INVITED_GUESTS_JOB_TITLE_CLASS}>직업 [{leftContent.jobName}]</h2>
+            <h2 className={JOB_TITLE_CLASS}>직업 [{leftContent.jobName}]</h2>
             <InvitedGuestsJobIntro
               description={leftContent.description}
               standingImage={leftContent.standingImage}
@@ -113,15 +113,15 @@ export default function InvitedGuestsSpread({
         <InvitedGuestsStatsCell key={`invited-left-lower-${jobIndex}`} content={leftContent} onRetry={() => retryJob(jobKey)} />
       )}
 
-      <div ref={rightColumnRef} className={INVITED_GUESTS_SPREAD_RIGHT_COLUMN_CLASS}>
-        <div className={INVITED_GUESTS_SPREAD_RIGHT_UPPER_CELL_CLASS}>
-          <section className={INVITED_GUESTS_TABLE_SECTION_CLASS}>
+      <div ref={rightColumnRef} className={SPREAD_RIGHT_COLUMN_CLASS}>
+        <div className={SPREAD_RIGHT_UPPER_CELL_CLASS}>
+          <section className={TABLE_SECTION_CLASS}>
             <motion.div
               key={`invited-right-tabs-${jobIndex}`}
-              className={INVITED_GUESTS_JOB_TABS_ANCHOR_CLASS}
-              initial={INVITED_GUESTS_REVEAL_INITIAL}
-              animate={INVITED_GUESTS_REVEAL_ANIMATE}
-              transition={invitedGuestsRevealTransition(INVITED_GUESTS_REVEAL_DELAYS.rightTabs)}
+              className={JOB_TABS_ANCHOR_CLASS}
+              initial={REVEAL_INIT}
+              animate={REVEAL_ANIMATE}
+              transition={revealTransition(REVEAL_DELAYS.rightTabs)}
             >
               {jobTabs}
             </motion.div>
@@ -133,10 +133,10 @@ export default function InvitedGuestsSpread({
         {rightContent && (
           <motion.div
             key={`invited-right-lower-${jobIndex}`}
-            className={INVITED_GUESTS_SPREAD_RIGHT_LOWER_CELL_CLASS}
-            initial={INVITED_GUESTS_REVEAL_INITIAL}
-            animate={INVITED_GUESTS_REVEAL_ANIMATE}
-            transition={invitedGuestsRevealTransition(INVITED_GUESTS_REVEAL_DELAYS.rightLower)}
+            className={SPREAD_RIGHT_LOWER_CELL_CLASS}
+            initial={REVEAL_INIT}
+            animate={REVEAL_ANIMATE}
+            transition={revealTransition(REVEAL_DELAYS.rightLower)}
           >
             <InvitedGuestsJobChallenges
               challenges={rightContent.challenges}

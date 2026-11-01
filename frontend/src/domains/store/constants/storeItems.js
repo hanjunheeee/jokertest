@@ -166,7 +166,7 @@ export const STORE_ITEMS = [
 
 export const STORE_GRID_ITEMS = STORE_ITEMS
 
-export function getStoreItemDisplayIcon(item, showDeadPreview = false) {
+export function getItemDisplayIcon(item, showDeadPreview = false) {
   if (showDeadPreview && item.iconDead) return item.iconDead
   return item.icon
 }
@@ -183,14 +183,14 @@ export function isProfileBorderStoreItem(item) {
   return item.category === "프로필 테두리"
 }
 
-export function getStoreProfileBorderZoomItem(item) {
+export function getProfileBorderZoomItem(item) {
   return {
     icon: item.icon,
     label: `${item.name} 프로필 테두리`,
   }
 }
 
-export function getStoreSkinZoomIcon(item) {
+export function getSkinZoomIcon(item) {
   return item.iconZoom ?? item.icon
 }
 
@@ -211,6 +211,6 @@ export function getStoreItemById(itemId) {
   return STORE_ITEMS.find((item) => item.id === itemId)
 }
 
-export function getStoreDummyItemInfo(itemId) {
+export function getDummyItemInfo(itemId) {
   return getStoreItemById(itemId) ?? STORE_ITEMS[0]
 }

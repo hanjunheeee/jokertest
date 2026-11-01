@@ -2,7 +2,7 @@
 // 채팅 입력칸 보기 훅(useChatInputViewport)이 사용 (숨긴 거울 div를 잠깐 붙여 재고 바로 뗌)
 
 // 거울 div에 그대로 옮길 입력칸 글자·여백 모양
-const TEXTAREA_MIRROR_STYLE_KEYS = [
+const MIRROR_STYLE_KEYS = [
   "boxSizing",
   "width",
   "fontFamily",
@@ -38,7 +38,7 @@ function createMirror(textarea) {
   const style = window.getComputedStyle(textarea)
   const mirror = document.createElement("div")
 
-  for (const key of TEXTAREA_MIRROR_STYLE_KEYS) {
+  for (const key of MIRROR_STYLE_KEYS) {
     mirror.style[key] = style[key]
   }
 
@@ -57,7 +57,7 @@ function createMirror(textarea) {
 }
 
 // 전체 글이 보이는 줄 몇 줄인지 (글이 없거나 줄 높이를 모르면 1)
-export function getFullTextVisualLineCount(textarea, lineHeight) {
+export function getVisualLineCount(textarea, lineHeight) {
   if (!lineHeight || !textarea.value) return 1
 
   const mirror = createMirror(textarea)
@@ -71,7 +71,7 @@ export function getFullTextVisualLineCount(textarea, lineHeight) {
 }
 
 // 커서가 몇 번째 보이는 줄에 있는지 (커서 뒤 글자 하나를 표시로 붙여 위치를 잼)
-export function getTextareaCaretVisualLineIndex(textarea, lineHeight) {
+export function getCaretLineIndex(textarea, lineHeight) {
   if (!lineHeight) return 0
 
   const mirror = createMirror(textarea)
@@ -92,9 +92,9 @@ export function getTextareaCaretVisualLineIndex(textarea, lineHeight) {
 }
 
 // 커서가 있는 줄이 맨 위에 오게 스크롤
-export function scrollTextareaToCaretLine(textarea, lineHeight) {
+export function scrollToCaretLine(textarea, lineHeight) {
   if (!lineHeight) return
 
-  const caretLineIndex = getTextareaCaretVisualLineIndex(textarea, lineHeight)
+  const caretLineIndex = getCaretLineIndex(textarea, lineHeight)
   textarea.scrollTop = Math.max(0, caretLineIndex * lineHeight)
 }

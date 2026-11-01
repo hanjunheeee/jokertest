@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion"
-import { INGAME_SIDE_PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
+import { PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
 import {
-  INGAME_SIDE_PANEL_BACKDROP_CLASS,
-  INGAME_SIDE_PANEL_CLOSE_BTN_CLASS,
-  INGAME_SIDE_PANEL_CLOSE_BTN_IMG_CLASS,
+  BACKDROP_CLASS,
+  CLOSE_BTN_CLASS,
+  CLOSE_BTN_IMG_CLASS,
   INGAME_SIDE_PANEL_CLASS,
-  INGAME_SIDE_PANEL_FRAME_IMAGE_CLASS,
+  FRAME_IMG_CLASS,
   INGAME_SIDE_PANEL_INSET,
-  INGAME_SIDE_PANEL_TRANSITION,
+  PANEL_TRANSITION,
 } from "../../constants/controls/ingameSidePanelLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
@@ -25,11 +25,11 @@ export default function SidePanel({
           <motion.button
             type="button"
             aria-label={closeAriaLabel}
-            className={INGAME_SIDE_PANEL_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={INGAME_SIDE_PANEL_TRANSITION}
+            transition={PANEL_TRANSITION}
             onClick={onClose}
           />
 
@@ -41,26 +41,26 @@ export default function SidePanel({
             initial={{ opacity: 0, x: -28 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -28 }}
-            transition={INGAME_SIDE_PANEL_TRANSITION}
+            transition={PANEL_TRANSITION}
             onClick={(event) => event.stopPropagation()}
           >
             <PublicAsset
-              src={INGAME_SIDE_PANEL_ASSETS.panelFrame}
+              src={PANEL_ASSETS.panelFrame}
               alt=""
-              className={INGAME_SIDE_PANEL_FRAME_IMAGE_CLASS}
+              className={FRAME_IMG_CLASS}
             />
 
             <button
               type="button"
               aria-label={closeAriaLabel}
               onClick={onClose}
-              className={INGAME_SIDE_PANEL_CLOSE_BTN_CLASS}
+              className={CLOSE_BTN_CLASS}
               style={{ outline: "none" }}
             >
               <PublicAsset
-                src={INGAME_SIDE_PANEL_ASSETS.closeButton}
+                src={PANEL_ASSETS.closeButton}
                 alt=""
-                className={INGAME_SIDE_PANEL_CLOSE_BTN_IMG_CLASS}
+                className={CLOSE_BTN_IMG_CLASS}
               />
             </button>
 

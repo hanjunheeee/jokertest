@@ -1,18 +1,18 @@
 import { createElement } from "react"
 import {
-  INVITED_GUESTS_CHALLENGE_CLEARED_CELL_CLASS,
-  INVITED_GUESTS_CHALLENGE_LABEL_CELL_CLASS,
-  INVITED_GUESTS_CHALLENGE_REWARD_CELL_CLASS,
-  INVITED_GUESTS_TABLE_ROW_CLASS,
+  CHALLENGE_CLEARED_CELL_CLASS,
+  CHALLENGE_LABEL_CELL_CLASS,
+  CHALLENGE_REWARD_CELL_CLASS,
+  TABLE_ROW_CLASS,
 } from "../../../constants/invitedGuests/tableStyle.js"
 import {
-  INVITED_GUESTS_REWARD_BORDER_BUTTON_CLASS,
-  INVITED_GUESTS_REWARD_BORDER_ICON_CLASS,
-  INVITED_GUESTS_REWARD_BORDER_LABEL_CLASS,
-  INVITED_GUESTS_REWARD_COUNT_CLASS,
-  INVITED_GUESTS_REWARD_CURRENCY_CLASS,
-  INVITED_GUESTS_REWARD_ICON_CLASS,
-  INVITED_GUESTS_REWARD_ROW_CLASS,
+  REWARD_BORDER_BTN_CLASS,
+  REWARD_BORDER_ICON_CLASS,
+  REWARD_BORDER_LABEL_CLASS,
+  REWARD_COUNT_CLASS,
+  REWARD_CURRENCY_CLASS,
+  REWARD_ICON_CLASS,
+  REWARD_ROW_CLASS,
 } from "../../../constants/invitedGuests/layoutStyle.js"
 import { publicAsset } from "../../../../../shared/utils/publicAsset.js"
 
@@ -43,14 +43,14 @@ function rewardIcon(reward, className) {
 function InvitedGuestsChallengeRewards({ rewards, onOpenProfileBorderZoom }) {
   return createElement(
     "div",
-    { className: INVITED_GUESTS_REWARD_ROW_CLASS },
+    { className: REWARD_ROW_CLASS },
     rewards.map((reward, index) => {
       if (reward.type === "currency") {
         return createElement(
           "span",
-          { key: `${reward.icon}-${index}`, className: INVITED_GUESTS_REWARD_CURRENCY_CLASS },
-          rewardIcon(reward, INVITED_GUESTS_REWARD_ICON_CLASS),
-          createElement("span", { className: INVITED_GUESTS_REWARD_COUNT_CLASS }, `×${reward.count}`),
+          { key: `${reward.icon}-${index}`, className: REWARD_CURRENCY_CLASS },
+          rewardIcon(reward, REWARD_ICON_CLASS),
+          createElement("span", { className: REWARD_COUNT_CLASS }, `×${reward.count}`),
         )
       }
 
@@ -59,13 +59,13 @@ function InvitedGuestsChallengeRewards({ rewards, onOpenProfileBorderZoom }) {
         {
           key: `${reward.icon}-${index}`,
           type: "button",
-          className: INVITED_GUESTS_REWARD_BORDER_BUTTON_CLASS,
+          className: REWARD_BORDER_BTN_CLASS,
           style: { outline: "none" },
           "aria-label": `${reward.label} 크게 보기`,
           onClick: () => onOpenProfileBorderZoom?.(reward),
         },
-        rewardIcon(reward, INVITED_GUESTS_REWARD_BORDER_ICON_CLASS),
-        createElement("span", { className: INVITED_GUESTS_REWARD_BORDER_LABEL_CLASS }, reward.label),
+        rewardIcon(reward, REWARD_BORDER_ICON_CLASS),
+        createElement("span", { className: REWARD_BORDER_LABEL_CLASS }, reward.label),
       )
     }),
   )
@@ -82,7 +82,7 @@ export default function InvitedGuestsChallengeRow({
   onOpenProfileBorderZoom,
 }) {
   const rowProps = {
-    className: INVITED_GUESTS_TABLE_ROW_CLASS,
+    className: TABLE_ROW_CLASS,
     "data-achievement-id": achievementId ?? undefined,
     "data-notification-target": targeted ? "true" : undefined,
     "aria-current": targeted ? "true" : undefined,
@@ -94,7 +94,7 @@ export default function InvitedGuestsChallengeRow({
       rowProps,
       createElement(
         "td",
-        { colSpan: 2, className: INVITED_GUESTS_CHALLENGE_CLEARED_CELL_CLASS },
+        { colSpan: 2, className: CHALLENGE_CLEARED_CELL_CLASS },
         "-- 도전과제 클리어 --",
       ),
     )
@@ -107,13 +107,13 @@ export default function InvitedGuestsChallengeRow({
     rowProps,
     createElement(
       "td",
-      { className: INVITED_GUESTS_CHALLENGE_LABEL_CELL_CLASS },
+      { className: CHALLENGE_LABEL_CELL_CLASS },
       label,
       hasProgress ? ` (${Math.min(current, threshold)}/${threshold})` : null,
     ),
     createElement(
       "td",
-      { className: INVITED_GUESTS_CHALLENGE_REWARD_CELL_CLASS },
+      { className: CHALLENGE_REWARD_CELL_CLASS },
       createElement(InvitedGuestsChallengeRewards, { rewards, onOpenProfileBorderZoom }),
     ),
   )

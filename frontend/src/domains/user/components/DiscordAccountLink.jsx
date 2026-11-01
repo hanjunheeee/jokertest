@@ -1,11 +1,11 @@
 import { useSearchParams } from "react-router-dom"
 import {
-  ACCOUNT_PANEL_ACTION_AREA_CLASS,
-  ACCOUNT_PANEL_ACTION_BUTTON_ROW_CLASS,
-  ACCOUNT_PANEL_FEEDBACK_LINE_CLASS,
-  ACCOUNT_PANEL_FORM_CLASS,
-  ACCOUNT_PANEL_FORM_HEADING_CLASS,
-  ACCOUNT_PANEL_SECTION_CLASS,
+  PANEL_ACTION_AREA_CLASS,
+  PANEL_ACTION_BTN_ROW_CLASS,
+  PANEL_FEEDBACK_LINE_CLASS,
+  PANEL_FORM_CLASS,
+  PANEL_FORM_HEADING_CLASS,
+  PANEL_SECTION_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import ConfirmButton from "@/domains/user/components/AccountPanel/ConfirmButton.jsx"
 import FeedbackMsg from "@/domains/user/components/AccountPanel/FeedbackMsg.jsx"
@@ -39,13 +39,13 @@ export default function DiscordAccountLink() {
   }
 
   return (
-    <section className={ACCOUNT_PANEL_SECTION_CLASS}>
-      <h3 className={ACCOUNT_PANEL_FORM_HEADING_CLASS}>Discord 계정 연결</h3>
+    <section className={PANEL_SECTION_CLASS}>
+      <h3 className={PANEL_FORM_HEADING_CLASS}>Discord 계정 연결</h3>
 
-      <form onSubmit={handleLinkDiscord} className={ACCOUNT_PANEL_FORM_CLASS}>
-        <div className={ACCOUNT_PANEL_ACTION_AREA_CLASS}>
+      <form onSubmit={handleLinkDiscord} className={PANEL_FORM_CLASS}>
+        <div className={PANEL_ACTION_AREA_CLASS}>
           {message ? (
-            <div className={ACCOUNT_PANEL_FEEDBACK_LINE_CLASS}>
+            <div className={PANEL_FEEDBACK_LINE_CLASS}>
               <button
                 type="button"
                 onClick={clearLinkParams}
@@ -56,7 +56,7 @@ export default function DiscordAccountLink() {
               </button>
             </div>
           ) : null}
-          <div className={ACCOUNT_PANEL_ACTION_BUTTON_ROW_CLASS}>
+          <div className={PANEL_ACTION_BTN_ROW_CLASS}>
             <ConfirmButton label="연결하기" />
           </div>
         </div>

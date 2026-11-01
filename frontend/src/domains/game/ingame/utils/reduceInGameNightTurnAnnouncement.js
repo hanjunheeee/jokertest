@@ -1,4 +1,4 @@
-export const INITIAL_IN_GAME_NIGHT_TURN_ANNOUNCEMENT = Object.freeze({
+export const INITIAL_TURN_ANNOUNCEMENT = Object.freeze({
   scope: null,
   seen: Object.freeze([]),
   pending: null,
@@ -37,7 +37,7 @@ export function reduceInGameNightTurnAnnouncement(state, input) {
   return { scope, seen, pending, active }
 }
 
-export function dismissInGameNightTurnAnnouncement(state, targetIdentity) {
+export function dismissTurnAnnouncement(state, targetIdentity) {
   if (state.active === null) return state
   if (typeof targetIdentity !== "string" || targetIdentity !== state.active.identity) return state
   return { ...state, active: null }

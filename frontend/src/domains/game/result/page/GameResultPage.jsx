@@ -7,16 +7,16 @@ import LabelledActionButton from "@/domains/game/shared/components/LabelledActio
 import GameResultIntroVideo from "../components/GameResultIntroVideo.jsx"
 import GameResultShell from "../components/GameResultShell.jsx"
 import { GAME_RESULT_ASSETS } from "../constants/gameResultAssets.js"
-import { GAME_RESULT_LOBBY_BUTTON_REVEAL_DELAY } from "../constants/gameResultEntranceMotion.js"
+import { LOBBY_BTN_REVEAL_DELAY } from "../constants/gameResultEntranceMotion.js"
 import {
   GAME_RESULT_LOBBY_BUTTON_LABEL,
   GAME_RESULT_MATCHING_BUTTON_LABEL,
 } from "../constants/gameResultLabels.js"
-import { GAME_RESULT_LOBBY_BUTTON_WRAP_CLASS } from "../constants/gameResultLayout.js"
+import { LOBBY_BTN_WRAP_CLASS } from "../constants/gameResultLayout.js"
 import { GAME_RESULT_OUTCOMES } from "../constants/gameResultPreviewData.js"
 import {
-  RESULT_BOOTSTRAP_HOLD_MS,
-  RESULT_PLAIN_BUTTON_CLASS,
+  BOOTSTRAP_HOLD_MS,
+  PLAIN_BTN_CLASS,
   RESULT_UNAVAILABLE_BODY,
   RESULT_UNAVAILABLE_TITLE,
   UNAVAILABLE_BODY_CLASS,
@@ -50,7 +50,7 @@ export default function GameResultPage() {
   const [holdExpired, setHoldExpired] = useState(false)
   useEffect(() => {
     if (view || bootstrapStatus !== "checking") return undefined
-    const timer = window.setTimeout(() => setHoldExpired(true), RESULT_BOOTSTRAP_HOLD_MS)
+    const timer = window.setTimeout(() => setHoldExpired(true), BOOTSTRAP_HOLD_MS)
     return () => window.clearTimeout(timer)
   }, [view, bootstrapStatus])
 
@@ -85,10 +85,10 @@ export default function GameResultPage() {
         </div>
       )}
       <motion.div
-        className={GAME_RESULT_LOBBY_BUTTON_WRAP_CLASS}
+        className={LOBBY_BTN_WRAP_CLASS}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ ...UI_REVEAL_TRANSITION, delay: GAME_RESULT_LOBBY_BUTTON_REVEAL_DELAY }}
+        transition={{ ...UI_REVEAL_TRANSITION, delay: LOBBY_BTN_REVEAL_DELAY }}
       >
         {view ? (
           <>
@@ -106,7 +106,7 @@ export default function GameResultPage() {
         ) : (
           <button
             type="button"
-            className={RESULT_PLAIN_BUTTON_CLASS}
+            className={PLAIN_BTN_CLASS}
             onClick={() => navigate("/multiplay", { replace: true })}
           >
             로비로 돌아가기

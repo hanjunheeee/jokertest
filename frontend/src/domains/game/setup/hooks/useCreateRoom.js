@@ -7,7 +7,7 @@ import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import {
-  CREATE_ROOM_ERROR_MESSAGES,
+  CREATE_ROOM_ERROR_MSGS,
   CURRENT_ROOM_MAX_POLL_ATTEMPTS,
   CURRENT_ROOM_POLL_INTERVAL_MS,
 } from "../../shared/constants/gameSetupSocket.js"
@@ -31,7 +31,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   // 화면을 떠났으면 알림 안 띄움
   const showError = (message) => {
     if (!mountedRef.current) return
-    alert(message ?? CREATE_ROOM_ERROR_MESSAGES.NETWORK)
+    alert(message ?? CREATE_ROOM_ERROR_MSGS.NETWORK)
   }
 
   // 요청 범위: 마지막 요청 하나만 살아 있음
@@ -70,7 +70,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   const recoverRoom = async (scope) => {
     const socket = scope?.socket ?? null
     if (!socket || !isCurrent(scope)) {
-      showError(CREATE_ROOM_ERROR_MESSAGES.NETWORK)
+      showError(CREATE_ROOM_ERROR_MSGS.NETWORK)
       return
     }
 
@@ -96,7 +96,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
       }
     }
 
-    showError(CREATE_ROOM_ERROR_MESSAGES.NETWORK)
+    showError(CREATE_ROOM_ERROR_MSGS.NETWORK)
   }
 
   // 방 만들기: 연타 막고, 응답 못 받으면 생긴 방 찾기로 넘어감
@@ -104,7 +104,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
     if (creatingRef.current) return
     const socket = getSocket()
     if (!socket) {
-      showError(CREATE_ROOM_ERROR_MESSAGES.NETWORK)
+      showError(CREATE_ROOM_ERROR_MSGS.NETWORK)
       return
     }
 

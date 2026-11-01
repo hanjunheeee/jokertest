@@ -1,13 +1,13 @@
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import { PLAYER_PROFILE_ASSETS } from "../../../../shared/constants/playerProfileAssets.js"
 import {
-  PROFILE_EDIT_CLOSE_BTN_CLASS,
-  PROFILE_EDIT_CLOSE_BTN_IMG_CLASS,
-  PROFILE_EDIT_ERROR_TEXT_CLASS,
-  PROFILE_EDIT_HEADER_CLASS,
-  PROFILE_EDIT_PANEL_CLASS,
-  profileBorderAssetSrcForItemId,
-  profilePhotoAssetSrcForItemId,
+  CLOSE_BTN_CLASS,
+  CLOSE_BTN_IMG_CLASS,
+  ERROR_TEXT_CLASS,
+  HEADER_CLASS,
+  PANEL_CLASS,
+  borderAssetSrcForItemId,
+  photoAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 import ProfileEditConfirmButton from "./ProfileEditConfirmButton.jsx"
@@ -33,27 +33,27 @@ export default function ProfileEditPanel({
   confirmStatus,
   confirmError,
 }) {
-  const draftPhoto = profilePhotoAssetSrcForItemId(draftPhotoItemId) ?? PLAYER_PROFILE_ASSETS.defaultPhoto
-  const draftFrame = profileBorderAssetSrcForItemId(draftBorderItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder
+  const draftPhoto = photoAssetSrcForItemId(draftPhotoItemId) ?? PLAYER_PROFILE_ASSETS.defaultPhoto
+  const draftFrame = borderAssetSrcForItemId(draftBorderItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder
 
   return (
-    <div className={PROFILE_EDIT_PANEL_CLASS}>
+    <div className={PANEL_CLASS}>
       <button
         type="button"
         aria-label="프로필 수정 닫기"
         data-sfx-owner="explicit"
         onClick={onClose}
-        className={PROFILE_EDIT_CLOSE_BTN_CLASS}
+        className={CLOSE_BTN_CLASS}
         style={{ outline: "none" }}
       >
         <PublicAsset
           src={STORE_ASSETS.popupCloseButton}
           alt=""
-          className={PROFILE_EDIT_CLOSE_BTN_IMG_CLASS}
+          className={CLOSE_BTN_IMG_CLASS}
         />
       </button>
 
-      <header className={PROFILE_EDIT_HEADER_CLASS}>
+      <header className={HEADER_CLASS}>
         <ProfileEditTabs activeTab={activeTab} onTabChange={onTabChange} />
       </header>
 
@@ -73,7 +73,7 @@ export default function ProfileEditPanel({
         onRetryLoadBorders={onRetryLoadBorders}
       />
 
-      {confirmError ? <p className={PROFILE_EDIT_ERROR_TEXT_CLASS}>{confirmError}</p> : null}
+      {confirmError ? <p className={ERROR_TEXT_CLASS}>{confirmError}</p> : null}
 
       <ProfileEditConfirmButton onClick={onConfirm} disabled={confirmStatus === "saving"} />
     </div>

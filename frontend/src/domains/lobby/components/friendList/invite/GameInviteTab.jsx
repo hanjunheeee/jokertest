@@ -1,8 +1,8 @@
 // 받은 게임 초대 탭 (새로고침·목록 오류·대상 없음 안내·초대 목록·뒤로)
 // FriendListPanelContent가 invite 탭일 때 그림
 import {
-  FRIEND_ACCEPT_BACK_BUTTON_CLASS,
-  FRIEND_ACCEPT_EMPTY_CLASS,
+  ACCEPT_BACK_BTN_CLASS,
+  ACCEPT_EMPTY_CLASS,
   FRIEND_ACCEPT_TAB_CLASS,
 } from "../../../constants/friendListStyle.js"
 import BackButton from "../../../../../shared/ui/BackButton.jsx"
@@ -11,7 +11,7 @@ import GameInviteTargetMissingNotice from "./GameInviteTargetMissingNotice.jsx"
 import GameInviteList from "./list/GameInviteList.jsx"
 
 // 바깥에서 쓰던 이름 그대로 다시 내보냄
-export { INVITE_ENDED_REASON_TEXT } from "../../../constants/gameInvite.js"
+export { ENDED_REASON_TEXT } from "../../../constants/gameInvite.js"
 export { describeState as describeInviteState } from "../../../utils/gameInvite/inviteState.js"
 
 // 대상 초대 없음 안내는 목록을 제대로 받았을 때만 보임
@@ -37,7 +37,7 @@ export default function GameInviteTab({
       <GameInviteToolbar onRefresh={onRefresh} />
 
       {error !== null ? (
-        <p role="status" data-invite-list-error="true" className={FRIEND_ACCEPT_EMPTY_CLASS}>
+        <p role="status" data-invite-list-error="true" className={ACCEPT_EMPTY_CLASS}>
           {error}
         </p>
       ) : null}
@@ -57,7 +57,7 @@ export default function GameInviteTab({
         size="compact"
         ariaLabel="친구 목록으로 돌아가기"
         onClick={onBack}
-        className={FRIEND_ACCEPT_BACK_BUTTON_CLASS}
+        className={ACCEPT_BACK_BTN_CLASS}
       />
     </div>
   )

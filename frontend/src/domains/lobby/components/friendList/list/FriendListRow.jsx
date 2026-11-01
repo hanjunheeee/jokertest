@@ -2,14 +2,14 @@
 // FriendListFolderRows·FriendListFilterResults가 친구마다 그림
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import {
-  FRIEND_ROW_CONTENT_CLASS,
+  ROW_CONTENT_CLASS,
   FRIEND_ROW_FRAME_CLASS,
   FRIEND_ROW_INFO_CLASS,
   FRIEND_ROW_ITEM_CLASS,
   FRIEND_ROW_NAME_CLASS,
-  FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS,
-  RECOMMENDED_FRIEND_ACTIONS_CLASS,
-  FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS,
+  ROW_PROFILE_PORTRAIT_WRAP_CLASS,
+  RECOMMENDED_ACTIONS_CLASS,
+  STATUS_DETAIL_ERROR_CLASS,
 } from "../../../constants/friendListStyle.js"
 import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
@@ -51,7 +51,7 @@ export default function FriendListRow({
         alt=""
         className={FRIEND_ROW_FRAME_CLASS}
       />
-      <div className={FRIEND_ROW_CONTENT_CLASS}>
+      <div className={ROW_CONTENT_CLASS}>
         <FriendListFavoriteStar
           active={isFavorite}
           onToggle={() => { if (!isSavingFavorite) setFavorite(id, !isFavorite) }}
@@ -59,24 +59,24 @@ export default function FriendListRow({
         <PlayerProfilePortrait
           photoSrc={portraitSrc}
           frameSrc={frameSrc}
-          wrapClassName={FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS}
+          wrapClassName={ROW_PROFILE_PORTRAIT_WRAP_CLASS}
         />
         <div className={FRIEND_ROW_INFO_CLASS}>
           <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
           <FriendOnlineStatus online={online} />
           {favoriteError !== null ? (
-            <p role="status" data-favorite-error={id} className={FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS}>
+            <p role="status" data-favorite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
               {favoriteError}
             </p>
           ) : null}
           {sendError !== null ? (
-            <p role="status" data-invite-error={id} className={FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS}>
+            <p role="status" data-invite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
               {sendError}
             </p>
           ) : null}
         </div>
         {onInvite !== null || onBlock !== null ? (
-          <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
+          <div className={RECOMMENDED_ACTIONS_CLASS}>
             {onInvite !== null ? (
               <FriendInviteButton
                 id={id}

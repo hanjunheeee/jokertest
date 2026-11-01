@@ -7,7 +7,7 @@ import InGameNightSuccessPendingAsset from "./nightSuccess/InGameNightSuccessPen
 import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
 import { buildFinalStatusLabel } from "../constants/ingameNightSuccess.js"
-import { INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
+import { PRIVATE_RESULT_MSG_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
 
 export default function InGameNightSuccessPresentation({
   current: currentProp,
@@ -59,7 +59,7 @@ export default function InGameNightSuccessPresentation({
           "data-ingame-night-success-final": finalStatus.alive ? "ALIVE" : "DEAD",
         }}
       >
-        <p className={INGAME_NIGHT_PRIVATE_RESULT_MESSAGE_CLASS}>
+        <p className={PRIVATE_RESULT_MSG_CLASS}>
           {buildFinalStatusLabel(finalStatus.alive)}
         </p>
       </InGameParchmentModalBase>

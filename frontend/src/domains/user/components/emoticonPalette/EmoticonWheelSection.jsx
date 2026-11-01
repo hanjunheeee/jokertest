@@ -4,15 +4,15 @@ import EmoticonPaletteImageButton from "@/domains/user/components/emoticonPalett
 import EmoticonPaletteWheel from "@/domains/user/components/emoticonPalette/EmoticonPaletteWheel.jsx"
 import { EMOTICON_PALETTE_ASSETS } from "@/domains/user/constants/emoticonPaletteAssets.js"
 import {
-  EMOTICON_PALETTE_ACTION_ROW_CLASS,
-  EMOTICON_PALETTE_WHEEL_SECTION_CLASS,
+  ACTION_ROW_CLASS,
+  WHEEL_SECTION_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { emoticonItemOf } from "@/domains/user/utils/emoticonPalette/items.js"
 
 // 저장 중에는 저장·취소를 모두 잠금
 export default function EmoticonWheelSection({ page }) {
   return (
-    <section aria-label="이모티콘 팔레트" className={EMOTICON_PALETTE_WHEEL_SECTION_CLASS}>
+    <section aria-label="이모티콘 팔레트" className={WHEEL_SECTION_CLASS}>
       <EmoticonPaletteWheel
         slots={page.selectedSlots}
         selectedSlotIndex={page.selectedSlotIndex}
@@ -21,7 +21,7 @@ export default function EmoticonWheelSection({ page }) {
         onSelectSlot={page.selectSlot}
       />
 
-      <div className={EMOTICON_PALETTE_ACTION_ROW_CLASS}>
+      <div className={ACTION_ROW_CLASS}>
         <EmoticonPaletteImageButton
           label="저장"
           src={EMOTICON_PALETTE_ASSETS.saveButton}

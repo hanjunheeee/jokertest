@@ -10,11 +10,11 @@ import EmoticonWheelSection from "@/domains/user/components/emoticonPalette/Emot
 import UserPageBackground from "@/domains/user/components/UserPageBackground.jsx"
 import UserPageChrome from "@/domains/user/components/UserPageChrome.jsx"
 import {
-  EMOTICON_PALETTE_BODY_CLASS,
-  EMOTICON_PALETTE_CONTENT_CLASS,
-  EMOTICON_PALETTE_MAIN_CLASS,
-  EMOTICON_PALETTE_ROOT_CLASS,
-  EMOTICON_PALETTE_UI_FADE,
+  BODY_CLASS,
+  CONTENT_CLASS,
+  MAIN_CLASS,
+  ROOT_CLASS,
+  UI_FADE,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { useEmoticonPalettePage } from "@/domains/user/hooks/useEmoticonPalettePage.js"
 
@@ -26,14 +26,14 @@ export default function EmoticonPalettePage() {
     <div className="relative h-svh w-full overflow-hidden bg-black">
       <UserPageBackground />
 
-      <div className={EMOTICON_PALETTE_ROOT_CLASS}>
+      <div className={ROOT_CLASS}>
         <motion.main
-          className={EMOTICON_PALETTE_MAIN_CLASS}
+          className={MAIN_CLASS}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={EMOTICON_PALETTE_UI_FADE}
+          transition={UI_FADE}
         >
-          <div className={EMOTICON_PALETTE_CONTENT_CLASS}>
+          <div className={CONTENT_CLASS}>
             <EmoticonPaletteStatus
               status={page.status}
               conflict={page.conflict}
@@ -41,7 +41,7 @@ export default function EmoticonPalettePage() {
               onRetry={page.load}
             />
 
-            <div className={EMOTICON_PALETTE_BODY_CLASS}>
+            <div className={BODY_CLASS}>
               <EmoticonInventorySection page={page} />
               <EmoticonWheelSection page={page} />
             </div>

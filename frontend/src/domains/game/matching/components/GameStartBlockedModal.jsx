@@ -1,10 +1,10 @@
 import { useRef } from 'react'
 import InGameParchmentModalBase from '@/domains/game/ingame/components/parchment/InGameParchmentModalBase.js'
-import { INGAME_PARCHMENT_CONFIRM_LABEL } from '@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js'
+import { PARCHMENT_CONFIRM_LABEL } from '@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js'
 import {
-  GAME_START_BLOCKED_MESSAGE_CLASS,
-  GAME_START_BLOCKED_TITLE,
-  GAME_START_BLOCKED_TITLE_CLASS,
+  BLOCKED_MSG_CLASS,
+  BLOCKED_TITLE,
+  BLOCKED_TITLE_CLASS,
 } from '../constants/gameStartMessages.js'
 
 export default function GameStartBlockedModal({ message, onClose }) {
@@ -16,15 +16,15 @@ export default function GameStartBlockedModal({ message, onClose }) {
     <InGameParchmentModalBase
       variantKey="gameStartBlocked"
       onDismiss={onClose}
-      confirmLabel={INGAME_PARCHMENT_CONFIRM_LABEL}
+      confirmLabel={PARCHMENT_CONFIRM_LABEL}
       confirmButtonRef={confirmButtonRef}
       focusKey={message}
       wrapperProps={{ 'data-game-start-blocked': '' }}
     >
-      <h2 className={GAME_START_BLOCKED_TITLE_CLASS}>
-        {GAME_START_BLOCKED_TITLE}
+      <h2 className={BLOCKED_TITLE_CLASS}>
+        {BLOCKED_TITLE}
       </h2>
-      <p role="alert" className={GAME_START_BLOCKED_MESSAGE_CLASS}>
+      <p role="alert" className={BLOCKED_MSG_CLASS}>
         {message}
       </p>
     </InGameParchmentModalBase>

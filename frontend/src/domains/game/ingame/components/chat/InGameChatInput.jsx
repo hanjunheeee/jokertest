@@ -1,25 +1,25 @@
 // 채팅 입력칸: 여러 줄 글을 한 줄 높이 칸 안에서 보여 주고, Enter로 보내기
 // 채팅 내용(InGameChatContent)이 사용, 줄 재기·스크롤은 useChatInputViewport
 import { forwardRef, useImperativeHandle, useRef } from "react"
-import { INGAME_CHAT_INPUT_MAX_LENGTH } from "../../constants/chat/ingameChatAssets.js"
+import { INPUT_MAX_LENGTH } from "../../constants/chat/ingameChatAssets.js"
 import {
   getInGameChatInputClass,
   getInGameChatInputPlaceholderClass,
-  getInGameChatInputViewportFixedHeightClass,
-  getInGameChatInputViewportSinglelineClass,
+  getInputViewportFixedHeightClass,
+  getInputViewportSinglelineClass,
   getInGameChatScaledFontSize,
   getInGameChatTextScale,
   getInGameChatTextScaleStyle,
-  INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS,
-  INGAME_CHAT_INPUT_VIEWPORT_FILLED_CLASS,
-  INGAME_CHAT_INPUT_VIEWPORT_MASK_CLASS,
-  INGAME_CHAT_INPUT_VIEWPORT_MULTILINE_CLASS,
-  INGAME_CHAT_INPUT_VIEWPORT_NO_MASK_CLASS,
-  INGAME_CHAT_INPUT_VIEWPORT_WRAP_BASE_CLASS,
+  INPUT_VIEWPORT_EMPTY_CLASS,
+  INPUT_VIEWPORT_FILLED_CLASS,
+  INPUT_VIEWPORT_MASK_CLASS,
+  INPUT_VIEWPORT_MULTILINE_CLASS,
+  INPUT_VIEWPORT_NO_MASK_CLASS,
+  INPUT_VIEWPORT_WRAP_BASE_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import { INGAME_SETTING_CHAT_SLIDER } from "../../constants/controls/ingameSetting/ingameSettingData.js"
 import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
-import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
+import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import { useChatInputViewport } from "../../hooks/useChatInputViewport.js"
 
 // 설정한 채팅 글자 크기 (없으면 기본값)
@@ -43,11 +43,11 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   { value, onChange, onSend, className = "", truncateDraftOnInput = true },
   ref,
 ) {
-  const variant = useInGameChatVariant()
+  const variant = useChatVariant()
   const inputClass = getInGameChatInputClass(variant)
   const placeholderClass = getInGameChatInputPlaceholderClass(variant)
-  const viewportFixedHeightClass = getInGameChatInputViewportFixedHeightClass(variant)
-  const viewportSinglelineClass = getInGameChatInputViewportSinglelineClass(variant)
+  const viewportFixedHeightClass = getInputViewportFixedHeightClass(variant)
+  const viewportSinglelineClass = getInputViewportSinglelineClass(variant)
   const wrapRef = useRef(null)
   const textareaRef = useRef(null)
 
@@ -84,7 +84,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
 
   const handleChange = (event) => {
     const next = truncateDraftOnInput
-      ? event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH)
+      ? event.target.value.slice(0, INPUT_MAX_LENGTH)
       : event.target.value
     onChange({
       ...event,
@@ -94,16 +94,16 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   }
 
   const wrapClass = [
-    INGAME_CHAT_INPUT_VIEWPORT_WRAP_BASE_CLASS,
+    INPUT_VIEWPORT_WRAP_BASE_CLASS,
     viewportFixedHeightClass,
     hasText
       ? showLinePeek
-        ? INGAME_CHAT_INPUT_VIEWPORT_FILLED_CLASS
-        : INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS
-      : INGAME_CHAT_INPUT_VIEWPORT_EMPTY_CLASS,
+        ? INPUT_VIEWPORT_FILLED_CLASS
+        : INPUT_VIEWPORT_EMPTY_CLASS
+      : INPUT_VIEWPORT_EMPTY_CLASS,
     showLinePeek
-      ? INGAME_CHAT_INPUT_VIEWPORT_MASK_CLASS
-      : INGAME_CHAT_INPUT_VIEWPORT_NO_MASK_CLASS,
+      ? INPUT_VIEWPORT_MASK_CLASS
+      : INPUT_VIEWPORT_NO_MASK_CLASS,
     className,
   ]
     .filter(Boolean)
@@ -116,7 +116,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     hasText
       ? useCenteredFirstLineViewport || !isVisualMultiLine
         ? viewportSinglelineClass
-        : INGAME_CHAT_INPUT_VIEWPORT_MULTILINE_CLASS
+        : INPUT_VIEWPORT_MULTILINE_CLASS
       : viewportSinglelineClass,
   ].join(" ")
 

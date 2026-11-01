@@ -5,11 +5,11 @@ import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import {
   DEFAULT_PROFILE_BORDER_ITEM_ID,
   DEFAULT_PROFILE_PHOTO_ITEM_ID,
-  PROFILE_BORDER_ITEM_TYPE,
+  BORDER_ITEM_TYPE,
   PROFILE_EDIT_TAB_PHOTO,
   PROFILE_PHOTO_ITEM_TYPE,
-  profileBorderAssetSrcForItemId,
-  profilePhotoAssetSrcForItemId,
+  borderAssetSrcForItemId,
+  photoAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
 import { listStatusOf, ownedOptionsOf } from "../../utils/profileEditOptions.js"
 
@@ -74,10 +74,10 @@ export function useProfileBorderEditor({ open, onClose }) {
     setDraftBorderItemId(itemId)
   }, [])
 
-  const ownedBorderOptions = ownedOptionsOf(entitlements, PROFILE_BORDER_ITEM_TYPE, profileBorderAssetSrcForItemId)
+  const ownedBorderOptions = ownedOptionsOf(entitlements, BORDER_ITEM_TYPE, borderAssetSrcForItemId)
   const borderListStatus = listStatusOf(economyStatus, ownedBorderOptions)
 
-  const ownedPhotoOptions = ownedOptionsOf(entitlements, PROFILE_PHOTO_ITEM_TYPE, profilePhotoAssetSrcForItemId)
+  const ownedPhotoOptions = ownedOptionsOf(entitlements, PROFILE_PHOTO_ITEM_TYPE, photoAssetSrcForItemId)
   const photoListStatus = listStatusOf(economyStatus, ownedPhotoOptions)
 
   // 바뀐 것만 저장, 결과를 모르면 지갑을 다시 받아 실패인지 확인함

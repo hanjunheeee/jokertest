@@ -1,11 +1,11 @@
 import { RANGE_SLIDER_ASSETS } from "@/shared/constants/rangeSliderAssets.js"
 import {
-  RANGE_SLIDER_CONTROL_CLASS,
+  CONTROL_CLASS,
   RANGE_SLIDER_KNOB_CLASS,
   RANGE_SLIDER_KNOB_HALF,
-  RANGE_SLIDER_TRACK_CLASS,
-  RANGE_SLIDER_TRACK_LANE_CLASS,
-  RANGE_SLIDER_VALUE_CLASS,
+  TRACK_CLASS,
+  TRACK_LANE_CLASS,
+  VALUE_CLASS,
   RANGE_SLIDER_WRAP_CLASS,
 } from "@/shared/constants/rangeSliderStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -23,11 +23,11 @@ export default function RangeSlider({
   ariaLabel,
   trackSrc = RANGE_SLIDER_ASSETS.track,
   knobSrc = RANGE_SLIDER_ASSETS.knob,
-  controlClassName = RANGE_SLIDER_CONTROL_CLASS,
-  valueClassName = RANGE_SLIDER_VALUE_CLASS,
+  controlClassName = CONTROL_CLASS,
+  valueClassName = VALUE_CLASS,
   wrapClassName = RANGE_SLIDER_WRAP_CLASS,
-  trackLaneClassName = RANGE_SLIDER_TRACK_LANE_CLASS,
-  trackClassName = RANGE_SLIDER_TRACK_CLASS,
+  trackLaneClassName = TRACK_LANE_CLASS,
+  trackClassName = TRACK_CLASS,
   knobClassName = RANGE_SLIDER_KNOB_CLASS,
 }) {
   const t = rangeRatio(value, min, max)

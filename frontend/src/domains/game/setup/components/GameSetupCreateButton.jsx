@@ -1,7 +1,7 @@
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
 import {
-  GAME_SETUP_FORM_ACTION_BTN_CLASS,
-  GAME_SETUP_FORM_ACTION_LABEL_CLASS,
+  FORM_ACTION_BTN_CLASS,
+  FORM_ACTION_LABEL_CLASS,
 } from "../constants/gameSetupFormActions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -21,7 +21,7 @@ export default function GameSetupCreateButton({
       aria-busy={busy || undefined}
       onClick={onClick}
       disabled={disabled}
-      className={GAME_SETUP_FORM_ACTION_BTN_CLASS}
+      className={FORM_ACTION_BTN_CLASS}
       style={{ outline: "none" }}
     >
       <PublicAsset
@@ -29,7 +29,7 @@ export default function GameSetupCreateButton({
         alt=""
         className="block h-auto w-full select-none"
       />
-      <span className={GAME_SETUP_FORM_ACTION_LABEL_CLASS}>{displayLabel}</span>
+      <span className={FORM_ACTION_LABEL_CLASS}>{displayLabel}</span>
     </button>
   )
 }

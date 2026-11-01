@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import {
-  PROFILE_EDIT_BACKDROP_CLASS,
-  PROFILE_EDIT_PANEL_WRAP_CLASS,
+  BACKDROP_CLASS,
+  PANEL_WRAP_CLASS,
   PROFILE_EDIT_TRANSITION,
 } from "../../constants/profileEditLayout.js"
 import { useProfileBorderEditor } from "./useProfileBorderEditor.js"
@@ -55,7 +55,7 @@ export default function ProfileEditOverlay({ open, onClose }) {
           <motion.button
             type="button"
             aria-label="프로필 수정 닫기"
-            className={PROFILE_EDIT_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             data-sfx-owner="explicit"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -64,7 +64,7 @@ export default function ProfileEditOverlay({ open, onClose }) {
             onClick={handleClose}
           />
 
-          <div className={PROFILE_EDIT_PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
             <motion.div
               role="dialog"
               aria-modal="true"

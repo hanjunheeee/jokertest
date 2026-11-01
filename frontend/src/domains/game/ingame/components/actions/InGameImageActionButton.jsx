@@ -1,9 +1,9 @@
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import {
-  INGAME_CORNER_ACTION_BTN_CLASS,
-  INGAME_CORNER_ACTION_BTN_IMG_CLASS,
-  INGAME_CORNER_ACTION_BTN_LABEL_CLASS,
-  INGAME_CORNER_ACTION_BTN_WRAP_CLASS,
+  CORNER_ACTION_BTN_CLASS,
+  CORNER_ACTION_BTN_IMG_CLASS,
+  CORNER_ACTION_BTN_LABEL_CLASS,
+  CORNER_ACTION_BTN_WRAP_CLASS,
 } from "../../constants/actions/ingameCornerActionLayout.js"
 
 export default function InGameImageActionButton({
@@ -11,13 +11,13 @@ export default function InGameImageActionButton({
   label,
   disabled = false,
   onClick,
-  className = INGAME_CORNER_ACTION_BTN_CLASS,
-  imgClassName = INGAME_CORNER_ACTION_BTN_IMG_CLASS,
-  labelClassName = INGAME_CORNER_ACTION_BTN_LABEL_CLASS,
+  className = CORNER_ACTION_BTN_CLASS,
+  imgClassName = CORNER_ACTION_BTN_IMG_CLASS,
+  labelClassName = CORNER_ACTION_BTN_LABEL_CLASS,
   ...rest
 }) {
   return (
-    <div className={INGAME_CORNER_ACTION_BTN_WRAP_CLASS}>
+    <div className={CORNER_ACTION_BTN_WRAP_CLASS}>
       <button
         type="button"
         aria-label={label}

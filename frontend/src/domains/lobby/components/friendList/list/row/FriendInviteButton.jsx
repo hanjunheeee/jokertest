@@ -1,6 +1,6 @@
 // 친구 줄의 게임 초대 버튼
 // FriendListRow가 대기방에서 열었을 때 그림
-import { RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS, RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS } from "../../../../constants/friendListStyle.js"
+import { RECOMMENDED_ACTION_BTN_CLASS, RECOMMENDED_ACTION_IMG_CLASS } from "../../../../constants/friendListStyle.js"
 import { FRIEND_LIST_ASSETS } from "../../../../constants/friendListAssets.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
@@ -9,7 +9,7 @@ export default function FriendInviteButton({ id, name, onInvite, disabled, sendi
   return (
     <button
       type="button"
-      className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
+      className={RECOMMENDED_ACTION_BTN_CLASS}
       aria-label={sending ? `${name} 초대 보내는 중` : `${name} 게임 초대`}
       aria-disabled={disabled || sending}
       disabled={disabled || sending}
@@ -21,7 +21,7 @@ export default function FriendInviteButton({ id, name, onInvite, disabled, sendi
       <PublicAsset
         src={FRIEND_LIST_ASSETS.friendRequestButton}
         alt=""
-        className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+        className={RECOMMENDED_ACTION_IMG_CLASS}
       />
     </button>
   )

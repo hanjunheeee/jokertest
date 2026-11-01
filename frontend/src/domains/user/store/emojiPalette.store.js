@@ -5,7 +5,7 @@ import { create } from "zustand"
 import { useAuthStore } from "../../auth/store/auth.store.js"
 import {
   inGameEmojiScopeKey,
-  readInGameEmojiScope,
+  readEmojiScope,
 } from "../../game/ingame/utils/selectInGameEmojiScope.js"
 import { useInGameStore } from "../../game/ingame/store/ingameStore.js"
 import { createInitialState } from "./emojiPalette/state.js"
@@ -32,6 +32,6 @@ useAuthStore.subscribe((state, prevState) => {
 useInGameStore.subscribe(() => {
   const state = useEmojiPaletteStore.getState()
   if (state.gameScopeKey === null && state.gameStatus === "idle") return
-  if (inGameEmojiScopeKey(readInGameEmojiScope()) === state.gameScopeKey) return
+  if (inGameEmojiScopeKey(readEmojiScope()) === state.gameScopeKey) return
   useEmojiPaletteStore.getState().resetGamePalette()
 })

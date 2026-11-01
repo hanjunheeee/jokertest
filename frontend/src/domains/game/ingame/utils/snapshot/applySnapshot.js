@@ -10,7 +10,7 @@ import { buildPlayers, readRoster } from "./roster.js"
 import { buildSelf, readSelf } from "./self.js"
 import { readDayFields } from "./dayFields.js"
 import { goesBackward, readDayPhase, readVersions, readWinResult } from "./phaseFields.js"
-import { normalizeRoomSettingsSource } from "./roomSettings.js"
+import { normRoomSettingsSource } from "./roomSettings.js"
 
 // 빈 문자열이면 null로
 const orNull = (value) => (isNonEmptyString(value) ? value : null)
@@ -61,7 +61,7 @@ export function applySessionSnapshotPure(current, response) {
     roomInstanceId: orNull(response.roomInstanceId),
     bootEpoch: orNull(response.bootEpoch),
     roomCode: orNull(response.roomCode),
-    roomSettingsSource: normalizeRoomSettingsSource(response.roomSettingsSource),
+    roomSettingsSource: normRoomSettingsSource(response.roomSettingsSource),
     participationRevision: versions.participationRevision,
     selfProgressSeq: versions.selfProgressSeq,
     players: buildPlayers(response.players, current.state.players),

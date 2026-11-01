@@ -1,5 +1,5 @@
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
-import { collectSpecifiedRoleNightActionTimes } from "./roomSettingsForm.js"
+import { collectSpecifiedRoleTimes } from "./roomSettingsForm.js"
 
 export function buildCreateRoomPayload({ checks, ranges, roleComposition, specifiedRoleNightActionTimes }) {
   const mode =
@@ -20,7 +20,7 @@ export function buildCreateRoomPayload({ checks, ranges, roleComposition, specif
     roleCompositionMode: mode,
   }
 
-  const roleNightActionTimes = collectSpecifiedRoleNightActionTimes(ranges, specifiedRoleNightActionTimes)
+  const roleNightActionTimes = collectSpecifiedRoleTimes(ranges, specifiedRoleNightActionTimes)
   if (roleNightActionTimes !== null) payload.roleNightActionTimes = roleNightActionTimes
 
   if (mode === ROLE_COMPOSITION_MODES.AUTO) {

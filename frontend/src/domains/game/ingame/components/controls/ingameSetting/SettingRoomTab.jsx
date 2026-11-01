@@ -1,5 +1,5 @@
 import { INGAME_SETTING_ROOM_ROWS } from "../../../constants/controls/ingameSetting/ingameSettingData.js"
-import { INGAME_SETTING_TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
+import { TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import { useNextRoomSettings } from "../../../hooks/useNextRoomSettings.js"
 import SettingRoomRow from "./SettingRoomRow.jsx"
 
@@ -19,7 +19,7 @@ export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
   }
 
   return (
-    <div className={INGAME_SETTING_TAB_BODY_CLASS}>
+    <div className={TAB_BODY_CLASS}>
       {INGAME_SETTING_ROOM_ROWS.map((row) =>
         row.kind === "action" ? (
           <SettingRoomRow

@@ -6,11 +6,11 @@ import CodeInputRow from "@/domains/auth/components/SignupEmailVerification/Code
 import NoticeSlot from "@/domains/auth/components/SignupEmailVerification/NoticeSlot.jsx"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
-  SIGNUP_ACTION_BUTTON_INTERACTION_CLASS,
-  SIGNUP_ACTION_BUTTON_LABEL_CLASS,
-  SIGNUP_CODE_SEND_BUTTON_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_BLOCK_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_TITLE_CLASS,
+  ACTION_BTN_INTERACTION_CLASS,
+  ACTION_BTN_LABEL_CLASS,
+  CODE_SEND_BTN_CLASS,
+  EMAIL_VERIFICATION_BLOCK_CLASS,
+  EMAIL_VERIFICATION_TITLE_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import { pickNotice, sendButtonLabel } from "@/domains/auth/utils/emailVerification/notice.js"
 
@@ -67,9 +67,9 @@ export default function SignupEmailVerification({
   const handleCodeInputChange = (e) => onSignupCodeChange(e)
 
   return (
-    <div className={SIGNUP_EMAIL_VERIFICATION_BLOCK_CLASS}>
+    <div className={EMAIL_VERIFICATION_BLOCK_CLASS}>
       <div className="flex items-center justify-between gap-1">
-        <span className={SIGNUP_EMAIL_VERIFICATION_TITLE_CLASS}>이메일 인증</span>
+        <span className={EMAIL_VERIFICATION_TITLE_CLASS}>이메일 인증</span>
         {!isVerified && (
           <AuthImageButton
             type="button"
@@ -80,9 +80,9 @@ export default function SignupEmailVerification({
             src={LOGIN_ASSETS.signupCodeSendButton}
             label={sendLabel}
             visibleLabel={sendLabel}
-            visibleLabelClassName={SIGNUP_ACTION_BUTTON_LABEL_CLASS}
-            interactionClassName={SIGNUP_ACTION_BUTTON_INTERACTION_CLASS}
-            className={SIGNUP_CODE_SEND_BUTTON_CLASS}
+            visibleLabelClassName={ACTION_BTN_LABEL_CLASS}
+            interactionClassName={ACTION_BTN_INTERACTION_CLASS}
+            className={CODE_SEND_BTN_CLASS}
           />
         )}
       </div>

@@ -3,7 +3,7 @@ export const FRIEND_LIST_FILTER_FIELDS = {
   incomingRequest: ["name", "id"],
 }
 
-export const FRIEND_LIST_FILTER_SEARCH = {
+export const FILTER_SEARCH = {
   listTab: {
     label: "친구 검색",
     placeholder: "검색할 친구 닉네임 입력",
@@ -14,7 +14,7 @@ export const FRIEND_LIST_FILTER_SEARCH = {
   },
 }
 
-export const FRIEND_LIST_FILTER_MESSAGES = {
+export const FILTER_MSGS = {
   noResults: "검색 결과가 없습니다.",
   noIncomingRequests: "받은 친구 요청이 없습니다.",
 }

@@ -1,6 +1,6 @@
 const ENTRANCE_PHASES = new Set(["DAY", "NIGHT"])
 
-export function buildInGamePhaseEntranceScope({ gameId, authUuid, epochKey }) {
+export function buildEntranceScope({ gameId, authUuid, epochKey }) {
   if (typeof gameId !== "string" || gameId.length === 0) return null
   if (typeof authUuid !== "string" || authUuid.length === 0) return null
   if (typeof epochKey !== "string" || epochKey.length === 0) return null

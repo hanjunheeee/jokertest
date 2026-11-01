@@ -1,16 +1,16 @@
 // 차단 목록 한 줄 (초상·이름·차단 해제 버튼)
 // FriendBlockTab이 차단한 사용자마다 그림
 import {
-  FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
-  RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
-  RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
-  RECOMMENDED_FRIEND_ACTIONS_CLASS,
-  RECOMMENDED_FRIEND_INFO_WRAP_CLASS,
-  RECOMMENDED_FRIEND_NAME_CLASS,
-  RECOMMENDED_FRIEND_ROW_CLASS,
-  RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
-  RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
-  RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
+  PROFILE_PORTRAIT_WRAP_CLASS,
+  RECOMMENDED_ACTION_BTN_CLASS,
+  RECOMMENDED_ACTION_IMG_CLASS,
+  RECOMMENDED_ACTIONS_CLASS,
+  RECOMMENDED_INFO_WRAP_CLASS,
+  RECOMMENDED_NAME_CLASS,
+  RECOMMENDED_ROW_CLASS,
+  RECOMMENDED_ROW_CONTENT_CLASS,
+  RECOMMENDED_ROW_FRAME_CLASS,
+  RECOMMENDED_TEXT_WRAP_CLASS,
 } from "../../../constants/friendListStyle.js"
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
@@ -25,23 +25,23 @@ export default function BlockedUserRow({ user, onUnblock, processing }) {
   })
 
   return (
-    <li className={RECOMMENDED_FRIEND_ROW_CLASS} data-blocked-id={user.id}>
-      <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_FRIEND_ROW_FRAME_CLASS} />
-      <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
+    <li className={RECOMMENDED_ROW_CLASS} data-blocked-id={user.id}>
+      <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_ROW_FRAME_CLASS} />
+      <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
+        <div className={RECOMMENDED_INFO_WRAP_CLASS}>
           <PlayerProfilePortrait
             photoSrc={portraitSrc}
             frameSrc={frameSrc}
-            wrapClassName={FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS}
+            wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
           />
-          <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{user.name}</p>
+          <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
+            <p className={RECOMMENDED_NAME_CLASS}>{user.name}</p>
           </div>
         </div>
-        <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
+        <div className={RECOMMENDED_ACTIONS_CLASS}>
           <button
             type="button"
-            className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
+            className={RECOMMENDED_ACTION_BTN_CLASS}
             aria-label={`${user.name} 차단 해제`}
             aria-disabled={processing}
             disabled={processing}
@@ -52,7 +52,7 @@ export default function BlockedUserRow({ user, onUnblock, processing }) {
             <PublicAsset
               src={FRIEND_LIST_ASSETS.friendAcceptButton}
               alt=""
-              className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
+              className={RECOMMENDED_ACTION_IMG_CLASS}
             />
           </button>
         </div>

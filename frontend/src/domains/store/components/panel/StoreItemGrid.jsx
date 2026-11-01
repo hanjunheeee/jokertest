@@ -2,10 +2,10 @@
 // 가게 패널이 씀
 import StoreGridToolbar from "./grid/StoreGridToolbar.jsx"
 import StoreItemSlot from "./grid/StoreItemSlot.jsx"
-import { getStoreItemDisplayIcon } from "../../constants/storeItems.js"
+import { getItemDisplayIcon } from "../../constants/storeItems.js"
 import {
   STORE_EMPTY_GRID_CLASS,
-  STORE_EMPTY_MESSAGE_CLASS,
+  EMPTY_MSG_CLASS,
   STORE_GRID_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
@@ -53,7 +53,7 @@ export default function StoreItemGrid({
 
       {isEmpty ? (
         <div className={STORE_EMPTY_GRID_CLASS} role="status">
-          <p className={STORE_EMPTY_MESSAGE_CLASS}>준비된 상품이 없습니다.</p>
+          <p className={EMPTY_MSG_CLASS}>준비된 상품이 없습니다.</p>
         </div>
       ) : (
         <div className={STORE_GRID_CLASS}>
@@ -61,7 +61,7 @@ export default function StoreItemGrid({
             <StoreItemSlot
               key={item.id}
               item={item}
-              icon={getStoreItemDisplayIcon(item, deadPreviewIds.has(item.id))}
+              icon={getItemDisplayIcon(item, deadPreviewIds.has(item.id))}
               name={item.name}
               priceAmount={item.priceAmount}
               selected={isItemSelected(item.id)}

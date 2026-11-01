@@ -5,8 +5,8 @@ import { useNavigate } from "react-router-dom"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import {
-  getInGameIdentityScopeVersion,
-  subscribeInGameIdentityScope,
+  getIdentityScopeVersion,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { onSessionEvents } from "../socket/session.js"
@@ -24,7 +24,7 @@ export function useGameSessionSocketEvents() {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
   const connectSeq = useConnectSeq(socket)
 

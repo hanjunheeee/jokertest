@@ -2,8 +2,8 @@ import { useRef } from "react"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import { getPlayerRecordListFallbackProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
-  INGAME_PLAYER_RECORD_LIST_SCROLL_CLASS,
-  INGAME_PLAYER_RECORD_LIST_SCROLL_WRAP_CLASS,
+  SCROLL_CLASS,
+  SCROLL_WRAP_CLASS,
 } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
 import SidePanelHeader from "../SidePanelHeader.jsx"
 import PlayerRecordListRow from "./PlayerRecordListRow.jsx"
@@ -20,10 +20,10 @@ export default function PlayerRecordListContent() {
         subtitle="모든 플레이어의 전적과 정보를 확인할 수 있습니다."
       />
 
-      <div className={INGAME_PLAYER_RECORD_LIST_SCROLL_WRAP_CLASS}>
+      <div className={SCROLL_WRAP_CLASS}>
         <ul
           ref={scrollRef}
-          className={INGAME_PLAYER_RECORD_LIST_SCROLL_CLASS}
+          className={SCROLL_CLASS}
           aria-label="플레이어 전적 목록"
         >
           {players.map((player, index) => {

@@ -4,8 +4,8 @@ import { useInGameStore } from "../../store/ingameStore.js"
 import { fetchSnapshot } from "../../socket/session.js"
 import { openAttempt } from "./attempt.js"
 
-const SESSION_SNAPSHOT_TIMEOUT_MS = 5000
-const SNAPSHOT_RETRY_BUDGET_MS = 5000
+const SESSION_SNAP_TIMEOUT_MS = 5000
+const RETRY_BUDGET_MS = 5000
 const SESSION_ROUTING_PENDING_CODE = "SESSION_ROUTING_PENDING"
 
 // 서버가 아직 판을 못 찾았다는 응답
@@ -65,7 +65,7 @@ export function createSnapshotRequester(ctx) {
       ctx.retryRef.current = {
         epoch: requestEpochVersion,
         attempts: 0,
-        deadline: Date.now() + SNAPSHOT_RETRY_BUDGET_MS,
+        deadline: Date.now() + RETRY_BUDGET_MS,
         timerId: null,
       }
     }
@@ -73,7 +73,7 @@ export function createSnapshotRequester(ctx) {
     if (attemptBudget.epoch !== requestEpochVersion) return
     attemptBudget.attempts += 1
     const ackTimeoutMs = Math.max(
-      1, Math.min(SESSION_SNAPSHOT_TIMEOUT_MS, attemptBudget.deadline - Date.now()),
+      1, Math.min(SESSION_SNAP_TIMEOUT_MS, attemptBudget.deadline - Date.now()),
     )
 
     const a = openAttempt(ctx, {

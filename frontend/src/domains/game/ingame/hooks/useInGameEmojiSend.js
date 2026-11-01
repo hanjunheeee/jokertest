@@ -2,28 +2,28 @@
 // 이모지 팔레트가 사용, 보내기는 socket/session.js를 부름
 import { useCallback } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
-import { isSameInGameReceiptScope, readInGameReceiptScope } from "../store/ingameStore.js"
-import { inGameEmojiScopeKey, readInGameEmojiScope } from "../utils/selectInGameEmojiScope.js"
+import { isSameReceiptScope, readInGameReceiptScope } from "../store/ingameStore.js"
+import { inGameEmojiScopeKey, readEmojiScope } from "../utils/selectInGameEmojiScope.js"
 import { emitEmoji } from "../socket/session.js"
 
-export const INGAME_EMOJI_SEND_UNAVAILABLE = "CONNECTION_UNAVAILABLE"
+export const SEND_UNAVAILABLE = "CONNECTION_UNAVAILABLE"
 
-export const INGAME_EMOJI_SEND_ACK_FAILED = "ACK_FAILED"
+export const ACK_FAILED = "ACK_FAILED"
 
 export const INGAME_EMOJI_SEND_STALE = "STALE_SCOPE"
 
 export function useInGameEmojiSend() {
   const send = useCallback(async (itemId) => {
     if (typeof itemId !== "string" || itemId.length === 0) {
-      return { ok: false, code: INGAME_EMOJI_SEND_UNAVAILABLE }
+      return { ok: false, code: SEND_UNAVAILABLE }
     }
 
-    const requestScope = readInGameEmojiScope()
-    if (requestScope === null) return { ok: false, code: INGAME_EMOJI_SEND_UNAVAILABLE }
+    const requestScope = readEmojiScope()
+    if (requestScope === null) return { ok: false, code: SEND_UNAVAILABLE }
 
     const requestSocket = getSocket()
     if (!requestSocket || requestSocket.connected !== true || typeof requestSocket.emitWithAck !== "function") {
-      return { ok: false, code: INGAME_EMOJI_SEND_UNAVAILABLE }
+      return { ok: false, code: SEND_UNAVAILABLE }
     }
 
     const requestReceipt = readInGameReceiptScope({
@@ -38,12 +38,12 @@ export function useInGameEmojiSend() {
         itemId,
       })
     } catch {
-      return { ok: false, code: INGAME_EMOJI_SEND_ACK_FAILED }
+      return { ok: false, code: ACK_FAILED }
     }
 
     // 기다리는 사이 소켓·판·수신 범위가 바뀌었으면 옛 응답으로 봄
     if (getSocket() !== requestSocket) return { ok: false, stale: true, code: INGAME_EMOJI_SEND_STALE }
-    const currentScope = readInGameEmojiScope()
+    const currentScope = readEmojiScope()
     if (inGameEmojiScopeKey(currentScope) !== inGameEmojiScopeKey(requestScope)) {
       return { ok: false, stale: true, code: INGAME_EMOJI_SEND_STALE }
     }
@@ -51,12 +51,12 @@ export function useInGameEmojiSend() {
       accountId: currentScope.accountId,
       identityGeneration: currentScope.identityGeneration,
     })
-    if (!isSameInGameReceiptScope(requestReceipt, currentReceipt)) {
+    if (!isSameReceiptScope(requestReceipt, currentReceipt)) {
       return { ok: false, stale: true, code: INGAME_EMOJI_SEND_STALE }
     }
 
     if (ack === null || typeof ack !== "object" || Array.isArray(ack)) {
-      return { ok: false, code: INGAME_EMOJI_SEND_ACK_FAILED }
+      return { ok: false, code: ACK_FAILED }
     }
     return ack
   }, [])

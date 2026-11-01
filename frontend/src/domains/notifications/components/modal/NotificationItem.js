@@ -6,13 +6,13 @@ import { publicAsset } from "../../../../shared/utils/publicAsset.js"
 import { buildNotificationTargetPath, notificationTargetLabel } from "../../../../shared/constants/notificationTargets.js"
 import { NOTIFICATION_ASSETS } from "../../constants/notificationAssets.js"
 import {
-  NOTIFICATION_ACTION_ROW_CLASS,
-  NOTIFICATION_ERROR_CLASS,
-  NOTIFICATION_ITEM_BODY_CLASS,
-  NOTIFICATION_ITEM_INNER_CLASS,
-  NOTIFICATION_ITEM_SLOT_CLASS,
-  NOTIFICATION_ITEM_SLOT_IMG_CLASS,
-  NOTIFICATION_ITEM_TITLE_CLASS,
+  ACTION_ROW_CLASS,
+  ERROR_CLASS,
+  ITEM_BODY_CLASS,
+  ITEM_INNER_CLASS,
+  ITEM_SLOT_CLASS,
+  ITEM_SLOT_IMG_CLASS,
+  ITEM_TITLE_CLASS,
 } from "../../constants/notificationLayoutStyle.js"
 import { renderActionButton } from "./renderActionButton.js"
 
@@ -39,7 +39,7 @@ export default function NotificationItem({ item, pending, error, onRead, onOpenT
   return createElement(
     "li",
     {
-      className: NOTIFICATION_ITEM_SLOT_CLASS,
+      className: ITEM_SLOT_CLASS,
       "data-notification-id": item.id,
       "data-notification-type": item.type,
       "data-notification-read": unread ? "false" : "true",
@@ -48,22 +48,22 @@ export default function NotificationItem({ item, pending, error, onRead, onOpenT
       src: publicAsset(NOTIFICATION_ASSETS.itemSlot),
       alt: "",
       draggable: false,
-      className: NOTIFICATION_ITEM_SLOT_IMG_CLASS,
+      className: ITEM_SLOT_IMG_CLASS,
     }),
     createElement(
       "div",
-      { className: NOTIFICATION_ITEM_INNER_CLASS },
-      createElement("p", { className: NOTIFICATION_ITEM_TITLE_CLASS }, item.title),
-      createElement("p", { className: NOTIFICATION_ITEM_BODY_CLASS }, item.body),
-      actions.length > 0 ? createElement("div", { className: NOTIFICATION_ACTION_ROW_CLASS }, actions) : null,
+      { className: ITEM_INNER_CLASS },
+      createElement("p", { className: ITEM_TITLE_CLASS }, item.title),
+      createElement("p", { className: ITEM_BODY_CLASS }, item.body),
+      actions.length > 0 ? createElement("div", { className: ACTION_ROW_CLASS }, actions) : null,
       // 읽음 실패: 오류를 지우고 같은 항목을 다시 읽음 처리
       error
         ? createElement(
             "div",
-            { className: NOTIFICATION_ACTION_ROW_CLASS },
+            { className: ACTION_ROW_CLASS },
             createElement(
               "p",
-              { className: NOTIFICATION_ERROR_CLASS, role: "alert", "data-notification-read-error": item.id },
+              { className: ERROR_CLASS, role: "alert", "data-notification-read-error": item.id },
               error,
             ),
             renderActionButton({

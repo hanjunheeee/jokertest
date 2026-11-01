@@ -9,7 +9,7 @@ export const GAME_MATCHING_ASSETS = {
   roomCodeShareFrame: "/frame/방코드 발송 프레임.png",
 }
 
-export const MATCHING_ROOM_CODE_DUMMY = "123456"
+export const ROOM_CODE_DUMMY = "123456"
 
 export const MATCHING_POPUP_COPY = {
   title: "멀티 플레이 매칭",
@@ -31,14 +31,14 @@ export const MATCHING_POPUP_COPY = {
 
 export const MATCHING_MAX_PLAYERS = 10
 
-export const MATCHING_PARTY_SLOTS_DUMMY = [
+export const PARTY_SLOTS_DUMMY = [
   { id: 1, ready: true },
   { id: 2, ready: true },
   { id: 3, ready: false },
   { id: 4, ready: false },
 ]
 
-export const MATCHING_PARTY_SLOTS_DUMMY_10 = [
+export const PARTY_SLOTS_DUMMY_10 = [
   { id: 1, ready: true },
   { id: 2, ready: true },
   { id: 3, ready: false },

@@ -3,9 +3,9 @@ import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import ProfileBorderZoomPanel from "@/shared/ui/profileBorderZoom/ProfileBorderZoomPanel.jsx"
 import {
-  PROFILE_BORDER_ZOOM_BACKDROP_CLASS,
-  PROFILE_BORDER_ZOOM_PANEL_WRAP_CLASS,
-  PROFILE_BORDER_ZOOM_TRANSITION,
+  BACKDROP_CLASS,
+  PANEL_WRAP_CLASS,
+  ZOOM_TRANSITION,
 } from "@/shared/ui/profileBorderZoom/profileBorderZoomLayout.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
@@ -38,16 +38,16 @@ export default function ProfileBorderZoomOverlay({ open, item, onClose }) {
           <motion.button
             type="button"
             aria-label="프로필 테두리 확대 보기 닫기"
-            className={PROFILE_BORDER_ZOOM_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={PROFILE_BORDER_ZOOM_TRANSITION}
+            transition={ZOOM_TRANSITION}
             onClick={onClose}
           />
 
-          <div className={PROFILE_BORDER_ZOOM_PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -55,7 +55,7 @@ export default function ProfileBorderZoomOverlay({ open, item, onClose }) {
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={PROFILE_BORDER_ZOOM_TRANSITION}
+              transition={ZOOM_TRANSITION}
               onClick={(event) => event.stopPropagation()}
             >
               <ProfileBorderZoomPanel item={item} onClose={onClose} />

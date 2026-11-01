@@ -30,12 +30,12 @@ export function adoptIdentityScope(gameId, state) {
 export const getMembershipEpoch = () => epoch
 
 // 지금 신원 범위 버전 (useSyncExternalStore 읽기용)
-export function getInGameIdentityScopeVersion() {
+export function getIdentityScopeVersion() {
   return version
 }
 
 // 신원 범위 바뀜 구독
-export function subscribeInGameIdentityScope(listener) {
+export function subscribeIdentityScope(listener) {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }

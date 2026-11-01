@@ -1,7 +1,7 @@
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
 import {
-  GAME_SETUP_FORM_ACTION_BTN_CLASS,
-  GAME_SETUP_FORM_ACTION_LABEL_CLASS,
+  FORM_ACTION_BTN_CLASS,
+  FORM_ACTION_LABEL_CLASS,
 } from "../constants/gameSetupFormActions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -18,7 +18,7 @@ export default function GameSetupCancelButton({
       onClick={onClick}
       disabled={disabled}
       data-sfx-kind="ui-cancel"
-      className={GAME_SETUP_FORM_ACTION_BTN_CLASS}
+      className={FORM_ACTION_BTN_CLASS}
       style={{ outline: "none" }}
     >
       <PublicAsset
@@ -26,7 +26,7 @@ export default function GameSetupCancelButton({
         alt=""
         className="block h-auto w-full select-none"
       />
-      <span className={GAME_SETUP_FORM_ACTION_LABEL_CLASS}>{label}</span>
+      <span className={FORM_ACTION_LABEL_CLASS}>{label}</span>
     </button>
   )
 }

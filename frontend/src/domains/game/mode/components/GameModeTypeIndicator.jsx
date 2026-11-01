@@ -1,6 +1,6 @@
 import {
-  GAME_MODE_INDICATOR_ASSETS,
-  GAME_MODE_INDICATOR_LABELS,
+  INDICATOR_ASSETS,
+  INDICATOR_LABELS,
 } from "@/domains/game/mode/constants/gameModeIndicatorAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
@@ -19,13 +19,13 @@ const SIZE_CLASS = {
   },
 }
 
-export default function GameModeTypeIndicator({ label = GAME_MODE_INDICATOR_LABELS.multi, size = "default" }) {
+export default function GameModeTypeIndicator({ label = INDICATOR_LABELS.multi, size = "default" }) {
   const classes = SIZE_CLASS[size] ?? SIZE_CLASS.default
 
   return (
     <div className={classes.wrap} aria-label="게임 유형">
       <div className={classes.badge} aria-label={label}>
-        <PublicAsset src={GAME_MODE_INDICATOR_ASSETS.tabActive} alt="" className="block h-auto w-full select-none" />
+        <PublicAsset src={INDICATOR_ASSETS.tabActive} alt="" className="block h-auto w-full select-none" />
         <span className={classes.label}>{label}</span>
       </div>
     </div>

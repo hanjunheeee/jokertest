@@ -1,18 +1,18 @@
 import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
-import { FRIEND_INVITE_MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
-import { FRIEND_INVITE_MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
+import { MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
+import { MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
 import {
-  FRIEND_INVITE_INFO_CLASS,
-  FRIEND_INVITE_NAME_CLASS,
-  FRIEND_INVITE_NAME_ROW_CLASS,
-  FRIEND_INVITE_PROFILE_PHOTO_WRAP_CLASS,
-  FRIEND_INVITE_PROFILE_WRAP_CLASS,
-  FRIEND_INVITE_ROW_ACTION_BTN_CLASS,
-  FRIEND_INVITE_ROW_ACTION_BTN_IMG_CLASS,
-  FRIEND_INVITE_ROW_ACTION_BTN_LABEL_CLASS,
+  INFO_CLASS,
+  NAME_CLASS,
+  NAME_ROW_CLASS,
+  PROFILE_PHOTO_WRAP_CLASS,
+  PROFILE_WRAP_CLASS,
+  ROW_ACTION_BTN_CLASS,
+  ROW_ACTION_BTN_IMG_CLASS,
+  ROW_ACTION_BTN_LABEL_CLASS,
   FRIEND_INVITE_ROW_CLASS,
-  FRIEND_INVITE_ROW_INNER_CLASS,
-  FRIEND_INVITE_STATS_CLASS,
+  ROW_INNER_CLASS,
+  STATS_CLASS,
 } from "../../constants/friendInviteModalLayout.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
@@ -35,18 +35,18 @@ export default function FriendInviteRow({
 
   return (
     <li className={FRIEND_INVITE_ROW_CLASS} data-friend-id={id}>
-      <div className={FRIEND_INVITE_ROW_INNER_CLASS}>
+      <div className={ROW_INNER_CLASS}>
         <PlayerProfilePortrait
           photoSrc={portraitSrc}
           frameSrc={frameSrc}
-          wrapClassName={FRIEND_INVITE_PROFILE_WRAP_CLASS}
-          photoWrapClassName={FRIEND_INVITE_PROFILE_PHOTO_WRAP_CLASS}
+          wrapClassName={PROFILE_WRAP_CLASS}
+          photoWrapClassName={PROFILE_PHOTO_WRAP_CLASS}
         />
 
-        <div className={FRIEND_INVITE_INFO_CLASS}>
-          <div className={FRIEND_INVITE_NAME_ROW_CLASS}>
-            <p className={FRIEND_INVITE_NAME_CLASS}>{name}</p>
-            <p className={FRIEND_INVITE_STATS_CLASS} data-testid={`friend-invite-stats-${id}`}>
+        <div className={INFO_CLASS}>
+          <div className={NAME_ROW_CLASS}>
+            <p className={NAME_CLASS}>{name}</p>
+            <p className={STATS_CLASS} data-testid={`friend-invite-stats-${id}`}>
               {formatPlayerRecordStats({
                 totalGames: accountTotalGames,
                 winRate: accountWinRate,
@@ -59,24 +59,24 @@ export default function FriendInviteRow({
           type="button"
           aria-label={
             inviting
-              ? FRIEND_INVITE_MODAL_COPY.invitingFriendAria(name)
-              : FRIEND_INVITE_MODAL_COPY.inviteFriendAria(name)
+              ? MODAL_COPY.invitingFriendAria(name)
+              : MODAL_COPY.inviteFriendAria(name)
           }
           disabled={inviting}
           data-sfx-kind={inviting ? undefined : "ui-confirm"}
           onClick={() => { if (!inviting) onInvite?.(id) }}
-          className={FRIEND_INVITE_ROW_ACTION_BTN_CLASS}
+          className={ROW_ACTION_BTN_CLASS}
           style={{ outline: "none" }}
         >
           <PublicAsset
-            src={inviting ? FRIEND_INVITE_MODAL_ASSETS.cancelButton : FRIEND_INVITE_MODAL_ASSETS.inviteButton}
+            src={inviting ? MODAL_ASSETS.cancelButton : MODAL_ASSETS.inviteButton}
             alt=""
-            className={FRIEND_INVITE_ROW_ACTION_BTN_IMG_CLASS}
+            className={ROW_ACTION_BTN_IMG_CLASS}
           />
-          <span className={FRIEND_INVITE_ROW_ACTION_BTN_LABEL_CLASS}>
+          <span className={ROW_ACTION_BTN_LABEL_CLASS}>
             {inviting
-              ? FRIEND_INVITE_MODAL_COPY.invitingActionLabel
-              : FRIEND_INVITE_MODAL_COPY.inviteActionLabel}
+              ? MODAL_COPY.invitingActionLabel
+              : MODAL_COPY.inviteActionLabel}
           </span>
         </button>
       </div>

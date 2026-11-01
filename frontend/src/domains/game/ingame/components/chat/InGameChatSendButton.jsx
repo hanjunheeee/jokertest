@@ -1,21 +1,21 @@
 import { INGAME_CHAT_ASSETS } from "../../constants/chat/ingameChatAssets.js"
 import {
-  getInGameChatSendButtonClass,
-  getInGameChatSendButtonLabelClass,
+  getSendBtnClass,
+  getSendBtnLabelClass,
 } from "../../constants/chat/ingameChatLayout.js"
-import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
+import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export default function InGameChatSendButton({
   onSend,
   className = "",
 }) {
-  const variant = useInGameChatVariant()
+  const variant = useChatVariant()
 
   return (
     <button
       type="button"
-      className={`${getInGameChatSendButtonClass(variant)} ${className}`.trim()}
+      className={`${getSendBtnClass(variant)} ${className}`.trim()}
       aria-label="채팅 보내기"
       onClick={onSend}
       style={{ outline: "none" }}
@@ -26,7 +26,7 @@ export default function InGameChatSendButton({
         className="block h-auto w-full select-none"
       />
       <span
-        className={getInGameChatSendButtonLabelClass(variant)}
+        className={getSendBtnLabelClass(variant)}
         aria-hidden="true"
       >
         보내기

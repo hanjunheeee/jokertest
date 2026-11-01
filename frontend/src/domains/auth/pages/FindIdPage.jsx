@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import FindIdForm from "@/domains/auth/components/recovery/FindIdForm.jsx"
-import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { useFindId } from "@/domains/auth/hooks/recovery/useFindId.js"
 
 // 찾았으면 가린 이메일, 아니면 입력 칸
@@ -28,7 +28,7 @@ export default function FindIdPage() {
             <p className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body">
               가입하신 이메일은 아래와 같아요
             </p>
-            <p role="status" className={`${AUTH_RECOVERY_ALERT_CLASS} text-center`}>
+            <p role="status" className={`${RECOVERY_ALERT_CLASS} text-center`}>
               {find.maskedEmail}
             </p>
             <button type="button" onClick={find.backToIdle} className="auth-text-link">다시 찾기</button>

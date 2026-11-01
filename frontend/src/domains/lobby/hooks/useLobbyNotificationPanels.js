@@ -2,20 +2,20 @@ import { useCallback, useEffect, useState } from "react"
 
 import { useNotificationsStore } from "../../notifications/store/notifications.store.js"
 import {
-  NOTIFICATION_FRIEND_REQUEST_PARAM,
-  NOTIFICATION_GAME_INVITE_PARAM,
+  FRIEND_REQUEST_PARAM,
+  GAME_INVITE_PARAM,
 } from "../../../shared/constants/notificationTargets.js"
 
 export function parseFriendRequestTargetId(searchParams) {
   const raw = typeof searchParams?.get === "function"
-    ? searchParams.get(NOTIFICATION_FRIEND_REQUEST_PARAM)
+    ? searchParams.get(FRIEND_REQUEST_PARAM)
     : null
   return /^\d+$/.test(raw ?? "") ? Number(raw) : null
 }
 
-export function parseGameInviteTargetId(searchParams) {
+export function parseInviteTargetId(searchParams) {
   const raw = typeof searchParams?.get === "function"
-    ? searchParams.get(NOTIFICATION_GAME_INVITE_PARAM)
+    ? searchParams.get(GAME_INVITE_PARAM)
     : null
   return typeof raw === "string" && raw.length > 0 ? raw : null
 }
@@ -28,7 +28,7 @@ export function useLobbyNotificationPanels({ searchParams, navigate } = {}) {
   const [friendRequestOpenSignal, setFriendRequestOpenSignal] = useState(0)
 
   const friendRequestTargetId = parseFriendRequestTargetId(searchParams)
-  const gameInviteTargetId = parseGameInviteTargetId(searchParams)
+  const gameInviteTargetId = parseInviteTargetId(searchParams)
 
   useEffect(() => {
     if (friendRequestTargetId === null && gameInviteTargetId === null) return

@@ -1,6 +1,6 @@
 // 밤 연출 대기 알림 검사·살아 있는지·스냅샷 복원 계획 (순수 계산)
 // 인게임 스토어의 대기 알림 받기·스냅샷 반영·스토어 감시가 사용
-import { isSameInGameReceiptScope } from "./scope.js"
+import { isSameReceiptScope } from "./scope.js"
 
 // 알림 모양 검사: 키는 판·밤 날짜·대기 여부 셋뿐
 export function isValidWait(payload) {
@@ -29,7 +29,7 @@ export function planWaitRestore(response, candidate, ownerScope, previousWait) {
     if (!isWaitLive(previousWait, candidate?.gameId ?? null, candidate?.state ?? null)) {
       return { ok: true, waiting: false }
     }
-    if (!isSameInGameReceiptScope(previousWait.scope, ownerScope)) return { ok: true, waiting: false }
+    if (!isSameReceiptScope(previousWait.scope, ownerScope)) return { ok: true, waiting: false }
     return { ok: true, waiting: true }
   }
   const waiting = response.presentationWaiting

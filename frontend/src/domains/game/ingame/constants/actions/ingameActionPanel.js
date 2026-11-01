@@ -1,49 +1,49 @@
-export const INGAME_ACTION_PANEL_CLASS =
+export const PANEL_CLASS =
   "absolute bottom-[clamp(0.75rem,2vh,1.25rem)] left-[clamp(0.75rem,2vw,1.25rem)] z-30 w-[min(24rem,calc(100vw-1.5rem))] rounded-md border border-[#d8b982]/55 bg-black/72 p-3 text-[#f8ead2] shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-sm"
 
-export const INGAME_ACTION_HEADER_CLASS =
+export const HEADER_CLASS =
   "flex items-center justify-between gap-3 border-b border-[#d8b982]/25 pb-2"
 
-export const INGAME_ACTION_TITLE_CLASS = "text-sm font-semibold tracking-normal text-[#ffe2ad]"
+export const TITLE_CLASS = "text-sm font-semibold tracking-normal text-[#ffe2ad]"
 
-export const INGAME_ACTION_META_CLASS = "text-[0.7rem] leading-tight text-[#cdbb9e]"
+export const META_CLASS = "text-[0.7rem] leading-tight text-[#cdbb9e]"
 
-export const INGAME_ACTION_SECTION_CLASS = "mt-3 space-y-2"
+export const SECTION_CLASS = "mt-3 space-y-2"
 
-export const INGAME_ACTION_CAPTION_CLASS =
+export const CAPTION_CLASS =
   "text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-[#caa565]/80"
 
-export const INGAME_ACTION_BUTTON_ROW_CLASS = "flex flex-wrap gap-2"
+export const BTN_ROW_CLASS = "flex flex-wrap gap-2"
 
-export const INGAME_ACTION_STATUS_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#e7d3ae]/90"
+export const STATUS_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#e7d3ae]/90"
 
-export const INGAME_ACTION_ERROR_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#ff9d8d]"
+export const ERROR_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#ff9d8d]"
 
-export const INGAME_ACTION_ERROR_BANNER_CLASS =
+export const ERROR_BANNER_CLASS =
   "mt-2 rounded-md border border-red-400/30 bg-red-950/45 px-2.5 py-1.5 text-[0.72rem] leading-snug text-red-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 
-export const INGAME_ACTION_BUTTON_CLASS =
+export const BTN_CLASS =
   "min-h-8 rounded border border-[#d8b982]/35 bg-[#2b1c15]/85 px-3 py-1.5 text-xs text-[#f8ead2] transition hover:border-[#f3d28d] hover:bg-[#53321f] disabled:cursor-not-allowed disabled:opacity-40"
 
-export const INGAME_ACTION_TARGET_BUTTON_CLASS =
+export const TARGET_BTN_CLASS =
   "min-h-8 rounded border border-[#927556]/45 bg-black/35 px-2 py-1 text-left text-xs text-[#f8ead2] transition hover:border-[#f3d28d] disabled:cursor-not-allowed disabled:opacity-40"
 
-export const INGAME_ACTION_SELECTED_TARGET_BUTTON_CLASS =
-  `${INGAME_ACTION_TARGET_BUTTON_CLASS} border-[#f3d28d] bg-[#5b321d]/80`
+export const SELECTED_TARGET_BTN_CLASS =
+  `${TARGET_BTN_CLASS} border-[#f3d28d] bg-[#5b321d]/80`
 
-export const INGAME_ACTION_TARGET_GRID_CLASS = "grid max-h-36 grid-cols-2 gap-2 overflow-y-auto pr-1"
+export const TARGET_GRID_CLASS = "grid max-h-36 grid-cols-2 gap-2 overflow-y-auto pr-1"
 
-export const INGAME_ACTION_TARGET_NAME_CLASS = "block truncate text-[0.78rem] font-medium text-[#f8ead2]"
+export const TARGET_NAME_CLASS = "block truncate text-[0.78rem] font-medium text-[#f8ead2]"
 
-export const INGAME_ACTION_TARGET_STATUS_ROW_CLASS =
+export const TARGET_STATUS_ROW_CLASS =
   "flex items-center gap-1 text-[0.62rem] font-medium tracking-wide text-[#cdbb9e]/85"
 
-export const INGAME_ACTION_TARGET_STATUS_DOT_ALIVE_CLASS =
+export const TARGET_STATUS_DOT_ALIVE_CLASS =
   "h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/80 shadow-[0_0_4px_rgba(52,211,153,0.7)]"
 
-export const INGAME_ACTION_TARGET_STATUS_DOT_DEAD_CLASS = "h-1.5 w-1.5 shrink-0 rounded-full bg-red-400/70"
+export const TARGET_STATUS_DOT_DEAD_CLASS = "h-1.5 w-1.5 shrink-0 rounded-full bg-red-400/70"
 
-export const INGAME_ACTION_TARGET_STATUS_DOT_DISCONNECTED_CLASS =
+export const TARGET_STATUS_DOT_DISCONNECTED_CLASS =
   "h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400/60"
 
 const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({

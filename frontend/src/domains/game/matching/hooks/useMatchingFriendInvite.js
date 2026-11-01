@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from "react"
-import { FRIEND_INVITE_DUMMY_FRIENDS } from "../constants/friendInviteModalDummyData.js"
+import { DUMMY_FRIENDS } from "../constants/friendInviteModalDummyData.js"
 
 export function useMatchingFriendInvite({ roomId = null } = {}) {
   const [modalOpen, setModalOpen] = useState(false)
   const [invitingIds, setInvitingIds] = useState(() => {
     const initial = new Set()
-    for (const friend of FRIEND_INVITE_DUMMY_FRIENDS) {
+    for (const friend of DUMMY_FRIENDS) {
       if (friend.initiallyInviting) initial.add(friend.id)
     }
     return initial
@@ -14,7 +14,7 @@ export function useMatchingFriendInvite({ roomId = null } = {}) {
   const canInvite = roomId !== null
 
   const inviteFriends = useMemo(
-    () => FRIEND_INVITE_DUMMY_FRIENDS.map(({ initiallyInviting: _ignored, ...friend }) => friend),
+    () => DUMMY_FRIENDS.map(({ initiallyInviting: _ignored, ...friend }) => friend),
     [],
   )
 

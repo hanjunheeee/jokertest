@@ -1,6 +1,6 @@
 // 받은 친구 신청 줄 목록
 // FriendAcceptTab이 검색 결과 또는 전체 신청을 넘겨 그림
-import { FRIEND_ACCEPT_LIST_CLASS } from "../../../../constants/friendListStyle.js"
+import { ACCEPT_LIST_CLASS } from "../../../../constants/friendListStyle.js"
 import IncomingFriendRow from "../IncomingFriendRow.jsx"
 import FriendAcceptEmptyState from "./FriendAcceptEmptyState.jsx"
 
@@ -9,7 +9,7 @@ export default function FriendAcceptRequestList({
   incomingRequests, isFiltering, onAccept, onBlock, processingRequestIds, targetRequestId,
 }) {
   return (
-    <ul className={FRIEND_ACCEPT_LIST_CLASS}>
+    <ul className={ACCEPT_LIST_CLASS}>
       {incomingRequests.length === 0 ? (
         <FriendAcceptEmptyState isFiltering={isFiltering} />
       ) : (

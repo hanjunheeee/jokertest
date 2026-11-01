@@ -2,7 +2,7 @@
 // 결과 화면·게임 설정 화면·인게임 설정 탭이 씀, 시험이 쓰는 export 이름 그대로 둠
 import { create } from "zustand"
 import { sanitizeRestoreSource, sanitizeRoomSettings } from "../utils/roomSettingsSourceSanitize.js"
-import { NEXT_ROOM_SETTINGS_STATUS } from "../constants/nextRoomSettings.js"
+import { SETTINGS_STATUS } from "../constants/nextRoomSettings.js"
 import { isNonEmptyString } from "../../shared/utils/valueChecks.js"
 import { persistActions } from "./nextRoomSettings/persistActions.js"
 import { restoreAction } from "./nextRoomSettings/restoreAction.js"
@@ -10,8 +10,8 @@ import { restoreAction } from "./nextRoomSettings/restoreAction.js"
 export { sanitizeRestoreSource, sanitizeRoomSettings }
 export {
   NEXT_ROOM_SETTINGS_RESTORE_CODES,
-  NEXT_ROOM_SETTINGS_SCHEMA_VERSION,
-  NEXT_ROOM_SETTINGS_STATUS,
+  SETTINGS_SCHEMA_VERSION,
+  SETTINGS_STATUS,
 } from "../constants/nextRoomSettings.js"
 export { nextRoomSettingsStorageKey } from "../utils/nextRoomRecord.js"
 
@@ -20,7 +20,7 @@ const INITIAL_STATE = Object.freeze({
   accountId: null,
   selectionGeneration: 0,
   enabled: false,
-  status: NEXT_ROOM_SETTINGS_STATUS.IDLE,
+  status: SETTINGS_STATUS.IDLE,
   pendingRetry: null,
   clearIntent: false,
 })

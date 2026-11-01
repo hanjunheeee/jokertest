@@ -1,6 +1,6 @@
 import BannerProfilePortrait from "./BannerProfilePortrait.jsx"
 import BannerTextPanel from "./BannerTextPanel.jsx"
-import { MY_PAGE_BANNER_ROOT_CLASS } from "../../constants/myPageBannerStyle.js"
+import { ROOT_CLASS } from "../../constants/myPageBannerStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
 export default function BannerMainButton({
@@ -22,7 +22,7 @@ export default function BannerMainButton({
       type={isInteractive ? "button" : undefined}
       aria-label={isInteractive ? "마이페이지" : undefined}
       onClick={onClick}
-      className={`${MY_PAGE_BANNER_ROOT_CLASS} ${isInteractive ? "interactive-scale w-full border-0 bg-transparent p-0" : "w-full"} ${className}`}
+      className={`${ROOT_CLASS} ${isInteractive ? "interactive-scale w-full border-0 bg-transparent p-0" : "w-full"} ${className}`}
     >
       <PublicAsset src={bannerSrc} alt="" className={bannerImageClassName} />
 

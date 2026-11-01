@@ -3,7 +3,7 @@ import TutorialGuideOverlay from "@/shared/ui/tutorialGuide/TutorialGuideOverlay
 import {
   GENERAL_SETTING_ACTIONS,
   GENERAL_SETTING_CHECKBOXES,
-  GENERAL_SETTING_SECTIONS,
+  SETTING_SECTIONS,
   GENERAL_SETTING_TEXT_SIZE,
 } from "../../constants/generalSettings.js"
 import { SETTING_ASSETS } from "../../constants/settingAssets.js"
@@ -95,7 +95,7 @@ export default function GeneralSettingsTab() {
   return (
     <>
       <div className="flex min-h-0 flex-col pb-[clamp(0.35rem,0.85vh,0.5rem)]">
-      <h3 className={SECTION_TITLE_CLASS}>{GENERAL_SETTING_SECTIONS.screen}</h3>
+      <h3 className={SECTION_TITLE_CLASS}>{SETTING_SECTIONS.screen}</h3>
       {screenItems.map(({ id, label }) => (
         <SettingCheckboxRow
           key={id}
@@ -116,7 +116,7 @@ export default function GeneralSettingsTab() {
         />
       </div>
 
-      <h3 className={SECTION_TITLE_CLASS}>{GENERAL_SETTING_SECTIONS.notification}</h3>
+      <h3 className={SECTION_TITLE_CLASS}>{SETTING_SECTIONS.notification}</h3>
       {notificationItems.map(({ id, label }) => (
         <SettingCheckboxRow
           key={id}

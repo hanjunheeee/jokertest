@@ -5,7 +5,7 @@ import { useAuthStore } from '../../auth/store/auth.store.js';
 let inFlightProfileFetch = null;
 
 let profileFetchSequence = 0;
-let appliedProfileFetchSequence = 0;
+let appliedFetchSeq = 0;
 
 const isDisplayableGameCount = (value) => Number.isSafeInteger(value) && value >= 0;
 const isDisplayableWinRate = (value) =>
@@ -42,15 +42,15 @@ export const useUserProfileStore = create((set, get) => ({
             const data = await getMyProfileApi();
             if (get().requestGeneration !== generation) return;
             if (get().invalidationRevision !== startedAtRevision) return;
-            if (sequence < appliedProfileFetchSequence) return;
+            if (sequence < appliedFetchSeq) return;
             assertDisplayableProfile(data);
-            appliedProfileFetchSequence = sequence;
+            appliedFetchSeq = sequence;
             set({ data, loading: false, appliedRevision: startedAtRevision, error: null });
         } catch (error) {
             if (get().requestGeneration !== generation) return;
             if (get().invalidationRevision !== startedAtRevision) return;
-            if (sequence < appliedProfileFetchSequence) return;
-            appliedProfileFetchSequence = sequence;
+            if (sequence < appliedFetchSeq) return;
+            appliedFetchSeq = sequence;
             console.error("프로필 불러오기 실패", error);
             set({ loading: false, error: { message: "프로필을 불러오지 못했습니다." } });
         }
@@ -84,7 +84,7 @@ export const useUserProfileStore = create((set, get) => ({
 
     reset: () => set((state) => {
         inFlightProfileFetch = null;
-        appliedProfileFetchSequence = profileFetchSequence;
+        appliedFetchSeq = profileFetchSequence;
         return {
             data: null,
             loading: true,

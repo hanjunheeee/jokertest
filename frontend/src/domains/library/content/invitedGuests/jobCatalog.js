@@ -1,7 +1,7 @@
 import { INVITED_GUESTS_ASSETS } from "../../constants/invitedGuests/assets.js"
 import {
-  INVITED_GUESTS_STANDING_IMAGE_LG_CLASS,
-  INVITED_GUESTS_STANDING_IMAGE_WRAP_RAISED_CLASS,
+  STANDING_IMG_LG_CLASS,
+  STANDING_IMG_WRAP_RAISED_CLASS,
 } from "../../constants/invitedGuests/layoutStyle.js"
 
 export const INVITED_GUESTS_JOB_CATALOG = {
@@ -16,14 +16,14 @@ export const INVITED_GUESTS_JOB_CATALOG = {
     description:
       "그날 밤, 폭풍우가 저택을 뒤덮었지만 귀족들은 웃음을 원했다. 날씨가 어떻든 그들의 흥은 멈추지 않아야 했으니까. 광대는 비에 젖은 채 그들을 즐겁게 하기 위해 불려왔다. 가면 뒤의 귀족들에게 그는 사람이 아닌 놀이에 불과했다. \n\n 그 순간 광대는 깨달았다. 자신만이 가면을 쓰지 않았다는 것을. 그는 무도회에 놓인 가면을 집어 들었다. 웃음을 지우고 역할을 뒤엎기 위해. 그 밤, 광대는 웃음을 멈췄고 무도회는 침묵을 배웠다. 살인은 복수가 아니라 공연이 되었다. 이제 무도회는 광대를 즐기지 않는다. 광대가 무도회를 연다.",
     standingImage: INVITED_GUESTS_ASSETS.clownStanding,
-    standingImageClass: INVITED_GUESTS_STANDING_IMAGE_LG_CLASS,
+    standingImageClass: STANDING_IMG_LG_CLASS,
   },
   doctor: {
     jobName: "주치의",
     description:
       "그는 이 밤이 위험해질 것을 알고 있었다. 웃음이 많을수록, 술잔을 비워갈수록 사고는 늘어나기 마련이니까.\n\n주치의는 무도회에 초대받은 유일한 이방인이었다. 즐기러 온 것이 아니라, 대비하기 위해 불려온 사람. 그는 누구의 편도 아니었다. 귀족의 편도, 광대의 편도 아니었다.\n\n그저, 아직 끝나지 않은 숨을 하나라도 더 붙잡고 싶었을 뿐이다. 그러나 그의 선의는 누구도 증명할 수 없다. 그가 살린 숨결이 과연 누구의 것이었는지조차.",
     standingImage: INVITED_GUESTS_ASSETS.doctorStanding,
-    standingImageWrapClass: INVITED_GUESTS_STANDING_IMAGE_WRAP_RAISED_CLASS,
+    standingImageWrapClass: STANDING_IMG_WRAP_RAISED_CLASS,
   },
   guard: {
     jobName: "경비원",

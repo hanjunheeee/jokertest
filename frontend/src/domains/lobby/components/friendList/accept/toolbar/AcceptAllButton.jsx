@@ -1,6 +1,6 @@
 // 받은 친구 신청 전부 수락 버튼
 // FriendAcceptToolbar가 그림
-import { FRIEND_ACCEPT_ALL_BUTTON_CLASS, FRIEND_ACCEPT_ALL_LABEL_CLASS, FRIEND_ACCEPT_BUTTON_IMAGE_CLASS } from "../../../../constants/friendListStyle.js"
+import { ACCEPT_ALL_BTN_CLASS, ACCEPT_ALL_LABEL_CLASS, ACCEPT_BTN_IMG_CLASS } from "../../../../constants/friendListStyle.js"
 import { FRIEND_LIST_ASSETS } from "../../../../constants/friendListAssets.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
@@ -10,7 +10,7 @@ export default function AcceptAllButton({ onClick, running }) {
     <button
       type="button"
       onClick={() => { if (!running) onClick?.() }}
-      className={FRIEND_ACCEPT_ALL_BUTTON_CLASS}
+      className={ACCEPT_ALL_BTN_CLASS}
       aria-label={running ? "전부 수락 처리 중" : "전부 수락"}
       aria-disabled={running}
       disabled={running}
@@ -19,9 +19,9 @@ export default function AcceptAllButton({ onClick, running }) {
       <PublicAsset
         src={FRIEND_LIST_ASSETS.acceptAllButton}
         alt=""
-        className={FRIEND_ACCEPT_BUTTON_IMAGE_CLASS}
+        className={ACCEPT_BTN_IMG_CLASS}
       />
-      <span className={FRIEND_ACCEPT_ALL_LABEL_CLASS}>{running ? "처리 중…" : "전부 수락"}</span>
+      <span className={ACCEPT_ALL_LABEL_CLASS}>{running ? "처리 중…" : "전부 수락"}</span>
     </button>
   )
 }

@@ -1,20 +1,20 @@
-export const INGAME_PARCHMENT_MODAL_REDUCED_TRANSITION = {
+export const REDUCED_TRANSITION = {
   duration: 0.01,
 }
 
-export const INGAME_PARCHMENT_MODAL_PARCHMENT_UNFOLD_TRANSITION = {
+export const PARCHMENT_UNFOLD_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1],
 }
 
-export const INGAME_PARCHMENT_MODAL_SCALE_TRANSITION =
-  INGAME_PARCHMENT_MODAL_PARCHMENT_UNFOLD_TRANSITION
+export const SCALE_TRANSITION =
+  PARCHMENT_UNFOLD_TRANSITION
 
-export function getInGameParchmentModalMotionPreset(animation) {
+export function getMotionPreset(animation) {
   if (animation === "parchment-unfold") {
     return {
-      transition: INGAME_PARCHMENT_MODAL_PARCHMENT_UNFOLD_TRANSITION,
-      reducedTransition: INGAME_PARCHMENT_MODAL_REDUCED_TRANSITION,
+      transition: PARCHMENT_UNFOLD_TRANSITION,
+      reducedTransition: REDUCED_TRANSITION,
       transformOrigin: "center",
       getPanelInitial: (reduced) =>
         reduced ? { opacity: 0 } : { opacity: 0, scaleY: 0.06, y: -10 },
@@ -27,8 +27,8 @@ export function getInGameParchmentModalMotionPreset(animation) {
 
   if (animation === "scale") {
     return {
-      transition: INGAME_PARCHMENT_MODAL_SCALE_TRANSITION,
-      reducedTransition: INGAME_PARCHMENT_MODAL_REDUCED_TRANSITION,
+      transition: SCALE_TRANSITION,
+      reducedTransition: REDUCED_TRANSITION,
       transformOrigin: "center",
       getPanelInitial: (reduced) =>
         reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 },

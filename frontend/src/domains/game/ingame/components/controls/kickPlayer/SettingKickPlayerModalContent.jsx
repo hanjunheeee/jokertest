@@ -2,10 +2,10 @@ import { useRef } from "react"
 import { getPlayerRecordListFallbackProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../constants/controls/kickPlayer/ingameKickPlayerData.js"
 import {
-  INGAME_KICK_PLAYER_MODAL_NOTICE_CLASS,
-  INGAME_KICK_PLAYER_MODAL_SCROLL_CLASS,
-  INGAME_KICK_PLAYER_MODAL_SCROLL_WRAP_CLASS,
-  INGAME_KICK_PLAYER_MODAL_SUBTITLE_CLASS,
+  MODAL_NOTICE_CLASS,
+  MODAL_SCROLL_CLASS,
+  MODAL_SCROLL_WRAP_CLASS,
+  MODAL_SUBTITLE_CLASS,
 } from "../../../constants/controls/kickPlayer/ingameKickPlayerLayout.js"
 import { KICK_REQUEST_STATUS } from "../../../constants/ingameKick.js"
 import SettingKickPlayerRow from "./SettingKickPlayerRow.jsx"
@@ -29,10 +29,10 @@ export default function SettingKickPlayerModalContent({
 
   return (
     <>
-      <p className={INGAME_KICK_PLAYER_MODAL_SUBTITLE_CLASS}>
+      <p className={MODAL_SUBTITLE_CLASS}>
         {INGAME_KICK_PLAYER_MODAL_COPY.subtitle}
       </p>
-      <p className={INGAME_KICK_PLAYER_MODAL_NOTICE_CLASS}>{INGAME_KICK_PLAYER_MODAL_COPY.notice}</p>
+      <p className={MODAL_NOTICE_CLASS}>{INGAME_KICK_PLAYER_MODAL_COPY.notice}</p>
 
       {pendingTarget ? (
         <div role="alertdialog" aria-label="추방 확인" data-testid="kick-confirm">
@@ -81,10 +81,10 @@ export default function SettingKickPlayerModalContent({
         </p>
       ) : null}
 
-      <div className={INGAME_KICK_PLAYER_MODAL_SCROLL_WRAP_CLASS}>
+      <div className={MODAL_SCROLL_WRAP_CLASS}>
         <ul
           ref={scrollRef}
-          className={INGAME_KICK_PLAYER_MODAL_SCROLL_CLASS}
+          className={MODAL_SCROLL_CLASS}
           aria-label={INGAME_KICK_PLAYER_MODAL_COPY.listAriaLabel}
         >
           {targets.map((player, index) => {

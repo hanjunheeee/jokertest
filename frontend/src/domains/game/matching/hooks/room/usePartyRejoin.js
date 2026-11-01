@@ -8,10 +8,10 @@ import { useInGameStore } from '../../../ingame/store/ingameStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
 import { PARTY_POLL_MS } from '../../constants/roomTiming.js'
 import {
-  clearPartyRejoinGameId,
-  consumePartyMatchingRoomReady,
-  persistPartyRejoinGameId,
-  rememberPartyMatchingRoomReady,
+  clearRejoinGameId,
+  consumeRoomReady,
+  persistRejoinGameId,
+  rememberRoomReady,
 } from '../../../shared/utils/partyMatchingRejoin.js'
 import { askPartyRoom, joinByCode, onParty } from '../../socket/party.js'
 import { askRoom } from '../../socket/room.js'
@@ -34,7 +34,7 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
     const rememberGameId = (gameId) => {
       if (typeof gameId !== 'string' || gameId.length === 0) return
       endedIdRef.current = gameId
-      persistPartyRejoinGameId(attachedUuid, gameId)
+      persistRejoinGameId(attachedUuid, gameId)
     }
 
     // 방에 들어감: 끝난 판 지우고 방 넣고 확인 완료 표시
@@ -44,7 +44,7 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
       const accountId = useAuthStore.getState().user?.uuid ?? null
       useInGameStore.getState().clearGame()
       useMatchingStore.getState().setRoom(payload)
-      clearPartyRejoinGameId(accountId)
+      clearRejoinGameId(accountId)
       partyBusyRef.current = false
       applyGenRef.current += 1
       if (mountedRef.current) setSyncStatus('verified')
@@ -78,7 +78,7 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
 
     // 파티 방 준비됨 방송: 기억해 두고 바로 들어가기 시도
     const handleReady = (payload) => {
-      rememberPartyMatchingRoomReady(payload)
+      rememberRoomReady(payload)
       request(payload)
     }
 
@@ -108,7 +108,7 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
           if (!response?.ok || !response.room) return
           const resolvedGameId = response.gameId ?? endedIdRef.current
           if (resolvedGameId) rememberGameId(resolvedGameId)
-          rememberPartyMatchingRoomReady({ gameId: resolvedGameId, room: response.room })
+          rememberRoomReady({ gameId: resolvedGameId, room: response.room })
           request({ gameId: resolvedGameId, room: response.room })
         })
         .catch(() => {
@@ -117,7 +117,7 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
     }
 
     // 화면 오기 전에 받아 둔 방송이 있으면 먼저 씀, 그다음 바로 한 번 묻기
-    const pendingParty = consumePartyMatchingRoomReady(endedIdRef.current)
+    const pendingParty = consumeRoomReady(endedIdRef.current)
     if (pendingParty) request(pendingParty)
     poll()
 

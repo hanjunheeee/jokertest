@@ -2,7 +2,7 @@
 // FriendListPanel이 패널 열릴 때 그림
 import { motion } from "framer-motion"
 import {
-  FRIEND_PANEL_BACKDROP_CLASS,
+  PANEL_BACKDROP_CLASS,
   FRIEND_PANEL_TRANSITION,
 } from "../../../constants/friendListStyle.js"
 
@@ -12,7 +12,7 @@ export default function FriendListPanelBackdrop({ onClose }) {
     <motion.button
       type="button"
       aria-label="친구 목록 닫기"
-      className={FRIEND_PANEL_BACKDROP_CLASS}
+      className={PANEL_BACKDROP_CLASS}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

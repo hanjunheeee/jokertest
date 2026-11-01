@@ -9,9 +9,9 @@ import {
   ROOM_CODE_ACTION_BTN_LABEL_CLASS,
 } from "../../mode/constants/roomCodeFrameStyles.js"
 import {
-  MATCHING_BTN_SCALE_WRAP_CLASS,
+  BTN_SCALE_WRAP_CLASS,
   MATCHING_BTN_IMG_SCALE_CLASS,
-  MATCHING_MODAL_CLOSE_BTN_CLASS,
+  MODAL_CLOSE_BTN_CLASS,
 } from "../constants/matchingPopupStyles.js"
 import {
   COPY_BTN_CLASS,
@@ -78,7 +78,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
                     type="button"
                     aria-label="방코드 팝업 닫기"
                     onClick={handleClose}
-                    className={MATCHING_MODAL_CLOSE_BTN_CLASS}
+                    className={MODAL_CLOSE_BTN_CLASS}
                   >
                     <PublicAsset
                       src={POPUP_CLOSE_BUTTON}
@@ -98,7 +98,7 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
                       data-copy-status={copyStatus || (canCopy ? "" : ROOM_CODE_COPY_RESULTS.CODE_UNAVAILABLE)}
                       className={canCopy ? COPY_BTN_CLASS : COPY_BTN_DISABLED_CLASS}
                     >
-                      <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
+                      <span className={BTN_SCALE_WRAP_CLASS}>
                         <PublicAsset
                           src={ROOM_INVITE_ASSETS.joinButton}
                           alt=""

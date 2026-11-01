@@ -1,8 +1,8 @@
-function normalizeFriendListFilterQuery(query) {
+function normQuery(query) {
   return query.trim().toLowerCase()
 }
 
-function itemMatchesFriendListFilter(item, normalizedQuery, fields) {
+function matchesFilter(item, normalizedQuery, fields) {
   return fields.some((field) => {
     const value = item?.[field]
     if (value == null) return false
@@ -11,10 +11,10 @@ function itemMatchesFriendListFilter(item, normalizedQuery, fields) {
 }
 
 export function filterFriendListItems(items, query, fields) {
-  const normalizedQuery = normalizeFriendListFilterQuery(query)
+  const normalizedQuery = normQuery(query)
   if (!normalizedQuery) return items
 
-  return items.filter((item) => itemMatchesFriendListFilter(item, normalizedQuery, fields))
+  return items.filter((item) => matchesFilter(item, normalizedQuery, fields))
 }
 
 export function mergeFriendGroups({ onlineFriends, offlineFriends, favoriteFriends }) {

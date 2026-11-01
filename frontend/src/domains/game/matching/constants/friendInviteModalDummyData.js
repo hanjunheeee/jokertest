@@ -1,4 +1,4 @@
-export const FRIEND_INVITE_DUMMY_FRIENDS = [
+export const DUMMY_FRIENDS = [
   {
     id: "dummy-friend-1",
     name: "한국인 김철수",

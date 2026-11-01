@@ -7,7 +7,7 @@ import {
   CHECK_ID_TO_SETTING_KEY,
   OVERALL_NIGHT_ACTION_TIME_ID,
   RANGE_ID_TO_SETTING_KEY,
-  ROOM_SETTINGS_FORM_ERROR_CODES as ERR,
+  ERROR_CODES as ERR,
   STEPPER_ITEMS_BY_ID,
 } from "../../constants/roomSettingsForm.js"
 import { validateRoleComposition } from "../roleComposition.js"
@@ -24,7 +24,7 @@ function fitsStepper(id, value) {
 }
 
 // 항목 정의의 기본값으로 폼 채우기
-export function buildDefaultSetupFormState(items = ALL_SETUP_ITEMS) {
+export function buildDefaultFormState(items = ALL_SETUP_ITEMS) {
   const checks = {}
   const ranges = {}
   for (const item of items) {
@@ -46,7 +46,7 @@ export function buildRoomSettingsFormState(source) {
     return { ok: false, code: ERR.INVALID_ACCESS_TYPE }
   }
 
-  const { checks, ranges } = buildDefaultSetupFormState()
+  const { checks, ranges } = buildDefaultFormState()
 
   checks["private-lobby"] = accessType === "code"
 

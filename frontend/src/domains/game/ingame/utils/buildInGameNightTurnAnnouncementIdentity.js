@@ -1,4 +1,4 @@
-export function buildInGameNightTurnAnnouncementScope({ gameId, authUuid, epochKey }) {
+export function buildAnnouncementScope({ gameId, authUuid, epochKey }) {
   if (typeof gameId !== "string" || gameId.length === 0) return null
   if (typeof authUuid !== "string" || authUuid.length === 0) return null
   if (typeof epochKey !== "string" || epochKey.length === 0) return null

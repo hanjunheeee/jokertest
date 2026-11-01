@@ -1,14 +1,14 @@
 import { motion } from "framer-motion"
 import { getLibraryTab } from "../../../../domains/library/constants/libraryTabs.js"
 import {
-  LIBRARY_INNER_REVEAL_ANIMATE,
-  LIBRARY_INNER_REVEAL_DELAYS,
-  LIBRARY_INNER_REVEAL_INITIAL,
-  LIBRARY_INNER_REVEAL_TRANSITION,
+  INNER_REVEAL_ANIMATE,
+  INNER_REVEAL_DELAYS,
+  INNER_REVEAL_INIT,
+  INNER_REVEAL_TRANSITION,
 } from "../../../../domains/library/constants/libraryEntranceMotion.js"
 import {
   LIBRARY_BOOK_TOC_CLASS,
-  LIBRARY_BOOK_TOC_IMAGE_CLASS,
+  BOOK_TOC_IMG_CLASS,
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
@@ -18,17 +18,17 @@ export default function LibraryTableOfContents({ activeTabId }) {
   return (
     <motion.div
       className={LIBRARY_BOOK_TOC_CLASS}
-      initial={LIBRARY_INNER_REVEAL_INITIAL}
-      animate={LIBRARY_INNER_REVEAL_ANIMATE}
+      initial={INNER_REVEAL_INIT}
+      animate={INNER_REVEAL_ANIMATE}
       transition={{
-        ...LIBRARY_INNER_REVEAL_TRANSITION,
-        delay: LIBRARY_INNER_REVEAL_DELAYS.toc,
+        ...INNER_REVEAL_TRANSITION,
+        delay: INNER_REVEAL_DELAYS.toc,
       }}
     >
       <PublicAsset
         src={activeTab.tocSrc}
         alt={activeTab.label}
-        className={LIBRARY_BOOK_TOC_IMAGE_CLASS}
+        className={BOOK_TOC_IMG_CLASS}
       />
     </motion.div>
   )

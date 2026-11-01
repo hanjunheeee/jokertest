@@ -1,17 +1,17 @@
 import { motion } from "framer-motion"
 import { getForbiddenRecordsPage } from "../../../../domains/library/content/forbiddenRecords/index.js"
 import {
-  FORBIDDEN_STORY_BODY_TRANSITION,
-  FORBIDDEN_STORY_PARAGRAPH_STAGGER,
-  FORBIDDEN_STORY_REVEAL_ANIMATE,
-  FORBIDDEN_STORY_REVEAL_INITIAL,
-  FORBIDDEN_STORY_TITLE_TRANSITION,
+  STORY_BODY_TRANSITION,
+  STORY_PARAGRAPH_STAGGER,
+  STORY_REVEAL_ANIMATE,
+  STORY_REVEAL_INIT,
+  STORY_TITLE_TRANSITION,
 } from "../../../../domains/library/constants/forbiddenRecords/entranceMotion.js"
 import {
-  LIBRARY_FORBIDDEN_LEFT_PAGE_CLASS,
-  LIBRARY_FORBIDDEN_SECTION_BODY_CLASS,
-  LIBRARY_FORBIDDEN_SECTION_BODY_WRAP_CLASS,
-  LIBRARY_FORBIDDEN_SECTION_TITLE_CLASS,
+  LEFT_PAGE_CLASS,
+  SECTION_BODY_CLASS,
+  SECTION_BODY_WRAP_CLASS,
+  SECTION_TITLE_CLASS,
 } from "../../../../domains/library/constants/forbiddenRecords/layoutStyle.js"
 
 function splitBodyParagraphs(body) {
@@ -26,28 +26,28 @@ export default function ForbiddenRecordsLeftPage({ pageIndex = 0 }) {
   const paragraphs = splitBodyParagraphs(left.body)
 
   return (
-    <div className={LIBRARY_FORBIDDEN_LEFT_PAGE_CLASS}>
+    <div className={LEFT_PAGE_CLASS}>
       <section key={pageIndex}>
         <motion.h2
-          className={LIBRARY_FORBIDDEN_SECTION_TITLE_CLASS}
-          initial={FORBIDDEN_STORY_REVEAL_INITIAL}
-          animate={FORBIDDEN_STORY_REVEAL_ANIMATE}
-          transition={FORBIDDEN_STORY_TITLE_TRANSITION}
+          className={SECTION_TITLE_CLASS}
+          initial={STORY_REVEAL_INIT}
+          animate={STORY_REVEAL_ANIMATE}
+          transition={STORY_TITLE_TRANSITION}
         >
           {left.title}
         </motion.h2>
-        <div className={LIBRARY_FORBIDDEN_SECTION_BODY_WRAP_CLASS}>
+        <div className={SECTION_BODY_WRAP_CLASS}>
           {paragraphs.map((paragraph, index) => (
             <motion.p
               key={`${pageIndex}-${index}`}
-              className={LIBRARY_FORBIDDEN_SECTION_BODY_CLASS}
-              initial={FORBIDDEN_STORY_REVEAL_INITIAL}
-              animate={FORBIDDEN_STORY_REVEAL_ANIMATE}
+              className={SECTION_BODY_CLASS}
+              initial={STORY_REVEAL_INIT}
+              animate={STORY_REVEAL_ANIMATE}
               transition={{
-                ...FORBIDDEN_STORY_BODY_TRANSITION,
+                ...STORY_BODY_TRANSITION,
                 delay:
-                  FORBIDDEN_STORY_BODY_TRANSITION.delay +
-                  index * FORBIDDEN_STORY_PARAGRAPH_STAGGER,
+                  STORY_BODY_TRANSITION.delay +
+                  index * STORY_PARAGRAPH_STAGGER,
               }}
             >
               {paragraph}

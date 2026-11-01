@@ -1,9 +1,9 @@
 import { INGAME_CONTROLS_ASSETS } from "../../constants/controls/ingameControlsAssets.js"
 import {
-  INGAME_CONTROL_BTN_CLASS,
-  INGAME_CONTROL_BTN_IMG_CLASS,
-  INGAME_ROLE_REVEAL_BTN_IMG_CLASS,
-  INGAME_TOP_CONTROLS_POSITION_CLASS,
+  BTN_CLASS,
+  BTN_IMG_CLASS,
+  ROLE_REVEAL_BTN_IMG_CLASS,
+  TOP_CONTROLS_POSITION_CLASS,
 } from "../../constants/controls/ingameControlsLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
@@ -13,7 +13,7 @@ function ControlButton({
   src,
   onClick,
   sfxOwner,
-  imgClassName = INGAME_CONTROL_BTN_IMG_CLASS,
+  imgClassName = BTN_IMG_CLASS,
 }) {
   return (
     <button
@@ -21,7 +21,7 @@ function ControlButton({
       data-sfx-owner={sfxOwner}
       aria-label={ariaLabel}
       onClick={onClick}
-      className={INGAME_CONTROL_BTN_CLASS}
+      className={BTN_CLASS}
       style={{ outline: "none" }}
     >
       <PublicAsset src={src} alt="" className={imgClassName} />
@@ -39,7 +39,7 @@ export default function InGameTopControls({
   onSettingsClick,
   onOpenRoleReveal,
   roleRevealAvailable = false,
-  className = INGAME_TOP_CONTROLS_POSITION_CLASS,
+  className = TOP_CONTROLS_POSITION_CLASS,
 }) {
   return (
     <div className={className} aria-label="인게임 컨트롤">
@@ -63,7 +63,7 @@ export default function InGameTopControls({
         <ControlButton
           ariaLabel={INGAME_ROLE_REVEAL_BUTTON_LABEL}
           src={INGAME_ROLE_REVEAL_BUTTON_SRC}
-          imgClassName={INGAME_ROLE_REVEAL_BTN_IMG_CLASS}
+          imgClassName={ROLE_REVEAL_BTN_IMG_CLASS}
           onClick={onOpenRoleReveal}
         />
       ) : null}

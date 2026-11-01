@@ -4,13 +4,13 @@ import {
   DAY_VOTE_READY_DONE_LABEL,
   DAY_VOTE_READY_LABEL,
   DAY_VOTE_READY_SENDING_LABEL,
-  INGAME_ACTION_BUTTON_CLASS,
-  INGAME_ACTION_BUTTON_ROW_CLASS,
+  BTN_CLASS,
+  BTN_ROW_CLASS,
 } from "../../constants/actions/ingameActionPanel.js"
 
-const PHASE_ACTION_ROW_CLASS = `justify-end ${INGAME_ACTION_BUTTON_ROW_CLASS}`
+const PHASE_ACTION_ROW_CLASS = `justify-end ${BTN_ROW_CLASS}`
 
-export const INGAME_PHASE_ACTION_ATTR = "data-ingame-phase-action"
+export const PHASE_ACTION_ATTR = "data-ingame-phase-action"
 
 export const INGAME_PHASE_ACTIONS = Object.freeze({
   DAY_READY: "dayReady",
@@ -93,8 +93,8 @@ export default function InGamePhaseActionRow() {
         <button
           key={entry.action}
           type="button"
-          {...{ [INGAME_PHASE_ACTION_ATTR]: entry.action }}
-          className={INGAME_ACTION_BUTTON_CLASS}
+          {...{ [PHASE_ACTION_ATTR]: entry.action }}
+          className={BTN_CLASS}
           disabled={!entry.enabled}
           onClick={entry.onClick}
         >

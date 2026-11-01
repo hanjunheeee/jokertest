@@ -1,4 +1,4 @@
-export const FRIEND_INVITE_MODAL_COPY = {
+export const MODAL_COPY = {
   title: "친구초대",
   inviteActionLabel: "초대하기",
   invitingActionLabel: "초대중..",

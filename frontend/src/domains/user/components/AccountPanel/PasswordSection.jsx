@@ -1,9 +1,9 @@
 import AuthInputSlot, { LockIcon } from "@/shared/ui/AuthInputSlot.jsx"
 import {
-  ACCOUNT_PANEL_DIVIDER_SECTION_CLASS,
-  ACCOUNT_PANEL_FORM_CLASS,
-  ACCOUNT_PANEL_FORM_HEADING_CLASS,
-  ACCOUNT_PANEL_INPUT_WRAP_CLASS,
+  DIVIDER_SECTION_CLASS,
+  PANEL_FORM_CLASS,
+  PANEL_FORM_HEADING_CLASS,
+  INPUT_WRAP_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import AccountPanelFormActions from "@/domains/user/components/AccountPanel/AccountPanelFormActions.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
@@ -16,11 +16,11 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
   }
 
   return (
-    <section className={ACCOUNT_PANEL_DIVIDER_SECTION_CLASS}>
-      <h3 className={ACCOUNT_PANEL_FORM_HEADING_CLASS}>비밀번호 변경</h3>
+    <section className={DIVIDER_SECTION_CLASS}>
+      <h3 className={PANEL_FORM_HEADING_CLASS}>비밀번호 변경</h3>
 
-      <form onSubmit={handleSubmit} className={ACCOUNT_PANEL_FORM_CLASS}>
-        <div className={ACCOUNT_PANEL_INPUT_WRAP_CLASS}>
+      <form onSubmit={handleSubmit} className={PANEL_FORM_CLASS}>
+        <div className={INPUT_WRAP_CLASS}>
           <AuthInputSlot
             name="currentPassword"
             value={pwForm.currentPassword}
@@ -32,7 +32,7 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
           />
         </div>
 
-        <div className={ACCOUNT_PANEL_INPUT_WRAP_CLASS}>
+        <div className={INPUT_WRAP_CLASS}>
           <AuthInputSlot
             name="newPassword"
             value={pwForm.newPassword}

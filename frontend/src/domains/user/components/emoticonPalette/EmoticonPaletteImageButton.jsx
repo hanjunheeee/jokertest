@@ -1,8 +1,8 @@
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import {
-  EMOTICON_PALETTE_IMAGE_BTN_CLASS,
-  EMOTICON_PALETTE_IMAGE_BTN_IMG_CLASS,
-  EMOTICON_PALETTE_IMAGE_BTN_LABEL_CLASS,
+  IMG_BTN_CLASS,
+  IMG_BTN_IMG_CLASS,
+  IMG_BTN_LABEL_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 
 export default function EmoticonPaletteImageButton({ label, src, disabled, onClick, type = "button" }) {
@@ -11,10 +11,10 @@ export default function EmoticonPaletteImageButton({ label, src, disabled, onCli
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className={EMOTICON_PALETTE_IMAGE_BTN_CLASS}
+      className={IMG_BTN_CLASS}
     >
-      <PublicAsset src={src} alt="" className={EMOTICON_PALETTE_IMAGE_BTN_IMG_CLASS} />
-      <span className={EMOTICON_PALETTE_IMAGE_BTN_LABEL_CLASS}>{label}</span>
+      <PublicAsset src={src} alt="" className={IMG_BTN_IMG_CLASS} />
+      <span className={IMG_BTN_LABEL_CLASS}>{label}</span>
     </button>
   )
 }

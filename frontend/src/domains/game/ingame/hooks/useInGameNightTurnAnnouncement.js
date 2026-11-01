@@ -6,17 +6,17 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import {
   getInGameNightTurnAnnouncement,
-  INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS,
+  ANNOUNCEMENT_MS,
 } from "../constants/nightTurn/ingameNightTurnAnnouncement.js"
 import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
 import {
   buildInGameNightTurnAnnouncementIdentity,
-  buildInGameNightTurnAnnouncementScope,
+  buildAnnouncementScope,
 } from "../utils/buildInGameNightTurnAnnouncementIdentity.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
 import {
-  dismissInGameNightTurnAnnouncement,
-  INITIAL_IN_GAME_NIGHT_TURN_ANNOUNCEMENT,
+  dismissTurnAnnouncement,
+  INITIAL_TURN_ANNOUNCEMENT,
   reduceInGameNightTurnAnnouncement,
 } from "../utils/reduceInGameNightTurnAnnouncement.js"
 import { onConnect } from "../socket/connection.js"
@@ -37,10 +37,10 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
   }, [socket])
 
   const epochKey = `${getInGameSocketEpochId(socket)}#${connectSeq}`
-  const scope = buildInGameNightTurnAnnouncementScope({ gameId, authUuid, epochKey })
+  const scope = buildAnnouncementScope({ gameId, authUuid, epochKey })
   const identity = buildInGameNightTurnAnnouncementIdentity(scope, dayIndex, nightTurnRole)
 
-  const [presentation, setPresentation] = useState(INITIAL_IN_GAME_NIGHT_TURN_ANNOUNCEMENT)
+  const [presentation, setPresentation] = useState(INITIAL_TURN_ANNOUNCEMENT)
   const lastSnapshotSeqRef = useRef(snapshotSeq)
 
   useEffect(() => {
@@ -63,14 +63,14 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
   const activeRole = presentation.active?.role ?? null
 
   const close = useCallback(() => {
-    setPresentation((current) => dismissInGameNightTurnAnnouncement(current, activeIdentity))
+    setPresentation((current) => dismissTurnAnnouncement(current, activeIdentity))
   }, [activeIdentity])
 
   useEffect(() => {
     if (activeIdentity === null) return undefined
     const timer = setTimeout(() => {
-      setPresentation((current) => dismissInGameNightTurnAnnouncement(current, activeIdentity))
-    }, INGAME_NIGHT_TURN_ANNOUNCEMENT_DURATION_MS)
+      setPresentation((current) => dismissTurnAnnouncement(current, activeIdentity))
+    }, ANNOUNCEMENT_MS)
     return () => clearTimeout(timer)
   }, [activeIdentity])
 

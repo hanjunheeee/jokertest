@@ -1,6 +1,6 @@
 // 방 코드 입장 실패 안내 문구 (서버 실패 코드별)
 // hooks/useRoomInvitePage가 씀
-export const ROOM_JOIN_FAILURE_MESSAGES = {
+export const JOIN_FAILURE_MSGS = {
   ROOM_CODE_MISMATCH: "입장 코드가 올바르지 않습니다. 코드를 다시 확인해주세요.",
   ROOM_NOT_FOUND: "방을 찾을 수 없습니다. 이미 사라진 방일 수 있어요.",
   ROOM_ALREADY_STARTED: "이미 게임이 시작된 방이라 입장할 수 없습니다.",

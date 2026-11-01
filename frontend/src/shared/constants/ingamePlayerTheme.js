@@ -15,13 +15,13 @@ export const INGAME_PLAYER_THEME_PALETTE = [
 
 export const INGAME_PLAYER_THEME_PALETTE_SIZE = INGAME_PLAYER_THEME_PALETTE.length
 
-export const INGAME_PLAYER_THEME_TEXT_RENDER_CLASS =
+export const THEME_TEXT_RENDER_CLASS =
   "antialiased [transform:translateZ(0)] [backface-visibility:hidden]"
 
-export const INGAME_PLAYER_THEME_TEXT_SHADOW =
+export const THEME_TEXT_SHADOW =
   "0 1px 2px rgba(0,0,0,0.85)"
 
-export function buildInGamePlayerThemeStyles(color, { emphasized = false } = {}) {
+export function buildThemeStyles(color, { emphasized = false } = {}) {
   return {
     color,
     frameStrokeScale: emphasized ? 1.04 : 1.026,
@@ -36,7 +36,7 @@ export function resolveInGamePlayerTheme(paletteIndex) {
     paletteIndex: paletteIndex % INGAME_PLAYER_THEME_PALETTE_SIZE,
     id: entry.id,
     color: entry.color,
-    styles: buildInGamePlayerThemeStyles(entry.color),
+    styles: buildThemeStyles(entry.color),
   }
 }
 
@@ -46,10 +46,10 @@ export function resolveInGamePlayerThemeByColorIndex(colorIndex) {
   return resolveInGamePlayerTheme(colorIndex)
 }
 
-export function resolveInGamePlayerThemeEmphasized(paletteIndex) {
+export function resolveThemeEmphasized(paletteIndex) {
   const theme = resolveInGamePlayerTheme(paletteIndex)
   return {
     ...theme,
-    styles: buildInGamePlayerThemeStyles(theme.color, { emphasized: true }),
+    styles: buildThemeStyles(theme.color, { emphasized: true }),
   }
 }

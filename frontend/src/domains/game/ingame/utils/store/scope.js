@@ -2,7 +2,7 @@
 // 인게임 스토어·화면·훅이 "같은 계정·판·소속·연결에서 받은 것인지" 볼 때 사용
 
 // 계정·신원 세대·판·소속·소속 세대·연결 세대·소켓 id·연결 여부가 모두 같아야 같음
-export function isSameInGameReceiptScope(a, b) {
+export function isSameReceiptScope(a, b) {
   if (a === null || typeof a !== "object" || b === null || typeof b !== "object") return false
   return a.accountId === b.accountId
     && a.identityGeneration === b.identityGeneration

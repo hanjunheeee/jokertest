@@ -1,7 +1,7 @@
 import { ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
 import { NEXT_ROOM_SETTINGS_RESTORE_CODES } from "../store/nextRoomSettingsStore.js"
 import { buildCreateRoomPayload } from "./buildCreateRoomPayload.js"
-import { buildDefaultSetupFormState, buildRoomSettingsFormState } from "./roomSettingsForm.js"
+import { buildDefaultFormState, buildRoomSettingsFormState } from "./roomSettingsForm.js"
 
 export function resolveNextGameCreateRoomPayload(accountId, readRestoreSource) {
   const read = readRestoreSource(accountId)
@@ -19,7 +19,7 @@ export function resolveNextGameCreateRoomPayload(accountId, readRestoreSource) {
     }
   }
 
-  const { checks, ranges } = buildDefaultSetupFormState()
+  const { checks, ranges } = buildDefaultFormState()
   return buildCreateRoomPayload({
     checks,
     ranges,

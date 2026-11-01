@@ -1,8 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { useEffect } from "react"
 import { dispatchUiSfx } from "../../../../../shared/hooks/useSfxRuntime.js"
-import { INGAME_PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
-import { getInGameParchmentModalMotionPreset } from "../../constants/parchment/ingameParchmentModalMotion.js"
+import { PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
+import { getMotionPreset } from "../../constants/parchment/ingameParchmentModalMotion.js"
 import { getInGameParchmentModalVariant } from "../../constants/parchment/ingameParchmentModalVariants.js"
 import InGameParchmentConfirmButton from "./InGameParchmentConfirmButton.js"
 import InGameParchmentPanel from "./InGameParchmentPanel.jsx"
@@ -26,14 +26,14 @@ export default function InGameParchmentModalAnimated({
   open,
   variantKey,
   onDismiss,
-  confirmLabel = INGAME_PARCHMENT_CONFIRM_LABEL,
+  confirmLabel = PARCHMENT_CONFIRM_LABEL,
   parchmentProps = {},
   wrapProps = {},
   children,
 }) {
   const prefersReducedMotion = useReducedMotion()
   const variant = getInGameParchmentModalVariant(variantKey)
-  const motionPreset = getInGameParchmentModalMotionPreset(variant.animation)
+  const motionPreset = getMotionPreset(variant.animation)
 
   useParchmentModalEscape(onDismiss, open)
 

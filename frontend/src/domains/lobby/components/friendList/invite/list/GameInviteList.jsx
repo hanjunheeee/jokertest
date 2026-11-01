@@ -1,14 +1,14 @@
 // 받은 게임 초대 목록 (비었으면 불러오는 중·없음 안내)
 // GameInviteTab이 그림
-import { FRIEND_ACCEPT_EMPTY_CLASS, FRIEND_ACCEPT_LIST_CLASS } from "../../../../constants/friendListStyle.js"
+import { ACCEPT_EMPTY_CLASS, ACCEPT_LIST_CLASS } from "../../../../constants/friendListStyle.js"
 import GameInviteRow from "./GameInviteRow.jsx"
 
 // 처리 중·오류·대상 표시는 초대 id로 골라 줄에 넘김
 export default function GameInviteList({ invites, status, pendingInviteIds, inviteErrors, onAccept, onDecline, targetInviteId }) {
   return (
-    <ul className={FRIEND_ACCEPT_LIST_CLASS} aria-label="받은 게임 초대">
+    <ul className={ACCEPT_LIST_CLASS} aria-label="받은 게임 초대">
       {invites.length === 0 ? (
-        <li className={FRIEND_ACCEPT_EMPTY_CLASS}>
+        <li className={ACCEPT_EMPTY_CLASS}>
           {status === "loading" ? "초대를 불러오는 중입니다." : "받은 게임 초대가 없습니다."}
         </li>
       ) : (

@@ -1,4 +1,4 @@
-export const INGAME_TRIBUNAL_PRESENTATION_CARD_MOTION = {
+export const CARD_MOTION = {
   hidden: { opacity: 0, scale: 1.55, y: "-8%" },
   visible: {
     opacity: 1,
@@ -8,7 +8,7 @@ export const INGAME_TRIBUNAL_PRESENTATION_CARD_MOTION = {
   },
 }
 
-export const INGAME_TRIBUNAL_PRESENTATION_BUTTON_MOTION = {
+export const BTN_MOTION = {
   hidden: { opacity: 0, scale: 1.45, y: 18 },
   visible: (delay = 0) => ({
     opacity: 1,
@@ -24,17 +24,17 @@ export const INGAME_TRIBUNAL_PRESENTATION_BUTTON_MOTION = {
   }),
 }
 
-export const INGAME_TRIBUNAL_PRESENTATION_BACKDROP_MOTION = {
+export const BACKDROP_MOTION = {
   hidden: { opacity: 0 },
   visible: { opacity: 1, transition: { duration: 0.22, ease: "easeOut" } },
 }
 
-export const INGAME_TRIBUNAL_PRESENTATION_SPLIT_TRANSITION = {
+export const SPLIT_TRANSITION = {
   duration: 0.58,
   ease: [0.22, 1, 0.36, 1],
 }
 
-export const INGAME_TRIBUNAL_PRESENTATION_CHAT_MOTION = {
+export const CHAT_MOTION = {
   hidden: { opacity: 0, y: 48 },
   visible: {
     opacity: 1,

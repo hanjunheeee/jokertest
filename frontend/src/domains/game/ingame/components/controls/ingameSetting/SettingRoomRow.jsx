@@ -1,12 +1,12 @@
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
-  INGAME_SETTING_CHECKBOX_CLASS,
-  INGAME_SETTING_ROOM_ACTION_LINK_CLASS,
-  INGAME_SETTING_ROOM_ACTION_LINK_DANGER_CLASS,
-  INGAME_SETTING_ROOM_ROW_DESC_CLASS,
-  INGAME_SETTING_ROOM_ROW_PLATE_CLASS,
-  INGAME_SETTING_ROOM_ROW_TEXT_CLASS,
-  INGAME_SETTING_ROOM_ROW_TITLE_CLASS,
+  CHECKBOX_CLASS,
+  ROOM_ACTION_LINK_CLASS,
+  ROOM_ACTION_LINK_DANGER_CLASS,
+  ROOM_ROW_DESC_CLASS,
+  ROOM_ROW_PLATE_CLASS,
+  ROOM_ROW_TEXT_CLASS,
+  ROOM_ROW_TITLE_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import CheckBox from "@/shared/ui/CheckBox.jsx"
 
@@ -21,11 +21,11 @@ export default function SettingRoomRow({
   onChange,
 }) {
   return (
-    <div className={INGAME_SETTING_ROOM_ROW_PLATE_CLASS} data-setting-row>
-      <div className={INGAME_SETTING_ROOM_ROW_TEXT_CLASS}>
-        <span className={INGAME_SETTING_ROOM_ROW_TITLE_CLASS}>{title}</span>
+    <div className={ROOM_ROW_PLATE_CLASS} data-setting-row>
+      <div className={ROOM_ROW_TEXT_CLASS}>
+        <span className={ROOM_ROW_TITLE_CLASS}>{title}</span>
         {description ? (
-          <span className={INGAME_SETTING_ROOM_ROW_DESC_CLASS}>{description}</span>
+          <span className={ROOM_ROW_DESC_CLASS}>{description}</span>
         ) : null}
       </div>
 
@@ -35,8 +35,8 @@ export default function SettingRoomRow({
           onClick={onAction}
           className={
             actionTone === "danger"
-              ? INGAME_SETTING_ROOM_ACTION_LINK_DANGER_CLASS
-              : INGAME_SETTING_ROOM_ACTION_LINK_CLASS
+              ? ROOM_ACTION_LINK_DANGER_CLASS
+              : ROOM_ACTION_LINK_CLASS
           }
           style={{ outline: "none" }}
         >
@@ -49,7 +49,7 @@ export default function SettingRoomRow({
           onChange={onChange}
           checkboxSrc={INGAME_SETTING_ASSETS.checkbox}
           checkMarkSrc={INGAME_SETTING_ASSETS.checkMark}
-          className={INGAME_SETTING_CHECKBOX_CLASS}
+          className={CHECKBOX_CLASS}
         />
       )}
     </div>

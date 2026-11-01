@@ -1,9 +1,9 @@
 // 가입 이메일 인증 칸의 받기 버튼 글자·안내 줄 고르기
 // components/SignupEmailVerification.jsx가 사용
 import {
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_ERROR_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_INFO_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS,
+  EMAIL_VERIFICATION_NOTICE_ERROR_CLASS,
+  EMAIL_VERIFICATION_NOTICE_INFO_CLASS,
+  EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS,
 } from "../../constants/signupLayoutStyle.js"
 
 // 받기 버튼 글자: 보내는 중 / 처음 / 재발송 대기 초 / 재발송
@@ -18,16 +18,16 @@ export function sendButtonLabel(stage, resendRemainingSec) {
 export function pickNotice({ isVerified, stage, message, codeRemainingSec }) {
   if (isVerified) {
     return {
-      className: SIGNUP_EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS,
+      className: EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS,
       text: "이메일 인증이 완료되었습니다.",
     }
   }
   if (message) {
-    return { className: SIGNUP_EMAIL_VERIFICATION_NOTICE_ERROR_CLASS, text: message }
+    return { className: EMAIL_VERIFICATION_NOTICE_ERROR_CLASS, text: message }
   }
   if (stage === "codeSent" && codeRemainingSec !== null) {
     return {
-      className: SIGNUP_EMAIL_VERIFICATION_NOTICE_INFO_CLASS,
+      className: EMAIL_VERIFICATION_NOTICE_INFO_CLASS,
       text: `남은 시간 ${codeRemainingSec}초`,
     }
   }

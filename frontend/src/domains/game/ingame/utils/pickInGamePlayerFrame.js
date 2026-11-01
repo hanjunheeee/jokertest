@@ -10,11 +10,11 @@ export function pickInGamePlayerFrame(index) {
 }
 
 const PLAYER_CARD_ALIVE_DIR = "/shopItem/player-card/playerframe-alive"
-const PLAYER_CARD_ITEM_ID_PREFIX = "player-card-"
+const CARD_ITEM_ID_PREFIX = "player-card-"
 
 export function resolveAccountCardFrameSrc(itemId) {
-  if (typeof itemId !== "string" || !itemId.startsWith(PLAYER_CARD_ITEM_ID_PREFIX)) return null
-  const variant = itemId.slice(PLAYER_CARD_ITEM_ID_PREFIX.length)
+  if (typeof itemId !== "string" || !itemId.startsWith(CARD_ITEM_ID_PREFIX)) return null
+  const variant = itemId.slice(CARD_ITEM_ID_PREFIX.length)
   if (!variant) return null
   return `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(${variant}).png`.normalize("NFC")
 }

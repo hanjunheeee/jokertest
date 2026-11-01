@@ -1,7 +1,7 @@
 import {
-  INVITED_GUESTS_STAT_CHIP_CLASS,
-  INVITED_GUESTS_STAT_NUMBER_CLASS,
-  INVITED_GUESTS_STAT_PERCENT_SUFFIX_CLASS,
+  STAT_CHIP_CLASS,
+  STAT_NUMBER_CLASS,
+  STAT_PERCENT_SUFFIX_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/tableStyle.js"
 
 function renderStatContent(value) {
@@ -12,20 +12,20 @@ function renderStatContent(value) {
   if (isPercent) {
     return (
       <>
-        <span className={INVITED_GUESTS_STAT_NUMBER_CLASS}>{number}</span>
-        <span className={INVITED_GUESTS_STAT_PERCENT_SUFFIX_CLASS}>%</span>
+        <span className={STAT_NUMBER_CLASS}>{number}</span>
+        <span className={STAT_PERCENT_SUFFIX_CLASS}>%</span>
       </>
     )
   }
 
-  return <span className={INVITED_GUESTS_STAT_NUMBER_CLASS}>{number}</span>
+  return <span className={STAT_NUMBER_CLASS}>{number}</span>
 }
 
 export default function InvitedGuestsStatValue({ value, chip = false }) {
   const content = renderStatContent(value)
 
   if (chip) {
-    return <span className={INVITED_GUESTS_STAT_CHIP_CLASS}>{content}</span>
+    return <span className={STAT_CHIP_CLASS}>{content}</span>
   }
 
   return content

@@ -12,7 +12,7 @@ import { onDisconnect } from "../socket/connection.js"
 import { emitDayVote } from "../socket/day.js"
 
 // 제출 효과음: 보낸 판·날짜·회차·소켓·본인이 그대로이고 살아 있을 때만
-function playDayVoteSubmitSfx(sfxEvent, requestScope, requestSocket) {
+function playSubmitSfx(sfxEvent, requestScope, requestSocket) {
   if (sfxEvent === null || typeof sfxEvent !== "object") return
 
   if (sfxEvent.gameId !== requestScope.gameId) return
@@ -68,7 +68,7 @@ export function useInGameDayVoteSubmit() {
     const controller = createDayVoteSubmitController({
       emitWithAck: (payload) => emitDayVote(socket, payload),
       onStateChange: setState,
-      onAccepted: (sfxEvent, requestScope) => playDayVoteSubmitSfx(sfxEvent, requestScope, socket),
+      onAccepted: (sfxEvent, requestScope) => playSubmitSfx(sfxEvent, requestScope, socket),
     })
     controllerRef.current = controller
     setState(controller.getState())

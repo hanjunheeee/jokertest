@@ -136,7 +136,7 @@ export function buildDefaultSkinsByJob() {
   )
 }
 
-export function resolveSkinCardWearPreview({
+export function resolveWearPreview({
   selectedItem,
   activeJobId,
   previewMode,
@@ -175,7 +175,7 @@ export function resolveSkinCardWearPreview({
   }
 }
 
-export function isSkinCardWearItemEquipped(item, appliedSkinsByJob, appliedCardFrameId) {
+export function isItemEquipped(item, appliedSkinsByJob, appliedCardFrameId) {
   if (item.itemType === "card") return appliedCardFrameId === item.id
   if (item.itemType === "skin" && item.jobId) return appliedSkinsByJob[item.jobId] === item.id
   return false

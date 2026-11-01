@@ -1,8 +1,8 @@
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
 import {
-  ROOM_CODE_FRAME_FOOTER_INSET,
-  ROOM_CODE_FRAME_IMAGE_CLASS,
-  ROOM_CODE_FRAME_INPUT_INSET,
+  FOOTER_INSET,
+  IMG_CLASS,
+  INPUT_INSET,
 } from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
 import RoomCodeInput from "@/domains/game/mode/components/RoomCodeInput.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
@@ -21,9 +21,9 @@ export default function RoomCodeFrame({
 }) {
   return (
     <div className={className}>
-      <PublicAsset src={frameSrc} alt={frameAlt} className={ROOM_CODE_FRAME_IMAGE_CLASS} />
+      <PublicAsset src={frameSrc} alt={frameAlt} className={IMG_CLASS} />
       {overlay}
-      <div className="absolute z-10 flex items-center justify-center" style={ROOM_CODE_FRAME_INPUT_INSET}>
+      <div className="absolute z-10 flex items-center justify-center" style={INPUT_INSET}>
         <RoomCodeInput
           value={value}
           onChange={onChange}
@@ -32,7 +32,7 @@ export default function RoomCodeFrame({
           disabled={disabled}
         />
       </div>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end" style={ROOM_CODE_FRAME_FOOTER_INSET}>
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end" style={FOOTER_INSET}>
         {footer}
       </div>
     </div>

@@ -24,11 +24,11 @@ import InGameTribunalPresentationGate from "../components/tribunalPresentation/I
 import InGameTribunalExpulsionOverlay from "../components/tribunalExpulsion/InGameTribunalExpulsionOverlay.jsx"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import {
-  getInGameIdentityScopeVersion,
-  isSameInGameReceiptScope,
+  getIdentityScopeVersion,
+  isSameReceiptScope,
   readInGameReceiptScope,
   selectNightPresentationWait,
-  subscribeInGameIdentityScope,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { selectInGameNightTurnDeadline } from "../utils/selectInGameNightTurnDeadline.js"
@@ -129,7 +129,7 @@ export default function InGamePage() {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
   const choiceScopeKey = `${authUuid}|${identityGeneration}|${gameId}|${identityScopeVersion}`
   const [keepWatchingScope, setKeepWatchingScope] = useState(null)
@@ -156,7 +156,7 @@ export default function InGamePage() {
     && nightPresentationWait.gameId === gameId
     && gameState?.phase === "NIGHT"
     && gameState?.dayIndex === nightPresentationWait.nightDayIndex
-    && isSameInGameReceiptScope(
+    && isSameReceiptScope(
       nightPresentationWait.scope,
       readInGameReceiptScope({ accountId: authUuid, identityGeneration }),
     )

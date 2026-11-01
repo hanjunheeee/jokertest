@@ -1,18 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   INGAME_CHAT_ASSETS,
-  INGAME_CHAT_FRAME_ASPECT,
-  INGAME_CHAT_INPUT_MAX_LENGTH,
+  FRAME_ASPECT,
+  INPUT_MAX_LENGTH,
 } from "../../constants/chat/ingameChatAssets.js"
 import {
-  getInGameChatInputShiftClass,
-  getInGameChatMessageListInset,
-  getInGameChatSendButtonShiftClass,
-  getInGameChatStatusLineInset,
-  getInGameChatTextFieldInset,
-  INGAME_CHAT_MESSAGE_LIST_CONTAINER_CLASS,
-  INGAME_CHAT_STATUS_LINE_WRAP_CLASS,
-  INGAME_CHAT_TEXT_FIELD_ROW_CLASS,
+  getInputShiftClass,
+  getMsgListInset,
+  getSendBtnShiftClass,
+  getStatusLineInset,
+  getTextFieldInset,
+  MSG_LIST_CONTAINER_CLASS,
+  STATUS_LINE_WRAP_CLASS,
+  TEXT_FIELD_ROW_CLASS,
 } from "../../constants/chat/ingameChatLayout.js"
 import InGameChatInput from "./InGameChatInput.jsx"
 import InGameChatMessageList from "./InGameChatMessageList.jsx"
@@ -88,7 +88,7 @@ export default function InGameChatContent({
       <div
         className={isBoard ? CHAT_ROOT_BOARD_CLASS : CHAT_ROOT_CLASS}
         style={{
-          aspectRatio: INGAME_CHAT_FRAME_ASPECT,
+          aspectRatio: FRAME_ASPECT,
           opacity: layoutReady ? 1 : 0,
           transition: "opacity 0.15s ease-out",
         }}
@@ -101,8 +101,8 @@ export default function InGameChatContent({
         />
 
         <div
-          className={INGAME_CHAT_MESSAGE_LIST_CONTAINER_CLASS}
-          style={getInGameChatMessageListInset(variant)}
+          className={MSG_LIST_CONTAINER_CLASS}
+          style={getMsgListInset(variant)}
           data-chat-interactive
         >
           <InGameChatMessageList
@@ -112,8 +112,8 @@ export default function InGameChatContent({
         </div>
 
         <div
-          className={INGAME_CHAT_TEXT_FIELD_ROW_CLASS}
-          style={getInGameChatTextFieldInset(variant)}
+          className={TEXT_FIELD_ROW_CLASS}
+          style={getTextFieldInset(variant)}
           data-chat-interactive
         >
           <InGameChatInput
@@ -122,23 +122,23 @@ export default function InGameChatContent({
             onChange={(event) =>
               onDraftChange(
                 truncateDraftOnInput
-                  ? event.target.value.slice(0, INGAME_CHAT_INPUT_MAX_LENGTH)
+                  ? event.target.value.slice(0, INPUT_MAX_LENGTH)
                   : event.target.value,
               )
             }
             onSend={handleSend}
-            className={getInGameChatInputShiftClass(variant)}
+            className={getInputShiftClass(variant)}
             truncateDraftOnInput={truncateDraftOnInput}
           />
           <InGameChatSendButton
             onSend={handleSend}
-            className={getInGameChatSendButtonShiftClass(variant)}
+            className={getSendBtnShiftClass(variant)}
           />
         </div>
 
         <div
-          className={INGAME_CHAT_STATUS_LINE_WRAP_CLASS}
-          style={getInGameChatStatusLineInset(variant)}
+          className={STATUS_LINE_WRAP_CLASS}
+          style={getStatusLineInset(variant)}
         >
           <InGameChatStatusLine status={status} error={error} />
         </div>

@@ -1,7 +1,7 @@
 // 판 진행 이벤트 손잡이 (판 끝·추방·방·계정·이모지): 판 정리·화면 이동·캐시·말풍선
 // 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦, 판 정리 함수는 끊김 감시도 씀
 import { useMatchingStore, isCurrentRoomKickEvent } from "../../../matching/store/matchingStore.js"
-import { rememberPartyMatchingRoomReady } from "../../../shared/utils/partyMatchingRejoin.js"
+import { rememberRoomReady } from "../../../shared/utils/partyMatchingRejoin.js"
 import { isCurrentGameKickEvent, useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
 import { createGameEndedHandler } from "../../utils/createGameEndedHandler.js"
@@ -73,7 +73,7 @@ export function createRoomHandlers(registered, navigate) {
   // 파티 매칭 방 준비됨 (다시 들어갈 때 쓰려고 적어 둠)
   const partyRoomReady = (payload) => {
     if (!isCurrent()) return
-    rememberPartyMatchingRoomReady(payload)
+    rememberRoomReady(payload)
   }
 
   return { gameEnded, gameKicked, roomKicked, cacheInvalidated, emojiShown, partyRoomReady }

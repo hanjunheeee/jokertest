@@ -3,7 +3,7 @@
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { MailIcon } from "@/shared/ui/InputIcons.jsx"
-import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { REQUEST_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 
 // 보내는 중엔 fieldset으로 칸·버튼을 한 번에 잠금
@@ -26,18 +26,18 @@ export default function ResetRequestForm({ status, email, setEmail, formError, o
       </label>
 
       {formError && (
-        <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
+        <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
           {formError}
         </p>
       )}
 
       {status === "rateLimited" && (
-        <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
+        <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
           {REQUEST_TEXT.rateLimited}
         </p>
       )}
       {status === "failed" && (
-        <p role="alert" className={`${AUTH_RECOVERY_ALERT_CLASS} mt-1 text-center`}>
+        <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
           {REQUEST_TEXT.failed}
         </p>
       )}

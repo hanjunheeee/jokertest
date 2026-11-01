@@ -10,7 +10,7 @@ export const INGAME_E2E_ATTRS = Object.freeze({
   targetId: "data-ingame-target-id",
 })
 
-export function buildInGameControlPanelE2eAttrs(gameState) {
+export function buildControlPanelE2eAttrs(gameState) {
   if (gameState === null || typeof gameState !== "object" || Array.isArray(gameState)) return {}
 
   const attrs = {}
@@ -20,7 +20,7 @@ export function buildInGameControlPanelE2eAttrs(gameState) {
   return attrs
 }
 
-export function buildInGamePlayerCardE2eAttrs({ nickname, status, isSelf } = {}) {
+export function buildPlayerCardE2eAttrs({ nickname, status, isSelf } = {}) {
   const attrs = {}
   if (isNonEmptyString(nickname)) attrs[INGAME_E2E_ATTRS.playerNickname] = nickname
   if (isNonEmptyString(status)) attrs[INGAME_E2E_ATTRS.playerStatus] = status
@@ -28,7 +28,7 @@ export function buildInGamePlayerCardE2eAttrs({ nickname, status, isSelf } = {})
   return attrs
 }
 
-export function buildInGameTargetE2eAttrs(player) {
+export function buildTargetE2eAttrs(player) {
   if (player === null || typeof player !== "object" || Array.isArray(player)) return {}
   if (!isNonEmptyString(player.id)) return {}
   return { [INGAME_E2E_ATTRS.targetId]: player.id }

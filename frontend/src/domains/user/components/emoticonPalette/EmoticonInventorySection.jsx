@@ -4,15 +4,15 @@ import EmoticonGradeFilter from "@/domains/user/components/emoticonPalette/Emoti
 import EmoticonInventoryGrid from "@/domains/user/components/emoticonPalette/EmoticonInventoryGrid.jsx"
 import EmoticonSearchInput from "@/domains/user/components/emoticonPalette/EmoticonSearchInput.jsx"
 import {
-  EMOTICON_PALETTE_INVENTORY_SECTION_CLASS,
-  EMOTICON_PALETTE_TOOLBAR_CLASS,
+  INVENTORY_SECTION_CLASS,
+  TOOLBAR_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { GRADE_FILTERS } from "@/domains/user/constants/emoticonPaletteText.js"
 
 export default function EmoticonInventorySection({ page }) {
   return (
-    <section aria-label="보유 이모티콘" className={EMOTICON_PALETTE_INVENTORY_SECTION_CLASS}>
-      <div className={EMOTICON_PALETTE_TOOLBAR_CLASS}>
+    <section aria-label="보유 이모티콘" className={INVENTORY_SECTION_CLASS}>
+      <div className={TOOLBAR_CLASS}>
         <EmoticonSearchInput
           value={page.query}
           disabled={!page.isReady}

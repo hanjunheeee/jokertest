@@ -3,10 +3,10 @@
 import { createElement } from "react"
 
 import {
-  NOTIFICATION_ERROR_CLASS,
+  ERROR_CLASS,
   NOTIFICATION_LIST_CLASS,
-  NOTIFICATION_MESSAGE_CLASS,
-  NOTIFICATION_EMPTY_MESSAGE_CLASS,
+  MSG_CLASS,
+  EMPTY_MSG_CLASS,
 } from "../../constants/notificationLayoutStyle.js"
 import { renderActionButton } from "./renderActionButton.js"
 import NotificationItem from "./NotificationItem.js"
@@ -17,7 +17,7 @@ export function renderBody({ state, error, visible, onRetry, itemProps }) {
     return createElement(
       "div",
       { className: "flex flex-col items-center gap-2", "data-notification-state": "error" },
-      createElement("p", { className: NOTIFICATION_ERROR_CLASS, role: "alert" }, error ?? "알림을 불러오지 못했습니다."),
+      createElement("p", { className: ERROR_CLASS, role: "alert" }, error ?? "알림을 불러오지 못했습니다."),
       renderActionButton({
         key: "retry-list",
         label: "다시 시도",
@@ -30,7 +30,7 @@ export function renderBody({ state, error, visible, onRetry, itemProps }) {
   if (state === "loading") {
     return createElement(
       "p",
-      { className: NOTIFICATION_MESSAGE_CLASS, "data-notification-state": "loading" },
+      { className: MSG_CLASS, "data-notification-state": "loading" },
       "알림을 불러오는 중입니다.",
     )
   }
@@ -38,7 +38,7 @@ export function renderBody({ state, error, visible, onRetry, itemProps }) {
   if (state === "empty") {
     return createElement(
       "p",
-      { className: NOTIFICATION_EMPTY_MESSAGE_CLASS, "data-notification-state": "empty" },
+      { className: EMPTY_MSG_CLASS, "data-notification-state": "empty" },
       "표시할 알림이 없습니다.",
     )
   }

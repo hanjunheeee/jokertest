@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
-  INGAME_TRIBUNAL_EXPULSION_BACKDROP_CLASS,
-  INGAME_TRIBUNAL_EXPULSION_FADE_LAYER_CLASS,
-  INGAME_TRIBUNAL_EXPULSION_FADE_MS,
-  INGAME_TRIBUNAL_EXPULSION_HOLD_MS,
-  INGAME_TRIBUNAL_EXPULSION_MESSAGE_AUTO_MS,
-  INGAME_TRIBUNAL_EXPULSION_MESSAGE_CLASS,
-  INGAME_TRIBUNAL_EXPULSION_VIDEO_CLASS,
-  INGAME_TRIBUNAL_EXPULSION_VIDEO_URL,
-  INGAME_TRIBUNAL_EXPULSION_VIDEO_WRAP_CLASS,
+  BACKDROP_CLASS,
+  FADE_LAYER_CLASS,
+  FADE_MS,
+  HOLD_MS,
+  MSG_AUTO_MS,
+  MSG_CLASS,
+  VIDEO_CLASS,
+  VIDEO_URL,
+  VIDEO_WRAP_CLASS,
 } from "../../constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
 
 export default function InGameTribunalExpulsionOverlay({
@@ -54,14 +54,14 @@ export default function InGameTribunalExpulsionOverlay({
 
   useEffect(() => {
     if (phase !== "hold") return undefined
-    const timer = window.setTimeout(() => setPhase("fade"), INGAME_TRIBUNAL_EXPULSION_HOLD_MS)
+    const timer = window.setTimeout(() => setPhase("fade"), HOLD_MS)
     return () => window.clearTimeout(timer)
   }, [phase])
 
   useEffect(() => {
     if (phase !== "fade") return undefined
     const frame = requestAnimationFrame(() => setFadeOpacity(1))
-    const timer = window.setTimeout(() => setPhase("message"), INGAME_TRIBUNAL_EXPULSION_FADE_MS)
+    const timer = window.setTimeout(() => setPhase("message"), FADE_MS)
     return () => {
       cancelAnimationFrame(frame)
       window.clearTimeout(timer)
@@ -70,7 +70,7 @@ export default function InGameTribunalExpulsionOverlay({
 
   useEffect(() => {
     if (phase !== "message") return undefined
-    const timer = window.setTimeout(finish, INGAME_TRIBUNAL_EXPULSION_MESSAGE_AUTO_MS)
+    const timer = window.setTimeout(finish, MSG_AUTO_MS)
     return () => window.clearTimeout(timer)
   }, [phase, finish])
 
@@ -90,18 +90,18 @@ export default function InGameTribunalExpulsionOverlay({
 
   return (
     <div
-      className={INGAME_TRIBUNAL_EXPULSION_BACKDROP_CLASS}
+      className={BACKDROP_CLASS}
       data-ingame-tribunal-expulsion={presentationId}
       onClick={phase === "message" ? finish : undefined}
       role="presentation"
     >
       {phase !== "message" ? (
-        <div className={INGAME_TRIBUNAL_EXPULSION_VIDEO_WRAP_CLASS}>
+        <div className={VIDEO_WRAP_CLASS}>
           <video
             ref={videoRef}
             key={presentationId}
-            className={INGAME_TRIBUNAL_EXPULSION_VIDEO_CLASS}
-            src={INGAME_TRIBUNAL_EXPULSION_VIDEO_URL}
+            className={VIDEO_CLASS}
+            src={VIDEO_URL}
             playsInline
             muted
             preload="auto"
@@ -109,16 +109,16 @@ export default function InGameTribunalExpulsionOverlay({
             onError={handleVideoError}
           />
           <div
-            className={INGAME_TRIBUNAL_EXPULSION_FADE_LAYER_CLASS}
+            className={FADE_LAYER_CLASS}
             style={{
               opacity: fadeOpacity,
-              transitionDuration: `${INGAME_TRIBUNAL_EXPULSION_FADE_MS}ms`,
+              transitionDuration: `${FADE_MS}ms`,
             }}
             aria-hidden="true"
           />
         </div>
       ) : (
-        <p className={INGAME_TRIBUNAL_EXPULSION_MESSAGE_CLASS}>{message}</p>
+        <p className={MSG_CLASS}>{message}</p>
       )}
     </div>
   )

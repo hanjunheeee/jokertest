@@ -2,7 +2,7 @@ import {
   INGAME_SETTING_CHAT_CHECKBOXES,
   INGAME_SETTING_CHAT_SLIDER,
 } from "../../../constants/controls/ingameSetting/ingameSettingData.js"
-import { INGAME_SETTING_TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
+import { TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import { useSettingsStore } from "../../../../../settings/store/settingsStore.js"
 import SettingCheckboxRow from "./SettingCheckboxRow.jsx"
 import SettingSliderRow from "./SettingSliderRow.jsx"
@@ -23,7 +23,7 @@ export default function SettingChatTab() {
   const checks = { ...defaultChatChecks(), ...(storedChecks ?? {}) }
 
   return (
-    <div className={INGAME_SETTING_TAB_BODY_CLASS}>
+    <div className={TAB_BODY_CLASS}>
       <SettingSliderRow
         label={INGAME_SETTING_CHAT_SLIDER.label}
         min={INGAME_SETTING_CHAT_SLIDER.min}

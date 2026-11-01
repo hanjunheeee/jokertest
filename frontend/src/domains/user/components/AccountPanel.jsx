@@ -1,14 +1,14 @@
 import { motion } from "framer-motion"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
-  ACCOUNT_PANEL_CONTENT_CLASS,
-  ACCOUNT_PANEL_FRAME_CONTENT_CLASS,
-  ACCOUNT_PANEL_FRAME_IMG_CLASS,
-  ACCOUNT_PANEL_FRAME_INSET,
-  ACCOUNT_PANEL_FRAME_SHELL_CLASS,
-  ACCOUNT_PANEL_POSITION_CLASS,
-  ACCOUNT_PANEL_SCROLL_CLASS,
-  ACCOUNT_PANEL_WRAP_CLASS,
+  CONTENT_CLASS,
+  FRAME_CONTENT_CLASS,
+  FRAME_IMG_CLASS,
+  FRAME_INSET,
+  FRAME_SHELL_CLASS,
+  POSITION_CLASS,
+  SCROLL_CLASS,
+  WRAP_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import NicknameSection from "@/domains/user/components/AccountPanel/NicknameSection.jsx"
@@ -32,22 +32,22 @@ export default function AccountPanel() {
   } = useAccountForm()
 
   return (
-    <div className={ACCOUNT_PANEL_POSITION_CLASS}>
+    <div className={POSITION_CLASS}>
       <motion.div
-        className={ACCOUNT_PANEL_WRAP_CLASS}
+        className={WRAP_CLASS}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={UI_REVEAL_TRANSITION}
       >
-      <div className={ACCOUNT_PANEL_FRAME_SHELL_CLASS}>
-        <PublicAsset src={LOGIN_ASSETS.frame} alt="" className={ACCOUNT_PANEL_FRAME_IMG_CLASS} />
+      <div className={FRAME_SHELL_CLASS}>
+        <PublicAsset src={LOGIN_ASSETS.frame} alt="" className={FRAME_IMG_CLASS} />
 
         <div
-          className={ACCOUNT_PANEL_FRAME_CONTENT_CLASS}
-          style={ACCOUNT_PANEL_FRAME_INSET}
+          className={FRAME_CONTENT_CLASS}
+          style={FRAME_INSET}
         >
-          <div className={ACCOUNT_PANEL_SCROLL_CLASS}>
-            <div className={ACCOUNT_PANEL_CONTENT_CLASS}>
+          <div className={SCROLL_CLASS}>
+            <div className={CONTENT_CLASS}>
               <NicknameSection
                 nickname={nickname}
                 setNickname={setNickname}

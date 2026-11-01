@@ -11,7 +11,7 @@ export const INGAME_SETTING_TABS = [
   { id: "room", label: "방관리", hostOnly: true },
 ]
 
-export const INGAME_SETTING_PREVIEW_AS_HOST = false
+export const PREVIEW_AS_HOST = false
 
 export const INGAME_SETTING_ROOM_ROWS = [
   {

@@ -1,6 +1,6 @@
 // 친구 검색 결과 목록
 // FriendRequestTab이 검색창 아래에 그림
-import { FRIEND_REQUEST_RESULT_LIST_CLASS } from "../../../../constants/friendListStyle.js"
+import { REQUEST_RESULT_LIST_CLASS } from "../../../../constants/friendListStyle.js"
 import RecommendedFriendRow from "../RecommendedFriendRow.jsx"
 import FriendRequestEmptyState from "./FriendRequestEmptyState.jsx"
 
@@ -9,7 +9,7 @@ export default function FriendRequestResultsList({ results, searching, errorMsg,
   if (!isSearching) return null
 
   return (
-    <ul className={FRIEND_REQUEST_RESULT_LIST_CLASS}>
+    <ul className={REQUEST_RESULT_LIST_CLASS}>
       {results.length === 0 ? (
         <FriendRequestEmptyState searching={searching} errorMsg={errorMsg} />
       ) : (

@@ -1,7 +1,7 @@
 import {
-  PODIUM_TABLE_PAGE_NODE_ACTIVE_CLASS,
-  PODIUM_TABLE_PAGE_NODE_BASE_CLASS,
-  PODIUM_TABLE_PAGE_NODES_WRAP_CLASS,
+  TABLE_PAGE_NODE_ACTIVE_CLASS,
+  TABLE_PAGE_NODE_BASE_CLASS,
+  TABLE_PAGE_NODES_WRAP_CLASS,
 } from "../../constants/podiumLayoutStyle.js"
 
 export default function PodiumRankingTablePageNodes({
@@ -10,7 +10,7 @@ export default function PodiumRankingTablePageNodes({
   onSelectPage,
 }) {
   return (
-    <div className={PODIUM_TABLE_PAGE_NODES_WRAP_CLASS} role="tablist" aria-label="랭킹 페이지 선택">
+    <div className={TABLE_PAGE_NODES_WRAP_CLASS} role="tablist" aria-label="랭킹 페이지 선택">
       {Array.from({ length: pageCount }, (_, index) => {
         const active = index === activePage
 
@@ -22,8 +22,8 @@ export default function PodiumRankingTablePageNodes({
             aria-selected={active}
             aria-label={`${index + 1}페이지`}
             onClick={() => onSelectPage?.(index)}
-            className={`${PODIUM_TABLE_PAGE_NODE_BASE_CLASS}${
-              active ? ` ${PODIUM_TABLE_PAGE_NODE_ACTIVE_CLASS}` : ""
+            className={`${TABLE_PAGE_NODE_BASE_CLASS}${
+              active ? ` ${TABLE_PAGE_NODE_ACTIVE_CLASS}` : ""
             }`}
           />
         )

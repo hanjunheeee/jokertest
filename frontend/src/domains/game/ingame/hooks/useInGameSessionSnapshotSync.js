@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
-  getInGameIdentityScopeVersion,
-  subscribeInGameIdentityScope,
+  getIdentityScopeVersion,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -26,7 +26,7 @@ export function useInGameSessionSnapshotSync() {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
   const [bootstrapStatus, setBootstrapStatus] = useState(gameId ? "ready" : "checking")
 

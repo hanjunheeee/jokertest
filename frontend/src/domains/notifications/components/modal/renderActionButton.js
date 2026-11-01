@@ -5,10 +5,10 @@ import { createElement } from "react"
 import { publicAsset } from "../../../../shared/utils/publicAsset.js"
 import { NOTIFICATION_ASSETS } from "../../constants/notificationAssets.js"
 import {
-  NOTIFICATION_ACTION_BUTTON_CLASS,
-  NOTIFICATION_ACTION_BUTTON_IMG_CLASS,
-  NOTIFICATION_ACTION_BUTTON_PRIMARY_LABEL_CLASS,
-  NOTIFICATION_ACTION_BUTTON_SECONDARY_LABEL_CLASS,
+  ACTION_BTN_CLASS,
+  ACTION_BTN_IMG_CLASS,
+  ACTION_BTN_PRIMARY_LABEL_CLASS,
+  ACTION_BTN_SECONDARY_LABEL_CLASS,
 } from "../../constants/notificationLayoutStyle.js"
 
 // 처리 중이면 글자·읽기 이름을 '처리 중'으로 바꿈
@@ -20,7 +20,7 @@ export function renderActionButton({ key, label, onClick, disabled, actionAttr, 
     {
       key,
       type: "button",
-      className: NOTIFICATION_ACTION_BUTTON_CLASS,
+      className: ACTION_BTN_CLASS,
       disabled,
       "aria-label": pending ? "처리 중" : label,
       "data-notification-action": actionAttr,
@@ -33,14 +33,14 @@ export function renderActionButton({ key, label, onClick, disabled, actionAttr, 
         : publicAsset(NOTIFICATION_ASSETS.actionButtonSecondary),
       alt: "",
       draggable: false,
-      className: NOTIFICATION_ACTION_BUTTON_IMG_CLASS,
+      className: ACTION_BTN_IMG_CLASS,
     }),
     createElement(
       "span",
       {
         className: isPrimary
-          ? NOTIFICATION_ACTION_BUTTON_PRIMARY_LABEL_CLASS
-          : NOTIFICATION_ACTION_BUTTON_SECONDARY_LABEL_CLASS,
+          ? ACTION_BTN_PRIMARY_LABEL_CLASS
+          : ACTION_BTN_SECONDARY_LABEL_CLASS,
       },
       pending ? "처리 중…" : label,
     ),

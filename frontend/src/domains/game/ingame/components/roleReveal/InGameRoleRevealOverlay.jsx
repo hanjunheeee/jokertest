@@ -1,11 +1,11 @@
 import {
-  INGAME_ROLE_REVEAL_ALLY_CHIP_CLASS,
-  INGAME_ROLE_REVEAL_ALLY_LIST_CLASS,
-  INGAME_ROLE_REVEAL_ALLY_SECTION_CLASS,
-  INGAME_ROLE_REVEAL_DESCRIPTION_CLASS,
-  INGAME_ROLE_REVEAL_HEADER_CLASS,
-  INGAME_ROLE_REVEAL_NICKNAME_CLASS,
-  INGAME_ROLE_REVEAL_ROLE_NAME_CLASS,
+  ALLY_CHIP_CLASS,
+  ALLY_LIST_CLASS,
+  ALLY_SECTION_CLASS,
+  DESC_CLASS,
+  HEADER_CLASS,
+  NICKNAME_CLASS,
+  ROLE_NAME_CLASS,
 } from "../../constants/roleReveal/ingameRoleRevealLayout.js"
 import { resolveInGameRoleRevealAllies } from "../../utils/resolveInGameRoleRevealAllies.js"
 import InGameParchmentModalAnimated from "../parchment/InGameParchmentModalAnimated.jsx"
@@ -29,23 +29,23 @@ export default function InGameRoleRevealOverlay({
       confirmLabel={primaryLabel}
       wrapProps={{ "aria-hidden": !open }}
     >
-      <div className={INGAME_ROLE_REVEAL_HEADER_CLASS}>
+      <div className={HEADER_CLASS}>
         {roleInfo.nickname ? (
-          <p className={INGAME_ROLE_REVEAL_NICKNAME_CLASS}>{roleInfo.nickname}</p>
+          <p className={NICKNAME_CLASS}>{roleInfo.nickname}</p>
         ) : null}
-        <p className={INGAME_ROLE_REVEAL_ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
+        <p className={ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
       </div>
 
       {roleInfo.description ? (
-        <p className={INGAME_ROLE_REVEAL_DESCRIPTION_CLASS}>{roleInfo.description}</p>
+        <p className={DESC_CLASS}>{roleInfo.description}</p>
       ) : null}
 
       {allies.length ? (
-        <div className={INGAME_ROLE_REVEAL_ALLY_SECTION_CLASS}>
+        <div className={ALLY_SECTION_CLASS}>
           <p>동료 광대</p>
-          <ul className={INGAME_ROLE_REVEAL_ALLY_LIST_CLASS}>
+          <ul className={ALLY_LIST_CLASS}>
             {allies.map((ally) => (
-              <li key={ally.uuid} className={INGAME_ROLE_REVEAL_ALLY_CHIP_CLASS}>
+              <li key={ally.uuid} className={ALLY_CHIP_CLASS}>
                 {ally.nickname}
               </li>
             ))}

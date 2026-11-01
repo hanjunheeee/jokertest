@@ -4,7 +4,7 @@ export const ROOM_CODE_LENGTH = 6
 
 export const ROOM_CODE_PATTERN = new RegExp(`^[A-Za-z0-9]{${ROOM_CODE_LENGTH}}$`)
 
-const ROOM_CODE_DISALLOWED_PATTERN = /[^A-Za-z0-9]/g
+const DISALLOWED_PATTERN = /[^A-Za-z0-9]/g
 
 export const ROOM_CODE_COPY_ERRORS = {
   UNAVAILABLE: "방코드를 아직 불러오지 못했습니다. 잠시 후 다시 시도해주세요.",
@@ -26,12 +26,12 @@ export function isValidRoomCode(code) {
 }
 
 export function normalizeRoomCodeChar(char) {
-  return normalizeRoomCode(char).replace(ROOM_CODE_DISALLOWED_PATTERN, "").slice(-1)
+  return normalizeRoomCode(char).replace(DISALLOWED_PATTERN, "").slice(-1)
 }
 
 export function normalizeRoomCodeText(text) {
   return normalizeRoomCode(text)
-    .replace(ROOM_CODE_DISALLOWED_PATTERN, "")
+    .replace(DISALLOWED_PATTERN, "")
     .slice(0, ROOM_CODE_LENGTH)
 }
 

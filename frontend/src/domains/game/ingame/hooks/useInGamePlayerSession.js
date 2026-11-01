@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
-import { resolveInGamePlayerThemeEmphasized } from "../../../../shared/constants/ingamePlayerTheme.js"
+import { resolveThemeEmphasized } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { buildInGamePreviewPlayers } from "../utils/buildInGamePreviewPlayers.js"
 import { mergeSourcePlayerWithPreview } from "../utils/mergeSourcePlayerWithPreview.js"
 
@@ -46,7 +46,7 @@ export function useInGamePlayerSession(options = INGAME_PREVIEW_PLAYER_COUNT) {
       if (!player) return null
 
       if (options?.emphasized) {
-        return resolveInGamePlayerThemeEmphasized(player.themeIndex).styles
+        return resolveThemeEmphasized(player.themeIndex).styles
       }
 
       return player.theme.styles

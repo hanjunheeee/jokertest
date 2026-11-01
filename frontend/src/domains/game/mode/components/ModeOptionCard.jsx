@@ -1,6 +1,6 @@
 import {
   MODE_CARD_BUTTON_CLASS,
-  MODE_CARD_FRAME_IMAGE_CLASS,
+  FRAME_IMG_CLASS,
   MODE_CARD_WRAP_CLASS,
 } from "@/domains/game/mode/constants/modeCardLayout.js"
 import ModeOptionCardComingSoon from "@/domains/game/mode/components/ModeOptionCardComingSoon.jsx"
@@ -24,7 +24,7 @@ export default function ModeOptionCard({
       className={MODE_CARD_BUTTON_CLASS}
     >
       <div className={MODE_CARD_WRAP_CLASS}>
-        <PublicAsset src={frame} alt={label} className={MODE_CARD_FRAME_IMAGE_CLASS} />
+        <PublicAsset src={frame} alt={label} className={FRAME_IMG_CLASS} />
         <ModeOptionCardOverlay title={title} descriptionLines={descriptionLines} />
         {comingSoon ? <ModeOptionCardComingSoon /> : null}
       </div>

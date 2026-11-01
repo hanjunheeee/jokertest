@@ -1,8 +1,8 @@
 import { useContext, useEffect, useState } from "react"
 import {
-  INGAME_PLAYER_BOARD_POSITION_CLASS,
-  buildInGamePlayerSlotStyle,
-  getInGamePlayerSlotPresets,
+  POSITION_CLASS,
+  buildSlotStyle,
+  getSlotPresets,
 } from "../../constants/board/ingamePlayerBoard.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import { isInGameSelfPlayer } from "../../utils/isInGameSelfPlayer.js"
@@ -14,7 +14,7 @@ import { useAuthStore } from "../../../../auth/store/auth.store.js"
 import { useEmojiPaletteStore } from "../../../../user/store/emojiPalette.store.js"
 import {
   inGameEmojiScopeKey,
-  readInGameEmojiScope,
+  readEmojiScope,
   selectInGameEmojiScope,
 } from "../../utils/selectInGameEmojiScope.js"
 import InGamePlayerCard from "./InGamePlayerCard.jsx"
@@ -26,7 +26,7 @@ export default function InGamePlayerBoard() {
   const { players, localPlayerId } = useInGamePlayerSessionContext()
   const actionCtx = useContext(InGameActionContext)
   const cardMenu = useInGamePlayerCardMenu()
-  const presets = getInGamePlayerSlotPresets(players.length)
+  const presets = getSlotPresets(players.length)
 
   const emojiByUuid = useInGameEmojiBubbleStore((state) => state.byUuid)
   const emojiSlots = useEmojiPaletteStore((state) => state.gameSlots)
@@ -43,7 +43,7 @@ export default function InGamePlayerBoard() {
 
   useEffect(() => {
     if (emojiScopeKey === null) return
-    useEmojiPaletteStore.getState().loadForGame(readInGameEmojiScope())
+    useEmojiPaletteStore.getState().loadForGame(readEmojiScope())
   }, [emojiScopeKey])
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function InGamePlayerBoard() {
   }
 
   return (
-    <div className={INGAME_PLAYER_BOARD_POSITION_CLASS}>
+    <div className={POSITION_CLASS}>
       {players.map((player, index) => {
         const activeEmoji = emojiByUuid[player.id] ?? null
         const isSelf = isInGameSelfPlayer(player.id, localPlayerId)
@@ -64,7 +64,7 @@ export default function InGamePlayerBoard() {
             key={player.id}
             ref={(node) => cardMenu.registerAnchor(player.id, node)}
             className="absolute pointer-events-auto cursor-pointer"
-            style={buildInGamePlayerSlotStyle(presets[index])}
+            style={buildSlotStyle(presets[index])}
             role="button"
             tabIndex={0}
             onClick={() => cardMenu.openMenu(player.id)}

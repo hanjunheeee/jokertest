@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
-  ROOM_LIST_ENTER_BTN_CLASS,
-  ROOM_LIST_ENTER_BTN_FRAME_CLASS,
-  ROOM_LIST_ENTER_BTN_LABEL_CLASS,
+  ENTER_BTN_CLASS,
+  ENTER_BTN_FRAME_CLASS,
+  ENTER_BTN_LABEL_CLASS,
   ROOM_LIST_FOOTER_CLASS,
   ROOM_LIST_SHELL_CLASS,
   ROOM_LIST_TOOLBAR_CLASS,
@@ -95,10 +95,10 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
           aria-label={enterLabel === "입장하기" ? "선택한 방 입장" : enterLabel}
           disabled={enterDisabled}
           onClick={handleEnterRoom}
-          className={ROOM_LIST_ENTER_BTN_CLASS}
+          className={ENTER_BTN_CLASS}
         >
-          <PublicAsset src={ROOM_LIST_ASSETS.enterButton} alt="" className={ROOM_LIST_ENTER_BTN_FRAME_CLASS} />
-          <span className={ROOM_LIST_ENTER_BTN_LABEL_CLASS}>{enterLabel}</span>
+          <PublicAsset src={ROOM_LIST_ASSETS.enterButton} alt="" className={ENTER_BTN_FRAME_CLASS} />
+          <span className={ENTER_BTN_LABEL_CLASS}>{enterLabel}</span>
         </button>
       </div>
     </div>

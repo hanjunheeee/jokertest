@@ -5,8 +5,8 @@ import { useEconomyStore } from "../../economy/store/economy.store.js"
 import {
   DEFAULT_PROFILE_BORDER_ITEM_ID,
   DEFAULT_PROFILE_PHOTO_ITEM_ID,
-  profileBorderAssetSrcForItemId,
-  profilePhotoAssetSrcForItemId,
+  borderAssetSrcForItemId,
+  photoAssetSrcForItemId,
 } from "../constants/profileEditLayout.js"
 
 const initialState = {
@@ -23,7 +23,7 @@ export const useProfileCustomizationStore = create((set) => ({
     const resolvedItemId = itemId ?? DEFAULT_PROFILE_PHOTO_ITEM_ID
     set({
       selectedPhotoItemId: resolvedItemId,
-      photoSrc: profilePhotoAssetSrcForItemId(resolvedItemId) ?? PLAYER_PROFILE_ASSETS.defaultPhoto,
+      photoSrc: photoAssetSrcForItemId(resolvedItemId) ?? PLAYER_PROFILE_ASSETS.defaultPhoto,
     })
   },
 
@@ -31,7 +31,7 @@ export const useProfileCustomizationStore = create((set) => ({
     const resolvedItemId = itemId ?? DEFAULT_PROFILE_BORDER_ITEM_ID
     set({
       selectedBorderItemId: resolvedItemId,
-      frameSrc: profileBorderAssetSrcForItemId(resolvedItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder,
+      frameSrc: borderAssetSrcForItemId(resolvedItemId) ?? PLAYER_PROFILE_ASSETS.defaultBorder,
     })
   },
 

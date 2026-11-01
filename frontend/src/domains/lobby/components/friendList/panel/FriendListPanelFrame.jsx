@@ -4,12 +4,12 @@ import { motion } from "framer-motion"
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import {
   FRIEND_PANEL_CLASS,
-  FRIEND_PANEL_CONTENT_CLASS,
-  FRIEND_PANEL_FRAME_CLASS,
-  FRIEND_PANEL_INSET_STYLE,
+  PANEL_CONTENT_CLASS,
+  PANEL_FRAME_CLASS,
+  PANEL_INSET_STYLE,
   FRIEND_PANEL_TRANSITION,
 } from "../../../constants/friendListStyle.js"
-import { getFriendPanelAriaLabel } from "../../../utils/friendListPanelAria.js"
+import { getAriaLabel } from "../../../utils/friendListPanelAria.js"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
 // 지금 탭 이름을 대화상자 이름으로 씀, 안쪽 클릭이 배경 닫기로 새지 않게 막음
@@ -18,7 +18,7 @@ export default function FriendListPanelFrame({ view, children }) {
     <motion.aside
       role="dialog"
       aria-modal="true"
-      aria-label={getFriendPanelAriaLabel(view)}
+      aria-label={getAriaLabel(view)}
       className={FRIEND_PANEL_CLASS}
       initial={{ opacity: 0, x: 28 }}
       animate={{ opacity: 1, x: 0 }}
@@ -29,9 +29,9 @@ export default function FriendListPanelFrame({ view, children }) {
       <PublicAsset
         src={FRIEND_LIST_ASSETS.panelFrame}
         alt=""
-        className={FRIEND_PANEL_FRAME_CLASS}
+        className={PANEL_FRAME_CLASS}
       />
-      <div className={FRIEND_PANEL_CONTENT_CLASS} style={FRIEND_PANEL_INSET_STYLE}>
+      <div className={PANEL_CONTENT_CLASS} style={PANEL_INSET_STYLE}>
         {children}
       </div>
     </motion.aside>

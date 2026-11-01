@@ -1,4 +1,4 @@
-const DISCORD_INVITE_SHORT_HOST = "discord.gg";
+const INVITE_SHORT_HOST = "discord.gg";
 const DISCORD_APP_HOSTS = new Set(["discord.com", "www.discord.com"]);
 
 const isInviteCode = (segment) => /^[A-Za-z0-9-]+$/.test(segment ?? "");
@@ -12,7 +12,7 @@ function isAllowedSupportPath(url) {
         return false;
     }
 
-    if (url.hostname === DISCORD_INVITE_SHORT_HOST) {
+    if (url.hostname === INVITE_SHORT_HOST) {
         return segments.length === 1 && isInviteCode(segments[0]);
     }
 
@@ -51,7 +51,7 @@ export function resolveDiscordSupportUrl(rawValue) {
         return null;
     }
 
-    if (url.hostname !== DISCORD_INVITE_SHORT_HOST && !DISCORD_APP_HOSTS.has(url.hostname)) {
+    if (url.hostname !== INVITE_SHORT_HOST && !DISCORD_APP_HOSTS.has(url.hostname)) {
         return null;
     }
 

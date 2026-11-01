@@ -2,9 +2,9 @@
 // FriendListViewTabs가 탭마다 그림
 import { FRIEND_LIST_ASSETS } from "../../constants/friendListAssets.js"
 import {
-  FRIEND_VIEW_TAB_BUTTON_CLASS,
-  FRIEND_VIEW_TAB_IMAGE_CLASS,
-  FRIEND_VIEW_TAB_LABEL_CLASS,
+  VIEW_TAB_BTN_CLASS,
+  VIEW_TAB_IMG_CLASS,
+  VIEW_TAB_LABEL_CLASS,
 } from "../../constants/friendListStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
@@ -23,11 +23,11 @@ export default function FriendListTabButton({ label, active, onClick }) {
       aria-selected={active}
       aria-label={label}
       onClick={onClick}
-      className={FRIEND_VIEW_TAB_BUTTON_CLASS}
+      className={VIEW_TAB_BTN_CLASS}
       style={{ outline: "none" }}
     >
-      <PublicAsset src={buttonImage} alt="" className={FRIEND_VIEW_TAB_IMAGE_CLASS} />
-      <span className={`${FRIEND_VIEW_TAB_LABEL_CLASS} ${labelColorClass}`} aria-hidden="true">
+      <PublicAsset src={buttonImage} alt="" className={VIEW_TAB_IMG_CLASS} />
+      <span className={`${VIEW_TAB_LABEL_CLASS} ${labelColorClass}`} aria-hidden="true">
         {label}
       </span>
     </button>

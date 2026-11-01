@@ -1,4 +1,4 @@
-import { getPlayerPortraitVariant } from "../constants/playerPortraitLayout.js"
+import { getPortraitVariant } from "../constants/playerPortraitLayout.js"
 import PublicAsset from "./PublicAsset.jsx"
 
 export default function PlayerPortraitFrame({
@@ -7,7 +7,7 @@ export default function PlayerPortraitFrame({
   portraitClassName = "",
 }) {
   const { bgInset, portraitInset, bgGradientClass, portraitImageClass } =
-    getPlayerPortraitVariant(variant)
+    getPortraitVariant(variant)
 
   return (
     <>

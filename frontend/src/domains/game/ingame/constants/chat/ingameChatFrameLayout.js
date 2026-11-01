@@ -1,6 +1,6 @@
 import { INGAME_CHAT_FRAME_SCALE } from "./ingameChatAssets.js"
 
-export const INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME = 7
+export const CONTENT_SHIFT_LEFT_FRAME = 7
 
 export function mapFrameInsetToLayoutBox(
   inset,

@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-import { subscribeInGameIdentityScope } from "./ingameStore.js"
+import { subscribeIdentityScope } from "./ingameStore.js"
 
 export const INGAME_EMOJI_BUBBLE_DURATION_MS = 3000
 
@@ -45,6 +45,6 @@ export const useInGameEmojiBubbleStore = create((set, get) => ({
   },
 }))
 
-subscribeInGameIdentityScope(() => {
+subscribeIdentityScope(() => {
   useInGameEmojiBubbleStore.getState().clearAllActiveEmoji()
 })

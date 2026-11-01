@@ -1,6 +1,6 @@
 // 판 정보 다듬기: 시작 상태 기본값 채우기·방장 id 고르기, 공개 진행 수 모양 검사 (순수 계산)
 // 인게임 스토어의 판 시작·참여·본인 진행 반영과 스냅샷 반영이 사용
-import { normalizeRoomSettingsSource } from "../snapshot/roomSettings.js"
+import { normRoomSettingsSource } from "../snapshot/roomSettings.js"
 
 // 빈 문자열이 아닌 방장 id만 받음
 const pickId = (value) => (typeof value === "string" && value.trim().length > 0 ? value : null)
@@ -13,7 +13,7 @@ export function normalizeGameState(state) {
     roomCode: typeof state.roomCode === "string" && state.roomCode.length > 0
       ? state.roomCode
       : null,
-    roomSettingsSource: normalizeRoomSettingsSource(state.roomSettingsSource),
+    roomSettingsSource: normRoomSettingsSource(state.roomSettingsSource),
     players: Array.isArray(state.players)
       ? state.players.map((p) => ({
           ...p,

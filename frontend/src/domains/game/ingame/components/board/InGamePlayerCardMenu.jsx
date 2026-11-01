@@ -1,12 +1,12 @@
 import PublicAsset from "@/shared/ui/PublicAsset"
-import { INGAME_PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
+import { PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
 import {
-  INGAME_PLAYER_CARD_OVERLAY_ACTIONS_CLASS,
-  INGAME_PLAYER_CARD_OVERLAY_BTN_CLASS,
-  INGAME_PLAYER_CARD_OVERLAY_BTN_IMG_CLASS,
-  INGAME_PLAYER_CARD_OVERLAY_BTN_LABEL_CLASS,
-  INGAME_PLAYER_CARD_OVERLAY_SCRIM_CLASS,
-  INGAME_PLAYER_CARD_OVERLAY_WRAP_CLASS,
+  OVERLAY_ACTIONS_CLASS,
+  OVERLAY_BTN_CLASS,
+  OVERLAY_BTN_IMG_CLASS,
+  OVERLAY_BTN_LABEL_CLASS,
+  OVERLAY_SCRIM_CLASS,
+  OVERLAY_WRAP_CLASS,
 } from "../../constants/board/ingamePlayerCardOverlayLayout.js"
 import { INGAME_CARD_MENU_ITEM_KINDS } from "../../hooks/useInGamePlayerCardMenu.js"
 
@@ -18,9 +18,9 @@ function resolveOverlayButtonAsset(kind) {
     || kind === INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL
     || kind === INGAME_CARD_MENU_ITEM_KINDS.TRIBUNAL_GUILTY
   ) {
-    return INGAME_PLAYER_CARD_OVERLAY_ASSETS.cancelButton
+    return PLAYER_CARD_OVERLAY_ASSETS.cancelButton
   }
-  return INGAME_PLAYER_CARD_OVERLAY_ASSETS.confirmButton
+  return PLAYER_CARD_OVERLAY_ASSETS.confirmButton
 }
 
 function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason = null, onClick }) {
@@ -30,13 +30,13 @@ function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason 
       role="menuitem"
       aria-label={label}
       title={disabled && disabledReason ? disabledReason : undefined}
-      className={INGAME_PLAYER_CARD_OVERLAY_BTN_CLASS}
+      className={OVERLAY_BTN_CLASS}
       disabled={disabled}
       onClick={onClick}
       style={{ outline: "none" }}
     >
-      <PublicAsset src={assetSrc} alt="" className={INGAME_PLAYER_CARD_OVERLAY_BTN_IMG_CLASS} />
-      <span className={INGAME_PLAYER_CARD_OVERLAY_BTN_LABEL_CLASS}>{label}</span>
+      <PublicAsset src={assetSrc} alt="" className={OVERLAY_BTN_IMG_CLASS} />
+      <span className={OVERLAY_BTN_LABEL_CLASS}>{label}</span>
     </button>
   )
 }
@@ -55,12 +55,12 @@ export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
       ref={menuRef}
       role="menu"
       aria-label="플레이어 행동"
-      className={INGAME_PLAYER_CARD_OVERLAY_WRAP_CLASS}
+      className={OVERLAY_WRAP_CLASS}
       onClick={(event) => event.stopPropagation()}
       {...{ [INGAME_PLAYER_CARD_MENU_ATTR]: "true" }}
     >
-      <div className={INGAME_PLAYER_CARD_OVERLAY_SCRIM_CLASS} aria-hidden="true" />
-      <div className={INGAME_PLAYER_CARD_OVERLAY_ACTIONS_CLASS}>
+      <div className={OVERLAY_SCRIM_CLASS} aria-hidden="true" />
+      <div className={OVERLAY_ACTIONS_CLASS}>
         {visibleItems.map((item) => (
           <OverlayImageButton
             key={item.kind}
@@ -74,7 +74,7 @@ export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
         {hasSingleCardAction ? null : (
           <OverlayImageButton
             label="취소"
-            assetSrc={INGAME_PLAYER_CARD_OVERLAY_ASSETS.cancelButton}
+            assetSrc={PLAYER_CARD_OVERLAY_ASSETS.cancelButton}
             onClick={() => onClose?.()}
           />
         )}

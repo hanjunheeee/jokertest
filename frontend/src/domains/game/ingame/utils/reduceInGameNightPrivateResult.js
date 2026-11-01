@@ -1,4 +1,4 @@
-import { getInGameRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
+import { getRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
 
 const OWNER_ROLE_BY_ACTION_TYPE = Object.freeze({
   INVESTIGATE: "GUARD",
@@ -39,7 +39,7 @@ export function parseInGameNightPrivateResultPayload({
     if (typeof selfUuid === "string" && selfUuid.length > 0 && payload.targetId === selfUuid) {
       return null
     }
-    if (getInGameRoleRevealDisplay(payload.role) === null) return null
+    if (getRoleRevealDisplay(payload.role) === null) return null
     return {
       gameId: payload.gameId,
       dayIndex: payload.dayIndex,
@@ -79,7 +79,7 @@ export function reduceInGameNightPrivateResult(payload, players) {
   if (target === null) return null
   if (typeof target.nickname !== "string" || target.nickname.length === 0) return null
 
-  const display = getInGameRoleRevealDisplay(payload.role)
+  const display = getRoleRevealDisplay(payload.role)
   if (display === null) return null
 
   const verb = payload.actionType === "INVESTIGATE" ? "조사" : "확인"

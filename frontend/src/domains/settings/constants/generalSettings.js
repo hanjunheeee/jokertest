@@ -1,4 +1,4 @@
-export const GENERAL_SETTING_SECTIONS = {
+export const SETTING_SECTIONS = {
   screen: "화면 모드",
   notification: "알림",
 }

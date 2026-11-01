@@ -5,30 +5,30 @@ import {
   TRIBUNAL_VOTE_GUILTY_LABEL,
   TRIBUNAL_VOTE_NOT_GUILTY_LABEL,
 } from "../../constants/actions/ingameActionPanel.js"
-import { INGAME_PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
+import { PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
 import {
-  INGAME_TRIBUNAL_PRESENTATION_ACTION_BTN_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_ACTION_BTN_IMG_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_ACTION_BTN_LABEL_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_ACTIONS_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_BACKDROP_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_CARD_WRAP_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_CHAT_WRAP_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_CLUSTER_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_INTRO_HOLD_MS,
-  INGAME_TRIBUNAL_PRESENTATION_DEV_RESOLVE_BTN_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_DEV_RESOLVE_WRAP_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_LEFT_COLUMN_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_NOTICE_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_ROW_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_SHELL_CLASS,
-  INGAME_TRIBUNAL_PRESENTATION_STAGE_CLASS,
+  ACTION_BTN_CLASS,
+  ACTION_BTN_IMG_CLASS,
+  ACTION_BTN_LABEL_CLASS,
+  ACTIONS_CLASS,
+  BACKDROP_CLASS,
+  CARD_WRAP_CLASS,
+  CHAT_WRAP_CLASS,
+  CLUSTER_CLASS,
+  INTRO_HOLD_MS,
+  DEV_RESOLVE_BTN_CLASS,
+  DEV_RESOLVE_WRAP_CLASS,
+  LEFT_COLUMN_CLASS,
+  NOTICE_CLASS,
+  ROW_CLASS,
+  SHELL_CLASS,
+  STAGE_CLASS,
 } from "../../constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 import {
-  INGAME_TRIBUNAL_PRESENTATION_BACKDROP_MOTION,
-  INGAME_TRIBUNAL_PRESENTATION_BUTTON_MOTION,
-  INGAME_TRIBUNAL_PRESENTATION_CARD_MOTION,
-  INGAME_TRIBUNAL_PRESENTATION_CHAT_MOTION,
+  BACKDROP_MOTION,
+  BTN_MOTION,
+  CARD_MOTION,
+  CHAT_MOTION,
 } from "../../constants/tribunalPresentation/ingameTribunalPresentationMotion.js"
 import InGamePlayerCard from "../board/InGamePlayerCard.jsx"
 import InGameTribunalPresentationChatPanel from "./InGameTribunalPresentationChatPanel.jsx"
@@ -42,15 +42,15 @@ function TribunalVoteButton({ label, assetSrc, disabled, onClick, motionDelay })
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={INGAME_TRIBUNAL_PRESENTATION_ACTION_BTN_CLASS}
+      className={ACTION_BTN_CLASS}
       style={{ outline: "none" }}
-      variants={INGAME_TRIBUNAL_PRESENTATION_BUTTON_MOTION}
+      variants={BTN_MOTION}
       initial={reduceMotion ? false : "hidden"}
       animate={reduceMotion ? undefined : "visible"}
       custom={motionDelay}
     >
-      <PublicAsset src={assetSrc} alt="" className={INGAME_TRIBUNAL_PRESENTATION_ACTION_BTN_IMG_CLASS} />
-      <span className={INGAME_TRIBUNAL_PRESENTATION_ACTION_BTN_LABEL_CLASS}>{label}</span>
+      <PublicAsset src={assetSrc} alt="" className={ACTION_BTN_IMG_CLASS} />
+      <span className={ACTION_BTN_LABEL_CLASS}>{label}</span>
     </motion.button>
   )
 }
@@ -86,7 +86,7 @@ export default function InGameTribunalPresentationOverlay({
     setLayoutPhase("intro")
     const timer = window.setTimeout(() => {
       setLayoutPhase("split")
-    }, INGAME_TRIBUNAL_PRESENTATION_INTRO_HOLD_MS)
+    }, INTRO_HOLD_MS)
 
     return () => window.clearTimeout(timer)
   }, [open, reduceMotion, defendant?.id])
@@ -99,28 +99,28 @@ export default function InGameTribunalPresentationOverlay({
     <AnimatePresence>
       {open ? (
         <div
-          className={INGAME_TRIBUNAL_PRESENTATION_SHELL_CLASS}
+          className={SHELL_CLASS}
           role="presentation"
           data-ingame-tribunal-presentation=""
           data-ingame-tribunal-layout={layoutPhase}
           aria-hidden={!open}
         >
           <motion.div
-            className={INGAME_TRIBUNAL_PRESENTATION_BACKDROP_CLASS}
-            variants={INGAME_TRIBUNAL_PRESENTATION_BACKDROP_MOTION}
+            className={BACKDROP_CLASS}
+            variants={BACKDROP_MOTION}
             initial={reduceMotion ? false : "hidden"}
             animate={reduceMotion ? undefined : "visible"}
             exit="hidden"
             aria-hidden="true"
           />
 
-          <div className={INGAME_TRIBUNAL_PRESENTATION_STAGE_CLASS}>
-            <div className={INGAME_TRIBUNAL_PRESENTATION_ROW_CLASS}>
-              <div className={INGAME_TRIBUNAL_PRESENTATION_CLUSTER_CLASS}>
-              <div className={INGAME_TRIBUNAL_PRESENTATION_LEFT_COLUMN_CLASS}>
+          <div className={STAGE_CLASS}>
+            <div className={ROW_CLASS}>
+              <div className={CLUSTER_CLASS}>
+              <div className={LEFT_COLUMN_CLASS}>
                 <motion.div
-                  className={INGAME_TRIBUNAL_PRESENTATION_CARD_WRAP_CLASS}
-                  variants={INGAME_TRIBUNAL_PRESENTATION_CARD_MOTION}
+                  className={CARD_WRAP_CLASS}
+                  variants={CARD_MOTION}
                   initial={reduceMotion ? false : "hidden"}
                   animate={reduceMotion ? undefined : "visible"}
                 >
@@ -136,28 +136,28 @@ export default function InGameTribunalPresentationOverlay({
 
                 {showVoteButtons ? (
                   <motion.div
-                    className={INGAME_TRIBUNAL_PRESENTATION_ACTIONS_CLASS}
+                    className={ACTIONS_CLASS}
                     initial={reduceMotion ? false : { opacity: 0 }}
                     animate={reduceMotion ? undefined : { opacity: 1 }}
                     transition={{ delay: reduceMotion ? 0 : 0.12, duration: 0.18 }}
                   >
                     <TribunalVoteButton
                       label={TRIBUNAL_VOTE_GUILTY_LABEL}
-                      assetSrc={INGAME_PLAYER_CARD_OVERLAY_ASSETS.cancelButton}
+                      assetSrc={PLAYER_CARD_OVERLAY_ASSETS.cancelButton}
                       disabled={!voteButtonsEnabled || voteSubmitting}
                       onClick={() => onVoteGuilty?.()}
                       motionDelay={0.16}
                     />
                     <TribunalVoteButton
                       label={TRIBUNAL_VOTE_NOT_GUILTY_LABEL}
-                      assetSrc={INGAME_PLAYER_CARD_OVERLAY_ASSETS.confirmButton}
+                      assetSrc={PLAYER_CARD_OVERLAY_ASSETS.confirmButton}
                       disabled={!voteButtonsEnabled || voteSubmitting}
                       onClick={() => onVoteNotGuilty?.()}
                       motionDelay={0.28}
                     />
                   </motion.div>
                 ) : noticeText ? (
-                  <p className={INGAME_TRIBUNAL_PRESENTATION_NOTICE_CLASS}>
+                  <p className={NOTICE_CLASS}>
                     {noticeText}
                   </p>
                 ) : null}
@@ -167,8 +167,8 @@ export default function InGameTribunalPresentationOverlay({
                 {showChat ? (
                   <motion.div
                     key="tribunal-chat"
-                    className={INGAME_TRIBUNAL_PRESENTATION_CHAT_WRAP_CLASS}
-                    variants={INGAME_TRIBUNAL_PRESENTATION_CHAT_MOTION}
+                    className={CHAT_WRAP_CLASS}
+                    variants={CHAT_MOTION}
                     initial={reduceMotion ? false : "hidden"}
                     animate={reduceMotion ? undefined : "visible"}
                     exit="hidden"
@@ -181,10 +181,10 @@ export default function InGameTribunalPresentationOverlay({
             </div>
 
             {devResolveLabel ? (
-              <div className={INGAME_TRIBUNAL_PRESENTATION_DEV_RESOLVE_WRAP_CLASS}>
+              <div className={DEV_RESOLVE_WRAP_CLASS}>
                 <button
                   type="button"
-                  className={INGAME_TRIBUNAL_PRESENTATION_DEV_RESOLVE_BTN_CLASS}
+                  className={DEV_RESOLVE_BTN_CLASS}
                   data-dev-tribunal-resolve=""
                   disabled={!devResolveEnabled}
                   onClick={() => onDevResolve?.()}

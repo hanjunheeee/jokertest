@@ -4,14 +4,14 @@ import ForbiddenRecordsSpread from "../../../../domains/library/components/forbi
 import InvitedGuestsSpread from "../../../../domains/library/components/invitedGuests/InvitedGuestsSpread.jsx"
 import LibraryPageNavigation from "../../../../domains/library/components/book/LibraryPageNavigation.jsx"
 import {
-  LIBRARY_INNER_REVEAL_ANIMATE,
-  LIBRARY_INNER_REVEAL_DELAYS,
-  LIBRARY_INNER_REVEAL_INITIAL,
-  LIBRARY_INNER_REVEAL_TRANSITION,
+  INNER_REVEAL_ANIMATE,
+  INNER_REVEAL_DELAYS,
+  INNER_REVEAL_INIT,
+  INNER_REVEAL_TRANSITION,
 } from "../../../../domains/library/constants/libraryEntranceMotion.js"
 import {
-  LIBRARY_BOOK_CONTENT_CLASS,
-  LIBRARY_BOOK_SPREAD_CLASS,
+  BOOK_CONTENT_CLASS,
+  BOOK_SPREAD_CLASS,
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 
 export default function LibraryBookContent({
@@ -27,15 +27,15 @@ export default function LibraryBookContent({
 }) {
   return (
     <motion.div
-      className={LIBRARY_BOOK_CONTENT_CLASS}
-      initial={LIBRARY_INNER_REVEAL_INITIAL}
-      animate={LIBRARY_INNER_REVEAL_ANIMATE}
+      className={BOOK_CONTENT_CLASS}
+      initial={INNER_REVEAL_INIT}
+      animate={INNER_REVEAL_ANIMATE}
       transition={{
-        ...LIBRARY_INNER_REVEAL_TRANSITION,
-        delay: LIBRARY_INNER_REVEAL_DELAYS.content,
+        ...INNER_REVEAL_TRANSITION,
+        delay: INNER_REVEAL_DELAYS.content,
       }}
     >
-      <div className={LIBRARY_BOOK_SPREAD_CLASS}>
+      <div className={BOOK_SPREAD_CLASS}>
         {activeTabId === LIBRARY_TABS.forbiddenRecords.id ? (
           <ForbiddenRecordsSpread
             pageIndex={pageIndex}

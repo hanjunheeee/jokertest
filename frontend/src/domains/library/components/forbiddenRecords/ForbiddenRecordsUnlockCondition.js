@@ -1,20 +1,20 @@
 import { createElement } from "react"
 import {
-  LIBRARY_FORBIDDEN_UNLOCK_BRACKET_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_CHALLENGE_GROUP_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_CONDITION_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_LABEL_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_STACK_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_VALUE_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_ROW_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_STACK_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_SUFFIX_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_REWARD_COUNT_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_REWARD_ICON_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_REWARD_ITEM_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_REWARD_LABEL_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_REWARD_ROW_CLASS,
-  LIBRARY_FORBIDDEN_UNLOCK_REWARD_STACK_CLASS,
+  UNLOCK_BRACKET_CLASS,
+  UNLOCK_CHALLENGE_GROUP_CLASS,
+  UNLOCK_CONDITION_CLASS,
+  UNLOCK_PROGRESS_LABEL_CLASS,
+  UNLOCK_PROGRESS_STACK_CLASS,
+  UNLOCK_PROGRESS_VALUE_CLASS,
+  UNLOCK_ROW_CLASS,
+  UNLOCK_STACK_CLASS,
+  UNLOCK_SUFFIX_CLASS,
+  UNLOCK_REWARD_COUNT_CLASS,
+  UNLOCK_REWARD_ICON_CLASS,
+  UNLOCK_REWARD_ITEM_CLASS,
+  UNLOCK_REWARD_LABEL_CLASS,
+  UNLOCK_REWARD_ROW_CLASS,
+  UNLOCK_REWARD_STACK_CLASS,
 } from "../../constants/forbiddenRecords/layoutStyle.js"
 import { publicAsset } from "../../../../shared/utils/publicAsset.js"
 
@@ -36,24 +36,24 @@ function ForbiddenRecordsUnlockRewards({ rewards }) {
 
   return createElement(
     "div",
-    { className: LIBRARY_FORBIDDEN_UNLOCK_REWARD_STACK_CLASS },
-    createElement("p", { className: LIBRARY_FORBIDDEN_UNLOCK_REWARD_LABEL_CLASS }, "보상"),
+    { className: UNLOCK_REWARD_STACK_CLASS },
+    createElement("p", { className: UNLOCK_REWARD_LABEL_CLASS }, "보상"),
     createElement(
       "div",
-      { className: LIBRARY_FORBIDDEN_UNLOCK_REWARD_ROW_CLASS },
+      { className: UNLOCK_REWARD_ROW_CLASS },
       rewards.map((reward) =>
         createElement(
           "div",
-          { key: reward.icon, className: LIBRARY_FORBIDDEN_UNLOCK_REWARD_ITEM_CLASS },
+          { key: reward.icon, className: UNLOCK_REWARD_ITEM_CLASS },
           createElement("img", {
             src: publicAsset(reward.icon),
             alt: "",
-            className: LIBRARY_FORBIDDEN_UNLOCK_REWARD_ICON_CLASS,
+            className: UNLOCK_REWARD_ICON_CLASS,
             draggable: false,
             "data-asset-src": reward.icon,
             onError: handleRewardIconError,
           }),
-          createElement("span", { className: LIBRARY_FORBIDDEN_UNLOCK_REWARD_COUNT_CLASS }, `×${reward.count}`),
+          createElement("span", { className: UNLOCK_REWARD_COUNT_CLASS }, `×${reward.count}`),
         ),
       ),
     ),
@@ -63,24 +63,24 @@ function ForbiddenRecordsUnlockRewards({ rewards }) {
 export default function ForbiddenRecordsUnlockCondition({ condition, progress, rewards }) {
   return createElement(
     "div",
-    { className: LIBRARY_FORBIDDEN_UNLOCK_STACK_CLASS },
+    { className: UNLOCK_STACK_CLASS },
     createElement(
       "div",
-      { className: LIBRARY_FORBIDDEN_UNLOCK_CHALLENGE_GROUP_CLASS },
+      { className: UNLOCK_CHALLENGE_GROUP_CLASS },
       createElement(
         "div",
-        { className: LIBRARY_FORBIDDEN_UNLOCK_ROW_CLASS },
-        createElement("span", { className: LIBRARY_FORBIDDEN_UNLOCK_BRACKET_CLASS, "aria-hidden": "true" }, "["),
-        createElement("span", { className: LIBRARY_FORBIDDEN_UNLOCK_CONDITION_CLASS }, condition),
-        createElement("span", { className: LIBRARY_FORBIDDEN_UNLOCK_BRACKET_CLASS, "aria-hidden": "true" }, "]"),
+        { className: UNLOCK_ROW_CLASS },
+        createElement("span", { className: UNLOCK_BRACKET_CLASS, "aria-hidden": "true" }, "["),
+        createElement("span", { className: UNLOCK_CONDITION_CLASS }, condition),
+        createElement("span", { className: UNLOCK_BRACKET_CLASS, "aria-hidden": "true" }, "]"),
       ),
-      createElement("p", { className: LIBRARY_FORBIDDEN_UNLOCK_SUFFIX_CLASS }, "시 해금"),
+      createElement("p", { className: UNLOCK_SUFFIX_CLASS }, "시 해금"),
       progress
         ? createElement(
             "div",
-            { className: LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_STACK_CLASS },
-            createElement("p", { className: LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_LABEL_CLASS }, "현재 진행도"),
-            createElement("p", { className: LIBRARY_FORBIDDEN_UNLOCK_PROGRESS_VALUE_CLASS }, progress),
+            { className: UNLOCK_PROGRESS_STACK_CLASS },
+            createElement("p", { className: UNLOCK_PROGRESS_LABEL_CLASS }, "현재 진행도"),
+            createElement("p", { className: UNLOCK_PROGRESS_VALUE_CLASS }, progress),
           )
         : null,
     ),

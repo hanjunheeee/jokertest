@@ -36,10 +36,10 @@ export const INGAME_PLAYER_NAMEPLATE_INSET = {
   height: "15%",
 }
 
-export const INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS =
+export const FRAME_SHADOW_LAYER_CLASS =
   "pointer-events-none absolute inset-0 z-0 block h-auto w-full select-none [filter:drop-shadow(0_2px_3px_rgba(10,6,2,0.42))_drop-shadow(0_6px_10px_rgba(8,5,2,0.22))]"
 
-export const INGAME_PLAYER_FRAME_IMAGE_CLASS =
+export const FRAME_IMG_CLASS =
   "relative z-10 block h-auto w-full max-w-full select-none [transform:translateZ(0)] [backface-visibility:hidden] [image-rendering:-webkit-optimize-contrast]"
 
 export const INGAME_PLAYER_NAMEPLATE_CLASS =

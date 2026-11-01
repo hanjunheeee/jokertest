@@ -1,7 +1,7 @@
 import InGameChatContent from "../chat/InGameChatContent.jsx"
 import {
-  INGAME_TRIBUNAL_PRESENTATION_CHAT_PANEL_CLASS,
-  getInGameTribunalPresentationChatPanelStyle,
+  CHAT_PANEL_CLASS,
+  getChatPanelStyle,
 } from "../../constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 
 export default function InGameTribunalPresentationChatPanel({
@@ -15,8 +15,8 @@ export default function InGameTribunalPresentationChatPanel({
 }) {
   return (
     <div
-      className={INGAME_TRIBUNAL_PRESENTATION_CHAT_PANEL_CLASS}
-      style={getInGameTribunalPresentationChatPanelStyle()}
+      className={CHAT_PANEL_CLASS}
+      style={getChatPanelStyle()}
       aria-label="최후의 반론 채팅"
     >
       <InGameChatContent

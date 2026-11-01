@@ -1,6 +1,6 @@
 // 대기방 자리 계산: 방 상태로 자리 목록 만들기·자리를 줄로 나누기
 // useMatchingPage·PlayerSlotGrid·MatchingPartySlots가 씀
-import { MATCHING_PARTY_SLOTS_DUMMY_10 } from "../constants/gameMatchingAssets.js"
+import { PARTY_SLOTS_DUMMY_10 } from "../constants/gameMatchingAssets.js"
 
 export const PLAYER_SLOT_COLUMNS = 5
 
@@ -14,7 +14,7 @@ export function buildSlots({ isInRoom, players, awaiting }) {
       accountProfileBorderId: player.accountProfileBorderId,
     }))
   }
-  return awaiting ? [] : MATCHING_PARTY_SLOTS_DUMMY_10
+  return awaiting ? [] : PARTY_SLOTS_DUMMY_10
 }
 
 // 한 줄에 columns개씩 끊음

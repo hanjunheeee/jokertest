@@ -7,17 +7,17 @@ import StoreSelectedItemDetail from "./StoreSelectedItemDetail.jsx"
 import StoreSidebar from "./StoreSidebar.jsx"
 import StorePanelOverlays from "./StorePanelOverlays.jsx"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
-import { getStoreItemDisplayIcon } from "../../constants/storeItems.js"
+import { getItemDisplayIcon } from "../../constants/storeItems.js"
 import { storePurchase } from "../../store/storePurchase.store.js"
 import {
   STORE_PANEL_CLASS,
-  STORE_PANEL_CONTENT_CLASS,
+  PANEL_CONTENT_CLASS,
   STORE_PANEL_FRAME_CLASS,
-  STORE_PANEL_GRID_COLUMN_CLASS,
+  PANEL_GRID_COLUMN_CLASS,
   STORE_PANEL_INNER_PAD,
-  STORE_PANEL_MAIN_ROW_CLASS,
-  STORE_PANEL_SCROLL_AREA_CLASS,
-  STORE_PANEL_SIDEBAR_CLASS,
+  PANEL_MAIN_ROW_CLASS,
+  PANEL_SCROLL_AREA_CLASS,
+  PANEL_SIDEBAR_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 import { useStorePanel } from "../../hooks/useStorePanel.js"
 import { isPurchaseDisabled, isRealPurchaseCategory } from "../../utils/storePanel.js"
@@ -41,12 +41,12 @@ export default function StorePanel({ visible = true }) {
         <div className="relative w-full">
           <PublicAsset src={STORE_ASSETS.panelFrame} alt="" className={STORE_PANEL_FRAME_CLASS} />
 
-          <div className={STORE_PANEL_CONTENT_CLASS} style={STORE_PANEL_INNER_PAD}>
+          <div className={PANEL_CONTENT_CLASS} style={STORE_PANEL_INNER_PAD}>
             <StorePurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
-            <div className={STORE_PANEL_MAIN_ROW_CLASS}>
-              <div className={STORE_PANEL_GRID_COLUMN_CLASS}>
+            <div className={PANEL_MAIN_ROW_CLASS}>
+              <div className={PANEL_GRID_COLUMN_CLASS}>
                 <div
-                  className={`${STORE_PANEL_SCROLL_AREA_CLASS} ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`}
+                  className={`${PANEL_SCROLL_AREA_CLASS} ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`}
                 >
                   <StoreItemGrid
                     items={panel.visibleItems}
@@ -70,7 +70,7 @@ export default function StorePanel({ visible = true }) {
                 {currentItem ? (
                   <StoreSelectedItemDetail
                     item={currentItem}
-                    displayIcon={getStoreItemDisplayIcon(
+                    displayIcon={getItemDisplayIcon(
                       currentItem,
                       panel.isDeadPreview(currentItem.id),
                     )}
@@ -89,7 +89,7 @@ export default function StorePanel({ visible = true }) {
                 ) : null}
               </div>
 
-              <aside className={STORE_PANEL_SIDEBAR_CLASS}>
+              <aside className={PANEL_SIDEBAR_CLASS}>
                 <StoreSidebar
                   categories={panel.categories}
                   activeCategory={activeCategory}

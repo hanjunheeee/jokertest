@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
-import { FRIEND_INVITE_MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
-import { FRIEND_INVITE_MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
+import { MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
+import { MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
 import {
-  FRIEND_INVITE_MODAL_BACKDROP_CLASS,
+  BACKDROP_CLASS,
   FRIEND_INVITE_MODAL_CLOSE_BTN_CLASS,
   FRIEND_INVITE_MODAL_CLOSE_BTN_IMG_CLASS,
   FRIEND_INVITE_MODAL_FRAME_IMAGE_CLASS,
   FRIEND_INVITE_MODAL_INNER_CLASS,
   FRIEND_INVITE_MODAL_INSET,
-  FRIEND_INVITE_MODAL_SHELL_CLASS,
+  SHELL_CLASS,
   FRIEND_INVITE_MODAL_TITLE_CLASS,
-  FRIEND_INVITE_MODAL_WRAP_CLASS,
+  WRAP_CLASS,
   getFriendInviteModalPanelStyle,
 } from "../../constants/friendInviteModalLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
@@ -40,44 +40,44 @@ export default function FriendInviteModalShell({ open, onClose, children }) {
   if (!mounted || !open) return null
 
   return createPortal(
-    <div className={FRIEND_INVITE_MODAL_SHELL_CLASS} role="presentation">
+    <div className={SHELL_CLASS} role="presentation">
       <button
         type="button"
-        aria-label={FRIEND_INVITE_MODAL_COPY.closeAriaLabel}
-        className={FRIEND_INVITE_MODAL_BACKDROP_CLASS}
+        aria-label={MODAL_COPY.closeAriaLabel}
+        className={BACKDROP_CLASS}
         data-sfx-kind="ui-cancel"
         onClick={onClose}
       />
 
-      <div className={FRIEND_INVITE_MODAL_WRAP_CLASS}>
+      <div className={WRAP_CLASS}>
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={FRIEND_INVITE_MODAL_COPY.title}
+          aria-label={MODAL_COPY.title}
           className={`${FRIEND_INVITE_MODAL_INNER_CLASS} pointer-events-auto`}
           style={getFriendInviteModalPanelStyle()}
           onClick={(event) => event.stopPropagation()}
         >
           <PublicAsset
-            src={FRIEND_INVITE_MODAL_ASSETS.panelFrame}
+            src={MODAL_ASSETS.panelFrame}
             alt=""
             className={FRIEND_INVITE_MODAL_FRAME_IMAGE_CLASS}
           />
 
           <h2 className={FRIEND_INVITE_MODAL_TITLE_CLASS}>
-            {FRIEND_INVITE_MODAL_COPY.title}
+            {MODAL_COPY.title}
           </h2>
 
           <button
             type="button"
-            aria-label={FRIEND_INVITE_MODAL_COPY.closeAriaLabel}
+            aria-label={MODAL_COPY.closeAriaLabel}
             onClick={onClose}
             data-sfx-kind="ui-cancel"
             className={FRIEND_INVITE_MODAL_CLOSE_BTN_CLASS}
             style={{ outline: "none" }}
           >
             <PublicAsset
-              src={FRIEND_INVITE_MODAL_ASSETS.closeButton}
+              src={MODAL_ASSETS.closeButton}
               alt=""
               className={FRIEND_INVITE_MODAL_CLOSE_BTN_IMG_CLASS}
             />

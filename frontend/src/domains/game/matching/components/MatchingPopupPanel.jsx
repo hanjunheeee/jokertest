@@ -6,12 +6,12 @@ import {
   MATCHING_POPUP_COPY,
 } from "../constants/gameMatchingAssets.js"
 import {
-  MATCHING_ACTION_BTN_ROW_CLASS,
-  MATCHING_PANEL_WRAP_CLASS,
-  MATCHING_BTN_SCALE_WRAP_CLASS,
-  MATCHING_ROOM_CODE_BTN_LABEL_CLASS,
-  MATCHING_ROOM_CODE_BTN_WRAP_CLASS,
-  MATCHING_START_GAME_BTN_AREA_CLASS,
+  ACTION_BTN_ROW_CLASS,
+  PANEL_WRAP_CLASS,
+  BTN_SCALE_WRAP_CLASS,
+  ROOM_CODE_BTN_LABEL_CLASS,
+  ROOM_CODE_BTN_WRAP_CLASS,
+  START_GAME_BTN_AREA_CLASS,
   MATCHING_TITLE_CLASS,
 } from "../../../../shared/constants/matchingPopupStyles.js"
 import MatchingPopupContent from "./MatchingPopupContent.jsx"
@@ -41,7 +41,7 @@ export default function MatchingPopupPanel({
 
   return (
     <div
-      className={MATCHING_PANEL_WRAP_CLASS}
+      className={PANEL_WRAP_CLASS}
       style={{ pointerEvents: visible ? "auto" : "none" }}
     >
       <motion.div
@@ -54,15 +54,15 @@ export default function MatchingPopupPanel({
           type="button"
           aria-label="초대코드 공유"
           onClick={onRoomCodeView}
-          className={MATCHING_ROOM_CODE_BTN_WRAP_CLASS}
+          className={ROOM_CODE_BTN_WRAP_CLASS}
         >
-          <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
+          <span className={BTN_SCALE_WRAP_CLASS}>
             <PublicAsset
               src={GAME_MATCHING_ASSETS.roomCodeViewButton}
               alt=""
               className="block h-auto w-full select-none"
             />
-            <span className={MATCHING_ROOM_CODE_BTN_LABEL_CLASS}>초대코드 공유</span>
+            <span className={ROOM_CODE_BTN_LABEL_CLASS}>초대코드 공유</span>
           </span>
         </button>
 
@@ -78,9 +78,9 @@ export default function MatchingPopupPanel({
           waitingMessage={waitingMessage}
         />
 
-        <div className={MATCHING_START_GAME_BTN_AREA_CLASS}>
+        <div className={START_GAME_BTN_AREA_CLASS}>
           <motion.div
-            className={MATCHING_ACTION_BTN_ROW_CLASS}
+            className={ACTION_BTN_ROW_CLASS}
             initial={{ opacity: 0, y: 6 }}
             animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
             transition={{ ...UI_REVEAL_TRANSITION, delay: 0.08 }}

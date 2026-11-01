@@ -7,7 +7,7 @@ import {
   getPlayerCardItems,
   getSkinCardWearItemById,
   getSkinItemsForJob,
-  resolveSkinCardWearPreview,
+  resolveWearPreview,
 } from "../constants/skinCardWear/skinCardWearCatalog.js"
 import {
   SKIN_CARD_WEAR_PREVIEW_MODE_CARD,
@@ -54,7 +54,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
 
   const preview = useMemo(
     () =>
-      resolveSkinCardWearPreview({
+      resolveWearPreview({
         selectedItem,
         activeJobId,
         previewMode,

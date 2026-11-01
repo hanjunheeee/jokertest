@@ -14,9 +14,9 @@ export const INGAME_DAY_TIMEBAR_PHASES = [
   { id: "vote", src: INGAME_TIMEBAR_ASSETS.voteNode },
 ]
 
-export const INGAME_DAY_TIMEBAR_ACTIVE_PHASE = "discussion"
+export const DAY_TIMEBAR_ACTIVE_PHASE = "discussion"
 
-export const INGAME_TIMEBAR_PREVIEW_DAY = 1
+export const PREVIEW_DAY = 1
 
 export const INGAME_TIMEBAR_DAY_STATUS_MESSAGE = "낮 — 토론과 투표"
 

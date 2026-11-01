@@ -2,10 +2,10 @@
 // page/GameResultPage가 씀
 
 // 새로고침 직후 판 상태를 받아 오는 동안 빈 화면으로 기다리는 최대 시간
-export const RESULT_BOOTSTRAP_HOLD_MS = 6000
+export const BOOTSTRAP_HOLD_MS = 6000
 
 // 결과가 없을 때 쓰는 글자 버튼
-export const RESULT_PLAIN_BUTTON_CLASS =
+export const PLAIN_BTN_CLASS =
   "cursor-pointer border-0 bg-transparent p-0 font-subheading app-text-scaled [--app-text-size:clamp(0.85rem,1.2vw,1.05rem)] font-semibold text-[#f5e6c8] underline decoration-dotted underline-offset-4 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
 
 // 결과 없음 안내

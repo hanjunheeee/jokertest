@@ -1,10 +1,10 @@
 import {
-  INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
-  INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_TIGHT,
+  CONFIRM_BTN_CLASS_RAISED_FOCUS,
+  CONFIRM_BTN_CLASS_TIGHT,
 } from "./ingameParchmentConfirmButton.js"
 import {
-  INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
-  INGAME_PARCHMENT_FRAME_CLASS,
+  FALLBACK_FRAME_CLASS,
+  FRAME_CLASS,
 } from "./ingameParchmentLayout.js"
 
 const ROLE_REVEAL_PARCHMENT_FRAME_CLASS =
@@ -13,22 +13,22 @@ const ROLE_REVEAL_PARCHMENT_FRAME_CLASS =
 const ROLE_REVEAL_PARCHMENT_FALLBACK_FRAME_CLASS =
   "pointer-events-auto relative w-[min(48rem,96vw)] rounded-lg border border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
 
-const NOTIFICATIONS_PARCHMENT_FRAME_CLASS =
+const NOTIFS_PARCHMENT_FRAME_CLASS =
   "pointer-events-auto relative aspect-[3/2] w-[min(48rem,94vw,150svh)] select-none"
 
-const NOTIFICATIONS_PARCHMENT_FALLBACK_FRAME_CLASS =
+const NOTIFS_PARCHMENT_FALLBACK_FRAME_CLASS =
   "pointer-events-auto relative w-[min(48rem,94vw)] rounded-lg border border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
 
-const NOTIFICATIONS_PARCHMENT_CONTENT_CLASS =
+const NOTIFS_PARCHMENT_CONTENT_CLASS =
   "absolute inset-x-[15%] inset-y-[13.5%] flex flex-col items-center gap-[clamp(0.25rem,0.8vw,0.5rem)] overflow-hidden text-center text-[#3a1a0c]"
 
-const NOTIFICATIONS_PARCHMENT_FALLBACK_CONTENT_CLASS =
+const NOTIFS_PARCHMENT_FALLBACK_CONTENT_CLASS =
   "flex max-h-[80svh] flex-col items-center gap-[clamp(0.25rem,0.8vw,0.5rem)] overflow-hidden px-6 py-7 text-center text-[#3a1a0c]"
 
-const NOTIFICATIONS_CONFIRM_BUTTON_CLASS =
-  `${INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS} shrink-0`
+const NOTIFS_CONFIRM_BTN_CLASS =
+  `${CONFIRM_BTN_CLASS_RAISED_FOCUS} shrink-0`
 
-export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
+export const MODAL_VARIANTS = Object.freeze({
   roleReveal: Object.freeze({
     animation: "parchment-unfold",
     backdropClass:
@@ -41,7 +41,7 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     parchmentFrameClass: ROLE_REVEAL_PARCHMENT_FRAME_CLASS,
     parchmentFallbackFrameClass: ROLE_REVEAL_PARCHMENT_FALLBACK_FRAME_CLASS,
     parchmentContentClass: "gap-[clamp(0.625rem,1.6vw,0.875rem)]",
-    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_TIGHT,
+    confirmButtonClass: CONFIRM_BTN_CLASS_TIGHT,
     focusConfirmOnMount: false,
   }),
   phaseEntrance: Object.freeze({
@@ -52,10 +52,10 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     panelClass: "pointer-events-auto max-w-full",
     dialogLabel: "단계 전환 안내",
     backdropLabel: "단계 전환 안내 닫기",
-    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
-    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentFrameClass: FRAME_CLASS,
+    parchmentFallbackFrameClass: FALLBACK_FRAME_CLASS,
     parchmentContentClass: "",
-    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    confirmButtonClass: CONFIRM_BTN_CLASS_RAISED_FOCUS,
     focusConfirmOnMount: true,
   }),
   nightTurn: Object.freeze({
@@ -67,10 +67,10 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     panelClass: "pointer-events-auto relative",
     dialogLabel: "밤 역할 안내",
     backdropLabel: "밤 안내 닫기",
-    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
-    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentFrameClass: FRAME_CLASS,
+    parchmentFallbackFrameClass: FALLBACK_FRAME_CLASS,
     parchmentContentClass: "",
-    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_TIGHT,
+    confirmButtonClass: CONFIRM_BTN_CLASS_TIGHT,
     focusConfirmOnMount: false,
   }),
   notifications: Object.freeze({
@@ -81,12 +81,12 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     panelClass: "pointer-events-auto max-w-full",
     dialogLabel: "알림",
     backdropLabel: "알림 닫기",
-    parchmentFrameClass: NOTIFICATIONS_PARCHMENT_FRAME_CLASS,
-    parchmentFallbackFrameClass: NOTIFICATIONS_PARCHMENT_FALLBACK_FRAME_CLASS,
-    parchmentContentBaseClass: NOTIFICATIONS_PARCHMENT_CONTENT_CLASS,
-    parchmentFallbackContentBaseClass: NOTIFICATIONS_PARCHMENT_FALLBACK_CONTENT_CLASS,
+    parchmentFrameClass: NOTIFS_PARCHMENT_FRAME_CLASS,
+    parchmentFallbackFrameClass: NOTIFS_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentContentBaseClass: NOTIFS_PARCHMENT_CONTENT_CLASS,
+    parchmentFallbackContentBaseClass: NOTIFS_PARCHMENT_FALLBACK_CONTENT_CLASS,
     parchmentContentClass: "",
-    confirmButtonClass: NOTIFICATIONS_CONFIRM_BUTTON_CLASS,
+    confirmButtonClass: NOTIFS_CONFIRM_BTN_CLASS,
     focusConfirmOnMount: true,
   }),
   nightPrivateResult: Object.freeze({
@@ -97,10 +97,10 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     panelClass: "pointer-events-auto max-w-full",
     dialogLabel: "밤 조사 결과",
     backdropLabel: "밤 조사 결과 닫기",
-    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
-    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentFrameClass: FRAME_CLASS,
+    parchmentFallbackFrameClass: FALLBACK_FRAME_CLASS,
     parchmentContentClass: "",
-    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    confirmButtonClass: CONFIRM_BTN_CLASS_RAISED_FOCUS,
     focusConfirmOnMount: true,
   }),
   gameStartBlocked: Object.freeze({
@@ -111,10 +111,10 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     panelClass: "pointer-events-auto max-w-full",
     dialogLabel: "게임 시작 불가",
     backdropLabel: "게임 시작 불가 안내 닫기",
-    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
-    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentFrameClass: FRAME_CLASS,
+    parchmentFallbackFrameClass: FALLBACK_FRAME_CLASS,
     parchmentContentClass: "",
-    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    confirmButtonClass: CONFIRM_BTN_CLASS_RAISED_FOCUS,
     focusConfirmOnMount: true,
   }),
   emoticonPaletteSave: Object.freeze({
@@ -125,16 +125,16 @@ export const INGAME_PARCHMENT_MODAL_VARIANTS = Object.freeze({
     panelClass: "pointer-events-auto max-w-full",
     dialogLabel: "팔레트 저장",
     backdropLabel: "팔레트 저장 안내 닫기",
-    parchmentFrameClass: INGAME_PARCHMENT_FRAME_CLASS,
-    parchmentFallbackFrameClass: INGAME_PARCHMENT_FALLBACK_FRAME_CLASS,
+    parchmentFrameClass: FRAME_CLASS,
+    parchmentFallbackFrameClass: FALLBACK_FRAME_CLASS,
     parchmentContentClass: "",
-    confirmButtonClass: INGAME_PARCHMENT_CONFIRM_BUTTON_CLASS_RAISED_FOCUS,
+    confirmButtonClass: CONFIRM_BTN_CLASS_RAISED_FOCUS,
     focusConfirmOnMount: true,
   }),
 })
 
 export function getInGameParchmentModalVariant(variantKey) {
-  const variant = INGAME_PARCHMENT_MODAL_VARIANTS[variantKey]
+  const variant = MODAL_VARIANTS[variantKey]
   if (!variant) {
     throw new Error(`Unknown ingame parchment modal variant: ${variantKey}`)
   }

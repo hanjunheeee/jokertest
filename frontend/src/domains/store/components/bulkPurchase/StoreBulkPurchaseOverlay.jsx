@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import {
-  STORE_BULK_PURCHASE_BACKDROP_CLASS,
-  STORE_BULK_PURCHASE_PANEL_WRAP_CLASS,
-  STORE_BULK_PURCHASE_TRANSITION,
+  BACKDROP_CLASS,
+  PANEL_WRAP_CLASS,
+  PURCHASE_TRANSITION,
 } from "../../constants/storeBulkPurchaseLayout.js"
 import StoreBulkPurchasePanel from "./StoreBulkPurchasePanel.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
@@ -29,16 +29,16 @@ export default function StoreBulkPurchaseOverlay({ open, items, deadPreviewIds, 
           <motion.button
             type="button"
             aria-label="일괄구매 확인 닫기"
-            className={STORE_BULK_PURCHASE_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={STORE_BULK_PURCHASE_TRANSITION}
+            transition={PURCHASE_TRANSITION}
             onClick={onClose}
           />
 
-          <div className={STORE_BULK_PURCHASE_PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -46,7 +46,7 @@ export default function StoreBulkPurchaseOverlay({ open, items, deadPreviewIds, 
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={STORE_BULK_PURCHASE_TRANSITION}
+              transition={PURCHASE_TRANSITION}
               onClick={(event) => event.stopPropagation()}
             >
               <StoreBulkPurchasePanel

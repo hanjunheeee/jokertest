@@ -7,7 +7,7 @@ import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { onJoinResult } from "../socket/rooms.js"
-import { ROOM_JOIN_FAILURE_MESSAGES } from "../constants/roomJoinMessages.js"
+import { JOIN_FAILURE_MSGS } from "../constants/roomJoinMessages.js"
 
 export function useRoomInvitePage() {
   const navigate = useNavigate()
@@ -35,7 +35,7 @@ export function useRoomInvitePage() {
     }
 
     const handleRoomJoinFailed = ({ code, message } = {}) => {
-      alert(ROOM_JOIN_FAILURE_MESSAGES[code] ?? message ?? "방에 참여할 수 없습니다.")
+      alert(JOIN_FAILURE_MSGS[code] ?? message ?? "방에 참여할 수 없습니다.")
     }
 
     return onJoinResult(socket, { joined: handleRoomJoined, failed: handleRoomJoinFailed })

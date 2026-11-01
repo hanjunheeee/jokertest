@@ -3,7 +3,7 @@
 import { getEmojiPaletteApi } from "../../api/emojiPalette.api.js"
 import {
   inGameEmojiScopeKey,
-  readInGameEmojiScope,
+  readEmojiScope,
 } from "../../../game/ingame/utils/selectInGameEmojiScope.js"
 import { normalizeSlots } from "../../utils/emoticonPalette/slots.js"
 
@@ -22,7 +22,7 @@ export function clearGameRequest() {
 export const gameActions = (set, get) => ({
   // 지금 판이 아니면 거절, 이미 받은 판이면 저장값, 받는 중이면 그 요청을 같이 기다림
   loadForGame: async (scope = null) => {
-    const liveScope = readInGameEmojiScope()
+    const liveScope = readEmojiScope()
     const key = inGameEmojiScopeKey(liveScope)
     if (key === null) return { ok: false, code: "NO_GAME_SCOPE" }
     if (scope !== null && inGameEmojiScopeKey(scope) !== key) return { ok: false, stale: true }
@@ -42,7 +42,7 @@ export const gameActions = (set, get) => ({
 
     // 그사이 다른 요청이 시작됐거나 판이 바뀌었으면 응답을 버림
     const isCurrent = () => gamePendingToken === token
-      && inGameEmojiScopeKey(readInGameEmojiScope()) === key
+      && inGameEmojiScopeKey(readEmojiScope()) === key
       && get().gameScopeKey === key
 
     const pending = (async () => {

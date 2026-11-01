@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import {
-  getInGameIdentityScopeVersion,
-  isSameInGameReceiptScope,
+  getIdentityScopeVersion,
+  isSameReceiptScope,
   readInGameReceiptScope,
   readNightSuccessReceiptScope,
   selectNightSuccessQueue,
-  subscribeInGameIdentityScope,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
@@ -18,9 +18,9 @@ import { onNightTurnEnded } from "../socket/night.js"
 
 const HEAL_WINDOW_CLOSING_ROLE = "DOCTOR"
 
-const NIGHT_SUCCESS_FINAL_STATUS_TYPES = new Set(["KILL", "HEAL"])
+const FINAL_STATUS_TYPES = new Set(["KILL", "HEAL"])
 
-function resolveNightSuccessTargetId(entry, selfUuid) {
+function resolveTargetId(entry, selfUuid) {
   if (typeof entry?.targetId === "string" && entry.targetId.length > 0) return entry.targetId
   if (Array.isArray(entry?.perspectives) && entry.perspectives.includes("TARGET")) {
     return typeof selfUuid === "string" && selfUuid.length > 0 ? selfUuid : null
@@ -28,7 +28,7 @@ function resolveNightSuccessTargetId(entry, selfUuid) {
   return null
 }
 
-function isInGameNightResultReflected(state, nightDayIndex) {
+function isResultReflected(state, nightDayIndex) {
   if (!state || !Number.isInteger(state.dayIndex)) return false
   if (state.phase === "NIGHT") return false
   return state.dayIndex > nightDayIndex || state.phase === "ENDED"
@@ -41,7 +41,7 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
 
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
@@ -100,12 +100,12 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
       accountId: auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null,
       identityGeneration: auth.identityGeneration ?? null,
     })
-    if (!isSameInGameReceiptScope(capturedScope, receiptScope)) return
+    if (!isSameReceiptScope(capturedScope, receiptScope)) return
     const result = useInGameStore.getState().completeNightSuccess(entry.eventId, capturedScope, outcome)
     if (!result || result.status === "noop") return
 
-    if (NIGHT_SUCCESS_FINAL_STATUS_TYPES.has(entry.type) && scopeKey) {
-      const targetId = resolveNightSuccessTargetId(entry, authUuid)
+    if (FINAL_STATUS_TYPES.has(entry.type) && scopeKey) {
+      const targetId = resolveTargetId(entry, authUuid)
       if (targetId) {
         const isKill = entry.type === "KILL"
         setTrack((prev) => {
@@ -134,7 +134,7 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     && track.killDone
     && (track.healDone || track.healWindowClosed)
     && queue.length === 0
-    && isInGameNightResultReflected(gameState, track.nightDayIndex)
+    && isResultReflected(gameState, track.nightDayIndex)
   ) {
     const player = (gameState?.players ?? []).find((p) => p?.uuid === track.targetId) ?? null
     if (player && typeof player.alive === "boolean") {
@@ -150,7 +150,7 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
       accountId: auth.isLoggedIn && auth.user?.uuid ? auth.user.uuid : null,
       identityGeneration: auth.identityGeneration ?? null,
     })
-    if (!isSameInGameReceiptScope(capturedCloseScope, receiptScope)) return
+    if (!isSameReceiptScope(capturedCloseScope, receiptScope)) return
     setTrack((prev) => (prev === displayedTrack ? null : prev))
   }, [displayedTrack, capturedCloseScope])
 

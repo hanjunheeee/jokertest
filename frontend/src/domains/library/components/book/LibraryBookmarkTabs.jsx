@@ -1,15 +1,15 @@
 import { motion } from "framer-motion"
 import { getLibraryTab } from "../../../../domains/library/constants/libraryTabs.js"
 import {
-  LIBRARY_INNER_REVEAL_ANIMATE,
-  LIBRARY_INNER_REVEAL_DELAYS,
-  LIBRARY_INNER_REVEAL_INITIAL,
-  LIBRARY_INNER_REVEAL_TRANSITION,
+  INNER_REVEAL_ANIMATE,
+  INNER_REVEAL_DELAYS,
+  INNER_REVEAL_INIT,
+  INNER_REVEAL_TRANSITION,
 } from "../../../../domains/library/constants/libraryEntranceMotion.js"
 import {
-  LIBRARY_BOOKMARK_IMAGE_CLASS,
-  LIBRARY_BOOKMARK_ITEM_CLASS,
-  LIBRARY_BOOKMARK_STACK_CLASS,
+  BOOKMARK_IMG_CLASS,
+  BOOKMARK_ITEM_CLASS,
+  BOOKMARK_STACK_CLASS,
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
@@ -19,12 +19,12 @@ export default function LibraryBookmarkTabs({ activeTabId, onTabChange }) {
 
   return (
     <motion.div
-      className={LIBRARY_BOOKMARK_STACK_CLASS}
-      initial={LIBRARY_INNER_REVEAL_INITIAL}
-      animate={LIBRARY_INNER_REVEAL_ANIMATE}
+      className={BOOKMARK_STACK_CLASS}
+      initial={INNER_REVEAL_INIT}
+      animate={INNER_REVEAL_ANIMATE}
       transition={{
-        ...LIBRARY_INNER_REVEAL_TRANSITION,
-        delay: LIBRARY_INNER_REVEAL_DELAYS.bookmarks,
+        ...INNER_REVEAL_TRANSITION,
+        delay: INNER_REVEAL_DELAYS.bookmarks,
       }}
     >
       <button
@@ -32,13 +32,13 @@ export default function LibraryBookmarkTabs({ activeTabId, onTabChange }) {
         aria-label={forbiddenTab.label}
         aria-current={activeTabId === forbiddenTab.id ? "page" : undefined}
         onClick={() => onTabChange(forbiddenTab.id)}
-        className={LIBRARY_BOOKMARK_ITEM_CLASS}
+        className={BOOKMARK_ITEM_CLASS}
         style={{ outline: "none" }}
       >
         <PublicAsset
           src={forbiddenTab.bookmarkSrc}
           alt=""
-          className={LIBRARY_BOOKMARK_IMAGE_CLASS}
+          className={BOOKMARK_IMG_CLASS}
         />
       </button>
       <button
@@ -46,13 +46,13 @@ export default function LibraryBookmarkTabs({ activeTabId, onTabChange }) {
         aria-label={invitedTab.label}
         aria-current={activeTabId === invitedTab.id ? "page" : undefined}
         onClick={() => onTabChange(invitedTab.id)}
-        className={LIBRARY_BOOKMARK_ITEM_CLASS}
+        className={BOOKMARK_ITEM_CLASS}
         style={{ outline: "none" }}
       >
         <PublicAsset
           src={invitedTab.bookmarkSrc}
           alt=""
-          className={LIBRARY_BOOKMARK_IMAGE_CLASS}
+          className={BOOKMARK_IMG_CLASS}
         />
       </button>
     </motion.div>

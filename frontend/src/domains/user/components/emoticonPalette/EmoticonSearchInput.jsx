@@ -1,18 +1,18 @@
 import { EMOTICON_PALETTE_ASSETS } from "@/domains/user/constants/emoticonPaletteAssets.js"
 import {
-  EMOTICON_PALETTE_SEARCH_FRAME_CLASS,
-  EMOTICON_PALETTE_SEARCH_INPUT_CLASS,
-  EMOTICON_PALETTE_SEARCH_WRAP_CLASS,
+  SEARCH_FRAME_CLASS,
+  SEARCH_INPUT_CLASS,
+  SEARCH_WRAP_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 export default function EmoticonSearchInput({ value, disabled, onChange }) {
   return (
-    <div className={EMOTICON_PALETTE_SEARCH_WRAP_CLASS}>
+    <div className={SEARCH_WRAP_CLASS}>
       <PublicAsset
         src={EMOTICON_PALETTE_ASSETS.searchInput}
         alt=""
-        className={EMOTICON_PALETTE_SEARCH_FRAME_CLASS}
+        className={SEARCH_FRAME_CLASS}
         aria-hidden="true"
       />
       <input
@@ -22,7 +22,7 @@ export default function EmoticonSearchInput({ value, disabled, onChange }) {
         disabled={disabled}
         onChange={onChange}
         placeholder="이모티콘 이름 검색"
-        className={EMOTICON_PALETTE_SEARCH_INPUT_CLASS}
+        className={SEARCH_INPUT_CLASS}
       />
     </div>
   )

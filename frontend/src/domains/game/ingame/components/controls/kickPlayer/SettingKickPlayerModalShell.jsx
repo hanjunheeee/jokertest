@@ -4,15 +4,15 @@ import { INGAME_KICK_PLAYER_MODAL_ASSETS } from "../../../constants/controls/kic
 import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../constants/controls/kickPlayer/ingameKickPlayerData.js"
 import {
   getInGameKickPlayerPanelStyle,
-  INGAME_KICK_PLAYER_MODAL_BACKDROP_CLASS,
+  MODAL_BACKDROP_CLASS,
   INGAME_KICK_PLAYER_MODAL_CLOSE_BTN_CLASS,
   INGAME_KICK_PLAYER_MODAL_CLOSE_BTN_IMG_CLASS,
   INGAME_KICK_PLAYER_MODAL_FRAME_IMAGE_CLASS,
   INGAME_KICK_PLAYER_MODAL_INNER_CLASS,
   INGAME_KICK_PLAYER_MODAL_INSET,
-  INGAME_KICK_PLAYER_MODAL_SHELL_CLASS,
+  MODAL_SHELL_CLASS,
   INGAME_KICK_PLAYER_MODAL_TITLE_CLASS,
-  INGAME_KICK_PLAYER_MODAL_WRAP_CLASS,
+  MODAL_WRAP_CLASS,
 } from "../../../constants/controls/kickPlayer/ingameKickPlayerLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
@@ -40,16 +40,16 @@ export default function SettingKickPlayerModalShell({ open, onClose, children })
   if (!mounted || !open) return null
 
   return createPortal(
-    <div className={INGAME_KICK_PLAYER_MODAL_SHELL_CLASS} role="presentation">
+    <div className={MODAL_SHELL_CLASS} role="presentation">
       <button
         type="button"
         aria-label={INGAME_KICK_PLAYER_MODAL_COPY.closeAriaLabel}
-        className={INGAME_KICK_PLAYER_MODAL_BACKDROP_CLASS}
+        className={MODAL_BACKDROP_CLASS}
         data-sfx-kind="ui-cancel"
         onClick={onClose}
       />
 
-      <div className={INGAME_KICK_PLAYER_MODAL_WRAP_CLASS}>
+      <div className={MODAL_WRAP_CLASS}>
         <div
           role="dialog"
           aria-modal="true"

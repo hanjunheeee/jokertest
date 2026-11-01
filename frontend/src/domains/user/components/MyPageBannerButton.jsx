@@ -4,8 +4,8 @@ import { MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
 import {
   LOBBY_BANNER_WIDTH_CLASS,
   LOBBY_TEXT_PANEL_INSET,
-  MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
-  MY_PAGE_BANNER_ROOT_CLASS,
+  BANNER_FRAME_IMG_CLASS,
+  ROOT_CLASS,
 } from "../constants/myPageBannerStyle.js"
 
 export default function MyPageBannerButton({
@@ -16,7 +16,7 @@ export default function MyPageBannerButton({
   showProfilePortrait = false,
   showSettingsIcon = false,
   bannerSrc = MY_PAGE_ASSETS.myPageButtonFrame,
-  bannerImageClassName = MY_PAGE_BANNER_FRAME_IMAGE_CLASS,
+  bannerImageClassName = BANNER_FRAME_IMG_CLASS,
   textPanelInset = LOBBY_TEXT_PANEL_INSET,
   className = LOBBY_BANNER_WIDTH_CLASS,
 }) {
@@ -24,7 +24,7 @@ export default function MyPageBannerButton({
 
   if (hasSettingsControl) {
     return (
-      <div className={`${MY_PAGE_BANNER_ROOT_CLASS} ${className}`}>
+      <div className={`${ROOT_CLASS} ${className}`}>
         <BannerMainButton
           onClick={onClick}
           bannerSrc={bannerSrc}

@@ -1,9 +1,9 @@
-export const GAME_START_BLOCKED_TITLE = '게임을 시작할 수 없습니다'
+export const BLOCKED_TITLE = '게임을 시작할 수 없습니다'
 
-export const GAME_START_BLOCKED_TITLE_CLASS =
+export const BLOCKED_TITLE_CLASS =
   'font-subheading app-text-scaled [--app-text-size:clamp(1rem,2.4vw,1.35rem)] font-bold leading-snug text-[#3a1a0c]'
 
-export const GAME_START_BLOCKED_MESSAGE_CLASS =
+export const BLOCKED_MSG_CLASS =
   'font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.85vw,1.05rem)] font-semibold leading-relaxed text-[#3a1a0c]/90'
 
 export const GAME_START_MESSAGES = Object.freeze({

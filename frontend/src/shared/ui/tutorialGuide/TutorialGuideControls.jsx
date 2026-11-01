@@ -2,12 +2,12 @@
 // TutorialGuideOverlay가 씀
 import { TUTORIAL_GUIDE_ARROW } from "@/shared/constants/tutorialAssets.js"
 import {
-  TUTORIAL_GUIDE_ARROW_BTN_CLASS,
-  TUTORIAL_GUIDE_ARROW_IMG_CLASS,
-  TUTORIAL_GUIDE_CONTROLS_CLASS,
-  TUTORIAL_GUIDE_NODE_ACTIVE_CLASS,
-  TUTORIAL_GUIDE_NODE_BASE_CLASS,
-  TUTORIAL_GUIDE_NODES_CLASS,
+  ARROW_BTN_CLASS,
+  ARROW_IMG_CLASS,
+  CONTROLS_CLASS,
+  NODE_ACTIVE_CLASS,
+  NODE_BASE_CLASS,
+  NODES_CLASS,
 } from "@/shared/ui/tutorialGuide/tutorialGuideLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -18,22 +18,22 @@ export default function TutorialGuideControls({ slides, pageIndex, setPageIndex 
   const canGoNext = pageIndex < slideCount - 1
 
   return (
-    <div className={TUTORIAL_GUIDE_CONTROLS_CLASS} aria-label="튜토리얼 페이지 이동">
+    <div className={CONTROLS_CLASS} aria-label="튜토리얼 페이지 이동">
       <button
         type="button"
         aria-label="이전 페이지"
         disabled={!canGoPrev}
         onClick={() => setPageIndex((prev) => prev - 1)}
-        className={TUTORIAL_GUIDE_ARROW_BTN_CLASS}
+        className={ARROW_BTN_CLASS}
       >
         <PublicAsset
           src={TUTORIAL_GUIDE_ARROW}
           alt=""
-          className={TUTORIAL_GUIDE_ARROW_IMG_CLASS}
+          className={ARROW_IMG_CLASS}
         />
       </button>
 
-      <div className={TUTORIAL_GUIDE_NODES_CLASS} role="tablist" aria-label="페이지 선택">
+      <div className={NODES_CLASS} role="tablist" aria-label="페이지 선택">
         {slides.map((_, index) => {
           const active = index === pageIndex
           return (
@@ -44,8 +44,8 @@ export default function TutorialGuideControls({ slides, pageIndex, setPageIndex 
               aria-selected={active}
               aria-label={`${index + 1}페이지`}
               onClick={() => setPageIndex(index)}
-              className={`${TUTORIAL_GUIDE_NODE_BASE_CLASS}${
-                active ? ` ${TUTORIAL_GUIDE_NODE_ACTIVE_CLASS}` : ""
+              className={`${NODE_BASE_CLASS}${
+                active ? ` ${NODE_ACTIVE_CLASS}` : ""
               }`}
             />
           )
@@ -57,12 +57,12 @@ export default function TutorialGuideControls({ slides, pageIndex, setPageIndex 
         aria-label="다음 페이지"
         disabled={!canGoNext}
         onClick={() => setPageIndex((prev) => prev + 1)}
-        className={TUTORIAL_GUIDE_ARROW_BTN_CLASS}
+        className={ARROW_BTN_CLASS}
       >
         <PublicAsset
           src={TUTORIAL_GUIDE_ARROW}
           alt=""
-          className={`${TUTORIAL_GUIDE_ARROW_IMG_CLASS} rotate-180`}
+          className={`${ARROW_IMG_CLASS} rotate-180`}
         />
       </button>
     </div>

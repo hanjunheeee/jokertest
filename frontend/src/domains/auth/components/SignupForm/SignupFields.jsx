@@ -6,9 +6,9 @@ import { LockIcon, MailIcon, ProfileIcon, SignupCalendarIcon } from "@/shared/ui
 import EmailCheckMessage from "@/domains/auth/components/SignupForm/EmailCheckMessage.jsx"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
-  SIGNUP_EMAIL_CHECK_BUTTON_CLASS,
-  SIGNUP_EMAIL_CHECK_BUTTON_LABEL_CLASS,
-  SIGNUP_EMAIL_CHECK_BLOCK_CLASS,
+  EMAIL_CHECK_BTN_CLASS,
+  EMAIL_CHECK_BTN_LABEL_CLASS,
+  EMAIL_CHECK_BLOCK_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import { useEmailCheck } from "@/domains/auth/hooks/login/useEmailCheck.js"
 
@@ -29,7 +29,7 @@ export default function SignupFields({ formData, handleInputChange }) {
         compact
       />
 
-      <div className={SIGNUP_EMAIL_CHECK_BLOCK_CLASS}>
+      <div className={EMAIL_CHECK_BLOCK_CLASS}>
         <AuthImageButton
           type="button"
           inline
@@ -37,8 +37,8 @@ export default function SignupFields({ formData, handleInputChange }) {
           src={LOGIN_ASSETS.emailCheckButton}
           label="이메일 중복확인"
           visibleLabel="이메일 중복확인"
-          visibleLabelClassName={SIGNUP_EMAIL_CHECK_BUTTON_LABEL_CLASS}
-          className={SIGNUP_EMAIL_CHECK_BUTTON_CLASS}
+          visibleLabelClassName={EMAIL_CHECK_BTN_LABEL_CLASS}
+          className={EMAIL_CHECK_BTN_CLASS}
         />
         <EmailCheckMessage status={emailCheckStatus} />
       </div>

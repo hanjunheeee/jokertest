@@ -1,7 +1,7 @@
 import { MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import {
   MATCHING_PROMPT_CLASS,
-  MATCHING_WAITING_MESSAGE_CLASS,
+  WAITING_MSG_CLASS,
 } from "../../../../shared/constants/matchingPopupStyles.js"
 import MatchingPartySlots from "./MatchingPartySlots.jsx"
 
@@ -25,7 +25,7 @@ export default function MatchingPopupContent({ slots, waitingMessage = "" }) {
       <MatchingPartySlots slots={slots} />
 
       {waitingMessage ? (
-        <p className={MATCHING_WAITING_MESSAGE_CLASS}>{waitingMessage}</p>
+        <p className={WAITING_MSG_CLASS}>{waitingMessage}</p>
       ) : null}
     </div>
   )

@@ -13,7 +13,7 @@ export function readExitScopeNow() {
 }
 
 // 요청 때와 소속·소속 세대·연결 세대가 같아야 그 요청의 응답으로 봄
-export function isExitRequestScopeCurrent(requestScope) {
+export function isRequestScopeCurrent(requestScope) {
   const now = readExitScopeNow()
   return now.membershipId === requestScope.membershipId
     && now.membershipEpoch === requestScope.membershipEpoch

@@ -1,33 +1,33 @@
 import {
   PROFILE_EDIT_GRID_CLASS,
-  PROFILE_EDIT_GRID_RETRY_BTN_CLASS,
-  PROFILE_EDIT_GRID_SECTION_CLASS,
-  PROFILE_EDIT_GRID_STATUS_TEXT_CLASS,
-  PROFILE_EDIT_OPTION_BORDER_CLASS,
-  PROFILE_EDIT_OPTION_BTN_CLASS,
-  PROFILE_EDIT_OPTION_CARD_CLASS,
-  PROFILE_EDIT_OPTION_CARD_SELECTED_CLASS,
-  PROFILE_EDIT_OPTION_PHOTO_CLASS,
-  PROFILE_EDIT_OPTION_PHOTO_WRAP_CLASS,
+  GRID_RETRY_BTN_CLASS,
+  GRID_SECTION_CLASS,
+  GRID_STATUS_TEXT_CLASS,
+  OPTION_BORDER_CLASS,
+  OPTION_BTN_CLASS,
+  OPTION_CARD_CLASS,
+  OPTION_CARD_SELECTED_CLASS,
+  OPTION_PHOTO_CLASS,
+  OPTION_PHOTO_WRAP_CLASS,
   PROFILE_EDIT_TAB_PHOTO,
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
 function OptionGridStatus({ status, onRetry, loadingText, errorText, emptyText }) {
   if (status === "loading") {
-    return <p className={PROFILE_EDIT_GRID_STATUS_TEXT_CLASS}>{loadingText}</p>
+    return <p className={GRID_STATUS_TEXT_CLASS}>{loadingText}</p>
   }
   if (status === "error") {
     return (
-      <div className={PROFILE_EDIT_GRID_STATUS_TEXT_CLASS}>
+      <div className={GRID_STATUS_TEXT_CLASS}>
         <p>{errorText}</p>
-        <button type="button" className={PROFILE_EDIT_GRID_RETRY_BTN_CLASS} onClick={onRetry}>
+        <button type="button" className={GRID_RETRY_BTN_CLASS} onClick={onRetry}>
           다시 시도
         </button>
       </div>
     )
   }
-  return <p className={PROFILE_EDIT_GRID_STATUS_TEXT_CLASS}>{emptyText}</p>
+  return <p className={GRID_STATUS_TEXT_CLASS}>{emptyText}</p>
 }
 
 function OptionGrid({ options, selectedItemId, onSelect, photo }) {
@@ -41,19 +41,19 @@ function OptionGrid({ options, selectedItemId, onSelect, photo }) {
             key={itemId}
             type="button"
             aria-pressed={selected}
-            className={PROFILE_EDIT_OPTION_BTN_CLASS}
+            className={OPTION_BTN_CLASS}
             style={{ outline: "none" }}
             onClick={() => onSelect(itemId)}
           >
             <div
-              className={`${PROFILE_EDIT_OPTION_CARD_CLASS} ${selected ? PROFILE_EDIT_OPTION_CARD_SELECTED_CLASS : ""}`}
+              className={`${OPTION_CARD_CLASS} ${selected ? OPTION_CARD_SELECTED_CLASS : ""}`}
             >
               {photo ? (
-                <div className={PROFILE_EDIT_OPTION_PHOTO_WRAP_CLASS}>
-                  <PublicAsset src={src} alt="" className={PROFILE_EDIT_OPTION_PHOTO_CLASS} />
+                <div className={OPTION_PHOTO_WRAP_CLASS}>
+                  <PublicAsset src={src} alt="" className={OPTION_PHOTO_CLASS} />
                 </div>
               ) : (
-                <PublicAsset src={src} alt="" className={PROFILE_EDIT_OPTION_BORDER_CLASS} />
+                <PublicAsset src={src} alt="" className={OPTION_BORDER_CLASS} />
               )}
             </div>
           </button>
@@ -80,7 +80,7 @@ export default function ProfileEditOptionGrid({
 
   return (
     <section
-      className={PROFILE_EDIT_GRID_SECTION_CLASS}
+      className={GRID_SECTION_CLASS}
       aria-label={isPhotoTab ? "프로필 이미지 목록" : "프로필 테두리 목록"}
     >
       {isPhotoTab ? (

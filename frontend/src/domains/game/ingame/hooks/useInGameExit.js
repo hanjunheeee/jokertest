@@ -5,8 +5,8 @@ import { useBlocker, useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import {
-  getInGameIdentityScopeVersion,
-  subscribeInGameIdentityScope,
+  getIdentityScopeVersion,
+  subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
 import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
@@ -17,7 +17,7 @@ import { EXIT_STATUS } from "../constants/ingameExit.js"
 import { sendLeave as sendLeaveNow } from "./exit/leave.js"
 import { lookupExitOutcome } from "./exit/outcome.js"
 
-export { IN_GAME_EXIT_ACK_TIMEOUT_MS } from "../constants/ingameExit.js"
+export { EXIT_ACK_TIMEOUT_MS } from "../constants/ingameExit.js"
 
 export function useInGameExit() {
   const navigate = useNavigate()
@@ -37,7 +37,7 @@ export function useInGameExit() {
 
   // 신원 범위·계정·신원 세대가 바뀌면 진행 중인 나가기를 버림
   const identityScopeVersion = useSyncExternalStore(
-    subscribeInGameIdentityScope, getInGameIdentityScopeVersion, getInGameIdentityScopeVersion,
+    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)

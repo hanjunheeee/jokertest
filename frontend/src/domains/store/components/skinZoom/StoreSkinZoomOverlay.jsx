@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import {
-  STORE_SKIN_ZOOM_BACKDROP_CLASS,
-  STORE_SKIN_ZOOM_PANEL_WRAP_CLASS,
-  STORE_SKIN_ZOOM_TRANSITION,
+  BACKDROP_CLASS,
+  PANEL_WRAP_CLASS,
+  ZOOM_TRANSITION,
 } from "../../constants/storeSkinZoomLayout.js"
 import StoreSkinZoomPanel from "./StoreSkinZoomPanel.jsx"
 import { dispatchUiSfx } from "../../../../shared/hooks/useSfxRuntime.js"
@@ -29,16 +29,16 @@ export default function StoreSkinZoomOverlay({ open, item, onClose }) {
           <motion.button
             type="button"
             aria-label="스킨 확대 보기 닫기"
-            className={STORE_SKIN_ZOOM_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             data-sfx-kind="ui-cancel"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={STORE_SKIN_ZOOM_TRANSITION}
+            transition={ZOOM_TRANSITION}
             onClick={onClose}
           />
 
-          <div className={STORE_SKIN_ZOOM_PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -46,7 +46,7 @@ export default function StoreSkinZoomOverlay({ open, item, onClose }) {
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={STORE_SKIN_ZOOM_TRANSITION}
+              transition={ZOOM_TRANSITION}
               onClick={(event) => event.stopPropagation()}
             >
               <StoreSkinZoomPanel item={item} onClose={onClose} />

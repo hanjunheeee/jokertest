@@ -1,7 +1,7 @@
 import { useState } from "react"
 import {
-  INGAME_CHAT_PANEL_POSITION_CLASS,
-  getInGameChatPanelStyle,
+  PANEL_POSITION_CLASS,
+  getPanelStyle,
 } from "../../constants/chat/ingameChatBoardLayout.js"
 import { useInGameChatSessionContext } from "./InGameChatSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
@@ -25,8 +25,8 @@ export default function InGameChatShell() {
     <>
       <aside
         aria-label="채팅"
-        className={INGAME_CHAT_PANEL_POSITION_CLASS}
-        style={getInGameChatPanelStyle()}
+        className={PANEL_POSITION_CLASS}
+        style={getPanelStyle()}
       >
         <InGameChatContent
           variant="board"

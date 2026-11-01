@@ -10,14 +10,14 @@ export const GAME_RESULT_MATCHING_BUTTON_LABEL = "대기방으로"
 
 export const GAME_RESULT_LOBBY_BUTTON_LABEL = "로비로"
 
-export const GAME_RESULT_SELF_INFO_BADGE_LABEL = "내 정보"
+export const SELF_INFO_BADGE_LABEL = "내 정보"
 
-export const GAME_RESULT_WINNING_TEAM_LABELS = {
+export const WINNING_TEAM_LABELS = {
   CITIZEN: "시민 진영 승리",
   JOKER: "광대 진영 승리",
 }
 
-export function resolveGameResultWinningTeamLabel(winningTeam) {
+export function resolveWinningTeamLabel(winningTeam) {
   if (!winningTeam) return null
-  return GAME_RESULT_WINNING_TEAM_LABELS[winningTeam] ?? null
+  return WINNING_TEAM_LABELS[winningTeam] ?? null
 }

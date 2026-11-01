@@ -1,1 +1,1 @@
-export const PODIUM_RANKING_TABLE_MAX_PAGE_COUNT = 10
+export const MAX_PAGE_COUNT = 10

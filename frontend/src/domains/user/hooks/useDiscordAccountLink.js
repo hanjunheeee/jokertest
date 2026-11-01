@@ -1,4 +1,4 @@
-export const DISCORD_LINK_ERROR_MESSAGES = {
+export const ERROR_MSGS = {
   OAUTH_CANCELLED: "Discord 계정 연결을 취소했습니다.",
   STATE_MISSING: "연결 요청 정보가 없습니다. 다시 시도해주세요.",
   STATE_INVALID: "연결 요청이 유효하지 않습니다. 다시 시도해주세요.",
@@ -19,8 +19,8 @@ export const DISCORD_LINK_ERROR_MESSAGES = {
 export const DEFAULT_DISCORD_LINK_ERROR_MESSAGE = "Discord 계정 연결에 실패했습니다. 다시 시도해주세요."
 
 export function mapDiscordLinkErrorCode(code) {
-  if (typeof code === "string" && Object.prototype.hasOwnProperty.call(DISCORD_LINK_ERROR_MESSAGES, code)) {
-    return DISCORD_LINK_ERROR_MESSAGES[code]
+  if (typeof code === "string" && Object.prototype.hasOwnProperty.call(ERROR_MSGS, code)) {
+    return ERROR_MSGS[code]
   }
   return DEFAULT_DISCORD_LINK_ERROR_MESSAGE
 }

@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect, useRef } from "react"
 import {
-  SKIN_CARD_WEAR_BACKDROP_CLASS,
-  SKIN_CARD_WEAR_PANEL_WRAP_CLASS,
-  SKIN_CARD_WEAR_TRANSITION,
+  BACKDROP_CLASS,
+  PANEL_WRAP_CLASS,
+  WEAR_TRANSITION,
 } from "../../constants/skinCardWear/skinCardWearLayout.js"
 import { useSkinCardWearSelection } from "../../hooks/useSkinCardWearSelection.js"
 import { useSkinCardWearStore } from "../../store/skinCardWear.store.js"
@@ -93,16 +93,16 @@ export default function SkinCardWearOverlay({ open, onClose }) {
           <motion.button
             type="button"
             aria-label="스킨&카드 착용 닫기"
-            className={SKIN_CARD_WEAR_BACKDROP_CLASS}
+            className={BACKDROP_CLASS}
             data-sfx-owner="explicit"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={SKIN_CARD_WEAR_TRANSITION}
+            transition={WEAR_TRANSITION}
             onClick={handleClose}
           />
 
-          <div className={SKIN_CARD_WEAR_PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -110,7 +110,7 @@ export default function SkinCardWearOverlay({ open, onClose }) {
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={SKIN_CARD_WEAR_TRANSITION}
+              transition={WEAR_TRANSITION}
               onClick={(event) => event.stopPropagation()}
             >
               <SkinCardWearPanel

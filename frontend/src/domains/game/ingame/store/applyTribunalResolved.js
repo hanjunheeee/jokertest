@@ -1,9 +1,9 @@
 import { normalizePublicWinResult } from "../utils/normalizePublicWinResult.js"
 import { isNonNegativeInteger } from "../../shared/utils/valueChecks.js"
 
-const TRIBUNAL_RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
+const RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
-const TRIBUNAL_CANCELLED_OUTCOME = "CANCELLED"
+const CANCELLED_OUTCOME = "CANCELLED"
 const TRIBUNAL_CANCEL_REASONS = new Set(["DEFENDANT_LEFT"])
 
 export function applyTribunalResolvedPure(current, payload) {
@@ -13,7 +13,7 @@ export function applyTribunalResolvedPure(current, payload) {
   if (typeof payload.phase !== "string") return current
   if (typeof payload.defendantUuid !== "string" || payload.defendantUuid.length === 0) return current
 
-  if (payload.outcome === TRIBUNAL_CANCELLED_OUTCOME) {
+  if (payload.outcome === CANCELLED_OUTCOME) {
     if (payload.phase !== "NIGHT") return current
     if (!TRIBUNAL_CANCEL_REASONS.has(payload.reason)) return current
     if (payload.executedUuid !== null) return current
@@ -37,7 +37,7 @@ export function applyTribunalResolvedPure(current, payload) {
     }
   }
 
-  if (!TRIBUNAL_RESOLVED_OUTCOMES.has(payload.outcome)) return current
+  if (!RESOLVED_OUTCOMES.has(payload.outcome)) return current
 
   const counts = payload.counts
   if (!counts || typeof counts !== "object" || Array.isArray(counts)) return current

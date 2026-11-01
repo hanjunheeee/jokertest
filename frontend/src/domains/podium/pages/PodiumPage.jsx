@@ -7,14 +7,14 @@ import PodiumHeader from "../components/PodiumHeader.jsx"
 import PodiumRankingTableShell from "../components/rankingTable/PodiumRankingTableShell.jsx"
 import PodiumTopThree from "../components/topThree/PodiumTopThree.jsx"
 import {
-  PODIUM_BACK_BUTTON_REVEAL_DELAY,
-  PODIUM_CONTENT_DROP_ANIMATE,
-  PODIUM_CONTENT_DROP_INITIAL,
-  PODIUM_CONTENT_DROP_TRANSITION,
-  PODIUM_INNER_REVEAL_ANIMATE,
-  PODIUM_INNER_REVEAL_DELAYS,
-  PODIUM_INNER_REVEAL_INITIAL,
-  PODIUM_INNER_REVEAL_TRANSITION,
+  BACK_BTN_REVEAL_DELAY,
+  CONTENT_DROP_ANIMATE,
+  CONTENT_DROP_INIT,
+  CONTENT_DROP_TRANSITION,
+  INNER_REVEAL_ANIMATE,
+  INNER_REVEAL_DELAYS,
+  INNER_REVEAL_INIT,
+  INNER_REVEAL_TRANSITION,
 } from "../constants/podiumEntranceMotion.js"
 import { PODIUM_CONTENT_CLASS, PODIUM_PAGE_ROOT_CLASS } from "../constants/podiumLayoutStyle.js"
 import { PODIUM_RANKING_DUMMY } from "../content/podiumRankingDummy.js"
@@ -31,37 +31,37 @@ export default function PodiumPage() {
       <PodiumBackground />
       <motion.div
         className={PODIUM_CONTENT_CLASS}
-        initial={PODIUM_CONTENT_DROP_INITIAL}
-        animate={PODIUM_CONTENT_DROP_ANIMATE}
-        transition={PODIUM_CONTENT_DROP_TRANSITION}
+        initial={CONTENT_DROP_INIT}
+        animate={CONTENT_DROP_ANIMATE}
+        transition={CONTENT_DROP_TRANSITION}
       >
         <motion.div
-          initial={PODIUM_INNER_REVEAL_INITIAL}
-          animate={PODIUM_INNER_REVEAL_ANIMATE}
+          initial={INNER_REVEAL_INIT}
+          animate={INNER_REVEAL_ANIMATE}
           transition={{
-            ...PODIUM_INNER_REVEAL_TRANSITION,
-            delay: PODIUM_INNER_REVEAL_DELAYS.header,
+            ...INNER_REVEAL_TRANSITION,
+            delay: INNER_REVEAL_DELAYS.header,
           }}
         >
           <PodiumHeader />
         </motion.div>
         <motion.div
-          initial={PODIUM_INNER_REVEAL_INITIAL}
-          animate={PODIUM_INNER_REVEAL_ANIMATE}
+          initial={INNER_REVEAL_INIT}
+          animate={INNER_REVEAL_ANIMATE}
           transition={{
-            ...PODIUM_INNER_REVEAL_TRANSITION,
-            delay: PODIUM_INNER_REVEAL_DELAYS.topThree,
+            ...INNER_REVEAL_TRANSITION,
+            delay: INNER_REVEAL_DELAYS.topThree,
           }}
         >
           <PodiumTopThree entries={topThree} />
         </motion.div>
         <motion.div
           className="flex min-h-0 flex-1 flex-col"
-          initial={PODIUM_INNER_REVEAL_INITIAL}
-          animate={PODIUM_INNER_REVEAL_ANIMATE}
+          initial={INNER_REVEAL_INIT}
+          animate={INNER_REVEAL_ANIMATE}
           transition={{
-            ...PODIUM_INNER_REVEAL_TRANSITION,
-            delay: PODIUM_INNER_REVEAL_DELAYS.table,
+            ...INNER_REVEAL_TRANSITION,
+            delay: INNER_REVEAL_DELAYS.table,
           }}
         >
           <PodiumRankingTableShell ranking={PODIUM_RANKING_DUMMY} />
@@ -70,7 +70,7 @@ export default function PodiumPage() {
       <MotionBackButton
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ ...UI_REVEAL_TRANSITION, delay: PODIUM_BACK_BUTTON_REVEAL_DELAY }}
+        transition={{ ...UI_REVEAL_TRANSITION, delay: BACK_BTN_REVEAL_DELAY }}
         onClick={() => navigate("/lobby")}
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-30`}
       />

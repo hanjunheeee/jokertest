@@ -2,13 +2,13 @@
 // FriendRequestResultsList가 후보마다 그림
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import {
-  RECOMMENDED_FRIEND_INFO_WRAP_CLASS,
-  RECOMMENDED_FRIEND_NAME_CLASS,
-  FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
-  RECOMMENDED_FRIEND_ROW_CLASS,
-  RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
-  RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
-  RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
+  RECOMMENDED_INFO_WRAP_CLASS,
+  RECOMMENDED_NAME_CLASS,
+  PROFILE_PORTRAIT_WRAP_CLASS,
+  RECOMMENDED_ROW_CLASS,
+  RECOMMENDED_ROW_CONTENT_CLASS,
+  RECOMMENDED_ROW_FRAME_CLASS,
+  RECOMMENDED_TEXT_WRAP_CLASS,
 } from "../../../constants/friendListStyle.js"
 import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
@@ -16,7 +16,7 @@ import { resolveAccountProfileAssets } from "../../../../../shared/utils/resolve
 import RecommendedFriendStatus from "./row/RecommendedFriendStatus.jsx"
 import RecommendedFriendActions from "./row/RecommendedFriendActions.jsx"
 
-export { RECOMMENDED_FRIEND_STATUS_TEXT } from "../../../constants/recommendedFriend.js"
+export { STATUS_TEXT } from "../../../constants/recommendedFriend.js"
 
 // 프로필 사진·테두리 id를 실제 그림 경로로 바꿔 초상에 넘김
 export default function RecommendedFriendRow({
@@ -33,21 +33,21 @@ export default function RecommendedFriendRow({
   const { portraitSrc, frameSrc } = resolveAccountProfileAssets({ accountProfilePhotoId, accountProfileBorderId })
 
   return (
-    <li className={RECOMMENDED_FRIEND_ROW_CLASS} data-candidate-id={id}>
+    <li className={RECOMMENDED_ROW_CLASS} data-candidate-id={id}>
       <PublicAsset
         src={FRIEND_LIST_ASSETS.rowFrame}
         alt=""
-        className={RECOMMENDED_FRIEND_ROW_FRAME_CLASS}
+        className={RECOMMENDED_ROW_FRAME_CLASS}
       />
-      <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
+      <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
+        <div className={RECOMMENDED_INFO_WRAP_CLASS}>
           <PlayerProfilePortrait
             photoSrc={portraitSrc}
             frameSrc={frameSrc}
-            wrapClassName={FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS}
+            wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
           />
-          <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{name}</p>
+          <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
+            <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
             <RecommendedFriendStatus status={status} />
           </div>
         </div>

@@ -17,7 +17,7 @@ export function selectInGameEmojiScope(inGame, authUuid, identityGeneration) {
   return { accountId: authUuid, identityGeneration: identityGeneration ?? null, gameId }
 }
 
-export function readInGameEmojiScope() {
+export function readEmojiScope() {
   const auth = useAuthStore.getState()
   return selectInGameEmojiScope(
     useInGameStore.getState(),

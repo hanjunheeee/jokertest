@@ -39,7 +39,7 @@ export const NIGHT_TIME_ID_TO_ROLE = Object.freeze(
   Object.fromEntries(ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ role, id }) => [id, role])),
 )
 
-export const ROOM_SETTINGS_FORM_ERROR_CODES = Object.freeze({
+export const ERROR_CODES = Object.freeze({
   NOT_OBJECT: "NOT_OBJECT",
   INVALID_ACCESS_TYPE: "INVALID_ACCESS_TYPE",
   MISSING_FIELD: "MISSING_FIELD",

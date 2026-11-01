@@ -1,12 +1,12 @@
 // 알림 창 보이는 목록 계산 (설정에서 끈 종류 빼기·안 읽은 수·본문 상태)
 // 알림 창·알림 버튼·모두 읽음 액션이 씀
-import { NOTIFICATION_SETTING_KEY_BY_TYPE } from "../constants/notificationSettingKeys.js"
+import { SETTING_KEY_BY_TYPE } from "../constants/notificationSettingKeys.js"
 
 // 설정 키가 없는 종류는 늘 보임, 체크를 끈 종류만 숨김
 export function selectVisibleNotifications(items, generalChecks) {
   const checks = generalChecks ?? {}
   return items.filter((item) => {
-    const key = NOTIFICATION_SETTING_KEY_BY_TYPE[item.type]
+    const key = SETTING_KEY_BY_TYPE[item.type]
     if (key === undefined) return true
     return checks[key] !== false
   })

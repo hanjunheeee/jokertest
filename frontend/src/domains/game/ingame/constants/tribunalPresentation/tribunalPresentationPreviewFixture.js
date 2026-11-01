@@ -1,11 +1,11 @@
 import { buildInGamePreviewPlayers } from "../../utils/buildInGamePreviewPlayers.js"
 
-export function buildTribunalPresentationPreviewDefendant() {
+export function buildPreviewDefendant() {
   const players = buildInGamePreviewPlayers(5)
   return players[1]
 }
 
-export function buildTribunalPresentationPreviewChatMessages() {
+export function buildPreviewChatMsgs() {
   const players = buildInGamePreviewPlayers(5)
   const now = Date.now()
 

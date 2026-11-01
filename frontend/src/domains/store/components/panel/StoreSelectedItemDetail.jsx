@@ -2,25 +2,25 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../constants/storeItems.js"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
-  STORE_DETAIL_IMAGE_CLASS,
-  STORE_DETAIL_IMAGE_WRAP_CLASS,
+  DETAIL_IMG_CLASS,
+  DETAIL_IMG_WRAP_CLASS,
   STORE_DETAIL_INFO_CLASS,
   STORE_DETAIL_META_CLASS,
-  STORE_DETAIL_META_DIVIDER_CLASS,
+  DETAIL_META_DIVIDER_CLASS,
   STORE_DETAIL_NAME_CLASS,
-  STORE_DETAIL_NAME_ROW_CLASS,
-  STORE_DETAIL_PRICE_AMOUNT_CLASS,
-  STORE_DETAIL_PRICE_GROUP_CLASS,
-  STORE_DETAIL_PRICE_ICON_CLASS,
-  STORE_DETAIL_PRICE_LABEL_CLASS,
-  STORE_DETAIL_PRICE_ROW_CLASS,
-  STORE_DETAIL_PRICE_TEXT_CLASS,
+  DETAIL_NAME_ROW_CLASS,
+  DETAIL_PRICE_AMOUNT_CLASS,
+  DETAIL_PRICE_GROUP_CLASS,
+  DETAIL_PRICE_ICON_CLASS,
+  DETAIL_PRICE_LABEL_CLASS,
+  DETAIL_PRICE_ROW_CLASS,
+  DETAIL_PRICE_TEXT_CLASS,
   STORE_DETAIL_ROW_CLASS,
-  STORE_DETAIL_SECTION_CLASS,
+  DETAIL_SECTION_CLASS,
   STORE_DETAIL_TAG_CLASS,
-  STORE_PURCHASE_BTN_CLASS,
-  STORE_PURCHASE_BTN_IMAGE_CLASS,
-  STORE_PURCHASE_LABEL_CLASS,
+  PURCHASE_BTN_CLASS,
+  PURCHASE_BTN_IMG_CLASS,
+  PURCHASE_LABEL_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
 function StorePurchaseButton({ onClick, disabled = false, owned = false, label = null }) {
@@ -28,7 +28,7 @@ function StorePurchaseButton({ onClick, disabled = false, owned = false, label =
   return (
     <button
       type="button"
-      className={`${STORE_PURCHASE_BTN_CLASS} ${disabled ? "cursor-not-allowed opacity-45" : "hover:opacity-90"}`}
+      className={`${PURCHASE_BTN_CLASS} ${disabled ? "cursor-not-allowed opacity-45" : "hover:opacity-90"}`}
       style={{ outline: "none" }}
       aria-label={text}
       disabled={disabled}
@@ -37,9 +37,9 @@ function StorePurchaseButton({ onClick, disabled = false, owned = false, label =
       <PublicAsset
         src={STORE_ASSETS.purchaseButton}
         alt=""
-        className={STORE_PURCHASE_BTN_IMAGE_CLASS}
+        className={PURCHASE_BTN_IMG_CLASS}
       />
-      <span className={STORE_PURCHASE_LABEL_CLASS}>{text}</span>
+      <span className={PURCHASE_LABEL_CLASS}>{text}</span>
     </button>
   )
 }
@@ -57,46 +57,46 @@ export default function StoreSelectedItemDetail({
   owned = false,
 }) {
   return (
-    <section className={STORE_DETAIL_SECTION_CLASS} aria-label="선택한 아이템 정보">
+    <section className={DETAIL_SECTION_CLASS} aria-label="선택한 아이템 정보">
       <div className={STORE_DETAIL_ROW_CLASS}>
-        <div className={STORE_DETAIL_IMAGE_WRAP_CLASS}>
-          <PublicAsset src={displayIcon} alt="" className={STORE_DETAIL_IMAGE_CLASS} />
+        <div className={DETAIL_IMG_WRAP_CLASS}>
+          <PublicAsset src={displayIcon} alt="" className={DETAIL_IMG_CLASS} />
         </div>
 
         <div className={STORE_DETAIL_INFO_CLASS}>
-          <div className={STORE_DETAIL_NAME_ROW_CLASS}>
+          <div className={DETAIL_NAME_ROW_CLASS}>
             <h2 className={STORE_DETAIL_NAME_CLASS}>{item.name}</h2>
             {item.tag ? <span className={STORE_DETAIL_TAG_CLASS}>{item.tag}</span> : null}
           </div>
 
           <p className={STORE_DETAIL_META_CLASS}>
             {item.category}
-            <span className={STORE_DETAIL_META_DIVIDER_CLASS}>·</span>
+            <span className={DETAIL_META_DIVIDER_CLASS}>·</span>
             {item.grade}
           </p>
 
-          <div className={STORE_DETAIL_PRICE_ROW_CLASS}>
-            <div className={STORE_DETAIL_PRICE_GROUP_CLASS}>
-              <span className={STORE_DETAIL_PRICE_LABEL_CLASS}>{item.kind ? "결제" : "구매 가격"}</span>
+          <div className={DETAIL_PRICE_ROW_CLASS}>
+            <div className={DETAIL_PRICE_GROUP_CLASS}>
+              <span className={DETAIL_PRICE_LABEL_CLASS}>{item.kind ? "결제" : "구매 가격"}</span>
               {item.kind ? (
-                <span className={STORE_DETAIL_PRICE_AMOUNT_CLASS}>
+                <span className={DETAIL_PRICE_AMOUNT_CLASS}>
                   <span data-testid="currency-pay">{formatAmount(item.payAmount, item.payCurrency)}</span>
-                  <span className={STORE_DETAIL_META_DIVIDER_CLASS}>→</span>
+                  <span className={DETAIL_META_DIVIDER_CLASS}>→</span>
                   <span data-testid="currency-grant">지급 {formatAmount(item.grantAmount, item.grantCurrency)}</span>
                   {item.bonusAmount > 0 ? (
                     <span data-testid="currency-bonus"> · 보너스 +{formatAmount(item.bonusAmount, item.grantCurrency)}</span>
                   ) : null}
                 </span>
               ) : isStorePricePending(item) ? (
-                <span className={STORE_DETAIL_PRICE_TEXT_CLASS}>{item.priceAmount}</span>
+                <span className={DETAIL_PRICE_TEXT_CLASS}>{item.priceAmount}</span>
               ) : (
                 <>
                   <PublicAsset
                     src={STORE_ASSETS.currencyIcon}
                     alt=""
-                    className={STORE_DETAIL_PRICE_ICON_CLASS}
+                    className={DETAIL_PRICE_ICON_CLASS}
                   />
-                  <span className={STORE_DETAIL_PRICE_AMOUNT_CLASS}>{item.priceAmount} 골드</span>
+                  <span className={DETAIL_PRICE_AMOUNT_CLASS}>{item.priceAmount} 골드</span>
                 </>
               )}
             </div>

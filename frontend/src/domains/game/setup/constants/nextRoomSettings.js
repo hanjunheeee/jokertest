@@ -2,7 +2,7 @@
 // store/nextRoomSettings·utils/nextRoomRecord·utils/resolveRestore가 씀
 
 // 저장 레코드 모양이 바뀌면 올림 (옛 레코드는 깨진 것으로 봄)
-export const NEXT_ROOM_SETTINGS_SCHEMA_VERSION = 1
+export const SETTINGS_SCHEMA_VERSION = 1
 
 // localStorage 키 앞부분, 뒤에 계정 id 붙임
 export const KEY_PREFIX = "joker:next-room-settings:v1:"
@@ -11,7 +11,7 @@ export const KEY_PREFIX = "joker:next-room-settings:v1:"
 export const ALLOWED_RECORD_KEYS = Object.freeze(["schemaVersion", "accountId", "enabled", "source"])
 
 // 저장·지우기 상태
-export const NEXT_ROOM_SETTINGS_STATUS = Object.freeze({
+export const SETTINGS_STATUS = Object.freeze({
   IDLE: "IDLE",
   PENDING: "PENDING",
   SAVED: "SAVED",

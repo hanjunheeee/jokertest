@@ -1,4 +1,4 @@
-export const FRIEND_INVITE_MODAL_ASSETS = {
+export const MODAL_ASSETS = {
   panelFrame: "/frame/투표현황창 프레임.png".normalize("NFD"),
   closeButton: "/button/팝업 닫기 버튼.png",
   inviteButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),

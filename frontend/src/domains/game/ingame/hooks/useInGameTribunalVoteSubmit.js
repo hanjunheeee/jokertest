@@ -12,7 +12,7 @@ import { onDisconnect } from "../socket/connection.js"
 const VALID_VOTES = new Set(["GUILTY", "NOT_GUILTY"])
 
 // 제출 효과음: 보낸 판·날짜·본인이 그대로이고 재판 중일 때만
-function playTribunalVoteSubmitSfx(sfxEvent, requestScope) {
+function playSubmitSfx(sfxEvent, requestScope) {
   if (sfxEvent === null || typeof sfxEvent !== "object") return
   if (sfxEvent.gameId !== requestScope.gameId) return
   if (sfxEvent.dayIndex !== requestScope.dayIndex) return
@@ -94,7 +94,7 @@ export function useInGameTribunalVoteSubmit() {
         if (isMountedRef.current) setState(next)
       },
       getLatestContext: () => buildLatestTribunalVoteContext(),
-      onAccepted: playTribunalVoteSubmitSfx,
+      onAccepted: playSubmitSfx,
     })
     controllerRef.current = controller
     setState(controller.getState())

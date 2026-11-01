@@ -1,16 +1,16 @@
-export const PLAYER_PORTRAIT_BG_GRADIENT_CLASS =
+export const BG_GRADIENT_CLASS =
   "absolute inset-0 bg-gradient-to-b from-[#ddd2bc] via-[#cfc3aa] to-[#bfb39a]"
 
-export const PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS =
+export const CLOSEUP_IMG_CLASS =
   "absolute inset-0 block h-full w-full select-none object-cover object-center"
 
-export const PLAYER_PORTRAIT_INGAME_SQUARE_IMAGE_CLASS =
+export const INGAME_SQUARE_IMG_CLASS =
   "absolute inset-0 block h-full w-full select-none object-fill object-center"
 
-export const PLAYER_PORTRAIT_STANDING_CROP_IMAGE_CLASS =
+export const STANDING_CROP_IMG_CLASS =
   "absolute top-0 left-1/2 block h-[200%] w-[112%] -translate-x-1/2 select-none object-cover object-[center_10%]"
 
-export const PLAYER_PORTRAIT_VARIANTS = {
+export const PORTRAIT_VARIANTS = {
   ingameCard: {
     bgInset: {
       top: "10%",
@@ -25,7 +25,7 @@ export const PLAYER_PORTRAIT_VARIANTS = {
       right: "10%",
     },
     bgGradientClass: "",
-    portraitImageClass: PLAYER_PORTRAIT_INGAME_SQUARE_IMAGE_CLASS,
+    portraitImageClass: INGAME_SQUARE_IMG_CLASS,
   },
 
   recordList: {
@@ -41,8 +41,8 @@ export const PLAYER_PORTRAIT_VARIANTS = {
       left: "22%",
       right: "22%",
     },
-    bgGradientClass: PLAYER_PORTRAIT_BG_GRADIENT_CLASS,
-    portraitImageClass: PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS,
+    bgGradientClass: BG_GRADIENT_CLASS,
+    portraitImageClass: CLOSEUP_IMG_CLASS,
   },
 
   friendList: {
@@ -58,8 +58,8 @@ export const PLAYER_PORTRAIT_VARIANTS = {
       left: "22%",
       right: "22%",
     },
-    bgGradientClass: PLAYER_PORTRAIT_BG_GRADIENT_CLASS,
-    portraitImageClass: PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS,
+    bgGradientClass: BG_GRADIENT_CLASS,
+    portraitImageClass: CLOSEUP_IMG_CLASS,
   },
 
   voteStatus: {
@@ -75,13 +75,13 @@ export const PLAYER_PORTRAIT_VARIANTS = {
       left: "2%",
       right: "2%",
     },
-    bgGradientClass: PLAYER_PORTRAIT_BG_GRADIENT_CLASS,
-    portraitImageClass: PLAYER_PORTRAIT_CLOSEUP_IMAGE_CLASS,
+    bgGradientClass: BG_GRADIENT_CLASS,
+    portraitImageClass: CLOSEUP_IMG_CLASS,
   },
 }
 
-export function getPlayerPortraitVariant(variant) {
-  const config = PLAYER_PORTRAIT_VARIANTS[variant]
+export function getPortraitVariant(variant) {
+  const config = PORTRAIT_VARIANTS[variant]
   if (!config) {
     throw new Error(`Unknown player portrait variant: ${variant}`)
   }

@@ -1,4 +1,4 @@
-import { getInGameRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
+import { getRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
 import { getDefaultSkinIdForJob, getSkinCardWearItemById } from "../../../user/constants/skinCardWear/skinCardWearCatalog.js"
 
 const ROLE_TEAMS = {
@@ -17,7 +17,7 @@ const ROLE_TO_SKIN_JOB_ID = {
   WITCH_HUNTER: "witchHunter",
 }
 
-function resolveInGameRoleRevealStandingSrc(role, accountSkinId) {
+function resolveStandingSrc(role, accountSkinId) {
   const skinJobId = ROLE_TO_SKIN_JOB_ID[role]
   if (!skinJobId) return null
   const resolvedSkinId = accountSkinId ?? getDefaultSkinIdForJob(skinJobId)
@@ -37,7 +37,7 @@ export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
   if (!Object.hasOwn(ROLE_TEAMS, self.role)) return null
   if (self.team !== ROLE_TEAMS[self.role]) return null
 
-  const display = getInGameRoleRevealDisplay(self.role)
+  const display = getRoleRevealDisplay(self.role)
   if (!display) return null
 
   let allies = null
@@ -54,6 +54,6 @@ export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
     teamLabel: display.teamLabel,
     description: display.description,
     allies,
-    standingSrc: resolveInGameRoleRevealStandingSrc(self.role, self.accountSkinId ?? null),
+    standingSrc: resolveStandingSrc(self.role, self.accountSkinId ?? null),
   }
 }

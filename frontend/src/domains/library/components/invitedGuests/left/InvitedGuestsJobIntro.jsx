@@ -1,15 +1,15 @@
 import InvitedGuestsSectionTitle from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsSectionTitle.jsx"
 import {
-  INVITED_GUESTS_INTRO_ROW_CLASS,
-  INVITED_GUESTS_INTRO_SECTION_CLASS,
-  INVITED_GUESTS_INTRO_TEXT_CLASS,
-  INVITED_GUESTS_INTRO_TEXT_STACK_CLASS,
-  INVITED_GUESTS_STANDING_IMAGE_CLASS,
-  INVITED_GUESTS_STANDING_IMAGE_WRAP_CLASS,
+  INTRO_ROW_CLASS,
+  INTRO_SECTION_CLASS,
+  INTRO_TEXT_CLASS,
+  INTRO_TEXT_STACK_CLASS,
+  STANDING_IMG_CLASS,
+  STANDING_IMG_WRAP_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
 import PublicAsset from "../../../../../shared/ui/PublicAsset"
 
-function splitDescriptionParagraphs(description = "") {
+function splitParagraphs(description = "") {
   return description
     .split(/\n\s*\n/)
     .map((paragraph) => paragraph.trim())
@@ -19,18 +19,18 @@ function splitDescriptionParagraphs(description = "") {
 export default function InvitedGuestsJobIntro({
   description,
   standingImage,
-  standingImageClass = INVITED_GUESTS_STANDING_IMAGE_CLASS,
-  standingImageWrapClass = INVITED_GUESTS_STANDING_IMAGE_WRAP_CLASS,
+  standingImageClass = STANDING_IMG_CLASS,
+  standingImageWrapClass = STANDING_IMG_WRAP_CLASS,
 }) {
-  const paragraphs = splitDescriptionParagraphs(description)
+  const paragraphs = splitParagraphs(description)
 
   return (
-    <section className={INVITED_GUESTS_INTRO_SECTION_CLASS}>
+    <section className={INTRO_SECTION_CLASS}>
       <InvitedGuestsSectionTitle>직업 설명</InvitedGuestsSectionTitle>
-      <div className={INVITED_GUESTS_INTRO_ROW_CLASS}>
-        <div className={INVITED_GUESTS_INTRO_TEXT_STACK_CLASS}>
+      <div className={INTRO_ROW_CLASS}>
+        <div className={INTRO_TEXT_STACK_CLASS}>
           {paragraphs.map((paragraph, index) => (
-            <p key={index} className={INVITED_GUESTS_INTRO_TEXT_CLASS}>
+            <p key={index} className={INTRO_TEXT_CLASS}>
               {paragraph}
             </p>
           ))}

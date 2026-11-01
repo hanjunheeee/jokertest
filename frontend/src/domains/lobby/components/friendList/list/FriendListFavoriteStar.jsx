@@ -1,18 +1,18 @@
 import {
-  FRIEND_ROW_FAVORITE_BUTTON_CLASS,
-  FRIEND_ROW_FAVORITE_STAR_ACTIVE_CLASS,
-  FRIEND_ROW_FAVORITE_STAR_CLASS,
+  ROW_FAVORITE_BTN_CLASS,
+  ROW_FAVORITE_STAR_ACTIVE_CLASS,
+  ROW_FAVORITE_STAR_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
 
 export default function FriendListFavoriteStar({ active = false, onToggle }) {
   const starClass = active
-    ? FRIEND_ROW_FAVORITE_STAR_ACTIVE_CLASS
-    : FRIEND_ROW_FAVORITE_STAR_CLASS
+    ? ROW_FAVORITE_STAR_ACTIVE_CLASS
+    : ROW_FAVORITE_STAR_CLASS
 
   return (
     <button
       type="button"
-      className={FRIEND_ROW_FAVORITE_BUTTON_CLASS}
+      className={ROW_FAVORITE_BTN_CLASS}
       aria-label={active ? "즐겨찾기 해제" : "즐겨찾기 추가"}
       aria-pressed={active}
       onClick={(event) => {
