@@ -3,45 +3,36 @@
 import { useNavigate } from "react-router-dom"
 import { useFindId } from "@/domains/auth/hooks/recovery/useFindId.js"
 import RecoveryScene from "@m/domains/auth/components/recovery/scene/RecoveryScene.jsx"
-import BottomAction from "@m/domains/auth/components/recovery/scene/BottomAction.jsx"
 import FindIdForm from "@m/domains/auth/components/recovery/FindIdForm.jsx"
 import FindIdResult from "@m/domains/auth/components/recovery/FindIdResult.jsx"
 
-const FORM_ID = "find-id-form"
-
-// 찾았으면 가린 이메일 + 다시 찾기, 아니면 입력 칸 + 아이디 찾기 버튼
+// 찾았으면 가린 이메일, 아니면 입력 칸 (데스크톱과 같음)
 export default function FindIdPage() {
   const navigate = useNavigate()
   const find = useFindId()
-  const isFound = find.status === "found"
-  const isSubmitting = find.status === "submitting"
 
-  // 뒤로 가기는 로그인 화면으로 (데스크톱과 같음)
+  // 뒤로 가기는 로그인 화면으로
   const handleBack = () => navigate("/login")
 
   return (
-    <>
-      <RecoveryScene formId={FORM_ID} onSubmit={find.handleSubmit} onBack={handleBack}>
-        {isFound ? (
-          <FindIdResult maskedEmail={find.maskedEmail} />
-        ) : (
-          <FindIdForm
-            status={find.status}
-            nickname={find.nickname}
-            setNickname={find.changeNickname}
-            birthDate={find.birthDate}
-            setBirthDate={find.setBirthDate}
-            formError={find.formError}
-            onRetry={find.backToIdle}
-          />
-        )}
-      </RecoveryScene>
-
-      {isFound ? (
-        <BottomAction label="다시 찾기" onClick={find.backToIdle} />
+    <RecoveryScene
+      intro="가입할 때 입력한 닉네임과 생년월일로 계정을 찾아드려요"
+      onSubmit={find.handleSubmit}
+      onBack={handleBack}
+    >
+      {find.status === "found" ? (
+        <FindIdResult maskedEmail={find.maskedEmail} onRetry={find.backToIdle} />
       ) : (
-        <BottomAction formId={FORM_ID} label={isSubmitting ? "조회 중" : "아이디 찾기"} disabled={isSubmitting} />
+        <FindIdForm
+          status={find.status}
+          nickname={find.nickname}
+          setNickname={find.changeNickname}
+          birthDate={find.birthDate}
+          setBirthDate={find.setBirthDate}
+          formError={find.formError}
+          onRetry={find.backToIdle}
+        />
       )}
-    </>
+    </RecoveryScene>
   )
 }

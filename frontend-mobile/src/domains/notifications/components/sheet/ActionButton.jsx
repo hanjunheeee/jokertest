@@ -1,5 +1,5 @@
-// 알림 시트 이미지 버튼 (보러 가기·다시 시도·읽은 메시지 삭제), 데스크톱과 같은 버튼 그림
-// 알림 줄·상세·본문 오류·바닥 줄이 씀
+// 알림 창 이미지 버튼 (보러 가기·다시 시도·읽은 메시지 삭제), 데스크톱과 같은 버튼 그림
+// 알림 줄·본문 오류·바닥 줄이 씀
 import { NOTIFICATION_ASSETS } from "@/domains/notifications/constants/notificationAssets.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import {

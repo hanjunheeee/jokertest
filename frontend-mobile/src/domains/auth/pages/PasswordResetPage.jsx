@@ -5,11 +5,8 @@ import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutSty
 import { RESET_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 import { useResetPage } from "@/domains/auth/hooks/recovery/useResetPage.js"
 import RecoveryScene from "@m/domains/auth/components/recovery/scene/RecoveryScene.jsx"
-import BottomAction from "@m/domains/auth/components/recovery/scene/BottomAction.jsx"
 import NewPasswordForm from "@m/domains/auth/components/recovery/NewPasswordForm.jsx"
 import ResetNotice from "@m/domains/auth/components/recovery/ResetNotice.jsx"
-
-const FORM_ID = "password-reset-form"
 
 // 확인 중 문구 글자 (알림 상자 없이)
 const VERIFYING_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:14px] font-bold text-text-body"
@@ -53,7 +50,7 @@ function noticeFor(reset, { goToLogin, goToRequest }) {
   }
 }
 
-// 상태마다 카드 안쪽·바닥 버튼만 바꿈 (바깥 틀이 그대로여야 배경 영상이 다시 안 붙음)
+// 상태마다 카드 안쪽만 바꿈 (바깥 틀이 그대로여야 배경 영상이 다시 안 붙음)
 export default function PasswordResetPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -66,39 +63,25 @@ export default function PasswordResetPage() {
   const goToRequest = () => navigate("/password-reset/request")
 
   const notice = noticeFor(reset, { goToLogin, goToRequest })
-  const isSubmitting = reset.status === "submitting"
-
-  // 안내 상태면 안내 + 그 버튼(있을 때만), 아니면 새 비밀번호 칸 + 변경 버튼
+  // 안내 상태면 안내만, 아니면 새 비밀번호 칸 (데스크톱처럼 뒤로 가기 없음)
   if (notice) {
     return (
-      <>
-        <RecoveryScene formId={FORM_ID} onSubmit={blockSubmit}>
-          <ResetNotice role={notice.role} className={notice.className} text={notice.text} />
-        </RecoveryScene>
-        {notice.actionLabel && <BottomAction label={notice.actionLabel} onClick={notice.onAction} />}
-      </>
+      <RecoveryScene onSubmit={blockSubmit}>
+        <ResetNotice {...notice} />
+      </RecoveryScene>
     )
   }
 
   return (
-    <>
-      <RecoveryScene formId={FORM_ID} onSubmit={reset.handleSubmit}>
-        <NewPasswordForm
-          status={reset.status}
-          password={reset.password}
-          setPassword={reset.setPassword}
-          passwordConfirm={reset.passwordConfirm}
-          setPasswordConfirm={reset.setPasswordConfirm}
-          formError={reset.formError}
-        />
-      </RecoveryScene>
-      <BottomAction
-        formId={FORM_ID}
-        src="/button/버튼 프레임1.png"
-        width="narrow"
-        label={isSubmitting ? "변경 중" : "비밀번호 변경"}
-        disabled={isSubmitting}
+    <RecoveryScene onSubmit={reset.handleSubmit}>
+      <NewPasswordForm
+        status={reset.status}
+        password={reset.password}
+        setPassword={reset.setPassword}
+        passwordConfirm={reset.passwordConfirm}
+        setPasswordConfirm={reset.setPasswordConfirm}
+        formError={reset.formError}
       />
-    </>
+    </RecoveryScene>
   )
 }

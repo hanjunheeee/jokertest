@@ -1,5 +1,5 @@
 // 알림 하나의 버튼 줄 (보러 가기, 읽음 실패면 오류 글·다시 시도)
-// 알림 줄(NotificationRow.jsx)과 상세(NotificationDetail.jsx)가 같이 씀
+// 알림 줄(NotificationRow.jsx)이 씀
 import {
   buildNotificationTargetPath,
   notificationTargetLabel,

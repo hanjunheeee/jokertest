@@ -17,10 +17,11 @@ const FRAME_STYLE = {
 }
 
 // 바깥 div가 폭 기준(container), 안쪽이 액자
+// 세로 화면은 데스크톱 액자 비율(403:625)을 최소 높이로 씀, 내용이 길면 더 길어짐 / 가로 화면은 내용만큼
 export default function ParchmentCard({ children, className = "" }) {
   return (
     <div className={`w-full [container-type:inline-size] ${className}`}>
-      <div style={FRAME_STYLE} className="flex min-h-[20rem] flex-col land:min-h-0">
+      <div style={FRAME_STYLE} className="flex aspect-[403/625] flex-col land:aspect-auto">
         {children}
       </div>
     </div>
