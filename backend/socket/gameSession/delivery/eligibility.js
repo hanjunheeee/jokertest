@@ -1,5 +1,5 @@
 // 판 방송 받을 자격 파일
-// 이 소켓이 지금 판 방송 받을 자격 있는지 + 판 밖 소속·판 채널 주인 판정, socket gameSession 방송·채널 떼기가 씀
+// 판 방송 받을 자격·판 밖 소속·판 채널 주인 판정, 방송·채널 떼기·개인 진행·채팅·스냅샷·밤·판 끝 정리가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
 const channelMembership = require('../../channelMembership')
@@ -9,12 +9,15 @@ const { hasOnlineUsersRegistry, isCurrentSocketForUuid } = require('../connectio
 
 // 이 소켓이 지금 이 판 방송 받을 자격 있는지: 참여 중·연결됨·지금 소켓·채널 안·제외 아님 (종료 문맥이 있으면 그것도 봄)
 function isEligibleRecipient(session, socket, uuid, endContext = null) {
+    // 판에 참여 중인 계정이어야 함 (종료 방송이면 허용 명단도 봄)
     if (!session || !socket) return false
     if (!isNonEmptyString(uuid)) return false
     if (!gameSessionCore.isParticipatingInSession(session, uuid)) return false
     if (endContext && !isEligibleEndRecipient(session, uuid, endContext)) return false
+    // 연결된 지금 소켓만 (새 탭에 넘어간 옛 소켓 막기)
     if (socket.connected !== true) return false
     if (hasOnlineUsersRegistry() && !isCurrentSocketForUuid(uuid, socket)) return false
+    // 채널 안이고 떼는 중 제외 걸린 소켓 아님
     if (!socket.rooms?.has?.(session.channelId)) return false
     if (typeof socket.id === 'string'
         && channelMembership.isSocketExcludedFromChannel(session.channelId, socket.id)) {

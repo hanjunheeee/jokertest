@@ -1,5 +1,6 @@
 // 추방 영수증 보관함 파일
-// 요청별 결정 기록(만료·한도) + 요청 지문, 부팅 id·자리 id 만들기, gameSession·matchmaking 추방 처리가 씀
+// 요청별 결정 기록(만료·한도) + 요청 지문, 부팅 id·자리 id 만들기
+// index 거쳐 gameSession·matchmaking 추방이 씀, 부팅 id·자리 id는 matchmaking 입장도 씀
 const crypto = require('crypto')
 const {
     KICK_RECEIPT_TTL_MS,
@@ -18,7 +19,7 @@ function kickReceiptKey(bootEpoch, requesterUuid, requestId) {
     return JSON.stringify([bootEpoch, requesterUuid, requestId])
 }
 
-// 만료된 영수증 지우기
+// 만료 영수증 지우기, 찾기·자리 보기 전마다 부름 (따로 도는 청소 타이머 없음)
 function pruneKickReceipts(now = Date.now()) {
     for (const [key, entry] of kickReceipts) {
         if (entry.expiresAt <= now) kickReceipts.delete(key)
@@ -76,15 +77,18 @@ function nextMembershipId() {
     return crypto.randomUUID()
 }
 
+// 시험용: 영수증 전부 비우기
 function __resetKickReceiptsForTests() {
     kickReceipts.clear()
 }
 
+// 시험용: 만료 지운 뒤 남은 영수증 수
 function __getKickReceiptCountForTests() {
     pruneKickReceipts()
     return kickReceipts.size
 }
 
+// 시험용: 영수증 직접 넣기 (만료·한도 상황 만들기)
 function __seedKickReceiptForTests(key, entry) {
     kickReceipts.set(key, entry)
 }

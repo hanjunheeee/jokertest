@@ -1,8 +1,8 @@
 // 방 설정 영수증 파일
-// 설정 버전 읽기 + 설정 저장 결과 영수증 (지도 11-③)
+// 설정 버전 읽기 + 설정 저장 결과 영수증, settings 처리기·방 알림 만드는 곳·방 없애는 곳이 사용 (지도 11-③)
 const { roomSettingsUpdateResults } = require('../core/state')
 
-// 방 설정 첫 버전
+// 방 설정 첫 버전 (join/create가 새 방에 넣음)
 const INIT_SETTINGS_VERSION = 1
 
 // 방 설정 버전 (이상한 값이면 첫 버전)
@@ -22,7 +22,7 @@ function settingsUpdateResultKey(uuid, roomId, requestId) {
     return JSON.stringify([uuid, roomId, requestId])
 }
 
-// 기한 지난 영수증 지움
+// 기한 지난 영수증 지우고 개수 한도 맞춤
 function pruneSettingsResults(now = Date.now()) {
     for (const [key, entry] of roomSettingsUpdateResults) {
         if (entry.expiresAt <= now) roomSettingsUpdateResults.delete(key)
@@ -30,7 +30,7 @@ function pruneSettingsResults(now = Date.now()) {
     enforceResultCapacity()
 }
 
-// 500개 넘으면 오래된 것부터 지움
+// 500개 넘으면 오래된 것부터 지움 (Map은 넣은 순서라 맨 앞이 가장 오래됨)
 function enforceResultCapacity() {
     while (roomSettingsUpdateResults.size > MAX_SETTINGS_RESULTS) {
         const oldest = roomSettingsUpdateResults.keys().next().value

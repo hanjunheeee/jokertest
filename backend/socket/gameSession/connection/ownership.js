@@ -1,5 +1,5 @@
 // 연결 소유권 파일
-// socket.js 접속 목록 주입 + 연결 소유권 기록·1회 소비 + 지금 그 계정 소켓인지 판정, socket gameSession이 씀
+// 접속 목록 주입·소유권 기록(1회 소비)·지금 소켓인지 판정, 핸들러·요청 검사·방송·끊김 유예·재접속·밤이 씀
 
 // 바깥에서 넣어 주는 참조 묶음 (socket.js onlineUsers, uuid → 소켓 id)
 const deps = {
@@ -20,6 +20,7 @@ function setOnlineUsersRegistry(registry) {
     ownershipByUuid.clear()
 }
 
+// 지금 접속 목록 (시험 보기 __getRegistryForTests가 씀)
 function getOnlineUsersRegistry() {
     return deps.onlineUsersRegistry
 }
@@ -63,6 +64,7 @@ function recordOwnership(io, socket, uuid) {
     const namespace = namespaceRegistryFor(socket, io)
     if (!namespace || namespace.get(socket.id) !== socket) return null
 
+    // 접속 목록·세대까지 적어 둠 (목록이 바뀌면 끊김 때 이 기록 안 믿음)
     const record = {
         socket,
         socketId: socket.id,

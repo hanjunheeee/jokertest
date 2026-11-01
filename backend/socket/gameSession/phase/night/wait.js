@@ -1,5 +1,6 @@
 // 밤 연출 대기 파일
-// 턴 사이 연출 대기 켜기·다시 판정·풀기 + 대기 중인지 조회(제출 막기·스냅샷), 밤 턴·이탈·핸들러가 씀
+// 턴 사이 연출 대기 만들기·켜기·다시 판정·풀기 + 대기 중인지 조회, 밤 턴·밤 마무리·이탈·핸들러가 씀
+// 풀면 다음 턴은 phaseHooks로 부름 (turn이 이 파일을 require해서 고리 막기)
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isNonEmptyString } = require('../../../common/shape')
 const { isolate } = require('../../../common/isolate')
@@ -31,6 +32,7 @@ function beginNightWait(run, completed, contract) {
         waiting: null,
         notifyTargets: null,
     }
+    // 여기부터 진짜 바뀜: 대기 단계로, 지금 역할 비움 (턴 사이 제출 막기는 핸들러가 함)
     run.stage = NIGHT_TURN_STAGES.PRESENTATION_WAIT
     run.wait = token
     session.nightTurnRole = null
@@ -57,7 +59,7 @@ function releaseNightPresentationWait(run, token) {
     return true
 }
 
-// 이 판이 지금 연출 대기 단계인지
+// 이 판이 지금 연출 대기 단계인지 (대기 중엔 밤 마무리·제출 거절)
 function isNightPresentationWaitActive(gameId) {
     const run = nightTurnRuns.get(gameId)
     return !!run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT
@@ -95,6 +97,7 @@ function activateNightWait(run, token) {
         return
     }
 
+    // 기다리는 사람 명단 (대기 알림 대상에서 빼려고)
     const waitingUuids = new Set()
     for (const byUuid of waiting.values()) {
         for (const uuid of byUuid.keys()) waitingUuids.add(uuid)
@@ -124,11 +127,13 @@ function activateNightWait(run, token) {
         releaseNightPresentationWait(run, token)
     }, run.presentationWaitTimeoutMs)
 
+    // 켜는 사이 자격 잃었거나 이미 완료한 사람 있으면 바로 풀리게 한 번 판정
     reevaluateNightWait(run, token)
 }
 
 // 연출 대기 다시 판정: 자격 잃은 사람은 기다림에서 빼고, 남은 사람 다 완료면 풂 (지도 05-⑨)
 function reevaluateNightWait(run, token) {
+    // 지난 표거나 아직 안 켠 표면 무시
     if (!isCurrentWaitToken(run, token)) return
     const { session } = run
     if (token.active !== true) return
@@ -136,6 +141,7 @@ function reevaluateNightWait(run, token) {
     const waiting = token.waiting
     if (!waiting) return
 
+    // 자격 잃은 사람 빼고, 남은 사람 없는 사건은 지움
     for (const [eventId, byUuid] of [...waiting]) {
         for (const [uuid, membershipId] of [...byUuid]) {
             if (!isEligibleForWait(run, session, uuid, membershipId)) {
@@ -145,6 +151,7 @@ function reevaluateNightWait(run, token) {
         if (byUuid.size === 0) waiting.delete(eventId)
     }
 
+    // 남은 사람이 전부 완료 신호 냈으면 풂, 한 명이라도 안 냈으면 계속 기다림
     const store = getNightSuccessReceipts(session)
     for (const [eventId, byUuid] of waiting) {
         const eventRecords = store?.byEvent.get(eventId)
@@ -166,6 +173,7 @@ function nightWaitRoutingFor(uuid, gameId) {
 
 // 스냅샷 때 연출 대기 표시 여부: 대기 켜져 있고 내가 사건 받는 사람이 아니면 true, 알림 대상에도 넣음
 function resolveNightWaitForSnap(session, uuid) {
+    // 지금 run의 켜진 대기 표고 아직 그 밤인지
     const run = nightTurnRuns.get(session.id)
     if (!run) return false
     if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return false
@@ -178,9 +186,11 @@ function resolveNightWaitForSnap(session, uuid) {
     if (token.nightDayIndex !== run.nightDayIndex) return false
     if (session.dayIndex !== run.nightDayIndex) return false
 
+    // 나도 지금 같은 자리로 연결돼 받을 수 있는지
     const membershipId = session.players.get(uuid)?.membershipId ?? null
     if (!isEligibleForWait(run, session, uuid, membershipId)) return false
 
+    // 사건 받는 사람은 연출을 직접 보니 대기 표시 안 함
     const contract = token.contract
     if (contract && Array.isArray(contract.events)) {
         for (const event of contract.events) {
@@ -190,6 +200,7 @@ function resolveNightWaitForSnap(session, uuid) {
         }
     }
 
+    // 다시 붙은 사람도 대기 해제 알림 받게 알림 대상에 넣음 (이미 있으면 안 넣음)
     if (Array.isArray(token.notifyTargets)) {
         const already = token.notifyTargets.some(
             (target) => target.uuid === uuid && target.membershipId === membershipId,

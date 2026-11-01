@@ -1,5 +1,5 @@
 // 게임 추방 핸들러 파일
-// 게임 중 추방 판단·실행(영수증으로 같은 요청 같은 답) + 추방 결과 조회, register가 등록함
+// 게임 중 추방 판단·실행(같은 요청 같은 답) + 결과 조회, register가 등록·시험은 gameSession.js로 부름
 const gameSessionCore = require('../../../game-core/gameSession')
 const kickReceiptStore = require('../../kickReceiptStore')
 const { isolate } = require('../../common/isolate')
@@ -12,6 +12,7 @@ const { applyParticipantDeparture } = require('../departure/apply')
 // 게임 추방 판단 검사: 처음 걸린 거절 이유 { rejection: [코드, 문구] } 또는 통과면 { session, target }
 // 자기 추방·끝난 판·다른 방 인스턴스·옛 자리·방장 아님·이미 나감을 막음 (지도 11-②⑦ · 12-⑥)
 function checkGameKick(uuid, input, CODES) {
+    // 자기 추방은 판 찾기 전에 바로 거절
     if (input.targetUuid === uuid) return { rejection: [CODES.SELF_KICK, '자신을 추방할 수 없습니다.'] }
 
     // 요청이 가리킨 판·방이 지금 내 판 그대로인지
@@ -44,9 +45,11 @@ function checkGameKick(uuid, input, CODES) {
 
 // 게임 중 추방: 영수증으로 같은 요청은 같은 답, 판단 거절도 기록해 둠 (지도 11-③④)
 function handleKickGamePlayer(io, socket, uuid, payload, callback) {
+    // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
 
     const CODES = kickReceiptStore.KICK_ERROR_CODES
+    // 영수증 없이 바로 거절 답
     const reject = (code, message) => respond(callback, { ok: false, code, message })
 
     // 모양 먼저 (지문 만들려면 필요), 그다음 지금 소켓
@@ -75,6 +78,7 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
         return
     }
 
+    // 서버 재시작 전 화면에서 온 요청이면 거절 (판·자리 정보가 옛것)
     if (input.bootEpoch !== kickReceiptStore.BOOT_EPOCH) {
         reject(CODES.STALE_BOOT, '서버가 재시작되었습니다. 게임 정보를 다시 불러와주세요.')
         return
@@ -93,6 +97,7 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
         reject(code, message)
     }
 
+    // 판단 검사, 걸리면 영수증 남기고 거절
     const checked = checkGameKick(uuid, input, CODES)
     if (checked.rejection) {
         decideReject(...checked.rejection)
@@ -100,11 +105,13 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
     }
     const { session, target } = checked
 
+    // 성공 영수증 자리 없으면 실행 전에 거절 (실행 뒤 기록 못 하면 재시도 답이 달라짐)
     if (!kickReceiptStore.hasKickReceiptCapacity()) {
         reject(CODES.RECEIPT_CAPACITY, '잠시 후 다시 시도해주세요.')
         return
     }
 
+    // 쫓긴 사람에게 보낼 개인 알림 내용
     const kickedEvent = {
         gameId: session.id,
         roomId: session.roomId,
@@ -115,8 +122,10 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
         hostUuid: uuid,
         requestId: input.requestId,
     }
+    // 대상 소켓 (커밋 직후 채널 떼기·개인 알림에 씀)
     const targetSocket = getSocketForUuid(io, input.targetUuid)
 
+    // 성공 답, 영수증에도 이대로 남겨 재시도에 같은 답
     const result = {
         ok: true,
         status: 'KICKED',
@@ -140,6 +149,7 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
             )
         },
     })
+    // 커밋이 이미 나간 사람이라 하면 판단 거절로 기록, 나머지 실패는 기록 없이 내부 오류
     if (!departed.ok) {
         if (departed.code === 'ALREADY_LEFT') {
             decideReject(CODES.ALREADY_LEFT, '이미 게임에서 나간 참가자입니다.')
@@ -149,6 +159,7 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
         return
     }
 
+    // 답 먼저, 그다음 대상 개인 알림·대기방 정리 (실패는 로그만)
     respond(callback, result)
     if (targetSocket) {
         isolate('[추방 개인 통지 실패]', { code: 'KICK_NOTIFY_ERROR', gameId: session.id },
@@ -159,6 +170,7 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
 
 // 추방 결과 조회: 내 영수증 있으면 그 답 다시, 없으면 UNKNOWN (지도 11-④)
 function handleGetKickResult(io, socket, uuid, payload, callback) {
+    // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
 
     // 지금 소켓 먼저, 그다음 조회 모양 (지도 11-④)
@@ -174,6 +186,7 @@ function handleGetKickResult(io, socket, uuid, payload, callback) {
     }
     const { bootEpoch, requestId } = validated.value
 
+    // 내 영수증 없으면 결정 전·만료·다른 부팅 요청이라 UNKNOWN
     const recorded = kickReceiptStore.lookupKickReceipt(
         kickReceiptStore.kickReceiptKey(bootEpoch, uuid, requestId),
     )

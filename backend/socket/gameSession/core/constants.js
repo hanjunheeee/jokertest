@@ -1,5 +1,5 @@
 // socket gameSession 상수 파일
-// 내부 전용 거절 코드 묶음·밤 턴 단계·연출 대기·밤 성공 ACK 값·거절 문구, socket gameSession 폴더 파일들이 씀
+// 내부 전용 거절 코드 묶음·밤 턴 단계·연출 대기·밤 성공 ACK 값·거절 문구, 핸들러·요청 검사·타이머·밤 단계·이탈 반영이 씀
 const { REPLY_MESSAGES } = require('../../common/replies')
 
 // core 거절 코드 중 밖에 그대로 보이면 안 되는 것 (INTERNAL_ERROR로 바꿔 답함, 지도 03-⑥ · 06-⑨)

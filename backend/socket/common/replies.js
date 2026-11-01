@@ -1,5 +1,6 @@
 // ack 답 모양 파일
-// 거절·실패 답 객체 만들기 + ack 보내기 감싸기, socket 핸들러들이 같이 씀
+// 거절·실패 답 객체 만들기 + ack 보내기 감싸기
+// socket gameSession 핸들러·요청 검사·밤 마무리가 같이 씀
 
 // 답 문구 (화면에 그대로 보이는 말)
 const REPLY_MESSAGES = Object.freeze({

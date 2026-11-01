@@ -1,5 +1,5 @@
 // 밤 핸들러 파일
-// 밤 행동 제출 · 밤 종료 버튼 · 밤 성공 연출 완료 신호, register가 등록함
+// 밤 행동 제출 · 밤 종료 버튼 · 밤 성공 연출 완료 신호, register가 등록·시험은 gameSession.js로 바로 부름
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { rejectedReply, invalidPayloadReply, respond, labeledResponder } = require('../../common/replies')
@@ -26,7 +26,9 @@ const respondNightAction = labeledResponder('[밤 행동 제출 ack 전달 실�
 
 // 밤 행동 제출: 내 턴이면 대상 기록, 그 역할 다 냈으면 턴 끝냄
 function handleSubmitNightAction(socket, uuid, payload, callback) {
+    // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
+    // ack: 성공 때만 core가 준 판 id 넘김
     const ack = (body, gameId) => respondNightAction(uuid, gameId, callback, body)
     // 지금 소켓·요청 모양 (지도 05-①②)
     const fields = acceptRequest(ack, uuid, socket, payload, pickGameTarget)
@@ -47,6 +49,7 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
     })
     if (!result) return
 
+    // 답 먼저, 그 역할 산 사람 다 냈으면 마감 안 기다리고 턴 닫음 (실패는 로그만)
     ack({ ok: true }, result.gameId)
 
     isolate('[밤 턴 종료 처리 에러]', { code: 'TURN_ADVANCE_ERROR', uuid, gameId: result.gameId },
@@ -58,9 +61,12 @@ const respondResolveNight = labeledResponder('[밤 행동 판정 오류]')
 
 // '밤 종료' 버튼: prepare 뒤 밤 마무리 관문으로 넘김, 연출 대기 중이면 거절 (지도 06)
 function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
+    // 시험이 prepare 등을 바꿔 끼움 (deps는 관문에도 그대로 넘김)
     const prepare = deps.prepare ?? gameSessionCore.prepareNightResolution
 
+    // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
+    // ack: 판 id는 prepare 뒤에만 로그에 찍음 (요청 값은 못 믿음)
     const ack = (body, gameId) => respondResolveNight(uuid, gameId, callback, body)
     // 지금 소켓·요청 모양 (지도 06-①②)
     const fields = acceptRequest(ack, uuid, socket, payload, pickGameId)
@@ -74,18 +80,22 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
         return
     }
 
+    // prepare: 밤 결과만 정함, 확정은 관문이 함
     const prepared = acceptCoreResult(ack, () => prepare(uuid, gameId),
         prepareLogs('[밤 행동 판정 오류]', uuid, RESOLVE_INTERNAL_CODES))
     if (!prepared) return
 
-    // 관문이 답하면 그 답, 관문이 답 없이 끝나면 (이미 판정됨 등) 여기서 답함 (지도 06-⑨)
+    // 관문이 답하면 그 답, 답 없이 끝나면(다른 마무리 도는 중·연출 대기) 이미 판정됨으로 답함 (지도 06-⑨)
     let answered = false
+    // 관문 답 받기: 답했다 표시하고 진짜 판 id로 ack
     const onResult = (response) => {
         answered = true
         ack(response, prepared.session.id)
     }
+    // 관문 로그에 누른 사람 찍게 붙임
     onResult.uuid = uuid
 
+    // 밤 마무리 관문: 확정·낮 타이머·결과 전달
     const outcome = finalizeNightForSession(io, prepared.session, { prepared, deps, onResult })
     if (!answered) {
         ack(outcome?.ok ? { ok: true } : rejectedReply('NIGHT_ALREADY_RESOLVED'), prepared.session.id)
@@ -96,12 +106,14 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
 function handleAckNightSuccess(io, socket, uuid, payload, callback) {
     const reply = typeof callback === 'function' ? (result) => respond(callback, result) : () => {}
 
+    // 완료 신호 모양 (허용 키만)
     const request = readNightSuccessAck(payload)
     if (!request) {
         reply(invalidPayloadReply())
         return
     }
 
+    // 그 사건 받은 바로 그 소켓·자리인지 (옛 탭·지난 밤 신호 거절)
     const found = findNightSuccessRecord(io, socket, uuid, request)
     if (found.code) {
         reply({ ok: false, code: found.code, message: NIGHT_REJECT_MESSAGES[found.code] })

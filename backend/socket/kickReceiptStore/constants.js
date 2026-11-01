@@ -1,5 +1,6 @@
-// 추방 상수 파일
-// 영수증 보관 시간·개수 한도, 추방 명령·이벤트·거절 코드, 요청 허용 키, 추방 영수증 폴더·gameSession·matchmaking이 씀
+// 추방 상수 파일, 영수증 보관 시간·개수 한도 + 추방 종류·사건 이름·거절 코드·요청 허용 키
+// 같은 폴더 receipts·validate·index가 씀
+// index 거쳐 gameSession·matchmaking 추방도 씀
 
 // 영수증 보관 시간 10분 (같은 요청 다시 오면 같은 답)
 const KICK_RECEIPT_TTL_MS = 10 * 60 * 1000
@@ -11,11 +12,13 @@ const KICK_REJECTION_RECEIPT_MAX_ENTRIES = Math.floor(KICK_RECEIPT_MAX_ENTRIES /
 // 요청 식별자 칸 최대 길이
 const MAX_IDENTIFIER_LENGTH = 128
 
+// 추방 종류: 대기방 추방·게임 중 추방 (영수증 지문에도 들어감)
 const KICK_COMMANDS = Object.freeze({
     ROOM: 'ROOM',
     GAME: 'GAME',
 })
 
+// 추방 사건 이름 (시험도 이 표 읽음)
 const KICK_EVENTS = Object.freeze({
     KICK_ROOM_PLAYER: 'kick_room_player',
     KICK_GAME_PLAYER: 'kick_game_player',
@@ -24,6 +27,7 @@ const KICK_EVENTS = Object.freeze({
     GAME_KICKED: 'game_kicked',
 })
 
+// 추방 거절 코드 모음, 방 추방·게임 추방이 같이 씀
 const KICK_ERROR_CODES = Object.freeze({
     INVALID_REQUEST: 'INVALID_REQUEST',
     STALE_SOCKET: 'STALE_SOCKET',

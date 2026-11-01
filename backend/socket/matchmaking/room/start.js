@@ -1,5 +1,5 @@
 // 게임 시작 파일
-// 방장 게임 시작 요청 + 시작 직전 프로필 잡기 (지도 02)
+// 방장 게임 시작 요청 + 시작 직전 프로필 잡기, matchmaking.js가 사건 받아 부름 (지도 02)
 const gameSession = require('../../../game-core/gameSession')
 const { playerRoom, gameRooms } = require('../core/state')
 const { getSettingsVersion, forgetSettingsResults } = require('../settings/receipts')
@@ -14,7 +14,7 @@ const { cancelRoomInvitesAsync } = require('../admission/release')
 const { rememberStartedRoom } = require('../join/startedMarks')
 const { emitPublicRoomList } = require('./view')
 
-// 기다리는 사이 방·방장·인원·준비가 그대로인지
+// 프로필 읽는 사이 방장·명단·자리·준비·설정 버전이 그대로인지
 function isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture) {
     if (room.hostUuid !== hostUuid) return false
     if (room.players.size !== playersAtCapture.size) return false
@@ -33,6 +33,7 @@ function isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture) {
 // 시작 직전 참가자 프로필 읽기 (그사이 방 바뀌면 멈춤)
 async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtCapture) {
     const uuids = [...playersAtCapture.keys()]
+    // 외형·전적·이모지 팔레트 같이 읽기, 전적·팔레트는 실패해도 빈 값으로 시작 (외형 실패는 던짐)
     const [loadouts, recordSummaries, emojiPaletteEntries] = await Promise.all([
         deps.economyService.getGameStartLoadouts(uuids),
         Promise.resolve()
@@ -54,10 +55,12 @@ async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtC
             }))),
     ])
 
+    // 읽는 사이 방이 바뀌었으면 시작 안 함
     if (!isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture)) {
         return { ok: false, code: 'ROOM_STATE_CHANGED' }
     }
 
+    // 명단 복사본에 외형·전적 붙임 (전적은 판 수·승률 둘 다 정수일 때만, 스킨 없으면 직업별 null)
     const players = new Map(uuids.map((uuid) => {
         const loadout = loadouts[uuid] ?? {}
         const record = recordSummaries.get(uuid)
@@ -74,6 +77,7 @@ async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtC
                 ?? { noble: null, clown: null, guard: null, doctor: null, witchHunter: null }) },
         }]
     }))
+    // 설정 복사 (역할 수·밤 시간은 안쪽까지 복사, 판이 방 설정 객체를 같이 들지 않게)
     const settings = {
         ...room.settings,
         ...(room.settings?.roleCounts ? { roleCounts: { ...room.settings.roleCounts } } : {}),
@@ -92,6 +96,7 @@ async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtC
 async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSocketId) {
     if (typeof callback !== 'function') return
 
+    // 계정의 지금 소켓인지 (새 탭에 밀린 옛 소켓 막기, 확인 함수 없으면 통과), 기다린 뒤 한 번 더 봄
     const isCanonicalSocket = () =>
         typeof getCurrentSocketId !== 'function' || getCurrentSocketId(uuid) === socket?.id
     if (!isCanonicalSocket()) {
@@ -103,6 +108,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 요청 모양: 방 id·내가 본 설정 버전
     if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
         callback({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
         return
@@ -117,6 +123,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 요청한 방이 지금 내 방이고 내가 방장이고 내가 본 설정 그대로인지
     const roomId = playerRoom.get(uuid)
     const room = roomId ? gameRooms.get(roomId) : null
     if (!room) {
@@ -142,6 +149,8 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 인원·역할 구성·전원 준비·입장 중인 사람 없음 (view computeCanStart와 같은 조건)
+    // 정원이 최소 인원보다 작은 방은 정원만 차면 됨, 조커보다는 사람이 많아야 함
     const players = [...room.players.values()]
     const configuredMinimum = getMinPlayers()
     const roomCapacity = room.settings?.maxPlayers ?? configuredMinimum
@@ -181,6 +190,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 지금 명단 찍어 두고 프로필 읽기 (DB 기다리는 사이 방이 바뀌면 멈춤)
     const versionAtRequest = expectedSettingsVersion
     const playersAtCapture = new Map(players.map((player) => [player.uuid, player]))
     let captured
@@ -195,6 +205,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         callback({ ok: false, code: captured.code, message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
         return
     }
+    // 기다린 뒤 다시 확인: 방 지워짐·내가 나감·끊김·새 탭·설정 바뀜·명단 바뀜·입장 시작
     if (gameRooms.get(roomId) !== room || playerRoom.get(uuid) !== roomId || socket?.connected === false) {
         callback({ ok: false, code: 'ROOM_STATE_CHANGED', message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
         return
@@ -231,6 +242,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
     }
 
     let callbackCalled = false
+    // 여기부터는 ack 한 번만, 보내다 터져도 처리기는 계속
     const respond = (payload) => {
         if (callbackCalled) return
         callbackCalled = true
@@ -241,6 +253,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         }
     }
 
+    // 판 만들기 준비 (아직 판 장부엔 안 넣음)
     let prepared
     try {
         prepared = gameSession.prepareGameSession(captured.room)
@@ -254,6 +267,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 참가자 전원 받을 소켓 있는지 (한 명이라도 없으면 시작 안 함, 판 넣기 전이라 되돌릴 것 없음)
     let uuidToSockets
     try {
         uuidToSockets = resolveParticipantSockets(io, prepared.session.players.keys(), roomId)
@@ -268,6 +282,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 사람마다 시작 내용 미리 만들기 (판 넣은 뒤 터지면 되돌릴 길 없음)
     let payloadsByUuid
     try {
         payloadsByUuid = new Map()
@@ -280,6 +295,8 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 여기부터 진짜 바뀜: 판 장부에 넣고 이모지 상태 붙임
+    // 방 지우고 입장 시도·영수증·초대 정리, 시작 표시 남김 (터지면 되돌리지 않고 실패만 답함)
     try {
         gameSession.commitGameSession(prepared.session)
         prepared.session.emojiPaletteByUuid = captured.emojiPaletteByUuid instanceof Map
@@ -298,12 +315,14 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
+    // 소켓에 지금 판 id 적어 둠 (끊김 처리가 어느 판 소켓인지 이걸로 앎)
     for (const sockets of uuidToSockets.values()) {
         for (const s of sockets) {
             s.data.activeGameId = prepared.session.id
         }
     }
 
+    // 사람마다 자기 시작 내용 보냄 (하나 실패해도 계속) → 공개 목록 새로 → 방장 ack
     prepared.session.players.forEach((_, u) => {
         const payload = payloadsByUuid.get(u)
         for (const s of uuidToSockets.get(u) ?? []) {

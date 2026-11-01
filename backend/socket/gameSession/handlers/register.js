@@ -1,5 +1,5 @@
 // 핸들러 등록 파일
-// 게임 이벤트 핸들러 등록·접속 현황 + 시험용 상태 초기화, 입구 gameSession.js가 내보냄
+// 게임 이벤트 핸들러 등록·접속 현황 + 시험용 상태 초기화, 입구 gameSession.js가 내보내고 socket.js가 연결마다 부름
 const gameSessionCore = require('../../../game-core/gameSession')
 const gameRecordService = require('../../../services/game/record')
 const kickReceiptStore = require('../../kickReceiptStore')
@@ -61,7 +61,7 @@ function getActiveGamePresenceSnapshot() {
     return gameSessionCore.getActiveGamePresenceSnapshot()
 }
 
-// 시험용 초기화: 접속 목록·사용자 전송·영수증·표식 비우고 타이머 run 4종 전부 끔
+// 시험용 초기화: 접속 목록·사용자 전송·추방 영수증·표식·밤 기록 비우고 타이머 run 4종 전부 끔
 function __resetStateForTests() {
     setOnlineUsersRegistry(null)
     gameRecordService.setEmitToUser(null)
@@ -69,13 +69,14 @@ function __resetStateForTests() {
     departureResolveMarks.clear()
     nightFinalizeInFlight.clear()
     resetNightReceipts()
-    // 밤 턴 → 낮 → 끊김 유예 → 전적 재시도 순서
+    // 타이머 run 끄기 (끄면서 보관함에서 지우니 키 먼저 복사), 마지막은 전적 재시도
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
     for (const gameId of [...disconnectGraceRuns.keys()]) detachAllGraces(gameId)
     gameRecordService.__resetTerminalPersistForTests()
 }
 
+// 시험용: 지금 넣어 둔 접속 목록 꺼내기
 function __getRegistryForTests() {
     return getOnlineUsersRegistry()
 }

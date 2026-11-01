@@ -1,5 +1,5 @@
 // 밤 연출 계약 파일
-// 역할 턴 성공 사건·받을 사람(행동자·대상 소켓) 계약 만들기 + 받는 사람별 성공 payload, socket gameSession 밤 턴이 씀
+// 역할 턴 성공 사건·받을 사람(행동자·대상 소켓) 계약 만들기 + 받는 사람별 성공 payload, 밤 턴·성공 전달이 씀
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isNonEmptyString } = require('../../../common/shape')
 const { isolateOr } = require('../../../common/isolate')
@@ -39,6 +39,7 @@ function cloneNightContract(contract) {
 
 // 사건 받을 사람: 행동자는 USER·대상은 TARGET 시점, 받을 소켓 정해진 계정만
 function buildNightRecipients(session, socketIdByUuid, actorUuids, targetId) {
+    // 계정별 시점 모으기 (행동자가 자기를 찍었으면 둘 다)
     const wanted = new Map()
     for (const uuid of actorUuids) {
         if (!isNonEmptyString(uuid)) continue
@@ -50,6 +51,7 @@ function buildNightRecipients(session, socketIdByUuid, actorUuids, targetId) {
         wanted.set(targetId, perspectives)
     }
 
+    // 소켓 못 정한 계정은 뺌, 시점은 정해 둔 순서로 정렬
     const recipients = []
     for (const [uuid, perspectives] of wanted) {
         if (!socketIdByUuid.has(uuid)) continue
@@ -69,15 +71,18 @@ function buildNightPresentationContract(run, completed) {
     const role = completed?.role ?? null
     const revision = completed?.revision ?? null
 
+    // 같은 역할·같은 리비전이면 처음 만든 것 그대로 (사건 id·받을 사람 안 바뀌게)
     const stored = run.contracts.get(role)
     if (stored && stored.revision === revision) return cloneNightContract(stored)
 
     const progress = gameSessionCore.getNightProgress(session)
     const step = { ...(completed?.step ?? {}) }
 
+    // 사람별 회복 상태(대기·회복·사망 후보)를 보낼 수 있는 객체로 옮김
     const recoveryStates = {}
     for (const [uuid, state] of progress?.recoveryStates ?? []) recoveryStates[uuid] = state
 
+    // 사건 고르기: 죽이기·살리기는 밤 기록에서, 조사·확인은 이 턴 결과 났고 대상 있을 때만
     const eventType = NIGHT_EVENT_TYPES[role] ?? null
     const descriptors = []
     if (eventType === 'KILL' || eventType === 'HEAL') {
@@ -119,6 +124,7 @@ function buildNightPresentationContract(run, completed) {
         }
     }
 
+    // 사건 id는 판·밤·역할·리비전·순번으로 (완료 신호·재접속 복구가 이 id로 찾음)
     const contract = {
         version: NIGHT_CONTRACT_VERSION,
         gameId: session.id,
@@ -136,6 +142,7 @@ function buildNightPresentationContract(run, completed) {
         })),
         recoveryStates,
     }
+    // 저장본은 두고 복사본만 내줌
     run.contracts.set(role, contract)
     return cloneNightContract(contract)
 }

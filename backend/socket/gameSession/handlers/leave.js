@@ -1,5 +1,6 @@
 // 나가기·끊김 핸들러 파일
-// 게임 중 나가기 + 소켓 끊김 처리 (끝난 판이면 이 사람 정리·판 끝 정리), register·socket.js가 씀
+// 게임 중 나가기 + 소켓 끊김 처리, 나가기는 register가 등록·끊김은 socket.js가 gameSession.js 통해 부름
+// 진행 중 판은 이탈 반영·끊김 유예, 끝난 판은 이 사람 정리 (마지막이면 판 끝 정리까지)
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { REPLY_MESSAGES, internalErrorReply, respond } = require('../../common/replies')
@@ -26,7 +27,9 @@ function endSessionForPlayer(uuid, reason, gameId, label) {
 
 // 게임 중 나가기: 진행 중이면 나만 빼고 판은 계속, 끝난 판이면 결과 화면 닫기 처리 (지도 12)
 function handleLeaveGameSession(io, socket, uuid, payload, callback) {
+    // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
+    // ack: callback이 던져도 밖으로 안 샘
     const ack = (body) => respond(callback, body)
     // 지금 소켓·요청 모양 (지도 12-③④)
     const fields = acceptRequest(ack, uuid, socket, payload, pickTrimmedGameId)
@@ -47,6 +50,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
                 message: REPLY_MESSAGES.FAILED,
             })
         }
+        // 진짜 빠졌을 때만 판 채널 떼고 대기방 상태 정리
         if (departed.ok) {
             detachFromGameChannel(
                 socket, uuid, activeSession.channelId, '[게임 이탈 채널 정리 실패]', { gameId: activeSession.id },
@@ -58,12 +62,14 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
 
     // 끝난 판(결과 화면)에서 나가기: 판에 없어도 성공으로 답함
     const closed = endSessionForPlayer(uuid, 'PLAYER_LEFT', normalizedGameId, '[게임 이탈 처리 에러]')
+    // 정리하다 던졌으면 내부 오류
     if (closed.threw) {
         ack(internalErrorReply())
         return
     }
     const { result } = closed
 
+    // 답 먼저, 정리된 게 없으면(판 없음·다른 판) 여기서 끝
     const ended = result.ok
     ack({ ok: true })
     if (!ended) return
@@ -73,6 +79,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
         finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
         return
     }
+    // 판이 남았으면 내 대기방 상태만 정리
     cleanupMatchmakingRooms(io, [uuid], '[ENDED 게임 이탈 시 matchmaking 정리 실패]')
 }
 
@@ -86,9 +93,11 @@ function reevaluateOnDisconnect(gameId) {
 
 // 소켓 끊김: 진짜 주인 소켓일 때만, 진행 중 판이면 유예만 걸고 판은 그대로 (지도 08-①②⑤)
 async function onDisconnect(io, socket, uuid) {
+    // 주인 소켓 아니면 무시, 맞으면 소유 기록 소비 (같은 끊김 두 번 처리 막기)
     if (!canProcessDisconnectFor(io, socket, uuid)) return
     consumeOwnership(socket, uuid)
 
+    // 판 채널에 붙은 적 없는 소켓이면 할 일 없음
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
 
@@ -109,6 +118,7 @@ async function onDisconnect(io, socket, uuid) {
 
     // 끝난 판: 이 사람 정리, 마지막이면 판 끝 정리까지
     const closed = endSessionForPlayer(uuid, 'PARTICIPANT_LEFT', expectedGameId, '[GameSession 종료 처리 에러]')
+    // 던졌거나 정리된 게 없거나 판이 남았으면 끝 (답할 사람 없음)
     if (closed.threw) return
     const { result } = closed
     if (!result.ok) return

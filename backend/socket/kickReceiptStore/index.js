@@ -1,5 +1,7 @@
 // 추방 영수증 입구
-// 추방 상수·영수증 보관함·요청 모양 검사를 묶어 내보냄, socket gameSession·matchmaking·시험이 폴더 이름으로 부름
+// 추방 상수·영수증 보관함·요청 모양 검사를 묶어 내보냄
+// socket gameSession·matchmaking·시험이 폴더 이름으로 부름
+// 부팅 id·자리 id는 추방 말고 matchmaking 입장·방 처리도 씀
 const {
     KICK_RECEIPT_TTL_MS,
     KICK_RECEIPT_MAX_ENTRIES,

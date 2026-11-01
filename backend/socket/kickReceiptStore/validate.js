@@ -1,5 +1,6 @@
 // 추방 요청 모양 검사 파일
-// 추방 요청·결과 조회 payload가 허용 키·식별자 모양인지, gameSession·matchmaking 추방 처리가 씀
+// 추방 요청·결과 조회 payload가 허용 키·식별자 모양인지
+// index 거쳐 gameSession 추방(요청·결과 조회)·matchmaking 방장 추방(요청)이 씀
 const { isPlainObject, hasOnlyKeys } = require('../common/shape')
 const {
     MAX_IDENTIFIER_LENGTH,
@@ -27,10 +28,12 @@ function invalidRequest() {
 function validateKickPayload(payload, command) {
     if (!isPlainObject(payload)) return invalidRequest()
 
+    // 종류별 허용 키만, 빠진 키·모양 틀린 값도 거절
     const allowed = command === KICK_COMMANDS.GAME ? GAME_KICK_KEYS : ROOM_KICK_KEYS
     if (!hasOnlyKeys(payload, allowed)) return invalidRequest()
     if (!allowed.every((key) => isIdentifier(payload[key]))) return invalidRequest()
 
+    // 허용 키만 새 객체로 복사 (받은 객체 그대로 안 씀)
     const value = {}
     for (const key of allowed) value[key] = payload[key]
     if (command !== KICK_COMMANDS.GAME) value.gameId = null

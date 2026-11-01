@@ -1,5 +1,6 @@
 // 판 끝 정리 파일
-// 판 지우기 전 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드, 나가기·끊김·판정이 씀
+// core가 판 지운 뒤 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드
+// 판 끝 마무리는 나가기·끊김, 종료 필드는 재판·밤·이탈 뒤 판정, 대기방 정리는 나가기·추방이 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
 const { persistTerminalSession } = require('../../../services/game/record')
@@ -30,14 +31,16 @@ function cleanupMatchmakingRooms(io, uuids, label) {
     isolateWithError(label, () => matchmaking.cleanupRoomStateForSessionParticipants(io, uuids))
 }
 
-// 판 지우기 전 마무리: 전적 저장 시작 → 타이머 정리 → 대기방 정리 → 종료 방송 → 채널 떼기, 단계마다 격리 (지도 07-③)
+// 판 지운 뒤 socket 쪽 마무리: 전적 저장 시작 → 타이머 정리 → 대기방 정리 → 종료 방송 → 채널 떼기, 단계마다 격리 (지도 07-③)
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
+    // 지워진 판의 밤 성공 수신 기록도 같이 비움
     deleteNightReceipts(session)
 
     // 종료 방송 받을 사람은 정리 전에 정해 둠 (다른 판·대기방으로 간 사람 빼기)
     const endContext = isolateOr(null, '[GameSession 종료 수신 문맥 구성 실패]', { code: 'END_CONTEXT_ERROR', gameId: session?.id },
         () => buildSessionEndContext(session, leftUuid, cleanupUuids))
 
+    // 승부 났으면 완료로, 아니면 나간 사람 적어 미완료로 저장 (같은 판은 한 번만 저장됨)
     isolateWithError('[GameSession 종료 시 전적 저장 실패]', () => {
         const completed = session.phase === 'ENDED' && !!session.winResult
         persistTerminalSession(session, {
@@ -46,6 +49,7 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
         })
     })
 
+    // 밤 턴·낮 타이머·이탈 표식·끊김 유예 전부 끔 (지워진 판에 늦게 안 돌게)
     isolateWithError('[GameSession 종료 시 타이머 정리 실패]', () => {
         stopNightTurnSequence(session.id)
         stopDayPhaseTimer(session.id)
@@ -64,6 +68,7 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
         }
     })
 
+    // 판 채널에 남은 소켓 전부 떼기 (계정 없는 소켓은 건너뜀)
     isolateWithError('[GameSession channel 정리 실패]', () => {
         const registry = io?.sockets?.sockets
         if (registry && typeof registry.values === 'function') {

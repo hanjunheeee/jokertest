@@ -24,6 +24,7 @@ function isSubmittingNightTurn(run, role) {
 
 // 연출 대기 표가 지금 run의 지금 대기인지 (턴 바뀜·멈춤·새 대기면 옛 표, 지도 05-⑨)
 function isCurrentWaitToken(run, token) {
+    // 이 run·이 판·이 밤에 만든 표고 run도 아직 지금 것인지
     if (!run || !token) return false
     if (token.run !== run) return false
     const { session } = run
@@ -31,6 +32,7 @@ function isCurrentWaitToken(run, token) {
     if (!isCurrentNightRun(run)) return false
     if (token.gameId !== session.id) return false
     if (token.nightDayIndex !== run.nightDayIndex) return false
+    // 아직 대기 단계고 지금 걸린 그 표인지
     if (run.stage !== NIGHT_TURN_STAGES.PRESENTATION_WAIT) return false
     return run.wait === token
 }

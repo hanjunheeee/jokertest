@@ -35,6 +35,7 @@ function deactivateWaitToken(run, token) {
 
 // 연출 대기 상한: 시험 주입 → 환경 변수 → 기본값 순서, 범위 밖 값은 버림 (지도 05-⑨)
 function resolveNightWaitMs(deps) {
+    // 1 이상 setTimeout 최대값 이하 정수만 (넘으면 Node가 1ms로 바꿔 바로 풀림)
     const isValidTimeout = (value) =>
         Number.isInteger(value) && value > 0 && value <= NIGHT_WAIT_MAX_MS
 

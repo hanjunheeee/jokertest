@@ -13,6 +13,7 @@ const { withTerminalFields } = require('./end')
 
 // 표 낸 뒤 표식 있으면 낮 투표·재판 바로 판정 시도
 function resolveAfterDeparture(io, uuid, gameId) {
+    // 내 판이 아니거나 표식이 지금 자리 아니면 안 함 (옛 표식)
     const session = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
     if (!session || !hasDepartureResolveMark(session)) return
     if (session.phase === 'DAY') {
@@ -34,15 +35,19 @@ function pickRequesterUuid(session) {
 
 // 이탈로 남은 사람 다 냈으면 낮 투표 바로 판정 (남은 참가자 한 명 이름으로 prepare)
 function maybeResolveDayVote(io, session) {
+    // 남은 참가자 없으면 prepare에 넣을 이름 없음
     const requesterUuid = pickRequesterUuid(session)
     if (!requesterUuid) return
 
+    // 아직 다 안 냈거나 이미 판정된 투표면 그만
     const prepared = gameSessionCore.prepareDayVoteResolution(requesterUuid, session.id, session.dayIndex)
     if (!prepared.ok || prepared.alreadyResolved) return
 
+    // 여기부터 진짜 바뀜: 판정 확정 (그사이 바뀌었으면 core가 거절)
     const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
     if (!committed.ok) return
 
+    // 확정됐으니 표식 지우고 결과 방송·타이머 맞춤
     clearDepartureMark(session.id)
 
     const label = '[이탈 후 낮 투표 판정 실패]'
@@ -54,15 +59,19 @@ function maybeResolveDayVote(io, session) {
 
 // 이탈로 남은 사람 다 냈으면 재판 바로 판정 (남은 참가자 한 명 이름으로 prepare)
 function maybeResolveTribunal(io, session) {
+    // 남은 참가자 없으면 prepare에 넣을 이름 없음
     const requesterUuid = pickRequesterUuid(session)
     if (!requesterUuid) return
 
+    // 아직 다 안 냈거나 이미 끝난 재판이면 그만
     const prepared = gameSessionCore.prepareTribunalVoteResolution(requesterUuid, session.id, session.dayIndex)
     if (!prepared.ok) return
 
+    // 여기부터 진짜 바뀜: 판정 확정 (그사이 표 바뀌었으면 core가 거절)
     const committed = gameSessionCore.commitTribunalVoteResolution(prepared.session, prepared.resolution)
     if (!committed.ok) return
 
+    // 확정됐으니 표식 지우고 결과 방송(승부 났으면 종료 필드)·타이머 맞춤
     clearDepartureMark(session.id)
 
     const label = '[이탈 후 재판 판정 실패]'

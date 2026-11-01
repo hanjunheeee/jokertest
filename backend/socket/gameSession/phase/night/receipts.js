@@ -1,5 +1,6 @@
 // 밤 성공 수신 기록 파일
-// 밤 성공 사건 수신 기록 보관함(판별·밤별) + 완료 신호 모양·주인 검사, socket gameSession 밤 턴·스냅샷·완료 핸들러가 씀
+// 사건 수신 기록 보관함(판별·밤별) + 완료 신호 모양·주인 검사, 밤 턴·성공 전달·연출 대기가 씀
+// 밖에선 밤 완료·스냅샷 핸들러, 판 끝 정리, 시험 초기화가 씀
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isPlainObject, isNonEmptyString, hasOnlyKeys } = require('../../../common/shape')
 const { getOrCreate } = require('../../../common/maps')
@@ -11,7 +12,7 @@ const { NIGHT_ACK_KEYS, NIGHT_SUCCESS_OUTCOMES } = require('../../core/constants
 // 시험 초기화 때 통째로 갈아 끼움
 let receiptsBySession = new WeakMap()
 
-// 그 판 수신 기록 보관함 (없으면 undefined)
+// 그 판 수신 기록 보관함 읽기 (연출 대기 판정·스냅샷 복구용, 없으면 undefined)
 function getNightSuccessReceipts(session) {
     return receiptsBySession.get(session)
 }
@@ -36,6 +37,7 @@ function resetNightReceipts() {
 
 // 밤 성공 payload 검사 복사: 모양 틀리면 null (재접속 복구 때 그대로 다시 보냄)
 function copyNightSuccessPayload(payload) {
+    // 판 id·사건 id·밤 번호·종류·시점 모양 확인
     if (!isPlainObject(payload)) return null
     if (!isNonEmptyString(payload.gameId)) return null
     if (!isNonEmptyString(payload.eventId)) return null
@@ -49,6 +51,7 @@ function copyNightSuccessPayload(payload) {
         type: payload.type,
         perspectives: [...payload.perspectives],
     }
+    // 행동자 시점이면 대상 id도 꼭 있어야 함
     if (payload.perspectives.includes('USER')) {
         if (!isNonEmptyString(payload.targetId)) return null
         copy.targetId = payload.targetId
@@ -58,8 +61,10 @@ function copyNightSuccessPayload(payload) {
 
 // 밤 성공 수신 기록 남기기: 같은 계정 다른 자리(membershipId)면 거절, 미완료면 지금 소켓으로 다시 묶음
 function recordNightReceipt(session, event, recipient, socket, payload = null) {
+    // 보관함 없으면 기록 없이 보내게 둠
     const store = receiptsBySession.get(session)
     if (!store) return { record: null, created: false, refused: false }
+    // 이미 기록 있으면: 다른 자리면 거절, 미완료면 지금 소켓으로 다시 묶음
     const byUuid = getOrCreate(store.byEvent, event.eventId, () => new Map())
     const existing = byUuid.get(recipient.uuid)
     if (existing) {
@@ -72,6 +77,7 @@ function recordNightReceipt(session, event, recipient, socket, payload = null) {
         }
         return { record: existing, created: false, refused: false }
     }
+    // 처음이면 새 기록, payload는 검사 복사본으로 둠 (재접속 복구 때 다시 보냄)
     const record = {
         membershipId: recipient.membershipId,
         socketId: recipient.socketId,

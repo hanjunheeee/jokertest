@@ -2,7 +2,7 @@
 // 부팅 번호·보관 시간·입장 대기 기본값, matchmaking 안 파일들이 사용
 const kickReceiptStore = require('../../kickReceiptStore')
 
-// 서버 켤 때마다 바뀌는 부팅 번호 (옛 서버 영수증 구분)
+// 서버 켤 때마다 바뀌는 부팅 번호, 추방 영수증과 같은 값 (옛 서버 초대·방 정보 거르기)
 const BOOT_EPOCH = kickReceiptStore.BOOT_EPOCH
 
 // 다음 방 우편함 30분 보관

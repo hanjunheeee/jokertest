@@ -37,7 +37,7 @@ function pickGameText({ gameId, text }) {
     return { gameId, text }
 }
 
-// 판 id + 이모티콘 id (둘 다 비면 거절)
+// 판 id + 이모티콘 id (하나라도 비면 거절)
 function pickGameItem({ gameId, itemId }) {
     if (!isNonEmptyString(gameId) || !isNonEmptyString(itemId)) return null
     return { gameId, itemId }
@@ -63,6 +63,7 @@ function readRequest(uuid, socket, payload, pickFields) {
 // 앞단 검사 + 거절이면 표준 답까지 보냄, 통과면 칸 묶음 (거절이면 null)
 function acceptRequest(ack, uuid, socket, payload, pickFields) {
     const request = readRequest(uuid, socket, payload, pickFields)
+    // 옛 소켓은 거절 문구, 모양 틀림은 잘못된 요청 문구로 답 (문구가 다름)
     if (request.code === 'STALE_SOCKET') {
         ack(rejectedReply(request.code))
         return null
@@ -85,6 +86,7 @@ function acceptCoreResult(ack, call, {
     onInternal = () => {},
     publicReply = rejectedReply,
 }) {
+    // core가 던지면 원인 안 보이게 INTERNAL_ERROR
     let result
     try {
         result = call()
@@ -93,6 +95,7 @@ function acceptCoreResult(ack, call, {
         ack(internalErrorReply())
         return null
     }
+    // 실패: 내부 전용 코드는 숨기고 나머지는 코드 그대로 답
     if (!result.ok) {
         if (internalCodes.has(result.code)) {
             onInternal(result.code)

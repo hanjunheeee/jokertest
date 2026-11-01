@@ -1,5 +1,5 @@
 // 판 방송 파일
-// 판 채널 방송·받을 소켓 모아 하나씩 보내기 + 판 채널 떼기, socket gameSession 핸들러·타이머가 씀
+// 판 채널 방송·받을 소켓 모아 하나씩 보내기 + 판 채널 떼기, 핸들러·낮밤 단계·이탈 반영·판 끝 정리·재접속이 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const channelMembership = require('../../channelMembership')
 const { isNonEmptyString } = require('../../common/shape')
@@ -27,6 +27,7 @@ function detachFromGameChannel(socket, uuid, channelId, logLabel, logFields) {
 // 채널 안 소켓 중 이 판 방송 받을 자격 없는 것 (방송에서 뺄 목록)
 function collectIneligibleIds(io, session, endContext = null) {
     const ineligible = []
+    // 소켓 목록 못 읽으면 뺄 것 없음
     const registry = io?.sockets?.sockets
     if (!registry || typeof registry.values !== 'function') return ineligible
     for (const s of [...registry.values()]) {
@@ -44,11 +45,13 @@ function emitToGameChannel(io, session, event, payload, endContext = null) {
         console.error('[게임 방송 폐기 · 세션 문맥 없음]', { code: 'GAME_EMIT_NO_SESSION_CONTEXT', event })
         return
     }
+    // 판 채널 id 없으면 보낼 곳 없음
     const channelId = session.channelId
     if (!isNonEmptyString(channelId)) return
     const exceptSocketIds = collectIneligibleIds(io, session, endContext)
     const options = {}
     if (exceptSocketIds.length > 0) options.exceptSocketIds = exceptSocketIds
+    // 종료 방송은 보내기 직전 받는 쪽마다 자격 다시 봄 (정리 중 소속이 바뀔 수 있음)
     if (endContext) {
         options.recipientFilter = (s) =>
             isEligibleRecipient(session, s, s.data?.user?.uuid ?? null, endContext)

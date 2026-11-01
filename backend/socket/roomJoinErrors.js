@@ -1,5 +1,5 @@
-// 방 입장 거절 코드 파일
-// 방 만들기·입장·재입장 거절 코드 모음, socket matchmaking·시험이 씀
+// 방 입장 거절 코드 파일, 코드·공개 방 입장·초대 수락·게임 중 거절에 씀
+// matchmaking join/guards·join·admission/accept·시험이 씀
 const ROOM_JOIN_ERROR_CODES = Object.freeze({
     INVALID_REQUEST: 'INVALID_REQUEST',
     CODE_REQUIRED: 'CODE_REQUIRED',

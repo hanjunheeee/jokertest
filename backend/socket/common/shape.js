@@ -1,12 +1,13 @@
 // 요청 모양 검사 파일
-// payload가 객체인지·빈 문자열 아닌지·허용 키만 있는지, socket 핸들러들이 같이 씀
+// payload가 객체인지·빈 문자열 아닌지·허용 키만 있는지
+// socket gameSession 요청·방송·밤 처리, 채널 제외 목록, 추방 요청 검사가 같이 씀
 
 // 객체인지 (null·배열은 거절)
 function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-// 비지 않은 문자열인지
+// 비지 않은 문자열인지 (공백만 있는 것은 안 거름)
 function isNonEmptyString(value) {
     return typeof value === 'string' && value.length > 0
 }

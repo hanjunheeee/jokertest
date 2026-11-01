@@ -1,5 +1,6 @@
 // 방 전환 잠금 파일
 // 방 만들기·입장·매칭 중복 잠금 + 세대 번호 (지도 01-③④)
+// join·create·queue·초대 accept가 잠금, 판 끝 정리(room/sessionCleanup)가 세대 올림
 const { pendingRoomTransitions, generationByUuid } = require('../core/state')
 
 // 처리 중 토큰 번호
@@ -14,7 +15,7 @@ function acquireRoomTransition(uuid) {
     return token
 }
 
-// 내 토큰일 때만 뽑기
+// 내 토큰일 때만 뽑기 (남의 토큰 뽑으면 그쪽 잠금이 풀림)
 function releaseRoomTransition(uuid, token) {
     if (pendingRoomTransitions.get(uuid) === token) pendingRoomTransitions.delete(uuid)
 }
