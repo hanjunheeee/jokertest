@@ -3,6 +3,7 @@ import {
   INGAME_CHAT_PANEL_POSITION_CLASS,
   getInGameChatPanelStyle,
 } from "../../constants/chat/ingameChatBoardLayout.js"
+import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
 import { useInGameChatSessionContext } from "./InGameChatSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 import InGameChatCloseupOverlay from "./closeup/InGameChatCloseupOverlay.jsx"
@@ -19,12 +20,22 @@ function selectTribunalPresentationOpen(state) {
  *
  * TRIBUNAL 연출 구간에는 보드 채팅을 숨기고, 연출 오버레이 우측 패널이 채팅을 담당한다.
  */
-export default function InGameChatShell() {
+export default function InGameChatShell({
+  timerPlacement = INGAME_TIMER_PLACEMENT.TIMEBAR,
+  statusLabel = null,
+  remainingRatio = 0,
+  remainingSec = null,
+}) {
   const [closeupOpen, setCloseupOpen] = useState(false)
   const tribunalPresentationOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
   const chatProps = useInGameChatSessionContext()
 
   if (tribunalPresentationOpen) return null
+
+  const showEmbeddedPhaseTimer =
+    timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
+    && typeof statusLabel === "string"
+    && statusLabel.length > 0
 
   return (
     <>
@@ -37,6 +48,9 @@ export default function InGameChatShell() {
           variant="board"
           {...chatProps}
           onOpenCloseup={() => setCloseupOpen(true)}
+          showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+          embeddedPhaseTimerRemainingRatio={remainingRatio}
+          embeddedPhaseTimerRemainingSec={remainingSec}
         />
       </aside>
 

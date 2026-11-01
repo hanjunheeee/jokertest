@@ -198,6 +198,7 @@ test('day timer: 토론 제한시간 직전에는 토론이 유지되고, 만료
         dayIndex: session.dayIndex,
         dayPhase: DAY_PHASES.VOTE,
         round: 1,
+        dayPhaseDeadline: session.dayPhaseDeadline,
     })
 })
 

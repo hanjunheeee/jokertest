@@ -45,7 +45,7 @@ const ignoredApplies = [
   ["gameId가 비어 있으면", () => seedNight(), startedPayload({ gameId: "" })],
   ["다른 게임의 턴이면", () => seedNight(), startedPayload({ gameId: "game-other" })],
   ["현재 state가 없으면", () => useInGameStore.setState({ gameId: GAME_ID, state: null, error: null }), startedPayload()],
-  ["밤이 아니면(DAY)", () => seedNight({ phase: "DAY", dayPhase: "DAY_DISCUSSION" }), startedPayload()],
+  ["DAY이지만 dayIndex가 다르면", () => seedNight({ phase: "DAY", dayPhase: "DAY_DISCUSSION", dayIndex: 2 }), startedPayload({ dayIndex: 1 })],
   ["밤이 아니면(TRIBUNAL)", () => seedNight({ phase: "TRIBUNAL" }), startedPayload()],
   ["밤이 아니면(ENDED)", () => seedNight({ phase: "ENDED" }), startedPayload()],
   ["다른 밤의 턴이면", () => seedNight({ dayIndex: 2 }), startedPayload({ dayIndex: 1 })],
@@ -66,6 +66,16 @@ for (const [label, setup, parsed] of ignoredApplies) {
     assert.equal(storeAfter.state, stateBefore)
   })
 }
+
+test("applyNightTurnStarted: DAY여도 dayIndex가 같으면 턴 시계를 받는다(day_vote_resolved 레이스)", () => {
+  seedNight({ phase: "DAY", dayPhase: "DAY_VOTE", dayIndex: 1 })
+  useInGameStore.getState().applyNightTurnStarted(startedPayload({ role: "JOKER" }))
+
+  const { state } = useInGameStore.getState()
+  assert.equal(state.phase, "DAY")
+  assert.equal(state.nightTurnRole, "JOKER")
+  assert.equal(state.nightTurnDeadline, DEADLINE)
+})
 
 test("applyNightTurnStarted: 유효한 턴은 nightTurnRole/nightTurnDeadline에 반영된다", () => {
   seedNight()

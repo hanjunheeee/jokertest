@@ -30,5 +30,17 @@ export function parseDayPhaseChangedPayload({ payload, gameId, dayIndex }) {
   if (dayPhase !== "DAY_VOTE") return null
   if (!Number.isInteger(round) || round < 1) return null
 
-  return { gameId: payloadGameId, dayIndex: payloadDayIndex, dayPhase, round }
+  let dayPhaseDeadline
+  if (Object.hasOwn(payload, "dayPhaseDeadline")) {
+    if (!Number.isFinite(payload.dayPhaseDeadline) || payload.dayPhaseDeadline <= 0) return null
+    dayPhaseDeadline = payload.dayPhaseDeadline
+  }
+
+  return {
+    gameId: payloadGameId,
+    dayIndex: payloadDayIndex,
+    dayPhase,
+    round,
+    ...(dayPhaseDeadline !== undefined ? { dayPhaseDeadline } : {}),
+  }
 }

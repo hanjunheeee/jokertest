@@ -1595,7 +1595,7 @@ const PLAY_AREA_MOUNT_LOCK = [
  * 예외로 둔다(선언 존재는 따로 단언한다).
  */
 const TIMEBAR_MOUNT_LOCK = [
-  "PublicAsset", "TimebarNode", "InGamePhaseActionRow",
+  "PublicAsset", "TimebarNode", "InGameTimebarExpandedTimer", "InGameTimebarPhaseHeader", "InGamePhaseActionRow",
 ]
 
 /** 네 소유 파일이 합쳐서 마운트하는 이름 전부. InGamePlayerCardMenu가 여기 포함된다. */

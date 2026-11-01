@@ -19,6 +19,8 @@ import InGameChatMessageList from "./InGameChatMessageList.jsx"
 import InGameChatSendButton from "./InGameChatSendButton.jsx"
 import InGameChatStatusLine from "./InGameChatStatusLine.jsx"
 import { InGameChatVariantContext } from "./InGameChatVariantContext.jsx"
+import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
+import InGamePhaseTurnTimerPanel from "../timebar/InGamePhaseTurnTimerPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 const CHAT_ROOT_CLASS =
@@ -46,6 +48,9 @@ export default function InGameChatContent({
   status = null,
   error = null,
   truncateDraftOnInput = true,
+  showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerRemainingRatio = 0,
+  embeddedPhaseTimerRemainingSec = null,
 }) {
   // 프레임 크기 계산이 끝나서 채팅 UI를 보여줘도 되는지 표시합니다.
   const [layoutReady, setLayoutReady] = useState(false)
@@ -109,9 +114,19 @@ export default function InGameChatContent({
           className={CHAT_FRAME_IMAGE_CLASS}
         />
 
+        {showEmbeddedPhaseTimer ? (
+          <InGamePhaseTurnTimerPanel
+            placement={INGAME_TIMER_PLACEMENT.CHAT}
+            remainingRatio={embeddedPhaseTimerRemainingRatio}
+            remainingSec={embeddedPhaseTimerRemainingSec}
+          />
+        ) : null}
+
         <div
           className={INGAME_CHAT_MESSAGE_LIST_CONTAINER_CLASS}
-          style={getInGameChatMessageListInset(variant)}
+          style={getInGameChatMessageListInset(variant, {
+            withEmbeddedPhaseTimer: isBoard && showEmbeddedPhaseTimer,
+          })}
           data-chat-interactive
         >
           <InGameChatMessageList

@@ -1521,9 +1521,32 @@ function advanceStalledPhaseAfterDeparture(session) {
     return { transitioned: null }
 }
 
+/** phase === 'DAY'일 때만 낮 하위 구간 타이머의 절대 마감(ms)을 실어 보낸다(소켓 dayPhaseRuns와 동기). */
+function buildPublicDayPhaseDeadlineField(session) {
+    if (session?.phase !== 'DAY') return {}
+    const deadline = session.dayPhaseDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return {}
+    return { dayPhaseDeadline: deadline }
+}
+
+/** phase === 'NIGHT'이고 역할 턴 제출 중일 때만 밤 턴 타이머 필드를 실어 보낸다. */
+function buildPublicNightTurnTimerFields(session) {
+    if (session?.phase !== 'NIGHT') return {}
+    const role = getCurrentNightTurnRole(session)
+    if (role === null || typeof role !== 'string') return {}
+    const deadline = session.nightTurnDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return {}
+    return { nightTurnRole: role, nightTurnDeadline: deadline }
+}
+
 /** ROLE_REVEAL→DAY 전이를 참가자 전체에게 알리는 공용 payload. 참가자 식별·비밀 정보를 전혀 포함하지 않는다. */
 function buildPhaseChangedPayload(session) {
-    return { gameId: session.id, phase: session.phase, dayIndex: session.dayIndex }
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        ...buildPublicDayPhaseDeadlineField(session),
+    }
 }
 
 // 이 밤에 행동 가능한 역할인지 판정한다. nightActionMinDayIndex가 null이면(CITIZEN) 애초에
@@ -3336,6 +3359,7 @@ function buildDayPhaseChangedPayload(session) {
         dayIndex: session.dayIndex,
         dayPhase: getDayPhase(session),
         round: getDayVoteRound(session),
+        ...buildPublicDayPhaseDeadlineField(session),
     }
 }
 
@@ -4128,6 +4152,8 @@ function buildSessionSnapshot(session, uuid) {
         // (nightResult/tribunal의 선택 필드 관례와 동일). 이 값이 없으면 재접속 클라이언트가
         // 토론과 투표를 구분하지 못해 그 낮에 갇힌다.
         ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
+        ...buildPublicDayPhaseDeadlineField(session),
+        ...buildPublicNightTurnTimerFields(session),
         players: [...session.players.values()].map((player, index) => ({
             uuid: player.uuid,
             nickname: player.nickname,

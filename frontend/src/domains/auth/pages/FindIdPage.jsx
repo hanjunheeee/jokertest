@@ -7,25 +7,11 @@ import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayo
 import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { findIdApi } from "@/domains/auth/api/auth.api.js"
-
-// backend/validation/findIdValidation.js의 닉네임 규칙과 같은 정규화(trim)·문자셋을 여기서도
-// 먼저 확인한다 — 서버가 다시 검사하므로 이 자체가 최종 판정은 아니고, 명백히 틀린 입력을
-// 보내기 전에 빠르게 걸러내기 위한 것이다.
-const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/
-const NICKNAME_MIN_LENGTH = 2
-const NICKNAME_MAX_LENGTH = 50
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-
-const validateLocalInput = (nickname, birthDate) => {
-  const trimmed = nickname.trim()
-  if (trimmed.length < NICKNAME_MIN_LENGTH || trimmed.length > NICKNAME_MAX_LENGTH || !NICKNAME_PATTERN.test(trimmed)) {
-    return { ok: false, message: `닉네임을 ${NICKNAME_MIN_LENGTH}~${NICKNAME_MAX_LENGTH}자로 입력해주세요.` }
-  }
-  if (!ISO_DATE_PATTERN.test(birthDate)) {
-    return { ok: false, message: "생년월일을 선택해주세요." }
-  }
-  return { ok: true }
-}
+import {
+  FIND_ID_NICKNAME_WHITESPACE_MESSAGE,
+  hasFindIdNicknameWhitespace,
+  validateFindIdLocalInput,
+} from "@/domains/auth/validation/findIdValidation.js"
 
 const NOT_FOUND_MESSAGE = "입력한 정보와 일치하는 계정을 찾을 수 없습니다."
 const RATE_LIMITED_MESSAGE = "너무 많은 요청입니다. 잠시 후 다시 시도해주세요."
@@ -58,8 +44,18 @@ export default function FindIdPage() {
     return () => { unmountedRef.current = true }
   }, [])
 
+  const handleNicknameChange = (event) => {
+    const next = event.target.value
+    setNickname(next)
+    if (hasFindIdNicknameWhitespace(next)) {
+      setFormError(FIND_ID_NICKNAME_WHITESPACE_MESSAGE)
+      return
+    }
+    setFormError((prev) => (prev === FIND_ID_NICKNAME_WHITESPACE_MESSAGE ? "" : prev))
+  }
+
   const submit = () => {
-    const validation = validateLocalInput(nickname, birthDate)
+    const validation = validateFindIdLocalInput(nickname, birthDate)
     if (!validation.ok) {
       setFormError(validation.message)
       return
@@ -70,7 +66,7 @@ export default function FindIdPage() {
     setStatus("submitting")
     const generation = ++requestGenerationRef.current
 
-    findIdApi({ nickname: nickname.trim(), birthDate })
+    findIdApi({ nickname: validation.nickname, birthDate: validation.birthDate })
       .then((result) => {
         // 세대·언마운트 확인을 잠금 해제보다 **먼저** 한다 — 늦게 도착한 옛 응답이 지금
         // 진행 중인 요청의 잠금을 풀면 그 사이 제출이 한 번 더 나갈 수 있다.
@@ -159,7 +155,7 @@ export default function FindIdPage() {
                 type="text"
                 name="nickname"
                 value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
+                onChange={handleNicknameChange}
                 placeholder="닉네임을 입력하세요"
                 autoComplete="off"
                 leadingIcon={<ProfileIcon />}

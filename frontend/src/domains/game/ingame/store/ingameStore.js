@@ -18,6 +18,7 @@ import { getDayVoteRound, parseDayVoteRoundFields } from "../utils/dayVoteRound.
 // 들어갈 때마다 같은 두 필드를 함께 비우기 위해 한 곳에 모아둔다 — 한쪽만 비우면 역할과
 // 남은 시간이 서로 다른 턴을 가리키게 된다.
 const CLEARED_NIGHT_TURN = Object.freeze({ nightTurnRole: null, nightTurnDeadline: null })
+const CLEARED_DAY_PHASE_TIMER = Object.freeze({ dayPhaseDeadline: null })
 
 // NIGHT에 새로 들어갈 때 개인 결과를 함께 비우는 패치. nightPrivateResult는 "지난 밤의 내
 // 조사/확인/암살 통지"라, 새 밤이 시작되면 반드시 사라져야 한다(그러지 않으면 지난 밤 결과가
@@ -930,6 +931,13 @@ export const useInGameStore = create((set) => ({
       const isLegacyFirstNight = payload.phase === "NIGHT" && payload.dayIndex === 0
       if (!isFirstDay && !isLegacyFirstNight) return current
 
+      let dayPhaseDeadline = undefined
+      if (isFirstDay && Object.hasOwn(payload, "dayPhaseDeadline")) {
+        const parsedDeadline = payload.dayPhaseDeadline
+        if (!Number.isFinite(parsedDeadline) || parsedDeadline <= 0) return current
+        dayPhaseDeadline = parsedDeadline
+      }
+
       // 낮은 항상 토론(DAY_DISCUSSION)부터 시작한다 — 서버 enterDayPhase가 DAY 진입 때마다
       // 하위 구간을 토론으로 초기화하는 것과 대응한다. dayPhase는 phase === "DAY"일 때만
       // 의미가 있으므로, 낮이 아닌 legacy first-night 경로에서는 null로 둔다.
@@ -939,6 +947,11 @@ export const useInGameStore = create((set) => ({
           phase: payload.phase,
           dayIndex: payload.dayIndex,
           dayPhase: isFirstDay ? "DAY_DISCUSSION" : null,
+          ...(isFirstDay
+            ? {
+                dayPhaseDeadline: dayPhaseDeadline ?? null,
+              }
+            : { ...CLEARED_DAY_PHASE_TIMER }),
         },
         // 밤으로 들어가는 경로에서만 개인 결과를 비운다(ROLE_REVEAL에서는 이미 비어 있지만,
         // "NIGHT에 들어갈 때 비운다"는 규칙을 이 경로에도 똑같이 적용해 예외를 만들지 않는다).
@@ -1114,6 +1127,7 @@ export const useInGameStore = create((set) => ({
             phase: "ENDED",
             dayIndex: payload.dayIndex,
             dayPhase: null, // 낮을 벗어났다 — dayPhase는 phase === "DAY"일 때만 의미가 있다.
+            ...CLEARED_DAY_PHASE_TIMER,
             // 밤을 벗어났다 — 역할 턴은 phase === "NIGHT"일 때만 의미가 있다. 여기서 비우지
             // 않으면 지난 밤의 마지막 턴이 다음 밤으로 이월돼, 그 밤의 첫 turn 방송이 도착하기
             // 전에 엉뚱한 역할의 안내가 한 장 뜬다.
@@ -1128,6 +1142,12 @@ export const useInGameStore = create((set) => ({
       if (!Number.isInteger(payload.dayIndex)) return current
       if (!Array.isArray(payload.players)) return current
       if (payload.dayIndex <= current.state.dayIndex) return current
+
+      let dayPhaseDeadline = null
+      if (Object.hasOwn(payload, "dayPhaseDeadline")) {
+        if (!Number.isFinite(payload.dayPhaseDeadline) || payload.dayPhaseDeadline <= 0) return current
+        dayPhaseDeadline = payload.dayPhaseDeadline
+      }
 
       const aliveByUuid = new Map(payload.players.map((p) => [p.uuid, p.alive]))
       const nextPlayers = current.state.players.map((p) =>
@@ -1145,6 +1165,7 @@ export const useInGameStore = create((set) => ({
           dayVoteRound: 1,
           dayVoteExcludedUuids: [],
           dayVoteResolution: null,
+          dayPhaseDeadline,
           // 밤을 벗어났다 — 위 ENDED 분기와 같은 이유로 역할 턴을 비운다.
           ...CLEARED_NIGHT_TURN,
           players: nextPlayers,
@@ -1168,11 +1189,15 @@ export const useInGameStore = create((set) => ({
       if (typeof parsed.gameId !== "string" || parsed.gameId.trim().length === 0) return current
       if (!current.gameId || !current.state) return current
       if (parsed.gameId !== current.gameId) return current
-      // 역할 턴은 밤에만 의미가 있다. 서버는 NIGHT 전이 방송(day_vote_resolved 등)을 보낸
-      // "뒤에" 턴 시퀀스를 시작하므로, 정상 경로에서 이 게이트에 걸리는 일은 없다 — 늦게
-      // 도착한 이전 밤의 턴이 낮·재판 화면에 새어드는 것을 막는 방어다.
-      if (current.state.phase !== "NIGHT") return current
       if (!Number.isInteger(parsed.dayIndex) || parsed.dayIndex !== current.state.dayIndex) return current
+      // 역할 턴은 밤에만 의미가 있다. 다만 서버는 day_vote_resolved **전에** 첫 night_turn_started를
+      // 보낼 수 있어(타이머 sync → 턴 방송 → 낮 판정 방송), 아직 phase가 DAY여도 같은 dayIndex면
+      // 턴 시계를 받아 둔다 — 안 그러면 밤 첫 역할 타이머가 store에 영구히 비어 00:00으로 멈춘다.
+      const phase = current.state.phase
+      const phaseAcceptsTurn =
+        phase === "NIGHT"
+        || (phase === "DAY" && current.state.dayIndex === parsed.dayIndex)
+      if (!phaseAcceptsTurn) return current
       if (typeof parsed.role !== "string" || parsed.role.length === 0) return current
       if (!Number.isFinite(parsed.deadline) || parsed.deadline <= 0) return current
       // 같은 턴의 중복 방송은 참조 보존 no-op — 안내는 canonical 턴이 실제로 바뀔 때만 열려야
@@ -1221,7 +1246,13 @@ export const useInGameStore = create((set) => ({
       // 늦게 도착한 중복 방송이 불필요한 리렌더를 만들지 않게 한다.
       if (current.state.dayPhase === "DAY_VOTE") return current
 
-      return { state: { ...current.state, dayPhase: "DAY_VOTE" } }
+      const nextState = { ...current.state, dayPhase: "DAY_VOTE" }
+      if (Object.hasOwn(parsed, "dayPhaseDeadline")) {
+        if (!Number.isFinite(parsed.dayPhaseDeadline) || parsed.dayPhaseDeadline <= 0) return current
+        nextState.dayPhaseDeadline = parsed.dayPhaseDeadline
+      }
+
+      return { state: nextState }
     }),
 
   // day_vote_resolved 방송을 반영한다. TRIBUNAL 판정은 phase를 TRIBUNAL로 바꾸고
@@ -1252,27 +1283,48 @@ export const useInGameStore = create((set) => ({
 
       if (outcome === "REVOTE") {
         if (current.state.dayPhase !== "DAY_VOTE") return current
-        return { state: {
+        const revoteState = {
           ...current.state,
           dayVoteRound: round + 1,
           dayVoteExcludedUuids: [...roundFields.revoteExcludedUuids],
           dayVoteResolution,
           tribunal: null,
           self: { ...current.state.self, hasActedThisPhase: false },
-        } }
+        }
+        if (Object.hasOwn(resolution, "dayPhaseDeadline")) {
+          if (!Number.isFinite(resolution.dayPhaseDeadline) || resolution.dayPhaseDeadline <= 0) return current
+          revoteState.dayPhaseDeadline = resolution.dayPhaseDeadline
+        }
+        return { state: revoteState }
       }
 
       // 두 분기 모두 낮을 벗어나므로 dayPhase를 null로 되돌린다 — dayPhase는 phase === "DAY"일
       // 때만 의미가 있고, 다음 낮 진입 경로가 다시 DAY_DISCUSSION으로 세팅한다.
       if (outcome === "TRIBUNAL") {
         if (typeof defendantUuid !== "string" || defendantUuid.length === 0) return current
-        return { state: { ...current.state, phase: "TRIBUNAL", dayPhase: null, dayVoteResolution, tribunal: { defendantUuid } } }
+        return {
+          state: {
+            ...current.state,
+            phase: "TRIBUNAL",
+            dayPhase: null,
+            dayVoteResolution,
+            tribunal: { defendantUuid },
+            ...CLEARED_DAY_PHASE_TIMER,
+          },
+        }
       }
       if (outcome === "TIE" || outcome === "ABSTAINED") {
         // 새 밤은 항상 "아직 어떤 턴도 방송되지 않은" 상태에서 시작한다. 첫
         // night_turn_started가 도착하기 전까지 role/deadline은 비어 있어야 한다.
         return {
-          state: { ...current.state, phase: "NIGHT", dayPhase: null, dayVoteResolution, ...CLEARED_NIGHT_TURN },
+          state: {
+            ...current.state,
+            phase: "NIGHT",
+            dayPhase: null,
+            dayVoteResolution,
+            ...CLEARED_DAY_PHASE_TIMER,
+            ...CLEARED_NIGHT_TURN,
+          },
           // NIGHT 재진입 — 지난 밤의 개인 결과·성공 사건 큐는 이 밤으로 넘어오지 않는다.
           ...CLEARED_NIGHT_PRIVATE_RESULT,
           ...clearNightSuccessQueue(),

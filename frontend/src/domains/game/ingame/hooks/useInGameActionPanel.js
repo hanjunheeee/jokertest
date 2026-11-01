@@ -87,6 +87,12 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     if (payload.publicVoteCount !== payload.publicAbstainCount) return null
   }
 
+  let dayPhaseDeadline
+  if (payload.outcome === "REVOTE" && Object.hasOwn(payload, "dayPhaseDeadline")) {
+    if (!Number.isFinite(payload.dayPhaseDeadline) || payload.dayPhaseDeadline <= 0) return null
+    dayPhaseDeadline = payload.dayPhaseDeadline
+  }
+
   return {
     gameId: payload.gameId,
     dayIndex: payload.dayIndex,
@@ -96,6 +102,7 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     publicVoteCount: payload.publicVoteCount,
     publicAbstainCount: payload.publicAbstainCount,
     ...roundFields,
+    ...(dayPhaseDeadline !== undefined ? { dayPhaseDeadline } : {}),
   }
 }
 

@@ -1004,17 +1004,17 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
     respond(callback, { ok: true })
 
     if (result.transitioned) {
-        try {
-            emitToGameChannel(io, result.session,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session))
-        } catch (err) {
-            console.error('[phase 변경 알림 전송 실패]', err)
-        }
         // 첫 DAY가 열리는 유일한 지점이므로 낮 토론 제한시간도 여기서 시작한다. 방송과 분리된
         // try 블록에 두어 한쪽이 실패해도 다른 쪽이 막히지 않게 한다(onDisconnect와 같은 관례).
         try {
             startDayPhaseTimer(io, result.session)
         } catch (err) {
             console.error('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: result.session.id })
+        }
+        try {
+            emitToGameChannel(io, result.session,'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session))
+        } catch (err) {
+            console.error('[phase 변경 알림 전송 실패]', err)
         }
     }
 }
@@ -1089,6 +1089,12 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
     respond(callback, { ok: true, readyCount: result.readyCount, requiredCount: result.requiredCount })
 
     if (result.transitioned) {
+        // 전원 준비로 토론이 조기 종료됐다 — 남은 토론 제한시간을 버리고 투표 제한시간을 건다.
+        try {
+            startDayPhaseTimer(io, result.session)
+        } catch (err) {
+            console.error('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: result.session.id })
+        }
         try {
             emitToGameChannel(io, result.session,
                 'day_phase_changed',
@@ -1096,12 +1102,6 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
             )
         } catch (err) {
             console.error('[낮 하위 페이즈 변경 알림 전송 실패]', err)
-        }
-        // 전원 준비로 토론이 조기 종료됐다 — 남은 토론 제한시간을 버리고 투표 제한시간을 건다.
-        try {
-            startDayPhaseTimer(io, result.session)
-        } catch (err) {
-            console.error('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: result.session.id })
         }
     }
 }
@@ -1310,6 +1310,7 @@ function advanceNightTurn(run) {
     const durationMs = resolveNightTurnDurationMs(run, role)
     const deadline = run.nowFn() + durationMs
     run.deadline = deadline
+    session.nightTurnDeadline = deadline
     emitNightTurnEvent(run, 'night_turn_started', gameSessionCore.buildNightTurnStartedPayload(session, role, deadline))
 
     if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) {
@@ -1768,6 +1769,7 @@ function beginNightPresentationWait(run, completed, contract) {
     run.stage = NIGHT_TURN_STAGES.PRESENTATION_WAIT
     run.wait = token
     session.nightTurnRole = null
+    session.nightTurnDeadline = null
     return token
 }
 
@@ -2169,6 +2171,7 @@ function stopNightTurnSequence(gameId) {
     run.stage = NIGHT_TURN_STAGES.STOPPED
     nightTurnRuns.delete(gameId)
     delete run.session.nightTurnRole
+    delete run.session.nightTurnDeadline
 }
 
 // gameId → 진행 중인 낮 페이즈 타이머 run. nightTurnRuns와 짝이 되는 구조이며 세션당 최대
@@ -2223,6 +2226,7 @@ function scheduleDayPhaseTimer(run) {
         round: gameSessionCore.getDayVoteRound(session),
     }
     run.deadline = run.nowFn() + durationMs
+    session.dayPhaseDeadline = run.deadline
     run.timerId = run.setTimeoutFn(
         isVote ? () => expireDayVoteWithAbstentions(run) : () => expireDayDiscussion(run),
         durationMs,
@@ -2247,8 +2251,8 @@ function expireDayDiscussion(run) {
         return
     }
 
-    emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
     scheduleDayPhaseTimer(run)
+    emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
 }
 
 /**
@@ -2310,7 +2314,10 @@ function expireDayVoteWithAbstentions(run) {
         return
     }
 
-    const resolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution)
+    const resolvedPayload = attachDayPhaseDeadline(
+        gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution),
+        session,
+    )
     let recipients = []
     try {
         recipients = resolveSessionParticipantSockets(run.io, session)
@@ -2326,7 +2333,11 @@ function expireDayVoteWithAbstentions(run) {
         }
     }
 
-    syncSessionPhaseTimers(run.io, session)
+    try {
+        syncSessionPhaseTimers(run.io, session)
+    } catch (err) {
+        console.error('[낮 투표 만료 판정 실패]', { code: 'TIMER_SYNC_ERROR', gameId: session.id })
+    }
 }
 
 /**
@@ -2386,7 +2397,19 @@ function stopDayPhaseTimer(gameId) {
         run.clearTimeoutFn(run.timerId)
         run.timerId = null
     }
+    if (run.session) {
+        run.session.dayPhaseDeadline = null
+    }
     dayPhaseRuns.delete(gameId)
+}
+
+/** 낮 타이머가 방금 맞춰 둔 session.dayPhaseDeadline을 공개 payload에 붙인다. */
+function attachDayPhaseDeadline(payload, session) {
+    if (payload === null || typeof payload !== 'object') return payload
+    if (session?.phase !== 'DAY') return payload
+    const deadline = session.dayPhaseDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return payload
+    return { ...payload, dayPhaseDeadline: deadline }
 }
 
 /**
@@ -2794,14 +2817,14 @@ function advancePhaseAfterDeparture(io, session, applied) {
 
     if (advanced.transitioned === 'DAY_VOTE') {
         try {
-            emitToGameChannel(io, session,'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
-        } catch (err) {
-            console.error('[이탈 후 단계 진행 실패]', { code: 'DAY_PHASE_DELIVERY_ERROR', gameId: session.id })
-        }
-        try {
             startDayPhaseTimer(io, session)
         } catch (err) {
             console.error('[이탈 후 단계 진행 실패]', { code: 'TIMER_START_ERROR', gameId: session.id })
+        }
+        try {
+            emitToGameChannel(io, session,'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
+        } catch (err) {
+            console.error('[이탈 후 단계 진행 실패]', { code: 'DAY_PHASE_DELIVERY_ERROR', gameId: session.id })
         }
         return
     }
@@ -2950,7 +2973,10 @@ function maybeResolveDayVoteAfterDeparture(io, session) {
     // 다음 라운드가 이탈 없이도 표식을 물려받은 것처럼 보일 수 있다.
     clearDepartureResolveMark(session.id)
 
-    const resolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution)
+    const resolvedPayload = attachDayPhaseDeadline(
+        gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution),
+        session,
+    )
     let recipients = []
     try {
         recipients = resolveSessionParticipantSockets(io, session)
@@ -2966,7 +2992,6 @@ function maybeResolveDayVoteAfterDeparture(io, session) {
         }
     }
 
-    // 실제 phase/round 전이가 일어난 경우다 — 여기서는 타이머를 다시 맞추는 것이 정확하다.
     try {
         syncSessionPhaseTimers(io, session)
     } catch (err) {
@@ -3707,7 +3732,10 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
 
             if (nightResultAppliedPayload) {
                 try {
-                    recipientSocket.emit('night_result_applied', nightResultAppliedPayload)
+                    recipientSocket.emit(
+                        'night_result_applied',
+                        attachDayPhaseDeadline(nightResultAppliedPayload, targetSession),
+                    )
                 } catch (err) {
                     console.error('[밤 행동 판정 오류]', { code: 'DELIVERY_ERROR', uuid: onResult?.uuid, gameId: targetSession.id })
                 }
@@ -4093,7 +4121,10 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
         recipients = []
     }
 
-    const dayVoteResolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
+    const dayVoteResolvedPayload = attachDayPhaseDeadline(
+        gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution),
+        prepared.session,
+    )
 
     for (const recipientSocket of recipients) {
         if (!stillEligibleForDelivery(prepared.session, recipientSocket)) continue
@@ -4104,8 +4135,6 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
         }
     }
 
-    // 판정 결과를 먼저 전달한 뒤 canonical phase에 맞는 다음 타이머를 시작한다. NIGHT 전이는 여기서
-    // 실제 밤 턴 시퀀스를 시작하므로 클라이언트는 day_vote_resolved 다음에 night_turn_started를 받는다.
     try {
         syncSessionPhaseTimers(io, prepared.session)
     } catch (err) {

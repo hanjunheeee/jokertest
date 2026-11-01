@@ -9,6 +9,7 @@
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../../shared/constants/customScrollbarStyles.js"
 import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
+  INGAME_CHAT_MESSAGE_LIST_INSET_WITH_EMBEDDED_TIMER,
   INGAME_CHAT_STATUS_LINE_INSET,
   INGAME_CHAT_TEXT_FIELD_INSET,
 } from "./ingameChatBoardLayout.js"
@@ -362,11 +363,19 @@ export const INGAME_CHAT_MESSAGE_SENDER_CLASS =
 export const INGAME_CHAT_MESSAGE_ROW_CLASS =
   `flex min-w-0 list-none items-start gap-[0.25em] ${INGAME_CHAT_MESSAGE_READ_ONLY_CLASS}`
 
-/** @param {"board" | "closeup"} [variant] */
-export function getInGameChatMessageListInset(variant = "board") {
-  return isInGameChatCloseupLikeVariant(variant)
-    ? INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
-    : INGAME_CHAT_MESSAGE_LIST_INSET
+/**
+ * @param {"board" | "closeup"} [variant]
+ * @param {{ withEmbeddedPhaseTimer?: boolean }} [options]
+ */
+export function getInGameChatMessageListInset(variant = "board", options = {}) {
+  const { withEmbeddedPhaseTimer = false } = options
+  if (isInGameChatCloseupLikeVariant(variant)) {
+    return INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
+  }
+  if (withEmbeddedPhaseTimer) {
+    return INGAME_CHAT_MESSAGE_LIST_INSET_WITH_EMBEDDED_TIMER
+  }
+  return INGAME_CHAT_MESSAGE_LIST_INSET
 }
 
 /** @param {"board" | "closeup"} [variant] */

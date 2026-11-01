@@ -11,6 +11,9 @@ import { normalizePublicWinResult } from "../utils/normalizePublicWinResult.js"
 // F-24(RESTORE-24): 복원 원본 설정의 허용 목록은 한 곳(setup/utils)이 소유한다. 그 모듈은
 // 순수 함수만 담고 있어(zustand·React 없음) 스냅샷 경로가 저장소 모듈을 끌어오지 않는다.
 import { sanitizeRoomSettings } from "../../setup/utils/roomSettingsSourceSanitize.js"
+import { INGAME_NIGHT_TURN_ANNOUNCEMENTS } from "../constants/nightTurn/ingameNightTurnAnnouncement.js"
+
+const KNOWN_NIGHT_TURN_ROLES = new Set(INGAME_NIGHT_TURN_ANNOUNCEMENTS.map((turn) => turn.role))
 
 const ROLE_TEAMS = {
   JOKER: "JOKER",
@@ -360,6 +363,40 @@ export function applySessionSnapshotPure(current, response) {
     return current
   }
 
+  let dayPhaseDeadline = null
+  if (Object.hasOwn(response, "dayPhaseDeadline")) {
+    if (response.phase !== "DAY") return current
+    if (!Number.isFinite(response.dayPhaseDeadline) || response.dayPhaseDeadline <= 0) return current
+    dayPhaseDeadline = response.dayPhaseDeadline
+  }
+
+  let nightTurnRole = null
+  let nightTurnDeadline = null
+  const responseHasNightTurnRole = Object.hasOwn(response, "nightTurnRole")
+  const responseHasNightTurnDeadline = Object.hasOwn(response, "nightTurnDeadline")
+  if (response.phase === "NIGHT") {
+    if (responseHasNightTurnRole || responseHasNightTurnDeadline) {
+      if (responseHasNightTurnRole !== responseHasNightTurnDeadline) return current
+      if (responseHasNightTurnRole) {
+        if (typeof response.nightTurnRole !== "string" || !KNOWN_NIGHT_TURN_ROLES.has(response.nightTurnRole)) {
+          return current
+        }
+        if (!Number.isFinite(response.nightTurnDeadline) || response.nightTurnDeadline <= 0) return current
+        nightTurnRole = response.nightTurnRole
+        nightTurnDeadline = response.nightTurnDeadline
+      }
+    } else if (
+      current.state?.phase === "NIGHT"
+      && current.state.dayIndex === response.dayIndex
+    ) {
+      // 구버전 스냅샷·비동기 조회 중 night_turn_started만 반영된 화면 — 턴 시계를 지우지 않는다.
+      nightTurnRole = current.state.nightTurnRole ?? null
+      nightTurnDeadline = current.state.nightTurnDeadline ?? null
+    }
+  } else if (responseHasNightTurnRole || responseHasNightTurnDeadline) {
+    return current
+  }
+
   // 종료(ENDED) 확정 이후에는 어떤 스냅샷도 활성 phase로 되돌릴 수 없다(잠금). 동일하게
   // ENDED인 스냅샷을 다시 적용하는 것은 막지 않는다(멱등 재적용 허용).
   if (current.state.phase === "ENDED" && response.phase !== "ENDED") return current
@@ -482,6 +519,9 @@ export function applySessionSnapshotPure(current, response) {
     phase: response.phase,
     dayIndex: response.dayIndex,
     dayPhase,
+    dayPhaseDeadline,
+    nightTurnRole,
+    nightTurnDeadline,
     hostUuid,
     // 진행 중 추방 요청이 "내가 보고 있던 그 판"을 가리킨다는 것을 서버가 확인하는 입력이다.
     // 새로고침으로 이 세 값이 사라지면 방장이 추방 요청 자체를 만들 수 없다.

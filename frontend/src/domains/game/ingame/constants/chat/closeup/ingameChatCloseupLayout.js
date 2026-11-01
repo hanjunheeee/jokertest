@@ -13,13 +13,13 @@ export const INGAME_CHAT_CLOSEUP_PANEL_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
-/** 전체 화면 dim — 클릭 시 닫기 */
+/** 전체 화면 dim — 클릭 시 닫기 (시간흐름바 z-[58] 위) */
 export const INGAME_CHAT_CLOSEUP_BACKDROP_CLASS =
-  "fixed inset-0 z-[45] cursor-default border-0 bg-black/45 p-0"
+  "fixed inset-0 z-[62] cursor-default border-0 bg-black/45 p-0"
 
 /** 클로즈업 패널 — 중앙 정렬 (perspective 없음) */
 export const INGAME_CHAT_CLOSEUP_PANEL_WRAP_CLASS =
-  "pointer-events-none fixed inset-0 z-[46] flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
+  "pointer-events-none fixed inset-0 z-[63] flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
 
 /** 채팅 프레임 컨테이너 — 보드보다 크게 (cqi 타이포 자동 확대) */
 const INGAME_CHAT_CLOSEUP_PANEL_WIDTH_BASE = {

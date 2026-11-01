@@ -8,6 +8,7 @@ import {
   INGAME_CHAT_CONTENT_SHIFT_LEFT_FRAME,
   mapFrameInsetToLayoutBox,
 } from "./ingameChatFrameLayout.js"
+import { CHAT_EMBEDDED_TIMER_MESSAGE_LIST_TOP_OFFSET_FRAME } from "./ingameChatTimerLayout.js"
 
 /** scale 보정 전 내부 레이아웃 박스 너비 — cqi 기준 유지용 */
 export const INGAME_CHAT_LAYOUT_WIDTH_PERCENT = `${100 / INGAME_CHAT_FRAME_SCALE}%`
@@ -90,6 +91,19 @@ export function getInGameChatPanelStyle(
 /** InGameChatContent — 보드 메시지 목록 inset (scale 보정 적용) */
 export const INGAME_CHAT_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
   CHAT_MESSAGE_LIST_INSET_FRAME,
+)
+
+const CHAT_MESSAGE_LIST_INSET_FRAME_WITH_EMBEDDED_TIMER = {
+  top: CHAT_MESSAGE_LIST_INSET_FRAME.top + CHAT_EMBEDDED_TIMER_MESSAGE_LIST_TOP_OFFSET_FRAME,
+  left: CHAT_MESSAGE_LIST_INSET_FRAME.left,
+  right: CHAT_MESSAGE_LIST_INSET_FRAME.right,
+  height:
+    CHAT_MESSAGE_LIST_INSET_FRAME.height - CHAT_EMBEDDED_TIMER_MESSAGE_LIST_TOP_OFFSET_FRAME,
+}
+
+/** 보드 + 채팅 프레임 내장 phase 타이머 */
+export const INGAME_CHAT_MESSAGE_LIST_INSET_WITH_EMBEDDED_TIMER = mapFrameInsetToLayoutBox(
+  CHAT_MESSAGE_LIST_INSET_FRAME_WITH_EMBEDDED_TIMER,
 )
 
 /** InGameChatContent — 보드 입력줄 inset */
