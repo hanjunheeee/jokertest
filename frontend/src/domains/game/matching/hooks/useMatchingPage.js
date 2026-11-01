@@ -1,31 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+// 대기방 화면 훅: 방·강퇴·친구 초대·설정 편집 훅을 묶어 화면 값으로 돌려줌
+// GameMatchingPage가 씀, 판 끝나고 돌아온 경우(파티 방 기다림)도 여기서 가름
+import { useCallback, useEffect, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { MATCHING_PARTY_SLOTS_DUMMY_10, MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
+import { MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import { useMatchingRoom } from "./useMatchingRoom"
 import { useMatchingRoomKick } from "./useMatchingRoomKick.js"
 import { useMatchingFriendInvite } from "./useMatchingFriendInvite.js"
+import { useSettingsEdit } from "./useSettingsEdit.js"
 import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
-import { getSocket } from "@/shared/socket/socketClient"
-import { buildRoomSettingsFormState } from "@/domains/game/setup/utils/roomSettingsForm.js"
 import { clearPartyRejoinGameId, readPartyRejoinGameId } from "../utils/partyMatchingRejoin.js"
+import { buildSlots } from "../utils/chunkPlayerSlots.js"
+import { leaveRoom } from "../socket/room.js"
 
 export function useMatchingPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const myUuid = useAuthStore((s) => s.user?.uuid)
-  const storedPartyGameId = readPartyRejoinGameId(myUuid)
-  const awaitRoomAfterGameResult =
-    location.state?.awaitRoomAfterGameResult === true || Boolean(storedPartyGameId)
+
+  // 결과 화면에서 왔거나 새로고침 전에 기다리던 판이 있으면 파티 방 기다림
+  const storedGameId = readPartyRejoinGameId(myUuid)
+  const awaiting =
+    location.state?.awaitRoomAfterGameResult === true || Boolean(storedGameId)
   const endedGameId = typeof location.state?.endedGameId === "string"
     ? location.state.endedGameId
-    : storedPartyGameId
+    : storedGameId
 
   const [uiVisible, setUiVisible] = useState(false)
 
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
-
-  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const {
     isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom,
@@ -35,10 +38,11 @@ export function useMatchingPage() {
   const myPlayer = players.find((player) => player.uuid === myUuid)
   const isReady = Boolean(myPlayer?.isReady)
 
+  // 방이 사라지면 목록으로 (파티 방 기다리는 중엔 그대로 둠), 게임 시작하면 인게임으로
   const handleRoomDeleted = useCallback(() => {
-    if (awaitRoomAfterGameResult) return
+    if (awaiting) return
     navigate("/multiplay")
-  }, [navigate, awaitRoomAfterGameResult])
+  }, [navigate, awaiting])
   const handleGameStarted = useCallback(() => navigate("/ingame"), [navigate])
 
   const {
@@ -49,8 +53,8 @@ export function useMatchingPage() {
   } = useMatchingRoom({
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
-    endedGameId: awaitRoomAfterGameResult ? endedGameId : null,
-    awaitPartyRoomRejoin: awaitRoomAfterGameResult,
+    endedGameId: awaiting ? endedGameId : null,
+    awaitPartyRoomRejoin: awaiting,
   })
 
   const {
@@ -71,33 +75,23 @@ export function useMatchingPage() {
     roomId: isInRoom ? roomId : null,
   })
 
-  const settingsForm = useMemo(
-    () => buildRoomSettingsFormState({ accessType, settings }),
-    [accessType, settings],
-  )
-  const settingsFormResetKey = `${roomId ?? ""}:${settingsVersion ?? ""}`
+  const {
+    settingsOpen, openSettings, closeSettings, canEditSettings,
+    settingsForm, settingsFormResetKey, submitSettings,
+  } = useSettingsEdit({
+    isInRoom, isHost, isRoomVerified, roomId, accessType, settings, settingsVersion,
+    hasPendingSettingsResult, saveRoomSettings,
+  })
 
-  const canEditSettings = isInRoom && isHost && isRoomVerified && settingsForm.ok && !hasPendingSettingsResult
-  const openSettings = () => { if (canEditSettings) setSettingsOpen(true) }
-  const closeSettings = () => setSettingsOpen(false)
-
-  useEffect(() => {
-    if (settingsOpen && !canEditSettings) setSettingsOpen(false)
-  }, [settingsOpen, canEditSettings])
-
-  const submitSettings = async (formState) => {
-    const result = await saveRoomSettings(formState)
-    if (result.ok) setSettingsOpen(false)
-    return result
-  }
-
+  // 첫 그림 다음 프레임에 화면 드러냄
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
     return () => cancelAnimationFrame(frame)
   }, [])
 
+  // 뒤로: 방 나가기 알리고 방·기다리던 판 지운 뒤 목록으로
   const handleBack = () => {
-    getSocket()?.emit("leave_room")
+    leaveRoom()
     clearRoom()
     clearPartyRejoinGameId(myUuid)
     navigate("/multiplay")
@@ -105,21 +99,13 @@ export function useMatchingPage() {
 
   const toggleReady = () => setReady(!isReady)
 
-  const slots = isInRoom
-    ? players.map((player) => ({
-        id: player.uuid,
-        ready: Boolean(player.isReady),
-        accountProfilePhotoId: player.accountProfilePhotoId,
-        accountProfileBorderId: player.accountProfileBorderId,
-      }))
-    : awaitRoomAfterGameResult
-      ? []
-      : MATCHING_PARTY_SLOTS_DUMMY_10
+  const slots = buildSlots({ isInRoom, players, awaiting })
 
-  const waitingMessage = !isInRoom && awaitRoomAfterGameResult
+  const waitingMessage = !isInRoom && awaiting
     ? MATCHING_POPUP_COPY.awaitingHostRoom
     : ""
 
+  // 방 코드는 확인된 방에서만 보여 줌
   const canViewRoomCode = isInRoom && isRoomVerified
   const displayRoomCode = canViewRoomCode ? roomCode : null
 

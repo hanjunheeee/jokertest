@@ -1,7 +1,11 @@
+// 낮 토론 끝 준비 훅: 준비 요청 보내기와 준비 수 보여 주기
+// 행동 패널이 사용, 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+import { onDisconnect } from "../socket/connection.js"
+import { emitReady } from "../socket/day.js"
 
 const ACK_TIMEOUT_MS = 5000
 
@@ -28,6 +32,7 @@ export function useInGameDayDiscussionReady() {
     }
   }, [])
 
+  // 세대 올려서 보낸 요청의 응답을 버리고 화면 값을 처음으로
   const invalidate = () => {
     versionRef.current += 1
     sendingRef.current = false
@@ -39,22 +44,24 @@ export function useInGameDayDiscussionReady() {
     setRequiredCount(null)
   }
 
+  // 연결이 끊기거나 소켓·판이 바뀌면 처음으로
   useEffect(() => {
     if (!socket) return
-    const handleDisconnect = () => invalidate()
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => invalidate())
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
       invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId])
 
+  // 날짜·낮 단계가 바뀌어도 처음으로
   useEffect(() => {
     invalidate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, dayIndex, dayPhase])
 
+  // 준비 보내기 (이미 보내는 중·준비됨이면 막기)
   const submitReady = () => {
     if (sendingRef.current || readyRef.current) return
     const requestSocket = getSocket()
@@ -83,9 +90,7 @@ export function useInGameDayDiscussionReady() {
         currentGameId: useInGameStore.getState().gameId,
       })
 
-    requestSocket
-      .timeout(ACK_TIMEOUT_MS)
-      .emitWithAck("ready_for_day_vote", { gameId: requestGameId })
+    emitReady(requestSocket, ACK_TIMEOUT_MS, requestGameId)
       .then((response) => {
         if (isStale()) return
         if (response?.ok) {
@@ -111,6 +116,7 @@ export function useInGameDayDiscussionReady() {
       })
   }
 
+  // 서버가 진행 수를 주면 그 값을 먼저 씀
   const serverProgress = useInGameStore((s) => s.state?.progress ?? null)
   const serverOwnsProgress = serverProgress?.kind === "DAY_DISCUSSION"
 

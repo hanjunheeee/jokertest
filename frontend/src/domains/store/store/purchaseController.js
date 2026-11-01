@@ -1,48 +1,20 @@
+// 가게 구매 흐름 컨트롤러 (일반 아이템 묶음 구매·골드 구매, 결과 모름이면 같은 id로 다시 확인)
+// 가게 구매 스토어가 요청 함수를 넣어 만들어 씀
 import { createStore } from "zustand/vanilla"
-
-const rejectedCodes = new Set([
-  "UNKNOWN_BULK_PURCHASE_FIELD", "UNKNOWN_BULK_PURCHASE_ITEM_FIELD", "INVALID_BULK_PURCHASE_REQUEST",
-  "MISSING_REFERENCE_EVENT_ID", "EMPTY_PURCHASE_ITEMS", "INVALID_PURCHASE_ITEM", "DUPLICATE_PURCHASE_ITEM",
-  "ITEM_NOT_PURCHASABLE", "INVALID_CURRENCY", "AMOUNT_OUT_OF_RANGE", "ITEM_ALREADY_OWNED",
-  "INSUFFICIENT_BALANCE", "BALANCE_LIMIT_EXCEEDED", "REFERENCE_EVENT_CONFLICT",
-])
-const goldRejectedStatus = {
-  INSUFFICIENT_DIAMOND: 400, BALANCE_LIMIT_EXCEEDED: 400, INVALID_GOLD_PURCHASE_REQUEST: 400,
-  UNKNOWN_GOLD_PURCHASE_FIELD: 400, PRODUCT_NOT_FOUND: 404, PRODUCT_STOPPED: 409, REFERENCE_EVENT_CONFLICT: 409,
-}
-const goldStatuses = ["pending", "unknown", "confirmed", "rejected", "priceChanged"]
-const idle = { status: "idle", referenceEventId: null, itemIds: [], error: null }
-const unresolved = (status) => status === "pending" || status === "unknown"
-const validText = (value, max) => typeof value === "string" && value.length >= 1 && value.length <= max
-const validVersion = (value) => Number.isSafeInteger(value) && value > 0
-const isGoldResultMissing = (error) =>
-  error?.status === 404 && error?.success === false && error?.code === "PURCHASE_RESULT_NOT_FOUND"
-
-const restore = (saved) => {
-  if (Object.hasOwn(saved, "kind")) {
-    if (saved.kind !== "GOLD" || !goldStatuses.includes(saved.status) || !validText(saved.productId, 64)
-      || !validVersion(saved.version) || !validText(saved.referenceEventId, 150)
-      || !Array.isArray(saved.itemIds) || saved.itemIds.length) throw new Error("Invalid record")
-    return {
-      kind: "GOLD", status: unresolved(saved.status) ? "unknown" : saved.status, referenceEventId: saved.referenceEventId,
-      itemIds: [], productId: saved.productId, version: saved.version,
-      code: typeof saved.code === "string" ? saved.code : null, error: typeof saved.error === "string" ? saved.error : null,
-    }
-  }
-  if (!Array.isArray(saved.itemIds) || !saved.itemIds.every(x => typeof x === "string")
-    || !["idle", "pending", "unknown", "confirmed", "rejected"].includes(saved.status)
-    || (unresolved(saved.status) && (!saved.referenceEventId || !saved.itemIds.length))) throw new Error("Invalid record")
-  return { ...saved, status: unresolved(saved.status) ? "unknown" : saved.status }
-}
+import { goldRejectedStatus, idle, rejectedCodes } from "../constants/purchaseController.js"
+import { isGoldResultMissing, restore, unresolved, validText, validVersion } from "../utils/purchaseRecord.js"
 
 export function createPurchaseController({ storage, post, postGold, lookup, refresh, randomId }) {
   let account = null
   let generation = 0
   let busy = false
   const store = createStore(() => ({ ...idle }))
+  // 구매 기록은 계정마다 기기에 따로 저장함
   const key = (id) => `joker:store-purchase:v1:${id}`
   const save = (state) => storage().setItem(key(account), JSON.stringify(state))
+  // 보내기 전에 기록부터 저장해서, 저장 못 하면 보내지 않음
   const update = (state) => { save(state); store.setState(state, true) }
+  // 계정이 바뀌면 그 계정의 기록을 되살림, 기록이 깨졌으면 구매를 막음
   const activate = (id) => {
     if (account === id) return
     account = id
@@ -61,6 +33,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
     }
     store.setState(state, true)
   }
+  // 일반 아이템 구매, 결과 모름이면 먼저 같은 id로 결과를 물어보고 없을 때만 다시 보냄
   const run = async (itemIds, checkOnly = false) => {
     if (!account || busy || store.getState().status === "blocked" || store.getState().status === "priceChanged") return
     const previous = store.getState()
@@ -105,6 +78,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       if (current()) busy = false
     }
   }
+  // 골드 구매 (purchase: 새로 사기, check: 결과 확인만, retry: 같은 id로 다시)
   const runGold = async (mode, product) => {
     if (!account || busy) return
     const previous = store.getState()
@@ -143,7 +117,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       if (!current()) return
       const confirmed = { ...request, status: "confirmed" }
       try { update(confirmed) } catch { store.setState(confirmed, true) }
-      try { await refresh(result) } catch {}
+      try { await refresh(result) } catch { /* 잔액 갱신 실패는 구매 결과와 상관없어 무시함 */ }
     } catch (error) {
       if (!current()) return
       let state
@@ -159,6 +133,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       if (current()) busy = false
     }
   }
+  // 가격 바뀜 안내를 확인하면 빈 상태로 돌림
   const acceptPriceChange = () => {
     if (busy || store.getState().status !== "priceChanged") return
     try { update({ ...idle }) } catch {

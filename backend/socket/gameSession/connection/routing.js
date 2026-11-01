@@ -1,0 +1,87 @@
+// 판 채널 다시 넣기 파일
+// 재접속·새로고침 때 판 채널 다시 넣기 (같은 범위 작업 하나로 묶기·늦은 작업 되돌리기), socket.js·스냅샷 핸들러가 씀
+const gameSessionCore = require('../../../game-core/gameSession')
+const { hasOnlineUsersRegistry, isCurrentSocketForUuid } = require('./ownership')
+const { cancelDisconnectGrace } = require('./grace')
+const { detachFromSessionChannel } = require('../delivery/broadcast')
+
+// 판 채널 다시 넣기 작업: 소켓마다 진행 중 작업 하나 + activeGameId를 어느 작업이 썼는지 (늦은 작업이 덮어쓰지 않게)
+let sessionRoutingWorkSeq = 0
+const sessionRoutingWorkBySocket = new WeakMap()
+const activeGameIdOwnerBySocket = new WeakMap()
+
+// 재접속·새로고침 때 판 채널 다시 넣기: 같은 범위 작업은 하나로 묶고, join 사이 바뀌었으면 되돌림 (지도 08-⑨)
+function resyncSessionRouting(socket, uuid) {
+    const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+    if (!routing) return Promise.resolve()
+
+    if (gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)) return Promise.resolve()
+
+    if (hasOnlineUsersRegistry() && !isCurrentSocketForUuid(uuid, socket)) return Promise.resolve()
+
+    const session = gameSessionCore.getActiveSessionForDeparture(uuid, routing.gameId) ?? null
+    const membershipId = session?.players?.get(uuid)?.membershipId ?? null
+    const socketId = socket?.id ?? null
+    const scopeKey = `${routing.gameId}\u0000${routing.channelId}\u0000${uuid}\u0000${socketId ?? ''}\u0000${membershipId ?? ''}`
+
+    const inFlight = sessionRoutingWorkBySocket.get(socket)
+    if (inFlight && inFlight.scopeKey === scopeKey) return inFlight.promise
+
+    sessionRoutingWorkSeq += 1
+    const token = {
+        id: sessionRoutingWorkSeq, scopeKey, socket, socketId, uuid, routing, session, membershipId, ready: false,
+    }
+
+    const run = async () => {
+        cancelDisconnectGrace(routing.gameId, uuid)
+
+        socket.data.activeGameId = routing.gameId
+        activeGameIdOwnerBySocket.set(socket, token)
+        if (!socket.rooms.has(routing.channelId)) {
+            await socket.join(routing.channelId)
+
+            // join 기다리는 사이 추방·이탈·유예 만료·새 탭 교체가 없었는지 다시 봄 (지도 08-⑨)
+            const current = gameSessionCore.getActiveSessionRoutingInfo(uuid)
+            const stillLatest = sessionRoutingWorkBySocket.get(socket)?.token === token
+            const stillSameSession =
+                gameSessionCore.getActiveSessionForDeparture(uuid, routing.gameId) === token.session
+            const stillMine = stillLatest
+                && stillSameSession
+                && current !== null
+                && current.gameId === routing.gameId
+                && current.channelId === routing.channelId
+                && !gameSessionCore.isForfeitedFromSession(routing.gameId, uuid)
+                && isCurrentSocketForUuid(uuid, socket)
+                && socket.id === token.socketId
+                && (token.session?.players?.get(uuid)?.membershipId ?? null) === token.membershipId
+            if (stillMine) {
+                token.ready = true
+                return
+            }
+
+            // 더 나중 재가입이 있으면 그쪽에 맡김, 내 재가입이 마지막이면 내가 넣은 것만 되돌림
+            if (!stillLatest) return
+
+            detachFromSessionChannel(
+                socket, uuid, routing.channelId, '\x1b[31m[세션 채널 정리 실패]\x1b[0m', { gameId: routing.gameId },
+            )
+            if (socket.data.activeGameId === routing.gameId && activeGameIdOwnerBySocket.get(socket) === token) {
+                socket.data.activeGameId = current !== null ? current.gameId : null
+                activeGameIdOwnerBySocket.delete(socket)
+            }
+            return
+        }
+        token.ready = true
+    }
+
+    const promise = run().finally(() => {
+        const current = sessionRoutingWorkBySocket.get(socket)
+        if (current && current.token === token) sessionRoutingWorkBySocket.delete(socket)
+    })
+    sessionRoutingWorkBySocket.set(socket, { scopeKey, token, promise })
+    return promise
+}
+
+module.exports = {
+    resyncSessionRouting,
+}

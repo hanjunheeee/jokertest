@@ -1,32 +1,24 @@
 // 재판 판정 파일
-// 재판 판정 prepare/commit + 결과 방송 내용 만들기
+// 재판 판정 prepare/commit (결과 방송 내용은 phase/tribunal/payloads.js)
 // prepare = 표 세서 결과만 정함, commit = 그사이 표 안 바뀌었는지 보고 확정 (지도 04-⑦)
-const { gameSessions, playerSession } = require('../../core/state')
+const { normalizeGameId, findSessionForActor } = require('../../core/lookup')
+const { isRegisteredSession } = require('../../queries')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../../core/terminal')
+const { enterNightPhase } = require('../../core/phase')
 const { DEATH_REASONS } = require('../../result')
-const { TRIBUNAL_CANCELLED_OUTCOME, TRIBUNAL_CANCEL_REASONS } = require('./constants')
 const { TRIBUNAL_PENDING, getEligibleTribunalVoterUuids, buildTribunalBallotSnapshot, tallyTribunalBallots, isSameBallots, } = require('./ballots')
 
 // 재판 판정 준비: 표 세서 결과 정하고 보관함에 넣음, 아직 확정 안 함
 function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
-    // 요청에 온 판 id·날짜 확인
-    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
+    // 요청에 온 판 id·날짜 확인 (날짜는 판 찾기 전에 봄)
+    const normalizedGameId = normalizeGameId(gameId)
     if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
     if (!Number.isInteger(dayIndex)) return { ok: false, code: 'INVALID_DAY_INDEX' }
 
-    // 지금 내가 있는 판이랑 같은지
-    const currentGameId = playerSession.get(uuid)
-    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
-    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
-
-    // 판 찾기, 내가 판에 있는지
-    const session = gameSessions.get(currentGameId)
-    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
-    if (!session.players.has(uuid)) return { ok: false, code: 'NOT_A_PARTICIPANT' }
-
-    // 끝난 판이면 거절
-    const endedCheck = assertSessionNotEnded(session)
-    if (!endedCheck.ok) return endedCheck
+    // 내 판 찾기, 내가 판에 있는지, 끝난 판이면 거절
+    const found = findSessionForActor(uuid, normalizedGameId, { requireActor: false, checkEnded: true })
+    if (!found.ok) return found
+    const { session } = found
 
     // 오늘 재판 중일 때만
     if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
@@ -82,8 +74,7 @@ function commitTribunalVoteResolution(session, resolution) {
     if (!endedCheck.ok) return endedCheck
 
     // 진짜 판 장부에 있는 그 판인지, 아직 같은 날 재판 중인지
-    const canonicalSession = gameSessions.get(session.id)
-    if (canonicalSession !== session) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
+    if (!isRegisteredSession(session)) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
     if (session.phase !== 'TRIBUNAL') return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
     if (session.dayIndex !== resolution.dayIndex) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
 
@@ -140,31 +131,8 @@ function commitTribunalVoteResolution(session, resolution) {
     }
 
     // 승패 안 나면 밤으로, 밤 기록 새로 시작
-    session.phase = 'NIGHT'
-    session.nightActions = new Map()
-    session.nightResolution = null
-    session.nightProgress = null
+    enterNightPhase(session)
     return { ok: true, terminal: null }
 }
 
-// 재판 결과 방송 내용 (취소된 재판이면 이유도 붙임)
-function buildTribunalVoteResolvedPayload(session) {
-    const tribunal = session.tribunal
-    const executedUuid = tribunal.executedUuid
-    return {
-        ...(tribunal.outcome === TRIBUNAL_CANCELLED_OUTCOME
-            ? { reason: tribunal.cancelReason ?? TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT }
-            : {}),
-        gameId: session.id,
-        dayIndex: tribunal.dayIndex,
-        phase: session.phase,
-        defendantUuid: tribunal.defendantUuid,
-        outcome: tribunal.outcome,
-        counts: { guilty: tribunal.counts.guilty, notGuilty: tribunal.counts.notGuilty },
-        executedUuid,
-        // 처형된 사람 역할 공개
-        executedRole: executedUuid ? session.players.get(executedUuid)?.role ?? null : null,
-    }
-}
-
-module.exports = { prepareTribunalVoteResolution, commitTribunalVoteResolution, buildTribunalVoteResolvedPayload }
+module.exports = { prepareTribunalVoteResolution, commitTribunalVoteResolution }

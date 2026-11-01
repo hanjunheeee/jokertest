@@ -14,6 +14,12 @@ function requiresAliveTarget(role) {
     return ROLE_DEFINITIONS[role]?.targetMustBeAlive !== false
 }
 
+// 고른 대상 생사가 역할 규칙에 맞는지 (보통은 산 사람, 마녀사냥꾼은 죽은 사람)
+// 역할 차례 끝내기·한 번에 판정 준비가 같은 규칙으로 다시 확인
+function matchesTargetLifeRule(role, targetPlayer) {
+    return requiresAliveTarget(role) ? targetPlayer.alive === true : targetPlayer.alive !== true
+}
+
 // 오늘 밤 행동할 산 사람 전부
 function getEligibleNightActorUuids(session) {
     const uuids = []
@@ -31,8 +37,10 @@ function getAliveActorUuidsForRole(session, role) {
 
 // 이 판 밤 차례 (판에 없는 역할은 뺌)
 function getNightTurnOrder(session) {
+    // 역할 구성 기록이 없으면 기본 순서 그대로
     const composition = session?.roleComposition
     if (!composition || typeof composition !== 'object') return NIGHT_TURN_ORDER
+    // 한 명 이상 있는 역할만 남김, 다 빠지면 기본 순서
     const order = NIGHT_TURN_ORDER.filter((role) => Number.isInteger(composition[role]) && composition[role] > 0)
     return order.length > 0 ? Object.freeze(order) : NIGHT_TURN_ORDER
 }
@@ -53,6 +61,7 @@ function getCurrentNightTurnRole(session) {
 module.exports = {
     isEligibleForNightAction,
     requiresAliveTarget,
+    matchesTargetLifeRule,
     getEligibleNightActorUuids,
     getAliveActorUuidsForRole,
     getNightTurnOrder,

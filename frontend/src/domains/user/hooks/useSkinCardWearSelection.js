@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+// 스킨·카드 장착 창 선택 훅 (목록·미리보기·고르기·탭·초기화)
+// 스킨·카드 장착 창(SkinCardWearOverlay.jsx)이 씀, 초안 상태는 skinCardWear/useWearDraft.js, 저장은 skinCardWear/useWearConfirm.js
+import { useCallback, useMemo } from "react"
 import {
-  SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID,
   SKIN_CARD_WEAR_JOB_TABS,
   getDefaultSkinIdForJob,
   getPlayerCardItems,
@@ -12,81 +13,37 @@ import {
   SKIN_CARD_WEAR_PREVIEW_MODE_CARD,
   SKIN_CARD_WEAR_PREVIEW_MODE_SKIN,
 } from "../constants/skinCardWear/skinCardWearLayout.js"
+import { SKIN_CARD_WEAR_CONFIRM_STATUS } from "../constants/skinCardWear/skinCardWearConfirm.js"
 import { useEconomyStore } from "../../economy/store/economy.store.js"
-import { useAuthStore } from "../../auth/store/auth.store.js"
+import { isItemOwned, resolveInitialSkinSelection } from "../utils/skinCardWear/wearSelection.js"
+import { useWearDraft } from "./skinCardWear/useWearDraft.js"
+import { useWearConfirm } from "./skinCardWear/useWearConfirm.js"
 
-function resolveInitialSkinSelection(skinsByJob, jobId = SKIN_CARD_WEAR_JOB_TABS[0].id) {
-  return skinsByJob[jobId] ?? getDefaultSkinIdForJob(jobId) ?? ""
-}
+export { SKIN_CARD_WEAR_CONFIRM_STATUS }
 
-const JOB_ID_TO_SKIN_SLOT = Object.freeze({
-  noble: "JOB_SKIN_NOBLE",
-  clown: "JOB_SKIN_CLOWN",
-  guard: "JOB_SKIN_GUARD",
-  doctor: "JOB_SKIN_DOCTOR",
-  witchHunter: "JOB_SKIN_WITCH_HUNTER",
-})
-
-const CONFIRMED_EQUIP_REJECTION_CODES = new Set([
-  "UNKNOWN_EQUIP_SLOT",
-  "INVALID_ITEM_ID",
-  "ITEM_TYPE_MISMATCH",
-  "ITEM_NOT_OWNED",
-  "SKIN_REVISION_CONFLICT",
-])
-const isConfirmedEquipRejection = (error) =>
-  typeof error?.code === "string" && CONFIRMED_EQUIP_REJECTION_CODES.has(error.code)
-
-const isItemOwned = (item, entitlements) => {
-  if (item.itemType === "skin" && item.source === "basic") return true
-  if (item.itemType === "card" && item.id === SKIN_CARD_WEAR_DEFAULT_CARD_FRAME_ID) return true
-  return entitlements.some((entry) => entry.itemId === item.id)
-}
-
-export const SKIN_CARD_WEAR_CONFIRM_STATUS = Object.freeze({
-  IDLE: "idle",
-  SAVING: "saving",
-  SUCCESS: "success",
-  ERROR: "error",
-  UNCERTAIN: "uncertain",
-})
-
+// 저장 중에는 고르기·탭·미리보기 전환을 모두 막음
 export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId }) {
-  const [activeJobIndex, setActiveJobIndex] = useState(0)
-  const [selectedItemId, setSelectedItemId] = useState(() =>
-    resolveInitialSkinSelection(initialSkinsByJob),
-  )
-  const [previewMode, setPreviewMode] = useState(SKIN_CARD_WEAR_PREVIEW_MODE_SKIN)
-  const [draftSkinsByJob, setDraftSkinsByJob] = useState(initialSkinsByJob)
-  const [draftCardFrameId, setDraftCardFrameId] = useState(initialCardFrameId)
-  const [confirmStatus, setConfirmStatus] = useState(SKIN_CARD_WEAR_CONFIRM_STATUS.IDLE)
-  const [confirmError, setConfirmError] = useState(null)
-  const savingRef = useRef(false)
-  const saveGeneration = useRef(0)
-  const editedSlots = useRef(new Set())
-
-  useEffect(() => {
-    setDraftSkinsByJob((previous) => {
-      const next = Object.fromEntries(SKIN_CARD_WEAR_JOB_TABS.map(({ id }) =>
-        [id, editedSlots.current.has(id) ? previous[id] : initialSkinsByJob[id]]))
-      return SKIN_CARD_WEAR_JOB_TABS.every(({ id }) => next[id] === previous[id]) ? previous : next
-    })
-    if (!editedSlots.current.has("card")) setDraftCardFrameId(initialCardFrameId)
-    setSelectedItemId((previous) => {
-      const item = getSkinCardWearItemById(previous)
-      if (item?.itemType === "skin" && !editedSlots.current.has(item.jobId)) {
-        return initialSkinsByJob[item.jobId] ?? getDefaultSkinIdForJob(item.jobId)
-      }
-      if (item?.itemType === "card" && !editedSlots.current.has("card")) return initialCardFrameId
-      return previous
-    })
-  }, [initialSkinsByJob, initialCardFrameId])
+  const {
+    activeJobIndex, setActiveJobIndex,
+    selectedItemId, setSelectedItemId,
+    previewMode, setPreviewMode,
+    draftSkinsByJob, setDraftSkinsByJob,
+    draftCardFrameId, setDraftCardFrameId,
+    edited,
+  } = useWearDraft(initialSkinsByJob, initialCardFrameId)
+  const {
+    confirmStatus, setConfirmStatus,
+    confirmError, setConfirmError,
+    savingRef, saveGeneration,
+    confirmLoadout,
+  } = useWearConfirm(draftSkinsByJob, draftCardFrameId, edited)
 
   const entitlements = useEconomyStore((state) => state.entitlements)
 
   const activeJobId = SKIN_CARD_WEAR_JOB_TABS[activeJobIndex]?.id ?? SKIN_CARD_WEAR_JOB_TABS[0].id
   const selectedItem = getSkinCardWearItemById(selectedItemId)
 
+  // 카드 미리보기면 카드 틀 목록, 아니면 지금 직업 스킨 목록에 보유 여부를 붙임
   const listItems = useMemo(() => {
     const rawItems = previewMode === SKIN_CARD_WEAR_PREVIEW_MODE_CARD
       ? getPlayerCardItems()
@@ -107,22 +64,24 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     [selectedItem, activeJobId, previewMode, draftSkinsByJob, draftCardFrameId],
   )
 
+  // 안 가진 항목은 못 고름, 고른 칸은 손댄 칸으로 기록
   const selectItem = useCallback((item) => {
     if (savingRef.current || item.owned === false) return
     setSelectedItemId(item.id)
 
     if (item.itemType === "skin" && item.jobId) {
-      editedSlots.current.add(item.jobId)
+      edited.current.add(item.jobId)
       setDraftSkinsByJob((prev) => ({ ...prev, [item.jobId]: item.id }))
       return
     }
 
     if (item.itemType === "card") {
-      editedSlots.current.add("card")
+      edited.current.add("card")
       setDraftCardFrameId(item.id)
     }
-  }, [])
+  }, [savingRef, edited, setSelectedItemId, setDraftSkinsByJob, setDraftCardFrameId])
 
+  // 스킨 미리보기 중 탭을 바꾸면 그 직업 초안 스킨을 고른 것으로 보임
   const handleJobSelect = useCallback(
     (index) => {
       if (savingRef.current) return
@@ -136,9 +95,10 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
       const skinId = draftSkinsByJob[jobId] ?? getDefaultSkinIdForJob(jobId)
       if (skinId) setSelectedItemId(skinId)
     },
-    [previewMode, draftSkinsByJob],
+    [savingRef, setActiveJobIndex, setSelectedItemId, previewMode, draftSkinsByJob],
   )
 
+  // 스킨↔카드 미리보기 전환, 바뀐 쪽의 초안 항목을 고른 것으로 보임
   const togglePreviewMode = useCallback(() => {
     if (savingRef.current) return
     setPreviewMode((prev) => {
@@ -155,10 +115,11 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
 
       return nextMode
     })
-  }, [draftCardFrameId, draftSkinsByJob, activeJobId])
+  }, [savingRef, setPreviewMode, setSelectedItemId, draftCardFrameId, draftSkinsByJob, activeJobId])
 
+  // 받은 장착값으로 처음부터 다시 시작, 저장 세대를 올려 진행 중 저장 결과를 버림
   const resetDraft = useCallback(({ skinsByJob, cardFrameId }) => {
-    editedSlots.current.clear()
+    edited.current.clear()
     saveGeneration.current += 1
     savingRef.current = false
     setActiveJobIndex(0)
@@ -168,96 +129,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     setSelectedItemId(resolveInitialSkinSelection(skinsByJob))
     setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.IDLE)
     setConfirmError(null)
-  }, [])
-
-  const confirmLoadout = useCallback(async ({ appliedSkinsByJob, appliedCardFrameId, isActive = () => true, onChanged }) => {
-    if (savingRef.current) return { ok: false, reason: "ALREADY_SAVING" }
-    const saveEpoch = saveGeneration.current
-    savingRef.current = true
-    setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SAVING)
-    setConfirmError(null)
-
-    const userIdAtStart = useAuthStore.getState().user?.uuid ?? null
-    const generationAtStart = useEconomyStore.getState().requestGeneration
-    const isStale = () =>
-      !isActive() || saveEpoch !== saveGeneration.current ||
-      (useAuthStore.getState().user?.uuid ?? null) !== userIdAtStart
-      || useEconomyStore.getState().requestGeneration !== generationAtStart
-
-    const changedSlots = []
-    for (const { id: jobId } of SKIN_CARD_WEAR_JOB_TABS) {
-      const draftSkinId = draftSkinsByJob[jobId]
-      if (editedSlots.current.has(jobId) && draftSkinId && draftSkinId !== appliedSkinsByJob?.[jobId]) {
-        changedSlots.push({ slot: JOB_ID_TO_SKIN_SLOT[jobId], itemId: draftSkinId, jobId })
-      }
-    }
-    if (editedSlots.current.has("card") && draftCardFrameId && draftCardFrameId !== appliedCardFrameId) {
-      changedSlots.push({ slot: "PLAYER_CARD_FRAME", itemId: draftCardFrameId, jobId: null })
-    }
-
-    const finish = (result) => {
-      if (saveEpoch === saveGeneration.current) savingRef.current = false
-      return result
-    }
-
-    if (changedSlots.length === 0) {
-      setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SUCCESS)
-      return finish({ ok: true, changed: false })
-    }
-
-    if (isStale()) return finish({ ok: false, stale: true })
-    try { onChanged?.() } catch {}
-
-    let firstRejection = null
-    const uncertainSlots = []
-    for (const changedSlot of changedSlots) {
-      if (isStale()) return finish({ ok: false, stale: true })
-      try {
-        // eslint-disable-next-line no-await-in-loop -- 슬롯별 장착은 각각 독립적인 서버
-        await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
-      } catch (error) {
-        if (isStale()) return finish({ ok: false, stale: true })
-        if (isConfirmedEquipRejection(error)) {
-          if (!firstRejection) firstRejection = error
-        } else {
-          uncertainSlots.push(changedSlot)
-        }
-      }
-    }
-
-    if (isStale()) return finish({ ok: false, stale: true })
-
-    let unresolvedUncertain = uncertainSlots.length > 0
-    if (unresolvedUncertain) {
-      try {
-        const summary = await useEconomyStore.getState().fetchSummary()
-        if (isStale()) return finish({ ok: false, stale: true })
-        const latestLoadout = summary?.loadout
-        unresolvedUncertain = !summary?.ok || !latestLoadout || uncertainSlots.some(({ itemId, jobId }) =>
-          (jobId ? latestLoadout.selectedSkinsByJob?.[jobId] ?? null : latestLoadout.selectedCardFrameId) !== itemId,
-        )
-      } catch {
-        unresolvedUncertain = true
-      }
-    }
-
-    if (isStale()) return finish({ ok: false, stale: true })
-
-    if (firstRejection) {
-      setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.ERROR)
-      setConfirmError(firstRejection.message ?? "장착에 실패했습니다.")
-      return finish({ ok: false, error: firstRejection })
-    }
-
-    if (unresolvedUncertain) {
-      setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.UNCERTAIN)
-      setConfirmError("저장 결과를 확인하지 못했습니다. 다시 시도해 주세요.")
-      return finish({ ok: false, uncertain: true })
-    }
-
-    setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SUCCESS)
-    return finish({ ok: true, changed: true })
-  }, [draftSkinsByJob, draftCardFrameId])
+  }, [edited, saveGeneration, savingRef, setActiveJobIndex, setPreviewMode, setDraftSkinsByJob, setDraftCardFrameId, setSelectedItemId, setConfirmStatus, setConfirmError])
 
   return {
     listItems,

@@ -6,6 +6,7 @@ const { GAME_ROLES } = require('../core/roles')
 // 고르게 섞기 (원본 안 건드리고 새 배열)
 function fisherYatesShuffle(items, randomFn) {
     const result = [...items]
+    // 뒤에서부터 앞쪽 아무 칸이랑 자리 바꾸기
     for (let i = result.length - 1; i > 0; i--) {
         const j = Math.floor(randomFn() * (i + 1))
         ;[result[i], result[j]] = [result[j], result[i]]
@@ -16,10 +17,12 @@ function fisherYatesShuffle(items, randomFn) {
 // 역할 목록 섞어서 사람마다 하나씩
 function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
     const shuffled = fisherYatesShuffle(players, randomFn)
+    // 숫자만 오면 광대 수로 구성 계산, 아니면 받은 구성 그대로
     const composition =
         typeof jokerCountOrComposition === 'number'
             ? computeRoleComposition(players.length, jokerCountOrComposition)
             : jokerCountOrComposition
+    // 역할 칸 줄 세우기 (사람이 섞였으니 역할은 순서대로 둬도 됨)
     const roles = [
         ...Array(composition.JOKER).fill(GAME_ROLES.JOKER),
         ...Array(composition.DOCTOR).fill(GAME_ROLES.DOCTOR),
@@ -27,6 +30,7 @@ function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
         ...Array(composition.WITCH_HUNTER).fill(GAME_ROLES.WITCH_HUNTER),
         ...Array(composition.CITIZEN).fill(GAME_ROLES.CITIZEN),
     ]
+    // 원본 안 건드리고 역할·생존 붙인 새 사람 목록
     return shuffled.map((player, index) => ({ ...player, role: roles[index], alive: true }))
 }
 

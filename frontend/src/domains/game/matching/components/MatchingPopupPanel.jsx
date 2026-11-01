@@ -1,12 +1,13 @@
+// 대기방 가운데 팝업: 초대코드 버튼·자리 목록·아래쪽 버튼 줄
+// MatchingRoomPanelArea가 씀, 방장은 준비·시작·삭제, 참가자는 준비·나가기
 import { motion } from "framer-motion"
 import {
   GAME_MATCHING_ASSETS,
   MATCHING_POPUP_COPY,
 } from "../constants/gameMatchingAssets.js"
 import {
-  MATCHING_ACTION_BTN_CLASS,
-  MATCHING_ACTION_BTN_LABEL_CLASS,
   MATCHING_ACTION_BTN_ROW_CLASS,
+  MATCHING_PANEL_WRAP_CLASS,
   MATCHING_BTN_SCALE_WRAP_CLASS,
   MATCHING_ROOM_CODE_BTN_LABEL_CLASS,
   MATCHING_ROOM_CODE_BTN_WRAP_CLASS,
@@ -14,12 +15,9 @@ import {
   MATCHING_TITLE_CLASS,
 } from "../constants/matchingPopupStyles.js"
 import MatchingPopupContent from "./MatchingPopupContent.jsx"
+import MatchingActionButton from "./MatchingActionButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
-
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
-
-const PANEL_WRAP_CLASS =
-  "absolute left-1/2 top-[48%] z-20 flex w-[min(58rem,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col items-center origin-center scale-[0.92]"
+import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function MatchingPopupPanel({
   visible,
@@ -36,9 +34,14 @@ export default function MatchingPopupPanel({
   onDeleteRoom,
   onLeaveRoom,
 }) {
+  // 준비 버튼: 요청 중 / 준비 해제 / 준비 문구, 준비 중이면 삭제 버튼 그림으로 바뀜
+  const readyLabel = isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn
+  const readySrc = isReady ? GAME_MATCHING_ASSETS.deleteRoomButton : GAME_MATCHING_ASSETS.startGameButton
+  const readyDisabled = isSettingReady || !isRoomVerified
+
   return (
     <div
-      className={PANEL_WRAP_CLASS}
+      className={MATCHING_PANEL_WRAP_CLASS}
       style={{ pointerEvents: visible ? "auto" : "none" }}
     >
       <motion.div
@@ -84,85 +87,37 @@ export default function MatchingPopupPanel({
           >
             {isHost ? (
               <>
-                <button
-                  type="button"
-                  aria-label={isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn}
+                <MatchingActionButton
+                  label={readyLabel}
+                  src={readySrc}
                   onClick={onToggleReady}
-                  disabled={isSettingReady || !isRoomVerified}
-                  className={MATCHING_ACTION_BTN_CLASS}
-                >
-                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                    <PublicAsset
-                      src={isReady ? GAME_MATCHING_ASSETS.deleteRoomButton : GAME_MATCHING_ASSETS.startGameButton}
-                      alt=""
-                      className="block h-auto w-full select-none"
-                    />
-                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-                      {isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn}
-                    </span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
+                  disabled={readyDisabled}
+                />
+                <MatchingActionButton
+                  label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
+                  src={GAME_MATCHING_ASSETS.startGameButton}
                   onClick={onStartGame}
                   disabled={isStarting}
-                  className={MATCHING_ACTION_BTN_CLASS}
-                >
-                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                    <PublicAsset src={GAME_MATCHING_ASSETS.startGameButton} alt="" className="block h-auto w-full select-none" />
-                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-                      {isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
-                    </span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={MATCHING_POPUP_COPY.deleteRoom}
+                />
+                <MatchingActionButton
+                  label={MATCHING_POPUP_COPY.deleteRoom}
+                  src={GAME_MATCHING_ASSETS.deleteRoomButton}
                   onClick={onDeleteRoom}
-                  className={MATCHING_ACTION_BTN_CLASS}
-                >
-                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                    <PublicAsset src={GAME_MATCHING_ASSETS.deleteRoomButton} alt="" className="block h-auto w-full select-none" />
-                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-                      {MATCHING_POPUP_COPY.deleteRoom}
-                    </span>
-                  </span>
-                </button>
+                />
               </>
             ) : (
               <>
-                <button
-                  type="button"
-                  aria-label={isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn}
+                <MatchingActionButton
+                  label={readyLabel}
+                  src={readySrc}
                   onClick={onToggleReady}
-                  disabled={isSettingReady || !isRoomVerified}
-                  className={MATCHING_ACTION_BTN_CLASS}
-                >
-                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                    <PublicAsset
-                      src={isReady ? GAME_MATCHING_ASSETS.deleteRoomButton : GAME_MATCHING_ASSETS.startGameButton}
-                      alt=""
-                      className="block h-auto w-full select-none"
-                    />
-                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-                      {isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn}
-                    </span>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={MATCHING_POPUP_COPY.leaveRoom}
+                  disabled={readyDisabled}
+                />
+                <MatchingActionButton
+                  label={MATCHING_POPUP_COPY.leaveRoom}
+                  src={GAME_MATCHING_ASSETS.deleteRoomButton}
                   onClick={onLeaveRoom}
-                  className={MATCHING_ACTION_BTN_CLASS}
-                >
-                  <span className={MATCHING_BTN_SCALE_WRAP_CLASS}>
-                    <PublicAsset src={GAME_MATCHING_ASSETS.deleteRoomButton} alt="" className="block h-auto w-full select-none" />
-                    <span className={MATCHING_ACTION_BTN_LABEL_CLASS} aria-hidden="true">
-                      {MATCHING_POPUP_COPY.leaveRoom}
-                    </span>
-                  </span>
-                </button>
+                />
               </>
             )}
           </motion.div>

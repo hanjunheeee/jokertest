@@ -1,46 +1,20 @@
+// 가입 이메일 인증 칸 (받기·재발송 버튼, 인증번호 입력 줄, 안내 줄)
+// components/SignupForm.jsx(일반 가입), components/SocialSignupForm/SocialSignupFields.jsx(소셜 가입)가 사용
 import { useLayoutEffect, useRef } from "react"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
+import CodeInputRow from "@/domains/auth/components/SignupEmailVerification/CodeInputRow.jsx"
+import NoticeSlot from "@/domains/auth/components/SignupEmailVerification/NoticeSlot.jsx"
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import {
   SIGNUP_ACTION_BUTTON_INTERACTION_CLASS,
   SIGNUP_ACTION_BUTTON_LABEL_CLASS,
   SIGNUP_CODE_SEND_BUTTON_CLASS,
   SIGNUP_EMAIL_VERIFICATION_BLOCK_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_ERROR_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_INFO_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_SLOT_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_SLOT_RESERVED_CLASS,
-  SIGNUP_EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS,
   SIGNUP_EMAIL_VERIFICATION_TITLE_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
+import { pickNotice, sendButtonLabel } from "@/domains/auth/utils/emailVerification/notice.js"
 
-function getSignupCodeSendButtonLabel(stage, resendRemainingSec) {
-  if (stage === "sending") return "발송 중..."
-  if (stage === "unverified") return "인증번호 받기"
-  if (resendRemainingSec > 0) return `재발송 (${resendRemainingSec}초)`
-  return "재발송"
-}
-
-function resolveSignupVerificationNotice({ isVerified, stage, message, codeRemainingSec }) {
-  if (isVerified) {
-    return {
-      className: SIGNUP_EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS,
-      text: "이메일 인증이 완료되었습니다.",
-    }
-  }
-  if (message) {
-    return { className: SIGNUP_EMAIL_VERIFICATION_NOTICE_ERROR_CLASS, text: message }
-  }
-  if (stage === "codeSent" && codeRemainingSec !== null) {
-    return {
-      className: SIGNUP_EMAIL_VERIFICATION_NOTICE_INFO_CLASS,
-      text: `남은 시간 ${codeRemainingSec}초`,
-    }
-  }
-  return null
-}
-
+// 대상이 가입 스크롤 칸 밖으로 나가 있으면 그 칸 안에서만 굴려 보이게 함 (페이지는 안 굴림)
 function scrollWithinSignupArea(target) {
   if (!target) return
   const scrollEl = target.closest("[data-signup-scroll-area]")
@@ -59,6 +33,7 @@ function scrollWithinSignupArea(target) {
   })
 }
 
+// 단계(stage)에 따라 버튼 잠금·입력 줄·안내 줄을 정함
 export default function SignupEmailVerification({
   emailVerification, onSignupCodeChange, handleRequestSignupCode, handleVerifySignupCode,
 }) {
@@ -67,17 +42,19 @@ export default function SignupEmailVerification({
   const isVerifying = stage === "verifying"
   const isVerified = stage === "verified"
   const showCodeInput = stage !== "unverified"
+  // 재발송은 보낸 뒤·만료·잠김에서 대기 초가 끝났을 때만
   const canResend = !isSending && !isVerified
     && (stage === "codeSent" || stage === "codeExpired" || stage === "locked")
     && resendRemainingSec <= 0
   const canVerify = stage === "codeSent" && code.trim().length > 0 && !isVerifying
-  const sendButtonLabel = getSignupCodeSendButtonLabel(stage, resendRemainingSec)
-  const notice = resolveSignupVerificationNotice({
+  const sendLabel = sendButtonLabel(stage, resendRemainingSec)
+  const notice = pickNotice({
     isVerified, stage, message, codeRemainingSec,
   })
   const blockRef = useRef(null)
   const noticeRef = useRef(null)
 
+  // 안내 문구가 바뀌거나 입력 줄이 열리면 그 자리가 보이게 굴림
   useLayoutEffect(() => {
     const target = noticeRef.current ?? blockRef.current
     if (!target) return
@@ -101,8 +78,8 @@ export default function SignupEmailVerification({
             onClick={handleSendCodeClick}
             disabled={stage === "unverified" ? isSending : !canResend}
             src={LOGIN_ASSETS.signupCodeSendButton}
-            label={sendButtonLabel}
-            visibleLabel={sendButtonLabel}
+            label={sendLabel}
+            visibleLabel={sendLabel}
             visibleLabelClassName={SIGNUP_ACTION_BUTTON_LABEL_CLASS}
             interactionClassName={SIGNUP_ACTION_BUTTON_INTERACTION_CLASS}
             className={SIGNUP_CODE_SEND_BUTTON_CLASS}
@@ -111,44 +88,18 @@ export default function SignupEmailVerification({
       </div>
 
       {showCodeInput && !isVerified && (
-        <div className="flex items-center gap-1 px-0.5">
-          <div className="min-w-0 flex-1">
-            <AuthInputSlot
-              type="text"
-              inputMode="numeric"
-              name="signupEmailCode"
-              inputTestId="signup-code-input"
-              value={code}
-              onChange={handleCodeInputChange}
-              placeholder="인증번호를 입력하세요"
-              disabled={stage === "codeExpired" || stage === "locked"}
-              compact
-            />
-          </div>
-          <button
-            type="button"
-            data-testid="signup-code-verify"
-            onClick={handleVerifyCodeClick}
-            disabled={!canVerify}
-            className="cursor-pointer rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isVerifying ? "확인 중..." : "확인"}
-          </button>
-        </div>
+        <CodeInputRow
+          stage={stage}
+          code={code}
+          canVerify={canVerify}
+          isVerifying={isVerifying}
+          onCodeChange={handleCodeInputChange}
+          onVerify={handleVerifyCodeClick}
+        />
       )}
 
       {(notice || (showCodeInput && !isVerified)) && (
-        <div
-          ref={noticeRef}
-          className={`${SIGNUP_EMAIL_VERIFICATION_NOTICE_SLOT_CLASS} ${showCodeInput && !isVerified ? SIGNUP_EMAIL_VERIFICATION_NOTICE_SLOT_RESERVED_CLASS : ""}`}
-          aria-live="polite"
-        >
-          {notice ? (
-            <p data-testid="signup-email-verification-notice" className={notice.className}>
-              {notice.text}
-            </p>
-          ) : null}
-        </div>
+        <NoticeSlot ref={noticeRef} notice={notice} reserveSpace={showCodeInput && !isVerified} />
       )}
     </div>
   )

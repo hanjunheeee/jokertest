@@ -75,3 +75,7 @@ export const MATCHING_PARTY_ICON_CLASS =
 
 export const MATCHING_MODAL_CLOSE_BTN_CLASS =
   "group absolute right-[clamp(-0.4rem,-1%,-0.15rem)] top-[clamp(0.95rem,4.2%,1.65rem)] z-20 block w-[clamp(3.75rem,7.4vw,5.1rem)] cursor-pointer border-0 bg-transparent p-0 leading-none"
+
+// 가운데 팝업 전체 자리·크기
+export const MATCHING_PANEL_WRAP_CLASS =
+  "absolute left-1/2 top-[48%] z-20 flex w-[min(58rem,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col items-center origin-center scale-[0.92]"

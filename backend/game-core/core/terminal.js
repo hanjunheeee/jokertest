@@ -27,9 +27,11 @@ function evaluateWinCondition(session) {
 
 // 판 닫기: ENDED로 바꾸고 승패·끝난 시각 기록, 관찰자한테 알림
 function finalizeGameSession(session, winResult) {
+    // 여기부터 진짜 바뀜: 판 상태를 끝으로
     session.phase = 'ENDED'
     session.winResult = winResult
     session.endedAt = Date.now()
+    // 시험 관찰자한테 판 끝났다고 알림 (운영은 그냥 지나감)
     observeNightCommit('GAME_FINALIZED', { gameId: session.id, winner: winResult?.winner ?? null })
 }
 

@@ -1,9 +1,13 @@
+// 밤 행동 제출 훅: 고른 대상 보내기와 제출 상태
+// 행동 패널·카드 메뉴가 사용, 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
 import { computeRoleRevealInvalidatePatch } from "../utils/computeRoleRevealInvalidatePatch.js"
 import { computeNightActionSubmitPatch } from "../utils/computeNightActionSubmitPatch.js"
+import { onDisconnect } from "../socket/connection.js"
+import { emitNightAction } from "../socket/night.js"
 
 const SUBMIT_TIMEOUT_MS = 5000
 
@@ -29,6 +33,7 @@ export function useInGameNightActionSubmit() {
     }
   }, [])
 
+  // 세대 올려서 보낸 요청의 응답을 버리고 제출 상태를 처음으로
   const invalidate = () => {
     versionRef.current += 1
     ackingRef.current = false
@@ -42,10 +47,9 @@ export function useInGameNightActionSubmit() {
 
   useEffect(() => {
     if (!socket) return
-    const handleDisconnect = () => invalidate()
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => invalidate())
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
       invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,6 +60,7 @@ export function useInGameNightActionSubmit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, phase, dayIndex])
 
+  // 대상 보내기 (응답 기다리는 중이면 막기)
   const submit = (targetId) => {
     if (ackingRef.current) return
     const requestSocket = getSocket()
@@ -84,9 +89,7 @@ export function useInGameNightActionSubmit() {
         currentGameId: useInGameStore.getState().gameId,
       })
 
-    requestSocket
-      .timeout(SUBMIT_TIMEOUT_MS)
-      .emitWithAck("submit_night_action", { gameId: requestGameId, targetId })
+    emitNightAction(requestSocket, SUBMIT_TIMEOUT_MS, requestGameId, targetId)
       .then((response) => {
         if (isStale()) return
         const patch = computeNightActionSubmitPatch(response)

@@ -1,3 +1,5 @@
+// 낮 투표 제출 훅: 컨트롤러로 투표 보내기, 받아들여지면 제출 효과음
+// 행동 패널·카드 메뉴가 사용, 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -6,7 +8,10 @@ import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { createDayVoteSubmitController } from "../utils/createDayVoteSubmitController.js"
 import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/computeDayVoteSubmitPatch.js"
 import { getDayVoteRound } from "../utils/dayVoteRound.js"
+import { onDisconnect } from "../socket/connection.js"
+import { emitDayVote } from "../socket/day.js"
 
+// 제출 효과음: 보낸 판·날짜·회차·소켓·본인이 그대로이고 살아 있을 때만
 function playDayVoteSubmitSfx(sfxEvent, requestScope, requestSocket) {
   if (sfxEvent === null || typeof sfxEvent !== "object") return
 
@@ -61,7 +66,7 @@ export function useInGameDayVoteSubmit() {
     if (!socket) return undefined
 
     const controller = createDayVoteSubmitController({
-      emitWithAck: (payload) => socket.emitWithAck("cast_day_vote", payload),
+      emitWithAck: (payload) => emitDayVote(socket, payload),
       onStateChange: setState,
       onAccepted: (sfxEvent, requestScope) => playDayVoteSubmitSfx(sfxEvent, requestScope, socket),
     })
@@ -82,10 +87,9 @@ export function useInGameDayVoteSubmit() {
 
   useEffect(() => {
     if (!socket) return undefined
-    const handleDisconnect = () => controllerRef.current?.invalidate("DISCONNECT")
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => controllerRef.current?.invalidate("DISCONNECT"))
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
     }
   }, [socket])
 
@@ -98,6 +102,7 @@ export function useInGameDayVoteSubmit() {
     controllerRef.current?.submit({ gameId, dayIndex, targetId })
   }
 
+  // 서버가 이번 회차 제출 여부를 주면 그 값을 먼저 씀
   const serverOwnsSubmission = typeof serverHasSubmitted === "boolean"
     && (!Number.isInteger(serverSubmissionRound) || serverSubmissionRound === dayVoteRound)
 

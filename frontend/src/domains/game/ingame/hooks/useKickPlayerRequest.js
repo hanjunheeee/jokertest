@@ -1,73 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+// 추방 요청 훅: 대상 확인 → 보내기 → 결과(성공·실패·모름) 상태, 결과 다시 묻기
+// 카드 추방 훅(useInGameKickFromCard)이 사용, 보내기는 socket/kick.js (응답 확인·결과 조회는 hooks/kick/)
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
+import { KICK_REQUEST_STATUS } from "../constants/ingameKick.js"
+import { emitKick } from "../socket/kick.js"
+import { captureAckGuard, nextRequestId } from "./kick/guards.js"
+import { lookupKickResult } from "./kick/lookupResult.js"
 
-export const KICK_EVENTS = Object.freeze({
-  ROOM: "kick_room_player",
-  GAME: "kick_game_player",
-  RESULT: "get_kick_result",
-})
-
-export const KICK_REQUEST_STATUS = Object.freeze({
-  IDLE: "IDLE",
-  CONFIRMING: "CONFIRMING",
-  SENDING: "SENDING",
-  SUCCEEDED: "SUCCEEDED",
-  FAILED: "FAILED",
-  UNKNOWN: "UNKNOWN",
-})
-
-export function captureVerificationGuard({ socket, getMembershipScopeId, getRevision }) {
-  const readScopeId = () => (typeof getMembershipScopeId === "function" ? getMembershipScopeId() : null)
-  const readRevision = () => (typeof getRevision === "function" ? getRevision() : null)
-
-  const auth = useAuthStore.getState()
-  const identityGeneration = auth.identityGeneration
-  const authUuid = auth.user?.uuid ?? null
-  const socketId = typeof socket?.id === "string" && socket.id ? socket.id : null
-  const scopeId = readScopeId()
-  const revision = readRevision()
-
-  return function isStillCurrent() {
-    if (!authUuid || !socketId || !scopeId) return false
-    if (!Number.isInteger(revision)) return false
-
-    const now = useAuthStore.getState()
-    if (now.identityGeneration !== identityGeneration) return false
-    if ((now.user?.uuid ?? null) !== authUuid) return false
-    if (getSocket() !== socket) return false
-    if (socket.id !== socketId) return false
-    if (readScopeId() !== scopeId) return false
-    if (readRevision() !== revision) return false
-    return true
-  }
-}
-
-function captureAckGuard({ socket, scopeId, requestGeneration, generation, refs, getMembershipScopeId }) {
-  const auth = useAuthStore.getState()
-  const identityGeneration = auth.identityGeneration
-  const authUuid = auth.user?.uuid ?? null
-  const socketId = typeof socket?.id === "string" && socket.id ? socket.id : null
-
-  return function isStillCurrent() {
-    if (!refs.mountedRef.current) return false
-    if (generation !== refs.generationRef.current) return false
-    if (requestGeneration !== refs.requestGenerationRef.current) return false
-    const now = useAuthStore.getState()
-    if (now.identityGeneration !== identityGeneration) return false
-    if ((now.user?.uuid ?? null) !== authUuid) return false
-    if (getSocket() !== socket) return false
-    if (socketId === null || socket.id !== socketId) return false
-    if (scopeId !== getMembershipScopeId()) return false
-    return true
-  }
-}
-
-let requestSeq = 0
-function nextRequestId() {
-  requestSeq += 1
-  return `kick-${requestSeq}-${Math.random().toString(36).slice(2, 10)}`
-}
+export { KICK_EVENTS } from "../socket/kick.js"
+export { KICK_REQUEST_STATUS } from "../constants/ingameKick.js"
+export { captureVerificationGuard } from "./kick/guards.js"
 
 export function useKickPlayerRequest({
   scope,
@@ -91,6 +34,7 @@ export function useKickPlayerRequest({
   statusRef.current = status
   const needsVerificationRef = useRef(false)
 
+  // 상태는 ref에도 바로 적음 (같은 틱 안의 다음 판단이 새 값을 보게)
   const applyStatus = useCallback((next) => {
     statusRef.current = next
     setStatus(next)
@@ -106,6 +50,7 @@ export function useKickPlayerRequest({
     return () => { mountedRef.current = false }
   }, [])
 
+  // 계정이 바뀌면 진행 중인 추방·영수증을 모두 버림
   useEffect(() => {
     generationRef.current += 1
     requestGenerationRef.current += 1
@@ -119,6 +64,7 @@ export function useKickPlayerRequest({
     setErrorCode(null)
   }, [authUuid, applyStatus])
 
+  // 대상 고르기: 보내는 중·소속 확인 기다리는 중이면 막기
   const requestConfirm = useCallback((target) => {
     if (!target || typeof target.uuid !== "string" || !target.uuid) return
     if (typeof target.membershipId !== "string" || !target.membershipId) return
@@ -140,6 +86,7 @@ export function useKickPlayerRequest({
     if (statusRef.current === KICK_REQUEST_STATUS.CONFIRMING) applyStatus(KICK_REQUEST_STATUS.IDLE)
   }, [applyStatus])
 
+  // 추방 보내기: 고른 뒤 내 소속·대상 소속이 그대로일 때만
   const confirmKick = useCallback((currentTargets = null) => {
     const target = pendingTarget
     if (!target) return
@@ -179,6 +126,7 @@ export function useKickPlayerRequest({
       return
     }
 
+    // 보내기 전에 잠그고 영수증을 남김 (응답을 못 받아도 나중에 결과를 물을 수 있게)
     sendLockRef.current = true
     lastReceiptRef.current = { bootEpoch: request.bootEpoch, requestId, socket }
     const generation = generationRef.current
@@ -199,7 +147,7 @@ export function useKickPlayerRequest({
       getMembershipScopeId,
     })
 
-    socket.emit(scope === "GAME" ? KICK_EVENTS.GAME : KICK_EVENTS.ROOM, request, (response) => {
+    emitKick(socket, scope, request, (response) => {
       if (!isStillCurrent()) return
 
       sendLockRef.current = false
@@ -214,81 +162,14 @@ export function useKickPlayerRequest({
     })
   }, [pendingTarget, buildRequest, getMembershipScopeId, scope, applyStatus])
 
-  const lookupResult = useCallback(() => {
-    const receipt = lastReceiptRef.current
-    if (!receipt) return
-    const socket = getSocket()
-    if (!socket) {
-      applyStatus(KICK_REQUEST_STATUS.FAILED)
-      setErrorCode("NOT_CONNECTED")
-      return
-    }
-    const generation = generationRef.current
-    requestGenerationRef.current += 1
-    const requestGeneration = requestGenerationRef.current
-    const scopeId = getMembershipScopeId()
-    const isStillCurrent = captureAckGuard({
-      socket,
-      scopeId,
-      requestGeneration,
-      generation,
-      refs: { mountedRef, generationRef, requestGenerationRef },
-      getMembershipScopeId,
-    })
+  // 결과 조회에 넘길 ref·상태 바꾸기 묶음
+  const lookupCtx = useMemo(() => ({
+    mountedRef, generationRef, requestGenerationRef, lastReceiptRef, sendLockRef, needsVerificationRef,
+    applyStatus, setErrorCode, setPendingTarget, setNeedsVerification,
+    settleVerification, getMembershipScopeId, verifyMembership,
+  }), [applyStatus, getMembershipScopeId, verifyMembership, settleVerification])
 
-    socket.emit(KICK_EVENTS.RESULT, { bootEpoch: receipt.bootEpoch, requestId: receipt.requestId }, (response) => {
-      if (!isStillCurrent()) return
-
-      const decided = response?.ok === true || response?.replayed === true
-      if (!decided) {
-        applyStatus(KICK_REQUEST_STATUS.FAILED)
-        setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
-        return
-      }
-
-      sendLockRef.current = false
-      setPendingTarget(null)
-      if (response && response.ok === true && response.status === "KICKED") {
-        applyStatus(KICK_REQUEST_STATUS.SUCCEEDED)
-        setErrorCode(null)
-        settleVerification()
-        return
-      }
-      if (response && response.ok === true && response.status === "UNKNOWN") {
-        applyStatus(KICK_REQUEST_STATUS.UNKNOWN)
-        setErrorCode(null)
-        if (typeof verifyMembership !== "function") return
-        needsVerificationRef.current = true
-        setNeedsVerification(true)
-        const isVerificationStillCurrent = captureAckGuard({
-          socket,
-          scopeId,
-          requestGeneration,
-          generation,
-          refs: { mountedRef, generationRef, requestGenerationRef },
-          getMembershipScopeId,
-        })
-        let verification
-        try {
-          verification = verifyMembership()
-        } catch {
-          return
-        }
-        Promise.resolve(verification)
-          .then((ok) => {
-            if (!isVerificationStillCurrent()) return
-            if (ok === false) return
-            needsVerificationRef.current = false
-            setNeedsVerification(false)
-          })
-          .catch(() => {})
-        return
-      }
-      applyStatus(KICK_REQUEST_STATUS.FAILED)
-      setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
-      settleVerification()
-    })
-  }, [applyStatus, getMembershipScopeId, verifyMembership, settleVerification])
+  const lookupResult = useCallback(() => lookupKickResult(lookupCtx), [lookupCtx])
 
   const reset = useCallback(() => {
     requestGenerationRef.current += 1

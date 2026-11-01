@@ -1,3 +1,5 @@
+// 방 입장 거절 코드 파일
+// 방 만들기·입장·재입장 거절 코드 모음, socket matchmaking·시험이 씀
 const ROOM_JOIN_ERROR_CODES = Object.freeze({
     INVALID_REQUEST: 'INVALID_REQUEST',
     CODE_REQUIRED: 'CODE_REQUIRED',

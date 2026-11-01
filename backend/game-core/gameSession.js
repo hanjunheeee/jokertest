@@ -1,8 +1,13 @@
+// game-core 입구 파일, 폴더별로 나눈 함수 모아서 내보냄
+// socket 쪽(gameSession·matchmaking)이 이 파일 require 해서 사용
+// 판 장부·역할·판 끝내기·관찰자는 core
 const crypto = require('crypto')
-const { gameSessions, playerSession, roomGameSession } = require('./core/state')
 const { ROLE_DEFINITIONS, GAME_ROLES, ROLE_TEAMS } = require('./core/roles')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('./core/terminal')
 const { observeNightCommit, isObserverBusy, setObserver } = require('./core/observer')
+// 시험 전용 장부 손잡이는 core/testing (장부 직접 만지는 건 core·queries만)
+const { __resetStateForTests, __getStateSnapshotForTests, __deleteGameSessionOnlyForTests } = require('./core/testing')
+// 죽은 이유·전적 기록·결과 공개는 result
 const { DEATH_REASONS, resolveGameSource, buildGameResultRecord, buildTerminalFields, buildPublicWinResult, } = require('./result')
 // 재판은 phase/tribunal
 const {
@@ -31,7 +36,9 @@ const {
     getEndedSessionGameIdForParticipant,
     canLookupPartyMatchingRoom,
     getEndedSessionParticipantUuids,
+    getActiveGamePresenceSnapshot,
 } = require('./queries')
+// 채팅·이모티콘은 chat
 const {
     CHAT_MAX_LENGTH, 
     CHAT_MIN_INTERVAL_MS, 
@@ -47,15 +54,16 @@ const {
     commitJokerChatMessage, 
     prepareGameChatMessage, 
     commitGameChatMessage,
-    clearEmoji,
 } = require('./chat')
 
+// 역할 구성 계산은 roleComposition (예전부터 따로 있던 파일)
 const {
     computeRoleComposition,
     getSpecialRoleBudget,
     resolveRoleComposition,
     validateResolvedComposition,
 } = require('./roleComposition')
+// 방 설정 화면용 모양 만들기는 game-core 밖 utils
 const { buildRoomSettingsView } = require('../utils/updateRoomSettingsValidation')
 // 낮은 phase/day
 const {
@@ -164,45 +172,20 @@ const {
 } = require('./phase/night')
 
 
-
- 
-function __resetStateForTests() {
-    gameSessions.clear()
-    playerSession.clear()
-    roomGameSession.clear()
-     setObserver(null)
-}
-
-function getActiveGamePresenceSnapshot() {
-    const participantUuids = new Set()
-    for (const session of gameSessions.values()) {
-        for (const uuid of session.players.keys()) participantUuids.add(uuid)
-    }
-    return { room_count: gameSessions.size, participantUuids }
-}
-
-function __getStateSnapshotForTests() {
-    return {
-        gameSessions: [...gameSessions.entries()].map(([id, s]) => [id, { ...s, players: [...s.players.entries()] }]),
-        playerSession: [...playerSession.entries()],
-        roomGameSession: [...roomGameSession.entries()],
-    }
-}
-
-function __deleteGameSessionOnlyForTests(gameId) {
-    gameSessions.delete(gameId)
-}
-
+// 밖으로 내보내는 것 (socket 쪽이 쓰는 이름 그대로)
 module.exports = {
+    // 역할 정의
     GAME_ROLES,
     ROLE_DEFINITIONS,
     ROLE_TEAMS,
+    // 판 만들기·판 정리·역할 공개
     prepareGameSession,
     commitGameSession,
     buildGameStartedPayload,
     endGameSessionForPlayer,
     acknowledgeRoleReveal,
     buildPhaseChangedPayload,
+    // 낮 단계·투표
     DAY_PHASES,
     acknowledgeDayVoteReady,
     buildDayPhaseChangedPayload,
@@ -212,6 +195,7 @@ module.exports = {
     getDayVoteRound,
     enterDayVotePhase,
     getEligibleDayVoterUuids,
+    // 밤 행동·턴
     submitNightAction,
     NIGHT_TURN_ORDER,
     getNightTurnOrder,
@@ -221,17 +205,20 @@ module.exports = {
     getAliveActorUuidsForRole,
     isRoleTurnComplete,
     getCurrentNightTurnRole,
+    // 낮 표 받기·투표 효과음
     submitDayVote,
     getSessionDayIndex,
     getSessionDayVoteRound,
     readDayVoteSubmitSfxEvent,
     readTribunalVoteSubmitSfxEvent,
+    // 채팅 보내기·받는 사람
     prepareJokerChatMessage,
     commitJokerChatMessage,
     prepareGameChatMessage,
     commitGameChatMessage,
     getChatRecipientUuids,
     CHAT_CHANNELS,
+    // 밤 판정·진행 기록
     prepareNightResolution,
     prepareNightResolutionForSession,
     completeNightRole,
@@ -241,22 +228,29 @@ module.exports = {
     collectRoleNightSubmissions,
     NIGHT_RECOVERY_STATES,
     commitNightResolution,
+    // 끊김 탈락·나가기·참여 변경 방송
     commitDisconnectElimination,
     buildDisconnectEliminationPayload,
     commitParticipantDeparture,
     buildParticipationChangedPayload,
+    // 진행 표시
     buildPublicPhaseProgress,
     buildSelfSubmissionFields,
     bumpSelfProgressSeq,
+    // 나간 뒤 멈춘 단계 넘기기·참여 확인
     advanceStalledPhaseAfterDeparture,
     isParticipatingInSession,
     getActiveSessionForDeparture,
+    // 재판 취소 이름
     TRIBUNAL_CANCELLED_OUTCOME,
     TRIBUNAL_CANCEL_REASONS,
+    // 끊김 유예 대상·기권 확인
     getDisconnectGraceTarget,
     isForfeitedFromSession,
+    // 밤 결과 공개 방송
     buildNightResultAppliedPayload,
     PUBLIC_NIGHT_DEATH_SOURCES,
+    // 낮 투표 판정·재판 표·재판 판정
     prepareDayVoteResolution,
     commitDayVoteResolution,
     buildDayVoteResolvedPayload,
@@ -264,17 +258,21 @@ module.exports = {
     prepareTribunalVoteResolution,
     commitTribunalVoteResolution,
     buildTribunalVoteResolvedPayload,
+    // 채팅 상수 (JOKER_CHAT_MAX_LENGTH는 옛 이름, 같은 값)
     JOKER_CHAT_MAX_LENGTH: CHAT_MAX_LENGTH,
     CHAT_MAX_LENGTH,
     CHAT_MIN_INTERVAL_MS,
     CHAT_COMMIT_MAX_AGE_MS,
     EMOJI_MIN_INTERVAL_MS,
+    // 끝난 판 막기·결과·전적 기록
     assertSessionNotEnded,
     buildTerminalFields,
     buildGameResultRecord,
     DEATH_REASONS,
+    // 새로고침 복구용 스냅샷
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
+    // 판 찾기 (매칭·끝난 판 파티·방 코드·접속 현황)
     getActiveSessionRoutingInfo,
     isParticipantBlockedFromMatchmaking,
     getEndedSessionPartyBroadcastContext,
@@ -283,11 +281,14 @@ module.exports = {
     getEndedSessionParticipantUuids,
     getRoomCodeSessionState,
     getActiveGamePresenceSnapshot,
+    // 여기부터 시험 전용 (운영 코드는 안 씀)
     __resetStateForTests,
     __getStateSnapshotForTests,
+    // 밤 확정 관찰자 끼우기 (null이면 뺌)
     __setNightCommitObserverForTests(observer = null) {
         setObserver(observer)
     },
+    // 밤 판정 준비 기록을 시험이 직접 넣기 (안 준 값은 지금 진행 기록에서 채움)
     __registerNightPreparationForTests(session, resolution, options = {}) {
         const progress = getNightProgress(session)
         return registerNightPreparation(session, resolution, {
@@ -295,6 +296,7 @@ module.exports = {
             progressRevision: options.progressRevision ?? (progress?.revision ?? 0),
         })
     },
+    // 안쪽 함수 직접 시험하는 묶음 (옛 이름 sanitizeJokerChatText도 같은 함수)
     __testables: {
         evaluateWinCondition,
         finalizeGameSession,

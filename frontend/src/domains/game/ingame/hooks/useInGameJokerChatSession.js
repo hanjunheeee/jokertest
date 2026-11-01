@@ -1,3 +1,5 @@
+// 조커 밤 채팅 세션 훅: 조커끼리 밤 채팅 받기·보내기와 입력 상태
+// 채팅 틀 속성 훅(useInGameChatShellProps)이 사용, 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useReducer, useRef, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -9,6 +11,8 @@ import { mapJokerChatSanitizeCodeToMessage } from "../utils/mapJokerChatSanitize
 import { toJokerChatUiMessage } from "../utils/toJokerChatUiMessage.js"
 import { isJokerNightChatEligible } from "../utils/isJokerNightChatEligible.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+import { onDisconnect } from "../socket/connection.js"
+import { emitJokerChat } from "../socket/chat.js"
 
 const SEND_TIMEOUT_MS = 5000
 
@@ -31,6 +35,7 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     }
   }, [])
 
+  // 세대 올려서 보낸 메시지의 응답을 버림
   const invalidate = () => {
     versionRef.current += 1
     sendingRef.current = false
@@ -38,10 +43,9 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
 
   useEffect(() => {
     if (!socket) return undefined
-    const handleDisconnect = () => invalidate()
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => invalidate())
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
       invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -53,6 +57,7 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalGameId])
 
+  // 조커 밤 채팅을 쓸 수 있을 때만 받기
   useEffect(() => {
     if (!socket || !isJokerNightChatEligible(gameState)) return undefined
     return attachJokerChatListener(
@@ -67,6 +72,7 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     )
   }, [socket, gameState])
 
+  // 보내기: 글 다듬기에서 걸리면 보내지 않고 오류만 보여 줌
   const send = () => {
     if (sendingRef.current) return
     if (!isJokerNightChatEligible(gameState)) return
@@ -107,9 +113,7 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
         currentGameId: useInGameStore.getState().gameId,
       })
 
-    requestSocket
-      .timeout(SEND_TIMEOUT_MS)
-      .emitWithAck("submit_joker_chat_message", { gameId: requestGameId, text: sanitized.text })
+    emitJokerChat(requestSocket, SEND_TIMEOUT_MS, requestGameId, sanitized.text)
       .then((response) => {
         if (isStale()) return
         dispatch({

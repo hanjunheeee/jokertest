@@ -1,15 +1,17 @@
 // 판 열기 파일
 // 판 후보 마지막 검사 + 장부에 넣기 (여기서 진짜 판 생김)
+// matchmaking이 게임 시작 때 gameSession.js 통해서 사용
 const { MIN_SUPPORTED_PLAYERS, MAX_SUPPORTED_PLAYERS, INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { RATE_FIELD } = require('../chat')
 const { GAME_ROLES } = require('../core/roles')
 const { computeRoleComposition, validateResolvedComposition } = require('../roleComposition')
-const { gameSessions, roomGameSession, playerSession } = require('../core/state')
+const { registerGameSession } = require('../core/register')
 const { endGameSessionForPlayer } = require('../core/cleanup')
-const { isParticipantBlockedFromMatchmaking } = require('../queries')
+const { isParticipantBlockedFromMatchmaking, hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries')
 
 // 후보 판 모양 전부 검사 (조작·빠진 값 막기)
 function assertValidSessionForCommit(session) {
+    // 판 id·방 id가 있는지, 사람이 2~10명인지
     if (!session || typeof session.id !== 'string' || session.id.length === 0) {
         throw new Error('commitGameSession: 잘못된 session.id')
     }
@@ -22,6 +24,7 @@ function assertValidSessionForCommit(session) {
     if (session.players.size < MIN_SUPPORTED_PLAYERS || session.players.size > MAX_SUPPORTED_PLAYERS) {
         throw new Error(`commitGameSession: 지원하지 않는 인원(${session.players.size})`)
     }
+    // 기록 칸이 전부 제 모양이고 비어 있는지 (새 판인데 뭐가 들어 있으면 거절)
     if (!(session.roleRevealAcks instanceof Set)) {
         throw new Error('commitGameSession: session.roleRevealAcks가 Set이 아님')
     }
@@ -34,6 +37,7 @@ function assertValidSessionForCommit(session) {
     if (session.nightActions.size !== 0) {
         throw new Error(`commitGameSession: session.nightActions가 비어있지 않음(size=${session.nightActions.size})`)
     }
+    // 채팅 간격 기록 칸들도 비어 있어야 함
     for (const field of Object.values(RATE_FIELD)) {
         if (!(session[field] instanceof Map)) {
             throw new Error(`commitGameSession: session.${field}이 Map이 아님`)
@@ -42,6 +46,7 @@ function assertValidSessionForCommit(session) {
             throw new Error(`commitGameSession: session.${field}이 비어있지 않음(size=${session[field].size})`)
         }
     }
+    // 밤 판정·낮 투표도 아직 아무것도 없어야 함 (투표는 1회차부터)
     if (session.nightResolution !== null) {
         throw new Error('commitGameSession: session.nightResolution이 null이 아님')
     }
@@ -62,6 +67,7 @@ function assertValidSessionForCommit(session) {
             `commitGameSession: session.dayVoteExcludedUuids가 비어있지 않음(size=${session.dayVoteExcludedUuids.size})`,
         )
     }
+    // 방송 채널 = 방 id, 역할 확인 단계·0일째로 시작
     if (session.channelId !== session.roomId) {
         throw new Error('commitGameSession: channelId가 roomId와 일치하지 않음')
     }
@@ -71,9 +77,11 @@ function assertValidSessionForCommit(session) {
     if (session.dayIndex !== INITIAL_DAY_INDEX) {
         throw new Error(`commitGameSession: 잘못된 dayIndex(${session.dayIndex})`)
     }
+    // 광대 수는 0 이상, 전체 인원보다 적어야 함
     if (!Number.isInteger(session.jokerCount) || session.jokerCount < 0 || session.jokerCount >= session.players.size) {
         throw new Error(`commitGameSession: 잘못된 session.jokerCount(${session.jokerCount})`)
     }
+    // 사람마다 uuid·닉네임·역할·생존 확인하면서 역할별 인원 셈
     const actualCounts = { JOKER: 0, CITIZEN: 0, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 }
     for (const [key, player] of session.players) {
         if (!player || typeof player.uuid !== 'string' || player.uuid.length === 0) {
@@ -93,6 +101,7 @@ function assertValidSessionForCommit(session) {
         }
         actualCounts[player.role] += 1
     }
+    // 기대 인원: 구성 칸 없으면 광대 수로 계산, 있으면 그 구성이 맞는지 먼저 봄
     let expected
     if (session.roleComposition === undefined) {
         expected = computeRoleComposition(session.players.size, session.jokerCount)
@@ -105,6 +114,7 @@ function assertValidSessionForCommit(session) {
         }
         expected = session.roleComposition
     }
+    // 실제 역할 인원이 기대랑 다르면 어느 역할인지 적어서 throw
     const mismatchedRoles = Object.keys(GAME_ROLES).filter((role) => actualCounts[role] !== expected[role])
     if (mismatchedRoles.length > 0) {
         const detail = mismatchedRoles
@@ -118,16 +128,18 @@ function assertValidSessionForCommit(session) {
 function commitGameSession(session) {
     assertValidSessionForCommit(session)
 
-    if (gameSessions.has(session.id)) {
+    // 판 id 겹침·같은 방 판 이미 있음 막기
+    if (hasSessionId(session.id)) {
         throw new Error(`GameSession id 충돌: ${session.id}`)
     }
-    if (roomGameSession.has(session.roomId)) {
+    if (hasRoomSession(session.roomId)) {
         throw new Error(`Room에 이미 활성 GameSession 존재: ${session.roomId}`)
     }
+    // 참가자가 옛 판에 남아 있을 때: 끝난 판이면 거기서 빼고, 아직 묶여 있으면 throw
     for (const uuid of session.players.keys()) {
-        const existingGameId = playerSession.get(uuid)
+        const existingGameId = getPlayerGameId(uuid)
         if (existingGameId && existingGameId !== session.id) {
-            const existingSession = gameSessions.get(existingGameId)
+            const existingSession = getSessionById(existingGameId)
             if (existingSession?.phase === 'ENDED') {
                 endGameSessionForPlayer(uuid, 'SUPERSEDED_BY_NEW_GAME', existingGameId)
             } else if (isParticipantBlockedFromMatchmaking(uuid)) {
@@ -135,9 +147,8 @@ function commitGameSession(session) {
             }
         }
     }
-    gameSessions.set(session.id, session)
-    roomGameSession.set(session.roomId, session.id)
-    session.players.forEach((_, uuid) => playerSession.set(uuid, session.id))
+    // 여기부터 진짜 바뀜: 장부 3개에 같이 넣음 = 판 생김
+    registerGameSession(session)
 }
 
 module.exports = {

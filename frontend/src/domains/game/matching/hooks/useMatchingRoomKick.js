@@ -1,7 +1,10 @@
+// 대기방 강퇴: 대상 목록·확인 창·강퇴 요청
+// useMatchingPage가 씀, 요청 보내기·결과 확인은 인게임과 같이 쓰는 useKickPlayerRequest에 맡김
 import { useCallback, useMemo, useState } from "react"
 import { useMatchingStore, selectRoomMembershipId } from "../store/matchingStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
+import { askRoomCb } from "../socket/room.js"
 import { useKickPlayerRequest, captureVerificationGuard } from "../../ingame/hooks/useKickPlayerRequest.js"
 
 export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
@@ -12,9 +15,11 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   const players = useMatchingStore((s) => s.players)
   const hostUuid = useMatchingStore((s) => s.hostUuid)
 
+  // 방장이고 방 확인이 끝났을 때만 강퇴 가능
   const isHost = Boolean(isInRoom && myUuid && myUuid === hostUuid)
   const canKick = Boolean(isHost && isRoomVerified)
 
+  // 지금 소속 묶음 id (서버 부팅·방·방 인스턴스·내 소속), 바뀌면 진행 중 강퇴는 무효
   const getMembershipScopeId = useCallback(() => {
     const state = useMatchingStore.getState()
     if (!state.isInRoom || !state.roomId) return null
@@ -23,6 +28,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     return `${state.bootEpoch ?? ""}:${state.roomId}:${state.roomInstanceId ?? ""}:${myMembershipId ?? ""}`
   }, [])
 
+  // 강퇴 결과가 애매할 때 서버에 지금 방을 물어 같은 방인지 확인하고 방을 새로 넣음
   const verifyMembership = useCallback(() => new Promise((resolve) => {
     const socket = getSocket()
     if (!socket) { resolve(false); return }
@@ -34,7 +40,8 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
       getRevision: () => useMatchingStore.getState().roomRevision,
     })
     try {
-      socket.emit("get_current_room", {}, (response) => {
+      askRoomCb(socket, (response) => {
+        // 그사이 소속이 바뀌었거나 방이 없거나 다른 방이면 실패
         if (!isStillCurrent()) { finish(false); return }
         if (!response || response.ok !== true) { finish(false); return }
         if (response.pending === true || !response.room) { finish(false); return }
@@ -51,6 +58,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     }
   }), [getMembershipScopeId])
 
+  // 강퇴 요청 만들기: 내가 방장이고 대상이 지금도 같은 소속으로 앉아 있을 때만
   const buildRequest = useCallback(({ target, requestId }) => {
     const state = useMatchingStore.getState()
     const authUuid = useAuthStore.getState().user?.uuid ?? null
@@ -77,6 +85,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
 
   const kick = useKickPlayerRequest({ scope: "ROOM", buildRequest, getMembershipScopeId, verifyMembership })
 
+  // 강퇴 대상: 나를 뺀, 소속 id가 있는 사람
   const targets = useMemo(() => (players ?? [])
     .filter((player) => player?.uuid && player.uuid !== myUuid)
     .filter((player) => typeof player.membershipId === "string" && player.membershipId.length > 0)
@@ -91,6 +100,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     setModalOpen(true)
   }, [canKick])
 
+  // 닫으면 진행 상태도 지움
   const closeKickModal = useCallback(() => {
     setModalOpen(false)
     kick.reset()

@@ -1,3 +1,5 @@
+// 낮·죽은 사람 채팅 세션 훅: 채널별 받기·보내기와 입력 상태
+// 채팅 틀 속성 훅(useInGameChatShellProps)이 사용, 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useReducer, useRef, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -10,6 +12,8 @@ import { sanitizeJokerChatText } from "../utils/sanitizeJokerChatText.js"
 import { mapJokerChatSanitizeCodeToMessage } from "../utils/mapJokerChatSanitizeCodeToMessage.js"
 import { toJokerChatUiMessage } from "../utils/toJokerChatUiMessage.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+import { onDisconnect } from "../socket/connection.js"
+import { emitGameChat } from "../socket/chat.js"
 
 const SEND_TIMEOUT_MS = 5000
 
@@ -18,6 +22,7 @@ const RECEIVE_EVENT_BY_CHANNEL = Object.freeze({
   [INGAME_CHAT_CHANNELS.DEAD]: "dead_chat_message_received",
 })
 
+// 보낸 메시지마다 채널 붙은 순번 (응답이 어느 보내기 것인지 가림)
 let requestTokenCounter = 0
 
 function nextRequestToken(channel) {
@@ -48,6 +53,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
     }
   }, [])
 
+  // 세대 올려서 보낸 메시지의 응답을 버리고 보내는 중 표시를 지움
   const invalidate = () => {
     versionRef.current += 1
     sendingRef.current[INGAME_CHAT_CHANNELS.DAY] = false
@@ -57,10 +63,9 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
 
   useEffect(() => {
     if (!socket) return undefined
-    const handleDisconnect = () => invalidate()
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => invalidate())
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
       invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -80,6 +85,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
   useEffect(() => {
     if (!socket) return undefined
 
+    // 받기를 붙인 때의 계정과 지금 계정이 다르면 아무것도 안 받음
     const socketAuthUuid = useAuthStore.getState().user?.uuid ?? null
 
     const getContext = () => {
@@ -107,6 +113,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
     }
   }, [socket])
 
+  // 보내기: 글 다듬기에서 걸리면 보내지 않고 그 채널에 오류만 보여 줌
   const send = () => {
     const requestChannel = sendChannel
     if (!requestChannel) return
@@ -145,6 +152,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
     sendingRef.current[requestChannel] = true
     dispatch({ type: "SEND", gameId: requestGameId, authUuid: requestAuthUuid, channel: requestChannel, requestToken })
 
+    // 응답 때 판·계정·보내는 채널이 바뀌었으면 옛 응답
     const isStale = () => {
       const currentAuthUuid = useAuthStore.getState().user?.uuid ?? null
       const owned = selectOwnedGameChatContext(useInGameStore.getState(), currentAuthUuid)
@@ -166,9 +174,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
       return owned.sendChannel !== requestChannel
     }
 
-    requestSocket
-      .timeout(SEND_TIMEOUT_MS)
-      .emitWithAck("submit_game_chat_message", { gameId: requestGameId, text: sanitized.text })
+    emitGameChat(requestSocket, SEND_TIMEOUT_MS, requestGameId, sanitized.text)
       .then((response) => {
         if (isStale()) return
         dispatch({

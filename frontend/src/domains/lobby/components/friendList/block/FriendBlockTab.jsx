@@ -1,3 +1,5 @@
+// 차단 목록 탭 (새로고침·오류·차단한 사용자 목록·뒤로)
+// FriendListPanelContent가 block 탭일 때 그림
 import {
   FRIEND_ACCEPT_BACK_BUTTON_CLASS,
   FRIEND_ACCEPT_EMPTY_CLASS,
@@ -6,66 +8,13 @@ import {
   FRIEND_ACCEPT_REFRESH_BUTTON_IMAGE_CLASS,
   FRIEND_ACCEPT_TAB_CLASS,
   FRIEND_ACCEPT_TOOLBAR_CLASS,
-  FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
-  RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
-  RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
-  RECOMMENDED_FRIEND_ACTIONS_CLASS,
-  RECOMMENDED_FRIEND_INFO_WRAP_CLASS,
-  RECOMMENDED_FRIEND_NAME_CLASS,
-  RECOMMENDED_FRIEND_ROW_CLASS,
-  RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
-  RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
-  RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
-} from "@/domains/lobby/constants/friendListStyle.js"
-import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
-import BackButton from "@/shared/ui/BackButton.jsx"
-import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
-import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
+} from "../../../constants/friendListStyle.js"
+import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
+import BackButton from "../../../../../shared/ui/BackButton.jsx"
+import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
+import BlockedUserRow from "./BlockedUserRow.jsx"
 
-function BlockedUserRow({ user, onUnblock, processing }) {
-  const { portraitSrc, frameSrc } = resolveAccountProfileAssets({
-    accountProfilePhotoId: user.accountProfilePhotoId,
-    accountProfileBorderId: user.accountProfileBorderId,
-  })
-
-  return (
-    <li className={RECOMMENDED_FRIEND_ROW_CLASS} data-blocked-id={user.id}>
-      <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_FRIEND_ROW_FRAME_CLASS} />
-      <div className={RECOMMENDED_FRIEND_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_FRIEND_INFO_WRAP_CLASS}>
-          <PlayerProfilePortrait
-            photoSrc={portraitSrc}
-            frameSrc={frameSrc}
-            wrapClassName={FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS}
-          />
-          <div className={RECOMMENDED_FRIEND_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_FRIEND_NAME_CLASS}>{user.name}</p>
-          </div>
-        </div>
-        <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
-          <button
-            type="button"
-            className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
-            aria-label={`${user.name} 차단 해제`}
-            aria-disabled={processing}
-            disabled={processing}
-            data-unblock-target={user.id}
-            onClick={() => { if (!processing) onUnblock(user.id) }}
-            style={{ outline: "none" }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendAcceptButton}
-              alt=""
-              className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
-            />
-          </button>
-        </div>
-      </div>
-    </li>
-  )
-}
-
+// 받은 신청 탭과 같은 틀을 씀, 비었을 땐 불러오는 중·없음 안내
 export default function FriendBlockTab({
   onBack,
   blockedUsers = [],

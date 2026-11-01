@@ -1,24 +1,13 @@
-import { useEffect, useRef, useState } from "react"
+// 소셜 가입 화면 상태 묶음 (가입 정보 불러오기·이메일 인증·가입 완료)
+// components/SocialSignupForm.jsx가 사용, 불러오기는 socialSignup/useIntentLoad.js·보내기는 socialSignup/submit.js가 맡음
+import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { completeSocialSignupApi, getSocialSignupIntentApi } from "../api/auth.api.js"
 import { useAuthStore } from "../store/auth.store.js"
 import { useSignupEmailVerification } from "./useSignupEmailVerification.js"
-import { validateNickname, validateBirthDate } from "../validation/signupValidation.js"
+import { useIntentLoad } from "./socialSignup/useIntentLoad.js"
+import { submitSignup } from "./socialSignup/submit.js"
 
-const trustedErrorCode = (error) => (
-  typeof error?.status === "number" && error.status >= 500 ? undefined : error?.code
-)
-
-const GENERIC_COMMUNICATION_ERROR_MESSAGE = "서버와 통신할 수 없습니다. 다시 시도해주세요."
-
-const isCompletedSignupUser = (user) => (
-  user !== null
-  && typeof user === "object"
-  && !Array.isArray(user)
-  && typeof user.uuid === "string"
-  && user.uuid.length > 0
-)
-
+// status는 가입 진행(idle·submitting·done·error·expired·cancelled·conflict), intentStatus는 가입 정보 불러오기
 export function useSocialSignup(intentToken) {
   const [status, setStatus] = useState("idle")
   const [errorMessage, setErrorMessage] = useState(null)
@@ -30,78 +19,34 @@ export function useSocialSignup(intentToken) {
   const login = useAuthStore((state) => state.login)
 
   const submittingRef = useRef(false)
-  const intentGenerationRef = useRef(0)
+  const intentGenRef = useRef(0)
 
+  // 인증은 가입 정보가 준비되고 서버가 요구할 때만 켬, 다시 불러오면 인증도 처음부터
   const verification = useSignupEmailVerification({
     email,
     active: intentStatus === "ready" && emailVerificationRequired,
     attemptKey: `${typeof intentToken === "string" ? intentToken : ""}:${intentAttempt}`,
   })
 
-  useEffect(() => {
-    const generation = ++intentGenerationRef.current
+  useIntentLoad({
+    intentToken, intentAttempt, genRef: intentGenRef,
+    setIntentStatus, setEmailVerificationRequired, setEmail, setStatus, setErrorMessage,
+  })
 
-    if (typeof intentToken !== "string" || !intentToken) {
-      setIntentStatus("error")
-      setStatus("expired")
-      setErrorMessage("소셜 로그인 세션이 만료되었습니다. 다시 시도해주세요.")
-      return undefined
-    }
-
-    setIntentStatus("loading")
-    setEmailVerificationRequired(false)
-    setEmail("")
-    setStatus("idle")
-    setErrorMessage(null)
-
-    getSocialSignupIntentApi({ intentToken })
-      .then((data) => {
-        if (intentGenerationRef.current !== generation) return
-        if (typeof data?.emailVerificationRequired !== "boolean") {
-          setIntentStatus("error")
-          setErrorMessage("가입 정보를 불러오지 못했습니다. 다시 시도해주세요.")
-          return
-        }
-        setEmailVerificationRequired(data.emailVerificationRequired)
-        setIntentStatus("ready")
-      })
-      .catch((error) => {
-        if (intentGenerationRef.current !== generation) return
-
-        const code = trustedErrorCode(error)
-        switch (code) {
-          case "INTENT_EXPIRED":
-          case "INTENT_INVALID":
-            setIntentStatus("error")
-            setStatus("expired")
-            break
-          case "INTENT_CONSUMED":
-            setIntentStatus("error")
-            setStatus("cancelled")
-            break
-          default:
-            setIntentStatus("error")
-        }
-        setErrorMessage(
-          code ? (error?.message || "가입 정보를 불러오지 못했습니다. 다시 시도해주세요.")
-            : "가입 정보를 불러오지 못했습니다. 다시 시도해주세요.",
-        )
-      })
-
-    return () => { intentGenerationRef.current += 1 }
-  }, [intentToken, intentAttempt])
-
+  // token이 없으면 다시 불러올 게 없음
   const retryIntent = () => {
     if (typeof intentToken !== "string" || !intentToken) return
     setIntentAttempt((attempt) => attempt + 1)
   }
 
+  // 주소가 바뀌면 받은 인증을 버림
   const handleEmailChange = (e) => {
     const { value } = e.target
     if (value !== email) verification.reset()
     setEmail(value)
   }
 
+  // 가입 정보 준비됨 + 보내는 중·끝남 아님 + (인증이 필요하면) 인증 끝
   const canSubmit = (
     intentStatus === "ready"
     && status !== "submitting"
@@ -109,103 +54,13 @@ export function useSocialSignup(intentToken) {
     && (!emailVerificationRequired || verification.hasValidSignupProof)
   )
 
-  const submit = async ({ nickname, birthDate }) => {
-    if (submittingRef.current) return
-
-    if (typeof intentToken !== "string" || !intentToken) {
-      setStatus("expired")
-      setErrorMessage("소셜 로그인 세션이 만료되었습니다. 다시 시도해주세요.")
-      return
-    }
-
-    if (intentStatus !== "ready") {
-      setStatus("error")
-      setErrorMessage("가입 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.")
-      return
-    }
-
-    const nicknameResult = validateNickname(nickname)
-    if (!nicknameResult.ok) {
-      setStatus("error")
-      setErrorMessage(nicknameResult.message)
-      return
-    }
-
-    let birthDateValue
-    if (birthDate) {
-      const birthDateResult = validateBirthDate(birthDate)
-      if (!birthDateResult.ok) {
-        setStatus("error")
-        setErrorMessage(birthDateResult.message)
-        return
-      }
-      birthDateValue = birthDateResult.value
-    }
-
-    let verifiedPayload
-    if (emailVerificationRequired) {
-      verifiedPayload = verification.buildSignupPayload()
-      if (!verifiedPayload) {
-        setStatus("error")
-        setErrorMessage("이메일 인증을 완료해주세요.")
-        return
-      }
-    }
-
-    submittingRef.current = true
-    const submitGeneration = intentGenerationRef.current
-    setStatus("submitting")
-    setErrorMessage(null)
-    try {
-      const result = await completeSocialSignupApi({
-        intentToken,
-        nickname: nicknameResult.value,
-        birthDate: birthDateValue,
-        email: verifiedPayload?.email,
-        signupProof: verifiedPayload?.signupProof,
-      })
-      if (intentGenerationRef.current !== submitGeneration) return
-      if (!isCompletedSignupUser(result?.user)) {
-        setStatus("error")
-        setErrorMessage(GENERIC_COMMUNICATION_ERROR_MESSAGE)
-        return
-      }
-      login(result.user)
-      setStatus("done")
-      navigate("/lobby")
-    } catch (error) {
-      if (intentGenerationRef.current !== submitGeneration) return
-
-      const code = trustedErrorCode(error)
-      switch (code) {
-        case "INTENT_EXPIRED":
-          setStatus("expired")
-          break
-        case "INTENT_CONSUMED":
-          setStatus("cancelled")
-          break
-        case "EMAIL_CONFLICT":
-          setStatus("conflict")
-          break
-        case "SIGNUP_PROOF_REQUIRED":
-        case "SIGNUP_PROOF_INVALID":
-          verification.reset()
-          setStatus("error")
-          break
-        default:
-          setStatus("error")
-      }
-      setErrorMessage(
-        code === "SIGNUP_PROOF_REQUIRED" ? "이메일 인증이 필요합니다. 다시 인증해주세요."
-          : code === "SIGNUP_PROOF_INVALID" ? "이메일 인증이 만료되었거나 이미 사용되었습니다. 다시 인증해주세요."
-            : code !== error?.code ? GENERIC_COMMUNICATION_ERROR_MESSAGE
-              : error?.message || "가입을 완료할 수 없습니다.",
-      )
-    } finally {
-      submittingRef.current = false
-    }
+  const submitCtx = {
+    intentToken, intentStatus, emailVerificationRequired, verification,
+    submittingRef, genRef: intentGenRef, setStatus, setErrorMessage, login, navigate,
   }
+  const submit = (fields) => submitSignup(submitCtx, fields)
 
+  // 에러를 지우고 입력 화면으로 (잠금도 풂)
   const reset = () => {
     submittingRef.current = false
     setStatus("idle")

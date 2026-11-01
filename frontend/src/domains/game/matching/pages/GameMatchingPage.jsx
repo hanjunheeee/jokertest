@@ -1,3 +1,5 @@
+// 대기방 화면: 배경·팝업·인원 머리말·뒤로/친구 초대·방장 버튼·강퇴 창·설정 편집
+// /game-matching 라우트가 씀, 값과 동작은 모두 useMatchingPage에서 받음
 import MatchingBackground from "../components/MatchingBackground.jsx"
 import MatchingPartyHeader from "../components/MatchingPartyHeader.jsx"
 import MatchingPageControls from "../components/MatchingPageControls.jsx"
@@ -7,11 +9,12 @@ import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
 import FriendInviteModalShell from "../components/friendInvite/FriendInviteModalShell.jsx"
 import FriendInviteModalContent from "../components/friendInvite/FriendInviteModalContent.jsx"
-import GameSetupPanel from "@/domains/game/setup/components/GameSetupPanel.jsx"
 import RoomSettingsResultNotice from "../components/RoomSettingsResultNotice.jsx"
 import SettingKickPlayerModalContent from "@/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalContent.jsx"
 import SettingKickPlayerModalShell from "@/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalShell.jsx"
 import MatchingHostActionButtons from "../components/MatchingHostActionButtons.jsx"
+import SettingsPendingNotice from "../components/settingsEdit/SettingsPendingNotice.jsx"
+import SettingsEditOverlay from "../components/settingsEdit/SettingsEditOverlay.jsx"
 
 export default function GameMatchingPage() {
   const {
@@ -127,6 +130,7 @@ export default function GameMatchingPage() {
         />
       </FriendInviteModalShell>
 
+      {/* 다른 창이 떠 있을 땐 방장 버튼 숨김 */}
       {!settingsOpen && !kickModalOpen && !friendInviteModalOpen ? (
         <MatchingHostActionButtons
           visible={uiVisible}
@@ -155,44 +159,28 @@ export default function GameMatchingPage() {
       </SettingKickPlayerModalShell>
 
       {hasPendingSettingsResult ? (
-        <div
-          role="status"
-          className="absolute bottom-[clamp(4rem,11vh,6.5rem)] left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#c9b892]/60 bg-black/70 px-4 py-2 text-[#f5f0e6]"
-        >
-          <span>{settingsError?.message ?? "저장 결과를 확인하는 중입니다."}</span>
-          <button
-            type="button"
-            onClick={verifyRoomSettingsResult}
-            aria-label="설정 저장 결과 확인"
-            className="interactive-scale cursor-pointer rounded border border-[#c9b892]/60 px-2 py-1 font-bold"
-          >
-            결과 확인
-          </button>
-        </div>
+        <SettingsPendingNotice
+          message={settingsError?.message}
+          onVerify={verifyRoomSettingsResult}
+        />
       ) : null}
 
+      {/* 결과 안내는 편집 중에만 가림 (결과 확인 대기 안내와 따로 뜸) */}
       <RoomSettingsResultNotice
         message={settingsOpen ? null : settingsResultNotice}
         onDismiss={dismissSettingsResultNotice}
       />
 
       {settingsOpen ? (
-        <div className="absolute inset-0 z-40 bg-black/70">
-          <GameSetupPanel
-            visible
-            mode="edit"
-            initialFormState={settingsForm.ok ? settingsForm : null}
-            formResetKey={settingsFormResetKey}
-            isCreating={isSavingSettings}
-            onCreateGame={submitSettings}
-            onCancel={closeSettings}
-          />
-          {settingsError && !hasPendingSettingsResult ? (
-            <p role="alert" className="absolute bottom-8 left-1/2 z-50 -translate-x-1/2 text-[#ffd9d9]">
-              {settingsError.message ?? "설정을 저장하지 못했습니다."}
-            </p>
-          ) : null}
-        </div>
+        <SettingsEditOverlay
+          settingsForm={settingsForm}
+          formResetKey={settingsFormResetKey}
+          isSaving={isSavingSettings}
+          onSubmit={submitSettings}
+          onCancel={closeSettings}
+          settingsError={settingsError}
+          hasPendingSettingsResult={hasPendingSettingsResult}
+        />
       ) : null}
     </div>
   )

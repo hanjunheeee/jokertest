@@ -8,11 +8,14 @@ let busy = false
 
 // 관찰자한테 알림, 관찰자가 터져도 게임은 계속
 function observeNightCommit(event, detail) {
+    // 끼운 관찰자 없으면 아무것도 안 함
     if (typeof observer !== 'function') return
+    // 도는 동안 표시 켜 둠, 끝나면 꼭 끔
     busy = true
     try {
         observer(event, detail)
     } catch (err) {
+        // 관찰자 오류는 일부러 삼킴
     } finally {
         busy = false
     }
@@ -25,6 +28,7 @@ function isObserverBusy() {
 
 // 관찰자 끼우기·빼기 (null이면 뺌), 시험 초기화 때도 사용
 function setObserver(fn) {
+    // 함수 아니면 뺌, 도는 중 표시도 같이 초기화
     observer = typeof fn === 'function' ? fn : null
     busy = false
 }

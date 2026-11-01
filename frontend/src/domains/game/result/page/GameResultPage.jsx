@@ -1,3 +1,5 @@
+// 게임 결과 화면: 연출 영상 → 결과(실제 판 또는 미리보기) → 대기방·로비 버튼
+// /gameresult 라우트가 씀, 그릴 결과가 없으면 확인 불가 안내만 보여 줌
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
@@ -12,6 +14,15 @@ import {
 } from "../constants/gameResultLabels.js"
 import { GAME_RESULT_LOBBY_BUTTON_WRAP_CLASS } from "../constants/gameResultLayout.js"
 import { GAME_RESULT_OUTCOMES } from "../constants/gameResultPreviewData.js"
+import {
+  RESULT_BOOTSTRAP_HOLD_MS,
+  RESULT_PLAIN_BUTTON_CLASS,
+  RESULT_UNAVAILABLE_BODY,
+  RESULT_UNAVAILABLE_TITLE,
+  UNAVAILABLE_BODY_CLASS,
+  UNAVAILABLE_TITLE_CLASS,
+  UNAVAILABLE_WRAP_CLASS,
+} from "../constants/gameResultUnavailable.js"
 import { useGameResultData } from "../hooks/useGameResultData.js"
 import { useGameResultPreview } from "../hooks/useGameResultPreview.js"
 import { useInGameExit } from "@/domains/game/ingame/hooks/useInGameExit.js"
@@ -19,22 +30,6 @@ import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInG
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { useGameResultReturnToMatching } from "../hooks/useGameResultReturnToMatching.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
-
-const RESULT_BOOTSTRAP_HOLD_MS = 6000
-
-const RESULT_PLAIN_BUTTON_CLASS =
-  "cursor-pointer border-0 bg-transparent p-0 font-subheading app-text-scaled [--app-text-size:clamp(0.85rem,1.2vw,1.05rem)] font-semibold text-[#f5e6c8] underline decoration-dotted underline-offset-4 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
-
-const UNAVAILABLE_WRAP_CLASS =
-  "absolute inset-0 z-10 flex flex-col items-center justify-center gap-[1.1rem] px-[clamp(1rem,5vw,3rem)] text-center"
-const UNAVAILABLE_TITLE_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(1.05rem,2vw,1.6rem)] font-bold text-[#f5e6c8] [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]"
-const UNAVAILABLE_BODY_CLASS =
-  "max-w-[36rem] font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.25vw,1rem)] leading-relaxed text-[#f0e0c8]/85"
-
-const RESULT_UNAVAILABLE_TITLE = "게임 결과를 확인할 수 없습니다"
-const RESULT_UNAVAILABLE_BODY =
-  "이 판의 결과는 화면이 종료까지 받아 둔 값으로만 보여드립니다. 새로고침 등으로 그 값이 사라졌거나 이 계정의 참가 자격이 이미 정리된 경우에는 다시 불러올 수 없습니다."
 
 export default function GameResultPage() {
   const navigate = useNavigate()

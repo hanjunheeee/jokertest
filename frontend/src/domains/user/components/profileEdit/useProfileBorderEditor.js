@@ -1,3 +1,5 @@
+// 프로필 사진·테두리 편집 창 상태 (열 때 지금 장착으로 초안 맞추기·보유 목록·확인 저장)
+// 프로필 편집 창이 씀
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import {
@@ -9,6 +11,7 @@ import {
   profileBorderAssetSrcForItemId,
   profilePhotoAssetSrcForItemId,
 } from "../../constants/profileEditLayout.js"
+import { listStatusOf, ownedOptionsOf } from "../../utils/profileEditOptions.js"
 
 export function useProfileBorderEditor({ open, onClose }) {
   const generation = useEconomyStore((state) => state.requestGeneration)
@@ -33,6 +36,7 @@ export function useProfileBorderEditor({ open, onClose }) {
   const pendingSaveRef = useRef(false)
   const hasEditedRef = useRef(false)
 
+  // 열 때마다 세션을 새로 열고 초안·저장 상태를 지금 장착으로 되돌림, 지갑이 없으면 받음
   useEffect(() => {
     editorSessionRef.current += 1
     pendingSaveRef.current = false
@@ -54,6 +58,7 @@ export function useProfileBorderEditor({ open, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, generation, fetchSummary])
 
+  // 사용자가 아직 안 고쳤으면 서버 장착이 바뀔 때 초안도 따라감
   useEffect(() => {
     if (!open || hasEditedRef.current) return
     setDraftPhotoItemId(currentPhotoItemId)
@@ -69,28 +74,13 @@ export function useProfileBorderEditor({ open, onClose }) {
     setDraftBorderItemId(itemId)
   }, [])
 
-  const ownedBorderOptions = entitlements
-    .filter((item) => item.itemType === PROFILE_BORDER_ITEM_TYPE)
-    .map((item) => ({ itemId: item.itemId, src: profileBorderAssetSrcForItemId(item.itemId) }))
-    .filter((item) => item.src != null)
+  const ownedBorderOptions = ownedOptionsOf(entitlements, PROFILE_BORDER_ITEM_TYPE, profileBorderAssetSrcForItemId)
+  const borderListStatus = listStatusOf(economyStatus, ownedBorderOptions)
 
-  const borderListStatus =
-    economyStatus === "error" ? "error"
-      : economyStatus === "idle" || economyStatus === "loading" ? "loading"
-        : ownedBorderOptions.length === 0 ? "empty"
-          : "ready"
+  const ownedPhotoOptions = ownedOptionsOf(entitlements, PROFILE_PHOTO_ITEM_TYPE, profilePhotoAssetSrcForItemId)
+  const photoListStatus = listStatusOf(economyStatus, ownedPhotoOptions)
 
-  const ownedPhotoOptions = entitlements
-    .filter((item) => item.itemType === PROFILE_PHOTO_ITEM_TYPE)
-    .map((item) => ({ itemId: item.itemId, src: profilePhotoAssetSrcForItemId(item.itemId) }))
-    .filter((item) => item.src != null)
-
-  const photoListStatus =
-    economyStatus === "error" ? "error"
-      : economyStatus === "idle" || economyStatus === "loading" ? "loading"
-        : ownedPhotoOptions.length === 0 ? "empty"
-          : "ready"
-
+  // 바뀐 것만 저장, 결과를 모르면 지갑을 다시 받아 실패인지 확인함
   const handleConfirm = useCallback(async ({ onChanged } = {}) => {
     if (confirmStatus === "saving" || pendingSaveRef.current) return
 
@@ -102,7 +92,7 @@ export function useProfileBorderEditor({ open, onClose }) {
     }
 
     pendingSaveRef.current = true
-    try { onChanged?.() } catch {}
+    try { onChanged?.() } catch { /* 알림 콜백 오류는 저장을 막지 않게 무시함 */ }
     setConfirmStatus("saving")
     setConfirmError(null)
     setConfirmUncertain(false)

@@ -1,22 +1,14 @@
-import { useEffect, useMemo, useState } from "react"
+// 가게 패널 (구매 알림·상품 칸·고른 상품 설명·분류 사이드바, 상태는 useStorePanel)
+// 가게 화면이 씀
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import StoreItemGrid from "./StoreItemGrid.jsx"
 import StoreSelectedItemDetail from "./StoreSelectedItemDetail.jsx"
 import StoreSidebar from "./StoreSidebar.jsx"
-import StoreSkinZoomOverlay from "../skinZoom/StoreSkinZoomOverlay.jsx"
-import ProfileBorderZoomOverlay from "@/shared/ui/profileBorderZoom/ProfileBorderZoomOverlay.jsx"
-import StoreBulkPurchaseOverlay from "../bulkPurchase/StoreBulkPurchaseOverlay.jsx"
+import StorePanelOverlays from "./StorePanelOverlays.jsx"
 import { STORE_ASSETS } from "../../constants/storeAssets.js"
-import {
-  getStoreItemsByCategory,
-  getStoreItemDisplayIcon,
-  isDefaultGrantStoreItem,
-  STORE_ITEMS,
-} from "../../constants/storeItems.js"
-import { storePurchase, useStorePurchase } from "../../store/storePurchase.store.js"
-import { useAuthStore } from "@/domains/auth/store/auth.store.js"
-import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
+import { getStoreItemDisplayIcon } from "../../constants/storeItems.js"
+import { storePurchase } from "../../store/storePurchase.store.js"
 import {
   STORE_PANEL_CLASS,
   STORE_PANEL_CONTENT_CLASS,
@@ -27,136 +19,15 @@ import {
   STORE_PANEL_SCROLL_AREA_CLASS,
   STORE_PANEL_SIDEBAR_CLASS,
 } from "../../constants/storeLayoutStyle.js"
-import { useStoreCategoryFilter } from "../../hooks/useStoreCategoryFilter.js"
+import { useStorePanel } from "../../hooks/useStorePanel.js"
+import { isPurchaseDisabled, isRealPurchaseCategory } from "../../utils/storePanel.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 
-const NON_PURCHASABLE_CATEGORIES = new Set(["인게임 재화"])
-const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(category)
-
 export default function StorePanel({ visible = true }) {
-  const { categories, activeCategory, selectCategory } = useStoreCategoryFilter()
-  const visibleItems = useMemo(
-    () => getStoreItemsByCategory(activeCategory),
-    [activeCategory],
-  )
-
-  const [selectedItem, setSelectedItem] = useState(STORE_ITEMS[0])
-  const [deadPreviewIds, setDeadPreviewIds] = useState(() => new Set())
-  const [skinZoomItem, setSkinZoomItem] = useState(null)
-  const [profileBorderZoomItem, setProfileBorderZoomItem] = useState(null)
-  const [bulkMode, setBulkMode] = useState(false)
-  const [bulkSelectedIds, setBulkSelectedIds] = useState(() => new Set())
-  const [bulkPurchaseOpen, setBulkPurchaseOpen] = useState(false)
-  const purchaseState = useStorePurchase()
-  const selectionLocked = ["pending", "unknown", "blocked"].includes(purchaseState.status)
-  const purchaseLocked = selectionLocked
-  const economyStatus = useEconomyStore((state) => state.status)
-  const authUserId = useAuthStore((state) => state.user?.uuid ?? null)
-  const entitlements = useEconomyStore((state) => state.entitlements)
-  const ownedItemIds = useMemo(
-    () => new Set(entitlements.map((entitlement) => entitlement.itemId)),
-    [entitlements],
-  )
-
-  useEffect(() => {
-    useEconomyStore.getState().fetchSummary()
-    storePurchase.activate(authUserId)
-    storePurchase.check()
-    setBulkMode(false)
-    setBulkSelectedIds(new Set())
-    setBulkPurchaseOpen(false)
-  }, [authUserId])
-
-  const bulkSelectedItems = useMemo(
-    () => STORE_ITEMS.filter((item) => bulkSelectedIds.has(item.id)),
-    [bulkSelectedIds],
-  )
-
-  const toggleDeadPreview = (itemId) => {
-    setDeadPreviewIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(itemId)) next.delete(itemId)
-      else next.add(itemId)
-      return next
-    })
-  }
-
-  const isDeadPreview = (itemId) => deadPreviewIds.has(itemId)
-
-  const openSkinZoom = (item) => {
-    setSelectedItem(item)
-    setSkinZoomItem(item)
-  }
-
-  const closeSkinZoom = () => {
-    setSkinZoomItem(null)
-  }
-
-  const openProfileBorderZoom = (item) => {
-    setProfileBorderZoomItem(item)
-  }
-
-  const closeProfileBorderZoom = () => {
-    setProfileBorderZoomItem(null)
-  }
-
-  const handleBulkModeChange = (nextBulkMode) => {
-    if (purchaseLocked) return
-    setBulkMode(nextBulkMode)
-    if (nextBulkMode) {
-      const canSeedSelection = selectedItem && !ownedItemIds.has(selectedItem.id)
-        && !isDefaultGrantStoreItem(selectedItem)
-      setBulkSelectedIds(new Set(canSeedSelection ? [selectedItem.id] : []))
-    } else {
-      setBulkSelectedIds(new Set())
-      setBulkPurchaseOpen(false)
-    }
-  }
-
-  const handleBulkSelectionChange = (itemId) => {
-    if (purchaseLocked || ownedItemIds.has(itemId) || isDefaultGrantStoreItem(STORE_ITEMS.find((item) => item.id === itemId))) return
-    setBulkSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(itemId)) next.delete(itemId)
-      else next.add(itemId)
-      return next
-    })
-  }
-
-  const currentItem = selectedItem
-    ? (visibleItems.find((item) => item.id === selectedItem.id) ?? selectedItem)
-    : null
-
-  let purchaseLabel = null
-  if (isDefaultGrantStoreItem(currentItem) && !ownedItemIds.has(currentItem?.id)) {
-    purchaseLabel = "기본 지급"
-  }
-
-  const handlePurchaseClick = () => {
-    if (purchaseLocked || economyStatus !== "ready") return
-    if (bulkMode) {
-      if (bulkSelectedIds.size) { storePurchase.prepare(); setBulkPurchaseOpen(true) }
-    } else if (selectedItem && isRealPurchaseCategory(selectedItem.category) && !ownedItemIds.has(selectedItem.id)
-      && !isDefaultGrantStoreItem(selectedItem)) {
-      storePurchase.purchase([selectedItem.id])
-    }
-  }
-
-  const closeBulkPurchase = () => { setBulkPurchaseOpen(false); setBulkMode(false); setBulkSelectedIds(new Set()) }
-  const handleBulkPurchaseConfirm = () => {
-    if (purchaseLocked || economyStatus !== "ready") return
-    storePurchase.purchase(bulkSelectedItems.map((item) => item.id))
-  }
-
-  useEffect(() => {
-    setSelectedItem((prev) => visibleItems.find((item) => item.id === prev?.id) ?? visibleItems[0] ?? null)
-    setSkinZoomItem(null)
-    setBulkMode(false)
-    setBulkSelectedIds(new Set())
-    setBulkPurchaseOpen(false)
-  }, [visibleItems])
+  const panel = useStorePanel()
+  const { activeCategory, currentItem, bulkMode, ownedItemIds } = panel
 
   return (
     <>
@@ -171,28 +42,28 @@ export default function StorePanel({ visible = true }) {
           <PublicAsset src={STORE_ASSETS.panelFrame} alt="" className={STORE_PANEL_FRAME_CLASS} />
 
           <div className={STORE_PANEL_CONTENT_CLASS} style={STORE_PANEL_INNER_PAD}>
-            <StorePurchaseFeedback state={purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+            <StorePurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
             <div className={STORE_PANEL_MAIN_ROW_CLASS}>
               <div className={STORE_PANEL_GRID_COLUMN_CLASS}>
                 <div
                   className={`${STORE_PANEL_SCROLL_AREA_CLASS} ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`}
                 >
                   <StoreItemGrid
-                    items={visibleItems}
+                    items={panel.visibleItems}
                     selectedItemId={currentItem?.id ?? null}
-                    onSelectItem={setSelectedItem}
-                    deadPreviewIds={deadPreviewIds}
-                    onToggleDeadPreview={toggleDeadPreview}
-                    onOpenSkinZoom={openSkinZoom}
-                    onOpenProfileBorderZoom={openProfileBorderZoom}
+                    onSelectItem={panel.setSelectedItem}
+                    deadPreviewIds={panel.deadPreviewIds}
+                    onToggleDeadPreview={panel.toggleDeadPreview}
+                    onOpenSkinZoom={panel.openSkinZoom}
+                    onOpenProfileBorderZoom={panel.openProfileBorderZoom}
                     showBulkPurchase={isRealPurchaseCategory(activeCategory)}
                     showSkinNotice={activeCategory === "스킨"}
                     bulkMode={bulkMode}
-                    bulkSelectedIds={bulkSelectedIds}
+                    bulkSelectedIds={panel.bulkSelectedIds}
                     ownedItemIds={ownedItemIds}
-                    selectionDisabled={selectionLocked}
-                    onBulkModeChange={handleBulkModeChange}
-                    onBulkSelectionChange={handleBulkSelectionChange}
+                    selectionDisabled={panel.selectionLocked}
+                    onBulkModeChange={panel.handleBulkModeChange}
+                    onBulkSelectionChange={panel.handleBulkSelectionChange}
                   />
                 </div>
 
@@ -201,27 +72,28 @@ export default function StorePanel({ visible = true }) {
                     item={currentItem}
                     displayIcon={getStoreItemDisplayIcon(
                       currentItem,
-                      isDeadPreview(currentItem.id),
+                      panel.isDeadPreview(currentItem.id),
                     )}
-                    onPurchaseClick={handlePurchaseClick}
+                    onPurchaseClick={panel.handlePurchaseClick}
                     owned={!bulkMode && ownedItemIds.has(currentItem.id)}
-                    purchaseLabel={bulkMode ? null : purchaseLabel}
-                    purchaseDisabled={
-                      purchaseLocked || economyStatus !== "ready"
-                      || (bulkMode && bulkSelectedIds.size === 0)
-                      || (!isRealPurchaseCategory(currentItem.category))
-                      || (!bulkMode && ownedItemIds.has(currentItem.id))
-                      || (!bulkMode && isDefaultGrantStoreItem(currentItem))
-                    }
+                    purchaseLabel={bulkMode ? null : panel.purchaseLabel}
+                    purchaseDisabled={isPurchaseDisabled({
+                      currentItem,
+                      bulkMode,
+                      bulkSelectedIds: panel.bulkSelectedIds,
+                      ownedItemIds,
+                      purchaseLocked: panel.purchaseLocked,
+                      economyStatus: panel.economyStatus,
+                    })}
                   />
                 ) : null}
               </div>
 
               <aside className={STORE_PANEL_SIDEBAR_CLASS}>
                 <StoreSidebar
-                  categories={categories}
+                  categories={panel.categories}
                   activeCategory={activeCategory}
-                  onSelectCategory={selectCategory}
+                  onSelectCategory={panel.selectCategory}
                 />
               </aside>
             </div>
@@ -229,24 +101,7 @@ export default function StorePanel({ visible = true }) {
         </div>
       </motion.div>
 
-      <StoreSkinZoomOverlay open={Boolean(skinZoomItem)} item={skinZoomItem} onClose={closeSkinZoom} />
-
-      <ProfileBorderZoomOverlay
-        open={Boolean(profileBorderZoomItem)}
-        item={profileBorderZoomItem}
-        onClose={closeProfileBorderZoom}
-      />
-
-      <StoreBulkPurchaseOverlay
-        open={bulkPurchaseOpen}
-        items={bulkSelectedItems}
-        deadPreviewIds={deadPreviewIds}
-        onClose={closeBulkPurchase}
-        onConfirm={handleBulkPurchaseConfirm}
-        purchaseState={purchaseState}
-        onCheck={storePurchase.check}
-        onRetry={storePurchase.retry}
-      />
+      <StorePanelOverlays panel={panel} />
     </>
   )
 }

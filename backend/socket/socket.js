@@ -1,3 +1,5 @@
+// socket.io 서버 입구 파일
+// 접속 목록·사용자 전송 + 연결·끊김 핸들러 등록, server.js가 initSocket을 부름
 const { Server } = require("socket.io");
 const cookie = require("cookie");
 
@@ -6,6 +8,7 @@ const presenceService = require("../service/presence.service");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
 const concurrencyService = require("../service/concurrency.service");
+const { logRejection } = require("./common/isolate");
 
 const onlineUsers = new Map();
 gameSession.setOnlineUsersRegistry(onlineUsers);
@@ -47,12 +50,8 @@ function initSocket(httpServer) {
 function registerDisconnectHandler(io, socket, uuid, sessionWatcher) {
     socket.on("disconnect", () => {
         sessionWatcher?.stop();
-        gameSession.onDisconnect(io, socket, uuid).catch((err) => {
-            console.error("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m", err);
-        });
-        handleDisconnect(io, socket, uuid).catch((err) => {
-            console.error("\x1b[31m[소켓 종료 처리 에러]\x1b[0m", err);
-        });
+        gameSession.onDisconnect(io, socket, uuid).catch(logRejection("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m"));
+        handleDisconnect(io, socket, uuid).catch(logRejection("\x1b[31m[소켓 종료 처리 에러]\x1b[0m"));
         matchmaking.onDisconnect(io, socket, uuid);
     });
 }
@@ -124,13 +123,9 @@ function registerConnectionHandlers(io, socket) {
 
     const sessionWatcher = startSessionRevocationWatcher(socket);
 
-    handleConnection(io, socket, uuid).catch((err) => {
-        console.error("\x1b[31m[소켓 접속 처리 에러]\x1b[0m", err);
-    });
+    handleConnection(io, socket, uuid).catch(logRejection("\x1b[31m[소켓 접속 처리 에러]\x1b[0m"));
 
-    gameSession.resyncSessionRouting(socket, uuid).catch((err) => {
-        console.error("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m", err);
-    });
+    gameSession.resyncSessionRouting(socket, uuid).catch(logRejection("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m"));
 
     matchmaking.registerMatchmakingHandlers(io, socket, uuid, {
         getCurrentSocketId: (accountUuid) => onlineUsers.get(accountUuid) ?? null,
@@ -145,7 +140,7 @@ function registerNotificationHandlers(socket, uuid) {
     socket.on("notifications_ready", (_payload, ack) => {
         const respond = (result) => {
             if (typeof ack === "function") {
-                try { ack(result); } catch {}
+                try { ack(result); } catch { /* ack가 던져도 알림 처리는 그대로 끝냄 */ }
             }
         };
 

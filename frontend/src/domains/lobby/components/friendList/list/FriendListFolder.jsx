@@ -1,67 +1,11 @@
-import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
-import {
-  FRIEND_FOLDER_BACKDROP_CLASS,
-  FRIEND_FOLDER_CHEVRON_CLASS,
-  FRIEND_FOLDER_CONTENT_CLASS,
-  FRIEND_FOLDER_HEADER_CLASS,
-  FRIEND_FOLDER_ICON_CLASS,
-  FRIEND_FOLDER_LABEL_CLASS,
-  FRIEND_FOLDER_LIST_CLASS,
-  FRIEND_FOLDER_SECTION_CLASS,
-} from "@/domains/lobby/constants/friendListStyle.js"
+// 접고 펴는 친구 폴더 하나 (머리 + 펼치면 친구 줄)
+// FriendListGroupFolders가 접속·오프라인·즐겨찾기 폴더로 그림
 import { useState } from "react"
-import FriendListRow from "@/domains/lobby/components/friendList/list/FriendListRow.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import FriendListFolderSection from "./folder/FriendListFolderSection.jsx"
+import FriendListFolderHeader from "./folder/FriendListFolderHeader.jsx"
+import FriendListFolderRows from "./folder/FriendListFolderRows.jsx"
 
-function FriendListFolderSection({ children, className = "" }) {
-  return (
-    <section className={`${FRIEND_FOLDER_SECTION_CLASS} ${className}`}>
-      <div className={FRIEND_FOLDER_BACKDROP_CLASS} aria-hidden="true" />
-      <div className={FRIEND_FOLDER_CONTENT_CLASS}>{children}</div>
-    </section>
-  )
-}
-
-function FriendListFolderHeader({ label, open, onToggle }) {
-  const folderIcon = open ? FRIEND_LIST_ASSETS.folderOpen : FRIEND_LIST_ASSETS.folderClosed
-  const chevronIcon = open ? FRIEND_LIST_ASSETS.chevronUp : FRIEND_LIST_ASSETS.chevronDown
-
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={FRIEND_FOLDER_HEADER_CLASS}
-      style={{ outline: "none" }}
-    >
-      <PublicAsset src={folderIcon} alt="" className={FRIEND_FOLDER_ICON_CLASS} />
-      <span className={FRIEND_FOLDER_LABEL_CLASS}>{label}</span>
-      <PublicAsset src={chevronIcon} alt="" className={FRIEND_FOLDER_CHEVRON_CLASS} />
-    </button>
-  )
-}
-
-function FriendListFolderRows({ friends, listClassName = FRIEND_FOLDER_LIST_CLASS, invite, block }) {
-  return (
-    <ul className={listClassName}>
-      {friends.map((friend) => (
-        <FriendListRow
-          key={friend.id}
-          id={friend.id}
-          name={friend.name}
-          online={friend.online}
-          accountProfilePhotoId={friend.accountProfilePhotoId}
-          accountProfileBorderId={friend.accountProfileBorderId}
-          onInvite={invite?.onInvite ?? null}
-          inviteDisabled={invite?.disabled ?? false}
-          inviteDisabledReason={invite?.disabledReason}
-          onBlock={block?.onBlock ?? null}
-          blocking={block?.blockingIds?.has(friend.id) ?? false}
-        />
-      ))}
-    </ul>
-  )
-}
-
+// 처음 열림 여부만 바깥에서 받고 이후 열고 닫기는 폴더가 가짐
 export default function FriendListFolder({
   label,
   friends,

@@ -1,55 +1,15 @@
-import {
-  FRIEND_LIST_FILTER_MESSAGES,
-} from "@/domains/lobby/constants/friendListFilter.js"
+// 친구 추가 탭 (닉네임 검색·검색 결과·뒤로)
+// FriendListPanelContent가 request 탭일 때 그림
 import {
   FRIEND_REQUEST_BACK_BUTTON_CLASS,
-  FRIEND_REQUEST_EMPTY_CLASS,
-  FRIEND_REQUEST_RESULT_LIST_CLASS,
   FRIEND_REQUEST_TAB_CLASS,
-} from "@/domains/lobby/constants/friendListStyle.js"
-import { useFriendSearch } from "@/domains/lobby/hooks/useFriendSearch.js"
-import BackButton from "@/shared/ui/BackButton.jsx"
-import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendListSearchBar.jsx"
-import RecommendedFriendRow from "@/domains/lobby/components/friendList/request/RecommendedFriendRow.jsx"
+} from "../../../constants/friendListStyle.js"
+import { useFriendSearch } from "../../../hooks/useFriendSearch.js"
+import BackButton from "../../../../../shared/ui/BackButton.jsx"
+import FriendListSearchBar from "../FriendListSearchBar.jsx"
+import FriendRequestResultsList from "./results/FriendRequestResultsList.jsx"
 
-function FriendRequestEmptyState({ searching, errorMsg }) {
-  const message = errorMsg
-    || (searching ? "친구를 검색 중입니다." : FRIEND_LIST_FILTER_MESSAGES.noResults)
-
-  return (
-    <li className={FRIEND_REQUEST_EMPTY_CLASS}>
-      {message}
-    </li>
-  )
-}
-
-function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend, onBlock, blockingIds, isSearching }) {
-  if (!isSearching) return null
-
-  return (
-    <ul className={FRIEND_REQUEST_RESULT_LIST_CLASS}>
-      {results.length === 0 ? (
-        <FriendRequestEmptyState searching={searching} errorMsg={errorMsg} />
-      ) : (
-        results.map((friend) => (
-          <RecommendedFriendRow
-            key={friend.id}
-            id={friend.id}
-            name={friend.name}
-            status={friend.status}
-            accountProfilePhotoId={friend.accountProfilePhotoId}
-            accountProfileBorderId={friend.accountProfileBorderId}
-            onSend={onSend}
-            onBlock={onBlock}
-            blocking={blockingIds.has(friend.id)}
-            sent={sentIds.has(friend.id)}
-          />
-        ))
-      )}
-    </ul>
-  )
-}
-
+// 검색·신청 상태는 useFriendSearch가 가지고, 차단은 패널에서 받음
 export default function FriendRequestTab({ onBack, onBlock, blockingIds = new Set() }) {
   const {
     query,

@@ -1,3 +1,5 @@
+// 밤 성공 연출 훅: 대기열 맨 앞 연출을 고르고, 다 보면 끝맺음 알림
+// 인게임 화면·밤 성공 연출 컴포넌트가 사용, 의사 차례 끝 받기는 socket/night.js를 부름
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -12,6 +14,7 @@ import {
 } from "../store/ingameStore.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
 import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
+import { onNightTurnEnded } from "../socket/night.js"
 
 const HEAL_WINDOW_CLOSING_ROLE = "DOCTOR"
 
@@ -69,6 +72,7 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     setTrack((prev) => (prev && prev.nightDayIndex === gameState.dayIndex ? prev : null))
   }, [gameState?.phase, gameState?.dayIndex])
 
+  // 의사 차례가 끝나면 그 밤 치료 창이 닫혔다고 적음
   useEffect(() => {
     if (!socket || typeof socket.on !== "function") return undefined
     const handleNightTurnEnded = (payload) => {
@@ -82,8 +86,7 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
         return { ...prev, healWindowClosed: true }
       })
     }
-    socket.on("night_turn_ended", handleNightTurnEnded)
-    return () => socket.off("night_turn_ended", handleNightTurnEnded)
+    return onNightTurnEnded(socket, handleNightTurnEnded)
   }, [socket, gameId, scopeKey])
 
   const finish = useCallback((outcome) => {

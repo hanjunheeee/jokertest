@@ -3,7 +3,8 @@ import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import LoginForm from "@/domains/auth/components/LoginForm.jsx"
 import SignupForm from "@/domains/auth/components/SignupForm.jsx"
 import SocialSignupForm from "@/domains/auth/components/SocialSignupForm.jsx"
-import { useLoginPage, resolveSocialLoginView } from "@/domains/auth/hooks/useLoginPage"
+import { useLoginPage } from "@/domains/auth/hooks/useLoginPage"
+import { resolveSocialLoginView } from "@/domains/auth/utils/socialErrors.js"
 
 export default function LoginPage() {
   const {

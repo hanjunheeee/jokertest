@@ -1,64 +1,20 @@
-import AuthInputSlot, { LockIcon, MailIcon } from "@/domains/auth/components/AuthInputSlot.jsx"
+// 일반 가입 입력 칸 묶음 (이메일+중복확인, 비밀번호 두 칸, 닉네임, 생년월일)
+// components/SignupForm.jsx가 스크롤 칸 안에 씀
+import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
+import { LockIcon, MailIcon, ProfileIcon, SignupCalendarIcon } from "@/domains/auth/components/InputIcons.jsx"
+import EmailCheckMessage from "@/domains/auth/components/SignupForm/EmailCheckMessage.jsx"
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import {
   SIGNUP_EMAIL_CHECK_BUTTON_CLASS,
   SIGNUP_EMAIL_CHECK_BUTTON_LABEL_CLASS,
   SIGNUP_EMAIL_CHECK_BLOCK_CLASS,
-  SIGNUP_EMAIL_CHECK_MESSAGE_AVAILABLE_CLASS,
-  SIGNUP_EMAIL_CHECK_MESSAGE_CLASS,
-  SIGNUP_EMAIL_CHECK_MESSAGE_ERROR_CLASS,
-  SIGNUP_EMAIL_CHECK_MESSAGE_LAYER_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
-import { useEmailAvailabilityCheck } from "@/domains/auth/hooks/useLoginPage.js"
+import { useEmailCheck } from "@/domains/auth/hooks/login/useEmailCheck.js"
 
-function UserIcon() {
-  return (
-    <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6" />
-    </svg>
-  )
-}
-
-function CalendarIcon() {
-  return (
-    <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M8 3v4M16 3v4M3 10h18" />
-    </svg>
-  )
-}
-
-function EmailCheckMessage({ status }) {
-  let message = null
-  let toneClass = ""
-
-  if (status === "checking") {
-    message = "이메일 확인 중..."
-    toneClass = "text-white/70"
-  } else if (status === "available") {
-    message = "사용할 수 있는 이메일입니다."
-    toneClass = SIGNUP_EMAIL_CHECK_MESSAGE_AVAILABLE_CLASS
-  } else if (status === "duplicate") {
-    message = "이미 사용 중인 이메일입니다."
-    toneClass = SIGNUP_EMAIL_CHECK_MESSAGE_ERROR_CLASS
-  } else if (status === "error") {
-    message = "중복 확인에 실패했습니다. 다시 시도해주세요."
-    toneClass = SIGNUP_EMAIL_CHECK_MESSAGE_ERROR_CLASS
-  }
-
-  if (!message) return null
-
-  return (
-    <div className={SIGNUP_EMAIL_CHECK_MESSAGE_LAYER_CLASS} aria-live="polite">
-      <p className={`${SIGNUP_EMAIL_CHECK_MESSAGE_CLASS} ${toneClass}`}>{message}</p>
-    </div>
-  )
-}
-
+// 중복확인은 이 칸에서만 쓰여서 훅을 여기서 부름
 export default function SignupFields({ formData, handleInputChange }) {
-  const { status: emailCheckStatus, check: handleCheckEmail } = useEmailAvailabilityCheck(formData.email)
+  const { status: emailCheckStatus, check: handleCheckEmail } = useEmailCheck(formData.email)
 
   return (
     <>
@@ -114,7 +70,7 @@ export default function SignupFields({ formData, handleInputChange }) {
         name="nickname"
         value={formData.nickname}
         onChange={handleInputChange}
-        leadingIcon={<UserIcon />}
+        leadingIcon={<ProfileIcon />}
         placeholder="사용할 닉네임을 입력하세요 (2~8자, 한글/영문/숫자)"
         compact
       />
@@ -124,7 +80,7 @@ export default function SignupFields({ formData, handleInputChange }) {
         name="birthDate"
         value={formData.birthDate}
         onChange={handleInputChange}
-        leadingIcon={<CalendarIcon />}
+        leadingIcon={<SignupCalendarIcon />}
         placeholder="생년월일을 선택하세요"
         compact
       />

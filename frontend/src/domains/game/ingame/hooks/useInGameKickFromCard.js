@@ -1,8 +1,11 @@
+// 카드에서 판 추방 훅: 대상 목록·요청 만들기·보내기 전 소속 확인
+// 카드 메뉴·설정의 추방 창이 사용, 스냅샷 묻기는 socket/session.js를 부름
 import { useCallback, useMemo } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useKickPlayerRequest, captureVerificationGuard } from "./useKickPlayerRequest.js"
+import { askSnapshot } from "../socket/session.js"
 
 export function useInGameKickFromCard() {
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
@@ -17,6 +20,7 @@ export function useInGameKickFromCard() {
       membershipId: player.membershipId ?? null,
     })), [state, authUuid])
 
+  // 부팅 세대·판·내 소속으로 만든 범위 id (요청 중 바뀌면 결과를 버림)
   const getMembershipScopeId = useCallback(() => {
     const current = useInGameStore.getState()
     if (!current.gameId || !current.state) return null
@@ -25,6 +29,7 @@ export function useInGameKickFromCard() {
     return `${current.state.bootEpoch ?? ""}:${current.gameId}:${myMembershipId ?? ""}`
   }, [authUuid])
 
+  // 보내기 전에 스냅샷을 다시 받아 내 소속이 아직 맞는지 확인
   const verifyMembership = useCallback(() => new Promise((resolve) => {
     const socket = getSocket()
     const current = useInGameStore.getState()
@@ -38,7 +43,7 @@ export function useInGameKickFromCard() {
       getRevision: () => useInGameStore.getState().state?.participationRevision ?? 0,
     })
     try {
-      socket.emit("get_session_snapshot", { gameId: gameIdAtRequest }, (response) => {
+      askSnapshot(socket, gameIdAtRequest, (response) => {
         if (!isStillCurrent()) { finish(false); return }
         if (!response || response.ok !== true) { finish(false); return }
         if (response.gameId !== gameIdAtRequest) { finish(false); return }
@@ -54,6 +59,7 @@ export function useInGameKickFromCard() {
     }
   }), [getMembershipScopeId])
 
+  // 판 추방 요청 내용 (내 소속·대상 소속·방 정보가 다 있어야 만듦)
   const buildRequest = useCallback(({ target, requestId }) => {
     const current = useInGameStore.getState()
     const currentState = current.state

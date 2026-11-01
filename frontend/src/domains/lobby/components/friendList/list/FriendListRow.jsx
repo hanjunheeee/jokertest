@@ -1,94 +1,27 @@
-import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+// 친구 목록 한 줄 (즐겨찾기 별·초상·이름·접속 상태·오류·초대/차단 버튼)
+// FriendListFolderRows·FriendListFilterResults가 친구마다 그림
+import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import {
   FRIEND_ROW_CONTENT_CLASS,
   FRIEND_ROW_FRAME_CLASS,
   FRIEND_ROW_INFO_CLASS,
   FRIEND_ROW_ITEM_CLASS,
   FRIEND_ROW_NAME_CLASS,
-  FRIEND_ROW_OFFLINE_OVERLAY_CLASS,
   FRIEND_ROW_PROFILE_PORTRAIT_WRAP_CLASS,
-  FRIEND_ROW_STATUS_BADGE_CLASS,
-  FRIEND_ROW_STATUS_TEXT_CLASS,
-  FRIEND_ROW_STATUS_WRAP_CLASS,
-  RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
-  RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
   RECOMMENDED_FRIEND_ACTIONS_CLASS,
   FRIEND_LIST_STATUS_DETAIL_ERROR_CLASS,
-} from "@/domains/lobby/constants/friendListStyle.js"
-import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
-import FriendListFavoriteStar from "@/domains/lobby/components/friendList/list/FriendListFavoriteStar.jsx"
-import { useFriendStore } from "@/domains/lobby/store/friend.store.js"
-import { useGameInviteStore } from "@/domains/lobby/store/gameInvite.store.js"
-import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
+} from "../../../constants/friendListStyle.js"
+import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
+import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
+import FriendListFavoriteStar from "./FriendListFavoriteStar.jsx"
+import FriendOnlineStatus from "./row/FriendOnlineStatus.jsx"
+import FriendInviteButton from "./row/FriendInviteButton.jsx"
+import FriendBlockButton from "./row/FriendBlockButton.jsx"
+import { useFriendStore } from "../../../store/friend.store.js"
+import { useGameInviteStore } from "../../../store/gameInvite.store.js"
+import { resolveAccountProfileAssets } from "../../../../../shared/utils/resolveAccountProfileAssets.js"
 
-function FriendOnlineStatus({ online }) {
-  const statusText = online ? "접속 중" : "오프라인"
-  const statusColorClass = online ? "text-amber-100/85" : "text-white/35"
-
-  return (
-    <div className={FRIEND_ROW_STATUS_WRAP_CLASS}>
-      <span className={FRIEND_ROW_STATUS_BADGE_CLASS}>
-        <PublicAsset
-          src={FRIEND_LIST_ASSETS.onlineBadge}
-          alt=""
-          className="h-full w-full select-none"
-        />
-        {!online ? (
-          <span className={FRIEND_ROW_OFFLINE_OVERLAY_CLASS} aria-hidden="true" />
-        ) : null}
-      </span>
-      <span className={`${FRIEND_ROW_STATUS_TEXT_CLASS} ${statusColorClass}`}>
-        {statusText}
-      </span>
-    </div>
-  )
-}
-
-function FriendInviteButton({ id, name, onInvite, disabled, sending, disabledReason }) {
-  return (
-    <button
-      type="button"
-      className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
-      aria-label={sending ? `${name} 초대 보내는 중` : `${name} 게임 초대`}
-      aria-disabled={disabled || sending}
-      disabled={disabled || sending}
-      title={disabled ? disabledReason : undefined}
-      data-invite-target={id}
-      onClick={() => { if (!disabled && !sending) onInvite(id) }}
-      style={{ outline: "none" }}
-    >
-      <PublicAsset
-        src={FRIEND_LIST_ASSETS.friendRequestButton}
-        alt=""
-        className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
-      />
-    </button>
-  )
-}
-
-function FriendBlockButton({ id, name, onBlock, processing }) {
-  return (
-    <button
-      type="button"
-      className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
-      aria-label={processing ? `${name} 차단 처리 중` : `${name} 차단`}
-      title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다(친구 관계는 남습니다)`}
-      aria-disabled={processing}
-      disabled={processing}
-      data-block-friend={id}
-      onClick={() => { if (!processing) onBlock(id) }}
-      style={{ outline: "none" }}
-    >
-      <PublicAsset
-        src={FRIEND_LIST_ASSETS.friendBlockButton}
-        alt=""
-        className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
-      />
-    </button>
-  )
-}
-
+// 즐겨찾기·초대 상태는 줄마다 스토어에서 직접 골라 다른 줄이 다시 그려지지 않게 함
 export default function FriendListRow({
   id,
   name,

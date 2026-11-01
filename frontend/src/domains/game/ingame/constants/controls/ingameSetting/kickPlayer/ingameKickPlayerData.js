@@ -1,11 +1,3 @@
-export const INGAME_KICK_PLAYER_MODAL_COPY = {
-  title: "플레이어 추방",
-  subtitle: "추방할 플레이어를 선택하세요.",
-  notice: "추방을 확인하면 대상은 즉시 퇴장합니다. 진행 중인 게임에서는 스스로 나간 것과 동일하게 처리됩니다.",
-  kickActionLabel: "추방",
-  pendingLabel: "확인 중",
-  pendingAriaLabel: "추방 확인 중",
-  closeAriaLabel: "플레이어 추방 닫기",
-  listAriaLabel: "추방 대상 플레이어 목록",
-  emptyTargets: "추방할 수 있는 참가자가 없습니다.",
-}
+// 옛 경로 입구: 본체는 constants/controls/kickPlayer/ (폴더 깊이 6칸 맞추려고 옮김)
+// 옛 경로를 쓰는 시험(kickPlayerFlow)이 사용, 시험이 옮겨지면 지움
+export { INGAME_KICK_PLAYER_MODAL_COPY } from "../../kickPlayer/ingameKickPlayerData.js"

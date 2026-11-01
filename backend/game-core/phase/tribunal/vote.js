@@ -1,22 +1,14 @@
 // 재판 투표 받기 파일
 // 유죄·무죄 표 받기 + 투표 효과음 이벤트 꺼내기, socket 쪽이 gameSession.js 통해서 사용
-const { gameSessions, playerSession } = require('../../core/state')
+const { normalizeGameId, findActorSession } = require('../../core/lookup')
+const { getSessionById } = require('../../queries')
 
 // 재판 표 받기 (재판 중, 투표 자격 있는 사람만)
 function submitTribunalVote(uuid, gameId, dayIndex, vote) {
-    // 요청에 온 판 id 확인
-    if (typeof gameId !== 'string' || gameId.length === 0) return { ok: false, code: 'INVALID_GAME_ID' }
-
-    // 지금 내가 있는 판이랑 같은지
-    const currentGameId = playerSession.get(uuid)
-    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
-    if (currentGameId !== gameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
-
-    // 판이랑 판 안의 나 찾기
-    const session = gameSessions.get(currentGameId)
-    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
-    const actor = session.players.get(uuid)
-    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
+    // 판 id 확인(공백 안 자름) + 내 판·판 안의 나 찾기
+    const found = findActorSession(uuid, gameId, { trim: false })
+    if (!found.ok) return found
+    const { session, actor } = found
 
     // 오늘 날짜 표인지 (지난 날 화면에서 보낸 것 거절)
     if (!Number.isInteger(dayIndex)) return { ok: false, code: 'INVALID_DAY_INDEX' }
@@ -60,14 +52,16 @@ function submitTribunalVote(uuid, gameId, dayIndex, vote) {
     // 한 사람 한 표, 바꾸기 없음
     if (tribunal.votes.has(uuid)) return { ok: false, code: 'TRIBUNAL_VOTE_ALREADY_SUBMITTED' }
 
+    // 여기부터 진짜 바뀜: 내 표 적기
     tribunal.votes.set(uuid, vote)
     return { ok: true, gameId: session.id, dayIndex: session.dayIndex, vote: tribunal.votes.get(uuid) }
 }
 
 // 투표 효과음 이벤트 꺼내기 (이미 표 낸 사람만, 같은 표는 같은 id라 두 번 안 울림)
 function readTribunalVoteSubmitSfxEvent(uuid, gameId) {
-    if (typeof gameId !== 'string' || gameId.length === 0) return null
-    const session = gameSessions.get(gameId)
+    // 판·재판·내 표 없으면 효과음 없음
+    if (!normalizeGameId(gameId, { trim: false })) return null
+    const session = getSessionById(gameId)
     if (!session) return null
     const tribunal = session.tribunal
     if (!tribunal || !(tribunal.votes instanceof Map)) return null

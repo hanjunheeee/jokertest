@@ -1,4 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
+// 채팅 입력칸: 여러 줄 글을 한 줄 높이 칸 안에서 보여 주고, Enter로 보내기
+// 채팅 내용(InGameChatContent)이 사용, 줄 재기·스크롤은 useChatInputViewport
+import { forwardRef, useImperativeHandle, useRef } from "react"
 import { INGAME_CHAT_INPUT_MAX_LENGTH } from "../../constants/chat/ingameChatAssets.js"
 import {
   getInGameChatInputClass,
@@ -18,30 +20,14 @@ import {
 import { INGAME_SETTING_CHAT_SLIDER } from "../../constants/controls/ingameSetting/ingameSettingData.js"
 import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
 import { useInGameChatVariant } from "./InGameChatVariantContext.jsx"
+import { useChatInputViewport } from "../../hooks/useChatInputViewport.js"
 
+// 설정한 채팅 글자 크기 (없으면 기본값)
 function selectChatTextSize(state) {
   return state.chatTextSize ?? INGAME_SETTING_CHAT_SLIDER.defaultValue
 }
 
-const TEXTAREA_MIRROR_STYLE_KEYS = [
-  "boxSizing",
-  "width",
-  "fontFamily",
-  "fontSize",
-  "fontWeight",
-  "fontStyle",
-  "letterSpacing",
-  "lineHeight",
-  "paddingTop",
-  "paddingRight",
-  "paddingBottom",
-  "paddingLeft",
-  "borderWidth",
-  "whiteSpace",
-  "wordBreak",
-  "overflowWrap",
-]
-
+// 커서를 옮기는 키를 누르면 다음 프레임에 줄 상태를 다시 잼
 const SELECTION_SYNC_KEYS = new Set([
   "ArrowUp",
   "ArrowDown",
@@ -52,91 +38,6 @@ const SELECTION_SYNC_KEYS = new Set([
   "Home",
   "End",
 ])
-
-function getTextareaLineHeight(textarea) {
-  const style = getComputedStyle(textarea)
-  const lineHeight = parseFloat(style.lineHeight)
-  if (Number.isFinite(lineHeight) && lineHeight > 0) return lineHeight
-
-  const fontSize = parseFloat(style.fontSize)
-  if (Number.isFinite(fontSize) && fontSize > 0) return fontSize * 1.35
-
-  return 0
-}
-
-function getFullTextVisualLineCount(textarea, lineHeight) {
-  if (!lineHeight || !textarea.value) return 1
-
-  const style = window.getComputedStyle(textarea)
-  const mirror = document.createElement("div")
-
-  for (const key of TEXTAREA_MIRROR_STYLE_KEYS) {
-    mirror.style[key] = style[key]
-  }
-
-  mirror.style.position = "absolute"
-  mirror.style.visibility = "hidden"
-  mirror.style.pointerEvents = "none"
-  mirror.style.top = "0"
-  mirror.style.left = "-9999px"
-  mirror.style.height = "auto"
-  mirror.style.width = `${textarea.clientWidth}px`
-  mirror.style.overflow = "hidden"
-  mirror.style.whiteSpace = "pre-wrap"
-  mirror.style.wordBreak = "break-word"
-  mirror.style.overflowWrap = "anywhere"
-  mirror.textContent = textarea.value
-
-  document.body.appendChild(mirror)
-  const lineCount = Math.max(1, Math.ceil(mirror.offsetHeight / lineHeight - 0.01))
-  document.body.removeChild(mirror)
-
-  return lineCount
-}
-
-function getTextareaCaretVisualLineIndex(textarea, lineHeight) {
-  if (!lineHeight) return 0
-
-  const style = window.getComputedStyle(textarea)
-  const mirror = document.createElement("div")
-
-  for (const key of TEXTAREA_MIRROR_STYLE_KEYS) {
-    mirror.style[key] = style[key]
-  }
-
-  mirror.style.position = "absolute"
-  mirror.style.visibility = "hidden"
-  mirror.style.pointerEvents = "none"
-  mirror.style.top = "0"
-  mirror.style.left = "-9999px"
-  mirror.style.height = "auto"
-  mirror.style.width = `${textarea.clientWidth}px`
-  mirror.style.overflow = "hidden"
-  mirror.style.whiteSpace = "pre-wrap"
-  mirror.style.wordBreak = "break-word"
-  mirror.style.overflowWrap = "anywhere"
-
-  const before = textarea.value.slice(0, textarea.selectionStart)
-  const after = textarea.value.slice(textarea.selectionStart)
-  mirror.textContent = before
-
-  const marker = document.createElement("span")
-  marker.textContent = after.charAt(0) || "\u200b"
-  mirror.appendChild(marker)
-
-  document.body.appendChild(mirror)
-  const lineIndex = Math.max(0, Math.round(marker.offsetTop / lineHeight))
-  document.body.removeChild(mirror)
-
-  return lineIndex
-}
-
-function scrollTextareaToCaretLine(textarea, lineHeight) {
-  if (!lineHeight) return
-
-  const caretLineIndex = getTextareaCaretVisualLineIndex(textarea, lineHeight)
-  textarea.scrollTop = Math.max(0, caretLineIndex * lineHeight)
-}
 
 const InGameChatInput = forwardRef(function InGameChatInput(
   { value, onChange, onSend, className = "", truncateDraftOnInput = true },
@@ -154,67 +55,16 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   const chatTextScale = getInGameChatTextScale(chatTextSize)
   const chatTextScaleStyle = getInGameChatTextScaleStyle(chatTextSize)
 
-  const [isVisualMultiLine, setIsVisualMultiLine] = useState(false)
-
-  const [isOnLastVisualLine, setIsOnLastVisualLine] = useState(true)
-
-  const [caretVisualLineIndex, setCaretVisualLineIndex] = useState(0)
   const hasText = value.length > 0
-  const showLinePeek = hasText && isVisualMultiLine && isOnLastVisualLine
-  const useCenteredFirstLineViewport =
-    hasText && isVisualMultiLine && !showLinePeek && caretVisualLineIndex === 0
 
   useImperativeHandle(ref, () => wrapRef.current)
 
-  const syncViewport = () => {
-    const textarea = textareaRef.current
-    if (!textarea || !hasText) {
-      setIsVisualMultiLine(false)
-      setIsOnLastVisualLine(true)
-      setCaretVisualLineIndex(0)
-      return
-    }
-
-    const lineHeight = getTextareaLineHeight(textarea)
-    const visualLineCount = getFullTextVisualLineCount(textarea, lineHeight)
-    const visualMultiLine = visualLineCount >= 2
-    const caretLineIndex = getTextareaCaretVisualLineIndex(textarea, lineHeight)
-    const onLastVisualLine = caretLineIndex >= visualLineCount - 1
-
-    setIsVisualMultiLine(visualMultiLine)
-    setIsOnLastVisualLine(onLastVisualLine)
-    setCaretVisualLineIndex(caretLineIndex)
-
-    if (visualMultiLine && onLastVisualLine) {
-      textarea.scrollTop = textarea.scrollHeight
-      return
-    }
-
-    if (visualMultiLine && caretLineIndex === 0) {
-      textarea.scrollTop = 0
-      return
-    }
-
-    if (visualMultiLine) {
-      scrollTextareaToCaretLine(textarea, lineHeight)
-      return
-    }
-
-    textarea.scrollTop = 0
-  }
-
-  useLayoutEffect(() => {
-    syncViewport()
-  }, [value, hasText, chatTextScale])
-
-  useEffect(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return undefined
-
-    const observer = new ResizeObserver(syncViewport)
-    observer.observe(textarea)
-    return () => observer.disconnect()
-  }, [hasText])
+  const { isVisualMultiLine, isOnLastVisualLine, caretVisualLineIndex, syncViewport } =
+    useChatInputViewport(textareaRef, { value, hasText, chatTextScale })
+  // 여러 줄인데 커서가 마지막 줄이면 윗줄을 살짝 보여 주고, 첫 줄이면 한 줄짜리처럼 가운데 둠
+  const showLinePeek = hasText && isVisualMultiLine && isOnLastVisualLine
+  const useCenteredFirstLineViewport =
+    hasText && isVisualMultiLine && !showLinePeek && caretVisualLineIndex === 0
 
   const handleSelectionChange = () => {
     requestAnimationFrame(syncViewport)

@@ -16,6 +16,7 @@ export async function bootstrapSession({ getMe, getMyProfile, store }) {
             const profile = await getMyProfile()
             if (typeof profile?.nickname === "string") nickname = profile.nickname
         } catch {
+            // 프로필을 못 받아도 세션은 살아 있어서 닉네임 없이 로그인으로 둠
         }
         store.getState().login({ uuid, role: me.role, nickname })
         return { outcome: persisted ? "replaced" : "adopted", uuid }

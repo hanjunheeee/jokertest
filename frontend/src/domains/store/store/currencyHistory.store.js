@@ -1,6 +1,8 @@
+// 재화 거래 내역 스토어 (최근 50개 불러오기·응답 검사)
+// 거래 내역 창·가게 패널·충전 흐름·가게 구매 스토어가 지급 뒤 다시 받을 때 씀
 import { createStore } from "zustand/vanilla"
 import { useStore } from "zustand"
-import { api } from "../../../shared/api/client.js"
+import { purchaseApi } from "../api/currency.api.js"
 import { useAuthStore } from "../../auth/store/auth.store.js"
 
 export const HISTORY_LIMIT = 50
@@ -14,6 +16,7 @@ const isText = (value, max) => typeof value === "string" && value.length > 0 && 
 const isEntryId = (value) => (Number.isSafeInteger(value) && value > 0) || (typeof value === "string" && /^[1-9][0-9]{0,19}$/.test(value))
 const brokenResponse = () => new Error("거래 내역 응답이 올바르지 않습니다.")
 
+// 거래 내역 응답 검사, 하나라도 틀리면 전체를 버림
 export const parseTransactions = (body) => {
   if (!body || !Array.isArray(body.transactions) || body.transactions.length > HISTORY_LIMIT) throw brokenResponse()
   const seen = new Set()
@@ -35,6 +38,7 @@ let account = useAuthStore.getState().user?.uuid ?? null
 let generation = 0
 let seq = 0
 
+// 계정이 바뀌면 세대를 올려 늦게 온 응답을 버림
 const activate = (id) => {
   if (id === account) return
   account = id
@@ -44,13 +48,14 @@ const activate = (id) => {
 }
 useAuthStore.subscribe((state) => activate(state.user?.uuid ?? null))
 
+// 마지막으로 보낸 요청의 응답만 반영함
 const load = () => {
   if (!account) return Promise.resolve()
   const started = generation
   const mine = ++seq
   const current = () => started === generation && mine === seq
   store.setState({ status: "loading" })
-  return api.get(`/economy/accounts/${account}/transactions`).then(
+  return purchaseApi.transactions(account).then(
     (body) => {
       if (!current()) return
       let transactions

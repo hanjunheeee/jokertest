@@ -1,55 +1,21 @@
+// 친구 목록 탭 (검색창·목록 오류·검색 결과 또는 폴더 세 개)
+// FriendListPanelContent가 list 탭일 때 그림
 import {
   FRIEND_LIST_STATUS_ERROR_CLASS,
   FRIEND_LIST_TAB_CLASS,
-  FRIEND_TAB_GROUP_GAP_CLASS,
-  FRIEND_TAB_SCROLLABLE_LIST_CLASS,
-} from "@/domains/lobby/constants/friendListStyle.js"
+} from "../../../constants/friendListStyle.js"
 import {
   FRIEND_LIST_FILTER_FIELDS,
   FRIEND_LIST_FILTER_SEARCH,
-} from "@/domains/lobby/constants/friendListFilter.js"
-import {
-  getFavoriteFriendLabel,
-  getNormalFriendLabel,
-  getOfflineFriendLabel,
-} from "@/domains/lobby/utils/friendListGroupLabels.js"
-import { mergeFriendGroups } from "@/domains/lobby/utils/filterFriendListItems.js"
-import { useFriendListLocalFilter } from "@/domains/lobby/hooks/useFriendListLocalFilter.js"
+} from "../../../constants/friendListFilter.js"
+import { mergeFriendGroups } from "../../../utils/filterFriendListItems.js"
+import { useFriendListLocalFilter } from "../../../hooks/useFriendListLocalFilter.js"
 import { useMemo } from "react"
-import FriendListFilterResults from "@/domains/lobby/components/friendList/list/FriendListFilterResults.jsx"
-import FriendListSearchBar from "@/domains/lobby/components/friendList/FriendListSearchBar.jsx"
-import FriendListFolder from "@/domains/lobby/components/friendList/list/FriendListFolder.jsx"
+import FriendListFilterResults from "./FriendListFilterResults.jsx"
+import FriendListSearchBar from "../FriendListSearchBar.jsx"
+import FriendListGroupFolders from "./FriendListGroupFolders.jsx"
 
-function FriendListGroupFolders({ onlineFriends, offlineFriends, favoriteFriends, invite, block }) {
-  return (
-    <>
-      <FriendListFolder
-        label={getNormalFriendLabel(onlineFriends)}
-        friends={onlineFriends}
-        defaultOpen
-        invite={invite}
-        block={block}
-      />
-      <FriendListFolder
-        className={FRIEND_TAB_GROUP_GAP_CLASS}
-        label={getOfflineFriendLabel(offlineFriends)}
-        friends={offlineFriends}
-        listClassName={FRIEND_TAB_SCROLLABLE_LIST_CLASS}
-        invite={invite}
-        block={block}
-      />
-      <FriendListFolder
-        className={FRIEND_TAB_GROUP_GAP_CLASS}
-        label={getFavoriteFriendLabel(favoriteFriends)}
-        friends={favoriteFriends}
-        listClassName={FRIEND_TAB_SCROLLABLE_LIST_CLASS}
-        invite={invite}
-        block={block}
-      />
-    </>
-  )
-}
-
+// 검색은 세 묶음을 합친 목록에서 함, 검색 중엔 폴더 대신 결과만 보임
 export default function FriendListTabContent({
   onlineFriends = [],
   offlineFriends = [],

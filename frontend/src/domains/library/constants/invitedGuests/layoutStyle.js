@@ -1,3 +1,5 @@
+// 초대받은 손님 펼침면 화면 모양 (글자·칸·표·보상·안내 문구 className)
+// 초대받은 손님 펼침면과 그 아래 칸 컴포넌트가 씀
 const INVITED_GUESTS_TEXT = "font-subheading antialiased text-[#1a1008] [text-shadow:0_1px_2px_rgba(0,0,0,0.08)]"
 const INVITED_GUESTS_TITLE = `${INVITED_GUESTS_TEXT} font-extrabold text-[#120a06]`
 const INVITED_GUESTS_LEFT_PAGE_PADDING_TOP = "pt-[clamp(0.55rem,1.1vh,0.78rem)]"
@@ -101,3 +103,9 @@ export const INVITED_GUESTS_REWARD_BORDER_ICON_CLASS =
 
 export const INVITED_GUESTS_REWARD_BORDER_LABEL_CLASS =
   `${INVITED_GUESTS_TEXT} app-text-scaled [--app-text-size:clamp(0.72rem,0.94vw,0.82rem)] font-semibold leading-tight`
+
+// 전적·랭킹을 불러오는 중·실패·빈 목록 안내 문구
+export const INVITED_GUESTS_STATE_MESSAGE_CLASS =
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.76rem,0.98vw,0.88rem)] leading-snug text-[#1a1008]/80"
+export const INVITED_GUESTS_STATE_RETRY_BUTTON_CLASS =
+  "mt-1 underline underline-offset-2 text-[#1a1008]"

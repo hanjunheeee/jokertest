@@ -4,10 +4,12 @@ const { ROLE_DEFINITIONS } = require('../core/roles')
 
 // 단계·생존 목록 + 끝났으면 승패 붙임
 function buildTerminalFields(session) {
+    // 생존 목록엔 uuid·생사만 (역할은 안 실음)
     const fields = {
         phase: session.phase,
         players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, isAlive: alive })),
     }
+    // 승패 나온 뒤에만 전원 정체 공개 (지도 07-⑧)
     if (session.winResult) fields.winResult = buildPublicWinResult(session)
     return fields
 }

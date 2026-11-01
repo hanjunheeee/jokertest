@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import RoomCodeViewModal from "@/domains/game/matching/components/RoomCodeViewModal.jsx"
 import SidePanel from "../SidePanel.jsx"
-import SettingKickPlayerModal from "./kickPlayer/SettingKickPlayerModal.jsx"
+import SettingKickPlayerModal from "../kickPlayer/SettingKickPlayerModal.jsx"
 import SettingPanelContent from "./SettingPanelContent.jsx"
 import { useInGameStore } from "../../../store/ingameStore.js"
 

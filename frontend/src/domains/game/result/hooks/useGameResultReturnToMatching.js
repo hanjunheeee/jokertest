@@ -1,3 +1,5 @@
+// 결과 화면 "대기방으로" 버튼: 방이 남아 있으면 그 방으로, 방장은 다음 판 방을 만들고, 참가자는 방장 방을 기다리러 감
+// GameResultPage가 씀
 import { useCallback, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
@@ -6,17 +8,33 @@ import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { useNextRoomSettingsStore } from "@/domains/game/setup/store/nextRoomSettingsStore.js"
 import {
   CREATE_ROOM_ERROR_MESSAGES,
-  CREATE_ROOM_TIMEOUT_MS,
   CURRENT_ROOM_MAX_POLL_ATTEMPTS,
   CURRENT_ROOM_POLL_INTERVAL_MS,
-  CURRENT_ROOM_TIMEOUT_MS,
-  SOCKET_EVENTS,
 } from "@/domains/game/setup/constants/gameSetupSocket.js"
 import { resolveNextGameCreateRoomPayload } from "@/domains/game/setup/utils/resolveNextGameCreateRoomPayload.js"
 import { persistPartyRejoinGameId } from "@/domains/game/matching/utils/partyMatchingRejoin.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
+import { askRoom, askSnapshot, createRoom } from "../socket/room.js"
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// 방 만들기 응답을 못 받았을 때: 방이 생겼는지 몇 번 물어봄 (서버가 만드는 중이면 기다렸다 다시)
+const findRoom = async (socket) => {
+  for (let attempt = 0; attempt < CURRENT_ROOM_MAX_POLL_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await askRoom(socket)
+      if (res?.ok && res.room) return res.room
+      if (res?.ok && res.pending) {
+        await wait(CURRENT_ROOM_POLL_INTERVAL_MS)
+        continue
+      }
+      break
+    } catch {
+      break
+    }
+  }
+  return null
+}
 
 export function useGameResultReturnToMatching() {
   const navigate = useNavigate()
@@ -24,25 +42,6 @@ export function useGameResultReturnToMatching() {
   const readRestoreSource = useNextRoomSettingsStore((s) => s.readRestoreSource)
   const [isReturning, setIsReturning] = useState(false)
   const inFlightRef = useRef(false)
-
-  const recoverCurrentRoom = async (socket) => {
-    for (let attempt = 0; attempt < CURRENT_ROOM_MAX_POLL_ATTEMPTS; attempt += 1) {
-      try {
-        const res = await socket
-          .timeout(CURRENT_ROOM_TIMEOUT_MS)
-          .emitWithAck(SOCKET_EVENTS.GET_CURRENT_ROOM, {})
-        if (res?.ok && res.room) return res.room
-        if (res?.ok && res.pending) {
-          await wait(CURRENT_ROOM_POLL_INTERVAL_MS)
-          continue
-        }
-        break
-      } catch {
-        break
-      }
-    }
-    return null
-  }
 
   const requestReturnToMatching = useCallback(async () => {
     if (inFlightRef.current) return
@@ -53,6 +52,7 @@ export function useGameResultReturnToMatching() {
       return
     }
 
+    // 끝난 판의 방장·판 id (판 정보를 지우기 전에 읽어 둠)
     const ingame = useInGameStore.getState()
     const hostUuid = ingame.hostUuid ?? ingame.state?.hostUuid ?? null
     const endedGameId = ingame.gameId ?? ingame.state?.id ?? null
@@ -61,11 +61,10 @@ export function useGameResultReturnToMatching() {
     inFlightRef.current = true
     setIsReturning(true)
     try {
+      // 이미 방에 들어가 있으면 그 방으로
       let room = null
       try {
-        const res = await socket
-          .timeout(CURRENT_ROOM_TIMEOUT_MS)
-          .emitWithAck(SOCKET_EVENTS.GET_CURRENT_ROOM, {})
+        const res = await askRoom(socket)
         if (res?.ok && res.room) room = res.room
       } catch {
       }
@@ -78,12 +77,11 @@ export function useGameResultReturnToMatching() {
         return
       }
 
+      // 방장: 유지한 설정(없으면 기본값)으로 다음 판 방 만들기
       if (isHost) {
         const payload = resolveNextGameCreateRoomPayload(accountId, readRestoreSource)
         try {
-          const response = await socket
-            .timeout(CREATE_ROOM_TIMEOUT_MS)
-            .emitWithAck(SOCKET_EVENTS.CREATE_ROOM, payload)
+          const response = await createRoom(socket, payload)
           if (response?.ok && response.room) {
             useMatchingStore.getState().setRoom(response.room)
             navigate("/game-matching", { replace: true })
@@ -96,7 +94,7 @@ export function useGameResultReturnToMatching() {
         } catch {
         }
 
-        const recovered = await recoverCurrentRoom(socket)
+        const recovered = await findRoom(socket)
         if (recovered) {
           useMatchingStore.getState().setRoom(recovered)
           navigate("/game-matching", { replace: true })
@@ -107,14 +105,13 @@ export function useGameResultReturnToMatching() {
         return
       }
 
+      // 참가자: 끝난 판 id를 기억하고 방장 방 기다리러 감 (모르면 서버에 물음)
       let partyGameId = typeof endedGameId === "string" && endedGameId.length > 0
         ? endedGameId
         : null
       if (!partyGameId) {
         try {
-          const snapshot = await socket
-            .timeout(CURRENT_ROOM_TIMEOUT_MS)
-            .emitWithAck("get_session_snapshot", {})
+          const snapshot = await askSnapshot(socket)
           if (typeof snapshot?.gameId === "string" && snapshot.gameId.length > 0) {
             partyGameId = snapshot.gameId
           }

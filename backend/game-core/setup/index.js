@@ -1,4 +1,5 @@
 // 판 준비 입구, 상수·역할 나누기·입력 검사·판 만들기·판 열기·시작 방송·역할 공개 묶어서 내보냄
+// gameSession.js·snapshot·departure가 여기로 가져다 씀
 module.exports = {
     ...require('./constants'),
     ...require('./assign'),

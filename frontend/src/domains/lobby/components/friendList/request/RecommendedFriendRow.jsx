@@ -1,98 +1,24 @@
-import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+// 친구 검색 결과 한 줄 (초상·이름·접속 상태·차단/신청 버튼)
+// FriendRequestResultsList가 후보마다 그림
+import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import {
   RECOMMENDED_FRIEND_INFO_WRAP_CLASS,
   RECOMMENDED_FRIEND_NAME_CLASS,
-  RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS,
-  RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS,
-  RECOMMENDED_FRIEND_ACTIONS_CLASS,
-  RECOMMENDED_FRIEND_OFFLINE_OVERLAY_CLASS,
   FRIEND_LIST_PROFILE_PORTRAIT_WRAP_CLASS,
   RECOMMENDED_FRIEND_ROW_CLASS,
   RECOMMENDED_FRIEND_ROW_CONTENT_CLASS,
   RECOMMENDED_FRIEND_ROW_FRAME_CLASS,
-  RECOMMENDED_FRIEND_SENT_BUTTON_CLASS,
-  RECOMMENDED_FRIEND_STATUS_BADGE_CLASS,
-  RECOMMENDED_FRIEND_STATUS_TEXT_CLASS,
-  RECOMMENDED_FRIEND_STATUS_WRAP_CLASS,
   RECOMMENDED_FRIEND_TEXT_WRAP_CLASS,
-} from "@/domains/lobby/constants/friendListStyle.js"
-import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
-import PublicAsset from "@/shared/ui/PublicAsset"
-import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
+} from "../../../constants/friendListStyle.js"
+import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
+import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
+import { resolveAccountProfileAssets } from "../../../../../shared/utils/resolveAccountProfileAssets.js"
+import RecommendedFriendStatus from "./row/RecommendedFriendStatus.jsx"
+import RecommendedFriendActions from "./row/RecommendedFriendActions.jsx"
 
-export const RECOMMENDED_FRIEND_STATUS_TEXT = Object.freeze({
-  ONLINE: "접속 중",
-  OFFLINE: "오프라인",
-  UNKNOWN: "상태 확인 불가",
-})
+export { RECOMMENDED_FRIEND_STATUS_TEXT } from "../../../constants/recommendedFriend.js"
 
-function RecommendedFriendStatus({ status }) {
-  const normalized = RECOMMENDED_FRIEND_STATUS_TEXT[status] !== undefined ? status : "UNKNOWN"
-  const statusText = RECOMMENDED_FRIEND_STATUS_TEXT[normalized]
-  const statusColorClass = normalized === "ONLINE"
-    ? "text-amber-100/85"
-    : normalized === "OFFLINE" ? "text-white/35" : "text-white/50"
-
-  return (
-    <div className={RECOMMENDED_FRIEND_STATUS_WRAP_CLASS} data-presence-status={normalized}>
-      <span className={RECOMMENDED_FRIEND_STATUS_BADGE_CLASS}>
-        <PublicAsset src={FRIEND_LIST_ASSETS.onlineBadge} alt="" className="h-full w-full select-none" />
-        {normalized !== "ONLINE" ? (
-          <span className={RECOMMENDED_FRIEND_OFFLINE_OVERLAY_CLASS} aria-hidden="true" />
-        ) : null}
-      </span>
-      <span className={`${RECOMMENDED_FRIEND_STATUS_TEXT_CLASS} ${statusColorClass}`}>
-        {statusText}
-      </span>
-    </div>
-  )
-}
-
-function RecommendedFriendActions({ id, name, onSend, onBlock, sent, blocking }) {
-  const sendButtonClass = sent
-    ? `${RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS} ${RECOMMENDED_FRIEND_SENT_BUTTON_CLASS}`
-    : RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS
-
-  const handleSendClick = () => {
-    if (sent) return
-    onSend?.(id)
-  }
-
-  return (
-    <div className={RECOMMENDED_FRIEND_ACTIONS_CLASS}>
-      <button
-        type="button"
-        className={RECOMMENDED_FRIEND_ACTION_BUTTON_CLASS}
-        aria-label={`${name} 차단`}
-        aria-disabled={blocking}
-        disabled={blocking}
-        data-block-target={id}
-        onClick={() => { if (!blocking) onBlock?.(id) }}
-        style={{ outline: "none" }}
-      >
-        <PublicAsset
-          src={FRIEND_LIST_ASSETS.friendBlockButton}
-          alt=""
-          className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
-        />
-      </button>
-      <button
-        type="button"
-        className={sendButtonClass}
-        aria-label={sent ? "신청 완료" : `${name}에게 친구 신청`}
-        onClick={handleSendClick}
-        style={{ outline: "none" }}
-      >
-        <PublicAsset
-          src={FRIEND_LIST_ASSETS.friendRequestButton}
-          alt=""
-          className={RECOMMENDED_FRIEND_ACTION_IMAGE_CLASS}
-        />
-      </button>
-    </div>
-  )
-}
-
+// 프로필 사진·테두리 id를 실제 그림 경로로 바꿔 초상에 넘김
 export default function RecommendedFriendRow({
   id,
   name,

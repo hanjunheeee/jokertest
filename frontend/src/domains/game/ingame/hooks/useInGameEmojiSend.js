@@ -1,8 +1,10 @@
+// 이모지 보내기 훅: 보낸 뒤 소켓·판·수신 범위가 그대로일 때만 응답을 돌려줌
+// 이모지 팔레트가 사용, 보내기는 socket/session.js를 부름
 import { useCallback } from "react"
-
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { isSameInGameReceiptScope, readInGameReceiptScope } from "../store/ingameStore.js"
 import { inGameEmojiScopeKey, readInGameEmojiScope } from "../utils/selectInGameEmojiScope.js"
+import { emitEmoji } from "../socket/session.js"
 
 export const INGAME_EMOJI_SEND_UNAVAILABLE = "CONNECTION_UNAVAILABLE"
 
@@ -31,14 +33,15 @@ export function useInGameEmojiSend() {
 
     let ack
     try {
-      ack = await requestSocket.emitWithAck("send_emoji", {
+      ack = await emitEmoji(requestSocket, {
         gameId: requestScope.gameId,
         itemId,
       })
-    } catch (error) {
+    } catch {
       return { ok: false, code: INGAME_EMOJI_SEND_ACK_FAILED }
     }
 
+    // 기다리는 사이 소켓·판·수신 범위가 바뀌었으면 옛 응답으로 봄
     if (getSocket() !== requestSocket) return { ok: false, stale: true, code: INGAME_EMOJI_SEND_STALE }
     const currentScope = readInGameEmojiScope()
     if (inGameEmojiScopeKey(currentScope) !== inGameEmojiScopeKey(requestScope)) {

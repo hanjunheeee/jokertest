@@ -1,3 +1,5 @@
+// 사망 공개 훅: 밤 결과·재판 판정으로 죽은 사람을 차례로 띄우기 (스냅샷 복구분 포함)
+// 지금은 시험만 사용 (인게임 화면엔 안 붙음), 받기는 socket/ 함수를 부름
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
@@ -21,6 +23,8 @@ import {
   INGAME_KILL_REVEAL_TRIBUNAL_SOURCE,
   resolveInGameKillRevealNickname,
 } from "../constants/killReveal/ingameKillReveal.js"
+import { onConnect } from "../socket/connection.js"
+import { onDeathResults } from "../socket/session.js"
 
 const NO_SNAPSHOT_ITEMS = Object.freeze([])
 
@@ -42,12 +46,11 @@ export function useInGameKillReveal({ hold = false } = {}) {
   const snapshotSeq = useInGameStore((s) => s.snapshotSeq)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
+  // 다시 연결될 때마다 범위를 새로 잡으려고 셈
   const [connectSeq, setConnectSeq] = useState(0)
   useEffect(() => {
     if (!socket) return undefined
-    const handleConnect = () => setConnectSeq((current) => current + 1)
-    socket.on("connect", handleConnect)
-    return () => socket.off("connect", handleConnect)
+    return onConnect(socket, () => setConnectSeq((current) => current + 1))
   }, [socket])
 
   const epochKey = `${getInGameSocketEpochId(socket)}#${connectSeq}#${identityGeneration}#${membershipId}#${identityScopeVersion}`
@@ -145,12 +148,7 @@ export function useInGameKillReveal({ hold = false } = {}) {
       ])
     }
 
-    socket.on("night_result_applied", handleNightResultApplied)
-    socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
-    return () => {
-      socket.off("night_result_applied", handleNightResultApplied)
-      socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
-    }
+    return onDeathResults(socket, handleNightResultApplied, handleTribunalVoteResolved)
   }, [socket, scope, authUuid, epochKey, hold, readScopeNow])
 
   const visible = presentation.scope === scope ? presentation : INITIAL_IN_GAME_KILL_REVEAL

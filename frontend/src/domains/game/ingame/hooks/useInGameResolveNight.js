@@ -1,3 +1,5 @@
+// 밤 판정 요청 훅: 판정 요청 보내기, 판정 끝·개인 결과·낮 넘어감 받아 상태 맞추기
+// 행동 패널 훅이 사용, 보내기·받기는 socket/ 함수를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -6,6 +8,8 @@ import { computeResolveNightAckPatch } from "../utils/computeResolveNightAckPatc
 import { computeResolveNightInvalidatePatch } from "../utils/computeResolveNightInvalidatePatch.js"
 import { computeResolveNightDayTransitionPatch } from "../utils/computeResolveNightDayTransitionPatch.js"
 import { shouldApplyNightBroadcastPayload } from "../utils/shouldApplyNightBroadcastPayload.js"
+import { onDisconnect } from "../socket/connection.js"
+import { emitResolveNight, onNightResolve } from "../socket/night.js"
 
 const RESOLVE_TIMEOUT_MS = 5000
 
@@ -29,6 +33,7 @@ export function useInGameResolveNight() {
     }
   }, [])
 
+  // 세대 올려서 보낸 요청의 응답을 버리고 판정 상태·개인 결과를 처음으로
   const invalidate = () => {
     versionRef.current += 1
     ackingRef.current = false
@@ -39,6 +44,7 @@ export function useInGameResolveNight() {
     setNightActionResult(patch.nightActionResult)
   }
 
+  // 낮으로 넘어갈 때: 개인 결과는 남기고 판정 상태만 처음으로
   const invalidateForDayTransition = () => {
     versionRef.current += 1
     ackingRef.current = false
@@ -50,10 +56,9 @@ export function useInGameResolveNight() {
 
   useEffect(() => {
     if (!socket) return
-    const handleDisconnect = () => invalidate()
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => invalidate())
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
       invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,6 +70,7 @@ export function useInGameResolveNight() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId])
 
+  // 판정 세 사건 받기 (이미 반영한 밤보다 옛 것은 버림)
   useEffect(() => {
     if (!socket || !gameId) return
 
@@ -93,17 +99,11 @@ export function useInGameResolveNight() {
       invalidateForDayTransition()
     }
 
-    socket.on("night_actions_resolved", handleResolved)
-    socket.on("night_action_result", handleResult)
-    socket.on("night_result_applied", handleApplied)
-    return () => {
-      socket.off("night_actions_resolved", handleResolved)
-      socket.off("night_action_result", handleResult)
-      socket.off("night_result_applied", handleApplied)
-    }
+    return onNightResolve(socket, { onResolved: handleResolved, onResult: handleResult, onApplied: handleApplied })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId])
 
+  // 판정 요청 (응답 기다리는 중이거나 이미 판정 중이면 막기)
   const resolveNight = () => {
     if (ackingRef.current || status !== "idle") return
     const requestSocket = getSocket()
@@ -132,9 +132,7 @@ export function useInGameResolveNight() {
         currentGameId: useInGameStore.getState().gameId,
       })
 
-    requestSocket
-      .timeout(RESOLVE_TIMEOUT_MS)
-      .emitWithAck("resolve_night", { gameId: requestGameId })
+    emitResolveNight(requestSocket, RESOLVE_TIMEOUT_MS, requestGameId)
       .then((response) => {
         if (isStale()) return
         const patch = computeResolveNightAckPatch(response)

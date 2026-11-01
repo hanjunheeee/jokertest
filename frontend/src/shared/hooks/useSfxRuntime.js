@@ -1,166 +1,31 @@
+// 앱 전체 효과음 연결 훅 (플레이어 만들기·범위 다시 맞추기·기본 클릭 소리·업적 소리)
+// App 최상단이 한 번 부르고, 효과음 함수는 화면·스토어·시험이 이 경로로 씀
 import { useEffect, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../socket/socketClient.js"
+import { onAchievementGranted } from "../socket/achievementSocket.js"
 import { createSfxPlayer } from "../audio/sfxPlayer.js"
 import { createSfxAssetLoader } from "../audio/loadSfxAsset.js"
-import { SFX_MANIFEST, SFX_SUPPRESSED_REASON } from "../audio/sfxManifest.js"
+import { SFX_MANIFEST } from "../audio/sfxManifest.js"
+import { clearActivePlayer, dispatchSfxEvent, setActivePlayer } from "../audio/sfxRuntime.js"
+import { installGenericClickOwner } from "../audio/uiClickSfx.js"
 import { useSettingsStore } from "../../domains/settings/store/settingsStore.js"
 import { useAuthStore } from "../../domains/auth/store/auth.store.js"
 import { useNotificationsStore } from "../../domains/notifications/store/notifications.store.js"
 import { useInGameStore } from "../../domains/game/ingame/store/ingameStore.js"
 import { useMatchingStore } from "../../domains/game/matching/store/matchingStore.js"
 
-let activePlayer = null
+// 바깥에서 쓰던 이름 그대로 다시 내보냄
+export {
+  dispatchSfxEvent,
+  claimSfxAudio,
+  getSfxMix,
+  subscribeSfxMix,
+  getSfxSilenceLog,
+  __setSfxPlayerForTests,
+} from "../audio/sfxRuntime.js"
+export { dispatchUiSfx } from "../audio/uiClickSfx.js"
 
-const NO_RUNTIME = Object.freeze({
-  status: "suppressed",
-  reason: SFX_SUPPRESSED_REASON.NO_RUNTIME,
-  completion: Promise.resolve("stopped"),
-})
-
-export function dispatchSfxEvent(event) {
-  if (activePlayer === null) return NO_RUNTIME
-  try {
-    return activePlayer.dispatch(event)
-  } catch {
-    return NO_RUNTIME
-  }
-}
-
-export function claimSfxAudio(event, options) {
-  if (activePlayer === null) {
-    return { status: "suppressed", reason: SFX_SUPPRESSED_REASON.NO_RUNTIME,attach: () => {
-},release: () => {
-} }
-  }
-  try {
-    return activePlayer.claimAudio(event, options)
-  } catch {
-    return { status: "suppressed", reason: SFX_SUPPRESSED_REASON.NO_RUNTIME,attach: () => {
-},release: () => {
-} }
-  }
-}
-
-export function getSfxMix() {
-  if (activePlayer === null) return { gain: 0, muted: true }
-  try {
-    return activePlayer.getMix()
-  } catch {
-    return { gain: 0, muted: true }
-  }
-}
-
-export function subscribeSfxMix(listener) {
-  if (activePlayer === null) return () => {}
-  try {
-    return activePlayer.subscribeMix(listener)
-  } catch {
-    return () => {}
-  }
-}
-
-export function getSfxSilenceLog() {
-  if (activePlayer === null) return []
-  try {
-    return activePlayer.getSilenceLog()
-  } catch {
-    return []
-  }
-}
-
-
-let uiActionSeq = 0
-const consumedNativeEvents = new WeakSet()
-
-function nextUiActionId(prefix) {
-  uiActionSeq += 1
-  return `${prefix}:${uiActionSeq}`
-}
-
-function resolveNativeEvent(candidate) {
-  if (candidate === null || typeof candidate !== "object") return null
-  if (candidate.nativeEvent !== null && typeof candidate.nativeEvent === "object") return candidate.nativeEvent
-  return candidate
-}
-
-export function dispatchUiSfx(kind, event) {
-  const native = resolveNativeEvent(event)
-  if (native !== null) {
-    if (consumedNativeEvents.has(native)) return NO_RUNTIME
-    consumedNativeEvents.add(native)
-  }
-  return dispatchSfxEvent({ kind, eventId: nextUiActionId(kind), origin: "live" })
-}
-
-function isActivatableControl(node) {
-  if (node === null || typeof node !== "object" || node.nodeType !== 1) return false
-  const tag = typeof node.tagName === "string" ? node.tagName.toLowerCase() : ""
-  const role = typeof node.getAttribute === "function" ? node.getAttribute("role") : null
-  if (tag === "button") return true
-  if (tag === "a" && typeof node.getAttribute === "function" && node.getAttribute("href") !== null) return true
-  if (tag === "input") {
-      const type = (node.getAttribute?.("type") ?? "").toLowerCase()
-    return type === "button" || type === "checkbox" || type === "radio"
-  }
-  return role === "button" || role === "checkbox" || role === "radio" || role === "menuitem" || role === "tab"
-}
-
-function isDisabledControl(node) {
-  if (node.disabled === true) return true
-  if (typeof node.getAttribute !== "function") return false
-  if (node.getAttribute("aria-disabled") === "true") return true
-  if (node.hasAttribute?.("inert")) return true
-  return false
-}
-
-function isSubmitControl(node) {
-  const tag = typeof node.tagName === "string" ? node.tagName.toLowerCase() : ""
-  const type = (node.getAttribute?.("type") ?? "").toLowerCase()
-  if (tag === "button") return type === "submit" || (type === "" && node.form != null)
-  if (tag === "input") return type === "submit"
-  return false
-}
-
-function findGenericOwner(nativeEvent) {
-  const path =
-    typeof nativeEvent.composedPath === "function"
-      ? nativeEvent.composedPath()
-      : [nativeEvent.target].filter(Boolean)
-
-  let control = null
-  for (const node of path) {
-    if (node === null || typeof node !== "object" || node.nodeType !== 1) continue
-    if (typeof node.getAttribute === "function" && node.getAttribute("data-sfx-owner") === "explicit") return null
-    if (control === null && isActivatableControl(node)) {
-      if (isDisabledControl(node) || isSubmitControl(node)) return null
-      control = node
-    }
-  }
-  return control
-}
-
-function installGenericClickOwner() {
-  if (typeof document === "undefined" || typeof document.addEventListener !== "function") return () => {}
-
-  const handleCapture = (nativeEvent) => {
-    try {
-      if (consumedNativeEvents.has(nativeEvent)) return
-      const control = findGenericOwner(nativeEvent)
-      if (control === null) return
-      consumedNativeEvents.add(nativeEvent)
-      const semantic = control.getAttribute?.("data-sfx-kind")
-      const kind = semantic === "ui-confirm" || semantic === "ui-cancel" ? semantic : "ui-click"
-
-      dispatchSfxEvent({ kind, eventId: nextUiActionId(kind), origin: "live" })
-    } catch {
-    }
-  }
-
-  document.addEventListener("click", handleCapture, true)
-  return () => document.removeEventListener("click", handleCapture, true)
-}
-
-
+// 플레이어가 보는 음량·음소거·알림 켬 여부
 function readSettingsForSfx() {
   const state = useSettingsStore.getState()
   return {
@@ -171,6 +36,7 @@ function readSettingsForSfx() {
   }
 }
 
+// 로그인 계정·지금 판·지금 방, 로그아웃이면 계정 null
 function readScopeForSfx() {
   const auth = useAuthStore.getState()
   return {
@@ -180,13 +46,10 @@ function readScopeForSfx() {
   }
 }
 
-export function __setSfxPlayerForTests(player) {
-  activePlayer = player ?? null
-}
-
 export function useSfxRuntime() {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
+  // 플레이어는 앱에 하나, 계정·판·방 스토어가 바뀔 때마다 범위를 다시 맞춤
   useEffect(() => {
     const player = createSfxPlayer({
       manifest: SFX_MANIFEST,
@@ -196,7 +59,7 @@ export function useSfxRuntime() {
       loadAsset: createSfxAssetLoader(),
       createMedia: (src) => new Audio(src),
     })
-    activePlayer = player
+    setActivePlayer(player)
 
     const resync = () => player.syncScope()
     const unsubscribers = [
@@ -211,13 +74,15 @@ export function useSfxRuntime() {
         try {
           unsubscribe?.()
         } catch {
+          // 하나가 실패해도 나머지 구독은 마저 끔
         }
       }
       player.dispose()
-      if (activePlayer === player) activePlayer = null
+      clearActivePlayer(player)
     }
   }, [])
 
+  // 업적 소리는 내 계정 것이고 알림 스토어가 처음 보는 이벤트라고 할 때만 냄
   useEffect(() => {
     if (!socket) return undefined
 
@@ -231,7 +96,6 @@ export function useSfxRuntime() {
       dispatchSfxEvent({ kind: envelope.kind, eventId: envelope.eventId, accountId, origin: envelope.origin })
     }
 
-    socket.on("achievement_granted", handleAchievementGranted)
-    return () => socket.off("achievement_granted", handleAchievementGranted)
+    return onAchievementGranted(socket, handleAchievementGranted)
   }, [socket])
 }

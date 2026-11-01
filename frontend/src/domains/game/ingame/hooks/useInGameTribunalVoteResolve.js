@@ -1,3 +1,5 @@
+// 재판 판정 요청 훅: 컨트롤러로 판정 요청 보내고 결과 보여 주기
+// 행동 패널이 사용, 끊김 받기는 socket/connection.js를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -5,6 +7,7 @@ import {
   createTribunalVoteResolveController,
   INITIAL_TRIBUNAL_VOTE_RESOLVE_STATE,
 } from "../utils/createTribunalVoteResolveController.js"
+import { onDisconnect } from "../socket/connection.js"
 
 export function useInGameTribunalVoteResolve() {
   const gameId = useInGameStore((s) => s.gameId)
@@ -59,13 +62,13 @@ export function useInGameTribunalVoteResolve() {
 
   useEffect(() => {
     if (!socket) return undefined
-    const handleDisconnect = () => controllerRef.current?.invalidate("DISCONNECT")
-    socket.on("disconnect", handleDisconnect)
+    const offDisconnect = onDisconnect(socket, () => controllerRef.current?.invalidate("DISCONNECT"))
     return () => {
-      socket.off("disconnect", handleDisconnect)
+      offDisconnect()
     }
   }, [socket])
 
+  // 판정 요청 (스토어의 지금 값으로 보냄)
   const resolveTribunalVote = () => {
     if (state.status !== "idle") return
     const storeState = useInGameStore.getState()

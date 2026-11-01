@@ -1,8 +1,12 @@
+// 역할 확인 알림 훅: 판에 들어오거나 다시 연결되면 역할 봤다고 한 번 알림
+// 역할 공개 훅(useInGameRoleReveal)이 사용, 보내기·연결 받기는 socket/ 함수를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
 import { computeRoleRevealInvalidatePatch } from "../utils/computeRoleRevealInvalidatePatch.js"
+import { onConnect, onDisconnect } from "../socket/connection.js"
+import { emitRoleRevealAck } from "../socket/session.js"
 
 const ACK_TIMEOUT_MS = 5000
 
@@ -25,6 +29,7 @@ export function useInGameRoleRevealAck() {
     }
   }, [])
 
+  // 세대 올려서 보낸 알림의 응답을 버리고 다시 알릴 수 있게 함
   const invalidate = () => {
     versionRef.current += 1
     ackingRef.current = false
@@ -37,13 +42,12 @@ export function useInGameRoleRevealAck() {
 
   useEffect(() => {
     if (!socket) return
-    const handleDisconnect = () => invalidate()
-    const handleConnect = () => acknowledge()
-    socket.on("disconnect", handleDisconnect)
-    socket.on("connect", handleConnect)
+    // 끊기면 처음으로, 다시 연결되면 다시 알림
+    const offDisconnect = onDisconnect(socket, () => invalidate())
+    const offConnect = onConnect(socket, () => acknowledge())
     return () => {
-      socket.off("disconnect", handleDisconnect)
-      socket.off("connect", handleConnect)
+      offDisconnect()
+      offConnect()
       invalidate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -55,6 +59,7 @@ export function useInGameRoleRevealAck() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId])
 
+  // 알림 보내기 (보내는 중이거나 이미 받아들여졌으면 막기)
   const acknowledge = () => {
     if (ackingRef.current || ackedRef.current) return
     const requestSocket = getSocket()
@@ -83,9 +88,7 @@ export function useInGameRoleRevealAck() {
         currentGameId: useInGameStore.getState().gameId,
       })
 
-    requestSocket
-      .timeout(ACK_TIMEOUT_MS)
-      .emitWithAck("acknowledge_role_reveal", { gameId: requestGameId })
+    emitRoleRevealAck(requestSocket, ACK_TIMEOUT_MS, requestGameId)
       .then((response) => {
         if (isStale()) return
         if (response?.ok) {

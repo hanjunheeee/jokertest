@@ -1,15 +1,23 @@
+// 게임 설정 패널: 탭(일반·회의)·설정 본문·만들기(저장)/취소 버튼
+// GameSetupPage(만들기)와 대기방 설정 편집(편집 모드)이 씀
 import { motion } from "framer-motion"
 import { useRef, useState } from "react"
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
-import { GENERAL_GAME_SETUP, MEETING_GAME_SETUP } from "../constants/gameSetupOptions.js"
+import { ALL_SETUP_ITEMS } from "../constants/roomSettingsForm.js"
+import {
+  FRAME_OVERLAY_INSET,
+  PANEL_CLASS,
+  PANEL_WRAP_CLASS,
+  SETUP_CONTENT_CLASS,
+} from "../constants/gameSetupPanelStyles.js"
+import { UI_REVEAL_TRANSITION } from "../../../../shared/constants/pageTransitions.js"
 import { useRoleCompositionState } from "../hooks/useRoleCompositionState.js"
 import { useSetupContentScrollOnRoleModeChange } from "../hooks/useSetupContentScrollOnRoleModeChange.js"
 import { useSetupTabState } from "../hooks/useSetupTabState.js"
+import { useNightTimeEdits } from "../hooks/useNightTimeEdits.js"
 import { buildCreateRoomPayload } from "../utils/buildCreateRoomPayload.js"
 import {
-  NIGHT_TIME_ID_TO_ROLE,
   NON_EDITABLE_SETUP_ITEM_IDS,
-  OVERALL_NIGHT_ACTION_TIME_ID,
   mergeSpecifiedRoleNightActionTimes,
 } from "../utils/roomSettingsForm.js"
 import GameSetupCreateButton from "./GameSetupCreateButton.jsx"
@@ -22,27 +30,6 @@ import GameSetupTabs from "./GameSetupTabs.jsx"
 import GeneralGameSetupTab from "./GeneralGameSetupTab.jsx"
 import MeetingGameSetupTab from "./MeetingGameSetupTab.jsx"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
-import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../shared/constants/customScrollbarStyles.js"
-
-const UI_REVEAL_TRANSITION = { duration: 0.9, ease: [0.22, 1, 0.36, 1] }
-
-const PANEL_WRAP_CLASS =
-  "absolute left-1/2 top-[48%] z-20 origin-center -translate-x-1/2 -translate-y-1/2 scale-[0.82]"
-
-const PANEL_CLASS =
-  "flex w-[min(76rem,96vw)] flex-col items-center"
-
-const FRAME_OVERLAY_INSET = {
-  paddingTop: "3.75%",
-  paddingBottom: "14%",
-  paddingLeft: "9.5%",
-  paddingRight: "9.5%",
-}
-
-const SETUP_CONTENT_CLASS =
-  `flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip pt-[clamp(1.35rem,1.85vh,2.5rem)] pb-[clamp(3.25rem,5vh,4.25rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
-
-const ALL_SETUP_ITEMS = [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]
 
 export default function GameSetupPanel({
   visible,
@@ -70,33 +57,17 @@ export default function GameSetupPanel({
     resetKey: formResetKey,
   })
 
+  // 직업 구성 방식을 바꾸면 그 구역이 보이게 본문 스크롤
   useSetupContentScrollOnRoleModeChange(setupContentRef, roleComposition.mode, activeTab)
 
-  const [editedRoleTimeIds, setEditedRoleTimeIds] = useState(() => new Set())
-  const [appliedFormSource, setAppliedFormSource] = useState({ key: formResetKey, state: initialFormState })
-  if (appliedFormSource.key !== formResetKey || appliedFormSource.state !== initialFormState) {
-    setAppliedFormSource({ key: formResetKey, state: initialFormState })
-    setEditedRoleTimeIds(new Set())
-  }
+  const { editedRoleTimeIds, handleSetRange } = useNightTimeEdits({
+    ranges, setRange, initialFormState, formResetKey,
+  })
 
-  const handleSetRange = (id, next) => {
-    const changed = ranges[id] !== next
-    if (NIGHT_TIME_ID_TO_ROLE[id] !== undefined && changed) {
-      setEditedRoleTimeIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
-    }
-    setRange(id, next)
-
-    const hasSpecifiedList = Array.isArray(initialFormState?.specifiedRoleNightActionTimes)
-    if (!hasSpecifiedList || id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
-    const serverSpecified = initialFormState.specifiedRoleNightActionTimes
-    for (const [roleTimeId, role] of Object.entries(NIGHT_TIME_ID_TO_ROLE)) {
-      if (serverSpecified.includes(role) || editedRoleTimeIds.has(roleTimeId)) continue
-      setRange(roleTimeId, next)
-    }
-  }
-
+  // 편집 모드에선 방 만든 뒤 못 바꾸는 항목 숨김
   const hiddenItemIds = isEditMode ? NON_EDITABLE_SETUP_ITEM_IDS : undefined
 
+  // 제출: 편집은 폼 값 그대로, 만들기는 방 만들기 payload로 바꿔서 넘김
   const handleSubmitClick = () => {
     if (!roleComposition.validation.ok) return
     if (isCreating || submitDisabled) return

@@ -1,32 +1,8 @@
+// 사용자 스크롤 막대 손잡이 (스크롤·크기 바뀜에 맞춰 위치 맞추기, 손잡이 끌어서 스크롤)
+// 공용 Scrollbar 컴포넌트가 씀
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { CUSTOM_SCROLLBAR_TRACK_INSET } from "@/shared/constants/customScrollbarStyles.js"
-
-function computeTravelMetrics(scrollEl, trackEl, thumbEl, trackInset) {
-  const trackHeight = trackEl.clientHeight
-  const thumbHeight = thumbEl.offsetHeight
-  const insetTopPx = trackHeight * trackInset.top
-  const insetBottomPx = trackHeight * trackInset.bottom
-  const travelRange = Math.max(
-    trackHeight - insetTopPx - insetBottomPx - thumbHeight,
-    0,
-  )
-  const maxScroll = Math.max(scrollEl.scrollHeight - scrollEl.clientHeight, 0)
-
-  return { insetTopPx, travelRange, maxScroll }
-}
-
-function scrollTopToThumbTop(scrollTop, metrics) {
-  const { insetTopPx, travelRange, maxScroll } = metrics
-  if (maxScroll <= 0 || travelRange <= 0) return insetTopPx
-  return insetTopPx + (scrollTop / maxScroll) * travelRange
-}
-
-function thumbTopToScrollTop(thumbTop, metrics) {
-  const { insetTopPx, travelRange, maxScroll } = metrics
-  if (travelRange <= 0 || maxScroll <= 0) return 0
-  const ratio = (thumbTop - insetTopPx) / travelRange
-  return Math.min(maxScroll, Math.max(0, ratio * maxScroll))
-}
+import { computeTravelMetrics, scrollTopToThumbTop, thumbTopToScrollTop } from "@/shared/utils/scrollbarThumb.js"
 
 export function useScrollbarThumb(
   scrollRef,
@@ -38,6 +14,7 @@ export function useScrollbarThumb(
   const [isScrollable, setIsScrollable] = useState(false)
   const dragStateRef = useRef(null)
 
+  // 스크롤할 게 없으면 손잡이를 숨길 수 있게 isScrollable을 끔
   const sync = useCallback(() => {
     const scrollEl = scrollRef?.current
     const trackEl = trackRef?.current
@@ -58,6 +35,7 @@ export function useScrollbarThumb(
     setThumbTop(scrollTopToThumbTop(scrollEl.scrollTop, metrics))
   }, [scrollRef, trackRef, thumbRef, trackInset.bottom, trackInset.top])
 
+  // 왼쪽 버튼으로 잡으면 포인터를 붙잡고, 끄는 만큼 손잡이 범위 안에서 스크롤을 옮김
   const onThumbPointerDown = useCallback(
     (event) => {
       const scrollEl = scrollRef?.current
@@ -117,6 +95,7 @@ export function useScrollbarThumb(
     [scrollRef, trackRef, thumbRef, trackInset.bottom, trackInset.top],
   )
 
+  // 내용 스크롤·크기 바뀜·자식 바뀜·창 크기·손잡이 그림 로드 때마다 다시 맞춤
   useLayoutEffect(() => {
     const scrollEl = scrollRef?.current
     const trackEl = trackRef?.current

@@ -1,8 +1,10 @@
+// 위아래로 쌓인 투명 영상 재생: 캔버스에 합친 그림을 그리고, 막히면 다시 재생·건너뛰기
+// 사망 공개 연출(InGameKillRevealOverlay)이 사용, 재생 도우미는 utils/ingameStackedAlphaPlayback.js
 import { useCallback, useEffect, useRef, useState } from "react"
-import { composeStackedAlpha } from "../../utils/composeStackedAlpha.js"
 import {
   cancelFrameLoop,
   cancelPlaybackWatchdog,
+  drawStackedFrame,
   isAutoplayBlockedRejection,
 } from "../../utils/ingameStackedAlphaPlayback.js"
 import {
@@ -40,38 +42,9 @@ export default function InGameStackedAlphaVideo({
     if (nextStatus) setStatus(nextStatus)
   }, [])
 
+  // 프레임 한 장 합쳐 그리기 (못 그리면 오류로 끝냄)
   const composeFrame = useCallback((lifetime) => {
-    const video = lifetime.video
-    if (!video) return
-    const width = video.videoWidth
-    const height = video.videoHeight
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
-    if (!Number.isFinite(video.readyState) || video.readyState < 2) return
-    if (height % 2 !== 0) {
-      settleOnce(lifetime, "error")
-      return
-    }
-    const halfHeight = height / 2
-    try {
-      const { workCanvas, workCtx, displayCanvas, displayCtx } = lifetime
-      if (!workCanvas || !workCtx || !displayCanvas || !displayCtx) {
-        settleOnce(lifetime, "error")
-        return
-      }
-      workCanvas.width = width
-      workCanvas.height = height
-      workCtx.drawImage(video, 0, 0, width, height)
-      const colorImage = workCtx.getImageData(0, 0, width, halfHeight)
-      const maskImage = workCtx.getImageData(0, halfHeight, width, halfHeight)
-      const composed = composeStackedAlpha(colorImage.data, maskImage.data)
-      displayCanvas.width = width
-      displayCanvas.height = halfHeight
-      const outImage = displayCtx.createImageData(width, halfHeight)
-      outImage.data.set(composed)
-      displayCtx.putImageData(outImage, 0, 0)
-    } catch {
-      settleOnce(lifetime, "error")
-    }
+    drawStackedFrame(lifetime, () => settleOnce(lifetime, "error"))
   }, [settleOnce])
 
   const scheduleFrame = useCallback((lifetime) => {

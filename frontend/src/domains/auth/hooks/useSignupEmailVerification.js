@@ -1,266 +1,93 @@
+// 가입 이메일 인증 상태 (인증번호 받기·확인·남은 시간·가입 증명)
+// hooks/useLoginPage.js(일반 가입), hooks/useSocialSignup.js(소셜 가입)가 사용, 요청은 emailVerification/send.js·verify.js가 맡음
 import { useEffect, useRef, useState } from "react"
-import { requestSignupCodeApi, verifySignupCodeApi } from "../api/auth.api.js"
+import { INITIAL_VERIFICATION, VERIFY_TEXT } from "../constants/emailVerification.js"
+import { sendCode } from "./emailVerification/send.js"
+import { verifyCode } from "./emailVerification/verify.js"
 
-const INITIAL_EMAIL_VERIFICATION = {
-  stage: "unverified",
-  email: "",
-  code: "",
-  signupProof: null,
-  resendAvailableAt: null,
-  codeExpiresAt: null,
-  attemptsRemaining: null,
-  message: "",
-}
+// 1초마다 다시 그릴 단계: 보냄(만료 감시)·만료·잠김(재발송 대기)
+const TICKING_STAGES = new Set(["codeSent", "codeExpired", "locked"])
 
-const SIGNUP_EMAIL_MAX_LENGTH = 100
-
-export function isValidSignupEmailFormat(email) {
-  if (typeof email !== "string") return false
-  const trimmed = email.trim()
-  if (!trimmed || trimmed.length > SIGNUP_EMAIL_MAX_LENGTH) return false
-  if (/\s/.test(trimmed)) return false
-
-  const atIndex = trimmed.indexOf("@")
-  if (atIndex <= 0 || atIndex === trimmed.length - 1) return false
-
-  const domain = trimmed.slice(atIndex + 1)
-  if (!domain.includes(".") || domain.startsWith(".") || domain.endsWith(".")) return false
-
-  return true
-}
-
-const GENERIC_SIGNUP_CODE_RETRY_MESSAGE = "서버와 통신할 수 없습니다. 다시 시도해주세요."
-
-const SIGNUP_CODE_ERROR_STATUS = {
-  RESEND_TOO_SOON: 429,
-  RATE_LIMITED: 429,
-  INVALID_INPUT: 400,
-  CODE_INVALID: 400,
-  CODE_EXPIRED: 400,
-  TOO_MANY_ATTEMPTS: 429,
-}
-
-function isKnownSignupCodeError(error, code) {
-  return error?.code === code && error?.status === SIGNUP_CODE_ERROR_STATUS[code]
-}
-
-function describeSignupCodeRequestError(error) {
-  if (isKnownSignupCodeError(error, "RESEND_TOO_SOON") && Number.isFinite(error.resendAfterSec)) {
-    return { kind: "RESEND_TOO_SOON", resendAfterSec: error.resendAfterSec }
-  }
-  if (isKnownSignupCodeError(error, "RATE_LIMITED")) return { kind: "RATE_LIMITED" }
-  if (isKnownSignupCodeError(error, "INVALID_INPUT")) return { kind: "INVALID_INPUT" }
-  return { kind: "UNKNOWN" }
-}
-
-function describeSignupCodeVerifyError(error) {
-  if (isKnownSignupCodeError(error, "CODE_INVALID")) {
-    return { kind: "CODE_INVALID", attemptsRemaining: Number.isFinite(error.attemptsRemaining) ? error.attemptsRemaining : null }
-  }
-  if (isKnownSignupCodeError(error, "CODE_EXPIRED")) return { kind: "CODE_EXPIRED" }
-  if (isKnownSignupCodeError(error, "TOO_MANY_ATTEMPTS")) return { kind: "TOO_MANY_ATTEMPTS" }
-  if (isKnownSignupCodeError(error, "RATE_LIMITED")) return { kind: "RATE_LIMITED" }
-  if (isKnownSignupCodeError(error, "INVALID_INPUT")) return { kind: "INVALID_INPUT" }
-  return { kind: "UNKNOWN" }
-}
-
+// active가 꺼져 있으면 받기·확인 둘 다 안 함, attemptKey가 바뀌면 인증을 처음부터
 export function useSignupEmailVerification({ email = "", active = true, attemptKey = "" } = {}) {
-  const [emailVerification, setEmailVerification] = useState(INITIAL_EMAIL_VERIFICATION)
+  const [state, setState] = useState(INITIAL_VERIFICATION)
 
-  const verificationGenerationRef = useRef(0)
-  const verificationRequestInFlightRef = useRef(false)
-  const [, forceVerificationTick] = useState(0)
+  const genRef = useRef(0)
+  const inFlightRef = useRef(false)
+  const [, forceTick] = useState(0)
 
+  // 모드·시도 키·주소가 바뀌면 그린 그 자리에서 바로 처음으로 (옛 인증이 한 번도 안 보이게)
   const resetSignature = `${active ? "1" : "0"}\u0000${attemptKey ?? ""}\u0000${email}`
   const [appliedSignature, setAppliedSignature] = useState(resetSignature)
   if (appliedSignature !== resetSignature) {
     setAppliedSignature(resetSignature)
-    verificationGenerationRef.current += 1
-    setEmailVerification(INITIAL_EMAIL_VERIFICATION)
+    genRef.current += 1
+    setState(INITIAL_VERIFICATION)
   }
 
-  useEffect(() => () => { verificationGenerationRef.current += 1 }, [])
+  // 화면을 나가면 진행 중 요청 응답을 버림
+  useEffect(() => () => { genRef.current += 1 }, [])
 
+  // 만료 시각이 지나면 만료로 바꾸고, 남은 초가 줄어들게 다시 그림
   useEffect(() => {
-    const relevantStages = new Set(["codeSent", "codeExpired", "locked"])
-    if (!relevantStages.has(emailVerification.stage)) return undefined
+    if (!TICKING_STAGES.has(state.stage)) return undefined
 
     const id = setInterval(() => {
-      setEmailVerification((prev) => {
+      setState((prev) => {
         if (prev.stage === "codeSent" && prev.codeExpiresAt !== null && Date.now() >= prev.codeExpiresAt) {
-          return { ...prev, stage: "codeExpired", message: "인증번호가 만료되었습니다. 다시 받아주세요." }
+          return { ...prev, stage: "codeExpired", message: VERIFY_TEXT.expired }
         }
         return prev
       })
-      forceVerificationTick((tick) => tick + 1)
+      forceTick((tick) => tick + 1)
     }, 1000)
     return () => clearInterval(id)
-  }, [emailVerification.stage])
+  }, [state.stage])
 
   const handleSignupCodeChange = (e) => {
     const { value } = e.target
-    setEmailVerification((prev) => ({ ...prev, code: value }))
+    setState((prev) => ({ ...prev, code: value }))
   }
 
-  const handleRequestSignupCode = async () => {
-    const current = emailVerification
+  // 받기·확인은 이번에 그린 상태(current)를 보고 판단함
+  const ctx = { email, active, current: state, setState, genRef, inFlightRef }
+  const handleRequestSignupCode = () => sendCode(ctx)
+  const handleVerifySignupCode = () => verifyCode(ctx)
 
-    if (!active) return
-    if (current.stage === "sending" || current.stage === "verifying" || current.stage === "verified") return
-    if (!isValidSignupEmailFormat(email)) return
-    if (verificationRequestInFlightRef.current) return
-    if (current.resendAvailableAt !== null && Date.now() < current.resendAvailableAt) return
-
-    verificationRequestInFlightRef.current = true
-    const requestGeneration = ++verificationGenerationRef.current
-    const stageBeforeSend = current.stage
-    const isResend = stageBeforeSend !== "unverified"
-
-    setEmailVerification((prev) => ({
-      ...prev,
-      stage: "sending",
-      email,
-      code: isResend ? "" : prev.code,
-      message: "",
-    }))
-
-    try {
-      const result = await requestSignupCodeApi({ email })
-      if (verificationGenerationRef.current !== requestGeneration) return
-
-      if (result?.ok === true && Number.isFinite(result.resendAfterSec) && Number.isFinite(result.expiresInSec)) {
-        const now = Date.now()
-        setEmailVerification((prev) => ({
-          ...prev,
-          stage: "codeSent",
-          email,
-          resendAvailableAt: now + result.resendAfterSec * 1000,
-          codeExpiresAt: now + result.expiresInSec * 1000,
-          attemptsRemaining: null,
-          message: "",
-        }))
-        return
-      }
-
-      setEmailVerification((prev) => ({ ...prev, stage: stageBeforeSend, message: GENERIC_SIGNUP_CODE_RETRY_MESSAGE }))
-    } catch (error) {
-      if (verificationGenerationRef.current !== requestGeneration) return
-
-      const described = describeSignupCodeRequestError(error)
-      if (described.kind === "RESEND_TOO_SOON") {
-        setEmailVerification((prev) => ({
-          ...prev,
-          stage: stageBeforeSend === "unverified" ? "codeSent" : stageBeforeSend,
-          email,
-          resendAvailableAt: Date.now() + described.resendAfterSec * 1000,
-          message: `${described.resendAfterSec}초 후 재발송할 수 있습니다.`,
-        }))
-      } else if (described.kind === "RATE_LIMITED") {
-        setEmailVerification((prev) => ({ ...prev, stage: stageBeforeSend, message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }))
-      } else if (described.kind === "INVALID_INPUT") {
-        setEmailVerification((prev) => ({ ...prev, stage: stageBeforeSend, message: "입력을 확인해주세요." }))
-      } else {
-        setEmailVerification((prev) => ({ ...prev, stage: stageBeforeSend, message: GENERIC_SIGNUP_CODE_RETRY_MESSAGE }))
-      }
-    } finally {
-      verificationRequestInFlightRef.current = false
-    }
-  }
-
-  const handleVerifySignupCode = async () => {
-    const current = emailVerification
-
-    if (!active) return
-    if (current.stage !== "codeSent") return
-    if (!current.code) return
-    if (verificationRequestInFlightRef.current) return
-
-    if (current.codeExpiresAt !== null && Date.now() >= current.codeExpiresAt) {
-      setEmailVerification((prev) => (
-        prev.stage === "codeSent"
-          ? { ...prev, stage: "codeExpired", message: "인증번호가 만료되었습니다. 다시 받아주세요." }
-          : prev
-      ))
-      return
-    }
-
-    verificationRequestInFlightRef.current = true
-    const requestGeneration = verificationGenerationRef.current
-    const targetEmail = current.email
-    const code = current.code
-
-    setEmailVerification((prev) => ({ ...prev, stage: "verifying", message: "" }))
-
-    try {
-      const result = await verifySignupCodeApi({ email: targetEmail, code })
-      if (verificationGenerationRef.current !== requestGeneration) return
-
-      if (result?.ok === true && typeof result.signupProof === "string" && result.signupProof) {
-        setEmailVerification((prev) => ({ ...prev, stage: "verified", signupProof: result.signupProof, message: "" }))
-        return
-      }
-
-      setEmailVerification((prev) => ({ ...prev, stage: "codeSent", message: GENERIC_SIGNUP_CODE_RETRY_MESSAGE }))
-    } catch (error) {
-      if (verificationGenerationRef.current !== requestGeneration) return
-
-      const described = describeSignupCodeVerifyError(error)
-      if (described.kind === "CODE_INVALID") {
-        setEmailVerification((prev) => ({
-          ...prev,
-          stage: "codeSent",
-          attemptsRemaining: described.attemptsRemaining,
-          message: described.attemptsRemaining !== null
-            ? `인증번호가 올바르지 않습니다. (남은 시도 ${described.attemptsRemaining}회)`
-            : "인증번호가 올바르지 않습니다.",
-        }))
-      } else if (described.kind === "CODE_EXPIRED") {
-        setEmailVerification((prev) => ({ ...prev, stage: "codeExpired", message: "인증번호가 만료되었습니다. 다시 받아주세요." }))
-      } else if (described.kind === "TOO_MANY_ATTEMPTS") {
-        setEmailVerification((prev) => ({ ...prev, stage: "locked", message: "오입력 횟수를 초과했습니다. 다시 받아주세요." }))
-      } else if (described.kind === "RATE_LIMITED") {
-        setEmailVerification((prev) => ({ ...prev, stage: "codeSent", message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }))
-      } else if (described.kind === "INVALID_INPUT") {
-        setEmailVerification((prev) => ({ ...prev, stage: "codeSent", message: "입력을 확인해주세요." }))
-      } else {
-        setEmailVerification((prev) => ({ ...prev, stage: "codeSent", message: GENERIC_SIGNUP_CODE_RETRY_MESSAGE }))
-      }
-    } finally {
-      verificationRequestInFlightRef.current = false
-    }
-  }
-
+  // 지금 칸의 주소로 받은 증명이 있을 때만 가입 가능
   const hasValidSignupProof = (
     active
-    && emailVerification.stage === "verified"
-    && emailVerification.email === email
-    && typeof emailVerification.signupProof === "string"
-    && emailVerification.signupProof.length > 0
+    && state.stage === "verified"
+    && state.email === email
+    && typeof state.signupProof === "string"
+    && state.signupProof.length > 0
   )
 
   const buildSignupPayload = () => (
-    hasValidSignupProof ? { email: emailVerification.email, signupProof: emailVerification.signupProof } : null
+    hasValidSignupProof ? { email: state.email, signupProof: state.signupProof } : null
   )
 
+  // 밖에서 인증을 버릴 때 (주소 바뀜·가입 끝·증명 거절), 진행 중 응답도 버림
   const reset = () => {
-    verificationGenerationRef.current += 1
-    setEmailVerification(INITIAL_EMAIL_VERIFICATION)
+    genRef.current += 1
+    setState(INITIAL_VERIFICATION)
   }
 
-  const nowForCountdown = Date.now()
-  const resendRemainingSec = emailVerification.resendAvailableAt !== null
-    ? Math.max(0, Math.ceil((emailVerification.resendAvailableAt - nowForCountdown) / 1000))
+  // 남은 초는 그릴 때마다 지금 시각으로 다시 셈
+  const now = Date.now()
+  const resendRemainingSec = state.resendAvailableAt !== null
+    ? Math.max(0, Math.ceil((state.resendAvailableAt - now) / 1000))
     : 0
-  const codeRemainingSec = (emailVerification.stage === "codeSent" && emailVerification.codeExpiresAt !== null)
-    ? Math.max(0, Math.ceil((emailVerification.codeExpiresAt - nowForCountdown) / 1000))
+  const codeRemainingSec = (state.stage === "codeSent" && state.codeExpiresAt !== null)
+    ? Math.max(0, Math.ceil((state.codeExpiresAt - now) / 1000))
     : null
 
   return {
     signupEmailVerification: {
-      stage: emailVerification.stage,
-      code: emailVerification.code,
-      message: emailVerification.message,
-      attemptsRemaining: emailVerification.attemptsRemaining,
+      stage: state.stage,
+      code: state.code,
+      message: state.message,
+      attemptsRemaining: state.attemptsRemaining,
       resendRemainingSec,
       codeRemainingSec,
     },

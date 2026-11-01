@@ -6,24 +6,27 @@ const { resolveRoleComposition } = require('../roleComposition')
 const { assignRoles } = require('./assign')
 const { INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { resolveGameSource } = require('../result')
-const { roomGameSession } = require('../core/state')
-const { isParticipantBlockedFromMatchmaking } = require('../queries')
+const { isParticipantBlockedFromMatchmaking, hasRoomSession } = require('../queries')
 
 // 방 → 판 후보 (역할 나누고 판 기본값 채움, 아직 장부에 안 넣음)
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
     const players = [...room.players.values()]
     const jokerCount = room.settings?.jokerCount ?? 0
 
+    // 인원·광대 수 검사
     const validation = validateSessionInput(players, jokerCount)
     if (!validation.ok) return validation
 
+    // 방 설정 → 역할별 인원, 안 맞으면 이유 붙여 거절
     const resolved = resolveRoleComposition(room.settings, players.length)
     if (!resolved.ok) {
         return { ok: false, code: 'INVALID_SESSION_INPUT', reason: `INVALID_ROLE_COMPOSITION:${resolved.reason}` }
     }
 
+    // 역할 나누고 전원 참여 중으로 시작
     const assigned = assignRoles(players, resolved.composition, randomFn)
     for (const player of assigned) player.isParticipating = true
+    // 판 기본값: 역할 확인 단계·0일째, 기록 칸은 전부 빈 상태
     const session = {
         id: gameIdFn(),
         startedAt: Date.now(),
@@ -59,14 +62,17 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         dayVoteSfx: new Map(),
         timerSettings: buildTimerSettings(room.settings),
     }
+    // 아직 후보만, 장부에 넣는 건 commitGameSession
     return { ok: true, session }
 }
 
 // 같은 방 판 이미 있는지·참가자가 다른 판에 있는지
 function checkGameSessionPreconditions(room) {
-    if (roomGameSession.has(room.id)) {
+    // 같은 방 두 번 시작 막기
+    if (hasRoomSession(room.id)) {
         return { ok: false, code: 'DUPLICATE_ROOM_SESSION' }
     }
+    // 한 명이라도 아직 다른 판에 묶여 있으면 거절
     for (const uuid of room.players.keys()) {
         if (isParticipantBlockedFromMatchmaking(uuid)) {
             return { ok: false, code: 'PLAYER_ALREADY_IN_SESSION' }

@@ -1,12 +1,13 @@
 // 채팅 보내기 파일
-// 채팅 prepare/commit + 판 닫을 때 이모티콘 비움
+// 채팅 prepare/commit (이모티콘 비우기는 판 정리라 core/cleanup.js로 옮김)
 // prepare = 검사만 하고 기록 안 함, commit = 다시 확인하고 기록함 (실패한 요청이 간격을 안 먹게)
 const crypto = require('crypto')
-const { gameSessions, playerSession } = require('../core/state')
+const { findActorSession } = require('../core/lookup')
+const { getPlayerGameId, getSessionById } = require('../queries')
 const { GAME_ROLES } = require('../core/roles')
 const { assertSessionNotEnded } = require('../core/terminal')
 const { CHAT_MIN_INTERVAL_MS, CHAT_COMMIT_MAX_AGE_MS } = require('./constants')
-const { sanitizeChatText, getChatRateLimitMap, resolveGameChatChannel } = require('./rules')
+const { sanitizeChatText, isInvalidClockValue, getChatRateLimitMap, resolveGameChatChannel } = require('./rules')
 
 // prepare가 만든 것만 commit 되게 기록, 밖에 안 내보냄
 // 키 = prepare가 돌려준 객체, 값 = 그때 값 복사본 (얼려 둠)
@@ -62,24 +63,10 @@ function isSamePrepared(prepared, capability) {
 
 // 밤 역할 채팅 검사, 죽은 광대도 가능
 function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
-    // 요청에 온 판 id 확인
-    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
-    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
-
-    // 지금 내가 있는 판이랑 같은지 (옛 판 화면에서 보낸 것 거절)
-    const currentGameId = playerSession.get(uuid)
-    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
-    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
-
-    // 판이랑 판 안의 나 찾기
-    const session = gameSessions.get(currentGameId)
-    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
-    const actor = session.players.get(uuid)
-    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
-
-    // 끝난 판이면 거절
-    const endedCheck = assertSessionNotEnded(session)
-    if (!endedCheck.ok) return endedCheck
+    // 판 id 확인 + 내 판·판 안의 나 찾기, 끝난 판이면 거절 (옛 판 화면에서 보낸 것 거절)
+    const found = findActorSession(uuid, gameId, { checkEnded: true })
+    if (!found.ok) return found
+    const { session, actor } = found
 
     // 밤에만, 산 사람만 (광대는 죽어도 됨)
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
@@ -91,9 +78,7 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
 
     // 시계 값이 정상 숫자인지 (시험에서 시계 바꿔 끼울 때 대비)
     const sentAt = now()
-    if (!Number.isFinite(sentAt) || !Number.isInteger(sentAt) || sentAt < 0) {
-        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
-    }
+    if (isInvalidClockValue(sentAt)) return { ok: false, code: 'INVALID_CLOCK_VALUE' }
 
     // 채널 = 내 역할, 마지막으로 보낸 지 0.5초 안 됐으면 거절
     const channel = actor.role
@@ -127,24 +112,10 @@ function commitJokerChatMessage(session, uuid, sentAt) {
 
 // 낮 채팅 검사 + 메시지 만들기, 아직 기록 안 함
 function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () => crypto.randomUUID() } = {}) {
-    // 요청에 온 판 id 확인
-    const normalizedGameId = typeof gameId === 'string' ? gameId.trim() : ''
-    if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
-
-    // 지금 내가 있는 판이랑 같은지 (옛 판 화면에서 보낸 것 거절)
-    const currentGameId = playerSession.get(uuid)
-    if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
-    if (currentGameId !== normalizedGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
-
-    // 판이랑 판 안의 나 찾기
-    const session = gameSessions.get(currentGameId)
-    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
-    const actor = session.players.get(uuid)
-    if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
-
-    // 끝난 판이면 거절
-    const endedCheck = assertSessionNotEnded(session)
-    if (!endedCheck.ok) return endedCheck
+    // 판 id 확인 + 내 판·판 안의 나 찾기, 끝난 판이면 거절 (옛 판 화면에서 보낸 것 거절)
+    const found = findActorSession(uuid, gameId, { checkEnded: true })
+    if (!found.ok) return found
+    const { session, actor } = found
 
     // 어느 채널로 갈지 (산 사람, 낮·재판 때만)
     const routed = resolveGameChatChannel(session, actor)
@@ -156,9 +127,7 @@ function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () 
 
     // 시계 값이 정상 숫자인지
     const sentAt = now()
-    if (!Number.isFinite(sentAt) || !Number.isInteger(sentAt) || sentAt < 0) {
-        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
-    }
+    if (isInvalidClockValue(sentAt)) return { ok: false, code: 'INVALID_CLOCK_VALUE' }
 
     // 마지막으로 보낸 지 0.5초 안 됐으면 거절
     const rateLimitMap = getChatRateLimitMap(session, routed.channel)
@@ -229,9 +198,9 @@ function commitGameChatMessage(prepared, { now = Date.now } = {}) {
     const { session, actorUuid: uuid, sentAt } = capability
 
     // 그사이 다른 판으로 옮겼거나 판이 바뀌었으면 거절
-    const currentGameId = playerSession.get(uuid)
+    const currentGameId = getPlayerGameId(uuid)
     if (!currentGameId) return { ok: false, code: 'NOT_IN_SESSION' }
-    const currentSession = gameSessions.get(currentGameId)
+    const currentSession = getSessionById(currentGameId)
     if (!currentSession) return { ok: false, code: 'SESSION_NOT_FOUND' }
     if (currentSession !== session) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
     if (session.id !== currentGameId) return { ok: false, code: 'STALE_SESSION_MISMATCH' }
@@ -254,16 +223,12 @@ function commitGameChatMessage(prepared, { now = Date.now } = {}) {
     if (session.dayIndex !== capability.dayIndex) return { ok: false, code: 'STALE_CHAT_REQUEST' }
 
     // 보낸 시각이 정상 숫자인지, 메시지 안 시각이랑 같은지
-    if (!Number.isFinite(sentAt) || !Number.isInteger(sentAt) || sentAt < 0) {
-        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
-    }
+    if (isInvalidClockValue(sentAt)) return { ok: false, code: 'INVALID_CLOCK_VALUE' }
     if (capability.message.sentAt !== sentAt) return { ok: false, code: 'INVALID_CLOCK_VALUE' }
 
     // 지금 시각 확인, 미래에서 왔거나 prepare 뒤 5초 넘었으면 거절
     const committedAt = now()
-    if (!Number.isFinite(committedAt) || !Number.isInteger(committedAt) || committedAt < 0) {
-        return { ok: false, code: 'INVALID_CLOCK_VALUE' }
-    }
+    if (isInvalidClockValue(committedAt)) return { ok: false, code: 'INVALID_CLOCK_VALUE' }
     if (sentAt > committedAt) return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
     if (committedAt - sentAt > CHAT_COMMIT_MAX_AGE_MS) return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
 
@@ -282,17 +247,9 @@ function commitGameChatMessage(prepared, { now = Date.now } = {}) {
     return { ok: true, gameId: session.id, channel: routed.channel, message: { ...capability.message } }
 }
 
-// 판 닫을 때 이모티콘 기록 비움
-// 이모티콘 간격 기록 + 사람별 이모티콘 목록, endGameSessionForPlayer가 부름
-function clearEmoji(session) {
-    if (session?.emojiRateLimit instanceof Map) session.emojiRateLimit.clear()
-    if (session?.emojiPaletteByUuid instanceof Map) session.emojiPaletteByUuid.clear()
-}
-
 module.exports = {
     prepareJokerChatMessage,
     commitJokerChatMessage,
     prepareGameChatMessage,
     commitGameChatMessage,
-    clearEmoji,
 }

@@ -1,3 +1,5 @@
+// 재판 추방 연출 훅: 유죄 판정으로 쫓겨난 사람을 차례로 띄우기
+// 인게임 화면이 사용, 받기는 socket/ 함수를 부름
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
@@ -18,6 +20,8 @@ import {
   buildInGameTribunalExpulsionMessage,
   resolveInGameTribunalExpulsionNickname,
 } from "../constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
+import { onConnect } from "../socket/connection.js"
+import { onTribunalResolved } from "../socket/tribunal.js"
 
 export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
@@ -34,12 +38,11 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
   )
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
+  // 다시 연결될 때마다 범위를 새로 잡으려고 셈
   const [connectSeq, setConnectSeq] = useState(0)
   useEffect(() => {
     if (!socket) return undefined
-    const handleConnect = () => setConnectSeq((current) => current + 1)
-    socket.on("connect", handleConnect)
-    return () => socket.off("connect", handleConnect)
+    return onConnect(socket, () => setConnectSeq((current) => current + 1))
   }, [socket])
 
   const epochKey = `${getInGameSocketEpochId(socket)}#${connectSeq}#${identityGeneration}#${membershipId}#${identityScopeVersion}`
@@ -98,8 +101,7 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
       ])
     }
 
-    socket.on("tribunal_vote_resolved", handleTribunalVoteResolved)
-    return () => socket.off("tribunal_vote_resolved", handleTribunalVoteResolved)
+    return onTribunalResolved(socket, handleTribunalVoteResolved)
   }, [socket, scope, authUuid, epochKey, hold, readScopeNow])
 
   const visible = presentation.scope === scope ? presentation : INITIAL_IN_GAME_TRIBUNAL_EXPULSION

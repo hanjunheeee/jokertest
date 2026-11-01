@@ -1,67 +1,15 @@
+// 이미지 배경 입력 칸 (앞 아이콘·비밀번호 보기 버튼·날짜 칸 글자색)
+// auth 화면 입력 칸 전부와 user 계정 패널이 사용, 아이콘은 InputIcons.jsx 것을 예전 경로로 다시 내보냄
 import { useState } from "react"
 import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { EyeIcon, EyeOffIcon } from "@/domains/auth/components/InputIcons.jsx"
 
-const inputIconClass = "h-[20px] w-[20px] shrink-0 text-neutral-600"
+export { MailIcon, ProfileIcon, CalendarIcon, LockIcon } from "@/domains/auth/components/InputIcons.jsx"
 
 export const AUTH_DATE_INPUT_CLASS = "auth-date-input"
 
-export function MailIcon() {
-  return (
-    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="m3 7 9 6 9-6" />
-    </svg>
-  )
-}
-
-export function ProfileIcon() {
-  return (
-    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="3.5" />
-      <path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6" />
-    </svg>
-  )
-}
-
-export function CalendarIcon() {
-  return (
-    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="5" width="16" height="16" rx="2" />
-      <path d="M8 3v4M16 3v4M4 10h16" />
-    </svg>
-  )
-}
-
-export function LockIcon() {
-  return (
-    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="5" y="11" width="14" height="10" rx="2" />
-      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-    </svg>
-  )
-}
-
-function EyeIcon() {
-  return (
-    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-      <circle cx="12" cy="12" r="2.5" />
-    </svg>
-  )
-}
-
-function EyeOffIcon() {
-  return (
-    <svg className={inputIconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 3l18 18" />
-      <path d="M10.6 10.6a2.5 2.5 0 0 0 3.5 3.5" />
-      <path d="M6.4 6.4C4 8.1 2.5 10 2 12s3.5 6 10 6c1.8 0 3.4-.4 4.8-1.1" />
-      <path d="M17.6 17.6C20 15.9 21.5 14 22 12s-3.5-6-10-6c-1.3 0-2.5.2-3.6.6" />
-    </svg>
-  )
-}
-
+// passwordToggle이면 type 대신 보기 상태로 password/text를 고름
 export default function AuthInputSlot({
   type = "text",
   name,
