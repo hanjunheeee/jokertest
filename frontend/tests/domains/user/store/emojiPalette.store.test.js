@@ -1,0 +1,531 @@
+import assert from "node:assert/strict"
+import test, { mock } from "node:test"
+
+let authState = { user: { uuid: "user-1" }, identityGeneration: 1 }
+const authListeners = new Set()
+
+const patchAuthState = (patch) => {
+  const previous = authState
+  authState = { ...authState, ...patch }
+  for (const listener of authListeners) listener(authState, previous)
+}
+
+mock.module("../../../../src/shared/env.js", {
+  namedExports: { API_BASE_URL: "", DISCORD_SUPPORT_URL: undefined },
+})
+
+mock.module("../../../../src/domains/auth/store/auth.store.js", {
+  namedExports: {
+    useAuthStore: {
+      getState: () => authState,
+      subscribe: (listener) => { authListeners.add(listener); return () => authListeners.delete(listener) },
+    },
+  },
+})
+
+const json = (status, body) => {
+  const response = { ok: status >= 200 && status < 300, status, json: async () => body, headers: { get: () => null } }
+  response.clone = () => response
+  return response
+}
+
+let handleRequest = async () => { throw new Error("fetch handler stub not set") }
+let calls = []
+Object.defineProperty(globalThis, "fetch", {
+  value: async (url, options = {}) => {
+    const method = options.method ?? "GET"
+    const body = options.body ? JSON.parse(options.body) : undefined
+    calls.push({ method, url, body })
+    return await handleRequest({ method, url, body })
+  },
+  configurable: true,
+  writable: true,
+})
+
+const createDeferred = () => {
+  let resolve
+  let reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+const unhandled = []
+process.on("unhandledRejection", (reason) => { unhandled.push(reason) })
+const flushMicrotasks = async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() }
+
+const { useEmojiPaletteStore } = await import("../../../../src/domains/user/store/emojiPalette.store.js")
+
+const DEFAULT_SLOTS = [
+  "emoji-basic-reject", "emoji-basic-tears", "emoji-basic-anger", "emoji-basic-love",
+  "emoji-basic-grin", "emoji-basic-hello", "emoji-basic-surrender", "emoji-basic-dizzy",
+]
+const EMPTY_SLOTS = [null, null, null, null, null, null, null, null]
+
+const resetWorld = () => {
+  calls = []
+  unhandled.length = 0
+  handleRequest = async () => { throw new Error("fetch handler stub not set") }
+  authState = { user: { uuid: "user-1" }, identityGeneration: 1 }
+  useEmojiPaletteStore.getState().reset()
+}
+
+const loadReady = async ({ slots = DEFAULT_SLOTS, revision = "r1", owned = DEFAULT_SLOTS } = {}) => {
+  handleRequest = async ({ method }) => {
+    if (method === "GET") return json(200, { ok: true, slots, revision, owned })
+    throw new Error(`unexpected ${method}`)
+  }
+  const result = await useEmojiPaletteStore.getState().load()
+  assert.equal(result.ok, true)
+}
+
+test("load: 성공하면 서버 값이 slots·revision·owned와 편집 상태(selectedSlots)에 함께 채워진다", async () => {
+  resetWorld()
+  await loadReady()
+
+  const state = useEmojiPaletteStore.getState()
+  assert.equal(state.status, "ready")
+  assert.deepEqual(state.slots, DEFAULT_SLOTS)
+  assert.deepEqual(state.selectedSlots, DEFAULT_SLOTS)
+  assert.equal(state.revision, "r1")
+  assert.deepEqual(state.owned, DEFAULT_SLOTS)
+  assert.equal(state.conflict, null)
+})
+
+test("계정 전환(uuid는 그대로, identityGeneration만 증가)이 일어나면 reset되고 requestGeneration이 오른다", async () => {
+  resetWorld()
+  const before = useEmojiPaletteStore.getState().requestGeneration
+
+  patchAuthState({ identityGeneration: authState.identityGeneration + 1 })
+
+  const state = useEmojiPaletteStore.getState()
+  assert.equal(state.requestGeneration, before + 1, "전이마다 진행 중인 요청을 무효화해야 한다")
+  assert.equal(state.user, undefined)
+  assert.equal(state.status, "idle")
+})
+
+test("신원 전이 도중 뒤늦게 도착한 이전 계정의 GET 응답은 store에 반영되지 않는다", async () => {
+  resetWorld()
+  const deferred = createDeferred()
+  handleRequest = async () => await deferred.promise
+
+  const pending = useEmojiPaletteStore.getState().load()
+  assert.equal(useEmojiPaletteStore.getState().status, "loading")
+
+  const generationBefore = useEmojiPaletteStore.getState().requestGeneration
+  patchAuthState({ identityGeneration: authState.identityGeneration + 1 })
+  assert.equal(useEmojiPaletteStore.getState().requestGeneration, generationBefore + 1)
+
+  deferred.resolve(json(200, { ok: true, slots: DEFAULT_SLOTS, revision: "r1", owned: DEFAULT_SLOTS }))
+  const result = await pending
+  assert.deepEqual(result, { ok: false, stale: true })
+
+  const state = useEmojiPaletteStore.getState()
+  assert.deepEqual(state.slots, EMPTY_SLOTS, "이전 신원의 팔레트가 새 화면에 채워지면 안 된다")
+  assert.deepEqual(state.selectedSlots, EMPTY_SLOTS)
+  assert.deepEqual(state.owned, [])
+  assert.equal(state.revision, null)
+  assert.equal(state.status, "idle", "reset 이후의 초기값이 그대로 남아야 한다")
+})
+
+test("load가 거부되면 처리되지 않은 rejection 없이 status='error'가 되고, 다시 부르면 상태가 다시 전이된다", async () => {
+  resetWorld()
+  handleRequest = async () => { throw new TypeError("network down") }
+
+  const failed = await useEmojiPaletteStore.getState().load()
+  assert.equal(failed.ok, false)
+  assert.equal(useEmojiPaletteStore.getState().status, "error")
+  assert.ok(useEmojiPaletteStore.getState().error instanceof Error)
+
+  await flushMicrotasks()
+  assert.deepEqual(unhandled, [], "load()는 거부를 스스로 잡아야 한다")
+
+  await loadReady({ revision: "r9" })
+  assert.equal(useEmojiPaletteStore.getState().status, "ready")
+  assert.equal(useEmojiPaletteStore.getState().revision, "r9")
+  assert.equal(useEmojiPaletteStore.getState().error, null)
+})
+
+test("save: 성공하면 서버가 돌려준 slots·revision이 서버 값과 편집 값 양쪽에 반영된다", async () => {
+  resetWorld()
+  await loadReady()
+
+  useEmojiPaletteStore.getState().selectSlot(2)
+  useEmojiPaletteStore.getState().assignItem("emoji-basic-dizzy")
+  const sent = useEmojiPaletteStore.getState().selectedSlots
+
+  handleRequest = async ({ method, body }) => {
+    if (method !== "PUT") throw new Error(`unexpected ${method}`)
+    return json(200, { ok: true, slots: body.slots, revision: "r2" })
+  }
+  const result = await useEmojiPaletteStore.getState().save()
+
+  assert.equal(result.ok, true)
+  const put = calls.filter((call) => call.method === "PUT")
+  assert.equal(put.length, 1)
+  assert.deepEqual(Object.keys(put[0].body).sort(), ["expectedRevision", "slots"], "허용 필드 둘만 보낸다")
+  assert.deepEqual(put[0].body.slots, sent)
+  assert.equal(put[0].body.expectedRevision, "r1")
+
+  const state = useEmojiPaletteStore.getState()
+  assert.deepEqual(state.slots, sent)
+  assert.deepEqual(state.selectedSlots, sent)
+  assert.equal(state.revision, "r2")
+  assert.equal(state.conflict, null)
+})
+
+test("assignItem: 이미 다른 칸에 있는 이모티콘을 넣으면 두 칸이 자리를 바꿔 중복이 생기지 않는다", async () => {
+  resetWorld()
+  await loadReady()
+
+  useEmojiPaletteStore.getState().selectSlot(0)
+  useEmojiPaletteStore.getState().assignItem("emoji-basic-anger")
+
+  const slots = useEmojiPaletteStore.getState().selectedSlots
+  assert.equal(slots[0], "emoji-basic-anger")
+  assert.equal(slots[2], "emoji-basic-reject", "덮어쓰기가 아니라 자리 바꿈이라야 중복이 생기지 않는다")
+  assert.equal(new Set(slots.filter((value) => value !== null)).size, slots.filter((value) => value !== null).length)
+})
+
+test("cancel: 편집을 버리고 서버에서 마지막으로 읽은 값으로 되돌린다", async () => {
+  resetWorld()
+  await loadReady()
+
+  useEmojiPaletteStore.getState().selectSlot(1)
+  useEmojiPaletteStore.getState().assignItem("emoji-startled")
+  assert.notDeepEqual(useEmojiPaletteStore.getState().selectedSlots, DEFAULT_SLOTS)
+
+  useEmojiPaletteStore.getState().cancel()
+  assert.deepEqual(useEmojiPaletteStore.getState().selectedSlots, DEFAULT_SLOTS)
+})
+
+test("save: 실제 apiClient→toApiError 경로로 온 409 REVISION_MISMATCH가 서버의 현재 값으로 편집 상태까지 재조정한다", async () => {
+  resetWorld()
+  await loadReady()
+
+  useEmojiPaletteStore.getState().selectSlot(0)
+  useEmojiPaletteStore.getState().assignItem("emoji-startled")
+
+  const serverSlots = [...DEFAULT_SLOTS].reverse()
+  handleRequest = async ({ method }) => {
+    if (method !== "PUT") throw new Error(`unexpected ${method}`)
+    return json(409, { ok: false, code: "REVISION_MISMATCH", message: "충돌", revision: "r2", slots: serverSlots })
+  }
+
+  const result = await useEmojiPaletteStore.getState().save()
+
+  assert.equal(result.ok, false)
+  assert.equal(result.code, "REVISION_MISMATCH")
+  assert.equal(result.status, 409)
+  assert.equal(result.revision, "r2")
+  assert.deepEqual(result.slots, serverSlots)
+
+  const state = useEmojiPaletteStore.getState()
+  assert.deepEqual(state.slots, serverSlots)
+  assert.deepEqual(state.selectedSlots, serverSlots, "충돌 뒤에는 편집 값도 서버의 현재 값이어야 한다")
+  assert.equal(state.revision, "r2")
+  assert.deepEqual(state.conflict, { revision: "r2", slots: serverSlots })
+})
+
+test("save: revision을 동봉하지 않는 실패(NOT_OWNED)는 상태를 전혀 바꾸지 않고 코드만 돌려준다", async () => {
+  resetWorld()
+  await loadReady()
+
+  handleRequest = async () => json(400, { ok: false, code: "NOT_OWNED", message: "미소유" })
+  const result = await useEmojiPaletteStore.getState().save()
+
+  assert.deepEqual(result, { ok: false, code: "NOT_OWNED", status: 400 })
+  const state = useEmojiPaletteStore.getState()
+  assert.deepEqual(state.slots, DEFAULT_SLOTS)
+  assert.deepEqual(state.selectedSlots, DEFAULT_SLOTS)
+  assert.equal(state.revision, "r1")
+  assert.equal(state.conflict, null)
+})
+
+test("save: 아직 불러오지 못한 상태에서는 요청을 보내지 않고 NOT_READY를 돌려준다", async () => {
+  resetWorld()
+
+  const result = await useEmojiPaletteStore.getState().save()
+
+  assert.deepEqual(result, { ok: false, code: "NOT_READY" })
+  assert.deepEqual(calls, [], "서버에 아무 요청도 보내지 않아야 한다")
+})
+
+const { useInGameStore } = await import("../../../../src/domains/game/ingame/store/ingameStore.js")
+
+const GAME_SLOTS = ["emoji-basic-hello", null, null, null, null, null, null, null]
+const NEXT_SLOTS = ["emoji-basic-love", null, null, null, null, null, null, null]
+
+const getCallCount = () => calls.filter((call) => call.method === "GET").length
+
+const inGameState = ({
+  gameId = "game-1", phase = "DAY", selfUuid = "user-1",
+  players = [{ uuid: "user-1", isParticipating: true, alive: true }],
+} = {}) => ({
+  id: gameId,
+  phase,
+  dayIndex: 1,
+  players,
+  self: { uuid: selfUuid, role: "CITIZEN", team: "CITIZEN" },
+})
+
+const seedGame = (options = {}) => {
+  useInGameStore.setState({ gameId: options.gameId ?? "game-1", state: inGameState(options) })
+}
+
+const resetGameWorld = () => {
+  useInGameStore.setState({ gameId: null, state: null })
+  resetWorld()
+}
+
+const respondGet = (slots) => {
+  handleRequest = async ({ method }) => {
+    if (method === "GET") return json(200, { ok: true, slots, revision: "r1", owned: slots.filter(Boolean) })
+    throw new Error(`unexpected ${method}`)
+  }
+}
+
+test("loadForGame: 같은 scope를 여러 번 불러도 GET은 1회다(진행 중 Promise와 완료 사본을 공유한다)", async () => {
+  resetGameWorld()
+  seedGame()
+  const deferred = createDeferred()
+  handleRequest = async () => await deferred.promise
+
+  const scope = { accountId: "user-1", identityGeneration: 1, gameId: "game-1" }
+  const first = useEmojiPaletteStore.getState().loadForGame(scope)
+  const second = useEmojiPaletteStore.getState().loadForGame(scope)
+  assert.equal(getCallCount(), 1, "같은 scope의 두 번째 호출이 GET을 더 냈다")
+
+  deferred.resolve(json(200, { ok: true, slots: GAME_SLOTS, revision: "r1", owned: ["emoji-basic-hello"] }))
+  assert.deepEqual((await first).slots, GAME_SLOTS)
+  assert.deepEqual((await second).slots, GAME_SLOTS)
+  assert.equal(getCallCount(), 1, "두 번째 호출이 별도 조회를 만들었다")
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
+
+  const cached = await useEmojiPaletteStore.getState().loadForGame(scope)
+  assert.equal(cached.cached, true)
+  assert.equal(getCallCount(), 1, "완료된 사본이 있는데 GET을 다시 냈다")
+  assert.deepEqual(unhandled, [])
+})
+
+test("loadForGame: 다음 판(gameId 변경)에서는 이전 사본을 버리고 한 번 더 읽는다", async () => {
+  resetGameWorld()
+  seedGame()
+  respondGet(GAME_SLOTS)
+  await useEmojiPaletteStore.getState().loadForGame()
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
+  assert.equal(getCallCount(), 1)
+
+  respondGet(NEXT_SLOTS)
+  seedGame({ gameId: "game-2" })
+  assert.equal(useEmojiPaletteStore.getState().gameScopeKey, null)
+  assert.equal(useEmojiPaletteStore.getState().gameSlots, null)
+
+  await useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "다음 판에서 팔레트를 다시 읽지 않았다")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, NEXT_SLOTS)
+})
+
+test("loadForGame: 마이페이지 load/save는 이 판의 사본을 건드리지 않는다(반대도 같다)", async () => {
+  resetGameWorld()
+  seedGame()
+  respondGet(GAME_SLOTS)
+  await useEmojiPaletteStore.getState().loadForGame()
+
+  await loadReady()
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS,
+    "마이페이지 조회가 진행 중인 판의 사본을 덮었다")
+
+  useEmojiPaletteStore.getState().selectSlot(0)
+  useEmojiPaletteStore.getState().assignItem("emoji-basic-dizzy")
+  handleRequest = async ({ method }) => {
+    if (method === "PUT") return json(200, { ok: true, slots: NEXT_SLOTS, revision: "r2" })
+    throw new Error(`unexpected ${method}`)
+  }
+  assert.equal((await useEmojiPaletteStore.getState().save()).ok, true)
+
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS,
+    "마이페이지 저장이 진행 중인 판의 사본을 바꿨다")
+  assert.deepEqual(useEmojiPaletteStore.getState().slots, NEXT_SLOTS, "전제: 마이페이지 값은 갱신돼야 한다")
+})
+
+test("loadForGame: 신원 전이(identityGeneration)는 사본과 진행 중 요청을 함께 버린다", async () => {
+  resetGameWorld()
+  seedGame()
+  const deferred = createDeferred()
+  handleRequest = async () => await deferred.promise
+
+  const pending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "loading")
+
+  patchAuthState({ identityGeneration: authState.identityGeneration + 1 })
+  assert.equal(useEmojiPaletteStore.getState().gameScopeKey, null, "신원 전이 뒤에도 사본 키가 남았다")
+
+  deferred.resolve(json(200, { ok: true, slots: GAME_SLOTS, revision: "r1", owned: [] }))
+  assert.deepEqual(await pending, { ok: false, stale: true })
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameSlots, null,
+    "전이 도중 날아간 응답이 새 신원의 사본으로 들어갔다")
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "idle")
+  assert.deepEqual(unhandled, [])
+})
+
+test("loadForGame: 판이 끝나거나(ENDED) 내가 빠지면 사본을 버린다", async () => {
+  for (const [label, patch] of [
+    ["종료", { phase: "ENDED" }],
+    ["참여 종료", { players: [{ uuid: "user-1", isParticipating: false, alive: true }] }],
+    ["roster에 내 행 없음", { players: [{ uuid: "user-2", isParticipating: true, alive: true }] }],
+    ["소유권 불일치", { selfUuid: "user-2", players: [{ uuid: "user-1", isParticipating: true, alive: true }] }],
+  ]) {
+    resetGameWorld()
+    seedGame()
+    respondGet(GAME_SLOTS)
+    // eslint-disable-next-line no-await-in-loop
+    await useEmojiPaletteStore.getState().loadForGame()
+    assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready", `전제(${label}): 먼저 사본이 있어야 한다`)
+
+    seedGame(patch)
+    assert.equal(useEmojiPaletteStore.getState().gameScopeKey, null, `${label} 뒤에도 사본 키가 남았다`)
+    assert.equal(useEmojiPaletteStore.getState().gameSlots, null, `${label} 뒤에도 사본이 남았다`)
+  }
+})
+
+test("loadForGame: 사망(alive=false)만으로는 사본을 버리지 않는다", async () => {
+  resetGameWorld()
+  seedGame()
+  respondGet(GAME_SLOTS)
+  await useEmojiPaletteStore.getState().loadForGame()
+
+  seedGame({ players: [{ uuid: "user-1", isParticipating: true, alive: false }] })
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready", "사망이 사본을 버렸다")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
+  assert.equal(getCallCount(), 1, "사망이 재조회를 만들었다")
+})
+
+test("loadForGame: 유효한 판이 없으면 아무 요청도 보내지 않는다", async () => {
+  resetGameWorld()
+  assert.deepEqual(await useEmojiPaletteStore.getState().loadForGame(), { ok: false, code: "NO_GAME_SCOPE" })
+  seedGame({ selfUuid: "user-2", players: [{ uuid: "user-1", isParticipating: true, alive: true }] })
+  assert.deepEqual(await useEmojiPaletteStore.getState().loadForGame(), { ok: false, code: "NO_GAME_SCOPE" })
+  assert.equal(getCallCount(), 0, "유효한 판이 없는데 서버를 읽었다")
+  assert.equal(useEmojiPaletteStore.getState().gameSlots, null)
+})
+
+test("loadForGame: 호출부가 넘긴 scope가 지금의 판과 다르면 읽지 않는다(늦은 effect)", async () => {
+  resetGameWorld()
+  seedGame({ gameId: "game-2" })
+  respondGet(GAME_SLOTS)
+
+  const staleScope = { accountId: "user-1", identityGeneration: 1, gameId: "game-1" }
+  assert.deepEqual(await useEmojiPaletteStore.getState().loadForGame(staleScope), { ok: false, stale: true })
+  assert.equal(getCallCount(), 0, "지나간 scope의 요청이 서버까지 나갔다")
+})
+
+test("loadForGame: 조회가 거부되면 처리되지 않은 rejection 없이 gameStatus='error'가 된다", async () => {
+  resetGameWorld()
+  seedGame()
+  handleRequest = async () => { throw new TypeError("network down") }
+
+  const result = await useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(result.ok, false)
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "error")
+  assert.equal(useEmojiPaletteStore.getState().gameSlots, null)
+
+  await flushMicrotasks()
+  assert.deepEqual(unhandled, [], "loadForGame()은 거부를 스스로 잡아야 한다")
+
+  respondGet(GAME_SLOTS)
+  await useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
+})
+
+const queueGets = (...deferreds) => {
+  let index = 0
+  handleRequest = async ({ method }) => {
+    if (method !== "GET") throw new Error(`unexpected ${method}`)
+    const deferred = deferreds[index]
+    index += 1
+    if (!deferred) throw new Error(`예상하지 않은 ${index}번째 GET`)
+    return await deferred.promise
+  }
+}
+
+test("loadForGame: 폐기 뒤 같은 키로 다시 시작하면, 앞 요청의 응답이 새 사본·pending을 바꾸지 못한다", async () => {
+  resetGameWorld()
+  seedGame()
+  const first = createDeferred()
+  const second = createDeferred()
+  queueGets(first, second)
+
+  const stalePending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 1)
+
+  useEmojiPaletteStore.getState().resetGamePalette()
+  assert.equal(useEmojiPaletteStore.getState().gameScopeKey, null)
+
+  const livePending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "폐기 뒤 재진입이 새 조회를 내지 않았다")
+  const liveKey = useEmojiPaletteStore.getState().gameScopeKey
+  assert.ok(liveKey, "재진입한 요청이 캐시 키를 세우지 않았다")
+
+  first.resolve(json(200, { ok: true, slots: NEXT_SLOTS, revision: "r-old", owned: [] }))
+  assert.deepEqual(await stalePending, { ok: false, stale: true },
+    "폐기된 요청이 자기 응답을 유효한 것으로 보고했다")
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameSlots, null,
+    "폐기된 요청의 응답이 새 요청의 사본 자리에 들어갔다")
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "loading",
+    "폐기된 요청이 진행 중인 새 요청의 상태를 끝난 것으로 바꿨다")
+  assert.equal(useEmojiPaletteStore.getState().gameScopeKey, liveKey)
+
+  const rejoin = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "폐기된 요청의 정리가 새 요청의 중복 방지를 풀었다")
+
+  second.resolve(json(200, { ok: true, slots: GAME_SLOTS, revision: "r-new", owned: [] }))
+  assert.deepEqual((await livePending).slots, GAME_SLOTS)
+  assert.deepEqual((await rejoin).slots, GAME_SLOTS, "합쳐진 호출이 새 요청의 결과를 받지 못했다")
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS,
+    "새 요청의 응답이 최종 사본이 되어야 한다")
+  assert.equal(getCallCount(), 2)
+  assert.deepEqual(unhandled, [])
+})
+
+test("loadForGame: 폐기된 앞 요청이 거부돼도 새 요청의 상태·중복 방지는 그대로다", async () => {
+  resetGameWorld()
+  seedGame()
+  const first = createDeferred()
+  const second = createDeferred()
+  queueGets(first, second)
+
+  const stalePending = useEmojiPaletteStore.getState().loadForGame()
+  useEmojiPaletteStore.getState().resetGamePalette()
+  const livePending = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2)
+
+  first.reject(new TypeError("network down"))
+  assert.deepEqual(await stalePending, { ok: false, stale: true })
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "loading",
+    "폐기된 요청의 실패가 진행 중인 새 요청을 error로 끝냈다")
+  const rejoin = useEmojiPaletteStore.getState().loadForGame()
+  assert.equal(getCallCount(), 2, "폐기된 요청의 실패 정리가 새 요청의 중복 방지를 풀었다")
+
+  second.resolve(json(200, { ok: true, slots: GAME_SLOTS, revision: "r-new", owned: [] }))
+  assert.deepEqual((await livePending).slots, GAME_SLOTS)
+  await rejoin
+  await flushMicrotasks()
+
+  assert.equal(useEmojiPaletteStore.getState().gameStatus, "ready")
+  assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
+  assert.deepEqual(unhandled, [], "폐기된 요청의 거부가 처리되지 않은 rejection으로 샜다")
+})

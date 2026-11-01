@@ -1,0 +1,4282 @@
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+
+const gameSessionSocketLayer = require('../../socket/gameSession')
+const gameSessionCore = require('../../game-core/gameSession')
+const matchmaking = require('../../socket/matchmaking')
+matchmaking.__setGameResultRepositoryForTests({
+    getAccountRecordSummaries: async (userIds) =>
+        new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
+})
+matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
+const {
+    callAsPromise,
+    createFakeSocket,
+    createFakeIo,
+    validSettingsPayload,
+    startPayload,
+    countingCallback,
+    setupReadyRoomForStart,
+} = require('../helpers/matchmakingFixtures')
+
+const { handleCreateRoom, handleJoinRoomByCode, handleSetReady, handleStartGame } = matchmaking.__testables
+const {
+    handleAcknowledgeRoleReveal,
+    handleAcknowledgeDayVoteReady,
+    handleSubmitNightAction,
+    handleSubmitJokerChatMessage,
+    handleResolveNight,
+    handleSubmitDayVote,
+    handleResolveDayVote,
+    handleCastTribunalVote,
+    handleResolveTribunalVote,
+    handleLeaveGameSession,
+    handleGetSessionSnapshot,
+    handleSubmitGameChatMessage,
+    resolveJokerTeammateSockets,
+    resolveChatRecipientSockets,
+} = gameSessionSocketLayer.__testables
+
+function createConventionFollowingRegistry() {
+    const overrides = new Map()
+    return new Proxy(overrides, {
+        get(target, prop, receiver) {
+            if (prop === 'get') {
+                return (uuid) => (target.has(uuid) ? target.get(uuid) : `sock-${uuid}`)
+            }
+            return Reflect.get(target, prop, receiver)
+        },
+    })
+}
+
+test.beforeEach(() => {
+    gameSessionCore.__resetStateForTests()
+    matchmaking.__resetStateForTests()
+    gameSessionSocketLayer.__resetStateForTests()
+    gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests(async () => ({ recorded: true }))
+})
+test.afterEach(() => {
+    gameSessionCore.__resetStateForTests()
+    matchmaking.__resetStateForTests()
+    gameSessionSocketLayer.__resetStateForTests()
+    gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests()
+})
+
+function makePlayer(uuid, nickname = `nick-${uuid}`) {
+    return { uuid, nickname, isReady: true }
+}
+
+function flushAsync() {
+    return new Promise((resolve) => setImmediate(resolve))
+}
+
+function makeRoom({ id = 'room-1', players, jokerCount = 1 } = {}) {
+    const playerList = players ?? [makePlayer('p1'), makePlayer('p2')]
+    return {
+        id,
+        players: new Map(playerList.map((p) => [p.uuid, p])),
+        settings: { jokerCount },
+    }
+}
+
+function commitTwoPlayerSession({ roomId = 'room-1', uuidA = 'p1', uuidB = 'p2' } = {}) {
+    const room = makeRoom({ id: roomId, players: [makePlayer(uuidA), makePlayer(uuidB)] })
+    const prepared = gameSessionCore.prepareGameSession(room)
+    gameSessionCore.commitGameSession(prepared.session)
+
+    const socketA = createFakeSocket(uuidA)
+    const socketB = createFakeSocket(uuidB)
+    socketA.rooms.add(prepared.session.channelId)
+    socketB.rooms.add(prepared.session.channelId)
+    socketA.data.activeGameId = prepared.session.id
+    socketB.data.activeGameId = prepared.session.id
+    const io = createFakeIo([socketA, socketB])
+
+    return { session: prepared.session, socketA, socketB, io }
+}
+
+test('onDisconnect: 어떤 활성 GameSession에도 속하지 않은 uuid는 아무 것도 바꾸지 않는다', async () => {
+    const socket = createFakeSocket('lonely-uuid')
+    const io = createFakeIo([socket])
+
+    await gameSessionSocketLayer.onDisconnect(io, socket, 'lonely-uuid')
+
+    assert.equal(io.broadcasts.length, 0)
+    assert.equal(socket.rooms.size, 0)
+})
+
+test('onDisconnect: 진행 중 세션은 종료 방송·registry/channel 정리 없이 재접속 유예만 시작한다', async () => {
+    const { session, socketA, socketB, io } = commitTwoPlayerSession()
+
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
+
+    assert.equal(io.broadcasts.some((b) => b.event === 'game_ended'), false)
+    assert.notEqual(gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, 'p1'), undefined)
+    assert.equal(socketB.rooms.has(session.channelId), true)
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), true)
+    assert.equal(snapshot.roomGameSession.some(([roomId]) => roomId === session.roomId), true)
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'p1'), true)
+})
+
+test('onDisconnect: room broadcast와 channel 제거 없이 참가자 소켓의 기존 세션 routing을 보존한다', async () => {
+    const { session, socketA, socketB, io } = commitTwoPlayerSession()
+
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
+
+    const gameEndedBroadcasts = io.broadcasts.filter((b) => b.event === 'game_ended')
+    assert.equal(gameEndedBroadcasts.length, 0)
+    assert.equal(socketA.rooms.has(session.channelId), true)
+    assert.equal(socketB.rooms.has(session.channelId), true)
+})
+
+test('onDisconnect: 유예 시작 경로는 io.to를 호출하지 않아 방송 계층 장애와 독립적이다', async () => {
+    const { session, socketA, socketB, io } = commitTwoPlayerSession()
+    io.to = () => {
+        throw new Error('emit 실패(테스트 주입)')
+    }
+
+    await assert.doesNotReject(() => gameSessionSocketLayer.onDisconnect(io, socketA, 'p1'))
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), true)
+    assert.equal(socketB.rooms.has(session.channelId), true)
+})
+
+test('onDisconnect: 유예 시작 경로는 io.in을 호출하지 않아 channel 정리 계층 장애와 독립적이다', async () => {
+    const { session, socketA, io } = commitTwoPlayerSession()
+    io.in = () => {
+        throw new Error('socketsLeave 실패(테스트 주입)')
+    }
+
+    await assert.doesNotReject(() => gameSessionSocketLayer.onDisconnect(io, socketA, 'p1'))
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([gameId]) => gameId === session.id), true)
+    assert.equal(io.broadcasts.some((b) => b.event === 'game_ended'), false)
+})
+
+test('onDisconnect: 같은 uuid로 연속 2회 호출해도 유예 run은 하나고 종료 방송은 없다', async () => {
+    const { session, socketA, io } = commitTwoPlayerSession()
+
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
+    const firstRun = gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, 'p1')
+
+    await gameSessionSocketLayer.onDisconnect(io, socketA, 'p1')
+    const secondRun = gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, 'p1')
+
+    assert.notEqual(firstRun, undefined)
+    assert.equal(secondRun, firstRun)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+})
+
+function commitSessionWithPlayers(uuids, { roomId = 'room-ack' } = {}) {
+    const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)) })
+    const prepared = gameSessionCore.prepareGameSession(room)
+    gameSessionCore.commitGameSession(prepared.session)
+
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(prepared.session.channelId)
+        s.data.activeGameId = prepared.session.id
+        return s
+    })
+    const io = createFakeIo(sockets)
+
+    return { session: prepared.session, sockets, io }
+}
+
+test('acknowledge_role_reveal: 2인 세션 중 1명만 확인하면 콜백은 ok:true이고 game_phase_changed는 방송되지 않는다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['p1', 'p2'])
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeRoleReveal(io, sockets[0], 'p1', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(io.broadcasts.some((b) => b.event === 'game_phase_changed'), false)
+})
+
+test('acknowledge_role_reveal: 나머지 1명도 확인하면 콜백은 ok:true이고 game_phase_changed가 정확히 1건, payload가 정확히 {gameId, phase:"DAY", dayIndex:1}이다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['q1', 'q2'])
+
+    handleAcknowledgeRoleReveal(io, sockets[0], 'q1', { gameId: session.id }, countingCallback().callback)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 0)
+    assert.equal(session.phase, 'ROLE_REVEAL')
+    assert.equal(session.dayIndex, 0)
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[1], 'q2', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
+    assert.equal(broadcasts.length, 1)
+    assert.equal(broadcasts[0].roomId, session.channelId)
+    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, phase: 'DAY', dayIndex: 1 })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+
+    const late = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[0], 'q1', { gameId: session.id }, late.callback)
+    assert.deepEqual(late.getResponse(), { ok: false, code: 'INVALID_PHASE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 1)
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+})
+
+test('acknowledge_role_reveal: 3인 세션에서 전원 확인해도 game_phase_changed는 전체 과정에서 정확히 1건만 발생한다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['r1', 'r2', 'r3'])
+
+    handleAcknowledgeRoleReveal(io, sockets[0], 'r1', { gameId: session.id }, countingCallback().callback)
+    handleAcknowledgeRoleReveal(io, sockets[1], 'r2', { gameId: session.id }, countingCallback().callback)
+    handleAcknowledgeRoleReveal(io, sockets[2], 'r3', { gameId: session.id }, countingCallback().callback)
+
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
+    assert.equal(broadcasts.length, 1)
+})
+
+test('acknowledge_role_reveal: callback이 함수가 아니면 무동작이다(상태 불변, 방송 없음)', () => {
+    const { session, io } = commitSessionWithPlayers(['s1', 's2'])
+
+    handleAcknowledgeRoleReveal(io, null, 's1', { gameId: session.id }, undefined)
+
+    assert.equal(session.roleRevealAcks.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('acknowledge_role_reveal: 세션 없는 uuid는 {ok:false, code:"NOT_IN_SESSION"}이다', () => {
+    const { io } = commitSessionWithPlayers(['t1', 't2'])
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeRoleReveal(io, createFakeSocket('not-a-participant'), 'not-a-participant', { gameId: 'whatever' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_IN_SESSION', message: '요청을 처리할 수 없습니다.' })
+})
+
+test('acknowledge_role_reveal: gameId 누락/타입 오류 payload는 {ok:false, code:"INVALID_PAYLOAD"}이다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['u1', 'u2'])
+
+    const missing = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[0], 'u1', {}, missing.callback)
+    assert.deepEqual(missing.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const wrongType = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[0], 'u1', { gameId: 123 }, wrongType.callback)
+    assert.deepEqual(wrongType.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(session.roleRevealAcks.size, 0)
+})
+
+test('acknowledge_role_reveal: 한 명이 유예 중이어도 연결된 참가자의 늦은 확인은 성공하되 전이는 아직 없다', async () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['v1', 'v2'])
+    await gameSessionSocketLayer.onDisconnect(io, sockets[0], 'v1')
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[1], 'v2', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 0)
+})
+
+function commitTribunalReadySession({ roomId = 'room-tribunal', uuidA = 'w1', uuidB = 'w2', uuidC = 'w3', defendantUuid = 'w3' } = {}) {
+    const room = makeRoom({ id: roomId, players: [makePlayer(uuidA), makePlayer(uuidB), makePlayer(uuidC)] })
+    const prepared = gameSessionCore.prepareGameSession(room)
+    gameSessionCore.commitGameSession(prepared.session)
+    const session = prepared.session
+    session.phase = 'TRIBUNAL'
+    session.dayVoteResolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: defendantUuid,
+        publicVoteCount: 3,
+        publicAbstainCount: 0,
+    }
+    session.tribunal = { candidateId: defendantUuid, dayIndex: session.dayIndex, defendantUuid, votes: new Map() }
+
+    const socketA = createFakeSocket(uuidA)
+    const socketB = createFakeSocket(uuidB)
+    const socketC = createFakeSocket(uuidC)
+    for (const s of [socketA, socketB, socketC]) {
+        s.rooms.add(session.channelId)
+        s.data.activeGameId = session.id
+    }
+    const io = createFakeIo([socketA, socketB, socketC])
+
+    return { session, socketA, socketB, socketC, io }
+}
+
+test('cast_tribunal_vote: 성공 ack는 정확히 {ok, gameId, dayIndex, vote, sfxEvent}만 담고 broadcast가 없다', () => {
+    const { session, socketA, io } = commitTribunalReadySession()
+    const { callback, getResponse } = countingCallback()
+
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        vote: 'GUILTY',
+        sfxEvent: {
+            kind: 'tribunal-vote-submitted',
+            eventId: `game:${session.id}:day:${session.dayIndex}:actor:w1:tribunal-submitted`,
+            accountId: 'w1',
+            gameId: session.id,
+            dayIndex: session.dayIndex,
+            origin: 'live',
+        },
+    })
+    assert.deepEqual(Object.keys(getResponse()).sort(), ['dayIndex', 'gameId', 'ok', 'sfxEvent', 'vote'])
+    assert.equal(Object.hasOwn(getResponse().sfxEvent, 'vote'), false)
+    assert.equal(io.broadcasts.length, 0)
+    assert.equal(session.tribunal.votes.get('w1'), 'GUILTY')
+})
+
+test('cast_tribunal_vote(F-16): 중복 제출 실패 ack에는 사건 봉투가 없다', () => {
+    const { session, socketA, io } = commitTribunalReadySession()
+
+    const first = countingCallback()
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, first.callback)
+    assert.equal(first.getResponse().ok, true)
+
+    const duplicate = countingCallback()
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, duplicate.callback)
+
+    assert.equal(duplicate.getResponse().ok, false)
+    assert.equal(duplicate.getResponse().code, 'TRIBUNAL_VOTE_ALREADY_SUBMITTED')
+    assert.equal(Object.hasOwn(duplicate.getResponse(), 'sfxEvent'), false)
+})
+
+test('cast_tribunal_vote: payload 형태 오류(gameId/dayIndex 누락·타입 오류)는 INVALID_PAYLOAD이다', () => {
+    const { session, socketA, io } = commitTribunalReadySession()
+
+    const missing = countingCallback()
+    handleCastTribunalVote(io, socketA, 'w1', {}, missing.callback)
+    assert.deepEqual(missing.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const badDayIndex = countingCallback()
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: '0', vote: 'GUILTY' }, badDayIndex.callback)
+    assert.deepEqual(badDayIndex.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(session.tribunal.votes.size, 0)
+})
+
+test('cast_tribunal_vote: 클라이언트 입력만으로 도달 가능한 공개 코드(INVALID_TRIBUNAL_VOTE)는 그대로 전달된다', () => {
+    const { session, socketA, io } = commitTribunalReadySession()
+    const { callback, getResponse } = countingCallback()
+
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'APPROVE' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_TRIBUNAL_VOTE', message: '요청을 처리할 수 없습니다.' })
+})
+
+test('cast_tribunal_vote: internal-only 코드는 INTERNAL_ERROR로 정규화되고, 로그는 정확히 {gameId, dayIndex, requesterUuid, internalCode} 4필드만 담는다', () => {
+    const { session, socketA, io } = commitTribunalReadySession()
+    session.tribunal = null
+
+    const originalError = console.error
+    const calls = []
+    console.error = (...args) => calls.push(args)
+    let response
+    try {
+        const { callback, getResponse } = countingCallback()
+        handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, callback)
+        response = getResponse()
+    } finally {
+        console.error = originalError
+    }
+
+    assert.deepEqual(response, { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(calls.length, 1)
+    const [, logPayload] = calls[0]
+    assert.deepEqual(Object.keys(logPayload).sort(), ['dayIndex', 'gameId', 'internalCode', 'requesterUuid'])
+    assert.deepEqual(logPayload, {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        requesterUuid: 'w1',
+        internalCode: 'TRIBUNAL_STATE_NOT_FOUND',
+    })
+})
+
+test('cast_tribunal_vote: callback이 던지면 CALLBACK_ERROR로 4필드 로그만 남기고 예외가 새지 않는다', () => {
+    const { session, io } = commitTribunalReadySession()
+    const originalError = console.error
+    const calls = []
+    console.error = (...args) => calls.push(args)
+
+    const throwingCallback = () => {
+        throw new Error('콜백 실패(테스트 주입)')
+    }
+    try {
+        assert.doesNotThrow(() =>
+            handleCastTribunalVote(io, null, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, throwingCallback),
+        )
+    } finally {
+        console.error = originalError
+    }
+
+    assert.equal(calls.length, 1)
+    const [, logPayload] = calls[0]
+    assert.deepEqual(Object.keys(logPayload).sort(), ['dayIndex', 'gameId', 'internalCode', 'requesterUuid'])
+    assert.equal(logPayload.internalCode, 'CALLBACK_ERROR')
+})
+
+test('acknowledge_role_reveal: 콜백이 throw해도 game_phase_changed 방송은 정상적으로 발생한다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['w1', 'w2'])
+    const throwingCallback = () => {
+        throw new Error('콜백 실패(테스트 주입)')
+    }
+
+    handleAcknowledgeRoleReveal(io, sockets[0], 'w1', { gameId: session.id }, countingCallback().callback)
+    assert.doesNotThrow(() => handleAcknowledgeRoleReveal(io, sockets[1], 'w2', { gameId: session.id }, throwingCallback))
+
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
+    assert.equal(broadcasts.length, 1)
+})
+
+test('acknowledge_role_reveal: N인 세션에서 N번 확인하면 콜백은 N회, game_phase_changed 방송은 정확히 1회다', () => {
+    const uuids = ['x1', 'x2', 'x3', 'x4']
+    const { session, sockets, io } = commitSessionWithPlayers(uuids)
+    let callbackCalls = 0
+
+    uuids.forEach((uuid, index) => {
+        handleAcknowledgeRoleReveal(io, sockets[index], uuid, { gameId: session.id }, () => {
+            callbackCalls += 1
+        })
+    })
+
+    assert.equal(callbackCalls, uuids.length)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_phase_changed').length, 1)
+})
+
+test('acknowledge_role_reveal: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 소켓 응답에서 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['y1', 'y2'])
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[0], 'y1', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('acknowledge_role_reveal: core가 NOT_A_PARTICIPANT를 반환하는 registry 불일치는 소켓 응답에서 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['z1', 'z2'])
+    session.players.delete('z1')
+
+    const { callback, getResponse } = countingCallback()
+    handleAcknowledgeRoleReveal(io, sockets[0], 'z1', { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('명시적 leave_game_session으로 GameSession이 정리된 뒤, 같은 uuid를 포함한 새 Room에서 다시 게임을 시작할 수 있다', async () => {
+    matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    matchmaking.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        getGameStartLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, {
+                profilePhotoId: null, profileBorderId: null, cardFrameId: null,
+                skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+            }])),
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
+    })
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+
+    const hostSocketA = createFakeSocket('uuid-cleanup-host')
+    const ioA = createFakeIo([hostSocketA])
+    const { joinerSocket: joinerSocketA, room: roomA } = await setupReadyRoomForStart(ioA, 'uuid-cleanup-host', 'uuid-cleanup-joiner', readyRoomHandlers)
+
+    const { callback: cbA, getResponse: getResponseA } = countingCallback()
+    await handleStartGame(ioA, hostSocketA, 'uuid-cleanup-host', startPayload(roomA), cbA)
+    assert.equal(getResponseA().ok, true)
+
+    handleLeaveGameSession(
+        ioA,
+        joinerSocketA,
+        'uuid-cleanup-joiner',
+        { gameId: joinerSocketA.data.activeGameId },
+        countingCallback().callback,
+    )
+
+    const afterLeave = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(afterLeave.playerSession.some(([uuid]) => uuid === 'uuid-cleanup-joiner'), false)
+    assert.equal(afterLeave.playerSession.some(([uuid]) => uuid === 'uuid-cleanup-host'), true)
+
+    handleLeaveGameSession(
+        ioA,
+        hostSocketA,
+        'uuid-cleanup-host',
+        { gameId: hostSocketA.data.activeGameId },
+        countingCallback().callback,
+    )
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.length, 0)
+    assert.equal(snapshot.playerSession.length, 0)
+    assert.equal(snapshot.roomGameSession.length, 0)
+
+    const hostSocketB = createFakeSocket('uuid-cleanup-host2')
+    const ioB = createFakeIo([hostSocketB])
+    const { room: roomB } = await setupReadyRoomForStart(ioB, 'uuid-cleanup-host2', 'uuid-cleanup-joiner', readyRoomHandlers)
+
+    const { callback: cbB, getResponse: getResponseB } = countingCallback()
+    await handleStartGame(ioB, hostSocketB, 'uuid-cleanup-host2', startPayload(roomB), cbB)
+
+    assert.equal(getResponseB().ok, true)
+    assert.notEqual(getResponseB().code, 'PLAYER_ALREADY_IN_SESSION')
+})
+
+function ackAllAndRewindToFirstNight(session, { dayIndex = 0 } = {}) {
+    for (const uuid of session.players.keys()) {
+        gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+    }
+    session.phase = 'NIGHT'
+    session.dayIndex = dayIndex
+    session.nightActions = new Map()
+    session.nightResolution = null
+    session.dayVotes = new Map()
+    session.dayVoteResolution = null
+    session.tribunal = null
+}
+
+function commitFullRoleSessionAtNight({ id = 'room-full', gameIdFn } = {}) {
+    const players = Array.from({ length: 10 }, (_, i) => makePlayer(`fp-${id}-${i}`))
+    const room = makeRoom({ id, players, jokerCount: 1 })
+    const opts = { randomFn: () => 0.999, ...(gameIdFn ? { gameIdFn } : {}) }
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    ackAllAndRewindToFirstNight(session)
+    const byRole = (role) => [...session.players.values()].find((p) => p.role === role).uuid
+    return {
+        session,
+        jokerUuid: byRole('JOKER'),
+        doctorUuid: byRole('DOCTOR'),
+        guardUuid: byRole('GUARD'),
+        witchHunterUuid: byRole('WITCH_HUNTER'),
+        citizenUuid: byRole('CITIZEN'),
+    }
+}
+
+function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
+    const players = [makePlayer(`ja-${id}`), makePlayer(`jb-${id}`), makePlayer(`jc-${id}`)]
+    const room = makeRoom({ id, players, jokerCount: 2 })
+    const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    ackAllAndRewindToFirstNight(session)
+    const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
+    const citizenUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
+    return { session, jokerUuids, citizenUuid }
+}
+
+function throwingCallback(message) {
+    return () => {
+        throw new Error(message)
+    }
+}
+
+test('submit_night_action: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+
+    for (const badPayload of [null, 'x', 42, []]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: gameId가 비문자열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: 123, targetId: citizenUuid }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: targetId가 null도 문자열도 아니면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: 42 }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: targetId 키 자체가 없어도(undefined) INVALID_PAYLOAD다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+})
+
+test('submit_night_action: callback이 함수가 아니면 완전한 no-op이다(예외도 없고 Map도 불변)', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
+
+    assert.doesNotThrow(() => handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: citizenUuid }, undefined))
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('submit_night_action: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: null }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('submit_night_action: 성공/실패 어느 경로에서도 브로드캐스트가 발생하지 않는다', () => {
+    const { session, doctorUuid, citizenUuid, guardUuid } = commitFullRoleSessionAtNight()
+    const io = createFakeIo([])
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: citizenUuid }, countingCallback().callback)
+    handleSubmitNightAction(createFakeSocket(guardUuid), guardUuid, { gameId: session.id, targetId: guardUuid }, countingCallback().callback)
+
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('submit_night_action(JOKER): 자기 자신·다른 JOKER·CITIZEN 세 대상 모두 외부 ack가 정확히 {ok:true}다(추가 키·gameId 없음)', () => {
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
+    const [actor, teammate] = jokerUuids
+
+    const self = countingCallback()
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: actor }, self.callback)
+
+    const teammateResult = countingCallback()
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: teammate }, teammateResult.callback)
+
+    const citizenResult = countingCallback()
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: citizenUuid }, citizenResult.callback)
+
+    assert.deepEqual(self.getResponse(), { ok: true })
+    assert.deepEqual(teammateResult.getResponse(), { ok: true })
+    assert.deepEqual(citizenResult.getResponse(), { ok: true })
+})
+
+test('submit_night_action(JOKER, 오라클 방지 회귀): 자기 자신·다른 JOKER·CITIZEN 세 외부 ack가 구조적으로 구분 불가능하다', () => {
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
+    const [actor, teammate] = jokerUuids
+
+    const self = countingCallback()
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: actor }, self.callback)
+    const teammateResult = countingCallback()
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: teammate }, teammateResult.callback)
+    const citizenResult = countingCallback()
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: session.id, targetId: citizenUuid }, citizenResult.callback)
+
+    assert.deepEqual(self.getResponse(), teammateResult.getResponse())
+    assert.deepEqual(teammateResult.getResponse(), citizenResult.getResponse())
+    assert.deepEqual(self.getResponse(), { ok: true })
+})
+
+test('로그 비밀성(registry 불일치): console.error 인자가 정확히 {code, uuid, gameId:undefined}뿐이고 원본 Error가 아니다', (t) => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[밤 행동 제출 registry 불일치]')
+    assert.deepEqual(Object.keys(loggedObj).sort(), ['code', 'gameId', 'uuid'])
+    assert.equal(loggedObj instanceof Error, false)
+    assert.equal(loggedObj.code, 'SESSION_NOT_FOUND')
+    assert.equal(loggedObj.uuid, doctorUuid)
+    assert.equal(loggedObj.gameId, undefined)
+})
+
+test('로그 비밀성(일반 예외): 의도적으로 민감한 문자열을 담은 Error를 던져도 로그·ack 어디에도 새지 않고 gameId는 undefined다', (t) => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    t.mock.method(gameSessionCore, 'submitNightAction', () => {
+        throw new Error('SECRET role=JOKER targetId=citizen-uuid-X')
+    })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: null }, callback)
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[밤 행동 제출 처리 에러]')
+    assert.deepEqual(loggedObj, { code: 'UNEXPECTED_ERROR', uuid: doctorUuid, gameId: undefined })
+    assert.equal(loggedObj instanceof Error, false)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('SECRET'), false)
+    assert.equal(serialized.includes('role=JOKER'), false)
+    assert.equal(serialized.includes('targetId=citizen-uuid-X'), false)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(JSON.stringify(getResponse()).includes('SECRET'), false)
+})
+
+test('로그 비밀성(callback 전달 실패, 성공 응답 전달 중): gameId는 core가 반환한 canonical session.id고, 이미 반영된 Map 쓰기는 롤백되지 않는다', (t) => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight()
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const io = createFakeIo([])
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: citizenUuid }, throwingCallback('SECRET stack leak role=DOCTOR')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[밤 행동 제출 ack 전달 실패]')
+    assert.deepEqual(Object.keys(loggedObj).sort(), ['code', 'gameId', 'uuid'])
+    assert.equal(loggedObj.code, 'CALLBACK_ERROR')
+    assert.equal(loggedObj.gameId, session.id)
+    assert.equal(loggedObj instanceof Error, false)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('SECRET'), false)
+    assert.equal(serialized.includes('stack leak'), false)
+    assert.equal(serialized.includes('role=DOCTOR'), false)
+
+    assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('로그 비밀성(callback 전달 실패, 실패 응답 전달 중): gameId는 undefined다(canonical 값을 쓸 근거가 없음)', (t) => {
+    const { session, guardUuid } = commitFullRoleSessionAtNight()
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(createFakeSocket(guardUuid), guardUuid, { gameId: session.id, targetId: guardUuid }, throwingCallback('SECRET-FAIL role=GUARD')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, undefined)
+    assert.equal(JSON.stringify(errorSpy.mock.calls[0].arguments).includes('SECRET-FAIL'), false)
+})
+
+test('로그 비밀성(중첩): submitNightAction과 callback이 동시에 throw해도 정확히 2건의 고정 구조 로그만 남고 gameId는 둘 다 undefined다', (t) => {
+    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    t.mock.method(gameSessionCore, 'submitNightAction', () => {
+        throw new Error('SECRET-A role=JOKER')
+    })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: session.id, targetId: null }, throwingCallback('SECRET-B stack role=GUARD')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 2)
+    const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+    const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+    assert.equal(firstPrefix, '[밤 행동 제출 처리 에러]')
+    assert.deepEqual(firstLogged, { code: 'UNEXPECTED_ERROR', uuid: doctorUuid, gameId: undefined })
+    assert.equal(secondPrefix, '[밤 행동 제출 ack 전달 실패]')
+    assert.deepEqual(secondLogged, { code: 'CALLBACK_ERROR', uuid: doctorUuid, gameId: undefined })
+
+    const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+    for (const secret of ['SECRET-A', 'SECRET-B', 'role=JOKER', 'role=GUARD', 'stack']) {
+        assert.equal(serialized.includes(secret), false)
+    }
+})
+
+test('로그 비밀성(개행·초장문 gameId): malformed payload의 gameId에 개행·10만자 문자열이 있어도 로그·ack 어디에도 새지 않는다', (t) => {
+    const { doctorUuid } = commitFullRoleSessionAtNight()
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const longInjection = '\n[admin] login succeeded\nrole=JOKER' + 'x'.repeat(100000)
+
+    assert.doesNotThrow(() =>
+        handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: longInjection, targetId: null }, throwingCallback('late leak')),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, undefined)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('admin'), false)
+    assert.equal(serialized.includes('role=JOKER'), false)
+    assert.equal(serialized.includes('xxxxx'), false)
+})
+
+test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 세션과 일치하면 정상 저장 성공이고, 외부 ack는 정확히 {ok:true}뿐이다(gameId 키 없음)', () => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc', gameIdFn: () => 'abc' })
+    assert.equal(session.id, 'abc')
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(Object.hasOwn(getResponse(), 'gameId'), false)
+    assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
+})
+
+test('9라운드 회귀: 같은 성공 제출에서 callback이 throw하면 CALLBACK_ERROR 로그의 gameId는 정확히 "abc"이고 원본 개행·공백 문자열은 어디에도 없다', (t) => {
+    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc2', gameIdFn: () => 'abc' })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, throwingCallback('late leak'))
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, 'abc')
+
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('\n  abc  \n'), false)
+    assert.equal(serialized.includes('  abc  '), false)
+})
+
+test('9라운드 회귀: JOKER no-op 성공에서도 callback이 throw하면 CALLBACK_ERROR 로그의 gameId는 client 원본이 아닌 canonical "abc"다', (t) => {
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-abc-joker', gameIdFn: () => 'abc' })
+    const [actor, teammate] = jokerUuids
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    handleSubmitNightAction(createFakeSocket(actor), actor, { gameId: '\n  abc  \n', targetId: teammate }, throwingCallback('late leak'))
+
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(loggedObj.gameId, 'abc')
+})
+
+function commitJokerChatSessionWithSockets(uuids, { roomId = 'room-jc', jokerCount = 2, gameIdFn } = {}) {
+    const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
+    const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, opts)
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    ackAllAndRewindToFirstNight(session)
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(session.channelId)
+        return s
+    })
+    const io = createFakeIo(sockets)
+    const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
+    const citizenUuids = [...session.players.values()].filter((p) => p.role !== 'JOKER').map((p) => p.uuid)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+    return { session, io, sockets, socketByUuid, jokerUuids, citizenUuids }
+}
+
+test('submit_joker_chat_message: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc1a', 'jc1b', 'jc1c'], { roomId: 'room-jc-1' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+
+    for (const badPayload of [null, 'x', 42, []]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitJokerChatMessage(io, socket, actor, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.jokerChatRateLimit.size, 0)
+})
+
+test('submit_joker_chat_message: gameId가 비문자열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc2a', 'jc2b', 'jc2c'], { roomId: 'room-jc-2' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: 123, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+})
+
+test('submit_joker_chat_message: text가 비문자열이면 INVALID_PAYLOAD이고 Map은 불변이다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc3a', 'jc3b', 'jc3c'], { roomId: 'room-jc-3' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 42 }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+})
+
+test('submit_joker_chat_message: callback이 함수가 아니면 완전한 no-op이다(예외도 없고 Map도 emit도 불변)', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc4a', 'jc4b', 'jc4c'], { roomId: 'room-jc-4' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+
+    assert.doesNotThrow(() => handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, undefined))
+
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+})
+
+test('submit_joker_chat_message: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc5a', 'jc5b', 'jc5c'], { roomId: 'room-jc-5' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, actor)
+
+    const { callback, getResponse } = countingCallback()
+    socket.trigger('submit_joker_chat_message', { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const delivered = socket.emitted.filter((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.length, 1)
+})
+
+test('submit_joker_chat_message: 정확히-한-번 전달 — JOKER 두 소켓(발신자 포함) 각각 정확히 1개, CITIZEN은 0개, io.broadcasts는 비어있다', () => {
+    const { session, io, jokerUuids, citizenUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc6a', 'jc6b', 'jc6c'], { roomId: 'room-jc-6' })
+    const [actor, teammate] = jokerUuids
+    const [citizen] = citizenUuids
+    const senderSocket = socketByUuid.get(actor)
+
+    const { callback, getResponse } = countingCallback()
+    handleSubmitJokerChatMessage(io, senderSocket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socketByUuid.get(actor).emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(socketByUuid.get(teammate).emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(socketByUuid.get(citizen).emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('submit_joker_chat_message: deps.prepare가 실패 응답을 반환하면 그 code 그대로 ack되고 Map은 불변, emit은 0회다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc7a', 'jc7b', 'jc7c'], { roomId: 'room-jc-7' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const deps = { prepare: () => ({ ok: false, code: 'RATE_LIMITED' }) }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'RATE_LIMITED', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+})
+
+test('submit_joker_chat_message: deps.prepare가 throw하면 ack INTERNAL_ERROR이고 로그가 정확히 {code, uuid, gameId:undefined} 3키이며 raw err가 없다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc8a', 'jc8b', 'jc8c'], { roomId: 'room-jc-8' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { prepare: () => { throw new Error('시계 오류(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'PREPARE_UNEXPECTED_ERROR', uuid: actor, gameId: undefined })
+    assert.equal(loggedObj instanceof Error, false)
+})
+
+test('submit_joker_chat_message: prepare가 INVALID_CLOCK_VALUE를 반환하면 ack INTERNAL_ERROR이고 로그가 정확히 {code:"INVALID_CLOCK_VALUE", uuid, gameId:undefined}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc9a', 'jc9b', 'jc9c'], { roomId: 'room-jc-9' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { prepare: () => ({ ok: false, code: 'INVALID_CLOCK_VALUE' }) }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'INVALID_CLOCK_VALUE', uuid: actor, gameId: undefined })
+})
+
+test('submit_joker_chat_message: deps.resolveTeammateSockets가 throw하면 ack INTERNAL_ERROR이고 Map은 불변(commit 미호출), emit 0회, 로그 {code:"RECIPIENT_RESOLVE_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc10a', 'jc10b', 'jc10c'], { roomId: 'room-jc-10' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { resolveTeammateSockets: () => { throw new Error('resolver 실패(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'RECIPIENT_RESOLVE_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: resolveTeammateSockets가 발신자를 제외한 나머지만 반환하면 ack INTERNAL_ERROR이고 Map 불변, 아무에게도 emit되지 않으며 로그 {code:"SENDER_NOT_IN_RECIPIENTS", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc11a', 'jc11b', 'jc11c'], { roomId: 'room-jc-11' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { resolveTeammateSockets: () => [teammateSocket] }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(teammateSocket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'SENDER_NOT_IN_RECIPIENTS', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: deps.idFn이 throw하면 ack INTERNAL_ERROR이고 Map 불변, emit 0회, 로그 {code:"ID_GENERATION_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc12a', 'jc12b', 'jc12c'], { roomId: 'room-jc-12' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { idFn: () => { throw new Error('id 생성 실패(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'ID_GENERATION_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: deps.idFn이 빈 문자열/공백을 반환하면 ack INTERNAL_ERROR(로그 code는 INVALID_MESSAGE_ID)이고 Map 불변, emit 0회다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc13a', 'jc13b', 'jc13c'], { roomId: 'room-jc-13' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    for (const badId of ['', '   ']) {
+        const deps = { idFn: () => badId }
+        const { callback, getResponse } = countingCallback()
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    }
+
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 2)
+    for (const call of errorSpy.mock.calls) {
+        assert.deepEqual(call.arguments[1], { code: 'INVALID_MESSAGE_ID', uuid: actor, gameId: session.id })
+    }
+})
+
+test('submit_joker_chat_message: deps.commit이 throw하면 ack INTERNAL_ERROR이고 성공 ack·emit이 전혀 없으며 로그 {code:"COMMIT_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc14a', 'jc14b', 'jc14c'], { roomId: 'room-jc-14' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { commit: () => { throw new Error('commit 실패(테스트 주입)') } }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.jokerChatRateLimit.size, 0)
+    assert.equal(socket.emitted.length, 0)
+    assert.equal(teammateSocket.emitted.length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'COMMIT_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: registry 불일치(SESSION_NOT_FOUND)는 ack INTERNAL_ERROR이고 로그가 정확히 {code:"SESSION_NOT_FOUND", uuid, gameId:undefined}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc15a', 'jc15b', 'jc15c'], { roomId: 'room-jc-15' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.deepEqual(loggedObj, { code: 'SESSION_NOT_FOUND', uuid: actor, gameId: undefined })
+})
+
+test('submit_joker_chat_message: callback이 throw해도 예외가 새지 않고 commit은 이미 반영되며 수신자 전원(발신자 포함)이 정상 수신하고 로그 {code:"CALLBACK_ERROR", uuid, gameId}다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc16a', 'jc16b', 'jc16c'], { roomId: 'room-jc-16' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.jokerChatRateLimit.get(actor) !== undefined, true)
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'CALLBACK_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: 한 recipient만 emit이 throw해도 나머지(발신자 포함)는 정상 수신하고 로그는 {code:"DELIVERY_ERROR", uuid, gameId}만 남는다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc17a', 'jc17b', 'jc17c'], { roomId: 'room-jc-17' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.emitShouldThrowOn = 'joker_chat_message'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, loggedObj] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[조커 채팅 오류]')
+    assert.deepEqual(loggedObj, { code: 'DELIVERY_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: callback throw와 recipient emit throw가 동시에 발생해도 commit은 반영되고 실패하지 않은 recipient는 정상 수신하며 두 로그가 서로 오염되지 않는다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc18a', 'jc18b', 'jc18c'], { roomId: 'room-jc-18' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.emitShouldThrowOn = 'joker_chat_message'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.jokerChatRateLimit.get(actor) !== undefined, true)
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    assert.equal(errorSpy.mock.calls.length, 2)
+    const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+    const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+    assert.equal(firstPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(firstLogged, { code: 'CALLBACK_ERROR', uuid: actor, gameId: session.id })
+    assert.equal(secondPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(secondLogged, { code: 'DELIVERY_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_joker_chat_message: CITIZEN 발행은 같은 역할 소켓에만 전달되고 JOKER에는 전달되지 않는다', () => {
+    const { session, io, citizenUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc19a', 'jc19b', 'jc19c'], { roomId: 'room-jc-19' })
+    const [citizen] = citizenUuids
+    const socket = socketByUuid.get(citizen)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, citizen, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const [uuid, s] of socketByUuid) {
+        const expected = session.players.get(uuid).role === 'CITIZEN' ? 1 : 0
+        assert.equal(s.emitted.filter((e) => e.event === 'joker_chat_message').length, expected)
+    }
+})
+
+test('submit_joker_chat_message: 밤의 5개 역할은 각각 같은 역할 소켓에만 전달되고 다른 역할에는 누출되지 않는다', () => {
+    const { session } = commitFullRoleSessionAtNight({ id: 'room-jc-all-roles' })
+    const sockets = [...session.players.keys()].map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+    const io = createFakeIo(sockets)
+    const socketByUuid = new Map(sockets.map((socket) => [socket.data.user.uuid, socket]))
+
+    for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN']) {
+        for (const socket of sockets) socket.emitted.length = 0
+        io.broadcasts.length = 0
+
+        const actor = [...session.players.values()].find((player) => player.role === role).uuid
+        const { callback, getResponse } = countingCallback()
+        handleSubmitJokerChatMessage(
+            io,
+            socketByUuid.get(actor),
+            actor,
+            { gameId: session.id, text: `${role} private message` },
+            callback,
+        )
+
+        assert.deepEqual(getResponse(), { ok: true }, `${role} 발행이 거부됐다`)
+        for (const [uuid, socket] of socketByUuid) {
+            const expected = session.players.get(uuid).role === role ? 1 : 0
+            assert.equal(
+                socket.emitted.filter((entry) => entry.event === 'joker_chat_message').length,
+                expected,
+                `${role} 메시지의 ${uuid} 전달 수가 올바르지 않다`,
+            )
+        }
+        assert.equal(io.broadcasts.length, 0, `${role} 메시지가 공개 브로드캐스트로 누출됐다`)
+    }
+})
+
+test('submit_joker_chat_message: 다른 GameSession의 JOKER 소켓에는 전달되지 않는다(두 세션 동시 커밋, 교차 오염 없음)', () => {
+    const roomA = makeRoom({ id: 'room-cross-a', players: [makePlayer('crossA1'), makePlayer('crossA2'), makePlayer('crossA3')], jokerCount: 2 })
+    const roomB = makeRoom({ id: 'room-cross-b', players: [makePlayer('crossB1'), makePlayer('crossB2'), makePlayer('crossB3')], jokerCount: 2 })
+    const candidateA = gameSessionCore.__testables.buildSessionCandidate(roomA, { randomFn: () => 0 })
+    const candidateB = gameSessionCore.__testables.buildSessionCandidate(roomB, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidateA.session)
+    gameSessionCore.commitGameSession(candidateB.session)
+    const sessionA = candidateA.session
+    const sessionB = candidateB.session
+    ackAllAndRewindToFirstNight(sessionA)
+    ackAllAndRewindToFirstNight(sessionB)
+
+    const socketsA = [...sessionA.players.keys()].map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(sessionA.channelId)
+        return s
+    })
+    const socketsB = [...sessionB.players.keys()].map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(sessionB.channelId)
+        return s
+    })
+    const io = createFakeIo([...socketsA, ...socketsB])
+
+    const actorA = [...sessionA.players.values()].find((p) => p.role === 'JOKER').uuid
+    const socketA = socketsA.find((s) => s.data.user.uuid === actorA)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socketA, actorA, { gameId: sessionA.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const s of socketsB) {
+        assert.equal(s.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+    }
+})
+
+test('submit_joker_chat_message: connected:false인 JOKER 소켓은 수신자에서 제외된다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc21a', 'jc21b', 'jc21c'], { roomId: 'room-jc-21' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.connected = false
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+})
+
+test('submit_joker_chat_message: session.channelId room 밖의 JOKER 소켓은 수신자에서 제외된다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc22a', 'jc22b', 'jc22c'], { roomId: 'room-jc-22' })
+    const [actor, teammate] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const teammateSocket = socketByUuid.get(teammate)
+    teammateSocket.rooms.delete(session.channelId)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 1)
+    assert.equal(teammateSocket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+})
+
+test('submit_joker_chat_message: payload에 senderUuid/role/team/nickname을 위조해도 브로드캐스트된 senderUuid는 항상 인증 uuid이고 다른 필드는 전달되지 않는다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc23a', 'jc23b', 'jc23c'], { roomId: 'room-jc-23' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(
+        io, socket, actor,
+        { gameId: session.id, text: 'hello', senderUuid: 'forged-uuid', role: 'CITIZEN', team: 'CITIZEN', nickname: 'forged-nickname' },
+        callback,
+    )
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const delivered = socket.emitted.find((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.payload.senderUuid, actor)
+    assert.deepEqual(Object.keys(delivered.payload).sort(), ['gameId', 'messageId', 'senderUuid', 'sentAt', 'text'])
+})
+
+test('submit_joker_chat_message: 공백으로 감싼 유효 gameId로 성공 요청 후 canonical gameId가 노출되고, 연속 두 메시지가 서로 다른 messageId로 도착 순서대로 append된다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc24a', 'jc24b', 'jc24c'], { roomId: 'room-jc-24' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    let clock = 1000
+    const nowFn = () => { const v = clock; clock += 1000; return v }
+    const idQueue = ['msg-jc24-1', 'msg-jc24-2']
+    let idIndex = 0
+    const deps = {
+        prepare: (uuid, gameId, text) => gameSessionCore.prepareJokerChatMessage(uuid, gameId, text, { now: nowFn }),
+        idFn: () => idQueue[idIndex++],
+    }
+
+    const first = countingCallback()
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: `  ${session.id}  `, text: 'first' }, first.callback, deps)
+    assert.deepEqual(first.getResponse(), { ok: true })
+
+    const second = countingCallback()
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'second' }, second.callback, deps)
+    assert.deepEqual(second.getResponse(), { ok: true })
+
+    const delivered = socket.emitted.filter((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.length, 2)
+    assert.equal(delivered[0].payload.gameId, session.id)
+    assert.equal(delivered[1].payload.gameId, session.id)
+    assert.equal(delivered[0].payload.messageId, 'msg-jc24-1')
+    assert.equal(delivered[1].payload.messageId, 'msg-jc24-2')
+    assert.equal(delivered[0].payload.text, 'first')
+    assert.equal(delivered[1].payload.text, 'second')
+})
+
+test('submit_joker_chat_message(중첩): deps.prepare가 throw하고 동시에 callback도 throw하면 두 로그가 각각 독립적으로 3키 고정 구조로 남고 Map은 완전히 불변이며 emit도 없다', (t) => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc25a', 'jc25b', 'jc25c'], { roomId: 'room-jc-25' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = { prepare: () => { throw new Error('SECRET prepare fail') } }
+    const beforeSnapshot = [...session.jokerChatRateLimit.entries()]
+
+    assert.doesNotThrow(() =>
+        handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hi' }, throwingCallback('SECRET callback fail'), deps),
+    )
+
+    assert.equal(errorSpy.mock.calls.length, 2)
+    const [firstPrefix, firstLogged] = errorSpy.mock.calls[0].arguments
+    const [secondPrefix, secondLogged] = errorSpy.mock.calls[1].arguments
+    assert.equal(firstPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(firstLogged, { code: 'PREPARE_UNEXPECTED_ERROR', uuid: actor, gameId: undefined })
+    assert.equal(secondPrefix, '[조커 채팅 오류]')
+    assert.deepEqual(secondLogged, { code: 'CALLBACK_ERROR', uuid: actor, gameId: undefined })
+    assert.deepEqual([...session.jokerChatRateLimit.entries()], beforeSnapshot)
+    assert.equal(socket.emitted.filter((e) => e.event === 'joker_chat_message').length, 0)
+
+    const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+    assert.equal(serialized.includes('SECRET'), false)
+})
+
+test('submit_joker_chat_message: deps.idFn이 앞뒤 공백이 있는 유효 문자열을 반환해도 성공하고 브로드캐스트된 messageId는 trim된 값과 정확히 일치한다', () => {
+    const { session, io, jokerUuids, socketByUuid } = commitJokerChatSessionWithSockets(['jc26a', 'jc26b', 'jc26c'], { roomId: 'room-jc-26' })
+    const [actor] = jokerUuids
+    const socket = socketByUuid.get(actor)
+    const deps = { idFn: () => '  msg-1  ' }
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitJokerChatMessage(io, socket, actor, { gameId: session.id, text: 'hi' }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const delivered = socket.emitted.find((e) => e.event === 'joker_chat_message')
+    assert.equal(delivered.payload.messageId, 'msg-1')
+})
+
+const DAY_CHAT_EVENT = 'day_chat_message_received'
+const DEAD_CHAT_EVENT = 'dead_chat_message_received'
+
+function commitGameChatSessionWithSockets(uuids, { roomId = 'room-gc', phase = 'DAY', deadUuids = [], jokerCount = 1 } = {}) {
+    const room = makeRoom({ id: roomId, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of session.players.keys()) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+    for (const uuid of deadUuids) session.players.get(uuid).alive = false
+    session.phase = phase
+
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(session.channelId)
+        return s
+    })
+    const io = createFakeIo(sockets)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    return { session, io, sockets, socketByUuid, jokerUuid }
+}
+
+function deliveredCount(socket, event) {
+    return socket.emitted.filter((e) => e.event === event).length
+}
+
+function deliveredPayloads(socket, event) {
+    return socket.emitted.filter((e) => e.event === event).map((e) => e.payload)
+}
+
+test('submit_game_chat_message: 생존 발신자의 DAY는 사망자를 포함한 참가자 소켓 전원에게 정확히 1건씩만 가고 io 브로드캐스트가 없다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs1a', 'gcs1b', 'gcs1c', 'gcs1d'], {
+        roomId: 'room-gcs-1',
+        phase: 'DAY',
+        deadUuids: ['gcs1d'],
+    })
+    const actor = 'gcs1a'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '안녕하세요' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const uuid of ['gcs1a', 'gcs1b', 'gcs1c']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1, `${uuid}는 정확히 1건 받아야 한다`)
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
+    }
+    assert.equal(deliveredCount(socketByUuid.get('gcs1d'), DAY_CHAT_EVENT), 1, '사망자도 공개 DAY 메시지를 받는다')
+    assert.equal(deliveredCount(socketByUuid.get('gcs1d'), DEAD_CHAT_EVENT), 0)
+    assert.equal(io.broadcasts.length, 0)
+    for (const s of socketByUuid.values()) {
+        assert.equal(s.emitted.every((e) => e.broadcastTo === undefined), true)
+    }
+    assert.deepEqual([...session.dayChatRateLimit.keys()], [actor])
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+test('submit_game_chat_message: 공개 payload는 정확히 7개 키뿐이고 비공개 값(role/team/alive/allies)이 하나도 없다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs2a', 'gcs2b', 'gcs2c', 'gcs2d'], {
+        roomId: 'room-gcs-2',
+        phase: 'DAY',
+    })
+    const actor = 'gcs2a'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '  안녕  ' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const [payload] = deliveredPayloads(socketByUuid.get('gcs2b'), DAY_CHAT_EVENT)
+    assert.deepEqual(Object.keys(payload).sort(), [
+        'dayIndex',
+        'gameId',
+        'messageId',
+        'nickname',
+        'senderUuid',
+        'sentAt',
+        'text',
+    ])
+    assert.equal(payload.gameId, session.id)
+    assert.equal(payload.senderUuid, actor)
+    assert.equal(payload.nickname, session.players.get(actor).nickname)
+    assert.equal(payload.text, '안녕', 'sanitize된 canonical 텍스트가 나간다')
+    assert.equal(payload.dayIndex, session.dayIndex)
+    assert.equal(Number.isInteger(payload.sentAt), true)
+    const serialized = JSON.stringify(payload)
+    for (const secret of ['role', 'team', 'alive', 'allies', 'JOKER', 'CITIZEN']) {
+        assert.equal(serialized.includes(secret), false, `${secret}가 노출되면 안 된다`)
+    }
+})
+
+test('submit_game_chat_message: payload에 채널·발신자·닉네임을 위조해도 라우팅과 payload는 canonical 상태만 따른다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs3a', 'gcs3b', 'gcs3c', 'gcs3d'], {
+        roomId: 'room-gcs-3',
+        phase: 'DAY',
+        deadUuids: ['gcs3d'],
+    })
+    const actor = 'gcs3a'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(
+        io,
+        socketByUuid.get(actor),
+        actor,
+        {
+            gameId: session.id,
+            text: '위조 시도',
+            channel: 'DEAD',
+            senderUuid: 'forged-uuid',
+            nickname: 'forged-nickname',
+            role: 'JOKER',
+            team: 'JOKER',
+            alive: false,
+            dayIndex: 99,
+            messageId: 'forged-message-id',
+            sentAt: 1,
+            recipient: 'gcs3d',
+            recipients: ['gcs3d'],
+            recipientUuids: ['gcs3d'],
+        },
+        callback,
+    )
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(deliveredCount(socketByUuid.get('gcs3d'), DEAD_CHAT_EVENT), 0)
+    for (const uuid of ['gcs3a', 'gcs3b', 'gcs3c', 'gcs3d']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1)
+    }
+    const [payload] = deliveredPayloads(socketByUuid.get('gcs3b'), DAY_CHAT_EVENT)
+    assert.deepEqual(Object.keys(payload).sort(), [
+        'dayIndex',
+        'gameId',
+        'messageId',
+        'nickname',
+        'senderUuid',
+        'sentAt',
+        'text',
+    ])
+    assert.equal(payload.senderUuid, actor)
+    assert.equal(payload.nickname, session.players.get(actor).nickname)
+    assert.equal(payload.dayIndex, session.dayIndex)
+    assert.equal(payload.text, '위조 시도')
+    assert.notEqual(payload.messageId, 'forged-message-id')
+    assert.notEqual(payload.sentAt, 1)
+    assert.deepEqual([...session.dayChatRateLimit.keys()], [actor])
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+test('submit_game_chat_message: prepare~commit 사이에 prepared 번들이 변조되면 전달 없이 원자적으로 거부된다', (t) => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsIa', 'gcsIb', 'gcsIc'], {
+        roomId: 'room-gcs-i',
+        phase: 'DAY',
+    })
+    const actor = 'gcsIa'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    const tamperingPrepare = (uuid, gameId, text, options) => {
+        const prepared = gameSessionCore.prepareGameChatMessage(uuid, gameId, text, options)
+        if (!prepared.ok) return prepared
+        prepared.sentAt += 1
+        prepared.message.sentAt += 1
+        prepared.message.text = '변조된 본문'
+        prepared.message.senderUuid = 'gcsIb'
+        return prepared
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '원문' }, callback, {
+        prepare: tamperingPrepare,
+    })
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0, '변조된 요청은 아무에게도 전달되지 않는다')
+    assert.equal(session.dayChatRateLimit.size, 0, '변조된 요청은 rate limit을 소비하지 않는다')
+    assert.equal(session.deadChatRateLimit.size, 0)
+    assert.deepEqual(
+        errorSpy.mock.calls.map((c) => c.arguments[1]),
+        [{ code: 'STALE_CHAT_REQUEST', uuid: actor, gameId: session.id }],
+    )
+
+    const clean = countingCallback()
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '원문' }, clean.callback)
+    assert.deepEqual(clean.getResponse(), { ok: true })
+    const [payload] = deliveredPayloads(socketByUuid.get('gcsIb'), DAY_CHAT_EVENT)
+    assert.equal(payload.text, '원문')
+    assert.equal(payload.senderUuid, actor)
+})
+
+test('submit_game_chat_message: 사망 발신자는 NOT_ELIGIBLE로 거부되고 어느 소켓에도 전달되지 않는다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs4a', 'gcs4b', 'gcs4c', 'gcs4d'], {
+        roomId: 'room-gcs-4',
+        phase: 'NIGHT',
+        deadUuids: ['gcs4a', 'gcs4b'],
+    })
+    const actor = 'gcs4a'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '사망자 대화' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+    for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0)
+    assert.equal(session.deadChatRateLimit.size, 0)
+    assert.equal(session.dayChatRateLimit.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('submit_game_chat_message: 같은 uuid라도 canonical이 아닌 소켓은 받지 않고, canonical 소켓은 정확히 1건씩 받는다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs5a', 'gcs5b', 'gcs5c'], {
+        roomId: 'room-gcs-5',
+        phase: 'DAY',
+    })
+    const secondSocket = createFakeSocket('gcs5b', { id: 'sock-gcs5b-2' })
+    secondSocket.rooms.add(session.channelId)
+    io.sockets.sockets.set(secondSocket.id, secondSocket)
+    const actor = 'gcs5a'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '여러 소켓' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const uuid of ['gcs5a', 'gcs5b', 'gcs5c']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1)
+    }
+    assert.equal(deliveredCount(secondSocket, DAY_CHAT_EVENT), 0,
+        'canonical이 아닌 같은 계정의 소켓이 공개 채팅을 받았다')
+    const total = [...io.sockets.sockets.values()].reduce((sum, s) => sum + deliveredCount(s, DAY_CHAT_EVENT), 0)
+    assert.equal(total, 3)
+})
+
+test('submit_game_chat_message: 다른 GameSession의 소켓에는 전달되지 않는다(교차 오염 없음)', () => {
+    const a = commitGameChatSessionWithSockets(['gcs6a1', 'gcs6a2', 'gcs6a3'], { roomId: 'room-gcs-6a', phase: 'DAY' })
+    const b = commitGameChatSessionWithSockets(['gcs6b1', 'gcs6b2', 'gcs6b3'], { roomId: 'room-gcs-6b', phase: 'DAY' })
+    const io = createFakeIo([...a.sockets, ...b.sockets])
+    const actor = 'gcs6a1'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, a.socketByUuid.get(actor), actor, { gameId: a.session.id, text: 'hello' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const s of a.sockets) assert.equal(deliveredCount(s, DAY_CHAT_EVENT), 1)
+    for (const s of b.sockets) assert.equal(deliveredCount(s, DAY_CHAT_EVENT), 0)
+    assert.equal(b.session.dayChatRateLimit.size, 0)
+})
+
+test('submit_game_chat_message: connected:false·session channel 밖 소켓은 수신자에서 제외된다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs7a', 'gcs7b', 'gcs7c'], {
+        roomId: 'room-gcs-7',
+        phase: 'DAY',
+    })
+    socketByUuid.get('gcs7b').connected = false
+    socketByUuid.get('gcs7c').rooms.delete(session.channelId)
+    const actor = 'gcs7a'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '제외 확인' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(deliveredCount(socketByUuid.get(actor), DAY_CHAT_EVENT), 1)
+    assert.equal(deliveredCount(socketByUuid.get('gcs7b'), DAY_CHAT_EVENT), 0)
+    assert.equal(deliveredCount(socketByUuid.get('gcs7c'), DAY_CHAT_EVENT), 0)
+})
+
+test('resolveChatRecipientSockets: 채널별 canonical 수신자만 돌려주고 연결 끊김·channel 밖·다른 세션 소켓은 제외한다', () => {
+    const { session, sockets, socketByUuid } = commitGameChatSessionWithSockets(['gcs8a', 'gcs8b', 'gcs8c', 'gcs8d'], {
+        roomId: 'room-gcs-8',
+        phase: 'DAY',
+        deadUuids: ['gcs8c', 'gcs8d'],
+    })
+    const other = commitGameChatSessionWithSockets(['gcs8x', 'gcs8y', 'gcs8z'], { roomId: 'room-gcs-8-other', phase: 'DAY' })
+    const mergedIo = createFakeIo([...sockets, ...other.sockets])
+    socketByUuid.get('gcs8b').connected = false
+    socketByUuid.get('gcs8d').rooms.delete(session.channelId)
+
+    const dayIds = resolveChatRecipientSockets(mergedIo, session, gameSessionCore.CHAT_CHANNELS.DAY).map((s) => s.id)
+    const deadIds = resolveChatRecipientSockets(mergedIo, session, gameSessionCore.CHAT_CHANNELS.DEAD).map((s) => s.id)
+
+    assert.deepEqual(dayIds, ['sock-gcs8a', 'sock-gcs8c'])
+    assert.deepEqual(deadIds, [])
+    for (const channel of [null, undefined, '', 'day', 'UNKNOWN', 42]) {
+        assert.deepEqual(resolveChatRecipientSockets(mergedIo, session, channel), [])
+    }
+})
+
+test('submit_game_chat_message: 사망이 확정되면 같은 발신자의 다음 메시지는 채널을 갈아타지 않고 거부된다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs9a', 'gcs9b', 'gcs9c', 'gcs9d'], {
+        roomId: 'room-gcs-9',
+        phase: 'DAY',
+        deadUuids: ['gcs9d'],
+    })
+    const actor = 'gcs9a'
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '살아있을 때' }, countingCallback().callback)
+    assert.equal(deliveredCount(socketByUuid.get('gcs9b'), DAY_CHAT_EVENT), 1)
+    assert.equal(deliveredCount(socketByUuid.get('gcs9d'), DAY_CHAT_EVENT), 1, '사망자도 관전자로서 받는다')
+
+    session.players.get(actor).alive = false
+    session.phase = 'NIGHT'
+
+    const second = countingCallback()
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '죽은 뒤' }, second.callback)
+
+    assert.deepEqual(second.getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+    for (const uuid of ['gcs9a', 'gcs9b', 'gcs9c', 'gcs9d']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1, '거부된 요청은 새 메시지를 만들지 않는다')
+    }
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+test('submit_game_chat_message: 한 recipient의 emit이 throw해도 나머지는 정상 수신하고 커밋은 롤백되지 않는다', (t) => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsAa', 'gcsAb', 'gcsAc'], {
+        roomId: 'room-gcs-a',
+        phase: 'DAY',
+    })
+    const actor = 'gcsAa'
+    socketByUuid.get('gcsAb').emitShouldThrowOn = DAY_CHAT_EVENT
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '전달 실패 격리' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(deliveredCount(socketByUuid.get(actor), DAY_CHAT_EVENT), 1)
+    assert.equal(deliveredCount(socketByUuid.get('gcsAb'), DAY_CHAT_EVENT), 0)
+    assert.equal(deliveredCount(socketByUuid.get('gcsAc'), DAY_CHAT_EVENT), 1)
+    assert.equal(session.dayChatRateLimit.get(actor) !== undefined, true, '전달 실패로 커밋이 되돌아가지 않는다')
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, logged] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[게임 채팅 오류]')
+    assert.deepEqual(logged, { code: 'DELIVERY_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_game_chat_message: callback이 throw해도 예외가 새지 않고 커밋·전달은 그대로 유지된다', (t) => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsBa', 'gcsBb', 'gcsBc'], {
+        roomId: 'room-gcs-b',
+        phase: 'DAY',
+    })
+    const actor = 'gcsBa'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    assert.doesNotThrow(() =>
+        handleSubmitGameChatMessage(
+            io,
+            socketByUuid.get(actor),
+            actor,
+            { gameId: session.id, text: '콜백 실패' },
+            throwingCallback('콜백 실패(테스트 주입)'),
+        ),
+    )
+
+    assert.equal(session.dayChatRateLimit.get(actor) !== undefined, true)
+    for (const uuid of ['gcsBa', 'gcsBb', 'gcsBc']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1)
+    }
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const [prefix, logged] = errorSpy.mock.calls[0].arguments
+    assert.equal(prefix, '[게임 채팅 오류]')
+    assert.deepEqual(logged, { code: 'CALLBACK_ERROR', uuid: actor, gameId: session.id })
+})
+
+test('submit_game_chat_message: 수신자 해석·messageId 생성 실패는 전부 원자적이다(INTERNAL_ERROR, emit 0회, 두 Map 불변)', (t) => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsCa', 'gcsCb', 'gcsCc'], {
+        roomId: 'room-gcs-c',
+        phase: 'DAY',
+    })
+    const actor = 'gcsCa'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    const cases = [
+        [{ resolveRecipientSockets: () => { throw new Error('resolve 실패(테스트 주입)') } }, 'RECIPIENT_RESOLVE_ERROR', session.id],
+        [{ resolveRecipientSockets: () => [] }, 'SENDER_NOT_IN_RECIPIENTS', session.id],
+        [{ idFn: () => { throw new Error('id 실패(테스트 주입)') } }, 'ID_GENERATION_ERROR', undefined],
+        [{ idFn: () => '   ' }, 'INVALID_MESSAGE_ID', undefined],
+        [{ idFn: () => 42 }, 'INVALID_MESSAGE_ID', undefined],
+    ]
+    for (const [deps] of cases) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '원자성' }, callback, deps)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    }
+
+    assert.equal(session.dayChatRateLimit.size, 0, '실패한 요청은 rate limit을 소비하지 않는다')
+    assert.equal(session.deadChatRateLimit.size, 0)
+    for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0)
+    assert.deepEqual(
+        errorSpy.mock.calls.map((c) => c.arguments[1]),
+        cases.map(([, code, gameId]) => ({ code, uuid: actor, gameId })),
+    )
+})
+
+test('submit_game_chat_message: 브로드캐스트되는 messageId는 game-core가 만든 canonical 값(trim된 idFn 결과)이다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsHa', 'gcsHb', 'gcsHc'], {
+        roomId: 'room-gcs-h',
+        phase: 'DAY',
+    })
+    const actor = 'gcsHa'
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: 'ID 확인' }, callback, {
+        idFn: () => '  msg-canonical  ',
+    })
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const uuid of ['gcsHa', 'gcsHb', 'gcsHc']) {
+        const [payload] = deliveredPayloads(socketByUuid.get(uuid), DAY_CHAT_EVENT)
+        assert.equal(payload.messageId, 'msg-canonical')
+    }
+})
+
+test('submit_game_chat_message: commit 실패는 전달 없이 끝나고, 요청 바인딩 실패는 내부 코드를 노출하지 않는다', (t) => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsDa', 'gcsDb', 'gcsDc'], {
+        roomId: 'room-gcs-d',
+        phase: 'DAY',
+    })
+    const actor = 'gcsDa'
+    const errorSpy = t.mock.method(console, 'error', () => {})
+
+    const ended = countingCallback()
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: 'x' }, ended.callback, {
+        commit: () => ({ ok: false, code: 'GAME_ALREADY_ENDED' }),
+    })
+    assert.deepEqual(ended.getResponse(), { ok: false, code: 'GAME_ALREADY_ENDED', message: '요청을 처리할 수 없습니다.' })
+
+    const stale = countingCallback()
+    handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: 'y' }, stale.callback, {
+        commit: () => ({ ok: false, code: 'STALE_CHAT_REQUEST' }),
+    })
+    assert.deepEqual(stale.getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.deepEqual(
+        errorSpy.mock.calls.map((c) => c.arguments[1]),
+        [{ code: 'STALE_CHAT_REQUEST', uuid: actor, gameId: session.id }],
+    )
+
+    for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0)
+    assert.equal(session.dayChatRateLimit.size, 0)
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+test('submit_game_chat_message: payload 형태 오류는 INVALID_PAYLOAD이고 callback이 함수가 아니면 완전한 no-op이다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsEa', 'gcsEb', 'gcsEc'], {
+        roomId: 'room-gcs-e',
+        phase: 'DAY',
+    })
+    const actor = 'gcsEa'
+    const socket = socketByUuid.get(actor)
+
+    for (const badPayload of [null, 'x', 42, [], { gameId: 123, text: 'hi' }, { gameId: session.id, text: 42 }]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitGameChatMessage(io, socket, actor, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.doesNotThrow(() => handleSubmitGameChatMessage(io, socket, actor, { gameId: session.id, text: 'hi' }, undefined))
+
+    assert.equal(session.dayChatRateLimit.size, 0)
+    for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0)
+})
+
+test('submit_game_chat_message: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+    const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsFa', 'gcsFb', 'gcsFc'], {
+        roomId: 'room-gcs-f',
+        phase: 'DAY',
+    })
+    const actor = 'gcsFa'
+    const socket = socketByUuid.get(actor)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, actor)
+    const { callback, getResponse } = countingCallback()
+
+    socket.trigger('submit_game_chat_message', { gameId: session.id, text: '배선 확인' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(deliveredCount(socket, DAY_CHAT_EVENT), 1)
+    assert.equal(deliveredCount(socketByUuid.get('gcsFb'), DAY_CHAT_EVENT), 1)
+    assert.equal(deliveredCount(socketByUuid.get('gcsFc'), DAY_CHAT_EVENT), 1)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지만 공개 채팅은 거부된다', () => {
+    const uuids = ['gcsGa', 'gcsGb', 'gcsGc', 'gcsGd']
+    const { session, io, socketByUuid, jokerUuid } = commitGameChatSessionWithSockets(uuids, {
+        roomId: 'room-gcs-g',
+        phase: 'NIGHT',
+    })
+    const jokerSocket = socketByUuid.get(jokerUuid)
+
+    assert.deepEqual(
+        resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.JOKER).map((s) => s.id),
+        [jokerSocket.id],
+    )
+
+    session.players.get(jokerUuid).alive = false
+
+    assert.deepEqual(
+        resolveChatRecipientSockets(io, session, gameSessionCore.CHAT_CHANNELS.JOKER).map((s) => s.id),
+        [jokerSocket.id],
+    )
+    const jokerChat = countingCallback()
+    handleSubmitJokerChatMessage(io, jokerSocket, jokerUuid, { gameId: session.id, text: '죽은 JOKER' }, jokerChat.callback)
+    assert.deepEqual(jokerChat.getResponse(), { ok: true })
+    assert.equal(deliveredCount(jokerSocket, 'joker_chat_message'), 1)
+    for (const uuid of uuids.filter((u) => u !== jokerUuid)) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), 'joker_chat_message'), 0, '팀 밖으로는 새지 않는다')
+    }
+    assert.deepEqual([...session.jokerChatRateLimit.keys()], [jokerUuid])
+
+    const publicChat = countingCallback()
+    handleSubmitGameChatMessage(io, jokerSocket, jokerUuid, { gameId: session.id, text: '사망자 대화' }, publicChat.callback)
+
+    assert.deepEqual(publicChat.getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
+    for (const uuid of uuids) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 0)
+    }
+    assert.equal(session.deadChatRateLimit.size, 0)
+})
+
+async function startRealTwoPlayerSession(hostUuid, joinerUuid) {
+    matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    matchmaking.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        getGameStartLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, {
+                profilePhotoId: null, profileBorderId: null, cardFrameId: null,
+                skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+            }])),
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
+    })
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+    const hostSocket = createFakeSocket(hostUuid)
+    const io = createFakeIo([hostSocket])
+    const { joinerSocket, room } = await setupReadyRoomForStart(io, hostUuid, joinerUuid, readyRoomHandlers)
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, hostUuid, startPayload(room), callback)
+    const startResponse = getResponse()
+    if (!startResponse.ok) throw new Error(`테스트 셋업 실패: ${JSON.stringify(startResponse)}`)
+    return { io, hostSocket, joinerSocket, gameId: startResponse.gameId, channelId: room.roomId }
+}
+
+test('leave_game_session: payload가 객체가 아니거나 gameId 누락/타입 오류/빈 문자열이면 INVALID_PAYLOAD이고 세션은 불변이다', async () => {
+    const { io } = await startRealTwoPlayerSession('leave-inv-host', 'leave-inv-joiner')
+    const badPayloads = [null, 'x', 42, [], {}, { gameId: 123 }, { gameId: '' }, { gameId: '   ' }]
+
+    for (const payload of badPayloads) {
+        const { callback, getResponse } = countingCallback()
+        handleLeaveGameSession(io, createFakeSocket('leave-inv-host'), 'leave-inv-host', payload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.length, 1)
+})
+
+test('leave_game_session: callback이 함수가 아니면 완전한 no-op이다(상태 불변, 새 방송 없음)', async () => {
+    const { io } = await startRealTwoPlayerSession('leave-nocb-host', 'leave-nocb-joiner')
+    const broadcastsBefore = io.broadcasts.length
+
+    assert.doesNotThrow(() => handleLeaveGameSession(io, createFakeSocket('leave-nocb-host'), 'leave-nocb-host', { gameId: 'whatever' }, undefined))
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.length, 1)
+    assert.equal(io.broadcasts.length, broadcastsBefore)
+})
+
+test('leave_game_session: 명시적 이탈은 ack {ok:true}이고 이탈자만 참여 종료된다 — roster·잔류자 채널은 그대로이고 game_ended는 방송되지 않는다(F-21 AC-03)', async () => {
+    const { io, joinerSocket, gameId, channelId } = await startRealTwoPlayerSession('leave-ok-host', 'leave-ok-joiner')
+    const { callback, getResponse } = countingCallback()
+
+    handleLeaveGameSession(io, createFakeSocket('leave-ok-host'), 'leave-ok-host', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+    const eliminated = io.broadcasts.filter((b) => b.event === 'player_eliminated')
+    assert.equal(eliminated.length, 1)
+    assert.equal(eliminated[0].payload.victimUuid, 'leave-ok-host')
+    const participation = io.broadcasts.filter((b) => b.event === 'session_participation_changed')
+    assert.equal(participation.length, 1)
+    assert.equal(participation[0].payload.departedUuid, 'leave-ok-host')
+    assert.equal(joinerSocket.rooms.has(channelId), true)
+
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    const stored = snapshot.gameSessions.find(([id]) => id === gameId)
+    assert.notEqual(stored, undefined)
+    assert.equal(stored[1].players.length, 2)
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-host'), false)
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-ok-joiner'), true)
+})
+
+test('F-23(AC-04): 이탈 커밋 직후 첫 공개 사건부터 이탈자의 실제 수신은 0이고, 잔류자는 정상 수신한다', async () => {
+    const { io, joinerSocket, gameId, channelId } =
+        await startRealTwoPlayerSession('leave-deliver-host', 'leave-deliver-joiner')
+    const leaverSocket = io.sockets.sockets.get('sock-leave-deliver-host')
+    assert.ok(leaverSocket, '이탈자 소켓이 io에 등록돼 있어야 한다')
+
+    leaverSocket.leave = () => new Promise(() => {})
+
+    const session = gameSessionCore.getActiveSessionForDeparture('leave-deliver-host', gameId)
+    assert.ok(session, '전제: 이탈 전에는 활성 세션이 있어야 한다')
+
+    const receivedBefore = leaverSocket.received.length
+    handleLeaveGameSession(io, leaverSocket, 'leave-deliver-host', { gameId }, countingCallback().callback)
+
+    assert.equal(leaverSocket.rooms.has(channelId), true, '전제: leave가 아직 끝나지 않아 채널에 남아 있다')
+    assert.equal(
+        leaverSocket.received.length, receivedBefore,
+        '이탈 커밋 직후의 공개 사건이 이탈자에게 전달됐다',
+    )
+    assert.ok(
+        joinerSocket.received.some((entry) => entry.event === 'player_eliminated'),
+        '잔류자가 공개 사망 사건을 받지 못했다',
+    )
+    assert.ok(
+        joinerSocket.received.some((entry) => entry.event === 'session_participation_changed'),
+        '잔류자가 참여 변화 사건을 받지 못했다',
+    )
+
+    gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId })
+    assert.equal(
+        leaverSocket.received.filter((e) => e.event === 'probe_after_departure').length, 0,
+        '이탈자가 이후 공개 방송을 받았다',
+    )
+    assert.equal(
+        joinerSocket.received.filter((e) => e.event === 'probe_after_departure').length, 1,
+        '잔류자가 이후 공개 방송을 받지 못했다',
+    )
+})
+
+test('F-23(AC-06): 이탈 커밋이 실제로 실패하면 성공 ACK로 바꾸지 않는다(멱등 성공과 구분)', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-fail-host', 'leave-fail-joiner')
+    const socket = io.sockets.sockets.get('sock-leave-fail-host')
+
+    const originalCommit = gameSessionCore.commitParticipantDeparture
+    gameSessionCore.commitParticipantDeparture = () => { throw new Error('커밋 실패(테스트 주입)') }
+    try {
+        const { callback, getResponse } = countingCallback()
+        handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, callback)
+        const response = getResponse()
+        assert.equal(response.ok, false, '실제 커밋 실패가 성공 ACK로 전달됐다')
+        assert.equal(response.code, 'INTERNAL_ERROR')
+    } finally {
+        gameSessionCore.commitParticipantDeparture = originalCommit
+    }
+
+    const stored = gameSessionCore.__getStateSnapshotForTests().gameSessions.find(([id]) => id === gameId)[1]
+    const me = stored.players.find(([uuid]) => uuid === 'leave-fail-host')[1]
+    assert.notEqual(me.isParticipating, false, '실패했는데 참여가 종료됐다')
+
+    const { callback: retryCallback, getResponse: getRetry } = countingCallback()
+    handleLeaveGameSession(io, socket, 'leave-fail-host', { gameId }, retryCallback)
+    assert.deepEqual(getRetry(), { ok: true }, '재시도가 성공하지 않았다')
+})
+
+test('F-23(AC-06): 이미 빠진 참가자의 중복 나가기는 여전히 멱등 성공이다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-dup-host', 'leave-dup-joiner')
+    const socket = io.sockets.sockets.get('sock-leave-dup-host')
+
+    handleLeaveGameSession(io, socket, 'leave-dup-host', { gameId }, countingCallback().callback)
+
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, socket, 'leave-dup-host', { gameId }, callback)
+    assert.deepEqual(getResponse(), { ok: true }, '중복 나가기가 실패로 바뀌었다')
+})
+
+test('leave_game_session: 이미 종료된 세션에 대한 뒤늦은 이탈 요청은 멱등하게 {ok:true}이고 추가 game_ended 방송이 없다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-idem-host', 'leave-idem-joiner')
+    handleLeaveGameSession(io, createFakeSocket('leave-idem-host'), 'leave-idem-host', { gameId }, countingCallback().callback)
+    const before = io.broadcasts.filter((b) => b.event === 'game_ended').length
+
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, createFakeSocket('leave-idem-host'), 'leave-idem-host', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const after = io.broadcasts.filter((b) => b.event === 'game_ended').length
+    assert.equal(after, before)
+})
+
+test('leave_game_session: 명시적 이탈 성공 뒤 같은 Socket의 disconnect가 중첩되어도 사망은 정확히 한 번뿐이다(F-21 AC-05)', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-a-host', 'leave-overlap-a-joiner')
+
+    handleLeaveGameSession(io, createFakeSocket('leave-overlap-a-host'), 'leave-overlap-a-host', { gameId }, countingCallback().callback)
+    await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-a-host')
+
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'session_participation_changed').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+})
+
+test('leave_game_session: disconnect가 먼저 처리된 뒤 도착한 명시적 이탈 요청도 사망은 한 번뿐이고 이탈 ack는 여전히 {ok:true}다(F-21 AC-05)', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-overlap-b-host', 'leave-overlap-b-joiner')
+
+    await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'leave-overlap-b-host')
+    const { callback, getResponse } = countingCallback()
+    handleLeaveGameSession(io, createFakeSocket('leave-overlap-b-host'), 'leave-overlap-b-host', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+    assert.equal(
+        gameSessionSocketLayer.__testables.getDisconnectGraceRun(gameId, 'leave-overlap-b-host'),
+        undefined,
+    )
+})
+
+test('leave_game_session(ABA, 동일 Socket): 세션 A 종료 뒤 같은 Socket의 세션 B disconnect는 B를 종료하지 않고 유예한다', async () => {
+    const { io, hostSocket, gameId: gameIdA } = await startRealTwoPlayerSession('aba-same-host', 'aba-same-joinerA')
+    handleLeaveGameSession(io, createFakeSocket('aba-same-host'), 'aba-same-host', { gameId: gameIdA }, countingCallback().callback)
+    assert.equal(hostSocket.data.activeGameId, gameIdA)
+
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+    const { room: roomB } = await setupReadyRoomForStart(io, 'aba-same-host', 'aba-same-joinerB', readyRoomHandlers)
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocket, 'aba-same-host', startPayload(roomB), callback)
+    const gameIdB = getResponse().gameId
+    assert.notEqual(gameIdB, gameIdA)
+    assert.equal(hostSocket.data.activeGameId, gameIdB)
+
+    await gameSessionSocketLayer.onDisconnect(io, hostSocket, 'aba-same-host')
+
+    const endedB = io.broadcasts.filter((b) => b.event === 'game_ended' && b.payload.gameId === gameIdB)
+    assert.equal(endedB.length, 0)
+    assert.notEqual(gameSessionSocketLayer.__testables.getDisconnectGraceRun(gameIdB, 'aba-same-host'), undefined)
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameIdB), true)
+})
+
+test('leave_game_session(ABA, 다른 Socket): 세션 A 종료 후 같은 uuid가 다른 Socket으로 세션 B를 시작하면, A의 지연 disconnect는 B의 registry·방송에 영향을 주지 않는다', async () => {
+    const readyRoomHandlers = { handleCreateRoom, handleJoinRoomByCode, handleSetReady }
+    const targetUuid = 'aba-cross-target'
+
+    const { io, joinerSocket: staleSocket, gameId: gameIdA } = await startRealTwoPlayerSession('aba-cross-host-a', targetUuid)
+    handleLeaveGameSession(io, createFakeSocket(targetUuid), targetUuid, { gameId: gameIdA }, countingCallback().callback)
+    assert.equal(staleSocket.data.activeGameId, gameIdA)
+
+    const hostSocketB = createFakeSocket('aba-cross-host-b')
+    io.sockets.sockets.set(hostSocketB.id, hostSocketB)
+    const { joinerSocket: freshSocket, room: roomB } = await setupReadyRoomForStart(io, 'aba-cross-host-b', targetUuid, readyRoomHandlers)
+    assert.notEqual(freshSocket, staleSocket)
+    const { callback, getResponse } = countingCallback()
+    await handleStartGame(io, hostSocketB, 'aba-cross-host-b', startPayload(roomB), callback)
+    const gameIdB = getResponse().gameId
+    assert.notEqual(gameIdB, gameIdA)
+
+    await gameSessionSocketLayer.onDisconnect(io, staleSocket, targetUuid)
+
+    const endedB = io.broadcasts.filter((b) => b.event === 'game_ended' && b.payload.gameId === gameIdB)
+    assert.equal(endedB.length, 0)
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameIdB), true)
+})
+
+test('leave_game_session: core가 예외를 던지면 ack는 INTERNAL_ERROR이고 원본 Error가 로그에 노출되지 않는다', (t) => {
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    t.mock.method(gameSessionCore, 'endGameSessionForPlayer', () => {
+        throw new Error('SECRET internal detail')
+    })
+    const io = createFakeIo([])
+    const { callback, getResponse } = countingCallback()
+
+    handleLeaveGameSession(io, createFakeSocket('leave-throw-uuid'), 'leave-throw-uuid', { gameId: 'whatever' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(errorSpy.mock.calls.length, 1)
+    const serialized = JSON.stringify(errorSpy.mock.calls[0].arguments)
+    assert.equal(serialized.includes('SECRET'), false)
+})
+
+test('leave_game_session: callback이 throw해도 개인 이탈 커밋·공개 사건·matchmaking 정리는 정상적으로 완료된다', async () => {
+    const { io, gameId } = await startRealTwoPlayerSession('leave-cbthrow-host', 'leave-cbthrow-joiner')
+
+    assert.doesNotThrow(() =>
+        handleLeaveGameSession(io, createFakeSocket('leave-cbthrow-host'), 'leave-cbthrow-host', { gameId }, () => {
+            throw new Error('콜백 실패(테스트 주입)')
+        }),
+    )
+
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    const snapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(snapshot.playerSession.some(([uuid]) => uuid === 'leave-cbthrow-host'), false)
+    assert.equal(snapshot.gameSessions.some(([id]) => id === gameId), true)
+})
+
+test('leave_game_session: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('leave-wiring-host', 'leave-wiring-joiner')
+    gameSessionSocketLayer.registerGameHandlers(io, hostSocket, 'leave-wiring-host')
+    const { callback, getResponse } = countingCallback()
+
+    hostSocket.trigger('leave_game_session', { gameId }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
+    assert.equal(io.broadcasts.filter((b) => b.event === 'game_ended').length, 0)
+})
+
+function seedLegacyRoomDuringSession(io, socket, uuid, roomId, { otherPlayers = [] } = {}) {
+    const players = new Map([
+        [uuid, makePlayer(uuid)],
+        ...otherPlayers.map((player) => [player.uuid, player]),
+    ])
+    const { accessType, ...settings } = validSettingsPayload({ maxPlayers: 4, jokerCount: 1 })
+    const room = {
+        id: roomId,
+        code: roomId.slice(-6).toUpperCase(),
+        title: 'legacy-race-room',
+        accessType,
+        hostUuid: uuid,
+        settings,
+        players,
+    }
+    matchmaking.__seedRoomForTests(room)
+    for (const playerUuid of players.keys()) matchmaking.__seedPlayerRoomForTests(playerUuid, roomId)
+    socket.rooms.add(roomId)
+    for (const player of otherPlayers) {
+        const playerSocket = io.sockets.sockets.get(`sock-${player.uuid}`)
+        playerSocket?.rooms.add(roomId)
+    }
+    return room
+}
+
+test('세션 종료 시 세션 진행 중 만든 Room B에 비참가자 Q가 참가해 있으면 Room B는 삭제되지 않고 host가 Q로 이전되며, 참가자 Socket은 Room B channel에서 실제로 leave된다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('cleanup-b-host', 'cleanup-b-joiner')
+
+    const qSocket = createFakeSocket('cleanup-b-q')
+    io.sockets.sockets.set(qSocket.id, qSocket)
+    const roomId = 'legacy-cleanup-b'
+    seedLegacyRoomDuringSession(io, hostSocket, 'cleanup-b-host', roomId, {
+        otherPlayers: [makePlayer('cleanup-b-q')],
+    })
+
+    handleLeaveGameSession(io, createFakeSocket('cleanup-b-host'), 'cleanup-b-host', { gameId }, countingCallback().callback)
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    const roomEntry = snapshot.gameRooms.find(([id]) => id === roomId)
+    assert.ok(roomEntry, 'Room B가 통째로 삭제되면 안 된다(비참가자 Q가 있음)')
+    const [, roomB] = roomEntry
+    assert.equal(roomB.hostUuid, 'cleanup-b-q')
+    assert.deepEqual(roomB.players.map(([uuid]) => uuid), ['cleanup-b-q'])
+
+    const hostChanged = io.broadcasts.find((b) => b.event === 'host_changed' && b.roomId === roomId)
+    assert.ok(hostChanged)
+    assert.equal(hostChanged.payload.hostUuid, 'cleanup-b-q')
+
+    assert.equal(hostSocket.rooms.has(roomId), false)
+    assert.equal(qSocket.rooms.has(roomId), true)
+})
+
+test('세션 종료 시 한 참가자의 Socket leave 실패가 다른 참가자·registry 정리를 막지 않는다', async () => {
+    const { io, hostSocket, joinerSocket, gameId } = await startRealTwoPlayerSession('cleanup-iso-host', 'cleanup-iso-joiner')
+
+    const createdHostRoom = seedLegacyRoomDuringSession(io, hostSocket, 'cleanup-iso-host', 'legacy-cleanup-host')
+    const createdJoinerRoom = seedLegacyRoomDuringSession(io, joinerSocket, 'cleanup-iso-joiner', 'legacy-cleanup-joiner')
+
+    joinerSocket.leave = () => {
+        throw new Error('leave 실패(테스트 주입)')
+    }
+
+    assert.doesNotThrow(() => handleLeaveGameSession(io, createFakeSocket('cleanup-iso-host'), 'cleanup-iso-host', { gameId }, countingCallback().callback))
+    assert.doesNotThrow(() => handleLeaveGameSession(io, joinerSocket, 'cleanup-iso-joiner', { gameId }, countingCallback().callback))
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.gameRooms.some(([id]) => id === createdHostRoom.id), false)
+    assert.equal(snapshot.gameRooms.some(([id]) => id === createdJoinerRoom.id), false)
+    assert.equal(snapshot.playerRoom.length, 0)
+
+    const gameSnapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(gameSnapshot.gameSessions.length, 0)
+})
+
+test('세션 종료 정리는 세션 진행 중 만든 Room/queue만 제거하고, 다른 활성 세션이나 종료 이후 새로 만든 Room에는 영향이 없다', async () => {
+    const { io, hostSocket, gameId } = await startRealTwoPlayerSession('cleanup-scope-host', 'cleanup-scope-joiner')
+    matchmaking.__seedMatchmakingQueueForTests('cleanup-scope-host', { uuid: 'cleanup-scope-host', nickname: 'x', socketId: hostSocket.id })
+
+    const { gameId: otherGameId } = await startRealTwoPlayerSession('cleanup-scope-other-host', 'cleanup-scope-other-joiner')
+
+    handleLeaveGameSession(io, createFakeSocket('cleanup-scope-host'), 'cleanup-scope-host', { gameId }, countingCallback().callback)
+
+    const snapshot = matchmaking.__getStateSnapshotForTests()
+    assert.equal(snapshot.matchmakingQueue.some(([uuid]) => uuid === 'cleanup-scope-host'), false)
+
+    const otherSnapshot = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(otherSnapshot.gameSessions.some(([id]) => id === otherGameId), true)
+
+    const afterRoom = await callAsPromise(handleCreateRoom, io, hostSocket, 'cleanup-scope-host', validSettingsPayload())
+    assert.equal(afterRoom.ok, true)
+    const afterSnapshot = matchmaking.__getStateSnapshotForTests()
+    assert.ok(afterSnapshot.gameRooms.some(([id]) => id === afterRoom.room.roomId))
+})
+
+test('세션 종료 직후 참가자별로 새 방 생성과 새 방 코드 참가가 모두 즉시 가능하다', async () => {
+    const { io, hostSocket, joinerSocket, gameId } = await startRealTwoPlayerSession('reentry-host', 'reentry-joiner')
+
+    handleLeaveGameSession(io, createFakeSocket('reentry-host'), 'reentry-host', { gameId }, countingCallback().callback)
+
+    const created = await callAsPromise(handleCreateRoom, io, hostSocket, 'reentry-host', validSettingsPayload())
+    assert.equal(created.ok, true)
+
+    await handleJoinRoomByCode(io, joinerSocket, 'reentry-joiner', created.room.roomCode)
+    assert.ok(joinerSocket.emitted.some((e) => e.event === 'room_joined'))
+})
+
+for (const lateExit of ['leave', 'disconnect']) {
+    test(`BUG-090: ENDED ${lateExit} cleanup preserves an early leaver's next room`, async () => {
+        const { session, sockets, io } = commitSessionWithPlayers(['late-a', 'late-b'])
+        session.phase = 'ENDED'
+        matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
+    matchmaking.__setEconomyServiceForTests({
+        getPublicProfileLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
+        getGameStartLoadouts: async (userIds) =>
+            Object.fromEntries(userIds.map((id) => [id, {
+                profilePhotoId: null, profileBorderId: null, cardFrameId: null,
+                skinsByJob: { noble: null, clown: null, guard: null, doctor: null, witchHunter: null },
+            }])),
+        getEmojiPalette: async () => ({ slots: Array(8).fill(null), owned: [] }),
+    })
+        handleLeaveGameSession(io, sockets[0], 'late-a', { gameId: session.id }, countingCallback().callback)
+        const next = await callAsPromise(handleCreateRoom, io, sockets[0], 'late-a', validSettingsPayload())
+        assert.equal(next.ok, true)
+        if (lateExit === 'leave') {
+            handleLeaveGameSession(io, sockets[1], 'late-b', { gameId: session.id }, countingCallback().callback)
+        } else {
+            await gameSessionSocketLayer.onDisconnect(io, sockets[1], 'late-b')
+        }
+        const state = matchmaking.__getStateSnapshotForTests()
+        assert.ok(state.gameRooms.some(([id]) => id === next.room.roomId))
+        assert.ok(state.playerRoom.some(([uuid, id]) => uuid === 'late-a' && id === next.room.roomId))
+        assert.ok(sockets[0].rooms.has(next.room.roomId))
+        assert.equal(gameSessionCore.__getStateSnapshotForTests().gameSessions.length, 0)
+    })
+}
+
+test('BUG-090: late ENDED cleanup does not invalidate an early leaver pending room creation', async () => {
+    const { session, sockets, io } = commitSessionWithPlayers(['pending-a', 'pending-b'])
+    session.phase = 'ENDED'
+    handleLeaveGameSession(io, sockets[0], 'pending-a', { gameId: session.id }, countingCallback().callback)
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => { await gate; return { uuid, nickname: uuid } } })
+    const creating = callAsPromise(handleCreateRoom, io, sockets[0], 'pending-a', validSettingsPayload())
+    handleLeaveGameSession(io, sockets[1], 'pending-b', { gameId: session.id }, countingCallback().callback)
+    release()
+    const next = await creating
+    assert.equal(next.ok, true)
+    assert.ok(matchmaking.__getStateSnapshotForTests().gameRooms.some(([id]) => id === next.room.roomId))
+})
+
+function commitTrioSessionWithSocketsAtNight({ id = 'room-rn' } = {}) {
+    const uuids = [`${id}-a`, `${id}-b`, `${id}-c`]
+    const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    ackAllAndRewindToFirstNight(session)
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(session.channelId)
+        return s
+    })
+    const io = createFakeIo(sockets)
+    const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
+    const citizenUuids = [...session.players.values()].filter((p) => p.role !== 'JOKER').map((p) => p.uuid)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+    return { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid }
+}
+
+function commitFourPlayerSessionWithSocketsAtNight({ id = 'room-rn-four' } = {}) {
+    const uuids = [`${id}-a`, `${id}-b`, `${id}-c`, `${id}-d`]
+    const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+
+    ackAllAndRewindToFirstNight(session)
+
+    const sockets = uuids.map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+
+    const io = createFakeIo(sockets)
+    const jokerUuid = [...session.players.values()].find((player) => player.role === 'JOKER').uuid
+    const citizenUuids = [...session.players.values()]
+        .filter((player) => player.role !== 'JOKER')
+        .map((player) => player.uuid)
+    const socketByUuid = new Map(
+        sockets.map((socket) => [socket.data.user.uuid, socket]),
+    )
+
+    return {
+        session,
+        io,
+        sockets,
+        uuids,
+        jokerUuid,
+        citizenUuids,
+        socketByUuid,
+    }
+}
+
+function commitEightPlayerSessionWithSocketsAtNight({ id = 'room-rn-eight' } = {}) {
+    const uuids = Array.from({ length: 8 }, (_, i) => `${id}-${i}`)
+    const room = makeRoom({ id, players: uuids.map((u) => makePlayer(u)), jokerCount: 1 })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+
+    ackAllAndRewindToFirstNight(session)
+
+    const sockets = uuids.map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+
+    const io = createFakeIo(sockets)
+    const byRole = (role) => [...session.players.values()].find((player) => player.role === role).uuid
+    const jokerUuid = byRole('JOKER')
+    const doctorUuid = byRole('DOCTOR')
+    const guardUuid = byRole('GUARD')
+    const citizenUuids = [...session.players.values()]
+        .filter((player) => player.role === 'CITIZEN')
+        .map((player) => player.uuid)
+    const socketByUuid = new Map(sockets.map((socket) => [socket.data.user.uuid, socket]))
+
+    return { session, io, sockets, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid }
+}
+
+test('submit_night_action: 사망한 참가자는 ACTOR_NOT_ALIVE ack을 받고 nightActions는 불변이다', () => {
+    const { session, doctorUuid, citizenUuids } = commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-actor' })
+    session.players.get(doctorUuid).alive = false
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitNightAction(
+        createFakeSocket(doctorUuid),
+        doctorUuid,
+        { gameId: session.id, targetId: citizenUuids[0] },
+        callback,
+    )
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'ACTOR_NOT_ALIVE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.nightActions.size, 0)
+})
+
+test('resolve_night: 사망한 행동 보유자가 미제출이어도 판정은 성공하고 night_result_applied는 사망자 포함 전원에게 1건씩 방송된다', () => {
+    const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-pending' })
+    assert.equal(session.players.get(doctorUuid).role, 'DOCTOR')
+    session.players.get(doctorUuid).alive = false
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+    gameSessionCore.submitNightAction(guardUuid, session.id, null)
+    assert.equal(session.nightActions.has(doctorUuid), false)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(victimUuid).alive, false)
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1, `${uuid}가 정확히 1건을 받지 않았다`)
+    }
+})
+
+test('resolve_night: 사망한 GUARD에게는 night_action_result(개인 조사 결과)가 전달되지 않는다', () => {
+    const { session, io, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-dead-guard' })
+    assert.equal(session.players.get(guardUuid).role, 'GUARD')
+    gameSessionCore.submitNightAction(guardUuid, session.id, citizenUuids[0])
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    gameSessionCore.submitNightAction(doctorUuid, session.id, null)
+    session.players.get(guardUuid).alive = false
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    const guardDelivered = socketByUuid.get(guardUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.deepEqual(guardDelivered, [])
+})
+
+test('resolve_night: 보호로 막힌 암살 — night_action_result는 광대에게만 1건이고, 나머지에게는 사망 없는 밤으로만 보인다', () => {
+    const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-rn-blocked' })
+    const [targetUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, targetUuid)
+    gameSessionCore.submitNightAction(doctorUuid, session.id, targetUuid)
+    gameSessionCore.submitNightAction(guardUuid, session.id, null)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+
+    const jokerDelivered = socketByUuid.get(jokerUuid).emitted.filter((e) => e.event === 'night_action_result')
+    assert.equal(jokerDelivered.length, 1)
+    assert.deepEqual(jokerDelivered[0].payload, {
+        gameId: session.id,
+        dayIndex: 0,
+        actionType: 'ASSASSINATE',
+        success: false,
+        sfxEvent: {
+            eventId: `game:${session.id}:night:0:ASSASSINATE`,
+            accountId: jokerUuid,
+            gameId: session.id,
+            origin: 'live',
+        },
+    })
+
+    for (const uuid of uuids) {
+        if (uuid === jokerUuid) continue
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_action_result')
+        assert.deepEqual(delivered, [], `${uuid}에게 개인 결과가 전달됐다`)
+    }
+
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1)
+        assert.equal(delivered[0].payload.victimUuid, null)
+        assert.deepEqual(delivered[0].payload.deathReveals, [])
+        for (const player of delivered[0].payload.players) assert.equal(player.alive, true)
+    }
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(targetUuid).alive, true)
+})
+
+test('resolve_night: 보호 안 된 유효 희생자 — night_result_applied가 참가자 전원(발신자 포함)에게 정확히 1건씩, payload가 buildNightResultAppliedPayload와 동일하다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-1' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid) ?? null, jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, 1)
+    assert.equal(session.players.get(victimUuid).alive, false)
+
+    const expectedPayload = gameSessionCore.buildNightResultAppliedPayload(session, victimUuid, [
+        { victimUuid, source: 'JOKER' },
+    ])
+    assert.deepEqual(expectedPayload.deathReveals, [{ victimUuid, source: 'JOKER' }])
+    for (const uuid of uuids) {
+        const socket = socketByUuid.get(uuid)
+        const delivered = socket.emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+        assert.equal(Object.hasOwn(delivered[0].payload, 'role'), false)
+        assert.equal(Object.hasOwn(delivered[0].payload, 'team'), false)
+    }
+})
+
+test('resolve_night: 무득표(전원 SKIP)면 victimUuid:null이고 전원 alive:true가 유지된다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-2' })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    for (const uuid of uuids) assert.equal(session.players.get(uuid).alive, true)
+    const delivered = socketByUuid.get(uuids[1]).emitted.find((e) => e.event === 'night_result_applied')
+    assert.deepEqual(delivered.payload.victimUuid, null)
+})
+
+test('resolve_night: 중복 호출 — 두 번째 호출은 NIGHT_ALREADY_RESOLVED이고 phase/dayIndex 변경과 night_result_applied 방송은 전체 과정에서 정확히 1회다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-3' })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, countingCallback().callback)
+    const second = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[1]), uuids[1], { gameId: session.id }, second.callback)
+
+    assert.deepEqual(second.getResponse(), { ok: false, code: 'NIGHT_ALREADY_RESOLVED', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.dayIndex, 1)
+    const totalDelivered = uuids.reduce(
+        (sum, uuid) => sum + socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length,
+        0,
+    )
+    assert.equal(totalDelivered, 3)
+})
+
+test('resolve_night: 오염된 resolution(세션 밖 uuid를 가리키는 pendingEliminationTargetId)은 INTERNAL_ERROR ack이고, night_result_applied가 없으며, 상태가 호출 전과 동일하다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-4' })
+    const deps = {
+        prepare: () => ({
+            ok: true,
+            session,
+            resolution: { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: 'not-a-participant', privateResults: new Map(), resolved: true },
+        }),
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, 0)
+    const totalDelivered = uuids.reduce(
+        (sum, uuid) => sum + socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length,
+        0,
+    )
+    assert.equal(totalDelivered, 0)
+})
+
+test('resolve_night: 로그 비밀성 — commit 실패 로그가 정확히 {code:"COMMIT_ERROR", uuid, gameId} 3키뿐이다', (t) => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-5' })
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    const deps = {
+        prepare: () => ({
+            ok: true,
+            session,
+            resolution: { gameId: session.id, dayIndex: 0, pendingEliminationTargetId: 'not-a-participant', privateResults: new Map(), resolved: true },
+        }),
+    }
+
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, countingCallback().callback, deps)
+
+    const call = errorSpy.mock.calls.find(
+        (entry) => entry.arguments[0] === '[밤 행동 판정 오류]',
+    )
+    assert.ok(call)
+    assert.deepEqual(Object.keys(call.arguments[1]).sort(), ['code', 'gameId', 'uuid'])
+    assert.equal(call.arguments[1].code, 'COMMIT_ERROR')
+})
+
+test('resolve_night: 한 recipient의 night_result_applied emit이 throw해도 나머지 recipient는 정상 수신하고 커밋된 상태는 롤백되지 않는다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-6' })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    const throwingSocket = socketByUuid.get(uuids[0])
+    const originalEmit = throwingSocket.emit.bind(throwingSocket)
+    throwingSocket.emit = (event, ...args) => {
+        if (event === 'night_result_applied') throw new Error('전달 실패(테스트 주입)')
+        return originalEmit(event, ...args)
+    }
+
+    assert.doesNotThrow(() => handleResolveNight(io, throwingSocket, uuids[0], { gameId: session.id }, countingCallback().callback))
+
+    assert.equal(session.phase, 'DAY')
+    const otherDelivered = socketByUuid.get(uuids[1]).emitted.filter((e) => e.event === 'night_result_applied')
+    assert.equal(otherDelivered.length, 1)
+})
+
+test('resolve_night 종료(CITIZEN 승리): 마지막 생존 JOKER가 NIGHT 희생자로 반영되면 phase ENDED와 canonical winResult로 종료되고, 참가자 전원이 night_result_applied를 정확히 1건씩 수신하며 payload가 canonical game-core 빌더 결과와 완전히 일치한다', () => {
+    const { session, io, uuids, jokerUuid, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-term-citizen' })
+    const deps = {
+        prepare: () => ({
+            ok: true,
+            session,
+            resolution: gameSessionCore.__registerNightPreparationForTests(session, {
+                gameId: session.id,
+                dayIndex: session.dayIndex,
+                pendingEliminationTargetId: jokerUuid,
+                privateResults: new Map(),
+                resolved: true,
+            }),
+        }),
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback, deps)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
+    assert.equal(session.players.get(jokerUuid).alive, false)
+
+    const expectedPayload = {
+        ...gameSessionCore.buildNightResultAppliedPayload(session, jokerUuid, [
+            { victimUuid: jokerUuid, source: 'UNKNOWN_NIGHT' },
+        ]),
+        ...gameSessionCore.buildTerminalFields(session),
+    }
+    assert.deepEqual(
+        Object.keys(expectedPayload).sort(),
+        ['dayIndex', 'deathReveals', 'gameId', 'phase', 'players', 'victimUuid', 'winResult'],
+    )
+    assert.equal(expectedPayload.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
+    assert.deepEqual(expectedPayload.deathReveals, [{ victimUuid: jokerUuid, source: 'UNKNOWN_NIGHT' }])
+    assert.deepEqual(
+        expectedPayload.players.map((p) => p.uuid).sort(),
+        [...uuids].sort(),
+    )
+
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
+        for (const forbidden of ['"role"', '"team"', '"allies"', 'privateResults', 'ballotSnapshot', 'nightActions']) {
+            assert.equal(serialized.includes(forbidden), false)
+        }
+    }
+})
+
+test('resolve_night 종료(JOKER 승리): NIGHT 희생으로 parity(생존 JOKER ≥ 생존 비-JOKER) 도달 시 phase ENDED와 canonical winResult로 종료되고, 참가자 전원이 night_result_applied를 정확히 1건씩 수신하며 payload가 canonical game-core 빌더 결과와 완전히 일치한다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-term-joker' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid) ?? null, jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'JOKER' })
+    assert.equal(session.players.get(victimUuid).alive, false)
+
+    const expectedPayload = {
+        ...gameSessionCore.buildNightResultAppliedPayload(session, victimUuid, [
+            { victimUuid, source: 'JOKER' },
+        ]),
+        ...gameSessionCore.buildTerminalFields(session),
+    }
+    assert.deepEqual(
+        Object.keys(expectedPayload).sort(),
+        ['dayIndex', 'deathReveals', 'gameId', 'phase', 'players', 'victimUuid', 'winResult'],
+    )
+    assert.equal(expectedPayload.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
+    assert.deepEqual(expectedPayload.deathReveals, [{ victimUuid, source: 'JOKER' }])
+
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
+        for (const forbidden of ['"role"', '"team"', '"allies"', 'privateResults', 'ballotSnapshot', 'nightActions']) {
+            assert.equal(serialized.includes(forbidden), false)
+        }
+    }
+})
+
+test('불변성: NIGHT 종료 payload를 캡처해 중첩 필드를 변형해도 canonical session.winResult와 이후 재구성된 payload는 오염되지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id: 'room-rn-immut' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+    handleResolveNight(io, socketByUuid.get(jokerUuid) ?? null, jokerUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(session.phase, 'ENDED')
+    const originalWinner = session.winResult.winner
+
+    const captured = socketByUuid.get(uuids[0]).emitted.find((e) => e.event === 'night_result_applied').payload
+    captured.winResult.winner = 'TAMPERED'
+    captured.players.push({ uuid: 'forged-uuid', isAlive: true })
+
+    assert.equal(session.winResult.winner, originalWinner)
+    assert.equal(session.players.has('forged-uuid'), false)
+
+    const rebuilt = gameSessionCore.buildTerminalFields(session)
+    assert.equal(rebuilt.winResult.winner, originalWinner)
+    assert.equal(rebuilt.players.length, session.players.size)
+})
+
+test('AC-05(F-25b): 결과 전달 도중 같은 밤의 resolve_night가 재진입해도 두 번째는 거부되고 수신자별 결과가 늘지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
+        commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-reentry' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    const reentrantSocket = socketByUuid.get(uuids[0])
+    const reentryResponses = []
+    const originalEmit = reentrantSocket.emit.bind(reentrantSocket)
+    reentrantSocket.emit = (event, ...args) => {
+        const result = originalEmit(event, ...args)
+        if (event === 'night_result_applied' && reentryResponses.length === 0) {
+            const inner = countingCallback()
+            handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, inner.callback)
+            reentryResponses.push(inner.getResponse())
+        }
+        return result
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(reentryResponses.length, 1)
+    assert.equal(reentryResponses[0].ok, false, '재진입한 두 번째 요청은 성공하지 않는다')
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.players.get(victimUuid).alive, false)
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 1, `${uuid}의 night_result_applied 건수`)
+    }
+})
+
+test('AC-05/A-08(F-25b): 준비 이후 이탈이 그 판을 끝내면 밤 커밋이 거부되고 밤 결과가 방송되지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
+        commitTrioSessionWithSocketsAtNight({ id: 'room-rn-depart-terminal' })
+    const [victimUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, victimUuid)
+
+    const deps = {
+        prepare: (uuid, gameId) => {
+            const prepared = gameSessionCore.prepareNightResolution(uuid, gameId)
+            assert.equal(prepared.ok, true)
+            const departure = gameSessionCore.commitParticipantDeparture(session, jokerUuid)
+            assert.deepEqual(departure.terminal, { winner: 'CITIZEN' })
+            return prepared
+        },
+    }
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback, deps)
+
+    assert.deepEqual(getResponse(), {
+        ok: false, code: 'GAME_ALREADY_ENDED', message: '요청을 처리할 수 없습니다.',
+    })
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
+    assert.equal(session.players.get(victimUuid).alive, true)
+    assert.equal(session.nightResolution, null)
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied')
+        assert.equal(delivered.length, 0, `${uuid}에게 밤 결과가 가면 안 된다`)
+    }
+})
+
+test('AC-05(F-25b): 이전 밤의 준비로는 다음 밤을 확정할 수 없고 세션 상태도 방송도 늘지 않는다', () => {
+    const { session, io, uuids, jokerUuid, citizenUuids, socketByUuid } =
+        commitFourPlayerSessionWithSocketsAtNight({ id: 'room-rn-stale-night' })
+    const [firstTargetUuid, secondTargetUuid] = citizenUuids
+    gameSessionCore.submitNightAction(jokerUuid, session.id, firstTargetUuid)
+    const stalePrepared = gameSessionCore.prepareNightResolution(jokerUuid, session.id)
+    assert.equal(stalePrepared.ok, true)
+
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(session.phase, 'DAY')
+
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    const deliveriesBefore = uuids.map(
+        (uuid) => socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length,
+    )
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveNight(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback, {
+        prepare: () => stalePrepared,
+    })
+
+    assert.deepEqual(getResponse(), {
+        ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.',
+    })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.nightResolution, null)
+    assert.equal(session.players.get(secondTargetUuid).alive, true)
+    assert.deepEqual(
+        uuids.map((uuid) => socketByUuid.get(uuid).emitted.filter((e) => e.event === 'night_result_applied').length),
+        deliveriesBefore,
+    )
+})
+
+function commitTrioSessionWithSocketsAtDay({ id = 'room-dv', advanceToVote = true } = {}) {
+    const { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid } = commitTrioSessionWithSocketsAtNight({ id })
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
+    if (advanceToVote) {
+        for (const player of session.players.values()) {
+            if (!player.alive) continue
+            handleAcknowledgeDayVoteReady(io, socketByUuid.get(player.uuid), player.uuid, { gameId: session.id }, countingCallback().callback)
+        }
+        assert.equal(session.dayPhase, 'DAY_VOTE')
+    }
+    io.broadcasts.length = 0
+    for (const socket of sockets) socket.emitted.length = 0
+    return { session, io, sockets, uuids, jokerUuid, citizenUuids, socketByUuid }
+}
+
+test('ready_for_day_vote: 마지막 준비에서만 day_phase_changed가 채널에 정확히 1회 방송되고 payload에 참가자 식별 정보가 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-1', advanceToVote: false })
+    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
+
+    const first = countingCallback()
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, first.callback)
+    assert.deepEqual(first.getResponse(), { ok: true, readyCount: 1, requiredCount: 3 })
+    assert.equal(io.broadcasts.length, 0)
+
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[1]), uuids[1], { gameId: session.id }, countingCallback().callback)
+    assert.equal(io.broadcasts.length, 0)
+
+    const last = countingCallback()
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[2]), uuids[2], { gameId: session.id }, last.callback)
+    assert.deepEqual(last.getResponse(), { ok: true, readyCount: 3, requiredCount: 3 })
+    assert.equal(session.dayPhase, 'DAY_VOTE')
+
+    const broadcasts = io.broadcasts.filter((b) => b.event === 'day_phase_changed')
+    assert.equal(broadcasts.length, 1)
+    assert.equal(broadcasts[0].roomId, session.channelId)
+    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, dayIndex: session.dayIndex, dayPhase: 'DAY_VOTE', round: 1 })
+    assertNoForbiddenPrivateData(broadcasts[0].payload, collectOtherPlayerRoleSecrets(session, uuids[0]))
+})
+
+test('ready_for_day_vote: 같은 참가자의 중복 준비는 멱등이고 전이시키지 않는다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-2', advanceToVote: false })
+
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, countingCallback().callback)
+    const repeat = countingCallback()
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, repeat.callback)
+
+    assert.deepEqual(repeat.getResponse(), { ok: true, readyCount: 1, requiredCount: 3 })
+    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('ready_for_day_vote: 이미 DAY_VOTE인 낮에 도착한 늦은 준비는 INVALID_DAY_PHASE이고 방송이 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-3' })
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_DAY_PHASE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('ready_for_day_vote: payload가 객체가 아니거나 gameId가 문자열이 아니면 INVALID_PAYLOAD이고 준비 집합은 불변이다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-4', advanceToVote: false })
+
+    for (const badPayload of [null, 'x', 42, [], {}, { gameId: 123 }]) {
+        const { callback, getResponse } = countingCallback()
+        handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.dayVoteReadyUuids.size, 0)
+    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
+})
+
+test('ready_for_day_vote: 현재 소켓이 아닌 요청은 STALE_SOCKET이고, callback이 함수가 아니면 완전한 no-op이다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-5', advanceToVote: false })
+    const { callback, getResponse } = countingCallback()
+
+    handleAcknowledgeDayVoteReady(io, createFakeSocket(uuids[0], { id: 'sock-other' }), uuids[0], { gameId: session.id }, callback)
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
+
+    assert.doesNotThrow(() => handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, undefined))
+    assert.equal(session.dayVoteReadyUuids.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('ready_for_day_vote: 마지막 준비의 callback이 throw해도 전이와 day_phase_changed 방송은 그대로 진행된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-drdy-6', advanceToVote: false })
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, countingCallback().callback)
+    handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[1]), uuids[1], { gameId: session.id }, countingCallback().callback)
+
+    assert.doesNotThrow(() =>
+        handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuids[2]), uuids[2], { gameId: session.id }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.dayPhase, 'DAY_VOTE')
+    assert.equal(io.broadcasts.filter((b) => b.event === 'day_phase_changed').length, 1)
+})
+
+test('cast_day_vote: 토론 중(DAY_DISCUSSION) 제출은 INVALID_DAY_PHASE로 거부되고 dayVotes가 비어 있으며 방송이 없다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-discussion', advanceToVote: false })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_DAY_PHASE', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.dayVotes.size, 0)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+function assertDayVoteAck(response, { session, actor, round = 1, revision }) {
+    assert.deepEqual(Object.keys(response).sort(), ['ok', 'sfxEvent'])
+    assert.equal(response.ok, true)
+    assert.deepEqual(response.sfxEvent, {
+        kind: 'day-vote-submitted',
+        eventId: `game:${session.id}:day:${session.dayIndex}:round:${round}:actor:${actor}:vote:${revision}`,
+        accountId: actor,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        round,
+        origin: 'live',
+    })
+    assert.equal(Object.hasOwn(response.sfxEvent, 'targetId'), false)
+}
+
+test('cast_day_vote: 정상 대상 투표는 ack {ok:true}이고 dayVotes에 저장되며 브로드캐스트가 없다', async () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-1' })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    await handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
+
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
+    assert.equal(session.dayVotes.get(actor), target)
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('cast_day_vote: 기권(targetId:null) 제출은 ack {ok:true}이고 dayVotes에 null로 저장된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-2' })
+    const [actor] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: null }, callback)
+
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
+    assert.equal(session.dayVotes.get(actor), null)
+    assert.equal(session.dayVotes.has(actor), true)
+})
+
+test('cast_day_vote(F-16): 같은 대상 재제출은 같은 eventId, 대상 변경은 새 eventId다', async () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-sfx-1' })
+    const [actor, targetB, targetC] = uuids
+    const socket = socketByUuid.get(actor)
+
+    const first = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, first.callback)
+    assertDayVoteAck(first.getResponse(), { session, actor, revision: 1 })
+
+    const again = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, again.callback)
+    assert.equal(again.getResponse().sfxEvent.eventId, first.getResponse().sfxEvent.eventId)
+
+    const changed = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetC }, changed.callback)
+    assertDayVoteAck(changed.getResponse(), { session, actor, revision: 2 })
+
+    const back = countingCallback()
+    await handleSubmitDayVote(io, socket, actor, { gameId: session.id, targetId: targetB }, back.callback)
+    assertDayVoteAck(back.getResponse(), { session, actor, revision: 3 })
+    assert.notEqual(back.getResponse().sfxEvent.eventId, first.getResponse().sfxEvent.eventId)
+})
+
+test('cast_day_vote(F-16): 실패한 제출은 사건 메타데이터를 만들지 않는다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-sfx-2' })
+    const [actor] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: actor }, callback)
+
+    assert.equal(getResponse().ok, false)
+    assert.equal(Object.hasOwn(getResponse(), 'sfxEvent'), false)
+    assert.equal(session.dayVoteSfx.size, 0)
+})
+
+test('cast_day_vote: payload의 위조 uuid/alive/role/phase는 전부 무시되고 인증된 uuid·registry 기준으로만 처리된다', async () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-3' })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    await handleSubmitDayVote(
+        io, socketByUuid.get(actor), actor,
+        { gameId: session.id, targetId: target, uuid: 'forged-uuid', alive: false, role: 'JOKER', phase: 'NIGHT' },
+        callback,
+    )
+
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
+    assert.equal(session.dayVotes.get(actor), target)
+    assert.equal(session.dayVotes.has('forged-uuid'), false)
+})
+
+test('cast_day_vote: callback이 함수가 아니면 완전한 no-op이다(예외 없고 dayVotes 불변)', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-4' })
+    const [actor, target] = uuids
+
+    assert.doesNotThrow(() => handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, undefined))
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: callback이 throw해도 예외가 새지 않고 이미 반영된 dayVotes는 유지된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-5' })
+    const [actor, target] = uuids
+
+    assert.doesNotThrow(() =>
+        handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, throwingCallback('콜백 실패(테스트 주입)')),
+    )
+
+    assert.equal(session.dayVotes.get(actor), target)
+})
+
+test('cast_day_vote: payload가 객체가 아니거나 배열이면 INVALID_PAYLOAD이고 dayVotes는 불변이다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-6' })
+    const [actor] = uuids
+
+    for (const badPayload of [null, 'x', 42, []]) {
+        const { callback, getResponse } = countingCallback()
+        handleSubmitDayVote(io, socketByUuid.get(actor), actor, badPayload, callback)
+        assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+    }
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: gameId가 비문자열이거나 targetId가 null/문자열이 아니면 INVALID_PAYLOAD다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-7' })
+    const [actor, target] = uuids
+
+    const badGameId = countingCallback()
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: 123, targetId: target }, badGameId.callback)
+    assert.deepEqual(badGameId.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const badTarget = countingCallback()
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: 42 }, badTarget.callback)
+    assert.deepEqual(badTarget.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: core가 SESSION_NOT_FOUND를 반환하는 registry 불일치는 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-8' })
+    const [actor, target] = uuids
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('cast_day_vote: core가 throw하면 INTERNAL_ERROR로 정규화되고 원본 Error가 로그에 노출되지 않는다', (t) => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-9' })
+    const [actor, target] = uuids
+    const errorSpy = t.mock.method(console, 'error', () => {})
+    t.mock.method(gameSessionCore, 'submitDayVote', () => {
+        throw new Error('SECRET internal detail')
+    })
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+    const serialized = JSON.stringify(errorSpy.mock.calls.map((c) => c.arguments))
+    assert.equal(serialized.includes('SECRET'), false)
+})
+
+test('cast_day_vote: 성공/실패 어느 경로에서도 io.broadcasts는 비어있다', () => {
+    const { session, io, uuids } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-10' })
+    const [actor, target] = uuids
+
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: target }, countingCallback().callback)
+    handleSubmitDayVote(io, null, actor, { gameId: session.id, targetId: actor }, countingCallback().callback)
+
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('cast_day_vote: stale gameId 요청은 실패 code 그대로 ack되고 dayVotes는 불변이다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-11' })
+    const [actor, target] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: 'not-the-real-game-id', targetId: target }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SESSION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: 교차 세션 요청(다른 GameSession의 gameId)은 거부되고 두 세션의 dayVotes 모두 불변이다', () => {
+    const dayA = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-cross-a' })
+    const dayB = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-cross-b' })
+    const [actorA] = dayA.uuids
+    const [, targetB] = dayB.uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleSubmitDayVote(dayA.io, dayA.socketByUuid.get(actorA), actorA, { gameId: dayB.session.id, targetId: targetB }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SESSION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(dayB.session.dayVotes.size, 0)
+    assert.equal(dayA.session.dayVotes.size, 0)
+})
+
+test('cast_day_vote: 같은 uuid가 두 번 제출하면 dayVotes에는 마지막 값만 저장된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-12' })
+    const [actor, targetB, targetC] = uuids
+
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: targetB }, countingCallback().callback)
+    handleSubmitDayVote(io, socketByUuid.get(actor), actor, { gameId: session.id, targetId: targetC }, countingCallback().callback)
+
+    assert.equal(session.dayVotes.get(actor), targetC)
+    assert.equal(session.dayVotes.size, 1)
+})
+
+test('cast_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', async () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-dv-13' })
+    const [actor, target] = uuids
+    const socket = socketByUuid.get(actor)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, actor)
+    const { callback, getResponse } = countingCallback()
+
+    socket.trigger('cast_day_vote', { gameId: session.id, targetId: target }, callback)
+    await flushAsync()
+
+    assertDayVoteAck(getResponse(), { session, actor, revision: 1 })
+    assert.equal(session.dayVotes.get(actor), target)
+})
+
+test('resolve_day_vote: TRIBUNAL 판정 ack가 정확히 {ok:true, gameId, dayIndex, outcome:"TRIBUNAL", tribunalTargetUuid}이고 phase가 TRIBUNAL로 전이된다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-1' })
+    const [a, b, c] = uuids
+    handleSubmitDayVote(io, socketByUuid.get(a), a, { gameId: session.id, targetId: c }, countingCallback().callback)
+    handleSubmitDayVote(io, socketByUuid.get(b), b, { gameId: session.id, targetId: c }, countingCallback().callback)
+    handleSubmitDayVote(io, socketByUuid.get(c), c, { gameId: session.id, targetId: null }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    handleResolveDayVote(io, socketByUuid.get(a), a, { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: c,
+    })
+    assert.equal(session.phase, 'TRIBUNAL')
+})
+
+test('resolve_day_vote: 1라운드 동점 ack의 outcome은 "REVOTE"이고 phase는 DAY에 남으며, 재투표 종결 시에만 NIGHT로 전이한다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-2' })
+    const [a, b, c] = uuids
+    const dayIndexBefore = session.dayIndex
+    handleSubmitDayVote(io, socketByUuid.get(a), a, { gameId: session.id, targetId: b }, countingCallback().callback)
+    handleSubmitDayVote(io, socketByUuid.get(b), b, { gameId: session.id, targetId: c }, countingCallback().callback)
+    handleSubmitDayVote(io, socketByUuid.get(c), c, { gameId: session.id, targetId: a }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    handleResolveDayVote(io, socketByUuid.get(a), a, { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: dayIndexBefore,
+        outcome: 'REVOTE',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayIndex, dayIndexBefore)
+
+    const revoteBroadcast = socketByUuid.get(a).emitted.find((e) => e.event === 'day_vote_resolved')
+    assert.equal(revoteBroadcast.payload.phase, 'DAY')
+    assert.equal(revoteBroadcast.payload.dayIndex, dayIndexBefore)
+    assert.equal(revoteBroadcast.payload.outcome, 'REVOTE')
+    assert.deepEqual([...revoteBroadcast.payload.revoteExcludedUuids].sort(), [...uuids].sort())
+    for (const uuid of uuids) {
+        assert.equal(socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved').length, 1)
+    }
+
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, socketByUuid.get(uuid), uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+    const second = countingCallback()
+    handleResolveDayVote(io, socketByUuid.get(a), a, { gameId: session.id, dayIndex: session.dayIndex }, second.callback)
+
+    assert.deepEqual(second.getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: dayIndexBefore,
+        outcome: 'ABSTAINED',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, dayIndexBefore)
+    assert.equal(session.nightActions.size, 0)
+    assert.equal(session.nightResolution, null)
+
+    for (const uuid of uuids) {
+        const broadcasts = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved')
+        assert.equal(broadcasts.length, 2)
+        assert.equal(broadcasts[1].payload.phase, 'NIGHT')
+        assert.equal(broadcasts[1].payload.outcome, 'ABSTAINED')
+    }
+})
+
+test('resolve_day_vote: ABSTAINED 판정도 phase가 NIGHT로 전이하며(dayIndex 불변), 이후 새 NIGHT 행동이 정상 접수된다', () => {
+    const { session, io, uuids, socketByUuid, jokerUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-abstain' })
+    const dayIndexBefore = session.dayIndex
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, socketByUuid.get(uuid), uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+    const { callback, getResponse } = countingCallback()
+
+    handleResolveDayVote(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: dayIndexBefore,
+        outcome: 'ABSTAINED',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, dayIndexBefore)
+
+    const turnStarts = io.broadcasts.filter((event) => event.event === 'night_turn_started')
+    assert.equal(turnStarts.length, 1)
+    assert.equal(turnStarts[0].roomId, session.channelId)
+    assert.equal(turnStarts[0].payload.gameId, session.id)
+    assert.equal(turnStarts[0].payload.role, 'JOKER')
+    assert.equal(Number.isInteger(turnStarts[0].payload.deadline), true)
+
+    const nightSubmitResult = gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    assert.deepEqual(nightSubmitResult, { ok: true, gameId: session.id })
+})
+
+test('resolve_day_vote: 이미 판정된 dayIndex 재요청은 멱등하게 동일한 결과 필드를 반환하고 재방송하지 않으며 NIGHT 상태를 다시 초기화하지 않는다', () => {
+    const { session, io, uuids, socketByUuid, jokerUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-3' })
+    const [a, b, c] = uuids
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, socketByUuid.get(uuid), uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+
+    handleResolveDayVote(io, socketByUuid.get(a), a, { gameId: session.id, dayIndex: session.dayIndex }, countingCallback().callback)
+    gameSessionCore.submitNightAction(jokerUuid, session.id, null)
+    const countBroadcasts = () =>
+        [a, b, c]
+            .map((uuid) => socketByUuid.get(uuid).emitted.filter((e) => e.event === 'day_vote_resolved').length)
+            .reduce((sum, n) => sum + n, 0)
+    const countAfterFirst = countBroadcasts()
+
+    const { callback, getResponse } = countingCallback()
+    handleResolveDayVote(io, socketByUuid.get(b), b, { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'ABSTAINED',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(countBroadcasts(), countAfterFirst)
+    assert.equal(session.nightActions.size, 1)
+})
+
+test('resolve_day_vote: registerGameHandlers로 실제 배선하면 socket.trigger가 직접 호출과 동일한 결과를 낸다', () => {
+    const { session, io, uuids, socketByUuid } = commitTrioSessionWithSocketsAtDay({ id: 'room-rdv-4' })
+    const [a] = uuids
+    for (const uuid of uuids) {
+        handleSubmitDayVote(io, socketByUuid.get(uuid), uuid, { gameId: session.id, targetId: null }, countingCallback().callback)
+    }
+    const socket = socketByUuid.get(a)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, a)
+    const { callback, getResponse } = countingCallback()
+
+    socket.trigger('resolve_day_vote', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'ABSTAINED',
+        tribunalTargetUuid: null,
+    })
+    assert.equal(session.phase, 'NIGHT')
+    const turnStarts = io.broadcasts.filter((event) => event.event === 'night_turn_started')
+    assert.equal(turnStarts.length, 1)
+    assert.equal(turnStarts[0].payload.role, 'JOKER')
+})
+
+test('handleResolveTribunalVote: 성공 시 commit 이후 canonical에서 빌드한 payload로 ACK와 broadcast 1회(tribunal_resolved 계약)', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-1', uuidA: 'r1', uuidB: 'r2', uuidC: 'r3', defendantUuid: 'r3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, socketA, 'r1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, socketB, 'r2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketA, 'r1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), { ok: true, gameId: session.id, dayIndex: session.dayIndex, outcome: 'NOT_GUILTY', counts: { guilty: 0, notGuilty: 2 }, executedUuid: null })
+    assert.equal(session.players.get('r3').alive, true)
+    for (const s of [socketA, socketB, socketC]) {
+        const delivered = s.emitted.filter((e) => e.event === 'tribunal_vote_resolved')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(Object.keys(delivered[0].payload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase'])
+    }
+})
+
+test('handleResolveTribunalVote: commit 실패 시 실패 ACK, broadcast 0회, payload 빌드 0회', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-2', uuidA: 's1', uuidB: 's2', uuidC: 's3', defendantUuid: 's3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, socketA, 's1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, socketB, 's2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    let buildCalls = 0
+    const deps = {
+        commit: () => ({ ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }),
+    }
+    const originalBuild = gameSessionCore.buildTribunalVoteResolvedPayload
+    gameSessionCore.buildTribunalVoteResolvedPayload = (...args) => {
+        buildCalls += 1
+        return originalBuild(...args)
+    }
+    const { callback, getResponse } = countingCallback()
+
+    try {
+        gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketA, 's1', { gameId: session.id, dayIndex: session.dayIndex }, callback, deps)
+    } finally {
+        gameSessionCore.buildTribunalVoteResolvedPayload = originalBuild
+    }
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(buildCalls, 0)
+    for (const s of [socketA, socketB, socketC]) {
+        assert.equal(s.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length, 0)
+    }
+})
+
+test('resolve_tribunal_vote: 권한 없는 요청 거부(NOT_A_PARTICIPANT → INTERNAL_ERROR)', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-3', uuidA: 't1', uuidB: 't2', uuidC: 't3', defendantUuid: 't3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    session.players.delete('t1')
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketA, 't1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('resolve_tribunal_vote: callback 없는 요청은 mutation 없음', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-4', uuidA: 'u1', uuidB: 'u2', uuidC: 'u3', defendantUuid: 'u3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, null, 'u1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, null, 'u2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+
+    assert.doesNotThrow(() =>
+        gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, null, 'u1', { gameId: session.id, dayIndex: session.dayIndex }, undefined),
+    )
+
+    assert.equal(session.players.get('u3').alive, true)
+})
+
+test('resolve_tribunal_vote: ACK와 broadcast에 raw ballot·private role 없음(public snapshot만 노출)', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-5', uuidA: 'v1', uuidB: 'v2', uuidC: 'v3', defendantUuid: 'v3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, socketA, 'v1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, socketB, 'v2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketA, 'v1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    const ackSerialized = JSON.stringify(getResponse())
+    assert.equal(ackSerialized.includes('ballotSnapshot'), false)
+    assert.equal(ackSerialized.includes('voterUuid'), false)
+    assert.equal(ackSerialized.includes('role'), false)
+    const broadcast = socketA.emitted.find((e) => e.event === 'tribunal_vote_resolved')
+    const broadcastSerialized = JSON.stringify(broadcast.payload)
+    assert.equal(broadcastSerialized.includes('ballotSnapshot'), false)
+    assert.equal(broadcastSerialized.includes('voterUuid'), false)
+})
+
+test('resolve_tribunal_vote: 중복 resolve 시 broadcast 증가분 0', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({ roomId: 'room-rtv-6', uuidA: 'w1', uuidB: 'w2', uuidC: 'w3', defendantUuid: 'w3' })
+    const io = createFakeIo([socketA, socketB, socketC])
+    handleCastTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, socketB, 'w2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketA, 'w1', { gameId: session.id, dayIndex: session.dayIndex }, countingCallback().callback)
+    const countBefore = socketA.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length
+
+    const { callback, getResponse } = countingCallback()
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketB, 'w2', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.equal(session.phase, 'NIGHT')
+    assert.deepEqual(getResponse(), { ok: false, code: 'INVALID_PHASE', message: '요청을 처리할 수 없습니다.' })
+    const countAfter = socketA.emitted.filter((e) => e.event === 'tribunal_vote_resolved').length
+    assert.equal(countAfter, countBefore)
+})
+
+test('resolve_tribunal_vote 전이(no-winner): 승리 조건 미충족 판정은 phase가 NIGHT로 전이하고, 참가자 전원이 tribunal_vote_resolved를 정확히 1건씩 수신하며 payload가 canonical public 상태와 일치한다', () => {
+    const { session, socketA, socketB, socketC } = commitTribunalReadySession({
+        roomId: 'room-rtv-night',
+        uuidA: 'x1',
+        uuidB: 'x2',
+        uuidC: 'x3',
+        defendantUuid: 'x3',
+    })
+    const io = createFakeIo([socketA, socketB, socketC])
+    const dayIndexBefore = session.dayIndex
+    handleCastTribunalVote(io, socketA, 'x1', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    handleCastTribunalVote(io, socketB, 'x2', { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' }, countingCallback().callback)
+    const { callback, getResponse } = countingCallback()
+
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketA, 'x1', { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'NOT_GUILTY',
+        counts: { guilty: 0, notGuilty: 2 },
+        executedUuid: null,
+    })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayIndex, dayIndexBefore)
+    assert.equal(Object.hasOwn(session, 'winResult'), false)
+
+    const turnStarts = io.broadcasts.filter((event) => event.event === 'night_turn_started')
+    assert.equal(turnStarts.length, 1)
+    assert.equal(turnStarts[0].roomId, session.channelId)
+    assert.equal(turnStarts[0].payload.gameId, session.id)
+    assert.equal(turnStarts[0].payload.role, 'JOKER')
+    assert.equal(Number.isInteger(turnStarts[0].payload.deadline), true)
+
+    const expectedPayload = gameSessionCore.buildTribunalVoteResolvedPayload(session)
+    assert.deepEqual(Object.keys(expectedPayload).sort(), ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase'])
+    assert.equal(expectedPayload.phase, 'NIGHT')
+
+    for (const s of [socketA, socketB, socketC]) {
+        const delivered = s.emitted.filter((e) => e.event === 'tribunal_vote_resolved')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
+        for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid', 'privateResults', 'nightActions']) {
+            assert.equal(serialized.includes(forbidden), false)
+        }
+    }
+})
+
+function commitDeterministicTribunalReadySession({ id, uuids, jokerCount, defendantRole }) {
+    const room = makeRoom({ id, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+    for (const uuid of uuids) gameSessionCore.acknowledgeRoleReveal(uuid, session.id)
+
+    const defendantUuid = [...session.players.values()].find((p) => p.role === defendantRole).uuid
+    session.phase = 'TRIBUNAL'
+    session.dayVoteResolution = {
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: defendantUuid,
+        publicVoteCount: uuids.length,
+        publicAbstainCount: 0,
+    }
+    session.tribunal = { candidateId: defendantUuid, dayIndex: session.dayIndex, defendantUuid, votes: new Map() }
+
+    const sockets = uuids.map((uuid) => {
+        const s = createFakeSocket(uuid)
+        s.rooms.add(session.channelId)
+        s.data.activeGameId = session.id
+        return s
+    })
+    const io = createFakeIo(sockets)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+    return { session, io, socketByUuid, defendantUuid }
+}
+
+test('resolve_tribunal_vote 종료(CITIZEN 승리): 피고인이 마지막 생존 JOKER고 GUILTY 판정이면 phase ENDED와 canonical winResult로 종료되고, 참가자 전원이 tribunal_vote_resolved를 정확히 1건씩 수신하며 ACK/broadcast가 현재 production 계약과 정확히 일치한다', () => {
+    const uuids = ['tc-a', 'tc-b', 'tc-c']
+    const { session, io, socketByUuid, defendantUuid } = commitDeterministicTribunalReadySession({
+        id: 'room-tv-term-citizen',
+        uuids,
+        jokerCount: 1,
+        defendantRole: 'JOKER',
+    })
+    const voterUuids = uuids.filter((uuid) => uuid !== defendantUuid)
+    for (const voterUuid of voterUuids) {
+        handleCastTribunalVote(io, socketByUuid.get(voterUuid), voterUuid, { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    }
+
+    const { callback, getResponse } = countingCallback()
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketByUuid.get(voterUuids[0]), voterUuids[0], { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'GUILTY',
+        counts: { guilty: 2, notGuilty: 0 },
+        executedUuid: defendantUuid,
+    })
+    assert.deepEqual(Object.keys(getResponse()).sort(), ['counts', 'dayIndex', 'executedUuid', 'gameId', 'ok', 'outcome'])
+
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'CITIZEN' })
+    assert.equal(session.players.get(defendantUuid).alive, false)
+
+    const expectedPayload = {
+        ...gameSessionCore.buildTribunalVoteResolvedPayload(session),
+        ...gameSessionCore.buildTerminalFields(session),
+    }
+    assert.deepEqual(
+        Object.keys(expectedPayload).sort(),
+        ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
+    )
+    assert.equal(expectedPayload.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
+
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'tribunal_vote_resolved')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
+        for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid']) {
+            assert.equal(serialized.includes(forbidden), false)
+        }
+    }
+})
+
+test('resolve_tribunal_vote 종료(JOKER 승리): 피고인이 비-JOKER고 처형 후 parity 도달 시 phase ENDED와 canonical winResult로 종료되고, 참가자 전원이 tribunal_vote_resolved를 정확히 1건씩 수신하며 ACK/broadcast가 현재 production 계약과 정확히 일치한다', () => {
+    const uuids = ['tj-a', 'tj-b', 'tj-c']
+    const { session, io, socketByUuid, defendantUuid } = commitDeterministicTribunalReadySession({
+        id: 'room-tv-term-joker',
+        uuids,
+        jokerCount: 2,
+        defendantRole: 'CITIZEN',
+    })
+    const voterUuids = uuids.filter((uuid) => uuid !== defendantUuid)
+    for (const voterUuid of voterUuids) {
+        handleCastTribunalVote(io, socketByUuid.get(voterUuid), voterUuid, { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    }
+
+    const { callback, getResponse } = countingCallback()
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(io, socketByUuid.get(voterUuids[0]), voterUuids[0], { gameId: session.id, dayIndex: session.dayIndex }, callback)
+
+    assert.deepEqual(getResponse(), {
+        ok: true,
+        gameId: session.id,
+        dayIndex: session.dayIndex,
+        outcome: 'GUILTY',
+        counts: { guilty: 2, notGuilty: 0 },
+        executedUuid: defendantUuid,
+    })
+    assert.deepEqual(Object.keys(getResponse()).sort(), ['counts', 'dayIndex', 'executedUuid', 'gameId', 'ok', 'outcome'])
+
+    assert.equal(session.phase, 'ENDED')
+    assert.deepEqual(session.winResult, { winner: 'JOKER' })
+    assert.equal(session.players.get(defendantUuid).alive, false)
+
+    const expectedPayload = {
+        ...gameSessionCore.buildTribunalVoteResolvedPayload(session),
+        ...gameSessionCore.buildTerminalFields(session),
+    }
+    assert.deepEqual(
+        Object.keys(expectedPayload).sort(),
+        ['counts', 'dayIndex', 'defendantUuid', 'executedRole', 'executedUuid', 'gameId', 'outcome', 'phase', 'players', 'winResult'],
+    )
+    assert.equal(expectedPayload.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(expectedPayload.winResult.reveals) && expectedPayload.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
+
+    for (const uuid of uuids) {
+        const delivered = socketByUuid.get(uuid).emitted.filter((e) => e.event === 'tribunal_vote_resolved')
+        assert.equal(delivered.length, 1)
+        assert.deepEqual(delivered[0].payload, expectedPayload)
+
+        const serialized = JSON.stringify(delivered[0].payload, (key, value) => (key === 'reveals' ? undefined : value))
+        for (const forbidden of ['"role"', '"team"', '"allies"', 'ballotSnapshot', 'voterUuid']) {
+            assert.equal(serialized.includes(forbidden), false)
+        }
+    }
+})
+
+test('불변성: TRIBUNAL 종료 payload를 캡처해 중첩 필드를 변형해도 canonical session.winResult와 이후 재구성된 payload는 오염되지 않는다', () => {
+    const uuids = ['ti-a', 'ti-b', 'ti-c']
+    const { session, io, socketByUuid, defendantUuid } = commitDeterministicTribunalReadySession({
+        id: 'room-tv-immut',
+        uuids,
+        jokerCount: 1,
+        defendantRole: 'JOKER',
+    })
+    const voterUuids = uuids.filter((uuid) => uuid !== defendantUuid)
+    for (const voterUuid of voterUuids) {
+        handleCastTribunalVote(io, socketByUuid.get(voterUuid), voterUuid, { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' }, countingCallback().callback)
+    }
+    gameSessionSocketLayer.__testables.handleResolveTribunalVote(
+        io, socketByUuid.get(voterUuids[0]), voterUuids[0], { gameId: session.id, dayIndex: session.dayIndex }, countingCallback().callback,
+    )
+    assert.equal(session.phase, 'ENDED')
+    const originalWinner = session.winResult.winner
+
+    const captured = socketByUuid.get(uuids[0]).emitted.find((e) => e.event === 'tribunal_vote_resolved').payload
+    captured.winResult.winner = 'TAMPERED'
+    captured.players.push({ uuid: 'forged-uuid', isAlive: true })
+
+    assert.equal(session.winResult.winner, originalWinner)
+    assert.equal(session.players.has('forged-uuid'), false)
+
+    const rebuilt = gameSessionCore.buildTerminalFields(session)
+    assert.equal(rebuilt.winResult.winner, originalWinner)
+    assert.equal(rebuilt.players.length, session.players.size)
+})
+
+function resolveDayVotesDirect(session, votesByUuid) {
+    if (session.dayPhase === 'DAY_DISCUSSION') {
+        for (const player of session.players.values()) {
+            if (player.alive) gameSessionCore.acknowledgeDayVoteReady(player.uuid, session.id)
+        }
+    }
+    for (const [voterUuid, targetUuid] of Object.entries(votesByUuid)) {
+        gameSessionCore.submitDayVote(voterUuid, session.id, targetUuid)
+    }
+    const [anyVoter] = Object.keys(votesByUuid)
+    const prepared = gameSessionCore.prepareDayVoteResolution(anyVoter, session.id, session.dayIndex)
+    return gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
+}
+
+function resolveTribunalVotesDirect(session, votesByUuid) {
+    for (const [voterUuid, vote] of Object.entries(votesByUuid)) {
+        gameSessionCore.submitTribunalVote(voterUuid, session.id, session.dayIndex, vote)
+    }
+    const [anyVoter] = Object.keys(votesByUuid)
+    const prepared = gameSessionCore.prepareTribunalVoteResolution(anyVoter, session.id, session.dayIndex)
+    return gameSessionCore.commitTribunalVoteResolution(prepared.session, prepared.resolution)
+}
+
+function resolveJokerOnlyNightDirect(session, jokerUuid, targetUuid) {
+    gameSessionCore.submitNightAction(jokerUuid, session.id, targetUuid)
+    const prepared = gameSessionCore.prepareNightResolution(jokerUuid, session.id)
+    return gameSessionCore.commitNightResolution(prepared.session, prepared.resolution)
+}
+
+const FORBIDDEN_PRIVATE_KEYS = new Set([
+    'role', 'team', 'allies',
+    'votes', 'nightActions', 'dayVotes', 'roleRevealAcks',
+    'nightTargetUuid', 'dayVoteTargetUuid', 'tribunalVoteUuid', 'tribunalVote',
+])
+
+const APPROVED_PUBLIC_VALUE_PATHS = new Set([
+    'players.*.uuid',
+    'nightResult.victimUuid',
+    'nightResult.deathReveals.*.victimUuid',
+    'nightResult.deathReveals.*.source',
+    'dayVoteResolution.tribunalTargetUuid',
+    'tribunal.defendantUuid',
+    'tribunal.executedUuid',
+    'tribunal.outcome',
+    'winResult.winner',
+])
+
+function normalizeSnapshotPath(path) {
+    return path.map((segment) => (typeof segment === 'number' ? '*' : segment)).join('.')
+}
+
+function assertNoForbiddenPrivateData(value, secretValues, path = [], insideSelf = false) {
+    if (Array.isArray(value)) {
+        value.forEach((item, i) => assertNoForbiddenPrivateData(item, secretValues, [...path, i], insideSelf))
+        return
+    }
+    if (value !== null && typeof value === 'object') {
+        for (const [key, val] of Object.entries(value)) {
+            const nextInsideSelf = insideSelf || (path.length === 0 && key === 'self')
+                || (path.length === 1 && path[0] === 'winResult' && key === 'reveals')
+            assert.ok(
+                nextInsideSelf || !FORBIDDEN_PRIVATE_KEYS.has(key),
+                `forbidden key "${key}" found at ${[...path, key].join('.') || '(root)'}`,
+            )
+            assertNoForbiddenPrivateData(val, secretValues, [...path, key], nextInsideSelf)
+        }
+        return
+    }
+    if (typeof value === 'string' && !insideSelf && !APPROVED_PUBLIC_VALUE_PATHS.has(normalizeSnapshotPath(path))) {
+        for (const secret of secretValues) {
+            assert.notStrictEqual(value, secret.value, `leaked ${secret.label} at ${path.join('.') || '(root)'}`)
+        }
+    }
+}
+
+function collectOtherPlayerRoleSecrets(session, viewerUuid) {
+    const secrets = []
+    for (const player of session.players.values()) {
+        if (player.uuid === viewerUuid) continue
+        secrets.push({ value: player.role, label: `role(${player.uuid})=${player.role}` })
+    }
+    return secrets
+}
+
+test('get_session_snapshot: 재접속으로 교체된 낡은 socket은 STALE_SOCKET이고 core 직렬화 함수가 호출되지 않는다', (t) => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-stale' })
+    const [uuid] = uuids
+    const staleSocket = socketByUuid.get(uuid)
+    const freshSocket = createFakeSocket(uuid, { id: `${staleSocket.id}-fresh` })
+    gameSessionSocketLayer.setOnlineUsersRegistry(new Map([[uuid, freshSocket.id]]))
+    const spy = t.mock.method(gameSessionCore, 'getSessionSnapshotForPlayer', () => {
+        throw new Error('교체된 소켓 요청인데 core 직렬화 함수가 호출됨')
+    })
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, staleSocket, uuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'STALE_SOCKET', message: '요청을 처리할 수 없습니다.' })
+    assert.equal(spy.mock.calls.length, 0)
+})
+
+test('get_session_snapshot: canonical socket 요청은 core 직렬화 함수를 (uuid, gameId)로 정확히 1회 호출하고 결과를 그대로 ack한다', (t) => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-current' })
+    const [uuid] = uuids
+    const original = gameSessionCore.getSessionSnapshotForPlayer
+    const spy = t.mock.method(gameSessionCore, 'getSessionSnapshotForPlayer', (...args) => original(...args))
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, callback)
+
+    assert.equal(getResponse().ok, true)
+    assert.equal(spy.mock.calls.length, 1)
+    assert.deepEqual(spy.mock.calls[0].arguments, [uuid, session.id])
+})
+
+test('get_session_snapshot: callback이 함수가 아니면 무동작이다(core 호출 없음)', (t) => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-nocb' })
+    const [uuid] = uuids
+    const spy = t.mock.method(gameSessionCore, 'getSessionSnapshotForPlayer', () => {
+        throw new Error('callback이 없는데 core가 호출됨')
+    })
+
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, undefined)
+
+    assert.equal(spy.mock.calls.length, 0)
+})
+
+test('get_session_snapshot: payload 형태 오류(비객체/배열/gameId 타입 오류)는 INVALID_PAYLOAD이고 core를 호출하지 않는다', (t) => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-badpayload' })
+    const [uuid] = uuids
+    const socket = socketByUuid.get(uuid)
+    const spy = t.mock.method(gameSessionCore, 'getSessionSnapshotForPlayer', () => {
+        throw new Error('잘못된 payload인데 core가 호출됨')
+    })
+
+    const nullPayload = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, null, nullPayload.callback)
+    assert.deepEqual(nullPayload.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const arrayPayload = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, [], arrayPayload.callback)
+    assert.deepEqual(arrayPayload.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    const badGameIdType = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, { gameId: 42 }, badGameIdType.callback)
+    assert.deepEqual(badGameIdType.getResponse(), { ok: false, code: 'INVALID_PAYLOAD', message: '잘못된 요청입니다.' })
+
+    assert.equal(spy.mock.calls.length, 0)
+})
+
+test('get_session_snapshot: gameId를 생략해도 성공한다(선택 필드)', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-omitted' })
+    const [uuid] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, {}, callback)
+
+    assert.equal(getResponse().ok, true)
+    assert.equal(getResponse().gameId, session.id)
+})
+
+test('get_session_snapshot: 인증됐지만 세션 참가자가 아닌 uuid는 INTERNAL_ERROR로 정규화된다(NOT_A_PARTICIPANT)', () => {
+    const { session, io } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-nonmember' })
+    const outsiderUuid = 'outsider-uuid'
+    const outsiderSocket = createFakeSocket(outsiderUuid)
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, outsiderSocket, outsiderUuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('get_session_snapshot: registry 불일치(SESSION_NOT_FOUND)는 INTERNAL_ERROR로 정규화된다', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-sessionnotfound' })
+    const [uuid] = uuids
+    gameSessionCore.__testables.__deleteGameSessionOnlyForTests(session.id)
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
+})
+
+test('get_session_snapshot: 잘못된 expected gameId는 GAME_ID_MISMATCH가 그대로 전달된다(INTERNAL_ERROR로 정규화되지 않음)', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-gidmismatch' })
+    const [uuid] = uuids
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, { gameId: 'not-the-real-game-id' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'GAME_ID_MISMATCH', message: '요청을 처리할 수 없습니다.' })
+})
+
+test('get_session_snapshot: 성공/실패/STALE_SOCKET 어느 경로에서도 room broadcast가 없다(ack 전용)', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-nobroadcast' })
+    const [uuid] = uuids
+
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, countingCallback().callback)
+    handleGetSessionSnapshot(io, socketByUuid.get(uuid), uuid, { gameId: 'wrong-id' }, countingCallback().callback)
+    handleGetSessionSnapshot(io, null, uuid, { gameId: session.id }, countingCallback().callback)
+
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('get_session_snapshot: roster의 isConnected는 registry상 canonical socket이 실제로 연결돼 있는지를 반영한다', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-connected' })
+    const [viewerUuid, connectedUuid, disconnectedUuid, missingUuid] = uuids
+    socketByUuid.get(disconnectedUuid).connected = false
+    io.sockets.sockets.delete(socketByUuid.get(missingUuid).id)
+
+    const { callback, getResponse } = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(viewerUuid), viewerUuid, { gameId: session.id }, callback)
+
+    const players = getResponse().players
+    assert.equal(players.find((p) => p.uuid === viewerUuid).isConnected, true)
+    assert.equal(players.find((p) => p.uuid === connectedUuid).isConnected, true)
+    assert.equal(players.find((p) => p.uuid === disconnectedUuid).isConnected, false)
+    assert.equal(players.find((p) => p.uuid === missingUuid).isConnected, false)
+})
+
+test('get_session_snapshot: F-13 AC-05 — 참가자의 계정 프로필(사진·테두리)이 재접속 스냅샷 roster에도 그대로 유지된다', () => {
+    const uuids = ['room-snap-profile-a', 'room-snap-profile-b']
+    const room = makeRoom({
+        id: 'room-snap-profile',
+        players: [
+            { ...makePlayer(uuids[0]), accountProfilePhotoId: 'player-profile-기사', accountProfileBorderId: 'profile-border-귀족' },
+            makePlayer(uuids[1]),
+        ],
+    })
+    const candidate = gameSessionCore.__testables.buildSessionCandidate(room, { randomFn: () => 0 })
+    gameSessionCore.commitGameSession(candidate.session)
+    const session = candidate.session
+
+    const sockets = uuids.map((uuid) => {
+        const socket = createFakeSocket(uuid)
+        socket.rooms.add(session.channelId)
+        return socket
+    })
+    const io = createFakeIo(sockets)
+    const socketByUuid = new Map(sockets.map((s) => [s.data.user.uuid, s]))
+
+    const { callback, getResponse } = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(uuids[0]), uuids[0], { gameId: session.id }, callback)
+
+    const players = getResponse().players
+    const withProfile = players.find((p) => p.uuid === uuids[0])
+    const withoutProfile = players.find((p) => p.uuid === uuids[1])
+    assert.equal(withProfile.accountProfilePhotoId, 'player-profile-기사')
+    assert.equal(withProfile.accountProfileBorderId, 'profile-border-귀족')
+    assert.equal(Object.hasOwn(withoutProfile, 'accountProfilePhotoId'), false, '계정 외형이 없던 참가자는 그 키 자체가 생기면 안 된다')
+})
+
+test('get_session_snapshot: 반복 요청은 deep-equal하고 canonical registry 상태를 바꾸지 않는다(멱등)', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-idempotent' })
+    const [uuid] = uuids
+    const socket = socketByUuid.get(uuid)
+    const beforeState = gameSessionCore.__getStateSnapshotForTests()
+
+    const first = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, { gameId: session.id }, first.callback)
+    const afterFirstState = gameSessionCore.__getStateSnapshotForTests()
+
+    const second = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, { gameId: session.id }, second.callback)
+    const afterSecondState = gameSessionCore.__getStateSnapshotForTests()
+
+    assert.deepEqual(first.getResponse(), second.getResponse())
+    assert.notEqual(first.getResponse(), second.getResponse())
+    assert.deepEqual(beforeState, afterFirstState)
+    assert.deepEqual(afterFirstState, afterSecondState)
+})
+
+test('get_session_snapshot: 첫 ack 응답 객체를 변형해도 canonical session과 재요청 결과는 오염되지 않는다(defensive copy)', () => {
+    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-defcopy' })
+    const [uuid, otherUuid] = uuids
+    const socket = socketByUuid.get(uuid)
+
+    const first = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, { gameId: session.id }, first.callback)
+    const response1 = first.getResponse()
+    response1.players.find((p) => p.uuid === otherUuid).isAlive = false
+    response1.players.find((p) => p.uuid === otherUuid).isConnected = false
+    response1.self.hasActedThisPhase = true
+    response1.players.push({ uuid: 'forged', nickname: 'forged', isAlive: true, isConnected: true })
+
+    assert.equal(session.players.get(otherUuid).alive, true)
+    assert.equal(session.players.has('forged'), false)
+
+    const second = countingCallback()
+    handleGetSessionSnapshot(io, socket, uuid, { gameId: session.id }, second.callback)
+    const response2 = second.getResponse()
+    assert.equal(response2.players.find((p) => p.uuid === otherUuid).isAlive, true)
+    assert.equal(response2.players.length, session.players.size)
+})
+
+test('get_session_snapshot: self 블록은 요청자 본인의 정보만 담고, 다른 참가자로 요청하면 self가 그 참가자 자신으로 바뀐다', () => {
+    const { session, io, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-selfonly' })
+    const [citizenA] = citizenUuids
+
+    const jokerAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, jokerAck.callback)
+    const citizenAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(citizenA), citizenA, { gameId: session.id }, citizenAck.callback)
+
+    assert.equal(jokerAck.getResponse().self.uuid, jokerUuid)
+    assert.equal(jokerAck.getResponse().self.role, 'JOKER')
+    assert.equal(citizenAck.getResponse().self.uuid, citizenA)
+    assert.equal(citizenAck.getResponse().self.role, 'CITIZEN')
+    assert.notEqual(jokerAck.getResponse().self.uuid, citizenAck.getResponse().self.uuid)
+})
+
+test('get_session_snapshot: TRIBUNAL 유죄 처형으로 CITIZEN 승리 — 소켓 계층 ack에도 nightResult/dayVoteResolution/tribunal/winResult가 전부 포함되고 비밀 데이터가 없다', () => {
+    const { session, io, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-sock-tribunal-end' })
+    const [citizenA, citizenB, citizenC] = citizenUuids
+
+    const nightOutcome = resolveJokerOnlyNightDirect(session, jokerUuid, null)
+    assert.deepEqual(nightOutcome, { ok: true, victimUuid: null, terminal: null })
+    assert.equal(session.phase, 'DAY')
+
+    const dayOutcome = resolveDayVotesDirect(session, {
+        [citizenA]: jokerUuid, [jokerUuid]: citizenA, [citizenB]: jokerUuid, [citizenC]: jokerUuid,
+    })
+    assert.deepEqual(dayOutcome, { ok: true })
+    assert.equal(session.phase, 'TRIBUNAL')
+    assert.equal(session.tribunal.defendantUuid, jokerUuid)
+
+    const tribunalOutcome = resolveTribunalVotesDirect(session, { [citizenA]: 'GUILTY', [citizenB]: 'GUILTY', [citizenC]: 'GUILTY' })
+    assert.deepEqual(tribunalOutcome, { ok: true, terminal: { winner: 'CITIZEN' } })
+    assert.equal(session.phase, 'ENDED')
+
+    const { callback, getResponse } = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(citizenA), citizenA, { gameId: session.id }, callback)
+    const snapshot = getResponse()
+
+    assert.deepEqual(
+        Object.keys(snapshot).sort(),
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal', 'winResult'],
+    )
+    assert.equal(snapshot.winResult.winner, 'CITIZEN')
+    assert.ok(Array.isArray(snapshot.winResult.reveals) && snapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
+    assert.deepEqual(snapshot.progress, { kind: 'NONE', doneCount: null, requiredCount: null })
+    assert.equal(snapshot.tribunal.executedUuid, jokerUuid)
+    assertNoForbiddenPrivateData(snapshot, collectOtherPlayerRoleSecrets(session, citizenA))
+    assert.equal(io.broadcasts.length, 0)
+})
+
+test('get_session_snapshot: NIGHT→DAY→TRIBUNAL(무죄)→post-tribunal NIGHT→night-kill ENDED(JOKER 승리) 전체 진행에서 소켓 계층 ack도 매 단계 top-level 키 집합이 정확하다', () => {
+    const { session, io, jokerUuid, citizenUuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-sock-progress' })
+    const [citizenA, citizenB, citizenC] = citizenUuids
+
+    const nightAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, nightAck.callback)
+    const nightSnapshot = nightAck.getResponse()
+    assert.equal(nightSnapshot.ok, true)
+    assert.deepEqual(Object.keys(nightSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
+    assert.equal(nightSnapshot.phase, 'NIGHT')
+    assert.deepEqual(nightSnapshot.progress, { kind: 'NIGHT', doneCount: null, requiredCount: null })
+    assertNoForbiddenPrivateData(nightSnapshot, collectOtherPlayerRoleSecrets(session, jokerUuid))
+
+    const nightOutcome = resolveJokerOnlyNightDirect(session, jokerUuid, citizenA)
+    assert.deepEqual(nightOutcome, { ok: true, victimUuid: citizenA, terminal: null })
+    assert.equal(session.phase, 'DAY')
+
+    const dayAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, dayAck.callback)
+    const daySnapshot = dayAck.getResponse()
+    assert.deepEqual(
+        Object.keys(daySnapshot).sort(),
+        ['bootEpoch', 'dayIndex', 'dayPhase', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'],
+    )
+    assert.equal(daySnapshot.dayPhase, 'DAY_DISCUSSION')
+    assert.deepEqual(daySnapshot.nightResult, {
+        dayIndex: session.dayIndex,
+        victimUuid: citizenA,
+        deathReveals: [{ victimUuid: citizenA, source: 'JOKER' }],
+    })
+    assertNoForbiddenPrivateData(daySnapshot, collectOtherPlayerRoleSecrets(session, citizenB))
+
+    const dayOutcome = resolveDayVotesDirect(session, { [jokerUuid]: citizenB, [citizenC]: citizenB, [citizenB]: jokerUuid })
+    assert.deepEqual(dayOutcome, { ok: true })
+    assert.equal(session.phase, 'TRIBUNAL')
+    assert.equal(session.tribunal.defendantUuid, citizenB)
+
+    const tribunalAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, tribunalAck.callback)
+    const tribunalSnapshot = tribunalAck.getResponse()
+    assert.deepEqual(
+        Object.keys(tribunalSnapshot).sort(),
+        ['bootEpoch', 'dayIndex', 'dayVoteResolution', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'tribunal'],
+    )
+    assert.deepEqual(tribunalSnapshot.tribunal, { defendantUuid: citizenB, resolved: false })
+    assertNoForbiddenPrivateData(tribunalSnapshot, collectOtherPlayerRoleSecrets(session, jokerUuid))
+
+    const tribunalOutcome = resolveTribunalVotesDirect(session, { [jokerUuid]: 'NOT_GUILTY', [citizenC]: 'NOT_GUILTY' })
+    assert.deepEqual(tribunalOutcome, { ok: true, terminal: null })
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.players.get(citizenB).alive, true)
+
+    assert.equal(session.dayVoteResolution.dayIndex, session.dayIndex)
+    assert.equal(session.tribunal.dayIndex, session.dayIndex)
+    const postTribunalAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, postTribunalAck.callback)
+    const postTribunalSnapshot = postTribunalAck.getResponse()
+    assert.deepEqual(Object.keys(postTribunalSnapshot).sort(), ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq'])
+    assert.equal(Object.hasOwn(postTribunalSnapshot, 'nightResult'), false)
+    assert.equal(Object.hasOwn(postTribunalSnapshot, 'dayVoteResolution'), false)
+    assert.equal(Object.hasOwn(postTribunalSnapshot, 'tribunal'), false)
+
+    const nightKillOutcome = resolveJokerOnlyNightDirect(session, jokerUuid, citizenC)
+    assert.deepEqual(nightKillOutcome, { ok: true, victimUuid: citizenC, terminal: { winner: 'JOKER' } })
+    assert.equal(session.phase, 'ENDED')
+
+    const endedAck = countingCallback()
+    handleGetSessionSnapshot(io, socketByUuid.get(citizenB), citizenB, { gameId: session.id }, endedAck.callback)
+    const endedSnapshot = endedAck.getResponse()
+    assert.deepEqual(
+        Object.keys(endedSnapshot).sort(),
+        ['bootEpoch', 'dayIndex', 'gameId', 'hostUuid', 'nightResult', 'nightSuccessRecovery', 'ok', 'participationRevision', 'phase', 'players', 'presentationWaiting', 'progress', 'roomCode', 'roomId', 'roomInstanceId', 'roomSettingsSource', 'self', 'selfProgressSeq', 'winResult'],
+    )
+    assert.deepEqual(endedSnapshot.nightResult, {
+        dayIndex: session.dayIndex,
+        victimUuid: citizenC,
+        deathReveals: [{ victimUuid: citizenC, source: 'JOKER' }],
+    })
+    assert.equal(endedSnapshot.winResult.winner, 'JOKER')
+    assert.ok(Array.isArray(endedSnapshot.winResult.reveals) && endedSnapshot.winResult.reveals.length > 0, '공개 winResult에는 전원 정체 공개(reveals)가 실린다')
+    assert.equal(Object.hasOwn(endedSnapshot, 'dayVoteResolution'), false)
+    assert.equal(Object.hasOwn(endedSnapshot, 'tribunal'), false)
+    assertNoForbiddenPrivateData(endedSnapshot, collectOtherPlayerRoleSecrets(session, citizenB))
+    assert.equal(io.broadcasts.length, 0)
+})
+
+
+for (const phase of ['DAY', 'TRIBUNAL', 'NIGHT']) {
+    test('F13 dead participant disconnect retains session and authenticated reconnect in ' + phase, async () => {
+        const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'dead-reconnect-' + phase })
+        const uuid = uuids[0]
+        session.phase = phase
+        const player = session.players.get(uuid)
+        player.alive = false
+        player.accountProfilePhotoId = 'player-profile-기사'
+        player.accountProfileBorderId = 'profile-border-귀족'
+        const originalTheme = gameSessionCore.getSessionSnapshotForPlayer(uuid, session.id).snapshot.players.find((entry) => entry.uuid === uuid).themeIndex
+        const oldSocket = socketByUuid.get(uuid)
+        oldSocket.data.activeGameId = session.id
+        oldSocket.connected = false
+
+        await gameSessionSocketLayer.onDisconnect(io, oldSocket, uuid)
+        assert.equal(io.broadcasts.some((event) => event.event === 'game_ended'), false)
+        assert.equal(gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, uuid), undefined)
+        assert.equal(gameSessionCore.getActiveSessionRoutingInfo(uuids[1]).gameId, session.id)
+
+        const replacement = createFakeSocket(uuid)
+        replacement.id = 'reconnected-' + uuid
+        io.sockets.sockets.delete(oldSocket.id)
+        io.sockets.sockets.set(replacement.id, replacement)
+        gameSessionSocketLayer.setOnlineUsersRegistry(new Map(uuids.map((id) => [id, id === uuid ? replacement.id : socketByUuid.get(id).id])))
+        await gameSessionSocketLayer.resyncSessionRouting(replacement, uuid)
+        const { callback, getResponse } = countingCallback()
+        handleGetSessionSnapshot(io, replacement, uuid, { gameId: session.id }, callback)
+        const response = getResponse()
+        assert.equal(response.ok, true)
+        assert.equal(response.phase, phase)
+        assert.equal(replacement.data.activeGameId, session.id)
+        assert.equal(replacement.rooms.has(session.channelId), true)
+        const restored = response.players.find((entry) => entry.uuid === uuid)
+        assert.equal(restored.isAlive, false)
+        assert.equal(restored.accountProfilePhotoId, 'player-profile-기사')
+        assert.equal(restored.accountProfileBorderId, 'profile-border-귀족')
+        assert.equal(restored.themeIndex, originalTheme)
+    })
+}
+
+test('F-23(AC-05): 사망 참가자는 교체 연결에서도 다음 공개 판정을 실제로 받고, 낮·재판·밤 행동은 모두 거부된다', async () => {
+    const { session, io, uuids, jokerUuid, doctorUuid, guardUuid, citizenUuids, socketByUuid } =
+        commitEightPlayerSessionWithSocketsAtNight({ id: 'room-ac05-dead' })
+
+    gameSessionCore.submitNightAction(jokerUuid, session.id, guardUuid)
+    gameSessionCore.submitNightAction(guardUuid, session.id, null)
+    gameSessionCore.submitNightAction(doctorUuid, session.id, null)
+    handleResolveNight(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(session.players.get(guardUuid).alive, false, '전제: 실제 판정으로 사망이 확정돼야 한다')
+    assert.equal(session.phase, 'DAY')
+
+    const oldSocket = socketByUuid.get(guardUuid)
+    oldSocket.data.activeGameId = session.id
+    oldSocket.connected = false
+    await gameSessionSocketLayer.onDisconnect(io, oldSocket, guardUuid)
+    assert.equal(io.broadcasts.some((event) => event.event === 'game_ended'), false)
+    assert.equal(gameSessionSocketLayer.__testables.getDisconnectGraceRun(session.id, guardUuid), undefined)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo(citizenUuids[0]).gameId, session.id)
+
+    const replacement = createFakeSocket(guardUuid)
+    replacement.id = 'reconnected-' + guardUuid
+    io.sockets.sockets.delete(oldSocket.id)
+    io.sockets.sockets.set(replacement.id, replacement)
+    gameSessionSocketLayer.setOnlineUsersRegistry(new Map(
+        uuids.map((id) => [id, id === guardUuid ? replacement.id : socketByUuid.get(id).id]),
+    ))
+    await gameSessionSocketLayer.resyncSessionRouting(replacement, guardUuid)
+    socketByUuid.set(guardUuid, replacement)
+
+    const snapshotAck = countingCallback()
+    handleGetSessionSnapshot(io, replacement, guardUuid, { gameId: session.id }, snapshotAck.callback)
+    const snapshot = snapshotAck.getResponse()
+    assert.equal(snapshot.ok, true, '사망이 재접속 자격을 없앴다')
+    const seated = snapshot.players.find((entry) => entry.uuid === guardUuid)
+    assert.equal(seated.isAlive, false)
+    assert.notEqual(seated.isParticipating, false, '사망과 참여 종료는 별개의 사실이다')
+
+    const witness = citizenUuids[0]
+    const aliveUuids = uuids.filter((uuid) => session.players.get(uuid).alive)
+    assert.equal(aliveUuids.length, 7, '전제: 사망자 한 명을 제외한 7명이 살아 있어야 한다')
+
+    for (const uuid of aliveUuids) {
+        handleAcknowledgeDayVoteReady(io, socketByUuid.get(uuid), uuid, { gameId: session.id }, countingCallback().callback)
+    }
+    assert.equal(session.dayPhase, 'DAY_VOTE', '전제: 생존자 전원 준비로 투표가 열려야 한다')
+
+    const votesBefore = session.dayVotes.size
+    const deadVoteAck = countingCallback()
+    handleSubmitDayVote(
+        io, replacement, guardUuid,
+        { gameId: session.id, targetId: witness },
+        deadVoteAck.callback,
+    )
+    await flushAsync()
+    assert.equal(deadVoteAck.getResponse().ok, false, '사망자의 낮 투표가 받아들여졌다')
+    assert.equal(session.dayVotes.size, votesBefore, '사망자의 낮 투표가 표 집계를 바꿨다')
+
+    const defendant = citizenUuids[1]
+    for (const uuid of aliveUuids) {
+        handleSubmitDayVote(
+            io, socketByUuid.get(uuid), uuid,
+            { gameId: session.id, targetId: uuid === defendant ? null : defendant },
+            countingCallback().callback,
+        )
+    }
+    await flushAsync()
+    assert.equal(session.dayVotes.size, aliveUuids.length, '전제: 생존자 전원의 표가 모여야 판정할 수 있다')
+    const dayResolveAck = countingCallback()
+    handleResolveDayVote(io, socketByUuid.get(jokerUuid), jokerUuid, { gameId: session.id, dayIndex: session.dayIndex }, dayResolveAck.callback)
+    assert.equal(dayResolveAck.getResponse().outcome, 'TRIBUNAL')
+    assert.equal(session.phase, 'TRIBUNAL')
+
+    assert.equal(
+        replacement.countReceived('day_vote_resolved'), 1,
+        '사망 참가자의 교체 연결이 다음 공개 판정을 받지 못했다',
+    )
+    assert.equal(
+        socketByUuid.get(witness).countReceived('day_vote_resolved'), 1,
+        '양성 대조: 정상 잔류자도 받지 못했다면 이 계수가 무의미하다',
+    )
+
+    const tribunalVotesBefore = session.tribunal.votes.size
+    const deadTribunalAck = countingCallback()
+    handleCastTribunalVote(
+        io, replacement, guardUuid,
+        { gameId: session.id, dayIndex: session.dayIndex, vote: 'GUILTY' },
+        deadTribunalAck.callback,
+    )
+    assert.equal(deadTribunalAck.getResponse().ok, false, '사망자의 재판 표가 받아들여졌다')
+    assert.equal(session.tribunal.votes.size, tribunalVotesBefore, '사망자의 재판 표가 집계를 바꿨다')
+
+    for (const uuid of aliveUuids) {
+        if (uuid === defendant) continue
+        handleCastTribunalVote(
+            io, socketByUuid.get(uuid), uuid,
+            { gameId: session.id, dayIndex: session.dayIndex, vote: 'NOT_GUILTY' },
+            countingCallback().callback,
+        )
+    }
+    const tribunalResolveAck = countingCallback()
+    handleResolveTribunalVote(
+        io, socketByUuid.get(jokerUuid), jokerUuid,
+        { gameId: session.id, dayIndex: session.dayIndex },
+        tribunalResolveAck.callback,
+    )
+    assert.equal(tribunalResolveAck.getResponse().ok, true)
+    assert.equal(session.players.get(defendant).alive, true, '전제: 무죄 판정이라 처형이 없어야 한다')
+    assert.equal(session.phase, 'NIGHT', '전제: 무죄 판정은 곧바로 밤으로 넘어간다')
+    assert.equal(
+        replacement.countReceived('tribunal_vote_resolved'), 1,
+        '사망 참가자의 교체 연결이 재판 판정을 받지 못했다',
+    )
+    assert.equal(socketByUuid.get(witness).countReceived('tribunal_vote_resolved'), 1)
+
+    const nightActionsBefore = session.nightActions.size
+    const deadNightAck = countingCallback()
+    handleSubmitNightAction(
+        replacement, guardUuid,
+        { gameId: session.id, targetId: witness },
+        deadNightAck.callback,
+    )
+    assert.deepEqual(
+        deadNightAck.getResponse(),
+        { ok: false, code: 'ACTOR_NOT_ALIVE', message: '요청을 처리할 수 없습니다.' },
+        '사망한 능력 보유자의 밤 행동이 거부되지 않았다',
+    )
+    assert.equal(session.nightActions.size, nightActionsBefore, '사망자의 밤 행동이 행동 Map을 바꿨다')
+
+    replacement.leave = () => new Promise(() => {})
+    const receivedBeforeLeave = replacement.received.length
+    handleLeaveGameSession(io, replacement, guardUuid, { gameId: session.id }, countingCallback().callback)
+    assert.equal(
+        replacement.received.length, receivedBeforeLeave,
+        '이탈 커밋 직후의 첫 공개 사건이 이탈자에게 전달됐다',
+    )
+    assert.ok(
+        socketByUuid.get(witness).received.some((entry) => entry.event === 'session_participation_changed'),
+        '양성 대조: 잔류자가 참여 변화 사건을 받지 못했다',
+    )
+
+    const beforeProbe = replacement.countReceived('probe_after_departure')
+    gameSessionSocketLayer.__testables.emitToGameChannel(io, session, 'probe_after_departure', { gameId: session.id })
+    assert.equal(replacement.countReceived('probe_after_departure'), beforeProbe, '이탈자가 이후 공개 방송을 받았다')
+    assert.equal(socketByUuid.get(witness).countReceived('probe_after_departure'), 1, '잔류자가 이후 공개 방송을 받지 못했다')
+
+    assert.equal(session.players.get(guardUuid).role, 'GUARD', '이탈이 roster의 역할을 지웠다')
+    assert.equal(session.players.get(guardUuid).alive, false)
+    assert.equal(session.players.get(guardUuid).isParticipating, false)
+    assert.equal(gameSessionCore.getActiveSessionRoutingInfo(witness).gameId, session.id, '이탈이 잔류자의 세션까지 끝냈다')
+    assert.equal(io.broadcasts.some((event) => event.event === 'game_ended'), false, '개인 이탈이 판을 끝냈다')
+})
