@@ -1,6 +1,6 @@
 // 친구 요청 파일, 보내기 · 수락 · 거절 · 받은 목록 · 결과
 // 보낼 때 받는 사람 알림도 같은 트랜잭션에서 만듦
-const db = require("../../models");
+const db = require("../../repositories/common/db");
 const friendRepository = require("../../repositories/friend/relation");
 const notificationService = require("../notification");
 const { createError } = require("../../utils/appError");

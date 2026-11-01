@@ -1,6 +1,6 @@
 // 차단 파일, 차단 확인 · 차단 목록 · 차단 · 해제
 // 차단하면 둘 사이 대기 게임 초대도 같이 취소
-const db = require("../../models");
+const db = require("../../repositories/common/db");
 const friendRepository = require("../../repositories/friend/relation");
 const gameInviteService = require("./gameInvite");
 const { createError } = require("../../utils/appError");
