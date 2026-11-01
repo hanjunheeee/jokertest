@@ -1,18 +1,6 @@
 const friendService = require("../services/friend");
 const gameInviteService = require("../services/friend/gameInvite");
 const { createError } = require("../utils/appError");
-const { emitToUser } = require("../socket/emitter");
-
-function buildFriendSfxEvent(kind, stage, accountId, requestId) {
-    if (!Number.isInteger(requestId)) return null;
-    if (typeof accountId !== 'string' || accountId.length === 0) return null;
-    return {
-        kind,
-        eventId: `friend-request:${requestId}:${stage}`,
-        accountId,
-        origin: 'live',
-    };
-}
 
 exports.getFriends = async (req, res, next) => {
     try {
@@ -51,26 +39,13 @@ exports.sendFriendRequest = async (req, res, next) => {
         }
 
         const created = await friendService.sendFriendRequest(req.user.uuid, receiverId);
-        const sfxEvent = buildFriendSfxEvent('friend-request-received', 'received', receiverId, created?.id);
-        try {
-            emitToUser(receiverId, 'friend_request_received', sfxEvent ? { sfxEvent } : {});
-        } catch (emitError) {
-            console.error('[친구 요청 통지 실패]', { code: 'FRIEND_REQUEST_NOTIFY_ERROR', receiverId });
-        }
+        friendService.notifyRequestReceived(receiverId, created?.id);
 
         res.status(200).json({ success: true, message: '친구 신청을 보냈습니다.' });
     } catch (error) {
         next(error);
     }
 };
-
-function emitFriendEventSafely(userId, event, payload, code) {
-    try {
-        emitToUser(userId, event, payload);
-    } catch (emitError) {
-        console.error('[친구 사건 통지 실패]', { code, userId });
-    }
-}
 
 exports.acceptRequest = async (req, res, next) => {
     try {
@@ -80,12 +55,7 @@ exports.acceptRequest = async (req, res, next) => {
         }
 
         const { requesterId } = await friendService.acceptRequest(req.user.uuid, requestId);
-        const sfxEvent = buildFriendSfxEvent('friend-request-accepted', 'accepted', requesterId, requestId);
-        emitFriendEventSafely(
-            requesterId, 'friend_request_accepted',
-            { byUuid: req.user.uuid, ...(sfxEvent ? { sfxEvent } : {}) },
-            'FRIEND_REQUEST_ACCEPT_NOTIFY_ERROR',
-        );
+        friendService.notifyRequestAccepted(requesterId, req.user.uuid, requestId);
 
         res.status(200).json({ success: true, message: '친구 요청을 수락했습니다.', data: { request_id: requestId, status: 'ACCEPTED' } });
     } catch (error) {
@@ -101,12 +71,7 @@ exports.declineRequest = async (req, res, next) => {
         }
 
         const { requesterId } = await friendService.declineRequest(req.user.uuid, requestId);
-        const sfxEvent = buildFriendSfxEvent('friend-request-declined', 'declined', requesterId, requestId);
-        emitFriendEventSafely(
-            requesterId, 'friend_request_declined',
-            { byUuid: req.user.uuid, ...(sfxEvent ? { sfxEvent } : {}) },
-            'FRIEND_REQUEST_DECLINE_NOTIFY_ERROR',
-        );
+        friendService.notifyRequestDeclined(requesterId, req.user.uuid, requestId);
 
         res.status(200).json({ success: true, message: '친구 요청을 거절했습니다.', data: { request_id: requestId, status: 'DECLINED' } });
     } catch (error) {
@@ -162,7 +127,7 @@ exports.blockUser = async (req, res, next) => {
         const result = await friendService.blockUser(req.user.uuid, targetId);
 
         for (const userId of [req.user.uuid, targetId]) {
-            emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'BLOCKED' }, 'FRIEND_BLOCK_NOTIFY_ERROR');
+            friendService.notifyBlocked(userId);
         }
 
         res.status(200).json({ success: true, data: result });
@@ -174,7 +139,7 @@ exports.blockUser = async (req, res, next) => {
 exports.unblockUser = async (req, res, next) => {
     try {
         const result = await friendService.unblockUser(req.user.uuid, req.params.targetId);
-        emitFriendEventSafely(req.user.uuid, 'friend_relation_invalidated', { reason: 'UNBLOCKED' }, 'FRIEND_UNBLOCK_NOTIFY_ERROR');
+        friendService.notifyUnblocked(req.user.uuid);
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         next(error);

@@ -771,7 +771,7 @@ const SERVER_EMIT_EVENTS_LOCK = [
 ]
 
 const SERVER_INDIRECT_EMIT_SITES_LOCK = [
-  "backend/controller/friend.controller.js:101 event",
+  "backend/services/friend/notify.js:20 event",
   "backend/socket/channelMembership.js:209 event",
   "backend/socket/channelMembership.js:267 event",
   "backend/socket/channelMembership.js:275 event",
@@ -876,7 +876,7 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
   )
   assert.ok(
     whereOf("friend_request_accepted")
-      .some((where) => where.startsWith("backend/controller/friend.controller.js")),
+      .some((where) => where.startsWith("backend/services/friend/notify.js")),
     "개인 전송 래퍼(emitFriendEventSafely) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
   )
   assert.ok(
