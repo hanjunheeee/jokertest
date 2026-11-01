@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 
 // 시험 주입 먼저, 없으면 진짜 db·emitter (늦은 require라 load 순환 없음)
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../../models'); },
+    get db() { return overrides.db ?? require('../../repositories/common/db'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
         try {

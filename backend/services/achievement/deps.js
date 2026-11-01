@@ -5,8 +5,9 @@
 
 // 시험 주입 먼저, 없으면 진짜 것 (전부 늦은 require라 load 순환 없음)
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../../models'); },
-    get gameResultRepository() { return overrides.gameResultRepository ?? require('../../repositories/game/result'); },
+    get db() { return overrides.db ?? require('../../repositories/common/db'); },
+    // 업적 진행 셈은 전적 통계 서비스 몫, 칸 이름은 시험 주입 이름 맞추려고 그대로 둠
+    get gameResultRepository() { return overrides.gameResultRepository ?? require('../game/roleStatistics/queries'); },
     get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../../repositories/game/voteParticipation'); },
     get economyService() { return overrides.economyService ?? require('../economy'); },
     get emitToUser() {

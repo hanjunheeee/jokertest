@@ -5,7 +5,7 @@ const achievementService = require('./evaluate');
 const userLookup = require('../../repositories/user/lookup');
 
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../../models'); },
+    get db() { return overrides.db ?? require('../../repositories/common/db'); },
     get achievementService() { return overrides.achievementService ?? achievementService; },
 });
 

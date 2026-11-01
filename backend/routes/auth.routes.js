@@ -8,8 +8,10 @@ const {
     discordLinkStart, discordLinkCallback,
 } = require("../controllers/auth");
 const { verifyToken }        = require("../middlewares/auth.middleware");
-const crypto                 = require("crypto");
 const { createRateLimiter }  = require("../middlewares/rateLimit.middleware");
+const {
+    buildSignupCodeRateLimiters, buildFindIdRateLimiters, buildPasswordResetRateLimiters,
+} = require("../middlewares/authRateLimit.middleware");
 const { validateFindIdRequest } = require("../validations/auth/findId");
 const { findId }             = require("../controllers/auth/accountRecovery");
 const { validateResetRequest } = require("../validations/auth/passwordReset");
@@ -28,26 +30,12 @@ router.post("/login", login);
 
 const codeConfig = getSignupEmailVerificationConfig(process.env);
 
-const codeIpHourLimiter = createRateLimiter({
-    windowMs: codeConfig.ipHourWindowMs,
-    max:      codeConfig.ipHourMax,
-    keyOf:    (req) => `ip-hour:${req.ip}`,
-});
-const codeIpDayLimiter = createRateLimiter({
-    windowMs: codeConfig.ipDayWindowMs,
-    max:      codeConfig.ipDayMax,
-    keyOf:    (req) => `ip-day:${req.ip}`,
-});
-const codeEmailHourLimiter = createRateLimiter({
-    windowMs: codeConfig.emailHourWindowMs,
-    max:      codeConfig.emailHourMax,
-    keyOf:    (req, res) => `email-hour:${crypto.createHash("sha256").update(res.locals.signupEmailCodeInput.email).digest("hex")}`,
-});
-const codeEmailDayLimiter = createRateLimiter({
-    windowMs: codeConfig.emailDayWindowMs,
-    max:      codeConfig.emailDayMax,
-    keyOf:    (req, res) => `email-day:${crypto.createHash("sha256").update(res.locals.signupEmailCodeInput.email).digest("hex")}`,
-});
+const {
+    ipHour:    codeIpHourLimiter,
+    ipDay:     codeIpDayLimiter,
+    emailHour: codeEmailHourLimiter,
+    emailDay:  codeEmailDayLimiter,
+} = buildSignupCodeRateLimiters(codeConfig, createRateLimiter);
 
 router.post(
     "/signup/email-code",
@@ -64,22 +52,10 @@ router.post(
     verifySignupCode,
 );
 
-const toPositiveInt = (value, fallback) => {
-    const parsed = Number(value);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-};
-
-const findIdIpLimiter = createRateLimiter({
-    windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
-    max:      toPositiveInt(process.env.FIND_ID_IP_MAX, 10),
-    keyOf:    (req) => `ip:${req.ip}`,
-});
-
-const findIdTargetLimiter = createRateLimiter({
-    windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
-    max:      toPositiveInt(process.env.FIND_ID_TARGET_MAX, 5),
-    keyOf:    (req, res) => `target:${crypto.createHash("sha256").update(res.locals.findIdInput.nickname).digest("hex")}`,
-});
+const {
+    ip:     findIdIpLimiter,
+    target: findIdTargetLimiter,
+} = buildFindIdRateLimiters(process.env, createRateLimiter);
 
 router.post(
     "/find-id",
@@ -89,25 +65,11 @@ router.post(
     findId,
 );
 
-const resetRequestIpLimiter = createRateLimiter({
-    windowMs: toPositiveInt(process.env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
-    max:      toPositiveInt(process.env.PASSWORD_RESET_REQUEST_IP_MAX, 10),
-    keyOf:    (req) => `ip:${req.ip}`,
-});
-
-const resetEmailLimiter = createRateLimiter({
-    windowMs: toPositiveInt(process.env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
-    max:      toPositiveInt(process.env.PASSWORD_RESET_REQUEST_EMAIL_MAX, 3),
-    keyOf:    (req, res) => `email:${crypto.createHash("sha256")
-        .update(res.locals.passwordResetInput.email.trim().toLowerCase())
-        .digest("hex")}`,
-});
-
-const resetCheckIpLimiter = createRateLimiter({
-    windowMs: toPositiveInt(process.env.PASSWORD_RESET_CHECK_WINDOW_MS, 10 * 60 * 1000),
-    max:      toPositiveInt(process.env.PASSWORD_RESET_CHECK_IP_MAX, 20),
-    keyOf:    (req) => `ip:${req.ip}`,
-});
+const {
+    requestIp:    resetRequestIpLimiter,
+    requestEmail: resetEmailLimiter,
+    checkIp:      resetCheckIpLimiter,
+} = buildPasswordResetRateLimiters(process.env, createRateLimiter);
 
 router.post(
     "/password-reset/request",

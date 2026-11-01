@@ -5,7 +5,7 @@ const authService = require("../account");
 const { hashPassword } = require("../../../utils/auth/credentials");
 const { createError } = require("../../../utils/appError");
 const { validateNickname, validateBirthDate } = require("../../../validations/auth/signup");
-const db = require("../../../models");
+const db = require("../../../repositories/common/db");
 const economyService = require("../../economy");
 const signupEmailVerificationService = require("../signupEmailVerification");
 const {
