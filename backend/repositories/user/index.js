@@ -9,6 +9,9 @@ const { getMyProfile } = require('./profile');
 const { findExternalIdentity, createExternalIdentity, createOAuthState, findOAuthStateByHash, markOAuthStateConsumed } = require('./oauth');
 const { createSocialSignupIntent, findSocialSignupIntentByHash, markSocialSignupIntentConsumed } = require('./signupIntent');
 
+// 보안 아닌 계정 조회도 같이 (초대·친구 요청·업적·아이디 찾기용)
+const { lockAccount, findNickname, listAllUuids, findForFindId } = require('./lookup');
+
 module.exports = {
     withTransaction,
     findByEmail,
@@ -34,4 +37,8 @@ module.exports = {
     createSocialSignupIntent,
     findSocialSignupIntentByHash,
     markSocialSignupIntentConsumed,
+    lockAccount,
+    findNickname,
+    listAllUuids,
+    findForFindId,
 };

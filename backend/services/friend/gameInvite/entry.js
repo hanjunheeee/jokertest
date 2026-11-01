@@ -8,22 +8,22 @@ const { getDeps } = require('./deps');
 const { expireDueInvitesForReceiver, isBlockedBetween, lockReceiver } = require('./guards');
 const { INVITE_STATUS, ENTRY_OUTCOME } = require('./constants');
 const { toPublicInvite } = require('./view');
+const gameInviteRepository = require('../../../repositories/friend/gameInvite');
+const { withTransaction } = require('../../../repositories/common');
 
 // 대기 초대를 이 시도로 수락 결정 (다른 시도가 먼저면 거절)
 async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch }) {
     const { db, now } = getDeps();
 
-    const decision = await db.sequelize.transaction(async (t) => {
-        const row0 = await db.GameInvite.findOne({ where: { id: inviteId }, transaction: t });
+    const decision = await withTransaction(db, async (t) => {
+        const row0 = await gameInviteRepository.findInviteInTransaction(db, inviteId, t);
         if (!row0) throw createError('초대를 찾을 수 없습니다.', 404);
         if (row0.receiver_id !== receiverId) throw createError('초대를 찾을 수 없습니다.', 404);
 
         await friendRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
         await expireDueInvitesForReceiver(db, receiverId, now(), t);
 
-        const row = await db.GameInvite.findOne({
-            where: { id: inviteId }, transaction: t, lock: t.LOCK.UPDATE,
-        });
+        const row = await gameInviteRepository.lockInvite(db, inviteId, t);
         if (!row) throw createError('초대를 찾을 수 없습니다.', 404);
 
         if (row.status === INVITE_STATUS.ACCEPTED && row.attempt_id === attemptId) {
@@ -36,23 +36,23 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
             return { rejection: createError('이미 처리된 초대입니다.', 409, row.status) };
         }
         if (row.boot_epoch !== bootEpoch) {
-            await row.update({
+            await gameInviteRepository.saveInvite(row, {
                 status: INVITE_STATUS.CANCELLED, end_reason: 'SERVER_RESTARTED',
                 decided_at: now(), revision: row.revision + 1,
-            }, { transaction: t });
+            }, t);
             return { rejection: createError('초대가 더 이상 유효하지 않습니다.', 409, 'SERVER_RESTARTED') };
         }
         if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
             throw createError('차단된 사용자의 초대는 수락할 수 없습니다.', 403, 'BLOCKED');
         }
 
-        await row.update({
+        await gameInviteRepository.saveInvite(row, {
             status: INVITE_STATUS.ACCEPTED,
             decided_at: now(),
             revision: row.revision + 1,
             attempt_id: attemptId,
             entry_outcome: ENTRY_OUTCOME.UNCONFIRMED,
-        }, { transaction: t });
+        }, t);
 
         return {
             ok: true, invite: toPublicInvite(row), roomId: row.room_id,
@@ -69,15 +69,13 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
     let publishedInTransaction = false;
 
     try {
-        return await db.sequelize.transaction(async (t) => {
-            const row0 = await db.GameInvite.findOne({ where: { id: inviteId }, transaction: t });
+        return await withTransaction(db, async (t) => {
+            const row0 = await gameInviteRepository.findInviteInTransaction(db, inviteId, t);
             if (!row0) return { ok: false, code: 'INVITE_NOT_FOUND', published: false };
 
             await friendRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
 
-            const row = await db.GameInvite.findOne({
-                where: { id: inviteId }, transaction: t, lock: t.LOCK.UPDATE,
-            });
+            const row = await gameInviteRepository.lockInvite(db, inviteId, t);
             if (!row) return { ok: false, code: 'INVITE_NOT_FOUND', published: false };
             if (row.receiver_id !== receiverId) return { ok: false, code: 'NOT_RECEIVER', published: false };
             if (row.attempt_id !== attemptId) return { ok: false, code: 'STALE_ATTEMPT', published: false };
@@ -92,27 +90,27 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
 
             const receiver = await lockReceiver(db, receiverId, t);
             if (!receiver || receiver.status !== 'ACTIVE') {
-                await row.update({ entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'ACCOUNT_UNAVAILABLE' }, { transaction: t });
+                await gameInviteRepository.saveInvite(row, { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'ACCOUNT_UNAVAILABLE' }, t);
                 return { ok: false, code: 'ACCOUNT_UNAVAILABLE', published: false };
             }
 
             if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
-                await row.update({ entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'BLOCKED_BEFORE_ENTRY' }, { transaction: t });
+                await gameInviteRepository.saveInvite(row, { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'BLOCKED_BEFORE_ENTRY' }, t);
                 return { ok: false, code: 'BLOCKED', published: false };
             }
 
             const committed = publish();
             if (!committed || committed.ok !== true) {
                 const code = committed?.code ?? 'ROOM_STATE_CHANGED';
-                await row.update({ entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: code }, { transaction: t });
+                await gameInviteRepository.saveInvite(row, { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: code }, t);
                 return { ok: false, code, published: false };
             }
             publishedInTransaction = true;
 
-            await row.update({
+            await gameInviteRepository.saveInvite(row, {
                 entry_outcome: ENTRY_OUTCOME.PUBLISHED,
                 decided_at: row.decided_at ?? now(),
-            }, { transaction: t });
+            }, t);
 
             return { ok: true, invite: toPublicInvite(row), alreadyPublished: false };
         });
@@ -130,7 +128,7 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
 // 응답 놓친 시도의 결과 다시 묻기
 async function getAttemptOutcome({ receiverId, inviteId, attemptId }) {
     const { db } = getDeps();
-    const row = await db.GameInvite.findOne({ where: { id: inviteId } });
+    const row = await gameInviteRepository.findInvite(db, inviteId);
     if (!row || row.receiver_id !== receiverId) return { known: false };
     if (attemptId !== undefined && row.attempt_id !== attemptId) {
         return { known: true, staleAttempt: true, invite: toPublicInvite(row) };
@@ -151,16 +149,13 @@ async function recordEntryInterrupted({ inviteId, attemptId, reason }) {
     const { db } = getDeps();
     if (typeof attemptId !== 'string' || attemptId.length === 0) return false;
     try {
-        const [affected] = await db.GameInvite.update(
-            { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: reason ?? 'INTERRUPTED' },
-            {
-                where: {
-                    id: inviteId,
-                    attempt_id: attemptId,
-                    entry_outcome: ENTRY_OUTCOME.UNCONFIRMED,
-                },
-            },
-        );
+        const [affected] = await gameInviteRepository.markEntryIfUnconfirmed(db, {
+            inviteId,
+            attemptId,
+            entryOutcome: ENTRY_OUTCOME.INTERRUPTED,
+            endReason: reason ?? 'INTERRUPTED',
+            unconfirmedOutcome: ENTRY_OUTCOME.UNCONFIRMED,
+        });
         return Number(affected) > 0;
     } catch (error) {
         console.error('[초대 입장 보상 기록 실패]', error);

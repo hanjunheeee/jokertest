@@ -10,6 +10,9 @@ const { INVITE_TTL_MS, INVITE_STATUS } = require('./constants');
 const { isBlockedBetween } = require('./guards');
 const { toPublicInvite } = require('./view');
 const { emitInviteReceived } = require('./notify');
+const userLookup = require('../../../repositories/user/lookup');
+const gameInviteRepository = require('../../../repositories/friend/gameInvite');
+const { withTransaction } = require('../../../repositories/common');
 
 // 같은 만들기 키면 처음 초대 그대로, 대기 초대 있으면 거절, 다 통과하면 만들고 받음 전송
 async function createInvite({ senderId, receiverId, creationKey }) {
@@ -44,7 +47,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     const expiresAt = new Date(createdAt.getTime() + INVITE_TTL_MS);
     const bootEpoch = getRoomAccess().bootEpoch;
 
-    const result = await db.sequelize.transaction(async (t) => {
+    const result = await withTransaction(db, async (t) => {
         const locked = await friendRepository.lockAccountsInOrder([senderId, receiverId], { transaction: t });
         const lockedByUuid = new Map(locked.filter(Boolean).map((row) => [row.uuid, row]));
         if (!lockedByUuid.get(senderId)) throw createError('사용자를 찾을 수 없습니다.', 404);
@@ -54,10 +57,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
 
         const room = requireSenderRoom();
 
-        const existing = await db.GameInvite.findOne({
-            where: { sender_id: senderId, creation_key: normalizedKey },
-            transaction: t,
-        });
+        const existing = await gameInviteRepository.findByCreationKey(db, { senderId, creationKey: normalizedKey }, t);
         if (existing) {
             if (existing.receiver_id !== receiverId || existing.room_id !== room.roomId) {
                 throw createError('같은 생성 키로 다른 초대를 보낼 수 없습니다.', 409);
@@ -74,19 +74,15 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             throw createError('친구만 게임에 초대할 수 있습니다.', 403);
         }
 
-        const livePending = await db.GameInvite.findOne({
-            where: {
-                sender_id: senderId,
-                receiver_id: receiverId,
-                room_id: room.roomId,
-                room_instance_id: room.roomInstanceId,
-                boot_epoch: bootEpoch,
-                status: INVITE_STATUS.PENDING,
-                expires_at: { [db.Sequelize.Op.gt]: createdAt },
-            },
-            order: [['creation_seq', 'DESC']],
-            transaction: t,
-        });
+        const livePending = await gameInviteRepository.findLivePending(db, {
+            senderId,
+            receiverId,
+            roomId: room.roomId,
+            roomInstanceId: room.roomInstanceId,
+            bootEpoch,
+            status: INVITE_STATUS.PENDING,
+            after: createdAt,
+        }, t);
         if (livePending) {
             return { invite: livePending, created: false, notification: null, senderNickname: null };
         }
@@ -96,13 +92,11 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             throw createError('지금은 상대를 초대할 수 없습니다.', 409, availability.code);
         }
 
-        const sender = await db.User.findOne({
-            where: { uuid: senderId }, attributes: ['nickname'], transaction: t,
-        });
+        const sender = await userLookup.findNickname(db, senderId, t);
 
         requireSenderRoom(room);
 
-        const invite = await db.GameInvite.create({
+        const invite = await gameInviteRepository.createInviteRow(db, {
             id: getDeps().newId(),
             sender_id: senderId,
             receiver_id: receiverId,
@@ -114,7 +108,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             status: INVITE_STATUS.PENDING,
             created_at: createdAt,
             expires_at: expiresAt,
-        }, { transaction: t });
+        }, t);
 
         const notificationResult = await notificationService.createGameInviteNotification({
             receiverId,

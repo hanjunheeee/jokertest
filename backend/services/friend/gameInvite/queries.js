@@ -7,6 +7,8 @@ const { getDeps } = require('./deps');
 const { lockReceiver, expireDueInvitesForReceiver } = require('./guards');
 const { INVITE_STATUS } = require('./constants');
 const { toPublicInvite } = require('./view');
+const gameInviteRepository = require('../../../repositories/friend/gameInvite');
+const { withTransaction } = require('../../../repositories/common');
 
 // 받은 대기 초대 목록 + 가장 새 순번
 async function getReceiverSnapshot(receiverId) {
@@ -15,23 +17,13 @@ async function getReceiverSnapshot(receiverId) {
         return { invites: [], cursor: '0' };
     }
 
-    return await db.sequelize.transaction(async (t) => {
+    return await withTransaction(db, async (t) => {
         await lockReceiver(db, receiverId, t);
         await expireDueInvitesForReceiver(db, receiverId, now(), t);
 
-        const rows = await db.GameInvite.findAll({
-            where: { receiver_id: receiverId, status: INVITE_STATUS.PENDING },
-            include: [{ model: db.User, as: 'InviteSender', attributes: ['uuid', 'nickname'] }],
-            order: [['creation_seq', 'ASC']],
-            transaction: t,
-        });
+        const rows = await gameInviteRepository.listForReceiverWithSender(db, { receiverId, status: INVITE_STATUS.PENDING }, t);
 
-        const newest = await db.GameInvite.findOne({
-            where: { receiver_id: receiverId },
-            attributes: ['creation_seq'],
-            order: [['creation_seq', 'DESC']],
-            transaction: t,
-        });
+        const newest = await gameInviteRepository.findNewestForReceiver(db, receiverId, t);
 
         return {
             invites: rows.map((row) => toPublicInvite(row)),
@@ -47,12 +39,8 @@ async function getInviteForUser(viewerId, inviteId) {
         throw createError('유효하지 않은 초대 id입니다.', 400);
     }
 
-    return await db.sequelize.transaction(async (t) => {
-        const row = await db.GameInvite.findOne({
-            where: { id: inviteId },
-            include: [{ model: db.User, as: 'InviteSender', attributes: ['uuid', 'nickname'] }],
-            transaction: t,
-        });
+    return await withTransaction(db, async (t) => {
+        const row = await gameInviteRepository.findWithSender(db, inviteId, t);
         if (!row) throw createError('초대를 찾을 수 없습니다.', 404);
         if (row.receiver_id !== viewerId && row.sender_id !== viewerId) {
             throw createError('초대를 찾을 수 없습니다.', 404);
@@ -61,7 +49,7 @@ async function getInviteForUser(viewerId, inviteId) {
         if (row.status === INVITE_STATUS.PENDING && row.expires_at.getTime() <= now().getTime()) {
             await lockReceiver(db, row.receiver_id, t);
             await expireDueInvitesForReceiver(db, row.receiver_id, now(), t);
-            await row.reload({ transaction: t });
+            await gameInviteRepository.reloadInvite(row, t);
         }
 
         return toPublicInvite(row);
