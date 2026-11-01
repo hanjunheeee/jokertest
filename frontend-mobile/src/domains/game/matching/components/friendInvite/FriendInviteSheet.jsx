@@ -1,7 +1,7 @@
 // 친구 초대 창: 투표 창 틀 + 친구 줄 목록, 친구 없으면 안내 문구
 // GameMatchingPage가 씀, 목록·초대 중 표시는 데스크톱 useMatchingFriendInvite 그대로 (데스크톱 FriendInviteModal과 같은 틀·글)
 import { MODAL_COPY } from "@/domains/game/matching/constants/friendInviteModalCopy.js"
-import VoteFrameModal from "../frame/VoteFrameModal.jsx"
+import VoteFrameModal from "@m/shared/ui/modal/VoteFrameModal.jsx"
 import FriendInviteRow from "./FriendInviteRow.jsx"
 
 // 친구 없음 글 (데스크톱 EMPTY_CLASS 색)

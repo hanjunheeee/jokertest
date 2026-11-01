@@ -1,5 +1,5 @@
 // 세로 화면용 양피지 판: 가로형 양피지 그림을 9칸 자르기(border-image)로 늘려 모서리 장식 유지
-// 연출 양피지 창(ParchmentDialog)·밤 연출 대기 창이 씀
+// 연출 양피지 창(ParchmentDialog)·밤 연출 대기 창·대기방 시작 막힘 창이 씀, 데스크톱 양피지 창(InGameParchmentPanelBase)과 같은 그림
 import { IMG_URL } from "@/domains/game/ingame/constants/parchment/ingameParchmentLayout.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 

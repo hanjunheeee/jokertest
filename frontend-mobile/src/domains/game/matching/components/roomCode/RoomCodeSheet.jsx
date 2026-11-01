@@ -15,7 +15,7 @@ import {
 } from "@/domains/game/shared/utils/roomCode.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
-import Modal from "../frame/Modal.jsx"
+import Modal from "@m/shared/ui/modal/Modal.jsx"
 
 // 코드 한 칸 글자 (그림 칸 자리에 맞춤, 데스크톱 RoomCodeInput과 같은 글꼴)
 const CELL_CLASS =

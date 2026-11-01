@@ -7,7 +7,7 @@ import {
 } from "@/domains/game/ingame/constants/ingameNightSuccess.js"
 import { PRIVATE_RESULT_MSG_CLASS } from "@/domains/game/ingame/constants/ingameNightPrivateResult.js"
 import ParchmentDialog from "../parchment/ParchmentDialog.jsx"
-import ConfirmButton from "../parchment/ConfirmButton.jsx"
+import ConfirmButton from "@m/shared/ui/modal/parchment/ConfirmButton.jsx"
 import KillVideo from "./KillVideo.jsx"
 
 // 사건 영상 → 자료 대기 → 최종 결과 순으로 하나만 그림

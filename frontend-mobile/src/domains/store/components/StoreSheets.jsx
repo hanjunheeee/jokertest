@@ -2,7 +2,7 @@
 // pages/StorePage가 씀 (데스크톱 StorePanelOverlays 자리, 같은 차례)
 import { storePurchase } from "@/domains/store/store/storePurchase.store.js"
 import SkinZoomModal from "./zoom/SkinZoomModal.jsx"
-import BorderZoomModal from "./zoom/BorderZoomModal.jsx"
+import BorderZoomModal from "@m/shared/ui/modal/BorderZoomModal.jsx"
 import BulkModal from "./bulk/BulkModal.jsx"
 
 // 창마다 열림 여부는 패널 훅(useStorePanel) 상태로 정함

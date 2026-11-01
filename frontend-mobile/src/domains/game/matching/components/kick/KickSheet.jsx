@@ -2,10 +2,10 @@
 // GameMatchingPage가 씀, 값·동작은 데스크톱 useMatchingRoomKick 그대로 (데스크톱 SettingKickPlayerModal과 같은 틀·글)
 import { INGAME_KICK_PLAYER_MODAL_COPY as COPY } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
 import { getPlayerRecordListFallbackProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
-import VoteFrameModal from "../frame/VoteFrameModal.jsx"
+import VoteFrameModal from "@m/shared/ui/modal/VoteFrameModal.jsx"
 import KickRow from "./KickRow.jsx"
 import KickStatus from "./KickStatus.jsx"
-import { NOTICE_CLASS, SUBTITLE_CLASS } from "../../constants/voteFrameStyle.js"
+import { NOTICE_CLASS, SUBTITLE_CLASS } from "@m/shared/ui/modal/voteFrameStyle.js"
 
 // 추방 창 (page = useMatchingPage 값 묶음)
 export default function KickSheet({ page }) {

@@ -9,8 +9,8 @@ import {
 } from "@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js"
 import { getMotionPreset } from "@/domains/game/ingame/constants/parchment/ingameParchmentModalMotion.js"
 import { getInGameParchmentModalVariant } from "@/domains/game/ingame/constants/parchment/ingameParchmentModalVariants.js"
-import ConfirmButton from "./ConfirmButton.jsx"
-import ParchmentFrame from "./ParchmentFrame.jsx"
+import ConfirmButton from "@m/shared/ui/modal/parchment/ConfirmButton.jsx"
+import ParchmentFrame from "@m/shared/ui/modal/parchment/ParchmentFrame.jsx"
 
 // 열렸을 때 Esc로 닫기 (데스크톱과 같음)
 function useEscape(onDismiss, open) {

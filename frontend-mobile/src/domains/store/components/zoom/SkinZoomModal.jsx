@@ -7,7 +7,7 @@ import {
     ILLUSTRATION_WRAP_CLASS,
     ZOOM_TRANSITION,
 } from "@/domains/store/constants/storeSkinZoomLayout.js"
-import CenterModal from "../modal/CenterModal.jsx"
+import CenterModal from "@m/shared/ui/modal/CenterModal.jsx"
 import { SKIN_PANEL_CLASS } from "../modal/modalStyle.js"
 
 // 전신 그림이 없으면 칸 그림으로 대신함, 그림 칸 모양은 데스크톱 상수 그대로

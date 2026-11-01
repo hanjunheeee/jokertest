@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion"
 import { createPortal } from "react-dom"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import { useEscapeClose } from "../../../hooks/sheets/useEscapeClose.js"
+import { useEscapeClose } from "@m/shared/hooks/useEscapeClose.js"
 import CloseButton from "./CloseButton.jsx"
 import {
   BACKDROP_CLASS,
@@ -31,7 +31,7 @@ export default function Sheet({
   escape = true,
   children,
 }) {
-  useEscapeClose(open && escape, onClose)
+  useEscapeClose(open && escape, onClose, { sfx: true })
   const z = SHEET_LAYERS[layer] ?? SHEET_LAYERS.base
 
   return createPortal(

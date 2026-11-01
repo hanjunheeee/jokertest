@@ -1,8 +1,8 @@
 // 투표 창 틀 그림 창: 틀·제목·닫기 + 스크롤 본문 (가운데 겹 창)
-// 대기방 추방 창·친구 초대 창이 씀, 데스크톱 SettingKickPlayerModalShell·FriendInviteModalShell과 같은 틀·덮개
+// 대기방 추방·친구 초대 창과 인게임 추방 창이 씀, 데스크톱 추방·친구 초대 창(투표 창 틀 빌림)과 같은 틀·덮개
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import Modal from "./Modal.jsx"
-import { CLOSE_STYLE, FRAME_ASSETS, FRAME_STYLE, TITLE_CLASS, TITLE_STYLE } from "../../constants/voteFrameStyle.js"
+import { CLOSE_STYLE, FRAME_ASSETS, FRAME_STYLE, TITLE_CLASS, TITLE_STYLE } from "./voteFrameStyle.js"
 
 // 제목은 틀 위쪽 판 자리, 닫기는 오른쪽 위 (둘 다 틀 테두리 안에 겹침)
 export default function VoteFrameModal({ open, onClose, title, closeLabel, testId, children }) {

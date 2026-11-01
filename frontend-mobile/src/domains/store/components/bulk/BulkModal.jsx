@@ -3,7 +3,7 @@
 import { getItemDisplayIcon } from "@/domains/store/constants/storeItems.js"
 import { calculateBulkPurchaseTotal } from "@/domains/store/utils/calculateBulkPurchaseTotal.js"
 import { HEADER_CLASS, PURCHASE_TRANSITION, TITLE_CLASS } from "@/domains/store/constants/storeBulkPurchaseLayout.js"
-import CenterModal from "../modal/CenterModal.jsx"
+import CenterModal from "@m/shared/ui/modal/CenterModal.jsx"
 import { BULK_PANEL_CLASS } from "../modal/modalStyle.js"
 import BulkItemRow from "./BulkItemRow.jsx"
 import BulkSummary from "./BulkSummary.jsx"

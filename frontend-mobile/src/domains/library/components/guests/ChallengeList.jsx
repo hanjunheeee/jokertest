@@ -1,7 +1,7 @@
 // 직업 도전과제 목록 (받은 과제는 클리어 줄, 아니면 이름·진행도·보상) + 테두리 크게 보기 창
 // guests/InvitedGuestsView.jsx가 뒷면 아래쪽에 씀
 import { useState } from "react"
-import BorderZoomModal from "@m/domains/library/components/guests/BorderZoomModal.jsx"
+import BorderZoomModal from "@m/shared/ui/modal/BorderZoomModal.jsx"
 import ChallengeRewards from "@m/domains/library/components/guests/ChallengeRewards.jsx"
 import {
   INK_SOFT_CLASS,

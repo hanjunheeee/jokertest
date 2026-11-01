@@ -14,8 +14,9 @@ import {
   normalizeRoomCode,
 } from "@/domains/game/shared/utils/roomCode.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import Modal from "../frame/Modal.jsx"
-import ImageButton from "../parts/ImageButton.jsx"
+import Modal from "@m/shared/ui/modal/Modal.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import { SHEET_BUTTON_LOOK } from "../parts/buttonLook.js"
 
 // 코드 한 칸 글자 (그림 칸 자리에 맞춤, 데스크톱 RoomCodeInput과 같은 여백·글꼴)
 const CELL_CLASS =
@@ -76,12 +77,13 @@ export default function RoomCodeSheet({ open, onClose, roomCode }) {
         {/* 복사 버튼은 틀 아래쪽 칸 (데스크톱 footer 자리) */}
         <div className="absolute inset-x-0 bottom-0 flex justify-center" style={FOOTER_INSET}>
           <ImageButton
+            look={SHEET_BUTTON_LOOK}
             label={copied ? "복사됨" : "방코드 복사"}
             ariaLabel={copied ? "방코드 복사됨" : "방코드 복사"}
             src={ROOM_INVITE_ASSETS.joinButton}
             onClick={handleCopy}
             disabled={!canCopy}
-            describedBy={errorText ? copyErrorId : undefined}
+            aria-describedby={errorText ? copyErrorId : undefined}
             className="h-11 w-[min(46%,15.25rem)]"
           />
         </div>

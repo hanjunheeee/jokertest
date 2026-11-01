@@ -1,5 +1,5 @@
 // 양피지 확인 버튼: 수락 버튼 그림 위에 글자, 누르면 확인 소리 (폭은 데스크톱 최대 9.3rem → 높이 44px 넘음)
-// 연출 양피지 창·밤 성공 자료 대기 창이 씀
+// 연출 양피지 창·밤 성공 자료 대기 창·대기방 시작 막힘 창이 씀
 import { forwardRef } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import {
