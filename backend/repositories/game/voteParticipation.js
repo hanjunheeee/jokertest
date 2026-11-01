@@ -9,11 +9,11 @@ exports.recordValidDayVoteParticipation = async ({ gameId, dayIndex, userId }) =
         return { recorded: created };
     } catch (error) {
         const constraint = error?.parent?.constraint ?? error?.original?.constraint;
-        const isDuplicateParticipation = error instanceof db.Sequelize.UniqueConstraintError && (
+        const isDuplicate = error instanceof db.Sequelize.UniqueConstraintError && (
             constraint === "vote_participations_game_day_user_unique" ||
             error?.fields?.game_id !== undefined
         );
-        if (isDuplicateParticipation) return { recorded: false };
+        if (isDuplicate) return { recorded: false };
         throw error;
     }
 };

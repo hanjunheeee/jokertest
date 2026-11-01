@@ -115,7 +115,7 @@ exports.findGameResultById = async (gameId) => {
 };
 
 const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']);
-const isRoleStatisticsEligibleGame = (settings) => !EXCLUDED_GAME_SOURCES.has(settings?.gameSource?.value);
+const isRoleStatsEligible = (settings) => !EXCLUDED_GAME_SOURCES.has(settings?.gameSource?.value);
 
 const toRoleStatisticsRow = (playerRow) => ({
     user_id: playerRow.user_id,
@@ -133,7 +133,7 @@ const findRoleStatisticsRows = async (where) => {
         nest: true,
     });
     return rows
-        .filter((row) => isRoleStatisticsEligibleGame(row.GameResult?.settings))
+        .filter((row) => isRoleStatsEligible(row.GameResult?.settings))
         .map(toRoleStatisticsRow);
 };
 
@@ -211,7 +211,7 @@ exports.getHighestWinRateRole = async (userId) => {
     return roleStatisticsPolicy.selectMaskOfFateRole(roleStatisticsPolicy.aggregateRoleStatistics(rows));
 };
 
-const toAchievementProgressRow = (playerRow) => ({
+const toProgressRow = (playerRow) => ({
     role: playerRow.role,
     won: playerRow.won === true || playerRow.won === 1,
     is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
@@ -231,7 +231,7 @@ exports.getAchievementProgressStats = async (userId) => {
             completed: row.GameResult?.completed === true || row.GameResult?.completed === 1,
             gameSourceValue: row.GameResult?.settings?.gameSource?.value,
         }))
-        .map(toAchievementProgressRow);
+        .map(toProgressRow);
 
     const roleWinsByRole = new Map();
     let survivals = 0;
