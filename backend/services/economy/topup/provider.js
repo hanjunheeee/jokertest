@@ -2,7 +2,9 @@
 
 // 결제사 확인 파일, 결제사 묻기 · 결제가 주문과 맞나 · 결과 저장
 // 확인 흐름이 잡은 주문마다 부름
-const { nowOf, orderModel } = require('./helpers');
+const { nowOf } = require('./helpers');
+const topupOrderRepository = require('../../../repositories/economy/topupOrder');
+const { withTransaction } = require('../../../repositories/common');
 const { ORDER_STATUS } = require('./constants');
 
 // 승인 또는 조회, 결제사 오류는 결과 모양으로 바꿈
@@ -33,20 +35,18 @@ const paymentMatchesOrder = (payment, order) => Boolean(payment)
 // 내 잠금 표일 때만 결과 상태 저장
 const persistProviderResult = async (db, deps, { order, leaseToken, nextStatus, failureCode = null }) => {
     const now = nowOf(deps);
-    return db.sequelize.transaction(async (t) => {
-        const current = await orderModel(db).findOne({
-            where: { order_id: order.order_id }, transaction: t, lock: t.LOCK.UPDATE,
-        });
+    return withTransaction(db, async (t) => {
+        const current = await topupOrderRepository.lockOrder(db, order.order_id, t);
         if (!current || current.lease_token !== leaseToken || current.status !== ORDER_STATUS.CONFIRMING) {
             return { lost: true };
         }
-        await current.update({
+        await topupOrderRepository.saveOrder(current, {
             status: nextStatus,
             lease_token: null,
             lease_expires_at: null,
             failure_code: failureCode,
             ...(nextStatus === ORDER_STATUS.PENDING_GRANT ? { approved_at: now } : {}),
-        }, { transaction: t });
+        }, t);
         return { lost: false };
     });
 };

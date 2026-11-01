@@ -20,12 +20,6 @@ const nowOf = (deps) => (typeof deps.now === 'function' ? deps.now() : new Date(
 // 주입 잠금 시간이 양의 정수일 때만
 const leaseMsOf = (deps) => (Number.isSafeInteger(deps.leaseMs) && deps.leaseMs > 0 ? deps.leaseMs : LEASE_MS);
 
-// 주문 모델 꺼내기
-const orderModel = (db) => db.EconomyTopupOrder ?? db.sequelize.models.EconomyTopupOrder;
-
-// 장부 모델 꺼내기
-const ledgerModel = (db) => db.EconomyLedgerEntry ?? db.sequelize.models.EconomyLedgerEntry;
-
 // 주문마다 장부 참조 id (두 번 지급 막기)
 const referenceEventIdOf = (orderId) => `topup:${orderId}`;
 
@@ -75,8 +69,6 @@ module.exports = {
     adapterOf,
     nowOf,
     leaseMsOf,
-    orderModel,
-    ledgerModel,
     referenceEventIdOf,
     grantTotalOf,
     orderNotFound,

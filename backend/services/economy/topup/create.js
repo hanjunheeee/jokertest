@@ -5,7 +5,8 @@
 const crypto = require('crypto');
 const { createError } = require('../../../utils/appError');
 const currencyProducts = require('../currencyProducts');
-const { dbOf, adapterOf, orderModel } = require('./helpers');
+const { dbOf, adapterOf } = require('./helpers');
+const topupOrderRepository = require('../../../repositories/economy/topupOrder');
 const { ORDER_STATUS } = require('./constants');
 
 // 판매 중 다이아 충전 상품만, 금액은 상품 값 그대로
@@ -22,7 +23,7 @@ const createTopupOrder = async ({ userId, productId, version }, deps = {}) => {
     const clientKey = adapter.getClientKey();
 
     const orderId = crypto.randomUUID();
-    await orderModel(db).create({
+    await topupOrderRepository.createOrder(db, {
         order_id: orderId,
         user_id: userId,
         product_id: product.productId,

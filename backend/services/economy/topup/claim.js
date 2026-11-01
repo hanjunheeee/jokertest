@@ -4,16 +4,15 @@
 // 확인 흐름이 부름
 const crypto = require('crypto');
 const { createError } = require('../../../utils/appError');
-const { orderModel, logDeferred, nowOf, orderNotFound, notOwner, leaseMsOf } = require('./helpers');
+const { logDeferred, nowOf, orderNotFound, notOwner, leaseMsOf } = require('./helpers');
+const topupOrderRepository = require('../../../repositories/economy/topupOrder');
+const { withTransaction, isUniqueConstraintName } = require('../../../repositories/common');
 const { ORDER_STATUS, TERMINAL_FAILURE_STATUSES } = require('./constants');
 
 // 내 잠금 표일 때만 풀기
 const releaseLease = async (db, orderId, leaseToken) => {
     try {
-        await orderModel(db).update(
-            { lease_token: null, lease_expires_at: null },
-            { where: { order_id: orderId, lease_token: leaseToken, status: ORDER_STATUS.CONFIRMING } },
-        );
+        await topupOrderRepository.clearLease(db, { orderId, leaseToken, status: ORDER_STATUS.CONFIRMING });
     } catch (error) {
         logDeferred('임대 반납 실패', orderId, error);
     }
@@ -22,10 +21,8 @@ const releaseLease = async (db, orderId, leaseToken) => {
 // 주인·상태·금액 확인 뒤 잠금 표 붙임 (다른 요청이 잡고 있으면 진행 중)
 const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = null, amount = null }) => {
     const now = nowOf(deps);
-    return db.sequelize.transaction(async (t) => {
-        const order = await orderModel(db).findOne({
-            where: { order_id: orderId }, transaction: t, lock: t.LOCK.UPDATE,
-        });
+    return withTransaction(db, async (t) => {
+        const order = await topupOrderRepository.lockOrder(db, orderId, t);
         if (!order) throw orderNotFound();
         if (order.user_id !== userId) throw notOwner();
         if (amount !== null && amount !== order.pay_amount) {
@@ -51,9 +48,7 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
         adapter.assertConfigured();
 
         if (!order.payment_key) {
-            const holder = await orderModel(db).findOne({
-                where: { payment_key: effectiveKey }, transaction: t,
-            });
+            const holder = await topupOrderRepository.findByPaymentKey(db, effectiveKey, t);
             if (holder && holder.order_id !== order.order_id) {
                 throw createError('이 결제키는 다른 주문에서 사용 중입니다.', 409, 'PAYMENT_KEY_CONFLICT');
             }
@@ -62,14 +57,14 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
         const mode = order.status === ORDER_STATUS.CONFIRMING ? 'recover' : 'first';
         const leaseToken = crypto.randomUUID();
         try {
-            await order.update({
+            await topupOrderRepository.saveOrder(order, {
                 payment_key: effectiveKey,
                 status: ORDER_STATUS.CONFIRMING,
                 lease_token: leaseToken,
                 lease_expires_at: new Date(now.getTime() + leaseMsOf(deps)),
-            }, { transaction: t });
+            }, t);
         } catch (error) {
-            if (error?.name === 'SequelizeUniqueConstraintError') {
+            if (isUniqueConstraintName(error)) {
                 throw createError('이 결제키는 다른 주문에서 사용 중입니다.', 409, 'PAYMENT_KEY_CONFLICT');
             }
             throw error;

@@ -3,7 +3,8 @@
 // 충전 조회 파일, 주문 하나 · 열린 주문 목록
 // 조회 때 지급 대기면 지급 다시 시도함
 const { createError } = require('../../../utils/appError');
-const { dbOf, adapterOf, expectString, orderNotFound, orderModel, notOwner, toOrderView } = require('./helpers');
+const { dbOf, adapterOf, expectString, orderNotFound, notOwner, toOrderView } = require('./helpers');
+const topupOrderRepository = require('../../../repositories/economy/topupOrder');
 const { ORDER_ID_PATTERN, ORDER_STATUS, OPEN_ORDER_STATUSES, OPEN_ORDER_LIMIT } = require('./constants');
 const { tryGrant, loadGrantedBalance } = require('./grant');
 const { claimOrder } = require('./claim');
@@ -15,7 +16,7 @@ const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
     const adapter = adapterOf(deps);
     expectString(orderId, ORDER_ID_PATTERN, orderNotFound);
 
-    const order = await orderModel(db).findOne({ where: { order_id: orderId } });
+    const order = await topupOrderRepository.findOrder(db, orderId);
     if (!order) throw orderNotFound();
     if (order.user_id !== userId) throw notOwner();
 
@@ -31,7 +32,7 @@ const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
         }
     }
 
-    const fresh = await orderModel(db).findOne({ where: { order_id: orderId } });
+    const fresh = await topupOrderRepository.findOrder(db, orderId);
     if (!fresh) throw orderNotFound();
     const balance = fresh.status === ORDER_STATUS.GRANTED ? await loadGrantedBalance(db, fresh) : null;
     return toOrderView(fresh, balance);
@@ -43,11 +44,7 @@ const listOpenTopupOrders = async ({ userId }, deps = {}) => {
         throw createError('로그인이 필요합니다.', 401);
     }
     const db = dbOf(deps);
-    const rows = await orderModel(db).findAll({
-        where: { user_id: userId, status: OPEN_ORDER_STATUSES },
-        order: [['created_at', 'DESC'], ['order_id', 'DESC']],
-        limit: OPEN_ORDER_LIMIT,
-    });
+    const rows = await topupOrderRepository.listByStatuses(db, { userId, statuses: OPEN_ORDER_STATUSES, limit: OPEN_ORDER_LIMIT });
     return rows.map((row) => ({
         orderId: row.order_id,
         status: row.status,

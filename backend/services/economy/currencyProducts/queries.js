@@ -5,22 +5,17 @@
 const { createError } = require('../../../utils/appError');
 const { KINDS, STATUSES } = require('./constants');
 const { normalizeProductRow, toPublicProduct, isNonEmptyString } = require('./normalize');
+const currencyProductRepository = require('../../../repositories/economy/currencyProduct');
 
 // db 안 넘기면 진짜 models (부를 때 require)
 const defaultDb = () => require('../../../models');
-
-// db에 바로 없으면 sequelize models에서 꺼냄 (시험 가짜 db 둘 다 받음)
-const productModel = (db) => db.EconomyCurrencyProduct ?? db.sequelize.models.EconomyCurrencyProduct;
 
 // 판매 중인 것만, 정렬 순서 → id 순
 const listCurrencyProducts = async ({ kind } = {}, db = defaultDb()) => {
     if (kind !== undefined && !Object.prototype.hasOwnProperty.call(KINDS, kind)) {
         throw createError('알 수 없는 상품 종류입니다.', 400, 'INVALID_PRODUCT_KIND');
     }
-    const rows = await productModel(db).findAll({
-        where: { status: STATUSES.ON_SALE, ...(kind ? { kind } : {}) },
-        order: [['sort_order', 'ASC'], ['product_id', 'ASC']],
-    });
+    const rows = await currencyProductRepository.listByStatus(db, { status: STATUSES.ON_SALE, kind });
     return rows
         .map(normalizeProductRow)
         .filter((product) => product && product.status === STATUSES.ON_SALE)
@@ -33,10 +28,7 @@ const getCurrencyProduct = async ({ productId, version, kind }, db = defaultDb()
     const notFound = () => createError('상품을 찾을 수 없습니다.', 404, 'PRODUCT_NOT_FOUND');
     if (!isNonEmptyString(productId, 64)) throw notFound();
 
-    const row = await productModel(db).findOne({
-        where: { product_id: productId },
-        ...(transaction ? { transaction } : {}),
-    });
+    const row = await currencyProductRepository.findProduct(db, productId, transaction);
     const product = normalizeProductRow(row);
     if (!product) throw notFound();
     if (kind !== undefined && product.kind !== kind) throw notFound();
