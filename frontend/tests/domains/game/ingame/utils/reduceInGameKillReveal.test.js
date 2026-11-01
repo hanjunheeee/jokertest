@@ -6,7 +6,7 @@ import {
   INITIAL_IN_GAME_KILL_REVEAL,
   reduceInGameKillReveal,
 } from "../../../../../src/domains/game/ingame/utils/reduceInGameKillReveal.js"
-import { buildInGameKillRevealQueueItems } from "../../../../../src/domains/game/ingame/utils/buildInGameKillRevealQueueItems.js"
+import { buildInGameKillRevealQueueItems } from "../../../../../src/domains/game/ingame/utils/nightDeathReveals.js"
 
 const GAME_ID = "game-kill-1"
 const AUTH_UUID = "uuid-self"

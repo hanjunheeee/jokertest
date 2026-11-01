@@ -7,7 +7,7 @@ import {
   NICKNAME_CLASS,
   ROLE_NAME_CLASS,
 } from "../../constants/roleReveal/ingameRoleRevealLayout.js"
-import { resolveInGameRoleRevealAllies } from "../../utils/resolveInGameRoleRevealAllies.js"
+import { resolveInGameRoleRevealAllies } from "../../utils/roleReveal.js"
 import InGameParchmentModalAnimated from "../parchment/InGameParchmentModalAnimated.jsx"
 
 export default function InGameRoleRevealOverlay({

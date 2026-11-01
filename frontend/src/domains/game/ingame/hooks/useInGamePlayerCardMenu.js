@@ -21,7 +21,6 @@ export {
   INGAME_CARD_MENU_DISABLED_REASONS,
   INGAME_CARD_MENU_ITEM_KINDS,
   INGAME_CARD_MENU_NIGHT_ACTION_CANCEL_LABEL,
-  NIGHT_FALLBACK_LABEL,
 } from "../constants/board/playerCardMenu.js"
 export { buildInGamePlayerCardMenuItems }
 

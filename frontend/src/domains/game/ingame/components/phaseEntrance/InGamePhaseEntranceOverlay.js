@@ -3,7 +3,7 @@ import {
   getEntranceMsg,
   CONFIRM_LABEL,
   MSG_CLASS,
-} from "../../constants/phaseEntrance/ingamePhaseEntrance.js"
+} from "../../constants/ingamePhaseEntrance.js"
 import InGameParchmentModalBase from "../parchment/InGameParchmentModalBase.js"
 
 export default function InGamePhaseEntranceOverlay({ open, phase, onConfirm }) {

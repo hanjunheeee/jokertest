@@ -15,7 +15,7 @@ import {
   CARD_MENU_SCOPE_FIELDS,
 } from "../constants/board/playerCardMenu.js"
 import { isInGameSelfPlayer } from "./isInGameSelfPlayer.js"
-import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "./resolveInGameDayPhase.js"
+import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "./dayPhase.js"
 
 // 잠김 이유 고르기 (죽음 → 대상 아님 → 전송 중 → 그 밖)
 function disabledReason({ selfAlive, inTargets, submitting }) {

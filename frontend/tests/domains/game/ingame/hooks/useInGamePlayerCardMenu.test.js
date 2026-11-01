@@ -70,7 +70,7 @@ const { INGAME_PLAYER_CARD_MENU_ATTR } = await import("../../../../../src/domain
 const { useInGameStore } = await import("../../../../../src/domains/game/ingame/store/ingameStore.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
 const { setSocket } = await import("../../../../../src/shared/socket/socketClient.js")
-const { INGAME_E2E_ATTRS } = await import("../../../../../src/domains/game/ingame/constants/e2e/ingameE2eHooks.js")
+const { INGAME_E2E_ATTRS } = await import("../../../../../src/domains/game/ingame/constants/ingameE2eHooks.js")
 
 const GAME_ID = "cm-v1-game"
 const SELF_UUID = "u1"

@@ -4,12 +4,12 @@ import {
   FRAME_SHADOW_LAYER_CLASS,
 } from "../../constants/board/ingamePlayerAssets.js"
 import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
-import { buildPlayerCardE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
+import { buildPlayerCardE2eAttrs } from "../../constants/ingameE2eHooks.js"
 import InGamePlayerFrameStroke from "./InGamePlayerFrameStroke.jsx"
 import InGamePlayerNameplate from "./InGamePlayerNameplate.jsx"
-import InGamePlayerStatusOverlay from "./status/InGamePlayerStatusOverlay.jsx"
+import InGamePlayerStatusOverlay from "./InGamePlayerStatusOverlay.jsx"
 import { resolveInGamePlayerFrameSrc } from "../../utils/pickInGamePlayerFrame.js"
-import { resolveInGamePlayerCardThemeStyles } from "../../utils/resolveInGamePlayerCardThemeStyles.js"
+import { resolveInGamePlayerCardThemeStyles } from "../../utils/playerCardStyles.js"
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

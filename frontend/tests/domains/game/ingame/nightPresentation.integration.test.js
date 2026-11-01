@@ -120,12 +120,12 @@ const { useInGameNightSuccessPresentation } = await import("../../../../src/doma
 const {
   INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS,
   INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR, INGAME_KILL_REVEAL_SKIP_LABEL,
-} = await import("../../../../src/domains/game/ingame/constants/killReveal/ingameKillReveal.js")
+} = await import("../../../../src/domains/game/ingame/constants/ingameKillReveal.js")
 const { INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE } = await import("../../../../src/domains/game/ingame/components/InGameNightPresentationWait.jsx")
 const { default: InGamePage } = await import("../../../../src/domains/game/ingame/pages/InGamePage.jsx")
 const { router } = await import("../../../../src/app/routes/index.jsx")
 const { useMatchingStore } = await import("../../../../src/domains/game/matching/store/matchingStore.js")
-const { getInGameRoleRevealInfo } = await import("../../../../src/domains/game/ingame/utils/getInGameRoleRevealInfo.js")
+const { getInGameRoleRevealInfo } = await import("../../../../src/domains/game/ingame/utils/roleReveal.js")
 
 const flushMicrotasks = () => new Promise((resolve) => { setTimeout(resolve, 0) })
 

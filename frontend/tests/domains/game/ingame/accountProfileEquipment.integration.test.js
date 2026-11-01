@@ -69,15 +69,15 @@ const { mergeSourcePlayerWithPreview } = await import("../../../../src/domains/g
 const { resolveAccountProfileBorderSrc } =
   await import("../../../../src/shared/utils/resolveAccountProfileAssets.js")
 const { resolveInGameAccountProfilePhotoSrc } =
-  await import("../../../../src/domains/game/ingame/utils/resolveInGameAccountProfilePhotoSrc.js")
-const { INGAME_PLAYER_STATUS, INGAME_PLAYER_STATUS_ASSETS } = await import("../../../../src/domains/game/ingame/constants/board/status/ingamePlayerStatus.js")
+  await import("../../../../src/domains/game/ingame/utils/mergeSourcePlayerWithPreview.js")
+const { INGAME_PLAYER_STATUS, INGAME_PLAYER_STATUS_ASSETS } = await import("../../../../src/domains/game/shared/constants/ingamePlayerStatus.js")
 const { default: InGamePlayerBoard } = await import("../../../../src/domains/game/ingame/components/board/InGamePlayerBoard.jsx")
 const { InGamePlayerSessionContext } = await import("../../../../src/domains/game/ingame/components/InGamePlayerSessionContext.js")
 const { InGameActionContext } = await import("../../../../src/domains/game/ingame/context/InGameActionContext.jsx")
 const { useInGameActionPanel } = await import("../../../../src/domains/game/ingame/hooks/useInGameActionPanel.js")
 const { default: MatchingPartySlots } = await import("../../../../src/domains/game/matching/components/MatchingPartySlots.jsx")
 const { useInGameStore } = await import("../../../../src/domains/game/ingame/store/ingameStore.js")
-const { getInGameRoleRevealInfo } = await import("../../../../src/domains/game/ingame/utils/getInGameRoleRevealInfo.js")
+const { getInGameRoleRevealInfo } = await import("../../../../src/domains/game/ingame/utils/roleReveal.js")
 const { getSkinCardWearItemById, getDefaultSkinIdForJob } =
   await import("../../../../src/domains/user/constants/skinCardWear/skinCardWearCatalog.js")
 

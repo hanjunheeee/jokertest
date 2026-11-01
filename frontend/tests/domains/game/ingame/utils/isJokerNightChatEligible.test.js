@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { isJokerNightChatEligible } from "../../../../../src/domains/game/ingame/utils/isJokerNightChatEligible.js"
+import { isJokerNightChatEligible } from "../../../../../src/domains/game/ingame/utils/selfAlive.js"
 
 test("isJokerNightChatEligible: state가 null이면 false다", () => {
   assert.equal(isJokerNightChatEligible(null), false)

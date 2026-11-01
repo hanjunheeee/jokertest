@@ -1,8 +1,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { buildDayVoteTargets, isSessionPlayerAlive } from "../../../../../src/domains/game/ingame/utils/buildDayVoteTargets.js"
-import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/ingame/constants/board/status/ingamePlayerStatus.js"
+import {
+  buildDayVoteTargets,
+  isSessionPlayerAlive,
+} from "../../../../../src/domains/game/ingame/utils/actionTargets.js"
+import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js"
 
 function sessionPlayer(overrides = {}) {
   return { id: "p1", nickname: "닉네임", status: INGAME_PLAYER_STATUS.ALIVE, ...overrides }

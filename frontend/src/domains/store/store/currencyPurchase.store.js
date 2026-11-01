@@ -9,8 +9,6 @@ import { discoverOpenOrders, handleReturn } from "./currency/paymentReturn.js"
 
 // 바깥에서 쓰던 이름 그대로 다시 내보냄
 export { currencyApi } from "../api/currency.api.js"
-export { requestTossTestPayment } from "../api/toss.api.js"
-export { toCurrencyStoreItem } from "../utils/currencyParse.js"
 
 useAuthStore.subscribe((state) => activate(state.user?.uuid ?? null))
 // 결제창에서 뒤로 가기로 캐시된 페이지가 다시 보이면 결제 중 상태를 풀고 줄을 이어 감

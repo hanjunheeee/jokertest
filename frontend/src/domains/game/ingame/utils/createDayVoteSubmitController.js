@@ -1,4 +1,4 @@
-import { computeDayVoteSubmitPatch, INITIAL_DAY_VOTE_SUBMIT_STATE } from "./computeDayVoteSubmitPatch.js"
+import { computeDayVoteSubmitPatch, INITIAL_DAY_VOTE_SUBMIT_STATE } from "./voteSubmitPatch.js"
 
 export const ACK_TIMEOUT_MS = 5000
 
@@ -63,6 +63,7 @@ export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIM
         try {
           onAccepted?.(sfxEvent, { gameId, dayIndex })
         } catch {
+          // 효과음 알림 실패가 제출 결과 처리를 막지 않게 무시함
         }
       }
 

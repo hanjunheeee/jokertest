@@ -3,7 +3,7 @@
 import { useInGameStore } from "../../store/ingameStore.js"
 import { INGAME_CARD_MENU_ITEM_KINDS as KINDS } from "../../constants/board/playerCardMenu.js"
 import { findCardMenuItem } from "../../utils/playerCardMenu.js"
-import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../../utils/resolveInGameDayPhase.js"
+import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../../utils/dayPhase.js"
 import { readMenuScope } from "./liveScope.js"
 
 const isDayKind = (kind) => kind === KINDS.DAY_VOTE || kind === KINDS.DAY_VOTE_CANCEL

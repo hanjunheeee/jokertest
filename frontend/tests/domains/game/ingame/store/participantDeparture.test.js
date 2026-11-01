@@ -2,7 +2,10 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { applyTribunalResolvedPure } from "../../../../../src/domains/game/ingame/store/applyTribunalResolved.js"
-import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "../../../../../src/domains/game/ingame/store/applySessionSnapshot.js"
+import {
+  applySessionSnapshotPure,
+  bootstrapSessionSnapshotPure,
+} from "../../../../../src/domains/game/ingame/utils/snapshot/applySnapshot.js"
 
 function tribunalCurrent() {
   return {

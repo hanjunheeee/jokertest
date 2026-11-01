@@ -34,7 +34,7 @@ const { useInGameStore } = await import("../../../../../src/domains/game/ingame/
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
 const { __setSfxPlayerForTests } = await import("../../../../../src/shared/hooks/useSfxRuntime.js")
 const { useMatchingRoom } = await import("../../../../../src/domains/game/matching/hooks/useMatchingRoom.js")
-const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/setup/constants/gameSetupSocket.js")
+const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/shared/constants/gameSetupSocket.js")
 
 const navigations = { roomDeleted: 0, gameStarted: [] }
 const roomCallbacks = {

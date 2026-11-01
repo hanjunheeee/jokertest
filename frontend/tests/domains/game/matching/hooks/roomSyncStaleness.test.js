@@ -32,7 +32,7 @@ const { setSocket } = await import("../../../../../src/shared/socket/socketClien
 const { useMatchingStore } = await import("../../../../../src/domains/game/matching/store/matchingStore.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
 const { useMatchingRoom } = await import("../../../../../src/domains/game/matching/hooks/useMatchingRoom.js")
-const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/setup/constants/gameSetupSocket.js")
+const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/shared/constants/gameSetupSocket.js")
 
 const roomCallbacks = { onRoomDeleted: () => {}, onGameStarted: () => {} }
 

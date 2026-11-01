@@ -9,13 +9,11 @@ export {
   SFX_REVIEW_STATUS,
   MAX_SEPARATE_SFX_DURATION_MS,
   SFX_LOAD_TIMEOUT_MS,
-  SFX_PLAYBACK_WATCHDOG_MS,
-  SFX_UI_COOLDOWN_MS,
   SFX_SUPPRESSED_REASON,
   SFX_SCOPE,
   SFX_CLASSIFICATION,
 } from "../constants/sfx.js"
-export { lookupSfxAsset, checkSfxAssetAllowed, verifyLoadedSfxAsset } from "../utils/sfx/asset.js"
+export { checkSfxAssetAllowed } from "../utils/sfx/asset.js"
 
 // 밤 성공 영상은 소리가 영상 안에 들어 있음 (역할-대상별 영상 파일)
 const NIGHT_SUCCESS_VIDEO_TABLE = Object.freeze({

@@ -8,11 +8,11 @@ import {
   getInGameNightTurnAnnouncement,
   ANNOUNCEMENT_MS,
 } from "../constants/nightTurn/ingameNightTurnAnnouncement.js"
-import { selectInGameNightTurnRole } from "../utils/selectInGameNightTurnRole.js"
+import { selectInGameNightTurnRole } from "../utils/nightTurn.js"
 import {
   buildInGameNightTurnAnnouncementIdentity,
   buildAnnouncementScope,
-} from "../utils/buildInGameNightTurnAnnouncementIdentity.js"
+} from "../utils/overlayIdentity.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
 import {
   dismissTurnAnnouncement,

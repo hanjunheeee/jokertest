@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
-import {
-  SETTINGS_STATUS,
-  useNextRoomSettingsStore,
-} from "@/domains/game/setup/store/nextRoomSettingsStore.js"
+import { SETTINGS_STATUS } from "@/domains/game/setup/constants/nextRoomSettings.js"
+import { useNextRoomSettingsStore } from "@/domains/game/setup/store/nextRoomSettingsStore.js"
 import { isPlainObject } from "../../shared/utils/valueChecks.js"
 import { useInGameStore } from "../store/ingameStore.js"
 

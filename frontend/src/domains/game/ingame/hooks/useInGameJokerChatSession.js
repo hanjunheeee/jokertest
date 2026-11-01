@@ -3,14 +3,11 @@
 import { useEffect, useReducer, useRef, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { jokerChatReducer } from "../utils/jokerChatReducer.js"
-import { selectJokerChatView } from "../utils/selectJokerChatView.js"
-import { attachJokerChatListener } from "../utils/attachJokerChatListener.js"
-import { sanitizeJokerChatText } from "../utils/sanitizeJokerChatText.js"
-import { mapJokerChatSanitizeCodeToMessage } from "../utils/mapJokerChatSanitizeCodeToMessage.js"
-import { toJokerChatUiMessage } from "../utils/toJokerChatUiMessage.js"
-import { isJokerNightChatEligible } from "../utils/isJokerNightChatEligible.js"
-import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+import { jokerChatReducer, selectJokerChatView } from "../utils/jokerChatReducer.js"
+import { attachJokerChatListener, toJokerChatUiMessage } from "../utils/jokerChatReceive.js"
+import { sanitizeJokerChatText, mapJokerChatSanitizeCodeToMessage } from "../utils/chatText.js"
+import { isJokerNightChatEligible } from "../utils/selfAlive.js"
+import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitJokerChat } from "../socket/chat.js"
 
@@ -48,13 +45,11 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
       offDisconnect()
       invalidate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     invalidate()
     dispatch({ type: "GAME_CHANGED", gameId: externalGameId })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalGameId])
 
   // 조커 밤 채팅을 쓸 수 있을 때만 받기

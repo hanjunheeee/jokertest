@@ -1,11 +1,10 @@
 // 이미지 배경 입력 칸 (앞 아이콘·비밀번호 보기 버튼·날짜 칸 글자색)
-// auth 화면 입력 칸 전부와 user 계정 패널이 사용, 아이콘은 InputIcons.jsx 것을 예전 경로로 다시 내보냄
+// auth 화면 입력 칸 전부와 user 계정 패널이 사용
 import { useState } from "react"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { EyeIcon, EyeOffIcon } from "@/shared/ui/InputIcons.jsx"
 
-export { MailIcon, ProfileIcon, CalendarIcon, LockIcon } from "@/shared/ui/InputIcons.jsx"
 
 export const AUTH_DATE_INPUT_CLASS = "auth-date-input"
 

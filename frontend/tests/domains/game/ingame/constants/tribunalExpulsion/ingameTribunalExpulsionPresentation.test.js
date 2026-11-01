@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import {
   buildInGameTribunalExpulsionMessage,
   resolveInGameTribunalExpulsionNickname,
-} from "../../../../../../src/domains/game/ingame/constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
+} from "../../../../../../src/domains/game/ingame/constants/ingameTribunalExpulsionPresentation.js"
 
 test("resolveInGameTribunalExpulsionNickname: roster에서 닉네임을 찾는다", () => {
   const players = [

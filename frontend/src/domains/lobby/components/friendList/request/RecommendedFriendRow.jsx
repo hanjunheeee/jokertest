@@ -16,7 +16,6 @@ import { resolveAccountProfileAssets } from "../../../../../shared/utils/resolve
 import RecommendedFriendStatus from "./row/RecommendedFriendStatus.jsx"
 import RecommendedFriendActions from "./row/RecommendedFriendActions.jsx"
 
-export { STATUS_TEXT } from "../../../constants/recommendedFriend.js"
 
 // 프로필 사진·테두리 id를 실제 그림 경로로 바꿔 초상에 넘김
 export default function RecommendedFriendRow({

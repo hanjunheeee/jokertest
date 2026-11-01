@@ -31,6 +31,7 @@ export function refreshAccountCaches(scopes, { invalidate = false } = {}) {
             if (typeof run !== "function") continue
             Promise.resolve(run()).catch(() => {})
         } catch {
+            // 스토어 하나가 실패해도 다음 스토어 갱신은 계속함
         }
     }
 }

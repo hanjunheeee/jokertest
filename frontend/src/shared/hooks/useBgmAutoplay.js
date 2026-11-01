@@ -35,6 +35,7 @@ export function applyGlobalBgmToMedia(media, state = useSettingsStore.getState()
         media.volume = gain
         media.muted = !MUSIC_PLAYBACK_ENABLED || globalBgmUiMuted || gain <= 0
     } catch {
+        // 미디어 볼륨·음소거 반영 실패는 무시함
     }
 }
 

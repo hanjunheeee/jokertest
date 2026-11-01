@@ -29,8 +29,6 @@ export default function SkinCardWearOverlay({ open, onClose }) {
     selectedItemId,
     previewMode,
     preview,
-    draftSkinsByJob,
-    draftCardFrameId,
     selectItem,
     togglePreviewMode,
     resetDraft,

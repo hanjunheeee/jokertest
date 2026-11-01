@@ -3,7 +3,7 @@ import {
   INGAME_TIMEBAR_DAY_STATUS_MESSAGE,
   INGAME_TIMEBAR_TRIBUNAL_STATUS_MESSAGE,
 } from "../constants/timebar/ingameTimebarAssets.js"
-import { selectInGameNightTurnRole } from "./selectInGameNightTurnRole.js"
+import { selectInGameNightTurnRole } from "./nightTurn.js"
 
 export function selectInGameTimebarStatusMessage(state, nightTurnRemainingSec = null) {
   if (state === null || typeof state !== "object" || Array.isArray(state)) return null

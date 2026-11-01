@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { useInGameStore } from "../../../../../src/domains/game/ingame/store/ingameStore.js"
-import { selectInGameSelfAlive } from "../../../../../src/domains/game/ingame/utils/selectInGameSelfAlive.js"
+import { selectInGameSelfAlive } from "../../../../../src/domains/game/ingame/utils/selfAlive.js"
 
 const GAME_ID = "game-1"
 

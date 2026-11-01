@@ -9,15 +9,13 @@ import {
   subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
-import { createSessionEndFinalizer } from "../utils/createSessionEndFinalizer.js"
-import { createExitConfirmController } from "../utils/createExitConfirmController.js"
-import { isPopNavigationBlocked } from "../utils/isPopNavigationBlocked.js"
+import { createSessionEndFinalizer } from "../utils/sessionEnd.js"
+import { createExitConfirmController, isPopNavigationBlocked } from "../utils/exitConfirm.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import { EXIT_STATUS } from "../constants/ingameExit.js"
 import { sendLeave as sendLeaveNow } from "./exit/leave.js"
 import { lookupExitOutcome } from "./exit/outcome.js"
 
-export { EXIT_ACK_TIMEOUT_MS } from "../constants/ingameExit.js"
 
 export function useInGameExit() {
   const navigate = useNavigate()

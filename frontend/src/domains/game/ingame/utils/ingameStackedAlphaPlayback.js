@@ -1,7 +1,7 @@
 // 위아래로 쌓인 투명 영상 재생 도우미: 감시 타이머·프레임 반복 끄기, 한 장 합쳐 그리기, 소리 맞추기
 // 쌓인 투명 영상(InGameStackedAlphaVideo)·밤 성공 사망 영상 훅이 사용 (lifetime = 재생 한 번의 기록)
-import { composeStackedAlpha } from "./composeStackedAlpha.js"
 
+// 재생 감시 타이머 끄기
 export function cancelPlaybackWatchdog(lifetime) {
   if (!lifetime || lifetime.watchdogId === null || lifetime.watchdogId === undefined) return
   clearTimeout(lifetime.watchdogId)
@@ -18,6 +18,7 @@ export function cancelFrameLoop(lifetime, video) {
     try {
       video.cancelVideoFrameCallback(handle)
     } catch {
+      // 프레임 콜백 끄기 실패는 무시함 (이미 끝난 콜백일 수 있음)
     }
     return
   }
@@ -25,6 +26,7 @@ export function cancelFrameLoop(lifetime, video) {
     try {
       cancelAnimationFrame(handle)
     } catch {
+      // 애니메이션 프레임 끄기 실패는 무시함
     }
   }
 }
@@ -87,4 +89,26 @@ export function applyMixToVideo(video, mix, forceMuted) {
       return false
     }
   }
+}
+
+// 색 픽셀에 가림 픽셀 밝기 평균을 투명도로 넣어 한 장으로 합침
+export function composeStackedAlpha(colorPixels, maskPixels) {
+  if (colorPixels === null || maskPixels === null || colorPixels === undefined || maskPixels === undefined) {
+    throw new TypeError("composeStackedAlpha: colorPixels와 maskPixels는 모두 있어야 한다")
+  }
+  if (colorPixels.length !== maskPixels.length) {
+    throw new RangeError("composeStackedAlpha: colorPixels와 maskPixels의 길이가 같아야 한다")
+  }
+  if (colorPixels.length % 4 !== 0) {
+    throw new RangeError("composeStackedAlpha: 픽셀 배열 길이는 4(RGBA)의 배수여야 한다")
+  }
+
+  const result = new Uint8ClampedArray(colorPixels.length)
+  for (let i = 0; i < colorPixels.length; i += 4) {
+    result[i] = colorPixels[i]
+    result[i + 1] = colorPixels[i + 1]
+    result[i + 2] = colorPixels[i + 2]
+    result[i + 3] = Math.round((maskPixels[i] + maskPixels[i + 1] + maskPixels[i + 2]) / 3)
+  }
+  return result
 }

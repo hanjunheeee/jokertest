@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { parseNightTurnStartedPayload } from "../../../../../src/domains/game/ingame/utils/parseNightTurnStartedPayload.js"
+import { parseNightTurnStartedPayload } from "../../../../../src/domains/game/ingame/utils/nightTurn.js"
 
 const GAME_ID = "game-1"
 const DEADLINE = 1_700_000_030_000

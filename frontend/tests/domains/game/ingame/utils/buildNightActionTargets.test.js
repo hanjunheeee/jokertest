@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { buildNightActionTargets } from "../../../../../src/domains/game/ingame/utils/buildNightActionTargets.js"
-import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/ingame/constants/board/status/ingamePlayerStatus.js"
+import { buildNightActionTargets } from "../../../../../src/domains/game/ingame/utils/actionTargets.js"
+import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js"
 
 function makePlayers() {
   return [

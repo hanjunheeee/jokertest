@@ -9,7 +9,6 @@ import { requestActions } from "./friend/requestActions.js";
 import { lockActions } from "./friend/lockActions.js";
 import { initialState } from "./friend/state.js";
 
-export { emptyAcceptAllResult } from "./friend/state.js";
 
 export const useFriendStore = create((set, get) => ({
     ...initialState(),

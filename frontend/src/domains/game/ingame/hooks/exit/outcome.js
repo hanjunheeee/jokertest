@@ -34,7 +34,7 @@ export function lookupExitOutcome(ctx) {
 
   startPending(ctx, isThisAttempt)
 
-  let sent = false
+  let sent
   try {
     askSnapshot(socket, requestedGameId, (response) => {
       // 묻던 때와 판·계정·신원·소켓·소속·연결이 하나라도 다르면 버림

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { getInGameRoleRevealInfo } from "../../../../../src/domains/game/ingame/utils/getInGameRoleRevealInfo.js"
+import { getInGameRoleRevealInfo } from "../../../../../src/domains/game/ingame/utils/roleReveal.js"
 import { getDefaultSkinIdForJob, getSkinCardWearItemById } from "../../../../../src/domains/user/constants/skinCardWear/skinCardWearCatalog.js"
 
 const AUTH_UUID = "player-1"

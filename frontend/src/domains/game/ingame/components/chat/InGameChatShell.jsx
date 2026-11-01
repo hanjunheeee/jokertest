@@ -5,7 +5,7 @@ import {
 } from "../../constants/chat/ingameChatBoardLayout.js"
 import { useInGameChatSessionContext } from "./InGameChatSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
-import InGameChatCloseupOverlay from "./closeup/InGameChatCloseupOverlay.jsx"
+import InGameChatCloseupOverlay from "./InGameChatCloseupOverlay.jsx"
 import InGameChatContent from "./InGameChatContent.jsx"
 
 function selectTribunalPresentationOpen(state) {

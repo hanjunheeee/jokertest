@@ -1,6 +1,6 @@
 // 행동 패널 잠금·열림 계산 (상태를 안 건드리는 순수 계산)
 // 행동 패널(useInGameActionPanel)이 렌더마다 부름
-import { INGAME_DAY_PHASES } from "./resolveInGameDayPhase.js"
+import { INGAME_DAY_PHASES } from "./dayPhase.js"
 
 // 낮 투표·밤 행동·토론 준비·재판 투표·재판 판정 버튼의 잠금과 열림
 // connected: 지금 공용 소켓이 붙어 있는지 (재판 버튼만 봄)

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { parseNightTurnEndedPayload } from "../../../../../src/domains/game/ingame/utils/parseNightTurnEndedPayload.js"
+import { parseNightTurnEndedPayload } from "../../../../../src/domains/game/ingame/utils/nightTurn.js"
 
 const GAME_ID = "game-1"
 const canonical = { gameId: GAME_ID, dayIndex: 2, nightTurnRole: "DOCTOR" }

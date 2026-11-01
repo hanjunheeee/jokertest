@@ -10,7 +10,6 @@ import { lookupKickResult } from "./kick/lookupResult.js"
 
 export { KICK_EVENTS } from "../socket/kick.js"
 export { KICK_REQUEST_STATUS } from "../constants/ingameKick.js"
-export { captureVerificationGuard } from "./kick/guards.js"
 
 export function useKickPlayerRequest({
   scope,

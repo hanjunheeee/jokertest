@@ -1,5 +1,5 @@
 // 입력 칸 앞 아이콘과 비밀번호 보기 아이콘 SVG 모음
-// AuthInputSlot.jsx와 auth 입력 칸들이 사용 (AuthInputSlot.jsx가 예전 이름 그대로 다시 내보냄)
+// AuthInputSlot.jsx·auth 입력 칸들·계정 비밀번호 칸이 사용
 // 1파일 1컴포넌트 예외: 10줄짜리 아이콘을 하나씩 나누면 파일만 늘어서 한곳에 모음
 const ICON_CLASS = "h-[20px] w-[20px] shrink-0 text-neutral-600"
 

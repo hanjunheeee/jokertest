@@ -72,7 +72,7 @@ const { renderHook, act, waitFor } = await import("@testing-library/react")
 const { useNicknameForm } = await import("../../../../src/domains/user/hooks/useNicknameForm.js")
 const { useAuthStore } = await import("../../../../src/domains/auth/store/auth.store.js")
 const { useUserProfileStore } = await import("../../../../src/domains/user/store/user.store.js")
-const { useMyProfile } = await import("../../../../src/domains/user/hooks/useMyProfile.js")
+const { useMyProfile } = await import("../../../../src/shared/hooks/useMyProfile.js")
 
 const BASE_PROFILE_ROW = {
   nickname: "변경전닉",

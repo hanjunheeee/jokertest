@@ -1,7 +1,7 @@
 // 저장소에서 읽은 복원 결과로 설정 폼 첫 값·폼 초기화 키·안내 문구 정하기
 // hooks/useGameSetupPage가 씀
 import { NEXT_ROOM_SETTINGS_RESTORE_CODES as CODES, RESTORE_NOTICES } from "../constants/nextRoomSettings.js"
-import { buildRoomSettingsFormState } from "./roomSettingsForm.js"
+import { buildRoomSettingsFormState } from "./roomSettingsForm/formState.js"
 
 // read = readRestoreSource 결과, base = 계정·계정 세대로 만든 키 앞부분
 export function resolveRestore(read, base) {

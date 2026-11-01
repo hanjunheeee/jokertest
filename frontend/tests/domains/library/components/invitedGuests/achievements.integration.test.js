@@ -24,7 +24,7 @@ function assertWires(relativePath, patterns) {
 
 const { mergeInvitedGuestsSpreads } = await import("../../../../../src/domains/library/content/invitedGuests/mergeInvitedGuestsSpreads.js")
 const { INVITED_GUESTS_JOB_CHALLENGES } = await import("../../../../../src/domains/library/content/invitedGuests/jobChallenges.js")
-const { INVITED_GUESTS_JOB_SPREAD_META } = await import("../../../../../src/domains/library/content/invitedGuests/jobSpreadMeta.js")
+const { INVITED_GUESTS_JOB_SPREAD_META } = await import("../../../../../src/shared/constants/jobSpreadMeta.js")
 const { INVITED_GUESTS_JOB_CATALOG } = await import("../../../../../src/domains/library/content/invitedGuests/jobCatalog.js")
 const { FORBIDDEN_RECORDS_SPREAD_META } = await import("../../../../../src/domains/library/content/forbiddenRecords/spreadMeta.js")
 const { resolveForbiddenRecordChallengeState } = await import("../../../../../src/domains/library/content/forbiddenRecords/resolveForbiddenRecordChallengeState.js")

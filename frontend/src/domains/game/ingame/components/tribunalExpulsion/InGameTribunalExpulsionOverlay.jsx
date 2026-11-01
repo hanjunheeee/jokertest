@@ -9,7 +9,7 @@ import {
   VIDEO_CLASS,
   VIDEO_URL,
   VIDEO_WRAP_CLASS,
-} from "../../constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
+} from "../../constants/ingameTribunalExpulsionPresentation.js"
 
 export default function InGameTribunalExpulsionOverlay({
   open = false,

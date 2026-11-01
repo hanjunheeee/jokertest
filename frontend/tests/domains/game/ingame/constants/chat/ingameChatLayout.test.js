@@ -9,7 +9,7 @@ import {
   INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET,
   INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET,
   INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET,
-} from "../../../../../../src/domains/game/ingame/constants/chat/closeup/ingameChatCloseupLayout.js"
+} from "../../../../../../src/domains/game/ingame/constants/chat/ingameChatCloseupLayout.js"
 import {
   getInGameChatInputClass,
   getInGameChatInputPlaceholderClass,

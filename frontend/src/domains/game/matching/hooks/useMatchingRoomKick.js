@@ -5,7 +5,8 @@ import { useMatchingStore, selectRoomMembershipId } from "../store/matchingStore
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { askRoomCb } from "../socket/room.js"
-import { useKickPlayerRequest, captureVerificationGuard } from "../../ingame/hooks/useKickPlayerRequest.js"
+import { captureVerificationGuard } from "../../ingame/hooks/kick/guards.js"
+import { useKickPlayerRequest } from "../../ingame/hooks/useKickPlayerRequest.js"
 
 export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   const [modalOpen, setModalOpen] = useState(false)

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { computeResolveNightAckPatch } from "../../../../../src/domains/game/ingame/utils/computeResolveNightAckPatch.js"
+import { computeResolveNightAckPatch } from "../../../../../src/domains/game/ingame/utils/nightPatches.js"
 
 test("{ok:true}면 {status:'resolved', error:null}을 반환한다", () => {
   assert.deepEqual(computeResolveNightAckPatch({ ok: true }), { status: "resolved", error: null })

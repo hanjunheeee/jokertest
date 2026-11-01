@@ -1,4 +1,4 @@
-import { selectInGameNightTurnRole } from "./selectInGameNightTurnRole.js"
+import { selectInGameNightTurnRole } from "./nightTurn.js"
 
 export function selectInGameNightTurnDeadline(state) {
   if (selectInGameNightTurnRole(state) === null) return null

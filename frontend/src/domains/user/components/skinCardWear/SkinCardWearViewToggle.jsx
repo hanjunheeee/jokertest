@@ -1,6 +1,5 @@
 import { SKIN_CARD_WEAR_ASSETS } from "../../constants/skinCardWear/skinCardWearAssets.js"
 import {
-  SKIN_CARD_WEAR_PREVIEW_MODE_CARD,
   SKIN_CARD_WEAR_PREVIEW_MODE_SKIN,
   VIEW_TOGGLE_BTN_CLASS,
   VIEW_TOGGLE_IMG_CLASS,

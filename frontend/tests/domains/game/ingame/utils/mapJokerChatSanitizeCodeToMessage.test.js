@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { mapJokerChatSanitizeCodeToMessage } from "../../../../../src/domains/game/ingame/utils/mapJokerChatSanitizeCodeToMessage.js"
+import { mapJokerChatSanitizeCodeToMessage } from "../../../../../src/domains/game/ingame/utils/chatText.js"
 
 test("mapJokerChatSanitizeCodeToMessage: EMPTY_MESSAGE는 지정된 안내 문구를 반환한다", () => {
   assert.equal(mapJokerChatSanitizeCodeToMessage("EMPTY_MESSAGE"), "메시지를 입력해주세요.")

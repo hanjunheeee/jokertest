@@ -3,7 +3,7 @@
 import InGameParchmentModalBase from "../parchment/InGameParchmentModalBase.js"
 import InGameParchmentConfirmButton from "../parchment/InGameParchmentConfirmButton.js"
 import { buildPendingAssetLabel } from "../../constants/ingameNightSuccess.js"
-import { PRIVATE_RESULT_MSG_CLASS } from "../../constants/nightPrivateResult/ingameNightPrivateResult.js"
+import { PRIVATE_RESULT_MSG_CLASS } from "../../constants/ingameNightPrivateResult.js"
 
 export default function InGameNightSuccessPendingAsset({ type, eventId, onFinish }) {
   const label = buildPendingAssetLabel(type)

@@ -104,7 +104,7 @@ const { useMatchingRoom } = await import("../../../../../src/domains/game/matchi
 const { buildRoomSettingsFormState, buildUpdateRoomSettingsPayload } =
   await import("../../../../../src/domains/game/setup/utils/roomSettingsForm.js")
 const { SOCKET_EVENTS, ROOM_SETTINGS_ERROR_CODES, ROOM_SETTINGS_ERROR_MESSAGES } =
-  await import("../../../../../src/domains/game/setup/constants/gameSetupSocket.js")
+  await import("../../../../../src/domains/game/shared/constants/gameSetupSocket.js")
 
 const { default: matchmaking } = await import("../../../../../../backend/socket/matchmaking.js")
 const { default: gameSessionSocketLayer } = await import("../../../../../../backend/socket/gameSession.js")

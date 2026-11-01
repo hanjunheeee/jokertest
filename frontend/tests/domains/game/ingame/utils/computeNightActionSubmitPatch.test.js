@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { computeNightActionSubmitPatch } from "../../../../../src/domains/game/ingame/utils/computeNightActionSubmitPatch.js"
+import { computeNightActionSubmitPatch } from "../../../../../src/domains/game/ingame/utils/nightPatches.js"
 
 test("{ok:true}면 {status:'idle', error:null}을 반환한다", () => {
   assert.deepEqual(computeNightActionSubmitPatch({ ok: true }), { status: "idle", error: null })

@@ -19,7 +19,7 @@ import {
 import {
   buildInGameTribunalExpulsionMessage,
   resolveInGameTribunalExpulsionNickname,
-} from "../constants/tribunalExpulsion/ingameTribunalExpulsionPresentation.js"
+} from "../constants/ingameTribunalExpulsionPresentation.js"
 import { onConnect } from "../socket/connection.js"
 import { onTribunalResolved } from "../socket/tribunal.js"
 

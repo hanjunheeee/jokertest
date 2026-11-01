@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { getForbiddenRecordsPage } from "../../../../domains/library/content/forbiddenRecords/index.js"
+import { getForbiddenRecordsPage } from "../../content/forbiddenRecords/pages.js"
 import {
   STORY_BODY_TRANSITION,
   STORY_PARAGRAPH_STAGGER,

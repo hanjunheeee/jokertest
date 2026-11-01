@@ -34,6 +34,7 @@ export function usePublicRooms() {
       if (reqSocket !== getSocket()) return
       if (response?.ok && Array.isArray(response.rooms)) setRooms(response.rooms)
     } catch {
+      // 목록 묻기 실패·시간 초과는 무시함 (지금 목록을 그대로 둠)
     }
   }, [])
 

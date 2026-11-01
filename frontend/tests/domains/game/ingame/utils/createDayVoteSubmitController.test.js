@@ -2,7 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { createDayVoteSubmitController } from "../../../../../src/domains/game/ingame/utils/createDayVoteSubmitController.js"
-import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../../../../../src/domains/game/ingame/utils/computeDayVoteSubmitPatch.js"
+import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../../../../../src/domains/game/ingame/utils/voteSubmitPatch.js"
 
 function createDeferred() {
   let resolve

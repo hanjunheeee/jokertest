@@ -4,10 +4,8 @@ import { useMatchingStore, isCurrentRoomKickEvent } from "../../../matching/stor
 import { rememberRoomReady } from "../../../shared/utils/partyMatchingRejoin.js"
 import { isCurrentGameKickEvent, useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
-import { createGameEndedHandler } from "../../utils/createGameEndedHandler.js"
-import { createSessionEndFinalizer } from "../../utils/createSessionEndFinalizer.js"
-import { currentAccountId, refreshCaches } from "./scope.js"
-import { isRegistrationScopeCurrent } from "./scope.js"
+import { createGameEndedHandler, createSessionEndFinalizer } from "../../utils/sessionEnd.js"
+import { currentAccountId, refreshCaches, isRegistrationScopeCurrent } from "./scope.js"
 
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 

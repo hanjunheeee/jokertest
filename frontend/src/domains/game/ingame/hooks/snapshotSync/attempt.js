@@ -8,7 +8,7 @@ import {
   readInGameReceiptScope,
   useInGameStore,
 } from "../../store/ingameStore.js"
-import { isStaleSessionSnapshotAckResponse } from "../../utils/isStaleSessionSnapshotAckResponse.js"
+import { isStaleSessionSnapshotAckResponse } from "../../utils/staleAck.js"
 import { hasNightObservationChanged } from "../../utils/snapshot/nightObservation.js"
 import { getInGameSnapshotRebindPending, setIdentityRebindPending } from "./rebindPending.js"
 

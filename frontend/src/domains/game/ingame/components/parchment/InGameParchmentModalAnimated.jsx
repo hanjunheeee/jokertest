@@ -5,7 +5,7 @@ import { PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchme
 import { getMotionPreset } from "../../constants/parchment/ingameParchmentModalMotion.js"
 import { getInGameParchmentModalVariant } from "../../constants/parchment/ingameParchmentModalVariants.js"
 import InGameParchmentConfirmButton from "./InGameParchmentConfirmButton.js"
-import InGameParchmentPanel from "./InGameParchmentPanel.jsx"
+import InGameParchmentPanel from "./InGameParchmentPanelBase.js"
 
 function useParchmentModalEscape(onDismiss, open) {
   useEffect(() => {

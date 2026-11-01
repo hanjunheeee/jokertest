@@ -11,7 +11,7 @@ import {
   INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR,
   REVEAL_SKIP_BTN_CLASS,
   INGAME_KILL_REVEAL_SKIP_LABEL,
-} from "../../constants/killReveal/ingameKillReveal.js"
+} from "../../constants/ingameKillReveal.js"
 
 export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
   const {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
-import { getInGameRoleRevealInfo } from "../utils/getInGameRoleRevealInfo.js"
+import { getInGameRoleRevealInfo } from "../utils/roleReveal.js"
 import { useInGameRoleRevealAck } from "./useInGameRoleRevealAck.js"
 
 export function useInGameRoleReveal() {

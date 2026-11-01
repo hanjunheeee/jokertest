@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { sanitizeJokerChatText } from "../../../../../src/domains/game/ingame/utils/sanitizeJokerChatText.js"
+import { sanitizeJokerChatText } from "../../../../../src/domains/game/ingame/utils/chatText.js"
 
 test("sanitizeJokerChatText: 일반 텍스트는 그대로 통과한다", () => {
   assert.deepEqual(sanitizeJokerChatText("hello world"), { ok: true, text: "hello world" })

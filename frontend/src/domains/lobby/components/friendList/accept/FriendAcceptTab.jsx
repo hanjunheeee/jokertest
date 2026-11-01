@@ -10,7 +10,6 @@ import FriendAcceptAllStatus from "./status/FriendAcceptAllStatus.jsx"
 import FriendAcceptTargetMissingNotice from "./status/FriendAcceptTargetMissingNotice.jsx"
 import FriendAcceptRequestList from "./list/FriendAcceptRequestList.jsx"
 
-export { buildAcceptAllSummary } from "../../../utils/friend/acceptAllSummary.js"
 
 // 검색은 이 탭 안에서만 거름, 대상 신청 없음 안내는 목록을 제대로 받았을 때만 보임
 export default function FriendAcceptTab({

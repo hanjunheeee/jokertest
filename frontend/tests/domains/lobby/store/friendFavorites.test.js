@@ -22,8 +22,8 @@ mock.module("../../../../src/domains/lobby/api/friend.api.js", {
 
 const { useFriendStore } = await import("../../../../src/domains/lobby/store/friend.store.js")
 const { useAuthStore } = await import("../../../../src/domains/auth/store/auth.store.js")
-const { applyFriendFavoriteFlags } = await import("../../../../src/domains/lobby/utils/applyFriendFavoriteFlags.js")
-const { groupFriends } = await import("../../../../src/domains/lobby/utils/groupFriends.js")
+const { applyFriendFavoriteFlags } = await import("../../../../src/domains/lobby/utils/friendList.js")
+const { groupFriends } = await import("../../../../src/domains/lobby/utils/friendList.js")
 
 const FRIENDS = [
   { id: "f-1", name: "가면술사", online: true },

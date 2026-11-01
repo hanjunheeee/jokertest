@@ -101,7 +101,7 @@ const { useGameSessionSocketEvents } =
   await import("../../../../../src/domains/game/ingame/hooks/useGameSessionSocketEvents.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
 const { useNextRoomSettingsStore, nextRoomSettingsStorageKey } = await import("../../../../../src/domains/game/setup/store/nextRoomSettingsStore.js")
-const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/setup/constants/gameSetupSocket.js")
+const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/shared/constants/gameSetupSocket.js")
 
 const { default: matchmaking } = await import("../../../../../../backend/socket/matchmaking.js")
 const { default: gameSessionCore } = await import("../../../../../../backend/game-core/gameSession.js")

@@ -3,7 +3,7 @@
 import { useAuthStore } from "../../../../auth/store/auth.store.js"
 import { getIdentityScopeVersion, useInGameStore } from "../../store/ingameStore.js"
 import { getDayVoteRound } from "../../utils/dayVoteRound.js"
-import { selectInGameNightTurnRole } from "../../utils/selectInGameNightTurnRole.js"
+import { selectInGameNightTurnRole } from "../../utils/nightTurn.js"
 
 // 렌더 값이 아니라 스토어의 지금 값으로 읽음
 export function readMenuScope() {

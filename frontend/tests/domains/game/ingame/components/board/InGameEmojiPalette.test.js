@@ -77,7 +77,7 @@ const {
   INGAME_EMOJI_PALETTE_FRAME_WIDTH,
   INGAME_EMOJI_PALETTE_FRAME_HEIGHT,
 } = await import("../../../../../../src/domains/game/ingame/components/board/InGameEmojiPalette.jsx")
-const { INGAME_E2E_ATTRS } = await import("../../../../../../src/domains/game/ingame/constants/e2e/ingameE2eHooks.js")
+const { INGAME_E2E_ATTRS } = await import("../../../../../../src/domains/game/ingame/constants/ingameE2eHooks.js")
 
 const SELF = "uuid-self"
 const OTHER = "uuid-other"

@@ -76,7 +76,7 @@ const { InGameActionProvider } = await import("../../../../../../src/domains/gam
 const { InGamePlayerSessionProvider } = await import("../../../../../../src/domains/game/ingame/components/InGamePlayerSessionProvider.jsx")
 const { default: InGamePlayerBoard } = await import("../../../../../../src/domains/game/ingame/components/board/InGamePlayerBoard.jsx")
 const { INGAME_EMOJI_BUBBLE_ATTR } = await import("../../../../../../src/domains/game/ingame/components/board/InGameEmojiBubble.jsx")
-const { INGAME_E2E_ATTRS } = await import("../../../../../../src/domains/game/ingame/constants/e2e/ingameE2eHooks.js")
+const { INGAME_E2E_ATTRS } = await import("../../../../../../src/domains/game/ingame/constants/ingameE2eHooks.js")
 
 const SELF = "uuid-self"
 const OTHER = "uuid-other"

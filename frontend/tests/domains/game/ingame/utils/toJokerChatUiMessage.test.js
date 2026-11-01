@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { toJokerChatUiMessage } from "../../../../../src/domains/game/ingame/utils/toJokerChatUiMessage.js"
+import { toJokerChatUiMessage } from "../../../../../src/domains/game/ingame/utils/jokerChatReceive.js"
 
 const networkMessage = { id: "msg-1", senderUuid: "uuid-1", text: "hello", sentAt: 1000 }
 

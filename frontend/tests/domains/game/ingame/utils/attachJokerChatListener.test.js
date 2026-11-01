@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { attachJokerChatListener } from "../../../../../src/domains/game/ingame/utils/attachJokerChatListener.js"
+import { attachJokerChatListener } from "../../../../../src/domains/game/ingame/utils/jokerChatReceive.js"
 
 function createFakeSocket() {
   const listeners = new Map()

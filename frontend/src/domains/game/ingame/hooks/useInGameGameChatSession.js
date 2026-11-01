@@ -8,10 +8,9 @@ import { gameChatReducer, initialGameChatState, selectGameChatView } from "../ut
 import { attachGameChatListener } from "../utils/attachGameChatListener.js"
 import { INGAME_CHAT_CHANNELS } from "../utils/inGameChatChannel.js"
 import { selectOwnedGameChatContext } from "../utils/selectOwnedGameChatContext.js"
-import { sanitizeJokerChatText } from "../utils/sanitizeJokerChatText.js"
-import { mapJokerChatSanitizeCodeToMessage } from "../utils/mapJokerChatSanitizeCodeToMessage.js"
-import { toJokerChatUiMessage } from "../utils/toJokerChatUiMessage.js"
-import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+import { sanitizeJokerChatText, mapJokerChatSanitizeCodeToMessage } from "../utils/chatText.js"
+import { toJokerChatUiMessage } from "../utils/jokerChatReceive.js"
+import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitGameChat } from "../socket/chat.js"
 
@@ -68,18 +67,15 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
       offDisconnect()
       invalidate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     invalidate()
     dispatch({ type: "CONTEXT_CHANGED", gameId: ownedGameId, authUuid })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownedGameId, authUuid])
 
   useEffect(() => {
     invalidate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendChannel, viewChannel])
 
   useEffect(() => {

@@ -57,7 +57,7 @@ mock.module("../../../../src/domains/auth/store/auth.store.js", {
 
 const { renderHook, waitFor, act, cleanup } = await import("@testing-library/react")
 test.afterEach(() => cleanup())
-const { useMyProfile } = await import("../../../../src/domains/user/hooks/useMyProfile.js")
+const { useMyProfile } = await import("../../../../src/shared/hooks/useMyProfile.js")
 const { useUserProfileStore } = await import("../../../../src/domains/user/store/user.store.js")
 
 const createDeferred = () => {

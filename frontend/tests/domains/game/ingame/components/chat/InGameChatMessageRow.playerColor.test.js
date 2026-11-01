@@ -5,7 +5,7 @@ import {
   INGAME_PLAYER_THEME_PALETTE,
   INGAME_PLAYER_THEME_PALETTE_SIZE,
   resolveInGamePlayerThemeByColorIndex,
-} from "../../../../../../src/domains/game/ingame/constants/ingamePlayerTheme.js"
+} from "../../../../../../src/shared/constants/ingamePlayerTheme.js"
 import { resolveInGameChatPlayerColor } from "../../../../../../src/domains/game/ingame/components/chat/resolveInGameChatPlayerColor.js"
 import { useSettingsStore } from "../../../../../../src/domains/settings/store/settingsStore.js"
 

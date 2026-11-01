@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { SETTING_TABS } from "../../../../src/domains/settings/constants/settingTabs.js"
-import { SOUND_SETTING_VOLUMES } from "../../../../src/domains/settings/constants/soundSettings.js"
+import { SOUND_SETTING_VOLUMES } from "../../../../src/shared/constants/soundSettings.js"
 
 test("설정 탭은 일반·사운드 두 개다", () => {
   assert.equal(SETTING_TABS.length, 2)

@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { selectJokerChatView } from "../../../../../src/domains/game/ingame/utils/selectJokerChatView.js"
+import { selectJokerChatView } from "../../../../../src/domains/game/ingame/utils/jokerChatReducer.js"
 
 test("selectJokerChatView: state.gameId === currentGameId면 state의 값을 그대로 반환한다", () => {
   const state = { gameId: "game-1", draft: "hi", messages: [{ id: "m1" }], status: "sending", error: "e" }

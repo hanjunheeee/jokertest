@@ -1,4 +1,5 @@
-import AuthInputSlot, { LockIcon } from "@/shared/ui/AuthInputSlot.jsx"
+import { LockIcon } from "@/shared/ui/InputIcons.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import {
   DIVIDER_SECTION_CLASS,
   PANEL_FORM_CLASS,

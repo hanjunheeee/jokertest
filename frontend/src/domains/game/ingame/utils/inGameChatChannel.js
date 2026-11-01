@@ -1,4 +1,4 @@
-import { selectInGameSelfAlive } from "./selectInGameSelfAlive.js"
+import { selectInGameSelfAlive } from "./selfAlive.js"
 
 export const INGAME_CHAT_CHANNELS = Object.freeze({
   DAY: "DAY",

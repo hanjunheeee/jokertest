@@ -1,6 +1,6 @@
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { isJokerNightChatEligible } from "../utils/isJokerNightChatEligible.js"
+import { isJokerNightChatEligible } from "../utils/selfAlive.js"
 import { useInGameGameChatSession } from "./useInGameGameChatSession.js"
 import { useInGameJokerChatSession } from "./useInGameJokerChatSession.js"
 

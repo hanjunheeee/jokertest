@@ -1,9 +1,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { buildNightActionTargets } from "../../../../../src/domains/game/ingame/utils/buildNightActionTargets.js"
-import { buildDayVoteTargets } from "../../../../../src/domains/game/ingame/utils/buildDayVoteTargets.js"
+import { buildNightActionTargets } from "../../../../../src/domains/game/ingame/utils/actionTargets.js"
+import { buildDayVoteTargets } from "../../../../../src/domains/game/ingame/utils/actionTargets.js"
 import { parseDayVoteResolvedPayload, computeDayVoteResolveAckPatch } from "../../../../../src/domains/game/ingame/hooks/useInGameActionPanel.js"
-import { bootstrapSessionSnapshotPure } from "../../../../../src/domains/game/ingame/store/applySessionSnapshot.js"
+import { bootstrapSessionSnapshotPure } from "../../../../../src/domains/game/ingame/utils/snapshot/applySnapshot.js"
 import { useInGameStore } from "../../../../../src/domains/game/ingame/store/ingameStore.js"
 import { getPlayerDisplayName } from "../../../../../src/domains/game/ingame/utils/getPlayerDisplayName.js"
 

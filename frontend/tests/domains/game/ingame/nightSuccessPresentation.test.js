@@ -177,7 +177,7 @@ const { useGameSessionSocketEvents } = await import("../../../../src/domains/gam
 const { useInGameNightSuccessPresentation } = await import("../../../../src/domains/game/ingame/hooks/useInGameNightSuccessPresentation.js")
 const { default: InGameNightSuccessPresentation } = await import("../../../../src/domains/game/ingame/components/InGameNightSuccessPresentation.jsx")
 const { resolveNightSuccessVideo } = await import("../../../../src/domains/game/ingame/utils/resolveNightSuccessVideo.js")
-const { composeStackedAlpha } = await import("../../../../src/domains/game/ingame/utils/composeStackedAlpha.js")
+const { composeStackedAlpha } = await import("../../../../src/domains/game/ingame/utils/ingameStackedAlphaPlayback.js")
 const { SFX_MANIFEST } = await import("../../../../src/shared/audio/sfxManifest.js")
 
 const NIGHT_SUCCESS_VIDEO = SFX_MANIFEST["night-success-video"].embeddedVideos

@@ -4,7 +4,8 @@ import { useCallback, useMemo } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { useKickPlayerRequest, captureVerificationGuard } from "./useKickPlayerRequest.js"
+import { captureVerificationGuard } from "./kick/guards.js"
+import { useKickPlayerRequest } from "./useKickPlayerRequest.js"
 import { askSnapshot } from "../socket/session.js"
 
 export function useInGameKickFromCard() {

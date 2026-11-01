@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import {
   computeTribunalVoteAckPatch,
   INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE,
-} from "../../../../../src/domains/game/ingame/utils/computeTribunalVoteSubmitPatch.js"
+} from "../../../../../src/domains/game/ingame/utils/voteSubmitPatch.js"
 
 test("computeTribunalVoteAckPatch: valid success ack returns submitted state", () => {
   const patch = computeTribunalVoteAckPatch({

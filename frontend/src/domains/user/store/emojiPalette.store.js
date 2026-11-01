@@ -12,7 +12,6 @@ import { createInitialState } from "./emojiPalette/state.js"
 import { editActions } from "./emojiPalette/editActions.js"
 import { gameActions } from "./emojiPalette/gameActions.js"
 
-export { EMOJI_PALETTE_SLOT_COUNT } from "../constants/emoticonPaletteSlots.js"
 
 export const useEmojiPaletteStore = create((set, get) => ({
   ...createInitialState(),

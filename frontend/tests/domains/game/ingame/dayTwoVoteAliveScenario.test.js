@@ -21,7 +21,7 @@ const { setSocket } = await import("../../../../src/shared/socket/socketClient.j
 const { buildPlayerSessionSourceFromGameState } = await import("../../../../src/domains/game/ingame/utils/buildPlayerSessionSourceFromGameState.js")
 const { buildInGamePreviewPlayers } = await import("../../../../src/domains/game/ingame/utils/buildInGamePreviewPlayers.js")
 const { mergeSourcePlayerWithPreview } = await import("../../../../src/domains/game/ingame/utils/mergeSourcePlayerWithPreview.js")
-const { selectInGameSelfAlive } = await import("../../../../src/domains/game/ingame/utils/selectInGameSelfAlive.js")
+const { selectInGameSelfAlive } = await import("../../../../src/domains/game/ingame/utils/selfAlive.js")
 const { INGAME_PREVIEW_PLAYER_COUNT } = await import("../../../../src/domains/game/ingame/constants/board/ingamePlayerBoard.js")
 
 const GAME_ID = "game-1"

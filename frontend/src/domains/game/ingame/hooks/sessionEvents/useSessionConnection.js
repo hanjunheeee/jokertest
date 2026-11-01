@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
 import { noteConnectionRebound, useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
-import { createSelfDisconnectHandler } from "../../utils/createSelfDisconnectHandler.js"
+import { createSelfDisconnectHandler } from "../../utils/sessionEnd.js"
 import { onConnect, onDisconnect } from "../../socket/connection.js"
 import { buildFinalizer } from "./roomHandlers.js"
 

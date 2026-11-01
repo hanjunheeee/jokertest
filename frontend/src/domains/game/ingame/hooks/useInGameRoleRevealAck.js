@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
-import { computeRoleRevealInvalidatePatch } from "../utils/computeRoleRevealInvalidatePatch.js"
+import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
+import { computeRoleRevealInvalidatePatch } from "../utils/roleReveal.js"
 import { onConnect, onDisconnect } from "../socket/connection.js"
 import { emitRoleRevealAck } from "../socket/session.js"
 

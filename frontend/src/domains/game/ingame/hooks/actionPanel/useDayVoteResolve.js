@@ -53,13 +53,11 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
       off()
       invalidate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   // 판·날짜·회차가 바뀌면 무효화
   useEffect(() => {
     invalidate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, dayIndex, dayVoteRound])
 
   // 다른 사람이 판정해도 방송으로 결과를 받음 (그 회차 것만)
@@ -77,7 +75,6 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
       setResolution({ outcome: parsed.outcome, tribunalTargetUuid: parsed.tribunalTargetUuid })
     }
     return onDayVoteResolved(socket, handleDayVoteResolved)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId, dayIndex, dayVoteRound])
 
   const controlsEnabled = open && status === "idle"

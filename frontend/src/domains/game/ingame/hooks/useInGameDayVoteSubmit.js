@@ -6,7 +6,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { createDayVoteSubmitController } from "../utils/createDayVoteSubmitController.js"
-import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/computeDayVoteSubmitPatch.js"
+import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/voteSubmitPatch.js"
 import { getDayVoteRound } from "../utils/dayVoteRound.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitDayVote } from "../socket/day.js"
@@ -77,12 +77,10 @@ export function useInGameDayVoteSubmit() {
       controller.dispose()
       controllerRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     controllerRef.current?.invalidate("CONTEXT_CHANGE")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, phase, dayIndex, dayVoteRound])
 
   useEffect(() => {

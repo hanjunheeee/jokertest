@@ -42,7 +42,7 @@ mock.module("../../../../../src/domains/user/api/user.api.js", {
 const { renderHook } = await import("@testing-library/react")
 const { useUserProfileStore } = await import("../../../../../src/domains/user/store/user.store.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
-const { useMyProfile } = await import("../../../../../src/domains/user/hooks/useMyProfile.js")
+const { useMyProfile } = await import("../../../../../src/shared/hooks/useMyProfile.js")
 const { refreshAccountCaches, registerAccountCacheStores, clearAccountCacheStores } =
   await import("../../../../../src/domains/user/utils/accountCacheRefresh.js")
 

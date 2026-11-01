@@ -1,6 +1,6 @@
 import { motion } from "framer-motion"
 import { FATE_MASK_DESCRIPTION, MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
-import FateMaskDescription from "./FateMaskFooter/FateMaskDescription.jsx"
+import FateMaskDescription from "./FateMaskDescription.jsx"
 import {
   FATE_MASK_FOOTER_CLASS,
   FATE_MASK_FRAME_IMG_CLASS,

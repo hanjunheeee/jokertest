@@ -91,7 +91,7 @@ const {
   INGAME_CARD_MENU_DAY_VOTE_LABEL,
   INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL,
 } = await import("../../../../../../src/domains/game/ingame/hooks/useInGamePlayerCardMenu.js")
-const { INGAME_E2E_ATTRS } = await import("../../../../../../src/domains/game/ingame/constants/e2e/ingameE2eHooks.js")
+const { INGAME_E2E_ATTRS } = await import("../../../../../../src/domains/game/ingame/constants/ingameE2eHooks.js")
 
 const GAME_ID = "cm-v1-board"
 const SELF_UUID = "u1"

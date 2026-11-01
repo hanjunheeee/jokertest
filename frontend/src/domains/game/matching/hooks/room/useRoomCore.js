@@ -115,7 +115,6 @@ export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
       mountedRef.current = false
       clearStart()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {

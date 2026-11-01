@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import {
   computeDayVoteSubmitPatch,
   INITIAL_DAY_VOTE_SUBMIT_STATE,
-} from "../../../../../src/domains/game/ingame/utils/computeDayVoteSubmitPatch.js"
+} from "../../../../../src/domains/game/ingame/utils/voteSubmitPatch.js"
 
 test("INITIAL_DAY_VOTE_SUBMIT_STATE: hasSubmitted가 false다(초기/리셋 상태에서는 표시 조건이 false)", () => {
   assert.deepEqual(INITIAL_DAY_VOTE_SUBMIT_STATE, {

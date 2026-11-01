@@ -1,5 +1,5 @@
 // 토스 결제 SDK 불러오기와 테스트 결제창 열기
-// 충전 시작 흐름이 씀 (currencyPurchase.store.js가 같은 이름으로 다시 내보냄)
+// 충전 시작 흐름이 씀
 // 테스트 키 검사는 원래 currencyPurchase.store.js 내용 그대로 옮김 (바꾸지 않음)
 import { CLIENT_KEY, SDK_URL } from "../constants/currencyPurchase.js"
 

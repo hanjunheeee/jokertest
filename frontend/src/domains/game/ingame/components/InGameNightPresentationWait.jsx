@@ -1,5 +1,5 @@
 import InGameParchmentPanelBase from "./parchment/InGameParchmentPanelBase.js"
-import { PRIVATE_RESULT_MSG_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
+import { PRIVATE_RESULT_MSG_CLASS } from "../constants/ingameNightPrivateResult.js"
 
 export const INGAME_NIGHT_PRESENTATION_WAIT_MESSAGE = "진행을 기다리는 중입니다."
 

@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { isInGameNightTurnActor } from "../../../../../src/domains/game/ingame/utils/isInGameNightTurnActor.js"
-import { getInGameNightTurnRoleLabel } from "../../../../../src/domains/game/ingame/utils/getInGameNightTurnRoleLabel.js"
+import { isInGameNightTurnActor } from "../../../../../src/domains/game/ingame/utils/nightTurn.js"
+import { getInGameNightTurnRoleLabel } from "../../../../../src/domains/game/ingame/utils/nightTurn.js"
 import { INGAME_NIGHT_TURN_ANNOUNCEMENTS } from "../../../../../src/domains/game/ingame/constants/nightTurn/ingameNightTurnAnnouncement.js"
 
 test("isInGameNightTurnActor: 현재 턴 역할과 내 직업이 같으면 true다(행동 패널 활성 조건)", () => {

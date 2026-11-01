@@ -13,7 +13,7 @@ function emitWithAck(socket, event, payload, timeoutMs) {
                 clearTimeout(timer);
                 finish(ack ?? { ok: false, code: "UNKNOWN", unknown: true });
             });
-        } catch (error) {
+        } catch {
             clearTimeout(timer);
             finish({ ok: false, code: "EMIT_FAILED", unknown: true });
         }

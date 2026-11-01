@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { resolveInGameRoleRevealAllies } from "../../../../../src/domains/game/ingame/utils/resolveInGameRoleRevealAllies.js"
+import { resolveInGameRoleRevealAllies } from "../../../../../src/domains/game/ingame/utils/roleReveal.js"
 
 const PLAYERS = [
   { uuid: "p1", nickname: "Alice" },

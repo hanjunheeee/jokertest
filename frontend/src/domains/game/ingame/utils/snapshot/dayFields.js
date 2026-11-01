@@ -2,7 +2,7 @@
 // 필드가 없으면 null, 모양이 틀리면 BAD (utils/snapshot/applySnapshot.js가 사용)
 import { DAY_VOTE_OUTCOMES, TRIBUNAL_OUTCOMES } from "../../constants/store/sessionSnapshot.js"
 import { parseDayVoteRoundFields } from "../dayVoteRound.js"
-import { normalizeInGameNightDeathReveals } from "../normalizeInGameNightDeathReveals.js"
+import { normalizeInGameNightDeathReveals } from "../nightDeathReveals.js"
 import { BAD, isNonEmptyString, isNonNegativeInteger, isPlainObject } from "./checks.js"
 
 // 밤 결과: 그날 것, 죽은 사람은 명단 안 (사망 공개 목록은 명단 안 사람만 남김)

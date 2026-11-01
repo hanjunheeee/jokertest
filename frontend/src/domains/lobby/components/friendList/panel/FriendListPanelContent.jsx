@@ -6,7 +6,7 @@ import FriendListTabContent from "../list/FriendListTabContent.jsx"
 import FriendListViewTabs from "../FriendListViewTabs.jsx"
 import FriendRequestTab from "../request/FriendRequestTab.jsx"
 import GameInviteTab from "../invite/GameInviteTab.jsx"
-import InviteSfxDiagnosticsPanel from "../diagnostics/InviteSfxDiagnosticsPanel.jsx"
+import InviteSfxDiagnosticsPanel from "../InviteSfxDiagnosticsPanel.jsx"
 
 // 탭마다 필요한 값만 넘김, 상태·처리는 FriendListPanel이 가짐
 export default function FriendListPanelContent({

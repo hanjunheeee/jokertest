@@ -2,7 +2,7 @@ import { useRef } from "react"
 import {
   CONFIRM_LABEL,
   PRIVATE_RESULT_MSG_CLASS,
-} from "../../constants/nightPrivateResult/ingameNightPrivateResult.js"
+} from "../../constants/ingameNightPrivateResult.js"
 import InGameParchmentModalBase from "../parchment/InGameParchmentModalBase.js"
 
 export default function InGameNightPrivateResultOverlay({ open, kind, label, onConfirm }) {

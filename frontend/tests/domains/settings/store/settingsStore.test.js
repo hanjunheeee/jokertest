@@ -34,7 +34,7 @@ const {
 const { INGAME_SETTING_CHAT_SLIDER, INGAME_SETTING_CHAT_CHECKBOXES } = await import(
   "../../../../src/domains/game/ingame/constants/controls/ingameSetting/ingameSettingData.js"
 )
-const { SOUND_SETTING_VOLUMES } = await import("../../../../src/domains/settings/constants/soundSettings.js")
+const { SOUND_SETTING_VOLUMES } = await import("../../../../src/shared/constants/soundSettings.js")
 const { GENERAL_SETTING_CHECKBOXES, GENERAL_SETTING_TEXT_SIZE } = await import(
   "../../../../src/domains/settings/constants/generalSettings.js"
 )

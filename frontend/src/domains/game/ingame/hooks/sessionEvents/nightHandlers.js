@@ -3,11 +3,9 @@
 import { useInGameStore } from "../../store/ingameStore.js"
 import { parseNightResultAppliedPayload } from "../../utils/parseNightResultAppliedPayload.js"
 import { parseInGameNightPrivateResultPayload } from "../../utils/reduceInGameNightPrivateResult.js"
-import { selectInGameSelfAlive } from "../../utils/selectInGameSelfAlive.js"
-import { parseNightTurnStartedPayload } from "../../utils/parseNightTurnStartedPayload.js"
-import { parseNightTurnEndedPayload } from "../../utils/parseNightTurnEndedPayload.js"
-import { currentAccountId } from "./scope.js"
-import { currentReceiptScope, isRegistrationScopeCurrent } from "./scope.js"
+import { selectInGameSelfAlive } from "../../utils/selfAlive.js"
+import { parseNightTurnStartedPayload, parseNightTurnEndedPayload } from "../../utils/nightTurn.js"
+import { currentAccountId, currentReceiptScope, isRegistrationScopeCurrent } from "./scope.js"
 import { originOf, playGameSfx, playResultSfxIfEnded } from "./sfx.js"
 
 // registered: 구독을 붙인 때의 수신 범위 (그 뒤 범위가 바뀌면 사건을 버림)

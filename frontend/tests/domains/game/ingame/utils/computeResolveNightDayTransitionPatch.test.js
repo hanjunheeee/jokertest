@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { computeResolveNightDayTransitionPatch } from "../../../../../src/domains/game/ingame/utils/computeResolveNightDayTransitionPatch.js"
-import { computeResolveNightInvalidatePatch } from "../../../../../src/domains/game/ingame/utils/computeResolveNightInvalidatePatch.js"
+import { computeResolveNightDayTransitionPatch } from "../../../../../src/domains/game/ingame/utils/nightPatches.js"
+import { computeResolveNightInvalidatePatch } from "../../../../../src/domains/game/ingame/utils/nightPatches.js"
 
 test("mounted면 status/error만 초기화한다", () => {
   assert.deepEqual(computeResolveNightDayTransitionPatch(true), { status: "idle", error: null })

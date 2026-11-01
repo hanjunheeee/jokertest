@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createGameEndedHandler } from "../../../../../src/domains/game/ingame/utils/createGameEndedHandler.js"
+import { createGameEndedHandler } from "../../../../../src/domains/game/ingame/utils/sessionEnd.js"
 
 function recorder() {
   const calls = []

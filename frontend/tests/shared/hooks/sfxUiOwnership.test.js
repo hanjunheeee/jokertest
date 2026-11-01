@@ -27,7 +27,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 const { renderHook } = await import("@testing-library/react")
 const { useSfxRuntime, dispatchUiSfx, __setSfxPlayerForTests } = await import("../../../src/shared/hooks/useSfxRuntime.js")
 const { createExitConfirmController } = await import(
-  "../../../src/domains/game/ingame/utils/createExitConfirmController.js"
+  "../../../src/domains/game/ingame/utils/exitConfirm.js"
 )
 
 function recordingPlayer() {

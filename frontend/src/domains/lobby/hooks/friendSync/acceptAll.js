@@ -1,8 +1,9 @@
 // 받은 친구 신청 전부 수락 (잠금 → 모두 요청 → 실패분 결과 확인 → 목록 다시 받기 → 결과 기록)
 // useFriendListSync의 전부 수락 버튼 처리가 씀
 import { acceptFriendRequest, fetchFriendRequestResults } from "../../api/friend.api.js"
-import { emptyAcceptAllResult, useFriendStore } from "../../store/friend.store.js"
-import { classifyAcceptResults } from "../../utils/friend/classifyAcceptResults.js"
+import { emptyAcceptAllResult } from "../../store/friend/state.js"
+import { useFriendStore } from "../../store/friend.store.js"
+import { classifyAcceptResults } from "../../utils/friend/acceptAll.js"
 import { isSameAccount } from "./requestOps.js"
 
 // 단계마다 계정이 바뀌었는지 보고, 바뀌었으면 결과를 남기지 않고 잠금만 풂

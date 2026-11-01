@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { shouldApplyNightBroadcastPayload } from "../../../../../src/domains/game/ingame/utils/shouldApplyNightBroadcastPayload.js"
+import { shouldApplyNightBroadcastPayload } from "../../../../../src/domains/game/ingame/utils/nightPatches.js"
 
 test("payload.gameId가 활성 gameId와 일치하면 true를 반환한다", () => {
   assert.equal(

@@ -10,10 +10,6 @@ import GameInviteToolbar from "./GameInviteToolbar.jsx"
 import GameInviteTargetMissingNotice from "./GameInviteTargetMissingNotice.jsx"
 import GameInviteList from "./list/GameInviteList.jsx"
 
-// 바깥에서 쓰던 이름 그대로 다시 내보냄
-export { ENDED_REASON_TEXT } from "../../../constants/gameInvite.js"
-export { describeState as describeInviteState } from "../../../utils/gameInvite/inviteState.js"
-
 // 대상 초대 없음 안내는 목록을 제대로 받았을 때만 보임
 export default function GameInviteTab({
   onBack,

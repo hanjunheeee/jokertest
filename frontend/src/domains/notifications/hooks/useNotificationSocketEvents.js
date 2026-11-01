@@ -8,7 +8,7 @@ import { subscribeNotifications } from "../socket/notifications.socket.js"
 import { createLiveHandler } from "./notificationSocket/liveNotification.js"
 import { createReadySync } from "./notificationSocket/readySync.js"
 
-export { READY_ACK_TIMEOUT_MS, READY_MAX_ATTEMPTS } from "../constants/notificationReady.js"
+export { READY_MAX_ATTEMPTS } from "../constants/notificationReady.js"
 export { __setNotificationTimersForTests } from "./notificationSocket/timers.js"
 
 // 로그인 계정이 있고 소켓이 있을 때만 받기 시작함

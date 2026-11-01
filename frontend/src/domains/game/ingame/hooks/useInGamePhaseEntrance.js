@@ -4,11 +4,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
-import { getEntranceMsg } from "../constants/phaseEntrance/ingamePhaseEntrance.js"
-import {
-  buildInGamePhaseEntranceIdentity,
-  buildEntranceScope,
-} from "../utils/buildInGamePhaseEntranceIdentity.js"
+import { getEntranceMsg } from "../constants/ingamePhaseEntrance.js"
+import { buildInGamePhaseEntranceIdentity, buildEntranceScope } from "../utils/overlayIdentity.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
 import {
   confirmPhaseEntrance,

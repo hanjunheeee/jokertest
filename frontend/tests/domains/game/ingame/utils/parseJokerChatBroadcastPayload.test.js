@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { parseJokerChatBroadcastPayload } from "../../../../../src/domains/game/ingame/utils/parseJokerChatBroadcastPayload.js"
+import { parseJokerChatBroadcastPayload } from "../../../../../src/domains/game/ingame/utils/jokerChatReceive.js"
 
 function validPayload(overrides = {}) {
   return {

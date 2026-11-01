@@ -53,7 +53,7 @@ export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
     for (const changedSlot of changedSlots) {
       if (isStale()) return finish({ ok: false, stale: true })
       try {
-        // eslint-disable-next-line no-await-in-loop -- 슬롯별 장착은 각각 독립적인 서버
+        // 슬롯별 장착은 각각 독립적인 서버 요청이라 하나씩 차례로 보냄
         await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
       } catch (error) {
         if (isStale()) return finish({ ok: false, stale: true })

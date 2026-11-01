@@ -66,7 +66,7 @@ const { MemoryRouter, Route, Routes, useLocation } = await import("react-router-
 
 const { default: LobbyPage } = await import("../../../src/domains/lobby/pages/LobbyPage.jsx")
 const { LOBBY_MENU_ITEMS } = await import("../../../src/domains/lobby/constants/lobbyMenu.js")
-const { LOBBY_ASSETS, LOBBY_MENU_BUTTONS } = await import("../../../src/domains/lobby/constants/lobbyAssets.js")
+const { LOBBY_ASSETS, LOBBY_MENU_BUTTONS } = await import("../../../src/shared/constants/lobbyAssets.js")
 const { LOBBY_INTRO_SESSION_KEY } = await import("../../../src/domains/lobby/constants/lobbyIntro.js")
 const { useAuthStore } = await import("../../../src/domains/auth/store/auth.store.js")
 const { useEconomyStore } = await import("../../../src/domains/economy/store/economy.store.js")

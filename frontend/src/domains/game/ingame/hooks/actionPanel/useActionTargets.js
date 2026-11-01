@@ -3,9 +3,8 @@
 import { useMemo } from "react"
 import { isSelfTargetAllowedForNightAction } from "../../constants/actions/ingameActionPanel.js"
 import { useInGamePlayerSessionContext } from "../../components/InGamePlayerSessionContext.js"
-import { buildNightActionTargets } from "../../utils/buildNightActionTargets.js"
-import { buildDayVoteTargets } from "../../utils/buildDayVoteTargets.js"
-import { resolveInGameSelfAliveForControls } from "../../utils/selectInGameSelfAlive.js"
+import { buildNightActionTargets, buildDayVoteTargets } from "../../utils/actionTargets.js"
+import { resolveInGameSelfAliveForControls } from "../../utils/selfAlive.js"
 
 export function useActionTargets(gameState) {
   const myRole = gameState?.self?.role

@@ -8,6 +8,7 @@ function holdOnCurrentFrame(video) {
   try {
     video.pause()
   } catch {
+    // 멈춤 실패는 무시함 (지금 프레임에 멈추는 게 목적)
   }
 }
 

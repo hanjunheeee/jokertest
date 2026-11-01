@@ -48,7 +48,7 @@ const { default: GameSetupPanel } = await import("../../../../../src/domains/gam
 const { default: RoomListRow } = await import("../../../../../src/domains/game/mode/components/roomList/RoomListRow.jsx")
 const { buildRoomSettingsFormState, buildUpdateRoomSettingsPayload } =
   await import("../../../../../src/domains/game/setup/utils/roomSettingsForm.js")
-const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/setup/constants/gameSetupSocket.js")
+const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/shared/constants/gameSetupSocket.js")
 const { setSocket } = await import("../../../../../src/shared/socket/socketClient.js")
 const { useMatchingStore } = await import("../../../../../src/domains/game/matching/store/matchingStore.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")

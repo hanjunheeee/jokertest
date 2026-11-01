@@ -1,7 +1,7 @@
 // 대기방 설정 편집 패널 열기·닫기·저장
 // useMatchingPage가 씀, 방장이고 방 확인이 끝났고 결과 확인 대기가 없을 때만 열림
 import { useEffect, useMemo, useState } from "react"
-import { buildRoomSettingsFormState } from "@/domains/game/setup/utils/roomSettingsForm.js"
+import { buildRoomSettingsFormState } from "@/domains/game/setup/utils/roomSettingsForm/formState.js"
 
 export function useSettingsEdit({
   isInRoom, isHost, isRoomVerified, roomId, accessType, settings, settingsVersion,

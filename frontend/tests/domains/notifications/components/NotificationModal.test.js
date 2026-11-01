@@ -48,7 +48,7 @@ const { useSettingsStore, buildDefaultGeneralChecks } = await import(
   "../../../../src/domains/settings/store/settingsStore.js"
 )
 const { buildNotificationTargetPath, notificationTargetLabel } = await import(
-  "../../../../src/domains/notifications/constants/notificationTargets.js"
+  "../../../../src/shared/constants/notificationTargets.js"
 )
 const { resolveAchievementLocation, ACHIEVEMENT_LOCATION_IDS } = await import(
   "../../../../src/domains/library/content/achievementLocation.js"

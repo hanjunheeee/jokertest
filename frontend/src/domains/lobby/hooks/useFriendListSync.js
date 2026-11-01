@@ -2,12 +2,10 @@
 // FriendListPanel·시험이 이 경로로 씀
 import { useCallback, useEffect } from "react"
 import { useFriendStore } from "../store/friend.store.js"
-import { applyFriendFavoriteFlags } from "../utils/applyFriendFavoriteFlags.js"
-import { groupFriends } from "../utils/groupFriends.js"
+import { applyFriendFavoriteFlags, groupFriends } from "../utils/friendList.js"
 import { makeRequestHandlers } from "./friendSync/requestOps.js"
 import { runAcceptAll } from "./friendSync/acceptAll.js"
 
-export { classifyAcceptResults } from "../utils/friend/classifyAcceptResults.js"
 
 // 패널이 열릴 때마다 친구·받은 신청·즐겨찾기를 새로 받음
 export function useFriendListSync(friendListOpen) {

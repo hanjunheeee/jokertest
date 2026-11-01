@@ -7,7 +7,7 @@ import InGameNightSuccessPendingAsset from "./nightSuccess/InGameNightSuccessPen
 import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
 import { buildFinalStatusLabel } from "../constants/ingameNightSuccess.js"
-import { PRIVATE_RESULT_MSG_CLASS } from "../constants/nightPrivateResult/ingameNightPrivateResult.js"
+import { PRIVATE_RESULT_MSG_CLASS } from "../constants/ingameNightPrivateResult.js"
 
 export default function InGameNightSuccessPresentation({
   current: currentProp,

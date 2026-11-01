@@ -57,7 +57,7 @@ export function sendLeave(ctx) {
     && ctx.requestTokenRef.current === requestToken
     && isRequestScopeCurrent(requestScope))
 
-  let sent = false
+  let sent
   try {
     sent = buildLeave(ctx, requestToken, requestScope)()
   } catch {

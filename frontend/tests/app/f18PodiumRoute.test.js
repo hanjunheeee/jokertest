@@ -235,7 +235,7 @@ test("F-18 AC-06: podium 도메인 소스 17개가 삭제·이름 변경·내용
 test("F-18 AC-06: 명예의 전당이 쓰는 이미지 36개가 실제 파일로 해석되고 바이트까지 보존되어 있다", async () => {
   const { PODIUM_ASSETS } = await import("../../src/domains/podium/constants/podiumAssets.js")
   const { PODIUM_RANKING_DUMMY } = await import("../../src/domains/podium/content/podiumRankingDummy.js")
-  const { LOBBY_MENU_BUTTONS } = await import("../../src/domains/lobby/constants/lobbyAssets.js")
+  const { LOBBY_MENU_BUTTONS } = await import("../../src/shared/constants/lobbyAssets.js")
   const { publicAsset } = await import("../../src/shared/utils/publicAsset.js")
 
   const declared = [

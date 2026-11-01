@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
-import { computeRoleRevealInvalidatePatch } from "../utils/computeRoleRevealInvalidatePatch.js"
-import { computeNightActionSubmitPatch } from "../utils/computeNightActionSubmitPatch.js"
+import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
+import { computeRoleRevealInvalidatePatch } from "../utils/roleReveal.js"
+import { computeNightActionSubmitPatch } from "../utils/nightPatches.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitNightAction } from "../socket/night.js"
 
@@ -52,12 +52,10 @@ export function useInGameNightActionSubmit() {
       offDisconnect()
       invalidate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     invalidate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, phase, dayIndex])
 
   // 대상 보내기 (응답 기다리는 중이면 막기)

@@ -6,9 +6,9 @@ import {
   INGAME_PLAYER_THEME_PALETTE,
   INGAME_PLAYER_THEME_PALETTE_SIZE,
   resolveInGamePlayerThemeByColorIndex,
-} from "../../../../../src/domains/game/ingame/constants/ingamePlayerTheme.js"
-import { buildInGamePlayerNameplateStyle } from "../../../../../src/domains/game/ingame/utils/buildInGamePlayerNameplateStyle.js"
-import { resolveInGamePlayerCardThemeStyles } from "../../../../../src/domains/game/ingame/utils/resolveInGamePlayerCardThemeStyles.js"
+} from "../../../../../src/shared/constants/ingamePlayerTheme.js"
+import { buildInGamePlayerNameplateStyle } from "../../../../../src/domains/game/ingame/utils/playerCardStyles.js"
+import { resolveInGamePlayerCardThemeStyles } from "../../../../../src/domains/game/ingame/utils/playerCardStyles.js"
 
 const COLOR_INDEXES = Array.from({ length: INGAME_PLAYER_THEME_PALETTE_SIZE }, (_, i) => i)
 

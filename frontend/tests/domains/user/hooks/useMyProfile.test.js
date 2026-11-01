@@ -35,7 +35,7 @@ mock.module("../../../../src/domains/user/api/user.api.js", {
 })
 
 const { renderHook, waitFor } = await import("@testing-library/react")
-const { useMyProfile } = await import("../../../../src/domains/user/hooks/useMyProfile.js")
+const { useMyProfile } = await import("../../../../src/shared/hooks/useMyProfile.js")
 const { useUserProfileStore } = await import("../../../../src/domains/user/store/user.store.js")
 
 const PROFILE_ROW = {

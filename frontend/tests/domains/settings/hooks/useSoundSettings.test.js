@@ -22,8 +22,8 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
-const { SOUND_SETTING_VOLUMES } = await import("../../../../src/domains/settings/constants/soundSettings.js")
-const { useSoundSettings } = await import("../../../../src/domains/settings/hooks/useSoundSettings.js")
+const { SOUND_SETTING_VOLUMES } = await import("../../../../src/shared/constants/soundSettings.js")
+const { useSoundSettings } = await import("../../../../src/shared/hooks/useSoundSettings.js")
 
 test("초기값은 soundSettings 상수의 defaultValue와 같다", () => {
   const { result } = renderHook(() => useSoundSettings())

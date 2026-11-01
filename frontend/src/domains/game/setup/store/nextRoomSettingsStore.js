@@ -8,11 +8,7 @@ import { persistActions } from "./nextRoomSettings/persistActions.js"
 import { restoreAction } from "./nextRoomSettings/restoreAction.js"
 
 export { sanitizeRestoreSource, sanitizeRoomSettings }
-export {
-  NEXT_ROOM_SETTINGS_RESTORE_CODES,
-  SETTINGS_SCHEMA_VERSION,
-  SETTINGS_STATUS,
-} from "../constants/nextRoomSettings.js"
+export { NEXT_ROOM_SETTINGS_RESTORE_CODES } from "../constants/nextRoomSettings.js"
 export { nextRoomSettingsStorageKey } from "../utils/nextRoomRecord.js"
 
 // selectionGeneration: 계정 바뀜·유지 끄기마다 올림, clearIntent: 이 탭에서 유지를 끈 뜻

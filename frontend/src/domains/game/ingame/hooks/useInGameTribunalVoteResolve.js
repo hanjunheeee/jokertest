@@ -52,12 +52,10 @@ export function useInGameTribunalVoteResolve() {
       controller.dispose()
       controllerRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     controllerRef.current?.invalidate("CONTEXT_CHANGE")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, dayIndex, phase, defendantUuid, actorUuid])
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import {
   sendFriendRequest,
 } from "@/domains/lobby/api/friend.api.js"
 import { useFriendStore } from "@/domains/lobby/store/friend.store"
-import { filterVisibleFriendCandidates } from "@/domains/lobby/utils/filterVisibleFriendCandidates.js"
+import { filterVisibleFriendCandidates } from "@/domains/lobby/utils/friendList.js"
 
 export function useFriendSearch() {
   const sentRequestIds = useFriendStore((state) => state.sentRequestIds)

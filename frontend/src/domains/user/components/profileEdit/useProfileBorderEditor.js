@@ -55,7 +55,6 @@ export function useProfileBorderEditor({ open, onClose }) {
       fetchSummary()
     }
     return () => { editorSessionRef.current += 1 }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, generation, fetchSummary])
 
   // 사용자가 아직 안 고쳤으면 서버 장착이 바뀔 때 초안도 따라감

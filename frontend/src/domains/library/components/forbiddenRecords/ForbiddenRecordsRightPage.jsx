@@ -1,7 +1,7 @@
 import { motion } from "framer-motion"
 import { useAchievements } from "../../../../domains/library/hooks/useAchievements.js"
 import { resolveForbiddenRecordChallengeState } from "../../../../domains/library/content/forbiddenRecords/resolveForbiddenRecordChallengeState.js"
-import { getForbiddenRecordsPage } from "../../../../domains/library/content/forbiddenRecords/index.js"
+import { getForbiddenRecordsPage } from "../../content/forbiddenRecords/pages.js"
 import { FORBIDDEN_ASSETS, getForbiddenRecordsChallengeClearIllust } from "../../../../domains/library/constants/forbiddenRecords/assets.js"
 import ForbiddenRecordsUnlockCondition from "../../../../domains/library/components/forbiddenRecords/ForbiddenRecordsUnlockCondition.js"
 import {

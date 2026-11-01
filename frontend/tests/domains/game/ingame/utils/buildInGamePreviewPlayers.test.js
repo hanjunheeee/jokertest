@@ -9,7 +9,7 @@ mock.module("../../../../../src/domains/game/ingame/utils/pickInGamePlayerFrame.
 })
 
 const { buildInGamePreviewPlayers } = await import("../../../../../src/domains/game/ingame/utils/buildInGamePreviewPlayers.js")
-const { INGAME_PLAYER_THEME_PALETTE_SIZE } = await import("../../../../../src/domains/game/ingame/constants/ingamePlayerTheme.js")
+const { INGAME_PLAYER_THEME_PALETTE_SIZE } = await import("../../../../../src/shared/constants/ingamePlayerTheme.js")
 
 test("같은 count로 두 번 호출하면 themeIndex 배열이 완전히 동일하다(무작위 셔플 없음)", () => {
   const first = buildInGamePreviewPlayers(10).map((p) => p.themeIndex)

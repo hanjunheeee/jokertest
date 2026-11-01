@@ -8,7 +8,7 @@ import {
   ROOM_SETTINGS_ERROR_CODES,
   ROOM_SETTINGS_ERROR_MESSAGES,
 } from '@/domains/game/shared/constants/gameSetupSocket.js'
-import { buildUpdateRoomSettingsPayload } from '@/domains/game/setup/utils/roomSettingsForm.js'
+import { buildUpdateRoomSettingsPayload } from '@/domains/game/setup/utils/roomSettingsForm/updatePayload.js'
 import { GAME_START_MESSAGES } from '../../constants/gameStartMessages.js'
 import { ROOM_MESSAGES } from '../../constants/roomMessages.js'
 import { isNewerRoom } from '../../utils/roomVersion.js'

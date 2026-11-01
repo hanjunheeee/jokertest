@@ -86,6 +86,8 @@ export default defineConfig([
       'no-restricted-imports': ['error', { paths: [SOCKET_IMPORT, AXIOS_IMPORT] }],
       // 매직 넘버: 너무 많이 나와서 끔 (보고서 참고)
       'no-magic-numbers': 'off',
+      // 일부러 안 쓰는 값: _로 시작하는 인자, 나머지(...rest)로 빼려고 꺼낸 이름은 봐줌
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', ignoreRestSiblings: true }],
     },
   },
 

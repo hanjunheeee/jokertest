@@ -1,7 +1,10 @@
 // 재판 투표 제출 컨트롤러: 한 번에 하나만 보내고, 시간 초과·옛 응답을 걸러 상태를 정함
 // 재판 투표 훅(useInGameTribunalVoteSubmit)이 사용, 보내기는 socket/tribunal.js가 맡음
 import { emitTribunalVote } from "../socket/tribunal.js"
-import { computeTribunalVoteAckPatch, INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE } from "./computeTribunalVoteSubmitPatch.js"
+import {
+  computeTribunalVoteAckPatch,
+  INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE,
+} from "./voteSubmitPatch.js"
 
 export const ACK_TIMEOUT_MS = 5000
 
@@ -84,6 +87,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
           try {
             onAccepted?.(sfxEvent, { gameId, dayIndex })
           } catch {
+            // 효과음 알림 실패가 제출 결과 처리를 막지 않게 무시함
           }
         }
       }

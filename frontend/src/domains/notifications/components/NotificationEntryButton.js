@@ -7,7 +7,8 @@ import {
   NOTIF_ENTRY_BTN_IMG_CLASS,
 } from "../../../shared/constants/lobbyLayoutStyle.js"
 import PublicAsset from "../../../shared/ui/PublicAsset.jsx"
-import { useNotificationsStore, selectUnreadCount } from "../store/notifications.store.js"
+import { selectUnreadCount } from "../utils/visibleNotifications.js"
+import { useNotificationsStore } from "../store/notifications.store.js"
 import { useSettingsStore } from "../../settings/store/settingsStore.js"
 
 function formatUnread(count) {

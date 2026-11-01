@@ -6,9 +6,9 @@ import { act, renderHook } from "@testing-library/react"
 import { useInGameActionPanel } from "../../../../../src/domains/game/ingame/hooks/useInGameActionPanel.js"
 import { useInGameStore } from "../../../../../src/domains/game/ingame/store/ingameStore.js"
 import { InGamePlayerSessionContext } from "../../../../../src/domains/game/ingame/components/InGamePlayerSessionContext.js"
-import { buildDayVoteTargets } from "../../../../../src/domains/game/ingame/utils/buildDayVoteTargets.js"
+import { buildDayVoteTargets } from "../../../../../src/domains/game/ingame/utils/actionTargets.js"
 import { getDayVoteRound } from "../../../../../src/domains/game/ingame/utils/dayVoteRound.js"
-import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/ingame/constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js"
 import { setSocket } from "../../../../../src/shared/socket/socketClient.js"
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/" })

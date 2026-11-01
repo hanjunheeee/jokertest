@@ -48,7 +48,7 @@ const { setSocket } = await import("../../../../../src/shared/socket/socketClien
 const { useMatchingStore } = await import("../../../../../src/domains/game/matching/store/matchingStore.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
 const { SOCKET_EVENTS, ROOM_SETTINGS_ERROR_MESSAGES } =
-  await import("../../../../../src/domains/game/setup/constants/gameSetupSocket.js")
+  await import("../../../../../src/domains/game/shared/constants/gameSetupSocket.js")
 
 const { default: matchmaking } =
   await import("../../../../../../backend/socket/matchmaking.js")

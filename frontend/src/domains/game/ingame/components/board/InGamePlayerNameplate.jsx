@@ -1,8 +1,10 @@
 import {
   INGAME_PLAYER_NAMEPLATE_CLASS,
 } from "../../constants/board/ingamePlayerAssets.js"
-import { buildInGamePlayerNameplateStyle } from "../../utils/buildInGamePlayerNameplateStyle.js"
-import { resolveInGamePlayerCardThemeStyles } from "../../utils/resolveInGamePlayerCardThemeStyles.js"
+import {
+  buildInGamePlayerNameplateStyle,
+  resolveInGamePlayerCardThemeStyles,
+} from "../../utils/playerCardStyles.js"
 
 export default function InGamePlayerNameplate({
   nickname = "",

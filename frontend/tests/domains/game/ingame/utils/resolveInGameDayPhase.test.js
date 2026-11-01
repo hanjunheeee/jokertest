@@ -1,6 +1,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../../../../../src/domains/game/ingame/utils/resolveInGameDayPhase.js"
+import {
+  INGAME_DAY_PHASES,
+  resolveInGameDayPhase,
+} from "../../../../../src/domains/game/ingame/utils/dayPhase.js"
 
 test("resolveInGameDayPhase: 낮이 아니면 null이다", () => {
   assert.equal(resolveInGameDayPhase(null), null)

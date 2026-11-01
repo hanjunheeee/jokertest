@@ -2,10 +2,9 @@
 // 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦
 import { useInGameStore } from "../../store/ingameStore.js"
 import { parseDayVoteResolvedPayload } from "../../utils/dayVoteResolve.js"
-import { parseDayPhaseChangedPayload } from "../../utils/parseDayPhaseChangedPayload.js"
+import { parseDayPhaseChangedPayload } from "../../utils/dayPhase.js"
 import { parsePlayerEliminatedPayload } from "../../utils/parsePlayerEliminatedPayload.js"
-import { currentAccountId } from "./scope.js"
-import { currentReceiptScope, isRegistrationScopeCurrent } from "./scope.js"
+import { currentAccountId, currentReceiptScope, isRegistrationScopeCurrent } from "./scope.js"
 import { originOf, playGameSfx, playResultSfxIfEnded } from "./sfx.js"
 
 // registered: 구독을 붙인 때의 수신 범위 (그 뒤 범위가 바뀌면 사건을 버림)

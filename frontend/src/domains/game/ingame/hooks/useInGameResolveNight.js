@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
-import { computeResolveNightAckPatch } from "../utils/computeResolveNightAckPatch.js"
-import { computeResolveNightInvalidatePatch } from "../utils/computeResolveNightInvalidatePatch.js"
-import { computeResolveNightDayTransitionPatch } from "../utils/computeResolveNightDayTransitionPatch.js"
-import { shouldApplyNightBroadcastPayload } from "../utils/shouldApplyNightBroadcastPayload.js"
+import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
+import {
+  computeResolveNightAckPatch,
+  computeResolveNightInvalidatePatch,
+  computeResolveNightDayTransitionPatch,
+  shouldApplyNightBroadcastPayload,
+} from "../utils/nightPatches.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitResolveNight, onNightResolve } from "../socket/night.js"
 
@@ -61,13 +63,11 @@ export function useInGameResolveNight() {
       offDisconnect()
       invalidate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     appliedNightDayIndexRef.current = null
     invalidate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId])
 
   // 판정 세 사건 받기 (이미 반영한 밤보다 옛 것은 버림)
@@ -100,7 +100,6 @@ export function useInGameResolveNight() {
     }
 
     return onNightResolve(socket, { onResolved: handleResolved, onResult: handleResult, onApplied: handleApplied })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId])
 
   // 판정 요청 (응답 기다리는 중이거나 이미 판정 중이면 막기)

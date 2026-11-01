@@ -16,7 +16,7 @@ import {
   INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET,
   CLOSEUP_TEXT_TYPOGRAPHY_CLASS,
   CLOSEUP_TEXT_WRAP_TRIM_CLASS,
-} from "./closeup/ingameChatCloseupLayout.js"
+} from "./ingameChatCloseupLayout.js"
 import { CONTENT_SHIFT_LEFT_FRAME } from "./ingameChatFrameLayout.js"
 import {
   TRIBUNAL_CHAT_INPUT_SHIFT_CLASS,

@@ -82,7 +82,7 @@ export function createSnapshotRequester(ctx) {
       retry: () => requestSnapshot({ retry: true }),
     })
 
-    let ackPromise = null
+    let ackPromise
     try {
       ackPromise = fetchSnapshot(a.requestSocket, ackTimeoutMs, a.requestGameId)
     } catch {

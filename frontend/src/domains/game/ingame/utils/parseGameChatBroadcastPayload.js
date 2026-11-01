@@ -1,4 +1,4 @@
-import { sanitizeJokerChatText } from "./sanitizeJokerChatText.js"
+import { sanitizeJokerChatText } from "./chatText.js"
 
 export function parseGameChatBroadcastPayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null

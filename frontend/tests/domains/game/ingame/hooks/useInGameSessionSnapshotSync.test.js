@@ -1331,7 +1331,7 @@ test("F-23(SPLIT-1): 이미 소속을 가진 요청의 응답은 bootstrap 권�
 })
 
 const { selectInGameDeadParticipantChoice } = await import("../../../../../src/domains/game/ingame/utils/selectInGameDeadParticipantChoice.js")
-const { resolveInGameSelfAliveForControls } = await import("../../../../../src/domains/game/ingame/utils/selectInGameSelfAlive.js")
+const { resolveInGameSelfAliveForControls } = await import("../../../../../src/domains/game/ingame/utils/selfAlive.js")
 
 async function restoreFromSnapshot(response, { gameId = "g1", playerUuid = "player-1" } = {}) {
   seedStore({ gameId, playerUuid, nickname: "Alice" })

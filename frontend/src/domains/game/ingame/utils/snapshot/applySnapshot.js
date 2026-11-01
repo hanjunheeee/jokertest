@@ -1,5 +1,5 @@
 // 세션 스냅샷 반영 계산: 판이 있을 때 반영·빈 스토어 채우기 (상태를 안 건드리는 순수 계산)
-// store/applySessionSnapshot.js가 다시 내보내고, 스냅샷 액션과 시험이 사용
+// 스냅샷 액션과 시험이 사용
 import {
   KNOWN_PHASES,
   PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS,

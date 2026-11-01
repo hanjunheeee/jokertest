@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { useInGameStore } from "../../../../../src/domains/game/ingame/store/ingameStore.js"
-import { selectInGameNightTurnRole } from "../../../../../src/domains/game/ingame/utils/selectInGameNightTurnRole.js"
+import { selectInGameNightTurnRole } from "../../../../../src/domains/game/ingame/utils/nightTurn.js"
 
 const GAME_ID = "game-1"
 const DEADLINE = 1_700_000_030_000

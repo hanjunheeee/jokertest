@@ -6,7 +6,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { createTribunalVoteSubmitController } from "../utils/createTribunalVoteSubmitController.js"
-import { INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE } from "../utils/computeTribunalVoteSubmitPatch.js"
+import { INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE } from "../utils/voteSubmitPatch.js"
 import { onDisconnect } from "../socket/connection.js"
 
 const VALID_VOTES = new Set(["GUILTY", "NOT_GUILTY"])
@@ -103,12 +103,10 @@ export function useInGameTribunalVoteSubmit() {
       controller.dispose()
       controllerRef.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket])
 
   useEffect(() => {
     controllerRef.current?.invalidate("CONTEXT_CHANGE")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, dayIndex, phase, alive, isDefendant, defendantUuid, actorUuid])
 
   useEffect(() => {

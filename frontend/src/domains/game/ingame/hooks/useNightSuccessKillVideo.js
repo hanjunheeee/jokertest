@@ -9,7 +9,7 @@ import {
   drawStackedFrame,
   isAutoplayBlockedRejection,
 } from "../utils/ingameStackedAlphaPlayback.js"
-import { INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS } from "../constants/killReveal/ingameKillReveal.js"
+import { INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS } from "../constants/ingameKillReveal.js"
 
 export function useNightSuccessKillVideo({ eventId, src, finish }) {
   const videoRef = useRef(null)
@@ -129,6 +129,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
         video.pause()
         video.currentTime = 0
       } catch {
+        // 영상 멈춤·되감기 실패는 무시함 (아직 불러오는 중일 수 있음)
       }
     }
 
@@ -164,6 +165,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       try {
         videoRef.current?.pause?.()
       } catch {
+        // 정리 중 멈춤 실패는 무시함
       }
     }
   }, [eventId, src, runPlayback, scheduleFrame, settleOnce])

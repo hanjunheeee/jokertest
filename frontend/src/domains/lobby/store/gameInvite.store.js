@@ -10,16 +10,7 @@ import { accountActions } from "./gameInvite/accountActions.js";
 import { initialState } from "./gameInvite/state.js";
 
 // 바깥에서 쓰던 이름 그대로 다시 내보냄
-export {
-    compareSeq as compareCreationSeq,
-    isUsable as isUsableInvite,
-    survives as survivesSnapshot,
-    merge as mergeInvites,
-    isTerminalRefusal as establishesTerminalRefusal,
-    isActionable as isActionablePending,
-    selectPending as selectPendingInvites,
-} from "../utils/gameInvite/invites.js";
-export { evalSound as evaluateInviteSound } from "../utils/gameInvite/inviteSound.js";
+export { selectPending as selectPendingInvites } from "../utils/gameInvite/invites.js";
 
 export const useGameInviteStore = create((set, get) => ({
     ...initialState(),

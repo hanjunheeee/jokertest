@@ -11,7 +11,7 @@ import {
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
-import { buildInGameKillRevealQueueItems } from "../utils/buildInGameKillRevealQueueItems.js"
+import { buildInGameKillRevealQueueItems } from "../utils/nightDeathReveals.js"
 import {
   consumeInGameKillReveal,
   hasPendingInGameKillReveal,
@@ -22,7 +22,7 @@ import {
   buildRevealMsg,
   TRIBUNAL_SOURCE,
   resolveRevealNickname,
-} from "../constants/killReveal/ingameKillReveal.js"
+} from "../constants/ingameKillReveal.js"
 import { onConnect } from "../socket/connection.js"
 import { onDeathResults } from "../socket/session.js"
 
@@ -164,7 +164,6 @@ export function useInGameKillReveal({ hold = false } = {}) {
       if (current.scope !== capturedScope) return current
       return consumeInGameKillReveal(current, targetId)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capturedScope])
 
   const hasUnqueuedSnapReveal = snapshotItems.some((item) => !visible.seenIds.includes(item.id))

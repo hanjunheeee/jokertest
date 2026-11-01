@@ -36,13 +36,13 @@ const { InGameChatVariantContext } = await import("../../../../../../src/domains
 const { InGamePlayerSessionContext } = await import("../../../../../../src/domains/game/ingame/components/InGamePlayerSessionContext.js")
 const { useSettingsStore } = await import("../../../../../../src/domains/settings/store/settingsStore.js")
 const { resolveInGamePlayerThemeByColorIndex } = await import(
-  "../../../../../../src/domains/game/ingame/constants/ingamePlayerTheme.js"
+  "../../../../../../src/shared/constants/ingamePlayerTheme.js"
 )
 const { INGAME_CHAT_TEXT_SCALE_CSS_VAR } = await import(
   "../../../../../../src/domains/game/ingame/constants/chat/ingameChatLayout.js"
 )
 const { useInGamePlayerSession } = await import("../../../../../../src/domains/game/ingame/hooks/useInGamePlayerSession.js")
-const { INGAME_PLAYER_THEME_PALETTE } = await import("../../../../../../src/domains/game/ingame/constants/ingamePlayerTheme.js")
+const { INGAME_PLAYER_THEME_PALETTE } = await import("../../../../../../src/shared/constants/ingamePlayerTheme.js")
 
 const theme0 = resolveInGamePlayerThemeByColorIndex(0)
 

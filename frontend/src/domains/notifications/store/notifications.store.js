@@ -9,7 +9,6 @@ import { readActions } from "./notifications/readActions.js"
 import { deleteActions } from "./notifications/deleteActions.js"
 
 export { __setNotificationsApiForTests } from "./notifications/callApi.js"
-export { SETTING_KEY_BY_TYPE } from "../constants/notificationSettingKeys.js"
 export { isNotificationBackedSourceKey, isConfirmedReadRow } from "../utils/notificationRows.js"
 export { mergeNotifications } from "../utils/mergeNotifications.js"
 export { selectVisibleNotifications, selectUnreadCount } from "../utils/visibleNotifications.js"

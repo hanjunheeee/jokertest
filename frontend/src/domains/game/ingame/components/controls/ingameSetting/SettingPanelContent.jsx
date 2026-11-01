@@ -14,7 +14,7 @@ import SidePanelHeader from "../SidePanelHeader.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
 function SettingTabPanel({
-  activeTab, onOpenKickPlayer, onOpenRoomCode, volumes, onVolumeChange, sfxMuted, onSfxMutedChange,
+  activeTab, onOpenKickPlayer, volumes, onVolumeChange, sfxMuted, onSfxMutedChange,
 }) {
   if (activeTab === "chat") return <SettingChatTab />
   if (activeTab === "room") {
@@ -30,9 +30,6 @@ function SettingTabPanel({
   )
 }
 
-const COMMON_ACTION_WRAP_CLASS = "px-[1.15rem] pb-[0.9rem] pt-[0.2rem]"
-const COMMON_ACTION_BTN_CLASS =
-  "cursor-pointer border-0 bg-transparent p-0 font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.15vw,1rem)] font-semibold text-[#f5e6c8] underline decoration-dotted underline-offset-4"
 
 export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }) {
   const scrollRef = useRef(null)

@@ -7,7 +7,10 @@ import {
 import { claimsForeignMembership } from "../../utils/store/scope.js"
 import { entersNewNight } from "../../utils/store/nightSuccess.js"
 import { buildWaitPatch, planWaitRestore } from "../../utils/store/nightPresentationWait.js"
-import { applySessionSnapshotPure, bootstrapSessionSnapshotPure } from "../applySessionSnapshot.js"
+import {
+  applySessionSnapshotPure,
+  bootstrapSessionSnapshotPure,
+} from "../../utils/snapshot/applySnapshot.js"
 import { adoptIdentityScope } from "./identityScope.js"
 import { clearQueue, records } from "./nightSuccessRecords.js"
 import { clearOnNightEntry, commitRecovery, planRecovery } from "./nightSuccessReception.js"

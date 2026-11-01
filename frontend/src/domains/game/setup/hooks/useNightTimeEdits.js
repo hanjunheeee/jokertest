@@ -2,7 +2,10 @@
 // components/GameSetupPanel이 씀
 // 서버가 따로 정한 직업·이미 손댄 직업은 전체 밤 시간을 따라가지 않음
 import { useState } from "react"
-import { NIGHT_TIME_ID_TO_ROLE, OVERALL_NIGHT_ACTION_TIME_ID } from "../utils/roomSettingsForm.js"
+import {
+  NIGHT_TIME_ID_TO_ROLE,
+  OVERALL_NIGHT_ACTION_TIME_ID,
+} from "../constants/roomSettingsForm.js"
 
 export function useNightTimeEdits({ ranges, setRange, initialFormState, formResetKey }) {
   const [editedRoleTimeIds, setEditedRoleTimeIds] = useState(() => new Set())

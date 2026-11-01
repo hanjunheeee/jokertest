@@ -1,7 +1,6 @@
 // 초대받은 손님 펼침면 화면 모양 (글자·칸·표·보상·안내 문구 className)
 // 초대받은 손님 펼침면과 그 아래 칸 컴포넌트가 씀
 const INVITED_GUESTS_TEXT = "font-subheading antialiased text-[#1a1008] [text-shadow:0_1px_2px_rgba(0,0,0,0.08)]"
-const INVITED_GUESTS_TITLE = `${INVITED_GUESTS_TEXT} font-extrabold text-[#120a06]`
 const LEFT_PAGE_PADDING_TOP = "pt-[clamp(0.55rem,1.1vh,0.78rem)]"
 const RIGHT_PAGE_PADDING_TOP = "pt-[clamp(0.78rem,1.55vh,1.05rem)]"
 const SPREAD_BOTTOM_INSET = "pb-[clamp(0.75rem,1.75vh,1.15rem)]"

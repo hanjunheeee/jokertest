@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
-import { isStaleRoleRevealAckResponse } from "../utils/isStaleRoleRevealAckResponse.js"
+import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitReady } from "../socket/day.js"
 
@@ -52,13 +52,11 @@ export function useInGameDayDiscussionReady() {
       offDisconnect()
       invalidate()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, gameId])
 
   // 날짜·낮 단계가 바뀌어도 처음으로
   useEffect(() => {
     invalidate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, dayIndex, dayPhase])
 
   // 준비 보내기 (이미 보내는 중·준비됨이면 막기)

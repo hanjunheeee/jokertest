@@ -9,7 +9,7 @@ const ERROR_CLASS = `${NOTICE_CLASS} text-[#ffb3a7]`
 const RETRY_CLASS =
   "ml-[0.4rem] cursor-pointer border-0 bg-transparent p-0 underline decoration-dotted"
 
-export default function SettingRoomTab({ onOpenKickPlayer, onOpenRoomCode }) {
+export default function SettingRoomTab({ onOpenKickPlayer }) {
   const {
     enabled, canToggle, canDisable, setKeepSettings, statusMessage, canRetry, retry,
   } = useNextRoomSettings()

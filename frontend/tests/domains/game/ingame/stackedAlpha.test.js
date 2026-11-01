@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { composeStackedAlpha } from "../../../../src/domains/game/ingame/utils/composeStackedAlpha.js"
+import { composeStackedAlpha } from "../../../../src/domains/game/ingame/utils/ingameStackedAlphaPlayback.js"
 
 function colorPixels() {
   return new Uint8ClampedArray([10, 20, 30, 255, 200, 150, 100, 255])

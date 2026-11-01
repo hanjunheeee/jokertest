@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { isStaleRoleRevealAckResponse } from "../../../../../src/domains/game/ingame/utils/isStaleRoleRevealAckResponse.js"
+import { isStaleRoleRevealAckResponse } from "../../../../../src/domains/game/ingame/utils/staleAck.js"
 
 function freshArgs(overrides = {}) {
   const socket = { connected: true }

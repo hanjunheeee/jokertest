@@ -1,6 +1,6 @@
 // 밤 관찰 열쇠 만들기, 스냅샷 응답과 겹치는 밤 관찰 찾기 (순수 계산)
 // 스냅샷 동기화 훅이 사용 (묻는 사이 그 밤 알림이 오면 응답이 옛 것일 수 있음)
-import { parseNightTurnStartedPayload } from "../parseNightTurnStartedPayload.js"
+import { parseNightTurnStartedPayload } from "../nightTurn.js"
 
 // 판 id·밤 날짜로 만든 관찰 열쇠
 export function nightObservationKey(gameId, nightDayIndex) {

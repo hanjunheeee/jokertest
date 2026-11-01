@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 
 import { buildGameResultViewModel } from "../../../../../src/domains/game/result/utils/buildGameResultViewModel.js"
 import { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } from "../../../../../src/domains/game/ingame/constants/board/ingamePlayerAssets.js"
-import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/ingame/constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js"
 import { getPlayerRecordListProfileAssets } from "../../../../../src/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { pickInGameJobPortrait } from "../../../../../src/domains/game/ingame/utils/pickInGameJobPortrait.js"
 import { pickJobPortrait } from "../../../../../src/shared/utils/pickJobPortrait.js"

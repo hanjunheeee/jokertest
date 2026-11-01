@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { parseDayPhaseChangedPayload } from "../../../../../src/domains/game/ingame/utils/parseDayPhaseChangedPayload.js"
+import { parseDayPhaseChangedPayload } from "../../../../../src/domains/game/ingame/utils/dayPhase.js"
 
 const CONTEXT = { gameId: "game-1", dayIndex: 2 }
 

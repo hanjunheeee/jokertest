@@ -58,7 +58,7 @@ const { setSocket } = await import("../../../../../src/shared/socket/socketClien
 const { useKickPlayerRequest, KICK_REQUEST_STATUS } = await import("../../../../../src/domains/game/ingame/hooks/useKickPlayerRequest.js")
 const { useInGameSettingIsHost } = await import("../../../../../src/domains/game/ingame/hooks/useInGameSettingIsHost.js")
 const { useInGameDayVoteSubmit } = await import("../../../../../src/domains/game/ingame/hooks/useInGameDayVoteSubmit.js")
-const { applySessionSnapshotPure } = await import("../../../../../src/domains/game/ingame/store/applySessionSnapshot.js")
+const { applySessionSnapshotPure } = await import("../../../../../src/domains/game/ingame/utils/snapshot/applySnapshot.js")
 const { default: SettingKickPlayerModal } = await import(
   "../../../../../src/domains/game/ingame/components/controls/kickPlayer/SettingKickPlayerModal.jsx")
 const { InGameActionProvider } = await import("../../../../../src/domains/game/ingame/pages/InGamePage.jsx")
@@ -67,7 +67,7 @@ const { default: InGamePlayerBoard } = await import("../../../../../src/domains/
 const { INGAME_PLAYER_CARD_MENU_ATTR } = await import(
   "../../../../../src/domains/game/ingame/components/board/InGamePlayerCardMenu.jsx")
 const { INGAME_CARD_MENU_DAY_VOTE_LABEL } = await import("../../../../../src/domains/game/ingame/hooks/useInGamePlayerCardMenu.js")
-const { INGAME_E2E_ATTRS } = await import("../../../../../src/domains/game/ingame/constants/e2e/ingameE2eHooks.js")
+const { INGAME_E2E_ATTRS } = await import("../../../../../src/domains/game/ingame/constants/ingameE2eHooks.js")
 
 const HOST = "uuid-host"
 const TARGET = "uuid-target"

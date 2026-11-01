@@ -22,6 +22,7 @@ export default function GameResultIntroVideo({ outcome = "win", onComplete }) {
         video.pause()
         video.currentTime = 0
       } catch {
+        // 멈춤·되감기 실패는 무시하고 재생은 시도함
       }
       const playResult = video.play()
       if (playResult && typeof playResult.then === "function") {
