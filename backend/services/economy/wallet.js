@@ -1,0 +1,62 @@
+'use strict';
+
+// 지갑 조회 파일, 지갑 요약(잔액·보유·장착) · 거래 목록
+// economy 경로가 부름
+const { defaultDb, buildSkinsByJob } = require('./helpers');
+const { ensureDefaultEntitlements } = require('./defaults');
+const { economyModels } = require('./ledger');
+
+// 처음 보는 계정이면 기본 지급부터 하고 잔액·보유·장착을 같이
+const getWalletSummary = async (userId, db = defaultDb()) => {
+    await ensureDefaultEntitlements(userId, db);
+    const models = economyModels(db);
+
+    const [wallet, entitlements, loadout] = await Promise.all([
+        models.EconomyWallet.findOne({ where: { user_id: userId } }),
+        models.EconomyEntitlement.findAll({ where: { user_id: userId }, order: [['id', 'ASC']] }),
+        models.EconomyLoadout.findOne({ where: { user_id: userId } }),
+    ]);
+
+    return {
+        balanceGold: wallet ? wallet.balance_gold : 0,
+        balanceDiamond: wallet ? wallet.balance_diamond : 0,
+        entitlements: entitlements.map((row) => ({
+            itemId: row.item_id,
+            itemType: row.item_type,
+            source: row.source,
+            acquiredAt: row.acquired_at,
+        })),
+        loadout: {
+            selectedProfilePhotoId: loadout?.selected_profile_photo_id ?? null,
+            selectedProfileBorderId: loadout?.selected_profile_border_id ?? null,
+            selectedCardFrameId: loadout?.selected_card_frame_id ?? null,
+            selectedSkinsByJob: buildSkinsByJob(loadout),
+            revision: loadout?.revision ?? null,
+        },
+    };
+};
+
+// 장부 최근 것부터 최대 limit개
+const listTransactions = async (userId, { limit = 50 } = {}, db = defaultDb()) => {
+    const models = economyModels(db);
+    const rows = await models.EconomyLedgerEntry.findAll({
+        where: { user_id: userId },
+        order: [['id', 'DESC']],
+        limit,
+    });
+    return rows.map((row) => ({
+        id: row.id,
+        reason: row.reason,
+        itemId: row.item_id,
+        currency: row.currency,
+        amount: row.amount,
+        balanceAfter: row.balance_after,
+        referenceEventId: row.reference_event_id,
+        createdAt: row.created_at,
+    }));
+};
+
+module.exports = {
+    getWalletSummary,
+    listTransactions,
+};
