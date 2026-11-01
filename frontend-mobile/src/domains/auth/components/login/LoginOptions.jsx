@@ -12,7 +12,7 @@ export default function LoginOptions({ rememberMe, onRememberMeChange }) {
 
       <div className="flex shrink-0 items-center gap-1">
         <Link to="/find-id" className={LINK_CLASS}>아이디 찾기</Link>
-        <span className="text-black/30" aria-hidden="true">|</span>
+        <span className="text-white/40" aria-hidden="true">|</span>
         <Link to="/password-reset/request" className={LINK_CLASS}>비밀번호 찾기</Link>
       </div>
     </div>

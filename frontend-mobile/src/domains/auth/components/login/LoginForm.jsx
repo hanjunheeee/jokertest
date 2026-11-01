@@ -22,7 +22,6 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
         leadingIcon={<MailIcon />}
         placeholder="이메일을 입력하세요"
         autoComplete="email"
-        inputMode="email"
       />
       <InputSlot
         name="password"
@@ -42,7 +41,7 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
         ariaLabel="로그인"
         label="로그인"
         labelClassName="app-text-scaled [--app-text-size:22px]"
-        className="mx-auto w-[94%]"
+        className="mx-auto w-[92%]"
       />
 
       <SocialButtons rememberMe={rememberMe} />

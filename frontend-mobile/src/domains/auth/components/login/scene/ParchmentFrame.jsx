@@ -25,7 +25,7 @@ const FRAME_STYLE = {
   padding: `${at(132)} ${at(36)} ${at(44)}`,
 }
 
-// 내용이 길면 액자가 같이 길어짐 (안쪽 스크롤 없음, 페이지가 굴림)
+// 내용이 길면 액자가 같이 길어짐 (안쪽 스크롤 없음, 페이지가 굴림), 브라우저 기본 입력 검사는 데스크톱처럼 켜 둠
 export default function ParchmentFrame({ children, onSubmit, frameSize = "default" }) {
   // onSubmit 있을 때만 확인 효과음 뒤 넘김
   const handleSubmit = (event) => {
@@ -38,7 +38,6 @@ export default function ParchmentFrame({ children, onSubmit, frameSize = "defaul
     <div className={`@container w-full ${FRAME_WIDTH_CLASS[frameSize] ?? FRAME_WIDTH_CLASS.default}`}>
       <form
         onSubmit={handleSubmit}
-        noValidate
         style={FRAME_STYLE}
         className="flex aspect-[403/625] w-full flex-col justify-center gap-2"
       >

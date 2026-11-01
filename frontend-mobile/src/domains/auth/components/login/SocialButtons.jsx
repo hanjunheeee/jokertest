@@ -13,8 +13,8 @@ export default function SocialButtons({ rememberMe = false }) {
       <p className="text-center font-subheading font-bold leading-none text-text-body/85 app-text-scaled [--app-text-size:12px]">또는</p>
 
       <div className="flex flex-col gap-2">
-        <ImageButton src={LOGIN_ASSETS.google} ariaLabel="Google 로그인" onClick={startGoogle} className="mx-auto w-[94%]" />
-        <ImageButton src={LOGIN_ASSETS.discord} ariaLabel="Discord 로그인" onClick={startDiscord} className="mx-auto w-[94%]" />
+        <ImageButton src={LOGIN_ASSETS.google} ariaLabel="Google 로그인" onClick={startGoogle} className="mx-auto w-[92%]" />
+        <ImageButton src={LOGIN_ASSETS.discord} ariaLabel="Discord 로그인" onClick={startDiscord} className="mx-auto w-[92%]" />
       </div>
     </>
   )

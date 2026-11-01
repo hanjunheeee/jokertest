@@ -1,5 +1,5 @@
 // 가입 이메일 인증 칸 (받기·재발송 버튼, 인증번호 입력 줄, 안내 줄)
-// signup/VerifyStep.jsx(일반 가입)·social/SocialFields.jsx(소셜)가 씀, 단계 판단은 데스크톱과 같음
+// signup/SignupForm.jsx(일반 가입)·social/SocialFields.jsx(소셜)가 씀, 단계 판단은 데스크톱과 같음
 import { useLayoutEffect, useRef } from "react"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import { pickNotice, sendButtonLabel } from "@/domains/auth/utils/emailVerification/notice.js"

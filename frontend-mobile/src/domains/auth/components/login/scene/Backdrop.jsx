@@ -1,4 +1,4 @@
-// 인증 화면 뒤 배경 영상 (반복 재생) + 글자 읽기 쉽게 살짝 어둡게
+// 인증 화면 뒤 배경 영상 (반복 재생), 데스크톱처럼 덮개 없음
 // login/scene/Scene.jsx가 씀
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
@@ -15,7 +15,6 @@ export default function Backdrop() {
         playsInline
         className="h-full w-full object-cover object-center"
       />
-      <div className="absolute inset-0 bg-black/25" />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 // 이메일 중복확인 버튼 + 결과 문구 한 줄
-// signup/AccountStep.jsx가 이메일 칸 아래에 씀, 상태는 SignupForm이 데스크톱 useEmailCheck로 들고 있음
+// signup/SignupFields.jsx가 이메일 칸 아래에 씀, 상태는 SignupFields가 데스크톱 useEmailCheck로 들고 있음
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import EmailCheckMessage from "@m/domains/auth/components/signup/EmailCheckMessage.jsx"
