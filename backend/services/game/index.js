@@ -2,12 +2,12 @@
 // 시험 손잡이(__)는 하위 입구에서만, 부를 땐 ./roleStatistics · ./record · ./achievementHooks 사용
 const roleStatistics = require('./roleStatistics')
 const { persistTerminalSession, setEmitToUser } = require('./record')
-const { recordDayVoteParticipation, evaluateAchievementsForUsers } = require('./achievementHooks')
+const { recordParticipation, evaluateForUsers } = require('./achievementHooks')
 
 module.exports = {
     ...roleStatistics,
     persistTerminalSession,
     setEmitToUser,
-    recordDayVoteParticipation,
-    evaluateAchievementsForUsers,
+    recordParticipation,
+    evaluateForUsers,
 }

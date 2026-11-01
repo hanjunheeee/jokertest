@@ -7,7 +7,7 @@ const { assertSessionNotEnded } = require('../../core/rules/terminal')
 const { enterNightPhase } = require('../../core/rules/phase')
 const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isVoteRoundResolved } = require('./state')
 const { DAY_PHASES } = require('./constants')
-const { getEligibleDayVoterUuids, tallyDayVoteOutcome, buildDayVoteBallotSnapshot, uuidListsEqual, dayVoteBallotSnapshotsEqual } = require('./ballots')
+const { getDayVoterUuids, tallyDayVoteOutcome, buildDayBallotSnap, uuidListsEqual, dayBallotSnapsEqual } = require('./ballots')
 
 // 낮 판정 준비: 표 세서 결과 정함, 아직 확정 안 함
 function prepareDayVoteResolution(uuid, gameId, dayIndex) {
@@ -36,7 +36,7 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     if (getDayPhase(session) !== DAY_PHASES.VOTE) return { ok: false, code: 'INVALID_DAY_PHASE' }
 
     // 산 사람 전부 표 냈는지
-    const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    const eligibleVoterUuids = getDayVoterUuids(session)
     for (const voterUuid of eligibleVoterUuids) {
         if (!session.dayVotes.has(voterUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
     }
@@ -69,7 +69,7 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
             publicAbstainCount: tally.publicAbstainCount,
             excludedUuids: Object.freeze([...getDayVoteExcludedUuids(session)].sort()),
             revoteExcludedUuids: Object.freeze(isRevote ? [...tally.tiedTargetUuids] : []),
-            ballotSnapshot: buildDayVoteBallotSnapshot(session),
+            ballotSnapshot: buildDayBallotSnap(session),
         },
     }
 }
@@ -91,7 +91,7 @@ function commitDayVoteResolution(session, resolution) {
     if (getDayPhase(session) !== DAY_PHASES.VOTE) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
 
     // 그사이 표 안 낸 사람 생겼거나 찍힌 사람이 죽었으면 거절
-    const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    const eligibleVoterUuids = getDayVoterUuids(session)
     for (const voterUuid of eligibleVoterUuids) {
         if (!session.dayVotes.has(voterUuid)) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
         const target = session.dayVotes.get(voterUuid)
@@ -120,7 +120,7 @@ function commitDayVoteResolution(session, resolution) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
     // 지금 표 묶음이 prepare 때랑 같은지 (지도 04-⑦)
-    if (!dayVoteBallotSnapshotsEqual(buildDayVoteBallotSnapshot(session), resolution.ballotSnapshot)) {
+    if (!dayBallotSnapsEqual(buildDayBallotSnap(session), resolution.ballotSnapshot)) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
     // 재판이면 피고가 아직 살아 있는지

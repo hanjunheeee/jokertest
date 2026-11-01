@@ -12,23 +12,23 @@ const {
 } = require('./participation')
 // 진행 중 판: 어느 판인지·유예·나가기 대상·접속 현황
 const {
-    getActiveSessionRoutingInfo, isParticipantBlockedFromMatchmaking, getRoomCodeSessionState,
+    getActiveSessionRoutingInfo, isMatchmakingBlocked, getRoomCodeSessionState,
     findExpectedSession, getDisconnectGraceTarget, getActiveSessionForDeparture,
     getActiveGamePresenceSnapshot,
 } = require('./live')
 // 끝난 판: 남은 사람·다음 방 우편함 자격
 const {
-    getEndedSessionPartyBroadcastContext, getEndedSessionGameIdForParticipant,
-    canLookupPartyMatchingRoom, getEndedSessionParticipantUuids,
+    getEndedPartyContext, getEndedGameId,
+    canLookupPartyRoom, getEndedPlayerUuids,
 } = require('./ended')
 
 module.exports = {
     DISCONNECT_GRACE_PHASES,
     getSessionById, hasSessionId, getPlayerGameId, hasRoomSession, isRegisteredSession,
     hasForfeited, isForfeitedFromSession, isParticipatingInSession, getParticipationRevision,
-    getActiveSessionRoutingInfo, isParticipantBlockedFromMatchmaking, getRoomCodeSessionState,
+    getActiveSessionRoutingInfo, isMatchmakingBlocked, getRoomCodeSessionState,
     findExpectedSession, getDisconnectGraceTarget, getActiveSessionForDeparture,
     getActiveGamePresenceSnapshot,
-    getEndedSessionPartyBroadcastContext, getEndedSessionGameIdForParticipant,
-    canLookupPartyMatchingRoom, getEndedSessionParticipantUuids,
+    getEndedPartyContext, getEndedGameId,
+    canLookupPartyRoom, getEndedPlayerUuids,
 }

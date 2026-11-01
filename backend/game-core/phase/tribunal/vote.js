@@ -58,7 +58,7 @@ function submitTribunalVote(uuid, gameId, dayIndex, vote) {
 }
 
 // 투표 효과음 이벤트 꺼내기 (이미 표 낸 사람만, 같은 표는 같은 id라 두 번 안 울림)
-function readTribunalVoteSubmitSfxEvent(uuid, gameId) {
+function readTribunalVoteSfx(uuid, gameId) {
     // 판·재판·내 표 없으면 효과음 없음
     if (!normalizeGameId(gameId, { trim: false })) return null
     const session = getSessionById(gameId)
@@ -74,4 +74,4 @@ function readTribunalVoteSubmitSfxEvent(uuid, gameId) {
     })
 }
 
-module.exports = { submitTribunalVote, readTribunalVoteSubmitSfxEvent }
+module.exports = { submitTribunalVote, readTribunalVoteSfx }

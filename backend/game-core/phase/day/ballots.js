@@ -3,7 +3,7 @@
 const { getDayVoteExcludedUuids } = require('./state')
 
 // 낮 투표할 수 있는 사람 (산 사람)
-function getEligibleDayVoterUuids(session) {
+function getDayVoterUuids(session) {
     const uuids = []
     for (const player of session.players.values()) {
         if (player.alive) uuids.push(player.uuid)
@@ -23,7 +23,7 @@ function uuidListsEqual(left, right) {
 
 // 낮 표 세기: 최다 득표자 한 명이면 재판, 동률이면 재투표 또는 밤
 function tallyDayVoteOutcome(session) {
-    const eligibleVoterUuids = getEligibleDayVoterUuids(session)
+    const eligibleVoterUuids = getDayVoterUuids(session)
     const excludedUuids = getDayVoteExcludedUuids(session)
     const voteCounts = new Map()
     let abstainCount = 0
@@ -76,9 +76,9 @@ function tallyDayVoteOutcome(session) {
 }
 
 // 지금 낮 표 묶음 (누가 누구 찍었나)
-function buildDayVoteBallotSnapshot(session) {
+function buildDayBallotSnap(session) {
     // 투표자 정렬 (비교 때 순서 안 꼬이게), 안 낸 표는 null
-    const ballots = getEligibleDayVoterUuids(session)
+    const ballots = getDayVoterUuids(session)
         .slice()
         .sort()
         .map((voterUuid) => {
@@ -89,7 +89,7 @@ function buildDayVoteBallotSnapshot(session) {
 }
 
 // 낮 표 묶음 둘이 같은지 (prepare 뒤에 표 바뀌었는지)
-function dayVoteBallotSnapshotsEqual(a, b) {
+function dayBallotSnapsEqual(a, b) {
     // 길이 같고 칸마다 투표자·대상이 같아야 같음 (지도 04-⑦)
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
     for (let i = 0; i < a.length; i += 1) {
@@ -99,9 +99,9 @@ function dayVoteBallotSnapshotsEqual(a, b) {
 }
 
 module.exports = {
-    getEligibleDayVoterUuids,
+    getDayVoterUuids,
     uuidListsEqual,
     tallyDayVoteOutcome,
-    buildDayVoteBallotSnapshot,
-    dayVoteBallotSnapshotsEqual,
+    buildDayBallotSnap,
+    dayBallotSnapsEqual,
 }

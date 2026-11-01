@@ -7,7 +7,7 @@ const { GAME_ROLES } = require('../core/rules/roles')
 const { computeRoleComposition, validateResolvedComposition } = require('../core/rules/roleComposition')
 const { registerGameSession } = require('../core/registry/write')
 const { endGameSessionForPlayer } = require('../core/registry/write')
-const { isParticipantBlockedFromMatchmaking, hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries')
+const { isMatchmakingBlocked, hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries')
 
 // 후보 판 모양 전부 검사 (조작·빠진 값 막기)
 function assertValidSessionForCommit(session) {
@@ -143,7 +143,7 @@ function commitGameSession(session) {
             const existingSession = getSessionById(existingGameId)
             if (existingSession?.phase === 'ENDED') {
                 endGameSessionForPlayer(uuid, 'SUPERSEDED_BY_NEW_GAME', existingGameId)
-            } else if (isParticipantBlockedFromMatchmaking(uuid)) {
+            } else if (isMatchmakingBlocked(uuid)) {
                 throw new Error(`참가자가 이미 다른 GameSession에 속함: ${uuid}`)
             }
         }

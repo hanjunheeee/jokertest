@@ -9,7 +9,7 @@ const generateRefreshSecret = () => crypto.randomBytes(32).toString("base64url")
 const hashRefreshToken      = (rawToken) => crypto.createHash("sha256").update(rawToken).digest("hex");
 
 // 같은 세션·이전 토큰이면 같은 새 토큰 (응답 놓쳐 다시 와도 같게)
-const deriveRotatedRefreshToken = (previousRawToken, sessionId) =>
+const deriveRotatedToken = (previousRawToken, sessionId) =>
     crypto.createHmac("sha256", process.env.JWT_SECRET)
         .update(`refresh-rotation-v1:${sessionId}:${previousRawToken}`)
         .digest("base64url");
@@ -17,5 +17,5 @@ const deriveRotatedRefreshToken = (previousRawToken, sessionId) =>
 module.exports = {
     generateRefreshSecret,
     hashRefreshToken,
-    deriveRotatedRefreshToken,
+    deriveRotatedToken,
 };

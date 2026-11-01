@@ -7,7 +7,7 @@ const { NIGHT_TURN_ORDER } = require('./constants')
 const { getEligibleNightActorUuids, matchesTargetLifeRule } = require('./actors')
 const { applyNightRoleStep, computeNightRoleStep, closeNightHealing } = require('./roleStep')
 const { isParticipatingInSession, isRegisteredSession } = require('../../queries')
-const { buildAssassinationFailureNotice } = require('./payloads')
+const { buildAssassinFailNotice } = require('./payloads')
 const { registerNightPreparation } = require('./ledger')
 
 // 요청한 사람 확인하고 밤 판정 준비
@@ -110,7 +110,7 @@ function prepareNightResolutionForSession(session) {
         }))
     }
     if (assassinationBlocked) {
-        privateBuilders.set('JOKER', buildAssassinationFailureNotice)
+        privateBuilders.set('JOKER', buildAssassinFailNotice)
     }
 
     // 그 역할 산 사람마다 개인 결과 하나씩 (받는 사람 uuid로 꺼냄)

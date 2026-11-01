@@ -107,19 +107,19 @@ exports.findGameResultById = async (gameId) => {
 };
 
 // 직업 통계용 판 기록 행 (승패 정해진 것만, 판 설정 붙임), 판정·집계는 서비스
-const findRoleStatisticsRowsWhere = (where) => db.GameResultPlayer.findAll({
+const findStatRowsWhere = (where) => db.GameResultPlayer.findAll({
     attributes: ["user_id", "role", "won", "is_alive"],
     where: { ...where, won: { [db.Sequelize.Op.ne]: null } },
     include: [{ model: db.GameResult, attributes: ["settings"], required: true }],
     raw: true,
     nest: true,
 });
-exports.findRoleStatisticsRowsByUser = (userId) => findRoleStatisticsRowsWhere({ user_id: userId });
-exports.findRoleStatisticsRowsByUsers = (userIds) => findRoleStatisticsRowsWhere({ user_id: { [db.Sequelize.Op.in]: userIds } });
-exports.findRoleStatisticsRowsByRole = (role) => findRoleStatisticsRowsWhere({ role });
+exports.findUserStatRows = (userId) => findStatRowsWhere({ user_id: userId });
+exports.findUsersStatRows = (userIds) => findStatRowsWhere({ user_id: { [db.Sequelize.Op.in]: userIds } });
+exports.findRoleStatRows = (role) => findStatRowsWhere({ role });
 
 // 업적 진행용 판 기록 행 (끝난 판 여부·판 설정 붙임)
-exports.findAchievementProgressRows = (userId) => db.GameResultPlayer.findAll({
+exports.findProgressRows = (userId) => db.GameResultPlayer.findAll({
     attributes: ["role", "won", "is_alive"],
     where: { user_id: userId },
     include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],

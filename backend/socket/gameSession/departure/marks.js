@@ -7,7 +7,7 @@ const { departureResolveMarks } = require('../core/state')
 function currentCoordinate(session) {
     if (!session) return null
     if (session.phase === 'DAY' && gameSessionCore.getDayPhase(session) === gameSessionCore.DAY_PHASES.VOTE) {
-        return `DAY_VOTE:${session.dayIndex}:${gameSessionCore.getSessionDayVoteRound(session.id)}`
+        return `DAY_VOTE:${session.dayIndex}:${gameSessionCore.getSessionVoteRound(session.id)}`
     }
     if (session.phase === 'TRIBUNAL' && session.tribunal && session.tribunal.resolved !== true) {
         return `TRIBUNAL:${session.dayIndex}:${session.tribunal.candidateId}`

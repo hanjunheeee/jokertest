@@ -4,7 +4,7 @@ const socialAuthService = require("../../services/auth/social");
 const { getDeviceType, getClientIp } = require("../../utils/request");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
 const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions } = require('./cookies');
-const { verifyOAuthAttempt, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = socialAuthService;
+const { verifyOAuthAttempt, INTENT_TTL_SECONDS } = socialAuthService;
 
 // 가입 마무리 → 시도 쿠키 지움 → 세션 쿠키
 exports.completeSocialSignup = async (req, res, next) => {
@@ -25,7 +25,7 @@ exports.completeSocialSignup = async (req, res, next) => {
             intentToken, nickname, birthDate, email, signupProof, rememberMe, reqInfo,
         });
 
-        res.clearCookie(OAUTH_ATTEMPT_COOKIE, attemptCookieOptions(SOCIAL_SIGNUP_INTENT_TTL_SECONDS));
+        res.clearCookie(OAUTH_ATTEMPT_COOKIE, attemptCookieOptions(INTENT_TTL_SECONDS));
 
         res.cookie("accessToken", token, buildSessionCookieOptions(rememberMe, refreshTokenExpiresAt));
         if (refreshToken) {

@@ -14,7 +14,7 @@ const toPositiveInt = (value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER
     return parsed;
 };
 
-const getSignupEmailVerificationConfig = (env = process.env) => {
+const getSignupEmailConfig = (env = process.env) => {
     const codeLength = toPositiveInt(env.SIGNUP_EMAIL_CODE_LENGTH, 6, { min: 4, max: 10 });
     const codeTtlMs = toPositiveInt(env.SIGNUP_EMAIL_CODE_TTL_MS, 600000);
     const resendCooldownMs = toPositiveInt(env.SIGNUP_EMAIL_RESEND_COOLDOWN_MS, 60000);
@@ -49,4 +49,4 @@ const getSignupEmailVerificationConfig = (env = process.env) => {
     };
 };
 
-module.exports = { getSignupEmailVerificationConfig, HOUR_MS, DAY_MS, MIN_HMAC_SECRET_LENGTH };
+module.exports = { getSignupEmailConfig, HOUR_MS, DAY_MS, MIN_HMAC_SECRET_LENGTH };

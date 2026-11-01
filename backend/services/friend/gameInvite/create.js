@@ -110,7 +110,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             expires_at: expiresAt,
         }, t);
 
-        const notificationResult = await notificationService.createGameInviteNotification({
+        const notificationResult = await notificationService.createForGameInvite({
             receiverId,
             inviteId: invite.id,
             senderNickname: sender?.nickname ?? null,

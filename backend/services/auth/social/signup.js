@@ -19,7 +19,7 @@ exports.getSocialSignupIntent = async ({ intentToken } = {}) => {
         throw createError("가입 정보가 없습니다.", 400, "INTENT_INVALID");
     }
 
-    const intent = await userRepository.findSocialSignupIntentByHash(hashValue(intentToken));
+    const intent = await userRepository.findIntentByHash(hashValue(intentToken));
     if (!intent) {
         throw createError("가입 정보가 만료되었거나 존재하지 않습니다. 다시 로그인해주세요.", 400, "INTENT_INVALID");
     }
@@ -52,7 +52,7 @@ exports.completeSocialSignup = async ({
 
     return await userRepository.withTransaction(async (transaction) => {
         const intentHash = hashValue(intentToken);
-        const intent = await userRepository.findSocialSignupIntentByHash(intentHash, {
+        const intent = await userRepository.findIntentByHash(intentHash, {
             transaction, lock: transaction.LOCK.UPDATE,
         });
         if (!intent) {
@@ -119,7 +119,7 @@ exports.completeSocialSignup = async ({
             user_id: user.uuid,
             email_snapshot: emailSnapshot,
         }, { transaction });
-        await userRepository.markSocialSignupIntentConsumed(intent.id, { transaction });
+        await userRepository.markIntentConsumed(intent.id, { transaction });
         await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });
 
         const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);

@@ -30,7 +30,7 @@ const toEligibleRoleStatisticsRows = (rows) => rows
 
 // 직업 5개 전부 채워 돌려줌, 안 해 본 직업은 0으로
 async function getMyRoleStatistics(userId) {
-    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findRoleStatisticsRowsByUser(userId))
+    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findUserStatRows(userId))
     const statsByRole = new Map(
         aggregateRoleStatistics(rows).map((entry) => [entry.role, entry]),
     )
@@ -49,7 +49,7 @@ async function getAccountRecordSummaries(userIds) {
     const summaries = new Map((userIds ?? []).map((userId) => [userId, { totalGames: 0, winRate: 0 }]))
     if (summaries.size === 0) return summaries
 
-    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findRoleStatisticsRowsByUsers([...summaries.keys()]))
+    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findUsersStatRows([...summaries.keys()]))
 
     const totalsByUser = new Map()
     for (const entry of aggregateRoleStatistics(rows)) {
@@ -72,7 +72,7 @@ async function getAccountRecordSummaries(userIds) {
 
 // 직업 하나 순위 표, 순서: 행 → 집계·줄 세우기 → 닉네임·사진 → 프로필 꾸미기
 async function getRoleRanking(role) {
-    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findRoleStatisticsRowsByRole(role))
+    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findRoleStatRows(role))
     const ranked = buildRoleRanking(aggregateRoleStatistics(rows))
     if (ranked.length === 0) return []
 
@@ -98,7 +98,7 @@ async function getRoleRanking(role) {
 
 // 한 사람의 승률 가장 높은 직업 (운명의 가면), 없으면 null
 async function getHighestWinRateRole(userId) {
-    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findRoleStatisticsRowsByUser(userId))
+    const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findUserStatRows(userId))
     return selectMaskOfFateRole(aggregateRoleStatistics(rows))
 }
 
@@ -111,7 +111,7 @@ const toProgressRow = (playerRow) => ({
 
 // 업적 보상 대상 판만 세어 판 수·생존·승리·직업별 승리 돌려줌
 async function getAchievementProgressStats(userId) {
-    const rows = await gameResultRepository.findAchievementProgressRows(userId)
+    const rows = await gameResultRepository.findProgressRows(userId)
 
     const eligibleRows = rows
         .filter((row) => isAchievementRewardEligibleGame({

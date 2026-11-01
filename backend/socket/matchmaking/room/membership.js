@@ -46,7 +46,7 @@ function hasRoomMembership(uuid) {
 
 // 진행 중 게임 채널에 들어가 있는지
 function hasLiveGameMembership(uuid) {
-    return gameSession.isParticipantBlockedFromMatchmaking(uuid)
+    return gameSession.isMatchmakingBlocked(uuid)
 }
 
 // 소켓을 방 채널에서 뗌

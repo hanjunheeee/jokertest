@@ -14,7 +14,7 @@ const ALREADY_IN_GAME_MESSAGE = '진행 중인 게임이 있습니다. 게임을
 
 // 진행 중 게임에 있으면 거절
 function rejectIfInGame(uuid, respond) {
-    if (!gameSession.isParticipantBlockedFromMatchmaking(uuid)) return false
+    if (!gameSession.isMatchmakingBlocked(uuid)) return false
     const routing = gameSession.getActiveSessionRoutingInfo(uuid)
     if (!routing) return false
     respond({

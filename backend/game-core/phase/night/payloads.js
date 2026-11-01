@@ -13,7 +13,7 @@ function buildNightTurnEndedPayload(session, role) {
 }
 
 // 광대한테: 암살 실패 알림
-function buildAssassinationFailureNotice() {
+function buildAssassinFailNotice() {
     return { actionType: 'ASSASSINATE', success: false }
 }
 
@@ -62,7 +62,7 @@ function buildNightDeathReveals(resolution, victimUuids) {
 module.exports = {
     buildNightTurnStartedPayload,
     buildNightTurnEndedPayload,
-    buildAssassinationFailureNotice,
+    buildAssassinFailNotice,
     buildNightResultAppliedPayload,
     resolveNightDeathSource,
     buildNightDeathReveals,

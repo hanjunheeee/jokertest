@@ -88,7 +88,7 @@ function expireDayVote(run) {
     if (!isLiveDayRun(run)) return
 
     fillAbstentions(
-        gameSessionCore.getEligibleDayVoterUuids(session),
+        gameSessionCore.getDayVoterUuids(session),
         (voterUuid) => session.dayVotes.has(voterUuid),
         (voterUuid) => gameSessionCore.submitDayVote(voterUuid, session.id, null),
         '[낮 투표 만료 기권 기록 실패]',

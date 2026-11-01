@@ -16,7 +16,7 @@ function getActiveSessionRoutingInfo(uuid) {
 }
 
 // 게임 중이라 매칭 못 들어가는지 (기권한 사람은 풀어 줌)
-function isParticipantBlockedFromMatchmaking(uuid) {
+function isMatchmakingBlocked(uuid) {
     // 판에 없거나 기권했으면 매칭 가능
     const routing = getActiveSessionRoutingInfo(uuid)
     if (!routing || isForfeitedFromSession(routing.gameId, uuid)) return false
@@ -91,7 +91,7 @@ function getActiveGamePresenceSnapshot() {
 
 module.exports = {
     getActiveSessionRoutingInfo,
-    isParticipantBlockedFromMatchmaking,
+    isMatchmakingBlocked,
     getRoomCodeSessionState,
     findExpectedSession,
     getDisconnectGraceTarget,

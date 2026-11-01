@@ -8,7 +8,7 @@ const ROLE_COMPOSITION_MODES = Object.freeze({ AUTO: 'auto', CUSTOM: 'custom' })
 const CUSTOM_ROLE_KEYS = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
 
 // 최종 구성에 꼭 있어야 하는 역할 칸 (시민 포함)
-const RESOLVED_COMPOSITION_KEYS = Object.freeze([...CUSTOM_ROLE_KEYS, 'CITIZEN'])
+const RESOLVED_ROLE_KEYS = Object.freeze([...CUSTOM_ROLE_KEYS, 'CITIZEN'])
 
 // 역할 하나당 최대 2명
 const MAX_SPECIAL_ROLE_COUNT = 2
@@ -206,11 +206,11 @@ function resolveRoleComposition(settings, playerCount) {
 function validateResolvedComposition(composition, playerCount, jokerCount) {
     if (!isPlainObject(composition)) return { ok: false, reason: 'NOT_OBJECT' }
     const keys = Object.keys(composition)
-    if (keys.length !== RESOLVED_COMPOSITION_KEYS.length) return { ok: false, reason: 'UNEXPECTED_KEYS' }
-    for (const key of RESOLVED_COMPOSITION_KEYS) {
+    if (keys.length !== RESOLVED_ROLE_KEYS.length) return { ok: false, reason: 'UNEXPECTED_KEYS' }
+    for (const key of RESOLVED_ROLE_KEYS) {
         if (!isNonNegativeInteger(composition[key])) return { ok: false, reason: 'INVALID_ROLE_COUNT' }
     }
-    const total = RESOLVED_COMPOSITION_KEYS.reduce((sum, key) => sum + composition[key], 0)
+    const total = RESOLVED_ROLE_KEYS.reduce((sum, key) => sum + composition[key], 0)
     if (total !== playerCount) return { ok: false, reason: 'TOTAL_MISMATCH' }
     if (composition.JOKER !== jokerCount) return { ok: false, reason: 'JOKER_COUNT_MISMATCH' }
     return { ok: true }
@@ -220,7 +220,7 @@ function validateResolvedComposition(composition, playerCount, jokerCount) {
 module.exports = {
     ROLE_COMPOSITION_MODES,
     CUSTOM_ROLE_KEYS,
-    RESOLVED_COMPOSITION_KEYS,
+    RESOLVED_ROLE_KEYS,
     MAX_SPECIAL_ROLE_COUNT,
     getSpecialRoleBudget,
     computeRoleComposition,

@@ -5,21 +5,21 @@
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 // 소셜 가입 마무리는 30분 안에
-const SOCIAL_SIGNUP_INTENT_TTL_MS = 30 * 60 * 1000;
+const INTENT_TTL_MS = 30 * 60 * 1000;
 
 // OAuth 시도 표(쿠키)는 로그인·연결 10분
-const OAUTH_ATTEMPT_TTL_SECONDS = 10 * 60;
+const ATTEMPT_TTL_SECONDS = 10 * 60;
 
 // 소셜 가입 시도 표(쿠키)는 30분
-const SOCIAL_SIGNUP_INTENT_TTL_SECONDS = 30 * 60;
+const INTENT_TTL_SECONDS = 30 * 60;
 
 // state 목적은 로그인·계정 연결 둘뿐
 const VALID_PURPOSES = new Set(["login", "link"]);
 
 module.exports = {
     OAUTH_STATE_TTL_MS,
-    SOCIAL_SIGNUP_INTENT_TTL_MS,
+    INTENT_TTL_MS,
     VALID_PURPOSES,
-    OAUTH_ATTEMPT_TTL_SECONDS,
-    SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
+    ATTEMPT_TTL_SECONDS,
+    INTENT_TTL_SECONDS,
 };

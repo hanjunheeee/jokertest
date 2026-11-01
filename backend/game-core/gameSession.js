@@ -11,14 +11,14 @@ const { __resetStateForTests, __getStateSnapshotForTests, __deleteGameSessionOnl
 const { DEATH_REASONS, resolveGameSource, buildGameResultRecord, buildTerminalFields, buildPublicWinResult, } = require('./result')
 // 재판은 phase/tribunal
 const {
-    TRIBUNAL_CANCELLED_OUTCOME,
+    TRIBUNAL_CANCELLED,
     TRIBUNAL_CANCEL_REASONS,
     TRIBUNAL_PENDING,
-    getEligibleTribunalVoterUuids,
-    buildTribunalBallotSnapshot,
+    getTribunalVoterUuids,
+    buildTribunalBallotSnap,
     tallyTribunalBallots,
     submitTribunalVote,
-    readTribunalVoteSubmitSfxEvent,
+    readTribunalVoteSfx,
     prepareTribunalVoteResolution,
     commitTribunalVoteResolution,
     buildTribunalVoteResolvedPayload,
@@ -26,16 +26,16 @@ const {
 // 판 조회는 queries
 const {
     getActiveSessionRoutingInfo,
-    isParticipantBlockedFromMatchmaking,
+    isMatchmakingBlocked,
     getRoomCodeSessionState,
     isForfeitedFromSession,
     isParticipatingInSession,
     getDisconnectGraceTarget,
     getActiveSessionForDeparture,
-    getEndedSessionPartyBroadcastContext,
-    getEndedSessionGameIdForParticipant,
-    canLookupPartyMatchingRoom,
-    getEndedSessionParticipantUuids,
+    getEndedPartyContext,
+    getEndedGameId,
+    canLookupPartyRoom,
+    getEndedPlayerUuids,
     getActiveGamePresenceSnapshot,
 } = require('./queries')
 // 채팅·이모티콘은 chat
@@ -75,14 +75,14 @@ const {
     enterDayVotePhase,
     getDayVoteRound,
     getDayVoteExcludedUuids,
-    getEligibleDayVoterUuids,
+    getDayVoterUuids,
     tallyDayVoteOutcome,
-    buildDayVoteBallotSnapshot,
-    dayVoteBallotSnapshotsEqual,
+    buildDayBallotSnap,
+    dayBallotSnapsEqual,
     submitDayVote,
-    readDayVoteSubmitSfxEvent,
+    readDayVoteSfx,
     getSessionDayIndex,
-    getSessionDayVoteRound,
+    getSessionVoteRound,
     acknowledgeDayVoteReady,
     buildDayPhaseChangedPayload,
     prepareDayVoteResolution,
@@ -106,15 +106,15 @@ const {
 // 끊김 탈락·나가기는 departure
 const {
     commitDisconnectElimination,
-    buildDisconnectEliminationPayload,
+    buildDisconnectPayload,
     commitParticipantDeparture,
-    advanceStalledPhaseAfterDeparture,
+    advanceStalledPhase,
 } = require('./departure')
 // 진행 표시·스냅샷은 snapshot
 const {
-    buildPublicPhaseProgress,
+    buildPublicProgress,
     bumpSelfProgressSeq,
-    buildSelfSubmissionFields,
+    buildSelfFields,
     buildSessionSnapshot,
     getSessionSnapshotForPlayer,
     buildPhaseChangedPayload,
@@ -167,7 +167,7 @@ const {
     commitNightResolution,
     buildNightTurnStartedPayload,
     buildNightTurnEndedPayload,
-    buildAssassinationFailureNotice,
+    buildAssassinFailNotice,
     buildNightResultAppliedPayload,
 } = require('./phase/night')
 
@@ -194,7 +194,7 @@ module.exports = {
     getDayPhase,
     getDayVoteRound,
     enterDayVotePhase,
-    getEligibleDayVoterUuids,
+    getDayVoterUuids,
     // 밤 행동·턴
     submitNightAction,
     NIGHT_TURN_ORDER,
@@ -208,9 +208,9 @@ module.exports = {
     // 낮 표 받기·투표 효과음
     submitDayVote,
     getSessionDayIndex,
-    getSessionDayVoteRound,
-    readDayVoteSubmitSfxEvent,
-    readTribunalVoteSubmitSfxEvent,
+    getSessionVoteRound,
+    readDayVoteSfx,
+    readTribunalVoteSfx,
     // 채팅 보내기·받는 사람
     prepareJokerChatMessage,
     commitJokerChatMessage,
@@ -230,19 +230,19 @@ module.exports = {
     commitNightResolution,
     // 끊김 탈락·나가기·참여 변경 방송
     commitDisconnectElimination,
-    buildDisconnectEliminationPayload,
+    buildDisconnectPayload,
     commitParticipantDeparture,
     buildParticipationChangedPayload,
     // 진행 표시
-    buildPublicPhaseProgress,
-    buildSelfSubmissionFields,
+    buildPublicProgress,
+    buildSelfFields,
     bumpSelfProgressSeq,
     // 나간 뒤 멈춘 단계 넘기기·참여 확인
-    advanceStalledPhaseAfterDeparture,
+    advanceStalledPhase,
     isParticipatingInSession,
     getActiveSessionForDeparture,
     // 재판 취소 이름
-    TRIBUNAL_CANCELLED_OUTCOME,
+    TRIBUNAL_CANCELLED,
     TRIBUNAL_CANCEL_REASONS,
     // 끊김 유예 대상·기권 확인
     getDisconnectGraceTarget,
@@ -274,11 +274,11 @@ module.exports = {
     buildSessionSnapshot,
     // 판 찾기 (매칭·끝난 판 파티·방 코드·접속 현황)
     getActiveSessionRoutingInfo,
-    isParticipantBlockedFromMatchmaking,
-    getEndedSessionPartyBroadcastContext,
-    getEndedSessionGameIdForParticipant,
-    canLookupPartyMatchingRoom,
-    getEndedSessionParticipantUuids,
+    isMatchmakingBlocked,
+    getEndedPartyContext,
+    getEndedGameId,
+    canLookupPartyRoom,
+    getEndedPlayerUuids,
     getRoomCodeSessionState,
     getActiveGamePresenceSnapshot,
     // 여기부터 시험 전용 (운영 코드는 안 씀)
@@ -330,14 +330,14 @@ module.exports = {
         closeNightHealing,
         collectRoleNightSubmissions,
         resolveRoleNightAction,
-        buildAssassinationFailureNotice,
+        buildAssassinFailNotice,
         expireDeadPlayerNightEffects,
         resolveNightDeathSource,
         buildNightDeathReveals,
-        getEligibleDayVoterUuids,
+        getDayVoterUuids,
         tallyDayVoteOutcome,
-        buildDayVoteBallotSnapshot,
-        dayVoteBallotSnapshotsEqual,
+        buildDayBallotSnap,
+        dayBallotSnapsEqual,
         __deleteGameSessionOnlyForTests,
     },
 }

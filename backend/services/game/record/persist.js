@@ -3,8 +3,8 @@
 const gameSessionCore = require('../../../game-core/gameSession')
 const gameResultRepository = require('../../../repositories/game/result')
 const gameAchievementService = require('../achievementHooks')
-const { terminalPersistRuns, getBySession, terminalPersistConfirmed } = require('./state')
-const { TERMINAL_PERSIST_RETRY_DELAYS_MS, TERMINAL_PERSIST_MAX_DELAY_MS, TERMINAL_PERSIST_CONFIRMED_MAX } = require('./constants')
+const { terminalPersistRuns, getBySession, confirmedGameIds } = require('./state')
+const { RETRY_DELAYS_MS, MAX_DELAY_MS, CONFIRMED_MAX } = require('./constants')
 const { deps } = require('./deps')
 const { invalidateAccountCaches } = require('./notify')
 
@@ -14,7 +14,7 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     if (typeof gameId !== 'string' || !gameId) return
     if (terminalPersistRuns.has(gameId)) return
     if (getBySession().get(session)) return
-    if (terminalPersistConfirmed.has(gameId)) return
+    if (confirmedGameIds.has(gameId)) return
 
     // 레코드·원 참가자 명단은 처음 한 번만 만들어 고정 (재시도마다 달라지지 않게)
     let record
@@ -56,14 +56,14 @@ function attemptTerminalPersist(run) {
         .then(() => finishTerminalPersist(run))
         .catch(() => {
             console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId: run.gameId, attempt: run.attempt })
-            scheduleTerminalPersistRetry(run)
+            scheduleRetry(run)
         })
 }
 
 // 재시도 예약: 아직 이 run이 그 판 작업일 때만 (프로세스 종료는 안 막음)
-function scheduleTerminalPersistRetry(run) {
+function scheduleRetry(run) {
     if (terminalPersistRuns.get(run.gameId) !== run) return
-    const delay = TERMINAL_PERSIST_RETRY_DELAYS_MS[run.attempt - 1] ?? TERMINAL_PERSIST_MAX_DELAY_MS
+    const delay = RETRY_DELAYS_MS[run.attempt - 1] ?? MAX_DELAY_MS
     const setTimeoutFn = deps.setTimeoutFn
     run.timerId = setTimeoutFn(() => {
         run.timerId = null
@@ -85,14 +85,14 @@ function clearPersistTimer(run) {
 // 저장 확인: 작업 지우고 확인 표시, 그다음 프로필 → (업적 평가 뒤) 경제·업적 캐시 무효화 신호
 function finishTerminalPersist(run) {
     if (terminalPersistRuns.get(run.gameId) === run) terminalPersistRuns.delete(run.gameId)
-    terminalPersistConfirmed.add(run.gameId)
-    if (terminalPersistConfirmed.size > TERMINAL_PERSIST_CONFIRMED_MAX) {
-        terminalPersistConfirmed.delete(terminalPersistConfirmed.values().next().value)
+    confirmedGameIds.add(run.gameId)
+    if (confirmedGameIds.size > CONFIRMED_MAX) {
+        confirmedGameIds.delete(confirmedGameIds.values().next().value)
     }
     clearPersistTimer(run)
 
     invalidateAccountCaches(run.participantUuids, run.gameId, ['profile'])
-    Promise.resolve(gameAchievementService.evaluateAchievementsForUsers(run.participantUuids, run.gameId))
+    Promise.resolve(gameAchievementService.evaluateForUsers(run.participantUuids, run.gameId))
         .then(() => invalidateAccountCaches(run.participantUuids, run.gameId, ['economy', 'achievements']))
         .catch(() => {
             console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId: run.gameId })

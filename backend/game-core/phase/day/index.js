@@ -6,11 +6,11 @@ const {
     getResolutionRound, getDayVoteReadyUuids, isVoteRoundResolved,
 } = require('./state')
 const {
-    getEligibleDayVoterUuids, uuidListsEqual, tallyDayVoteOutcome, buildDayVoteBallotSnapshot,
-    dayVoteBallotSnapshotsEqual,
+    getDayVoterUuids, uuidListsEqual, tallyDayVoteOutcome, buildDayBallotSnap,
+    dayBallotSnapsEqual,
 } = require('./ballots')
-const { submitDayVote, advanceDayVoteSfx, readDayVoteSubmitSfxEvent } = require('./vote')
-const { getSessionDayIndex, getSessionDayVoteRound, acknowledgeDayVoteReady } = require('./ready')
+const { submitDayVote, advanceDayVoteSfx, readDayVoteSfx } = require('./vote')
+const { getSessionDayIndex, getSessionVoteRound, acknowledgeDayVoteReady } = require('./ready')
 const { prepareDayVoteResolution, commitDayVoteResolution } = require('./resolve')
 const { buildDayPhaseChangedPayload, buildDayVoteResolvedPayload } = require('./payloads')
 
@@ -18,10 +18,10 @@ module.exports = {
     DAY_PHASES, DAY_DISCUSSION_DURATION_MS, DAY_VOTE_DURATION_MS,
     enterDayPhase, getDayPhase, enterDayVotePhase, getDayVoteRound, getDayVoteExcludedUuids,
     getResolutionRound, getDayVoteReadyUuids, isVoteRoundResolved,
-    getEligibleDayVoterUuids, uuidListsEqual, tallyDayVoteOutcome, buildDayVoteBallotSnapshot,
-    dayVoteBallotSnapshotsEqual,
-    submitDayVote, advanceDayVoteSfx, readDayVoteSubmitSfxEvent,
-    getSessionDayIndex, getSessionDayVoteRound, acknowledgeDayVoteReady,
+    getDayVoterUuids, uuidListsEqual, tallyDayVoteOutcome, buildDayBallotSnap,
+    dayBallotSnapsEqual,
+    submitDayVote, advanceDayVoteSfx, readDayVoteSfx,
+    getSessionDayIndex, getSessionVoteRound, acknowledgeDayVoteReady,
     prepareDayVoteResolution, commitDayVoteResolution,
     buildDayPhaseChangedPayload, buildDayVoteResolvedPayload,
 }

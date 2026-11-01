@@ -21,7 +21,7 @@ async function getReceiverSnapshot(receiverId) {
         await lockReceiver(db, receiverId, t);
         await expireDueInvites(db, receiverId, now(), t);
 
-        const rows = await gameInviteRepository.listForReceiverWithSender(db, { receiverId, status: INVITE_STATUS.PENDING }, t);
+        const rows = await gameInviteRepository.listReceivedWithSender(db, { receiverId, status: INVITE_STATUS.PENDING }, t);
 
         const newest = await gameInviteRepository.findNewestForReceiver(db, receiverId, t);
 

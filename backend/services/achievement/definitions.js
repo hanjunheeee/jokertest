@@ -69,9 +69,9 @@ const JOB_ACHIEVEMENTS = Object.freeze(
 
 const ACHIEVEMENT_DEFINITIONS = Object.freeze([...FORBIDDEN_RECORD_ACHIEVEMENTS, ...JOB_ACHIEVEMENTS]);
 
-const ACHIEVEMENT_DEFINITIONS_BY_ID = new Map(ACHIEVEMENT_DEFINITIONS.map((def) => [def.id, def]));
+const DEFINITIONS_BY_ID = new Map(ACHIEVEMENT_DEFINITIONS.map((def) => [def.id, def]));
 
-const getAchievementDefinition = (achievementId) => ACHIEVEMENT_DEFINITIONS_BY_ID.get(achievementId);
+const getAchievementDefinition = (achievementId) => DEFINITIONS_BY_ID.get(achievementId);
 
 module.exports = {
     CURRENCIES,

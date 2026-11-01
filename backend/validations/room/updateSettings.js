@@ -106,7 +106,7 @@ function buildRoomSettingsView(settings) {
     return view
 }
 
-function settingsContainNonAllowlistedKeys(settings) {
+function hasDisallowedKeys(settings) {
     if (!isPlainObject(settings)) return false
     for (const key of Object.keys(settings)) {
         if (EDITABLE_ROOM_SETTING_KEYS.includes(key)) continue
@@ -148,7 +148,7 @@ function fingerprintUpdateSettings(accessType, settings) {
     return parts.join('|')
 }
 
-function fingerprintUpdateRequest(expectedSettingsVersion, accessType, settings) {
+function fingerprintRequest(expectedSettingsVersion, accessType, settings) {
     return `v=${expectedSettingsVersion}|${fingerprintUpdateSettings(accessType, settings)}`
 }
 
@@ -243,14 +243,14 @@ module.exports = {
     validateUpdateRoomSettingsPayload,
     buildEditableSettingsView,
     buildRoomSettingsView,
-    settingsContainNonAllowlistedKeys,
+    hasDisallowedKeys,
     fingerprintUpdateSettings,
-    fingerprintUpdateRequest,
+    fingerprintRequest,
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
     EDITABLE_ROOM_SETTING_KEYS,
     PRESERVED_ROOM_SETTING_KEYS,
     UPDATE_REQUEST_TOP_LEVEL_KEYS,
     MAX_IDENTIFIER_LENGTH,
-    isRoomSettingsIdentifier: isIdentifier,
+    isSettingsIdentifier: isIdentifier,
 }

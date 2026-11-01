@@ -1,6 +1,6 @@
 // 전적 저장 시험 손잡이 파일
 // 진행 중 저장 보기 · 상태 전부 초기화
-const { terminalPersistRuns, terminalPersistConfirmed, setBySession } = require('./state')
+const { terminalPersistRuns, confirmedGameIds, setBySession } = require('./state')
 const { clearPersistTimer } = require('./persist')
 const { __setTerminalPersistTimersForTests } = require('./deps')
 
@@ -13,7 +13,7 @@ function __getTerminalPersistRunsForTests() {
 function __resetTerminalPersistForTests() {
     for (const run of [...terminalPersistRuns.values()]) clearPersistTimer(run)
     terminalPersistRuns.clear()
-    terminalPersistConfirmed.clear()
+    confirmedGameIds.clear()
     setBySession(new WeakMap())
     __setTerminalPersistTimersForTests()
 }

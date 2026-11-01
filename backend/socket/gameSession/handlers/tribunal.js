@@ -27,7 +27,7 @@ const { resolveAfterDeparture } = require('../departure/autoResolve')
 
 // 재판 표 제출 효과음 (기록 없거나 읽다 던지면 null)
 function buildTribunalVoteSfx(uuid, gameId) {
-    const record = tryOr(null, () => gameSessionCore.readTribunalVoteSubmitSfxEvent(uuid, gameId))
+    const record = tryOr(null, () => gameSessionCore.readTribunalVoteSfx(uuid, gameId))
     if (record === null) return null
     return {
         kind: 'tribunal-vote-submitted',

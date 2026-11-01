@@ -3,7 +3,7 @@
 // socket 쪽이 gameSession.js 통해서 판 다시 그릴 때 사용
 const { buildPlayerThemeIndices, buildSettingsFields, PLAYER_THEME_PALETTE_SIZE, buildProfileFields, buildViewerRoleFields } = require('../setup')
 const { getDayPhase, buildDayVoteResolvedPayload } = require('../phase/day')
-const { computeHasActed, buildSelfSubmissionFields, buildPublicPhaseProgress } = require('./progress')
+const { computeHasActed, buildSelfFields, buildPublicProgress } = require('./progress')
 const { buildNightResultAppliedPayload } = require('../phase/night')
 const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal')
 const { buildPublicWinResult } = require('../result')
@@ -52,9 +52,9 @@ function buildSessionSnapshot(session, uuid) {
         self: {
             ...buildViewerRoleFields(session, viewer),
             hasActedThisPhase: computeHasActed(session, uuid),
-            ...buildSelfSubmissionFields(session, uuid),
+            ...buildSelfFields(session, uuid),
         },
-        progress: buildPublicPhaseProgress(session),
+        progress: buildPublicProgress(session),
     }
 
     // 밤 판정이 있으면 공개 결과만 (누가 죽었나)

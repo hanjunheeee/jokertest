@@ -6,7 +6,7 @@ const { getActiveSessionRoutingInfo } = require('./live')
 const { isForfeitedFromSession } = require('./participation')
 
 // 끝난 판 방장이 다음 방 알릴 사람 목록 (방장·기권한 사람 빼고)
-function getEndedSessionPartyBroadcastContext(hostUuid) {
+function getEndedPartyContext(hostUuid) {
     // 방장이 끝난 판에 있고 그 판 방장이 맞을 때만
     const routing = getActiveSessionRoutingInfo(hostUuid)
     if (!routing) return null
@@ -24,7 +24,7 @@ function getEndedSessionPartyBroadcastContext(hostUuid) {
 }
 
 // 끝난 판에 아직 남아 있는 사람의 판 id
-function getEndedSessionGameIdForParticipant(uuid) {
+function getEndedGameId(uuid) {
     // 판에 없거나 기권했으면 없음
     const routing = getActiveSessionRoutingInfo(uuid)
     if (!routing || isForfeitedFromSession(routing.gameId, uuid)) return null
@@ -35,7 +35,7 @@ function getEndedSessionGameIdForParticipant(uuid) {
 }
 
 // 다음 방 우편함 볼 자격 있는지 (끝난 판 참가자, 기권 안 한 사람)
-function canLookupPartyMatchingRoom(uuid, gameId) {
+function canLookupPartyRoom(uuid, gameId) {
     // 판 id 모양 확인, 기권한 사람은 거절
     if (!normalizeGameId(gameId, { trim: false })) return false
     if (isForfeitedFromSession(gameId, uuid)) return false
@@ -46,7 +46,7 @@ function canLookupPartyMatchingRoom(uuid, gameId) {
 }
 
 // 끝난 판 남은 사람 목록 (기권한 사람 빼고)
-function getEndedSessionParticipantUuids(gameId, { excludeUuid = null } = {}) {
+function getEndedPlayerUuids(gameId, { excludeUuid = null } = {}) {
     // 끝난 판 아니면 빈 목록
     const session = gameSessions.get(gameId)
     if (!session || session.phase !== 'ENDED') return []
@@ -61,8 +61,8 @@ function getEndedSessionParticipantUuids(gameId, { excludeUuid = null } = {}) {
 }
 
 module.exports = {
-    getEndedSessionPartyBroadcastContext,
-    getEndedSessionGameIdForParticipant,
-    canLookupPartyMatchingRoom,
-    getEndedSessionParticipantUuids,
+    getEndedPartyContext,
+    getEndedGameId,
+    canLookupPartyRoom,
+    getEndedPlayerUuids,
 }

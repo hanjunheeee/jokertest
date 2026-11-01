@@ -7,7 +7,7 @@ const grantRepository = require('../../repositories/achievement');
 const { withTransaction } = require('../../repositories/common');
 
 // 지급 통지 실패해도 던지지 않음, 사건 이름은 문자열 그대로
-const notifyAchievementGranted = (userId, definition) => {
+const notifyGranted = (userId, definition) => {
     try {
         const emit = getDeps().emitToUser;
         if (typeof emit !== 'function') return;
@@ -59,7 +59,7 @@ const grantAchievement = async (userId, definition) => {
             }
         }
 
-        const { notification } = await getDeps().notificationService.createAchievementNotification({
+        const { notification } = await getDeps().notificationService.createForAchievement({
             userId, achievementId: definition.id,
         }, { db, transaction });
 
@@ -68,6 +68,6 @@ const grantAchievement = async (userId, definition) => {
 };
 
 module.exports = {
-    notifyAchievementGranted,
+    notifyGranted,
     grantAchievement,
 };

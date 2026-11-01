@@ -6,8 +6,8 @@ const { isRegisteredSession } = require('../../queries')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../../core/rules/terminal')
 const { enterNightPhase } = require('../../core/rules/phase')
 const { DEATH_REASONS } = require('../../result')
-const { TRIBUNAL_PENDING, getEligibleTribunalVoterUuids, buildTribunalBallotSnapshot, tallyTribunalBallots, isSameBallots, } = require('./ballots')
-const { TRIBUNAL_CANCELLED_OUTCOME, TRIBUNAL_CANCEL_REASONS } = require('./constants')
+const { TRIBUNAL_PENDING, getTribunalVoterUuids, buildTribunalBallotSnap, tallyTribunalBallots, isSameBallots, } = require('./ballots')
+const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('./constants')
 
 // 재판 판정 준비: 표 세서 결과 정하고 보관함에 넣음, 아직 확정 안 함
 function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
@@ -39,13 +39,13 @@ function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
     if (tribunal.resolved === true) return { ok: false, code: 'TRIBUNAL_ALREADY_RESOLVED' }
 
     // 투표할 사람이 전부 냈는지
-    const eligibleVoterUuids = getEligibleTribunalVoterUuids(session, tribunal.defendantUuid)
+    const eligibleVoterUuids = getTribunalVoterUuids(session, tribunal.defendantUuid)
     for (const voterUuid of eligibleVoterUuids) {
         if (!tribunal.votes.has(voterUuid)) return { ok: false, code: 'TRIBUNAL_VOTES_INCOMPLETE' }
     }
 
     // 지금 표 묶음 만들고 얼림 (나중에 비교용)
-    const ballotSnapshot = buildTribunalBallotSnapshot(session, tribunal)
+    const ballotSnapshot = buildTribunalBallotSnap(session, tribunal)
     for (const entry of ballotSnapshot) Object.freeze(entry)
     Object.freeze(ballotSnapshot)
 
@@ -95,7 +95,7 @@ function commitTribunalVoteResolution(session, resolution) {
     if (!record || record.resolution !== resolution) return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
 
     // 지금 표가 prepare 때 표랑 같은지
-    const currentBallotSnapshot = buildTribunalBallotSnapshot(session, tribunal)
+    const currentBallotSnapshot = buildTribunalBallotSnap(session, tribunal)
     if (!isSameBallots(currentBallotSnapshot, record.ballotSnapshot)) {
         return { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' }
     }
@@ -141,7 +141,7 @@ function buildTribunalVoteResolvedPayload(session) {
     const tribunal = session.tribunal
     const executedUuid = tribunal.executedUuid
     return {
-        ...(tribunal.outcome === TRIBUNAL_CANCELLED_OUTCOME
+        ...(tribunal.outcome === TRIBUNAL_CANCELLED
             ? { reason: tribunal.cancelReason ?? TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT }
             : {}),
         gameId: session.id,

@@ -48,7 +48,7 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
 
             const requester = await userLookup.findNickname(db, myUuid, t);
 
-            const result = await notificationService.createFriendRequestNotification({
+            const result = await notificationService.createForFriendRequest({
                 receiverId,
                 requestId: Number.isInteger(created?.id) ? created.id : Number(created?.id),
                 requesterNickname: requester?.nickname ?? null,
@@ -71,14 +71,14 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
 // 나에게 온 대기 요청만 수락, 친구 관계 만듦
 exports.acceptRequest = async (myUuid, requestId) => {
     return await withTransaction(db, async (t) => {
-        const identified = await friendRequestRepository.findFriendRequestById(requestId);
+        const identified = await friendRequestRepository.findRequestById(requestId);
         if (!identified) throw createError('친구 요청을 찾을 수 없습니다.', 404);
 
         await friendshipRepository.lockAccountsInOrder(
             [identified.requester_id, identified.receiver_id], { transaction: t },
         );
 
-        const request = await friendRequestRepository.findFriendRequestById(requestId, {
+        const request = await friendRequestRepository.findRequestById(requestId, {
             transaction: t,
             lock: t.LOCK.UPDATE,
         });
@@ -104,14 +104,14 @@ exports.acceptRequest = async (myUuid, requestId) => {
 // 나에게 온 대기 요청만 거절
 exports.declineRequest = async (myUuid, requestId) => {
     return await withTransaction(db, async (t) => {
-        const identified = await friendRequestRepository.findFriendRequestById(requestId);
+        const identified = await friendRequestRepository.findRequestById(requestId);
         if (!identified) throw createError('친구 요청을 찾을 수 없습니다.', 404);
 
         await friendshipRepository.lockAccountsInOrder(
             [identified.requester_id, identified.receiver_id], { transaction: t },
         );
 
-        const request = await friendRequestRepository.findFriendRequestById(requestId, {
+        const request = await friendRequestRepository.findRequestById(requestId, {
             transaction: t,
             lock: t.LOCK.UPDATE,
         });
@@ -156,7 +156,7 @@ exports.getRequestResults = async (myUuid, requestIds) => {
     )];
     if (ids.length === 0) return [];
 
-    const rows = await friendRequestRepository.findRequestResultsForUser(myUuid, ids);
+    const rows = await friendRequestRepository.findRequestResults(myUuid, ids);
     return rows.map((row) => ({
         request_id: row.id,
         status: row.status,

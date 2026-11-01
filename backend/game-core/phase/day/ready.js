@@ -4,7 +4,7 @@ const { getSessionById } = require('../../queries')
 const { getDayVoteRound, getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('./state')
 const { findActorSession } = require('../../core/registry/lookup')
 const { DAY_PHASES } = require('./constants')
-const { getEligibleDayVoterUuids } = require('./ballots')
+const { getDayVoterUuids } = require('./ballots')
 
 // 판의 지금 날짜
 function getSessionDayIndex(gameId) {
@@ -13,7 +13,7 @@ function getSessionDayIndex(gameId) {
 }
 
 // 판의 지금 투표 번호
-function getSessionDayVoteRound(gameId) {
+function getSessionVoteRound(gameId) {
     const session = getSessionById(gameId)
     return session ? getDayVoteRound(session) : null
 }
@@ -31,7 +31,7 @@ function acknowledgeDayVoteReady(uuid, gameId) {
     if (!actor.alive) return { ok: false, code: 'ACTOR_NOT_ALIVE' }
 
     // 준비 명단 없으면 새로 만들어 붙임
-    const eligibleUuids = getEligibleDayVoterUuids(session)
+    const eligibleUuids = getDayVoterUuids(session)
     const readyUuids = getDayVoteReadyUuids(session)
     session.dayVoteReadyUuids = readyUuids
     // 산 사람 중 누른 사람만 셈 (죽은 사람 기록은 안 셈)
@@ -55,6 +55,6 @@ function acknowledgeDayVoteReady(uuid, gameId) {
 
 module.exports = {
     getSessionDayIndex,
-    getSessionDayVoteRound,
+    getSessionVoteRound,
     acknowledgeDayVoteReady,
 }

@@ -34,7 +34,7 @@ const { prepareNightResolution, prepareNightResolutionForSession } = require('./
 const { expireDeadPlayerNightEffects, commitNightResolution } = require('./commit')
 // 밤 방송 내용·사망 공개 목록
 const {
-    buildNightTurnStartedPayload, buildNightTurnEndedPayload, buildAssassinationFailureNotice,
+    buildNightTurnStartedPayload, buildNightTurnEndedPayload, buildAssassinFailNotice,
     buildNightResultAppliedPayload, resolveNightDeathSource, buildNightDeathReveals,
 } = require('./payloads')
 
@@ -53,6 +53,6 @@ module.exports = {
     snapshotNightPreparation, restoreNightPreparation, registerNightPreparation,
     prepareNightResolution, prepareNightResolutionForSession,
     expireDeadPlayerNightEffects, commitNightResolution,
-    buildNightTurnStartedPayload, buildNightTurnEndedPayload, buildAssassinationFailureNotice,
+    buildNightTurnStartedPayload, buildNightTurnEndedPayload, buildAssassinFailNotice,
     buildNightResultAppliedPayload, resolveNightDeathSource, buildNightDeathReveals,
 }

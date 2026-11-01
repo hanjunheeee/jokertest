@@ -4,7 +4,7 @@
 // 판 끝·투표 뒤 손잡이·컨트롤러·전체 다시 평가가 부름
 const achievementDefinitions = require('./definitions');
 const { loadProgress, currentValueOf, meetsThreshold } = require('./progress');
-const { grantAchievement, notifyAchievementGranted } = require('./grant');
+const { grantAchievement, notifyGranted } = require('./grant');
 const { getDeps } = require('./deps');
 const grantRepository = require('../../repositories/achievement');
 
@@ -24,7 +24,7 @@ const evaluateAndGrantForUser = async (userId) => {
         }
         const { granted, notification } = await grantAchievement(userId, definition);
         if (granted) {
-            notifyAchievementGranted(userId, definition);
+            notifyGranted(userId, definition);
             if (notification) getDeps().notificationService.emitNotificationCreated(userId, notification);
         }
         results.push({ id: definition.id, achieved: true, granted, current, threshold: definition.threshold });

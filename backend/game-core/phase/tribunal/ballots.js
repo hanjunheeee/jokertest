@@ -6,7 +6,7 @@
 const TRIBUNAL_PENDING = new WeakMap()
 
 // 재판 투표할 수 있는 사람 (산 사람 중 피고 빼고)
-function getEligibleTribunalVoterUuids(session, defendantUuid) {
+function getTribunalVoterUuids(session, defendantUuid) {
     const uuids = []
     for (const player of session.players.values()) {
         if (player.alive && player.uuid !== defendantUuid) uuids.push(player.uuid)
@@ -15,8 +15,8 @@ function getEligibleTribunalVoterUuids(session, defendantUuid) {
 }
 
 // 지금 투표 상태 묶음 (누가 뭘 찍었나)
-function buildTribunalBallotSnapshot(session, tribunal) {
-    const eligibleVoterUuids = getEligibleTribunalVoterUuids(session, tribunal.defendantUuid)
+function buildTribunalBallotSnap(session, tribunal) {
+    const eligibleVoterUuids = getTribunalVoterUuids(session, tribunal.defendantUuid)
     // 투표할 사람마다 낸 표 (안 냈으면 빈 값)
     const snapshot = eligibleVoterUuids.map((voterUuid) => ({ voterUuid, choice: tribunal.votes.get(voterUuid) }))
     // 투표자 순서로 정렬 (비교 때 순서 안 꼬이게)
@@ -53,8 +53,8 @@ function isSameBallots(a, b) {
 
 module.exports = {
     TRIBUNAL_PENDING,
-    getEligibleTribunalVoterUuids,
-    buildTribunalBallotSnapshot,
+    getTribunalVoterUuids,
+    buildTribunalBallotSnap,
     tallyTribunalBallots,
     isSameBallots,
 }

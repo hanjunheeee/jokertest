@@ -74,7 +74,7 @@ function advanceDayVoteSfx(session, uuid, targetId, isFirstSubmission) {
 }
 
 // 투표 효과음 이벤트 꺼내기
-function readDayVoteSubmitSfxEvent(uuid, gameId) {
+function readDayVoteSfx(uuid, gameId) {
     // 판 id·판·내 기록 없으면 효과음 없음
     if (!normalizeGameId(gameId, { trim: false })) return null
     const session = getSessionById(gameId)
@@ -92,5 +92,5 @@ function readDayVoteSubmitSfxEvent(uuid, gameId) {
 module.exports = {
     submitDayVote,
     advanceDayVoteSfx,
-    readDayVoteSubmitSfxEvent,
+    readDayVoteSfx,
 }

@@ -25,7 +25,7 @@ const { resolveAfterDeparture } = require('../departure/autoResolve')
 
 // 낮 투표 제출 효과음 (기록 없거나 읽다 던지면 null, 효과음 없이 답함)
 function buildDayVoteSfx(uuid, gameId) {
-    const record = tryOr(null, () => gameSessionCore.readDayVoteSubmitSfxEvent(uuid, gameId))
+    const record = tryOr(null, () => gameSessionCore.readDayVoteSfx(uuid, gameId))
     if (record === null) return null
     return {
         kind: 'day-vote-submitted',
@@ -62,7 +62,7 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     }
 
     // 기권이거나 재투표 라운드면 참여 기록 없이 바로 답
-    if (targetId === null || gameSessionCore.getSessionDayVoteRound(gameId) !== 1) {
+    if (targetId === null || gameSessionCore.getSessionVoteRound(gameId) !== 1) {
         ackThenResolve({ ok: true, sfxEvent })
         return
     }
@@ -70,7 +70,7 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     // 1라운드 진짜 표: 참여 기록 저장이 끝나야 성공으로 답함, 실패면 다시 내라고 답함 (지도 04-③)
     const dayIndex = gameSessionCore.getSessionDayIndex(gameId)
     try {
-        await gameAchievementService.recordDayVoteParticipation({ gameId, dayIndex, userId: uuid })
+        await gameAchievementService.recordParticipation({ gameId, dayIndex, userId: uuid })
     } catch {
         console.error('[투표 참여 사건 저장 실패]', { code: 'VOTE_PERSIST_ERROR', uuid, gameId })
         ackThenResolve({
@@ -83,7 +83,7 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
 
     // 답 먼저, 업적 평가는 기다리지 않음
     ackThenResolve({ ok: true, sfxEvent })
-    gameAchievementService.evaluateAchievementsForUsers([uuid], gameId)
+    gameAchievementService.evaluateForUsers([uuid], gameId)
 }
 
 // 낮 투표 판정 ack

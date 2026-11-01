@@ -13,7 +13,7 @@ function emitSelfProgress(io, session, onlyUuid = null) {
     let progress = null
     const built = isolate(label, { code: 'SELF_PROGRESS_BUILD_ERROR', gameId: session.id }, () => {
         seq = gameSessionCore.bumpSelfProgressSeq(session)
-        progress = gameSessionCore.buildPublicPhaseProgress(session)
+        progress = gameSessionCore.buildPublicProgress(session)
     })
     if (!built) return
     const participationRevision = Number.isSafeInteger(session.participationRevision)
@@ -34,7 +34,7 @@ function emitSelfProgress(io, session, onlyUuid = null) {
                 participationRevision,
                 selfProgressSeq: seq,
                 progress,
-                self: gameSessionCore.buildSelfSubmissionFields(session, player.uuid),
+                self: gameSessionCore.buildSelfFields(session, player.uuid),
             }))
     }
 }

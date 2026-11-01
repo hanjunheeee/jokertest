@@ -22,12 +22,12 @@ function handleGetPartyMatchingRoom(uuid, payload, callback) {
     if (typeof callback !== 'function') return
     const gameId = typeof payload?.gameId === 'string' && payload.gameId.length > 0
         ? payload.gameId
-        : gameSession.getEndedSessionGameIdForParticipant(uuid)
+        : gameSession.getEndedGameId(uuid)
     if (!gameId) {
         callback({ ok: true, gameId: null, room: null })
         return
     }
-    if (!gameSession.canLookupPartyMatchingRoom(uuid, gameId)) {
+    if (!gameSession.canLookupPartyRoom(uuid, gameId)) {
         callback({ ok: true, gameId, room: null })
         return
     }
@@ -36,8 +36,8 @@ function handleGetPartyMatchingRoom(uuid, payload, callback) {
 
 // 방장이 다음 방 만들면 끝난 판 사람들한테 알리고 우편함에 넣음
 function notifyPartyOfRoom(io, hostUuid, room) {
-    const ctx = gameSession.getEndedSessionPartyBroadcastContext(hostUuid)
-    const gameId = ctx?.gameId ?? gameSession.getEndedSessionGameIdForParticipant(hostUuid)
+    const ctx = gameSession.getEndedPartyContext(hostUuid)
+    const gameId = ctx?.gameId ?? gameSession.getEndedGameId(hostUuid)
     if (!gameId) return
     const payload = {
         gameId,
@@ -49,7 +49,7 @@ function notifyPartyOfRoom(io, hostUuid, room) {
             io.to(ctx.channelId).emit('party_matching_room_ready', payload)
         }
         const participantUuids = ctx?.participantUuids
-            ?? gameSession.getEndedSessionParticipantUuids(gameId, { excludeUuid: hostUuid })
+            ?? gameSession.getEndedPlayerUuids(gameId, { excludeUuid: hostUuid })
         for (const participantUuid of participantUuids) {
             for (const participantSocket of findAllLiveSockets(io, participantUuid)) {
                 participantSocket.emit('party_matching_room_ready', payload)

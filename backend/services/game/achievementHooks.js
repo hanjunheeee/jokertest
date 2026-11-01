@@ -10,14 +10,14 @@ const deps = {
 }
 
 // 1라운드 진짜 표의 참여 기록 저장 (돌려받은 Promise를 그대로 넘김, 지도 04-③)
-function recordDayVoteParticipation(entry) {
+function recordParticipation(entry) {
     const record = deps.recordVoteParticipation
     return record(entry)
 }
 
 // 여러 명 업적 평가: 한 사람 실패가 다른 사람·뒤 신호를 막지 않게 사람마다 catch (지도 07-⑥)
 // 묶은 Promise는 거부되지 않음
-function evaluateAchievementsForUsers(userIds, gameId) {
+function evaluateForUsers(userIds, gameId) {
     const settled = []
     for (const userId of userIds) {
         if (typeof userId !== 'string' || !userId) continue
@@ -43,8 +43,8 @@ function __setEvaluateAchievementsForTests(fn) {
 }
 
 module.exports = {
-    recordDayVoteParticipation,
-    evaluateAchievementsForUsers,
+    recordParticipation,
+    evaluateForUsers,
     __setRecordVoteParticipationForTests,
     __setEvaluateAchievementsForTests,
 }

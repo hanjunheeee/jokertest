@@ -3,7 +3,7 @@
 const crypto = require("crypto");
 const discordOAuthService = require("../oauth/discord");
 const { signOAuthAttempt } = require("./attempt");
-const { OAUTH_ATTEMPT_TTL_SECONDS } = require("./constants");
+const { ATTEMPT_TTL_SECONDS } = require("./constants");
 
 // 지문 만들고 로그인한 세션으로 연결 state 발급 → 시도 표 서명
 exports.startDiscordLink = async ({ userId, sessionId }) => {
@@ -15,7 +15,7 @@ exports.startDiscordLink = async ({ userId, sessionId }) => {
 
     const attemptToken = signOAuthAttempt(
         { fp: browserFingerprint, purpose: "link", provider: "discord" },
-        OAUTH_ATTEMPT_TTL_SECONDS,
+        ATTEMPT_TTL_SECONDS,
     );
     return { state, attemptToken };
 };

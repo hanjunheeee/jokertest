@@ -44,7 +44,7 @@ const createNotification = async ({ userId, type, sourceKey, title, body, target
 };
 
 // 친구 신청 알림, 요청 id 숫자 아니면 안 만듦
-const createFriendRequestNotification = async ({ receiverId, requestId, requesterNickname }, options = {}) => {
+const createForFriendRequest = async ({ receiverId, requestId, requesterNickname }, options = {}) => {
     if (!Number.isInteger(requestId)) return { created: false, notification: null };
 
     const who = typeof requesterNickname === 'string' && requesterNickname.trim().length > 0
@@ -62,7 +62,7 @@ const createFriendRequestNotification = async ({ receiverId, requestId, requeste
 };
 
 // 게임 초대 알림
-const createGameInviteNotification = async ({ receiverId, inviteId, senderNickname }, options = {}) => {
+const createForGameInvite = async ({ receiverId, inviteId, senderNickname }, options = {}) => {
     if (typeof inviteId !== 'string' || inviteId.length === 0) {
         return { created: false, notification: null };
     }
@@ -82,7 +82,7 @@ const createGameInviteNotification = async ({ receiverId, inviteId, senderNickna
 };
 
 // 업적 달성 알림
-const createAchievementNotification = async ({ userId, achievementId }, options = {}) => {
+const createForAchievement = async ({ userId, achievementId }, options = {}) => {
     if (typeof achievementId !== 'string' || achievementId.length === 0) {
         return { created: false, notification: null };
     }
@@ -119,8 +119,8 @@ const ensureSystemWelcome = async (userId) => {
 
 module.exports = {
     createNotification,
-    createFriendRequestNotification,
-    createGameInviteNotification,
-    createAchievementNotification,
+    createForFriendRequest,
+    createForGameInvite,
+    createForAchievement,
     ensureSystemWelcome,
 };

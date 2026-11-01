@@ -34,12 +34,12 @@ const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 
-const isPasswordResetScopedPath = (req) => String(req.originalUrl || req.url || '')
+const isPasswordResetPath = (req) => String(req.originalUrl || req.url || '')
     .split('?')[0].replace(/\/+$/, '').toLowerCase().startsWith('/auth/password-reset');
-const isSignupScopedPath = (req) => String(req.originalUrl || req.url || '')
+const isSignupPath = (req) => String(req.originalUrl || req.url || '')
     .split('?')[0].replace(/\/+$/, '').toLowerCase().startsWith('/auth/signup');
 app.use((req, res, next) => {
-    if (isPasswordResetScopedPath(req) || isSignupScopedPath(req)) res.set('Cache-Control', 'no-store');
+    if (isPasswordResetPath(req) || isSignupPath(req)) res.set('Cache-Control', 'no-store');
     next();
 });
 
@@ -47,8 +47,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 morgan.token("safe-url", (req) => (
-    isPasswordResetScopedPath(req) ? "/auth/password-reset/[REDACTED]"
-        : isSignupScopedPath(req) ? "/auth/signup/[REDACTED]"
+    isPasswordResetPath(req) ? "/auth/password-reset/[REDACTED]"
+        : isSignupPath(req) ? "/auth/signup/[REDACTED]"
         : (req.originalUrl || req.url)
 ));
 app.use(morgan(":method :safe-url :status :response-time ms"));

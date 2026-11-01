@@ -1,11 +1,11 @@
 // 진행 표시 파일
 // 단계별 몇 명 했는지 + 내가 냈는지, 스냅샷·방송이 사용
 // 내 진행 번호 올리기(상태 바뀜)도 여기 둠, socket 쪽이 내 제출 알림 보낼 때 사용
-const { getEligibleDayVoterUuids, getDayPhase, DAY_PHASES, getDayVoteRound, getDayVoteReadyUuids } = require('../phase/day')
-const { getEligibleTribunalVoterUuids } = require('../phase/tribunal')
+const { getDayVoterUuids, getDayPhase, DAY_PHASES, getDayVoteRound, getDayVoteReadyUuids } = require('../phase/day')
+const { getTribunalVoterUuids } = require('../phase/tribunal')
 
 // 지금 단계에서 몇 명 했는지 / 몇 명 해야 하는지 (밤은 숫자 숨김)
-function buildPublicPhaseProgress(session) {
+function buildPublicProgress(session) {
     // 역할 확인: 참여 중인 사람 중 확인한 수
     if (session.phase === 'ROLE_REVEAL') {
         const pending = [...session.players.values()].filter((p) => p.isParticipating !== false)
@@ -18,7 +18,7 @@ function buildPublicPhaseProgress(session) {
     }
     // 낮: 토론 중이면 투표 준비한 수, 투표 중이면 표 낸 수
     if (session.phase === 'DAY') {
-        const eligible = getEligibleDayVoterUuids(session)
+        const eligible = getDayVoterUuids(session)
         if (getDayPhase(session) === DAY_PHASES.DISCUSSION) {
             const ready = getDayVoteReadyUuids(session)
             return {
@@ -35,7 +35,7 @@ function buildPublicPhaseProgress(session) {
     }
     // 재판: 피고 뺀 투표할 사람 중 표 낸 수
     if (session.phase === 'TRIBUNAL' && session.tribunal) {
-        const eligible = getEligibleTribunalVoterUuids(session, session.tribunal.defendantUuid)
+        const eligible = getTribunalVoterUuids(session, session.tribunal.defendantUuid)
         const votes = session.tribunal.votes instanceof Map ? session.tribunal.votes : new Map()
         return {
             kind: 'TRIBUNAL',
@@ -48,7 +48,7 @@ function buildPublicPhaseProgress(session) {
 }
 
 // 지금 단계에서 내가 낸 것 (역할 확인·투표 준비·낮 표·재판 표)
-function buildSelfSubmissionFields(session, uuid) {
+function buildSelfFields(session, uuid) {
     const fields = {}
     // 역할 확인: 내가 확인했는지
     if (session.phase === 'ROLE_REVEAL') {
@@ -106,8 +106,8 @@ function bumpSelfProgressSeq(session) {
 }
 
 module.exports = {
-    buildPublicPhaseProgress,
-    buildSelfSubmissionFields,
+    buildPublicProgress,
+    buildSelfFields,
     computeHasActed,
     bumpSelfProgressSeq,
 }

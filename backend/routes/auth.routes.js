@@ -18,7 +18,7 @@ const { validateResetRequest } = require("../validations/auth/passwordReset");
 const {
     requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
 } = require("../controllers/auth/passwordReset");
-const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
+const { getSignupEmailConfig } = require("../config/signupEmailVerification");
 const { validateCodeRequest, validateCodeVerify } = require("../validations/auth/signupEmailVerification");
 const {
     requestSignupCode, verifySignupCode,
@@ -28,7 +28,7 @@ router.post("/signup", signup);
 router.get("/check-email", checkEmail);
 router.post("/login", login);
 
-const codeConfig = getSignupEmailVerificationConfig(process.env);
+const codeConfig = getSignupEmailConfig(process.env);
 
 const {
     ipHour:    codeIpHourLimiter,

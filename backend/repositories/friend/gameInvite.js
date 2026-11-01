@@ -46,7 +46,7 @@ const findLivePending = (db, { senderId, receiverId, roomId, roomInstanceId, boo
 const createInviteRow = (db, row, transaction) => db.GameInvite.create(row, { transaction });
 
 // 받는 사람의 그 상태 초대 + 보낸 사람 닉네임, 순번 순
-const listForReceiverWithSender = (db, { receiverId, status }, transaction) => db.GameInvite.findAll({
+const listReceivedWithSender = (db, { receiverId, status }, transaction) => db.GameInvite.findAll({
     where: { receiver_id: receiverId, status },
     include: [{ model: db.User, as: 'InviteSender', attributes: ['uuid', 'nickname'] }],
     order: [['creation_seq', 'ASC']],
@@ -145,7 +145,7 @@ module.exports = {
     findByCreationKey,
     findLivePending,
     createInviteRow,
-    listForReceiverWithSender,
+    listReceivedWithSender,
     findNewestForReceiver,
     findWithSender,
     reloadInvite,

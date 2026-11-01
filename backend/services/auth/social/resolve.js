@@ -4,7 +4,7 @@ const userRepository = require("../../../repositories/user");
 const authService = require("../account");
 const { createError } = require("../../../utils/appError");
 const { generateOpaqueToken, hashValue } = require('./tokens');
-const { SOCIAL_SIGNUP_INTENT_TTL_MS } = require('./constants');
+const { INTENT_TTL_MS } = require('./constants');
 
 // 연결된 계정 있으면 세션 발급, 없으면 이메일 충돌 확인 뒤 가입 의도 만듦
 exports.resolveOAuthAccount = async ({
@@ -44,7 +44,7 @@ exports.resolveOAuthAccount = async ({
         }
 
         const rawIntentToken = generateOpaqueToken();
-        const expiresAt = new Date(Date.now() + SOCIAL_SIGNUP_INTENT_TTL_MS);
+        const expiresAt = new Date(Date.now() + INTENT_TTL_MS);
         await userRepository.createSocialSignupIntent({
             intent_token_hash: hashValue(rawIntentToken),
             provider,

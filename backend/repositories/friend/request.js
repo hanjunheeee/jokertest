@@ -42,7 +42,7 @@ exports.createFriendRequest = async (requesterId, receiverId, options = {}) => {
 };
 
 // id로 신청 하나 (잠금 옵션은 부르는 쪽이 넘김)
-exports.findFriendRequestById = async (requestId, options = {}) => {
+exports.findRequestById = async (requestId, options = {}) => {
     return await db.FriendRequest.findOne({ where: { id: requestId }, ...options });
 };
 
@@ -106,7 +106,7 @@ exports.cancelPendingRequestsBetween = async (uuidA, uuidB, options = {}) => {
 };
 
 // 내가 낀 신청들 지금 상태
-exports.findRequestResultsForUser = async (uuid, requestIds, options = {}) => {
+exports.findRequestResults = async (uuid, requestIds, options = {}) => {
     return await db.FriendRequest.findAll({
         where: {
             id: { [Op.in]: requestIds },

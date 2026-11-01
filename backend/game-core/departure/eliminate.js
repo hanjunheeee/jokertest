@@ -50,7 +50,7 @@ function recordForfeit(session, uuid) {
 }
 
 // 끊김 탈락 방송 (생존 목록·탈락한 사람)
-function buildDisconnectEliminationPayload(session, victimUuid) {
+function buildDisconnectPayload(session, victimUuid) {
     return {
         gameId: session.id,
         phase: session.phase,
@@ -64,5 +64,5 @@ function buildDisconnectEliminationPayload(session, victimUuid) {
 module.exports = {
     commitDisconnectElimination,
     recordForfeit,
-    buildDisconnectEliminationPayload,
+    buildDisconnectPayload,
 }

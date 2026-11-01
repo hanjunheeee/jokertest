@@ -7,7 +7,7 @@ const { createError } = require('../../../utils/appError');
 const { logDeferred, nowOf, orderNotFound, notOwner, leaseMsOf } = require('./helpers');
 const topupOrderRepository = require('../../../repositories/economy/topupOrder');
 const { withTransaction, isUniqueConstraintName } = require('../../../repositories/common');
-const { ORDER_STATUS, TERMINAL_FAILURE_STATUSES } = require('./constants');
+const { ORDER_STATUS, FAILURE_STATUSES } = require('./constants');
 
 // 내 잠금 표일 때만 풀기
 const releaseLease = async (db, orderId, leaseToken) => {
@@ -33,7 +33,7 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
         }
 
         if (order.status === ORDER_STATUS.GRANTED) return { kind: 'GRANTED', order };
-        if (TERMINAL_FAILURE_STATUSES.has(order.status)) return { kind: 'TERMINAL', order };
+        if (FAILURE_STATUSES.has(order.status)) return { kind: 'TERMINAL', order };
         if (order.status === ORDER_STATUS.PENDING_GRANT) return { kind: 'PENDING_GRANT', order };
 
         const effectiveKey = paymentKey ?? order.payment_key;

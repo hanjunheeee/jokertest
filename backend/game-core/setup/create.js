@@ -6,7 +6,7 @@ const { resolveRoleComposition } = require('../core/rules/roleComposition')
 const { assignRoles } = require('./assign')
 const { INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { resolveGameSource } = require('../result')
-const { isParticipantBlockedFromMatchmaking, hasRoomSession } = require('../queries')
+const { isMatchmakingBlocked, hasRoomSession } = require('../queries')
 
 // 방 → 판 후보 (역할 나누고 판 기본값 채움, 아직 장부에 안 넣음)
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
@@ -74,7 +74,7 @@ function checkGameSessionPreconditions(room) {
     }
     // 한 명이라도 아직 다른 판에 묶여 있으면 거절
     for (const uuid of room.players.keys()) {
-        if (isParticipantBlockedFromMatchmaking(uuid)) {
+        if (isMatchmakingBlocked(uuid)) {
             return { ok: false, code: 'PLAYER_ALREADY_IN_SESSION' }
         }
     }

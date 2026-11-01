@@ -4,7 +4,7 @@ const userRepository          = require("../../../repositories/user");
 const { generateToken }       = require("../../../utils/auth/credentials");
 const { createError }         = require("../../../utils/appError");
 const { ACCESS_TOKEN_SHORT_TTL_SECONDS, REFRESH_TOKEN_GRACE_MS, capAccessTokenTtlSeconds } = require("../../../utils/auth/cookieOptions");
-const { hashRefreshToken, deriveRotatedRefreshToken } = require('./tokens');
+const { hashRefreshToken, deriveRotatedToken } = require('./tokens');
 
 // 없음 → 폐기 → 만료 → 정지 → 재사용 → 유효 시간 → 새 토큰 (직전 토큰은 짧은 유예 안에서만 같은 결과)
 exports.refresh = async (rawRefreshToken) => {
@@ -53,7 +53,7 @@ exports.refresh = async (rawRefreshToken) => {
         }, { expiresIn: cappedTtlSeconds });
 
         if (isGraceMatch) {
-            const recoveredRawToken = deriveRotatedRefreshToken(rawRefreshToken, session.id);
+            const recoveredRawToken = deriveRotatedToken(rawRefreshToken, session.id);
             return {
                 type: "ok",
                 accessToken,
@@ -62,7 +62,7 @@ exports.refresh = async (rawRefreshToken) => {
             };
         }
 
-        const newRawRefreshToken = deriveRotatedRefreshToken(rawRefreshToken, session.id);
+        const newRawRefreshToken = deriveRotatedToken(rawRefreshToken, session.id);
         const newHash = hashRefreshToken(newRawRefreshToken);
 
         await userRepository.applyRefreshRotation(session.id, {

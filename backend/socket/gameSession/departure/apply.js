@@ -41,7 +41,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     if (applied.eliminated) {
         let payload = null
         step('PAYLOAD_BUILD_ERROR', () => {
-            payload = gameSessionCore.buildDisconnectEliminationPayload(session, applied.victimUuid)
+            payload = gameSessionCore.buildDisconnectPayload(session, applied.victimUuid)
             if (applied.terminal) {
                 payload = { ...payload, ...gameSessionCore.buildTerminalFields(session) }
             }
@@ -95,7 +95,7 @@ function advanceAfterDeparture(io, session, applied) {
     }
 
     const advanced = isolateOr({ transitioned: null }, label, { code: 'ADVANCE_ERROR', gameId: session.id },
-        () => gameSessionCore.advanceStalledPhaseAfterDeparture(session))
+        () => gameSessionCore.advanceStalledPhase(session))
 
     if (advanced.transitioned === 'DAY') {
         step('PHASE_DELIVERY_ERROR',

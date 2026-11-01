@@ -5,7 +5,7 @@
 const { createError } = require('../../../utils/appError');
 const { askProvider, paymentMatchesOrder, persistProviderResult } = require('./provider');
 const { releaseLease, claimOrder } = require('./claim');
-const { ORDER_STATUS, FAILURE_STATUS_BY_OUTCOME, SAFE_LOG_CODE, ORDER_ID_PATTERN, PAYMENT_KEY_PATTERN, TERMINAL_FAILURE_STATUSES } = require('./constants');
+const { ORDER_STATUS, FAILURE_STATUS_BY_OUTCOME, SAFE_LOG_CODE, ORDER_ID_PATTERN, PAYMENT_KEY_PATTERN, FAILURE_STATUSES } = require('./constants');
 const { tryGrant, loadGrantedBalance } = require('./grant');
 const { dbOf, adapterOf, expectString, orderNotFound, paymentFailed, processingError } = require('./helpers');
 
@@ -84,7 +84,7 @@ const confirmTopupOrder = async ({ userId, orderId, paymentKey, amount }, deps =
         return { status: ORDER_STATUS.GRANTED, balanceDiamond: outcome.balanceDiamond };
     }
     if (outcome.status === ORDER_STATUS.PENDING_GRANT) return { status: ORDER_STATUS.PENDING_GRANT };
-    if (TERMINAL_FAILURE_STATUSES.has(outcome.status)) throw paymentFailed();
+    if (FAILURE_STATUSES.has(outcome.status)) throw paymentFailed();
     throw processingError();
 };
 

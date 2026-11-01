@@ -4,9 +4,9 @@ const { assertSessionNotEnded } = require('../core/rules/terminal')
 const { enterNightPhase } = require('../core/rules/phase')
 const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
 const { releasePlayerSession } = require('../core/registry/write')
-const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnapshot, TRIBUNAL_CANCELLED_OUTCOME, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal')
+const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap, TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal')
 const { isRoleRevealComplete } = require('../setup')
-const { enterDayPhase, getDayPhase, DAY_PHASES, getEligibleDayVoterUuids, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day')
+const { enterDayPhase, getDayPhase, DAY_PHASES, getDayVoterUuids, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day')
 const { hasForfeited, getParticipationRevision } = require('../queries')
 
 // 게임 중 나가기: 산 사람이면 탈락, 방장 넘기기, 남은 표·준비·밤 행동에서 빼기
@@ -110,11 +110,11 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
             if (wasDefendant) {
                 TRIBUNAL_PENDING.delete(session)
                 const counts = tallyTribunalBallots(
-                    buildTribunalBallotSnapshot(session, session.tribunal),
+                    buildTribunalBallotSnap(session, session.tribunal),
                     session.tribunal.defendantUuid,
                 ).counts
                 // 취소 결과 기록, 처형 없이 바로 밤으로
-                session.tribunal.outcome = TRIBUNAL_CANCELLED_OUTCOME
+                session.tribunal.outcome = TRIBUNAL_CANCELLED
                 session.tribunal.cancelReason = TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT
                 session.tribunal.counts = { guilty: counts.guilty, notGuilty: counts.notGuilty }
                 session.tribunal.executedUuid = null
@@ -143,7 +143,7 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
 }
 
 // 나간 사람 때문에 다 찬 단계면 넘김 (역할 확인 → 낮, 토론 → 투표)
-function advanceStalledPhaseAfterDeparture(session) {
+function advanceStalledPhase(session) {
     // 역할 확인 중: 남은 사람 다 확인했으면 첫 낮으로 (지도 03-⑤)
     if (session.phase === 'ROLE_REVEAL') {
         if (!isRoleRevealComplete(session)) return { transitioned: null }
@@ -152,7 +152,7 @@ function advanceStalledPhaseAfterDeparture(session) {
     }
     // 낮 토론 중: 남은 산 사람 다 준비했으면 투표로
     if (session.phase === 'DAY' && getDayPhase(session) === DAY_PHASES.DISCUSSION) {
-        const eligibleUuids = getEligibleDayVoterUuids(session)
+        const eligibleUuids = getDayVoterUuids(session)
         if (eligibleUuids.length === 0) return { transitioned: null }
         const readyUuids = getDayVoteReadyUuids(session)
         if (!eligibleUuids.every((uuid) => readyUuids.has(uuid))) return { transitioned: null }
@@ -164,5 +164,5 @@ function advanceStalledPhaseAfterDeparture(session) {
 
 module.exports = {
     commitParticipantDeparture,
-    advanceStalledPhaseAfterDeparture,
+    advanceStalledPhase,
 }

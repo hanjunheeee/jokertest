@@ -5,24 +5,24 @@
 const terminalPersistRuns = new Map()
 
 // 이 프로세스에서 저장 확인된 판 (오래된 것부터 버림)
-const terminalPersistConfirmed = new Set()
+const confirmedGameIds = new Set()
 
 // session을 붙잡은 늦은 훅도 저장 다시 못 하게 (Set에서 밀려난 판 보완)
-let terminalPersistBySession = new WeakMap()
+let sessionMarks = new WeakMap()
 
 // 지금 세션 표식 꺼내기 (초기화 뒤에도 새 WeakMap 보이게)
 function getBySession() {
-    return terminalPersistBySession
+    return sessionMarks
 }
 
 // 세션 표식 통째로 바꾸기 (시험 초기화가 부름)
 function setBySession(next) {
-    terminalPersistBySession = next
+    sessionMarks = next
 }
 
 module.exports = {
     terminalPersistRuns,
-    terminalPersistConfirmed,
+    confirmedGameIds,
     getBySession,
     setBySession,
 }

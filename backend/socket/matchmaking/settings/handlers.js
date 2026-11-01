@@ -3,7 +3,7 @@
 const { getAdmissionAttempt, countRoomOccupancy } = require('../admission/attempts')
 const { resolveParticipantSockets } = require('../room/membership')
 const { getSettingsVersion, pruneSettingsResults, settingsUpdateResultKey, recordSettingsResult, SETTINGS_RESULT_TTL_MS } = require('./receipts')
-const { buildRoomSettingsView, ROOM_SETTINGS_EVENTS, validateUpdateRoomSettingsPayload, fingerprintUpdateRequest, fingerprintUpdateSettings, ROOM_SETTINGS_ERROR_CODES, buildEditableSettingsView, settingsContainNonAllowlistedKeys, PRESERVED_ROOM_SETTING_KEYS, isRoomSettingsIdentifier } = require('../../../validations/room/updateSettings')
+const { buildRoomSettingsView, ROOM_SETTINGS_EVENTS, validateUpdateRoomSettingsPayload, fingerprintRequest, fingerprintUpdateSettings, ROOM_SETTINGS_ERROR_CODES, buildEditableSettingsView, hasDisallowedKeys, PRESERVED_ROOM_SETTING_KEYS, isSettingsIdentifier } = require('../../../validations/room/updateSettings')
 const { computeCanStart, buildRoomPayload, emitPublicRoomList } = require('../room/view')
 const { roomSettingsUpdateResults, playerRoom, gameRooms } = require('../core/state')
 const { rejectIfInGame } = require('../join/guards')
@@ -59,7 +59,7 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
         return
     }
     const { roomId, requestId, expectedSettingsVersion, accessType, settings } = validated.value
-    const fingerprint = fingerprintUpdateRequest(expectedSettingsVersion, accessType, settings)
+    const fingerprint = fingerprintRequest(expectedSettingsVersion, accessType, settings)
     const settingsFingerprint = fingerprintUpdateSettings(accessType, settings)
 
     if (socket?.data?.user?.uuid !== uuid || socket?.connected === false) {
@@ -144,7 +144,7 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
     const changed = currentFingerprint !== settingsFingerprint
 
     if (!changed) {
-        if (settingsContainNonAllowlistedKeys(room.settings)) {
+        if (hasDisallowedKeys(room.settings)) {
             room.settings = buildRoomSettingsView(room.settings)
         }
         recordSettingsResult(resultKey, {
@@ -200,7 +200,7 @@ function handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getC
         return
     }
     const { roomId, requestId } = payload
-    if (!isRoomSettingsIdentifier(roomId) || !isRoomSettingsIdentifier(requestId)) {
+    if (!isSettingsIdentifier(roomId) || !isSettingsIdentifier(requestId)) {
         respond({ ok: false, code: ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' })
         return
     }

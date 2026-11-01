@@ -288,9 +288,9 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
 
 // 끝난 판 사람을 방장이 만든 다음 방에 자동 입장
 async function autoJoinPartyToRoom(io, hostUuid, room) {
-    const gameId = gameSession.getEndedSessionGameIdForParticipant(hostUuid)
+    const gameId = gameSession.getEndedGameId(hostUuid)
     if (!gameId || typeof room?.code !== 'string' || room.code.length === 0) return
-    const participantUuids = gameSession.getEndedSessionParticipantUuids(gameId, { excludeUuid: hostUuid })
+    const participantUuids = gameSession.getEndedPlayerUuids(gameId, { excludeUuid: hostUuid })
     for (const participantUuid of participantUuids) {
         if (playerRoom.has(participantUuid)) continue
         if (pendingRoomTransitions.has(participantUuid)) continue
