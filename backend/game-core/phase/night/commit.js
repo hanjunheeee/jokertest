@@ -1,5 +1,5 @@
 // 밤 확정 파일
-// 밤 판정 확정 + 죽은 사람 밤 행동 지움, 확정 뒤 승패 판정·낮으로
+// 밤 판정 확정 + 죽은 사람 밤 행동 지움, socket 밤 마무리·끊김 탈락이 사용
 // 사망 공개 목록 만들기는 payloads.js (방송 내용이라 확정 파일에서 뺌)
 const { NIGHT_TURN_ORDER } = require('./constants')
 const { buildNightDeathReveals } = require('./payloads')

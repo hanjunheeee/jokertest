@@ -1,5 +1,5 @@
 // 판 준비 상수 파일
-// 인원 범위·첫 단계·스킨 짝·색 수, setup 안 파일들이 사용
+// 인원 범위·첫 단계·스킨 짝·색 수, setup·스냅샷이 사용
 
 // 역할 → 스킨 직업 id
 const ROLE_TO_SKIN_JOB_ID = Object.freeze({

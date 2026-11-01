@@ -1,5 +1,5 @@
 // 밤 판정 준비 파일
-// 밤 결과 계산 + 개인 결과 만들기, 아직 확정 안 함
+// 밤 결과·개인 결과 계산(확정 안 함), socket 밤 판정 요청·자동 마무리가 사용
 const { findActorSession } = require('../../core/registry/lookup')
 const { assertSessionNotEnded } = require('../../core/rules/terminal')
 const { getNightProgress, createNightProgress } = require('./progress')
@@ -12,7 +12,7 @@ const { registerNightPreparation } = require('./ledger')
 
 // 요청한 사람 확인하고 밤 판정 준비
 function prepareNightResolution(uuid, gameId) {
-    // 판 id 확인 + 내 판 찾기, 내가 판에 있는지 (옛 판 화면에서 누른 것 거절) (지도 06-③)
+    // 판 id 확인 + 내 판 찾기 (옛 판 화면에서 누른 것 거절, 지도 06-③)
     const found = findActorSession(uuid, gameId, { requireActor: false })
     if (!found.ok) return found
 

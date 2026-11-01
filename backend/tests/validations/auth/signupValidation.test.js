@@ -14,9 +14,9 @@ const {
     validatePasswordConfirm,
     validateSignupPayload,
     parseIsoDateUtc,
-} = require('../../validations/auth/signup');
+} = require('../../../validations/auth/signup');
 
-const FIXTURE_PATH = path.join(__dirname, '..', '..', '..', 'tests', 'fixtures', 'f02-signup-validation.json');
+const FIXTURE_PATH = path.join(__dirname, '..', '..', '..', '..', 'tests', 'fixtures', 'f02-signup-validation.json');
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
 
 test('AC-01: fixture 경계값과 동일한 min/max를 사용한다', () => {

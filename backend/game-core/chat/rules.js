@@ -1,5 +1,5 @@
 // 채팅 규칙 파일
-// 글 검사 + 채널·속도 제한 정하기, chat/messages.js가 사용
+// 글 검사·채널·받는 사람 정하기, 채팅 보내기·socket 채팅 방송이 사용
 const { GAME_ROLES } = require('../core/rules/roles')
 const { CHAT_MAX_LENGTH, BAD_CHARS, CHAT_CHANNELS, RATE_FIELD } = require('./constants')
 

@@ -1,5 +1,5 @@
 // 밤 진행 기록 파일
-// 오늘 밤 진행 기록 만들기·찾기 + 역할 끝났는지·회복 막힘 상태 확인
+// 오늘 밤 진행 기록 만들기·찾기·확인, 밤 코드·socket 쪽이 사용
 const { NIGHT_RECOVERY_STATES } = require('./constants')
 const { isRegisteredSession } = require('../../queries')
 
@@ -58,6 +58,7 @@ function markNightSequenced(session) {
     // 아직 판정 안 끝난 밤일 때만
     if (session.phase !== 'NIGHT') return false
     if (session.nightResolution !== null) return false
+    // 여기부터 진짜 바뀜: 차례 진행 표시 켬
     ensureNightProgress(session, { sequenced: true })
     return true
 }

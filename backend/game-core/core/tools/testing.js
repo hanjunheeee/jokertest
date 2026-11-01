@@ -1,5 +1,5 @@
 // 시험 전용 장부 손잡이 파일
-// 장부 비우기·복사·판만 지우기, gameSession.js가 __ 이름으로 내보냄 (운영 코드는 안 씀)
+// 장부 비우기·복사·판만 지우기, 시험만 gameSession.js의 __ 이름으로 사용
 // gameSession.js에 있던 것, 장부 직접 만지는 거라 core로 옮김
 const { gameSessions, playerSession, roomGameSession } = require('../registry/state')
 const { setObserver } = require('./observer')

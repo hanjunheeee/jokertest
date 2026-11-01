@@ -1,5 +1,5 @@
 // 낮 방송 내용 파일
-// 낮 단계 바뀜 + 낮 투표 결과 방송 내용, 상태는 안 바꿈 (판정 commit은 resolve.js)
+// 낮 단계 바뀜 + 투표 결과 방송 내용, 상태 안 바꿈 (확정은 resolve.js)
 // socket 쪽 방송이랑 스냅샷이 사용
 const { getDayPhase, getDayVoteRound, getResolutionRound } = require('./state')
 

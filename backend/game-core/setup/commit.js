@@ -126,6 +126,7 @@ function assertValidSessionForCommit(session) {
 
 // 판 장부 3개에 같이 넣기 (같은 방 두 번 시작이면 throw)
 function commitGameSession(session) {
+    // 후보 모양부터 검사 (틀리면 throw)
     assertValidSessionForCommit(session)
 
     // 판 id 겹침·같은 방 판 이미 있음 막기

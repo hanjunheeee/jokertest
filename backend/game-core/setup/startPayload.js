@@ -7,6 +7,7 @@ const { buildRoomSettingsView } = require('../../validations/room/updateSettings
 
 // 보는 사람 기준 역할 칸 (광대끼리는 서로 보임)
 function buildViewerRoleFields(session, viewer) {
+    // 판에 없는 사람이면 칸 없음
     if (!viewer) return null
     // 직업 스킨은 내 역할 것 하나만 (남의 스킨 보이면 역할 들킴, 지도 20-⑩)
     const skinJobId = ROLE_TO_SKIN_JOB_ID[viewer.role]

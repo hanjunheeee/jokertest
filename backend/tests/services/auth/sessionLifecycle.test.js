@@ -4,8 +4,8 @@ const test   = require("node:test");
 const assert = require("node:assert/strict");
 const jwt    = require("jsonwebtoken");
 
-const db = require("../../models");
-const { verifyAccessToken, resolveSession } = require("../../services/auth/sessionLifecycle");
+const db = require("../../../models");
+const { verifyAccessToken, resolveSession } = require("../../../services/auth/sessionLifecycle");
 
 const sign = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1d" });
 

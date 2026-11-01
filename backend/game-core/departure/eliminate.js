@@ -1,6 +1,6 @@
 // 끊김 탈락 파일
 // 끊긴 사람 탈락 처리(기권 명단 넣기 포함, 지도 08) + 탈락 방송 내용 만들기
-// 탈락 방송 내용은 상태 안 바꿈, socket 쪽 방송이 gameSession.js 통해서 사용
+// 탈락은 게임 중 나가기가, 방송 내용(상태 안 바꿈)은 socket 쪽이 사용
 const { isObserverBusy, observeNightCommit } = require('../core/tools/observer')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../core/rules/terminal')
 const { DEATH_REASONS } = require('../result')

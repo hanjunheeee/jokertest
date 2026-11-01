@@ -44,7 +44,7 @@ function submitNightAction(uuid, gameId, targetId) {
             return { ok: false, code: 'TARGET_NOT_DEAD' }
         }
 
-        // 광대가 동료 광대 찍으면 기록 없이 ok만
+        // 광대가 광대(나 포함) 찍으면 기록 없이 ok만
         if (actor.role === 'JOKER' && ROLE_TEAMS[targetPlayer.role] === 'JOKER') {
             return { ok: true, gameId: session.id }
         }

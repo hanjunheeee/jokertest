@@ -1,5 +1,5 @@
 // 진행 중 판 찾기 파일
-// 누가 어느 판인지·유예 대상인지·접속 현황, socket 쪽이 gameSession.js 통해서 사용
+// 누가 어느 판인지·유예 대상·접속 현황, socket 쪽·판 준비가 사용
 // 기권·참여 중 확인은 queries/participation.js
 const { gameSessions, playerSession } = require('../core/registry/state')
 const { DISCONNECT_GRACE_PHASES } = require('./constants')

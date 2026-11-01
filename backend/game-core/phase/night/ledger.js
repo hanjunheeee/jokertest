@@ -1,10 +1,11 @@
 // 밤 판정 대장 파일
-// prepare 결과 보관 + 입력 지문, commit 직전 바꿔치기 막기 (지도 06-⑥)
+// prepare 결과 보관 + 입력 지문, 밤 판정 준비·확정이 사용
+// commit 직전 바꿔치기 막기 (지도 06-⑥)
 const { getNightProgress } = require('./progress')
 const { NIGHT_TURN_ORDER } = require('./constants')
 const { getParticipationRevision } = require('../../queries')
 
-// 판정 결과 객체 → 준비할 때 기록 (밖에 안 내보냄)
+// 판정 결과 객체 → 준비할 때 기록 (game-core 밖엔 안 내보냄)
 const nightPreparations = new WeakMap()
 
 // 밤 입력 지문: 누가 누구 골랐나 + 진행 기록 상태를 한 줄로

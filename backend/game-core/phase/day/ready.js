@@ -1,5 +1,5 @@
 // 낮 준비 파일
-// 토론 끝내기 준비 확인 + 낮 상태 읽기, socket 쪽이 사용 (낮 단계 방송은 payloads.js)
+// 투표 준비 받기 + 날짜·투표 번호 읽기, socket 쪽이 사용 (방송은 payloads.js)
 const { getSessionById } = require('../../queries')
 const { getDayVoteRound, getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('./state')
 const { findActorSession } = require('../../core/registry/lookup')

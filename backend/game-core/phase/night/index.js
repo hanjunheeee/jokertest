@@ -1,5 +1,5 @@
-// 밤 입구, 상수·자격·진행 기록·역할 차례·행동 받기·판정 대장·판정 준비·확정·방송 묶어서 내보냄
-// gameSession.js·나가기·판 만들기·스냅샷이 여기서 가져다 씀
+// 밤 입구, 밤 폴더 파일 전부 묶어서 내보냄
+// gameSession.js·끊김 탈락·판 만들기·스냅샷이 여기서 가져다 씀
 // 밤 순서·시간·판정 방식 같은 고정 값
 const {
     NIGHT_TURN_ORDER, NIGHT_TURN_DURATION_MS, NIGHT_ACTION_RESOLUTION_POLICY, NIGHT_RECOVERY_STATES,

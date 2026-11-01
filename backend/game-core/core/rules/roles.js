@@ -1,5 +1,5 @@
 // 역할 정의 모아 둔 파일
-// game-core 안 파일들이 require 해서 사용, 밖으로는 gameSession.js가 다시 내보냄
+// game-core 안에서 사용, 밖으로는 gameSession.js가 다시 내보냄
 
 // 역할별 팀 · 밤 행동 시작 날짜 · 대상이 살아 있어야 하는지
 const ROLE_DEFINITIONS = Object.freeze({

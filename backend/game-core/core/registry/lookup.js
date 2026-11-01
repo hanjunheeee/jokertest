@@ -1,5 +1,5 @@
 // 요청 입구 확인 파일
-// 판 id 정리 + 요청한 사람의 판·나 찾기, prepare/submit 함수들이 맨 앞에서 사용
+// 판 id 정리 + 요청한 사람의 판·나 찾기, 요청 받는 함수들이 맨 앞에서 사용
 const { gameSessions, playerSession } = require('./state')
 const { assertSessionNotEnded } = require('../rules/terminal')
 

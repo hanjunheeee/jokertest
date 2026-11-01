@@ -1,5 +1,6 @@
 // 낮 판정 파일
-// 낮 투표 판정 prepare/commit (지도 04), 결과 방송 내용은 phase/day/payloads.js
+// 낮 투표 판정 prepare/commit, socket 쪽이 사용 (지도 04)
+// 결과 방송 내용은 phase/day/payloads.js
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
 const { isRegisteredSession } = require('../../queries')
 const { assertSessionNotEnded } = require('../../core/rules/terminal')
@@ -23,9 +24,8 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     // 오늘 날짜 요청인지
     if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
 
-    // 이번 투표 이미 판정됐으면 그 결과 그대로 줌
-    // (마감 타이머·버튼 겹침, 다시 확정 안 함, 지도 04-⑥)
-    // 바로 위에서 요청 날짜 = 오늘 날짜 확인함, 그래서 오늘 기준으로 봐도 같음
+    // 이번 투표 이미 판정됐으면 결과만 줌, 다시 확정 안 함 (타이머·버튼 겹침, 지도 04-⑥)
+    // 요청 날짜 = 오늘 날짜 확인했으니 오늘 기준으로 봐도 같음
     const currentRound = getDayVoteRound(session)
     if (isVoteRoundResolved(session)) {
         return { ok: true, alreadyResolved: true, session, resolution: session.dayVoteResolution }

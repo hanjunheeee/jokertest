@@ -67,6 +67,7 @@ function buildSessionSnapshot(session, uuid) {
         fields.nightResult = { dayIndex, victimUuid, deathReveals }
     }
 
+    // 낮·재판 칸은 넣어도 되는 단계일 때만
     if (canIncludeVoteFields(session)) {
         // 오늘 낮 투표 결과 (누가 누굴 찍었는지는 빼고 숫자만)
         if (session.dayVoteResolution && session.dayVoteResolution.dayIndex === session.dayIndex) {

@@ -1,5 +1,5 @@
 // 게임 중 나가기 파일
-// 나간 사람 정리 + 나간 뒤 멈춘 단계 넘기기 (지도 12)
+// 나간 사람 정리 + 멈춘 단계 넘기기, socket 나가기 처리가 사용 (지도 12)
 const { assertSessionNotEnded } = require('../core/rules/terminal')
 const { enterNightPhase } = require('../core/rules/phase')
 const { commitDisconnectElimination, recordForfeit } = require('./eliminate')

@@ -1,5 +1,5 @@
 // 밤 행동 자격 파일
-// 누가 밤 행동 할 수 있는지 + 역할 차례 순서·차례 끝났는지
+// 밤 행동 자격 + 역할 차례 순서·끝났는지, 밤 코드·socket 쪽이 사용
 const { ROLE_DEFINITIONS } = require('../../core/rules/roles')
 const { NIGHT_TURN_ORDER } = require('./constants')
 

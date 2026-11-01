@@ -1,5 +1,5 @@
 // 판 조회 입구, 상수·장부 읽기·참여 확인·진행 중 판·끝난 판 찾기 묶어서 내보냄
-// gameSession.js·판 준비·밤·낮·재판·채팅·스냅샷이 이 입구로 사용
+// gameSession.js·판 준비·밤·낮·재판·채팅·나가기·스냅샷이 이 입구로 사용
 // 끊김 유예 단계 이름
 const { DISCONNECT_GRACE_PHASES } = require('./constants')
 // 장부 읽기: id로 판 찾기·장부에 있는 그 판인지

@@ -1,6 +1,6 @@
 // 채팅 보내기 파일
-// 채팅 prepare/commit (이모티콘 비우기는 판 정리라 core/registry/write.js로 옮김)
-// prepare = 검사만 하고 기록 안 함, commit = 다시 확인하고 기록함 (실패한 요청이 간격을 안 먹게)
+// 채팅 prepare/commit, socket 채팅 처리가 gameSession.js 통해서 사용
+// prepare = 검사만, commit = 다시 보고 기록 (실패한 요청이 간격 안 먹게)
 const crypto = require('crypto')
 const { findActorSession } = require('../core/registry/lookup')
 const { getPlayerGameId, getSessionById } = require('../queries')
@@ -63,7 +63,7 @@ function isSamePrepared(prepared, capability) {
 
 // 밤 역할 채팅 검사, 죽은 광대도 가능
 function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
-    // 판 id 확인 + 내 판·판 안의 나 찾기, 끝난 판이면 거절 (옛 판 화면에서 보낸 것 거절)
+    // 판 id 확인 + 내 판·나 찾기, 끝난 판·옛 판 화면에서 온 것 거절
     const found = findActorSession(uuid, gameId, { checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
@@ -112,7 +112,7 @@ function commitJokerChatMessage(session, uuid, sentAt) {
 
 // 낮 채팅 검사 + 메시지 만들기, 아직 기록 안 함
 function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () => crypto.randomUUID() } = {}) {
-    // 판 id 확인 + 내 판·판 안의 나 찾기, 끝난 판이면 거절 (옛 판 화면에서 보낸 것 거절)
+    // 판 id 확인 + 내 판·나 찾기, 끝난 판·옛 판 화면에서 온 것 거절
     const found = findActorSession(uuid, gameId, { checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
@@ -232,6 +232,7 @@ function commitGameChatMessage(prepared, { now = Date.now } = {}) {
     if (sentAt > committedAt) return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
     if (committedAt - sentAt > CHAT_COMMIT_MAX_AGE_MS) return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
 
+    // 이 채널 간격 기록 칸 없으면 거절
     const rateLimitMap = getChatRateLimitMap(session, routed.channel)
     if (!(rateLimitMap instanceof Map)) return { ok: false, code: 'INVALID_CHAT_CHANNEL' }
 
@@ -241,7 +242,7 @@ function commitGameChatMessage(prepared, { now = Date.now } = {}) {
         return { ok: false, code: 'STALE_CHAT_TIMESTAMP' }
     }
 
-    // 한 번 쓴 건 보관함에서 지움 (같은 걸로 두 번 commit 못 하게), 보낸 시각 기록
+    // 여기부터 진짜 바뀜: 쓴 건 보관함에서 지움 (두 번 commit 막기), 보낸 시각 기록
     preparedChats.delete(prepared)
     rateLimitMap.set(uuid, sentAt)
     return { ok: true, gameId: session.id, channel: routed.channel, message: { ...capability.message } }

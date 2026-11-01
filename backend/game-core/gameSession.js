@@ -1,11 +1,11 @@
 // game-core 입구 파일, 폴더별로 나눈 함수 모아서 내보냄
-// socket 쪽(gameSession·matchmaking)이 이 파일 require 해서 사용
+// socket 쪽(gameSession·matchmaking)·전적 저장이 require 해서 사용
 // 판 장부·역할·판 끝내기·관찰자는 core (registry·rules·tools)
 const crypto = require('crypto')
 const { ROLE_DEFINITIONS, GAME_ROLES, ROLE_TEAMS } = require('./core/rules/roles')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('./core/rules/terminal')
 const { observeNightCommit, isObserverBusy, setObserver } = require('./core/tools/observer')
-// 시험 전용 장부 손잡이는 core/tools/testing (장부 직접 만지는 건 core·queries만)
+// 시험 전용 장부 손잡이는 core/tools/testing (장부는 core·queries만 만짐)
 const { __resetStateForTests, __getStateSnapshotForTests, __deleteGameSessionOnlyForTests } = require('./core/tools/testing')
 // 죽은 이유·전적 기록·결과 공개는 result
 const { DEATH_REASONS, resolveGameSource, buildGameResultRecord, buildTerminalFields, buildPublicWinResult, } = require('./result')
@@ -56,14 +56,14 @@ const {
     commitGameChatMessage,
 } = require('./chat')
 
-// 역할 구성 계산은 core/rules/roleComposition (예전엔 game-core 바로 밑에 있던 파일)
+// 역할 구성 계산은 core/rules/roleComposition (밖은 옛 자리 입구로 씀)
 const {
     computeRoleComposition,
     getSpecialRoleBudget,
     resolveRoleComposition,
     validateResolvedComposition,
 } = require('./core/rules/roleComposition')
-// 방 설정 화면용 모양 만들기는 game-core 밖 utils
+// 방 설정 화면용 모양 만들기는 game-core 밖 validations
 const { buildRoomSettingsView } = require('../validations/room/updateSettings')
 // 낮은 phase/day
 const {

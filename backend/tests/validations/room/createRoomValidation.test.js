@@ -5,7 +5,7 @@ const {
     validateRoleNightActionTimes,
     ROLE_NIGHT_ACTION_TIME_KEYS,
     ALLOWED_ROLE_NIGHT_ACTION_TIME,
-} = require('../../validations/room/create')
+} = require('../../../validations/room/create')
 
 function validPayload(overrides = {}) {
     return {

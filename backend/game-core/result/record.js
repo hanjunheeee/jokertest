@@ -1,5 +1,5 @@
 // 전적 기록 만드는 파일
-// 판 하나 → DB에 넣을 전적 기록 + 테스트 판인지 구분, socket 쪽 전적 저장이 사용
+// 판 → DB 전적 기록 + 테스트 판 구분, 전적 저장·판 만들기가 사용
 const { ROLE_TEAMS } = require('../core/rules/roles')
 const { observeNightCommit } = require('../core/tools/observer')
 const { ABORTED_WINNER, ABORTED_WIN_REASON, WIN_REASON_BY_WINNER, DEATH_REASONS } = require('./constants')

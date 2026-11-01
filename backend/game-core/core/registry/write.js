@@ -1,6 +1,6 @@
 // 판 장부 쓰기 파일
 // 장부에 판 넣기 + 사람·판 빼기, 판 열기·나가기·새 판 시작·socket 종료 정리가 사용
-// 장부 쓰기는 여기서만, 이모티콘 비우기도 여기 둠 (core가 chat 부르는 거꾸로 된 require 막기)
+// 장부 쓰기는 시험용 빼고 여기서만, 이모티콘 비우기도 둠 (core→chat require 막기)
 const { playerSession, gameSessions, roomGameSession } = require('./state')
 
 // 장부 3개에 같이 넣음 = 판 생김 (하나만 넣으면 장부끼리 안 맞음)

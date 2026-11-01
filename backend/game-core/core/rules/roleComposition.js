@@ -1,5 +1,5 @@
 // 역할 구성 정하는 파일 (판 쪼개기 전부터 따로 있던 파일)
-// 방 만들기·방 설정 검사·판 준비(setup)가 사용
+// 방 만들기·방 설정 검사·시작 확인·판 준비(setup)가 사용
 
 // 구성 방식: 자동(인원 따라 정함) / 직접(방장이 역할별 수 지정)
 const ROLE_COMPOSITION_MODES = Object.freeze({ AUTO: 'auto', CUSTOM: 'custom' })

@@ -1,5 +1,5 @@
 // 밤 역할 차례 파일
-// 역할 하나 차례 판정 + 진행 기록에 반영 (지도 05·06)
+// 역할 차례 판정 + 기록 반영, socket 밤 차례·판정 준비가 사용 (지도 05·06)
 const { getAliveActorUuidsForRole, matchesTargetLifeRule, isRoleTurnComplete } = require('./actors')
 const { NIGHT_ACTION_RESOLUTION_POLICY, NIGHT_RECOVERY_STATES, NIGHT_TURN_ORDER, EMPTY_COMPLETED_ROLES } = require('./constants')
 const { isRecoveryBlockedState, getNightProgress, ensureNightProgress } = require('./progress')
@@ -75,7 +75,7 @@ function computeNightRoleStep(session, progress, role) {
         return { role, targetId: null, status: 'NO_ACTOR' }
     }
 
-    // 광대한테 찍혀 치료 기다리는 사람은 행동 못 함 (의사는 예외)
+    // 광대한테 찍혀 치료 대기·죽을 예정인 사람은 행동 못 함 (의사는 예외)
     const excludedActorUuids = role === 'DOCTOR'
         ? new Set()
         : new Set(actors.filter((actorUuid) => isRecoveryBlockedState(progress.recoveryStates.get(actorUuid))))

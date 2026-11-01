@@ -4,7 +4,7 @@ const { MIN_SUPPORTED_PLAYERS, MAX_SUPPORTED_PLAYERS } = require('./constants')
 const { NIGHT_TURN_ORDER } = require('../phase/night')
 const { buildRoomSettingsView } = require('../../validations/room/updateSettings')
 
-// 방 정보가 판 만들 수 있는 모양인지 (인원·역할 구성)
+// 방 정보가 판 만들 수 있는 모양인지 (인원·광대 수)
 function validateSessionInput(players, jokerCount) {
     // 사람 목록이 비었거나 2~10명 밖이면 거절
     if (!Array.isArray(players) || players.length === 0) {

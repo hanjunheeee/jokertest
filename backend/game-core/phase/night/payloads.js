@@ -1,5 +1,5 @@
 // 밤 방송 내용 파일
-// 밤 차례 시작·끝 + 밤 결과·사망 공개 방송 내용
+// 밤 차례·결과·사망 공개 방송 내용, socket 밤 방송·스냅샷·밤 판정이 사용
 const { PUBLIC_NIGHT_DEATH_SOURCES } = require('./constants')
 
 // 역할 차례 시작 방송 (마감 시각 포함)
@@ -34,7 +34,7 @@ function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) 
     }
 }
 
-// 죽은 이유 하나로 정하기 (둘 이상이면 모름)
+// 죽은 이유 하나로 정하기 (하나로 안 정해지면 모름)
 function resolveNightDeathSource(resolution, victimUuid) {
     // 광대 암살·마녀사냥꾼 처형 중 이 사람 겨눈 쪽 모으기
     const attributions = []
