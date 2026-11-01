@@ -10,8 +10,8 @@
 @source "../../../frontend/src/shared/constants";
 @source "../../../frontend/src/shared/ui/{ProtectedRoute,PublicAsset,GlobalBgmLayer}.jsx";
 
-/* 폰 가로 (높이 낮은 가로 화면) */
-@custom-variant land (@media (orientation: landscape) and (max-height: 540px));
+/* 폰 가로 (높이 낮은 가로 화면), 폭 560 이상만: 세로 폰에 키보드가 올라와 높이가 폭보다 낮아져도 가로로 안 보게 */
+@custom-variant land (@media (orientation: landscape) and (max-height: 540px) and (min-width: 560px));
 /* 키 낮은 폰 (SE 667 등) */
 @custom-variant short (@media (max-height: 700px));
 

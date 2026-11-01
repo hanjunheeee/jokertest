@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react"
 
 // index.css의 land:(가로·높이 540 이하)와 md:(768 이상)에 맞춤
-const TWO_COLUMN_QUERY = "(min-width: 768px), (orientation: landscape) and (max-height: 540px)"
+const TWO_COLUMN_QUERY = "(min-width: 768px), (orientation: landscape) and (max-height: 540px) and (min-width: 560px)"
 
 // 화면을 돌리거나 크기가 바뀌면 다시 그림
 function subscribe(onChange) {
