@@ -1,6 +1,6 @@
 // 동시 접속 스냅샷 파일, 지금 접속 수 세기 + 한 줄 저장
 // 주기 켜기(scheduler)가 부르고 시험도 바로 부름
-const snapshotRepository = require('../../../repositories/presence')
+const snapshotRepository = require('../../../repositories/presence/concurrentSnapshot')
 
 // 접속 Map·판 참가자 Set으로 로비/게임 중 수 나눠 셈
 function getCurrentSnapshot(onlineUsers, gameSnapshot) {

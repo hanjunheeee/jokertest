@@ -3,8 +3,8 @@
 // 탈락은 게임 중 나가기가, 방송 내용(상태 안 바꿈)은 socket 쪽이 사용
 const { isObserverBusy, observeNightCommit } = require('../core/tools/observer')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../core/rules/terminal')
-const { DEATH_REASONS } = require('../result')
-const { expireDeadPlayerNightEffects } = require('../phase/night')
+const { DEATH_REASONS } = require('../result/constants')
+const { expireDeadPlayerNightEffects } = require('../phase/night/commit')
 
 // 끊긴 사람 탈락: 죽음 처리·기권 표시·밤 행동 지움, 승패 나면 판 닫기
 function commitDisconnectElimination(session, uuid) {

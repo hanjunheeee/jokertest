@@ -2,12 +2,13 @@
 // 판 후보 마지막 검사 + 장부에 넣기 (여기서 진짜 판 생김)
 // matchmaking이 게임 시작 때 gameSession.js 통해서 사용
 const { MIN_SUPPORTED_PLAYERS, MAX_SUPPORTED_PLAYERS, INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
-const { RATE_FIELD } = require('../chat')
+const { RATE_FIELD } = require('../chat/constants')
 const { GAME_ROLES } = require('../core/rules/roles')
 const { computeRoleComposition, validateResolvedComposition } = require('../core/rules/roleComposition')
 const { registerGameSession } = require('../core/registry/write')
 const { endGameSessionForPlayer } = require('../core/registry/write')
-const { isMatchmakingBlocked, hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries')
+const { isMatchmakingBlocked } = require('../queries/live')
+const { hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries/byId')
 
 // 후보 판 모양 전부 검사 (조작·빠진 값 막기)
 function assertValidSessionForCommit(session) {

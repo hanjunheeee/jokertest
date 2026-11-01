@@ -5,8 +5,9 @@ const { validateSessionInput, buildRoomSettingsSource, buildTimerSettings } = re
 const { resolveRoleComposition } = require('../core/rules/roleComposition')
 const { assignRoles } = require('./assign')
 const { INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
-const { resolveGameSource } = require('../result')
-const { isMatchmakingBlocked, hasRoomSession } = require('../queries')
+const { resolveGameSource } = require('../result/record')
+const { isMatchmakingBlocked } = require('../queries/live')
+const { hasRoomSession } = require('../queries/byId')
 
 // 방 → 판 후보 (역할 나누고 판 기본값 채움, 아직 장부에 안 넣음)
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {

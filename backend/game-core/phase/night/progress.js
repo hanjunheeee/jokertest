@@ -1,7 +1,7 @@
 // 밤 진행 기록 파일
 // 오늘 밤 진행 기록 만들기·찾기·확인, 밤 코드·socket 쪽이 사용
 const { NIGHT_RECOVERY_STATES } = require('./constants')
-const { isRegisteredSession } = require('../../queries')
+const { isRegisteredSession } = require('../../queries/byId')
 
 // 치료 기다리는 중이거나 죽을 예정이면 행동 막힘
 function isRecoveryBlockedState(state) {

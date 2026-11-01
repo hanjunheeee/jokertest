@@ -2,7 +2,7 @@
 // 낮 투표 판정 prepare/commit, socket 쪽이 사용 (지도 04)
 // 결과 방송 내용은 phase/day/payloads.js
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
-const { isRegisteredSession } = require('../../queries')
+const { isRegisteredSession } = require('../../queries/byId')
 const { assertSessionNotEnded, enterNightPhase } = require('../../core/rules/terminal')
 const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isVoteRoundResolved } = require('./state')
 const { DAY_PHASES } = require('./constants')

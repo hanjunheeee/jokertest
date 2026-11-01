@@ -1,14 +1,17 @@
 // 판 스냅샷 파일
 // 새로고침·재접속 때 보낼 판 전체 모습 + 사람별로 보이는 것만
 // socket 쪽이 gameSession.js 통해서 판 다시 그릴 때 사용
-const { buildPlayerThemeIndices, buildSettingsFields, PLAYER_THEME_PALETTE_SIZE, buildProfileFields, buildViewerRoleFields } = require('../setup')
-const { getDayPhase, buildDayVoteResolvedPayload } = require('../phase/day')
+const { buildPlayerThemeIndices, buildSettingsFields, buildProfileFields, buildViewerRoleFields } = require('../setup/startPayload')
+const { PLAYER_THEME_PALETTE_SIZE } = require('../setup/constants')
+const { getDayPhase } = require('../phase/day/state')
+const { buildDayVoteResolvedPayload } = require('../phase/day/payloads')
 const { computeHasActed, buildSelfFields, buildPublicProgress } = require('./progress')
-const { buildNightResultAppliedPayload } = require('../phase/night')
-const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal')
-const { buildPublicWinResult } = require('../result')
+const { buildNightResultAppliedPayload } = require('../phase/night/payloads')
+const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal/resolve')
+const { buildPublicWinResult } = require('../result/winReveal')
 const { normalizeGameId } = require('../core/registry/lookup')
-const { isForfeitedFromSession, getPlayerGameId, getSessionById } = require('../queries')
+const { isForfeitedFromSession } = require('../queries/participation')
+const { getPlayerGameId, getSessionById } = require('../queries/byId')
 
 // 스냅샷에 낮·재판 칸 넣어도 되는지
 function canIncludeVoteFields(session) {

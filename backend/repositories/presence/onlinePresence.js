@@ -1,5 +1,5 @@
 // 접속 상태 저장소 파일, 접속 행 읽기·저장
-// 친구 목록·접속 서비스가 모듈 객체로 바로 부름 (presence 입구 index.js 안 거침)
+// 친구 목록·접속 서비스가 모듈 객체로 바로 부름
 
 const db     = require("../../models");
 const { Op } = db.Sequelize;

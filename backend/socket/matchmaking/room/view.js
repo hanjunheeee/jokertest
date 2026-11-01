@@ -1,7 +1,7 @@
 // 방 정보 파일
 // 방 정보 내용 만들기 + 공개 방 목록 만들기·방송
 const { getMinPlayers } = require('../core/config')
-const { resolveRoleComposition } = require('../../../game-core/roleComposition')
+const { resolveRoleComposition } = require('../../../game-core/core/rules/roleComposition')
 const { hasPendingAdmission } = require('../admission/attempts')
 const { BOOT_EPOCH } = require('../core/constants')
 const { getSettingsVersion } = require('../settings/receipts')

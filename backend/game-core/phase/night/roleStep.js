@@ -3,7 +3,7 @@
 const { getAliveActorUuidsForRole, matchesTargetLifeRule, isRoleTurnComplete } = require('./actors')
 const { NIGHT_ACTION_RESOLUTION_POLICY, NIGHT_RECOVERY_STATES, NIGHT_TURN_ORDER, EMPTY_COMPLETED_ROLES } = require('./constants')
 const { isRecoveryBlockedState, getNightProgress, ensureNightProgress } = require('./progress')
-const { isRegisteredSession } = require('../../queries')
+const { isRegisteredSession } = require('../../queries/byId')
 const { assertSessionNotEnded } = require('../../core/rules/terminal')
 
 // 이 역할 사람들이 낸 대상 모으기 (빼라는 사람 빼고)

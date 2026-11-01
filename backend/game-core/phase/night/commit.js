@@ -7,9 +7,10 @@ const { isObserverBusy, observeNightCommit } = require('../../core/tools/observe
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../../core/rules/terminal')
 const { nightPreparations, computeFingerprint, restoreNightPreparation } = require('./ledger')
 const { getNightProgress } = require('./progress')
-const { isParticipatingInSession, isRegisteredSession, getParticipationRevision } = require('../../queries')
-const { DEATH_REASONS } = require('../../result')
-const { enterDayPhase } = require('../day')
+const { isParticipatingInSession, getParticipationRevision } = require('../../queries/participation')
+const { isRegisteredSession } = require('../../queries/byId')
+const { DEATH_REASONS } = require('../../result/constants')
+const { enterDayPhase } = require('../day/state')
 
 // 죽은 사람이 낸 밤 행동 지움
 function expireDeadPlayerNightEffects(session, deadUuids) {

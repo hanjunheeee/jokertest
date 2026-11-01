@@ -3,10 +3,13 @@
 const { assertSessionNotEnded, enterNightPhase } = require('../core/rules/terminal')
 const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
 const { releasePlayerSession } = require('../core/registry/write')
-const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap, TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal')
-const { isRoleRevealComplete } = require('../setup')
-const { enterDayPhase, getDayPhase, DAY_PHASES, getDayVoterUuids, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day')
-const { hasForfeited, getParticipationRevision } = require('../queries')
+const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap } = require('../phase/tribunal/ballots')
+const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal/constants')
+const { isRoleRevealComplete } = require('../setup/roleAck')
+const { enterDayPhase, getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day/state')
+const { DAY_PHASES } = require('../phase/day/constants')
+const { getDayVoterUuids } = require('../phase/day/ballots')
+const { hasForfeited, getParticipationRevision } = require('../queries/participation')
 
 // 게임 중 나가기: 산 사람이면 탈락, 방장 넘기기, 남은 표·준비·밤 행동에서 빼기
 // 피고가 나가면 재판 취소하고 밤으로

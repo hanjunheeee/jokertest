@@ -1,12 +1,12 @@
 const express = require("express");
 const router  = express.Router();
 
-const {
-    signup, login, me, logout, checkEmail, refresh,
-    completeSocialSignup, getSocialSignupIntent, googleAuthStart, googleAuthCallback,
-    discordAuthStart, discordAuthCallback,
-    discordLinkStart, discordLinkCallback,
-} = require("../controllers/auth");
+const { signup, login, checkEmail } = require("../controllers/auth/account");
+const { me, logout, refresh } = require("../controllers/auth/session");
+const { completeSocialSignup, getSocialSignupIntent } = require("../controllers/auth/socialSignup");
+const { googleAuthStart, googleAuthCallback } = require("../controllers/auth/google");
+const { discordAuthStart, discordAuthCallback } = require("../controllers/auth/discord");
+const { discordLinkStart, discordLinkCallback } = require("../controllers/auth/discordLink");
 const { verifyToken }        = require("../middlewares/auth.middleware");
 const { createRateLimiter }  = require("../middlewares/rateLimit.middleware");
 const {

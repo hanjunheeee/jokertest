@@ -15,10 +15,7 @@ const {
 } = require('../validations/room/updateSettings')
 const { ROOM_JOIN_ERROR_CODES } = require('./roomJoinErrors')
 const gameSession = require('../game-core/gameSession')
-const {
-    validateCreateRoomRoleComposition,
-    resolveRoleComposition,
-} = require('../game-core/roleComposition')
+const { validateCreateRoomRoleComposition, resolveRoleComposition } = require('../game-core/core/rules/roleComposition')
 const gameInviteModule = require('../services/friend/gameInvite')
 const kickReceiptStore = require('./kickReceiptStore')
 const channelMembership = require('./channelMembership')

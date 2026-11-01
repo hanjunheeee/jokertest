@@ -1,7 +1,7 @@
 // 재판 투표 받기 파일
 // 유죄·무죄 표 받기 + 효과음 이벤트, socket 쪽이 gameSession.js 통해서 사용
 const { normalizeGameId, findActorSession } = require('../../core/registry/lookup')
-const { getSessionById } = require('../../queries')
+const { getSessionById } = require('../../queries/byId')
 
 // 재판 표 받기 (재판 중, 투표 자격 있는 사람만)
 function submitTribunalVote(uuid, gameId, dayIndex, vote) {

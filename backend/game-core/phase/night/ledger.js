@@ -3,7 +3,7 @@
 // commit 직전 바꿔치기 막기 (지도 06-⑥)
 const { getNightProgress } = require('./progress')
 const { NIGHT_TURN_ORDER } = require('./constants')
-const { getParticipationRevision } = require('../../queries')
+const { getParticipationRevision } = require('../../queries/participation')
 
 // 판정 결과 객체 → 준비할 때 기록 (game-core 밖엔 안 내보냄)
 const nightPreparations = new WeakMap()

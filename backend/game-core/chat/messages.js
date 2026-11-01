@@ -3,7 +3,7 @@
 // prepare = 검사만, commit = 다시 보고 기록 (실패한 요청이 간격 안 먹게)
 const crypto = require('crypto')
 const { findActorSession } = require('../core/registry/lookup')
-const { getPlayerGameId, getSessionById } = require('../queries')
+const { getPlayerGameId, getSessionById } = require('../queries/byId')
 const { GAME_ROLES } = require('../core/rules/roles')
 const { assertSessionNotEnded } = require('../core/rules/terminal')
 const { CHAT_MIN_INTERVAL_MS, CHAT_COMMIT_MAX_AGE_MS } = require('./constants')

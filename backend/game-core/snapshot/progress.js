@@ -1,8 +1,10 @@
 // 진행 표시 파일
 // 단계별 몇 명 했는지 + 내가 냈는지, 스냅샷·방송이 사용
 // 내 진행 번호 올리기(상태 바뀜)도 여기 둠, socket 쪽이 내 제출 알림 보낼 때 사용
-const { getDayVoterUuids, getDayPhase, DAY_PHASES, getDayVoteRound, getDayVoteReadyUuids } = require('../phase/day')
-const { getTribunalVoterUuids } = require('../phase/tribunal')
+const { getDayVoterUuids } = require('../phase/day/ballots')
+const { getDayPhase, getDayVoteRound, getDayVoteReadyUuids } = require('../phase/day/state')
+const { DAY_PHASES } = require('../phase/day/constants')
+const { getTribunalVoterUuids } = require('../phase/tribunal/ballots')
 
 // 지금 단계에서 몇 명 했는지 / 몇 명 해야 하는지 (밤은 숫자 숨김)
 function buildPublicProgress(session) {

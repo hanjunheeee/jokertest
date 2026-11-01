@@ -3,7 +3,7 @@
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
 const { isVoteRoundResolved, getDayVoteRound, getDayPhase, getDayVoteExcludedUuids } = require('./state')
 const { DAY_PHASES } = require('./constants')
-const { getSessionById } = require('../../queries')
+const { getSessionById } = require('../../queries/byId')
 
 // 낮 표 받기 (투표 단계, 산 사람, 뽑을 수 있는 사람만)
 function submitDayVote(uuid, gameId, targetId) {

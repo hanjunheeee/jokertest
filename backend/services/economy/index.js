@@ -13,9 +13,28 @@ const { getEmojiPalette, saveEmojiPalette } = require('./emojiPalette');
 const { buildSkinsByJob } = require('./helpers');
 const { applyLedgerTransaction } = require('./ledger');
 const { __internal } = require('./testing');
-// 상품·충전 이름도 같이 모음 (복사본이라 부를 땐 ./currencyProducts · ./topup 입구 사용)
-const currencyProducts = require('./currencyProducts');
-const topup = require('./topup');
+// 상품·충전 이름도 하나씩 같이 모음 (복사본이라 부를 땐 ./currencyProducts · ./topup 입구 사용)
+const {
+    KINDS,
+    STATUSES,
+    ALLOWED_CURRENCY_PAIRS,
+    normalizeProductRow,
+    toPublicProduct,
+    listCurrencyProducts,
+    getCurrencyProduct,
+} = require('./currencyProducts');
+const {
+    ORDER_STATUS,
+    OPEN_ORDER_LIMIT,
+    LEASE_MS,
+    ORDER_ID_PATTERN,
+    PAYMENT_KEY_PATTERN,
+    referenceEventIdOf,
+    createTopupOrder,
+    confirmTopupOrder,
+    getTopupOrder,
+    listOpenTopupOrders,
+} = require('./topup');
 
 module.exports = {
     CURRENCIES,
@@ -42,6 +61,21 @@ module.exports = {
     applyLedgerTransaction,
     MAX_BALANCE,
     __internal,
-    ...currencyProducts,
-    ...topup,
+    KINDS,
+    STATUSES,
+    ALLOWED_CURRENCY_PAIRS,
+    normalizeProductRow,
+    toPublicProduct,
+    listCurrencyProducts,
+    getCurrencyProduct,
+    ORDER_STATUS,
+    OPEN_ORDER_LIMIT,
+    LEASE_MS,
+    ORDER_ID_PATTERN,
+    PAYMENT_KEY_PATTERN,
+    referenceEventIdOf,
+    createTopupOrder,
+    confirmTopupOrder,
+    getTopupOrder,
+    listOpenTopupOrders,
 };

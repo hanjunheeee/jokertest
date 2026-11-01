@@ -6,8 +6,25 @@ const { sendFriendRequest, acceptRequest, declineRequest, getIncomingRequests, g
 const { getFavoriteFriendIds, setFriendFavorite } = require('./favorites');
 // 컨트롤러에서 옮긴 친구 사건 전송 (효과음 사건 포함)
 const { notifyRequestReceived, notifyRequestAccepted, notifyRequestDeclined, notifyBlocked, notifyUnblocked } = require('./notify');
-// 게임 초대 이름도 모음, 시험 손잡이(__internal·__setRoomAccessForRuntime)는 ./gameInvite 입구에서만
-const { __internal, __setRoomAccessForRuntime, ...gameInvite } = require('./gameInvite');
+// 게임 초대 이름도 하나씩 모음, 시험 손잡이(__internal·__setRoomAccessForRuntime)는 ./gameInvite 입구에서만
+const {
+    INVITE_TTL_MS,
+    INVITE_STATUS,
+    ENTRY_OUTCOME,
+    toPublicInvite,
+    compareSeq,
+    createInvite,
+    getReceiverSnapshot,
+    getInviteForUser,
+    declineInvite,
+    cancelPendingInvitesBetween,
+    cancelPendingInvitesForRoom,
+    recordAcceptDecision,
+    finalizeAcceptedEntry,
+    getAttemptOutcome,
+    recordEntryInterrupted,
+    emitInviteUpdated,
+} = require('./gameInvite');
 
 module.exports = {
     getFriendList,
@@ -28,5 +45,20 @@ module.exports = {
     notifyRequestDeclined,
     notifyBlocked,
     notifyUnblocked,
-    ...gameInvite,
+    INVITE_TTL_MS,
+    INVITE_STATUS,
+    ENTRY_OUTCOME,
+    toPublicInvite,
+    compareSeq,
+    createInvite,
+    getReceiverSnapshot,
+    getInviteForUser,
+    declineInvite,
+    cancelPendingInvitesBetween,
+    cancelPendingInvitesForRoom,
+    recordAcceptDecision,
+    finalizeAcceptedEntry,
+    getAttemptOutcome,
+    recordEntryInterrupted,
+    emitInviteUpdated,
 };

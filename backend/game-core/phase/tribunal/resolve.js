@@ -2,9 +2,9 @@
 // 재판 판정 prepare/commit + 결과 방송 내용 만들기, socket 쪽 방송·스냅샷이 사용
 // prepare = 표 세서 결과만 정함, commit = 그사이 표 안 바뀌었는지 보고 확정 (지도 04-⑦)
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
-const { isRegisteredSession } = require('../../queries')
+const { isRegisteredSession } = require('../../queries/byId')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession, enterNightPhase } = require('../../core/rules/terminal')
-const { DEATH_REASONS } = require('../../result')
+const { DEATH_REASONS } = require('../../result/constants')
 const { TRIBUNAL_PENDING, getTribunalVoterUuids, buildTribunalBallotSnap, tallyTribunalBallots, isSameBallots, } = require('./ballots')
 const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('./constants')
 

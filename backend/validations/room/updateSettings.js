@@ -7,10 +7,7 @@ const {
     ALLOWED_DAY_VOTE_TIME,
     ALLOWED_NIGHT_ACTION_TIME,
 } = require('./create')
-const {
-    CUSTOM_ROLE_KEYS,
-    validateCreateRoomRoleComposition,
-} = require('../../game-core/roleComposition')
+const { CUSTOM_ROLE_KEYS, validateCreateRoomRoleComposition } = require('../../game-core/core/rules/roleComposition')
 
 const ALLOWED_ACCESS_TYPES = Object.freeze(['open', 'code'])
 

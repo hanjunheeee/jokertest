@@ -1,6 +1,6 @@
 // 낮 준비 파일
 // 투표 준비 받기 + 날짜·투표 번호 읽기, socket 쪽이 사용 (방송은 payloads.js)
-const { getSessionById } = require('../../queries')
+const { getSessionById } = require('../../queries/byId')
 const { getDayVoteRound, getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('./state')
 const { findActorSession } = require('../../core/registry/lookup')
 const { DAY_PHASES } = require('./constants')

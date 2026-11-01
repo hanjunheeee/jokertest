@@ -2,8 +2,8 @@
 // 역할 확인 버튼 받기 + 전원 확인됐는지
 // socket 쪽이 gameSession.js 통해서 사용, 전원 확인 검사는 나가기 쪽도 씀
 const { findActorSession } = require('../core/registry/lookup')
-const { enterDayPhase } = require('../phase/day')
-const { isParticipatingInSession } = require('../queries')
+const { enterDayPhase } = require('../phase/day/state')
+const { isParticipatingInSession } = require('../queries/participation')
 
 // "역할 확인" 누른 사람 기록, 전원 확인되면 첫 낮으로
 function acknowledgeRoleReveal(uuid, gameId) {

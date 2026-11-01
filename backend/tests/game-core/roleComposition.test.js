@@ -10,7 +10,7 @@ const {
     validateCreateRoomRoleComposition,
     resolveRoleComposition,
     validateResolvedComposition,
-} = require('../../game-core/roleComposition')
+} = require('../../game-core/core/rules/roleComposition')
 
 function customCounts(overrides = {}) {
     return { JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1, ...overrides }

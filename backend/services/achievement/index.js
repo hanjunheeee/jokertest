@@ -5,8 +5,16 @@
 const { loadProgress } = require('./progress');
 const { getStatusForUser, evaluateAndGrantForUser } = require('./evaluate');
 const { __internal } = require('./testing');
-// 업적 정의 이름은 그대로 펼침, 전체 다시 평가는 함수 하나만 (recovery __internal은 겹쳐서 뺌)
-const definitions = require('./definitions');
+// 업적 정의 이름은 하나씩 적음, 전체 다시 평가는 함수 하나만 (recovery __internal은 겹쳐서 뺌)
+const {
+    CURRENCIES,
+    METRICS,
+    JOB_ROLES,
+    FORBIDDEN_RECORD_ACHIEVEMENTS,
+    JOB_ACHIEVEMENTS,
+    ACHIEVEMENT_DEFINITIONS,
+    getAchievementDefinition,
+} = require('./definitions');
 const { evaluateAllUsers } = require('./recovery');
 
 module.exports = {
@@ -14,6 +22,12 @@ module.exports = {
     getStatusForUser,
     evaluateAndGrantForUser,
     __internal,
-    ...definitions,
+    CURRENCIES,
+    METRICS,
+    JOB_ROLES,
+    FORBIDDEN_RECORD_ACHIEVEMENTS,
+    JOB_ACHIEVEMENTS,
+    ACHIEVEMENT_DEFINITIONS,
+    getAchievementDefinition,
     evaluateAllUsers,
 };

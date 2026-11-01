@@ -1,7 +1,7 @@
 // 판 입력 검사 파일
 // 방 정보 검사 + 시간·설정 값 정리, 판 만들 때 사용
 const { MIN_SUPPORTED_PLAYERS, MAX_SUPPORTED_PLAYERS } = require('./constants')
-const { NIGHT_TURN_ORDER } = require('../phase/night')
+const { NIGHT_TURN_ORDER } = require('../phase/night/constants')
 const { buildRoomSettingsView } = require('../../validations/room/updateSettings')
 
 // 방 정보가 판 만들 수 있는 모양인지 (인원·광대 수)
