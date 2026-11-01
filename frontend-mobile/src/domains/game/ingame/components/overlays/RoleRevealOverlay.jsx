@@ -1,22 +1,24 @@
 // 내 역할 공개 창: 닉네임·역할 이름·설명·동료 광대, 확인 누르면 닫힘 (역할 확인 알림은 훅이 따로 보냄)
-// OverlayLayer가 씀, 값은 useInGameRoleReveal(useInGameOverlayStack 안)
+// OverlayLayer가 씀, 값은 useInGameRoleReveal(useInGameOverlayStack 안), 글자 모양은 데스크톱 상수 그대로
 import {
     ALLY_CHIP_CLASS,
     ALLY_LIST_CLASS,
     ALLY_SECTION_CLASS,
+    DESC_CLASS,
+    HEADER_CLASS,
+    NICKNAME_CLASS,
+    ROLE_NAME_CLASS,
 } from "@/domains/game/ingame/constants/roleReveal/ingameRoleRevealLayout.js"
 import { resolveInGameRoleRevealAllies } from "@/domains/game/ingame/utils/roleReveal.js"
 import ParchmentDialog from "./parchment/ParchmentDialog.jsx"
 
-// 폰에서 역할 이름이 제일 먼저 눈에 띄게 크게
-const HEADER_CLASS = "w-full space-y-0.5 border-b border-[#6b4321]/40 pb-2"
-const NICKNAME_CLASS = "text-[1rem] font-semibold tracking-wide text-[#5b3a20] land:text-[0.9rem]"
-const ROLE_NAME_CLASS =
-    "font-display text-[2.1rem] font-medium leading-tight tracking-wide text-[#3a1a0c] antialiased md:text-[2.6rem] land:text-[1.6rem]"
-const DESC_CLASS = "text-[0.92rem] leading-relaxed [word-break:keep-all] text-[#4a2c14] land:text-[0.82rem] land:leading-snug"
+// 가로 폰은 높이가 낮아 데스크톱 vw 글자가 넘침 → 가로 폰만 글자 줄임
+const LAND_NICK = "land:text-[0.95rem]"
+const LAND_ROLE = "land:text-[1.6rem] land:leading-tight"
+const LAND_DESC = "land:text-[0.85rem] land:leading-snug"
 
-// roleInfo 없으면 안 그림, 데스크톱처럼 동료 광대는 판 참가자 닉네임으로 바꿔 보임
-export default function RoleRevealOverlay({ open, onClose, roleInfo, players = [] }) {
+// roleInfo 없으면 안 그림, 동료 광대는 판 참가자 닉네임으로 바꿔 보임 (데스크톱과 같음)
+export default function RoleRevealOverlay({ open, onClose, roleInfo, players = [], primaryLabel = "확인" }) {
     if (!roleInfo) return null
 
     const allies = resolveInGameRoleRevealAllies(roleInfo.allies, players)
@@ -25,16 +27,16 @@ export default function RoleRevealOverlay({ open, onClose, roleInfo, players = [
         <ParchmentDialog
             open={open}
             variantKey="roleReveal"
-            zClass="z-[55]"
             onDismiss={onClose}
+            confirmLabel={primaryLabel}
             wrapperProps={{ "data-ingame-role-reveal": roleInfo.role }}
         >
             <div className={HEADER_CLASS}>
-                {roleInfo.nickname ? <p className={NICKNAME_CLASS}>{roleInfo.nickname}</p> : null}
-                <p className={ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
+                {roleInfo.nickname ? <p className={`${NICKNAME_CLASS} ${LAND_NICK}`}>{roleInfo.nickname}</p> : null}
+                <p className={`${ROLE_NAME_CLASS} ${LAND_ROLE}`}>{roleInfo.roleName}</p>
             </div>
 
-            {roleInfo.description ? <p className={DESC_CLASS}>{roleInfo.description}</p> : null}
+            {roleInfo.description ? <p className={`${DESC_CLASS} ${LAND_DESC}`}>{roleInfo.description}</p> : null}
 
             {allies.length ? (
                 <div className={ALLY_SECTION_CLASS}>

@@ -1,13 +1,13 @@
 // 밤 성공 연출 창: 대기열 맨 앞 사건을 영상(또는 자료 대기 창)으로, 다 보면 최종 생존 결과
-// OverlayLayer가 씀, 값은 useInGameNightSuccessPresentation (데스크톱 InGameNightSuccessPresentation과 같은 순서)
+// OverlayLayer가 씀, 값은 useInGameNightSuccessPresentation (데스크톱 InGameNightSuccessPresentation과 같은 순서·글)
 import { resolveNightSuccessVideo } from "@/domains/game/ingame/utils/resolveNightSuccessVideo.js"
 import {
     buildFinalStatusLabel,
     buildPendingAssetLabel,
 } from "@/domains/game/ingame/constants/ingameNightSuccess.js"
+import { PRIVATE_RESULT_MSG_CLASS } from "@/domains/game/ingame/constants/ingameNightPrivateResult.js"
 import ParchmentDialog from "../parchment/ParchmentDialog.jsx"
 import ConfirmButton from "../parchment/ConfirmButton.jsx"
-import { BIG_MSG_CLASS } from "../overlayText.js"
 import KillVideo from "./KillVideo.jsx"
 
 // 사건 영상 → 자료 대기 → 최종 결과 순으로 하나만 그림
@@ -26,13 +26,12 @@ export default function NightSuccessOverlay({ current, open, finish, finalStatus
             <ParchmentDialog
                 open
                 variantKey="nightPrivateResult"
-                zClass="z-[65]"
                 onDismiss={() => finish("SKIPPED")}
                 showConfirm={false}
                 focusKey={current.eventId}
                 wrapperProps={{ "data-ingame-night-success-pending": "" }}
             >
-                <p className={BIG_MSG_CLASS}>{label}</p>
+                <p className={PRIVATE_RESULT_MSG_CLASS}>{label}</p>
                 <ConfirmButton label="확인" onClick={() => finish("COMPLETED")} />
             </ParchmentDialog>
         )
@@ -44,12 +43,11 @@ export default function NightSuccessOverlay({ current, open, finish, finalStatus
         <ParchmentDialog
             open
             variantKey="nightPrivateResult"
-            zClass="z-[65]"
             onDismiss={onClose}
             confirmLabel="확인"
             wrapperProps={{ "data-ingame-night-success-final": finalStatus.alive ? "ALIVE" : "DEAD" }}
         >
-            <p className={BIG_MSG_CLASS}>{buildFinalStatusLabel(finalStatus.alive)}</p>
+            <p className={PRIVATE_RESULT_MSG_CLASS}>{buildFinalStatusLabel(finalStatus.alive)}</p>
         </ParchmentDialog>
     )
 }

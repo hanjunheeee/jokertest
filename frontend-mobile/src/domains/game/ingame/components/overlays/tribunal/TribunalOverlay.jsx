@@ -1,5 +1,5 @@
 // 재판 연출 창: 피고 카드·유무죄 버튼이 먼저 크게, 잠시 뒤 카드가 위로 줄고 아래에 최후의 반론 채팅
-// 재판 문지기(TribunalGate)·재판 미리보기 화면이 씀 (세로: 위 카드 + 아래 채팅, 가로 폰: 왼쪽 카드 + 오른쪽 채팅)
+// 재판 문지기(TribunalGate)·재판 미리보기 화면이 씀 (세로: 위 카드 + 아래 채팅, 가로 폰: 왼쪽 카드 + 오른쪽 채팅, 덮개 짙기·움직임은 데스크톱 값)
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion"
 import {
     BACKDROP_MOTION,
@@ -55,7 +55,7 @@ export default function TribunalOverlay({
             data-ingame-tribunal-layout={layoutPhase}
         >
             <motion.div
-                className="absolute inset-0 bg-black/80"
+                className="absolute inset-0 bg-black/62"
                 variants={BACKDROP_MOTION}
                 initial={reduced ? false : "hidden"}
                 animate={reduced ? undefined : "visible"}

@@ -11,6 +11,10 @@ import { INGAME_ASSETS } from "@/domains/game/ingame/constants/ingameAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import TribunalOverlay from "../components/overlays/tribunal/TribunalOverlay.jsx"
 
+// 다시 보기 버튼: 데스크톱 모양 (아래 가운데는 폰에서 채팅 입력칸 자리라 오른쪽 위로)
+const REPLAY_BTN_CLASS =
+    "fixed right-3 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] z-[60] min-h-11 cursor-pointer rounded border border-[#6b4321] bg-[#e2c78f] px-5 py-2 font-subheading text-sm font-bold text-[#3a1a0c] shadow-[0_4px_14px_rgba(0,0,0,0.45)] transition active:bg-[#f0dcae]"
+
 // 채팅은 이 화면 상태로만 흉내, 투표 버튼은 눌러도 아무 일 없음
 export default function TribunalPresentationPreviewPage() {
     const [replayKey, setReplayKey] = useState(0)
@@ -45,24 +49,26 @@ export default function TribunalPresentationPreviewPage() {
         setReplayKey((k) => k + 1)
     }, [])
 
-    // 채팅 줄이 명단 색을 읽어서 명단 컨텍스트로 감쌈, 연출은 body로 꺼냄 (다시 보기는 판정 버튼 자리에 둠)
+    // 채팅 줄이 명단 색을 읽어서 명단 컨텍스트로 감쌈, 연출·다시 보기 버튼은 body로 꺼냄 (판정 버튼은 데스크톱처럼 없음)
     return (
         <div className="relative h-full w-full overflow-hidden bg-black">
             <PublicAsset src={INGAME_ASSETS.bg} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
             <InGamePlayerSessionProvider>
                 {createPortal(
-                    <TribunalOverlay
-                        key={replayKey}
-                        defendant={defendant}
-                        showVoteButtons
-                        voteButtonsEnabled
-                        onVoteGuilty={() => {}}
-                        onVoteNotGuilty={() => {}}
-                        chatProps={chatProps}
-                        devResolveLabel="다시 보기"
-                        devResolveEnabled
-                        onDevResolve={replay}
-                    />,
+                    <>
+                        <TribunalOverlay
+                            key={replayKey}
+                            defendant={defendant}
+                            showVoteButtons
+                            voteButtonsEnabled
+                            onVoteGuilty={() => {}}
+                            onVoteNotGuilty={() => {}}
+                            chatProps={chatProps}
+                        />
+                        <button type="button" className={REPLAY_BTN_CLASS} onClick={replay}>
+                            다시 보기
+                        </button>
+                    </>,
                     document.body,
                 )}
             </InGamePlayerSessionProvider>

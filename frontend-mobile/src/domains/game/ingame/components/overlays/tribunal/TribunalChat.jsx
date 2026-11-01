@@ -1,16 +1,22 @@
-// 재판 '최후의 반론' 채팅 칸: 메시지 목록 + 바닥 입력칸·보내기 (양피지 색 판)
-// 재판 연출 창(TribunalOverlay)이 씀, 값은 채팅 세션 컨텍스트(InGameChatSessionProvider)
+// 재판 '최후의 반론' 채팅 칸: 데스크톱 채팅 틀 그림을 목록 칸·입력 줄로 잘라 깔고 그 안에 메시지 목록·입력칸·보내기
+// 재판 연출 창(TribunalOverlay)이 씀, 값은 채팅 세션 컨텍스트, 틀 자르기·입력 줄 모양은 채팅 담당 부품을 불러 씀 (고치지 않음)
 import { useEffect, useRef } from "react"
 import { INPUT_MAX_LENGTH } from "@/domains/game/ingame/constants/chat/ingameChatAssets.js"
+import FrameSlice from "../../chat/FrameSlice.jsx"
+import SendButton from "../../chat/SendButton.jsx"
+import {
+    COMPOSER_ROW_CLASS,
+    FRAME_ROOT_CLASS,
+    FRAME_SLICE,
+    TEXTAREA_CLASS,
+    listInsetStyle,
+} from "../../chat/chatStyle.js"
 import TribunalChatRow from "./TribunalChatRow.jsx"
 
-const PANEL_CLASS =
-    "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border-2 border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
+// 입력 줄 높이 (입력 띠 양피지 안에 입력칸 44px가 들어가는 높이, 채팅 입력 줄과 같음)
+const BAR_CLASS = "relative h-[75px] w-full shrink-0 overflow-hidden"
 
-const SEND_BTN_CLASS =
-    "min-h-11 shrink-0 rounded border border-[#d8b982]/60 bg-[#2b1c15] px-4 font-subheading text-sm font-bold text-[#e9b582] active:bg-[#53321f] disabled:opacity-50"
-
-// 오류 먼저, 보내는 중이면 전송 중 (데스크톱 상태 줄과 같음)
+// 오류 먼저, 보내는 중이면 전송 중 (데스크톱 상태 줄과 같은 글)
 function statusText(status, error) {
     if (error) return error
     if (status === "sending") return "전송 중"
@@ -23,7 +29,9 @@ export default function TribunalChat({ draft = "", messages = [], onDraftChange,
 
     useEffect(() => {
         const el = listRef.current
-        if (el) el.scrollTop = el.scrollHeight
+        if (!el) return undefined
+        const frame = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
+        return () => cancelAnimationFrame(frame)
     }, [messages])
 
     const send = () => onSend?.()
@@ -35,35 +43,44 @@ export default function TribunalChat({ draft = "", messages = [], onDraftChange,
     const line = statusText(status, error)
 
     return (
-        <section className={PANEL_CLASS} aria-label="최후의 반론 채팅">
-            <p className="shrink-0 border-b border-[#6b4321]/40 py-1.5 text-center font-subheading text-sm font-bold text-[#5b3a20]">
-                최후의 반론
-            </p>
-            <ul
-                ref={listRef}
-                role="log"
-                aria-label="채팅 내역"
-                className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain px-3 py-2"
-            >
-                <li aria-hidden className="mt-auto" />
-                {messages.map((m) => (
-                    <TribunalChatRow key={m.id} playerId={m.playerId} senderName={m.senderName} text={m.text} sentAt={m.sentAt} />
-                ))}
-            </ul>
-            {line ? <p className="shrink-0 px-3 text-[11px] text-[#7a2a12]">{line}</p> : null}
-            <div className="flex shrink-0 items-end gap-2 border-t border-[#6b4321]/40 bg-[#2b1c15]/10 p-2">
-                <textarea
-                    rows={1}
-                    value={draft}
-                    maxLength={INPUT_MAX_LENGTH}
-                    onChange={(e) => onDraftChange?.(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="TYPE HERE..."
-                    aria-label="채팅 입력"
-                    enterKeyHint="send"
-                    className="min-h-11 flex-1 resize-none rounded border border-[#6b4321]/50 bg-[#fbf3dc]/80 px-2.5 py-2 font-subheading leading-snug text-[#3a1a0c] placeholder:text-[#8a6a4a] focus:outline-none focus:ring-2 focus:ring-[#6b4321]/50"
-                />
-                <button type="button" className={SEND_BTN_CLASS} onClick={send} disabled={!onSend}>보내기</button>
+        <section className={`${FRAME_ROOT_CLASS} flex min-h-[15rem] flex-1 flex-col`} aria-label="최후의 반론 채팅">
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+                <FrameSlice slice={FRAME_SLICE.list} />
+                <div className="absolute flex flex-col" style={listInsetStyle(FRAME_SLICE.list)}>
+                    <ul
+                        ref={listRef}
+                        role="log"
+                        aria-label="채팅 내역"
+                        aria-readonly="true"
+                        className="flex min-h-0 flex-1 flex-col items-start gap-[0.52em] overflow-x-hidden overflow-y-auto overscroll-contain pb-1 pt-2 [scrollbar-width:none]"
+                    >
+                        <li aria-hidden className="min-h-0 flex-1 list-none" />
+                        {messages.map((m) => (
+                            <TribunalChatRow key={m.id} playerId={m.playerId} senderName={m.senderName} text={m.text} sentAt={m.sentAt} />
+                        ))}
+                    </ul>
+                    {line ? <p className="shrink-0 px-1 text-[11px] font-bold text-[#7a2a12]">{line}</p> : null}
+                </div>
+            </div>
+            <div className={BAR_CLASS}>
+                <FrameSlice slice={FRAME_SLICE.composer} />
+                <div className={COMPOSER_ROW_CLASS}>
+                    <div className="relative min-w-0 flex-1">
+                        <textarea
+                            rows={1}
+                            value={draft}
+                            maxLength={INPUT_MAX_LENGTH}
+                            onChange={(e) => onDraftChange?.(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder="TYPE HERE..."
+                            aria-label="채팅 입력"
+                            enterKeyHint="send"
+                            autoComplete="off"
+                            className={TEXTAREA_CLASS}
+                        />
+                    </div>
+                    <SendButton onSend={send} />
+                </div>
             </div>
         </section>
     )

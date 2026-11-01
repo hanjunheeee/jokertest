@@ -35,7 +35,7 @@ const FRAME_CLASS =
     "pointer-events-auto relative w-[min(100vw-2.5rem,24rem)] select-none [--pk:0.2] md:w-[30rem] md:[--pk:0.28] land:w-[min(70vw,28rem)] land:[--pk:0.17]"
 
 const CONTENT_CLASS =
-    "relative flex min-h-[9rem] max-h-[min(72svh,36rem)] flex-col items-center justify-center gap-2.5 overflow-y-auto overscroll-contain text-center text-[#3a1a0c] land:max-h-[78svh] land:gap-1.5"
+    "relative flex min-h-[9rem] max-h-[min(72svh,36rem)] flex-col items-center justify-center gap-2 overflow-y-auto overscroll-contain text-center text-[#3a1a0c] land:max-h-[78svh] land:gap-1.5"
 
 // 양피지 한 장, 넘치면 안쪽만 스크롤
 export default function ParchmentFrame({ className = "", children, ...rest }) {
