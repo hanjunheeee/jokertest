@@ -2,16 +2,13 @@
 // shared/settings 아래 StepperRow·ChoiceRow가 씀
 import { SETTING_LOOKS } from "./settingLooks.js"
 
-// 제목·설명 글 (줄 버튼 안에선 span으로)
-export function RowText({ look, label, description, inline = false }) {
-  const Text = inline ? "span" : "p"
-  const Wrap = inline ? "span" : "div"
-  const block = inline ? "block " : ""
+// 제목·설명 글
+function RowText({ look, label, description }) {
   return (
-    <Wrap className="min-w-[9rem] flex-1">
-      <Text className={`${block}${look.title}`}>{label}</Text>
-      {description ? <Text className={`${block}${look.desc}`}>{description}</Text> : null}
-    </Wrap>
+    <div className="min-w-[9rem] flex-1">
+      <p className={look.title}>{label}</p>
+      {description ? <p className={look.desc}>{description}</p> : null}
+    </div>
   )
 }
 

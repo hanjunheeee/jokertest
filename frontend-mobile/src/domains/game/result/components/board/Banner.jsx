@@ -21,11 +21,11 @@ export default function Banner({ outcome }) {
                 alt=""
                 className={`block h-auto w-full select-none ${SHADOW_CLASS}`}
             />
-            <h1
+            <p
                 className={`pointer-events-none absolute inset-0 flex items-center justify-center px-[14%] pt-[2%] pb-[1%] font-display text-[2.4rem] font-medium leading-none land:text-[2rem] md:text-[3rem] [text-shadow:0_2px_6px_rgba(0,0,0,0.75)] ${tone}`}
             >
                 {label}
-            </h1>
+            </p>
         </div>
     )
 }

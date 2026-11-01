@@ -1,32 +1,39 @@
-// 방 설정 위 탭 줄 (일반·회의&투표·역할 배정)
-// SetupPanel이 씀, 데스크톱 탭 그림의 붉은/어두운 색을 CSS로 옮김 (가로 긴 그림이 좁은 칸에선 찌그러져서)
-import { SETUP_TABS } from "../constants/setupLayout.js"
+// 방 설정 위 탭 줄 (일반·회의&투표), 탭 그림·글자·순서는 데스크톱 GameSetupTabs와 같음
+// SetupPanel이 씀, 폰 세로는 두 칸 나란히, 폰 가로는 왼쪽 세로 줄
+import { GAME_SETUP_ASSETS } from "@/domains/game/setup/constants/gameSetupAssets.js"
+import { GAME_SETUP_TABS } from "@/domains/game/setup/constants/gameSetupOptions.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-const BASE_CLASS =
-  "flex min-h-11 flex-1 items-center justify-center rounded-sm border px-1 font-subheading app-text-scaled [--app-text-size:0.95rem] font-bold leading-tight tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)] transition-colors"
+const TAB_BTN_CLASS =
+  "group relative flex min-h-11 min-w-0 flex-1 cursor-pointer items-center justify-center border-0 bg-transparent p-0 leading-none land:flex-none"
 
-const ACTIVE_CLASS =
-  "border-[#c9a77a] bg-gradient-to-b from-[#7a2b2b] to-[#4e1717] shadow-[inset_0_0_0_2px_rgba(0,0,0,0.35)]"
+// 그림은 늘여 깔고 누를 때만 살짝 줄어듦
+const TAB_IMG_CLASS =
+  "pointer-events-none absolute inset-0 block h-full w-full select-none object-fill transition-transform group-active:scale-[0.97]"
 
-const IDLE_CLASS =
-  "border-[#6d5a48] bg-gradient-to-b from-[#3e332c] to-[#251d18] text-[#f5f0e6]/80 shadow-[inset_0_0_0_2px_rgba(0,0,0,0.35)]"
+const TAB_LABEL_CLASS =
+  "pointer-events-none relative whitespace-nowrap px-1 font-subheading app-text-scaled [--app-text-size:1.1rem] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-// 탭 줄 (고른 탭은 붉은 판)
+// 탭 줄 (고른 탭은 활성 그림, 데스크톱처럼 aria-pressed)
 export default function SetupTabs({ activeTab, onSelect }) {
   return (
-    <nav className="flex w-full gap-1.5 land:flex-col" role="tablist" aria-label="인게임 설정 탭">
-      {SETUP_TABS.map((tab) => {
+    <nav className="flex w-full gap-1.5 land:flex-col" aria-label="인게임 설정 탭">
+      {GAME_SETUP_TABS.map((tab) => {
         const active = tab.id === activeTab
         return (
           <button
             key={tab.id}
             type="button"
-            role="tab"
-            aria-selected={active}
+            aria-pressed={active}
             onClick={() => onSelect(tab.id)}
-            className={`${BASE_CLASS} ${active ? ACTIVE_CLASS : IDLE_CLASS}`}
+            className={TAB_BTN_CLASS}
           >
-            {tab.label}
+            <PublicAsset
+              src={active ? GAME_SETUP_ASSETS.tabActive : GAME_SETUP_ASSETS.tabInactive}
+              alt=""
+              className={TAB_IMG_CLASS}
+            />
+            <span className={TAB_LABEL_CLASS}>{tab.label}</span>
           </button>
         )
       })}

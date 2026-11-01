@@ -20,14 +20,17 @@ export default function RoleComposition({ look: lookName, roleComposition, maxPl
     roleComposition
   const role = SETTING_LOOKS[lookName].role
   const blockRef = useRef(null)
+  const summaryRef = useRef(null)
   const prevModeRef = useRef(mode)
 
-  // 시트에선 직접 지정으로 바꾸면 늘어난 줄이 보이게 스크롤 (첫 그림엔 안 함, 데스크톱은 DOM 훅이 맡음)
+  // 직접 지정으로 바꾸면 늘어난 줄이 보이게 스크롤 (첫 그림엔 안 함), 방 설정은 데스크톱처럼 요약 줄까지
   useEffect(() => {
     if (prevModeRef.current === mode) return
     prevModeRef.current = mode
-    if (role.scrollOnCustom && isCustom) blockRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-  }, [mode, isCustom, role.scrollOnCustom])
+    if (!role.scrollOnCustom || !isCustom) return
+    const target = role.scrollToSummary ? summaryRef.current : blockRef.current
+    target?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+  }, [mode, isCustom, role.scrollOnCustom, role.scrollToSummary])
 
   return (
     <div ref={blockRef} className={role.wrap} data-setup-role-composition>
@@ -59,7 +62,7 @@ export default function RoleComposition({ look: lookName, roleComposition, maxPl
         : null}
 
       {isCustom ? (
-        <div className={role.summary} data-setup-role-composition-summary>
+        <div ref={summaryRef} className={role.summary} data-setup-role-composition-summary>
           <p className={role.line}>
             {CITIZEN_ROLE_LABEL}: {citizenCount === null ? "-" : `${citizenCount}명`} (자동 계산)
           </p>
