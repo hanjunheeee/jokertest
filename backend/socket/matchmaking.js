@@ -27,19 +27,19 @@ const {
     matchmakingQueue,
     gameRooms,
     playerRoom,
-    partyMatchingRoomByGameId,
+    partyRoomByGameId,
     pendingRoomTransitions,
     roomAdmissionAttempts,
     publishedAdmissions,
     roomSettingsUpdateResults,
-    roomTransitionGeneration,
+    generationByUuid,
     startedRoomMarks,
     pendingRoomRemovals,
-    roomPresenceConfirmedTick,
+    presenceConfirmedTick,
 } = require('./matchmaking/core/state')
 // 인원 규칙·자동 매칭 켜기는 matchmaking/config
 const {
-    isRandomMatchmakingEnabled,
+    isRandomMatchEnabled,
     __setRandomMatchmakingEnabledForTests,
     getMinPlayers,
     getSupportedRoomSizes,
@@ -48,23 +48,23 @@ const {
 const {
     acquireRoomTransition,
     releaseRoomTransition,
-    getRoomTransitionGeneration,
-    bumpRoomTransitionGeneration,
+    getGeneration,
+    bumpGeneration,
 } = require('./matchmaking/join/transition')
 // 설정 버전·저장 영수증은 matchmaking/settingsReceipts
 const {
-    INITIAL_SETTINGS_VERSION,
+    INIT_SETTINGS_VERSION,
     getSettingsVersion,
-    SETTINGS_UPDATE_RESULT_TTL_MS,
+    SETTINGS_RESULT_TTL_MS,
     settingsUpdateResultKey,
-    pruneSettingsUpdateResults,
-    recordSettingsUpdateResult,
-    forgetSettingsUpdateResultsForRoom,
+    pruneSettingsResults,
+    recordSettingsResult,
+    forgetSettingsResults,
 } = require('./matchmaking/settings/receipts')
 // 시작된 방 표시는 matchmaking/startedMarks
 const {
     rememberStartedRoom,
-    __resetStartedRoomMarksForTests,
+    __resetStartedMarksForTests,
     isStartedRoomMark,
 } = require('./matchmaking/join/startedMarks')
 // 바깥 의존 주입구는 matchmaking/deps
@@ -79,44 +79,44 @@ const {
 // matchmaking 상수
 const {
     BOOT_EPOCH,
-    PARTY_MATCHING_ROOM_TTL_MS,
+    PARTY_ROOM_TTL_MS,
     ROOM_RECONNECT_GRACE_MS,
-    ADMISSION_DEFAULT_STEP_TIMEOUT_MS,
-    ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS,
+    ADMISSION_STEP_MS,
+    ADMISSION_TOTAL_MS,
 } = require('./matchmaking/core/constants')
 // 자리·소켓 확인은 matchmaking/membership
 const {
-    isRoomOwnedByAnotherSocket,
-    isCanonicalSocketForAccount,
-    isCanonicalSocketWhenObservable,
-    isAccountSeatedInRoom,
+    isOwnedByOtherSocket,
+    isCanonicalSocket,
+    isCanonicalOrUnknown,
+    isSeatedInRoom,
     hasRoomMembership,
     hasLiveGameMembership,
     detachSocketFromChannel,
     leaveSocketRoomSafely,
-    findLiveSocketForUuid,
-    findAllLiveSocketsForUuid,
+    findLiveSocket,
+    findAllLiveSockets,
     resolveParticipantSockets,
 } = require('./matchmaking/room/membership')
 // 입장 요청 검사·실패 알림은 matchmaking/joinGuards
 const {
     emitRoomJoinFailed,
     ALREADY_IN_GAME_MESSAGE,
-    rejectIfInActiveGame,
+    rejectIfInGame,
     JOIN_REQUEST_INVALID_MESSAGE,
     validateJoinRoomByCodeRequest,
-    describeStartedRoomJoinFailure,
+    describeJoinFailure,
     isRoomCodeReserved,
 } = require('./matchmaking/join/guards')
 // 입장 시도 기록은 matchmaking/admission
 const {
     nextAttemptId,
-    releasePublishedAdmission,
+    releasePublished,
     getAdmissionAttempt,
-    invalidateAdmissionAttempt,
-    compensateInvalidatedAttempt,
-    invalidateAdmissionAttemptsForRoom,
-    hasPendingAdmissionForRoom,
+    invalidateAttempt,
+    compensateAttempt,
+    invalidateRoomAttempts,
+    hasPendingAdmission,
     countRoomOccupancy,
     withAdmissionTimeout,
 } = require('./matchmaking/admission/attempts')
@@ -124,15 +124,15 @@ const {
 const {
     computeCanStart,
     buildRoomPayload,
-    loadRoomParticipantProfile,
+    loadPlayerProfile,
     buildPublicRoomList,
     emitPublicRoomList,
 } = require('./matchmaking/room/view')
 // 입장 되돌리기·방 초대 취소는 matchmaking/release
 const {
-    removePublishedAdmission,
+    removePublished,
     scheduleLateJoinCleanup,
-    cancelInvitesForRoomAsync,
+    cancelRoomInvitesAsync,
 } = require('./matchmaking/admission/release')
 // 자동 매칭 줄은 matchmaking/queue
 const {
@@ -155,7 +155,7 @@ const {
 // 끝난 판 다음 방은 matchmaking/party
 const {
     handleGetPartyMatchingRoom,
-    notifyEndedSessionPartyOfMatchingRoom,
+    notifyPartyOfRoom,
 } = require('./matchmaking/join/party')
 // 방 나가기·끊김 유예는 matchmaking/leave
 const {
@@ -304,12 +304,12 @@ function __resetStateForTests() {
     publishedAdmissions.clear()
     startedRoomMarks.clear()
     roomSettingsUpdateResults.clear()
-    partyMatchingRoomByGameId.clear()
+    partyRoomByGameId.clear()
     kickReceiptStore.__resetKickReceiptsForTests()
     channelMembership.__resetChannelExclusionsForTests()
     for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
     pendingRoomRemovals.clear()
-    roomPresenceConfirmedTick.clear()
+    presenceConfirmedTick.clear()
     resetRoomPresenceTick()
 }
 
@@ -374,8 +374,8 @@ function __removeRoomForTests(roomId) {
         room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     }
     gameRooms.delete(roomId)
-    invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
-    forgetSettingsUpdateResultsForRoom(roomId)
+    invalidateRoomAttempts(roomId, 'ROOM_GONE')
+    forgetSettingsResults(roomId)
 }
 
 function __getBootEpochForTests() {
@@ -406,7 +406,7 @@ module.exports = {
     __getBootEpochForTests,
     __seedAdmissionAttemptForTests,
     __expireAdmissionAttemptForTests,
-    __resetStartedRoomMarksForTests,
+    __resetStartedMarksForTests,
     __setUserRepositoryForTests,
     __setEconomyServiceForTests,
     __setGameResultRepositoryForTests,
@@ -439,7 +439,7 @@ module.exports = {
         handleAcceptGameInvite,
         handleGetGameInviteResult,
         countRoomOccupancy,
-        hasPendingAdmissionForRoom,
+        hasPendingAdmission,
         removeFromRoom,
         handleKickRoomPlayer,
         commitRoomDeparture,

@@ -10,23 +10,23 @@ const {
     labeledResponder,
 } = require('../../common/replies')
 const {
-    CAST_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES,
-    RESOLVE_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES,
+    CAST_INTERNAL_CODES,
+    TRIBUNAL_INTERNAL_CODES,
 } = require('../core/constants')
 const { pickGameDay, acceptRequest, acceptCoreResult, prepareLogs, commitLogs } = require('../core/requests')
 const { isCurrentSocketForUuid } = require('../connection/ownership')
 const {
-    resolveSessionParticipantSockets,
-    resolveRecipientsOrEmpty,
+    resolveSessionSockets,
+    resolveOrEmpty,
     emitToEachEligible,
 } = require('../delivery/broadcast')
-const { emitOwnProgressAfterSubmit } = require('../delivery/progress')
+const { emitProgressAfterSubmit } = require('../delivery/progress')
 const { syncSessionPhaseTimers } = require('../phase/day')
 const { withTerminalFields } = require('../departure/end')
-const { resolveAfterDepartureOnSubmit } = require('../departure/autoResolve')
+const { resolveAfterDeparture } = require('../departure/autoResolve')
 
 // 재판 표 제출 효과음 (기록 없거나 읽다 던지면 null)
-function buildTribunalVoteSubmitSfxEvent(uuid, gameId) {
+function buildTribunalVoteSfx(uuid, gameId) {
     const record = tryOr(null, () => gameSessionCore.readTribunalVoteSubmitSfxEvent(uuid, gameId))
     if (record === null) return null
     return {
@@ -77,7 +77,7 @@ function handleCastTribunalVote(io, socket, uuid, payload, callback) {
     const ackInGame = (body) => ack(body, gameId, dayIndex)
 
     const result = acceptCoreResult(ackInGame, () => gameSessionCore.submitTribunalVote(uuid, gameId, dayIndex, vote), {
-        internalCodes: CAST_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES,
+        internalCodes: CAST_INTERNAL_CODES,
         onThrow: () => console.error('[재판 투표 제출 오류]', logFields('UNEXPECTED_ERROR')),
         onInternal: (code) => console.error('[재판 투표 제출 오류]', logFields(code)),
     })
@@ -88,25 +88,25 @@ function handleCastTribunalVote(io, socket, uuid, payload, callback) {
         gameId: result.gameId,
         dayIndex: result.dayIndex,
         vote: result.vote,
-        sfxEvent: buildTribunalVoteSubmitSfxEvent(uuid, gameId),
+        sfxEvent: buildTribunalVoteSfx(uuid, gameId),
     })
 
-    emitOwnProgressAfterSubmit(io, uuid, gameId, 'SELF_PROGRESS_AFTER_TRIBUNAL_VOTE')
+    emitProgressAfterSubmit(io, uuid, gameId, 'SELF_PROGRESS_AFTER_TRIBUNAL_VOTE')
 
-    isolate('[이탈 후 재판 판정 실패]', logFields('SUBMIT_RESOLVE_ERROR'), () => resolveAfterDepartureOnSubmit(io, uuid, gameId))
+    isolate('[이탈 후 재판 판정 실패]', logFields('SUBMIT_RESOLVE_ERROR'), () => resolveAfterDeparture(io, uuid, gameId))
 }
 
 // 재판 판정 ack
-const respondResolveTribunalVote = labeledResponder('[재판 판정 오류]')
+const respondResolveVote = labeledResponder('[재판 판정 오류]')
 
 // 재판 판정 버튼: 표 세서 확정, 승부 났으면 종료 필드 실어 판 전체에 방송
 function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {}) {
     const prepare = deps.prepare ?? gameSessionCore.prepareTribunalVoteResolution
     const commit = deps.commit ?? gameSessionCore.commitTribunalVoteResolution
-    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionSockets
 
     if (typeof callback !== 'function') return
-    const ack = (body, gameId) => respondResolveTribunalVote(uuid, gameId, callback, body)
+    const ack = (body, gameId) => respondResolveVote(uuid, gameId, callback, body)
     // 지금 소켓·요청 모양 (지도 04-①)
     const fields = acceptRequest(ack, uuid, socket, payload, pickGameDay)
     if (!fields) return
@@ -114,7 +114,7 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
 
     const label = '[재판 판정 오류]'
     const prepared = acceptCoreResult(ack, () => prepare(uuid, gameId, dayIndex),
-        prepareLogs(label, uuid, RESOLVE_TRIBUNAL_VOTE_INTERNAL_ONLY_CODES))
+        prepareLogs(label, uuid, TRIBUNAL_INTERNAL_CODES))
     if (!prepared) return
 
     const ackInSession = (body) => ack(body, prepared.session.id)
@@ -142,7 +142,7 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
         })
     }
 
-    const recipients = resolveRecipientsOrEmpty(io, prepared.session, label, fieldsInSession, resolveParticipantSockets)
+    const recipients = resolveOrEmpty(io, prepared.session, label, fieldsInSession, resolveParticipantSockets)
     if (broadcastPayload) {
         emitToEachEligible(prepared.session, recipients, label, fieldsInSession,
             (recipientSocket) => recipientSocket.emit('tribunal_vote_resolved', broadcastPayload))

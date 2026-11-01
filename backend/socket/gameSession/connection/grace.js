@@ -12,15 +12,15 @@ function getDisconnectGraceRun(gameId, uuid) {
 }
 
 // 유예 run 떼기: 타이머 끄고 보관함에서 지움 (판에 남은 유예 없으면 판 칸도 지움)
-function detachDisconnectGraceRun(gameId, uuid, run) {
+function detachGraceRun(gameId, uuid, run) {
     clearRunTimer(run)
     deleteNested(disconnectGraceRuns, gameId, uuid)
 }
 
 // 그 판의 유예 run 전부 떼기 (판 끝·시험 초기화)
-function detachAllDisconnectGraces(gameId) {
+function detachAllGraces(gameId) {
     for (const [uuid, run] of [...(disconnectGraceRuns.get(gameId) ?? [])]) {
-        detachDisconnectGraceRun(gameId, uuid, run)
+        detachGraceRun(gameId, uuid, run)
     }
 }
 
@@ -58,7 +58,7 @@ function beginDisconnectGrace(io, session, uuid, deps = {}) {
 }
 
 // 단계가 바뀌었으면 끊긴 단계 유예는 전부 만료 (단계 경계마다 부름, 지도 08-⑥)
-function expireDisconnectGracesAtPhaseBoundary(session) {
+function expireGracesAtBoundary(session) {
     const pending = disconnectGraceRuns.get(session.id)
     if (!pending) return
     for (const run of [...pending.values()]) {
@@ -71,7 +71,7 @@ function expireDisconnectGracesAtPhaseBoundary(session) {
 function cancelDisconnectGrace(gameId, uuid) {
     const run = getDisconnectGraceRun(gameId, uuid)
     if (!run) return false
-    detachDisconnectGraceRun(gameId, uuid, run)
+    detachGraceRun(gameId, uuid, run)
     return true
 }
 
@@ -79,7 +79,7 @@ function cancelDisconnectGrace(gameId, uuid) {
 function expireDisconnectGrace(run) {
     const { io, session, uuid } = run
     if (getDisconnectGraceRun(session.id, uuid) !== run) return
-    detachDisconnectGraceRun(session.id, uuid, run)
+    detachGraceRun(session.id, uuid, run)
 
     if (isUuidConnected(io, uuid)) return
     const target = gameSessionCore.getDisconnectGraceTarget(uuid, session.id)
@@ -91,9 +91,9 @@ function expireDisconnectGrace(run) {
 
 module.exports = {
     getDisconnectGraceRun,
-    detachAllDisconnectGraces,
+    detachAllGraces,
     beginDisconnectGrace,
-    expireDisconnectGracesAtPhaseBoundary,
+    expireGracesAtBoundary,
     cancelDisconnectGrace,
     expireDisconnectGrace,
 }

@@ -3,20 +3,20 @@
 const kickReceiptStore = require('../../kickReceiptStore')
 const gameSession = require('../../../game-core/gameSession')
 const channelMembership = require('../../channelMembership')
-const { rejectIfInActiveGame, emitRoomJoinFailed, describeStartedRoomJoinFailure } = require('./guards')
+const { rejectIfInGame, emitRoomJoinFailed, describeJoinFailure } = require('./guards')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = require('../core/state')
-const { acquireRoomTransition, getRoomTransitionGeneration, releaseRoomTransition } = require('./transition')
-const { detachSocketFromChannel, isAccountSeatedInRoom, isCanonicalSocketForAccount, hasRoomMembership, hasLiveGameMembership, isCanonicalSocketWhenObservable, findLiveSocketForUuid } = require('../room/membership')
+const { acquireRoomTransition, getGeneration, releaseRoomTransition } = require('./transition')
+const { detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership, isCanonicalOrUnknown, findLiveSocket } = require('../room/membership')
 const { deps } = require('../core/deps')
-const { loadRoomParticipantProfile, buildRoomPayload, computeCanStart, emitPublicRoomList, buildPublicRoomList } = require('../room/view')
+const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList, buildPublicRoomList } = require('../room/view')
 const { isStartedRoomMark } = require('./startedMarks')
 const { getSupportedRoomSizes } = require('../core/config')
 const { countRoomOccupancy } = require('../admission/attempts')
 
 // 코드로 방 입장: 검사 → 잠금 → 프로필 → 방 찾기 → 채널 → 명단 추가 확정 → 알림
 async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null) {
-    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) =>
+    if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
     )) return
 
@@ -48,7 +48,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS, '이미 처리 중인 요청이 있습니다.')
         return
     }
-    const generationAtReservation = getRoomTransitionGeneration(uuid)
+    const generationAtReservation = getGeneration(uuid)
 
     let joinedRoomId = null
     let committed = false
@@ -68,8 +68,8 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     const detachJoinedRoomChannel = (channelId) => {
         detachSocketFromChannel(socket, channelId, '[코드 참가 정리 실패]', {
             ownsChannel: () =>
-                isAccountSeatedInRoom(uuid, channelId)
-                && isCanonicalSocketForAccount(io, uuid, socket, channelId),
+                isSeatedInRoom(uuid, channelId)
+                && isCanonicalSocket(io, uuid, socket, channelId),
             keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
         })
     }
@@ -77,7 +77,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     try {
         const [user, accountProfile] = await Promise.all([
             deps.userRepository.findByUuid(uuid),
-            loadRoomParticipantProfile(uuid),
+            loadPlayerProfile(uuid),
         ])
         if (!user) {
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, '사용자 정보를 찾을 수 없습니다.')
@@ -89,7 +89,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             return
         }
 
-        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+        if (getGeneration(uuid) !== generationAtReservation) {
             emitRoomJoinFailed(
                 socket,
                 ROOM_JOIN_ERROR_CODES.SESSION_ENDED,
@@ -107,7 +107,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
                     roomId: expectedRoom.roomId,
                 })
                 if (sessionState !== null) {
-                    emitRoomJoinFailed(socket, ...describeStartedRoomJoinFailure(sessionState.phase))
+                    emitRoomJoinFailed(socket, ...describeJoinFailure(sessionState.phase))
                 } else if (isStartedRoomMark(`id:${expectedRoom.roomId}`)) {
                     emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.')
                 } else {
@@ -129,7 +129,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (!room) {
             const sessionState = gameSession.getRoomCodeSessionState({ roomCode: normalizedCode })
             if (sessionState !== null) {
-                emitRoomJoinFailed(socket, ...describeStartedRoomJoinFailure(sessionState.phase))
+                emitRoomJoinFailed(socket, ...describeJoinFailure(sessionState.phase))
                 return
             }
             if (isStartedRoomMark(`code:${normalizedCode}`)) {
@@ -159,7 +159,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
 
         if (socket.id !== socketIdAtRequest
             || socket.data?.user?.uuid !== uuid
-            || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)) {
+            || !isCanonicalOrUnknown(io, uuid, socket, room.id)) {
             detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.DISCONNECTED, '연결이 끊어져 방에 참여하지 못했습니다.')
@@ -197,7 +197,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             return
         }
 
-        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+        if (getGeneration(uuid) !== generationAtReservation) {
             detachJoinedRoomChannel(room.id)
             joinedRoomId = null
             emitRoomJoinFailed(
@@ -255,7 +255,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
 
 // 공개방 고르기 입장 (코드 입장 흐름 그대로 씀)
 async function handleJoinPublicRoom(io, socket, uuid, payload) {
-    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) =>
+    if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
     )) return
 
@@ -287,7 +287,7 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
 }
 
 // 끝난 판 사람을 방장이 만든 다음 방에 자동 입장
-async function autoJoinEndedSessionPartyToRoom(io, hostUuid, room) {
+async function autoJoinPartyToRoom(io, hostUuid, room) {
     const gameId = gameSession.getEndedSessionGameIdForParticipant(hostUuid)
     if (!gameId || typeof room?.code !== 'string' || room.code.length === 0) return
     const participantUuids = gameSession.getEndedSessionParticipantUuids(gameId, { excludeUuid: hostUuid })
@@ -295,7 +295,7 @@ async function autoJoinEndedSessionPartyToRoom(io, hostUuid, room) {
         if (playerRoom.has(participantUuid)) continue
         if (pendingRoomTransitions.has(participantUuid)) continue
         if (matchmakingQueue.has(participantUuid)) continue
-        const participantSocket = findLiveSocketForUuid(io, participantUuid)
+        const participantSocket = findLiveSocket(io, participantUuid)
         if (!participantSocket) continue
         try {
             await handleJoinRoomByCode(
@@ -320,6 +320,6 @@ function handleGetPublicRooms(callback) {
 module.exports = {
     handleJoinRoomByCode,
     handleJoinPublicRoom,
-    autoJoinEndedSessionPartyToRoom,
+    autoJoinPartyToRoom,
     handleGetPublicRooms,
 }

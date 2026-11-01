@@ -2,24 +2,24 @@
 // 방 만들기 요청 받기 + 자리 잡은 뒤 실제로 만들기 (지도 09)
 const kickReceiptStore = require('../../kickReceiptStore')
 const crypto = require('crypto')
-const { rejectIfInActiveGame, isRoomCodeReserved } = require('./guards')
+const { rejectIfInGame, isRoomCodeReserved } = require('./guards')
 const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = require('../core/state')
 const { validateCreateRoomPayload } = require('../../../validations/room/create')
 const { validateCreateRoomRoleComposition } = require('../../../game-core/roleComposition')
-const { acquireRoomTransition, getRoomTransitionGeneration, releaseRoomTransition } = require('./transition')
+const { acquireRoomTransition, getGeneration, releaseRoomTransition } = require('./transition')
 const { deps } = require('../core/deps')
-const { loadRoomParticipantProfile, emitPublicRoomList, buildRoomPayload } = require('../room/view')
-const { INITIAL_SETTINGS_VERSION } = require('../settings/receipts')
+const { loadPlayerProfile, emitPublicRoomList, buildRoomPayload } = require('../room/view')
+const { INIT_SETTINGS_VERSION } = require('../settings/receipts')
 const { leaveSocketRoomSafely } = require('../room/membership')
 const { generateUniqueRoomCode } = require('../../../utils/roomCode')
-const { notifyEndedSessionPartyOfMatchingRoom } = require('./party')
-const { autoJoinEndedSessionPartyToRoom } = require('./join')
+const { notifyPartyOfRoom } = require('./party')
+const { autoJoinPartyToRoom } = require('./join')
 
 // 방 만들기 요청: 게임 중이면 거절, 처리 중 잠금 걸고 진행
 function handleCreateRoom(io, socket, uuid, payload, callback) {
     if (typeof callback !== 'function') return
 
-    if (rejectIfInActiveGame(uuid, (error) => callback({ ok: false, ...error }))) return
+    if (rejectIfInGame(uuid, (error) => callback({ ok: false, ...error }))) return
 
     if (playerRoom.has(uuid)) {
         callback({ ok: false, message: '이미 참여 중인 방이 있습니다.' })
@@ -55,13 +55,13 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
         callback({ ok: false, message: '이미 처리 중인 요청이 있습니다.' })
         return
     }
-    const generationAtReservation = getRoomTransitionGeneration(uuid)
+    const generationAtReservation = getGeneration(uuid)
 
-    handleCreateRoomAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation, transitionToken)
+    createAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation, transitionToken)
 }
 
 // 방 만들기: 설정 검사 → 코드 만들기 → 방 열기 → 끝난 판 사람들 부르기
-async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation, transitionToken) {
+async function createAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation, transitionToken) {
     let roomId = null
     let joined = false
     let room = null
@@ -69,7 +69,7 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
     try {
         const [user, accountProfile] = await Promise.all([
             deps.userRepository.findByUuid(uuid),
-            loadRoomParticipantProfile(uuid),
+            loadPlayerProfile(uuid),
         ])
         if (!user) {
             callback({ ok: false, message: '사용자 정보를 찾을 수 없습니다.' })
@@ -81,7 +81,7 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             return
         }
 
-        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+        if (getGeneration(uuid) !== generationAtReservation) {
             callback({ ok: false, message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
             return
         }
@@ -101,7 +101,7 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             accessType,
             players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false, ...accountProfile }]]),
             settings,
-            settingsVersion: INITIAL_SETTINGS_VERSION,
+            settingsVersion: INIT_SETTINGS_VERSION,
         }
 
         await socket.join(roomId)
@@ -114,7 +114,7 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
             return
         }
 
-        if (getRoomTransitionGeneration(uuid) !== generationAtReservation) {
+        if (getGeneration(uuid) !== generationAtReservation) {
             await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
             joined = false
             callback({ ok: false, message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
@@ -148,12 +148,12 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
 
     try {
         callback({ ok: true, room: buildRoomPayload(room) })
-        notifyEndedSessionPartyOfMatchingRoom(io, uuid, room)
+        notifyPartyOfRoom(io, uuid, room)
     } catch (ackError) {
         console.error('[방 생성 ack 실패]', ackError)
     }
     try {
-        await autoJoinEndedSessionPartyToRoom(io, uuid, room)
+        await autoJoinPartyToRoom(io, uuid, room)
     } catch (err) {
         console.error('[종료된 판 파티 자동 재입장 일괄 실패]', err)
     }
@@ -161,5 +161,5 @@ async function handleCreateRoomAfterReservation(io, socket, uuid, { accessType, 
 
 module.exports = {
     handleCreateRoom,
-    handleCreateRoomAfterReservation,
+    createAfterReservation,
 }

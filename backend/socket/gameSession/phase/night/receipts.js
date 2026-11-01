@@ -4,34 +4,34 @@ const gameSessionCore = require('../../../../game-core/gameSession')
 const { isPlainObject, isNonEmptyString, hasOnlyKeys } = require('../../../common/shape')
 const { getOrCreate } = require('../../../common/maps')
 const { isCurrentSocketForUuid } = require('../../connection/ownership')
-const { isEligibleSessionRecipient, hasMembershipOutsideSession } = require('../../delivery/eligibility')
-const { NIGHT_SUCCESS_ACK_ALLOWED_KEYS, NIGHT_SUCCESS_OUTCOMES } = require('../../core/constants')
+const { isEligibleRecipient, hasOutsideMembership } = require('../../delivery/eligibility')
+const { NIGHT_ACK_KEYS, NIGHT_SUCCESS_OUTCOMES } = require('../../core/constants')
 
 // 판 → { nightDayIndex, byEvent: 사건 id → uuid → 수신 기록 } (판 객체가 사라지면 같이 사라짐)
 // 시험 초기화 때 통째로 갈아 끼움
-let nightSuccessReceiptsBySession = new WeakMap()
+let receiptsBySession = new WeakMap()
 
 // 그 판 수신 기록 보관함 (없으면 undefined)
 function getNightSuccessReceipts(session) {
-    return nightSuccessReceiptsBySession.get(session)
+    return receiptsBySession.get(session)
 }
 
 // 이 밤 수신 기록 칸 열기: 없거나 지난 밤 것이면 새로 (같은 밤이면 그대로 둠)
-function ensureNightSuccessReceipts(session) {
-    const storedReceipts = nightSuccessReceiptsBySession.get(session)
+function ensureNightReceipts(session) {
+    const storedReceipts = receiptsBySession.get(session)
     if (!storedReceipts || storedReceipts.nightDayIndex !== session.dayIndex) {
-        nightSuccessReceiptsBySession.set(session, { nightDayIndex: session.dayIndex, byEvent: new Map() })
+        receiptsBySession.set(session, { nightDayIndex: session.dayIndex, byEvent: new Map() })
     }
 }
 
 // 판 끝: 그 판 수신 기록 지움
-function deleteNightSuccessReceipts(session) {
-    nightSuccessReceiptsBySession.delete(session)
+function deleteNightReceipts(session) {
+    receiptsBySession.delete(session)
 }
 
 // 시험용 초기화: 보관함 통째로 새로
-function resetNightSuccessReceipts() {
-    nightSuccessReceiptsBySession = new WeakMap()
+function resetNightReceipts() {
+    receiptsBySession = new WeakMap()
 }
 
 // 밤 성공 payload 검사 복사: 모양 틀리면 null (재접속 복구 때 그대로 다시 보냄)
@@ -57,8 +57,8 @@ function copyNightSuccessPayload(payload) {
 }
 
 // 밤 성공 수신 기록 남기기: 같은 계정 다른 자리(membershipId)면 거절, 미완료면 지금 소켓으로 다시 묶음
-function recordNightSuccessReceipt(session, event, recipient, socket, payload = null) {
-    const store = nightSuccessReceiptsBySession.get(session)
+function recordNightReceipt(session, event, recipient, socket, payload = null) {
+    const store = receiptsBySession.get(session)
     if (!store) return { record: null, created: false, refused: false }
     const byUuid = getOrCreate(store.byEvent, event.eventId, () => new Map())
     const existing = byUuid.get(recipient.uuid)
@@ -84,8 +84,8 @@ function recordNightSuccessReceipt(session, event, recipient, socket, payload = 
 }
 
 // 보내기 실패한 그 소켓 묶음만 풂 (완료됐거나 다른 소켓으로 다시 묶인 기록은 그대로)
-function discardNightSuccessReceiptIfUncompleted(session, eventId, uuid, failedSocket = null, failedSocketId = null) {
-    const byUuid = nightSuccessReceiptsBySession.get(session)?.byEvent.get(eventId)
+function discardNightReceipt(session, eventId, uuid, failedSocket = null, failedSocketId = null) {
+    const byUuid = receiptsBySession.get(session)?.byEvent.get(eventId)
     const record = byUuid?.get(uuid)
     if (!record || record.completed === true) return
     if (record.socket !== failedSocket) return
@@ -95,7 +95,7 @@ function discardNightSuccessReceiptIfUncompleted(session, eventId, uuid, failedS
 }
 
 // 아직 완료 안 된 내 수신 기록 (같은 자리·payload 멀쩡한 것만, 재접속 복구용)
-function collectPendingNightSuccessRecords(store, uuid, membershipId) {
+function collectPendingRecords(store, uuid, membershipId) {
     const pending = []
     for (const byUuid of store.byEvent.values()) {
         const record = byUuid.get(uuid)
@@ -109,7 +109,7 @@ function collectPendingNightSuccessRecords(store, uuid, membershipId) {
 }
 
 // 그 밤 사건 완료 신호를 아직 받을 때인지: 그 밤이거나 바로 다음 낮·재판 (끝난 판은 둘 다)
-function isNightSuccessCompletionWindowOpen(session, nightDayIndex) {
+function isNightAckWindowOpen(session, nightDayIndex) {
     if (session.phase === 'NIGHT') return session.dayIndex === nightDayIndex
     if (session.phase === 'DAY' || session.phase === 'TRIBUNAL') return session.dayIndex === nightDayIndex + 1
     if (session.phase === 'ENDED') return session.dayIndex === nightDayIndex || session.dayIndex === nightDayIndex + 1
@@ -119,7 +119,7 @@ function isNightSuccessCompletionWindowOpen(session, nightDayIndex) {
 // 밤 성공 완료 신호 모양: 허용 키만, 판 id·밤 번호·사건 id·결과 값 (틀리면 null, 지도 05-⑩)
 function readNightSuccessAck(payload) {
     if (!isPlainObject(payload)) return null
-    if (!hasOnlyKeys(payload, NIGHT_SUCCESS_ACK_ALLOWED_KEYS)) return null
+    if (!hasOnlyKeys(payload, NIGHT_ACK_KEYS)) return null
     const { gameId, nightDayIndex, eventId } = payload
     if (!isNonEmptyString(gameId)) return null
     if (!Number.isInteger(nightDayIndex) || nightDayIndex < 0) return null
@@ -137,8 +137,8 @@ function findNightSuccessRecord(io, socket, uuid, { gameId, nightDayIndex, event
     if (!session) return { code: 'NOT_ELIGIBLE' }
 
     // 그 밤 사건을 아직 받을 수 있는 때인지, 보관함에 그 사건이 있는지
-    if (!isNightSuccessCompletionWindowOpen(session, nightDayIndex)) return { code: 'STALE_EVENT' }
-    const store = nightSuccessReceiptsBySession.get(session)
+    if (!isNightAckWindowOpen(session, nightDayIndex)) return { code: 'STALE_EVENT' }
+    const store = receiptsBySession.get(session)
     if (!store || store.nightDayIndex !== nightDayIndex) return { code: 'STALE_EVENT' }
     const byUuid = store.byEvent.get(eventId)
     if (!byUuid) return { code: 'STALE_EVENT' }
@@ -148,21 +148,21 @@ function findNightSuccessRecord(io, socket, uuid, { gameId, nightDayIndex, event
     if (!record) return { code: 'NOT_ELIGIBLE' }
     if (record.socket !== socket || record.socketId !== socket.id) return { code: 'NOT_ELIGIBLE' }
     if ((session.players.get(uuid)?.membershipId ?? null) !== record.membershipId) return { code: 'NOT_ELIGIBLE' }
-    if (!isEligibleSessionRecipient(session, socket, uuid)) return { code: 'NOT_ELIGIBLE' }
-    if (hasMembershipOutsideSession(session, uuid)) return { code: 'NOT_ELIGIBLE' }
+    if (!isEligibleRecipient(session, socket, uuid)) return { code: 'NOT_ELIGIBLE' }
+    if (hasOutsideMembership(session, uuid)) return { code: 'NOT_ELIGIBLE' }
     return { session, record }
 }
 
 module.exports = {
     getNightSuccessReceipts,
-    ensureNightSuccessReceipts,
-    deleteNightSuccessReceipts,
-    resetNightSuccessReceipts,
+    ensureNightReceipts,
+    deleteNightReceipts,
+    resetNightReceipts,
     copyNightSuccessPayload,
-    recordNightSuccessReceipt,
-    discardNightSuccessReceiptIfUncompleted,
-    collectPendingNightSuccessRecords,
-    isNightSuccessCompletionWindowOpen,
+    recordNightReceipt,
+    discardNightReceipt,
+    collectPendingRecords,
+    isNightAckWindowOpen,
     readNightSuccessAck,
     findNightSuccessRecord,
 }

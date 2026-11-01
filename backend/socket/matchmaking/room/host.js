@@ -3,13 +3,13 @@
 const channelMembership = require('../../channelMembership')
 const kickReceiptStore = require('../../kickReceiptStore')
 const { BOOT_EPOCH } = require('../core/constants')
-const { getAdmissionAttempt, invalidateAdmissionAttemptsForRoom } = require('../admission/attempts')
-const { rejectIfInActiveGame } = require('../join/guards')
+const { getAdmissionAttempt, invalidateRoomAttempts } = require('../admission/attempts')
+const { rejectIfInGame } = require('../join/guards')
 const { playerRoom, gameRooms } = require('../core/state')
 const { resolveParticipantSockets } = require('./membership')
 const { commitRoomDeparture, notifyRoomDeparture } = require('./leave')
-const { forgetSettingsUpdateResultsForRoom } = require('../settings/receipts')
-const { cancelInvitesForRoomAsync } = require('../admission/release')
+const { forgetSettingsResults } = require('../settings/receipts')
+const { cancelRoomInvitesAsync } = require('../admission/release')
 const { emitPublicRoomList } = require('./view')
 
 // 방장 강퇴: 같은 요청 다시 오면 영수증으로 결과 재생, 내용 다르면 거절
@@ -79,7 +79,7 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
         decideReject(CODES.ADMISSION_PENDING, '입장 처리가 아직 끝나지 않았습니다.')
         return
     }
-    if (rejectIfInActiveGame(uuid, ({ message }) => decideReject(CODES.ALREADY_IN_GAME, message))) return
+    if (rejectIfInGame(uuid, ({ message }) => decideReject(CODES.ALREADY_IN_GAME, message))) return
 
     const currentRoomId = playerRoom.get(uuid)
     if (!currentRoomId) {
@@ -180,9 +180,9 @@ function handleDeleteRoom(io, uuid) {
 
     room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
     gameRooms.delete(roomId)
-    invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_DELETED')
-    forgetSettingsUpdateResultsForRoom(roomId)
-    cancelInvitesForRoomAsync(roomId, 'ROOM_DELETED')
+    invalidateRoomAttempts(roomId, 'ROOM_DELETED')
+    forgetSettingsResults(roomId)
+    cancelRoomInvitesAsync(roomId, 'ROOM_DELETED')
     emitPublicRoomList(io)
 }
 

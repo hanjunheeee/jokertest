@@ -3,10 +3,10 @@
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { getSocketForUuid } = require('../connection/ownership')
-const { isEligibleSessionRecipient } = require('./eligibility')
+const { isEligibleRecipient } = require('./eligibility')
 
 // 내 제출 상태를 나한테만 보냄 (onlyUuid 없으면 참여 중인 전원 각자에게, 지도 12-⑧)
-function emitSelfSubmissionProgress(io, session, onlyUuid = null) {
+function emitSelfProgress(io, session, onlyUuid = null) {
     if (!session || !(session.players instanceof Map)) return
     const label = '[개인 진행 상태 전송 실패]'
     let seq = null
@@ -25,7 +25,7 @@ function emitSelfSubmissionProgress(io, session, onlyUuid = null) {
         if (player.isParticipating === false) continue
         const targetSocket = getSocketForUuid(io, player.uuid)
         if (!targetSocket) continue
-        if (!isEligibleSessionRecipient(session, targetSocket, player.uuid)) continue
+        if (!isEligibleRecipient(session, targetSocket, player.uuid)) continue
         isolate(label, { code: 'SELF_PROGRESS_DELIVERY_ERROR', uuid: player.uuid, gameId: session.id },
             () => targetSocket.emit('session_self_progress', {
                 gameId: session.id,
@@ -40,14 +40,14 @@ function emitSelfSubmissionProgress(io, session, onlyUuid = null) {
 }
 
 // 표 제출 뒤 내 진행 상태만 나한테 (지금 판이 그대로일 때만)
-function emitOwnProgressAfterSubmit(io, uuid, gameId, code) {
+function emitProgressAfterSubmit(io, uuid, gameId, code) {
     isolate('[개인 진행 상태 전송 실패]', { code, gameId }, () => {
         const committed = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
-        if (committed) emitSelfSubmissionProgress(io, committed, uuid)
+        if (committed) emitSelfProgress(io, committed, uuid)
     })
 }
 
 module.exports = {
-    emitSelfSubmissionProgress,
-    emitOwnProgressAfterSubmit,
+    emitSelfProgress,
+    emitProgressAfterSubmit,
 }

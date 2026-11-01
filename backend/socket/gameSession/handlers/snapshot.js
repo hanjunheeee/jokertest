@@ -7,14 +7,14 @@ const { pickOptionalGameId, acceptRequest, acceptCoreResult, registryLogs } = re
 const { isCurrentSocketForUuid, isUuidConnected } = require('../connection/ownership')
 const { cancelDisconnectGrace } = require('../connection/grace')
 const { resyncSessionRouting } = require('../connection/routing')
-const { isEligibleSessionRecipient, hasMembershipOutsideSession } = require('../delivery/eligibility')
+const { isEligibleRecipient, hasOutsideMembership } = require('../delivery/eligibility')
 const {
     getNightSuccessReceipts,
     copyNightSuccessPayload,
-    collectPendingNightSuccessRecords,
-    isNightSuccessCompletionWindowOpen,
+    collectPendingRecords,
+    isNightAckWindowOpen,
 } = require('../phase/night/receipts')
-const { resolveNightPresentationWaitingForSnapshot } = require('../phase/night/wait')
+const { resolveNightWaitForSnap } = require('../phase/night/wait')
 
 // 스냅샷 거절 답: 유예 만료로 빠진 사람은 다시 못 들어온다고 알림
 function snapshotRejectedReply(code) {
@@ -55,7 +55,7 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
     const nightSuccessRecovery = []
     let presentationWaiting = false
     if (recoverySession) {
-        if (!isEligibleSessionRecipient(recoverySession, socket, uuid)
+        if (!isEligibleRecipient(recoverySession, socket, uuid)
             && !socket.rooms?.has?.(recoverySession.channelId)
             && gameSessionCore.getActiveSessionRoutingInfo(uuid)?.channelId === recoverySession.channelId) {
             resyncSessionRouting(socket, uuid).catch(logRejection('\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m'))
@@ -70,13 +70,13 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
         const receiptStore = getNightSuccessReceipts(recoverySession)
         if (receiptStore
             && recoverySession.phase !== 'ENDED'
-            && isNightSuccessCompletionWindowOpen(recoverySession, receiptStore.nightDayIndex)) {
+            && isNightAckWindowOpen(recoverySession, receiptStore.nightDayIndex)) {
             const membershipId = recoverySession.players.get(uuid)?.membershipId ?? null
-            const pending = collectPendingNightSuccessRecords(receiptStore, uuid, membershipId)
+            const pending = collectPendingRecords(receiptStore, uuid, membershipId)
             if (pending.length > 0
                 && isCurrentSocketForUuid(uuid, socket, io)
-                && isEligibleSessionRecipient(recoverySession, socket, uuid)
-                && !hasMembershipOutsideSession(recoverySession, uuid)) {
+                && isEligibleRecipient(recoverySession, socket, uuid)
+                && !hasOutsideMembership(recoverySession, uuid)) {
                 for (const record of pending) {
                     record.socket = socket
                     record.socketId = socket.id
@@ -85,7 +85,7 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
             }
         }
 
-        presentationWaiting = resolveNightPresentationWaitingForSnapshot(recoverySession, uuid)
+        presentationWaiting = resolveNightWaitForSnap(recoverySession, uuid)
     }
 
     ack({

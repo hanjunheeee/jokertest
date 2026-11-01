@@ -3,28 +3,28 @@
 const kickReceiptStore = require('../../kickReceiptStore')
 const gameSession = require('../../../game-core/gameSession')
 const channelMembership = require('../../channelMembership')
-const { ADMISSION_DEFAULT_STEP_TIMEOUT_MS, ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS, BOOT_EPOCH } = require('../core/constants')
-const { rejectIfInActiveGame } = require('../join/guards')
+const { ADMISSION_STEP_MS, ADMISSION_TOTAL_MS, BOOT_EPOCH } = require('../core/constants')
+const { rejectIfInGame } = require('../join/guards')
 const { playerRoom, matchmakingQueue, gameRooms, roomAdmissionAttempts, publishedAdmissions } = require('../core/state')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
-const { getAdmissionAttempt, nextAttemptId, withAdmissionTimeout, countRoomOccupancy, compensateInvalidatedAttempt, releasePublishedAdmission } = require('./attempts')
-const { acquireRoomTransition, getRoomTransitionGeneration, releaseRoomTransition } = require('../join/transition')
+const { getAdmissionAttempt, nextAttemptId, withAdmissionTimeout, countRoomOccupancy, compensateAttempt, releasePublished } = require('./attempts')
+const { acquireRoomTransition, getGeneration, releaseRoomTransition } = require('../join/transition')
 const { deps } = require('../core/deps')
 const { getSupportedRoomSizes } = require('../core/config')
-const { loadRoomParticipantProfile, computeCanStart, emitPublicRoomList, buildRoomPayload } = require('../room/view')
-const { scheduleLateJoinCleanup, removePublishedAdmission } = require('./release')
-const { isCanonicalSocketWhenObservable, isAccountSeatedInRoom, detachSocketFromChannel, isCanonicalSocketForAccount, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
+const { loadPlayerProfile, computeCanStart, emitPublicRoomList, buildRoomPayload } = require('../room/view')
+const { scheduleLateJoinCleanup, removePublished } = require('./release')
+const { isCanonicalOrUnknown, isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
 
 // 입장 단계 하나 기다리는 시간 (시험이 줄임)
-let ADMISSION_STEP_TIMEOUT_MS = ADMISSION_DEFAULT_STEP_TIMEOUT_MS
+let STEP_TIMEOUT_MS = ADMISSION_STEP_MS
 
 // 입장 전체 기다리는 시간 (시험이 줄임)
-let ADMISSION_TOTAL_TIMEOUT_MS = ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS
+let TOTAL_TIMEOUT_MS = ADMISSION_TOTAL_MS
 
 // 시험용: 입장 대기 시간 바꾸기
 function __setAdmissionTimeoutsForTests({ step, total } = {}) {
-    ADMISSION_STEP_TIMEOUT_MS = Number.isFinite(step) ? step : ADMISSION_DEFAULT_STEP_TIMEOUT_MS
-    ADMISSION_TOTAL_TIMEOUT_MS = Number.isFinite(total) ? total : ADMISSION_DEFAULT_TOTAL_TIMEOUT_MS
+    STEP_TIMEOUT_MS = Number.isFinite(step) ? step : ADMISSION_STEP_MS
+    TOTAL_TIMEOUT_MS = Number.isFinite(total) ? total : ADMISSION_TOTAL_MS
 }
 
 // 초대 수락 입장: 자리 미리 잡고 단계마다 시간 제한, 실패하면 되돌림
@@ -45,7 +45,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         return
     }
 
-    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) => respond({ ok: false, code, message, gameId }))) return
+    if (rejectIfInGame(uuid, ({ code, message, gameId }) => respond({ ok: false, code, message, gameId }))) return
     if (playerRoom.has(uuid)) {
         respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, message: '이미 참여 중인 방이 있습니다.' })
         return
@@ -64,26 +64,26 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         return
     }
 
-    const generationAtRequest = getRoomTransitionGeneration(uuid)
+    const generationAtRequest = getGeneration(uuid)
     const attemptId = nextAttemptId()
     const startedAt = Date.now()
-    const remaining = () => Math.max(0, ADMISSION_TOTAL_TIMEOUT_MS - (Date.now() - startedAt))
+    const remaining = () => Math.max(0, TOTAL_TIMEOUT_MS - (Date.now() - startedAt))
     const step = (promise, code) => withAdmissionTimeout(
-        promise, Math.min(ADMISSION_STEP_TIMEOUT_MS, remaining() || 1), code,
+        promise, Math.min(STEP_TIMEOUT_MS, remaining() || 1), code,
     )
 
     let attempt = null
     let joinedRoomId = null
     const admissionExclusionOwner = channelMembership.createChannelExclusionOwner('admission')
-    let admissionExclusionChannelId = null
-    let admissionExclusionSocketId = null
-    const releaseAdmissionExclusion = () => {
-        if (admissionExclusionChannelId === null || admissionExclusionSocketId === null) return
+    let exclusionChannelId = null
+    let exclusionSocketId = null
+    const releaseExclusion = () => {
+        if (exclusionChannelId === null || exclusionSocketId === null) return
         channelMembership.releaseChannelExclusion(
-            admissionExclusionChannelId, admissionExclusionSocketId, admissionExclusionOwner,
+            exclusionChannelId, exclusionSocketId, admissionExclusionOwner,
         )
-        admissionExclusionChannelId = null
-        admissionExclusionSocketId = null
+        exclusionChannelId = null
+        exclusionSocketId = null
     }
     const socketIdAtRequest = socket.id
 
@@ -121,7 +121,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             generation: generationAtRequest,
             socketId: socket.id,
             phase: 'reserved',
-            expiresAt: startedAt + ADMISSION_TOTAL_TIMEOUT_MS,
+            expiresAt: startedAt + TOTAL_TIMEOUT_MS,
         }
         roomAdmissionAttempts.set(uuid, attempt)
 
@@ -140,7 +140,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
 
         const [user, accountProfile] = await step(Promise.all([
             deps.userRepository.findByUuid(uuid),
-            loadRoomParticipantProfile(uuid),
+            loadPlayerProfile(uuid),
         ]), 'PROFILE_TIMEOUT')
         if (!user) {
             respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, message: '사용자 정보를 찾을 수 없습니다.' })
@@ -151,8 +151,8 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             return
         }
 
-        admissionExclusionChannelId = room.id
-        admissionExclusionSocketId = socket.id
+        exclusionChannelId = room.id
+        exclusionSocketId = socket.id
         channelMembership.excludeSocketFromChannel(room.id, socket.id, admissionExclusionOwner)
         const joinPromise = Promise.resolve(socket.join(room.id))
         try {
@@ -165,18 +165,18 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
 
         if (socket.id !== socketIdAtRequest
             || socket.data?.user?.uuid !== uuid
-            || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)) {
-            if (!isAccountSeatedInRoom(uuid, room.id)) {
+            || !isCanonicalOrUnknown(io, uuid, socket, room.id)) {
+            if (!isSeatedInRoom(uuid, room.id)) {
                 detachSocketFromChannel(socket, room.id, '[초대 입장 정리 실패]', {
                     ownsChannel: () =>
-                        isAccountSeatedInRoom(uuid, room.id)
-                        && isCanonicalSocketForAccount(io, uuid, socket, room.id),
+                        isSeatedInRoom(uuid, room.id)
+                        && isCanonicalSocket(io, uuid, socket, room.id),
                     keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                 })
             }
             joinedRoomId = null
             if (roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
-            compensateInvalidatedAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
+            compensateAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
             respond({ ok: false, code: 'INTERRUPTED', message: '입장이 중단되었습니다.' })
             return
         }
@@ -187,12 +187,12 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             if (getAdmissionAttempt(uuid) !== attempt) return { ok: false, code: 'INTERRUPTED' }
             if (attempt.invalidated) return { ok: false, code: 'INTERRUPTED' }
             if (attempt.bootEpoch !== BOOT_EPOCH) return { ok: false, code: 'SERVER_RESTARTED' }
-            if (getRoomTransitionGeneration(uuid) !== generationAtRequest) return { ok: false, code: 'SESSION_ENDED' }
+            if (getGeneration(uuid) !== generationAtRequest) return { ok: false, code: 'SESSION_ENDED' }
             if (!socket.connected || attempt.socketId !== socket.id || socket.id !== socketIdAtRequest) {
                 return { ok: false, code: 'DISCONNECTED' }
             }
             if (socket.data?.user?.uuid !== uuid) return { ok: false, code: 'DISCONNECTED' }
-            if (!isCanonicalSocketWhenObservable(io, uuid, socket, room.id)) return { ok: false, code: 'DISCONNECTED' }
+            if (!isCanonicalOrUnknown(io, uuid, socket, room.id)) return { ok: false, code: 'DISCONNECTED' }
             if (socket.rooms && !socket.rooms.has(room.id)) return { ok: false, code: 'CHANNEL_LOST' }
             const current = gameRooms.get(attempt.roomId)
             if (current !== room || (current.instanceId ?? current.id) !== attempt.roomInstanceId) {
@@ -215,7 +215,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             socket.data.activeRoomId = current.id
             return { ok: true }
         }
-        const unpublish = () => removePublishedAdmission(io, socket, attempt)
+        const unpublish = () => removePublished(io, socket, attempt)
 
         const finalized = await withAdmissionTimeout(
             deps.gameInviteService.finalizeAcceptedEntry({
@@ -226,15 +226,15 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         )
 
         if (!finalized.ok) {
-            if (attempt.phase === 'published') removePublishedAdmission(io, socket, attempt)
+            if (attempt.phase === 'published') removePublished(io, socket, attempt)
             roomAdmissionAttempts.delete(uuid)
             if (joinedRoomId) {
                 const cleanupChannelId = joinedRoomId
-                if (!isAccountSeatedInRoom(uuid, cleanupChannelId)) {
+                if (!isSeatedInRoom(uuid, cleanupChannelId)) {
                     detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
                         ownsChannel: () =>
-                            isAccountSeatedInRoom(uuid, cleanupChannelId)
-                            && isCanonicalSocketForAccount(io, uuid, socket, cleanupChannelId),
+                            isSeatedInRoom(uuid, cleanupChannelId)
+                            && isCanonicalSocket(io, uuid, socket, cleanupChannelId),
                         keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                     })
                 }
@@ -259,21 +259,21 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             || socket.id !== socketIdAtRequest
             || socket.data?.user?.uuid !== uuid
             || !socket.connected
-            || !isCanonicalSocketWhenObservable(io, uuid, socket, room.id)
+            || !isCanonicalOrUnknown(io, uuid, socket, room.id)
             || (socket.rooms && typeof socket.rooms.has === 'function' && !socket.rooms.has(room.id))
             || current !== room || playerRoom.get(uuid) !== room.id || !seated
             || (attempt.publicationMembershipId !== undefined
                 && seated.membershipId !== attempt.publicationMembershipId)) {
-            if (attempt.phase === 'published') removePublishedAdmission(io, socket, attempt)
+            if (attempt.phase === 'published') removePublished(io, socket, attempt)
             if (roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
-            releasePublishedAdmission(attempt)
+            releasePublished(attempt)
             if (joinedRoomId) {
                 const cleanupChannelId = joinedRoomId
-                if (!isAccountSeatedInRoom(uuid, cleanupChannelId)) {
+                if (!isSeatedInRoom(uuid, cleanupChannelId)) {
                     detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
                         ownsChannel: () =>
-                            isAccountSeatedInRoom(uuid, cleanupChannelId)
-                            && isCanonicalSocketForAccount(io, uuid, socket, cleanupChannelId),
+                            isSeatedInRoom(uuid, cleanupChannelId)
+                            && isCanonicalSocket(io, uuid, socket, cleanupChannelId),
                         keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                     })
                 }
@@ -284,8 +284,8 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         }
 
         roomAdmissionAttempts.delete(uuid)
-        releasePublishedAdmission(attempt)
-        releaseAdmissionExclusion()
+        releasePublished(attempt)
+        releaseExclusion()
 
         channelMembership.emitToChannel(
             io, room.id, 'player_joined_room',
@@ -302,16 +302,16 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         const own = registered || (attempt && !attempt.invalidated) ? attempt : null
         if (own) {
             if (registered) roomAdmissionAttempts.delete(uuid)
-            if (own.phase === 'published') removePublishedAdmission(io, socket, own)
-            compensateInvalidatedAttempt(own, timedOut ? error.admissionTimeout : 'ACCEPT_FAILED')
+            if (own.phase === 'published') removePublished(io, socket, own)
+            compensateAttempt(own, timedOut ? error.admissionTimeout : 'ACCEPT_FAILED')
         }
         if (joinedRoomId) {
             const cleanupChannelId = joinedRoomId
-            if (!isAccountSeatedInRoom(uuid, cleanupChannelId)) {
+            if (!isSeatedInRoom(uuid, cleanupChannelId)) {
                 detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
                     ownsChannel: () =>
-                        isAccountSeatedInRoom(uuid, cleanupChannelId)
-                        && isCanonicalSocketForAccount(io, uuid, socket, cleanupChannelId),
+                        isSeatedInRoom(uuid, cleanupChannelId)
+                        && isCanonicalSocket(io, uuid, socket, cleanupChannelId),
                     keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
                 })
             }
@@ -326,7 +326,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
     } finally {
         releaseRoomTransition(uuid, transitionToken)
         if (attempt && roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
-        releaseAdmissionExclusion()
+        releaseExclusion()
     }
 }
 
@@ -384,18 +384,18 @@ function __seedAdmissionAttemptForTests(uuid, attempt) {
         room: gameRooms.get(attempt.roomId) ?? null,
         roomInstanceId: attempt.roomInstanceId ?? gameRooms.get(attempt.roomId)?.instanceId ?? attempt.roomId,
         bootEpoch: BOOT_EPOCH,
-        generation: getRoomTransitionGeneration(uuid),
+        generation: getGeneration(uuid),
         socketId: attempt.socketId ?? null,
         phase: attempt.phase ?? 'reserved',
-        expiresAt: Date.now() + ADMISSION_TOTAL_TIMEOUT_MS,
+        expiresAt: Date.now() + TOTAL_TIMEOUT_MS,
     }
     roomAdmissionAttempts.set(uuid, seeded)
     if (seeded.phase === 'published') publishedAdmissions.set(uuid, seeded)
 }
 
 module.exports = {
-    ADMISSION_STEP_TIMEOUT_MS,
-    ADMISSION_TOTAL_TIMEOUT_MS,
+    STEP_TIMEOUT_MS,
+    TOTAL_TIMEOUT_MS,
     __setAdmissionTimeoutsForTests,
     handleAcceptGameInvite,
     handleGetGameInviteResult,

@@ -8,18 +8,18 @@ const {
     pickTimerFns,
     clearRunTimer,
     deactivateWaitToken,
-    resolveNightPresentationWaitTimeoutMs,
+    resolveNightWaitMs,
     computeEmptyTurnDelayMs,
     resolveNightTurnDurationMs,
     fillAbstentions,
 } = require('../../core/timers')
-const { expireDisconnectGracesAtPhaseBoundary, expireDisconnectGrace } = require('../../connection/grace')
+const { expireGracesAtBoundary, expireDisconnectGrace } = require('../../connection/grace')
 const { emitToGameChannel } = require('../../delivery/broadcast')
 const { isCurrentNightRun, isSubmittingNightTurn } = require('./checks')
 const { buildNightPresentationContract } = require('./contract')
-const { ensureNightSuccessReceipts } = require('./receipts')
+const { ensureNightReceipts } = require('./receipts')
 const { emitNightSuccessEvents } = require('./notify')
-const { beginNightPresentationWait, activateNightPresentationWait } = require('./wait')
+const { beginNightWait, activateNightWait } = require('./wait')
 
 // 밤 턴 방송, 던져도 턴 진행은 계속
 function emitNightTurnEvent(run, event, payload) {
@@ -70,12 +70,12 @@ function advanceNightTurn(run) {
         return
     }
 
-    run.timerId = run.setTimeoutFn(() => expireNightTurnWithAbstentions(run, role), durationMs)
-    maybeEndNightTurnOnCompletion(session.id)
+    run.timerId = run.setTimeoutFn(() => expireNightTurn(run, role), durationMs)
+    maybeEndNightTurn(session.id)
 }
 
 // 밤 턴 마감: 그 역할 끊김 유예를 먼저 끝내고, 안 낸 사람은 기권으로 채운 뒤 턴 닫음 (지도 08-⑥)
-function expireNightTurnWithAbstentions(run, role) {
+function expireNightTurn(run, role) {
     const { session } = run
     if (!isSubmittingNightTurn(run, role)) return
 
@@ -116,17 +116,17 @@ function endNightTurn(run, role) {
     clearRunTimer(run)
     run.deadline = null
 
-    const wait = beginNightPresentationWait(run, completed, contract)
+    const wait = beginNightWait(run, completed, contract)
     if (contract) {
         isolate('[밤 성공 사건 전달 오류]', { code: 'SUCCESS_EVENT_ERROR', role, gameId: session.id },
             () => emitNightSuccessEvents(run, contract))
     }
     emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
-    activateNightPresentationWait(run, wait)
+    activateNightWait(run, wait)
 }
 
 // 지금 역할 산 행동자가 다 냈으면 마감 안 기다리고 턴 닫음 (빈 턴은 타이머에 맡김)
-function maybeEndNightTurnOnCompletion(gameId) {
+function maybeEndNightTurn(gameId) {
     const run = nightTurnRuns.get(gameId)
     if (!run) return
     const role = gameSessionCore.getCurrentNightTurnRole(run.session)
@@ -139,12 +139,12 @@ function maybeEndNightTurnOnCompletion(gameId) {
 // 밤 턴 순서 시작: 밤마다 run 하나, 이미 있으면 그대로 (시계·타이머는 시험이 넣을 수 있음)
 function startNightTurnSequence(io, session, deps = {}) {
     if (!session || session.phase !== 'NIGHT') return null
-    expireDisconnectGracesAtPhaseBoundary(session)
+    expireGracesAtBoundary(session)
     if (session.phase !== 'NIGHT') return null
     const existing = nightTurnRuns.get(session.id)
     if (existing) return existing
 
-    ensureNightSuccessReceipts(session)
+    ensureNightReceipts(session)
 
     const run = {
         io,
@@ -160,7 +160,7 @@ function startNightTurnSequence(io, session, deps = {}) {
         randomFn: deps.randomFn ?? Math.random,
         ...pickTimerFns(deps),
         durationMs: deps.turnDurationMs ?? null,
-        presentationWaitTimeoutMs: resolveNightPresentationWaitTimeoutMs(deps),
+        presentationWaitTimeoutMs: resolveNightWaitMs(deps),
     }
     nightTurnRuns.set(session.id, run)
     gameSessionCore.markNightSequenced(session)
@@ -184,7 +184,7 @@ function stopNightTurnSequence(gameId) {
 module.exports = {
     advanceNightTurn,
     endNightTurn,
-    maybeEndNightTurnOnCompletion,
+    maybeEndNightTurn,
     startNightTurnSequence,
     stopNightTurnSequence,
 }

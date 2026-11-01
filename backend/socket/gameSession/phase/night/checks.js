@@ -5,9 +5,9 @@ const { NIGHT_TURN_STAGES } = require('../../core/constants')
 const { nightTurnRuns } = require('../../core/state')
 const { isCurrentSocketForUuid, getSocketForUuid } = require('../../connection/ownership')
 const {
-    isEligibleSessionRecipient,
+    isEligibleRecipient,
     isSessionOnlyRecipient,
-    hasMembershipOutsideSession,
+    hasOutsideMembership,
 } = require('../../delivery/eligibility')
 
 // 이 run이 아직 그 판의 지금 밤 run인지 (늦게 온 옛 타이머 거르기, 지도 05-⑩)
@@ -44,13 +44,13 @@ function isStillDeliverableTo(io, session, socket, uuid, membershipId) {
 }
 
 // 기다릴 사람이 지금도 같은 자리로 연결돼 받을 수 있는지 (끊김·나감·다른 판이면 기다림에서 뺌)
-function isAccountCurrentlyEligibleForWait(run, session, uuid, membershipId) {
+function isEligibleForWait(run, session, uuid, membershipId) {
     if (!isNonEmptyString(uuid)) return false
     if ((session.players.get(uuid)?.membershipId ?? null) !== membershipId) return false
     const socket = getSocketForUuid(run.io, uuid)
     if (!socket) return false
-    if (!isEligibleSessionRecipient(session, socket, uuid)) return false
-    return !hasMembershipOutsideSession(session, uuid)
+    if (!isEligibleRecipient(session, socket, uuid)) return false
+    return !hasOutsideMembership(session, uuid)
 }
 
 module.exports = {
@@ -58,5 +58,5 @@ module.exports = {
     isSubmittingNightTurn,
     isCurrentWaitToken,
     isStillDeliverableTo,
-    isAccountCurrentlyEligibleForWait,
+    isEligibleForWait,
 }

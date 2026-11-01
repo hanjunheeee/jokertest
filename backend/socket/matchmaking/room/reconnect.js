@@ -3,10 +3,10 @@
 const channelMembership = require('../../channelMembership')
 const kickReceiptStore = require('../../kickReceiptStore')
 const { roomAdmissionAttempts, playerRoom, gameRooms, matchmakingQueue, pendingRoomTransitions } = require('../core/state')
-const { invalidateAdmissionAttempt, compensateInvalidatedAttempt, getAdmissionAttempt } = require('../admission/attempts')
-const { removePublishedAdmission } = require('../admission/release')
-const { isCanonicalSocketForAccount, detachSocketFromChannel, isAccountSeatedInRoom, hasRoomMembership, hasLiveGameMembership } = require('./membership')
-const { scheduleRoomRetentionOnDisconnect, cancelRoomRetention, markRoomPresenceConfirmed } = require('./leave')
+const { invalidateAttempt, compensateAttempt, getAdmissionAttempt } = require('../admission/attempts')
+const { removePublished } = require('../admission/release')
+const { isCanonicalSocket, detachSocketFromChannel, isSeatedInRoom, hasRoomMembership, hasLiveGameMembership } = require('./membership')
+const { scheduleRoomRetention, cancelRoomRetention, markPresenceConfirmed } = require('./leave')
 const { buildRoomPayload } = require('./view')
 
 // 재접속한 소켓을 원래 방 채널에 다시 붙임 (자리 그대로일 때만)
@@ -15,9 +15,9 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
 
     const attempt = roomAdmissionAttempts.get(uuid)
     if (attempt && attempt.socketId !== socket.id) {
-        invalidateAdmissionAttempt(uuid, 'CANONICAL_SOCKET_REPLACED')
-        removePublishedAdmission(socket.server ?? null, null, attempt)
-        compensateInvalidatedAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
+        invalidateAttempt(uuid, 'CANONICAL_SOCKET_REPLACED')
+        removePublished(socket.server ?? null, null, attempt)
+        compensateAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
     }
 
     const roomId = playerRoom.get(uuid)
@@ -41,7 +41,7 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
         const seat = current.players.get(uuid)
         if (!seat) return false
         if (capturedMembershipId !== null && (seat.membershipId ?? null) !== capturedMembershipId) return false
-        return isCanonicalSocketForAccount(io, uuid, socket, roomId)
+        return isCanonicalSocket(io, uuid, socket, roomId)
     }
 
     if (!stillOwnsCapturedSeat()) return
@@ -61,8 +61,8 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
         socket, roomId, '[방 채널 재가입 보상 실패]',
         {
             ownsChannel: () =>
-                isAccountSeatedInRoom(uuid, roomId)
-                && isCanonicalSocketForAccount(io, uuid, socket, roomId),
+                isSeatedInRoom(uuid, roomId)
+                && isCanonicalSocket(io, uuid, socket, roomId),
             keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
         },
     )
@@ -78,9 +78,9 @@ function onDisconnect(io, socket, uuid) {
 
     const ownAttempt = roomAdmissionAttempts.get(uuid)
     if (ownAttempt && (socket?.id === undefined || ownAttempt.socketId === socket.id)) {
-        const invalidated = invalidateAdmissionAttempt(uuid, 'DISCONNECTED')
-        if (invalidated?.phase === 'published') removePublishedAdmission(io, socket, invalidated)
-        compensateInvalidatedAttempt(invalidated, 'DISCONNECTED')
+        const invalidated = invalidateAttempt(uuid, 'DISCONNECTED')
+        if (invalidated?.phase === 'published') removePublished(io, socket, invalidated)
+        compensateAttempt(invalidated, 'DISCONNECTED')
     }
 
     const currentRoomId = playerRoom.get(uuid)
@@ -89,7 +89,7 @@ function onDisconnect(io, socket, uuid) {
     const expectedRoomId = socket?.data?.activeRoomId
     if (expectedRoomId !== undefined && expectedRoomId !== currentRoomId) return
 
-    scheduleRoomRetentionOnDisconnect(io, socket, uuid)
+    scheduleRoomRetention(io, socket, uuid)
 }
 
 // 새로고침 뒤 지금 방 묻기 (확인되면 빼기 예약 취소)
@@ -122,7 +122,7 @@ function handleGetCurrentRoom(uuid, callback) {
         return
     }
 
-    markRoomPresenceConfirmed(uuid)
+    markPresenceConfirmed(uuid)
     cancelRoomRetention(uuid)
 
     callback({ ok: true, room: buildRoomPayload(room) })

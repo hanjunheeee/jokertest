@@ -8,13 +8,13 @@ const kickReceiptStore = require('./kickReceiptStore')
 const { NIGHT_TURN_STAGES } = require('./gameSession/core/constants')
 const { nightTurnRuns, setPhaseHooks } = require('./gameSession/core/state')
 const {
-    resolveNightPresentationWaitTimeoutMs,
+    resolveNightWaitMs,
     computeEmptyTurnDelayMs,
     resolveNightTurnDurationMs,
 } = require('./gameSession/core/timers')
 const {
     setOnlineUsersRegistry,
-    recordConnectionOwnership,
+    recordOwnership,
     canProcessDisconnectFor,
     isCurrentSocketForUuid,
 } = require('./gameSession/connection/ownership')
@@ -25,26 +25,26 @@ const {
     expireDisconnectGrace,
 } = require('./gameSession/connection/grace')
 const { resyncSessionRouting } = require('./gameSession/connection/routing')
-const { isEligibleSessionRecipient, buildSessionEndContext } = require('./gameSession/delivery/eligibility')
+const { isEligibleRecipient, buildSessionEndContext } = require('./gameSession/delivery/eligibility')
 const {
     detachSocketFromChannel,
     emitToGameChannel,
-    resolveSessionParticipantSockets,
+    resolveSessionSockets,
     resolveChatRecipientSockets,
     resolveJokerTeammateSockets,
 } = require('./gameSession/delivery/broadcast')
 const {
     buildNightPresentationContract,
-    buildNightSuccessPayload,
+    buildNightPayload,
 } = require('./gameSession/phase/night/contract')
 const { getNightSuccessReceipts } = require('./gameSession/phase/night/receipts')
-const { emitNightSuccessEvents, emitNightPresentationWait } = require('./gameSession/phase/night/notify')
+const { emitNightSuccessEvents, emitNightWait } = require('./gameSession/phase/night/notify')
 const {
-    beginNightPresentationWait,
+    beginNightWait,
     releaseNightPresentationWait,
     isNightPresentationWaitActive,
-    activateNightPresentationWait,
-    reevaluateNightPresentationWait,
+    activateNightWait,
+    reevaluateNightWait,
 } = require('./gameSession/phase/night/wait')
 const {
     advanceNightTurn,
@@ -60,7 +60,7 @@ const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('
 const {
     handleSubmitNightAction,
     handleResolveNight,
-    handleAcknowledgeNightActionSuccess,
+    handleAckNightSuccess,
 } = require('./gameSession/handlers/night')
 const {
     handleSubmitJokerChatMessage,
@@ -76,7 +76,7 @@ const {
     registerGameHandlers,
     getActiveGamePresenceSnapshot,
     __resetStateForTests,
-    __getOnlineUsersRegistryForTests,
+    __getRegistryForTests,
 } = require('./gameSession/handlers/register')
 
 // 아래 파일이 부를 위층 함수 잇기 (require 고리 막기)
@@ -97,7 +97,7 @@ module.exports = {
     KICK_EVENTS: kickReceiptStore.KICK_EVENTS,
     KICK_ERROR_CODES: kickReceiptStore.KICK_ERROR_CODES,
     __resetStateForTests,
-    __getOnlineUsersRegistryForTests,
+    __getRegistryForTests,
     __testables: {
         handleAcknowledgeRoleReveal,
         handleAcknowledgeDayVoteReady,
@@ -124,27 +124,27 @@ module.exports = {
         __setTerminalPersistTimersForTests: gameRecordService.__setTerminalPersistTimersForTests,
         resolveJokerTeammateSockets,
         resolveChatRecipientSockets,
-        resolveSessionParticipantSockets,
+        resolveSessionSockets,
         emitToGameChannel,
-        isEligibleSessionRecipient,
+        isEligibleRecipient,
         buildSessionEndContext,
         canProcessDisconnectFor,
-        recordConnectionOwnership,
+        recordOwnership,
         startNightTurnSequence,
         stopNightTurnSequence,
         buildNightPresentationContract,
-        beginNightPresentationWait,
+        beginNightWait,
         releaseNightPresentationWait,
         isNightPresentationWaitActive,
         NIGHT_TURN_STAGES,
-        activateNightPresentationWait,
-        reevaluateNightPresentationWait,
-        emitNightPresentationWait,
-        resolveNightPresentationWaitTimeoutMs,
+        activateNightWait,
+        reevaluateNightWait,
+        emitNightWait,
+        resolveNightWaitMs,
         __getNightTurnRunForTests: (gameId) => nightTurnRuns.get(gameId) ?? null,
-        buildNightSuccessPayload,
+        buildNightPayload,
         emitNightSuccessEvents,
-        handleAcknowledgeNightActionSuccess,
+        handleAckNightSuccess,
         __getNightSuccessReceiptsForTests: (session) => getNightSuccessReceipts(session) ?? null,
         computeEmptyTurnDelayMs,
         resolveNightTurnDurationMs,

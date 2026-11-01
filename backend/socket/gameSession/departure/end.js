@@ -4,13 +4,13 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
 const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr, isolateWithError } = require('../../common/isolate')
-const { detachAllDisconnectGraces } = require('../connection/grace')
+const { detachAllGraces } = require('../connection/grace')
 const { buildSessionEndContext } = require('../delivery/eligibility')
-const { detachFromSessionChannel, emitToGameChannel } = require('../delivery/broadcast')
-const { deleteNightSuccessReceipts } = require('../phase/night/receipts')
+const { detachFromGameChannel, emitToGameChannel } = require('../delivery/broadcast')
+const { deleteNightReceipts } = require('../phase/night/receipts')
 const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
-const { clearDepartureResolveMark } = require('./marks')
+const { clearDepartureMark } = require('./marks')
 
 // 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
 // 종료 필드 만들다 던지면 원래 내용 그대로
@@ -32,7 +32,7 @@ function cleanupMatchmakingRooms(io, uuids, label) {
 
 // 판 지우기 전 마무리: 전적 저장 시작 → 타이머 정리 → 대기방 정리 → 종료 방송 → 채널 떼기, 단계마다 격리 (지도 07-③)
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
-    deleteNightSuccessReceipts(session)
+    deleteNightReceipts(session)
 
     // 종료 방송 받을 사람은 정리 전에 정해 둠 (다른 판·대기방으로 간 사람 빼기)
     const endContext = isolateOr(null, '[GameSession 종료 수신 문맥 구성 실패]', { code: 'END_CONTEXT_ERROR', gameId: session?.id },
@@ -49,8 +49,8 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     isolateWithError('[GameSession 종료 시 타이머 정리 실패]', () => {
         stopNightTurnSequence(session.id)
         stopDayPhaseTimer(session.id)
-        clearDepartureResolveMark(session.id)
-        detachAllDisconnectGraces(session.id)
+        clearDepartureMark(session.id)
+        detachAllGraces(session.id)
     })
 
     cleanupMatchmakingRooms(io, cleanupUuids, '[GameSession 종료 시 matchmaking 정리 실패]')
@@ -71,7 +71,7 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
                 if (!member?.rooms?.has?.(session.channelId)) continue
                 const memberUuid = member.data?.user?.uuid ?? null
                 if (typeof memberUuid !== 'string') continue
-                detachFromSessionChannel(
+                detachFromGameChannel(
                     member, memberUuid, session.channelId, '[GameSession channel 정리 실패]', { gameId: session.id },
                 )
             }

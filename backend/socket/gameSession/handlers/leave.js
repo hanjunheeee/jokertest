@@ -3,13 +3,13 @@
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { REPLY_MESSAGES, internalErrorReply, respond } = require('../../common/replies')
-const { IDEMPOTENT_DEPARTURE_CODES } = require('../core/constants')
+const { IDEMPOTENT_LEAVE_CODES } = require('../core/constants')
 const { nightTurnRuns } = require('../core/state')
 const { pickTrimmedGameId, acceptRequest } = require('../core/requests')
-const { canProcessDisconnectFor, consumeConnectionOwnership } = require('../connection/ownership')
+const { canProcessDisconnectFor, consumeOwnership } = require('../connection/ownership')
 const { beginDisconnectGrace } = require('../connection/grace')
-const { detachFromSessionChannel } = require('../delivery/broadcast')
-const { reevaluateNightPresentationWait } = require('../phase/night/wait')
+const { detachFromGameChannel } = require('../delivery/broadcast')
+const { reevaluateNightWait } = require('../phase/night/wait')
 const { cleanupMatchmakingRooms, finalizeGameSessionEnd } = require('../departure/end')
 const { applyParticipantDeparture } = require('../departure/apply')
 
@@ -38,7 +38,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     if (activeSession && activeSession.phase !== 'ENDED') {
         const departed = applyParticipantDeparture(io, activeSession, uuid, { reason: 'PLAYER_LEFT' })
         // 이미 빠진 사람이 또 나가기면 성공으로 답함 (지도 12-⑥)
-        if (departed.ok || IDEMPOTENT_DEPARTURE_CODES.has(departed.code)) {
+        if (departed.ok || IDEMPOTENT_LEAVE_CODES.has(departed.code)) {
             ack({ ok: true })
         } else {
             ack({
@@ -48,7 +48,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
             })
         }
         if (departed.ok) {
-            detachFromSessionChannel(
+            detachFromGameChannel(
                 socket, uuid, activeSession.channelId, '[게임 이탈 채널 정리 실패]', { gameId: activeSession.id },
             )
             cleanupMatchmakingRooms(io, [uuid], '[게임 이탈 시 matchmaking 정리 실패]')
@@ -77,17 +77,17 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
 }
 
 // 끊긴 사람을 연출 기다림에서 빼 보기 (기다리던 사람이 끊기면 상한까지 안 기다리게, 지도 05-⑨)
-function reevaluateWaitAfterDisconnect(gameId) {
+function reevaluateOnDisconnect(gameId) {
     const run = nightTurnRuns.get(gameId)
     if (!run || !run.wait) return
     isolate('[연결 종료 처리 실패]', { code: 'WAIT_REEVALUATE_ERROR', gameId },
-        () => reevaluateNightPresentationWait(run, run.wait))
+        () => reevaluateNightWait(run, run.wait))
 }
 
 // 소켓 끊김: 진짜 주인 소켓일 때만, 진행 중 판이면 유예만 걸고 판은 그대로 (지도 08-①②⑤)
 async function onDisconnect(io, socket, uuid) {
     if (!canProcessDisconnectFor(io, socket, uuid)) return
-    consumeConnectionOwnership(socket, uuid)
+    consumeOwnership(socket, uuid)
 
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
@@ -96,14 +96,14 @@ async function onDisconnect(io, socket, uuid) {
     const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
     if (graceTarget) {
         beginDisconnectGrace(io, graceTarget.session, uuid)
-        reevaluateWaitAfterDisconnect(graceTarget.session.id)
+        reevaluateOnDisconnect(graceTarget.session.id)
         return
     }
 
     // 죽은 참가자 등 유예 없는 사람: 판이 진행 중이면 자리·재입장 권리 그대로
     const reconnectState = gameSessionCore.getSessionSnapshotForPlayer(uuid, expectedGameId)
     if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) {
-        reevaluateWaitAfterDisconnect(expectedGameId)
+        reevaluateOnDisconnect(expectedGameId)
         return
     }
 

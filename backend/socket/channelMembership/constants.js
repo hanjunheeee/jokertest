@@ -5,7 +5,7 @@
 const MAX_CHANNEL_LEAVE_ATTEMPTS = 3
 
 // 떼는 사이 채널을 다시 가졌을 때 되찾기 깊이 한도 (무한 왕복 막기)
-const MAX_CHANNEL_RESTORE_DEPTH = 1
+const MAX_RESTORE_DEPTH = 1
 
 // 주인 안 준 제외 걸기의 주인 이름
 const DEFAULT_EXCLUSION_OWNER = '__default__'
@@ -15,7 +15,7 @@ const CHANNEL_EXCLUSION_ALARM_ENTRIES = 1024
 
 module.exports = {
     MAX_CHANNEL_LEAVE_ATTEMPTS,
-    MAX_CHANNEL_RESTORE_DEPTH,
+    MAX_RESTORE_DEPTH,
     DEFAULT_EXCLUSION_OWNER,
     CHANNEL_EXCLUSION_ALARM_ENTRIES,
 }

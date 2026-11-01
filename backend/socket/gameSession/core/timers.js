@@ -3,8 +3,8 @@
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const {
-    NIGHT_PRESENTATION_WAIT_DEFAULT_TIMEOUT_MS,
-    NIGHT_PRESENTATION_WAIT_MAX_TIMEOUT_MS,
+    NIGHT_WAIT_DEFAULT_MS,
+    NIGHT_WAIT_MAX_MS,
 } = require('./constants')
 
 // run에 넣을 시계·타이머 함수: 시험이 넣은 것 먼저, 없으면 진짜 것 (부를 때마다 전역 값을 읽음)
@@ -34,9 +34,9 @@ function deactivateWaitToken(run, token) {
 }
 
 // 연출 대기 상한: 시험 주입 → 환경 변수 → 기본값 순서, 범위 밖 값은 버림 (지도 05-⑨)
-function resolveNightPresentationWaitTimeoutMs(deps) {
+function resolveNightWaitMs(deps) {
     const isValidTimeout = (value) =>
-        Number.isInteger(value) && value > 0 && value <= NIGHT_PRESENTATION_WAIT_MAX_TIMEOUT_MS
+        Number.isInteger(value) && value > 0 && value <= NIGHT_WAIT_MAX_MS
 
     const injected = deps?.presentationWaitTimeoutMs
     if (isValidTimeout(injected)) return injected
@@ -44,7 +44,7 @@ function resolveNightPresentationWaitTimeoutMs(deps) {
     const fromEnv = Number(process.env.NIGHT_PRESENTATION_WAIT_TIMEOUT_MS)
     if (isValidTimeout(fromEnv)) return fromEnv
 
-    return NIGHT_PRESENTATION_WAIT_DEFAULT_TIMEOUT_MS
+    return NIGHT_WAIT_DEFAULT_MS
 }
 
 // 산 행동자 없는 턴도 바로 안 끝내고 턴 길이의 20~60% 무작위 뒤 끝냄 (역할 전멸이 새지 않게)
@@ -80,7 +80,7 @@ module.exports = {
     pickTimerFns,
     clearRunTimer,
     deactivateWaitToken,
-    resolveNightPresentationWaitTimeoutMs,
+    resolveNightWaitMs,
     computeEmptyTurnDelayMs,
     resolveNightTurnDurationMs,
     fillAbstentions,

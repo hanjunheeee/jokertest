@@ -2,11 +2,11 @@
 // 방장 설정 저장 받기·방송 + 저장 결과 다시 묻기 (지도 11-②③)
 const { getAdmissionAttempt, countRoomOccupancy } = require('../admission/attempts')
 const { resolveParticipantSockets } = require('../room/membership')
-const { getSettingsVersion, pruneSettingsUpdateResults, settingsUpdateResultKey, recordSettingsUpdateResult, SETTINGS_UPDATE_RESULT_TTL_MS } = require('./receipts')
+const { getSettingsVersion, pruneSettingsResults, settingsUpdateResultKey, recordSettingsResult, SETTINGS_RESULT_TTL_MS } = require('./receipts')
 const { buildRoomSettingsView, ROOM_SETTINGS_EVENTS, validateUpdateRoomSettingsPayload, fingerprintUpdateRequest, fingerprintUpdateSettings, ROOM_SETTINGS_ERROR_CODES, buildEditableSettingsView, settingsContainNonAllowlistedKeys, PRESERVED_ROOM_SETTING_KEYS, isRoomSettingsIdentifier } = require('../../../validations/room/updateSettings')
 const { computeCanStart, buildRoomPayload, emitPublicRoomList } = require('../room/view')
 const { roomSettingsUpdateResults, playerRoom, gameRooms } = require('../core/state')
-const { rejectIfInActiveGame } = require('../join/guards')
+const { rejectIfInGame } = require('../join/guards')
 
 // 바뀐 설정을 방 사람들한테 방송
 function emitRoomSettingsUpdated(io, room) {
@@ -71,7 +71,7 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
         return
     }
 
-    pruneSettingsUpdateResults()
+    pruneSettingsResults()
     const resultKey = settingsUpdateResultKey(uuid, roomId, requestId)
     const recorded = roomSettingsUpdateResults.get(resultKey)
     if (recorded) {
@@ -90,7 +90,7 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
         return
     }
 
-    if (rejectIfInActiveGame(uuid, ({ message }) =>
+    if (rejectIfInGame(uuid, ({ message }) =>
         reject(ROOM_SETTINGS_ERROR_CODES.ALREADY_IN_GAME, message)
     )) return
 
@@ -147,9 +147,9 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
         if (settingsContainNonAllowlistedKeys(room.settings)) {
             room.settings = buildRoomSettingsView(room.settings)
         }
-        recordSettingsUpdateResult(resultKey, {
+        recordSettingsResult(resultKey, {
             roomId, fingerprint, changed: false, settingsVersion: currentVersion,
-            expiresAt: Date.now() + SETTINGS_UPDATE_RESULT_TTL_MS,
+            expiresAt: Date.now() + SETTINGS_RESULT_TTL_MS,
         })
         respond({ ok: true, changed: false, roomId, requestId, settingsVersion: currentVersion })
         return
@@ -169,12 +169,12 @@ function handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurren
     }
 
     room.settingsVersion = currentVersion + 1
-    recordSettingsUpdateResult(resultKey, {
+    recordSettingsResult(resultKey, {
         roomId,
         fingerprint,
         changed: true,
         settingsVersion: room.settingsVersion,
-        expiresAt: Date.now() + SETTINGS_UPDATE_RESULT_TTL_MS,
+        expiresAt: Date.now() + SETTINGS_RESULT_TTL_MS,
     })
 
     emitRoomSettingsUpdated(io, room)
@@ -214,7 +214,7 @@ function handleGetRoomSettingsUpdateResult(uuid, payload, callback, socket, getC
         return
     }
 
-    pruneSettingsUpdateResults()
+    pruneSettingsResults()
     const recorded = roomSettingsUpdateResults.get(settingsUpdateResultKey(uuid, roomId, requestId))
 
     const currentRoomId = playerRoom.get(uuid)

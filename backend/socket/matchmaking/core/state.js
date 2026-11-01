@@ -11,7 +11,7 @@ const gameRooms = new Map()
 const playerRoom = new Map()
 
 // 끝난 판 → 방장이 만든 다음 방 (우편함, 30분)
-const partyMatchingRoomByGameId = new Map()
+const partyRoomByGameId = new Map()
 
 // 방 만들기·입장·매칭 중복 잠금 (uuid → 처리 중 토큰)
 const pendingRoomTransitions = new Map()
@@ -26,7 +26,7 @@ const publishedAdmissions = new Map()
 const roomSettingsUpdateResults = new Map()
 
 // 사람별 세대 번호, 게임 끝 정리 때 +1 (옛 요청 커밋 막기)
-const roomTransitionGeneration = new Map()
+const generationByUuid = new Map()
 
 // 시작돼 사라진 방 코드 기억 ("이미 시작" vs "방 없음" 구분, 30분)
 const startedRoomMarks = new Map()
@@ -35,19 +35,19 @@ const startedRoomMarks = new Map()
 const pendingRoomRemovals = new Map()
 
 // "방에 있음" 확인된 순번 (늦은 끊김이 확인을 못 뒤집게)
-const roomPresenceConfirmedTick = new Map()
+const presenceConfirmedTick = new Map()
 
 module.exports = {
     matchmakingQueue,
     gameRooms,
     playerRoom,
-    partyMatchingRoomByGameId,
+    partyRoomByGameId,
     pendingRoomTransitions,
     roomAdmissionAttempts,
     publishedAdmissions,
     roomSettingsUpdateResults,
-    roomTransitionGeneration,
+    generationByUuid,
     startedRoomMarks,
     pendingRoomRemovals,
-    roomPresenceConfirmedTick,
+    presenceConfirmedTick,
 }

@@ -14,7 +14,7 @@ function nextAttemptId() {
 }
 
 // 명단에 넣은 시도의 되돌릴 권리 내려놓기 (내 것일 때만)
-function releasePublishedAdmission(attempt) {
+function releasePublished(attempt) {
     if (attempt && publishedAdmissions.get(attempt.accountUuid) === attempt) {
         publishedAdmissions.delete(attempt.accountUuid)
     }
@@ -32,7 +32,7 @@ function getAdmissionAttempt(uuid) {
 }
 
 // 입장 시도 없애기
-function invalidateAdmissionAttempt(uuid, reason) {
+function invalidateAttempt(uuid, reason) {
     const attempt = roomAdmissionAttempts.get(uuid)
     if (!attempt) return null
     roomAdmissionAttempts.delete(uuid)
@@ -41,7 +41,7 @@ function invalidateAdmissionAttempt(uuid, reason) {
 }
 
 // 없앤 시도의 초대 되돌리기
-function compensateInvalidatedAttempt(attempt, reason) {
+function compensateAttempt(attempt, reason) {
     if (!attempt || typeof attempt.inviteId !== 'string') return
 
     const settled = attempt.decisionSettled === true || !attempt.decisionPromise
@@ -57,16 +57,16 @@ function compensateInvalidatedAttempt(attempt, reason) {
 }
 
 // 방 없어질 때 그 방 입장 시도 전부 없앰
-function invalidateAdmissionAttemptsForRoom(roomId, reason) {
+function invalidateRoomAttempts(roomId, reason) {
     for (const [uuid, attempt] of [...roomAdmissionAttempts]) {
         if (attempt.roomId !== roomId) continue
         roomAdmissionAttempts.delete(uuid)
-        compensateInvalidatedAttempt(attempt, reason)
+        compensateAttempt(attempt, reason)
     }
 }
 
 // 이 방에 입장 중인 사람 있는지 (있으면 시작·준비 막음)
-function hasPendingAdmissionForRoom(roomId) {
+function hasPendingAdmission(roomId) {
     for (const [uuid] of roomAdmissionAttempts) {
         const attempt = getAdmissionAttempt(uuid)
         if (attempt && attempt.roomId === roomId) return true
@@ -104,12 +104,12 @@ function withAdmissionTimeout(promise, ms, code) {
 module.exports = {
     admissionAttemptSeq,
     nextAttemptId,
-    releasePublishedAdmission,
+    releasePublished,
     getAdmissionAttempt,
-    invalidateAdmissionAttempt,
-    compensateInvalidatedAttempt,
-    invalidateAdmissionAttemptsForRoom,
-    hasPendingAdmissionForRoom,
+    invalidateAttempt,
+    compensateAttempt,
+    invalidateRoomAttempts,
+    hasPendingAdmission,
     countRoomOccupancy,
     withAdmissionTimeout,
 }

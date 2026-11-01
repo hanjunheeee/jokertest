@@ -22,7 +22,7 @@ function rememberStartedRoom(room) {
 }
 
 // 시험용: 표시 전부 지움
-function __resetStartedRoomMarksForTests() {
+function __resetStartedMarksForTests() {
     startedRoomMarks.clear()
 }
 
@@ -41,6 +41,6 @@ module.exports = {
     STARTED_ROOM_MARK_TTL_MS,
     pruneStartedRoomMarks,
     rememberStartedRoom,
-    __resetStartedRoomMarksForTests,
+    __resetStartedMarksForTests,
     isStartedRoomMark,
 }

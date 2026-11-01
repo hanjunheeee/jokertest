@@ -9,7 +9,7 @@ const channelExclusions = new Map()
 
 let exclusionOwnerSeq = 0
 let channelExclusionCount = 0
-let channelExclusionAlarmRaised = false
+let alarmRaised = false
 
 // 제외 주인 이름 새로 뽑기 (떼기 작업마다 하나)
 function createChannelExclusionOwner(label = 'owner') {
@@ -26,8 +26,8 @@ function excludeSocketFromChannel(channelId, socketId, owner = DEFAULT_EXCLUSION
     if (owners.has(owner)) return
     owners.add(owner)
     channelExclusionCount += 1
-    if (!channelExclusionAlarmRaised && channelExclusionCount > CHANNEL_EXCLUSION_ALARM_ENTRIES) {
-        channelExclusionAlarmRaised = true
+    if (!alarmRaised && channelExclusionCount > CHANNEL_EXCLUSION_ALARM_ENTRIES) {
+        alarmRaised = true
         console.error('[채널 전달 제외 수위 초과]', {
             code: 'CHANNEL_EXCLUSION_OVER_CAPACITY',
             entries: channelExclusionCount,
@@ -38,8 +38,8 @@ function excludeSocketFromChannel(channelId, socketId, owner = DEFAULT_EXCLUSION
 
 // 수위 아래로 내려오면 경보 다시 켤 수 있게
 function rearmExclusionAlarm() {
-    if (channelExclusionAlarmRaised && channelExclusionCount <= CHANNEL_EXCLUSION_ALARM_ENTRIES) {
-        channelExclusionAlarmRaised = false
+    if (alarmRaised && channelExclusionCount <= CHANNEL_EXCLUSION_ALARM_ENTRIES) {
+        alarmRaised = false
     }
 }
 

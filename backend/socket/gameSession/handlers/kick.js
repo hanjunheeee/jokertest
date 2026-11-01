@@ -5,7 +5,7 @@ const kickReceiptStore = require('../../kickReceiptStore')
 const { isolate } = require('../../common/isolate')
 const { REPLY_MESSAGES, staleSocketReply, respond } = require('../../common/replies')
 const { isCurrentSocketForUuid, getSocketForUuid } = require('../connection/ownership')
-const { detachFromSessionChannel } = require('../delivery/broadcast')
+const { detachFromGameChannel } = require('../delivery/broadcast')
 const { cleanupMatchmakingRooms } = require('../departure/end')
 const { applyParticipantDeparture } = require('../departure/apply')
 
@@ -135,7 +135,7 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
                 fingerprint,
                 result,
             })
-            detachFromSessionChannel(
+            detachFromGameChannel(
                 targetSocket, input.targetUuid, session.channelId, '[추방 채널 이탈 실패]', { gameId: session.id },
             )
         },

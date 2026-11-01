@@ -5,9 +5,9 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const { attempt } = require('../../common/isolate')
 const { rejectedReply, respond, labeledResponder } = require('../../common/replies')
 const {
-    JOKER_CHAT_INTERNAL_ONLY_CODES,
-    GAME_CHAT_INTERNAL_ONLY_CODES,
-    GAME_CHAT_COMMIT_INTERNAL_CODES,
+    JOKER_INTERNAL_CODES,
+    CHAT_INTERNAL_CODES,
+    CHAT_NON_PUBLIC_CODES,
     CHAT_EVENT_BY_CHANNEL,
 } = require('../core/constants')
 const {
@@ -20,7 +20,7 @@ const {
     commitLogs,
     internalFailure,
 } = require('../core/requests')
-const { isEligibleSessionRecipient } = require('../delivery/eligibility')
+const { isEligibleRecipient } = require('../delivery/eligibility')
 const {
     emitToGameChannel,
     resolveChatRecipientSockets,
@@ -47,7 +47,7 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
     const { gameId, text } = fields
 
     const prepared = acceptCoreResult(ack, () => prepare(uuid, gameId, text),
-        prepareLogs(label, uuid, JOKER_CHAT_INTERNAL_ONLY_CODES))
+        prepareLogs(label, uuid, JOKER_INTERNAL_CODES))
     if (!prepared) return
 
     // 여기부터 판 id는 prepare가 돌려준 진짜 id로 답함
@@ -118,7 +118,7 @@ function handleSubmitGameChatMessage(io, socket, uuid, payload, callback, deps =
     const label = '[게임 채팅 오류]'
 
     const prepared = acceptCoreResult(ack, () => prepare(uuid, gameId, text, { idFn }),
-        prepareLogs(label, uuid, GAME_CHAT_INTERNAL_ONLY_CODES))
+        prepareLogs(label, uuid, CHAT_INTERNAL_CODES))
     if (!prepared) return
 
     // 여기부터 판 id는 prepare가 돌려준 진짜 id로 답함
@@ -146,7 +146,7 @@ function handleSubmitGameChatMessage(io, socket, uuid, payload, callback, deps =
 
     // 끝난 판만 그대로 알려 주고 나머지 commit 실패는 내부 사정
     const committed = acceptCoreResult(ackInSession, () => commit(prepared),
-        commitLogs(label, uuid, prepared.session.id, GAME_CHAT_COMMIT_INTERNAL_CODES))
+        commitLogs(label, uuid, prepared.session.id, CHAT_NON_PUBLIC_CODES))
     if (!committed) return
 
     const outbound = committed.message
@@ -183,7 +183,7 @@ function handleSendEmoji(io, socket, uuid, payload, callback) {
     const { gameId, itemId } = request.fields
 
     const session = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
-    if (!session || !isEligibleSessionRecipient(session, socket, uuid)) {
+    if (!session || !isEligibleRecipient(session, socket, uuid)) {
         reject('NOT_PARTICIPANT')
         return
     }

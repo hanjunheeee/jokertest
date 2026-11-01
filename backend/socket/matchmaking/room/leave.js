@@ -1,21 +1,21 @@
 // 방 나가기 파일
 // 방 나가기 확정·알림 + 끊긴 사람 15초 뒤 빼기 예약 (지도 08·11)
 const channelMembership = require('../../channelMembership')
-const { roomPresenceConfirmedTick, pendingRoomRemovals, playerRoom, gameRooms } = require('../core/state')
-const { findLiveSocketForUuid, detachSocketFromChannel, isAccountSeatedInRoom, isCanonicalSocketForAccount, hasRoomMembership, hasLiveGameMembership } = require('./membership')
+const { presenceConfirmedTick, pendingRoomRemovals, playerRoom, gameRooms } = require('../core/state')
+const { findLiveSocket, detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('./membership')
 const { ROOM_RECONNECT_GRACE_MS, BOOT_EPOCH } = require('../core/constants')
-const { invalidateAdmissionAttempt, compensateInvalidatedAttempt, invalidateAdmissionAttemptsForRoom } = require('../admission/attempts')
-const { removePublishedAdmission, cancelInvitesForRoomAsync } = require('../admission/release')
-const { forgetSettingsUpdateResultsForRoom, getSettingsVersion } = require('../settings/receipts')
+const { invalidateAttempt, compensateAttempt, invalidateRoomAttempts } = require('../admission/attempts')
+const { removePublished, cancelRoomInvitesAsync } = require('../admission/release')
+const { forgetSettingsResults, getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('./view')
 
 // "방에 있음" 확인 순번 시계 (벽시계 대신 하나씩 올림)
 let roomPresenceTick = 0
 
 // 방에 있다고 확인된 순번 기록 (늦게 온 끊김이 이걸 못 뒤집게)
-function markRoomPresenceConfirmed(uuid) {
+function markPresenceConfirmed(uuid) {
     roomPresenceTick += 1
-    roomPresenceConfirmedTick.set(uuid, roomPresenceTick)
+    presenceConfirmedTick.set(uuid, roomPresenceTick)
 }
 
 // 끊긴 사람 빼기 예약 취소 (돌아왔을 때)
@@ -27,7 +27,7 @@ function cancelRoomRetention(uuid) {
 }
 
 // 끊긴 사람 15초 뒤 방에서 빼기 예약 (그사이 다시 오거나 확인되면 안 뺌)
-function scheduleRoomRetentionOnDisconnect(io, socket, uuid) {
+function scheduleRoomRetention(io, socket, uuid) {
     const roomId = playerRoom.get(uuid)
     if (!roomId) return
 
@@ -36,9 +36,9 @@ function scheduleRoomRetentionOnDisconnect(io, socket, uuid) {
 
     const run = () => {
         pendingRoomRemovals.delete(uuid)
-        if ((roomPresenceConfirmedTick.get(uuid) ?? -1) > scheduledTick) return
+        if ((presenceConfirmedTick.get(uuid) ?? -1) > scheduledTick) return
         if (playerRoom.get(uuid) !== roomId) return
-        removeFromRoom(io, findLiveSocketForUuid(io, uuid), uuid)
+        removeFromRoom(io, findLiveSocket(io, uuid), uuid)
     }
 
     const timer = setTimeout(run, ROOM_RECONNECT_GRACE_MS)
@@ -51,10 +51,10 @@ function scheduleRoomRetentionOnDisconnect(io, socket, uuid) {
 function commitRoomDeparture(io, socket, uuid, reason) {
     cancelRoomRetention(uuid)
 
-    const ownAttempt = invalidateAdmissionAttempt(uuid, reason)
+    const ownAttempt = invalidateAttempt(uuid, reason)
     if (ownAttempt) {
-        removePublishedAdmission(io, socket, ownAttempt)
-        compensateInvalidatedAttempt(ownAttempt, reason)
+        removePublished(io, socket, ownAttempt)
+        compensateAttempt(ownAttempt, reason)
     }
 
     const roomId = playerRoom.get(uuid)
@@ -69,9 +69,9 @@ function commitRoomDeparture(io, socket, uuid, reason) {
 
     if (room.players.size === 0) {
         gameRooms.delete(roomId)
-        invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_GONE')
-        forgetSettingsUpdateResultsForRoom(roomId)
-        cancelInvitesForRoomAsync(roomId, 'ROOM_GONE')
+        invalidateRoomAttempts(roomId, 'ROOM_GONE')
+        forgetSettingsResults(roomId)
+        cancelRoomInvitesAsync(roomId, 'ROOM_GONE')
         return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: true, hostChanged: false }
     }
 
@@ -93,8 +93,8 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
             departing, roomId, '[대기방 채널 이탈 실패]',
             {
                 ownsChannel: () =>
-                    isAccountSeatedInRoom(outcome.uuid, roomId)
-                    && isCanonicalSocketForAccount(io, outcome.uuid, departing, roomId),
+                    isSeatedInRoom(outcome.uuid, roomId)
+                    && isCanonicalSocket(io, outcome.uuid, departing, roomId),
                 keepsConnection: () =>
                     hasRoomMembership(outcome.uuid) || hasLiveGameMembership(outcome.uuid),
             },
@@ -150,9 +150,9 @@ function resetRoomPresenceTick() {
 
 module.exports = {
     resetRoomPresenceTick,
-    markRoomPresenceConfirmed,
+    markPresenceConfirmed,
     cancelRoomRetention,
-    scheduleRoomRetentionOnDisconnect,
+    scheduleRoomRetention,
     commitRoomDeparture,
     notifyRoomDeparture,
     removeFromRoom,

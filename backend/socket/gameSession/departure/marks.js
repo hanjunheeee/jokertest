@@ -4,7 +4,7 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const { departureResolveMarks } = require('../core/state')
 
 // 지금 판정 자리 좌표: 낮 투표면 날짜·라운드, 안 끝난 재판이면 날짜·후보 (그 밖엔 null)
-function departureResolveCoordinate(session) {
+function currentCoordinate(session) {
     if (!session) return null
     if (session.phase === 'DAY' && gameSessionCore.getDayPhase(session) === gameSessionCore.DAY_PHASES.VOTE) {
         return `DAY_VOTE:${session.dayIndex}:${gameSessionCore.getSessionDayVoteRound(session.id)}`
@@ -16,25 +16,25 @@ function departureResolveCoordinate(session) {
 }
 
 // 이탈 커밋 뒤 표식 남김: 남은 사람이 다 내면 그 자리에서 바로 판정
-function markDepartureResolvePending(session) {
-    const coordinate = departureResolveCoordinate(session)
+function markDeparturePending(session) {
+    const coordinate = currentCoordinate(session)
     if (coordinate === null) return
     departureResolveMarks.set(session.id, coordinate)
 }
 
 // 판정했거나 판 끝나면 표식 지움
-function clearDepartureResolveMark(gameId) {
+function clearDepartureMark(gameId) {
     departureResolveMarks.delete(gameId)
 }
 
 // 표식이 지금 판정 자리 그대로인지 (라운드·후보 바뀌었으면 옛 표식)
 function hasDepartureResolveMark(session) {
-    const coordinate = departureResolveCoordinate(session)
+    const coordinate = currentCoordinate(session)
     return coordinate !== null && departureResolveMarks.get(session.id) === coordinate
 }
 
 module.exports = {
-    markDepartureResolvePending,
-    clearDepartureResolveMark,
+    markDeparturePending,
+    clearDepartureMark,
     hasDepartureResolveMark,
 }

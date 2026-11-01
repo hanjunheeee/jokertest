@@ -6,7 +6,7 @@ const { deps } = require('../core/deps')
 const { playerRoom, gameRooms } = require('../core/state')
 
 // 이 방 자리를 다른 소켓이 갖고 있는지 (새 탭 교체 확인)
-function isRoomOwnedByAnotherSocket(io, roomId, uuid, socket) {
+function isOwnedByOtherSocket(io, roomId, uuid, socket) {
     const sockets = io?.sockets?.sockets
     if (!sockets || typeof sockets.values !== 'function') return false
     for (const other of sockets.values()) {
@@ -19,21 +19,21 @@ function isRoomOwnedByAnotherSocket(io, roomId, uuid, socket) {
 }
 
 // 이 소켓이 계정의 진짜 소켓인지 (옛 소켓 거르기)
-function isCanonicalSocketForAccount(io, uuid, socket, roomId) {
+function isCanonicalSocket(io, uuid, socket, roomId) {
     if (!socket) return false
     const canonicalId = deps.onlineUsersRegistry?.get?.(uuid)
     if (typeof canonicalId === 'string') return canonicalId === socket.id
-    return !isRoomOwnedByAnotherSocket(io, roomId, uuid, socket)
+    return !isOwnedByOtherSocket(io, roomId, uuid, socket)
 }
 
 // 접속 목록 있을 때만 진짜 소켓인지 봄, 없으면 통과
-function isCanonicalSocketWhenObservable(io, uuid, socket, roomId) {
+function isCanonicalOrUnknown(io, uuid, socket, roomId) {
     if (!(deps.onlineUsersRegistry instanceof Map)) return true
-    return isCanonicalSocketForAccount(io, uuid, socket, roomId)
+    return isCanonicalSocket(io, uuid, socket, roomId)
 }
 
 // 계정이 이 방 명단에 있는지
-function isAccountSeatedInRoom(uuid, roomId) {
+function isSeatedInRoom(uuid, roomId) {
     if (playerRoom.get(uuid) !== roomId) return false
     return gameRooms.get(roomId)?.players.has(uuid) === true
 }
@@ -41,7 +41,7 @@ function isAccountSeatedInRoom(uuid, roomId) {
 // 명단에 있고 그 방 소속인지
 function hasRoomMembership(uuid) {
     const roomId = playerRoom.get(uuid)
-    return typeof roomId === 'string' ? isAccountSeatedInRoom(uuid, roomId) : false
+    return typeof roomId === 'string' ? isSeatedInRoom(uuid, roomId) : false
 }
 
 // 진행 중 게임 채널에 들어가 있는지
@@ -64,7 +64,7 @@ async function leaveSocketRoomSafely(socket, roomId, logLabel) {
 }
 
 // 계정의 지금 연결된 소켓 하나 찾기
-function findLiveSocketForUuid(io, uuid) {
+function findLiveSocket(io, uuid) {
     for (const candidate of io?.sockets?.sockets?.values?.() ?? []) {
         if (candidate?.data?.user?.uuid !== uuid) continue
         if (candidate.connected === false) continue
@@ -74,7 +74,7 @@ function findLiveSocketForUuid(io, uuid) {
 }
 
 // 계정의 연결된 소켓 전부 찾기
-function findAllLiveSocketsForUuid(io, uuid) {
+function findAllLiveSockets(io, uuid) {
     const found = []
     for (const candidate of io?.sockets?.sockets?.values?.() ?? []) {
         if (candidate?.data?.user?.uuid !== uuid) continue
@@ -93,11 +93,11 @@ function resolveParticipantSockets(io, uuids, roomId) {
         if (!u || !targets.has(u)) continue
         if (s.connected !== true) continue
         if (!s.rooms?.has(roomId)) continue
-        if (!isAccountSeatedInRoom(u, roomId)) continue
+        if (!isSeatedInRoom(u, roomId)) continue
         if (typeof s.id === 'string'
             && channelMembership.isSocketExcludedFromChannel(roomId, s.id)) continue
         if (deps.onlineUsersRegistry instanceof Map
-            && !isCanonicalSocketForAccount(io, u, s, roomId)) continue
+            && !isCanonicalSocket(io, u, s, roomId)) continue
         if (!map.has(u)) map.set(u, [])
         map.get(u).push(s)
     }
@@ -105,15 +105,15 @@ function resolveParticipantSockets(io, uuids, roomId) {
 }
 
 module.exports = {
-    isRoomOwnedByAnotherSocket,
-    isCanonicalSocketForAccount,
-    isCanonicalSocketWhenObservable,
-    isAccountSeatedInRoom,
+    isOwnedByOtherSocket,
+    isCanonicalSocket,
+    isCanonicalOrUnknown,
+    isSeatedInRoom,
     hasRoomMembership,
     hasLiveGameMembership,
     detachSocketFromChannel,
     leaveSocketRoomSafely,
-    findLiveSocketForUuid,
-    findAllLiveSocketsForUuid,
+    findLiveSocket,
+    findAllLiveSockets,
     resolveParticipantSockets,
 }

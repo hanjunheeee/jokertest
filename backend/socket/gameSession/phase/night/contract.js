@@ -4,15 +4,15 @@ const gameSessionCore = require('../../../../game-core/gameSession')
 const { isNonEmptyString } = require('../../../common/shape')
 const { isolateOr } = require('../../../common/isolate')
 const { isSessionOnlyRecipient } = require('../../delivery/eligibility')
-const { resolveSessionParticipantSockets } = require('../../delivery/broadcast')
+const { resolveSessionSockets } = require('../../delivery/broadcast')
 const {
-    NIGHT_PRESENTATION_CONTRACT_VERSION,
-    NIGHT_PRESENTATION_EVENT_TYPE_BY_ROLE,
-    NIGHT_PRESENTATION_PERSPECTIVES,
+    NIGHT_CONTRACT_VERSION,
+    NIGHT_EVENT_TYPES,
+    NIGHT_PERSPECTIVES,
 } = require('../../core/constants')
 
 // 계약 깊은 복사 (저장본이 밖에서 바뀌지 않게)
-function cloneNightPresentationContract(contract) {
+function cloneNightContract(contract) {
     return {
         version: contract.version,
         gameId: contract.gameId,
@@ -38,7 +38,7 @@ function cloneNightPresentationContract(contract) {
 }
 
 // 사건 받을 사람: 행동자는 USER·대상은 TARGET 시점, 받을 소켓 정해진 계정만
-function buildNightPresentationRecipients(session, deliverableSocketIdByUuid, actorUuids, targetId) {
+function buildNightRecipients(session, socketIdByUuid, actorUuids, targetId) {
     const wanted = new Map()
     for (const uuid of actorUuids) {
         if (!isNonEmptyString(uuid)) continue
@@ -52,12 +52,12 @@ function buildNightPresentationRecipients(session, deliverableSocketIdByUuid, ac
 
     const recipients = []
     for (const [uuid, perspectives] of wanted) {
-        if (!deliverableSocketIdByUuid.has(uuid)) continue
+        if (!socketIdByUuid.has(uuid)) continue
         recipients.push({
             uuid,
             membershipId: session.players.get(uuid)?.membershipId ?? null,
-            socketId: deliverableSocketIdByUuid.get(uuid),
-            perspectives: NIGHT_PRESENTATION_PERSPECTIVES.filter((perspective) => perspectives.has(perspective)),
+            socketId: socketIdByUuid.get(uuid),
+            perspectives: NIGHT_PERSPECTIVES.filter((perspective) => perspectives.has(perspective)),
         })
     }
     return recipients
@@ -70,7 +70,7 @@ function buildNightPresentationContract(run, completed) {
     const revision = completed?.revision ?? null
 
     const stored = run.contracts.get(role)
-    if (stored && stored.revision === revision) return cloneNightPresentationContract(stored)
+    if (stored && stored.revision === revision) return cloneNightContract(stored)
 
     const progress = gameSessionCore.getNightProgress(session)
     const step = { ...(completed?.step ?? {}) }
@@ -78,7 +78,7 @@ function buildNightPresentationContract(run, completed) {
     const recoveryStates = {}
     for (const [uuid, state] of progress?.recoveryStates ?? []) recoveryStates[uuid] = state
 
-    const eventType = NIGHT_PRESENTATION_EVENT_TYPE_BY_ROLE[role] ?? null
+    const eventType = NIGHT_EVENT_TYPES[role] ?? null
     const descriptors = []
     if (eventType === 'KILL' || eventType === 'HEAL') {
         for (const event of progress?.events ?? []) {
@@ -106,21 +106,21 @@ function buildNightPresentationContract(run, completed) {
     }
 
     // 받을 수 있는 계정마다 소켓 하나 고정 (다른 판·대기방 소속 생긴 계정은 뺌)
-    const deliverableSocketIdByUuid = new Map()
+    const socketIdByUuid = new Map()
     if (descriptors.length > 0) {
         const candidates = isolateOr([], '[밤 연출 계약 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', role, gameId: session.id },
-            () => resolveSessionParticipantSockets(io, session))
+            () => resolveSessionSockets(io, session))
         for (const candidate of candidates) {
             const uuid = candidate?.data?.user?.uuid ?? null
             if (!isNonEmptyString(uuid)) continue
-            if (deliverableSocketIdByUuid.has(uuid)) continue
+            if (socketIdByUuid.has(uuid)) continue
             if (!isSessionOnlyRecipient(session, candidate, uuid)) continue
-            deliverableSocketIdByUuid.set(uuid, typeof candidate.id === 'string' ? candidate.id : null)
+            socketIdByUuid.set(uuid, typeof candidate.id === 'string' ? candidate.id : null)
         }
     }
 
     const contract = {
-        version: NIGHT_PRESENTATION_CONTRACT_VERSION,
+        version: NIGHT_CONTRACT_VERSION,
         gameId: session.id,
         nightDayIndex: run.nightDayIndex,
         role,
@@ -132,16 +132,16 @@ function buildNightPresentationContract(run, completed) {
             type: descriptor.type,
             targetId: descriptor.targetId,
             actorUuids: [...actorUuids],
-            recipients: buildNightPresentationRecipients(session, deliverableSocketIdByUuid, actorUuids, descriptor.targetId),
+            recipients: buildNightRecipients(session, socketIdByUuid, actorUuids, descriptor.targetId),
         })),
         recoveryStates,
     }
     run.contracts.set(role, contract)
-    return cloneNightPresentationContract(contract)
+    return cloneNightContract(contract)
 }
 
 // 받는 사람별 밤 성공 payload (USER 시점에만 대상 id 실음)
-function buildNightSuccessPayload(contract, event, recipient) {
+function buildNightPayload(contract, event, recipient) {
     const payload = {
         gameId: contract.gameId,
         nightDayIndex: contract.nightDayIndex,
@@ -154,8 +154,8 @@ function buildNightSuccessPayload(contract, event, recipient) {
 }
 
 module.exports = {
-    cloneNightPresentationContract,
-    buildNightPresentationRecipients,
+    cloneNightContract,
+    buildNightRecipients,
     buildNightPresentationContract,
-    buildNightSuccessPayload,
+    buildNightPayload,
 }

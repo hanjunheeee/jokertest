@@ -4,10 +4,10 @@ const gameSessionCore = require('../../../../game-core/gameSession')
 const { isNonEmptyString } = require('../../../common/shape')
 const { isolate, isolateOr } = require('../../../common/isolate')
 const { rejectedReply, internalErrorReply } = require('../../../common/replies')
-const { NIGHT_COMMIT_INTERNAL_ONLY_CODES } = require('../../core/constants')
+const { NIGHT_INTERNAL_CODES } = require('../../core/constants')
 const { nightFinalizeInFlight } = require('../../core/state')
-const { stillEligibleForDelivery, hasMembershipOutsideSession } = require('../../delivery/eligibility')
-const { resolveSessionParticipantSockets, resolveRecipientsOrEmpty } = require('../../delivery/broadcast')
+const { stillEligible, hasOutsideMembership } = require('../../delivery/eligibility')
+const { resolveSessionSockets, resolveOrEmpty } = require('../../delivery/broadcast')
 const { isNightPresentationWaitActive } = require('./wait')
 const { stopNightTurnSequence } = require('./turn')
 const { startDayPhaseTimer } = require('../day')
@@ -17,7 +17,7 @@ const { withTerminalFields } = require('../../departure/end')
 function finalizeNightForSession(io, session, { prepared = null, deps = {}, onResult = null } = {}) {
     const prepareForSession = deps.prepareForSession ?? gameSessionCore.prepareNightResolutionForSession
     const commit = deps.commit ?? gameSessionCore.commitNightResolution
-    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionSockets
     const label = '[밤 행동 판정 오류]'
 
     const gameId = session?.id
@@ -58,7 +58,7 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
             return failCommit()
         }
         if (!applied.ok) {
-            if (NIGHT_COMMIT_INTERNAL_ONLY_CODES.has(applied.code)) return failCommit()
+            if (NIGHT_INTERNAL_CODES.has(applied.code)) return failCommit()
             if (onResult) onResult(rejectedReply(applied.code))
             return { ok: false, code: applied.code }
         }
@@ -80,11 +80,11 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
         })
 
         // 소켓마다 하나씩: 판정 끝 → 내 개인 결과(있으면) → 공개 결과 (지도 06-⑧)
-        const recipients = resolveRecipientsOrEmpty(io, targetSession, label, fields, resolveParticipantSockets)
+        const recipients = resolveOrEmpty(io, targetSession, label, fields, resolveParticipantSockets)
         for (const recipientSocket of recipients) {
-            if (!stillEligibleForDelivery(targetSession, recipientSocket)) continue
+            if (!stillEligible(targetSession, recipientSocket)) continue
             const recipientUuid = recipientSocket.data?.user?.uuid ?? null
-            if (recipientUuid !== null && hasMembershipOutsideSession(targetSession, recipientUuid)) continue
+            if (recipientUuid !== null && hasOutsideMembership(targetSession, recipientUuid)) continue
 
             isolate(label, { code: 'DELIVERY_ERROR', ...fields },
                 () => recipientSocket.emit('night_actions_resolved', { gameId: targetSession.id, dayIndex: resolution.dayIndex }))

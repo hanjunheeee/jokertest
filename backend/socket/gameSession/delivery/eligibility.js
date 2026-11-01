@@ -8,11 +8,11 @@ const { tryOr } = require('../../common/isolate')
 const { hasOnlineUsersRegistry, isCurrentSocketForUuid } = require('../connection/ownership')
 
 // 이 소켓이 지금 이 판 방송 받을 자격 있는지: 참여 중·연결됨·지금 소켓·채널 안·제외 아님 (종료 문맥이 있으면 그것도 봄)
-function isEligibleSessionRecipient(session, socket, uuid, endContext = null) {
+function isEligibleRecipient(session, socket, uuid, endContext = null) {
     if (!session || !socket) return false
     if (!isNonEmptyString(uuid)) return false
     if (!gameSessionCore.isParticipatingInSession(session, uuid)) return false
-    if (endContext && !isEligibleSessionEndRecipient(session, uuid, endContext)) return false
+    if (endContext && !isEligibleEndRecipient(session, uuid, endContext)) return false
     if (socket.connected !== true) return false
     if (hasOnlineUsersRegistry() && !isCurrentSocketForUuid(uuid, socket)) return false
     if (!socket.rooms?.has?.(session.channelId)) return false
@@ -24,14 +24,14 @@ function isEligibleSessionRecipient(session, socket, uuid, endContext = null) {
 }
 
 // 보내기 직전 다시 보기: 소켓에 붙은 계정으로 자격 판정
-function stillEligibleForDelivery(session, recipientSocket) {
-    return isEligibleSessionRecipient(session, recipientSocket, recipientSocket?.data?.user?.uuid ?? null)
+function stillEligible(session, recipientSocket) {
+    return isEligibleRecipient(session, recipientSocket, recipientSocket?.data?.user?.uuid ?? null)
 }
 
 // 이 판 받을 자격 있고 다른 판·대기방 소속은 없는지 (개인 사건·대기 알림 받을 사람 고르기)
 function isSessionOnlyRecipient(session, socket, uuid) {
-    if (!stillEligibleForDelivery(session, socket)) return false
-    return !hasMembershipOutsideSession(session, uuid)
+    if (!stillEligible(session, socket)) return false
+    return !hasOutsideMembership(session, uuid)
 }
 
 // matchmaking 대기방 소속 묻기, 던지면 소속 없음으로 봄
@@ -40,18 +40,18 @@ function isInMatchmakingRoom(uuid) {
 }
 
 // 이 판 말고 다른 판·대기방 소속이 생겼는지 (생겼으면 이 판 방송은 안 보냄, 지도 06-⑧)
-function hasMembershipOutsideSession(session, uuid) {
+function hasOutsideMembership(session, uuid) {
     const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
     if (routing && routing.gameId !== session.id) return true
     return isInMatchmakingRoom(uuid)
 }
 
 // 종료 방송 받을 자격: 그 판 문맥·허용 명단 안·미리 빠진 사람 아님·다른 소속 없음
-function isEligibleSessionEndRecipient(session, uuid, endContext) {
+function isEligibleEndRecipient(session, uuid, endContext) {
     if (endContext.gameId !== session.id) return false
     if (!endContext.allowed.has(uuid)) return false
     if (endContext.preExcluded.has(uuid)) return false
-    if (hasMembershipOutsideSession(session, uuid)) return false
+    if (hasOutsideMembership(session, uuid)) return false
     return true
 }
 
@@ -63,7 +63,7 @@ function buildSessionEndContext(session, leftUuid, cleanupUuids) {
         if (!isNonEmptyString(candidate)) continue
         if (candidate === leftUuid) continue
         if (!gameSessionCore.isParticipatingInSession(session, candidate)) continue
-        if (hasMembershipOutsideSession(session, candidate)) {
+        if (hasOutsideMembership(session, candidate)) {
             preExcluded.add(candidate)
             continue
         }
@@ -94,12 +94,12 @@ function socketHasLiveMembership(socket, uuid) {
 }
 
 module.exports = {
-    isEligibleSessionRecipient,
-    stillEligibleForDelivery,
+    isEligibleRecipient,
+    stillEligible,
     isSessionOnlyRecipient,
     isInMatchmakingRoom,
-    hasMembershipOutsideSession,
-    isEligibleSessionEndRecipient,
+    hasOutsideMembership,
+    isEligibleEndRecipient,
     buildSessionEndContext,
     ownsSessionChannelNow,
     liveSessionRoutingFor,

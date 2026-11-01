@@ -5,8 +5,8 @@ const { isolate } = require('../../common/isolate')
 const { rejectedReply, invalidPayloadReply, respond, labeledResponder } = require('../../common/replies')
 const {
     INTERNAL_ONLY_CODES,
-    RESOLVE_INTERNAL_ONLY_CODES,
-    NIGHT_SUCCESS_REJECT_MESSAGES,
+    RESOLVE_INTERNAL_CODES,
+    NIGHT_REJECT_MESSAGES,
 } = require('../core/constants')
 const { nightTurnRuns } = require('../core/state')
 const {
@@ -17,8 +17,8 @@ const {
     prepareLogs,
 } = require('../core/requests')
 const { readNightSuccessAck, findNightSuccessRecord } = require('../phase/night/receipts')
-const { reevaluateNightPresentationWait, presentationWaitRoutingFor } = require('../phase/night/wait')
-const { maybeEndNightTurnOnCompletion } = require('../phase/night/turn')
+const { reevaluateNightWait, nightWaitRoutingFor } = require('../phase/night/wait')
+const { maybeEndNightTurn } = require('../phase/night/turn')
 const { finalizeNightForSession } = require('../phase/night/finalize')
 
 // 밤 행동 제출 ack (판 id는 core가 돌려준 진짜 id만 찍음)
@@ -34,7 +34,7 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
     const { gameId, targetId } = fields
 
     // 턴 사이 연출 대기 중이면 core 부르기 전에 끊음 (다음 역할 제출이 미리 받아지는 것 막기, 지도 05-⑥)
-    if (presentationWaitRoutingFor(uuid, gameId)) {
+    if (nightWaitRoutingFor(uuid, gameId)) {
         ack(rejectedReply('ACTIONS_PENDING'))
         return
     }
@@ -50,7 +50,7 @@ function handleSubmitNightAction(socket, uuid, payload, callback) {
     ack({ ok: true }, result.gameId)
 
     isolate('[밤 턴 종료 처리 에러]', { code: 'TURN_ADVANCE_ERROR', uuid, gameId: result.gameId },
-        () => maybeEndNightTurnOnCompletion(result.gameId))
+        () => maybeEndNightTurn(result.gameId))
 }
 
 // '밤 종료' 버튼 ack
@@ -68,14 +68,14 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
     const { gameId } = fields
 
     // 연출 대기 중이면 prepare 전에 끊음 (지도 06-⑤)
-    const waitingRouting = presentationWaitRoutingFor(uuid, gameId)
+    const waitingRouting = nightWaitRoutingFor(uuid, gameId)
     if (waitingRouting) {
         ack(rejectedReply('ACTIONS_PENDING'), waitingRouting.gameId)
         return
     }
 
     const prepared = acceptCoreResult(ack, () => prepare(uuid, gameId),
-        prepareLogs('[밤 행동 판정 오류]', uuid, RESOLVE_INTERNAL_ONLY_CODES))
+        prepareLogs('[밤 행동 판정 오류]', uuid, RESOLVE_INTERNAL_CODES))
     if (!prepared) return
 
     // 관문이 답하면 그 답, 관문이 답 없이 끝나면 (이미 판정됨 등) 여기서 답함 (지도 06-⑨)
@@ -93,7 +93,7 @@ function handleResolveNight(io, socket, uuid, payload, callback, deps = {}) {
 }
 
 // 밤 성공 연출 완료 신호: 내 수신 기록을 완료로 바꾸고 연출 기다림 다시 봄 (callback 없어도 처리)
-function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback) {
+function handleAckNightSuccess(io, socket, uuid, payload, callback) {
     const reply = typeof callback === 'function' ? (result) => respond(callback, result) : () => {}
 
     const request = readNightSuccessAck(payload)
@@ -104,7 +104,7 @@ function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback
 
     const found = findNightSuccessRecord(io, socket, uuid, request)
     if (found.code) {
-        reply({ ok: false, code: found.code, message: NIGHT_SUCCESS_REJECT_MESSAGES[found.code] })
+        reply({ ok: false, code: found.code, message: NIGHT_REJECT_MESSAGES[found.code] })
         return
     }
     const { session, record } = found
@@ -122,12 +122,12 @@ function handleAcknowledgeNightActionSuccess(io, socket, uuid, payload, callback
     const run = nightTurnRuns.get(session.id)
     if (run && run.wait && run.wait.waiting && run.wait.waiting.has(request.eventId)) {
         isolate('[밤 성공 완료 처리 오류]', { code: 'WAIT_REEVALUATE_ERROR', gameId: session.id },
-            () => reevaluateNightPresentationWait(run, run.wait))
+            () => reevaluateNightWait(run, run.wait))
     }
 }
 
 module.exports = {
     handleSubmitNightAction,
     handleResolveNight,
-    handleAcknowledgeNightActionSuccess,
+    handleAckNightSuccess,
 }

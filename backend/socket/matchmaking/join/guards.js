@@ -13,7 +13,7 @@ function emitRoomJoinFailed(socket, code, message, details = {}) {
 const ALREADY_IN_GAME_MESSAGE = '진행 중인 게임이 있습니다. 게임을 끝내거나 나간 뒤에 다시 시도해주세요.'
 
 // 진행 중 게임에 있으면 거절
-function rejectIfInActiveGame(uuid, respond) {
+function rejectIfInGame(uuid, respond) {
     if (!gameSession.isParticipantBlockedFromMatchmaking(uuid)) return false
     const routing = gameSession.getActiveSessionRoutingInfo(uuid)
     if (!routing) return false
@@ -26,7 +26,7 @@ function rejectIfInActiveGame(uuid, respond) {
 }
 
 // 코드 입장 요청에 허용하는 키
-const JOIN_ROOM_BY_CODE_TOP_LEVEL_KEYS = Object.freeze(['roomCode', 'roomId'])
+const JOIN_BY_CODE_KEYS = Object.freeze(['roomCode', 'roomId'])
 
 // 요청 모양 틀렸을 때 문구
 const JOIN_REQUEST_INVALID_MESSAGE = '잘못된 참가 요청입니다. 방 코드로는 일반 참가만 할 수 있습니다.'
@@ -41,7 +41,7 @@ function validateJoinRoomByCodeRequest(payload) {
         }
     }
     for (const key of Object.keys(payload)) {
-        if (!JOIN_ROOM_BY_CODE_TOP_LEVEL_KEYS.includes(key)) {
+        if (!JOIN_BY_CODE_KEYS.includes(key)) {
             return {
                 ok: false,
                 code: ROOM_JOIN_ERROR_CODES.INVALID_REQUEST,
@@ -62,7 +62,7 @@ function validateJoinRoomByCodeRequest(payload) {
 }
 
 // "이미 시작" vs "이미 끝남" 실패 이유 고르기
-function describeStartedRoomJoinFailure(phase) {
+function describeJoinFailure(phase) {
     if (phase === 'ENDED') {
         return [ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.']
     }
@@ -78,10 +78,10 @@ function isRoomCodeReserved(code) {
 module.exports = {
     emitRoomJoinFailed,
     ALREADY_IN_GAME_MESSAGE,
-    rejectIfInActiveGame,
-    JOIN_ROOM_BY_CODE_TOP_LEVEL_KEYS,
+    rejectIfInGame,
+    JOIN_BY_CODE_KEYS,
     JOIN_REQUEST_INVALID_MESSAGE,
     validateJoinRoomByCodeRequest,
-    describeStartedRoomJoinFailure,
+    describeJoinFailure,
     isRoomCodeReserved,
 }

@@ -2,15 +2,15 @@
 // 명단에 넣은 입장 시도 되돌리기·늦게 붙은 소켓 정리 + 방 초대 취소 (지도 23)
 const channelMembership = require('../../channelMembership')
 const { gameRooms, publishedAdmissions, playerRoom, roomAdmissionAttempts } = require('../core/state')
-const { releasePublishedAdmission } = require('./attempts')
-const { isAccountSeatedInRoom, detachSocketFromChannel, isCanonicalSocketForAccount, hasRoomMembership, hasLiveGameMembership, isRoomOwnedByAnotherSocket } = require('../room/membership')
-const { forgetSettingsUpdateResultsForRoom, getSettingsVersion } = require('../settings/receipts')
+const { releasePublished } = require('./attempts')
+const { isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership, isOwnedByOtherSocket } = require('../room/membership')
+const { forgetSettingsResults, getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('../room/view')
 const { BOOT_EPOCH } = require('../core/constants')
 const { deps } = require('../core/deps')
 
 // 명단에 넣었던 입장 시도 되돌리기 (내가 넣은 것일 때만, 방 사람들한테 알림)
-function removePublishedAdmission(io, socket, attempt) {
+function removePublished(io, socket, attempt) {
     if (!attempt || attempt.phase !== 'published') return
     const room = gameRooms.get(attempt.roomId)
 
@@ -23,18 +23,18 @@ function removePublishedAdmission(io, socket, attempt) {
         && (attempt.publicationMembershipId === undefined
             || seatedMembershipId === attempt.publicationMembershipId)
     if (stillMine) {
-        releasePublishedAdmission(attempt)
+        releasePublished(attempt)
         room.players.delete(attempt.accountUuid)
         playerRoom.delete(attempt.accountUuid)
     }
 
-    const accountStillSeated = isAccountSeatedInRoom(attempt.accountUuid, attempt.roomId)
+    const accountStillSeated = isSeatedInRoom(attempt.accountUuid, attempt.roomId)
     if (socket && typeof socket.leave === 'function' && socket.id === attempt.socketId
         && (stillMine || !accountStillSeated)) {
         detachSocketFromChannel(socket, attempt.roomId, '[초대 입장 채널 정리 실패]', {
             ownsChannel: () =>
-                isAccountSeatedInRoom(attempt.accountUuid, attempt.roomId)
-                && isCanonicalSocketForAccount(io, attempt.accountUuid, socket, attempt.roomId),
+                isSeatedInRoom(attempt.accountUuid, attempt.roomId)
+                && isCanonicalSocket(io, attempt.accountUuid, socket, attempt.roomId),
             keepsConnection: () =>
                 hasRoomMembership(attempt.accountUuid) || hasLiveGameMembership(attempt.accountUuid),
         })
@@ -42,7 +42,7 @@ function removePublishedAdmission(io, socket, attempt) {
     if (!stillMine || !room) return
     if (room.players.size === 0) {
         gameRooms.delete(attempt.roomId)
-        forgetSettingsUpdateResultsForRoom(attempt.roomId)
+        forgetSettingsResults(attempt.roomId)
         emitPublicRoomList(io)
         return
     }
@@ -81,12 +81,12 @@ function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise)
         const leaveNow = () => {
             detachSocketFromChannel(socket, roomId, '[늦은 초대 채널 정리 실패]', {
                 ownsChannel: () =>
-                    isAccountSeatedInRoom(uuid, roomId)
-                    && isCanonicalSocketForAccount(io, uuid, socket, roomId),
+                    isSeatedInRoom(uuid, roomId)
+                    && isCanonicalSocket(io, uuid, socket, roomId),
                 keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
             })
         }
-        if (isRoomOwnedByAnotherSocket(io, roomId, uuid, socket)) { leaveNow(); return }
+        if (isOwnedByOtherSocket(io, roomId, uuid, socket)) { leaveNow(); return }
         if (playerRoom.get(uuid) === roomId) return
         const current = roomAdmissionAttempts.get(uuid)
         if (current && current !== attempt && current.roomId === roomId && current.socketId === socket.id) return
@@ -95,14 +95,14 @@ function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise)
 }
 
 // 방이 없어지거나 시작되면 그 방 초대 전부 취소 (실패해도 무시)
-function cancelInvitesForRoomAsync(roomId, reason) {
+function cancelRoomInvitesAsync(roomId, reason) {
     Promise.resolve()
         .then(() => deps.gameInviteService.cancelPendingInvitesForRoom(roomId, reason))
         .catch((err) => console.error('[방 소멸 초대 정리 실패]', err))
 }
 
 module.exports = {
-    removePublishedAdmission,
+    removePublished,
     scheduleLateJoinCleanup,
-    cancelInvitesForRoomAsync,
+    cancelRoomInvitesAsync,
 }

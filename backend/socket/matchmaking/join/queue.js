@@ -2,22 +2,22 @@
 // 자동 매칭 줄 서기 + 줄에서 빠지기 (지도 10)
 const kickReceiptStore = require('../../kickReceiptStore')
 const crypto = require('crypto')
-const { rejectIfInActiveGame, emitRoomJoinFailed } = require('./guards')
-const { isRandomMatchmakingEnabled, getMinPlayers, getSupportedRoomSizes } = require('../core/config')
+const { rejectIfInGame, emitRoomJoinFailed } = require('./guards')
+const { isRandomMatchEnabled, getMinPlayers, getSupportedRoomSizes } = require('../core/config')
 const { playerRoom, matchmakingQueue, gameRooms } = require('../core/state')
 const { getAdmissionAttempt } = require('../admission/attempts')
-const { getRoomTransitionGeneration, acquireRoomTransition, releaseRoomTransition } = require('./transition')
+const { getGeneration, acquireRoomTransition, releaseRoomTransition } = require('./transition')
 const { deps } = require('../core/deps')
 const { generateRoomCode } = require('../../../utils/roomCode')
 const { buildRoomPayload } = require('../room/view')
 
 // 자동 매칭 줄 서기, 인원 차면 방 만들어 넣음 (게임 중·방 안이면 거절)
 async function handleJoinMatchmaking(io, socket, uuid) {
-    if (rejectIfInActiveGame(uuid, ({ code, message, gameId }) =>
+    if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
     )) return
 
-    if (!isRandomMatchmakingEnabled()) {
+    if (!isRandomMatchEnabled()) {
         socket.emit('matchmaking_disabled', { message: '현재 빠른 매칭은 지원하지 않습니다.' })
         return
     }
@@ -25,7 +25,7 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     if (playerRoom.has(uuid)) return
     if (getAdmissionAttempt(uuid)) return
 
-    const generationAtRequest = getRoomTransitionGeneration(uuid)
+    const generationAtRequest = getGeneration(uuid)
     const transitionToken = acquireRoomTransition(uuid)
     if (transitionToken === null) return
 
@@ -36,7 +36,7 @@ async function handleJoinMatchmaking(io, socket, uuid) {
         releaseRoomTransition(uuid, transitionToken)
     }
     if (!user) return
-    if (getRoomTransitionGeneration(uuid) !== generationAtRequest) return
+    if (getGeneration(uuid) !== generationAtRequest) return
     if (playerRoom.has(uuid) || getAdmissionAttempt(uuid)) return
 
     matchmakingQueue.set(uuid, { uuid, nickname: user.nickname, socketId: socket.id, generation: generationAtRequest })
@@ -45,7 +45,7 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     if (matchmakingQueue.size < getMinPlayers()) return
 
     const queuedPlayers = [...matchmakingQueue.values()].filter(
-        (entry) => getRoomTransitionGeneration(entry.uuid) === entry.generation
+        (entry) => getGeneration(entry.uuid) === entry.generation
     )
     const roomSize = getSupportedRoomSizes().find((size) => queuedPlayers.length >= size)
     if (!roomSize) return

@@ -4,7 +4,7 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const gameAchievementService = require('../../../services/game/achievementHooks')
 const { isolate, tryOr } = require('../../common/isolate')
 const { respond, labeledResponder } = require('../../common/replies')
-const { RESOLVE_INTERNAL_ONLY_CODES } = require('../core/constants')
+const { RESOLVE_INTERNAL_CODES } = require('../core/constants')
 const {
     pickGameTarget,
     pickGameDay,
@@ -15,16 +15,16 @@ const {
     commitLogs,
 } = require('../core/requests')
 const {
-    resolveSessionParticipantSockets,
-    resolveRecipientsOrEmpty,
+    resolveSessionSockets,
+    resolveOrEmpty,
     emitToEachEligible,
 } = require('../delivery/broadcast')
-const { emitOwnProgressAfterSubmit } = require('../delivery/progress')
+const { emitProgressAfterSubmit } = require('../delivery/progress')
 const { syncSessionPhaseTimers } = require('../phase/day')
-const { resolveAfterDepartureOnSubmit } = require('../departure/autoResolve')
+const { resolveAfterDeparture } = require('../departure/autoResolve')
 
 // 낮 투표 제출 효과음 (기록 없거나 읽다 던지면 null, 효과음 없이 답함)
-function buildDayVoteSubmitSfxEvent(uuid, gameId) {
+function buildDayVoteSfx(uuid, gameId) {
     const record = tryOr(null, () => gameSessionCore.readDayVoteSubmitSfxEvent(uuid, gameId))
     if (record === null) return null
     return {
@@ -51,14 +51,14 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
         registryLogs('[낮 투표 제출 처리 에러]', '[낮 투표 제출 registry 불일치]', uuid, gameId))
     if (!result) return
 
-    const sfxEvent = buildDayVoteSubmitSfxEvent(uuid, gameId)
+    const sfxEvent = buildDayVoteSfx(uuid, gameId)
 
     // 내 진행 상태 → ack → 이탈로 남은 사람 다 냈으면 바로 판정 (순서 고정)
     const ackThenResolve = (ackPayload) => {
-        emitOwnProgressAfterSubmit(io, uuid, gameId, 'SELF_PROGRESS_AFTER_SUBMIT')
+        emitProgressAfterSubmit(io, uuid, gameId, 'SELF_PROGRESS_AFTER_SUBMIT')
         ack(ackPayload)
         isolate('[이탈 후 낮 투표 판정 실패]', { code: 'SUBMIT_RESOLVE_ERROR', gameId },
-            () => resolveAfterDepartureOnSubmit(io, uuid, gameId))
+            () => resolveAfterDeparture(io, uuid, gameId))
     }
 
     // 기권이거나 재투표 라운드면 참여 기록 없이 바로 답
@@ -93,7 +93,7 @@ const respondResolveDayVote = labeledResponder('[낮 투표 판정 오류]')
 function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
     const prepare = deps.prepare ?? gameSessionCore.prepareDayVoteResolution
     const commit = deps.commit ?? gameSessionCore.commitDayVoteResolution
-    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionParticipantSockets
+    const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionSockets
 
     if (typeof callback !== 'function') return
     const ack = (body, gameId) => respondResolveDayVote(uuid, gameId, callback, body)
@@ -104,7 +104,7 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
     const label = '[낮 투표 판정 오류]'
 
     const prepared = acceptCoreResult(ack, () => prepare(uuid, gameId, dayIndex),
-        prepareLogs(label, uuid, RESOLVE_INTERNAL_ONLY_CODES))
+        prepareLogs(label, uuid, RESOLVE_INTERNAL_CODES))
     if (!prepared) return
 
     const ackInSession = (body) => ack(body, prepared.session.id)
@@ -131,7 +131,7 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
 
     // 받는 사람 먼저 모으고 결과 방송, 그다음 단계 타이머
     const fieldsInSession = { uuid, gameId: prepared.session.id }
-    const recipients = resolveRecipientsOrEmpty(io, prepared.session, label, fieldsInSession, resolveParticipantSockets)
+    const recipients = resolveOrEmpty(io, prepared.session, label, fieldsInSession, resolveParticipantSockets)
     const dayVoteResolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
     emitToEachEligible(prepared.session, recipients, label, fieldsInSession,
         (recipientSocket) => recipientSocket.emit('day_vote_resolved', dayVoteResolvedPayload))

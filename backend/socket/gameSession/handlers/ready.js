@@ -5,7 +5,7 @@ const { isolate, isolateWithError } = require('../../common/isolate')
 const { respond } = require('../../common/replies')
 const { pickGameId, acceptRequest, acceptCoreResult, registryLogs } = require('../core/requests')
 const { emitToGameChannel } = require('../delivery/broadcast')
-const { emitSelfSubmissionProgress } = require('../delivery/progress')
+const { emitSelfProgress } = require('../delivery/progress')
 const { startDayPhaseTimer } = require('../phase/day')
 
 // 역할 확인 요청: 다 확인하면 낮으로 넘기고 낮 타이머 시작
@@ -51,7 +51,7 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
 
     // 내 준비 상태는 나한테만 먼저 알림
     isolate('[개인 진행 상태 전송 실패]', { code: 'SELF_PROGRESS_AFTER_READY', gameId },
-        () => emitSelfSubmissionProgress(io, result.session, uuid))
+        () => emitSelfProgress(io, result.session, uuid))
 
     ack({ ok: true, readyCount: result.readyCount, requiredCount: result.requiredCount })
 

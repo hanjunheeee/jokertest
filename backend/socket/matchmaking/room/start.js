@@ -2,20 +2,20 @@
 // 방장 게임 시작 요청 + 시작 직전 프로필 잡기 (지도 02)
 const gameSession = require('../../../game-core/gameSession')
 const { playerRoom, gameRooms } = require('../core/state')
-const { getSettingsVersion, forgetSettingsUpdateResultsForRoom } = require('../settings/receipts')
+const { getSettingsVersion, forgetSettingsResults } = require('../settings/receipts')
 const { deps } = require('../core/deps')
 const { BOOT_EPOCH } = require('../core/constants')
 const { ROOM_SETTINGS_ERROR_CODES } = require('../../../validations/room/updateSettings')
 const { getMinPlayers } = require('../core/config')
 const { resolveRoleComposition } = require('../../../game-core/roleComposition')
-const { hasPendingAdmissionForRoom, invalidateAdmissionAttemptsForRoom } = require('../admission/attempts')
+const { hasPendingAdmission, invalidateRoomAttempts } = require('../admission/attempts')
 const { resolveParticipantSockets } = require('./membership')
-const { cancelInvitesForRoomAsync } = require('../admission/release')
+const { cancelRoomInvitesAsync } = require('../admission/release')
 const { rememberStartedRoom } = require('../join/startedMarks')
 const { emitPublicRoomList } = require('./view')
 
 // 기다리는 사이 방·방장·인원·준비가 그대로인지
-function isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVersionAtCapture) {
+function isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture) {
     if (room.hostUuid !== hostUuid) return false
     if (room.players.size !== playersAtCapture.size) return false
     for (const [u, player] of playersAtCapture) {
@@ -24,14 +24,14 @@ function isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVers
         if (player.membershipId !== room.players.get(u)?.membershipId) return false
         if (player.isReady !== true) return false
     }
-    if (settingsVersionAtCapture !== undefined && settingsVersionAtCapture !== getSettingsVersion(room)) {
+    if (versionAtCapture !== undefined && versionAtCapture !== getSettingsVersion(room)) {
         return false
     }
     return true
 }
 
 // 시작 직전 참가자 프로필 읽기 (그사이 방 바뀌면 멈춤)
-async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settingsVersionAtCapture) {
+async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtCapture) {
     const uuids = [...playersAtCapture.keys()]
     const [loadouts, recordSummaries, emojiPaletteEntries] = await Promise.all([
         deps.economyService.getGameStartLoadouts(uuids),
@@ -54,7 +54,7 @@ async function captureRoomStartProfiles(room, hostUuid, playersAtCapture, settin
             }))),
     ])
 
-    if (!isStartRequestStillValid(room, hostUuid, playersAtCapture, settingsVersionAtCapture)) {
+    if (!isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture)) {
         return { ok: false, code: 'ROOM_STATE_CHANGED' }
     }
 
@@ -172,7 +172,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         })
         return
     }
-    if (hasPendingAdmissionForRoom(roomId)) {
+    if (hasPendingAdmission(roomId)) {
         callback({
             ok: false,
             code: 'ADMISSION_IN_PROGRESS',
@@ -181,11 +181,11 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         return
     }
 
-    const settingsVersionAtRequest = expectedSettingsVersion
+    const versionAtRequest = expectedSettingsVersion
     const playersAtCapture = new Map(players.map((player) => [player.uuid, player]))
     let captured
     try {
-        captured = await captureRoomStartProfiles(room, uuid, playersAtCapture, settingsVersionAtRequest)
+        captured = await captureStartProfiles(room, uuid, playersAtCapture, versionAtRequest)
     } catch (err) {
         console.error('[게임 시작 계정 외형 조회 에러]', err)
         callback({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
@@ -217,11 +217,11 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         })
         return
     }
-    if (!isStartRequestStillValid(room, uuid, playersAtCapture, expectedSettingsVersion)) {
+    if (!isStartStillValid(room, uuid, playersAtCapture, expectedSettingsVersion)) {
         callback({ ok: false, code: 'ROOM_STATE_CHANGED', message: '방 상태가 바뀌어 게임을 시작하지 못했습니다. 다시 시도해주세요.' })
         return
     }
-    if (hasPendingAdmissionForRoom(roomId)) {
+    if (hasPendingAdmission(roomId)) {
         callback({
             ok: false,
             code: 'ADMISSION_IN_PROGRESS',
@@ -288,9 +288,9 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         prepared.session.emojiRateLimit = new Map()
         room.players.forEach((_, u) => playerRoom.delete(u))
         gameRooms.delete(roomId)
-        invalidateAdmissionAttemptsForRoom(roomId, 'ROOM_STARTED')
-        forgetSettingsUpdateResultsForRoom(roomId)
-        cancelInvitesForRoomAsync(roomId, 'ROOM_STARTED')
+        invalidateRoomAttempts(roomId, 'ROOM_STARTED')
+        forgetSettingsResults(roomId)
+        cancelRoomInvitesAsync(roomId, 'ROOM_STARTED')
         rememberStartedRoom(room)
     } catch (err) {
         console.error('[GameSession commit 에러 — 상태가 부분 반영됐을 수 있음]', err)
@@ -320,7 +320,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
 }
 
 module.exports = {
-    isStartRequestStillValid,
-    captureRoomStartProfiles,
+    isStartStillValid,
+    captureStartProfiles,
     handleStartGame,
 }

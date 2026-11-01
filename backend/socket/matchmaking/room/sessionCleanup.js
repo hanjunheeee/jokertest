@@ -1,22 +1,22 @@
 // 게임 시작·끝 정리 파일
 // 판 참가자들의 대기방·줄·입장 시도 정리, socket gameSession이 부름 (지도 02·07)
 const channelMembership = require('../../channelMembership')
-const { bumpRoomTransitionGeneration } = require('../join/transition')
-const { invalidateAdmissionAttempt, compensateInvalidatedAttempt } = require('../admission/attempts')
-const { removePublishedAdmission } = require('../admission/release')
+const { bumpGeneration } = require('../join/transition')
+const { invalidateAttempt, compensateAttempt } = require('../admission/attempts')
+const { removePublished } = require('../admission/release')
 const { matchmakingQueue, playerRoom, gameRooms } = require('../core/state')
-const { forgetSettingsUpdateResultsForRoom, getSettingsVersion } = require('../settings/receipts')
+const { forgetSettingsResults, getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('./view')
 const { BOOT_EPOCH } = require('../core/constants')
 
 // 판 참가자 정리: 줄에서 빼고, 남은 대기방 소속·입장 시도 지우고, 세대 번호 올림
 function cleanupRoomStateForSessionParticipants(io, uuids) {
     for (const uuid of uuids) {
-        bumpRoomTransitionGeneration(uuid)
-        const attempt = invalidateAdmissionAttempt(uuid, 'SESSION_ENDED')
+        bumpGeneration(uuid)
+        const attempt = invalidateAttempt(uuid, 'SESSION_ENDED')
         if (attempt) {
-            removePublishedAdmission(io, null, attempt)
-            compensateInvalidatedAttempt(attempt, 'SESSION_ENDED')
+            removePublished(io, null, attempt)
+            compensateAttempt(attempt, 'SESSION_ENDED')
         }
     }
 
@@ -57,10 +57,10 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
         }
     }
 
-    const removedUuidsByRoomId = new Map()
+    const removedUuidsByRoom = new Map()
     for (const entry of affected) {
-        if (!removedUuidsByRoomId.has(entry.roomId)) removedUuidsByRoomId.set(entry.roomId, [])
-        removedUuidsByRoomId.get(entry.roomId).push(entry.uuid)
+        if (!removedUuidsByRoom.has(entry.roomId)) removedUuidsByRoom.set(entry.roomId, [])
+        removedUuidsByRoom.get(entry.roomId).push(entry.uuid)
     }
 
     const processedRoomIds = new Set()
@@ -72,7 +72,7 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
         try {
             if (room.players.size === 0) {
                 gameRooms.delete(entry.roomId)
-                forgetSettingsUpdateResultsForRoom(entry.roomId)
+                forgetSettingsResults(entry.roomId)
                 emitPublicRoomList(io)
                 continue
             }
@@ -91,7 +91,7 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
             console.error('[세션 종료 Room 정리 실패]', err)
         }
 
-        for (const removedUuid of removedUuidsByRoomId.get(entry.roomId) ?? []) {
+        for (const removedUuid of removedUuidsByRoom.get(entry.roomId) ?? []) {
             try {
                 channelMembership.emitToChannel(io, entry.roomId, 'player_left_room', {
                     uuid: removedUuid,

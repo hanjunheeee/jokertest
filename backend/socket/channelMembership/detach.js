@@ -1,7 +1,7 @@
 // 채널 떼기 파일
 // leave 실패면 재시도·제외로 막고, 떼는 사이 채널을 다시 가졌으면 되찾기, socket gameSession·matchmaking이 씀
 const { tryOr } = require('../common/isolate')
-const { MAX_CHANNEL_LEAVE_ATTEMPTS, MAX_CHANNEL_RESTORE_DEPTH } = require('./constants')
+const { MAX_CHANNEL_LEAVE_ATTEMPTS, MAX_RESTORE_DEPTH } = require('./constants')
 const {
     createChannelExclusionOwner,
     excludeSocketFromChannel,
@@ -54,7 +54,7 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
             release()
             return
         }
-        if (depth >= MAX_CHANNEL_RESTORE_DEPTH) {
+        if (depth >= MAX_RESTORE_DEPTH) {
             finishReconcile()
             return
         }

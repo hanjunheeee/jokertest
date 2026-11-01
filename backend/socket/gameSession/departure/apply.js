@@ -7,12 +7,12 @@ const { NIGHT_TURN_STAGES } = require('../core/constants')
 const { nightTurnRuns } = require('../core/state')
 const { cancelDisconnectGrace } = require('../connection/grace')
 const { emitToGameChannel } = require('../delivery/broadcast')
-const { emitSelfSubmissionProgress } = require('../delivery/progress')
-const { reevaluateNightPresentationWait } = require('../phase/night/wait')
-const { maybeEndNightTurnOnCompletion } = require('../phase/night/turn')
+const { emitSelfProgress } = require('../delivery/progress')
+const { reevaluateNightWait } = require('../phase/night/wait')
+const { maybeEndNightTurn } = require('../phase/night/turn')
 const { startDayPhaseTimer, syncSessionPhaseTimers } = require('../phase/day')
-const { markDepartureResolvePending, clearDepartureResolveMark } = require('./marks')
-const { maybeResolveDayVoteAfterDeparture, maybeResolveTribunalVoteAfterDeparture } = require('./autoResolve')
+const { markDeparturePending, clearDepartureMark } = require('./marks')
+const { maybeResolveDayVote, maybeResolveTribunal } = require('./autoResolve')
 
 // 참가자 이탈 반영: core 커밋 뒤 단계는 하나씩 격리, 커밋은 되돌리지 않음 (지도 12-⑦⑧⑨⑩)
 function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LEFT', onCommitted = null } = {}) {
@@ -32,7 +32,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
 
     if (typeof onCommitted === 'function') step('COMMIT_HOOK_ERROR', () => onCommitted(applied))
 
-    if (!applied.terminal) markDepartureResolvePending(session)
+    if (!applied.terminal) markDeparturePending(session)
 
     // 끊김 유예 중이었으면 같이 끝냄 (유예 타이머가 두 번째 사망 시도 못 하게, 지도 12-⑦)
     step('GRACE_CANCEL_ERROR', () => cancelDisconnectGrace(session.id, uuid))
@@ -65,7 +65,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     }
 
     // 기권 처리된 표는 각자에게만 (누가 누굴 찍었는지 안 새게)
-    emitSelfSubmissionProgress(io, session)
+    emitSelfProgress(io, session)
 
     if (applied.tribunalCancelled) {
         step('TRIBUNAL_CANCEL_ERROR',
@@ -74,18 +74,18 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
 
     // 승부 났으면 전적 저장은 시작만 하고 타이머 정리 (지도 12-⑩)
     if (applied.terminal) {
-        clearDepartureResolveMark(session.id)
+        clearDepartureMark(session.id)
         persistTerminalSession(session, { completed: true })
         step('TIMER_SYNC_ERROR', () => syncSessionPhaseTimers(io, session))
         return applied
     }
 
-    advancePhaseAfterDeparture(io, session, applied)
+    advanceAfterDeparture(io, session, applied)
     return applied
 }
 
 // 이탈로 막혀 있던 단계 풀기: 다 확인·준비됐으면 다음 단계로, 남은 사람 다 냈으면 바로 판정
-function advancePhaseAfterDeparture(io, session, applied) {
+function advanceAfterDeparture(io, session, applied) {
     const label = '[이탈 후 단계 진행 실패]'
     const step = (code, run) => isolate(label, { code, gameId: session.id }, run)
 
@@ -112,12 +112,12 @@ function advancePhaseAfterDeparture(io, session, applied) {
     }
 
     if (session.phase === 'DAY' && gameSessionCore.getDayPhase(session) === gameSessionCore.DAY_PHASES.VOTE) {
-        step('DAY_VOTE_RESOLVE_ERROR', () => maybeResolveDayVoteAfterDeparture(io, session))
+        step('DAY_VOTE_RESOLVE_ERROR', () => maybeResolveDayVote(io, session))
         return
     }
 
     if (session.phase === 'TRIBUNAL') {
-        step('TRIBUNAL_RESOLVE_ERROR', () => maybeResolveTribunalVoteAfterDeparture(io, session))
+        step('TRIBUNAL_RESOLVE_ERROR', () => maybeResolveTribunal(io, session))
         return
     }
 
@@ -125,10 +125,10 @@ function advancePhaseAfterDeparture(io, session, applied) {
     if (session.phase === 'NIGHT') {
         const run = nightTurnRuns.get(session.id)
         if (run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT && run.wait) {
-            step('WAIT_REEVALUATE_ERROR', () => reevaluateNightPresentationWait(run, run.wait))
+            step('WAIT_REEVALUATE_ERROR', () => reevaluateNightWait(run, run.wait))
             return
         }
-        step('TURN_COMPLETION_ERROR', () => maybeEndNightTurnOnCompletion(session.id))
+        step('TURN_COMPLETION_ERROR', () => maybeEndNightTurn(session.id))
     }
 }
 

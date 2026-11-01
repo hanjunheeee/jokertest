@@ -4,7 +4,7 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { dayPhaseRuns } = require('../core/state')
 const { pickTimerFns, clearRunTimer, fillAbstentions } = require('../core/timers')
-const { expireDisconnectGracesAtPhaseBoundary } = require('../connection/grace')
+const { expireGracesAtBoundary } = require('../connection/grace')
 const { emitToGameChannel, deliverToParticipants } = require('../delivery/broadcast')
 const { startNightTurnSequence, stopNightTurnSequence } = require('./night/turn')
 
@@ -15,7 +15,7 @@ function emitDayPhaseEvent(run, event, payload) {
 }
 
 // 판이 타이머 걸 때 적어 둔 낮·날짜·단계·라운드 그대로인지
-function matchesScheduledDayState(run) {
+function matchesDayState(run) {
     const { session } = run
     if (session.phase !== 'DAY') return false
     if (session.dayIndex !== run.scheduledFor.dayIndex) return false
@@ -26,7 +26,7 @@ function matchesScheduledDayState(run) {
 // 이 낮 타이머가 아직 그 판의 run이고 걸어 둔 그 단계·라운드 그대로인지 (늦은 타이머 거르기, 지도 04-⑥)
 function isLiveDayRun(run) {
     if (dayPhaseRuns.get(run.session.id) !== run) return false
-    return matchesScheduledDayState(run)
+    return matchesDayState(run)
 }
 
 // 타이머 쪽 core 호출: 던지거나 실패하면 로그만 찍고 null (답할 사람이 없음)
@@ -64,7 +64,7 @@ function scheduleDayPhaseTimer(run) {
     }
     run.deadline = run.nowFn() + durationMs
     run.timerId = run.setTimeoutFn(
-        isVote ? () => expireDayVoteWithAbstentions(run) : () => expireDayDiscussion(run),
+        isVote ? () => expireDayVote(run) : () => expireDayDiscussion(run),
         durationMs,
     )
 }
@@ -83,7 +83,7 @@ function expireDayDiscussion(run) {
 }
 
 // 투표 마감: 안 낸 사람 기권으로 채우고 판정·방송, 다음 단계 타이머로 (지도 04-⑥)
-function expireDayVoteWithAbstentions(run) {
+function expireDayVote(run) {
     const { session } = run
     if (!isLiveDayRun(run)) return
 
@@ -119,7 +119,7 @@ function expireDayVoteWithAbstentions(run) {
 // 낮 타이머 시작: 판마다 run 하나 (토론·투표 길이는 방 설정, 없으면 기본값)
 function startDayPhaseTimer(io, session, deps = {}) {
     if (!session) return null
-    expireDisconnectGracesAtPhaseBoundary(session)
+    expireGracesAtBoundary(session)
     if (session.phase !== 'DAY') {
         stopDayPhaseTimer(session.id)
         return null
@@ -161,7 +161,7 @@ function stopDayPhaseTimer(gameId) {
 // 판 단계에 맞게 타이머 맞추기: 낮이면 낮 타이머만, 밤이면 밤 턴만, 그 밖엔 둘 다 끔
 function syncSessionPhaseTimers(io, session) {
     if (!session) return null
-    expireDisconnectGracesAtPhaseBoundary(session)
+    expireGracesAtBoundary(session)
 
     if (session.phase === 'DAY') {
         stopNightTurnSequence(session.id)

@@ -11,7 +11,7 @@ function buildSkipSet(socketIds, senderSocket) {
 }
 
 // 채널 멤버 소켓마다 직접 보냄 (건너뛸 것·재검사 탈락은 뺌), 소켓 목록 없으면 false
-function emitToChannelMembersIndividually(io, channelId, event, payload, skipSocketIds, recipientFilter = null) {
+function emitToEachMember(io, channelId, event, payload, skipSocketIds, recipientFilter = null) {
     const registry = io?.sockets?.sockets
     if (!registry || typeof registry.values !== 'function') return false
     for (const member of [...registry.values()]) {
@@ -52,7 +52,7 @@ function emitToChannel(io, channelId, event, payload, options = null) {
         // 받을 사람 재검사가 있으면 소켓마다 직접 보냄 (못 하면 방송 폐기)
         if (recipientFilter) {
             const skipSet = buildSkipSet([...denied, ...extra], senderSocket)
-            if (emitToChannelMembersIndividually(io, channelId, event, payload, skipSet, recipientFilter)) return
+            if (emitToEachMember(io, channelId, event, payload, skipSet, recipientFilter)) return
             console.error('[채널 전달 재검사 불가 · 방송 폐기]', {
                 code: 'CHANNEL_EMIT_DROPPED_FAIL_CLOSED', channelId, event, excluded: skipSet.size,
             })
@@ -77,7 +77,7 @@ function emitToChannel(io, channelId, event, payload, options = null) {
 
         // except가 없으면 소켓마다 직접 보내며 제외 (그것도 못 하면 방송 폐기)
         const skipSet = buildSkipSet(skip, senderSocket)
-        if (emitToChannelMembersIndividually(io, channelId, event, payload, skipSet)) {
+        if (emitToEachMember(io, channelId, event, payload, skipSet)) {
             console.error('[채널 전달 제외 우회]', {
                 code: 'CHANNEL_EXCLUDE_FALLBACK', channelId, event, excluded: skipSet.size,
             })

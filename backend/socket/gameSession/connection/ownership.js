@@ -10,14 +10,14 @@ const deps = {
 let registryGeneration = 0
 
 // 연결 때 검증한 소유 기록: 소켓별 + 계정별 최신 (disconnect 때 1회 소비)
-const connectionOwnershipBySocket = new WeakMap()
-const connectionOwnershipByUuid = new Map()
+const ownershipBySocket = new WeakMap()
+const ownershipByUuid = new Map()
 
 // 접속 목록 넣기, 세대 올리고 계정별 소유 기록 비움 (null이면 시험용 초기화)
 function setOnlineUsersRegistry(registry) {
     deps.onlineUsersRegistry = registry
     registryGeneration += 1
-    connectionOwnershipByUuid.clear()
+    ownershipByUuid.clear()
 }
 
 function getOnlineUsersRegistry() {
@@ -44,20 +44,20 @@ function namespaceRegistryFor(socket, io = null) {
 }
 
 // 소켓 id·계정 uuid가 둘 다 비지 않은 문자열인지
-function hasSocketIdAndUuid(socket, uuid) {
+function hasSocketAndUuid(socket, uuid) {
     if (!socket || typeof socket.id !== 'string' || socket.id.length === 0) return false
     return typeof uuid === 'string' && uuid.length > 0
 }
 
 // 인증된 계정이 그 uuid고 접속 목록도 있는지 (소유권 기록·끊김 판정 공통 앞단)
 function isOwnedIdentity(socket, uuid) {
-    if (!hasSocketIdAndUuid(socket, uuid)) return false
+    if (!hasSocketAndUuid(socket, uuid)) return false
     if (socket.data?.user?.uuid !== uuid) return false
     return hasOnlineUsersRegistry()
 }
 
 // 연결 때 소유 기록 남기기: 접속 목록·소켓 목록 둘 다 이 소켓일 때만
-function recordConnectionOwnership(io, socket, uuid) {
+function recordOwnership(io, socket, uuid) {
     if (!isOwnedIdentity(socket, uuid)) return null
     if (deps.onlineUsersRegistry.get(uuid) !== socket.id) return null
     const namespace = namespaceRegistryFor(socket, io)
@@ -70,8 +70,8 @@ function recordConnectionOwnership(io, socket, uuid) {
         registry: deps.onlineUsersRegistry,
         generation: registryGeneration,
     }
-    connectionOwnershipBySocket.set(socket, record)
-    connectionOwnershipByUuid.set(uuid, record)
+    ownershipBySocket.set(socket, record)
+    ownershipByUuid.set(uuid, record)
     return record
 }
 
@@ -87,27 +87,27 @@ function canProcessDisconnectFor(io, socket, uuid) {
     }
 
     // 이미 목록에서 빠졌으면 연결 때 남긴 소유 기록이 지금 세대·지금 접속 목록 그대로인지
-    const owned = connectionOwnershipBySocket.get(socket)
+    const owned = ownershipBySocket.get(socket)
     if (!owned) return false
     if (owned.socket !== socket || owned.socketId !== socket.id || owned.uuid !== uuid) return false
     if (owned.registry !== deps.onlineUsersRegistry || owned.generation !== registryGeneration) return false
-    if (connectionOwnershipByUuid.get(uuid) !== owned) return false
+    if (ownershipByUuid.get(uuid) !== owned) return false
     if (socket.connected !== false) return false
     if (deps.onlineUsersRegistry.get(uuid) !== owned.socketId) return false
     return true
 }
 
 // 소유 기록 1회 소비 (같은 끊김을 두 번 처리 못 하게)
-function consumeConnectionOwnership(socket, uuid) {
-    const owned = connectionOwnershipBySocket.get(socket)
+function consumeOwnership(socket, uuid) {
+    const owned = ownershipBySocket.get(socket)
     if (!owned) return
-    connectionOwnershipBySocket.delete(socket)
-    if (connectionOwnershipByUuid.get(uuid) === owned) connectionOwnershipByUuid.delete(uuid)
+    ownershipBySocket.delete(socket)
+    if (ownershipByUuid.get(uuid) === owned) ownershipByUuid.delete(uuid)
 }
 
 // 지금 그 계정에 등록된 바로 그 소켓인지 (아니면 STALE_SOCKET, 지도 05-①)
 function isCurrentSocketForUuid(uuid, socket, io = null) {
-    if (!hasSocketIdAndUuid(socket, uuid)) return false
+    if (!hasSocketAndUuid(socket, uuid)) return false
     if (socket.data?.user?.uuid !== undefined && socket.data.user.uuid !== uuid) return false
     if (!hasOnlineUsersRegistry()) return false
     if (deps.onlineUsersRegistry.get(uuid) !== socket.id) return false
@@ -135,9 +135,9 @@ module.exports = {
     getOnlineUsersRegistry,
     hasOnlineUsersRegistry,
     registeredSocketIdFor,
-    recordConnectionOwnership,
+    recordOwnership,
     canProcessDisconnectFor,
-    consumeConnectionOwnership,
+    consumeOwnership,
     isCurrentSocketForUuid,
     getSocketForUuid,
     isUuidConnected,

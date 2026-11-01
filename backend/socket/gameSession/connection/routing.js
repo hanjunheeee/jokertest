@@ -3,12 +3,12 @@
 const gameSessionCore = require('../../../game-core/gameSession')
 const { hasOnlineUsersRegistry, isCurrentSocketForUuid } = require('./ownership')
 const { cancelDisconnectGrace } = require('./grace')
-const { detachFromSessionChannel } = require('../delivery/broadcast')
+const { detachFromGameChannel } = require('../delivery/broadcast')
 
 // 판 채널 다시 넣기 작업: 소켓마다 진행 중 작업 하나 + activeGameId를 어느 작업이 썼는지 (늦은 작업이 덮어쓰지 않게)
 let sessionRoutingWorkSeq = 0
-const sessionRoutingWorkBySocket = new WeakMap()
-const activeGameIdOwnerBySocket = new WeakMap()
+const routingWorkBySocket = new WeakMap()
+const gameIdOwnerBySocket = new WeakMap()
 
 // 재접속·새로고침 때 판 채널 다시 넣기: 같은 범위 작업은 하나로 묶고, join 사이 바뀌었으면 되돌림 (지도 08-⑨)
 function resyncSessionRouting(socket, uuid) {
@@ -24,7 +24,7 @@ function resyncSessionRouting(socket, uuid) {
     const socketId = socket?.id ?? null
     const scopeKey = `${routing.gameId}\u0000${routing.channelId}\u0000${uuid}\u0000${socketId ?? ''}\u0000${membershipId ?? ''}`
 
-    const inFlight = sessionRoutingWorkBySocket.get(socket)
+    const inFlight = routingWorkBySocket.get(socket)
     if (inFlight && inFlight.scopeKey === scopeKey) return inFlight.promise
 
     sessionRoutingWorkSeq += 1
@@ -36,13 +36,13 @@ function resyncSessionRouting(socket, uuid) {
         cancelDisconnectGrace(routing.gameId, uuid)
 
         socket.data.activeGameId = routing.gameId
-        activeGameIdOwnerBySocket.set(socket, token)
+        gameIdOwnerBySocket.set(socket, token)
         if (!socket.rooms.has(routing.channelId)) {
             await socket.join(routing.channelId)
 
             // join 기다리는 사이 추방·이탈·유예 만료·새 탭 교체가 없었는지 다시 봄 (지도 08-⑨)
             const current = gameSessionCore.getActiveSessionRoutingInfo(uuid)
-            const stillLatest = sessionRoutingWorkBySocket.get(socket)?.token === token
+            const stillLatest = routingWorkBySocket.get(socket)?.token === token
             const stillSameSession =
                 gameSessionCore.getActiveSessionForDeparture(uuid, routing.gameId) === token.session
             const stillMine = stillLatest
@@ -62,12 +62,12 @@ function resyncSessionRouting(socket, uuid) {
             // 더 나중 재가입이 있으면 그쪽에 맡김, 내 재가입이 마지막이면 내가 넣은 것만 되돌림
             if (!stillLatest) return
 
-            detachFromSessionChannel(
+            detachFromGameChannel(
                 socket, uuid, routing.channelId, '\x1b[31m[세션 채널 정리 실패]\x1b[0m', { gameId: routing.gameId },
             )
-            if (socket.data.activeGameId === routing.gameId && activeGameIdOwnerBySocket.get(socket) === token) {
+            if (socket.data.activeGameId === routing.gameId && gameIdOwnerBySocket.get(socket) === token) {
                 socket.data.activeGameId = current !== null ? current.gameId : null
-                activeGameIdOwnerBySocket.delete(socket)
+                gameIdOwnerBySocket.delete(socket)
             }
             return
         }
@@ -75,10 +75,10 @@ function resyncSessionRouting(socket, uuid) {
     }
 
     const promise = run().finally(() => {
-        const current = sessionRoutingWorkBySocket.get(socket)
-        if (current && current.token === token) sessionRoutingWorkBySocket.delete(socket)
+        const current = routingWorkBySocket.get(socket)
+        if (current && current.token === token) routingWorkBySocket.delete(socket)
     })
-    sessionRoutingWorkBySocket.set(socket, { scopeKey, token, promise })
+    routingWorkBySocket.set(socket, { scopeKey, token, promise })
     return promise
 }
 

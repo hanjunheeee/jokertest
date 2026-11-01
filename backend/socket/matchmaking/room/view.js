@@ -2,7 +2,7 @@
 // 방 정보 내용 만들기 + 공개 방 목록 만들기·방송
 const { getMinPlayers } = require('../core/config')
 const { resolveRoleComposition } = require('../../../game-core/roleComposition')
-const { hasPendingAdmissionForRoom } = require('../admission/attempts')
+const { hasPendingAdmission } = require('../admission/attempts')
 const { BOOT_EPOCH } = require('../core/constants')
 const { getSettingsVersion } = require('../settings/receipts')
 const { buildRoomSettingsView, buildEditableSettingsView } = require('../../../validations/room/updateSettings')
@@ -20,7 +20,7 @@ function computeCanStart(room) {
     if (players.length < requiredPlayers) return false
     if (players.length <= jokerCount) return false
     if (!resolveRoleComposition(room.settings, players.length).ok) return false
-    if (hasPendingAdmissionForRoom(room.id)) return false
+    if (hasPendingAdmission(room.id)) return false
     return players.every((player) => player.isReady === true)
 }
 
@@ -41,7 +41,7 @@ function buildRoomPayload(room) {
 }
 
 // 참가자 프로필 읽기 (DB, 실패해도 기본값)
-async function loadRoomParticipantProfile(uuid) {
+async function loadPlayerProfile(uuid) {
     const loadouts = await deps.economyService.getPublicProfileLoadouts([uuid])
     const loadout = loadouts[uuid] ?? { profilePhotoId: null, profileBorderId: null }
     return {
@@ -80,7 +80,7 @@ function emitPublicRoomList(io) {
 module.exports = {
     computeCanStart,
     buildRoomPayload,
-    loadRoomParticipantProfile,
+    loadPlayerProfile,
     buildPublicRoomList,
     emitPublicRoomList,
 }
