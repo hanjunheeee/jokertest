@@ -1,32 +1,31 @@
-// 인게임 행동 줄 (모바일): 안내 한 줄 + 투표 현황·준비·기권/투표취소·집계·재판 투표/판정·건너뛰기/취소·밤 종료
+// 인게임 행동 줄 (모바일): 데스크톱 구석 패널(투표 현황·기권·건너뛰기) + 단계 행동 줄(준비·집계·판정·밤 종료)
 // InGamePage가 씀, props 없이 데스크톱 행동 컨텍스트(InGameActionContext)로 값 읽음
 import { useActionRow } from "../../hooks/actions/useActionRow.js"
-import ActionButton from "./ActionButton.jsx"
-import ActionMessage from "./ActionMessage.jsx"
-import VoteStatusSheet from "./VoteStatusSheet.jsx"
+import ImageButton from "./ImageButton.jsx"
+import PhaseButton from "./PhaseButton.jsx"
+import VoteStatusPanel from "./VoteStatusPanel.jsx"
 
-// 대상 고르기는 카드 메뉴(보드)가 맡고, 여기선 단계 버튼과 상태만 보여 줌
+// 대상 고르기는 카드 메뉴(보드), 재판 유죄·무죄는 재판 연출이 맡음 (데스크톱과 같음)
 export default function ActionRow() {
   const row = useActionRow()
   // 조작 Provider 밖이면 안 그림 (데스크톱 구석 패널과 같음)
   if (!row.ctx) return null
 
   return (
-    <div className="flex w-full flex-col gap-1 px-2 py-1" aria-label="투표·행동" data-ingame-action-row="">
-      <ActionMessage message={row.message} />
-      <div className="flex w-full items-center gap-1.5">
-        {row.actions.map((entry) => (
-          <ActionButton
-            key={entry.action}
-            action={entry.action}
-            label={entry.label}
-            enabled={entry.enabled}
-            onClick={entry.onClick}
-            tone={entry.tone}
-          />
+    <div className="flex w-full flex-wrap items-center gap-x-2 px-2 py-1 [container-type:inline-size]" data-ingame-action-row="">
+      <div className="flex min-w-0 items-center gap-[clamp(0.35rem,1.1vw,0.65rem)]" aria-label="투표·행동">
+        {row.cornerActions.map((entry) => (
+          <ImageButton key={entry.kind} {...entry} />
         ))}
       </div>
-      <VoteStatusSheet open={row.voteStatusOpen} onClose={row.closeVoteStatus} nameOf={row.nameOf} />
+      {row.phaseActions.length > 0 ? (
+        <div className="ml-auto flex flex-wrap justify-end gap-2" aria-label="단계 행동">
+          {row.phaseActions.map((entry) => (
+            <PhaseButton key={entry.action} {...entry} />
+          ))}
+        </div>
+      ) : null}
+      <VoteStatusPanel open={row.voteStatusOpen} onClose={row.closeVoteStatus} nameOf={row.nameOf} />
     </div>
   )
 }

@@ -40,7 +40,7 @@ export default function ExpandedTimer({ remainingRatio = 0, remainingSec = null 
           className={MARKER_CLASS}
           style={{ left: `${markerLeftPercent}%`, opacity: markerOpacity }}
         />
-        <span className={DIGITS_CLASS} role="timer" aria-live="off">
+        <span className={DIGITS_CLASS} role="timer" aria-live="polite">
           {clockText}
         </span>
       </div>

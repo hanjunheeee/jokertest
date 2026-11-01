@@ -4,10 +4,11 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { INGAME_TIMEBAR_ASSETS } from "@/domains/game/ingame/constants/timebar/ingameTimebarAssets.js"
 import {
   COLLAPSE_BTN_LABEL,
+  EXPAND_BTN_IMG_CLASS,
   EXPAND_BTN_LABEL,
 } from "@/domains/game/ingame/constants/timebar/ingameTimebarLayout.js"
 
-// 그림은 데스크톱처럼 모서리에 걸치되 누름 칸은 틀 안쪽으로 넓힘 (가로 넘침 막기)
+// 그림 크기·눌림은 데스크톱 확대 버튼 상수 그대로, 누름 칸만 틀 안쪽으로 넓힘 (가로 넘침 막기)
 export default function ExpandButton({ expanded, onToggle }) {
   return (
     <button
@@ -18,11 +19,9 @@ export default function ExpandButton({ expanded, onToggle }) {
       data-ingame-timebar-expand=""
       onClick={onToggle}
     >
-      <PublicAsset
-        src={INGAME_TIMEBAR_ASSETS.expandButton}
-        alt=""
-        className="block h-auto w-[clamp(1.58rem,7.6cqi,2.2rem)] select-none transition-transform duration-200 ease-out group-active:scale-[0.92]"
-      />
+      <span className="block w-[clamp(1.58rem,7.6cqi,2.4rem)]">
+        <PublicAsset src={INGAME_TIMEBAR_ASSETS.expandButton} alt="" className={EXPAND_BTN_IMG_CLASS} />
+      </span>
     </button>
   )
 }
