@@ -2,12 +2,12 @@
 
 // 인증 코드 확인 파일, 코드 확인 · 가입 증명 소비
 // 틀린 횟수·만료·한 번만 쓰기 확인
-const db = require('../../../models');
 const userRepository = require('../../../repositories/user.repositories');
 const { normalizeEmail } = require('../../../validation/signupEmailVerificationValidation');
 const { requireConfig } = require('./config');
 const { PURPOSE } = require('./constants');
 const { hashCode, generateProof, hashProof } = require('./codes');
+const signupVerificationRepository = require('../../../repositories/auth/signupEmailVerification');
 
 // 맞으면 증명 발급, 틀리면 횟수 올리고 남은 횟수 알려 줌
 exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = {}) => {
@@ -16,10 +16,7 @@ exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = 
     const nowMs = now().getTime();
 
     return userRepository.withTransaction(async (transaction) => {
-        const row = await db.SignupEmailVerification.findOne({
-            where: { email: normalizedEmail, purpose: PURPOSE },
-            transaction, lock: transaction.LOCK.UPDATE, logging: false,
-        });
+        const row = await signupVerificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 
         if (!row || !row.code_hash || row.code_consumed_at) {
             return { ok: false, code: 'CODE_INVALID' };
@@ -34,10 +31,7 @@ exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = 
         const presentedHash = hashCode(normalizedEmail, row.generation, code, config.hmacSecret);
         if (presentedHash !== row.code_hash) {
             const nextAttempts = row.attempts + 1;
-            await db.SignupEmailVerification.update(
-                { attempts: nextAttempts },
-                { where: { id: row.id }, transaction, logging: false },
-            );
+            await signupVerificationRepository.updateVerification(row.id, { attempts: nextAttempts }, transaction);
             if (nextAttempts >= config.maxAttempts) {
                 return { ok: false, code: 'TOO_MANY_ATTEMPTS' };
             }
@@ -48,12 +42,12 @@ exports.verifySignupCode = async ({ email, code }, { now = () => new Date() } = 
         const proofHash = hashProof(normalizedEmail, row.generation, proof, config.hmacSecret);
         const proofExpiresAt = new Date(nowMs + config.proofTtlMs);
 
-        await db.SignupEmailVerification.update({
+        await signupVerificationRepository.updateVerification(row.id, {
             code_consumed_at: new Date(nowMs),
             proof_hash: proofHash,
             proof_expires_at: proofExpiresAt,
             proof_consumed_at: null,
-        }, { where: { id: row.id }, transaction, logging: false });
+        }, transaction);
 
         return { ok: true, signupProof: proof };
     });
@@ -68,10 +62,7 @@ exports.consumeSignupProof = async ({ email, signupProof }, { transaction, now =
     const normalizedEmail = normalizeEmail(email);
     const nowMs = now().getTime();
 
-    const row = await db.SignupEmailVerification.findOne({
-        where: { email: normalizedEmail, purpose: PURPOSE },
-        transaction, lock: transaction.LOCK.UPDATE, logging: false,
-    });
+    const row = await signupVerificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 
     if (!row || !row.proof_hash || row.proof_consumed_at) {
         return { ok: false, code: 'SIGNUP_PROOF_INVALID' };
@@ -85,10 +76,7 @@ exports.consumeSignupProof = async ({ email, signupProof }, { transaction, now =
         return { ok: false, code: 'SIGNUP_PROOF_INVALID' };
     }
 
-    await db.SignupEmailVerification.update(
-        { proof_consumed_at: new Date(nowMs) },
-        { where: { id: row.id }, transaction, logging: false },
-    );
+    await signupVerificationRepository.updateVerification(row.id, { proof_consumed_at: new Date(nowMs) }, transaction);
 
     return { ok: true };
 };

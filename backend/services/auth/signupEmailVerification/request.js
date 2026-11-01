@@ -2,13 +2,14 @@
 
 // 인증 코드 보내기 파일, 다시 보내기 대기 · 이미 가입 · 메일 보내기
 // 이미 가입한 이메일도 같은 응답 (가입 여부 숨김), 메일 실패는 삼킴
-const db = require('../../../models');
 const userRepository = require('../../../repositories/user.repositories');
 const mailAdapterModule = require('../../../mail/mailAdapter');
 const { normalizeEmail } = require('../../../validation/signupEmailVerificationValidation');
 const { requireConfig } = require('./config');
 const { PURPOSE } = require('./constants');
 const { generateNumericCode, hashCode } = require('./codes');
+const signupVerificationRepository = require('../../../repositories/auth/signupEmailVerification');
+const { isUniqueConstraintName } = require('../../../repositories/common');
 
 // 행 잠금 → 대기 시간 확인 → 새 세대 코드 저장 → 메일, 동시에 행 만들다 겹치면 처음부터 다시
 exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter, now = () => new Date() } = {}) => {
@@ -18,18 +19,15 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
     const nowMs = now().getTime();
 
     const outcome = await userRepository.withTransaction(async (transaction) => {
-        let row = await db.SignupEmailVerification.findOne({
-            where: { email: normalizedEmail, purpose: PURPOSE },
-            transaction, lock: transaction.LOCK.UPDATE, logging: false,
-        });
+        let row = await signupVerificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 
         if (!row) {
             try {
-                row = await db.SignupEmailVerification.create({
+                row = await signupVerificationRepository.createVerification({
                     email: normalizedEmail, purpose: PURPOSE, generation: 0, attempts: 0,
-                }, { transaction, logging: false });
+                }, transaction);
             } catch (error) {
-                if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
+                if (!isUniqueConstraintName(error)) throw error;
                 return { retry: true };
             }
         }
@@ -51,7 +49,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         const existingUser = await userRepository.findByEmail(normalizedEmail, { transaction, logging: false });
 
         if (existingUser) {
-            await db.SignupEmailVerification.update({
+            await signupVerificationRepository.updateVerification(row.id, {
                 generation: nextGeneration,
                 code_hash: null,
                 code_expires_at: null,
@@ -61,7 +59,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
                 proof_hash: null,
                 proof_expires_at: null,
                 proof_consumed_at: null,
-            }, { where: { id: row.id }, transaction, logging: false });
+            }, transaction);
             return { alreadyRegistered: true, expiresInSec, resendAfterSec };
         }
 
@@ -75,7 +73,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         const codeHash = hashCode(normalizedEmail, nextGeneration, code, config.hmacSecret);
         const codeExpiresAt = new Date(nowMs + config.codeTtlMs);
 
-        await db.SignupEmailVerification.update({
+        await signupVerificationRepository.updateVerification(row.id, {
             generation: nextGeneration,
             code_hash: codeHash,
             code_expires_at: codeExpiresAt,
@@ -85,7 +83,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
             proof_hash: null,
             proof_expires_at: null,
             proof_consumed_at: null,
-        }, { where: { id: row.id }, transaction, logging: false });
+        }, transaction);
 
         return { code, expiresInSec, resendAfterSec };
     });

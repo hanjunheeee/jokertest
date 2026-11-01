@@ -2,23 +2,20 @@
 
 // 비밀번호 재설정 확인 파일, 토큰 확인 · 비번 바꾸기
 // 바꾸면 접속 세션 전부 끊고 남은 토큰 폐기
-const db = require('../../../models');
 const userRepository = require('../../../repositories/user.repositories');
 const { hashPassword } = require('../../../utils/hash');
 const { validatePassword } = require('../../../validation/signupValidation');
 const { validateResetToken } = require('../../../validation/passwordResetValidation');
 const { hashToken } = require('./tokens');
 const { withDeadlockRetry } = require('./retry');
+const passwordResetTokenRepository = require('../../../repositories/auth/passwordResetToken');
 
 // 토큰 모양 → 없음·폐기 → 사용됨 → 만료 순으로 확인
 exports.verifyPasswordReset = async (rawToken) => {
     const tokenResult = validateResetToken(rawToken);
     if (!tokenResult.ok) return { ok: false, code: 'INVALID' };
 
-    const row = await db.PasswordResetToken.findOne({
-        where: { token_hash: hashToken(rawToken) },
-        logging: false,
-    });
+    const row = await passwordResetTokenRepository.findByHash(hashToken(rawToken));
 
     if (!row || row.revoked_at) return { ok: false, code: 'INVALID' };
     if (row.used) return { ok: false, code: 'USED' };
@@ -39,10 +36,7 @@ exports.confirmPasswordReset = async (rawToken, newPassword) => {
     const tokenHash = hashToken(rawToken);
 
     const outcome = await withDeadlockRetry(async (transaction) => {
-        const tokenRow = await db.PasswordResetToken.findOne({
-            where: { token_hash: tokenHash },
-            transaction, lock: transaction.LOCK.UPDATE, logging: false,
-        });
+        const tokenRow = await passwordResetTokenRepository.lockByHash(tokenHash, transaction);
         if (!tokenRow || tokenRow.revoked_at) return { code: 'INVALID' };
         if (tokenRow.used) return { code: 'USED' };
         if (tokenRow.expired_at <= new Date()) return { code: 'EXPIRED' };
@@ -53,20 +47,14 @@ exports.confirmPasswordReset = async (rawToken, newPassword) => {
         if (!user) return { code: 'INVALID' };
         if (user.has_local_password === false) return { code: 'SOCIAL_ONLY' };
 
-        await db.PasswordResetToken.update(
-            { used: true },
-            { where: { id: tokenRow.id }, transaction, logging: false },
-        );
+        await passwordResetTokenRepository.markUsed(tokenRow.id, transaction);
 
         const password_hash = await hashPassword(passwordResult.value);
         await userRepository.updateUser(user.uuid, { password_hash }, { transaction, logging: false });
 
         await userRepository.markOnlineSessionsOffline(user.uuid, { transaction, logging: false });
 
-        await db.PasswordResetToken.update(
-            { used: true, revoked_at: new Date() },
-            { where: { user_id: user.uuid, used: false, revoked_at: null }, transaction, logging: false },
-        );
+        await passwordResetTokenRepository.revokeOpenTokens(user.uuid, transaction);
 
         return { code: 'OK' };
     });
