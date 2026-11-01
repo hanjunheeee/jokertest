@@ -1,5 +1,5 @@
-// 내 프로필 파일, 프로필 응답 만들기(직업 통계로 승률·최고 승률 직업 이름) · 닉네임 바꾸기(검사·중복 확인)
-// profile 컨트롤러가 부름, 상태 코드·응답 감싸기는 컨트롤러 몫 (저장소는 모듈 객체로 불러 시험 패치 먹게)
+// 내 프로필 파일, 프로필 응답 만들기(직업 통계로 승률·최고 승률 직업 이름) · 닉네임 바꾸기(검사·중복 확인) + 계정 한 명 읽기
+// profile 컨트롤러·관리자 확인·방 입장이 부름, 상태 코드·응답 감싸기는 컨트롤러 몫 (저장소는 모듈 객체로 불러 시험 패치 먹게)
 const userRepository            = require("../../repositories/user");
 const gameResultRepository      = require("../../repositories/game/result");
 const roleStatisticsPolicy      = require("../game/roleStatistics");
@@ -52,3 +52,7 @@ exports.changeNickname = async (uuid, nickname) => {
     await userRepository.updateUser(uuid, { nickname: normalizedNickname });
     return { ok: true };
 };
+
+// 계정 한 명 읽기 (방 입장·관리자 확인용), 저장소 index 객체로 불러 시험 갈아끼우기 먹게
+// async 안 붙임: 저장소 Promise 그대로 돌려줘 마이크로태스크 한 칸 안 늘림 (matchmaking 경합 시험 순서 지키기)
+exports.findByUuid = (...args) => userRepository.findByUuid(...args);
