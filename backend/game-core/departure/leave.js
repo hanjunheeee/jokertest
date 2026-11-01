@@ -1,7 +1,6 @@
 // 게임 중 나가기 파일
 // 나간 사람 정리 + 멈춘 단계 넘기기, socket 나가기 처리가 사용 (지도 12)
-const { assertSessionNotEnded } = require('../core/rules/terminal')
-const { enterNightPhase } = require('../core/rules/phase')
+const { assertSessionNotEnded, enterNightPhase } = require('../core/rules/terminal')
 const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
 const { releasePlayerSession } = require('../core/registry/write')
 const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap, TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal')

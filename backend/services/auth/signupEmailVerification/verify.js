@@ -4,8 +4,7 @@
 // 틀린 횟수·만료·한 번만 쓰기 확인
 const userRepository = require('../../../repositories/user');
 const { normalizeEmail } = require('../../../validations/auth/signupEmailVerification');
-const { requireConfig } = require('./config');
-const { PURPOSE } = require('./constants');
+const { PURPOSE, requireConfig } = require('./config');
 const { hashCode, generateProof, hashProof } = require('./codes');
 const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
 

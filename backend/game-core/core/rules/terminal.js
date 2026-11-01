@@ -1,5 +1,5 @@
-// 판 끝내는 파일
-// 끝난 판 막기 + 승패 판정·판 닫기, 요청 처리·밤 확정·재판·끊김 탈락이 사용
+// 판 끝내기·밤으로 넘기기 파일
+// 끝난 판 막기 + 승패 판정·판 닫기, 밤 시작(밤 기록 새로) · 요청 처리·밤 확정·낮·재판·나가기가 사용
 const { observeNightCommit } = require('../tools/observer')
 
 // 끝난 판(ENDED)이면 요청 거절, 아니면 통과
@@ -35,4 +35,13 @@ function finalizeGameSession(session, winResult) {
     observeNightCommit('GAME_FINALIZED', { gameId: session.id, winner: winResult?.winner ?? null })
 }
 
-module.exports = { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession }
+// 밤 시작: 단계 NIGHT, 밤 행동·판정·진행 기록 새로 (지난 밤 것 안 섞이게)
+// 낮·재판·나가기가 다 써서 phase/night 말고 core에 둠 (낮↔밤 require 막기)
+function enterNightPhase(session) {
+    session.phase = 'NIGHT'
+    session.nightActions = new Map()
+    session.nightResolution = null
+    session.nightProgress = null
+}
+
+module.exports = { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession, enterNightPhase }

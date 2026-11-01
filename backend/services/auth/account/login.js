@@ -1,5 +1,5 @@
-// 로그인 파일, 잠금·정지·비번 확인 뒤 세션 발급
-// 세션 발급은 입구 객체로 불러 시험 패치 먹게
+// 로그인·로그아웃 파일, 잠금·정지·비번 확인 뒤 세션 발급 · 로그아웃 기록 남기고 그 세션 끊기
+// 세션 발급은 입구 객체로 불러 시험 패치 먹게 (저장소도 모듈 객체로 불러 시험 패치 그대로 먹게)
 const userRepository          = require("../../../repositories/user");
 const { comparePassword } = require("../../../utils/auth/credentials");
 const { createError }         = require("../../../utils/appError");
@@ -65,4 +65,9 @@ exports.login = async (loginData, reqInfo) => {
     });
     if (outcome.error) throw outcome.error;
     return outcome.value;
+};
+
+// 마지막 로그인 기록에 로그아웃 시각 + 그 세션 끊기 (세션 컨트롤러가 부름)
+exports.logout = async ({ uuid, sessionId }) => {
+    await userRepository.recordLogout(uuid, sessionId);
 };

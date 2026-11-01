@@ -1,12 +1,11 @@
-// 전적 저장 파일, 저장 시작 · 시도 · 재시도 · 끝내기
-// 저장은 시작만 하고 기다리지 않음 (판정 방송이 DB를 안 기다리게)
+// 전적 저장 파일, 저장 시작 · 시도 · 재시도 · 끝내기 + 저장 뒤 캐시 무효화 신호
+// 저장은 시작만 하고 기다리지 않음 (판정 방송이 DB를 안 기다리게), 사건 이름은 문자열 그대로 (프론트 감사 시험 잠금)
 const gameSessionCore = require('../../../game-core/gameSession')
 const gameResultRepository = require('../../../repositories/game/result')
 const gameAchievementService = require('../achievementHooks')
 const { terminalPersistRuns, getBySession, confirmedGameIds } = require('./state')
 const { RETRY_DELAYS_MS, MAX_DELAY_MS, CONFIRMED_MAX } = require('./constants')
 const { deps } = require('./deps')
-const { invalidateAccountCaches } = require('./notify')
 
 // 판 끝 전적 저장 시작: 같은 판은 한 번만 (진행 중·이 세션 표식·저장 확인 중 하나라도 있으면 그만, 지도 07-③)
 function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
@@ -97,6 +96,20 @@ function finishTerminalPersist(run) {
         .catch(() => {
             console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId: run.gameId })
         })
+}
+
+// 원 참가자 각자에게 캐시 무효화 신호 (채널에 없어도, 내용은 판 id·범위만, 지도 07-⑦)
+function invalidateAccountCaches(uuids, gameId, scopes) {
+    const emit = deps.emitToUser
+    if (typeof emit !== 'function') return
+    for (const uuid of uuids) {
+        if (typeof uuid !== 'string' || !uuid) continue
+        try {
+            emit(uuid, 'account_cache_invalidated', { gameId, scopes: [...scopes] })
+        } catch {
+            console.error('[캐시 무효화 전달 실패]', { code: 'INVALIDATION_DELIVERY_ERROR', gameId })
+        }
+    }
 }
 
 module.exports = {

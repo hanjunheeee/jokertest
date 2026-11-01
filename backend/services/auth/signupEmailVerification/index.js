@@ -4,7 +4,7 @@
 // 컨트롤러·가입·소셜 가입이 이 입구로 부름 (시험이 consumeSignupProof를 이 객체에서 갈아끼움)
 const { requestSignupCode } = require('./request');
 const { verifySignupCode, consumeSignupProof } = require('./verify');
-const { PURPOSE } = require('./constants');
+const { PURPOSE } = require('./config');
 const { __testables } = require('./testing');
 
 module.exports = {

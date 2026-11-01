@@ -6,7 +6,7 @@ const { createError } = require('../../utils/appError');
 const notificationRepository = require('../../repositories/notification');
 const { withTransaction } = require('../../repositories/common');
 const { getDeps } = require('./deps');
-const { toPublicNotification } = require('./view');
+const { toPublicNotification } = require('./notify');
 const { UUID_PATTERN } = require('./constants');
 
 // 내 알림 최근 것부터

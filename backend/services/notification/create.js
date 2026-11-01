@@ -4,9 +4,8 @@
 // 친구·초대·업적 서비스가 바깥 트랜잭션 넘겨서 부름
 const { createError } = require('../../utils/appError');
 const { getDeps } = require('./deps');
-const { toPublicNotification } = require('./view');
 const { NOTIFICATION_TYPES, friendRequestSourceKey, gameInviteSourceKey, achievementSourceKey, SYSTEM_WELCOME } = require('./constants');
-const { emitNotificationCreated } = require('./notify');
+const { toPublicNotification, emitNotificationCreated } = require('./notify');
 const notificationRepository = require('../../repositories/notification');
 const { withTransaction } = require('../../repositories/common');
 

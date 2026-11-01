@@ -9,7 +9,7 @@ const {
     PRODUCT_KINDS,
     rejectUnknownFields,
     isPositiveSafeInteger,
-} = require("../../validations/economy/fields");
+} = require("../../validations/economy");
 const { serializePublicProduct, serializeTopupOrder } = require("./serializers");
 
 // GET /currency-products: 판매 중 상품 목록 (kind 있으면 아는 종류만)

@@ -12,7 +12,7 @@ const {
     IGNORED_GOLD_PURCHASE_REFERENCE_FIELDS,
     rejectUnknownFields,
     isPositiveSafeInteger,
-} = require("../../validations/economy/fields");
+} = require("../../validations/economy");
 const { serializeLedgerEntry } = require("./serializers");
 
 // POST /purchase: 아이템 하나 구매 (새로 사면 201, 같은 참조 id 다시 오면 200)

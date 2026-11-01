@@ -2,7 +2,7 @@
 // routes/economy.routes.js가 부름 (본인 확인은 앞 미들웨어 몫, 경제 서비스는 모듈 객체로 불러 시험 갈아끼우기 먹게)
 const { createError }  = require("../../utils/appError");
 const economyService = require("../../services/economy");
-const { ALLOWED_EQUIP_PROFILE_FIELDS, rejectUnknownFields } = require("../../validations/economy/fields");
+const { ALLOWED_EQUIP_PROFILE_FIELDS, rejectUnknownFields } = require("../../validations/economy");
 const { serializeLoadout, serializeEquipLoadout } = require("./serializers");
 
 // GET /accounts/:userId/wallet: 골드·다이아 잔액

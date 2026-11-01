@@ -1,6 +1,6 @@
 // 경제 요청 필드 검사 파일, 경로별 허용 필드 표 · 모르는 필드 400 · 양의 안전 정수 확인
 // controllers/economy 구매·장착·지급·충전 처리기가 부름 (값 모양 검사는 처리기 안에 그대로)
-const { createError } = require("../../utils/appError");
+const { createError } = require("../utils/appError");
 
 // 경로별 허용 필드 (그 밖 필드는 서비스 부르기 전 400)
 const ALLOWED_PURCHASE_FIELDS = new Set(["itemId", "referenceEventId"]);

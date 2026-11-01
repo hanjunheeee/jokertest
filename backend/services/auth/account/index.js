@@ -2,10 +2,8 @@
 // 인증 컨트롤러·소셜 로그인이 이 입구로 부름 (시험이 issueSessionForUser·signup을 이 객체에서 갈아끼움)
 const { issueSessionForUser } = require('./session');
 const { signup, checkEmailAvailability } = require('./signup');
-const { login } = require('./login');
+const { login, logout } = require('./login');
 const { refresh } = require('./refresh');
-// 컨트롤러에서 옮긴 로그아웃 기록
-const { logout } = require('./logout');
 // profile 컨트롤러에서 옮긴 비번 바꾸기
 const { changePassword } = require('./password');
 

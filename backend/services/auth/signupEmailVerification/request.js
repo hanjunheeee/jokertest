@@ -5,8 +5,7 @@
 const userRepository = require('../../../repositories/user');
 const mailAdapterModule = require('../../../utils/adapters/mail');
 const { normalizeEmail } = require('../../../validations/auth/signupEmailVerification');
-const { requireConfig } = require('./config');
-const { PURPOSE } = require('./constants');
+const { PURPOSE, requireConfig } = require('./config');
 const { generateNumericCode, hashCode } = require('./codes');
 const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
 const { isUniqueConstraintName } = require('../../../repositories/common');

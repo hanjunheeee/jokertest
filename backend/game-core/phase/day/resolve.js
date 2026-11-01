@@ -3,8 +3,7 @@
 // 결과 방송 내용은 phase/day/payloads.js
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
 const { isRegisteredSession } = require('../../queries')
-const { assertSessionNotEnded } = require('../../core/rules/terminal')
-const { enterNightPhase } = require('../../core/rules/phase')
+const { assertSessionNotEnded, enterNightPhase } = require('../../core/rules/terminal')
 const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isVoteRoundResolved } = require('./state')
 const { DAY_PHASES } = require('./constants')
 const { getDayVoterUuids, tallyDayVoteOutcome, buildDayBallotSnap, uuidListsEqual, dayBallotSnapsEqual } = require('./ballots')
