@@ -2,8 +2,9 @@
 // 목록·추가·요청·초대·차단 탭의 줄들이 씀
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
+import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
+import ProfilePortrait from "@m/shared/ui/portrait/ProfilePortrait.jsx"
 import { NAME_CLASS, ROW_CLASS, ROW_FRAME_CLASS, ROW_TARGET_CLASS } from "../sheetStyle.js"
-import Portrait from "./Portrait.jsx"
 
 // onOpen이 있으면 초상·이름 칸 전체를 누르는 버튼으로 만듦 (줄 동작 메뉴 열기)
 export default function RowShell({
@@ -18,9 +19,14 @@ export default function RowShell({
   rowProps = {},
   children = null,
 }) {
+  // 아이템 id를 그림 경로로 (없으면 기본 사진·평민 테두리)
+  const { portraitSrc, frameSrc } = resolveAccountProfileAssets({
+    accountProfilePhotoId: photoId,
+    accountProfileBorderId: borderId,
+  })
   const body = (
     <>
-      <Portrait photoId={photoId} borderId={borderId} />
+      <ProfilePortrait photoSrc={portraitSrc} frameSrc={frameSrc} aria-hidden="true" />
       <div className="min-w-0 flex-1 text-left">
         <p className={NAME_CLASS}>{name}</p>
         {children}

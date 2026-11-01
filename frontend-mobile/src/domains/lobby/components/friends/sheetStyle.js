@@ -15,6 +15,10 @@ export const SHEET_TABS = [
 // 시트 닫기 버튼 그림 (상점 팝업과 같은 그림)
 export const CLOSE_BUTTON_SRC = "/button/팝업 닫기 버튼.png".normalize("NFD")
 
+// 닫기 버튼 (누르는 칸 44px, 보임 여부 grid/hidden은 부르는 쪽)
+export const CLOSE_BTN_CLASS = "size-11 shrink-0 place-items-center border-0 bg-transparent p-0 active:scale-95"
+export const CLOSE_ICON_CLASS = "block size-9 select-none object-contain"
+
 // 패널 프레임을 border-image로 깔아 모서리 장식이 늘어나지 않게 함
 export const SHEET_FRAME_STYLE = {
   borderStyle: "solid",

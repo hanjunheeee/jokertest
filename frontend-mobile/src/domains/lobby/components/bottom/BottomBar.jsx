@@ -7,7 +7,7 @@ import { usePendingInvites } from "@m/domains/lobby/hooks/usePendingInvites.js"
 import NotificationButton from "@m/domains/lobby/components/bottom/NotificationButton.jsx"
 import FriendsButton from "@m/domains/lobby/components/bottom/FriendsButton.jsx"
 import InviteAlert from "@m/domains/lobby/components/bottom/InviteAlert.jsx"
-import SoundControl from "@m/domains/lobby/components/bottom/SoundControl.jsx"
+import SoundControl from "@m/shared/ui/sound/SoundControl.jsx"
 
 // 배경 그림 위에 떠 보이게 바탕은 투명, 버튼 줄만 둠
 export default function BottomBar({ notificationsOpen, onOpenNotifications, friendListOpen, onOpenFriendList }) {
@@ -36,7 +36,7 @@ export default function BottomBar({ notificationsOpen, onOpenNotifications, frie
                         <NotificationButton open={notificationsOpen} onOpen={onOpenNotifications} />
                         <FriendsButton open={friendListOpen} onOpen={onOpenFriendList} inviteCount={invites.count} />
                     </div>
-                    <SoundControl />
+                    <SoundControl look="lobby" />
                 </div>
             </motion.div>
         </ShellBottom>

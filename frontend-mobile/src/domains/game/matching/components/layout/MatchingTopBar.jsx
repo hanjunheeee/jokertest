@@ -5,7 +5,8 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
-import SoundToggle from "./SoundToggle.jsx"
+import BackButton from "@m/shared/ui/button/BackButton.jsx"
+import MuteToggle from "@m/shared/ui/sound/MuteToggle.jsx"
 import { BACK_BUTTON_SRC, ICON_BTN_CLASS, ROOM_MENU_COPY } from "../../constants/matchingMobileStyles.js"
 
 // 위 줄 (친구 초대·방장 메뉴는 쓸 수 있을 때만)
@@ -27,15 +28,13 @@ export default function MatchingTopBar({
       transition={UI_REVEAL_TRANSITION}
       style={{ pointerEvents: visible ? "auto" : "none" }}
     >
-      <button
-        type="button"
-        aria-label="멀티플레이 선택으로 돌아가기"
-        data-sfx-kind="ui-cancel"
+      <BackButton
         onClick={onBack}
+        label="멀티플레이 선택으로 돌아가기"
+        src={BACK_BUTTON_SRC}
         className={ICON_BTN_CLASS}
-      >
-        <PublicAsset src={BACK_BUTTON_SRC} alt="" className="block h-10 w-10 select-none object-contain" />
-      </button>
+        iconClassName="block h-10 w-10 select-none object-contain"
+      />
 
       {/* 파티 인원 (읽기 프로그램엔 한 문장으로) */}
       <div
@@ -61,7 +60,7 @@ export default function MatchingTopBar({
         </button>
       ) : null}
 
-      <SoundToggle />
+      <MuteToggle className={ICON_BTN_CLASS} iconClassName="block h-9 w-9 select-none object-contain" title />
 
       {/* 방장 메뉴: 설정 변경·추방 (방장 아니면 안 보임) */}
       {showHostMenu ? (

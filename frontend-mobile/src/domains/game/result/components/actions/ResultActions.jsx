@@ -9,7 +9,14 @@ import {
 } from "@/domains/game/result/constants/gameResultLabels.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
-import FrameButton from "./FrameButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+
+// 틀 그림 버튼 (데스크톱 LabelledActionButton 모바일판, 부모 칸을 나눠 채우고 높이 44px 이상)
+const FRAME_LOOK = {
+    button: "relative flex h-13 min-w-0 flex-1 items-center justify-center transition-transform active:scale-[0.97] disabled:opacity-70 land:h-11 md:h-14",
+    img: "pointer-events-none absolute inset-0 h-full w-full select-none object-fill",
+    label: "relative truncate px-3 font-subheading text-lg font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
+}
 
 const ROW_CLASS =
     "mx-auto flex w-full max-w-[30rem] items-center gap-3 px-4 py-2.5 land:max-w-[26rem] land:py-1.5 md:max-w-[34rem]"
@@ -30,15 +37,20 @@ export default function ResultActions({ hasResult, isReturning, onReturnToMatchi
                 >
                     {hasResult ? (
                         <>
-                            <FrameButton
+                            <ImageButton
+                                look={FRAME_LOOK}
                                 src={GAME_RESULT_ASSETS.matchingButton}
                                 label={GAME_RESULT_MATCHING_BUTTON_LABEL}
+                                ariaLabel={GAME_RESULT_MATCHING_BUTTON_LABEL}
                                 onClick={onReturnToMatching}
                                 disabled={isReturning}
+                                busy={isReturning}
                             />
-                            <FrameButton
+                            <ImageButton
+                                look={FRAME_LOOK}
                                 src={GAME_RESULT_ASSETS.lobbyButton}
                                 label={GAME_RESULT_LOBBY_BUTTON_LABEL}
+                                ariaLabel={GAME_RESULT_LOBBY_BUTTON_LABEL}
                                 onClick={onExitToLobby}
                             />
                         </>

@@ -5,7 +5,7 @@ import { PARCHMENT_FRAME_VARIANTS } from "@/domains/game/mode/constants/roomInvi
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
 import { useRoomInvitePage } from "@/domains/game/mode/hooks/useRoomInvitePage.js"
 import ModeBackdrop from "@m/domains/game/mode/components/common/ModeBackdrop.jsx"
-import TopBar from "@m/domains/game/mode/components/common/TopBar.jsx"
+import TopBar from "@m/shared/ui/top/TopBar.jsx"
 import CodeActions from "@m/domains/game/mode/components/roomCode/CodeActions.jsx"
 import CodeFrame from "@m/domains/game/mode/components/roomCode/CodeFrame.jsx"
 
@@ -22,7 +22,7 @@ export default function RoomInvitePage() {
       <ModeBackdrop src={ROOM_INVITE_ASSETS.bg} />
 
       <div className="relative z-10 flex flex-1 flex-col">
-        <TopBar onBack={goBackToModeSelect} backAriaLabel="게임 모드 선택으로 돌아가기" />
+        <TopBar onBack={goBackToModeSelect} backLabel="게임 모드 선택으로 돌아가기" />
 
         {/* 키보드가 올라와도 틀이 보이게 위쪽 가까이 둠 */}
         <div className="flex flex-1 flex-col items-center justify-start px-3 pb-4 pt-[8svh] land:justify-center land:pt-0 md:justify-center md:pt-0">

@@ -28,10 +28,6 @@ export const ERROR_ON_DARK_CLASS =
 export const ERROR_ON_PARCHMENT_CLASS =
   "font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-snug text-[#8c1c13]"
 
-// 그림 버튼 글자 (데스크톱 그림 버튼과 같은 흰 글자·그림자)
-export const IMAGE_BTN_LABEL_CLASS =
-  "relative z-[1] px-2 font-subheading app-text-scaled [--app-text-size:0.95rem] font-bold leading-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
-
 // 시트 안 줄 목록 (친구 초대·추방)
 export const SHEET_ROW_CLASS =
   "flex min-h-[3.75rem] items-center gap-3 border-b border-[#c9b892]/20 py-2 last:border-b-0"

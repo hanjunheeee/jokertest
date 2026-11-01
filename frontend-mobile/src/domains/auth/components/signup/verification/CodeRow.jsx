@@ -1,6 +1,6 @@
 // 인증번호 입력 칸 + 확인 버튼 한 줄
 // signup/verification/EmailVerification.jsx가 받기를 누른 뒤(인증 끝나기 전)에만 씀
-import InputSlot from "@m/domains/auth/components/login/ui/InputSlot.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 
 // 만료·잠김이면 입력 칸만 잠그고, 버튼은 canVerify로 따로 잠금 (데스크톱과 같음)
 export default function CodeRow({ stage, code, canVerify, isVerifying, onCodeChange, onVerify }) {

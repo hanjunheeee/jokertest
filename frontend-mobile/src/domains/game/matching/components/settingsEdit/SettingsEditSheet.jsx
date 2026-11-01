@@ -1,9 +1,10 @@
 // 대기방 설정 변경 시트 (거의 꽉 찬 양피지 시트): 탭·설정 줄·저장/취소·저장 실패 문구
 // GameMatchingPage가 씀, 데스크톱 SettingsEditOverlay(GameSetupPanel 편집 모드)를 세로 시트로 바꿈
+import { useState } from "react"
 import { GAME_SETUP_ASSETS } from "@/domains/game/setup/constants/gameSetupAssets.js"
-import { useSettingsForm } from "../../hooks/useSettingsForm.js"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import { useSetupForm } from "@m/domains/game/shared/hooks/useSetupForm.js"
 import BottomSheet from "../sheet/BottomSheet.jsx"
-import ImageButton from "../common/ImageButton.jsx"
 import SettingsTabs from "./SettingsTabs.jsx"
 import SettingsItemList from "./SettingsItemList.jsx"
 import { ERROR_ON_PARCHMENT_CLASS } from "../../constants/matchingMobileStyles.js"
@@ -18,10 +19,13 @@ export default function SettingsEditSheet({
   settingsError,
   hasPendingSettingsResult,
 }) {
-  const form = useSettingsForm({
+  const [activeTab, setActiveTab] = useState("general")
+  // 편집 모드: 저장 중이면 잠금, 방 만든 뒤 못 바꾸는 항목 숨김 (방 설정 화면과 같은 훅)
+  const form = useSetupForm({
+    mode: "edit",
     initialFormState: settingsForm?.ok ? settingsForm : null,
     formResetKey,
-    isSaving,
+    isCreating: isSaving,
     onSubmit,
   })
 
@@ -46,6 +50,7 @@ export default function SettingsEditSheet({
           ) : null}
           <div className="mx-auto grid w-full max-w-[24rem] grid-cols-2 gap-2">
             <ImageButton
+              look="fill"
               label={isSaving ? "저장 중…" : "설정 저장"}
               ariaLabel="설정 저장"
               busy={isSaving}
@@ -55,6 +60,7 @@ export default function SettingsEditSheet({
               className="h-12"
             />
             <ImageButton
+              look="fill"
               label="취소"
               ariaLabel="설정 변경 취소"
               src={GAME_SETUP_ASSETS.cancelButton}
@@ -68,9 +74,9 @@ export default function SettingsEditSheet({
       }
     >
       <div className="sticky top-0 z-[1] -mx-4 bg-[#cdb68a] px-4 pt-1 pb-2">
-        <SettingsTabs activeTab={form.activeTab} onSelect={form.setActiveTab} />
+        <SettingsTabs activeTab={activeTab} onSelect={setActiveTab} />
       </div>
-      <SettingsItemList form={form} />
+      <SettingsItemList activeTab={activeTab} form={form} />
     </BottomSheet>
   )
 }

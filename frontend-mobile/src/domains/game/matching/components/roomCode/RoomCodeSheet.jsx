@@ -11,7 +11,7 @@ import {
   normalizeRoomCode,
 } from "@/domains/game/shared/utils/roomCode.js"
 import BottomSheet from "../sheet/BottomSheet.jsx"
-import ImageButton from "../common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { ERROR_ON_PARCHMENT_CLASS, ROOM_CODE_COPY } from "../../constants/matchingMobileStyles.js"
 
 // 코드 한 칸 모양 (데스크톱 방코드 틀의 어두운 칸 느낌)
@@ -45,12 +45,13 @@ export default function RoomCodeSheet({ open, onClose, roomCode }) {
         </div>
 
         <ImageButton
+          look="fill"
           label={copied ? ROOM_CODE_COPY.copied : ROOM_CODE_COPY.copy}
           ariaLabel={copied ? "방코드 복사됨" : "방코드 복사"}
           src={GAME_MATCHING_ASSETS.startGameButton}
           onClick={handleCopy}
           disabled={!canCopy}
-          describedBy={errorText ? copyErrorId : undefined}
+          aria-describedby={errorText ? copyErrorId : undefined}
           className="h-12 w-[12rem]"
         />
         <p

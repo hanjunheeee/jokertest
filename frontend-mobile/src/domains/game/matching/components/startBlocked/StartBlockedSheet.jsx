@@ -3,7 +3,7 @@
 import { BLOCKED_TITLE } from "@/domains/game/matching/constants/gameStartMessages.js"
 import { BTN_ASSET, PARCHMENT_CONFIRM_LABEL } from "@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js"
 import BottomSheet from "../sheet/BottomSheet.jsx"
-import ImageButton from "../common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 
 // 시작 막힘 안내 (확인·닫기 모두 문구 지움)
 export default function StartBlockedSheet({ message, onClose }) {
@@ -14,7 +14,7 @@ export default function StartBlockedSheet({ message, onClose }) {
       title={BLOCKED_TITLE}
       tone="parchment"
       footer={
-        <ImageButton label={PARCHMENT_CONFIRM_LABEL} src={BTN_ASSET} onClick={onClose} className="mx-auto h-12 w-[10rem]" />
+        <ImageButton look="fill" label={PARCHMENT_CONFIRM_LABEL} src={BTN_ASSET} onClick={onClose} className="mx-auto h-12 w-[10rem]" />
       }
     >
       <div data-game-start-blocked="">

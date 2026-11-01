@@ -2,7 +2,7 @@
 // GameMatchingPage가 씀, 데스크톱 왼쪽 위 방장 버튼 줄(MatchingHostActionButtons)을 ⋯ 메뉴로 옮김
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import BottomSheet from "../sheet/BottomSheet.jsx"
-import ImageButton from "../common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { ROOM_MENU_COPY, SHEET_NOTE_CLASS } from "../../constants/matchingMobileStyles.js"
 
 // 방장 메뉴 (고르면 메뉴 닫고 그 창 엶)
@@ -27,6 +27,7 @@ export default function HostMenuSheet({
         {/* 설정 변경: 편집 자격 있을 때만 */}
         {canEditSettings ? (
           <ImageButton
+            look="fill"
             label={MATCHING_POPUP_COPY.changeRoomSettings}
             src={GAME_MATCHING_ASSETS.startGameButton}
             onClick={pick(onOpenSettings)}
@@ -37,6 +38,7 @@ export default function HostMenuSheet({
         {isKickHost ? (
           <>
             <ImageButton
+              look="fill"
               label={MATCHING_POPUP_COPY.kickParticipant}
               src={GAME_MATCHING_ASSETS.deleteRoomButton}
               onClick={canKick ? pick(onOpenKickModal) : undefined}

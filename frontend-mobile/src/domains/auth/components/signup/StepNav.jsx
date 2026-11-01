@@ -1,7 +1,7 @@
 // 가입 단계 아래 버튼 줄 (이전·다음, 마지막 단계는 가입 버튼)
 // signup/SignupForm.jsx가 씀
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
-import ImageButton from "@m/domains/auth/components/login/ui/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { HINT_TEXT_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 
 // 이전·다음 글자 버튼 모양 (그림 없는 버튼, 누르는 자리 44px)
@@ -20,7 +20,7 @@ export default function StepNav({ step, isLastStep, onPrev, onNext, canSubmitSig
         <ImageButton
           type="submit"
           src={LOGIN_ASSETS.signupButton}
-          label="회원가입"
+          ariaLabel="회원가입"
           disabled={!canSubmitSignup}
           className="mx-auto w-[86%]"
         />

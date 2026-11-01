@@ -2,7 +2,7 @@
 // EmoticonPalettePage가 씀
 import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
-import ImageButton from "@m/domains/user/components/emoticon/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { BTN_ASSET, PARCHMENT_CONFIRM_LABEL } from "@/domains/game/ingame/constants/parchment/ingameParchmentConfirmButton.js"
 import { IMG_URL } from "@/domains/game/ingame/constants/parchment/ingameParchmentLayout.js"
 import { SAVE_SUCCESS_MSG } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
@@ -42,6 +42,7 @@ export default function SaveDoneDialog({ open, onDismiss }) {
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-[16%] py-[15%] text-center">
           <p role="status" className="font-subheading text-lg font-bold leading-snug text-[#3a1a0c]">{SAVE_SUCCESS_MSG}</p>
           <ImageButton
+            look="plain"
             label={PARCHMENT_CONFIRM_LABEL}
             src={BTN_ASSET}
             onClick={onDismiss}

@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef } from "react"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import { pickNotice, sendButtonLabel } from "@/domains/auth/utils/emailVerification/notice.js"
-import ImageButton from "@m/domains/auth/components/login/ui/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import CodeRow from "@m/domains/auth/components/signup/verification/CodeRow.jsx"
 import Notice from "@m/domains/auth/components/signup/verification/Notice.jsx"
 
@@ -43,8 +43,8 @@ export default function EmailVerification({
             onClick={() => handleRequestSignupCode()}
             disabled={stage === "unverified" ? isSending : !canResend}
             src={LOGIN_ASSETS.signupCodeSendButton}
+            ariaLabel={sendLabel}
             label={sendLabel}
-            visibleLabel={sendLabel}
             labelClassName="!text-black whitespace-nowrap app-text-scaled [--app-text-size:13px]"
             className="w-[7.5rem] shrink-0"
           />

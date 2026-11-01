@@ -3,11 +3,11 @@
 import { useNavigate } from "react-router-dom"
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
 import { usePublicRooms } from "@/domains/game/mode/hooks/usePublicRooms.js"
-import ImageButton from "@m/domains/game/mode/components/common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import ModeBackdrop from "@m/domains/game/mode/components/common/ModeBackdrop.jsx"
-import SoundMenu from "@m/domains/game/mode/components/common/SoundMenu.jsx"
+import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
 import TitleBadge from "@m/domains/game/mode/components/common/TitleBadge.jsx"
-import TopBar from "@m/domains/game/mode/components/common/TopBar.jsx"
+import TopBar from "@m/shared/ui/top/TopBar.jsx"
 import EnterBar from "@m/domains/game/mode/components/roomList/EnterBar.jsx"
 import Pager from "@m/domains/game/mode/components/roomList/Pager.jsx"
 import RoomCardList from "@m/domains/game/mode/components/roomList/RoomCardList.jsx"
@@ -31,15 +31,15 @@ export default function MultiplayEntryPage() {
       <div className="relative z-10 flex flex-1 flex-col">
         <TopBar
           onBack={() => navigate("/gameMode")}
-          backAriaLabel="게임 모드 선택으로 돌아가기"
+          backLabel="게임 모드 선택으로 돌아가기"
           title={<TitleBadge />}
-          right={<SoundMenu />}
+          right={<SoundMenu look="mode" />}
         />
 
         <div className="mx-auto flex w-full max-w-[48rem] flex-col gap-3 px-4 pb-4 land:px-6">
           <nav className="grid grid-cols-2 gap-3 land:flex land:gap-3 md:flex" aria-label="방 목록 작업">
-            <ImageButton src={ROOM_LIST_ASSETS.optionButton} label="방 만들기" onClick={() => navigate("/game-setup")} className="w-full land:w-40 md:w-48" />
-            <ImageButton src={ROOM_LIST_ASSETS.optionButton} label="코드로 참가" onClick={() => joinByCode()} className="w-full land:w-40 md:w-48" />
+            <ImageButton look="plate" src={ROOM_LIST_ASSETS.optionButton} label="방 만들기" onClick={() => navigate("/game-setup")} className="w-full land:w-40 md:w-48" />
+            <ImageButton look="plate" src={ROOM_LIST_ASSETS.optionButton} label="코드로 참가" onClick={() => joinByCode()} className="w-full land:w-40 md:w-48" />
           </nav>
 
           <RoomCardList rooms={list.pageRooms} selectedRoomId={list.selectedRoomId} onSelectRoom={list.selectRoom} />

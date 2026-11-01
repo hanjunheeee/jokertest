@@ -4,8 +4,8 @@ import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/control
 import { MODAL_ASSETS } from "@/domains/game/matching/constants/friendInviteModalAssets.js"
 import { MODAL_COPY } from "@/domains/game/matching/constants/friendInviteModalCopy.js"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
-import Portrait from "../common/Portrait.jsx"
-import ImageButton from "../common/ImageButton.jsx"
+import ProfilePortrait from "@m/shared/ui/portrait/ProfilePortrait.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { SHEET_ROW_CLASS } from "../../constants/matchingMobileStyles.js"
 
 // 친구 한 명 줄 (초대 중이면 잠그고 취소 그림·"초대중..")
@@ -17,7 +17,7 @@ export default function FriendInviteRow({ friend, inviting, onInvite }) {
 
   return (
     <li className={SHEET_ROW_CLASS} data-friend-id={friend.id}>
-      <Portrait photoSrc={portraitSrc} frameSrc={frameSrc} />
+      <ProfilePortrait photoSrc={portraitSrc} frameSrc={frameSrc} />
       <div className="min-w-0 flex-1">
         <p className="truncate font-subheading app-text-scaled [--app-text-size:1rem] font-bold text-[#f5f0e6]">
           {friend.name}
@@ -30,6 +30,7 @@ export default function FriendInviteRow({ friend, inviting, onInvite }) {
         </p>
       </div>
       <ImageButton
+        look="fill"
         label={inviting ? MODAL_COPY.invitingActionLabel : MODAL_COPY.inviteActionLabel}
         ariaLabel={inviting ? MODAL_COPY.invitingFriendAria(friend.name) : MODAL_COPY.inviteFriendAria(friend.name)}
         src={inviting ? MODAL_ASSETS.cancelButton : MODAL_ASSETS.inviteButton}

@@ -2,7 +2,7 @@
 // login/scene/Scene.jsx가 씀 (데스크톱은 왼쪽 위·오른쪽 아래 구석이었음)
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
-import SoundToggle from "@m/domains/auth/components/login/scene/SoundToggle.jsx"
+import SoundControl from "@m/shared/ui/sound/SoundControl.jsx"
 
 // 가로 화면에선 높이를 아끼려고 위 줄을 액자 양옆 빈자리에 겹쳐 띄우고 등급 그림을 줄임
 export default function TopBar() {
@@ -13,7 +13,7 @@ export default function TopBar() {
         alt="전체이용가"
         className="pointer-events-none h-auto w-12 select-none land:w-9! md:w-16"
       />
-      <SoundToggle />
+      <SoundControl look="login" />
     </header>
   )
 }

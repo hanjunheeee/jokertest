@@ -20,3 +20,11 @@ export const VALUE_CLASS =
 // 그림 위 글자 (탭·동작 버튼)
 export const IMAGE_LABEL_CLASS =
     "pointer-events-none absolute inset-0 flex items-center justify-center px-1 text-center font-subheading font-bold leading-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+
+// 초록 그림 동작 버튼 (다시 보기·초기화), 그림 비율(215×65) 그대로라 폭 8rem이면 높이 44px 넘음
+export const ACTION_BUTTON_LOOK = {
+    button: "relative block min-h-11 w-32 shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-transform active:scale-95",
+    img: "block h-auto w-full select-none",
+    label: IMAGE_LABEL_CLASS,
+    labelSize: "app-text-scaled [--app-text-size:0.85rem]",
+}

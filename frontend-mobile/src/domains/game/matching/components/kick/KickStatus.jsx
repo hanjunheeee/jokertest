@@ -2,7 +2,7 @@
 // KickSheet가 씀, 표시 조건·test id는 데스크톱 SettingKickPlayerModalContent와 같음
 import { KICK_REQUEST_STATUS } from "@/domains/game/ingame/constants/ingameKick.js"
 import { GAME_MATCHING_ASSETS } from "@/domains/game/matching/constants/gameMatchingAssets.js"
-import ImageButton from "../common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { ERROR_ON_DARK_CLASS, SHEET_NOTE_CLASS } from "../../constants/matchingMobileStyles.js"
 
 // 진행 표시 묶음
@@ -25,19 +25,21 @@ export default function KickStatus({
           </p>
           <div className="grid grid-cols-2 gap-2">
             <ImageButton
+              look="fill"
               label="추방"
               src={GAME_MATCHING_ASSETS.deleteRoomButton}
               disabled={isSending}
               onClick={() => onConfirmKick?.(targets)}
-              testId="kick-confirm-accept"
+              data-testid="kick-confirm-accept"
               className="h-11"
             />
             <ImageButton
+              look="fill"
               label="취소"
               src={GAME_MATCHING_ASSETS.startGameButton}
               sfxKind="ui-cancel"
               onClick={() => onCancelConfirm?.()}
-              testId="kick-confirm-cancel"
+              data-testid="kick-confirm-cancel"
               className="h-11"
             />
           </div>

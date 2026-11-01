@@ -3,8 +3,8 @@
 import CardIntro from "./CardIntro.jsx"
 import FieldLabel from "./FieldLabel.jsx"
 import RecoveryAlert from "./RecoveryAlert.jsx"
-import InputSlot from "./fields/InputSlot.jsx"
-import { LockIcon } from "./fields/InputIcons.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
+import { LockIcon } from "@m/shared/ui/input/InputIcons.jsx"
 
 // 보내는 중엔 fieldset으로 칸을 한 번에 잠금 (데스크톱과 같음)
 export default function NewPasswordForm({ status, password, setPassword, passwordConfirm, setPasswordConfirm, formError }) {
@@ -14,6 +14,7 @@ export default function NewPasswordForm({ status, password, setPassword, passwor
 
       <FieldLabel text="새 비밀번호">
         <InputSlot
+          look="recovery"
           name="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -26,6 +27,7 @@ export default function NewPasswordForm({ status, password, setPassword, passwor
 
       <FieldLabel text="새 비밀번호 확인">
         <InputSlot
+          look="recovery"
           name="passwordConfirm"
           value={passwordConfirm}
           onChange={(e) => setPasswordConfirm(e.target.value)}

@@ -5,8 +5,8 @@ import CardIntro from "./CardIntro.jsx"
 import FieldLabel from "./FieldLabel.jsx"
 import RecoveryAlert from "./RecoveryAlert.jsx"
 import TextLink from "./TextLink.jsx"
-import InputSlot from "./fields/InputSlot.jsx"
-import { CalendarIcon, ProfileIcon } from "./fields/InputIcons.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
+import { CalendarIcon, ProfileIcon } from "@m/shared/ui/input/InputIcons.jsx"
 
 // 보내는 중엔 fieldset으로 칸·링크를 한 번에 잠금 (데스크톱과 같음)
 export default function FindIdForm({ status, nickname, setNickname, birthDate, setBirthDate, formError, onRetry }) {
@@ -16,6 +16,7 @@ export default function FindIdForm({ status, nickname, setNickname, birthDate, s
 
       <FieldLabel text="닉네임">
         <InputSlot
+          look="recovery"
           type="text"
           name="nickname"
           value={nickname}
@@ -28,6 +29,7 @@ export default function FindIdForm({ status, nickname, setNickname, birthDate, s
 
       <FieldLabel text="생년월일">
         <InputSlot
+          look="recovery"
           type="date"
           name="birthDate"
           value={birthDate}

@@ -5,7 +5,12 @@ import { motion } from "framer-motion"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import TopBar from "./TopBar.jsx"
+import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
+import TopBar from "@m/shared/ui/top/TopBar.jsx"
+
+// 위 줄: 스크롤해도 붙어 있음, 가로 화면에서도 높이 그대로
+const BAR_CLASS =
+    "sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 bg-gradient-to-b from-black/80 to-black/0 px-3"
 
 const MotionAsset = motion.create(PublicAsset)
 
@@ -24,7 +29,17 @@ export default function ScreenFrame({ title, onBack, children }) {
             {/* 그림 위 글자가 읽히게 살짝 어둡게 */}
             <div className="pointer-events-none fixed inset-0 z-0 bg-black/35" aria-hidden="true" />
 
-            <TopBar title={title} onBack={onBack} />
+            <TopBar
+                onBack={onBack}
+                className={BAR_CLASS}
+                backIconClassName="block h-full w-full select-none object-contain"
+                title={
+                    <h1 className="min-w-0 flex-1 truncate text-center font-display text-[1.2rem] text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
+                        {title}
+                    </h1>
+                }
+                right={<SoundMenu look="user" />}
+            />
 
             <div className="relative z-10 flex min-h-0 flex-1 flex-col">{children}</div>
         </div>

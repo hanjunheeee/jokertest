@@ -1,7 +1,7 @@
 // 대기방 바닥 고정 줄: 안내 띠 + 준비·시작·삭제(방장) / 준비·나가기(참가자)
 // GameMatchingPage가 ShellBottom 안에 넣어 씀, 버튼 글자·잠금 규칙은 데스크톱 MatchingPopupPanel과 같음
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
-import ImageButton from "../common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import NoticeBanner from "./NoticeBanner.jsx"
 
 // 바닥 줄 (page = useMatchingPage 값 묶음)
@@ -53,10 +53,11 @@ export default function ActionBar({ page }) {
       <div
         className={`mx-auto grid w-full max-w-[34rem] gap-2 ${isHost ? "grid-cols-3" : "grid-cols-2"} land:max-w-[28rem]`}
       >
-        <ImageButton label={readyLabel} src={readySrc} onClick={toggleReady} disabled={readyDisabled} className="h-12 land:h-11" />
+        <ImageButton look="fill" label={readyLabel} src={readySrc} onClick={toggleReady} disabled={readyDisabled} className="h-12 land:h-11" />
         {isHost ? (
           <>
             <ImageButton
+              look="fill"
               label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
               src={GAME_MATCHING_ASSETS.startGameButton}
               onClick={startGame}
@@ -64,6 +65,7 @@ export default function ActionBar({ page }) {
               className="h-12 land:h-11"
             />
             <ImageButton
+              look="fill"
               label={MATCHING_POPUP_COPY.deleteRoom}
               src={GAME_MATCHING_ASSETS.deleteRoomButton}
               onClick={deleteRoom}
@@ -72,6 +74,7 @@ export default function ActionBar({ page }) {
           </>
         ) : (
           <ImageButton
+            look="fill"
             label={MATCHING_POPUP_COPY.leaveRoom}
             src={GAME_MATCHING_ASSETS.deleteRoomButton}
             onClick={handleBack}

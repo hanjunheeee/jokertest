@@ -3,7 +3,7 @@
 import { motion } from "framer-motion"
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
-import ImageButton from "../common/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import SlotGrid from "../slots/SlotGrid.jsx"
 import { PARCHMENT_CLASS, ROOM_CODE_COPY } from "../../constants/matchingMobileStyles.js"
 
@@ -29,6 +29,7 @@ export default function MatchingBoard({ visible, cards, waitingMessage, onRoomCo
         </p>
         {/* 초대코드 공유 (누르면 방코드 시트) */}
         <ImageButton
+          look="fill"
           label={ROOM_CODE_COPY.open}
           src={GAME_MATCHING_ASSETS.roomCodeViewButton}
           onClick={onRoomCodeOpen}

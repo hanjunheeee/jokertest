@@ -3,7 +3,9 @@
 
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import FormActions from "./FormActions.jsx"
-import InputSlot from "./InputSlot.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
+import { UserIcon } from "@m/shared/ui/input/InputIcons.jsx"
+import { MUTED_ICON_CLASS } from "@m/shared/ui/input/inputSlotLooks.js"
 import SectionTitle from "./SectionTitle.jsx"
 
 // 보낼 때 확인 소리 후 폼 처리로 넘김, 보내는 중엔 버튼 잠금
@@ -24,7 +26,8 @@ export default function NicknameSection({ nickname, setNickname, nicknameMsg, ni
                     onChange={(e) => setNickname(e.target.value)}
                     placeholder="새 닉네임"
                     autoComplete="off"
-                    icon="user"
+                    look="account"
+                    leadingIcon={<UserIcon className={MUTED_ICON_CLASS} />}
                 />
                 <FormActions msg={nicknameMsg} confirmDisabled={nicknameLoading} />
             </form>

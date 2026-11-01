@@ -2,24 +2,11 @@
 // 알림 시트(NotificationSheet.jsx)가 씀
 import { useEffect } from "react"
 
-import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import { useEscapeClose } from "@m/shared/hooks/useEscapeClose.js"
 
 // 열려 있을 때만 Esc 들음, 취소 소리 냄
 export function useSheetKeys({ open, inDetail, onBack, onClose, closeButtonRef }) {
-  useEffect(() => {
-    if (!open) return undefined
-
-    // Esc만 받음
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return
-      dispatchUiSfx("ui-cancel", event)
-      if (inDetail) onBack()
-      else onClose?.()
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, inDetail, onBack, onClose])
+  useEscapeClose(open, inDetail ? onBack : onClose, { sfx: true })
 
   // 열릴 때·목록으로 돌아올 때 닫기 버튼에 포커스 (화면 읽기 시작점)
   useEffect(() => {

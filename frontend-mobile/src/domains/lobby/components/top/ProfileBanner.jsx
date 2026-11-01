@@ -8,7 +8,7 @@ import {
     TEXT_SHADOW,
 } from "@/domains/user/constants/myPageBannerStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import BannerPortrait from "@m/domains/lobby/components/top/BannerPortrait.jsx"
+import BannerPortrait from "@m/shared/ui/portrait/BannerPortrait.jsx"
 
 // 배너 본체는 버튼 하나, 톱니는 그 위에 겹친 따로 버튼 (안쪽에 버튼 넣지 않기)
 // 톱니 그림은 데스크톱 자리(위 14.5%·오른쪽 17%·폭 7.8cqi)의 가운데에 두고 누르는 칸만 44px로 키움

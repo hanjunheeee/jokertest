@@ -3,7 +3,7 @@
 import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import { useAudioControl } from "@/shared/hooks/useAudioControl.js"
 import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
-import PublicAsset from "@/shared/ui/PublicAsset"
+import MuteButton from "@m/shared/ui/sound/MuteButton.jsx"
 import RangeSlider from "./RangeSlider.jsx"
 
 // 막대 그림 앞뒤 장식 (데스크톱 soundControlLayout과 같은 %)
@@ -11,27 +11,18 @@ const BAR_EDGE = { startPct: 20, endPct: 8 }
 
 // 값·동작은 데스크톱 useAudioControl, 0~1 값을 0~100 칸으로 바꿔 씀
 export default function BgmControl() {
-    const { sliderValue, isSilent, disabled, onVolumeChange, toggleMute } = useAudioControl(getGlobalBgmRef())
+    const control = useAudioControl(getGlobalBgmRef())
+    const { sliderValue, disabled, onVolumeChange } = control
     const percent = Math.round(sliderValue * 100)
-    const muteLabel = disabled ? "배경음 사용 안 함" : isSilent ? "음소거 해제" : "음소거"
 
     return (
         // 막대 그림이 403×88이라 폭을 15rem으로 묶어야 바닥 줄 높이 안에 들어감
         <div className="flex w-full max-w-60 items-center gap-1" role="group" aria-label="사운드 조절">
-            <button
-                type="button"
-                disabled={disabled}
-                onClick={toggleMute}
-                aria-label={muteLabel}
-                aria-pressed={isSilent}
+            <MuteButton
+                control={control}
                 className="flex size-12 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 disabled:cursor-default"
-            >
-                <PublicAsset
-                    src={isSilent ? SOUND_CONTROL_ASSETS.noSoundIcon : SOUND_CONTROL_ASSETS.soundOnIcon}
-                    alt=""
-                    className="block w-11 h-auto select-none"
-                />
-            </button>
+                iconClassName="block w-11 h-auto select-none"
+            />
             <RangeSlider
                 value={percent}
                 min={0}

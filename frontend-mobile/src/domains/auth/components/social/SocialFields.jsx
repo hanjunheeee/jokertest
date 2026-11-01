@@ -1,9 +1,9 @@
 // 소셜 가입 입력 칸 (불러오는 중 표시, 이메일+인증, 닉네임, 생년월일, 가입·취소 버튼)
 // social/SocialSignupForm.jsx가 입력 화면에서 씀, signup = 데스크톱 useSocialSignup 결과
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
-import ImageButton from "@m/domains/auth/components/login/ui/ImageButton.jsx"
-import InputSlot from "@m/domains/auth/components/login/ui/InputSlot.jsx"
-import { CalendarIcon, MailIcon, ProfileIcon } from "@m/domains/auth/components/login/ui/icons.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
+import { SignupCalendarIcon, MailIcon, ProfileIcon } from "@m/shared/ui/input/InputIcons.jsx"
 import { ERROR_TEXT_CLASS, HINT_TEXT_CLASS, LINK_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 import EmailVerification from "@m/domains/auth/components/signup/verification/EmailVerification.jsx"
 
@@ -59,7 +59,7 @@ export default function SocialFields({
         name="birthDate"
         value={birthDate}
         onChange={(e) => { if (!isSubmitting) setBirthDate(e.target.value) }}
-        leadingIcon={<CalendarIcon />}
+        leadingIcon={<SignupCalendarIcon />}
         placeholder="생년월일을 선택하세요"
         ariaLabel="생년월일"
       />
@@ -74,7 +74,7 @@ export default function SocialFields({
         onClick={onSubmit}
         disabled={!canSubmit}
         src={LOGIN_ASSETS.signupButton}
-        label={isSubmitting ? "처리 중..." : "가입 완료"}
+        ariaLabel={isSubmitting ? "처리 중..." : "가입 완료"}
         className="mx-auto w-[86%]"
       />
       <button type="button" onClick={onCancel} className={`${LINK_CLASS} self-center`}>취소하고 로그인 화면으로</button>

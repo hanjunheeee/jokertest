@@ -141,4 +141,56 @@
   .mobile-shell__bottom:empty {
     display: none;
   }
+
+  /* 아래는 데스크톱 app/index.css 전역 class 그대로 (데스크톱 상수 class 문자열이 이 이름을 씀) */
+  .interactive-scale {
+    @apply cursor-pointer border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-[1.02] active:scale-[0.99];
+  }
+
+  .interactive-scale-sm {
+    @apply block transition-transform duration-200 ease-out group-hover:scale-[1.18] group-active:scale-[0.9] group-disabled:scale-100;
+  }
+
+  .interactive-scale-peer-sm {
+    @apply block transition-transform duration-200 ease-out peer-hover:scale-[1.18] peer-active:scale-[0.9];
+  }
+
+  .auth-date-input:not(.auth-date-input--filled)::-webkit-datetime-edit,
+  .auth-date-input:not(.auth-date-input--filled)::-webkit-datetime-edit-year-field,
+  .auth-date-input:not(.auth-date-input--filled)::-webkit-datetime-edit-month-field,
+  .auth-date-input:not(.auth-date-input--filled)::-webkit-datetime-edit-day-field,
+  .auth-date-input:not(.auth-date-input--filled)::-webkit-datetime-edit-text {
+    color: rgb(255 255 255 / 0.55);
+  }
+
+  .auth-date-input--filled::-webkit-datetime-edit {
+    color: #fff;
+  }
+
+  .auth-date-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 1;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin-inline-start: 0.125rem;
+    background: center / contain no-repeat
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='16' rx='2'/%3E%3Cpath d='M8 3v4M16 3v4M4 10h16'/%3E%3C/svg%3E");
+    transition: transform 200ms ease-out;
+  }
+
+  .auth-date-input:hover::-webkit-calendar-picker-indicator {
+    transform: scale(1.18);
+  }
+
+  .auth-date-input:active::-webkit-calendar-picker-indicator {
+    transform: scale(0.9);
+  }
+
+  .auth-text-link {
+    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-amber-800 underline-offset-2 hover:underline;
+    font-size: calc(13px * var(--app-text-scale, 1));
+    font-weight: 700;
+    -webkit-text-stroke: 0.35px currentColor;
+    paint-order: stroke fill;
+  }
 }

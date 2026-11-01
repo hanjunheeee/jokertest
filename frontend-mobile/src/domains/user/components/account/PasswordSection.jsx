@@ -3,7 +3,9 @@
 
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import FormActions from "./FormActions.jsx"
-import InputSlot from "./InputSlot.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
+import { LockIcon } from "@m/shared/ui/input/InputIcons.jsx"
+import { MUTED_ICON_CLASS } from "@m/shared/ui/input/inputSlotLooks.js"
 import SectionTitle from "./SectionTitle.jsx"
 
 // 보낼 때 확인 소리 후 폼 처리로 넘김, 보내는 중엔 버튼 잠금
@@ -24,7 +26,8 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
                     onChange={handlePwChange}
                     placeholder="현재 비밀번호"
                     autoComplete="current-password"
-                    icon="lock"
+                    look="account"
+                    leadingIcon={<LockIcon className={MUTED_ICON_CLASS} />}
                     passwordToggle
                 />
                 <InputSlot
@@ -33,7 +36,8 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
                     onChange={handlePwChange}
                     placeholder="새 비밀번호"
                     autoComplete="new-password"
-                    icon="lock"
+                    look="account"
+                    leadingIcon={<LockIcon className={MUTED_ICON_CLASS} />}
                     passwordToggle
                 />
                 <FormActions msg={pwMsg} confirmDisabled={pwLoading} />

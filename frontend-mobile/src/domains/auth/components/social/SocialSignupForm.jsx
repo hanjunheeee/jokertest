@@ -4,7 +4,7 @@ import { useState } from "react"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import { SOCIAL_SIGNUP_TEXT } from "@/domains/auth/constants/socialMessages.js"
 import { useSocialSignup } from "@/domains/auth/hooks/useSocialSignup.js"
-import ImageButton from "@m/domains/auth/components/login/ui/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { ERROR_TEXT_CLASS, HEADER_TEXT_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 import IntentError from "@m/domains/auth/components/social/IntentError.jsx"
 import SocialFields from "@m/domains/auth/components/social/SocialFields.jsx"
@@ -42,7 +42,7 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
     return (
       <div className="flex flex-col items-center gap-4 py-6 text-center">
         <p role="alert" className={ERROR_TEXT_CLASS}>{errorMessage}</p>
-        <ImageButton onClick={onCancel} src={LOGIN_ASSETS.loginButton} label="로그인 화면으로" className="mx-auto w-[86%]" />
+        <ImageButton onClick={onCancel} src={LOGIN_ASSETS.loginButton} ariaLabel="로그인 화면으로" className="mx-auto w-[86%]" />
       </div>
     )
   }

@@ -5,8 +5,8 @@ import CardIntro from "./CardIntro.jsx"
 import FieldLabel from "./FieldLabel.jsx"
 import RecoveryAlert from "./RecoveryAlert.jsx"
 import TextLink from "./TextLink.jsx"
-import InputSlot from "./fields/InputSlot.jsx"
-import { MailIcon } from "./fields/InputIcons.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
+import { MailIcon } from "@m/shared/ui/input/InputIcons.jsx"
 
 // 보내는 중엔 fieldset으로 칸·링크를 한 번에 잠금 (데스크톱과 같음)
 export default function ResetRequestForm({ status, email, setEmail, formError, onRetry }) {
@@ -16,6 +16,7 @@ export default function ResetRequestForm({ status, email, setEmail, formError, o
 
       <FieldLabel text="이메일">
         <InputSlot
+          look="recovery"
           type="email"
           name="email"
           value={email}

@@ -1,9 +1,9 @@
 // 로그인 모드 칸 (안내 문구, 이메일·비밀번호, 유지·찾기 링크, 로그인·소셜 버튼, 가입 전환)
 // pages/LoginPage.jsx가 로그인 모드일 때 씀
-import ImageButton from "@m/domains/auth/components/login/ui/ImageButton.jsx"
-import InputSlot from "@m/domains/auth/components/login/ui/InputSlot.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 import ModeSwitch from "@m/domains/auth/components/login/ui/ModeSwitch.jsx"
-import { LockIcon, MailIcon } from "@m/domains/auth/components/login/ui/icons.jsx"
+import { LockIcon, MailIcon } from "@m/shared/ui/input/InputIcons.jsx"
 import { HEADER_TEXT_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 import LoginOptions from "@m/domains/auth/components/login/LoginOptions.jsx"
 import SocialButtons from "@m/domains/auth/components/login/SocialButtons.jsx"
@@ -39,8 +39,8 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
       <ImageButton
         type="submit"
         src="/button/버튼 프레임2.png"
+        ariaLabel="로그인"
         label="로그인"
-        visibleLabel="로그인"
         labelClassName="app-text-scaled [--app-text-size:22px]"
         className="mx-auto w-[94%]"
       />
