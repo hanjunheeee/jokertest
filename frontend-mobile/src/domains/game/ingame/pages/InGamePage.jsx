@@ -32,7 +32,7 @@ const GRID_CLASS = [
 // 칸 하나 공통 (가로 스크롤 없게 min-w-0), 판·채팅만 줄어들 수 있게 min-h-0 따로 붙임
 const SLOT_CLASS = "relative min-w-0"
 
-// 낮은 화면에서 입력 중: 진행 바는 접고(채팅 칸에 타이머 있음) 세로 판도 접어 채팅 목록 자리 냄 (가로는 판이 왼쪽이라 둠)
+// 낮은 화면에서 입력 중: 진행 바·세로 판을 잠깐 접어 채팅 목록 자리 냄 (타이머는 키보드 내리면 다시 보임, 가로는 판이 왼쪽이라 둠)
 const TYPING_TIME_CLASS = "hidden"
 const TYPING_BOARD_CLASS = "hidden land:block"
 

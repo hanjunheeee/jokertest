@@ -33,7 +33,7 @@ export default function KickStatus({
           className="flex flex-col gap-2 rounded-lg border border-[#b50000]/60 bg-[#3a1410]/70 p-3"
         >
           <p className="text-center font-subheading app-text-scaled [--app-text-size:0.95rem] font-bold text-[#f5f0e6]">
-            <span data-testid="kick-confirm-target">{pendingTarget.nickname || pendingTarget.uuid}</span> 님을 추방할까요?
+            <span data-testid="kick-confirm-target">{pendingTarget.nickname || pendingTarget.uuid}</span>
           </p>
           <div className="grid grid-cols-2 gap-2">
             <ImageButton

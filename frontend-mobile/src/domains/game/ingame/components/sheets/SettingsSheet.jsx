@@ -1,4 +1,4 @@
-// 인게임 설정 시트: 탭 줄(채팅·사운드·방관리)·고른 탭 본문·방 코드 보기 버튼, 위에 추방·방 코드 시트
+// 인게임 설정 시트: 탭 줄(채팅·사운드·방관리)·고른 탭 본문·방 코드 보기 버튼, 위에 추방·방 코드 창
 // InGamePage 위 줄이 { open, onClose }로 엶, 탭·소리 값은 데스크톱 useInGameSettingPanel (SettingPanel과 같은 구성)
 import { useState } from "react"
 import { INGAME_SETTING_ASSETS } from "@/domains/game/ingame/constants/controls/ingameSetting/ingameSettingAssets.js"
@@ -39,6 +39,7 @@ export default function SettingsSheet({ open, onClose }) {
         src={INGAME_SETTING_ASSETS.roomCodeButton}
         onClick={() => setRoomCodeOpen(true)}
         className="h-11 w-[9.5rem]"
+        labelClassName="text-[#ebe2cc]/90"
         testId="setting-room-code"
       />
     </div>
@@ -51,6 +52,7 @@ export default function SettingsSheet({ open, onClose }) {
         open={open}
         onClose={onClose}
         title="설정"
+        ariaLabel="인게임 설정"
         subtitle="게임 중 빠르게 변경할 수 있는 설정입니다."
         closeLabel="인게임 설정 닫기"
         header={<Tabs tabs={visibleTabs} activeTab={activeTab} onSelect={setActiveTab} />}

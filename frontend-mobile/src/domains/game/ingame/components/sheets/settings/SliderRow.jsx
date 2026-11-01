@@ -7,7 +7,7 @@ import { ROW_LABEL_CLASS, ROW_PLATE_CLASS, ROW_VALUE_CLASS } from "./rowStyle.js
 export default function SliderRow({ label, min, max, value, onChange }) {
   return (
     <div className={ROW_PLATE_CLASS} data-setting-row>
-      <span className={`${ROW_LABEL_CLASS} w-[5.6rem] shrink-0 break-keep`}>{label}</span>
+      <span className={`${ROW_LABEL_CLASS} w-[6.9rem] shrink-0 whitespace-nowrap`}>{label}</span>
       <div className="min-w-0 flex-1">
         <RangeSlider ariaLabel={label} min={min} max={max} value={value} onChange={onChange} />
       </div>

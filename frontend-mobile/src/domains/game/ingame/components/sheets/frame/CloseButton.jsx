@@ -1,5 +1,5 @@
 // 시트 닫기 그림 버튼 (데스크톱 옆 창 닫기 그림 그대로)
-// sheets/frame/Sheet.jsx가 씀
+// sheets/frame/Sheet.jsx·Modal.jsx가 씀
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { CLOSE_BTN_CLASS, CLOSE_BUTTON_SRC, CLOSE_IMG_CLASS } from "./sheetStyle.js"
 

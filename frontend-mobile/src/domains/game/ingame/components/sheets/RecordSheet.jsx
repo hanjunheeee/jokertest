@@ -14,6 +14,7 @@ export default function RecordSheet({ open, onClose }) {
       open={open}
       onClose={onClose}
       title="플레이어 리스트"
+      ariaLabel="플레이어별 전적목록"
       subtitle="모든 플레이어의 전적과 정보를 확인할 수 있습니다."
       closeLabel="플레이어별 전적목록 닫기"
       testId="record-sheet"
