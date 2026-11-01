@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover: 노치 뒤까지 그리고 안전영역은 env(safe-area-inset-*)로 비킴 -->
+    <!-- interactive-widget: 키보드가 올라오면 화면 높이를 줄여 입력칸이 안 가려지게 -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#000000" />
+    <title>client-mobile</title>
+  </head>
+  <body>
+    <!-- 로비 메뉴 hover 빨강 필터 (데스크톱 index.html과 같은 id, 데스크톱 class가 url(#lobby-menu-red)로 씀) -->
+    <svg aria-hidden="true" width="0" height="0" class="pointer-events-none absolute">
+      <defs>
+        <filter id="lobby-menu-red" color-interpolation-filters="sRGB">
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="0.2126 0.7152 0.0722 0 0
+                    0.2126 0.7152 0.0722 0 0
+                    0.2126 0.7152 0.0722 0 0
+                    0      0      0      1 0"
+            result="lum"
+          />
+          <feComponentTransfer in="lum">
+            <feFuncR type="linear" slope="0.7098" intercept="0" />
+            <feFuncG type="linear" slope="0" intercept="0" />
+            <feFuncB type="linear" slope="0" intercept="0" />
+            <feFuncA type="identity" />
+          </feComponentTransfer>
+        </filter>
+      </defs>
+    </svg>
+    <!-- src/main.jsx가 React 앱을 붙이는 자리 -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

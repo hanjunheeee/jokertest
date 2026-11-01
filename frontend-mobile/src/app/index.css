@@ -1,0 +1,144 @@
+/* 모바일 전역 css: 데스크톱 글꼴·색·글자 배율 + 모바일 기준점·안전영역
+   데스크톱 app/index.css에서 화면 틀(viewport-shell) 부분만 빼고 옮김 */
+@import url("https://fonts.googleapis.com/earlyaccess/nanummyeongjo.css");
+@import "tailwindcss";
+
+/* Tailwind 4는 프로젝트 바깥 파일을 안 훑음 → 화면 class 문자열이 든 데스크톱 로직 폴더만 열기
+   (./src는 기본으로 훑음, 명시는 읽기 쉽게) */
+@source "../../src";
+@source "../../../frontend/src/domains/**/constants";
+@source "../../../frontend/src/shared/constants";
+@source "../../../frontend/src/shared/ui/{ProtectedRoute,PublicAsset,GlobalBgmLayer}.jsx";
+
+/* 폰 가로 (높이 낮은 가로 화면) */
+@custom-variant land (@media (orientation: landscape) and (max-height: 540px));
+/* 키 낮은 폰 (SE 667 등) */
+@custom-variant short (@media (max-height: 700px));
+
+@font-face {
+  font-family: "Shilla";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/Shilla_CultureM-Medium.woff2")
+    format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Shilla";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2206-02@1.0/Shilla_CultureB-Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 기준점: 접두사 없음 = 폰 세로, md 768(태블릿 세로)·lg 1024(태블릿 가로)·xl 1280(데스크톱)
+   sm·2xl은 데스크톱 상수 class가 쓸 수 있어서 기본값 그대로 둠
+   --app-text-scale: 설정의 글자 크기 단계와 연결 (데스크톱 useAppTextScaleSync가 바꿈) */
+@theme {
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+
+  --font-display: "Shilla", serif;
+  --font-subheading: "Nanum Myeongjo", serif;
+  --font-sans: "Nanum Myeongjo", serif;
+
+  --color-text-main: #b50000;
+  --color-text-body: #000000;
+
+  --app-text-scale: 1;
+
+  --text-xs: calc(0.75rem * var(--app-text-scale, 1));
+  --text-sm: calc(0.875rem * var(--app-text-scale, 1));
+}
+
+@utility app-text-scaled {
+  font-size: calc(var(--app-text-size, 1rem) * var(--app-text-scale, 1));
+}
+
+/* 안전영역 비키기 (노치·홈 막대) */
+@utility safe-pt {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility safe-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility safe-px {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-black;
+    /* 당겨서 새로고침·바운스로 화면이 흔들리지 않게 */
+    overscroll-behavior: none;
+  }
+
+  html {
+    /* 가로로 돌릴 때 iOS가 글자를 멋대로 키우지 않게 */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply font-sans text-text-body antialiased;
+    font-size: calc(1rem * var(--app-text-scale, 1));
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1 {
+    @apply font-display font-medium text-text-main;
+  }
+
+  h2 {
+    @apply font-subheading text-text-main font-bold;
+  }
+
+  p {
+    @apply text-text-body;
+  }
+
+  /* iOS 입력 확대 막기: 입력칸 글자 16px 이상 */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+@layer components {
+  /* 화면 틀: 높이 100svh, 안전영역 안쪽에 페이지 + 바닥 자리 */
+  .mobile-shell {
+    @apply relative flex w-full flex-col overflow-hidden bg-black;
+    height: 100svh;
+    container-type: inline-size;
+    container-name: mobile-viewport;
+    /* 노치·홈 막대·가로일 때 좌우 둥근 모서리 비키기 */
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+
+  @supports (height: 100dvh) {
+    .mobile-shell {
+      height: 100dvh;
+    }
+  }
+
+  .mobile-shell__page {
+    @apply relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 바닥 자리: 페이지가 portal로 바닥 줄·전환 버튼을 넣음, 비면 높이 0 */
+  .mobile-shell__bottom {
+    @apply relative shrink-0;
+  }
+
+  .mobile-shell__bottom:empty {
+    display: none;
+  }
+}

@@ -1,0 +1,19 @@
+# 로그
+logs
+*.log
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# 환경 값 (예시만 커밋)
+.env
+.env.*
+!.env.example
+
+# 편집기
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store

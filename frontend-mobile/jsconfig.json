@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["../frontend/src/*"],
+      "@m/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*", "../frontend/src/**/*"]
+}
