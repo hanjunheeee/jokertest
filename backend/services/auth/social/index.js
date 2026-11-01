@@ -7,6 +7,10 @@ const { linkExternalIdentityForValidatedSession, linkExternalIdentity } = requir
 // 컨트롤러에서 옮긴 시도 표 서명·확인·판정 + 시도 표 유효 시간
 const { signOAuthAttempt, verifyOAuthAttempt, rememberMeForSignup } = require('./attempt');
 const { OAUTH_ATTEMPT_TTL_SECONDS, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = require('./constants');
+// 컨트롤러에서 옮긴 구글·디스코드 로그인 흐름 · 디스코드 연결 흐름
+const { startGoogleLogin, completeGoogleLogin } = require('./googleLogin');
+const { startDiscordLogin, completeDiscordLogin } = require('./discordLogin');
+const { startDiscordLink, completeDiscordLink } = require('./discordLink');
 
 module.exports = {
     issueOAuthState,
@@ -22,4 +26,10 @@ module.exports = {
     rememberMeForSignup,
     OAUTH_ATTEMPT_TTL_SECONDS,
     SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
+    startGoogleLogin,
+    completeGoogleLogin,
+    startDiscordLogin,
+    completeDiscordLogin,
+    startDiscordLink,
+    completeDiscordLink,
 };
