@@ -1,6 +1,6 @@
 'use strict';
 
-const passwordResetService = require('../service/passwordReset.service');
+const passwordResetService = require('../services/auth/passwordReset');
 
 exports.requestPasswordReset = async (req, res) => {
     res.set('Cache-Control', 'no-store');

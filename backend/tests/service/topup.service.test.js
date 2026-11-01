@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const topup = require('../../service/topup.service');
+const topup = require('../../services/economy/topup');
 const { createFakeTopupDb } = require('../helpers/fakeTopupDb');
 const { createFakeTossAdapter } = require('../helpers/fakeTossAdapter');
 
@@ -278,9 +278,9 @@ test('응답 유실(제공자는 승인): CONFIRMING으로 남고, 새 서비스
     assert.equal(ctx.fake.providerState(order.paymentKey), 'DONE');
     assertNothingGranted(ctx, order);
 
-    const resolved = require.resolve('../../service/topup.service');
+    const resolved = require.resolve('../../services/economy/topup');
     delete require.cache[resolved];
-    const freshService = require('../../service/topup.service');
+    const freshService = require('../../services/economy/topup');
     const recovered = await freshService.getTopupOrder({ userId: USER_A, orderId: order.orderId }, ctx.deps);
     assert.equal(recovered.status, 'GRANTED');
     assert.equal(recovered.balanceDiamond, 110);

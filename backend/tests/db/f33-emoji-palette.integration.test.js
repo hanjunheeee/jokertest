@@ -55,7 +55,7 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const economyService = require('../../service/economy.service');
+const economyService = require('../../services/economy');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');

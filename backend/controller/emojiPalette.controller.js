@@ -1,6 +1,6 @@
 'use strict';
 
-const economyService = require('../service/economy.service');
+const economyService = require('../services/economy');
 
 const ALLOWED_SAVE_FIELDS = new Set(['slots', 'expectedRevision']);
 

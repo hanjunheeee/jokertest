@@ -145,7 +145,7 @@ const createF29RecoveryFixture = async (t, options = {}) => {
     const baseURL = `http://127.0.0.1:${server.address().port}`;
 
     const db = require('../../models');
-    const authService = require('../../service/auth.service');
+    const authService = require('../../services/auth/account');
 
     const cleanup = async () => {
         if (io) {
@@ -164,7 +164,7 @@ const createF29RecoveryFixture = async (t, options = {}) => {
     };
 
     const createSocialOnlyUser = async ({ nickname, email, provider = 'google', birthDate = '1992-02-02' }) => {
-        const socialAuthService = require('../../service/socialAuth.service');
+        const socialAuthService = require('../../services/auth/social');
         const crypto = require('node:crypto');
         const fingerprint = `fp-${crypto.randomUUID()}`;
         const state = await socialAuthService.issueOAuthState({ purpose: 'login', browserFingerprint: fingerprint });

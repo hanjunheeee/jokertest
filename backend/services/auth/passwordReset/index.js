@@ -1,12 +1,12 @@
 'use strict';
 
 const crypto = require('crypto');
-const db = require('../models');
-const userRepository = require('../repositories/user.repositories');
-const { hashPassword } = require('../utils/hash');
-const { validatePassword } = require('../validation/signupValidation');
-const { validateResetToken } = require('../validation/passwordResetValidation');
-const mailAdapter = require('../mail/mailAdapter');
+const db = require('../../../models');
+const userRepository = require('../../../repositories/user.repositories');
+const { hashPassword } = require('../../../utils/hash');
+const { validatePassword } = require('../../../validation/signupValidation');
+const { validateResetToken } = require('../../../validation/passwordResetValidation');
+const mailAdapter = require('../../../mail/mailAdapter');
 
 const TOKEN_TTL_MS = (() => {
     const parsed = Number(process.env.PASSWORD_RESET_TOKEN_TTL_MS);

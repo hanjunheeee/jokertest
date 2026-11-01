@@ -1,9 +1,9 @@
 'use strict';
 
 const crypto = require('crypto');
-const { createError } = require('../utils/appError');
-const currencyProducts = require('./currencyProducts.service');
-const economyService = require('./economy.service');
+const { createError } = require('../../../utils/appError');
+const currencyProducts = require('../currencyProducts');
+const economyService = require('..');
 
 const ORDER_STATUS = Object.freeze({
     CREATED: 'CREATED',
@@ -22,9 +22,9 @@ const ORDER_ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/;
 const PAYMENT_KEY_PATTERN = /^[A-Za-z0-9_=+/.-]{1,200}$/;
 const SAFE_LOG_CODE = /^[A-Z0-9_]{1,80}$/;
 
-const defaultDb = () => require('../models');
+const defaultDb = () => require('../../../models');
 const dbOf = (deps) => deps.db ?? defaultDb();
-const adapterOf = (deps) => deps.adapter ?? require('../payments/tossAdapter');
+const adapterOf = (deps) => deps.adapter ?? require('../../../payments/tossAdapter');
 const nowOf = (deps) => (typeof deps.now === 'function' ? deps.now() : new Date());
 const leaseMsOf = (deps) => (Number.isSafeInteger(deps.leaseMs) && deps.leaseMs > 0 ? deps.leaseMs : LEASE_MS);
 

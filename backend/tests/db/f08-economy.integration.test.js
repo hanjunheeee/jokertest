@@ -47,11 +47,11 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const economyService = require('../../service/economy.service');
+const economyService = require('../../services/economy');
 const { CURRENCIES } = economyService;
 const { hashPassword } = require('../../utils/hash');
-const authService = require('../../service/auth.service');
-const socialAuthService = require('../../service/socialAuth.service');
+const authService = require('../../services/auth/account');
+const socialAuthService = require('../../services/auth/social');
 const { backfillDefaultEntitlements } = require('../../db/backfillEconomy');
 const { prepareSignupProof } = require('../helpers/signupProof');
 

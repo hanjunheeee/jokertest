@@ -12,7 +12,7 @@ const crypto         = require("node:crypto");
 const db = require("../../models");
 const { generateToken } = require("../../utils/jwt");
 const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
-const authService  = require("../../service/auth.service");
+const authService  = require("../../services/auth/account");
 const socketLayer  = require("../../socket/socket");
 
 const { Op } = db.Sequelize;

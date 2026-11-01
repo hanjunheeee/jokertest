@@ -76,8 +76,8 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const authService = require('../../service/auth.service');
-const discordOAuthService = require('../../service/discordOAuth.service');
+const authService = require('../../services/auth/account');
+const discordOAuthService = require('../../services/auth/oauth/discord');
 const userRepository = require('../../repositories/user.repositories');
 const mailAdapterModule = require('../../mail/mailAdapter');
 const { hashPassword } = require('../../utils/hash');

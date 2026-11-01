@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const products = require('../../service/currencyProducts.service');
+const products = require('../../services/economy/currencyProducts');
 const { createFakeTopupDb } = require('../helpers/fakeTopupDb');
 
 const ROW = Object.freeze({

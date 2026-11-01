@@ -1,6 +1,6 @@
 'use strict';
 
-const accountRecoveryService = require('../service/accountRecovery.service');
+const accountRecoveryService = require('../services/auth/accountRecovery');
 const { getClientIp } = require('../utils/ip');
 
 const IP_PATTERN = /^[0-9a-fA-F:.]{1,45}$/;

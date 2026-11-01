@@ -1,15 +1,15 @@
 const crypto = require("crypto");
-const userRepository = require("../repositories/user.repositories");
-const authService = require("./auth.service");
-const { hashPassword } = require("../utils/hash");
-const { createError } = require("../utils/appError");
-const { validateNickname, validateBirthDate } = require("../validation/signupValidation");
-const db = require("../models");
-const economyService = require("./economy.service");
-const signupEmailVerificationService = require("./signupEmailVerification.service");
+const userRepository = require("../../../repositories/user.repositories");
+const authService = require("../account");
+const { hashPassword } = require("../../../utils/hash");
+const { createError } = require("../../../utils/appError");
+const { validateNickname, validateBirthDate } = require("../../../validation/signupValidation");
+const db = require("../../../models");
+const economyService = require("../../economy");
+const signupEmailVerificationService = require("../signupEmailVerification");
 const {
     normalizeEmail: normalizeSignupEmail, validateEmailFormat,
-} = require("../validation/signupEmailVerificationValidation");
+} = require("../../../validation/signupEmailVerificationValidation");
 
 const generateOpaqueToken = () => crypto.randomBytes(32).toString("base64url");
 const hashValue = (raw) => crypto.createHash("sha256").update(raw).digest("hex");

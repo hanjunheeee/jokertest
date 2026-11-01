@@ -10,7 +10,7 @@ const jwt          = require("jsonwebtoken");
 const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
 const { createError } = require("../../utils/appError");
 const userRepository = require("../../repositories/user.repositories");
-const economyService  = require("../../service/economy.service");
+const economyService  = require("../../services/economy");
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan", "findByUuid"];
 

@@ -73,8 +73,8 @@ const rebuildFullSchema = async () => {
 };
 
 const db = require('../../models');
-const googleOAuthService = require('../../service/googleOAuth.service');
-const discordOAuthService = require('../../service/discordOAuth.service');
+const googleOAuthService = require('../../services/auth/oauth/google');
+const discordOAuthService = require('../../services/auth/oauth/discord');
 const userRepository = require('../../repositories/user.repositories');
 const mailAdapterModule = require('../../mail/mailAdapter');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');

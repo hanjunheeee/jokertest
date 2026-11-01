@@ -51,7 +51,7 @@ const unavailable = (t) => {
 
 const db = require('../../models');
 const userRepository = require('../../repositories/user.repositories');
-const topupService = require('../../service/topup.service');
+const topupService = require('../../services/economy/topup');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
 
 test.after(async () => {

@@ -11,9 +11,9 @@ const cookieParser = require("cookie-parser");
 const jwt          = require("jsonwebtoken");
 
 const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
-const authService        = require("../../service/auth.service");
-const socialAuthService  = require("../../service/socialAuth.service");
-const googleOAuthService = require("../../service/googleOAuth.service");
+const authService        = require("../../services/auth/account");
+const socialAuthService  = require("../../services/auth/social");
+const googleOAuthService = require("../../services/auth/oauth/google");
 
 const SOCIAL_KEYS = ["issueOAuthState", "consumeOAuthState", "resolveOAuthAccount"];
 const GOOGLE_KEYS  = ["buildAuthorizationUrl", "exchangeCodeForProfile"];

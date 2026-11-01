@@ -13,9 +13,9 @@ const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
 const { createError } = require("../../utils/appError");
 const userRepository = require("../../repositories/user.repositories");
-const currencyProductsService = require("../../service/currencyProducts.service");
-const topupService = require("../../service/topup.service");
-const economyService = require("../../service/economy.service");
+const currencyProductsService = require("../../services/economy/currencyProducts");
+const topupService = require("../../services/economy/topup");
+const economyService = require("../../services/economy");
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan", "findByUuid"];
 

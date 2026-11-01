@@ -55,7 +55,7 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const economyService = require('../../service/economy.service');
+const economyService = require('../../services/economy');
 const { CURRENCIES } = economyService;
 const catalog = require('../../economy/catalog');
 const { hashPassword } = require('../../utils/hash');

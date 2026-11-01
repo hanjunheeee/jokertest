@@ -1,19 +1,19 @@
-const userRepository          = require("../repositories/user.repositories");
+const userRepository          = require("../../../repositories/user.repositories");
 const { hashPassword,
-        comparePassword }     = require("../utils/hash");
-const { generateToken }       = require("../utils/jwt");
-const { createError }         = require("../utils/appError");
-const { validateSignupPayload } = require("../validation/signupValidation");
-const db                      = require("../models");
-const economyService          = require("./economy.service");
-const signupEmailVerificationService = require("./signupEmailVerification.service");
-const { normalizeEmail: normalizeSignupEmail } = require("../validation/signupEmailVerificationValidation");
+        comparePassword }     = require("../../../utils/hash");
+const { generateToken }       = require("../../../utils/jwt");
+const { createError }         = require("../../../utils/appError");
+const { validateSignupPayload } = require("../../../validation/signupValidation");
+const db                      = require("../../../models");
+const economyService          = require("../../economy");
+const signupEmailVerificationService = require("../signupEmailVerification");
+const { normalizeEmail: normalizeSignupEmail } = require("../../../validation/signupEmailVerificationValidation");
 const {
     PERSISTENT_SESSION_MAX_AGE_MS,
     ACCESS_TOKEN_SHORT_TTL_SECONDS,
     REFRESH_TOKEN_GRACE_MS,
     capAccessTokenTtlSeconds,
-} = require("../auth/cookieOptions");
+} = require("../../../auth/cookieOptions");
 const crypto                  = require("crypto");
 
 const generateRefreshSecret = () => crypto.randomBytes(32).toString("base64url");

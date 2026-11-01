@@ -52,7 +52,7 @@ const resetSchema = async () => {
 const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
 
 const db = require('../../models');
-const economyService = require('../../service/economy.service');
+const economyService = require('../../services/economy');
 const { hashPassword } = require('../../utils/hash');
 
 test.after(async () => {

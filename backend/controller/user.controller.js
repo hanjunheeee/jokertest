@@ -1,9 +1,9 @@
 const crypto            = require("crypto");
 const jwt                = require("jsonwebtoken");
-const authService       = require("../service/auth.service");
-const socialAuthService = require("../service/socialAuth.service");
-const googleOAuthService = require("../service/googleOAuth.service");
-const discordOAuthService = require("../service/discordOAuth.service");
+const authService       = require("../services/auth/account");
+const socialAuthService = require("../services/auth/social");
+const googleOAuthService = require("../services/auth/oauth/google");
+const discordOAuthService = require("../services/auth/oauth/discord");
 const userRepository    = require("../repositories/user.repositories");
 const { getDeviceType } = require("../utils/device");
 const { getClientIp }   = require("../utils/ip");

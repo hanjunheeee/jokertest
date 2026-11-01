@@ -1,7 +1,7 @@
 'use strict';
 
-const { createError } = require('../utils/appError');
-const { MAX_BALANCE } = require('./economy.service');
+const { createError } = require('../../../utils/appError');
+const { MAX_BALANCE } = require('..');
 
 const KINDS = Object.freeze({ DIAMOND_TOPUP: 'DIAMOND_TOPUP', GOLD_PURCHASE: 'GOLD_PURCHASE' });
 const STATUSES = Object.freeze({ ON_SALE: 'ON_SALE', STOPPED: 'STOPPED' });
@@ -11,7 +11,7 @@ const ALLOWED_CURRENCY_PAIRS = Object.freeze({
     [KINDS.GOLD_PURCHASE]: Object.freeze({ payCurrency: 'DIAMOND', grantCurrency: 'GOLD' }),
 });
 
-const defaultDb = () => require('../models');
+const defaultDb = () => require('../../../models');
 
 const isPositiveInt = (value) => Number.isSafeInteger(value) && value > 0;
 const isNonNegativeInt = (value) => Number.isSafeInteger(value) && value >= 0;

@@ -11,9 +11,9 @@ const cookieParser = require("cookie-parser");
 const jwt          = require("jsonwebtoken");
 
 const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
-const authService        = require("../../service/auth.service");
-const socialAuthService  = require("../../service/socialAuth.service");
-const discordOAuthService = require("../../service/discordOAuth.service");
+const authService        = require("../../services/auth/account");
+const socialAuthService  = require("../../services/auth/social");
+const discordOAuthService = require("../../services/auth/oauth/discord");
 const userRepository     = require("../../repositories/user.repositories");
 
 const SOCIAL_KEYS  = ["issueOAuthState", "consumeOAuthState", "resolveOAuthAccount", "linkExternalIdentityForValidatedSession"];

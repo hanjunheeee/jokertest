@@ -1,14 +1,14 @@
 'use strict';
 
 const crypto = require('crypto');
-const catalog = require('../economy/catalog');
+const catalog = require('../../economy/catalog');
 const {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
     DEFAULT_PROFILE_BORDER_ID,
     listDefaultGrantItems,
 } = catalog;
-const { createError } = require('../utils/appError');
+const { createError } = require('../../utils/appError');
 
 const FREE_CARD_FRAME_ID = 'player-card-베이스';
 
@@ -88,7 +88,7 @@ const economyModels = (db) => ({
     EconomyEmojiPalette: db.sequelize.models.EconomyEmojiPalette,
 });
 
-const defaultDb = () => require('../models');
+const defaultDb = () => require('../../models');
 
 const ensureWalletRow = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
@@ -515,7 +515,7 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
     const preExisting = await findStored(null);
     if (preExisting) return consumeStored(preExisting);
 
-    const currencyProductsService = require('./currencyProducts.service');
+    const currencyProductsService = require('./currencyProducts');
 
     const runOnce = () => models.sequelize.transaction({ isolationLevel: 'READ COMMITTED' }, async (t) => {
         let product = null;

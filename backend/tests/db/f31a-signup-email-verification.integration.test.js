@@ -77,7 +77,7 @@ const rebuildFullSchema = async () => {
 };
 
 const db = require('../../models');
-const authService = require('../../service/auth.service');
+const authService = require('../../services/auth/account');
 const mailAdapterModule = require('../../mail/mailAdapter');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
 const { hashPassword } = require('../../utils/hash');

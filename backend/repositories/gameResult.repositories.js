@@ -1,7 +1,7 @@
 const db = require("../models");
 const gameSessionCore = require("../game-core/gameSession");
 const roleStatisticsPolicy = require("../services/game/roleStatistics");
-const economyService = require("../service/economy.service");
+const economyService = require("../services/economy");
 
 let economyServiceRef = economyService;
 function __setEconomyServiceForTests(fakeEconomyService) {

@@ -1,7 +1,7 @@
 'use strict';
 
-const db = require('../models');
-const { maskEmail } = require('../utils/maskEmail');
+const db = require('../../models');
+const { maskEmail } = require('../../utils/maskEmail');
 
 const NOT_FOUND_RESULT = Object.freeze({ ok: false, code: 'NOT_FOUND' });
 

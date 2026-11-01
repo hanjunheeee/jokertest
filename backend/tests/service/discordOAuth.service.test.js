@@ -8,7 +8,7 @@ process.env.DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "adapte
 process.env.DISCORD_REDIRECT_URI  = process.env.DISCORD_REDIRECT_URI  || "https://backend.example.test/auth/discord/callback";
 process.env.DISCORD_LINK_REDIRECT_URI = process.env.DISCORD_LINK_REDIRECT_URI || "https://backend.example.test/auth/discord/link/callback";
 
-const discordOAuthService = require("../../service/discordOAuth.service");
+const discordOAuthService = require("../../services/auth/oauth/discord");
 
 const FETCH_BAD_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
     101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513,

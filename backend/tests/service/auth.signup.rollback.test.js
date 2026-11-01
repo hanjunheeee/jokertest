@@ -5,7 +5,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localh
 
 const db             = require("../../models");
 const userRepository = require("../../repositories/user.repositories");
-const authService    = require("../../service/auth.service");
+const authService    = require("../../services/auth/account");
 const { prepareSignupProof } = require("../helpers/signupProof");
 
 const createEconomyFakes = () => {

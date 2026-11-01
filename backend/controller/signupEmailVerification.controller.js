@@ -1,6 +1,6 @@
 'use strict';
 
-const signupEmailVerificationService = require('../service/signupEmailVerification.service');
+const signupEmailVerificationService = require('../services/auth/signupEmailVerification');
 
 exports.requestSignupCode = async (req, res, next) => {
     res.set('Cache-Control', 'no-store');

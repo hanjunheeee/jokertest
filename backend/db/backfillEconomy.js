@@ -1,6 +1,6 @@
 'use strict';
 
-const economyService = require('../service/economy.service');
+const economyService = require('../services/economy');
 
 const DEFAULT_BATCH_SIZE = 200;
 const DEFAULT_MAX_RETRIES = 2;

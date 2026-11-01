@@ -6,7 +6,7 @@ const jwt    = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 
 const userRepository = require("../../repositories/user.repositories");
-const authService    = require("../../service/auth.service");
+const authService    = require("../../services/auth/account");
 const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS } = require("../../auth/cookieOptions");
 
 const PASSWORD  = "correct-horse";

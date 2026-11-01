@@ -6,7 +6,7 @@ const buildDeps = (overrides = {}) => ({
     get db() { return overrides.db ?? require('../models'); },
     get gameResultRepository() { return overrides.gameResultRepository ?? require('../repositories/gameResult.repositories'); },
     get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../repositories/voteParticipation.repositories'); },
-    get economyService() { return overrides.economyService ?? require('../service/economy.service'); },
+    get economyService() { return overrides.economyService ?? require('./economy'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
         try {

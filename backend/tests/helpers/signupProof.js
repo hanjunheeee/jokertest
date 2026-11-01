@@ -4,7 +4,7 @@ process.env.SIGNUP_EMAIL_HMAC_SECRET = process.env.SIGNUP_EMAIL_HMAC_SECRET
     || 'test-only-signup-email-hmac-secret-not-for-prod';
 
 const mailAdapterModule = require('../../mail/mailAdapter');
-const signupEmailVerificationService = require('../../service/signupEmailVerification.service');
+const signupEmailVerificationService = require('../../services/auth/signupEmailVerification');
 
 const prepareSignupProof = async (email, { now } = {}) => {
     const memoryMail = mailAdapterModule.createMemoryMailAdapter();

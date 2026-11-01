@@ -20,7 +20,7 @@ const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
 const userRepository = require("../../repositories/user.repositories");
-const authService = require("../../service/auth.service");
+const authService = require("../../services/auth/account");
 const mailAdapterModule = require("../../mail/mailAdapter");
 const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
 
@@ -223,7 +223,7 @@ test("AC-01: 확인 성공 응답은 ok/signupProof만 반환하고, 그 증명�
 
     db.User.create = async (data) => ({ uuid: crypto.randomUUID(), ...data });
     db.UserStats = { create: async (data) => data };
-    const economyService = require("../../service/economy.service");
+    const economyService = require("../../services/economy");
     const originalEnsure = economyService.ensureDefaultEntitlements;
     economyService.ensureDefaultEntitlements = async () => {};
     t.after(() => { economyService.ensureDefaultEntitlements = originalEnsure; });

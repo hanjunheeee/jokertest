@@ -1,7 +1,7 @@
 // 바깥 의존 주입구 파일
 // 접속 목록·초대·사용자·경제·전적 저장소 참조 묶음, 시험이 가짜로 갈아끼움
 const userRepository = require('../../../repositories/user.repositories')
-const economyService = require('../../../service/economy.service')
+const economyService = require('../../../services/economy')
 const gameResultRepository = require('../../../repositories/gameResult.repositories')
 const gameInviteModule = require('../../../service/gameInvite.service')
 

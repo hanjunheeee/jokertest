@@ -3,9 +3,9 @@ const router  = express.Router();
 
 const { verifyToken } = require("../middleware/auth.middleware");
 const { createError }  = require("../utils/appError");
-const economyService = require("../service/economy.service");
-const currencyProductsService = require("../service/currencyProducts.service");
-const topupService = require("../service/topup.service");
+const economyService = require("../services/economy");
+const currencyProductsService = require("../services/economy/currencyProducts");
+const topupService = require("../services/economy/topup");
 const userRepository = require("../repositories/user.repositories");
 const { getRewardCatalogEntry } = require("../economy/catalog");
 

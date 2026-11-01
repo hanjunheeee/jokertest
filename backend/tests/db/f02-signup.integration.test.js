@@ -68,8 +68,8 @@ const VALID_SIGNUP_BASE = {
 };
 
 const db = require('../../models');
-const authService = require('../../service/auth.service');
-const signupEmailVerificationService = require('../../service/signupEmailVerification.service');
+const authService = require('../../services/auth/account');
+const signupEmailVerificationService = require('../../services/auth/signupEmailVerification');
 const userRepository = require('../../repositories/user.repositories');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const { hashPassword } = require('../../utils/hash');

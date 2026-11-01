@@ -47,7 +47,7 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const economyService = require('../../service/economy.service');
+const economyService = require('../../services/economy');
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
 const matchmaking = require('../../socket/matchmaking');

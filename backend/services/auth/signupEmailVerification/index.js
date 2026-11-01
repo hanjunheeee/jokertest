@@ -1,12 +1,12 @@
 'use strict';
 
 const crypto = require('crypto');
-const { createError } = require('../utils/appError');
-const db = require('../models');
-const userRepository = require('../repositories/user.repositories');
-const mailAdapterModule = require('../mail/mailAdapter');
-const { getSignupEmailVerificationConfig } = require('../config/signupEmailVerification');
-const { normalizeEmail } = require('../validation/signupEmailVerificationValidation');
+const { createError } = require('../../../utils/appError');
+const db = require('../../../models');
+const userRepository = require('../../../repositories/user.repositories');
+const mailAdapterModule = require('../../../mail/mailAdapter');
+const { getSignupEmailVerificationConfig } = require('../../../config/signupEmailVerification');
+const { normalizeEmail } = require('../../../validation/signupEmailVerificationValidation');
 
 const PURPOSE = 'SIGNUP';
 

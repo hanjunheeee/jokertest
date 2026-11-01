@@ -1,4 +1,4 @@
-const { createError } = require("../utils/appError");
+const { createError } = require("../../../../utils/appError");
 
 const DISCORD_AUTH_ENDPOINT     = "https://discord.com/api/oauth2/authorize";
 const DISCORD_TOKEN_ENDPOINT    = "https://discord.com/api/oauth2/token";
