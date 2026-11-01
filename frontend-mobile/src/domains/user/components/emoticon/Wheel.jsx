@@ -15,9 +15,9 @@ import {
 import { emoticonItemOf } from "@/domains/user/utils/emoticonPalette/items.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-// 칸 하나가 바퀴 폭의 18%라 바퀴 폭 15rem 이상이면 칸이 44px 넘음
+// 칸 하나가 바퀴 폭의 18%라 바퀴 폭 16rem 이상이어야 칸 가로·세로 모두 44px 넘음 (칸이 정사각이 아님)
 const WRAP_CLASS =
-  "relative mx-auto w-[min(100%,18rem,36svh)] min-w-[15rem] land:w-[16.5rem] md:w-[min(100%,24rem,40svh)]"
+  "relative mx-auto w-[min(100%,18rem,36svh)] min-w-[16rem] land:w-[16.5rem] md:w-[min(100%,24rem,40svh)]"
 
 // 칸마다 든 이모티콘 그림, 비면 빈 칸 글자, 고른 칸은 눌림 표시
 export default function Wheel({ slots, selectedSlotIndex, disabled, onSelectSlot }) {

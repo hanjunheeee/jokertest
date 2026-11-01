@@ -28,19 +28,19 @@ export default function MyPage() {
     // 프로필 수정·스킨&카드 착용 시트는 주소 ?sheet=로 열고 닫음 (폰 뒤로 가기로 닫히게)
     return (
         <ScreenFrame title="마이페이지" onBack={() => navigate("/lobby")}>
-            <div className="mx-auto flex w-full max-w-[26rem] flex-col gap-3 px-4 pb-4 md:max-w-[30rem] land:max-w-[52rem]">
+            <div className="mx-auto flex w-full max-w-[26rem] flex-col gap-3 px-4 pb-4 md:max-w-[30rem] land:max-w-[52rem] lg:max-w-[52rem]">
                 {showNotice ? <StaleNotice hasProfile={Boolean(profile)} error={error} onRetry={retry} /> : null}
 
                 {ready ? (
-                    // 세로: 띠 → 가면 → 기록 (데스크톱 순서), 가로: 왼쪽 띠·기록 / 오른쪽 가면
-                    <div className="flex flex-col gap-3 land:grid land:grid-cols-2 land:items-start land:gap-x-4">
-                        <div className="land:col-start-1 land:row-start-1">
+                    // 세로: 띠 → 가면 → 기록 (데스크톱 순서), 가로·lg: 왼쪽 띠·기록 / 오른쪽 가면 (lg 세로 한 줄이면 기록이 바닥 메뉴에 가림)
+                    <div className="flex flex-col gap-3 land:grid land:grid-cols-2 land:items-start land:gap-x-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+                        <div className="land:col-start-1 land:row-start-1 lg:col-start-1 lg:row-start-1">
                             <ProfileCard profile={profile} />
                         </div>
                         {/* 가면·기록은 데스크톱 본문처럼 서서히 나타남 (띠는 바로) */}
                         {description ? (
                             <motion.div
-                                className="land:col-start-2 land:row-span-2 land:row-start-1"
+                                className="land:col-start-2 land:row-span-2 land:row-start-1 lg:col-start-2 lg:row-span-2 lg:row-start-1"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 transition={MY_PAGE_UI_FADE}
@@ -49,7 +49,7 @@ export default function MyPage() {
                             </motion.div>
                         ) : null}
                         <motion.div
-                            className="land:col-start-1 land:row-start-2"
+                            className="land:col-start-1 land:row-start-2 lg:col-start-1 lg:row-start-2"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={MY_PAGE_UI_FADE}
