@@ -1,6 +1,6 @@
 'use strict';
 
-const db = require('../../models');
+const db = require('../../repositories/common/db');
 const { maskEmail } = require('../../utils/auth/maskEmail');
 const findRequestRepository = require('../../repositories/auth/accountFindRequest');
 const userLookup = require('../../repositories/user/lookup');
