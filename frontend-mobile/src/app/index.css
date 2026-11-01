@@ -6,7 +6,7 @@
 /* Tailwind 4는 프로젝트 바깥 파일을 안 훑음 → 화면 class 문자열이 든 데스크톱 로직 폴더만 열기
    (./src는 기본으로 훑음, 명시는 읽기 쉽게) */
 @source "../../src";
-@source "../../../frontend/src/domains/**/constants";
+@source "../../../frontend/src/domains";
 @source "../../../frontend/src/shared/constants";
 @source "../../../frontend/src/shared/ui/{ProtectedRoute,PublicAsset,GlobalBgmLayer}.jsx";
 
