@@ -1,12 +1,13 @@
 // 재판 판정 파일
-// 재판 판정 prepare/commit (결과 방송 내용은 phase/tribunal/payloads.js)
+// 재판 판정 prepare/commit + 결과 방송 내용 만들기, socket 쪽 방송·스냅샷이 사용
 // prepare = 표 세서 결과만 정함, commit = 그사이 표 안 바뀌었는지 보고 확정 (지도 04-⑦)
-const { normalizeGameId, findSessionForActor } = require('../../core/lookup')
+const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
 const { isRegisteredSession } = require('../../queries')
-const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../../core/terminal')
-const { enterNightPhase } = require('../../core/phase')
+const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../../core/rules/terminal')
+const { enterNightPhase } = require('../../core/rules/phase')
 const { DEATH_REASONS } = require('../../result')
 const { TRIBUNAL_PENDING, getEligibleTribunalVoterUuids, buildTribunalBallotSnapshot, tallyTribunalBallots, isSameBallots, } = require('./ballots')
+const { TRIBUNAL_CANCELLED_OUTCOME, TRIBUNAL_CANCEL_REASONS } = require('./constants')
 
 // 재판 판정 준비: 표 세서 결과 정하고 보관함에 넣음, 아직 확정 안 함
 function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
@@ -135,4 +136,24 @@ function commitTribunalVoteResolution(session, resolution) {
     return { ok: true, terminal: null }
 }
 
-module.exports = { prepareTribunalVoteResolution, commitTribunalVoteResolution }
+// 재판 결과 방송 내용 (취소된 재판이면 이유도 붙임)
+function buildTribunalVoteResolvedPayload(session) {
+    const tribunal = session.tribunal
+    const executedUuid = tribunal.executedUuid
+    return {
+        ...(tribunal.outcome === TRIBUNAL_CANCELLED_OUTCOME
+            ? { reason: tribunal.cancelReason ?? TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT }
+            : {}),
+        gameId: session.id,
+        dayIndex: tribunal.dayIndex,
+        phase: session.phase,
+        defendantUuid: tribunal.defendantUuid,
+        outcome: tribunal.outcome,
+        counts: { guilty: tribunal.counts.guilty, notGuilty: tribunal.counts.notGuilty },
+        executedUuid,
+        // 처형된 사람 역할 공개
+        executedRole: executedUuid ? session.players.get(executedUuid)?.role ?? null : null,
+    }
+}
+
+module.exports = { prepareTribunalVoteResolution, commitTribunalVoteResolution, buildTribunalVoteResolvedPayload }

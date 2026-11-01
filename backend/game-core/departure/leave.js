@@ -1,9 +1,9 @@
 // 게임 중 나가기 파일
 // 나간 사람 정리 + 나간 뒤 멈춘 단계 넘기기 (지도 12)
-const { assertSessionNotEnded } = require('../core/terminal')
-const { enterNightPhase } = require('../core/phase')
+const { assertSessionNotEnded } = require('../core/rules/terminal')
+const { enterNightPhase } = require('../core/rules/phase')
 const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
-const { releasePlayerSession } = require('../core/cleanup')
+const { releasePlayerSession } = require('../core/registry/write')
 const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnapshot, TRIBUNAL_CANCELLED_OUTCOME, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal')
 const { isRoleRevealComplete } = require('../setup')
 const { enterDayPhase, getDayPhase, DAY_PHASES, getEligibleDayVoterUuids, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day')

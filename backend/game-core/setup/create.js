@@ -2,7 +2,7 @@
 // 판 후보 만들기 + 시작 전 검사, matchmaking이 게임 시작 때 사용
 const crypto = require('crypto')
 const { validateSessionInput, buildRoomSettingsSource, buildTimerSettings } = require('./input')
-const { resolveRoleComposition } = require('../roleComposition')
+const { resolveRoleComposition } = require('../core/rules/roleComposition')
 const { assignRoles } = require('./assign')
 const { INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { resolveGameSource } = require('../result')

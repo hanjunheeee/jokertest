@@ -7,7 +7,7 @@ const gameSessions = new Map()
 // 사람 uuid → 판 id. 한 사람이 판 두 개에 못 들어가 막기
 const playerSession = new Map()
 
-// 방 id → 판 id. 같은 방에서 판이 두 번 안 열리게 막는 거야
+// 방 id → 판 id. 같은 방에서 판이 두 번 안 열리게 막기
 const roomGameSession = new Map()
 
 // 판 열 때(commitGameSession) 셋 다 넣고, 판 닫을 때(endGameSessionForPlayer) 셋 다 지움

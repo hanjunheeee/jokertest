@@ -1,7 +1,7 @@
 // 역할 나누기 파일
 // 섞기 + 사람마다 역할 붙이기, 판 만들 때 사용
-const { computeRoleComposition } = require('../roleComposition')
-const { GAME_ROLES } = require('../core/roles')
+const { computeRoleComposition } = require('../core/rules/roleComposition')
+const { GAME_ROLES } = require('../core/rules/roles')
 
 // 고르게 섞기 (원본 안 건드리고 새 배열)
 function fisherYatesShuffle(items, randomFn) {

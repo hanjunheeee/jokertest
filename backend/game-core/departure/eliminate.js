@@ -1,7 +1,8 @@
 // 끊김 탈락 파일
-// 끊긴 사람 탈락 처리 + 기권 명단 넣기 (지도 08), 탈락 방송 내용은 payloads.js
-const { isObserverBusy, observeNightCommit } = require('../core/observer')
-const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../core/terminal')
+// 끊긴 사람 탈락 처리(기권 명단 넣기 포함, 지도 08) + 탈락 방송 내용 만들기
+// 탈락 방송 내용은 상태 안 바꿈, socket 쪽 방송이 gameSession.js 통해서 사용
+const { isObserverBusy, observeNightCommit } = require('../core/tools/observer')
+const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../core/rules/terminal')
 const { DEATH_REASONS } = require('../result')
 const { expireDeadPlayerNightEffects } = require('../phase/night')
 
@@ -48,7 +49,20 @@ function recordForfeit(session, uuid) {
     session.detachedUuids.add(uuid)
 }
 
+// 끊김 탈락 방송 (생존 목록·탈락한 사람)
+function buildDisconnectEliminationPayload(session, victimUuid) {
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        // 역할·죽은 이유 없이 uuid·생존만 (지도 12-⑧)
+        players: [...session.players.values()].map(({ uuid, alive }) => ({ uuid, alive })),
+        victimUuid,
+    }
+}
+
 module.exports = {
     commitDisconnectElimination,
     recordForfeit,
+    buildDisconnectEliminationPayload,
 }

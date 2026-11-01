@@ -1,6 +1,6 @@
 // 밤 행동 자격 파일
 // 누가 밤 행동 할 수 있는지 + 역할 차례 순서·차례 끝났는지
-const { ROLE_DEFINITIONS } = require('../../core/roles')
+const { ROLE_DEFINITIONS } = require('../../core/rules/roles')
 const { NIGHT_TURN_ORDER } = require('./constants')
 
 // 이 역할이 오늘 밤 행동할 수 있는 날인지 (마녀사냥꾼은 둘째 밤부터)

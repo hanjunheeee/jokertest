@@ -1,6 +1,6 @@
 // 채팅 상수 파일
 // 글자 수·간격·채널 목록, chat 폴더 안 파일들이 사용
-const { GAME_ROLES } = require('../core/roles')
+const { GAME_ROLES } = require('../core/rules/roles')
 
 // 채팅 한 줄 최대 150자
 const CHAT_MAX_LENGTH = 150

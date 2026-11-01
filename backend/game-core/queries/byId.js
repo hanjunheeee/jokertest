@@ -1,6 +1,6 @@
 // 판 장부 읽기 파일
 // 장부 Map 3개 읽기 + 장부에 있는 그 판인지, core·queries 밖 파일이 장부 직접 안 만지게 사용
-const { gameSessions, playerSession, roomGameSession } = require('../core/state')
+const { gameSessions, playerSession, roomGameSession } = require('../core/registry/state')
 
 // 판 id → 판 (없으면 undefined)
 function getSessionById(gameId) {

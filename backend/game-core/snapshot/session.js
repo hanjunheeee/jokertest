@@ -7,7 +7,7 @@ const { computeHasActedThisPhase, buildSelfSubmissionFields, buildPublicPhasePro
 const { buildNightResultAppliedPayload } = require('../phase/night')
 const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal')
 const { buildPublicWinResult } = require('../result')
-const { normalizeGameId } = require('../core/lookup')
+const { normalizeGameId } = require('../core/registry/lookup')
 const { isForfeitedFromSession, getPlayerGameId, getSessionById } = require('../queries')
 
 // 스냅샷에 낮·재판 칸 넣어도 되는지

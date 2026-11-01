@@ -1,9 +1,9 @@
 // 낮 판정 파일
 // 낮 투표 판정 prepare/commit (지도 04), 결과 방송 내용은 phase/day/payloads.js
-const { normalizeGameId, findSessionForActor } = require('../../core/lookup')
+const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
 const { isRegisteredSession } = require('../../queries')
-const { assertSessionNotEnded } = require('../../core/terminal')
-const { enterNightPhase } = require('../../core/phase')
+const { assertSessionNotEnded } = require('../../core/rules/terminal')
+const { enterNightPhase } = require('../../core/rules/phase')
 const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isDayVoteRoundResolved } = require('./state')
 const { DAY_PHASES } = require('./constants')
 const { getEligibleDayVoterUuids, tallyDayVoteOutcome, buildDayVoteBallotSnapshot, uuidListsEqual, dayVoteBallotSnapshotsEqual } = require('./ballots')

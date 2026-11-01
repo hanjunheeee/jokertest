@@ -1,5 +1,6 @@
 // 진행 표시 파일
-// 단계별 몇 명 했는지 + 내가 냈는지, 스냅샷·방송이 사용 (내 진행 번호 올리기는 seq.js)
+// 단계별 몇 명 했는지 + 내가 냈는지, 스냅샷·방송이 사용
+// 내 진행 번호 올리기(상태 바뀜)도 여기 둠, socket 쪽이 내 제출 알림 보낼 때 사용
 const { getEligibleDayVoterUuids, getDayPhase, DAY_PHASES, getDayVoteRound, getDayVoteReadyUuids } = require('../phase/day')
 const { getEligibleTribunalVoterUuids } = require('../phase/tribunal')
 
@@ -96,8 +97,17 @@ function computeHasActedThisPhase(session, uuid) {
     }
 }
 
+// 내 진행 번호 +1 (늦게 온 옛 알림 거르기용)
+function bumpSelfProgressSeq(session) {
+    // 이상한 값이면 0부터 다시
+    const next = (Number.isSafeInteger(session.selfProgressSeq) ? session.selfProgressSeq : 0) + 1
+    session.selfProgressSeq = next
+    return next
+}
+
 module.exports = {
     buildPublicPhaseProgress,
     buildSelfSubmissionFields,
     computeHasActedThisPhase,
+    bumpSelfProgressSeq,
 }

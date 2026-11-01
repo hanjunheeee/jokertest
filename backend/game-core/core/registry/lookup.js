@@ -1,7 +1,7 @@
 // 요청 입구 확인 파일
 // 판 id 정리 + 요청한 사람의 판·나 찾기, prepare/submit 함수들이 맨 앞에서 사용
 const { gameSessions, playerSession } = require('./state')
-const { assertSessionNotEnded } = require('./terminal')
+const { assertSessionNotEnded } = require('../rules/terminal')
 
 // 요청에 온 판 id 정리, 못 쓰는 값이면 빈 문자열
 // trim 끄면 공백 안 자름 (낮 표·재판 표는 원래 안 자름)

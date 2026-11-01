@@ -2,7 +2,7 @@
 // 토론 끝내기 준비 확인 + 낮 상태 읽기, socket 쪽이 사용 (낮 단계 방송은 payloads.js)
 const { getSessionById } = require('../../queries')
 const { getDayVoteRound, getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('./state')
-const { findActorSession } = require('../../core/lookup')
+const { findActorSession } = require('../../core/registry/lookup')
 const { DAY_PHASES } = require('./constants')
 const { getEligibleDayVoterUuids } = require('./ballots')
 

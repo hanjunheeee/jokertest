@@ -1,14 +1,14 @@
 // 밤 판정 준비 파일
 // 밤 결과 계산 + 개인 결과 만들기, 아직 확정 안 함
-const { findActorSession } = require('../../core/lookup')
-const { assertSessionNotEnded } = require('../../core/terminal')
+const { findActorSession } = require('../../core/registry/lookup')
+const { assertSessionNotEnded } = require('../../core/rules/terminal')
 const { getNightProgress, createNightProgress } = require('./progress')
 const { NIGHT_TURN_ORDER } = require('./constants')
 const { getEligibleNightActorUuids, matchesTargetLifeRule } = require('./actors')
 const { applyNightRoleStep, computeNightRoleStep, closeNightHealing } = require('./roleStep')
 const { isParticipatingInSession, isRegisteredSession } = require('../../queries')
 const { buildAssassinationFailureNotice } = require('./payloads')
-const { registerNightPreparation } = require('./preparation')
+const { registerNightPreparation } = require('./ledger')
 
 // 요청한 사람 확인하고 밤 판정 준비
 function prepareNightResolution(uuid, gameId) {

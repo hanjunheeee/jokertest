@@ -1,6 +1,6 @@
 // 판 결과 공개 파일
 // 끝난 판 승패 + 전원 역할 공개, 스냅샷·종료 방송이 사용
-const { ROLE_DEFINITIONS } = require('../core/roles')
+const { ROLE_DEFINITIONS } = require('../core/rules/roles')
 
 // 단계·생존 목록 + 끝났으면 승패 붙임
 function buildTerminalFields(session) {

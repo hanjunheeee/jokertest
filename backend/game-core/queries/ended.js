@@ -1,7 +1,7 @@
 // 끝난 판 파티 찾기 파일
 // 끝난 판 남은 사람·다음 방 우편함 자격, 매칭 쪽이 사용
-const { gameSessions } = require('../core/state')
-const { normalizeGameId } = require('../core/lookup')
+const { gameSessions } = require('../core/registry/state')
+const { normalizeGameId } = require('../core/registry/lookup')
 const { getActiveSessionRoutingInfo } = require('./live')
 const { isForfeitedFromSession } = require('./participation')
 

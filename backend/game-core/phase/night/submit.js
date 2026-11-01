@@ -1,9 +1,9 @@
 // 밤 행동 받기 파일
 // 밤 행동 대상 받기, socket 쪽이 gameSession.js 통해서 사용
-const { findActorSession } = require('../../core/lookup')
+const { findActorSession } = require('../../core/registry/lookup')
 const { isEligibleForNightAction, getCurrentNightTurnRole, requiresAliveTarget } = require('./actors')
 const { isNightRoleCompleted } = require('./progress')
-const { ROLE_TEAMS } = require('../../core/roles')
+const { ROLE_TEAMS } = require('../../core/rules/roles')
 const { SELF_TARGET_ALLOWED_ROLES } = require('./constants')
 
 // 밤 행동 대상 받기 (밤·산 사람·내 차례·대상 조건 맞을 때만)

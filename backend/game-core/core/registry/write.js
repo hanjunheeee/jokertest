@@ -1,7 +1,15 @@
-// 판 정리 파일
-// 판 장부에서 사람·판 빼기, 나가기·새 판 시작·socket 종료 정리가 사용
-// 이모티콘 비우기도 여기 둠 (core가 chat 부르는 거꾸로 된 require 막기)
+// 판 장부 쓰기 파일
+// 장부에 판 넣기 + 사람·판 빼기, 판 열기·나가기·새 판 시작·socket 종료 정리가 사용
+// 장부 쓰기는 여기서만, 이모티콘 비우기도 여기 둠 (core가 chat 부르는 거꾸로 된 require 막기)
 const { playerSession, gameSessions, roomGameSession } = require('./state')
+
+// 장부 3개에 같이 넣음 = 판 생김 (하나만 넣으면 장부끼리 안 맞음)
+// 판 열기(setup/commit.js)가 검사 다 끝낸 뒤 부름
+function registerGameSession(session) {
+    gameSessions.set(session.id, session)
+    roomGameSession.set(session.roomId, session.id)
+    session.players.forEach((_, uuid) => playerSession.set(uuid, session.id))
+}
 
 // 판 닫을 때 이모티콘 기록 비움
 // 이모티콘 간격 기록 + 사람별 이모티콘 목록, endGameSessionForPlayer가 부름
@@ -63,6 +71,7 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
 }
 
 module.exports = {
+    registerGameSession,
     clearEmoji,
     releasePlayerSession,
     endGameSessionForPlayer,

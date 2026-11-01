@@ -1,6 +1,6 @@
 // 참여 확인 파일
 // 기권했는지·아직 참여 중인지 + 참여 번호 읽기, 판 찾기·밤 판정·나가기가 사용
-const { gameSessions } = require('../core/state')
+const { gameSessions } = require('../core/registry/state')
 
 // 이 판 기권 명단에 있는지 (명단 없으면 아님)
 function hasForfeited(session, uuid) {

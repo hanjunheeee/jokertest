@@ -1,11 +1,11 @@
 // 채팅 보내기 파일
-// 채팅 prepare/commit (이모티콘 비우기는 판 정리라 core/cleanup.js로 옮김)
+// 채팅 prepare/commit (이모티콘 비우기는 판 정리라 core/registry/write.js로 옮김)
 // prepare = 검사만 하고 기록 안 함, commit = 다시 확인하고 기록함 (실패한 요청이 간격을 안 먹게)
 const crypto = require('crypto')
-const { findActorSession } = require('../core/lookup')
+const { findActorSession } = require('../core/registry/lookup')
 const { getPlayerGameId, getSessionById } = require('../queries')
-const { GAME_ROLES } = require('../core/roles')
-const { assertSessionNotEnded } = require('../core/terminal')
+const { GAME_ROLES } = require('../core/rules/roles')
+const { assertSessionNotEnded } = require('../core/rules/terminal')
 const { CHAT_MIN_INTERVAL_MS, CHAT_COMMIT_MAX_AGE_MS } = require('./constants')
 const { sanitizeChatText, isInvalidClockValue, getChatRateLimitMap, resolveGameChatChannel } = require('./rules')
 
