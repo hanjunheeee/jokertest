@@ -1,6 +1,7 @@
 'use strict';
 
-const achievementService = require('./index');
+// 평가 함수만 바로 (입구를 부르면 입구 ↔ recovery 순환)
+const achievementService = require('./evaluate');
 
 const buildDeps = (overrides = {}) => ({
     get db() { return overrides.db ?? require('../../models'); },
