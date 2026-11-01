@@ -5,16 +5,11 @@ import { readFile } from "node:fs/promises"
 const componentUrl = new URL("../../../../../../src/domains/game/ingame/components/timebar/InGameTimebar.jsx", import.meta.url)
 const pageUrl = new URL("../../../../../../src/domains/game/ingame/pages/InGamePage.jsx", import.meta.url)
 
-test("statusMessage prop을 받아 전용 스타일 상수로 그대로 렌더한다", async () => {
+test("확대 시 타이머바·게이지 컴포넌트를 마운트하고 텍스트 status 줄은 그리지 않는다", async () => {
   const source = await readFile(componentUrl, "utf8")
-  assert.match(source, /statusMessage = null/)
-  assert.match(source, /INGAME_TIMEBAR_STATUS_CLASS/)
-  assert.match(source, /<p className=\{INGAME_TIMEBAR_STATUS_CLASS\}>\{statusMessage\}<\/p>/)
-})
-
-test("문구가 비어 있으면(ENDED 등) 줄 자체를 그리지 않는다", async () => {
-  const source = await readFile(componentUrl, "utf8")
-  assert.match(source, /typeof statusMessage === "string" && statusMessage\.length > 0 \?/)
+  assert.match(source, /InGamePhaseTurnTimerPanel/)
+  assert.match(source, /frameExpanded/)
+  assert.doesNotMatch(source, /INGAME_TIMEBAR_STATUS_CLASS/)
 })
 
 test("문구를 컴포넌트가 스스로 만들거나 store·소켓에서 읽지 않는다(호출부가 canonical state에서 파생해 넘긴다)", async () => {
@@ -26,11 +21,19 @@ test("문구를 컴포넌트가 스스로 만들거나 store·소켓에서 읽�
   assert.doesNotMatch(source, /socket/i)
 })
 
-test("옛 밤 역할 턴 전용 줄(nightTurnRole·nightTurnRemainingSec prop)은 statusMessage 한 줄로 합쳐졌다", async () => {
+test("타임바는 phaseTurnDeadline prop으로 확대 타이머를 구동한다", async () => {
   const source = await readFile(componentUrl, "utf8")
-  assert.doesNotMatch(source, /nightTurnRole/)
-  assert.doesNotMatch(source, /nightTurnRemainingSec/)
-  assert.doesNotMatch(source, /INGAME_TIMEBAR_NIGHT_TURN/)
+  assert.match(source, /phaseTurnDeadline/)
+  assert.match(source, /InGamePhaseTurnTimerPanel/)
+  assert.doesNotMatch(source, /TIMER_FALLBACK_LABEL/)
+  assert.doesNotMatch(source, /useInGameStore/)
+})
+
+test("시간흐름바 우측 상단에 확대 버튼 에셋이 배치된다", async () => {
+  const source = await readFile(componentUrl, "utf8")
+  assert.match(source, /INGAME_TIMEBAR_ASSETS\.expandButton/)
+  assert.match(source, /data-ingame-timebar-expand/)
+  assert.match(source, /INGAME_TIMEBAR_EXPAND_BTN_CLASS/)
 })
 
 test("기존 day/phase 표시 로직(제 N일 라벨·단계 노드·활성 노드 판정)은 그대로 남아 있다", async () => {
@@ -58,16 +61,20 @@ test("AC-02: InGamePage가 InGameBackground를 실제 화면 트리에 그린다
   assert.doesNotMatch(source, /motion\.img/)
 })
 
-test("AC-02: InGamePage가 타임바에 canonical state에서 파생한 statusMessage를 넘긴다", async () => {
+test("AC-02: InGamePage가 타임바에 statusLabel·phaseTurnDeadline을 넘긴다", async () => {
   const source = await readFile(pageUrl, "utf8")
   assert.match(
     source,
-    /import \{ selectInGameTimebarStatusMessage \} from "\.\.\/utils\/selectInGameTimebarStatusMessage\.js"/,
+    /import \{ selectInGameTimebarStatusLabel \} from "\.\.\/utils\/selectInGameTimebarStatusMessage\.js"/,
   )
   assert.match(
     source,
-    /statusMessage=\{selectInGameTimebarStatusMessage\(gameState, nightTurnRemainingSec\)\}/,
+    /import \{ selectInGameTimebarPhaseDeadline \} from "\.\.\/utils\/timebar\/phaseDeadline\.js"/,
   )
+  assert.match(source, /const timebarStatusLabel = selectInGameTimebarStatusLabel\(gameState\)/)
+  assert.match(source, /statusLabel=\{timebarStatusLabel\}/)
+  assert.match(source, /phaseTurnDeadline=\{phaseTurnDeadline\}/)
+  assert.match(source, /timerPlacement=\{timerPlacement\}/)
 })
 
 test("AC-05: 페이지가 스냅샷 동기화 상태를 받아 guard 순수 함수에 그대로 넘긴다", async () => {

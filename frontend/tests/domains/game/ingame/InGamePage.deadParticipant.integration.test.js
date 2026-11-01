@@ -1196,7 +1196,7 @@ const PLAY_AREA_MOUNT_LOCK = [
 ]
 
 const TIMEBAR_MOUNT_LOCK = [
-  "PublicAsset", "TimebarNode", "InGamePhaseActionRow",
+  "PublicAsset", "TimebarNode", "InGameTimebarExpandedTimer", "InGameTimebarPhaseHeader", "InGamePhaseActionRow",
 ]
 
 const INGAME_MOUNT_LOCK = [...new Set([

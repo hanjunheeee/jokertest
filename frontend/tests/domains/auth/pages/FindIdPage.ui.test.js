@@ -127,6 +127,33 @@ test("형식이 잘못된 입력은 로컬에서 막히고 API를 호출하지 �
   assert.ok(view.container.textContent.includes("닉네임을"))
 })
 
+test("닉네임 가운데 띄어쓰기는 recovery alert로 고지하고 API를 호출하지 않는다", async () => {
+  const view = await mountFindIdPage()
+  fillForm(view, { nickname: "홍 길동", birthDate: "2000-01-15" })
+  await act(async () => { submitForm(view) })
+
+  assert.equal(calls.length, 0)
+  const alert = view.container.querySelector('[role="alert"]')
+  assert.ok(alert, "recovery alert가 표시되어야 합니다")
+  assert.ok(alert.textContent.includes("띄어쓰기"))
+  assert.ok(alert.className.includes("border-red-800/35"), "AUTH_RECOVERY_ALERT_CLASS와 같은 형태여야 합니다")
+})
+
+test("닉네임 입력 중 가운데 띄어쓰기를 넣으면 즉시 recovery alert가 뜬다", async () => {
+  const view = await mountFindIdPage()
+  await act(async () => {
+    fireEvent.change(view.container.querySelector('input[name="nickname"]'), { target: { value: "홍길" } })
+  })
+  assert.equal(view.container.querySelector('[role="alert"]'), null)
+
+  await act(async () => {
+    fireEvent.change(view.container.querySelector('input[name="nickname"]'), { target: { value: "홍 길동" } })
+  })
+  const alert = view.container.querySelector('[role="alert"]')
+  assert.ok(alert?.textContent.includes("띄어쓰기"))
+  cleanup()
+})
+
 test("지연 응답 중 연속 제출해도 API는 한 번만 호출되고, 성공하면 힌트를 보여주며 입력을 지운다", async () => {
   let resolveFindId
   findIdHandler = () => new Promise((resolve) => { resolveFindId = resolve })

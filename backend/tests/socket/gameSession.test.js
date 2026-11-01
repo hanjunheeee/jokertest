@@ -215,7 +215,7 @@ test('acknowledge_role_reveal: 나머지 1명도 확인하면 콜백은 ok:true�
     const broadcasts = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
     assert.equal(broadcasts.length, 1)
     assert.equal(broadcasts[0].roomId, session.channelId)
-    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, phase: 'DAY', dayIndex: 1 })
+    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, phase: 'DAY', dayIndex: 1, dayPhaseDeadline: session.dayPhaseDeadline })
     assert.equal(session.phase, 'DAY')
     assert.equal(session.dayIndex, 1)
 
@@ -2526,7 +2526,7 @@ test('resolve_night: 보호 안 된 유효 희생자 — night_result_applied가
         const socket = socketByUuid.get(uuid)
         const delivered = socket.emitted.filter((e) => e.event === 'night_result_applied')
         assert.equal(delivered.length, 1)
-        assert.deepEqual(delivered[0].payload, expectedPayload)
+        assert.deepEqual(delivered[0].payload, { ...expectedPayload, dayPhaseDeadline: session.dayPhaseDeadline })
         assert.equal(Object.hasOwn(delivered[0].payload, 'role'), false)
         assert.equal(Object.hasOwn(delivered[0].payload, 'team'), false)
     }
@@ -2873,7 +2873,7 @@ test('ready_for_day_vote: 마지막 준비에서만 day_phase_changed가 채널�
     const broadcasts = io.broadcasts.filter((b) => b.event === 'day_phase_changed')
     assert.equal(broadcasts.length, 1)
     assert.equal(broadcasts[0].roomId, session.channelId)
-    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, dayIndex: session.dayIndex, dayPhase: 'DAY_VOTE', round: 1 })
+    assert.deepEqual(broadcasts[0].payload, { gameId: session.id, dayIndex: session.dayIndex, dayPhase: 'DAY_VOTE', round: 1, dayPhaseDeadline: session.dayPhaseDeadline })
     assertNoForbiddenPrivateData(broadcasts[0].payload, collectOtherPlayerRoleSecrets(session, uuids[0]))
 })
 
