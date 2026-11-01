@@ -6,6 +6,8 @@ const { login } = require('./login');
 const { refresh } = require('./refresh');
 // 컨트롤러에서 옮긴 로그아웃 기록
 const { logout } = require('./logout');
+// profile 컨트롤러에서 옮긴 비번 바꾸기
+const { changePassword } = require('./password');
 
 module.exports = {
     issueSessionForUser,
@@ -14,4 +16,5 @@ module.exports = {
     login,
     refresh,
     logout,
+    changePassword,
 };
