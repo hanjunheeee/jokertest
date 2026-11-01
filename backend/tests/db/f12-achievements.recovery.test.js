@@ -58,9 +58,9 @@ const resetSchema = async () => {
 
 const db = require('../../models');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
-const achievementRecoveryService = require('../../services/achievementRecoveryService');
+const achievementRecoveryService = require('../../services/achievement/recovery');
 const economyService = require('../../services/economy');
-const achievementDefinitions = require('../../services/achievementDefinitions');
+const achievementDefinitions = require('../../services/achievement/definitions');
 const { hashPassword } = require('../../utils/hash');
 
 test.after(async () => {

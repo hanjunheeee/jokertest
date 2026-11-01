@@ -54,7 +54,7 @@ const db = require('../../models');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
-const achievementService = require('../../services/achievementService');
+const achievementService = require('../../services/achievement');
 const kickReceiptStore = require('../../socket/kickReceiptStore');
 const { hashPassword } = require('../../utils/hash');
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const achievementRecoveryService = require('../services/achievementRecoveryService');
+const achievementRecoveryService = require('../services/achievement/recovery');
 
 const main = async () => {
     const db = require('../models');

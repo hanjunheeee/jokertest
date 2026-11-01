@@ -9,7 +9,7 @@ const cookieParser = require("cookie-parser");
 
 const db                    = require("../../models");
 const achievementController = require("../../controller/achievement.controller");
-const achievementService    = require("../../services/achievementService");
+const achievementService    = require("../../services/achievement");
 
 const callController = async (fn, req) => {
     let status;

@@ -1,6 +1,6 @@
 'use strict';
 
-const achievementService = require('../services/achievementService');
+const achievementService = require('../services/achievement');
 
 exports.getMyAchievements = async (req, res, next) => {
     try {

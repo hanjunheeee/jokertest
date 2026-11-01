@@ -60,7 +60,7 @@ const resetSchema = async () => {
 
 const db = require('../../models');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
-const achievementService = require('../../services/achievementService');
+const achievementService = require('../../services/achievement');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');

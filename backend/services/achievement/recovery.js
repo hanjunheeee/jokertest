@@ -1,9 +1,9 @@
 'use strict';
 
-const achievementService = require('./achievementService');
+const achievementService = require('./index');
 
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../models'); },
+    get db() { return overrides.db ?? require('../../models'); },
     get achievementService() { return overrides.achievementService ?? achievementService; },
 });
 

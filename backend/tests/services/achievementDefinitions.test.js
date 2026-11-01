@@ -10,7 +10,7 @@ const {
     FORBIDDEN_RECORD_ACHIEVEMENTS,
     JOB_ACHIEVEMENTS,
     getAchievementDefinition,
-} = require('../../services/achievementDefinitions');
+} = require('../../services/achievement/definitions');
 
 const FRONTEND_SPREAD_META_PATH = path.join(__dirname, '..', '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'forbiddenRecords', 'spreadMeta.js');
 const FRONTEND_JOB_CHALLENGES_PATH = path.join(__dirname, '..', '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'invitedGuests', 'jobChallenges.js');

@@ -1,21 +1,21 @@
 'use strict';
 
-const achievementDefinitions = require('./achievementDefinitions');
+const achievementDefinitions = require('./definitions');
 
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../models'); },
-    get gameResultRepository() { return overrides.gameResultRepository ?? require('../repositories/gameResult.repositories'); },
-    get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../repositories/voteParticipation.repositories'); },
-    get economyService() { return overrides.economyService ?? require('./economy'); },
+    get db() { return overrides.db ?? require('../../models'); },
+    get gameResultRepository() { return overrides.gameResultRepository ?? require('../../repositories/gameResult.repositories'); },
+    get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../../repositories/voteParticipation.repositories'); },
+    get economyService() { return overrides.economyService ?? require('../economy'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
         try {
-            return require('../socket/emitter').emitToUser;
+            return require('../../socket/emitter').emitToUser;
         } catch {
             return null;
         }
     },
-    get notificationService() { return overrides.notificationService ?? require('./notification'); },
+    get notificationService() { return overrides.notificationService ?? require('../notification'); },
 });
 
 let deps = buildDeps();

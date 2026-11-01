@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const achievementRecoveryService = require('../../services/achievementRecoveryService');
+const achievementRecoveryService = require('../../services/achievement/recovery');
 
 const { __internal } = achievementRecoveryService;
 

@@ -66,7 +66,7 @@ const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_
 const db = require('../../models');
 const friendService = require('../../services/friend');
 const notificationService = require('../../services/notification');
-const achievementService = require('../../services/achievementService');
+const achievementService = require('../../services/achievement');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const socket = require('../../socket/socket');
 const { hashPassword } = require('../../utils/hash');
