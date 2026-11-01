@@ -79,7 +79,7 @@ const { prepareDayVoteResolution, commitDayVoteResolution } = require('./phase/d
 const {
     endGameSessionForPlayer,
 } = require('./core/registry/write')
-// 밤은 phase/night
+// 밤 고정 값은 phase/night/constants
 const {
     NIGHT_TURN_ORDER,
     NIGHT_TURN_DURATION_MS,
