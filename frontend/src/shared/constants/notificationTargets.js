@@ -1,11 +1,13 @@
 // 알림을 눌렀을 때 갈 주소와 그 주소에 싣는 쿼리 이름, 대상 이름표
 // notifications 알림 항목, lobby 알림 패널, library 화면이 씀
+// 로비·서고가 이 쿼리로 해당 항목을 찾아 엶
 export const FRIEND_REQUEST_PARAM = "notificationRequestId"
 
 export const ACHIEVEMENT_PARAM = "achievementId"
 
 export const GAME_INVITE_PARAM = "gameInviteId"
 
+// 모르는 대상·빈 id면 null (주소에 엉뚱한 값 안 싣기)
 export function buildNotificationTargetPath(target) {
   if (target === null || typeof target !== "object" || Array.isArray(target)) return null
 
@@ -29,6 +31,7 @@ export function buildNotificationTargetPath(target) {
   return null
 }
 
+// 이동 버튼 글자, 모르는 대상이면 null
 export function notificationTargetLabel(target) {
   if (target?.kind === "friend-request") return "요청 보러 가기"
   if (target?.kind === "game-invite") return "초대 보러 가기"

@@ -1,3 +1,5 @@
+// 그림 슬라이더 (막대·손잡이 그림 위에 안 보이는 range 입력)
+// settings 일반·소리 탭과 ingame 설정 창 슬라이더 줄이 씀
 import { RANGE_SLIDER_ASSETS } from "@/shared/constants/rangeSliderAssets.js"
 import {
   CONTROL_CLASS,
@@ -10,11 +12,13 @@ import {
 } from "@/shared/constants/rangeSliderStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 0~1 위치, min=max면 0 (0으로 나누기 막기)
 function rangeRatio(value, min, max) {
   if (max === min) return 0
   return (value - min) / (max - min)
 }
 
+// 조작은 투명 input이 받고, 손잡이 그림은 css 변수(--range-t)로 따라감
 export default function RangeSlider({
   value,
   min,
@@ -56,6 +60,7 @@ export default function RangeSlider({
             aria-hidden="true"
             className={knobClassName}
             style={{
+              // 손잡이 반폭만큼 양끝을 띄워 막대 밖으로 안 나가게
               left: "calc(var(--knob-half) + (100% - 2 * var(--knob-half)) * var(--range-t))",
             }}
           />

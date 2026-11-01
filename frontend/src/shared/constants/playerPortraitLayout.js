@@ -1,3 +1,5 @@
+// 초상 틀 안쪽 자리(배경·초상 inset)와 그림 class, 쓰는 곳별 variant
+// PlayerPortraitFrame이 씀
 export const BG_GRADIENT_CLASS =
   "absolute inset-0 bg-gradient-to-b from-[#ddd2bc] via-[#cfc3aa] to-[#bfb39a]"
 
@@ -10,6 +12,7 @@ export const INGAME_SQUARE_IMG_CLASS =
 export const STANDING_CROP_IMG_CLASS =
   "absolute top-0 left-1/2 block h-[200%] w-[112%] -translate-x-1/2 select-none object-cover object-[center_10%]"
 
+// 지금 화면은 ingameCard만 씀 (카드·결과 MVP)
 export const PORTRAIT_VARIANTS = {
   ingameCard: {
     bgInset: {
@@ -80,6 +83,7 @@ export const PORTRAIT_VARIANTS = {
   },
 }
 
+// 없는 이름이면 바로 던짐 (오타를 빈 칸으로 숨기지 않기)
 export function getPortraitVariant(variant) {
   const config = PORTRAIT_VARIANTS[variant]
   if (!config) {

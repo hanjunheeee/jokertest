@@ -25,6 +25,7 @@ export default function TutorialGuideOverlay({
   const slideCount = slides.length
   const { mounted, pageIndex, setPageIndex } = useTutorialPager({ open, onClose, slideCount })
 
+  // 포털 준비 전이거나 슬라이드가 없으면 안 그림
   if (!mounted || slideCount === 0) return null
 
   return createPortal(

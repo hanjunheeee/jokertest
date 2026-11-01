@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
+// 페이지 번호·포털 준비 여부를 돌려줌
 export function useTutorialPager({ open, onClose, slideCount }) {
   const [mounted, setMounted] = useState(false)
   const [pageIndex, setPageIndex] = useState(0)
@@ -13,6 +14,7 @@ export function useTutorialPager({ open, onClose, slideCount }) {
   }, [])
 
   useEffect(() => {
+    // 열 때마다 첫 페이지부터
     if (open) setPageIndex(0)
   }, [open])
 

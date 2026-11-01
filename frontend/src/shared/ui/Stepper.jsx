@@ -1,7 +1,10 @@
+// 좌우 화살표로 목록 값을 하나씩 넘기는 칸
+// setup 고르기·숫자 줄이 씀
 import { useState } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
+// index를 넘기면 바깥이 값을 들고, 안 넘기면 안에서 들고 있음
 export default function Stepper({
   options,
   defaultIndex = 0,
@@ -23,6 +26,7 @@ export default function Stepper({
   const atMin = index === 0
   const atMax = index === options.length - 1
 
+  // 끝에서 더 못 가게 자르고, 실제로 바뀔 때만 클릭 소리
   const updateIndex = (next, event) => {
     const resolved = typeof next === "function" ? next(index) : next
     const clamped = Math.max(0, Math.min(options.length - 1, resolved))
@@ -33,6 +37,7 @@ export default function Stepper({
 
   return (
     <div className="flex items-center gap-1.5">
+      {/* 소리는 updateIndex가 직접 내서 기본 클릭 소리는 뺌 (data-sfx-owner) */}
       <button
         type="button"
         aria-label={`${ariaLabel} 감소`}
@@ -57,6 +62,7 @@ export default function Stepper({
         />
         <span className={valueClassName}>{value}</span>
       </div>
+      {/* 같은 화살표 그림을 뒤집어 씀 */}
       <button
         type="button"
         aria-label={`${ariaLabel} 증가`}

@@ -1,3 +1,5 @@
+// 튜토리얼 슬라이드·화살표 그림 경로
+// 튜토리얼 창·페이지 이동 줄이 씀
 export const TUTORIAL_GUIDE_SLIDES = [
   "/tutorial/1페이지.png",
   "/tutorial/2페이지.png",

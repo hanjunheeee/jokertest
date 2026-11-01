@@ -24,6 +24,7 @@ export function applyMix(media, mix) {
   }
 }
 
+// 지금 음량은 ctx.currentMix에 두고 구독자에게 알림
 export function createMix(ctx) {
   const { getSettings } = ctx
 
@@ -33,10 +34,12 @@ export function createMix(ctx) {
     return mixFrom(settings)
   }
 
+  // 바깥에서 못 바꾸게 사본을 줌
   function get() {
     return { ...ctx.currentMix }
   }
 
+  // 함수 아닌 값은 안 받음, 끄는 함수 돌려줌
   function subscribe(listener) {
     if (typeof listener !== "function") return () => {}
     ctx.mixListeners.add(listener)

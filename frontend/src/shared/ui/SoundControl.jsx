@@ -1,3 +1,5 @@
+// 배경음 조절 (음소거 아이콘 버튼 + 그림 슬라이더)
+// auth·matching·mode·setup·lobby 화면 컨트롤과 PageSoundControlArea가 씀
 import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets"
 import {
   SOUND_CONTROL_CLASSES,
@@ -7,6 +9,7 @@ import { useAudioControl } from "@/shared/hooks/useAudioControl"
 import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 값·동작은 useAudioControl이 맡고 여기선 그림만
 export default function SoundControl({ audioRef = getGlobalBgmRef() }) {
   const { sliderValue, isSilent, disabled, onVolumeChange, toggleMute } = useAudioControl(audioRef)
 
@@ -16,6 +19,7 @@ export default function SoundControl({ audioRef = getGlobalBgmRef() }) {
 
   return (
     <div className="flex items-center" role="group" aria-label="사운드 조절">
+      {/* 배경음 끈 빌드면 잠그고 이유를 title로 보여 줌 */}
       <button
         type="button"
         disabled={disabled}
@@ -34,6 +38,7 @@ export default function SoundControl({ audioRef = getGlobalBgmRef() }) {
 
       <div className={`relative shrink-0 ${SOUND_CONTROL_CLASSES.barWidth} ${SOUND_CONTROL_CLASSES.barOffset}`}>
         <PublicAsset src={SOUND_CONTROL_ASSETS.sliderBar} alt="" className={SOUND_CONTROL_CLASSES.sliderBar} />
+        {/* 투명 range가 조작을 받고, 손잡이 그림은 값 위치로 옮김 */}
         <input
           type="range"
           disabled={disabled}

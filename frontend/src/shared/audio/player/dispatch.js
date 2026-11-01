@@ -4,6 +4,7 @@ import { SFX_SCOPE, SFX_SUPPRESSED_REASON, SFX_UI_COOLDOWN_MS } from "../../cons
 import { checkSfxAssetAllowed } from "../../utils/sfx/asset.js"
 import { guard, suppressed } from "../../utils/sfx/event.js"
 
+// admit은 범위 파일, startPlayback은 재생 파일 것을 받음
 export function createDispatch(ctx, admit, startPlayback) {
   const { record, getSettings, now } = ctx
 
@@ -40,6 +41,7 @@ export function createDispatch(ctx, admit, startPlayback) {
       }
     }
 
+    // 음소거거나 음량 0이면 내지 않음
     if (ctx.currentMix.muted || ctx.currentMix.gain === 0) {
       record(SFX_SUPPRESSED_REASON.MUTED, event, { stage: "settings" })
       return suppressed(SFX_SUPPRESSED_REASON.MUTED)

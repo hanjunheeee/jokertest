@@ -1,6 +1,5 @@
 // 효과음 자산 검사 (목록에서 찾기·재생해도 되는 자산인지·불러온 파일 해시 확인)
 // 효과음 플레이어·효과음 목록이 씀 (sfxManifest.js가 같은 이름으로 다시 내보냄)
-// 해시 검사는 원래 sfxManifest.js 내용 그대로 옮김 (바꾸지 않음)
 import {
   MAX_SEPARATE_SFX_DURATION_MS,
   SFX_CLASSIFICATION,

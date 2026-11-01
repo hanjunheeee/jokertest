@@ -1,3 +1,5 @@
+// 모든 화면을 감싸는 틀 (가운데 게임 화면 + 좌우 배너)
+// app/routes/index.jsx가 가장 바깥 경로로 씀
 import { Outlet } from "react-router-dom";
 import { VIEWPORT_BANNER_ASSETS } from "@/shared/layouts/constants/viewportBannerAssets";
 import {
@@ -8,6 +10,7 @@ import {
 } from "@/shared/layouts/constants/viewportLayout"
 import PublicAsset from "@/shared/ui/PublicAsset";
 
+// 게임 화면 최대 폭·배너 간격을 css 변수로 넘겨 index.css가 배치함
 export default function ViewportShell() {
     return (
     <div

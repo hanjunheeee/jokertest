@@ -1,3 +1,5 @@
+// 그림 스크롤 막대 (막대·손잡이 그림, 손잡이 끌기)
+// auth 가입·ingame 설정·추방·기록·matching 친구 초대·result·notifications·settings·user 이모티콘·스킨 목록이 씀
 import { useRef } from "react"
 import { CUSTOM_SCROLLBAR_ASSETS } from "@/shared/constants/customScrollbarAssets.js"
 import {
@@ -10,6 +12,7 @@ import { useScrollbarThumb } from "@/shared/hooks/useScrollbarThumb.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 스크롤할 게 없으면 자리는 두고 숨김(opacity 0), box를 주면 막대 위치·높이를 그 값으로
 export default function Scrollbar({
   scrollRef,
   trackSrc = CUSTOM_SCROLLBAR_ASSETS.track,
@@ -33,6 +36,7 @@ export default function Scrollbar({
   const wrapStyle =
     box != null ? { top: box.top, height: box.height } : undefined
 
+  // 늘 보이기·스크롤 대상 없음·스크롤 가능일 때 보임
   const showScrollbar = alwaysVisible || !scrollRef || isScrollable
 
   return (
@@ -47,6 +51,7 @@ export default function Scrollbar({
         alt=""
         className={CUSTOM_SCROLLBAR_TRACK_CLASS}
       />
+      {/* 손잡이 그림, 숨김일 땐 포인터를 안 받음 */}
       <img
         ref={thumbRef}
         src={publicAsset(thumbSrc)}

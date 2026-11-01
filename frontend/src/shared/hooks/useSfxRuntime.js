@@ -1,5 +1,5 @@
 // 앱 전체 효과음 연결 훅 (플레이어 만들기·범위 다시 맞추기·기본 클릭 소리·업적 소리)
-// App 최상단이 한 번 부르고, 효과음 함수는 화면·스토어·시험이 이 경로로 씀
+// App 최상단이 한 번 부르고, 효과음 함수는 화면·훅·시험이 이 경로로 씀
 import { useEffect, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../socket/socketClient.js"
 import { onAchievementGranted } from "../socket/achievementSocket.js"
@@ -46,7 +46,9 @@ function readScopeForSfx() {
   }
 }
 
+// 플레이어를 둘 만들지 않게 App에서만 부름
 export function useSfxRuntime() {
+  // 공용 소켓이 바뀌면 업적 받기를 다시 붙임
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
   // 플레이어는 앱에 하나, 계정·판·방 스토어가 바뀔 때마다 범위를 다시 맞춤

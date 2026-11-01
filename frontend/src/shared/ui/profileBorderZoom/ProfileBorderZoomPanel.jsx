@@ -1,3 +1,5 @@
+// 확대 창 몸통 (닫기 버튼·테두리 그림·이름)
+// ProfileBorderZoomOverlay가 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import ProfileBorderZoomIllustration from "@/shared/ui/profileBorderZoom/ProfileBorderZoomIllustration.jsx"
 import {
@@ -8,6 +10,7 @@ import {
   TITLE_CLASS,
 } from "@/shared/ui/profileBorderZoom/profileBorderZoomLayout.js"
 
+// item = { icon, label }
 export default function ProfileBorderZoomPanel({ item, onClose }) {
   return (
     <div className={PANEL_CLASS}>

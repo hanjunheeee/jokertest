@@ -1,5 +1,8 @@
+// 값 칸 그림 + 값 + ▼ 표시만 있는 모양 (펼치는 기능은 없음)
+// 지금 화면에서는 안 씀, 글자 배율 시험만 불러옴
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 보여 주기만 하고 값 바꾸기는 안 받음
 export default function Dropdown({
   value,
   inputFieldSrc,

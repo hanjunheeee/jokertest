@@ -6,6 +6,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { EyeIcon, EyeOffIcon } from "@/shared/ui/InputIcons.jsx"
 
 
+// 날짜 칸 빈 값 글자색은 index.css가 이 class로 맞춤
 export const AUTH_DATE_INPUT_CLASS = "auth-date-input"
 
 // passwordToggle이면 type 대신 보기 상태로 password/text를 고름
@@ -32,10 +33,12 @@ export default function AuthInputSlot({
       <PublicAsset src={LOGIN_ASSETS.input} alt="" className="block h-auto w-full select-none" />
 
       <div className="absolute inset-0 flex items-center gap-2 px-[9%] py-2">
+        {/* 앞 아이콘은 넘겼을 때만 */}
         {leadingIcon ? (
           <span className={`pointer-events-none flex items-center ${compact ? "scale-95" : ""}`}>{leadingIcon}</span>
         ) : null}
 
+        {/* 날짜 칸은 값이 있을 때 class를 붙여 글자색을 바꿈, 나머지는 흰 글자 */}
         <input
           type={inputType}
           name={name}
@@ -53,6 +56,7 @@ export default function AuthInputSlot({
           }`.trim()}
         />
 
+        {/* 비밀번호 칸만 보기 버튼 */}
         {passwordToggle ? (
           <button
             type="button"

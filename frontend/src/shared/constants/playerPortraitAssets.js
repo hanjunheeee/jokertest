@@ -1,5 +1,8 @@
+// 직업 전신·클로즈업 초상 그림 경로 (순번으로 고름)
+// pickJobPortrait·ingame 초상 고르기가 씀 (전신 목록은 시험만 봄)
 const BASIC_STANDING_DIR = "/shopItem/basic/jobs-standing"
 const BASIC_CLOSEUP_DIR = "/shopItem/basic/jobs-closeup"
+// 경비원3은 basic 폴더에 없어 옛 ingame-playercard 폴더 그림을 씀
 const LEGACY_STANDING_DIR = "/frame/ingame-playercard/jobs-standing"
 const LEGACY_CLOSEUP_DIR = "/frame/ingame-playercard/jobs-closeup"
 

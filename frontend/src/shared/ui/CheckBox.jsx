@@ -1,5 +1,8 @@
+// 그림 체크박스 (칸 그림 위에 체크 표시 그림)
+// settings 일반·소리 탭과 ingame 설정 창이 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 칸·체크 그림은 쓰는 쪽이 넘김, role=checkbox로 화면 읽기 지원
 export default function CheckBox({
   checked,
   onChange,
@@ -22,6 +25,7 @@ export default function CheckBox({
         alt=""
         className="block h-auto w-full select-none"
       />
+      {/* 켜졌을 때만 체크 표시 */}
       {checked ? (
         <PublicAsset
           src={checkMarkSrc}

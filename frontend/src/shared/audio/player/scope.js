@@ -4,6 +4,7 @@ import { SFX_COMPLETION, SFX_SCOPE, SFX_SUPPRESSED_REASON } from "../../constant
 import { lookupSfxAsset } from "../../utils/sfx/asset.js"
 import { buildKey, guard, pickId, validateEvent } from "../../utils/sfx/event.js"
 
+// 범위가 바뀌면 stopActive로 재생 중인 소리를 멈춤
 export function createScope(ctx, stopActive) {
   const { getScope, manifest } = ctx
 
@@ -39,6 +40,7 @@ export function createScope(ctx, stopActive) {
     stopActive(SFX_COMPLETION.STOPPED)
   }
 
+  // 키 안에 그 판·방 조각이 든 기록만 지움
   function dropSegment(segment) {
     for (const key of [...ctx.handled.keys()]) {
       if (key.includes(`|${segment}|`)) ctx.handled.delete(key)

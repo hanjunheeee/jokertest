@@ -6,6 +6,7 @@ import { verifyLoadedSfxAsset } from "../../utils/sfx/asset.js"
 import { guard } from "../../utils/sfx/event.js"
 import { applyMix } from "./mix.js"
 
+// 불러오기·소리 만들기 함수는 ctx(바깥 연결)에서 받음
 export function createPlayback(ctx) {
   const { record, setTimer, clearTimer, loadAsset, createMedia } = ctx
 
@@ -84,7 +85,9 @@ export function createPlayback(ctx) {
       return completion
     }
 
+    // 불러오는 쪽이 중간에 취소됐는지 물어볼 수 있게 함
     const loadControl = {isCancelled:() => isStale() }
+    // 불러오기 함수가 바로 던져도 실패로 끝냄
     let loading
     try {
       loading = Promise.resolve(loadAsset(entry, loadControl))
@@ -116,6 +119,7 @@ export function createPlayback(ctx) {
         startMedia(verified.src)
       },
       () => {
+        // 불러오기 실패, 이미 끝났으면 무시
         if (settled) return
         record("asset-load-failed", event, { stage: "load" })
         handle.settle(SFX_COMPLETION.FAILED)

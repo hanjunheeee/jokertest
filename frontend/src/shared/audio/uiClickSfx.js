@@ -7,6 +7,7 @@ let uiActionSeq = 0
 // 한 클릭에 소리가 두 번 나지 않게 이미 처리한 클릭을 적어 둠
 const consumedNativeEvents = new WeakSet()
 
+// 클릭마다 다른 id (중복 거름에 안 걸리게)
 function nextUiActionId(prefix) {
   uiActionSeq += 1
   return `${prefix}:${uiActionSeq}`
@@ -19,6 +20,7 @@ function resolveNativeEvent(candidate) {
   return candidate
 }
 
+// 직접 소리 낸 클릭은 적어 둬서 기본 클릭 소리가 또 안 남
 export function dispatchUiSfx(kind, event) {
   const native = resolveNativeEvent(event)
   if (native !== null) {

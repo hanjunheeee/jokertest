@@ -1,6 +1,9 @@
+// 그림 슬라이더 자리·모양 class와 손잡이 반폭
+// RangeSlider가 씀
 export const VALUE_CLASS =
   "mb-[0.12rem] pr-[clamp(0.5rem,0.9vw,0.7rem)] text-right font-subheading app-text-scaled [--app-text-size:clamp(1.22rem,1.75vw,1.42rem)] font-bold leading-none text-[#1a1008]"
 
+// 손잡이 반폭, 막대 양끝 여백 계산에 씀
 export const RANGE_SLIDER_KNOB_HALF = "clamp(0.65rem,0.95vw,0.78rem)"
 
 export const RANGE_SLIDER_WRAP_CLASS =

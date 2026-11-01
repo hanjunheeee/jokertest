@@ -1,3 +1,6 @@
+// 프로필 테두리 확대 창 자리·모양 class와 움직임 값
+// profileBorderZoom 안 세 컴포넌트가 씀 (닫기 그림 경로는 자산 경로 시험도 봄)
+// 뒤판·창이 같은 속도로 나타나고 사라짐
 export const ZOOM_TRANSITION = {
   duration: 0.35,
   ease: [0.22, 1, 0.36, 1],

@@ -34,6 +34,7 @@ export default function TutorialGuideControls({ slides, pageIndex, setPageIndex 
       </button>
 
       <div className={NODES_CLASS} role="tablist" aria-label="페이지 선택">
+        {/* 점을 누르면 그 페이지로 바로 감 */}
         {slides.map((_, index) => {
           const active = index === pageIndex
           return (

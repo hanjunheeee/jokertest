@@ -2,6 +2,7 @@
 // sfxPlayer.js가 만들어 claimAudio로 내보냄
 import { applyMix, silence } from "./mix.js"
 
+// admit·syncScope는 범위 파일(scope.js) 것을 받음
 export function createClaim(ctx, admit, syncScope) {
   const { record } = ctx
 

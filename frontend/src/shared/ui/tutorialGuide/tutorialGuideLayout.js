@@ -1,3 +1,5 @@
+// 튜토리얼 창 자리·모양 class와 움직임 값
+// TutorialGuideOverlay·TutorialGuideControls가 씀
 export const BACKDROP_CLASS =
   "fixed inset-0 z-[100] cursor-pointer border-0 bg-black/82 p-0"
 

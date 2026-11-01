@@ -1,10 +1,11 @@
 // 효과음 플레이어가 쓰는 순수 계산 (요청 검사·막힘 응답·중복 키·음량 계산)
-// shared/audio/player/ 아래 파일이 씀
+// sfxPlayer.js와 shared/audio/player/ 아래 파일이 씀
 import { SFX_COMPLETION } from "../../constants/sfx.js"
 
 // 막힌 요청은 모두 같은 '멈춤' 완료 약속을 돌려줌
 const SETTLED_STOPPED = Promise.resolve(SFX_COMPLETION.STOPPED)
 
+// 막힘 응답 (이유 + 이미 끝난 약속)
 export function suppressed(reason) {
   return { status: "suppressed", reason, completion: SETTLED_STOPPED }
 }

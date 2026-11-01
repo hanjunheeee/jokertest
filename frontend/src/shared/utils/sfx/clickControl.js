@@ -15,6 +15,7 @@ function isActivatableControl(node) {
   return role === "button" || role === "checkbox" || role === "radio" || role === "menuitem" || role === "tab"
 }
 
+// 잠긴 버튼(disabled·aria-disabled·inert)은 소리 안 냄
 function isDisabledControl(node) {
   if (node.disabled === true) return true
   if (typeof node.getAttribute !== "function") return false

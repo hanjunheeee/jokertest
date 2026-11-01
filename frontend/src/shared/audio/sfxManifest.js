@@ -59,6 +59,7 @@ function synthesizedAsset(kind, extra) {
   }
 }
 
+// 소리 종류별 자산·범위·알림 키 (그 알림을 끄면 소리도 안 냄)
 export const SFX_MANIFEST = Object.freeze({
   "ui-click": synthesizedAsset("ui-click", { scope: SFX_SCOPE.UI, notificationKey: null }),
   "ui-confirm": synthesizedAsset("ui-confirm", { scope: SFX_SCOPE.UI, notificationKey: null }),
@@ -93,6 +94,7 @@ export const SFX_MANIFEST = Object.freeze({
   "player-eliminated": synthesizedAsset("player-eliminated", { scope: SFX_SCOPE.GAME, notificationKey: null }),
   "game-result": synthesizedAsset("game-result", { scope: SFX_SCOPE.GAME, notificationKey: null }),
 
+  // 밤 성공 영상 소리는 따로 안 내고 영상째 재생
   "night-success-video": pendingAsset({
     scope: SFX_SCOPE.GAME,
     notificationKey: null,

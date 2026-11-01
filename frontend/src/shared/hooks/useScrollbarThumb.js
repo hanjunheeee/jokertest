@@ -1,9 +1,10 @@
-// 사용자 스크롤 막대 손잡이 (스크롤·크기 바뀜에 맞춰 위치 맞추기, 손잡이 끌어서 스크롤)
+// 그림 스크롤 막대 손잡이 (스크롤·크기 바뀜에 맞춰 위치 맞추기, 손잡이 끌어서 스크롤)
 // 공용 Scrollbar 컴포넌트가 씀
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { CUSTOM_SCROLLBAR_TRACK_INSET } from "@/shared/constants/customScrollbarStyles.js"
 import { computeTravelMetrics, scrollTopToThumbTop, thumbTopToScrollTop } from "@/shared/utils/scrollbarThumb.js"
 
+// 막대 여백은 막대 높이 비율, 손잡이 위치·보일지·끌기 시작 함수를 돌려줌
 export function useScrollbarThumb(
   scrollRef,
   trackRef,
@@ -59,6 +60,7 @@ export function useScrollbarThumb(
 
       thumbEl.setPointerCapture(event.pointerId)
 
+      // 손잡이를 범위 안으로 자르고 그 위치만큼 스크롤
       const onPointerMove = (moveEvent) => {
         const dragState = dragStateRef.current
         if (!dragState || moveEvent.pointerId !== dragState.pointerId) return
@@ -77,6 +79,7 @@ export function useScrollbarThumb(
         scrollEl.scrollTop = thumbTopToScrollTop(nextThumbTop, liveMetrics)
       }
 
+      // 같은 포인터일 때만 끝내고 손잡이 받기를 풂
       const endDrag = (endEvent) => {
         const dragState = dragStateRef.current
         if (!dragState || endEvent.pointerId !== dragState.pointerId) return
@@ -119,6 +122,7 @@ export function useScrollbarThumb(
 
     const onThumbLoad = () => sync()
     thumbEl.addEventListener("load", onThumbLoad)
+    // 그림이 이미 받아져 있으면 load가 안 옴, 바로 맞춤
     if (thumbEl.complete) {
       sync()
     }

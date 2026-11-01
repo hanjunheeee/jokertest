@@ -1,3 +1,5 @@
+// 동그란 프로필 사진 + 테두리 그림 (안 넘기면 기본 사진·평민 테두리)
+// lobby 친구 목록 줄들·matching 친구 초대 줄·ingame 추방·기록 줄·result 플레이어 줄이 씀
 import { PLAYER_PROFILE_ASSETS } from "@/shared/constants/playerProfileAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
@@ -12,6 +14,7 @@ const DEFAULT_PHOTO_CLASS =
 const DEFAULT_FRAME_CLASS =
   "pointer-events-none absolute inset-0 z-[2] h-full w-full select-none object-contain"
 
+// class는 쓰는 곳마다 바꿔 끼울 수 있게 기본값만 둠
 export default function PlayerProfilePortrait({
   photoSrc: photoSrcProp,
   frameSrc: frameSrcProp,
