@@ -1,5 +1,5 @@
 // 채팅 보기 설정: 글자 배율·시각 보이기·닉네임 색 켜짐 (인게임 설정 채팅 탭 값)
-// MessageList·Composer가 씀, 기본값은 데스크톱 설정 목록 값 그대로
+// MessageList가 씀, 기본값은 데스크톱 설정 목록 값 그대로
 import { useSettingsStore } from "@/domains/settings/store/settingsStore.js"
 import {
     INGAME_SETTING_CHAT_CHECKBOXES,

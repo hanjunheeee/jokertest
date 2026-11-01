@@ -1,5 +1,5 @@
 // 화면 키보드에 가려지는 아래쪽 높이(px): visualViewport로 잼
-// 입력 줄(Composer)이 씀, 안드로이드는 viewport 메타(resizes-content)로 이미 줄어 0, iOS는 이 값만큼 올림
+// 크게 보기 시트(CloseupSheet)가 씀, 안드로이드는 viewport 메타(resizes-content)로 이미 줄어 0, iOS는 이 값만큼 올림
 import { useEffect, useState } from "react"
 
 // 레이아웃 높이 - 보이는 높이 - 보이는 칸 위쪽 밀림 = 키보드가 덮은 높이

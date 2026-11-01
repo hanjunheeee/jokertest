@@ -1,25 +1,18 @@
-// 채팅 상태 줄: 보내기 실패 글 > 전송 중 > 못 보내는 까닭(읽기 전용·채팅 없음)
-// ChatPanel·CloseupSheet가 씀, 데스크톱 상태 줄에 읽기 전용 안내를 더함
-const LINE_CLASS = "shrink-0 truncate px-3 pb-1 pt-0.5 font-subheading text-[0.74rem] font-bold leading-tight"
+// 채팅 상태 줄: 오류 문구나 '전송 중' 한 줄, 틀 가운데 나무 띠 위에 얹음 (데스크톱 상태 줄 자리)
+// ChatPanel·Composer가 씀, 글자 모양·문구는 데스크톱 InGameChatStatusLine과 같음
+const WRAP_CLASS = "pointer-events-none absolute inset-x-[8%] z-[1] flex items-center justify-center"
+const LINE_CLASS = "truncate px-1 text-[11px] leading-none text-white/80"
 
-// 셋 다 없으면 안 그림
-export default function StatusLine({ status = null, error = null, blockedReason = null }) {
-    if (error) {
-        return (
-            <p className={`${LINE_CLASS} text-[#a01818]`} role="alert">
-                {error}
+// 오류 먼저, 보내는 중이면 전송 중, 둘 다 아니면 안 그림 (placeStyle은 띠 자리)
+export default function StatusLine({ status = null, error = null, placeStyle }) {
+    const text = error ?? (status === "sending" ? "전송 중" : null)
+    if (!text) return null
+
+    return (
+        <div className={WRAP_CLASS} style={placeStyle}>
+            <p className={LINE_CLASS} role={error ? "alert" : "status"}>
+                {text}
             </p>
-        )
-    }
-    if (status === "sending") {
-        return (
-            <p className={`${LINE_CLASS} text-[#3a1a0c]/75`} role="status">
-                전송 중…
-            </p>
-        )
-    }
-    if (blockedReason) {
-        return <p className={`${LINE_CLASS} text-[#3a1a0c]/65`}>{blockedReason}</p>
-    }
-    return null
+        </div>
+    )
 }

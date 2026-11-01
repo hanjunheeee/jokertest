@@ -1,39 +1,79 @@
-// 모바일 채팅 공통 모양: 양피지 칸·나무 테두리·글자·입력 줄 class
-// components/chat 아래 부품들이 씀, 색은 데스크톱 채팅 틀 그림·글자색(#3a1a0c)에 맞춤
+// 모바일 채팅 공통 모양: 데스크톱 채팅 틀 그림을 목록 칸·입력 줄로 잘라 쓰는 자리 값과 글자 모양
+// components/chat 아래 부품들이 씀, 글자색·굵기·자간은 데스크톱 채팅 글(ingameChatLayout)과 같음
 
-// 채팅 칸: 나무 테두리 + 양피지 바탕 (틀 그림은 비율이 고정이라 세로 폰에선 CSS로 그림)
-export const PANEL_CLASS =
-    "relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[0.7rem] border-[3px] border-[#3b2414] bg-[#e9d8b2] [background-image:radial-gradient(ellipse_at_center,rgba(255,248,230,0.55),rgba(160,110,60,0.18)_78%,rgba(90,50,20,0.32))] [box-shadow:inset_0_0_0_1px_rgba(255,236,200,0.35),inset_0_0_18px_rgba(70,35,10,0.35),0_4px_14px_rgba(0,0,0,0.55)]"
+// 데스크톱 틀 그림(인게임-채팅창프레임2.png, 813x585) 세로 기준 줄 (px)
+// 33까지 위 나무, 457~477 가운데 나무 띠, 477~556 입력 띠 양피지, 그 아래 아래 나무
+const FRAME_H = 585
+const PARCHMENT_TOP = 33
+const DIVIDER_TOP = 457
+const DIVIDER_BOTTOM = 477
+const SIDE_WOOD_RATIO = 62 / 813
 
-// 머리 줄 (채널 표시·크게 보기)
-export const HEADER_CLASS =
-    "flex shrink-0 items-center gap-2 border-b border-[#3a1a0c]/18 py-0.5 pl-2 pr-0.5"
+// 틀 그림 한 장에서 잘라 보일 구간 (top: 그 구간 시작, end: 끝)
+export const FRAME_SLICE = Object.freeze({
+    // 목록만 있는 칸 (세로 폰): 가운데 나무 띠까지 → 띠가 칸 아래 테두리
+    listWithDivider: { start: 0, end: DIVIDER_BOTTOM },
+    // 목록 + 입력 줄 붙는 칸 (넓은 배치·크게 보기): 띠는 입력 줄이 그림
+    list: { start: 0, end: DIVIDER_TOP },
+    // 입력 줄: 가운데 띠부터 그림 끝까지
+    composer: { start: DIVIDER_TOP, end: FRAME_H },
+})
 
-// 메시지 글 기본 모양 (데스크톱 채팅 글과 같은 글꼴·굵기·색)
-export const TEXT_CLASS =
-    "font-subheading font-bold leading-[1.4] tracking-[0.02em] text-[#3a1a0c]"
+// 구간 → 그림 높이·위치 style (칸 높이에 맞춰 늘림, 가로는 칸 너비 그대로라 데스크톱 object-fill과 같음)
+export function frameSliceStyle({ start, end }) {
+    const span = end - start
+    return {
+        height: `${(FRAME_H / span) * 100}%`,
+        top: `${(-start / span) * 100}%`,
+    }
+}
 
-// 메시지 목록 스크롤 칸 (가로 스크롤 없음, 끝에서 바깥 화면 안 끌려감)
-export const LIST_SCROLL_CLASS =
-    "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-2.5 py-1.5 [scrollbar-width:thin] [scrollbar-color:rgba(58,26,12,0.35)_transparent]"
+// 목록 칸 안쪽 자리 (틀 나무 안쪽, 위·옆 나무 두께 비율)
+export function listInsetStyle(slice) {
+    const span = slice.end - slice.start
+    const bottomWood = slice.end - Math.min(slice.end, DIVIDER_TOP)
+    return {
+        top: `${(PARCHMENT_TOP / span) * 100 + 1}%`,
+        bottom: `${(bottomWood / span) * 100 + 0.8}%`,
+        left: `${SIDE_WOOD_RATIO * 100 + 2.2}%`,
+        right: `${SIDE_WOOD_RATIO * 100 + 0.8}%`,
+    }
+}
 
-// 입력 줄 바깥 (나무 바탕, 키보드가 덮으면 transform으로 올림)
+// 가운데 나무 띠 자리 (상태 줄을 띠 위에 얹음, 데스크톱도 상태 줄이 띠 위)
+export function dividerStyle(slice) {
+    const span = slice.end - slice.start
+    const top = ((DIVIDER_TOP - slice.start) / span) * 100
+    const height = ((DIVIDER_BOTTOM - DIVIDER_TOP) / span) * 100
+    return { top: `${top}%`, height: `${height}%` }
+}
+
+// 채팅 틀 바탕 (그림 밖으로 안 넘치게 자름)
+export const FRAME_ROOT_CLASS = "relative w-full overflow-hidden [container-type:inline-size]"
+
+// 잘라 쓰는 틀 그림
+export const FRAME_IMAGE_CLASS = "pointer-events-none absolute left-0 w-full max-w-none select-none object-fill"
+
+// 입력 줄 높이·안쪽 여백 (입력 띠 양피지 79px 비율 → 입력칸 44px가 띠 안에 들어감)
 export const COMPOSER_BAR_CLASS =
-    "flex w-full items-end gap-2 bg-[#2a1810] px-2.5 py-2 [box-shadow:0_-2px_10px_rgba(0,0,0,0.45)] transition-transform duration-150 ease-out"
+    "relative h-[75px] w-full shrink-0 overflow-hidden transition-transform duration-150 ease-out"
 
-// 입력칸 (양피지 바탕, 글자 16px 이상은 index.css가 맞춤 → iOS 확대 없음)
+export const COMPOSER_ROW_CLASS =
+    "absolute inset-x-[7.6%] top-[16%] bottom-[23%] flex items-center gap-[clamp(0.15rem,1cqi,0.35rem)] pl-[clamp(0.6rem,4cqi,1.4rem)]"
+
+// 메시지 글 모양 (데스크톱 TEXT_TYPOGRAPHY_CLASS에서 글자 크기만 뺌, 크기는 chatFontSize)
+export const TEXT_CLASS = "font-subheading font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+
+// 입력칸: 데스크톱처럼 투명 바탕·테두리 없음, 높이 고정 한 줄(넘치면 안에서 스크롤), 글자 16px 이상은 index.css가 맞춤
 export const TEXTAREA_CLASS =
-    "block max-h-[6.2rem] min-h-11 w-full resize-none rounded-[0.5rem] border border-[#c9a46a]/60 bg-[#efe2c4] px-3 py-[0.6rem] font-subheading font-bold leading-[1.35] text-[#3a1a0c] outline-none placeholder:text-[#6a4526]/70 focus:border-[#e0b46a] focus:ring-2 focus:ring-[#e0b46a]/40 disabled:cursor-not-allowed disabled:bg-[#cdbd9c] disabled:text-[#6a4526]"
+    `block h-11 w-full resize-none overflow-y-auto border-0 bg-transparent p-0 py-[0.7rem] outline-none placeholder:text-[#4a2814] placeholder:opacity-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${TEXT_CLASS}`
 
 // 아이콘 버튼 (누르는 자리 44px)
 export const ICON_BTN_CLASS =
-    "flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#3a1a0c] active:scale-95 active:bg-[#3a1a0c]/10"
+    "flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 transition-transform duration-200 ease-out active:scale-[0.99]"
 
-// 크게 보기 시트 움직임 (데스크톱 겹창과 같은 값)
-export const SHEET_TRANSITION = { duration: 0.28, ease: [0.22, 1, 0.36, 1] }
-
-// 글자 크기: 데스크톱 배율(0.6~1)을 쓰되 폰에서 너무 작지 않게 바닥 둠
-export function chatFontSize(textScale, base = 0.95) {
-    const rem = Math.max(0.74, base * textScale)
+// 글자 크기: 데스크톱 배율(0.6~1) × 데스크톱 최대 크기, 폰에서 읽을 수 있게 바닥만 둠
+export function chatFontSize(textScale, base = 0.92) {
+    const rem = Math.max(0.7, base * textScale)
     return `calc(${rem.toFixed(3)}rem * var(--app-text-scale, 1))`
 }
