@@ -1,0 +1,29 @@
+// Discord OAuth 환경 파일, 환경변수 읽기 · 시간 초과 값과 판정
+// 부를 때마다 읽음 (load 때 붙잡지 않음)
+const { createError } = require("../../../../utils/appError");
+
+// 요청 시간 제한 (환경변수 없으면 8초)
+const DISCORD_REQUEST_TIMEOUT_MS = () => Number(process.env.DISCORD_OAUTH_TIMEOUT_MS) || 8000;
+
+// fetch 시간 초과·중단 오류인지
+const isTimeoutError = (error) => error?.name === "TimeoutError" || error?.name === "AbortError";
+
+// 꼭 있어야 하는 환경변수, 없으면 500
+const readRequiredEnv = (name) => {
+    const value = process.env[name];
+    if (!value) {
+        throw createError(`${name} 환경변수가 설정되지 않았습니다.`, 500, "DISCORD_OAUTH_NOT_CONFIGURED");
+    }
+    return value;
+};
+
+// 연결이면 연결용 돌아올 주소, 아니면 로그인용
+const resolveRedirectUri = (purpose) =>
+    purpose === "link" ? readRequiredEnv("DISCORD_LINK_REDIRECT_URI") : readRequiredEnv("DISCORD_REDIRECT_URI");
+
+module.exports = {
+    DISCORD_REQUEST_TIMEOUT_MS,
+    isTimeoutError,
+    readRequiredEnv,
+    resolveRedirectUri,
+};
