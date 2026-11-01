@@ -1,9 +1,9 @@
 // 판 끝 전적 저장 파일
 // 전적 레코드 1번 만들고 저장·재시도 + 저장 뒤 캐시 무효화 신호·업적 평가, socket gameSession이 부름
 // 저장은 시작만 하고 기다리지 않음 (판정 방송·ack가 DB를 안 기다리게, 지도 07-①)
-const gameSessionCore = require('../game-core/gameSession')
-const gameResultRepository = require('../repositories/gameResult.repositories')
-const gameAchievementService = require('./gameAchievement.service')
+const gameSessionCore = require('../../../game-core/gameSession')
+const gameResultRepository = require('../../../repositories/gameResult.repositories')
+const gameAchievementService = require('../achievementHooks')
 
 // 바깥 함수 참조 묶음: 재시도 타이머(시험이 교체) + 사용자 전송(socket.js가 넣어 줌)
 const deps = {

@@ -1,7 +1,7 @@
 // 핸들러 등록 파일
 // 게임 이벤트 핸들러 등록·접속 현황 + 시험용 상태 초기화, 입구 gameSession.js가 내보냄
 const gameSessionCore = require('../../../game-core/gameSession')
-const gameRecordService = require('../../../service/gameRecord.service')
+const gameRecordService = require('../../../services/game/record')
 const kickReceiptStore = require('../../kickReceiptStore')
 const {
     nightTurnRuns,

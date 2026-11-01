@@ -1,6 +1,6 @@
 const db = require("../models");
 const gameSessionCore = require("../game-core/gameSession");
-const roleStatisticsPolicy = require("../services/roleStatisticsPolicy");
+const roleStatisticsPolicy = require("../services/game/roleStatistics");
 const economyService = require("../service/economy.service");
 
 let economyServiceRef = economyService;

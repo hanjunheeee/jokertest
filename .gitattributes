@@ -18,7 +18,7 @@
 *.woff2 binary
 
 # F10 checkpoint contained a NUL; keep the complete policy diff reviewable.
-backend/services/roleStatisticsPolicy.js diff
+backend/services/game/roleStatistics/index.js diff
 
 # F12: expose both sides of the historical NUL-containing test as text.
 backend/tests/services/achievementService.test.js diff

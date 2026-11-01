@@ -1,7 +1,7 @@
 // 참가자 이탈 반영 파일
 // 이탈 커밋 뒤 방송·유예·전적 + 막혀 있던 단계 풀기, 나가기·추방·끊김 유예 만료가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
-const { persistTerminalSession } = require('../../../service/gameRecord.service')
+const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr } = require('../../common/isolate')
 const { NIGHT_TURN_STAGES } = require('../core/constants')
 const { nightTurnRuns } = require('../core/state')

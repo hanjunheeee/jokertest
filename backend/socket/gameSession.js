@@ -1,9 +1,9 @@
 // socket gameSession 입구 파일
 // gameSession/ 폴더의 핸들러·타이머를 모아 내보냄 + 아래 파일이 부를 위층 함수 잇기, socket.js·시험이 씀
 // 전적 저장·업적 평가는 service가 맡음 (socket은 부르기만, 시험 주입구 이름은 그대로 내보냄)
-const gameRecordService = require('../service/gameRecord.service')
+const gameRecordService = require('../services/game/record')
 const { persistTerminalSession, setEmitToUser } = gameRecordService
-const gameAchievementService = require('../service/gameAchievement.service')
+const gameAchievementService = require('../services/game/achievementHooks')
 const kickReceiptStore = require('./kickReceiptStore')
 const { NIGHT_TURN_STAGES } = require('./gameSession/core/constants')
 const { nightTurnRuns, setPhaseHooks } = require('./gameSession/core/state')

@@ -1,7 +1,7 @@
 // 낮 투표 핸들러 파일
 // 낮 투표 제출(1라운드 참여 기록 저장) · 낮 투표 집계 버튼, register가 등록함
 const gameSessionCore = require('../../../game-core/gameSession')
-const gameAchievementService = require('../../../service/gameAchievement.service')
+const gameAchievementService = require('../../../services/game/achievementHooks')
 const { isolate, tryOr } = require('../../common/isolate')
 const { respond, labeledResponder } = require('../../common/replies')
 const { RESOLVE_INTERNAL_ONLY_CODES } = require('../core/constants')

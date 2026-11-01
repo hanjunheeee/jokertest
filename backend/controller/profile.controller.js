@@ -1,6 +1,6 @@
 const userRepository            = require("../repositories/user.repositories");
 const gameResultRepository      = require("../repositories/gameResult.repositories");
-const roleStatisticsPolicy      = require("../services/roleStatisticsPolicy");
+const roleStatisticsPolicy      = require("../services/game/roleStatistics");
 const { comparePassword,
         hashPassword }          = require("../utils/hash");
 const { validateNickname,

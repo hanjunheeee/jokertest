@@ -8,7 +8,7 @@ const {
     buildRoleRanking,
     selectMaskOfFateRole,
     isAchievementRewardEligibleGame,
-} = require('../../services/roleStatisticsPolicy')
+} = require('../../services/game/roleStatistics')
 
 test('getRoleKoreanName: 5개 직업 코드가 고정 한국어 이름으로 매핑된다', () => {
     assert.equal(getRoleKoreanName('CITIZEN'), '귀족')

@@ -2,7 +2,7 @@
 // 판 지우기 전 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드, 나가기·끊김·판정이 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
-const { persistTerminalSession } = require('../../../service/gameRecord.service')
+const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr, isolateWithError } = require('../../common/isolate')
 const { detachAllDisconnectGraces } = require('../connection/grace')
 const { buildSessionEndContext } = require('../delivery/eligibility')
