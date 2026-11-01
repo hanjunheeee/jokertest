@@ -1,7 +1,7 @@
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
-const gameSessionCore = require("../../game-core/gameSession");
+const gameSessionCore = require("../../../game-core/gameSession");
 
 const { buildGameResultRecord } = gameSessionCore;
 const { buildSessionCandidate, resolveGameSource } = gameSessionCore.__testables;

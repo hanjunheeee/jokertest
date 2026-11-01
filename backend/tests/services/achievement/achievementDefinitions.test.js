@@ -10,10 +10,10 @@ const {
     FORBIDDEN_RECORD_ACHIEVEMENTS,
     JOB_ACHIEVEMENTS,
     getAchievementDefinition,
-} = require('../../services/achievement/definitions');
+} = require('../../../services/achievement/definitions');
 
-const FRONTEND_SPREAD_META_PATH = path.join(__dirname, '..', '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'forbiddenRecords', 'spreadMeta.js');
-const FRONTEND_JOB_CHALLENGES_PATH = path.join(__dirname, '..', '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'invitedGuests', 'jobChallenges.js');
+const FRONTEND_SPREAD_META_PATH = path.join(__dirname, '..', '..', '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'forbiddenRecords', 'spreadMeta.js');
+const FRONTEND_JOB_CHALLENGES_PATH = path.join(__dirname, '..', '..', '..', '..', 'frontend', 'src', 'domains', 'library', 'content', 'invitedGuests', 'jobChallenges.js');
 
 const EXPECTED_FORBIDDEN_RECORDS = [
     { id: 'record-1-masquerade', metric: 'COMPLETED_GAMES', threshold: 3 },

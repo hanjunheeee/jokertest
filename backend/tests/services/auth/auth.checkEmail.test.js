@@ -1,8 +1,8 @@
 const test   = require("node:test");
 const assert = require("node:assert/strict");
 
-const db          = require("../../models");
-const authService = require("../../services/auth/account");
+const db          = require("../../../models");
+const authService = require("../../../services/auth/account");
 
 const setupFakeUserFindOne = (t, impl) => {
     const original = db.User;

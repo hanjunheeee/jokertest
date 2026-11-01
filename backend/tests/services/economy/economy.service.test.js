@@ -3,8 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const economyService = require('../../services/economy');
-const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+const economyService = require('../../../services/economy');
+const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../../economy/catalog');
 const { CURRENCIES } = economyService;
 
 const createFakeDb = () => {

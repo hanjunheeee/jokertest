@@ -3,8 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const products = require('../../services/economy/currencyProducts');
-const { createFakeTopupDb } = require('../helpers/fakeTopupDb');
+const products = require('../../../services/economy/currencyProducts');
+const { createFakeTopupDb } = require('../../helpers/fakeTopupDb');
 
 const ROW = Object.freeze({
     product_id: 'p-1', kind: 'DIAMOND_TOPUP', display_name: '시험 상품(임시값)', pay_currency: 'KRW', pay_amount: 1000,

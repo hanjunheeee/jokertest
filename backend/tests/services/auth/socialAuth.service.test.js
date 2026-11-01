@@ -4,9 +4,9 @@ const test   = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
 
-const userRepository = require("../../repositories/user.repositories");
-const authService    = require("../../services/auth/account");
-const socialAuthService = require("../../services/auth/social");
+const userRepository = require("../../../repositories/user.repositories");
+const authService    = require("../../../services/auth/account");
+const socialAuthService = require("../../../services/auth/social");
 
 const hashValue = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 

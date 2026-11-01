@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const achievementService = require('../../services/achievement');
-const notificationService = require('../../services/notification');
-const { ACHIEVEMENT_DEFINITIONS, getAchievementDefinition } = require('../../services/achievement/definitions');
+const achievementService = require('../../../services/achievement');
+const notificationService = require('../../../services/notification');
+const { ACHIEVEMENT_DEFINITIONS, getAchievementDefinition } = require('../../../services/achievement/definitions');
 
 const { __internal } = achievementService;
 

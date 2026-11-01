@@ -6,10 +6,10 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localh
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const db = require('../../models');
-const friendService = require('../../services/friend');
-const friendRepository = require('../../repositories/friend.repositories');
-const economyService = require('../../services/economy');
+const db = require('../../../models');
+const friendService = require('../../../services/friend');
+const friendRepository = require('../../../repositories/friend.repositories');
+const economyService = require('../../../services/economy');
 
 const stubFriendRepository = (t, overrides) => {
     const keys = [
