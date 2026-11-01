@@ -19,8 +19,8 @@ const buildSkinsByJob = (loadout) => Object.fromEntries(
     Object.entries(JOB_TO_SKIN_COLUMN).map(([jobId, column]) => [jobId, loadout?.[column] ?? null]),
 );
 
-// db 안 넘기면 진짜 models (부를 때 require, 시험은 가짜 db 넘김)
-const defaultDb = () => require('../../models');
+// db 안 넘기면 진짜 models (db 손잡이 창구로 부를 때 require, 시험은 가짜 db 넘김)
+const defaultDb = () => require('../../repositories/common/db');
 
 // 같은 참조 id로 다시 온 장부 요청이 처음과 같은 내용인지
 const payloadMatches = (entry, { reason, itemId, currency, amount }) =>

@@ -7,8 +7,8 @@ const { KINDS, STATUSES } = require('./constants');
 const { normalizeProductRow, toPublicProduct, isNonEmptyString } = require('./normalize');
 const productRepository = require('../../../repositories/economy/currencyProduct');
 
-// db 안 넘기면 진짜 models (부를 때 require)
-const defaultDb = () => require('../../../models');
+// db 안 넘기면 진짜 models (db 손잡이 창구로 부를 때 require)
+const defaultDb = () => require('../../../repositories/common/db');
 
 // 판매 중인 것만, 정렬 순서 → id 순
 const listCurrencyProducts = async ({ kind } = {}, db = defaultDb()) => {
