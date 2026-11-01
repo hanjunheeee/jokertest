@@ -32,10 +32,11 @@ function beginNightWait(run, completed, contract) {
         waiting: null,
         notifyTargets: null,
     }
-    // 여기부터 진짜 바뀜: 대기 단계로, 지금 역할 비움 (턴 사이 제출 막기는 핸들러가 함)
+    // 여기부터 진짜 바뀜: 대기 단계로, 지금 역할·마감 시각 비움 (턴 사이 제출 막기는 핸들러가 함)
     run.stage = NIGHT_TURN_STAGES.PRESENTATION_WAIT
     run.wait = token
     session.nightTurnRole = null
+    session.nightTurnDeadline = null
     return token
 }
 

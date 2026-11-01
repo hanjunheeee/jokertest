@@ -4,9 +4,9 @@
 const { buildPlayerThemeIndices, buildSettingsFields, buildProfileFields, buildViewerRoleFields } = require('../setup/startPayload')
 const { PLAYER_THEME_PALETTE_SIZE } = require('../setup/constants')
 const { getDayPhase } = require('../phase/day/state')
-const { buildDayVoteResolvedPayload } = require('../phase/day/payloads')
+const { buildDayVoteResolvedPayload, buildPublicDayPhaseDeadlineField } = require('../phase/day/payloads')
 const { computeHasActed, buildSelfFields, buildPublicProgress } = require('./progress')
-const { buildNightResultAppliedPayload } = require('../phase/night/payloads')
+const { buildNightResultAppliedPayload, buildPublicNightTurnTimerFields } = require('../phase/night/payloads')
 const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal/resolve')
 const { buildPublicWinResult } = require('../result/winReveal')
 const { normalizeGameId } = require('../core/registry/lookup')
@@ -42,6 +42,9 @@ function buildSessionSnapshot(session, uuid) {
         selfProgressSeq: session.selfProgressSeq ?? 0,
         // 낮이면 토론·투표 중 어느 쪽인지
         ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
+        // 새로고침해도 타이머가 이어지게 낮·밤 차례 마감 시각
+        ...buildPublicDayPhaseDeadlineField(session),
+        ...buildPublicNightTurnTimerFields(session),
         players: [...session.players.values()].map((player, index) => ({
             uuid: player.uuid,
             nickname: player.nickname,

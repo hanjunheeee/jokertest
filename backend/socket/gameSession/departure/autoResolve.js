@@ -7,7 +7,7 @@ const {
     emitToEachEligible,
     deliverToParticipants,
 } = require('../delivery/broadcast')
-const { syncSessionPhaseTimers } = require('../phase/day')
+const { syncSessionPhaseTimers, attachDayPhaseDeadline } = require('../phase/day')
 const { clearDepartureMark, hasDepartureResolveMark } = require('./marks')
 const { withTerminalFields } = require('./end')
 
@@ -52,7 +52,10 @@ function maybeResolveDayVote(io, session) {
 
     const label = '[이탈 후 낮 투표 판정 실패]'
     const fields = { gameId: session.id }
-    const resolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution)
+    const resolvedPayload = attachDayPhaseDeadline(
+        gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution),
+        session,
+    )
     deliverToParticipants(io, session, 'day_vote_resolved', resolvedPayload, label, fields)
     isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))
 }

@@ -113,11 +113,11 @@ function advanceAfterDeparture(io, session, applied) {
         return
     }
 
-    // 토론 끝나 투표로: 낮 단계 방송 + 투표 타이머
+    // 토론 끝나 투표로: 투표 타이머 먼저 걸고 낮 단계 방송 (새 마감 시각 실으려고)
     if (advanced.transitioned === 'DAY_VOTE') {
+        step('TIMER_START_ERROR', () => startDayPhaseTimer(io, session))
         step('DAY_PHASE_DELIVERY_ERROR',
             () => emitToGameChannel(io, session, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session)))
-        step('TIMER_START_ERROR', () => startDayPhaseTimer(io, session))
         return
     }
 

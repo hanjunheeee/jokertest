@@ -2,11 +2,17 @@
 // 단계 바뀜 + 참여 바뀜(누가 나감) 방송 내용
 // socket 쪽이 gameSession.js 통해서 방송할 때 사용
 const { buildPublicProgress } = require('./progress')
+const { buildPublicDayPhaseDeadlineField } = require('../phase/day/payloads')
 
-// 단계 바뀜 방송 (판 id·단계·날짜)
+// 단계 바뀜 방송 (판 id·단계·날짜, 낮이면 마감 시각)
 // 역할 같은 비밀은 안 실음 (지도 03-⑦)
 function buildPhaseChangedPayload(session) {
-    return { gameId: session.id, phase: session.phase, dayIndex: session.dayIndex }
+    return {
+        gameId: session.id,
+        phase: session.phase,
+        dayIndex: session.dayIndex,
+        ...buildPublicDayPhaseDeadlineField(session),
+    }
 }
 
 // 누가 나갔을 때 방송 (방장·참여 번호·사람 목록·진행 표시)

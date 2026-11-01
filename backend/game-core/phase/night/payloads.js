@@ -1,6 +1,18 @@
 // 밤 방송 내용 파일
-// 밤 차례·결과·사망 공개 방송 내용, socket 밤 방송·스냅샷·밤 판정이 사용
+// 밤 차례·결과·사망 공개 방송 내용·차례 타이머 칸, socket 밤 방송·스냅샷·밤 판정이 사용
 const { PUBLIC_NIGHT_DEATH_SOURCES } = require('./constants')
+const { getCurrentNightTurnRole } = require('./actors')
+
+// 밤 차례 타이머 칸: 밤이고 역할 차례 받는 중일 때만 실음 (값은 socket 밤 턴이 적어 둠)
+function buildPublicNightTurnTimerFields(session) {
+    if (session?.phase !== 'NIGHT') return {}
+    // 차례 사이 연출 대기 중이면 역할이 비어 있어 칸째 뺌
+    const role = getCurrentNightTurnRole(session)
+    if (role === null || typeof role !== 'string') return {}
+    const deadline = session.nightTurnDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return {}
+    return { nightTurnRole: role, nightTurnDeadline: deadline }
+}
 
 // 역할 차례 시작 방송 (마감 시각 포함)
 function buildNightTurnStartedPayload(session, role, deadline) {
@@ -60,6 +72,7 @@ function buildNightDeathReveals(resolution, victimUuids) {
 }
 
 module.exports = {
+    buildPublicNightTurnTimerFields,
     buildNightTurnStartedPayload,
     buildNightTurnEndedPayload,
     buildAssassinFailNotice,

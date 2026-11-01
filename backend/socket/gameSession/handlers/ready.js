@@ -1,5 +1,5 @@
 // 확인·준비 핸들러 파일
-// 역할 확인·낮 투표 준비 (다 되면 다음 단계 방송·낮 타이머), register가 등록·시험은 gameSession.js로 부름
+// 역할 확인·낮 투표 준비 (다 되면 낮 타이머·다음 단계 방송), register가 등록·시험은 gameSession.js로 부름
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate, isolateWithError } = require('../../common/isolate')
 const { respond } = require('../../common/replies')
@@ -26,17 +26,18 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
 
     ack({ ok: true })
 
-    // 다 확인했으면 낮 진입 방송 + 낮 타이머
+    // 다 확인했으면 낮 타이머 + 낮 진입 방송
     if (result.transitioned) {
         announceDayStep(io, result.session, '[phase 변경 알림 전송 실패]', () =>
             emitToGameChannel(io, result.session, 'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session)))
     }
 }
 
-// 낮 단계 바뀜 방송 + 낮 타이머 다시 걸기, 방송이 던져도 타이머는 검 (방송 실패는 원본 에러 찍음)
+// 낮 타이머 다시 걸기 + 낮 단계 바뀜 방송, 타이머 먼저 (방송에 새 마감 시각 실으려고)
+// 한쪽이 던져도 다른 쪽은 함 (방송 실패는 원본 에러 찍음)
 function announceDayStep(io, session, emitLabel, emitStep) {
-    isolateWithError(emitLabel, emitStep)
     isolate('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: session.id }, () => startDayPhaseTimer(io, session))
+    isolateWithError(emitLabel, emitStep)
 }
 
 // 낮 투표 준비 요청: 다 준비하면 토론 → 투표로 넘기고 타이머 다시 걸기
@@ -61,7 +62,7 @@ function handleAcknowledgeDayVoteReady(io, socket, uuid, payload, callback) {
 
     ack({ ok: true, readyCount: result.readyCount, requiredCount: result.requiredCount })
 
-    // 다 준비했으면 투표 단계 방송 + 투표 타이머
+    // 다 준비했으면 투표 타이머 + 투표 단계 방송 (남은 토론 시간은 버림)
     if (result.transitioned) {
         announceDayStep(io, result.session, '[낮 하위 페이즈 변경 알림 전송 실패]', () =>
             emitToGameChannel(io, result.session, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(result.session)))

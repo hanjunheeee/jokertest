@@ -20,7 +20,7 @@ const {
     emitToEachEligible,
 } = require('../delivery/broadcast')
 const { emitProgressAfterSubmit } = require('../delivery/progress')
-const { syncSessionPhaseTimers } = require('../phase/day')
+const { syncSessionPhaseTimers, attachDayPhaseDeadline } = require('../phase/day')
 const { resolveAfterDeparture } = require('../departure/autoResolve')
 
 // 낮 투표 제출 효과음 (기록 없거나 읽다 던지면 null, 효과음 없이 답함)
@@ -143,7 +143,10 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
     // 받는 사람 먼저 모으고 결과 방송, 그다음 단계 타이머
     const fieldsInSession = { uuid, gameId: prepared.session.id }
     const recipients = resolveOrEmpty(io, prepared.session, label, fieldsInSession, resolveParticipantSockets)
-    const dayVoteResolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution)
+    const dayVoteResolvedPayload = attachDayPhaseDeadline(
+        gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution),
+        prepared.session,
+    )
     emitToEachEligible(prepared.session, recipients, label, fieldsInSession,
         (recipientSocket) => recipientSocket.emit('day_vote_resolved', dayVoteResolvedPayload))
 

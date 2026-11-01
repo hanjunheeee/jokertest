@@ -1,5 +1,5 @@
 // 낮 타이머 파일
-// 낮 토론·투표 마감 타이머 + 판 단계에 맞게 밤·낮 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
+// 낮 토론·투표 마감 타이머(마감 시각 방송에 붙이기 포함) + 판 단계에 맞게 밤·낮 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { dayPhaseRuns } = require('../core/state')
@@ -65,13 +65,15 @@ function scheduleDayPhaseTimer(run) {
         round: gameSessionCore.getDayVoteRound(session),
     }
     run.deadline = run.nowFn() + durationMs
+    // 판에도 마감 시각 적어 둠 (방송·스냅샷이 화면 타이머용으로 실음)
+    session.dayPhaseDeadline = run.deadline
     run.timerId = run.setTimeoutFn(
         isVote ? () => expireDayVote(run) : () => expireDayDiscussion(run),
         durationMs,
     )
 }
 
-// 토론 마감: 투표 단계로 넘기고 방송, 투표 타이머 걸기
+// 토론 마감: 투표 단계로 넘기고 투표 타이머 걸기, 그다음 방송 (새 마감 시각 실으려고)
 function expireDayDiscussion(run) {
     const { session } = run
     // 늦게 온 옛 타이머면 무시
@@ -82,8 +84,8 @@ function expireDayDiscussion(run) {
         () => gameSessionCore.enterDayVotePhase(session))
     if (!entered) return
 
-    emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
     scheduleDayPhaseTimer(run)
+    emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
 }
 
 // 투표 마감: 안 낸 사람 기권으로 채우고 판정·방송, 다음 단계 타이머로 (지도 04-⑥)
@@ -118,11 +120,14 @@ function expireDayVote(run) {
         () => gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution))
     if (!committed) return
 
-    const resolvedPayload = gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution)
+    const resolvedPayload = attachDayPhaseDeadline(
+        gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution),
+        session,
+    )
     deliverToParticipants(run.io, session, 'day_vote_resolved', resolvedPayload, label, { gameId: session.id })
 
-    // 재판·재투표·밤 중 바뀐 단계에 맞게 타이머 다시 맞춤
-    syncSessionPhaseTimers(run.io, session)
+    // 재판·재투표·밤 중 바뀐 단계에 맞게 타이머 다시 맞춤, 던져도 로그만 (타이머 콜백 밖으로 안 샘)
+    isolate(label, { code: 'TIMER_SYNC_ERROR', gameId: session.id }, () => syncSessionPhaseTimers(run.io, session))
 }
 
 // 낮 타이머 시작: 판마다 run 하나 (토론·투표 길이는 방 설정, 없으면 기본값)
@@ -167,7 +172,20 @@ function stopDayPhaseTimer(gameId) {
     const run = dayPhaseRuns.get(gameId)
     if (!run) return
     clearRunTimer(run)
+    // 판에 적어 둔 마감 시각도 지움 (낮 밖 방송·스냅샷에 옛 시각 안 남게)
+    if (run.session) {
+        run.session.dayPhaseDeadline = null
+    }
     dayPhaseRuns.delete(gameId)
+}
+
+// 낮 타이머가 판에 적어 둔 마감 시각을 공개 방송 내용에 붙임 (낮이 아니거나 시각 없으면 그대로)
+function attachDayPhaseDeadline(payload, session) {
+    if (payload === null || typeof payload !== 'object') return payload
+    if (session?.phase !== 'DAY') return payload
+    const deadline = session.dayPhaseDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return payload
+    return { ...payload, dayPhaseDeadline: deadline }
 }
 
 // 판 단계에 맞게 타이머 맞추기: 낮이면 낮 타이머만, 밤이면 밤 턴만, 그 밖엔 둘 다 끔
@@ -194,4 +212,5 @@ module.exports = {
     startDayPhaseTimer,
     stopDayPhaseTimer,
     syncSessionPhaseTimers,
+    attachDayPhaseDeadline,
 }

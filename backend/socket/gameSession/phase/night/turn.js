@@ -68,6 +68,8 @@ function advanceNightTurn(run) {
     const durationMs = resolveNightTurnDurationMs(run, role)
     const deadline = run.nowFn() + durationMs
     run.deadline = deadline
+    // 판에도 마감 시각 적어 둠 (새로고침 스냅샷이 화면 타이머용으로 실음)
+    session.nightTurnDeadline = deadline
     emitNightTurnEvent(run, 'night_turn_started', gameSessionCore.buildNightTurnStartedPayload(session, role, deadline))
 
     // 산 행동자 없는 턴도 무작위 시간 뒤 닫음 (역할 전멸이 새지 않게)
@@ -191,8 +193,9 @@ function stopNightTurnSequence(gameId) {
     run.wait = null
     run.stage = NIGHT_TURN_STAGES.STOPPED
     nightTurnRuns.delete(gameId)
-    // 지금 역할 표시도 지움 (다음 밤은 새 run이 다시 정함)
+    // 지금 역할 표시·마감 시각도 지움 (다음 밤은 새 run이 다시 정함)
     delete run.session.nightTurnRole
+    delete run.session.nightTurnDeadline
 }
 
 module.exports = {

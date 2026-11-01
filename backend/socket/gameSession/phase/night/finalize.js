@@ -10,7 +10,7 @@ const { stillEligible, hasOutsideMembership } = require('../../delivery/eligibil
 const { resolveSessionSockets, resolveOrEmpty } = require('../../delivery/broadcast')
 const { isNightPresentationWaitActive } = require('./wait')
 const { stopNightTurnSequence } = require('./turn')
-const { startDayPhaseTimer } = require('../day')
+const { startDayPhaseTimer, attachDayPhaseDeadline } = require('../day')
 const { withTerminalFields } = require('../../departure/end')
 
 // 밤 마무리 관문: 자동 마무리·'밤 종료' 버튼 둘 다 여기로 모음, 같은 밤 두 번 확정 못 함 (지도 06-④⑤)
@@ -116,9 +116,13 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
                     }))
             }
 
+            // 공개 결과엔 위에서 건 새 낮 마감 시각 붙임 (화면 낮 타이머 시작용)
             if (nightResultAppliedPayload) {
                 isolate(label, { code: 'DELIVERY_ERROR', ...fields },
-                    () => recipientSocket.emit('night_result_applied', nightResultAppliedPayload))
+                    () => recipientSocket.emit(
+                        'night_result_applied',
+                        attachDayPhaseDeadline(nightResultAppliedPayload, targetSession),
+                    ))
             }
         }
 
