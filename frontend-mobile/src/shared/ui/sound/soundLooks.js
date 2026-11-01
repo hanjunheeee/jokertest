@@ -53,6 +53,17 @@ export const SOUND_LOOKS = {
     input: INPUT_FILL,
     knot: `${KNOT} w-3.5`,
   },
+  // 서고 위 줄: 막대는 쓸어 넘기기와 안 섞이게 책 밖, 폭은 화면 폭 비율
+  library: {
+    group: "flex shrink-0 items-center",
+    button: "relative z-10 flex size-11 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 active:scale-95 disabled:cursor-not-allowed",
+    icon: "block w-10 select-none",
+    title: false,
+    track: "relative -ml-2 h-11 w-[clamp(4.5rem,20vw,6.5rem)]",
+    bar: BAR_CENTER,
+    input: INPUT_FILL,
+    knot: `${KNOT} w-3.5`,
+  },
 }
 
 // 펼침 창 (root·여는 버튼·바깥 덮개·창 틀 + 창 안 조절 한 벌)

@@ -2,7 +2,8 @@
 // KickSheet가 씀, 문구·그림·줄 판은 데스크톱 SettingKickPlayerRow와 같음
 import { INGAME_KICK_PLAYER_MODAL_COPY as COPY } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
 import { PLAYER_ASSETS } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerAssets.js"
-import ImageButton from "../parts/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import { SHEET_BUTTON_LOOK } from "../parts/buttonLook.js"
 import Portrait from "../parts/Portrait.jsx"
 import { ROW_CLASS } from "./kickStyle.js"
 
@@ -15,6 +16,7 @@ export default function KickRow({ name, profilePhotoSrc, profileBorderSrc, isPen
         {name}
       </p>
       <ImageButton
+        look={SHEET_BUTTON_LOOK}
         label={isPending ? COPY.pendingLabel : COPY.kickActionLabel}
         ariaLabel={isPending ? COPY.pendingAriaLabel : COPY.kickActionLabel}
         src={PLAYER_ASSETS.kickActionButton}

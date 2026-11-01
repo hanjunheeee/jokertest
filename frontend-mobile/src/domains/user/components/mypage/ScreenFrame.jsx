@@ -8,9 +8,9 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
 import TopBar from "@m/shared/ui/top/TopBar.jsx"
 
-// 위 줄: 스크롤해도 붙어 있음, 가로 화면에서도 높이 그대로
+// 위 줄: 스크롤해도 붙어 있음, 가로 화면에서도 높이 그대로, 데스크톱처럼 덮개 없음
 const BAR_CLASS =
-    "sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 bg-gradient-to-b from-black/80 to-black/0 px-3"
+    "sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 px-3"
 
 const MotionAsset = motion.create(PublicAsset)
 

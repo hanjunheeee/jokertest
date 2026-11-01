@@ -4,7 +4,7 @@ import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import { useAudioControl } from "@/shared/hooks/useAudioControl.js"
 import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
 import MuteButton from "@m/shared/ui/sound/MuteButton.jsx"
-import RangeSlider from "./RangeSlider.jsx"
+import RangeSlider from "@m/shared/ui/slider/RangeSlider.jsx"
 
 // 막대 그림 앞뒤 장식 (데스크톱 soundControlLayout과 같은 %)
 const BAR_EDGE = { startPct: 20, endPct: 8 }

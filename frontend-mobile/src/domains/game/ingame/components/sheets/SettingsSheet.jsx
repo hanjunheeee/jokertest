@@ -7,7 +7,8 @@ import { useInGameSettingPanel } from "@/domains/game/ingame/hooks/useInGameSett
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import Sheet from "./frame/Sheet.jsx"
 import KickSheet from "./kick/KickSheet.jsx"
-import ImageButton from "./parts/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import { SHEET_BUTTON_LOOK } from "./parts/buttonLook.js"
 import RoomCodeSheet from "./roomCode/RoomCodeSheet.jsx"
 import SettingsBody from "./settings/SettingsBody.jsx"
 import Tabs from "./settings/Tabs.jsx"
@@ -35,12 +36,13 @@ export default function SettingsSheet({ open, onClose }) {
   const footer = (
     <div className="flex justify-end">
       <ImageButton
+        look={SHEET_BUTTON_LOOK}
         label="방 코드 보기"
         src={INGAME_SETTING_ASSETS.roomCodeButton}
         onClick={() => setRoomCodeOpen(true)}
         className="h-11 w-[9.5rem]"
         labelClassName="text-[#ebe2cc]/90"
-        testId="setting-room-code"
+        data-testid="setting-room-code"
       />
     </div>
   )

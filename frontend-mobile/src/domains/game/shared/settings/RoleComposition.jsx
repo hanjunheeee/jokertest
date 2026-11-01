@@ -73,7 +73,7 @@ export default function RoleComposition({ look: lookName, roleComposition, maxPl
             시민 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
           </p>
           {validation.ok ? null : (
-            <p role="alert" className={role.errorFull ?? `${role.line} ${role.error}`}>
+            <p role="alert" className={`${role.line} ${role.error}`}>
               {validation.message}
             </p>
           )}

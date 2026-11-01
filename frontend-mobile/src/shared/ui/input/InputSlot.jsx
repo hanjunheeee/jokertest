@@ -13,11 +13,12 @@ function toneOf(look, type, value) {
 }
 
 // 높이 48px 고정 (그림은 칸에 맞게 늘림), passwordToggle이면 보기 상태로 password/text를 고름
+// look = inputSlotLooks 이름 또는 같은 모양 객체 (한 화면만 쓰는 모양은 그 화면이 객체로 넘김)
 export default function InputSlot({
   look = "login", type = "text", name, value, onChange, placeholder, autoComplete, leadingIcon,
   passwordToggle = false, disabled = false, inputMode, inputTestId, ariaLabel,
 }) {
-  const style = INPUT_SLOT_LOOKS[look]
+  const style = typeof look === "string" ? INPUT_SLOT_LOOKS[look] : look
   const [passwordVisible, setPasswordVisible] = useState(false)
   const inputType = passwordToggle ? (passwordVisible ? "text" : "password") : type
 

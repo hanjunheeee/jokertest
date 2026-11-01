@@ -12,8 +12,8 @@ import {
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
+import SoundControl from "@m/shared/ui/sound/SoundControl.jsx"
 import BookmarkTabs from "@m/domains/library/components/top/BookmarkTabs.jsx"
-import LibrarySound from "@m/domains/library/components/top/LibrarySound.jsx"
 import { TAP_CLASS } from "@m/domains/library/constants/libraryStyle.js"
 
 // 책 안쪽 칸과 같은 떠오름, 늦는 시간만 다름
@@ -47,7 +47,7 @@ export default function LibraryTopBar({ activeTabId, onTabChange, onBack }) {
           />
         </motion.h1>
         <div className="land:order-last land:ml-auto">
-          <LibrarySound />
+          <SoundControl look="library" />
         </div>
       </div>
       <motion.div className="flex justify-center land:justify-start" {...reveal(INNER_REVEAL_DELAYS.bookmarks)}>

@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react"
 import { INGAME_SETTING_ASSETS } from "@/domains/game/ingame/constants/controls/ingameSetting/ingameSettingAssets.js"
 import { PLAYER_ASSETS } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerAssets.js"
 import { KICK_REQUEST_STATUS } from "@/domains/game/ingame/constants/ingameKick.js"
-import ImageButton from "../parts/ImageButton.jsx"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import { SHEET_BUTTON_LOOK } from "../parts/buttonLook.js"
 
 const NOTE_CLASS = "font-subheading app-text-scaled [--app-text-size:0.85rem] leading-snug"
 const ERROR_CLASS = `${NOTE_CLASS} font-semibold text-[#ffb3a7]`
@@ -37,19 +38,21 @@ export default function KickStatus({
           </p>
           <div className="grid grid-cols-2 gap-2">
             <ImageButton
+              look={SHEET_BUTTON_LOOK}
               label="추방"
               src={PLAYER_ASSETS.kickActionButton}
               disabled={isSending}
               onClick={() => onConfirmKick?.(targets)}
-              testId="kick-confirm-accept"
+              data-testid="kick-confirm-accept"
               className="h-11"
             />
             <ImageButton
+              look={SHEET_BUTTON_LOOK}
               label="취소"
               src={INGAME_SETTING_ASSETS.tabInactive}
               sfxKind="ui-cancel"
               onClick={() => onCancelConfirm?.()}
-              testId="kick-confirm-cancel"
+              data-testid="kick-confirm-cancel"
               className="h-11"
             />
           </div>

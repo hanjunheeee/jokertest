@@ -2,8 +2,9 @@
 // 모드 영역 페이지·마이페이지 틀(ScreenFrame)이 씀, 데스크톱 왼쪽 아래 뒤로 가기를 위로 옮긴 것
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
 
+// 데스크톱처럼 덮개 없는 투명 줄 (어두운 그라데이션 안 깖)
 const BAR_CLASS =
-  "sticky top-0 z-30 flex h-14 items-center gap-2 bg-gradient-to-b from-black/80 to-black/0 px-3 land:h-12"
+  "sticky top-0 z-30 flex h-14 items-center gap-2 px-3 land:h-12"
 
 // 오른쪽이 비어도 제목이 가운데 오게 같은 폭 자리 둠, 줄 높이 등은 className으로 바꿈
 export default function TopBar({

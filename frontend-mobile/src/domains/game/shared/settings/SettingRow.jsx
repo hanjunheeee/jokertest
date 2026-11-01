@@ -12,7 +12,7 @@ function RowText({ look, label, description }) {
   )
 }
 
-// 설정 줄 하나 (look 이름: setup | sheet)
+// 설정 줄 하나 (look 이름: setup)
 export default function SettingRow({ look: lookName, label, description, children }) {
   const look = SETTING_LOOKS[lookName]
   return (
