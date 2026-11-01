@@ -2,6 +2,7 @@
 
 // 평가 함수만 바로 (입구를 부르면 입구 ↔ recovery 순환)
 const achievementService = require('./evaluate');
+const userLookup = require('../../repositories/user/lookup');
 
 const buildDeps = (overrides = {}) => ({
     get db() { return overrides.db ?? require('../../models'); },
@@ -12,7 +13,7 @@ let deps = buildDeps();
 
 const evaluateAllUsers = async () => {
     const { db, achievementService: service } = deps;
-    const users = await db.User.findAll({ attributes: ['uuid'], raw: true });
+    const users = await userLookup.listAllUuids(db);
 
     const summary = { usersProcessed: 0, grants: [], errors: [] };
     for (const { uuid } of users) {

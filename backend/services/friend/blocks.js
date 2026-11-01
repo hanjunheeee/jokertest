@@ -5,6 +5,7 @@ const friendRepository = require("../../repositories/friend.repositories");
 const gameInviteService = require("./gameInvite");
 const { createError } = require("../../utils/appError");
 const { loadPublicLoadouts } = require('./list');
+const { withTransaction } = require('../../repositories/common');
 
 // 둘 중 누가 차단했으면 403
 const assertNotBlocked = async (uuidA, uuidB, options = {}) => {
@@ -46,7 +47,7 @@ exports.blockUser = async (myUuid, targetId) => {
         throw createError('자기 자신을 차단할 수 없습니다.', 400);
     }
 
-    return await db.sequelize.transaction(async (t) => {
+    return await withTransaction(db, async (t) => {
         const [accountA, accountB] = await friendRepository.lockAccountsInOrder(
             [myUuid, targetId], { transaction: t },
         );
@@ -68,7 +69,7 @@ exports.unblockUser = async (myUuid, targetId) => {
         throw createError('targetId가 필요합니다.', 400);
     }
 
-    return await db.sequelize.transaction(async (t) => {
+    return await withTransaction(db, async (t) => {
         await friendRepository.lockAccountsInOrder([myUuid, targetId], { transaction: t });
 
         const removed = await friendRepository.deleteBlock(myUuid, targetId, { transaction: t });

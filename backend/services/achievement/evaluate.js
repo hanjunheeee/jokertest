@@ -6,6 +6,7 @@ const achievementDefinitions = require('./definitions');
 const { loadProgress, currentValueOf, meetsThreshold } = require('./progress');
 const { grantAchievement, notifyAchievementGranted } = require('./grant');
 const { getDeps } = require('./deps');
+const grantRepository = require('../../repositories/achievement');
 
 // 정의 순서대로 기준 넘은 것만 지급, 새로 지급되면 통지·알림 보냄
 const evaluateAndGrantForUser = async (userId) => {
@@ -39,7 +40,7 @@ const getStatusForUser = async (userId) => {
     const { db } = getDeps();
     const [progress, grants] = await Promise.all([
         loadProgress(userId),
-        db.AchievementGrant.findAll({ where: { user_id: userId }, attributes: ['achievement_id', 'granted_at'], raw: true }),
+        grantRepository.listGrantsByUser(db, userId),
     ]);
     const grantedAtById = new Map(grants.map((grant) => [grant.achievement_id, grant.granted_at]));
 

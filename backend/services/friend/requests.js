@@ -6,6 +6,8 @@ const notificationService = require("../notification");
 const { createError } = require("../../utils/appError");
 const { assertNotBlocked } = require('./blocks');
 const { loadPublicLoadouts } = require('./list');
+const userLookup = require('../../repositories/user/lookup');
+const { withTransaction } = require('../../repositories/common');
 
 // 두 계정 순서대로 잠금 → 상태·차단·이미 친구·이미 요청 확인 → 요청 + 알림
 exports.sendFriendRequest = async (myUuid, receiverId) => {
@@ -17,7 +19,7 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
     }
 
     try {
-        const { request, notification } = await db.sequelize.transaction(async (t) => {
+        const { request, notification } = await withTransaction(db, async (t) => {
             const [accountA, accountB] = await friendRepository.lockAccountsInOrder(
                 [myUuid, receiverId], { transaction: t },
             );
@@ -43,9 +45,7 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
 
             const created = await friendRepository.createFriendRequest(myUuid, receiverId, { transaction: t });
 
-            const requester = await db.User.findOne({
-                where: { uuid: myUuid }, attributes: ['nickname'], transaction: t,
-            });
+            const requester = await userLookup.findNickname(db, myUuid, t);
 
             const result = await notificationService.createFriendRequestNotification({
                 receiverId,
@@ -69,7 +69,7 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
 
 // 나에게 온 대기 요청만 수락, 친구 관계 만듦
 exports.acceptRequest = async (myUuid, requestId) => {
-    return await db.sequelize.transaction(async (t) => {
+    return await withTransaction(db, async (t) => {
         const identified = await friendRepository.findFriendRequestById(requestId);
         if (!identified) throw createError('친구 요청을 찾을 수 없습니다.', 404);
 
@@ -102,7 +102,7 @@ exports.acceptRequest = async (myUuid, requestId) => {
 
 // 나에게 온 대기 요청만 거절
 exports.declineRequest = async (myUuid, requestId) => {
-    return await db.sequelize.transaction(async (t) => {
+    return await withTransaction(db, async (t) => {
         const identified = await friendRepository.findFriendRequestById(requestId);
         if (!identified) throw createError('친구 요청을 찾을 수 없습니다.', 404);
 
