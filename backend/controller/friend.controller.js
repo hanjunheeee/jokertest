@@ -1,7 +1,7 @@
 const friendService = require("../service/friend.service");
 const gameInviteService = require("../service/gameInvite.service");
 const { createError } = require("../utils/appError");
-const { emitToUser } = require("../socket/socket");
+const { emitToUser } = require("../socket/emitter");
 
 function buildFriendSfxEvent(kind, stage, accountId, requestId) {
     if (!Number.isInteger(requestId)) return null;

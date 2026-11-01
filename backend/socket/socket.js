@@ -9,19 +9,11 @@ const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");
 const concurrencyService = require("../service/concurrency.service");
 const { logRejection } = require("./common/isolate");
+// 접속 목록·io·사용자 전송은 emitter (서비스가 socket.js 안 거치고 보내게)
+const { onlineUsers, setIo, emitToUser } = require("./emitter");
 
-const onlineUsers = new Map();
 gameSession.setOnlineUsersRegistry(onlineUsers);
 matchmaking.setOnlineUsersRegistry(onlineUsers);
-
-let _io = null;
-
-function emitToUser(uuid, event, payload) {
-    const socketId = onlineUsers.get(uuid);
-    if (socketId && _io) {
-        _io.to(socketId).emit(event, payload);
-    }
-}
 
 gameSession.setEmitToUser(emitToUser);
 
@@ -34,7 +26,7 @@ function initSocket(httpServer) {
         },
     });
 
-    _io = io;
+    setIo(io);
 
     io.use(authenticateSocket);
     io.on("connection", (socket) => registerConnectionHandlers(io, socket));

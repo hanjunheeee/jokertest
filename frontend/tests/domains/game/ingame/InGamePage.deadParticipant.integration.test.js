@@ -779,7 +779,7 @@ const SERVER_INDIRECT_EMIT_SITES_LOCK = [
   "backend/socket/gameSession.js:1249 event",
   "backend/socket/gameSession.js:2182 event",
   "backend/socket/gameSession.js:3469 eventName",
-  "backend/socket/socket.js:27 event",
+  "backend/socket/emitter.js:22 event",
 ]
 
 test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기고 관전 전용 이름이 없다", async () => {

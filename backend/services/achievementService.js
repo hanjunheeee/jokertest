@@ -10,7 +10,7 @@ const buildDeps = (overrides = {}) => ({
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
         try {
-            return require('../socket/socket').emitToUser;
+            return require('../socket/emitter').emitToUser;
         } catch {
             return null;
         }
