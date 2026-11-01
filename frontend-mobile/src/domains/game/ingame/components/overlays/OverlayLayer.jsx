@@ -1,4 +1,4 @@
-// 인게임 연출 층: 역할 공개·단계 입장·밤 차례·밤 대기·밤 성공·밤 결과·재판·추방·사망 선택·결과 넘김을 body에 띄움
+// 인게임 연출 층: 역할 공개·단계 입장·밤 차례·밤 대기·밤 성공·밤 결과·재판·추방·사망 선택을 body에 띄움
 // InGamePage가 Provider(플레이어·채팅 세션·행동 컨텍스트) 안쪽에 props 없이 둠, 잠금 값은 overlayBridge로 틀에 넘김
 import { createPortal } from "react-dom"
 import { useOverlayLayer } from "../../hooks/overlays/useOverlayLayer.js"
@@ -8,7 +8,6 @@ import NightPrivateResultOverlay from "./NightPrivateResultOverlay.jsx"
 import NightTurnOverlay from "./NightTurnOverlay.jsx"
 import NightWaitOverlay from "./NightWaitOverlay.jsx"
 import PhaseEntranceOverlay from "./PhaseEntranceOverlay.jsx"
-import ResultHandoff from "./ResultHandoff.jsx"
 import RoleRevealOverlay from "./RoleRevealOverlay.jsx"
 import NightSuccessOverlay from "./nightSuccess/NightSuccessOverlay.jsx"
 import TribunalGate from "./tribunal/TribunalGate.jsx"
@@ -19,7 +18,6 @@ export default function OverlayLayer() {
 
     return createPortal(
         <div data-ingame-overlay-layer="">
-            <ResultHandoff />
             <TribunalGate />
             <NightTurnOverlay
                 open={o.nightTurn.open && !o.waitOpen}

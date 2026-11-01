@@ -9,7 +9,7 @@ import Sheet from "./Sheet.jsx"
 const MENU_ATTR = "data-ingame-player-card-menu"
 
 // 취소류·유죄·추방은 취소 그림
-const CANCEL_TONE_KINDS = new Set([KINDS.DAY_VOTE_CANCEL, KINDS.NIGHT_ACTION_CANCEL, KINDS.TRIBUNAL_GUILTY, "KICK"])
+const CANCEL_TONE_KINDS = new Set([KINDS.DAY_VOTE_CANCEL, KINDS.NIGHT_ACTION_CANCEL, KINDS.TRIBUNAL_GUILTY])
 // 낮 투표·밤 행동 항목이 있으면 따로 취소 버튼을 안 붙임 (데스크톱 규칙)
 const SINGLE_ACTION_KINDS = new Set([KINDS.DAY_VOTE, KINDS.DAY_VOTE_CANCEL, KINDS.NIGHT_ACTION, KINDS.NIGHT_ACTION_CANCEL])
 

@@ -1,4 +1,4 @@
-// 카드 시트 상태: 탭한 카드·시트 항목(데스크톱 카드 메뉴 항목 + 방장 추방)·열기·닫기
+// 카드 시트 상태: 탭한 카드·시트 항목(데스크톱 카드 메뉴 항목 그대로)·열기·닫기
 // Board가 씀 (고르기·제출 대기·범위 닫기는 데스크톱 useInGamePlayerCardMenu가 그대로 맡음)
 import { useCallback, useContext, useState } from "react"
 import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionContext.jsx"
@@ -7,7 +7,6 @@ import { useInGamePlayerCardMenu } from "@/domains/game/ingame/hooks/useInGamePl
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { buildInGamePlayerCardMenuItems } from "@/domains/game/ingame/utils/playerCardMenu.js"
 import { selectInGameNightTurnRole } from "@/domains/game/ingame/utils/nightTurn.js"
-import { buildKickItem } from "./sheetExtras.js"
 
 // 시트를 연 뒤 바뀌면 닫는 범위 (판·단계·날짜·밤 차례·조작 막힘)
 function buildScopeKey(gameId, gameState, interactionBlocked) {
@@ -25,7 +24,6 @@ export function useCardSheet() {
     const { closeMenu, openMenu, getItems, registerAnchor, menuRef, openPlayerId } = cardMenu
     const gameId = useInGameStore((s) => s.gameId)
     const gameState = useInGameStore((s) => s.state)
-    const storeHostUuid = useInGameStore((s) => s.hostUuid ?? null)
     const interactionBlocked = Boolean(ctx?.interactionBlocked)
     const scopeKey = buildScopeKey(gameId, gameState, interactionBlocked)
 
@@ -51,15 +49,8 @@ export function useCardSheet() {
         && (!opened.attached || openPlayerId === opened.playerId)
     const targetId = isOpen ? opened.playerId : null
 
-    // 데스크톱 메뉴 항목 + 방장 추방 (추방은 시트 닫고 컨텍스트의 추방 확인을 엶)
-    const menuItems = isOpen && opened.attached ? getItems(targetId) : []
-    const targetRow = (gameState?.players ?? []).find((row) => row?.uuid === targetId) ?? null
-    const kickItem = isOpen
-        ? buildKickItem({ ctx, hostUuid: ctx?.hostUuid ?? storeHostUuid, localPlayerId, targetId, targetRow })
-        : null
-    const items = kickItem
-        ? [...menuItems, { ...kickItem, onSelect: () => { close(); ctx.requestConfirmByUuid(targetId) } }]
-        : menuItems
+    // 데스크톱 메뉴 항목 그대로 (추방은 데스크톱처럼 설정 시트 방관리 탭에서만)
+    const items = isOpen && opened.attached ? getItems(targetId) : []
 
     return { targetId, items, open, close, registerAnchor, menuRef }
 }
