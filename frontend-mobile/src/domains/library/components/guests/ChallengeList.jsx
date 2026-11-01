@@ -7,8 +7,8 @@ import {
   INK_SOFT_CLASS,
   SMALL_TEXT_CLASS,
   TABLE_HEAD_ROW_CLASS,
-  TABLE_ROW_CLASS,
 } from "@m/domains/library/constants/libraryStyle.js"
+import { TABLE_ROW_CLASS } from "@/domains/library/constants/invitedGuests/tableStyle.js"
 
 // 진행 숫자 둘 다 있을 때만 (현재/목표), 현재는 목표 넘지 않게 (데스크톱과 같음)
 function progressText(current, threshold) {

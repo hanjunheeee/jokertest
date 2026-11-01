@@ -3,10 +3,11 @@
 import { useState } from "react"
 import { INVITED_GUESTS_MASTERY_RANKING_LIMIT } from "@/shared/constants/jobSpreadMeta.js"
 import {
-  PROFILE_BORDER_CLASS,
-  PROFILE_PHOTO_CLASS,
-  rankCellClass,
-} from "@m/domains/library/constants/guestsStyle.js"
+  TABLE_PROFILE_BORDER_CLASS,
+  TABLE_PROFILE_PHOTO_CLASS,
+  TABLE_ROW_CLASS,
+} from "@/domains/library/constants/invitedGuests/tableStyle.js"
+import { rankCellClass } from "@m/domains/library/constants/guestsStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import StatValue from "@m/domains/library/components/guests/StatValue.jsx"
 import {
@@ -14,7 +15,6 @@ import {
   INK_SOFT_CLASS,
   SMALL_TEXT_CLASS,
   TABLE_HEAD_ROW_CLASS,
-  TABLE_ROW_CLASS,
 } from "@m/domains/library/constants/libraryStyle.js"
 
 // 한 줄: 사진 위에 테두리 겹침, 닉네임은 길면 말줄임
@@ -24,8 +24,8 @@ function RankingRow({ rank, profileSrc, profileBorderSrc, nickname, playCount, w
       <td className={rankCellClass(rank)}>{rank}</td>
       <td className="w-11 py-1">
         <div className="relative mx-auto h-10 w-10">
-          <PublicAsset src={profileSrc} alt="" className={PROFILE_PHOTO_CLASS} />
-          {profileBorderSrc ? <PublicAsset src={profileBorderSrc} alt="" className={PROFILE_BORDER_CLASS} /> : null}
+          <PublicAsset src={profileSrc} alt="" className={TABLE_PROFILE_PHOTO_CLASS} />
+          {profileBorderSrc ? <PublicAsset src={profileBorderSrc} alt="" className={TABLE_PROFILE_BORDER_CLASS} /> : null}
         </div>
       </td>
       <td className={`max-w-0 truncate pl-1.5 font-semibold ${INK_SOFT_CLASS}`}>{nickname}</td>

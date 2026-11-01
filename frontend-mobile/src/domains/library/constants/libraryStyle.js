@@ -22,10 +22,9 @@ export const SMALL_TEXT_CLASS =
 export const STATE_MSG_CLASS =
   `${INK_BODY_CLASS} app-text-scaled [--app-text-size:0.86rem] leading-snug opacity-80`
 
-// 표 머리·줄 (데스크톱 tableStyle과 같은 선 색)
+// 표 머리 (데스크톱 tableStyle과 같은 선 색, 글자 크기만 폰 고정, 줄은 데스크톱 TABLE_ROW_CLASS)
 export const TABLE_HEAD_ROW_CLASS =
   `${INK_TITLE_CLASS} border-b border-[#2a1810]/22 app-text-scaled [--app-text-size:0.84rem] font-black`
-export const TABLE_ROW_CLASS = "border-b border-[#2a1810]/10 last:border-b-0"
 
 // 누르는 자리 최소 44px, 누르면 살짝 줄어듦
 export const TAP_CLASS =

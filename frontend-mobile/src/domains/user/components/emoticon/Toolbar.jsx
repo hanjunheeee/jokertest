@@ -1,7 +1,7 @@
 // 보유 이모티콘 검색·등급 거르기 줄 (검색칸 틀 그림 + 보이는 틀 위에 겹친 투명 select)
 // EmoticonPalettePage가 씀
 import { EMOTICON_PALETTE_ASSETS } from "@/domains/user/constants/emoticonPaletteAssets.js"
-import { FILTER_CHEVRON_CLASS } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
+import { FILTER_CHEVRON_CLASS, FILTER_SELECT_CLASS } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { GRADE_FILTERS } from "@/domains/user/constants/emoticonPaletteText.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
@@ -44,7 +44,7 @@ export default function Toolbar({ page }) {
           value={page.gradeFilter}
           disabled={disabled}
           onChange={(event) => page.setGradeFilter(event.target.value)}
-          className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+          className={FILTER_SELECT_CLASS}
         >
           {GRADE_FILTERS.map((grade) => (
             <option key={grade} value={grade}>{grade}</option>

@@ -1,7 +1,7 @@
 // 방 카드 하나: 방 이름·코드/진행중/마감 표시·설정 요약·인원, 못 들어가는 방은 어둡게 잠금
 // RoomCardList가 씀, 데스크톱 RoomListRow와 같은 판단(코드 배지·설정 요약)을 카드 모양으로
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
-import { ROOM_LIST_ROW_FRAME_SELECTED_CLASS, ROW_DIM_OVERLAY_CLASS } from "@/domains/game/mode/constants/roomListLayout.js"
+import { ROOM_LIST_ROW_CLASS, ROOM_LIST_ROW_FRAME_SELECTED_CLASS, ROW_DIM_OVERLAY_CLASS } from "@/domains/game/mode/constants/roomListLayout.js"
 import { resolveRoomListRowCode } from "@/domains/game/mode/utils/resolveRoomListRowCode.js"
 import { summarizeRoomListSettings } from "@/domains/game/mode/utils/summarizeRoomListSettings.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
@@ -36,7 +36,7 @@ export default function RoomCard({ room, selected, onSelect }) {
   ].filter(Boolean).join(", ")
 
   return (
-    <li className="relative w-full min-w-0 list-none">
+    <li className={ROOM_LIST_ROW_CLASS}>
       <button
         type="button"
         onClick={isJoinable ? onSelect : undefined}

@@ -1,8 +1,12 @@
 // 잠긴 기록 해금 조건·진행도·보상 묶음 ([조건] 시 해금)
-// forbidden/LockPage.jsx가 씀, 글자 모양은 데스크톱과 같은 값 (constants/unlockStyle.js)
+// forbidden/LockPage.jsx가 씀, 글자 모양은 데스크톱 상수 + 폰에 맞게 고친 값 (constants/unlockStyle.js)
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import {
-  PROGRESS_LABEL_CLASS,
+  UNLOCK_BRACKET_CLASS,
+  UNLOCK_PROGRESS_LABEL_CLASS,
+  UNLOCK_STACK_CLASS,
+} from "@/domains/library/constants/forbiddenRecords/layoutStyle.js"
+import {
   PROGRESS_STACK_CLASS,
   PROGRESS_VALUE_CLASS,
   REWARD_COUNT_CLASS,
@@ -10,11 +14,9 @@ import {
   REWARD_ITEM_CLASS,
   REWARD_ROW_CLASS,
   REWARD_STACK_CLASS,
-  UNLOCK_BRACKET_CLASS,
   UNLOCK_CONDITION_CLASS,
   UNLOCK_GROUP_CLASS,
   UNLOCK_ROW_CLASS,
-  UNLOCK_STACK_CLASS,
   UNLOCK_SUFFIX_CLASS,
 } from "@m/domains/library/constants/unlockStyle.js"
 
@@ -31,14 +33,14 @@ export default function UnlockCondition({ condition, progress, rewards }) {
         <p className={`m-0 ${UNLOCK_SUFFIX_CLASS}`}>시 해금</p>
         {progress ? (
           <div className={PROGRESS_STACK_CLASS}>
-            <p className={`m-0 ${PROGRESS_LABEL_CLASS}`}>현재 진행도</p>
+            <p className={`m-0 ${UNLOCK_PROGRESS_LABEL_CLASS}`}>현재 진행도</p>
             <p className={`m-0 ${PROGRESS_VALUE_CLASS}`}>{progress}</p>
           </div>
         ) : null}
       </div>
       {rewards?.length ? (
         <div className={REWARD_STACK_CLASS}>
-          <p className={`m-0 ${PROGRESS_LABEL_CLASS}`}>보상</p>
+          <p className={`m-0 ${UNLOCK_PROGRESS_LABEL_CLASS}`}>보상</p>
           <div className={REWARD_ROW_CLASS}>
             {rewards.map((reward) => (
               <div key={reward.icon} className={REWARD_ITEM_CLASS}>

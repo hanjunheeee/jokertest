@@ -4,10 +4,10 @@ import { motion } from "framer-motion"
 import { INVITED_GUESTS_JOB_SPREAD_META } from "@/shared/constants/jobSpreadMeta.js"
 import { INVITED_GUESTS_ASSETS } from "@/domains/library/constants/invitedGuests/assets.js"
 import {
-  JOB_TAB_ACTIVE_CLASS,
-  JOB_TAB_INACTIVE_CLASS,
-  JOB_TAB_LABEL_CLASS,
-} from "@m/domains/library/constants/guestsStyle.js"
+  JOB_TAB_LABEL_ACTIVE_CLASS,
+  JOB_TAB_LABEL_INACTIVE_CLASS,
+} from "@/domains/library/constants/invitedGuests/layoutStyle.js"
+import { JOB_TAB_LABEL_CLASS } from "@m/domains/library/constants/guestsStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { revealProps } from "@m/domains/library/constants/guestsMotion.js"
 
@@ -33,7 +33,7 @@ export default function JobTabs({ activeIndex, onSelect }) {
               className="pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
             />
             <span
-              className={`${JOB_TAB_LABEL_CLASS} ${active ? JOB_TAB_ACTIVE_CLASS : JOB_TAB_INACTIVE_CLASS}`}
+              className={`${JOB_TAB_LABEL_CLASS} ${active ? JOB_TAB_LABEL_ACTIVE_CLASS : JOB_TAB_LABEL_INACTIVE_CLASS}`}
             >
               {jobLabel}
             </span>

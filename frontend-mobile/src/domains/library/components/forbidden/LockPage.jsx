@@ -15,6 +15,7 @@ import {
   UNLOCK_REVEAL_INIT,
   UNLOCK_REVEAL_TRANSITION,
 } from "@/domains/library/constants/forbiddenRecords/entranceMotion.js"
+import { UNLOCK_LAYER_CLASS } from "@/domains/library/constants/forbiddenRecords/layoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import UnlockCondition from "@m/domains/library/components/forbidden/UnlockCondition.jsx"
 import { BODY_TEXT_CLASS } from "@m/domains/library/constants/libraryStyle.js"
@@ -71,7 +72,7 @@ export default function LockPage({ pageIndex, record, achievementsState, targetA
           <>
             <SpreadArt src={FORBIDDEN_ASSETS.bloodStain} />
             <motion.div
-              className="absolute inset-0 z-[1] flex items-center justify-center px-[8%]"
+              className={UNLOCK_LAYER_CLASS}
               initial={UNLOCK_REVEAL_INIT}
               animate={UNLOCK_REVEAL_ANIMATE}
               transition={UNLOCK_REVEAL_TRANSITION}

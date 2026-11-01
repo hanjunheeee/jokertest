@@ -8,8 +8,8 @@ import {
   SMALL_TEXT_CLASS,
   STATE_MSG_CLASS,
   TABLE_HEAD_ROW_CLASS,
-  TABLE_ROW_CLASS,
 } from "@m/domains/library/constants/libraryStyle.js"
+import { TABLE_ROW_CLASS } from "@/domains/library/constants/invitedGuests/tableStyle.js"
 
 // 상태 차례: 실패 → 다시 시도, 전적 있음 → 표, 그 밖 → 불러오는 중 (데스크톱과 같음)
 export default function MyStats({ content, onRetry }) {

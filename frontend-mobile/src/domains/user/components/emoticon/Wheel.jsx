@@ -5,6 +5,7 @@ import { toSlotNumber } from "@/domains/user/constants/emoticonPaletteSlots.js"
 import {
   FRAME_ASPECT_RATIO,
   FRAME_IMG_CLASS,
+  PLATE_ICON_CLASS,
   SLOT_BTN_CLASS,
   SLOT_EMPTY_CLASS,
   SLOT_IDLE_CLASS,
@@ -40,7 +41,7 @@ export default function Wheel({ slots, selectedSlotIndex, disabled, onSelectSlot
             className={`${SLOT_BTN_CLASS} ${isSelected ? SLOT_SELECTED_CLASS : SLOT_IDLE_CLASS}`}
           >
             {item
-              ? <PublicAsset src={item.icon} alt={item.name} className="max-h-full max-w-full select-none" />
+              ? <PublicAsset src={item.icon} alt={item.name} className={PLATE_ICON_CLASS} />
               : <span className={SLOT_EMPTY_CLASS}>비어 있음</span>}
           </button>
         )

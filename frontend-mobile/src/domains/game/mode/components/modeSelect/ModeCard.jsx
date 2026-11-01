@@ -1,7 +1,9 @@
 // 모드 카드 하나: 틀 그림·제목·설명, 준비중이면 잠금 + "준비중..." 가림막
 // ModeCardList가 씀, 글자 크기는 카드 폭 기준(cqw)이라 폰·태블릿 어디서나 같은 비율
 import {
+  COMING_SOON_OVERLAY_CLASS,
   DESC_INSET,
+  FRAME_IMG_CLASS,
   MODE_CARD_TITLE_INSET,
 } from "@/domains/game/mode/constants/modeCardLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
@@ -21,7 +23,7 @@ export default function ModeCard({ mode, onSelect, className = "" }) {
       <PublicAsset
         src={frame}
         alt=""
-        className="pointer-events-none block h-auto w-full select-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+        className={FRAME_IMG_CLASS}
       />
 
       {title ? (
@@ -51,7 +53,7 @@ export default function ModeCard({ mode, onSelect, className = "" }) {
 
       {comingSoon ? (
         <span
-          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-[2.5%] bg-[rgba(33,23,17,0.7)] shadow-[inset_0_0_40px_rgba(0,0,0,0.25)]"
+          className={COMING_SOON_OVERLAY_CLASS}
           aria-hidden="true"
         >
           <span className="font-display text-[length:calc(12cqw*var(--app-text-scale,1))] font-semibold tracking-[0.12em] text-[#ead9b7] drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">

@@ -2,6 +2,7 @@
 // pages/StorePage가 씀 (데스크톱 StorePanel 자리)
 import { motion } from "framer-motion"
 import { getItemDisplayIcon } from "@/domains/store/constants/storeItems.js"
+import { PANEL_SCROLL_AREA_CLASS } from "@/domains/store/constants/storeLayoutStyle.js"
 import { storePurchase } from "@/domains/store/store/storePurchase.store.js"
 import { isPurchaseDisabled, isRealPurchaseCategory } from "@/domains/store/utils/storePanel.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
@@ -37,7 +38,7 @@ export default function StorePanel({ visible, panel }) {
                 <PurchaseFeedback className="mb-2" state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
                 <div className={MAIN_ROW_CLASS}>
                     <div className={GRID_COLUMN_CLASS}>
-                        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                        <div className={PANEL_SCROLL_AREA_CLASS}>
                             {/* 인게임 재화 분류엔 일괄구매 숨김, 스킨 분류엔 안내 문구 */}
                             <ItemGrid
                                 items={panel.visibleItems}

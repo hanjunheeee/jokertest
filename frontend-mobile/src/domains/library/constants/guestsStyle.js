@@ -1,16 +1,13 @@
 // 초대받은 자들 표·탭·보상 모양 (순위 칸·숫자·프로필·직업 탭 글자·보상 아이콘)
-// guests/ 컴포넌트가 씀, 값은 데스크톱 invitedGuests/tableStyle·layoutStyle과 같게 폰 크기로 고정
-// 데스크톱 constants의 class 문자열은 모바일 Tailwind가 안 만들어 줘서(@source 안 먹음) 여기 따로 둠
+// guests/ 컴포넌트가 씀, 데스크톱 clamp 크기를 폰 크기로 고정한 것만 둠 (같은 값은 데스크톱 상수 import)
 
 // 직업 이름 (h2)
 export const JOB_TITLE_CLASS =
   "font-display text-center app-text-scaled [--app-text-size:1.55rem] font-medium leading-snug text-[#120a06] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.1)]"
 
-// 직업 탭 글자: 고른 탭·안 고른 탭
+// 직업 탭 글자 (다섯 칸 균등이라 좁은 폰에서 말줄임·자간 좁힘)
 export const JOB_TAB_LABEL_CLASS =
   "relative z-10 truncate font-subheading app-text-scaled [--app-text-size:0.7rem] font-bold tracking-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
-export const JOB_TAB_ACTIVE_CLASS = "text-[#e8f0dc]"
-export const JOB_TAB_INACTIVE_CLASS = "text-[#ebe2cc]/90"
 
 // 순위 칸: 1위·2~3위·나머지 모양 다름
 const RANK_BASE = "text-center font-display tabular-nums leading-none antialiased"
@@ -31,12 +28,6 @@ export const STAT_NUMBER_CLASS =
   "font-display app-text-scaled [--app-text-size:1rem] font-bold tabular-nums leading-none text-[#120a06] antialiased"
 export const STAT_PERCENT_CLASS =
   "font-display app-text-scaled [--app-text-size:0.78rem] font-semibold tabular-nums leading-none text-[#3d2a1c]/70"
-
-// 랭킹 프로필: 동그란 사진 위에 테두리 겹침
-export const PROFILE_PHOTO_CLASS =
-  "absolute left-1/2 top-1/2 block h-[68%] w-[68%] -translate-x-1/2 -translate-y-1/2 rounded-full object-cover"
-export const PROFILE_BORDER_CLASS =
-  "pointer-events-none absolute inset-0 block h-full w-full select-none object-contain"
 
 // 도전과제 보상 아이콘·개수·테두리 이름
 const INK = "font-subheading antialiased text-[#1a1008]"

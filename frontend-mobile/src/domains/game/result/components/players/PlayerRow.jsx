@@ -1,12 +1,12 @@
 // 결과 목록 한 줄: 프로필·이름·직업, 내 줄이면 "내 정보" 배지와 밝은 강조
 // players/PlayerList가 씀
 import { SELF_INFO_BADGE_LABEL } from "@/domains/game/result/constants/gameResultLabels.js"
+import { PLAYER_ROW_INNER_SELF_CLASS } from "@/domains/game/result/constants/gameResultLayout.js"
 import ProfilePortrait from "@m/shared/ui/portrait/ProfilePortrait.jsx"
 
 const ROW_CLASS =
     "flex min-h-14 items-center gap-2 rounded-sm border px-2 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 const ROW_TONE = "border-[#3a2818]/75 bg-[#120a06]/60"
-const ROW_SELF_TONE = "border-white/55 bg-white/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]"
 
 // 참가자 한 줄 (긴 이름은 말줄임, 직업은 오른쪽 고정)
 export default function PlayerRow({ name, job, profilePhotoSrc, profileBorderSrc, isSelf = false }) {
@@ -15,7 +15,7 @@ export default function PlayerRow({ name, job, profilePhotoSrc, profileBorderSrc
 
     return (
         <li className="list-none">
-            <div className={`${ROW_CLASS} ${isSelf ? ROW_SELF_TONE : ROW_TONE}`}>
+            <div className={`${ROW_CLASS} ${isSelf ? PLAYER_ROW_INNER_SELF_CLASS : ROW_TONE}`}>
                 <ProfilePortrait photoSrc={profilePhotoSrc} frameSrc={profileBorderSrc} className="size-14" spot="raised" />
                 <div className="flex min-w-0 flex-1 items-center gap-1.5">
                     {isSelf ? (
