@@ -1,5 +1,5 @@
 // 판 진행 이벤트 손잡이 (밤): 밤 결과 적용·개인 결과·차례·성공 연출·연출 대기
-// 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦
+// 판 진행 이벤트 훅(useGameSessionSocketEvents)이 구독 붙일 때마다 새로 만듦
 import { useInGameStore } from "../../store/ingameStore.js"
 import { parseNightResultAppliedPayload } from "../../utils/parseNightResultAppliedPayload.js"
 import { parseInGameNightPrivateResultPayload } from "../../utils/reduceInGameNightPrivateResult.js"

@@ -1,3 +1,5 @@
+// 양피지 창 종류별 설정: 덮개·판·이름·틀·확인 버튼·움직임
+// 양피지 창 부품(Base·Animated)과 시험이 사용
 import {
   CONFIRM_BTN_CLASS_RAISED_FOCUS,
   CONFIRM_BTN_CLASS_TIGHT,
@@ -7,12 +9,14 @@ import {
   FRAME_CLASS,
 } from "./ingameParchmentLayout.js"
 
+// 역할 보기 창 틀 (보통보다 큼)
 const ROLE_REVEAL_PARCHMENT_FRAME_CLASS =
   "pointer-events-auto relative aspect-[3/2] w-[min(48rem,96vw,158svh)] select-none"
 
 const ROLE_REVEAL_PARCHMENT_FALLBACK_FRAME_CLASS =
   "pointer-events-auto relative w-[min(48rem,96vw)] rounded-lg border border-[#6b4321] bg-gradient-to-b from-[#f3e5bd] via-[#e7d19f] to-[#c9a05f] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
 
+// 알림 창 틀·내용·확인 버튼 (보통보다 크고 넘치면 자름)
 const NOTIFS_PARCHMENT_FRAME_CLASS =
   "pointer-events-auto relative aspect-[3/2] w-[min(48rem,94vw,150svh)] select-none"
 
@@ -28,6 +32,7 @@ const NOTIFS_PARCHMENT_FALLBACK_CONTENT_CLASS =
 const NOTIFS_CONFIRM_BTN_CLASS =
   `${CONFIRM_BTN_CLASS_RAISED_FOCUS} shrink-0`
 
+// 창 종류별 설정 (역할 보기·단계 안내·밤 차례·알림 등 7개)
 export const MODAL_VARIANTS = Object.freeze({
   roleReveal: Object.freeze({
     animation: "parchment-unfold",
@@ -133,8 +138,10 @@ export const MODAL_VARIANTS = Object.freeze({
   }),
 })
 
+// 종류 이름으로 설정 꺼내기
 export function getInGameParchmentModalVariant(variantKey) {
   const variant = MODAL_VARIANTS[variantKey]
+  // 없는 종류면 바로 오류 (설정 빠뜨린 걸 일찍 알게)
   if (!variant) {
     throw new Error(`Unknown ingame parchment modal variant: ${variantKey}`)
   }

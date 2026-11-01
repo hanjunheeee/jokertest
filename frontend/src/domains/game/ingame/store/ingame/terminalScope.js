@@ -7,6 +7,7 @@ import { getMembershipEpoch } from "./identityScope.js"
 import { getSocketEpoch } from "./connectionScope.js"
 import { isReceiptCurrent } from "./receiptScope.js"
 
+// 확정 범위와 그 범위를 적은 승패 결과
 let scope = null
 let seenWin = null
 

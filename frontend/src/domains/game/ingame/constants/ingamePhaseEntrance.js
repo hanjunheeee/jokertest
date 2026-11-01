@@ -1,5 +1,7 @@
 // 낮밤 시작 안내 창 문구·모양 (단계별 문구 고르기 포함)
 // 낮밤 시작 안내 창·안내 훅이 씀
+
+// 안내하는 단계와 단계별 글
 export const ENTRANCE_PHASES = Object.freeze(["DAY", "NIGHT"])
 
 export const ENTRANCE_MSGS = Object.freeze({
@@ -7,17 +9,20 @@ export const ENTRANCE_MSGS = Object.freeze({
   NIGHT: "밤이 되었습니다",
 })
 
+// 확인 버튼·창 이름·덮개 이름
 export const CONFIRM_LABEL = "확인"
 
 export const DIALOG_LABEL = "단계 전환 안내"
 
 export const BACKDROP_LABEL = "단계 전환 안내 닫기"
 
+// 단계 → 안내 글 (낮·밤 아니면 null)
 export function getEntranceMsg(phase) {
   if (phase !== "DAY" && phase !== "NIGHT") return null
   return ENTRANCE_MSGS[phase]
 }
 
+// 덮개·판·글·확인 버튼 모양
 export const BACKDROP_CLASS =
   "fixed inset-0 z-[60] w-full cursor-default bg-black/70"
 

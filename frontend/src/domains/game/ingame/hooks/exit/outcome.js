@@ -17,6 +17,7 @@ export function lookupExitOutcome(ctx) {
     ctx.setStatus(EXIT_STATUS.UNRESOLVED, "OFFLINE")
     return false
   }
+  // 묻는 때 판·계정·신원·소켓·수신 범위를 잡아 둠
   const requestToken = ctx.bumpAttempt()
   const requestedGameId = gameId
   const requestedAccountId = useAuthStore.getState().user?.uuid ?? null
@@ -26,6 +27,7 @@ export function lookupExitOutcome(ctx) {
     accountId: requestedAccountId, identityGeneration: requestedIdentityGeneration,
   })
 
+  // 화면이 살아 있고 안 끝났고 시도 번호·범위가 그대로여야 이번 시도
   const isThisAttempt = () =>
     ctx.mountedRef.current
     && !ctx.settledRef.current
@@ -34,6 +36,7 @@ export function lookupExitOutcome(ctx) {
 
   startPending(ctx, isThisAttempt)
 
+  // 묻다 터지면 이번 시도가 그대로일 때만 결과 모름(연결 없음)으로 둠
   let sent
   try {
     askSnapshot(socket, requestedGameId, (response) => {

@@ -49,6 +49,7 @@ export function applySessionSnapshotPure(current, response) {
   const versions = readVersions(response, current.state)
   if (versions === BAD) return current
 
+  // 새 판 상태 (재투표 판정이면 다음 회차·제외 명단을 이어 받음)
   const hostUuid = orNull(response.hostUuid)
   const { dayVoteResolution } = day
   const nextState = {
@@ -80,12 +81,14 @@ export function applySessionSnapshotPure(current, response) {
 
 // 빈 스토어 채우기: 응답의 판·명단·본인으로 씨앗을 만들고 반영 (틀리면 null)
 export function bootstrapSessionSnapshotPure(response) {
+  // 씨앗 만들 재료(판 id·명단·본인 uuid)가 있어야 함
   if (!isPlainObject(response)) return null
   if (!isNonEmptyString(response.gameId)) return null
   if (!Array.isArray(response.players) || response.players.length === 0) return null
   if (!isPlainObject(response.self)) return null
   if (!isNonEmptyString(response.self.uuid)) return null
 
+  // 명단·본인 uuid만 든 씨앗에 반영, 검사를 통과해야 채움
   const seed = {
     gameId: response.gameId,
     state: {

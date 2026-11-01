@@ -4,6 +4,7 @@ import { useInGameStore } from "../../store/ingameStore.js"
 import { fetchSnapshot } from "../../socket/session.js"
 import { openAttempt } from "./attempt.js"
 
+// 한 번 묻기 시간 제한·다시 묻기 전체 시간 예산, 서버가 판을 찾는 중일 때 코드
 const SESSION_SNAP_TIMEOUT_MS = 5000
 const RETRY_BUDGET_MS = 5000
 const SESSION_ROUTING_PENDING_CODE = "SESSION_ROUTING_PENDING"
@@ -26,6 +27,7 @@ function applyResponse(ctx, a, response) {
     a.settleUnapplied()
     return
   }
+  // 판 없이 물었으면 빈 스토어 채우기 (복구됐는지를 처음 확인 결과로 둠)
   if (!a.requestGameId) {
     if (response?.ok !== true) {
       a.finishRebindUnapplied(scopeOnArrival)
@@ -58,6 +60,7 @@ function applyResponse(ctx, a, response) {
 export function createSnapshotRequester(ctx) {
   const requestSnapshot = ({ retry = false } = {}) => {
     const requestEpochVersion = ctx.epochVersionRef.current
+    // 첫 묻기면 이 세대 몫 예산 새로 잡음 (이미 물은 세대면 막기)
     if (!retry) {
       if (ctx.requestedVersionRef.current === requestEpochVersion) return
       ctx.requestedVersionRef.current = requestEpochVersion
@@ -69,6 +72,7 @@ export function createSnapshotRequester(ctx) {
         timerId: null,
       }
     }
+    // 다른 세대 예산이면 막기, 시간 제한은 남은 예산을 넘지 않게
     const attemptBudget = ctx.retryRef.current
     if (attemptBudget.epoch !== requestEpochVersion) return
     attemptBudget.attempts += 1
@@ -82,6 +86,7 @@ export function createSnapshotRequester(ctx) {
       retry: () => requestSnapshot({ retry: true }),
     })
 
+    // 묻다 터지거나 응답 없으면 다시 묻기, 못 하면 반영 못 하고 끝냄
     let ackPromise
     try {
       ackPromise = fetchSnapshot(a.requestSocket, ackTimeoutMs, a.requestGameId)

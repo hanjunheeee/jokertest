@@ -1,3 +1,5 @@
+// 채팅 메시지 목록: 끌어서 스크롤, 새 메시지 오면 맨 아래로
+// 채팅 내용 틀(InGameChatContent)이 사용
 import { useEffect, useRef } from "react"
 import { useDragScroll } from "../../hooks/useDragScroll.js"
 import {
@@ -8,6 +10,7 @@ import {
 } from "../../constants/chat/ingameChatLayout.js"
 import InGameChatMessageRow from "./InGameChatMessageRow.jsx"
 
+// 메시지 줄 묶음, 맨 위 빈 칸이 늘어나 적은 메시지도 아래부터 쌓임
 export default function InGameChatMessageList({
   messages,
   textFieldWidth = 0,
@@ -16,6 +19,7 @@ export default function InGameChatMessageList({
   const scrollRef = useRef(null)
   useDragScroll(scrollRef)
 
+  // 메시지 바뀌면 다음 프레임에 맨 아래로 (그려진 뒤 높이로)
   useEffect(() => {
     const scrollEl = scrollRef.current
     if (!scrollEl) return

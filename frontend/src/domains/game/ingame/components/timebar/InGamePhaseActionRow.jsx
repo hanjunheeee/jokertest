@@ -1,3 +1,5 @@
+// 단계 행동 줄: 낮 준비·낮 집계·재판 판정·밤 종료 글자 버튼
+// 시간 흐름 바(InGameTimebar)가 사용, 상태·동작은 조작 컨텍스트에서 꺼냄
 import { useContext } from "react"
 import { InGameActionContext } from "../../context/InGameActionContext.jsx"
 import {
@@ -8,8 +10,10 @@ import {
   BTN_ROW_CLASS,
 } from "../../constants/actions/ingameActionPanel.js"
 
+// 버튼 줄 모양 (오른쪽 정렬)
 const PHASE_ACTION_ROW_CLASS = `justify-end ${BTN_ROW_CLASS}`
 
+// 단계 행동 표시 이름과 값들 (구석 패널 버튼도 같은 표시, 시험이 찾음)
 export const PHASE_ACTION_ATTR = "data-ingame-phase-action"
 
 export const INGAME_PHASE_ACTIONS = Object.freeze({
@@ -21,10 +25,12 @@ export const INGAME_PHASE_ACTIONS = Object.freeze({
   NIGHT_RESOLVE: "nightResolve",
 })
 
+// 지금 단계에 맞는 버튼 목록, 글자는 보내는 중·끝남 따라 바뀜
 function buildPhaseActions(ctx) {
   const phase = ctx.gameState?.phase ?? null
   const actions = []
 
+  // 낮 토론: 준비 버튼
   if (phase === "DAY" && ctx.dayPhase === "DAY_DISCUSSION") {
     actions.push({
       action: INGAME_PHASE_ACTIONS.DAY_READY,
@@ -38,6 +44,7 @@ function buildPhaseActions(ctx) {
     })
   }
 
+  // 낮 투표: 집계 버튼
   if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
     actions.push({
       action: INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE,
@@ -51,6 +58,7 @@ function buildPhaseActions(ctx) {
     })
   }
 
+  // 재판: 판정 버튼 (끝났으면 판정 완료)
   if (phase === "TRIBUNAL") {
     actions.push({
       action: INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE,
@@ -64,6 +72,7 @@ function buildPhaseActions(ctx) {
     })
   }
 
+  // 밤: 내 차례일 때만 밤 종료, 판정 요청 전에만 누름
   if (phase === "NIGHT" && ctx.isNightTurnActor) {
     actions.push({
       action: INGAME_PHASE_ACTIONS.NIGHT_RESOLVE,
@@ -80,6 +89,7 @@ function buildPhaseActions(ctx) {
   return actions
 }
 
+// 조작 Provider 밖이거나 보일 버튼 없으면 안 그림
 export default function InGamePhaseActionRow() {
   const ctx = useContext(InGameActionContext)
   if (!ctx) return null

@@ -1,3 +1,7 @@
+// 인원수별(4~10명) 카드 자리표: 위치·구역·기울기
+// 카드 판 상수(ingamePlayerBoard.js)가 사용
+
+// 자리마다 화면 비율 위치(left·top %)와 구역(top·side·bottom), 기울기
 export const INGAME_PLAYER_LAYOUT_4 = [
   { left: 50, top: 18, zone: "top", rotate: 0, rotateX: -6 },
   { left: 82, top: 46, zone: "side", rotate: 10 },
@@ -68,6 +72,7 @@ export const INGAME_PLAYER_LAYOUT_10 = [
   { left: 82, top: 77, zone: "bottom", rotate: -3 },
 ]
 
+// 인원수 → 자리표 (없는 인원수는 카드 판 상수가 10명 표 앞부분을 씀)
 export const LAYOUTS_BY_COUNT = {
   4: INGAME_PLAYER_LAYOUT_4,
   5: INGAME_PLAYER_LAYOUT_5,

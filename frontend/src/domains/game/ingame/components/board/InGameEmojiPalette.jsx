@@ -1,3 +1,5 @@
+// 이모지 팔레트: 내 카드 우클릭 때 뜨는 8칸 둥근 판, 고르면 이모지 보냄
+// 플레이어 보드(InGamePlayerBoard)가 사용, 보내기는 useInGameEmojiSend
 import { useEffect, useRef } from "react"
 
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -5,12 +7,14 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { useInGameEmojiSend } from "../../hooks/useInGameEmojiSend.js"
 import { findInGameEmoticonItem } from "../../utils/findInGameEmoticonItem.js"
 
+// 틀 그림·시험이 찾는 표시·읽어 주는 이름
 export const FRAME_SRC = "/frame/emoji/palette-frame.png"
 
 export const INGAME_EMOJI_PALETTE_ATTR = "data-ingame-emoji-palette"
 
 export const PALETTE_LABEL = "이모티콘 팔레트"
 
+// 칸 수와 틀 그림 원본 크기 (비율 맞추기용, 시험도 봄)
 export const INGAME_EMOJI_PALETTE_SLOT_COUNT = 8
 
 export const INGAME_EMOJI_PALETTE_FRAME_WIDTH = 769
@@ -18,6 +22,7 @@ export const INGAME_EMOJI_PALETTE_FRAME_HEIGHT = 738
 export const ASPECT_RATIO =
   `${INGAME_EMOJI_PALETTE_FRAME_WIDTH} / ${INGAME_EMOJI_PALETTE_FRAME_HEIGHT}`
 
+// 칸 자리: 12시부터 시계 방향 8곳
 const SLOT_POSITIONS = [
   { top: "12%", left: "50%" },
   { top: "23%", left: "77%" },
@@ -29,6 +34,7 @@ const SLOT_POSITIONS = [
   { top: "23%", left: "23%" },
 ]
 
+// 판·틀·칸 모양 (빈 칸은 흐리고 못 누름)
 const PALETTE_WRAP_CLASS =
   "absolute left-1/2 top-1/2 z-40 w-[min(13rem,72vw)] -translate-x-1/2 -translate-y-1/2"
 
@@ -42,12 +48,15 @@ const SLOT_FILLED_CLASS = "cursor-pointer hover:border-[#e8c878] hover:bg-black/
 
 const SLOT_EMPTY_CLASS = "cursor-default opacity-40"
 
+// 고르면 보드에 알려 닫고 보내기, 바깥 누름·Esc면 닫힘
 export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
   const { send } = useInGameEmojiSend()
   const rootRef = useRef(null)
+  // 닫기 함수는 ref로 들고 있어 바깥 누름 감시를 한 번만 붙임
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
+  // 판 바깥 누름·Esc 키 감시 (판 안쪽 누름은 무시)
   useEffect(() => {
     const close = () => {
       if (typeof onCloseRef.current === "function") onCloseRef.current()
@@ -69,6 +78,7 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
     }
   }, [])
 
+  // 고르면 바로 닫고 보내기, 보내기 실패는 팔레트가 이미 닫혀 조용히 넘김
   const dispatch = (event, itemId) => {
     event.stopPropagation()
     event.preventDefault()
@@ -94,8 +104,10 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
         aria-hidden="true"
       />
       {Array.from({ length: INGAME_EMOJI_PALETTE_SLOT_COUNT }, (_, index) => {
+        // 칸마다 저장된 이모지 찾기, 없으면 빈 칸
         const item = findInGameEmoticonItem(slots[index])
         const position = SLOT_POSITIONS[index]
+        // 우클릭 떼기나 좌클릭으로 고름
         return (
           <button
             key={`ingame-emoji-slot-${index}`}

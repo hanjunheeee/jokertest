@@ -1,5 +1,8 @@
+// 추방 창 모양: 투표 창 틀 모양을 빌려 쓰고 덮개·목록 줄 모양 더함
+// 추방 창 틀(Shell)·내용(Content)·줄(Row)이 사용
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 틀·닫기 버튼·제목은 투표 창 것을 이름만 바꿔 씀
 export {
   getVotePanelStyle as getInGameKickPlayerPanelStyle,
   VOTE_CLOSE_BTN_CLASS as INGAME_KICK_PLAYER_MODAL_CLOSE_BTN_CLASS,
@@ -10,6 +13,7 @@ export {
   INGAME_VOTE_TITLE_CLASS as INGAME_KICK_PLAYER_MODAL_TITLE_CLASS,
 } from "../../vote/ingameVoteLayout.js"
 
+// 화면 전체 덮개와 가운데 정렬
 export const MODAL_SHELL_CLASS = "fixed inset-0 z-[52]"
 
 export const MODAL_BACKDROP_CLASS =
@@ -18,17 +22,20 @@ export const MODAL_BACKDROP_CLASS =
 export const MODAL_WRAP_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
 
+// 안내 글 두 줄
 export const MODAL_SUBTITLE_CLASS =
   "mb-[clamp(0.28rem,0.8cqi,0.4rem)] shrink-0 text-center font-subheading text-[clamp(0.62rem,2.1cqi,0.78rem)] font-bold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const MODAL_NOTICE_CLASS =
   "mb-[clamp(0.55rem,1.6cqi,0.75rem)] shrink-0 text-center font-subheading text-[clamp(0.58rem,1.85cqi,0.72rem)] font-bold leading-snug text-white/75 [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+// 대상 목록 스크롤 (기본 스크롤바 숨김)
 export const MODAL_SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 
 export const MODAL_SCROLL_CLASS =
   `h-full min-h-0 overflow-y-auto overscroll-contain pr-[clamp(0.35rem,1.2cqi,0.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
+// 대상 한 줄·프로필·이름·추방 버튼 (잠기면 흐리게)
 export const ROW_CLASS = "relative min-w-0 list-none"
 
 export const ROW_INNER_CLASS =

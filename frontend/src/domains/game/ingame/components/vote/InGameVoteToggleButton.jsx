@@ -1,3 +1,5 @@
+// 투표 현황 열기 버튼: 그림 위에 '투표 현황' 글자
+// 구석 행동 패널(InGameCornerActionPanel)이 사용
 import { INGAME_VOTE_ASSETS } from "@/domains/game/ingame/constants/vote/ingameVoteAssets.js"
 import {
   TOGGLE_BTN_CLASS,
@@ -7,6 +9,7 @@ import {
 } from "../../constants/vote/ingameVoteLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 모양은 기본값이 있고 구석 패널이 자기 모양으로 바꿔 넘김
 export default function InGameVoteToggleButton({
   onClick,
   className = TOGGLE_BTN_WRAP_CLASS,

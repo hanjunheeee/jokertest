@@ -1,3 +1,6 @@
+// 추방 창 글: 제목·안내·버튼 이름·화면 읽기 이름·빈 목록 글
+// 추방 창 틀·내용·줄과 시험이 사용
+
 export const INGAME_KICK_PLAYER_MODAL_COPY = {
   title: "플레이어 추방",
   subtitle: "추방할 플레이어를 선택하세요.",

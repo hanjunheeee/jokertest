@@ -1,5 +1,7 @@
-// 밤 사망 연출 상수와 안내 문구 만들기 (영상 경로·건너뛰기·대체 시간·피해자 이름)
-// 사망 연출 훅·밤 성공 사망 영상이 씀
+// 사망 공개 상수와 안내 글 만들기 (밤 사망·재판 처형, 영상·건너뛰기)
+// 사망 공개 훅(useInGameKillReveal)·밤 성공 사망 영상이 씀
+
+// 사망 영상 경로·기본 이름·건너뛰기 글·다시 재생 표시 속성
 export const ANIM_VIDEO_URL = "/video-direction/night-success-kill-target-stacked.mp4"
 
 export const UNKNOWN_NICKNAME = "한 플레이어"
@@ -8,10 +10,13 @@ export const INGAME_KILL_REVEAL_SKIP_LABEL = "건너뛰기"
 
 export const INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR = "data-ingame-kill-reveal-retry"
 
+// 영상이 안 끝날 때 넘어가는 시간
 export const INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS = 12000
 
+// 재판 처형에서 온 사망 표시
 export const TRIBUNAL_SOURCE = "TRIBUNAL"
 
+// 사망 원인별 안내 글 (모르는 원인이면 null)
 export function buildRevealMsg(source, victimNickname) {
   const nickname =
     typeof victimNickname === "string" && victimNickname.length > 0
@@ -25,6 +30,7 @@ export function buildRevealMsg(source, victimNickname) {
   return null
 }
 
+// 피해자 이름 찾기 (못 찾으면 한 플레이어)
 export function resolveRevealNickname(players, victimUuid) {
   if (!Array.isArray(players)) return UNKNOWN_NICKNAME
   if (typeof victimUuid !== "string" || victimUuid.length === 0) {
@@ -39,6 +45,7 @@ export function resolveRevealNickname(players, victimUuid) {
   return found.nickname
 }
 
+// 사망 연출 덮개·영상·캔버스·글·건너뛰기 버튼 모양
 export const REVEAL_BACKDROP_CLASS =
   "fixed inset-0 z-[70] bg-black/92"
 

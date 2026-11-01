@@ -1,4 +1,4 @@
-// 채팅 크게 보기 창 (입력·보내기·메시지 목록, 열려 있을 때 키 입력 받음)
+// 채팅 크게 보기 창: 큰 모양 채팅 내용, Esc·뒤 막·닫기 버튼으로 닫힘
 // InGameChatShell이 씀
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
@@ -15,6 +15,7 @@ import InGameChatContent from "./InGameChatContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
+// 열렸을 때만 그림, 내용은 InGameChatContent를 closeup 모양으로
 export default function InGameChatCloseupOverlay({
   open,
   onClose,
@@ -26,6 +27,7 @@ export default function InGameChatCloseupOverlay({
   error = null,
   truncateDraftOnInput = true,
 }) {
+  // 열렸을 때만 Esc로 닫기 (닫는 소리 같이 냄)
   useEffect(() => {
     if (!open) return undefined
 
@@ -39,6 +41,7 @@ export default function InGameChatCloseupOverlay({
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [open, onClose])
 
+  // 창 안 누름은 뒤 막 닫기로 번지지 않게 막음
   return (
     <AnimatePresence>
       {open ? (

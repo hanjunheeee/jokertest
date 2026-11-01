@@ -14,6 +14,7 @@ import {
 } from "../utils/reduceInGamePhaseEntrance.js"
 import { onConnect } from "../socket/connection.js"
 
+// 단계 입장 안내 상태와 확인 (앞 연출 중이면 hold로 미룸)
 export function useInGamePhaseEntrance({ hold = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
   const phase = useInGameStore((s) => s.state?.phase ?? null)
@@ -29,13 +30,16 @@ export function useInGamePhaseEntrance({ hold = false } = {}) {
     return onConnect(socket, () => setConnectSeq((current) => current + 1))
   }, [socket])
 
+  // 판·계정·연결 범위와 단계·날짜로 안내 하나를 가림
   const epochKey = `${getInGameSocketEpochId(socket)}#${connectSeq}`
   const scope = buildEntranceScope({ gameId, authUuid, epochKey })
   const identity = buildInGamePhaseEntranceIdentity(scope, phase, dayIndex)
 
   const [presentation, setPresentation] = useState(INITIAL_PHASE_ENTRANCE)
+  // 스냅샷으로 바뀐 건지 가리려고 지난 순번 둠
   const lastSnapshotSeqRef = useRef(snapshotSeq)
 
+  // 범위·안내·멈춤·스냅샷이 바뀌면 다시 계산 (스냅샷 복구로 온 단계는 안내 안 띄움)
   useEffect(() => {
     const hydrated = lastSnapshotSeqRef.current !== snapshotSeq
     lastSnapshotSeqRef.current = snapshotSeq
@@ -48,10 +52,12 @@ export function useInGamePhaseEntrance({ hold = false } = {}) {
   const activeIdentity = presentation.active?.identity ?? null
   const activePhase = presentation.active?.phase ?? null
 
+  // 지금 안내 확인하고 닫기
   const confirm = useCallback(() => {
     setPresentation((current) => confirmPhaseEntrance(current, activeIdentity))
   }, [activeIdentity])
 
+  // armed = 띄울 안내가 남아 있음 (밤 차례 안내를 미룸), blocking = 보이는 동안 조작 막음
   return {
     open: presentation.active !== null,
     phase: activePhase,

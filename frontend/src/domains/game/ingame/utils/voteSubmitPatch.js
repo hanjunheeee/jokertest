@@ -32,6 +32,7 @@ export const INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE = {
   error: null,
 }
 
+// 받는 투표 값 (유죄·무죄)
 const VALID_VOTES = new Set(["GUILTY", "NOT_GUILTY"])
 
 // 재판 투표 제출 응답 검사 → 상태 조각 (모양이 틀리면 null)

@@ -1,5 +1,5 @@
 // 밤 성공 연출 기록 장부: eventId별 수신 범위·끝맺음·확인 응답 상태
-// 밤 성공 받기·복구·끝맺음 액션과 연결·신원 감시가 사용, 연출 훅은 수신 범위만 읽음
+// 액션 묶음·받기 판단·연결·신원 감시가 사용, 연출 훅은 입구로 수신 범위만 읽음
 import { EMPTY_NIGHT_SUCCESS_QUEUE } from "../../constants/store/ingameStore.js"
 import { getStore } from "./storeRef.js"
 

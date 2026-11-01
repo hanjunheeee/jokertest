@@ -22,6 +22,7 @@ export const nightResultActions = (set) => ({
       return { nightPrivateResult: parsed }
     }),
 
+  // 밤 개인 결과 지우기 (이미 비었으면 그대로)
   clearNightPrivateResult: () =>
     set((current) => (current.nightPrivateResult === null ? current : CLEARED_NIGHT_PRIVATE_RESULT)),
 
@@ -38,6 +39,7 @@ export const nightResultActions = (set) => ({
   // 연출 대기 알림 받기 (그 판·그 밤, 본인 계정·지금 소속·지금 연결에서 받은 것만)
   receiveNightPresentationWait: (payload, receiptScope = null) =>
     set((current) => {
+      // 모양·지금 판의 그 밤인지, 받은 범위가 본인·지금 소속·지금 연결인지
       if (!isValidWait(payload)) return current
       if (!current.gameId || !current.state) return current
       if (payload.gameId !== current.gameId) return current
@@ -75,6 +77,7 @@ export const nightResultActions = (set) => ({
   // 밤 성공 연출 끝맺음: 대기열에서 빼고 서버에 다 봤다고 알림
   // 같은 범위에서 받은 기록만, 한 번만 끝냄
   completeNightSuccess: (eventId, receiptScope = null, outcome = "COMPLETED") => {
+    // 허용 결과·아직 안 끝난 기록·같은 받은 범위일 때만
     if (!NIGHT_SUCCESS_OUTCOMES.has(outcome)) return { status: "noop" }
     const record = records.get(eventId)
     if (!record || record.completed) return { status: "noop" }
@@ -90,6 +93,7 @@ export const nightResultActions = (set) => ({
       removed = true
       return { nightSuccessQueue: filtered.length === 0 ? EMPTY_NIGHT_SUCCESS_QUEUE : filtered }
     })
+    // 못 뺐거나 그사이 장부가 바뀌었으면 끝내지 않음
     if (!removed) return { status: "noop" }
     if (records.get(eventId) !== record) return { status: "noop" }
 
@@ -110,6 +114,7 @@ export const nightResultActions = (set) => ({
           eventId: record.entry.eventId,
           ...(outcome === "ERROR" || outcome === "SKIPPED" ? { outcome } : {}),
         },
+        // 응답은 장부가 그대로일 때만 적음
         (response) => {
           if (records.get(eventId) !== record) return
           record.ackStatus = response && typeof response === "object" && response.ok === true ? "accepted" : "rejected"

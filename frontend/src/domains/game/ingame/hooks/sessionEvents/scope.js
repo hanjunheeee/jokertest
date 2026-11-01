@@ -1,5 +1,5 @@
-// 판 진행 이벤트용 계정·수신 범위: 지금 계정 id·계정 캐시 새로 받기, 지금 범위 읽기·구독 때 범위가 그대로인지
-// hooks/sessionEvents/ 파일들이 사용 (옛 연결·옛 신원의 구독이 받은 사건을 막음)
+// 판 진행 이벤트용 범위: 지금 계정 id·캐시 새로 받기·지금 수신 범위·구독 때 범위 비교
+// hooks/sessionEvents/ 파일들과 판 진행 이벤트 훅이 사용 (옛 연결·옛 신원 구독의 사건 막기)
 import { useAuthStore } from "../../../../auth/store/auth.store.js"
 import { readInGameReceiptScope } from "../../store/ingameStore.js"
 import { refreshAccountCaches } from "../../../../user/utils/accountCacheRefresh.js"

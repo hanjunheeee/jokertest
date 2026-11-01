@@ -1,6 +1,7 @@
 // 낮 투표 판정 요청 고정 값: 응답 시간·실패 문구
-// 낮 투표 판정 요청(useDayVoteResolve)과 판정 응답 계산(utils/dayVote/)이 사용
+// 낮 투표 판정 요청 훅(useDayVoteResolve)과 utils/dayVoteResolve.js가 사용
 
+// 판정 응답 기다리는 시간
 export const TIMEOUT_MS = 5000
 
 // 서버가 실패 문구를 안 줬을 때

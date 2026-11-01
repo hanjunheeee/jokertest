@@ -1,5 +1,5 @@
 // 단계 진행 액션 묶음: 첫 단계 넘어감·사망·밤 결과 적용·밤 차례·낮 단계
-// 입구 파일이 create 할 때 펼쳐 씀, 소켓 사건은 판 진행 이벤트 훅이 파싱해서 넘김
+// 입구가 create 때 펼쳐 씀, 판 진행 손잡이가 사건을 넘김 (첫 단계만 파싱 없이)
 import {
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,
@@ -8,6 +8,7 @@ import { applyPlayerEliminatedPure } from "../applyPlayerEliminated.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { commitWithReceipt } from "./receiptScope.js"
 
+// 사건 모양 검사용 (객체인지·판 id가 있는지)
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 const hasGameId = (value) => typeof value.gameId === "string" && value.gameId.trim().length > 0
 
@@ -20,6 +21,7 @@ export const phaseActions = (set) => ({
   // 역할 공개 끝나고 첫 단계로 넘어감 (첫 낮, 또는 옛 방식의 0일 밤만)
   applyPhaseChanged: (payload) =>
     set((current) => {
+      // 지금 판이 역할 공개 중일 때만
       if (!isPlainObject(payload)) return current
       if (!hasGameId(payload)) return current
       if (!current.gameId || !current.state) return current
@@ -48,6 +50,7 @@ export const phaseActions = (set) => ({
   // 밤 결과 적용: 끝났으면 ENDED로, 아니면 다음 낮 토론으로
   applyNightResultAppliedPayload: (payload, receipt = null) =>
     commitWithReceipt(receipt, set, (current) => {
+      // 지금 판이고 아직 안 끝났을 때만
       if (!isPlainObject(payload)) return current
       if (!hasGameId(payload)) return current
       if (!current.gameId || !current.state) return current
@@ -99,6 +102,7 @@ export const phaseActions = (set) => ({
   // 밤 역할 차례 시작 (같은 밤·같은 차례면 그대로, 차례가 오면 연출 대기는 끝)
   applyNightTurnStarted: (parsed) =>
     set((current) => {
+      // 지금 판의 그 밤이고 역할·마감 값이 제대로일 때만
       if (!isPlainObject(parsed)) return current
       if (!hasGameId(parsed)) return current
       if (!current.gameId || !current.state) return current
@@ -120,6 +124,7 @@ export const phaseActions = (set) => ({
   // 밤 역할 차례 끝 (지금 차례인 역할일 때만 비움)
   applyNightTurnEnded: (parsed) =>
     set((current) => {
+      // 지금 판의 그 밤일 때만
       if (!isPlainObject(parsed)) return current
       if (!hasGameId(parsed)) return current
       if (!current.gameId || !current.state || parsed.gameId !== current.gameId) return current
@@ -133,6 +138,7 @@ export const phaseActions = (set) => ({
   // 낮 토론 → 투표 (그 낮일 때 한 번만)
   applyDayPhaseChanged: (parsed) =>
     set((current) => {
+      // 지금 판의 그 낮이고 아직 토론 중일 때만
       if (!isPlainObject(parsed)) return current
       if (!hasGameId(parsed)) return current
       if (!current.gameId || !current.state) return current

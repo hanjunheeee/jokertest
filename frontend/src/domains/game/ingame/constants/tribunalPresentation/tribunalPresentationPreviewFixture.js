@@ -1,10 +1,14 @@
+// 재판 연출 미리보기용 가짜 피고와 채팅
+// 재판 연출 미리보기 화면(TribunalPresentationPreviewPage)이 사용
 import { buildInGamePreviewPlayers } from "../../utils/buildInGamePreviewPlayers.js"
 
+// 미리보기 5명 중 둘째를 피고로
 export function buildPreviewDefendant() {
   const players = buildInGamePreviewPlayers(5)
   return players[1]
 }
 
+// 미리보기 채팅 3개 (지금 시각 기준 몇 분 전)
 export function buildPreviewChatMsgs() {
   const players = buildInGamePreviewPlayers(5)
   const now = Date.now()

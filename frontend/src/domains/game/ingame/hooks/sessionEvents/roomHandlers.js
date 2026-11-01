@@ -7,6 +7,7 @@ import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.j
 import { createGameEndedHandler, createSessionEndFinalizer } from "../../utils/sessionEnd.js"
 import { currentAccountId, refreshCaches, isRegistrationScopeCurrent } from "./scope.js"
 
+// 사건 모양 검사용 (배열·null 빼고 객체만)
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
 // 판 정리: 판·방 비우고 멀티 화면으로
@@ -18,7 +19,7 @@ export function buildFinalizer(navigate) {
   })
 }
 
-// registered: 구독을 붙인 때의 수신 범위
+// registered: 구독을 붙인 때의 수신 범위 (판 끝·추방·캐시는 범위 대신 판 id·계정으로 거름)
 export function createRoomHandlers(registered, navigate) {
   const isCurrent = () => isRegistrationScopeCurrent(registered)
 

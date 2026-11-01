@@ -1,5 +1,5 @@
 // 다시 묶기 기다림 표시: 연결·신원이 바뀌어 스냅샷을 다시 받는 중인지 (모듈 하나에 하나만 둠)
-// 스냅샷 동기화 훅이 켜고 끄고, 인게임 화면이 구독해서 조작을 막음
+// 스냅샷 동기화 훅·attempt.js가 켜고 끄고, 인게임 화면이 구독해서 결과 화면 이동을 미룸
 import { useSyncExternalStore } from "react"
 
 let identityRebindPending = false
@@ -12,6 +12,7 @@ export function setIdentityRebindPending(next) {
   for (const listener of [...identityRebindListeners]) listener()
 }
 
+// 읽기·구독·훅 (화면은 훅으로 읽음)
 export function getInGameSnapshotRebindPending() {
   return identityRebindPending
 }

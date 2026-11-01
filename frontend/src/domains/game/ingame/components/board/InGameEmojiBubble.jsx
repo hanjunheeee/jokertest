@@ -1,11 +1,15 @@
+// 이모지 말풍선: 카드 위에 잠깐 뜨는 받은 이모지
+// 플레이어 보드(InGamePlayerBoard)가 사용, 띄우기·지우기는 이모지 말풍선 스토어가 맡음
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 import { findInGameEmoticonItem } from "../../utils/findInGameEmoticonItem.js"
 
+// 말풍선 틀 그림과 시험이 찾는 표시 이름
 export const INGAME_EMOJI_BUBBLE_SRC = "/frame/emoji/speech-bubble.png"
 
 export const INGAME_EMOJI_BUBBLE_ATTR = "data-ingame-emoji-bubble"
 
+// 말풍선 자리·틀·아이콘 칸 모양 (카드 위 가운데)
 const BUBBLE_WRAP_CLASS =
   "pointer-events-none absolute bottom-full left-1/2 z-30 w-[min(4.5rem,42%)] -translate-x-1/2 -translate-y-1"
 
@@ -13,6 +17,7 @@ const FRAME_IMG_CLASS = "block h-auto w-full select-none"
 
 const BUBBLE_ICON_WRAP_CLASS = "absolute inset-0 flex items-center justify-center p-[22%] pb-[32%]"
 
+// 이모지 id로 항목 찾아 그림, 목록에 없는 id면 안 그림
 export default function InGameEmojiBubble({ itemId }) {
   const item = findInGameEmoticonItem(itemId)
   if (!item) return null

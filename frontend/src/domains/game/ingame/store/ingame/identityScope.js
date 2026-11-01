@@ -1,12 +1,14 @@
 // 신원 범위: 판·본인·소속이 바뀔 때마다 소속 세대와 구독 버전을 올림
-// 입구 파일·스토어 감시·수신 범위가 쓰고, 화면·훅은 버전 구독으로 다시 그림
+// 입구·스토어 감시·스냅샷 액션이 맞추고 범위 파일이 읽음, 화면·훅은 버전 구독
 import { readSelfMembershipId } from "../../utils/store/scope.js"
 
+// 소속 세대와 마지막으로 본 판·본인·소속
 let epoch = 0
 let seenGameId
 let seenSelfUuid
 let seenMembershipId
 
+// 구독 버전과 구독자
 let version = 0
 const listeners = new Set()
 

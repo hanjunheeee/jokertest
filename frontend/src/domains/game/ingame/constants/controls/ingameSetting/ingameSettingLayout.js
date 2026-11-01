@@ -1,5 +1,8 @@
+// 설정 창 모양: 탭 줄·밀대 줄·체크 줄·방관리 줄·방 코드 버튼·스크롤
+// components/controls/ingameSetting/ 파일들이 사용
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 탭 줄과 탭 버튼 (고른 탭은 글자색 다름)
 export const TAB_NAV_CLASS =
   "mb-[clamp(0.45rem,1vh,0.62rem)] flex w-full shrink-0 items-stretch gap-[clamp(0.25rem,0.55vw,0.4rem)]"
 
@@ -16,9 +19,11 @@ export const TAB_LABEL_ACTIVE_CLASS = "text-[#e8f0dc]"
 
 export const TAB_LABEL_INACTIVE_CLASS = "text-[#ebe2cc]/90"
 
+// 탭 본문 세로 쌓기
 export const TAB_BODY_CLASS =
   "flex w-full flex-col gap-[clamp(0.28rem,0.65vh,0.38rem)] pb-[clamp(0.2rem,0.5vh,0.32rem)]"
 
+// 밀대 줄·체크 줄 판과 이름·값 글자
 export const SLIDER_ROW_PLATE_CLASS =
   "flex w-full min-h-[clamp(2.35rem,5.2vh,2.65rem)] items-center gap-[clamp(0.35rem,1.2vw,0.55rem)] rounded-sm border border-[#3a2818]/75 bg-[#120a06]/50 px-[clamp(0.38rem,1.6%,0.52rem)] py-[clamp(0.22rem,0.55vh,0.3rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 
@@ -34,6 +39,7 @@ export const SLIDER_ROW_LABEL_CLASS =
 export const ROW_VALUE_CLASS =
   "shrink-0 font-subheading text-[clamp(0.78rem,1vw,0.92rem)] font-bold leading-none tabular-nums text-white/90"
 
+// 밀대 안 칸·길·손잡이 (숫자는 화면 읽기만)
 export const SLIDER_WRAP_CLASS =
   "relative flex min-w-0 flex-1 items-center pl-[clamp(0.28rem,0.85vw,0.42rem)]"
 
@@ -54,9 +60,11 @@ export const SLIDER_TRACK_CLASS =
 export const SLIDER_KNOB_CLASS =
   "pointer-events-none absolute top-1/2 z-[1] w-[clamp(1.3rem,1.85vw,1.55rem)] -translate-x-1/2 -translate-y-1/2 select-none"
 
+// 체크 칸
 export const CHECKBOX_CLASS =
   "relative block w-[clamp(1.35rem,1.85vw,1.55rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
 
+// 방관리 줄 판·제목·설명·링크 (위험 링크는 붉은색)
 export const ROOM_ROW_PLATE_CLASS =
   "flex w-full items-center gap-[clamp(0.35rem,1.2vw,0.55rem)] rounded-sm border border-[#3a2818]/75 bg-[#120a06]/50 px-[clamp(0.38rem,1.6%,0.52rem)] py-[clamp(0.32rem,0.78vh,0.42rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 
@@ -74,6 +82,7 @@ export const ROOM_ACTION_LINK_CLASS =
 export const ROOM_ACTION_LINK_DANGER_CLASS =
   "interactive-scale shrink-0 cursor-pointer border-0 bg-transparent p-0 font-subheading text-[clamp(0.72rem,0.95vw,0.86rem)] font-bold leading-none text-[#ffb4b4] underline decoration-[#c95555]/90 decoration-1 underline-offset-[0.18em] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// 방 코드 버튼 (설정 창 오른쪽 아래, 밖으로 살짝 나감)
 export const ROOM_CODE_BTN_WRAP_CLASS =
   "pointer-events-none absolute bottom-[clamp(0.35rem,1.2vh,0.65rem)] right-0 z-20 translate-x-[clamp(1.15rem,6.5%,2.1rem)]"
 
@@ -86,6 +95,7 @@ export const ROOM_CODE_BTN_IMG_CLASS =
 export const ROOM_CODE_BTN_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[8%] text-center font-subheading text-[clamp(0.62rem,0.88vw,0.78rem)] font-bold leading-none text-[#ebe2cc]/90 [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+// 스크롤 칸 (기본 스크롤바 숨기고 공용 스크롤바 씀)
 export const SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 
 export const SCROLL_CLASS =

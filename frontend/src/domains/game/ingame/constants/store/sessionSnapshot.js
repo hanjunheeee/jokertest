@@ -10,6 +10,7 @@ export const ROLE_TEAMS = {
   WITCH_HUNTER: "CITIZEN",
 }
 
+// 아는 단계 이름 (모르면 스냅샷 안 받음)
 export const KNOWN_PHASES = new Set(["ROLE_REVEAL", "NIGHT", "DAY", "TRIBUNAL", "ENDED"])
 
 // 같은 날 안에서 단계가 뒤로 가는지 볼 때 쓰는 순위
@@ -20,6 +21,7 @@ export const PHASE_PROGRESS_RANK = Object.freeze({
 // 밤 결과·낮 투표·재판 필드가 오면 안 되는 단계
 export const PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS = new Set(["ROLE_REVEAL", "NIGHT"])
 
+// 아는 낮 세부 단계·투표 결과·재판 결과 (모르면 스냅샷 안 받음)
 export const KNOWN_DAY_PHASES = new Set(["DAY_DISCUSSION", "DAY_VOTE"])
 export const DAY_VOTE_OUTCOMES = new Set(["ABSTAINED", "TIE", "TRIBUNAL", "REVOTE"])
 export const TRIBUNAL_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])

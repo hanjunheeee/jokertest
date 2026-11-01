@@ -6,6 +6,7 @@ import {
   getSkinCardWearItemById,
 } from "../../../user/constants/skinCardWear/skinCardWearCatalog.js"
 
+// 직업 → 팀 짝 (본인 팀 검사용)
 const ROLE_TEAMS = {
   JOKER: "JOKER",
   CITIZEN: "CITIZEN",
@@ -14,6 +15,7 @@ const ROLE_TEAMS = {
   WITCH_HUNTER: "CITIZEN",
 }
 
+// 직업 → 스킨 직업 id (서 있는 그림 찾기용)
 const ROLE_TO_SKIN_JOB_ID = {
   CITIZEN: "noble",
   JOKER: "clown",
@@ -48,6 +50,7 @@ export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
   const display = getRoleRevealDisplay(self.role)
   if (!display) return null
 
+  // 조커면 동료 목록이 꼭 있어야 함
   let allies = null
   if (self.role === "JOKER") {
     if (!Array.isArray(self.allies)) return null

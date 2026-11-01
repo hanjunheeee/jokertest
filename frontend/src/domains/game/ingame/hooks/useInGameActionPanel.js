@@ -20,6 +20,7 @@ import { useInGameDayDiscussionReady } from "./useInGameDayDiscussionReady.js"
 import { useActionTargets } from "./actionPanel/useActionTargets.js"
 import { useDayVoteResolve } from "./actionPanel/useDayVoteResolve.js"
 
+// 낮 투표 판정 계산은 시험이 이 경로로 가져가서 다시 내보냄
 export {
   computeDayVoteResolveAckPatch,
   computeDayVoteResolveInvalidatePatch,
@@ -27,7 +28,7 @@ export {
   shouldApplyDayVoteResolvedPayload,
 } from "../utils/dayVoteResolve.js"
 
-// 요청 훅 부르는 순서가 effect 순서이므로 바꾸지 않음
+// 행동 패널 값 만들기 (요청 훅 부르는 순서가 곧 effect 순서라 바꾸지 않음)
 export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
   const gameState = useInGameStore((s) => s.state)
@@ -46,6 +47,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     setSelectedDayVoteTargetId(null)
   }, [gameId, dayIndex, dayVoteRound])
 
+  // 밤 행동·낮 투표 대상 목록과 조작용 내 생존
   const { nightActionTargets, dayVoteTargets, selfAliveForControls } = useActionTargets(gameState)
 
   // 최근 사건 6개 (새 것 먼저)
@@ -54,6 +56,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     [gameState?.events],
   )
 
+  // 내 역할·날짜에 맞는 밤 행동 종류·버튼 이름
   const nightActionType = getInGameNightActionType(myRole, dayIndex)
   const nightActionLabel = getInGameNightActionLabel(myRole, dayIndex)
   const hasTarget = Boolean(selectedNightTargetId)
@@ -62,6 +65,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const dayVoteSubmit = useInGameDayVoteSubmit()
   const resolveNightRequest = useInGameResolveNight()
 
+  // 낮 투표 판정 버튼은 조작 막힘·판 끝이 아니고 낮 투표 단계일 때만 엶
   const isGameEnded = gameState?.phase === "ENDED"
   const dayVoteResolve = useDayVoteResolve({
     gameId,
@@ -77,6 +81,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
   const tribunalResolveRequest = useInGameTribunalVoteResolve()
 
+  // 밤 차례·요청 상태·연결을 모아 버튼 잠금 한 번에 계산 (utils/actionPanelLocks.js)
   const nightTurnRole = selectInGameNightTurnRole(gameState ?? null)
   const isNightTurnActor = isInGameNightTurnActor(nightTurnRole, myRole)
   const locks = computePanelLocks({
@@ -104,6 +109,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayVoteSubmit.submitDayVote(null)
   }
 
+  // 재판 판정 요청 (판정 중 막기는 판정 훅이 함)
   const resolveTribunalVote = () => {
     tribunalResolveRequest.resolveTribunalVote()
   }
@@ -170,6 +176,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     resolveTribunalVote,
     tribunalResolveStatus: tribunalResolveRequest.status,
     tribunalResolveError: tribunalResolveRequest.error,
+    // 재판 결과는 서버 상태 값이 있으면 그걸 먼저, 없으면 요청 응답 값
     tribunalResolveOutcome: gameState?.tribunal?.outcome ?? tribunalResolveRequest.outcome,
     tribunalResolveCounts: gameState?.tribunal?.counts ?? tribunalResolveRequest.counts,
     tribunalResolveExecutedUuid: gameState?.tribunal?.executedUuid ?? tribunalResolveRequest.executedUuid,

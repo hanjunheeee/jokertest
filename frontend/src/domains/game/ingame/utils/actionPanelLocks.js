@@ -54,6 +54,7 @@ export function computePanelLocks({
   const tribunalResolveLocked =
     interactionBlocked || tribunalResolveStatus !== "idle" || gameState?.tribunal?.resolved === true
 
+  // 재판 투표: 피고가 아니고 살아 있고 아직 안 냈을 때, 연결돼 있어야 함
   const tribunalVoteControlsEnabled =
     !interactionBlocked &&
     !isGameEnded &&
@@ -67,6 +68,7 @@ export function computePanelLocks({
     !tribunalResolveLocked &&
     connected
 
+  // 재판 판정 요청: 재판 중이고 잠기지 않았고 연결돼 있을 때
   const tribunalResolveControlsEnabled =
     !interactionBlocked &&
     !isGameEnded &&

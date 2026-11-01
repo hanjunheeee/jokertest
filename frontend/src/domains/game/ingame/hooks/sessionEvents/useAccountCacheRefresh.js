@@ -5,6 +5,7 @@ import { ACCOUNT_CACHE_SCOPES } from "../../../../user/utils/accountCacheRefresh
 import { onConnect } from "../../socket/connection.js"
 import { refreshCaches } from "./scope.js"
 
+// 소켓이 바뀌면 다시 붙임 (로그인 안 돼 있으면 refreshCaches가 막음)
 export function useAccountCacheRefresh(socket) {
   useEffect(() => {
     const refresh = () => refreshCaches(ACCOUNT_CACHE_SCOPES)
@@ -16,6 +17,7 @@ export function useAccountCacheRefresh(socket) {
       refresh()
     }
 
+    // window·document가 없는 곳에서도 안 터지게 하나씩 확인
     const offConnect = socket ? onConnect(socket, refresh) : null
     if (typeof window !== "undefined") window.addEventListener("focus", refresh)
     if (typeof document !== "undefined") document.addEventListener("visibilitychange", handleVisibility)

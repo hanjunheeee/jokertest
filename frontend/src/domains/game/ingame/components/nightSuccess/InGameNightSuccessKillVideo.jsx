@@ -1,4 +1,4 @@
-// 밤 성공 사망 영상: 합친 그림 캔버스와 숨긴 원본 영상, 막혔을 때 다시 재생·건너뛰기
+// 밤 성공 영상 창: 합친 그림 캔버스와 숨긴 원본 영상, 막히면 다시 재생·건너뛰기
 // 밤 성공 연출(InGameNightSuccessPresentation)이 영상 자료가 있을 때 띄움, 재생은 useNightSuccessKillVideo
 import { useNightSuccessKillVideo } from "../../hooks/useNightSuccessKillVideo.js"
 import {
@@ -13,6 +13,7 @@ import {
   INGAME_KILL_REVEAL_SKIP_LABEL,
 } from "../../constants/ingameKillReveal.js"
 
+// 이름은 Kill이지만 치료·조사·확인 영상도 여기서, 재생·끝 알림은 훅이 맡음
 export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
   const {
     videoRef, canvasRef, status, handleEnded, handleError, handleSkip, handleRetry,

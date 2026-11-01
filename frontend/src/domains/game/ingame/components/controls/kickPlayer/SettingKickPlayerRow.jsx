@@ -1,3 +1,5 @@
+// 추방 대상 한 줄: 프로필 그림·이름·추방 버튼
+// 추방 창 내용(SettingKickPlayerModalContent)이 사용
 import { PLAYER_ASSETS } from "../../../constants/controls/kickPlayer/ingameKickPlayerAssets.js"
 import {
   ACTION_BTN_CLASS,
@@ -14,6 +16,7 @@ import { THEME_TEXT_RENDER_CLASS } from "../../../../../../shared/constants/inga
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 고른 대상이면 버튼 글이 확인 중, 색 정보가 오면 이름에 색 입힘
 export default function SettingKickPlayerRow({
   name,
   profilePhotoSrc,

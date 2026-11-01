@@ -6,12 +6,15 @@ import {
   INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE,
 } from "./voteSubmitPatch.js"
 
+// 응답 기다리는 시간 (넘으면 시간 초과 문구)
 export const ACK_TIMEOUT_MS = 5000
 
+// 시간 초과·응답 없음·응답 모양 틀림 때 상태 조각
 const TIMEOUT_PATCH = { status: "idle", submittedVote: null, error: "요청 시간이 초과되었습니다." }
 const NO_ACK_PATCH = { status: "idle", submittedVote: null, error: "요청에 응답하지 않습니다. 다시 시도해주세요." }
 const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제출하지 못했습니다. 다시 시도해주세요." }
 
+// 컨트롤러 만들기 (상태는 안에 들고, 바뀔 때마다 onStateChange로 알림)
 export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {
   let state = INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE
   let submitting = false
@@ -19,11 +22,13 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
   let activeTimer = null
   let disposed = false
 
+  // 상태 바꾸고 알림 (버린 뒤엔 알리지 않음)
   const setState = (next) => {
     state = next
     if (!disposed) onStateChange?.(state)
   }
 
+  // 걸려 있는 시간 초과 타이머 끄기
   const clearActiveTimer = () => {
     if (activeTimer !== null) {
       clearTimeout(activeTimer)
@@ -36,6 +41,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
       return state
     },
 
+    // 투표 보내기: 버렸거나 보내는 중이거나 연결이 없으면 막기
     submit({ gameId, dayIndex, vote, defendantUuid, actorUuid }) {
       if (disposed) return
       if (submitting) return
@@ -50,9 +56,11 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
 
       setState({ ...state, status: "submitting", error: null })
 
+      // 버렸거나 더 새 요청이 있거나 소켓이 바뀌거나 끊겼으면 옛 요청
       const isSocketStale = () =>
         disposed || requestGeneration !== generation || requestSocket !== getSocket?.() || !requestSocket.connected
 
+      // 판·날짜·재판 단계·생존·피고·투표한 사람이 바뀌었으면 옛 요청
       const isContextStale = () => {
         const latest = getLatestContext?.() ?? {}
         if (latest.gameId !== gameId) return true
@@ -64,6 +72,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
         return false
       }
 
+      // 실패로 한 번만 정함 (옛 요청이면 무시)
       const settleFailure = (patch) => {
         if (settled) return
         if (isSocketStale()) return
@@ -74,6 +83,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
         setState(patch)
       }
 
+      // 성공으로 한 번만 정함 (응답의 판·날짜가 맞아야 함), 효과음 봉투가 있으면 알림
       const settleSuccess = (patch, ackGameId, ackDayIndex, sfxEvent) => {
         if (settled) return
         if (isSocketStale()) return
@@ -92,8 +102,10 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
         }
       }
 
+      // 시간 초과면 실패
       activeTimer = setTimeout(() => settleFailure(TIMEOUT_PATCH), timeoutMs)
 
+      // 응답 모양이 틀리면 실패 문구, 아니면 성공·실패대로 정함, 응답이 없으면 실패
       emitTribunalVote(requestSocket, gameId, dayIndex, vote)
         .then((ackResult) => {
           const patch = computeTribunalVoteAckPatch(ackResult)
@@ -110,6 +122,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
         .catch(() => settleFailure(NO_ACK_PATCH))
     },
 
+    // 판·연결이 바뀌면 요청 버리고 처음 상태로 되돌림
     invalidate(_reason) {
       if (disposed) return
       generation += 1
@@ -118,6 +131,7 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
       setState(INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE)
     },
 
+    // 훅이 내려갈 때: 요청 버리고 더는 알리지 않음
     dispose() {
       if (disposed) return
       generation += 1

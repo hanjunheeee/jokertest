@@ -17,6 +17,7 @@ import { createRoomHandlers } from "./sessionEvents/roomHandlers.js"
 import { useConnectSeq, useSelfDisconnect } from "./sessionEvents/useSessionConnection.js"
 import { useAccountCacheRefresh } from "./sessionEvents/useAccountCacheRefresh.js"
 
+// 판 진행 공개 사건 구독과 계정 캐시·내 연결 끊김 감시 붙이기
 export function useGameSessionSocketEvents() {
   const navigate = useNavigate()
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
@@ -39,6 +40,7 @@ export function useGameSessionSocketEvents() {
     })
   }, [socket, navigate, authUuid, identityGeneration, identityScopeVersion, connectSeq])
 
+  // 계정 캐시 새로 받기, 내 연결이 끊기면 판 정리
   useAccountCacheRefresh(socket)
   useSelfDisconnect(socket, gameId, navigate)
 }

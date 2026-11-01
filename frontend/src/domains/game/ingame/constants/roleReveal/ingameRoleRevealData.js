@@ -1,3 +1,7 @@
+// 역할별 보여 줄 이름·진영·설명
+// utils/roleReveal.js·utils/reduceInGameNightPrivateResult.js가 사용
+
+// 역할 → 이름·진영 글·설명
 const ROLE_REVEAL_DISPLAY = Object.freeze({
   JOKER: Object.freeze({
     name: "광대",
@@ -26,6 +30,7 @@ const ROLE_REVEAL_DISPLAY = Object.freeze({
   }),
 })
 
+// 역할 → 보여 줄 내용 (모르는 역할이면 null)
 export function getRoleRevealDisplay(role) {
   return ROLE_REVEAL_DISPLAY[role] ?? null
 }

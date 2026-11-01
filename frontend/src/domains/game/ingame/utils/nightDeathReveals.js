@@ -1,5 +1,5 @@
 // 밤 사망 공개 목록 다듬기와 사망 연출 줄 항목 만들기
-// 사망 연출 훅·낮 상태 조각이 사용
+// 사망 연출 훅(useInGameKillReveal)·스냅샷 낮 필드 검사가 사용
 
 // 서버가 보내는 사망 원인
 export const DEATH_SOURCES = Object.freeze([

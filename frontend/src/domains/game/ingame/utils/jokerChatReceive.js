@@ -1,5 +1,5 @@
 // 조커 채팅 받기: 모양 검사 통과하고 지금 판 것만 손잡이에 넘기기, 화면용 메시지로 바꾸기
-// 조커 채팅 세션 훅이 사용, 받기 등록은 socket/chat.js가 맡음
+// 조커·낮 채팅 세션 훅이 사용, 받기 등록은 socket/chat.js가 맡음
 import { onJokerChat } from "../socket/chat.js"
 import { sanitizeJokerChatText } from "./chatText.js"
 

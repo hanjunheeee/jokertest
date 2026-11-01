@@ -57,6 +57,7 @@ export function sendLeave(ctx) {
     && ctx.requestTokenRef.current === requestToken
     && isRequestScopeCurrent(requestScope))
 
+  // 보내다 터져도 못 보낸 것으로 봄
   let sent
   try {
     sent = buildLeave(ctx, requestToken, requestScope)()
@@ -64,6 +65,7 @@ export function sendLeave(ctx) {
     sent = false
   }
   if (sent) return true
+  // 그사이 새 시도가 시작됐거나 이미 끝났으면 건드리지 않음
   if (ctx.requestTokenRef.current !== requestToken || ctx.settledRef.current) return false
   ctx.pendingRef.current = false
   ctx.clearTimer()

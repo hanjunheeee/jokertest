@@ -1,3 +1,5 @@
+// 플레이어 카드 메뉴: 카드 위에 뜨는 투표·밤 행동·재판 버튼 묶음
+// 플레이어 보드(InGamePlayerBoard)가 사용, 항목은 useInGamePlayerCardMenu가 만듦
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
 import {
@@ -10,8 +12,10 @@ import {
 } from "../../constants/board/ingamePlayerCardOverlayLayout.js"
 import { INGAME_CARD_MENU_ITEM_KINDS } from "../../hooks/useInGamePlayerCardMenu.js"
 
+// 시험이 메뉴를 찾는 표시
 export const INGAME_PLAYER_CARD_MENU_ATTR = "data-ingame-player-card-menu"
 
+// 취소류·유죄는 취소 그림, 나머지는 확인 그림
 function resolveOverlayButtonAsset(kind) {
   if (
     kind === INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL
@@ -23,6 +27,7 @@ function resolveOverlayButtonAsset(kind) {
   return PLAYER_CARD_OVERLAY_ASSETS.confirmButton
 }
 
+// 그림 버튼 하나, 못 누를 땐 이유를 title로 보여 줌
 function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason = null, onClick }) {
   return (
     <button
@@ -41,8 +46,10 @@ function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason 
   )
 }
 
+// 보이는 항목만 버튼으로, 바깥 누름·Esc 닫기는 카드 메뉴 훅이 맡음
 export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
   const visibleItems = items.filter((item) => item.visible !== false)
+  // 낮 투표·밤 행동 항목이 있으면 따로 취소 버튼 안 붙임
   const hasSingleCardAction = visibleItems.some(
     (item) => item.kind === INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE
       || item.kind === INGAME_CARD_MENU_ITEM_KINDS.DAY_VOTE_CANCEL
@@ -50,6 +57,7 @@ export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
       || item.kind === INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL,
   )
 
+  // 메뉴 안 누름이 카드 누름(메뉴 다시 열기)으로 번지지 않게 막음
   return (
     <div
       ref={menuRef}

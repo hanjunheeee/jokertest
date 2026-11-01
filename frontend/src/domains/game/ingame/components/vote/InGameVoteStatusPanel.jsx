@@ -1,3 +1,5 @@
+// 투표 현황 창: 틀 그림·제목·닫기 버튼과 낮 투표 집계 내용
+// 인게임 화면이 사용, 여는 버튼은 구석 행동 패널의 투표 현황 버튼
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import { INGAME_VOTE_ASSETS } from "../../constants/vote/ingameVoteAssets.js"
@@ -18,7 +20,9 @@ import InGameVoteStatusContent from "./InGameVoteStatusContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
+// 뒤 막·닫기 버튼·Esc 모두 onClose, 집계 내용은 InGameVoteStatusContent
 export default function InGameVoteStatusPanel({ open, onClose }) {
+  // 열렸을 때만 Esc로 닫기 (닫는 소리 같이 냄)
   useEffect(() => {
     if (!open) return undefined
 
@@ -32,6 +36,7 @@ export default function InGameVoteStatusPanel({ open, onClose }) {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [open, onClose])
 
+  // 창 안 누름은 뒤 막 닫기로 번지지 않게 막음
   return (
     <AnimatePresence>
       {open ? (

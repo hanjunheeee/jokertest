@@ -1,6 +1,7 @@
 // 채팅 글 검사(금지 문자·빈 글·길이)와 검사 실패 문구
 // 게임·조커 채팅 세션 훅과 채팅 방송 검사가 사용
 
+// 글 길이 상한과 막는 글자(제어 문자·글 방향을 바꾸는 숨은 문자)
 const JOKER_CHAT_MAX_LENGTH = 150
 
 const FORBIDDEN_CHARS_PATTERN =
@@ -19,6 +20,7 @@ export function sanitizeJokerChatText(rawText) {
   return { ok: true, text: trimmed }
 }
 
+// 실패 코드별 문구와 모르는 코드용 기본 문구
 const SANITIZE_CODE_MESSAGES = {
   EMPTY_MESSAGE: "메시지를 입력해주세요.",
   MESSAGE_TOO_LONG: "메시지는 150자 이하로 입력해주세요.",

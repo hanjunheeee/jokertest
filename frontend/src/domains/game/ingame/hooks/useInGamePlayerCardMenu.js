@@ -1,5 +1,5 @@
 // 플레이어 카드 메뉴 훅 입구: 메뉴 열기·닫기·항목 고르기와 범위가 바뀌면 닫기
-// 플레이어 보드가 씀 (항목 만들기는 utils/cardMenu/, 고르기·제출 대기·바깥 닫기는 hooks/cardMenu/)
+// 플레이어 보드가 씀 (항목 만들기는 utils/playerCardMenu.js, 고르기·제출 대기·바깥 닫기는 hooks/cardMenu/)
 import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { InGameActionContext } from "../context/InGameActionContext.jsx"
 import { useInGamePlayerSessionContext } from "../components/InGamePlayerSessionContext.js"
@@ -15,6 +15,7 @@ import { selectItem } from "./cardMenu/selectItem.js"
 import { useMenuDismiss } from "./cardMenu/useMenuDismiss.js"
 import { usePendingSubmit } from "./cardMenu/usePendingSubmit.js"
 
+// 메뉴 항목 상수·항목 만들기는 메뉴 컴포넌트·시험이 이 경로로 가져감
 export {
   INGAME_CARD_MENU_DAY_VOTE_CANCEL_LABEL,
   INGAME_CARD_MENU_DAY_VOTE_LABEL,
@@ -24,6 +25,7 @@ export {
 } from "../constants/board/playerCardMenu.js"
 export { buildInGamePlayerCardMenuItems }
 
+// 카드 메뉴 열림 상태와 열기·닫기·항목 함수 (행동 컨텍스트 값으로 항목을 만듦)
 export function useInGamePlayerCardMenu() {
   const ctx = useContext(InGameActionContext)
   const { localPlayerId } = useInGamePlayerSessionContext()
@@ -35,6 +37,7 @@ export function useInGamePlayerCardMenu() {
     subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
 
+  // 열린 카드, 제출 대기가 바뀌면 다시 그리기용 틱
   const [openPlayerId, setOpenPlayerId] = useState(null)
   const [, setPendingTick] = useState(0)
 
@@ -59,6 +62,7 @@ export function useInGamePlayerCardMenu() {
   localPlayerIdRef.current = localPlayerId
   openPlayerIdRef.current = openPlayerId
 
+  // 컨텍스트에서 읽은 지금 단계 값 (아래 범위 키에 씀)
   const gameState = ctx?.gameState ?? null
   const phase = gameState?.phase ?? null
   const dayPhase = ctx?.dayPhase ?? null
@@ -86,6 +90,7 @@ export function useInGamePlayerCardMenu() {
   // 메뉴 열기 (항목이 없으면 안 열고, 같은 카드를 다시 누르면 닫음)
   const openMenu = useCallback((playerId) => {
     const live = latestContextRef.current
+    // 컨텍스트 없음·잘못된 id·조작 막힘·판 끝이면 안 엶
     if (!live) return
     if (typeof playerId !== "string" || playerId.length === 0) return
     if (live.interactionBlocked) return
@@ -101,6 +106,7 @@ export function useInGamePlayerCardMenu() {
     setOpenPlayerId(playerId)
   }, [cancelPending, closeMenu])
 
+  // 항목 고르기 (본체는 hooks/cardMenu/selectItem.js, 제출 대기 생기면 다시 그림)
   const runSelect = useCallback((targetId, kind, generation) => {
     selectItem(r, {
       targetId,
@@ -131,8 +137,10 @@ export function useInGamePlayerCardMenu() {
     anchorsRef.current.set(playerId, node)
   }, [])
 
+  // 이 카드 메뉴가 열렸는지
   const isOpen = useCallback((playerId) => openPlayerId === playerId, [openPlayerId])
 
+  // 화면 빠지면 세대 올려 남은 고르기·제출 대기 무효
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -156,6 +164,7 @@ export function useInGamePlayerCardMenu() {
     closeMenu()
   }, [scopeKey, closeMenu])
 
+  // 바깥 누름·Escape면 닫기, 고른 대상이 컨텍스트에 들어오면 제출 (제출 대기는 맨 마지막 effect)
   useMenuDismiss(openPlayerId, { menuRef, anchorsRef, closeMenu })
   usePendingSubmit(r, { cancelPending, closeMenu })
 

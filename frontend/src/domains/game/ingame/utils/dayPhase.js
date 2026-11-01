@@ -14,7 +14,7 @@ export function resolveInGameDayPhase(gameState) {
   return INGAME_DAY_PHASES.DISCUSSION
 }
 
-// 낮 투표 시작 알림 검사: 지금 판·날짜·라운드가 맞을 때만 돌려줌
+// 낮 투표 시작 알림 검사: 지금 판·날짜이고 투표 단계·회차 모양이 맞을 때만 돌려줌
 export function parseDayPhaseChangedPayload({ payload, gameId, dayIndex }) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null
 

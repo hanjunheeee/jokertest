@@ -1,5 +1,5 @@
 // 스냅샷 액션 묶음: 판이 있을 때 반영·빈 스토어에서 처음 채우기
-// 입구 파일이 create 할 때 펼쳐 씀, 스냅샷 동기화 훅이 응답과 수신 증거를 넘김
+// 입구가 create 때 펼쳐 씀, 스냅샷 묻기(request.js)·카드 추방 훅이 응답을 넘김
 import {
   CLEARED_NIGHT_PRIVATE_RESULT,
   EMPTY_NIGHT_SUCCESS_QUEUE,
@@ -22,6 +22,7 @@ export const snapshotActions = (set) => ({
   // 수신 범위는 신원 범위를 맞추기 전·후로 나눠 읽으므로 부르는 자리를 바꾸지 않음
   applySessionSnapshot: (response, receiptContext = null) =>
     commitWithReceipt(receiptContext, set, (current) => {
+      // 바뀐 게 없거나 남의 소속을 내 것이라 하면 그대로
       const patch = applySessionSnapshotPure(current, response)
       if (patch === current) return current
       if (claimsForeignMembership(current, patch.state)) return current
@@ -31,11 +32,13 @@ export const snapshotActions = (set) => ({
       const followUp = () => buildFollowUpScope(receiptContext, gameId, patch.state)
       const willClear = entersNewNight(current.state, patch.state)
 
+      // 새 밤으로 넘어가면 옛 장부는 안 보고 복구 계획을 세움
       const recovery = planRecovery(response, candidate, followUp(), willClear ? [] : records.keys())
       if (!recovery.ok) return current
       const waitPlan = planWaitRestore(response, candidate, followUp(), current.nightPresentationWait)
       if (!waitPlan.ok) return current
 
+      // 여기부터 확정: 순번 올리고 신원 범위 맞춘 뒤 복구·대기 조각을 붙임
       const snapshotSeq = current.snapshotSeq + 1
       adoptIdentityScope(gameId, patch.state)
       const nightEntryPatch = clearOnNightEntry(current.state, patch.state)
@@ -68,6 +71,7 @@ export const snapshotActions = (set) => ({
       const waitPlan = planWaitRestore(response, candidate, followUp(), null)
       if (!waitPlan.ok) return current
 
+      // 여기부터 확정: 옛 개인 결과·대기열은 비우고 복구 항목만 새로 넣음
       const snapshotSeq = current.snapshotSeq + 1
       adoptIdentityScope(gameId, patch.state)
       return {

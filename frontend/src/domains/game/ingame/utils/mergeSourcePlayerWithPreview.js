@@ -6,6 +6,7 @@ import { resolveAccountCardFrameSrc } from "./pickInGamePlayerFrame.js"
 
 // 실제 참가자 값으로 미리보기 칸 덮어쓰기 (계정 사진·카드 테두리가 있으면 그걸 씀)
 export function mergeSourcePlayerWithPreview(player, preview) {
+  // 상태: 끊김을 먼저 보고, 그다음 생존
   const status = !player.connected
     ? INGAME_PLAYER_STATUS.DISCONNECTED
     : player.alive
@@ -51,6 +52,7 @@ export function mergeSourcePlayerWithPreview(player, preview) {
   }
 }
 
+// 계정 사진 경로 재료 (사각형 꼬리가 안 붙는 이름이 따로 있음)
 const PHOTO_BASE = "/shopItem/player-profile/ingame/"
 const ITEM_ID_PREFIX = "player-profile-"
 

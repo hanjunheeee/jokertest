@@ -27,6 +27,7 @@ export function usePendingSubmit(r, { cancelPending, closeMenu }) {
     const selected = pending.kind === KINDS.DAY_VOTE ? live.selectedDayVoteTargetId : live.selectedNightTargetId
     if (selected !== pending.targetId) return
 
+    // 소비한 것으로 적고 한 번만 보낸 뒤 닫음
     r.consumedRef.current = pending.requestId
     r.pendingRef.current = null
     if (pending.kind === KINDS.DAY_VOTE) live.submitDayVote()

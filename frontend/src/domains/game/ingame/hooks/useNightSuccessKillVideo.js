@@ -1,5 +1,5 @@
 // 밤 성공 사망 영상 재생 훅: 재생·감시 타이머·프레임 합치기·소리 맞추기, 끝나면 결과를 한 번만 알림
-// 밤 성공 사망 영상(components/nightSuccess/InGameNightSuccessKillVideo)이 사용 (재생 기록 하나를 모든 단계가 같이 고쳐 써서 한 파일에 둠)
+// 밤 성공 사망 영상 컴포넌트(InGameNightSuccessKillVideo)가 사용 (재생 기록 하나를 모든 단계가 같이 고쳐 써서 한 파일에 둠)
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getSfxMix, subscribeSfxMix } from "../../../../shared/hooks/useSfxRuntime.js"
 import {
@@ -11,10 +11,12 @@ import {
 } from "../utils/ingameStackedAlphaPlayback.js"
 import { INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS } from "../constants/ingameKillReveal.js"
 
+// 영상·캔버스 ref, 재생 상태와 끝·오류·건너뛰기·다시 재생 손잡이
 export function useNightSuccessKillVideo({ eventId, src, finish }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const [status, setStatus] = useState("loading")
+  // 지금 재생 기록 (옛 기록의 콜백은 이것과 비교해 버림)
   const attemptRef = useRef(null)
 
   // 재생 한 번에 결과는 한 번만 (타이머·프레임 반복도 같이 끔)
@@ -27,6 +29,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
     finish(outcome)
   }, [finish])
 
+  // 프레임 하나 합쳐 그리기 (못 그리면 오류로 끝)
   const composeFrame = useCallback((lifetime) => {
     drawStackedFrame(lifetime, () => settleOnce(lifetime, "ERROR", "error"))
   }, [settleOnce])
@@ -51,7 +54,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
     }
   }, [composeFrame])
 
-  // 재생 시도: 감시 타이머를 걸고 재생, 자동 재생이 막히면 소리 끄고 한 번 더, 그래도 막히면 다시 재생 화면
+  // 재생 시도: 감시 타이머 걸고 소리 맞춰 재생 (시도마다 세대 올려 옛 시도 응답 버림)
   const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
     if (lifetime.settled) return
 
@@ -72,9 +75,11 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       setStatus((prev) => (prev === "loading" || prev === "playing" ? "watchdog" : prev))
     }, INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS)
 
+    // 영상 노드가 없으면 감시 타이머에 맡김
     const video = videoRef.current
     if (!video) return
 
+    // 효과음 설정대로 소리 맞춤 (한 번 소리 끈 뒤엔 계속 끔, 못 맞추면 오류로 끝)
     const mix = getSfxMix()
     const forceMuted = lifetime.silentLatch || mix.muted
     if (!applyMixToVideo(video, mix, forceMuted)) {
@@ -83,6 +88,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
     }
     const attemptWasMuted = forceMuted
 
+    // 재생 실패: 자동 재생 막힘이면 소리 끄고 한 번 더, 또 막히면 다시 재생 화면, 그 밖엔 오류
     const reportFailure = (err) => {
       if (!isCurrentAttempt()) return
       cancelPlaybackWatchdog(lifetime)
@@ -98,6 +104,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       settleOnce(lifetime, "ERROR", "error")
     }
 
+    // play가 바로 던져도 실패로 봄, 재생이 시작되면 playing으로
     let playResult
     try {
       playResult = video.play?.()
@@ -133,6 +140,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       }
     }
 
+    // 보이는 캔버스·작업 캔버스 준비 뒤 재생과 프레임 반복 시작 (캔버스 못 얻으면 오류로 끝)
     let scheduled = true
     queueMicrotask(() => {
       if (!scheduled) return
@@ -157,6 +165,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       if (!lifetime.settled) scheduleFrame(lifetime)
     })
 
+    // 화면 빠지거나 사건 바뀌면 이 기록 끝내고 타이머·프레임·영상 멈춤
     return () => {
       scheduled = false
       lifetime.alive = false
@@ -184,6 +193,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
     return unsubscribe
   }, [settleOnce])
 
+  // 영상 끝·오류·건너뛰기는 결과로 끝냄, 다시 재생은 같은 기록으로 한 번 더 (끝났으면 무시)
   const handleEnded = () => settleOnce(attemptRef.current, "COMPLETED")
   const handleError = () => settleOnce(attemptRef.current, "ERROR", "error")
   const handleSkip = () => settleOnce(attemptRef.current, "SKIPPED")

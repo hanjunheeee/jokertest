@@ -1,5 +1,5 @@
 // 판 진행 이벤트 손잡이 (낮·재판·사망·참여): 받은 사건을 파싱해 스토어에 넣고 효과음
-// 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦
+// 판 진행 이벤트 훅(useGameSessionSocketEvents)이 구독 붙일 때마다 새로 만듦
 import { useInGameStore } from "../../store/ingameStore.js"
 import { parseDayVoteResolvedPayload } from "../../utils/dayVoteResolve.js"
 import { parseDayPhaseChangedPayload } from "../../utils/dayPhase.js"
@@ -37,6 +37,7 @@ export function createDayHandlers(registered) {
       dayIndex: current.state.dayIndex,
     })
     if (!parsed) return
+    // 스토어는 피고를 defendantUuid로 받음
     useInGameStore
       .getState()
       .applyDayVoteResolvedToPhase(current.gameId, parsed.dayIndex, {

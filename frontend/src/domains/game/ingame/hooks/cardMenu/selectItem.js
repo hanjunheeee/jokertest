@@ -6,6 +6,7 @@ import { findCardMenuItem } from "../../utils/playerCardMenu.js"
 import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../../utils/dayPhase.js"
 import { readMenuScope } from "./liveScope.js"
 
+// 항목 종류 묶기: 낮 투표류·밤 행동류 (둘 다 아니면 재판 투표)
 const isDayKind = (kind) => kind === KINDS.DAY_VOTE || kind === KINDS.DAY_VOTE_CANCEL
 const isNightKind = (kind) => kind === KINDS.NIGHT_ACTION || kind === KINDS.NIGHT_ACTION_CANCEL
 
@@ -46,6 +47,7 @@ export function selectItem(r, { targetId, kind, generation, closeMenu, bumpPendi
     if (useInGameStore.getState().state?.tribunal?.defendantUuid !== targetId) return
   }
 
+  // 한 번 고르면 메뉴 닫거나 대기 버릴 때까지 잠금 (두 번 누르기 막기)
   r.lockRef.current = true
 
   // 재판 투표·투표 취소·밤 행동 취소: 바로 보내고 닫음

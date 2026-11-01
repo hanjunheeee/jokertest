@@ -1,3 +1,5 @@
+// 채팅 내용 틀: 틀 그림·메시지 목록·입력칸·보내기·상태 줄을 한 판에 배치
+// 채팅 틀·크게 보기 창·재판 연출 채팅이 사용, 모양 차이는 variant로 나눔
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   INGAME_CHAT_ASSETS,
@@ -21,6 +23,7 @@ import InGameChatStatusLine from "./InGameChatStatusLine.jsx"
 import { InGameChatVariantContext } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 틀 바탕·틀 그림 모양 (보드 모양만 눌러서 크게 보기라 손가락 커서)
 const CHAT_ROOT_CLASS =
   "group relative w-full [container-type:inline-size]"
 
@@ -30,6 +33,7 @@ const CHAT_ROOT_BOARD_CLASS =
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
 
+// 채팅 한 판 그리기, variant는 컨텍스트로 아래 부품에 내려 줌
 export default function InGameChatContent({
   variant = "board",
   draft,
@@ -43,15 +47,18 @@ export default function InGameChatContent({
 }) {
   const [layoutReady, setLayoutReady] = useState(false)
 
+  // 입력칸 너비, 메시지 줄 최대 너비 기준으로 씀
   const [textFieldWidth, setTextFieldWidth] = useState(0)
   const inputWrapRef = useRef(null)
   const isBoard = variant === "board"
 
+  // 첫 프레임 뒤에 보이게 해서 자리 잡기 전 깜빡임 막기
   useEffect(() => {
     const frame = requestAnimationFrame(() => setLayoutReady(true))
     return () => cancelAnimationFrame(frame)
   }, [])
 
+  // 입력칸 너비 재기, 틀·창 크기 바뀔 때마다 다시 잼
   useLayoutEffect(() => {
     const inputWrap = inputWrapRef.current
     if (!inputWrap) return undefined
@@ -73,16 +80,19 @@ export default function InGameChatContent({
     }
   }, [layoutReady])
 
+  // 보드 모양에서 빈 곳 누르면 크게 보기, 목록·입력 줄 누름은 제외
   const handleRootClick = (event) => {
     if (!isBoard || !onOpenCloseup) return
     if (event.target.closest("[data-chat-interactive]")) return
     onOpenCloseup()
   }
 
+  // 보내기 (Enter·버튼 같이 씀)
   const handleSend = () => {
     onSend()
   }
 
+  // 글자 수 자르기는 truncateDraftOnInput일 때만 (지금 부르는 쪽은 전부 끔)
   return (
     <InGameChatVariantContext.Provider value={variant}>
       <div

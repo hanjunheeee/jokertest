@@ -8,10 +8,12 @@ import { isPublicProgress, normalizeGameState, pickHostUuid } from "../../utils/
 import { clearQueue } from "./nightSuccessRecords.js"
 import { isConfirmedWin } from "./terminalScope.js"
 
+// 사건 모양 검사용 (배열·null 빼고 객체만)
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
 export const sessionActions = (set) => ({
-  // 판 시작 정보 넣기 (다른 판으로 바뀌면 밤 개인 결과·성공 연출·연출 대기를 비움)
+  // 판 시작 정보 넣기, 매칭 방의 판 시작 사건이 부름
+  // 다른 판으로 바뀌면 밤 개인 결과·성공 연출·연출 대기를 비움
   setGamePayload: ({ gameId, state, hostUuid }) =>
     set((current) => {
       const nextGameId = gameId ?? state?.id ?? null
@@ -30,6 +32,7 @@ export const sessionActions = (set) => ({
   // 참여 여부 바뀜 반영 (더 새 버전이고, 지금 명단과 정확히 같은 사람들일 때만)
   applyParticipationChanged: (payload) =>
     set((current) => {
+      // 모양·지금 판·더 새 참여 버전인지, 명단이 비어 오면 거절
       if (!isPlainObject(payload)) return current
       if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return current
       if (!current.gameId || !current.state) return current
@@ -79,6 +82,7 @@ export const sessionActions = (set) => ({
   // 본인 제출 상태 반영 (참여 버전이 뒤처지지 않고, 진행 순번이 더 새 것일 때만)
   applySelfProgress: (payload) =>
     set((current) => {
+      // 모양·지금 판·참여 버전이 뒤처지지 않는지
       if (!isPlainObject(payload)) return current
       if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return current
       if (!current.gameId || !current.state) return current
@@ -112,7 +116,7 @@ export const sessionActions = (set) => ({
       }
     }),
 
-  // 지금 범위에서 확정되지 않은 승패 결과는 지움 (재결속 실패 때 옛 계정 결과로 이동 막기)
+  // 지금 범위에서 확정 안 된 승패 결과는 지움 (다시 묶기 실패 때 옛 계정 결과로 이동 막기)
   invalidateUnconfirmedTerminalResult: (currentScope = null) =>
     set((current) => {
       if (!current.gameId || !current.state) return current
@@ -122,6 +126,7 @@ export const sessionActions = (set) => ({
       return { state: { ...current.state, winResult: null } }
     }),
 
+  // 오류 넣기 (지금은 시험만 부름)
   setGameError: (error) => set({ error }),
 
   // 판 정보 전부 비우기

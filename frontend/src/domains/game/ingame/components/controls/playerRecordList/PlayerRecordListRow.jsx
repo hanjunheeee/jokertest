@@ -1,3 +1,5 @@
+// 전적 목록 한 줄: 프로필 그림·이름·판 수와 승률
+// 전적 목록 내용(PlayerRecordListContent)이 사용
 import { formatPlayerRecordStats } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
   INFO_CLASS,
@@ -13,6 +15,7 @@ import { THEME_TEXT_RENDER_CLASS } from "../../../../../../shared/constants/inga
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 
+// 이름 색은 플레이어 세션 문맥에서 받음 (id 없으면 기본색)
 export default function PlayerRecordListRow({
   playerId = null,
   name,
@@ -27,6 +30,7 @@ export default function PlayerRecordListRow({
   const nameClass =
     `${NAME_CLASS} ${themeStyles ? THEME_TEXT_RENDER_CLASS : ""}`.trim()
 
+  // 전적 글은 formatPlayerRecordStats가 만듦 (숫자 없으면 조회 실패)
   return (
     <li className={ROW_CLASS}>
       <div className={ROW_INNER_CLASS}>

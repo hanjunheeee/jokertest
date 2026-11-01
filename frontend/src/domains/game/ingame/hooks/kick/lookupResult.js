@@ -26,7 +26,9 @@ function awaitVerification(ctx, makeGuard) {
     .catch(() => {})
 }
 
+// 지난 요청 영수증(bootEpoch·requestId)으로 결과 묻기
 export function lookupKickResult(ctx) {
+  // 영수증 없으면 물을 게 없음, 연결 없으면 실패
   const receipt = ctx.lastReceiptRef.current
   if (!receipt) return
   const socket = getSocket()
@@ -35,6 +37,7 @@ export function lookupKickResult(ctx) {
     ctx.setErrorCode("NOT_CONNECTED")
     return
   }
+  // 요청 세대 올리고 묻는 때 값으로 응답 확인 함수 만듦 (소속 다시 확인 때도 같은 값)
   const generation = ctx.generationRef.current
   ctx.requestGenerationRef.current += 1
   const requestGeneration = ctx.requestGenerationRef.current
@@ -50,6 +53,7 @@ export function lookupKickResult(ctx) {
   const isStillCurrent = makeGuard()
 
   emitKickResult(socket, receipt.bootEpoch, receipt.requestId, (response) => {
+    // 그사이 화면·세대·계정·소켓·범위가 바뀌었으면 버림
     if (!isStillCurrent()) return
 
     // 서버가 아직 결정 못 했으면 실패로만 두고 잠금은 그대로
@@ -60,6 +64,7 @@ export function lookupKickResult(ctx) {
       return
     }
 
+    // 결정됐으면 잠금 풀고, 추방됨이면 성공
     ctx.sendLockRef.current = false
     ctx.setPendingTarget(null)
     if (response && response.ok === true && response.status === "KICKED") {
@@ -68,6 +73,7 @@ export function lookupKickResult(ctx) {
       ctx.settleVerification()
       return
     }
+    // 서버도 모르면 결과 모름으로 두고 소속 확인 함수가 있으면 다시 확인
     if (response && response.ok === true && response.status === "UNKNOWN") {
       ctx.applyStatus(KICK_REQUEST_STATUS.UNKNOWN)
       ctx.setErrorCode(null)
@@ -75,6 +81,7 @@ export function lookupKickResult(ctx) {
       awaitVerification(ctx, makeGuard)
       return
     }
+    // 그 밖엔 실패로 확정
     ctx.applyStatus(KICK_REQUEST_STATUS.FAILED)
     ctx.setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
     ctx.settleVerification()

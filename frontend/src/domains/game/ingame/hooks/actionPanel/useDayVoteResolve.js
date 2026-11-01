@@ -17,7 +17,8 @@ import {
 import { onDisconnect } from "../../socket/connection.js"
 import { emitResolveDayVote, onDayVoteResolved } from "../../socket/day.js"
 
-// open: 판정 버튼을 열 수 있는 단계인지 (조작 막힘·판 끝·낮 투표 단계는 부르는 쪽이 계산)
+// 낮 투표 판정 상태 훅
+// open = 판정 버튼 열 단계인지 (조작 막힘·판 끝·낮 투표는 부르는 쪽이 계산)
 export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   const [status, setStatus] = useState("idle")
@@ -27,6 +28,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
   const versionRef = useRef(0)
   const mountedRef = useRef(true)
 
+  // 내려간 뒤 상태 바꾸기 막기용 표시
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -67,6 +69,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
       const parsed = parseDayVoteResolvedPayload({ payload, gameId, dayIndex })
       if (!parsed) return
       if ((parsed.round ?? 1) !== dayVoteRound) return
+      // 내 요청이 진행 중이어도 방송 결과가 우선, 재투표면 다시 누를 수 있게 idle로 둠
       versionRef.current += 1
       ackingRef.current = false
       if (!mountedRef.current) return
@@ -81,6 +84,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
 
   // 판정 요청 (응답이 늦게 와도 판·날짜·회차·연결이 그대로일 때만 반영)
   const resolve = () => {
+    // 못 누르는 때·보내는 중이면 막기, 연결 없으면 오류 문구
     if (!controlsEnabled) return
     if (ackingRef.current || status !== "idle") return
     const requestSocket = getSocket()
@@ -90,6 +94,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
     }
     if (!gameId || !Number.isInteger(dayIndex)) return
 
+    // 요청 때 세대·판·날짜·회차를 잡아 둠
     versionRef.current += 1
     const requestVersion = versionRef.current
     const requestGameId = gameId
@@ -100,6 +105,7 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
     setStatus("resolving")
     setError(null)
 
+    // 화면·세대·소켓·연결·판·날짜·회차 중 하나라도 바뀌었으면 옛 응답
     const isStale = () =>
       !mountedRef.current ||
       requestVersion !== versionRef.current ||
@@ -117,12 +123,14 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
         setError(patch.error)
         setResolution(patch.resolution)
       })
+      // 응답 없음(시간 초과 포함)이면 다시 누를 수 있게 둠
       .catch(() => {
         if (!isStale()) {
           setStatus("idle")
           setError(NO_ACK_MSG)
         }
       })
+      // 그사이 새 세대가 안 생겼을 때만 보내는 중 표시 풂
       .finally(() => {
         if (requestVersion === versionRef.current) {
           ackingRef.current = false

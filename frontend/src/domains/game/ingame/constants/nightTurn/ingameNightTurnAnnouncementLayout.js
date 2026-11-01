@@ -1,3 +1,7 @@
+// 밤 차례 안내 창 모양: 덮개·판·글·닫기 버튼
+// 밤 차례 안내 창(InGameNightTurnAnnouncementOverlay)이 사용
+
+// 덮개와 가운데 판
 export const BACKDROP_CLASS =
   "fixed inset-0 z-[60] cursor-default border-0 bg-black/70 p-0"
 
@@ -6,6 +10,7 @@ export const PANEL_WRAP_CLASS =
 
 export const PANEL_CLASS = "pointer-events-auto relative"
 
+// 안내 글·작은 글·닫기 버튼
 export const MSG_CLASS =
   "font-subheading text-[clamp(1.1rem,3.2vw,1.9rem)] font-bold tracking-wide text-[#3a1a0c]"
 

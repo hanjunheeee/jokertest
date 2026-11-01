@@ -1,3 +1,5 @@
+// 판 화면 왼쪽 옆 창 틀: 뒤 덮개·틀 그림·닫기 버튼·안쪽 여백
+// 설정 창(SettingPanel)·전적 목록 창(PlayerRecordListPanel)이 사용
 import { AnimatePresence, motion } from "framer-motion"
 import { PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
 import {
@@ -11,6 +13,7 @@ import {
 } from "../../constants/controls/ingameSidePanelLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 열려 있을 때만 그림, 나타나고 사라지는 움직임은 AnimatePresence가 맡음
 export default function SidePanel({
   open,
   onClose,
@@ -18,6 +21,7 @@ export default function SidePanel({
   closeAriaLabel = ariaLabel,
   children,
 }) {
+  // 덮개·닫기 버튼 누르면 닫기, 창 안 클릭은 바깥으로 안 번지게 막기
   return (
     <AnimatePresence>
       {open ? (

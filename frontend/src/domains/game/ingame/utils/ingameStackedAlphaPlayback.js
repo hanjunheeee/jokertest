@@ -1,5 +1,5 @@
-// 위아래로 쌓인 투명 영상 재생 도우미: 감시 타이머·프레임 반복 끄기, 한 장 합쳐 그리기, 소리 맞추기
-// 쌓인 투명 영상(InGameStackedAlphaVideo)·밤 성공 사망 영상 훅이 사용 (lifetime = 재생 한 번의 기록)
+// 위아래로 쌓은 투명 영상 재생 도우미: 타이머·프레임 끄기, 합쳐 그리기, 소리 맞추기
+// 밤 성공 사망 영상 훅(useNightSuccessKillVideo)이 사용 (lifetime = 재생 한 번의 기록)
 
 // 재생 감시 타이머 끄기
 export function cancelPlaybackWatchdog(lifetime) {
@@ -93,6 +93,7 @@ export function applyMixToVideo(video, mix, forceMuted) {
 
 // 색 픽셀에 가림 픽셀 밝기 평균을 투명도로 넣어 한 장으로 합침
 export function composeStackedAlpha(colorPixels, maskPixels) {
+  // 두 배열이 있고 길이가 같고 4의 배수여야 함 (아니면 던짐)
   if (colorPixels === null || maskPixels === null || colorPixels === undefined || maskPixels === undefined) {
     throw new TypeError("composeStackedAlpha: colorPixels와 maskPixels는 모두 있어야 한다")
   }

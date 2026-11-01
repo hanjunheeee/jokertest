@@ -1,6 +1,7 @@
 // 밤 성공 연출 고정 값: 영상 캔버스 모양, 자료 대기 문구, 최종 결과 문구
 // 밤 성공 연출 화면(components/nightSuccess/, InGameNightSuccessPresentation)이 사용
 
+// 역할 영상 캔버스 모양
 export const ROLE_VIDEO_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
 
@@ -16,6 +17,7 @@ export function buildPendingAssetLabel(type) {
   return "연출 자료 대기 중입니다."
 }
 
+// 최종 생존·사망 글
 export function buildFinalStatusLabel(alive) {
   return alive ? "최종 결과, 생존했습니다." : "최종 결과, 사망했습니다."
 }

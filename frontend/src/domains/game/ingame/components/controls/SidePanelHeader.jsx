@@ -1,3 +1,5 @@
+// 옆 창 머리: 제목 판 그림 위 제목과 그 아래 설명 한 줄
+// 설정 창 내용(SettingPanelContent)·전적 목록 내용이 사용
 import { PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
 import {
   HEADER_PLATE_CLASS,
@@ -7,6 +9,7 @@ import {
 } from "../../constants/controls/ingameSidePanelLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 제목은 판 그림 위에 겹쳐 그림
 export default function SidePanelHeader({ title, subtitle }) {
   return (
     <header className={HEADER_WRAP_CLASS}>

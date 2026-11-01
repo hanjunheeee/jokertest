@@ -1,5 +1,5 @@
 // 스냅샷 묻기 한 번의 판단 묶음: 옛 응답인지, 다시 묶기 기다림 풀기, 다시 묻기 예약
-// 스냅샷 묻기(request.js)가 시도마다 만듦 (ctx = 훅 effect의 값·ref 묶음, 셋 다 묻던 때 잡은 값을 같이 써서 한 파일에 둠)
+// 스냅샷 묻기(request.js)가 시도마다 만듦, 셋 다 묻던 때 잡은 값을 같이 써서 한 파일에 둠
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../../auth/store/auth.store.js"
 import {
@@ -12,6 +12,7 @@ import { isStaleSessionSnapshotAckResponse } from "../../utils/staleAck.js"
 import { hasNightObservationChanged } from "../../utils/snapshot/nightObservation.js"
 import { getInGameSnapshotRebindPending, setIdentityRebindPending } from "./rebindPending.js"
 
+// 다시 묻기 간격·한 세대 최대 횟수
 const SNAPSHOT_RETRY_DELAY_MS = 250
 const SNAPSHOT_MAX_ATTEMPTS = 20
 
@@ -33,6 +34,7 @@ function readCurrentAuthScope() {
 }
 
 // 묻는 때의 값을 잡아 두고, 응답 때 비교·정리할 함수들을 돌려줌
+// ctx = 훅 effect의 값·ref 묶음
 export function openAttempt(ctx, { requestEpochVersion, attemptBudget, retry }) {
   const requestSocket = ctx.socket
   const requestGameId = ctx.gameId
@@ -45,6 +47,7 @@ export function openAttempt(ctx, { requestEpochVersion, attemptBudget, retry }) 
   })
   const observationsAtRequest = new Map(ctx.nightObservationsRef.current)
 
+  // 묻는 사이 그 밤 사건을 따로 받았으면 응답이 뒤처졌을 수 있음
   const hasConflictingNightObservation = (response) =>
     hasNightObservationChanged(ctx.nightObservationsRef.current, observationsAtRequest, response, requestGameId)
 
@@ -55,6 +58,7 @@ export function openAttempt(ctx, { requestEpochVersion, attemptBudget, retry }) 
     ctx.epochVersionRef.current === requestEpochVersion
     && isSameReceiptScope(receiptContext, scopeAtDecision)
 
+  // 반영했으면 기다림만 풂
   const finishRebindApplied = (scopeAtDecision) => {
     if (!ownsCurrentScope(scopeAtDecision)) return
     setIdentityRebindPending(false)

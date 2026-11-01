@@ -39,6 +39,7 @@ const SELECTION_SYNC_KEYS = new Set([
   "End",
 ])
 
+// 입력칸 본체, ref로는 바깥 틀 div를 내줌 (너비 재기용)
 const InGameChatInput = forwardRef(function InGameChatInput(
   { value, onChange, onSend, className = "", truncateDraftOnInput = true },
   ref,
@@ -66,10 +67,12 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   const useCenteredFirstLineViewport =
     hasText && isVisualMultiLine && !showLinePeek && caretVisualLineIndex === 0
 
+  // 커서 옮김·고름 뒤 다음 프레임에 줄 상태 다시 잼
   const handleSelectionChange = () => {
     requestAnimationFrame(syncViewport)
   }
 
+  // Enter는 보내기, Shift+Enter·한글 조합 중이면 그대로 둠
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
@@ -82,6 +85,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     }
   }
 
+  // truncateDraftOnInput면 글자 수 자르고, 바깥에 알린 뒤 줄 상태 다시 잼
   const handleChange = (event) => {
     const next = truncateDraftOnInput
       ? event.target.value.slice(0, INPUT_MAX_LENGTH)
@@ -93,6 +97,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     requestAnimationFrame(syncViewport)
   }
 
+  // 마지막 줄 볼 때만 윗줄 살짝 비치게 가림, 아니면 한 줄 모양
   const wrapClass = [
     INPUT_VIEWPORT_WRAP_BASE_CLASS,
     viewportFixedHeightClass,
@@ -111,6 +116,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
 
   const textareaFontSizeStyle = { fontSize: getInGameChatScaledFontSize(variant) }
 
+  // 첫 줄이거나 한 줄이면 가운데 한 줄 모양, 그 밖은 여러 줄 모양
   const textareaClass = [
     inputClass,
     hasText
@@ -120,6 +126,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
       : viewportSinglelineClass,
   ].join(" ")
 
+  // 안내 글은 따로 얹은 span, 틀 아무 데나 눌러도 입력칸에 커서
   return (
     <div
       ref={wrapRef}

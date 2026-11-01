@@ -1,7 +1,8 @@
 // 카드 메뉴 닫기 훅: 메뉴·카드 바깥을 누르거나 Escape면 닫음
-// 카드 메뉴 훅(useInGamePlayerCardMenu)이 메뉴가 열려 있을 때만 붙임
+// 카드 메뉴 훅(useInGamePlayerCardMenu)이 사용 (메뉴가 열린 동안만 문서에 붙음)
 import { useEffect } from "react"
 
+// 열린 카드가 바뀔 때마다 누르기·키 받기를 다시 붙임
 export function useMenuDismiss(openPlayerId, { menuRef, anchorsRef, closeMenu }) {
   useEffect(() => {
     if (openPlayerId === null) return undefined

@@ -1,3 +1,5 @@
+// 추방 창 내용: 안내 글·추방 확인 칸·결과 글·대상 목록
+// 설정 추방 창·InGamePage 카드 추방 창·GameMatchingPage가 사용
 import { useRef } from "react"
 import { getPlayerRecordListFallbackProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../constants/controls/kickPlayer/ingameKickPlayerData.js"
@@ -11,6 +13,7 @@ import { KICK_REQUEST_STATUS } from "../../../constants/ingameKick.js"
 import SettingKickPlayerRow from "./SettingKickPlayerRow.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
+// 추방 진행 값은 부르는 쪽 훅에서 받아 그리기만 함
 export default function SettingKickPlayerModalContent({
   targets = [],
   pendingTarget = null,
@@ -27,6 +30,10 @@ export default function SettingKickPlayerModalContent({
 }) {
   const scrollRef = useRef(null)
 
+  // 고른 대상 있으면 확인 칸, 추방은 지금 목록을 같이 넘겨 다시 확인
+  // 실패·결과 모름이면 오류 글, 결과 묻기 버튼은 성공 전까지만
+  // 목록 다시 확인 중이면 새로 못 고른다는 안내
+  // 프로필 그림은 줄 순서대로 기본 그림을 돌려 씀
   return (
     <>
       <p className={MODAL_SUBTITLE_CLASS}>

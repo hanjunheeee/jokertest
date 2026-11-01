@@ -5,23 +5,27 @@ import {
   mapFrameInsetToLayoutBox,
 } from "./ingameChatFrameLayout.js"
 
+// 열고 닫을 때 움직임
 export const PANEL_TRANSITION = {
   duration: 0.32,
   ease: [0.22, 1, 0.36, 1],
 }
 
+// 뒤 덮개와 가운데 정렬 판
 export const BACKDROP_CLASS =
   "fixed inset-0 z-[45] cursor-default border-0 bg-black/45 p-0"
 
 export const PANEL_WRAP_CLASS =
   "pointer-events-none fixed inset-0 z-[46] flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
 
+// 패널 폭 기준값
 const PANEL_WIDTH_BASE = {
   minRem: 44,
   midVw: 84,
   maxRem: 66,
 }
 
+// 크게 보기 패널 폭 (화면 폭 따라, 최소·최대 rem 안에서)
 export function getCloseupPanelStyle() {
   const { minRem, midVw, maxRem } = PANEL_WIDTH_BASE
   return {
@@ -29,12 +33,14 @@ export function getCloseupPanelStyle() {
   }
 }
 
+// 패널 안쪽과 닫기 버튼 자리
 export const PANEL_INNER_CLASS =
   "pointer-events-auto relative w-full [container-type:inline-size]"
 
 export const CLOSE_BTN_CLASS =
   "interactive-scale absolute right-[clamp(-0.35rem,-0.8cqi,-0.1rem)] top-[clamp(-0.15rem,0.6cqi,0.25rem)] z-20 block w-[clamp(4rem,10cqi,6rem)] cursor-pointer border-0 bg-transparent p-0 leading-none"
 
+// 틀 그림 기준 목록·입력·상태 줄 자리 (판 위 채팅보다 넓음)
 const MSG_LIST_INSET_FRAME_CLOSEUP = {
   top: 8,
   left: 4 + CONTENT_SHIFT_LEFT_FRAME,
@@ -56,6 +62,7 @@ const STATUS_LINE_INSET_FRAME_CLOSEUP = {
   height: 9,
 }
 
+// 틀 기준 자리를 화면 자리로 바꾼 값
 export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
   MSG_LIST_INSET_FRAME_CLOSEUP,
 )
@@ -68,6 +75,7 @@ export const INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET = mapFrameInsetToLayoutBox(
   STATUS_LINE_INSET_FRAME_CLOSEUP,
 )
 
+// 크게 보기 글자·입력 높이·여백·보내기 버튼 모양
 export const CLOSEUP_TEXT_TYPOGRAPHY_CLASS =
   "font-subheading text-[clamp(0.95rem,4.15cqi,1.28rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 

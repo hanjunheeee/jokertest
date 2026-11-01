@@ -1,3 +1,5 @@
+// 설정 창 밀대 한 줄: 이름·밀대·오른쪽 숫자
+// 채팅 탭(글자 크기)·사운드 탭(음량)이 사용
 import {
   ROW_VALUE_CLASS,
   SLIDER_CONTROL_CLASS,
@@ -12,6 +14,7 @@ import {
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import RangeSlider from "@/shared/ui/RangeSlider.jsx"
 
+// 밀대 안 숫자는 화면 읽기만, 오른쪽 숫자는 눈으로만 보게 나눔
 export default function SettingSliderRow({ label, min, max, value, onChange }) {
   return (
     <div className={SLIDER_ROW_PLATE_CLASS} data-setting-row>

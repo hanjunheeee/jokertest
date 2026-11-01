@@ -3,6 +3,7 @@
 
 // 확인 창 → 취소면 그대로, 확인이면 나가기 요청 (결과는 onDecision으로 알림)
 export function createExitConfirmController({ confirm, requestLeave, onDecision, message = "게임에서 나가시겠습니까?" }) {
+  // 취소·확인 결정을 바깥에 알림
   const announce = (kind) => {
     try {
       onDecision?.(kind)

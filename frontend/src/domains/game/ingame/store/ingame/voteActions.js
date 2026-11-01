@@ -1,5 +1,5 @@
 // 투표 결과 액션 묶음: 낮 투표 판정·재판 판정 반영
-// 입구 파일이 create 할 때 펼쳐 씀
+// 입구 파일이 create 할 때 펼쳐 씀, 판 진행 이벤트 손잡이(낮)가 넘김
 import {
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,

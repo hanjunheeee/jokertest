@@ -1,5 +1,5 @@
 // 추방 요청 훅: 대상 확인 → 보내기 → 결과(성공·실패·모름) 상태, 결과 다시 묻기
-// 카드 추방 훅(useInGameKickFromCard)이 사용, 보내기는 socket/kick.js (응답 확인·결과 조회는 hooks/kick/)
+// 판 추방 훅(useInGameKickFromCard)·대기방 추방 훅(useMatchingRoomKick)이 사용, 보내기는 socket/kick.js (확인·조회는 hooks/kick/)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -8,9 +8,11 @@ import { emitKick } from "../socket/kick.js"
 import { captureAckGuard, nextRequestId } from "./kick/guards.js"
 import { lookupKickResult } from "./kick/lookupResult.js"
 
+// 사건 이름·상태 이름은 시험이 이 경로로 가져감
 export { KICK_EVENTS } from "../socket/kick.js"
 export { KICK_REQUEST_STATUS } from "../constants/ingameKick.js"
 
+// 추방 진행 상태와 고르기·보내기·결과 조회 함수 (scope = GAME 판·ROOM 방)
 export function useKickPlayerRequest({
   scope,
   buildRequest,
@@ -24,6 +26,7 @@ export function useKickPlayerRequest({
   const [needsVerification, setNeedsVerification] = useState(false)
   const [hasReceipt, setHasReceipt] = useState(false)
 
+  // 훅 세대·요청 세대·마지막 영수증·화면 살아 있음·보내기 잠금·상태 (콜백이 바로 읽음)
   const generationRef = useRef(0)
   const requestGenerationRef = useRef(0)
   const lastReceiptRef = useRef(null)
@@ -39,11 +42,13 @@ export function useKickPlayerRequest({
     setStatus(next)
   }, [])
 
+  // 소속 다시 확인 기다림 풀기
   const settleVerification = useCallback(() => {
     needsVerificationRef.current = false
     setNeedsVerification(false)
   }, [])
 
+  // 화면 빠진 뒤엔 응답 반영 안 하게 표시
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
@@ -65,6 +70,7 @@ export function useKickPlayerRequest({
 
   // 대상 고르기: 보내는 중·소속 확인 기다리는 중이면 막기
   const requestConfirm = useCallback((target) => {
+    // 대상 uuid·소속 id가 없으면 안 받음
     if (!target || typeof target.uuid !== "string" || !target.uuid) return
     if (typeof target.membershipId !== "string" || !target.membershipId) return
     if (sendLockRef.current) return
@@ -80,6 +86,7 @@ export function useKickPlayerRequest({
     applyStatus(KICK_REQUEST_STATUS.CONFIRMING)
   }, [getMembershipScopeId, applyStatus])
 
+  // 고르기 취소 (확인 중이었으면 처음으로)
   const cancelConfirm = useCallback(() => {
     setPendingTarget(null)
     if (statusRef.current === KICK_REQUEST_STATUS.CONFIRMING) applyStatus(KICK_REQUEST_STATUS.IDLE)
@@ -92,12 +99,14 @@ export function useKickPlayerRequest({
     if (sendLockRef.current) return
     if (statusRef.current === KICK_REQUEST_STATUS.SENDING) return
 
+    // 대상 비우고 실패로
     const fail = (code) => {
       setPendingTarget(null)
       applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode(code)
     }
 
+    // 고른 뒤 내 소속 범위나 대상 소속이 바뀌었으면 실패
     if (target.scopeId !== getMembershipScopeId()) {
       fail("STALE_MEMBERSHIP")
       return
@@ -110,6 +119,7 @@ export function useKickPlayerRequest({
       }
     }
 
+    // 소켓이 없으면 실패
     const socket = getSocket()
     if (!socket) {
       applyStatus(KICK_REQUEST_STATUS.FAILED)
@@ -117,6 +127,7 @@ export function useKickPlayerRequest({
       return
     }
 
+    // 요청 내용을 못 만들면(방·소속 정보 모자람) 실패
     const requestId = nextRequestId()
     const request = buildRequest({ target, requestId })
     if (!request) {
@@ -137,6 +148,7 @@ export function useKickPlayerRequest({
     setStatus(KICK_REQUEST_STATUS.SENDING)
     setErrorCode(null)
 
+    // 응답 때 화면·세대·계정·소켓·범위가 그대로인지
     const isStillCurrent = captureAckGuard({
       socket,
       scopeId,
@@ -146,6 +158,7 @@ export function useKickPlayerRequest({
       getMembershipScopeId,
     })
 
+    // 옛 응답은 버림, 성공이면 성공, 아니면 서버 코드로 실패 (잠금 풂)
     emitKick(socket, scope, request, (response) => {
       if (!isStillCurrent()) return
 
@@ -168,8 +181,10 @@ export function useKickPlayerRequest({
     settleVerification, getMembershipScopeId, verifyMembership,
   }), [applyStatus, getMembershipScopeId, verifyMembership, settleVerification])
 
+  // 지난 요청 결과 다시 묻기 (본체는 hooks/kick/lookupResult.js)
   const lookupResult = useCallback(() => lookupKickResult(lookupCtx), [lookupCtx])
 
+  // 진행 중 응답 버리고 처음으로 (보내기 잠금·영수증은 그대로 둠)
   const reset = useCallback(() => {
     requestGenerationRef.current += 1
     setPendingTarget(null)

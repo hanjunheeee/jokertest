@@ -1,3 +1,7 @@
+// 행동 패널 모양·문구와 밤 행동 종류·이름 고르기
+// 단계 버튼 줄·재판 연출·행동 패널 훅·카드 메뉴 유틸이 사용
+
+// 행동 패널 모양 (단계 버튼 줄이 BTN_CLASS·BTN_ROW_CLASS를 씀)
 export const PANEL_CLASS =
   "absolute bottom-[clamp(0.75rem,2vh,1.25rem)] left-[clamp(0.75rem,2vw,1.25rem)] z-30 w-[min(24rem,calc(100vw-1.5rem))] rounded-md border border-[#d8b982]/55 bg-black/72 p-3 text-[#f8ead2] shadow-[0_12px_36px_rgba(0,0,0,0.5)] backdrop-blur-sm"
 
@@ -46,6 +50,7 @@ export const TARGET_STATUS_DOT_DEAD_CLASS = "h-1.5 w-1.5 shrink-0 rounded-full b
 export const TARGET_STATUS_DOT_DISCONNECTED_CLASS =
   "h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400/60"
 
+// 역할별로 밤 행동을 시작하는 dayIndex (마녀사냥꾼만 늦게 시작)
 const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({
   JOKER: 0,
   DOCTOR: 0,
@@ -53,11 +58,13 @@ const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({
   WITCH_HUNTER: 2,
 })
 
+// 밤 행동이 있는 역할이고 시작 날이 됐는지
 function isNightActionEligible(role, dayIndex) {
   const minDayIndex = NIGHT_ACTION_MIN_DAY_INDEX[role]
   return minDayIndex !== undefined && dayIndex >= minDayIndex
 }
 
+// 역할 → 서버에 보낼 밤 행동 종류 (못 하는 날이면 null)
 export function getInGameNightActionType(role, dayIndex) {
   if (!isNightActionEligible(role, dayIndex)) return null
   if (role === "DOCTOR") return "PROTECT"
@@ -67,6 +74,7 @@ export function getInGameNightActionType(role, dayIndex) {
   return null
 }
 
+// 역할 → 밤 행동 버튼 이름 (못 하는 날이면 null)
 export function getInGameNightActionLabel(role, dayIndex) {
   if (!isNightActionEligible(role, dayIndex)) return null
   if (role === "DOCTOR") return "보호"
@@ -76,10 +84,12 @@ export function getInGameNightActionLabel(role, dayIndex) {
   return null
 }
 
+// 자기 자신을 고를 수 있는 밤 행동 (의사 보호만)
 export function isSelfTargetAllowedForNightAction(role) {
   return role === "DOCTOR"
 }
 
+// 재판 투표·판정 버튼 이름과 안내 글
 export const TRIBUNAL_VOTE_GUILTY_LABEL = "유죄"
 export const TRIBUNAL_VOTE_NOT_GUILTY_LABEL = "무죄"
 export const TRIBUNAL_VOTE_SUBMIT_LABEL = "투표 제출"
@@ -91,6 +101,7 @@ export const TRIBUNAL_RESOLVE_LABEL = "재판 판정"
 export const TRIBUNAL_RESOLVE_RESOLVING_LABEL = "판정 중..."
 export const TRIBUNAL_RESOLVE_DONE_LABEL = "판정 완료"
 
+// 낮 토론·투표 준비 버튼 이름과 안내 글
 export const DAY_DISCUSSION_CAPTION = "토론 진행"
 export const DAY_DISCUSSION_NOTICE = "토론 중입니다. 투표는 아직 열리지 않았습니다."
 export const DAY_VOTE_READY_LABEL = "투표 시작 준비"
@@ -98,6 +109,7 @@ export const DAY_VOTE_READY_SENDING_LABEL = "준비 중..."
 export const DAY_VOTE_READY_DONE_LABEL = "준비 완료"
 export const DAY_DEAD_NOTICE = "사망한 참가자는 낮 진행에 참여할 수 없습니다."
 
+// 이긴 팀 → 승리 문구 (모르는 값이면 null)
 export function getInGameWinResultLabel(winResult) {
   if (!winResult || typeof winResult !== "object") return null
   if (winResult.winner === "CITIZEN") return "시민 진영 승리"
@@ -105,6 +117,7 @@ export function getInGameWinResultLabel(winResult) {
   return null
 }
 
+// 판 사건 한 줄 글 (종류 행동한 사람 -> 대상)
 export function formatInGameEvent(event) {
   const actor = event.actorId ? ` ${event.actorId}` : ""
   const target = event.targetId ? ` -> ${event.targetId}` : ""

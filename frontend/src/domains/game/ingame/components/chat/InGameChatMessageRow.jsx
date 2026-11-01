@@ -1,3 +1,5 @@
+// 채팅 메시지 한 줄: 시각·보낸 사람·글, 설정 따라 시각·닉네임 색·글자 크기
+// 채팅 메시지 목록(InGameChatMessageList)이 사용
 import {
   getInGameChatMessageBodyClass,
   getInGameChatMessageSenderClass,
@@ -17,19 +19,23 @@ import {
   selectNicknameColorEnabled,
 } from "./resolveInGameChatPlayerColor.js"
 
+// 시각 보이기 설정 id와 기본값 (설정 화면 목록 값 그대로)
 const SHOW_TIME_SETTING_ID = "show-time"
 const SHOW_TIME_DEFAULT_CHECKED =
   INGAME_SETTING_CHAT_CHECKBOXES.find(({ id }) => id === SHOW_TIME_SETTING_ID)?.defaultChecked ??
   false
 
+// 시각 보이기 켜짐 여부 (안 건드렸으면 기본값)
 function selectShowTimeEnabled(state) {
   return state.chatChecks?.[SHOW_TIME_SETTING_ID] ?? SHOW_TIME_DEFAULT_CHECKED
 }
 
+// 채팅 글자 크기 (없으면 기본값, 입력칸에도 같은 함수 있음)
 function selectChatTextSize(state) {
   return state.chatTextSize ?? INGAME_SETTING_CHAT_SLIDER.defaultValue
 }
 
+// 받은 시각을 시:분으로, 이상한 값이면 시각 안 보임
 function formatChatMessageTime(sentAt) {
   if (!Number.isFinite(sentAt)) return null
   const date = new Date(sentAt)
@@ -40,6 +46,7 @@ function formatChatMessageTime(sentAt) {
   return `${hours}:${minutes}`
 }
 
+// 보낸 사람 색은 테마 색 (닉네임 색 설정 끄면 기본색)
 export default function InGameChatMessageRow({
   playerId = null,
   senderName,
@@ -64,6 +71,7 @@ export default function InGameChatMessageRow({
 
   const formattedTime = showTimeEnabled ? formatChatMessageTime(sentAt) : null
 
+  // 글 최대 너비는 입력칸 너비 기준, 크게 보기·재판 모양은 조금 좁게
   const messageMaxWidth =
     textFieldWidth > 0
       ? variant === "closeup" || variant === "tribunal"

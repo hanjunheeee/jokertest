@@ -1,5 +1,5 @@
 // 밤 차례 알림 검사와 지금 차례 직업 고르기 (상태를 안 건드리는 순수 계산)
-// 밤 이벤트 훅·밤 관찰·행동 패널·카드 메뉴·차례 안내·시간 바·차례 마감 시각 계산이 사용
+// 밤 이벤트 손잡이·스냅샷 밤 관찰·행동 패널·카드 메뉴·차례 안내·시간 바가 사용
 import { INGAME_NIGHT_TURN_ANNOUNCEMENTS } from "../constants/nightTurn/ingameNightTurnAnnouncement.js"
 
 const KNOWN_NIGHT_TURN_ROLES = new Set(INGAME_NIGHT_TURN_ANNOUNCEMENTS.map((turn) => turn.role))

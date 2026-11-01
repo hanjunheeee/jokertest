@@ -14,12 +14,14 @@ import { onNightNotices } from "../socket/night.js"
 import { setIdentityRebindPending } from "./snapshotSync/rebindPending.js"
 import { createSnapshotRequester } from "./snapshotSync/request.js"
 
+// 다시 묶기 기다림 표시는 인게임 화면·시험이 이 경로로 가져감
 export {
   getInGameSnapshotRebindPending,
   subscribeInGameSnapshotRebindPending,
   useInGameSnapshotRebindPending,
 } from "./snapshotSync/rebindPending.js"
 
+// 스냅샷 다시 묻기 붙이고 처음 판 복구 상태 돌려줌 (checking·ready·recovered·missing·failed)
 export function useInGameSessionSnapshotSync() {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   const gameId = useInGameStore((s) => s.gameId)
@@ -28,8 +30,10 @@ export function useInGameSessionSnapshotSync() {
   const identityScopeVersion = useSyncExternalStore(
     subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
   )
+  // 판이 이미 있으면 ready, 없으면 내 판 찾기 전이라 checking
   const [bootstrapStatus, setBootstrapStatus] = useState(gameId ? "ready" : "checking")
 
+  // 화면 살아 있음·세대·지난 범위·물은 세대·반영한 범위·다시 묻기 예산·밤 관찰 장부
   const mountedRef = useRef(true)
   const epochVersionRef = useRef(0)
   const epochBaseRef = useRef({
@@ -42,6 +46,7 @@ export function useInGameSessionSnapshotSync() {
   const retryRef = useRef({ epoch: -1, attempts: 0, deadline: 0, timerId: null })
   const nightObservationsRef = useRef(new Map())
 
+  // 화면 빠지면 다시 묶기 기다림 풀고 예약된 다시 묻기 끔
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -55,6 +60,7 @@ export function useInGameSessionSnapshotSync() {
     }
   }, [])
 
+  // 소켓·판·계정·신원이 바뀔 때마다 이번 범위로 묻기를 새로 붙임 (소켓·계정 없으면 안 물음)
   useEffect(() => {
     if (!socket || !authUuid) return
 
@@ -83,6 +89,7 @@ export function useInGameSessionSnapshotSync() {
       mountedRef.current && getSocket() === socket
       && (useAuthStore.getState().user?.uuid ?? null) === authUuid
 
+    // 밤 알림 대상마다 받은 횟수 올림 (묻는 사이 바뀌었는지 비교용)
     const noteNightObservation = (key) => {
       if (key === null) return
       const book = nightObservationsRef.current
@@ -99,6 +106,7 @@ export function useInGameSessionSnapshotSync() {
     }
     const offNightNotices = onNightNotices(socket, observeWaitNotice, observeTurnStart)
 
+    // 예약된 다시 묻기 끄기
     const cancelScheduledRetry = () => {
       const retry = retryRef.current
       if (retry.timerId !== null) {
@@ -107,6 +115,7 @@ export function useInGameSessionSnapshotSync() {
       }
     }
 
+    // 이번 범위로 묻기 함수 만들기 (본체는 hooks/snapshotSync/request.js)
     const requestSnapshot = createSnapshotRequester({
       socket, gameId, authUuid, identityGeneration,
       mountedRef, epochVersionRef, requestedVersionRef, fulfilledRef, retryRef, nightObservationsRef,
@@ -131,10 +140,12 @@ export function useInGameSessionSnapshotSync() {
 
     const offConnect = onConnect(socket, handleConnect)
 
+    // 이미 연결돼 있으면 바로 묻기
     if (socket.connected) {
       requestSnapshot()
     }
 
+    // 범위가 바뀌면 받기 떼고 밤 관찰 장부 비움
     return () => {
       offConnect()
       offNightNotices()

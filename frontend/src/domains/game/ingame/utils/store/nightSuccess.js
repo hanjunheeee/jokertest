@@ -1,5 +1,5 @@
 // 밤 성공 연출 알림 검사·대기열 항목 만들기·받을 수 있는 시점 판단 (순수 계산)
-// store/ingame/nightSuccessReception.js와 액션 묶음이 사용
+// 밤 성공 받기 판단(store/ingame/nightSuccessReception.js)·스냅샷 액션이 사용
 import {
   NIGHT_SUCCESS_PERSPECTIVES,
   NIGHT_SUCCESS_TYPES,

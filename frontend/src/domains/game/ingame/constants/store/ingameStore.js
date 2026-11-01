@@ -1,5 +1,5 @@
 // 인게임 스토어 고정 값: 비우기 조각·본인 제출 키·밤 성공 연출 허용 값
-// store/ingame/ 파일들과 스냅샷 반영 유틸이 사용
+// store/ingame/ 파일들과 utils/snapshot/self.js·utils/store/nightSuccess.js가 사용
 
 // 밤 차례 비우기 조각
 export const CLEARED_NIGHT_TURN = Object.freeze({ nightTurnRole: null, nightTurnDeadline: null })

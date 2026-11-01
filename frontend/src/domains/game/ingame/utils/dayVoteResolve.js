@@ -1,8 +1,9 @@
 // 낮 투표 판정 계산: 판정 응답·무효화 조각, 판정 방송 검사 (상태를 안 건드리는 순수 계산)
-// 행동 패널(입구 useInGameActionPanel.js가 다시 내보냄)과 판 진행 이벤트 훅이 사용
+// 판정 훅(useDayVoteResolve)·낮 이벤트 손잡이가 사용, 행동 패널 입구가 다시 내보냄
 import { FAILED_MSG } from "../constants/actions/dayVoteResolve.js"
 import { parseDayVoteRoundFields } from "./dayVoteRound.js"
 
+// 받는 판정 결과·다음 단계 이름과 표 수 검사
 const RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED", "REVOTE"])
 const RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL", "DAY"])
 

@@ -1,3 +1,5 @@
+// 재판 연출 창: 피고 카드·투표 버튼 먼저, 잠시 뒤 옆에 채팅 열림
+// 재판 연출 문지기(Gate)·재판 연출 미리보기 화면이 사용
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { useEffect, useState } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -33,6 +35,7 @@ import {
 import InGamePlayerCard from "../board/InGamePlayerCard.jsx"
 import InGameTribunalPresentationChatPanel from "./InGameTribunalPresentationChatPanel.jsx"
 
+// 유죄·무죄 그림 버튼 하나, 나타나는 늦춤은 motionDelay
 function TribunalVoteButton({ label, assetSrc, disabled, onClick, motionDelay }) {
   const reduceMotion = useReducedMotion()
 
@@ -55,6 +58,7 @@ function TribunalVoteButton({ label, assetSrc, disabled, onClick, motionDelay })
   )
 }
 
+// 처음엔 채팅 없이(intro), 정한 시간 뒤 채팅 열림(split)
 export default function InGameTribunalPresentationOverlay({
   open = false,
   defendant = null,
@@ -72,12 +76,15 @@ export default function InGameTribunalPresentationOverlay({
   const reduceMotion = useReducedMotion()
   const [layoutPhase, setLayoutPhase] = useState("intro")
 
+  // 열릴 때·피고 바뀔 때 intro부터, 움직임 줄이기면 바로 split
   useEffect(() => {
+    // 닫히면 처음 단계로 되돌림
     if (!open) {
       setLayoutPhase("intro")
       return undefined
     }
 
+    // 움직임 줄이기 설정이면 기다리지 않음
     if (reduceMotion) {
       setLayoutPhase("split")
       return undefined
@@ -91,10 +98,13 @@ export default function InGameTribunalPresentationOverlay({
     return () => window.clearTimeout(timer)
   }, [open, reduceMotion, defendant?.id])
 
+  // 피고 없으면 안 그림
   if (!defendant) return null
 
+  // 채팅은 split 단계이고 채팅 값 있을 때만
   const showChat = layoutPhase === "split" && chatProps
 
+  // 투표 버튼 못 보이면 대신 안내 문구, 판정 버튼은 글자 받았을 때만
   return (
     <AnimatePresence>
       {open ? (

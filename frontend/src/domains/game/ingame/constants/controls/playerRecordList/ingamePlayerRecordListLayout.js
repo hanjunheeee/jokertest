@@ -1,11 +1,15 @@
+// 전적 목록 모양: 스크롤·줄·프로필·이름·전적 글
+// 전적 목록 내용·줄(PlayerRecordListRow)이 사용
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 스크롤 칸 (기본 스크롤바 숨김)
 export const SCROLL_WRAP_CLASS =
   "relative min-h-0 flex-1"
 
 export const SCROLL_CLASS =
   `h-full min-h-0 overflow-y-auto overscroll-contain pr-[clamp(1.15rem,2vw,1.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
+// 한 줄과 프로필 그림 자리
 export const ROW_CLASS =
   "relative w-full list-none border-b border-[#3a2818]/70 py-[clamp(0.38rem,0.9vh,0.52rem)] last:border-b-0"
 
@@ -18,6 +22,7 @@ export const PROFILE_PORTRAIT_WRAP_CLASS =
 export const PROFILE_PORTRAIT_PHOTO_WRAP_CLASS =
   "absolute left-1/2 top-[46%] z-[1] aspect-square w-[67%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full"
 
+// 이름·전적 글 (전적은 흐리게, 숫자 폭 고정)
 export const INFO_CLASS =
   "flex min-w-0 flex-1 flex-col justify-center"
 

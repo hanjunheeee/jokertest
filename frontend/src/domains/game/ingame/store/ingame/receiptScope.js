@@ -1,5 +1,5 @@
 // 수신 범위: 지금 범위 읽기·받은 증거가 아직 유효한지·증거 붙여 상태 바꾸기
-// 액션 묶음·종료 결과 범위·훅이 사용 (훅은 입구 파일의 readInGameReceiptScope로 씀)
+// 액션 묶음·밤 성공 받기·종료 결과 범위·스토어 감시가 사용, 훅은 입구를 통해 씀
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
 import { readSelfMembershipId } from "../../utils/store/scope.js"
 import { getStore } from "./storeRef.js"

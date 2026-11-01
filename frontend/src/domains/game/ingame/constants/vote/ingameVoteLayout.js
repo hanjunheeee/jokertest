@@ -1,5 +1,8 @@
+// 투표 현황 창 모양: 덮개·틀·제목·현황 줄·투표 목록·버튼
+// 투표 현황 창·내용·버튼과 추방 창·친구 초대 창 모양이 사용
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 열고 닫을 때 움직임과 덮개·가운데 정렬
 export const PANEL_TRANSITION = {
   duration: 0.32,
   ease: [0.22, 1, 0.36, 1],
@@ -11,12 +14,14 @@ export const BACKDROP_CLASS =
 export const PANEL_WRAP_CLASS =
   "pointer-events-none fixed inset-0 z-[46] flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
 
+// 창 폭
 export function getVotePanelStyle() {
   return {
     width: "clamp(28rem, 52vw, 42rem)",
   }
 }
 
+// 창 안쪽·틀 그림·안쪽 여백
 export const VOTE_PANEL_INNER_CLASS =
   "pointer-events-auto relative w-full [container-type:inline-size]"
 
@@ -30,6 +35,7 @@ export const INGAME_VOTE_PANEL_INSET = {
   paddingRight: "clamp(1.35rem, 5.2cqi, 2rem)",
 }
 
+// 닫기 버튼·제목·부제
 export const VOTE_CLOSE_BTN_CLASS =
   "interactive-scale absolute top-[clamp(3rem,3.8cqi,4rem)] right-[clamp(0.5rem,-0.35cqi,2rem)] z-20 border-0 bg-transparent p-0 leading-none"
 
@@ -42,6 +48,7 @@ export const INGAME_VOTE_TITLE_CLASS =
 export const SUBTITLE_CLASS =
   "mb-[clamp(0.55rem,1.6cqi,0.75rem)] shrink-0 text-center font-subheading text-[clamp(0.95rem,3.2cqi,1.2rem)] font-bold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+// 현황 칸과 줄 (결과 모를 때 글 포함)
 export const SCROLL_WRAP_CLASS = "relative min-h-0 flex-1"
 
 export const STATUS_SECTION_CLASS =
@@ -60,6 +67,7 @@ export const STATUS_UNRESOLVED_WRAP_CLASS =
 export const STATUS_UNRESOLVED_CLASS =
   "text-center font-subheading text-[clamp(1.2rem,4.2cqi,1.5rem)] font-bold text-[#e0c9a3] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// 투표 목록 칸·줄·프로필·이름·표 수·왕관
 export const INGAME_VOTE_GRID_CLASS =
   `grid h-full min-h-0 grid-cols-2 gap-x-[clamp(0.52rem,2.1cqi,0.82rem)] gap-y-[clamp(0.33rem,1.12cqi,0.52rem)] overflow-y-auto overscroll-contain pr-[clamp(0.35rem,1.2cqi,0.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
@@ -86,6 +94,7 @@ export const COUNT_IDLE_CLASS = "text-[#8a8078]"
 export const INGAME_VOTE_CROWN_CLASS =
   "font-subheading text-[clamp(1.17rem,4.15cqi,1.48rem)] leading-none text-[#d62828]"
 
+// 체크 칸·체크 표시
 export const CHECKBOX_CLASS =
   "interactive-scale relative block w-[clamp(1.42rem,4.8cqi,1.72rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
 
@@ -95,6 +104,7 @@ export const CHECKBOX_IMG_CLASS =
 export const CHECKMARK_CLASS =
   "pointer-events-none absolute inset-[12%] block h-auto w-[76%] select-none"
 
+// 아래 제출 버튼
 export const FOOTER_CLASS =
   "mt-[clamp(0.55rem,1.6cqi,0.75rem)] flex shrink-0 justify-center"
 
@@ -107,6 +117,7 @@ export const SUBMIT_BTN_IMG_CLASS =
 export const SUBMIT_BTN_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center pb-[2%] pt-[clamp(0.12rem,0.45cqi,0.18rem)] font-subheading text-[clamp(1.08rem,3.8cqi,1.35rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// 투표 현황 열기 버튼
 export const TOGGLE_BTN_WRAP_CLASS = "relative shrink-0 self-end"
 
 export const TOGGLE_BTN_CLASS =

@@ -1,3 +1,5 @@
+// 채팅 보내기 버튼: 그림 위에 '보내기' 글자
+// 채팅 내용 틀(InGameChatContent)이 사용, 모양은 variant 따라
 import { INGAME_CHAT_ASSETS } from "../../constants/chat/ingameChatAssets.js"
 import {
   getSendBtnClass,
@@ -6,6 +8,7 @@ import {
 import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 누르면 onSend, 크기·자리는 variant별 모양값
 export default function InGameChatSendButton({
   onSend,
   className = "",

@@ -1,7 +1,8 @@
 // 인게임 스토어 상태 모양과 처음 값, 상태 고르개
-// 입구 파일이 create 할 때 펼쳐 쓰고 고르개는 다시 내보냄 (키 목록은 시험이 잠그므로 늘리거나 줄이지 않음)
+// 입구 파일이 create 할 때 펼쳐 쓰고, 고르개 둘은 입구가 다시 내보냄 (키 목록은 시험이 잠가서 늘리거나 줄이지 않음)
 import { EMPTY_NIGHT_SUCCESS_QUEUE } from "../../constants/store/ingameStore.js"
 
+// 판 id·판 상태·오류 + 아래 보조 값들
 export const initialState = {
   gameId: null,
   state: null,

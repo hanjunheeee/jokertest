@@ -5,6 +5,7 @@ import InGameParchmentConfirmButton from "../parchment/InGameParchmentConfirmBut
 import { buildPendingAssetLabel } from "../../constants/ingameNightSuccess.js"
 import { PRIVATE_RESULT_MSG_CLASS } from "../../constants/ingameNightPrivateResult.js"
 
+// 대기 문구 없는 종류(치료·조사·확인 말고)면 안 그림
 export default function InGameNightSuccessPendingAsset({ type, eventId, onFinish }) {
   const label = buildPendingAssetLabel(type)
   if (label === null) return null

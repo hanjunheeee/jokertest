@@ -1,3 +1,5 @@
+// 방관리 탭 한 줄: 제목·설명과 오른쪽 링크 버튼 또는 체크 칸
+// 방관리 탭(SettingRoomTab)이 사용
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
   CHECKBOX_CLASS,
@@ -10,6 +12,7 @@ import {
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import CheckBox from "@/shared/ui/CheckBox.jsx"
 
+// variant가 action이면 링크 버튼(danger면 붉은 글자), 아니면 체크 칸
 export default function SettingRoomRow({
   title,
   description,
@@ -20,6 +23,7 @@ export default function SettingRoomRow({
   onAction,
   onChange,
 }) {
+  // 설명은 있을 때만 보임
   return (
     <div className={ROOM_ROW_PLATE_CLASS} data-setting-row>
       <div className={ROOM_ROW_TEXT_CLASS}>

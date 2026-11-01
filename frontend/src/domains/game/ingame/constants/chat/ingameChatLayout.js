@@ -1,3 +1,5 @@
+// 채팅 글자·입력칸·목록·보내기 버튼 모양 (판 위·크게 보기·재판)
+// 채팅 목록·줄·입력·보내기 버튼·채팅 내용 화면이 사용
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../../shared/constants/customScrollbarStyles.js"
 import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
@@ -31,15 +33,19 @@ import {
   TRIBUNAL_CHAT_TEXT_WRAP_TRIM_CLASS,
 } from "../tribunalPresentation/ingameTribunalPresentationChatLayout.js"
 
+// 내용 미는 값도 같이 내보냄
 export { CONTENT_SHIFT_LEFT_FRAME }
 
+// 크게 보기·재판은 같은 자리 값을 씀
 function isCloseupLikeVariant(variant) {
   return variant === "closeup" || variant === "tribunal"
 }
 
+// 판 위 채팅 기본 글자 모양
 export const TEXT_TYPOGRAPHY_CLASS =
   "font-subheading text-[clamp(0.72rem,3.2cqi,0.92rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 
+// 종류별 글자 모양 고르기
 export function getInGameChatTextTypographyClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_CLASS
   return variant === "closeup"
@@ -47,6 +53,7 @@ export function getInGameChatTextTypographyClass(variant = "board") {
     : TEXT_TYPOGRAPHY_CLASS
 }
 
+// 설정 글자 크기 CSS 변수와 그 변수를 곱한 글자 모양
 export const INGAME_CHAT_TEXT_SCALE_CSS_VAR = "--ingame-chat-text-scale"
 
 export const TEXT_TYPOGRAPHY_SCALED_CLASS =
@@ -61,6 +68,7 @@ export const INGAME_CHAT_TEXT_SCALED_FONT_SIZE =
 export const INGAME_CHAT_CLOSEUP_TEXT_SCALED_FONT_SIZE =
   "clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))"
 
+// 종류별 글자 크기 (설정 배율 반영)
 export function getInGameChatScaledFontSize(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_TEXT_SCALED_FONT_SIZE
   return variant === "closeup"
@@ -68,6 +76,7 @@ export function getInGameChatScaledFontSize(variant = "board") {
     : INGAME_CHAT_TEXT_SCALED_FONT_SIZE
 }
 
+// 종류별 글자 모양 (설정 배율 반영)
 export function getInGameChatScaledTypographyClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS
   return variant === "closeup"
@@ -75,13 +84,16 @@ export function getInGameChatScaledTypographyClass(variant = "board") {
     : TEXT_TYPOGRAPHY_SCALED_CLASS
 }
 
+// 설정 글자 크기를 CSS 변수 값으로
 export function getInGameChatTextScaleStyle(chatTextSize) {
   return { [INGAME_CHAT_TEXT_SCALE_CSS_VAR]: String(getInGameChatTextScale(chatTextSize)) }
 }
 
+// 글자 배율 범위
 const CHAT_TEXT_SCALE_MIN = 0.6
 const CHAT_TEXT_SCALE_MAX = 1
 
+// 설정 글자 크기(0~100) → 배율, 숫자 아니면 1
 export function getInGameChatTextScale(chatTextSize) {
   const n = Number(chatTextSize)
   if (!Number.isFinite(n)) return 1
@@ -91,6 +103,7 @@ export function getInGameChatTextScale(chatTextSize) {
   return CHAT_TEXT_SCALE_MIN + (CHAT_TEXT_SCALE_MAX - CHAT_TEXT_SCALE_MIN) * ratio
 }
 
+// 시간·입력칸·자리 글 모양 (종류별 글자 모양 붙임)
 export function getInGameChatMessageTimeClass(variant = "board") {
   return `shrink-0 opacity-60 ${MSG_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)}`
 }
@@ -103,6 +116,7 @@ export function getInGameChatInputPlaceholderClass(variant = "board") {
   return `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INPUT_WRAP_TRIM_CLASS} ${getInGameChatScaledTypographyClass(variant)} text-[#4a2814]`
 }
 
+// 종류별 본문 오른쪽 여백
 export function getTextWrapTrimClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_TEXT_WRAP_TRIM_CLASS
   return variant === "closeup"
@@ -110,6 +124,7 @@ export function getTextWrapTrimClass(variant = "board") {
     : TEXT_WRAP_TRIM_CLASS
 }
 
+// 본문·보낸 사람 글 모양 (종류별 글자 모양 붙임)
 export function getInGameChatMessageBodyClass(variant = "board") {
   return `min-w-0 box-border ${MSG_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)} ${TEXT_WRAP_CLASS} ${getTextWrapTrimClass(variant)}`
 }
@@ -118,6 +133,7 @@ export function getInGameChatMessageSenderClass(variant = "board") {
   return `shrink-0 ${MSG_READ_ONLY_CLASS} ${getInGameChatScaledTypographyClass(variant)}`
 }
 
+// 종류별 한 줄 입력 높이·입력칸 고정 높이
 export function getInputSingleLineHeightClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS
   return variant === "closeup"
@@ -132,10 +148,12 @@ export function getInputViewportFixedHeightClass(variant = "board") {
     : INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
 }
 
+// 한 줄 입력 보기 칸 모양
 export function getInputViewportSinglelineClass(variant = "board") {
   return `overflow-hidden box-border ${TEXT_WRAP_CLASS} ${INPUT_WRAP_TRIM_CLASS} ${getInputSingleLineHeightClass(variant)}`
 }
 
+// 판 위 채팅 줄바꿈·오른쪽 여백·입력 높이
 export const TEXT_WRAP_CLASS =
   "whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
 
@@ -154,6 +172,7 @@ export const INPUT_VIEWPORT_FIXED_HEIGHT_CLASS =
 export const INPUT_MULTI_LINE_VIEWPORT_HEIGHT_CLASS =
   INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
 
+// 입력칸 감싸기·빈칸/채움 정렬·자리 글·위쪽 흐림
 export const INPUT_VIEWPORT_WRAP_BASE_CLASS =
   "relative min-w-0 flex-1 overflow-hidden"
 
@@ -174,6 +193,7 @@ export const INPUT_VIEWPORT_NO_MASK_CLASS =
 export const INPUT_VIEWPORT_WRAP_CLASS =
   `${INPUT_VIEWPORT_WRAP_BASE_CLASS} ${INPUT_VIEWPORT_MASK_CLASS} ${INPUT_MULTI_LINE_VIEWPORT_HEIGHT_CLASS}`
 
+// 판 위 채팅 입력칸·여러 줄/한 줄 보기 칸 모양
 export const INGAME_CHAT_INPUT_CLASS =
   `block w-full resize-none border-0 bg-transparent p-0 outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${TEXT_TYPOGRAPHY_CLASS}`
 
@@ -186,6 +206,7 @@ export const INPUT_VIEWPORT_SINGLELINE_CLASS =
 export const INPUT_VIEWPORT_CLASS =
   INPUT_VIEWPORT_MULTILINE_CLASS
 
+// 입력칸 왼쪽 띄움과 종류별 고르기
 export const INPUT_SHIFT_CLASS =
   "ml-[clamp(1.4rem,7.6cqi,2.35rem)]"
 
@@ -196,6 +217,7 @@ export function getInputShiftClass(variant = "board") {
     : INPUT_SHIFT_CLASS
 }
 
+// 보내기 버튼 모양과 종류별 고르기
 export const SEND_BTN_SHIFT_CLASS =
   "-translate-x-[clamp(1.15rem,6.2cqi,1.85rem)]"
 
@@ -226,6 +248,7 @@ export function getSendBtnShiftClass(variant = "board") {
     : SEND_BTN_SHIFT_CLASS
 }
 
+// 입력 줄·메시지 목록·메시지 줄 모양 (목록 위쪽은 흐리게)
 export const TEXT_FIELD_ROW_CLASS =
   "absolute flex min-h-0 items-center gap-[clamp(0.15rem,1cqi,0.35rem)]"
 
@@ -255,6 +278,7 @@ export const MSG_SENDER_CLASS =
 export const MSG_ROW_CLASS =
   `flex min-w-0 list-none items-start gap-[0.25em] ${MSG_READ_ONLY_CLASS}`
 
+// 종류별 목록·입력·상태 줄 자리
 export function getMsgListInset(variant = "board") {
   return isCloseupLikeVariant(variant)
     ? INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
@@ -273,5 +297,6 @@ export function getStatusLineInset(variant = "board") {
     : INGAME_CHAT_STATUS_LINE_INSET
 }
 
+// 상태 줄 감싸기
 export const STATUS_LINE_WRAP_CLASS =
   "absolute flex items-center justify-center"

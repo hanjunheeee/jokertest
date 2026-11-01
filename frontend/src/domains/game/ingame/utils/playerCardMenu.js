@@ -1,5 +1,5 @@
-// 플레이어 카드 메뉴 순수 계산: 메뉴 항목 만들기·찾기, 고를 때와 지금 범위 비교 (컨텍스트 값만 읽음)
-// 카드 메뉴 훅(useInGamePlayerCardMenu)과 hooks/cardMenu/ 파일들이 열기·고르기·제출 직전마다 부름
+// 카드 메뉴 계산: 항목 만들기·찾기, 고를 때와 지금 범위 비교 (컨텍스트만 읽음)
+// 카드 메뉴 훅과 hooks/cardMenu/ 파일들이 열기·고르기·제출 직전에 부름
 import {
   DAY_DISCUSSION_NOTICE,
   TRIBUNAL_VOTE_GUILTY_LABEL,
@@ -95,6 +95,7 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
     dayPhase: gameState?.dayPhase ?? ctx.dayPhase ?? null,
   })
 
+  // 낮 투표 중 다른 사람 카드: 투표 또는 취소
   if (phase === "DAY" && dayPhase === INGAME_DAY_PHASES.VOTE && !isSelf) {
     items.push(dayVoteItem(ctx, targetId, selfAlive))
   }
@@ -104,10 +105,12 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
     items.push(item(KINDS.DAY_VOTE, INGAME_CARD_MENU_DAY_VOTE_LABEL, false, DAY_DISCUSSION_NOTICE))
   }
 
+  // 재판 중 피고 카드: 유죄·무죄
   if (phase === "TRIBUNAL" && gameState?.tribunal?.defendantUuid === targetId) {
     items.push(...tribunalItems(ctx, selfAlive))
   }
 
+  // 밤 내 차례일 때 다른 사람 카드: 행동 또는 취소
   if (phase === "NIGHT" && ctx.isNightTurnActor && !isSelf) {
     items.push(nightItem(ctx, targetId, selfAlive))
   }

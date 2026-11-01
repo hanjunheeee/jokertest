@@ -9,10 +9,12 @@ import {
 } from "../../../shared/constants/ingamePlayerStatus.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 생존이면 안 그림, 죽음·연결 끊김은 초상 어둡게 + 배지
 export default function InGamePlayerStatusOverlay({ status }) {
   if (isStatusActive(status)) return null
 
   const visual = STATUS_VISUALS[status]
+  // 모르는 상태 값이면 그릴 것 없음
   if (!visual?.portraitDim && !visual?.badgeSrc) return null
 
   return (

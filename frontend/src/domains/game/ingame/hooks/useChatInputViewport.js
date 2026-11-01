@@ -1,4 +1,4 @@
-// 채팅 입력칸 보기 훅: 여러 줄인지·커서가 마지막 줄인지·커서 줄 번호를 재고 스크롤을 맞춤
+// 채팅 입력칸 줄 재기 훅: 여러 줄인지·커서 줄 위치 재고 스크롤 맞춤
 // 채팅 입력칸(InGameChatInput)이 사용, 줄 재기는 utils/textareaLines.js
 import { useEffect, useLayoutEffect, useState } from "react"
 import {
@@ -8,6 +8,7 @@ import {
   scrollToCaretLine,
 } from "../utils/textareaLines.js"
 
+// 입력칸 줄 상태 셋과 다시 재기 함수 돌려줌 (입력칸이 키 입력 때도 부름)
 export function useChatInputViewport(textareaRef, { value, hasText, chatTextScale }) {
   const [isVisualMultiLine, setIsVisualMultiLine] = useState(false)
 
@@ -15,9 +16,10 @@ export function useChatInputViewport(textareaRef, { value, hasText, chatTextScal
 
   const [caretVisualLineIndex, setCaretVisualLineIndex] = useState(0)
 
-  // 줄 상태를 다시 재고 스크롤 맞춤 (마지막 줄이면 맨 아래, 첫 줄이면 맨 위, 그 밖엔 커서 줄)
+  // 줄 상태 다시 재고 스크롤 맞춤
   const syncViewport = () => {
     const textarea = textareaRef.current
+    // 입력칸이 없거나 글이 없으면 한 줄 상태로 되돌림
     if (!textarea || !hasText) {
       setIsVisualMultiLine(false)
       setIsOnLastVisualLine(true)
@@ -35,6 +37,7 @@ export function useChatInputViewport(textareaRef, { value, hasText, chatTextScal
     setIsOnLastVisualLine(onLastVisualLine)
     setCaretVisualLineIndex(caretLineIndex)
 
+    // 여러 줄이면 커서 따라감 (마지막 줄은 맨 아래, 첫 줄은 맨 위), 한 줄이면 맨 위
     if (visualMultiLine && onLastVisualLine) {
       textarea.scrollTop = textarea.scrollHeight
       return
