@@ -1,82 +1,18 @@
 'use strict';
 
+// 경제 카테고리 입구, 옛 economy.service 이름 전부 내보냄 (나누는 중이라 남은 함수도 여기)
+// routes·컨트롤러·친구·업적·인증·충전·socket이 이 입구로 부름
 const crypto = require('crypto');
 const catalog = require('../../economy/catalog');
+const { createError } = require('../../utils/appError');
 const {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
     DEFAULT_PROFILE_BORDER_ID,
     listDefaultGrantItems,
 } = catalog;
-const { createError } = require('../../utils/appError');
-
-const FREE_CARD_FRAME_ID = 'player-card-베이스';
-
-const SKIN_ITEM_ID_PREFIX = 'player-skin-';
-
-const JOB_SKIN_ID_PREFIX_BY_SLOT = Object.freeze({
-    JOB_SKIN_NOBLE: '귀족',
-    JOB_SKIN_CLOWN: '광대',
-    JOB_SKIN_GUARD: '경비원',
-    JOB_SKIN_DOCTOR: '주치의',
-    JOB_SKIN_WITCH_HUNTER: '마녀사냥꾼',
-});
-
-const FREE_JOB_SKIN_IDS_BY_SLOT = Object.freeze({
-    JOB_SKIN_NOBLE: Object.freeze(['basic-skin-귀족1', 'basic-skin-귀족2', 'basic-skin-귀족3']),
-    JOB_SKIN_CLOWN: Object.freeze(['basic-skin-광대1', 'basic-skin-광대2']),
-    JOB_SKIN_GUARD: Object.freeze(['basic-skin-경비원1', 'basic-skin-경비원2']),
-    JOB_SKIN_DOCTOR: Object.freeze(['basic-skin-주치의']),
-    JOB_SKIN_WITCH_HUNTER: Object.freeze(['basic-skin-마녀사냥꾼']),
-});
-
-const isFreeJobSkin = (slot, itemId) => (FREE_JOB_SKIN_IDS_BY_SLOT[slot] ?? []).includes(itemId);
-
-const CURRENCIES = Object.freeze({ GOLD: 'GOLD', DIAMOND: 'DIAMOND' });
-
-const CURRENCY_TO_WALLET_COLUMN = Object.freeze({
-    GOLD: 'balance_gold',
-    DIAMOND: 'balance_diamond',
-});
-
-const MAX_BALANCE = 1_000_000_000;
-
-const isValidCurrency = (currency) => Object.prototype.hasOwnProperty.call(CURRENCY_TO_WALLET_COLUMN, currency);
-const isBoundedAmount = (amount) => Number.isInteger(amount) && Number.isSafeInteger(amount) && Math.abs(amount) <= MAX_BALANCE;
-
-const SLOT_TO_ITEM_TYPE = {
-    PROFILE_PHOTO: ITEM_TYPES.PROFILE_PHOTO,
-    PROFILE_BORDER: ITEM_TYPES.PROFILE_BORDER,
-    PLAYER_CARD_FRAME: ITEM_TYPES.PLAYER_CARD_FRAME,
-    JOB_SKIN_NOBLE: ITEM_TYPES.SKIN,
-    JOB_SKIN_CLOWN: ITEM_TYPES.SKIN,
-    JOB_SKIN_GUARD: ITEM_TYPES.SKIN,
-    JOB_SKIN_DOCTOR: ITEM_TYPES.SKIN,
-    JOB_SKIN_WITCH_HUNTER: ITEM_TYPES.SKIN,
-};
-
-const SLOT_TO_LOADOUT_COLUMN = {
-    PROFILE_PHOTO: 'selected_profile_photo_id',
-    PROFILE_BORDER: 'selected_profile_border_id',
-    PLAYER_CARD_FRAME: 'selected_card_frame_id',
-    JOB_SKIN_NOBLE: 'selected_skin_noble',
-    JOB_SKIN_CLOWN: 'selected_skin_clown',
-    JOB_SKIN_GUARD: 'selected_skin_guard',
-    JOB_SKIN_DOCTOR: 'selected_skin_doctor',
-    JOB_SKIN_WITCH_HUNTER: 'selected_skin_witch_hunter',
-};
-
-const JOB_SKIN_COLUMN_BY_JOB_ID = Object.freeze({
-    noble: 'selected_skin_noble',
-    clown: 'selected_skin_clown',
-    guard: 'selected_skin_guard',
-    doctor: 'selected_skin_doctor',
-    witchHunter: 'selected_skin_witch_hunter',
-});
-
-const buildSkinsByJob = (loadout) => Object.fromEntries(
-    Object.entries(JOB_SKIN_COLUMN_BY_JOB_ID).map(([jobId, column]) => [jobId, loadout?.[column] ?? null]),
-);
+const { isValidCurrency, isBoundedAmount, payloadMatches, referenceEventConflictError, defaultDb, buildSkinsByJob, purchasePayloadsEqual, purchaseRequestConflictError, snapshotLedgerEntry, isFreeJobSkin } = require('./helpers');
+const { CURRENCY_TO_WALLET_COLUMN, MAX_BALANCE, CURRENCIES, GOLD_PURCHASE_REASON, GOLD_PURCHASE_KIND, GOLD_PURCHASE_MAX_ATTEMPTS, SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_SKIN_ID_PREFIX_BY_SLOT, SKIN_ITEM_ID_PREFIX, EMOJI_PALETTE_SLOT_COLUMNS, DEFAULT_EMOJI_PALETTE_SLOTS } = require('./constants');
 
 const economyModels = (db) => ({
     sequelize: db.sequelize,
@@ -87,8 +23,6 @@ const economyModels = (db) => ({
     EconomyPurchaseRequest: db.sequelize.models.EconomyPurchaseRequest,
     EconomyEmojiPalette: db.sequelize.models.EconomyEmojiPalette,
 });
-
-const defaultDb = () => require('../../models');
 
 const ensureWalletRow = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
@@ -101,15 +35,6 @@ const ensureWalletRow = async (db, userId, externalTransaction = null) => {
         if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
     }
 };
-
-const payloadMatches = (entry, { reason, itemId, currency, amount }) =>
-    entry.reason === reason
-    && (entry.item_id ?? null) === (itemId ?? null)
-    && entry.currency === currency
-    && entry.amount === amount;
-
-const referenceEventConflictError = () =>
-    createError('참조 사건 ID가 이미 다른 요청에 사용되었습니다.', 409, 'REFERENCE_EVENT_CONFLICT');
 
 const applyLedgerTransaction = async (db, {
     userId, reason, currency, amount, itemId = null, itemType = null, referenceEventId, entitlementSource = null,
@@ -337,14 +262,6 @@ const derivePurchaseItemReferenceEventId = (referenceEventId, itemId) => `${refe
 
 const normalizePurchaseRequestPayload = (items) => ({ itemIds: items.map((entry) => entry.itemId).slice().sort() });
 
-const purchasePayloadsEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-
-const purchaseRequestConflictError = referenceEventConflictError;
-
-const snapshotLedgerEntry = (ledgerEntry) => (
-    typeof ledgerEntry.get === 'function' ? ledgerEntry.get({ plain: true }) : ledgerEntry
-);
-
 const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb()) => {
     if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
@@ -462,10 +379,6 @@ const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => 
     if (!existing) return null;
     return { kind: existing.kind, results: existing.result_json, createdAt: existing.created_at };
 };
-
-const GOLD_PURCHASE_KIND = 'GOLD';
-const GOLD_PURCHASE_REASON = 'GOLD_PURCHASE';
-const GOLD_PURCHASE_MAX_ATTEMPTS = 3;
 
 const deriveGoldPurchaseReferenceEventId = (referenceEventId, leg) =>
     `gold:${crypto.createHash('sha256').update(referenceEventId).digest('hex')}:${leg}`;
@@ -832,15 +745,6 @@ const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
     }
     return byUserId;
 };
-
-const EMOJI_PALETTE_SLOT_COLUMNS = Object.freeze([
-    'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6', 'slot_7', 'slot_8',
-]);
-
-const DEFAULT_EMOJI_PALETTE_SLOTS = Object.freeze([
-    'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',
-    'emoji-basic-grin', 'emoji-basic-hello', 'emoji-basic-surrender', 'emoji-basic-dizzy',
-]);
 
 const emojiPaletteDefaults = (userId) => ({
     user_id: userId,
