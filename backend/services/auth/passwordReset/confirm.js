@@ -3,7 +3,7 @@
 // 비밀번호 재설정 확인 파일, 토큰 확인 · 비번 바꾸기
 // 바꾸면 접속 세션 전부 끊고 남은 토큰 폐기
 const userRepository = require('../../../repositories/user.repositories');
-const { hashPassword } = require('../../../utils/hash');
+const { hashPassword } = require('../../../utils/auth/credentials');
 const { validatePassword } = require('../../../validations/auth/signup');
 const { validateResetToken } = require('../../../validations/auth/passwordReset');
 const { hashToken } = require('./tokens');

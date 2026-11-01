@@ -3,7 +3,7 @@
 // 장착 파일, 아이템 장착 · 프로필 사진·테두리 장착 · 공개/게임 시작 로드아웃
 // economy 경로·친구 목록·방 참가자 프로필이 부름
 const crypto = require('crypto');
-const catalog = require('../../economy/catalog');
+const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb, buildSkinsByJob, isFreeJobSkin } = require('./helpers');
 const { SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_SKIN_ID_PREFIX_BY_SLOT, SKIN_ITEM_ID_PREFIX } = require('./constants');

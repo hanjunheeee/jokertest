@@ -12,7 +12,7 @@ const cookieParser = require("cookie-parser");
 
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const db = require("../../models");
-const { maskEmail } = require("../../utils/maskEmail");
+const { maskEmail } = require("../../utils/auth/maskEmail");
 
 const startServer = async (t) => {
     const app = express();

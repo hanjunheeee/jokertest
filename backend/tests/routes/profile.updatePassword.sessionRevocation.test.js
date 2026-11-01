@@ -10,7 +10,7 @@ const bcrypt        = require("bcrypt");
 const crypto         = require("node:crypto");
 
 const db = require("../../models");
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const authService  = require("../../services/auth/account");
 const socketLayer  = require("../../socket/socket");

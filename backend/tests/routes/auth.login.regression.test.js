@@ -7,7 +7,7 @@ const bcrypt = require("bcrypt");
 
 const userRepository = require("../../repositories/user.repositories");
 const authService    = require("../../services/auth/account");
-const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS } = require("../../auth/cookieOptions");
+const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS } = require("../../utils/auth/cookieOptions");
 
 const PASSWORD  = "correct-horse";
 const REQ_INFO  = { ip: "127.0.0.1", userAgent: "jest-ua", deviceType: "PC" };

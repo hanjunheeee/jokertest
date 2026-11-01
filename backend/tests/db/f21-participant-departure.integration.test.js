@@ -56,7 +56,7 @@ const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
 const achievementService = require('../../services/achievement');
 const kickReceiptStore = require('../../socket/kickReceiptStore');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 const { handleKickGamePlayer, handleLeaveGameSession, __getTerminalPersistRunsForTests } =
     gameSessionSocketLayer.__testables;

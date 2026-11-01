@@ -60,8 +60,8 @@ const resetSchema = async () => {
 const db = require('../../models');
 const authService = require('../../services/auth/account');
 const userRepository = require('../../repositories/user.repositories');
-const sessionLifecycle = require('../../auth/sessionLifecycle');
-const { hashPassword } = require('../../utils/hash');
+const sessionLifecycle = require('../../services/auth/sessionLifecycle');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

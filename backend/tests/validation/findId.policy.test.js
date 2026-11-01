@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { maskEmail, FALLBACK_MASK } = require('../../utils/maskEmail');
+const { maskEmail, FALLBACK_MASK } = require('../../utils/auth/maskEmail');
 const { validateFindIdPayload } = require('../../validations/auth/findId');
 const { validateNickname } = require('../../validations/auth/signup');
 

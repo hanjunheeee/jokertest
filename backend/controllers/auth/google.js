@@ -2,9 +2,8 @@
 // 콜백 오류는 로그인 화면으로 code만 붙여 돌려보냄
 const socialAuthService = require("../../services/auth/social");
 const googleOAuthService = require("../../services/auth/oauth/google");
-const { getDeviceType } = require("../../utils/device");
-const { getClientIp }   = require("../../utils/ip");
-const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../auth/cookieOptions");
+const { getDeviceType, getClientIp } = require("../../utils/request");
+const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
 const { OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions } = require('./cookies');
 const { verifyOAuthAttempt, OAUTH_ATTEMPT_TTL_SECONDS, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = require("../../services/auth/social");
 

@@ -55,7 +55,7 @@ const gameResultRepository = require('../../repositories/gameResult.repositories
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
 const achievementService = require('../../services/achievement');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 const {
     handleSubmitNightAction,

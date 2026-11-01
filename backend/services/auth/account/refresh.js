@@ -1,9 +1,9 @@
 // refresh 파일, refresh 토큰 확인 · 회전 · 재사용 감지
 // 재사용이면 모든 세션 끊음, 오류 문구는 경우마다 정해짐
 const userRepository          = require("../../../repositories/user.repositories");
-const { generateToken }       = require("../../../utils/jwt");
+const { generateToken }       = require("../../../utils/auth/credentials");
 const { createError }         = require("../../../utils/appError");
-const { ACCESS_TOKEN_SHORT_TTL_SECONDS, REFRESH_TOKEN_GRACE_MS, capAccessTokenTtlSeconds } = require("../../../auth/cookieOptions");
+const { ACCESS_TOKEN_SHORT_TTL_SECONDS, REFRESH_TOKEN_GRACE_MS, capAccessTokenTtlSeconds } = require("../../../utils/auth/cookieOptions");
 const { hashRefreshToken, deriveRotatedRefreshToken } = require('./tokens');
 
 // 없음 → 폐기 → 만료 → 정지 → 재사용 → 유효 시간 → 새 토큰 (직전 토큰은 짧은 유예 안에서만 같은 결과)

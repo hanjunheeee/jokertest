@@ -21,7 +21,7 @@ const cookieParser = require("cookie-parser");
 const db = require("../../models");
 const userRepository = require("../../repositories/user.repositories");
 const authService = require("../../services/auth/account");
-const mailAdapterModule = require("../../mail/mailAdapter");
+const mailAdapterModule = require("../../utils/adapters/mail");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const AUTH_ROUTES_PATH = require.resolve("../../routes/auth.routes");

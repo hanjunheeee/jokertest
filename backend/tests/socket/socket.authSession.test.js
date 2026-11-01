@@ -7,13 +7,13 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const socketLayer = require("../../socket/socket");
 const matchmaking = require("../../socket/matchmaking");
 const gameSessionSocketLayer = require("../../socket/gameSession");
-const sessionLifecycle = require("../../auth/sessionLifecycle");
+const sessionLifecycle = require("../../services/auth/sessionLifecycle");
 const { createFakeSocket, createFakeIo } = require("../helpers/matchmakingFixtures");
 
 const UUID = "auth-session-uuid";

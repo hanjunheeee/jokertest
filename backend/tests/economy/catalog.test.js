@@ -9,7 +9,7 @@ const {
     EMOTICON_PRICE_GOLD_PLACEHOLDER,
     getCatalogItem,
     listDefaultGrantItems,
-} = require('../../economy/catalog');
+} = require('../../services/economy/catalog');
 
 const BASIC_EMOTICON_IDS = [
     'emoji-basic-reject', 'emoji-basic-tears', 'emoji-basic-anger', 'emoji-basic-love',

@@ -7,7 +7,7 @@ const economyService = require("../services/economy");
 const currencyProductsService = require("../services/economy/currencyProducts");
 const topupService = require("../services/economy/topup");
 const userRepository = require("../repositories/user.repositories");
-const { getRewardCatalogEntry } = require("../economy/catalog");
+const { getRewardCatalogEntry } = require("../services/economy/catalog");
 
 const requireSelf = (req, res, next) => {
     const authenticatedUuid = req.user?.uuid;

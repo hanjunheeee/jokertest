@@ -5,7 +5,7 @@ const socket = require('../../socket/socket')
 const matchmaking = require('../../socket/matchmaking')
 const gameSessionSocketLayer = require('../../socket/gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
-const sessionLifecycle = require('../../auth/sessionLifecycle')
+const sessionLifecycle = require('../../services/auth/sessionLifecycle')
 const presenceService = require('../../services/presence/status')
 const { createFakeSocket, createFakeIo } = require('../helpers/matchmakingFixtures')
 

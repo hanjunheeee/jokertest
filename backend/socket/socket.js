@@ -3,7 +3,7 @@
 const { Server } = require("socket.io");
 const cookie = require("cookie");
 
-const sessionLifecycle = require("../auth/sessionLifecycle");
+const sessionLifecycle = require("../services/auth/sessionLifecycle");
 const presenceService = require("../services/presence/status");
 const matchmaking     = require("./matchmaking");
 const gameSession     = require("./gameSession");

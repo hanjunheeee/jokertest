@@ -12,7 +12,7 @@ const defaultDb = () => require('../../../models');
 const dbOf = (deps) => deps.db ?? defaultDb();
 
 // 주입 결제사 먼저, 없으면 토스 (부를 때 require)
-const adapterOf = (deps) => deps.adapter ?? require('../../../payments/tossAdapter');
+const adapterOf = (deps) => deps.adapter ?? require('../../../utils/adapters/toss');
 
 // 주입 시각 함수 먼저
 const nowOf = (deps) => (typeof deps.now === 'function' ? deps.now() : new Date());

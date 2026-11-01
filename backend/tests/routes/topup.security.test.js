@@ -19,7 +19,7 @@ const { createError } = require("../../utils/appError");
 const userRepository = require("../../repositories/user.repositories");
 const currencyProductsService = require("../../services/economy/currencyProducts");
 const topupService = require("../../services/economy/topup");
-const { createTossAdapter } = require("../../payments/tossAdapter");
+const { createTossAdapter } = require("../../utils/adapters/toss");
 const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 
 const RUN = crypto.randomBytes(8).toString("hex");

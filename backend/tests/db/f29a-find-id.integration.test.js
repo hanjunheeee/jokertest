@@ -70,7 +70,7 @@ const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_
 
 const db = require('../../models');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
-const { maskEmail } = require('../../utils/maskEmail');
+const { maskEmail } = require('../../utils/auth/maskEmail');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

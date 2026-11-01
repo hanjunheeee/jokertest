@@ -51,7 +51,7 @@ const economyService = require('../../services/economy');
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
 const matchmaking = require('../../socket/matchmaking');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 const {
     callAsPromise, createFakeSocket, createFakeIo, validSettingsPayload, readyPayload, startPayload,

@@ -9,7 +9,7 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const startServer = async (t) => {

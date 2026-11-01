@@ -57,8 +57,8 @@ const resetSchema = async () => {
 const db = require('../../models');
 const economyService = require('../../services/economy');
 const { CURRENCIES } = economyService;
-const catalog = require('../../economy/catalog');
-const { hashPassword } = require('../../utils/hash');
+const catalog = require('../../services/economy/catalog');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

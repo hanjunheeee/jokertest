@@ -2,7 +2,7 @@
 
 // 경제 상수 파일, 통화·최대 잔액·슬롯/컬럼 짝·무료 스킨·골드 구매·이모티콘 칸
 // 경제 안 파일들과 상품 서비스가 같이 씀
-const catalog = require('../../economy/catalog');
+const catalog = require('./catalog');
 const {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,

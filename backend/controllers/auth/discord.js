@@ -2,9 +2,8 @@
 // 구글과 같은 흐름 (합치기는 나중 리팩터)
 const socialAuthService = require("../../services/auth/social");
 const discordOAuthService = require("../../services/auth/oauth/discord");
-const { getDeviceType } = require("../../utils/device");
-const { getClientIp }   = require("../../utils/ip");
-const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../auth/cookieOptions");
+const { getDeviceType, getClientIp } = require("../../utils/request");
+const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
 const { OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions } = require('./cookies');
 const { verifyOAuthAttempt, OAUTH_ATTEMPT_TTL_SECONDS, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = require("../../services/auth/social");
 

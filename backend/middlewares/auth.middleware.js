@@ -1,5 +1,5 @@
 const { createError }  = require("../utils/appError");
-const sessionLifecycle = require("../auth/sessionLifecycle");
+const sessionLifecycle = require("../services/auth/sessionLifecycle");
 
 exports.verifyToken = async (req, res, next) => {
     let decoded;

@@ -49,7 +49,7 @@ const resetSchema = async () => {
 const db = require('../../models');
 const economyService = require('../../services/economy');
 const { CURRENCIES } = economyService;
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 const authService = require('../../services/auth/account');
 const socialAuthService = require('../../services/auth/social');
 const { backfillDefaultEntitlements } = require('../../db/backfillEconomy');
@@ -257,7 +257,7 @@ test('AC-03(R-IMPL): 실제 DB에서도 지갑 조회 없이 곧바로 기본 �
     await setUp();
 
     const userId = await createLocalUser('ac03eq');
-    const { DEFAULT_PROFILE_PHOTO_ID } = require('../../economy/catalog');
+    const { DEFAULT_PROFILE_PHOTO_ID } = require('../../services/economy/catalog');
 
     const loadout = await economyService.equipItem({ userId, slot: 'PROFILE_PHOTO', itemId: DEFAULT_PROFILE_PHOTO_ID });
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
@@ -285,7 +285,7 @@ test('AC-03(CODEX-2): authService.signup 직후 — 지갑/장착 조회를 한 
         signupProof,
     });
 
-    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../services/economy/catalog');
     const owned = await db.sequelize.models.EconomyEntitlement.findAll({ where: { user_id: user.uuid } });
     assert.equal(owned.length, 25, '가입 트랜잭션이 커밋된 시점에 이미 25종(프로필 16 + 테두리 1 + 기본 이모티콘 8)을 보유해야 한다');
     assert.equal(new Set(owned.map((row) => row.item_id)).size, 25, '중복 지급이 없어야 한다');
@@ -321,7 +321,7 @@ test('AC-03(CODEX-2): socialAuthService.completeSocialSignup 직후 — 지갑/�
     assert.equal(owned.length, 25, '소셜 가입 완료 트랜잭션이 커밋된 시점에 이미 기본 지급이 끝나 있어야 한다');
 
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: signup.user.uuid } });
-    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../services/economy/catalog');
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
 });
@@ -401,7 +401,7 @@ test('AC-03(CODEX-2): 기존 계정 백필(backfillDefaultEntitlements) — 가�
     const ledgerAfterBackfill = await db.EconomyLedgerEntry.count({ where: { user_id: userId } });
 
     const loadout = await db.sequelize.models.EconomyLoadout.findOne({ where: { user_id: userId } });
-    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../economy/catalog');
+    const { DEFAULT_PROFILE_PHOTO_ID, DEFAULT_PROFILE_BORDER_ID } = require('../../services/economy/catalog');
     assert.equal(loadout.selected_profile_photo_id, DEFAULT_PROFILE_PHOTO_ID);
     assert.equal(loadout.selected_profile_border_id, DEFAULT_PROFILE_BORDER_ID);
 

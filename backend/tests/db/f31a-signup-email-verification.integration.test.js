@@ -78,9 +78,9 @@ const rebuildFullSchema = async () => {
 
 const db = require('../../models');
 const authService = require('../../services/auth/account');
-const mailAdapterModule = require('../../mail/mailAdapter');
+const mailAdapterModule = require('../../utils/adapters/mail');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

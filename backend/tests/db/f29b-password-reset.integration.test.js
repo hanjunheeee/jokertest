@@ -78,9 +78,9 @@ const db = require('../../models');
 const authService = require('../../services/auth/account');
 const socialAuthService = require('../../services/auth/social');
 const userRepository = require('../../repositories/user.repositories');
-const mailAdapterModule = require('../../mail/mailAdapter');
+const mailAdapterModule = require('../../utils/adapters/mail');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 const { prepareSignupProof } = require('../helpers/signupProof');
 
 test.after(async () => {
@@ -202,7 +202,7 @@ test('AC-04: confirm은 새 로그인 없이도 기존 세션 전체를 폐기�
     const local = await createLocalUser({ nickname: 'AC04세션', email: `ac04-${crypto.randomUUID()}@example.com` });
     const memory = useMemoryMailAdapter(t);
     const base = await startServer(t);
-    const { generateToken } = require('../../utils/jwt');
+    const { generateToken } = require('../../utils/auth/credentials');
 
     const sessionAId = crypto.randomUUID();
     const sessionBId = crypto.randomUUID();

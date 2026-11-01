@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-const { createTossAdapter, readConfig, CONFIRM_URL, paymentUrl, idempotencyKeyOf } = require('../../payments/tossAdapter');
+const { createTossAdapter, readConfig, CONFIRM_URL, paymentUrl, idempotencyKeyOf } = require('../../utils/adapters/toss');
 
 const RUN = crypto.randomBytes(6).toString('hex');
 const CLIENT_KEY = `test_ck_client${RUN}0000`;

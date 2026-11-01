@@ -70,7 +70,7 @@ test("achievementService가 실패하면 next(error)로 전달된다", async (t)
     assert.equal(caught.message, "db down");
 });
 
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const ROUTE_TOKEN = generateToken({ uuid: "route-u1", role: "USER", sessionId: "route-session-1" });

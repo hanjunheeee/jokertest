@@ -14,7 +14,7 @@ const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
 const userRepository = require("../../repositories/user.repositories");
-const mailAdapter = require("../../mail/mailAdapter");
+const mailAdapter = require("../../utils/adapters/mail");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const hashToken = (raw) => crypto.createHash("sha256").update(raw).digest("hex");

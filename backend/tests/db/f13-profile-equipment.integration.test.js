@@ -53,7 +53,7 @@ const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_
 
 const db = require('../../models');
 const economyService = require('../../services/economy');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

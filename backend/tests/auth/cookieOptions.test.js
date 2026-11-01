@@ -7,7 +7,7 @@ const {
     buildRefreshCookieOptions,
     capAccessTokenTtlSeconds,
     clearSessionCookie,
-} = require("../../auth/cookieOptions");
+} = require("../../utils/auth/cookieOptions");
 
 test("rememberMe true는 persistent cookie를, false는 session cookie를 만든다", () => {
     const persistent = buildSessionCookieOptions(true);

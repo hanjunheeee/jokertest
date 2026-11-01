@@ -536,7 +536,7 @@ test("저장 레코드의 settings.gameSource가 조회 경로의 개발 경기 
     assert.equal(stats.find((s) => s.role === "CITIZEN").games, 0, "개발 경기 출처가 저장→조회 왕복 후에도 제외되어야 한다");
 });
 
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const ROUTE_TOKEN = generateToken({ uuid: "route-u1", role: "USER", sessionId: "route-session-1" });

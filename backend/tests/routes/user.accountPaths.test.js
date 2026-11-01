@@ -10,7 +10,7 @@ const fs           = require("node:fs");
 const path         = require("node:path");
 
 const db = require("../../models");
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const { Sequelize }          = require("sequelize");

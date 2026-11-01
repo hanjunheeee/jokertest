@@ -117,7 +117,7 @@ const createF29RecoveryFixture = async (t, options = {}) => {
 
     const restoreLimitEnv = applyLimitEnv(limits);
 
-    const mailAdapterModule = require('../../mail/mailAdapter');
+    const mailAdapterModule = require('../../utils/adapters/mail');
     const memoryMail = mailAdapterModule.createMemoryMailAdapter();
     const originalCreateHttpMailAdapter = mailAdapterModule.createHttpMailAdapter;
     mailAdapterModule.createHttpMailAdapter = () => memoryMail;

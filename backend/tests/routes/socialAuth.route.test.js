@@ -8,7 +8,7 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 const jwt          = require("jsonwebtoken");
 
-const { generateToken } = require("../../utils/jwt");
+const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const userRepository    = require("../../repositories/user.repositories");
 const socialAuthService = require("../../services/auth/social");

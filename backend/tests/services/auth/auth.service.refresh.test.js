@@ -7,7 +7,7 @@ const crypto = require("node:crypto");
 
 const userRepository = require("../../../repositories/user.repositories");
 const authService    = require("../../../services/auth/account");
-const { REFRESH_TOKEN_GRACE_MS } = require("../../../auth/cookieOptions");
+const { REFRESH_TOKEN_GRACE_MS } = require("../../../utils/auth/cookieOptions");
 
 const hashOf = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 

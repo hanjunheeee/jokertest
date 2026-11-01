@@ -3,7 +3,7 @@
 // 이모티콘 팔레트 파일, 보유 이모티콘 · 팔레트 조회/저장
 // 팔레트 컨트롤러가 부름
 const crypto = require('crypto');
-const catalog = require('../../economy/catalog');
+const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb } = require('./helpers');
 const { EMOJI_PALETTE_SLOT_COLUMNS, DEFAULT_EMOJI_PALETTE_SLOTS } = require('./constants');

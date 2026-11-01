@@ -56,8 +56,7 @@ const unavailable = (t) => {
 
 const db = require('../../models');
 const economyService = require('../../services/economy');
-const { hashPassword } = require('../../utils/hash');
-const { generateToken } = require('../../utils/jwt');
+const { hashPassword, generateToken } = require('../../utils/auth/credentials');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 
 test.after(async () => {

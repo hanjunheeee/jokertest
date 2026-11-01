@@ -2,7 +2,7 @@
 
 // 아이템 구매 파일, 묶음·단건 구매 + 구매 결과 다시 묻기
 // 같은 참조 id 요청은 처음 결과 그대로 (중복 결제 막기)
-const catalog = require('../../economy/catalog');
+const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb, purchasePayloadsEqual, purchaseRequestConflictError, snapshotLedgerEntry } = require('./helpers');
 const { CURRENCIES } = require('./constants');

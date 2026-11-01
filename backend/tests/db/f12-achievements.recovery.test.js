@@ -61,7 +61,7 @@ const gameResultRepository = require('../../repositories/gameResult.repositories
 const achievementRecoveryService = require('../../services/achievement/recovery');
 const economyService = require('../../services/economy');
 const achievementDefinitions = require('../../services/achievement/definitions');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

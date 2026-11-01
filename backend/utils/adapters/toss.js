@@ -1,6 +1,6 @@
 'use strict';
 
-const { createError } = require('../utils/appError');
+const { createError } = require('../appError');
 
 const TOSS_API_ORIGIN = 'https://api.tosspayments.com';
 const CONFIRM_URL = `${TOSS_API_ORIGIN}/v1/payments/confirm`;

@@ -3,7 +3,7 @@
 // 기본 지급 파일, 처음 계정에 기본 장착·기본 보유 아이템 넣기
 // 가입·소셜 가입·백필 스크립트가 부름
 const crypto = require('crypto');
-const catalog = require('../../economy/catalog');
+const catalog = require('./catalog');
 const { defaultDb } = require('./helpers');
 const { CURRENCIES } = require('./constants');
 const {

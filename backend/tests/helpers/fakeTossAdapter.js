@@ -1,6 +1,6 @@
 'use strict';
 
-const tossAdapter = require('../../payments/tossAdapter');
+const tossAdapter = require('../../utils/adapters/toss');
 const { createError } = require('../../utils/appError');
 
 const FAKE_CLIENT_KEY = 'test_ck_fakeclientkey0000000000000001';

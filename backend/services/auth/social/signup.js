@@ -2,7 +2,7 @@
 // 이메일 없는 제공자면 이메일 인증 증명까지 받음
 const userRepository = require("../../../repositories/user.repositories");
 const authService = require("../account");
-const { hashPassword } = require("../../../utils/hash");
+const { hashPassword } = require("../../../utils/auth/credentials");
 const { createError } = require("../../../utils/appError");
 const { validateNickname, validateBirthDate } = require("../../../validations/auth/signup");
 const db = require("../../../models");

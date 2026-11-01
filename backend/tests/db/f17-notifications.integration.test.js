@@ -69,8 +69,7 @@ const notificationService = require('../../services/notification');
 const achievementService = require('../../services/achievement');
 const gameResultRepository = require('../../repositories/gameResult.repositories');
 const socket = require('../../socket/socket');
-const { hashPassword } = require('../../utils/hash');
-const { generateToken } = require('../../utils/jwt');
+const { hashPassword, generateToken } = require('../../utils/auth/credentials');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 
 test.after(async () => {

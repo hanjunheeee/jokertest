@@ -1,7 +1,7 @@
 // 세션 컨트롤러 파일, 내 정보 · 로그아웃 · refresh
 // refresh 실패(401·403)면 세션 쿠키 지움
 const authService       = require("../../services/auth/account");
-const { buildSessionCookieOptions, buildRefreshCookieOptions, clearSessionCookie } = require("../../auth/cookieOptions");
+const { buildSessionCookieOptions, buildRefreshCookieOptions, clearSessionCookie } = require("../../utils/auth/cookieOptions");
 
 // 토큰 속 uuid·role만
 exports.me = async (req, res, next) => {

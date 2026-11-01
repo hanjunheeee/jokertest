@@ -1,9 +1,8 @@
 // 소셜 가입 컨트롤러 파일, 소셜 가입 마무리 · 가입 의도 확인
 // 시도 표의 rememberMe는 같은 가입 의도일 때만 믿음
 const socialAuthService = require("../../services/auth/social");
-const { getDeviceType } = require("../../utils/device");
-const { getClientIp }   = require("../../utils/ip");
-const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../auth/cookieOptions");
+const { getDeviceType, getClientIp } = require("../../utils/request");
+const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
 const { OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions } = require('./cookies');
 const { verifyOAuthAttempt, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = socialAuthService;
 

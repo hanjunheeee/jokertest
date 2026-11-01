@@ -1,9 +1,8 @@
 // 계정 컨트롤러 파일, 가입 · 이메일 확인 · 로그인
 // 로그인 성공이면 access·refresh 쿠키 넣음
 const authService       = require("../../services/auth/account");
-const { getDeviceType } = require("../../utils/device");
-const { getClientIp }   = require("../../utils/ip");
-const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../auth/cookieOptions");
+const { getDeviceType, getClientIp } = require("../../utils/request");
+const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
 
 // 가입 서비스 부르고 200
 exports.signup = async (req, res, next) => {

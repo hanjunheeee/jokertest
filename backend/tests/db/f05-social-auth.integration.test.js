@@ -66,7 +66,7 @@ const db = require('../../models');
 const authService = require('../../services/auth/account');
 const socialAuthService = require('../../services/auth/social');
 const userRepository = require('../../repositories/user.repositories');
-const { hashPassword } = require('../../utils/hash');
+const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();
