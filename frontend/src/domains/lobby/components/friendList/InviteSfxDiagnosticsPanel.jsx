@@ -10,6 +10,7 @@ import {
   summarizeInviteSfxObservations,
 } from "@/domains/lobby/diagnostics/inviteSfxDiagnostics.js"
 
+// 기록이 바뀔 때마다 다시 그림, 수·막힌 이유·기록 줄을 보임 (계정 id는 끝 6자만)
 export default function InviteSfxDiagnosticsPanel() {
   const observations = useSyncExternalStore(
     subscribeInviteSfxObservations,
@@ -17,6 +18,7 @@ export default function InviteSfxDiagnosticsPanel() {
     getInviteSfxObservations,
   )
 
+  // 훅은 먼저 부르고, 진단이 꺼져 있으면 안 그림
   if (!isInviteSfxDiagnosticsEnabled()) return null
 
   const summary = summarizeInviteSfxObservations(observations)

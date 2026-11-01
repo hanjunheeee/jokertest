@@ -15,6 +15,7 @@ export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
   const saveGeneration = useRef(0)
 
   const confirmLoadout = useCallback(async ({ appliedSkinsByJob, appliedCardFrameId, isActive = () => true, onChanged }) => {
+    // 이미 저장 중이면 거절
     if (savingRef.current) return { ok: false, reason: "ALREADY_SAVING" }
     const saveEpoch = saveGeneration.current
     savingRef.current = true
@@ -39,12 +40,14 @@ export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
       return result
     }
 
+    // 바뀐 칸이 없으면 바로 성공
     if (changedSlots.length === 0) {
       setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SUCCESS)
       return finish({ ok: true, changed: false })
     }
 
     if (isStale()) return finish({ ok: false, stale: true })
+    // 바뀐 칸이 있을 때만 알림 콜백(확인 소리)
     try { onChanged?.() } catch { /* 알림 콜백 오류는 저장을 막지 않게 무시함 */ }
 
     // 칸마다 차례로 보냄: 확정 거절은 첫 것만 남기고, 나머지 오류는 결과 모름으로 모음
@@ -53,7 +56,6 @@ export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
     for (const changedSlot of changedSlots) {
       if (isStale()) return finish({ ok: false, stale: true })
       try {
-        // 슬롯별 장착은 각각 독립적인 서버 요청이라 하나씩 차례로 보냄
         await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
       } catch (error) {
         if (isStale()) return finish({ ok: false, stale: true })
@@ -81,18 +83,21 @@ export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
 
     if (isStale()) return finish({ ok: false, stale: true })
 
+    // 확정 거절이 하나라도 있으면 실패
     if (firstRejection) {
       setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.ERROR)
       setConfirmError(firstRejection.message ?? "장착에 실패했습니다.")
       return finish({ ok: false, error: firstRejection })
     }
 
+    // 결과 모르는 칸이 남으면 모름
     if (unresolvedUncertain) {
       setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.UNCERTAIN)
       setConfirmError("저장 결과를 확인하지 못했습니다. 다시 시도해 주세요.")
       return finish({ ok: false, uncertain: true })
     }
 
+    // 모두 성공
     setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.SUCCESS)
     return finish({ ok: true, changed: true })
   }, [draftSkinsByJob, draftCardFrameId, edited])

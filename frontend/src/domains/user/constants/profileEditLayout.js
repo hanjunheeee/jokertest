@@ -1,5 +1,8 @@
+// 프로필 편집 창 className·움직임과 프로필 사진·테두리 아이템 id → 그림 경로
+// 프로필 편집 창 컴포넌트들·편집 훅·프로필 꾸미기 스토어·시험이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../shared/constants/customScrollbarStyles.js"
 
+// 창 열고 닫는 움직임·배경·틀
 export const PROFILE_EDIT_TRANSITION = {
   duration: 0.35,
   ease: [0.22, 1, 0.36, 1],
@@ -17,6 +20,7 @@ export const PANEL_CLASS =
 export const HEADER_CLASS =
   "border-b border-[#2a1810]/14 px-[clamp(0.85rem,1.5vw,1.15rem)] py-[clamp(0.65rem,1.2vh,0.85rem)]"
 
+// 위쪽 탭
 export const PROFILE_EDIT_TABS_CLASS =
   "flex items-center justify-center gap-[clamp(0.35rem,0.75vw,0.55rem)]"
 
@@ -31,6 +35,7 @@ export const TAB_BTN_LABEL_CLASS =
 export const TAB_BTN_LABEL_INACTIVE_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.92rem)] font-bold text-[#5c554d] [text-shadow:0_1px_1px_rgba(245,240,230,0.35)]"
 
+// 미리보기
 export const PREVIEW_SECTION_CLASS =
   "flex items-center justify-center border-b border-[#2a1810]/12 px-[clamp(0.85rem,1.5vw,1.15rem)] py-[clamp(0.85rem,1.8vh,1.15rem)]"
 
@@ -46,6 +51,7 @@ export const PREVIEW_PHOTO_CLASS =
 export const PREVIEW_FRAME_CLASS =
   "pointer-events-none absolute inset-0 z-[2] h-full w-full select-none object-contain"
 
+// 보유 목록 칸
 export const GRID_SECTION_CLASS =
   `min-h-[min(10rem,28vh)] max-h-[min(16rem,38vh)] overflow-y-auto overscroll-contain px-[clamp(0.75rem,1.35vw,1rem)] py-[clamp(0.65rem,1.2vh,0.85rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
@@ -70,6 +76,7 @@ export const OPTION_PHOTO_CLASS =
 export const OPTION_BORDER_CLASS =
   "block h-[88%] w-[88%] select-none object-contain object-center"
 
+// 확인·닫기 버튼
 export const FOOTER_CLASS =
   "border-t border-[#2a1810]/14 px-[clamp(0.85rem,1.5vw,1.15rem)] py-[clamp(0.75rem,1.35vh,1rem)]"
 
@@ -87,11 +94,13 @@ export const CLOSE_BTN_CLASS =
 export const CLOSE_BTN_IMG_CLASS =
   "block h-auto w-[clamp(2.1rem,3.8vw,2.65rem)] select-none"
 
+// 그림 폴더 (테두리 폴더 이름의 빈칸은 실제 public 폴더 이름 그대로)
 const PROFILE_PHOTO_BASE = "/shopItem/player-profile/"
 const PROFILE_BORDER_BASE = "/shopItem/player- profileborder/"
 
 const PHOTO_ITEM_ID_PREFIX = "player-profile-"
 
+// 사진 이름 (보여 줄 순서)
 const PHOTO_NAMES_IN_DISPLAY_ORDER = [
   "금빛가면", "마인", "사냥꾼", "기사", "붉은기운", "악당", "영애", "수녀",
   "영주", "화관쓴소녀", "암살자", "역병의사", "그림자", "음유시인", "드워프", "귀부인",
@@ -99,12 +108,15 @@ const PHOTO_NAMES_IN_DISPLAY_ORDER = [
 
 const photoAssetSrcForName = (name) => `${PROFILE_PHOTO_BASE}프로필-${name}.png`.normalize("NFD")
 
+// 무료 사진 그림 목록 (지금 아무도 안 씀)
 export const FREE_PHOTOS = PHOTO_NAMES_IN_DISPLAY_ORDER.map(photoAssetSrcForName)
 
+// 기본 사진·사진 아이템 종류
 export const DEFAULT_PROFILE_PHOTO_ITEM_ID = `${PHOTO_ITEM_ID_PREFIX}금빛가면`
 
 export const PROFILE_PHOTO_ITEM_TYPE = "PROFILE_PHOTO"
 
+// 사진 아이템 id → 그림 경로 (접두어가 다르거나 이름이 비면 null)
 export const photoAssetSrcForItemId = (itemId) => {
   if (typeof itemId !== "string" || !itemId.startsWith(PHOTO_ITEM_ID_PREFIX)) return null
   const name = itemId.slice(PHOTO_ITEM_ID_PREFIX.length)
@@ -112,17 +124,20 @@ export const photoAssetSrcForItemId = (itemId) => {
   return photoAssetSrcForName(name)
 }
 
+// 사진 고르기 칸 목록 (지금은 시험만 씀)
 export const PROFILE_EDIT_PHOTO_OPTIONS = PHOTO_NAMES_IN_DISPLAY_ORDER.map((name) => ({
   itemId: `${PHOTO_ITEM_ID_PREFIX}${name}`,
   src: photoAssetSrcForName(name),
 }))
 
+// 테두리 id 접두어·기본 테두리·아이템 종류
 const BORDER_ITEM_ID_PREFIX = "profile-border-"
 
 export const DEFAULT_PROFILE_BORDER_ITEM_ID = `${BORDER_ITEM_ID_PREFIX}평민`
 
 export const BORDER_ITEM_TYPE = "PROFILE_BORDER"
 
+// 테두리 아이템 id → 그림 경로 (접두어가 다르거나 등급이 비면 null)
 export const borderAssetSrcForItemId = (itemId) => {
   if (typeof itemId !== "string" || !itemId.startsWith(BORDER_ITEM_ID_PREFIX)) return null
   const tier = itemId.slice(BORDER_ITEM_ID_PREFIX.length)
@@ -130,6 +145,7 @@ export const borderAssetSrcForItemId = (itemId) => {
   return `${PROFILE_BORDER_BASE}프로필프레임-${tier}.png`.normalize("NFD")
 }
 
+// 탭 id·이름
 export const PROFILE_EDIT_TAB_PHOTO = "photo"
 export const PROFILE_EDIT_TAB_BORDER = "border"
 
@@ -138,6 +154,7 @@ export const PROFILE_EDIT_TABS = [
   { id: PROFILE_EDIT_TAB_BORDER, label: "테두리 수정" },
 ]
 
+// 목록 상태 글자·다시 시도·오류 글자
 export const GRID_STATUS_TEXT_CLASS =
   "flex flex-col items-center gap-[0.5rem] px-[0.5rem] py-[1rem] text-center font-body app-text-scaled [--app-text-size:0.85rem] text-[#5c554d]"
 

@@ -3,6 +3,7 @@
 import { INVITE_SFX_DIAGNOSTICS_LIMIT } from "../../constants/inviteSfxDiagnostics.js";
 import { isInviteSfxDiagnosticsEnabled } from "./flag.js";
 
+// 지금 계정·최근 기록(얼린 배열)·기록 번호·구독자
 let scopeAccountId = null;
 let entries = Object.freeze([]);
 let entrySeq = 0;
@@ -24,6 +25,7 @@ export function syncInviteSfxDiagnosticsAccount(accountId) {
     notify();
 }
 
+// 기록·계정·번호를 모두 처음으로 (시험이 씀)
 export function resetInviteSfxDiagnostics() {
     scopeAccountId = null;
     entries = Object.freeze([]);
@@ -36,9 +38,11 @@ export function recordInviteSfxObservation(build) {
     if (!isInviteSfxDiagnosticsEnabled()) return null;
     try {
         const raw = build();
+        // 만든 값이 객체가 아니면 안 남김
         if (raw === null || typeof raw !== "object") return null;
         const foreign = typeof raw.accountId === "string" && raw.accountId !== scopeAccountId;
         entrySeq += 1;
+        // 최근 기록만 정해진 개수로 남김
         entries = Object.freeze([
             ...entries.slice(Math.max(0, entries.length - (INVITE_SFX_DIAGNOSTICS_LIMIT - 1))),
             Object.freeze({
@@ -64,6 +68,7 @@ export function recordInviteSfxObservation(build) {
 
 // 재생이 끝나면 그 기록에 결과를 붙임 (그사이 밀려난 기록이면 무시)
 export function trackInviteSfxCompletion(seq, completion) {
+    // 기록 번호나 끝남 약속이 없으면 할 일 없음
     if (!Number.isInteger(seq)) return;
     if (completion === null || typeof completion?.then !== "function") return;
     completion.then(
@@ -78,14 +83,17 @@ export function trackInviteSfxCompletion(seq, completion) {
     );
 }
 
+// 지금 기록 (얼린 배열이라 그대로 넘김)
 export function getInviteSfxObservations() {
     return entries;
 }
 
+// 기록이 묶인 계정
 export function getInviteSfxDiagnosticsAccount() {
     return scopeAccountId;
 }
 
+// 기록이 바뀔 때 부를 함수 등록, 떼는 함수를 돌려줌
 export function subscribeInviteSfxObservations(listener) {
     if (typeof listener !== "function") return () => {};
     listeners.add(listener);

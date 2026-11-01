@@ -39,7 +39,7 @@ export const seqActions = (set, get) => ({
             : { ok: false, reason: "superseded-error", superseded: true, message: applied.message };
     },
 
-    // 로컬에서 목록을 직접 바꿀 때 그보다 먼저 시작한 응답이 덮지 못하게 순번을 올림
+    // 로컬에서 목록을 직접 바꿀 때 그보다 먼저 시작한 응답이 덮지 못하게 순번을 올림 (setIncomingRequests만 씀)
     bumpSeq: (key) => {
         const ticket = nextSeq();
         set((state) => ({
@@ -49,7 +49,9 @@ export const seqActions = (set, get) => ({
         return ticket;
     },
 
+    // 계정별 상태만 비움 (계정·세대는 그대로, 지금 아무도 안 씀)
     reset: () => set(initialAccountState()),
 
+    // 시험용: 계정 칸까지 처음 상태로
     __resetForTests: () => set(initialState()),
 });

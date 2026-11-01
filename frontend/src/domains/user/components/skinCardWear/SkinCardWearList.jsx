@@ -1,3 +1,5 @@
+// 스킨·카드 목록 (스크롤 + 자체 스크롤바)
+// SkinCardWearPanel이 씀
 import { useRef } from "react"
 import { isItemEquipped } from "../../constants/skinCardWear/skinCardWearCatalog.js"
 import {
@@ -10,6 +12,7 @@ import {
 import Scrollbar from "../../../../shared/ui/Scrollbar.jsx"
 import SkinCardWearListItem from "./SkinCardWearListItem.jsx"
 
+// 항목마다 고름·착용 중·보유 여부를 계산해 넘김
 export default function SkinCardWearList({
   items,
   selectedItemId,

@@ -1,3 +1,5 @@
+// 팔레트 8칸 바퀴 (틀 그림 + 칸 버튼)
+// EmoticonWheelSection이 씀
 import { EMOTICON_PALETTE_ASSETS } from "@/domains/user/constants/emoticonPaletteAssets.js"
 import { toSlotNumber } from "@/domains/user/constants/emoticonPaletteSlots.js"
 import {
@@ -12,6 +14,7 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 칸마다 든 이모티콘 그림, 비면 빈 칸 글자, 고른 칸은 눌림 표시
 export default function EmoticonPaletteWheel({
   slots,
   selectedSlotIndex,

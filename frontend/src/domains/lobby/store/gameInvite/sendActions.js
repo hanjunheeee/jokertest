@@ -10,10 +10,12 @@ export const sendActions = (set, get) => ({
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
         if (get().sendingReceiverIds.has(receiverId)) return { ok: false, reason: "in-progress" };
 
+        // 키 묶음을 안 주면 받는 사람 id로 묶음
         const scope = typeof keyScope === "string" && keyScope.length > 0 ? keyScope : receiverId;
         const attempt = get().sendKeys[scope] ?? 1;
         const creationKey = `${scope}:${get().sendLifecycleId}:${attempt}`;
 
+        // 보내는 중 표시, 그 사람 옛 오류 지움
         set((state) => ({
             sendingReceiverIds: new Set(state.sendingReceiverIds).add(receiverId),
             sendErrors: Object.fromEntries(

@@ -1,3 +1,5 @@
+// 배너 초상 (장착한 프로필 사진·테두리)
+// BannerMainButton이 씀
 import { useEffect } from "react"
 import {
   LOBBY_BANNER_PROFILE_LAYOUT,
@@ -12,6 +14,7 @@ import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import { PLAYER_PROFILE_ASSETS } from "../../../../shared/constants/playerProfileAssets.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 받은 그림이 없으면 꾸미기 스토어 값, 그것도 없으면 기본 그림
 export default function BannerProfilePortrait({
   photoSrc: photoSrcProp,
   frameSrc: frameSrcProp,
@@ -19,6 +22,7 @@ export default function BannerProfilePortrait({
   const storePhoto = useProfileCustomizationStore((state) => state.photoSrc)
   const storeFrame = useProfileCustomizationStore((state) => state.frameSrc)
 
+  // 처음 그릴 때 지갑 요약 받기 (장착값이 꾸미기 스토어로 들어옴)
   useEffect(() => {
     useEconomyStore.getState().fetchSummary()
   }, [])

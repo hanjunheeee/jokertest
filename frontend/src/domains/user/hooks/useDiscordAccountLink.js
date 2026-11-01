@@ -1,3 +1,7 @@
+// Discord 계정 연결 결과 문구 (서버가 주소에 붙여 준 성공 표시·오류 코드 → 안내 문구)
+// DiscordAccountLink·시험이 씀 (이름은 훅이지만 훅은 없음)
+
+// 오류 코드별 문구
 export const ERROR_MSGS = {
   OAUTH_CANCELLED: "Discord 계정 연결을 취소했습니다.",
   STATE_MISSING: "연결 요청 정보가 없습니다. 다시 시도해주세요.",
@@ -16,8 +20,10 @@ export const ERROR_MSGS = {
   DISCORD_PROFILE_INVALID: "Discord 계정 정보를 확인할 수 없습니다.",
   DISCORD_OAUTH_TIMEOUT: "Discord 응답이 지연되었습니다. 다시 시도해주세요.",
 }
+// 모르는 코드일 때 기본 문구
 export const DEFAULT_DISCORD_LINK_ERROR_MESSAGE = "Discord 계정 연결에 실패했습니다. 다시 시도해주세요."
 
+// 코드 → 문구, 모르는 코드면 기본 문구
 export function mapDiscordLinkErrorCode(code) {
   if (typeof code === "string" && Object.prototype.hasOwnProperty.call(ERROR_MSGS, code)) {
     return ERROR_MSGS[code]
@@ -25,6 +31,7 @@ export function mapDiscordLinkErrorCode(code) {
   return DEFAULT_DISCORD_LINK_ERROR_MESSAGE
 }
 
+// 성공 표시가 있으면 성공 문구, 아니면 오류 코드 문구, 둘 다 없으면 null
 export function resolveDiscordLinkMessage({ socialLinkSuccess, socialLinkError } = {}) {
   if (typeof socialLinkSuccess === "string" && socialLinkSuccess) {
     return { type: "success", text: "Discord 계정이 연결되었습니다." }

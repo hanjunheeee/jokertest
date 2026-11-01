@@ -9,6 +9,7 @@ export function useBlockActions() {
   const unblockUser = useFriendStore((state) => state.unblockUser)
   const [blockingIds, setBlockingIds] = useState(() => new Set())
 
+  // 대상 id를 처리 중으로 두고 요청, 끝나면 성공·실패 상관없이 뺌
   const run = useCallback(async (targetId, action) => {
     setBlockingIds((previous) => new Set(previous).add(targetId))
     try {
@@ -22,6 +23,7 @@ export function useBlockActions() {
     }
   }, [])
 
+  // 차단·차단 해제 버튼 처리
   const handleBlockUser = useCallback(
     (targetId) => run(targetId, blockUser),
     [run, blockUser],

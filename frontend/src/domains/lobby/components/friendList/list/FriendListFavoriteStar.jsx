@@ -1,9 +1,12 @@
+// 친구 줄의 즐겨찾기 별 버튼
+// FriendListRow가 줄 맨 앞에 그림
 import {
   ROW_FAVORITE_BTN_CLASS,
   ROW_FAVORITE_STAR_ACTIVE_CLASS,
   ROW_FAVORITE_STAR_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
 
+// 줄 클릭으로 번지지 않게 막고 눌림 상태를 aria-pressed로 알림
 export default function FriendListFavoriteStar({ active = false, onToggle }) {
   const starClass = active
     ? ROW_FAVORITE_STAR_ACTIVE_CLASS

@@ -11,6 +11,7 @@ export const respondActions = (set, get) => ({
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
         if (get().pendingInviteIds.has(inviteId)) return { ok: false, reason: "in-progress" };
 
+        // 처리 중 표시, 그 초대 옛 오류 지움
         set((state) => ({
             pendingInviteIds: new Set(state.pendingInviteIds).add(inviteId),
             inviteErrors: Object.fromEntries(
@@ -27,6 +28,7 @@ export const respondActions = (set, get) => ({
             const invite = await declineGameInviteApi(inviteId);
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             clearPending();
+            // 서버가 준 줄이 쓸 수 있는 모양일 때만 목록에 덮음
             if (isUsable(invite)) {
                 set((state) => ({ invites: merge(state.invites, [invite]) }));
             }
@@ -34,6 +36,7 @@ export const respondActions = (set, get) => ({
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             clearPending();
+            // 실패면 그 초대 줄에 오류 문구 남김
             set((state) => ({
                 inviteErrors: { ...state.inviteErrors, [inviteId]: error?.message ?? "초대를 거절하지 못했습니다." },
             }));
@@ -41,6 +44,7 @@ export const respondActions = (set, get) => ({
         }
     },
 
+    // 수락 작업 번호 새로 받기 (수락 잠금 주인으로 씀)
     beginAcceptOperation: () => nextOperationId(),
 
     // 수락 잠금: 잠글 때 주인을 남기고, 풀 때는 같은 주인만 풂

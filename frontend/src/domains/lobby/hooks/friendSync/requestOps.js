@@ -1,5 +1,5 @@
 // 받은 친구 신청 하나 수락·거절 (잠금 → 요청 → 성공 처리 → 잠금 풀기)
-// useFriendListSync가 고른 스토어 액션을 넘겨 처리 함수를 받음
+// useFriendListSync가 처리 함수를 받아 씀, 계정 확인 함수는 전부 수락(acceptAll.js)도 씀
 import { acceptFriendRequest, declineFriendRequest } from "../../api/friend.api.js"
 import { useFriendStore } from "../../store/friend.store.js"
 
@@ -8,16 +8,19 @@ export const isSameAccount = (generation) => useFriendStore.getState().isCurrent
 
 // 같은 신청을 두 번 처리하지 않게 작업 번호로 잠그고, 실패하면 목록을 다시 받음
 export function makeRequestHandlers({ lockRequests, unlockRequests, removeIncomingRequest, fetchFriends, fetchIncoming }) {
+  // 한 건 처리 틀: 계정 맞추기 → 작업 번호로 잠금 → 요청 → 성공 처리, 끝나면 그 잠금만 풂
   const run = async (requestId, { call, onSuccess, failureMessage }) => {
     const store = useFriendStore.getState()
     const generation = store.syncAccount()
     const operationId = store.beginOperation()
+    // 이미 처리 중인 신청이면 그냥 끝
     if (lockRequests([requestId], operationId).length === 0) return
     try {
       await call(requestId)
       if (!isSameAccount(generation)) return
       await onSuccess(requestId)
     } catch (error) {
+      // 실패면 목록이 실제와 다를 수 있어 받은 신청 다시 받음
       if (!isSameAccount(generation)) return
       console.error(failureMessage, error.message)
       await fetchIncoming()
@@ -36,6 +39,7 @@ export function makeRequestHandlers({ lockRequests, unlockRequests, removeIncomi
     failureMessage: "친구 수락 실패:",
   })
 
+  // 거절은 받은 신청 줄만 지움
   const handleDeclineRequest = (requestId) => run(requestId, {
     call: declineFriendRequest,
     onSuccess: async (id) => { removeIncomingRequest(id) },

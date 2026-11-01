@@ -1,3 +1,5 @@
+// 계정 관리 패널 (닉네임·비밀번호 바꾸기·Discord 연결, 로그인 틀 그림을 같이 씀)
+// AccountPage가 씀
 import { motion } from "framer-motion"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
@@ -17,6 +19,7 @@ import DiscordAccountLink from "@/domains/user/components/DiscordAccountLink.jsx
 import { useAccountForm } from "@/domains/user/hooks/useAccountForm.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+// 두 폼 값은 useAccountForm에서 받아 칸마다 넘김
 export default function AccountPanel() {
   const {
     nickname,

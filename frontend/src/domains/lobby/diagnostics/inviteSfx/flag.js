@@ -1,5 +1,5 @@
 // 게임 초대 소리 진단을 켤지 판정 (개발 빌드 + 주소 표시)
-// 진단 기록(log.js)과 진단 패널이 씀
+// 진단 기록(log.js)·진단 입구가 씀 (패널은 입구로 씀)
 import { INVITE_SFX_QA_FLAG } from "../../constants/inviteSfxDiagnostics.js";
 
 // 빌드 종류·주소를 읽는 함수, 시험에서 바꿔 끼움
@@ -8,6 +8,7 @@ let readEnv = () => ({
     search: typeof window !== "undefined" ? (window.location?.search ?? "") : "",
 });
 
+// 시험용: 빌드 종류·주소 읽기를 바꿔 끼움 (null이면 꺼진 상태)
 export function __setInviteSfxDiagnosticsEnvForTests(next) {
     readEnv = next ?? (() => ({ dev: false, search: "" }));
 }

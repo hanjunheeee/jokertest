@@ -1,3 +1,5 @@
+// 배너 위 톱니 버튼 (계정 설정)
+// MyPageBannerButton이 씀
 import { LOBBY_ASSETS } from "../../../../shared/constants/lobbyAssets.js"
 import {
   LOBBY_SETTINGS_GEAR_LAYOUT,
@@ -6,6 +8,7 @@ import {
 } from "../../constants/myPageBannerStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 누름이 바깥으로 번지지 않게 막음
 export default function SettingsGearButton({ onClick }) {
   return (
     <button

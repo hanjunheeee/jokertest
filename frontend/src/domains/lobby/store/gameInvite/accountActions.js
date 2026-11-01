@@ -20,6 +20,8 @@ export const accountActions = (set, get) => ({
     // 재접속 때 스냅샷 다시 받기 전까지 실시간 초대를 버퍼에 모음
     beginResync: () => set({ snapshotLoaded: false, restorePending: true, liveBuffer: [] }),
 
+    // 계정별 상태만 비움 (계정·세대는 그대로, 지금 아무도 안 씀)
     reset: () => set(initialAccountState()),
+    // 시험용: 계정 칸까지 처음 상태로
     __resetForTests: () => set(initialState()),
 });

@@ -1,5 +1,5 @@
 // 프로필 사진·테두리 편집 창 상태 (열 때 지금 장착으로 초안 맞추기·보유 목록·확인 저장)
-// 프로필 편집 창이 씀
+// 프로필 편집 창(ProfileEditOverlay)·시험이 씀
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import {
@@ -13,6 +13,7 @@ import {
 } from "../../constants/profileEditLayout.js"
 import { listStatusOf, ownedOptionsOf } from "../../utils/profileEditOptions.js"
 
+// 지갑 장착값·보유 목록 고르기 + 초안·탭·저장 상태
 export function useProfileBorderEditor({ open, onClose }) {
   const generation = useEconomyStore((state) => state.requestGeneration)
   const economyStatus = useEconomyStore((state) => state.status)
@@ -64,6 +65,7 @@ export function useProfileBorderEditor({ open, onClose }) {
     setDraftBorderItemId(currentBorderItemId)
   }, [open, currentPhotoItemId, currentBorderItemId])
 
+  // 사용자가 고르면 고친 걸로 기록 (서버 장착 따라가기 멈춤)
   const setDraftPhotoItemIdTracked = useCallback((itemId) => {
     hasEditedRef.current = true
     setDraftPhotoItemId(itemId)
@@ -73,6 +75,7 @@ export function useProfileBorderEditor({ open, onClose }) {
     setDraftBorderItemId(itemId)
   }, [])
 
+  // 종류별 보유 목록과 목록 상태
   const ownedBorderOptions = ownedOptionsOf(entitlements, BORDER_ITEM_TYPE, borderAssetSrcForItemId)
   const borderListStatus = listStatusOf(economyStatus, ownedBorderOptions)
 
@@ -81,10 +84,12 @@ export function useProfileBorderEditor({ open, onClose }) {
 
   // 바뀐 것만 저장, 결과를 모르면 지갑을 다시 받아 실패인지 확인함
   const handleConfirm = useCallback(async ({ onChanged } = {}) => {
+    // 이미 저장 중이면 거절
     if (confirmStatus === "saving" || pendingSaveRef.current) return
 
     const photoChanged = draftPhotoItemId !== currentPhotoItemId
     const borderChanged = draftBorderItemId !== currentBorderItemId
+    // 바뀐 게 없으면 저장 없이 닫음
     if (!photoChanged && !borderChanged) {
       onClose()
       return
@@ -105,6 +110,7 @@ export function useProfileBorderEditor({ open, onClose }) {
         photoItemId: photoChanged ? draftPhotoItemId : undefined,
         borderItemId: borderChanged ? draftBorderItemId : undefined,
       })
+      // 그사이 창이 닫혔거나 지갑 세대가 바뀌었으면 버림
       if (isStale()) {
         return
       }
@@ -112,6 +118,7 @@ export function useProfileBorderEditor({ open, onClose }) {
       onClose()
     } catch (error) {
       if (isStale()) return
+      // 코드 있는 실패는 확정 거절, 코드 없으면 지갑을 다시 받아 확인
       const confirmedRejection = typeof error?.code === "string" && error.code.length > 0
       let refreshUncertain = false
       if (!confirmedRejection) {
@@ -129,6 +136,7 @@ export function useProfileBorderEditor({ open, onClose }) {
           : (error?.message ?? "프로필 저장에 실패했습니다."),
       )
     } finally {
+      // 이 창 세션일 때만 잠금 풂
       if (editorSessionRef.current === startSession) pendingSaveRef.current = false
     }
   }, [confirmStatus, draftPhotoItemId, currentPhotoItemId, draftBorderItemId, currentBorderItemId, equipProfile, fetchSummary, onClose])

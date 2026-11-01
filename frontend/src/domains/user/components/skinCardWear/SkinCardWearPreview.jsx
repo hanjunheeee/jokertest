@@ -1,3 +1,5 @@
+// 스킨·카드 미리보기 (서 있는 그림 또는 플레이어 카드, 바꾸기 버튼)
+// SkinCardWearPanel이 씀
 import { AnimatePresence, motion } from "framer-motion"
 import InGamePlayerCard from "../../../game/ingame/components/board/InGamePlayerCard.jsx"
 import { useUserProfileStore } from "../../store/user.store.js"
@@ -17,6 +19,7 @@ import {
 } from "../../constants/skinCardWear/skinCardWearLayout.js"
 import SkinCardWearViewToggle from "./SkinCardWearViewToggle.jsx"
 
+// 그림이 바뀔 때만 움직임이 다시 돌게 미리보기 키를 만듦
 function resolvePreviewKey(preview, isCardPreview) {
   if (isCardPreview) {
     return `card:${preview.portraitSrc ?? ""}:${preview.frameSrc ?? ""}`
@@ -25,6 +28,7 @@ function resolvePreviewKey(preview, isCardPreview) {
   return `skin:${preview.standingSrc ?? "empty"}`
 }
 
+// 카드 미리보기는 인게임 카드를 내 닉네임으로 그대로 보임
 export default function SkinCardWearPreview({ preview, previewMode, onTogglePreviewMode }) {
   const isCardPreview = preview.mode === SKIN_CARD_WEAR_PREVIEW_MODE_CARD
   const playerNickname = useUserProfileStore((state) => state.data?.nickname) ?? ""

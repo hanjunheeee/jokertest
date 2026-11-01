@@ -1,3 +1,5 @@
+// 이모티콘 팔레트 화면 그림 경로 (친구 목록·공용 버튼 그림을 같이 씀)
+// 이모티콘 팔레트 컴포넌트들이 씀
 export const EMOTICON_PALETTE_ASSETS = {
   paletteFrame: "/frame/emoji/palette-frame.png",
   plate: "/frame/emoji/plate.png",

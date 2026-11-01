@@ -9,6 +9,7 @@ import {
 import { applyFavoriteWrites, newerRemovals } from "../../utils/friend/pendingWrites.js";
 import { nextSeq } from "./state.js";
 
+// 네 목록 모두 같은 틀: 로그인 확인 → 번호표 → 응답 뒤 계정·순번 확인 → 반영, 실패도 같은 확인 뒤 오류 남김
 export const loadActions = (set, get) => ({
     // 친구 목록: 계정이 바뀌었거나 더 새 응답이 이미 반영됐으면 버림
     fetchFriends: async () => {
@@ -100,7 +101,7 @@ export const loadActions = (set, get) => ({
         }
     },
 
-    // 소켓으로 온 친구 접속 상태를 목록에 반영함
+    // 소켓으로 온 친구 접속 상태를 목록에 반영함 (OFFLINE 말고는 접속으로 봄)
     updateFriendStatus: (uuid, status) => set((state) => ({
         friends: state.friends.map((friend) =>
             friend.id === uuid

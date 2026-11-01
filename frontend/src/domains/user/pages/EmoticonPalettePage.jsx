@@ -1,5 +1,5 @@
 // 이모티콘 팔레트 화면 (안내 줄·보유 이모티콘·팔레트 바퀴·저장 완료 창, 상태는 useEmoticonPalettePage)
-// 라우터가 /mypage/emoticons 경로에 씀
+// 라우터(app/routes)가 /mypage/emoticons 경로에 씀, 시험도 씀
 import { useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 
@@ -18,6 +18,7 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { useEmoticonPalettePage } from "@/domains/user/hooks/useEmoticonPalettePage.js"
 
+// 뒤로는 마이페이지로, 저장 완료 창은 맨 위 층
 export default function EmoticonPalettePage() {
   const navigate = useNavigate()
   const page = useEmoticonPalettePage()

@@ -1,5 +1,5 @@
 // 게임 초대 줄 다루기 (순번 비교·쓸 수 있는 줄인지·합치기·남길지)
-// gameInvite 스토어 액션과 입구 파일이 씀
+// gameInvite 스토어·액션 파일, 소리 판정(inviteSound)·스냅샷 합치기(mergeSnapshot)가 씀
 
 // creationSeq 비교: 큰 숫자 문자열이라 길이 먼저 보고 글자 순으로 봄
 export function compareSeq(left, right) {
@@ -28,7 +28,7 @@ export function survives(invite, snapshotIds, cursor) {
     return compareSeq(invite.creationSeq, cursor) > 0;
 }
 
-// 같은 초대는 revision 큰 쪽으로 덮고 새 순번부터 정렬함
+// 같은 초대는 revision 같거나 큰 쪽으로 덮고 새 순번부터 정렬함 (못 쓰는 줄은 버림)
 export function merge(existing, incoming) {
     const byId = new Map();
     for (const item of existing) byId.set(item.inviteId, item);
@@ -57,7 +57,7 @@ export function isTerminalRefusal(status) {
     return status >= 400 && status < 500;
 }
 
-// 화면에 보일 대기 초대: 대기 상태이고 아직 안 지난 것만
+// 화면에 보일 대기 초대: 대기 상태이고 아직 안 지난 것만 (지금은 시험만 씀)
 export function selectPending(invites, now = Date.now()) {
     return invites.filter((invite) => {
         if (invite.status !== "PENDING") return false;

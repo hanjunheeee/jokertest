@@ -6,11 +6,13 @@ import { useEffect, useState } from "react"
 export function usePanelView(open, targetRequestId, targetInviteId) {
   const [panelView, setPanelView] = useState("list")
 
+  // 받은 신청 대상이 오면 요청 수락 탭으로
   useEffect(() => {
     if (!open || targetRequestId == null) return
     setPanelView("accept")
   }, [open, targetRequestId])
 
+  // 게임 초대 대상이 오면 게임 초대 탭으로
   useEffect(() => {
     if (!open || targetInviteId === null) return
     setPanelView("invite")

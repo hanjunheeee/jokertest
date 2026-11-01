@@ -1,5 +1,5 @@
 // 게임 초대 상수 (수락 응답 기다림 시간·끝난 초대 안내 문구)
-// 초대 수락 흐름·초대 탭·시험이 씀
+// 초대 수락 흐름(friendSocket/inviteAccept)·초대 상태 판정(utils/gameInvite/inviteState)·소켓 훅 입구가 씀
 
 // 수락 응답은 방 입장까지 걸려 길게 기다림
 export const INVITE_ACCEPT_TIMEOUT_MS = 15000;

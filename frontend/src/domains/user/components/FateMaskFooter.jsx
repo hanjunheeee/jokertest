@@ -1,3 +1,5 @@
+// 운명의 가면 틀 (틀 그림 + 설명 한 줄, 화면 읽기에서는 숨김)
+// MyPageLayout이 씀
 import { motion } from "framer-motion"
 import { FATE_MASK_DESCRIPTION, MY_PAGE_ASSETS } from "../constants/myPageAssets.js"
 import FateMaskDescription from "./FateMaskDescription.jsx"
@@ -9,6 +11,7 @@ import {
 } from "../constants/myPageLayoutStyle.js"
 import PublicAsset from "../../../shared/ui/PublicAsset.jsx"
 
+// 나타나는 움직임만 있고 누를 것 없음
 export default function FateMaskFooter({
   src = MY_PAGE_ASSETS.fateMaskFrame,
   description = FATE_MASK_DESCRIPTION,

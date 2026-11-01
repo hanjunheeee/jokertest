@@ -47,6 +47,7 @@ export function mergeSnapshot(state, data, ticket) {
         && !soundConsumed.has(item.invite.inviteId)
     ));
 
+    // 남길 줄: 기존·버퍼 줄은 늘 거르고, 옛·같은 경계 스냅샷이면 들어온 줄도 거름
     const keep = (invite) => survives(invite, pendingIds, effectiveCursor);
     const retained = state.invites.filter(keep);
     const incoming = knownWorse || sameBoundary
@@ -54,6 +55,7 @@ export function mergeSnapshot(state, data, ticket) {
         : rows;
     const bufferedInvites = buffered.map((item) => item.invite).filter(keep);
 
+    // 버퍼 비우고 복원 끝 표시, 미룬 소리 후보는 결과로 돌려줌
     return {
         patch: {
             invites: merge(retained, [...incoming, ...bufferedInvites]),

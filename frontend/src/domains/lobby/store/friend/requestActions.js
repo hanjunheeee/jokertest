@@ -13,7 +13,7 @@ export const requestActions = (set, get) => ({
         }));
     },
 
-    // 받은 신청 목록을 통째로 바꿈, 그 뒤에 지운 신청 기록만 남김
+    // 받은 신청 목록을 통째로 바꿈, 그 뒤에 지운 신청 기록만 남김 (지금 아무도 안 씀)
     setIncomingRequests: (requests) => {
         const ticket = get().bumpSeq("incoming");
         set((state) => {
@@ -22,6 +22,7 @@ export const requestActions = (set, get) => ({
         });
     },
 
+    // 검색 결과 줄을 보낸 신청으로 표시
     addSentRequest: (uuid) => set((state) => ({
         sentRequestIds: new Set(state.sentRequestIds).add(uuid),
     })),
@@ -36,5 +37,6 @@ export const requestActions = (set, get) => ({
         return { sentRequestIds: nextSent, resolvedRequestIds: nextResolved };
     }),
 
+    // 새 검색 때 응답 끝난 신청 기록 비움
     clearResolvedRequests: () => set({ resolvedRequestIds: new Set() }),
 });

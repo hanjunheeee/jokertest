@@ -9,6 +9,7 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { GRADE_FILTERS } from "@/domains/user/constants/emoticonPaletteText.js"
 
+// 불러오기가 끝나기 전엔 검색·거르기·목록 모두 잠금
 export default function EmoticonInventorySection({ page }) {
   return (
     <section aria-label="보유 이모티콘" className={INVENTORY_SECTION_CLASS}>

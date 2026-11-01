@@ -1,5 +1,8 @@
+// 친구 목록 패널 className·움직임 값 (패널 틀·탭·폴더·줄·탭별 목록)
+// 친구 목록 컴포넌트들(components/friendList)이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 패널 열고 닫는 움직임·뒤 배경·틀
 export const FRIEND_PANEL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 
 export const PANEL_BACKDROP_CLASS = "absolute inset-0 z-20 cursor-default border-0 bg-black/25 p-0"
@@ -19,6 +22,7 @@ export const PANEL_INSET_STYLE = {
   paddingRight: "10.5%",
 }
 
+// 검색 줄
 export const SEARCH_ZONE_CLASS =
   "mb-4 shrink-0 rounded-md border border-white/20 bg-black/40 px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_2px_10px_rgba(0,0,0,0.35)]"
 
@@ -30,6 +34,7 @@ export const SEARCH_INPUT_FRAME_CLASS = "block h-auto w-full select-none"
 export const SEARCH_INPUT_CLASS =
   "absolute inset-0 bg-transparent pl-[17%] pr-[6%] font-subheading app-text-scaled [--app-text-size:12px] leading-none text-white/85 outline-none placeholder:text-white/65"
 
+// 위쪽 탭 버튼
 export const VIEW_TAB_LIST_CLASS =
   "mb-3 flex shrink-0 items-stretch gap-[clamp(0.25rem,0.55vw,0.4rem)]"
 
@@ -42,6 +47,7 @@ export const VIEW_TAB_IMG_CLASS =
 export const VIEW_TAB_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.82rem)] font-bold tracking-wide [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+// 친구 폴더 (바탕·머리·펼친 목록)
 export const FOLDER_SECTION_CLASS =
   "relative shrink-0 overflow-hidden rounded-md border border-white/25 px-2 py-1.5 shadow-[0_2px_12px_rgba(0,0,0,0.45)] backdrop-blur-sm"
 
@@ -60,6 +66,7 @@ export const FOLDER_CHEVRON_CLASS = "ml-auto h-3 w-3 shrink-0 select-none opacit
 
 export const FOLDER_LIST_CLASS = "mt-1.5 overflow-visible pr-0.5"
 
+// 친구 줄 (별·초상·이름·접속 상태)
 export const FRIEND_ROW_ITEM_CLASS = "relative mt-2 w-full list-none"
 
 export const FRIEND_ROW_FRAME_CLASS = "block h-auto w-full select-none"
@@ -95,6 +102,7 @@ export const ROW_OFFLINE_OVERLAY_CLASS =
 
 export const ROW_STATUS_TEXT_CLASS = "app-text-scaled [--app-text-size:10px] leading-none"
 
+// 친구 목록 탭·검색 결과·상태 문구
 export const FRIEND_LIST_TAB_CLASS = "flex h-full min-h-0 flex-col"
 
 export const FILTER_RESULT_LIST_CLASS =
@@ -118,6 +126,7 @@ export const TAB_SCROLLABLE_LIST_CLASS =
 
 export const TAB_GROUP_GAP_CLASS = "mt-3.5"
 
+// 친구 추가 탭
 export const REQUEST_TAB_CLASS = "relative flex min-h-0 flex-1 flex-col"
 
 export const REQUEST_RESULT_LIST_CLASS =
@@ -128,6 +137,7 @@ export const REQUEST_EMPTY_CLASS =
 
 export const REQUEST_BACK_BTN_CLASS = "absolute bottom-0 left-0 z-10"
 
+// 받은 신청·차단·게임 초대 탭 (같은 틀을 같이 씀)
 export const FRIEND_ACCEPT_TAB_CLASS = "flex h-full min-h-0 flex-col"
 
 export const ACCEPT_TOOLBAR_CLASS =
@@ -158,12 +168,14 @@ export const STATUS_ERROR_CLASS =
 
 export const ACCEPT_BACK_BTN_CLASS = "mt-2"
 
+// 받은 신청 줄 버튼 칸 (지금 아무도 안 씀)
 export const INCOMING_ACTIONS_CLASS =
   "flex shrink-0 items-center gap-[clamp(0.2rem,0.45vw,0.35rem)]"
 
 export const INCOMING_ACTION_BTN_CLASS =
   "block w-[clamp(1.85rem,2.8vw,2.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
+// 검색 결과·받은 신청·차단·초대 줄 공통
 export const RECOMMENDED_ROW_CLASS = "relative mt-2 w-full list-none"
 
 export const RECOMMENDED_ROW_FRAME_CLASS = "block h-auto w-full select-none"

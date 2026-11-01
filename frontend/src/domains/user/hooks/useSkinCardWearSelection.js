@@ -1,5 +1,5 @@
 // 스킨·카드 장착 창 선택 훅 (목록·미리보기·고르기·탭·초기화)
-// 스킨·카드 장착 창(SkinCardWearOverlay.jsx)이 씀, 초안 상태는 skinCardWear/useWearDraft.js, 저장은 skinCardWear/useWearConfirm.js
+// 스킨·카드 장착 창(SkinCardWearOverlay.jsx)·시험이 씀, 초안 상태는 skinCardWear/useWearDraft.js, 저장은 skinCardWear/useWearConfirm.js
 import { useCallback, useMemo } from "react"
 import {
   SKIN_CARD_WEAR_JOB_TABS,
@@ -19,6 +19,7 @@ import { isItemOwned, resolveInitialSkinSelection } from "../utils/skinCardWear/
 import { useWearDraft } from "./skinCardWear/useWearDraft.js"
 import { useWearConfirm } from "./skinCardWear/useWearConfirm.js"
 
+// 시험이 저장 상태 상수를 이 경로로 씀
 export { SKIN_CARD_WEAR_CONFIRM_STATUS }
 
 // 저장 중에는 고르기·탭·미리보기 전환을 모두 막음
@@ -40,6 +41,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
 
   const entitlements = useEconomyStore((state) => state.entitlements)
 
+  // 지금 직업 탭 id (번호가 틀리면 첫 직업)
   const activeJobId = SKIN_CARD_WEAR_JOB_TABS[activeJobIndex]?.id ?? SKIN_CARD_WEAR_JOB_TABS[0].id
   const selectedItem = getSkinCardWearItemById(selectedItemId)
 
@@ -52,6 +54,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     return rawItems.map((item) => ({ ...item, owned: isItemOwned(item, entitlements) }))
   }, [previewMode, activeJobId, entitlements])
 
+  // 미리보기: 고른 항목·지금 직업·초안 장착값으로 계산
   const preview = useMemo(
     () =>
       resolveWearPreview({

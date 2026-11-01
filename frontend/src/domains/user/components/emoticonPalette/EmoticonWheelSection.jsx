@@ -9,7 +9,7 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { emoticonItemOf } from "@/domains/user/utils/emoticonPalette/items.js"
 
-// 저장 중에는 저장·취소를 모두 잠금
+// 불러오기 전·저장 중에는 저장·취소를 잠금, 불러오기 전엔 바퀴 칸도 잠금
 export default function EmoticonWheelSection({ page }) {
   return (
     <section aria-label="이모티콘 팔레트" className={WHEEL_SECTION_CLASS}>

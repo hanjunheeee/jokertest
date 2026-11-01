@@ -1,3 +1,5 @@
+// 프로필 편집 창 (배경 + 대화상자, Esc·배경 누르면 닫힘)
+// MyPageLayout이 씀
 import { AnimatePresence, motion } from "framer-motion"
 import { useEffect } from "react"
 import {
@@ -9,6 +11,7 @@ import { useProfileBorderEditor } from "./useProfileBorderEditor.js"
 import ProfileEditPanel from "./ProfileEditPanel.jsx"
 import { dispatchUiSfx } from "../../../../shared/hooks/useSfxRuntime.js"
 
+// 상태는 useProfileBorderEditor가 맡고, 닫기·확인 소리를 여기서 냄
 export default function ProfileEditOverlay({ open, onClose }) {
   const {
     activeTab,
@@ -28,13 +31,16 @@ export default function ProfileEditOverlay({ open, onClose }) {
     handleConfirm,
   } = useProfileBorderEditor({ open, onClose })
 
+  // 닫기: 취소 소리 뒤 닫음
   const handleClose = () => {
     dispatchUiSfx("ui-cancel")
     onClose()
   }
 
+  // 확인: 실제로 저장할 때만 확인 소리
   const handleConfirmWithSfx = () => handleConfirm({ onChanged: () => dispatchUiSfx("ui-confirm") })
 
+  // 열려 있을 때만 Esc로 닫기
   useEffect(() => {
     if (!open) return undefined
 

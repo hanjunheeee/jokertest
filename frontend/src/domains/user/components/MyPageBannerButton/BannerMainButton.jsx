@@ -1,8 +1,11 @@
+// 배너 본체 (배너 그림 + 초상 + 닉네임 글자)
+// MyPageBannerButton이 씀
 import BannerProfilePortrait from "./BannerProfilePortrait.jsx"
 import BannerTextPanel from "./BannerTextPanel.jsx"
 import { ROOT_CLASS } from "../../constants/myPageBannerStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 누름 처리가 있으면 버튼, 없으면 그냥 칸
 export default function BannerMainButton({
   onClick,
   bannerSrc,

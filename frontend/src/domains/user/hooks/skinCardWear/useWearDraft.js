@@ -17,6 +17,7 @@ export function useWearDraft(initialSkinsByJob, initialCardFrameId) {
   const [draftCardFrameId, setDraftCardFrameId] = useState(initialCardFrameId)
   const edited = useRef(new Set())
 
+  // 서버 장착값이 바뀌면 손대지 않은 칸만 따라감
   useEffect(() => {
     setDraftSkinsByJob((previous) => syncDraftSkins(previous, initialSkinsByJob, edited.current))
     if (!edited.current.has("card")) setDraftCardFrameId(initialCardFrameId)

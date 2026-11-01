@@ -1,3 +1,5 @@
+// 미리보기 바꾸기 버튼 (스킨 ↔ 플레이어 카드)
+// SkinCardWearPreview가 씀
 import { SKIN_CARD_WEAR_ASSETS } from "../../constants/skinCardWear/skinCardWearAssets.js"
 import {
   SKIN_CARD_WEAR_PREVIEW_MODE_SKIN,
@@ -7,6 +9,7 @@ import {
 } from "../../constants/skinCardWear/skinCardWearLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 지금 방식의 반대쪽으로 바꾼다는 이름을 붙임
 export default function SkinCardWearViewToggle({ previewMode, onToggle }) {
   const isSkinMode = previewMode === SKIN_CARD_WEAR_PREVIEW_MODE_SKIN
 

@@ -1,3 +1,7 @@
+// 닉네임 입력칸 앞 사람 모양 그림
+// NicknameSection이 씀
+
+// 그림만이라 화면 읽기에서 숨김
 export default function UserIcon() {
   return (
     <svg className="h-[20px] w-[20px] shrink-0 text-neutral-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -7,6 +7,7 @@ import {
   FATE_MASK_TEXT_SHADOW,
 } from "../constants/myPageLayoutStyle.js"
 
+// 앞말은 있을 때만 띄어 붙임
 export default function FateMaskDescription({ description }) {
   const { prefix, highlight, suffix } = description
 

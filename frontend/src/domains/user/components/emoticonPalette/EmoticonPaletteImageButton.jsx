@@ -1,3 +1,5 @@
+// 팔레트 저장·취소 그림 버튼
+// EmoticonWheelSection이 씀
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import {
   IMG_BTN_CLASS,
@@ -5,6 +7,7 @@ import {
   IMG_BTN_LABEL_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 
+// 그림 위에 글자
 export default function EmoticonPaletteImageButton({ label, src, disabled, onClick, type = "button" }) {
   return (
     <button

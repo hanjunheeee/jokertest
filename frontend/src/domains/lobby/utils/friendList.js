@@ -1,5 +1,5 @@
 // 친구 목록 다듬기: 즐겨찾기 표시, 접속·즐겨찾기 묶음, 처리한 검색 후보 빼기
-// 친구 목록 동기화 훅·친구 검색 훅이 사용
+// 친구 목록 동기화 훅·친구 검색 훅·시험이 사용
 
 // 즐겨찾기 id 모음으로 친구마다 isFavorite 붙임
 export function applyFriendFavoriteFlags(friends, favoriteFriendIds) {
@@ -20,7 +20,7 @@ export const groupFriends = (friends) => {
   }
 }
 
-// 이미 신청 처리한 검색 결과는 뺌
+// 상대가 응답 끝낸 신청 대상은 검색 결과에서 뺌
 export const filterVisibleFriendCandidates = (results, resolvedRequestIds) => {
   return results.filter((user) => !resolvedRequestIds.has(user.id))
 }

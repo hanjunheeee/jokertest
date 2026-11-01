@@ -2,6 +2,7 @@
 // 이모티콘 팔레트 스토어가 씀
 import { EMOJI_PALETTE_SLOT_COUNT } from "../../constants/emoticonPaletteSlots.js"
 
+// 칸 수만큼 빈 칸(null)
 export const emptySlots = () => Array.from({ length: EMOJI_PALETTE_SLOT_COUNT }, () => null)
 
 // 칸 수를 맞추고 빈 문자열·문자열 아닌 값은 빈 칸으로 바꿈

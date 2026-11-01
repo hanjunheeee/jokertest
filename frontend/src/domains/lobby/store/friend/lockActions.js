@@ -21,6 +21,7 @@ export const lockActions = (set, get) => ({
         return fresh;
     },
 
+    // 받은 신청 처리 작업 번호 새로 받기 (잠금 주인으로 씀)
     beginOperation: () => nextOperationId(),
 
     // 주인을 주면 그 주인이 잠근 신청만 풂
@@ -35,5 +36,6 @@ export const lockActions = (set, get) => ({
         return { processingRequestIds: next, requestLockOwners: owners };
     }),
 
+    // 전부 수락 진행·결과 저장 (받은 신청 탭 안내 줄이 읽음)
     setAcceptAllResult: (result) => set({ acceptAllResult: result }),
 });

@@ -7,12 +7,14 @@ import {
 } from "../../../game/ingame/utils/selectInGameEmojiScope.js"
 import { normalizeSlots } from "../../utils/emoticonPalette/slots.js"
 
+// 같은 판 요청 합치기용 진행 중 키·약속·번호표 (모듈에 하나)
 let gamePendingKey = null
 let gamePendingPromise = null
 
 let gamePendingToken = null
 let gameRequestSeq = 0
 
+// 진행 중 인게임 요청 표시 지우기 (초기화·새 요청 때)
 export function clearGameRequest() {
   gamePendingKey = null
   gamePendingPromise = null
@@ -33,6 +35,7 @@ export const gameActions = (set, get) => ({
     }
     if (gamePendingKey === key && gamePendingPromise !== null) return gamePendingPromise
 
+    // 새 요청: 번호표 받고 불러오는 중 표시
     clearGameRequest()
     gameRequestSeq += 1
     const token = gameRequestSeq
@@ -57,6 +60,7 @@ export const gameActions = (set, get) => ({
         set({ gameStatus: "error" })
         return { ok: false, code: error?.code, error }
       } finally {
+        // 내 요청일 때만 진행 표시 지움
         if (gamePendingToken === token) clearGameRequest()
       }
     })()

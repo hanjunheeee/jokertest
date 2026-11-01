@@ -1,6 +1,9 @@
+// 스킨·카드 장착 창 className·움직임·미리보기 방식 값
+// 스킨·카드 장착 창 컴포넌트들·장착 훅·시험이 씀
 import { buildThemeStyles } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../shared/constants/customScrollbarStyles.js"
 
+// 미리보기 이름표 색·창 움직임·미리보기 바뀜 움직임
 export const PREVIEW_NAMEPLATE_THEME = {
   styles: buildThemeStyles("#ffffff"),
 }
@@ -21,6 +24,7 @@ export const PREVIEW_MOTION_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
+// 배경·창 틀·안쪽 여백
 export const BACKDROP_CLASS =
   "fixed inset-0 z-[55] cursor-default border-0 bg-[#1a0f0a]/62 p-0 backdrop-blur-[4px]"
 
@@ -48,6 +52,7 @@ export const PANEL_CONTENT_CLASS =
 export const PANEL_GRID_CLASS =
   "grid min-h-0 flex-1 w-full overflow-visible grid-cols-[minmax(0,0.68fr)_minmax(0,1.32fr)]"
 
+// 왼쪽 목록 (제목·스크롤·항목 버튼)
 export const LIST_COLUMN_CLASS =
   "flex min-h-0 flex-col overflow-visible bg-transparent pt-[clamp(0.82rem,1.75vh,1.05rem)] -translate-y-[clamp(0.18rem,0.45vh,0.32rem)]"
 
@@ -93,12 +98,14 @@ export const LIST_ITEM_KIND_CLASS =
 export const LIST_ITEM_EQUIPPED_CHECK_CLASS =
   "pointer-events-none ml-auto shrink-0 block h-[clamp(0.95rem,1.25vw,1.08rem)] w-[clamp(0.95rem,1.25vw,1.08rem)] select-none object-contain"
 
+// 항목 종류 글자 (기본 스킨·스킨·플레이어 카드)
 export const ITEM_KIND_LABEL = {
   basic: "기본 스킨",
   premium: "스킨",
   card: "플레이어 카드",
 }
 
+// 오른쪽 미리보기 (직업 탭·서 있는 그림·카드)
 export const PREVIEW_COLUMN_CLASS =
   "relative flex min-h-0 flex-col overflow-visible bg-transparent"
 
@@ -136,6 +143,7 @@ export const SKIN_CARD_WEAR_PREVIEW_CARD_WRAP_CLASS =
   " " +
   SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_TEXT_CLASS
 
+// 미리보기 바꾸기·적용·닫기 버튼
 export const VIEW_TOGGLE_WRAP_CLASS =
   "pointer-events-auto absolute right-[clamp(-0.55rem,-0.95vw,-0.32rem)] bottom-0 z-20 translate-y-[clamp(4.05rem,6.8vh,5.25rem)]"
 
@@ -161,5 +169,6 @@ export const CLOSE_BTN_CLASS =
 export const CLOSE_BTN_IMG_CLASS =
   "block h-auto w-[clamp(2.75rem,4.8vw,3.35rem)] select-none"
 
+// 미리보기 방식 값
 export const SKIN_CARD_WEAR_PREVIEW_MODE_SKIN = "skin"
 export const SKIN_CARD_WEAR_PREVIEW_MODE_CARD = "card"

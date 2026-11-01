@@ -1,9 +1,12 @@
+// 피의 기록 한 줄 (이름·값, 둘째 줄부터 위에 구분선)
+// BloodRecordStatsPanel이 씀
 import {
   BLOOD_RECORD_ROW_LABEL_CLASS,
   BLOOD_RECORD_ROW_VALUE_CLASS,
   BLOOD_RECORD_TEXT_SHADOW,
 } from "../../constants/myPageLayoutStyle.js"
 
+// 구분선은 showDivider일 때만
 export default function BloodRecordStatRow({ label, value, showDivider }) {
   return (
     <div className="flex flex-col gap-[0.35em]">

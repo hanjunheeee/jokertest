@@ -1,5 +1,5 @@
 // 이모티콘 팔레트 화면의 이모티콘 찾기·목록 거르기
-// 이모티콘 팔레트 화면 훅이 씀 (바퀴 칸 그림은 emoticonItemOf로 찾음)
+// 이모티콘 팔레트 화면 훅·바퀴 칸(EmoticonWheelSection)이 씀 (바퀴 칸 그림은 emoticonItemOf로 찾음)
 import { EMOTICON_STORE_ITEMS, getStoreItemById } from "@/domains/store/constants/storeItems.js"
 import { EMOTICON_CATEGORY } from "../../constants/emoticonPaletteText.js"
 

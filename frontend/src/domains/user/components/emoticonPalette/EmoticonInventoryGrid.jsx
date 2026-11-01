@@ -1,3 +1,5 @@
+// 이모티콘 판 목록 (스크롤 + 자체 스크롤바)
+// EmoticonInventorySection이 씀
 import { useRef } from "react"
 
 import EmoticonPlateButton from "@/domains/user/components/emoticonPalette/EmoticonPlateButton.jsx"
@@ -10,6 +12,7 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
+// 보유한 것만 누를 수 있게 판마다 보유 여부를 넘김
 export default function EmoticonInventoryGrid({ items, ownedIds, disabled, onAssign }) {
   const scrollRef = useRef(null)
 

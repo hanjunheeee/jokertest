@@ -1,3 +1,5 @@
+// 스킨·카드 목록 항목 하나 (썸네일·이름·종류·착용 체크)
+// SkinCardWearList가 씀
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 import { SKIN_CARD_WEAR_ASSETS } from "../../constants/skinCardWear/skinCardWearAssets.js"
 import {
@@ -12,12 +14,14 @@ import {
   LIST_ITEM_THUMB_WRAP_CLASS,
 } from "../../constants/skinCardWear/skinCardWearLayout.js"
 
+// 종류 글자: 카드·기본 스킨·스킨
 function resolveItemKindLabel(item) {
   if (item.itemType === "card") return ITEM_KIND_LABEL.card
   if (item.source === "basic") return ITEM_KIND_LABEL.basic
   return ITEM_KIND_LABEL.premium
 }
 
+// 미보유면 잠그고 흐리게, 착용 중이면 체크 표시
 export default function SkinCardWearListItem({
   item,
   selected,

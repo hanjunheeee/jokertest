@@ -42,6 +42,7 @@ export default function FriendListPanel({
 
   const { invite, inviteList } = usePanelInvites({ open, roomId, isRoomVerified })
 
+  // 탭 바꾸기
   const showListView = () => setPanelView("list")
   const showRequestView = () => setPanelView("request")
   const showAcceptView = () => setPanelView("accept")
@@ -58,6 +59,7 @@ export default function FriendListPanel({
     onClose()
   }
 
+  // 친구 줄 차단 버튼에 넘길 묶음
   const friendBlock = { onBlock: handleBlockUser, blockingIds }
 
   return (

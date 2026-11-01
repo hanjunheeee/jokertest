@@ -1,3 +1,5 @@
+// 친구 목록 여는 그림 버튼
+// 로비 친구 영역·대기실(GameMatchingPage 친구 초대)이 씀
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets"
 import {
   FRIEND_LIST_BTN_CLASS,
@@ -5,6 +7,7 @@ import {
 } from "@/shared/constants/lobbyLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 그림만 있는 버튼이라 접근성 이름을 받음 (대기실은 친구 초대로 바꿔 씀)
 export default function FriendListToggleButton({ open, onOpen, ariaLabel = "친구 목록" }) {
   return (
     <button

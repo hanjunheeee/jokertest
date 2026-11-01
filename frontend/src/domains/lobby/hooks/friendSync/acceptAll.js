@@ -19,6 +19,7 @@ export async function runAcceptAll({ incomingRequests, lockRequests, unlockReque
   const locked = lockRequests(requestIds, operationId)
   if (locked.length === 0) return
 
+  // 진행 중 표시
   setAcceptAllResult({ ...emptyAcceptAllResult(), running: true })
 
   try {
@@ -42,6 +43,7 @@ export async function runAcceptAll({ incomingRequests, lockRequests, unlockReque
       }
     }
 
+    // 성공·실패·미확정으로 나눔
     const { accepted, failed, unconfirmed } = classifyAcceptResults(locked, settled, confirmedStatuses)
 
     if (!isSameAccount(generation)) return
@@ -57,6 +59,7 @@ export async function runAcceptAll({ incomingRequests, lockRequests, unlockReque
     ].filter(Boolean)
 
     if (!isSameAccount(generation)) return
+    // 결과 기록 (받은 신청 탭 안내 줄이 읽음)
     setAcceptAllResult({
       running: false,
       accepted: accepted.length,
@@ -68,6 +71,7 @@ export async function runAcceptAll({ incomingRequests, lockRequests, unlockReque
       completedAt: Date.now(),
     })
   } finally {
+    // 계정이 바뀌어도 이 작업 잠금은 꼭 풂
     unlockRequests(locked, operationId)
   }
 }

@@ -1,5 +1,5 @@
 // 친구 검색 결과 줄의 접속 상태 글자
-// RecommendedFriendStatus와 시험이 씀
+// RecommendedFriendStatus가 씀
 
 // 서버가 모르는 상태를 주면 UNKNOWN 글자를 씀
 export const STATUS_TEXT = Object.freeze({

@@ -1,5 +1,5 @@
 // 친구 스토어의 처음 상태와 모듈 번호표
-// friend.store.js와 액션 파일들, 친구 목록 동기화 훅이 씀
+// friend.store.js와 액션 파일들, 전부 수락 흐름(friendSync/acceptAll)이 씀
 
 // 쓰기·응답 번호표: 응답이 그보다 늦은 로컬 변경을 덮지 못하게 함
 let writeSeq = 0;

@@ -1,3 +1,5 @@
+// 프로필 편집 창 보유 목록 칸 (사진·테두리 탭별 목록 또는 상태 글자)
+// ProfileEditPanel·시험이 씀
 import {
   PROFILE_EDIT_GRID_CLASS,
   GRID_RETRY_BTN_CLASS,
@@ -13,6 +15,7 @@ import {
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 목록 상태 글자: 불러오는 중·실패(다시 시도)·비었음
 function OptionGridStatus({ status, onRetry, loadingText, errorText, emptyText }) {
   if (status === "loading") {
     return <p className={GRID_STATUS_TEXT_CLASS}>{loadingText}</p>
@@ -30,6 +33,7 @@ function OptionGridStatus({ status, onRetry, loadingText, errorText, emptyText }
   return <p className={GRID_STATUS_TEXT_CLASS}>{emptyText}</p>
 }
 
+// 보유 아이템 칸 목록, 고른 칸 표시 (사진은 둥근 틀 안에)
 function OptionGrid({ options, selectedItemId, onSelect, photo }) {
   return (
     <div className={PROFILE_EDIT_GRID_CLASS}>
@@ -63,6 +67,7 @@ function OptionGrid({ options, selectedItemId, onSelect, photo }) {
   )
 }
 
+// 탭에 맞는 목록을 보이고, 준비 안 됐으면 상태 글자
 export default function ProfileEditOptionGrid({
   activeTab,
   ownedPhotoOptions,

@@ -5,6 +5,7 @@ import { useEmojiPaletteStore } from "@/domains/user/store/emojiPalette.store.js
 import { SAVE_FAILURE_MESSAGES } from "@/domains/user/constants/emoticonPaletteText.js"
 import { filterEmoticons } from "@/domains/user/utils/emoticonPalette/items.js"
 
+// 팔레트 스토어 값 고르기 + 검색·등급·저장 중·저장 완료 창·안내 문구 상태
 export function useEmoticonPalettePage() {
   const status = useEmojiPaletteStore((state) => state.status)
   const owned = useEmojiPaletteStore((state) => state.owned)
@@ -23,6 +24,7 @@ export function useEmoticonPalettePage() {
   const [saveSuccessOpen, setSaveSuccessOpen] = useState(false)
   const [notice, setNotice] = useState(null)
 
+  // 화면 열 때 팔레트 불러오기
   useEffect(() => {
     load()
   }, [load])
@@ -31,6 +33,7 @@ export function useEmoticonPalettePage() {
 
   const ownedIdSet = useMemo(() => new Set(owned), [owned])
 
+  // 등급·검색어로 거른 이모티콘 목록
   const visibleItems = useMemo(() => filterEmoticons(gradeFilter, query), [gradeFilter, query])
 
   // 버전 충돌은 스토어가 충돌 안내를 띄우므로 따로 문구를 안 냄
@@ -54,6 +57,7 @@ export function useEmoticonPalettePage() {
     })
   }
 
+  // 취소: 안내·완료 창 닫고 마지막 저장 칸으로
   const handleCancel = () => {
     setNotice(null)
     setSaveSuccessOpen(false)

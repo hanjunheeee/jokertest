@@ -3,6 +3,7 @@
 import { getInviteSfxObservations } from "./inviteSfx/log.js";
 import { summarize } from "../utils/inviteSfxSummary.js";
 
+// 상수·켜기 판정·기록 함수를 한 경로로 다시 내보냄
 export { INVITE_SFX_QA_FLAG, INVITE_SFX_DIAGNOSTICS_LIMIT } from "../constants/inviteSfxDiagnostics.js";
 export { __setInviteSfxDiagnosticsEnvForTests, isInviteSfxDiagnosticsEnabled } from "./inviteSfx/flag.js";
 export {

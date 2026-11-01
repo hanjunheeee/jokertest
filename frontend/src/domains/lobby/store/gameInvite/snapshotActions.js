@@ -12,6 +12,7 @@ export const snapshotActions = (set, get) => ({
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
 
         const ticket = nextSnapshotSeq();
+        // 불러오는 중 표시, 복원 중으로 둬서 새 초대 소리를 미룸
         set({ status: "loading", error: null, restorePending: true });
 
         let data;
@@ -25,6 +26,7 @@ export const snapshotActions = (set, get) => ({
             return { ok: false, reason: "error" };
         }
 
+        // 계정이 바뀌었으면 버림 (옛 스냅샷인지는 mergeSnapshot이 커서로 봄)
         if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
 
         const { patch, result } = mergeSnapshot(get(), data, ticket);
@@ -35,15 +37,18 @@ export const snapshotActions = (set, get) => ({
     // 소켓으로 온 초대: 스냅샷 전이면 버퍼에 두고, 복원 중이면 소리만 미룸
     receiveLiveInvite: (accountId, invite, sfxEvent = null) => {
         const state = get();
+        // 다른 계정·못 쓰는 줄·내가 받는 초대 아님이면 안 받음
         if (accountId === null || accountId !== state.accountId) return { applied: false, reason: "account-mismatch" };
         if (!isUsable(invite)) return { applied: false, reason: "invalid" };
         if (invite.receiverId !== accountId) return { applied: false, reason: "receiver-mismatch" };
 
+        // 스냅샷 전이면 버퍼에 모음
         if (!state.snapshotLoaded) {
             set({ liveBuffer: [...state.liveBuffer, { invite, sfxEvent }] });
             return { applied: false, reason: "buffered" };
         }
 
+        // 스냅샷이 이미 끝난 걸로 본 대기 초대면 버림
         if (!isActionable(invite, state.snapshotPendingIds, state.cursor, state.snapshotLoaded)) {
             return { applied: false, reason: "known-terminal" };
         }

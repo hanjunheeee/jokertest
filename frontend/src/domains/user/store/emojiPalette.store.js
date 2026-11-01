@@ -13,6 +13,7 @@ import { editActions } from "./emojiPalette/editActions.js"
 import { gameActions } from "./emojiPalette/gameActions.js"
 
 
+// 처음 상태 + 편집·인게임 액션을 펼침, requestGeneration은 초기화마다 올려 옛 응답을 버리는 세대 번호
 export const useEmojiPaletteStore = create((set, get) => ({
   ...createInitialState(),
   requestGeneration: 0,
@@ -30,6 +31,7 @@ useAuthStore.subscribe((state, prevState) => {
 // 판이 바뀌면 받아 둔 인게임 팔레트를 비움
 useInGameStore.subscribe(() => {
   const state = useEmojiPaletteStore.getState()
+  // 이미 비어 있거나 같은 판이면 할 일 없음
   if (state.gameScopeKey === null && state.gameStatus === "idle") return
   if (inGameEmojiScopeKey(readEmojiScope()) === state.gameScopeKey) return
   useEmojiPaletteStore.getState().resetGamePalette()

@@ -1,3 +1,5 @@
+// 스킨·카드 장착 창 안쪽 (틀·제목·닫기·직업 탭·목록·미리보기·적용 버튼)
+// SkinCardWearOverlay가 씀
 import { SKIN_CARD_WEAR_ASSETS } from "../../constants/skinCardWear/skinCardWearAssets.js"
 import {
   CLOSE_BTN_CLASS,
@@ -20,6 +22,7 @@ import SkinCardWearJobTabs from "./SkinCardWearJobTabs.jsx"
 import SkinCardWearList from "./SkinCardWearList.jsx"
 import SkinCardWearPreview from "./SkinCardWearPreview.jsx"
 
+// 저장 중엔 안쪽을 inert로 잠그고, 실패·모름이면 오류 문구와 다시 시도 글자
 export default function SkinCardWearPanel({
   listItems,
   selectedItemId,

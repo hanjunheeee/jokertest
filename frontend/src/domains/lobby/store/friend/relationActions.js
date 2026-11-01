@@ -9,6 +9,7 @@ export const relationActions = (set, get) => ({
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
 
+        // 저장 중 표시, 그 친구 옛 오류 지움
         set((state) => ({
             favoritePendingIds: new Set(state.favoritePendingIds).add(friendId),
             favoriteErrors: Object.fromEntries(
@@ -40,6 +41,7 @@ export const relationActions = (set, get) => ({
         } catch (error) {
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             clearPending();
+            // 실패면 그 친구 줄에 오류 문구 남김
             set((state) => ({
                 favoriteErrors: {
                     ...state.favoriteErrors,

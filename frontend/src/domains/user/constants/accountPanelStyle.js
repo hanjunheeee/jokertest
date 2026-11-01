@@ -1,5 +1,8 @@
+// 계정 관리 패널 className·틀 여백
+// 계정 관리 패널 컴포넌트들·DiscordAccountLink가 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 패널 자리·틀 (로그인 틀 그림 안쪽 여백)
 export const FRAME_INSET = {
   paddingTop: "31.5%",
   paddingBottom: "6.5%",
@@ -23,9 +26,11 @@ export const FRAME_CONTENT_CLASS =
 export const SCROLL_CLASS =
   `relative flex min-h-0 flex-1 flex-col overflow-x-visible overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
+// 제목 (지금 아무도 안 씀)
 export const HEADING_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(0.7rem,0.98vw,0.82rem)] font-bold text-[#e8dfc8] [text-shadow:0_1px_3px_rgba(0,0,0,0.8)]"
 
+// 폼 제목·칸·결과 줄·입력 (닉네임·비밀번호·Discord)
 export const PANEL_FORM_HEADING_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(0.7rem,0.98vw,0.82rem)] font-bold text-black"
 
@@ -46,6 +51,7 @@ export const PANEL_ACTION_BTN_ROW_CLASS = "flex w-full justify-end"
 
 export const INPUT_WRAP_CLASS = "w-full max-w-full"
 
+// 확인 버튼
 export const CONFIRM_BTN_SRC = "/button/버튼(수락 및 긍정).png".normalize("NFD")
 export const CONFIRM_BTN_CLASS =
   "relative ml-auto block w-[clamp(5.4rem,10vw,7.6rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
@@ -53,6 +59,7 @@ export const CONFIRM_BTN_IMG_CLASS = "block h-auto w-full select-none"
 export const CONFIRM_BTN_TEXT_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(0.6rem,0.75vw,0.68rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.8)]"
 
+// 결과 문구 (성공·실패 색)
 export const FEEDBACK_BASE_CLASS =
   "block w-full whitespace-nowrap font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1.05vw,0.84rem)] font-bold [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
 export const FEEDBACK_SUCCESS_CLASS = "text-[#2E6B3A]"

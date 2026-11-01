@@ -1,3 +1,5 @@
+// 받은 친구 신청 한 줄 (초상·이름·차단·수락 버튼)
+// FriendAcceptRequestList가 신청마다 그림
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 import {
   PROFILE_PORTRAIT_WRAP_CLASS,
@@ -15,6 +17,7 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
+// 처리 중이면 두 버튼 다 잠금, 알림에서 찾던 신청은 표시함
 export default function IncomingFriendRow({
   requestId,
   requesterId,
@@ -52,6 +55,7 @@ export default function IncomingFriendRow({
           </div>
         </div>
         <div className={RECOMMENDED_ACTIONS_CLASS}>
+          {/* 차단 처리 함수와 신청자 id가 있을 때만 차단 버튼 */}
           {onBlock !== null && typeof requesterId === "string" ? (
             <button
               type="button"

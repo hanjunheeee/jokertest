@@ -15,7 +15,7 @@ export const soundActions = (set, get) => ({
         return true;
     },
 
-    // 진단 기록용: 소리를 안 낸 이유만 알려 줌
+    // 진단 기록용: 소리 낼지와 막힌 이유만 알려 줌 (소비 표시 안 함)
     explainInviteSound: (accountId, invite, now = Date.now()) => (
         evalSound(get(), accountId, invite, now)
     ),

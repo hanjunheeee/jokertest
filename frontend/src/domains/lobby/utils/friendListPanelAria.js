@@ -1,3 +1,7 @@
+// 친구 목록 패널 대화상자 이름 (지금 탭 이름)
+// FriendListPanelFrame이 씀
+
+// 모르는 탭이면 친구 목록으로 봄
 export function getAriaLabel(view) {
   if (view === "request") return "친구 신청"
   if (view === "accept") return "친구 수락"

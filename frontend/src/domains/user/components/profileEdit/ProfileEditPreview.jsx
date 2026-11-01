@@ -1,3 +1,5 @@
+// 프로필 편집 미리보기 (사진 + 테두리 겹침)
+// ProfileEditPanel이 씀
 import {
   PREVIEW_FRAME_CLASS,
   PREVIEW_PHOTO_CLASS,
@@ -7,6 +9,7 @@ import {
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 사진은 둥근 칸 안, 테두리는 위에 겹침
 export default function ProfileEditPreview({ photoSrc, frameSrc }) {
   return (
     <section className={PREVIEW_SECTION_CLASS} aria-label="프로필 미리보기">

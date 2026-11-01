@@ -1,5 +1,5 @@
 // 친구 줄의 게임 초대 버튼
-// FriendListRow가 대기방에서 열었을 때 그림
+// FriendListRow가 초대 처리 함수를 받았을 때 그림 (방 id가 있는 패널만 줌)
 import { RECOMMENDED_ACTION_BTN_CLASS, RECOMMENDED_ACTION_IMG_CLASS } from "../../../../constants/friendListStyle.js"
 import { FRIEND_LIST_ASSETS } from "../../../../constants/friendListAssets.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"

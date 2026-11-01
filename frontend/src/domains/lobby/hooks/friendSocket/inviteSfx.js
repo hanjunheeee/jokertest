@@ -1,5 +1,5 @@
 // 친구·게임 초대 효과음 내기와 초대 스냅샷 다시 받기
-// 친구 소켓 훅·초대 수락 흐름·시험이 씀
+// 친구 소켓 사건 처리(handlers)·초대 수락 흐름·소켓 훅 입구가 씀
 import { useGameInviteStore } from "../../store/gameInvite.store.js";
 import { useAuthStore } from "../../../auth/store/auth.store.js";
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js";
@@ -22,6 +22,7 @@ export function playFriendSfx(sfxEvent) {
     if (accountId === null) return;
     if (sfxEvent.accountId !== accountId) return;
 
+    // 같은 사건 소리는 알림 스토어가 한 번만 허락함
     if (!useNotificationsStore.getState().consumeSoundEvent(accountId, sfxEvent.eventId)) return;
 
     dispatchSfxEvent({
@@ -40,6 +41,7 @@ export function playGameInviteSfx(payload) {
 
     const accountId = myAccountId();
     if (accountId === null) return;
+    // 다른 계정 사건이면 진단만 남기고 끝
     if (sfxEvent.accountId !== accountId) {
         recordInviteSfxObservation(() => ({
             phase: "received", accountId: sfxEvent.accountId, inviteId: invite?.inviteId ?? null,
@@ -48,6 +50,7 @@ export function playGameInviteSfx(payload) {
         return;
     }
 
+    // 스토어가 막으면 막은 이유를 진단에 남김
     if (!useGameInviteStore.getState().consumeInviteSound(accountId, invite)) {
         recordInviteSfxObservation(() => ({
             phase: "received", accountId, inviteId: invite?.inviteId ?? null,
@@ -58,6 +61,7 @@ export function playGameInviteSfx(payload) {
         return;
     }
 
+    // 소리 내고, 재생기 응답·재생 끝남을 진단에 남김
     const result = dispatchSfxEvent({
         kind: sfxEvent.kind,
         eventId: sfxEvent.eventId,

@@ -30,8 +30,10 @@ export default function FriendAcceptTab({
     FRIEND_LIST_FILTER_FIELDS.incomingRequest,
   )
 
+  // 검색 중이면 거른 목록, 아니면 전체
   const visibleRequests = isFiltering ? filteredItems : incomingRequests
 
+  // 알림에서 찾던 신청이 목록에 없을 때 (목록 오류면 안 보임)
   const targetMissing =
     incomingLoaded &&
     incomingError === null &&

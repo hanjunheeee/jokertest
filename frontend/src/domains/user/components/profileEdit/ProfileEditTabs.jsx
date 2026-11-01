@@ -1,3 +1,5 @@
+// 프로필 편집 창 탭 (프로필 수정·테두리 수정)
+// ProfileEditPanel이 씀
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
   TAB_BTN_CLASS,
@@ -9,6 +11,7 @@ import {
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 켜진 탭은 구매 버튼 그림, 꺼진 탭은 흐린 버튼 그림
 export default function ProfileEditTabs({ activeTab, onTabChange }) {
   return (
     <div className={PROFILE_EDIT_TABS_CLASS} role="tablist" aria-label="프로필 수정 옵션">

@@ -1,5 +1,8 @@
+// 이모티콘 팔레트 화면 className·움직임·바퀴 칸 자리
+// 이모티콘 팔레트 화면과 그 컴포넌트들이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+// 화면 나타나는 움직임·바탕
 export const UI_FADE = {
   duration: 0.7,
   ease: [0.22, 1, 0.36, 1],
@@ -13,6 +16,7 @@ export const MAIN_CLASS =
 export const CONTENT_CLASS =
   "flex w-full min-h-0 max-w-[min(72rem,96vw)] flex-col gap-[clamp(0.35rem,0.8vh,0.55rem)]"
 
+// 위쪽 안내 줄·저장 완료 문구
 export const STATUS_WRAP_CLASS =
   "flex shrink-0 flex-col items-center gap-[clamp(0.25rem,0.5vh,0.35rem)]"
 
@@ -33,6 +37,7 @@ export const ERROR_ROW_CLASS =
 export const RETRY_BTN_CLASS =
   "interactive-scale cursor-pointer rounded border border-[#c9b892]/60 bg-black/45 px-3 py-1 font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.78rem)] font-bold text-[#f5f0e6]"
 
+// 본문·보유 이모티콘 칸 (검색·등급 거르기·목록)
 export const BODY_CLASS =
   "flex min-h-0 flex-1 flex-col gap-[clamp(0.85rem,1.75vh,1.2rem)] lg:flex-row lg:items-stretch lg:gap-[clamp(0.75rem,1.6vw,1.25rem)]"
 
@@ -82,6 +87,7 @@ export const GRID_CLASS =
 
 export const GRID_ITEM_CLASS = "overflow-visible"
 
+// 이모티콘 판 버튼 (보유·미보유·이름표)
 export const PLATE_BTN_CLASS =
   "group relative z-0 block w-[clamp(6.5rem,11.8vw,9.25rem)] shrink-0 cursor-pointer overflow-visible border-0 bg-transparent p-[0.2rem] leading-none hover:z-30 disabled:cursor-not-allowed disabled:opacity-45"
 
@@ -113,6 +119,7 @@ export const PLATE_NAMEPLATE_IMG_CLASS =
 export const PLATE_NAMEPLATE_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[10%] text-center font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1.08vw,0.88rem)] font-bold leading-tight text-[#ebe2cc]/95 whitespace-nowrap"
 
+// 바퀴 칸 (틀 크기·칸 버튼)
 export const WHEEL_SECTION_CLASS =
   "flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-[clamp(0.55rem,1.1vh,0.85rem)]"
 
@@ -127,6 +134,7 @@ export const FRAME_HEIGHT = 738
 export const FRAME_ASPECT_RATIO =
   `${FRAME_WIDTH} / ${FRAME_HEIGHT}`
 
+// 8칸 자리 (12시부터 시계 방향, 틀 기준 %)
 export const SLOT_POSITIONS = [
   { top: "15%", left: "50%" },
   { top: "26%", left: "74%" },
@@ -149,6 +157,7 @@ export const SLOT_IDLE_CLASS = "border-transparent opacity-90"
 export const SLOT_EMPTY_CLASS =
   "app-text-scaled [--app-text-size:0.7rem] opacity-60"
 
+// 저장·취소 버튼 줄
 export const ACTION_ROW_CLASS =
   "flex shrink-0 items-center justify-center gap-[clamp(0.65rem,1.25vw,0.95rem)]"
 

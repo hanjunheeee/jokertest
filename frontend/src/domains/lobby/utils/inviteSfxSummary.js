@@ -13,6 +13,7 @@ export function summarize(observations) {
         if (entry.phase === "received") summary.arrivals += 1;
         if (entry.eligible) summary.eligibleDispatches += 1;
         if (entry.playback === "played") summary.audiblePlaybacks += 1;
+        // 소리 낸 기록은 재생기 이유, 막힌 기록은 막은 이유로 셈
         const reason = entry.eligible ? entry.dispatchReason : entry.reason;
         if (typeof reason === "string" && reason.length > 0) {
             summary.suppressedByReason[reason] = (summary.suppressedByReason[reason] ?? 0) + 1;

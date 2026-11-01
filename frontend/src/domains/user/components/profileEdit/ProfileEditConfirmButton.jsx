@@ -1,3 +1,5 @@
+// 프로필 편집 창 아래 수정하기 버튼
+// ProfileEditPanel이 씀
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
   CONFIRM_BTN_CLASS,
@@ -7,6 +9,7 @@ import {
 } from "../../constants/profileEditLayout.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset.jsx"
 
+// 저장 중엔 잠그고 글자를 바꿈, 소리는 편집 창이 직접 냄(data-sfx-owner)
 export default function ProfileEditConfirmButton({ onClick, disabled = false }) {
   return (
     <footer className={FOOTER_CLASS}>

@@ -1,5 +1,7 @@
 // 스킨·카드 장착 저장 상태·직업별 장착 칸·확정 거절 코드
-// 스킨·카드 장착 선택 훅과 저장 계산이 씀
+// 스킨·카드 장착 저장 훅(useWearConfirm)·선택 훅·저장 계산이 씀
+
+// 저장 상태 (uncertain = 저장됐는지 확인 못 함)
 export const SKIN_CARD_WEAR_CONFIRM_STATUS = Object.freeze({
   IDLE: "idle",
   SAVING: "saving",

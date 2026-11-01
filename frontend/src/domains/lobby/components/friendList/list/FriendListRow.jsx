@@ -52,6 +52,7 @@ export default function FriendListRow({
         className={FRIEND_ROW_FRAME_CLASS}
       />
       <div className={ROW_CONTENT_CLASS}>
+        {/* 저장 중엔 별을 눌러도 다시 안 보냄 */}
         <FriendListFavoriteStar
           active={isFavorite}
           onToggle={() => { if (!isSavingFavorite) setFavorite(id, !isFavorite) }}
@@ -64,6 +65,7 @@ export default function FriendListRow({
         <div className={FRIEND_ROW_INFO_CLASS}>
           <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
           <FriendOnlineStatus online={online} />
+          {/* 즐겨찾기·초대 실패 문구는 줄 안에 보임 */}
           {favoriteError !== null ? (
             <p role="status" data-favorite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
               {favoriteError}
@@ -75,6 +77,7 @@ export default function FriendListRow({
             </p>
           ) : null}
         </div>
+        {/* 초대·차단 처리 함수가 있을 때만 버튼 칸 */}
         {onInvite !== null || onBlock !== null ? (
           <div className={RECOMMENDED_ACTIONS_CLASS}>
             {onInvite !== null ? (

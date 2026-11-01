@@ -7,6 +7,7 @@ import { createInitialState, currentChecker } from "./state.js"
 import { clearGameRequest } from "./gameActions.js"
 
 export const editActions = (set, get) => ({
+  // 불러오기: 서버 칸으로 저장 칸·편집 칸을 같이 맞춤, 늦게 온 옛 응답은 버림
   load: async () => {
     set({ status: "loading", error: null, conflict: null })
     const isCurrent = currentChecker(get)
@@ -41,6 +42,7 @@ export const editActions = (set, get) => ({
     set({ selectedSlotIndex: index })
   },
 
+  // 고른 칸에 이모티콘 넣기 (다른 칸에 있으면 자리 바꿈, 불러오기 전엔 안 받음)
   assignItem: (itemId) => {
     if (get().status !== "ready") return
     if (typeof itemId !== "string" || itemId.length === 0) return
@@ -78,6 +80,7 @@ export const editActions = (set, get) => ({
         })
         return { ok: false, code: error.code, status: error.status, revision: error.revision, slots: conflictSlots }
       }
+      // 그 밖의 실패는 편집 칸을 그대로 둠
       return { ok: false, code: error?.code, status: error?.status }
     }
   },

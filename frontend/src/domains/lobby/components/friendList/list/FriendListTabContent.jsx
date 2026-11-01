@@ -43,6 +43,7 @@ export default function FriendListTabContent({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
+      {/* 목록 못 받았으면 오류 + 다시 시도 */}
       {friendsError !== null ? (
         <p role="status" data-friend-list-error="true" className={`px-2 ${STATUS_ERROR_CLASS}`}>
           {friendsError}
@@ -53,6 +54,7 @@ export default function FriendListTabContent({
           ) : null}
         </p>
       ) : null}
+      {/* 검색 중엔 결과만, 아니면 폴더 세 개 */}
       {isFiltering ? (
         <FriendListFilterResults friends={filteredItems} invite={invite} block={block} />
       ) : (

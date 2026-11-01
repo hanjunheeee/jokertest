@@ -1,3 +1,5 @@
+// 로비 배경 (정지 그림 + 첫 진입 영상 + 영상 건너뛰기 칸)
+// LobbyPage가 맨 아래 층에 그림
 import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
 import {
   LOBBY_BG_IMAGE_CLASS,
@@ -8,6 +10,7 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
+// UI가 보이면 영상을 숨기고, 보이기 전엔 화면 전체가 건너뛰기 버튼
 export default function LobbyBackground({ bgVideoRef, uiVisible, onSkipIntro }) {
   return (
     <>

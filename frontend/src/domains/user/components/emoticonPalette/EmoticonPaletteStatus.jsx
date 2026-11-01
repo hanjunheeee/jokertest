@@ -9,6 +9,7 @@ import {
   STATUS_WRAP_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 
+// 불러오는 중·실패(다시 시도)·충돌·저장 실패 줄을 상황마다 보임
 export default function EmoticonPaletteStatus({ status, conflict, notice, onRetry }) {
   return (
     <div className={STATUS_WRAP_CLASS}>

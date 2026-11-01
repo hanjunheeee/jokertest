@@ -1,3 +1,5 @@
+// 프로필 편집 창 안쪽 (닫기·탭·미리보기·보유 목록·오류·수정하기)
+// ProfileEditOverlay가 씀
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import { PLAYER_PROFILE_ASSETS } from "../../../../shared/constants/playerProfileAssets.js"
 import {
@@ -15,6 +17,7 @@ import ProfileEditOptionGrid from "./ProfileEditOptionGrid.jsx"
 import ProfileEditPreview from "./ProfileEditPreview.jsx"
 import ProfileEditTabs from "./ProfileEditTabs.jsx"
 
+// 초안 id를 그림으로 바꿔 미리보기, 못 찾으면 기본 그림
 export default function ProfileEditPanel({
   activeTab,
   onTabChange,

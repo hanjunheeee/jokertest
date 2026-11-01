@@ -1,3 +1,5 @@
+// 친구 목록 패널·줄·버튼 그림 경로
+// 친구 목록 컴포넌트들과 로비·대기실의 친구 버튼이 씀
 export const FRIEND_LIST_ASSETS = {
   openButton: "/button/친구목록 버튼.png".normalize("NFD"),
   panelFrame: "/frame/friendList/친구목록 탭 프레임.png",
