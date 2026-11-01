@@ -3,7 +3,11 @@
 import { useEffect, useRef, useState } from "react"
 import { findIdApi } from "../../api/auth.api.js"
 import { FIND_ID_TEXT } from "../../constants/recoveryMessages.js"
-import { validateFindId } from "../../validation/recovery.js"
+import {
+  FIND_ID_NICKNAME_WHITESPACE_MESSAGE,
+  hasFindIdNicknameWhitespace,
+  validateFindId,
+} from "../../validation/recovery.js"
 
 // 찾기 상태: idle → submitting → found / notFound / rateLimited / failed
 export function useFindId() {
@@ -24,6 +28,16 @@ export function useFindId() {
     return () => { unmountedRef.current = true }
   }, [])
 
+  // 닉네임 입력: 가운데 띄어쓰기는 바로 알림, 고치면 그 알림만 지움 (다른 알림은 그대로)
+  const changeNickname = (next) => {
+    setNickname(next)
+    if (hasFindIdNicknameWhitespace(next)) {
+      setFormError(FIND_ID_NICKNAME_WHITESPACE_MESSAGE)
+      return
+    }
+    setFormError((prev) => (prev === FIND_ID_NICKNAME_WHITESPACE_MESSAGE ? "" : prev))
+  }
+
   // 입력 검사 뒤 요청, 마지막에 보낸 요청 응답만 반영
   const submit = () => {
     const check = validateFindId(nickname, birthDate)
@@ -37,7 +51,7 @@ export function useFindId() {
     setStatus("submitting")
     const gen = ++genRef.current
 
-    findIdApi({ nickname: nickname.trim(), birthDate })
+    findIdApi({ nickname: check.nickname, birthDate: check.birthDate })
       .then((result) => {
         if (unmountedRef.current || genRef.current !== gen) return
         submittingRef.current = false
@@ -85,5 +99,5 @@ export function useFindId() {
     setStatus("idle")
   }
 
-  return { status, nickname, setNickname, birthDate, setBirthDate, maskedEmail, formError, handleSubmit, backToIdle }
+  return { status, nickname, changeNickname, birthDate, setBirthDate, maskedEmail, formError, handleSubmit, backToIdle }
 }

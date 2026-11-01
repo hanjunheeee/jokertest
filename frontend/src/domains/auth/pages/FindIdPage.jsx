@@ -38,7 +38,7 @@ export default function FindIdPage() {
           <FindIdForm
             status={find.status}
             nickname={find.nickname}
-            setNickname={find.setNickname}
+            setNickname={find.changeNickname}
             birthDate={find.birthDate}
             setBirthDate={find.setBirthDate}
             formError={find.formError}
