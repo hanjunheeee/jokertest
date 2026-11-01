@@ -1,10 +1,11 @@
-// 채팅 틀: 보드 구석 채팅과 크게 보기 창, 재판 연출 중엔 숨김
+// 채팅 틀: 보드 구석 채팅(타이머 자리가 채팅이면 틀 안 타이머)과 크게 보기 창, 재판 연출 중엔 숨김
 // 인게임 화면·InGamePlayArea가 사용, 채팅 값은 채팅 세션 컨텍스트에서 꺼냄
 import { useState } from "react"
 import {
   PANEL_POSITION_CLASS,
   getPanelStyle,
 } from "../../constants/chat/ingameChatBoardLayout.js"
+import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
 import { useInGameChatSessionContext } from "./InGameChatSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 import InGameChatCloseupOverlay from "./InGameChatCloseupOverlay.jsx"
@@ -17,14 +18,25 @@ function selectTribunalPresentationOpen(state) {
     && state.tribunal.resolved !== true
 }
 
-// 크게 보기 열림은 여기서만 들고 있음
-export default function InGameChatShell() {
+// 크게 보기 열림은 여기서만 들고 있음, 타이머 값은 인게임 화면이 넘김
+export default function InGameChatShell({
+  timerPlacement = INGAME_TIMER_PLACEMENT.TIMEBAR,
+  statusLabel = null,
+  remainingRatio = 0,
+  remainingSec = null,
+}) {
   const [closeupOpen, setCloseupOpen] = useState(false)
   const tribunalPresentationOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
   const chatProps = useInGameChatSessionContext()
 
   // 재판 연출이 자기 채팅을 띄우므로 겹치지 않게 숨김
   if (tribunalPresentationOpen) return null
+
+  // 틀 안 타이머는 채팅 자리이고 단계 글이 있을 때만 (끝난 판·역할 공개엔 없음)
+  const showEmbeddedPhaseTimer =
+    timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
+    && typeof statusLabel === "string"
+    && statusLabel.length > 0
 
   return (
     <>
@@ -37,6 +49,9 @@ export default function InGameChatShell() {
           variant="board"
           {...chatProps}
           onOpenCloseup={() => setCloseupOpen(true)}
+          showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+          embeddedPhaseTimerRemainingRatio={remainingRatio}
+          embeddedPhaseTimerRemainingSec={remainingSec}
         />
       </aside>
 

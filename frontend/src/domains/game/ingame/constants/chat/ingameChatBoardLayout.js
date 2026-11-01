@@ -1,10 +1,11 @@
-// 판 위 채팅 창 모양: 패널 폭·기울기·목록/입력/상태 줄 자리
+// 판 위 채팅 창 모양: 패널 폭·기울기·목록(타이머 켰을 때 포함)/입력/상태 줄 자리
 // 채팅 틀(InGameChatShell)과 채팅 레이아웃 상수가 사용
 import { INGAME_CHAT_FRAME_SCALE } from "./ingameChatAssets.js"
 import {
   CONTENT_SHIFT_LEFT_FRAME,
   mapFrameInsetToLayoutBox,
 } from "./ingameChatFrameLayout.js"
+import { EMBEDDED_TIMER_LIST_OFFSET_FRAME } from "./ingameChatTimerLayout.js"
 
 // 틀 배율을 되돌린 폭
 export const WIDTH_PERCENT = `${100 / INGAME_CHAT_FRAME_SCALE}%`
@@ -81,6 +82,18 @@ export function getPanelStyle(
 // 틀 기준 자리를 화면 자리로 바꾼 값
 export const INGAME_CHAT_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
   MSG_LIST_INSET_FRAME,
+)
+
+// 채팅 틀 안 타이머 켰을 때 목록 자리 (타이머만큼 내리고 줄임)
+const MSG_LIST_INSET_FRAME_WITH_TIMER = {
+  top: MSG_LIST_INSET_FRAME.top + EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+  left: MSG_LIST_INSET_FRAME.left,
+  right: MSG_LIST_INSET_FRAME.right,
+  height: MSG_LIST_INSET_FRAME.height - EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+}
+
+export const MSG_LIST_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
+  MSG_LIST_INSET_FRAME_WITH_TIMER,
 )
 
 export const INGAME_CHAT_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(

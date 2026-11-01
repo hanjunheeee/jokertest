@@ -4,6 +4,9 @@
 // 밤 차례 비우기 조각
 export const CLEARED_NIGHT_TURN = Object.freeze({ nightTurnRole: null, nightTurnDeadline: null })
 
+// 낮 마감 시각 비우기 조각 (낮 벗어날 때 옛 시각이 타이머에 안 남게)
+export const CLEARED_DAY_PHASE_TIMER = Object.freeze({ dayPhaseDeadline: null })
+
 // 밤 개인 결과 비우기 조각
 export const CLEARED_NIGHT_PRIVATE_RESULT = Object.freeze({ nightPrivateResult: null })
 

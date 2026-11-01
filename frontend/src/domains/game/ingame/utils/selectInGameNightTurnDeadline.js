@@ -1,5 +1,5 @@
 // 밤 차례 마감 시각 고르기와 남은 초 계산
-// 인게임 화면·밤 차례 남은 시간 훅(useInGameNightTurnCountdown)이 사용
+// 남은 초 계산은 단계 타이머 진행 훅(useTurnProgress)·옛 남은 초 훅이 사용, 마감 고르기는 시험만 사용
 import { selectInGameNightTurnRole } from "./nightTurn.js"
 
 // 밤 차례 중일 때만 마감 시각 (없거나 틀리면 null)

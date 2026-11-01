@@ -1,5 +1,5 @@
 // 밤 차례 남은 초 훅: 마감 시각까지 1초마다 남은 초를 다시 셈
-// 인게임 화면(InGamePage)이 시간 막대 문구에 사용
+// 지금은 부르는 곳 없음 (시간 바 남은 시간은 hooks/timebar/useTurnProgress.js로 바뀜)
 import { useEffect, useState } from "react"
 import { computeInGameNightTurnRemainingSec } from "../utils/selectInGameNightTurnDeadline.js"
 

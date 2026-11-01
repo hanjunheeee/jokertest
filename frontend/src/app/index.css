@@ -149,6 +149,11 @@
     container-name: game-viewport;
   }
 
+  /* 임시: 배너 칸은 두고 그림만 비움 (viewportLayout의 SIDE_BANNER_IMAGES_VISIBLE이 false일 때) */
+  .viewport-shell--banner-images-hidden .viewport-shell__banner {
+    @apply bg-black;
+  }
+
   @media (max-width: 1191px) {
     .viewport-shell {
       gap: 0;

@@ -5,6 +5,7 @@ import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
   INGAME_CHAT_STATUS_LINE_INSET,
   INGAME_CHAT_TEXT_FIELD_INSET,
+  MSG_LIST_INSET_WITH_TIMER,
 } from "./ingameChatBoardLayout.js"
 import {
   CLOSEUP_INPUT_SHIFT_CLASS,
@@ -278,11 +279,16 @@ export const MSG_SENDER_CLASS =
 export const MSG_ROW_CLASS =
   `flex min-w-0 list-none items-start gap-[0.25em] ${MSG_READ_ONLY_CLASS}`
 
-// 종류별 목록·입력·상태 줄 자리
-export function getMsgListInset(variant = "board") {
-  return isCloseupLikeVariant(variant)
-    ? INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
-    : INGAME_CHAT_MESSAGE_LIST_INSET
+// 종류별 목록·입력·상태 줄 자리 (판 위 목록은 채팅 틀 안 타이머 켜면 내려감)
+export function getMsgListInset(variant = "board", options = {}) {
+  const { withEmbeddedPhaseTimer = false } = options
+  if (isCloseupLikeVariant(variant)) {
+    return INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
+  }
+  if (withEmbeddedPhaseTimer) {
+    return MSG_LIST_INSET_WITH_TIMER
+  }
+  return INGAME_CHAT_MESSAGE_LIST_INSET
 }
 
 export function getTextFieldInset(variant = "board") {

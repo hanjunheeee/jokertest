@@ -11,6 +11,7 @@ import { buildSelf, readSelf } from "./self.js"
 import { readDayFields } from "./dayFields.js"
 import { goesBackward, readDayPhase, readVersions, readWinResult } from "./phaseFields.js"
 import { normRoomSettingsSource } from "./roomSettings.js"
+import { readTimerFields } from "./timerFields.js"
 
 // 빈 문자열이면 null로
 const orNull = (value) => (isNonEmptyString(value) ? value : null)
@@ -38,11 +39,13 @@ export function applySessionSnapshotPure(current, response) {
   const day = readDayFields(response, roster, !PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS.has(response.phase))
   if (day === BAD) return current
 
-  // 승패·낮 단계·역행
+  // 승패·낮 단계·낮/밤 차례 타이머·역행
   const winResult = readWinResult(response)
   if (winResult === BAD) return current
   const dayPhase = readDayPhase(response)
   if (dayPhase === BAD) return current
+  const timer = readTimerFields(response, current.state)
+  if (timer === BAD) return current
   if (goesBackward(current.state, response)) return current
 
   // 참여 버전·본인 진행 순번
@@ -57,6 +60,9 @@ export function applySessionSnapshotPure(current, response) {
     phase: response.phase,
     dayIndex: response.dayIndex,
     dayPhase,
+    dayPhaseDeadline: timer.dayPhaseDeadline,
+    nightTurnRole: timer.nightTurnRole,
+    nightTurnDeadline: timer.nightTurnDeadline,
     hostUuid,
     roomId: orNull(response.roomId),
     roomInstanceId: orNull(response.roomInstanceId),

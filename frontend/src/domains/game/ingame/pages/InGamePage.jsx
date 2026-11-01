@@ -18,6 +18,7 @@ import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
 import InGameVoteStatusPanel from "../components/vote/InGameVoteStatusPanel.jsx"
+import InGameTimerPlacementDevToggle from "../components/timebar/InGameTimerPlacementDevToggle.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import InGameCornerActionPanel from "../components/actions/InGameCornerActionPanel.jsx"
 import InGameTribunalPresentationGate from "../components/tribunalPresentation/InGameTribunalPresentationGate.jsx"
@@ -31,12 +32,12 @@ import {
   subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
-import { selectInGameNightTurnDeadline } from "../utils/selectInGameNightTurnDeadline.js"
+import { selectInGameTimebarPhaseDeadline } from "../utils/timebar/phaseDeadline.js"
 import {
   isValidInGameSession,
   shouldRedirectOutOfInGame,
 } from "../utils/selectInGameSessionGuard.js"
-import { selectInGameTimebarStatusMessage } from "../utils/selectInGameTimebarStatusMessage.js"
+import { selectInGameTimebarStatusLabel } from "../utils/selectInGameTimebarStatusMessage.js"
 import { selectInGameDeadParticipantChoice } from "../utils/selectInGameDeadParticipantChoice.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
@@ -46,13 +47,14 @@ import {
 } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameNightPrivateResult } from "../hooks/useInGameNightPrivateResult.js"
 import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
-import { useInGameNightTurnCountdown } from "../hooks/useInGameNightTurnCountdown.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameTribunalExpulsionPresentation } from "../hooks/useInGameTribunalExpulsionPresentation.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
 import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
 import { useInGameKickFromCard } from "../hooks/useInGameKickFromCard.js"
+import { useTurnProgress } from "../hooks/timebar/useTurnProgress.js"
+import { useTimerPlacement } from "../hooks/timebar/useTimerPlacement.js"
 
 export function InGameActionProvider({ interactionBlocked = false, children }) {
   const actionPanelValue = useInGameActionPanel({ interactionBlocked })
@@ -196,8 +198,10 @@ export default function InGamePage() {
     || nightSuccessPresentation.open || nightPresentationWaitOpen
     || tribunalPresentationOpen || tribunalExpulsion.open
 
-  const nightTurnDeadline = useInGameStore((s) => selectInGameNightTurnDeadline(s.state ?? null))
-  const nightTurnRemainingSec = useInGameNightTurnCountdown(nightTurnDeadline)
+  const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
+  const timebarStatusLabel = selectInGameTimebarStatusLabel(gameState)
+  const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
+  const { timerPlacement, cycleTimerPlacement } = useTimerPlacement()
 
   const isValidGameSession = isValidInGameSession(gameId, gameState)
 
@@ -210,6 +214,10 @@ export default function InGamePage() {
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
+      <InGameTimerPlacementDevToggle
+        timerPlacement={timerPlacement}
+        onCycle={cycleTimerPlacement}
+      />
       <InGameBackground />
 
       <InGamePlayerSessionProvider>
@@ -229,11 +237,20 @@ export default function InGamePage() {
             <InGameTimebar
               day={gameState?.dayIndex}
               activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
-              statusMessage={selectInGameTimebarStatusMessage(gameState, nightTurnRemainingSec)}
+              statusLabel={timebarStatusLabel}
+              phaseTurnDeadline={phaseTurnDeadline}
+              timerPlacement={timerPlacement}
+              remainingRatio={remainingRatio}
+              remainingSec={remainingSec}
             />
             <InGameCornerActionPanel onVoteStatusClick={() => setVoteStatusOpen(true)} />
             <InGamePlayerBoard />
-            <InGameChatShell />
+            <InGameChatShell
+              timerPlacement={timerPlacement}
+              statusLabel={timebarStatusLabel}
+              remainingRatio={remainingRatio}
+              remainingSec={remainingSec}
+            />
             <PlayerRecordListPanel
               open={sidePanel.recordsOpen}
               onClose={sidePanel.close}

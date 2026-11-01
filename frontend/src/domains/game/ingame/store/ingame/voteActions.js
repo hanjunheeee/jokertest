@@ -1,9 +1,11 @@
-// 투표 결과 액션 묶음: 낮 투표 판정·재판 판정 반영
+// 투표 결과 액션 묶음: 낮 투표 판정·재판 판정 반영 (낮 마감 시각 같이 반영)
 // 입구 파일이 create 할 때 펼쳐 씀, 판 진행 이벤트 손잡이(낮)가 넘김
 import {
+  CLEARED_DAY_PHASE_TIMER,
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,
 } from "../../constants/store/ingameStore.js"
+import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../../utils/dayVoteRound.js"
 import { applyTribunalResolvedPure } from "../applyTribunalResolved.js"
 import { clearQueue } from "./nightSuccessRecords.js"
@@ -39,28 +41,48 @@ export const voteActions = (set) => ({
         publicAbstainCount: resolution.publicAbstainCount,
       }
 
-      // 재투표: 투표 중일 때만, 회차 올리고 본인 행동 표시 풀기
+      // 재투표: 투표 중일 때만, 회차 올리고 본인 행동 표시 풀기 (새 마감 시각은 실려 왔을 때만)
       if (outcome === "REVOTE") {
         if (current.state.dayPhase !== "DAY_VOTE") return current
-        return { state: {
+        const revoteState = {
           ...current.state,
           dayVoteRound: round + 1,
           dayVoteExcludedUuids: [...roundFields.revoteExcludedUuids],
           dayVoteResolution,
           tribunal: null,
           self: { ...current.state.self, hasActedThisPhase: false },
-        } }
+        }
+        const dayPhaseDeadline = parseDayPhaseDeadlineField(resolution)
+        if (dayPhaseDeadline === null) return current
+        if (dayPhaseDeadline !== undefined) revoteState.dayPhaseDeadline = dayPhaseDeadline
+        return { state: revoteState }
       }
 
-      // 재판: 피고가 있어야 함
+      // 재판: 피고가 있어야 함, 낮을 벗어나 낮 마감 시각 비움
       if (outcome === "TRIBUNAL") {
         if (typeof defendantUuid !== "string" || defendantUuid.length === 0) return current
-        return { state: { ...current.state, phase: "TRIBUNAL", dayPhase: null, dayVoteResolution, tribunal: { defendantUuid } } }
+        return {
+          state: {
+            ...current.state,
+            phase: "TRIBUNAL",
+            dayPhase: null,
+            dayVoteResolution,
+            tribunal: { defendantUuid },
+            ...CLEARED_DAY_PHASE_TIMER,
+          },
+        }
       }
-      // 동표·기권: 바로 밤으로, 밤 개인 결과·성공 연출 비움
+      // 동표·기권: 바로 밤으로, 낮 마감 시각·밤 개인 결과·성공 연출 비움
       if (outcome === "TIE" || outcome === "ABSTAINED") {
         return {
-          state: { ...current.state, phase: "NIGHT", dayPhase: null, dayVoteResolution, ...CLEARED_NIGHT_TURN },
+          state: {
+            ...current.state,
+            phase: "NIGHT",
+            dayPhase: null,
+            dayVoteResolution,
+            ...CLEARED_DAY_PHASE_TIMER,
+            ...CLEARED_NIGHT_TURN,
+          },
           ...CLEARED_NIGHT_PRIVATE_RESULT,
           ...clearQueue(),
         }

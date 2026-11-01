@@ -1,6 +1,7 @@
 // 낮 투표 판정 계산: 판정 응답·무효화 조각, 판정 방송 검사 (상태를 안 건드리는 순수 계산)
 // 판정 훅(useDayVoteResolve)·낮 이벤트 손잡이가 사용, 행동 패널 입구가 다시 내보냄
 import { FAILED_MSG } from "../constants/actions/dayVoteResolve.js"
+import { parseDayPhaseDeadlineField } from "./dayPhase.js"
 import { parseDayVoteRoundFields } from "./dayVoteRound.js"
 
 // 받는 판정 결과·다음 단계 이름과 표 수 검사
@@ -62,6 +63,10 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     if (payload.publicVoteCount !== payload.publicAbstainCount) return null
   }
 
+  // 재투표면 새 투표 마감 시각 (있을 때만, 틀리면 거절)
+  const dayPhaseDeadline = payload.outcome === "REVOTE" ? parseDayPhaseDeadlineField(payload) : undefined
+  if (dayPhaseDeadline === null) return null
+
   return {
     gameId: payload.gameId,
     dayIndex: payload.dayIndex,
@@ -71,6 +76,7 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     publicVoteCount: payload.publicVoteCount,
     publicAbstainCount: payload.publicAbstainCount,
     ...roundFields,
+    ...(dayPhaseDeadline !== undefined ? { dayPhaseDeadline } : {}),
   }
 }
 

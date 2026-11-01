@@ -11,12 +11,12 @@ export const PANEL_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
-// 뒤 덮개와 가운데 정렬 판
+// 뒤 덮개와 가운데 정렬 판 (시간 바 z-[58]보다 위)
 export const BACKDROP_CLASS =
-  "fixed inset-0 z-[45] cursor-default border-0 bg-black/45 p-0"
+  "fixed inset-0 z-[62] cursor-default border-0 bg-black/45 p-0"
 
 export const PANEL_WRAP_CLASS =
-  "pointer-events-none fixed inset-0 z-[46] flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
+  "pointer-events-none fixed inset-0 z-[63] flex items-center justify-center px-[clamp(0.5rem,2vw,1rem)] py-[clamp(0.75rem,3vh,1.5rem)]"
 
 // 패널 폭 기준값
 const PANEL_WIDTH_BASE = {

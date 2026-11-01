@@ -1,6 +1,7 @@
 // 밤 결과 적용 방송 검사: 판 끝 또는 다음 낮, 명단·죽은 사람이 맞을 때만
 // 밤 이벤트 손잡이(hooks/sessionEvents/nightHandlers.js)가 사용
 import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
+import { parseDayPhaseDeadlineField } from "./dayPhase.js"
 
 // 지금 판·명단 기준 검사 → 반영할 조각 (틀리면 null)
 export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, canonicalPlayerIds, previouslyDeadUuids }) {
@@ -94,5 +95,12 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
     if (!deadUuids.has(uuid)) return null
   }
 
-  return { gameId: payloadGameId, phase, dayIndex: payloadDayIndex, players: normalizedPlayers, victimUuid }
+  // 새 낮 마감 시각: 틀리면 거절, 없으면 칸째 안 실음 (스토어가 칸 있으면 값을 믿음)
+  const dayPhaseDeadline = parseDayPhaseDeadlineField(payload)
+  if (dayPhaseDeadline === null) return null
+
+  return {
+    gameId: payloadGameId, phase, dayIndex: payloadDayIndex, players: normalizedPlayers, victimUuid,
+    ...(dayPhaseDeadline !== undefined ? { dayPhaseDeadline } : {}),
+  }
 }

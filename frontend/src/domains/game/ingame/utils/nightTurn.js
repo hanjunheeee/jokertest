@@ -1,8 +1,9 @@
 // 밤 차례 알림 검사와 지금 차례 직업 고르기 (상태를 안 건드리는 순수 계산)
-// 밤 이벤트 손잡이·스냅샷 밤 관찰·행동 패널·카드 메뉴·차례 안내·시간 바가 사용
+// 밤 이벤트 손잡이·스냅샷 밤 관찰·스냅샷 타이머 검사·행동 패널·카드 메뉴·차례 안내·시간 바가 사용
 import { INGAME_NIGHT_TURN_ANNOUNCEMENTS } from "../constants/nightTurn/ingameNightTurnAnnouncement.js"
 
-const KNOWN_NIGHT_TURN_ROLES = new Set(INGAME_NIGHT_TURN_ANNOUNCEMENTS.map((turn) => turn.role))
+// 밤 차례가 있는 직업 (안내 목록에 있는 것만)
+export const KNOWN_NIGHT_TURN_ROLES = new Set(INGAME_NIGHT_TURN_ANNOUNCEMENTS.map((turn) => turn.role))
 
 // 밤 차례 시작 알림 검사: 지금 판·날짜·아는 직업·마감 시각이 맞을 때만 돌려줌
 export function parseNightTurnStartedPayload({ payload, gameId, dayIndex }) {

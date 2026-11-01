@@ -1,9 +1,11 @@
-// 단계 진행 액션 묶음: 첫 단계 넘어감·사망·밤 결과 적용·밤 차례·낮 단계
+// 단계 진행 액션 묶음: 첫 단계 넘어감·사망·밤 결과 적용·밤 차례·낮 단계 (낮 마감 시각 같이 반영)
 // 입구가 create 때 펼쳐 씀, 판 진행 손잡이가 사건을 넘김 (첫 단계만 파싱 없이)
 import {
+  CLEARED_DAY_PHASE_TIMER,
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,
 } from "../../constants/store/ingameStore.js"
+import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
 import { applyPlayerEliminatedPure } from "../applyPlayerEliminated.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { commitWithReceipt } from "./receiptScope.js"
@@ -32,12 +34,17 @@ export const phaseActions = (set) => ({
       const isLegacyFirstNight = payload.phase === "NIGHT" && payload.dayIndex === 0
       if (!isFirstDay && !isLegacyFirstNight) return current
 
+      // 첫 낮 마감 시각은 틀리면 거절, 옛 방식 밤이면 비움
+      const dayPhaseDeadline = isFirstDay ? parseDayPhaseDeadlineField(payload) : undefined
+      if (dayPhaseDeadline === null) return current
+
       return {
         state: {
           ...current.state,
           phase: payload.phase,
           dayIndex: payload.dayIndex,
           dayPhase: isFirstDay ? "DAY_DISCUSSION" : null,
+          ...(isFirstDay ? { dayPhaseDeadline: dayPhaseDeadline ?? null } : { ...CLEARED_DAY_PHASE_TIMER }),
         },
         ...(isLegacyFirstNight ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearQueue() } : {}),
       }
@@ -70,6 +77,7 @@ export const phaseActions = (set) => ({
             phase: "ENDED",
             dayIndex: payload.dayIndex,
             dayPhase: null,
+            ...CLEARED_DAY_PHASE_TIMER,
             ...CLEARED_NIGHT_TURN,
             players: mergeAlive(current.state.players, aliveByUuid),
             ...(payload.winResult ? { winResult: payload.winResult } : {}),
@@ -83,6 +91,10 @@ export const phaseActions = (set) => ({
       if (!Array.isArray(payload.players)) return current
       if (payload.dayIndex <= current.state.dayIndex) return current
 
+      // 새 낮 토론 마감 시각 (틀리면 거절, 없으면 비움)
+      const dayPhaseDeadline = parseDayPhaseDeadlineField(payload)
+      if (dayPhaseDeadline === null) return current
+
       const aliveByUuid = new Map(payload.players.map((p) => [p.uuid, p.alive]))
       return {
         state: {
@@ -93,6 +105,7 @@ export const phaseActions = (set) => ({
           dayVoteRound: 1,
           dayVoteExcludedUuids: [],
           dayVoteResolution: null,
+          dayPhaseDeadline: dayPhaseDeadline ?? null,
           ...CLEARED_NIGHT_TURN,
           players: mergeAlive(current.state.players, aliveByUuid),
         },
@@ -102,13 +115,18 @@ export const phaseActions = (set) => ({
   // 밤 역할 차례 시작 (같은 밤·같은 차례면 그대로, 차례가 오면 연출 대기는 끝)
   applyNightTurnStarted: (parsed) =>
     set((current) => {
-      // 지금 판의 그 밤이고 역할·마감 값이 제대로일 때만
+      // 지금 판의 그 날이고 역할·마감 값이 제대로일 때만
       if (!isPlainObject(parsed)) return current
       if (!hasGameId(parsed)) return current
       if (!current.gameId || !current.state) return current
       if (parsed.gameId !== current.gameId) return current
-      if (current.state.phase !== "NIGHT") return current
       if (!Number.isInteger(parsed.dayIndex) || parsed.dayIndex !== current.state.dayIndex) return current
+      // 밤 첫 차례 방송이 낮 판정 방송보다 먼저 올 수 있어 같은 날 낮이면 받아 둠 (안 그러면 첫 차례 타이머가 00:00에 멈춤)
+      const phase = current.state.phase
+      const phaseAcceptsTurn =
+        phase === "NIGHT"
+        || (phase === "DAY" && current.state.dayIndex === parsed.dayIndex)
+      if (!phaseAcceptsTurn) return current
       if (typeof parsed.role !== "string" || parsed.role.length === 0) return current
       if (!Number.isFinite(parsed.deadline) || parsed.deadline <= 0) return current
       if (current.state.nightTurnRole === parsed.role && current.state.nightTurnDeadline === parsed.deadline) {
@@ -148,6 +166,12 @@ export const phaseActions = (set) => ({
       if (parsed.dayPhase !== "DAY_VOTE") return current
       if (current.state.dayPhase === "DAY_VOTE") return current
 
-      return { state: { ...current.state, dayPhase: "DAY_VOTE" } }
+      // 투표 마감 시각은 실려 왔을 때만 바꿈 (틀리면 거절)
+      const nextState = { ...current.state, dayPhase: "DAY_VOTE" }
+      const dayPhaseDeadline = parseDayPhaseDeadlineField(parsed)
+      if (dayPhaseDeadline === null) return current
+      if (dayPhaseDeadline !== undefined) nextState.dayPhaseDeadline = dayPhaseDeadline
+
+      return { state: nextState }
     }),
 })

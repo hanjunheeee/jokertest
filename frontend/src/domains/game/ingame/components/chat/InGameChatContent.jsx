@@ -21,6 +21,8 @@ import InGameChatMessageList from "./InGameChatMessageList.jsx"
 import InGameChatSendButton from "./InGameChatSendButton.jsx"
 import InGameChatStatusLine from "./InGameChatStatusLine.jsx"
 import { InGameChatVariantContext } from "./InGameChatVariantContext.jsx"
+import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
+import InGamePhaseTurnTimerPanel from "../timebar/InGamePhaseTurnTimerPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 틀 바탕·틀 그림 모양 (보드 모양만 눌러서 크게 보기라 손가락 커서)
@@ -33,7 +35,7 @@ const CHAT_ROOT_BOARD_CLASS =
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
 
-// 채팅 한 판 그리기, variant는 컨텍스트로 아래 부품에 내려 줌
+// 채팅 한 판 그리기, variant는 컨텍스트로 아래 부품에 내려 줌 (틀 안 타이머는 채팅 틀만 켬)
 export default function InGameChatContent({
   variant = "board",
   draft,
@@ -44,6 +46,9 @@ export default function InGameChatContent({
   status = null,
   error = null,
   truncateDraftOnInput = true,
+  showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerRemainingRatio = 0,
+  embeddedPhaseTimerRemainingSec = null,
 }) {
   const [layoutReady, setLayoutReady] = useState(false)
 
@@ -110,9 +115,19 @@ export default function InGameChatContent({
           className={CHAT_FRAME_IMAGE_CLASS}
         />
 
+        {showEmbeddedPhaseTimer ? (
+          <InGamePhaseTurnTimerPanel
+            placement={INGAME_TIMER_PLACEMENT.CHAT}
+            remainingRatio={embeddedPhaseTimerRemainingRatio}
+            remainingSec={embeddedPhaseTimerRemainingSec}
+          />
+        ) : null}
+
         <div
           className={MSG_LIST_CONTAINER_CLASS}
-          style={getMsgListInset(variant)}
+          style={getMsgListInset(variant, {
+            withEmbeddedPhaseTimer: isBoard && showEmbeddedPhaseTimer,
+          })}
           data-chat-interactive
         >
           <InGameChatMessageList
