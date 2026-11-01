@@ -4,6 +4,9 @@ const { issueOAuthState, consumeOAuthState } = require('./state');
 const { resolveOAuthAccount, handleOAuthCallback } = require('./resolve');
 const { getSocialSignupIntent, completeSocialSignup } = require('./signup');
 const { linkExternalIdentityForValidatedSession, linkExternalIdentity } = require('./link');
+// 컨트롤러에서 옮긴 시도 표 서명·확인·판정 + 시도 표 유효 시간
+const { signOAuthAttempt, verifyOAuthAttempt, rememberMeForSignup } = require('./attempt');
+const { OAUTH_ATTEMPT_TTL_SECONDS, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = require('./constants');
 
 module.exports = {
     issueOAuthState,
@@ -14,4 +17,9 @@ module.exports = {
     completeSocialSignup,
     linkExternalIdentityForValidatedSession,
     linkExternalIdentity,
+    signOAuthAttempt,
+    verifyOAuthAttempt,
+    rememberMeForSignup,
+    OAUTH_ATTEMPT_TTL_SECONDS,
+    SOCIAL_SIGNUP_INTENT_TTL_SECONDS,
 };

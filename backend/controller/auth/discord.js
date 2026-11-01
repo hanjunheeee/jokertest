@@ -6,7 +6,8 @@ const discordOAuthService = require("../../services/auth/oauth/discord");
 const { getDeviceType } = require("../../utils/device");
 const { getClientIp }   = require("../../utils/ip");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../auth/cookieOptions");
-const { signOAuthAttempt, OAUTH_ATTEMPT_TTL_SECONDS, OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions, verifyOAuthAttempt, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = require('./cookies');
+const { OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions } = require('./cookies');
+const { signOAuthAttempt, verifyOAuthAttempt, OAUTH_ATTEMPT_TTL_SECONDS, SOCIAL_SIGNUP_INTENT_TTL_SECONDS } = require("../../services/auth/social");
 
 // state 발급 → 시도 쿠키 → 인가 주소로
 exports.discordAuthStart = async (req, res, next) => {

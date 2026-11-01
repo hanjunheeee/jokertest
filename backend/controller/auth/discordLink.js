@@ -3,7 +3,8 @@
 const crypto            = require("crypto");
 const socialAuthService = require("../../services/auth/social");
 const discordOAuthService = require("../../services/auth/oauth/discord");
-const { signOAuthAttempt, OAUTH_ATTEMPT_TTL_SECONDS, OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions, verifyOAuthAttempt } = require('./cookies');
+const { OAUTH_ATTEMPT_COOKIE, oauthAttemptCookieOptions } = require('./cookies');
+const { signOAuthAttempt, verifyOAuthAttempt, OAUTH_ATTEMPT_TTL_SECONDS } = require("../../services/auth/social");
 
 // 연결용 state 발급 → 시도 쿠키 → 인가 주소로
 exports.discordLinkStart = async (req, res, next) => {

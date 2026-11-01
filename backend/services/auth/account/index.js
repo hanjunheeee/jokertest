@@ -4,6 +4,8 @@ const { issueSessionForUser } = require('./session');
 const { signup, checkEmailAvailability } = require('./signup');
 const { login } = require('./login');
 const { refresh } = require('./refresh');
+// 컨트롤러에서 옮긴 로그아웃 기록
+const { logout } = require('./logout');
 
 module.exports = {
     issueSessionForUser,
@@ -11,4 +13,5 @@ module.exports = {
     checkEmailAvailability,
     login,
     refresh,
+    logout,
 };
