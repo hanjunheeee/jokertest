@@ -80,7 +80,7 @@ function buildSelfSubmissionFields(session, uuid) {
 }
 
 // 지금 단계에서 내가 이미 했는지
-function computeHasActedThisPhase(session, uuid) {
+function computeHasActed(session, uuid) {
     switch (session.phase) {
         case 'ROLE_REVEAL':
             return session.roleRevealAcks.has(uuid)
@@ -108,6 +108,6 @@ function bumpSelfProgressSeq(session) {
 module.exports = {
     buildPublicPhaseProgress,
     buildSelfSubmissionFields,
-    computeHasActedThisPhase,
+    computeHasActed,
     bumpSelfProgressSeq,
 }

@@ -52,7 +52,7 @@ function getDayVoteReadyUuids(session) {
 
 // 이번 투표(오늘·지금 투표 번호)가 이미 판정 끝났는지
 // 낮 표 받기·낮 판정 준비가 같이 씀
-function isDayVoteRoundResolved(session) {
+function isVoteRoundResolved(session) {
     return (
         session.dayVoteResolution !== null &&
         session.dayVoteResolution.dayIndex === session.dayIndex &&
@@ -68,5 +68,5 @@ module.exports = {
     getDayVoteExcludedUuids,
     getResolutionRound,
     getDayVoteReadyUuids,
-    isDayVoteRoundResolved,
+    isVoteRoundResolved,
 }

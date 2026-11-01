@@ -100,7 +100,7 @@ const {
     NIGHT_ACTION_RESOLUTION_POLICY,
     NIGHT_RECOVERY_STATES,
     EMPTY_COMPLETED_ROLES,
-    SELF_TARGET_ALLOWED_ROLES,
+    SELF_TARGET_ROLES,
     PUBLIC_NIGHT_DEATH_SOURCES,
 } = require('./phase/night')
 // 끊김 탈락·나가기는 departure
@@ -134,8 +134,8 @@ const {
     commitGameSession,
     buildViewerRoleFields,
     buildPlayerThemeIndices,
-    buildPlayerAccountProfileFields,
-    buildRoomSettingsSourceFields,
+    buildProfileFields,
+    buildSettingsFields,
     buildGameStartedPayload,
     acknowledgeRoleReveal,
     isRoleRevealComplete,

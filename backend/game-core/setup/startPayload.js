@@ -60,7 +60,7 @@ function buildPlayerThemeIndices(session) {
 }
 
 // 사람 프로필 칸 (사진·테두리·카드틀·전적, 있는 것만)
-function buildPlayerAccountProfileFields(player) {
+function buildProfileFields(player) {
     return {
         ...(Object.hasOwn(player, 'accountProfilePhotoId') ? { accountProfilePhotoId: player.accountProfilePhotoId } : {}),
         ...(Object.hasOwn(player, 'accountProfileBorderId') ? { accountProfileBorderId: player.accountProfileBorderId } : {}),
@@ -71,7 +71,7 @@ function buildPlayerAccountProfileFields(player) {
 }
 
 // 방 설정 보여줄 칸
-function buildRoomSettingsSourceFields(session) {
+function buildSettingsFields(session) {
     const source = session?.roomSettingsSource
     // 설정 원본이 없거나 객체 아니면 칸 자체를 뺌
     if (source === null || typeof source !== 'object' || Array.isArray(source)) return {}
@@ -100,7 +100,7 @@ function buildGameStartedPayload(session, viewerUuid) {
             roomInstanceId: session.roomInstanceId ?? null,
             bootEpoch: session.bootEpoch ?? null,
             roomCode: session.roomCode ?? null,
-            ...buildRoomSettingsSourceFields(session),
+            ...buildSettingsFields(session),
             participationRevision: session.participationRevision ?? 0,
             players: [...session.players.values()].map((player, index) => ({
                 uuid: player.uuid,
@@ -109,7 +109,7 @@ function buildGameStartedPayload(session, viewerUuid) {
                 isAlive: player.alive === true,
                 isParticipating: player.isParticipating !== false,
                 membershipId: player.membershipId ?? null,
-                ...buildPlayerAccountProfileFields(player),
+                ...buildProfileFields(player),
             })),
             self: buildViewerRoleFields(session, viewer),
         },
@@ -119,7 +119,7 @@ function buildGameStartedPayload(session, viewerUuid) {
 module.exports = {
     buildViewerRoleFields,
     buildPlayerThemeIndices,
-    buildPlayerAccountProfileFields,
-    buildRoomSettingsSourceFields,
+    buildProfileFields,
+    buildSettingsFields,
     buildGameStartedPayload,
 }

@@ -1,9 +1,9 @@
 // 판 스냅샷 파일
 // 새로고침·재접속 때 보낼 판 전체 모습 + 사람별로 보이는 것만
 // socket 쪽이 gameSession.js 통해서 판 다시 그릴 때 사용
-const { buildPlayerThemeIndices, buildRoomSettingsSourceFields, PLAYER_THEME_PALETTE_SIZE, buildPlayerAccountProfileFields, buildViewerRoleFields } = require('../setup')
+const { buildPlayerThemeIndices, buildSettingsFields, PLAYER_THEME_PALETTE_SIZE, buildProfileFields, buildViewerRoleFields } = require('../setup')
 const { getDayPhase, buildDayVoteResolvedPayload } = require('../phase/day')
-const { computeHasActedThisPhase, buildSelfSubmissionFields, buildPublicPhaseProgress } = require('./progress')
+const { computeHasActed, buildSelfSubmissionFields, buildPublicPhaseProgress } = require('./progress')
 const { buildNightResultAppliedPayload } = require('../phase/night')
 const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal')
 const { buildPublicWinResult } = require('../result')
@@ -11,7 +11,7 @@ const { normalizeGameId } = require('../core/registry/lookup')
 const { isForfeitedFromSession, getPlayerGameId, getSessionById } = require('../queries')
 
 // 스냅샷에 낮·재판 칸 넣어도 되는지
-function canIncludeDayTribunalFields(session) {
+function canIncludeVoteFields(session) {
     if (session.phase === 'DAY' || session.phase === 'TRIBUNAL') return true
     // 끝난 판은 밤 결과 날짜가 지금 날짜와 다를 때만 (밤에 끝난 판이면 뺌)
     if (session.phase === 'ENDED') {
@@ -34,7 +34,7 @@ function buildSessionSnapshot(session, uuid) {
         roomInstanceId: session.roomInstanceId ?? null,
         bootEpoch: session.bootEpoch ?? null,
         roomCode: session.roomCode ?? null,
-        ...buildRoomSettingsSourceFields(session),
+        ...buildSettingsFields(session),
         participationRevision: session.participationRevision ?? 0,
         selfProgressSeq: session.selfProgressSeq ?? 0,
         // 낮이면 토론·투표 중 어느 쪽인지
@@ -46,12 +46,12 @@ function buildSessionSnapshot(session, uuid) {
             isParticipating: player.isParticipating !== false,
             membershipId: player.membershipId ?? null,
             themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
-            ...buildPlayerAccountProfileFields(player),
+            ...buildProfileFields(player),
         })),
         // 나만 보는 칸: 내 역할·내가 이미 했는지·내가 낸 것
         self: {
             ...buildViewerRoleFields(session, viewer),
-            hasActedThisPhase: computeHasActedThisPhase(session, uuid),
+            hasActedThisPhase: computeHasActed(session, uuid),
             ...buildSelfSubmissionFields(session, uuid),
         },
         progress: buildPublicPhaseProgress(session),
@@ -67,7 +67,7 @@ function buildSessionSnapshot(session, uuid) {
         fields.nightResult = { dayIndex, victimUuid, deathReveals }
     }
 
-    if (canIncludeDayTribunalFields(session)) {
+    if (canIncludeVoteFields(session)) {
         // 오늘 낮 투표 결과 (누가 누굴 찍었는지는 빼고 숫자만)
         if (session.dayVoteResolution && session.dayVoteResolution.dayIndex === session.dayIndex) {
             const { round, outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount, revoteExcludedUuids } =
@@ -129,7 +129,7 @@ function getSessionSnapshotForPlayer(uuid, expectedGameId) {
 }
 
 module.exports = {
-    canIncludeDayTribunalFields,
+    canIncludeVoteFields,
     buildSessionSnapshot,
     getSessionSnapshotForPlayer,
 }

@@ -4,7 +4,7 @@ const { normalizeGameId, findSessionForActor } = require('../../core/registry/lo
 const { isRegisteredSession } = require('../../queries')
 const { assertSessionNotEnded } = require('../../core/rules/terminal')
 const { enterNightPhase } = require('../../core/rules/phase')
-const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isDayVoteRoundResolved } = require('./state')
+const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isVoteRoundResolved } = require('./state')
 const { DAY_PHASES } = require('./constants')
 const { getEligibleDayVoterUuids, tallyDayVoteOutcome, buildDayVoteBallotSnapshot, uuidListsEqual, dayVoteBallotSnapshotsEqual } = require('./ballots')
 
@@ -27,7 +27,7 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     // (마감 타이머·버튼 겹침, 다시 확정 안 함, 지도 04-⑥)
     // 바로 위에서 요청 날짜 = 오늘 날짜 확인함, 그래서 오늘 기준으로 봐도 같음
     const currentRound = getDayVoteRound(session)
-    if (isDayVoteRoundResolved(session)) {
+    if (isVoteRoundResolved(session)) {
         return { ok: true, alreadyResolved: true, session, resolution: session.dayVoteResolution }
     }
 

@@ -11,8 +11,8 @@ const {
 } = require('./create')
 const { assertValidSessionForCommit, commitGameSession } = require('./commit')
 const {
-    buildViewerRoleFields, buildPlayerThemeIndices, buildPlayerAccountProfileFields,
-    buildRoomSettingsSourceFields, buildGameStartedPayload,
+    buildViewerRoleFields, buildPlayerThemeIndices, buildProfileFields,
+    buildSettingsFields, buildGameStartedPayload,
 } = require('./startPayload')
 const { acknowledgeRoleReveal, isRoleRevealComplete } = require('./roleAck')
 
@@ -23,7 +23,7 @@ module.exports = {
     validateSessionInput, buildTimerSettings, buildRoomSettingsSource,
     buildSessionCandidate, checkGameSessionPreconditions, prepareGameSession,
     assertValidSessionForCommit, commitGameSession,
-    buildViewerRoleFields, buildPlayerThemeIndices, buildPlayerAccountProfileFields,
-    buildRoomSettingsSourceFields, buildGameStartedPayload,
+    buildViewerRoleFields, buildPlayerThemeIndices, buildProfileFields,
+    buildSettingsFields, buildGameStartedPayload,
     acknowledgeRoleReveal, isRoleRevealComplete,
 }

@@ -8,7 +8,7 @@ const { getParticipationRevision } = require('../../queries')
 const nightPreparations = new WeakMap()
 
 // 밤 입력 지문: 누가 누구 골랐나 + 진행 기록 상태를 한 줄로
-function computeNightInputFingerprint(session) {
+function computeFingerprint(session) {
     // 제출을 "누가>누구"로 적고 정렬 (넣은 순서 달라도 같은 지문)
     const submissions = []
     for (const [actorUuid, target] of session.nightActions ?? []) {
@@ -31,18 +31,18 @@ function computeNightInputFingerprint(session) {
 }
 
 // Map·Set·배열·객체 깊은 복사
-function cloneNightPreparationValue(value) {
+function deepClone(value) {
     // 안에 든 값까지 하나씩 복사 (원본 고쳐도 복사본은 그대로)
     if (value instanceof Map) {
         const copy = new Map()
-        for (const [key, nested] of value) copy.set(key, cloneNightPreparationValue(nested))
+        for (const [key, nested] of value) copy.set(key, deepClone(nested))
         return copy
     }
     if (value instanceof Set) return new Set(value)
-    if (Array.isArray(value)) return value.map((item) => cloneNightPreparationValue(item))
+    if (Array.isArray(value)) return value.map((item) => deepClone(item))
     if (value !== null && typeof value === 'object') {
         const copy = {}
-        for (const [key, nested] of Object.entries(value)) copy[key] = cloneNightPreparationValue(nested)
+        for (const [key, nested] of Object.entries(value)) copy[key] = deepClone(nested)
         return copy
     }
     return value
@@ -51,7 +51,7 @@ function cloneNightPreparationValue(value) {
 // 판정 결과 통째로 복사해 둠
 function snapshotNightPreparation(resolution) {
     const snapshot = new Map()
-    for (const key of Object.keys(resolution)) snapshot.set(key, cloneNightPreparationValue(resolution[key]))
+    for (const key of Object.keys(resolution)) snapshot.set(key, deepClone(resolution[key]))
     return snapshot
 }
 
@@ -62,7 +62,7 @@ function restoreNightPreparation(resolution, snapshot) {
         if (!snapshot.has(key)) delete resolution[key]
     }
     // 원래 칸은 복사본 값으로 덮어씀
-    for (const [key, value] of snapshot) resolution[key] = cloneNightPreparationValue(value)
+    for (const [key, value] of snapshot) resolution[key] = deepClone(value)
 }
 
 // 판정 결과를 대장에 등록 (판·날짜·참여 번호·지문·복사본)
@@ -76,7 +76,7 @@ function registerNightPreparation(session, resolution, { sequenced, progressRevi
         participationRevision: getParticipationRevision(session),
         sequenced,
         progressRevision,
-        inputFingerprint: computeNightInputFingerprint(session),
+        inputFingerprint: computeFingerprint(session),
         pendingEliminationTargetId: resolution.pendingEliminationTargetId ?? null,
         prepared: snapshotNightPreparation(resolution),
         // commit 한 번 하면 true, 같은 준비로 두 번 확정 막기
@@ -87,8 +87,8 @@ function registerNightPreparation(session, resolution, { sequenced, progressRevi
 
 module.exports = {
     nightPreparations,
-    computeNightInputFingerprint,
-    cloneNightPreparationValue,
+    computeFingerprint,
+    deepClone,
     snapshotNightPreparation,
     restoreNightPreparation,
     registerNightPreparation,

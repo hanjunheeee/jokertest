@@ -3,7 +3,7 @@
 const { DAY_PHASES, DAY_DISCUSSION_DURATION_MS, DAY_VOTE_DURATION_MS } = require('./constants')
 const {
     enterDayPhase, getDayPhase, enterDayVotePhase, getDayVoteRound, getDayVoteExcludedUuids,
-    getResolutionRound, getDayVoteReadyUuids, isDayVoteRoundResolved,
+    getResolutionRound, getDayVoteReadyUuids, isVoteRoundResolved,
 } = require('./state')
 const {
     getEligibleDayVoterUuids, uuidListsEqual, tallyDayVoteOutcome, buildDayVoteBallotSnapshot,
@@ -17,7 +17,7 @@ const { buildDayPhaseChangedPayload, buildDayVoteResolvedPayload } = require('./
 module.exports = {
     DAY_PHASES, DAY_DISCUSSION_DURATION_MS, DAY_VOTE_DURATION_MS,
     enterDayPhase, getDayPhase, enterDayVotePhase, getDayVoteRound, getDayVoteExcludedUuids,
-    getResolutionRound, getDayVoteReadyUuids, isDayVoteRoundResolved,
+    getResolutionRound, getDayVoteReadyUuids, isVoteRoundResolved,
     getEligibleDayVoterUuids, uuidListsEqual, tallyDayVoteOutcome, buildDayVoteBallotSnapshot,
     dayVoteBallotSnapshotsEqual,
     submitDayVote, advanceDayVoteSfx, readDayVoteSubmitSfxEvent,

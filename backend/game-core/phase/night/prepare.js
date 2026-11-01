@@ -92,10 +92,10 @@ function prepareNightResolutionForSession(session) {
     }
 
     // 개인 결과 만드는 법을 역할별로: 경비원 조사·마녀사냥꾼 확인·광대 실패
-    const privateResultBuilderByRole = new Map()
+    const privateBuilders = new Map()
     if (investigationTargetId !== null && session.players.has(investigationTargetId)) {
         const role = session.players.get(investigationTargetId).role
-        privateResultBuilderByRole.set('GUARD', () => ({
+        privateBuilders.set('GUARD', () => ({
             actionType: 'INVESTIGATE',
             targetId: investigationTargetId,
             role,
@@ -103,21 +103,21 @@ function prepareNightResolutionForSession(session) {
     }
     if (confirmationTargetId !== null && session.players.has(confirmationTargetId)) {
         const role = session.players.get(confirmationTargetId).role
-        privateResultBuilderByRole.set('WITCH_HUNTER', () => ({
+        privateBuilders.set('WITCH_HUNTER', () => ({
             actionType: 'CONFIRM',
             targetId: confirmationTargetId,
             role,
         }))
     }
     if (assassinationBlocked) {
-        privateResultBuilderByRole.set('JOKER', buildAssassinationFailureNotice)
+        privateBuilders.set('JOKER', buildAssassinationFailureNotice)
     }
 
     // 그 역할 산 사람마다 개인 결과 하나씩 (받는 사람 uuid로 꺼냄)
     const privateResults = new Map()
     for (const player of session.players.values()) {
         if (player.alive !== true) continue
-        const buildResult = privateResultBuilderByRole.get(player.role)
+        const buildResult = privateBuilders.get(player.role)
         if (buildResult !== undefined) privateResults.set(player.uuid, buildResult())
     }
 

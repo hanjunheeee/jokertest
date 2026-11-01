@@ -5,7 +5,7 @@ const { NIGHT_TURN_ORDER } = require('./constants')
 const { buildNightDeathReveals } = require('./payloads')
 const { isObserverBusy, observeNightCommit } = require('../../core/tools/observer')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../../core/rules/terminal')
-const { nightPreparations, computeNightInputFingerprint, restoreNightPreparation } = require('./ledger')
+const { nightPreparations, computeFingerprint, restoreNightPreparation } = require('./ledger')
 const { getNightProgress } = require('./progress')
 const { isParticipatingInSession, isRegisteredSession, getParticipationRevision } = require('../../queries')
 const { DEATH_REASONS } = require('../../result')
@@ -46,11 +46,11 @@ function commitNightResolution(session, resolution) {
     // 다른 길로 이미 판정된 밤이면 거절
     if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
     // 준비 뒤에 누가 판에서 빠졌으면 다시 준비해야 함
-    const currentParticipationRevision = getParticipationRevision(session)
-    if (currentParticipationRevision !== record.participationRevision) return { ok: false, code: 'STALE_RESOLUTION' }
+    const currentRevision = getParticipationRevision(session)
+    if (currentRevision !== record.participationRevision) return { ok: false, code: 'STALE_RESOLUTION' }
 
     // 준비 뒤에 제출·진행이 바뀌었는지 지문으로 확인 (지도 06-⑥)
-    if (record.inputFingerprint !== computeNightInputFingerprint(session)) {
+    if (record.inputFingerprint !== computeFingerprint(session)) {
         return { ok: false, code: 'STALE_RESOLUTION' }
     }
 

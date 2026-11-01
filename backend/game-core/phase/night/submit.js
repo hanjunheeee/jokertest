@@ -4,7 +4,7 @@ const { findActorSession } = require('../../core/registry/lookup')
 const { isEligibleForNightAction, getCurrentNightTurnRole, requiresAliveTarget } = require('./actors')
 const { isNightRoleCompleted } = require('./progress')
 const { ROLE_TEAMS } = require('../../core/rules/roles')
-const { SELF_TARGET_ALLOWED_ROLES } = require('./constants')
+const { SELF_TARGET_ROLES } = require('./constants')
 
 // 밤 행동 대상 받기 (밤·산 사람·내 차례·대상 조건 맞을 때만)
 // 광대가 광대를 고르면 성공처럼 답하지만 기록 안 함
@@ -50,7 +50,7 @@ function submitNightAction(uuid, gameId, targetId) {
         }
 
         // 자기 자신은 의사만 고를 수 있음
-        if (targetId === uuid && !SELF_TARGET_ALLOWED_ROLES.has(actor.role)) {
+        if (targetId === uuid && !SELF_TARGET_ROLES.has(actor.role)) {
             return { ok: false, code: 'INVALID_TARGET' }
         }
     }

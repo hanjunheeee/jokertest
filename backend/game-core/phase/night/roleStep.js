@@ -50,7 +50,7 @@ function resolveRoleNightAction(session, role, excludedActorUuids = new Set()) {
 }
 
 // 대상이 판에 없거나 살아/죽어 있어야 하는데 아닌 사람 찾기
-function findInvalidRoleSubmission(session, role) {
+function findInvalidSubmission(session, role) {
     for (const actorUuid of getAliveActorUuidsForRole(session, role)) {
         const target = session.nightActions.get(actorUuid)
         // 건너뛴 사람은 볼 것 없음
@@ -154,7 +154,7 @@ function completeNightRole(session, role) {
     if (!isRoleTurnComplete(session, role)) return { ok: false, code: 'ACTIONS_PENDING' }
 
     // 낸 뒤로 대상이 사라졌거나 생사가 바뀌었으면 거절
-    if (findInvalidRoleSubmission(session, role) !== null) {
+    if (findInvalidSubmission(session, role) !== null) {
         return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
     }
 
@@ -176,7 +176,7 @@ function completeNightRole(session, role) {
 module.exports = {
     collectRoleNightSubmissions,
     resolveRoleNightAction,
-    findInvalidRoleSubmission,
+    findInvalidSubmission,
     computeNightRoleStep,
     closeNightHealing,
     applyNightRoleStep,

@@ -26,7 +26,7 @@ const NIGHT_RECOVERY_STATES = Object.freeze({
 const EMPTY_COMPLETED_ROLES = Object.freeze(new Set())
 
 // 자기 자신 고를 수 있는 역할: 의사만
-const SELF_TARGET_ALLOWED_ROLES = new Set(['DOCTOR'])
+const SELF_TARGET_ROLES = new Set(['DOCTOR'])
 
 // 밤에 죽은 이유 공개 이름: 광대 · 마녀사냥꾼 · 모름
 const PUBLIC_NIGHT_DEATH_SOURCES = Object.freeze({
@@ -41,6 +41,6 @@ module.exports = {
     NIGHT_ACTION_RESOLUTION_POLICY,
     NIGHT_RECOVERY_STATES,
     EMPTY_COMPLETED_ROLES,
-    SELF_TARGET_ALLOWED_ROLES,
+    SELF_TARGET_ROLES,
     PUBLIC_NIGHT_DEATH_SOURCES,
 }

@@ -108,7 +108,7 @@ function validateCustomRoleCounts(roleCounts, slotCount) {
 }
 
 // 검사 실패 이유 → 방장 화면에 보여 줄 문구
-const CREATE_ROOM_ROLE_COMPOSITION_MESSAGES = Object.freeze({
+const CREATE_ROOM_MESSAGES = Object.freeze({
     INVALID_MODE: '역할 구성 방식 값이 올바르지 않습니다.',
     ROLE_COUNTS_NOT_OBJECT: '역할 구성 값이 올바르지 않습니다.',
     UNKNOWN_ROLE_KEY: '역할 구성 값이 올바르지 않습니다.',
@@ -127,17 +127,17 @@ function validateCreateRoomRoleComposition(payload, baseSettings) {
     // 모르는 구성 방식이면 거절
     const mode = resolveRoleCompositionMode(payload)
     if (mode === null) {
-        return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES.INVALID_MODE }
+        return { ok: false, message: CREATE_ROOM_MESSAGES.INVALID_MODE }
     }
     const rawRoleCounts = isPlainObject(payload) ? payload.roleCounts : undefined
 
     // 자동: 역할별 수를 보내면 거절, 광대 수만 2명 이하인지
     if (mode === ROLE_COMPOSITION_MODES.AUTO) {
         if (rawRoleCounts !== undefined) {
-            return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES.ROLE_COUNTS_NOT_ALLOWED }
+            return { ok: false, message: CREATE_ROOM_MESSAGES.ROLE_COUNTS_NOT_ALLOWED }
         }
         if (baseSettings.jokerCount > MAX_SPECIAL_ROLE_COUNT) {
-            return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES.ROLE_COUNT_ABOVE_LIMIT }
+            return { ok: false, message: CREATE_ROOM_MESSAGES.ROLE_COUNT_ABOVE_LIMIT }
         }
         return { ok: true, value: { roleCompositionMode: ROLE_COMPOSITION_MODES.AUTO } }
     }
@@ -145,10 +145,10 @@ function validateCreateRoomRoleComposition(payload, baseSettings) {
     // 직접: 역할별 수 검사 + 광대 수가 따로 받은 광대 설정이랑 같은지
     const validated = validateCustomRoleCounts(rawRoleCounts, baseSettings.maxPlayers)
     if (!validated.ok) {
-        return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES[validated.reason] }
+        return { ok: false, message: CREATE_ROOM_MESSAGES[validated.reason] }
     }
     if (validated.roleCounts.JOKER !== baseSettings.jokerCount) {
-        return { ok: false, message: CREATE_ROOM_ROLE_COMPOSITION_MESSAGES.JOKER_COUNT_MISMATCH }
+        return { ok: false, message: CREATE_ROOM_MESSAGES.JOKER_COUNT_MISMATCH }
     }
     return {
         ok: true,

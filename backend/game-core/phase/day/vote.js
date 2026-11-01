@@ -1,7 +1,7 @@
 // 낮 표 받기 파일
 // 낮 투표 받기 + 투표 효과음 이벤트, socket 쪽이 gameSession.js 통해서 사용
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
-const { isDayVoteRoundResolved, getDayVoteRound, getDayPhase, getDayVoteExcludedUuids } = require('./state')
+const { isVoteRoundResolved, getDayVoteRound, getDayPhase, getDayVoteExcludedUuids } = require('./state')
 const { DAY_PHASES } = require('./constants')
 const { getSessionById } = require('../../queries')
 
@@ -21,7 +21,7 @@ function submitDayVote(uuid, gameId, targetId) {
     const { session, actor } = found
 
     // 이번 투표가 이미 판정 끝났으면 거절
-    if (isDayVoteRoundResolved(session)) return { ok: false, code: 'DAY_VOTE_ALREADY_RESOLVED' }
+    if (isVoteRoundResolved(session)) return { ok: false, code: 'DAY_VOTE_ALREADY_RESOLVED' }
     // 낮 투표 단계일 때만, 산 사람만
     if (session.phase !== 'DAY') return { ok: false, code: 'INVALID_PHASE' }
     if (getDayPhase(session) !== DAY_PHASES.VOTE) return { ok: false, code: 'INVALID_DAY_PHASE' }
