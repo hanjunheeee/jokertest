@@ -7,7 +7,6 @@ import Tabs from "@m/domains/user/components/profileEdit/Tabs.jsx"
 import ConfirmBar from "@m/domains/user/components/wear/ConfirmBar.jsx"
 import FullSheet from "@m/domains/user/components/wear/FullSheet.jsx"
 // 허용 목록에 있는 로직 훅이지만 components 아래 하위 폴더라 gitignore식 부정 패턴이 못 풀어 줌 (eslint 설정 문제)
-// eslint-disable-next-line no-restricted-imports
 import { useProfileBorderEditor } from "@/domains/user/components/profileEdit/useProfileBorderEditor.js"
 import {
   borderAssetSrcForItemId,

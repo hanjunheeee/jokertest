@@ -39,30 +39,27 @@ const NO_HTTP_CALL = [
 // 경계 규칙: 데스크톱 화면(components·pages·ui·layouts·routes)은 못 부름, 로직만 부름
 const BOUNDARY_MSG =
   '[mobile-boundary] 데스크톱 화면 import 금지. 로직(api·socket·store·hooks·utils·constants)만 @/로 부르고 화면은 @m/에 새로 만듦'
+// 정규식 조각, 앞의 @/는 뺌 (gitignore식 부정 패턴은 상위 폴더가 막히면 하위 파일을 못 풀어 줘서 정규식으로 씀)
 const DESKTOP_UI = [
-  '@/domains/**/components/**',
-  '@/domains/**/pages/**',
-  '@/domains/**/page/**',
-  '@/shared/ui/**',
-  '@/shared/layouts/**',
-  '@/app/routes/**',
-  '@/app/App*',
-  '@/app/index.css',
-  '@/main*',
+  'domains/(.+/)?(components|pages|page)/',
+  'shared/(ui|layouts)/',
+  'app/routes/',
+  'app/App',
+  'app/index\\.css$',
+  'main',
 ]
-// 화면 폴더에 있지만 로직인 것 (그대로 씀)
+// 화면 폴더에 있지만 로직인 것 (그대로 씀). 파일 이름 뒤엔 확장자나 끝만 옴
 const DESKTOP_UI_ALLOW = [
-  '!@/shared/ui/ProtectedRoute*',
-  '!@/shared/ui/PublicAsset*',
-  '!@/shared/ui/GlobalBgmLayer*',
-  '!@/domains/game/ingame/components/InGamePlayerSessionProvider*',
-  '!@/domains/game/ingame/components/InGamePlayerSessionContext*',
-  '!@/domains/game/ingame/components/chat/InGameChatSessionProvider*',
-  '!@/domains/game/ingame/components/chat/InGameChatSessionContext*',
-  '!@/domains/user/components/profileEdit/useProfileBorderEditor*',
+  'shared/ui/(ProtectedRoute|PublicAsset|GlobalBgmLayer)',
+  'domains/game/ingame/components/InGamePlayerSession(Provider|Context)',
+  'domains/game/ingame/components/chat/InGameChatSession(Provider|Context)',
+  'domains/user/components/profileEdit/useProfileBorderEditor',
 ]
+// 허용 목록은 앞보기 부정(?!)으로 먼저 빼고 나머지 화면 경로만 막기
+const DESKTOP_UI_REGEX =
+  `^@/(?!(${DESKTOP_UI_ALLOW.join('|')})(\\.[a-z]+)?$)(${DESKTOP_UI.join('|')})`
 const BOUNDARY_PATTERNS = [
-  { group: [...DESKTOP_UI, ...DESKTOP_UI_ALLOW], message: BOUNDARY_MSG },
+  { regex: DESKTOP_UI_REGEX, message: BOUNDARY_MSG },
   // 상대 경로로 데스크톱 폴더에 들어가기 막기 (별칭 우회)
   { regex: '(^|/)frontend/src(/|$)', message: '[mobile-boundary] 데스크톱 파일은 상대 경로 말고 @/ 별칭으로 부름' },
 ]
