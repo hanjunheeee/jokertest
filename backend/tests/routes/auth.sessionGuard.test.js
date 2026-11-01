@@ -10,7 +10,7 @@ const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
 const { generateToken } = require("../../utils/jwt");
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const startServer = async (t) => {
     const app = express();

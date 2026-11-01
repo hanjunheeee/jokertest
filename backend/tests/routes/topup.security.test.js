@@ -14,7 +14,7 @@ const cookieParser = require("cookie-parser");
 const morgan       = require("morgan");
 const jwt          = require("jsonwebtoken");
 
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const { createError } = require("../../utils/appError");
 const userRepository = require("../../repositories/user.repositories");
 const currencyProductsService = require("../../services/economy/currencyProducts");

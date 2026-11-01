@@ -3,7 +3,7 @@
 const { getAdmissionAttempt, countRoomOccupancy } = require('../admission/attempts')
 const { resolveParticipantSockets } = require('../room/membership')
 const { getSettingsVersion, pruneSettingsUpdateResults, settingsUpdateResultKey, recordSettingsUpdateResult, SETTINGS_UPDATE_RESULT_TTL_MS } = require('./receipts')
-const { buildRoomSettingsView, ROOM_SETTINGS_EVENTS, validateUpdateRoomSettingsPayload, fingerprintUpdateRequest, fingerprintUpdateSettings, ROOM_SETTINGS_ERROR_CODES, buildEditableSettingsView, settingsContainNonAllowlistedKeys, PRESERVED_ROOM_SETTING_KEYS, isRoomSettingsIdentifier } = require('../../../utils/updateRoomSettingsValidation')
+const { buildRoomSettingsView, ROOM_SETTINGS_EVENTS, validateUpdateRoomSettingsPayload, fingerprintUpdateRequest, fingerprintUpdateSettings, ROOM_SETTINGS_ERROR_CODES, buildEditableSettingsView, settingsContainNonAllowlistedKeys, PRESERVED_ROOM_SETTING_KEYS, isRoomSettingsIdentifier } = require('../../../validations/room/updateSettings')
 const { computeCanStart, buildRoomPayload, emitPublicRoomList } = require('../room/view')
 const { roomSettingsUpdateResults, playerRoom, gameRooms } = require('../core/state')
 const { rejectIfInActiveGame } = require('../join/guards')

@@ -8,7 +8,7 @@ const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
 const { generateToken } = require("../../utils/jwt");
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const socketLayer = require("../../socket/socket");
 const matchmaking = require("../../socket/matchmaking");

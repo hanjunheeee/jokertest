@@ -9,15 +9,15 @@ const {
 } = require("../controllers/auth");
 const { verifyToken }        = require("../middlewares/auth.middleware");
 const crypto                 = require("crypto");
-const { createRateLimiter }  = require("../middlewares/rateLimit");
-const { validateFindIdRequest } = require("../validations/findIdValidation");
+const { createRateLimiter }  = require("../middlewares/rateLimit.middleware");
+const { validateFindIdRequest } = require("../validations/auth/findId");
 const { findId }             = require("../controllers/auth/accountRecovery");
-const { validatePasswordResetRequest } = require("../validations/passwordResetValidation");
+const { validatePasswordResetRequest } = require("../validations/auth/passwordReset");
 const {
     requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
 } = require("../controllers/auth/passwordReset");
 const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
-const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validations/signupEmailVerificationValidation");
+const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validations/auth/signupEmailVerification");
 const {
     requestSignupCode, verifySignupCode,
 } = require("../controllers/auth/signupEmailVerification");

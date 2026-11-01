@@ -69,7 +69,7 @@ const resetSchema = async () => {
 const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
 
 const db = require('../../models');
-const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 const { maskEmail } = require('../../utils/maskEmail');
 
 test.after(async () => {
@@ -158,7 +158,7 @@ const postJson = (base, path, body) => fetch(`${base}${path}`, {
 
 const startDefaultLimitRouteServer = async (t) => {
     const routesPath = require.resolve('../../routes/auth.routes');
-    const rateLimitPath = require.resolve('../../middlewares/rateLimit');
+    const rateLimitPath = require.resolve('../../middlewares/rateLimit.middleware');
     const savedIpMax = process.env.FIND_ID_IP_MAX;
     const savedTargetMax = process.env.FIND_ID_TARGET_MAX;
     delete process.env.FIND_ID_IP_MAX;

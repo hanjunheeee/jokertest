@@ -22,10 +22,10 @@ const db = require("../../models");
 const userRepository = require("../../repositories/user.repositories");
 const authService = require("../../services/auth/account");
 const mailAdapterModule = require("../../mail/mailAdapter");
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const AUTH_ROUTES_PATH = require.resolve("../../routes/auth.routes");
-const RATE_LIMIT_PATH = require.resolve("../../middlewares/rateLimit");
+const RATE_LIMIT_PATH = require.resolve("../../middlewares/rateLimit.middleware");
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

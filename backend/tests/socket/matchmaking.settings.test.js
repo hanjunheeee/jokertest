@@ -87,7 +87,7 @@ const {
 } = matchmaking.__testables
 
 const { ROOM_SETTINGS_ERROR_CODES, ROOM_SETTINGS_EVENTS } = matchmaking
-const { MAX_IDENTIFIER_LENGTH } = require('../../utils/updateRoomSettingsValidation')
+const { MAX_IDENTIFIER_LENGTH } = require('../../validations/room/updateSettings')
 
 function findSpectatorKeys(value, path = '$') {
     if (value === null || typeof value !== 'object') return []
@@ -138,9 +138,9 @@ test('AC-06 · 폐기 키 검출기는 중첩·대문자 SPECTATOR까지 각각 
 })
 
 test('AC-02 · 방 설정 허용 목록·요청 허용 키·역할 키·실제 저장 키가 전수로 고정된다', async () => {
-    const validation = require('../../utils/updateRoomSettingsValidation')
+    const validation = require('../../validations/room/updateSettings')
     const { CUSTOM_ROLE_KEYS } = require('../../game-core/roleComposition')
-    const { ROLE_NIGHT_ACTION_TIME_KEYS } = require('../../utils/createRoomValidation')
+    const { ROLE_NIGHT_ACTION_TIME_KEYS } = require('../../validations/room/create')
 
     assert.deepEqual([...validation.EDITABLE_ROOM_SETTING_KEYS], [
         'maxPlayers', 'jokerCount', 'roleCompositionMode', 'roleCounts',

@@ -1,6 +1,6 @@
 const crypto = require('crypto')
 const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
-const { validateCreateRoomPayload } = require('../utils/createRoomValidation')
+const { validateCreateRoomPayload } = require('../validations/room/create')
 const {
     validateUpdateRoomSettingsPayload,
     buildEditableSettingsView,
@@ -12,7 +12,7 @@ const {
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
     PRESERVED_ROOM_SETTING_KEYS,
-} = require('../utils/updateRoomSettingsValidation')
+} = require('../validations/room/updateSettings')
 const { ROOM_JOIN_ERROR_CODES } = require('./roomJoinErrors')
 const gameSession = require('../game-core/gameSession')
 const {

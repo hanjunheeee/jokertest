@@ -421,7 +421,7 @@ const SPECTATOR_SOURCE_ALLOWLIST = [
   "frontend/src/domains/game/ingame/constants/controls/ingameSetting/ingameSettingData.js",
   "frontend/src/domains/game/setup/utils/roomSettingsForm.js",
   "frontend/src/domains/game/setup/hooks/useRoleCompositionState.js",
-  "backend/utils/updateRoomSettingsValidation.js",
+  "backend/validations/room/updateSettings.js",
   "backend/socket/matchmaking.js",
   "backend/socket/gameSession.js",
   "backend/game-core/gameSession.js",
@@ -693,7 +693,7 @@ test("F-23(SPLIT-1/AC-02): 라우트 path 전체와 백엔드 socket.on 사건 �
   const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
   const tables = {
     KICK_EVENTS: backendRequire("./kickReceiptStore").KICK_EVENTS,
-    ROOM_SETTINGS_EVENTS: backendRequire("../utils/updateRoomSettingsValidation").ROOM_SETTINGS_EVENTS,
+    ROOM_SETTINGS_EVENTS: backendRequire("../validations/room/updateSettings").ROOM_SETTINGS_EVENTS,
   }
   assert.equal(tables.KICK_EVENTS.KICK_ROOM_PLAYER, "kick_room_player", "추방 사건 표를 읽지 못했다")
   assert.equal(tables.ROOM_SETTINGS_EVENTS.UPDATE_ROOM_SETTINGS, "update_room_settings",
@@ -787,7 +787,7 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
   const backendRequire = createRequire(new URL("backend/socket/matchmaking.js", REPO_ROOT))
   const tables = {
     KICK_EVENTS: backendRequire("./kickReceiptStore").KICK_EVENTS,
-    ROOM_SETTINGS_EVENTS: backendRequire("../utils/updateRoomSettingsValidation").ROOM_SETTINGS_EVENTS,
+    ROOM_SETTINGS_EVENTS: backendRequire("../validations/room/updateSettings").ROOM_SETTINGS_EVENTS,
   }
 
   const probe = collectServerEmitEventNames([{

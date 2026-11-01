@@ -10,7 +10,7 @@ const { once }     = require("node:events");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
 
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const db = require("../../models");
 
 const startServer = async (t) => {

@@ -2,7 +2,7 @@ const test   = require("node:test");
 const assert = require("node:assert/strict");
 
 const db             = require("../../models");
-const gameController = require("../../controllers/game.controller");
+const gameController = require("../../controllers/game/result");
 const gameRouter     = require("../../routes/game.routes");
 const { verifyToken } = require("../../middlewares/auth.middleware");
 

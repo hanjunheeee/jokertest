@@ -64,7 +64,7 @@ const {
     validateResolvedComposition,
 } = require('./core/rules/roleComposition')
 // 방 설정 화면용 모양 만들기는 game-core 밖 utils
-const { buildRoomSettingsView } = require('../utils/updateRoomSettingsValidation')
+const { buildRoomSettingsView } = require('../validations/room/updateSettings')
 // 낮은 phase/day
 const {
     DAY_PHASES,

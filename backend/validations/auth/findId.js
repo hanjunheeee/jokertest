@@ -1,6 +1,6 @@
 'use strict';
 
-const { NICKNAME_PATTERN, validateBirthDate } = require('./signupValidation');
+const { NICKNAME_PATTERN, validateBirthDate } = require('./signup');
 
 const NICKNAME_RAW_MAX_LENGTH = 200;
 const NICKNAME_MIN_LENGTH = 2;

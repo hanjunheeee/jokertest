@@ -1,7 +1,7 @@
 // 준비 버튼 파일
 // 대기방 준비·준비 취소 받기, 방 사람들한테 알림 (지도 02)
 const channelMembership = require('../../channelMembership')
-const { ROOM_SETTINGS_ERROR_CODES } = require('../../../utils/updateRoomSettingsValidation')
+const { ROOM_SETTINGS_ERROR_CODES } = require('../../../validations/room/updateSettings')
 const { getAdmissionAttempt } = require('../admission/attempts')
 const { playerRoom, gameRooms } = require('../core/state')
 const { getSettingsVersion } = require('../settings/receipts')

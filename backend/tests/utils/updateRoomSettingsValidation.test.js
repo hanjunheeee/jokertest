@@ -11,7 +11,7 @@ const {
     ROOM_SETTINGS_ERROR_CODES,
     ROOM_SETTINGS_EVENTS,
     MAX_IDENTIFIER_LENGTH,
-} = require('../../utils/updateRoomSettingsValidation')
+} = require('../../validations/room/updateSettings')
 const matchmaking = require('../../socket/matchmaking')
 
 function validPayload(overrides = {}) {

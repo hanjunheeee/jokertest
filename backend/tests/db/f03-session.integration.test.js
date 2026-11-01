@@ -219,7 +219,7 @@ test('AC-03/AC-05: 실제 로그아웃 후 HTTP 보호 요청·refresh·기존 �
 
     const express = require('express');
     const cookieParser = require('cookie-parser');
-    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
+    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
     const { once } = require('node:events');
     const socketLayer = require('../../socket/socket');
     const fakeHandshakeSocket = (accessToken) => ({ handshake: { headers: { cookie: `accessToken=${accessToken}` } }, data: {} });
@@ -276,7 +276,7 @@ test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 
 
     const express = require('express');
     const cookieParser = require('cookie-parser');
-    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
+    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
     const { once } = require('node:events');
     const socketLayer = require('../../socket/socket');
     const fakeHandshakeSocket = (accessToken) => ({ handshake: { headers: { cookie: `accessToken=${accessToken}` } }, data: {} });
@@ -371,7 +371,7 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 변경 요청 세션뿐 아니라,
 
     const express = require('express');
     const cookieParser = require('cookie-parser');
-    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
+    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
     const { once } = require('node:events');
 
     const app = express();

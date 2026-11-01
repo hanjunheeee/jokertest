@@ -5,7 +5,7 @@ const { getMyProfile,
         updateNickname,
         updatePassword } = require("../controllers/profile.controller");
 const { getMyRoleStatistics,
-        getRoleRanking }  = require("../controllers/roleStatistics.controller");
+        getRoleRanking }  = require("../controllers/game/roleStatistics");
 const { getMyAchievements } = require("../controllers/achievement.controller");
 const { getEmojiPalette,
         saveEmojiPalette }  = require("../controllers/emojiPalette.controller");

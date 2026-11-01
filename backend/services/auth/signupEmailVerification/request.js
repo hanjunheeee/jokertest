@@ -4,7 +4,7 @@
 // 이미 가입한 이메일도 같은 응답 (가입 여부 숨김), 메일 실패는 삼킴
 const userRepository = require('../../../repositories/user.repositories');
 const mailAdapterModule = require('../../../mail/mailAdapter');
-const { normalizeEmail } = require('../../../validations/signupEmailVerificationValidation');
+const { normalizeEmail } = require('../../../validations/auth/signupEmailVerification');
 const { requireConfig } = require('./config');
 const { PURPOSE } = require('./constants');
 const { generateNumericCode, hashCode } = require('./codes');

@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-const { globalErrorHandler } = require('../../middlewares/errorHandler');
+const { globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 const { createError } = require('../../utils/appError');
 
 const MARK = `SECRETMARK${crypto.randomBytes(6).toString('hex')}`;

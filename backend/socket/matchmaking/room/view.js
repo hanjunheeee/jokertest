@@ -5,7 +5,7 @@ const { resolveRoleComposition } = require('../../../game-core/roleComposition')
 const { hasPendingAdmissionForRoom } = require('../admission/attempts')
 const { BOOT_EPOCH } = require('../core/constants')
 const { getSettingsVersion } = require('../settings/receipts')
-const { buildRoomSettingsView, buildEditableSettingsView } = require('../../../utils/updateRoomSettingsValidation')
+const { buildRoomSettingsView, buildEditableSettingsView } = require('../../../validations/room/updateSettings')
 const { deps } = require('../core/deps')
 const { gameRooms } = require('../core/state')
 

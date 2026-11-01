@@ -79,7 +79,7 @@ const rebuildFullSchema = async () => {
 const db = require('../../models');
 const authService = require('../../services/auth/account');
 const mailAdapterModule = require('../../mail/mailAdapter');
-const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 const { hashPassword } = require('../../utils/hash');
 
 test.after(async () => {

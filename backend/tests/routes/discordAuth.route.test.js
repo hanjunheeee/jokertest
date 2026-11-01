@@ -10,7 +10,7 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 const jwt          = require("jsonwebtoken");
 
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const authService        = require("../../services/auth/account");
 const socialAuthService  = require("../../services/auth/social");
 const discordOAuthService = require("../../services/auth/oauth/discord");

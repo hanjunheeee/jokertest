@@ -14,7 +14,7 @@ const {
     validatePasswordConfirm,
     validateSignupPayload,
     parseIsoDateUtc,
-} = require('../../validations/signupValidation');
+} = require('../../validations/auth/signup');
 
 const FIXTURE_PATH = path.join(__dirname, '..', '..', '..', 'tests', 'fixtures', 'f02-signup-validation.json');
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));

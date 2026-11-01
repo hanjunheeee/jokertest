@@ -3,7 +3,7 @@
 // 게임 시작 방송은 socket 쪽이, 칸 만들기는 snapshot도 같이 씀
 const { ROLE_TO_SKIN_JOB_ID, PLAYER_THEME_PALETTE_SIZE } = require('./constants')
 const { ROLE_TEAMS } = require('../core/rules/roles')
-const { buildRoomSettingsView } = require('../../utils/updateRoomSettingsValidation')
+const { buildRoomSettingsView } = require('../../validations/room/updateSettings')
 
 // 보는 사람 기준 역할 칸 (광대끼리는 서로 보임)
 function buildViewerRoleFields(session, viewer) {

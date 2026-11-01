@@ -1,6 +1,6 @@
 const userService               = require("../services/user");
 const authService               = require("../services/auth/account");
-const { validatePassword }      = require("../validations/signupValidation");
+const { validatePassword }      = require("../validations/auth/signup");
 
 exports.getMyProfile = async (req, res, next) => {
     try {

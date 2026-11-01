@@ -3,11 +3,11 @@
 const userRepository          = require("../../../repositories/user.repositories");
 const { hashPassword } = require("../../../utils/hash");
 const { createError }         = require("../../../utils/appError");
-const { validateSignupPayload } = require("../../../validations/signupValidation");
+const { validateSignupPayload } = require("../../../validations/auth/signup");
 const db                      = require("../../../models");
 const economyService          = require("../../economy");
 const signupEmailVerificationService = require("../signupEmailVerification");
-const { normalizeEmail: normalizeSignupEmail } = require("../../../validations/signupEmailVerificationValidation");
+const { normalizeEmail: normalizeSignupEmail } = require("../../../validations/auth/signupEmailVerification");
 
 // 입력 검사 → 증명 있나 → 해시 → (트랜잭션) 증명 소비 → 이메일·닉네임 중복 → 만들기
 exports.signup = async (userData) => {

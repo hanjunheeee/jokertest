@@ -184,7 +184,7 @@ test("5회째 실패는 계정을 잠그고 423을 반환한다", async (t) => {
 const express      = require("express");
 const cookieParser = require("cookie-parser");
 const { once }     = require("node:events");
-const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const startAuthServer = async (t) => {
     const app = express();

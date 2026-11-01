@@ -1,4 +1,4 @@
-const gameResultRepository = require("../repositories/gameResult.repositories");
+const gameResultRepository = require("../../repositories/gameResult.repositories");
 
 exports.getGameResult = async (req, res, next) => {
     try {

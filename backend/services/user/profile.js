@@ -3,7 +3,7 @@
 const userRepository            = require("../../repositories/user.repositories");
 const gameResultRepository      = require("../../repositories/gameResult.repositories");
 const roleStatisticsPolicy      = require("../game/roleStatistics");
-const { validateNickname }      = require("../../validations/signupValidation");
+const { validateNickname }      = require("../../validations/auth/signup");
 
 // 프로필 행 없으면 null, 있으면 응답 data 객체 (조회 순서: 프로필 → 최고 승률 직업 → 직업 통계)
 exports.getMyProfile = async (uuid) => {

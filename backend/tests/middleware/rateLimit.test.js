@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createRateLimiter } = require('../../middlewares/rateLimit');
+const { createRateLimiter } = require('../../middlewares/rateLimit.middleware');
 
 const fakeRes = () => {
     const res = {
