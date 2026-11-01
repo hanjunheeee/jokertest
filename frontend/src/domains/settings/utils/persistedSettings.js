@@ -9,6 +9,7 @@ import { defaultGeneralChecks } from "./settingsDefaults.js"
 export const GENERAL_CHECK_STORAGE_IDS = new Set(Object.keys(defaultGeneralChecks()))
 const CHAT_CHECK_ID_SET = new Set(CHAT_CHECK_STORAGE_IDS)
 
+// NaN·Infinity·숫자 아닌 값 거름
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value)
 }
@@ -51,6 +52,7 @@ function sanitizeBooleanMap(value, allowedIds) {
 
 // 저장값을 지금 상태 위에 항목별로 걸러 덮음
 export function mergePersistedSettings(persisted, current) {
+  // 저장값 없음(처음 실행)·깨진 값이면 지금 상태 그대로
   if (typeof persisted !== "object" || persisted === null) return current
 
   const volumes = sanitizeVolumes(persisted.volumes, current.volumes)
@@ -65,6 +67,7 @@ export function mergePersistedSettings(persisted, current) {
       ? { ...current.generalChecks, ...restoredChecks }
       : current.generalChecks
 
+  // 글자 크기·채팅 체크·음소거·채팅 글자 크기도 하나씩 걸러냄
   const generalTextSize = clampNumber(persisted.generalTextSize, {
     min: GENERAL_SETTING_TEXT_SIZE.min,
     max: GENERAL_SETTING_TEXT_SIZE.max,

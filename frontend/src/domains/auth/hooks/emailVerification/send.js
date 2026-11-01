@@ -14,6 +14,7 @@ export async function sendCode({ email, active, current, setState, genRef, inFli
   if (inFlightRef.current) return
   if (current.resendAvailableAt !== null && Date.now() < current.resendAvailableAt) return
 
+  // 요청 잠그고 세대 올림 (앞선 응답 버림), 실패 때 돌아갈 단계 기억
   inFlightRef.current = true
   const gen = ++genRef.current
   const stageBefore = current.stage
@@ -30,6 +31,7 @@ export async function sendCode({ email, active, current, setState, genRef, inFli
 
   try {
     const result = await requestSignupCodeApi({ email })
+    // 그사이 초기화됐으면 응답 버림
     if (genRef.current !== gen) return
 
     // 재발송·만료 초가 숫자로 와야 보낸 걸로 봄
@@ -47,8 +49,10 @@ export async function sendCode({ email, active, current, setState, genRef, inFli
       return
     }
 
+    // ok·초 값이 안 맞는 응답은 못 보낸 걸로 보고 원래 단계로
     setState((prev) => ({ ...prev, stage: stageBefore, message: VERIFY_TEXT.retry }))
   } catch (error) {
+    // 초기화됐으면 버림
     if (genRef.current !== gen) return
 
     // 너무 빨리 재발송: 처음이었으면 보낸 걸로 두고 대기 시각만 맞춤, 나머지는 원래 단계로 돌림

@@ -1,5 +1,5 @@
 // 가입 이메일 중복 확인 (확인한 뒤 주소가 바뀌면 결과를 지움)
-// components/SignupForm/SignupFields.jsx가 사용, hooks/useLoginPage.js가 useEmailAvailabilityCheck로 다시 내보냄
+// components/SignupForm/SignupFields.jsx가 사용, useLoginPage.js가 시험용 이름으로 다시 내보냄
 import { useEffect, useRef, useState } from "react"
 import { checkEmailApi } from "../../api/auth.api.js"
 

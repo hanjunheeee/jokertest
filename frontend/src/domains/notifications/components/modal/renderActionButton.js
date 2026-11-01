@@ -11,7 +11,7 @@ import {
   ACTION_BTN_SECONDARY_LABEL_CLASS,
 } from "../../constants/notificationLayoutStyle.js"
 
-// 처리 중이면 글자·읽기 이름을 '처리 중'으로 바꿈
+// 처리 중이면 글자·화면 읽기 이름을 '처리 중'으로 바꿈, variant로 버튼 그림 고름
 export function renderActionButton({ key, label, onClick, disabled, actionAttr, variant = "primary", pending = false }) {
   const isPrimary = variant === "primary"
 

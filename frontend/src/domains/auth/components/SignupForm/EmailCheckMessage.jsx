@@ -12,6 +12,7 @@ export default function EmailCheckMessage({ status }) {
   let message = null
   let toneClass = ""
 
+  // 상태별 문구·색
   if (status === "checking") {
     message = "이메일 확인 중..."
     toneClass = "text-white/70"

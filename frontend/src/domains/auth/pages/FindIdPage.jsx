@@ -1,5 +1,5 @@
 // 아이디 찾기 화면: 닉네임·생년월일로 가입 이메일을 가려서 보여 줌
-// app/routes/index.jsx가 /find-id에 붙임, 상태는 hooks/recovery/useFindId.js, 입력 칸은 components/recovery/FindIdForm.jsx
+// app/routes/index.jsx가 /find-id에 붙임, 상태는 useFindId·입력 칸은 FindIdForm
 import { useNavigate } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
@@ -12,6 +12,7 @@ export default function FindIdPage() {
   const navigate = useNavigate()
   const find = useFindId()
 
+  // 뒤로 가기는 로그인 화면으로
   const handleBack = () => navigate("/login")
 
   return (

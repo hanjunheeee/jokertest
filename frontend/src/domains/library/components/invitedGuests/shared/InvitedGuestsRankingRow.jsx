@@ -1,3 +1,5 @@
+// 숙련도 랭킹 표 한 줄 (순위·프로필·닉네임·판수·승률)
+// right/InvitedGuestsMasteryRanking.jsx와 podium의 PodiumRankingTableColumn.jsx가 씀
 import InvitedGuestsRankingProfile from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsRankingProfile.jsx"
 import InvitedGuestsStatValue from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsStatValue.jsx"
 import {
@@ -9,6 +11,7 @@ import {
   TABLE_WINRATE_CELL_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/tableStyle.js"
 
+// 1~3위는 순위 칸 모양 따로 (getRankCellClass)
 export default function InvitedGuestsRankingRow({
   rank,
   profileSrc,

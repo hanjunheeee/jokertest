@@ -1,3 +1,5 @@
+// 상점 오른쪽 분류 목록 (제목 + 분류 버튼들)
+// StorePanel이 씀
 import {
   CATEGORY_ROW_CLASS,
   CATEGORY_ROW_SELECTED_CLASS,
@@ -8,6 +10,7 @@ import {
   SIDEBAR_WRAP_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
+// 분류 한 줄 버튼, 고른 분류는 눌린 상태로 보임
 function CategoryRow({ label, selected, onSelect }) {
   return (
     <button
@@ -22,6 +25,7 @@ function CategoryRow({ label, selected, onSelect }) {
   )
 }
 
+// 분류 목록 제목
 function CategoryHeader() {
   return (
     <div className={SIDEBAR_HEADER_WRAP_CLASS}>
@@ -30,6 +34,7 @@ function CategoryHeader() {
   )
 }
 
+// 고른 분류를 다시 누르면 풀리는 건 useStoreCategoryFilter가 처리
 export default function StoreSidebar({ categories, activeCategory, onSelectCategory }) {
   return (
     <div className={SIDEBAR_WRAP_CLASS} aria-label="카테고리">

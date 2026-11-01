@@ -1,3 +1,5 @@
+// 서고 책 틀 (책 그림 위에 목차·책갈피·내용 칸 겹침, 떨어지듯 등장)
+// pages/LibraryPage.jsx가 씀
 import { motion } from "framer-motion"
 import { LIBRARY_ASSETS } from "../../../../domains/library/constants/libraryAssets.js"
 import LibraryBookContent from "../../../../domains/library/components/book/LibraryBookContent.jsx"
@@ -16,6 +18,7 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
+// 페이지가 든 탭·쪽·직업 값을 책 안쪽 칸들로 나눠 넘김
 export default function LibraryBookShell({
   activeTabId,
   onTabChange,

@@ -1,3 +1,5 @@
+// 고른 상품 설명 칸 (그림·이름·분류·등급·가격·구매 버튼)
+// StorePanel이 고른 상품이 있을 때 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../constants/storeItems.js"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
@@ -23,6 +25,7 @@ import {
   PURCHASE_LABEL_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 
+// 구매 버튼 글자: 따로 받은 문구 > 보유중 > 구매 순서
 function StorePurchaseButton({ onClick, disabled = false, owned = false, label = null }) {
   const text = label ?? (owned ? "보유중" : "구매")
   return (
@@ -44,10 +47,13 @@ function StorePurchaseButton({ onClick, disabled = false, owned = false, label =
   )
 }
 
+// 재화 단위 글자
 const CURRENCY_UNIT = { KRW: "원", DIAMOND: "다이아", GOLD: "골드" }
+// 금액 + 단위 (원화만 천 단위 쉼표)
 const formatAmount = (amount, currency) =>
   `${currency === "KRW" ? amount.toLocaleString("ko-KR") : amount} ${CURRENCY_UNIT[currency] ?? currency}`
 
+// 가격 줄: 충전 상품은 결제→지급(+보너스), 가격 미정은 문구, 나머지는 골드
 export default function StoreSelectedItemDetail({
   item,
   displayIcon = item.icon,

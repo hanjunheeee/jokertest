@@ -1,7 +1,7 @@
 // 가입 이메일 인증 시작 상태·안내 문구·에러 code별 HTTP 상태
-// hooks/useSignupEmailVerification.js, hooks/emailVerification/*, utils/emailVerification/errors.js가 사용
+// 인증 훅(useSignupEmailVerification.js·emailVerification 폴더)과 utils의 errors.js가 사용
 
-// 인증 시작 상태 (모드·주소가 바뀌거나 reset 때 여기로 되돌림)
+// 인증 시작 상태 (켜짐·시도 키·주소가 바뀌거나 reset 때 여기로 되돌림)
 export const INITIAL_VERIFICATION = {
   stage: "unverified",
   email: "",

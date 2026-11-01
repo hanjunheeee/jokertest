@@ -1,5 +1,5 @@
 // 펼침면 왼쪽 아래 칸 (내 직업 전적, 실패면 다시 시도, 아직이면 불러오는 중)
-// InvitedGuestsSpread가 직업을 고를 때마다 새로 보이며 씀
+// invitedGuests/InvitedGuestsSpread.jsx가 씀, 직업 바뀌면 key로 새로 그림
 import { motion } from "framer-motion"
 import InvitedGuestsMyJobStats from "../../../../../domains/library/components/invitedGuests/left/InvitedGuestsMyJobStats.jsx"
 import InvitedGuestsRetryMessage from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsRetryMessage.jsx"
@@ -14,6 +14,7 @@ import {
   revealTransition,
 } from "../../../../../domains/library/constants/invitedGuests/entranceMotion.js"
 
+// 상태 차례: 실패 → 다시 시도, 전적 있음 → 표, 그 밖 → 불러오는 중
 export default function InvitedGuestsStatsCell({ content, onRetry }) {
   return (
     <motion.div

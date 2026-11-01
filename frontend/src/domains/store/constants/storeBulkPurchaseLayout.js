@@ -1,8 +1,13 @@
+// 일괄구매 확인 창 모양 (움직임·뒤판·창·목록·합계·버튼 class)
+// bulkPurchase/ 아래 일괄구매 창 컴포넌트 다섯이 씀
+
+// 열고 닫는 움직임
 export const PURCHASE_TRANSITION = {
   duration: 0.35,
   ease: [0.22, 1, 0.36, 1],
 }
 
+// 뒤판·창 자리·창 틀
 export const BACKDROP_CLASS =
   "fixed inset-0 z-[55] cursor-default border-0 bg-[#1a0f0a]/62 p-0 backdrop-blur-[4px]"
 
@@ -12,6 +17,7 @@ export const PANEL_WRAP_CLASS =
 export const PANEL_CLASS =
   "pointer-events-auto relative flex w-[min(36rem,92vw)] max-w-[42rem] flex-col overflow-hidden rounded-[1.1rem] border border-[#b83232]/40 bg-[#f5f0e6]/84 ring-1 ring-[#c43c3c]/14 backdrop-blur-[6px] [box-shadow:inset_0_1px_0_rgba(255,255,255,0.48),0_16px_42px_rgba(26,15,10,0.36)]"
 
+// 제목 줄·몸통 (왼쪽 목록 | 오른쪽 합계)
 export const HEADER_CLASS =
   "border-b border-[#2a1810]/14 px-[clamp(0.85rem,1.5vw,1.15rem)] py-[clamp(0.65rem,1.2vh,0.85rem)]"
 
@@ -27,6 +33,7 @@ export const LIST_CLASS =
 export const SUMMARY_CLASS =
   "flex min-w-[9.5rem] flex-[0.85] flex-col justify-between gap-[clamp(0.75rem,1.4vh,1rem)] px-[clamp(0.75rem,1.35vw,1rem)] py-[clamp(0.75rem,1.35vh,1rem)]"
 
+// 목록 한 줄 (그림·이름·가격)
 export const ITEM_ROW_CLASS =
   "flex items-center gap-[clamp(0.45rem,0.85vw,0.65rem)] rounded-sm bg-[#1a0f0a]/08 px-[clamp(0.4rem,0.75vw,0.55rem)] py-[clamp(0.35rem,0.7vh,0.5rem)]"
 
@@ -51,6 +58,7 @@ export const ITEM_PRICE_AMOUNT_CLASS =
 export const ITEM_PRICE_ICON_CLASS =
   "block h-[clamp(0.72rem,1.1vw,0.85rem)] w-auto shrink-0 select-none object-contain"
 
+// 합계 칸·구매하기 버튼
 export const TOTAL_LABEL_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-bold text-[#3d1810]"
 
@@ -77,6 +85,7 @@ export const CONFIRM_BTN_LABEL_CLASS =
 
 export const CONFIRM_BTN_IMG_CLASS = "block h-auto w-full select-none"
 
+// 닫기 버튼
 export const CLOSE_BTN_CLASS =
   "interactive-scale absolute right-[clamp(0.35rem,2%,0.65rem)] top-[clamp(0.45rem,2.2%,0.65rem)] z-20 cursor-pointer border-0 bg-transparent p-0 leading-none"
 

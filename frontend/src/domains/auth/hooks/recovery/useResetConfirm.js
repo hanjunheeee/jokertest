@@ -5,12 +5,13 @@ import { confirmPasswordResetApi } from "../../api/auth.api.js"
 import { RESET_TEXT } from "../../constants/recoveryMessages.js"
 import { validatePassword, validatePasswordConfirm } from "../../validation/signupValidation.js"
 
-// 제출 처리(handleSubmit)를 돌려줌
+// 새 비밀번호 제출 처리(handleSubmit)를 돌려줌, 화면 상태는 useResetPage가 가짐
 export function useResetConfirm({
   token, status, password, passwordConfirm,
   visitIdRef, unmountedRef, submittingRef,
   setStatus, setFormError, setLinkInvalidReason, setPassword, setPasswordConfirm,
 }) {
+  // 확정 요청 번호 (더 새 요청이 오면 옛 응답 버림)
   const requestRef = useRef(0)
 
   // 확정 요청: 성공은 done, 링크 문제는 linkInvalid, 소셜 계정은 socialOnly, 나머지는 문구 띄우고 ready

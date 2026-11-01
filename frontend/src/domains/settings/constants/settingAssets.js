@@ -1,3 +1,5 @@
+// 설정 화면 그림·영상 주소
+// 설정 화면·배경·탭 줄·내용 칸·일반/사운드 탭이 씀
 export const SETTING_ASSETS = {
   bgVideo: "/bg/로비 설정창 영상2.mp4".normalize("NFD"),
   bg: "/bg/로비 설정 뒷배경.png".normalize("NFD"),

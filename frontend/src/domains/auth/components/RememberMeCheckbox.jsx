@@ -1,7 +1,11 @@
+// 로그인 상태 유지 체크 상자 (그림 상자 + 체크 표시)
+// components/LoginForm/LoginOptions.jsx가 사용
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 그림 상자를 쓰려고 진짜 checkbox 대신 button + role=checkbox
 export default function RememberMeCheckbox({ checked, onChange }) {
+  // 누를 때마다 켬·끔 뒤집기
   const toggle = () => onChange(!checked)
 
   return (

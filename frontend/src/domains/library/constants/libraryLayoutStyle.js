@@ -1,10 +1,14 @@
+// 서고 화면·책 모양 className (배경·책 크기·목차·책갈피·내용 칸·쪽 넘김 줄)
+// 서고 화면·배경·book/ 컴포넌트와 forbiddenRecords/layoutStyle.js가 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../shared/constants/customScrollbarStyles.js"
 
+// 화면 바탕·배경 그림
 export const LIBRARY_PAGE_ROOT_CLASS = "relative h-svh w-full overflow-hidden bg-black"
 
 export const LIBRARY_BG_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-cover object-center"
 
+// 책 무대·책 크기 (화면 폭 따라 커짐, 살짝 위로 올림)
 export const BOOK_STAGE_CLASS =
   "absolute inset-0 z-10 flex items-center justify-center px-[clamp(0.75rem,2.5vw,2rem)] py-[clamp(1.5rem,6vh,3.5rem)]"
 
@@ -16,6 +20,7 @@ export const BOOK_SHELL_OFFSET_CLASS =
 
 export const BOOK_FRAME_CLASS = "block h-auto w-full select-none"
 
+// 목차: 책 위 가운데에 반쯤 걸침
 export const BOOK_TOC_WRAP_CLASS =
   "pointer-events-none absolute left-1/2 top-0 z-20 w-[clamp(9.5rem,16.5vw,13.5rem)] -translate-x-1/2 -translate-y-[36%]"
 
@@ -23,6 +28,7 @@ export const LIBRARY_BOOK_TOC_CLASS = BOOK_TOC_WRAP_CLASS
 
 export const BOOK_TOC_IMG_CLASS = "block h-auto w-full select-none"
 
+// 책갈피: 책 오른쪽 밖으로 반쯤 나옴
 export const BOOKMARK_STACK_CLASS =
   "absolute right-0 top-[18%] z-30 flex translate-x-[52%] flex-col items-stretch gap-[clamp(0.3rem,0.75vh,0.5rem)]"
 
@@ -34,6 +40,7 @@ export const BOOKMARK_ITEM_CLASS =
 
 export const BOOKMARK_IMG_CLASS = "block h-auto w-full select-none"
 
+// 내용 칸·펼침면·쪽 (쪽은 스크롤, 기본 스크롤바 숨김)
 export const BOOK_CONTENT_CLASS =
   "absolute inset-x-[6.8%] top-[8.5%] bottom-[8.5%] z-10 flex min-h-0 flex-col overflow-visible"
 
@@ -47,6 +54,7 @@ export const BOOK_PAGE_SCROLL_CLASS =
 
 export const BOOK_LEFT_PAGE_CLASS = BOOK_PAGE_SCROLL_CLASS
 
+// 쪽 넘김 줄 (다음 화살표는 오른쪽 끝)
 export const PAGE_NAV_BAR_CLASS =
   "relative z-20 flex shrink-0 w-full"
 

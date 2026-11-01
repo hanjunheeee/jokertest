@@ -1,10 +1,11 @@
 // 가게 패널 구매 버튼 판정 (살 수 있는 분류인지·버튼 잠금·기본 지급 문구)
-// 가게 패널과 패널 훅이 씀
+// StorePanel·useStorePanel이 씀
 import { isDefaultGrantStoreItem } from "../constants/storeItems.js"
 
 // 인게임 재화는 충전 흐름으로 사서 일반 구매·일괄구매에서 뺌
 const NON_PURCHASABLE_CATEGORIES = new Set(["인게임 재화"])
 
+// 일반 구매·일괄구매가 되는 분류인지
 export const isRealPurchaseCategory = (category) => !NON_PURCHASABLE_CATEGORIES.has(category)
 
 // 기본 지급 아이템은 아직 안 받았을 때만 '기본 지급' 문구를 보임

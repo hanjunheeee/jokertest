@@ -1,3 +1,5 @@
+// 일괄구매 목록 한 줄 (그림·이름·가격)
+// StoreBulkPurchaseItemList가 상품마다 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../constants/storeItems.js"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
@@ -12,6 +14,7 @@ import {
   ITEM_ROW_CLASS,
 } from "../../constants/storeBulkPurchaseLayout.js"
 
+// 가격 미정이면 문구만, 아니면 골드 아이콘과 가격
 export default function StoreBulkPurchaseItemRow({ item, displayIcon = item.icon }) {
   return (
     <div className={ITEM_ROW_CLASS}>

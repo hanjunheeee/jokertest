@@ -1,5 +1,5 @@
 // 인증번호 입력 칸 + 확인 버튼 한 줄
-// components/SignupEmailVerification.jsx가 번호를 보낸 뒤(인증 끝나기 전)에만 씀
+// components/SignupEmailVerification.jsx가 받기를 누른 뒤(인증 끝나기 전)에만 씀
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 
 // 만료·잠김이면 입력 칸만 잠그고, 버튼은 canVerify로 따로 잠금

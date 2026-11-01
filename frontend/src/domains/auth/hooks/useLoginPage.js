@@ -1,5 +1,5 @@
 // 로그인 화면 상태 (로그인·일반 가입 모드 전환, 입력값, 이미 로그인돼 있으면 로비로)
-// pages/LoginPage.jsx가 사용, 제출은 login/useLoginSubmit.js가 맡음, 아래 다시 내보내기는 시험이 이 경로로 가져가서 남김
+// pages/LoginPage.jsx가 사용, 제출은 login/useLoginSubmit.js가 맡음
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { getMeApi } from "../api/auth.api.js"
@@ -7,10 +7,12 @@ import { selectIsAuthenticated, useAuthStore } from "../store/auth.store.js"
 import { useSignupEmailVerification } from "./useSignupEmailVerification.js"
 import { useLoginSubmit } from "./login/useLoginSubmit.js"
 
+// 시험이 이 경로로 가져가는 이름 (화면 코드는 원래 파일에서 가져감)
 export { SOCIAL_ERROR_MESSAGES, DEFAULT_SOCIAL_ERROR_MESSAGE } from "../constants/socialMessages.js"
 export { mapSocialErrorCode, resolveSocialLoginView } from "../utils/socialErrors.js"
 export { useEmailCheck as useEmailAvailabilityCheck } from "./login/useEmailCheck.js"
 
+// 입력값 시작 값 (로그인·가입 공통)
 const INITIAL_FORM_DATA = { email: "", password: "", passwordConfirm: "", nickname: "", birthDate: "" }
 
 // 로그인과 일반 가입이 입력값(formData) 하나를 같이 씀
@@ -72,6 +74,7 @@ export function useLoginPage() {
     handleSignupCodeChange,
     handleRequestSignupCode,
     handleVerifySignupCode,
+    // 가입 버튼은 증명 있고 보내는 중 아닐 때만
     canSubmitSignup: hasValidSignupProof && !isSubmitting,
   }
 }

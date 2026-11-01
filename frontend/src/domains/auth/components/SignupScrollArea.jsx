@@ -1,3 +1,5 @@
+// 가입 칸 스크롤 영역 (기본 스크롤바 숨기고 공용 Scrollbar 붙임)
+// components/SignupForm.jsx, components/SocialSignupForm.jsx가 사용
 import { useRef } from "react"
 import {
   SCROLL_AREA_CLASS,
@@ -6,6 +8,7 @@ import {
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
+// data-signup-scroll-area는 이메일 인증 칸이 이 영역을 찾아 굴릴 때 씀
 export default function SignupScrollArea({ children }) {
   const scrollRef = useRef(null)
 

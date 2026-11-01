@@ -1,5 +1,5 @@
 // 설정 스토어 입구 (create·기기 저장 연결, 상태·저장 처리는 settings/ 아래와 utils/)
-// 설정 화면·인게임 설정·효과음/배경음 훅·시험이 이 경로로 씀
+// 설정 탭·인게임 채팅/설정·알림·글자 배율 동기화·소리 훅이 이 경로로 씀
 import { create } from "zustand"
 import { persist, createJSONStorage } from "zustand/middleware"
 import { SETTINGS_STORAGE_KEY } from "../constants/settingsStorage.js"
@@ -7,7 +7,7 @@ import { GENERAL_CHECK_STORAGE_IDS, mergePersistedSettings } from "../utils/pers
 import { createSettingsStorage } from "./settings/storage.js"
 import { settingsState } from "./settings/state.js"
 
-// 바깥에서 쓰던 이름 그대로 다시 내보냄
+// 시험이 쓰는 이름 그대로 다시 내보냄 (src는 안 씀)
 export {
   CHAT_TEXT_SIZE_STORAGE_RANGE,
   CHAT_CHECK_STORAGE_IDS,
@@ -25,10 +25,12 @@ export {
 // 저장 실패 기록은 이 모듈마다 따로 둠 (시험이 새 모듈로 다시 불러 확인함)
 const storage = createSettingsStorage()
 
+// 마지막 저장 실패 꺼내기 (시험만 씀)
 export function getSettingsStorageWriteError() {
   return storage.getError()
 }
 
+// 저장 실패 기록 지움 (시험만 씀)
 export function clearSettingsStorageWriteError() {
   storage.clearError()
 }
@@ -53,4 +55,5 @@ export const useSettingsStore = create(
   ),
 )
 
+// 저장하는 일반 체크 id 배열 (시험만 씀)
 export const GENERAL_CHECK_STORAGE_ID_LIST = [...GENERAL_CHECK_STORAGE_IDS]

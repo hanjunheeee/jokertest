@@ -7,11 +7,12 @@ import { resolveUserId } from "./state.js"
 // 장착 저장은 앞의 저장이 끝난 뒤에 보냄
 let loadoutQueue = null
 
+// 초기화 때 줄 끊음, 이미 보낸 요청 결과는 세대 확인으로 버림
 export const clearLoadoutQueue = () => {
   loadoutQueue = null
 }
 
-// send: 보낼 요청, matches: 서버 상태가 이미 원하는 장착인지, conflictCode: 다시 맞출 충돌 코드
+// 장착 저장 보내기 (send: 보낼 요청, matches: 서버가 이미 원하는 장착인지, conflictCode: 맞출 충돌)
 export const sendLoadoutWrite = (get, set, {
   send, buildBody, matches, applyExtra, conflictCode,
   requireKnownRevision = false, replayOnConflict = true,
@@ -20,8 +21,10 @@ export const sendLoadoutWrite = (get, set, {
   const userId = resolveUserId()
   // 보낸 뒤 계정이 바뀌었거나 초기화됐으면 결과를 버림
   const isCurrent = () => Boolean(userId) && generation === get().requestGeneration && userId === resolveUserId()
+  // 계정 바뀜 오류 (SESSION_CHANGED)
   const sessionChangedError = () => Object.assign(new Error("계정이 변경되어 저장을 취소했습니다."), { code: "SESSION_CHANGED" })
 
+  // 받은 장착 상태 합쳐 넣고 저장 순번 올림, 서버 상태 맞출 땐 applyExtra 안 붙임
   const applyLoadoutResult = (loadout, { withExtra = true } = {}) => {
     if (!isCurrent()) return
     set((state) => {
@@ -33,6 +36,7 @@ export const sendLoadoutWrite = (get, set, {
     })
   }
 
+  // 서버의 지금 장착 상태 받기, 받기 앞뒤로 계정 바뀜 확인
   const fetchAuthoritativeLoadout = async () => {
     if (!isCurrent()) throw sessionChangedError()
     const entitlementsResponse = await economyApi.entitlements(userId)
@@ -48,11 +52,14 @@ export const sendLoadoutWrite = (get, set, {
       applyLoadoutResult(result.loadout)
       return result
     } catch (error) {
+      // 그사이 계정 바뀌었으면 맞추지 않고 원래 오류로 끝
       if (!isCurrent()) throw error
 
+      // 맞출 충돌이 아니거나 한도 넘으면 그대로 실패
       const code = error?.code
       if (code !== conflictCode || attemptNumber > MAX_LOADOUT_EQUIP_AUTO_RETRIES) throw error
 
+      // 서버 상태를 못 받으면 원래 오류로 실패
       let serverLoadout
       try {
         serverLoadout = await fetchAuthoritativeLoadout()
@@ -63,6 +70,7 @@ export const sendLoadoutWrite = (get, set, {
 
       applyLoadoutResult(serverLoadout, { withExtra: false })
 
+      // 이미 원하는 상태면 성공으로 끝, 다시 안 보내는 칸이면 실패
       if (matches(serverLoadout)) {
         return { loadout: serverLoadout, reconciled: true }
       }
@@ -80,6 +88,7 @@ export const sendLoadoutWrite = (get, set, {
     let revision = get().loadout.revision
     if (requireKnownRevision && (typeof revision !== "string" || revision.length === 0)) {
       if (!isCurrent()) throw sessionChangedError()
+      // 서버 상태를 못 받으면 아직 못 불러왔다는 오류
       let authoritative
       try {
         authoritative = await fetchAuthoritativeLoadout()
@@ -96,6 +105,7 @@ export const sendLoadoutWrite = (get, set, {
     }
     return attemptSend(revision, 1)
   }
+  // 앞 저장이 끝난 뒤 보냄, 앞 저장이 실패해도 줄은 이어 감
   const result = loadoutQueue ? loadoutQueue.then(run) : run()
   const settled = result.then(() => undefined, () => undefined)
   loadoutQueue = settled

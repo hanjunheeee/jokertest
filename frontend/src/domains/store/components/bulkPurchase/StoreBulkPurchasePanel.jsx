@@ -1,3 +1,5 @@
+// 일괄구매 확인 창 안쪽 (닫기 버튼·제목·고른 상품 목록·합계)
+// StoreBulkPurchaseOverlay가 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
@@ -12,6 +14,7 @@ import { calculateBulkPurchaseTotal } from "../../utils/calculateBulkPurchaseTot
 import StoreBulkPurchaseItemList from "./StoreBulkPurchaseItemList.jsx"
 import StoreBulkPurchaseSummary from "./StoreBulkPurchaseSummary.jsx"
 
+// 합계는 그릴 때마다 고른 상품 가격으로 다시 셈
 export default function StoreBulkPurchasePanel({ items, deadPreviewIds, onClose, onConfirm, purchaseState, onCheck, onRetry }) {
   const { total, hasPendingPrice } = calculateBulkPurchaseTotal(items)
 

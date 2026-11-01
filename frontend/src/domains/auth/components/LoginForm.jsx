@@ -1,9 +1,12 @@
+// 로그인 모드 칸 (안내 문구, 이메일·비밀번호, 유지·찾기 링크, 로그인·소셜 버튼, 가입 전환)
+// pages/LoginPage.jsx가 로그인 모드일 때 사용
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import AuthModeSwitchPrompt from "@/domains/auth/components/AuthModeSwitchPrompt.jsx"
 import LoginFields from "@/domains/auth/components/LoginForm/LoginFields.jsx"
 import LoginOptions from "@/domains/auth/components/LoginForm/LoginOptions.jsx"
 import SocialLoginButtons from "@/domains/auth/components/LoginForm/SocialLoginButtons.jsx"
 
+// 제출은 바깥 액자 form이 받음 (로그인 버튼이 type=submit)
 export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup }) {
   return (
     <>

@@ -1,5 +1,5 @@
 // 소셜 가입 화면 상태 묶음 (가입 정보 불러오기·이메일 인증·가입 완료)
-// components/SocialSignupForm.jsx가 사용, 불러오기는 socialSignup/useIntentLoad.js·보내기는 socialSignup/submit.js가 맡음
+// components/SocialSignupForm.jsx가 사용, 불러오기·보내기는 socialSignup 폴더 파일이 맡음
 import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "../store/auth.store.js"
@@ -7,7 +7,7 @@ import { useSignupEmailVerification } from "./useSignupEmailVerification.js"
 import { useIntentLoad } from "./socialSignup/useIntentLoad.js"
 import { submitSignup } from "./socialSignup/submit.js"
 
-// status는 가입 진행(idle·submitting·done·error·expired·cancelled·conflict), intentStatus는 가입 정보 불러오기
+// status는 가입 진행 단계, intentStatus는 가입 정보 불러오기(loading·ready·error)
 export function useSocialSignup(intentToken) {
   const [status, setStatus] = useState("idle")
   const [errorMessage, setErrorMessage] = useState(null)
@@ -18,6 +18,7 @@ export function useSocialSignup(intentToken) {
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
 
+  // 보내기 잠금, 가입 정보 세대 번호 (다시 불러오면 옛 응답 버림)
   const submittingRef = useRef(false)
   const intentGenRef = useRef(0)
 
@@ -28,6 +29,7 @@ export function useSocialSignup(intentToken) {
     attemptKey: `${typeof intentToken === "string" ? intentToken : ""}:${intentAttempt}`,
   })
 
+  // 가입 정보 불러오기 (token·다시 시도 바뀔 때마다)
   useIntentLoad({
     intentToken, intentAttempt, genRef: intentGenRef,
     setIntentStatus, setEmailVerificationRequired, setEmail, setStatus, setErrorMessage,
@@ -54,13 +56,15 @@ export function useSocialSignup(intentToken) {
     && (!emailVerificationRequired || verification.hasValidSignupProof)
   )
 
+  // 보내기(submit.js)에 넘길 상태·ref·인증 묶음
   const submitCtx = {
     intentToken, intentStatus, emailVerificationRequired, verification,
     submittingRef, genRef: intentGenRef, setStatus, setErrorMessage, login, navigate,
   }
+  // 가입 완료 보내기 (검사·요청은 submit.js가 함)
   const submit = (fields) => submitSignup(submitCtx, fields)
 
-  // 에러를 지우고 입력 화면으로 (잠금도 풂)
+  // 에러를 지우고 입력 화면으로 (잠금도 풂), 화면은 안 쓰고 시험만 부름
   const reset = () => {
     submittingRef.current = false
     setStatus("idle")

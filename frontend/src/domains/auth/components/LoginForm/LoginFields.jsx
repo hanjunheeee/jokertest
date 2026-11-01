@@ -1,6 +1,9 @@
+// 로그인 이메일·비밀번호 입력 칸
+// components/LoginForm.jsx가 사용
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import { LockIcon, MailIcon } from "@/shared/ui/InputIcons.jsx"
 
+// name이 formData 키와 같아야 useLoginPage 입력 처리가 맞는 칸을 고침
 export default function LoginFields({ formData, onChange }) {
   return (
     <>

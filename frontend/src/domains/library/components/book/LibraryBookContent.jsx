@@ -1,3 +1,5 @@
+// 책 안쪽 내용 칸 (지금 탭 펼침면 + 쪽 넘김 줄)
+// book/LibraryBookShell.jsx가 씀
 import { motion } from "framer-motion"
 import { LIBRARY_TABS } from "../../../../domains/library/constants/libraryTabs.js"
 import ForbiddenRecordsSpread from "../../../../domains/library/components/forbiddenRecords/ForbiddenRecordsSpread.jsx"
@@ -14,6 +16,7 @@ import {
   BOOK_SPREAD_CLASS,
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 
+// 목차·책갈피 다음에 떠오름, 탭 따라 펼침면 바꿈
 export default function LibraryBookContent({
   activeTabId,
   pageIndex = 0,
@@ -36,6 +39,7 @@ export default function LibraryBookContent({
       }}
     >
       <div className={BOOK_SPREAD_CLASS}>
+        {/* 금지된 기록은 쪽 단위, 초대받은 자들은 직업 탭 단위 */}
         {activeTabId === LIBRARY_TABS.forbiddenRecords.id ? (
           <ForbiddenRecordsSpread
             pageIndex={pageIndex}
@@ -49,6 +53,7 @@ export default function LibraryBookContent({
           />
         )}
       </div>
+      {/* 쪽 넘김은 금지된 기록만 (초대받은 자들은 직업 탭으로 넘김) */}
       {activeTabId === LIBRARY_TABS.forbiddenRecords.id && (
         <LibraryPageNavigation
           canGoPrev={canGoPrev}

@@ -1,3 +1,5 @@
+// 일괄구매 합계 칸 (소비 골드·구매 결과 안내·구매하기 버튼)
+// StoreBulkPurchasePanel이 씀
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
@@ -14,6 +16,7 @@ import {
   TOTAL_ROW_CLASS,
 } from "../../constants/storeBulkPurchaseLayout.js"
 
+// 가격 미정 상품이 끼면 합계 대신 준비중
 export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onConfirm, purchaseState = { status: "idle" }, onCheck, onRetry }) {
   return (
     <aside className={SUMMARY_CLASS} aria-label="구매 합계">
@@ -34,6 +37,7 @@ export default function StoreBulkPurchaseSummary({ total, hasPendingPrice, onCon
       </div>
 
       <StorePurchaseFeedback state={purchaseState} onCheck={onCheck} onRetry={onRetry} />
+      {/* 가격 미정·결과 기다림·결과 모름·이미 완료·기록 막힘이면 잠금 (두 번 사기 막기) */}
       <button
         type="button"
         className={CONFIRM_BTN_CLASS}

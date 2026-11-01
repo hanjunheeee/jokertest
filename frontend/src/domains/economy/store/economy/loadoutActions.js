@@ -5,6 +5,7 @@ import { JOB_SKIN_SLOT_TO_JOB_ID, SLOT_TO_LOADOUT_FIELD } from "../../constants/
 import { clearLoadoutQueue, sendLoadoutWrite } from "./loadoutWrite.js"
 import { initialState } from "./state.js"
 
+// 장착·프로필 장착·초기화 액션 묶음
 export const loadoutActions = (set, get) => ({
   // 직업 스킨·카드 칸은 버전을 꼭 붙이고 충돌 때 다시 보내지 않음
   equip: ({ slot, itemId }) => {

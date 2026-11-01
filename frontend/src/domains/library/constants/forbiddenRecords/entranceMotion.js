@@ -1,3 +1,7 @@
+// 금지된 기록 등장 움직임 값 (원고 글·핏자국 번짐·해금 조건)
+// forbiddenRecords/ 왼쪽·오른쪽 쪽 컴포넌트가 씀
+
+// 왼쪽 원고: 제목 먼저, 본문은 조금 늦게, 문단마다 더 늦게
 export const STORY_REVEAL_INIT = {
   opacity: 0,
   y: 28,
@@ -25,6 +29,7 @@ export const STORY_BODY_TRANSITION = {
 
 export const STORY_PARAGRAPH_STAGGER = 0.05
 
+// 오른쪽 핏자국: 가운데서 천천히 번짐
 export const BLOOD_SPREAD_INIT = {
   opacity: 0,
   scale: 0.90,
@@ -42,6 +47,7 @@ export const BLOOD_SPREAD_TRANSITION = {
 
 export const BLOOD_SPREAD_ORIGIN = "center"
 
+// 해금 조건 글: 핏자국보다 살짝 늦게 떠오름
 export const UNLOCK_REVEAL_INIT = {
   opacity: 0,
   y: 12,

@@ -12,12 +12,13 @@ export function useRestoreFocus(open) {
     restoreRef.current = document.activeElement
   }
 
+  // 닫혀 있을 때만: 기억 지우고 삭제 오류 지운 뒤 포커스 되돌림
   useEffect(() => {
     if (open) return undefined
     const previous = restoreRef.current
     restoreRef.current = null
     useNotificationsStore.getState().clearDeleteReadError()
-    // 이미 사라진 요소면 포커스 실패를 무시함
+    // 포커스 받을 수 있는 요소일 때만 되돌림
     if (previous && typeof previous.focus === "function") {
       try {
         previous.focus()

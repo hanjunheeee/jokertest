@@ -7,7 +7,7 @@ import { isPositiveInt, isText } from "../../utils/currencyParse.js"
 import { ctx, get, set } from "./state.js"
 import { resumeQueue } from "./queue.js"
 
-// 같은 때 여러 번 불러도 요청은 하나만 보냄
+// 같은 때 여러 번 불러도 요청은 하나만 보냄 (로그인 안 했으면 안 받음)
 export const loadProducts = () => {
   if (!ctx.account) return Promise.resolve(false)
   if (ctx.productsRun) return ctx.productsRun
@@ -16,6 +16,7 @@ export const loadProducts = () => {
   const run = currencyApi.listProducts().then(
     (products) => {
       if (started !== ctx.generation) return false
+      // 새 목록 받으면 바뀐 상품 표시·설정 없음 대기도 풂
       set((state) => ({
         products, productsStatus: "ready", productsLoadCount: state.productsLoadCount + 1, productsStale: false, configPending: false,
         reason: state.reason === "CONFIG_MISSING" ? null : state.reason,
@@ -40,6 +41,7 @@ export const startTopup = async (product) => {
   const state = get()
   if (!ctx.account || ctx.creating || state.configPending || state.productsStale || state.productsStatus !== "ready"
     || BUSY_STATUSES.includes(state.status) || !isText(product?.productId, 64) || !isPositiveInt(product?.version)) return
+  // 주문 만드는 중 표시 (두 번 눌러도 주문 하나)
   ctx.creating = true
   const started = ctx.generation
   set({ status: "creatingOrder", reason: null, order: null, autoChecks: 0, lookupFailed: false })
@@ -67,6 +69,7 @@ export const startTopup = async (product) => {
       set({ status: "idle", configPending: true, reason: "CONFIG_MISSING" })
       return
     }
+    // 결제창 열기, 사용자 취소·SDK 실패·그 밖 실패를 나눠 안내
     set({ status: "payment", order: { orderId: order.orderId, amount: order.amount } })
     try {
       await requestTossTestPayment(order, window.location.origin)

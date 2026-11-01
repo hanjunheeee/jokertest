@@ -22,6 +22,7 @@ export async function verifyCode({ active, current, setState, genRef, inFlightRe
     return
   }
 
+  // 요청 잠금, 보낼 때 세대·주소·번호를 붙잡아 둠
   inFlightRef.current = true
   const gen = genRef.current
   const targetEmail = current.email
@@ -31,6 +32,7 @@ export async function verifyCode({ active, current, setState, genRef, inFlightRe
 
   try {
     const result = await verifySignupCodeApi({ email: targetEmail, code })
+    // 그사이 초기화됐으면 응답 버림
     if (genRef.current !== gen) return
 
     // 비어 있지 않은 문자열 증명이 와야 인증 끝으로 봄
@@ -39,10 +41,13 @@ export async function verifyCode({ active, current, setState, genRef, inFlightRe
       return
     }
 
+    // ok·증명이 안 맞는 응답은 다시 적게 하고 재시도 문구
     setState((prev) => ({ ...prev, stage: "codeSent", message: VERIFY_TEXT.retry }))
   } catch (error) {
+    // 초기화됐으면 버림
     if (genRef.current !== gen) return
 
+    // 실패 종류별 단계·문구 (틀린 번호면 남은 횟수 표시)
     const described = verifyErrorKind(error)
     if (described.kind === "CODE_INVALID") {
       setState((prev) => ({

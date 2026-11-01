@@ -13,6 +13,7 @@ export function PasswordResetRequestPage() {
   const navigate = useNavigate()
   const request = useResetRequest()
 
+  // 뒤로 가기는 로그인 화면으로
   const handleBack = () => navigate("/login")
 
   return (

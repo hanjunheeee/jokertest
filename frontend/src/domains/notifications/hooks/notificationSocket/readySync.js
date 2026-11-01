@@ -1,5 +1,5 @@
 // 연결마다 복원 → ready 보내기 → 응답 기다림·재시도
-// 알림 소켓 훅이 소켓 연결마다 만들어 씀, 연결이 바뀌면 이전 진행분은 버림
+// 알림 소켓 훅이 소켓·계정마다 만들어 씀, 다시 연결되면 이전 진행분은 버림
 import { emitNotificationsReady } from "../../socket/notifications.socket.js"
 import { READY_ACK_TIMEOUT_MS, READY_MAX_ATTEMPTS } from "../../constants/notificationReady.js"
 import { schedule, unschedule } from "./timers.js"
@@ -29,8 +29,10 @@ export function createReadySync(socket, store, accountAlive) {
   // 복원이 끝났고 연결돼 있을 때만 ready 보냄, 한도까지 다시 보냄
   const attemptReady = () => {
     const active = sync
+    // 지난 진행분·이미 응답받음·복원 전이면 안 보냄
     if (!isActive(active)) return
     if (active.readyAcked || !active.snapshotReady) return
+    // 끊겨 있거나 한도를 다 썼으면 재시도 표시만 하고 멈춤
     if (!active.connected || socket.connected === false) {
       store.getState().setReadyState("retry")
       return
@@ -49,6 +51,7 @@ export function createReadySync(socket, store, accountAlive) {
       unschedule(active.timer)
       active.timer = null
       if (!isActive(active)) return
+      // 응답 오면 보냄 확정, 실패면 재시도 표시 뒤 한도 안에서 다시 보냄
       if (ok) {
         active.readyAcked = true
         store.getState().setReadyState("sent")
@@ -58,6 +61,7 @@ export function createReadySync(socket, store, accountAlive) {
       if (active.attempts < READY_MAX_ATTEMPTS) attemptReady()
     }
 
+    // 보내기 자체가 터지면 바로 실패, 아니면 시간 초과 타이머 걺
     try {
       emitNotificationsReady(socket, (ack) => settle(ack?.ok === true))
     } catch {
@@ -82,6 +86,7 @@ export function createReadySync(socket, store, accountAlive) {
     }
     sync = active
 
+    // 복원이 끝나는 순간(snapshotLoaded가 켜질 때) ready 시도
     active.unsubscribe = store.subscribe((state, previous) => {
       if (!isActive(active)) return
       if (state.snapshotLoaded && !previous.snapshotLoaded) {
@@ -90,6 +95,7 @@ export function createReadySync(socket, store, accountAlive) {
       }
     })
 
+    // 복원 다시 시작, 실패하면 재시도 표시
     store.getState().beginResync()
     store.getState().loadSnapshot().then(
       (result) => {
@@ -103,7 +109,7 @@ export function createReadySync(socket, store, accountAlive) {
     )
   }
 
-  // 끊긴 채 시작한 진행분이면 이어서 ready만 보내고, 아니면 새로 시작
+  // 끊긴 채 시작한 진행분이면 이어서 ready만 보내고, 아니면 새로 시작 (지난 계정이면 무시)
   const connect = () => {
     if (!accountAlive()) return
     if (sync !== null && sync.connected === false) {

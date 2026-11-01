@@ -1,5 +1,5 @@
 // 소셜 로그인 실패 코드별 문구와 소셜 가입 화면 문구
-// utils/socialErrors.js·hooks/socialSignup/*·components/SocialSignupForm*이 사용, hooks/useLoginPage.js가 시험용으로 다시 내보냄
+// socialErrors.js·socialSignup 폴더·SocialSignupForm 화면이 사용, useLoginPage.js는 시험용 다시 내보냄
 
 // 로그인 화면 주소의 socialError 코드 → 안내 문구
 export const SOCIAL_ERROR_MESSAGES = {
@@ -25,6 +25,7 @@ export const SOCIAL_ERROR_MESSAGES = {
   DISCORD_PROFILE_INVALID: "Discord 계정 정보를 확인할 수 없습니다.",
   DISCORD_OAUTH_TIMEOUT: "Discord 응답이 지연되었습니다. 다시 시도해주세요.",
 }
+// 표에 없는 코드일 때 문구
 export const DEFAULT_SOCIAL_ERROR_MESSAGE = "소셜 로그인에 실패했습니다. 다시 시도해주세요."
 
 // 소셜 가입(첫 소셜 로그인) 화면 문구

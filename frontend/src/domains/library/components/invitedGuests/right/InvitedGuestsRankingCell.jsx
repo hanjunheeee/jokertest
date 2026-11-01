@@ -12,7 +12,7 @@ import {
   revealTransition,
 } from "../../../../../domains/library/constants/invitedGuests/entranceMotion.js"
 
-// 10판 넘게 한 사람이 없으면 빈 목록 안내를 보임
+// 제목·표를 따로 늦게 띄움, 직업 바뀌면 key로 다시 등장
 export default function InvitedGuestsRankingCell({ jobIndex, content, onRetry }) {
   return (
     <>
@@ -30,6 +30,7 @@ export default function InvitedGuestsRankingCell({ jobIndex, content, onRetry })
         animate={REVEAL_ANIMATE}
         transition={revealTransition(REVEAL_DELAYS.rightUpper)}
       >
+        {/* 실패 → 다시 시도, 아직 안 옴 → 불러오는 중, 10판 이상 한 사람 없음 → 빈 목록 안내 */}
         {content.rankingStatus === "error" ? (
           <InvitedGuestsRetryMessage message={content.rankingError ?? "랭킹을 불러오지 못했습니다."} onRetry={onRetry} />
         ) : content.ranking === null ? (

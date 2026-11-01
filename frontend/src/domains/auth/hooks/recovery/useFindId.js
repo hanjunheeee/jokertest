@@ -13,6 +13,7 @@ export function useFindId() {
   const [maskedEmail, setMaskedEmail] = useState("")
   const [formError, setFormError] = useState("")
 
+  // 보내기 잠금·요청 세대·화면 나감 표시
   const submittingRef = useRef(false)
   const genRef = useRef(0)
   const unmountedRef = useRef(false)

@@ -31,6 +31,7 @@ export default function ResetRequestForm({ status, email, setEmail, formError, o
         </p>
       )}
 
+      {/* 결과 알림: 요청 너무 많음·통신 실패 */}
       {status === "rateLimited" && (
         <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
           {REQUEST_TEXT.rateLimited}
@@ -51,6 +52,7 @@ export default function ResetRequestForm({ status, email, setEmail, formError, o
         className="mt-1 cursor-pointer"
       />
 
+      {/* 너무 많음·실패면 다시 입력 버튼 (입력 화면으로) */}
       {(status === "rateLimited" || status === "failed") && (
         <button type="button" onClick={onRetry} className="auth-text-link mt-1">다시 입력</button>
       )}

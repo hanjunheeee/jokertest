@@ -1,9 +1,12 @@
+// 서고 화면 뒷배경 그림
+// pages/LibraryPage.jsx가 씀
 import { motion } from "framer-motion"
 import { LIBRARY_ASSETS } from "../../../domains/library/constants/libraryAssets.js"
 import { LIBRARY_BG_IMAGE_CLASS } from "../../../domains/library/constants/libraryLayoutStyle.js"
 import { BG_FADE_TRANSITION } from "../../../shared/constants/pageTransitions.js"
 import { publicAsset } from "../../../shared/utils/publicAsset.js"
 
+// 들어올 때 서서히 보이는 배경, 끌어가기 막음
 export default function LibraryBackground() {
   return (
     <motion.img

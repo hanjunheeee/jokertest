@@ -1,3 +1,5 @@
+// 금지된 기록 쪽 넘김 화살표 줄 (이전·다음)
+// book/LibraryBookContent.jsx가 씀
 import { LIBRARY_ASSETS } from "../../../../domains/library/constants/libraryAssets.js"
 import {
   PAGE_NAV_ARROW_BTN_CLASS,
@@ -8,6 +10,7 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
+// 끝 쪽이면 그쪽 화살표 잠그고 투명하게 숨김
 export default function LibraryPageNavigation({
   canGoPrev = false,
   canGoNext = false,

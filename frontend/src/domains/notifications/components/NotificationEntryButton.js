@@ -1,3 +1,5 @@
+// 로비 알림 버튼 (안 읽은 수 배지)
+// 로비 친구 영역(lobby/components/LobbyFriendArea.jsx)이 씀
 import { createElement } from "react"
 
 import { LOBBY_ASSETS } from "../../../shared/constants/lobbyAssets.js"
@@ -11,10 +13,12 @@ import { selectUnreadCount } from "../utils/visibleNotifications.js"
 import { useNotificationsStore } from "../store/notifications.store.js"
 import { useSettingsStore } from "../../settings/store/settingsStore.js"
 
+// 배지 글자, 100개부터는 99+로 줄임
 function formatUnread(count) {
   return count > 99 ? "99+" : String(count)
 }
 
+// 설정에서 끈 종류는 빼고 셈, 안 읽은 게 없으면 배지 안 그림
 export default function NotificationEntryButton({ onOpen, open = false }) {
   const items = useNotificationsStore((state) => state.items)
   const generalChecks = useSettingsStore((state) => state.generalChecks)

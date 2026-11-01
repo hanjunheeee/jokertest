@@ -12,6 +12,7 @@ export function useLoginSubmit({
   // state는 다음 그림에야 바뀌어서 같은 순간 두 번 누름은 ref로 막음
   const inFlightRef = useRef(false)
 
+  // 기본 제출(새로고침) 막고, 이미 보내는 중이면 무시
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (inFlightRef.current) return
@@ -40,6 +41,7 @@ export function useLoginSubmit({
         if (isSignupMode) {
           // 가입되면 로그인 모드로 돌리고 인증을 비움
           const result = await signupApi({ ...formData, signupProof: signupPayload.signupProof })
+          // success:true가 와야 가입된 걸로 봄
           if (result?.success !== true) {
             alert("서버와 연결할 수 없습니다. 다시 시도해주세요.")
             return
@@ -48,6 +50,7 @@ export function useLoginSubmit({
           setIsSignupMode(false)
           resetVerification()
         } else {
+          // 로그인되면 store에 넣고 로비로
           const { user } = await loginApi({ ...formData, rememberMe })
           login(user)
           navigate("/lobby")
@@ -62,6 +65,7 @@ export function useLoginSubmit({
               : "이메일 인증이 만료되었거나 이미 사용되었습니다. 다시 인증해주세요.",
           )
         } else {
+          // 그 밖은 서버 문구로 알림 (없으면 기본 문구)
           console.error("API 통신 에러")
           alert(error.message || "서버와 연결할 수 없습니다.")
         }

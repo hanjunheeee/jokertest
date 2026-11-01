@@ -1,5 +1,5 @@
 // 아이디 찾기·비밀번호 재설정 화면 안내 문구 모음
-// hooks/recovery/*, components/recovery/*, pages/passwordReset/*가 사용
+// hooks/recovery 폴더 요청 훅, FindIdForm·ResetRequestForm, pages/passwordReset 폴더가 사용
 
 // 아이디 찾기 결과·실패 문구
 export const FIND_ID_TEXT = {

@@ -5,6 +5,7 @@ import ProfileBorderZoomOverlay from "@/shared/ui/profileBorderZoom/ProfileBorde
 import StoreBulkPurchaseOverlay from "../bulkPurchase/StoreBulkPurchaseOverlay.jsx"
 import { storePurchase } from "../../store/storePurchase.store.js"
 
+// 창마다 열림 여부는 패널 훅(useStorePanel) 상태로 정함
 export default function StorePanelOverlays({ panel }) {
   return (
     <>

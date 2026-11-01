@@ -1,5 +1,5 @@
-// 가입 이메일 인증 상태 (인증번호 받기·확인·남은 시간·가입 증명)
-// hooks/useLoginPage.js(일반 가입), hooks/useSocialSignup.js(소셜 가입)가 사용, 요청은 emailVerification/send.js·verify.js가 맡음
+// 가입 이메일 인증 상태 (받기·확인·남은 시간·가입 증명), 요청은 emailVerification 폴더가 맡음
+// hooks/useLoginPage.js(일반 가입), hooks/useSocialSignup.js(소셜 가입)가 사용
 import { useEffect, useRef, useState } from "react"
 import { INITIAL_VERIFICATION, VERIFY_TEXT } from "../constants/emailVerification.js"
 import { sendCode } from "./emailVerification/send.js"
@@ -12,11 +12,12 @@ const TICKING_STAGES = new Set(["codeSent", "codeExpired", "locked"])
 export function useSignupEmailVerification({ email = "", active = true, attemptKey = "" } = {}) {
   const [state, setState] = useState(INITIAL_VERIFICATION)
 
+  // genRef 바뀌면 진행 중 응답 버림, inFlightRef로 요청 하나씩만, forceTick은 다시 그리기용
   const genRef = useRef(0)
   const inFlightRef = useRef(false)
   const [, forceTick] = useState(0)
 
-  // 모드·시도 키·주소가 바뀌면 그린 그 자리에서 바로 처음으로 (옛 인증이 한 번도 안 보이게)
+  // 켜짐·시도 키·주소가 바뀌면 그린 그 자리에서 바로 처음으로 (옛 인증이 한 번도 안 보이게)
   const resetSignature = `${active ? "1" : "0"}\u0000${attemptKey ?? ""}\u0000${email}`
   const [appliedSignature, setAppliedSignature] = useState(resetSignature)
   if (appliedSignature !== resetSignature) {
@@ -44,6 +45,7 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
     return () => clearInterval(id)
   }, [state.stage])
 
+  // 인증번호 칸 글자 그대로 저장 (검사는 확인 때)
   const handleSignupCodeChange = (e) => {
     const { value } = e.target
     setState((prev) => ({ ...prev, code: value }))
@@ -51,7 +53,9 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
 
   // 받기·확인은 이번에 그린 상태(current)를 보고 판단함
   const ctx = { email, active, current: state, setState, genRef, inFlightRef }
+  // 인증번호 받기·재발송
   const handleRequestSignupCode = () => sendCode(ctx)
+  // 인증번호 확인
   const handleVerifySignupCode = () => verifyCode(ctx)
 
   // 지금 칸의 주소로 받은 증명이 있을 때만 가입 가능
@@ -63,6 +67,7 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
     && state.signupProof.length > 0
   )
 
+  // 가입 요청에 붙일 주소·증명, 증명 없으면 null (부르는 쪽이 막음)
   const buildSignupPayload = () => (
     hasValidSignupProof ? { email: state.email, signupProof: state.signupProof } : null
   )

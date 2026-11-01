@@ -38,12 +38,14 @@ export async function submitSignup(ctx, { nickname, birthDate }) {
   if (ctx.submittingRef.current) return
 
   const input = checkInput(ctx, { nickname, birthDate })
+  // 검사에 걸리면 요청 없이 상태·문구만
   if (!input.ok) {
     ctx.setStatus(input.status)
     ctx.setErrorMessage(input.message)
     return
   }
 
+  // 잠그고 보낼 때 세대 번호 기억
   ctx.submittingRef.current = true
   const submitGen = ctx.genRef.current
   ctx.setStatus("submitting")
@@ -63,6 +65,7 @@ export async function submitSignup(ctx, { nickname, birthDate }) {
       ctx.setErrorMessage(SOCIAL_SIGNUP_TEXT.generic)
       return
     }
+    // 로그인 처리 뒤 로비로
     ctx.login(result.user)
     ctx.setStatus("done")
     ctx.navigate("/lobby")

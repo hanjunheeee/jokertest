@@ -9,6 +9,7 @@ export function useLinkCheck({ token, setStatus, setLinkInvalidReason, unmounted
   const [verifyFailedMessage, setVerifyFailedMessage] = useState(RESET_TEXT.verifyFailed)
   const [reloadKey, setReloadKey] = useState(0)
 
+  // 마지막에 본 token, 보낸 요청 캐시 (키 = 방문·다시 확인 횟수·token)
   const visitedTokenRef = useRef(null)
   const cacheRef = useRef({ key: "", promise: null })
 
@@ -27,6 +28,7 @@ export function useLinkCheck({ token, setStatus, setLinkInvalidReason, unmounted
       return
     }
 
+    // 확인 중으로 바꿈, effect 정리 때 응답 버리게 표시
     let cancelled = false
     setStatus("verifying")
 
@@ -40,6 +42,7 @@ export function useLinkCheck({ token, setStatus, setLinkInvalidReason, unmounted
 
     promise
       .then((result) => {
+        // 정리됨·화면 나감·다른 방문이면 버림
         if (cancelled || unmountedRef.current || visitIdRef.current !== visitId) return
         // 쓸 수 있음 / 만료·사용됨·잘못됨 / 그 밖은 확인 실패 (캐시 비워서 다시 확인 때 새로 보냄)
         if (result?.ok === true && result.status === "VALID") {

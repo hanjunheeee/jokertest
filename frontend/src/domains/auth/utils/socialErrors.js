@@ -1,5 +1,5 @@
 // 소셜 로그인·소셜 가입 응답과 에러를 화면 값(모드·상태·문구)으로 바꾸기
-// pages/LoginPage.jsx(로그인 화면 모드), hooks/socialSignup/*(가입 에러)가 사용, hooks/useLoginPage.js가 시험용으로 다시 내보냄
+// pages/LoginPage.jsx(화면 모드), hooks/socialSignup 폴더(가입 에러)가 사용, useLoginPage.js도 다시 내보냄
 import { DEFAULT_SOCIAL_ERROR_MESSAGE, SOCIAL_ERROR_MESSAGES, SOCIAL_SIGNUP_TEXT } from "../constants/socialMessages.js"
 
 // 모르는 코드는 기본 문구 (자기 키만 봐서 toString 같은 이름도 걸러 냄)
@@ -73,7 +73,7 @@ export function submitErrorView(error) {
     default:
   }
   const proofLost = code === "SIGNUP_PROOF_REQUIRED" || code === "SIGNUP_PROOF_INVALID"
-  // 5xx로 code를 버렸으면 통신 실패 문구, 아니면 서버 문구
+  // 증명 에러는 정한 문구, 5xx로 code를 버렸으면 통신 실패 문구, 아니면 서버 문구
   const message = code === "SIGNUP_PROOF_REQUIRED" ? SOCIAL_SIGNUP_TEXT.proofRequired
     : code === "SIGNUP_PROOF_INVALID" ? SOCIAL_SIGNUP_TEXT.proofInvalid
       : code !== error?.code ? SOCIAL_SIGNUP_TEXT.generic

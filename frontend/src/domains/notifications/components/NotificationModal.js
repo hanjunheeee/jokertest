@@ -1,5 +1,5 @@
 // 알림 창 (목록·읽음·보러 가기·읽은 메시지 삭제)
-// 알림 버튼·로비 알림 패널이 씀, 항목·본문·바닥 줄은 modal/ 아래 파일
+// 로비 친구 영역(LobbyFriendArea.jsx)이 씀, 항목·본문·바닥 줄은 modal/ 아래
 import { createElement, useRef } from "react"
 
 import { useNotificationsStore } from "../store/notifications.store.js"
@@ -24,6 +24,7 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
   const deleteReadError = useNotificationsStore((state) => state.deleteReadError)
   const generalChecks = useSettingsStore((state) => state.generalChecks)
 
+  // 훅은 닫혀 있어도 돌림, 닫힐 때 포커스 되돌리기 위함
   useRestoreFocus(open)
   const closeButtonRef = useRef(null)
   useAutoMarkRead(open, status, generalChecks)
@@ -32,9 +33,11 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
 
   const visible = selectVisibleNotifications(items, generalChecks)
   const bodyState = resolveBodyState(status, visible.length)
+  // 목록을 다 받았고 읽은 알림이 있을 때만 삭제 버튼 켬
   const hasRead = items.some((item) => item.readAt)
   const deleteDisabled = status !== "success" || deleteReadPending || !hasRead
 
+  // 읽음 실패 뒤 다시 시도 때 읽음만 다시 보냄
   const handleRead = (item) => {
     useNotificationsStore.getState().markRead(item.id)
   }
@@ -46,6 +49,7 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
     onNavigate?.(path)
   }
 
+  // 항목마다 처리 중·오류 상태와 버튼 처리 함수 묶음
   const itemProps = (item) => ({
     pending: readPendingIds.includes(item.id),
     error: readErrors[item.id] ?? null,

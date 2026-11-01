@@ -5,6 +5,7 @@ import {
   STATE_RETRY_BTN_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
 
+// 실패 문구 + 누르면 다시 요청하는 버튼
 export default function InvitedGuestsRetryMessage({ message, onRetry }) {
   return (
     <div className={STATE_MSG_CLASS}>

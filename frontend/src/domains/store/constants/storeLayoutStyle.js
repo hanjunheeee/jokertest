@@ -1,3 +1,7 @@
+// 상점 화면 모양 class (패널·상품 칸·위 줄·분류 목록·설명 칸·보유 재화)
+// components/ 아래 상점 패널·상품 칸·설명 칸·분류 목록·보유 재화 컴포넌트가 씀
+
+// 패널 자리·틀 그림 안쪽 여백·내용 칸 나누기
 export const STORE_PANEL_CLASS =
   "absolute left-1/2 top-[44%] z-20 w-[min(62rem,85vw)] -translate-x-1/2 -translate-y-1/2"
 
@@ -23,18 +27,21 @@ export const PANEL_SCROLL_AREA_CLASS = "min-h-0 flex-1 overflow-y-auto overscrol
 export const PANEL_SIDEBAR_CLASS =
   "w-[26%] min-w-[9.25rem] shrink-0 pl-[clamp(0.9rem,1.4vw,1.1rem)]"
 
+// 상품 칸 그림 자리
 export const SLOT_IMG_WRAP_CLASS =
   "my-[clamp(0.15rem,0.35vh,0.25rem)] flex h-[clamp(5.5rem,9vw,7.5rem)] w-full items-center justify-center"
 
 export const STORE_SLOT_IMAGE_CLASS =
   "block h-full w-full max-w-[clamp(7.75rem,12.5vw,11.25rem)] select-none object-contain object-center"
 
+// 스킨 전신 그림을 잘라 보이는 칸 (지금 부르는 곳 없음)
 export const SLOT_SKIN_IMG_WRAP_CLASS =
   "relative my-[clamp(0.15rem,0.35vh,0.25rem)] flex h-[clamp(5.5rem,9vw,7.5rem)] w-full items-center justify-center overflow-hidden"
 
 export const SKIN_STANDING_CROP_IMG_CLASS =
   "absolute top-0 left-1/2 block h-[380%] w-[172%] -translate-x-1/2 select-none object-cover object-[center_5%]"
 
+// 상품 칸 카드·선택 표시·위쪽 칸
 export const STORE_SLOT_CARD_CLASS =
   "flex w-full flex-col overflow-hidden rounded-md border border-[#2a1810]/14 transition-[box-shadow,ring-color] [box-shadow:inset_0_1px_0_rgba(245,240,230,0.12),_0_4px_14px_rgba(0,0,0,0.16),_0_2px_5px_rgba(0,0,0,0.10)]"
 
@@ -44,6 +51,7 @@ export const SLOT_CARD_SELECTED_CLASS =
 export const STORE_SLOT_TOP_CLASS =
   "flex flex-col items-center bg-[#1a0f0a]/06 px-[clamp(0.35rem,0.75vw,0.55rem)] pt-[clamp(0.35rem,0.75vh,0.55rem)] pb-[clamp(0.25rem,0.55vh,0.4rem)]"
 
+// 상품 이름 (직업 줄·스킨명 줄)
 export const SLOT_NAME_WRAP_CLASS =
   "flex min-h-[clamp(2.35rem,4.2vh,2.75rem)] w-full flex-col items-center justify-center gap-[clamp(0.05rem,0.15vh,0.1rem)] rounded-sm border border-[#2a1810]/12 bg-[#1a0f0a]/10 px-[clamp(0.3rem,0.55vw,0.45rem)] py-[clamp(0.2rem,0.45vh,0.3rem)] text-center [box-shadow:inset_0_1px_0_rgba(245,240,230,0.14)]"
 
@@ -53,6 +61,7 @@ export const SLOT_NAME_JOB_CLASS =
 export const SLOT_NAME_TITLE_CLASS =
   "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.12vw,1rem)] font-extrabold leading-snug text-[#140c08]"
 
+// 아래 이름 class 셋은 지금 부르는 곳 없음
 export const SLOT_NAME_LINE_CLASS = SLOT_NAME_TITLE_CLASS
 
 export const SLOT_NAME_TEXT_CLASS =
@@ -61,6 +70,7 @@ export const SLOT_NAME_TEXT_CLASS =
 export const STORE_SLOT_NAME_CLASS =
   "line-clamp-1 w-full px-1 text-center font-subheading app-text-scaled [--app-text-size:clamp(0.9rem,1.2vw,1.05rem)] font-extrabold leading-snug text-[#140c08]"
 
+// 상품 칸 가격 줄
 export const STORE_SLOT_PRICE_CLASS =
   "flex w-full items-center justify-center gap-[clamp(0.2rem,0.4vw,0.3rem)] border-t border-[#2a1810]/14 bg-[#1a0f0a]/24 px-[clamp(0.35rem,0.75vw,0.55rem)] py-[clamp(0.3rem,0.65vh,0.45rem)] [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
 
@@ -75,11 +85,13 @@ export const SLOT_PRICE_AMOUNT_CLASS =
 export const SLOT_PRICE_ICON_CLASS =
   "block h-[clamp(0.85rem,1.35vw,1rem)] w-auto shrink-0 select-none object-contain"
 
+// 상품 칸 바깥 틀·칸 버튼
 export const ITEM_SLOT_WRAP_CLASS = "relative w-full"
 
 export const ITEM_SLOT_BTN_CLASS =
   "flex min-h-0 w-full cursor-pointer flex-col items-center justify-center overflow-visible border-0 bg-transparent p-0 transition-opacity hover:opacity-95"
 
+// 상품 칸 위 줄 (스킨 안내·일괄구매 버튼)
 export const BULK_BTN_WRAP_CLASS =
   "mb-[clamp(0.35rem,0.75vh,0.55rem)] flex items-center justify-between gap-[clamp(0.65rem,1.2vw,0.95rem)] px-[clamp(0.15rem,0.35vw,0.25rem)]"
 
@@ -100,6 +112,7 @@ export const BULK_BTN_LABEL_CLASS =
 
 export const BULK_BTN_IMG_CLASS = "block h-auto w-full select-none"
 
+// 빈 목록 안내·상품 칸 격자 (한 줄 4칸)
 export const STORE_EMPTY_GRID_CLASS =
   "flex min-h-[clamp(12rem,28vh,16rem)] w-full items-center justify-center px-[clamp(0.75rem,1.5vw,1.25rem)]"
 
@@ -109,12 +122,14 @@ export const EMPTY_MSG_CLASS =
 export const STORE_GRID_CLASS =
   "grid grid-cols-4 gap-x-[clamp(0.5rem,1.05vw,0.75rem)] gap-y-[clamp(0.85rem,1.75vh,1.2rem)] p-[clamp(0.15rem,0.35vw,0.25rem)]"
 
+// 칸 옆 보조 버튼 (사망 미리보기·크게 보기)
 export const PREVIEW_TOGGLE_BTN_CLASS =
   "group absolute right-[clamp(0.2rem,0.4vw,0.3rem)] top-[clamp(0.3rem,1.0vh,0.4rem)] z-10 h-[clamp(1.1rem,1.55vw,1.28rem)] w-[clamp(1.1rem,1.55vw,1.28rem)] cursor-pointer border-0 bg-transparent p-0 leading-none"
 
 export const PREVIEW_TOGGLE_IMG_CLASS =
   "interactive-scale-sm block h-full w-full select-none object-contain"
 
+// 분류 목록
 export const SIDEBAR_WRAP_CLASS =
   "flex h-full w-full flex-col gap-[clamp(0.75rem,1.6vh,1.05rem)] px-[clamp(0.25rem,0.65vw,0.45rem)] py-[clamp(0.25rem,0.65vh,0.4rem)] font-subheading"
 
@@ -136,6 +151,7 @@ export const CATEGORY_ROW_CLASS =
 export const CATEGORY_ROW_SELECTED_CLASS =
   "bg-[#1a0f0a]/32 text-white [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
 
+// 고른 상품 설명 칸
 export const DETAIL_SECTION_CLASS =
   "mt-auto mb-[clamp(0.85rem,1.8vh,1.2rem)] shrink-0 rounded-md bg-[#1a0f0a]/22 px-[clamp(0.4rem,0.8vw,0.55rem)] py-[clamp(0.4rem,0.85vh,0.55rem)] [box-shadow:inset_0_1px_0_rgba(245,240,230,0.10),_0_6px_18px_rgba(0,0,0,0.16)]"
 
@@ -145,6 +161,7 @@ export const STORE_DETAIL_ROW_CLASS =
 export const DETAIL_IMG_WRAP_CLASS =
   "relative flex h-[clamp(3.75rem,6.5vw,5rem)] w-[clamp(3.75rem,6.5vw,5rem)] shrink-0 items-center justify-center overflow-hidden"
 
+// 지금 부르는 곳 없음
 export const DETAIL_SKIN_CROP_IMG_CLASS = SKIN_STANDING_CROP_IMG_CLASS
 
 export const DETAIL_IMG_CLASS =
@@ -166,6 +183,7 @@ export const STORE_DETAIL_META_CLASS =
 
 export const DETAIL_META_DIVIDER_CLASS = "mx-1.5 text-[#8b7355]/70"
 
+// 설명 칸 가격 줄
 export const DETAIL_PRICE_ROW_CLASS =
   "flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5"
 
@@ -184,6 +202,7 @@ export const DETAIL_PRICE_AMOUNT_CLASS =
 export const DETAIL_PRICE_ICON_CLASS =
   "block h-[clamp(1.15rem,1.9vw,1.45rem)] w-auto shrink-0 select-none object-contain"
 
+// 구매 버튼
 export const PURCHASE_BTN_CLASS =
   "relative w-[clamp(4.5rem,8vw,6.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
@@ -192,6 +211,7 @@ export const PURCHASE_LABEL_CLASS =
 
 export const PURCHASE_BTN_IMG_CLASS = "block h-auto w-full select-none"
 
+// 오른쪽 위 보유 재화 표시
 export const CURRENCY_POSITION_CLASS =
   "absolute right-[2.5%] top-[2.5%] z-30 sm:right-[3%] sm:top-[3%]"
 

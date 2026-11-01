@@ -1,3 +1,5 @@
+// 알림 창 껍데기 (어두운 바탕·틀 그림·제목·닫기 버튼, 틀 그림 실패 때 대체 틀)
+// 알림 창(NotificationModal.js)이 내용을 넣어 씀
 import { createElement, useEffect, useState } from "react"
 
 import { dispatchUiSfx } from "../../../shared/hooks/useSfxRuntime.js"
@@ -17,10 +19,12 @@ import {
   MODAL_WRAP_CLASS,
 } from "../constants/notificationLayoutStyle.js"
 
+// Esc로 닫기, 닫기 함수가 있을 때만 키 들음
 function useEscape(onDismiss, active = true) {
   useEffect(() => {
     if (!active || !onDismiss) return undefined
 
+    // Esc만 받아 취소 소리 내고 닫음
     const onKeyDown = (event) => {
       if (event.key !== "Escape") return
       dispatchUiSfx("ui-cancel", event)
@@ -32,12 +36,14 @@ function useEscape(onDismiss, active = true) {
   }, [active, onDismiss])
 }
 
+// 열리면 닫기 버튼에 포커스 줌, focusKey가 바뀌면 다시 줌
 function useCloseFocus(closeButtonRef, focusKey) {
   useEffect(() => {
     closeButtonRef?.current?.focus()
   }, [focusKey, closeButtonRef])
 }
 
+// 닫기 버튼 그리기, 닫기 함수가 없으면 안 그림
 function renderCloseButton({ onDismiss, closeButtonRef }) {
   if (!onDismiss) return null
 
@@ -61,6 +67,7 @@ function renderCloseButton({ onDismiss, closeButtonRef }) {
   )
 }
 
+// 틀 그림이 안 뜨면 그림 없는 대체 틀로 바꿔 그림
 export default function NotificationModalShell({
   onDismiss,
   closeButtonRef,
@@ -73,6 +80,7 @@ export default function NotificationModalShell({
   useEscape(onDismiss, Boolean(onDismiss))
   useCloseFocus(closeButtonRef, focusKey)
 
+  // 내용 칸: 틀 그림 안쪽 여백에 맞춤, 대체 틀이면 여백 없음
   const contentNode = createElement(
     "div",
     {
@@ -85,6 +93,7 @@ export default function NotificationModalShell({
     children,
   )
 
+  // 틀 그림 위에 제목·닫기·내용 겹침, 그림 오류면 대체 틀 사용
   const panelInner = frameFailed
     ? createElement(
         "div",
@@ -108,6 +117,7 @@ export default function NotificationModalShell({
         contentNode,
       )
 
+  // 바탕 버튼을 누르면 닫힘, 창 본체는 그 위에 띄움
   return createElement(
     "div",
     wrapperProps,

@@ -1,15 +1,20 @@
 // 가입 입력 검사 (이메일·닉네임·생년월일·비밀번호) 규칙과 날짜 계산
-// 일반 가입·소셜 가입·비밀번호 재설정·이메일 인증 훅이 사용, 경계값은 시험 fixture와 맞춤
+// 가입·소셜 가입·재설정·이메일 인증 훅과 validation/recovery.js가 사용, 경계값은 시험 fixture와 맞춤
+
+// 닉네임 규칙
 export const NICKNAME_MIN_LENGTH = 2
 export const NICKNAME_MAX_LENGTH = 8
 export const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/
 
+// 비밀번호 규칙 (바이트 상한 72는 서버 검사와 같음)
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 64
 export const PASSWORD_MAX_BYTES = 72
 
+// 인증번호 받기 전 이메일 길이 상한
 const EMAIL_MAX_LENGTH = 100
 
+// YYYY-MM-DD 모양 (연·월·일 따로 꺼냄)
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 
 // YYYY-MM-DD를 UTC 날짜로, 2월 30일처럼 넘어가는 날짜는 null

@@ -12,6 +12,7 @@ export function useResetPage(token) {
   const [passwordConfirm, setPasswordConfirm] = useState("")
   const [formError, setFormError] = useState("")
 
+  // 제출 잠금·화면 나감 표시·링크 방문 번호 (아래 두 훅이 같이 씀)
   const submittingRef = useRef(false)
   const unmountedRef = useRef(false)
   const visitIdRef = useRef(0)
@@ -31,10 +32,12 @@ export function useResetPage(token) {
     submittingRef.current = false
   }, [token])
 
+  // 링크 확인 (token 바뀜·다시 확인 때 다시 돎)
   const { verifyFailedMessage, retryVerify } = useLinkCheck({
     token, setStatus, setLinkInvalidReason, unmountedRef, visitIdRef,
   })
 
+  // 새 비밀번호 제출 처리
   const handleSubmit = useResetConfirm({
     token, status, password, passwordConfirm,
     visitIdRef, unmountedRef, submittingRef,

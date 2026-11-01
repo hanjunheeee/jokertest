@@ -1,5 +1,5 @@
 // 비밀번호 재설정 화면 (메일 링크의 token 확인 뒤 새 비밀번호 받기)
-// pages/PasswordResetPage.jsx가 PasswordResetPage로 내보냄 (/password-reset), 상태는 hooks/recovery/useResetPage.js
+// pages/PasswordResetPage.jsx가 내보냄 (/password-reset), 상태는 useResetPage
 import { useNavigate, useSearchParams } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import NewPasswordForm from "@/domains/auth/components/recovery/NewPasswordForm.jsx"
@@ -8,6 +8,7 @@ import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutSty
 import { RESET_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 import { useResetPage } from "@/domains/auth/hooks/recovery/useResetPage.js"
 
+// 확인 중 문구 글자 (알림 상자 없이)
 const VERIFYING_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body"
 
 // 안내 화면에선 Enter로 제출돼도 아무것도 안 함
@@ -56,10 +57,13 @@ export function PasswordResetPage() {
   const token = searchParams.get("token") || ""
   const reset = useResetPage(token)
 
+  // 로그인으로 (재설정 화면은 방문 기록에서 뺌)
   const goToLogin = () => navigate("/login", { replace: true })
+  // 메일 다시 요청 화면으로
   const goToRequest = () => navigate("/password-reset/request")
 
   const notice = noticeFor(reset, { goToLogin, goToRequest })
+  // 안내 상태면 안내만, 아니면 새 비밀번호 칸
   if (notice) {
     return (
       <AuthScene onSubmit={blockSubmit}>

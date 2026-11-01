@@ -1,5 +1,5 @@
 // 가입 이메일 인증 칸 (받기·재발송 버튼, 인증번호 입력 줄, 안내 줄)
-// components/SignupForm.jsx(일반 가입), components/SocialSignupForm/SocialSignupFields.jsx(소셜 가입)가 사용
+// components/SignupForm.jsx(일반 가입)·SocialSignupForm/SocialSignupFields.jsx(소셜)가 사용
 import { useLayoutEffect, useRef } from "react"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import CodeInputRow from "@/domains/auth/components/SignupEmailVerification/CodeInputRow.jsx"
@@ -16,15 +16,18 @@ import { pickNotice, sendButtonLabel } from "@/domains/auth/utils/emailVerificat
 
 // 대상이 가입 스크롤 칸 밖으로 나가 있으면 그 칸 안에서만 굴려 보이게 함 (페이지는 안 굴림)
 function scrollWithinSignupArea(target) {
+  // 가입 스크롤 칸 안에 있을 때만
   if (!target) return
   const scrollEl = target.closest("[data-signup-scroll-area]")
   if (!scrollEl) return
 
+  // 그린 뒤 자리를 재려고 다음 프레임에
   requestAnimationFrame(() => {
     const margin = 8
     const scrollRect = scrollEl.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
 
+    // 아래로 넘치면 내리고 위로 넘치면 올림, 가장자리 여백 조금
     if (targetRect.bottom > scrollRect.bottom - margin) {
       scrollEl.scrollTop += targetRect.bottom - scrollRect.bottom + margin
     } else if (targetRect.top < scrollRect.top + margin) {
@@ -46,6 +49,7 @@ export default function SignupEmailVerification({
   const canResend = !isSending && !isVerified
     && (stage === "codeSent" || stage === "codeExpired" || stage === "locked")
     && resendRemainingSec <= 0
+  // 확인은 보낸 상태에서 번호를 적었고 확인 중이 아닐 때만
   const canVerify = stage === "codeSent" && code.trim().length > 0 && !isVerifying
   const sendLabel = sendButtonLabel(stage, resendRemainingSec)
   const notice = pickNotice({
@@ -62,14 +66,18 @@ export default function SignupEmailVerification({
     scrollWithinSignupArea(target)
   }, [notice?.text, showCodeInput])
 
+  // 받기 버튼: 클릭 이벤트는 안 넘김
   const handleSendCodeClick = () => handleRequestSignupCode()
+  // 확인 버튼: 클릭 이벤트는 안 넘김
   const handleVerifyCodeClick = () => handleVerifySignupCode()
+  // 번호 칸 입력은 이벤트째 넘김
   const handleCodeInputChange = (e) => onSignupCodeChange(e)
 
   return (
     <div className={EMAIL_VERIFICATION_BLOCK_CLASS}>
       <div className="flex items-center justify-between gap-1">
         <span className={EMAIL_VERIFICATION_TITLE_CLASS}>이메일 인증</span>
+        {/* 받기·재발송 버튼: 처음엔 보내는 중만 잠금, 그 뒤엔 canResend로 */}
         {!isVerified && (
           <AuthImageButton
             type="button"
@@ -87,6 +95,7 @@ export default function SignupEmailVerification({
         )}
       </div>
 
+      {/* 번호 입력 줄: 받기를 누른 뒤부터 인증 끝나기 전까지 */}
       {showCodeInput && !isVerified && (
         <CodeInputRow
           stage={stage}
@@ -98,6 +107,7 @@ export default function SignupEmailVerification({
         />
       )}
 
+      {/* 안내 줄: 문구가 있거나 입력 줄이 열려 있으면 자리 잡음 */}
       {(notice || (showCodeInput && !isVerified)) && (
         <NoticeSlot ref={noticeRef} notice={notice} reserveSpace={showCodeInput && !isVerified} />
       )}

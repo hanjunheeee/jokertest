@@ -1,3 +1,5 @@
+// 일반 가입 모드 칸 (입력 칸, 이메일 인증, 가입 버튼, 로그인 전환)
+// pages/LoginPage.jsx가 가입 모드일 때 사용
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_FORM_BODY_CLASS,
@@ -13,6 +15,7 @@ import SignupEmailVerification from "@/domains/auth/components/SignupEmailVerifi
 import SignupFields from "@/domains/auth/components/SignupForm/SignupFields.jsx"
 import SignupScrollArea from "@/domains/auth/components/SignupScrollArea.jsx"
 
+// canSubmitSignup이 거짓이면 안내 띄우고 가입 버튼 잠금 (인증 전·보내는 중)
 export default function SignupForm({
   formData, onChange, onSwitchToLogin,
   emailVerification, onSignupCodeChange, handleRequestSignupCode, handleVerifySignupCode, canSubmitSignup,

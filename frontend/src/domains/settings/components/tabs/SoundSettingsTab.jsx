@@ -1,3 +1,5 @@
+// 설정 사운드 탭 (음량 슬라이더들 + 효과음 음소거)
+// components/SettingContentArea.jsx가 씀
 import { SOUND_SETTING_VOLUMES } from "../../../../shared/constants/soundSettings.js"
 import { SETTING_ASSETS } from "../../constants/settingAssets.js"
 import CheckBox from "@/shared/ui/CheckBox"
@@ -12,6 +14,7 @@ const LABEL_CLASS =
 
 const SFX_MUTE_LABEL = "효과음 음소거"
 
+// 값·바꾸기는 공용 useSoundSettings로 (인게임 설정 창과 같은 값)
 export default function SoundSettingsTab() {
   const { volumes, setVolume, sfxMuted, setSfxMuted } = useSoundSettings()
 
@@ -30,6 +33,7 @@ export default function SoundSettingsTab() {
         </div>
       ))}
 
+      {/* 효과음만 따로 끄기 */}
       <div className={ROW_CLASS} data-setting-row>
         <span className={LABEL_CLASS}>{SFX_MUTE_LABEL}</span>
         <CheckBox

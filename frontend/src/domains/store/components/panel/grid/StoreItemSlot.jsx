@@ -14,6 +14,7 @@ import {
   STORE_SLOT_TOP_CLASS,
 } from "../../../constants/storeLayoutStyle.js"
 
+// 보조 버튼은 칸 버튼 밖에 둠 (버튼 안에 버튼을 넣지 않기 위함)
 export default function StoreItemSlot({
   item,
   icon,
@@ -37,6 +38,7 @@ export default function StoreItemSlot({
         aria-pressed={selected}
       >
         <div className={`${STORE_SLOT_CARD_CLASS} ${selected ? SLOT_CARD_SELECTED_CLASS : ""}`}>
+          {/* 보유한 상품은 왼쪽 위에 보유중 표시 */}
           {owned ? (
             <span
               className="absolute left-1 top-1 z-10 rounded-sm bg-[#2a1810]/78 px-1.5 py-0.5 app-text-scaled [--app-text-size:clamp(0.6rem,0.82vw,0.68rem)] font-bold text-[#f5f0e6]"

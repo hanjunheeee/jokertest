@@ -1,3 +1,5 @@
+// 초대받은 손님 직업별 소개 (이름·설명 글·서 있는 그림, 일부는 그림 크기·위치 따로)
+// content/invitedGuests/pages.js가 씀, 시험도 직접 봄
 import { INVITED_GUESTS_ASSETS } from "../../constants/invitedGuests/assets.js"
 import {
   STANDING_IMG_LG_CLASS,

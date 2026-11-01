@@ -1,3 +1,5 @@
+// 상점 오른쪽 위 보유 재화 표시 (골드·다이아, 불러오기 실패면 재시도 버튼)
+// StorePage가 경제 스토어 값을 넣어 씀
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
@@ -11,6 +13,7 @@ import {
 } from "../constants/storeLayoutStyle.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+// 재화 한 칸: 준비되면 숫자, 실패면 재시도 버튼, 그 밖엔 불러오는 중 표시
 function StoreCurrencyItem({ icon, amount, label, status, onRetry }) {
   const isError = status === "error"
   const isReady = status === "ready"
@@ -41,6 +44,7 @@ function StoreCurrencyItem({ icon, amount, label, status, onRetry }) {
   )
 }
 
+// 골드(무료)·다이아(유료) 두 칸, 영상 끝나기 전엔 숨기고 누르기 막음
 export default function StoreCurrencyBalance({
   visible = true,
   balanceGold = 0,

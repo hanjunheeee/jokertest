@@ -1,5 +1,5 @@
-// 알림 소켓 훅: 계정 맞추기·소켓 받기 연결·끊기
-// 앱 루트가 씀, 받은 알림 처리는 notificationSocket/liveNotification.js, ready 동기화는 notificationSocket/readySync.js
+// 알림 소켓 훅: 계정 맞추기·소켓 받기 연결·끊기 (새 알림·ready는 notificationSocket/)
+// 앱 루트(app/App.jsx)가 씀
 import { useEffect } from "react"
 
 import { useAuthStore } from "../../auth/store/auth.store.js"
@@ -8,6 +8,7 @@ import { subscribeNotifications } from "../socket/notifications.socket.js"
 import { createLiveHandler } from "./notificationSocket/liveNotification.js"
 import { createReadySync } from "./notificationSocket/readySync.js"
 
+// 시험이 이 경로로 가져다 씀
 export { READY_MAX_ATTEMPTS } from "../constants/notificationReady.js"
 export { __setNotificationTimersForTests } from "./notificationSocket/timers.js"
 
@@ -25,6 +26,7 @@ export function useNotificationSocketEvents(socket) {
     })
   }, [])
 
+  // 소켓·계정이 바뀔 때마다 받기를 새로 붙이고 이전 것은 정리
   useEffect(() => {
     if (!socket || accountUuid === null) return undefined
 
@@ -38,6 +40,7 @@ export function useNotificationSocketEvents(socket) {
 
     let cancelled = false
 
+    // 정리됐거나 계정 세대가 바뀌었으면 지난 연결로 봄
     const accountAlive = () =>
       !cancelled && store.getState().accountGeneration === accountGeneration
 
@@ -48,8 +51,10 @@ export function useNotificationSocketEvents(socket) {
       disconnect: ready.disconnect,
     })
 
+    // 복원은 바로 시작, ready는 연결돼 있을 때만 보냄
     ready.start({ connected: socket.connected !== false })
 
+    // 정리 때 늦게 온 결과가 안 들어가게 막고 받기 끊음
     return () => {
       cancelled = true
       ready.teardown()

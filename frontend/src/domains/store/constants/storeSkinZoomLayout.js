@@ -1,8 +1,13 @@
+// 스킨 전신 보기 창 모양 (움직임·뒤판·창·그림·닫기 버튼 class)
+// skinZoom/ 아래 전신 보기 컴포넌트 셋이 씀
+
+// 열고 닫는 움직임
 export const ZOOM_TRANSITION = {
   duration: 0.35,
   ease: [0.22, 1, 0.36, 1],
 }
 
+// 뒤판·창 자리·창 틀
 export const BACKDROP_CLASS =
   "fixed inset-0 z-40 cursor-default border-0 bg-[#1a0f0a]/62 p-0 backdrop-blur-[4px]"
 
@@ -12,12 +17,14 @@ export const PANEL_WRAP_CLASS =
 export const PANEL_CLASS =
   "pointer-events-auto relative flex w-[min(28rem,52vw)] max-w-[34rem] flex-col overflow-hidden rounded-[1.25rem] border border-[#b83232]/40 bg-[#f5f0e6]/78 ring-1 ring-[#c43c3c]/16 backdrop-blur-[6px] [box-shadow:inset_0_1px_0_rgba(255,255,255,0.48),inset_0_-2px_10px_rgba(42,24,16,0.07),0_14px_40px_rgba(26,15,10,0.34),0_0_28px_rgba(196,60,60,0.12)]"
 
+// 전신 그림 (아래 붙여 세움)
 export const ILLUSTRATION_WRAP_CLASS =
   "relative flex min-h-[min(42rem,78vh)] w-full items-end justify-center bg-[#1a0f0a]/06 px-[clamp(0.75rem,1.4vw,1.1rem)] pb-[clamp(1rem,2vh,1.35rem)] pt-[clamp(1rem,2vh,1.35rem)] [box-shadow:inset_0_2px_14px_rgba(26,15,10,0.08)]"
 
 export const ILLUSTRATION_CLASS =
   "block h-[min(40rem,74vh)] w-full select-none object-contain object-bottom"
 
+// 닫기 버튼
 export const CLOSE_BTN_CLASS =
   "interactive-scale absolute right-[clamp(0.35rem,2%,0.65rem)] top-[clamp(0.55rem,2.5%,0.85rem)] z-20 cursor-pointer border-0 bg-transparent p-0 leading-none"
 

@@ -1,3 +1,5 @@
+// 초대받은 손님 그림 주소 (직업 탭 버튼·서 있는 그림·테두리·재화 아이콘)
+// 직업 탭(InvitedGuestsJobTabs.jsx)·jobCatalog.js·jobChallenges.js가 씀
 export const INVITED_GUESTS_ASSETS = {
   jobTabActive: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
   jobTabInactive: "/button/버튼(미선택).png",
@@ -18,11 +20,13 @@ export const INVITED_GUESTS_ASSETS = {
     "/shopItem/player- profileborder/프로필프레임-마녀사냥꾼.png".normalize("NFD"),
 }
 
+// 도전과제 재화 보상 아이콘
 export const INVITED_GUESTS_CURRENCY_ASSETS = {
   gold50: "/shopItem/ingame-money/coin/금화-50.png".normalize("NFD"),
   diamond10: "/shopItem/ingame-money/diamond/다이아-10.png".normalize("NFD"),
 }
 
+// 테두리 견본 목록 (부르는 곳 없음)
 const PROFILE_BORDER_BASE = "/shopItem/player- profileborder/"
 
 export const DUMMY_PROFILE_BORDERS = [

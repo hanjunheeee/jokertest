@@ -5,6 +5,7 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useEconomyStore } from "../../../economy/store/economy.store.js"
 import { currencyHistory } from "../currencyHistory.store.js"
 
+// 화면 상태 처음 값 (상품 목록·충전 진행 상태·보이는 주문·자동 확인 횟수)
 const initialState = {
   products: [],
   productsStatus: "idle",
@@ -18,8 +19,11 @@ const initialState = {
   lookupFailed: false,
 }
 
+// 화면이 구독하는 충전 상태
 export const store = createStore(() => ({ ...initialState }))
+// 상태 일부 바꾸기
 export const set = (patch) => store.setState(patch)
+// 지금 상태 읽기
 export const get = () => store.getState()
 
 // 다른 파일에서 다시 넣는 값은 ctx에 둠, 계정이 바뀌면 세대를 올려 늦게 온 응답을 버림
@@ -33,6 +37,7 @@ export const ctx = {
   active: null,
   activeToken: 0,
 }
+// 결제 복귀 확인·확인 중 주문·주문 기록·찾기에서 뺄 주문·진행 중 주문 찾기 (계정 바뀌면 비움)
 export const returnRuns = new Map()
 export const inFlightOrders = new Map()
 export const records = new Map()
@@ -59,7 +64,7 @@ export const activate = (id) => {
   store.setState({ ...initialState }, true)
 }
 
-// 지급이 끝나면 잔액과 재화 기록을 다시 받음
+// 지급이 끝나면 잔액과 거래 내역을 다시 받음, 그사이 계정이 바뀌었으면 안 받음
 export const refreshSummary = async (started) => {
   if (started !== ctx.generation) return
   const summary = useEconomyStore.getState().fetchSummary()
@@ -76,8 +81,9 @@ export const recordOf = (orderId, amount, source, serverStatus = null) => {
   }
   return record
 }
+// 지금 화면에 보이는 주문인지
 export const isActive = (orderId) => ctx.active !== null && ctx.active.orderId === orderId
-// 화면에 보이는 주문을 바꿀 때마다 표를 새로 줌
+// 보이는 주문을 바꿀 때마다 번호표를 새로 줌 (예전 주문 자동 확인 멈추기용)
 export const setActive = (orderId) => {
   ctx.activeToken += 1
   ctx.active = { orderId, token: ctx.activeToken }

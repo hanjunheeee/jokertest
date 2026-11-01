@@ -43,6 +43,7 @@ export default function FindIdForm({ status, nickname, setNickname, birthDate, s
         </p>
       )}
 
+      {/* 결과 알림: 못 찾음·요청 너무 많음·통신 실패 */}
       {status === "notFound" && (
         <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
           {FIND_ID_TEXT.notFound}
@@ -69,6 +70,7 @@ export default function FindIdForm({ status, nickname, setNickname, birthDate, s
         className="mt-1 cursor-pointer"
       />
 
+      {/* 못 찾음·너무 많음이면 다시 입력, 실패면 재시도 (둘 다 입력 화면으로) */}
       {(status === "notFound" || status === "rateLimited") && (
         <button type="button" onClick={onRetry} className="auth-text-link mt-1">다시 입력</button>
       )}

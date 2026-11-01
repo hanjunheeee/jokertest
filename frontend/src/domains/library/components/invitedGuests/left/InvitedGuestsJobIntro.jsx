@@ -1,3 +1,5 @@
+// 직업 설명 묶음 (설명 문단 + 직업 서 있는 그림)
+// invitedGuests/InvitedGuestsSpread.jsx가 씀
 import InvitedGuestsSectionTitle from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsSectionTitle.jsx"
 import {
   INTRO_ROW_CLASS,
@@ -9,6 +11,7 @@ import {
 } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
 import PublicAsset from "../../../../../shared/ui/PublicAsset"
 
+// 빈 줄 기준으로 문단 나눔, 빈 문단 버림
 function splitParagraphs(description = "") {
   return description
     .split(/\n\s*\n/)
@@ -16,6 +19,7 @@ function splitParagraphs(description = "") {
     .filter(Boolean)
 }
 
+// 직업마다 그림 크기·위치 className 따로 받음, 안 주면 기본 모양
 export default function InvitedGuestsJobIntro({
   description,
   standingImage,

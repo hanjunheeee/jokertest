@@ -1,3 +1,5 @@
+// 금지된 기록 왼쪽 쪽 (원고 제목·본문 문단)
+// forbiddenRecords/ForbiddenRecordsSpread.jsx가 씀
 import { motion } from "framer-motion"
 import { getForbiddenRecordsPage } from "../../content/forbiddenRecords/pages.js"
 import {
@@ -14,6 +16,7 @@ import {
   SECTION_TITLE_CLASS,
 } from "../../../../domains/library/constants/forbiddenRecords/layoutStyle.js"
 
+// 빈 줄 기준으로 문단 나눔, 빈 문단 버림
 function splitBodyParagraphs(body) {
   return body
     .split(/\n\s*\n/)
@@ -21,6 +24,7 @@ function splitBodyParagraphs(body) {
     .filter(Boolean)
 }
 
+// 쪽 바뀌면 key로 새로 그려 등장 다시 보임, 문단은 하나씩 늦게
 export default function ForbiddenRecordsLeftPage({ pageIndex = 0 }) {
   const { left } = getForbiddenRecordsPage(pageIndex)
   const paragraphs = splitBodyParagraphs(left.body)

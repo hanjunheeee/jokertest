@@ -1,3 +1,5 @@
+// 책 위쪽 목차 그림 (지금 탭 이름)
+// book/LibraryBookShell.jsx가 씀
 import { motion } from "framer-motion"
 import { getLibraryTab } from "../../../../domains/library/constants/libraryTabs.js"
 import {
@@ -12,6 +14,7 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
+// 지금 탭 목차 그림, 책 다음에 떠오름
 export default function LibraryTableOfContents({ activeTabId }) {
   const activeTab = getLibraryTab(activeTabId)
 

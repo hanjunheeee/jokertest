@@ -1,5 +1,7 @@
 // 설정 기기 저장소 감싸기 (못 쓰면 메모리로 대신함)·마지막 저장 실패 기록
 // 설정 스토어 입구가 모듈마다 한 번 만들어 씀, 실패 기록은 만든 쪽마다 따로 둠
+
+// 메모리 저장소 (새로 고치면 사라짐)
 function createMemoryStorage() {
   const memory = new Map()
   return {
@@ -17,6 +19,7 @@ function createMemoryStorage() {
 export function createSettingsStorage() {
   let lastError = null
 
+  // 실패 기록 남기고 콘솔 경고
   const report = (error, message) => {
     lastError = error
     console.warn(`[settings] ${message}`, error)
@@ -37,7 +40,9 @@ export function createSettingsStorage() {
     }
   }
 
+  // persist가 저장소 고를 때 부름: 없으면 메모리, 막혔으면 실패 남기는 메모리
   const resolve = () => {
+    // localStorage 없는 곳(시험 등)은 조용히 메모리, 접근부터 막히면 unavailable
     try {
       if (typeof localStorage === "undefined") return createMemoryStorage()
     } catch (error) {

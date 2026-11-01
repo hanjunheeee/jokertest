@@ -1,5 +1,5 @@
 // 가게 패널 (구매 알림·상품 칸·고른 상품 설명·분류 사이드바, 상태는 useStorePanel)
-// 가게 화면이 씀
+// StorePage가 씀
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import StoreItemGrid from "./StoreItemGrid.jsx"
@@ -25,6 +25,7 @@ import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 
+// 영상 끝나기 전엔 숨기고 누르기 막음, 확대·일괄구매 창은 패널 밖에 붙임
 export default function StorePanel({ visible = true }) {
   const panel = useStorePanel()
   const { activeCategory, currentItem, bulkMode, ownedItemIds } = panel
@@ -48,6 +49,7 @@ export default function StorePanel({ visible = true }) {
                 <div
                   className={`${PANEL_SCROLL_AREA_CLASS} ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`}
                 >
+                  {/* 인게임 재화 분류엔 일괄구매 숨김, 스킨 분류엔 안내 문구 */}
                   <StoreItemGrid
                     items={panel.visibleItems}
                     selectedItemId={currentItem?.id ?? null}
@@ -67,6 +69,7 @@ export default function StorePanel({ visible = true }) {
                   />
                 </div>
 
+                {/* 일괄구매 중엔 보유 표시·기본 지급 문구를 끔 */}
                 {currentItem ? (
                   <StoreSelectedItemDetail
                     item={currentItem}

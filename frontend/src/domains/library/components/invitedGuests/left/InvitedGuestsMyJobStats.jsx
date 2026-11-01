@@ -1,3 +1,5 @@
+// 나의 직업 전적 표 (플레이 횟수·승률·생존 횟수)
+// left/InvitedGuestsStatsCell.jsx가 씀
 import InvitedGuestsSectionTitle from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsSectionTitle.jsx"
 import InvitedGuestsStatValue from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsStatValue.jsx"
 import { STATS_SECTION_CLASS } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
@@ -12,6 +14,7 @@ import {
   TABLE_ROW_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/tableStyle.js"
 
+// 받은 세 값을 항목·기록 두 칸 표로 보임
 export default function InvitedGuestsMyJobStats({ playCount, winRate, survivalCount }) {
   const rows = [
     { label: "플레이 횟수", value: playCount },

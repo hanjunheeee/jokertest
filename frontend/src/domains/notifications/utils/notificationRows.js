@@ -1,5 +1,7 @@
 // 알림 한 줄 모양 검사 (쓸 수 있는 줄·알림 기반 소리 키·읽음 확정 줄)
 // 알림 스토어 액션과 병합 계산이 씀
+
+// id·소리 키가 빈 문자열이 아닌 객체만 알림 줄로 씀
 export function isUsableNotification(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false
   if (typeof value.id !== "string" || value.id.length === 0) return false

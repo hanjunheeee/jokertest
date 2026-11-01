@@ -43,12 +43,14 @@ export function useIntentLoad({
       .catch((error) => {
         if (genRef.current !== generation) return
 
+        // 실패 종류별 문구, 만료·잘못됨·이미 씀이면 가입 상태도 바꿈
         const view = intentErrorView(error)
         setIntentStatus("error")
         if (view.status) setStatus(view.status)
         setErrorMessage(view.message)
       })
 
+    // effect 정리 때 세대 올려 늦은 응답 버림
     return () => { genRef.current += 1 }
   }, [intentToken, intentAttempt, genRef, setIntentStatus, setEmailVerificationRequired, setEmail, setStatus, setErrorMessage])
 }

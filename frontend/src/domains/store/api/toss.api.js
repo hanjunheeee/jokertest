@@ -1,15 +1,16 @@
 // 토스 결제 SDK 불러오기와 테스트 결제창 열기
-// 충전 시작 흐름이 씀
-// 테스트 키 검사는 원래 currencyPurchase.store.js 내용 그대로 옮김 (바꾸지 않음)
+// currency/topup.js(충전 시작)가 씀
 import { CLIENT_KEY, SDK_URL } from "../constants/currencyPurchase.js"
 
-// SDK 스크립트는 한 번만 붙이고, 실패하면 다음에 다시 붙일 수 있게 비움
+// 불러오는 중인 SDK 보관, 스크립트를 한 번만 붙이기 위함
 let sdkLoading = null
+// 이미 있으면 바로 씀, 불러오는 중이면 그걸 같이 기다림
 const loadTossSdk = () => {
   if (typeof window.TossPayments === "function") return Promise.resolve(window.TossPayments)
   if (!sdkLoading) {
     sdkLoading = new Promise((resolve, reject) => {
       const script = document.createElement("script")
+      // 실패하면 스크립트 떼고 비움 (다음에 다시 붙이기 위함)
       const fail = () => {
         sdkLoading = null
         script.remove()
@@ -17,6 +18,7 @@ const loadTossSdk = () => {
       }
       script.src = SDK_URL
       script.async = true
+      // 불러왔는데 TossPayments가 없어도 실패로 봄
       script.onload = () => (typeof window.TossPayments === "function" ? resolve(window.TossPayments) : fail())
       script.onerror = fail
       document.head.appendChild(script)

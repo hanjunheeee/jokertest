@@ -17,6 +17,7 @@ export function mergeNotifications(existing, incoming) {
   const byId = new Map()
   for (const item of existing) byId.set(item.id, item)
 
+  // 모양 틀린 줄은 버림, 처음 보는 id면 그대로 넣음
   for (const raw of incoming) {
     if (!isUsableNotification(raw)) continue
     const prev = byId.get(raw.id)

@@ -1,3 +1,5 @@
+// 책 오른쪽 책갈피 두 개 (금지된 기록·초대받은 자들 탭 바꾸기)
+// book/LibraryBookShell.jsx가 씀
 import { motion } from "framer-motion"
 import { getLibraryTab } from "../../../../domains/library/constants/libraryTabs.js"
 import {
@@ -13,6 +15,7 @@ import {
 } from "../../../../domains/library/constants/libraryLayoutStyle.js"
 import PublicAsset from "../../../../shared/ui/PublicAsset"
 
+// 지금 탭 책갈피에 aria-current 표시, 누르면 그 탭으로
 export default function LibraryBookmarkTabs({ activeTabId, onTabChange }) {
   const forbiddenTab = getLibraryTab("forbiddenRecords")
   const invitedTab = getLibraryTab("invitedGuests")

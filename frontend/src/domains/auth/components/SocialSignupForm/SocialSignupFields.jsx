@@ -25,12 +25,14 @@ export default function SocialSignupFields({
 
   return (
     <>
+      {/* 가입 정보 불러오는 중 표시 */}
       {isIntentLoading && (
         <p data-testid="social-intent-loading" className="px-2 text-xs text-white/70">
           가입 정보를 불러오는 중입니다...
         </p>
       )}
 
+      {/* 서버가 인증을 요구할 때만 이메일 칸 + 인증 칸 */}
       {emailVerificationRequired && (
         <>
           <AuthInputSlot
@@ -71,6 +73,7 @@ export default function SocialSignupFields({
         compact
       />
 
+      {/* 인증이 필요한데 아직 보낼 수 없으면 안내 (보내는 중엔 숨김) */}
       {emailVerificationRequired && !canSubmit && !isSubmitting && (
         <p className={SIGNUP_HINT_TEXT_CLASS}>이메일 인증을 완료해야 가입할 수 있습니다.</p>
       )}

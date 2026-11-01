@@ -7,9 +7,11 @@ import { resolveUserId } from "./state.js"
 const buildReferenceEventId = (userId, itemId) =>
   `purchase:${userId}:${itemId}:${crypto.randomUUID()}`
 
+// 구매·다시 구매 액션 묶음, 지금 가게 화면은 storePurchase.store.js로 사서 시험만 부름
 export const purchaseActions = (set, get) => ({
   // 결과 모름으로 끝난 구매는 같은 id로 다시 보내 두 번 사지 않게 함
   purchase: async ({ itemId }) => {
+    // 로그인 안 했으면 거절
     const userId = resolveUserId()
     if (!userId) throw new Error("로그인이 필요합니다.")
 
@@ -19,6 +21,7 @@ export const purchaseActions = (set, get) => ({
       ? existingPending.referenceEventId
       : buildReferenceEventId(userId, itemId)
 
+    // 구매 줄을 대기로 표시
     set((state) => ({
       pendingPurchases: {
         ...state.pendingPurchases,
@@ -28,6 +31,7 @@ export const purchaseActions = (set, get) => ({
 
     try {
       const result = await economyApi.purchase({ itemId, referenceEventId })
+      // 그사이 초기화됐으면 상태 안 건드림, 아니면 확정 표시 뒤 지갑·보유 다시 받음
       if (get().requestGeneration !== generation) return result
       set((state) => ({
         pendingPurchases: {
@@ -38,6 +42,7 @@ export const purchaseActions = (set, get) => ({
       await get().fetchSummary()
       return result
     } catch (error) {
+      // 그사이 초기화됐으면 상태 안 건드림
       if (get().requestGeneration !== generation) throw error
 
       // 서버가 코드를 준 실패만 거절, 나머지는 결과 모름
@@ -57,5 +62,6 @@ export const purchaseActions = (set, get) => ({
     }
   },
 
+  // 같은 아이템 다시 구매 (결과 모름이면 같은 id로)
   retryPurchase: (itemId) => get().purchase({ itemId }),
 })

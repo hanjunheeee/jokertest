@@ -1,8 +1,11 @@
+// 초대받은 손님 직업별 도전과제 (id·이름·난이도·보상)
+// invitedGuests/pages.js·achievementLocation.js가 씀, 시험도 직접 봄
 import {
   INVITED_GUESTS_ASSETS,
   INVITED_GUESTS_CURRENCY_ASSETS,
 } from "../../constants/invitedGuests/assets.js"
 
+// 직업마다 10·20·30승 세 단계, 30승 보상은 그 직업 테두리
 export const INVITED_GUESTS_JOB_CHALLENGES = {
   noble: [
     {
