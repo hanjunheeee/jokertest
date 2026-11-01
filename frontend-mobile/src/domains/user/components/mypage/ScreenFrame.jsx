@@ -14,7 +14,8 @@ const BAR_CLASS =
 
 const MotionAsset = motion.create(PublicAsset)
 
-// 배경은 화면에 고정, 본문만 스크롤
+// 배경은 화면에 고정, 본문만 스크롤 (데스크톱처럼 배경 덮개 없음)
+// 제목은 데스크톱 화면에 없는 글이라 화면 읽기용으로만 둠
 export default function ScreenFrame({ title, onBack, children }) {
     return (
         <div className="relative flex min-h-full flex-col">
@@ -26,18 +27,12 @@ export default function ScreenFrame({ title, onBack, children }) {
                 transition={BG_FADE_TRANSITION}
                 className="pointer-events-none fixed inset-0 z-0 h-full w-full select-none object-cover object-bottom"
             />
-            {/* 그림 위 글자가 읽히게 살짝 어둡게 */}
-            <div className="pointer-events-none fixed inset-0 z-0 bg-black/35" aria-hidden="true" />
 
             <TopBar
                 onBack={onBack}
                 className={BAR_CLASS}
                 backIconClassName="block h-full w-full select-none object-contain"
-                title={
-                    <h1 className="min-w-0 flex-1 truncate text-center font-display text-[1.2rem] text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]">
-                        {title}
-                    </h1>
-                }
+                title={<h1 className="sr-only">{title}</h1>}
                 right={<SoundMenu look="user" />}
             />
 

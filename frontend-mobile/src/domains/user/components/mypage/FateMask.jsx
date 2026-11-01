@@ -5,29 +5,32 @@ import { motion } from "framer-motion"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import {
     FATE_MASK_DESC_INSET,
+    FATE_MASK_FRAME_IMG_CLASS,
     FATE_MASK_HIGHLIGHT_CLASS,
     FATE_MASK_TEXT_SHADOW,
     FATE_MASK_UI_FADE,
 } from "@/domains/user/constants/myPageLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-// 폰 폭에선 한 줄에 안 들어가서 줄바꿈 허용 (낱말 단위)
+// 데스크톱 FATE_MASK_DESC_CLASS와 같은 글꼴·색·크기, 폰 폭에선 한 줄에 안 들어가서 낱말 단위 줄바꿈만 다름
+const DESC_CLASS =
+    "pointer-events-none absolute flex items-end justify-center break-keep pb-[0.18em] text-center font-subheading app-text-scaled [--app-text-size:max(0.75rem,3.1cqi)] font-bold leading-[1.55] text-[#e8e4dc]"
+
+// 나타나는 움직임만 있고 누를 것 없음, 화면 읽기에서 숨김 (데스크톱과 같음)
 export default function FateMask({ description }) {
     const { prefix, highlight, suffix } = description
 
     return (
         <motion.div
-            className="relative w-full [container-type:inline-size]"
+            className="pointer-events-none relative w-full [container-type:inline-size]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={FATE_MASK_UI_FADE}
+            aria-hidden="true"
         >
-            <PublicAsset src={MY_PAGE_ASSETS.fateMaskFrame} alt="" className="block h-auto w-full select-none" />
+            <PublicAsset src={MY_PAGE_ASSETS.fateMaskFrame} alt="" className={FATE_MASK_FRAME_IMG_CLASS} />
 
-            <p
-                className="pointer-events-none absolute flex items-center justify-center break-keep text-center font-subheading text-[max(0.8rem,3.6cqi)] font-bold leading-[1.45] text-[#e8e4dc]"
-                style={{ ...FATE_MASK_DESC_INSET, textShadow: FATE_MASK_TEXT_SHADOW }}
-            >
+            <p className={DESC_CLASS} style={{ ...FATE_MASK_DESC_INSET, textShadow: FATE_MASK_TEXT_SHADOW }}>
                 <span>
                     {prefix ? `${prefix} ` : null}
                     <span className={FATE_MASK_HIGHLIGHT_CLASS}>[{highlight}]</span>

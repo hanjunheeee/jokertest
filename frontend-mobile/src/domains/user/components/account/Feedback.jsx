@@ -12,7 +12,7 @@ export default function Feedback({ msg }) {
     return (
         <p
             role={msg.type === "success" ? "status" : "alert"}
-            className={`block w-full break-keep font-subheading text-[0.9rem] font-bold leading-snug [text-shadow:0_1px_2px_rgba(255,255,255,0.35)] ${colorClass}`}
+            className={`block w-full break-keep font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-snug [text-shadow:0_1px_2px_rgba(0,0,0,0.7)] ${colorClass}`}
         >
             {msg.text}
         </p>

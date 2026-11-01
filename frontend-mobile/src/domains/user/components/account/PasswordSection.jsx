@@ -5,12 +5,13 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import FormActions from "./FormActions.jsx"
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 import { LockIcon } from "@m/shared/ui/input/InputIcons.jsx"
-import { MUTED_ICON_CLASS } from "@m/shared/ui/input/inputSlotLooks.js"
 import SectionTitle from "./SectionTitle.jsx"
 
 // 보낼 때 확인 소리 후 폼 처리로 넘김, 보내는 중엔 버튼 잠금
 export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoading, onSubmit }) {
     const handleSubmit = (event) => {
+        // 처리 함수가 없으면 아무것도 안 함 (데스크톱과 같음)
+        if (typeof onSubmit !== "function") return
         dispatchUiSfx("ui-confirm", event)
         onSubmit(event)
     }
@@ -27,7 +28,7 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
                     placeholder="현재 비밀번호"
                     autoComplete="current-password"
                     look="account"
-                    leadingIcon={<LockIcon className={MUTED_ICON_CLASS} />}
+                    leadingIcon={<LockIcon />}
                     passwordToggle
                 />
                 <InputSlot
@@ -37,7 +38,7 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
                     placeholder="새 비밀번호"
                     autoComplete="new-password"
                     look="account"
-                    leadingIcon={<LockIcon className={MUTED_ICON_CLASS} />}
+                    leadingIcon={<LockIcon />}
                     passwordToggle
                 />
                 <FormActions msg={pwMsg} confirmDisabled={pwLoading} />

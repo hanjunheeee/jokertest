@@ -5,12 +5,13 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import FormActions from "./FormActions.jsx"
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 import { UserIcon } from "@m/shared/ui/input/InputIcons.jsx"
-import { MUTED_ICON_CLASS } from "@m/shared/ui/input/inputSlotLooks.js"
 import SectionTitle from "./SectionTitle.jsx"
 
 // 보낼 때 확인 소리 후 폼 처리로 넘김, 보내는 중엔 버튼 잠금
 export default function NicknameSection({ nickname, setNickname, nicknameMsg, nicknameLoading, onSubmit }) {
     const handleSubmit = (event) => {
+        // 처리 함수가 없으면 아무것도 안 함 (데스크톱과 같음)
+        if (typeof onSubmit !== "function") return
         dispatchUiSfx("ui-confirm", event)
         onSubmit(event)
     }
@@ -27,7 +28,7 @@ export default function NicknameSection({ nickname, setNickname, nicknameMsg, ni
                     placeholder="새 닉네임"
                     autoComplete="off"
                     look="account"
-                    leadingIcon={<UserIcon className={MUTED_ICON_CLASS} />}
+                    leadingIcon={<UserIcon />}
                 />
                 <FormActions msg={nicknameMsg} confirmDisabled={nicknameLoading} />
             </form>
