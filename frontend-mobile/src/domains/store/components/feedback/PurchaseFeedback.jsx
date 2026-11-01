@@ -1,5 +1,5 @@
 // 구매 결과 안내 줄 (확인 중·완료·거절·결과 모름 + 결과 확인·다시 시도 버튼)
-// pages/StorePage·detail/DetailSheet·bulk/BulkSheet가 씀
+// panel/StorePanel·bulk/BulkSummary가 씀
 
 // 상태별 문구 (막힘·가격 바뀜은 문구 없이 오류 글만, 데스크톱 StorePurchaseFeedback과 같음)
 const MESSAGES = {
@@ -17,7 +17,7 @@ export default function PurchaseFeedback({ state, onCheck, onRetry, className = 
     if (state.status === "idle" && !state.error) return null
 
     return (
-        <div role="status" className={`rounded border border-[#9c793d] bg-[#241a10]/95 px-3 py-2 text-sm text-[#f3dfb4] ${className}`}>
+        <div role="status" className={`rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4] ${className}`}>
             {MESSAGES[state.status] ? <p className="text-[#f3dfb4]">{MESSAGES[state.status]}</p> : null}
             {state.error ? <p className="text-[#f3dfb4]">{state.error}</p> : null}
             {/* 결과 모름이면 결과 확인, 결과 모름·거절이면 다시 시도 */}

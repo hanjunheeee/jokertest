@@ -30,8 +30,6 @@ export default function StoreBackdrop({ videoRef, introDone, onSkip }) {
                     draggable={false}
                 />
             )}
-            {/* 배경 그림이 밝아 위 글자가 묻히지 않게 살짝 어둡게 */}
-            {introDone ? <div className="pointer-events-none absolute inset-0 bg-black/30" aria-hidden="true" /> : null}
             {/* 영상 위 투명 건너뛰기 (데스크톱 SettingIntroSkipLayer와 같은 동작) */}
             {!introDone ? (
                 <button

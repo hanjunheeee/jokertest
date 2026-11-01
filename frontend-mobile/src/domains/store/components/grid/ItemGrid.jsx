@@ -1,18 +1,18 @@
 // 상품 칸 목록 (위 줄·빈 목록 안내·상품 칸 격자)
-// pages/StorePage가 씀, 칸 하나는 grid/ItemSlot
+// panel/StorePanel이 씀, 칸 하나는 grid/ItemSlot
 import { getItemDisplayIcon } from "@/domains/store/constants/storeItems.js"
+import { EMPTY_MSG_CLASS, STORE_EMPTY_GRID_CLASS } from "@/domains/store/constants/storeLayoutStyle.js"
 import GridToolbar from "./GridToolbar.jsx"
 import ItemSlot from "./ItemSlot.jsx"
 
-// 폰 세로 3칸, 가로·태블릿은 더 많이
-const GRID_CLASS = "grid grid-cols-3 gap-x-2 gap-y-3 md:grid-cols-4 land:grid-cols-6 lg:grid-cols-6"
+// 데스크톱은 한 줄 4칸 → 폰 세로 3칸, 태블릿 4칸, 폰 가로 4칸 (간격은 데스크톱 최소값)
+const GRID_CLASS = "grid grid-cols-3 gap-x-2 gap-y-3.5 p-0.5 md:grid-cols-4 land:grid-cols-4"
 
-// 선택 규칙은 데스크톱 StoreItemGrid 그대로, 일반 모드에서 고르면 설명 시트도 엶
+// 선택 규칙은 데스크톱 StoreItemGrid 그대로 (고르면 아래 설명 칸이 바뀜)
 export default function ItemGrid({
     items,
     selectedItemId,
     onSelectItem,
-    onOpenDetail,
     deadPreviewIds,
     onToggleDeadPreview,
     onOpenSkinZoom,
@@ -33,7 +33,6 @@ export default function ItemGrid({
             onBulkSelectionChange?.(item.id)
         }
         onSelectItem(item)
-        if (!bulkMode) onOpenDetail?.()
     }
 
     // 일괄구매면 고른 목록에 있는지, 아니면 고른 한 상품인지
@@ -41,16 +40,14 @@ export default function ItemGrid({
 
     if (items.length === 0) {
         return (
-            <div className="flex min-h-48 w-full items-center justify-center px-4" role="status">
-                <p className="text-center font-display app-text-scaled [--app-text-size:1.35rem] font-medium leading-snug text-[#2a1810]/55">
-                    준비된 상품이 없습니다.
-                </p>
+            <div className={STORE_EMPTY_GRID_CLASS} role="status">
+                <p className={EMPTY_MSG_CLASS}>준비된 상품이 없습니다.</p>
             </div>
         )
     }
 
     return (
-        <div className="relative">
+        <div className="relative shrink-0">
             {showBulkPurchase ? (
                 <GridToolbar showSkinNotice={showSkinNotice} active={bulkMode} onToggle={() => onBulkModeChange?.(!bulkMode)} />
             ) : null}

@@ -4,8 +4,8 @@
 // 쪽 바탕: 데스크톱 책 그림은 가로 펼침면이라 한 쪽만 못 잘라 씀 → 같은 결의 양피지 그림
 export const PARCHMENT_SRC = "/frame/양피지 모달.png".normalize("NFD")
 
-// 테두리 확대 시트 닫기 그림 (데스크톱 확대 창과 같은 그림)
-export const SHEET_CLOSE_SRC = "/button/팝업 닫기 버튼.png".normalize("NFD")
+// 테두리 확대 창 닫기 그림 (데스크톱 확대 창과 같은 그림)
+export const ZOOM_CLOSE_SRC = "/button/팝업 닫기 버튼.png".normalize("NFD")
 
 // 잉크 글자 공통 (데스크톱 forbiddenRecords·invitedGuests 글자색)
 const INK = "font-subheading antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.08)]"

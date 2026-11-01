@@ -1,7 +1,7 @@
-// 직업 도전과제 목록 (받은 과제는 클리어 줄, 아니면 이름·진행도·보상) + 테두리 크게 보기 시트
+// 직업 도전과제 목록 (받은 과제는 클리어 줄, 아니면 이름·진행도·보상) + 테두리 크게 보기 창
 // guests/InvitedGuestsView.jsx가 뒷면 아래쪽에 씀
 import { useState } from "react"
-import BorderZoomSheet from "@m/domains/library/components/guests/BorderZoomSheet.jsx"
+import BorderZoomModal from "@m/domains/library/components/guests/BorderZoomModal.jsx"
 import ChallengeRewards from "@m/domains/library/components/guests/ChallengeRewards.jsx"
 import {
   INK_SOFT_CLASS,
@@ -32,7 +32,7 @@ export default function ChallengeList({ challenges, targetAchievementId = null }
           return (
             <li
               key={challenge.id}
-              className={`${TABLE_ROW_CLASS} py-2 ${targeted ? "rounded-sm bg-[#b50000]/10" : ""}`}
+              className={`${TABLE_ROW_CLASS} py-2`}
               data-achievement-id={challenge.id}
               data-notification-target={targeted ? "true" : undefined}
               aria-current={targeted ? "true" : undefined}
@@ -54,7 +54,7 @@ export default function ChallengeList({ challenges, targetAchievementId = null }
           )
         })}
       </ul>
-      <BorderZoomSheet item={zoomItem} onClose={() => setZoomItem(null)} />
+      <BorderZoomModal item={zoomItem} onClose={() => setZoomItem(null)} />
     </section>
   )
 }

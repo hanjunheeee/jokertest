@@ -4,7 +4,7 @@ import {
     SLOT_NAME_JOB_CLASS,
     SLOT_NAME_TITLE_CLASS,
     SLOT_NAME_WRAP_CLASS,
-} from "./slotStyle.js"
+} from "@/domains/store/constants/storeLayoutStyle.js"
 
 // 첫 '-' 앞은 위 작은 줄, 뒤는 큰 줄, '-'가 없으면 한 줄 (데스크톱 StoreItemSlotName과 같음)
 function splitName(name) {
@@ -13,12 +13,12 @@ function splitName(name) {
     return { primary: name.slice(0, dashIndex), secondary: name.slice(dashIndex + 1) }
 }
 
-// 이름 칸 모양은 데스크톱 값 그대로 (오른쪽은 확대 버튼 자리만큼 비움)
-export default function SlotName({ name, reserveRight = false }) {
+// 이름 칸 모양은 데스크톱 상수 그대로
+export default function SlotName({ name }) {
     const { primary, secondary } = splitName(String(name))
 
     return (
-        <div className={`${SLOT_NAME_WRAP_CLASS} ${reserveRight ? "pr-5" : ""}`}>
+        <div className={SLOT_NAME_WRAP_CLASS}>
             {secondary ? (
                 <>
                     <p className={SLOT_NAME_JOB_CLASS}>{primary}</p>
