@@ -1,19 +1,9 @@
+// 전적 저장소 파일, 한 판 전적 쓰기(트랜잭션) + 전적 행 읽기(판 하나·직업 통계·업적 진행용)
+// 판 기록 서비스·전적 통계 서비스가 부름, 판정·집계는 서비스 몫이라 행 그대로 돌려줌
 const db = require("../../models");
-const gameSessionCore = require("../../game-core/gameSession");
-const roleStatisticsPolicy = require("../../services/game/roleStatistics");
-const economyService = require("../../services/economy");
 
-let economyServiceRef = economyService;
-function __setEconomyServiceForTests(fakeEconomyService) {
-    economyServiceRef = fakeEconomyService ?? economyService;
-}
-
-exports.persistGameResult = async (session, { completed, disconnectedUuid } = {}) => {
-    return exports.persistGameResultRecord(
-        gameSessionCore.buildGameResultRecord(session, { completed, disconnectedUuid }),
-    );
-};
-
+// 한 판 전적 쓰기, 판·참가자·계정 통계를 한 트랜잭션으로 (중간 실패면 셋 다 되돌림)
+// 같은 판 id 다시 저장(동시 경합 포함)은 실패 아니고 persisted:false로 넘김
 exports.persistGameResultRecord = async (record) => {
     const { result, players = [], stats = [] } = record;
 
@@ -76,8 +66,10 @@ exports.persistGameResultRecord = async (record) => {
     }
 };
 
+// Sequelize 행이면 plain 객체로, 이미 plain이면 그대로
 const toPlain = (row) => (row && typeof row.get === "function" ? row.get({ plain: true }) : row);
 
+// 판 하나 결과·참가자 (없으면 null)
 exports.findGameResultById = async (gameId) => {
     const row = await db.GameResult.findOne({
         where: { id: gameId },
@@ -114,29 +106,6 @@ exports.findGameResultById = async (gameId) => {
     };
 };
 
-const EXCLUDED_GAME_SOURCES = new Set(['development', 'test']);
-const isRoleStatsEligible = (settings) => !EXCLUDED_GAME_SOURCES.has(settings?.gameSource?.value);
-
-const toRoleStatisticsRow = (playerRow) => ({
-    user_id: playerRow.user_id,
-    role: playerRow.role,
-    won: playerRow.won === true || playerRow.won === 1 ? true : playerRow.won === false || playerRow.won === 0 ? false : null,
-    is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
-});
-
-const findRoleStatisticsRows = async (where) => {
-    const rows = await db.GameResultPlayer.findAll({
-        attributes: ["user_id", "role", "won", "is_alive"],
-        where: { ...where, won: { [db.Sequelize.Op.ne]: null } },
-        include: [{ model: db.GameResult, attributes: ["settings"], required: true }],
-        raw: true,
-        nest: true,
-    });
-    return rows
-        .filter((row) => isRoleStatsEligible(row.GameResult?.settings))
-        .map(toRoleStatisticsRow);
-};
-
 // 직업 통계용 판 기록 행 (승패 정해진 것만, 판 설정 붙임), 판정·집계는 서비스
 const findRoleStatisticsRowsWhere = (where) => db.GameResultPlayer.findAll({
     attributes: ["user_id", "role", "won", "is_alive"],
@@ -157,122 +126,3 @@ exports.findAchievementProgressRows = (userId) => db.GameResultPlayer.findAll({
     raw: true,
     nest: true,
 });
-
-exports.getMyRoleStatistics = async (userId) => {
-    const rows = await findRoleStatisticsRows({ user_id: userId });
-    const statsByRole = new Map(
-        roleStatisticsPolicy.aggregateRoleStatistics(rows).map((entry) => [entry.role, entry]),
-    );
-    return roleStatisticsPolicy.ROLE_CODES.map((role) => statsByRole.get(role) ?? {
-        user_id: userId,
-        role,
-        games: 0,
-        wins: 0,
-        survivalCount: 0,
-        winRate: 0,
-    });
-};
-
-exports.getAccountRecordSummaries = async (userIds) => {
-    const summaries = new Map((userIds ?? []).map((userId) => [userId, { totalGames: 0, winRate: 0 }]));
-    if (summaries.size === 0) return summaries;
-
-    const rows = await findRoleStatisticsRows({ user_id: { [db.Sequelize.Op.in]: [...summaries.keys()] } });
-
-    const totalsByUser = new Map();
-    for (const entry of roleStatisticsPolicy.aggregateRoleStatistics(rows)) {
-        const total = totalsByUser.get(entry.user_id) ?? { games: 0, wins: 0 };
-        total.games += entry.games;
-        total.wins += entry.wins;
-        totalsByUser.set(entry.user_id, total);
-    }
-
-    for (const [userId, { games, wins }] of totalsByUser) {
-        if (!summaries.has(userId)) continue;
-        summaries.set(userId, {
-            totalGames: games,
-            winRate: games > 0 ? Math.round((wins / games) * 100) : 0,
-        });
-    }
-
-    return summaries;
-};
-
-exports.getRoleRanking = async (role) => {
-    const rows = await findRoleStatisticsRows({ role });
-    const ranked = roleStatisticsPolicy.buildRoleRanking(roleStatisticsPolicy.aggregateRoleStatistics(rows));
-    if (ranked.length === 0) return [];
-
-    const users = await db.User.findAll({
-        where: { uuid: ranked.map((entry) => entry.user_id) },
-        attributes: ["uuid", "nickname", "profile_image_url"],
-        raw: true,
-    });
-    const userByUuid = new Map(users.map((user) => [user.uuid, user]));
-    const loadoutsByUuid = await economyServiceRef.getPublicProfileLoadouts(ranked.map((entry) => entry.user_id));
-
-    return ranked.map((entry, index) => {
-        const loadout = loadoutsByUuid[entry.user_id] ?? { profilePhotoId: null, profileBorderId: null };
-        return {
-            rank: index + 1,
-            uuid: entry.user_id,
-            nickname: userByUuid.get(entry.user_id)?.nickname ?? null,
-            profile_image_url: userByUuid.get(entry.user_id)?.profile_image_url ?? null,
-            accountProfilePhotoId: loadout.profilePhotoId,
-            accountProfileBorderId: loadout.profileBorderId,
-            games: entry.games,
-            wins: entry.wins,
-            winRate: entry.winRate,
-        };
-    });
-};
-
-exports.getHighestWinRateRole = async (userId) => {
-    const rows = await findRoleStatisticsRows({ user_id: userId });
-    return roleStatisticsPolicy.selectMaskOfFateRole(roleStatisticsPolicy.aggregateRoleStatistics(rows));
-};
-
-const toProgressRow = (playerRow) => ({
-    role: playerRow.role,
-    won: playerRow.won === true || playerRow.won === 1,
-    is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
-});
-
-exports.getAchievementProgressStats = async (userId) => {
-    const rows = await db.GameResultPlayer.findAll({
-        attributes: ["role", "won", "is_alive"],
-        where: { user_id: userId },
-        include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
-        raw: true,
-        nest: true,
-    });
-
-    const eligibleRows = rows
-        .filter((row) => roleStatisticsPolicy.isAchievementRewardEligibleGame({
-            completed: row.GameResult?.completed === true || row.GameResult?.completed === 1,
-            gameSourceValue: row.GameResult?.settings?.gameSource?.value,
-        }))
-        .map(toProgressRow);
-
-    const roleWinsByRole = new Map();
-    let survivals = 0;
-    let wins = 0;
-    for (const row of eligibleRows) {
-        if (row.is_alive) survivals += 1;
-        if (row.won) {
-            wins += 1;
-            if (typeof row.role === "string") {
-                roleWinsByRole.set(row.role, (roleWinsByRole.get(row.role) ?? 0) + 1);
-            }
-        }
-    }
-
-    return {
-        completedGames: eligibleRows.length,
-        survivals,
-        wins,
-        roleWinsByRole,
-    };
-};
-
-exports.__setEconomyServiceForTests = __setEconomyServiceForTests;
