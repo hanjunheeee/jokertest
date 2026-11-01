@@ -8,6 +8,8 @@ import FateMask from "@m/domains/user/components/mypage/FateMask.jsx"
 import BloodRecord from "@m/domains/user/components/mypage/BloodRecord.jsx"
 import StaleNotice from "@m/domains/user/components/mypage/StaleNotice.jsx"
 import MyPageActions from "@m/domains/user/components/mypage/MyPageActions.jsx"
+import ProfileEditSheet from "@m/domains/user/components/profileEdit/ProfileEditSheet.jsx"
+import WearSheet from "@m/domains/user/components/wear/WearSheet.jsx"
 import { MY_PAGE_SHEETS, useMyPageSheet } from "@m/domains/user/hooks/mypage/useMyPageSheet.js"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
 import { useMyProfile } from "@/shared/hooks/useMyProfile.js"
@@ -16,13 +18,12 @@ import { useMyProfile } from "@/shared/hooks/useMyProfile.js"
 export default function MyPage() {
     const navigate = useNavigate()
     const { profile, stats, description, loading, isStale, error, retry } = useMyProfile()
-    const { openSheet } = useMyPageSheet()
+    const { openSheet, sheetProps } = useMyPageSheet()
 
     const ready = !loading && profile
     const showNotice = isStale || (!loading && !profile)
 
-    // 프로필 수정·스킨&카드 착용 시트는 다른 담당이 만듦
-    // 붙일 때: 여기서 sheetProps(MY_PAGE_SHEETS.profileEdit)를 { open, onClose }로 넘김
+    // 프로필 수정·스킨&카드 착용 시트는 주소 ?sheet=로 열고 닫음 (폰 뒤로 가기로 닫히게)
     return (
         <ScreenFrame title="마이페이지" onBack={() => navigate("/lobby")}>
             <div className="mx-auto flex w-full max-w-[26rem] flex-col gap-3 px-4 pb-4 md:max-w-[30rem] land:max-w-[52rem]">
@@ -60,6 +61,9 @@ export default function MyPage() {
                     onEmoticons={() => navigate("/mypage/emoticons")}
                 />
             </ShellBottom>
+
+            <ProfileEditSheet {...sheetProps(MY_PAGE_SHEETS.profileEdit)} />
+            <WearSheet {...sheetProps(MY_PAGE_SHEETS.skinCardWear)} />
         </ScreenFrame>
     )
 }
