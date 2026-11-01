@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+// 마이그레이션 명령 파일, 적용할 마이그레이션 목록 + status·migrate·resolve-failure 명령
+// 운영자가 직접 돌림, DB 시험들이 MIGRATIONS 목록을 가져다 씀
 const path = require('path');
 
 const migrationRunner = require('../db/migrationRunner');
@@ -24,8 +26,10 @@ const addSignupEmailVerification = require('../db/migrations/0016-signup-email-v
 const addSocialSignupEmail = require('../db/migrations/0017-social-signup-email');
 const addCurrencyProductsTopupOrders = require('../db/migrations/0018-add-currency-products-topup-orders');
 const addEmojiPalettes = require('../db/migrations/0019-add-emoji-palettes');
+// 적용 순서 그대로 (새 마이그레이션은 끝에 붙임)
 const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes];
 
+// 첫 낱말은 명령, 나머지는 --confirm · --name (값은 띄어 쓰거나 = 로)
 const parseArgs = (argv) => {
     const [command, ...rest] = argv;
     const options = {};
@@ -38,6 +42,7 @@ const parseArgs = (argv) => {
     return { command, options };
 };
 
+// 이름·상태·적용 시각 한 줄씩, 체크섬 다르면 표시·오류 있으면 아래에
 const printStatusTable = (rows) => {
     for (const row of rows) {
         const checksumFlag = row.checksumMatches === false ? ' [체크섬 불일치]' : '';
@@ -46,6 +51,7 @@ const printStatusTable = (rows) => {
     }
 };
 
+// status: 상태만 보여 줌, failed·running이 있으면 종료 코드 1
 const runStatus = async (db) => {
     const rows = await migrationRunner.getStatus({ sequelize: db.sequelize, migrations: MIGRATIONS });
     console.log('마이그레이션 상태:');
@@ -61,6 +67,7 @@ const runStatus = async (db) => {
     return (hasFailed || hasStuckRunning) ? 1 : 0;
 };
 
+// migrate: failed·running 이력이 있으면 아예 시작 안 함, 실패하면 원인 + 지금 상태 보여 주고 1
 const runMigrate = async (db) => {
     const preStatus = await migrationRunner.getStatus({ sequelize: db.sequelize, migrations: MIGRATIONS });
     const blockedBefore = preStatus.filter((r) => r.status === 'failed' || r.status === 'running');
@@ -88,6 +95,7 @@ const runMigrate = async (db) => {
     }
 };
 
+// resolve-failure: 이름과 --confirm 둘 다 있어야 실패 이력 지움 (복구 끝난 뒤에만)
 const runResolveFailure = async (db, options) => {
     if (!options.name) {
         console.error('--name <migration-name>이 필요합니다.');
@@ -111,6 +119,7 @@ const runResolveFailure = async (db, options) => {
     }
 };
 
+// 명령 확인 → DB 열기 → 명령 실행 → 무슨 일이 있어도 DB 닫기
 const main = async () => {
     const { command, options } = parseArgs(process.argv.slice(2));
     if (!['status', 'migrate', 'resolve-failure'].includes(command)) {
@@ -132,6 +141,7 @@ const main = async () => {
     process.exitCode = exitCode;
 };
 
+// 직접 실행할 때만 돌림 (시험이 MIGRATIONS만 가져가도 안 돎)
 if (require.main === module) {
     main().catch((error) => {
         console.error(`[migrate-db] 처리되지 않은 오류: ${error.message}`);

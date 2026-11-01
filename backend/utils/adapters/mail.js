@@ -1,10 +1,14 @@
 'use strict';
 
+// 메일 보내기 어댑터 파일, 메일 문구 3종 + HTTPS 메일 게이트웨이 발송기 + 시험용 메모리 발송기
+// 비번 재설정 요청·가입 인증번호 요청 서비스가 HTTP 발송기를 만들어 씀, 시험은 메모리 발송기를 넣음
 const https = require('https');
 const { URL } = require('url');
 
+// 보낼 수 있는 메일 목적 (비번 재설정 링크 · 소셜 전용 계정 안내 · 가입 인증번호)
 const TEMPLATES = new Set(['PASSWORD_RESET', 'SOCIAL_LOGIN_GUIDE', 'SIGNUP_CODE']);
 
+// 목적마다 제목·본문 만들기, 모르는 목적이면 던짐
 const renderTemplate = (template, params = {}) => {
     if (template === 'PASSWORD_RESET') {
         return {
@@ -21,6 +25,7 @@ const renderTemplate = (template, params = {}) => {
         };
     }
     if (template === 'SIGNUP_CODE') {
+        // 남은 분은 최소 1분으로 적음
         const minutes = Math.max(1, Math.floor((params.expiresInSec ?? 0) / 60));
         return {
             subject: '[Joker] 가입 인증번호',
@@ -32,19 +37,23 @@ const renderTemplate = (template, params = {}) => {
     throw new Error('알 수 없는 메일 목적입니다.');
 };
 
+// 진짜 발송기: 설정은 PASSWORD_RESET_MAIL_* 환경 변수 (가입 인증번호도 같이 씀)
 const createHttpMailAdapter = ({
     gatewayUrl = process.env.PASSWORD_RESET_MAIL_GATEWAY_URL,
     gatewayToken = process.env.PASSWORD_RESET_MAIL_GATEWAY_TOKEN,
     from = process.env.PASSWORD_RESET_MAIL_FROM,
+    // 기다리는 시간은 양의 정수일 때만, 아니면 5초
     timeoutMs = (() => {
         const parsed = Number(process.env.PASSWORD_RESET_MAIL_TIMEOUT_MS);
         return Number.isInteger(parsed) && parsed > 0 ? parsed : 5000;
     })(),
 } = {}) => {
+    // 실패는 { ok: false }로만 돌려줌 (모르는 목적만 던짐), 원인은 밖에 안 드러냄
     const sendMail = async ({ to, template, params = {} }) => {
         if (!TEMPLATES.has(template)) {
             throw new Error('알 수 없는 메일 목적입니다.');
         }
+        // 설정 빠졌거나 받는 주소 없으면 안 보냄
         if (!gatewayUrl || !gatewayToken || !from || typeof to !== 'string' || !to) {
             return { ok: false };
         }
@@ -56,6 +65,7 @@ const createHttpMailAdapter = ({
             return { ok: false };
         }
 
+        // 게이트웨이 주소가 https일 때만 (토큰·인증번호가 평문으로 안 나가게)
         let target;
         try {
             target = new URL(gatewayUrl);
@@ -68,6 +78,7 @@ const createHttpMailAdapter = ({
 
         const payload = JSON.stringify({ from, to, subject: rendered.subject, text: rendered.text });
 
+        // 응답·오류·시간 초과 중 먼저 온 것 하나로만 끝냄
         return await new Promise((resolve) => {
             let settled = false;
             const finish = (result) => {
@@ -85,6 +96,7 @@ const createHttpMailAdapter = ({
                 },
                 timeout: timeoutMs,
             }, (res) => {
+                // 본문은 버리고 2xx면 성공
                 res.on('data', () => {});
                 res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -105,6 +117,7 @@ const createHttpMailAdapter = ({
     return { sendMail };
 };
 
+// 시험용 발송기: 보낸 메일을 outbox에 쌓고, 다음 한 번 실패(결과·던지기)를 넣을 수 있음
 const createMemoryMailAdapter = () => {
     const outbox = [];
     let nextFailure = null;
@@ -113,6 +126,7 @@ const createMemoryMailAdapter = () => {
         if (!TEMPLATES.has(template)) {
             throw new Error('알 수 없는 메일 목적입니다.');
         }
+        // 진짜와 같게 문구 만들기는 거침
         renderTemplate(template, params);
 
         if (nextFailure === 'throw') {

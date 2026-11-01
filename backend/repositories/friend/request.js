@@ -1,10 +1,10 @@
 // 친구 신청 저장소 파일, 신청 찾기·만들기·상태 바꾸기·취소 + 신청 대상 닉네임 검색
-// 친구 서비스가 모듈 객체로 부름 (시험이 이 객체 이름을 갈아끼움)
+// 친구 서비스(requests·list·blocks)가 모듈 객체로 부름 (시험이 이 객체 함수를 바꿔 끼움)
 
 const db     = require("../../models");
 const { Op } = db.Sequelize;
 
-// 검색에서 차단 관계 빼기용, 모듈 객체로 부름 (시험이 block.js 이름 갈아끼워도 먹게)
+// 검색에서 차단 관계 빼기용, 모듈 객체로 부름 (시험이 block.js 함수를 바꿔 끼워도 먹게)
 const blockRepository = require("./block");
 
 // 나에게 온 대기 신청 + 보낸 사람 프로필
@@ -19,7 +19,7 @@ exports.findIncomingRequests = async (uuid) => {
     });
 };
 
-// 두 사람 사이 대기 신청 하나 (방향 무관)
+// 두 사람 사이 대기 신청 하나, 누가 보냈든 (겹친 신청 막기)
 exports.findPendingRequest = async (uuidA, uuidB) => {
     return await db.FriendRequest.findOne({
         where: {
@@ -32,7 +32,7 @@ exports.findPendingRequest = async (uuidA, uuidB) => {
     });
 };
 
-// 대기 신청 한 줄 만들기
+// 대기 신청 한 줄 만들기 (두 사람 사이 대기는 DB가 한 줄만 받음)
 exports.createFriendRequest = async (requesterId, receiverId, options = {}) => {
     return await db.FriendRequest.create({
         requester_id: requesterId,
@@ -46,7 +46,7 @@ exports.findRequestById = async (requestId, options = {}) => {
     return await db.FriendRequest.findOne({ where: { id: requestId }, ...options });
 };
 
-// 신청 상태 바꾸고 응답 시각 남기기
+// 신청 상태 바꾸고 응답 시각 남기기 (수락·거절)
 exports.updateFriendRequestStatus = async (requestId, status, options = {}) => {
     return await db.FriendRequest.update(
         { status, responded_at: new Date() },
@@ -88,7 +88,7 @@ exports.searchUsersByNickname = async (query, myUuid) => {
     });
 };
 
-// 두 사람 사이 대기 신청 전부 취소 (차단할 때)
+// 두 사람 사이 대기 신청 전부 취소 (차단할 때, 지우지 않고 이력으로 남김)
 exports.cancelPendingRequestsBetween = async (uuidA, uuidB, options = {}) => {
     return await db.FriendRequest.update(
         { status: 'CANCELLED', responded_at: new Date() },
@@ -105,7 +105,7 @@ exports.cancelPendingRequestsBetween = async (uuidA, uuidB, options = {}) => {
     );
 };
 
-// 내가 낀 신청들 지금 상태
+// 내가 낀 신청들 지금 상태 (화면이 놓친 결과 다시 받기, 남의 신청은 안 보임)
 exports.findRequestResults = async (uuid, requestIds, options = {}) => {
     return await db.FriendRequest.findAll({
         where: {
