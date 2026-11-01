@@ -7,19 +7,8 @@ const { getDeps } = require('./deps');
 const { toPublicNotification } = require('./view');
 const { NOTIFICATION_TYPES, friendRequestSourceKey, gameInviteSourceKey, achievementSourceKey, SYSTEM_WELCOME } = require('./constants');
 const { emitNotificationCreated } = require('./notify');
-
-// 같은 사용자·출처 키 유일 제약에 걸린 건지 (다른 유일 오류는 아님)
-const isDuplicateNotification = (error, db, userId, sourceKey) => {
-    const UniqueConstraintError = db?.Sequelize?.UniqueConstraintError;
-    const isUniqueError = UniqueConstraintError
-        ? error instanceof UniqueConstraintError
-        : error?.name === 'SequelizeUniqueConstraintError';
-    if (!isUniqueError) return false;
-    const constraint = error?.parent?.constraint ?? error?.original?.constraint;
-    if (constraint === 'notifications_user_source_unique') return true;
-    if (Object.prototype.hasOwnProperty.call(error?.fields ?? {}, 'notifications_user_source_unique')) return true;
-    return error?.fields?.user_id === userId && error?.fields?.source_key === sourceKey;
-};
+const notificationRepository = require('../../repositories/notification');
+const { withTransaction } = require('../../repositories/common');
 
 // 출처 키로 한 번만 만듦, 이미 있으면 created false로 있던 것 돌려줌
 const createNotification = async ({ userId, type, sourceKey, title, body, target = null }, options = {}) => {
@@ -45,18 +34,11 @@ const createNotification = async ({ userId, type, sourceKey, title, body, target
     };
 
     try {
-        const [row, created] = await db.Notification.findOrCreate({
-            where: { user_id: userId, source_key: sourceKey },
-            defaults,
-            transaction: options.transaction,
-        });
+        const [row, created] = await notificationRepository.findOrCreateBySource(db, { userId, sourceKey, defaults }, options.transaction);
         return { created, notification: toPublicNotification(row) };
     } catch (error) {
-        if (!isDuplicateNotification(error, db, userId, sourceKey)) throw error;
-        const existing = await db.Notification.findOne({
-            where: { user_id: userId, source_key: sourceKey },
-            transaction: options.transaction,
-        });
+        if (!notificationRepository.isDuplicateSourceError(error, db, userId, sourceKey)) throw error;
+        const existing = await notificationRepository.findBySource(db, { userId, sourceKey }, options.transaction);
         return { created: false, notification: toPublicNotification(existing) };
     }
 };
@@ -122,7 +104,7 @@ const ensureSystemWelcome = async (userId) => {
     }
 
     const { db } = getDeps();
-    const result = await db.sequelize.transaction(async (transaction) => createNotification({
+    const result = await withTransaction(db, async (transaction) => createNotification({
         userId,
         type: SYSTEM_WELCOME.type,
         sourceKey: SYSTEM_WELCOME.sourceKey,

@@ -2,8 +2,9 @@
 
 // 알림 관리 파일, 목록 · 하나 읽음 · 읽은 것 지우기
 // 알림 컨트롤러가 부름
-const { Op } = require('sequelize');
 const { createError } = require('../../utils/appError');
+const notificationRepository = require('../../repositories/notification');
+const { withTransaction } = require('../../repositories/common');
 const { getDeps } = require('./deps');
 const { toPublicNotification } = require('./view');
 const { UUID_PATTERN } = require('./constants');
@@ -12,10 +13,7 @@ const { UUID_PATTERN } = require('./constants');
 const listForUser = async (userId) => {
     if (typeof userId !== 'string' || userId.length === 0) return [];
     const { db } = getDeps();
-    const rows = await db.Notification.findAll({
-        where: { user_id: userId },
-        order: [['created_at', 'DESC'], ['id', 'DESC']],
-    });
+    const rows = await notificationRepository.listByUser(db, userId);
     return rows.map(toPublicNotification);
 };
 
@@ -26,24 +24,15 @@ const markRead = async (userId, notificationId) => {
     }
 
     const { db, now } = getDeps();
-    return db.sequelize.transaction(async (transaction) => {
-        const row = await db.Notification.findOne({
-            where: { id: notificationId, user_id: userId },
-            transaction,
-        });
+    return withTransaction(db, async (transaction) => {
+        const row = await notificationRepository.findForUser(db, { notificationId, userId }, transaction);
         if (!row) throw createError('알림을 찾을 수 없습니다.', 404);
 
         if (row.read_at === null || row.read_at === undefined) {
-            await db.Notification.update(
-                { read_at: now() },
-                { where: { id: notificationId, user_id: userId, read_at: null }, transaction },
-            );
+            await notificationRepository.markReadIfUnread(db, { notificationId, userId, readAt: now() }, transaction);
         }
 
-        const confirmed = await db.Notification.findOne({
-            where: { id: notificationId, user_id: userId },
-            transaction,
-        });
+        const confirmed = await notificationRepository.findForUser(db, { notificationId, userId }, transaction);
         return toPublicNotification(confirmed);
     });
 };
@@ -55,12 +44,7 @@ const deleteReadForUser = async (userId) => {
     }
 
     const { db } = getDeps();
-    const deletedCount = await db.Notification.destroy({
-        where: {
-            user_id: userId,
-            read_at: { [Op.ne]: null },
-        },
-    });
+    const deletedCount = await notificationRepository.deleteReadByUser(db, userId);
 
     return { deletedCount };
 };
