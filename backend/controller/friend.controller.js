@@ -1,5 +1,5 @@
-const friendService = require("../service/friend.service");
-const gameInviteService = require("../service/gameInvite.service");
+const friendService = require("../services/friend");
+const gameInviteService = require("../services/friend/gameInvite");
 const { createError } = require("../utils/appError");
 const { emitToUser } = require("../socket/emitter");
 

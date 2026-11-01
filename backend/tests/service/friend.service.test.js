@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const db = require('../../models');
-const friendService = require('../../service/friend.service');
+const friendService = require('../../services/friend');
 const friendRepository = require('../../repositories/friend.repositories');
 const economyService = require('../../services/economy');
 

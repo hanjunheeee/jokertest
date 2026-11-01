@@ -72,8 +72,8 @@ const resetSchema = async () => {
 const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
 
 const db = require('../../models');
-const friendService = require('../../service/friend.service');
-const gameInviteService = require('../../service/gameInvite.service');
+const friendService = require('../../services/friend');
+const gameInviteService = require('../../services/friend/gameInvite');
 const notificationService = require('../../services/notification');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');

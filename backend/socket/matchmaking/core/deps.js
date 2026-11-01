@@ -3,7 +3,7 @@
 const userRepository = require('../../../repositories/user.repositories')
 const economyService = require('../../../services/economy')
 const gameResultRepository = require('../../../repositories/gameResult.repositories')
-const gameInviteModule = require('../../../service/gameInvite.service')
+const gameInviteModule = require('../../../services/friend/gameInvite')
 
 // 지금 쓰는 참조 묶음 (바꿀 땐 이 객체 칸만 바꿈, matchmaking 안에서는 deps.xxx로 읽음)
 const deps = {

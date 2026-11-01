@@ -64,7 +64,7 @@ const resetSchema = async () => {
 const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_TABLE);
 
 const db = require('../../models');
-const friendService = require('../../service/friend.service');
+const friendService = require('../../services/friend');
 const notificationService = require('../../services/notification');
 const achievementService = require('../../services/achievementService');
 const gameResultRepository = require('../../repositories/gameResult.repositories');

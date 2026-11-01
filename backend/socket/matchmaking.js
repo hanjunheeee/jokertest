@@ -19,7 +19,7 @@ const {
     validateCreateRoomRoleComposition,
     resolveRoleComposition,
 } = require('../game-core/roleComposition')
-const gameInviteModule = require('../service/gameInvite.service')
+const gameInviteModule = require('../services/friend/gameInvite')
 const kickReceiptStore = require('./kickReceiptStore')
 const channelMembership = require('./channelMembership')
 // 대기방·매칭 장부는 matchmaking/state

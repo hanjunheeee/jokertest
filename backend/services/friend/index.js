@@ -1,9 +1,9 @@
-const db = require("../models");
-const friendRepository = require("../repositories/friend.repositories");
-const economyService = require("../services/economy");
-const notificationService = require("../services/notification");
-const gameInviteService = require("./gameInvite.service");
-const { createError } = require("../utils/appError");
+const db = require("../../models");
+const friendRepository = require("../../repositories/friend.repositories");
+const economyService = require("../economy");
+const notificationService = require("../notification");
+const gameInviteService = require("./gameInvite");
+const { createError } = require("../../utils/appError");
 
 const resolvePresenceStatus = (presence) => {
     if (!presence) return 'UNKNOWN';

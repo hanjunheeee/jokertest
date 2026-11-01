@@ -2,16 +2,16 @@
 
 const crypto = require('node:crypto');
 
-const friendRepository = require('../repositories/friend.repositories');
-const notificationService = require('../services/notification');
-const { createError } = require('../utils/appError');
+const friendRepository = require('../../../repositories/friend.repositories');
+const notificationService = require('../../notification');
+const { createError } = require('../../../utils/appError');
 
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../models'); },
+    get db() { return overrides.db ?? require('../../../models'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
         try {
-            return require('../socket/emitter').emitToUser;
+            return require('../../../socket/emitter').emitToUser;
         } catch {
             return null;
         }
