@@ -5,8 +5,8 @@
 const { createError } = require('../../../utils/appError');
 const { LEASE_MS, SAFE_LOG_CODE, ORDER_STATUS } = require('./constants');
 
-// db 안 넘기면 진짜 models (부를 때 require)
-const defaultDb = () => require('../../../models');
+// db 안 넘기면 진짜 models (db 손잡이 창구로 부를 때 require)
+const defaultDb = () => require('../../../repositories/common/db');
 
 // 주입 db 먼저
 const dbOf = (deps) => deps.db ?? defaultDb();

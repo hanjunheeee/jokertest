@@ -8,7 +8,7 @@ const { getMyRoleStatistics,
         getRoleRanking }  = require("../controllers/game/roleStatistics");
 const { getMyAchievements } = require("../controllers/achievement.controller");
 const { getEmojiPalette,
-        saveEmojiPalette }  = require("../controllers/emojiPalette.controller");
+        saveEmojiPalette }  = require("../controllers/economy/emojiPalette");
 const { verifyToken }    = require("../middlewares/auth.middleware");
 
 router.get("/me/profile",   verifyToken, getMyProfile);

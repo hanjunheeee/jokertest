@@ -1,6 +1,8 @@
 'use strict';
 
-const economyService = require('../services/economy');
+// 이모티콘 팔레트 처리기 파일, 내 팔레트 읽기 · 저장 (오류는 이 파일 응답 모양으로 바로 보냄)
+// routes/user.routes.js가 /me/emoji-palette에 부름 (경제 서비스는 모듈 객체로)
+const economyService = require('../../services/economy');
 
 const ALLOWED_SAVE_FIELDS = new Set(['slots', 'expectedRevision']);
 
