@@ -1,11 +1,11 @@
 import { createElement } from "react"
 
-import { LOBBY_ASSETS } from "../../lobby/constants/lobbyAssets.js"
+import { LOBBY_ASSETS } from "../../../shared/constants/lobbyAssets.js"
 import {
   LOBBY_NOTIFICATION_ENTRY_BADGE_CLASS,
   LOBBY_NOTIFICATION_ENTRY_BTN_CLASS,
   LOBBY_NOTIFICATION_ENTRY_BTN_IMG_CLASS,
-} from "../../lobby/constants/lobbyLayoutStyle.js"
+} from "../../../shared/constants/lobbyLayoutStyle.js"
 import PublicAsset from "../../../shared/ui/PublicAsset.jsx"
 import { useNotificationsStore, selectUnreadCount } from "../store/notifications.store.js"
 import { useSettingsStore } from "../../settings/store/settingsStore.js"

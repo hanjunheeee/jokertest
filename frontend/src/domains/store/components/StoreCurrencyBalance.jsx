@@ -1,6 +1,6 @@
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
-import { STORE_ASSETS } from "../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
 import {
   STORE_CURRENCY_AMOUNT_CLASS,
   STORE_CURRENCY_DIVIDER_CLASS,

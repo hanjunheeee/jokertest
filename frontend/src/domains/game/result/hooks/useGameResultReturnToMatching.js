@@ -10,11 +10,12 @@ import {
   CREATE_ROOM_ERROR_MESSAGES,
   CURRENT_ROOM_MAX_POLL_ATTEMPTS,
   CURRENT_ROOM_POLL_INTERVAL_MS,
-} from "@/domains/game/setup/constants/gameSetupSocket.js"
+} from "@/domains/game/shared/constants/gameSetupSocket.js"
 import { resolveNextGameCreateRoomPayload } from "@/domains/game/setup/utils/resolveNextGameCreateRoomPayload.js"
-import { persistPartyRejoinGameId } from "@/domains/game/matching/utils/partyMatchingRejoin.js"
+import { persistPartyRejoinGameId } from "@/domains/game/shared/utils/partyMatchingRejoin.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
-import { askRoom, askSnapshot, createRoom } from "../socket/room.js"
+import { askRoom, createRoom } from "@/domains/game/shared/socket/room.js"
+import { askSnapshot } from "../socket/room.js"
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -67,6 +68,7 @@ export function useGameResultReturnToMatching() {
         const res = await askRoom(socket)
         if (res?.ok && res.room) room = res.room
       } catch {
+        // 응답이 없으면 방이 없다고 보고 아래 경로로 넘어감
       }
 
       useInGameStore.getState().clearGame()
@@ -92,6 +94,7 @@ export function useGameResultReturnToMatching() {
             return
           }
         } catch {
+          // 응답을 못 받으면 방이 생겼는지 아래에서 다시 물음
         }
 
         const recovered = await findRoom(socket)
@@ -116,6 +119,7 @@ export function useGameResultReturnToMatching() {
             partyGameId = snapshot.gameId
           }
         } catch {
+          // 판 id를 못 받으면 기억 없이 대기방으로 감
         }
       }
       if (partyGameId) persistPartyRejoinGameId(accountId, partyGameId)

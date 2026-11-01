@@ -6,7 +6,7 @@ import StoreItemGrid from "./StoreItemGrid.jsx"
 import StoreSelectedItemDetail from "./StoreSelectedItemDetail.jsx"
 import StoreSidebar from "./StoreSidebar.jsx"
 import StorePanelOverlays from "./StorePanelOverlays.jsx"
-import { STORE_ASSETS } from "../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import { getStoreItemDisplayIcon } from "../../constants/storeItems.js"
 import { storePurchase } from "../../store/storePurchase.store.js"
 import {

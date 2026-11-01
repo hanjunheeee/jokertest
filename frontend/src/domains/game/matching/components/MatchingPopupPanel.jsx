@@ -13,7 +13,7 @@ import {
   MATCHING_ROOM_CODE_BTN_WRAP_CLASS,
   MATCHING_START_GAME_BTN_AREA_CLASS,
   MATCHING_TITLE_CLASS,
-} from "../constants/matchingPopupStyles.js"
+} from "../../../../shared/constants/matchingPopupStyles.js"
 import MatchingPopupContent from "./MatchingPopupContent.jsx"
 import MatchingActionButton from "./MatchingActionButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"

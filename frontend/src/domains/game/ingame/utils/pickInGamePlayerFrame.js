@@ -2,7 +2,7 @@ import {
   INGAME_PLAYER_ALIVE_FRAME_VARIANTS,
   INGAME_PLAYER_DEAD_FRAME_VARIANTS,
 } from "../constants/board/ingamePlayerAssets.js"
-import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
 import { pickJobPortrait } from "../../../../shared/utils/pickJobPortrait.js"
 
 export function pickInGamePlayerFrame(index) {

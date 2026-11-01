@@ -1,6 +1,6 @@
 // 대기방 방송 받기: 방 안 이벤트, 소켓 연결·끊김
 // hooks/room/useRoomEvents·useRoomCheck가 씀, 둘 다 끊는 함수 돌려줌
-import { SOCKET_EVENTS } from '@/domains/game/setup/constants/gameSetupSocket.js'
+import { SOCKET_EVENTS } from '@/domains/game/shared/constants/gameSetupSocket.js'
 
 // 방 안 이벤트: 입장·퇴장·방장 바뀜·준비·방 삭제·게임 시작·설정 바뀜
 export function onRoomEvents(socket, h) {

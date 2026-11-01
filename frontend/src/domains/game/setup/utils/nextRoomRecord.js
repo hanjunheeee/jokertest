@@ -5,11 +5,8 @@ import {
   KEY_PREFIX,
   NEXT_ROOM_SETTINGS_SCHEMA_VERSION,
 } from "../constants/nextRoomSettings.js"
-import { isPlainObject, sanitizeRestoreSource } from "./roomSettingsSourceSanitize.js"
-
-export function isNonEmptyString(value) {
-  return typeof value === "string" && value.length > 0
-}
+import { sanitizeRestoreSource } from "./roomSettingsSourceSanitize.js"
+import { isNonEmptyString, isPlainObject } from "../../shared/utils/valueChecks.js"
 
 // 계정별 저장 키, 계정 id가 없으면 null
 export function nextRoomSettingsStorageKey(accountId) {

@@ -1,4 +1,4 @@
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { API_BASE_URL } from "@/shared/env.js"
 

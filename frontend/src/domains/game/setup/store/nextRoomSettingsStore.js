@@ -3,7 +3,7 @@
 import { create } from "zustand"
 import { sanitizeRestoreSource, sanitizeRoomSettings } from "../utils/roomSettingsSourceSanitize.js"
 import { NEXT_ROOM_SETTINGS_STATUS } from "../constants/nextRoomSettings.js"
-import { isNonEmptyString } from "../utils/nextRoomRecord.js"
+import { isNonEmptyString } from "../../shared/utils/valueChecks.js"
 import { persistActions } from "./nextRoomSettings/persistActions.js"
 import { restoreAction } from "./nextRoomSettings/restoreAction.js"
 

@@ -9,7 +9,7 @@ import {
   ROOM_CODE_COPY_RESULTS,
   resolveRoomCodeCopy,
   resolveRoomCodeCopyStatus,
-} from "../utils/roomCode.js"
+} from "../../shared/utils/roomCode.js"
 
 // 복사됨 표시 유지 시간
 const COPIED_MS = 2000

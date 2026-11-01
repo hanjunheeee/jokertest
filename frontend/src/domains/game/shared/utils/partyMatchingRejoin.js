@@ -1,3 +1,5 @@
+// 파티 다시 모이기: 끝난 판 id를 세션 저장소에 기억하고, 먼저 온 방 준비 방송을 잠깐 들고 있음
+// ingame 판 정리·matching 대기방·result 대기방 복귀가 씀
 let pendingPartyMatchingRoomReady = null
 
 const storageKey = (accountId) => `joker:partyRejoinGameId:${accountId}`
@@ -7,6 +9,7 @@ export function persistPartyRejoinGameId(accountId, gameId) {
   try {
     sessionStorage.setItem(storageKey(accountId), gameId)
   } catch {
+    // 저장소를 못 쓰는 환경이면 기억 없이 넘어감
   }
 }
 
@@ -25,6 +28,7 @@ export function clearPartyRejoinGameId(accountId) {
   try {
     sessionStorage.removeItem(storageKey(accountId))
   } catch {
+    // 저장소를 못 쓰는 환경이면 지울 것도 없음
   }
   pendingPartyMatchingRoomReady = null
 }

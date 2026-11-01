@@ -10,12 +10,11 @@ import {
   INGAME_KICK_PLAYER_ROW_INNER_CLASS,
 } from "../../../constants/controls/kickPlayer/ingameKickPlayerLayout.js"
 import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../constants/controls/kickPlayer/ingameKickPlayerData.js"
-import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../../constants/ingamePlayerTheme.js"
+import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../../../../../shared/constants/ingamePlayerTheme.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export default function SettingKickPlayerRow({
-  playerId,
   name,
   profilePhotoSrc,
   profileBorderSrc,

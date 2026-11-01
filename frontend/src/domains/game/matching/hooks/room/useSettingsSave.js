@@ -7,7 +7,7 @@ import { useAuthStore } from '@/domains/auth/store/auth.store'
 import {
   ROOM_SETTINGS_ERROR_CODES,
   ROOM_SETTINGS_ERROR_MESSAGES,
-} from '@/domains/game/setup/constants/gameSetupSocket.js'
+} from '@/domains/game/shared/constants/gameSetupSocket.js'
 import { buildUpdateRoomSettingsPayload } from '@/domains/game/setup/utils/roomSettingsForm.js'
 import { GAME_START_MESSAGES } from '../../constants/gameStartMessages.js'
 import { ROOM_MESSAGES } from '../../constants/roomMessages.js'

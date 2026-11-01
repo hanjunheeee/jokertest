@@ -1,7 +1,7 @@
 // 충전 응답·결제창 복귀 주소 검사(위변조 막기)와 충전 상품을 가게 칸으로 바꾸기
 // 충전 API·충전 흐름 스토어가 씀
 // 검사 코드는 원래 currencyPurchase.store.js 내용 그대로 옮김 (바꾸지 않음)
-import { STORE_ASSETS } from "../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
 import { KIND_CURRENCIES, ORDER_ID, PAYMENT_KEY } from "../constants/currencyPurchase.js"
 
 export const isSafeInt = (value) => Number.isSafeInteger(value)

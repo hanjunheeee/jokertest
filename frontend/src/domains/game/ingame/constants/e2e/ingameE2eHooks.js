@@ -1,3 +1,5 @@
+import { isNonEmptyString } from "../../../shared/utils/valueChecks.js"
+
 export const INGAME_E2E_ATTRS = Object.freeze({
   phase: "data-ingame-phase",
   dayIndex: "data-ingame-day-index",
@@ -7,10 +9,6 @@ export const INGAME_E2E_ATTRS = Object.freeze({
   playerSelf: "data-ingame-player-self",
   targetId: "data-ingame-target-id",
 })
-
-function isNonEmptyString(value) {
-  return typeof value === "string" && value.length > 0
-}
 
 export function buildInGameControlPanelE2eAttrs(gameState) {
   if (gameState === null || typeof gameState !== "object" || Array.isArray(gameState)) return {}

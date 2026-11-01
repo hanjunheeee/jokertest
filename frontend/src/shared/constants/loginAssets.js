@@ -1,3 +1,5 @@
+// 로그인 배경 영상·프레임·입력 칸 그림 경로
+// auth 화면, 입력 칸(AuthInputSlot), user 계정 패널이 씀
 export const LOGIN_ASSETS = {
   bgVideo: "/bg/로그인_뒷배경_무한루프.mp4",
   frame: "/frame/로그인 프레임.png",

@@ -1,4 +1,4 @@
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_FORM_BODY_CLASS,
   SIGNUP_HEADER_TEXT_CLASS,

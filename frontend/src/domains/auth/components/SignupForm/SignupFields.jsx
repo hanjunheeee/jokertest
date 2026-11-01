@@ -1,10 +1,10 @@
 // 일반 가입 입력 칸 묶음 (이메일+중복확인, 비밀번호 두 칸, 닉네임, 생년월일)
 // components/SignupForm.jsx가 스크롤 칸 안에 씀
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
-import { LockIcon, MailIcon, ProfileIcon, SignupCalendarIcon } from "@/domains/auth/components/InputIcons.jsx"
+import { LockIcon, MailIcon, ProfileIcon, SignupCalendarIcon } from "@/shared/ui/InputIcons.jsx"
 import EmailCheckMessage from "@/domains/auth/components/SignupForm/EmailCheckMessage.jsx"
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_EMAIL_CHECK_BUTTON_CLASS,
   SIGNUP_EMAIL_CHECK_BUTTON_LABEL_CLASS,

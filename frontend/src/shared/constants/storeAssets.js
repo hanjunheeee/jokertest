@@ -1,3 +1,5 @@
+// 상점 배경·프레임·버튼 그림 경로
+// store 화면과 user 프로필 꾸미기 패널이 씀
 export const STORE_ASSETS = {
   bg: "/bg/상점 뒷배경3.PNG",
   entryVideo: "/bg/상점 진입 영상.mp4",

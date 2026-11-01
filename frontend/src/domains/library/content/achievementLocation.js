@@ -1,6 +1,6 @@
 import { LIBRARY_TABS } from "../constants/libraryTabs.js"
 import { FORBIDDEN_RECORDS_SPREAD_META } from "./forbiddenRecords/spreadMeta.js"
-import { INVITED_GUESTS_JOB_SPREAD_META } from "./invitedGuests/jobSpreadMeta.js"
+import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../shared/constants/jobSpreadMeta.js"
 import { INVITED_GUESTS_JOB_CHALLENGES } from "./invitedGuests/jobChallenges.js"
 
 const LOCATIONS = new Map()

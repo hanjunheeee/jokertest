@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   ACCOUNT_PANEL_CONTENT_CLASS,
   ACCOUNT_PANEL_FRAME_CONTENT_CLASS,

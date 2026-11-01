@@ -3,7 +3,7 @@ import {
   INGAME_SETTING_DEFAULT_TAB,
   INGAME_SETTING_TABS,
 } from "../constants/controls/ingameSetting/ingameSettingData.js"
-import { useSoundSettings } from "../../../settings/hooks/useSoundSettings.js"
+import { useSoundSettings } from "../../../../shared/hooks/useSoundSettings.js"
 import { useSettingsStore } from "../../../settings/store/settingsStore.js"
 
 export function useInGameSettingPanel({ isHost = false } = {}) {

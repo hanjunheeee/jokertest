@@ -1,6 +1,6 @@
 // 판 끝난 뒤 파티 방 다시 들어가기: 보내기·받기
 // hooks/room/usePartyRejoin이 씀
-import { SOCKET_EVENTS } from '@/domains/game/setup/constants/gameSetupSocket.js'
+import { SOCKET_EVENTS } from '@/domains/game/shared/constants/gameSetupSocket.js'
 import { PARTY_POLL_TIMEOUT_MS } from '../constants/roomTiming.js'
 
 // 방 코드로 들어가기 요청

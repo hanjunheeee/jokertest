@@ -4,6 +4,7 @@ import {
   NEXT_ROOM_SETTINGS_STATUS,
   useNextRoomSettingsStore,
 } from "@/domains/game/setup/store/nextRoomSettingsStore.js"
+import { isPlainObject } from "../../shared/utils/valueChecks.js"
 import { useInGameStore } from "../store/ingameStore.js"
 
 export const NEXT_ROOM_SETTINGS_AVAILABILITY = Object.freeze({
@@ -27,10 +28,6 @@ const AVAILABILITY_MESSAGES = Object.freeze({
     "이 게임의 방 설정을 확인할 수 없어 다음 게임으로 유지할 수 없습니다.",
   [NEXT_ROOM_SETTINGS_AVAILABILITY.NOT_PARTICIPATING]: "이 게임의 참가자만 설정을 유지할 수 있습니다.",
 })
-
-function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 export function useNextRoomSettings() {
   const accountId = useAuthStore((s) => s.user?.uuid ?? null)

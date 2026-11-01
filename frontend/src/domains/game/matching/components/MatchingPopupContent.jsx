@@ -2,7 +2,7 @@ import { MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import {
   MATCHING_PROMPT_CLASS,
   MATCHING_WAITING_MESSAGE_CLASS,
-} from "../constants/matchingPopupStyles.js"
+} from "../../../../shared/constants/matchingPopupStyles.js"
 import MatchingPartySlots from "./MatchingPartySlots.jsx"
 
 const CONTENT_INSET = {

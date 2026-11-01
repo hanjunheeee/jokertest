@@ -4,7 +4,7 @@ import {
   MATCHING_ACTION_BTN_CLASS,
   MATCHING_ACTION_BTN_LABEL_CLASS,
   MATCHING_BTN_SCALE_WRAP_CLASS,
-} from "../constants/matchingPopupStyles.js"
+} from "../../../../shared/constants/matchingPopupStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export default function MatchingActionButton({ label, src, onClick, disabled }) {

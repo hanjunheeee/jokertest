@@ -1,4 +1,4 @@
-import { INGAME_PLAYER_THEME_PALETTE_SIZE } from "../constants/ingamePlayerTheme.js"
+import { INGAME_PLAYER_THEME_PALETTE_SIZE } from "../../../../shared/constants/ingamePlayerTheme.js"
 
 const ROLE_TEAMS = {
   JOKER: "JOKER",

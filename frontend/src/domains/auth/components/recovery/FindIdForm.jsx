@@ -1,8 +1,8 @@
 // 아이디 찾기 입력 칸·알림·버튼 묶음
 // pages/FindIdPage.jsx가 찾기 전 화면에 씀
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
-import { CalendarIcon, ProfileIcon } from "@/domains/auth/components/InputIcons.jsx"
+import { CalendarIcon, ProfileIcon } from "@/shared/ui/InputIcons.jsx"
 import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { FIND_ID_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 

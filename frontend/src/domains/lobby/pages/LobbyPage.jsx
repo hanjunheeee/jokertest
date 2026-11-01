@@ -4,10 +4,10 @@ import LobbyContentLayer from "@/domains/lobby/components/LobbyContentLayer.jsx"
 import LobbyFriendArea from "@/domains/lobby/components/LobbyFriendArea.jsx"
 import LobbyMenuArea from "@/domains/lobby/components/LobbyMenuArea.jsx"
 import LobbyProfileArea from "@/domains/lobby/components/LobbyProfileArea.jsx"
-import { LOBBY_PAGE_ROOT_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
+import { LOBBY_PAGE_ROOT_CLASS } from "@/shared/constants/lobbyLayoutStyle.js"
 import { useLobbyIntro } from "@/domains/lobby/hooks/useLobbyIntro.js"
 import { useLobbyNotificationPanels } from "@/domains/lobby/hooks/useLobbyNotificationPanels.js"
-import { useMyProfile } from "@/domains/user/hooks/useMyProfile.js"
+import { useMyProfile } from "@/shared/hooks/useMyProfile.js"
 
 export default function LobbyPage() {
   const navigate = useNavigate()

@@ -1,4 +1,4 @@
-import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
 
 export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed, role } = {}) {
   if (!Array.isArray(players)) return []

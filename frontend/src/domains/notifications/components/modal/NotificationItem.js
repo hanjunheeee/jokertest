@@ -3,7 +3,7 @@
 import { createElement } from "react"
 
 import { publicAsset } from "../../../../shared/utils/publicAsset.js"
-import { buildNotificationTargetPath, notificationTargetLabel } from "../../constants/notificationTargets.js"
+import { buildNotificationTargetPath, notificationTargetLabel } from "../../../../shared/constants/notificationTargets.js"
 import { NOTIFICATION_ASSETS } from "../../constants/notificationAssets.js"
 import {
   NOTIFICATION_ACTION_ROW_CLASS,

@@ -1,6 +1,6 @@
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
-import { STORE_ASSETS } from "../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
   STORE_BULK_PURCHASE_CONFIRM_BTN_CLASS,
   STORE_BULK_PURCHASE_CONFIRM_BTN_IMAGE_CLASS,

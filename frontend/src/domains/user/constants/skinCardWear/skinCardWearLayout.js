@@ -1,4 +1,4 @@
-import { buildInGamePlayerThemeStyles } from "../../../game/ingame/constants/ingamePlayerTheme.js"
+import { buildInGamePlayerThemeStyles } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../shared/constants/customScrollbarStyles.js"
 
 export const SKIN_CARD_WEAR_PREVIEW_NAMEPLATE_THEME = {

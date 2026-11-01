@@ -1,5 +1,5 @@
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../shared/constants/customScrollbarStyles.js"
-import { MATCHING_BTN_FOCUS_CLASS, MATCHING_BTN_IMG_SCALE_CLASS } from "../../game/matching/constants/matchingPopupStyles.js"
+import { MATCHING_BTN_FOCUS_CLASS, MATCHING_BTN_IMG_SCALE_CLASS } from "../../../shared/constants/matchingPopupStyles.js"
 
 export const NOTIFICATION_MODAL_BACKDROP_CLASS =
   "fixed inset-0 z-[70] w-full cursor-default border-0 bg-black/70 p-0"

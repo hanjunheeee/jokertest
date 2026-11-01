@@ -1,4 +1,4 @@
-import { isValidRoomCode, normalizeRoomCode } from "../../matching/utils/roomCode.js"
+import { isValidRoomCode, normalizeRoomCode } from "../../shared/utils/roomCode.js"
 
 export const ROOM_LIST_ROW_CODE_REQUIRED_LABEL = "코드"
 

@@ -1,13 +1,11 @@
+import { isPlainObject } from "../../shared/utils/valueChecks.js"
+
 const ROLE_LABELS = Object.freeze({
   JOKER: "광대",
   DOCTOR: "의사",
   GUARD: "경비원",
   WITCH_HUNTER: "마녀사냥꾼",
 })
-
-function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 export function summarizeRoomListSettings(settings) {
   if (!isPlainObject(settings)) return { roles: null, times: null, ariaText: null }

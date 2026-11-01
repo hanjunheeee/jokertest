@@ -1,10 +1,10 @@
 // 소셜 가입 스크롤 칸 안쪽 (불러오는 중 표시, 이메일+인증, 닉네임, 생년월일, 버튼)
 // components/SocialSignupForm.jsx가 입력 화면에서 씀, signup = useSocialSignup 결과
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
-import { MailIcon, ProfileIcon, SignupCalendarIcon } from "@/domains/auth/components/InputIcons.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
+import { MailIcon, ProfileIcon, SignupCalendarIcon } from "@/shared/ui/InputIcons.jsx"
 import SignupEmailVerification from "@/domains/auth/components/SignupEmailVerification.jsx"
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_HINT_TEXT_CLASS,
   SIGNUP_SUBMIT_BUTTON_CLASS,

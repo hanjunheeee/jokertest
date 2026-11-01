@@ -1,4 +1,4 @@
-import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
 
 export function isSessionPlayerAlive(sessionPlayer) {
   return sessionPlayer?.status !== INGAME_PLAYER_STATUS.DEAD

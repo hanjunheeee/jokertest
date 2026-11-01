@@ -10,7 +10,7 @@ import {
   INVITED_GUESTS_TABLE_HEAD_WINRATE_CELL_CLASS,
 } from "../../../../../domains/library/constants/invitedGuests/tableStyle.js"
 import { INVITED_GUESTS_TABLE_SECTION_CLASS } from "../../../../../domains/library/constants/invitedGuests/layoutStyle.js"
-import { INVITED_GUESTS_MASTERY_RANKING_LIMIT } from "../../../../../domains/library/content/invitedGuests/jobSpreadMeta.js"
+import { INVITED_GUESTS_MASTERY_RANKING_LIMIT } from "../../../../../shared/constants/jobSpreadMeta.js"
 
 export default function InvitedGuestsMasteryRanking({ ranking, hideHeader = false }) {
   const [page, setPage] = useState(0)

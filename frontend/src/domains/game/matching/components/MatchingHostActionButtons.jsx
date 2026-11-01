@@ -5,7 +5,7 @@ import {
   MATCHING_HOST_ACTION_BTN_CLASS,
   MATCHING_HOST_ACTION_BTN_LABEL_CLASS,
   MATCHING_HOST_ACTION_COL_CLASS,
-} from "../constants/matchingPopupStyles.js"
+} from "../../../../shared/constants/matchingPopupStyles.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

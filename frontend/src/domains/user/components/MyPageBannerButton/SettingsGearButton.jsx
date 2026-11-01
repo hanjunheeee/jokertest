@@ -1,4 +1,4 @@
-import { LOBBY_ASSETS } from "../../../lobby/constants/lobbyAssets.js"
+import { LOBBY_ASSETS } from "../../../../shared/constants/lobbyAssets.js"
 import {
   LOBBY_SETTINGS_GEAR_LAYOUT,
   MY_PAGE_BANNER_SETTINGS_BTN_CLASS,

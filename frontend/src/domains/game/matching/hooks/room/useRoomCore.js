@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ROOM_SETTINGS_ERROR_CODES,
   ROOM_SETTINGS_ERROR_MESSAGES,
-} from '@/domains/game/setup/constants/gameSetupSocket.js'
+} from '@/domains/game/shared/constants/gameSetupSocket.js'
 
 export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
   // 방 확인 상태: waiting_socket / checking / verified / failed

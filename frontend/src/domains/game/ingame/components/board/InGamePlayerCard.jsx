@@ -3,7 +3,7 @@ import {
   INGAME_PLAYER_FRAME_IMAGE_CLASS,
   INGAME_PLAYER_FRAME_SHADOW_LAYER_CLASS,
 } from "../../constants/board/ingamePlayerAssets.js"
-import { INGAME_PLAYER_STATUS } from "../../constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
 import { buildInGamePlayerCardE2eAttrs } from "../../constants/e2e/ingameE2eHooks.js"
 import InGamePlayerFrameStroke from "./InGamePlayerFrameStroke.jsx"
 import InGamePlayerNameplate from "./InGamePlayerNameplate.jsx"

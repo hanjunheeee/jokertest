@@ -10,8 +10,8 @@ import FriendListToggleButton from "@/domains/lobby/components/friendList/Friend
 import FriendInviteModalShell from "../components/friendInvite/FriendInviteModalShell.jsx"
 import FriendInviteModalContent from "../components/friendInvite/FriendInviteModalContent.jsx"
 import RoomSettingsResultNotice from "../components/RoomSettingsResultNotice.jsx"
-import SettingKickPlayerModalContent from "@/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalContent.jsx"
-import SettingKickPlayerModalShell from "@/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModalShell.jsx"
+import SettingKickPlayerModalContent from "@/domains/game/ingame/components/controls/kickPlayer/SettingKickPlayerModalContent.jsx"
+import SettingKickPlayerModalShell from "@/domains/game/ingame/components/controls/kickPlayer/SettingKickPlayerModalShell.jsx"
 import MatchingHostActionButtons from "../components/MatchingHostActionButtons.jsx"
 import SettingsPendingNotice from "../components/settingsEdit/SettingsPendingNotice.jsx"
 import SettingsEditOverlay from "../components/settingsEdit/SettingsEditOverlay.jsx"
@@ -24,7 +24,6 @@ export default function GameMatchingPage() {
     openRoomCode,
     closeRoomCode,
     slots,
-    roomId,
     roomCode,
     partyCount,
     isHost,

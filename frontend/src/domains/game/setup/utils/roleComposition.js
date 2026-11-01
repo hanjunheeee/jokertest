@@ -6,10 +6,7 @@ import {
   ROLE_COMPOSITION_MODES,
   DEFAULT_CUSTOM_ROLE_COUNTS,
 } from "../constants/roleComposition.js"
-
-function isNonNegativeInteger(value) {
-  return Number.isInteger(value) && value >= 0
-}
+import { isNonNegativeInteger } from "../../shared/utils/valueChecks.js"
 
 export function createDefaultCustomRoleCounts() {
   return { ...DEFAULT_CUSTOM_ROLE_COUNTS }

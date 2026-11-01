@@ -1,6 +1,6 @@
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../constants/storeItems.js"
-import { STORE_ASSETS } from "../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
   STORE_BULK_PURCHASE_ITEM_IMAGE_CLASS,
   STORE_BULK_PURCHASE_ITEM_IMAGE_WRAP_CLASS,

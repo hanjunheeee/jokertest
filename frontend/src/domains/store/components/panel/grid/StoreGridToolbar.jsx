@@ -2,7 +2,7 @@
 // StoreItemGrid가 상품이 있고 일괄구매를 보일 때 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { STORE_SKIN_CATEGORY_NOTICE } from "../../../constants/storeNotices.js"
-import { STORE_ASSETS } from "../../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../../shared/constants/storeAssets.js"
 import {
   STORE_BULK_BTN_CLASS,
   STORE_BULK_BTN_IMAGE_CLASS,

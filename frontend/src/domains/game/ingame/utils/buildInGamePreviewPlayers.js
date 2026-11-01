@@ -1,9 +1,9 @@
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
-import { getPreviewPlayerStatus } from "../constants/board/status/ingamePlayerStatus.js"
+import { getPreviewPlayerStatus } from "../../shared/constants/ingamePlayerStatus.js"
 import {
   INGAME_PLAYER_THEME_PALETTE_SIZE,
   resolveInGamePlayerTheme,
-} from "../constants/ingamePlayerTheme.js"
+} from "../../../../shared/constants/ingamePlayerTheme.js"
 import { pickInGameJobPortrait } from "./pickInGameJobPortrait.js"
 import { pickInGamePlayerFrame } from "./pickInGamePlayerFrame.js"
 

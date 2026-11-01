@@ -1,4 +1,4 @@
-export { SOUND_SETTING_VOLUMES as INGAME_SETTING_SOUND_VOLUMES } from "../../../../../settings/constants/soundSettings.js"
+export { SOUND_SETTING_VOLUMES as INGAME_SETTING_SOUND_VOLUMES } from "../../../../../../shared/constants/soundSettings.js"
 
 export const INGAME_SETTING_SFX_MUTE = {
   id: "sfx-muted",

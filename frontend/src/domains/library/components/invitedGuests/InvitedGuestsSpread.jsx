@@ -8,7 +8,7 @@ import InvitedGuestsStatsCell from "../../../../domains/library/components/invit
 import InvitedGuestsJobChallenges from "../../../../domains/library/components/invitedGuests/right/InvitedGuestsJobChallenges.jsx"
 import InvitedGuestsRankingCell from "../../../../domains/library/components/invitedGuests/right/InvitedGuestsRankingCell.jsx"
 import { getInvitedGuestsPage } from "../../../../domains/library/content/invitedGuests/index.js"
-import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../../domains/library/content/invitedGuests/jobSpreadMeta.js"
+import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../../shared/constants/jobSpreadMeta.js"
 import { useRoleStatisticsStore } from "../../../../domains/library/store/roleStatistics.store.js"
 import {
   INVITED_GUESTS_JOB_TITLE_CLASS,

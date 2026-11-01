@@ -12,7 +12,7 @@ import {
   consumePartyMatchingRoomReady,
   persistPartyRejoinGameId,
   rememberPartyMatchingRoomReady,
-} from '../../utils/partyMatchingRejoin.js'
+} from '../../../shared/utils/partyMatchingRejoin.js'
 import { askPartyRoom, joinByCode, onParty } from '../../socket/party.js'
 import { askRoom } from '../../socket/room.js'
 

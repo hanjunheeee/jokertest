@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef } from "react"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import CodeInputRow from "@/domains/auth/components/SignupEmailVerification/CodeInputRow.jsx"
 import NoticeSlot from "@/domains/auth/components/SignupEmailVerification/NoticeSlot.jsx"
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_ACTION_BUTTON_INTERACTION_CLASS,
   SIGNUP_ACTION_BUTTON_LABEL_CLASS,

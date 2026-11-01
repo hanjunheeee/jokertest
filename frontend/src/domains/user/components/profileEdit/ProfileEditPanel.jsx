@@ -1,4 +1,4 @@
-import { STORE_ASSETS } from "../../../store/constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import { PLAYER_PROFILE_ASSETS } from "../../../../shared/constants/playerProfileAssets.js"
 import {
   PROFILE_EDIT_CLOSE_BTN_CLASS,

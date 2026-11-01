@@ -1,4 +1,4 @@
-import { LOBBY_MENU_BUTTONS } from "./lobbyAssets.js"
+import { LOBBY_MENU_BUTTONS } from "../../../shared/constants/lobbyAssets.js"
 
 export const LOBBY_MENU_ITEMS = [
   { id: "gameplay", label: "게임플레이", src: LOBBY_MENU_BUTTONS.gameplay },

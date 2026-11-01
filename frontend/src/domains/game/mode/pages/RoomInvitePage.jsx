@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import LabelledActionButton from "@/domains/game/mode/components/LabelledActionButton.jsx"
+import LabelledActionButton from "@/domains/game/shared/components/LabelledActionButton.jsx"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
 import {

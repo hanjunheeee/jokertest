@@ -1,10 +1,10 @@
-import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
+import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
 import {
   LOBBY_BG_IMAGE_CLASS,
   LOBBY_BG_VIDEO_CLASS,
   LOBBY_BG_VIDEO_HIDDEN_CLASS,
   LOBBY_INTRO_SKIP_LAYER_CLASS,
-} from "@/domains/lobby/constants/lobbyLayoutStyle.js"
+} from "@/shared/constants/lobbyLayoutStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 

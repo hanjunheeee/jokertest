@@ -6,9 +6,9 @@ import { sanitizeRestoreSource } from "../../utils/roomSettingsSourceSanitize.js
 import {
   buildDisabledRecord,
   buildRecord,
-  isNonEmptyString,
   nextRoomSettingsStorageKey,
 } from "../../utils/nextRoomRecord.js"
+import { isNonEmptyString } from "../../../shared/utils/valueChecks.js"
 import { removeVerified, writeVerified } from "./storage.js"
 
 export const persistActions = (set, get) => ({

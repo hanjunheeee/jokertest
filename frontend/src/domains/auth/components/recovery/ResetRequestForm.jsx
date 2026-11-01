@@ -1,8 +1,8 @@
 // 재설정 메일 요청 입력 칸·알림·버튼 묶음
 // pages/passwordReset/RequestPage.jsx가 보내기 전 화면에 씀
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
-import { MailIcon } from "@/domains/auth/components/InputIcons.jsx"
+import { MailIcon } from "@/shared/ui/InputIcons.jsx"
 import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { REQUEST_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 

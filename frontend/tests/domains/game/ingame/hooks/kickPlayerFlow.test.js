@@ -60,7 +60,7 @@ const { useInGameSettingIsHost } = await import("../../../../../src/domains/game
 const { useInGameDayVoteSubmit } = await import("../../../../../src/domains/game/ingame/hooks/useInGameDayVoteSubmit.js")
 const { applySessionSnapshotPure } = await import("../../../../../src/domains/game/ingame/store/applySessionSnapshot.js")
 const { default: SettingKickPlayerModal } = await import(
-  "../../../../../src/domains/game/ingame/components/controls/ingameSetting/kickPlayer/SettingKickPlayerModal.jsx")
+  "../../../../../src/domains/game/ingame/components/controls/kickPlayer/SettingKickPlayerModal.jsx")
 const { InGameActionProvider } = await import("../../../../../src/domains/game/ingame/pages/InGamePage.jsx")
 const { InGamePlayerSessionProvider } = await import("../../../../../src/domains/game/ingame/components/InGamePlayerSessionProvider.jsx")
 const { default: InGamePlayerBoard } = await import("../../../../../src/domains/game/ingame/components/board/InGamePlayerBoard.jsx")
@@ -156,7 +156,7 @@ test.afterEach(() => {
 })
 
 const { INGAME_KICK_PLAYER_MODAL_COPY } = await import(
-  "../../../../../src/domains/game/ingame/constants/controls/ingameSetting/kickPlayer/ingameKickPlayerData.js")
+  "../../../../../src/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js")
 
 function mountRealModal() {
   const view = render(createElement(SettingKickPlayerModal, { open: true, onClose: () => {} }))

@@ -1,4 +1,4 @@
-import { STORE_ASSETS } from "../../../store/constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
   PROFILE_EDIT_TAB_BTN_CLASS,
   PROFILE_EDIT_TAB_BTN_IMAGE_CLASS,

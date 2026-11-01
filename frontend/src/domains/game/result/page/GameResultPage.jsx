@@ -3,7 +3,7 @@
 import { motion } from "framer-motion"
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import LabelledActionButton from "@/domains/game/mode/components/LabelledActionButton.jsx"
+import LabelledActionButton from "@/domains/game/shared/components/LabelledActionButton.jsx"
 import GameResultIntroVideo from "../components/GameResultIntroVideo.jsx"
 import GameResultShell from "../components/GameResultShell.jsx"
 import { GAME_RESULT_ASSETS } from "../constants/gameResultAssets.js"

@@ -1,5 +1,5 @@
 import { SKIN_STORE_ITEMS } from "../../../store/constants/storeItems.js"
-import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../library/content/invitedGuests/jobSpreadMeta.js"
+import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../../shared/constants/jobSpreadMeta.js"
 
 const BASIC_STANDING_DIR = "/shopItem/basic/jobs-standing"
 const BASIC_CLOSEUP_DIR = "/shopItem/basic/jobs-closeup"

@@ -1,5 +1,5 @@
 import PublicAsset from "@/shared/ui/PublicAsset"
-import { STORE_ASSETS } from "../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../shared/constants/storeAssets.js"
 import {
   STORE_BULK_PURCHASE_BODY_CLASS,
   STORE_BULK_PURCHASE_CLOSE_BTN_CLASS,

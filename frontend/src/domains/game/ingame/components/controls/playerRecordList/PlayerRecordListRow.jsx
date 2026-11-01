@@ -9,7 +9,7 @@ import {
   INGAME_PLAYER_RECORD_LIST_ROW_INNER_CLASS,
   INGAME_PLAYER_RECORD_LIST_STATS_CLASS,
 } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListLayout.js"
-import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../../constants/ingamePlayerTheme.js"
+import { INGAME_PLAYER_THEME_TEXT_RENDER_CLASS } from "../../../../../../shared/constants/ingamePlayerTheme.js"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 

@@ -4,7 +4,7 @@ import { useNotificationsStore } from "../../notifications/store/notifications.s
 import {
   NOTIFICATION_FRIEND_REQUEST_PARAM,
   NOTIFICATION_GAME_INVITE_PARAM,
-} from "../../notifications/constants/notificationTargets.js"
+} from "../../../shared/constants/notificationTargets.js"
 
 export function parseFriendRequestTargetId(searchParams) {
   const raw = typeof searchParams?.get === "function"

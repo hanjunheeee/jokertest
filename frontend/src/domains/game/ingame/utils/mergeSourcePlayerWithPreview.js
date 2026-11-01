@@ -1,5 +1,5 @@
-import { INGAME_PLAYER_STATUS } from "../constants/board/status/ingamePlayerStatus.js"
-import { resolveInGamePlayerTheme } from "../constants/ingamePlayerTheme.js"
+import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
+import { resolveInGamePlayerTheme } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { resolveInGameAccountProfilePhotoSrc } from "./resolveInGameAccountProfilePhotoSrc.js"
 import { resolveAccountCardFrameSrc } from "./pickInGamePlayerFrame.js"
 

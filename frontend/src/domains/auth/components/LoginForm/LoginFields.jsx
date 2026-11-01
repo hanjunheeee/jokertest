@@ -1,5 +1,5 @@
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
-import { LockIcon, MailIcon } from "@/domains/auth/components/InputIcons.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
+import { LockIcon, MailIcon } from "@/shared/ui/InputIcons.jsx"
 
 export default function LoginFields({ formData, onChange }) {
   return (

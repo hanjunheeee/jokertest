@@ -8,7 +8,7 @@ import {
   MATCHING_SLOT_WRAP_CLASS,
   MATCHING_SLOTS_GRID_CLASS,
   MATCHING_SLOTS_ROW_CLASS,
-} from "../constants/matchingPopupStyles.js"
+} from "../../../../shared/constants/matchingPopupStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export { PLAYER_SLOT_COLUMNS as MATCHING_SLOT_COLUMNS }

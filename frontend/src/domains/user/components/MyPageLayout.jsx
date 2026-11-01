@@ -19,7 +19,7 @@ import {
   MY_PAGE_ROOT_CLASS,
   MY_PAGE_UI_FADE,
 } from "../constants/myPageLayoutStyle.js"
-import { useMyProfile } from "../hooks/useMyProfile.js"
+import { useMyProfile } from "../../../shared/hooks/useMyProfile.js"
 
 export default function MyPageLayout() {
   const navigate = useNavigate()

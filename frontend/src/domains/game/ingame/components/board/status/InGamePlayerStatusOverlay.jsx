@@ -4,7 +4,7 @@ import {
   INGAME_PLAYER_STATUS_PORTRAIT_DIM_CLASS,
   INGAME_PLAYER_STATUS_VISUALS,
   isInGamePlayerStatusActive,
-} from "../../../constants/board/status/ingamePlayerStatus.js"
+} from "../../../../shared/constants/ingamePlayerStatus.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 export default function InGamePlayerStatusOverlay({ status }) {

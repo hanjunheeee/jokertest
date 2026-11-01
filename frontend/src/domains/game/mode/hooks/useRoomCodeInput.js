@@ -3,7 +3,7 @@ import {
   ROOM_CODE_LENGTH,
   normalizeRoomCodeChar,
   normalizeRoomCodeText,
-} from "../../matching/utils/roomCode.js"
+} from "../../shared/utils/roomCode.js"
 
 const CODE_LENGTH = ROOM_CODE_LENGTH
 

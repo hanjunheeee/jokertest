@@ -1,5 +1,6 @@
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
 import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../constants/gameSetupOptions.js"
+import { isPlainObject } from "../../shared/utils/valueChecks.js"
 
 export const ALLOWED_SETTING_KEYS = Object.freeze([
   "maxPlayers",
@@ -23,10 +24,6 @@ const NESTED_ROLE_MAPS = Object.freeze({
   roleCounts: CUSTOM_ROLE_KEYS,
   roleNightActionTimes: ALLOWED_ROLE_TIME_KEYS,
 })
-
-export function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
 
 function isAllowedScalar(value) {
   return typeof value === "number" || typeof value === "boolean" || typeof value === "string"

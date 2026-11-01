@@ -1,3 +1,5 @@
+// 인트로 영상 위를 덮는 투명 건너뛰기 버튼
+// settings 설정 화면과 store 상점 화면이 씀
 export default function SettingIntroSkipLayer({ visible, onSkip }) {
   if (!visible) return null
 

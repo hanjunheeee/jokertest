@@ -11,10 +11,7 @@ import {
   STEPPER_ITEMS_BY_ID,
 } from "../../constants/roomSettingsForm.js"
 import { validateRoleComposition } from "../roleComposition.js"
-
-function isPlainObject(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
+import { isPlainObject } from "../../../shared/utils/valueChecks.js"
 
 // 숫자 고르기 칸이 그 값을 보여 줄 수 있는지 (정수·범위 안·간격에 맞음)
 function fitsStepper(id, value) {

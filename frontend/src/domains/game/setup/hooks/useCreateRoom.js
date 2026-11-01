@@ -10,9 +10,9 @@ import {
   CREATE_ROOM_ERROR_MESSAGES,
   CURRENT_ROOM_MAX_POLL_ATTEMPTS,
   CURRENT_ROOM_POLL_INTERVAL_MS,
-} from "../constants/gameSetupSocket.js"
+} from "../../shared/constants/gameSetupSocket.js"
 import { isSameScope, readScope } from "../utils/membershipScope.js"
-import { askRoom, createRoom } from "../socket/room.js"
+import { askRoom, createRoom } from "../../shared/socket/room.js"
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 

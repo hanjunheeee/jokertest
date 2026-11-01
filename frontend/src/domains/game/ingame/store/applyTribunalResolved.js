@@ -1,13 +1,10 @@
 import { normalizePublicWinResult } from "../utils/normalizePublicWinResult.js"
+import { isNonNegativeInteger } from "../../shared/utils/valueChecks.js"
 
 const TRIBUNAL_RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 
 const TRIBUNAL_CANCELLED_OUTCOME = "CANCELLED"
 const TRIBUNAL_CANCEL_REASONS = new Set(["DEFENDANT_LEFT"])
-
-function isNonNegativeInteger(value) {
-  return Number.isInteger(value) && value >= 0
-}
 
 export function applyTribunalResolvedPure(current, payload) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return current

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { INGAME_PREVIEW_PLAYER_COUNT } from "../constants/board/ingamePlayerBoard.js"
-import { resolveInGamePlayerThemeEmphasized } from "../constants/ingamePlayerTheme.js"
+import { resolveInGamePlayerThemeEmphasized } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { buildInGamePreviewPlayers } from "../utils/buildInGamePreviewPlayers.js"
 import { mergeSourcePlayerWithPreview } from "../utils/mergeSourcePlayerWithPreview.js"
 

@@ -9,7 +9,7 @@ import { useMatchingFriendInvite } from "./useMatchingFriendInvite.js"
 import { useSettingsEdit } from "./useSettingsEdit.js"
 import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
-import { clearPartyRejoinGameId, readPartyRejoinGameId } from "../utils/partyMatchingRejoin.js"
+import { clearPartyRejoinGameId, readPartyRejoinGameId } from "../../shared/utils/partyMatchingRejoin.js"
 import { buildSlots } from "../utils/chunkPlayerSlots.js"
 import { leaveRoom } from "../socket/room.js"
 

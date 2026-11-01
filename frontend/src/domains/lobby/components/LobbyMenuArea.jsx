@@ -1,8 +1,8 @@
-import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
+import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
 import {
   LOBBY_LOGO_CLASS,
   LOBBY_SIDE_MENU_CLASS,
-} from "@/domains/lobby/constants/lobbyLayoutStyle.js"
+} from "@/shared/constants/lobbyLayoutStyle.js"
 import LobbyMenuNav from "@/domains/lobby/components/LobbyMenuNav.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 

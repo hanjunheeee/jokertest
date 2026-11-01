@@ -1,6 +1,6 @@
 // 설정 기본값 만들기 (음량·일반 체크)
 // 설정 스토어 처음 상태·초기화와 저장값 정리가 씀, 부를 때마다 새 객체를 줌
-import { SOUND_SETTING_VOLUMES } from "../constants/soundSettings.js"
+import { SOUND_SETTING_VOLUMES } from "../../../shared/constants/soundSettings.js"
 import { GENERAL_SETTING_CHECKBOXES } from "../constants/generalSettings.js"
 import { HIDDEN_GENERAL_CHECK_IDS } from "../constants/settingsStorage.js"
 

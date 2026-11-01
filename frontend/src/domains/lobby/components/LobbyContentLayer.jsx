@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { LOBBY_UI_LAYER_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
+import { LOBBY_UI_LAYER_CLASS } from "@/shared/constants/lobbyLayoutStyle.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 export default function LobbyContentLayer({ visible, children }) {

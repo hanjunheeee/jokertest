@@ -1,10 +1,3 @@
-import { useSettingsStore } from "../store/settingsStore.js"
-
-export function useSoundSettings() {
-  const volumes = useSettingsStore((s) => s.volumes)
-  const setVolume = useSettingsStore((s) => s.setVolume)
-  const sfxMuted = useSettingsStore((s) => s.sfxMuted)
-  const setSfxMuted = useSettingsStore((s) => s.setSfxMuted)
-
-  return { volumes, setVolume, sfxMuted, setSfxMuted }
-}
+// 옛 경로 입구: 본체는 shared/hooks/useSoundSettings.js로 옮김 (여러 영역이 같이 써서)
+// 시험이 옛 경로로 부름, 시험 경로가 바뀌면 지움
+export { useSoundSettings } from "../../../shared/hooks/useSoundSettings.js"

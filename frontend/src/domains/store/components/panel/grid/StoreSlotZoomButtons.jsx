@@ -7,7 +7,7 @@ import {
   isProfileBorderStoreItem,
   isSkinStoreItem,
 } from "../../../constants/storeItems.js"
-import { STORE_ASSETS } from "../../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../../shared/constants/storeAssets.js"
 import {
   STORE_PREVIEW_TOGGLE_BTN_CLASS,
   STORE_PREVIEW_TOGGLE_IMG_CLASS,

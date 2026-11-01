@@ -3,7 +3,7 @@ import {
   ROOM_CODE_FRAME_FOOTER_INSET,
   ROOM_CODE_FRAME_IMAGE_CLASS,
   ROOM_CODE_FRAME_INPUT_INSET,
-} from "@/domains/game/mode/constants/roomCodeFrameStyles.js"
+} from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
 import RoomCodeInput from "@/domains/game/mode/components/RoomCodeInput.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 

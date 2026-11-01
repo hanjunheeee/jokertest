@@ -1,4 +1,4 @@
-import { LOBBY_ASSETS } from "@/domains/lobby/constants/lobbyAssets.js"
+import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
 import { LOBBY_MENU_ITEMS } from "@/domains/lobby/constants/lobbyMenu.js"
 import {
   LOBBY_MENU_BTN_CLASS,

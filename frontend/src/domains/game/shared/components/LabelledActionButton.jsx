@@ -1,8 +1,10 @@
+// 그림 버튼 위에 글자를 얹은 행동 버튼
+// mode 방코드 화면(RoomInvitePage)과 결과 화면(GameResultPage)이 씀
 import { motion } from "framer-motion"
 import {
   ROOM_CODE_ACTION_BTN_CLASS,
   ROOM_CODE_ACTION_BTN_LABEL_CLASS,
-} from "@/domains/game/mode/constants/roomCodeFrameStyles.js"
+} from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 export default function LabelledActionButton({ src, label, onClick, className = "", variants }) {

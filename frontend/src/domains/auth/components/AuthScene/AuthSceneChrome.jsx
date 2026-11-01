@@ -1,4 +1,4 @@
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 

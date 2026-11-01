@@ -1,4 +1,4 @@
-import { LOBBY_PROFILE_SHORTCUT_CLASS } from "@/domains/lobby/constants/lobbyLayoutStyle.js"
+import { LOBBY_PROFILE_SHORTCUT_CLASS } from "@/shared/constants/lobbyLayoutStyle.js"
 import MyPageBannerButton from "@/domains/user/components/MyPageBannerButton.jsx"
 
 export default function LobbyProfileArea({ profile, loading, onMyPage, onAccount }) {

@@ -1,5 +1,5 @@
 import { publicAsset } from "@/shared/utils/publicAsset.js"
-import { LOGIN_ASSETS } from "@/domains/auth/constants/loginAssets.js"
+import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 
 export default function AuthBackgroundMedia() {
   return (

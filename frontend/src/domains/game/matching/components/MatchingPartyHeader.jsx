@@ -6,7 +6,7 @@ import {
   MATCHING_PARTY_ICON_CLASS,
   MATCHING_PARTY_TEXT_CLASS,
   MATCHING_PARTY_COUNT_CLASS,
-} from "../constants/matchingPopupStyles.js"
+} from "../../../../shared/constants/matchingPopupStyles.js"
 
 export default function MatchingPartyHeader({ visible, partyCount, transition }) {
   return (

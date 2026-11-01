@@ -1,5 +1,5 @@
 import { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } from "../../ingame/constants/board/ingamePlayerAssets.js"
-import { INGAME_PLAYER_STATUS } from "../../ingame/constants/board/status/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
 import { getPlayerRecordListProfileAssets } from "../../ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { pickInGameJobPortrait } from "../../ingame/utils/pickInGameJobPortrait.js"
 import { pickJobPortrait } from "../../../../shared/utils/pickJobPortrait.js"

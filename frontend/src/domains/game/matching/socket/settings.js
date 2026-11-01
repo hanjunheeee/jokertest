@@ -4,7 +4,7 @@ import {
   ROOM_SETTINGS_RESULT_TIMEOUT_MS,
   SOCKET_EVENTS,
   UPDATE_ROOM_SETTINGS_TIMEOUT_MS,
-} from '@/domains/game/setup/constants/gameSetupSocket.js'
+} from '@/domains/game/shared/constants/gameSetupSocket.js'
 
 // 설정 저장 요청
 export const sendSettings = (socket, payload) =>

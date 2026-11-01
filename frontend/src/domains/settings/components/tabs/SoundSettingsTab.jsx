@@ -1,8 +1,8 @@
-import { SOUND_SETTING_VOLUMES } from "../../constants/soundSettings.js"
+import { SOUND_SETTING_VOLUMES } from "../../../../shared/constants/soundSettings.js"
 import { SETTING_ASSETS } from "../../constants/settingAssets.js"
 import CheckBox from "@/shared/ui/CheckBox"
 import RangeSlider from "@/shared/ui/RangeSlider"
-import { useSoundSettings } from "../../hooks/useSoundSettings.js"
+import { useSoundSettings } from "../../../../shared/hooks/useSoundSettings.js"
 
 const ROW_CLASS =
   "flex shrink-0 items-center justify-between gap-[clamp(1rem,2.5vw,2rem)] border-b border-[#c4a574]/35 py-[clamp(0.35rem,0.85vh,0.5rem)] last:border-b-0"

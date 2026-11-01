@@ -1,7 +1,7 @@
 import {
   LOBBY_LEFT_CONTROLS_CLASS,
   LOBBY_RIGHT_CONTROLS_CLASS,
-} from "@/domains/lobby/constants/lobbyLayoutStyle.js"
+} from "@/shared/constants/lobbyLayoutStyle.js"
 import FriendListPanel from "@/domains/lobby/components/friendList/FriendListPanel.jsx"
 import FriendListToggleButton from "@/domains/lobby/components/friendList/FriendListToggleButton.jsx"
 import NotificationEntryButton from "@/domains/notifications/components/NotificationEntryButton.js"

@@ -1,8 +1,8 @@
 // 새 비밀번호 머리글·입력 칸 두 개·에러·변경 버튼
 // pages/passwordReset/ResetPage.jsx가 ready·submitting 상태에서 씀
-import AuthInputSlot from "@/domains/auth/components/AuthInputSlot.jsx"
+import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
-import { LockIcon } from "@/domains/auth/components/InputIcons.jsx"
+import { LockIcon } from "@/shared/ui/InputIcons.jsx"
 import { AUTH_RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 
 // 보내는 중엔 fieldset으로 칸·버튼을 한 번에 잠금

@@ -1,7 +1,7 @@
 import {
   INGAME_PLAYER_THEME_TEXT_RENDER_CLASS,
   INGAME_PLAYER_THEME_TEXT_SHADOW,
-} from "../../constants/ingamePlayerTheme.js"
+} from "../../../../../shared/constants/ingamePlayerTheme.js"
 import { INGAME_SETTING_CHAT_CHECKBOXES } from "../../constants/controls/ingameSetting/ingameSettingData.js"
 import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
 

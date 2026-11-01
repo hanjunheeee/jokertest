@@ -3,7 +3,7 @@ import { INVITED_GUESTS_JOB_CHALLENGES } from "./jobChallenges.js"
 import {
   INVITED_GUESTS_JOB_SPREAD_META,
   INVITED_GUESTS_PAGE_COUNT,
-} from "./jobSpreadMeta.js"
+} from "../../../../shared/constants/jobSpreadMeta.js"
 import { mergeInvitedGuestsSpreads } from "./mergeInvitedGuestsSpreads.js"
 
 export { INVITED_GUESTS_PAGE_COUNT }

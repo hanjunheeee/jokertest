@@ -1,21 +1,9 @@
-export const ROOM_CODE_FRAME_FOOTER_INSET = {
-  paddingLeft: "9.5%",
-  paddingRight: "9.5%",
-  paddingBottom: "7.5%",
-}
-
-export const ROOM_CODE_FRAME_INPUT_INSET = {
-  top: "48.4%",
-  left: "10.6%",
-  right: "12.6%",
-  height: "12.8%",
-}
-
-export const ROOM_CODE_ACTION_BTN_CLASS =
-  "interactive-scale relative w-[clamp(11.4rem,19%,15.25rem)] shrink-0 leading-none"
-
-export const ROOM_CODE_ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:clamp(1.05rem,1.55vw,1.3rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
-
-export const ROOM_CODE_FRAME_IMAGE_CLASS =
-  "pointer-events-none block h-auto w-full select-none drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+// 옛 경로 입구: 본체는 domains/game/shared/constants/roomCodeFrameStyles.js로 옮김 (여러 영역이 같이 써서)
+// RoomCodeViewModal.jsx(원격 원문과 비교하는 시험 대상이라 손대지 않음)이 옛 경로로 부름
+export {
+  ROOM_CODE_FRAME_FOOTER_INSET,
+  ROOM_CODE_FRAME_INPUT_INSET,
+  ROOM_CODE_ACTION_BTN_CLASS,
+  ROOM_CODE_ACTION_BTN_LABEL_CLASS,
+  ROOM_CODE_FRAME_IMAGE_CLASS,
+} from "../../shared/constants/roomCodeFrameStyles.js"

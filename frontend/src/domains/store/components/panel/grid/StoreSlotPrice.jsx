@@ -2,7 +2,7 @@
 // StoreItemSlot이 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../../constants/storeItems.js"
-import { STORE_ASSETS } from "../../../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../../../shared/constants/storeAssets.js"
 import {
   STORE_SLOT_PRICE_AMOUNT_CLASS,
   STORE_SLOT_PRICE_CLASS,

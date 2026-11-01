@@ -1,6 +1,6 @@
 // 기기에 저장된 설정값 정리·합치기 (깨진 값·범위 밖 값 걸러냄)
 // 설정 스토어 persist의 merge가 씀
-import { SOUND_SETTING_VOLUMES } from "../constants/soundSettings.js"
+import { SOUND_SETTING_VOLUMES } from "../../../shared/constants/soundSettings.js"
 import { GENERAL_SETTING_TEXT_SIZE } from "../constants/generalSettings.js"
 import { CHAT_CHECK_STORAGE_IDS, CHAT_TEXT_SIZE_STORAGE_RANGE } from "../constants/settingsStorage.js"
 import { defaultGeneralChecks } from "./settingsDefaults.js"

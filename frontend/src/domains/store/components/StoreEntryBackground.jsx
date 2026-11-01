@@ -1,4 +1,4 @@
-import { STORE_ASSETS } from "../constants/storeAssets.js"
+import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 export default function StoreEntryBackground({ videoRef }) {

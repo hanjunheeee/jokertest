@@ -1,3 +1,5 @@
+// 로비 화면 자리·버튼 className
+// lobby 화면과 notifications 알림 버튼이 씀
 export const LOBBY_PAGE_ROOT_CLASS = "relative h-svh w-full overflow-hidden bg-black"
 
 export const LOBBY_UI_LAYER_CLASS = "absolute inset-0 z-10"
