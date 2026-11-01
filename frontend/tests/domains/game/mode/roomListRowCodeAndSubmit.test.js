@@ -768,7 +768,7 @@ test("행이 그 계산 결과를 배지와 aria-label에 그대로 연결한다
 
 test("행의 코드 표시는 서버가 목록에 실어 주지 않은 값을 만들어 내지 않는다", () => {
   const listContract = readFileSync(
-    path.join(srcRoot, "..", "..", "backend", "socket", "matchmaking.js"),
+    path.join(srcRoot, "..", "..", "backend", "socket", "matchmaking", "room", "view.js"),
     "utf8",
   )
   const builder = listContract
