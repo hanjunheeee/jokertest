@@ -1,7 +1,7 @@
 // 내 프로필 파일, 프로필 응답 만들기(직업 통계로 승률·최고 승률 직업 이름) · 닉네임 바꾸기(검사·중복 확인) + 계정 한 명 읽기
-// profile 컨트롤러·관리자 확인·방 입장이 부름, 상태 코드·응답 감싸기는 컨트롤러 몫 (저장소는 모듈 객체로 불러 시험 패치 먹게)
+// profile 컨트롤러·관리자 확인·방 입장이 부름, 상태 코드·응답 감싸기는 컨트롤러 몫 (저장소·전적 통계 서비스는 모듈 객체로 불러 시험 패치 먹게)
 const userRepository            = require("../../repositories/user");
-const gameResultRepository      = require("../../repositories/game/result");
+const roleStatisticsQueries     = require("../game/roleStatistics/queries");
 const roleStatisticsPolicy      = require("../game/roleStatistics");
 const { validateNickname }      = require("../../validations/auth/signup");
 
@@ -11,9 +11,9 @@ exports.getMyProfile = async (uuid) => {
     if (!row) return null;
 
     const stats = row.UserStat ?? {};
-    const highestWinRateRole = await gameResultRepository.getHighestWinRateRole(uuid);
+    const highestWinRateRole = await roleStatisticsQueries.getHighestWinRateRole(uuid);
 
-    const roleStatistics = await gameResultRepository.getMyRoleStatistics(uuid);
+    const roleStatistics = await roleStatisticsQueries.getMyRoleStatistics(uuid);
     let displayedGames = 0;
     let displayedWins  = 0;
     for (const entry of roleStatistics) {

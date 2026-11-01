@@ -1,4 +1,4 @@
-const gameResultRepository = require("../../repositories/game/result");
+const gameRecordQueries = require("../../services/game/record/queries");
 
 exports.getGameResult = async (req, res, next) => {
     try {
@@ -7,7 +7,7 @@ exports.getGameResult = async (req, res, next) => {
             return res.status(400).json({ success: false, message: "게임 id가 필요합니다." });
         }
 
-        const result = await gameResultRepository.findGameResultById(gameId);
+        const result = await gameRecordQueries.findGameResultById(gameId);
         if (!result) {
             return res.status(404).json({ success: false, message: "게임 기록을 찾을 수 없습니다." });
         }
