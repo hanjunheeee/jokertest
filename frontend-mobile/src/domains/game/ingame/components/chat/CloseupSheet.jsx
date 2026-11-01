@@ -8,7 +8,6 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import { INGAME_CHAT_ASSETS } from "@/domains/game/ingame/constants/chat/ingameChatAssets.js"
 import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardInset.js"
 import ChatHeader from "./ChatHeader.jsx"
-import ChatTimer from "./ChatTimer.jsx"
 import Composer from "./Composer.jsx"
 import MessageList from "./MessageList.jsx"
 import StatusLine from "./StatusLine.jsx"
@@ -27,8 +26,8 @@ function CloseButton({ onClose }) {
     )
 }
 
-// session은 채팅 세션 값, channel은 useChatChannel 값, timer는 useChatTimer 값
-export default function CloseupSheet({ open, onClose, session, channel, timer, emptyText }) {
+// session은 채팅 세션 값, channel은 useChatChannel 값
+export default function CloseupSheet({ open, onClose, session, channel, emptyText }) {
     const keyboardInset = useKeyboardInset()
 
     // 열렸을 때만 Esc로 닫기 (닫는 소리 같이)
@@ -61,7 +60,6 @@ export default function CloseupSheet({ open, onClose, session, channel, timer, e
                 >
                     <div className={`${PANEL_CLASS} rounded-none border-x-0 md:h-full md:max-w-[40rem] md:rounded-[0.9rem] md:border-x-[3px]`}>
                         <ChatHeader channel={channel} action={<CloseButton onClose={onClose} />} className="py-1" />
-                        {timer.visible ? <ChatTimer deadline={timer.deadline} /> : null}
                         <MessageList messages={session.messages} selfId={channel.selfId} emptyText={emptyText} fontBase={1.12} />
                         <StatusLine status={session.status} error={session.error} blockedReason={channel.blockedReason} />
                         <Composer

@@ -1,14 +1,12 @@
-// 인게임 채팅 칸: 채널 표시·타이머·메시지 목록·상태 줄 + 입력 줄(세로 폰은 화면 바닥 자리) + 크게 보기 시트
+// 인게임 채팅 칸: 채널 표시·메시지 목록·상태 줄 + 입력 줄(세로 폰은 화면 바닥 자리) + 크게 보기 시트
 // InGamePage가 props 없이 씀, 값은 데스크톱 채팅 세션 컨텍스트(InGameChatSessionProvider)·인게임 스토어
 import { useCallback, useState } from "react"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
 import { useInGameChatSessionContext } from "@/domains/game/ingame/components/chat/InGameChatSessionContext.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { useChatChannel } from "@m/domains/game/ingame/hooks/chat/useChatChannel.js"
-import { useChatTimer } from "@m/domains/game/ingame/hooks/chat/useChatTimer.js"
 import { useWideChat } from "@m/domains/game/ingame/hooks/chat/useWideChat.js"
 import ChatHeader from "./ChatHeader.jsx"
-import ChatTimer from "./ChatTimer.jsx"
 import CloseupSheet from "./CloseupSheet.jsx"
 import Composer from "./Composer.jsx"
 import MessageList from "./MessageList.jsx"
@@ -29,11 +27,10 @@ function resolveEmptyText(channel) {
     return "아직 메시지가 없음"
 }
 
-// 세로 폰: 목록은 칸 안, 입력 줄은 바닥 자리(행동 줄 아래), 넓은 배치: 입력 줄도 칸 안
+// 세로 폰: 목록은 칸 안, 입력 줄은 바닥 자리(행동 줄 아래), 넓은 배치: 입력 줄도 칸 안 (타이머는 진행 바만 보여 줘서 없음)
 export default function ChatPanel() {
     const session = useInGameChatSessionContext()
     const channel = useChatChannel()
-    const timer = useChatTimer()
     const wide = useWideChat()
     const tribunalOpen = useInGameStore(selectTribunalPresentationOpen)
     const [closeupOpen, setCloseupOpen] = useState(false)
@@ -59,7 +56,6 @@ export default function ChatPanel() {
         <>
             <section aria-label="채팅" className={PANEL_CLASS}>
                 <ChatHeader channel={channel} onExpand={() => setCloseupOpen(true)} />
-                {timer.visible ? <ChatTimer deadline={timer.deadline} /> : null}
                 <MessageList messages={session.messages} selfId={channel.selfId} emptyText={emptyText} />
                 <StatusLine status={session.status} error={session.error} blockedReason={channel.blockedReason} />
                 {wide ? composer : null}
@@ -70,7 +66,6 @@ export default function ChatPanel() {
                 onClose={closeCloseup}
                 session={session}
                 channel={channel}
-                timer={timer}
                 emptyText={emptyText}
             />
         </>
