@@ -1,8 +1,11 @@
-// 방코드 시트: 6칸 코드 + 복사 버튼 + 복사 실패 문구
-// GameMatchingPage가 씀, 복사 상태는 데스크톱 useRoomCodeCopy 그대로 (RoomCodeViewModal과 같은 규칙)
+// 방코드 창: 데스크톱 방코드 발송 틀 그림(제목·안내 글 들어 있음) 위 6칸 코드 + 복사 버튼 + 복사 실패 글
+// GameMatchingPage가 씀, 복사 상태는 데스크톱 useRoomCodeCopy, 그림·덮개·움직임·글은 데스크톱 RoomCodeViewModal 그대로
 import { useId } from "react"
 import { GAME_MATCHING_ASSETS } from "@/domains/game/matching/constants/gameMatchingAssets.js"
+import { FRAME_VARIANTS, POPUP_CLOSE_BUTTON } from "@/domains/game/matching/constants/roomCodeViewModal.js"
 import { useRoomCodeCopy } from "@/domains/game/matching/hooks/useRoomCodeCopy.js"
+import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
+import { FOOTER_INSET, INPUT_INSET } from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
 import {
   ROOM_CODE_COPY_ERRORS,
   ROOM_CODE_COPY_RESULTS,
@@ -10,15 +13,24 @@ import {
   isValidRoomCode,
   normalizeRoomCode,
 } from "@/domains/game/shared/utils/roomCode.js"
-import BottomSheet from "../sheet/BottomSheet.jsx"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
-import { ERROR_ON_PARCHMENT_CLASS, ROOM_CODE_COPY } from "../../constants/matchingMobileStyles.js"
+import Modal from "../frame/Modal.jsx"
 
-// 코드 한 칸 모양 (데스크톱 방코드 틀의 어두운 칸 느낌)
+// 코드 한 칸 글자 (그림 칸 자리에 맞춤, 데스크톱 RoomCodeInput과 같은 글꼴)
 const CELL_CLASS =
-  "flex aspect-[4/5] min-w-0 flex-1 items-center justify-center rounded-md border-2 border-[#1d1611] bg-[#2b2520] font-display app-text-scaled [--app-text-size:1.7rem] font-bold text-[#f5f0e6] shadow-[inset_0_2px_6px_rgba(0,0,0,0.7)] land:aspect-auto land:h-12"
+  "flex aspect-square h-[92%] w-[13%] items-center justify-center font-subheading text-[min(6vw,2.1rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
 
-// 방코드 시트
+// 복사 버튼 (데스크톱 ROOM_CODE_ACTION_BTN_LABEL_CLASS 글자, 못 쓰면 반투명)
+const COPY_LOOK = {
+  button:
+    "relative flex h-11 w-[min(46%,15.25rem)] min-w-0 cursor-pointer items-center justify-center overflow-hidden border-0 bg-transparent p-0 leading-none transition-transform active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
+  img: "pointer-events-none absolute inset-0 h-full w-full select-none object-fill",
+  label:
+    "relative z-[1] whitespace-nowrap font-subheading app-text-scaled [--app-text-size:1rem] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
+}
+
+// 방코드 창 (roomCode는 확인된 방에서만 값 있음)
 export default function RoomCodeSheet({ open, onClose, roomCode }) {
   const copyErrorId = useId()
   // 표시값은 정규화한 코드, 형식이 맞을 때만 복사 가능
@@ -32,37 +44,66 @@ export default function RoomCodeSheet({ open, onClose, roomCode }) {
   const errorText = copyError || (canCopy ? "" : ROOM_CODE_COPY_ERRORS.UNAVAILABLE)
 
   return (
-    <BottomSheet open={open} onClose={handleClose} title={ROOM_CODE_COPY.title} tone="parchment" closeLabel="방코드 팝업 닫기">
-      <div className="flex flex-col items-center gap-3 pt-1 pb-2" data-copy-status={copyStatus || undefined}>
-        <p className="text-center font-subheading app-text-scaled [--app-text-size:0.92rem] font-semibold leading-snug text-[#2a1810]">
-          {ROOM_CODE_COPY.description}
-        </p>
+    <Modal
+      open={open}
+      onClose={handleClose}
+      closeLabel="방코드 보기 닫기"
+      ariaLabel="방코드"
+      backdropClassName="bg-black/60"
+      variants={FRAME_VARIANTS}
+      testId="room-code-sheet"
+      className="w-[min(calc(100vw-1.5rem),52rem)] land:w-[min(calc(100vw-1.5rem),30rem)]"
+    >
+      <div className="relative w-full">
+        <PublicAsset
+          src={GAME_MATCHING_ASSETS.roomCodeShareFrame}
+          alt="초대 방코드"
+          className="pointer-events-none block h-auto w-full select-none drop-shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+        />
+        <button
+          type="button"
+          aria-label="방코드 팝업 닫기"
+          onClick={handleClose}
+          data-sfx-kind="ui-cancel"
+          className="absolute -right-1 top-[4.2%] z-20 flex h-11 w-11 cursor-pointer items-center justify-center border-0 bg-transparent p-0 active:scale-95"
+        >
+          <PublicAsset src={POPUP_CLOSE_BUTTON} alt="" className="block h-10 w-10 select-none object-contain" />
+        </button>
 
-        <div className="flex w-full max-w-[22rem] gap-1.5" role="group" aria-label={`방코드 ${displayRoomCode || "없음"}`}>
-          {cells.map((char, i) => (
-            <span key={i} className={CELL_CLASS} aria-hidden="true">{char}</span>
-          ))}
+        <div className="absolute z-10" style={INPUT_INSET}>
+          <div
+            className="flex h-full w-full items-center justify-between pl-[8.6%] pr-[7.8%]"
+            role="group"
+            aria-label={`방코드 ${displayRoomCode || "없음"}`}
+          >
+            {cells.map((char, i) => (
+              <span key={i} className={CELL_CLASS} aria-hidden="true">{char}</span>
+            ))}
+          </div>
         </div>
 
-        <ImageButton
-          look="fill"
-          label={copied ? ROOM_CODE_COPY.copied : ROOM_CODE_COPY.copy}
-          ariaLabel={copied ? "방코드 복사됨" : "방코드 복사"}
-          src={GAME_MATCHING_ASSETS.startGameButton}
-          onClick={handleCopy}
-          disabled={!canCopy}
-          aria-describedby={errorText ? copyErrorId : undefined}
-          className="h-12 w-[12rem]"
-        />
-        <p
-          id={copyErrorId}
-          role="alert"
-          data-copy-status={copyStatus || (canCopy ? "" : ROOM_CODE_COPY_RESULTS.CODE_UNAVAILABLE)}
-          className={`${ERROR_ON_PARCHMENT_CLASS} min-h-[1.25rem] text-center`}
-        >
-          {errorText}
-        </p>
+        {/* 복사 버튼은 틀 아래쪽 칸 (데스크톱 footer 자리) */}
+        <div className="absolute inset-x-0 bottom-0 flex justify-center" style={FOOTER_INSET}>
+          <ImageButton
+            look={COPY_LOOK}
+            label={copied ? "복사됨" : "방코드 복사"}
+            ariaLabel={copied ? "방코드 복사됨" : "방코드 복사"}
+            src={ROOM_INVITE_ASSETS.joinButton}
+            onClick={handleCopy}
+            disabled={!canCopy}
+            aria-describedby={copyError ? copyErrorId : undefined}
+            data-copy-status={copyStatus || (canCopy ? "" : ROOM_CODE_COPY_RESULTS.CODE_UNAVAILABLE)}
+          />
+        </div>
       </div>
-    </BottomSheet>
+      {/* 복사 실패 글은 틀이 작은 폰에서 칸을 가리지 않게 틀 아래 */}
+      <p
+        id={copyErrorId}
+        role="alert"
+        className="mt-2 min-h-[1.25rem] text-center font-subheading app-text-scaled [--app-text-size:0.9rem] font-semibold leading-snug text-[#ffb3a7] [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
+      >
+        {errorText}
+      </p>
+    </Modal>
   )
 }

@@ -1,15 +1,17 @@
-// 대기방 설정 변경 시트 (거의 꽉 찬 양피지 시트): 탭·설정 줄·저장/취소·저장 실패 문구
-// GameMatchingPage가 씀, 데스크톱 SettingsEditOverlay(GameSetupPanel 편집 모드)를 세로 시트로 바꿈
+// 대기방 설정 변경 화면: 어두운 덮개 위 탭·양피지 설정 목록·설정 저장/취소 + 저장 실패 글
+// GameMatchingPage가 열렸을 때만 씀, 데스크톱 SettingsEditOverlay(GameSetupPanel 편집 모드)와 같은 구성·글
 import { useState } from "react"
+import { createPortal } from "react-dom"
+import { motion } from "framer-motion"
 import { GAME_SETUP_ASSETS } from "@/domains/game/setup/constants/gameSetupAssets.js"
+import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { useSetupForm } from "@m/domains/game/shared/hooks/useSetupForm.js"
-import BottomSheet from "../sheet/BottomSheet.jsx"
 import SettingsTabs from "./SettingsTabs.jsx"
 import SettingsItemList from "./SettingsItemList.jsx"
-import { ERROR_ON_PARCHMENT_CLASS } from "../../constants/matchingMobileStyles.js"
+import { ACTION_LOOK } from "../../constants/settingsEditStyle.js"
 
-// 설정 변경 시트 (열렸을 때만 페이지가 그림, 폼 값은 열 때마다 방 설정에서 새로 채움)
+// 설정 변경 화면 (폼 값은 열 때마다 방 설정에서 새로 채움), 처음 탭은 일반
 export default function SettingsEditSheet({
   settingsForm,
   formResetKey,
@@ -32,51 +34,52 @@ export default function SettingsEditSheet({
   // 결과 확인 대기 중엔 바닥 안내가 같은 오류를 보여 주므로 여기선 숨김
   const showError = Boolean(settingsError) && !hasPendingSettingsResult
 
-  return (
-    <BottomSheet
-      open
-      onClose={onCancel}
-      title="방 설정 변경"
-      tone="parchment"
-      size="full"
-      closeLabel="설정 변경 취소"
-      closeDisabled={isSaving}
-      footer={
-        <div className="flex flex-col gap-1.5">
-          {showError ? (
-            <p role="alert" className={`${ERROR_ON_PARCHMENT_CLASS} text-center`}>
-              {settingsError.message ?? "설정을 저장하지 못했습니다."}
-            </p>
-          ) : null}
-          <div className="mx-auto grid w-full max-w-[24rem] grid-cols-2 gap-2">
-            <ImageButton
-              look="fill"
-              label={isSaving ? "저장 중…" : "설정 저장"}
-              ariaLabel="설정 저장"
-              busy={isSaving}
-              src={GAME_SETUP_ASSETS.createGameButton}
-              onClick={form.submit}
-              disabled={!form.canSubmit}
-              className="h-12"
-            />
-            <ImageButton
-              look="fill"
-              label="취소"
-              ariaLabel="설정 변경 취소"
-              src={GAME_SETUP_ASSETS.cancelButton}
-              sfxKind="ui-cancel"
-              onClick={onCancel}
-              disabled={isSaving}
-              className="h-12"
-            />
+  // 화면 틀(container) 밖 body에 띄워 바닥 줄까지 덮음
+  return createPortal(
+    <div className="fixed inset-0 z-[62] bg-black/70">
+      <motion.div
+        className="mx-auto flex h-full w-full max-w-2xl flex-col gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] land:max-w-none land:px-4 land:pt-2 land:pb-2"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={UI_REVEAL_TRANSITION}
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-2 land:flex-row land:gap-3">
+          <div className="shrink-0 land:w-44">
+            <SettingsTabs activeTab={activeTab} onSelect={setActiveTab} />
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SettingsItemList activeTab={activeTab} form={form} />
           </div>
         </div>
-      }
-    >
-      <div className="sticky top-0 z-[1] -mx-4 bg-[#cdb68a] px-4 pt-1 pb-2">
-        <SettingsTabs activeTab={activeTab} onSelect={setActiveTab} />
-      </div>
-      <SettingsItemList activeTab={activeTab} form={form} />
-    </BottomSheet>
+
+        <div className="flex shrink-0 items-center justify-center gap-3 pt-1">
+          <ImageButton
+            look={ACTION_LOOK}
+            src={GAME_SETUP_ASSETS.createGameButton}
+            label={isSaving ? "저장 중…" : "설정 저장"}
+            ariaLabel="설정 저장"
+            busy={isSaving}
+            disabled={!form.canSubmit}
+            onClick={form.submit}
+          />
+          <ImageButton
+            look={ACTION_LOOK}
+            src={GAME_SETUP_ASSETS.cancelButton}
+            label="취소"
+            ariaLabel="설정 변경 취소"
+            sfxKind="ui-cancel"
+            disabled={isSaving}
+            onClick={onCancel}
+          />
+        </div>
+
+        {showError ? (
+          <p role="alert" className="shrink-0 text-center text-[#ffd9d9]">
+            {settingsError.message ?? "설정을 저장하지 못했습니다."}
+          </p>
+        ) : null}
+      </motion.div>
+    </div>,
+    document.body,
   )
 }

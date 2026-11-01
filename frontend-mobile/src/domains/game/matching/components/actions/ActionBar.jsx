@@ -1,8 +1,9 @@
-// 대기방 바닥 고정 줄: 안내 띠 + 준비·시작·삭제(방장) / 준비·나가기(참가자)
-// GameMatchingPage가 ShellBottom 안에 넣어 씀, 버튼 글자·잠금 규칙은 데스크톱 MatchingPopupPanel과 같음
+// 대기방 바닥 줄: 안내 띠 + 준비·시작·삭제(방장) / 준비·나가기(참가자)
+// GameMatchingPage가 ShellBottom 안에 넣어 씀, 버튼 글자·그림·순서·잠금은 데스크톱 MatchingPopupPanel 아래 버튼 줄과 같음
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import NoticeBanner from "./NoticeBanner.jsx"
+import { ACTION_BUTTON_LOOK } from "../../constants/matchingMobileStyles.js"
 
 // 바닥 줄 (page = useMatchingPage 값 묶음)
 export default function ActionBar({ page }) {
@@ -26,7 +27,7 @@ export default function ActionBar({ page }) {
   const hasResultNotice = typeof resultNotice === "string" && resultNotice.length > 0
 
   return (
-    <div className="flex flex-col gap-2 border-t border-[#c9b892]/35 bg-black/90 px-3 pt-2 pb-2 land:flex-row land:items-center land:py-1.5">
+    <div className="flex flex-col gap-2 px-3 pt-2 pb-2 land:flex-row land:items-center land:py-1.5">
       {hasPendingSettingsResult || hasResultNotice ? (
         <div className="flex flex-col gap-1.5 land:min-w-0 land:flex-1">
           {hasPendingSettingsResult ? (
@@ -53,32 +54,32 @@ export default function ActionBar({ page }) {
       <div
         className={`mx-auto grid w-full max-w-[34rem] gap-2 ${isHost ? "grid-cols-3" : "grid-cols-2"} land:max-w-[28rem]`}
       >
-        <ImageButton look="fill" label={readyLabel} src={readySrc} onClick={toggleReady} disabled={readyDisabled} className="h-12 land:h-11" />
+        <ImageButton look={ACTION_BUTTON_LOOK} label={readyLabel} src={readySrc} onClick={toggleReady} disabled={readyDisabled} />
         {isHost ? (
           <>
             <ImageButton
-              look="fill"
+              look={ACTION_BUTTON_LOOK}
               label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
               src={GAME_MATCHING_ASSETS.startGameButton}
               onClick={startGame}
               disabled={isStarting}
-              className="h-12 land:h-11"
+             
             />
             <ImageButton
-              look="fill"
+              look={ACTION_BUTTON_LOOK}
               label={MATCHING_POPUP_COPY.deleteRoom}
               src={GAME_MATCHING_ASSETS.deleteRoomButton}
               onClick={deleteRoom}
-              className="h-12 land:h-11"
+             
             />
           </>
         ) : (
           <ImageButton
-            look="fill"
+            look={ACTION_BUTTON_LOOK}
             label={MATCHING_POPUP_COPY.leaveRoom}
             src={GAME_MATCHING_ASSETS.deleteRoomButton}
             onClick={handleBack}
-            className="h-12 land:h-11"
+           
           />
         )}
       </div>

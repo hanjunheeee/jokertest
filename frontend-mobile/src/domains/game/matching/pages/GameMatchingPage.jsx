@@ -1,14 +1,12 @@
-// 대기방 화면 (/game-matching): 배경·위 줄·양피지 판(자리 2열)·바닥 준비/시작 줄·시트들
+// 대기방 화면 (/game-matching): 배경·위 줄·방장 버튼/초대코드·매칭 틀·바닥 준비/시작 줄·창들
 // app/routes/index.jsx가 씀, 값과 동작은 모두 데스크톱 useMatchingPage에서 받음
-import { useState } from "react"
 import { useMatchingPage } from "@/domains/game/matching/hooks/useMatchingPage.js"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
-import { useSlotCards } from "../hooks/useSlotCards.js"
 import MatchingBackdrop from "../components/layout/MatchingBackdrop.jsx"
 import MatchingTopBar from "../components/layout/MatchingTopBar.jsx"
 import MatchingBoard from "../components/layout/MatchingBoard.jsx"
+import HostActions from "../components/layout/HostActions.jsx"
 import ActionBar from "../components/actions/ActionBar.jsx"
-import HostMenuSheet from "../components/menu/HostMenuSheet.jsx"
 import RoomCodeSheet from "../components/roomCode/RoomCodeSheet.jsx"
 import FriendInviteSheet from "../components/friendInvite/FriendInviteSheet.jsx"
 import KickSheet from "../components/kick/KickSheet.jsx"
@@ -18,11 +16,6 @@ import SettingsEditSheet from "../components/settingsEdit/SettingsEditSheet.jsx"
 // 대기방 페이지
 export default function GameMatchingPage() {
   const page = useMatchingPage()
-  const cards = useSlotCards(page.slots)
-  const [hostMenuOpen, setHostMenuOpen] = useState(false)
-
-  // 방장 메뉴는 데스크톱 방장 버튼 줄과 같은 조건 (설정 변경 가능 또는 방장)
-  const showHostMenu = page.canEditSettings || page.isKickHost
 
   // 친구 버튼은 열고 닫기 둘 다 (데스크톱 친구 버튼과 같음)
   const toggleFriendInvite = () => {
@@ -30,11 +23,14 @@ export default function GameMatchingPage() {
     else page.openFriendInviteModal()
   }
 
+  // 다른 창이 떠 있을 땐 방장 버튼 숨김 (데스크톱과 같음, 자리는 남겨 판이 안 흔들림)
+  const hostActionsHidden = page.settingsOpen || page.kickModalOpen || page.friendInviteModalOpen
+
   return (
-    <div className="relative min-h-full w-full">
+    <div className="relative flex min-h-full w-full flex-col">
       <MatchingBackdrop visible={page.uiVisible} />
 
-      <div className="relative flex min-h-full flex-col">
+      <div className="relative flex flex-1 flex-col">
         <MatchingTopBar
           visible={page.uiVisible}
           partyCount={page.partyCount}
@@ -42,16 +38,25 @@ export default function GameMatchingPage() {
           canOpenFriendInvite={page.canOpenFriendInvite}
           friendInviteOpen={page.friendInviteModalOpen}
           onToggleFriendInvite={toggleFriendInvite}
-          showHostMenu={showHostMenu}
-          onOpenHostMenu={() => setHostMenuOpen(true)}
         />
 
-        <div className="flex-1 px-3 pt-1 pb-4 land:px-6 md:px-8 md:pt-6">
+        <div className="flex flex-1 flex-col justify-center px-3 pb-3 land:px-6 land:pb-1 md:px-8">
           <MatchingBoard
             visible={page.uiVisible}
-            cards={cards}
+            slots={page.slots}
             waitingMessage={page.waitingMessage}
             onRoomCodeOpen={page.openRoomCode}
+            leading={
+              <HostActions
+                visible={page.uiVisible}
+                hidden={hostActionsHidden}
+                canEditSettings={page.canEditSettings}
+                isKickHost={page.isKickHost}
+                canKick={page.canKick}
+                onOpenSettings={page.openSettings}
+                onOpenKickModal={page.openKickModal}
+              />
+            }
           />
         </div>
       </div>
@@ -60,15 +65,6 @@ export default function GameMatchingPage() {
         <ActionBar page={page} />
       </ShellBottom>
 
-      <HostMenuSheet
-        open={hostMenuOpen && showHostMenu}
-        onClose={() => setHostMenuOpen(false)}
-        canEditSettings={page.canEditSettings}
-        isKickHost={page.isKickHost}
-        canKick={page.canKick}
-        onOpenSettings={page.openSettings}
-        onOpenKickModal={page.openKickModal}
-      />
       <RoomCodeSheet open={page.roomCodeOpen} onClose={page.closeRoomCode} roomCode={page.roomCode} />
       <FriendInviteSheet
         open={page.friendInviteModalOpen}
