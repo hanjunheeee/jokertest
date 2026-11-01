@@ -1,7 +1,9 @@
 // 차단 파일, 차단 확인 · 차단 목록 · 차단 · 해제
 // 차단하면 둘 사이 대기 게임 초대도 같이 취소
 const db = require("../../repositories/common/db");
-const friendRepository = require("../../repositories/friend/relation");
+const friendshipRepository = require("../../repositories/friend/friendship");
+const friendRequestRepository = require("../../repositories/friend/request");
+const blockRepository = require("../../repositories/friend/block");
 const gameInviteService = require("./gameInvite");
 const { createError } = require("../../utils/appError");
 const { loadPublicLoadouts } = require('./list');
@@ -9,7 +11,7 @@ const { withTransaction } = require('../../repositories/common');
 
 // 둘 중 누가 차단했으면 403
 const assertNotBlocked = async (uuidA, uuidB, options = {}) => {
-    const blocks = await friendRepository.findBlocksBetween(uuidA, uuidB, options);
+    const blocks = await blockRepository.findBlocksBetween(uuidA, uuidB, options);
     if (blocks.length > 0) {
         throw createError('차단된 사용자와는 친구 신청·게임 초대를 주고받을 수 없습니다.', 403);
     }
@@ -20,7 +22,7 @@ exports.assertNotBlocked = assertNotBlocked;
 
 // 내가 차단한 사람 목록
 exports.getBlockedUsers = async (myUuid) => {
-    const rows = await friendRepository.findBlocksOwnedBy(myUuid);
+    const rows = await blockRepository.findBlocksOwnedBy(myUuid);
     const uuids = rows.map((row) => row.blocked_id);
     const loadoutsByUuid = await loadPublicLoadouts(uuids);
 
@@ -48,13 +50,13 @@ exports.blockUser = async (myUuid, targetId) => {
     }
 
     return await withTransaction(db, async (t) => {
-        const [accountA, accountB] = await friendRepository.lockAccountsInOrder(
+        const [accountA, accountB] = await friendshipRepository.lockAccountsInOrder(
             [myUuid, targetId], { transaction: t },
         );
         if (!accountA || !accountB) throw createError('사용자를 찾을 수 없습니다.', 404);
 
-        await friendRepository.createBlock(myUuid, targetId, { transaction: t });
-        await friendRepository.cancelPendingRequestsBetween(myUuid, targetId, { transaction: t });
+        await blockRepository.createBlock(myUuid, targetId, { transaction: t });
+        await friendRequestRepository.cancelPendingRequestsBetween(myUuid, targetId, { transaction: t });
         const cancelledInvites = await gameInviteService.cancelPendingInvitesBetween(
             myUuid, targetId, 'BLOCKED', { db, transaction: t },
         );
@@ -70,9 +72,9 @@ exports.unblockUser = async (myUuid, targetId) => {
     }
 
     return await withTransaction(db, async (t) => {
-        await friendRepository.lockAccountsInOrder([myUuid, targetId], { transaction: t });
+        await friendshipRepository.lockAccountsInOrder([myUuid, targetId], { transaction: t });
 
-        const removed = await friendRepository.deleteBlock(myUuid, targetId, { transaction: t });
+        const removed = await blockRepository.deleteBlock(myUuid, targetId, { transaction: t });
         if (removed === 0) throw createError('차단 기록을 찾을 수 없습니다.', 404);
 
         return { unblockedId: targetId };

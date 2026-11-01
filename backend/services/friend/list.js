@@ -1,6 +1,9 @@
 // 친구 목록 파일, 접속 상태 판정 · 공개 로드아웃 · 친구 목록 · 닉네임 검색
 // friend 컨트롤러가 부름
-const friendRepository = require("../../repositories/friend/relation");
+const friendshipRepository = require("../../repositories/friend/friendship");
+const friendRequestRepository = require("../../repositories/friend/request");
+const blockRepository = require("../../repositories/friend/block");
+const onlinePresenceRepository = require("../../repositories/presence/onlinePresence");
 const economyService = require("../economy");
 
 // 접속 행 없으면 오프라인
@@ -17,22 +20,22 @@ const loadPublicLoadouts = async (uuids) => {
 
 // 친구 관계 + 접속 상태 + 즐겨찾기 + 공개 장착 합쳐 목록
 exports.getFriendList = async (myUuid) => {
-    const friendships = await friendRepository.findFriendship(myUuid);
+    const friendships = await friendshipRepository.findFriendship(myUuid);
 
     const friendInfos = friendships.map((f) => {
         const isRequester = f.requester_id === myUuid;
         return isRequester ? f.Friend2 : f.Friend1;
     });
 
-    const blockedUuids = new Set(await friendRepository.findBlockedCounterpartUuids(myUuid));
+    const blockedUuids = new Set(await blockRepository.findBlockedCounterpartUuids(myUuid));
     const visibleFriends = friendInfos.filter((friend) => !blockedUuids.has(friend.uuid));
 
-    const presences = await friendRepository.findOnlinePresences(visibleFriends.map((f) => f.uuid));
+    const presences = await onlinePresenceRepository.findOnlinePresences(visibleFriends.map((f) => f.uuid));
     const presenceByUuid = new Map(presences.map((p) => [p.user_id, p]));
 
     const loadoutsByUuid = await loadPublicLoadouts(visibleFriends.map((f) => f.uuid));
 
-    const favoriteIds = new Set(await friendRepository.findFavoriteFriendIds(myUuid));
+    const favoriteIds = new Set(await blockRepository.findFavoriteFriendIds(myUuid));
 
     return visibleFriends.map((friendInfo) => {
         const presence = presenceByUuid.get(friendInfo.uuid);
@@ -55,12 +58,12 @@ exports.getFriendList = async (myUuid) => {
 exports.searchUsers = async (query, myUuid) => {
     if (!query || query.trim().length < 1) return [];
 
-    const users = await friendRepository.searchUsersByNickname(query.trim(), myUuid);
+    const users = await friendRequestRepository.searchUsersByNickname(query.trim(), myUuid);
     const uuids = users.map((u) => u.uuid);
 
     const [loadoutsByUuid, presences] = await Promise.all([
         loadPublicLoadouts(uuids),
-        friendRepository.findOnlinePresences(uuids),
+        onlinePresenceRepository.findOnlinePresences(uuids),
     ]);
     const presenceByUuid = new Map(presences.map((p) => [p.user_id, p]));
 

@@ -1,11 +1,12 @@
-const friendRepository = require("../../repositories/friend/relation");
+const friendshipRepository = require("../../repositories/friend/friendship");
+const onlinePresenceRepository = require("../../repositories/presence/onlinePresence");
 
 exports.setPresence = async (uuid, status) => {
-    await friendRepository.upsertOnlinePresence(uuid, status);
+    await onlinePresenceRepository.upsertOnlinePresence(uuid, status);
 };
 
 exports.getAcceptedFriendUuids = async (uuid) => {
-    const friendships = await friendRepository.findFriendshipUuidsOnly(uuid);
+    const friendships = await friendshipRepository.findFriendshipUuidsOnly(uuid);
 
     return friendships.map((friendship) => {
         const isRequester = friendship.requester_id === uuid;
