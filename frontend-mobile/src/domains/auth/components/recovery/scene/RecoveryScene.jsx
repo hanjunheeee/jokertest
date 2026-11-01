@@ -25,7 +25,8 @@ export default function RecoveryScene({ intro, onSubmit, onBack, children }) {
       <SceneTopBar />
 
       <div className="relative z-10 flex flex-1 items-center justify-center px-4 py-4 land:py-2">
-        <ParchmentCard className="max-w-[24rem] land:max-w-[26rem] md:max-w-[28rem]">
+        {/* 큰 가로 화면(lg)은 카드가 한 화면에 들게 높이로도 폭 상한 */}
+        <ParchmentCard className="max-w-[24rem] land:max-w-[26rem] md:max-w-[28rem] lg:max-w-[min(28rem,calc((100svh-8.5rem)*0.645))]">
           <form onSubmit={handleSubmit} className="flex flex-1 flex-col">
             {intro && <CardIntro>{intro}</CardIntro>}
             {children}

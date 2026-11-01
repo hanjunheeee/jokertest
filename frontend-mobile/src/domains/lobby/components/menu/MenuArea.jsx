@@ -11,7 +11,7 @@ export default function MenuArea() {
             <PublicAsset
                 src={LOBBY_ASSETS.logo}
                 alt="The Joker"
-                className="pointer-events-none h-auto w-[min(58vw,15rem)] select-none short:w-[min(46vw,12rem)] land:w-[min(30vw,13rem)] md:w-[22rem]"
+                className="pointer-events-none h-auto w-[min(58vw,15rem)] select-none short:w-[min(46vw,12rem)] land:w-[min(30vw,13rem)] md:w-[min(22rem,34svh)]"
             />
             <MenuNav />
         </section>

@@ -15,10 +15,10 @@ const RED_FILTER_CLASS =
     "transition-[filter] duration-200 ease-[ease] group-hover:[filter:url(#lobby-menu-red)] group-active:[filter:url(#lobby-menu-red)]"
 
 const IMG_CLASS =
-    `block h-[clamp(2.75rem,6.2svh,3.4rem)] w-auto max-w-[72vw] select-none object-contain ${RED_FILTER_CLASS} land:h-10 land:max-w-[40vw] md:h-16`
+    `block h-[clamp(2.75rem,6.2svh,3.4rem)] w-auto max-w-[72vw] select-none object-contain ${RED_FILTER_CLASS} land:h-10 land:max-w-[40vw] md:h-[clamp(2.75rem,6svh,4rem)]`
 
 const DISCORD_IMG_CLASS =
-    `block aspect-square h-[clamp(2.4rem,5.4svh,3rem)] w-auto shrink-0 select-none object-cover ${RED_FILTER_CLASS} land:h-9 md:h-14`
+    `block aspect-square h-[clamp(2.4rem,5.4svh,3rem)] w-auto shrink-0 select-none object-cover ${RED_FILTER_CLASS} land:h-9 md:h-[clamp(2.4rem,5.2svh,3.5rem)]`
 
 // 고객센터: 주소 있으면 새 창 링크, 없으면 잠긴 버튼 + 안내 / 나머지: 누르면 이동 처리
 export default function MenuItemButton({ item, isActive, isSupport, supportUrl, onSelect }) {

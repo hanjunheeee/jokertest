@@ -11,7 +11,7 @@ export default function MenuNav() {
     return (
         <nav
             aria-label="로비 메뉴"
-            className="flex flex-col items-center gap-[clamp(0.25rem,1.6svh,1rem)] land:grid land:grid-cols-2 land:gap-x-4 land:gap-y-1 md:gap-5"
+            className="flex flex-col items-center gap-[clamp(0.25rem,1.6svh,1rem)] land:grid land:grid-cols-2 land:gap-x-4 land:gap-y-1 md:gap-[clamp(0.5rem,1.5svh,1.25rem)]"
         >
             {LOBBY_MENU_ITEMS.map((item) => (
                 <MenuItemButton

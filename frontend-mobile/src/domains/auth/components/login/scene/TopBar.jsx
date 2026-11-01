@@ -3,10 +3,10 @@
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
-// 가로 화면에선 높이를 아끼려고 액자 옆 빈자리에 겹쳐 띄우고 등급 그림을 줄임
+// 가로 화면에선 높이를 아끼려고 액자 옆 빈자리에 겹쳐 띄우고 등급 그림을 줄임, 큰 화면(lg)도 옆 빈자리에 띄움
 export default function TopBar() {
   return (
-    <header className="relative z-10 flex shrink-0 items-center px-3 pt-2 land:absolute land:left-0 land:top-0 land:px-4! land:pt-2! md:px-6 md:pt-4">
+    <header className="relative z-10 flex shrink-0 items-center px-3 pt-2 land:absolute land:left-0 land:top-0 land:px-4! land:pt-2! md:px-6 md:pt-4 lg:absolute lg:left-0 lg:top-0">
       <PublicAsset
         src={LOGIN_ASSETS.ageRating}
         alt="전체이용가"

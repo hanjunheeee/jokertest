@@ -10,7 +10,7 @@ function TabBody({ activeTab }) {
     return null
 }
 
-// 폰은 기본 스크롤바 그대로 (데스크톱 그림 스크롤바는 손가락으로 못 잡음)
+// 폰은 기본 스크롤바 그대로 (데스크톱 그림 스크롤바는 손가락으로 못 잡음), 작은 가로는 양피지 폭에 맞춰 줄임
 export default function SettingContent({ activeTab }) {
     return (
         <div
@@ -18,7 +18,7 @@ export default function SettingContent({ activeTab }) {
             aria-label="설정 목록"
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 md:px-10"
         >
-            <div className="mx-auto w-full max-w-xl land:max-w-lg">
+            <div className="mx-auto w-full max-w-xl land:max-w-[min(32rem,66vw)]">
                 <TabBody activeTab={activeTab} />
             </div>
         </div>
