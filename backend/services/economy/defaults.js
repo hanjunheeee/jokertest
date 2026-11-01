@@ -12,29 +12,23 @@ const {
     DEFAULT_PROFILE_BORDER_ID,
     listDefaultGrantItems,
 } = catalog;
-const { economyModels, applyLedgerTransaction } = require('./ledger');
+const { applyLedgerTransaction } = require('./ledger');
+const { economyModels } = require('../../repositories/economy/models');
+const loadoutRepository = require('../../repositories/economy/loadout');
 
 // 장착 행 없으면 기본값으로 만들고 비어 있는 칸만 채움
 const ensureDefaultLoadout = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
-    const txOptions = externalTransaction ? { transaction: externalTransaction } : {};
+    await loadoutRepository.ensureLoadout(models, { userId, revision: crypto.randomUUID() }, externalTransaction);
 
-    await models.EconomyLoadout.findOrCreate({
-        where: { user_id: userId },
-        defaults: { user_id: userId, revision: crypto.randomUUID() },
-        ...txOptions,
-    });
+    await loadoutRepository.fillEmptyColumn(models, {
+        userId, column: 'selected_profile_photo_id', value: DEFAULT_PROFILE_PHOTO_ID, revision: crypto.randomUUID(),
+    }, externalTransaction);
+    await loadoutRepository.fillEmptyColumn(models, {
+        userId, column: 'selected_profile_border_id', value: DEFAULT_PROFILE_BORDER_ID, revision: crypto.randomUUID(),
+    }, externalTransaction);
 
-    await models.EconomyLoadout.update(
-        { selected_profile_photo_id: DEFAULT_PROFILE_PHOTO_ID, revision: crypto.randomUUID() },
-        { where: { user_id: userId, selected_profile_photo_id: null }, ...txOptions },
-    );
-    await models.EconomyLoadout.update(
-        { selected_profile_border_id: DEFAULT_PROFILE_BORDER_ID, revision: crypto.randomUUID() },
-        { where: { user_id: userId, selected_profile_border_id: null }, ...txOptions },
-    );
-
-    return models.EconomyLoadout.findOne({ where: { user_id: userId }, ...txOptions });
+    return loadoutRepository.findLoadout(models, userId, externalTransaction);
 };
 
 // 기본 아이템을 장부 거래로 지급 (다시 불러도 두 번 안 줌)

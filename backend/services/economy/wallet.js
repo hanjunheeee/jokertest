@@ -4,7 +4,11 @@
 // economy 경로가 부름
 const { defaultDb, buildSkinsByJob } = require('./helpers');
 const { ensureDefaultEntitlements } = require('./defaults');
-const { economyModels } = require('./ledger');
+const { economyModels } = require('../../repositories/economy/models');
+const walletRepository = require('../../repositories/economy/wallet');
+const entitlementRepository = require('../../repositories/economy/entitlement');
+const loadoutRepository = require('../../repositories/economy/loadout');
+const ledgerRepository = require('../../repositories/economy/ledger');
 
 // 처음 보는 계정이면 기본 지급부터 하고 잔액·보유·장착을 같이
 const getWalletSummary = async (userId, db = defaultDb()) => {
@@ -12,9 +16,9 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
     const models = economyModels(db);
 
     const [wallet, entitlements, loadout] = await Promise.all([
-        models.EconomyWallet.findOne({ where: { user_id: userId } }),
-        models.EconomyEntitlement.findAll({ where: { user_id: userId }, order: [['id', 'ASC']] }),
-        models.EconomyLoadout.findOne({ where: { user_id: userId } }),
+        walletRepository.findWallet(models, userId),
+        entitlementRepository.listOwned(models, userId),
+        loadoutRepository.findLoadout(models, userId),
     ]);
 
     return {
@@ -39,11 +43,7 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
 // 장부 최근 것부터 최대 limit개
 const listTransactions = async (userId, { limit = 50 } = {}, db = defaultDb()) => {
     const models = economyModels(db);
-    const rows = await models.EconomyLedgerEntry.findAll({
-        where: { user_id: userId },
-        order: [['id', 'DESC']],
-        limit,
-    });
+    const rows = await ledgerRepository.listEntries(models, userId, limit);
     return rows.map((row) => ({
         id: row.id,
         reason: row.reason,

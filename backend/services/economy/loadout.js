@@ -8,7 +8,7 @@ const { createError } = require('../../utils/appError');
 const { defaultDb, buildSkinsByJob, isFreeJobSkin } = require('./helpers');
 const { SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_SKIN_ID_PREFIX_BY_SLOT, SKIN_ITEM_ID_PREFIX } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
-const { economyModels } = require('./ledger');
+const { economyModels } = require('../../repositories/economy/models');
 
 // 보유·칸 종류 확인 뒤 revision 맞을 때만 바꿈 (다른 곳에서 바꿨으면 409)
 const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaultDb()) => {

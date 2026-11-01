@@ -6,7 +6,8 @@ const catalog = require('../../economy/catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb, purchasePayloadsEqual, purchaseRequestConflictError, snapshotLedgerEntry } = require('./helpers');
 const { CURRENCIES } = require('./constants');
-const { economyModels, ensureWalletRow, applyLedgerTransaction } = require('./ledger');
+const { ensureWalletRow, applyLedgerTransaction } = require('./ledger');
+const { economyModels } = require('../../repositories/economy/models');
 
 // 묶음 안 아이템마다 장부 참조 id
 const derivePurchaseItemReferenceEventId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;

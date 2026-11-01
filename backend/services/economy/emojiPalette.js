@@ -8,7 +8,7 @@ const { createError } = require('../../utils/appError');
 const { defaultDb } = require('./helpers');
 const { EMOJI_PALETTE_SLOT_COLUMNS, DEFAULT_EMOJI_PALETTE_SLOTS } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
-const { economyModels } = require('./ledger');
+const { economyModels } = require('../../repositories/economy/models');
 const {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,

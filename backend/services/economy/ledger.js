@@ -5,28 +5,19 @@
 const { createError } = require('../../utils/appError');
 const { isValidCurrency, isBoundedAmount, payloadMatches, referenceEventConflictError } = require('./helpers');
 const { CURRENCY_TO_WALLET_COLUMN, MAX_BALANCE } = require('./constants');
-
-// 경제 모델 묶음 꺼내기 (db에 바로 없는 모델은 sequelize models에서)
-const economyModels = (db) => ({
-    sequelize: db.sequelize,
-    EconomyWallet: db.sequelize.models.EconomyWallet,
-    EconomyLedgerEntry: db.EconomyLedgerEntry,
-    EconomyEntitlement: db.sequelize.models.EconomyEntitlement,
-    EconomyLoadout: db.sequelize.models.EconomyLoadout,
-    EconomyPurchaseRequest: db.sequelize.models.EconomyPurchaseRequest,
-    EconomyEmojiPalette: db.sequelize.models.EconomyEmojiPalette,
-});
+const { economyModels } = require('../../repositories/economy/models');
+const walletRepository = require('../../repositories/economy/wallet');
+const ledgerRepository = require('../../repositories/economy/ledger');
+const entitlementRepository = require('../../repositories/economy/entitlement');
+const { withTransaction, isUniqueConstraintName } = require('../../repositories/common');
 
 // 지갑 행 없으면 만듦 (동시에 만들어도 하나만)
 const ensureWalletRow = async (db, userId, externalTransaction = null) => {
     const models = economyModels(db);
     try {
-        await models.EconomyWallet.create(
-            { user_id: userId, balance_gold: 0, balance_diamond: 0 },
-            externalTransaction ? { transaction: externalTransaction } : undefined,
-        );
+        await walletRepository.createEmptyWallet(models, userId, externalTransaction);
     } catch (error) {
-        if (error?.name !== 'SequelizeUniqueConstraintError') throw error;
+        if (!isUniqueConstraintName(error)) throw error;
     }
 };
 
@@ -47,10 +38,7 @@ const applyLedgerTransaction = async (db, {
     const models = economyModels(db);
     const payload = { reason, itemId, currency, amount };
 
-    const preExisting = await models.EconomyLedgerEntry.findOne({
-        where: { user_id: userId, reference_event_id: referenceEventId },
-        ...(externalTransaction ? { transaction: externalTransaction } : {}),
-    });
+    const preExisting = await ledgerRepository.findByReference(models, { userId, referenceEventId }, externalTransaction);
     if (preExisting) {
         if (!payloadMatches(preExisting, payload)) throw referenceEventConflictError();
         return { idempotent: true, ledgerEntry: preExisting };
@@ -59,26 +47,16 @@ const applyLedgerTransaction = async (db, {
     await ensureWalletRow(db, userId, externalTransaction);
 
     const runWrite = async (t) => {
-        const wallet = await models.EconomyWallet.findOne({
-            where: { user_id: userId },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
-        });
+        const wallet = await walletRepository.lockWallet(models, userId, t);
 
-        const committed = await models.EconomyLedgerEntry.findOne({
-            where: { user_id: userId, reference_event_id: referenceEventId },
-            transaction: t,
-        });
+        const committed = await ledgerRepository.findByReference(models, { userId, referenceEventId }, t);
         if (committed) {
             if (!payloadMatches(committed, payload)) throw referenceEventConflictError();
             return { idempotent: true, ledgerEntry: committed };
         }
 
         if (itemId) {
-            const owned = await models.EconomyEntitlement.findOne({
-                where: { user_id: userId, item_id: itemId },
-                transaction: t,
-            });
+            const owned = await entitlementRepository.findOwned(models, { userId, itemId }, t);
             if (owned) {
                 throw createError('이미 보유한 상품입니다.', 409, 'ITEM_ALREADY_OWNED');
             }
@@ -93,11 +71,11 @@ const applyLedgerTransaction = async (db, {
             throw createError('잔액 한도를 초과했습니다.', 400, 'BALANCE_LIMIT_EXCEEDED');
         }
 
-        await wallet.update({ [column]: newBalance }, { transaction: t });
+        await walletRepository.saveWallet(wallet, { [column]: newBalance }, t);
 
         let ledgerEntry;
         try {
-            ledgerEntry = await models.EconomyLedgerEntry.create({
+            ledgerEntry = await ledgerRepository.createEntry(models, {
                 user_id: userId,
                 reason,
                 item_id: itemId,
@@ -105,9 +83,9 @@ const applyLedgerTransaction = async (db, {
                 amount,
                 balance_after: newBalance,
                 reference_event_id: referenceEventId,
-            }, { transaction: t });
+            }, t);
         } catch (error) {
-            if (error?.name === 'SequelizeUniqueConstraintError') {
+            if (isUniqueConstraintName(error)) {
                 throw Object.assign(
                     createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_REFERENCE_EVENT'),
                     { referenceEventId },
@@ -117,22 +95,19 @@ const applyLedgerTransaction = async (db, {
         }
 
         if (itemId) {
-            await models.EconomyEntitlement.create({
+            await entitlementRepository.createOwned(models, {
                 user_id: userId,
                 item_id: itemId,
                 item_type: itemType,
                 source: entitlementSource,
-            }, { transaction: t });
+            }, t);
         }
 
         return { idempotent: false, ledgerEntry, walletBalance: newBalance };
     };
 
     const resolveDuplicate = async (transactionForLookup) => {
-        const existing = await models.EconomyLedgerEntry.findOne({
-            where: { user_id: userId, reference_event_id: referenceEventId },
-            ...(transactionForLookup ? { transaction: transactionForLookup } : {}),
-        });
+        const existing = await ledgerRepository.findByReference(models, { userId, referenceEventId }, transactionForLookup);
         if (!existing) return null;
         if (!payloadMatches(existing, payload)) throw referenceEventConflictError();
         return { idempotent: true, ledgerEntry: existing };
@@ -151,7 +126,7 @@ const applyLedgerTransaction = async (db, {
     }
 
     try {
-        return await models.sequelize.transaction(runWrite);
+        return await withTransaction(models, runWrite);
     } catch (error) {
         if (error?.code === 'DUPLICATE_REFERENCE_EVENT') {
             const resolved = await resolveDuplicate(null);
@@ -162,7 +137,6 @@ const applyLedgerTransaction = async (db, {
 };
 
 module.exports = {
-    economyModels,
     ensureWalletRow,
     applyLedgerTransaction,
 };

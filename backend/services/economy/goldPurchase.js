@@ -6,7 +6,8 @@ const crypto = require('crypto');
 const { createError } = require('../../utils/appError');
 const { defaultDb, purchaseRequestConflictError, snapshotLedgerEntry } = require('./helpers');
 const { CURRENCIES, GOLD_PURCHASE_REASON, GOLD_PURCHASE_KIND, GOLD_PURCHASE_MAX_ATTEMPTS } = require('./constants');
-const { economyModels, ensureWalletRow, applyLedgerTransaction } = require('./ledger');
+const { ensureWalletRow, applyLedgerTransaction } = require('./ledger');
+const { economyModels } = require('../../repositories/economy/models');
 
 // 다이아 빼기·골드 넣기 두 장부 참조 id (요청 id 해시)
 const deriveGoldPurchaseReferenceEventId = (referenceEventId, leg) =>
