@@ -1,13 +1,13 @@
 'use strict';
 
 // 비밀번호 재설정 토큰 파일, 토큰 만들기 · 해시 · 재설정 주소
-// 원래 토큰은 메일 주소에만, DB엔 해시만
+// 같은 폴더 request.js·confirm.js·testing.js가 씀, 원래 토큰은 메일 주소에만·DB엔 해시만
 const crypto = require('crypto');
 
-// 메일로 보낼 원래 토큰
+// 메일로 보낼 원래 토큰 (추측 못 하는 무작위 32바이트)
 const generateRawToken = () => crypto.randomBytes(32).toString('base64url');
 
-// DB에 넣을 토큰 해시
+// DB에 넣을 토큰 해시 (DB가 새도 링크는 못 만들게)
 const hashToken = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
 
 // 앱 주소가 없거나 http(s) 아니면 null (메일 안 보냄)
@@ -15,6 +15,7 @@ const buildResetUrl = (rawToken) => {
     const base = process.env.PASSWORD_RESET_APP_URL;
     if (typeof base !== 'string' || !base.trim()) return null;
 
+    // 못 읽는 주소면 null
     let target;
     try {
         target = new URL(base.trim());
@@ -23,6 +24,7 @@ const buildResetUrl = (rawToken) => {
     }
     if (target.protocol !== 'http:' && target.protocol !== 'https:') return null;
 
+    // 앱 주소 뒤에 /password-reset 붙이고 쿼리는 token 하나만
     target.pathname = `${target.pathname.replace(/\/+$/, '')}/password-reset`;
     target.search = '';
     target.searchParams.set('token', rawToken);

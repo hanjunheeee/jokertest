@@ -1,9 +1,9 @@
 'use strict';
 
 // 게임 초대 공개 모양 파일, 초대 행 → 화면 모양 · 순번 비교
-// 만들기·조회·취소·전송이 같이 씀
+// create·queries·cancel·entry가 모양 씀, compareSeq는 시험만
 
-// 행 없으면 null, 보낸 사람 닉네임 붙임
+// 초대 행 → 화면 모양, 행 없으면 null (닉네임은 넘긴 값 먼저)
 const toPublicInvite = (row, senderNickname = null) => {
     if (row === null || row === undefined) return null;
     const plain = typeof row.get === 'function' ? row.get({ plain: true }) : row;

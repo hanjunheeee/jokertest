@@ -1,12 +1,12 @@
 'use strict';
 
 // 게임 초대 상수 파일, 유효 시간·초대 상태·입장 결과·방 접근 없음 기본값
-// 초대 안 파일들이 같이 씀
+// gameInvite 안 파일들(deps·guards·create·cancel·entry·queries·index)이 씀
 
 // 초대는 3분 동안만 유효
 const INVITE_TTL_MS = 3 * 60 * 1000;
 
-// 초대 상태 (대기 → 수락 결정 → 입장 / 거절·취소·만료)
+// 초대 상태 (대기 → 수락 / 거절·취소·만료, 입장 결과는 아래 따로)
 const INVITE_STATUS = Object.freeze({
     PENDING: 'PENDING',
     ACCEPTED: 'ACCEPTED',
@@ -15,14 +15,14 @@ const INVITE_STATUS = Object.freeze({
     CANCELLED: 'CANCELLED',
 });
 
-// 수락 뒤 입장 결과
+// 수락 뒤 입장 결과 (확인 전 → 입장됨 / 중단)
 const ENTRY_OUTCOME = Object.freeze({
     UNCONFIRMED: 'UNCONFIRMED',
     PUBLISHED: 'PUBLISHED',
     INTERRUPTED: 'INTERRUPTED',
 });
 
-// matchmaking이 방 접근자를 아직 안 넣었을 때 (방 없음으로 봄)
+// socket/matchmaking.js가 방 접근자 넣기 전 기본값 (방 없음·초대 못 받음으로 봄)
 const NO_ROOM_ACCESS = Object.freeze({
     bootEpoch: 'unbound',
     describeRoomForInvite: () => null,

@@ -1,5 +1,5 @@
-// 직업 통계 상수 파일, 직업 코드·이름·최소 판 수·보상 제외 판 출처
-// 집계·랭킹·보상 판정 파일이 같이 씀
+// 직업 통계 상수 파일, 직업 코드·이름·최소 판 수·셈에서 뺄 판 출처
+// aggregate·ranking·eligibility·queries가 같이 씀, index.js가 내보냄
 
 // 직업 코드 순서 (같은 승률일 때 고르는 순서로도 씀)
 const ROLE_CODES = Object.freeze(['CITIZEN', 'JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
@@ -16,10 +16,10 @@ const ROLE_KOREAN_NAMES = Object.freeze({
 // 랭킹에 들어가려면 그 직업으로 이만큼은 해야 함
 const RANKING_MIN_GAMES = 10
 
-// 운명의 가면 직업 후보 최소 판 수
+// 운명의 가면(최고 승률 직업) 후보 최소 판 수
 const MASK_OF_FATE_MIN_GAMES = 1
 
-// 개발·시험 판은 업적 보상에서 빼기
+// 개발·시험 판은 업적 보상·직업 통계에서 빼기
 const EXCLUDED_GAME_SOURCES = new Set(['development', 'test'])
 
 module.exports = {

@@ -1,7 +1,7 @@
 'use strict';
 
 // 재화 상품 상수 파일, 상품 종류·판매 상태·종류별 통화 짝
-// 행 검사·조회가 같이 씀
+// currencyProducts/normalize.js·queries.js·index.js가 씀
 
 // 다이아 충전 · 골드 구매 두 가지
 const KINDS = Object.freeze({ DIAMOND_TOPUP: 'DIAMOND_TOPUP', GOLD_PURCHASE: 'GOLD_PURCHASE' });

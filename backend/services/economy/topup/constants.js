@@ -1,7 +1,7 @@
 'use strict';
 
 // 충전 상수 파일, 주문 상태·실패 상태·잠금 시간·값 모양·결과→상태·열린 주문 한도
-// 충전 안 파일들이 같이 씀
+// 충전 안 파일 전부가 씀 (일부는 topup/index.js가 내보냄)
 
 // 주문 상태 (만듦 → 확인 중 → 지급 대기 → 지급됨 / 실패·취소·만료)
 const ORDER_STATUS = Object.freeze({
@@ -26,10 +26,10 @@ const ORDER_ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/;
 // 결제 키 모양
 const PAYMENT_KEY_PATTERN = /^[A-Za-z0-9_=+/.-]{1,200}$/;
 
-// 로그에 남겨도 되는 코드 모양
+// 로그·실패 코드로 남겨도 되는 코드 모양
 const SAFE_LOG_CODE = /^[A-Z0-9_]{1,80}$/;
 
-// 결제사 결과마다 주문 상태
+// 결제사 실패 결과마다 주문 상태 (PENDING·UNKNOWN은 표에 없어 확인 중 그대로)
 const FAILURE_STATUS_BY_OUTCOME = Object.freeze({
     REJECTED: ORDER_STATUS.FAILED,
     FAILED: ORDER_STATUS.FAILED,

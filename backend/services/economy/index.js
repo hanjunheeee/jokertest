@@ -1,7 +1,7 @@
 'use strict';
 
-// 경제 카테고리 입구, 옛 economy.service 이름 23개 + __internal + 상품·충전 이름 내보냄
-// routes·컨트롤러·친구·업적·인증·충전·socket이 이 입구로 부름 (시험이 이 객체 함수를 갈아끼움)
+// 경제 입구 파일, 경제 함수·상수 23개 + 시험 손잡이(__internal) + 상품·충전 이름 내보냄
+// controllers/economy·auth 가입 2곳·friend/list·achievement·game/roleStatistics·socket/matchmaking·db/backfillEconomy가 부름 (시험이 이 객체 함수 갈아끼움)
 const { CURRENCIES, FREE_CARD_FRAME_ID, SLOT_TO_ITEM_TYPE, DEFAULT_EMOJI_SLOTS, MAX_BALANCE } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
 const { getWalletSummary, listTransactions } = require('./wallet');
@@ -13,7 +13,7 @@ const { getEmojiPalette, saveEmojiPalette } = require('./emojiPalette');
 const { buildSkinsByJob } = require('./helpers');
 const { applyLedgerTransaction } = require('./ledger');
 const { __internal } = require('./testing');
-// 상품·충전 이름도 하나씩 같이 모음 (복사본이라 부를 땐 ./currencyProducts · ./topup 입구 사용)
+// 상품·충전 이름도 같이 모음 (불러올 때 값 복사본이라 시험 갈아끼우기 안 먹음, 부를 땐 ./currencyProducts·./topup 입구 사용)
 const {
     KINDS,
     STATUSES,

@@ -1,5 +1,5 @@
 // 전적 저장 상태 파일, 진행 중 저장 Map · 저장 확인 Set · 세션 표식 WeakMap
-// 세션 표식은 초기화 때 새로 만들므로 다른 파일은 getBySession()으로 매번 읽음
+// persist.js·testing.js가 씀, 세션 표식은 초기화 때 새로 만드니 getBySession()으로 매번 읽음
 
 // 아직 DB 커밋 확인 못 한 저장 작업 (gameId → run)
 const terminalPersistRuns = new Map()

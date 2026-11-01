@@ -1,13 +1,14 @@
-// 소셜 로그인 입구, 옛 socialAuth.service와 같은 이름만 골라 내보냄
-// 인증 컨트롤러가 이 입구로 부름 (자기 부르기도 이 입구 객체로)
+// 소셜 로그인 입구, state·계정 찾기·소셜 가입·연결·시도 표·구글·디스코드 흐름 묶어 내보냄
+// controllers/auth/google.js·discord.js·discordLink.js·socialSignup.js가 부름 (같은 폴더 자기 부르기도 이 입구 객체로)
+// 시험이 issueOAuthState·consumeOAuthState·resolveOAuthAccount·linkExternalIdentityForValidatedSession을 이 객체에서 갈아끼움
 const { issueOAuthState, consumeOAuthState } = require('./state');
 const { resolveOAuthAccount, handleOAuthCallback } = require('./resolve');
 const { getSocialSignupIntent, completeSocialSignup } = require('./signup');
 const { linkExternalIdentityForValidatedSession, linkExternalIdentity } = require('./link');
-// 컨트롤러에서 옮긴 시도 표 서명·확인·판정 + 시도 표 유효 시간
+// 시도 표 서명·확인·판정 + 시도 표 유효 시간 (컨트롤러 쿠키가 씀)
 const { signOAuthAttempt, verifyOAuthAttempt, rememberMeForSignup } = require('./attempt');
 const { ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require('./constants');
-// 컨트롤러에서 옮긴 구글·디스코드 로그인 흐름 · 디스코드 연결 흐름
+// 구글·디스코드 로그인 흐름 · 디스코드 연결 흐름
 const { startGoogleLogin, completeGoogleLogin } = require('./googleLogin');
 const { startDiscordLogin, completeDiscordLogin } = require('./discordLogin');
 const { startDiscordLink, completeDiscordLink } = require('./discordLink');

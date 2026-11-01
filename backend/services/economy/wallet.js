@@ -1,7 +1,7 @@
 'use strict';
 
 // 지갑 조회 파일, 지갑 요약(잔액·보유·장착) · 거래 목록
-// economy 경로가 부름
+// index 거쳐 controllers/economy/account.js가 부름
 const { defaultDb, buildSkinsByJob } = require('./helpers');
 const { ensureDefaultEntitlements } = require('./defaults');
 const { economyModels } = require('../../repositories/economy/models');
@@ -15,12 +15,14 @@ const getWalletSummary = async (userId, db = defaultDb()) => {
     await ensureDefaultEntitlements(userId, db);
     const models = economyModels(db);
 
+    // 셋 다 읽기만이라 한꺼번에
     const [wallet, entitlements, loadout] = await Promise.all([
         walletRepository.findWallet(models, userId),
         entitlementRepository.listOwned(models, userId),
         loadoutRepository.findLoadout(models, userId),
     ]);
 
+    // 지갑·장착 행 없으면 0·null로
     return {
         balanceGold: wallet ? wallet.balance_gold : 0,
         balanceDiamond: wallet ? wallet.balance_diamond : 0,

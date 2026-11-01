@@ -1,8 +1,8 @@
-// 친구 사건 전송 파일, 효과음 사건 만들기 · 친구 사건 보내기 (보내다 실패해도 삼키고 기록만 함)
-// friend 컨트롤러가 서비스 호출 끝난 뒤 부름, 응답(200)은 전송 실패와 상관없이 컨트롤러가 그대로 보냄
+// 친구 사건 전송 파일, 효과음 사건 만들기 · 신청·수락·거절·차단 사건 보내기
+// controllers/friend.controller.js가 index.js 거쳐 서비스 다음에 부름 (전송 실패해도 응답은 그대로)
 const { emitToUser } = require("../../socket/emitter");
 
-// 요청 id·계정 id가 올바를 때만 효과음 사건 만듦, 아니면 null
+// 효과음 사건 만들기, 요청·계정 id 없으면 null (소리 없이 사건만 보냄)
 function buildFriendSfxEvent(kind, stage, accountId, requestId) {
     if (!Number.isInteger(requestId)) return null;
     if (typeof accountId !== 'string' || accountId.length === 0) return null;
@@ -14,7 +14,7 @@ function buildFriendSfxEvent(kind, stage, accountId, requestId) {
     };
 }
 
-// 친구 사건 보내기, 실패하면 코드·대상만 기록하고 삼킴
+// 친구 사건 보내기, 실패해도 기록만 하고 삼킴 (DB 처리는 이미 끝났기 때문)
 function emitFriendEventSafely(userId, event, payload, code) {
     try {
         emitToUser(userId, event, payload);
@@ -23,7 +23,7 @@ function emitFriendEventSafely(userId, event, payload, code) {
     }
 }
 
-// 친구 신청 받는 쪽에 알림 (실패 기록 문구·코드는 옮기기 전 그대로 따로 둠)
+// 신청 받는 쪽에 받음 사건 (옛 실패 기록 문구 그대로 두려고 감싸개 안 씀)
 exports.notifyRequestReceived = (receiverId, requestId) => {
     const sfxEvent = buildFriendSfxEvent('friend-request-received', 'received', receiverId, requestId);
     try {
@@ -33,7 +33,7 @@ exports.notifyRequestReceived = (receiverId, requestId) => {
     }
 };
 
-// 신청 보낸 쪽에 수락 알림
+// 신청 보낸 쪽에 수락 사건
 exports.notifyRequestAccepted = (requesterId, byUuid, requestId) => {
     const sfxEvent = buildFriendSfxEvent('friend-request-accepted', 'accepted', requesterId, requestId);
     emitFriendEventSafely(
@@ -43,7 +43,7 @@ exports.notifyRequestAccepted = (requesterId, byUuid, requestId) => {
     );
 };
 
-// 신청 보낸 쪽에 거절 알림
+// 신청 보낸 쪽에 거절 사건
 exports.notifyRequestDeclined = (requesterId, byUuid, requestId) => {
     const sfxEvent = buildFriendSfxEvent('friend-request-declined', 'declined', requesterId, requestId);
     emitFriendEventSafely(
@@ -53,12 +53,12 @@ exports.notifyRequestDeclined = (requesterId, byUuid, requestId) => {
     );
 };
 
-// 차단 뒤 관계 무효 알림 (한 명씩 부름)
+// 차단 뒤 관계 무효 사건, 화면이 친구·초대 다시 받음 (컨트롤러가 두 사람 각각 부름)
 exports.notifyBlocked = (userId) => {
     emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'BLOCKED' }, 'FRIEND_BLOCK_NOTIFY_ERROR');
 };
 
-// 차단 풀기 뒤 관계 무효 알림
+// 차단 풀기 뒤 관계 무효 사건 (컨트롤러가 푼 사람에게만 부름)
 exports.notifyUnblocked = (userId) => {
     emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'UNBLOCKED' }, 'FRIEND_UNBLOCK_NOTIFY_ERROR');
 };

@@ -1,11 +1,11 @@
 'use strict';
 
 // 충전 도우미 파일, 주입 꺼내기(db·결제사·시각·잠금 시간) · 오류 · 주문 모양 · 로그
-// 만들기·잡기·지급·조회가 같이 씀
+// 충전 안 파일(create·claim·confirm·provider·grant·queries·index)이 같이 씀
 const { createError } = require('../../../utils/appError');
 const { LEASE_MS, SAFE_LOG_CODE, ORDER_STATUS } = require('./constants');
 
-// db 안 넘기면 진짜 models (db 손잡이 창구로 부를 때 require)
+// db 안 넘기면 진짜 models (부를 때 require, 가짜 db 넘기는 시험은 진짜 DB 안 엶)
 const defaultDb = () => require('../../../repositories/common/db');
 
 // 주입 db 먼저
@@ -38,7 +38,7 @@ const processingError = () => createError('결제 확인이 진행 중입니다.
 // 결제 안 됨 402
 const paymentFailed = () => createError('결제가 완료되지 않았습니다.', 402, 'PAYMENT_FAILED');
 
-// 나중에 처리할 일 로그 (코드 모양 맞을 때만 남김)
+// 나중에 처리할 일 로그 (코드는 모양 맞을 때만, 결제 값은 안 남김)
 const logDeferred = (event, orderId, error) => {
     const code = typeof error?.code === 'string' && SAFE_LOG_CODE.test(error.code) ? error.code : 'UNKNOWN';
     console.warn(`[topup] ${event} order=${orderId} code=${code}`);
@@ -50,7 +50,7 @@ const expectString = (value, pattern, makeError) => {
     return value;
 };
 
-// 화면에 보낼 주문 모양 (+ 잔액)
+// 화면에 보낼 주문 모양 (잔액은 지급됐을 때만)
 const toOrderView = (order, balanceDiamond = null) => ({
     orderId: order.order_id,
     status: order.status,

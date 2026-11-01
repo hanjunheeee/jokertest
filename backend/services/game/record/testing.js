@@ -1,5 +1,5 @@
-// 전적 저장 시험 손잡이 파일
-// 진행 중 저장 보기 · 상태 전부 초기화
+// 전적 저장 시험 손잡이 파일, 진행 중 저장 보기 · 상태 전부 초기화
+// 전적 입구(index.js)가 내보냄, socket/gameSession/handlers/register.js 시험 초기화·시험이 씀
 const { terminalPersistRuns, confirmedGameIds, setBySession } = require('./state')
 const { clearPersistTimer } = require('./persist')
 const { __setTerminalPersistTimersForTests } = require('./deps')

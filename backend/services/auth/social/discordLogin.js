@@ -1,5 +1,6 @@
 // 디스코드 로그인 흐름 파일, 시작 준비(지문·state·시도 표) · 콜백 흐름(state 소비·프로필·계정 찾기)
-// 디스코드 컨트롤러가 부름, 쿠키·redirect·인가 주소는 컨트롤러 몫 (쿠키 넣은 뒤 주소 만드는 순서 그대로)
+// social 입구로 controllers/auth/discord.js가 부름
+// 쿠키·redirect·인가 주소는 컨트롤러 몫 (쿠키 넣은 뒤 주소 만드는 순서 그대로)
 const crypto = require("crypto");
 const discordOAuthService = require("../oauth/discord");
 const { signOAuthAttempt } = require("./attempt");
@@ -7,6 +8,7 @@ const { ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require("./constants");
 
 // 지문 만들고 로그인 state 발급 → 시도 표 서명 (state 소비·계정 찾기는 입구 객체로 불러 시험 패치 먹게)
 exports.startDiscordLogin = async ({ rememberMe }) => {
+    // 지문 원문은 시도 쿠키에만, state 행엔 해시 (다른 브라우저로 콜백 막기)
     const browserFingerprint = crypto.randomBytes(32).toString("base64url");
 
     const { state } = await require('./index').issueOAuthState({ purpose: "login", browserFingerprint });
@@ -20,11 +22,14 @@ exports.startDiscordLogin = async ({ rememberMe }) => {
 
 // 시도 표의 지문·rememberMe → state 소비 → 취소 아니면 프로필 → 계정 찾기 → 가입 의도면 가입 시도 표
 exports.completeDiscordLogin = async ({ attempt, query, reqInfo }) => {
+    // 이 제공자 로그인 시도 표일 때만 지문·rememberMe 믿음 (아니면 지문 없음으로 state 소비 실패)
     const browserFingerprint = attempt?.purpose === "login" && attempt?.provider === "discord" ? attempt.fp : undefined;
     const rememberMe = attempt?.purpose === "login" && attempt?.provider === "discord" && attempt?.rememberMe === true;
 
+    // 취소여도 state 먼저 소비 (같은 state 다시 못 쓰게)
     await require('./index').consumeOAuthState(query.state, { browserFingerprint, purpose: "login" });
 
+    // 제공자 화면에서 취소했으면 프로필 안 받음 (취소 오류는 계정 찾기가 던짐)
     const cancelled = query.error !== undefined;
     let subject = null;
     let email = null;
@@ -38,6 +43,7 @@ exports.completeDiscordLogin = async ({ attempt, query, reqInfo }) => {
         provider: "discord", subject, email, cancelled, rememberMe, reqInfo,
     });
 
+    // 가입 필요면 가입 의도·rememberMe 담은 가입 시도 표 (가입 마무리 때 rememberMe 이어 씀)
     let intentAttemptToken = null;
     if (result.status === "SIGNUP_REQUIRED") {
         intentAttemptToken = signOAuthAttempt(

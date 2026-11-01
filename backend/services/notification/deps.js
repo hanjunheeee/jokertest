@@ -1,14 +1,15 @@
 'use strict';
 
 // 알림 주입 파일, db·전송·id·시각 꺼내는 묶음 + 시험용 바꾸기
-// 묶음은 다시 대입되므로 다른 파일은 getDeps()로 매번 읽음
+// create·manage·notify가 getDeps()로 매번 읽음 (시험이 묶음 다시 대입하기 때문)
 const crypto = require('node:crypto');
 
-// 시험 주입 먼저, 없으면 진짜 db·emitter (늦은 require라 load 순환 없음)
+// 시험 주입 먼저, 없으면 진짜 db·emitter (늦은 require라 불러오기 순환 없음)
 const buildDeps = (overrides = {}) => ({
     get db() { return overrides.db ?? require('../../repositories/common/db'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
+        // emitter 못 불러오면 null (전송 쪽이 함수인지 보고 건너뜀)
         try {
             return require('../../socket/emitter').emitToUser;
         } catch {

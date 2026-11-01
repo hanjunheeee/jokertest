@@ -1,7 +1,7 @@
 'use strict';
 
-// 게임 초대 입구, 옛 gameInvite.service와 같은 이름만 골라 내보냄
-// friend 컨트롤러·친구 차단·matchmaking 수락 흐름이 이 입구로 부름 (시험 손잡이도 여기)
+// 게임 초대 입구, 초대 기능·상수 + 시험 손잡이 내보냄
+// controllers/friend.controller.js·friend/blocks.js·friend/index.js·socket/matchmaking.js·socket/matchmaking/core/deps.js가 부름
 const { INVITE_TTL_MS, INVITE_STATUS, ENTRY_OUTCOME } = require('./constants');
 const { toPublicInvite, compareSeq } = require('./view');
 const { createInvite } = require('./create');

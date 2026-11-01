@@ -1,5 +1,6 @@
 // 전적 통계 읽기 파일, 직업 통계(내 것·계정 요약·순위·최고 승률) + 업적 진행 셈
-// 컨트롤러·프로필·업적·matchmaking이 부름, 저장소는 행만 주고 판정·집계는 여기서 함
+// controllers/game/roleStatistics.js·services/user.js·achievement/deps.js·socket/matchmaking/core/deps.js가 부름
+// 저장소는 행만 주고 판정·집계는 여기서 함
 const gameResultRepository = require('../../../repositories/game/result')
 const userLookup = require('../../../repositories/user/lookup')
 const db = require('../../../repositories/common/db')
@@ -11,6 +12,7 @@ const { isAchievementRewardEligibleGame, isRoleStatisticsEligibleSettings } = re
 
 // 순위 장식(공개 프로필 꾸미기) 읽는 곳, 시험이 가짜로 바꿀 수 있게 따로 둠
 let economyServiceRef = economyService
+// 시험용: 경제 서비스 갈아끼우기 (없으면 진짜 것)
 function __setEconomyServiceForTests(fakeEconomyService) {
     economyServiceRef = fakeEconomyService ?? economyService
 }
@@ -51,6 +53,7 @@ async function getAccountRecordSummaries(userIds) {
 
     const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findUsersStatRows([...summaries.keys()]))
 
+    // 직업별 집계를 사람별로 더함
     const totalsByUser = new Map()
     for (const entry of aggregateRoleStatistics(rows)) {
         const total = totalsByUser.get(entry.user_id) ?? { games: 0, wins: 0 }
@@ -59,6 +62,7 @@ async function getAccountRecordSummaries(userIds) {
         totalsByUser.set(entry.user_id, total)
     }
 
+    // 물어본 사람만 채움, 판 없는 사람은 0 그대로
     for (const [userId, { games, wins }] of totalsByUser) {
         if (!summaries.has(userId)) continue
         summaries.set(userId, {
@@ -74,12 +78,14 @@ async function getAccountRecordSummaries(userIds) {
 async function getRoleRanking(role) {
     const rows = toEligibleRoleStatisticsRows(await gameResultRepository.findRoleStatRows(role))
     const ranked = buildRoleRanking(aggregateRoleStatistics(rows))
+    // 순위에 아무도 없으면 계정·장식 안 읽음
     if (ranked.length === 0) return []
 
     const users = await userLookup.findRankingProfiles(db, ranked.map((entry) => entry.user_id))
     const userByUuid = new Map(users.map((user) => [user.uuid, user]))
     const loadoutsByUuid = await economyServiceRef.getPublicProfileLoadouts(ranked.map((entry) => entry.user_id))
 
+    // 장식·계정 못 찾은 사람은 빈 값으로
     return ranked.map((entry, index) => {
         const loadout = loadoutsByUuid[entry.user_id] ?? { profilePhotoId: null, profileBorderId: null }
         return {
@@ -113,6 +119,7 @@ const toProgressRow = (playerRow) => ({
 async function getAchievementProgressStats(userId) {
     const rows = await gameResultRepository.findProgressRows(userId)
 
+    // 끝까지 간 판·개발 아닌 판만 남김 (완료 값 1/0도 참/거짓으로)
     const eligibleRows = rows
         .filter((row) => isAchievementRewardEligibleGame({
             completed: row.GameResult?.completed === true || row.GameResult?.completed === 1,
@@ -120,6 +127,7 @@ async function getAchievementProgressStats(userId) {
         }))
         .map(toProgressRow)
 
+    // 생존·승리 세고, 승리는 직업별로도 셈 (직업 업적용)
     const roleWinsByRole = new Map()
     let survivals = 0
     let wins = 0

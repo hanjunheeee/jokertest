@@ -1,7 +1,7 @@
 'use strict';
 
-// 게임 초대 만들기 파일
-// 보낸 사람 방·받는 사람 상태·차단·같은 요청 확인 뒤 초대 하나 만들고 알림
+// 게임 초대 만들기 파일, 방·계정·차단·친구·중복 확인 뒤 초대 하나 + 받는 사람 알림
+// controllers/friend.controller.js가 gameInvite/index.js 거쳐 부름
 const friendshipRepository = require('../../../repositories/friend/friendship');
 const notificationService = require('../../notification');
 const { createError } = require('../../../utils/appError');
@@ -14,10 +14,11 @@ const userLookup = require('../../../repositories/user/lookup');
 const gameInviteRepository = require('../../../repositories/friend/gameInvite');
 const { withTransaction } = require('../../../repositories/common');
 
-// 같은 만들기 키면 처음 초대 그대로, 대기 초대 있으면 거절, 다 통과하면 만들고 받음 전송
+// 초대 만들기: 같은 키·살아 있는 대기 초대면 그것 그대로, 아니면 새로 만들고 전송
 async function createInvite({ senderId, receiverId, creationKey }) {
     const { db, now } = getDeps();
 
+    // 받는 사람·만들기 키 모양 확인, 나 자신이면 거절
     if (typeof receiverId !== 'string' || receiverId.length === 0) {
         throw createError('초대할 상대를 지정해야 합니다.', 400);
     }
@@ -29,6 +30,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     }
     const normalizedKey = creationKey.trim();
 
+    // 보낸 사람 대기방 확인: 없음·꽉 참이면 409, 기대한 방과 다르면 ROOM_STATE_CHANGED
     const requireSenderRoom = (expected = null) => {
         const currentId = getRoomAccess().getRoomIdForUser(senderId);
         const current = currentId ? getRoomAccess().describeRoomForInvite(currentId) : null;
@@ -41,13 +43,16 @@ async function createInvite({ senderId, receiverId, creationKey }) {
         return current;
     };
 
+    // 트랜잭션 열기 전에 한 번 (방 없으면 DB 안 감)
     requireSenderRoom();
 
+    // 부팅 epoch 같이 저장 (서버 다시 켜지면 옛 초대 수락 거절용)
     const createdAt = now();
     const expiresAt = new Date(createdAt.getTime() + INVITE_TTL_MS);
     const bootEpoch = getRoomAccess().bootEpoch;
 
     const result = await withTransaction(db, async (t) => {
+        // 두 계정 순서대로 잠금, 없는 계정 404 · 받는 사람 활성 아니면 403
         const locked = await friendshipRepository.lockAccountsInOrder([senderId, receiverId], { transaction: t });
         const lockedByUuid = new Map(locked.filter(Boolean).map((row) => [row.uuid, row]));
         if (!lockedByUuid.get(senderId)) throw createError('사용자를 찾을 수 없습니다.', 404);
@@ -55,8 +60,10 @@ async function createInvite({ senderId, receiverId, creationKey }) {
         if (!receiver) throw createError('초대할 사용자를 찾을 수 없습니다.', 404);
         if (receiver.status !== 'ACTIVE') throw createError('초대할 수 없는 계정입니다.', 403);
 
+        // 잠그는 사이 방 바뀌었을 수 있어 다시 확인
         const room = requireSenderRoom();
 
+        // 같은 만들기 키면 처음 초대 그대로 (다시 보내도 안전), 다른 상대·방이면 409
         const existing = await gameInviteRepository.findByCreationKey(db, { senderId, creationKey: normalizedKey }, t);
         if (existing) {
             if (existing.receiver_id !== receiverId || existing.room_id !== room.roomId) {
@@ -65,6 +72,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             return { invite: existing, created: false, notification: null, senderNickname: null };
         }
 
+        // 차단이면 403, 수락된 친구 아니면 403
         if (await isBlockedBetween(senderId, receiverId, { transaction: t })) {
             throw createError('차단된 사용자에게는 게임 초대를 보낼 수 없습니다.', 403);
         }
@@ -74,6 +82,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             throw createError('친구만 게임에 초대할 수 있습니다.', 403);
         }
 
+        // 같은 방·부팅에 살아 있는 대기 초대 있으면 그것 그대로 (중복 초대 막기)
         const livePending = await gameInviteRepository.findLivePending(db, {
             senderId,
             receiverId,
@@ -87,6 +96,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             return { invite: livePending, created: false, notification: null, senderNickname: null };
         }
 
+        // 받는 사람이 지금 초대 받을 수 있는지 (판정은 matchmaking 방 접근자가 함)
         const availability = getRoomAccess().describeReceiverAvailability(receiverId);
         if (!availability.available) {
             throw createError('지금은 상대를 초대할 수 없습니다.', 409, availability.code);
@@ -94,8 +104,10 @@ async function createInvite({ senderId, receiverId, creationKey }) {
 
         const sender = await userLookup.findNickname(db, senderId, t);
 
+        // 닉네임 읽는 사이 방 바뀌었으면 거절
         requireSenderRoom(room);
 
+        // 여기부터 진짜 바뀜: 초대 행 → 받는 사람 알림 (한 트랜잭션)
         const invite = await gameInviteRepository.createInviteRow(db, {
             id: getDeps().newId(),
             sender_id: senderId,
@@ -126,6 +138,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
 
     const publicInvite = toPublicInvite(result.invite, result.senderNickname);
 
+    // 새로 만든 때만 커밋 뒤 받음 사건·알림 전송
     if (result.created) {
         emitInviteReceived(receiverId, publicInvite);
         if (result.notification !== null) {

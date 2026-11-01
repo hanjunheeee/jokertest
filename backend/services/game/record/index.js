@@ -1,5 +1,5 @@
-// 판 끝 전적 저장 입구, 옛 gameRecord.service와 같은 이름만 골라 내보냄
-// socket gameSession이 이 입구로 부름 (시험 손잡이도 여기)
+// 판 끝 전적 저장 입구, 저장 시작·전송 함수 넣기·시험 손잡이 모아 내보냄
+// socket/gameSession.js·socket/gameSession/departure/apply.js·end.js·handlers/register.js가 부름
 const { persistTerminalSession } = require('./persist')
 const { setEmitToUser, __setTerminalPersistTimersForTests } = require('./deps')
 const { __getTerminalPersistRunsForTests, __resetTerminalPersistForTests } = require('./testing')

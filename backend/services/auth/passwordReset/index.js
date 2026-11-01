@@ -1,7 +1,7 @@
 'use strict';
 
-// 비밀번호 재설정 입구, 옛 passwordReset.service와 같은 이름만 골라 내보냄
-// 비밀번호 재설정 컨트롤러가 이 입구로 부름
+// 비밀번호 재설정 입구, 요청·링크 확인·새 비번 저장 + 유효 시간·시험 손잡이 내보냄
+// controllers/auth/passwordReset.js가 부름 (TOKEN_TTL_MS·__testables는 지금 쓰는 곳 없음)
 const { requestPasswordReset } = require('./request');
 const { verifyPasswordReset, confirmPasswordReset } = require('./confirm');
 const { TOKEN_TTL_MS } = require('./constants');

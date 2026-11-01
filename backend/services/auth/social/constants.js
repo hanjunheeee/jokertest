@@ -1,5 +1,5 @@
-// 소셜 로그인 상수 파일, state·가입 의도 유효 시간 · state 목적
-// state·가입 의도 파일이 씀
+// 소셜 로그인 상수 파일, state·가입 의도·시도 표 유효 시간 · state 목적
+// 같은 폴더 state·resolve·googleLogin·discordLogin·discordLink.js가 씀, 시도 표 시간은 social 입구로 controllers/auth도 씀
 
 // state는 10분 안에 돌아와야 함
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;

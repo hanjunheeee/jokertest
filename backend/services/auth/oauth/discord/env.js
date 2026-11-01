@@ -1,5 +1,5 @@
 // Discord OAuth 환경 파일, 환경변수 읽기 · 시간 초과 값과 판정
-// 부를 때마다 읽음 (load 때 붙잡지 않음)
+// 같은 폴더 flow.js가 부름, 환경변수는 부를 때마다 읽음 (load 때 붙잡지 않음)
 const { createError } = require("../../../../utils/appError");
 
 // 요청 시간 제한 (환경변수 없으면 8초)

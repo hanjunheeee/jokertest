@@ -1,7 +1,7 @@
 'use strict';
 
 // 충전 지급 파일, 지급된 잔액 읽기 · 지급 대기 주문 지급 · 지급 시도
-// 확인 흐름·조회 복구가 부름
+// topup/confirm.js·topup/queries.js가 부름
 // 장부 거래·통화는 economy 잎에서 바로 (economy 입구를 부르면 입구 ↔ 충전 순환)
 const { applyLedgerTransaction } = require('../ledger');
 const { CURRENCIES } = require('../constants');
@@ -22,13 +22,16 @@ const loadGrantedBalance = async (db, order, transaction) => {
 const grantPendingOrder = async (db, deps, orderId) => {
     const now = nowOf(deps);
     return withTransaction(db, async (t) => {
+        // 주문 잠그고 이미 지급됐으면 그 잔액 (두 요청이 같이 와도 한 번만)
         const order = await topupOrderRepository.lockOrder(db, orderId, t);
         if (!order) throw orderNotFound();
         if (order.status === ORDER_STATUS.GRANTED) {
             return { status: ORDER_STATUS.GRANTED, balanceDiamond: await loadGrantedBalance(db, order, t) };
         }
+        // 지급 대기 아니면 손 안 댐
         if (order.status !== ORDER_STATUS.PENDING_GRANT) return { status: order.status };
 
+        // 여기부터 진짜 바뀜: 다이아 지급 장부 → 주문 지급됨
         const { ledgerEntry } = await applyLedgerTransaction(db, {
             userId: order.user_id,
             reason: 'DIAMOND_TOPUP',
@@ -43,7 +46,7 @@ const grantPendingOrder = async (db, deps, orderId) => {
     });
 };
 
-// 지급 실패해도 던지지 않고 나중에 다시 (로그만)
+// 지급 실패해도 안 던짐, 지급 대기로 두고 다음 확인·조회 때 다시 (로그만)
 const tryGrant = async (db, deps, orderId) => {
     try {
         return await grantPendingOrder(db, deps, orderId);
