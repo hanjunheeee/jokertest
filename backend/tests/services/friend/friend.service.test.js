@@ -8,25 +8,33 @@ const assert = require('node:assert/strict');
 
 const db = require('../../../models');
 const friendService = require('../../../services/friend');
-const friendRepository = require('../../../repositories/friend/relation');
+const friendshipRepository = require('../../../repositories/friend/friendship');
+const friendRequestRepository = require('../../../repositories/friend/request');
+const blockRepository = require('../../../repositories/friend/block');
+const onlinePresenceRepository = require('../../../repositories/presence/onlinePresence');
 const economyService = require('../../../services/economy');
 
+// 옛 relation.js가 4파일로 나뉨 → 이름마다 그 이름이 있는 저장소 객체를 갈아끼우기
+const repositoryKeys = [
+    [friendshipRepository, ['findFriendship', 'findExistingFriendship', 'createFriendship', 'lockAccountsInOrder']],
+    [friendRequestRepository, ['searchUsersByNickname', 'cancelPendingRequestsBetween', 'createFriendRequest', 'updateFriendRequestStatus']],
+    [blockRepository, ['findBlockedCounterpartUuids', 'findFavoriteFriendIds', 'setFriendFavorite', 'findBlocksOwnedBy', 'deleteBlock']],
+    [onlinePresenceRepository, ['findOnlinePresences']],
+];
+
 const stubFriendRepository = (t, overrides) => {
-    const keys = [
-        'findFriendship', 'findOnlinePresences',
-        'findBlockedCounterpartUuids', 'findFavoriteFriendIds',
-        'searchUsersByNickname', 'findExistingFriendship', 'setFriendFavorite',
-        'findBlocksOwnedBy', 'deleteBlock',
-        'lockAccountsInOrder', 'cancelPendingRequestsBetween',
-        'createFriendRequest', 'updateFriendRequestStatus', 'createFriendship',
-    ];
-    const originals = Object.fromEntries(keys.map((key) => [key, friendRepository[key]]));
-    Object.assign(friendRepository, {
+    const stubs = {
         findBlockedCounterpartUuids: async () => [],
         findFavoriteFriendIds: async () => [],
         ...overrides,
-    });
-    t.after(() => Object.assign(friendRepository, originals));
+    };
+    const unknown = Object.keys(stubs).filter((key) => !repositoryKeys.some(([, keys]) => keys.includes(key)));
+    if (unknown.length > 0) throw new Error(`갈아끼울 저장소를 모르는 이름: ${unknown.join(', ')}`);
+    for (const [repository, keys] of repositoryKeys) {
+        const originals = Object.fromEntries(keys.map((key) => [key, repository[key]]));
+        Object.assign(repository, Object.fromEntries(keys.filter((key) => key in stubs).map((key) => [key, stubs[key]])));
+        t.after(() => Object.assign(repository, originals));
+    }
 };
 
 const stubEconomyService = (t, overrides) => {
@@ -149,7 +157,7 @@ test('F-19 AC-04/AC-05: 차단 관계인 친구는 목록에서 빠지지만 관
 
     assert.deepEqual(friends.map((f) => f.id), ['friend-a']);
     assert.deepEqual(loadoutQuery, ['friend-a']);
-    assert.equal((await friendRepository.findFriendship('me')).length, 2);
+    assert.equal((await friendshipRepository.findFriendship('me')).length, 2);
 });
 
 test('F-19 AC-01: 검색 결과는 실제 접속 상태를 ONLINE/OFFLINE/UNKNOWN으로 구분한다', async (t) => {

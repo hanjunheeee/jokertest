@@ -1466,7 +1466,7 @@ test('review5 RR: block committed after initial read must prevent finalization',
     placeInRoom(a, 'room-rr-block');
     const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'rr-block' });
     await gameInviteService.recordAcceptDecision({ receiverId: b, inviteId: invite.inviteId, attemptId: 'attempt-rr', bootEpoch: roomAccess.bootEpoch });
-    const repository = require('../../repositories/friend/relation');
+    const repository = require('../../repositories/friend/friendship');
     const original = repository.lockAccountsInOrder;
     let held = false;
     repository.lockAccountsInOrder = async function(...args) {
@@ -1519,7 +1519,7 @@ test('review5 RR: block during decision lock acquisition preserves cancellation'
     await befriend(a, b);
     placeInRoom(a, 'room-rr-decision');
     const { invite } = await gameInviteService.createInvite({ senderId: a, receiverId: b, creationKey: 'rr-decision' });
-    const repository = require('../../repositories/friend/relation');
+    const repository = require('../../repositories/friend/friendship');
     const original = repository.lockAccountsInOrder;
     let paused = false;
     repository.lockAccountsInOrder = async function(...args) {

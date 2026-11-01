@@ -2,7 +2,7 @@
 
 // 게임 초대 만들기 파일
 // 보낸 사람 방·받는 사람 상태·차단·같은 요청 확인 뒤 초대 하나 만들고 알림
-const friendRepository = require('../../../repositories/friend/relation');
+const friendshipRepository = require('../../../repositories/friend/friendship');
 const notificationService = require('../../notification');
 const { createError } = require('../../../utils/appError');
 const { getDeps, getRoomAccess } = require('./deps');
@@ -48,7 +48,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     const bootEpoch = getRoomAccess().bootEpoch;
 
     const result = await withTransaction(db, async (t) => {
-        const locked = await friendRepository.lockAccountsInOrder([senderId, receiverId], { transaction: t });
+        const locked = await friendshipRepository.lockAccountsInOrder([senderId, receiverId], { transaction: t });
         const lockedByUuid = new Map(locked.filter(Boolean).map((row) => [row.uuid, row]));
         if (!lockedByUuid.get(senderId)) throw createError('사용자를 찾을 수 없습니다.', 404);
         const receiver = lockedByUuid.get(receiverId);
@@ -69,7 +69,7 @@ async function createInvite({ senderId, receiverId, creationKey }) {
             throw createError('차단된 사용자에게는 게임 초대를 보낼 수 없습니다.', 403);
         }
 
-        const friendship = await friendRepository.findExistingFriendship(senderId, receiverId, { transaction: t });
+        const friendship = await friendshipRepository.findExistingFriendship(senderId, receiverId, { transaction: t });
         if (!friendship || friendship.status !== 'ACCEPTED') {
             throw createError('친구만 게임에 초대할 수 있습니다.', 403);
         }

@@ -2,7 +2,7 @@
 
 // 게임 초대 입장 파일, 수락 결정 · 입장 확정 · 결과 · 중단 기록
 // matchmaking 초대 수락 흐름이 단계마다 부름 (부팅 epoch·시도 id로 옛 시도 거절)
-const friendRepository = require('../../../repositories/friend/relation');
+const friendshipRepository = require('../../../repositories/friend/friendship');
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
 const { expireDueInvites, isBlockedBetween, lockReceiver } = require('./guards');
@@ -20,7 +20,7 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
         if (!row0) throw createError('초대를 찾을 수 없습니다.', 404);
         if (row0.receiver_id !== receiverId) throw createError('초대를 찾을 수 없습니다.', 404);
 
-        await friendRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
+        await friendshipRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
         await expireDueInvites(db, receiverId, now(), t);
 
         const row = await gameInviteRepository.lockInvite(db, inviteId, t);
@@ -73,7 +73,7 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
             const row0 = await gameInviteRepository.findInviteInTransaction(db, inviteId, t);
             if (!row0) return { ok: false, code: 'INVITE_NOT_FOUND', published: false };
 
-            await friendRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
+            await friendshipRepository.lockAccountsInOrder([row0.sender_id, row0.receiver_id], { transaction: t });
 
             const row = await gameInviteRepository.lockInvite(db, inviteId, t);
             if (!row) return { ok: false, code: 'INVITE_NOT_FOUND', published: false };
