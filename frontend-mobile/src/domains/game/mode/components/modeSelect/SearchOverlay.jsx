@@ -13,9 +13,9 @@ export default function SearchOverlay({ open, onCancel, message = DEFAULT_MSG })
   if (!open) return null
 
   return (
-    <div className={`${OVERLAY_CLASS} px-6 text-center`} role="dialog" aria-modal="true" aria-label={message}>
+    <div className={`${OVERLAY_CLASS} px-6 text-center`} role="dialog" aria-modal="true">
       <p className={MSG_CLASS}>{message}</p>
-      <button type="button" onClick={onCancel} data-sfx-kind="ui-cancel" className={CANCEL_CLASS}>
+      <button type="button" onClick={onCancel} className={CANCEL_CLASS}>
         <span className={CANCEL_TEXT_CLASS}>취소</span>
       </button>
     </div>

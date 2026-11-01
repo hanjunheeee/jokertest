@@ -14,7 +14,7 @@ function TabBody({ activeTab }) {
 export default function SettingContent({ activeTab }) {
     return (
         <div
-            role="tabpanel"
+            role="region"
             aria-label="설정 목록"
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 md:px-10"
         >

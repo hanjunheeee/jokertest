@@ -1,4 +1,4 @@
-// 설정 화면 (/setting): 인트로 영상 → 양피지 배경 + 위 줄·탭·설정 목록, 바닥 줄은 배경음 조절
+// 설정 화면 (/setting): 인트로 영상 → 양피지 배경 + 뒤로 버튼·탭·설정 목록, 바닥 줄은 배경음 조절
 // app/routes/index.jsx가 씀
 import { useState } from "react"
 import { motion } from "framer-motion"
@@ -44,8 +44,8 @@ export default function SettingPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={UI_REVEAL_TRANSITION}
                 >
-                    {/* 폰 가로는 높이가 모자라서 위 줄과 탭을 한 줄로 */}
-                    <div className="flex shrink-0 flex-col land:flex-row land:items-center land:[&_h1]:hidden">
+                    {/* 폰 가로는 높이가 모자라서 뒤로 버튼과 탭을 한 줄로 */}
+                    <div className="flex shrink-0 flex-col land:flex-row land:items-center">
                         <SettingTopBar onBack={() => navigate("/lobby")} />
                         <div className="land:flex-1 land:pr-14">
                             <SettingTabs activeTab={activeTab} onSelect={setActiveTab} />

@@ -1,4 +1,4 @@
-// 방 목록 화면 (/multiplay): 위 줄(뒤로·멀티플레이·소리) + 방 만들기/코드로 참가 + 방 카드 + 쪽 넘김 + 바닥 입장 버튼
+// 방 목록 화면 (/multiplay): 위 줄(뒤로·멀티플레이·소리) + 방 만들기/코드로 참가 + 방 카드(안에 쪽 넘김) + 바닥 입장 버튼
 // app/routes/index.jsx가 씀, 목록 받기·입장은 데스크톱 usePublicRooms 그대로
 import { useNavigate } from "react-router-dom"
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
@@ -42,9 +42,12 @@ export default function MultiplayEntryPage() {
             <ImageButton look="plate" src={ROOM_LIST_ASSETS.optionButton} label="코드로 참가" onClick={() => joinByCode()} className="w-full land:w-40 md:w-48" />
           </nav>
 
-          <RoomCardList rooms={list.pageRooms} selectedRoomId={list.selectedRoomId} onSelectRoom={list.selectRoom} />
-
-          <Pager currentPage={list.currentPage} pageCount={list.pageCount} onPrev={list.goPrev} onNext={list.goNext} />
+          <RoomCardList
+            rooms={list.pageRooms}
+            selectedRoomId={list.selectedRoomId}
+            onSelectRoom={list.selectRoom}
+            footer={<Pager currentPage={list.currentPage} pageCount={list.pageCount} onPrev={list.goPrev} onNext={list.goNext} />}
+          />
         </div>
       </div>
 

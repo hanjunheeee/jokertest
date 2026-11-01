@@ -1,6 +1,7 @@
 // 방 카드 하나: 방 이름·코드/진행중/마감 표시·설정 요약·인원, 못 들어가는 방은 어둡게 잠금
 // RoomCardList가 씀, 데스크톱 RoomListRow와 같은 판단(코드 배지·설정 요약)을 카드 모양으로
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
+import { ROOM_LIST_ROW_FRAME_SELECTED_CLASS, ROW_DIM_OVERLAY_CLASS } from "@/domains/game/mode/constants/roomListLayout.js"
 import { resolveRoomListRowCode } from "@/domains/game/mode/utils/resolveRoomListRowCode.js"
 import { summarizeRoomListSettings } from "@/domains/game/mode/utils/summarizeRoomListSettings.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
@@ -45,7 +46,7 @@ export default function RoomCard({ room, selected, onSelect }) {
         style={FRAME_STYLE}
         className={`relative flex min-h-[4.75rem] w-full flex-col justify-center gap-1 border-0 bg-transparent px-[7%] py-2.5 text-left leading-none transition duration-150 ${
           isJoinable ? "cursor-pointer active:brightness-110" : "cursor-not-allowed"
-        } ${selected ? "brightness-[1.12] saturate-[1.42] hue-rotate-[-12deg] drop-shadow-[0_0_6px_rgba(160,28,28,0.95)]" : ""}`}
+        } ${selected ? ROOM_LIST_ROW_FRAME_SELECTED_CLASS : ""}`}
       >
         <span className="flex min-w-0 items-center justify-between gap-2" aria-hidden="true">
           <span className="min-w-0 flex-1 truncate font-subheading app-text-scaled [--app-text-size:1.02rem] font-bold leading-tight text-[#f3d28d] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]">
@@ -75,7 +76,7 @@ export default function RoomCard({ room, selected, onSelect }) {
           </span>
         </span>
 
-        {!isJoinable ? <span className="pointer-events-none absolute inset-0 rounded-sm bg-black/55" aria-hidden="true" /> : null}
+        {!isJoinable ? <span className={ROW_DIM_OVERLAY_CLASS} aria-hidden="true" /> : null}
       </button>
     </li>
   )
