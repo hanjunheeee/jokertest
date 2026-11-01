@@ -15,7 +15,7 @@ const buildDeps = (overrides = {}) => ({
             return null;
         }
     },
-    get notificationService() { return overrides.notificationService ?? require('../service/notification.service'); },
+    get notificationService() { return overrides.notificationService ?? require('./notification'); },
 });
 
 let deps = buildDeps();

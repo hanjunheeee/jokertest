@@ -143,7 +143,7 @@ function registerNotificationHandlers(socket, uuid) {
 
         let notificationService;
         try {
-            notificationService = require("../service/notification.service");
+            notificationService = require("../services/notification");
         } catch (err) {
             console.error("\x1b[31m[알림 서비스 로드 실패]\x1b[0m", err);
             respond({ ok: false, reason: "UNAVAILABLE" });

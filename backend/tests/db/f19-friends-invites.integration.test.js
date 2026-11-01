@@ -74,7 +74,7 @@ const DATA_TABLES = DROP_ORDER.filter((table) => table !== migrationRunner.META_
 const db = require('../../models');
 const friendService = require('../../service/friend.service');
 const gameInviteService = require('../../service/gameInvite.service');
-const notificationService = require('../../service/notification.service');
+const notificationService = require('../../services/notification');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');
 const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');

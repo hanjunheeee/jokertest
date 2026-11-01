@@ -3,14 +3,14 @@
 const crypto = require('node:crypto');
 const { Op } = require('sequelize');
 
-const { createError } = require('../utils/appError');
+const { createError } = require('../../utils/appError');
 
 const buildDeps = (overrides = {}) => ({
-    get db() { return overrides.db ?? require('../models'); },
+    get db() { return overrides.db ?? require('../../models'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;
         try {
-            return require('../socket/emitter').emitToUser;
+            return require('../../socket/emitter').emitToUser;
         } catch {
             return null;
         }

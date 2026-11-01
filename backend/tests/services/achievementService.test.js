@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const achievementService = require('../../services/achievementService');
-const notificationService = require('../../service/notification.service');
+const notificationService = require('../../services/notification');
 const { ACHIEVEMENT_DEFINITIONS, getAchievementDefinition } = require('../../services/achievementDefinitions');
 
 const { __internal } = achievementService;

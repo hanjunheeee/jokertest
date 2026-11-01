@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 
 const friendRepository = require('../repositories/friend.repositories');
-const notificationService = require('./notification.service');
+const notificationService = require('../services/notification');
 const { createError } = require('../utils/appError');
 
 const buildDeps = (overrides = {}) => ({

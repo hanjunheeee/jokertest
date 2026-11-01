@@ -880,7 +880,7 @@ test("F-23(AC-02 보수): 서버가 송신하는 사건 이름 전체가 잠기�
     "개인 전송 래퍼(emitFriendEventSafely) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
   )
   assert.ok(
-    whereOf("notification_created").some((where) => where.startsWith("backend/service/")),
+    whereOf("notification_created").some((where) => where.startsWith("backend/services/")),
     "개인 전송기 별칭(emit = deps.emitToUser) 호출 지점의 사건 이름이 더 이상 잡히지 않는다",
   )
 })

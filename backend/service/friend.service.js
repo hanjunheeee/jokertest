@@ -1,7 +1,7 @@
 const db = require("../models");
 const friendRepository = require("../repositories/friend.repositories");
 const economyService = require("../services/economy");
-const notificationService = require("./notification.service");
+const notificationService = require("../services/notification");
 const gameInviteService = require("./gameInvite.service");
 const { createError } = require("../utils/appError");
 
