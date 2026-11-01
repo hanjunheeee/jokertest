@@ -10,7 +10,9 @@ import {
 } from "../../utils/nextRoomRecord.js"
 import { getStorage, removeVerified, writeVerified } from "./storage.js"
 
+// 복원값 읽기 액션 묶음
 export const restoreAction = (set, get) => ({
+  // 계정 복원값 읽기: 결과 코드 + 설정 원본
   readRestoreSource: (accountId) => {
     // 계정 없음 / 저장소 못 씀
     const key = nextRoomSettingsStorageKey(accountId)
@@ -19,6 +21,7 @@ export const restoreAction = (set, get) => ({
     if (storage === null) {
       return { code: CODES.STORAGE_UNAVAILABLE, source: null }
     }
+    // 읽다 오류 나도 저장소 못 씀으로 봄
     let raw
     try {
       raw = storage.getItem(key)
@@ -26,6 +29,7 @@ export const restoreAction = (set, get) => ({
       return { code: CODES.STORAGE_UNAVAILABLE, source: null }
     }
 
+    // 이 탭에서 유지를 끈 뜻이 있는지 (같은 계정일 때만)
     const memory = get()
     const hasClearIntent = memory.clearIntent === true && memory.accountId === accountId
 

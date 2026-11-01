@@ -1,3 +1,5 @@
+// 대기방 그림 경로·팝업 문구·미리보기용 가짜 자리
+// 대기방 컴포넌트·RoomCodeViewModal·useMatchingPage·chunkPlayerSlots가 씀
 export const GAME_MATCHING_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
   popupFrame: "/frame/매칭 팝업 프레임.png",
@@ -9,8 +11,10 @@ export const GAME_MATCHING_ASSETS = {
   roomCodeShareFrame: "/frame/방코드 발송 프레임.png",
 }
 
+// 방 코드 가짜 값 (지금 부르는 곳 없음)
 export const ROOM_CODE_DUMMY = "123456"
 
+// 대기방 팝업 문구
 export const MATCHING_POPUP_COPY = {
   title: "멀티 플레이 매칭",
   prompt: "무도회 속에 숨어든 광대를 찾아 떠나시겠습니까?",
@@ -29,8 +33,10 @@ export const MATCHING_POPUP_COPY = {
   kickParticipant: "참가자 추방",
 }
 
+// 최대 인원 (지금 부르는 곳 없음)
 export const MATCHING_MAX_PLAYERS = 10
 
+// 가짜 자리 4칸 (지금 부르는 곳 없음)
 export const PARTY_SLOTS_DUMMY = [
   { id: 1, ready: true },
   { id: 2, ready: true },
@@ -38,6 +44,7 @@ export const PARTY_SLOTS_DUMMY = [
   { id: 4, ready: false },
 ]
 
+// 가짜 자리 10칸 (방에 없을 때 미리보기, chunkPlayerSlots가 씀)
 export const PARTY_SLOTS_DUMMY_10 = [
   { id: 1, ready: true },
   { id: 2, ready: true },

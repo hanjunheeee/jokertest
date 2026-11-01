@@ -1,9 +1,12 @@
+// 설정 패널 아래 버튼(취소·제출) 모양
+// GameSetupCancelButton·GameSetupCreateButton·GameSetupPanel이 씀
 export const FORM_ACTION_BTN_CLASS =
   "interactive-scale group relative block w-[clamp(13.5rem,20vw,17.5rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:opacity-60"
 
 export const FORM_ACTION_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading app-text-scaled [--app-text-size:clamp(1.22rem,1.75vw,1.42rem)] font-bold tracking-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// 버튼 하나일 때·둘일 때 줄
 export const FORM_ACTIONS_SINGLE_CLASS =
   "mx-auto mt-[clamp(0.55rem,1.2vh,0.85rem)] w-fit"
 

@@ -1,8 +1,11 @@
+// 게임 설정 화면 구석 조작: 오른쪽 아래 소리 조절, 왼쪽 아래 뒤로 가기
+// GameSetupPage가 씀
 import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import SoundControl from "@/shared/ui/SoundControl.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+// 소리 조절·뒤로 가기 (뒤로 효과음은 useGameSetupPage가 직접 내서 data-sfx-owner로 막음)
 export default function GameSetupPageControls({ visible, onBack }) {
   return (
     <>

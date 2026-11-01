@@ -1,3 +1,7 @@
+// 결과 연출 영상 건너뛰기 버튼 상수
+// GameResultIntroVideo가 씀
+
+// 영상이 안 끝날 때 건너뛰기 보이기까지 기다리는 시간
 export const FALLBACK_TIMEOUT_MS = 20000
 
 export const SKIP_LABEL = "건너뛰기"

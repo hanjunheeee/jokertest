@@ -7,6 +7,7 @@ import {
   OVERALL_NIGHT_ACTION_TIME_ID,
 } from "../constants/roomSettingsForm.js"
 
+// 손댄 직업별 밤 시간·숫자 바꾸기 처리
 export function useNightTimeEdits({ ranges, setRange, initialFormState, formResetKey }) {
   const [editedRoleTimeIds, setEditedRoleTimeIds] = useState(() => new Set())
 
@@ -17,6 +18,7 @@ export function useNightTimeEdits({ ranges, setRange, initialFormState, formRese
     setEditedRoleTimeIds(new Set())
   }
 
+  // 숫자 바꾸기 (패널의 setRange 대신 씀)
   const handleSetRange = (id, next) => {
     // 직업별 밤 시간을 실제로 바꿨으면 손댄 것으로 기억
     const changed = ranges[id] !== next

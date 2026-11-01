@@ -1,5 +1,5 @@
 // 다음 게임 설정 유지(브라우저 저장) 상수·복원 안내 문구
-// store/nextRoomSettings·utils/nextRoomRecord·utils/resolveRestore가 씀
+// store/nextRoomSettings·nextRoomRecord·resolveRestore·인게임 설정 훅이 씀
 
 // 저장 레코드 모양이 바뀌면 올림 (옛 레코드는 깨진 것으로 봄)
 export const SETTINGS_SCHEMA_VERSION = 1

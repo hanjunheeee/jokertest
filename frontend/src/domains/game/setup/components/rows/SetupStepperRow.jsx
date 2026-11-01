@@ -1,3 +1,5 @@
+// 설정 숫자 고르기 줄: 제목·설명 + 좌우 화살표 숫자 칸
+// SetupTabContent·RoleCompositionSection이 씀
 import { useMemo } from "react"
 import { GAME_SETUP_ASSETS } from "../../constants/gameSetupAssets.js"
 import {
@@ -7,6 +9,7 @@ import {
 } from "../../constants/setupRowStyles.js"
 import Stepper from "@/shared/ui/Stepper"
 
+// 최소~최대를 간격대로 늘어놓기
 function buildOptions(min, max, step = 1) {
   const options = []
   for (let current = min; current <= max; current += step) {
@@ -15,6 +18,7 @@ function buildOptions(min, max, step = 1) {
   return options
 }
 
+// 숫자 고르기 줄
 export default function SetupStepperRow({
   label,
   description,
@@ -25,11 +29,13 @@ export default function SetupStepperRow({
   unit,
   onChange,
 }) {
+  // 고를 숫자 목록·보여 줄 글자(단위 붙임)
   const options = useMemo(() => buildOptions(min, max, step), [min, max, step])
   const displayOptions = useMemo(
     () => options.map((option) => (unit ? `${option}${unit}` : option)),
     [options, unit],
   )
+  // 지금 값 순서 (목록에 없으면 첫 값)
   const index = Math.max(0, options.indexOf(value))
 
   return (

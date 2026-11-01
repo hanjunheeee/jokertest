@@ -1,5 +1,7 @@
 // 방 만들기·지금 내 방 묻기·방 설정 저장의 소켓 이벤트 이름, 시간 제한, 오류 코드·문구
 // setup·matching·result의 소켓 함수와 훅이 씀
+
+// 소켓 이벤트 이름
 export const SOCKET_EVENTS = {
   CREATE_ROOM: "create_room",
   GET_CURRENT_ROOM: "get_current_room",
@@ -9,6 +11,7 @@ export const SOCKET_EVENTS = {
   ROOM_SETTINGS_UPDATED: "room_settings_updated",
 }
 
+// 방 설정 저장 실패 코드 (서버와 같은 값)
 export const ROOM_SETTINGS_ERROR_CODES = {
   INVALID_REQUEST: "INVALID_REQUEST",
   STALE_SOCKET: "STALE_SOCKET",
@@ -24,9 +27,11 @@ export const ROOM_SETTINGS_ERROR_CODES = {
   INTERNAL_ERROR: "INTERNAL_ERROR",
 }
 
+// 설정 저장·결과 묻기 응답 기다리는 시간
 export const UPDATE_ROOM_SETTINGS_TIMEOUT_MS = 8000
 export const ROOM_SETTINGS_RESULT_TIMEOUT_MS = 5000
 
+// 설정 저장 오류 문구
 export const ROOM_SETTINGS_ERROR_MESSAGES = {
   NETWORK: "설정을 저장하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.",
   RESULT_UNKNOWN: "저장 결과를 확인하지 못했습니다. 최신 설정을 불러온 뒤 다시 시도해주세요.",
@@ -34,12 +39,15 @@ export const ROOM_SETTINGS_ERROR_MESSAGES = {
     "방 설정이 저장됐는지 확인하지 못했습니다. 지금 방 설정을 확인하고, 원하는 값과 다르면 다시 저장해주세요.",
 }
 
+// 방 만들기·지금 방 묻기 응답 기다리는 시간
 export const CREATE_ROOM_TIMEOUT_MS = 8000
 export const CURRENT_ROOM_TIMEOUT_MS = 5000
 
+// 방 만들기 응답 못 받았을 때 방이 생겼는지 다시 묻는 간격·횟수
 export const CURRENT_ROOM_POLL_INTERVAL_MS = 700
 export const CURRENT_ROOM_MAX_POLL_ATTEMPTS = 4
 
+// 방 만들기 실패 문구
 export const CREATE_ROOM_ERROR_MSGS = {
   NETWORK: "네트워크 상태를 확인한 뒤 다시 시도해주세요.",
 }

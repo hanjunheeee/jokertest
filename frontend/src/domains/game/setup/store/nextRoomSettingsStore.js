@@ -7,7 +7,9 @@ import { isNonEmptyString } from "../../shared/utils/valueChecks.js"
 import { persistActions } from "./nextRoomSettings/persistActions.js"
 import { restoreAction } from "./nextRoomSettings/restoreAction.js"
 
+// 정리 함수 다시 내보냄 (지금 이 경로로 부르는 곳 없음)
 export { sanitizeRestoreSource, sanitizeRoomSettings }
+// 복원 코드·저장 키 다시 내보냄 (resolveNextGameCreateRoomPayload·시험이 씀)
 export { NEXT_ROOM_SETTINGS_RESTORE_CODES } from "../constants/nextRoomSettings.js"
 export { nextRoomSettingsStorageKey } from "../utils/nextRoomRecord.js"
 
@@ -38,5 +40,6 @@ export const useNextRoomSettingsStore = create((set, get) => ({
   ...persistActions(set, get),
   ...restoreAction(set, get),
 
+  // 시험용: 처음 상태로
   __resetForTests: () => set({ ...INITIAL_STATE }),
 }))

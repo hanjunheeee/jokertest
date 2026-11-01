@@ -1,5 +1,5 @@
 // 직업별 밤 시간: 서버가 따로 정한 직업 목록 합치기, 요청에 실을 값 모으기
-// utils/roomSettingsForm/updatePayload·utils/buildCreateRoomPayload·GameSetupPanel이 씀
+// updatePayload·buildCreateRoomPayload·GameSetupPanel(입구 거쳐)이 씀
 import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../../constants/gameSetupOptions.js"
 import { ROLE_TO_NIGHT_TIME_ID } from "../../constants/roomSettingsForm.js"
 

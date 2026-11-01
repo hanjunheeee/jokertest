@@ -19,6 +19,7 @@ import MatchingActionButton from "./MatchingActionButton.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+// 대기방 가운데 팝업
 export default function MatchingPopupPanel({
   visible,
   slots,
@@ -34,9 +35,10 @@ export default function MatchingPopupPanel({
   onDeleteRoom,
   onLeaveRoom,
 }) {
-  // 준비 버튼: 요청 중 / 준비 해제 / 준비 문구, 준비 중이면 삭제 버튼 그림으로 바뀜
+  // 준비 버튼 글자: 요청 중 / 준비취소 / 준비완료, 준비한 상태면 취소(부정) 버튼 그림 씀
   const readyLabel = isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn
   const readySrc = isReady ? GAME_MATCHING_ASSETS.deleteRoomButton : GAME_MATCHING_ASSETS.startGameButton
+  // 요청 중이거나 방 확인 전이면 준비 버튼 잠금
   const readyDisabled = isSettingReady || !isRoomVerified
 
   return (
@@ -50,6 +52,7 @@ export default function MatchingPopupPanel({
         animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
         transition={UI_REVEAL_TRANSITION}
       >
+        {/* 초대코드 공유 버튼 (누르면 방코드 창) */}
         <button
           type="button"
           aria-label="초대코드 공유"
@@ -85,6 +88,7 @@ export default function MatchingPopupPanel({
             animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
             transition={{ ...UI_REVEAL_TRANSITION, delay: 0.08 }}
           >
+            {/* 방장: 준비·시작·삭제 / 참가자: 준비·나가기 */}
             {isHost ? (
               <>
                 <MatchingActionButton

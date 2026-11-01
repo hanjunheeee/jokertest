@@ -14,6 +14,7 @@ import {
 // 복사됨 표시 유지 시간
 const COPIED_MS = 2000
 
+// 방코드 복사 상태·동작
 export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState("")
@@ -26,6 +27,7 @@ export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   const socketId = socket?.id ?? null
 
+  // 복사됨 표시 타이머 지움
   const clearTimer = () => {
     if (!timerRef.current) return
     window.clearTimeout(timerRef.current)
@@ -41,6 +43,7 @@ export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
     setCopyStatus("")
   }
 
+  // 열림·코드·계정·소켓이 바뀌면 표시 지움, 떠날 때 진행 중 결과 버림
   useEffect(() => {
     reset()
     return () => {
@@ -50,11 +53,13 @@ export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, displayRoomCode, authUuid, identityGeneration, socket, socketId])
 
+  // 닫을 때 표시 지우고 닫음
   const handleClose = () => {
     reset()
     onClose()
   }
 
+  // 복사 누름
   const handleCopy = async () => {
     // 복사할 수 없는 코드면 이유만 표시
     const outcome = resolveRoomCodeCopy(displayRoomCode)
@@ -66,6 +71,7 @@ export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
       return
     }
 
+    // 새 복사 시작: 이전 표시 지우고 세대 잡아 둠
     reset()
     const gen = genRef.current
 
@@ -76,12 +82,14 @@ export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
       setCopied(true)
       setCopyError("")
       setCopyStatus(ROOM_CODE_COPY_RESULTS.COPY_SUCCEEDED)
+      // 2초 뒤 복사됨 표시 끔 (그사이 지워졌으면 그대로 둠)
       timerRef.current = window.setTimeout(() => {
         if (genRef.current !== gen) return
         setCopied(false)
         timerRef.current = null
       }, COPIED_MS)
     } catch {
+      // 클립보드 거절·실패면 실패 문구
       if (genRef.current !== gen) return
       setCopied(false)
       setCopyError(ROOM_CODE_COPY_ERRORS.CLIPBOARD_FAILED)

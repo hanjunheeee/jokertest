@@ -21,6 +21,7 @@ const unknownError = () => ({
   message: ROOM_SETTINGS_ERROR_MESSAGES.RESULT_UNKNOWN,
 })
 
+// 설정 저장·결과 확인 함수 묶음
 export function useSettingsSave(ctx) {
   const {
     syncStatus, pending, savingRef, settingsVerRef, memberGenRef, applyGenRef, mountedRef, inFlightRef,
@@ -85,8 +86,10 @@ export function useSettingsSave(ctx) {
     setNotice(null)
     try {
       const response = await sendSettings(reqSocket, payload)
+      // 그사이 바뀌었으면 응답 버림
       if (isStale()) return { ok: false, code: 'STALE' }
 
+      // 이 요청이 결과 확인 대기였으면 풂
       if (mountedRef.current) {
         setPending((prev) => (prev?.requestId === requestId ? null : prev))
       }
@@ -120,6 +123,7 @@ export function useSettingsSave(ctx) {
       }
       return { ok: false, code: ROOM_SETTINGS_ERROR_CODES.UNKNOWN }
     } finally {
+      // 날아가는 요청 표시는 내 요청일 때만, 저장 중 표시는 마지막 요청일 때만 끔
       if (inFlightRef.current?.requestId === requestId) {
         inFlightRef.current = null
       }
@@ -129,6 +133,7 @@ export function useSettingsSave(ctx) {
 
   // 결과 확인: 응답 못 받은 저장이 됐는지 서버에 물음
   const verifyRoomSettingsResult = async () => {
+    // 결과 확인 대기 없으면 할 일 없음
     const asked = pending
     if (!asked) return { ok: false, code: 'NO_PENDING' }
     const socket = getSocket()
@@ -137,6 +142,7 @@ export function useSettingsSave(ctx) {
       return { ok: false, code: 'OFFLINE' }
     }
 
+    // 보낼 때 값 잡아 둠, 응답 올 때 바뀌었으면 버림
     const uuid = useAuthStore.getState().user?.uuid
     settingsVerRef.current += 1
     const ver = settingsVerRef.current
@@ -149,12 +155,14 @@ export function useSettingsSave(ctx) {
       || reqSocket !== getSocket()
       || useAuthStore.getState().user?.uuid !== uuid
       || member !== memberGenRef.current
+    // 그사이 다른 방 반영이 없었는지
     const isFresh = () => applyGenRef.current === applyGen
 
     savingRef.current = true
     setIsSaving(true)
     try {
       const response = await askSettingsResult(reqSocket, asked)
+      // 그사이 바뀌었으면 응답 버림
       if (isStale()) return { ok: false, code: 'STALE' }
       if (!response?.ok) return { ok: false, code: response?.code ?? ROOM_SETTINGS_ERROR_CODES.UNKNOWN }
 
@@ -175,6 +183,7 @@ export function useSettingsSave(ctx) {
         return { ok: true, status: 'UNKNOWN' }
       }
 
+      // 결과 알아냄(저장됨/안 됨): 대기·오류·안내 지움
       setPending(null)
       setSettingsError(null)
       setNotice(null)
@@ -186,6 +195,7 @@ export function useSettingsSave(ctx) {
       }
       return { ok: true, status: response.status, settingsVersion: response.settingsVersion }
     } catch {
+      // 응답 못 받으면 결과 모름 오류 다시 띄움
       if (!isStale()) {
         setSettingsError(unknownError())
       }

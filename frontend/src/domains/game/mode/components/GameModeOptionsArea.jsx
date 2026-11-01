@@ -1,6 +1,9 @@
+// 모드 선택 카드 줄 (랜덤 매칭·방 찾기·비밀연회장)
+// GameModePage가 씀, 카드 목록은 constants/modeAssets.js의 GAME_MODES
 import { GAME_MODES } from "@/domains/game/mode/constants/modeAssets.js"
 import ModeOptionCard from "@/domains/game/mode/components/ModeOptionCard.jsx"
 
+// 모드 카드 줄 (누르면 모드 id를 onModeSelect로 넘김)
 export default function GameModeOptionsArea({ onModeSelect }) {
   return (
     <div

@@ -1,5 +1,5 @@
 // 서버 방 설정 → 설정 폼 첫 값 (못 나타내는 값이면 오류 코드)
-// utils/resolveRestore·matching/hooks/useSettingsEdit·hooks/useSetupTabState가 씀
+// resolveRestore·resolveNextGameCreateRoomPayload·useSettingsEdit이 씀
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../../constants/roleComposition.js"
 import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../../constants/gameSetupOptions.js"
 import {
@@ -34,7 +34,7 @@ export function buildDefaultFormState(items = ALL_SETUP_ITEMS) {
   return { checks, ranges }
 }
 
-// source = { accessType, settings }, 결과 = { ok, accessType, checks, ranges, roleComposition, specifiedRoleNightActionTimes }
+// { accessType, settings } → 폼 첫 값 (못 나타내면 ok false + 오류 코드)
 export function buildRoomSettingsFormState(source) {
   // 모양·공개 방식 확인
   if (!isPlainObject(source) || !isPlainObject(source.settings)) {

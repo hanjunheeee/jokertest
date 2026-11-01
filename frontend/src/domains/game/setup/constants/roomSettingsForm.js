@@ -1,5 +1,5 @@
 // 방 설정 폼 항목 id와 서버 설정 키 짝, 폼 오류 코드
-// utils/roomSettingsForm/ 아래 계산 파일들이 씀
+// roomSettingsForm 계산 파일·입구·useNightTimeEdits·GameSetupPanel이 씀
 import {
   GENERAL_GAME_SETUP,
   MEETING_GAME_SETUP,
@@ -28,6 +28,7 @@ export const CHECK_ID_TO_SETTING_KEY = Object.freeze({
 // 방을 만든 뒤엔 바꿀 수 없는 항목 (편집 모드에서 숨김)
 export const NON_EDITABLE_SETUP_ITEM_IDS = Object.freeze(["lights-out", "soul-betting", "vote-reveal"])
 
+// 두 탭 항목 전부
 export const ALL_SETUP_ITEMS = [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]
 
 // 직업 ↔ 직업별 밤 시간 항목 id
@@ -35,10 +36,12 @@ export const ROLE_TO_NIGHT_TIME_ID = Object.freeze(
   Object.fromEntries(ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ role, id }) => [role, id])),
 )
 
+// 직업별 밤 시간 항목 id → 직업
 export const NIGHT_TIME_ID_TO_ROLE = Object.freeze(
   Object.fromEntries(ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ role, id }) => [id, role])),
 )
 
+// 폼 오류 코드
 export const ERROR_CODES = Object.freeze({
   NOT_OBJECT: "NOT_OBJECT",
   INVALID_ACCESS_TYPE: "INVALID_ACCESS_TYPE",

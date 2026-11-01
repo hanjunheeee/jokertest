@@ -1,8 +1,11 @@
+// 대기방 배경 그림
+// GameMatchingPage가 씀, 화면 드러날 때 서서히 밝아짐
 import { motion } from "framer-motion"
 import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
+// 배경 그림 (visible 따라 투명도 바뀜)
 export default function MatchingBackground({ visible }) {
   return (
     <motion.img

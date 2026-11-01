@@ -23,6 +23,7 @@ const recheck = (ctx) => {
   else ctx.setSyncStatus('waiting_socket')
 }
 
+// 계정 바뀜·방 바뀜 구독 효과 둘
 export function useRoomReset(ctx) {
   // 계정 바뀜: 남은 결과 확인·안내까지 다 지우고 방 비움
   useEffect(() => {

@@ -2,6 +2,7 @@
 // GameMatchingPage가 씀, 편집 패널이 열렸을 때만 그림
 import GameSetupPanel from "@/domains/game/setup/components/GameSetupPanel.jsx"
 
+// 설정 편집 덮개 (편집 모드 패널 + 저장 실패 문구)
 export default function SettingsEditOverlay({
   settingsForm,
   formResetKey,

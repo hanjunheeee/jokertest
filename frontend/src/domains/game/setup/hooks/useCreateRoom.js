@@ -14,13 +14,16 @@ import {
 import { isSameScope, readScope } from "../utils/membershipScope.js"
 import { askRoom, createRoom } from "../../shared/socket/room.js"
 
+// 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// 방 만들기 상태·동작
 export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   const [isCreating, setIsCreating] = useState(false)
   const creatingRef = useRef(false)
   const mountedRef = useRef(true)
 
+  // 화면 살아 있는지 표시
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -36,6 +39,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
 
   // 요청 범위: 마지막 요청 하나만 살아 있음
   const scopeRef = useRef(null)
+  // 지금 계정·소켓·소속 범위 잡기 (token은 범위마다 새 객체)
   const captureScope = (socket) => ({
     token: {},
     accountId,
@@ -103,6 +107,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   const createGame = async (settings) => {
     if (creatingRef.current) return
     const socket = getSocket()
+    // 소켓 없으면 연결 문제 안내
     if (!socket) {
       showError(CREATE_ROOM_ERROR_MSGS.NETWORK)
       return
@@ -115,8 +120,10 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
 
     try {
       const response = await createRoom(socket, settings)
+      // 그사이 계정·소켓·소속이 바뀌었으면 응답 버림
       if (!isCurrent(scope)) return
 
+      // 서버가 거절하면 이유 알림
       if (!response.ok) {
         showError(response.message)
         return
@@ -124,6 +131,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
 
       enterRoom(response.room, scope)
     } catch {
+      // 응답 못 받으면 방이 생겼는지 찾기
       if (!isCurrent(scope)) return
       await recoverRoom(scope)
     } finally {
@@ -136,5 +144,6 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
     }
   }
 
+  // isBusy: 지금 만드는 중인지 (뒤로 가기 확인용)
   return { isCreating, createGame, isBusy: () => creatingRef.current }
 }

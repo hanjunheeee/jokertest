@@ -1,3 +1,5 @@
+// 설정 패널 취소 버튼 (취소 그림 + 글자)
+// GameSetupPanel이 씀
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
 import {
   FORM_ACTION_BTN_CLASS,
@@ -5,6 +7,7 @@ import {
 } from "../constants/gameSetupFormActions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 취소 버튼 (닫기 효과음은 data-sfx-kind로 냄)
 export default function GameSetupCancelButton({
   onClick,
   disabled = false,

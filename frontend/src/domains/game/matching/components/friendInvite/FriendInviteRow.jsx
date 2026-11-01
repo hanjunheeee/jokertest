@@ -1,3 +1,5 @@
+// 친구 초대 목록 한 줄: 프로필·이름·전적·초대 버튼
+// FriendInviteModalContent가 씀, 전적 문구는 인게임 기록 목록과 같은 형식
 import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
 import { MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
@@ -18,6 +20,7 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
 
+// 친구 한 명 줄
 export default function FriendInviteRow({
   id,
   name,
@@ -28,6 +31,7 @@ export default function FriendInviteRow({
   inviting = false,
   onInvite,
 }) {
+  // 장착한 프로필 사진·테두리 id를 그림 경로로 바꿈
   const { portraitSrc, frameSrc } = resolveAccountProfileAssets({
     accountProfilePhotoId,
     accountProfileBorderId,
@@ -55,6 +59,7 @@ export default function FriendInviteRow({
           </div>
         </div>
 
+        {/* 초대 버튼: 보내는 중이면 잠그고 취소 그림·"초대중.." 표시 */}
         <button
           type="button"
           aria-label={

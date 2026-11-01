@@ -26,6 +26,7 @@ const staleCheck = (ctx, verRef, { ver, socket, roomId, uuid, member }) => () =>
   return false
 }
 
+// 시작·준비 요청 함수 묶음 (방 삭제는 소켓 함수 그대로 넘김)
 export function useRoomRequests(ctx) {
   const {
     syncStatus, startingRef, readyingRef, startVerRef, readyVerRef, memberGenRef, readyAggRef,
@@ -65,6 +66,7 @@ export function useRoomRequests(ctx) {
         roomId,
         expectedSettingsVersion: settingsVersion,
       })
+      // 그사이 바뀌었으면 응답 버림
       if (isStale()) return
 
       // 실패: 방 상태가 바뀐 거면 방 다시 확인
@@ -73,6 +75,7 @@ export function useRoomRequests(ctx) {
         setStartBlocked(response?.message ?? GAME_START_MESSAGES.FALLBACK)
       }
     } catch {
+      // 응답 못 받으면 시간 초과 안내
       if (!isStale()) setStartBlocked(GAME_START_MESSAGES.REQUEST_TIMEOUT)
     } finally {
       // 내 요청이 마지막 요청일 때만 시작 중 표시 끔
@@ -117,6 +120,7 @@ export function useRoomRequests(ctx) {
         roomId,
         expectedSettingsVersion: settingsVersion,
       })
+      // 그사이 바뀌었으면 응답 버림
       if (isStale()) return
 
       if (response?.ok) {
@@ -147,14 +151,18 @@ export function useRoomRequests(ctx) {
         const sfx = roomSfx('room-ready-changed', response.sfxEvent, useAuthStore.getState())
         if (sfx) dispatchSfxEvent(sfx)
       } else if (response?.code === ROOM_SETTINGS_ERROR_CODES.SETTINGS_VERSION_CONFLICT) {
+        // 설정 버전 충돌: 방 다시 확인하고 알림
         resync()
         alert(response.message ?? ROOM_MESSAGES.SETTINGS_CHANGED)
       } else {
+        // 그 밖 실패
         alert(response?.message ?? ROOM_MESSAGES.READY_FAILED)
       }
     } catch {
+      // 응답 못 받으면 다시 시도 안내
       if (!isStale()) alert(ROOM_MESSAGES.READY_RETRY)
     } finally {
+      // 내 요청이 마지막 요청일 때만 준비 중 표시 끔
       if (ver === readyVerRef.current && member === memberGenRef.current) {
         clearReady()
       }

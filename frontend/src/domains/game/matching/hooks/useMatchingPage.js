@@ -13,6 +13,7 @@ import { clearRejoinGameId, readRejoinGameId } from "../../shared/utils/partyMat
 import { buildSlots } from "../utils/chunkPlayerSlots.js"
 import { leaveRoom } from "../socket/room.js"
 
+// 대기방 화면 값·동작 묶음
 export function useMatchingPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -34,6 +35,7 @@ export function useMatchingPage() {
     isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom,
     accessType, settings, settingsVersion,
   } = useMatchingStore()
+  // 방장·내 준비 여부는 방 상태에서 계산
   const isHost = isInRoom && myUuid === hostUuid
   const myPlayer = players.find((player) => player.uuid === myUuid)
   const isReady = Boolean(myPlayer?.isReady)
@@ -45,6 +47,7 @@ export function useMatchingPage() {
   }, [navigate, awaiting])
   const handleGameStarted = useCallback(() => navigate("/ingame"), [navigate])
 
+  // 방 확인·방송·요청 (파티 방 기다리면 끝난 판 id 넘김)
   const {
     deleteRoom, startGame, setReady, isStarting, isSettingReady, isRoomVerified,
     saveRoomSettings, verifyRoomSettingsResult, isSavingSettings, hasPendingSettingsResult, settingsError,
@@ -57,12 +60,14 @@ export function useMatchingPage() {
     awaitPartyRoomRejoin: awaiting,
   })
 
+  // 강퇴 (방 확인 끝나야 가능)
   const {
     canKick, isKickHost, kickModalOpen, openKickModal, closeKickModal,
     kickTargets, kickPendingTarget, kickStatus, kickErrorCode, isKicking, canLookupKickResult, isAwaitingKickResolution,
     requestKickConfirm, cancelKickConfirm, confirmKick, lookupKickResult,
   } = useMatchingRoomKick({ isRoomVerified })
 
+  // 친구 초대 (방에 있을 때만)
   const {
     canOpenFriendInvite,
     friendInviteModalOpen,
@@ -75,6 +80,7 @@ export function useMatchingPage() {
     roomId: isInRoom ? roomId : null,
   })
 
+  // 설정 편집 (방장·방 확인 끝·결과 확인 대기 없음일 때만)
   const {
     settingsOpen, openSettings, closeSettings, canEditSettings,
     settingsForm, settingsFormResetKey, submitSettings,
@@ -97,8 +103,10 @@ export function useMatchingPage() {
     navigate("/multiplay")
   }
 
+  // 준비 누르면 지금과 반대로 요청
   const toggleReady = () => setReady(!isReady)
 
+  // 자리 목록·기다림 문구 (파티 방 기다리는 중이면 빈 자리 + 기다림 문구)
   const slots = buildSlots({ isInRoom, players, awaiting })
 
   const waitingMessage = !isInRoom && awaiting
@@ -109,6 +117,7 @@ export function useMatchingPage() {
   const canViewRoomCode = isInRoom && isRoomVerified
   const displayRoomCode = canViewRoomCode ? roomCode : null
 
+  // 화면에 넘길 값 (canViewRoomCode·roomId·canStart·room* 셋은 페이지가 안 씀)
   return {
     uiVisible,
     waitingMessage,

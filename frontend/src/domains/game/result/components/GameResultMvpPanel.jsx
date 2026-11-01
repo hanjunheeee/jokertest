@@ -1,3 +1,5 @@
+// 결과 화면 MVP 칸: 명찰 틀·초상화 틀·이름
+// GameResultShell이 씀
 import {
   GAME_RESULT_ASSETS,
   resolveMvpNameplateFrame,
@@ -17,7 +19,9 @@ import {
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// MVP 칸 (명찰 틀은 승패 따라 바뀜)
 export default function GameResultMvpPanel({ outcome = "win", mvp }) {
+  // MVP 없으면 안 그림
   if (!mvp) return null
 
   const mvpNameplateFrameSrc = resolveMvpNameplateFrame(outcome)
@@ -59,6 +63,7 @@ export default function GameResultMvpPanel({ outcome = "win", mvp }) {
               className={FRAME_IMG_BLOCK_CLASS}
             />
           </div>
+          {/* 이름 있을 때만 */}
           {mvp.name ? (
             <p
               className={MVP_PLAYER_NAME_CLASS}

@@ -17,6 +17,7 @@ import { getSocket } from "@/shared/socket/socketClient.js"
 import { askRoom, createRoom } from "@/domains/game/shared/socket/room.js"
 import { askSnapshot } from "../socket/room.js"
 
+// 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // 방 만들기 응답을 못 받았을 때: 방이 생겼는지 몇 번 물어봄 (서버가 만드는 중이면 기다렸다 다시)
@@ -37,6 +38,7 @@ const findRoom = async (socket) => {
   return null
 }
 
+// 대기방으로 돌아가기 상태·동작
 export function useGameResultReturnToMatching() {
   const navigate = useNavigate()
   const accountId = useAuthStore((s) => s.user?.uuid ?? null)
@@ -44,10 +46,12 @@ export function useGameResultReturnToMatching() {
   const [isReturning, setIsReturning] = useState(false)
   const inFlightRef = useRef(false)
 
+  // 대기방으로 버튼 누름 (누르는 중이면 무시)
   const requestReturnToMatching = useCallback(async () => {
     if (inFlightRef.current) return
 
     const socket = getSocket()
+    // 소켓·계정 없으면 연결 문제 안내
     if (!socket || !accountId) {
       window.alert(CREATE_ROOM_ERROR_MSGS.NETWORK)
       return
@@ -71,6 +75,7 @@ export function useGameResultReturnToMatching() {
         // 응답이 없으면 방이 없다고 보고 아래 경로로 넘어감
       }
 
+      // 판 정보는 여기서 지움 (방장·판 id는 위에서 읽어 둠)
       useInGameStore.getState().clearGame()
 
       if (room) {
@@ -89,6 +94,7 @@ export function useGameResultReturnToMatching() {
             navigate("/game-matching", { replace: true })
             return
           }
+          // 서버가 거절하면 이유 알리고 끝냄
           if (response?.ok === false && response.message) {
             window.alert(response.message)
             return
@@ -104,6 +110,7 @@ export function useGameResultReturnToMatching() {
           return
         }
 
+        // 방도 못 찾으면 연결 문제 안내
         window.alert(CREATE_ROOM_ERROR_MSGS.NETWORK)
         return
       }
@@ -131,6 +138,7 @@ export function useGameResultReturnToMatching() {
         },
       })
     } finally {
+      // 끝나면 누르는 중 표시 풂
       inFlightRef.current = false
       setIsReturning(false)
     }

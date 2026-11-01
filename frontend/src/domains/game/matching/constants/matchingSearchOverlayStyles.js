@@ -1,3 +1,5 @@
+// 매칭 찾는 중 덮개 모양·기본 문구
+// MatchingSearchOverlay가 씀
 export const OVERLAY_CLASS =
   "fixed inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-black/70"
 

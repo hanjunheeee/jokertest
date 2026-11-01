@@ -12,12 +12,14 @@ import { ROOM_MESSAGES } from '../../constants/roomMessages.js'
 import { onConnection } from '../../socket/events.js'
 import { askRoom } from '../../socket/room.js'
 
+// 방 확인 효과 (소켓·방 삭제 콜백 바뀌면 다시 붙음)
 export function useRoomCheck(ctx, socket, onRoomDeleted) {
   useEffect(() => {
     const {
       setSyncStatus, identityRef, applyGenRef, memberGenRef, mountedRef, awaitPartyRef,
       bumpRef, resyncRef, invalidateRef, applyVerified, dropRequests,
     } = ctx
+    // 소켓 없으면 연결 기다림 표시만
     if (!socket) {
       setSyncStatus('waiting_socket')
       return
@@ -38,7 +40,9 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
     let reqVer = 0
     let inFlight = false
 
+    // 방 반영 세대 올림 (확인 결과 넣은 뒤 그 전 응답 버리게)
     const advance = () => { applyGenRef.current += 1 }
+    // 다시 확인할지 묻는 창은 한 번만 (확인 성공·재연결 때 다시 풂)
     let prompted = false
 
     // 진행 중 확인 무효화, 재시도 타이머 지움
@@ -102,9 +106,11 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
       inFlight = true
       askRoom(reqSocket)
         .then((response) => {
+          // 마지막으로 보낸 확인의 응답일 때만 진행 중 표시 끔
           if (ver === reqVer) inFlight = false
           if (isStale()) return
 
+          // 서버가 거절하면 실패
           if (!response?.ok) {
             fail(id)
             return
@@ -142,6 +148,7 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
           onRoomDeleted?.()
         })
         .catch(() => {
+          // 응답 못 받으면(시간 초과 등) 실패
           if (ver === reqVer) inFlight = false
           if (!isStale()) fail(id)
         })
@@ -175,6 +182,7 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
       startSeries({ resetPrompt: false })
     }
 
+    // 이미 연결돼 있으면 바로 확인, 아니면 연결 기다림
     if (socket.connected) {
       startSeries({ resetPrompt: true })
     } else {
@@ -188,11 +196,13 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
       dropRequests()
       setSyncStatus('waiting_socket')
     }
+    // 브라우저가 오프라인 되면 끊긴 것과 같게 처리
     const handleOffline = () => {
       stopCheck()
       dropRequests()
       setSyncStatus('waiting_socket')
     }
+    // 온라인 돌아오면 지금 소켓이 붙어 있을 때만 다시 확인
     const handleOnline = () => {
       if (cancelled) return
       if (socket !== getSocket()) return
@@ -202,6 +212,7 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
     window.addEventListener('offline', handleOffline)
     window.addEventListener('online', handleOnline)
 
+    // 떠날 때 입구 함수 지우고 진행 중 확인·요청 무효화
     return () => {
       cancelled = true
       bumpRef.current = null

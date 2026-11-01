@@ -1,5 +1,5 @@
 // 방 만들기 요청·지금 내 방 묻기
-// setup 방 만들기(useCreateRoom)와 result 대기방 복귀(useGameResultReturnToMatching)가 씀
+// setup useCreateRoom·result useGameResultReturnToMatching이 씀
 import {
   CREATE_ROOM_TIMEOUT_MS,
   CURRENT_ROOM_TIMEOUT_MS,

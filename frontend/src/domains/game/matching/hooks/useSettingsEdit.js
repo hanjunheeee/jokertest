@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { buildRoomSettingsFormState } from "@/domains/game/setup/utils/roomSettingsForm/formState.js"
 
+// 설정 편집 상태
 export function useSettingsEdit({
   isInRoom, isHost, isRoomVerified, roomId, accessType, settings, settingsVersion,
   hasPendingSettingsResult, saveRoomSettings,
@@ -16,7 +17,9 @@ export function useSettingsEdit({
   )
   const settingsFormResetKey = `${roomId ?? ""}:${settingsVersion ?? ""}`
 
+  // 편집 자격: 방장·방 확인 끝·폼 정상·결과 확인 대기 없음
   const canEditSettings = isInRoom && isHost && isRoomVerified && settingsForm.ok && !hasPendingSettingsResult
+  // 자격 있을 때만 열기, 닫기는 언제나
   const openSettings = () => { if (canEditSettings) setSettingsOpen(true) }
   const closeSettings = () => setSettingsOpen(false)
 

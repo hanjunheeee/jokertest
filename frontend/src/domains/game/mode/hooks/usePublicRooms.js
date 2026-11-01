@@ -8,6 +8,7 @@ import { PUBLIC_ROOM_JOIN_TIMEOUT_MS } from "@/domains/game/mode/constants/roomL
 import { getSocket, subscribeSocket } from "@/shared/socket/socketClient.js"
 import { askRooms, joinPublic, onRoomList } from "../socket/rooms.js"
 
+// 공개 방 목록·들어가기 상태
 export function usePublicRooms() {
   const navigate = useNavigate()
   const [rooms, setRooms] = useState([])
@@ -15,6 +16,7 @@ export function usePublicRooms() {
 
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
+  // 화면 떠남 표시·목록 묻기 버전·들어가는 중 표시·제한 시간 타이머
   const disposedRef = useRef(false)
   const fetchVerRef = useRef(0)
   const joiningRef = useRef(false)
@@ -48,11 +50,13 @@ export function usePublicRooms() {
     if (!disposedRef.current) setIsJoining(false)
   }, [])
 
+  // 화면 살아 있는지 표시
   useEffect(() => {
     disposedRef.current = false
     return () => { disposedRef.current = true }
   }, [])
 
+  // 소켓 붙이기: 목록 갱신·입장 결과·다시 연결 받고 목록 새로 물음
   useEffect(() => {
     if (!socket) return undefined
 
@@ -61,6 +65,7 @@ export function usePublicRooms() {
     let owned = true
     const isCurrent = () => owned && attachedSocket === getSocket()
 
+    // 목록 갱신 방송: 받은 목록으로 바꾸고 묻던 응답은 버림 (버전 올림)
     const handleUpdated = ({ rooms: nextRooms } = {}) => {
       if (!Array.isArray(nextRooms)) return
       if (!isCurrent()) return
@@ -75,11 +80,13 @@ export function usePublicRooms() {
       useMatchingStore.getState().setRoom(room)
       navigate("/game-matching")
     }
+    // 입장 실패: 다시 누를 수 있게 풀고 알림
     const handleJoinFailed = ({ message } = {}) => {
       if (!isCurrent()) return
       clearJoin()
       alert(message ?? "공개 방에 참여할 수 없습니다.")
     }
+    // 다시 연결되면 목록 새로 물음
     const handleConnect = () => {
       if (!isCurrent()) return
       fetchRooms()
@@ -93,6 +100,7 @@ export function usePublicRooms() {
     })
     fetchRooms()
 
+    // 떠날 때 옛 핸들러 막고 뗌, 들어가는 중 표시 지움
     return () => {
       owned = false
       off()
@@ -102,6 +110,7 @@ export function usePublicRooms() {
 
   // 공개 방 들어가기: 응답 방송이 안 오면 제한 시간 뒤 다시 누를 수 있게 풂
   const joinPublicRoom = useCallback((roomId) => {
+    // 이미 들어가는 중이거나 소켓 없으면 안 보냄
     if (joiningRef.current) return
 
     const socket = getSocket()

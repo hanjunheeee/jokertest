@@ -1,3 +1,5 @@
+// 친구 초대 창 모양 상수, 틀·제목·닫기·여백은 인게임 투표 창 것 빌려 씀
+// friendInvite 컴포넌트 셋(Shell·Content·Row)이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 export {

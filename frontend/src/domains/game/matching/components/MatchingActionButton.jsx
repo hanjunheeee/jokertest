@@ -7,6 +7,7 @@ import {
 } from "../../../../shared/constants/matchingPopupStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 그림 버튼 하나
 export default function MatchingActionButton({ label, src, onClick, disabled }) {
   return (
     <button

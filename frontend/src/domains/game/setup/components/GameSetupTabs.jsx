@@ -1,7 +1,10 @@
+// 설정 패널 위 탭 줄 (일반·회의&투표)
+// GameSetupPanel이 씀
 import { GAME_SETUP_ASSETS } from "../constants/gameSetupAssets.js"
 import { GAME_SETUP_TABS } from "../constants/gameSetupOptions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 탭 버튼·글자·줄 모양
 const TAB_BTN_CLASS =
   "interactive-scale relative w-[clamp(21rem,45vw,27rem)] shrink-0 leading-none"
 
@@ -11,6 +14,7 @@ const TAB_LABEL_CLASS =
 const TAB_NAV_CLASS =
   "mb-[clamp(0.15rem,0.35vh,0.25rem)] flex shrink-0 flex-nowrap items-center justify-center gap-[clamp(0.25rem,0.5vw,0.4rem)] overflow-visible -translate-y-[clamp(0.6rem,1.6vh,0.95rem)]"
 
+// 탭 버튼 하나 (고른 탭은 활성 그림)
 function GameSetupTabButton({ tab, active, onSelect }) {
   return (
     <button
@@ -30,6 +34,7 @@ function GameSetupTabButton({ tab, active, onSelect }) {
   )
 }
 
+// 탭 줄
 export default function GameSetupTabs({ activeTab, onSelect }) {
   return (
     <nav className={TAB_NAV_CLASS} aria-label="인게임 설정 탭">

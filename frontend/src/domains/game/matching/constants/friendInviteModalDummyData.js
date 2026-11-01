@@ -1,3 +1,5 @@
+// 친구 초대 창 가짜 친구 목록 (실제 친구 목록 대신 씀)
+// useMatchingFriendInvite가 씀, initiallyInviting은 처음부터 초대 중으로 보일 친구
 export const DUMMY_FRIENDS = [
   {
     id: "dummy-friend-1",

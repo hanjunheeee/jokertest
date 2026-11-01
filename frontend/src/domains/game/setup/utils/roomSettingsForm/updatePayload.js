@@ -3,6 +3,7 @@
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../../constants/roleComposition.js"
 import { collectSpecifiedRoleTimes } from "./nightTimes.js"
 
+// 방 설정 바꾸기 payload 만들기
 export function buildUpdateRoomSettingsPayload({
   checks,
   ranges,

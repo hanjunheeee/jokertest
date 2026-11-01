@@ -1,3 +1,5 @@
+// 게임 설정 화면 그림 경로 (배경·틀·탭·체크·버튼·입력칸·화살표)
+// 설정 컴포넌트들이 씀
 export const GAME_SETUP_ASSETS = {
   bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
   frame: "/frame/인게임 설정 프레임_.png",

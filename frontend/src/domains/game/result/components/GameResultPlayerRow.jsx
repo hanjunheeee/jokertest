@@ -1,3 +1,5 @@
+// 결과 목록 한 줄: 프로필·이름·직업, 내 줄이면 "내 정보" 배지와 강조
+// GameResultPlayerList가 씀
 import { SELF_INFO_BADGE_LABEL } from "../constants/gameResultLabels.js"
 import {
   PLAYER_INFO_CLASS,
@@ -14,6 +16,7 @@ import {
 } from "../constants/gameResultLayout.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 
+// 참가자 한 줄
 export default function GameResultPlayerRow({
   name,
   job,
@@ -34,6 +37,7 @@ export default function GameResultPlayerRow({
         />
 
         <div className={PLAYER_INFO_CLASS}>
+          {/* 내 줄이면 "내 정보" 배지 */}
           {isSelf ? (
             <span className={PLAYER_SELF_BADGE_CLASS}>
               {SELF_INFO_BADGE_LABEL}

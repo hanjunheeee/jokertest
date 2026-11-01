@@ -2,6 +2,7 @@
 // useMatchingPage·PlayerSlotGrid·MatchingPartySlots가 씀
 import { PARTY_SLOTS_DUMMY_10 } from "../constants/gameMatchingAssets.js"
 
+// 한 줄 칸 수
 export const PLAYER_SLOT_COLUMNS = 5
 
 // 방에 있으면 사람 자리, 파티 방 기다리는 중이면 빈 목록, 그 밖엔 미리보기용 가짜 자리

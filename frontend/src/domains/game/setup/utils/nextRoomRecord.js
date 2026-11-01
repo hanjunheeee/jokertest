@@ -29,7 +29,7 @@ export function buildDisabledRecord(accountId) {
   return { schemaVersion: SETTINGS_SCHEMA_VERSION, accountId, enabled: false }
 }
 
-// 저장된 문자열 읽기: none / corrupted / disabled / enabled, dropped = 허용 밖 키를 버렸는지
+// 저장된 문자열 읽기 → none·corrupted·disabled·enabled (dropped = 허용 밖 키 버림)
 export function parseRecord(raw, accountId) {
   if (raw === null || raw === undefined) return { kind: "none" }
   let parsed

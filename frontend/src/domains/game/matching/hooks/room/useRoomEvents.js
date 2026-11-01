@@ -11,8 +11,10 @@ import { READY_EVENT, classifyReady } from '../../utils/roomVersion.js'
 import { roomSfx, startSfx } from '../../utils/roomSfx.js'
 import { onRoomEvents } from '../../socket/events.js'
 
+// 방 안 방송 받기 효과
 export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarted }) {
   useEffect(() => {
+    // 소켓·방 없으면 안 붙음
     if (!socket || !roomId) return
 
     const { addPlayer, removePlayer, updateHost, setPlayerReady, clearRoom, applyRoomSettings } =
@@ -36,6 +38,7 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       bumpRef.current?.()
     }
 
+    // 입장: 사람 넣음
     const handleJoined = ({ player, canStart }) => {
       if (!isCurrent()) return
       readyAggRef.current += 1
@@ -77,6 +80,7 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       if (!payload || payload.roomId !== roomId) return
       const known = useMatchingStore.getState().settingsVersion
       const incoming = payload.settingsVersion
+      // 둘 다 버전 숫자일 때 같거나 옛것이면 버림 (숫자 아니면 그냥 반영)
       if (Number.isSafeInteger(incoming) && Number.isSafeInteger(known)) {
         if (incoming < known) return
         if (incoming === known) return
@@ -134,6 +138,7 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       settings: handleSettings,
     })
 
+    // 떠날 때 옛 핸들러 반영 막고 뗌
     return () => {
       owned = false
       off()

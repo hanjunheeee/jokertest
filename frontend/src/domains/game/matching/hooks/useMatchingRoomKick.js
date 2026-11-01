@@ -8,6 +8,7 @@ import { askRoomCb } from "../socket/room.js"
 import { captureVerificationGuard } from "../../ingame/hooks/kick/guards.js"
 import { useKickPlayerRequest } from "../../ingame/hooks/useKickPlayerRequest.js"
 
+// 대기방 강퇴 상태·동작
 export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   const [modalOpen, setModalOpen] = useState(false)
 
@@ -33,6 +34,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   const verifyMembership = useCallback(() => new Promise((resolve) => {
     const socket = getSocket()
     if (!socket) { resolve(false); return }
+    // 결과는 한 번만 넘김
     let settled = false
     const finish = (ok) => { if (!settled) { settled = true; resolve(ok) } }
     const isStillCurrent = captureVerificationGuard({
@@ -63,11 +65,13 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   const buildRequest = useCallback(({ target, requestId }) => {
     const state = useMatchingStore.getState()
     const authUuid = useAuthStore.getState().user?.uuid ?? null
+    // 내가 방에 있는 방장이고 방 식별값이 다 있어야 함
     if (!authUuid || !state.isInRoom) return null
     if (state.hostUuid !== authUuid) return null
     if (typeof state.roomId !== "string" || !state.roomId) return null
     if (typeof state.roomInstanceId !== "string" || !state.roomInstanceId) return null
     if (typeof state.bootEpoch !== "string" || !state.bootEpoch) return null
+    // 나·대상 소속 id가 지금 앉은 그대로여야 함, 나 자신은 못 내보냄
     const requesterMembershipId = selectRoomMembershipId(state, authUuid)
     if (!requesterMembershipId) return null
     const targetMembershipId = selectRoomMembershipId(state, target.uuid)
@@ -84,6 +88,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     }
   }, [])
 
+  // 보내기·결과 확인은 인게임과 같은 강퇴 요청 훅에 맡김 (scope ROOM)
   const kick = useKickPlayerRequest({ scope: "ROOM", buildRequest, getMembershipScopeId, verifyMembership })
 
   // 강퇴 대상: 나를 뺀, 소속 id가 있는 사람
@@ -96,6 +101,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
       membershipId: player.membershipId,
     })), [players, myUuid])
 
+  // 강퇴 가능할 때만 창 엶
   const openKickModal = useCallback(() => {
     if (!canKick) return
     setModalOpen(true)
@@ -107,6 +113,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     kick.reset()
   }, [kick.reset])
 
+  // 강퇴 자격 잃으면 열린 창도 닫힌 것으로 봄
   const effectiveOpen = modalOpen && canKick
 
   return {

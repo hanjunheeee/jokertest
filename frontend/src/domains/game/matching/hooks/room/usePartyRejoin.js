@@ -16,9 +16,11 @@ import {
 import { askPartyRoom, joinByCode, onParty } from '../../socket/party.js'
 import { askRoom } from '../../socket/room.js'
 
+// 파티 방 재입장 효과 (소켓·끝난 판 id·기다림 여부 바뀌면 다시 붙음)
 export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
   useEffect(() => {
     const { awaitPartyRef, endedIdRef, partyBusyRef, applyGenRef, mountedRef, setSyncStatus } = ctx
+    // 소켓 없거나 파티 방 안 기다리면 안 붙음
     if (!socket || !awaitPartyRef.current) return undefined
 
     // 붙인 소켓·계정이 그대로일 때만 응답 반영
@@ -72,6 +74,7 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
       joinByCode(socket, joinPayload)
     }
 
+    // 들어가기 성공 방송: 방 넣고 끝냄
     const handleJoined = (payload) => {
       complete(payload)
     }
@@ -121,14 +124,17 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
     if (pendingParty) request(pendingParty)
     poll()
 
+    // 들어가기 실패: 다음 묻기 때 다시 시도하게 요청 중 표시 풂
     const handleJoinFailed = () => {
       partyBusyRef.current = false
     }
 
+    // 방송 붙이고 주기적으로 묻기 시작
     const off = onParty(socket, { joined: handleJoined, joinFailed: handleJoinFailed, ready: handleReady })
 
     const pollTimer = window.setInterval(poll, PARTY_POLL_MS)
 
+    // 떠날 때 옛 응답 막고 타이머·방송 뗌
     return () => {
       owned = false
       window.clearInterval(pollTimer)

@@ -8,6 +8,7 @@ import { useNextRoomSettingsStore } from "../store/nextRoomSettingsStore.js"
 import { resolveRestore } from "../utils/resolveRestore.js"
 import { useCreateRoom } from "./useCreateRoom.js"
 
+// 게임 설정 화면 값·동작
 export function useGameSetupPage() {
   const navigate = useNavigate()
 
@@ -19,10 +20,12 @@ export function useGameSetupPage() {
 
   // 계정이 바뀌면 그 계정의 저장값으로 폼을 새로 채움
   const restore = useMemo(() => {
+    // 계정 없으면 기본값
     if (!accountId) return { formState: null, resetKey: `none:${identityGeneration}`, notice: "" }
     return resolveRestore(readRestoreSource(accountId), `${accountId}:${identityGeneration}`)
   }, [accountId, identityGeneration, readRestoreSource])
 
+  // 첫 그림 다음 프레임에 화면 드러냄
   useEffect(() => {
     const frame = requestAnimationFrame(() => setUiVisible(true))
     return () => cancelAnimationFrame(frame)

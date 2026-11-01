@@ -1,3 +1,5 @@
+// 방 목록 아래 페이지 넘기기: 이전·다음 화살표 + "현재 / 전체"
+// RoomListPanel이 씀
 import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
 import {
   PAGE_ARROW_BTN_CLASS,
@@ -8,6 +10,7 @@ import {
 } from "@/domains/game/mode/constants/roomListLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 페이지 넘기기 (첫·끝 페이지면 그쪽 화살표 잠금)
 export default function PaginationFooter({ currentPage, pageCount, onPrevPage, onNextPage }) {
   return (
     <div className={PAGINATION_FOOTER_CLASS}>
@@ -26,6 +29,7 @@ export default function PaginationFooter({ currentPage, pageCount, onPrevPage, o
           {currentPage + 1} / {pageCount}
         </span>
 
+        {/* 다음 화살표는 뒤로 가기 그림을 뒤집어 씀 */}
         <button
           type="button"
           aria-label="다음 페이지"

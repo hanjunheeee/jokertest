@@ -1,3 +1,5 @@
+// 빠른 매칭 찾는 중 덮개: 문구 + 취소 버튼
+// GameModePage가 씀, 찾는 중일 때만 뜸
 import {
   CANCEL_CLASS,
   CANCEL_TEXT_CLASS,
@@ -6,11 +8,13 @@ import {
   MSG_CLASS,
 } from "@/domains/game/matching/constants/matchingSearchOverlayStyles"
 
+// 매칭 찾는 중 덮개
 export default function MatchingSearchOverlay({
   open,
   onCancel,
   message = DEFAULT_MSG,
 }) {
+  // 안 찾는 중이면 안 그림
   if (!open) return null
 
   return (

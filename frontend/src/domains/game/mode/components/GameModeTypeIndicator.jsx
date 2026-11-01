@@ -1,9 +1,12 @@
+// 화면 위 가운데 게임 유형 표시 (기본 "멀티플레이")
+// MultiplayEntryPage가 씀, size로 큰/작은 모양 고름
 import {
   INDICATOR_ASSETS,
   INDICATOR_LABELS,
 } from "@/domains/game/mode/constants/gameModeIndicatorAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 크기별 자리·글자 모양
 const SIZE_CLASS = {
   default: {
     wrap: "absolute left-1/2 top-[2.5%] z-10 -translate-x-1/2 sm:top-[3%]",
@@ -19,6 +22,7 @@ const SIZE_CLASS = {
   },
 }
 
+// 게임 유형 표시 (모르는 size면 기본 크기)
 export default function GameModeTypeIndicator({ label = INDICATOR_LABELS.multi, size = "default" }) {
   const classes = SIZE_CLASS[size] ?? SIZE_CLASS.default
 

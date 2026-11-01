@@ -12,6 +12,7 @@ import { useRoomReset } from './useRoomReset.js'
 import { useRoomRequests } from './useRoomRequests.js'
 import { useSettingsSave } from './useSettingsSave.js'
 
+// 대기방 훅 묶음 (방 확인 상태·요청·설정 저장 결과를 화면 값으로)
 export function useRoom({
   onRoomDeleted,
   onGameStarted,
@@ -23,12 +24,14 @@ export function useRoom({
   // 소켓이 바뀌면 다시 그림 (효과들이 새 소켓에 다시 붙음)
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
+  // 상태 묶음 만들고 효과 훅 차례로 붙임 (순서 바꾸지 않기)
   const ctx = useRoomCore({ endedGameId, awaitPartyRoomRejoin })
   usePartyRejoin(ctx, socket, endedGameId, awaitPartyRoomRejoin)
   useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarted })
   useRoomCheck(ctx, socket, onRoomDeleted)
   useRoomReset(ctx)
 
+  // 요청 함수
   const { deleteRoom, startGame, setReady } = useRoomRequests(ctx)
   const { saveRoomSettings, verifyRoomSettingsResult } = useSettingsSave(ctx)
 

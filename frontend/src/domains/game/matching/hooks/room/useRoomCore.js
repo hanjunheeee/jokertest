@@ -7,6 +7,7 @@ import {
   ROOM_SETTINGS_ERROR_MESSAGES,
 } from '@/domains/game/shared/constants/gameSetupSocket.js'
 
+// 대기방 훅들이 같이 쓰는 상태·ref 묶음 만들기
 export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
   // 방 확인 상태: waiting_socket / checking / verified / failed
   const [syncStatus, setSyncStatus] = useState('waiting_socket')
@@ -23,6 +24,7 @@ export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
   endedIdRef.current = endedGameId
   const awaitPartyRef = useRef(awaitPartyRoomRejoin)
   awaitPartyRef.current = awaitPartyRoomRejoin
+  // 파티 방 들어가기 요청 중 (겹쳐 보내기 막기)
   const partyBusyRef = useRef(false)
 
   // 요청 버전: 올리면 그 전 요청의 응답은 버림
@@ -34,16 +36,19 @@ export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
   const [isSaving, setIsSaving] = useState(false)
   const savingRef = useRef(false)
   const [pending, setPending] = useState(null)
+  // 저장 오류·결과 안내·시작 막힘 문구
   const [settingsError, setSettingsError] = useState(null)
   const [notice, setNotice] = useState(null)
   const [startBlocked, setStartBlocked] = useState(null)
+  // 지금 날아가는 저장 요청 (끊기면 결과 확인 대상으로 옮김)
   const inFlightRef = useRef(null)
 
   // 방 반영 세대: 방 확인 응답이 오기 전에 다른 반영이 끼면 그 응답은 버림
-  // 확인 훅이 살아 있으면 그 훅 함수를 부르고(확인 다시 시작), 없으면 세대만 올림
+  // 확인 훅이 살아 있으면 그 훅 함수를 부르고, 없으면 세대만 올림
   const applyGenRef = useRef(0)
   const bumpRef = useRef(null)
   const resyncRef = useRef(null)
+  // resync = 방 다시 확인, bump = 세대 올리고 확인 중이면 다시 시작
   const resync = () => {
     if (resyncRef.current) resyncRef.current()
     else applyGenRef.current += 1
@@ -69,6 +74,7 @@ export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
     applyingRef.current = true
     try { apply() } finally { applyingRef.current = false }
   }
+  // 확인 무효화 입구 (확인 훅이 채움, 계정·방 바뀔 때 부름)
   const invalidateRef = useRef(null)
 
   // 요청 중 표시 끄기 (화면이 살아 있을 때만 state 바꿈)

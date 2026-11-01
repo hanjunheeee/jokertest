@@ -41,6 +41,7 @@ export function animateScrollTop(container, targetTop, duration) {
   const startTime = performance.now()
   let frameId = 0
 
+  // 한 프레임: 진행 비율만큼 옮기고 끝 아니면 다음 프레임
   const step = (now) => {
     const progress = Math.min(1, (now - startTime) / duration)
     container.scrollTop = startTop + delta * easeOutCubic(progress)

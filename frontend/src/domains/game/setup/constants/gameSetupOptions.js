@@ -1,10 +1,14 @@
+// 게임 설정 항목 정의 (탭·일반·회의&투표·직업별 밤 시간)
+// 설정 탭 컴포넌트·constants/roomSettingsForm·폼 계산·저장값 정리가 씀, 시험도 씀
 import { MAX_SPECIAL_ROLE_COUNT } from "./roleComposition.js"
 
+// 탭 목록
 export const GAME_SETUP_TABS = [
   { id: "general", label: "일반" },
   { id: "meeting", label: "회의&투표" },
 ]
 
+// 일반 탭 항목 (id는 폼 키, 서버 키 짝은 constants/roomSettingsForm.js)
 export const GENERAL_GAME_SETUP = [
   {
     id: "private-lobby",
@@ -46,8 +50,10 @@ export const GENERAL_GAME_SETUP = [
   },
 ]
 
+// 직업별 밤 시간 칸 범위 (전체 밤 시간과 같음)
 const ROLE_NIGHT_ACTION_TIME_RANGE = { type: "stepper", min: 30, max: 120, step: 30, defaultValue: 90, unit: "초" }
 
+// 직업별 밤 시간 항목 (직업 ↔ 항목 id)
 export const ROLE_NIGHT_ACTION_TIME_OPTIONS = [
   { role: "JOKER", id: "night-action-time-joker", label: "광대 밤 시간 조절" },
   { role: "DOCTOR", id: "night-action-time-doctor", label: "의사 밤 시간 조절" },
@@ -55,12 +61,14 @@ export const ROLE_NIGHT_ACTION_TIME_OPTIONS = [
   { role: "WITCH_HUNTER", id: "night-action-time-witch-hunter", label: "마녀사냥꾼 밤 시간 조절" },
 ]
 
+// 직업별 밤 시간을 숫자 고르기 항목으로
 export const ROLE_NIGHT_ACTION_TIME_ITEMS = ROLE_NIGHT_ACTION_TIME_OPTIONS.map(({ id, label }) => ({
   ...ROLE_NIGHT_ACTION_TIME_RANGE,
   id,
   label,
 }))
 
+// 회의&투표 탭 항목
 export const MEETING_GAME_SETUP = [
   {
     id: "day-discussion-time",

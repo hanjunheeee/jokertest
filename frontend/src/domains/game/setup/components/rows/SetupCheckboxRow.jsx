@@ -1,3 +1,5 @@
+// 설정 체크 줄: 제목·설명 + 체크 상자
+// SetupTabContent가 씀
 import { GAME_SETUP_ASSETS } from "../../constants/gameSetupAssets.js"
 import {
   SETUP_DESC_CLASS,
@@ -6,11 +8,13 @@ import {
 } from "../../constants/setupRowStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 체크 줄 (누르면 반대 값으로 onChange)
 export default function SetupCheckboxRow({ label, description, checked, onChange }) {
   return (
     <div className={SETUP_ROW_CLASS} data-setup-row>
       <div className="min-w-0 flex-1">
         <p className={SETUP_TITLE_CLASS}>{label}</p>
+        {/* 설명 있을 때만 */}
         {description ? <p className={SETUP_DESC_CLASS}>{description}</p> : null}
       </div>
       <button
@@ -28,6 +32,7 @@ export default function SetupCheckboxRow({ label, description, checked, onChange
             alt=""
             className="block h-auto w-full select-none"
           />
+          {/* 켜져 있을 때만 체크 표시 */}
           {checked ? (
             <PublicAsset
               src={GAME_SETUP_ASSETS.checkMark}

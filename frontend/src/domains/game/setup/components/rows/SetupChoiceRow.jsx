@@ -1,3 +1,5 @@
+// 설정 고르기 줄: 제목·설명 + 좌우 화살표로 고르는 칸
+// RoleCompositionSection이 씀 (직업 구성 자동/직접 지정)
 import { GAME_SETUP_ASSETS } from "../../constants/gameSetupAssets.js"
 import {
   SETUP_DESC_CLASS,
@@ -6,7 +8,9 @@ import {
 } from "../../constants/setupRowStyles.js"
 import Stepper from "@/shared/ui/Stepper"
 
+// 고르기 줄 (값 대신 고른 항목 순서로 Stepper에 넘김)
 export default function SetupChoiceRow({ label, description, options, value, onChange }) {
+  // 지금 값 순서 (못 찾으면 첫 항목)
   const index = Math.max(0, options.findIndex((option) => option.value === value))
 
   return (

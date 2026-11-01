@@ -7,6 +7,7 @@ import {
 } from "@/domains/game/shared/constants/roomCodeFrameStyles.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 행동 버튼 (나타나는 움직임은 variants로 받음)
 export default function LabelledActionButton({ src, label, onClick, className = "", variants }) {
   return (
     <motion.button

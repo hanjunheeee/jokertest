@@ -1,3 +1,5 @@
+// 친구 초대 창 문구 (제목·버튼·읽기 프로그램용 이름)
+// friendInvite 컴포넌트 셋(Shell·Content·Row)이 씀
 export const MODAL_COPY = {
   title: "친구초대",
   inviteActionLabel: "초대하기",

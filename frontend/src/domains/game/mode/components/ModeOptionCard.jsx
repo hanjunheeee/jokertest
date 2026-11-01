@@ -1,3 +1,5 @@
+// 모드 카드 하나: 틀 그림·제목·설명, 준비중이면 잠금
+// GameModeOptionsArea가 씀
 import {
   MODE_CARD_BUTTON_CLASS,
   FRAME_IMG_CLASS,
@@ -7,6 +9,7 @@ import ModeOptionCardComingSoon from "@/domains/game/mode/components/ModeOptionC
 import ModeOptionCardOverlay from "@/domains/game/mode/components/ModeOptionCardOverlay.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
+// 모드 카드 버튼
 export default function ModeOptionCard({
   label,
   title,
@@ -26,6 +29,7 @@ export default function ModeOptionCard({
       <div className={MODE_CARD_WRAP_CLASS}>
         <PublicAsset src={frame} alt={label} className={FRAME_IMG_CLASS} />
         <ModeOptionCardOverlay title={title} descriptionLines={descriptionLines} />
+        {/* 준비중 모드면 가림막 */}
         {comingSoon ? <ModeOptionCardComingSoon /> : null}
       </div>
     </button>

@@ -1,3 +1,5 @@
+// 대기방 인원 머리말: 사람 그림 + "파티 인원 N명"
+// GameMatchingPage가 씀
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
@@ -8,6 +10,7 @@ import {
   PARTY_COUNT_CLASS,
 } from "../../../../shared/constants/matchingPopupStyles.js"
 
+// 인원 머리말 (읽기 프로그램엔 aria-label로 인원 수 알림)
 export default function MatchingPartyHeader({ visible, partyCount, transition }) {
   return (
     <motion.div
