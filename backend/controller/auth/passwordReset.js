@@ -1,6 +1,8 @@
 'use strict';
 
-const passwordResetService = require('../services/auth/passwordReset');
+// 비밀번호 재설정 컨트롤러 파일, 요청 · 토큰 확인 · 새 비번 저장 응답
+// 요청은 오류를 삼키고 늘 200 (가입 여부 숨김), 나머지 오류는 500
+const passwordResetService = require('../../services/auth/passwordReset');
 
 exports.requestPasswordReset = async (req, res) => {
     res.set('Cache-Control', 'no-store');

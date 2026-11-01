@@ -6,21 +6,21 @@ const {
     completeSocialSignup, getSocialSignupIntent, googleAuthStart, googleAuthCallback,
     discordAuthStart, discordAuthCallback,
     discordLinkStart, discordLinkCallback,
-} = require("../controller/user.controller");
+} = require("../controller/auth");
 const { verifyToken }        = require("../middleware/auth.middleware");
 const crypto                 = require("crypto");
 const { createRateLimiter }  = require("../middleware/rateLimit");
 const { validateFindIdRequest } = require("../validation/findIdValidation");
-const { findId }             = require("../controller/accountRecovery.controller");
+const { findId }             = require("../controller/auth/accountRecovery");
 const { validatePasswordResetRequest } = require("../validation/passwordResetValidation");
 const {
     requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
-} = require("../controller/passwordReset.controller");
+} = require("../controller/auth/passwordReset");
 const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
 const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validation/signupEmailVerificationValidation");
 const {
     requestSignupCode, verifySignupCode,
-} = require("../controller/signupEmailVerification.controller");
+} = require("../controller/auth/signupEmailVerification");
 
 router.post("/signup", signup);
 router.get("/check-email", checkEmail);

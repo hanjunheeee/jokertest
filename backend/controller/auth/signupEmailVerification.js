@@ -1,6 +1,8 @@
 'use strict';
 
-const signupEmailVerificationService = require('../services/auth/signupEmailVerification');
+// 가입 이메일 인증 컨트롤러 파일, 코드 요청 · 코드 확인 응답
+// 서비스 결과 코드를 상태로 바꿈 (다시 보내기 대기·시도 초과는 429)
+const signupEmailVerificationService = require('../../services/auth/signupEmailVerification');
 
 exports.requestSignupCode = async (req, res, next) => {
     res.set('Cache-Control', 'no-store');

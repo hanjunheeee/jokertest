@@ -1,7 +1,9 @@
 'use strict';
 
-const accountRecoveryService = require('../services/auth/accountRecovery');
-const { getClientIp } = require('../utils/ip');
+// 아이디 찾기 컨트롤러 파일, IP 거르기 · 아이디 찾기 응답
+// 못 찾아도 200 NOT_FOUND, 오류는 500 (원본 오류 안 보임)
+const accountRecoveryService = require('../../services/auth/accountRecovery');
+const { getClientIp } = require('../../utils/ip');
 
 const IP_PATTERN = /^[0-9a-fA-F:.]{1,45}$/;
 
