@@ -4,8 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { maskEmail, FALLBACK_MASK } = require('../../utils/maskEmail');
-const { validateFindIdPayload } = require('../../validation/findIdValidation');
-const { validateNickname } = require('../../validation/signupValidation');
+const { validateFindIdPayload } = require('../../validations/findIdValidation');
+const { validateNickname } = require('../../validations/signupValidation');
 
 test('로컬 파트 길이 1은 *로만 가려진다', () => {
     assert.equal(maskEmail('a@b.co'), '*@b***.co');

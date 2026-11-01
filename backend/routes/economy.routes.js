@@ -1,7 +1,7 @@
 const express = require("express");
 const router  = express.Router();
 
-const { verifyToken } = require("../middleware/auth.middleware");
+const { verifyToken } = require("../middlewares/auth.middleware");
 const { createError }  = require("../utils/appError");
 const economyService = require("../services/economy");
 const currencyProductsService = require("../services/economy/currencyProducts");

@@ -58,7 +58,7 @@ const db = require('../../models');
 const economyService = require('../../services/economy');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');
-const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

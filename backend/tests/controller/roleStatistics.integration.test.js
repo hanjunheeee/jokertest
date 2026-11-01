@@ -9,8 +9,8 @@ const cookieParser = require("cookie-parser");
 
 const db                      = require("../../models");
 const gameResultRepository    = require("../../repositories/gameResult.repositories");
-const roleStatisticsController = require("../../controller/roleStatistics.controller");
-const profileController       = require("../../controller/profile.controller");
+const roleStatisticsController = require("../../controllers/roleStatistics.controller");
+const profileController       = require("../../controllers/profile.controller");
 const userRepository          = require("../../repositories/user.repositories");
 const gameSessionCore         = require("../../game-core/gameSession");
 
@@ -537,7 +537,7 @@ test("저장 레코드의 settings.gameSource가 조회 경로의 개발 경기 
 });
 
 const { generateToken } = require("../../utils/jwt");
-const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
 
 const ROUTE_TOKEN = generateToken({ uuid: "route-u1", role: "USER", sessionId: "route-session-1" });
 

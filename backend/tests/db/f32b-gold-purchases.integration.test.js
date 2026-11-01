@@ -47,7 +47,7 @@ const unavailable = (t) => {
 const db = require('../../models');
 const userRepository = require('../../repositories/user.repositories');
 const economyService = require('../../services/economy');
-const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

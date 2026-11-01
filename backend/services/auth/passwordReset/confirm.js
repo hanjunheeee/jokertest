@@ -4,8 +4,8 @@
 // 바꾸면 접속 세션 전부 끊고 남은 토큰 폐기
 const userRepository = require('../../../repositories/user.repositories');
 const { hashPassword } = require('../../../utils/hash');
-const { validatePassword } = require('../../../validation/signupValidation');
-const { validateResetToken } = require('../../../validation/passwordResetValidation');
+const { validatePassword } = require('../../../validations/signupValidation');
+const { validateResetToken } = require('../../../validations/passwordResetValidation');
 const { hashToken } = require('./tokens');
 const { withDeadlockRetry } = require('./retry');
 const passwordResetTokenRepository = require('../../../repositories/auth/passwordResetToken');

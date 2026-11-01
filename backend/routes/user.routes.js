@@ -3,13 +3,13 @@ const router  = express.Router();
 
 const { getMyProfile,
         updateNickname,
-        updatePassword } = require("../controller/profile.controller");
+        updatePassword } = require("../controllers/profile.controller");
 const { getMyRoleStatistics,
-        getRoleRanking }  = require("../controller/roleStatistics.controller");
-const { getMyAchievements } = require("../controller/achievement.controller");
+        getRoleRanking }  = require("../controllers/roleStatistics.controller");
+const { getMyAchievements } = require("../controllers/achievement.controller");
 const { getEmojiPalette,
-        saveEmojiPalette }  = require("../controller/emojiPalette.controller");
-const { verifyToken }    = require("../middleware/auth.middleware");
+        saveEmojiPalette }  = require("../controllers/emojiPalette.controller");
+const { verifyToken }    = require("../middlewares/auth.middleware");
 
 router.get("/me/profile",   verifyToken, getMyProfile);
 router.patch("/me/nickname", verifyToken, updateNickname);

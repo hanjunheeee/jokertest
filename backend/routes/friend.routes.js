@@ -1,8 +1,8 @@
 const express = require("express");
 const router  = express.Router();
 
-const friendController = require("../controller/friend.controller");
-const { verifyToken }  = require("../middleware/auth.middleware");
+const friendController = require("../controllers/friend.controller");
+const { verifyToken }  = require("../middlewares/auth.middleware");
 
 router.get("/", verifyToken, friendController.getFriends);
 router.get("/search", verifyToken, friendController.searchUsers);

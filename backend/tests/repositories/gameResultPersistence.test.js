@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 const db                   = require("../../models");
 const gameResultRepository = require("../../repositories/gameResult.repositories");
 const userRepository       = require("../../repositories/user.repositories");
-const profileController    = require("../../controller/profile.controller");
+const profileController    = require("../../controllers/profile.controller");
 const gameSessionCore      = require("../../game-core/gameSession");
 const gameSessionSocket    = require("../../socket/gameSession");
 

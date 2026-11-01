@@ -11,7 +11,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'f29-recovery-fixture-secret'
 process.env.PASSWORD_RESET_APP_URL = process.env.PASSWORD_RESET_APP_URL || 'https://frontend.example.test';
 
 const AUTH_ROUTES_PATH = require.resolve('../../routes/auth.routes');
-const RATE_LIMIT_PATH = require.resolve('../../middleware/rateLimit');
+const RATE_LIMIT_PATH = require.resolve('../../middlewares/rateLimit');
 
 const RATE_LIMIT_ENV_KEYS = [
     'FIND_ID_WINDOW_MS', 'FIND_ID_IP_MAX', 'FIND_ID_TARGET_MAX',
@@ -124,7 +124,7 @@ const createF29RecoveryFixture = async (t, options = {}) => {
 
     const express = require('express');
     const cookieParser = require('cookie-parser');
-    const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+    const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
 
     const app = express();
     app.use(express.json());

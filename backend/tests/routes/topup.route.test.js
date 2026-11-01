@@ -10,7 +10,7 @@ const jwt          = require("jsonwebtoken");
 
 const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 
-const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
 const { createError } = require("../../utils/appError");
 const userRepository = require("../../repositories/user.repositories");
 const currencyProductsService = require("../../services/economy/currencyProducts");

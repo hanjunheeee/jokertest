@@ -2,9 +2,9 @@ const test   = require("node:test");
 const assert = require("node:assert/strict");
 
 const db             = require("../../models");
-const gameController = require("../../controller/game.controller");
+const gameController = require("../../controllers/game.controller");
 const gameRouter     = require("../../routes/game.routes");
-const { verifyToken } = require("../../middleware/auth.middleware");
+const { verifyToken } = require("../../middlewares/auth.middleware");
 
 const GAME_ROW = {
     id: "game-42",

@@ -1,8 +1,8 @@
 const express = require("express");
 const router  = express.Router();
 
-const notificationController = require("../controller/notification.controller");
-const { verifyToken }        = require("../middleware/auth.middleware");
+const notificationController = require("../controllers/notification.controller");
+const { verifyToken }        = require("../middlewares/auth.middleware");
 
 router.get("/", verifyToken, notificationController.getNotifications);
 router.delete("/read", verifyToken, notificationController.deleteReadNotifications);

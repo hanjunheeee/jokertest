@@ -6,21 +6,21 @@ const {
     completeSocialSignup, getSocialSignupIntent, googleAuthStart, googleAuthCallback,
     discordAuthStart, discordAuthCallback,
     discordLinkStart, discordLinkCallback,
-} = require("../controller/auth");
-const { verifyToken }        = require("../middleware/auth.middleware");
+} = require("../controllers/auth");
+const { verifyToken }        = require("../middlewares/auth.middleware");
 const crypto                 = require("crypto");
-const { createRateLimiter }  = require("../middleware/rateLimit");
-const { validateFindIdRequest } = require("../validation/findIdValidation");
-const { findId }             = require("../controller/auth/accountRecovery");
-const { validatePasswordResetRequest } = require("../validation/passwordResetValidation");
+const { createRateLimiter }  = require("../middlewares/rateLimit");
+const { validateFindIdRequest } = require("../validations/findIdValidation");
+const { findId }             = require("../controllers/auth/accountRecovery");
+const { validatePasswordResetRequest } = require("../validations/passwordResetValidation");
 const {
     requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
-} = require("../controller/auth/passwordReset");
+} = require("../controllers/auth/passwordReset");
 const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
-const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validation/signupEmailVerificationValidation");
+const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validations/signupEmailVerificationValidation");
 const {
     requestSignupCode, verifySignupCode,
-} = require("../controller/auth/signupEmailVerification");
+} = require("../controllers/auth/signupEmailVerification");
 
 router.post("/signup", signup);
 router.get("/check-email", checkEmail);

@@ -3,7 +3,7 @@
 // 인증 코드 확인 파일, 코드 확인 · 가입 증명 소비
 // 틀린 횟수·만료·한 번만 쓰기 확인
 const userRepository = require('../../../repositories/user.repositories');
-const { normalizeEmail } = require('../../../validation/signupEmailVerificationValidation');
+const { normalizeEmail } = require('../../../validations/signupEmailVerificationValidation');
 const { requireConfig } = require('./config');
 const { PURPOSE } = require('./constants');
 const { hashCode, generateProof, hashProof } = require('./codes');

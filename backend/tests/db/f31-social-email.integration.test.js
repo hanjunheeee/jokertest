@@ -77,7 +77,7 @@ const googleOAuthService = require('../../services/auth/oauth/google');
 const discordOAuthService = require('../../services/auth/oauth/discord');
 const userRepository = require('../../repositories/user.repositories');
 const mailAdapterModule = require('../../mail/mailAdapter');
-const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

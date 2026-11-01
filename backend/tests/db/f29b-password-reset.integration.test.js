@@ -79,7 +79,7 @@ const authService = require('../../services/auth/account');
 const socialAuthService = require('../../services/auth/social');
 const userRepository = require('../../repositories/user.repositories');
 const mailAdapterModule = require('../../mail/mailAdapter');
-const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
 const { hashPassword } = require('../../utils/hash');
 const { prepareSignupProof } = require('../helpers/signupProof');
 

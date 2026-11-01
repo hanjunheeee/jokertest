@@ -15,7 +15,7 @@ const cookieParser = require("cookie-parser");
 const db = require("../../models");
 const userRepository = require("../../repositories/user.repositories");
 const mailAdapter = require("../../mail/mailAdapter");
-const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
 
 const hashToken = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 const tokenUrlOf = (mail) => new URL(mail.params.resetUrl);
@@ -417,7 +417,7 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
 });
 
 test("제한기: 대상 이메일별 한도를 넘으면 429 RATE_LIMITED다", async (t) => {
-    const { createRateLimiter } = require("../../middleware/rateLimit");
+    const { createRateLimiter } = require("../../middlewares/rateLimit");
     let now = 0;
     const limiter = createRateLimiter({ windowMs: 60_000, max: 3, keyOf: () => "email:fixed", now: () => now });
     const run = () => new Promise((resolve) => {

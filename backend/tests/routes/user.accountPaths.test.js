@@ -11,7 +11,7 @@ const path         = require("node:path");
 
 const db = require("../../models");
 const { generateToken } = require("../../utils/jwt");
-const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
 
 const { Sequelize }          = require("sequelize");
 const migrationRunner        = require("../../db/migrationRunner");

@@ -21,7 +21,7 @@ try {
     failStartup(error);
 }
 
-const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("./middlewares/errorHandler");
 const authRouter     = require("./routes/auth.routes");
 const userRouter     = require("./routes/user.routes");
 const friendRouter   = require("./routes/friend.routes");

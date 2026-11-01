@@ -63,7 +63,7 @@ const gameResultRepository = require('../../repositories/gameResult.repositories
 const achievementService = require('../../services/achievement');
 const { hashPassword } = require('../../utils/hash');
 const { generateToken } = require('../../utils/jwt');
-const { notFoundHandler, globalErrorHandler } = require('../../middleware/errorHandler');
+const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler');
 
 test.after(async () => {
     if (TEST_DB_URL) await db.sequelize.close();

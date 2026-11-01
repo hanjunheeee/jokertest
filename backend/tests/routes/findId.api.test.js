@@ -10,7 +10,7 @@ const { once }     = require("node:events");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
 
-const { notFoundHandler, globalErrorHandler } = require("../../middleware/errorHandler");
+const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler");
 const db = require("../../models");
 const { maskEmail } = require("../../utils/maskEmail");
 

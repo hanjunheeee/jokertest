@@ -4,13 +4,13 @@ const userRepository = require("../../../repositories/user.repositories");
 const authService = require("../account");
 const { hashPassword } = require("../../../utils/hash");
 const { createError } = require("../../../utils/appError");
-const { validateNickname, validateBirthDate } = require("../../../validation/signupValidation");
+const { validateNickname, validateBirthDate } = require("../../../validations/signupValidation");
 const db = require("../../../models");
 const economyService = require("../../economy");
 const signupEmailVerificationService = require("../signupEmailVerification");
 const {
     normalizeEmail: normalizeSignupEmail, validateEmailFormat,
-} = require("../../../validation/signupEmailVerificationValidation");
+} = require("../../../validations/signupEmailVerificationValidation");
 const { hashValue, generateOpaqueToken } = require('./tokens');
 
 // 없음·처리됨·만료 확인, 이메일 인증 필요한지 알려 줌
