@@ -7,7 +7,9 @@
     "dev": "nodemon index.js",
     "start": "node index.js",
     "test:game-core": "node --test \"tests/game-core/**/*.test.js\"",
-    "test": "node --env-file=.env.test --test"
+    "test": "node --env-file=.env.test --test",
+    "lint": "eslint .",
+    "check:depth": "node ../scripts/check-depth.mjs ."
   },
   "keywords": [],
   "author": "",

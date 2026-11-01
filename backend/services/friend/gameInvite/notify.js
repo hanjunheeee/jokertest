@@ -19,7 +19,7 @@ function emitInviteReceived(receiverId, publicInvite) {
                 origin: 'live',
             },
         });
-    } catch (error) {
+    } catch {
         console.error('[게임 초대 전달 실패]', { code: 'GAME_INVITE_EMIT_ERROR', receiverId });
     }
 }
@@ -31,7 +31,7 @@ function emitInviteUpdated(userIds, publicInvite) {
     for (const userId of new Set(userIds.filter(Boolean))) {
         try {
             emit(userId, 'game_invite_updated', { invite: publicInvite });
-        } catch (error) {
+        } catch {
             console.error('[게임 초대 상태 전달 실패]', { code: 'GAME_INVITE_UPDATE_EMIT_ERROR', userId });
         }
     }

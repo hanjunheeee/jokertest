@@ -38,7 +38,7 @@ const emitNotificationCreated = (userId, notification) => {
             };
         }
         emit(userId, 'notification_created', payload);
-    } catch (error) {
+    } catch {
         console.error('[알림 전달 실패]', { code: 'NOTIFICATION_EMIT_ERROR', userId, notificationId: notification?.id });
     }
 };

@@ -34,7 +34,7 @@ async function captureSnapshot({
         const current = getCurrentSnapshot(onlineUsers, getGameSnapshot())
         await snapshotRepository.saveSnapshot({ captured_at: now(), ...current }, { model })
         return true
-    } catch (error) {
+    } catch {
         console.error('[동시 접속 스냅샷 저장 실패]', { code: 'CONCURRENT_SNAPSHOT_FAILED' })
         return false
     }

@@ -5,9 +5,6 @@
 const catalog = require('./catalog');
 const {
     ITEM_TYPES,
-    DEFAULT_PROFILE_PHOTO_ID,
-    DEFAULT_PROFILE_BORDER_ID,
-    listDefaultGrantItems,
 } = catalog;
 
 // 누구나 가진 기본 카드 테두리

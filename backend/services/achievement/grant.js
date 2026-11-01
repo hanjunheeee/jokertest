@@ -20,7 +20,7 @@ const notifyGranted = (userId, definition) => {
                 origin: 'live',
             },
         });
-    } catch (error) {
+    } catch {
         console.error('[업적 지급 통지 실패]', { code: 'ACHIEVEMENT_NOTIFY_ERROR', userId, achievementId: definition.id });
     }
 };

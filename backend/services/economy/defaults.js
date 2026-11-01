@@ -7,7 +7,6 @@ const catalog = require('./catalog');
 const { defaultDb } = require('./helpers');
 const { CURRENCIES } = require('./constants');
 const {
-    ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
     DEFAULT_PROFILE_BORDER_ID,
     listDefaultGrantItems,

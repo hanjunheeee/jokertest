@@ -14,7 +14,7 @@ function observeNightCommit(event, detail) {
     busy = true
     try {
         observer(event, detail)
-    } catch (err) {
+    } catch {
         // 관찰자 오류는 일부러 삼킴
     } finally {
         busy = false

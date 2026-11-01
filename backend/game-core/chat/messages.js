@@ -20,7 +20,7 @@ function makeMsgId(idFn) {
     // id 만드는 함수가 터져도 서버는 안 죽게 잡음
     try {
         rawMessageId = idFn()
-    } catch (err) {
+    } catch {
         return { ok: false, code: 'ID_GENERATION_ERROR' }
     }
     // 문자열 아니거나 공백뿐이면 쓸 수 없는 id

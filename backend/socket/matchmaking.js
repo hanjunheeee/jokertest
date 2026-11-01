@@ -1,21 +1,8 @@
-const crypto = require('crypto')
-const { generateRoomCode, generateUniqueRoomCode } = require('../utils/roomCode')
-const { validateCreateRoomPayload } = require('../validations/room/create')
 const {
-    validateUpdateRoomSettingsPayload,
-    buildEditableSettingsView,
-    buildRoomSettingsView,
-    hasDisallowedKeys,
-    fingerprintUpdateSettings,
-    fingerprintRequest,
-    isSettingsIdentifier,
     ROOM_SETTINGS_EVENTS,
     ROOM_SETTINGS_ERROR_CODES,
-    PRESERVED_ROOM_SETTING_KEYS,
 } = require('../validations/room/updateSettings')
-const { ROOM_JOIN_ERROR_CODES } = require('./roomJoinErrors')
 const gameSession = require('../game-core/gameSession')
-const { validateCreateRoomRoleComposition, resolveRoleComposition } = require('../game-core/core/rules/roleComposition')
 const gameInviteModule = require('../services/friend/gameInvite')
 const kickReceiptStore = require('./kickReceiptStore')
 const channelMembership = require('./channelMembership')
@@ -29,44 +16,26 @@ const {
     roomAdmissionAttempts,
     publishedAdmissions,
     roomSettingsUpdateResults,
-    generationByUuid,
     startedRoomMarks,
     pendingRoomRemovals,
     presenceConfirmedTick,
 } = require('./matchmaking/core/state')
 // 인원 규칙·자동 매칭 켜기는 matchmaking/config
 const {
-    isRandomMatchEnabled,
     __setRandomMatchmakingEnabledForTests,
-    getMinPlayers,
     getSupportedRoomSizes,
 } = require('./matchmaking/core/config')
-// 방 전환 잠금·세대 번호는 matchmaking/transition
-const {
-    acquireRoomTransition,
-    releaseRoomTransition,
-    getGeneration,
-    bumpGeneration,
-} = require('./matchmaking/join/transition')
 // 설정 버전·저장 영수증은 matchmaking/settingsReceipts
 const {
-    INIT_SETTINGS_VERSION,
-    getSettingsVersion,
-    SETTINGS_RESULT_TTL_MS,
-    settingsUpdateResultKey,
-    pruneSettingsResults,
-    recordSettingsResult,
     forgetSettingsResults,
 } = require('./matchmaking/settings/receipts')
 // 시작된 방 표시는 matchmaking/startedMarks
 const {
-    rememberStartedRoom,
     __resetStartedMarksForTests,
     isStartedRoomMark,
 } = require('./matchmaking/join/startedMarks')
 // 바깥 의존 주입구는 matchmaking/deps
 const {
-    deps,
     setOnlineUsersRegistry,
     __setGameInviteServiceForTests,
     __setUserRepositoryForTests,
@@ -76,61 +45,28 @@ const {
 // matchmaking 상수
 const {
     BOOT_EPOCH,
-    PARTY_ROOM_TTL_MS,
     ROOM_RECONNECT_GRACE_MS,
-    ADMISSION_STEP_MS,
-    ADMISSION_TOTAL_MS,
 } = require('./matchmaking/core/constants')
 // 자리·소켓 확인은 matchmaking/membership
 const {
-    isOwnedByOtherSocket,
-    isCanonicalSocket,
-    isCanonicalOrUnknown,
-    isSeatedInRoom,
     hasRoomMembership,
-    hasLiveGameMembership,
-    detachSocketFromChannel,
     leaveSocketRoomSafely,
-    findLiveSocket,
-    findAllLiveSockets,
-    resolveParticipantSockets,
 } = require('./matchmaking/room/membership')
 // 입장 요청 검사·실패 알림은 matchmaking/joinGuards
 const {
     emitRoomJoinFailed,
     ALREADY_IN_GAME_MESSAGE,
-    rejectIfInGame,
     JOIN_REQUEST_INVALID_MESSAGE,
     validateJoinRoomByCodeRequest,
-    describeJoinFailure,
     isRoomCodeReserved,
 } = require('./matchmaking/join/guards')
 // 입장 시도 기록은 matchmaking/admission
 const {
-    nextAttemptId,
-    releasePublished,
     getAdmissionAttempt,
-    invalidateAttempt,
-    compensateAttempt,
     invalidateRoomAttempts,
     hasPendingAdmission,
     countRoomOccupancy,
-    withAdmissionTimeout,
 } = require('./matchmaking/admission/attempts')
-// 방 정보·공개 방 목록은 matchmaking/roomView
-const {
-    computeCanStart,
-    buildRoomPayload,
-    loadPlayerProfile,
-    buildPublicRoomList,
-    emitPublicRoomList,
-} = require('./matchmaking/room/view')
-// 입장 되돌리기·방 초대 취소는 matchmaking/release
-const {
-    removePublished,
-    scheduleLateJoinCleanup,
-    cancelRoomInvitesAsync,
-} = require('./matchmaking/admission/release')
 // 자동 매칭 줄은 matchmaking/queue
 const {
     handleJoinMatchmaking,
@@ -152,7 +88,6 @@ const {
 // 끝난 판 다음 방은 matchmaking/party
 const {
     handleGetPartyMatchingRoom,
-    notifyPartyOfRoom,
 } = require('./matchmaking/join/party')
 // 방 나가기·끊김 유예는 matchmaking/leave
 const {
@@ -246,7 +181,7 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         handleAcceptGameInvite(io, socket, uuid, payload, callback).catch((err) => {
             console.error('\x1b[31m[초대 수락 에러]\x1b[0m', err)
             if (typeof callback === 'function') {
-                try { callback({ ok: false, code: 'INTERNAL_ERROR', message: '초대를 처리하지 못했습니다.' }) } catch {}
+                try { callback({ ok: false, code: 'INTERNAL_ERROR', message: '초대를 처리하지 못했습니다.' }) } catch { /* 응답 보내기 실패는 무시 (에러는 위에서 남김) */ }
             }
         })
     )
@@ -254,7 +189,7 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         handleGetGameInviteResult(uuid, payload, callback).catch((err) => {
             console.error('\x1b[31m[초대 결과 조회 에러]\x1b[0m', err)
             if (typeof callback === 'function') {
-                try { callback({ ok: false, code: 'UNKNOWN' }) } catch {}
+                try { callback({ ok: false, code: 'UNKNOWN' }) } catch { /* 응답 보내기 실패는 무시 (에러는 위에서 남김) */ }
             }
         })
     )

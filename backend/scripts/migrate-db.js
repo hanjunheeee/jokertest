@@ -121,7 +121,7 @@ const main = async () => {
 
     const db = require(path.join(__dirname, '..', 'models'));
 
-    let exitCode = 1;
+    let exitCode;
     try {
         if (command === 'status') exitCode = await runStatus(db);
         else if (command === 'migrate') exitCode = await runMigrate(db);

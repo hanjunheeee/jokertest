@@ -48,6 +48,7 @@ exports.requestPasswordReset = async ({ email }, { mailAdapter: injectedMailAdap
             }
         }
     } catch {
+        // 메일 실패는 삼킴 (응답이 달라지면 가입 여부 드러남)
     }
 
     return { ok: true };

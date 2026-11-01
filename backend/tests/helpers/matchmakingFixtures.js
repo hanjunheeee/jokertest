@@ -105,6 +105,7 @@ function createFakeIo(sockets = []) {
             try {
                 receive.call(s, event, payload)
             } catch {
+                // 받는 소켓 오류는 무시 (진짜 socket.io처럼 다른 소켓 전달 계속)
             }
         }
     }

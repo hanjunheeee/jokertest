@@ -62,7 +62,7 @@ const main = async () => {
 
     const db = require(path.join(__dirname, '..', 'models'));
 
-    let exitCode = 1;
+    let exitCode;
     try {
         exitCode = await runBackfill(db, options);
     } finally {

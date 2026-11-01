@@ -64,7 +64,7 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
 async function createAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation, transitionToken) {
     let roomId = null
     let joined = false
-    let room = null
+    let room
 
     try {
         const [user, accountProfile] = await Promise.all([

@@ -1,24 +1,17 @@
 // game-core 입구 파일, 폴더별로 나눈 함수 모아서 내보냄
 // socket 쪽(gameSession·matchmaking)·전적 저장이 require 해서 사용
 // 판 장부·역할·판 끝내기·관찰자는 core (registry·rules·tools)
-const crypto = require('crypto')
 const { ROLE_DEFINITIONS, GAME_ROLES, ROLE_TEAMS } = require('./core/rules/roles')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('./core/rules/terminal')
-const { observeNightCommit, isObserverBusy, setObserver } = require('./core/tools/observer')
+const { setObserver } = require('./core/tools/observer')
 // 시험 전용 장부 손잡이는 core/tools/testing (장부는 core·queries만 만짐)
 const { __resetStateForTests, __getStateSnapshotForTests, __deleteGameSessionOnlyForTests } = require('./core/tools/testing')
 // 죽은 이유·전적 기록·결과 공개는 result
 const { DEATH_REASONS } = require('./result/constants')
 const { resolveGameSource, buildGameResultRecord } = require('./result/record')
-const { buildTerminalFields, buildPublicWinResult } = require('./result/winReveal')
+const { buildTerminalFields } = require('./result/winReveal')
 // 재판은 phase/tribunal
 const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('./phase/tribunal/constants')
-const {
-    TRIBUNAL_PENDING,
-    getTribunalVoterUuids,
-    buildTribunalBallotSnap,
-    tallyTribunalBallots,
-} = require('./phase/tribunal/ballots')
 const { submitTribunalVote, readTribunalVoteSfx } = require('./phase/tribunal/vote')
 const { prepareTribunalVoteResolution, commitTribunalVoteResolution, buildTribunalVoteResolvedPayload } = require('./phase/tribunal/resolve')
 // 판 조회는 queries
@@ -44,7 +37,6 @@ const {
     EMOJI_MIN_INTERVAL_MS,
     CHAT_COMMIT_MAX_AGE_MS,
     CHAT_CHANNELS,
-    RATE_FIELD,
 } = require('./chat/constants')
 const {
     sanitizeChatText,
@@ -63,11 +55,7 @@ const {
 const {
     computeRoleComposition,
     getSpecialRoleBudget,
-    resolveRoleComposition,
-    validateResolvedComposition,
 } = require('./core/rules/roleComposition')
-// 방 설정 화면용 모양 만들기는 game-core 밖 validations
-const { buildRoomSettingsView } = require('../validations/room/updateSettings')
 // 낮은 phase/day
 const { DAY_PHASES, DAY_DISCUSSION_DURATION_MS, DAY_VOTE_DURATION_MS } = require('./phase/day/constants')
 const {
@@ -97,8 +85,6 @@ const {
     NIGHT_TURN_DURATION_MS,
     NIGHT_ACTION_RESOLUTION_POLICY,
     NIGHT_RECOVERY_STATES,
-    EMPTY_COMPLETED_ROLES,
-    SELF_TARGET_ROLES,
     PUBLIC_NIGHT_DEATH_SOURCES,
 } = require('./phase/night/constants')
 // 끊김 탈락·나가기는 departure
@@ -109,19 +95,14 @@ const { buildPublicProgress, bumpSelfProgressSeq, buildSelfFields } = require('.
 const { buildSessionSnapshot, getSessionSnapshotForPlayer } = require('./snapshot/session')
 const { buildPhaseChangedPayload, buildParticipationChangedPayload } = require('./snapshot/payloads')
 // 판 만들기·역할 공개는 setup
-const { PLAYER_THEME_PALETTE_SIZE } = require('./setup/constants')
 const { assignRoles } = require('./setup/assign')
 const { validateSessionInput, buildTimerSettings, buildRoomSettingsSource } = require('./setup/input')
 const { buildSessionCandidate, checkGameSessionPreconditions, prepareGameSession } = require('./setup/create')
 const { assertValidSessionForCommit, commitGameSession } = require('./setup/commit')
 const {
-    buildViewerRoleFields,
-    buildPlayerThemeIndices,
-    buildProfileFields,
-    buildSettingsFields,
     buildGameStartedPayload,
 } = require('./setup/startPayload')
-const { acknowledgeRoleReveal, isRoleRevealComplete } = require('./setup/roleAck')
+const { acknowledgeRoleReveal } = require('./setup/roleAck')
 // 밤은 phase/night
 const {
     isEligibleForNightAction,

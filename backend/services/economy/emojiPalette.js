@@ -14,9 +14,6 @@ const emojiPaletteRepository = require('../../repositories/economy/emojiPalette'
 const { withTransaction } = require('../../repositories/common');
 const {
     ITEM_TYPES,
-    DEFAULT_PROFILE_PHOTO_ID,
-    DEFAULT_PROFILE_BORDER_ID,
-    listDefaultGrantItems,
 } = catalog;
 
 // 팔레트 처음 행 값

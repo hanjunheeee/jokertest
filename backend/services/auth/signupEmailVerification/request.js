@@ -102,6 +102,7 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
                 params: { code: outcome.code, expiresInSec: outcome.expiresInSec },
             });
         } catch {
+            // 메일 실패는 삼킴 (이미 가입한 이메일과 같은 응답, 가입 여부 숨김)
         }
     }
 

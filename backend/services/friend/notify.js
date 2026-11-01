@@ -18,7 +18,7 @@ function buildFriendSfxEvent(kind, stage, accountId, requestId) {
 function emitFriendEventSafely(userId, event, payload, code) {
     try {
         emitToUser(userId, event, payload);
-    } catch (emitError) {
+    } catch {
         console.error('[친구 사건 통지 실패]', { code, userId });
     }
 }
@@ -28,7 +28,7 @@ exports.notifyRequestReceived = (receiverId, requestId) => {
     const sfxEvent = buildFriendSfxEvent('friend-request-received', 'received', receiverId, requestId);
     try {
         emitToUser(receiverId, 'friend_request_received', sfxEvent ? { sfxEvent } : {});
-    } catch (emitError) {
+    } catch {
         console.error('[친구 요청 통지 실패]', { code: 'FRIEND_REQUEST_NOTIFY_ERROR', receiverId });
     }
 };

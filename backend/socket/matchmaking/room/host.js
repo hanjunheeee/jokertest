@@ -161,7 +161,7 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     for (const targetSocket of targetSockets) {
         try {
             targetSocket.emit(kickReceiptStore.KICK_EVENTS.ROOM_KICKED, kickedEvent)
-        } catch (err) {
+        } catch {
             console.error('[추방 개인 통지 실패]', { code: 'KICK_NOTIFY_ERROR', roomId: room.id })
         }
     }

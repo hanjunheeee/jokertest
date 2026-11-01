@@ -10,6 +10,7 @@ exports.requestPasswordReset = async (req, res) => {
         const { email } = res.locals.passwordResetInput;
         await passwordResetService.requestPasswordReset({ email });
     } catch {
+        // 실패해도 늘 같은 200 (가입 여부 숨김)
     }
     return res.status(200).json({ ok: true });
 };
