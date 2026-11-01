@@ -11,7 +11,9 @@ const { verifyOAuthAttempt, ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require(
 exports.googleAuthStart = async (req, res, next) => {
     try {
         const rememberMe = req.query.rememberMe === "true";
-        const { state, attemptToken } = await socialAuthService.startGoogleLogin({ rememberMe });
+        const { state, attemptToken } = await socialAuthService.startGoogleLogin({
+            rememberMe, client: socialAuthService.parseClient(req.query.client),
+        });
         res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, attemptCookieOptions(ATTEMPT_TTL_SECONDS));
 
         res.redirect(googleOAuthService.buildAuthorizationUrl(state));
@@ -26,7 +28,8 @@ exports.googleAuthCallback = async (req, res, next) => {
     const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
     res.clearCookie(OAUTH_ATTEMPT_COOKIE, attemptCookieOptions(ATTEMPT_TTL_SECONDS));
 
-    const frontendBase = process.env.FRONTEND_URL;
+    // 모바일에서 시작한 시도 표만 모바일 주소로 (시도 표는 서명돼서 못 바꿔치기)
+    const frontendBase = socialAuthService.resolveFrontendBase(attempt?.client);
     const redirectWithError = (code) => res.redirect(`${frontendBase}/login?socialError=${encodeURIComponent(code)}`);
 
     try {

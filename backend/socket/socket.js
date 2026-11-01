@@ -24,10 +24,11 @@ matchmaking.setOnlineUsersRegistry(onlineUsers);
 gameSession.setEmitToUser(emitToUser);
 
 // socket.io 서버 켜기: 접속 인증 걸고 연결마다 처리기 붙임, 동시 접속 기록 주기도 켬
-function initSocket(httpServer) {
+// CORS 주소는 index.js가 config에서 받아 넘김 (안 넘기면 FRONTEND_URL)
+function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL } = {}) {
     const io = new Server(httpServer, {
         cors: {
-            origin:      process.env.FRONTEND_URL,
+            origin:      corsOrigin,
             credentials: true,
             methods:     ["GET", "POST"],
         },

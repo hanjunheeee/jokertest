@@ -33,11 +33,12 @@ const gameRouter     = require("./routes/game.routes");
 const economyRouter  = require("./routes/economy.routes");
 const notificationRouter = require("./routes/notification.routes");
 const { initSocket } = require("./socket/socket");
+const { getCorsOrigin } = require("./config/frontendOrigins");
 
 const app = express();
 
-// 프런트 주소에서만 쿠키 실은 요청 받음
-app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+// 프런트 주소(데스크톱·모바일 목록)에서만 쿠키 실은 요청 받음
+app.use(cors({ origin: getCorsOrigin(), credentials: true }));
 
 // 비번 재설정·가입 경로인지 (뒤 슬래시·쿼리 빼고 소문자로 봄)
 const isPasswordResetPath = (req) => String(req.originalUrl || req.url || '')
@@ -77,7 +78,7 @@ app.use(globalErrorHandler);
 
 // http 서버 하나에 Express와 socket.io를 같이 붙임
 const server = http.createServer(app);
-const io = initSocket(server);
+const io = initSocket(server, { corsOrigin: getCorsOrigin() });
 
 const port = Number(process.env.PORT) || 4000;
 

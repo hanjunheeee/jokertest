@@ -2,11 +2,11 @@
 // social 입구로 controllers/auth/discordLink.js가 부름, 쿠키·redirect·인가 주소는 컨트롤러 몫
 const crypto = require("crypto");
 const discordOAuthService = require("../oauth/discord");
-const { signOAuthAttempt } = require("./attempt");
+const { signOAuthAttempt, clientMark } = require("./attempt");
 const { ATTEMPT_TTL_SECONDS } = require("./constants");
 
 // 지문 만들고 로그인한 세션으로 연결 state 발급 → 시도 표 서명
-exports.startDiscordLink = async ({ userId, sessionId }) => {
+exports.startDiscordLink = async ({ userId, sessionId, client }) => {
     // 지문 원문은 시도 쿠키에만, state 행엔 해시 (다른 브라우저로 콜백 막기)
     const browserFingerprint = crypto.randomBytes(32).toString("base64url");
 
@@ -16,7 +16,7 @@ exports.startDiscordLink = async ({ userId, sessionId }) => {
     });
 
     const attemptToken = signOAuthAttempt(
-        { fp: browserFingerprint, purpose: "link", provider: "discord" },
+        { fp: browserFingerprint, purpose: "link", provider: "discord", ...clientMark(client) },
         ATTEMPT_TTL_SECONDS,
     );
     return { state, attemptToken };

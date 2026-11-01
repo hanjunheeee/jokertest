@@ -3,18 +3,18 @@
 // 쿠키·redirect·인가 주소는 컨트롤러 몫 (쿠키 넣은 뒤 주소 만드는 순서 그대로)
 const crypto = require("crypto");
 const googleOAuthService = require("../oauth/google");
-const { signOAuthAttempt } = require("./attempt");
+const { signOAuthAttempt, clientMark } = require("./attempt");
 const { ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require("./constants");
 
 // 지문 만들고 로그인 state 발급 → 시도 표 서명 (state 소비·계정 찾기는 입구 객체로 불러 시험 패치 먹게)
-exports.startGoogleLogin = async ({ rememberMe }) => {
+exports.startGoogleLogin = async ({ rememberMe, client }) => {
     // 지문 원문은 시도 쿠키에만, state 행엔 해시 (다른 브라우저로 콜백 막기)
     const browserFingerprint = crypto.randomBytes(32).toString("base64url");
 
     const { state } = await require('./index').issueOAuthState({ purpose: "login", browserFingerprint });
 
     const attemptToken = signOAuthAttempt(
-        { fp: browserFingerprint, rememberMe, purpose: "login", provider: "google" },
+        { fp: browserFingerprint, rememberMe, purpose: "login", provider: "google", ...clientMark(client) },
         ATTEMPT_TTL_SECONDS,
     );
     return { state, attemptToken };
