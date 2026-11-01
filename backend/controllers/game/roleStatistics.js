@@ -1,4 +1,4 @@
-const gameResultRepository = require("../../repositories/gameResult.repositories");
+const gameResultRepository = require("../../repositories/game/result");
 const roleStatisticsPolicy = require("../../services/game/roleStatistics");
 
 exports.getMyRoleStatistics = async (req, res, next) => {

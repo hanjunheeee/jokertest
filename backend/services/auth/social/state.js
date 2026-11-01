@@ -1,6 +1,6 @@
 // OAuth state 파일, state 발급 · 소비 (한 번만, 같은 브라우저만)
 // 컨트롤러·콜백 흐름·계정 연결이 부름
-const userRepository = require("../../../repositories/user.repositories");
+const userRepository = require("../../../repositories/user");
 const { createError } = require("../../../utils/appError");
 const { VALID_PURPOSES, OAUTH_STATE_TTL_MS } = require('./constants');
 const { generateOpaqueToken, hashValue } = require('./tokens');

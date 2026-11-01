@@ -6,7 +6,7 @@ const { createError }  = require("../utils/appError");
 const economyService = require("../services/economy");
 const currencyProductsService = require("../services/economy/currencyProducts");
 const topupService = require("../services/economy/topup");
-const userRepository = require("../repositories/user.repositories");
+const userRepository = require("../repositories/user");
 const { getRewardCatalogEntry } = require("../services/economy/catalog");
 
 const requireSelf = (req, res, next) => {

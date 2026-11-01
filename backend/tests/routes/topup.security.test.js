@@ -16,7 +16,7 @@ const jwt          = require("jsonwebtoken");
 
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const { createError } = require("../../utils/appError");
-const userRepository = require("../../repositories/user.repositories");
+const userRepository = require("../../repositories/user");
 const currencyProductsService = require("../../services/economy/currencyProducts");
 const topupService = require("../../services/economy/topup");
 const { createTossAdapter } = require("../../utils/adapters/toss");

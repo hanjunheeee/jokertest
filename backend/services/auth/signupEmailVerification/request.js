@@ -2,7 +2,7 @@
 
 // 인증 코드 보내기 파일, 다시 보내기 대기 · 이미 가입 · 메일 보내기
 // 이미 가입한 이메일도 같은 응답 (가입 여부 숨김), 메일 실패는 삼킴
-const userRepository = require('../../../repositories/user.repositories');
+const userRepository = require('../../../repositories/user');
 const mailAdapterModule = require('../../../utils/adapters/mail');
 const { normalizeEmail } = require('../../../validations/auth/signupEmailVerification');
 const { requireConfig } = require('./config');

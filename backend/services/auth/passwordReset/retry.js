@@ -2,7 +2,7 @@
 
 // 비밀번호 재설정 재시도 파일, 데드락 판정 · 트랜잭션 다시
 // 요청·바꾸기가 같은 묶음으로 씀
-const userRepository = require('../../../repositories/user.repositories');
+const userRepository = require('../../../repositories/user');
 const { DEADLOCK_MAX_RETRIES } = require('./constants');
 // 데드락 판정은 공통 저장소 (Sequelize 데드락 이름·MySQL 코드 둘 다 봄, 판정 그대로)
 const { isDeadlock } = require('../../../repositories/common');

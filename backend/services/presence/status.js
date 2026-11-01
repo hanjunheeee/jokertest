@@ -1,4 +1,4 @@
-const friendRepository = require("../../repositories/friend.repositories");
+const friendRepository = require("../../repositories/friend/relation");
 
 exports.setPresence = async (uuid, status) => {
     await friendRepository.upsertOnlinePresence(uuid, status);

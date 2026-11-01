@@ -8,10 +8,10 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 
 const db                      = require("../../models");
-const gameResultRepository    = require("../../repositories/gameResult.repositories");
+const gameResultRepository    = require("../../repositories/game/result");
 const roleStatisticsController = require("../../controllers/game/roleStatistics");
 const profileController       = require("../../controllers/profile.controller");
-const userRepository          = require("../../repositories/user.repositories");
+const userRepository          = require("../../repositories/user");
 const gameSessionCore         = require("../../game-core/gameSession");
 
 const { buildGameResultRecord } = gameSessionCore;

@@ -1,7 +1,7 @@
 // 전적 저장 파일, 저장 시작 · 시도 · 재시도 · 끝내기
 // 저장은 시작만 하고 기다리지 않음 (판정 방송이 DB를 안 기다리게)
 const gameSessionCore = require('../../../game-core/gameSession')
-const gameResultRepository = require('../../../repositories/gameResult.repositories')
+const gameResultRepository = require('../../../repositories/game/result')
 const gameAchievementService = require('../achievementHooks')
 const { terminalPersistRuns, getBySession, terminalPersistConfirmed } = require('./state')
 const { TERMINAL_PERSIST_RETRY_DELAYS_MS, TERMINAL_PERSIST_MAX_DELAY_MS, TERMINAL_PERSIST_CONFIRMED_MAX } = require('./constants')

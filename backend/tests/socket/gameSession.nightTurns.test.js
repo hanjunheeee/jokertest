@@ -6,7 +6,7 @@ const assert = require('node:assert/strict')
 const gameSessionSocketLayer = require('../../socket/gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const matchmaking = require('../../socket/matchmaking')
-const gameResultRepository = require('../../repositories/gameResult.repositories')
+const gameResultRepository = require('../../repositories/game/result')
 const { createFakeSocket, createFakeIo, countingCallback } = require('../helpers/matchmakingFixtures')
 
 const {

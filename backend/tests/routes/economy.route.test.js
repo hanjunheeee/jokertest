@@ -9,7 +9,7 @@ const jwt          = require("jsonwebtoken");
 
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const { createError } = require("../../utils/appError");
-const userRepository = require("../../repositories/user.repositories");
+const userRepository = require("../../repositories/user");
 const economyService  = require("../../services/economy");
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan", "findByUuid"];

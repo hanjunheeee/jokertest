@@ -1,6 +1,6 @@
 // 친구 목록 파일, 접속 상태 판정 · 공개 로드아웃 · 친구 목록 · 닉네임 검색
 // friend 컨트롤러가 부름
-const friendRepository = require("../../repositories/friend.repositories");
+const friendRepository = require("../../repositories/friend/relation");
 const economyService = require("../economy");
 
 // 접속 행 없으면 오프라인

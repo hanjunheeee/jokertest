@@ -1,6 +1,6 @@
 // refresh 파일, refresh 토큰 확인 · 회전 · 재사용 감지
 // 재사용이면 모든 세션 끊음, 오류 문구는 경우마다 정해짐
-const userRepository          = require("../../../repositories/user.repositories");
+const userRepository          = require("../../../repositories/user");
 const { generateToken }       = require("../../../utils/auth/credentials");
 const { createError }         = require("../../../utils/appError");
 const { ACCESS_TOKEN_SHORT_TTL_SECONDS, REFRESH_TOKEN_GRACE_MS, capAccessTokenTtlSeconds } = require("../../../utils/auth/cookieOptions");

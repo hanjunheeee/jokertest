@@ -2,7 +2,7 @@
 
 // 게임 초대 입장 파일, 수락 결정 · 입장 확정 · 결과 · 중단 기록
 // matchmaking 초대 수락 흐름이 단계마다 부름 (부팅 epoch·시도 id로 옛 시도 거절)
-const friendRepository = require('../../../repositories/friend.repositories');
+const friendRepository = require('../../../repositories/friend/relation');
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
 const { expireDueInvitesForReceiver, isBlockedBetween, lockReceiver } = require('./guards');

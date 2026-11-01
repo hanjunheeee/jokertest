@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const jwt    = require("jsonwebtoken");
 const crypto = require("node:crypto");
 
-const userRepository = require("../../../repositories/user.repositories");
+const userRepository = require("../../../repositories/user");
 const authService    = require("../../../services/auth/account");
 const { REFRESH_TOKEN_GRACE_MS } = require("../../../utils/auth/cookieOptions");
 

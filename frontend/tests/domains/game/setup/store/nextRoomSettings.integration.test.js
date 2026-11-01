@@ -107,7 +107,7 @@ const { default: matchmaking } = await import("../../../../../../backend/socket/
 const { default: gameSessionCore } = await import("../../../../../../backend/game-core/gameSession.js")
 const { default: gameSessionSocketLayer } = await import("../../../../../../backend/socket/gameSession.js")
 const { default: gameResultRepository } =
-  await import("../../../../../../backend/repositories/gameResult.repositories.js")
+  await import("../../../../../../backend/repositories/game/result.js")
 const { default: matchmakingFixtures } =
   await import("../../../../../../backend/tests/helpers/matchmakingFixtures.js")
 

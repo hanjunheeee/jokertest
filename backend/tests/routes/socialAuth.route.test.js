@@ -10,7 +10,7 @@ const jwt          = require("jsonwebtoken");
 
 const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
-const userRepository    = require("../../repositories/user.repositories");
+const userRepository    = require("../../repositories/user");
 const socialAuthService = require("../../services/auth/social");
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan"];

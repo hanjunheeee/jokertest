@@ -6,8 +6,8 @@
 // 시험 주입 먼저, 없으면 진짜 것 (전부 늦은 require라 load 순환 없음)
 const buildDeps = (overrides = {}) => ({
     get db() { return overrides.db ?? require('../../models'); },
-    get gameResultRepository() { return overrides.gameResultRepository ?? require('../../repositories/gameResult.repositories'); },
-    get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../../repositories/voteParticipation.repositories'); },
+    get gameResultRepository() { return overrides.gameResultRepository ?? require('../../repositories/game/result'); },
+    get voteParticipationRepository() { return overrides.voteParticipationRepository ?? require('../../repositories/game/voteParticipation'); },
     get economyService() { return overrides.economyService ?? require('../economy'); },
     get emitToUser() {
         if (overrides.emitToUser) return overrides.emitToUser;

@@ -1,6 +1,6 @@
 // 로그인 파일, 잠금·정지·비번 확인 뒤 세션 발급
 // 세션 발급은 입구 객체로 불러 시험 패치 먹게
-const userRepository          = require("../../../repositories/user.repositories");
+const userRepository          = require("../../../repositories/user");
 const { comparePassword } = require("../../../utils/auth/credentials");
 const { createError }         = require("../../../utils/appError");
 

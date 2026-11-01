@@ -50,7 +50,7 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const userRepository = require('../../repositories/user.repositories');
+const userRepository = require('../../repositories/user');
 const topupService = require('../../services/economy/topup');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 

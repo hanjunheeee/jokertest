@@ -1,6 +1,6 @@
 // 즐겨찾기 파일, 즐겨찾기 친구 id 목록 · 켜고 끄기
 // friend 컨트롤러가 부름
-const friendRepository = require("../../repositories/friend.repositories");
+const friendRepository = require("../../repositories/friend/relation");
 const { createError } = require("../../utils/appError");
 
 // 내 즐겨찾기 친구 id

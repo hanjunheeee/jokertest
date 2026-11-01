@@ -65,7 +65,7 @@ const resetSchema = async () => {
 const db = require('../../models');
 const authService = require('../../services/auth/account');
 const socialAuthService = require('../../services/auth/social');
-const userRepository = require('../../repositories/user.repositories');
+const userRepository = require('../../repositories/user');
 const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {

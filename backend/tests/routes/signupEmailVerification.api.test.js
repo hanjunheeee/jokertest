@@ -19,7 +19,7 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
-const userRepository = require("../../repositories/user.repositories");
+const userRepository = require("../../repositories/user");
 const authService = require("../../services/auth/account");
 const mailAdapterModule = require("../../utils/adapters/mail");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");

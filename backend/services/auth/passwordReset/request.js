@@ -2,7 +2,7 @@
 
 // 비밀번호 재설정 요청 파일, 안 쓴 토큰 폐기 · 새 토큰 · 메일
 // 없는 이메일도 같은 응답 (가입 여부 숨김), 메일 실패는 삼킴
-const userRepository = require('../../../repositories/user.repositories');
+const userRepository = require('../../../repositories/user');
 const mailAdapter = require('../../../utils/adapters/mail');
 const { withDeadlockRetry } = require('./retry');
 const { generateRawToken, hashToken, buildResetUrl } = require('./tokens');

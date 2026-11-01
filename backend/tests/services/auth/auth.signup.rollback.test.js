@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const db             = require("../../../models");
-const userRepository = require("../../../repositories/user.repositories");
+const userRepository = require("../../../repositories/user");
 const authService    = require("../../../services/auth/account");
 const { prepareSignupProof } = require("../../helpers/signupProof");
 

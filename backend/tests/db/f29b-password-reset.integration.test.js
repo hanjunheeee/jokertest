@@ -77,7 +77,7 @@ const resetSchema = async () => {
 const db = require('../../models');
 const authService = require('../../services/auth/account');
 const socialAuthService = require('../../services/auth/social');
-const userRepository = require('../../repositories/user.repositories');
+const userRepository = require('../../repositories/user');
 const mailAdapterModule = require('../../utils/adapters/mail');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 const { hashPassword } = require('../../utils/auth/credentials');

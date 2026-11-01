@@ -1,6 +1,6 @@
 // 소셜 계정 연결 파일, 로그인한 세션에 외부 계정 붙이기
 // state 확인 뒤 연결은 입구 객체로 state 소비 부름
-const userRepository = require("../../../repositories/user.repositories");
+const userRepository = require("../../../repositories/user");
 const { createError } = require("../../../utils/appError");
 
 // 세션 살아 있나 → 이미 다른 계정에 붙었나 → 붙임 (같은 계정이면 그대로)

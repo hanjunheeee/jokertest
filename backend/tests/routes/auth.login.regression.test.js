@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const jwt    = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 
-const userRepository = require("../../repositories/user.repositories");
+const userRepository = require("../../repositories/user");
 const authService    = require("../../services/auth/account");
 const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS } = require("../../utils/auth/cookieOptions");
 

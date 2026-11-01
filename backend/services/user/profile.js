@@ -1,7 +1,7 @@
 // 내 프로필 파일, 프로필 응답 만들기(직업 통계로 승률·최고 승률 직업 이름) · 닉네임 바꾸기(검사·중복 확인)
 // profile 컨트롤러가 부름, 상태 코드·응답 감싸기는 컨트롤러 몫 (저장소는 모듈 객체로 불러 시험 패치 먹게)
-const userRepository            = require("../../repositories/user.repositories");
-const gameResultRepository      = require("../../repositories/gameResult.repositories");
+const userRepository            = require("../../repositories/user");
+const gameResultRepository      = require("../../repositories/game/result");
 const roleStatisticsPolicy      = require("../game/roleStatistics");
 const { validateNickname }      = require("../../validations/auth/signup");
 

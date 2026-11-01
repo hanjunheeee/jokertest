@@ -14,7 +14,7 @@ const { notFoundHandler, globalErrorHandler } = require("../../middlewares/error
 const authService        = require("../../services/auth/account");
 const socialAuthService  = require("../../services/auth/social");
 const discordOAuthService = require("../../services/auth/oauth/discord");
-const userRepository     = require("../../repositories/user.repositories");
+const userRepository     = require("../../repositories/user");
 
 const SOCIAL_KEYS  = ["issueOAuthState", "consumeOAuthState", "resolveOAuthAccount", "linkExternalIdentityForValidatedSession"];
 const DISCORD_KEYS = ["buildAuthorizationUrl", "exchangeCodeForProfile"];

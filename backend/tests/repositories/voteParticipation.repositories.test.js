@@ -5,7 +5,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localh
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { __internal } = require('../../repositories/voteParticipation.repositories');
+const { __internal } = require('../../repositories/game/voteParticipation');
 const { isEligibleGameResult } = __internal;
 
 test('AC-02: 정상 확정(completed:true)·비개발 운영 경기는 자격이 있다', () => {

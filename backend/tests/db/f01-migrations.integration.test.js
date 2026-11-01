@@ -459,7 +459,7 @@ test('AC-04: 50자 닉네임이 실제 경기 저장 경로를 통해 잘리지 
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const db = require('../../models');
-    const gameResultRepository = require('../../repositories/gameResult.repositories');
+    const gameResultRepository = require('../../repositories/game/result');
 
     t.after(async () => {
         await db.sequelize.close();

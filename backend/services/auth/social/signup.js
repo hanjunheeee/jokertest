@@ -1,6 +1,6 @@
 // 소셜 가입 파일, 가입 의도 확인 · 소셜 가입 마무리
 // 이메일 없는 제공자면 이메일 인증 증명까지 받음
-const userRepository = require("../../../repositories/user.repositories");
+const userRepository = require("../../../repositories/user");
 const authService = require("../account");
 const { hashPassword } = require("../../../utils/auth/credentials");
 const { createError } = require("../../../utils/appError");

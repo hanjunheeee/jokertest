@@ -6,7 +6,7 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const gameSessionSocket = require('../../../socket/gameSession')
 const socketModule = require('../../../socket/socket')
 const presenceService = require('../../../services/presence/status')
-const userRepository = require('../../../repositories/user.repositories')
+const userRepository = require('../../../repositories/user')
 
 function resetAll() {
     concurrency.stopConcurrentSnapshotScheduler({ clearIntervalFn: () => {} })

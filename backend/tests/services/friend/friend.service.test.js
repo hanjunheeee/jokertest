@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 
 const db = require('../../../models');
 const friendService = require('../../../services/friend');
-const friendRepository = require('../../../repositories/friend.repositories');
+const friendRepository = require('../../../repositories/friend/relation');
 const economyService = require('../../../services/economy');
 
 const stubFriendRepository = (t, overrides) => {

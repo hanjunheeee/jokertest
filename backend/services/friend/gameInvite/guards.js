@@ -2,7 +2,7 @@
 
 // 게임 초대 확인 파일, 받는 계정 잠금 · 차단 확인 · 지난 초대 만료 정리
 // 만들기가 트랜잭션 안에서 부름
-const friendRepository = require('../../../repositories/friend.repositories');
+const friendRepository = require('../../../repositories/friend/relation');
 const { INVITE_STATUS } = require('./constants');
 const userLookup = require('../../../repositories/user/lookup');
 const gameInviteRepository = require('../../../repositories/friend/gameInvite');

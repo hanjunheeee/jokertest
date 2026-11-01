@@ -45,7 +45,7 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const userRepository = require('../../repositories/user.repositories');
+const userRepository = require('../../repositories/user');
 const economyService = require('../../services/economy');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
 

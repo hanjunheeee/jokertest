@@ -1,6 +1,6 @@
 // 소셜 계정 찾기 파일, 외부 계정 → 로그인 또는 가입 의도 · 콜백 흐름
 // 콜백 흐름은 입구 객체로 state 소비·계정 찾기를 부름 (시험 패치 먹게)
-const userRepository = require("../../../repositories/user.repositories");
+const userRepository = require("../../../repositories/user");
 const authService = require("../account");
 const { createError } = require("../../../utils/appError");
 const { generateOpaqueToken, hashValue } = require('./tokens');

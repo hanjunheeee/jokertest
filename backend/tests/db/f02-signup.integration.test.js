@@ -70,8 +70,8 @@ const VALID_SIGNUP_BASE = {
 const db = require('../../models');
 const authService = require('../../services/auth/account');
 const signupEmailVerificationService = require('../../services/auth/signupEmailVerification');
-const userRepository = require('../../repositories/user.repositories');
-const gameResultRepository = require('../../repositories/gameResult.repositories');
+const userRepository = require('../../repositories/user');
+const gameResultRepository = require('../../repositories/game/result');
 const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {

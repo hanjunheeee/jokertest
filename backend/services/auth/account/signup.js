@@ -1,6 +1,6 @@
 // 가입 파일, 이메일 가입 · 이메일 중복 확인
 // 가입은 증명 소비·중복 확인·계정·통계·기본 지급을 한 트랜잭션에서
-const userRepository          = require("../../../repositories/user.repositories");
+const userRepository          = require("../../../repositories/user");
 const { hashPassword } = require("../../../utils/auth/credentials");
 const { createError }         = require("../../../utils/appError");
 const { validateSignupPayload } = require("../../../validations/auth/signup");

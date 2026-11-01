@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 
 const db                  = require("../../models");
 const profileController   = require("../../controllers/profile.controller");
-const gameResultRepository = require("../../repositories/gameResult.repositories");
+const gameResultRepository = require("../../repositories/game/result");
 
 const CURRENT_NICKNAME_SNAPSHOT = "경기당시닉네임";
 

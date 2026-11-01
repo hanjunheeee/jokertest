@@ -48,7 +48,7 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/gameResult.repositories');
+const gameResultRepository = require('../../repositories/game/result');
 const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {

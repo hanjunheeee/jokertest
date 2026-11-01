@@ -51,7 +51,7 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/gameResult.repositories');
+const gameResultRepository = require('../../repositories/game/result');
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
 const achievementService = require('../../services/achievement');

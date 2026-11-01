@@ -2,7 +2,7 @@
 
 // 게임 초대 만들기 파일
 // 보낸 사람 방·받는 사람 상태·차단·같은 요청 확인 뒤 초대 하나 만들고 알림
-const friendRepository = require('../../../repositories/friend.repositories');
+const friendRepository = require('../../../repositories/friend/relation');
 const notificationService = require('../../notification');
 const { createError } = require('../../../utils/appError');
 const { getDeps, getRoomAccess } = require('./deps');

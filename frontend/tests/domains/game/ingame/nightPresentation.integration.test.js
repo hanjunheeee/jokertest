@@ -265,7 +265,7 @@ function setupBackendNight(roomId, { playerCount = 10 } = {}) {
   const gameSessionSocketLayer = backendRequire("./gameSession")
   const gameSessionCore = backendRequire("../game-core/gameSession")
   const matchmaking = backendRequire("./matchmaking")
-  const gameResultRepository = backendRequire("../repositories/gameResult.repositories")
+  const gameResultRepository = backendRequire("../repositories/game/result")
   const {
     createFakeSocket: createBackendFakeSocket, createFakeIo,
   } = backendRequire("../tests/helpers/matchmakingFixtures")

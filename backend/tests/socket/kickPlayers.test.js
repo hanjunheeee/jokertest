@@ -12,7 +12,7 @@ const gameSessionSocketLayer = require('../../socket/gameSession')
 const gameSessionCore = require('../../game-core/gameSession')
 const kickReceiptStore = require('../../socket/kickReceiptStore')
 const channelMembership = require('../../socket/channelMembership')
-const gameResultRepository = require('../../repositories/gameResult.repositories')
+const gameResultRepository = require('../../repositories/game/result')
 
 const {
     createFakeSocket,

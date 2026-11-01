@@ -1,6 +1,6 @@
 // 세션 발급 파일, 옛 접속 세션 끊고 새 세션 행 + access 토큰
 // 로그인·소셜 로그인·소셜 가입이 트랜잭션 안에서 부름
-const userRepository          = require("../../../repositories/user.repositories");
+const userRepository          = require("../../../repositories/user");
 const { generateToken }       = require("../../../utils/auth/credentials");
 const { PERSISTENT_SESSION_MAX_AGE_MS, ACCESS_TOKEN_SHORT_TTL_SECONDS, capAccessTokenTtlSeconds } = require("../../../utils/auth/cookieOptions");
 const crypto                  = require("crypto");

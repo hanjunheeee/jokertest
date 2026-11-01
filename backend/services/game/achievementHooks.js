@@ -1,6 +1,6 @@
 // 판 중 업적 평가 파일
 // 업적 평가 묶음(사람마다 따로 실패 처리) + 낮 투표 참여 기록 저장, socket gameSession·전적 저장이 부름
-const voteParticipationRepository = require('../../repositories/voteParticipation.repositories')
+const voteParticipationRepository = require('../../repositories/game/voteParticipation')
 const achievementService = require('../achievement')
 
 // 바깥 함수 참조 묶음 (시험이 가짜로 갈아끼움, 불 때마다 이 칸을 읽음)

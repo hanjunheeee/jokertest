@@ -170,7 +170,7 @@ test("서고 랭킹: 실제 장착 테두리가 없는 참가자(profileBorderSr
   assert.equal(container.querySelectorAll("img").length, 1, "테두리가 없으면 사진 img 하나만 그려야 한다")
 })
 
-test("서고 랭킹: 상위 변환(mergeInvitedGuestsSpreads)은 이제 gameResult.repositories.js의 getRoleRanking이 내려주는 실제 accountProfilePhotoId/accountProfileBorderId를 resolveAccountProfileAssets와 같은 규칙으로 해석해 profileSrc/profileBorderSrc를 채운다(운영자 확장 승인 반영, 더 이상 항상 null로 고정하지 않는다)", async () => {
+test("서고 랭킹: 상위 변환(mergeInvitedGuestsSpreads)은 이제 repositories/game/result.js의 getRoleRanking이 내려주는 실제 accountProfilePhotoId/accountProfileBorderId를 resolveAccountProfileAssets와 같은 규칙으로 해석해 profileSrc/profileBorderSrc를 채운다(운영자 확장 승인 반영, 더 이상 항상 null로 고정하지 않는다)", async () => {
   const { mergeInvitedGuestsSpreads } = await import("../../../../src/domains/library/content/invitedGuests/mergeInvitedGuestsSpreads.js")
 
   const spreadMeta = [{ id: "s1", jobKey: "noble" }]
