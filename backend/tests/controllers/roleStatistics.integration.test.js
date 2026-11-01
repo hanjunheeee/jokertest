@@ -8,7 +8,7 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 
 const db                      = require("../../models");
-const gameResultRepository    = require("../../repositories/game/result");
+const roleStatisticsQueries   = require("../../services/game/roleStatistics/queries");
 const roleStatisticsController = require("../../controllers/game/roleStatistics");
 const profileController       = require("../../controllers/profile.controller");
 const userRepository          = require("../../repositories/user");
@@ -16,7 +16,7 @@ const gameSessionCore         = require("../../game-core/gameSession");
 
 const { buildGameResultRecord } = gameSessionCore;
 
-gameResultRepository.__setEconomyServiceForTests({
+roleStatisticsQueries.__setEconomyServiceForTests({
     getPublicProfileLoadouts: async (userIds) =>
         Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
 });
@@ -104,7 +104,7 @@ test("AC-01/AC-02: 5개 직업이 항상 채워지고, 판을 하지 않은 직�
     fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", true));
     fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", false, false));
 
-    const stats = await gameResultRepository.getMyRoleStatistics("u1");
+    const stats = await roleStatisticsQueries.getMyRoleStatistics("u1");
 
     assert.equal(stats.length, 5);
     assert.deepEqual(stats.map((s) => s.role), ["CITIZEN", "JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]);
@@ -122,7 +122,7 @@ test("AC-01: 중단 경기 잔류자(won=null)는 판수에 들어가지 않는�
     fixture.addGame("g1", { gameSource: productionGame() });
     fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", null, true));
 
-    const stats = await gameResultRepository.getMyRoleStatistics("u1");
+    const stats = await roleStatisticsQueries.getMyRoleStatistics("u1");
     assert.equal(stats.find((s) => s.role === "CITIZEN").games, 0);
 });
 
@@ -173,7 +173,7 @@ test("AC-03: 최소 10판 미만 사용자는 랭킹에서 빠지고, 나머지�
     for (let i = 0; i < 20; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 10));
     for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "c-user", "JOKER", i < 5));
 
-    const ranking = await gameResultRepository.getRoleRanking("JOKER");
+    const ranking = await roleStatisticsQueries.getRoleRanking("JOKER");
 
     assert.deepEqual(ranking.map((r) => r.uuid), ["b-user", "a-user", "c-user"], "9판 사용자는 빠지고 승률→판수→UUID 순서다");
     assert.deepEqual(ranking.map((r) => r.rank), [1, 2, 3], "순위는 전체 목록 기준 1부터 부여된다(화면 페이지 이동과 무관)");
@@ -191,7 +191,7 @@ test("F-13 AC-05: getRoleRanking은 계정별로 서로 다른 실제 장착 사
     for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", "a-user", "JOKER", i < 5));
 
     let seenUserIds = null;
-    gameResultRepository.__setEconomyServiceForTests({
+    roleStatisticsQueries.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) => {
             seenUserIds = userIds;
             return {
@@ -201,13 +201,13 @@ test("F-13 AC-05: getRoleRanking은 계정별로 서로 다른 실제 장착 사
         },
     });
     t.after(() => {
-        gameResultRepository.__setEconomyServiceForTests({
+        roleStatisticsQueries.__setEconomyServiceForTests({
             getPublicProfileLoadouts: async (userIds) =>
                 Object.fromEntries(userIds.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
         });
     });
 
-    const ranking = await gameResultRepository.getRoleRanking("JOKER");
+    const ranking = await roleStatisticsQueries.getRoleRanking("JOKER");
 
     assert.deepEqual([...seenUserIds].sort(), ["a-user", "b-user"]);
     assert.deepEqual(ranking.map((r) => r.uuid), ["b-user", "a-user"], "승률 순위 계산은 이 필드 추가와 무관하게 그대로여야 한다");
@@ -229,7 +229,7 @@ test("A-10: 랭킹 응답은 화면이 페이지를 넘기기 전에 잘리지 �
         for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("g1", uuid, "GUARD", true));
     }
 
-    const ranking = await gameResultRepository.getRoleRanking("GUARD");
+    const ranking = await roleStatisticsQueries.getRoleRanking("GUARD");
     assert.equal(ranking.length, 8, "기존 상위 5명 상한(INVITED_GUESTS_MASTERY_RANKING_LIMIT)으로 잘리면 안 된다");
 });
 
@@ -238,7 +238,7 @@ test("AC-05: settings.gameSource가 아예 없는(이 기능 이전) 과거 경�
     fixture.addGame("legacy-1", {});
     fixture.addPlayer(playerRow("legacy-1", "u1", "DOCTOR", true));
 
-    const stats = await gameResultRepository.getMyRoleStatistics("u1");
+    const stats = await roleStatisticsQueries.getMyRoleStatistics("u1");
     assert.equal(stats.find((s) => s.role === "DOCTOR").games, 1, "과거 기록을 개발 경기로 임의 재분류해 제외하면 안 된다");
 });
 
@@ -248,10 +248,10 @@ test("AC-05/A-07: settings.gameSource.value가 development인 경기는 내 전�
     fixture.addUser("u1", { nickname: "닉1", profile_image_url: null });
     for (let i = 0; i < 10; i += 1) fixture.addPlayer(playerRow("dev-1", "u1", "GUARD", true));
 
-    const stats = await gameResultRepository.getMyRoleStatistics("u1");
+    const stats = await roleStatisticsQueries.getMyRoleStatistics("u1");
     assert.equal(stats.find((s) => s.role === "GUARD").games, 0);
 
-    const ranking = await gameResultRepository.getRoleRanking("GUARD");
+    const ranking = await roleStatisticsQueries.getRoleRanking("GUARD");
     assert.deepEqual(ranking, []);
 });
 
@@ -261,13 +261,13 @@ test("AC-05: 중단 경기의 이탈자 패배 전적은 유지되고 won=null �
     fixture.addPlayer(playerRow("abort-1", "leaver", "CITIZEN", false, false));
     fixture.addPlayer(playerRow("abort-1", "stayer", "CITIZEN", null, true));
 
-    const leaverStats = await gameResultRepository.getMyRoleStatistics("leaver");
+    const leaverStats = await roleStatisticsQueries.getMyRoleStatistics("leaver");
     const citizen = leaverStats.find((s) => s.role === "CITIZEN");
     assert.equal(citizen.games, 1);
     assert.equal(citizen.wins, 0);
     assert.equal(citizen.survivalCount, 0);
 
-    const stayerStats = await gameResultRepository.getMyRoleStatistics("stayer");
+    const stayerStats = await roleStatisticsQueries.getMyRoleStatistics("stayer");
     assert.equal(stayerStats.find((s) => s.role === "CITIZEN").games, 0, "잔류자의 미확정 전적은 판수에 들어가면 안 된다");
 });
 
@@ -277,13 +277,13 @@ test("AC-04: 운명의 가면은 최다 플레이가 아니라 최소 1판 이�
     for (let i = 0; i < 20; i += 1) fixture.addPlayer(playerRow("g1", "u1", "CITIZEN", i < 8));
     for (let i = 0; i < 5; i += 1) fixture.addPlayer(playerRow("g1", "u1", "JOKER", true));
 
-    const result = await gameResultRepository.getHighestWinRateRole("u1");
+    const result = await roleStatisticsQueries.getHighestWinRateRole("u1");
     assert.equal(result.role, "JOKER");
 });
 
 test("AC-04: 전적이 전혀 없으면 null이다(더미로 대체하지 않는다)", async (t) => {
     setupFixtureDb(t);
-    const result = await gameResultRepository.getHighestWinRateRole("nobody");
+    const result = await roleStatisticsQueries.getHighestWinRateRole("nobody");
     assert.equal(result, null);
 });
 
@@ -515,7 +515,7 @@ test("F-30 AC-02: buildGameResultRecord가 만든 정상·중단 레코드가 �
     assert.equal(data.total_games, 2);
     assert.equal(data.account_win_rate, 0.5);
 
-    const stayerStats = await gameResultRepository.getMyRoleStatistics("u2");
+    const stayerStats = await roleStatisticsQueries.getMyRoleStatistics("u2");
     assert.equal(stayerStats.reduce((sum, entry) => sum + entry.games, 0), 0, "중단 잔류자는 표시 판수가 0이어야 한다");
 });
 
@@ -532,7 +532,7 @@ test("저장 레코드의 settings.gameSource가 조회 경로의 개발 경기 
     fixture.addGame(record.result.id, record.result.settings);
     for (const player of record.players) fixture.addPlayer(player);
 
-    const stats = await gameResultRepository.getMyRoleStatistics("u1");
+    const stats = await roleStatisticsQueries.getMyRoleStatistics("u1");
     assert.equal(stats.find((s) => s.role === "CITIZEN").games, 0, "개발 경기 출처가 저장→조회 왕복 후에도 제외되어야 한다");
 });
 

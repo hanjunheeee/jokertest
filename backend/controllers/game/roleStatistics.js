@@ -1,9 +1,9 @@
-const gameResultRepository = require("../../repositories/game/result");
+const roleStatisticsQueries = require("../../services/game/roleStatistics/queries");
 const roleStatisticsPolicy = require("../../services/game/roleStatistics");
 
 exports.getMyRoleStatistics = async (req, res, next) => {
     try {
-        const stats = await gameResultRepository.getMyRoleStatistics(req.user.uuid);
+        const stats = await roleStatisticsQueries.getMyRoleStatistics(req.user.uuid);
         res.status(200).json({
             success: true,
             data: stats.map((entry) => ({
@@ -27,7 +27,7 @@ exports.getRoleRanking = async (req, res, next) => {
             return res.status(400).json({ success: false, message: "알 수 없는 직업입니다." });
         }
 
-        const ranking = await gameResultRepository.getRoleRanking(role);
+        const ranking = await roleStatisticsQueries.getRoleRanking(role);
         res.status(200).json({
             success: true,
             data: {
