@@ -12,12 +12,12 @@ const crypto                 = require("crypto");
 const { createRateLimiter }  = require("../middlewares/rateLimit.middleware");
 const { validateFindIdRequest } = require("../validations/auth/findId");
 const { findId }             = require("../controllers/auth/accountRecovery");
-const { validatePasswordResetRequest } = require("../validations/auth/passwordReset");
+const { validateResetRequest } = require("../validations/auth/passwordReset");
 const {
     requestPasswordReset, verifyPasswordReset, confirmPasswordReset,
 } = require("../controllers/auth/passwordReset");
 const { getSignupEmailVerificationConfig } = require("../config/signupEmailVerification");
-const { validateSignupCodeRequest, validateSignupCodeVerify } = require("../validations/auth/signupEmailVerification");
+const { validateCodeRequest, validateCodeVerify } = require("../validations/auth/signupEmailVerification");
 const {
     requestSignupCode, verifySignupCode,
 } = require("../controllers/auth/signupEmailVerification");
@@ -26,41 +26,41 @@ router.post("/signup", signup);
 router.get("/check-email", checkEmail);
 router.post("/login", login);
 
-const signupEmailVerificationConfig = getSignupEmailVerificationConfig(process.env);
+const codeConfig = getSignupEmailVerificationConfig(process.env);
 
-const signupCodeIpHourRateLimiter = createRateLimiter({
-    windowMs: signupEmailVerificationConfig.ipHourWindowMs,
-    max:      signupEmailVerificationConfig.ipHourMax,
+const codeIpHourLimiter = createRateLimiter({
+    windowMs: codeConfig.ipHourWindowMs,
+    max:      codeConfig.ipHourMax,
     keyOf:    (req) => `ip-hour:${req.ip}`,
 });
-const signupCodeIpDayRateLimiter = createRateLimiter({
-    windowMs: signupEmailVerificationConfig.ipDayWindowMs,
-    max:      signupEmailVerificationConfig.ipDayMax,
+const codeIpDayLimiter = createRateLimiter({
+    windowMs: codeConfig.ipDayWindowMs,
+    max:      codeConfig.ipDayMax,
     keyOf:    (req) => `ip-day:${req.ip}`,
 });
-const signupCodeEmailHourRateLimiter = createRateLimiter({
-    windowMs: signupEmailVerificationConfig.emailHourWindowMs,
-    max:      signupEmailVerificationConfig.emailHourMax,
+const codeEmailHourLimiter = createRateLimiter({
+    windowMs: codeConfig.emailHourWindowMs,
+    max:      codeConfig.emailHourMax,
     keyOf:    (req, res) => `email-hour:${crypto.createHash("sha256").update(res.locals.signupEmailCodeInput.email).digest("hex")}`,
 });
-const signupCodeEmailDayRateLimiter = createRateLimiter({
-    windowMs: signupEmailVerificationConfig.emailDayWindowMs,
-    max:      signupEmailVerificationConfig.emailDayMax,
+const codeEmailDayLimiter = createRateLimiter({
+    windowMs: codeConfig.emailDayWindowMs,
+    max:      codeConfig.emailDayMax,
     keyOf:    (req, res) => `email-day:${crypto.createHash("sha256").update(res.locals.signupEmailCodeInput.email).digest("hex")}`,
 });
 
 router.post(
     "/signup/email-code",
-    signupCodeIpHourRateLimiter,
-    signupCodeIpDayRateLimiter,
-    validateSignupCodeRequest,
-    signupCodeEmailHourRateLimiter,
-    signupCodeEmailDayRateLimiter,
+    codeIpHourLimiter,
+    codeIpDayLimiter,
+    validateCodeRequest,
+    codeEmailHourLimiter,
+    codeEmailDayLimiter,
     requestSignupCode,
 );
 router.post(
     "/signup/email-code/verify",
-    validateSignupCodeVerify(signupEmailVerificationConfig.codeLength),
+    validateCodeVerify(codeConfig.codeLength),
     verifySignupCode,
 );
 
@@ -69,13 +69,13 @@ const toPositiveInt = (value, fallback) => {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-const findIdIpRateLimiter = createRateLimiter({
+const findIdIpLimiter = createRateLimiter({
     windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
     max:      toPositiveInt(process.env.FIND_ID_IP_MAX, 10),
     keyOf:    (req) => `ip:${req.ip}`,
 });
 
-const findIdTargetRateLimiter = createRateLimiter({
+const findIdTargetLimiter = createRateLimiter({
     windowMs: toPositiveInt(process.env.FIND_ID_WINDOW_MS, 600000),
     max:      toPositiveInt(process.env.FIND_ID_TARGET_MAX, 5),
     keyOf:    (req, res) => `target:${crypto.createHash("sha256").update(res.locals.findIdInput.nickname).digest("hex")}`,
@@ -83,19 +83,19 @@ const findIdTargetRateLimiter = createRateLimiter({
 
 router.post(
     "/find-id",
-    findIdIpRateLimiter,
+    findIdIpLimiter,
     validateFindIdRequest,
-    findIdTargetRateLimiter,
+    findIdTargetLimiter,
     findId,
 );
 
-const passwordResetRequestIpRateLimiter = createRateLimiter({
+const resetRequestIpLimiter = createRateLimiter({
     windowMs: toPositiveInt(process.env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
     max:      toPositiveInt(process.env.PASSWORD_RESET_REQUEST_IP_MAX, 10),
     keyOf:    (req) => `ip:${req.ip}`,
 });
 
-const passwordResetRequestEmailRateLimiter = createRateLimiter({
+const resetEmailLimiter = createRateLimiter({
     windowMs: toPositiveInt(process.env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
     max:      toPositiveInt(process.env.PASSWORD_RESET_REQUEST_EMAIL_MAX, 3),
     keyOf:    (req, res) => `email:${crypto.createHash("sha256")
@@ -103,7 +103,7 @@ const passwordResetRequestEmailRateLimiter = createRateLimiter({
         .digest("hex")}`,
 });
 
-const passwordResetCheckIpRateLimiter = createRateLimiter({
+const resetCheckIpLimiter = createRateLimiter({
     windowMs: toPositiveInt(process.env.PASSWORD_RESET_CHECK_WINDOW_MS, 10 * 60 * 1000),
     max:      toPositiveInt(process.env.PASSWORD_RESET_CHECK_IP_MAX, 20),
     keyOf:    (req) => `ip:${req.ip}`,
@@ -111,13 +111,13 @@ const passwordResetCheckIpRateLimiter = createRateLimiter({
 
 router.post(
     "/password-reset/request",
-    passwordResetRequestIpRateLimiter,
-    validatePasswordResetRequest,
-    passwordResetRequestEmailRateLimiter,
+    resetRequestIpLimiter,
+    validateResetRequest,
+    resetEmailLimiter,
     requestPasswordReset,
 );
-router.get("/password-reset/verify", passwordResetCheckIpRateLimiter, verifyPasswordReset);
-router.post("/password-reset/confirm", passwordResetCheckIpRateLimiter, confirmPasswordReset);
+router.get("/password-reset/verify", resetCheckIpLimiter, verifyPasswordReset);
+router.post("/password-reset/confirm", resetCheckIpLimiter, confirmPasswordReset);
 
 router.post("/refresh", refresh);
 

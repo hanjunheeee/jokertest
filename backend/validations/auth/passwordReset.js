@@ -25,7 +25,7 @@ const validateResetEmail = (email) => {
     return { ok: true, value: trimmed };
 };
 
-const validatePasswordResetRequest = (req, res, next) => {
+const validateResetRequest = (req, res, next) => {
     const body = req.body;
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
         return res.status(400).json({ ok: false, code: 'INVALID_INPUT' });
@@ -66,6 +66,6 @@ module.exports = {
     TOKEN_BYTES,
     TOKEN_PATTERN,
     validateResetEmail,
-    validatePasswordResetRequest,
+    validateResetRequest,
     validateResetToken,
 };

@@ -5,7 +5,7 @@
 const OAUTH_ATTEMPT_COOKIE = "oauthAttempt";
 
 // httpOnly·Lax, 운영에서만 secure
-const oauthAttemptCookieOptions = (maxAgeSeconds) => ({
+const attemptCookieOptions = (maxAgeSeconds) => ({
     httpOnly: true,
     sameSite: "Lax",
     secure:   process.env.NODE_ENV === "production",
@@ -14,5 +14,5 @@ const oauthAttemptCookieOptions = (maxAgeSeconds) => ({
 
 module.exports = {
     OAUTH_ATTEMPT_COOKIE,
-    oauthAttemptCookieOptions,
+    attemptCookieOptions,
 };

@@ -140,12 +140,12 @@ router.get("/purchases/:referenceEventId", verifyToken, requireSelf, async (req,
 });
 
 const ALLOWED_GOLD_PURCHASE_FIELDS = new Set(["productId", "version", "referenceEventId"]);
-const IGNORED_GOLD_PURCHASE_REFERENCE_FIELDS = ["price", "priceGold", "amount", "quantity", "payAmount", "grantAmount", "bonusAmount"];
+const IGNORED_GOLD_REF_FIELDS = ["price", "priceGold", "amount", "quantity", "payAmount", "grantAmount", "bonusAmount"];
 
 router.post("/gold-purchases", verifyToken, requireSelf, async (req, res, next) => {
     try {
         const body = { ...(req.body ?? {}) };
-        for (const field of IGNORED_GOLD_PURCHASE_REFERENCE_FIELDS) delete body[field];
+        for (const field of IGNORED_GOLD_REF_FIELDS) delete body[field];
         rejectUnknownFields(body, ALLOWED_GOLD_PURCHASE_FIELDS, "UNKNOWN_GOLD_PURCHASE_FIELD");
         const { productId, version, referenceEventId } = body;
         if (typeof productId !== "string" || productId.length === 0 || productId.length > 64

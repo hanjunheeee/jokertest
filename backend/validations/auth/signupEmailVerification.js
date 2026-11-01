@@ -21,7 +21,7 @@ const validateEmailFormat = (email) => {
 
 const isPlainObjectBody = (body) => typeof body === 'object' && body !== null && !Array.isArray(body);
 
-const validateSignupCodeRequest = (req, res, next) => {
+const validateCodeRequest = (req, res, next) => {
     const body = req.body;
     if (!isPlainObjectBody(body)) {
         return res.status(400).json({ ok: false, code: 'INVALID_INPUT' });
@@ -36,7 +36,7 @@ const validateSignupCodeRequest = (req, res, next) => {
     return next();
 };
 
-const validateSignupCodeVerify = (codeLength) => {
+const validateCodeVerify = (codeLength) => {
     const codePattern = new RegExp(`^\\d{${codeLength}}$`);
 
     return (req, res, next) => {
@@ -62,6 +62,6 @@ module.exports = {
     EMAIL_MAX_LENGTH,
     normalizeEmail,
     validateEmailFormat,
-    validateSignupCodeRequest,
-    validateSignupCodeVerify,
+    validateCodeRequest,
+    validateCodeVerify,
 };

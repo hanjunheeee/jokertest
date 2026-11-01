@@ -16,7 +16,7 @@ exports.globalErrorHandler = (err, req, res, next) => {
         return res.status(status).json({ ok: false, code });
     }
 
-    const SIGNUP_SCOPED_ALLOWED_ERROR_CODES = {
+    const SIGNUP_SCOPED_ERRORS = {
         SIGNUP_PROOF_REQUIRED: { status: 401, message: '이메일 인증이 필요합니다.' },
         SIGNUP_PROOF_INVALID: { status: 401, message: '이메일 인증 증명이 유효하지 않습니다.' },
     };
@@ -25,19 +25,19 @@ exports.globalErrorHandler = (err, req, res, next) => {
     if (signupScopedPath.startsWith('/auth/signup')) {
         res.set('Cache-Control', 'no-store');
         if (typeof err.code === 'string' && err.code) {
-            const fixed = SIGNUP_SCOPED_ALLOWED_ERROR_CODES[err.code];
+            const fixed = SIGNUP_SCOPED_ERRORS[err.code];
             if (fixed) {
                 return res.status(fixed.status).json({ success: false, message: fixed.message, code: err.code });
             }
             return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
         }
-        const KNOWN_SIGNUP_DUPLICATE_MESSAGES = new Set([
+        const DUPLICATE_MESSAGES = new Set([
             "이미 사용 중인 이메일입니다.",
             "이미 사용 중인 닉네임입니다.",
         ]);
         const rawStatus = err.status || err.statusCode;
         if (rawStatus === 409) {
-            if (typeof err.message === 'string' && KNOWN_SIGNUP_DUPLICATE_MESSAGES.has(err.message)) {
+            if (typeof err.message === 'string' && DUPLICATE_MESSAGES.has(err.message)) {
                 return res.status(409).json({ success: false, message: err.message });
             }
             return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
