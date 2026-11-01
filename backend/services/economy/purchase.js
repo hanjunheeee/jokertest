@@ -8,6 +8,9 @@ const { defaultDb, purchasePayloadsEqual, purchaseRequestConflictError, snapshot
 const { CURRENCIES } = require('./constants');
 const { ensureWalletRow, applyLedgerTransaction } = require('./ledger');
 const { economyModels } = require('../../repositories/economy/models');
+const walletRepository = require('../../repositories/economy/wallet');
+const purchaseRequestRepository = require('../../repositories/economy/purchaseRequest');
+const { withTransaction, isUniqueConstraintName } = require('../../repositories/common');
 
 // 묶음 안 아이템마다 장부 참조 id
 const derivePurchaseItemReferenceEventId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;
@@ -35,7 +38,7 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     const payload = normalizePurchaseRequestPayload(items);
     const models = economyModels(db);
 
-    const preExisting = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+    const preExisting = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId });
     if (preExisting) {
         if (!purchasePayloadsEqual(preExisting.payload_json, payload)) throw purchaseRequestConflictError();
         return { idempotent: true, kind: preExisting.kind, results: preExisting.result_json };
@@ -52,12 +55,9 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     await ensureWalletRow(db, userId);
 
     const runWrite = async (t) => {
-        await models.EconomyWallet.findOne({ where: { user_id: userId }, transaction: t, lock: t.LOCK.UPDATE });
+        await walletRepository.lockWallet(models, userId, t);
 
-        const committed = await models.EconomyPurchaseRequest.findOne({
-            where: { user_id: userId, reference_event_id: referenceEventId },
-            transaction: t,
-        });
+        const committed = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId }, t);
         if (committed) {
             if (!purchasePayloadsEqual(committed.payload_json, payload)) throw purchaseRequestConflictError();
             return { idempotent: true, kind: committed.kind, results: committed.result_json };
@@ -81,15 +81,15 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
 
         let purchaseRequest;
         try {
-            purchaseRequest = await models.EconomyPurchaseRequest.create({
+            purchaseRequest = await purchaseRequestRepository.createRequest(models, {
                 user_id: userId,
                 reference_event_id: referenceEventId,
                 kind,
                 payload_json: payload,
                 result_json: results,
-            }, { transaction: t });
+            }, t);
         } catch (error) {
-            if (error?.name === 'SequelizeUniqueConstraintError') {
+            if (isUniqueConstraintName(error)) {
                 throw Object.assign(
                     createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_PURCHASE_REQUEST'),
                     { referenceEventId },
@@ -102,14 +102,14 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     };
 
     const resolveDuplicateRequest = async () => {
-        const existing = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+        const existing = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId });
         if (!existing) return null;
         if (!purchasePayloadsEqual(existing.payload_json, payload)) throw purchaseRequestConflictError();
         return { idempotent: true, kind: existing.kind, results: existing.result_json };
     };
 
     try {
-        return await models.sequelize.transaction(runWrite);
+        return await withTransaction(models, runWrite);
     } catch (error) {
         if (error?.code === 'DUPLICATE_PURCHASE_REQUEST') {
             const resolved = await resolveDuplicateRequest();
@@ -131,7 +131,7 @@ const getPurchaseResult = async (userId, referenceEventId, db = defaultDb()) => 
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
     }
     const models = economyModels(db);
-    const existing = await models.EconomyPurchaseRequest.findOne({ where: { user_id: userId, reference_event_id: referenceEventId } });
+    const existing = await purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId });
     if (!existing) return null;
     return { kind: existing.kind, results: existing.result_json, createdAt: existing.created_at };
 };

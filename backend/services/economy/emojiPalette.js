@@ -9,6 +9,9 @@ const { defaultDb } = require('./helpers');
 const { EMOJI_PALETTE_SLOT_COLUMNS, DEFAULT_EMOJI_PALETTE_SLOTS } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
 const { economyModels } = require('../../repositories/economy/models');
+const entitlementRepository = require('../../repositories/economy/entitlement');
+const emojiPaletteRepository = require('../../repositories/economy/emojiPalette');
+const { withTransaction } = require('../../repositories/common');
 const {
     ITEM_TYPES,
     DEFAULT_PROFILE_PHOTO_ID,
@@ -28,10 +31,7 @@ const emojiPaletteSlotsOf = (row) => EMOJI_PALETTE_SLOT_COLUMNS.map((column) => 
 
 // 보유한 이모티콘 id 목록
 const listOwnedEmoticons = async (models, userId, transaction = null) => {
-    const rows = await models.EconomyEntitlement.findAll({
-        where: { user_id: userId, item_type: ITEM_TYPES.EMOTICON },
-        ...(transaction ? { transaction } : {}),
-    });
+    const rows = await entitlementRepository.listOwnedByType(models, { userId, itemType: ITEM_TYPES.EMOTICON }, transaction);
     return rows.map((row) => row.item_id);
 };
 
@@ -49,10 +49,7 @@ const getEmojiPalette = async (userId, db = defaultDb()) => {
     await ensureDefaultEntitlements(userId, db);
     const models = economyModels(db);
 
-    const [row] = await models.EconomyEmojiPalette.findOrCreate({
-        where: { user_id: userId },
-        defaults: emojiPaletteDefaults(userId),
-    });
+    const [row] = await emojiPaletteRepository.ensurePalette(models, { userId, defaults: emojiPaletteDefaults(userId) });
 
     return {
         slots: emojiPaletteSlotsOf(row),
@@ -71,12 +68,8 @@ const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = d
     await ensureDefaultEntitlements(userId, db);
     const models = economyModels(db);
 
-    return db.sequelize.transaction(async (t) => {
-        await models.EconomyEmojiPalette.findOrCreate({
-            where: { user_id: userId },
-            defaults: emojiPaletteDefaults(userId),
-            transaction: t,
-        });
+    return withTransaction(db, async (t) => {
+        await emojiPaletteRepository.ensurePalette(models, { userId, defaults: emojiPaletteDefaults(userId) }, t);
 
         const owned = new Set(await listOwnedEmoticons(models, userId, t));
         if (slots.some((value) => value !== null && !owned.has(value))) {
@@ -87,17 +80,10 @@ const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = d
         const patch = { revision };
         EMOJI_PALETTE_SLOT_COLUMNS.forEach((column, index) => { patch[column] = slots[index]; });
 
-        const [affected] = await models.EconomyEmojiPalette.update(patch, {
-            where: { user_id: userId, revision: expectedRevision },
-            transaction: t,
-        });
+        const [affected] = await emojiPaletteRepository.updatePaletteIfRevision(models, { userId, expectedRevision, patch }, t);
         if (affected === 1) return { slots: [...slots], revision };
 
-        const current = await models.EconomyEmojiPalette.findOne({
-            where: { user_id: userId },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
-        });
+        const current = await emojiPaletteRepository.lockPalette(models, userId, t);
         const error = createError(
             '이모티콘 팔레트가 다른 곳에서 이미 변경되었습니다. 최신 상태를 다시 불러온 뒤 다시 시도하세요.',
             409,

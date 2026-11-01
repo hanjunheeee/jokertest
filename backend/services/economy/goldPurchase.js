@@ -8,14 +8,13 @@ const { defaultDb, purchaseRequestConflictError, snapshotLedgerEntry } = require
 const { CURRENCIES, GOLD_PURCHASE_REASON, GOLD_PURCHASE_KIND, GOLD_PURCHASE_MAX_ATTEMPTS } = require('./constants');
 const { ensureWalletRow, applyLedgerTransaction } = require('./ledger');
 const { economyModels } = require('../../repositories/economy/models');
+const walletRepository = require('../../repositories/economy/wallet');
+const purchaseRequestRepository = require('../../repositories/economy/purchaseRequest');
+const { withTransaction, isUniqueConstraintName, isDeadlockError } = require('../../repositories/common');
 
 // 다이아 빼기·골드 넣기 두 장부 참조 id (요청 id 해시)
 const deriveGoldPurchaseReferenceEventId = (referenceEventId, leg) =>
     `gold:${crypto.createHash('sha256').update(referenceEventId).digest('hex')}:${leg}`;
-
-// MySQL 데드락인지
-const isDeadlockError = (error) =>
-    error?.parent?.code === 'ER_LOCK_DEADLOCK' || error?.original?.code === 'ER_LOCK_DEADLOCK';
 
 // 저장된 구매 결과에서 응답 모양
 const goldPurchaseResultOf = (stored) => {
@@ -54,17 +53,14 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
         }
         return goldPurchaseResultOf(stored);
     };
-    const findStored = (transaction) => models.EconomyPurchaseRequest.findOne({
-        where: { user_id: userId, reference_event_id: referenceEventId },
-        ...(transaction ? { transaction } : {}),
-    });
+    const findStored = (transaction) => purchaseRequestRepository.findRequestByReference(models, { userId, referenceEventId }, transaction);
 
     const preExisting = await findStored(null);
     if (preExisting) return consumeStored(preExisting);
 
     const currencyProductsService = require('./currencyProducts');
 
-    const runOnce = () => models.sequelize.transaction({ isolationLevel: 'READ COMMITTED' }, async (t) => {
+    const runOnce = () => withTransaction(models, { isolationLevel: 'READ COMMITTED' }, async (t) => {
         let product = null;
         let productError = null;
         try {
@@ -78,11 +74,7 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
             else throw error;
         }
 
-        const lockWallet = () => models.EconomyWallet.findOne({
-            where: { user_id: userId },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
-        });
+        const lockWallet = () => walletRepository.lockWallet(models, userId, t);
         let wallet = await lockWallet();
         if (!wallet) {
             await ensureWalletRow(db, userId, t);
@@ -119,15 +111,15 @@ const purchaseGold = async ({ userId, productId, version, referenceEventId }, db
 
         const results = [snapshotLedgerEntry(diamondOutcome.ledgerEntry), snapshotLedgerEntry(goldOutcome.ledgerEntry)];
         try {
-            await models.EconomyPurchaseRequest.create({
+            await purchaseRequestRepository.createRequest(models, {
                 user_id: userId,
                 reference_event_id: referenceEventId,
                 kind: GOLD_PURCHASE_KIND,
                 payload_json: payload,
                 result_json: results,
-            }, { transaction: t });
+            }, t);
         } catch (error) {
-            if (error?.name === 'SequelizeUniqueConstraintError') {
+            if (isUniqueConstraintName(error)) {
                 throw Object.assign(
                     createError('이미 처리된 참조 사건입니다.', 409, 'DUPLICATE_PURCHASE_REQUEST'),
                     { referenceEventId },

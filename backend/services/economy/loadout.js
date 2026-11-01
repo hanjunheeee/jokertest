@@ -9,6 +9,9 @@ const { defaultDb, buildSkinsByJob, isFreeJobSkin } = require('./helpers');
 const { SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_SKIN_ID_PREFIX_BY_SLOT, SKIN_ITEM_ID_PREFIX } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
 const { economyModels } = require('../../repositories/economy/models');
+const entitlementRepository = require('../../repositories/economy/entitlement');
+const loadoutRepository = require('../../repositories/economy/loadout');
+const { withTransaction } = require('../../repositories/common');
 
 // 보유·칸 종류 확인 뒤 revision 맞을 때만 바꿈 (다른 곳에서 바꿨으면 409)
 const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaultDb()) => {
@@ -38,25 +41,18 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
 
-        const owned = await models.EconomyEntitlement.findOne({ where: { user_id: userId, item_id: itemId } });
+        const owned = await entitlementRepository.findOwned(models, { userId, itemId });
         if (!owned) {
             throw createError('보유하지 않은 상품은 장착할 수 없습니다.', 403, 'ITEM_NOT_OWNED');
         }
     }
 
-    await models.EconomyLoadout.findOrCreate({
-        where: { user_id: userId },
-        defaults: { user_id: userId, revision: crypto.randomUUID() },
-    });
+    await loadoutRepository.ensureLoadout(models, { userId, revision: crypto.randomUUID() });
 
     const hasExpectedRevision = typeof expectedRevision === 'string' && expectedRevision.length > 0;
 
-    return db.sequelize.transaction(async (t) => {
-        const loadout = await models.EconomyLoadout.findOne({
-            where: { user_id: userId },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
-        });
+    return withTransaction(db, async (t) => {
+        const loadout = await loadoutRepository.lockLoadout(models, userId, t);
 
         if (hasExpectedRevision && loadout.revision !== expectedRevision) {
             throw createError(
@@ -66,7 +62,7 @@ const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaul
             );
         }
 
-        await loadout.update({ [column]: itemId, revision: crypto.randomUUID() }, { transaction: t });
+        await loadoutRepository.saveLoadout(loadout, { [column]: itemId, revision: crypto.randomUUID() }, t);
         return loadout;
     });
 };
@@ -102,24 +98,17 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
             throw createError('존재하지 않는 상품이거나 이 슬롯에 장착할 수 없는 종류입니다.', 400, 'ITEM_TYPE_MISMATCH');
         }
         // eslint-disable-next-line no-await-in-loop -- 슬롯이 최대 2개뿐이고, 두 검증 모두
-        const owned = await models.EconomyEntitlement.findOne({ where: { user_id: userId, item_id: itemId } });
+        const owned = await entitlementRepository.findOwned(models, { userId, itemId });
         if (!owned) {
             throw createError('보유하지 않은 상품은 장착할 수 없습니다.', 403, 'ITEM_NOT_OWNED');
         }
         updates[column] = itemId;
     }
 
-    await models.EconomyLoadout.findOrCreate({
-        where: { user_id: userId },
-        defaults: { user_id: userId, revision: crypto.randomUUID() },
-    });
+    await loadoutRepository.ensureLoadout(models, { userId, revision: crypto.randomUUID() });
 
-    return db.sequelize.transaction(async (t) => {
-        const loadout = await models.EconomyLoadout.findOne({
-            where: { user_id: userId },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
-        });
+    return withTransaction(db, async (t) => {
+        const loadout = await loadoutRepository.lockLoadout(models, userId, t);
 
         if (loadout.revision !== expectedRevision) {
             throw createError(
@@ -129,7 +118,7 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
             );
         }
 
-        await loadout.update({ ...updates, revision: crypto.randomUUID() }, { transaction: t });
+        await loadoutRepository.saveLoadout(loadout, { ...updates, revision: crypto.randomUUID() }, t);
         return loadout;
     });
 };
@@ -141,7 +130,7 @@ const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
 
     const models = economyModels(db);
     await Promise.all(uniqueUserIds.map((userId) => ensureDefaultEntitlements(userId, db)));
-    const loadouts = await models.EconomyLoadout.findAll({ where: { user_id: uniqueUserIds } });
+    const loadouts = await loadoutRepository.listLoadouts(models, uniqueUserIds);
 
     const byUserId = {};
     for (const userId of uniqueUserIds) byUserId[userId] = { profilePhotoId: null, profileBorderId: null };
@@ -161,7 +150,7 @@ const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
 
     const models = economyModels(db);
     await Promise.all(uniqueUserIds.map((userId) => ensureDefaultEntitlements(userId, db)));
-    const loadouts = await models.EconomyLoadout.findAll({ where: { user_id: uniqueUserIds } });
+    const loadouts = await loadoutRepository.listLoadouts(models, uniqueUserIds);
 
     const byUserId = {};
     for (const userId of uniqueUserIds) {
