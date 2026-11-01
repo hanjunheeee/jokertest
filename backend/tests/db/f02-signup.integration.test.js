@@ -71,7 +71,7 @@ const db = require('../../models');
 const authService = require('../../services/auth/account');
 const signupEmailVerificationService = require('../../services/auth/signupEmailVerification');
 const userRepository = require('../../repositories/user');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
 const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
@@ -203,7 +203,7 @@ test('AC-06: 30자를 넘는 nickname_snapshot도 경기 기록 저장 경로에
         winResult: { winner: 'CITIZEN' },
     };
 
-    const outcome = await gameResultRepository.persistGameResult(session, { completed: true });
+    const outcome = await persistGameResult(session, { completed: true });
     assert.deepEqual(outcome, { persisted: true, gameId });
 
     const [rows] = await sequelize.query(

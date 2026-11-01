@@ -56,7 +56,7 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
 const voteParticipationRepository = require('../../repositories/game/voteParticipation');
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocket = require('../../socket/gameSession');
@@ -336,7 +336,7 @@ test('AC-03/A-04: 중단된 경기에 속한 사건은 countEligibleDayVoteParti
     registerOnline([a, b]);
     await submitVote(session, a, b);
 
-    const result = await gameResultRepository.persistGameResult(session, { completed: false, disconnectedUuid: b });
+    const result = await persistGameResult(session, { completed: false, disconnectedUuid: b });
     assert.equal(result.persisted, true);
 
     assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(a), 0, '중단 경기의 사건은 업적 집계에서 제외되어야 한다');
@@ -354,7 +354,7 @@ test('A-04: 개발 경기에 속한 사건은 countEligibleDayVoteParticipations
     session.winResult = { winner: 'CITIZEN' };
     session.endedAt = Date.now();
     session.gameSource = 'development';
-    const result = await gameResultRepository.persistGameResult(session, { completed: true });
+    const result = await persistGameResult(session, { completed: true });
     assert.equal(result.persisted, true);
 
     assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(a), 0, '개발 경기의 사건은 업적 집계에서 제외되어야 한다');
@@ -381,7 +381,7 @@ test('AC-05: 정상 확정된 운영 경기의 비기권 투표는 F-12 조회 �
     session.winResult = { winner: 'CITIZEN' };
     session.endedAt = Date.now();
     session.gameSource = 'production';
-    const result = await gameResultRepository.persistGameResult(session, { completed: true });
+    const result = await persistGameResult(session, { completed: true });
     assert.equal(result.persisted, true);
 
     assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(a), 1);

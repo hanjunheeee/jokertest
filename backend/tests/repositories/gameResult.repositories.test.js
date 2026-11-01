@@ -48,7 +48,8 @@ const unavailable = (t) => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
+const roleStatisticsQueries = require('../../services/game/roleStatistics/queries');
 const { hashPassword } = require('../../utils/auth/credentials');
 
 test.after(async () => {
@@ -103,7 +104,7 @@ const seedFinishedGame = async (uuid, role, { winner = 'CITIZEN', gameSource = '
         winResult: { winner },
         gameSource,
     });
-    const result = await gameResultRepository.persistGameResult(session, { completed: true });
+    const result = await persistGameResult(session, { completed: true });
     assert.equal(result.persisted, true, '시드 자체가 저장되지 않으면 이 시험은 아무것도 증명하지 못한다');
     return session.id;
 };
@@ -128,7 +129,7 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
         makePlayer(withRecords, 'CITIZEN', true),
         makePlayer(leaver, 'CITIZEN', true),
     ]), { winResult: null });
-    await gameResultRepository.persistGameResult(abortedSession, { completed: false, disconnectedUuid: leaver });
+    await persistGameResult(abortedSession, { completed: false, disconnectedUuid: leaver });
     const abortedRow = await db.GameResultPlayer.findOne({
         where: { game_id: abortedSession.id, user_id: withRecords }, raw: true,
     });
@@ -161,7 +162,7 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
     await seedFinishedGame(excludedOnly, 'CITIZEN', { winner: 'CITIZEN', gameSource: 'development' });
     await seedFinishedGame(excludedOnly, 'GUARD', { winner: 'CITIZEN', gameSource: 'test' });
 
-    const summaries = await gameResultRepository.getAccountRecordSummaries([
+    const summaries = await roleStatisticsQueries.getAccountRecordSummaries([
         withRecords, withoutRecords, excludedOnly,
     ]);
 
@@ -190,7 +191,7 @@ test('AC-01: 여러 계정을 한 번에 조회하고, 역할이 갈린 계정�
 
     assert.notEqual(summaries.get(withRecords).winRate, 75, '역할별 승률 평균으로 계산하면 안 된다');
 
-    const roleStats = await gameResultRepository.getMyRoleStatistics(withRecords);
+    const roleStats = await roleStatisticsQueries.getMyRoleStatistics(withRecords);
     const roleGames = roleStats.reduce((sum, entry) => sum + entry.games, 0);
     const roleWins = roleStats.reduce((sum, entry) => sum + entry.wins, 0);
     assert.equal(roleGames, summaries.get(withRecords).totalGames, '역할별 판수 합계와 총 판수가 갈라지면 안 된다');
@@ -211,7 +212,7 @@ test('AC-01: 빈 목록은 DB를 건드리지 않고 빈 Map을 돌려주고, �
     db.GameResultPlayer.findAll = (...args) => { queries += 1; return original.apply(db.GameResultPlayer, args); };
     t.after(() => { db.GameResultPlayer.findAll = original; });
 
-    const empty = await gameResultRepository.getAccountRecordSummaries([]);
+    const empty = await roleStatisticsQueries.getAccountRecordSummaries([]);
     assert.equal(empty.size, 0);
     assert.equal(queries, 0, '조회할 계정이 없으면 쿼리를 보내지 않아야 한다');
 
@@ -219,7 +220,7 @@ test('AC-01: 빈 목록은 DB를 건드리지 않고 빈 Map을 돌려주고, �
     await seedFinishedGame(uuid, 'DOCTOR', { winner: 'CITIZEN' });
 
     queries = 0;
-    const summaries = await gameResultRepository.getAccountRecordSummaries([uuid, uuid, uuid]);
+    const summaries = await roleStatisticsQueries.getAccountRecordSummaries([uuid, uuid, uuid]);
     assert.equal(queries, 1, '중복이 있어도 조회는 한 번이어야 한다');
     assert.equal(summaries.size, 1, '같은 uuid가 여러 번 들어와도 결과는 한 항목이다');
     assert.deepEqual(summaries.get(uuid), { totalGames: 1, winRate: 100 });

@@ -55,7 +55,8 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
+const roleStatisticsQueries = require('../../services/game/roleStatistics/queries');
 const gameSessionSocket = require('../../socket/gameSession');
 const { hashPassword } = require('../../utils/auth/credentials');
 
@@ -114,9 +115,9 @@ test('AC-01: 같은 game_id로 두 번 저장해도 행이 늘지 않고 통계�
         makePlayer(u2, 'JOKER', false),
     ]));
 
-    const first = await gameResultRepository.persistGameResult(session, { completed: true });
+    const first = await persistGameResult(session, { completed: true });
     assert.equal(first.persisted, true);
-    const second = await gameResultRepository.persistGameResult(session, { completed: true });
+    const second = await persistGameResult(session, { completed: true });
     assert.equal(second.persisted, false, '이미 저장된 game_id는 다시 저장되지 않아야 한다(실패가 아니다)');
 
     assert.equal(await db.GameResult.count({ where: { id: gameId } }), 1, '경기 헤더가 중복 생성되면 안 된다');
@@ -135,8 +136,8 @@ test('AC-01: 동시 요청(경합)에서도 같은 game_id는 실제 DB 제약�
     const session = makeEndedSession(gameId, new Map([makePlayer(u1, 'DOCTOR', true)]));
 
     const [r1, r2] = await Promise.all([
-        gameResultRepository.persistGameResult(session, { completed: true }),
-        gameResultRepository.persistGameResult(session, { completed: true }),
+        persistGameResult(session, { completed: true }),
+        persistGameResult(session, { completed: true }),
     ]);
     const persistedCount = [r1, r2].filter((r) => r.persisted).length;
     assert.equal(persistedCount, 1, '동시 저장 요청 중 정확히 하나만 실제로 저장되어야 한다(나머지는 persisted:false)');
@@ -155,9 +156,9 @@ test('AC-01: 실제 DB raw TINYINT를 정규화한 JOIN 통계와 settings.gameS
     const gameId = crypto.randomUUID();
     const session = makeEndedSession(gameId, new Map([makePlayer(u1, 'GUARD', true)]), { gameSource: 'production' });
 
-    await gameResultRepository.persistGameResult(session, { completed: true });
+    await persistGameResult(session, { completed: true });
 
-    const stats = await gameResultRepository.getMyRoleStatistics(u1);
+    const stats = await roleStatisticsQueries.getMyRoleStatistics(u1);
     const guard = stats.find((s) => s.role === 'GUARD');
     assert.equal(guard.games, 1);
     assert.equal(guard.wins, 1);
@@ -185,7 +186,7 @@ test('AC-01: 참가자 삽입이 실패하면 이미 만든 game_results 행도 
     t.after(() => { db.GameResultPlayer.bulkCreate = original; });
 
     await assert.rejects(
-        () => gameResultRepository.persistGameResult(session, { completed: true }),
+        () => persistGameResult(session, { completed: true }),
         /시뮬레이션된 참가자 삽입 실패/,
     );
 
@@ -206,7 +207,7 @@ test('AC-05: 중단 경기는 이탈자 패배만 확정되고, 잔류자(won=nu
         makePlayer(stayer, 'CITIZEN', true),
     ]), { winResult: null });
 
-    const result = await gameResultRepository.persistGameResult(session, { completed: false, disconnectedUuid: leaver });
+    const result = await persistGameResult(session, { completed: false, disconnectedUuid: leaver });
     assert.equal(result.persisted, true);
 
     const rows = await db.GameResultPlayer.findAll({ where: { game_id: gameId } });
@@ -217,9 +218,9 @@ test('AC-05: 중단 경기는 이탈자 패배만 확정되고, 잔류자(won=nu
     assert.equal(leaverRow.death_reason, 'DISCONNECT');
     assert.equal(stayerRow.won, null, '잔류자의 승패는 미확정(null)으로 남아야 한다');
 
-    const leaverStats = await gameResultRepository.getMyRoleStatistics(leaver);
+    const leaverStats = await roleStatisticsQueries.getMyRoleStatistics(leaver);
     assert.equal(leaverStats.find((s) => s.role === 'CITIZEN').games, 1);
-    const stayerStats = await gameResultRepository.getMyRoleStatistics(stayer);
+    const stayerStats = await roleStatisticsQueries.getMyRoleStatistics(stayer);
     assert.equal(stayerStats.find((s) => s.role === 'CITIZEN').games, 0, '잔류자의 미확정 전적은 실제 DB 조회에서도 판수에 들어가면 안 된다');
 
     const stayerUserStats = await db.UserStats.findOne({ where: { user_id: stayer } });
@@ -248,6 +249,6 @@ test('AC-05: 소켓 종료 저장 경로(persistTerminalSession)도 실제 DB에
     assert.ok(row, '소켓 종료 경로가 실제로 game_results에 저장해야 한다(타임아웃 2초 안에 반영되지 않음)');
     assert.deepEqual(row.settings.gameSource, { v: 1, value: 'development' }, '소켓 경로를 거쳐도 출처 값이 그대로 보존되어야 한다');
 
-    const stats = await gameResultRepository.getMyRoleStatistics(u1);
+    const stats = await roleStatisticsQueries.getMyRoleStatistics(u1);
     assert.equal(stats.find((s) => s.role === 'CITIZEN').games, 0, '소켓 경로로 저장된 개발 경기도 조회에서 제외되어야 한다');
 });

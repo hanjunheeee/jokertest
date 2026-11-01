@@ -59,7 +59,7 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
 const achievementService = require('../../services/achievement');
 const { hashPassword, generateToken } = require('../../utils/auth/credentials');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
@@ -111,7 +111,7 @@ const persistWins = async (userId, role, count) => {
     for (let i = 0; i < count; i += 1) {
         const gameId = crypto.randomUUID();
         const session = makeEndedSession(gameId, new Map([makePlayer(userId, role, true)]), { winner: role === 'JOKER' ? 'JOKER' : 'CITIZEN' });
-        const result = await gameResultRepository.persistGameResult(session, { completed: true });
+        const result = await persistGameResult(session, { completed: true });
         assert.equal(result.persisted, true);
     }
 };

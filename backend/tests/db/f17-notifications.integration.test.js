@@ -67,7 +67,7 @@ const db = require('../../models');
 const friendService = require('../../services/friend');
 const notificationService = require('../../services/notification');
 const achievementService = require('../../services/achievement');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
 const socket = require('../../socket/socket');
 const { hashPassword, generateToken } = require('../../utils/auth/credentials');
 const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
@@ -316,7 +316,7 @@ test('AC-01/A-02: 신규 업적 지급은 grant·보상 원장과 같은 트랜�
             uuid: userId, nickname: `n-${userId.slice(0, 6)}`, role: 'CITIZEN', team: 'CITIZEN',
             alive: true, deathReason: null,
         }]]);
-        const result = await gameResultRepository.persistGameResult({
+        const result = await persistGameResult({
             id: gameId, roomId: crypto.randomUUID(), phase: 'ENDED', dayIndex: 2, jokerCount: 1,
             roleComposition: { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, CITIZEN: 1 },
             timerSettings: { dayDiscussionTime: 90, dayVoteTime: null, nightActionTime: null, roleNightActionTimes: {} },

@@ -459,7 +459,7 @@ test('AC-04: 50자 닉네임이 실제 경기 저장 경로를 통해 잘리지 
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
 
     const db = require('../../models');
-    const gameResultRepository = require('../../repositories/game/result');
+    const { persistGameResult } = require('../helpers/persistGameResult');
 
     t.after(async () => {
         await db.sequelize.close();
@@ -488,7 +488,7 @@ test('AC-04: 50자 닉네임이 실제 경기 저장 경로를 통해 잘리지 
         winResult: { winner: 'CITIZEN' },
     };
 
-    const outcome = await gameResultRepository.persistGameResult(session, { completed: true });
+    const outcome = await persistGameResult(session, { completed: true });
     assert.deepEqual(outcome, { persisted: true, gameId });
 
     const rows = await queryRows(

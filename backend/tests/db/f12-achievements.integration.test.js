@@ -57,7 +57,8 @@ const resetSchema = async () => {
 };
 
 const db = require('../../models');
-const gameResultRepository = require('../../repositories/game/result');
+const { persistGameResult } = require('../helpers/persistGameResult');
+const roleStatisticsQueries = require('../../services/game/roleStatistics/queries');
 const achievementService = require('../../services/achievement');
 const { hashPassword } = require('../../utils/auth/credentials');
 
@@ -109,7 +110,7 @@ const persistWins = async (userId, role, count) => {
     for (let i = 0; i < count; i += 1) {
         const gameId = crypto.randomUUID();
         const session = makeEndedSession(gameId, new Map([makePlayer(userId, role, true)]), { winner: winnerForRole(role) });
-        const result = await gameResultRepository.persistGameResult(session, { completed: true });
+        const result = await persistGameResult(session, { completed: true });
         assert.equal(result.persisted, true);
     }
 };
@@ -208,9 +209,9 @@ test('AC-05: 중단 경기 참가자는 진행률에 반영되지 않는다', as
     const userId = await createLocalUser('aborted1');
     const gameId = crypto.randomUUID();
     const session = makeEndedSession(gameId, new Map([makePlayer(userId, 'CITIZEN', false)]), { winner: 'CITIZEN' });
-    await gameResultRepository.persistGameResult(session, { completed: false, disconnectedUuid: userId });
+    await persistGameResult(session, { completed: false, disconnectedUuid: userId });
 
-    const stats = await gameResultRepository.getAchievementProgressStats(userId);
+    const stats = await roleStatisticsQueries.getAchievementProgressStats(userId);
     assert.equal(stats.completedGames, 0, '중단 경기는 정상 확정 경기 수에 포함되면 안 된다');
 
     const results = await achievementService.evaluateAndGrantForUser(userId);
@@ -224,9 +225,9 @@ test('AC-05: 개발 경기는 진행률에 반영되지 않는다', async (t) =>
     const userId = await createLocalUser('devgame1');
     const gameId = crypto.randomUUID();
     const session = makeEndedSession(gameId, new Map([makePlayer(userId, 'CITIZEN', true)]), { winner: 'CITIZEN', gameSource: 'development' });
-    await gameResultRepository.persistGameResult(session, { completed: true });
+    await persistGameResult(session, { completed: true });
 
-    const stats = await gameResultRepository.getAchievementProgressStats(userId);
+    const stats = await roleStatisticsQueries.getAchievementProgressStats(userId);
     assert.equal(stats.completedGames, 0, '개발 경기는 진행률에 포함되면 안 된다');
 });
 

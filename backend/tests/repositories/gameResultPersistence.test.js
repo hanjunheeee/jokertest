@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 
 const db                   = require("../../models");
 const gameResultRepository = require("../../repositories/game/result");
+const { persistGameResult } = require("../helpers/persistGameResult");
 const userRepository       = require("../../repositories/user");
 const profileController    = require("../../controllers/profile.controller");
 const gameSessionCore      = require("../../game-core/gameSession");
@@ -288,7 +289,7 @@ test("AC-01: game_results·game_result_players·user_stats가 단일 트랜잭�
     const { committed, seenTransactions } = setupFakeDb(t);
     const session = makeEndedSession();
 
-    const outcome = await gameResultRepository.persistGameResult(session, { completed: true });
+    const outcome = await persistGameResult(session, { completed: true });
 
     assert.deepEqual(outcome, { persisted: true, gameId: "game-1" });
     assert.equal(committed.game_results.length, 1);
@@ -301,7 +302,7 @@ test("AC-01: 저장 실패는 세 테이블 어디에도 흔적을 남기지 않
     const { committed } = setupFakeDb(t, { statsFails: true });
 
     await assert.rejects(
-        () => gameResultRepository.persistGameResult(makeEndedSession(), { completed: true }),
+        () => persistGameResult(makeEndedSession(), { completed: true }),
         /user_stats 증분 실패/,
     );
 
@@ -313,7 +314,7 @@ test("AC-01: 저장 실패는 세 테이블 어디에도 흔적을 남기지 않
 test("AC-01: 저장 후 프로필 조회에 stats 변경이 반영된다", async (t) => {
     const { committed } = setupFakeDb(t);
 
-    await gameResultRepository.persistGameResult(
+    await persistGameResult(
         makeEndedSession({ gameSource: "production" }),
         { completed: true },
     );
@@ -484,8 +485,8 @@ test("AC-03: 같은 game_id로 두 번 호출해도 행이 중복되지 않고 s
     const { committed } = setupFakeDb(t);
     const session = makeEndedSession();
 
-    const first  = await gameResultRepository.persistGameResult(session, { completed: true });
-    const second = await gameResultRepository.persistGameResult(session, { completed: true });
+    const first  = await persistGameResult(session, { completed: true });
+    const second = await persistGameResult(session, { completed: true });
 
     assert.deepEqual(first,  { persisted: true,  gameId: "game-1" });
     assert.deepEqual(second, { persisted: false, gameId: "game-1" });
@@ -497,7 +498,7 @@ test("AC-03: 같은 game_id로 두 번 호출해도 행이 중복되지 않고 s
 test("AC-03: 동시 삽입 경쟁의 game_results PK 충돌도 성공한 no-op으로 처리한다", async (t) => {
     const { committed } = setupFakeDb(t, { duplicateRace: true });
 
-    const outcome = await gameResultRepository.persistGameResult(makeEndedSession(), { completed: true });
+    const outcome = await persistGameResult(makeEndedSession(), { completed: true });
 
     assert.deepEqual(outcome, { persisted: false, gameId: "game-1" });
     assert.equal(committed.game_result_players.length, 0);
@@ -529,7 +530,7 @@ test("AC-04: 중단 경기는 completed=false이고 이탈자만 패배·DISCONN
 test("AC-04: 중단 경기 저장 후에도 잔류자의 stats는 그대로다", async (t) => {
     const { committed } = setupFakeDb(t);
 
-    await gameResultRepository.persistGameResult(makeAbortedSession(), {
+    await persistGameResult(makeAbortedSession(), {
         completed: false,
         disconnectedUuid: "a3",
     });
