@@ -9,6 +9,7 @@ const { removePublished } = require('../admission/release')
 const { isCanonicalSocket, detachSocketFromChannel, isSeatedInRoom, hasRoomMembership, hasLiveGameMembership } = require('./membership')
 const { scheduleRoomRetention, cancelRoomRetention, markPresenceConfirmed } = require('./leave')
 const { buildRoomPayload } = require('./view')
+const { deps } = require('../core/deps')
 
 // 재접속한 소켓을 원래 방 채널에 다시 붙임 (자리 그대로일 때만)
 async function resyncRoomChannelOnReconnect(socket, uuid) {
@@ -100,6 +101,11 @@ function onDisconnect(io, socket, uuid) {
 
     const expectedRoomId = socket?.data?.activeRoomId
     if (expectedRoomId !== undefined && expectedRoomId !== currentRoomId) return
+
+    // 새 탭에 밀려 끊긴 옛 소켓이고 새 소켓이 이미 접속 목록에 있으면 유예 안 걺 (BE-031)
+    // 새 소켓은 접속 때 방 채널에 다시 붙어서, 15초 안에 방을 안 물어도 자리 그대로
+    const canonicalId = deps.onlineUsersRegistry?.get?.(uuid)
+    if (socket?.data?.forcedLogout === true && typeof canonicalId === 'string' && canonicalId !== socket?.id) return
 
     scheduleRoomRetention(io, socket, uuid)
 }

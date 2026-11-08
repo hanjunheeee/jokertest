@@ -221,7 +221,9 @@ test("AC-09: force_disconnect 안내에는 토큰·쿠키 같은 값이 들어�
     await socketLayer.__testables.handleConnection(io, fresh, UUID);
 
     const payload = existing.emitted[0].payload;
-    assert.deepEqual(Object.keys(payload), ["message"]);
+    // 칸은 안내 문구와 밀어낸 까닭 code만 (known 1-15에서 code 더함)
+    assert.deepEqual(Object.keys(payload).sort(), ["code", "message"]);
+    assert.equal(payload.code, "REPLACED_BY_OTHER_LOGIN");
     assert.equal(/token|cookie|password/i.test(JSON.stringify(payload)), false);
 });
 
@@ -371,7 +373,7 @@ test("F-29b AC-04: 검사가 아직 끝나지 않았으면 다음 tick은 중복
     assert.equal(callCount, 2, "이전 검사가 끝난 뒤에는 다음 tick에서 다시 조회해야 합니다");
 });
 
-test("F-29b AC-04: 주기 검사 중 예외가 발생해도 연결을 유지하지 않고 강제 종료하며, 원문 오류는 로그에 남기지 않는다", async (t) => {
+test("F-29b AC-04·BE-010: 주기 검사 예외는 한 번엔 안 끊고 연달아 쌓여야 강제 종료하며, 원문 오류는 로그에 남기지 않는다", async (t) => {
     stubAuthStorage(t);
     const socket = makeGuardedSocket(UUID);
 
@@ -387,11 +389,20 @@ test("F-29b AC-04: 주기 검사 중 예외가 발생해도 연결을 유지하�
     const watcher = socketLayer.__testables.startSessionRevocationWatcher(socket);
     t.after(() => watcher.stop());
 
+    // DB가 잠깐 흔들린 첫 실패들에는 연결 유지 (접속자 전원 로그아웃 막기)
+    for (let i = 1; i < socketLayer.__testables.WATCH_FAILURE_LIMIT; i += 1) {
+        t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.equal(socket.disconnectCalls, 0, "검사 실패 한두 번에는 연결을 끊으면 안 됩니다");
+    assert.equal(socket.emitted.length, 0);
+
     t.mock.timers.tick(socketLayer.__testables.SESSION_CHECK_INTERVAL_MS);
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
 
-    assert.deepEqual(socket.emitted.map((e) => e.event), ["force_disconnect"], "검사 예외에서도 연결을 종료해야 합니다");
+    assert.deepEqual(socket.emitted.map((e) => e.event), ["force_disconnect"], "검사 실패가 쌓이면 연결을 종료해야 합니다");
     assert.equal(socket.disconnectCalls, 1);
 
     const loggedText = JSON.stringify(loggedArgs);

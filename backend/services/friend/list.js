@@ -6,10 +6,26 @@ const blockRepository = require("../../repositories/friend/block");
 const onlinePresenceRepository = require("../../repositories/presence/onlinePresence");
 const economyService = require("../economy");
 
+// 접속 행이 ONLINE이어도 이 서버 접속 목록에 없으면 OFFLINE (BE-015)
+// 서버가 꺼지거나 재시작되면 끊김 처리가 안 돌아 ONLINE 행이 남음, 소켓 서버가 안 켜졌으면(시험 등) 행 그대로
+const isListedOnline = (uuid) => {
+    const emitter = require("../../socket/emitter");
+    if (!emitter.getIo()) return true;
+    return emitter.onlineUsers.has(uuid);
+};
+
+// 접속 행 상태를 이 서버 접속 목록과 맞춤
+const liveStatusOf = (uuid, presence) => {
+    if (!presence) return null;
+    if (presence.status === 'ONLINE' && !isListedOnline(uuid)) return 'OFFLINE';
+    return presence.status;
+};
+
 // 검색 결과 접속 상태, 접속 행 없으면 UNKNOWN
-const resolvePresenceStatus = (presence) => {
-    if (!presence) return 'UNKNOWN';
-    return presence.status === 'ONLINE' ? 'ONLINE' : 'OFFLINE';
+const resolvePresenceStatus = (uuid, presence) => {
+    const status = liveStatusOf(uuid, presence);
+    if (!status) return 'UNKNOWN';
+    return status === 'ONLINE' ? 'ONLINE' : 'OFFLINE';
 };
 
 // 여러 사람 공개 장착 한 번에 (빈 목록이면 경제 서비스 안 부름)
@@ -41,15 +57,15 @@ exports.getFriendList = async (myUuid) => {
 
     // 접속 행 없으면 OFFLINE (검색과 달리 UNKNOWN 안 씀), 장착 없으면 빈 값
     return visibleFriends.map((friendInfo) => {
-        const presence = presenceByUuid.get(friendInfo.uuid);
+        const status = liveStatusOf(friendInfo.uuid, presenceByUuid.get(friendInfo.uuid));
         const loadout = loadoutsByUuid[friendInfo.uuid] ?? { profilePhotoId: null, profileBorderId: null };
 
         return {
             id:         friendInfo.uuid,
             name:       friendInfo.nickname,
             profile:    friendInfo.profile_image_url || '/assets/default_profile.png',
-            status:     presence ? presence.status : 'OFFLINE',
-            online:     presence ? presence.status !== 'OFFLINE' : false,
+            status:     status ?? 'OFFLINE',
+            online:     status ? status !== 'OFFLINE' : false,
             isFavorite: favoriteIds.has(friendInfo.uuid),
             accountProfilePhotoId:  loadout.profilePhotoId,
             accountProfileBorderId: loadout.profileBorderId,
@@ -73,7 +89,7 @@ exports.searchUsers = async (query, myUuid) => {
 
     return users.map((u) => {
         const loadout = loadoutsByUuid[u.uuid] ?? { profilePhotoId: null, profileBorderId: null };
-        const status = resolvePresenceStatus(presenceByUuid.get(u.uuid));
+        const status = resolvePresenceStatus(u.uuid, presenceByUuid.get(u.uuid));
         return {
             id:      u.uuid,
             name:    u.nickname,

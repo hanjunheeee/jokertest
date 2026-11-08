@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 // (인증 → sessionLifecycle, 접속 상태 → presence 서비스·matchmaking)
 const {
     authenticateSocket, wrapSocketWithSessionGuard, startSessionRevocationWatcher, SESSION_CHECK_INTERVAL_MS,
+    WATCH_FAILURE_LIMIT, EVENT_CHECK_CACHE_MS,
 } = require("./connection/auth");
 const { handleConnection, handleDisconnect } = require("./connection/presence");
 const matchmaking     = require("./matchmaking");
@@ -56,7 +57,12 @@ function registerDisconnectHandler(io, socket, uuid, sessionWatcher) {
         sessionWatcher?.stop();
         gameSession.onDisconnect(io, socket, uuid).catch(logRejection("\x1b[31m[게임 소켓 종료 처리 에러]\x1b[0m"));
         handleDisconnect(io, socket, uuid).catch(logRejection("\x1b[31m[소켓 종료 처리 에러]\x1b[0m"));
-        matchmaking.onDisconnect(io, socket, uuid);
+        // 대기방 정리는 동기라 직접 잡음 (던져도 끊김 처리기 밖으로 안 새게)
+        try {
+            matchmaking.onDisconnect(io, socket, uuid);
+        } catch (err) {
+            console.error("[31m[대기방 끊김 처리 에러][0m", err);
+        }
     });
 }
 
@@ -97,6 +103,6 @@ module.exports = {
     __testables: {
         registerConnectionHandlers, registerDisconnectHandler, handleConnection, handleDisconnect,
         authenticateSocket, wrapSocketWithSessionGuard, registerNotificationHandlers,
-        startSessionRevocationWatcher, SESSION_CHECK_INTERVAL_MS,
+        startSessionRevocationWatcher, SESSION_CHECK_INTERVAL_MS, WATCH_FAILURE_LIMIT, EVENT_CHECK_CACHE_MS,
     },
 };
