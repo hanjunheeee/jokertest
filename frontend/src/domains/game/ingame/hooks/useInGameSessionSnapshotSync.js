@@ -62,7 +62,11 @@ export function useInGameSessionSnapshotSync() {
 
   // 소켓·판·계정·신원이 바뀔 때마다 이번 범위로 묻기를 새로 붙임 (소켓·계정 없으면 안 물음)
   useEffect(() => {
-    if (!socket || !authUuid) return
+    // 소켓·계정이 없으면(로그아웃 등) 다시 묶을 일이 없어 기다림 표시도 끔
+    if (!socket || !authUuid) {
+      setIdentityRebindPending(false)
+      return
+    }
 
     // 범위가 바뀌었고 방금 내가 반영한 범위도 아니면 새 세대 (판 중이면 다시 묶기 기다림 켬)
     const base = epochBaseRef.current

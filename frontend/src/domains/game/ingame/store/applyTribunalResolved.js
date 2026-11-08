@@ -19,7 +19,7 @@ export function applyTribunalResolvedPure(current, payload) {
   if (typeof payload.phase !== "string") return current
   if (typeof payload.defendantUuid !== "string" || payload.defendantUuid.length === 0) return current
 
-  // 재판 취소: 밤으로 가고 처형 없음, 표 수 모양, 지금 그 피고 재판 중일 때만
+  // 재판 취소: 밤으로 가고 처형 없음(피고는 나가서 죽음 처리), 표 수 모양, 지금 그 피고 재판 중일 때만
   if (payload.outcome === CANCELLED_OUTCOME) {
     if (payload.phase !== "NIGHT") return current
     if (!TRIBUNAL_CANCEL_REASONS.has(payload.reason)) return current
@@ -35,11 +35,16 @@ export function applyTribunalResolvedPure(current, payload) {
     if (current.state.phase !== "TRIBUNAL") return current
     if (current.state.tribunal?.defendantUuid !== payload.defendantUuid) return current
 
+    // 피고는 나가서 판에서 빠짐: 사망 방송을 놓쳤어도 죽은 것으로 둠 (다음 밤 결과의 죽은 사람 수 맞추기)
+    const nextCancelPlayers = (current.state.players ?? []).map((p) =>
+      (p.uuid === payload.defendantUuid && p.alive !== false ? { ...p, alive: false } : p))
+
     return {
       state: {
         ...current.state,
         phase: "NIGHT",
         tribunal: null,
+        players: nextCancelPlayers,
       },
     }
   }

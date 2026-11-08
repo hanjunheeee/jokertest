@@ -1,6 +1,8 @@
 // 스냅샷 묻기: 시도 예산 잡기, 묻기, 응답을 판 복구·스냅샷 반영으로 넘기기
 // 스냅샷 동기화 훅(useInGameSessionSnapshotSync)이 effect마다 만듦, 묻기는 socket/session.js
 import { useInGameStore } from "../../store/ingameStore.js"
+import { useMatchingStore } from "../../../matching/store/matchingStore.js"
+import { isSessionGoneResponse } from "../../utils/sessionEnd.js"
 import { fetchSnapshot } from "../../socket/session.js"
 import { openAttempt } from "./attempt.js"
 
@@ -14,7 +16,17 @@ const isRoutingPending = (response) =>
   response !== null && typeof response === "object"
   && response.ok !== true && response.code === SESSION_ROUTING_PENDING_CODE
 
-// 응답 반영: 옛 응답·길 찾는 중·밤 관찰 충돌을 거르고, 판 없이 물었으면 복구, 아니면 반영
+// 판이 있는데 서버가 판 없음이라 하면 판·방 정리 (끝난 판의 결과 화면은 그대로 둠)
+// 화면 이동은 인게임 화면의 "맞는 판 아님" 검사가 맡음
+function clearGoneSession(requestGameId) {
+  const { gameId, state } = useInGameStore.getState()
+  if (gameId !== requestGameId) return
+  if (state?.phase === "ENDED") return
+  useInGameStore.getState().clearGame()
+  useMatchingStore.getState().clearRoom()
+}
+
+// 응답 반영: 옛 응답·길 찾는 중·판 없음·밤 관찰 충돌을 거르고, 판 없이 물었으면 복구, 아니면 반영
 function applyResponse(ctx, a, response) {
   const scopeOnArrival = a.readScopeNow()
   if (a.isStaleNow()) {
@@ -22,6 +34,11 @@ function applyResponse(ctx, a, response) {
     return
   }
   if (isRoutingPending(response) && a.scheduleRetry()) return
+  if (a.requestGameId && isSessionGoneResponse(response)) {
+    a.finishRebindUnapplied(scopeOnArrival)
+    clearGoneSession(a.requestGameId)
+    return
+  }
   if (a.hasConflictingNightObservation(response)) {
     if (a.scheduleRetry()) return
     a.settleUnapplied()

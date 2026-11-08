@@ -37,7 +37,7 @@ function cancelledPayload(overrides = {}) {
   }
 }
 
-test("AC-03: CANCELLED는 tribunal을 비우고 같은 날 밤으로 넘기되 아무도 죽이지 않는다", () => {
+test("AC-03·FE-002: CANCELLED는 tribunal을 비우고 같은 날 밤으로 넘기되 나간 피고만 죽음 처리한다(처형 없음)", () => {
   const current = tribunalCurrent()
   const next = applyTribunalResolvedPure(current, cancelledPayload())
 
@@ -45,7 +45,7 @@ test("AC-03: CANCELLED는 tribunal을 비우고 같은 날 밤으로 넘기되 �
   assert.equal(next.state.phase, "NIGHT")
   assert.equal(next.state.tribunal, null)
   assert.equal(next.state.dayIndex, 2, "취소는 날짜를 넘기지 않는다")
-  for (const player of next.state.players) assert.equal(player.alive, true)
+  for (const player of next.state.players) assert.equal(player.alive, player.uuid !== "d1")
 })
 
 test("AC-03: 취소 조합이 하나라도 어긋나면 완전한 no-op이다(참조까지 보존)", () => {

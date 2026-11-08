@@ -40,12 +40,14 @@ export function parsePlayerEliminatedPayload({
   if (!Number.isInteger(payload.dayIndex) || payload.dayIndex !== dayIndex) return null
 
   // 판 끝이면 승패 결과가 있어야 하고, 아니면 지금 단계와 같아야 함
+  // 재판 중 피고가 나가면 서버가 단계를 밤으로 먼저 바꾼 뒤 사망을 보내서 재판 중 밤 방송도 받음
+  // (단계는 뒤따르는 재판 취소 방송이 밤으로 바꿈)
   const isTerminal = payload.phase === "ENDED"
   let winResult = null
   if (isTerminal) {
     winResult = normalizePublicWinResult(payload.winResult)
     if (winResult === null) return null
-  } else if (payload.phase !== phase) {
+  } else if (payload.phase !== phase && !(phase === "TRIBUNAL" && payload.phase === "NIGHT")) {
     return null
   }
 
