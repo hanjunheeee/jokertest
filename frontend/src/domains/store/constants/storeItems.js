@@ -129,6 +129,14 @@ export const INGAME_MONEY_STORE_ITEMS = [
   ...[10, 50, 100, 300].map((amount) => createIngameMoneyItem("diamond", amount)),
 ]
 
+// 서버 재화 상품 그림: 지급 재화·수량이 묶음 그림과 맞으면 그 그림, 아니면 null
+// utils/currencyParse.js toCurrencyStoreItem이 씀 (예: GOLD 100 → 금화-100.png)
+export function ingameMoneyIconOf(grantCurrency, amount) {
+  const key = grantCurrency === "GOLD" ? "gold" : grantCurrency === "DIAMOND" ? "diamond" : null
+  if (!key) return null
+  return INGAME_MONEY_STORE_ITEMS.find((item) => item.id === `ingame-money-${key}-${amount}`)?.icon ?? null
+}
+
 // 상점 이모티콘 임시 가격
 export const EMOTICON_PRICE_GOLD_PLACEHOLDER = 500
 

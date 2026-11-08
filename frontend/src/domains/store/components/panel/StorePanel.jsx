@@ -1,4 +1,4 @@
-// 가게 패널 (구매 알림·상품 칸·고른 상품 설명·분류 사이드바, 상태는 useStorePanel)
+// 가게 패널 (구매 알림·재화 안내·상품 칸·고른 상품 설명·분류 사이드바, 상태는 useStorePanel)
 // StorePage가 씀
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -24,6 +24,7 @@ import { isPurchaseDisabled, isRealPurchaseCategory } from "../../utils/storePan
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
+import StoreCurrencyFeedback from "../StoreCurrencyFeedback.jsx"
 
 // 영상 끝나기 전엔 숨기고 누르기 막음, 확대·일괄구매 창은 패널 밖에 붙임
 export default function StorePanel({ visible = true }) {
@@ -43,7 +44,9 @@ export default function StorePanel({ visible = true }) {
           <PublicAsset src={STORE_ASSETS.panelFrame} alt="" className={STORE_PANEL_FRAME_CLASS} />
 
           <div className={PANEL_CONTENT_CLASS} style={STORE_PANEL_INNER_PAD}>
-            <StorePurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+            {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}
+            {panel.purchaseState.kind !== "GOLD" && <StorePurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />}
+            <StoreCurrencyFeedback panel={panel} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
             <div className={PANEL_MAIN_ROW_CLASS}>
               <div className={PANEL_GRID_COLUMN_CLASS}>
                 <div
@@ -87,6 +90,7 @@ export default function StorePanel({ visible = true }) {
                       ownedItemIds,
                       purchaseLocked: panel.purchaseLocked,
                       economyStatus: panel.economyStatus,
+                      currencyBlocked: panel.currencyBlocked,
                     })}
                   />
                 ) : null}

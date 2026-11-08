@@ -1,5 +1,5 @@
 // 재화 충전 흐름 스토어 입구 (계정 구독·페이지 복귀 처리, 흐름은 currency/ 아래 파일)
-// storePurchase.store.js가 currencyApi만 가져감, 충전 흐름은 지금 시험만 부름
+// hooks/useCurrencyStore.js가 흐름을 부르고, storePurchase.store.js는 currencyApi만 가져감
 import { useStore } from "zustand"
 import { useAuthStore } from "../../auth/store/auth.store.js"
 import { activate, ctx, get, set, store } from "./currency/state.js"
@@ -19,9 +19,9 @@ if (typeof window !== "undefined" && window.addEventListener) {
   })
 }
 
-// 충전 흐름 동작 묶음 (지금은 시험만 부름)
+// 충전 흐름 동작 묶음 (useCurrencyStore·시험이 부름)
 export const currencyPurchase = {
   store, activate, loadProducts, startTopup, handleReturn, checkOrder, discoverOpenOrders,
 }
-// 충전 상태 구독 훅 (지금 부르는 곳 없음)
+// 충전 상태 구독 훅 (useCurrencyStore가 씀)
 export const useCurrencyPurchase = () => useStore(store)

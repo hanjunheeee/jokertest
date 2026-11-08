@@ -1,5 +1,5 @@
 // 가게 패널 구매 버튼 판정 (살 수 있는 분류인지·버튼 잠금·기본 지급 문구)
-// StorePanel·useStorePanel이 씀
+// 데스크톱·모바일 StorePanel·useStorePanel이 씀
 import { isDefaultGrantStoreItem } from "../constants/storeItems.js"
 
 // 인게임 재화는 충전 흐름으로 사서 일반 구매·일괄구매에서 뺌
@@ -14,11 +14,14 @@ export function purchaseLabelOf(currentItem, ownedItemIds) {
   return null
 }
 
-// 구매 중·지갑 미준비·일괄구매 빈 선택·못 사는 분류·보유·기본 지급이면 잠금
-export function isPurchaseDisabled({ currentItem, bulkMode, bulkSelectedIds, ownedItemIds, purchaseLocked, economyStatus }) {
+// 구매 중·지갑 미준비·일괄구매 빈 선택·못 사는 분류·재화 상품 잠금·보유·기본 지급이면 잠금
+// 재화 상품(kind 있음)은 충전·골드 구매 흐름이라 분류 대신 currencyBlocked로 봄
+export function isPurchaseDisabled({ currentItem, bulkMode, bulkSelectedIds, ownedItemIds, purchaseLocked, economyStatus, currencyBlocked = false }) {
+  const currencyItem = Boolean(currentItem.kind)
   return purchaseLocked || economyStatus !== "ready"
     || (bulkMode && bulkSelectedIds.size === 0)
-    || (!isRealPurchaseCategory(currentItem.category))
+    || (!currencyItem && !isRealPurchaseCategory(currentItem.category))
+    || (!bulkMode && currencyItem && currencyBlocked)
     || (!bulkMode && ownedItemIds.has(currentItem.id))
     || (!bulkMode && isDefaultGrantStoreItem(currentItem))
 }

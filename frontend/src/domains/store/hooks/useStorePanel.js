@@ -1,5 +1,5 @@
-// 가게 패널 상태와 동작 (분류·선택 상품·미리보기·확대 창·일괄구매·구매 버튼)
-// StorePanel이 씀
+// 가게 패널 상태와 동작 (분류·선택 상품·미리보기·확대 창·일괄구매·구매 버튼, 재화 상품은 useCurrencyStore)
+// 데스크톱 StorePanel·모바일 StorePage가 씀
 // 선택·일괄구매·구매 버튼이 같은 선택 상태와 잠금을 함께 봐서 한 훅에 둠
 import { useEffect, useMemo, useState } from "react"
 import { getStoreItemsByCategory, isDefaultGrantStoreItem, STORE_ITEMS } from "../constants/storeItems.js"
@@ -7,7 +7,9 @@ import { storePurchase, useStorePurchase } from "../store/storePurchase.store.js
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
 import { useStoreCategoryFilter } from "./useStoreCategoryFilter.js"
+import { isSuccessReturn, useCurrencyStore } from "./useCurrencyStore.js"
 import { isRealPurchaseCategory, purchaseLabelOf } from "../utils/storePanel.js"
+import { CURRENCY_CATEGORY, mergeCurrencyItems } from "../utils/currencyView.js"
 
 // 고른 id 하나를 넣거나 뺀 새 Set
 const toggleId = (prev, itemId) => {
@@ -20,10 +22,14 @@ const toggleId = (prev, itemId) => {
 // 패널 상태를 한 곳에 모아 StorePanel·StorePanelOverlays에 넘김
 export function useStorePanel() {
   const { categories, activeCategory, selectCategory } = useStoreCategoryFilter()
-  // 고른 분류의 상품 (기본 지급 이모티콘은 뺌)
+  const purchaseState = useStorePurchase()
+  const authUserId = useAuthStore((state) => state.user?.uuid ?? null)
+  const currencyPanel = useCurrencyStore({ authUserId, purchaseState })
+  const { currencyItems } = currencyPanel
+  // 고른 분류의 상품 (기본 지급 이모티콘은 뺌, 인게임 재화는 서버 상품으로 바꿈)
   const visibleItems = useMemo(
-    () => getStoreItemsByCategory(activeCategory),
-    [activeCategory],
+    () => mergeCurrencyItems(activeCategory, getStoreItemsByCategory(activeCategory), currencyItems),
+    [activeCategory, currencyItems],
   )
 
   const [selectedItem, setSelectedItem] = useState(STORE_ITEMS[0])
@@ -33,12 +39,10 @@ export function useStorePanel() {
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkSelectedIds, setBulkSelectedIds] = useState(() => new Set())
   const [bulkPurchaseOpen, setBulkPurchaseOpen] = useState(false)
-  const purchaseState = useStorePurchase()
-  // 결과 기다림·결과 모름·기록 막힘이면 선택·구매 모두 잠금
+  // 결과 기다림·결과 모름·기록 막힘이면 선택·구매 모두 잠금, 골드 가격 바뀜은 고르기만 되고 구매는 잠금
   const selectionLocked = ["pending", "unknown", "blocked"].includes(purchaseState.status)
-  const purchaseLocked = selectionLocked
+  const purchaseLocked = selectionLocked || currencyPanel.goldPriceChanged
   const economyStatus = useEconomyStore((state) => state.status)
-  const authUserId = useAuthStore((state) => state.user?.uuid ?? null)
   const entitlements = useEconomyStore((state) => state.entitlements)
   // 보유 상품 id 모음 (경제 스토어의 보유 목록)
   const ownedItemIds = useMemo(
@@ -47,8 +51,11 @@ export function useStorePanel() {
   )
 
   // 처음 열 때·계정 바뀔 때 지갑 다시 받고, 구매 상태를 그 계정으로 맞춰 남은 결과 확인, 일괄구매 끔
+  // 결제 성공 복귀면 지갑은 서버 확인 뒤에 받음 (확인 전 잔액을 완료로 오해하지 않게)
   useEffect(() => {
-    useEconomyStore.getState().fetchSummary()
+    if (!isSuccessReturn(window.location.search)) {
+      useEconomyStore.getState().fetchSummary()
+    }
     storePurchase.activate(authUserId)
     storePurchase.check()
     setBulkMode(false)
@@ -96,7 +103,7 @@ export function useStorePanel() {
     if (purchaseLocked) return
     setBulkMode(nextBulkMode)
     if (nextBulkMode) {
-      const canSeedSelection = selectedItem && !ownedItemIds.has(selectedItem.id)
+      const canSeedSelection = selectedItem && !selectedItem.kind && !ownedItemIds.has(selectedItem.id)
         && !isDefaultGrantStoreItem(selectedItem)
       setBulkSelectedIds(new Set(canSeedSelection ? [selectedItem.id] : []))
     } else {
@@ -116,17 +123,29 @@ export function useStorePanel() {
     ? (visibleItems.find((item) => item.id === selectedItem.id) ?? selectedItem)
     : null
 
-  const purchaseLabel = purchaseLabelOf(currentItem, ownedItemIds)
+  // 재화 상품이면 충전·골드 구매 글자, 아니면 기본 지급 글자
+  const purchaseLabel = currentItem?.kind ? currencyPanel.labelOf(currentItem) : purchaseLabelOf(currentItem, ownedItemIds)
+  // 재화 상품 버튼 잠금 (목록 준비 안 됨·설정 대기·충전 진행 중)
+  const currencyBlocked = currencyPanel.blockedOf(currentItem)
 
-  // 잠김·지갑 미준비면 무시, 일괄구매면 확인 창을 열고, 아니면 고른 상품 하나를 바로 삼
+  // 잠김·지갑 미준비면 무시, 일괄구매면 확인 창, 재화 상품이면 충전·골드 구매, 아니면 고른 상품 하나를 바로 삼
   const handlePurchaseClick = () => {
     if (purchaseLocked || economyStatus !== "ready") return
     if (bulkMode) {
       if (bulkSelectedIds.size) { storePurchase.prepare(); setBulkPurchaseOpen(true) }
+    } else if (currentItem?.kind) {
+      currencyPanel.buy(currentItem)
     } else if (selectedItem && isRealPurchaseCategory(selectedItem.category) && !ownedItemIds.has(selectedItem.id)
       && !isDefaultGrantStoreItem(selectedItem)) {
       storePurchase.purchase([selectedItem.id])
     }
+  }
+
+  // 다이아 부족 안내에서 재화 분류의 충전 상품으로 이동 (이미 재화 분류면 다시 눌러 풀지 않음)
+  const goToDiamondTopup = () => {
+    if (activeCategory !== CURRENCY_CATEGORY) selectCategory(CURRENCY_CATEGORY)
+    const target = currencyPanel.findTopupItem()
+    if (target) setSelectedItem(target)
   }
 
   // 확인 창 닫으면 일괄구매도 끄고 선택 비움
@@ -155,5 +174,6 @@ export function useStorePanel() {
     bulkMode, bulkSelectedIds, bulkSelectedItems, bulkPurchaseOpen,
     handleBulkModeChange, handleBulkSelectionChange, closeBulkPurchase, handleBulkPurchaseConfirm,
     purchaseState, purchaseLocked, selectionLocked, economyStatus, ownedItemIds, handlePurchaseClick,
+    currencyPanel, currencyBlocked, goToDiamondTopup,
   }
 }

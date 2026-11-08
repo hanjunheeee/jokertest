@@ -2,6 +2,7 @@
 // 충전 API(currency.api.js)·currency/ 아래 결제 복귀·충전 시작이 씀
 import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
 import { KIND_CURRENCIES, ORDER_ID, PAYMENT_KEY } from "../constants/currencyPurchase.js"
+import { ingameMoneyIconOf } from "../constants/storeItems.js"
 
 // 소수·너무 큰 수 막기
 export const isSafeInt = (value) => Number.isSafeInteger(value)
@@ -50,13 +51,15 @@ export const parseReturn = (search) => {
   return { mode, valid: PAYMENT_KEY.test(paymentKey) && ORDER_ID.test(orderId) && isSafeInt(amount), paymentKey, orderId, amount }
 }
 
-// 충전 상품을 가게 목록 칸 모양으로 바꿈 (지금 부르는 곳 없음)
+// 충전 상품을 가게 목록 칸 모양으로 바꿈 (그림은 수량 맞는 묶음 그림 먼저, 없으면 재화 표시 그림)
+// hooks/useCurrencyStore.js가 씀
 export const toCurrencyStoreItem = (product) => ({
   ...product,
   id: `currency:${product.productId}`,
   category: "인게임 재화",
   name: product.displayName,
-  icon: product.kind === "DIAMOND_TOPUP" ? STORE_ASSETS.premiumCurrencyIcon : STORE_ASSETS.currencyIcon,
+  icon: ingameMoneyIconOf(product.grantCurrency, product.grantAmount)
+    ?? (product.kind === "DIAMOND_TOPUP" ? STORE_ASSETS.premiumCurrencyIcon : STORE_ASSETS.currencyIcon),
   priceAmount: String(product.payAmount),
   grade: product.kind === "DIAMOND_TOPUP" ? "다이아" : "골드",
   description: "",

@@ -1,4 +1,4 @@
-// 상점 판 (구매 알림·상품 칸·고른 상품 설명·분류 목록), 상태는 데스크톱 useStorePanel을 페이지가 넘김
+// 상점 판 (구매 알림·재화 안내·상품 칸·고른 상품 설명·분류 목록), 상태는 데스크톱 useStorePanel을 페이지가 넘김
 // pages/StorePage가 씀 (데스크톱 StorePanel 자리)
 import { motion } from "framer-motion"
 import { getItemDisplayIcon } from "@/domains/store/constants/storeItems.js"
@@ -7,6 +7,7 @@ import { storePurchase } from "@/domains/store/store/storePurchase.store.js"
 import { isPurchaseDisabled, isRealPurchaseCategory } from "@/domains/store/utils/storePanel.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PurchaseFeedback from "../feedback/PurchaseFeedback.jsx"
+import CurrencyFeedback from "../feedback/CurrencyFeedback.jsx"
 import ItemGrid from "../grid/ItemGrid.jsx"
 import ItemDetail from "../detail/ItemDetail.jsx"
 import CategoryList from "./CategoryList.jsx"
@@ -35,7 +36,11 @@ export default function StorePanel({ visible, panel }) {
             aria-hidden={!visible}
         >
             <div className={PANEL_CLASS}>
-                <PurchaseFeedback className="mb-2" state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+                {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}
+                {panel.purchaseState.kind === "GOLD" ? null : (
+                    <PurchaseFeedback className="mb-2" state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+                )}
+                <CurrencyFeedback className="mb-2" panel={panel} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
                 <div className={MAIN_ROW_CLASS}>
                     <div className={GRID_COLUMN_CLASS}>
                         <div className={PANEL_SCROLL_AREA_CLASS}>
@@ -73,6 +78,7 @@ export default function StorePanel({ visible, panel }) {
                                     ownedItemIds,
                                     purchaseLocked: panel.purchaseLocked,
                                     economyStatus: panel.economyStatus,
+                                    currencyBlocked: panel.currencyBlocked,
                                 })}
                             />
                         ) : null}

@@ -67,7 +67,11 @@ export async function load(url, context, nextLoad) {
         target: ts.ScriptTarget.ES2022,
       },
     })
-    return { format: "module", source: result.outputText, shortCircuit: true }
+    // Vite가 채우는 import.meta.env가 node엔 없어서 시험용 값 채움 (라우터의 DEV 분기가 안 터지게)
+    const envShim = result.outputText.includes("import.meta.env")
+      ? 'import.meta.env ??= { DEV: false, PROD: true, MODE: "test" };\n'
+      : ""
+    return { format: "module", source: envShim + result.outputText, shortCircuit: true }
   }
   return nextLoad(url, context)
 }
