@@ -41,6 +41,7 @@ export default function CodeFrame({ value, onChange, onSubmit, autoFocus = false
         </div>
 
         {/* 실제 입력칸: 글자·커서는 숨기고, 누르는 자리는 위아래로 늘려 44px 이상 */}
+        {/* maxLength 없음: 붙여넣은 "ABC-123"을 자르기 전에 정리해야 함 (6자리 자르기는 useCodeField) */}
         <input
           ref={inputRef}
           type="text"
@@ -50,7 +51,6 @@ export default function CodeFrame({ value, onChange, onSubmit, autoFocus = false
           autoCorrect="off"
           autoCapitalize="characters"
           spellCheck={false}
-          maxLength={ROOM_CODE_LENGTH}
           pattern="[A-Za-z0-9]*"
           aria-label="방 코드 6자리"
           value={value}

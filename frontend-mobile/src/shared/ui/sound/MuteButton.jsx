@@ -1,5 +1,5 @@
 // 배경음 음소거 그림 버튼 (켜짐·꺼짐 아이콘, 누르는 칸 44px 이상)
-// SoundGroup·MuteToggle·서고 SoundMini·설정 BgmControl이 씀
+// SoundGroup·MuteToggle·설정 BgmControl이 씀
 import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 

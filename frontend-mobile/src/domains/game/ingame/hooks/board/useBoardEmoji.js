@@ -1,5 +1,5 @@
 // 카드 판 이모티콘: 판 범위 키·인게임 팔레트 불러오기·팔레트 열림 상태
-// Board가 씀 (데스크톱 InGamePlayerBoard 안 effect 두 개를 그대로 옮김)
+// Board·카톡형 PortraitStrip이 씀 (데스크톱 InGamePlayerBoard 안 effect 두 개를 그대로 옮김)
 import { useCallback, useEffect, useState } from "react"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"

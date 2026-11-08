@@ -1,5 +1,5 @@
 // 플레이어 카드 그림: 초상·상태 표시·테마 테두리·카드 틀·이름판·"나" 표시
-// CardSlot이 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
+// CardSlot·StripSlot·재판 DefendantCard가 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
 import {
     FRAME_IMG_CLASS,
     FRAME_SHADOW_LAYER_CLASS,
@@ -21,7 +21,7 @@ const SELF_BADGE_CLASS =
 // 내 카드 금색 고리 (데스크톱 InGamePlayerCard와 같은 class)
 const SELF_RING_CLASS = "ring-2 ring-[#f3d28d]/80 ring-offset-2 ring-offset-black/40 rounded-full"
 
-// 틀 비율은 그림이 정함 (폭은 className으로)
+// 틀 비율은 그림이 정함 (폭은 className으로), withE2e 끄면 시험 표시 안 붙임 (재판 피고 카드가 판 카드와 같은 선택자로 겹치지 않게)
 export default function PlayerCard({
     portraitSrc,
     frameSrc = INGAME_PLAYER_ASSETS.cardFrame,
@@ -30,6 +30,7 @@ export default function PlayerCard({
     theme = null,
     voteHighlight = false,
     isSelf = false,
+    withE2e = true,
     className = "",
 }) {
     const styles = resolveInGamePlayerCardThemeStyles(theme, voteHighlight)
@@ -39,7 +40,7 @@ export default function PlayerCard({
     return (
         <div
             className={`relative shrink-0 [container-type:inline-size] ${className}`}
-            {...buildPlayerCardE2eAttrs({ nickname, status, isSelf })}
+            {...(withE2e ? buildPlayerCardE2eAttrs({ nickname, status, isSelf }) : null)}
         >
             <div className={`relative w-full overflow-visible ${isSelf ? SELF_RING_CLASS : ""}`}>
                 <div className="absolute z-[1] overflow-hidden" style={portraitInset}>

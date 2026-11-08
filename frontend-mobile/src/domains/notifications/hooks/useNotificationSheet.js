@@ -43,8 +43,8 @@ export function useNotificationSheet({ open, onClose }) {
 
   const visible = selectVisibleNotifications(items, generalChecks)
   const bodyState = resolveBodyState(status, visible.length)
-  // 목록을 다 받았고 읽은 알림이 있을 때만 삭제 버튼 켬
-  const hasRead = items.some((item) => item.readAt)
+  // 목록을 다 받았고 보이는 읽은 알림이 있을 때만 삭제 버튼 켬 (숨긴 종류만 읽은 게 있으면 안 켬, 데스크톱과 같음)
+  const hasRead = visible.some((item) => item.readAt)
 
   // 읽음이 확정된 뒤에만 창 닫고 이동
   const openTarget = async (item, path) => {

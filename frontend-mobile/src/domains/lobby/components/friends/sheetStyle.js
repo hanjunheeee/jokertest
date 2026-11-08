@@ -1,5 +1,5 @@
 // 친구 시트 탭 목록·그림 경로·className 모음 (시트 틀·탭·줄 버튼·목록 칸)
-// 친구 시트 컴포넌트들(components/friends)이 씀, 줄·글자 모양은 데스크톱 friendListStyle 상수를 그대로 부름
+// 친구 시트 컴포넌트들(components/friends)이 씀, 데스크톱 friendListStyle은 안 부르고 폰 크기 값을 여기 둠
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 

@@ -12,8 +12,9 @@ export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode 
   const [pageIndex, setPageIndex] = useState(0)
 
   const pageCount = Math.max(1, Math.ceil(rooms.length / PAGE_SIZE))
-  // 방이 줄어 쪽 수가 줄면 마지막 쪽으로 당김
+  // 방이 줄어 쪽 수가 줄면 마지막 쪽으로 당기고 저장 값도 맞춤 (안 맞추면 다시 늘 때 옛 쪽으로 튐, 그리는 중에 바로 맞춤)
   const currentPage = Math.min(pageIndex, pageCount - 1)
+  if (pageIndex !== currentPage) setPageIndex(currentPage)
 
   // 지금 쪽 방들 + 표시 상태(진행중·마감·대기)
   const pageRooms = useMemo(() => {
@@ -23,8 +24,9 @@ export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode 
       .map((room) => ({ ...room, displayStatus: deriveRoomDisplayStatus(room) }))
   }, [rooms, currentPage])
 
-  // 고른 방이 목록에서 사라지면 안 고른 걸로 봄
+  // 고른 방이 목록에서 사라지면 고른 값도 지움 (같은 방이 다시 생겨도 저절로 되살아나지 않게)
   const selectedRoom = pageRooms.find((room) => room.id === selectedRoomId) ?? null
+  if (selectedRoomId !== null && !selectedRoom) setSelectedRoomId(null)
   const needsCode = selectedRoom?.accessType === "code"
   const isFull = selectedRoom?.status === "full"
 
@@ -51,7 +53,8 @@ export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode 
   }
 
   const enterDisabled = !selectedRoom || isFull || isJoining
-  const enterLabel = isJoining ? "입장 중" : needsCode ? "코드 입력" : isFull ? "마감" : "입장하기"
+  // 정원 찬 코드 방은 "마감" (코드를 쳐도 못 들어감)
+  const enterLabel = isJoining ? "입장 중" : isFull ? "마감" : needsCode ? "코드 입력" : "입장하기"
 
   return {
     pageRooms,

@@ -12,9 +12,15 @@ function buildOptions(min, max, step = 1) {
   return options
 }
 
-// 숫자 고르기 줄 (목록에 없는 값이면 첫 값으로 보임, 데스크톱과 같음)
+// 목록에 없는 값(옛 설정·서버 값)은 제자리에 끼워 그대로 보임 → 보이는 값과 저장되는 값이 같음
+function withCurrent(options, value) {
+  if (!Number.isFinite(value) || options.includes(value)) return options
+  return [...options, value].sort((a, b) => a - b)
+}
+
+// 숫자 고르기 줄
 export default function StepperRow({ look, label, description, value, min, max, step = 1, unit, onChange }) {
-  const options = useMemo(() => buildOptions(min, max, step), [min, max, step])
+  const options = useMemo(() => withCurrent(buildOptions(min, max, step), value), [min, max, step, value])
   const labels = useMemo(() => options.map((o) => (unit ? `${o}${unit}` : o)), [options, unit])
   const index = Math.max(0, options.indexOf(value))
   const stepper = SETTING_LOOKS[look].stepper
