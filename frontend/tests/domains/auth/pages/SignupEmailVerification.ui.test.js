@@ -23,8 +23,17 @@ installDomGlobal("Element", dom.window.Element)
 installDomGlobal("Node", dom.window.Node)
 installDomGlobal("Event", dom.window.Event)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
-installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
-installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
+// FE-014: jsdom(pretendToBeVisual) rAF는 16ms setInterval로 도는데, mock.timers(setInterval)를 켠 시험과 걸치면
+// 진짜 interval을 가짜 clearInterval로 지우려다 못 지워 시험이 다 끝나도 프로세스가 안 끝남(부하 걸린 전체 실행에서만 보임)
+// → 시험 전 진짜 setTimeout을 잡아 두고 그걸로 한 번만 부르는 rAF를 씀
+const realSetTimeout = globalThis.setTimeout
+const realClearTimeout = globalThis.clearTimeout
+const frameRaf = (callback) => realSetTimeout(() => callback(dom.window.performance.now()), 16)
+const frameCancel = (handle) => realClearTimeout(handle)
+dom.window.requestAnimationFrame = frameRaf
+dom.window.cancelAnimationFrame = frameCancel
+installDomGlobal("requestAnimationFrame", frameRaf)
+installDomGlobal("cancelAnimationFrame", frameCancel)
 installDomGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })
 installDomGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} })
 
