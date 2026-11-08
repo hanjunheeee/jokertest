@@ -33,20 +33,6 @@ exports.findPendingRequest = async (uuidA, uuidB, options = {}) => {
     });
 };
 
-// 내가 그 사람에게 보낸 신청 중 since 뒤에 거절된 것 하나 (거절 직후 재신청 막기)
-exports.findRecentlyDeclined = async (requesterId, receiverId, since, options = {}) => {
-    return await db.FriendRequest.findOne({
-        where: {
-            requester_id: requesterId,
-            receiver_id:  receiverId,
-            status:       'DECLINED',
-            responded_at: { [Op.gt]: since },
-        },
-        attributes: ['id', 'responded_at'],
-        ...options,
-    });
-};
-
 // LIKE 와일드카드(\ % _) 앞에 \ 붙여 글자 그대로 찾게 함 (MySQL 기본 이스케이프 글자)
 const escapeLike = (text) => String(text).replace(/[\\%_]/g, (ch) => `\\${ch}`);
 

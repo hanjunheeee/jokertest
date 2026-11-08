@@ -10,9 +10,6 @@ const { loadPublicLoadouts } = require('./list');
 const userLookup = require('../../repositories/user/lookup');
 const { withTransaction } = require('../../repositories/common');
 
-// 거절된 뒤 같은 사람에게 다시 신청 못 하는 시간 (신청·알림·효과음 되풀이 막기)
-const DECLINE_RESEND_COOLDOWN_MS = 10 * 60 * 1000;
-
 // 결과 다시 묻기 한 번에 받는 id 최대 수 (큰 IN 조회 막기)
 const MAX_RESULT_IDS = 100;
 
@@ -52,13 +49,6 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
             const existingRequest = await friendRequestRepository.findPendingRequest(myUuid, receiverId, { transaction: t });
             if (existingRequest) {
                 throw createError('이미 친구 신청 중입니다.', 409);
-            }
-
-            // 내 신청이 방금 거절됐으면 잠시 동안 429 (거절 직후 되풀이 신청 막기)
-            const since = new Date(Date.now() - DECLINE_RESEND_COOLDOWN_MS);
-            const recentlyDeclined = await friendRequestRepository.findRecentlyDeclined(myUuid, receiverId, since, { transaction: t });
-            if (recentlyDeclined) {
-                throw createError('거절된 친구 신청은 잠시 뒤 다시 보낼 수 있습니다.', 429);
             }
 
             // 여기부터 진짜 바뀜: 신청 행 → 보낸 사람 닉네임으로 받는 사람 알림

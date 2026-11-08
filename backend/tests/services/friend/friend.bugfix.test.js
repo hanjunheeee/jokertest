@@ -32,8 +32,6 @@ const stubSendPath = (t, overrides = {}) => {
     t.mock.method(blockRepository, 'findBlocksBetween', async () => []);
     t.mock.method(friendshipRepository, 'findExistingFriendship', async (a, b, options) => { seen.friendship = options; return null; });
     t.mock.method(friendRequestRepository, 'findPendingRequest', async (a, b, options) => { seen.pending = options; return null; });
-    t.mock.method(friendRequestRepository, 'findRecentlyDeclined', overrides.findRecentlyDeclined
-        ?? (async (a, b, since, options) => { seen.declined = { since, options }; return null; }));
     t.mock.method(friendRequestRepository, 'createFriendRequest', async () => ({ id: 7 }));
     t.mock.method(userLookup, 'findNickname', async () => ({ nickname: '나' }));
     t.mock.method(notificationService, 'createForFriendRequest', async () => ({ created: false, notification: null }));
@@ -45,23 +43,6 @@ test('친구 신청 보내기: 이미 친구·대기 신청 조회도 같은 트
     await friendService.sendFriendRequest('me', 'you');
     assert.equal(seen.friendship?.transaction, transaction);
     assert.equal(seen.pending?.transaction, transaction);
-});
-
-test('BE-063: 거절된 지 얼마 안 된 신청이 있으면 같은 사람에게 다시 못 보냄 (429)', async (t) => {
-    let created = false;
-    stubSendPath(t, { findRecentlyDeclined: async () => ({ id: 3, status: 'DECLINED' }) });
-    t.mock.method(friendRequestRepository, 'createFriendRequest', async () => { created = true; return { id: 8 }; });
-    await assert.rejects(() => friendService.sendFriendRequest('me', 'you'), (error) => error.status === 429);
-    assert.equal(created, false);
-});
-
-test('BE-063: 대기 시간 기준 시각은 지금보다 앞, 트랜잭션 같이 넘김', async (t) => {
-    const { seen, transaction } = stubSendPath(t);
-    const before = Date.now();
-    await friendService.sendFriendRequest('me', 'you');
-    assert.ok(seen.declined.since instanceof Date);
-    assert.ok(seen.declined.since.getTime() < before);
-    assert.equal(seen.declined.options?.transaction, transaction);
 });
 
 // 수락 기본 가짜 묶음
