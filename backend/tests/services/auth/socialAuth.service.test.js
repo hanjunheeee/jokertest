@@ -7,6 +7,8 @@ const crypto = require("crypto");
 const userRepository = require("../../../repositories/user");
 const authService    = require("../../../services/auth/account");
 const socialAuthService = require("../../../services/auth/social");
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require("../../helpers/termsStub").passSignupTermsForFile();
 
 const hashValue = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
 
@@ -81,6 +83,12 @@ const createFakeUserRepository = () => {
         async findByUuid(uuid) {
             const row = usersByUuid.get(uuid);
             return row ? { ...row } : null;
+        },
+        // 소셜 로그인 마지막 접속 시각 기록용
+        async updateUser(uuid, patch) {
+            const row = usersByUuid.get(uuid);
+            if (row) Object.assign(row, patch);
+            return [row ? 1 : 0];
         },
         async findByEmail(email) {
             const uuid = usersByEmail.get(email);

@@ -12,6 +12,8 @@ const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const userRepository    = require("../../repositories/user");
 const socialAuthService = require("../../services/auth/social");
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require("../helpers/termsStub").passSignupTermsForFile();
 
 const REPO_KEYS = ["findActiveSession", "checkActiveBan"];
 const SERVICE_KEYS = ["completeSocialSignup", "getSocialSignupIntent", "issueOAuthState", "linkExternalIdentity"];
@@ -268,7 +270,7 @@ test("완료 요청에 email_verified·verified·provider·subject·rememberMe�
 
     assert.equal(res.status, 200);
     const passed = calls[0].args[0];
-    assert.deepEqual(Object.keys(passed).sort(), ["birthDate", "email", "intentToken", "nickname", "rememberMe", "reqInfo", "signupProof"],
+    assert.deepEqual(Object.keys(passed).sort(), ["ageConfirmed", "agreedTermsVersionIds", "birthDate", "email", "intentToken", "nickname", "rememberMe", "reqInfo", "signupProof"],
         "컨트롤러는 허용한 가입 필드와 서버가 만든 rememberMe·reqInfo만 서비스에 넘겨야 합니다");
     assert.equal(passed.email_verified, undefined);
     assert.equal(passed.emailVerified, undefined);

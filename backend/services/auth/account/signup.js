@@ -11,8 +11,10 @@ const signupEmailVerificationService = require("../signupEmailVerification");
 const { normalizeEmail: normalizeSignupEmail } = require("../../../validations/auth/signupEmailVerification");
 // 금지어 든 닉네임 거절 (금지어 표 비면 안 막음)
 const bannedWords = require("../../ops/bannedWords");
+// 약관 동의·만 14세 확인 (입구 객체로 불러 시험 갈아끼우기 먹게)
+const termsService = require("../terms");
 
-// 입력 검사 → 증명 있나 → 해시 → (트랜잭션) 증명 소비 → 이메일·닉네임 중복 → 만들기
+// 입력 검사 → 증명 있나 → 약관·만 14세 → 해시 → (트랜잭션) 증명 소비 → 이메일·닉네임 중복 → 만들기 → 동의 기록
 exports.signup = async (userData) => {
     // 이메일·비번·닉네임·생일 모양 먼저 검사
     const parsed = validateSignupPayload(userData);
@@ -29,6 +31,13 @@ exports.signup = async (userData) => {
     if (typeof signupProof !== "string" || !signupProof) {
         throw createError("이메일 인증이 필요합니다.", 401, "SIGNUP_PROOF_REQUIRED");
     }
+
+    // 만 14세 확인 체크·생일 14세 미만·필수 약관 빠짐이면 해시 전에 거절
+    const agreedVersionIds = await termsService.checkSignupAgreements({
+        agreedTermsVersionIds: userData.agreedTermsVersionIds,
+        ageConfirmed: userData.ageConfirmed,
+        birthDate,
+    });
 
     // bcrypt 해시는 느려서 트랜잭션 열기 전에 미리
     const password_hash = await hashPassword(password);
@@ -64,6 +73,7 @@ exports.signup = async (userData) => {
         }, { transaction });
         await userRepository.createUserStats(user.uuid, { transaction });
         await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });
+        await termsService.recordAgreements(user.uuid, agreedVersionIds, { transaction });
         return user;
     });
 };

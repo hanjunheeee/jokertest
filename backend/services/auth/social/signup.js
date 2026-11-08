@@ -9,6 +9,8 @@ const { validateNickname, validateBirthDate } = require("../../../validations/au
 const db = require("../../../repositories/common/db");
 const economyService = require("../../economy");
 const bannedWords = require("../../ops/bannedWords");
+// 약관 동의·만 14세 확인 (입구 객체로 불러 시험 갈아끼우기 먹게)
+const termsService = require("../terms");
 const signupEmailVerificationService = require("../signupEmailVerification");
 const {
     normalizeEmail: normalizeSignupEmail, validateEmailFormat,
@@ -37,9 +39,10 @@ exports.getSocialSignupIntent = async ({ intentToken } = {}) => {
     return { emailVerificationRequired: intent.email === null };
 };
 
-// 닉네임·생일 검사 → (트랜잭션) 의도 잠금 → 이메일 증명 → 중복 → 계정·외부 계정·기본 지급 → 세션
+// 닉네임·생일·약관·만 14세 검사 → (트랜잭션) 의도 잠금 → 이메일 증명 → 중복 → 계정·외부 계정·기본 지급·동의 기록 → 세션
 exports.completeSocialSignup = async ({
-    intentToken, nickname, birthDate, email, signupProof, rememberMe = false, reqInfo = {},
+    intentToken, nickname, birthDate, email, signupProof, agreedTermsVersionIds, ageConfirmed,
+    rememberMe = false, reqInfo = {},
 }) => {
     // 의도 토큰·닉네임·생일 먼저 검사 (DB 안 감)
     if (typeof intentToken !== "string" || !intentToken) {
@@ -58,6 +61,10 @@ exports.completeSocialSignup = async ({
         throw createError(birthDateResult.message, 400);
     }
     const birthDateValue = birthDateResult.value;
+    // 만 14세 확인 체크·생일 14세 미만·필수 약관 빠짐이면 트랜잭션 전에 거절
+    const agreedVersionIds = await termsService.checkSignupAgreements({
+        agreedTermsVersionIds, ageConfirmed, birthDate: birthDateValue,
+    });
 
     return await userRepository.withTransaction(async (transaction) => {
         // 의도 행 잠그고 다시 확인 (같은 의도로 두 번 가입 막기)
@@ -149,7 +156,9 @@ exports.completeSocialSignup = async ({
         }, { transaction });
         await userRepository.markIntentConsumed(intent.id, { transaction });
         await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });
-        // 가입 마무리도 로그인이라 기록 남김 (로그아웃이 이 기록을 닫음)
+        await termsService.recordAgreements(user.uuid, agreedVersionIds, { transaction });
+        // 가입 마무리도 로그인이라 기록·마지막 접속 시각 남김 (로그아웃이 이 기록을 닫음)
+        await userRepository.updateUser(user.uuid, { last_login_at: new Date() }, { transaction });
         await userRepository.createLoginHistory({
             user_id:    user.uuid,
             ip_address: reqInfo.ip,

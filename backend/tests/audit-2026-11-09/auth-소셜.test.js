@@ -18,6 +18,8 @@ const economyService = require('../../services/economy');
 const signupEmailVerificationService = require('../../services/auth/signupEmailVerification');
 const frontendOrigins = require('../../config/frontendOrigins');
 const { useAuthStore, swap } = require('./authFakes');
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const START = new Date('2026-11-09T12:00:00.000Z');
 const sha256 = (raw) => crypto.createHash('sha256').update(raw).digest('hex');

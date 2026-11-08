@@ -39,13 +39,14 @@ exports.resolveOAuthAccount = async ({
             if (activeBan) {
                 throw createError("정지된 계정입니다.", 403, "ACCOUNT_BANNED");
             }
-            // 이메일 로그인처럼 로그인 기록 남김 (로그아웃이 이 기록을 닫음)
+            // 이메일 로그인처럼 로그인 기록·마지막 접속 시각 남김 (로그아웃이 이 기록을 닫음)
             await userRepository.createLoginHistory({
                 user_id:    user.uuid,
                 ip_address: reqInfo.ip,
                 user_agent: reqInfo.userAgent,
                 success:    true,
             }, { transaction });
+            await userRepository.updateUser(user.uuid, { last_login_at: new Date() }, { transaction });
             // 같은 트랜잭션에서 세션 발급 (account 입구 객체로 불러 시험 패치 먹게)
             const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);
             return { status: "LOGIN", user, ...session };

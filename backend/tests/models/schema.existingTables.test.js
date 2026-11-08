@@ -72,8 +72,6 @@ const EXISTING_TABLES = [
         notNull: [],
         columns: {
             user_id:          'UUID',
-            reputation:       'INTEGER',
-            title:            'STRING(50)',
             total_games:      'INTEGER',
             survival_count:   'INTEGER',
             execution_count:  'INTEGER',
@@ -194,6 +192,7 @@ const NEW_MODELS = [
     'FriendFavorite', 'FriendBlock', 'GameInvite',
     'SignupEmailVerification',
     'EconomyCurrencyProduct', 'EconomyTopupOrder',
+    'TermsVersion', 'UserTermsAgreement',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

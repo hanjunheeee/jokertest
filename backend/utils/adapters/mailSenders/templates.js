@@ -1,13 +1,13 @@
 'use strict';
 
-// 메일 문구 파일, 목적 3종 제목·본문 + 보내기 전 공통 확인(목적·받는 주소·기다리는 시간)
+// 메일 문구 파일, 목적 5종 제목·본문 + 보내기 전 공통 확인(목적·받는 주소·기다리는 시간)
 // 메일 발송기 셋(gateway·smtp·memory)과 adapters/mail.js가 씀
 
 // 메일 제목 앞 게임 이름 (데스크톱·모바일 화면 이름과 같게)
 const GAME_NAME = '가면무도회 살인사건';
 
-// 보낼 수 있는 메일 목적 (비번 재설정 링크 · 소셜 전용 계정 안내 · 가입 인증번호)
-const TEMPLATES = new Set(['PASSWORD_RESET', 'SOCIAL_LOGIN_GUIDE', 'SIGNUP_CODE']);
+// 보낼 수 있는 메일 목적 (비번 재설정 링크 · 소셜 전용 계정 안내 · 가입 인증번호 · 이메일 바꾸기 인증번호 · 이메일 바뀜 알림)
+const TEMPLATES = new Set(['PASSWORD_RESET', 'SOCIAL_LOGIN_GUIDE', 'SIGNUP_CODE', 'EMAIL_CHANGE_CODE', 'EMAIL_CHANGED']);
 
 // 목적마다 제목·본문 만들기, 모르는 목적이면 던짐
 const renderTemplate = (template, params = {}) => {
@@ -33,6 +33,29 @@ const renderTemplate = (template, params = {}) => {
             text: `아래 인증번호를 입력해 이메일 인증을 완료해주세요.\n\n${params.code}\n\n`
                 + `이 인증번호는 발급 후 ${minutes}분 이내에만 사용할 수 있습니다. `
                 + '본인이 요청하지 않았다면 이 메일을 무시해주세요.',
+        };
+    }
+    if (template === 'EMAIL_CHANGE_CODE') {
+        const minutes = Math.max(1, Math.floor((params.expiresInSec ?? 0) / 60));
+        return {
+            subject: `[${GAME_NAME}] 이메일 변경 인증번호`,
+            text: `계정 이메일을 이 주소로 바꾸려면 아래 인증번호를 입력해주세요.
+
+${params.code}
+
+`
+                + `이 인증번호는 발급 후 ${minutes}분 이내에만 사용할 수 있습니다. `
+                + '본인이 요청하지 않았다면 이 메일을 무시해주세요.',
+        };
+    }
+    if (template === 'EMAIL_CHANGED') {
+        // 새 주소는 가려서 적음 (옛 주소를 다른 사람이 볼 수도 있음)
+        return {
+            subject: `[${GAME_NAME}] 계정 이메일이 바뀌었습니다`,
+            text: `계정 이메일이 ${params.maskedNewEmail ?? '새 주소'}(으)로 바뀌었습니다.
+
+`
+                + '본인이 바꾼 것이 아니라면 바로 고객센터로 알려주세요.',
         };
     }
     throw new Error('알 수 없는 메일 목적입니다.');

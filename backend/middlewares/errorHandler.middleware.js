@@ -26,6 +26,10 @@ exports.globalErrorHandler = (err, req, res, next) => {
     const SIGNUP_SCOPED_ERRORS = {
         SIGNUP_PROOF_REQUIRED: { status: 401, message: '이메일 인증이 필요합니다.' },
         SIGNUP_PROOF_INVALID: { status: 401, message: '이메일 인증 증명이 유효하지 않습니다.' },
+        // 약관 동의·만 14세 확인 (회원 기능)
+        TERMS_AGREEMENT_REQUIRED: { status: 400, message: '필수 약관에 동의해주세요.' },
+        AGE_CONFIRM_REQUIRED: { status: 400, message: '만 14세 이상인지 확인해주세요.' },
+        AGE_UNDER_14: { status: 400, message: '만 14세 미만은 가입할 수 없습니다.' },
     };
     const signupScopedPath = String(req.originalUrl || req.url || '')
         .split('?')[0].replace(/\/+$/, '').toLowerCase();

@@ -25,6 +25,7 @@ const { validateCodeRequest, validateCodeVerify } = require("../validations/auth
 const {
     requestSignupCode, verifySignupCode,
 } = require("../controllers/auth/signupEmailVerification");
+const { getCurrentTerms } = require("../controllers/auth/terms");
 
 // 로그인·중복 확인·refresh·소셜 가입 ip 제한 (env는 불러올 때 한 번 읽음)
 const accountLimiters = buildAccountRateLimiters(process.env, createRateLimiter);
@@ -33,6 +34,8 @@ const accountLimiters = buildAccountRateLimiters(process.env, createRateLimiter)
 router.post("/signup", signup);
 router.get("/check-email", accountLimiters.checkEmail, checkEmail);
 router.post("/login", accountLimiters.login, login);
+// 지금 약관 목록 (가입 화면·전체 보기 창, 로그인 전)
+router.get("/terms", getCurrentTerms);
 
 // 가입 인증 설정(번호 자리 수·제한 횟수)은 불러올 때 env에서 한 번 읽음
 const codeConfig = getSignupEmailConfig(process.env);

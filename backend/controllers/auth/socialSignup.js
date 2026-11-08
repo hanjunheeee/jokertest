@@ -28,7 +28,9 @@ exports.completeSocialSignup = async (req, res, next) => {
             deviceType: getDeviceType(userAgent),
         };
 
-        const { intentToken, nickname, birthDate, email, signupProof } = req.body ?? {};
+        const {
+            intentToken, nickname, birthDate, email, signupProof, agreedTermsVersionIds, ageConfirmed,
+        } = req.body ?? {};
 
         // 로그인 유지는 본문 말고 같은 의도의 시도 쿠키에서만 가져옴
         const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
@@ -36,7 +38,7 @@ exports.completeSocialSignup = async (req, res, next) => {
         const rememberMe = socialAuthService.rememberMeForSignup(attempt, intentToken);
 
         const { user, token, refreshToken, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
-            intentToken, nickname, birthDate, email, signupProof, rememberMe, reqInfo,
+            intentToken, nickname, birthDate, email, signupProof, agreedTermsVersionIds, ageConfirmed, rememberMe, reqInfo,
         });
 
         // 가입 끝났을 때만 시도 쿠키 지움 (실패면 남겨서 다시 시도 가능)

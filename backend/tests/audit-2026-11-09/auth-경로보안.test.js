@@ -25,6 +25,8 @@ const { createError } = require('../../utils/appError');
 const { findMissingEnv, assertRequiredEnv } = require('../../config/requiredEnv');
 const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 const { useAuthStore, swap } = require('./authFakes');
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const SECRET = 'audit-route-hmac-secret-0123456789';
 const PASSWORD = 'route-pass-123';

@@ -7,6 +7,8 @@ const db             = require("../../../models");
 const userRepository = require("../../../repositories/user");
 const authService    = require("../../../services/auth/account");
 const { prepareSignupProof } = require("../../helpers/signupProof");
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require("../../helpers/termsStub").passSignupTermsForFile();
 
 const createEconomyFakes = () => {
     const committedWallets = new Map();

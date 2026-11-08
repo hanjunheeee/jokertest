@@ -20,6 +20,8 @@ const { hashCode } = require('../../services/auth/signupEmailVerification/codes'
 const { buildResetUrl } = require('../../services/auth/passwordReset/tokens');
 const { getSignupEmailConfig } = require('../../config/signupEmailVerification');
 const { useAuthStore, swap, createClock, uniqueError } = require('./authFakes');
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const SECRET = 'audit-signup-hmac-secret-0123456789';
 const sha256 = (raw) => crypto.createHash('sha256').update(raw).digest('hex');

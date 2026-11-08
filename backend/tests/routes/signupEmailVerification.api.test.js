@@ -23,6 +23,8 @@ const userRepository = require("../../repositories/user");
 const authService = require("../../services/auth/account");
 const mailAdapterModule = require("../../utils/adapters/mail");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require("../helpers/termsStub").passSignupTermsForFile();
 
 const AUTH_ROUTES_PATH = require.resolve("../../routes/auth.routes");
 const RATE_LIMIT_PATH = require.resolve("../../middlewares/rateLimit.middleware");

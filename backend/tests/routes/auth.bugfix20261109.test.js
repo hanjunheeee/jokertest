@@ -20,6 +20,8 @@ const authService       = require("../../services/auth/account");
 const socialAuthService = require("../../services/auth/social");
 const passwordService   = require("../../services/auth/account/password");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
+// 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
+require("../helpers/termsStub").passSignupTermsForFile();
 
 const PASSWORD = "correct-horse";
 const REQ_INFO = { ip: "127.0.0.1", userAgent: "node-test", deviceType: "PC" };
