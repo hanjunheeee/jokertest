@@ -1,5 +1,5 @@
 // 방 목록 줄 설정 요약: 직업 구성·제한 시간 글자, 읽기 문구
-// RoomListRow가 씀, 서버가 준 방 설정을 표시만 함
+// 데스크톱 RoomListRow·모바일 RoomCard가 씀, 서버가 준 방 설정을 표시만 함
 import { isPlainObject } from "../../shared/utils/valueChecks.js"
 
 // 요약에 넣는 직업과 이름 (시민은 뺌)
@@ -25,10 +25,14 @@ export function summarizeRoomListSettings(settings) {
     roles = `${ROLE_LABELS.JOKER} ${settings.jokerCount}`
   }
 
-  // 시간: 토론·투표·밤 (숫자인 것만)
+  // 시간: 토론·투표·재판·밤 (숫자인 것만)
   const timeParts = []
   if (Number.isInteger(settings.dayDiscussionTime)) timeParts.push(`토론 ${settings.dayDiscussionTime}초`)
   if (Number.isInteger(settings.dayVoteTime)) timeParts.push(`투표 ${settings.dayVoteTime}초`)
+  // 재판: 낮 투표 시간과 다를 때만 (같거나 없으면 재판이 투표 시간을 따라감)
+  if (Number.isInteger(settings.tribunalTime) && settings.tribunalTime !== settings.dayVoteTime) {
+    timeParts.push(`재판 ${settings.tribunalTime}초`)
+  }
   if (Number.isInteger(settings.nightActionTime)) timeParts.push(`밤 ${settings.nightActionTime}초`)
   const times = timeParts.length > 0 ? timeParts.join(" · ") : null
 
