@@ -130,6 +130,7 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
         user_stats: new Map(),
     };
     const seenTransactions = [];
+    const roleQueries = [];
     let staged = null;
 
     const statsRow = (user_id, total_games = 0, survival_count = 0) => ({
@@ -213,6 +214,23 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
                     }));
             }
             requireTransaction({ transaction }, "findAll(game_result_players roles)");
+            roleQueries.push(where);
+            // 직업별 판 수 한 번에 (BE-065): user_id IN 목록 → { user_id, role, count }
+            const inList = where.user_id?.[db.Sequelize.Op.in];
+            if (Array.isArray(inList)) {
+                const rows = [];
+                for (const userId of inList) {
+                    const roles = [
+                        ...(committed.role_history.get(userId) ?? []),
+                        ...staged.game_result_players.filter((row) => row.user_id === userId).map((row) => row.role),
+                    ];
+                    const counts = new Map();
+                    for (const role of roles) counts.set(role, (counts.get(role) ?? 0) + 1);
+                    // MySQL COUNT는 글자로 올 수 있어 글자로 돌려줌
+                    for (const [role, count] of counts) rows.push({ user_id: userId, role, count: String(count) });
+                }
+                return rows;
+            }
             const prior = committed.role_history.get(where.user_id) ?? [];
             const current = staged.game_result_players
                 .filter((row) => row.user_id === where.user_id)
@@ -250,7 +268,7 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
         db.User                  = original.User;
     });
 
-    return { committed, seenTransactions };
+    return { committed, seenTransactions, roleQueries };
 };
 
 const stubPersistGameResult = (t, impl) => {
@@ -296,6 +314,19 @@ test("AC-01: game_results·game_result_players·user_stats가 단일 트랜잭�
     assert.equal(committed.game_result_players.length, 3);
     assert.ok(seenTransactions.length >= 5);
     assert.equal(new Set(seenTransactions.map((tx) => tx.id)).size, 1);
+});
+
+test("BE-065: 많이 한 직업은 참가자 수와 상관없이 한 번의 묶음 읽기로 셈 (같은 수면 직업 이름 순)", async (t) => {
+    const { committed, roleQueries } = setupFakeDb(t);
+    committed.role_history.set("u2", ["JOKER"]);
+
+    await persistGameResult(makeEndedSession(), { completed: true });
+
+    assert.equal(roleQueries.length, 1, "참가자마다 판 기록을 다시 읽음");
+    assert.deepEqual([...roleQueries[0].user_id[db.Sequelize.Op.in]].sort(), ["u1", "u2", "u3"]);
+    assert.equal(committed.user_stats.get("u1").most_played_role, "DOCTOR");
+    assert.equal(committed.user_stats.get("u2").most_played_role, "DOCTOR", "1:1 동점이면 이름 순");
+    assert.equal(committed.user_stats.get("u3").most_played_role, "JOKER");
 });
 
 test("AC-01: 저장 실패는 세 테이블 어디에도 흔적을 남기지 않는다(단일 트랜잭션 롤백)", async (t) => {

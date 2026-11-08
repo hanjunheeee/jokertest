@@ -2,6 +2,30 @@
 // 판 기록·직업 통계 서비스(services/game)가 부름, 판정·집계는 서비스 몫
 const db = require("../../models");
 
+// 계정마다 많이 한 직업 (계정 id → 직업), 같은 수면 직업 이름 순
+// 직업별 판 수를 GROUP BY 한 번으로 읽음, 예: [u1 DOCTOR 2, u1 CITIZEN 1] → u1: DOCTOR
+const findMostPlayedRoles = async (userIds, transaction) => {
+    const best = new Map();
+    if (userIds.length === 0) return best;
+    const rows = await db.GameResultPlayer.findAll({
+        attributes: ["user_id", "role", [db.sequelize.fn("COUNT", db.sequelize.col("role")), "count"]],
+        where: { user_id: { [db.Sequelize.Op.in]: userIds }, won: { [db.Sequelize.Op.ne]: null } },
+        group: ["user_id", "role"],
+        raw: true,
+        transaction,
+    });
+    for (const row of rows) {
+        if (typeof row.role !== "string") continue;
+        // MySQL COUNT는 글자로 올 수 있어 숫자로 바꿈
+        const count = Number(row.count);
+        const current = best.get(row.user_id);
+        if (!current || count > current.count || (count === current.count && row.role.localeCompare(current.role) < 0)) {
+            best.set(row.user_id, { role: row.role, count });
+        }
+    }
+    return new Map([...best].map(([userId, { role }]) => [userId, role]));
+};
+
 // 한 판 전적 쓰기, 판·참가자·계정 통계를 한 트랜잭션으로 (중간 실패면 셋 다 되돌림)
 // 같은 판 id 다시 저장(동시 경합 포함)은 실패 아니고 persisted:false로 넘김
 exports.persistGameResultRecord = async (record) => {
@@ -22,7 +46,7 @@ exports.persistGameResultRecord = async (record) => {
                 await db.GameResultPlayer.bulkCreate(players, { transaction });
             }
 
-            // 사람마다 판 수·생존·처형 더하고, 많이 한 직업은 그 사람 기록으로 다시 셈
+            // 사람마다 판 수·생존·처형 더함
             for (const delta of stats) {
                 await db.UserStats.increment(
                     {
@@ -32,23 +56,14 @@ exports.persistGameResultRecord = async (record) => {
                     },
                     { where: { user_id: delta.user_id }, transaction },
                 );
+            }
 
-                // 승패 정해진 판만 셈, 같은 수면 직업 이름 순 (방금 넣은 이 판 줄도 포함)
-                const roleRows = await db.GameResultPlayer.findAll({
-                    attributes: ["role"],
-                    where: { user_id: delta.user_id, won: { [db.Sequelize.Op.ne]: null } },
-                    raw: true,
-                    transaction,
-                });
-                const roleCounts = new Map();
-                for (const row of roleRows) {
-                    if (typeof row.role !== "string") continue;
-                    roleCounts.set(row.role, (roleCounts.get(row.role) ?? 0) + 1);
-                }
-                const mostPlayedRole = [...roleCounts]
-                    .sort(([roleA, countA], [roleB, countB]) => countB - countA || roleA.localeCompare(roleB))[0]?.[0] ?? null;
+            // 많이 한 직업: 이 판 사람들 직업별 판 수를 한 번에 묶어 셈 (BE-065, 사람마다 전체 기록 다시 읽지 않기)
+            // 승패 정해진 판만, 방금 넣은 이 판 줄도 포함
+            const mostPlayedRoles = await findMostPlayedRoles(stats.map((delta) => delta.user_id), transaction);
+            for (const delta of stats) {
                 await db.UserStats.update(
-                    { most_played_role: mostPlayedRole },
+                    { most_played_role: mostPlayedRoles.get(delta.user_id) ?? null },
                     { where: { user_id: delta.user_id }, transaction },
                 );
             }
