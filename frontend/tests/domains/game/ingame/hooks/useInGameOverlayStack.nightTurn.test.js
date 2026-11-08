@@ -151,6 +151,10 @@ test("오버레이 순서: 역할 공개 → 진입 연출 → 역할 턴 안내
   assert.equal(result.current.phaseEntrance.open, false)
   assert.equal(result.current.nightTurn.open, false)
 
+  // 저절로 연 역할 창은 단계가 넘어가면 닫힘(역할 공개 10초 규칙), 순서를 보려고 "내 역할 보기"로 다시 연 창으로 둠
+  act(() => {
+    result.current.roleReveal.reopen()
+  })
   applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
   assert.equal(result.current.phaseEntrance.open, false, "역할 공개가 먼저다")
   assert.equal(result.current.nightTurn.open, false)
@@ -172,6 +176,18 @@ test("오버레이 순서: 역할 공개 → 진입 연출 → 역할 턴 안내
   assert.equal(result.current.nightTurn.open, true)
   assert.equal(result.current.nightTurn.role, "JOKER")
   assert.equal(result.current.nightTurn.announcement.message, "광대의 시간입니다")
+
+  unmount()
+})
+
+test("저절로 연 역할 공개 창은 단계가 넘어가면 닫히고 진입 연출이 이어서 뜬다", () => {
+  const { result, unmount } = mountLiveOverlayStack()
+  assert.equal(result.current.roleReveal.open, true)
+
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 1 })
+  assert.equal(result.current.roleReveal.open, false)
+  assert.equal(result.current.phaseEntrance.open, true)
+  assert.equal(result.current.phaseEntrance.message, "밤이 되었습니다")
 
   unmount()
 })
