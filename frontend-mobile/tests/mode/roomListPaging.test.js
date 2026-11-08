@@ -155,3 +155,19 @@ test("방 안 고르고 입장 누르면 아무것도 안 부름", () => {
     act(() => result.current.enterRoom())
     assert.deepEqual(calls, { enter: [], code: [] })
 })
+
+test("마감 판정: 서버가 waiting으로 보내도 인원 찬 방·진행 중 방은 입장 잠김·글자 마감 (코드 방도)", () => {
+    for (const extra of [
+        { status: "waiting", current: 8, max: 8 },
+        { status: "waiting", current: 8, max: 8, accessType: "code" },
+        { status: "in_progress", current: 3, max: 8 },
+        { status: "full", current: 7, max: 8 },
+    ]) {
+        const { result, calls } = setup({ rooms: makeRooms(1, extra) })
+        act(() => result.current.selectRoom("방1"))
+        assert.equal(result.current.enterDisabled, true, JSON.stringify(extra))
+        assert.equal(result.current.enterLabel, "마감", JSON.stringify(extra))
+        act(() => result.current.enterRoom())
+        assert.deepEqual(calls, { enter: [], code: [] })
+    }
+})

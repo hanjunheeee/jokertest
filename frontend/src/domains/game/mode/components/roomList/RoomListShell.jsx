@@ -10,7 +10,7 @@ import {
   ROOM_LIST_SHELL_CLASS,
   ROOM_LIST_TOOLBAR_CLASS,
 } from "../../constants/roomListLayout.js"
-import { deriveRoomDisplayStatus } from "../../utils/deriveRoomDisplayStatus.js"
+import { deriveRoomDisplayStatus, isRoomClosedForEntry } from "../../utils/deriveRoomDisplayStatus.js"
 import RoomListActionButton from "./RoomListActionButton.jsx"
 import RoomListPanel from "./RoomListPanel.jsx"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
@@ -35,7 +35,8 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
 
   const selectedRoom = pageRooms.find((room) => room.id === selectedRoomId) ?? null
   const selectedRoomNeedsCode = selectedRoom?.accessType === "code"
-  const selectedRoomIsFull = selectedRoom?.status === "full"
+  // 인원 찬 방·진행 중 방도 마감 (서버 full 표시만 믿지 않음)
+  const selectedRoomIsFull = isRoomClosedForEntry(selectedRoom)
 
   // 고른 방이 목록에서 사라지면 고름 풂 (다시 생겨도 저절로 안 골라지게)
   if (selectedRoomId !== null && !rooms.some((room) => room.id === selectedRoomId)) {

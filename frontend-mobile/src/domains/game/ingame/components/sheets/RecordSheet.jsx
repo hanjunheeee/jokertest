@@ -1,6 +1,6 @@
 // 인게임 기록 시트: 플레이어 리스트(프로필·이름·판 수·승률)
 // InGamePage 위 줄이 { open, onClose }로 엶, 목록은 데스크톱 플레이어 세션 문맥 그대로 (PlayerRecordListContent와 같음)
-import { getPlayerRecordListFallbackProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
+import { resolvePlayerRecordListProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import Sheet from "./frame/Sheet.jsx"
 import RecordRow from "./record/RecordRow.jsx"
@@ -21,8 +21,8 @@ export default function RecordSheet({ open, onClose }) {
     >
       <ul aria-label="플레이어 전적 목록" className="flex flex-col">
         {players.map((player, index) => {
-          // 프로필 그림은 줄 순서대로 기본 그림을 돌려 씀 (데스크톱과 같음)
-          const fallback = getPlayerRecordListFallbackProfileAssets(index)
+          // 그 사람 사진·테두리, 없을 때만 줄 순서 기본 그림 (데스크톱과 같음)
+          const profile = resolvePlayerRecordListProfileAssets(player, index)
           const hasRecord = Object.hasOwn(player, "accountTotalGames") && Object.hasOwn(player, "accountWinRate")
           return (
             <RecordRow
@@ -31,8 +31,8 @@ export default function RecordSheet({ open, onClose }) {
               name={player.nickname}
               totalGames={hasRecord ? player.accountTotalGames : undefined}
               winRate={hasRecord ? player.accountWinRate : undefined}
-              profilePhotoSrc={fallback.profilePhotoSrc}
-              profileBorderSrc={fallback.profileBorderSrc}
+              profilePhotoSrc={profile.profilePhotoSrc}
+              profileBorderSrc={profile.profileBorderSrc}
             />
           )
         })}

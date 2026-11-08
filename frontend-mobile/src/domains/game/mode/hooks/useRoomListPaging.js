@@ -1,7 +1,7 @@
 // 방 목록 쪽 나누기·방 고르기·입장 버튼 상태
 // MultiplayEntryPage가 씀, 데스크톱 RoomListShell(화면 파일이라 못 부름) 안 판단을 그대로 옮김
 import { useMemo, useState } from "react"
-import { deriveRoomDisplayStatus } from "@/domains/game/mode/utils/deriveRoomDisplayStatus.js"
+import { deriveRoomDisplayStatus, isRoomClosedForEntry } from "@/domains/game/mode/utils/deriveRoomDisplayStatus.js"
 
 // 한 쪽 방 수 (데스크톱과 같음)
 export const PAGE_SIZE = 12
@@ -28,7 +28,8 @@ export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode 
   const selectedRoom = pageRooms.find((room) => room.id === selectedRoomId) ?? null
   if (selectedRoomId !== null && !selectedRoom) setSelectedRoomId(null)
   const needsCode = selectedRoom?.accessType === "code"
-  const isFull = selectedRoom?.status === "full"
+  // 인원 찬 방·진행 중 방도 마감 (서버 full 표시만 믿지 않음)
+  const isFull = isRoomClosedForEntry(selectedRoom)
 
   // 같은 방 다시 누르면 풀림
   const selectRoom = (roomId) => {
@@ -53,7 +54,7 @@ export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode 
   }
 
   const enterDisabled = !selectedRoom || isFull || isJoining
-  // 정원 찬 코드 방은 "마감" (코드를 쳐도 못 들어감)
+  // 꽉 찬 방·진행 중 방은 코드 방이어도 "마감" (잠긴 버튼에 "코드 입력"이 뜨지 않게)
   const enterLabel = isJoining ? "입장 중" : isFull ? "마감" : needsCode ? "코드 입력" : "입장하기"
 
   return {

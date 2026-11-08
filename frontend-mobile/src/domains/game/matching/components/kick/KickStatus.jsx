@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react"
 import { GAME_MATCHING_ASSETS } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import { PLAYER_ASSETS } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerAssets.js"
 import { KICK_REQUEST_STATUS } from "@/domains/game/ingame/constants/ingameKick.js"
+import { resolveKickErrorMessage } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { CONFIRM_BUTTON_LOOK as CONFIRM_LOOK, ERROR_CLASS, NOTE_CLASS } from "../../constants/voteFrameStyle.js"
 
@@ -55,7 +56,7 @@ export default function KickStatus({
       ) : null}
 
       {status === KICK_REQUEST_STATUS.FAILED ? (
-        <p role="alert" data-testid="kick-error" className={ERROR_CLASS}>{errorCode}</p>
+        <p role="alert" data-testid="kick-error" className={ERROR_CLASS}>{resolveKickErrorMessage(errorCode)}</p>
       ) : null}
       {status === KICK_REQUEST_STATUS.UNKNOWN ? (
         <p role="alert" data-testid="kick-unknown" className={ERROR_CLASS}>

@@ -29,5 +29,9 @@ export const LINK_DANGER_CLASS = `${LINK_BASE} text-[#ffb4b4] decoration-[#c9555
 export const ERROR_CLASS =
   "px-1 text-left font-subheading app-text-scaled [--app-text-size:0.82rem] leading-snug text-[#ffb3a7]"
 
+// 안내 글 (실패 아닌 알림, 데스크톱 SettingRoomTab 안내처럼 붉지 않게)
+export const NOTICE_CLASS =
+  "px-1 text-left font-subheading app-text-scaled [--app-text-size:0.82rem] leading-snug text-[#ebe2cc]/85"
+
 export const RETRY_CLASS =
   "ml-1.5 inline-flex min-h-11 cursor-pointer items-center border-0 bg-transparent p-0 align-middle underline decoration-dotted"

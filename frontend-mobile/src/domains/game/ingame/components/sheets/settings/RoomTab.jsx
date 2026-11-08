@@ -3,7 +3,7 @@
 import { INGAME_SETTING_ROOM_ROWS } from "@/domains/game/ingame/constants/controls/ingameSetting/ingameSettingData.js"
 import { useNextRoomSettings } from "@/domains/game/ingame/hooks/useNextRoomSettings.js"
 import RoomRow from "./RoomRow.jsx"
-import { ERROR_CLASS, RETRY_CLASS, TAB_BODY_CLASS } from "./rowStyle.js"
+import { ERROR_CLASS, NOTICE_CLASS, RETRY_CLASS, TAB_BODY_CLASS } from "./rowStyle.js"
 
 const KEEP_ROW_ID = "keep-settings-next-game"
 
@@ -33,9 +33,9 @@ export default function RoomTab() {
             checked={row.id === KEEP_ROW_ID ? enabled : row.defaultChecked}
             onChange={(next) => handleKeepChange(row.id, next)}
           />
-          {/* 유지 줄 아래 안내·오류 글, 저장 실패일 때만 다시 시도 버튼 */}
+          {/* 유지 줄 아래 안내·오류 글, 저장 실패(다시 시도 있음)만 경고 모양, 나머지는 안내 모양 (데스크톱과 같음) */}
           {row.id === KEEP_ROW_ID && statusMessage ? (
-            <p role="alert" className={ERROR_CLASS}>
+            <p role={canRetry ? "alert" : "status"} className={canRetry ? ERROR_CLASS : NOTICE_CLASS}>
               {statusMessage}
               {canRetry ? (
                 <button type="button" className={RETRY_CLASS} onClick={retry}>다시 시도</button>

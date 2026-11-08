@@ -1,7 +1,7 @@
 // 참가자 추방 창: 투표 창 틀 + 안내 글·진행 표시·대상 목록
 // GameMatchingPage가 씀, 값·동작은 데스크톱 useMatchingRoomKick 그대로 (데스크톱 SettingKickPlayerModal과 같은 틀·글)
 import { INGAME_KICK_PLAYER_MODAL_COPY as COPY } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
-import { getPlayerRecordListFallbackProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
+import { resolvePlayerRecordListProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import VoteFrameModal from "@m/shared/ui/modal/VoteFrameModal.jsx"
 import KickRow from "./KickRow.jsx"
 import KickStatus from "./KickStatus.jsx"
@@ -47,8 +47,8 @@ export default function KickSheet({ page }) {
 
       <ul aria-label={COPY.listAriaLabel} className="flex flex-col gap-1.5">
         {targets.map((player, index) => {
-          // 프로필 그림은 줄 순서대로 기본 그림을 돌려 씀 (데스크톱과 같음)
-          const { profilePhotoSrc, profileBorderSrc } = getPlayerRecordListFallbackProfileAssets(index)
+          // 그 사람 사진·테두리, 없을 때만 줄 순서 기본 그림 (데스크톱과 같음)
+          const { profilePhotoSrc, profileBorderSrc } = resolvePlayerRecordListProfileAssets(player, index)
           return (
             <KickRow
               key={player.membershipId ?? player.uuid}
