@@ -147,7 +147,7 @@ test("AC-10: 저장 버튼을 누르면 PUT 본문이 {slots, expectedRevision} 
   await waitFor(() => assert.equal(useEmojiPaletteStore.getState().revision, "r2"))
 })
 
-test("AC-11: 취소 버튼을 누르면 서버에서 마지막으로 불러온 팔레트로 복원된다", async () => {
+test("AC-11: 되돌리기(옛 취소) 버튼을 누르면 서버에서 마지막으로 불러온 팔레트로 복원된다", async () => {
   newWorld()
   const view = await mountReady()
 
@@ -155,7 +155,7 @@ test("AC-11: 취소 버튼을 누르면 서버에서 마지막으로 불러온 �
   await click(view, listButton(view, "깜짝"))
   assert.equal(slotContent(view, 1), "깜짝")
 
-  await click(view, view.getByRole("button", { name: "취소" }))
+  await click(view, view.getByRole("button", { name: "되돌리기" }))
 
   for (let index = 0; index < 8; index += 1) {
     assert.equal(slotContent(view, index + 1), DEFAULT_NAMES[index], "취소는 서버 값으로 되돌린다")

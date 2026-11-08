@@ -262,7 +262,8 @@ test("AC-06(Chrome 회귀): 긴 목록에서도 제목·닫기 버튼은 스크�
   const confirm = view.container.querySelector('[aria-label="닫기"]')
   assert.ok(content && scrollWrap && scroll && heading && confirm)
 
-  assert.equal(scrollWrap.parentElement, content)
+  // 본문 칸 안 세로 줄(MODAL_BODY_COLUMN_CLASS) 아래에 있음, DOM 노드는 equal 비교 시 차이 출력이 끝없이 커져 ok로 봄
+  assert.ok(content.contains(scrollWrap), "스크롤 래퍼는 본문 칸 안에 있다")
   assert.equal(confirm.closest('[data-notification-content="true"]'), null, "닫기는 본문 스크롤 영역 밖(프레임 위)에 있다")
   assert.equal(scroll.contains(heading), false)
   assert.equal(scroll.contains(confirm), false, "닫기 버튼이 목록과 함께 스크롤되면 화면 밖으로 밀린다")
@@ -286,7 +287,7 @@ test("AC-06(Chrome 회귀): 긴 목록에서도 제목·닫기 버튼은 스크�
   assert.ok(content.className.includes("absolute"), "본문은 프레임 inset 위에 배치된다")
   assert.ok(content.className.includes("overflow-hidden"), "본문 영역 자체는 스크롤하지 않는다")
 
-  assert.equal(document.activeElement, confirm)
+  assert.ok(document.activeElement === confirm, "열면 닫기 버튼에 초점")
   assert.equal(scroll.scrollTop, 0, "열자마자 목록은 맨 위(가장 새 알림)를 보여준다")
   assert.equal(rows[0].textContent.includes("알림 0"), true, "첫 행이 가장 새 알림이다")
 })
@@ -309,7 +310,8 @@ test("AC-06(Chrome 회귀): 프레임 이미지가 실패한 대체 패널에서
   const scrollWrap = view.container.querySelector("[data-notification-scroll-wrap]")
   assert.equal(view.container.querySelector("[data-notification-heading]"), null, "대체 패널에는 프레임 제목이 없다")
   assert.equal(view.container.querySelector('[aria-label="닫기"]').closest('[data-notification-content="true"]'), null)
-  assert.equal(scrollWrap.parentElement, content)
+  // 본문 칸 안 세로 줄(MODAL_BODY_COLUMN_CLASS) 아래에 있음, DOM 노드는 equal 비교 시 차이 출력이 끝없이 커져 ok로 봄
+  assert.ok(content.contains(scrollWrap), "스크롤 래퍼는 본문 칸 안에 있다")
   assert.equal(view.container.querySelectorAll("[data-notification-id]").length, 6)
   assert.ok(scrollWrap.className.includes("flex-1"))
   assert.ok(content.className.includes("max-h-[80svh]"), "대체 패널도 화면을 넘지 않는다")
@@ -559,8 +561,9 @@ test("AC-02: 해석할 수 없는 대상에는 이동 버튼 자체가 없다(�
   const view = mount(React.createElement(NotificationModal, { open: true, onClose: () => {} }))
   t.after(view.unmount)
 
-  assert.equal(view.container.querySelector('[data-notification-action="open-target"]'), null)
-  assert.equal(view.container.querySelector("[data-notification-action]"), null, "액션 버튼이 없어야 한다")
+  assert.ok(view.container.querySelector('[data-notification-action="open-target"]') === null)
+  // 바닥 줄 "읽은 메시지 삭제"도 같은 속성이라 항목 안만 봄, DOM 노드 equal 비교는 차이 출력이 끝없어 ok로 봄
+  assert.ok(view.container.querySelector("[data-notification-id] [data-notification-action]") === null, "항목에 액션 버튼이 없어야 한다")
 })
 
 test("AC-06: 확인 버튼·backdrop·Escape 모두 닫기를 부르고, 조회 실패 중에도 닫힌다", async (t) => {
@@ -598,10 +601,10 @@ test("AC-06: 닫으면 열기 전에 초점을 갖고 있던 요소로 초점이
   const view = mount(React.createElement(NotificationModal, { open: true, onClose: () => {} }))
   t.after(view.unmount)
 
-  assert.notEqual(document.activeElement, opener, "셸이 확인 버튼으로 초점을 옮긴다")
+  assert.ok(document.activeElement !== opener, "셸이 확인 버튼으로 초점을 옮긴다")
 
   view.rerender(React.createElement(NotificationModal, { open: false, onClose: () => {} }))
-  assert.equal(document.activeElement, opener)
+  assert.ok(document.activeElement === opener, "닫으면 연 버튼으로 초점 되돌림")
 })
 
 test("AC-05: 계정이 바뀌면 열려 있던 모달의 내용이 비워진다", async (t) => {

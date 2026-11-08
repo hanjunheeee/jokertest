@@ -28,7 +28,11 @@ mock.module("../../../../src/domains/user/api/emojiPalette.api.js", {
 
 const navigateCalls = []
 mock.module("react-router-dom", {
-  namedExports: { useNavigate: () => (...args) => navigateCalls.push(args) },
+  // 인게임 화면이 useLocation도 씀
+  namedExports: {
+    useNavigate: () => (...args) => navigateCalls.push(args),
+    useLocation: () => ({ pathname: "/ingame", search: "", hash: "", state: null, key: "test" }),
+  },
 })
 mock.module("../../../../src/domains/game/matching/hooks/useMatchingRoom.js", {
   namedExports: {

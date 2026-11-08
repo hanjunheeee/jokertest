@@ -1,6 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
+import { register } from "node:module"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   pretendToBeVisual: true,
@@ -21,7 +22,12 @@ installDomGlobal("MouseEvent", dom.window.MouseEvent)
 installDomGlobal("KeyboardEvent", dom.window.KeyboardEvent)
 installDomGlobal("MutationObserver", dom.window.MutationObserver)
 installDomGlobal("localStorage", dom.window.localStorage)
+// jsdom엔 없음, 알림 창 스크롤 막대가 씀
+installDomGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+// 알림 창이 .jsx(NotificationScrollArea)를 불러 jsx 읽기 도우미 필요
+register(new URL("../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 const React = (await import("react")).default
 const { act, createElement, useMemo, useState } = await import("react")
