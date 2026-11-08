@@ -2,13 +2,13 @@
 // LobbyPage가 씀
 import ProfileBanner from "@m/domains/lobby/components/top/ProfileBanner.jsx"
 
-// 데스크톱처럼 오른쪽 위에 둠, 프로필 받기 전엔 배너 자리만 비워 둠 (데스크톱은 안 그림, 모바일은 아래 메뉴가 안 튀게)
+// 모바일: 작은 배너를 화면 좌상단에 (RevealLayer 패딩은 음수 마진으로 맞춤)
 export default function TopBar({ profile, loading, onMyPage, onAccount }) {
     const ready = !loading && profile
 
     return (
-        <header className="flex items-center justify-end pt-[3%]">
-            <div className="min-w-0 w-[min(100%,26rem)] land:max-w-[19rem]">
+        <header className="-ml-2 mt-1 flex w-full items-start justify-start land:mt-1.5 md:-ml-6 md:mt-0">
+            <div className="min-w-0 w-[min(76vw,14.75rem)] land:w-[min(62vw,12.25rem)]">
                 {ready ? (
                     <ProfileBanner profile={profile} onMyPage={onMyPage} onAccount={onAccount} />
                 ) : (

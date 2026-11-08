@@ -10,6 +10,7 @@ export function useScrollbarThumb(
   trackRef,
   thumbRef,
   trackInset = CUSTOM_SCROLLBAR_TRACK_INSET,
+  syncKey,
 ) {
   const [thumbTop, setThumbTop] = useState(0)
   const [isScrollable, setIsScrollable] = useState(false)
@@ -134,7 +135,7 @@ export function useScrollbarThumb(
       window.removeEventListener("resize", sync)
       thumbEl.removeEventListener("load", onThumbLoad)
     }
-  }, [scrollRef, trackRef, thumbRef, sync])
+  }, [scrollRef, trackRef, thumbRef, sync, syncKey])
 
   return { thumbTop, isScrollable, onThumbPointerDown }
 }

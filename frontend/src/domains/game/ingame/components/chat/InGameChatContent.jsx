@@ -35,7 +35,7 @@ const CHAT_ROOT_BOARD_CLASS =
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
 
-// 채팅 한 판 그리기, variant는 컨텍스트로 아래 부품에 내려 줌 (틀 안 타이머는 채팅 틀만 켬)
+// 채팅 한 판 그리기, variant는 컨텍스트로 아래 부품에 내려 줌 (틀 안 타이머는 board·closeup)
 export default function InGameChatContent({
   variant = "board",
   draft,
@@ -47,6 +47,7 @@ export default function InGameChatContent({
   error = null,
   truncateDraftOnInput = true,
   showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerStatusLabel = null,
   embeddedPhaseTimerRemainingRatio = 0,
   embeddedPhaseTimerRemainingSec = null,
 }) {
@@ -118,6 +119,8 @@ export default function InGameChatContent({
         {showEmbeddedPhaseTimer ? (
           <InGamePhaseTurnTimerPanel
             placement={INGAME_TIMER_PLACEMENT.CHAT}
+            embeddedLayout={variant === "closeup" ? "closeup" : "board"}
+            statusLabel={embeddedPhaseTimerStatusLabel}
             remainingRatio={embeddedPhaseTimerRemainingRatio}
             remainingSec={embeddedPhaseTimerRemainingSec}
           />
@@ -126,7 +129,7 @@ export default function InGameChatContent({
         <div
           className={MSG_LIST_CONTAINER_CLASS}
           style={getMsgListInset(variant, {
-            withEmbeddedPhaseTimer: isBoard && showEmbeddedPhaseTimer,
+            withEmbeddedPhaseTimer: showEmbeddedPhaseTimer,
           })}
           data-chat-interactive
         >

@@ -1,6 +1,7 @@
 // 아이디 찾기 입력 칸·알림·버튼·다시 입력 링크 묶음
 // pages/FindIdPage.jsx가 찾기 전 화면에 씀
-import { FIND_ID_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
+import { FIND_ID_NICKNAME_WHITESPACE_MESSAGE } from "@/domains/auth/validation/recovery.js"
+import { useFindIdParchment } from "@m/domains/auth/hooks/recovery/useFindIdParchment.js"
 import FieldLabel from "./FieldLabel.jsx"
 import RecoveryAlert from "./RecoveryAlert.jsx"
 import RecoveryButton from "./RecoveryButton.jsx"
@@ -11,6 +12,9 @@ import { CalendarIcon, ProfileIcon } from "@m/shared/ui/input/InputIcons.jsx"
 // 보내는 중엔 fieldset으로 칸·버튼을 한 번에 잠금 (데스크톱과 같음)
 export default function FindIdForm({ status, nickname, setNickname, birthDate, setBirthDate, formError, onRetry }) {
   const isSubmitting = status === "submitting"
+  const whitespaceOnly =
+    formError === FIND_ID_NICKNAME_WHITESPACE_MESSAGE
+  useFindIdParchment({ status, formError })
 
   return (
     <fieldset disabled={isSubmitting} className="contents">
@@ -36,15 +40,14 @@ export default function FindIdForm({ status, nickname, setNickname, birthDate, s
           onChange={(e) => setBirthDate(e.target.value)}
           autoComplete="bday"
           leadingIcon={<CalendarIcon />}
+          placeholder="생일 날짜를 선택해주세요"
+          ariaLabel="생일 날짜를 선택해주세요"
+          inputClassName="auth-date-input--hint-sm auth-date-input--hint-10px"
+          datePlaceholderClassName="[--app-text-size:10px]"
         />
       </FieldLabel>
 
-      {formError && <RecoveryAlert>{formError}</RecoveryAlert>}
-
-      {/* 결과 알림: 못 찾음·요청 너무 많음·통신 실패 */}
-      {status === "notFound" && <RecoveryAlert>{FIND_ID_TEXT.notFound}</RecoveryAlert>}
-      {status === "rateLimited" && <RecoveryAlert>{FIND_ID_TEXT.rateLimited}</RecoveryAlert>}
-      {status === "failed" && <RecoveryAlert>{FIND_ID_TEXT.failed}</RecoveryAlert>}
+      {whitespaceOnly ? <RecoveryAlert>{formError}</RecoveryAlert> : null}
 
       <RecoveryButton label={isSubmitting ? "조회 중" : "아이디 찾기"} labelSize="large" disabled={isSubmitting} />
 

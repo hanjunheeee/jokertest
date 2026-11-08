@@ -26,6 +26,10 @@ export default function InGameChatCloseupOverlay({
   status = null,
   error = null,
   truncateDraftOnInput = true,
+  showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerStatusLabel = null,
+  embeddedPhaseTimerRemainingRatio = 0,
+  embeddedPhaseTimerRemainingSec = null,
 }) {
   // 열렸을 때만 Esc로 닫기 (닫는 소리 같이 냄)
   useEffect(() => {
@@ -97,6 +101,10 @@ export default function InGameChatCloseupOverlay({
                 status={status}
                 error={error}
                 truncateDraftOnInput={truncateDraftOnInput}
+                showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+                embeddedPhaseTimerStatusLabel={embeddedPhaseTimerStatusLabel}
+                embeddedPhaseTimerRemainingRatio={embeddedPhaseTimerRemainingRatio}
+                embeddedPhaseTimerRemainingSec={embeddedPhaseTimerRemainingSec}
               />
             </motion.div>
           </div>

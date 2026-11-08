@@ -3,16 +3,20 @@
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 
-// 데스크톱 새로고침처럼 누르면 그림만 줄어듦 (interactive-scale-sm), 누르는 칸은 44px
-export default function RefreshButton({ label, onClick }) {
+// 데스크톱 새로고침처럼 누르면 그림만 줄어듦 (interactive-scale-sm)
+export default function RefreshButton({ label, onClick, compact = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="group grid size-11 shrink-0 cursor-pointer place-items-center border-0 bg-transparent p-0"
+      className={`group grid shrink-0 cursor-pointer place-items-center border-0 bg-transparent p-0 ${compact ? "size-10" : "size-11"}`}
     >
-      <PublicAsset src={FRIEND_LIST_ASSETS.refreshButton} alt="" className="interactive-scale-sm h-auto w-7 select-none" />
+      <PublicAsset
+        src={FRIEND_LIST_ASSETS.refreshButton}
+        alt=""
+        className={`interactive-scale-sm h-auto select-none ${compact ? "w-6" : "w-7"}`}
+      />
     </button>
   )
 }

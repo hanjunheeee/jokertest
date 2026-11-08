@@ -17,7 +17,7 @@ export default function StoreBackdrop({ videoRef, introDone, onSkip }) {
                     muted
                     playsInline
                     preload="auto"
-                    className="absolute inset-0 z-10 h-full w-full object-cover object-center"
+                    className="absolute inset-0 z-10 h-full w-full object-cover object-[72%_center]"
                 />
             ) : (
                 <motion.img

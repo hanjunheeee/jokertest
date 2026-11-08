@@ -6,8 +6,8 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 // 액자 폭: 폰은 화면 폭 거의 다, 태블릿·가로는 상한
 const FRAME_WIDTH_CLASS = {
-  default: "max-w-[26rem] land:max-w-[22rem]! md:max-w-[28rem]",
-  signup: "max-w-[28rem] land:max-w-[24rem]! md:max-w-[30rem]",
+  default: "w-[94%] max-w-[20.5rem] land:max-w-[19rem]! md:w-full md:max-w-[28rem]",
+  signup: "w-[94%] max-w-[20.5rem] land:max-w-[19rem]! md:w-full md:max-w-[28rem]",
 }
 
 // 액자 그림(403×625) 9칸 자르기: 위(가면 장식)·네 모서리는 그대로, 가운데만 늘림 → 내용이 길어도 장식이 안 찌그러짐
@@ -22,7 +22,7 @@ const FRAME_STYLE = {
   borderImageWidth: `${at(SLICE.top)} ${at(SLICE.side)} ${at(SLICE.bottom)}`,
   borderImageRepeat: "stretch",
   // 안쪽 여백: 가면 장식 아래·테두리 안쪽부터 내용
-  padding: `${at(132)} ${at(36)} ${at(44)}`,
+  padding: `${at(124)} ${at(34)} ${at(40)}`,
 }
 
 // 내용이 길면 액자가 같이 길어짐 (안쪽 스크롤 없음, 페이지가 굴림), 브라우저 기본 입력 검사는 데스크톱처럼 켜 둠
@@ -39,7 +39,7 @@ export default function ParchmentFrame({ children, onSubmit, frameSize = "defaul
       <form
         onSubmit={handleSubmit}
         style={FRAME_STYLE}
-        className="flex aspect-[403/625] w-full flex-col justify-center gap-2"
+        className="flex aspect-[403/625] w-full flex-col justify-center gap-1.5"
       >
         {children}
       </form>

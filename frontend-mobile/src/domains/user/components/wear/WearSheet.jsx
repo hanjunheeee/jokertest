@@ -16,13 +16,17 @@ const confirmLabelOf = (status) => {
 
 // 세로: 직업 탭·미리보기 위, 목록 아래 / 폰 가로: 데스크톱처럼 목록 왼쪽, 탭·미리보기 오른쪽
 export default function WearSheet({ open, onClose }) {
-  const wear = useWearSheet({ open, onClose })
+  const wear = useWearSheet({ open })
   const isSaving = wear.confirmStatus === "saving"
   const hasFailed = wear.confirmStatus === "error" || wear.confirmStatus === "uncertain"
 
   return (
     <FullSheet open={open} onClose={onClose} label="스킨&카드 착용" title="스킨&카드 목록">
-      <div className="flex min-h-0 flex-1 flex-col land:flex-row-reverse land:gap-3 land:px-4 land:pt-1" inert={isSaving} aria-disabled={isSaving}>
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-x-hidden land:flex-row-reverse land:gap-3 land:overflow-x-visible land:px-4 land:pt-1"
+        inert={isSaving}
+        aria-disabled={isSaving}
+      >
         <div className="contents land:flex land:w-[52%] land:min-h-0 land:flex-col land:pb-2">
           <JobTabs tabs={wear.jobTabs} activeIndex={wear.activeJobIndex} onSelect={wear.setActiveJobIndex} />
           <Preview preview={wear.preview} onToggle={wear.togglePreviewMode} />
@@ -36,6 +40,7 @@ export default function WearSheet({ open, onClose }) {
         />
       </div>
       <ConfirmBar
+        compact
         label={confirmLabelOf(wear.confirmStatus)}
         saving={isSaving}
         error={hasFailed ? wear.confirmError : null}

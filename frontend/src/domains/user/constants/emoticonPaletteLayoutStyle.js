@@ -11,10 +11,10 @@ export const UI_FADE = {
 export const ROOT_CLASS = "relative z-10 flex h-full min-h-0 flex-col"
 
 export const MAIN_CLASS =
-  "relative flex min-h-0 flex-1 items-center justify-center px-[clamp(1rem,3cqw,2.5rem)] pt-[clamp(2rem,5vh,3.5rem)] pb-[clamp(4.5rem,10vh,6rem)]"
+  "relative flex min-h-0 flex-1 items-stretch justify-center px-[clamp(1rem,3cqw,2.5rem)] pt-[clamp(2rem,5vh,3.5rem)] pb-[clamp(4.5rem,10vh,6rem)]"
 
 export const CONTENT_CLASS =
-  "flex w-full min-h-0 max-w-[min(72rem,96vw)] flex-col gap-[clamp(0.35rem,0.8vh,0.55rem)]"
+  "flex min-h-0 w-full max-w-[min(72rem,96vw)] flex-1 flex-col gap-[clamp(0.35rem,0.8vh,0.55rem)]"
 
 // 위쪽 안내 줄·저장 완료 문구
 export const STATUS_WRAP_CLASS =
@@ -74,10 +74,10 @@ export const GRID_SCROLL_WRAP_CLASS =
   "relative min-h-0 flex-1 overflow-hidden"
 
 export const GRID_SCROLL_CLASS =
-  `absolute inset-0 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain pr-[clamp(0.75rem,1.5vw,1.05rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
+  `absolute inset-0 min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain pr-[clamp(0.95rem,2.1vw,1.3rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 export const GRID_SCROLLBAR_CLASS =
-  "z-[15] !right-[clamp(0.35rem,0.65vw,0.5rem)] !translate-x-0"
+  "z-[15] !right-[clamp(0.28rem,0.85vw,0.48rem)] !translate-x-0"
 
 export const GRID_GAP_CLASS =
   "gap-x-[clamp(0.2rem,0.38vw,0.32rem)] gap-y-[clamp(0.2rem,0.38vw,0.32rem)]"

@@ -5,7 +5,7 @@
 export default function SpreadPages({ left, right, side, twoColumn, pageKey, stickyRight = false }) {
   if (twoColumn) {
     return (
-      <div key={pageKey} className="grid min-h-full grid-cols-2 gap-0">
+      <div key={pageKey} className="grid min-h-0 grid-cols-2 gap-0">
         <div className="min-w-0 border-r border-[#2a1810]/20 pr-4">{left}</div>
         <div className={`min-w-0 pl-4 ${stickyRight ? "sticky top-0 self-start" : ""}`}>{right}</div>
       </div>

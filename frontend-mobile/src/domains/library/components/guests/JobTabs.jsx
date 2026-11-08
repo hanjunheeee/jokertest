@@ -7,7 +7,7 @@ import {
   JOB_TAB_LABEL_ACTIVE_CLASS,
   JOB_TAB_LABEL_INACTIVE_CLASS,
 } from "@/domains/library/constants/invitedGuests/layoutStyle.js"
-import { JOB_TAB_LABEL_CLASS } from "@m/domains/library/constants/guestsStyle.js"
+import { JOB_TAB_BTN_CLASS, JOB_TAB_LABEL_CLASS } from "@m/domains/library/constants/guestsStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { revealProps } from "@m/domains/library/constants/guestsMotion.js"
 
@@ -25,7 +25,7 @@ export default function JobTabs({ activeIndex, onSelect }) {
             aria-selected={active}
             aria-label={jobLabel}
             onClick={() => onSelect(index)}
-            className="relative flex min-h-11 min-w-0 items-center justify-center border-0 bg-transparent px-0.5 leading-none transition-transform duration-150 active:scale-95"
+            className={JOB_TAB_BTN_CLASS}
           >
             <PublicAsset
               src={active ? INVITED_GUESTS_ASSETS.jobTabActive : INVITED_GUESTS_ASSETS.jobTabInactive}

@@ -2,7 +2,8 @@
 // 로비가 { open, onClose }로 엶, 새 알림은 앱 루트 소켓 훅이 스토어에 넣어 바로 보임
 import { useEffect, useRef } from "react"
 
-import { NOTIFICATION_ASSETS } from "@/domains/notifications/constants/notificationAssets.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { NOTIFICATION_ASSETS } from "@m/domains/notifications/constants/notificationAssets.js"
 import CloseButton from "@m/shared/ui/button/CloseButton.jsx"
 import SheetPortal from "@m/shared/ui/sheet/SheetPortal.jsx"
 import {
@@ -16,7 +17,9 @@ import {
   FRAME_STYLE,
   PANEL_CLASS,
   TITLE_CLASS,
-  TITLE_STYLE,
+  TITLE_PLATE_CLASS,
+  TITLE_WRAP_CLASS,
+  TITLE_WRAP_STYLE,
   WRAP_CLASS,
 } from "@m/domains/notifications/constants/sheetStyle.js"
 import { useNotificationSheet } from "@m/domains/notifications/hooks/useNotificationSheet.js"
@@ -41,7 +44,12 @@ export default function NotificationSheet({ open, onClose }) {
         <div className={WRAP_CLASS}>
           <div role="dialog" aria-modal="true" aria-label="알림" className={PANEL_CLASS}>
             <div aria-hidden="true" className={FRAME_CLASS} style={FRAME_STYLE} />
-            <p className={TITLE_CLASS} style={TITLE_STYLE} data-notification-heading="true">알림</p>
+            <div className={TITLE_WRAP_CLASS} style={TITLE_WRAP_STYLE} data-notification-heading-wrap="true">
+              <PublicAsset src={NOTIFICATION_ASSETS.titlePlate} alt="" className={TITLE_PLATE_CLASS} />
+              <p className={TITLE_CLASS} data-notification-heading="true">
+                알림
+              </p>
+            </div>
             <CloseButton
               ref={closeButtonRef}
               label="닫기"

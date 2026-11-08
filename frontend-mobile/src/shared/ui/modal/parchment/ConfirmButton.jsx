@@ -22,7 +22,16 @@ const LABEL_CLASS =
 
 // 그림 버튼 하나, ref로 바깥에서 초점 줄 수 있음
 const ConfirmButton = forwardRef(function ConfirmButton(
-    { label = PARCHMENT_CONFIRM_LABEL, onClick, raised = false, sfxKind = "ui-confirm" },
+    {
+        label = PARCHMENT_CONFIRM_LABEL,
+        onClick,
+        raised = false,
+        sfxKind = "ui-confirm",
+        disabled = false,
+        src = BTN_ASSET,
+        buttonClassName = "",
+        labelClassName = "",
+    },
     ref,
 ) {
     return (
@@ -30,13 +39,14 @@ const ConfirmButton = forwardRef(function ConfirmButton(
             ref={ref}
             type="button"
             aria-label={label}
-            className={`${BTN_CLASS} ${raised ? RAISED_CLASS : TIGHT_CLASS}`}
+            disabled={disabled}
+            className={`${BTN_CLASS} ${raised ? RAISED_CLASS : TIGHT_CLASS} ${buttonClassName} disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100`.trim()}
             style={raised ? undefined : { outline: "none" }}
             data-sfx-kind={sfxKind}
             onClick={onClick}
         >
-            <PublicAsset src={BTN_ASSET} alt="" draggable={false} className={IMG_CLASS} />
-            <span className={LABEL_CLASS}>{label}</span>
+            <PublicAsset src={src} alt="" draggable={false} className={IMG_CLASS} />
+            <span className={`${LABEL_CLASS} ${labelClassName}`.trim()}>{label}</span>
         </button>
     )
 })

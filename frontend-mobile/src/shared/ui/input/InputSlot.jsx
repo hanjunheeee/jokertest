@@ -16,7 +16,8 @@ function toneOf(look, type, value) {
 // look = inputSlotLooks 이름 또는 같은 모양 객체 (한 화면만 쓰는 모양은 그 화면이 객체로 넘김)
 export default function InputSlot({
   look = "login", type = "text", name, value, onChange, placeholder, autoComplete, leadingIcon,
-  passwordToggle = false, disabled = false, inputMode, inputTestId, ariaLabel,
+  passwordToggle = false, disabled = false, inputMode, inputTestId, ariaLabel, inputClassName = "",
+  datePlaceholderClassName = "",
 }) {
   const style = typeof look === "string" ? INPUT_SLOT_LOOKS[look] : look
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -29,19 +30,32 @@ export default function InputSlot({
       <div className={style.row}>
         {leadingIcon ? <span className="pointer-events-none flex items-center">{leadingIcon}</span> : null}
 
-        <input
-          type={inputType}
-          name={name}
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
-          autoComplete={autoComplete}
-          disabled={disabled}
-          inputMode={inputMode}
-          aria-label={style.namedByPlaceholder ? ariaLabel ?? placeholder : ariaLabel}
-          data-testid={inputTestId}
-          className={`${style.input} ${toneOf(style, type, value)}`}
-        />
+        <div className="relative min-w-0 flex-1 self-stretch">
+          {/* type=date는 placeholder 속성이 화면에 안 나와서 빈 칸에 문구를 겹침 */}
+          {type === "date" && placeholder && !value ? (
+            <span
+              className={`pointer-events-none absolute inset-y-0 left-0 z-[1] flex max-w-[calc(100%-1.75rem)] items-center truncate font-subheading text-white/55 app-text-scaled [--app-text-size:11px] ${datePlaceholderClassName}`.trim()}
+              aria-hidden="true"
+            >
+              {placeholder}
+            </span>
+          ) : null}
+          <input
+            type={inputType}
+            name={name}
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            autoComplete={autoComplete}
+            disabled={disabled}
+            inputMode={inputMode}
+            aria-label={style.namedByPlaceholder ? ariaLabel ?? placeholder : ariaLabel}
+            data-testid={inputTestId}
+            className={`${style.input} w-full ${toneOf(style, type, value)} ${inputClassName} ${
+              type === "date" && placeholder && !value ? "auth-date-input--overlay-hint" : ""
+            }`.trim()}
+          />
+        </div>
 
         {/* 비밀번호 칸만 보기 버튼, 누르는 자리 44px (없으면 오른쪽 여백만) */}
         {passwordToggle ? (

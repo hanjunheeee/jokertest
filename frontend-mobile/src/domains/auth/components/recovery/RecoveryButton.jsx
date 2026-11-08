@@ -5,15 +5,15 @@ import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 // 데스크톱처럼 카드 폭 92%·그림 비율대로 높이, 잠기면 흐리게
 const LOOK = {
   button:
-    "relative mx-auto mt-2 block min-h-11 w-[92%] cursor-pointer border-0 bg-transparent p-0 leading-none transition-transform duration-200 ease-out active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100",
+    "relative mx-auto mt-2 block min-h-10 w-[98%] cursor-pointer border-0 bg-transparent p-0 leading-none transition-transform duration-200 ease-out active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100",
   img: "pointer-events-none block h-auto w-full select-none",
   label: "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading font-bold text-white",
 }
 
 // 글자 크기: 데스크톱 아이디 찾기는 16px, 나머지는 text-sm
 const LABEL_SIZE = {
-  large: "app-text-scaled [--app-text-size:16px]",
-  small: "app-text-scaled [--app-text-size:14px]",
+  large: "app-text-scaled [--app-text-size:15px]",
+  small: "app-text-scaled [--app-text-size:13px]",
 }
 
 // 제출 버튼이라 form 안에 둠 (Enter 제출도 같이 됨)

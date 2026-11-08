@@ -11,16 +11,16 @@ export default function DiscordSection() {
     const { message, clearMessage, startLink } = useDiscordLink()
 
     return (
-        <section className="flex flex-col gap-2">
+        <section className="flex flex-col gap-1.5">
             <SectionTitle>Discord 계정 연결</SectionTitle>
 
-            <form onSubmit={startLink} className="flex w-full flex-col gap-2">
+            <form onSubmit={startLink} className="flex w-full flex-col gap-1.5">
                 {message ? (
                     <button
                         type="button"
                         onClick={clearMessage}
                         aria-label="연결 결과 메시지 닫기"
-                        className="block min-h-11 w-full cursor-pointer border-0 bg-transparent p-0 text-left"
+                        className="block min-h-9 w-full cursor-pointer border-0 bg-transparent p-0 text-left"
                     >
                         <Feedback msg={message} />
                     </button>

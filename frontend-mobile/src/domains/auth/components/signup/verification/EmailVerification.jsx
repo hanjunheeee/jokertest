@@ -4,6 +4,11 @@ import { useLayoutEffect, useRef } from "react"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import { pickNotice, sendButtonLabel } from "@/domains/auth/utils/emailVerification/notice.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import {
+  CODE_SEND_BUTTON_CLASS,
+  SIGNUP_AUX_BUTTON_LOOK,
+  SIGNUP_AUX_CODE_SEND_LABEL_CLASS,
+} from "@m/domains/auth/components/signup/signupAuxButtonLook.js"
 import CodeRow from "@m/domains/auth/components/signup/verification/CodeRow.jsx"
 import Notice from "@m/domains/auth/components/signup/verification/Notice.jsx"
 
@@ -33,20 +38,21 @@ export default function EmailVerification({
   }, [notice?.text])
 
   return (
-    <div className="flex flex-col gap-1.5 rounded bg-white/10 px-2 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="px-1 font-subheading font-bold leading-none text-black app-text-scaled [--app-text-size:14px]">이메일 인증</span>
+    <div className="mx-auto flex w-[88%] flex-col gap-1.5 rounded bg-white/10 px-2 py-2">
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="pl-3 font-subheading font-bold leading-none text-black app-text-scaled [--app-text-size:13px]">이메일 인증</span>
         {/* 받기·재발송 버튼: 처음엔 보내는 중만 잠금, 그 뒤엔 canResend로 */}
         {!isVerified && (
           <ImageButton
+            look={SIGNUP_AUX_BUTTON_LOOK}
             data-testid="signup-code-send"
             onClick={() => handleRequestSignupCode()}
             disabled={stage === "unverified" ? isSending : !canResend}
             src={LOGIN_ASSETS.signupCodeSendButton}
             ariaLabel={sendLabel}
             label={sendLabel}
-            labelClassName="!text-black whitespace-nowrap app-text-scaled [--app-text-size:13px]"
-            className="w-[7.5rem] shrink-0"
+            labelClassName={SIGNUP_AUX_CODE_SEND_LABEL_CLASS}
+            className={CODE_SEND_BUTTON_CLASS}
           />
         )}
       </div>

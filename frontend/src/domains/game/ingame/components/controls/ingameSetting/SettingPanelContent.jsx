@@ -4,11 +4,13 @@ import { useRef } from "react"
 import {
   SCROLL_CLASS,
   SCROLL_WRAP_CLASS,
+  SETTING_FOOTER_ACTIONS_WRAP_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import { useInGameSettingIsHost } from "../../../hooks/useInGameSettingIsHost.js"
 import { useInGameSettingPanel } from "../../../hooks/useInGameSettingPanel.js"
 import SettingChatTab from "./SettingChatTab.jsx"
 import SettingRoomCodeButton from "./SettingRoomCodeButton.jsx"
+import SettingTimerPlacementButton from "./SettingTimerPlacementButton.jsx"
 import SettingRoomTab from "./SettingRoomTab.jsx"
 import SettingSoundTab from "./SettingSoundTab.jsx"
 import SettingTabs from "./SettingTabs.jsx"
@@ -35,7 +37,12 @@ function SettingTabPanel({
 
 
 // 방장일 때만 방관리 탭이 보임 (useInGameSettingIsHost로 봄)
-export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }) {
+export default function SettingPanelContent({
+  onOpenKickPlayer,
+  onOpenRoomCode,
+  timerPlacement,
+  onCycleTimerPlacement,
+}) {
   const scrollRef = useRef(null)
   const isHost = useInGameSettingIsHost()
   const { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted } =
@@ -67,7 +74,13 @@ export default function SettingPanelContent({ onOpenKickPlayer, onOpenRoomCode }
         <Scrollbar scrollRef={scrollRef} />
       </div>
 
-      <SettingRoomCodeButton onClick={() => onOpenRoomCode?.()} />
+      <div className={SETTING_FOOTER_ACTIONS_WRAP_CLASS}>
+        <SettingTimerPlacementButton
+          timerPlacement={timerPlacement}
+          onCycle={onCycleTimerPlacement}
+        />
+        <SettingRoomCodeButton onClick={() => onOpenRoomCode?.()} />
+      </div>
     </div>
   )
 }

@@ -19,7 +19,7 @@ export default function EmailCheckMessage({ status }) {
   if (!message) return null
 
   return (
-    <p aria-live="polite" className={`min-w-0 flex-1 break-keep text-right leading-tight app-text-scaled [--app-text-size:13px] ${message.tone}`}>
+    <p aria-live="polite" className={`min-w-0 flex-1 break-keep text-left leading-tight app-text-scaled [--app-text-size:13px] ${message.tone}`}>
       {message.text}
     </p>
   )

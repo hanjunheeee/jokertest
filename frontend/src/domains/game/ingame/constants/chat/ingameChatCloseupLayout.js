@@ -4,6 +4,7 @@ import {
   CONTENT_SHIFT_LEFT_FRAME,
   mapFrameInsetToLayoutBox,
 } from "./ingameChatFrameLayout.js"
+import { EMBEDDED_TIMER_LIST_OFFSET_FRAME } from "./ingameChatTimerLayout.js"
 
 // 열고 닫을 때 움직임
 export const PANEL_TRANSITION = {
@@ -65,6 +66,17 @@ const STATUS_LINE_INSET_FRAME_CLOSEUP = {
 // 틀 기준 자리를 화면 자리로 바꾼 값
 export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
   MSG_LIST_INSET_FRAME_CLOSEUP,
+)
+
+const MSG_LIST_INSET_FRAME_CLOSEUP_WITH_TIMER = {
+  top: MSG_LIST_INSET_FRAME_CLOSEUP.top + EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+  left: MSG_LIST_INSET_FRAME_CLOSEUP.left,
+  right: MSG_LIST_INSET_FRAME_CLOSEUP.right,
+  height: MSG_LIST_INSET_FRAME_CLOSEUP.height - EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+}
+
+export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
+  MSG_LIST_INSET_FRAME_CLOSEUP_WITH_TIMER,
 )
 
 export const INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(

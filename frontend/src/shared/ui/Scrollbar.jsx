@@ -21,6 +21,7 @@ export default function Scrollbar({
   trackInset = CUSTOM_SCROLLBAR_TRACK_INSET,
   alwaysVisible = false,
   className = "",
+  syncKey,
 }) {
   const trackRef = useRef(null)
 
@@ -31,6 +32,7 @@ export default function Scrollbar({
     trackRef,
     thumbRef,
     trackInset,
+    syncKey,
   )
 
   const wrapStyle =

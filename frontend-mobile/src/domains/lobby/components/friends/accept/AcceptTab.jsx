@@ -1,4 +1,4 @@
-// 요청 수락 탭 (검색·전부 수락·결과 안내·오류·대상 없음 안내·신청 목록·뒤로)
+// 요청 수락 탭 (전부 수락·검색·결과 안내·오류·대상 없음 안내·신청 목록·뒤로)
 // SheetBody가 accept 탭일 때 그림
 import { FILTER_MSGS, FILTER_SEARCH, FRIEND_LIST_FILTER_FIELDS } from "@/domains/lobby/constants/friendListFilter.js"
 import { ACCEPT_EMPTY_CLASS } from "@/domains/lobby/constants/friendListStyle.js"
@@ -26,14 +26,14 @@ export default function AcceptTab({
     && !incomingRequests.some((request) => request.request_id === targetRequestId)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="-mt-2 flex min-h-0 flex-1 flex-col">
+      <AcceptToolbar running={acceptAllResult?.running === true} onAcceptAll={onAcceptAll} onRefresh={onRefresh} />
       <SearchBar
         label={FILTER_SEARCH.acceptTab.label}
         placeholder={FILTER_SEARCH.acceptTab.placeholder}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      <AcceptToolbar running={acceptAllResult?.running === true} onAcceptAll={onAcceptAll} onRefresh={onRefresh} />
       <div className={SCROLL_CLASS}>
         {summary !== null ? (
           <div role="status" data-accept-all-status="true" className={ACCEPT_EMPTY_CLASS}>

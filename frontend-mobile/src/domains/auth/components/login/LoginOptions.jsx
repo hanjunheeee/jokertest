@@ -7,13 +7,13 @@ import { LINK_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 // 좁은 폰에선 두 줄로 넘어가게 wrap, 찾기 링크는 /find-id, /password-reset/request로
 export default function LoginOptions({ rememberMe, onRememberMeChange }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-2">
+    <div className="mx-auto -my-1 flex w-[88%] flex-wrap items-center justify-between gap-x-2 gap-y-0">
       <RememberMe checked={rememberMe} onChange={onRememberMeChange} />
 
       <div className="flex shrink-0 items-center gap-1">
-        <Link to="/find-id" className={LINK_CLASS}>아이디 찾기</Link>
+        <Link to="/find-id" className={`${LINK_CLASS} !min-h-8`}>아이디 찾기</Link>
         <span className="text-white/40" aria-hidden="true">|</span>
-        <Link to="/password-reset/request" className={LINK_CLASS}>비밀번호 찾기</Link>
+        <Link to="/password-reset/request" className={`${LINK_CLASS} !min-h-8`}>비밀번호 찾기</Link>
       </div>
     </div>
   )

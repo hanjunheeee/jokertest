@@ -1,7 +1,7 @@
 // 초대받은 자들 앞면 (직업 이름·직업 설명·서 있는 그림·나의 직업 전적)
 // guests/InvitedGuestsView.jsx가 씀
 import { motion } from "framer-motion"
-import { JOB_TITLE_CLASS } from "@m/domains/library/constants/guestsStyle.js"
+import { INVITED_TABLE_PANEL_CLASS, JOB_TITLE_CLASS } from "@m/domains/library/constants/guestsStyle.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import MyStats from "@m/domains/library/components/guests/MyStats.jsx"
 import { SECTION_TITLE_CLASS, SMALL_TEXT_CLASS } from "@m/domains/library/constants/libraryStyle.js"
@@ -38,7 +38,7 @@ export default function JobIntroPage({ content, onRetry }) {
           ))}
         </section>
       </motion.div>
-      <motion.div {...revealProps("leftLower")}>
+      <motion.div className={INVITED_TABLE_PANEL_CLASS} {...revealProps("leftLower")}>
         <MyStats content={content} onRetry={onRetry} />
       </motion.div>
     </div>

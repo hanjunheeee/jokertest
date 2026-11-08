@@ -18,6 +18,8 @@ export default function InGameTimebarExpandedTimer({
   remainingRatio = 0,
   remainingSec = null,
   variant = "timebar",
+  digitsClassName = DIGITS_CLASS,
+  markerClassName = MARKER_CLASS,
 }) {
   const hasActiveCountdown = Number.isFinite(remainingSec) && remainingSec >= 0
   const clockText = hasActiveCountdown ? formatInGameTimebarClock(remainingSec) : "00:00"
@@ -56,10 +58,10 @@ export default function InGameTimebarExpandedTimer({
         <PublicAsset
           src={INGAME_TIMEBAR_ASSETS.timerCenterMarker}
           alt=""
-          className={MARKER_CLASS}
+          className={markerClassName}
           style={{ left: `${markerLeftPercent}%`, opacity: markerOpacity }}
         />
-        <span className={DIGITS_CLASS} role="timer" aria-live="polite">
+        <span className={digitsClassName} role="timer" aria-live="polite">
           {clockText}
         </span>
       </div>

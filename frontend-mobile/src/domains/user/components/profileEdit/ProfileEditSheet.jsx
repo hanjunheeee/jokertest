@@ -39,6 +39,7 @@ export default function ProfileEditSheet({ open, onClose }) {
     <FullSheet
       open={open}
       onClose={onClose}
+      variant="centered"
       label="프로필 수정"
       header={<Tabs activeTab={editor.activeTab} onTabChange={editor.setActiveTab} />}
       className={SHEET_CLASS}
@@ -46,11 +47,12 @@ export default function ProfileEditSheet({ open, onClose }) {
     >
       <div className="flex min-h-0 flex-1 flex-col land:flex-row">
         <div className="land:flex land:w-[38%] land:items-center land:justify-center land:border-r land:border-[#2a1810]/12">
-          <Preview photoSrc={draftPhoto} frameSrc={draftFrame} />
+          <Preview compact photoSrc={draftPhoto} frameSrc={draftFrame} />
         </div>
-        <OptionGrid editor={editor} />
+        <OptionGrid editor={editor} compact />
       </div>
       <ConfirmBar
+        compact
         label={saving ? "저장 중…" : "수정하기"}
         ariaLabel="수정하기"
         saving={saving}
@@ -59,7 +61,7 @@ export default function ProfileEditSheet({ open, onClose }) {
         src={STORE_ASSETS.purchaseButton}
         errorClass={ERROR_TEXT_CLASS}
         errorRole={null}
-        className={LINE_CLASS}
+        className={`${LINE_CLASS} py-1.5`}
       />
     </FullSheet>
   )

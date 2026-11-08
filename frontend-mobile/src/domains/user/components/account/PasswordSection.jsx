@@ -17,10 +17,10 @@ export default function PasswordSection({ pwForm, handlePwChange, pwMsg, pwLoadi
     }
 
     return (
-        <section className="flex flex-col gap-2 border-b border-[#8b6a3e]/30 pb-4">
+        <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
             <SectionTitle>비밀번호 변경</SectionTitle>
 
-            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-2">
+            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-1.5">
                 <InputSlot
                     name="currentPassword"
                     value={pwForm.currentPassword}

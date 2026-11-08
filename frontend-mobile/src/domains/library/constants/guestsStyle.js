@@ -9,6 +9,13 @@ export const JOB_TITLE_CLASS =
 export const JOB_TAB_LABEL_CLASS =
   "relative z-10 truncate font-subheading app-text-scaled [--app-text-size:0.7rem] font-bold tracking-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+export const JOB_TAB_BTN_CLASS =
+  "relative flex h-8 min-w-0 items-center justify-center border-0 bg-transparent px-0.5 py-0 leading-none transition-transform duration-150 active:scale-95 land:h-7"
+
+// 전적·도전과제 표 칸 (살짝 들어간 양피지 톤, 구분선 대신 블록으로 나눔)
+export const INVITED_TABLE_PANEL_CLASS =
+  "rounded-[0.45rem] bg-[#2a1810]/[0.06] px-3 py-3 shadow-[inset_0_0_0_1px_rgba(42,24,16,0.16)]"
+
 // 순위 칸: 1위·2~3위·나머지 모양 다름
 const RANK_BASE = "text-center font-display tabular-nums leading-none antialiased"
 const RANK_TIER_CLASS = {

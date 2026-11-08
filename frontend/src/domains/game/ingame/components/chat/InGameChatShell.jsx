@@ -50,6 +50,7 @@ export default function InGameChatShell({
           {...chatProps}
           onOpenCloseup={() => setCloseupOpen(true)}
           showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+          embeddedPhaseTimerStatusLabel={statusLabel}
           embeddedPhaseTimerRemainingRatio={remainingRatio}
           embeddedPhaseTimerRemainingSec={remainingSec}
         />
@@ -59,6 +60,10 @@ export default function InGameChatShell({
         open={closeupOpen}
         onClose={() => setCloseupOpen(false)}
         {...chatProps}
+        showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+        embeddedPhaseTimerStatusLabel={statusLabel}
+        embeddedPhaseTimerRemainingRatio={remainingRatio}
+        embeddedPhaseTimerRemainingSec={remainingSec}
       />
     </>
   )

@@ -3,6 +3,7 @@
 import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import { useAudioControl } from "@/shared/hooks/useAudioControl.js"
 import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
+import { MOBILE_SOUND_BAR_HIDDEN } from "@m/shared/constants/mobileSoundUi.js"
 import MuteButton from "@m/shared/ui/sound/MuteButton.jsx"
 import RangeSlider from "@m/shared/ui/slider/RangeSlider.jsx"
 
@@ -12,6 +13,7 @@ const BAR_EDGE = { startPct: 20, endPct: 8 }
 // 값·동작은 데스크톱 useAudioControl, 0~1 값을 0~100 칸으로 바꿔 씀
 export default function BgmControl() {
     const control = useAudioControl(getGlobalBgmRef())
+    if (MOBILE_SOUND_BAR_HIDDEN) return null
     const { sliderValue, disabled, onVolumeChange } = control
     const percent = Math.round(sliderValue * 100)
 

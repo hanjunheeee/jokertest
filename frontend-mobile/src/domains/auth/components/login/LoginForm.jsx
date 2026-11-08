@@ -40,8 +40,8 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
         src="/button/버튼 프레임2.png"
         ariaLabel="로그인"
         label="로그인"
-        labelClassName="app-text-scaled [--app-text-size:22px]"
-        className="mx-auto w-[92%]"
+        labelClassName="app-text-scaled [--app-text-size:20px]"
+        className="mx-auto w-[88%]"
       />
 
       <SocialButtons rememberMe={rememberMe} />

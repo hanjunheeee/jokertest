@@ -1,8 +1,22 @@
 // 모바일 서고 모양 class와 그림 경로 (양피지 쪽·잉크 글자·누르는 자리)
 // library/components 전부가 씀, 색·글꼴은 데스크톱 서고 constants와 같은 값
+import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 // 쪽 바탕: 데스크톱 책 그림은 가로 펼침면이라 한 쪽만 못 잘라 씀 → 같은 결의 양피지 그림
 export const PARCHMENT_SRC = "/frame/양피지 모달.png".normalize("NFD")
+
+// 목차: 책 프레임 상단 중앙에 반쯤 걸침 (데스크톱 libraryLayoutStyle과 같은 배치)
+export const BOOK_TOC_WRAP_CLASS =
+  "pointer-events-none absolute left-1/2 top-1.5 z-20 w-[clamp(7.25rem,38vw,10.5rem)] -translate-x-1/2 land:top-1"
+export const BOOK_TOC_IMG_CLASS = "block h-auto w-full select-none"
+
+// 책 본문 스크롤 (matching/friendInviteModalLayout.js SCROLL_* 와 같은 구조)
+export const BOOK_SCROLL_WRAP_CLASS = "relative h-full min-h-0 w-full flex-1"
+
+export const BOOK_SCROLL_AREA_CLASS = `h-full min-h-0 w-full overflow-x-hidden overflow-y-auto overscroll-contain pb-3 pl-4 pr-[clamp(1.45rem,6vw,1.85rem)] pt-2 text-left md:pl-6 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
+
+export const BOOK_SCROLLBAR_CLASS =
+  "z-20 !right-[clamp(0.12rem,0.55vw,0.28rem)] !top-0 !bottom-0 !w-[clamp(0.72rem,1.05rem,0.95rem)] !translate-x-0 origin-top"
 
 // 잉크 글자 공통 (데스크톱 forbiddenRecords·invitedGuests 글자색)
 const INK = "font-subheading antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.08)]"

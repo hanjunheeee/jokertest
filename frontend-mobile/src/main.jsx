@@ -6,9 +6,12 @@ import '@m/app/index.css'
 import App from '@m/app/App'
 import { handleAuthUnauthorized } from '@/domains/auth/api/unauthorized'
 import { setUnauthorizedHandler } from '@/shared/api/response'
+import { installParchmentAlert } from '@m/shared/ui/modal/parchment/parchmentAlert.js'
 
 // 로그인 풀린 401은 데스크톱과 같은 auth 처리(로그아웃 → /login)로 넘김
 setUnauthorizedHandler(handleAuthUnauthorized)
+// 공용 로직의 alert → 양피지 안내 창 (ParchmentAlertHost)
+installParchmentAlert()
 
 // StrictMode는 개발 때 효과를 두 번 돌려 정리 빠짐을 드러냄
 createRoot(document.getElementById('root')).render(

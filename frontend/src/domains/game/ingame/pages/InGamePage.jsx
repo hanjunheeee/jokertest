@@ -18,7 +18,6 @@ import InGameTopControls from "../components/controls/InGameTopControls.jsx"
 import PlayerRecordListPanel from "../components/controls/playerRecordList/PlayerRecordListPanel.jsx"
 import SettingPanel from "../components/controls/ingameSetting/SettingPanel.jsx"
 import InGameVoteStatusPanel from "../components/vote/InGameVoteStatusPanel.jsx"
-import InGameTimerPlacementDevToggle from "../components/timebar/InGameTimerPlacementDevToggle.jsx"
 import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import InGameCornerActionPanel from "../components/actions/InGameCornerActionPanel.jsx"
 import InGameTribunalPresentationGate from "../components/tribunalPresentation/InGameTribunalPresentationGate.jsx"
@@ -214,10 +213,6 @@ export default function InGamePage() {
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
-      <InGameTimerPlacementDevToggle
-        timerPlacement={timerPlacement}
-        onCycle={cycleTimerPlacement}
-      />
       <InGameBackground />
 
       <InGamePlayerSessionProvider>
@@ -255,7 +250,12 @@ export default function InGamePage() {
               open={sidePanel.recordsOpen}
               onClose={sidePanel.close}
             />
-            <SettingPanel open={sidePanel.settingsOpen} onClose={sidePanel.close} />
+            <SettingPanel
+              open={sidePanel.settingsOpen}
+              onClose={sidePanel.close}
+              timerPlacement={timerPlacement}
+              onCycleTimerPlacement={cycleTimerPlacement}
+            />
             <InGameVoteStatusPanel
               open={voteStatusOpen}
               onClose={() => setVoteStatusOpen(false)}

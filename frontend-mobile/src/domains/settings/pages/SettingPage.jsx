@@ -7,6 +7,8 @@ import { SETTING_ASSETS } from "@/domains/settings/constants/settingAssets.js"
 import { BG_FADE_TRANSITION, UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { useVideoIntro } from "@/shared/hooks/useVideoIntro.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
+import { MOBILE_SOUND_BAR_HIDDEN } from "@m/shared/constants/mobileSoundUi.js"
+import BottomBackFixed from "@m/shared/ui/button/BottomBackFixed.jsx"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
 import BgmControl from "../components/controls/BgmControl.jsx"
 import SettingContent from "../components/layout/SettingContent.jsx"
@@ -39,15 +41,15 @@ export default function SettingPage() {
 
             {introDone ? (
                 <motion.div
-                    className="relative z-10 flex min-h-0 flex-1 flex-col"
+                    className="relative z-10 flex min-h-0 flex-1 flex-col pt-4 land:pt-2"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={UI_REVEAL_TRANSITION}
                 >
                     {/* 폰 가로는 높이가 모자라서 뒤로 버튼과 탭을 한 줄로 */}
-                    <div className="flex shrink-0 flex-col land:flex-row land:items-center">
-                        <SettingTopBar onBack={() => navigate("/lobby")} />
-                        <div className="land:flex-1 land:pr-14">
+                    <div className="flex shrink-0 flex-col land:flex-row land:items-center land:pr-14">
+                        <SettingTopBar hideBack />
+                        <div className="land:flex-1">
                             <SettingTabs activeTab={activeTab} onSelect={setActiveTab} />
                         </div>
                     </div>
@@ -55,11 +57,12 @@ export default function SettingPage() {
                     {/* 세로는 배경이 높이에 맞춰져 아래 나무 띠가 늘 10% → 글이 그 위로 안 내려가게 비움
                         (가로는 폭에 맞춰져 띠가 잘려 나감) */}
                     <div className="shrink-0 basis-[9%] land:basis-0" aria-hidden="true" />
+                    <BottomBackFixed onClick={() => navigate("/lobby")} />
                 </motion.div>
             ) : null}
 
             {/* 바닥 줄: 데스크톱 오른쪽 아래 배경음 조절 자리 */}
-            {introDone ? (
+            {introDone && !MOBILE_SOUND_BAR_HIDDEN ? (
                 <ShellBottom>
                     <div className="flex h-14 items-center justify-end border-t border-[#c4a574]/30 bg-[linear-gradient(#2a1d14,#140c08)] px-3 land:h-12">
                         <BgmControl />

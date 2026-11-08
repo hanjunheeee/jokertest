@@ -29,7 +29,7 @@ export default function EmoticonWheelSection({ page }) {
           onClick={page.handleSave}
         />
         <EmoticonPaletteImageButton
-          label="취소"
+          label="되돌리기"
           src={EMOTICON_PALETTE_ASSETS.cancelButton}
           disabled={!page.isReady || page.saving}
           onClick={page.handleCancel}

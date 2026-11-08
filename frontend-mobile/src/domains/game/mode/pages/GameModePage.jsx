@@ -3,6 +3,7 @@
 import { useNavigate } from "react-router-dom"
 import { useMatchmakingSearch } from "@/domains/game/mode/hooks/useMatchmakingSearch.js"
 import ModeBackdrop from "@m/domains/game/mode/components/common/ModeBackdrop.jsx"
+import BottomBackFixed from "@m/shared/ui/button/BottomBackFixed.jsx"
 import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
 import TopBar from "@m/shared/ui/top/TopBar.jsx"
 import ModeCardList from "@m/domains/game/mode/components/modeSelect/ModeCardList.jsx"
@@ -24,18 +25,19 @@ export default function GameModePage() {
   }
 
   return (
-    <div className="relative flex min-h-full flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <ModeBackdrop />
 
       <div className="relative z-10 flex flex-1 flex-col">
-        <TopBar onBack={() => navigate("/lobby")} right={<SoundMenu look="mode" />} />
+        <TopBar hideBack right={<SoundMenu look="mode" />} />
 
-        {/* 남는 높이 가운데에 카드 (카드가 길면 그냥 스크롤) */}
-        <div className="flex flex-1 flex-col justify-center">
+        {/* 카드 3장 세로·한 화면(스크롤 없음), ModeCardList가 높이·비대칭 배치 담당 */}
+        <div className="flex min-h-0 flex-1 flex-col pb-1 pt-1">
           <ModeCardList onModeSelect={handleModeSelect} />
         </div>
       </div>
 
+      <BottomBackFixed onClick={() => navigate("/lobby")} />
       <SearchOverlay open={isSearching} onCancel={cancelQuickMatch} />
     </div>
   )

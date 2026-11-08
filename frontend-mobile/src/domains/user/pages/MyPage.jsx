@@ -27,7 +27,7 @@ export default function MyPage() {
 
     // 프로필 수정·스킨&카드 착용 시트는 주소 ?sheet=로 열고 닫음 (폰 뒤로 가기로 닫히게)
     return (
-        <ScreenFrame title="마이페이지" onBack={() => navigate("/lobby")}>
+        <ScreenFrame title="마이페이지" backAtBottom onBack={() => navigate("/lobby")}>
             <div className="mx-auto flex w-full max-w-[26rem] flex-col gap-3 px-4 pb-4 md:max-w-[30rem] land:max-w-[52rem] lg:max-w-[52rem]">
                 {showNotice ? <StaleNotice hasProfile={Boolean(profile)} error={error} onRetry={retry} /> : null}
 
@@ -40,7 +40,7 @@ export default function MyPage() {
                         {/* 가면·기록은 데스크톱 본문처럼 서서히 나타남 (띠는 바로) */}
                         {description ? (
                             <motion.div
-                                className="land:col-start-2 land:row-span-2 land:row-start-1 lg:col-start-2 lg:row-span-2 lg:row-start-1"
+                                className="mt-3 land:col-start-2 land:row-span-2 land:mt-0 land:row-start-1 lg:col-start-2 lg:row-span-2 lg:mt-0 lg:row-start-1"
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 transition={MY_PAGE_UI_FADE}
@@ -49,7 +49,7 @@ export default function MyPage() {
                             </motion.div>
                         ) : null}
                         <motion.div
-                            className="land:col-start-1 land:row-start-2 lg:col-start-1 lg:row-start-2"
+                            className={`land:col-start-1 land:row-start-2 lg:col-start-1 lg:row-start-2 ${description ? "" : "mt-3"} land:mt-0 lg:mt-0`}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             transition={MY_PAGE_UI_FADE}

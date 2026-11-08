@@ -8,7 +8,12 @@ import SettingPanelContent from "./SettingPanelContent.jsx"
 import { useInGameStore } from "../../../store/ingameStore.js"
 
 // 설정 창이 추방 창·방 코드 창 여닫기를 들고 있음
-export default function SettingPanel({ open, onClose }) {
+export default function SettingPanel({
+  open,
+  onClose,
+  timerPlacement,
+  onCycleTimerPlacement,
+}) {
   const [kickModalOpen, setKickModalOpen] = useState(false)
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
   const roomCode = useInGameStore((s) => s.state?.roomCode ?? null)
@@ -33,6 +38,8 @@ export default function SettingPanel({ open, onClose }) {
         <SettingPanelContent
           onOpenKickPlayer={() => setKickModalOpen(true)}
           onOpenRoomCode={() => setRoomCodeOpen(true)}
+          timerPlacement={timerPlacement}
+          onCycleTimerPlacement={onCycleTimerPlacement}
         />
       </SidePanel>
 

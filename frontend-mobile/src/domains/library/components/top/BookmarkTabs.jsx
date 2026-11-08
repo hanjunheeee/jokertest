@@ -1,5 +1,5 @@
 // 금지된 기록·초대받은 자들 책갈피 두 개 (데스크톱 책갈피 그림, 책 오른쪽 세로 대신 위 줄 가로)
-// top/LibraryTopBar.jsx가 씀
+// top/LibraryBottomBar.jsx가 씀
 import { getLibraryTab } from "@/domains/library/constants/libraryTabs.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { TAP_CLASS } from "@m/domains/library/constants/libraryStyle.js"

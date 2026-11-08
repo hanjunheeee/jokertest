@@ -27,7 +27,7 @@ export default function ItemActions({ item, pending, error, onOpenTarget, onRetr
       ) : null}
       {error ? (
         <div className={ACTION_ROW_CLASS}>
-          <p className={ERROR_CLASS} role="alert" data-notification-read-error={item.id}>
+          <p className={`${ERROR_CLASS} w-full basis-full text-left`} role="alert" data-notification-read-error={item.id}>
             {error}
           </p>
           <ActionButton label="다시 시도" action="retry-read" onClick={() => onRetryRead(item)} />

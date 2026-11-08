@@ -16,6 +16,9 @@ export const INGAME_TIMEBAR_ASSETS = {
   discussionNode: "/frame/ingame-timebar/토론 노드.png",
   voteNode: "/frame/ingame-timebar/추방투표 노드.png",
   phaseHeaderPlate: "/frame/탑레벨 프레임_1_.png",
+  /** 채팅 클로즈업 내장 단계 타이머 — 단계 머리 판만 결과 화면 틀 사용 */
+  phaseHeaderPlateChatCloseup:
+    "/frame/gameResult/게임 결과 프레임.png".normalize("NFD"),
 }
 
 // 바에 그리는 단계 순서 (밤 → 결과 → 토론 → 투표)

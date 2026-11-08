@@ -28,7 +28,7 @@ const TEXTS = {
 }
 
 // 칸 배치·모양은 데스크톱 상수 그대로(폭 따라 열 수 자동, 칸 60px 이상), 고른 칸은 붉은 테두리, 사진은 둥근 틀 안
-export default function OptionGrid({ editor }) {
+export default function OptionGrid({ editor, compact = false }) {
   const isPhoto = editor.activeTab === PROFILE_EDIT_TAB_PHOTO
   const status = isPhoto ? editor.photoListStatus : editor.borderListStatus
   const options = isPhoto ? editor.ownedPhotoOptions : editor.ownedBorderOptions
@@ -39,7 +39,7 @@ export default function OptionGrid({ editor }) {
   return (
     <section
       aria-label={isPhoto ? "프로필 이미지 목록" : "프로필 테두리 목록"}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
+      className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${compact ? "px-3 py-2" : "px-4 py-3"}`}
     >
       {status !== "ready" ? (
         <OptionStatus status={status} onRetry={onRetry} {...TEXTS[isPhoto ? "photo" : "border"]} />

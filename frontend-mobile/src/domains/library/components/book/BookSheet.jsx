@@ -11,16 +11,18 @@ import {
   INNER_REVEAL_TRANSITION,
 } from "@/domains/library/constants/libraryEntranceMotion.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import BookScrollArea from "@m/domains/library/components/book/BookScrollArea.jsx"
+import BookTableOfContents from "@m/domains/library/components/book/BookTableOfContents.jsx"
 import { useSwipe } from "@m/domains/library/hooks/useSwipe.js"
 import { PARCHMENT_SRC } from "@m/domains/library/constants/libraryStyle.js"
 
 // 책은 위에서 떨어지듯, 안 내용은 그 뒤에 떠오름 (데스크톱 책 등장 상수)
 // 그림 가장자리 어두운 테두리는 크게 키워 잘라냄, scrollKey가 바뀌면 맨 위부터 다시 보임
-export default function BookSheet({ header = null, nav = null, scrollKey, onNext, onPrev, children }) {
+export default function BookSheet({ activeTabId, header = null, nav = null, scrollKey, onNext, onPrev, children }) {
   const swipe = useSwipe({ onNext, onPrev })
 
   return (
-    <div className="relative z-10 flex min-h-0 flex-1 px-3 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] md:px-6 lg:mx-auto lg:w-full lg:max-w-5xl">
+    <div className="relative z-10 flex min-h-0 flex-1 px-3 pt-1 pb-1 md:px-6 lg:mx-auto lg:w-full lg:max-w-5xl">
       <motion.div
         className="relative flex min-h-0 w-full flex-col overflow-hidden rounded-[0.6rem] border border-[#3a2414] shadow-[0_10px_30px_rgba(0,0,0,0.55),inset_0_0_24px_rgba(60,30,10,0.35)]"
         initial={BOOK_DROP_INIT}
@@ -34,18 +36,16 @@ export default function BookSheet({ header = null, nav = null, scrollKey, onNext
           aria-hidden="true"
           className="pointer-events-none absolute left-[-24%] top-[-24%] h-[148%] w-[148%] max-w-none select-none object-cover"
         />
+        <BookTableOfContents activeTabId={activeTabId} />
         <motion.div
           className="relative flex min-h-0 flex-1 flex-col"
           initial={INNER_REVEAL_INIT}
           animate={INNER_REVEAL_ANIMATE}
           transition={{ ...INNER_REVEAL_TRANSITION, delay: INNER_REVEAL_DELAYS.content }}
         >
-          {header ? <div className="relative shrink-0 px-2 pt-2.5">{header}</div> : null}
-          <div
-            key={scrollKey}
-            className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-3 md:px-6"
-          >
-            {children}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-16 land:pt-11">
+            {header ? <div className="relative shrink-0 px-2 pt-1">{header}</div> : null}
+            <BookScrollArea scrollKey={scrollKey}>{children}</BookScrollArea>
           </div>
           {nav}
         </motion.div>

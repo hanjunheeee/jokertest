@@ -4,9 +4,9 @@ import { useNavigate } from "react-router-dom"
 import { useResetRequest } from "@/domains/auth/hooks/recovery/useResetRequest.js"
 import RecoveryScene from "@m/domains/auth/components/recovery/scene/RecoveryScene.jsx"
 import ResetRequestForm from "@m/domains/auth/components/recovery/ResetRequestForm.jsx"
-import RequestSent from "@m/domains/auth/components/recovery/RequestSent.jsx"
+import ResetRequestSentDialog from "@m/domains/auth/components/recovery/ResetRequestSentDialog.jsx"
 
-// 보냈으면 안내 + 다시 보내기, 아니면 입력 칸 (데스크톱과 같음)
+// 접수 안내는 양피지 창, 입력 칸은 그대로 유지
 export default function PasswordResetRequestPage() {
   const navigate = useNavigate()
   const request = useResetRequest()
@@ -20,17 +20,19 @@ export default function PasswordResetRequestPage() {
       onSubmit={request.handleSubmit}
       onBack={handleBack}
     >
-      {request.status === "sent" ? (
-        <RequestSent onResend={request.handleResend} />
-      ) : (
-        <ResetRequestForm
-          status={request.status}
-          email={request.email}
-          setEmail={request.setEmail}
-          formError={request.formError}
-          onRetry={request.backToIdle}
-        />
-      )}
+      <ResetRequestForm
+        status={request.status}
+        email={request.email}
+        setEmail={request.setEmail}
+        formError={request.formError}
+        onRetry={request.backToIdle}
+      />
+      <ResetRequestSentDialog
+        open={request.status === "sent"}
+        onConfirm={request.backToIdle}
+        onResend={request.handleResend}
+        resendDisabled={request.status === "submitting"}
+      />
     </RecoveryScene>
   )
 }

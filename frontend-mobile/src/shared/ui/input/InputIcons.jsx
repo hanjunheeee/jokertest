@@ -1,7 +1,7 @@
 // 입력 칸 앞 아이콘과 비밀번호 보기 아이콘 SVG 모음 (데스크톱 shared/ui/InputIcons와 같은 그림)
 // InputSlot과 로그인·가입·계정 찾기·계정 관리 칸이 씀
 // 1파일 1컴포넌트 예외: 몇 줄짜리 아이콘을 하나씩 나누면 파일만 늘어서 한곳에 모음 (데스크톱과 같은 이유)
-const ICON_CLASS = "h-5 w-5 shrink-0 text-neutral-600"
+const ICON_CLASS = "h-[1.125rem] w-[1.125rem] shrink-0 text-neutral-600"
 
 // 같은 선 굵기·크기 틀 (색은 className으로 바꿈)
 function Svg({ className = ICON_CLASS, children }) {

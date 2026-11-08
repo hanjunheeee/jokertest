@@ -13,6 +13,7 @@ import { useSocket } from "@/shared/hooks/useSocket"
 import { useAppTextScaleSync } from "@/app/useAppTextScaleSync.js"
 import { useSfxRuntime } from "@/shared/hooks/useSfxRuntime.js"
 import GlobalBgmLayer from "@/shared/ui/GlobalBgmLayer.jsx"
+import ParchmentAlertHost from "@m/shared/ui/modal/parchment/ParchmentAlertHost.jsx"
 
 export default function App() {
     // 로그인 동안 앱 전체에 소켓 하나 (한 계정 한 소켓은 서버가 지킴)
@@ -33,6 +34,7 @@ export default function App() {
     return (
         <>
             <GlobalBgmLayer />
+            <ParchmentAlertHost />
             <RouterProvider router={router} />
         </>
     )

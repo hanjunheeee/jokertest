@@ -17,10 +17,10 @@ export default function NicknameSection({ nickname, setNickname, nicknameMsg, ni
     }
 
     return (
-        <section className="flex flex-col gap-2 border-b border-[#8b6a3e]/30 pb-4">
+        <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
             <SectionTitle>닉네임 변경</SectionTitle>
 
-            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-2">
+            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-1.5">
                 <InputSlot
                     name="nickname"
                     value={nickname}

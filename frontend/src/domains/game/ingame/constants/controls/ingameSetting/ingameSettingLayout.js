@@ -82,9 +82,18 @@ export const ROOM_ACTION_LINK_CLASS =
 export const ROOM_ACTION_LINK_DANGER_CLASS =
   "interactive-scale shrink-0 cursor-pointer border-0 bg-transparent p-0 font-subheading text-[clamp(0.72rem,0.95vw,0.86rem)] font-bold leading-none text-[#ffb4b4] underline decoration-[#c95555]/90 decoration-1 underline-offset-[0.18em] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-// 방 코드 버튼 (설정 창 오른쪽 아래, 밖으로 살짝 나감)
-export const ROOM_CODE_BTN_WRAP_CLASS =
-  "pointer-events-none absolute bottom-[clamp(0.35rem,1.2vh,0.65rem)] right-0 z-20 translate-x-[clamp(1.15rem,6.5%,2.1rem)]"
+// 설정 창 아래 액션 버튼 줄 (방 코드·개발 타이머 자리 등, 오른쪽 아래)
+export const SETTING_FOOTER_ACTIONS_WRAP_CLASS =
+  "pointer-events-none absolute bottom-[clamp(0.35rem,1.2vh,0.65rem)] right-0 z-20 flex translate-x-[clamp(1.65rem,9.5%,2.85rem)] items-end justify-end gap-[clamp(0.28rem,2vw,0.55rem)]"
+
+export const SETTING_FOOTER_ACTION_BTN_WRAP_CLASS =
+  "pointer-events-none shrink-0"
+
+export const SETTING_FOOTER_TIMER_PLACEMENT_BTN_WRAP_CLASS =
+  `${SETTING_FOOTER_ACTION_BTN_WRAP_CLASS} translate-x-[clamp(1.15rem,6vw,1.85rem)]`
+
+/** @deprecated SETTING_FOOTER_ACTION_BTN_WRAP_CLASS 사용 */
+export const ROOM_CODE_BTN_WRAP_CLASS = SETTING_FOOTER_ACTION_BTN_WRAP_CLASS
 
 export const ROOM_CODE_BTN_CLASS =
   "interactive-scale pointer-events-auto relative block w-[clamp(6.9rem,48%,9rem)] shrink-0 overflow-hidden cursor-pointer border-0 bg-transparent p-0 leading-none"

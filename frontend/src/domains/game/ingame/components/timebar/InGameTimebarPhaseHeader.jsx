@@ -12,17 +12,20 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 export default function InGameTimebarPhaseHeader({
   label,
   wrapClassName = PHASE_HEADER_WRAP_CLASS,
+  titleClassName = PHASE_HEADER_TITLE_CLASS,
+  plateSrc = INGAME_TIMEBAR_ASSETS.phaseHeaderPlate,
+  plateClassName = PHASE_HEADER_PLATE_CLASS,
 }) {
   if (typeof label !== "string" || label.length === 0) return null
 
   return (
     <div className={wrapClassName}>
       <PublicAsset
-        src={INGAME_TIMEBAR_ASSETS.phaseHeaderPlate}
+        src={plateSrc}
         alt=""
-        className={PHASE_HEADER_PLATE_CLASS}
+        className={plateClassName}
       />
-      <p className={PHASE_HEADER_TITLE_CLASS}>{label}</p>
+      <p className={titleClassName}>{label}</p>
     </div>
   )
 }

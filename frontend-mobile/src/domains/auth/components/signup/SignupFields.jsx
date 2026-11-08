@@ -53,7 +53,8 @@ export default function SignupFields({ formData, onChange }) {
         value={formData.birthDate}
         onChange={onChange}
         leadingIcon={<SignupCalendarIcon />}
-        placeholder="생년월일을 선택하세요"
+        placeholder="생일 날짜를 선택해주세요"
+        inputClassName="auth-date-input--hint-sm"
       />
     </>
   )

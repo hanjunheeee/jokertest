@@ -10,8 +10,8 @@ export default function AccountPage() {
     const navigate = useNavigate()
 
     return (
-        <ScreenFrame title="계정 관리" onBack={() => navigate("/mypage")}>
-            <div className="mx-auto flex w-full max-w-[25rem] flex-1 items-center px-4 pb-6 pt-2 land:max-w-[24rem]">
+        <ScreenFrame title="계정 관리" backAtBottom onBack={() => navigate("/mypage")}>
+            <div className="mx-auto flex w-full max-w-[20.5rem] flex-1 items-center px-3 pb-5 pt-1 land:max-w-[20rem]">
                 <AccountPanel />
             </div>
         </ScreenFrame>

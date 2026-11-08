@@ -60,8 +60,9 @@ export default function SocialFields({
         value={birthDate}
         onChange={(e) => { if (!isSubmitting) setBirthDate(e.target.value) }}
         leadingIcon={<SignupCalendarIcon />}
-        placeholder="생년월일을 선택하세요"
-        ariaLabel="생년월일"
+        placeholder="생일 날짜를 선택해주세요"
+        ariaLabel="생일 날짜를 선택해주세요"
+        inputClassName="auth-date-input--hint-sm"
       />
 
       {/* 인증이 필요한데 아직 보낼 수 없으면 안내 (보내는 중엔 숨김) */}

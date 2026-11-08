@@ -142,6 +142,34 @@
     display: none;
   }
 
+  /* 게임 모드 선택: 3장 세로·1.2배·겹침 — 크기는 유지, translate로 우하단 뒤로가기 비움 */
+  .mode-card-stack {
+    transform: translateY(clamp(-2rem, -7vh, -3.75rem));
+  }
+
+  .mode-card-stack > button {
+    width: min(88vw, calc((100svh - 6rem) / 3 / 1.878 * 1.2));
+    max-width: 100%;
+  }
+
+  .mode-card-stack > button:not(:first-child) {
+    margin-top: calc((100svh - 6rem) * -0.1);
+  }
+
+  @media (orientation: landscape) {
+    .mode-card-stack {
+      transform: translateY(clamp(-1.25rem, -4vh, -2.25rem));
+    }
+
+    .mode-card-stack > button {
+      width: min(68vw, calc((100svh - 5.5rem) / 3 / 1.878 * 1.2));
+    }
+
+    .mode-card-stack > button:not(:first-child) {
+      margin-top: calc((100svh - 5.5rem) * -0.1);
+    }
+  }
+
   /* 아래는 데스크톱 app/index.css 전역 class 그대로 (데스크톱 상수 class 문자열이 이 이름을 씀) */
   .interactive-scale {
     @apply cursor-pointer border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-[1.02] active:scale-[0.99];
@@ -163,8 +191,48 @@
     color: rgb(255 255 255 / 0.55);
   }
 
+  /* date 칸 커스텀 placeholder 겹침 시 브라우저 기본 "연도-월-일" 숨김 */
+  .auth-date-input--overlay-hint:not(.auth-date-input--filled)::-webkit-datetime-edit,
+  .auth-date-input--overlay-hint:not(.auth-date-input--filled)::-webkit-datetime-edit-year-field,
+  .auth-date-input--overlay-hint:not(.auth-date-input--filled)::-webkit-datetime-edit-month-field,
+  .auth-date-input--overlay-hint:not(.auth-date-input--filled)::-webkit-datetime-edit-day-field,
+  .auth-date-input--overlay-hint:not(.auth-date-input--filled)::-webkit-datetime-edit-text {
+    color: transparent;
+  }
+
+  /* 가입 생년월일: 빈 칸 힌트 11px·선택 값 13px (다른 입력 placeholder/값과 동일) */
+  .auth-date-input--hint-sm:not(.auth-date-input--filled)::-webkit-datetime-edit,
+  .auth-date-input--hint-sm:not(.auth-date-input--filled)::-webkit-datetime-edit-year-field,
+  .auth-date-input--hint-sm:not(.auth-date-input--filled)::-webkit-datetime-edit-month-field,
+  .auth-date-input--hint-sm:not(.auth-date-input--filled)::-webkit-datetime-edit-day-field,
+  .auth-date-input--hint-sm:not(.auth-date-input--filled)::-webkit-datetime-edit-text {
+    font-size: calc(11px * var(--app-text-scale, 1));
+  }
+
+  .auth-date-input--hint-10px:not(.auth-date-input--filled)::-webkit-datetime-edit,
+  .auth-date-input--hint-10px:not(.auth-date-input--filled)::-webkit-datetime-edit-year-field,
+  .auth-date-input--hint-10px:not(.auth-date-input--filled)::-webkit-datetime-edit-month-field,
+  .auth-date-input--hint-10px:not(.auth-date-input--filled)::-webkit-datetime-edit-day-field,
+  .auth-date-input--hint-10px:not(.auth-date-input--filled)::-webkit-datetime-edit-text {
+    font-size: calc(10px * var(--app-text-scale, 1));
+  }
+
   .auth-date-input--filled::-webkit-datetime-edit {
     color: #fff;
+  }
+
+  .auth-date-input--hint-sm.auth-date-input--filled::-webkit-datetime-edit,
+  .auth-date-input--hint-sm.auth-date-input--filled::-webkit-datetime-edit-year-field,
+  .auth-date-input--hint-sm.auth-date-input--filled::-webkit-datetime-edit-month-field,
+  .auth-date-input--hint-sm.auth-date-input--filled::-webkit-datetime-edit-day-field,
+  .auth-date-input--hint-sm.auth-date-input--filled::-webkit-datetime-edit-text {
+    font-size: calc(13px * var(--app-text-scale, 1));
+  }
+
+  /* 가입 생년월일: 달력 아이콘을 칸 오른쪽에서 조금 안쪽으로 */
+  .auth-date-input--hint-sm::-webkit-calendar-picker-indicator {
+    margin-inline-start: 0;
+    margin-inline-end: 0.55rem;
   }
 
   .auth-date-input::-webkit-calendar-picker-indicator {

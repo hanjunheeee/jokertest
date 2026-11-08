@@ -5,6 +5,7 @@ import { SOUND_CONTROL_ASSETS } from "@/shared/constants/soundControlAssets.js"
 import { useAudioControl } from "@/shared/hooks/useAudioControl.js"
 import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { MOBILE_SOUND_BAR_HIDDEN } from "@m/shared/constants/mobileSoundUi.js"
 import SoundGroup from "@m/shared/ui/sound/SoundGroup.jsx"
 import { SOUND_MENU_LOOKS } from "@m/shared/ui/sound/soundLooks.js"
 
@@ -13,6 +14,7 @@ export default function SoundMenu({ look }) {
   const menu = SOUND_MENU_LOOKS[look]
   const control = useAudioControl(getGlobalBgmRef())
   const [open, setOpen] = useState(false)
+  if (MOBILE_SOUND_BAR_HIDDEN) return null
   const icon = control.isSilent ? SOUND_CONTROL_ASSETS.noSoundIcon : SOUND_CONTROL_ASSETS.soundOnIcon
   const group = <SoundGroup control={control} look={menu.control} />
 

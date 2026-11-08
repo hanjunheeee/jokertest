@@ -2,8 +2,12 @@
 // pages/SettingPage.jsx가 씀
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
 
-// 뒤로 버튼은 누르는 칸 48px, 데스크톱 왼쪽 아래 자리를 위 줄로 옮김
-export default function SettingTopBar({ onBack }) {
+// hideBack: 우하단 BottomBackFixed만 씀 — 줄 높이는 유지해 탭·목록이 안 올라가게
+export default function SettingTopBar({ onBack, hideBack = false }) {
+    if (hideBack) {
+        return <header className="flex h-14 shrink-0 land:h-12 land:w-14" aria-hidden="true" />
+    }
+
     return (
         <header className="flex h-14 shrink-0 items-center px-2">
             <BackButton

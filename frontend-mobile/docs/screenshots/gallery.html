@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Mobile UI screenshots</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0d; }
+    .sheet {
+      width: 1920px;
+      height: 1080px;
+      max-width: 100vw;
+      margin: 0 auto 20px;
+      padding: 16px 20px 20px;
+      background: #161616;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 10px 14px;
+      page-break-after: always;
+    }
+    .cell {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+    .cap {
+      flex: 0 0 auto;
+      margin-bottom: 4px;
+      font: 600 13px/1.25 ui-sans-serif, system-ui, sans-serif;
+      color: #d4cfc6;
+      letter-spacing: -0.01em;
+    }
+    .frame {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a0a;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .frame img {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <section class="sheet">
+    <figure class="cell">
+      <figcaption class="cap">로그인 /login</figcaption>
+      <div class="frame"><img src="png/01-auth-login.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">회원가입 /login (가입 모드)</figcaption>
+      <div class="frame"><img src="png/02-auth-signup.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">아이디 찾기 /find-id</figcaption>
+      <div class="frame"><img src="png/03-auth-find-id.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">비밀번호 찾기(요청) /password-reset/request</figcaption>
+      <div class="frame"><img src="png/04-auth-pw-request.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">로비</figcaption>
+      <div class="frame"><img src="png/05-lobby-main.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">로비 · 알림</figcaption>
+      <div class="frame"><img src="png/06-lobby-notifications.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">로비 · 친구</figcaption>
+      <div class="frame"><img src="png/07-lobby-friends.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">마이페이지</figcaption>
+      <div class="frame"><img src="png/08-mypage-main.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">프로필 수정 시트</figcaption>
+      <div class="frame"><img src="png/09-mypage-profile-edit.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">스킨&카드 착용</figcaption>
+      <div class="frame"><img src="png/10-mypage-wear.png" alt="" loading="lazy" /></div>
+    </figure>
+  </section>
+  <section class="sheet">
+    <figure class="cell">
+      <figcaption class="cap">이모티콘</figcaption>
+      <div class="frame"><img src="png/11-emoticon-page.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">계정 관리</figcaption>
+      <div class="frame"><img src="png/12-account-main.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">설정 · 일반</figcaption>
+      <div class="frame"><img src="png/13-setting-general.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">상점</figcaption>
+      <div class="frame"><img src="png/14-store-main.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">서고 · 금지된 기록</figcaption>
+      <div class="frame"><img src="png/15-library-forbidden.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">서고 · 초대받은 자들</figcaption>
+      <div class="frame"><img src="png/16-library-guests.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">모드 선택</figcaption>
+      <div class="frame"><img src="png/17-gamemode-main.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">멀티 플레이</figcaption>
+      <div class="frame"><img src="png/18-multiplay-main.png" alt="" loading="lazy" /></div>
+    </figure>
+    <figure class="cell">
+      <figcaption class="cap">비밀연회장 초대</figcaption>
+      <div class="frame"><img src="png/19-room-invite-main.png" alt="" loading="lazy" /></div>
+    </figure>
+  </section>
+</body>
+</html>

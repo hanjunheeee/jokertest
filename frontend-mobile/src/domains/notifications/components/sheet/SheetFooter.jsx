@@ -7,16 +7,18 @@ import ActionButton from "@m/domains/notifications/components/sheet/ActionButton
 export default function SheetFooter({ disabled, pending, error, onDelete }) {
   return (
     <div className={FOOTER_CLASS} data-notification-footer="true">
-      <ActionButton
-        label="읽은 메시지 삭제"
-        action="delete-read"
-        variant="secondary"
-        disabled={disabled}
-        pending={pending}
-        onClick={onDelete}
-      />
+      <div className="mt-3 mr-2.5 self-end">
+        <ActionButton
+          label="읽은 메시지 삭제"
+          action="delete-read"
+          variant="secondary"
+          disabled={disabled}
+          pending={pending}
+          onClick={onDelete}
+        />
+      </div>
       {error ? (
-        <p className={ERROR_CLASS} role="alert" data-notification-delete-error="true">{error}</p>
+        <p className={`${ERROR_CLASS} w-full text-left`} role="alert" data-notification-delete-error="true">{error}</p>
       ) : null}
     </div>
   )

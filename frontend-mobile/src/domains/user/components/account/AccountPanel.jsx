@@ -18,11 +18,11 @@ const FRAME_STYLE = {
     borderWidth: "1px",
     borderImageSource: `url("${publicAsset(LOGIN_ASSETS.frame)}")`,
     borderImageSlice: "160 50 70 50 fill",
-    borderImageWidth: "39.7cqi 12.4cqi 17.4cqi 12.4cqi",
+    borderImageWidth: "35.5cqi 11cqi 15.5cqi 11cqi",
     borderImageRepeat: "stretch",
-    // 내용은 가면 장식 바로 아래부터 (데스크톱 안쪽 여백 31.5%와 비슷)
-    padding: "30cqi 10.5cqi 8.5cqi",
-    minHeight: "155cqi",
+    // 내용은 가면 장식 바로 아래부터 (모바일에서 안쪽 여백·최소 높이 축소)
+    padding: "32cqi 9cqi 11cqi",
+    minHeight: "174cqi",
 }
 
 // 내용이 길면 틀이 세로로 늘어나고 화면이 스크롤 (틀 안 스크롤 없음)
@@ -36,7 +36,7 @@ export default function AccountPanel() {
             animate={{ opacity: 1, y: 0 }}
             transition={UI_REVEAL_TRANSITION}
         >
-            <div className="flex w-full flex-col gap-4" style={FRAME_STYLE}>
+            <div className="flex w-full flex-col gap-2.5" style={FRAME_STYLE}>
                 <NicknameSection
                     nickname={form.nickname}
                     setNickname={form.setNickname}

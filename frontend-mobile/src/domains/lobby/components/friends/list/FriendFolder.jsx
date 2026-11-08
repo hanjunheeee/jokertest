@@ -5,14 +5,20 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 import {
   FOLDER_BACKDROP_CLASS,
-  FOLDER_CHEVRON_CLASS,
   FOLDER_CONTENT_CLASS,
   FOLDER_HEADER_CLASS,
-  FOLDER_ICON_CLASS,
-  FOLDER_LABEL_CLASS,
   FOLDER_LIST_CLASS,
-  FOLDER_SECTION_CLASS,
 } from "@/domains/lobby/constants/friendListStyle.js"
+
+// 모바일: 접힌 폴더 머리·테두리 영역 높이 축소
+const FOLDER_SECTION_CLASS =
+  "relative shrink-0 overflow-hidden rounded-md border border-white/25 px-2 py-0.5 shadow-[0_2px_12px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+
+const FOLDER_ICON_CLASS = "h-3.5 w-3.5 shrink-0 select-none"
+
+const FOLDER_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:12px] leading-tight text-white/90"
+
+const FOLDER_CHEVRON_CLASS = "ml-auto h-2.5 w-2.5 shrink-0 select-none opacity-90"
 import FriendRow from "./FriendRow.jsx"
 
 // 모양은 데스크톱 FriendListFolder 그대로, 머리 누르는 칸만 44px
@@ -24,7 +30,7 @@ export default function FriendFolder({ label, friends, defaultOpen = false, clas
     <section className={`${FOLDER_SECTION_CLASS} ${className}`}>
       <div className={FOLDER_BACKDROP_CLASS} aria-hidden="true" />
       <div className={FOLDER_CONTENT_CLASS}>
-        <button type="button" onClick={() => setOpen((prev) => !prev)} className={`${FOLDER_HEADER_CLASS} -my-1.5 min-h-11`}>
+        <button type="button" onClick={() => setOpen((prev) => !prev)} className={`${FOLDER_HEADER_CLASS} -my-0.5 min-h-8 gap-1.5 py-0.5`}>
           <PublicAsset src={open ? FRIEND_LIST_ASSETS.folderOpen : FRIEND_LIST_ASSETS.folderClosed} alt="" className={FOLDER_ICON_CLASS} />
           <span className={FOLDER_LABEL_CLASS}>{label}</span>
           <PublicAsset src={open ? FRIEND_LIST_ASSETS.chevronUp : FRIEND_LIST_ASSETS.chevronDown} alt="" className={FOLDER_CHEVRON_CLASS} />

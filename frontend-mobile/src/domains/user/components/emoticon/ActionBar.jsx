@@ -24,7 +24,7 @@ export default function ActionBar({ page }) {
     <ShellBottom>
       <div className="flex items-center justify-center gap-3 border-t border-[#c9a227]/20 bg-black/80 px-4 py-2 backdrop-blur-sm">
         <ImageButton look={LOOK} label="저장" src={EMOTICON_PALETTE_ASSETS.saveButton} disabled={locked} onClick={page.handleSave} />
-        <ImageButton look={LOOK} label="취소" src={EMOTICON_PALETTE_ASSETS.cancelButton} disabled={locked} onClick={page.handleCancel} />
+        <ImageButton look={LOOK} label="되돌리기" src={EMOTICON_PALETTE_ASSETS.cancelButton} disabled={locked} onClick={page.handleCancel} />
       </div>
     </ShellBottom>
   )

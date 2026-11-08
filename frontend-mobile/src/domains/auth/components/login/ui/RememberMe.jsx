@@ -11,12 +11,12 @@ export default function RememberMe({ checked, onChange }) {
       role="checkbox"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="flex min-h-11 cursor-pointer items-center gap-2 border-0 bg-transparent p-0"
+      className="flex min-h-8 cursor-pointer items-center gap-2 border-0 bg-transparent p-0 pl-1"
     >
-      <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
-        <PublicAsset src={LOGIN_ASSETS.checkbox} alt="" className="pointer-events-none h-5 w-5 select-none" />
+      <span className="relative flex h-[1.125rem] w-[1.125rem] shrink-0 items-center justify-center">
+        <PublicAsset src={LOGIN_ASSETS.checkbox} alt="" className="pointer-events-none h-[1.125rem] w-[1.125rem] select-none" />
         {checked ? (
-          <svg className="pointer-events-none absolute h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg className="pointer-events-none absolute h-3 w-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M5 13l4 4L19 7" />
           </svg>
         ) : null}

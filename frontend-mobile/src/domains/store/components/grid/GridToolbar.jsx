@@ -26,7 +26,7 @@ export default function GridToolbar({ showSkinNotice, active, onToggle }) {
             {/* 켜지면 수락 버튼 그림, 꺼지면 미선택 그림 */}
             <button
                 type="button"
-                className="relative h-11 w-[6.25rem] shrink-0 cursor-pointer border-0 bg-transparent p-0 active:opacity-90"
+                className="relative h-10 w-[5.5rem] shrink-0 cursor-pointer border-0 bg-transparent p-0 active:opacity-90"
                 style={{ outline: "none" }}
                 aria-pressed={active}
                 onClick={onToggle}
@@ -36,7 +36,7 @@ export default function GridToolbar({ showSkinNotice, active, onToggle }) {
                     alt=""
                     className="absolute inset-0 block h-full w-full select-none object-fill"
                 />
-                <span className={BULK_BTN_LABEL_CLASS}>일괄구매</span>
+                <span className={`${BULK_BTN_LABEL_CLASS} [--app-text-size:0.66rem]`}>일괄구매</span>
             </button>
         </div>
     )

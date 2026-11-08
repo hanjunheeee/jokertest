@@ -39,7 +39,15 @@ function SpreadArt({ src }) {
 }
 
 // 알림 대상 기록이면 data 표시 (데스크톱과 같은 이름표), 업적 받기 상태는 위에서 받음
-export default function LockPage({ pageIndex, record, achievementsState, targetAchievementId }) {
+// variant stacked: 본문과 같은 스크롤 위쪽에 해금·일러스트만
+export default function LockPage({
+  pageIndex,
+  record,
+  achievementsState,
+  targetAchievementId,
+  variant = "page",
+}) {
+  const stacked = variant === "stacked"
   const { id, right } = record
   const { locked, unlockCondition, unlockProgress, unlockRewards, progressUnit, clearIllust, body } = right
   const achievement = achievementsState.achievements?.find((entry) => entry.id === id)
@@ -57,15 +65,31 @@ export default function LockPage({ pageIndex, record, achievementsState, targetA
 
   if (!locked) {
     return (
-      <div className="flex min-h-full items-center" {...markers}>
-        <p className={`m-0 px-2 text-center ${BODY_TEXT_CLASS}`}>{body ?? "해금된 기록 본문이 이 영역에 표시됩니다."}</p>
+      <div
+        className={stacked ? "w-full" : "flex min-h-full items-center"}
+        {...markers}
+      >
+        <p className={`m-0 px-2 text-center ${BODY_TEXT_CLASS}`}>
+          {body ?? "해금된 기록 본문이 이 영역에 표시됩니다."}
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center" {...markers}>
-      <div className="relative aspect-[4/5] w-full max-w-[26rem] land:aspect-auto land:h-[min(15rem,62svh)]">
+    <div
+      className={
+        stacked ? "flex w-full flex-col items-center" : "flex min-h-full items-center justify-center"
+      }
+      {...markers}
+    >
+      <div
+        className={
+          stacked
+            ? "relative aspect-[4/5] w-full max-w-[22rem] max-h-[min(38svh,20rem)]"
+            : "relative aspect-[4/5] w-full max-w-[26rem] land:aspect-auto land:h-[min(15rem,62svh)]"
+        }
+      >
         {challengeCleared ? (
           <SpreadArt src={clearIllust ?? getForbiddenRecordsChallengeClearIllust(pageIndex + 1)} />
         ) : (

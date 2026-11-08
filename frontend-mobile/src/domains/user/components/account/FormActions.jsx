@@ -7,7 +7,7 @@ import Feedback from "./Feedback.jsx"
 // 결과 문구는 있을 때만, 버튼은 오른쪽
 export default function FormActions({ msg, confirmLabel = "변경", confirmDisabled = false }) {
     return (
-        <div className="flex w-full flex-col gap-1.5">
+        <div className="flex w-full flex-col gap-1">
             {msg ? <Feedback msg={msg} /> : null}
             <div className="flex w-full justify-end">
                 <ConfirmButton label={confirmLabel} disabled={confirmDisabled} />

@@ -14,6 +14,12 @@ const WEAR_ERROR_CLASS = "m-0 text-center font-subheading text-sm text-[#ff6b6b]
 const BTN_CLASS =
   "interactive-scale relative block min-h-11 w-[min(100%,14rem)] cursor-pointer border-0 bg-transparent p-0 leading-none land:w-[11rem] disabled:cursor-not-allowed"
 
+const BTN_COMPACT_CLASS =
+  "interactive-scale relative block min-h-9 w-[min(100%,10.5rem)] cursor-pointer border-0 bg-transparent p-0 leading-none land:w-[9.5rem] disabled:cursor-not-allowed"
+
+const LABEL_COMPACT_CLASS =
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:0.72rem] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+
 // 저장 중엔 잠그고 흐리게(데스크톱 0.6), 소리는 시트 쪽 훅이 직접 냄(data-sfx-owner)
 // errorClass·errorRole·ariaLabel로 프로필 편집 창 모양을 따름
 export default function ConfirmBar({
@@ -26,6 +32,7 @@ export default function ConfirmBar({
   errorClass = WEAR_ERROR_CLASS,
   errorRole = "alert",
   className = "border-[#c9a227]/20 bg-black/70",
+  compact = false,
 }) {
   return (
     <div className={`flex shrink-0 flex-col items-center gap-1.5 border-t px-4 py-2 land:py-1 ${className}`}>
@@ -41,11 +48,11 @@ export default function ConfirmBar({
         disabled={saving}
         aria-label={ariaLabel}
         aria-busy={saving}
-        className={BTN_CLASS}
+        className={compact ? BTN_COMPACT_CLASS : BTN_CLASS}
         style={{ outline: "none", opacity: saving ? 0.6 : 1 }}
       >
         <PublicAsset src={src} alt="" className={CONFIRM_BTN_IMG_CLASS} />
-        <span className={CONFIRM_BTN_LABEL_CLASS}>{label}</span>
+        <span className={compact ? LABEL_COMPACT_CLASS : CONFIRM_BTN_LABEL_CLASS}>{label}</span>
       </button>
     </div>
   )

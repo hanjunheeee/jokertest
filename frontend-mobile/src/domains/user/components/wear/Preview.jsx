@@ -33,42 +33,53 @@ export default function Preview({ preview, onToggle }) {
   const nickname = useUserProfileStore((state) => state.data?.nickname) ?? ""
 
   return (
-    <section
-      aria-label="스킨&카드 미리보기"
-      style={BG_STYLE}
-      className="relative mx-4 flex [--bg-size:auto_140%] md:[--bg-size:200%_auto] land:[--bg-size:200%_auto] min-h-0 shrink-0 basis-[38%] items-end justify-center overflow-hidden rounded-md border border-[#c9a227]/25 bg-[#140c08] land:mx-0 land:basis-auto land:flex-1"
-    >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={previewKeyOf(preview, isCard)}
-          initial={PREVIEW_MOTION.initial}
-          animate={PREVIEW_MOTION.animate}
-          exit={PREVIEW_MOTION.exit}
-          transition={PREVIEW_MOTION_TRANSITION}
-          className="flex h-full w-full items-end justify-center"
-        >
-          {isCard ? (
-            <div className="m-auto aspect-[338/369] h-[86%] max-w-[80%]">
-              <PreviewCard portraitSrc={preview.portraitSrc} frameSrc={preview.frameSrc} nickname={nickname} />
-            </div>
-          ) : preview.standingSrc ? (
-            <div className="flex h-[90%] w-full items-end justify-center">
-              <PublicAsset src={preview.standingSrc} alt="" className={PREVIEW_STANDING_CLASS} />
-            </div>
-          ) : null}
-        </motion.div>
-      </AnimatePresence>
-
-      <button
-        type="button"
-        aria-label={isCard ? "스킨 일러스트 미리보기로 전환" : "플레이어 카드 미리보기로 전환"}
-        aria-pressed={isCard}
-        onClick={onToggle}
-        className="group absolute bottom-1 right-1 z-20 h-12 w-28 cursor-pointer border-0 bg-transparent p-0 leading-none"
-        style={{ outline: "none" }}
+    <div className="relative min-h-0 shrink-0 basis-[46%] land:min-h-0 land:shrink land:basis-auto land:flex-1">
+      {/* 세로: 배경만 화면 밖으로 넓힘, 캐릭터·카드 크기는 그대로 */}
+      <div
+        aria-hidden
+        style={BG_STYLE}
+        className="pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[132vw] -translate-x-1/2 overflow-hidden bg-[#140c08] [--bg-size:188%_auto] land:inset-0 land:left-0 land:w-full land:translate-x-0 land:[--bg-size:200%_auto]"
+      />
+      <section
+        aria-label="스킨&카드 미리보기"
+        className="relative z-10 mx-4 flex h-full min-h-0 items-end justify-center overflow-hidden rounded-md border-0 bg-transparent land:mx-0"
       >
-        <PublicAsset src={SKIN_CARD_WEAR_ASSETS.previewToggleButton} alt="" className={VIEW_TOGGLE_IMG_CLASS} />
-      </button>
-    </section>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={previewKeyOf(preview, isCard)}
+            initial={PREVIEW_MOTION.initial}
+            animate={PREVIEW_MOTION.animate}
+            exit={PREVIEW_MOTION.exit}
+            transition={PREVIEW_MOTION_TRANSITION}
+            className="flex h-full w-full items-end justify-center"
+          >
+            {isCard ? (
+              <div className="m-auto aspect-[338/369] h-[62%] max-w-[56%] -translate-y-3 land:h-[86%] land:max-w-[80%] land:translate-y-0">
+                <PreviewCard portraitSrc={preview.portraitSrc} frameSrc={preview.frameSrc} nickname={nickname} />
+              </div>
+            ) : preview.standingSrc ? (
+              <div className="flex h-[84%] w-full max-w-[92%] -translate-y-3 items-end justify-center land:h-[90%] land:max-w-none land:translate-y-0">
+                <PublicAsset
+                  src={preview.standingSrc}
+                  alt=""
+                  className={`${PREVIEW_STANDING_CLASS} !h-[104%] land:!h-[108%]`}
+                />
+              </div>
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
+
+        <button
+          type="button"
+          aria-label={isCard ? "스킨 일러스트 미리보기로 전환" : "플레이어 카드 미리보기로 전환"}
+          aria-pressed={isCard}
+          onClick={onToggle}
+          className="group absolute bottom-1 right-1 z-20 h-12 w-28 cursor-pointer border-0 bg-transparent p-0 leading-none"
+          style={{ outline: "none" }}
+        >
+          <PublicAsset src={SKIN_CARD_WEAR_ASSETS.previewToggleButton} alt="" className={VIEW_TOGGLE_IMG_CLASS} />
+        </button>
+      </section>
+    </div>
   )
 }

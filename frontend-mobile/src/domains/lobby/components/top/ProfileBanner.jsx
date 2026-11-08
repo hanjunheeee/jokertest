@@ -34,7 +34,7 @@ export default function ProfileBanner({ profile, onMyPage, onAccount }) {
                 <span className="pointer-events-none absolute flex items-center" style={LOBBY_TEXT_PANEL_INSET}>
                     {/* 데스크톱 BannerTextPanel처럼 긴 이름은 줄바꿈, 글자만 폰에서 읽히게 키움 */}
                     <span
-                        className={`relative ${TEXT_ALIGN_LEFT_CLASS} max-w-full [overflow-wrap:anywhere] font-subheading app-text-scaled [--app-text-size:max(0.85rem,5cqi)] font-bold leading-tight text-[#ebe2cc]`}
+                        className={`relative ${TEXT_ALIGN_LEFT_CLASS} max-w-full [overflow-wrap:anywhere] font-subheading app-text-scaled [--app-text-size:max(0.74rem,4.15cqi)] font-bold leading-tight text-[#ebe2cc]`}
                         style={{ textShadow: TEXT_SHADOW }}
                     >
                         {profile.nickname}
@@ -46,12 +46,12 @@ export default function ProfileBanner({ profile, onMyPage, onAccount }) {
                 type="button"
                 aria-label="계정 설정"
                 onClick={onAccount}
-                className="group absolute right-[20.9%] top-[31%] z-10 flex h-11 w-11 translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center border-0 bg-transparent p-0"
+                className="group absolute right-[18.5%] top-[31%] z-10 flex h-11 w-11 translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center border-0 bg-transparent p-0"
             >
                 <PublicAsset
                     src={LOBBY_ASSETS.settingsGear}
                     alt=""
-                    className="interactive-scale-sm aspect-square w-[7.8cqi] min-w-4 select-none object-contain"
+                    className="interactive-scale-sm aspect-square w-[8.2cqi] min-w-[1.05rem] select-none object-contain"
                 />
             </button>
         </div>

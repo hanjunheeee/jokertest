@@ -14,9 +14,10 @@ export const SHEET_TABS = [
 // 시트 닫기 버튼 그림 (상점 팝업과 같은 그림)
 export const CLOSE_BUTTON_SRC = "/button/팝업 닫기 버튼.png".normalize("NFD")
 
-// 닫기 버튼 (누르는 칸 44px)
-export const CLOSE_BTN_CLASS = "grid size-11 shrink-0 place-items-center border-0 bg-transparent p-0 active:scale-95"
-export const CLOSE_ICON_CLASS = "block size-9 select-none object-contain"
+// 닫기: 프레임 모서리에 걸침 (안쪽보다 바깥·위로 반쯤 빼기)
+export const CLOSE_BTN_CLASS =
+  "absolute z-20 right-[-1.3rem] top-[-1.85rem] flex size-[3.15rem] cursor-pointer items-center justify-center border-0 bg-transparent p-0 leading-none outline-none active:scale-95"
+export const CLOSE_ICON_CLASS = "pointer-events-none block size-11 select-none object-contain"
 
 // 패널 프레임을 border-image로 깔아 폰 높이로 늘려도 모서리 장식이 늘어나지 않게 함
 export const SHEET_FRAME_STYLE = {
@@ -25,9 +26,12 @@ export const SHEET_FRAME_STYLE = {
   borderImage: `url("${publicAsset(FRIEND_LIST_ASSETS.panelFrame)}") 44 28 40 28 fill / 30px 18px 26px stretch`,
 }
 
-// 시트 틀: 폰 세로는 화면 전체, 가로·태블릿은 오른쪽 패널 (데스크톱 패널 폭)
+// 시트 틀: 알림 팝업(PANEL_CLASS)과 같은 중앙 모달 크기
 export const SHEET_CLASS =
-  "relative ml-auto flex h-full w-full flex-col md:max-w-[26rem] land:max-w-[28rem]"
+  "pointer-events-auto relative m-2 flex h-[min(calc(100%-1rem),82svh)] max-h-[42rem] w-full max-w-[min(92vw,20.5rem)] flex-col overflow-visible [container-type:inline-size] land:max-h-[38rem] land:max-w-[22rem] md:max-h-[46rem] md:max-w-[26rem]"
+
+export const SHEET_ROOT_CLASS =
+  "pointer-events-none fixed inset-0 z-50 flex items-center justify-center overflow-visible safe-pt safe-pb safe-px"
 
 // 줄 버튼 (데스크톱 RECOMMENDED_ACTION_BTN 모양, 누르는 칸만 44px)
 export const ACTION_BTN_CLASS =

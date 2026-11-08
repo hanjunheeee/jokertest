@@ -1,6 +1,6 @@
 // 알림 목록 한 줄 (제목·본문·보러 가기·읽음 실패 다시 시도), 데스크톱 NotificationItem 모양
 // 알림 본문 목록(SheetBody.jsx)이 씀
-import { NOTIFICATION_ASSETS } from "@/domains/notifications/constants/notificationAssets.js"
+import { NOTIFICATION_ASSETS } from "@m/domains/notifications/constants/notificationAssets.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 import {
   ITEM_BODY_CLASS,

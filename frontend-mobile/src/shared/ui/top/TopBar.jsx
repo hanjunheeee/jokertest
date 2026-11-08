@@ -9,6 +9,7 @@ const BAR_CLASS =
 // 오른쪽이 비어도 제목이 가운데 오게 같은 폭 자리 둠, 줄 높이 등은 className으로 바꿈
 export default function TopBar({
   onBack,
+  hideBack = false,
   backLabel = "뒤로 가기",
   backIconClassName = "block h-auto w-full select-none",
   title = null,
@@ -17,7 +18,11 @@ export default function TopBar({
 }) {
   return (
     <header className={className}>
-      <BackButton onClick={onBack} label={backLabel} iconClassName={backIconClassName} />
+      {hideBack ? (
+        <div className="size-11 shrink-0" aria-hidden="true" />
+      ) : (
+        <BackButton onClick={onBack} label={backLabel} iconClassName={backIconClassName} />
+      )}
 
       <div className="flex min-w-0 flex-1 justify-center">{title}</div>
 

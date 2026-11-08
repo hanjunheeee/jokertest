@@ -2,11 +2,13 @@
 // 로그인·계정 찾기·로비 바닥 줄·방 설정 위 줄·서고 위 줄이 씀
 import { useAudioControl } from "@/shared/hooks/useAudioControl.js"
 import { getGlobalBgmRef } from "@/shared/hooks/useBgmRuntime.js"
+import { MOBILE_SOUND_BAR_HIDDEN } from "@m/shared/constants/mobileSoundUi.js"
 import SoundGroup from "@m/shared/ui/sound/SoundGroup.jsx"
 import { SOUND_LOOKS } from "@m/shared/ui/sound/soundLooks.js"
 
 // 값·동작은 데스크톱 useAudioControl 그대로, 크기만 look 이름으로 고름
 export default function SoundControl({ look, audioRef = getGlobalBgmRef() }) {
   const control = useAudioControl(audioRef)
+  if (MOBILE_SOUND_BAR_HIDDEN) return null
   return <SoundGroup control={control} look={SOUND_LOOKS[look]} />
 }

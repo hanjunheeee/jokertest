@@ -1,4 +1,4 @@
-// 스킨·카드 착용 시트 열림 수명 관리 (열 때 초안 다시 시작·지갑 받기·적용 뒤 닫기)
+// 스킨·카드 착용 시트 열림 수명 관리 (열 때 초안 다시 시작·지갑 받기, 닫기는 사용자가 직접)
 // WearSheet가 씀, 데스크톱 SkinCardWearOverlay 안에 있던 수명 로직을 화면 없이 옮김
 import { useEffect, useRef } from "react"
 import { useSkinCardWearSelection } from "@/domains/user/hooks/useSkinCardWearSelection.js"
@@ -13,10 +13,9 @@ const appliedNow = () => ({
 })
 
 // 열고 닫을 때마다 lifecycle 번호를 올려 닫힌 뒤 늦게 온 결과를 버림
-export function useWearSheet({ open, onClose }) {
+export function useWearSheet({ open }) {
   const lifecycle = useRef(0)
   const dirty = useRef(false)
-  const onCloseRef = useRef(onClose)
   const appliedSkinsByJob = useSkinCardWearStore((state) => state.skinsByJob)
   const appliedCardFrameId = useSkinCardWearStore((state) => state.cardFrameId)
   const fetchSummary = useEconomyStore((state) => state.fetchSummary)
@@ -27,11 +26,6 @@ export function useWearSheet({ open, onClose }) {
     initialCardFrameId: appliedCardFrameId,
   })
   const { resetDraft, selectItem, confirmLoadout } = selection
-
-  // 늘 최신 닫기 함수
-  useEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
 
   // 열림: 초안 다시 시작 → 지갑 받기 → 그사이 안 고쳤으면 받은 값으로 한 번 더 맞춤
   useEffect(() => {
@@ -54,17 +48,16 @@ export function useWearSheet({ open, onClose }) {
     selectItem(item)
   }
 
-  // 적용: 바뀐 칸 있으면 확인 소리, 저장 성공하고 그사이 안 닫혔으면 닫음
+  // 적용: 바뀐 칸 있으면 확인 소리, 저장만 함 (닫기는 닫기·뒤로가기)
   const handleConfirm = async () => {
     const epoch = lifecycle.current
     dirty.current = true
-    const result = await confirmLoadout({
+    await confirmLoadout({
       appliedSkinsByJob,
       appliedCardFrameId,
       onChanged: () => dispatchUiSfx("ui-confirm"),
       isActive: () => epoch === lifecycle.current,
     })
-    if (result.ok && epoch === lifecycle.current) onCloseRef.current()
   }
 
   return { ...selection, appliedSkinsByJob, appliedCardFrameId, handleSelectItem, handleConfirm }

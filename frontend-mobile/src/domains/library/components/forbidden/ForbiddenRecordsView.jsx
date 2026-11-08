@@ -1,4 +1,4 @@
-// 금지된 기록 탭 (앞면 원고 + 뒷면 해금 쪽)
+// 금지된 기록 탭 (폰: 해금·일러스트 위 + 원고 아래 한 스크롤, 넓은 화면: 양쪽 펼침)
 // pages/LibraryPage.jsx가 금지된 기록 탭에서 씀
 import { useAchievements } from "@/domains/library/hooks/useAchievements.js"
 import { getForbiddenRecordsPage } from "@/domains/library/content/forbiddenRecords/pages.js"
@@ -10,6 +10,22 @@ import StoryPage from "@m/domains/library/components/forbidden/StoryPage.jsx"
 export default function ForbiddenRecordsView({ pageIndex, side, twoColumn, targetAchievementId }) {
   const { achievements, status, error } = useAchievements()
   const record = getForbiddenRecordsPage(pageIndex)
+  const achievementsState = { achievements, status, error }
+
+  if (!twoColumn) {
+    return (
+      <div key={`record-${pageIndex}-merged`} className="flex flex-col gap-5 pb-2">
+        <LockPage
+          variant="stacked"
+          pageIndex={pageIndex}
+          record={record}
+          achievementsState={achievementsState}
+          targetAchievementId={targetAchievementId}
+        />
+        <StoryPage title={record.left.title} body={record.left.body} />
+      </div>
+    )
+  }
 
   return (
     <SpreadPages
@@ -22,7 +38,7 @@ export default function ForbiddenRecordsView({ pageIndex, side, twoColumn, targe
         <LockPage
           pageIndex={pageIndex}
           record={record}
-          achievementsState={{ achievements, status, error }}
+          achievementsState={achievementsState}
           targetAchievementId={targetAchievementId}
         />
       }

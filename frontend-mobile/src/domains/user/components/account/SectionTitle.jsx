@@ -4,7 +4,7 @@
 // 양피지 위라 검은 글자, 단계는 데스크톱처럼 h3 (글자 크기만 폰에 맞춤)
 export default function SectionTitle({ children }) {
     return (
-        <h3 className="font-subheading app-text-scaled [--app-text-size:0.95rem] font-bold text-black">
+        <h3 className="font-subheading app-text-scaled [--app-text-size:0.82rem] font-bold text-black">
             {children}
         </h3>
     )

@@ -12,6 +12,7 @@ import {
   CLOSEUP_INPUT_SINGLE_LINE_HEIGHT_CLASS,
   CLOSEUP_INPUT_VIEWPORT_FIXED_HEIGHT_CLASS,
   INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET,
+  INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET_WITH_TIMER,
   CLOSEUP_SEND_BTN_CLASS,
   CLOSEUP_SEND_BTN_LABEL_CLASS,
   CLOSEUP_SEND_BTN_SHIFT_CLASS,
@@ -283,7 +284,9 @@ export const MSG_ROW_CLASS =
 export function getMsgListInset(variant = "board", options = {}) {
   const { withEmbeddedPhaseTimer = false } = options
   if (isCloseupLikeVariant(variant)) {
-    return INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
+    return withEmbeddedPhaseTimer
+      ? INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET_WITH_TIMER
+      : INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET
   }
   if (withEmbeddedPhaseTimer) {
     return MSG_LIST_INSET_WITH_TIMER

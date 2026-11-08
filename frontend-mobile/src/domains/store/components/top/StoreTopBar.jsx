@@ -1,9 +1,8 @@
-// 상점 위 줄 (왼쪽 뒤로 가기, 오른쪽 보유 재화·배경음)
-// pages/StorePage가 씀, 데스크톱 왼쪽 아래 뒤로 가기·오른쪽 위 재화·오른쪽 아래 소리를 한 줄로 모음
+// 상점 위 줄 (왼쪽 뒤로 가기, 오른쪽 보유 재화)
+// pages/StorePage가 씀
 import { motion } from "framer-motion"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
-import MuteToggle from "@m/shared/ui/sound/MuteToggle.jsx"
 import CurrencyBalance from "./CurrencyBalance.jsx"
 
 // 위 줄 그림 버튼 (누르는 칸 44px, 폰 폭에 소리 막대 자리가 없어 음소거 아이콘만)
@@ -33,7 +32,6 @@ export default function StoreTopBar({ visible, onBack, balanceGold, balanceDiamo
                 status={economyStatus}
                 onRetry={onRetryEconomy}
             />
-            <MuteToggle className={`${ICON_BTN_CLASS} disabled:opacity-50`} iconClassName="block h-10 w-10 select-none object-contain" style={NO_OUTLINE} />
         </motion.div>
     )
 }

@@ -1,5 +1,5 @@
 // 단계 타이머 자리 값(확대 시간 바·채팅 틀 안)과 읽기·저장 (주소 쿼리 → 브라우저 저장 → 기본값)
-// 타이머 자리 훅(useTimerPlacement)·채팅 틀·채팅 내용·진행 바·타이머 묶음·개발용 전환 버튼이 사용
+// 타이머 자리 훅(useTimerPlacement)·채팅 틀·채팅 내용·진행 바·타이머 묶음·설정 창 개발용 전환 버튼이 사용
 export const INGAME_TIMER_PLACEMENT = Object.freeze({
   TIMEBAR: "timebar",
   CHAT: "chat",
