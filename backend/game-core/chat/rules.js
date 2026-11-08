@@ -2,6 +2,7 @@
 // 글 검사·채널·받는 사람 정하기, 채팅 보내기·socket 채팅 방송이 사용
 const { GAME_ROLES } = require('../core/rules/roles')
 const { CHAT_MAX_LENGTH, BAD_CHARS, CHAT_CHANNELS, RATE_FIELD } = require('./constants')
+const { isParticipatingInSession } = require('../queries/participation')
 
 // 줄바꿈 맞추고 앞뒤 공백 자름, 빈 글·긴 글 거절
 function sanitizeChatText(rawText) {
@@ -33,15 +34,23 @@ function getChatRateLimitMap(session, channel) {
     return field ? session[field] : undefined
 }
 
-// 산 사람만, 낮·재판 때만 낮 채널 사용
+// 죽은 사람끼리 채팅 여는 단계 (낮·밤 상관없음, 사용자 결정 2026-11-09)
+const DEAD_CHAT_PHASES = new Set(['DAY', 'TRIBUNAL', 'NIGHT'])
+
+// 죽은 사람(판 참여 중)은 언제나 죽은 사람 채널, 산 사람은 낮·재판 때만 낮 채널
 function resolveGameChatChannel(session, actor) {
-    // 채널은 보낸 값 말고 서버가 생사·단계로 정함 (지도 13-④)
-    if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
+    // 채널은 보낸 값 말고 서버가 생사·단계로 정함 (지도 13-④), 죽은 사람은 낮 채널에 못 씀
+    if (actor.alive !== true) {
+        // 나가서 빠졌거나 기권한 사람은 판 밖이라 못 씀
+        if (!isParticipatingInSession(session, actor.uuid)) return { ok: false, code: 'NOT_ELIGIBLE' }
+        if (!DEAD_CHAT_PHASES.has(session.phase)) return { ok: false, code: 'INVALID_PHASE' }
+        return { ok: true, channel: CHAT_CHANNELS.DEAD }
+    }
     if (session.phase !== 'DAY' && session.phase !== 'TRIBUNAL') return { ok: false, code: 'INVALID_PHASE' }
     return { ok: true, channel: CHAT_CHANNELS.DAY }
 }
 
-// 받는 사람: 낮은 전원, 역할 채널은 같은 역할 산 사람 (광대는 죽어도 받음)
+// 받는 사람: 낮은 전원, 죽은 사람 채널은 죽은 사람만, 역할 채널은 같은 역할 산 사람 (광대는 죽어도 받음)
 function getChatRecipientUuids(session, channel) {
     const uuids = []
     // 역할 이름인 채널인지
@@ -50,6 +59,9 @@ function getChatRecipientUuids(session, channel) {
         // 낮 채널: 판에 있는 사람 전부 (죽은 사람은 읽기만)
         if (channel === CHAT_CHANNELS.DAY) {
             uuids.push(player.uuid)
+        } else if (channel === CHAT_CHANNELS.DEAD) {
+            // 죽은 사람 채널: 죽은 사람만 (산 사람은 못 봄), 나간 사람은 소켓 쪽 자격에서 빠짐
+            if (player.alive !== true) uuids.push(player.uuid)
         } else if (roleChannel && player.role === channel) {
             // 역할 채널: 같은 역할 중 산 사람, 광대는 죽어도
             if (player.alive === true || channel === CHAT_CHANNELS.JOKER) uuids.push(player.uuid)

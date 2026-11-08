@@ -1,4 +1,4 @@
-// 방 만들기 설정 검사 파일, 고를 수 있는 값 표 + 방 만들기 요청 검사 (직업별 밤 시간 포함)
+// 방 만들기 설정 검사 파일, 고를 수 있는 값 표 + 방 만들기 요청 검사 (재판 시간·직업별 밤 시간 포함)
 // socket/matchmaking/join/create.js가 부름 (역할 구성은 거기서 따로), 값 표는 updateSettings.js도 같이 씀
 const ALLOWED_ACCESS_TYPES = ['open', 'code']
 
@@ -17,6 +17,15 @@ function isAllowedMaxPlayers(value) {
 const ALLOWED_DAY_DISCUSSION_TIME = Object.freeze([30, 60, 90, 120, 150])
 const ALLOWED_DAY_VOTE_TIME = Object.freeze([30, 60, 90])
 const ALLOWED_NIGHT_ACTION_TIME = Object.freeze([30, 60, 90, 120])
+// 재판 시간 15~120초 15초 간격 (안 보내면 낮 투표 시간을 씀, 옛 방·옛 저장값도 그대로 돌기)
+const ALLOWED_TRIBUNAL_TIME = Object.freeze([15, 30, 45, 60, 75, 90, 105, 120])
+
+// 재판 시간 칸 검사: 없으면 통과(값 없음), 있으면 허용 값만
+function validateTribunalTime(raw) {
+    if (raw === undefined) return { ok: true, value: undefined }
+    if (!ALLOWED_TRIBUNAL_TIME.includes(raw)) return { ok: false, message: '재판 시간 값이 올바르지 않습니다.' }
+    return { ok: true, value: raw }
+}
 
 // 직업별 밤 시간 정할 수 있는 역할 (시민은 밤 행동 없음), 값은 전체 밤 시간과 같은 표
 const ROLE_NIGHT_ACTION_TIME_KEYS = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
@@ -61,6 +70,7 @@ function validateCreateRoomPayload(payload) {
         soulBetting,
         dayDiscussionTime,
         dayVoteTime,
+        tribunalTime,
         nightActionTime,
         roleNightActionTimes,
         voteReveal,
@@ -88,13 +98,15 @@ function validateCreateRoomPayload(payload) {
     if (!ALLOWED_DAY_VOTE_TIME.includes(dayVoteTime)) {
         return { ok: false, message: '낮 투표 시간 값이 올바르지 않습니다.' }
     }
+    const tribunal = validateTribunalTime(tribunalTime)
+    if (!tribunal.ok) return tribunal
     if (!ALLOWED_NIGHT_ACTION_TIME.includes(nightActionTime)) {
         return { ok: false, message: '밤 행동 시간 값이 올바르지 않습니다.' }
     }
     const roleTimes = validateRoleNightActionTimes(roleNightActionTimes)
     if (!roleTimes.ok) return roleTimes
 
-    // 받은 본문 말고 검사한 칸만 새로 담음, 직업별 밤 시간은 보냈을 때만
+    // 받은 본문 말고 검사한 칸만 새로 담음, 재판 시간·직업별 밤 시간은 보냈을 때만
     const settings = {
         maxPlayers,
         jokerCount,
@@ -105,6 +117,7 @@ function validateCreateRoomPayload(payload) {
         nightActionTime,
         voteReveal,
     }
+    if (tribunal.value !== undefined) settings.tribunalTime = tribunal.value
     if (roleTimes.value !== undefined) settings.roleNightActionTimes = roleTimes.value
 
     return { ok: true, value: { accessType, settings } }
@@ -113,6 +126,7 @@ function validateCreateRoomPayload(payload) {
 module.exports = {
     validateCreateRoomPayload,
     validateRoleNightActionTimes,
+    validateTribunalTime,
     ROLE_NIGHT_ACTION_TIME_KEYS,
     ALLOWED_ROLE_NIGHT_ACTION_TIME,
     ALLOWED_MAX_PLAYERS,
@@ -120,5 +134,6 @@ module.exports = {
     ALLOWED_JOKER_COUNT,
     ALLOWED_DAY_DISCUSSION_TIME,
     ALLOWED_DAY_VOTE_TIME,
+    ALLOWED_TRIBUNAL_TIME,
     ALLOWED_NIGHT_ACTION_TIME,
 }

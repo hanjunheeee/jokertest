@@ -144,7 +144,7 @@ test('AC-02 · 방 설정 허용 목록·요청 허용 키·역할 키·실제 �
 
     assert.deepEqual([...validation.EDITABLE_ROOM_SETTING_KEYS], [
         'maxPlayers', 'jokerCount', 'roleCompositionMode', 'roleCounts',
-        'dayDiscussionTime', 'dayVoteTime', 'nightActionTime', 'roleNightActionTimes',
+        'dayDiscussionTime', 'dayVoteTime', 'tribunalTime', 'nightActionTime', 'roleNightActionTimes',
     ], '편집 가능 설정 허용 목록이 바뀌었다')
     assert.deepEqual([...validation.PRESERVED_ROOM_SETTING_KEYS],
         ['lightsOut', 'soulBetting', 'voteReveal'], '보존 설정 목록이 바뀌었다')
@@ -1727,4 +1727,28 @@ test('AC-06 · 저장 뒤 입력 객체를 변형해도 서버 저장값은 바�
     const after = matchmaking.__getStateSnapshotForTests().gameRooms[0][1].settings
     assert.equal(after.maxPlayers, 6)
     assert.equal(after.roleCounts.JOKER, 1)
+})
+
+// 재판 시간 (사용자 결정 2026-11-09): 방 만들 때·바꿀 때 저장, 방 보기에 실림, 안 보내면 칸 없음(낮 투표 시간 따라감)
+test('재판 시간 · 방 만들 때 저장되고 방 보기에 실리며, 바꾸기로 값 바꾸기·빼기(낮 투표 따라가기)가 된다', async () => {
+    const io = createFakeIo([])
+    const { room, hostSocket } = await createRoom(io, 'host-tribunal', { tribunalTime: 45 })
+    assert.equal(rawRoom(room.roomId).settings.tribunalTime, 45)
+    assert.equal(room.settings.tribunalTime, 45)
+
+    const changed = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-tribunal',
+        updatePayload(room.roomId, { tribunalTime: 90 }))
+    assert.equal(changed.ok, true, changed.message)
+    assert.equal(changed.changed, true)
+    assert.equal(rawRoom(room.roomId).settings.tribunalTime, 90)
+
+    const cleared = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-tribunal',
+        updatePayload(room.roomId, { expectedSettingsVersion: changed.settingsVersion }))
+    assert.equal(cleared.ok, true, cleared.message)
+    assert.equal(Object.hasOwn(rawRoom(room.roomId).settings, 'tribunalTime'), false)
+
+    const rejected = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-tribunal',
+        updatePayload(room.roomId, { expectedSettingsVersion: cleared.settingsVersion, tribunalTime: 10 }))
+    assert.equal(rejected.ok, false)
+    assert.equal(rejected.code, ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST)
 })

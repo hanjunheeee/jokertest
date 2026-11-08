@@ -4,7 +4,6 @@
 const crypto = require('crypto')
 const { findActorSession } = require('../core/registry/lookup')
 const { getPlayerGameId, getSessionById } = require('../queries/byId')
-const { GAME_ROLES } = require('../core/rules/roles')
 const { assertSessionNotEnded } = require('../core/rules/terminal')
 const { CHAT_MIN_INTERVAL_MS, CHAT_COMMIT_MAX_AGE_MS } = require('./constants')
 const { sanitizeChatText, isInvalidClockValue, getChatRateLimitMap, resolveGameChatChannel } = require('./rules')
@@ -61,16 +60,16 @@ function isSamePrepared(prepared, capability) {
     )
 }
 
-// 밤 역할 채팅 검사, 죽은 광대도 가능
+// 밤 역할 채팅 검사, 산 사람만 (죽은 광대는 읽기만, 쓰기는 죽은 사람 채팅으로)
 function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
     // 판 id 확인 + 내 판·나 찾기, 끝난 판·옛 판 화면에서 온 것 거절
     const found = findActorSession(uuid, gameId, { checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
 
-    // 밤에만, 산 사람만 (광대는 죽어도 됨)
+    // 밤에만, 산 사람만 (죽은 사람은 죽은 사람 채팅으로, 사용자 결정 2026-11-09)
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
-    if (actor.alive !== true && actor.role !== GAME_ROLES.JOKER) return { ok: false, code: 'NOT_ELIGIBLE' }
+    if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
 
     // 글 검사
     const sanitized = sanitizeChatText(text)
@@ -103,7 +102,7 @@ function commitJokerChatMessage(session, uuid, sentAt) {
     const actor = session.players.get(uuid)
     if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
-    if (actor.alive !== true && actor.role !== GAME_ROLES.JOKER) return { ok: false, code: 'NOT_ELIGIBLE' }
+    if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
 
     // 보낸 시각 기록 = 다음 채팅 간격 계산 기준
     const rateLimitMap = getChatRateLimitMap(session, actor.role)
@@ -112,14 +111,14 @@ function commitJokerChatMessage(session, uuid, sentAt) {
     return { ok: true }
 }
 
-// 낮 채팅 검사 + 메시지 만들기, 아직 기록 안 함
+// 낮·죽은 사람 채팅 검사 + 메시지 만들기, 아직 기록 안 함
 function prepareGameChatMessage(uuid, gameId, text, { now = Date.now, idFn = () => crypto.randomUUID() } = {}) {
     // 판 id 확인 + 내 판·나 찾기, 끝난 판·옛 판 화면에서 온 것 거절
     const found = findActorSession(uuid, gameId, { checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
 
-    // 어느 채널로 갈지 (산 사람, 낮·재판 때만)
+    // 어느 채널로 갈지 (산 사람 낮·재판 = 낮, 죽은 사람 언제나 = 죽은 사람)
     const routed = resolveGameChatChannel(session, actor)
     if (!routed.ok) return routed
 

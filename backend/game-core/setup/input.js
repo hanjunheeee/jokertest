@@ -56,6 +56,8 @@ function buildTimerSettings(settings) {
     return {
         dayDiscussionTime: positiveInt(settings?.dayDiscussionTime),
         dayVoteTime: positiveInt(settings?.dayVoteTime),
+        // 재판 시간: 방 설정에 없으면 null (재판 타이머가 낮 투표 시간을 씀)
+        tribunalTime: positiveInt(settings?.tribunalTime),
         nightActionTime: positiveInt(settings?.nightActionTime),
         roleNightActionTimes,
     }

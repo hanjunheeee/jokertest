@@ -16,11 +16,12 @@ function matchesTribunal(run) {
     return session.dayIndex === run.dayIndex && tribunal.defendantUuid === run.defendantUuid
 }
 
-// 재판 길이: 시험 주입 → 방 설정 낮 투표 시간 → 기본 낮 투표 시간 (재판도 표 한 번 내는 단계라 같은 길이)
+// 재판 길이: 시험 주입 → 방 설정 재판 시간 → 방 설정 낮 투표 시간 → 기본 낮 투표 시간 (재판 시간 칸 없는 옛 방은 낮 투표와 같은 길이)
 function resolveTribunalDurationMs(session, deps) {
     if (Number.isInteger(deps.durationMs) && deps.durationMs > 0) return deps.durationMs
-    const seconds = session.timerSettings?.dayVoteTime
-    if (Number.isInteger(seconds) && seconds > 0) return seconds * 1000
+    for (const seconds of [session.timerSettings?.tribunalTime, session.timerSettings?.dayVoteTime]) {
+        if (Number.isInteger(seconds) && seconds > 0) return seconds * 1000
+    }
     return gameSessionCore.DAY_VOTE_DURATION_MS
 }
 
@@ -99,4 +100,5 @@ function expireTribunal(run) {
 module.exports = {
     startTribunalTimer,
     stopTribunalTimer,
+    resolveTribunalDurationMs,
 }

@@ -369,5 +369,5 @@ test('방 설정의 이상한 시간 값(0·음수·소수·문자)은 판 시�
         dayDiscussionTime: 0, dayVoteTime: -5, nightActionTime: 1.5,
         roleNightActionTimes: { JOKER: 20, DOCTOR: '10', GUARD: 0, MAFIA: 5 },
     });
-    assert.deepEqual(settings, { dayDiscussionTime: null, dayVoteTime: null, nightActionTime: null, roleNightActionTimes: { JOKER: 20 } });
+    assert.deepEqual(settings, { dayDiscussionTime: null, dayVoteTime: null, tribunalTime: null, nightActionTime: null, roleNightActionTimes: { JOKER: 20 } });
 });

@@ -226,6 +226,42 @@ test('BE-003: 재판 중 한 명이 표를 안 내도 마감 때 기권으로 �
     assert.equal(__getTribunalRunForTests(session.id), null, '판정 뒤 재판 마감은 꺼짐')
 })
 
+// 재판 시간 설정 (사용자 결정 2026-11-09): 방 설정 재판 시간이 있으면 그 값, 없으면 낮 투표 시간
+function toTribunal(session, uuids) {
+    toDayVote(session)
+    const defendant = uuids[1]
+    for (const uuid of uuids) gameSessionCore.submitDayVote(uuid, session.id, uuid === defendant ? uuids[0] : defendant)
+    const prepared = gameSessionCore.prepareDayVoteResolution(uuids[0], session.id, session.dayIndex)
+    gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
+    assert.equal(session.phase, 'TRIBUNAL')
+}
+
+test('재판 시간: 방 설정 재판 시간(45초)이 있으면 재판 마감이 그 값을 씀 (낮 투표 30초와 따로)', () => {
+    const { session, uuids } = commitFivePlayerSession('tribunal-time-set', { dayVoteTime: 30, tribunalTime: 45 })
+    assert.equal(session.timerSettings.tribunalTime, 45)
+    const { io } = wireSession(session)
+    const clock = createManualClock()
+    toTribunal(session, uuids)
+
+    startTribunalTimer(io, session, clock)
+    assert.equal(session.tribunalDeadline, clock.now() + 45_000)
+    clock.advance(45_000 - 1)
+    assert.equal(session.tribunal.resolved, undefined)
+    clock.advance(1)
+    assert.equal(session.tribunal.resolved, true)
+})
+
+test('재판 시간: 칸 없는 옛 방 설정은 낮 투표 시간(60초)을 그대로 씀', () => {
+    const { session, uuids } = commitFivePlayerSession('tribunal-time-legacy', { dayVoteTime: 60 })
+    assert.equal(session.timerSettings.tribunalTime, null)
+    const { io } = wireSession(session)
+    const clock = createManualClock()
+    toTribunal(session, uuids)
+
+    startTribunalTimer(io, session, clock)
+    assert.equal(session.tribunalDeadline, clock.now() + 60_000)
+})
+
 test('known 1-1: 판 첫 사람이 나간 판도 낮 투표 마감 타이머가 판정한다', () => {
     const { session, uuids } = commitFivePlayerSession('dayvote-first-left', { dayVoteTime: 30 })
     const { io, trigger } = wireSession(session)

@@ -172,3 +172,21 @@ test('validateRoleNightActionTimes는 클라이언트 객체를 그대로 담지
     assert.deepEqual(validateRoleNightActionTimes(undefined), { ok: true, value: undefined })
     assert.deepEqual(validateRoleNightActionTimes({}), { ok: true, value: {} })
 })
+
+// 재판 시간 (사용자 결정 2026-11-09: 방 설정 칸, 기본 = 낮 투표 시간)
+test('재판 시간: 안 보내면 칸 없음(낮 투표 시간을 따라감), 15~120초 15초 간격만 받음', () => {
+    const omitted = validateCreateRoomPayload(validPayload())
+    assert.equal(omitted.ok, true)
+    assert.equal(Object.hasOwn(omitted.value.settings, 'tribunalTime'), false)
+
+    for (const seconds of [15, 30, 45, 60, 75, 90, 105, 120]) {
+        const result = validateCreateRoomPayload(validPayload({ tribunalTime: seconds }))
+        assert.equal(result.ok, true, `${seconds}초`)
+        assert.equal(result.value.settings.tribunalTime, seconds)
+    }
+    for (const bad of [0, 10, 20, 135, 150, -15, 30.5, '30', null, true]) {
+        const result = validateCreateRoomPayload(validPayload({ tribunalTime: bad }))
+        assert.equal(result.ok, false, `${String(bad)}는 거절`)
+        assert.equal(result.message, '재판 시간 값이 올바르지 않습니다.')
+    }
+})

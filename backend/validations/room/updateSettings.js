@@ -2,6 +2,7 @@
 // socket/matchmaking(설정 바꾸기·방 보기·준비·시작)·game-core/setup이 부름 (값 표는 create.js 것)
 const {
     validateRoleNightActionTimes,
+    validateTribunalTime,
     ROLE_NIGHT_ACTION_TIME_KEYS,
     isAllowedMaxPlayers,
     ALLOWED_JOKER_COUNT,
@@ -45,6 +46,7 @@ const EDITABLE_ROOM_SETTING_KEYS = Object.freeze([
     'roleCounts',
     'dayDiscussionTime',
     'dayVoteTime',
+    'tribunalTime',
     'nightActionTime',
     'roleNightActionTimes',
 ])
@@ -167,6 +169,29 @@ function fingerprintRequest(expectedSettingsVersion, accessType, settings) {
     return `v=${expectedSettingsVersion}|${fingerprintUpdateSettings(accessType, settings)}`
 }
 
+// 시간 칸들 검사 (방 만들기와 같은 표), 맞으면 재판 시간·직업별 밤 시간 정리 값 (안 보낸 칸은 undefined)
+function validateTimeFields({ dayDiscussionTime, dayVoteTime, tribunalTime, nightActionTime, roleNightActionTimes }) {
+    if (!ALLOWED_DAY_DISCUSSION_TIME.includes(dayDiscussionTime)) {
+        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '낮 토론 시간 값이 올바르지 않습니다.')
+    }
+    if (!ALLOWED_DAY_VOTE_TIME.includes(dayVoteTime)) {
+        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '낮 투표 시간 값이 올바르지 않습니다.')
+    }
+    // 재판 시간은 안 보내면 칸 없음 (낮 투표 시간을 따라감)
+    const tribunal = validateTribunalTime(tribunalTime)
+    if (!tribunal.ok) {
+        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, tribunal.message)
+    }
+    if (!ALLOWED_NIGHT_ACTION_TIME.includes(nightActionTime)) {
+        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '밤 행동 시간 값이 올바르지 않습니다.')
+    }
+    const roleTimes = validateRoleNightActionTimes(roleNightActionTimes)
+    if (!roleTimes.ok) {
+        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, roleTimes.message)
+    }
+    return { ok: true, tribunalTime: tribunal.value, roleNightActionTimes: roleTimes.value }
+}
+
 // 모르는 칸 → id·버전 → 칸마다 허용 값 → 역할 구성 순, 맞으면 새로 담은 settings
 function validateUpdateRoomSettingsPayload(payload) {
     if (!isPlainObject(payload)) {
@@ -190,7 +215,6 @@ function validateUpdateRoomSettingsPayload(payload) {
         dayDiscussionTime,
         dayVoteTime,
         nightActionTime,
-        roleNightActionTimes,
     } = payload
 
     // 방·요청 id, 기대 버전 (1 이상 정수, 그사이 설정이 바뀌었는지 볼 때 씀)
@@ -217,19 +241,9 @@ function validateUpdateRoomSettingsPayload(payload) {
     if (jokerCount >= maxPlayers) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '광대 수는 최대 플레이어 수보다 적어야 합니다.')
     }
-    if (!ALLOWED_DAY_DISCUSSION_TIME.includes(dayDiscussionTime)) {
-        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '낮 토론 시간 값이 올바르지 않습니다.')
-    }
-    if (!ALLOWED_DAY_VOTE_TIME.includes(dayVoteTime)) {
-        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '낮 투표 시간 값이 올바르지 않습니다.')
-    }
-    if (!ALLOWED_NIGHT_ACTION_TIME.includes(nightActionTime)) {
-        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '밤 행동 시간 값이 올바르지 않습니다.')
-    }
-    const roleTimes = validateRoleNightActionTimes(roleNightActionTimes)
-    if (!roleTimes.ok) {
-        return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, roleTimes.message)
-    }
+    // 시간 칸들 (낮 토론·낮 투표·재판·밤·직업별 밤)
+    const times = validateTimeFields(payload)
+    if (!times.ok) return times
 
     // 역할 구성(자동·직접)은 game-core 규칙으로
     const roleComposition = validateCreateRoomRoleComposition(payload, { maxPlayers, jokerCount })
@@ -246,7 +260,8 @@ function validateUpdateRoomSettingsPayload(payload) {
         nightActionTime,
         ...roleComposition.value,
     }
-    if (roleTimes.value !== undefined) settings.roleNightActionTimes = roleTimes.value
+    if (times.tribunalTime !== undefined) settings.tribunalTime = times.tribunalTime
+    if (times.roleNightActionTimes !== undefined) settings.roleNightActionTimes = times.roleNightActionTimes
 
     return {
         ok: true,

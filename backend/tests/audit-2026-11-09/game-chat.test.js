@@ -62,11 +62,23 @@ test('낮 채팅: 산 사람은 낮·재판 때 보낼 수 있고 밤엔 INVALID
     assert.equal(prepare(session, uuids[0], '안녕').code, 'INVALID_PHASE');
 });
 
-test('낮 채팅: 죽은 사람은 NOT_ELIGIBLE (읽기만)', () => {
+test('낮 채팅: 죽은 사람은 낮 채널에 못 쓰고 DEAD로 감, 낮 채팅 읽기는 그대로 (사용자 규칙)', () => {
     const { session, uuids } = dayGame();
     session.players.get(uuids[0]).alive = false;
-    assert.equal(prepare(session, uuids[0], '나 죽었어').code, 'NOT_ELIGIBLE');
+    assert.equal(prepare(session, uuids[0], '나 죽었어').channel, 'DEAD');
     assert.ok(core.getChatRecipientUuids(session, 'DAY').includes(uuids[0]));
+    assert.deepEqual(core.getChatRecipientUuids(session, 'DEAD'), [uuids[0]]);
+});
+
+test('죽은 사람 채팅: 낮·재판·밤 상관없이 DEAD, 나가서 빠진 사람은 NOT_ELIGIBLE (사용자 규칙)', () => {
+    const { session, uuids } = dayGame();
+    session.players.get(uuids[0]).alive = false;
+    for (const phase of ['DAY', 'TRIBUNAL', 'NIGHT']) {
+        session.phase = phase;
+        assert.equal(prepare(session, uuids[0], '죽은 사람끼리').channel, 'DEAD', phase);
+    }
+    session.players.get(uuids[0]).isParticipating = false;
+    assert.equal(prepare(session, uuids[0], '나갔음').code, 'NOT_ELIGIBLE');
 });
 
 test('낮 채팅: 끝난 판이면 GAME_ALREADY_ENDED', () => {
@@ -126,11 +138,11 @@ test('commit: 손으로 만든 비슷한 객체는 STALE_CHAT_REQUEST', () => {
     assert.equal(core.commitGameChatMessage(null).code, 'STALE_CHAT_REQUEST');
 });
 
-test('commit: 그사이 죽었으면 NOT_ELIGIBLE, 그사이 밤이 됐으면 INVALID_PHASE', () => {
+test('commit: 그사이 죽었으면 STALE_CHAT_CHANNEL (사용자 규칙), 그사이 밤이 됐으면 INVALID_PHASE', () => {
     const a = dayGame();
     const p = prepare(a.session, a.uuids[0], 'a', 10_000);
     a.session.players.get(a.uuids[0]).alive = false;
-    assert.equal(core.commitGameChatMessage(p, at(10_000)).code, 'NOT_ELIGIBLE');
+    assert.equal(core.commitGameChatMessage(p, at(10_000)).code, 'STALE_CHAT_CHANNEL');
     const q = prepare(a.session, a.uuids[1], 'a', 10_000);
     a.session.phase = 'NIGHT';
     assert.equal(core.commitGameChatMessage(q, at(10_000)).code, 'INVALID_PHASE');

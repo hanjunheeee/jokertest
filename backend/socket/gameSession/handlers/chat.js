@@ -1,5 +1,5 @@
 // 채팅·이모티콘 핸들러 파일
-// 조커 채팅 · 낮 채팅 · 이모티콘 보내기 (지도 13), register가 등록·시험은 gameSession.js로 바로 부름
+// 조커 채팅 · 낮·죽은 사람 채팅 · 이모티콘 보내기 (지도 13), register가 등록·시험은 gameSession.js로 바로 부름
 // 채팅은 받을 소켓·id 먼저 정하고 commit (확정 전 실패면 아무것도 안 바뀜)
 const { randomUUID } = require('node:crypto')
 const gameSessionCore = require('../../../game-core/gameSession')
@@ -135,7 +135,7 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
 // 낮 채팅 ack
 const respondGameChat = labeledResponder('[게임 채팅 오류]')
 
-// 낮 채팅(낮·재판, 산 사람만): 받을 사람 정하고 확정한 뒤 소켓마다 하나씩 보냄
+// 낮 채팅(낮·재판, 산 사람) · 죽은 사람 채팅(언제나, 죽은 사람끼리): 받을 사람 정하고 확정한 뒤 소켓마다 하나씩 보냄
 function handleSubmitGameChatMessage(io, socket, uuid, payload, callback, deps = {}) {
     // 시험이 prepare·commit·받는 소켓·id 함수를 바꿔 끼움 (id는 prepare가 만듦)
     const prepare = deps.prepare ?? gameSessionCore.prepareGameChatMessage

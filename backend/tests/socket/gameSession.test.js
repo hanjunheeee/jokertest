@@ -1511,7 +1511,7 @@ test('submit_game_chat_message: prepare~commit 사이에 prepared 번들이 변�
     assert.equal(payload.senderUuid, actor)
 })
 
-test('submit_game_chat_message: 사망 발신자는 NOT_ELIGIBLE로 거부되고 어느 소켓에도 전달되지 않는다', () => {
+test('submit_game_chat_message: 밤의 사망 발신자는 DEAD로 보내고 죽은 사람만 받는다 (사용자 규칙)', () => {
     const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs4a', 'gcs4b', 'gcs4c', 'gcs4d'], {
         roomId: 'room-gcs-4',
         phase: 'NIGHT',
@@ -1522,11 +1522,48 @@ test('submit_game_chat_message: 사망 발신자는 NOT_ELIGIBLE로 거부되고
 
     handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '사망자 대화' }, callback)
 
-    assert.deepEqual(getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
-    for (const s of socketByUuid.values()) assert.equal(s.emitted.length, 0)
-    assert.equal(session.deadChatRateLimit.size, 0)
+    assert.deepEqual(getResponse(), { ok: true })
+    assert.equal(deliveredCount(socketByUuid.get('gcs4a'), DEAD_CHAT_EVENT), 1)
+    assert.equal(deliveredCount(socketByUuid.get('gcs4b'), DEAD_CHAT_EVENT), 1)
+    for (const uuid of ['gcs4c', 'gcs4d']) {
+        assert.equal(socketByUuid.get(uuid).emitted.length, 0, '산 사람은 죽은 사람 채팅을 못 받는다')
+    }
+    for (const s of socketByUuid.values()) assert.equal(deliveredCount(s, DAY_CHAT_EVENT), 0)
+    assert.deepEqual([...session.deadChatRateLimit.keys()], [actor])
     assert.equal(session.dayChatRateLimit.size, 0)
     assert.equal(io.broadcasts.length, 0)
+})
+
+test('submit_game_chat_message: 죽은 사람 채팅도 증거 보관에 원문(채널 DEAD)으로 들어가고 보내는 글은 금지어를 가림 (사용자 규칙)', () => {
+    const chatBuffer = require('../../services/ops/chatBuffer')
+    const bannedWords = require('../../services/ops/bannedWords')
+    chatBuffer.__resetForTests()
+    bannedWords.__setWordsForTests(['나쁜말'])
+    try {
+        const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcsDa', 'gcsDb', 'gcsDc', 'gcsDd'], {
+            roomId: 'room-gcs-dead-evidence',
+            phase: 'DAY',
+            deadUuids: ['gcsDa', 'gcsDb'],
+        })
+        const { callback, getResponse } = countingCallback()
+
+        handleSubmitGameChatMessage(io, socketByUuid.get('gcsDa'), 'gcsDa', { gameId: session.id, text: '이건 나쁜말 이다' }, callback)
+
+        assert.deepEqual(getResponse(), { ok: true })
+        const delivered = socketByUuid.get('gcsDb').emitted.find((e) => e.event === DEAD_CHAT_EVENT)
+        assert.ok(delivered, '죽은 사람은 받는다')
+        assert.equal(delivered.payload.text.includes('나쁜말'), false, '보내는 글은 금지어를 가림')
+        for (const uuid of ['gcsDc', 'gcsDd']) assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
+
+        const kept = chatBuffer.getGameChatMessages(session.id)
+        assert.equal(kept.length, 1)
+        assert.equal(kept[0].channel, 'DEAD')
+        assert.equal(kept[0].senderUuid, 'gcsDa')
+        assert.equal(kept[0].text, '이건 나쁜말 이다', '증거는 원문')
+    } finally {
+        bannedWords.__setWordsForTests([])
+        chatBuffer.__resetForTests()
+    }
 })
 
 test('submit_game_chat_message: 같은 uuid라도 canonical이 아닌 소켓은 받지 않고, canonical 소켓은 정확히 1건씩 받는다', () => {
@@ -1600,13 +1637,14 @@ test('resolveChatRecipientSockets: 채널별 canonical 수신자만 돌려주고
     const deadIds = resolveChatRecipientSockets(mergedIo, session, gameSessionCore.CHAT_CHANNELS.DEAD).map((s) => s.id)
 
     assert.deepEqual(dayIds, ['sock-gcs8a', 'sock-gcs8c'])
-    assert.deepEqual(deadIds, [])
+    // 죽은 사람 채널은 죽은 사람만 (gcs8d는 채널 밖이라 빠짐, 사용자 규칙)
+    assert.deepEqual(deadIds, ['sock-gcs8c'])
     for (const channel of [null, undefined, '', 'day', 'UNKNOWN', 42]) {
         assert.deepEqual(resolveChatRecipientSockets(mergedIo, session, channel), [])
     }
 })
 
-test('submit_game_chat_message: 사망이 확정되면 같은 발신자의 다음 메시지는 채널을 갈아타지 않고 거부된다', () => {
+test('submit_game_chat_message: 사망이 확정되면 같은 발신자의 다음 메시지는 DEAD로 가고 죽은 사람만 받는다 (사용자 규칙)', () => {
     const { session, io, socketByUuid } = commitGameChatSessionWithSockets(['gcs9a', 'gcs9b', 'gcs9c', 'gcs9d'], {
         roomId: 'room-gcs-9',
         phase: 'DAY',
@@ -1624,12 +1662,17 @@ test('submit_game_chat_message: 사망이 확정되면 같은 발신자의 다�
     const second = countingCallback()
     handleSubmitGameChatMessage(io, socketByUuid.get(actor), actor, { gameId: session.id, text: '죽은 뒤' }, second.callback)
 
-    assert.deepEqual(second.getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
-    for (const uuid of ['gcs9a', 'gcs9b', 'gcs9c', 'gcs9d']) {
-        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
-        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1, '거부된 요청은 새 메시지를 만들지 않는다')
+    assert.deepEqual(second.getResponse(), { ok: true })
+    for (const uuid of ['gcs9a', 'gcs9d']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 1, '죽은 사람은 받는다')
     }
-    assert.equal(session.deadChatRateLimit.size, 0)
+    for (const uuid of ['gcs9b', 'gcs9c']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0, '산 사람은 못 받는다')
+    }
+    for (const uuid of ['gcs9a', 'gcs9b', 'gcs9c', 'gcs9d']) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 1, '낮 채널엔 새 글 없음')
+    }
+    assert.deepEqual([...session.deadChatRateLimit.keys()], [actor])
 })
 
 test('submit_game_chat_message: 한 recipient의 emit이 throw해도 나머지는 정상 수신하고 커밋은 롤백되지 않는다', (t) => {
@@ -1799,7 +1842,7 @@ test('submit_game_chat_message: registerGameHandlers로 실제 배선하면 sock
     assert.equal(io.broadcasts.length, 0)
 })
 
-test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지만 공개 채팅은 거부된다', () => {
+test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 읽기만 하고(NOT_ELIGIBLE) 말은 DEAD로 간다 (사용자 규칙)', () => {
     const uuids = ['gcsGa', 'gcsGb', 'gcsGc', 'gcsGd']
     const { session, io, socketByUuid, jokerUuid } = commitGameChatSessionWithSockets(uuids, {
         roomId: 'room-gcs-g',
@@ -1820,22 +1863,23 @@ test('submit_game_chat_message: 사망한 JOKER는 팀 채팅을 계속 쓰지�
     )
     const jokerChat = countingCallback()
     handleSubmitJokerChatMessage(io, jokerSocket, jokerUuid, { gameId: session.id, text: '죽은 JOKER' }, jokerChat.callback)
-    assert.deepEqual(jokerChat.getResponse(), { ok: true })
-    assert.equal(deliveredCount(jokerSocket, 'joker_chat_message'), 1)
-    for (const uuid of uuids.filter((u) => u !== jokerUuid)) {
-        assert.equal(deliveredCount(socketByUuid.get(uuid), 'joker_chat_message'), 0, '팀 밖으로는 새지 않는다')
+    assert.equal(jokerChat.getResponse().ok, false)
+    assert.equal(jokerChat.getResponse().code, 'NOT_ELIGIBLE')
+    for (const uuid of uuids) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), 'joker_chat_message'), 0)
     }
-    assert.deepEqual([...session.jokerChatRateLimit.keys()], [jokerUuid])
+    assert.equal(session.jokerChatRateLimit.size, 0)
 
     const publicChat = countingCallback()
     handleSubmitGameChatMessage(io, jokerSocket, jokerUuid, { gameId: session.id, text: '사망자 대화' }, publicChat.callback)
 
-    assert.deepEqual(publicChat.getResponse(), { ok: false, code: 'NOT_ELIGIBLE', message: '요청을 처리할 수 없습니다.' })
-    for (const uuid of uuids) {
-        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0)
-        assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 0)
+    assert.deepEqual(publicChat.getResponse(), { ok: true })
+    assert.equal(deliveredCount(jokerSocket, DEAD_CHAT_EVENT), 1)
+    for (const uuid of uuids.filter((u) => u !== jokerUuid)) {
+        assert.equal(deliveredCount(socketByUuid.get(uuid), DEAD_CHAT_EVENT), 0, '산 사람은 못 받는다')
     }
-    assert.equal(session.deadChatRateLimit.size, 0)
+    for (const uuid of uuids) assert.equal(deliveredCount(socketByUuid.get(uuid), DAY_CHAT_EVENT), 0)
+    assert.deepEqual([...session.deadChatRateLimit.keys()], [jokerUuid])
 })
 
 async function startRealTwoPlayerSession(hostUuid, joinerUuid) {

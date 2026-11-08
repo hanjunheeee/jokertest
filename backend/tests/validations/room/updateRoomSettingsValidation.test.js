@@ -208,3 +208,30 @@ test('이벤트명·오류 코드는 소켓 계층이 다시 내보내는 값과
     assert.equal(ROOM_SETTINGS_EVENTS.GET_ROOM_SETTINGS_UPDATE_RESULT, 'get_room_settings_update_result')
     assert.equal(ROOM_SETTINGS_EVENTS.ROOM_SETTINGS_UPDATED, 'room_settings_updated')
 })
+
+// 재판 시간 (사용자 결정 2026-11-09: 방 설정 칸, 기본 = 낮 투표 시간)
+test('재판 시간: 바꾸기 요청에 넣을 수 있고, 안 넣으면 칸 없음, 범위 밖은 거절', () => {
+    const omitted = validateUpdateRoomSettingsPayload(validPayload())
+    assert.equal(omitted.ok, true)
+    assert.equal(Object.hasOwn(omitted.value.settings, 'tribunalTime'), false)
+
+    const set = validateUpdateRoomSettingsPayload(validPayload({ tribunalTime: 45 }))
+    assert.equal(set.ok, true)
+    assert.equal(set.value.settings.tribunalTime, 45)
+
+    for (const bad of [0, 10, 135, '45', null]) {
+        const result = validateUpdateRoomSettingsPayload(validPayload({ tribunalTime: bad }))
+        assert.equal(result.ok, false, `${String(bad)}는 거절`)
+        assert.equal(result.code, ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST)
+    }
+})
+
+test('재판 시간: 설정 보기에 있으면 실리고 지문도 달라짐, 옛 저장값(칸 없음)은 그대로 보기', () => {
+    const base = { maxPlayers: 8, jokerCount: 2, dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90 }
+    assert.equal(Object.hasOwn(buildRoomSettingsView(base), 'tribunalTime'), false)
+    assert.equal(buildEditableSettingsView({ ...base, tribunalTime: 90 }).tribunalTime, 90)
+    assert.notEqual(
+        fingerprintUpdateSettings('open', base),
+        fingerprintUpdateSettings('open', { ...base, tribunalTime: 60 }),
+    )
+})

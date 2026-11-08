@@ -458,12 +458,13 @@ test('밤 역할 채팅: 광대는 밤에 보낼 수 있음, 낮엔 INVALID_PHAS
     assert.equal(core.prepareJokerChatMessage(joker, session.id, '안녕', fixedNow(1000)).code, 'INVALID_PHASE');
 });
 
-test('밤 역할 채팅: 죽은 광대는 보낼 수 있고 죽은 의사는 NOT_ELIGIBLE', () => {
+test('밤 역할 채팅: 죽은 광대·죽은 의사 모두 NOT_ELIGIBLE (죽은 사람 채팅으로, 사용자 규칙), 죽은 광대는 읽기만', () => {
     const { session, joker, doctor } = fullNight();
     session.players.get(joker).alive = false;
     session.players.get(doctor).alive = false;
-    assert.equal(core.prepareJokerChatMessage(joker, session.id, 'a', fixedNow(1000)).ok, true);
+    assert.equal(core.prepareJokerChatMessage(joker, session.id, 'a', fixedNow(1000)).code, 'NOT_ELIGIBLE');
     assert.equal(core.prepareJokerChatMessage(doctor, session.id, 'a', fixedNow(1000)).code, 'NOT_ELIGIBLE');
+    assert.ok(core.getChatRecipientUuids(session, 'JOKER').includes(joker));
 });
 
 test('밤 역할 채팅: 기록 뒤 0.5초 안에 또 보내면 RATE_LIMITED, 0.5초 지나면 통과', () => {
