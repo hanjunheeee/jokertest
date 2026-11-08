@@ -1,5 +1,6 @@
 // 대기방 요청: 게임 시작·준비 바꾸기·방 삭제
 // hooks/room/useRoom이 씀, 방 확인이 끝나야 보내고 응답이 옛것이면 버림
+import { useRef, useState } from 'react'
 import { getSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
@@ -10,7 +11,7 @@ import { ROOM_MESSAGES } from '../../constants/roomMessages.js'
 import { READY_EVENT, classifyReady } from '../../utils/roomVersion.js'
 import { roomSfx } from '../../utils/roomSfx.js'
 import { canSend } from '../../utils/request.js'
-import { deleteRoom, sendReady, sendStart } from '../../socket/room.js'
+import { sendDeleteRoom, sendReady, sendStart } from '../../socket/room.js'
 
 // 응답이 옛것인지 보는 검사 만들기: 보낼 때 잡은 버전·소속·소켓·방·계정이 하나라도 바뀌면 옛것
 const staleCheck = (ctx, verRef, { ver, socket, roomId, uuid, member }) => () => {
@@ -26,12 +27,41 @@ const staleCheck = (ctx, verRef, { ver, socket, roomId, uuid, member }) => () =>
   return false
 }
 
-// 시작·준비 요청 함수 묶음 (방 삭제는 소켓 함수 그대로 넘김)
+// 시작·준비·방 삭제 요청 함수 묶음
 export function useRoomRequests(ctx) {
   const {
     syncStatus, startingRef, readyingRef, startVerRef, readyVerRef, memberGenRef, readyAggRef,
     setIsStarting, setIsSettingReady, setStartBlocked, resync, bump, clearStart, clearReady,
   } = ctx
+
+  // 방 삭제 보내는 중 (연타 막기)
+  const deletingRef = useRef(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // 방 삭제: 연결 없으면 알리고, 한 번 확인받은 뒤 보냄 (모두 나가게 되니까, FE-033)
+  const deleteRoom = async () => {
+    if (deletingRef.current) return
+    const socket = getSocket()
+    if (!canSend(socket)) {
+      alert(GAME_START_MESSAGES.SOCKET_UNAVAILABLE)
+      return
+    }
+    if (!window.confirm(ROOM_MESSAGES.DELETE_CONFIRM)) return
+    deletingRef.current = true
+    setIsDeleting(true)
+    try {
+      const response = await sendDeleteRoom(socket)
+      // 성공이면 방 삭제 방송이 화면을 옮김, 실패만 알림
+      if (response?.ok === false && ctx.mountedRef.current) {
+        alert(response.message ?? ROOM_MESSAGES.DELETE_FAILED)
+      }
+    } catch {
+      if (ctx.mountedRef.current) alert(ROOM_MESSAGES.DELETE_FAILED)
+    } finally {
+      deletingRef.current = false
+      if (ctx.mountedRef.current) setIsDeleting(false)
+    }
+  }
 
   // 게임 시작: 막히면 안내 창 띄움
   const startGame = async () => {
@@ -169,5 +199,5 @@ export function useRoomRequests(ctx) {
     }
   }
 
-  return { deleteRoom, startGame, setReady }
+  return { deleteRoom, isDeleting, startGame, setReady }
 }

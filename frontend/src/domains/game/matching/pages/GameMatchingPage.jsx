@@ -34,6 +34,8 @@ export default function GameMatchingPage() {
     isRoomVerified,
     startGame,
     deleteRoom,
+    isDeleting,
+    canViewRoomCode,
     startBlockedMessage,
     dismissStartBlockedMessage,
     handleBack,
@@ -73,6 +75,7 @@ export default function GameMatchingPage() {
     inviteFriends,
     invitingIds,
     inviteFriend,
+    friendInviteError,
   } = useMatchingPage()
 
   return (
@@ -86,6 +89,7 @@ export default function GameMatchingPage() {
         roomCodeOpen={roomCodeOpen}
         onRoomCodeOpen={openRoomCode}
         onRoomCodeClose={closeRoomCode}
+        roomCodeDisabled={!canViewRoomCode}
         isHost={isHost}
         isReady={isReady}
         isSettingReady={isSettingReady}
@@ -94,6 +98,7 @@ export default function GameMatchingPage() {
         isRoomVerified={isRoomVerified}
         onStartGame={startGame}
         onDeleteRoom={deleteRoom}
+        isDeleting={isDeleting}
         onLeaveRoom={handleBack}
         startBlockedMessage={startBlockedMessage}
         onDismissStartBlocked={dismissStartBlockedMessage}
@@ -126,6 +131,7 @@ export default function GameMatchingPage() {
           friends={inviteFriends}
           invitingIds={invitingIds}
           onInviteFriend={inviteFriend}
+          errorMessage={friendInviteError}
         />
       </FriendInviteModalShell>
 

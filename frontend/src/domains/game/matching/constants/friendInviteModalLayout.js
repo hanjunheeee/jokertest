@@ -1,4 +1,4 @@
-// 친구 초대 창 모양 상수, 틀·제목·닫기·여백은 인게임 투표 창 것 빌려 씀
+// 친구 초대 창 모양 상수, 틀·제목·닫기·여백은 인게임 투표 창 것 빌려 씀, 글자 크기는 설정 배율 따름
 // friendInvite 컴포넌트 셋(Shell·Content·Row)이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
@@ -44,13 +44,13 @@ export const NAME_ROW_CLASS =
   "flex min-w-0 flex-col gap-[clamp(0.12rem,0.35vh,0.2rem)]"
 
 export const NAME_CLASS =
-  "min-w-0 truncate font-display text-[clamp(0.92rem,1.18vw,1.08rem)] font-medium leading-tight tracking-normal text-white antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "min-w-0 truncate font-display app-text-scaled [--app-text-size:clamp(0.92rem,1.18vw,1.08rem)] font-medium leading-tight tracking-normal text-white antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const STATS_CLASS =
-  "min-w-0 truncate font-subheading text-[clamp(0.78rem,1.02vw,0.92rem)] font-bold leading-none text-white/55 tabular-nums"
+  "min-w-0 truncate font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.02vw,0.92rem)] font-bold leading-none text-white/55 tabular-nums"
 
 export const EMPTY_CLASS =
-  "mb-[clamp(0.35rem,1cqi,0.5rem)] shrink-0 text-center font-subheading text-[clamp(0.58rem,1.85cqi,0.72rem)] font-bold text-white/70"
+  "mb-[clamp(0.35rem,1cqi,0.5rem)] shrink-0 text-center font-subheading app-text-scaled [--app-text-size:clamp(0.58rem,1.85cqi,0.72rem)] font-bold text-white/70"
 
 export const ROW_ACTION_BTN_CLASS =
   "interactive-scale group relative block w-[clamp(5.85rem,22cqi,7.25rem)] shrink-0 -translate-x-[clamp(0.45rem,2cqi,0.85rem)] cursor-pointer border-0 bg-transparent p-0 leading-none disabled:cursor-default disabled:opacity-90"
@@ -59,4 +59,4 @@ export const ROW_ACTION_BTN_IMG_CLASS =
   "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.03] group-active:scale-[0.97] group-disabled:transform-none"
 
 export const ROW_ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center px-[8%] text-center font-subheading text-[clamp(0.62rem,2.1cqi,0.78rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)] group-disabled:text-[#ebe2cc]/75"
+  "pointer-events-none absolute inset-0 flex items-center justify-center px-[8%] text-center font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,2.1cqi,0.78rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)] group-disabled:text-[#ebe2cc]/75"

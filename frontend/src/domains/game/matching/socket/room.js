@@ -8,7 +8,18 @@ import { CHECK_TIMEOUT_MS, READY_TIMEOUT_MS, START_TIMEOUT_MS } from '../constan
 export const askRoom = (socket) => socket.timeout(CHECK_TIMEOUT_MS).emitWithAck('get_current_room', {})
 
 // 지금 내 방 묻기 (콜백으로 받음, 강퇴 전 소속 확인용)
-export const askRoomCb = (socket, done) => socket.emit('get_current_room', {}, done)
+// 응답이 시간 안에 안 오면 null로 한 번만 부름 (끊겨도 소속 확인이 끝나게)
+export const askRoomCb = (socket, done) => {
+  let settled = false
+  const finish = (response) => {
+    if (settled) return
+    settled = true
+    window.clearTimeout(timer)
+    done(response)
+  }
+  const timer = window.setTimeout(() => finish(null), CHECK_TIMEOUT_MS)
+  socket.emit('get_current_room', {}, finish)
+}
 
 // 게임 시작 요청
 export const sendStart = (socket, payload) =>
@@ -18,6 +29,9 @@ export const sendStart = (socket, payload) =>
 export const sendReady = (socket, payload) =>
   socket.timeout(READY_TIMEOUT_MS).emitWithAck('set_ready', payload)
 
-// 방 삭제·나가기: 응답 안 기다림, 지금 소켓으로 보냄
-export const deleteRoom = () => getSocket()?.emit('delete_room')
+// 방 삭제 요청 (응답 기다림, 성공하면 방 삭제 방송도 옴)
+export const sendDeleteRoom = (socket) =>
+  socket.timeout(CHECK_TIMEOUT_MS).emitWithAck('delete_room', {})
+
+// 방 나가기: 응답 안 기다림, 지금 소켓으로 보냄
 export const leaveRoom = () => getSocket()?.emit('leave_room')

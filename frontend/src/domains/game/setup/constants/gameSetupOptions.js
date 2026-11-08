@@ -21,7 +21,7 @@ export const GENERAL_GAME_SETUP = [
     id: "max-players",
     type: "stepper",
     label: "최대 플레이어 수",
-    min: 4,
+    min: 5,
     max: 10,
     defaultValue: 10,
   },

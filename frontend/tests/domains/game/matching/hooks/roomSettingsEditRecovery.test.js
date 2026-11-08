@@ -176,7 +176,7 @@ test.afterEach(() => {
 
 test("AC-03 · 같은 버전의 거부 응답으로 폼이 되맞춰지면 편집 의도도 함께 버려져, 다음 저장이 없던 직업별 override를 만들지 않는다", async () => {
   const { socket, container, room } = await mountHost({
-    guestCount: 4, settings: { maxPlayers: 8, jokerCount: 1, nightActionTime: 90 },
+    guestCount: 5, settings: { maxPlayers: 8, jokerCount: 1, nightActionTime: 90 },
   })
   assert.equal(room.settings.roleNightActionTimes, undefined, "전제: 서버에 직업별 지정이 없다")
 
@@ -187,14 +187,14 @@ test("AC-03 · 같은 버전의 거부 응답으로 폼이 되맞춰지면 편�
   assert.equal(readStepperRow(container, "광대 밤 시간 조절"), "60초", "스테퍼 클릭이 화면에 반영되지 않았다")
 
   await clickTab(container, "일반")
-  for (let i = 0; i < 4; i += 1) await clickByLabel(container, "최대 플레이어 수 감소")
-  assert.equal(readStepperRow(container, "최대 플레이어 수"), "4")
+  for (let i = 0; i < 3; i += 1) await clickByLabel(container, "최대 플레이어 수 감소")
+  assert.equal(readStepperRow(container, "최대 플레이어 수"), "5")
 
   const versionBefore = useMatchingStore.getState().settingsVersion
   await clickByLabel(container, "설정 저장")
 
   const rejected = socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS)
-  assert.equal(rejected.payload.maxPlayers, 4, "화면에서 내린 정원이 요청에 실리지 않았다")
+  assert.equal(rejected.payload.maxPlayers, 5, "화면에서 내린 정원이 요청에 실리지 않았다")
   assert.equal(useMatchingStore.getState().settingsVersion, versionBefore,
     "전제가 깨졌다(거부인데 설정 버전이 올랐다)")
   assert.equal(useMatchingStore.getState().settings.maxPlayers, 8, "거부된 정원이 저장됐다")
@@ -219,12 +219,12 @@ test("AC-03 · 같은 버전의 거부 응답으로 폼이 되맞춰지면 편�
 
 test("AC-03 · 되맞춘 뒤 다시 지정한 직업별 밤 시간은 그대로 실리고, 무관한 방 사건은 편집을 버리지 않는다", async () => {
   const { socket, container } = await mountHost({
-    guestCount: 4, settings: { maxPlayers: 8, jokerCount: 1, nightActionTime: 90 },
+    guestCount: 5, settings: { maxPlayers: 8, jokerCount: 1, nightActionTime: 90 },
   })
   await clickByLabel(container, "방 설정 변경")
 
   await clickTab(container, "일반")
-  for (let i = 0; i < 4; i += 1) await clickByLabel(container, "최대 플레이어 수 감소")
+  for (let i = 0; i < 3; i += 1) await clickByLabel(container, "최대 플레이어 수 감소")
   await clickByLabel(container, "설정 저장")
   assert.equal(readStepperRow(container, "최대 플레이어 수"), "8")
 

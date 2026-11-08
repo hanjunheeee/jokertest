@@ -25,6 +25,7 @@ export default function MatchingPopupPanel({
   slots,
   waitingMessage = "",
   onRoomCodeView,
+  roomCodeDisabled = false,
   isHost,
   isReady,
   isSettingReady,
@@ -33,6 +34,7 @@ export default function MatchingPopupPanel({
   isRoomVerified,
   onStartGame,
   onDeleteRoom,
+  isDeleting = false,
   onLeaveRoom,
 }) {
   // 준비 버튼 글자: 요청 중 / 준비취소 / 준비완료, 준비한 상태면 취소(부정) 버튼 그림 씀
@@ -52,12 +54,13 @@ export default function MatchingPopupPanel({
         animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
         transition={UI_REVEAL_TRANSITION}
       >
-        {/* 초대코드 공유 버튼 (누르면 방코드 창) */}
+        {/* 초대코드 공유 버튼 (누르면 방코드 창, 확인된 방이 없으면 잠금) */}
         <button
           type="button"
           aria-label="초대코드 공유"
           onClick={onRoomCodeView}
-          className={ROOM_CODE_BTN_WRAP_CLASS}
+          disabled={roomCodeDisabled}
+          className={`${ROOM_CODE_BTN_WRAP_CLASS} disabled:cursor-default disabled:opacity-60`}
         >
           <span className={BTN_SCALE_WRAP_CLASS}>
             <PublicAsset
@@ -107,6 +110,7 @@ export default function MatchingPopupPanel({
                   label={MATCHING_POPUP_COPY.deleteRoom}
                   src={GAME_MATCHING_ASSETS.deleteRoomButton}
                   onClick={onDeleteRoom}
+                  disabled={isDeleting}
                 />
               </>
             ) : (

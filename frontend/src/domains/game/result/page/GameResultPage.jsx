@@ -11,6 +11,7 @@ import { LOBBY_BTN_REVEAL_DELAY } from "../constants/gameResultEntranceMotion.js
 import {
   GAME_RESULT_LOBBY_BUTTON_LABEL,
   GAME_RESULT_MATCHING_BUTTON_LABEL,
+  GAME_RESULT_MATCHING_PENDING_LABEL,
 } from "../constants/gameResultLabels.js"
 import { LOBBY_BTN_WRAP_CLASS } from "../constants/gameResultLayout.js"
 import { GAME_RESULT_OUTCOMES } from "../constants/gameResultPreviewData.js"
@@ -56,10 +57,13 @@ export default function GameResultPage() {
 
   const bootstrapPending = bootstrapStatus === "checking" && !holdExpired
 
-  useEffect(() => {
-    if (!view) return
+  // 결과 종류가 바뀌면 연출을 다시 봄 (그리는 중에 앞 값과 비교해 바로 맞춤)
+  const outcome = view?.outcome ?? null
+  const [introOutcome, setIntroOutcome] = useState(outcome)
+  if (outcome !== null && outcome !== introOutcome) {
+    setIntroOutcome(outcome)
     setIntroComplete(false)
-  }, [view?.outcome])
+  }
 
   if (!view && bootstrapPending) return null
 
@@ -92,22 +96,25 @@ export default function GameResultPage() {
       >
         {view ? (
           <>
+            {/* 대기방 가는 중엔 두 버튼 다 잠금 (늦은 응답이 로비 간 뒤 대기방으로 끌고 가지 않게) */}
             <LabelledActionButton
               src={GAME_RESULT_ASSETS.matchingButton}
-              label={GAME_RESULT_MATCHING_BUTTON_LABEL}
+              label={isReturning ? GAME_RESULT_MATCHING_PENDING_LABEL : GAME_RESULT_MATCHING_BUTTON_LABEL}
+              disabled={isReturning}
               onClick={() => { if (!isReturning) requestReturnToMatching() }}
             />
             <LabelledActionButton
               src={GAME_RESULT_ASSETS.lobbyButton}
               label={GAME_RESULT_LOBBY_BUTTON_LABEL}
-              onClick={requestExit}
+              disabled={isReturning}
+              onClick={() => { if (!isReturning) requestExit() }}
             />
           </>
         ) : (
           <button
             type="button"
             className={PLAIN_BTN_CLASS}
-            onClick={() => navigate("/multiplay", { replace: true })}
+            onClick={() => navigate("/lobby", { replace: true })}
           >
             로비로 돌아가기
           </button>

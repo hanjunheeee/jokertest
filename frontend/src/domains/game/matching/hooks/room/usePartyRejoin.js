@@ -1,12 +1,14 @@
 // 판 끝난 뒤 방장이 만든 파티 방으로 다시 들어가기
 // hooks/room/useRoom이 씀, 방에 없고 파티 방을 기다릴 때만 붙음
 // 방송(파티 방 준비됨)·주기적 묻기·남아 있던 방송 세 길로 방 코드를 받아 들어감
-import { useEffect } from 'react'
+// 방이 없어졌다·꽉 찼다는 거절이 오거나 너무 오래 기다리면 그만두고 onGiveUp으로 알림 (FE-005)
+import { useEffect, useRef } from 'react'
 import { getSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useInGameStore } from '../../../ingame/store/ingameStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
-import { PARTY_POLL_MS } from '../../constants/roomTiming.js'
+import { PARTY_POLL_MS, PARTY_WAIT_MAX_MS } from '../../constants/roomTiming.js'
+import { ROOM_MESSAGES } from '../../constants/roomMessages.js'
 import {
   clearRejoinGameId,
   consumeRoomReady,
@@ -16,12 +18,31 @@ import {
 import { askPartyRoom, joinByCode, onParty } from '../../socket/party.js'
 import { askRoom } from '../../socket/room.js'
 
+// 다시 해도 안 될 입장 거절 (방 없어짐·꽉 참·이미 시작·코드 다름·판 끝남)
+const GIVE_UP_CODES = new Set([
+  'ROOM_NOT_FOUND',
+  'ROOM_FULL',
+  'ROOM_ALREADY_STARTED',
+  'ROOM_CODE_MISMATCH',
+  'SESSION_ENDED',
+])
+
 // 파티 방 재입장 효과 (소켓·끝난 판 id·기다림 여부 바뀌면 다시 붙음)
-export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
+export function usePartyRejoin(ctx, socket, endedGameId, awaitParty, onGiveUp) {
+  // 기다리기 시작한 때 (소켓이 바뀌어 다시 붙어도 처음 때 그대로)
+  const waitStartedAtRef = useRef(null)
+  // 그만둘 때 부를 함수는 최신 것으로
+  const onGiveUpRef = useRef(onGiveUp)
+  useEffect(() => { onGiveUpRef.current = onGiveUp })
+
   useEffect(() => {
     const { awaitPartyRef, endedIdRef, partyBusyRef, applyGenRef, mountedRef, setSyncStatus } = ctx
     // 소켓 없거나 파티 방 안 기다리면 안 붙음
-    if (!socket || !awaitPartyRef.current) return undefined
+    if (!socket || !awaitPartyRef.current) {
+      if (!awaitPartyRef.current) waitStartedAtRef.current = null
+      return undefined
+    }
+    if (waitStartedAtRef.current === null) waitStartedAtRef.current = Date.now()
 
     // 붙인 소켓·계정이 그대로일 때만 응답 반영
     const attachedSocket = socket
@@ -99,13 +120,32 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
         .catch(() => {})
     }
 
-    // 주기적 묻기: 지금 방 확인 + 파티 방 묻기
+    // 기다리기 그만둠: 옛 응답 막고 기억 지운 뒤 화면에 알림
+    let pollTimer = null
+    const giveUp = (message) => {
+      if (!isCurrent()) return
+      owned = false
+      if (pollTimer !== null) window.clearInterval(pollTimer)
+      partyBusyRef.current = false
+      clearRejoinGameId(attachedUuid)
+      onGiveUpRef.current?.(message)
+    }
+
+    // 주기적 묻기: 지금 방 확인 + 파티 방 묻기 (앞 묻기 응답 오기 전엔 안 겹쳐 보냄)
+    let pollBusy = false
     const poll = () => {
       if (!isCurrent()) return
       if (!awaitPartyRef.current || useMatchingStore.getState().isInRoom) return
+      if (Date.now() - waitStartedAtRef.current > PARTY_WAIT_MAX_MS) {
+        giveUp(ROOM_MESSAGES.PARTY_WAIT_TIMEOUT)
+        return
+      }
       void syncRoom()
+      if (pollBusy) return
+      pollBusy = true
       const pollPayload = endedIdRef.current ? { gameId: endedIdRef.current } : {}
       askPartyRoom(socket, pollPayload)
+        .finally(() => { pollBusy = false })
         .then((response) => {
           if (!isCurrent()) return
           if (!response?.ok || !response.room) return
@@ -124,15 +164,19 @@ export function usePartyRejoin(ctx, socket, endedGameId, awaitParty) {
     if (pendingParty) request(pendingParty)
     poll()
 
-    // 들어가기 실패: 다음 묻기 때 다시 시도하게 요청 중 표시 풂
-    const handleJoinFailed = () => {
+    // 들어가기 실패: 다시 해도 안 될 거절이면 그만두고, 아니면 다음 묻기 때 다시 시도
+    const handleJoinFailed = (payload) => {
+      if (!isCurrent()) return
+      // 내가 보낸 파티 방 입장 요청의 실패만 봄
+      if (!partyBusyRef.current) return
       partyBusyRef.current = false
+      if (GIVE_UP_CODES.has(payload?.code)) giveUp(ROOM_MESSAGES.PARTY_ROOM_GONE)
     }
 
     // 방송 붙이고 주기적으로 묻기 시작
     const off = onParty(socket, { joined: handleJoined, joinFailed: handleJoinFailed, ready: handleReady })
 
-    const pollTimer = window.setInterval(poll, PARTY_POLL_MS)
+    pollTimer = window.setInterval(poll, PARTY_POLL_MS)
 
     // 떠날 때 옛 응답 막고 타이머·방송 뗌
     return () => {

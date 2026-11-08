@@ -18,6 +18,7 @@ export function useRoom({
   onGameStarted,
   endedGameId = null,
   awaitPartyRoomRejoin = false,
+  onPartyRejoinFailed,
 }) {
   const roomId = useMatchingStore((s) => s.roomId)
 
@@ -26,17 +27,18 @@ export function useRoom({
 
   // 상태 묶음 만들고 효과 훅 차례로 붙임 (순서 바꾸지 않기)
   const ctx = useRoomCore({ endedGameId, awaitPartyRoomRejoin })
-  usePartyRejoin(ctx, socket, endedGameId, awaitPartyRoomRejoin)
+  usePartyRejoin(ctx, socket, endedGameId, awaitPartyRoomRejoin, onPartyRejoinFailed)
   useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarted })
   useRoomCheck(ctx, socket, onRoomDeleted)
   useRoomReset(ctx)
 
   // 요청 함수
-  const { deleteRoom, startGame, setReady } = useRoomRequests(ctx)
+  const { deleteRoom, isDeleting, startGame, setReady } = useRoomRequests(ctx)
   const { saveRoomSettings, verifyRoomSettingsResult } = useSettingsSave(ctx)
 
   return {
     deleteRoom,
+    isDeleting,
     startGame,
     setReady,
     isStarting: ctx.isStarting,

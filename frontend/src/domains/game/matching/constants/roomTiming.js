@@ -13,3 +13,5 @@ export const PENDING_MAX_RETRIES = 3
 // 판 끝난 뒤 파티 방 묻는 간격·응답 기다리는 시간
 export const PARTY_POLL_MS = 2500
 export const PARTY_POLL_TIMEOUT_MS = 5000
+// 파티 방 기다리는 최대 시간 (방장이 결과 화면에 오래 머물러도 넉넉하게 3분)
+export const PARTY_WAIT_MAX_MS = 180000

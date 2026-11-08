@@ -10,11 +10,12 @@ import {
 import FriendInviteRow from "./FriendInviteRow.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
-// 친구 목록 본문 (초대 중인 친구는 invitingIds로 받음)
+// 친구 목록 본문 (초대 중인 친구는 invitingIds로 받음, 실패 문구는 errorMessage)
 export default function FriendInviteModalContent({
   friends = [],
   invitingIds = new Set(),
   onInviteFriend,
+  errorMessage = null,
 }) {
   // 직접 그린 스크롤바가 목록 스크롤 위치를 읽게 ref 같이 넘김
   const scrollRef = useRef(null)
@@ -25,6 +26,13 @@ export default function FriendInviteModalContent({
       {friends.length === 0 ? (
         <p role="status" className={EMPTY_CLASS}>
           {MODAL_COPY.emptyFriends}
+        </p>
+      ) : null}
+
+      {/* 목록 받기·초대 보내기 실패 문구 */}
+      {errorMessage ? (
+        <p role="alert" className={EMPTY_CLASS}>
+          {errorMessage}
         </p>
       ) : null}
 

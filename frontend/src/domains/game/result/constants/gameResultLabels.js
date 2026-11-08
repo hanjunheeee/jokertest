@@ -13,6 +13,9 @@ export const GAME_RESULT_JOB_LABELS = {
 // 버튼 글자
 export const GAME_RESULT_MATCHING_BUTTON_LABEL = "대기방으로"
 
+// 대기방 가는 중 버튼 글자 (방 만들기 응답 기다리는 동안)
+export const GAME_RESULT_MATCHING_PENDING_LABEL = "이동 중.."
+
 export const GAME_RESULT_LOBBY_BUTTON_LABEL = "로비로"
 
 // 내 줄 배지

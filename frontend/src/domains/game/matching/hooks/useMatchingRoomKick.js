@@ -113,7 +113,10 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     kick.reset()
   }, [kick.reset])
 
-  // 강퇴 자격 잃으면 열린 창도 닫힌 것으로 봄
+  // 강퇴 자격 잃으면 창을 닫음 (되찾아도 저절로 다시 안 열리게)
+  // 강퇴 보내는 중·결과 확인 중이면 그대로 둠 (방 다시 확인하는 잠깐 사이에 결과 창이 사라지지 않게)
+  const kickInProgress = Boolean(kick.isSending || kick.isAwaitingResolution)
+  if (modalOpen && !canKick && !kickInProgress) setModalOpen(false)
   const effectiveOpen = modalOpen && canKick
 
   return {

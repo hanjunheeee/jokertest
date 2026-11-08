@@ -31,7 +31,7 @@ test("진행 중인 게임이 store에 남아 있으면 ?outcome= 미리보기�
   assert.match(source, /const previewRequested =\s*\n?\s*!hasLiveSession &&/)
 })
 
-test("그릴 결과가 없으면 확인 불가 안내를 그리고, 로비 복귀(/multiplay replace)는 사용자 클릭에서만 일어난다", async () => {
+test("그릴 결과가 없으면 확인 불가 안내를 그리고, 로비 복귀(/lobby replace)는 사용자 클릭에서만 일어난다", async () => {
   const source = await readFile(pageUrl, "utf8")
 
   assert.match(source, /if \(!view && bootstrapPending\) return null/)
@@ -42,13 +42,13 @@ test("그릴 결과가 없으면 확인 불가 안내를 그리고, 로비 복�
   assert.doesNotMatch(source, /방 코드/)
   assert.doesNotMatch(source, /RoomCodeViewModal/)
 
-  const navigationLines = source.split("\n").filter((line) => line.includes('navigate("/multiplay"'))
+  const navigationLines = source.split("\n").filter((line) => line.includes('navigate("/lobby"'))
   assert.equal(
     navigationLines.length, 1,
     `로비 이동이 여러 곳으로 갈렸다:\n${navigationLines.join("\n")}`,
   )
   assert.match(navigationLines[0], /onClick=/, "로비 이동이 사용자 입력이 아닌 곳에서 일어난다")
-  assert.match(navigationLines[0], /navigate\("\/multiplay", \{ replace: true \}\)/)
+  assert.match(navigationLines[0], /navigate\("\/lobby", \{ replace: true \}\)/)
 })
 
 test("진입 연출 영상이 끝난 뒤에만 GameResultShell과 로비 버튼을 그린다", async () => {
@@ -79,7 +79,8 @@ test("로비 복귀 버튼은 로컬 기존 종료 경로(useInGameExit)의 requ
     /import \{ useInGameExit \} from "@\/domains\/game\/ingame\/hooks\/useInGameExit\.js"/,
   )
   assert.match(source, /const \{ requestExit \} = useInGameExit\(\)/)
-  assert.match(source, /onClick=\{requestExit\}/)
+  // 대기방 가는 중엔 로비 버튼도 잠김 (FE-029)
+  assert.match(source, /onClick=\{\(\) => \{ if \(!isReturning\) requestExit\(\) \}\}/)
 })
 
 test("원격 결과 화면 전용 이탈 경로(useGameResultLobbyExit)는 쓰지 않는다", async () => {
