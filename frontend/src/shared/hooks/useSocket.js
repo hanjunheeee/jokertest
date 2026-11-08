@@ -1,4 +1,4 @@
-// 로그인 동안 공용 소켓 연결 유지: 강제 끊김이면 로그아웃, 인증 실패면 토큰 갱신 뒤 다시 연결
+// 로그인 동안 공용 소켓 연결 유지: 강제 끊김이면 로그아웃, 인증 실패면 토큰 갱신 뒤 다시 연결, 서버 점검이면 안내만
 // App이 씀, 연결 만들기·이벤트 받기는 shared/socket/connection.js가 맡음
 import { useEffect, useRef, useState } from "react";
 import { connectSocket, onConnection } from "../socket/connection.js";
@@ -6,6 +6,7 @@ import { useAuthStore } from "../../domains/auth/store/auth.store.js";
 import { setSocket } from "../socket/socketClient.js";
 import { refreshAccessToken } from "../api/client.js";
 import { API_BASE_URL } from "../env.js";
+import { SERVER_SHUTDOWN_NOTICE } from "../constants/connectionSocket.js";
 
 const SOCKET_URL = API_BASE_URL;
 
@@ -54,6 +55,11 @@ export function useSocket() {
                 alert(payload?.message || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
                 logout();
                 window.location.replace("/login");
+            },
+            // 서버 점검·업데이트로 곧 끊김: 안내만 (모바일은 alert가 양피지 창), 로그아웃·끊기 안 함
+            // 끊긴 뒤엔 socket.io가 알아서 다시 연결, 판 중이면 connect 뒤 판 쪽 스냅샷 다시 묻기로 복구
+            serverShutdown: () => {
+                alert(SERVER_SHUTDOWN_NOTICE);
             },
             // 연결되면 재인증 횟수 처음부터
             connect: () => {

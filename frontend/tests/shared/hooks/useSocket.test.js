@@ -259,3 +259,44 @@ test("1-15: force_disconnect가 같은 브라우저 다른 탭(REPLACED_BY_SAME_
   hook.unmount();
   authState.isLoggedIn = false;
 });
+
+test("서버 점검(server_shutdown)이면 안내만 하고 로그아웃·끊기·재인증 안 함, 다시 붙으면 평소처럼 이어짐", async () => {
+  resetAll();
+  authState.isLoggedIn = true;
+  const alerts = [];
+  globalThis.alert = (message) => alerts.push(message);
+  const { SERVER_SHUTDOWN_NOTICE, CONNECTION_SOCKET_EVENTS } = await import("../../../src/shared/constants/connectionSocket.js");
+  const hook = renderHook(() => useSocket());
+  await act(async () => {});
+
+  const socket = createdSockets[0];
+  act(() => { socket.fire(CONNECTION_SOCKET_EVENTS.SERVER_SHUTDOWN, { code: "SERVER_SHUTDOWN", message: "서버 글" }); });
+  assert.deepEqual(alerts, [SERVER_SHUTDOWN_NOTICE], "자동 재접속을 알려 주는 화면 쪽 글로 한 번 안내");
+  assert.match(SERVER_SHUTDOWN_NOTICE, /자동으로 다시 연결/);
+  assert.equal(logoutCalls.length, 0, "점검 안내로 로그아웃하면 안 됨");
+  assert.equal(socket.disconnectCallCount, 0, "직접 끊으면 socket.io 자동 재접속이 멈춤");
+  assert.equal(refreshCalls.length, 0);
+
+  // 서버가 다시 켜진 뒤 같은 소켓이 다시 붙음 → 소켓을 새로 만들지 않고 그대로 씀
+  await act(async () => { socket.fire("connect"); });
+  assert.equal(createdSockets.length, 1);
+  assert.equal(logoutCalls.length, 0);
+
+  hook.unmount();
+  authState.isLoggedIn = false;
+});
+
+test("언마운트하면 server_shutdown 손잡이도 지워 늦게 온 안내가 안 뜸", async () => {
+  resetAll();
+  authState.isLoggedIn = true;
+  const alerts = [];
+  globalThis.alert = (message) => alerts.push(message);
+  const hook = renderHook(() => useSocket());
+  await act(async () => {});
+  const socket = createdSockets[0];
+
+  hook.unmount();
+  authState.isLoggedIn = false;
+  socket.fire("server_shutdown", { code: "SERVER_SHUTDOWN" });
+  assert.deepEqual(alerts, []);
+});

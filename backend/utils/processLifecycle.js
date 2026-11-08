@@ -1,11 +1,11 @@
 // 프로세스 끝내기 도구, 종료 신호·예상 못 한 오류 받으면 정리 순서대로 닫고 끝냄
 // index.js가 직접 켤 때(npm start·docker)만 붙임, 다시 켜기는 docker restart·pm2에 맡김
 
-// 접속 중인 화면에 보내는 안내 (화면이 아직 안 들어도 끊긴 뒤 자동 재접속으로 이어짐)
+// 접속 중인 화면에 보내는 안내 (화면 shared/hooks/useSocket이 받아 안내만 띄움, 끊긴 뒤 자동 재접속은 그대로)
 const SHUTDOWN_EVENT = "server_shutdown";
 const SHUTDOWN_NOTICE = Object.freeze({
     code: "SERVER_SHUTDOWN",
-    message: "서버 점검으로 잠시 연결이 끊깁니다. 잠시 후 다시 접속해주세요.",
+    message: "서버 점검·업데이트로 잠시 연결이 끊깁니다. 잠시 뒤 자동으로 다시 연결돼요.",
 });
 
 // 정리 순서: 새 연결 막기 → 안내 보내기 → 잠깐 기다림(안내 전달) → 소켓 닫기 → DB 닫기 → 로그 닫기 → 종료
