@@ -15,9 +15,27 @@ import { INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS } from "../constants/ingameKillR
 export function useNightSuccessKillVideo({ eventId, src, finish }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
-  const [status, setStatus] = useState("loading")
+  // 상태는 사건·영상 열쇠와 같이 둠 (열쇠가 바뀌면 그리는 즉시 loading으로 봄)
+  const playbackKey = `${eventId}|${src}`
+  const [statusEntry, setStatusEntry] = useState({ key: playbackKey, value: "loading" })
+  const status = statusEntry.key === playbackKey ? statusEntry.value : "loading"
+  const playbackKeyRef = useRef(playbackKey)
+  const setStatus = useCallback((next) => {
+    const key = playbackKeyRef.current
+    setStatusEntry((prev) => {
+      const prevValue = prev.key === key ? prev.value : "loading"
+      const value = typeof next === "function" ? next(prevValue) : next
+      if (prev.key === key && prev.value === value) return prev
+      return { key, value }
+    })
+  }, [])
   // 지금 재생 기록 (옛 기록의 콜백은 이것과 비교해 버림)
   const attemptRef = useRef(null)
+  // 끝 알림은 늘 최신 것을 부름 (다시 연결로 finish가 바뀌어도 영상을 처음부터 다시 틀지 않기)
+  const finishRef = useRef(finish)
+  useEffect(() => {
+    finishRef.current = finish
+  }, [finish])
 
   // 재생 한 번에 결과는 한 번만 (타이머·프레임 반복도 같이 끔)
   const settleOnce = useCallback((lifetime, outcome, nextStatus) => {
@@ -26,8 +44,8 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
     cancelPlaybackWatchdog(lifetime)
     cancelFrameLoop(lifetime, lifetime.video)
     if (nextStatus) setStatus(nextStatus)
-    finish(outcome)
-  }, [finish])
+    finishRef.current(outcome)
+  }, [setStatus])
 
   // 프레임 하나 합쳐 그리기 (못 그리면 오류로 끝)
   const composeFrame = useCallback((lifetime) => {
@@ -36,26 +54,29 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
 
   // 다음 프레임 예약 (영상 프레임 콜백이 있으면 그걸, 없으면 애니메이션 프레임)
   const scheduleFrame = useCallback((lifetime) => {
-    if (!lifetime.alive || lifetime.settled) return
-    const video = lifetime.video
-    const step = () => {
-      lifetime.frameHandle = null
-      if (attemptRef.current !== lifetime || !lifetime.alive || lifetime.settled) return
-      composeFrame(lifetime)
+    const schedule = () => {
       if (!lifetime.alive || lifetime.settled) return
-      scheduleFrame(lifetime)
+      const video = lifetime.video
+      const step = () => {
+        lifetime.frameHandle = null
+        if (attemptRef.current !== lifetime || !lifetime.alive || lifetime.settled) return
+        composeFrame(lifetime)
+        if (!lifetime.alive || lifetime.settled) return
+        schedule()
+      }
+      if (video && typeof video.requestVideoFrameCallback === "function") {
+        lifetime.frameKind = "video-frame"
+        lifetime.frameHandle = video.requestVideoFrameCallback(step)
+      } else if (typeof requestAnimationFrame === "function") {
+        lifetime.frameKind = "raf"
+        lifetime.frameHandle = requestAnimationFrame(step)
+      }
     }
-    if (video && typeof video.requestVideoFrameCallback === "function") {
-      lifetime.frameKind = "video-frame"
-      lifetime.frameHandle = video.requestVideoFrameCallback(step)
-    } else if (typeof requestAnimationFrame === "function") {
-      lifetime.frameKind = "raf"
-      lifetime.frameHandle = requestAnimationFrame(step)
-    }
+    schedule()
   }, [composeFrame])
 
   // 재생 시도: 감시 타이머 걸고 소리 맞춰 재생 (시도마다 세대 올려 옛 시도 응답 버림)
-  const runPlayback = useCallback((lifetime, { retry = false } = {}) => {
+  const runPlayback = useCallback(function runAttempt(lifetime, { retry = false } = {}) {
     if (lifetime.settled) return
 
     const generation = lifetime.generation + 1
@@ -95,7 +116,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       if (isAutoplayBlockedRejection(err)) {
         if (!attemptWasMuted && !lifetime.silentLatch) {
           lifetime.silentLatch = true
-          runPlayback(lifetime)
+          runAttempt(lifetime)
           return
         }
         setStatus("retry")
@@ -117,9 +138,9 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
         if (isCurrentAttempt()) setStatus((prev) => (prev === "loading" ? "playing" : prev))
       }, reportFailure)
     }
-  }, [settleOnce])
+  }, [settleOnce, setStatus])
 
-  // 사건·영상이 바뀔 때마다 새 재생 기록으로 처음부터 (캔버스 준비는 이번 틱 뒤에)
+  // 사건·영상이 바뀔 때마다 새 재생 기록으로 처음부터 (상태는 열쇠가 바뀌어 loading, 캔버스 준비는 이번 틱 뒤에)
   useEffect(() => {
     const lifetime = {
       alive: true, generation: 0, watchdogId: null, silentLatch: false, settled: false,
@@ -127,7 +148,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
       displayCanvas: null, displayCtx: null, video: null,
     }
     attemptRef.current = lifetime
-    setStatus("loading")
+    playbackKeyRef.current = playbackKey
 
     const video = videoRef.current
     lifetime.video = video
@@ -177,7 +198,7 @@ export function useNightSuccessKillVideo({ eventId, src, finish }) {
         // 정리 중 멈춤 실패는 무시함
       }
     }
-  }, [eventId, src, runPlayback, scheduleFrame, settleOnce])
+  }, [playbackKey, runPlayback, scheduleFrame, settleOnce])
 
   // 재생 중 효과음 설정이 바뀌면 다시 시작하지 않고 소리만 맞춤
   useEffect(() => {

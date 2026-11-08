@@ -14,7 +14,6 @@ export default function InGameNightSuccessPresentation({
   current: currentProp,
   open: openProp,
   finish: finishProp,
-  assetStatus: assetStatusProp,
   finalStatus: finalStatusProp,
   onClose: onCloseProp,
   hold = false,
@@ -35,8 +34,6 @@ export default function InGameNightSuccessPresentation({
   }, [controlled, finishProp, owned.finish])
   const finalStatus = controlled ? finalStatusProp : owned.finalStatus
   const onClose = controlled ? onCloseProp : owned.onClose
-  // assetStatus는 받기만 하고 안 씀 (영상 유무는 아래에서 다시 봄)
-  void assetStatusProp
 
   if (!open) return null
 

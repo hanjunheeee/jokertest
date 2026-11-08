@@ -13,7 +13,6 @@ import {
   useInGameStore,
 } from "../store/ingameStore.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
-import { resolveNightSuccessVideo } from "../utils/resolveNightSuccessVideo.js"
 import { onNightTurnEnded } from "../socket/night.js"
 
 // 의사 차례가 끝나면 그 밤엔 치료가 더 안 옴
@@ -70,19 +69,19 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     [authUuid, identityGeneration, identityScopeVersion, socketEpochId, gameId],
   )
 
-  // 최종 결과용 추적: 대상·죽임 봄·치료 봄·치료 창 닫힘
+  // 최종 결과용 추적: 대상·죽임 봄·치료 봄
   const [track, setTrack] = useState(null)
+  // 치료 창이 닫힌 밤 (추적과 따로 둠: 의사 차례 끝이 죽임 연출보다 먼저 와도 안 버리기)
+  const [healClosed, setHealClosed] = useState(null)
 
-  // 범위 바뀌면 추적 지움
-  useEffect(() => {
+  // 범위가 바뀌었거나 다른 밤이 시작되면 그리는 중에 추적 지움 (지운 뒤엔 조건이 거짓이라 한 번만)
+  const nightStartedElsewhere = gameState?.phase === "NIGHT"
+    && Number.isInteger(gameState?.dayIndex)
+    && track !== null
+    && track.nightDayIndex !== gameState.dayIndex
+  if (track !== null && (track.scopeKey !== scopeKey || nightStartedElsewhere)) {
     setTrack(null)
-  }, [scopeKey])
-
-  // 새 밤이 되면 같은 밤 추적만 남김
-  useEffect(() => {
-    if (gameState?.phase !== "NIGHT" || !Number.isInteger(gameState?.dayIndex)) return
-    setTrack((prev) => (prev && prev.nightDayIndex === gameState.dayIndex ? prev : null))
-  }, [gameState?.phase, gameState?.dayIndex])
+  }
 
   // 의사 차례가 끝나면 그 밤 치료 창이 닫혔다고 적음
   useEffect(() => {
@@ -93,12 +92,13 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
       if (payload.role !== HEAL_WINDOW_CLOSING_ROLE) return
       if (typeof payload.gameId !== "string" || payload.gameId !== gameId) return
       if (!Number.isInteger(payload.dayIndex)) return
-      // 같은 범위·같은 밤 추적일 때만 적음
-      setTrack((prev) => {
-        if (!prev || prev.scopeKey !== scopeKey || prev.nightDayIndex !== payload.dayIndex) return prev
-        if (prev.healWindowClosed) return prev
-        return { ...prev, healWindowClosed: true }
-      })
+      // 범위와 밤을 같이 적어 두고, 최종 결과 고를 때 추적과 맞춰 봄
+      if (!scopeKey) return
+      setHealClosed((prev) => (
+        prev && prev.scopeKey === scopeKey && prev.nightDayIndex === payload.dayIndex
+          ? prev
+          : { scopeKey, nightDayIndex: payload.dayIndex }
+      ))
     }
     return onNightTurnEnded(socket, handleNightTurnEnded)
   }, [socket, gameId, scopeKey])
@@ -137,7 +137,6 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
             targetId,
             killDone: isKill,
             healDone: !isKill,
-            healWindowClosed: false,
           }
         })
       }
@@ -147,11 +146,14 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
   // 죽임 봤고 치료도 봤거나 치료 창이 닫혔고, 대기열 비고 결과가 반영됐을 때만 최종 생존 결과
   let finalStatus = null
   let displayedTrack = null
+  const healWindowClosed = Boolean(track && healClosed
+    && healClosed.scopeKey === track.scopeKey
+    && healClosed.nightDayIndex === track.nightDayIndex)
   if (
     track
     && track.scopeKey === scopeKey
     && track.killDone
-    && (track.healDone || track.healWindowClosed)
+    && (track.healDone || healWindowClosed)
     && queue.length === 0
     && isResultReflected(gameState, track.nightDayIndex)
   ) {
@@ -180,8 +182,6 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     open: !hold && (current !== null || finalStatus !== null),
     pending: current !== null,
     finish,
-    // 영상 자료가 있으면 AVAILABLE, 아직 없으면 PENDING
-    assetStatus: current ? (resolveNightSuccessVideo(current) ? "AVAILABLE" : "PENDING") : null,
     finalStatus,
     onClose,
   }

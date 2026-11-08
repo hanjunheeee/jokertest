@@ -379,23 +379,36 @@ test("중복 도착한 같은 eventId는 큐에 다시 들어가지 않는다", 
   session.close()
 })
 
-test("AC-04: 전용 영상이 없는 HEAL·INVESTIGATE·CONFIRM은 assetStatus가 계속 PENDING이고, 확인해도 검증 완료로 바뀌지 않는다", () => {
+test("AC-04: 전용 영상이 없는 INVESTIGATE·CONFIRM(TARGET)은 영상 없이 차례대로 끝남", () => {
   seedNightSession()
   const session = openSession()
 
   session.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "e1" }))
-  assert.equal(session.value.assetStatus, "AVAILABLE", "KILL-USER은 선택표에 영상이 있으므로 AVAILABLE이어야 한다")
+  assert.ok(resolveNightSuccessVideo(session.value.current), "KILL-USER은 선택표에 영상이 있음")
   session.finish("COMPLETED")
 
   session.deliver("night_action_success", buildSuccessPayload({ type: "HEAL", eventId: "e2" }))
-  assert.equal(session.value.assetStatus, "AVAILABLE", "HEAL-USER도 선택표에 영상이 있다")
+  assert.ok(resolveNightSuccessVideo(session.value.current), "HEAL-USER도 선택표에 영상이 있음")
   session.finish("COMPLETED")
 
   session.deliver("night_action_success",
     buildSuccessPayload({ type: "INVESTIGATE", eventId: "e3", perspectives: ["TARGET"] }))
-  assert.equal(session.value.assetStatus, "PENDING")
+  assert.equal(resolveNightSuccessVideo(session.value.current), null)
   session.finish("COMPLETED")
   assert.equal(session.value.current, null)
+
+  session.close()
+})
+
+test("의사 차례 끝이 죽임 연출보다 먼저 와도 치료 없는 밤엔 최종 결과가 뜸", () => {
+  seedNightSession({ dayIndex: 9 })
+  const session = openSession()
+
+  session.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "k9", nightDayIndex: 9, perspectives: ["TARGET"] }))
+  session.deliver("night_turn_ended", buildNightTurnEndedPayload({ role: "DOCTOR", dayIndex: 9 }))
+  session.finish("COMPLETED")
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 10, selfAlive: false, victimUuid: SELF_UUID }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: false })
 
   session.close()
 })

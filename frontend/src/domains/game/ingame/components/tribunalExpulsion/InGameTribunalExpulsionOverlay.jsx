@@ -8,57 +8,72 @@ import {
   HOLD_MS,
   MSG_AUTO_MS,
   MSG_CLASS,
+  SKIP_BTN_CLASS,
+  SKIP_LABEL,
   VIDEO_CLASS,
   VIDEO_URL,
+  VIDEO_WATCHDOG_MS,
   VIDEO_WRAP_CLASS,
 } from "../../constants/ingameTribunalExpulsionPresentation.js"
 
-// 단계는 playing → hold → fade → message, 문구에서 시간 지나거나 누르면 끝
+// 열림이어도 연출 id 없으면 안 띄움, 연출 id마다 새로 그려 단계·영상을 처음부터
 export default function InGameTribunalExpulsionOverlay({
   open = false,
   presentationId = null,
   message = null,
   onComplete = null,
 }) {
+  const active = Boolean(open) && typeof presentationId === "string" && presentationId.length > 0
+  if (!active) return null
+  return (
+    <TribunalExpulsionPlayback
+      key={presentationId}
+      presentationId={presentationId}
+      message={message}
+      onComplete={onComplete}
+    />
+  )
+}
+
+// 단계는 playing → hold → fade → message, 문구에서 시간 지나거나 누르면 끝
+// 연달아 와도 새로 그려지므로 영상 칸이 늘 있는 첫 단계에서 재생 시작함
+function TribunalExpulsionPlayback({ presentationId, message, onComplete }) {
   const videoRef = useRef(null)
   const [phase, setPhase] = useState("playing")
   const [fadeOpacity, setFadeOpacity] = useState(0)
+  const [stalled, setStalled] = useState(false)
 
-  // 열림이어도 연출 id 없으면 안 띄움
-  const active = Boolean(open) && typeof presentationId === "string" && presentationId.length > 0
-
-  // 새 연출마다 처음부터 재생, 자동 재생 막히면 바로 멈춤 단계로
+  // 처음 그려질 때 한 번 재생, 자동 재생 막히면 바로 멈춤 단계로
   useEffect(() => {
-    // 닫히면 단계·어둡기 처음으로 되돌림
-    if (!active) {
-      setPhase("playing")
-      setFadeOpacity(0)
-      return undefined
-    }
-
-    setPhase("playing")
-    setFadeOpacity(0)
-
-    // 영상 칸 없으면(문구 단계 화면이면) 재생 건너뜀
     const video = videoRef.current
     if (!video) return undefined
-
-    video.currentTime = 0
-    const playPromise = video.play()
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(() => {
-        setPhase("hold")
-      })
+    let alive = true
+    let playResult
+    try {
+      video.currentTime = 0
+      playResult = video.play?.()
+    } catch (err) {
+      playResult = Promise.reject(err)
     }
+    Promise.resolve(playResult).catch(() => {
+      if (alive) setPhase("hold")
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
 
-    return undefined
-  }, [active, presentationId])
+  // 영상이 끝 알림 없이 멈추면 건너뛰기 버튼 띄움 (화면 잠김 막기)
+  useEffect(() => {
+    if (phase !== "playing") return undefined
+    const timer = window.setTimeout(() => setStalled(true), VIDEO_WATCHDOG_MS)
+    return () => window.clearTimeout(timer)
+  }, [phase])
 
-  // 열려 있을 때만 끝 알림, 지금 연출 id를 같이 넘김
+  // 끝 알림, 지금 연출 id를 같이 넘김
   const finish = useCallback(() => {
-    if (!active) return
     onComplete?.(presentationId)
-  }, [active, onComplete, presentationId])
+  }, [onComplete, presentationId])
 
   // 멈춤 단계는 잠깐 보여 준 뒤 어두워짐으로
   useEffect(() => {
@@ -87,19 +102,15 @@ export default function InGameTribunalExpulsionOverlay({
 
   // 영상 끝나면 마지막 장면에 멈춰 두고 멈춤 단계로
   const handleVideoEnded = () => {
-    const video = videoRef.current
-    if (video) {
-      video.pause()
-    }
+    videoRef.current?.pause?.()
     setPhase("hold")
   }
 
-  // 영상이 안 열리면 바로 문구로
-  const handleVideoError = () => {
+  // 영상이 안 열리거나 건너뛰면 바로 문구로
+  const goToMessage = () => {
+    videoRef.current?.pause?.()
     setPhase("message")
   }
-
-  if (!active) return null
 
   // 문구 단계에서만 화면 눌러 바로 끝내기
   return (
@@ -113,14 +124,13 @@ export default function InGameTribunalExpulsionOverlay({
         <div className={VIDEO_WRAP_CLASS}>
           <video
             ref={videoRef}
-            key={presentationId}
             className={VIDEO_CLASS}
             src={VIDEO_URL}
             playsInline
             muted
             preload="auto"
             onEnded={handleVideoEnded}
-            onError={handleVideoError}
+            onError={goToMessage}
           />
           <div
             className={FADE_LAYER_CLASS}
@@ -130,6 +140,11 @@ export default function InGameTribunalExpulsionOverlay({
             }}
             aria-hidden="true"
           />
+          {stalled && phase === "playing" ? (
+            <button type="button" className={SKIP_BTN_CLASS} onClick={goToMessage}>
+              {SKIP_LABEL}
+            </button>
+          ) : null}
         </div>
       ) : (
         <p className={MSG_CLASS}>{message}</p>

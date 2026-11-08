@@ -13,6 +13,11 @@ export const FADE_MS = 1600
 
 export const MSG_AUTO_MS = 3200
 
+// 영상이 끝 알림 없이 멈춰도 화면이 안 잠기게 건너뛰기 버튼 띄우는 시간 (ms, 영상은 약 5초)
+export const VIDEO_WATCHDOG_MS = 12000
+
+export const SKIP_LABEL = "건너뛰기"
+
 // 덮개·영상·어두워지는 막·글 모양
 export const BACKDROP_CLASS =
   "absolute inset-0 z-[70] flex items-center justify-center bg-black/78 px-4"
@@ -25,6 +30,9 @@ export const VIDEO_CLASS =
 
 export const FADE_LAYER_CLASS =
   "pointer-events-none absolute inset-0 bg-black transition-opacity ease-out"
+
+export const SKIP_BTN_CLASS =
+  "absolute bottom-4 left-1/2 -translate-x-1/2 min-h-9 rounded border border-[#d8b982] bg-[#2b1c15] px-5 py-1.5 text-sm font-semibold tracking-wide text-[#f8ead2] transition hover:border-[#f3d28d] hover:bg-[#53321f] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f3d28d]"
 
 export const MSG_CLASS =
   "max-w-[min(42rem,80%)] px-6 text-center font-display text-[clamp(1.35rem,4.2cqi,2.35rem)] font-bold leading-snug tracking-wide text-[#f8ead2] [text-shadow:0_2px_12px_rgba(0,0,0,0.85)]"

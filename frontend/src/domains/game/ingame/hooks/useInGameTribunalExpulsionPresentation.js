@@ -1,6 +1,6 @@
 // 재판 추방 연출 훅: 유죄 판정으로 쫓겨난 사람을 차례로 띄우기
 // 인게임 화면(InGamePage)이 사용, 받기는 socket/ 함수를 부름
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import {
   getIdentityScopeVersion,
@@ -51,9 +51,11 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
   const scope = gameId && authUuid ? `${gameId}|${authUuid}|${epochKey}` : null
 
   const [presentation, setPresentation] = useState(INITIAL_IN_GAME_TRIBUNAL_EXPULSION)
-  // 콜백이 지금 범위와 비교하려고 ref에도 둠
+  // 콜백이 지금 범위와 비교하려고 ref에도 둠 (그린 뒤 바로 맞춤)
   const scopeRef = useRef(scope)
-  scopeRef.current = scope
+  useLayoutEffect(() => {
+    scopeRef.current = scope
+  }, [scope])
   const capturedScope = scope
 
   // 지금 계정 기준 수신 범위 읽기
@@ -62,12 +64,11 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
     identityGeneration: useAuthStore.getState().identityGeneration ?? null,
   }), [])
 
-  // 범위·멈춤이 바뀌면 대기열 다시 계산 (범위 바뀌면 비움)
-  useEffect(() => {
-    setPresentation((current) =>
-      reduceInGameTribunalExpulsionPresentation(current, { scope, items: [], hold }),
-    )
-  }, [scope, hold])
+  // 범위·멈춤이 바뀌면 그리는 중에 대기열 다시 계산 (범위 바뀌면 비움, 바뀐 게 없으면 같은 상태라 다시 안 그림)
+  const recomputed = reduceInGameTribunalExpulsionPresentation(presentation, { scope, items: [], hold })
+  if (recomputed !== presentation) {
+    setPresentation(recomputed)
+  }
 
   // 재판 판정 받아 대기열에 넣기 (소켓·범위·계정 없으면 안 받음)
   useEffect(() => {
@@ -80,11 +81,11 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
       )
     }
 
-    // 붙인 때 계정·신원 세대가 아직 그대로인지
+    // 붙인 때 계정·신원 세대가 아직 그대로인지 (붙인 때 값과 지금 값 비교)
     const isCurrentReceipt = () => {
       const receipt = readScopeNow()
       return receipt.accountId === authUuid
-        && receipt.identityGeneration === useAuthStore.getState().identityGeneration
+        && receipt.identityGeneration === identityGeneration
     }
 
     // 유죄로 처형된 사람이 판에 있을 때만 넣기 (무죄·취소·다른 판은 버림)
@@ -111,7 +112,7 @@ export function useInGameTribunalExpulsionPresentation({ hold = false } = {}) {
     }
 
     return onTribunalResolved(socket, handleTribunalVoteResolved)
-  }, [socket, scope, authUuid, epochKey, hold, readScopeNow])
+  }, [socket, scope, authUuid, identityGeneration, epochKey, hold, readScopeNow])
 
   // 다른 범위 대기열이면 안 보임, 보이는 것은 닉네임 넣은 문구로
   const visible = presentation.scope === scope ? presentation : INITIAL_IN_GAME_TRIBUNAL_EXPULSION

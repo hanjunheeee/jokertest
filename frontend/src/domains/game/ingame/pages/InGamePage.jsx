@@ -295,7 +295,6 @@ export default function InGamePage() {
         current={nightSuccessPresentation.current}
         open={nightSuccessPresentation.open}
         finish={nightSuccessPresentation.finish}
-        assetStatus={nightSuccessPresentation.assetStatus}
         finalStatus={nightSuccessPresentation.finalStatus}
         onClose={nightSuccessPresentation.onClose}
       />
