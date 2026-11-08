@@ -1,4 +1,4 @@
-// 인게임 화면 (/ingame): 위 줄·진행 바·카드 판·채팅·행동 줄 (입력 줄은 ChatPanel이 화면 틀 바닥 자리에 넣음), 연출·시트는 위에 띄움
+// 인게임 화면 (/ingame): 폰 세로는 카톡형(TalkLayout), 폰 가로·태블릿은 위 줄·진행 바·카드 판·채팅·행동 줄 칸 배치, 연출·시트는 위에 띄움
 // app/routes/index.jsx가 씀, 로직은 useInGamePage (데스크톱 InGamePage와 같은 순서·조건), Provider도 데스크톱과 같게 감쌈
 import { InGamePlayerSessionProvider } from "@/domains/game/ingame/components/InGamePlayerSessionProvider.jsx"
 import { InGameChatSessionProvider } from "@/domains/game/ingame/components/chat/InGameChatSessionProvider.jsx"
@@ -12,6 +12,8 @@ import ActionProvider from "@m/domains/game/ingame/components/shell/ActionProvid
 import Background from "@m/domains/game/ingame/components/shell/Background.jsx"
 import TopBar from "@m/domains/game/ingame/components/shell/TopBar.jsx"
 import Timebar from "@m/domains/game/ingame/components/timebar/Timebar.jsx"
+import TalkLayout from "@m/domains/game/ingame/components/talk/TalkLayout.jsx"
+import { useWideChat } from "@m/domains/game/ingame/hooks/chat/useWideChat.js"
 import { useCompactTyping } from "@m/domains/game/ingame/hooks/page/useCompactTyping.js"
 import { useInGamePage } from "@m/domains/game/ingame/hooks/page/useInGamePage.js"
 
@@ -41,6 +43,8 @@ const TYPING_BOARD_CLASS = "hidden land:block"
 export default function InGamePage() {
   const page = useInGamePage()
   const compactTyping = useCompactTyping()
+  // 폰 세로만 카톡형 (폰 가로·태블릿은 아래 칸 배치 그대로)
+  const wide = useWideChat()
 
   if (!page.isValidGameSession) return null
 
@@ -53,6 +57,8 @@ export default function InGamePage() {
       <InGamePlayerSessionProvider>
         <InGameChatSessionProvider>
           <ActionProvider interactionBlocked={interactionBlocked}>
+            {wide ? null : <TalkLayout page={page} compactTyping={compactTyping} locked={surfaceLocked} />}
+            {wide ? (
             <div
               className={`${GRID_CLASS} ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
               inert={surfaceLocked || undefined}
@@ -82,6 +88,7 @@ export default function InGamePage() {
                 <ActionRow />
               </div>
             </div>
+            ) : null}
 
             {/* 기록 시트는 플레이어 세션 컨텍스트를 읽어서 Provider 안에 둠 */}
             <RecordSheet open={sidePanel.recordsOpen} onClose={sidePanel.close} />
