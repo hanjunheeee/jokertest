@@ -11,6 +11,7 @@ import {
   RECOMMENDED_ROW_CONTENT_CLASS,
   RECOMMENDED_ROW_FRAME_CLASS,
   RECOMMENDED_TEXT_WRAP_CLASS,
+  STATUS_DETAIL_ERROR_CLASS,
 } from "../../../constants/friendListStyle.js"
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
@@ -18,7 +19,7 @@ import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 import { resolveAccountProfileAssets } from "../../../../../shared/utils/resolveAccountProfileAssets.js"
 
 // 해제 처리 중엔 버튼을 잠가 중복 요청을 막음
-export default function BlockedUserRow({ user, onUnblock, processing }) {
+export default function BlockedUserRow({ user, onUnblock, processing, error = null }) {
   const { portraitSrc, frameSrc } = resolveAccountProfileAssets({
     accountProfilePhotoId: user.accountProfilePhotoId,
     accountProfileBorderId: user.accountProfileBorderId,
@@ -36,6 +37,11 @@ export default function BlockedUserRow({ user, onUnblock, processing }) {
           />
           <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
             <p className={RECOMMENDED_NAME_CLASS}>{user.name}</p>
+            {error !== null ? (
+              <p role="alert" data-unblock-error={user.id} className={STATUS_DETAIL_ERROR_CLASS}>
+                {error}
+              </p>
+            ) : null}
           </div>
         </div>
         <div className={RECOMMENDED_ACTIONS_CLASS}>

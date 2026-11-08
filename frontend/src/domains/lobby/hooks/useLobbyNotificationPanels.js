@@ -52,7 +52,17 @@ export function useLobbyNotificationPanels({ searchParams, navigate } = {}) {
 
   // 친구 패널 열고 닫기
   const openFriendList = useCallback(() => setFriendListOpen(true), [])
-  const closeFriendList = useCallback(() => setFriendListOpen(false), [])
+  // 닫을 때 주소의 대상 id도 지움 (남아 있으면 다시 열 때마다 그 탭으로 튀고 "이미 처리됨"이 또 뜸)
+  const hasTarget = friendRequestTargetId !== null || gameInviteTargetId !== null
+  const closeFriendList = useCallback(() => {
+    setFriendListOpen(false)
+    if (!hasTarget || typeof navigate !== "function") return
+    const rest = new URLSearchParams(searchParams?.toString?.() ?? "")
+    rest.delete(FRIEND_REQUEST_PARAM)
+    rest.delete(GAME_INVITE_PARAM)
+    const search = rest.toString()
+    navigate({ search: search ? `?${search}` : "" }, { replace: true })
+  }, [hasTarget, navigate, searchParams])
 
   // 알림 항목 누름: 알림 창 닫고 신호 올린 뒤 이동
   const handleNotificationNavigate = useCallback((path) => {

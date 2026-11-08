@@ -81,7 +81,13 @@ function LobbyConsumer({ initialSearch = "", navigations }) {
 
   const panels = useLobbyNotificationPanels({
     searchParams,
-    navigate: (path) => {
+    navigate: (path, options) => {
+      // 패널 닫기는 { search } 객체로 대상 질의만 지움(replace)
+      if (typeof path === "object") {
+        navigations.push({ search: path.search, replace: options?.replace === true })
+        setSearch((path.search ?? "").replace(/^\?/, ""))
+        return
+      }
       navigations.push(path)
       const [, query = ""] = path.split("?")
       setSearch(query)
@@ -259,11 +265,17 @@ test("AC-02/R-IMPL#3: 같은 notificationRequestId로 다시 들어오면 닫아
 
   await click(view.container.querySelector('[data-action="close-friend-panel"]'))
   assert.equal(friendPanelOpen(view), "false")
+  // FE-036: 닫으면 주소의 대상 id를 지워, 다시 열 때 요청 탭으로 튀지 않음
+  assert.equal(friendPanelTarget(view), "")
 
   await click(view.container.querySelector("[data-notification-entry]"))
   await click(view.container.querySelector('[data-notification-action="open-target"]'))
 
-  assert.deepEqual(navigations, ["/lobby?notificationRequestId=42", "/lobby?notificationRequestId=42"])
+  assert.deepEqual(navigations, [
+    "/lobby?notificationRequestId=42",
+    { search: "", replace: true },
+    "/lobby?notificationRequestId=42",
+  ])
   assert.equal(friendPanelOpen(view), "true", "같은 대상 재진입도 친구 패널을 다시 열어야 한다")
   assert.equal(friendPanelTarget(view), "42", "요청을 새로 만들지 않고 같은 원본 id를 가리킨다")
 })

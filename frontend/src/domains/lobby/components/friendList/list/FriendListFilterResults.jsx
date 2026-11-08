@@ -33,6 +33,7 @@ export default function FriendListFilterResults({ friends, invite = null, block 
           inviteDisabledReason={invite?.disabledReason}
           onBlock={block?.onBlock ?? null}
           blocking={block?.blockingIds?.has(friend.id) ?? false}
+          blockError={block?.blockErrors?.[friend.id] ?? null}
         />
       ))}
     </ul>

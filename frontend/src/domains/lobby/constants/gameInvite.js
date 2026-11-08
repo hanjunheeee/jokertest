@@ -7,6 +7,10 @@ export const INVITE_ACCEPT_TIMEOUT_MS = 15000;
 // 결과 다시 묻기·지금 방 확인은 짧게 기다림
 export const INVITE_VERIFY_TIMEOUT_MS = 5000;
 
+// 결과 다시 묻기에 "처리 중"이 오면 조금 기다려 몇 번 더 물음 (서버는 방에 앉혔는데 화면만 로비에 남는 것 막기)
+export const INVITE_RESULT_RETRY_DELAY_MS = 1500;
+export const INVITE_RESULT_MAX_TRIES = 3;
+
 // 끝난 초대 상태별 안내 문구
 export const ENDED_REASON_TEXT = Object.freeze({
     DECLINED: "이미 거절한 초대입니다.",

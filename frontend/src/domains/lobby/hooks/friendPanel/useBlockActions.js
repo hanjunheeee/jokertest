@@ -8,12 +8,25 @@ export function useBlockActions() {
   const blockUser = useFriendStore((state) => state.blockUser)
   const unblockUser = useFriendStore((state) => state.unblockUser)
   const [blockingIds, setBlockingIds] = useState(() => new Set())
+  // 대상 id → 실패 문구, 결과를 버리면 실패해도 된 줄 알아서 남김
+  const [blockErrors, setBlockErrors] = useState(() => ({}))
 
   // 대상 id를 처리 중으로 두고 요청, 끝나면 성공·실패 상관없이 뺌
-  const run = useCallback(async (targetId, action) => {
+  const run = useCallback(async (targetId, action, fallbackMessage) => {
     setBlockingIds((previous) => new Set(previous).add(targetId))
+    setBlockErrors((previous) => {
+      if (!(targetId in previous)) return previous
+      const next = { ...previous }
+      delete next[targetId]
+      return next
+    })
     try {
-      await action(targetId)
+      const result = await action(targetId)
+      if (result?.ok === false && result.reason === "error") {
+        setBlockErrors((previous) => ({ ...previous, [targetId]: result.message ?? fallbackMessage }))
+      }
+    } catch {
+      setBlockErrors((previous) => ({ ...previous, [targetId]: fallbackMessage }))
     } finally {
       setBlockingIds((previous) => {
         const next = new Set(previous)
@@ -25,13 +38,13 @@ export function useBlockActions() {
 
   // 차단·차단 해제 버튼 처리
   const handleBlockUser = useCallback(
-    (targetId) => run(targetId, blockUser),
+    (targetId) => run(targetId, blockUser, "차단하지 못했습니다."),
     [run, blockUser],
   )
   const handleUnblockUser = useCallback(
-    (targetId) => run(targetId, unblockUser),
+    (targetId) => run(targetId, unblockUser, "차단을 해제하지 못했습니다."),
     [run, unblockUser],
   )
 
-  return { blockingIds, handleBlockUser, handleUnblockUser }
+  return { blockingIds, blockErrors, handleBlockUser, handleUnblockUser }
 }

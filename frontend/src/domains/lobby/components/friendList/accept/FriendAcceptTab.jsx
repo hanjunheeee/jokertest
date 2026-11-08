@@ -16,14 +16,19 @@ export default function FriendAcceptTab({
   onBack,
   incomingRequests = [],
   onAccept,
+  onDecline = null,
   onBlock = null,
   onAcceptAll,
   onRefresh,
   targetRequestId = null,
   processingRequestIds = new Set(),
+  requestErrors = {},
+  blockErrors = {},
+  blockingIds = null,
   acceptAllResult = null,
   incomingError = null,
-  incomingLoaded = true,
+  // 기본은 "아직 못 받음", 넘기는 쪽이 다 받았을 때만 true
+  incomingLoaded = false,
 }) {
   const { query, setQuery, isFiltering, filteredItems } = useFriendListLocalFilter(
     incomingRequests,
@@ -64,8 +69,13 @@ export default function FriendAcceptTab({
         incomingRequests={visibleRequests}
         isFiltering={isFiltering}
         onAccept={onAccept}
+        onDecline={onDecline}
         onBlock={onBlock}
         processingRequestIds={processingRequestIds}
+        requestErrors={requestErrors}
+        blockErrors={blockErrors}
+        blockingIds={blockingIds}
+        listFailed={incomingError !== null}
         targetRequestId={targetRequestId}
       />
       <BackButton

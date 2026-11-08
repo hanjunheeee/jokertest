@@ -20,6 +20,7 @@ export default function FriendListFolderRows({ friends, listClassName = FOLDER_L
           inviteDisabledReason={invite?.disabledReason}
           onBlock={block?.onBlock ?? null}
           blocking={block?.blockingIds?.has(friend.id) ?? false}
+          blockError={block?.blockErrors?.[friend.id] ?? null}
         />
       ))}
     </ul>

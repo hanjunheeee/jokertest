@@ -25,6 +25,14 @@ export function useFriendSearch() {
 
   const [errorMsg, setErrorMsg] = useState("")
 
+  // 마지막으로 검색 버튼을 누른 검색어, 누르기 전·검색어 바꾼 뒤엔 결과·"없음"을 안 보이게 함
+  const [searchedQuery, setSearchedQuery] = useState(null)
+
+  // 신청 보내는 중인 대상 (연타로 같은 신청 여러 번 나가는 것 막기), 신청 실패 문구 (대상 id → 문구)
+  const [sendingIds, setSendingIds] = useState(() => new Set())
+  const [sendErrors, setSendErrors] = useState(() => ({}))
+  const sendingRef = useRef(new Set())
+
   // 검색 번호 (새 검색마다 올림)
   const searchGenerationRef = useRef(0)
 
@@ -47,6 +55,7 @@ export function useFriendSearch() {
 
     setSearching(true)
     setErrorMsg("")
+    setSearchedQuery(trimmedQuery)
 
     try {
       const data = await searchFriendCandidates(trimmedQuery)
@@ -58,13 +67,23 @@ export function useFriendSearch() {
       setResults([])
       setErrorMsg(err.message || "검색 중 오류가 발생했습니다.")
     } finally {
-      // 옛 검색이면 로딩 표시는 새 검색이 끔
-      if (!isStale()) setSearching(false)
+      // 더 새 검색이 있으면 로딩 표시는 그쪽이 끔, 계정만 바뀐 경우는 여기서 끔(안 꺼지는 것 막기)
+      if (searchGenerationRef.current === searchGeneration) setSearching(false)
     }
   }
 
   // 친구 신청: 보낸 뒤 그 줄을 보낸 상태로 표시
+  // 실패 문구는 줄마다 둠: 검색 결과가 있으면 빈 상태 줄이 안 그려져 errorMsg로는 안 보였음
   const handleSend = async (receiverId) => {
+    if (sendingRef.current.has(receiverId)) return
+    sendingRef.current.add(receiverId)
+    setSendingIds(new Set(sendingRef.current))
+    setSendErrors((previous) => {
+      if (!(receiverId in previous)) return previous
+      const next = { ...previous }
+      delete next[receiverId]
+      return next
+    })
     const accountGeneration = syncAccount()
     try {
       await sendFriendRequest(receiverId)
@@ -74,15 +93,19 @@ export function useFriendSearch() {
     } catch (err) {
       if (!isCurrentAccount(accountGeneration)) return
       console.error("친구 신청 실패:", err)
-      setErrorMsg(err.message || "친구 신청에 실패했습니다.")
+      setSendErrors((previous) => ({ ...previous, [receiverId]: err?.message || "친구 신청에 실패했습니다." }))
+    } finally {
+      sendingRef.current.delete(receiverId)
+      setSendingIds(new Set(sendingRef.current))
     }
   }
 
   // 상대가 응답 끝낸 신청 대상은 검색 결과에서 뺌
   const visibleResults = filterVisibleFriendCandidates(results, resolvedRequestIds)
 
-  // 검색어가 있을 때만 결과 목록을 보임
-  const isSearching = query.trim().length > 0
+  // 검색어가 있고 그 검색어로 검색했을 때만 결과 목록을 보임
+  const trimmed = query.trim()
+  const isSearching = trimmed.length > 0 && trimmed === searchedQuery
 
   return {
     query,
@@ -92,6 +115,8 @@ export function useFriendSearch() {
     isSearching,
     sentIds: sentRequestIds,
     errorMsg,
+    sendingIds,
+    sendErrors,
     handleSearch,
     handleSend,
   }

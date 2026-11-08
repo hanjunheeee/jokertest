@@ -15,6 +15,10 @@ export function useFriendListSync(friendListOpen) {
   const incomingRequests = useFriendStore((state) => state.incomingRequests)
   const friendsError = useFriendStore((state) => state.friendsError)
   const incomingError = useFriendStore((state) => state.incomingError)
+  // 한 번이라도 제대로 받았고 지금 받는 중이 아닐 때만 "다 받음"
+  const incomingLoaded = useFriendStore(
+    (state) => state.appliedResult.incoming?.ok === true && state.incomingInFlight === 0,
+  )
   const blockedUsers = useFriendStore((state) => state.blockedUsers)
   const blocksStatus = useFriendStore((state) => state.blocksStatus)
   const blocksError = useFriendStore((state) => state.blocksError)
@@ -26,6 +30,7 @@ export function useFriendListSync(friendListOpen) {
   const removeIncomingRequest = useFriendStore((state) => state.removeIncomingRequest)
 
   const processingRequestIds = useFriendStore((state) => state.processingRequestIds)
+  const requestErrors = useFriendStore((state) => state.requestErrors)
   const acceptAllResult = useFriendStore((state) => state.acceptAllResult)
   const lockRequests = useFriendStore((state) => state.lockRequests)
   const unlockRequests = useFriendStore((state) => state.unlockRequests)
@@ -64,11 +69,13 @@ export function useFriendListSync(friendListOpen) {
     incomingRequests,
     friendsError,
     incomingError,
+    incomingLoaded,
     blockedUsers,
     blocksStatus,
     blocksError,
     favoritePendingIds,
     processingRequestIds,
+    requestErrors,
     acceptAllResult,
     handleRefreshFriends,
     handleRefreshBlocks,

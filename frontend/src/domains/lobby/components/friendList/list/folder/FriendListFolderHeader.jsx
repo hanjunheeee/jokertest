@@ -18,6 +18,7 @@ export default function FriendListFolderHeader({ label, open, onToggle }) {
     <button
       type="button"
       onClick={onToggle}
+      aria-expanded={open}
       className={FOLDER_HEADER_CLASS}
       style={{ outline: "none" }}
     >

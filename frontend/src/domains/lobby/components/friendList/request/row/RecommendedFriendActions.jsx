@@ -10,13 +10,14 @@ import {
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
 // 이미 신청한 상대는 신청 버튼 모양만 바꾸고 다시 보내지 않음
-export default function RecommendedFriendActions({ id, name, onSend, onBlock, sent, blocking }) {
+export default function RecommendedFriendActions({ id, name, onSend, onBlock, sent, sending = false, blocking }) {
   const sendButtonClass = sent
     ? `${RECOMMENDED_ACTION_BTN_CLASS} ${RECOMMENDED_SENT_BTN_CLASS}`
     : RECOMMENDED_ACTION_BTN_CLASS
 
+  // 보내는 중엔 다시 안 보냄 (연타로 같은 신청 여러 번 나가는 것 막기)
   const handleSendClick = () => {
-    if (sent) return
+    if (sent || sending) return
     onSend?.(id)
   }
 
@@ -42,6 +43,8 @@ export default function RecommendedFriendActions({ id, name, onSend, onBlock, se
         type="button"
         className={sendButtonClass}
         aria-label={sent ? "신청 완료" : `${name}에게 친구 신청`}
+        aria-disabled={sending}
+        disabled={sending}
         onClick={handleSendClick}
         style={{ outline: "none" }}
       >

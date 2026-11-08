@@ -36,8 +36,17 @@ export const loadActions = (set, get) => ({
         const generation = get().syncAccount();
         if (get().accountId === null) return { ok: false, reason: "anonymous" };
         const ticket = nextSeq();
+        set((state) => ({ incomingInFlight: state.incomingInFlight + 1 }));
+        // 같은 계정일 때만 받는 중 수를 줄임 (계정 바뀌면 상태가 이미 비워짐)
+        let settled = false;
+        const settle = () => {
+            if (settled) return;
+            settled = true;
+            if (get().isCurrent(generation)) set((state) => ({ incomingInFlight: Math.max(0, state.incomingInFlight - 1) }));
+        };
         try {
             const requests = await fetchIncomingApi();
+            settle();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             if (!get().claimSeq("incoming", ticket, { ok: true })) return get().supersededResult("incoming");
             set((state) => {
@@ -49,6 +58,7 @@ export const loadActions = (set, get) => ({
             });
             return { ok: true, requests };
         } catch (error) {
+            settle();
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             const message = error?.message ?? "받은 친구 신청을 불러오지 못했습니다.";
             if (!get().claimSeq("incoming", ticket, { ok: false, message })) return get().supersededResult("incoming");

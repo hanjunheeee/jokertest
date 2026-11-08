@@ -33,8 +33,8 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
 
   const visible = selectVisibleNotifications(items, generalChecks)
   const bodyState = resolveBodyState(status, visible.length)
-  // 목록을 다 받았고 읽은 알림이 있을 때만 삭제 버튼 켬
-  const hasRead = items.some((item) => item.readAt)
+  // 목록을 다 받았고 보이는 것 중 읽은 알림이 있을 때만 삭제 버튼 켬 (숨긴 종류는 안 셈)
+  const hasRead = visible.some((item) => item.readAt)
   const deleteDisabled = status !== "success" || deleteReadPending || !hasRead
 
   // 읽음 실패 뒤 다시 시도 때 읽음만 다시 보냄

@@ -22,14 +22,18 @@ export default function FriendListPanelContent({
   friendsError,
   incomingRequests,
   incomingError,
+  incomingLoaded = false,
   processingRequestIds,
+  requestErrors = {},
   acceptAllResult,
   onRefreshRequests,
   onAcceptRequest,
+  onDeclineRequest = null,
   onAcceptAll,
   onBlockUser,
   onUnblockUser,
   blockingIds,
+  blockErrors = {},
   friendBlock,
   blockedUsers,
   blocksStatus,
@@ -72,9 +76,14 @@ export default function FriendListPanelContent({
           onBack={onListView}
           incomingRequests={incomingRequests}
           incomingError={incomingError}
+          incomingLoaded={incomingLoaded}
           processingRequestIds={processingRequestIds}
+          requestErrors={requestErrors}
+          blockErrors={blockErrors}
+          blockingIds={blockingIds}
           acceptAllResult={acceptAllResult}
           onAccept={onAcceptRequest}
+          onDecline={onDeclineRequest}
           onBlock={onBlockUser}
           onAcceptAll={onAcceptAll}
           onRefresh={onRefreshRequests}
@@ -104,6 +113,7 @@ export default function FriendListPanelContent({
           status={blocksStatus}
           error={blocksError}
           processingIds={blockingIds}
+          rowErrors={blockErrors}
           onUnblock={onUnblockUser}
           onRefresh={onRefreshBlocks}
         />

@@ -19,6 +19,8 @@ export default function FriendRequestTab({ onBack, onBlock, blockingIds = new Se
     isSearching,
     sentIds,
     errorMsg,
+    sendingIds,
+    sendErrors,
     handleSearch,
     handleSend,
   } = useFriendSearch()
@@ -38,6 +40,8 @@ export default function FriendRequestTab({ onBack, onBlock, blockingIds = new Se
         isSearching={isSearching}
         errorMsg={errorMsg}
         sentIds={sentIds}
+        sendingIds={sendingIds}
+        sendErrors={sendErrors}
         onSend={handleSend}
         onBlock={onBlock}
         blockingIds={blockingIds}

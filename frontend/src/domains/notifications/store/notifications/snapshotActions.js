@@ -23,7 +23,13 @@ export const snapshotActions = (set, get) => ({
       data = await callNotificationsApi("fetchNotificationsApi")
     } catch (error) {
       if (!get().isCurrent(accountGeneration, requestGeneration)) return { ok: false, reason: "stale" }
-      set({ status: "error", error: error?.message ?? "알림을 불러오지 못했습니다." })
+      // 쌓인 알림은 목록에 넣음(배지·목록에 나오게), 소리 판정·ready 신호는 다시 받기 성공까지 미룸
+      const failed = get()
+      set({
+        status: "error",
+        error: error?.message ?? "알림을 불러오지 못했습니다.",
+        items: mergeNotifications(failed.items, failed.liveBuffer.filter(isUsableNotification)),
+      })
       return { ok: false, reason: "error" }
     }
 
@@ -79,7 +85,8 @@ export const snapshotActions = (set, get) => ({
     if (accountId === null || accountId !== state.accountId) return { applied: false, reason: "account-mismatch" }
     if (!isUsableNotification(notification)) return { applied: false, reason: "invalid" }
 
-    if (!state.snapshotLoaded) {
+    // 받기 실패 뒤엔 바로 목록에 넣음 (버퍼에만 갇혀 배지·목록에 안 나오는 것 막기)
+    if (!state.snapshotLoaded && state.status !== "error") {
       set({ liveBuffer: [...state.liveBuffer, notification] })
       return { applied: false, reason: "buffered" }
     }

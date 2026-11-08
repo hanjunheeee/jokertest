@@ -33,6 +33,7 @@ export default function FriendListRow({
   inviteDisabledReason = undefined,
   onBlock = null,
   blocking = false,
+  blockError = null,
 }) {
   const isFavorite = useFriendStore((state) => state.favoriteFriendIds.has(id))
   const isSavingFavorite = useFriendStore((state) => state.favoritePendingIds.has(id))
@@ -69,6 +70,11 @@ export default function FriendListRow({
           {favoriteError !== null ? (
             <p role="status" data-favorite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
               {favoriteError}
+            </p>
+          ) : null}
+          {blockError !== null ? (
+            <p role="status" data-block-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
+              {blockError}
             </p>
           ) : null}
           {sendError !== null ? (

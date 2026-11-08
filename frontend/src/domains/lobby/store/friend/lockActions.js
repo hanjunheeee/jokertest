@@ -36,6 +36,14 @@ export const lockActions = (set, get) => ({
         return { processingRequestIds: next, requestLockOwners: owners };
     }),
 
+    // 신청 하나의 실패 문구 넣기·지우기 (null이면 지움)
+    setRequestError: (requestId, message) => set((state) => {
+        const next = { ...state.requestErrors };
+        if (message === null) delete next[requestId];
+        else next[requestId] = message;
+        return { requestErrors: next };
+    }),
+
     // 전부 수락 진행·결과 저장 (받은 신청 탭 안내 줄이 읽음)
     setAcceptAllResult: (result) => set({ acceptAllResult: result }),
 });

@@ -47,7 +47,13 @@ export const initialAccountState = () => ({
     incomingError: null,
     favoritesError: null,
 
+    // 받은 신청 받는 중인 요청 수 (다 받기 전 "이미 처리됨" 판정 막기)
+    incomingInFlight: 0,
+
     processingRequestIds: new Set(),
+
+    // 받은 신청 수락·거절 실패 문구 (신청 id → 문구), 줄에 보임
+    requestErrors: {},
 
     requestLockOwners: {},
 

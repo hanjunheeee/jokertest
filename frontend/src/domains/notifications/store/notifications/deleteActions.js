@@ -1,6 +1,7 @@
 // 읽은 알림 지우기·알림 창 열고 닫기 액션
 // notifications.store.js가 create 안에서 펼쳐 씀
 import { callNotificationsApi } from "./callApi.js"
+import { mergeNotifications } from "../../utils/mergeNotifications.js"
 
 // 읽은 알림 지우기·알림 창 열고 닫기 액션 묶음
 export const deleteActions = (set, get) => ({
@@ -27,16 +28,16 @@ export const deleteActions = (set, get) => ({
       readPendingIds: get().readPendingIds.filter((id) => !readIds.has(id)),
     })
 
-    // 실패하면 목록 되돌리고 오류 남김, 그사이 계정 바뀌었으면 결과 버림
+    // 실패하면 뺀 알림만 다시 넣고 오류 남김 (통째로 되돌리면 그사이 온 알림·읽음이 사라짐), 계정 바뀌었으면 결과 버림
     try {
       await callNotificationsApi("deleteReadNotificationsApi")
     } catch (error) {
       if (!get().isCurrent(accountGeneration)) return { ok: false, reason: "stale" }
-      set({
+      set((state) => ({
         deleteReadPending: false,
         deleteReadError: error?.message ?? "읽은 메시지를 삭제하지 못했습니다.",
-        items: snapshot,
-      })
+        items: mergeNotifications(state.items, readItems),
+      }))
       return { ok: false, reason: "error" }
     }
 

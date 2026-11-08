@@ -53,7 +53,7 @@ export default function ListTab({ groups, friendsError, onRetry, invite, block }
           )
         ) : (
           <>
-            <FriendFolder label={getNormalFriendLabel(onlineFriends)} friends={onlineFriends} defaultOpen invite={invite} block={block} />
+            <FriendFolder label={getNormalFriendLabel(onlineFriends, onlineFriends.length + offlineFriends.length)} friends={onlineFriends} defaultOpen invite={invite} block={block} />
             <FriendFolder className={TAB_GROUP_GAP_CLASS} label={getOfflineFriendLabel(offlineFriends)} friends={offlineFriends} invite={invite} block={block} />
             <FriendFolder className={TAB_GROUP_GAP_CLASS} label={getFavoriteFriendLabel(favoriteFriends)} friends={favoriteFriends} invite={invite} block={block} />
           </>

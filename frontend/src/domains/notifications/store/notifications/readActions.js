@@ -105,13 +105,16 @@ export const readActions = (set, get) => ({
     const failedIds = results.filter((result) => !result.ok).map((result) => result.id)
     const okRows = results.filter((result) => result.ok).map((result) => result.row)
 
-    // 실패한 것만 안 읽음으로 되돌리고 확정 줄은 합침
-    set((state) => ({
-      items: mergeNotifications(
-        state.items.map((item) => (failedIds.includes(item.id) ? { ...item, readAt: null } : item)),
-        okRows,
-      ),
-    }))
+    // 실패한 것만 안 읽음으로 되돌리고 확정 줄은 합침, 그사이 지운 알림은 다시 안 넣음
+    set((state) => {
+      const present = new Set(state.items.map((item) => item.id))
+      return {
+        items: mergeNotifications(
+          state.items.map((item) => (failedIds.includes(item.id) ? { ...item, readAt: null } : item)),
+          okRows.filter((row) => present.has(row.id)),
+        ),
+      }
+    })
 
     return {
       ok: failedIds.length === 0,

@@ -1,7 +1,7 @@
 // 연결마다 복원 → ready 보내기 → 응답 기다림·재시도
 // 알림 소켓 훅이 소켓·계정마다 만들어 씀, 다시 연결되면 이전 진행분은 버림
 import { emitNotificationsReady } from "../../socket/notifications.socket.js"
-import { READY_ACK_TIMEOUT_MS, READY_MAX_ATTEMPTS } from "../../constants/notificationReady.js"
+import { READY_ACK_TIMEOUT_MS, READY_MAX_ATTEMPTS, READY_RETRY_DELAY_MS } from "../../constants/notificationReady.js"
 import { schedule, unschedule } from "./timers.js"
 
 // start·connect·disconnect·teardown 묶음 만듦
@@ -58,7 +58,12 @@ export function createReadySync(socket, store, accountAlive) {
         return
       }
       store.getState().setReadyState("retry")
-      if (active.attempts < READY_MAX_ATTEMPTS) attemptReady()
+      if (active.attempts < READY_MAX_ATTEMPTS) {
+        active.timer = schedule(() => {
+          active.timer = null
+          attemptReady()
+        }, READY_RETRY_DELAY_MS * active.attempts)
+      }
     }
 
     // 보내기 자체가 터지면 바로 실패, 아니면 시간 초과 타이머 걺

@@ -9,6 +9,7 @@ import {
   RECOMMENDED_ROW_CONTENT_CLASS,
   RECOMMENDED_ROW_FRAME_CLASS,
   RECOMMENDED_TEXT_WRAP_CLASS,
+  STATUS_DETAIL_ERROR_CLASS,
 } from "../../../constants/friendListStyle.js"
 import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
@@ -25,6 +26,8 @@ export default function RecommendedFriendRow({
   onSend,
   onBlock,
   sent,
+  sending = false,
+  sendError = null,
   blocking = false,
   accountProfilePhotoId,
   accountProfileBorderId,
@@ -48,6 +51,11 @@ export default function RecommendedFriendRow({
           <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
             <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
             <RecommendedFriendStatus status={status} />
+            {sendError !== null ? (
+              <p role="alert" data-send-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
+                {sendError}
+              </p>
+            ) : null}
           </div>
         </div>
         <RecommendedFriendActions
@@ -56,6 +64,7 @@ export default function RecommendedFriendRow({
           onSend={onSend}
           onBlock={onBlock}
           sent={sent}
+          sending={sending}
           blocking={blocking}
         />
       </div>

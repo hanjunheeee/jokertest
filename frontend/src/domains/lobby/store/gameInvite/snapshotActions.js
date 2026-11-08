@@ -22,7 +22,13 @@ export const snapshotActions = (set, get) => ({
             // 계정이 바뀌었거나 더 새 스냅샷이 이미 들어왔으면 오류를 안 남김
             if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
             if (get().snapshotSeq >= ticket) return { ok: false, reason: "superseded", superseded: true };
-            set({ status: "error", error: error?.message ?? "초대를 불러오지 못했습니다." });
+            // 쌓인 초대는 목록에 넣음 (버퍼에만 갇히지 않게), 소리 판정은 다시 받기 성공까지 미룸
+            const failed = get();
+            set({
+                status: "error",
+                error: error?.message ?? "초대를 불러오지 못했습니다.",
+                invites: merge(failed.invites, failed.liveBuffer.map((item) => item?.invite)),
+            });
             return { ok: false, reason: "error" };
         }
 
@@ -42,8 +48,8 @@ export const snapshotActions = (set, get) => ({
         if (!isUsable(invite)) return { applied: false, reason: "invalid" };
         if (invite.receiverId !== accountId) return { applied: false, reason: "receiver-mismatch" };
 
-        // 스냅샷 전이면 버퍼에 모음
-        if (!state.snapshotLoaded) {
+        // 스냅샷 전이면 버퍼에 모음 (받기 실패 뒤엔 바로 목록에 넣음, 다시 시도 성공 때 합쳐짐)
+        if (!state.snapshotLoaded && state.status !== "error") {
             set({ liveBuffer: [...state.liveBuffer, { invite, sfxEvent }] });
             return { applied: false, reason: "buffered" };
         }

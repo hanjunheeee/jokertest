@@ -896,6 +896,42 @@ test("AC-06: 재조회가 아직 진행 중이라고 답하면 성공으로도 �
   await mounted.unmount()
 })
 
+test("3장 inviteAccept: 재조회가 '처리 중'이면 기다렸다 다시 묻고, 들어갔다고 하면 방으로 감", async () => {
+  signIn(ACCOUNT_A)
+  installPlayer()
+  const socket = createFakeSocket()
+  setSocket(socket)
+  snapshotResponder = async () => ({ invites: [invite({ inviteId: "slow", creationSeq: "1" })], cursor: "1" })
+
+  const navigated = []
+  const mounted = await mountHook(socket, (path) => navigated.push(path))
+  await act(async () => { await flush() })
+
+  const room = { roomId: "room-slow", players: [] }
+  let lookups = 0
+  socket.__setAckResponder((event, payload, ack) => {
+    if (event === "accept_game_invite") { ack({ ok: false, code: "UNKNOWN", unknown: true }); return }
+    if (event === "get_game_invite_result") {
+      lookups += 1
+      ack(lookups === 1 ? { ok: true, pending: true, entered: false } : { ok: true, entered: true, room })
+      return
+    }
+    if (event === "get_current_room") { ack({ ok: true, room }); return }
+    ack({ ok: false, code: "UNEXPECTED_EVENT" })
+  })
+
+  let result
+  await act(async () => {
+    result = await requestGameInviteAccept("slow")
+    await flush()
+  })
+
+  assert.equal(lookups, 2, "처리 중이면 한 번 더 물음")
+  assert.equal(result.ok, true)
+  assert.deepEqual(navigated, ["/game-matching"])
+  await mounted.unmount()
+})
+
 test("AC-06: 성공 ACK라도 현재 소속이 그 방이 아니면 이동하지 않는다", async () => {
   signIn(ACCOUNT_A)
   installPlayer()

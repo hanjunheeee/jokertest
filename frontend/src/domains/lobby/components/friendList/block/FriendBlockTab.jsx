@@ -21,6 +21,7 @@ export default function FriendBlockTab({
   status = "idle",
   error = null,
   processingIds = new Set(),
+  rowErrors = {},
   onUnblock,
   onRefresh,
 }) {
@@ -45,7 +46,8 @@ export default function FriendBlockTab({
       ) : null}
 
       <ul className={ACCEPT_LIST_CLASS} aria-label="차단한 사용자">
-        {blockedUsers.length === 0 ? (
+        {/* 목록을 못 받았으면 오류만 보임, "없습니다"는 거짓 안내라 안 띄움 */}
+        {blockedUsers.length === 0 && error !== null ? null : blockedUsers.length === 0 ? (
           <li className={ACCEPT_EMPTY_CLASS}>
             {status === "loading" ? "차단 목록을 불러오는 중입니다." : "차단한 사용자가 없습니다."}
           </li>
@@ -56,6 +58,7 @@ export default function FriendBlockTab({
               user={user}
               onUnblock={onUnblock}
               processing={processingIds.has(user.id)}
+              error={rowErrors[user.id] ?? null}
             />
           ))
         )}

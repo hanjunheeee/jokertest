@@ -27,18 +27,21 @@ export default function FriendListPanel({
     incomingRequests,
     friendsError,
     incomingError,
+    incomingLoaded,
     blockedUsers,
     blocksStatus,
     blocksError,
     processingRequestIds,
+    requestErrors,
     acceptAllResult,
     handleRefreshFriends,
     handleRefreshBlocks,
     handleAcceptRequest,
+    handleDeclineRequest,
     handleAcceptAll,
   } = useFriendListSync(open)
 
-  const { blockingIds, handleBlockUser, handleUnblockUser } = useBlockActions()
+  const { blockingIds, blockErrors, handleBlockUser, handleUnblockUser } = useBlockActions()
 
   const { invite, inviteList } = usePanelInvites({ open, roomId, isRoomVerified })
 
@@ -60,14 +63,14 @@ export default function FriendListPanel({
   }
 
   // 친구 줄 차단 버튼에 넘길 묶음
-  const friendBlock = { onBlock: handleBlockUser, blockingIds }
+  const friendBlock = { onBlock: handleBlockUser, blockingIds, blockErrors }
 
   return (
     <AnimatePresence>
       {open ? (
         <>
           <FriendListPanelBackdrop onClose={handleClose} />
-          <FriendListPanelFrame view={panelView}>
+          <FriendListPanelFrame view={panelView} onClose={handleClose}>
             <FriendListPanelContent
               panelView={panelView}
               onListView={showListView}
@@ -81,14 +84,18 @@ export default function FriendListPanel({
               friendsError={friendsError}
               incomingRequests={incomingRequests}
               incomingError={incomingError}
+              incomingLoaded={incomingLoaded}
               processingRequestIds={processingRequestIds}
+              requestErrors={requestErrors}
               acceptAllResult={acceptAllResult}
               onRefreshRequests={handleRefreshFriends}
               onAcceptRequest={handleAcceptRequest}
+              onDeclineRequest={handleDeclineRequest}
               onAcceptAll={handleAcceptAll}
               onBlockUser={handleBlockUser}
               onUnblockUser={handleUnblockUser}
               blockingIds={blockingIds}
+              blockErrors={blockErrors}
               friendBlock={friendBlock}
               blockedUsers={blockedUsers}
               blocksStatus={blocksStatus}

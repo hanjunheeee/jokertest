@@ -10,7 +10,12 @@ import {
     emitInviteResult,
     isSameConnection,
 } from "../../socket/gameInvite.socket.js";
-import { INVITE_ACCEPT_TIMEOUT_MS, INVITE_VERIFY_TIMEOUT_MS } from "../../constants/gameInvite.js";
+import {
+    INVITE_ACCEPT_TIMEOUT_MS,
+    INVITE_RESULT_MAX_TRIES,
+    INVITE_RESULT_RETRY_DELAY_MS,
+    INVITE_VERIFY_TIMEOUT_MS,
+} from "../../constants/gameInvite.js";
 import { canEnterRoom } from "../../utils/gameInvite/inviteState.js";
 import { loadInviteSnapshotAndPlayNew } from "./inviteSfx.js";
 
@@ -53,11 +58,16 @@ export async function requestGameInviteAccept(inviteId) {
     try {
         let result = await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS);
 
-        // 응답을 못 받았으면 같은 연결·같은 계정일 때만 결과를 다시 물음
-        if (result?.unknown === true
-            && isSameConnection(socket, connectionId)
-            && useGameInviteStore.getState().isCurrent(accountGeneration)) {
-            const recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
+        // 응답을 못 받았으면 같은 연결·같은 계정일 때만 결과를 다시 물음, "처리 중"이면 기다렸다 몇 번 더
+        const canAskAgain = () => isSameConnection(socket, connectionId)
+            && useGameInviteStore.getState().isCurrent(accountGeneration);
+        if (result?.unknown === true && canAskAgain()) {
+            let recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
+            for (let tries = 1; recovered?.ok === true && recovered.pending === true && tries < INVITE_RESULT_MAX_TRIES; tries += 1) {
+                await new Promise((resolve) => setTimeout(resolve, INVITE_RESULT_RETRY_DELAY_MS));
+                if (!canAskAgain()) break;
+                recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
+            }
             if (recovered?.ok === true && recovered.pending !== true) {
                 result = recovered.entered === true && recovered.room
                     ? { ok: true, room: recovered.room, inviteId, recovered: true }

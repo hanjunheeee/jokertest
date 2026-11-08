@@ -16,7 +16,7 @@ export default function FriendListGroupFolders({ onlineFriends, offlineFriends, 
   return (
     <>
       <FriendListFolder
-        label={getNormalFriendLabel(onlineFriends)}
+        label={getNormalFriendLabel(onlineFriends, onlineFriends.length + offlineFriends.length)}
         friends={onlineFriends}
         defaultOpen
         invite={invite}

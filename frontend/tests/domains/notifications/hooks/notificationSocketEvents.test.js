@@ -423,11 +423,15 @@ test("AC-07: ACK가 오지 않으면 제한 시간 뒤 다시 보내고 상한�
 
   assert.equal(socket.__readyEmits().length, 1)
 
+  // 시간 초과 한 번 + 다시 보내기 전 기다림 한 번 (바로 다시 보내 한도를 한꺼번에 쓰지 않음)
   for (let attempt = 2; attempt <= READY_MAX_ATTEMPTS; attempt += 1) {
+    await act(async () => timers.flush())
+    assert.equal(socket.__readyEmits().length, attempt - 1, "실패 바로 뒤엔 아직 안 보냄")
     await act(async () => timers.flush())
     assert.equal(socket.__readyEmits().length, attempt, `timeout 뒤 ${attempt}번째 시도`)
   }
 
+  await act(async () => timers.flush())
   await act(async () => timers.flush())
   assert.equal(socket.__readyEmits().length, READY_MAX_ATTEMPTS, "상한을 넘어 계속 보내면 안 된다")
   assert.equal(readyState(), "retry")
@@ -447,6 +451,8 @@ test("AC-07: ACK가 ok:false면 재시도하되 상한을 넘지 않는다", asy
     const entry = socket.__readyEmits()[guard]
     guard += 1
     await act(async () => entry.ack({ ok: false, reason: "STALE_SOCKET" }))
+    // 다시 보내기 전 기다림 타이머를 흘림
+    await act(async () => timers.flush())
   }
 
   assert.equal(socket.__readyEmits().length, READY_MAX_ATTEMPTS)

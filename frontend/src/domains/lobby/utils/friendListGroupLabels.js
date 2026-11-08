@@ -6,9 +6,9 @@ export const countOnlineFriends = (friends) => {
   return friends.filter((friend) => friend.online || friend.status === "ONLINE").length
 }
 
-// 일반 폴더: 접속 수/전체 수
-export const getNormalFriendLabel = (friends) => {
-  return `일반 (${countOnlineFriends(friends)}/${friends.length})`
+// 일반 폴더: 접속 수/전체 수 (폴더엔 접속 중만 들어와 늘 n/n이라, 전체는 즐겨찾기 뺀 친구 수를 따로 받음)
+export const getNormalFriendLabel = (friends, total = friends.length) => {
+  return `일반 (${countOnlineFriends(friends)}/${total})`
 }
 
 // 오프라인 폴더: 전체 수

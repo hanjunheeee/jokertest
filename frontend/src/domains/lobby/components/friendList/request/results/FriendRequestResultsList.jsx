@@ -5,7 +5,9 @@ import RecommendedFriendRow from "../RecommendedFriendRow.jsx"
 import FriendRequestEmptyState from "./FriendRequestEmptyState.jsx"
 
 // 검색어가 없으면 목록 자체를 안 그림
-export default function FriendRequestResultsList({ results, searching, errorMsg, sentIds, onSend, onBlock, blockingIds, isSearching }) {
+export default function FriendRequestResultsList({
+  results, searching, errorMsg, sentIds, sendingIds = new Set(), sendErrors = {}, onSend, onBlock, blockingIds, isSearching,
+}) {
   if (!isSearching) return null
 
   return (
@@ -25,6 +27,8 @@ export default function FriendRequestResultsList({ results, searching, errorMsg,
             onBlock={onBlock}
             blocking={blockingIds.has(friend.id)}
             sent={sentIds.has(friend.id)}
+            sending={sendingIds.has(friend.id)}
+            sendError={sendErrors[friend.id] ?? null}
           />
         ))
       )}
