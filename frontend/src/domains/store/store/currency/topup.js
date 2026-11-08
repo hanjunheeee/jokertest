@@ -6,6 +6,7 @@ import { BUSY_STATUSES, CLIENT_KEY } from "../../constants/currencyPurchase.js"
 import { isPositiveInt, isText } from "../../utils/currencyParse.js"
 import { ctx, get, set } from "./state.js"
 import { resumeQueue } from "./queue.js"
+import { isCancelCode, watchPaymentWindow } from "./paymentWatch.js"
 
 // 같은 때 여러 번 불러도 요청은 하나만 보냄 (로그인 안 했으면 안 받음)
 export const loadProducts = () => {
@@ -69,15 +70,19 @@ export const startTopup = async (product) => {
       set({ status: "idle", configPending: true, reason: "CONFIG_MISSING" })
       return
     }
-    // 결제창 열기, 사용자 취소·SDK 실패·그 밖 실패를 나눠 안내
+    // 결제창 열기, 사용자 취소·창 닫힘(약속이 안 끝남)·SDK 실패·그 밖 실패를 나눠 안내
     set({ status: "payment", order: { orderId: order.orderId, amount: order.amount } })
+    const watch = watchPaymentWindow()
     try {
-      await requestTossTestPayment(order, window.location.origin)
+      await Promise.race([requestTossTestPayment(order, window.location.origin), watch.promise])
     } catch (error) {
-      if (started !== ctx.generation) return
-      if (error?.code === "USER_CANCEL") set({ status: "canceled", reason: "USER_CANCEL" })
+      if (started !== ctx.generation || get().status !== "payment") return
+      if (isCancelCode(error?.code)) set({ status: "canceled", reason: "USER_CANCEL" })
+      else if (error?.code === "PAYMENT_WINDOW_CLOSED") set({ status: "canceled", reason: "PAYMENT_WINDOW_CLOSED" })
       else if (error?.code === "SDK_LOAD_FAILED") set({ status: "failed", reason: "SDK_LOAD_FAILED" })
       else set({ status: "failed", reason: "PAYMENT_WINDOW_FAILED" })
+    } finally {
+      watch.stop()
     }
   } finally {
     // 끝나면 기다리던 주문을 이어서 보여 줌

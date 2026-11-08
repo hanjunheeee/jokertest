@@ -24,6 +24,7 @@ export const TOPUP_FAILURE_MESSAGES = {
   ORDER_FAILED: "결제가 실패해 다이아가 지급되지 않았습니다.",
   ORDER_CANCELED: "결제가 취소되어 다이아가 지급되지 않았습니다.",
   ORDER_EXPIRED: "결제 시간이 만료되어 다이아가 지급되지 않았습니다.",
+  ORDER_REFUNDED: "환불된 주문입니다. 이 주문의 다이아는 지급되지 않거나 회수되었습니다.",
   ORDER_CREATE_FAILED: "주문을 만들지 못했습니다. 다시 시도해 주세요.",
   SDK_LOAD_FAILED: "결제창을 불러오지 못했습니다. 다시 시도해 주세요.",
   PAYMENT_WINDOW_FAILED: "결제창을 열지 못했습니다. 다시 시도해 주세요.",

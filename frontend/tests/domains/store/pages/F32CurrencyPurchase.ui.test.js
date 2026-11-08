@@ -459,6 +459,7 @@ for (const [status, message] of [
   ["FAILED", /결제가 실패해 다이아가 지급되지 않았습니다/],
   ["CANCELED", /결제가 취소되어 다이아가 지급되지 않았습니다/],
   ["EXPIRED", /결제 시간이 만료되어 다이아가 지급되지 않았습니다/],
+  ["REFUNDED", /환불된 주문입니다/],
 ]) {
   test(`AC-03: 주문 조회 ${status}는 실패로 수렴하며 각각 다른 미지급 사유를 표시한다`, async () => {
     const view = await startPolling(() => { throw new TypeError("lost") })
@@ -468,6 +469,13 @@ for (const [status, message] of [
     assert.equal(balance(view, DIAMOND_LABEL), "유료 재화 100")
   })
 }
+
+test("환불: 결제 확인이 409 ORDER_REFUNDED면 결과 모름이 아니라 환불된 주문으로 안내한다", async () => {
+  const view = await startPolling(() => apiError(409, "ORDER_REFUNDED"))
+  await untilText(view, /환불된 주문입니다/)
+  assert.equal(balance(view, DIAMOND_LABEL), "유료 재화 100")
+  assert.equal(view.queryByRole("button", { name: "결과 확인" }), null)
+})
 
 test("AC-03: 조회 실패는 상태를 확정하지 않고 수동 결과 확인을 남긴다", async () => {
   const view = await startPolling(() => { throw new TypeError("lost") })
@@ -509,6 +517,31 @@ test("AC-03: 실패 복귀·SDK 취소는 취소로, SDK 로딩 실패는 재시
   await click(loadView, "충전")
   await waitFor(() => assert.equal(sdkCalls.length, 1))
   assert.equal(posts(ORDERS).length, 2)
+})
+
+test("결제창 멈춤: SDK 약속이 안 끝나도 페이지로 돌아오면·오래 기다리면 결제 중 상태를 풀고 다시 충전할 수 있다", async () => {
+  const { PAYMENT_WATCH } = await import("../../../../src/domains/store/store/currency/paymentWatch.js")
+  await newWorld()
+  sdkBehavior = () => new Promise(() => {})
+  const view = await mountStore()
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
+  await openCurrencyTab(view)
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() })
+  await click(view, "충전")
+  await until(() => assert.equal(sdkCalls.length, 1))
+  await until(() => assert.match(text(view), /결제창으로 이동하고 있습니다/))
+  await tick(PAYMENT_WATCH.graceMs + 10)
+  await act(async () => { window.dispatchEvent(new window.Event("focus")) })
+  await tick(PAYMENT_WATCH.settleMs)
+  await untilText(view, /결제가 취소되었거나 완료되지 않았습니다/)
+  assert.equal(posts(CONFIRM).length, 0)
+
+  await click(view, "충전")
+  await until(() => assert.equal(sdkCalls.length, 2))
+  await tick(PAYMENT_WATCH.timeoutMs)
+  await untilText(view, /결제가 취소되었거나 완료되지 않았습니다/)
+  assert.ok(button(view, "충전"))
+  mock.timers.reset()
 })
 
 test("AC-04: 주문 생성이 CONFIG_MISSING이면 설정 대기로 잠기고, 목록 새로고침 성공 뒤 다음 명시적 클릭에서만 다시 주문한다", async () => {
