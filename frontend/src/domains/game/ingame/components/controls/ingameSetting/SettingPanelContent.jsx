@@ -1,4 +1,4 @@
-// 설정 창 내용: 머리·탭 줄·고른 탭 본문·방 코드 보기 버튼
+// 설정 창 내용: 머리·탭 줄·고른 탭 본문·아래 타이머 위치·방 코드 보기 버튼
 // 설정 창(SettingPanel)이 사용, 탭·소리 값은 useInGameSettingPanel이 줌
 import { useRef } from "react"
 import {
@@ -63,7 +63,6 @@ export default function SettingPanelContent({
           <SettingTabPanel
             activeTab={activeTab}
             onOpenKickPlayer={onOpenKickPlayer}
-            onOpenRoomCode={onOpenRoomCode}
             volumes={volumes}
             onVolumeChange={setVolume}
             sfxMuted={sfxMuted}

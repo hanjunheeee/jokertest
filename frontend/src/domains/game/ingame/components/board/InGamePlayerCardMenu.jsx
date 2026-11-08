@@ -1,5 +1,6 @@
 // 플레이어 카드 메뉴: 카드 위에 뜨는 투표·밤 행동·재판 버튼 묶음
 // 플레이어 보드(InGamePlayerBoard)가 사용, 항목은 useInGamePlayerCardMenu가 만듦
+import { useId } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { PLAYER_CARD_OVERLAY_ASSETS } from "../../constants/board/ingamePlayerCardOverlayAssets.js"
 import {
@@ -11,6 +12,9 @@ import {
   OVERLAY_WRAP_CLASS,
 } from "../../constants/board/ingamePlayerCardOverlayLayout.js"
 import { INGAME_CARD_MENU_ITEM_KINDS } from "../../hooks/useInGamePlayerCardMenu.js"
+
+// 키보드로 왔을 때만 보이는 초점 테두리
+const FOCUS_RING_CLASS = "outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3d28d]"
 
 // 시험이 메뉴를 찾는 표시
 export const INGAME_PLAYER_CARD_MENU_ATTR = "data-ingame-player-card-menu"
@@ -27,21 +31,24 @@ function resolveOverlayButtonAsset(kind) {
   return PLAYER_CARD_OVERLAY_ASSETS.confirmButton
 }
 
-// 그림 버튼 하나, 못 누를 땐 이유를 title로 보여 줌
+// 그림 버튼 하나, 못 누를 땐 이유를 title과 숨김 글자로 같이 줌 (화면 읽기·키보드도 이유를 알게)
 function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason = null, onClick }) {
+  const reasonId = useId()
+  const showReason = disabled && Boolean(disabledReason)
   return (
     <button
       type="button"
       role="menuitem"
       aria-label={label}
-      title={disabled && disabledReason ? disabledReason : undefined}
-      className={OVERLAY_BTN_CLASS}
+      aria-describedby={showReason ? reasonId : undefined}
+      title={showReason ? disabledReason : undefined}
+      className={`${OVERLAY_BTN_CLASS} ${FOCUS_RING_CLASS}`}
       disabled={disabled}
       onClick={onClick}
-      style={{ outline: "none" }}
     >
       <PublicAsset src={assetSrc} alt="" className={OVERLAY_BTN_IMG_CLASS} />
       <span className={OVERLAY_BTN_LABEL_CLASS}>{label}</span>
+      {showReason ? <span id={reasonId} className="sr-only">{disabledReason}</span> : null}
     </button>
   )
 }

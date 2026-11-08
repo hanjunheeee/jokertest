@@ -404,9 +404,23 @@ async function startGameFromMatchingRoom({ host, created, router, view }) {
   return started
 }
 
+// 유죄로 끝난 판은 재판 추방 연출을 다 본 뒤에 결과 화면으로 감 (영상 오류로 문구 단계, 눌러서 끝냄)
+async function finishTribunalExpulsions(container) {
+  for (let i = 0; i < 5; i += 1) {
+    const overlay = container.querySelector("[data-ingame-tribunal-expulsion]")
+    if (!overlay) return
+    const video = overlay.querySelector("video")
+    if (video) {
+      await act(async () => { video.dispatchEvent(new window.Event("error")) })
+    }
+    await act(async () => { overlay.click() })
+  }
+}
+
 async function enterResultScreen({ router, view }) {
   if (router.state.location.pathname === "/ingame") {
     await dismissParchmentOverlays(view.container)
+    await finishTribunalExpulsions(view.container)
     await waitFor(() => {
       assert.equal(
         router.state.location.pathname, "/gameresult",

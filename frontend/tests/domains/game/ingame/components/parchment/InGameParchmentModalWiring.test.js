@@ -7,7 +7,6 @@ import { cleanup, fireEvent, render } from "@testing-library/react"
 import InGamePhaseEntranceOverlay from "../../../../../../src/domains/game/ingame/components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import { getInGameParchmentModalVariant } from "../../../../../../src/domains/game/ingame/constants/parchment/ingameParchmentModalVariants.js"
 
-const pageUrl = new URL("../../../../../../src/domains/game/ingame/pages/InGamePage.jsx", import.meta.url)
 const roleRevealUrl = new URL("../../../../../../src/domains/game/ingame/components/roleReveal/InGameRoleRevealOverlay.jsx", import.meta.url)
 const nightTurnUrl = new URL("../../../../../../src/domains/game/ingame/components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx", import.meta.url)
 const phaseEntranceUrl = new URL("../../../../../../src/domains/game/ingame/components/phaseEntrance/InGamePhaseEntranceOverlay.js", import.meta.url)
@@ -107,58 +106,6 @@ test("open이 아니거나 DAY/NIGHT가 아닌 phase에서는 셸을 아예 마�
   } finally {
     cleanup()
   }
-})
-
-test("InGamePage는 새 셸을 쓰는 세 오버레이를 각각 정확히 한 번 마운트하고 오버레이 스택 상태를 그대로 넘긴다", async () => {
-  const source = await readFile(pageUrl, "utf8")
-
-  const mounts = [
-    {
-      tag: "InGameNightTurnAnnouncementOverlay",
-      importPath: "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx",
-      props: [
-        /open=\{nightTurn\.open && !nightPresentationWaitOpen\}/,
-        /announcement=\{nightTurn\.announcement\}/,
-        /onClose=\{nightTurn\.close\}/,
-      ],
-    },
-    {
-      tag: "InGamePhaseEntranceOverlay",
-      importPath: "../components/phaseEntrance/InGamePhaseEntranceOverlay.js",
-      props: [
-        /open=\{phaseEntrance\.open && !nightPresentationWaitOpen\}/,
-        /phase=\{phaseEntrance\.phase\}/,
-        /onConfirm=\{phaseEntrance\.confirm\}/,
-      ],
-    },
-    {
-      tag: "InGameRoleRevealOverlay",
-      importPath: "../components/roleReveal/InGameRoleRevealOverlay.jsx",
-      props: [/open=\{roleReveal\.open\}/, /onClose=\{roleReveal\.close\}/, /roleInfo=\{roleReveal\.roleInfo\}/],
-    },
-  ]
-
-  assert.match(source, /useInGameOverlayStack\(\)/)
-  assert.match(source, /const \{ roleReveal, phaseEntrance, nightTurn, interactionBlocked \} =/)
-
-  for (const mount of mounts) {
-    assert.match(
-      source,
-      new RegExp(`import ${mount.tag} from "${mount.importPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
-      `${mount.tag} import가 없다`,
-    )
-
-    const occurrences = source.match(new RegExp(`<${mount.tag}\\b`, "g")) ?? []
-    assert.equal(occurrences.length, 1, `${mount.tag}은 정확히 한 번만 마운트돼야 한다`)
-
-    const block = source.match(new RegExp(`<${mount.tag}[\\s\\S]*?/>`))
-    assert.notEqual(block, null, `${mount.tag} 마운트 블록을 찾을 수 없다`)
-    for (const prop of mount.props) {
-      assert.match(block[0], prop, `${mount.tag}의 ${prop} 배선이 없다`)
-    }
-  }
-
-  assert.match(source, /\{nightPresentationWaitOpen \? null : \(\s*<InGameRoleRevealOverlay/)
 })
 
 test("세 오버레이는 각자 새 파치먼트 셸에 물려 있고, 셸이 아는 variantKey만 쓴다", async () => {

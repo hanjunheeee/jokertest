@@ -499,7 +499,8 @@ test("AC-05(f): 재판 — 행동 줄 경로에서 제출하면 카드 메뉴 �
     "행동 줄 경로가 낸 제출의 완료 상태가 공유 컨텍스트에 없다")
   assert.equal(afterAck.tribunalVoteSubmittedVote, "NOT_GUILTY",
     "행동 줄 경로가 제출한 표가 공유 컨텍스트에 남지 않았다")
-  const reopened = await openCardMenu(view.container, "B")
+  // 잠긴 항목을 눌러도 메뉴는 열린 채라 다시 누르면 닫힘, 열려 있으면 그 메뉴를 봄
+  const reopened = menuNodeOf(view.container) ?? await openCardMenu(view.container, "B")
   assert.equal(findMenuItem(reopened, "유죄").disabled, true,
     "행동 줄 경로의 제출이 끝났는데 메뉴 항목이 다시 열렸다")
   assert.match(reopened.textContent, new RegExp(INGAME_CARD_MENU_DISABLED_REASONS.blocked),

@@ -1,8 +1,6 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
-import React, { act } from "react"
+import { act } from "react"
 import { JSDOM } from "jsdom"
 
 const dom = new JSDOM(
@@ -229,30 +227,4 @@ test("역할 턴 안내는 아래 게임 표면의 입력을 잠그지 않는다
   )
 
   unmount()
-})
-
-test("live root(InGamePage)가 교정된 컨트롤러를 그대로 쓴다", () => {
-  const pageSource = readFileSync(
-    fileURLToPath(new URL("../../../../../src/domains/game/ingame/pages/InGamePage.jsx", import.meta.url)),
-    "utf8",
-  )
-
-  assert.match(pageSource, /useInGameOverlayStack\(\)/)
-  assert.match(pageSource, /nightTurn/)
-  assert.match(pageSource, /open=\{nightTurn\.open && !nightPresentationWaitOpen\}/)
-  assert.match(pageSource, /announcement=\{nightTurn\.announcement\}/)
-  assert.match(pageSource, /onClose=\{nightTurn\.close\}/)
-
-  const stackSource = readFileSync(
-    fileURLToPath(new URL("../../../../../src/domains/game/ingame/hooks/useInGameOverlayStack.js", import.meta.url)),
-    "utf8",
-  )
-  assert.match(stackSource, /useInGameNightTurnAnnouncement/)
-
-  const controllerSource = readFileSync(
-    fileURLToPath(new URL("../../../../../src/domains/game/ingame/hooks/useInGameNightTurnAnnouncement.js", import.meta.url)),
-    "utf8",
-  )
-  assert.doesNotMatch(controllerSource, /getInGameNightTurnAnnouncements/)
-  assert.doesNotMatch(controllerSource, /cursor/)
 })

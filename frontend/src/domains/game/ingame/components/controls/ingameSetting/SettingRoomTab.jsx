@@ -53,8 +53,9 @@ export default function SettingRoomTab({ onOpenKickPlayer }) {
             />
             {row.id === "keep-settings-next-game" ? (
               <>
+                {/* 저장·해제 실패만 붉은 오류·바로 알림, 불러오는 중 같은 안내는 보통 글 */}
                 {statusMessage ? (
-                  <p role="alert" className={ERROR_CLASS}>
+                  <p role={canRetry ? "alert" : "status"} className={canRetry ? ERROR_CLASS : NOTICE_CLASS}>
                     {statusMessage}
                     {canRetry ? (
                       <button type="button" className={RETRY_CLASS} onClick={retry}>
