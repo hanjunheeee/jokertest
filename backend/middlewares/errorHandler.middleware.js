@@ -2,9 +2,9 @@
 // index.js가 모든 라우터 뒤에 붙임, 경로 시험들도 같은 두 처리기를 붙여 씀
 const { createError } = require("../utils/appError");
 
-// 어느 경로에도 안 걸린 요청은 404 오류로 넘김
+// 어느 경로에도 안 걸린 요청은 404 오류로 넘김 (요청 주소를 응답에 되비추지 않음: 쿼리 속 토큰·끼워 넣은 글자)
 exports.notFoundHandler = (req, res, next) => {
-    next(createError(`${req.method} ${req.url} 라우터를 찾을 수 없습니다.`, 404));
+    next(createError("요청한 경로를 찾을 수 없습니다.", 404));
 };
 
 // 아이디 찾기·가입·비번 재설정·충전 경로는 정한 코드·문구만 내보내고, 나머지는 기본 모양
@@ -175,6 +175,10 @@ exports.globalErrorHandler = (err, req, res, next) => {
     // 그 밖엔 500대는 고정 문구 (DB 표·제약 이름 같은 내부 문구 안 내보내기), 코드도 앱이 정한 것만
     const exposeInternals = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
     const hideInternals = isServerError && !exposeInternals;
+    // 앱이 안 만들고 코드도 없는 4xx(라이브러리 오류: 주소 풀기 실패 등)는 운영에서 고정 문구 (입력 조각·라이브러리 문구 안 내보내기)
+    if (!isServerError && err.name !== 'AppError' && !err.code && !exposeInternals) {
+        return res.status(statusCode).json({ success: false, message: '요청을 처리할 수 없습니다.' });
+    }
     res.status(statusCode).json({
         success: false,
         message: hideInternals ? '서버 내부에서 에러가 발생했습니다.' : (err.message || '서버 내부에서 에러가 발생했습니다.'),

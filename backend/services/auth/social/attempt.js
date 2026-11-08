@@ -8,10 +8,12 @@ const signOAuthAttempt = (payload, ttlSeconds) =>
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ttlSeconds });
 
 // 서명 틀리거나 만료면 null (던지지 않음, 없는 시도 표처럼 다룸)
+// HS256만 받고, purpose 칸 없는 토큰(로그인 토큰 등)은 시도 표로 안 봄
 const verifyOAuthAttempt = (token) => {
     if (typeof token !== "string" || !token) return null;
     try {
-        return jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
+        return decoded && typeof decoded.purpose === "string" ? decoded : null;
     } catch {
         return null;
     }

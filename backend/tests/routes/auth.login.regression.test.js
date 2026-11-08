@@ -159,7 +159,8 @@ test("비밀번호 불일치는 401이고 실패 횟수를 올린다", async (t)
 
     await assert.rejects(
         authService.login({ email: "a@b.com", password: "wrong" }, REQ_INFO),
-        (error) => error.status === 401 && /2\/5/.test(error.message)
+        // 보안 점검 2026-11-09: 문구는 없는 이메일과 같게, 횟수는 아래 저장 값으로 봄
+        (error) => error.status === 401 && /이메일 또는 비밀번호/.test(error.message)
     );
 
     assert.deepEqual(calls.find((call) => call.name === "updateUser").args[1], {

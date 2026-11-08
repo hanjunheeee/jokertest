@@ -45,10 +45,35 @@ function replyRejected(args, code, message) {
     try { ack({ ok: false, code, message }); } catch { /* 답 함수가 던져도 처리기는 그대로 끝냄 */ }
 }
 
+// 소켓 하나 사건 수 제한: 10초에 120번까지 (보통 판은 1초에 몇 번), 넘으면 그 사건 버림, 360번 넘으면 연결 끊음
+// 사건 퍼붓기로 서버·DB 검사 줄을 막는 것 막기 (보안 점검 2026-11-09)
+const EVENT_RATE_WINDOW_MS = 10 * 1000;
+const EVENT_RATE_MAX = 120;
+const EVENT_RATE_DISCONNECT_AT = 360;
+
+// 사건 수 세기: 창 안 횟수 → "ok" / "drop"(버림) / "disconnect"(끊음)
+function createEventRateLimiter({
+    windowMs = EVENT_RATE_WINDOW_MS, max = EVENT_RATE_MAX, disconnectAt = EVENT_RATE_DISCONNECT_AT, now = Date.now,
+} = {}) {
+    let windowStart = now();
+    let count = 0;
+    return () => {
+        const nowMs = now();
+        if (nowMs - windowStart >= windowMs) {
+            windowStart = nowMs;
+            count = 0;
+        }
+        count += 1;
+        if (count > disconnectAt) return "disconnect";
+        if (count > max) return "drop";
+        return "ok";
+    };
+}
+
 // 접속 뒤 끊긴 세션이 사건 못 보내게 사건마다 다시 검사, disconnect는 정리 안 막게 뺌
 // 사건은 온 순서대로 한 줄로 검사 뒤 처리기 부름 (검사 기다리는 사이 순서 바뀜 막기, BE-011)
 // 처리기 끝까지는 안 기다림 (오래 걸리는 처리기가 뒤 사건을 막지 않게)
-function wrapSocketWithSessionGuard(socket) {
+function wrapSocketWithSessionGuard(socket, { countEvent = createEventRateLimiter() } = {}) {
     const registerListener = socket.on.bind(socket);
     let line = Promise.resolve();
     let lastOkAt = -Infinity;
@@ -66,6 +91,16 @@ function wrapSocketWithSessionGuard(socket) {
         if (event === "disconnect") return registerListener(event, listener);
 
         return registerListener(event, (...args) => {
+            // 너무 많으면 검사 줄에 넣지도 않음 (버린 사건은 답 함수에 알림, 계속 퍼부으면 끊음)
+            const verdict = countEvent();
+            if (verdict === "disconnect") {
+                socket.disconnect(true);
+                return line;
+            }
+            if (verdict === "drop") {
+                replyRejected(args, "RATE_LIMITED", "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+                return line;
+            }
             const turn = line.then(async () => {
                 // 검사 자체가 실패하면 이번 사건만 버리고 답 함수 있으면 실패로 답함 (연결은 안 끊음)
                 let result;
@@ -176,6 +211,10 @@ async function authenticateSocket(socket, next) {
 module.exports = {
     authenticateSocket,
     wrapSocketWithSessionGuard,
+    createEventRateLimiter,
+    EVENT_RATE_WINDOW_MS,
+    EVENT_RATE_MAX,
+    EVENT_RATE_DISCONNECT_AT,
     startSessionRevocationWatcher,
     SESSION_CHECK_INTERVAL_MS,
     EVENT_CHECK_CACHE_MS,

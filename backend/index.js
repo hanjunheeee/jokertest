@@ -25,6 +25,8 @@ if (logFile) require("./utils/logFile").teeConsoleToLogFile(logFile);
 // 필수 환경값: 운영은 비면 시작 거부, 개발은 경고만 (로컬 .env 덜 채워도 켜지게)
 try {
     require("./config/requiredEnv").assertRequiredEnv();
+    // 서명 키가 짧거나 예시 값이면 운영은 시작 거부 (토큰 위조 막기)
+    require("./config/requiredEnv").assertStrongSecrets();
 } catch (error) {
     if (require("./config/requiredEnv").isStartupFatal(error)) failStartup(error, "환경값"); // 운영 + 모르는 NODE_ENV는 거부
     console.warn(`[STARTUP] 경고 — ${error.message} (개발이라 계속, 운영이면 시작 거부)`);

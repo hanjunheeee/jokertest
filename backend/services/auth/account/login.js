@@ -2,13 +2,24 @@
 // controllers/auth/account.js(로그인)·auth/session.js(로그아웃)가 account 입구로 부름
 // 세션 발급은 입구 객체로 불러 시험 패치 먹게 (저장소도 모듈 객체로 불러 시험 패치 그대로 먹게)
 const userRepository          = require("../../../repositories/user");
-const { comparePassword } = require("../../../utils/auth/credentials");
+const { comparePassword, hashPassword } = require("../../../utils/auth/credentials");
+const crypto                  = require("crypto");
 const { createError }         = require("../../../utils/appError");
 const { hashRefreshToken }    = require("./tokens");
 
 // 실패 몇 번에 잠그나·얼마나 잠그나
 const MAX_FAILED_LOGINS = 5;
 const LOCK_MS = 15 * 60 * 1000;
+
+// 없는 이메일·틀린 비번 같은 문구 (가입 여부 안 드러나게, 보안 점검 2026-11-09)
+const LOGIN_FAILED_MESSAGE = "이메일 또는 비밀번호가 일치하지 않습니다.";
+
+// 없는 이메일도 비번 비교 한 번 (응답 시간으로 가입 여부 드러나는 것 막기), 해시는 처음 한 번만 만듦
+let dummyHashPromise = null;
+const compareWithDummy = async (password) => {
+    dummyHashPromise ??= hashPassword(crypto.randomBytes(16).toString("hex"));
+    await comparePassword(password, await dummyHashPromise);
+};
 
 // (트랜잭션) 행 잠금 → 잠김 → 비번 비교 → 기록 → 틀리면 실패 횟수·잠금 / 맞으면 정지 확인 → 세션
 // 정지는 비번 맞은 뒤에만 봄 (비번 모르는 사람에게 정지 사유 안 보이기)
@@ -25,7 +36,8 @@ exports.login = async (loginData, reqInfo) => {
         // 같은 계정 동시 로그인이 실패 횟수 덮어쓰지 않게 행 잠금
         const user = await userRepository.findByEmail(email.trim(), { transaction, lock: transaction.LOCK.UPDATE });
         if (!user) {
-            throw createError("가입되지 않은 이메일입니다.", 401);
+            await compareWithDummy(password);
+            throw createError(LOGIN_FAILED_MESSAGE, 401);
         }
 
         // 잠금 시간 안이면 비번 안 보고 거절 (계속 맞혀 보기 막기)
@@ -59,7 +71,7 @@ exports.login = async (loginData, reqInfo) => {
             if (lockedUntil) {
                 return { error: createError("비밀번호를 5회 잘못 입력하여 15분간 계정이 잠깁니다.", 423) };
             }
-            return { error: createError(`비밀번호가 일치하지 않습니다. (틀린 횟수: ${failCount}/5)`, 401) };
+            return { error: createError(LOGIN_FAILED_MESSAGE, 401) };
         }
 
         // 비번 맞고 정지 중이면 남은 세션도 끊고 403

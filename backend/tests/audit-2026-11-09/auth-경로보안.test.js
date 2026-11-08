@@ -403,7 +403,7 @@ test('HTTP 보안 헤더: 없는 경로 404 응답에도 보안 헤더가 붙고
     assert.equal(res.status, 404);
     assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(res.headers.get('x-frame-options'), 'DENY');
-    assert.equal(res.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'none'");
+    assert.equal(res.headers.get('content-security-policy'), "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     assert.equal(res.headers.get('x-powered-by'), null);
 });
 

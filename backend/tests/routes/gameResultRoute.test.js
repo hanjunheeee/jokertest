@@ -39,7 +39,8 @@ const setupFakeDb = (t, row) => {
     return seen;
 };
 
-const callGetGameResult = async (gameId) => {
+// 보안 점검 2026-11-09: 판 결과는 그 판 참가자만 보므로 부르는 사람을 참가자로 둠 (u1·a1 둘 다 참가자 쪽)
+const callGetGameResult = async (gameId, uuid = gameId === "game-abort" ? "a1" : "u1") => {
     let status;
     let body;
     const res = {
@@ -52,7 +53,7 @@ const callGetGameResult = async (gameId) => {
             return this;
         },
     };
-    await gameController.getGameResult({ params: { gameId } }, res, (err) => {
+    await gameController.getGameResult({ params: { gameId }, user: { uuid } }, res, (err) => {
         throw err;
     });
     return { status, body };

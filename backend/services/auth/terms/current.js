@@ -24,6 +24,17 @@ const pickCurrentVersions = (rows, now = new Date()) => {
     return [...byKind.values()].sort((a, b) => String(a.kind).localeCompare(String(b.kind)));
 };
 
+// 약관 전문 주소는 http·https만 (javascript: 같은 주소가 화면 링크로 가서 스크립트 도는 것 막기)
+const safeLinkOf = (value) => {
+    if (typeof value !== 'string') return null;
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? value : null;
+    } catch {
+        return null;
+    }
+};
+
 // 화면에 줄 모양 (관리자 id·만든 시각은 안 보냄)
 const toPublicTerms = (row) => ({
     id: Number(row.id),
@@ -31,7 +42,7 @@ const toPublicTerms = (row) => ({
     version: row.version,
     title: row.title,
     body: row.body ?? null,
-    url: row.url ?? null,
+    url: safeLinkOf(row.url),
     effectiveAt: new Date(row.effective_at).toISOString(),
     required: isTrue(row.is_required),
 });

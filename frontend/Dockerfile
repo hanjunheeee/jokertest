@@ -36,6 +36,8 @@ RUN npm run build --prefix frontend && npm run build --prefix frontend-mobile
 
 FROM nginx:1.27-alpine AS runner
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+# 보안 헤더 조각 (default.conf가 include)
+COPY nginx/snippets/ /etc/nginx/snippets/
 COPY --from=build /app/frontend/dist /usr/share/nginx/html/desktop
 # 모바일은 화면 파일만: public 그림은 데스크톱 폴더 것을 nginx가 같이 씀 (같은 그림 두 벌 안 넣기)
 COPY --from=build /app/frontend-mobile/dist/index.html /app/frontend-mobile/dist/version.json /usr/share/nginx/html/mobile/

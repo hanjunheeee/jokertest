@@ -25,8 +25,30 @@ const assertRequiredEnv = (env = process.env) => {
     }
 };
 
+// 서명·해시 키 최소 길이와 예시 값 모양 (예시 파일 값 그대로 운영에 올리는 것 막기)
+const SECRET_MIN_LENGTH = 32;
+const SECRET_KEYS = ["JWT_SECRET", "SIGNUP_EMAIL_HMAC_SECRET"];
+const PLACEHOLDER_PATTERN = /^(change|replace|example|your|secret|test|dev)|change[-_]?me|placeholder/i;
+
+// 짧거나 예시 모양인 키 이름 목록 (빈 값은 빠진 값 검사 몫이라 뺌), 값 자체는 안 돌려줌
+const findWeakSecrets = (env = process.env) => SECRET_KEYS.filter((key) => {
+    const value = typeof env[key] === "string" ? env[key].trim() : "";
+    if (!value) return false;
+    return value.length < SECRET_MIN_LENGTH || PLACEHOLDER_PATTERN.test(value);
+});
+
+// 약한 키 있으면 던짐 (index.js가 운영이면 시작 거부, 개발이면 경고만)
+const assertStrongSecrets = (env = process.env) => {
+    const weak = findWeakSecrets(env);
+    if (weak.length > 0) {
+        throw new Error(`서명 키가 약합니다(${SECRET_MIN_LENGTH}자 미만이거나 예시 값): ${weak.join(", ")}`);
+    }
+};
+
 // 시작 거부할 오류인지: 운영이면 다, 개발이어도 모르는 NODE_ENV는 거부 (오타로 운영이 개발 규칙으로 뜨는 것 막기)
 const isStartupFatal = (error, env = process.env) =>
     isProduction(env) || error?.code === "UNKNOWN_NODE_ENV";
 
-module.exports = { REQUIRED_ENV_KEYS, findMissingEnv, assertRequiredEnv, isStartupFatal };
+module.exports = {
+    REQUIRED_ENV_KEYS, SECRET_MIN_LENGTH, findMissingEnv, assertRequiredEnv, findWeakSecrets, assertStrongSecrets, isStartupFatal,
+};

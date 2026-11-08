@@ -2,7 +2,7 @@
 // routes/game.routes.js가 GET /game/:gameId에 부름 (기록 읽기는 services/game/record/queries.js)
 const gameRecordQueries = require("../../services/game/record/queries");
 
-// 판 id로 기록 찾아 판 정보 + 사람마다 역할·승패·생존 응답
+// 판 id로 기록 찾아 판 정보 + 사람마다 역할·승패·생존 응답 (그 판 참가자만)
 exports.getGameResult = async (req, res, next) => {
     try {
         // 공백뿐인 id는 400
@@ -12,7 +12,10 @@ exports.getGameResult = async (req, res, next) => {
         }
 
         const result = await gameRecordQueries.findGameResultById(gameId);
-        if (!result) {
+        // 그 판에 낀 사람만 봄, 남의 판은 없는 판과 같은 404 (판 id만 바꿔 남의 판 직업·승패 보기 막기)
+        const isParticipant = Array.isArray(result?.players)
+            && result.players.some((player) => player.user_id === req.user?.uuid);
+        if (!result || !isParticipant) {
             return res.status(404).json({ success: false, message: "게임 기록을 찾을 수 없습니다." });
         }
 

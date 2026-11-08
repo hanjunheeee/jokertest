@@ -98,7 +98,8 @@ test("known-issues 잠금 뒤 실패 횟수: 잠금이 끝난 계정은 한 번 
 
     await assert.rejects(
         authService.login({ email: "a@b.com", password: "wrong" }, REQ_INFO),
-        (error) => error.status === 401 && /1\/5/.test(error.message),
+        // 보안 점검 2026-11-09: 횟수는 문구 대신 저장 값으로 봄 (문구는 없는 이메일과 같음)
+        (error) => error.status === 401 && /이메일 또는 비밀번호/.test(error.message),
     );
     assert.deepEqual(argsOf("updateUser")[1], { failed_login_count: 1, locked_until: null });
 });

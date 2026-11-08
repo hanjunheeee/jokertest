@@ -43,7 +43,7 @@ const login = (body) => authService.login({ email: 'player@example.com', passwor
 
 test('로그인: 가입 안 된 이메일은 401이고 로그인 기록을 남기지 않는다', async (t) => {
     const { store } = await setUp(t);
-    await assert.rejects(login({ email: 'nobody@example.com' }), (e) => e.status === 401 && /가입되지 않은/.test(e.message));
+    await assert.rejects(login({ email: 'nobody@example.com' }), (e) => e.status === 401 && /이메일 또는 비밀번호가 일치하지 않습니다/.test(e.message));
     assert.equal(store.data.history.length, 0);
 });
 
@@ -86,9 +86,11 @@ test('로그인: 틀리면 실패 기록(ip·브라우저 정보)이 남고 거�
     assert.equal(store.data.history[0].user_agent, 'audit-agent');
 });
 
-test('로그인: 두 번째로 틀리면 문구에 2/5', async (t) => {
-    await setUp(t, { failed_login_count: 1 });
-    await assert.rejects(login({ password: 'wrong-pass' }), (e) => e.status === 401 && /2\/5/.test(e.message));
+// 보안 점검 2026-11-09: 틀린 횟수는 문구에 안 실음 (없는 이메일과 같은 문구라야 가입 여부가 안 드러남), 횟수는 계정에만 셈
+test('로그인: 두 번째로 틀리면 없는 이메일과 같은 문구, 틀린 횟수는 2로 셈', async (t) => {
+    const { user } = await setUp(t, { failed_login_count: 1 });
+    await assert.rejects(login({ password: 'wrong-pass' }), (e) => e.status === 401 && e.message === '이메일 또는 비밀번호가 일치하지 않습니다.');
+    assert.equal(user.failed_login_count, 2);
 });
 
 test('로그인: 4번 틀린 뒤 5번째로 틀리면 423이고 지금부터 15분 잠긴다', async (t) => {

@@ -8,7 +8,7 @@ const { validateSignupPayload } = require("../../../validations/auth/signup");
 const db                      = require("../../../repositories/common/db");
 const economyService          = require("../../economy");
 const signupEmailVerificationService = require("../signupEmailVerification");
-const { normalizeEmail: normalizeSignupEmail } = require("../../../validations/auth/signupEmailVerification");
+const { normalizeEmail: normalizeSignupEmail, validateEmailFormat } = require("../../../validations/auth/signupEmailVerification");
 // 금지어 든 닉네임 거절 (금지어 표 비면 안 막음)
 const bannedWords = require("../../ops/bannedWords");
 // 약관 동의·만 14세 확인 (입구 객체로 불러 시험 갈아끼우기 먹게)
@@ -82,6 +82,10 @@ exports.signup = async (userData) => {
 exports.checkEmailAvailability = async (email) => {
     if (typeof email !== "string" || !email.trim()) {
         throw createError("이메일을 입력해주세요.", 400);
+    }
+    // 주소 하나짜리 모양만 DB에 물음 (아무 글자로 가입 여부 훑기 줄이기)
+    if (!validateEmailFormat(email)) {
+        throw createError("이메일 형식이 올바르지 않습니다.", 400);
     }
     const existing = await userRepository.findByEmail(email.trim());
     return { available: !existing };

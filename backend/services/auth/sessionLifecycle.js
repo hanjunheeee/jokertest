@@ -3,13 +3,21 @@
 const jwt              = require("jsonwebtoken");
 const userRepository    = require("../../repositories/user");
 
+// 서명 방식은 HS256 하나만 받음 (다른 방식으로 바꿔 서명한 토큰 막기)
+const ACCESS_TOKEN_ALGORITHMS = ["HS256"];
+
 // 서명 틀리거나 만료면 jwt가 던짐, 잡는 건 부르는 쪽 몫
 // ignoreExpiration은 로그아웃·디스코드 연결 콜백만 (세션 살아 있는지는 따로 봄)
+// 같은 키로 서명한 소셜 시도 표(purpose 칸 있음)는 로그인 토큰으로 안 받음
 exports.verifyAccessToken = (token, { ignoreExpiration = false } = {}) => {
-    if (ignoreExpiration) {
-        return jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ACCESS_TOKEN_ALGORITHMS,
+        ...(ignoreExpiration ? { ignoreExpiration: true } : {}),
+    });
+    if (decoded && typeof decoded === "object" && decoded.purpose !== undefined) {
+        throw new jwt.JsonWebTokenError("access token expected");
     }
-    return jwt.verify(token, process.env.JWT_SECRET);
+    return decoded;
 };
 
 // 토큰 속 세션이 아직 살아 있고 정지 아닌지, 거절은 상태 코드·문구로 돌려줌

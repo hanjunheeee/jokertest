@@ -19,6 +19,9 @@ const { registerNotificationHandlers } = require("./connection/notifications");
 // 웹소켓만 쓰는 화면은 cors가 안 걸려 Origin을 직접 검사 (DP-034)
 const { createOriginGuard } = require("./connection/originCheck");
 
+// 소켓 사건 하나 최대 크기 (보안 점검 2026-11-09)
+const MAX_SOCKET_MESSAGE_BYTES = 64 * 1024;
+
 // 판·대기방도 같은 접속 목록 Map을 봄 (지금 소켓인지 가리기용)
 gameSession.setOnlineUsersRegistry(onlineUsers);
 matchmaking.setOnlineUsersRegistry(onlineUsers);
@@ -37,6 +40,8 @@ function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL, allowRe
             methods:     ["GET", "POST"],
         },
         allowRequest,
+        // 사건 하나 최대 64KB (기본 1MB, 큰 메시지로 메모리 쓰게 하기 막기, 채팅·설정은 몇 KB)
+        maxHttpBufferSize: MAX_SOCKET_MESSAGE_BYTES,
     });
 
     // 서비스가 emitter로 보낼 수 있게 io 먼저 넣음
@@ -104,6 +109,7 @@ function __getOnlineUsersForTests() {
 
 module.exports = {
     initSocket,
+    MAX_SOCKET_MESSAGE_BYTES,
     emitToUser,
     __getOnlineUsersForTests,
     // 시험이 연결 처리 조각을 하나씩 부르게 같이 내보냄

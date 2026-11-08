@@ -101,7 +101,8 @@ const buildAccountRateLimiters = (env, createRateLimiter) => {
     });
     const checkEmail = createRateLimiter({
         windowMs: toPositiveInt(env.CHECK_EMAIL_IP_WINDOW_MS, tenMinutes),
-        max:      toPositiveInt(env.CHECK_EMAIL_IP_MAX, 60),
+        // 가입 여부를 알려 주는 경로라 ip당 10분 20번까지만 (훑기 막기, 보안 점검 2026-11-09)
+        max:      toPositiveInt(env.CHECK_EMAIL_IP_MAX, 20),
         keyOf:    (req) => `check-email-ip:${req.ip}`,
         message:  TOO_MANY_MESSAGE,
     });
