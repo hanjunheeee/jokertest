@@ -266,6 +266,7 @@ function setupBackendNight(roomId, { playerCount = 10 } = {}) {
   const gameSessionCore = backendRequire("../game-core/gameSession")
   const matchmaking = backendRequire("./matchmaking")
   const gameResultRepository = backendRequire("../repositories/game/result")
+  const backendSessionState = backendRequire("./gameSession/core/state")
   const {
     createFakeSocket: createBackendFakeSocket, createFakeIo,
   } = backendRequire("../tests/helpers/matchmakingFixtures")
@@ -338,6 +339,7 @@ function setupBackendNight(roomId, { playerCount = 10 } = {}) {
   const ctx = {
     gameSessionSocketLayer,
     gameSessionCore,
+    backendSessionState,
     io,
     session,
     backendSockets,
@@ -581,8 +583,9 @@ function captureServerScheduledTimers(run) {
   const calls = []
   let fakeTimerId = 1
   globalThis.setTimeout = (fn, delay) => {
-    calls.push({ fn, delay })
-    return fakeTimerId++
+    const id = fakeTimerId++
+    calls.push({ fn, delay, id })
+    return id
   }
   try {
     run()
@@ -592,8 +595,14 @@ function captureServerScheduledTimers(run) {
   return calls
 }
 
+// 판 끝 뒤 끊긴 사람 정리 예약(BE-020)은 다음 낮 타이머가 아니라서 뺌
+function withoutEndedSweep(ctx, calls) {
+  const sweepTimerId = ctx.backendSessionState.endedSweepRuns.get(ctx.session.id)?.timerId ?? null
+  return calls.filter((call) => call.id !== sweepTimerId).map(({ fn, delay }) => ({ fn, delay }))
+}
+
 function driveRemainingNightRolesToFinalization(ctx) {
-  return captureServerScheduledTimers(() => {
+  return withoutEndedSweep(ctx, captureServerScheduledTimers(() => {
     for (let guard = 0; guard < 12 && ctx.session.phase === "NIGHT"; guard += 1) {
       const role = ctx.session.nightTurnRole
       if (!role) {
@@ -608,7 +617,7 @@ function driveRemainingNightRolesToFinalization(ctx) {
       }
       ctx.submit(actor[0], null)
     }
-  })
+  }))
 }
 
 function resetScreenBetweenScenes() {

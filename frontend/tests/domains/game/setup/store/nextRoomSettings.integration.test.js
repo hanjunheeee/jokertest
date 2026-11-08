@@ -106,6 +106,10 @@ const { SOCKET_EVENTS } = await import("../../../../../src/domains/game/shared/c
 const { default: matchmaking } = await import("../../../../../../backend/socket/matchmaking.js")
 const { default: gameSessionCore } = await import("../../../../../../backend/game-core/gameSession.js")
 const { default: gameSessionSocketLayer } = await import("../../../../../../backend/socket/gameSession.js")
+const { default: gameSessionState } =
+  await import("../../../../../../backend/socket/gameSession/core/state.js")
+const { default: roleRevealTimer } =
+  await import("../../../../../../backend/socket/gameSession/phase/roleReveal.js")
 const { default: gameResultRepository } =
   await import("../../../../../../backend/repositories/game/result.js")
 const { default: matchmakingFixtures } =
@@ -279,6 +283,14 @@ async function createAndStartRealRoom(host, joiners) {
   return { created, room }
 }
 
+// 역할 공개 10초 마감을 바로 끝냄 (서버는 확인을 안 기다리고 마감 때 첫 낮으로 넘김)
+function expireRoleRevealNow(session) {
+  const run = gameSessionState.roleRevealRuns.get(session.id)
+  assert.ok(run, "역할 공개 마감이 걸려 있지 않다")
+  roleRevealTimer.stopRoleRevealTimer(session.id)
+  roleRevealTimer.ensureRoleRevealTimer(run.io, session, { setTimeoutFn: (fn) => { fn(); return null } })
+}
+
 async function playToCitizenVictory(connections) {
   const session = liveSession(connections[0].uuid)
   const gameId = session.id
@@ -289,7 +301,9 @@ async function playToCitizenVictory(connections) {
     const acked = await ack(connection, "acknowledge_role_reveal", { gameId })
     assert.equal(acked.ok, true, JSON.stringify(acked))
   }
-  assert.equal(liveSession(connections[0].uuid).phase, "DAY", "역할 확인 뒤 낮으로 넘어가지 않았다")
+  assert.equal(liveSession(connections[0].uuid).phase, "ROLE_REVEAL", "확인만으로 낮으로 넘어가면 안 된다")
+  expireRoleRevealNow(session)
+  assert.equal(liveSession(connections[0].uuid).phase, "DAY", "역할 공개 마감 뒤 낮으로 넘어가지 않았다")
 
   for (const connection of connections) {
     const ready = await ack(connection, "ready_for_day_vote", { gameId })
@@ -692,7 +706,8 @@ test("F-24(AC-05) · 유지를 끄면 영속 레코드가 사라지고 다음 �
   assert.equal(request.dayDiscussionTime, 60)
   assert.equal(request.dayVoteTime, 60)
   assert.equal(request.nightActionTime, 90)
-  assert.deepEqual(request.roleNightActionTimes, { JOKER: 90, DOCTOR: 90, GUARD: 90, WITCH_HUNTER: 90 })
+  // 1-14: 새 방은 손댄 직업만 따로 실음 (전체 밤 시간이 기본값)
+  assert.equal(Object.hasOwn(request, "roleNightActionTimes"), false)
 })
 
 test("F-24(AC-05) · 비활성 레코드는 복원 원본으로 쓰이지 않고 source도 남기지 않는다", async () => {
