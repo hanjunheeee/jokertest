@@ -1,5 +1,6 @@
 // 대기방 설정 편집 화면: 어두운 바탕 위에 게임 설정 패널(편집 모드) + 저장 실패 문구
 // GameMatchingPage가 씀, 편집 패널이 열렸을 때만 그림
+import { useEffect } from "react"
 import GameSetupPanel from "@/domains/game/setup/components/GameSetupPanel.jsx"
 
 // 설정 편집 덮개 (편집 모드 패널 + 저장 실패 문구)
@@ -12,8 +13,18 @@ export default function SettingsEditOverlay({
   settingsError,
   hasPendingSettingsResult,
 }) {
+  // Esc로 닫기 (저장 중엔 안 닫음)
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape" || isSaving) return
+      onCancel?.()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [isSaving, onCancel])
+
   return (
-    <div className="absolute inset-0 z-40 bg-black/70">
+    <div className="absolute inset-0 z-40 bg-black/70" role="dialog" aria-modal="true" aria-label="방 설정 변경">
       <GameSetupPanel
         visible
         mode="edit"

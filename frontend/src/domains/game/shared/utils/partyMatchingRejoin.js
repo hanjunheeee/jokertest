@@ -1,7 +1,13 @@
 // 파티 다시 모이기: 끝난 판 id를 세션 저장소에 기억하고, 먼저 온 방 준비 방송을 잠깐 들고 있음
 // ingame 판 정리·matching 대기방·result 대기방 복귀가 씀
-// 화면 오기 전에 받은 파티 방 준비 방송 (한 번 꺼내 쓰면 비움)
+import { useAuthStore } from "@/domains/auth/store/auth.store.js"
+
+// 화면 오기 전에 받은 파티 방 준비 방송과 받은 계정 (한 번 꺼내 쓰면 비움)
 let pendingRoomReady = null
+let pendingRoomReadyAccount = null
+
+// 지금 로그인 계정 id (없으면 null)
+const currentAccountId = () => useAuthStore.getState().user?.uuid ?? null
 
 // 계정별 저장 키
 const storageKey = (accountId) => `joker:partyRejoinGameId:${accountId}`
@@ -36,21 +42,29 @@ export function clearRejoinGameId(accountId) {
     // 저장소를 못 쓰는 환경이면 지울 것도 없음
   }
   pendingRoomReady = null
+  pendingRoomReadyAccount = null
 }
 
-// 파티 방 준비 방송 들고 있기 (판 id·방 코드 있는 것만)
-export function rememberRoomReady(payload) {
+// 파티 방 준비 방송 들고 있기 (판 id·방 코드 있는 것만, 받은 계정과 같이 기억)
+export function rememberRoomReady(payload, accountId = currentAccountId()) {
   if (payload === null || typeof payload !== "object") return
   if (typeof payload.gameId !== "string" || payload.gameId.length === 0) return
   if (typeof payload.room?.roomCode !== "string" || payload.room.roomCode.length === 0) return
   pendingRoomReady = payload
+  pendingRoomReadyAccount = accountId
 }
 
-// 들고 있던 방송 꺼내기 (다른 판 것이면 안 꺼냄)
-export function consumeRoomReady(gameId) {
+// 들고 있던 방송 꺼내기 (다른 판·다른 계정 것이면 안 꺼냄, 다른 계정 것은 버림)
+export function consumeRoomReady(gameId, accountId = currentAccountId()) {
   if (!pendingRoomReady) return null
+  if (pendingRoomReadyAccount !== accountId) {
+    pendingRoomReady = null
+    pendingRoomReadyAccount = null
+    return null
+  }
   if (gameId && pendingRoomReady.gameId !== gameId) return null
   const value = pendingRoomReady
   pendingRoomReady = null
+  pendingRoomReadyAccount = null
   return value
 }

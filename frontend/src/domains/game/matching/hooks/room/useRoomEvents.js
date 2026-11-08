@@ -32,6 +32,16 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       && (useAuthStore.getState().user?.uuid ?? null) === attachedUuid
       && memberGenRef.current === attachedMembership
 
+    // 같은 방 인스턴스·서버 부팅 방송인지 (값이 안 오면 통과)
+    const isSameInstance = ({ roomInstanceId, bootEpoch }) => {
+      const identity = useMatchingStore.getState()
+      if (typeof roomInstanceId === "string" && typeof identity.roomInstanceId === "string"
+        && roomInstanceId !== identity.roomInstanceId) return false
+      if (typeof bootEpoch === "string" && typeof identity.bootEpoch === "string"
+        && bootEpoch !== identity.bootEpoch) return false
+      return true
+    }
+
     // 반영하고 방 반영 세대 올림 (확인 중이던 요청은 다시 시작)
     const apply = (fn) => {
       fn()
@@ -39,16 +49,20 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
     }
 
     // 입장: 사람 넣음
-    const handleJoined = ({ player, canStart }) => {
+    const handleJoined = ({ player, canStart, roomId: eventRoomId, roomInstanceId, bootEpoch }) => {
       if (!isCurrent()) return
+      if (eventRoomId !== undefined && eventRoomId !== roomId) return
+      if (!isSameInstance({ roomInstanceId, bootEpoch })) return
+      if (!player || typeof player.uuid !== "string") return
       readyAggRef.current += 1
       apply(() => addPlayer(player, canStart))
     }
 
-    // 퇴장: 같은 방이고, 소속 id가 오면 지금 앉은 그 사람일 때만
-    const handleLeft = ({ uuid, canStart, membershipId, roomId: eventRoomId }) => {
+    // 퇴장: 같은 방·같은 방 인스턴스·서버 부팅이고, 소속 id가 오면 지금 앉은 그 사람일 때만
+    const handleLeft = ({ uuid, canStart, membershipId, roomId: eventRoomId, roomInstanceId, bootEpoch }) => {
       if (!isCurrent()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return
+      if (!isSameInstance({ roomInstanceId, bootEpoch })) return
       if (typeof membershipId === "string" && membershipId.length > 0) {
         const seated = useMatchingStore.getState().players?.find((player) => player.uuid === uuid)
         if (!seated) return
@@ -64,11 +78,7 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
     }) => {
       if (!isCurrent()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return
-      const identity = useMatchingStore.getState()
-      if (typeof roomInstanceId === "string" && typeof identity.roomInstanceId === "string"
-        && roomInstanceId !== identity.roomInstanceId) return
-      if (typeof bootEpoch === "string" && typeof identity.bootEpoch === "string"
-        && bootEpoch !== identity.bootEpoch) return
+      if (!isSameInstance({ roomInstanceId, bootEpoch })) return
       apply(() => updateHost(hostUuid, canStart))
       const known = useMatchingStore.getState().settingsVersion
       if (settingsVersion !== undefined && settingsVersion !== known) resync()

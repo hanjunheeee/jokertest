@@ -15,7 +15,7 @@ import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 export default function RoomInvitePage() {
-  const { uiVisible, roomCode, setRoomCode, joinRoom, goBackToModeSelect } = useRoomInvitePage()
+  const { uiVisible, roomCode, setRoomCode, joinRoom, isJoining, goBackToModeSelect } = useRoomInvitePage()
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -56,6 +56,7 @@ export default function RoomInvitePage() {
                   src={ROOM_INVITE_ASSETS.joinButton}
                   label="참여하기"
                   variants={BUTTON_VARIANTS}
+                  disabled={isJoining}
                   onClick={joinRoom}
                 />
               </motion.div>

@@ -84,13 +84,14 @@ export default function GameSetupPanel({
       })
       return
     }
+    // 새로 만들 때도 손댄 직업만 따로 실음 (안 손댄 직업은 전체 밤 시간을 따르게, known 1-14)
     onCreateGame(
       buildCreateRoomPayload({
         checks,
         ranges,
         roleComposition: composition,
         specifiedRoleNightActionTimes: mergeSpecifiedRoleTimes(
-          initialFormState?.specifiedRoleNightActionTimes, editedRoleTimeIds,
+          initialFormState?.specifiedRoleNightActionTimes ?? [], editedRoleTimeIds,
         ),
       }),
     )

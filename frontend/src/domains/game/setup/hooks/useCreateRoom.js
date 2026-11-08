@@ -13,6 +13,7 @@ import {
 } from "../../shared/constants/gameSetupSocket.js"
 import { isSameScope, readScope } from "../utils/membershipScope.js"
 import { askRoom, createRoom } from "../../shared/socket/room.js"
+import { leaveRoom } from "../../matching/socket/room.js"
 
 // 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -62,11 +63,15 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   }
 
   // 방 들어가기: 끝난 판 지우고 방 넣고 대기방으로
+  // 그사이 화면을 떠났으면 방을 안 넣고 서버 방에서 나감 (딴 화면에 있는데 방에 묶이지 않게)
   const enterRoom = (room, scope = null) => {
     if (scope !== null && !isCurrent(scope)) return
+    if (!mountedRef.current) {
+      leaveRoom()
+      return
+    }
     useInGameStore.getState().clearGame()
     useMatchingStore.getState().setRoom(room)
-    if (!mountedRef.current) return
     navigate("/game-matching")
   }
 

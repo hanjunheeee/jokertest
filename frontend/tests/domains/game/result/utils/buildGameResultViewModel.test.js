@@ -1,12 +1,17 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 
-import { buildGameResultViewModel } from "../../../../../src/domains/game/result/utils/buildGameResultViewModel.js"
-import { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } from "../../../../../src/domains/game/ingame/constants/board/ingamePlayerAssets.js"
-import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js"
-import { getPlayerRecordListProfileAssets } from "../../../../../src/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
-import { pickInGameJobPortrait } from "../../../../../src/domains/game/ingame/utils/pickInGameJobPortrait.js"
-import { pickJobPortrait } from "../../../../../src/shared/utils/pickJobPortrait.js"
+import { register } from "node:module"
+
+// 원본이 @/ 별칭을 쓸 수 있어 별칭 풀이 걸고 불러옴
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
+
+const { buildGameResultViewModel } = await import("../../../../../src/domains/game/result/utils/buildGameResultViewModel.js")
+const { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } = await import("../../../../../src/domains/game/ingame/constants/board/ingamePlayerAssets.js")
+const { INGAME_PLAYER_STATUS } = await import("../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js")
+const { getPlayerRecordListProfileAssets } = await import("../../../../../src/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js")
+const { pickInGameJobPortrait } = await import("../../../../../src/domains/game/ingame/utils/pickInGameJobPortrait.js")
+const { pickJobPortrait } = await import("../../../../../src/shared/utils/pickJobPortrait.js")
 
 const LOCAL_WIN_RESULT_CITIZEN = { winner: "CITIZEN" }
 const LOCAL_WIN_RESULT_JOKER = { winner: "JOKER" }

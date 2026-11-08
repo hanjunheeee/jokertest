@@ -1,6 +1,6 @@
 // 친구 초대 창 틀: 어두운 바탕·틀 그림·제목·닫기 버튼, Esc로 닫기
 // GameMatchingPage가 씀, 본문(FriendInviteModalContent)은 children으로 받음
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { createPortal } from "react-dom"
 import { MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
 import { MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
@@ -21,13 +21,6 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 // 친구 초대 창 틀 (document.body에 포털로 띄움)
 export default function FriendInviteModalShell({ open, onClose, children }) {
-  // 화면에 붙은 뒤부터 포털 그림
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
   // 열려 있을 때만 Esc로 닫음 (닫기 효과음 같이 냄)
   useEffect(() => {
     if (!open) return undefined
@@ -42,8 +35,8 @@ export default function FriendInviteModalShell({ open, onClose, children }) {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [open, onClose])
 
-  // 붙기 전이거나 닫혀 있으면 안 그림
-  if (!mounted || !open) return null
+  // 닫혀 있거나 문서가 없으면 안 그림
+  if (!open || typeof document === "undefined") return null
 
   return createPortal(
     <div className={SHELL_CLASS} role="presentation">

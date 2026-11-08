@@ -45,6 +45,8 @@ export function useRoomCodeCopy({ open, displayRoomCode, onClose }) {
 
   // 열림·코드·계정·소켓이 바뀌면 표시 지움, 떠날 때 진행 중 결과 버림
   useEffect(() => {
+    // 소켓·계정 같은 바깥 값이 바뀐 걸 따라 지우는 것이라 효과 안에서 지움
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     reset()
     return () => {
       genRef.current += 1

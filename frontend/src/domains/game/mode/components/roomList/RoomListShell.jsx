@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
+// 방 목록 셸: 위 작업 줄·목록 판·쪽 넘김·입장 버튼, 고른 방·쪽 번호 상태
+// MultiplayRoomListArea가 씀
+import { useMemo, useState } from "react"
 import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
   ENTER_BTN_CLASS,
@@ -21,9 +23,8 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
 
   const pageCount = Math.max(1, Math.ceil(rooms.length / PAGE_SIZE))
 
-  useEffect(() => {
-    setCurrentPage((page) => Math.min(page, pageCount - 1))
-  }, [pageCount])
+  // 목록이 줄어 쪽이 사라지면 마지막 쪽으로 (그리는 중에 바로 맞춤)
+  if (currentPage > pageCount - 1) setCurrentPage(pageCount - 1)
 
   const pageRooms = useMemo(() => {
     const start = currentPage * PAGE_SIZE
@@ -36,11 +37,10 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
   const selectedRoomNeedsCode = selectedRoom?.accessType === "code"
   const selectedRoomIsFull = selectedRoom?.status === "full"
 
-  useEffect(() => {
-    if (selectedRoomId === null) return
-    const stillExists = rooms.some((room) => room.id === selectedRoomId)
-    if (!stillExists) setSelectedRoomId(null)
-  }, [rooms, selectedRoomId])
+  // 고른 방이 목록에서 사라지면 고름 풂 (다시 생겨도 저절로 안 골라지게)
+  if (selectedRoomId !== null && !rooms.some((room) => room.id === selectedRoomId)) {
+    setSelectedRoomId(null)
+  }
 
   const handleSelectRoom = (roomId) => {
     setSelectedRoomId((current) => (current === roomId ? null : roomId))
@@ -64,12 +64,13 @@ export default function RoomListShell({ rooms, onCreateGame, onJoinByCode, onEnt
 
   const enterDisabled = !selectedRoom || selectedRoomIsFull || isJoining
 
+  // 꽉 찬 방은 코드 방이어도 "마감" (잠긴 버튼에 "코드 입력"이 뜨지 않게)
   const enterLabel = isJoining
     ? "입장 중"
-    : selectedRoomNeedsCode
-      ? "코드 입력"
-      : selectedRoomIsFull
-        ? "마감"
+    : selectedRoomIsFull
+      ? "마감"
+      : selectedRoomNeedsCode
+        ? "코드 입력"
         : "입장하기"
 
   return (

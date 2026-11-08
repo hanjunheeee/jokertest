@@ -52,13 +52,14 @@ export function useSetupForm({ mode, initialFormState, formResetKey, isCreating,
       })
       return
     }
+    // 새로 만들 때도 손댄 직업만 따로 실음 (데스크톱 GameSetupPanel과 같음, known 1-14)
     onSubmit(
       buildCreateRoomPayload({
         checks,
         ranges,
         roleComposition: composition,
         specifiedRoleNightActionTimes: mergeSpecifiedRoleTimes(
-          initialFormState?.specifiedRoleNightActionTimes, editedRoleTimeIds,
+          initialFormState?.specifiedRoleNightActionTimes ?? [], editedRoleTimeIds,
         ),
       }),
     )

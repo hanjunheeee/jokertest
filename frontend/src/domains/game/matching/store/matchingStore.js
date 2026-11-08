@@ -81,10 +81,12 @@ export const useMatchingStore = create((set) => ({
             roomRevision: s.roomRevision + 1,
         })),
 
-    // 입장한 사람 넣기
+    // 입장한 사람 넣기 (같은 사람이 이미 있으면 새 값으로 바꿔 두 번 안 들어가게)
     addPlayer: (player, canStart) =>
         set((s) => ({
-            players: [...s.players, player],
+            players: s.players.some((p) => p.uuid === player?.uuid)
+                ? s.players.map((p) => (p.uuid === player.uuid ? player : p))
+                : [...s.players, player],
             canStart: canStart ?? s.canStart,
             roomRevision: s.roomRevision + 1,
         })),

@@ -7,7 +7,7 @@ import { getSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
 import { dispatchUiSfx } from '@/shared/hooks/useSfxRuntime.js'
-import { PENDING_MAX_RETRIES, PENDING_RETRY_MS } from '../../constants/roomTiming.js'
+import { FAILED_RECHECK_MS, PENDING_MAX_RETRIES, PENDING_RETRY_MS } from '../../constants/roomTiming.js'
 import { ROOM_MESSAGES } from '../../constants/roomMessages.js'
 import { onConnection } from '../../socket/events.js'
 import { askRoom } from '../../socket/room.js'
@@ -56,16 +56,30 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
       }
     }
 
-    // 확인 실패: 한 번만 다시 확인할지 물음
+    // 실패 뒤 조용히 다시 확인 걸기 (취소해도 계속 막혀 있지 않게)
+    const scheduleRecheck = () => {
+      if (retryTimer !== null) return
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null
+        if (!cancelled) startSeries({ resetPrompt: false })
+      }, FAILED_RECHECK_MS)
+    }
+
+    // 확인 실패: 한 번만 다시 확인할지 물음, 취소했거나 이미 물었으면 잠시 뒤 다시 확인
     const fail = (id) => {
       if (cancelled || id !== seriesId) return
       setSyncStatus('failed')
-      if (prompted) return
+      if (prompted) {
+        scheduleRecheck()
+        return
+      }
       prompted = true
       const confirmed = window.confirm(ROOM_MESSAGES.CHECK_RETRY)
       dispatchUiSfx(confirmed ? 'ui-confirm' : 'ui-cancel')
       if (confirmed) {
         startSeries({ resetPrompt: false })
+      } else {
+        scheduleRecheck()
       }
     }
 

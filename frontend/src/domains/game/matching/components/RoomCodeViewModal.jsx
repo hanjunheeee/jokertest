@@ -1,7 +1,7 @@
 // 대기방 방코드 보기 모달: 코드 프레임 + 복사 버튼
 // MatchingRoomPanelArea가 씀, 복사 상태는 useRoomCodeCopy가 맡음
 import { AnimatePresence, motion } from "framer-motion"
-import { useId } from "react"
+import { useEffect, useId } from "react"
 import RoomCodeFrame from "../../mode/components/RoomCodeFrame.jsx"
 import { ROOM_INVITE_ASSETS } from "../../mode/constants/roomInviteAssets.js"
 import { GAME_MATCHING_ASSETS } from "../constants/gameMatchingAssets.js"
@@ -39,6 +39,16 @@ export default function RoomCodeViewModal({ open, onClose, roomCode }) {
 
   const { copied, copyError, copyStatus, handleClose, handleCopy } =
     useRoomCodeCopy({ open, displayRoomCode, onClose })
+
+  // 열려 있을 때 Esc로 닫기
+  useEffect(() => {
+    if (!open) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") handleClose()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [open, handleClose])
 
   return (
     <AnimatePresence>

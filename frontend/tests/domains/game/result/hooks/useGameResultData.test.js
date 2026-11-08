@@ -20,6 +20,9 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+import { register } from "node:module"
+// 원본이 @/ 별칭을 쓸 수 있어 별칭 풀이 걸고 불러옴
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 const { renderHook } = await import("@testing-library/react")
 const { useInGameStore } = await import("../../../../../src/domains/game/ingame/store/ingameStore.js")
 const { useGameResultData } = await import("../../../../../src/domains/game/result/hooks/useGameResultData.js")

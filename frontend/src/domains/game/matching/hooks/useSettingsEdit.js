@@ -1,6 +1,6 @@
 // 대기방 설정 편집 패널 열기·닫기·저장
 // useMatchingPage가 씀, 방장이고 방 확인이 끝났고 결과 확인 대기가 없을 때만 열림
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { buildRoomSettingsFormState } from "@/domains/game/setup/utils/roomSettingsForm/formState.js"
 
 // 설정 편집 상태
@@ -23,10 +23,8 @@ export function useSettingsEdit({
   const openSettings = () => { if (canEditSettings) setSettingsOpen(true) }
   const closeSettings = () => setSettingsOpen(false)
 
-  // 열린 채로 편집 자격을 잃으면 닫음
-  useEffect(() => {
-    if (settingsOpen && !canEditSettings) setSettingsOpen(false)
-  }, [settingsOpen, canEditSettings])
+  // 열린 채로 편집 자격을 잃으면 닫음 (그리는 중에 바로 맞춤)
+  if (settingsOpen && !canEditSettings) setSettingsOpen(false)
 
   // 저장 성공하면 닫음
   const submitSettings = async (formState) => {

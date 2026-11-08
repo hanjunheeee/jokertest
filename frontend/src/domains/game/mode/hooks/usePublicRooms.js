@@ -73,6 +73,7 @@ export function usePublicRooms() {
       setRooms(nextRooms)
     }
     // 입장 성공: 끝난 판 지우고 방 넣고 대기방으로
+    // 내가 안 보낸 입장(판 끝난 뒤 서버가 넣어 준 파티 방 등)도 서버에선 이미 그 방 사람이라 따라감
     const handleJoined = (room) => {
       if (!isCurrent()) return
       clearJoin()
@@ -80,9 +81,10 @@ export function usePublicRooms() {
       useMatchingStore.getState().setRoom(room)
       navigate("/game-matching")
     }
-    // 입장 실패: 다시 누를 수 있게 풀고 알림
+    // 입장 실패: 다시 누를 수 있게 풀고 알림 (내가 보낸 입장 중일 때만, FE-032)
     const handleJoinFailed = ({ message } = {}) => {
       if (!isCurrent()) return
+      if (!joiningRef.current) return
       clearJoin()
       alert(message ?? "공개 방에 참여할 수 없습니다.")
     }
@@ -98,6 +100,8 @@ export function usePublicRooms() {
       joinFailed: handleJoinFailed,
       connect: handleConnect,
     })
+    // 목록 묻기는 응답이 온 뒤에만 상태를 바꿔 그리는 중 연쇄 갱신이 없음
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchRooms()
 
     // 떠날 때 옛 핸들러 막고 뗌, 들어가는 중 표시 지움

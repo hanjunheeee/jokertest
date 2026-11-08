@@ -27,10 +27,11 @@ export function useNightTimeEdits({ ranges, setRange, initialFormState, formRese
     }
     setRange(id, next)
 
-    // 서버 목록이 있는 편집에서 전체 밤 시간을 바꿨을 때만 나머지 직업을 맞춤
-    const hasSpecifiedList = Array.isArray(initialFormState?.specifiedRoleNightActionTimes)
-    if (!hasSpecifiedList || id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
-    const serverSpecified = initialFormState.specifiedRoleNightActionTimes
+    // 전체 밤 시간을 바꾸면 서버가 정하지 않고 손대지 않은 직업을 맞춤 (서버 목록 없는 새 방도, known 1-14)
+    if (id !== OVERALL_NIGHT_ACTION_TIME_ID || !changed) return
+    const serverSpecified = Array.isArray(initialFormState?.specifiedRoleNightActionTimes)
+      ? initialFormState.specifiedRoleNightActionTimes
+      : []
     for (const [roleTimeId, role] of Object.entries(NIGHT_TIME_ID_TO_ROLE)) {
       if (serverSpecified.includes(role) || editedRoleTimeIds.has(roleTimeId)) continue
       setRange(roleTimeId, next)

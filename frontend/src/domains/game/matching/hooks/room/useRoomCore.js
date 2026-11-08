@@ -20,9 +20,12 @@ export function useRoomCore({ endedGameId, awaitPartyRoomRejoin }) {
   const mountedRef = useRef(true)
 
   // 끝난 판 id·파티 방 기다림 여부는 매 렌더 최신값으로 덮음 (효과 안에서 최신값 읽기)
+  // 그리는 중에 덮어야 같은 커밋의 효과들이 바로 새 값을 봄 (효과로 옮기면 순서가 바뀜)
   const endedIdRef = useRef(endedGameId)
+  // eslint-disable-next-line react-hooks/refs
   endedIdRef.current = endedGameId
   const awaitPartyRef = useRef(awaitPartyRoomRejoin)
+  // eslint-disable-next-line react-hooks/refs
   awaitPartyRef.current = awaitPartyRoomRejoin
   // 파티 방 들어가기 요청 중 (겹쳐 보내기 막기)
   const partyBusyRef = useRef(false)

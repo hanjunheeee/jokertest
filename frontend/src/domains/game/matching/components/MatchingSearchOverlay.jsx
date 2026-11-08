@@ -18,7 +18,7 @@ export default function MatchingSearchOverlay({
   if (!open) return null
 
   return (
-    <div className={OVERLAY_CLASS} role="dialog" aria-modal="true">
+    <div className={OVERLAY_CLASS} role="dialog" aria-modal="true" aria-label="빠른 매칭 찾는 중">
       <p className={MSG_CLASS}>{message}</p>
       <button type="button" onClick={onCancel} className={CANCEL_CLASS}>
         <span className={CANCEL_TEXT_CLASS}>취소</span>

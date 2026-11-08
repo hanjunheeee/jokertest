@@ -338,7 +338,7 @@ test("AC-03 · 전체 밤 시간을 바꾼 뒤 직업 행을 처음 누르면 �
   assert.deepEqual(payload.roleNightActionTimes, { JOKER: 120 })
 })
 
-test("AC-03 · 생성 화면에서는 전체 밤 시간을 바꿔도 직업 행이 따라가지 않는다(기존 계약 보존)", async () => {
+test("known 1-14 · 생성 화면에서도 전체 밤 시간을 바꾸면 안 손댄 직업 행이 따라가고, 직업별 값은 안 실림", async () => {
   const { container, getSubmitted } = await mountPanel({ mode: "create", initialFormState: null })
   await clickTab(container, "회의&투표")
   assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "90초")
@@ -347,15 +347,15 @@ test("AC-03 · 생성 화면에서는 전체 밤 시간을 바꿔도 직업 행�
   await clickStepper(container, `${OVERALL_NIGHT_LABEL} 증가`)
   assert.equal(readStepperRow(container, OVERALL_NIGHT_LABEL), "120초")
   for (const role of Object.keys(ROLE_TIME_LABELS)) {
-    assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "90초",
-      `생성 화면의 ${role} 기본값이 전체 시간을 따라가 바뀌었다`)
+    assert.equal(readStepperRow(container, ROLE_TIME_LABELS[role]), "120초",
+      `생성 화면의 ${role} 행이 전체 시간을 따라가지 않았다`)
   }
 
   await clickSubmit(container, "게임 만들기")
   const payload = getSubmitted()
   assert.equal(payload.nightActionTime, 120)
-  assert.deepEqual(payload.roleNightActionTimes,
-    { JOKER: 90, DOCTOR: 90, GUARD: 90, WITCH_HUNTER: 90 })
+  assert.equal(Object.hasOwn(payload, "roleNightActionTimes"), false,
+    "손대지 않은 직업 시간이 실려 서버가 전체 값을 무시하게 됨")
 })
 
 test("AC-03 · 이 화면이 표현할 수 없는 서버 설정은 기본값으로 덮지 않고 명시적 실패로 돌려준다", async () => {
@@ -386,7 +386,7 @@ test("AC-03 · 이 화면이 표현할 수 없는 서버 설정은 기본값으�
   assert.equal(custom({ JOKER: 1, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 }).ok, true)
   assert.equal(custom({ JOKER: 1, DOCTOR: 3, GUARD: 0, WITCH_HUNTER: 0 }).code, "INVALID_ROLE_COUNTS")
   assert.equal(
-    custom({ JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 }, { maxPlayers: 4 }).code,
+    custom({ JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 }, { maxPlayers: 5 }).code,
     "INVALID_ROLE_COUNTS",
   )
   const mismatched = form({
@@ -397,14 +397,12 @@ test("AC-03 · 이 화면이 표현할 수 없는 서버 설정은 기본값으�
   assert.equal(mismatched.field, "jokerCount")
 })
 
-test("AC-03 · 생성 화면은 지정 목록이라는 출발점이 없어 기존 계약대로 네 직업을 모두 싣는다", async () => {
+test("known 1-14 · 생성 화면은 손댄 직업만 직업별 밤 시간으로 싣는다", async () => {
   const { container, getSubmitted } = await mountPanel({ mode: "create", initialFormState: null })
   await clickTab(container, "회의&투표")
   await clickStepper(container, "광대 밤 시간 조절 감소")
   await clickSubmit(container, "게임 만들기")
 
   const payload = getSubmitted()
-  assert.deepEqual(Object.keys(payload.roleNightActionTimes).sort(),
-    ["DOCTOR", "GUARD", "JOKER", "WITCH_HUNTER"])
-  assert.equal(payload.roleNightActionTimes.JOKER, 60, "생성 화면에서 바꾼 값이 반영되지 않았다")
+  assert.deepEqual(payload.roleNightActionTimes, { JOKER: 60 }, "생성 화면에서 바꾼 값만 실려야 함")
 })

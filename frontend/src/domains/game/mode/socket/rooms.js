@@ -27,8 +27,10 @@ export function onRoomList(socket, { updated, joined, joinFailed, connect }) {
   }
 }
 
+// 방 코드로 들어가기 (결과는 입장 성공·실패 방송으로 옴)
+export const joinByCode = (socket, payload) => socket.emit("join_room_by_code", payload)
+
 // 방 코드 입장 성공·실패 받기, 끊는 함수 돌려줌
-// (입장 요청 보내기는 시험이 훅 원문을 확인해서 hooks/useRoomInvitePage에 남김)
 export function onJoinResult(socket, { joined, failed }) {
   socket.on("room_joined", joined)
   socket.on("room_join_failed", failed)

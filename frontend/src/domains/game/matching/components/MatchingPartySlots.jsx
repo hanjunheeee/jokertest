@@ -32,7 +32,7 @@ export default function MatchingPartySlots({ slots = [] }) {
         <div key={slot.id} className={SLOT_WRAP_CLASS}>
           <PublicAsset
             src={slot.ready ? GAME_MATCHING_ASSETS.silhouetteReady : GAME_MATCHING_ASSETS.silhouetteNotReady}
-            alt=""
+            alt={slot.ready ? "준비 완료한 참가자" : "준비 전 참가자"}
             className={`${slotClass}${slot.ready ? "" : ` ${SLOT_NOT_READY_OFFSET_CLASS}`}`}
           />
         </div>

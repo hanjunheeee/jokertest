@@ -14,11 +14,16 @@ import { publicAsset } from "@/shared/utils/publicAsset"
 export default function GameResultIntroVideo({ outcome = "win", onComplete }) {
   const videoRef = useRef(null)
   const [showSkip, setShowSkip] = useState(false)
+  // 승패가 바뀌면 건너뛰기 숨김 (그리는 중에 앞 값과 비교해 바로 맞춤)
+  const [skipOutcome, setSkipOutcome] = useState(outcome)
+  if (skipOutcome !== outcome) {
+    setSkipOutcome(outcome)
+    setShowSkip(false)
+  }
 
   // 승패 바뀔 때마다 처음부터 다시 재생
   useEffect(() => {
     let cancelled = false
-    setShowSkip(false)
 
     const video = videoRef.current
     if (video) {

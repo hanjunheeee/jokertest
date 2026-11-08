@@ -31,3 +31,14 @@ test("clearRoom은 방과 매칭 검색 상태를 함께 초기화한다", () =>
         useMatchingStore.setState(initialState, true)
     }
 })
+
+test("known 3장: 같은 사람 입장 방송이 두 번 와도 자리는 하나 (새 값으로 바뀜)", () => {
+    useMatchingStore.setState({ players: [{ uuid: "p1", isReady: false }] })
+    useMatchingStore.getState().addPlayer({ uuid: "p1", isReady: true })
+    useMatchingStore.getState().addPlayer({ uuid: "p2", isReady: false })
+    assert.deepEqual(useMatchingStore.getState().players, [
+        { uuid: "p1", isReady: true },
+        { uuid: "p2", isReady: false },
+    ])
+    useMatchingStore.getState().clearRoom()
+})
