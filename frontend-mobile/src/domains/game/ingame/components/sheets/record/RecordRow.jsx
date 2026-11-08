@@ -1,4 +1,4 @@
-// 전적 목록 한 줄: 프로필 그림·이름·판 수와 승률
+// 전적 목록 한 줄: 프로필 그림·이름·판 수와 승률, 오른쪽 끝 덧붙임(신고 버튼) 자리
 // RecordSheet가 씀, 전적 글·이름 색은 데스크톱 PlayerRecordListRow와 같은 규칙
 import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
@@ -6,7 +6,7 @@ import { THEME_TEXT_RENDER_CLASS } from "@/shared/constants/ingamePlayerTheme.js
 import Portrait from "../parts/Portrait.jsx"
 
 // 이름 색은 플레이어 세션 문맥에서 받음 (id 없으면 기본색)
-export default function RecordRow({ playerId = null, name, totalGames, winRate, profilePhotoSrc, profileBorderSrc }) {
+export default function RecordRow({ playerId = null, name, totalGames, winRate, profilePhotoSrc, profileBorderSrc, trailing = null }) {
   const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
   const themeStyles = playerId ? getThemeStylesByPlayerId(playerId) : null
 
@@ -28,6 +28,7 @@ export default function RecordRow({ playerId = null, name, totalGames, winRate, 
           {formatPlayerRecordStats({ totalGames, winRate })}
         </p>
       </div>
+      {trailing}
     </li>
   )
 }

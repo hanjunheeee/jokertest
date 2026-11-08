@@ -8,10 +8,15 @@ import {
 import SidePanelHeader from "../SidePanelHeader.jsx"
 import PlayerRecordListRow from "./PlayerRecordListRow.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
+import ReportDialog from "@/domains/report/components/ReportDialog.jsx"
+import ReportRowButton from "@/domains/report/components/ReportRowButton.jsx"
+import { useGameReport } from "@/domains/report/hooks/useGameReport.js"
 
 export default function PlayerRecordListContent() {
   const scrollRef = useRef(null)
   const { players } = useInGamePlayerSessionContext()
+  // 신고 창 (나·판 id 없음은 버튼 안 보임)
+  const report = useGameReport()
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -41,6 +46,13 @@ export default function PlayerRecordListContent() {
                 winRate={hasRecord ? player.accountWinRate : undefined}
                 profilePhotoSrc={profile.profilePhotoSrc}
                 profileBorderSrc={profile.profileBorderSrc}
+                trailing={report.canReport(player.id) ? (
+                  <ReportRowButton
+                    name={player.nickname}
+                    done={report.isReported(player.id)}
+                    onClick={() => report.open({ uuid: player.id, nickname: player.nickname })}
+                  />
+                ) : null}
               />
             )
           })}
@@ -48,6 +60,7 @@ export default function PlayerRecordListContent() {
 
         <Scrollbar scrollRef={scrollRef} />
       </div>
+      <ReportDialog dialog={report} />
     </div>
   )
 }

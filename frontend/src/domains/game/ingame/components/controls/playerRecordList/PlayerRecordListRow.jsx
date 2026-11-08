@@ -1,4 +1,4 @@
-// 전적 목록 한 줄: 프로필 그림·이름·판 수와 승률
+// 전적 목록 한 줄: 프로필 그림·이름·판 수와 승률, 오른쪽 끝 덧붙임(신고 버튼) 자리
 // 전적 목록 내용(PlayerRecordListContent)이 사용
 import { formatPlayerRecordStats } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
@@ -23,6 +23,7 @@ export default function PlayerRecordListRow({
   winRate,
   profilePhotoSrc,
   profileBorderSrc,
+  trailing = null,
 }) {
   const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
   const themeStyles = playerId ? getThemeStylesByPlayerId(playerId) : null
@@ -54,6 +55,7 @@ export default function PlayerRecordListRow({
             </p>
           </div>
         </div>
+        {trailing}
       </div>
     </li>
   )

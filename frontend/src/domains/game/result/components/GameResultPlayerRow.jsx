@@ -1,4 +1,4 @@
-// 결과 목록 한 줄: 프로필·이름·직업, 내 줄이면 "내 정보" 배지와 강조
+// 결과 목록 한 줄: 프로필·이름·직업, 내 줄이면 "내 정보" 배지와 강조, 남의 줄은 오른쪽 끝 덧붙임(신고 버튼) 자리
 // GameResultPlayerList가 씀
 import { SELF_INFO_BADGE_LABEL } from "../constants/gameResultLabels.js"
 import {
@@ -23,6 +23,7 @@ export default function GameResultPlayerRow({
   profilePhotoSrc,
   profileBorderSrc,
   isSelf = false,
+  trailing = null,
 }) {
   return (
     <li className={PLAYER_ROW_CLASS}>
@@ -54,6 +55,7 @@ export default function GameResultPlayerRow({
         >
           {job}
         </span>
+        {trailing}
       </div>
     </li>
   )

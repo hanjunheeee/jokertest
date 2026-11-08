@@ -16,6 +16,9 @@ import GameResultPlayerRow from "./GameResultPlayerRow.jsx"
 import GameResultWinningTeamBadge from "./GameResultWinningTeamBadge.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import ReportDialog from "@/domains/report/components/ReportDialog.jsx"
+import ReportRowButton from "@/domains/report/components/ReportRowButton.jsx"
+import { useGameReport } from "@/domains/report/hooks/useGameReport.js"
 
 // 참가자 정체 목록
 export default function GameResultPlayerList({
@@ -27,6 +30,8 @@ export default function GameResultPlayerList({
   // 스크롤바가 목록 스크롤을 읽게 ref 같이 넘김
   const scrollRef = useRef(null)
   const playerListFrameSrc = resolvePlayerListFrame(outcome)
+  // 신고 창 (미리보기는 판 id가 없어 버튼 안 보임, 내 줄도 안 보임)
+  const report = useGameReport()
 
   return (
     <section
@@ -60,6 +65,13 @@ export default function GameResultPlayerList({
                 key={player.id}
                 {...player}
                 isSelf={Boolean(selfUuid && player.id === selfUuid)}
+                trailing={player.id !== selfUuid && report.canReport(player.id) ? (
+                  <ReportRowButton
+                    name={player.name}
+                    done={report.isReported(player.id)}
+                    onClick={() => report.open({ uuid: player.id, nickname: player.name })}
+                  />
+                ) : null}
               />
             ))}
           </ul>
@@ -71,6 +83,7 @@ export default function GameResultPlayerList({
           />
         </div>
       </div>
+      <ReportDialog dialog={report} />
     </section>
   )
 }

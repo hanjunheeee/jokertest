@@ -1,4 +1,4 @@
-// 결과 목록 한 줄: 프로필·이름·직업, 내 줄이면 "내 정보" 배지와 밝은 강조
+// 결과 목록 한 줄: 프로필·이름·직업, 내 줄이면 "내 정보" 배지와 밝은 강조, 남의 줄은 오른쪽 끝 덧붙임(신고 버튼) 자리
 // players/PlayerList가 씀
 import { SELF_INFO_BADGE_LABEL } from "@/domains/game/result/constants/gameResultLabels.js"
 import { PLAYER_ROW_INNER_SELF_CLASS } from "@/domains/game/result/constants/gameResultLayout.js"
@@ -9,7 +9,7 @@ const ROW_CLASS =
 const ROW_TONE = "border-[#3a2818]/75 bg-[#120a06]/60"
 
 // 참가자 한 줄 (긴 이름은 말줄임, 직업은 오른쪽 고정)
-export default function PlayerRow({ name, job, profilePhotoSrc, profileBorderSrc, isSelf = false }) {
+export default function PlayerRow({ name, job, profilePhotoSrc, profileBorderSrc, isSelf = false, trailing = null }) {
     const text = isSelf ? "text-black" : "text-white"
     const jobText = isSelf ? "text-black" : "text-[#c8a878] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
@@ -30,6 +30,7 @@ export default function PlayerRow({ name, job, profilePhotoSrc, profileBorderSrc
                 <span className={`shrink-0 pr-1 font-subheading text-[0.95rem] font-bold leading-none ${jobText}`}>
                     {job}
                 </span>
+                {trailing}
             </div>
         </li>
     )

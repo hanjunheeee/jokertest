@@ -4,10 +4,15 @@ import { resolvePlayerRecordListProfileAssets } from "@/domains/game/ingame/cons
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import Sheet from "./frame/Sheet.jsx"
 import RecordRow from "./record/RecordRow.jsx"
+import { useGameReport } from "@/domains/report/hooks/useGameReport.js"
+import ReportRowButton from "@m/domains/report/ReportRowButton.jsx"
+import ReportSheet from "@m/domains/report/ReportSheet.jsx"
 
 // 전적 값이 둘 다 온 사람만 숫자를 넘김 (아니면 조회 실패 글)
 export default function RecordSheet({ open, onClose }) {
   const { players } = useInGamePlayerSessionContext()
+  // 신고 창 (나·판 id 없음은 버튼 안 보임)
+  const report = useGameReport()
 
   return (
     <Sheet
@@ -33,10 +38,18 @@ export default function RecordSheet({ open, onClose }) {
               winRate={hasRecord ? player.accountWinRate : undefined}
               profilePhotoSrc={profile.profilePhotoSrc}
               profileBorderSrc={profile.profileBorderSrc}
+              trailing={report.canReport(player.id) ? (
+                <ReportRowButton
+                  name={player.nickname}
+                  done={report.isReported(player.id)}
+                  onClick={() => report.open({ uuid: player.id, nickname: player.nickname })}
+                />
+              ) : null}
             />
           )
         })}
       </ul>
+      <ReportSheet dialog={report} />
     </Sheet>
   )
 }
