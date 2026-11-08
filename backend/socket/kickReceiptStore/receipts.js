@@ -6,12 +6,14 @@ const {
     KICK_RECEIPT_TTL_MS,
     KICK_RECEIPT_MAX_ENTRIES,
     KICK_REJECTION_RECEIPT_MAX_ENTRIES,
+    KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER,
+    KICK_RECEIPT_MAX_PER_REQUESTER,
 } = require('./constants')
 
 // 이 서버 프로세스 id (재시작 뒤 옛 요청 거르기)
 const BOOT_EPOCH = crypto.randomUUID()
 
-// 영수증 키 → { command, fingerprint, result, decidedAt, expiresAt }
+// 영수증 키 → { command, fingerprint, result, requesterUuid, decidedAt, expiresAt }
 const kickReceipts = new Map()
 
 // 영수증 키: 부팅 id + 요청자 + 요청 id
@@ -32,25 +34,38 @@ function lookupKickReceipt(key) {
     return kickReceipts.get(key) ?? null
 }
 
-// 성공 영수증 남길 자리 있는지
-function hasKickReceiptCapacity() {
-    pruneKickReceipts()
-    return kickReceipts.size < KICK_RECEIPT_MAX_ENTRIES
+// 이 요청자 영수증 수 (만료는 부르는 쪽이 먼저 지움, 요청자 없으면 0)
+function countRequesterReceipts(requesterUuid) {
+    if (requesterUuid === undefined || requesterUuid === null) return 0
+    let count = 0
+    for (const entry of kickReceipts.values()) {
+        if (entry.requesterUuid === requesterUuid) count += 1
+    }
+    return count
 }
 
-// 판단 거절 영수증 남길 자리 있는지 (전체 한도의 절반까지)
-function hasKickRejectionCapacity() {
+// 성공 영수증 남길 자리 있는지 (전체 한도 + 요청자 한도)
+function hasKickReceiptCapacity(requesterUuid) {
     pruneKickReceipts()
-    return kickReceipts.size < KICK_REJECTION_RECEIPT_MAX_ENTRIES
+    if (kickReceipts.size >= KICK_RECEIPT_MAX_ENTRIES) return false
+    return countRequesterReceipts(requesterUuid) < KICK_RECEIPT_MAX_PER_REQUESTER
+}
+
+// 판단 거절 영수증 남길 자리 있는지 (전체 한도의 절반까지 + 요청자 거절 한도)
+function hasKickRejectionCapacity(requesterUuid) {
+    pruneKickReceipts()
+    if (kickReceipts.size >= KICK_REJECTION_RECEIPT_MAX_ENTRIES) return false
+    return countRequesterReceipts(requesterUuid) < KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER
 }
 
 // 영수증 남기기, 이미 있으면 처음 것 그대로 (같은 요청은 같은 답)
-function recordKickReceipt(key, { command, fingerprint, result, now = Date.now() }) {
+function recordKickReceipt(key, { command, fingerprint, result, requesterUuid = null, now = Date.now() }) {
     if (kickReceipts.has(key)) return kickReceipts.get(key)
     const entry = {
         command,
         fingerprint,
         result,
+        requesterUuid,
         decidedAt: now,
         expiresAt: now + KICK_RECEIPT_TTL_MS,
     }

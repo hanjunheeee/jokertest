@@ -26,12 +26,21 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
     const socketId = typeof socket.id === 'string' ? socket.id : null
     const detachOwner = createChannelExclusionOwner('detach')
 
+    // 끊긴 소켓인지 (끊김 정리가 제외 기록을 이미 다 지웠음, BE-053)
+    const isGone = () => socket.connected === false || socket.disconnected === true
+
     // 이 떼기 작업 이름으로 제외 걸기·풀기 (소켓 id 없으면 아무것도 안 함)
-    const exclude = () => {
-        if (socketId) excludeSocketFromChannel(channelId, socketId, detachOwner)
-    }
+    // 끊긴 소켓엔 안 걺: 늦게 온 실패가 다시 걸면 아무도 안 풀어 쌓임
     const release = () => {
         if (socketId) releaseChannelExclusion(channelId, socketId, detachOwner)
+    }
+    const exclude = () => {
+        if (!socketId) return
+        if (isGone()) {
+            release()
+            return
+        }
+        excludeSocketFromChannel(channelId, socketId, detachOwner)
     }
     // 떼기 로그: 라벨은 부른 쪽 것, 칸은 코드·채널·덧붙임·부른 쪽 칸 순서
     const report = (code, extraFields = {}) => {
@@ -105,6 +114,11 @@ function detachSocketFromChannel(socket, channelId, logLabel, logFields = {}, ow
 
     // leave 실패: 다시 가졌으면 떼기 그만두고 되찾기
     const handleFailure = (attempt, depth) => {
+        // 그사이 끊겼으면 방송 못 받으니 떼기 그만 (제외도 안 남김)
+        if (isGone()) {
+            release()
+            return
+        }
         if (ownsChannel()) {
             release()
             restoreIfSuperseded(depth)

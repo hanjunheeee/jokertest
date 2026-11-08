@@ -1004,9 +1004,11 @@ test('AC-04(대기방·포화): 거부를 보존할 수 없으면 확정 거부 
 test('AC-04(A-08): 거부 기록은 커밋 자리를 잠식하지 않는다 — 수위를 넘어도 실제 추방은 그대로 성공한다', async () => {
     const { io, sockets, room } = await setupRoom('rk-6', ['rk-7'])
 
+    // 한 사람 거절 기록은 요청자 한도까지만 (BE-021), 그래도 실제 추방 자리는 남아야 함
+    const PER_REQUESTER = kickReceiptStore.KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER
     let decided = 0
     let firstDecidedRequestId = null
-    for (let index = 0; index < REJECTION_LIMIT + 50; index += 1) {
+    for (let index = 0; index < PER_REQUESTER + 50; index += 1) {
         const selfPayload = roomKickPayload(room, 'rk-6', 'rk-7', {
             targetUuid: 'rk-6',
             targetMembershipId: seatOf(room, 'rk-6').membershipId,
@@ -1020,8 +1022,8 @@ test('AC-04(A-08): 거부 기록은 커밋 자리를 잠식하지 않는다 — 
             assert.equal(response.code, CODES.RECEIPT_CAPACITY)
         }
     }
-    assert.equal(decided, REJECTION_LIMIT, '거부가 수위를 넘겨 기록됐거나 모자라게 기록됐다')
-    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
+    assert.equal(decided, PER_REQUESTER, '거부가 요청자 한도를 넘겨 기록됐거나 모자라게 기록됐다')
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), PER_REQUESTER)
     assert.equal(
         getKickResult(io, sockets['rk-6'], 'rk-6', { bootEpoch: BOOT, requestId: firstDecidedRequestId }).code,
         CODES.SELF_KICK,
@@ -1030,6 +1032,51 @@ test('AC-04(A-08): 거부 기록은 커밋 자리를 잠식하지 않는다 — 
     const { response } = kickRoomPlayer(io, sockets['rk-6'], 'rk-6', roomKickPayload(room, 'rk-6', 'rk-7'))
     assert.equal(response.ok, true, JSON.stringify(response))
     assert.equal(response.status, 'KICKED')
+})
+
+test('BE-021: 한 계정이 요청 id만 바꿔 거절 영수증을 채워도 다른 사람 거절은 그대로 기록된다', async () => {
+    const { io, sockets, room } = await setupRoom('rk-30', ['rk-31', 'rk-32'])
+    const PER_REQUESTER = kickReceiptStore.KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER
+
+    // 방 아닌 사람(rk-31) 자격으로 계속 거절받기: 자기 한도 넘으면 자기만 RECEIPT_CAPACITY
+    let lastCode = null
+    for (let index = 0; index < PER_REQUESTER + 5; index += 1) {
+        const payload = roomKickPayload(room, 'rk-30', 'rk-32', {
+            requesterMembershipId: seatOf(room, 'rk-31').membershipId,
+        })
+        lastCode = kickRoomPlayer(io, sockets['rk-31'], 'rk-31', payload).response.code
+    }
+    assert.equal(lastCode, CODES.RECEIPT_CAPACITY)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), PER_REQUESTER)
+
+    // 다른 사람(rk-32) 거절은 확정 답 + 기록
+    const other = roomKickPayload(room, 'rk-30', 'rk-31', {
+        requesterMembershipId: seatOf(room, 'rk-32').membershipId,
+    })
+    assert.equal(kickRoomPlayer(io, sockets['rk-32'], 'rk-32', other).response.code, CODES.NOT_HOST)
+    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), PER_REQUESTER + 1)
+})
+
+test('BE-021: 영수증 보관함 요청자 한도 — 거절은 요청자당 한도, 성공은 그보다 넓은 요청자 한도', () => {
+    const now = Date.now()
+    const PER_REJECT = kickReceiptStore.KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER
+    const PER_ALL = kickReceiptStore.KICK_RECEIPT_MAX_PER_REQUESTER
+    assert.ok(PER_REJECT < PER_ALL)
+    for (let index = 0; index < PER_REJECT; index += 1) {
+        kickReceiptStore.recordKickReceipt(kickReceiptStore.kickReceiptKey(BOOT, 'spam', `r-${index}`), {
+            command: 'ROOM', fingerprint: `fp-${index}`, result: { ok: false }, requesterUuid: 'spam', now,
+        })
+    }
+    assert.equal(kickReceiptStore.hasKickRejectionCapacity('spam'), false)
+    assert.equal(kickReceiptStore.hasKickRejectionCapacity('other'), true)
+    assert.equal(kickReceiptStore.hasKickReceiptCapacity('spam'), true)
+    for (let index = PER_REJECT; index < PER_ALL; index += 1) {
+        kickReceiptStore.recordKickReceipt(kickReceiptStore.kickReceiptKey(BOOT, 'spam', `r-${index}`), {
+            command: 'ROOM', fingerprint: `fp-${index}`, result: { ok: true }, requesterUuid: 'spam', now,
+        })
+    }
+    assert.equal(kickReceiptStore.hasKickReceiptCapacity('spam'), false)
+    assert.equal(kickReceiptStore.hasKickReceiptCapacity('other'), true)
 })
 
 test('AC-05(게임): 나간 대상의 채널 leave가 비동기로 거부되면 그 연결을 끊는다', async () => {

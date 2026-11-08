@@ -6,8 +6,14 @@
 const KICK_RECEIPT_TTL_MS = 10 * 60 * 1000
 
 // 영수증 전체 한도, 판단 거절 영수증은 그 절반까지만 (거절이 자리를 다 먹지 않게)
+// 대기방 강퇴만 남음: 방 하나 강퇴는 최대 9번이라 4096개(10분)면 방 수백 개 동시 강퇴도 받음, 메모리는 수 MB 안
 const KICK_RECEIPT_MAX_ENTRIES = 4096
 const KICK_REJECTION_RECEIPT_MAX_ENTRIES = Math.floor(KICK_RECEIPT_MAX_ENTRIES / 2)
+
+// 요청자 한 명 한도 (10분 안, BE-021): 한 계정이 요청 id만 바꿔 전체 자리를 채우지 못하게
+// 거절은 32개, 성공 포함 전체는 64개 (방장 한 명이 10분에 강퇴할 일은 많아야 수십 번)
+const KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER = 32
+const KICK_RECEIPT_MAX_PER_REQUESTER = 64
 
 // 요청 식별자 칸 최대 길이
 const MAX_IDENTIFIER_LENGTH = 128
@@ -56,6 +62,8 @@ module.exports = {
     KICK_RECEIPT_TTL_MS,
     KICK_RECEIPT_MAX_ENTRIES,
     KICK_REJECTION_RECEIPT_MAX_ENTRIES,
+    KICK_REJECTION_RECEIPT_MAX_PER_REQUESTER,
+    KICK_RECEIPT_MAX_PER_REQUESTER,
     MAX_IDENTIFIER_LENGTH,
     KICK_COMMANDS,
     KICK_EVENTS,

@@ -65,13 +65,14 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     }
     // 판단 거절은 영수증에 남겨 재시도에도 같은 답 (자리 없으면 기록 없이 잠시 후 다시)
     const decideReject = (code, message) => {
-        if (!kickReceiptStore.hasKickRejectionCapacity()) {
+        if (!kickReceiptStore.hasKickRejectionCapacity(uuid)) {
             reject(CODES.RECEIPT_CAPACITY, '잠시 후 다시 시도해주세요.')
             return
         }
         kickReceiptStore.recordKickReceipt(receiptKey, {
             command: kickReceiptStore.KICK_COMMANDS.ROOM,
             fingerprint,
+            requesterUuid: uuid,
             result: { ok: false, code, message },
         })
         reject(code, message)
@@ -138,7 +139,7 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     }
 
     // 성공 영수증 남길 자리 없으면 실행 전에 거절 (실행만 하고 기록 못 하면 재시도가 다른 답 받음)
-    if (!kickReceiptStore.hasKickReceiptCapacity()) {
+    if (!kickReceiptStore.hasKickReceiptCapacity(uuid)) {
         reject(CODES.RECEIPT_CAPACITY, '잠시 후 다시 시도해주세요.')
         return
     }
@@ -167,6 +168,7 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     kickReceiptStore.recordKickReceipt(receiptKey, {
         command: kickReceiptStore.KICK_COMMANDS.ROOM,
         fingerprint,
+        requesterUuid: uuid,
         result,
     })
 
