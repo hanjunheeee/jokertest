@@ -35,21 +35,47 @@ test('정상 payload는 통과하고 settings로 묶인다', () => {
     assert.equal(result.value.settings.maxPlayers, 8)
 })
 
-test('maxPlayers는 UI가 선택 가능한 4~10 정수만 허용한다', () => {
-    for (const value of [4, 5, 6, 7, 8, 9, 10]) {
-        assert.equal(validateCreateRoomPayload(validPayload({ maxPlayers: value })).ok, true, `maxPlayers=${value}는 허용돼야 함`)
+// NODE_ENV 잠깐 바꿔 돌리고 원래대로
+function withNodeEnv(value, run) {
+    const original = process.env.NODE_ENV
+    if (value === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = value
+    try {
+        run()
+    } finally {
+        if (original === undefined) delete process.env.NODE_ENV
+        else process.env.NODE_ENV = original
     }
-    for (const value of [3, 11, 4.5, '4', null, undefined]) {
-        assert.equal(validateCreateRoomPayload(validPayload({ maxPlayers: value })).ok, false, `maxPlayers=${value}는 거부돼야 함`)
-    }
+}
+
+test('운영(NODE_ENV=production) maxPlayers는 게임 규칙(한 판 5~10명)대로 5~10 정수만 허용한다 (4명 방 거절)', () => {
+    withNodeEnv('production', () => {
+        for (const value of [5, 6, 7, 8, 9, 10]) {
+            assert.equal(validateCreateRoomPayload(validPayload({ maxPlayers: value })).ok, true, `maxPlayers=${value}는 허용돼야 함`)
+        }
+        for (const value of [3, 4, 11, 4.5, '5', null, undefined]) {
+            assert.equal(validateCreateRoomPayload(validPayload({ maxPlayers: value })).ok, false, `maxPlayers=${value}는 거부돼야 함`)
+        }
+    })
 })
 
-test('jokerCount는 1~4 정수이면서 maxPlayers보다 작아야 한다', () => {
-    for (const value of [0, 5, 2.5, '2']) {
-        assert.equal(validateCreateRoomPayload(validPayload({ jokerCount: value })).ok, false)
+test('개발(NODE_ENV 운영 아님) maxPlayers는 개발 편의로 4~10 정수를 허용한다', () => {
+    withNodeEnv(undefined, () => {
+        for (const value of [4, 5, 6, 7, 8, 9, 10]) {
+            assert.equal(validateCreateRoomPayload(validPayload({ maxPlayers: value })).ok, true, `maxPlayers=${value}는 허용돼야 함`)
+        }
+        for (const value of [3, 11, 4.5, '4', null, undefined]) {
+            assert.equal(validateCreateRoomPayload(validPayload({ maxPlayers: value })).ok, false, `maxPlayers=${value}는 거부돼야 함`)
+        }
+    })
+})
+
+test('jokerCount는 역할 구성 규칙(광대 최대 2명)대로 1~2 정수만 허용한다', () => {
+    for (const value of [0, 3, 4, 5, 2.5, '2']) {
+        assert.equal(validateCreateRoomPayload(validPayload({ jokerCount: value })).ok, false, `jokerCount=${value}는 거부돼야 함`)
     }
-    assert.equal(validateCreateRoomPayload(validPayload({ jokerCount: 4, maxPlayers: 4 })).ok, false)
-    assert.equal(validateCreateRoomPayload(validPayload({ jokerCount: 3, maxPlayers: 4 })).ok, true)
+    assert.equal(validateCreateRoomPayload(validPayload({ jokerCount: 1, maxPlayers: 5 })).ok, true)
+    assert.equal(validateCreateRoomPayload(validPayload({ jokerCount: 2, maxPlayers: 5 })).ok, true)
 })
 
 test('시간 필드는 정해진 step 값만 허용한다', () => {

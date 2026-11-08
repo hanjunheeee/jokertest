@@ -16,14 +16,17 @@ const withNodeEnv = (value, fn) => {
     }
 };
 
+// 운영 규칙(한 판 5~10명·광대 1명 이상)에도 맞는 방 (NODE_ENV=production으로도 판을 만듦)
 const makeRoom = (overrides = {}) => ({
     id: "room-1",
     players: new Map([
         ["u1", { uuid: "u1", nickname: "닉1" }],
         ["u2", { uuid: "u2", nickname: "닉2" }],
         ["u3", { uuid: "u3", nickname: "닉3" }],
+        ["u4", { uuid: "u4", nickname: "닉4" }],
+        ["u5", { uuid: "u5", nickname: "닉5" }],
     ]),
-    settings: {},
+    settings: { jokerCount: 1 },
     ...overrides,
 });
 
@@ -45,7 +48,7 @@ test("buildSessionCandidate: 세션 생성 시점의 서버 NODE_ENV로 session.
 test("buildSessionCandidate: room.settings에 담긴 클라이언트 값은 gameSource 판정에 전혀 영향을 주지 않는다", () => {
     withNodeEnv("production", () => {
         const spoofedRoom = makeRoom({
-            settings: { gameSource: "production", isDev: true, source: { value: "production" } },
+            settings: { jokerCount: 1, gameSource: "production", isDev: true, source: { value: "production" } },
         });
         const result = buildSessionCandidate(spoofedRoom);
         assert.equal(result.ok, true);

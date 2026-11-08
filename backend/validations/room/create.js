@@ -2,9 +2,18 @@
 // socket/matchmaking/join/create.js가 부름 (역할 구성은 거기서 따로), 값 표는 updateSettings.js도 같이 씀
 const ALLOWED_ACCESS_TYPES = ['open', 'code']
 
+const { getMinRoomCapacity } = require('../../game-core/setup/constants')
+
 // 고를 수 있는 값 (그 밖 숫자는 거절)
+// 정원 표는 개발 최소 4까지 둠, 실제 하한은 isAllowedMaxPlayers가 운영 5로 막음 (한 판 5~10명 규칙)
+// 광대는 역할 구성 상한(2명)대로 (3·4는 받아도 시작 때 늘 걸림)
 const ALLOWED_MAX_PLAYERS = Object.freeze([4, 5, 6, 7, 8, 9, 10])
-const ALLOWED_JOKER_COUNT = Object.freeze([1, 2, 3, 4])
+const ALLOWED_JOKER_COUNT = Object.freeze([1, 2])
+
+// 정원 값 허용인지: 표 안 + 지금 규칙 최소 정원 이상 (운영 5, 개발 4)
+function isAllowedMaxPlayers(value) {
+    return ALLOWED_MAX_PLAYERS.includes(value) && value >= getMinRoomCapacity()
+}
 const ALLOWED_DAY_DISCUSSION_TIME = Object.freeze([30, 60, 90, 120, 150])
 const ALLOWED_DAY_VOTE_TIME = Object.freeze([30, 60, 90])
 const ALLOWED_NIGHT_ACTION_TIME = Object.freeze([30, 60, 90, 120])
@@ -60,7 +69,7 @@ function validateCreateRoomPayload(payload) {
     if (!ALLOWED_ACCESS_TYPES.includes(accessType)) {
         return { ok: false, message: '공개 방식 값이 올바르지 않습니다.' }
     }
-    if (!ALLOWED_MAX_PLAYERS.includes(maxPlayers)) {
+    if (!isAllowedMaxPlayers(maxPlayers)) {
         return { ok: false, message: '최대 플레이어 수가 올바르지 않습니다.' }
     }
     if (!ALLOWED_JOKER_COUNT.includes(jokerCount)) {
@@ -107,6 +116,7 @@ module.exports = {
     ROLE_NIGHT_ACTION_TIME_KEYS,
     ALLOWED_ROLE_NIGHT_ACTION_TIME,
     ALLOWED_MAX_PLAYERS,
+    isAllowedMaxPlayers,
     ALLOWED_JOKER_COUNT,
     ALLOWED_DAY_DISCUSSION_TIME,
     ALLOWED_DAY_VOTE_TIME,

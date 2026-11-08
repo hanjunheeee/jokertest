@@ -84,7 +84,7 @@ test('값의 허용 목록은 생성 검증과 같다 — 목록 밖 값은 보�
     const bad = [
         { accessType: 'private' }, { accessType: null },
         { maxPlayers: 3 }, { maxPlayers: 11 }, { maxPlayers: '8' },
-        { jokerCount: 0 }, { jokerCount: 5 },
+        { jokerCount: 0 }, { jokerCount: 3 }, { jokerCount: 5 },
         { dayDiscussionTime: 45 }, { dayVoteTime: 120 }, { nightActionTime: 150 },
         { roleNightActionTimes: { JOKER: 45 } },
         { roleNightActionTimes: { CITIZEN: 60 } },
@@ -93,6 +93,18 @@ test('값의 허용 목록은 생성 검증과 같다 — 목록 밖 값은 보�
     for (const overrides of bad) {
         const result = validateUpdateRoomSettingsPayload(validPayload(overrides))
         assert.equal(result.ok, false, `거부되지 않은 입력: ${JSON.stringify(overrides)}`)
+    }
+})
+
+test('운영(NODE_ENV=production)에선 정원 4로 바꾸기를 거부한다 (한 판 5~10명 규칙)', () => {
+    const original = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+        assert.equal(validateUpdateRoomSettingsPayload(validPayload({ maxPlayers: 4, jokerCount: 1 })).ok, false)
+        assert.equal(validateUpdateRoomSettingsPayload(validPayload({ maxPlayers: 5, jokerCount: 1 })).ok, true)
+    } finally {
+        if (original === undefined) delete process.env.NODE_ENV
+        else process.env.NODE_ENV = original
     }
 })
 

@@ -1,7 +1,7 @@
 // 판 열기 파일
 // 판 후보 마지막 검사 + 장부에 넣기 (여기서 진짜 판 생김)
 // matchmaking이 게임 시작 때 gameSession.js 통해서 사용
-const { MIN_SUPPORTED_PLAYERS, MAX_SUPPORTED_PLAYERS, INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
+const { getMinSupportedPlayers, MAX_SUPPORTED_PLAYERS, INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { RATE_FIELD } = require('../chat/constants')
 const { GAME_ROLES } = require('../core/rules/roles')
 const { computeRoleComposition, validateResolvedComposition } = require('../core/rules/roleComposition')
@@ -12,7 +12,7 @@ const { hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = requir
 
 // 후보 판 모양 전부 검사 (조작·빠진 값 막기)
 function assertValidSessionForCommit(session) {
-    // 판 id·방 id가 있는지, 사람이 2~10명인지
+    // 판 id·방 id가 있는지, 사람이 최소(운영 5·개발 2)~10명인지
     if (!session || typeof session.id !== 'string' || session.id.length === 0) {
         throw new Error('commitGameSession: 잘못된 session.id')
     }
@@ -22,7 +22,7 @@ function assertValidSessionForCommit(session) {
     if (!(session.players instanceof Map) || session.players.size === 0) {
         throw new Error('commitGameSession: session.players가 비어있거나 Map이 아님')
     }
-    if (session.players.size < MIN_SUPPORTED_PLAYERS || session.players.size > MAX_SUPPORTED_PLAYERS) {
+    if (session.players.size < getMinSupportedPlayers() || session.players.size > MAX_SUPPORTED_PLAYERS) {
         throw new Error(`commitGameSession: 지원하지 않는 인원(${session.players.size})`)
     }
     // 기록 칸이 전부 제 모양이고 비어 있는지 (새 판인데 뭐가 들어 있으면 거절)

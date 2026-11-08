@@ -6,7 +6,7 @@ const { getSettingsVersion, forgetSettingsResults } = require('../settings/recei
 const { deps } = require('../core/deps')
 const { BOOT_EPOCH } = require('../core/constants')
 const { ROOM_SETTINGS_ERROR_CODES } = require('../../../validations/room/updateSettings')
-const { getMinPlayers } = require('../core/config')
+const { getMinPlayers, isDevMatchmaking } = require('../core/config')
 const { resolveRoleComposition } = require('../../../game-core/core/rules/roleComposition')
 const { hasPendingAdmission, invalidateRoomAttempts } = require('../admission/attempts')
 const { resolveParticipantSockets } = require('./membership')
@@ -150,11 +150,12 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
     }
 
     // 인원·역할 구성·전원 준비·입장 중인 사람 없음 (view computeCanStart와 같은 조건)
-    // 정원이 최소 인원보다 작은 방은 정원만 차면 됨, 조커보다는 사람이 많아야 함
+    // 운영은 정원과 상관없이 최소 5명 (한 판 5~10명 규칙), 개발만 정원이 최소보다 작으면 정원만 차면 됨
+    // 조커보다는 사람이 많아야 함
     const players = [...room.players.values()]
     const configuredMinimum = getMinPlayers()
     const roomCapacity = room.settings?.maxPlayers ?? configuredMinimum
-    const requiredPlayers = Math.min(configuredMinimum, roomCapacity)
+    const requiredPlayers = isDevMatchmaking() ? Math.min(configuredMinimum, roomCapacity) : configuredMinimum
     const jokerCount = room.settings?.jokerCount ?? 0
 
     if (players.length < requiredPlayers || players.length <= jokerCount) {

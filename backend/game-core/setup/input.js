@@ -1,16 +1,16 @@
 // 판 입력 검사 파일
 // 방 정보 검사 + 시간·설정 값 정리, 판 만들 때 사용
-const { MIN_SUPPORTED_PLAYERS, MAX_SUPPORTED_PLAYERS } = require('./constants')
+const { getMinSupportedPlayers, MAX_SUPPORTED_PLAYERS, isProductionRules } = require('./constants')
 const { NIGHT_TURN_ORDER } = require('../phase/night/constants')
 const { buildRoomSettingsView } = require('../../validations/room/updateSettings')
 
 // 방 정보가 판 만들 수 있는 모양인지 (인원·광대 수)
 function validateSessionInput(players, jokerCount) {
-    // 사람 목록이 비었거나 2~10명 밖이면 거절
+    // 사람 목록이 비었거나 최소(운영 5·개발 2)~10명 밖이면 거절
     if (!Array.isArray(players) || players.length === 0) {
         return { ok: false, code: 'INVALID_SESSION_INPUT', reason: 'EMPTY_PLAYERS' }
     }
-    if (players.length < MIN_SUPPORTED_PLAYERS || players.length > MAX_SUPPORTED_PLAYERS) {
+    if (players.length < getMinSupportedPlayers() || players.length > MAX_SUPPORTED_PLAYERS) {
         return { ok: false, code: 'INVALID_SESSION_INPUT', reason: 'PLAYER_COUNT_OUT_OF_RANGE' }
     }
     // 사람마다 uuid·닉네임 있는지, 같은 사람 두 번 없는지
@@ -27,8 +27,9 @@ function validateSessionInput(players, jokerCount) {
         }
         seenUuids.add(player.uuid)
     }
-    // 광대 수는 0 이상, 전체 인원보다 적어야 함
-    if (!Number.isInteger(jokerCount) || jokerCount < 0) {
+    // 광대 수는 0 이상(운영은 1 이상), 전체 인원보다 적어야 함 (광대 없는 판은 시작부터 승부 남, 개발 시험 판만 0 허용)
+    const minJokerCount = isProductionRules() ? 1 : 0
+    if (!Number.isInteger(jokerCount) || jokerCount < minJokerCount) {
         return { ok: false, code: 'INVALID_SESSION_INPUT', reason: 'INVALID_JOKER_COUNT' }
     }
     if (jokerCount >= players.length) {

@@ -3,7 +3,7 @@
 const {
     validateRoleNightActionTimes,
     ROLE_NIGHT_ACTION_TIME_KEYS,
-    ALLOWED_MAX_PLAYERS,
+    isAllowedMaxPlayers,
     ALLOWED_JOKER_COUNT,
     ALLOWED_DAY_DISCUSSION_TIME,
     ALLOWED_DAY_VOTE_TIME,
@@ -208,7 +208,7 @@ function validateUpdateRoomSettingsPayload(payload) {
     if (!ALLOWED_ACCESS_TYPES.includes(accessType)) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '공개 방식 값이 올바르지 않습니다.')
     }
-    if (!ALLOWED_MAX_PLAYERS.includes(maxPlayers)) {
+    if (!isAllowedMaxPlayers(maxPlayers)) {
         return fail(ROOM_SETTINGS_ERROR_CODES.INVALID_REQUEST, '최대 플레이어 수가 올바르지 않습니다.')
     }
     if (!ALLOWED_JOKER_COUNT.includes(jokerCount)) {
