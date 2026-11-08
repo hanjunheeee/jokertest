@@ -9,6 +9,32 @@ const addF19FriendsInvites = require('../../db/migrations/0013-f19-friends-invit
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
 const addCurrencyProductsTopupOrders = require('../../db/migrations/0018-add-currency-products-topup-orders');
 const addEmojiPalettes = require('../../db/migrations/0019-add-emoji-palettes');
+// 전체 마이그레이션(scripts/migrate-db MIGRATIONS)을 쓰는 시험이 만드는 표도 관리 목록에 넣음 (2026-11-09 운영·약관 표)
+const addOperationsTables = require('../../db/migrations/0024-add-operations-tables');
+const addTermsAgreements = require('../../db/migrations/0026-add-terms-agreements');
+const dropUnusedTrafficLogs = require('../../db/migrations/0028-drop-unused-columns-traffic-logs');
+
+// 기준선(0001)이 만들고 뒤 마이그레이션이 지우는 표 (0028 traffic_logs, 2026-11-09)
+// 관리 목록엔 남김(일부만 적용한 시험 DB엔 있음), 행 비우기·있어야 하는 표 검사에선 뺌, 표 지우기 때 있으면 마지막에 지움
+const TABLES_DROPPED_LATER = [dropUnusedTrafficLogs.DROPPED_TABLE];
+
+// 지울 때 자식 표 먼저 (신고 증거→신고, 감사 기록→관리자, 쿠폰 사용→쿠폰, 동의→약관 판)
+const OPERATIONS_DROP_ORDER = [
+    addOperationsTables.TABLES.REPORT_CHAT_EVIDENCE,
+    addOperationsTables.TABLES.REPORTS,
+    addOperationsTables.TABLES.ADMIN_AUDIT_LOGS,
+    addOperationsTables.TABLES.ADMIN_USERS,
+    addOperationsTables.TABLES.COUPON_REDEMPTIONS,
+    addOperationsTables.TABLES.COUPONS,
+    addOperationsTables.TABLES.BANNED_WORDS,
+    addTermsAgreements.TABLES.USER_TERMS_AGREEMENTS,
+];
+
+// 마이그레이션이 처음 값을 넣어 두는 표 (점검 상태 한 줄·약관 판), 행 비우기에선 빼고 표 지우기 때만 지움
+const SEEDED_TABLES = [
+    addOperationsTables.TABLES.MAINTENANCE_STATE,
+    addTermsAgreements.TABLES.TERMS_VERSIONS,
+];
 
 const ALLOWED_DATABASE_NAMES = new Set([
     'pluto_f01_20260909_al',
@@ -73,10 +99,13 @@ const buildManagedSchema = ({
         ...f19FriendTables,
         addSignupEmailVerification.TABLE_NAME,
         ...currencyProductTopupTables,
+        ...OPERATIONS_DROP_ORDER,
+        ...SEEDED_TABLES,
         migrationRunner.META_TABLE,
     ];
 
     const dropOrder = [
+        ...OPERATIONS_DROP_ORDER,
         ...currencyProductTopupTables,
         addSignupEmailVerification.TABLE_NAME,
         ...f19FriendTables,
@@ -87,7 +116,7 @@ const buildManagedSchema = ({
         ...economyTables,
         ...socialTables,
         addRefreshTokenHistory.TABLE_NAME,
-        ...[...baseline.TABLE_ORDER].reverse(),
+        ...[...baseline.TABLE_ORDER].reverse().filter((table) => !TABLES_DROPPED_LATER.includes(table)),
         migrationRunner.META_TABLE,
     ];
 
@@ -115,6 +144,10 @@ const resetManagedSchema = async (sequelize, url, { managedTables, dropOrder }) 
     for (const table of dropOrder) {
         if (existing.has(table)) await queryInterface.dropTable(table);
     }
+    // 관리 목록엔 있고 지우는 순서엔 없는 표 = 처음 값 넣어 두는 표·뒤 마이그레이션이 지우는 표, 자식 표 다 지운 뒤 마지막에
+    for (const table of managedTables) {
+        if (!dropOrder.includes(table) && existing.has(table)) await queryInterface.dropTable(table);
+    }
 };
 
 const SAFE_TABLE_NAME = /^[A-Za-z0-9_]+$/;
@@ -131,7 +164,7 @@ const resetManagedData = async (sequelize, url, { managedTables, dropOrder, keep
     await assertDedicatedTestDatabase(sequelize, url);
     const existing = await assertNoUnknownTables(sequelize, managedTables);
 
-    const missingTables = managedTables.filter((table) => !existing.has(table));
+    const missingTables = managedTables.filter((table) => !existing.has(table) && !TABLES_DROPPED_LATER.includes(table));
     if (missingTables.length > 0) return { cleaned: false, missingTables, deleted: [] };
 
     const keep = new Set(keepTables);

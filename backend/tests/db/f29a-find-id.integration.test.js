@@ -361,9 +361,10 @@ test('AC-03: 마스킹 힌트는 재설정 요청에서도 계정으로 인정�
     const { maskedEmail } = await findRes.json();
     assert.equal(maskedEmail, 'h***e@e***.com');
 
+    // 별표 든 주소는 메일 주소 모양 검사에서 먼저 400 (8db744e3 이메일 한 곳 검사, 2026-11-09), 계정·토큰은 그대로 안 생김
     const requestRes = await postJson(base, '/auth/password-reset/request', { email: maskedEmail });
-    assert.equal(requestRes.status, 200);
-    assert.deepEqual(await requestRes.json(), { ok: true });
+    assert.equal(requestRes.status, 400);
+    assert.deepEqual(await requestRes.json(), { ok: false, code: 'INVALID_INPUT' });
     assert.equal(await db.PasswordResetToken.count(), 0, '존재하지 않는 계정에 토큰이 생기면 안 됩니다');
 
     const before = await db.User.findByPk(uuid);

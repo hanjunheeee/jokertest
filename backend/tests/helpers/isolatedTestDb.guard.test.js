@@ -228,9 +228,16 @@ test('최소 스키마(addEconomy 스텁)에서도 economy_emoji_palettes가 관
         'external_identities', 'oauth_states', 'social_signup_intents',
         'economy_emoji_palettes',
         'signup_email_verifications',
+        // 0024 운영 표·0026 약관 표 (전체 마이그레이션 쓰는 시험이 만듦), 처음 값 있는 두 표는 맨 끝
+        'report_chat_evidence', 'reports', 'admin_audit_logs', 'admin_users',
+        'coupon_redemptions', 'coupons', 'banned_words', 'user_terms_agreements',
+        'maintenance_state', 'terms_versions',
         'schema_migrations',
     ]);
     assert.deepEqual(DATA_SCHEMA.dropOrder, [
+        // 0024 운영 표·0026 약관 동의 (자식 표 먼저), 처음 값 있는 점검 상태·약관 판은 행 비우기에서 뺌
+        'report_chat_evidence', 'reports', 'admin_audit_logs', 'admin_users',
+        'coupon_redemptions', 'coupons', 'banned_words', 'user_terms_agreements',
         'signup_email_verifications',
         'economy_emoji_palettes',
         'external_identities', 'oauth_states', 'social_signup_intents',
@@ -287,6 +294,9 @@ test('정상 경로에서는 keepTables를 뺀 모든 관리 테이블이 자식
 
     assert.equal(result.cleaned, true);
     assert.deepEqual(sequelize.deleteCalls, [
+        // 0024 운영 표·0026 약관 동의 (자식 표 먼저), 처음 값 있는 점검 상태·약관 판은 행 비우기에서 뺌
+        'report_chat_evidence', 'reports', 'admin_audit_logs', 'admin_users',
+        'coupon_redemptions', 'coupons', 'banned_words', 'user_terms_agreements',
         'signup_email_verifications',
         'economy_emoji_palettes',
         'external_identities', 'oauth_states', 'social_signup_intents',
@@ -329,4 +339,20 @@ test('findNonEmptyManagedTables는 행이 남은 테이블만 한 번의 질의�
 test('모든 테이블이 비어 있으면 findNonEmptyManagedTables는 빈 목록을 돌려준다', async () => {
     const sequelize = makeDataStubSequelize({ connectedDatabaseName: APPROVED_DB_NAME });
     assert.deepEqual(await findNonEmptyManagedTables(sequelize, ['users', 'user_sessions']), []);
+});
+
+// 2026-11-09: 0024·0026이 처음 값을 넣는 표(점검 상태·약관 판)는 행 비우기에선 남기고 표 지우기 때만 지움
+test('처음 값 있는 표(maintenance_state·terms_versions)는 행 비우기에선 안 지우고, 표 지우기에선 자식 표 다음 맨 끝에 지운다', async () => {
+    const data = makeDataStubSequelize({ connectedDatabaseName: APPROVED_DB_NAME, existingTables: ALL_MANAGED });
+    const result = await resetManagedData(data, APPROVED_URL, { ...DATA_SCHEMA, keepTables: ['schema_migrations'] });
+    assert.equal(result.cleaned, true);
+    assert.equal(data.deleteCalls.includes('maintenance_state'), false);
+    assert.equal(data.deleteCalls.includes('terms_versions'), false);
+
+    const schema = makeStubSequelize({ connectedDatabaseName: APPROVED_DB_NAME, existingTables: ALL_MANAGED });
+    await resetManagedSchema(schema, APPROVED_URL, DATA_SCHEMA);
+    const drops = schema.dropCalls;
+    assert.deepEqual([...drops].sort(), [...ALL_MANAGED].sort(), '관리 표는 전부 지워야 함');
+    assert.ok(drops.indexOf('terms_versions') > drops.indexOf('user_terms_agreements'), '약관 판은 동의 표 다음에');
+    assert.deepEqual(drops.slice(-2), ['maintenance_state', 'terms_versions']);
 });

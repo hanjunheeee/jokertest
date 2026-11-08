@@ -204,8 +204,10 @@ test('AC-03/AC-05: 이미 성공한 재화 지급(GOLD) 이후 실패(DIAMOND)�
     }
 
     assert.equal(goldCallCount, 1, 'GOLD 호출 자체는 실제로 한 번 일어나야 한다(그래야 롤백 대상이 실제로 생긴다)');
-    assert.equal(interrupted.errors.length, 1, '지급 실패는 evaluateAllUsers 요약의 errors로 드러나야 한다');
-    assert.equal(interrupted.errors[0].userId, userId);
+    // 업적 하나 지급이 던져도 계정 평가는 이어 감 (BE-066, 06dc99ed 2026-11-09) → 계정 오류 아님, 그 업적만 안 받은 채로 남아 다음 평가 때 다시 시도
+    assert.deepEqual(interrupted.errors, [], '업적 하나 실패는 계정 오류로 올라가지 않는다(BE-066)');
+    const interruptedGrants = interrupted.grants.find((g) => g.userId === userId)?.achievementIds ?? [];
+    assert.equal(interruptedGrants.includes('record-1-masquerade'), false, '실패한 업적은 받은 목록에 없어야 한다');
 
     const grantCountAfterFailure = await db.AchievementGrant.count({ where: { user_id: userId } });
     assert.equal(grantCountAfterFailure, 0, '보상 지급이 실패하면 achievement_grants도 함께 롤백되어야 한다(부분 지급 금지)');

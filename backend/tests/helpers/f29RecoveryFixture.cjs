@@ -9,6 +9,8 @@ const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f29-recovery-fixture-secret';
 process.env.PASSWORD_RESET_APP_URL = process.env.PASSWORD_RESET_APP_URL || 'https://frontend.example.test';
+// 약관 동의·만 14세 검사는 통과로 (2026-11-09 가입에 붙은 검사, 그 검사는 member-약관 시험 몫)
+require('./termsStub').passSignupTermsForFile();
 
 const AUTH_ROUTES_PATH = require.resolve('../../routes/auth.routes');
 const RATE_LIMIT_PATH = require.resolve('../../middlewares/rateLimit.middleware');

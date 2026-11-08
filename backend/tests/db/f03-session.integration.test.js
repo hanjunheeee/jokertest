@@ -256,6 +256,8 @@ test('AC-03/AC-05: 실제 로그아웃 후 HTTP 보호 요청·refresh·기존 �
     await assert.rejects(authService.refresh(refreshToken), (error) => error.status === 401);
     assert.ok(await runAuthenticateSocket(fakeHandshakeSocket(token)) instanceof Error,
         '로그아웃된 계정의 신규 소켓 연결은 거부되어야 합니다(F-03 AC-03/AC-05)');
+    // 사건 검사 통과는 1초 저장됨 (BE-012, 2026-11-09) → 그 시간 지난 뒤 사건부터 막혀야 함
+    await new Promise((resolve) => setTimeout(resolve, socketLayer.__testables.EVENT_CHECK_CACHE_MS + 50));
     let ranAfterLogout = false;
     guarded.on('game_action', () => { ranAfterLogout = true; });
     await guarded._handlers.game_action();
@@ -329,6 +331,8 @@ test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 
     await assert.rejects(authService.refresh(refreshToken), (error) => error.status === 401 || error.status === 403);
     assert.ok(await runAuthenticateSocket(fakeHandshakeSocket(token)) instanceof Error,
         '정지된 계정의 신규 소켓 연결은 거부되어야 합니다(F-03 AC-03/AC-05)');
+    // 사건 검사 통과는 1초 저장됨 (BE-012, 2026-11-09) → 그 시간 지난 뒤 사건부터 막혀야 함
+    await new Promise((resolve) => setTimeout(resolve, socketLayer.__testables.EVENT_CHECK_CACHE_MS + 50));
     let protectedEventRanAfterBan = false;
     guarded.on('game_action', () => { protectedEventRanAfterBan = true; });
     await guarded._handlers.game_action();

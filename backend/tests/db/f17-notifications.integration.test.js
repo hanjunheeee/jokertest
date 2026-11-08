@@ -719,7 +719,9 @@ test('AC-07/R-IMPL#5: 세션이 폐기된 소켓의 ready는 가드에서 끊기
 
     const ack = await fireGuardedReady(s);
 
-    assert.equal(ack, null, '가드가 거부한 이벤트는 핸들러에 닿지 않으므로 ACK도 없다');
+    // 가드가 거부하면 처리기는 안 닿고 답 함수에만 거절을 알림 (BE-042, 2a7d570e 2026-11-09)
+    assert.equal(ack?.ok, false, '가드가 거부한 이벤트는 처리기에 닿지 않고 거절 답만 온다');
+    assert.equal(ack?.code, 'SESSION_EXPIRED');
     assert.equal(s.__emitted.filter((e) => e.event === 'force_disconnect').length, 1);
     assert.deepEqual(s.__disconnects, [true], '가드는 소켓을 실제로 끊는다');
     assert.equal(await db.Notification.count({ where: { user_id: userId } }), 0, '무효 세션은 생성 0이다');
@@ -770,7 +772,11 @@ test('AC-07/R-IMPL#5: registerConnectionHandlers가 등록한 notifications_read
     assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1);
 
     await db.UserSession.update({ is_online: false }, { where: { id: `session-${userId}` } });
-    assert.equal(await fireGuardedReady(s), null);
+    // 사건 검사 통과는 1초 저장됨 (BE-012) → 그 뒤 사건부터 막히고, 거절은 답 함수로 알림 (BE-042, 2a7d570e 2026-11-09)
+    await new Promise((resolve) => setTimeout(resolve, socket.__testables.EVENT_CHECK_CACHE_MS + 50));
+    const rejectedAck = await fireGuardedReady(s);
+    assert.equal(rejectedAck?.ok, false);
+    assert.equal(rejectedAck?.code, 'SESSION_EXPIRED');
     assert.equal(s.__emitted.filter((e) => e.event === 'force_disconnect').length, 1);
     assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1, '추가 생성 0');
     assert.equal(emitted.filter((e) => e.event === 'notification_created').length, 1, '추가 발행 0');

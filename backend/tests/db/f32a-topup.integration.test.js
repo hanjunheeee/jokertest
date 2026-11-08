@@ -3,6 +3,8 @@
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f32a-topup-integration-test-secret';
+// 약관 동의·만 14세 검사는 통과로 (2026-11-09 가입에 붙은 검사, 그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -1198,6 +1200,13 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     assert.deepEqual((await ctx.listOpen(stranger)).json, { ok: true, orders: [] });
 });
 
+// 뒤 마이그레이션이 일부러 지우는 칸 (0028 users.phone, 2026-11-09) 은 "그대로" 비교에서 뺌
+const { DROPPED_COLUMNS: LATER_DROPPED_COLUMNS } = require('../../db/migrations/0028-drop-unused-columns-traffic-logs');
+const withoutLaterDroppedColumns = (snapshot) => Object.fromEntries(Object.entries(snapshot).map(([table, rows]) => {
+    const dropped = LATER_DROPPED_COLUMNS.filter((c) => c.table === table).map((c) => c.column);
+    return [table, rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => !dropped.includes(key))))];
+}));
+
 const snapshotEconomy = async () => {
     const tables = ['users', 'economy_wallets', 'economy_ledger_entries', 'economy_entitlements', 'economy_loadouts'];
     const snapshot = {};
@@ -1300,7 +1309,7 @@ test('AC-06: 0017 상태의 기존 경제 데이터는 0018 적용 전후로 그
         '0019가 실제로 적용되어 economy_emoji_palettes가 생겨야 한다',
     );
     assert.deepEqual((await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS })).applied, []);
-    assert.deepEqual(await snapshotEconomy(), before, '나머지 마이그레이션 적용 후에도 기존 경제 데이터는 값과 건수가 그대로여야 한다');
+    assert.deepEqual(withoutLaterDroppedColumns(await snapshotEconomy()), withoutLaterDroppedColumns(before), '나머지 마이그레이션 적용 후에도 기존 경제 데이터는 값과 건수가 그대로여야 한다');
 });
 
 test('AC-06: 전체 스키마를 다시 세우면(reset → 전체 적용) 두 신규 테이블도 오류 없이 만들어진다', async (t) => {

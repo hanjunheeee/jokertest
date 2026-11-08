@@ -9,6 +9,8 @@ process.env.SIGNUP_EMAIL_HOUR_MAX = '1000';
 process.env.SIGNUP_EMAIL_DAY_MAX = '1000';
 process.env.SIGNUP_IP_HOUR_MAX = '1000';
 process.env.SIGNUP_IP_DAY_MAX = '1000';
+// 약관 동의·만 14세 검사는 통과로 (2026-11-09 가입에 붙은 검사, 그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const test = require('node:test');
 const http = require('node:http');

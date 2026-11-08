@@ -16,6 +16,8 @@ process.env.SIGNUP_EMAIL_HOUR_MAX = '1000';
 process.env.SIGNUP_EMAIL_DAY_MAX = '1000';
 process.env.SIGNUP_IP_HOUR_MAX = '1000';
 process.env.SIGNUP_IP_DAY_MAX = '1000';
+// 약관 동의·만 14세 검사는 통과로 (2026-11-09 가입에 붙은 검사, 그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -233,7 +235,8 @@ for (const provider of ['google', 'discord']) {
         const { intentToken, cookie } = await runOAuthToIntent(base, provider);
         assert.ok(intentToken);
 
-        const intentRes = await postJson(base, '/auth/social/signup/intent', { intentToken });
+        // 의도 확인도 이 브라우저 가입 시도 쿠키가 있어야 함 (06dc99ed, 2026-11-09)
+        const intentRes = await postJson(base, '/auth/social/signup/intent', { intentToken }, { cookie });
         const intentBody = await intentRes.json();
         assert.equal(intentRes.status, 200, JSON.stringify(intentBody));
         assert.deepEqual(intentBody, { success: true, data: { emailVerificationRequired: false } });
@@ -279,7 +282,7 @@ for (const [label, [provider, buildProfile]] of Object.entries(UNVERIFIED_PROFIL
         const intentRow = await readIntent(intentToken);
         assert.equal(intentRow.email, null);
 
-        const intentRes = await postJson(base, '/auth/social/signup/intent', { intentToken });
+        const intentRes = await postJson(base, '/auth/social/signup/intent', { intentToken }, { cookie });
         assert.deepEqual(await intentRes.json(), { success: true, data: { emailVerificationRequired: true } });
         assert.equal((await intentRow.reload()).consumed_at, null, '조회는 intent를 소비하면 안 된다');
 
@@ -321,18 +324,19 @@ test('AC-02: 비소비 intent 조회는 부재·소비·만료를 기존 코드�
     await startMockProvider(t, { profile: { sub: subject } });
     const base = await startServer(t);
 
+    // 이 브라우저 가입 시도 쿠키 없이 낸 의도 토큰은 컨트롤러가 먼저 INTENT_EXPIRED (06dc99ed, 2026-11-09)
     const missing = await postJson(base, '/auth/social/signup/intent', { intentToken: 'never-issued' });
     assert.equal(missing.status, 400);
-    assert.equal((await missing.json()).code, 'INTENT_INVALID');
+    assert.equal((await missing.json()).code, 'INTENT_EXPIRED');
 
-    const { intentToken } = await runOAuthToIntent(base, 'google');
+    const { intentToken, cookie } = await runOAuthToIntent(base, 'google');
     const intentRow = await readIntent(intentToken);
     await intentRow.update({ expires_at: new Date(Date.now() - 1000) });
-    const expired = await postJson(base, '/auth/social/signup/intent', { intentToken });
+    const expired = await postJson(base, '/auth/social/signup/intent', { intentToken }, { cookie });
     assert.equal((await expired.json()).code, 'INTENT_EXPIRED');
 
     await intentRow.update({ expires_at: new Date(Date.now() + 60_000), consumed_at: new Date() });
-    const consumed = await postJson(base, '/auth/social/signup/intent', { intentToken });
+    const consumed = await postJson(base, '/auth/social/signup/intent', { intentToken }, { cookie });
     assert.equal(consumed.status, 409);
     assert.equal((await consumed.json()).code, 'INTENT_CONSUMED');
 });

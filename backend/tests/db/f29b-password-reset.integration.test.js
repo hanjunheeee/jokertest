@@ -7,6 +7,8 @@ process.env.PASSWORD_RESET_APP_URL = process.env.PASSWORD_RESET_APP_URL || 'http
 process.env.PASSWORD_RESET_REQUEST_IP_MAX = '1000';
 process.env.PASSWORD_RESET_REQUEST_EMAIL_MAX = '1000';
 process.env.PASSWORD_RESET_CHECK_IP_MAX = '1000';
+// 약관 동의·만 14세 검사는 통과로 (2026-11-09 가입에 붙은 검사, 그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

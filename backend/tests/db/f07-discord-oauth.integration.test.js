@@ -20,6 +20,8 @@ process.env.SIGNUP_EMAIL_HOUR_MAX = '1000';
 process.env.SIGNUP_EMAIL_DAY_MAX = '1000';
 process.env.SIGNUP_IP_HOUR_MAX = '1000';
 process.env.SIGNUP_IP_DAY_MAX = '1000';
+// 약관 동의·만 14세 검사는 통과로 (2026-11-09 가입에 붙은 검사, 그 검사는 member-약관 시험 몫)
+require('../helpers/termsStub').passSignupTermsForFile();
 
 const { Sequelize } = require('sequelize');
 const migrationRunner = require('../../db/migrationRunner');
@@ -461,7 +463,8 @@ test('AC-04: 로그인 후 실제 /auth/discord/link 왕복으로만 계정이 �
     assert.equal(await db.ExternalIdentity.count({ where: { provider: 'discord', subject } }), 1);
 });
 
-test('AC-04: 인증 없이 /auth/discord/link를 호출하면 401이고 state는 발급되지 않는다(실제 DB, 스텁 없음)', async (t) => {
+// 브라우저가 바로 여는 주소라 401 대신 계정 화면으로 SESSION_EXPIRED 붙여 돌려보냄 (06dc99ed, 2026-11-09)
+test('AC-04: 인증 없이 /auth/discord/link를 호출하면 계정 화면으로 SESSION_EXPIRED를 붙여 돌려보내고 state는 발급되지 않는다(실제 DB, 스텁 없음)', async (t) => {
     if (unavailable(t)) return;
     await resetSchema();
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
@@ -470,7 +473,8 @@ test('AC-04: 인증 없이 /auth/discord/link를 호출하면 401이고 state는
     const beforeStates = await db.OAuthState.count();
 
     const res = await rawGet(base, '/auth/discord/link');
-    assert.equal(res.statusCode, 401);
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=SESSION_EXPIRED`);
     assert.equal(await db.OAuthState.count(), beforeStates);
 });
 
