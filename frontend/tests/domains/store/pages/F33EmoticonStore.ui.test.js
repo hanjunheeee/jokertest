@@ -130,7 +130,8 @@ const text = (view) => view.container.textContent
 const click = (view, name) => act(async () => { fireEvent.click(view.getByRole("button", { name })) })
 const waitEconomyReady = () => waitFor(() => assert.equal(useEconomyStore.getState().status, "ready"))
 const slotButtons = (view) => Array.from(view.container.querySelectorAll("button[aria-pressed]"))
-  .filter((el) => el.querySelector("img") && !el.textContent.includes("일괄구매"))
+  // 사운드 조절 묶음의 음소거 버튼도 aria-pressed·그림을 가져 상품 칸에서 뺌 (ed549ece부터)
+  .filter((el) => el.querySelector("img") && !el.textContent.includes("일괄구매") && !el.closest('[aria-label="사운드 조절"]'))
 const findSlot = (view, name) => {
   const matches = slotButtons(view).filter((el) => el.textContent.replace("보유중", "").startsWith(name))
   assert.equal(matches.length, 1, `상품 칸 ${name}은 정확히 하나여야 한다`)
