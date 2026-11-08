@@ -94,11 +94,11 @@ test('내 프로필: 계정이 없으면 null', async (t) => {
     assert.equal(await userService.getMyProfile('ghost'), null);
 });
 
-test('내 프로필: 판 수·승률은 직업 통계 합으로 (3판1승 + 1판1승 = 4판 0.5)', async (t) => {
+test('내 프로필: 판 수는 user_stats 그대로, 승률만 직업 통계 합 (99판 · 3판1승 + 1판1승 = 0.5, 사용자 결정 2026-11-09)', async (t) => {
     swap(t, userRepository, 'getMyProfile', async () => ({ nickname: 'n', profile_image_url: null, UserStat: { total_games: 99 } }));
     fakeStatsQueries(t, { roleStats: [{ games: 3, wins: 1 }, { games: 1, wins: 1 }] });
     const profile = await userService.getMyProfile('me');
-    assert.equal(profile.total_games, 4);
+    assert.equal(profile.total_games, 99);
     assert.equal(profile.account_win_rate, 0.5);
 });
 
@@ -110,14 +110,15 @@ test('내 프로필: 판이 하나도 없으면 승률 0 (0으로 나누기 없�
     assert.equal(profile.account_win_rate, 0);
 });
 
-test('내 프로필: 통계 행이 없으면 칭호 신참·생존 0·처형 0·많이 한 직업 null', async (t) => {
+test('내 프로필: 통계 행이 없으면 판 0·생존 0·처형 0·많이 한 직업 null, 칭호 칸 없음', async (t) => {
     swap(t, userRepository, 'getMyProfile', async () => ({ nickname: 'n', profile_image_url: null }));
     fakeStatsQueries(t);
     const profile = await userService.getMyProfile('me');
     assert.deepEqual(
-        [profile.title, profile.survival_count, profile.execution_count, profile.most_played_role],
-        ['신참', 0, 0, null],
+        [profile.total_games, profile.survival_count, profile.execution_count, profile.most_played_role],
+        [0, 0, 0, null],
     );
+    assert.equal(Object.hasOwn(profile, 'title'), false);
 });
 
 test('내 프로필: 최고 승률 직업은 한글 이름, 없으면 null', async (t) => {
@@ -231,7 +232,7 @@ test('프로필 저장소: 통계 칸이 null이면 그 칸만 기본값, 있는
     });
     const row = await profileRepository.getMyProfile('me');
     assert.equal(row.profile_image_url, null);
-    assert.deepEqual(row.UserStat, { title: '베테랑', total_games: 0, survival_count: 3, execution_count: 0, most_played_role: 'JOKER' });
+    assert.deepEqual(row.UserStat, { total_games: 0, survival_count: 3, execution_count: 0, most_played_role: 'JOKER' });
 });
 
 test('프로필 저장소: 계정 행이 없으면 null', async (t) => {

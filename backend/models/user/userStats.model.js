@@ -7,9 +7,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.UUID,
       primaryKey: true,
     },
-    // 평판·칭호는 값을 바꾸는 곳 없음 (칭호는 늘 기본값)
-    reputation: { type: DataTypes.INTEGER, defaultValue: 0 },
-    title: { type: DataTypes.STRING(50), defaultValue: '신참' },
+    // 평판·칭호 칸은 지움 (마이그레이션 0027, 사용자 결정)
     // 승패 정해진 판만 더함 (깨진 판은 안 셈)
     total_games: { type: DataTypes.INTEGER, defaultValue: 0 },
     survival_count: { type: DataTypes.INTEGER, defaultValue: 0 },

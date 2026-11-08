@@ -23,7 +23,7 @@ exports.getMyProfile = async (uuid) => {
         attributes: ['nickname', 'profile_image_url'],
         include: [{
             model:      db.UserStats,
-            attributes: ['title', 'total_games', 'survival_count', 'execution_count', 'most_played_role'],
+            attributes: ['total_games', 'survival_count', 'execution_count', 'most_played_role'],
         }],
     });
 

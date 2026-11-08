@@ -17,22 +17,21 @@ exports.getMyProfile = async (uuid) => {
     const stats = row.UserStat ?? {};
     const highestWinRateRole = await roleStatisticsQueries.getHighestWinRateRole(uuid);
 
-    // 판 수·승률은 직업 통계 합으로 (개발·시험 판 빠진 수라 직업 화면과 맞음)
+    // 승률만 직업 통계 합으로 (user_stats엔 이긴 수 칸이 없음)
     const roleStatistics = await roleStatisticsQueries.getMyRoleStatistics(uuid);
-    let displayedGames = 0;
-    let displayedWins  = 0;
+    let roleGames = 0;
+    let roleWins  = 0;
     for (const entry of roleStatistics) {
-        displayedGames += entry.games ?? 0;
-        displayedWins  += entry.wins  ?? 0;
+        roleGames += entry.games ?? 0;
+        roleWins  += entry.wins  ?? 0;
     }
-    const accountWinRate = displayedGames > 0 ? displayedWins / displayedGames : 0;
+    const accountWinRate = roleGames > 0 ? roleWins / roleGames : 0;
 
-    // 생존·처형·많이 한 직업은 user_stats 그대로, 최고 승률 직업은 한글 이름
+    // 판 수·생존·처형·많이 한 직업은 전부 user_stats 기준 (사용자 결정), 최고 승률 직업은 한글 이름
     return {
         nickname:          row.nickname,
         profile_image_url: row.profile_image_url,
-        title:             stats.title            ?? '신참',
-        total_games:       displayedGames,
+        total_games:       stats.total_games      ?? 0,
         account_win_rate:  accountWinRate,
         survival_count:    stats.survival_count   ?? 0,
         execution_count:   stats.execution_count  ?? 0,

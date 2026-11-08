@@ -107,7 +107,7 @@ test("highest_win_rate_role이 null이면(전적 0판) 더미 직업 대신 전�
   assert.equal(result.current.description.highlight, "전적 없음")
 })
 
-test("highest_win_rate_role이 추가돼도 기존 stats·title 필드는 그대로 나온다", async () => {
+test("highest_win_rate_role이 추가돼도 기존 stats·닉네임은 그대로 나온다", async () => {
   resetStore()
   useUserProfileStore.setState({
     data: { ...BASE_PROFILE_ROW, highest_win_rate_role: "주치의" },
@@ -116,7 +116,7 @@ test("highest_win_rate_role이 추가돼도 기존 stats·title 필드는 그대
 
   const { result } = renderHook(() => useMyProfile())
 
-  assert.deepEqual(result.current.profile, { nickname: "가면술사", title: "무자비한 광대" })
+  assert.deepEqual(result.current.profile, { nickname: "가면술사" })
   assert.deepEqual(result.current.stats, [
     { label: "전체 판수", value: "1,245" },
     { label: "승률", value: "66.7%" },

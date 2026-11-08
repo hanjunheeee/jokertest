@@ -238,7 +238,7 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
         findOne: async ({ where }) => {
             const stats = committed.user_stats.get(where.uuid);
             if (!stats) return null;
-            return { nickname: `nick-${where.uuid}`, profile_image_url: null, UserStat: { ...stats, reputation: 0, title: "신참" } };
+            return { nickname: `nick-${where.uuid}`, profile_image_url: null, UserStat: { ...stats } };
         },
     };
 
@@ -325,8 +325,9 @@ test("AC-01: 저장 후 프로필 조회에 stats 변경이 반영된다", async
 
     const body = await readProfile("u1");
     assert.equal(body.success, true);
-    assert.equal(body.data.total_games, 1);
+    assert.equal(body.data.total_games, 4, "판 수는 user_stats 그대로 (사용자 결정 2026-11-09)");
     assert.equal(body.data.account_win_rate, 1, "시민 승리 한 판이면 계정 승률은 1이다");
+    assert.equal(Object.hasOwn(body.data, "title"), false, "칭호는 지움");
     assert.equal(body.data.survival_count, 2);
     assert.equal(body.data.most_played_role, "DOCTOR");
     assert.equal(Object.hasOwn(body.data, "reputation"), false, "F-30 AC-04: 명성은 응답에서 제거됐다");

@@ -84,7 +84,7 @@ test("F-21(A-10): 캐시가 있어도 화면 진입은 서버를 한 번 다시 
   myPage.unmount()
 })
 
-test("profile은 닉네임과 title만 담고 명성 필드를 더 이상 만들지 않는다", () => {
+test("profile은 닉네임만 담고 칭호·명성 필드를 만들지 않는다 (칭호 삭제, 사용자 결정 2026-11-09)", () => {
   resetStore()
   useUserProfileStore.setState({ data: PROFILE_ROW, loading: false })
 
@@ -92,7 +92,6 @@ test("profile은 닉네임과 title만 담고 명성 필드를 더 이상 만들
 
   assert.deepEqual(result.current.profile, {
     nickname: "가면술사",
-    title: "무자비한 광대",
   })
   assert.equal("reputationLabel" in result.current.profile, false)
   assert.equal("reputationValue" in result.current.profile, false)

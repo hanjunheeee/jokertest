@@ -294,7 +294,7 @@ test("A-11: getMyProfile은 most_played_role을 그대로 유지하면서 highes
         ? {
             nickname: "닉1",
             profile_image_url: null,
-            UserStat: { reputation: 10, title: "신참", total_games: 5, survival_count: 3, execution_count: 1, most_played_role: "CITIZEN" },
+            UserStat: { total_games: 5, survival_count: 3, execution_count: 1, most_played_role: "CITIZEN" },
         }
         : null);
     t.after(() => { userRepository.getMyProfile = originalUserRepo; });
@@ -314,7 +314,7 @@ test("A-11: 전적이 없는 계정은 highest_win_rate_role이 null이다", asy
     const originalUserRepo = userRepository.getMyProfile;
     userRepository.getMyProfile = async () => ({
         nickname: "닉1", profile_image_url: null,
-        UserStat: { reputation: 0, title: "신참", total_games: 0, survival_count: 0, execution_count: 0, most_played_role: null },
+        UserStat: { total_games: 0, survival_count: 0, execution_count: 0, most_played_role: null },
     });
     t.after(() => { userRepository.getMyProfile = originalUserRepo; });
 
@@ -329,7 +329,6 @@ const stubProfileUser = (t, overrides = {}) => {
             nickname: "닉1",
             profile_image_url: null,
             UserStat: {
-                title: "신참",
                 total_games: 999,
                 survival_count: 3,
                 execution_count: 1,
@@ -344,7 +343,7 @@ const stubProfileUser = (t, overrides = {}) => {
 const getMyProfileData = async (req = { user: { uuid: "u1" } }) =>
     (await callController(profileController.getMyProfile, req)).body.data;
 
-test("F-30 AC-02: 표시 판수·승률은 계정 전체 유효 종료 경기의 판수·승수다(최고 직업 승률도 직업별 평균도 아니다)", async (t) => {
+test("F-30 AC-02: 승률은 계정 전체 유효 종료 경기의 승수/판수다(최고 직업 승률도 직업별 평균도 아니다)", async (t) => {
     const fixture = setupFixtureDb(t);
     stubProfileUser(t);
 
@@ -357,12 +356,11 @@ test("F-30 AC-02: 표시 판수·승률은 계정 전체 유효 종료 경기의
 
     const data = await getMyProfileData();
 
-    assert.equal(data.total_games, 3);
     assert.equal(data.account_win_rate, 2 / 3);
     assert.equal(data.highest_win_rate_role, "광대");
     assert.notEqual(data.account_win_rate, 1, "특정 직업의 최고 승률을 계정 승률로 쓰면 안 된다");
     assert.notEqual(data.account_win_rate, 0.75, "직업별 승률의 평균(0.5·1.0)을 계정 승률로 쓰면 안 된다");
-    assert.notEqual(data.total_games, 999);
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
 });
 
 test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 경기·타 계정 행은 들어가지 않는다", async (t) => {
@@ -380,7 +378,7 @@ test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 
     fixture.addPlayer(playerRow("abort-1", "u1", "GUARD", false, false));
 
     let data = await getMyProfileData();
-    assert.equal(data.total_games, 4);
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 1 / 2);
 
     fixture.addPlayer(playerRow("abort-1", "u1", "DOCTOR", null, true));
@@ -390,14 +388,14 @@ test("F-30 AC-02: 중단 이탈자의 패배는 포함되고, 잔류자·개발 
     fixture.addPlayer(playerRow("no-such-game", "u1", "CITIZEN", true));
 
     data = await getMyProfileData();
-    assert.equal(data.total_games, 4, "잔류자·개발 경기·타 계정·JOIN 대상 없는 행이 표시 판수에 섞였다");
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 1 / 2);
 
     fixture.addGame("legacy-1", {});
     fixture.addPlayer(playerRow("legacy-1", "u1", "CITIZEN", true));
 
     data = await getMyProfileData();
-    assert.equal(data.total_games, 5);
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 3 / 5);
 });
 
@@ -411,16 +409,16 @@ test("F-30 AC-02: DB의 0/1 표현도 boolean과 같은 판수·승률을 만든
     fixture.addPlayer(playerRow("g2", "u1", "CITIZEN", 0));
 
     const data = await getMyProfileData();
-    assert.equal(data.total_games, 2);
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 0.5);
 });
 
-test("F-30 AC-03: 전적이 전혀 없는 계정은 0판·승률 0이다(원본 판수 999는 쓰지 않는다)", async (t) => {
+test("F-30 AC-03: 전적이 전혀 없는 계정은 0판·승률 0이다(승률 0, 판 수는 user_stats 그대로)", async (t) => {
     setupFixtureDb(t);
     stubProfileUser(t);
 
     const data = await getMyProfileData();
-    assert.equal(data.total_games, 0);
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 0, "0판에서 0으로 나눈 NaN이 나가면 안 된다");
     assert.equal(Number.isFinite(data.account_win_rate), true);
 });
@@ -435,7 +433,7 @@ test("F-30 AC-04: 프로필 응답에 reputation 키 자체가 없고 나머지 
 
     assert.equal(Object.hasOwn(data, "reputation"), false, "명성이 아직 응답에 실린다");
     assert.equal(data.nickname, "닉1");
-    assert.equal(data.title, "신참");
+    assert.equal(Object.hasOwn(data, "title"), false, "칭호는 지움");
     assert.equal(data.survival_count, 3);
     assert.equal(data.execution_count, 1);
     assert.equal(data.most_played_role, "CITIZEN");
@@ -455,7 +453,7 @@ test("F-30 AC-02: 내 프로필도 req.user.uuid만 본다 — body/query의 다
         query: { user_id: "victim" },
     });
 
-    assert.equal(data.total_games, 1, "다른 계정의 전적이 내 표시 판수에 들어왔다");
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 0);
 });
 
@@ -512,7 +510,7 @@ test("F-30 AC-02: buildGameResultRecord가 만든 정상·중단 레코드가 �
     }
 
     const data = await getMyProfileData();
-    assert.equal(data.total_games, 2);
+    assert.equal(data.total_games, 999, "판 수는 user_stats 그대로");
     assert.equal(data.account_win_rate, 0.5);
 
     const stayerStats = await roleStatisticsQueries.getMyRoleStatistics("u2");

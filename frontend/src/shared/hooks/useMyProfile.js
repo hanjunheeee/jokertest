@@ -1,4 +1,4 @@
-// 내 프로필 요약(닉네임·칭호·판수·승률·대표 직업 문구)을 사용자 스토어에서 읽고, 창으로 돌아오면 다시 불러옴
+// 내 프로필 요약(닉네임·판수·승률·대표 직업 문구)을 사용자 스토어에서 읽고, 창으로 돌아오면 다시 불러옴
 // lobby 프로필 영역(LobbyPage)과 마이페이지(MyPageLayout)가 씀
 import { useEffect } from "react"
 import { useUserProfileStore } from "../../domains/user/store/user.store.js"
@@ -43,7 +43,6 @@ export function useMyProfile() {
 
     const profile = {
         nickname: data.nickname,
-        title:    data.title,
     }
 
     const stats = [

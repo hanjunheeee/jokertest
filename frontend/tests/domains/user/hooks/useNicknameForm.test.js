@@ -126,7 +126,7 @@ test("AC-03: 닉네임 변경 성공 시 재요청 없이 auth store와 마이�
   await waitFor(() => assert.equal(profileResult.current.profile.nickname, "변경후닉"))
 
   assert.deepEqual(profileResult.current.stats, EXPECTED_STATS)
-  assert.equal(profileResult.current.profile.title, "신참")
+  assert.equal("title" in profileResult.current.profile, false)
 })
 
 test("AC-03: 닉네임 변경 실패 시 auth store와 마이페이지 표시 모두 변경 전 닉네임을 그대로 유지한다", async () => {
@@ -144,5 +144,5 @@ test("AC-03: 닉네임 변경 실패 시 auth store와 마이페이지 표시 �
   assert.equal(useAuthStore.getState().user.nickname, "변경전닉", "실패 시 auth store는 바뀌면 안 됩니다")
   assert.equal(profileResult.current.profile.nickname, "변경전닉", "실패 시 마이페이지 표시도 바뀌면 안 됩니다")
   assert.deepEqual(profileResult.current.stats, EXPECTED_STATS)
-  assert.equal(profileResult.current.profile.title, "신참")
+  assert.equal("title" in profileResult.current.profile, false)
 })

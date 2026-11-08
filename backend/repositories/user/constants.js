@@ -10,7 +10,6 @@ const UNIQUE_CONFLICTS = [
 
 // 통계 행이 없거나 칸이 비었을 때 보여 줄 값 (user_stats 표 기본값과 같게)
 const STATS_DEFAULTS = {
-    title:            '신참',
     total_games:      0,
     survival_count:   0,
     execution_count:  0,

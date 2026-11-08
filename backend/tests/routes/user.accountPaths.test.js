@@ -282,7 +282,6 @@ test("user_stats 행이 없는 계정도 프로필 조회가 200으로 성공한
     assert.deepEqual(body.data, {
         nickname:          "통계없음",
         profile_image_url: null,
-        title:             "신참",
         total_games:       0,
         account_win_rate:  0,
         survival_count:    0,
@@ -293,7 +292,7 @@ test("user_stats 행이 없는 계정도 프로필 조회가 200으로 성공한
     assert.equal(Object.hasOwn(body.data, "reputation"), false);
 });
 
-test("user_stats가 있어도 표시 판수·승률은 전적 조회 모집단에서 나오고 명성 키는 없다", async (t) => {
+test("판 수는 user_stats 그대로, 승률은 전적 조회 모집단에서, 칭호·명성 키는 없다 (사용자 결정 2026-11-09)", async (t) => {
     stubDb(t, {
         findOne: async () => ({
             nickname:          "통계있음",
@@ -309,16 +308,16 @@ test("user_stats가 있어도 표시 판수·승률은 전적 조회 모집단�
     const body = await (await getProfile(base)).json();
 
     assert.equal(Object.hasOwn(body.data, "reputation"), false, "명성이 아직 응답에 실린다");
-    assert.equal(body.data.total_games, 0, "원본 UserStats.total_games를 그대로 흘려보내면 안 된다");
+    assert.equal(body.data.total_games, 10, "판 수는 user_stats 기준");
     assert.equal(body.data.account_win_rate, 0);
-    assert.equal(body.data.title, "베테랑");
+    assert.equal(Object.hasOwn(body.data, "title"), false, "칭호는 지움");
     assert.equal(body.data.survival_count, 7);
     assert.equal(body.data.execution_count, 3);
     assert.equal(body.data.most_played_role, "마피아");
     assert.equal(body.data.profile_image_url, "https://example.com/a.png");
 });
 
-test("F-30 AC-02: 인증 계정의 확정 전적만 합산되어 표시 판수·승률이 나간다", async (t) => {
+test("F-30 AC-02: 승률은 인증 계정의 확정 전적만 합산, 판 수는 user_stats", async (t) => {
     const seenOptions = [];
     stubDb(t, {
         findOne: async () => ({
@@ -339,7 +338,7 @@ test("F-30 AC-02: 인증 계정의 확정 전적만 합산되어 표시 판수·
 
     const body = await (await getProfile(base)).json();
 
-    assert.equal(body.data.total_games, 3);
+    assert.equal(body.data.total_games, 999);
     assert.equal(body.data.account_win_rate, 2 / 3, "최고 직업 승률(1.0)이나 직업별 평균(0.75)이 아니다");
     assert.equal(Object.hasOwn(body.data, "reputation"), false);
 
@@ -360,7 +359,7 @@ test("Sequelize 인스턴스로 넘어온 통계도 평탄화되어 노출된다
     const body = await (await getProfile(base)).json();
 
     assert.equal(Object.hasOwn(body.data, "reputation"), false);
-    assert.equal(body.data.title, "중수");
+    assert.equal(Object.hasOwn(body.data, "title"), false);
     assert.equal(body.data.total_games, 0, "누락된 필드는 기본값으로 채워져야 합니다");
     assert.equal(body.data.account_win_rate, 0);
 });
