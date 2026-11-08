@@ -42,7 +42,7 @@ export const router = createBrowserRouter([
           { path: "/game-matching", element: <GameMatchingPage /> },
           { path: "/ingame", element: <InGamePage /> },
           { path: "/gameresult", element: <GameResultPage /> },
-          ...(import.meta.env.DEV
+          ...(import.meta.env?.DEV
             ? [{ path: "/dev/tribunal-presentation", element: <TribunalPresentationPreviewPage /> }]
             : []),
           { path: "/setting", element: <SettingPage /> },

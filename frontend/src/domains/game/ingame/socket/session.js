@@ -1,5 +1,5 @@
-// 판 진행 소켓: 공개 사건 받기 묶음, 스냅샷 묻기, 판 나가기·역할 확인·이모지 보내기
-// 판 진행 이벤트·스냅샷 동기화·나가기·추방 확인·사망 공개·역할 확인·이모지 훅이 사용
+// 판 진행 소켓: 공개 사건 받기 묶음, 스냅샷 묻기, 판 나가기·이모지 보내기
+// 판 진행 이벤트·스냅샷 동기화·나가기·추방 확인·사망 공개·이모지 훅이 사용 (역할 확인은 서버가 안 기다려 안 보냄)
 import { onNightTurn } from "./night.js"
 
 // 판 진행 공개 사건과 받을 손잡이 이름 (등록 순서 그대로 둠)
@@ -10,7 +10,6 @@ const SESSION_EVENTS = [
   ["player_eliminated", "playerEliminated"],
   ["session_participation_changed", "participationChanged"],
   ["session_self_progress", "selfProgress"],
-  ["game_kicked", "gameKicked"],
   ["room_kicked", "roomKicked"],
   ["account_cache_invalidated", "cacheInvalidated"],
   ["game_phase_changed", "phaseChanged"],
@@ -58,11 +57,6 @@ export function fetchSnapshot(socket, ms, gameId) {
 // 판 나가기 요청 (응답은 콜백으로 받음)
 export function emitLeave(socket, gameId, onAck) {
   socket.emit("leave_game_session", { gameId }, onAck)
-}
-
-// 역할 확인 알림 (응답 기다림)
-export function emitRoleRevealAck(socket, ms, gameId) {
-  return socket.timeout(ms).emitWithAck("acknowledge_role_reveal", { gameId })
 }
 
 // 이모지 보내기 (응답 기다림, 시간 제한 없음)

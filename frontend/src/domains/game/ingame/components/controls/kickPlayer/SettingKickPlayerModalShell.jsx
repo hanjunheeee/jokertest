@@ -1,5 +1,5 @@
 // 추방 창 틀: 화면 덮개·투표 창 틀 그림·제목·닫기 버튼 (body에 띄움)
-// 설정 추방 창(SettingKickPlayerModal)·GameMatchingPage가 사용
+// 대기방 추방 창(GameMatchingPage)이 사용 (판 안 추방 창은 기능을 빼며 지움)
 import { useRef } from "react"
 import { createPortal } from "react-dom"
 import { INGAME_KICK_PLAYER_MODAL_ASSETS } from "../../../constants/controls/kickPlayer/ingameKickPlayerAssets.js"

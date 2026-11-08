@@ -88,8 +88,8 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     }
   }, [])
 
-  // 보내기·결과 확인은 인게임과 같은 강퇴 요청 훅에 맡김 (scope ROOM)
-  const kick = useKickPlayerRequest({ scope: "ROOM", buildRequest, getMembershipScopeId, verifyMembership })
+  // 보내기·결과 확인은 강퇴 요청 훅에 맡김
+  const kick = useKickPlayerRequest({ buildRequest, getMembershipScopeId, verifyMembership })
 
   // 강퇴 대상: 나를 뺀, 소속 id가 있는 사람
   const targets = useMemo(() => (players ?? [])

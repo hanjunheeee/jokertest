@@ -1,8 +1,8 @@
-// 판 진행 이벤트 손잡이 (판 끝·추방·방·계정·이모지): 판 정리·화면 이동·캐시·말풍선
-// 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦 (끊김 때는 판 정리 안 함, 판 정리는 판 끝·추방·나가기·판 없음 응답만)
+// 판 진행 이벤트 손잡이 (판 끝·대기방 추방·방·계정·이모지): 판 정리·화면 이동·캐시·말풍선
+// 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦 (끊김 때는 판 정리 안 함, 판 정리는 판 끝·나가기·판 없음 응답만, 판 안 추방은 기능을 뺌)
 import { useMatchingStore, isCurrentRoomKickEvent } from "../../../matching/store/matchingStore.js"
 import { rememberRoomReady } from "../../../shared/utils/partyMatchingRejoin.js"
-import { isCurrentGameKickEvent, useInGameStore } from "../../store/ingameStore.js"
+import { useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
 import { createGameEndedHandler, createSessionEndFinalizer } from "../../utils/sessionEnd.js"
 import { currentAccountId, refreshCaches, isRegistrationScopeCurrent } from "./scope.js"
@@ -19,7 +19,7 @@ export function buildFinalizer(navigate) {
   })
 }
 
-// registered: 구독을 붙인 때의 수신 범위 (판 끝·추방·캐시는 범위 대신 판 id·계정으로 거름)
+// registered: 구독을 붙인 때의 수신 범위 (판 끝·대기방 추방·캐시는 범위 대신 판 id·계정으로 거름)
 export function createRoomHandlers(registered, navigate) {
   const isCurrent = () => isRegistrationScopeCurrent(registered)
 
@@ -28,17 +28,6 @@ export function createRoomHandlers(registered, navigate) {
     getCurrentGameId: () => useInGameStore.getState().gameId,
     finalize: buildFinalizer(navigate),
   })
-
-  // 내가 지금 판에서 추방됨: 판 비우고, 방에도 없으면 멀티 화면으로
-  const gameKicked = (payload) => {
-    if (!isPlainObject(payload)) return
-    const accountId = currentAccountId()
-    if (accountId === null || payload.targetUuid !== accountId) return
-    if (!isCurrentGameKickEvent(useInGameStore.getState(), payload)) return
-    useInGameStore.getState().clearGame()
-    if (useMatchingStore.getState().isInRoom) return
-    navigate("/multiplay", { replace: true })
-  }
 
   // 내가 지금 방에서 추방됨: 방 비우고, 판에도 없으면 멀티 화면으로
   const roomKicked = (payload) => {
@@ -75,5 +64,5 @@ export function createRoomHandlers(registered, navigate) {
     rememberRoomReady(payload)
   }
 
-  return { gameEnded, gameKicked, roomKicked, cacheInvalidated, emojiShown, partyRoomReady }
+  return { gameEnded, roomKicked, cacheInvalidated, emojiShown, partyRoomReady }
 }

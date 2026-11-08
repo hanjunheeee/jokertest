@@ -15,13 +15,6 @@ export const PREVIEW_AS_HOST = false
 
 export const INGAME_SETTING_ROOM_ROWS = [
   {
-    kind: "action",
-    id: "kick-player",
-    title: "플레이어 추방",
-    description: "추방할 플레이어를 선택 후 추방할 수 있습니다.",
-    actionLabel: "추방하기",
-  },
-  {
     kind: "checkbox",
     id: "keep-settings-next-game",
     title: "다음 게임 동일 설정 유지",

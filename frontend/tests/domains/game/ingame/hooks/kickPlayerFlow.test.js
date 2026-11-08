@@ -59,8 +59,6 @@ const { useKickPlayerRequest, KICK_REQUEST_STATUS } = await import("../../../../
 const { useInGameSettingIsHost } = await import("../../../../../src/domains/game/ingame/hooks/useInGameSettingIsHost.js")
 const { useInGameDayVoteSubmit } = await import("../../../../../src/domains/game/ingame/hooks/useInGameDayVoteSubmit.js")
 const { applySessionSnapshotPure } = await import("../../../../../src/domains/game/ingame/utils/snapshot/applySnapshot.js")
-const { default: SettingKickPlayerModal } = await import(
-  "../../../../../src/domains/game/ingame/components/controls/kickPlayer/SettingKickPlayerModal.jsx")
 const { InGameActionProvider } = await import("../../../../../src/domains/game/ingame/pages/InGamePage.jsx")
 const { InGamePlayerSessionProvider } = await import("../../../../../src/domains/game/ingame/components/InGamePlayerSessionProvider.jsx")
 const { default: InGamePlayerBoard } = await import("../../../../../src/domains/game/ingame/components/board/InGamePlayerBoard.jsx")
@@ -123,7 +121,6 @@ function mountKick({ verifyMembership = null } = {}) {
     }
   }
   return renderHook(() => useKickPlayerRequest({
-    scope: "GAME",
     buildRequest,
     getMembershipScopeId: () => useInGameStore.getState().gameId ?? null,
     verifyMembership,
@@ -155,163 +152,8 @@ test.afterEach(() => {
   setSocket(null)
 })
 
-const { INGAME_KICK_PLAYER_MODAL_COPY } = await import(
-  "../../../../../src/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js")
-
-function mountRealModal() {
-  const view = render(createElement(SettingKickPlayerModal, { open: true, onClose: () => {} }))
-  return view
-}
-
 const byTestId = (id) => document.body.querySelector(`[data-testid="${id}"]`)
 
-function clickRowKick(nickname) {
-  const buttons = [...document.body.querySelectorAll("li button")]
-  const row = buttons.find((b) => b.closest("li")?.textContent?.includes(nickname))
-  assert.ok(row, `${nickname} 행의 추방 버튼을 찾지 못했다`)
-  assert.equal(row.getAttribute("aria-label"), INGAME_KICK_PLAYER_MODAL_COPY.kickActionLabel)
-  act(() => { row.click() })
-}
-
-function clickTestId(id) {
-  const el = byTestId(id)
-  assert.ok(el, `${id}를 찾지 못했다`)
-  act(() => { el.click() })
-}
-
-function driveModalToHeldSnapshotRefresh(socket) {
-  mountRealModal()
-  clickRowKick("대상")
-  clickTestId("kick-confirm-accept")
-  const sent = socket.emitted.find((e) => e.event === "kick_game_player")
-  assert.ok(sent, "kick_game_player가 나가지 않았다")
-
-  clickTestId("kick-lookup-result")
-  const lookup = socket.emitted.find((e) => e.event === "get_kick_result")
-  assert.ok(lookup, "결과 조회가 나가지 않았다")
-  act(() => { lookup.ack({ ok: true, status: "UNKNOWN" }) })
-
-  const refresh = socket.emitted.find((e) => e.event === "get_session_snapshot")
-  assert.ok(refresh, "UNKNOWN 뒤 실제 스냅샷 재확인이 시작되지 않았다")
-  assert.ok(byTestId("kick-awaiting-resolution"), "재확인 대기 안내가 없다")
-  return refresh
-}
-
-function serverSnapshot(overrides = {}) {
-  return {
-    ok: true,
-    gameId: "game-1",
-    phase: "DAY",
-    dayPhase: "DAY_DISCUSSION",
-    dayIndex: 1,
-    hostUuid: HOST,
-    roomId: "room-1",
-    roomInstanceId: "inst-1",
-    bootEpoch: "boot-1",
-    participationRevision: 1,
-    players: [
-      { uuid: HOST, nickname: "호스트", isAlive: true, isConnected: true, isParticipating: true, membershipId: "mem-host" },
-      { uuid: TARGET, nickname: "대상", isAlive: true, isConnected: true, isParticipating: true, membershipId: "mem-target" },
-    ],
-    self: { uuid: HOST, nickname: "호스트", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
-    ...overrides,
-  }
-}
-
-async function releaseRefresh(refresh, response) {
-  await act(async () => { refresh.ack(response) })
-}
-
-test("AC-04: 실제 모달의 재확인은 아무것도 바뀌지 않았을 때 스냅샷을 적용하고 잠금을 푼다", async () => {
-  const socket = setUp()
-  const refresh = driveModalToHeldSnapshotRefresh(socket)
-
-  await releaseRefresh(refresh, serverSnapshot({
-    participationRevision: 2,
-    players: serverSnapshot().players.map((p) =>
-      (p.uuid === TARGET ? { ...p, isParticipating: false } : p)),
-  }))
-
-  const state = useInGameStore.getState().state
-  assert.equal(state.participationRevision, 2, "정상 재확인이 적용되지 않았다")
-  assert.equal(state.players.find((p) => p.uuid === TARGET).isParticipating, false)
-  assert.equal(byTestId("kick-awaiting-resolution"), null, "성공한 재확인 뒤에도 잠금이 남았다")
-})
-
-test("AC-04: 반영되지 않은 응답은 재확인 성공이 아니다(잠금이 풀리지 않는다)", async () => {
-  const socket = setUp()
-  const refresh = driveModalToHeldSnapshotRefresh(socket)
-
-  await releaseRefresh(refresh, serverSnapshot({
-    participationRevision: 3,
-    players: [serverSnapshot().players[0]],
-  }))
-
-  assert.equal(useInGameStore.getState().state.participationRevision, 0, "거부돼야 하는 응답이 적용됐다")
-  assert.ok(byTestId("kick-awaiting-resolution"), "반영되지 않았는데 잠금이 풀렸다")
-})
-
-test("AC-05: 같은 Socket이 재연결되면(id만 새로) 실제 모달의 재확인 ACK는 적용되지 않는다", async () => {
-  const socket = setUp()
-  const refresh = driveModalToHeldSnapshotRefresh(socket)
-
-  socket.id = "sock-reconnected"
-
-  const before = useInGameStore.getState().state
-  await releaseRefresh(refresh, serverSnapshot({ participationRevision: 9 }))
-
-  assert.equal(useInGameStore.getState().state, before, "재연결 뒤 옛 ACK가 스냅샷을 적용했다")
-  assert.ok(byTestId("kick-awaiting-resolution"), "적용되지 않았는데 잠금이 풀렸다")
-})
-
-test("AC-05: A→B→A 계정 전이 뒤 도착한 실제 모달의 재확인 ACK는 적용되지 않는다", async () => {
-  const socket = setUp()
-  const refresh = driveModalToHeldSnapshotRefresh(socket)
-
-  act(() => useAuthStore.getState().logout())
-  act(() => useAuthStore.getState().login({ uuid: HOST }))
-
-  const before = useInGameStore.getState().state
-  await releaseRefresh(refresh, serverSnapshot({ participationRevision: 9 }))
-
-  assert.equal(useInGameStore.getState().state, before, "계정 전이 뒤 옛 ACK가 스냅샷을 적용했다")
-})
-
-test("AC-05: 재확인을 보낸 뒤 더 새로운 참여 사건이 반영되면 옛 ACK는 적용되지 않는다", async () => {
-  const socket = setUp()
-  const refresh = driveModalToHeldSnapshotRefresh(socket)
-
-  act(() => useInGameStore.getState().applyParticipationChanged({
-    gameId: "game-1",
-    participationRevision: 5,
-    hostUuid: HOST,
-    players: [
-      { uuid: HOST, membershipId: "mem-host", isParticipating: true },
-      { uuid: TARGET, membershipId: "mem-target", isParticipating: false },
-    ],
-  }))
-  const afterEvent = useInGameStore.getState().state
-  assert.equal(afterEvent.participationRevision, 5)
-
-  await releaseRefresh(refresh, serverSnapshot({ participationRevision: 6 }))
-
-  assert.equal(useInGameStore.getState().state, afterEvent, "더 새로운 참여 사건이 옛 ACK에 덮였다")
-  assert.equal(
-    useInGameStore.getState().state.players.find((p) => p.uuid === TARGET).isParticipating, false,
-    "옛 ACK가 참여 종료를 되돌렸다",
-  )
-})
-
-test("AC-05: 다른 판을 가리키는 재확인 응답은 현재 판에 적용되지 않는다", async () => {
-  const socket = setUp()
-  const refresh = driveModalToHeldSnapshotRefresh(socket)
-
-  const before = useInGameStore.getState().state
-  await releaseRefresh(refresh, serverSnapshot({ gameId: "game-9" }))
-
-  assert.equal(useInGameStore.getState().state, before)
-  assert.ok(byTestId("kick-awaiting-resolution"))
-})
 
 test("AC-02: 확인 취소는 소켓 요청을 한 번도 보내지 않고 상태를 되돌린다", () => {
   const socket = setUp()
@@ -328,7 +170,7 @@ test("AC-02: 확인 취소는 소켓 요청을 한 번도 보내지 않고 상�
   assert.equal(socket.emitted.length, 0)
 })
 
-test("AC-02: 확인 승인은 서버 값만으로 만든 payload를 kick_game_player로 정확히 한 번 보낸다", () => {
+test("AC-02: 확인 승인은 서버 값만으로 만든 payload를 kick_room_player로 정확히 한 번 보낸다", () => {
   const socket = setUp()
   const { result } = mountKick()
 
@@ -337,7 +179,7 @@ test("AC-02: 확인 승인은 서버 값만으로 만든 payload를 kick_game_pl
 
   assert.equal(socket.emitted.length, 1)
   const sent = socket.emitted[0]
-  assert.equal(sent.event, "kick_game_player")
+  assert.equal(sent.event, "kick_room_player")
   assert.deepEqual(Object.keys(sent.payload).sort(), [
     "bootEpoch", "gameId", "requestId", "requesterMembershipId",
     "roomId", "roomInstanceId", "targetMembershipId", "targetUuid",
@@ -618,7 +460,7 @@ test("AC-02: 같은 렌더 안에서 confirmKick을 두 번 불러도 요청은 
   })
 
   assert.equal(socket.emitted.length, 1)
-  assert.equal(socket.emitted[0].event, "kick_game_player")
+  assert.equal(socket.emitted[0].event, "kick_room_player")
 })
 
 test("AC-04: UNKNOWN을 받으면 확인이 풀려 같은 확인으로 두 번째 추방이 나가지 않는다", () => {
@@ -693,7 +535,7 @@ test("AC-04: 재확인 대기 중이라도 다음 조회가 KICKED를 확정하�
   act(() => result.current.requestConfirm(currentTargets()[0]))
   act(() => result.current.confirmKick(currentTargets()))
   const first = socket.emitted[0]
-  assert.equal(first.event, "kick_game_player")
+  assert.equal(first.event, "kick_room_player")
 
   act(() => result.current.lookupResult())
   act(() => socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }))
@@ -727,7 +569,7 @@ test("AC-04: 재확인 대기 중이라도 다음 조회가 KICKED를 확정하�
   act(() => result.current.confirmKick(currentTargets()))
 
   assert.equal(socket.emitted.length, 4)
-  assert.equal(socket.emitted[3].event, "kick_game_player")
+  assert.equal(socket.emitted[3].event, "kick_room_player")
   assert.equal(socket.emitted[3].payload.targetUuid, OTHER)
   assert.equal(socket.emitted[3].payload.targetMembershipId, "mem-other")
   assert.notEqual(socket.emitted[3].payload.requestId, first.payload.requestId)
@@ -1114,7 +956,7 @@ test("V-2(AC-03): 낮 투표 구간에는 투표 오버레이만 뜨고 추방 �
   assert.ok(menu, "전제: 낮 투표 구간에는 카드 오버레이가 열려야 한다")
   assert.ok(cardMenuItem(menu, INGAME_CARD_MENU_DAY_VOTE_LABEL), "전제: 투표하기가 있어야 한다")
   assert.equal(byTestId("kick-confirm"), null, "카드에서 추방 확인 대화가 열렸다")
-  assert.equal(socket.emitted.filter((e) => e.event === "kick_game_player").length, 0)
+  assert.equal(socket.emitted.filter((e) => e.event === "kick_room_player").length, 0)
 })
 
 function setUpCardWithFallbackHost({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION" } = {}) {

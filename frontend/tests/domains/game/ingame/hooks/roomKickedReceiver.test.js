@@ -88,38 +88,6 @@ function kickedEvent(overrides = {}) {
   }
 }
 
-function gameKickedEvent(overrides = {}) {
-  return {
-    gameId: "game-9",
-    roomId: "room-1",
-    roomInstanceId: "inst-1",
-    bootEpoch: "boot-1",
-    targetUuid: ME,
-    targetMembershipId: "g-me",
-    hostUuid: OTHER,
-    requestId: "kick-g-1",
-    ...overrides,
-  }
-}
-
-function seedGame(overrides = {}) {
-  act(() => {
-    useAuthStore.setState({ user: { uuid: ME }, isLoggedIn: true })
-    useInGameStore.getState().setGamePayload({
-      gameId: "game-9",
-      state: {
-        id: "game-9", phase: "DAY", dayIndex: 1, hostUuid: OTHER,
-        roomId: "room-1", roomInstanceId: "inst-1", bootEpoch: "boot-1",
-        players: [
-          { uuid: OTHER, nickname: "방장", isAlive: true, isParticipating: true, membershipId: "g-other" },
-          { uuid: ME, nickname: "나", isAlive: true, isParticipating: true, membershipId: "g-me" },
-        ],
-        self: { uuid: ME, nickname: "나", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
-        ...overrides,
-      },
-    })
-  })
-}
 
 function installCacheRecorder() {
   const calls = []
@@ -206,96 +174,6 @@ test("AC-05: 대기방 추방은 진행 중인 게임 상태도, 그 게임을 �
   assert.equal(useMatchingStore.getState().isInRoom, false)
   assert.equal(useInGameStore.getState().gameId, "game-9", "그 방이 소유하지 않은 게임은 그대로다")
   assert.deepEqual(view.paths, ["/game-matching"], "별개인 진행 중 게임의 화면에서 쫓아냈다")
-  view.unmount()
-})
-
-test("AC-02: 확정된 진행 중 추방은 그 게임만 비우고 로비로 한 번 이동한다", () => {
-  const socket = createFakeSocket()
-  seedGame()
-  act(() => setSocket(socket))
-  const view = mountReceiver()
-
-  act(() => socket.deliver("game_kicked", gameKickedEvent()))
-
-  assert.equal(useInGameStore.getState().gameId, null)
-  assert.equal(useInGameStore.getState().state, null)
-  assert.deepEqual(view.paths, ["/game-matching", "/multiplay"])
-
-  act(() => socket.deliver("game_kicked", gameKickedEvent()))
-  assert.deepEqual(view.paths, ["/game-matching", "/multiplay"])
-  view.unmount()
-})
-
-test("AC-05: 옛 게임의 추방 사건이 그 사이 들어간 **새 대기방**까지 지우지 않는다", () => {
-  const socket = createFakeSocket()
-  seedGame()
-  seedRoom(serverRoom({ roomId: "room-2", roomInstanceId: "inst-2" }))
-  act(() => setSocket(socket))
-  const view = mountReceiver()
-
-  act(() => socket.deliver("game_kicked", gameKickedEvent()))
-
-  const room = useMatchingStore.getState()
-  assert.equal(room.isInRoom, true, "옛 게임 사건이 새 대기방 소속을 지웠다")
-  assert.equal(room.roomId, "room-2")
-  assert.equal(room.players.length, 2)
-  assert.equal(useInGameStore.getState().gameId, null)
-  assert.deepEqual(view.paths, ["/game-matching"], "옛 게임 사건이 새 대기방 화면에서 쫓아냈다")
-  view.unmount()
-})
-
-test("AC-05/AC-06: 신원(방 인스턴스·서버 기동·내 소속)이 하나라도 빠진 추방 사건은 적용되지 않는다", () => {
-  const socket = createFakeSocket()
-  seedGame()
-  act(() => setSocket(socket))
-  const view = mountReceiver()
-
-  const incomplete = [
-    gameKickedEvent({ roomInstanceId: undefined }),
-    gameKickedEvent({ roomInstanceId: "" }),
-    gameKickedEvent({ bootEpoch: undefined }),
-    gameKickedEvent({ bootEpoch: null }),
-    gameKickedEvent({ targetMembershipId: undefined }),
-    gameKickedEvent({ gameId: "" }),
-  ]
-  for (const event of incomplete) act(() => socket.deliver("game_kicked", event))
-
-  assert.equal(useInGameStore.getState().gameId, "game-9")
-  assert.deepEqual(view.paths, ["/game-matching"])
-  view.unmount()
-})
-
-test("AC-05/AC-06: 서버가 신원을 싣지 않은 옛 스냅샷 위에서는 어떤 추방 사건도 적용되지 않는다", () => {
-  const socket = createFakeSocket()
-  seedGame({ roomInstanceId: null, bootEpoch: null })
-  act(() => setSocket(socket))
-  const view = mountReceiver()
-
-  act(() => socket.deliver("game_kicked", gameKickedEvent()))
-
-  assert.equal(useInGameStore.getState().gameId, "game-9")
-  assert.deepEqual(view.paths, ["/game-matching"])
-  view.unmount()
-})
-
-test("AC-05/AC-06: 다른 게임·옛 인스턴스·옛 기동·다른 소속·남의 사건은 전부 무시된다", () => {
-  const socket = createFakeSocket()
-  seedGame()
-  act(() => setSocket(socket))
-  const view = mountReceiver()
-
-  const ignored = [
-    gameKickedEvent({ gameId: "game-10" }),
-    gameKickedEvent({ roomInstanceId: "inst-2" }),
-    gameKickedEvent({ bootEpoch: "boot-2" }),
-    gameKickedEvent({ targetMembershipId: "g-me-2" }),
-    gameKickedEvent({ targetUuid: OTHER, targetMembershipId: "g-other" }),
-  ]
-  for (const event of ignored) act(() => socket.deliver("game_kicked", event))
-
-  assert.equal(useInGameStore.getState().gameId, "game-9")
-  assert.equal(useInGameStore.getState().state.players.length, 2)
-  assert.deepEqual(view.paths, ["/game-matching"])
   view.unmount()
 })
 

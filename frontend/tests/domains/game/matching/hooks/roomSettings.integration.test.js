@@ -358,12 +358,9 @@ test("F-23(AC-01/AC-02) · 실제 인게임 방관리 탭에 관전자 항목이
   useAuthStore.setState({ user: { uuid: "host-ingame" }, isLoggedIn: true })
   useInGameStore.setState({ gameId: "game-ingame", hostUuid: "host-ingame" })
 
-  const kicks = []
   let container
   await act(async () => {
-    ;({ container } = render(React.createElement(SettingPanelContent, {
-      onOpenKickPlayer: () => kicks.push("open"),
-    })))
+    ;({ container } = render(React.createElement(SettingPanelContent, {})))
   })
 
   const roomTab = [...container.querySelectorAll("button")]
@@ -374,9 +371,9 @@ test("F-23(AC-01/AC-02) · 실제 인게임 방관리 탭에 관전자 항목이
   assert.equal(container.textContent.includes("관전"), false, "방관리 탭에 관전자 문구가 있다")
   assert.equal(container.querySelector("[aria-label='관전자 허용']"), null, "관전자 체크박스가 남아 있다")
 
-  for (const kept of ["플레이어 추방", "다음 게임 동일 설정 유지"]) {
-    assert.equal(container.textContent.includes(kept), true, `${kept} 항목이 사라졌다`)
-  }
+  assert.equal(container.textContent.includes("다음 게임 동일 설정 유지"), true, "다음 게임 유지 항목이 사라졌다")
+  // 판 안 추방은 기능을 뺌 (대기방 추방만 남김)
+  assert.equal(container.textContent.includes("플레이어 추방"), false, "판 안 추방 줄이 남아 있다")
   // 방 코드는 방관리 줄이 아니라 설정 창 아래 "방 코드 보기" 버튼으로 옮김(창 안에 복사 버튼)
   assert.ok(container.querySelector("[aria-label='방 코드 보기']"), "방 코드 보기 버튼이 사라졌다")
   assert.equal(container.textContent.includes("강제 종료"), false, "취소된 강제 종료가 되살아났다")
@@ -392,9 +389,7 @@ test("F-23(AC-01/AC-02) · 실제 인게임 방관리 탭에 관전자 항목이
 
   const kickButton = [...container.querySelectorAll("button")]
     .find((node) => node.textContent.trim() === "추방하기")
-  assert.ok(kickButton, "추방하기 버튼이 사라졌다")
-  await act(async () => { kickButton.click() })
-  assert.deepEqual(kicks, ["open"], "추방 콜백이 한 번 이어지지 않았다")
+  assert.equal(kickButton, undefined, "판 안 추방하기 버튼이 남아 있다")
 
   useInGameStore.getState().clearGame()
 })
@@ -409,12 +404,12 @@ test("F-23(AC-02) · 설정 항목 정의·폼/요청 키·store 상태 키가 �
     "인게임 설정 탭 목록이 바뀌었다")
   assert.deepEqual(
     INGAME_SETTING_ROOM_ROWS.map((row) => `${row.kind}:${row.id}`),
-    ["action:kick-player", "checkbox:keep-settings-next-game"],
+    ["checkbox:keep-settings-next-game"],
     "인게임 방관리 항목 정의가 바뀌었다",
   )
   assert.deepEqual(
     INGAME_SETTING_ROOM_ROWS.map((row) => row.title),
-    ["플레이어 추방", "다음 게임 동일 설정 유지"],
+    ["다음 게임 동일 설정 유지"],
     "인게임 방관리 항목 문구가 바뀌었다",
   )
 

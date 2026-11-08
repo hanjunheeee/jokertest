@@ -1,5 +1,5 @@
 // 추방 요청 훅: 대상 확인 → 보내기 → 결과(성공·실패·모름) 상태, 결과 다시 묻기
-// 판 추방 훅(useInGameKickFromCard)·대기방 추방 훅(useMatchingRoomKick)이 사용, 보내기는 socket/kick.js (확인·조회는 hooks/kick/)
+// 대기방 추방 훅(useMatchingRoomKick)이 사용 (판 안 추방은 기능을 뺌), 보내기는 socket/kick.js (확인·조회는 hooks/kick/)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -12,9 +12,8 @@ import { lookupKickResult } from "./kick/lookupResult.js"
 export { KICK_EVENTS } from "../socket/kick.js"
 export { KICK_REQUEST_STATUS } from "../constants/ingameKick.js"
 
-// 추방 진행 상태와 고르기·보내기·결과 조회 함수 (scope = GAME 판·ROOM 방)
+// 추방 진행 상태와 고르기·보내기·결과 조회 함수
 export function useKickPlayerRequest({
-  scope,
   buildRequest,
   getMembershipScopeId = () => null,
   verifyMembership = null,
@@ -162,7 +161,7 @@ export function useKickPlayerRequest({
 
     // 옛 응답은 버림, 응답 기한이 지나면 결과 모름(잠금은 그대로, 결과 확인으로 정함)
     // 성공이면 성공, 아니면 서버 코드로 실패 (잠금 풂)
-    emitKick(socket, scope, request, (response) => {
+    emitKick(socket, request, (response) => {
       if (!isStillCurrent()) return
 
       if (response?.timedOut === true) {
@@ -182,7 +181,7 @@ export function useKickPlayerRequest({
       applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
     })
-  }, [pendingTarget, buildRequest, getMembershipScopeId, scope, applyStatus])
+  }, [pendingTarget, buildRequest, getMembershipScopeId, applyStatus])
 
   // 결과 조회에 넘길 ref·상태 바꾸기 묶음
   const lookupCtx = useMemo(() => ({

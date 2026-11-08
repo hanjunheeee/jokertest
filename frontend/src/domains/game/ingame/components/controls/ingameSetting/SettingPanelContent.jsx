@@ -19,11 +19,11 @@ import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
 // 고른 탭 본문 하나만 그림 (채팅·방관리 아니면 사운드)
 function SettingTabPanel({
-  activeTab, onOpenKickPlayer, volumes, onVolumeChange, sfxMuted, onSfxMutedChange,
+  activeTab, volumes, onVolumeChange, sfxMuted, onSfxMutedChange,
 }) {
   if (activeTab === "chat") return <SettingChatTab />
   if (activeTab === "room") {
-    return <SettingRoomTab onOpenKickPlayer={onOpenKickPlayer} />
+    return <SettingRoomTab />
   }
   return (
     <SettingSoundTab
@@ -38,7 +38,6 @@ function SettingTabPanel({
 
 // 방장일 때만 방관리 탭이 보임 (useInGameSettingIsHost로 봄)
 export default function SettingPanelContent({
-  onOpenKickPlayer,
   onOpenRoomCode,
   timerPlacement,
   onCycleTimerPlacement,
@@ -62,7 +61,6 @@ export default function SettingPanelContent({
         <div ref={scrollRef} className={SCROLL_CLASS}>
           <SettingTabPanel
             activeTab={activeTab}
-            onOpenKickPlayer={onOpenKickPlayer}
             volumes={volumes}
             onVolumeChange={setVolume}
             sfxMuted={sfxMuted}
