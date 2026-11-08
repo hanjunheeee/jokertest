@@ -12,6 +12,7 @@ import { useTribunalIntro } from "../../../hooks/overlays/useTribunalIntro.js"
 import DefendantCard from "./DefendantCard.jsx"
 import TribunalChat from "./TribunalChat.jsx"
 import TribunalActions from "./TribunalActions.jsx"
+import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardInset.js"
 
 // intro는 카드 가운데 크게, split은 세로면 위 줄(카드 왼쪽·버튼 오른쪽), 가로 폰이면 왼쪽 칸
 // 가로 폰 왼쪽 칸은 키보드로 높이가 모자라면 안에서 스크롤 (가운데 맞춤이 위로 넘쳐 잘리지 않게 center-safe)
@@ -26,6 +27,18 @@ const TOP_CLASS = {
 const CARD_CLASS = {
     intro: "w-[min(56vw,16rem,36svh)] land:w-[min(26vw,46svh)]",
     split: "w-[min(30vw,8.5rem)] shrink-0 md:w-[11rem] land:w-[min(20vw,34svh)]",
+}
+
+// 연출 판 위아래 여백
+// 위: 위 줄·진행 바 아래부터 그림 (데스크톱처럼 덮개 너머로 보이게), 잴 칸 없으면 safe area 여백 그대로
+// 아래: iOS는 키보드가 떠도 화면이 안 줄어 반론 입력칸이 가려짐 → 가려진 높이만큼 비움 (안드로이드는 0)
+function useStageInsetStyle() {
+    const hudInset = useHudInset()
+    const keyboardInset = useKeyboardInset()
+    return {
+        ...(hudInset > 0 ? { paddingTop: hudInset } : null),
+        ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : null),
+    }
 }
 
 // 투표 버튼 못 보이면 안내 문구, 판정 버튼은 글자 받았을 때만
@@ -44,8 +57,7 @@ export default function TribunalOverlay({
 }) {
     const reduced = useReducedMotion()
     const layoutPhase = useTribunalIntro(defendant?.id ?? null)
-    // 위 줄·진행 바 아래부터 그림 (데스크톱처럼 덮개 너머로 보이게), 잴 칸 없으면 safe area 여백 그대로
-    const hudInset = useHudInset()
+    const insetStyle = useStageInsetStyle()
     if (!defendant) return null
 
     const showChat = layoutPhase === "split" && chatProps
@@ -57,7 +69,7 @@ export default function TribunalOverlay({
             role="presentation"
             data-ingame-tribunal-presentation=""
             data-ingame-tribunal-layout={layoutPhase}
-            style={hudInset > 0 ? { paddingTop: hudInset } : undefined}
+            style={insetStyle}
         >
             <motion.div
                 className="absolute inset-0 bg-black/62"

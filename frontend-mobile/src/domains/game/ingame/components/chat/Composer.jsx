@@ -1,6 +1,6 @@
 // 채팅 입력 줄: 데스크톱 틀 아래 입력 띠 그림 위에 입력칸 + 보내기, Enter 보내기·Shift+Enter 줄바꿈
-// ChatPanel(바닥 자리 또는 칸 안)·CloseupSheet가 씀, 보내기·검사·오류 문구는 데스크톱 채팅 세션 훅
-import { useRef } from "react"
+// ChatPanel(넓은 배치)·TalkLayout(폰 세로 바닥 자리)·CloseupSheet가 씀, 보내기·검사·오류 문구는 데스크톱 채팅 세션 훅
+import { useEffect, useRef } from "react"
 import { useKeyboardLift } from "@m/domains/game/ingame/hooks/chat/useKeyboardLift.js"
 import FrameSlice from "./FrameSlice.jsx"
 import SendButton from "./SendButton.jsx"
@@ -11,6 +11,7 @@ import { COMPOSER_BAR_CLASS, COMPOSER_ROW_CLASS, dividerStyle, FRAME_SLICE, TEXT
 const DIVIDER_PLACE = dividerStyle(FRAME_SLICE.composer)
 
 // lift가 꺼지면 키보드 비킴은 부르는 쪽이 맡음, withStatus면 상태 줄도 여기 그림
+// locked: 화면 잠금(연출·사망 선택·밤 대기) 동안 입력 막기 (바닥 자리로 portal 돼 화면 inert 밖이라 따로 막음)
 export default function Composer({
     draft,
     onDraftChange,
@@ -19,13 +20,20 @@ export default function Composer({
     error = null,
     withStatus = false,
     lift = true,
+    locked = false,
 }) {
     const barRef = useRef(null)
     const textareaRef = useRef(null)
     const keyboardLift = useKeyboardLift(barRef, lift)
 
+    // 잠기면 치던 키보드도 내림
+    useEffect(() => {
+        if (locked) textareaRef.current?.blur()
+    }, [locked])
+
     // 보낸 뒤에도 초점 유지 (키보드 그대로), 못 보낼 때 거르기는 세션 훅이 함
     const send = () => {
+        if (locked) return
         onSend()
         textareaRef.current?.focus({ preventScroll: true })
     }
@@ -44,6 +52,7 @@ export default function Composer({
             style={keyboardLift > 0 ? { transform: `translateY(-${keyboardLift}px)` } : undefined}
             data-chat-composer
             data-chat-interactive
+            inert={locked || undefined}
         >
             <FrameSlice slice={FRAME_SLICE.composer} />
             {withStatus ? <StatusLine status={status} error={error} placeStyle={DIVIDER_PLACE} /> : null}

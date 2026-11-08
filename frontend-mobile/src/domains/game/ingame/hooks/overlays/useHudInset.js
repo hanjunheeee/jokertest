@@ -15,7 +15,7 @@ function measure() {
     return Math.round(bottom)
 }
 
-// 칸 크기·화면 크기 바뀔 때마다 다시 잼
+// 칸 크기·화면 크기·자리 바뀔 때마다 다시 잼
 export function useHudInset() {
     const [inset, setInset] = useState(measure)
 
@@ -25,9 +25,17 @@ export function useHudInset() {
         const observer = new ResizeObserver(sync)
         document.querySelectorAll(HUD_SELECTOR).forEach((el) => observer.observe(el))
         window.addEventListener("resize", sync)
+        // 크기는 그대로고 자리만 옮겨질 때(키보드로 보이는 칸이 밀림·화면 스크롤)도 다시 잼
+        const viewport = window.visualViewport
+        viewport?.addEventListener("resize", sync)
+        viewport?.addEventListener("scroll", sync)
+        window.addEventListener("scroll", sync, { passive: true, capture: true })
         return () => {
             observer.disconnect()
             window.removeEventListener("resize", sync)
+            viewport?.removeEventListener("resize", sync)
+            viewport?.removeEventListener("scroll", sync)
+            window.removeEventListener("scroll", sync, { capture: true })
         }
     }, [])
 

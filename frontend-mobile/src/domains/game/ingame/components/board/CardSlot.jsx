@@ -4,6 +4,7 @@ import { useLongPress } from "@m/domains/game/ingame/hooks/board/useLongPress.js
 import { CARD_WIDTH, SLOT_CLASS } from "./boardStyle.js"
 import EmojiBubble from "./EmojiBubble.jsx"
 import PlayerCard from "./PlayerCard.jsx"
+import { slotLabel } from "@m/domains/game/ingame/utils/talk/slotLabel.js"
 
 const SLOT_STYLE = { width: CARD_WIDTH }
 
@@ -29,7 +30,7 @@ export default function CardSlot({ player, isSelf, highlight, emoji, anchorRef, 
             type="button"
             className={SLOT_CLASS}
             style={SLOT_STYLE}
-            aria-label={player.nickname}
+            aria-label={slotLabel(player.nickname, player.status, isSelf)}
             data-board-slot={player.id}
             onClick={handleClick}
             onContextMenu={handleContextMenu}

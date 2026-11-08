@@ -11,8 +11,6 @@ const SIDE_WOOD_RATIO = 62 / 813
 
 // 틀 그림 한 장에서 잘라 보일 구간 (top: 그 구간 시작, end: 끝)
 export const FRAME_SLICE = Object.freeze({
-    // 목록만 있는 칸 (세로 폰): 가운데 나무 띠까지 → 띠가 칸 아래 테두리
-    listWithDivider: { start: 0, end: DIVIDER_BOTTOM },
     // 목록 + 입력 줄 붙는 칸 (넓은 배치·크게 보기): 띠는 입력 줄이 그림
     list: { start: 0, end: DIVIDER_TOP },
     // 입력 줄: 가운데 띠부터 그림 끝까지

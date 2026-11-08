@@ -20,6 +20,7 @@ import {
 } from "@/domains/game/ingame/constants/vote/ingameVoteLayout.js"
 import { useVotePanelFit } from "../../hooks/actions/useVotePanelFit.js"
 import VoteStatusContent from "./VoteStatusContent.jsx"
+import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
 
 const TITLE = "투표 현황"
 
@@ -29,6 +30,7 @@ const CLOSE_HIT_CLASS = "before:absolute before:-inset-3 before:content-['']"
 // 창은 데스크톱 폭으로 그리고 배율만 줄임 (틀 그림 위 글 자리가 데스크톱과 같게)
 export default function VoteStatusPanel({ open, onClose, nameOf }) {
   const fit = useVotePanelFit(open)
+  const focusRef = useDialogFocus()
 
   // 열렸을 때만 Esc로 닫기 (닫는 소리 같이 냄)
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function VoteStatusPanel({ open, onClose, nameOf }) {
           <div className={PANEL_WRAP_CLASS}>
             <div className="shrink-0" style={{ width: fit.width, transform: `scale(${fit.scale})` }}>
               <motion.div
+                ref={focusRef}
                 role="dialog"
                 aria-modal="true"
                 aria-label={TITLE}

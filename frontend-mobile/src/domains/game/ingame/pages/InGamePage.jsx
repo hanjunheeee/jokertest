@@ -16,6 +16,7 @@ import TalkLayout from "@m/domains/game/ingame/components/talk/TalkLayout.jsx"
 import { useWideChat } from "@m/domains/game/ingame/hooks/chat/useWideChat.js"
 import { useCompactTyping } from "@m/domains/game/ingame/hooks/page/useCompactTyping.js"
 import { useInGamePage } from "@m/domains/game/ingame/hooks/page/useInGamePage.js"
+import { useRecordEmojiHistory } from "@m/domains/game/ingame/hooks/talk/useEmojiHistory.js"
 
 // 칸 배치: 세로는 한 줄로 쌓고, 폰 가로·태블릿 가로(lg)는 왼쪽 위 줄·판 / 오른쪽 진행 바·채팅·행동
 // 가로에서 진행 바는 위 두 줄에 걸쳐 둬서 위 줄 높이가 진행 바만큼 커지지 않게 함
@@ -45,6 +46,8 @@ export default function InGamePage() {
   const compactTyping = useCompactTyping()
   // 폰 세로만 카톡형 (폰 가로·태블릿은 아래 칸 배치 그대로)
   const wide = useWideChat()
+  // 받은 이모티콘 기록은 배치와 상관없이 늘 (가로로 돌린 동안 온 것도 채팅방에 남게)
+  useRecordEmojiHistory()
 
   if (!page.isValidGameSession) return null
 

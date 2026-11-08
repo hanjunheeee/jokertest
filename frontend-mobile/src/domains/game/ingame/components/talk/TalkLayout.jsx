@@ -1,6 +1,7 @@
 // 카톡형 화면 (폰 세로 전용): 위 줄(버튼 + 단계 줄) → 펼친 진행 바 → 초상 띠 → 채팅방 → 행동 줄, 입력칸은 화면 바닥 자리
 // InGamePage가 폰 세로(useWideChat 거짓)일 때만 씀, 폰 가로·태블릿은 지금 배치 그대로
 import { useState } from "react"
+import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardInset.js"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
 import { useInGameChatSessionContext } from "@/domains/game/ingame/components/chat/InGameChatSessionContext.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
@@ -29,6 +30,8 @@ export default function TalkLayout({ page, compactTyping, locked }) {
     const [timebarOpen, setTimebarOpen] = useState(false)
     const [boardOpen, setBoardOpen] = useState(false)
     const { sidePanel } = page
+    // iOS는 키보드가 떠도 화면이 안 줄어 입력줄만 올라감 → 채팅방 아래에 그만큼 비워 최신 말풍선이 안 가려지게 (안드로이드는 0)
+    const keyboardInset = useKeyboardInset()
 
     return (
         <div
@@ -48,13 +51,17 @@ export default function TalkLayout({ page, compactTyping, locked }) {
                 <PhaseLine expanded={timebarOpen} onToggle={() => setTimebarOpen((open) => !open)} />
             </div>
             <div className={`${SLOT_CLASS} px-2 ${timebarOpen && !compactTyping ? "" : "hidden"}`} data-slot="timebar">
-                {timebarOpen ? <Timebar /> : null}
+                {/* 늘 그려 두고 숨기기만: 펼친 순간부터 게이지를 새로 세면 막대 길이가 틀림 */}
+                <Timebar initialExpanded />
             </div>
             <div className={`${SLOT_CLASS} ${compactTyping ? "hidden" : ""}`} data-slot="board">
                 <PortraitStrip expanded={boardOpen} onToggle={() => setBoardOpen((open) => !open)} />
             </div>
             {/* 재판 중엔 숨기기만 함 → 그동안 생긴 처형 알림·이모티콘 기록이 안 날아감 (빼 버리면 다시 그릴 때 처음부터) */}
-            <div className={`relative min-h-0 min-w-0 flex-1 flex-col px-1.5 pt-1 ${tribunalOpen ? "invisible flex" : "flex"}`} data-slot="chat">
+            <div className={`relative min-h-0 min-w-0 flex-1 flex-col px-1.5 pt-1 ${tribunalOpen ? "invisible flex" : "flex"}`}
+                style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
+                data-slot="chat"
+            >
                 <TalkList />
             </div>
             <div className={`${SLOT_CLASS} px-1.5 pb-1`} data-slot="actions">
@@ -62,7 +69,7 @@ export default function TalkLayout({ page, compactTyping, locked }) {
             </div>
             {tribunalOpen ? null : (
                 <ShellBottom>
-                    <Composer draft={session.draft} onDraftChange={session.onDraftChange} onSend={session.onSend} />
+                    <Composer draft={session.draft} onDraftChange={session.onDraftChange} onSend={session.onSend} locked={locked} />
                 </ShellBottom>
             )}
         </div>

@@ -1,5 +1,7 @@
 // 사망 후 선택 창: 관전 계속하기·게임 나가기, 나가기 실패·결과 모름이면 다시 시도·결과 확인
 // OverlayLayer가 씀, 열림·선택은 useDeadChoice (나가기는 화면 틀의 useInGameExit 손잡이), 글·색은 데스크톱과 같음
+import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
+
 const PANEL_CLASS =
     "flex w-[min(28rem,92vw)] flex-col items-center gap-4 rounded-2xl bg-neutral-900/95 px-8 py-7 text-center text-white shadow-2xl land:gap-3 land:py-5"
 
@@ -37,6 +39,7 @@ export default function DeadChoiceOverlay({
     exitStatus = "idle",
     exitErrorCode = null,
 }) {
+    const focusRef = useDialogFocus()
     if (!open) return null
 
     const notice = exitNotice(exitStatus, exitErrorCode)
@@ -45,6 +48,7 @@ export default function DeadChoiceOverlay({
     return (
         <div
             className="fixed inset-0 z-[68] flex items-center justify-center bg-black/70 px-6 safe-pt safe-pb"
+            ref={focusRef}
             role="dialog"
             aria-modal="true"
             aria-label="사망 후 선택"

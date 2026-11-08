@@ -17,12 +17,15 @@ export function useStickToBottom(scrollRef, lines) {
         setUnseen(false)
     }, [scrollRef])
 
+    // 줄 수·마지막 줄이 바뀔 때만 새 줄로 봄 (투표·상태만 바뀌어도 목록 배열은 새로 만들어짐)
+    const lastKey = lines.length > 0 ? `${lines.length}:${lines[lines.length - 1].id}` : ""
+
     // 새 줄: 맨 아래 보던 중이면 내림, 아니면 알림만 (그린 직후 높이로 내리려고 layout effect)
     useLayoutEffect(() => {
-        if (lines.length === 0) return
+        if (!lastKey) return
         if (nearBottomRef.current) scrollToBottom()
         else setUnseen(true)
-    }, [lines, scrollToBottom])
+    }, [lastKey, scrollToBottom])
 
     // 스크롤 위치 기억, 칸 높이가 바뀌면(키보드·띠 펼침) 맨 아래 보던 경우만 다시 내림
     useEffect(() => {

@@ -15,6 +15,7 @@ import {
   SHEET_TITLE_CLASS,
   SHEET_TRANSITION,
 } from "./sheetStyle.js"
+import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
 
 // 열렸을 때만 그림, 뒤판·Esc·닫기 버튼으로 닫음 (위 창이 떠 있으면 escape=false로 Esc 양보)
 export default function Sheet({
@@ -32,6 +33,7 @@ export default function Sheet({
   children,
 }) {
   useEscapeClose(open && escape, onClose, { sfx: true })
+  const focusRef = useDialogFocus()
   const z = SHEET_LAYERS[layer] ?? SHEET_LAYERS.base
 
   return createPortal(
@@ -52,6 +54,7 @@ export default function Sheet({
           />
           <motion.div
             key="panel"
+            ref={focusRef}
             role="dialog"
             aria-modal="true"
             aria-label={ariaLabel}

@@ -7,6 +7,7 @@ import { STORE_ASSETS } from "@/shared/constants/storeAssets.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { BACKDROP_CLASS, CLOSE_BTN_CLASS, PANEL_CLASS, PARCHMENT_CLASS, SHEET_TITLE_CLASS, SHEET_TRANSITION } from "./sheetStyle.js"
+import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
 
 // 열린 동안 Esc로 닫기 (태블릿 키보드 대비)
 function useEscape(open, onClose) {
@@ -25,6 +26,8 @@ function useEscape(open, onClose) {
 // 열렸을 때만 그림, 뒤판·Esc·닫기 버튼으로 닫음
 export default function Sheet({ open, title, closeLabel = "닫기", onClose, panelRef, children, ...rest }) {
     useEscape(open, onClose)
+    // panelRef(카드 메뉴 바깥 누름 판단)도 같이 채움
+    const focusRef = useDialogFocus(panelRef)
 
     return createPortal(
         <AnimatePresence>
@@ -44,7 +47,7 @@ export default function Sheet({ open, title, closeLabel = "닫기", onClose, pan
                     />
                     <motion.div
                         key="panel"
-                        ref={panelRef}
+                        ref={focusRef}
                         role="dialog"
                         aria-modal="true"
                         aria-label={title}

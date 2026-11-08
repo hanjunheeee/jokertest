@@ -12,6 +12,7 @@ import Composer from "./Composer.jsx"
 import FrameSlice from "./FrameSlice.jsx"
 import MessageList from "./MessageList.jsx"
 import { FRAME_ROOT_CLASS, FRAME_SLICE, listInsetStyle } from "./chatStyle.js"
+import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
 
 // 뒤 막은 데스크톱과 같은 검은 45%, 창 자리는 폰은 꽉 채움(안전영역 안쪽), 태블릿은 가운데
 const BACKDROP_CLASS = "fixed inset-0 z-[70] cursor-default border-0 bg-black/45 p-0"
@@ -23,6 +24,7 @@ const LIST_INSET = listInsetStyle(FRAME_SLICE.list)
 // session은 채팅 세션 값
 export default function CloseupSheet({ open, onClose, session }) {
     const keyboardInset = useKeyboardInset()
+    const focusRef = useDialogFocus()
 
     // 열렸을 때만 Esc로 닫기 (닫는 소리 같이)
     useEffect(() => {
@@ -59,6 +61,7 @@ export default function CloseupSheet({ open, onClose, session }) {
                         style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
                     >
                         <motion.div
+                            ref={focusRef}
                             role="dialog"
                             aria-modal="true"
                             aria-label="채팅 클로즈업"

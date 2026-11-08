@@ -9,12 +9,21 @@ import { buildTalkFeed } from "@m/domains/game/ingame/utils/talk/buildTalkFeed.j
 import { useEmojiHistory } from "./useEmojiHistory.js"
 import { useSystemNotices } from "./useSystemNotices.js"
 
+// 받은 말·이모티콘 중 가장 늦은 시각 (없으면 null)
+function latestServerAt(messages = [], emojis = []) {
+    let latest = null
+    for (const item of messages ?? []) if (Number.isFinite(item.sentAt) && (latest === null || item.sentAt > latest)) latest = item.sentAt
+    for (const item of emojis) if (Number.isFinite(item.at) && (latest === null || item.at > latest)) latest = item.at
+    return latest
+}
+
 export function useTalkFeed() {
     const session = useInGameChatSessionContext()
-    const { players, localPlayerId, getPlayerById } = useInGamePlayerSessionContext()
+    const { localPlayerId, getPlayerById } = useInGamePlayerSessionContext()
     const joker = useInGameStore((s) => isJokerNightChatEligible(s.state))
-    const notices = useSystemNotices(players)
     const emojis = useEmojiHistory()
+    const latestAt = latestServerAt(session.messages, emojis)
+    const notices = useSystemNotices(latestAt)
 
     const lines = useMemo(
         () => buildTalkFeed({

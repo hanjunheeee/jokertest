@@ -1,7 +1,6 @@
 // 재판 '최후의 반론' 채팅 칸: 데스크톱 채팅 틀 그림을 목록 칸·입력 줄로 잘라 깔고 그 안에 메시지 목록·입력칸·보내기
 // 재판 연출 창(TribunalOverlay)이 씀, 값은 채팅 세션 컨텍스트, 틀 자르기·입력 줄 모양은 채팅 담당 부품을 불러 씀 (고치지 않음)
 import { useEffect, useRef } from "react"
-import { INPUT_MAX_LENGTH } from "@/domains/game/ingame/constants/chat/ingameChatAssets.js"
 import { MSG_LIST_SPACER_CLASS } from "@/domains/game/ingame/constants/chat/ingameChatLayout.js"
 import FrameSlice from "../../chat/FrameSlice.jsx"
 import SendButton from "../../chat/SendButton.jsx"
@@ -26,6 +25,7 @@ function statusText(status, error) {
 
 // 칸 최소 높이는 0: 키보드로 화면이 낮아지면 목록만 줄고 입력 줄은 화면 안에 남게 함
 // Enter 보내기 (한글 조합 중·Shift+Enter는 제외), 새 메시지 오면 맨 아래로
+// 글자 수는 자르지 않음: 데스크톱·일반 입력줄처럼 채팅 세션 훅이 검사하고 오류 글을 띄움
 export default function TribunalChat({ draft = "", messages = [], onDraftChange, onSend, status = null, error = null }) {
     const listRef = useRef(null)
 
@@ -71,7 +71,6 @@ export default function TribunalChat({ draft = "", messages = [], onDraftChange,
                         <textarea
                             rows={1}
                             value={draft}
-                            maxLength={INPUT_MAX_LENGTH}
                             onChange={(e) => onDraftChange?.(e.target.value)}
                             onKeyDown={handleKeyDown}
                             placeholder="TYPE HERE..."

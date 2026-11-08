@@ -4,6 +4,7 @@ import { findInGameEmoticonItem } from "@/domains/game/ingame/utils/findInGameEm
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import PlayerCard from "@m/domains/game/ingame/components/board/PlayerCard.jsx"
 import { useLongPress } from "@m/domains/game/ingame/hooks/board/useLongPress.js"
+import { slotLabel } from "@m/domains/game/ingame/utils/talk/slotLabel.js"
 
 // 카드 폭: 10명이어도 넘겨 보면 되니 손가락으로 누르기 편한 크기 (높이는 카드 그림 비율)
 const SLOT_CLASS =
@@ -43,7 +44,7 @@ export default function StripSlot({ player, isSelf, highlight, emoji, anchorRef,
             ref={anchorRef}
             type="button"
             className={SLOT_CLASS}
-            aria-label={player.nickname}
+            aria-label={slotLabel(player.nickname, player.status, isSelf)}
             data-strip-slot={player.id}
             onClick={handleClick}
             onContextMenu={handleContextMenu}

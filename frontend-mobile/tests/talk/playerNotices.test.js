@@ -1,7 +1,7 @@
 // 시스템 알림 줄 만들기 시험
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { diffPlayerNotices } from "../../src/domains/game/ingame/utils/talk/playerNotices.js"
+import { diffPlayerNotices, toNoticePlayers } from "../../src/domains/game/ingame/utils/talk/playerNotices.js"
 
 const before = [
     { id: "a", nickname: "철수", status: "alive" },
@@ -38,4 +38,24 @@ test("같은 사람·상태·시각이면 번호가 같아 겹쳐 쌓이지 않�
     const first = diffPlayerNotices(before, after, 7)
     const second = diffPlayerNotices(before, after, 7)
     assert.equal(first[0].id, second[0].id)
+})
+
+test("끊긴 사람이 그사이 죽으면 사망 알림 (MO-005)", () => {
+    const prev = [{ id: "a", nickname: "철수", alive: true, connected: false }]
+    const next = [{ id: "a", nickname: "철수", alive: false, connected: false }]
+    assert.deepEqual(diffPlayerNotices(prev, next, 5).map((notice) => notice.text), ["철수님이 죽었습니다"])
+})
+
+test("죽은 사람이 끊기면 알림 없음, 판 참가자 모양 바꾸기", () => {
+    const prev = toNoticePlayers([{ uuid: "a", nickname: "철수", alive: false, isConnected: true }])
+    const next = toNoticePlayers([{ uuid: "a", nickname: "철수", alive: false, isConnected: false }])
+    assert.deepEqual(prev, [{ id: "a", nickname: "철수", alive: false, connected: true }])
+    assert.deepEqual(diffPlayerNotices(prev, next, 5), [])
+})
+
+test("칸 이름에 상태 붙이기 (MO-012)", async () => {
+    const { slotLabel } = await import("../../src/domains/game/ingame/utils/talk/slotLabel.js")
+    assert.equal(slotLabel("철수", "alive"), "철수")
+    assert.equal(slotLabel("철수", "dead", true), "철수, 나, 사망")
+    assert.equal(slotLabel("영희", "disconnected"), "영희, 연결 끊김")
 })

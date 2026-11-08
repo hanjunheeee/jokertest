@@ -73,7 +73,8 @@ export function useOverlayLayer() {
         reopenRef.current = roleReveal.reopen
     })
     const reopenRoleReveal = useCallback(() => reopenRef.current?.(), [])
-    useEffect(() => {
+    // 그리기 전에 넘김: 연출이 뜨는 첫 화면부터 판·채팅·행동이 잠김 (effect면 한 번 그린 뒤라 그 사이 누를 수 있었음)
+    useLayoutEffect(() => {
         setOverlayState({ interactionBlocked, surfaceLocked, roleRevealAvailable, reopenRoleReveal })
     }, [interactionBlocked, surfaceLocked, roleRevealAvailable, reopenRoleReveal, setOverlayState])
 

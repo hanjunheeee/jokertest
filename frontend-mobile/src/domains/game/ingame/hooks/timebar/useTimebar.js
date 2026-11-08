@@ -7,15 +7,13 @@ import { selectInGameTimebarPhaseDeadline } from "@/domains/game/ingame/utils/ti
 import { selectInGameTimebarStatusLabel } from "@/domains/game/ingame/utils/selectInGameTimebarStatusMessage.js"
 import { useTurnProgress } from "@/domains/game/ingame/hooks/timebar/useTurnProgress.js"
 
-// 처음엔 접힘 (데스크톱 진행 바 기본값과 같음, 배포 타이머 자리는 늘 시간 바)
-const INITIAL_EXPANDED = false
-
 // 낮 마감·밤 차례 마감 하나로 게이지 계산, 재판·끝남은 마감 없음
-export function useTimebar() {
+// 처음엔 접힘(데스크톱 기본값), 카톡형은 단계 줄을 눌러 열었으니 펼친 채로 시작
+export function useTimebar(initialExpanded = false) {
   const gameState = useInGameStore((s) => s.state)
   const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
   const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
-  const [expanded, setExpanded] = useState(INITIAL_EXPANDED)
+  const [expanded, setExpanded] = useState(initialExpanded)
 
   // 날짜가 없으면 데스크톱 진행 바 기본값처럼 1일
   const day = Number.isInteger(gameState?.dayIndex) ? gameState.dayIndex : 1

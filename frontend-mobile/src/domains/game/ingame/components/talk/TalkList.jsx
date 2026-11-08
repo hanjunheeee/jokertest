@@ -22,7 +22,7 @@ const JOKER_BANNER_CLASS =
     "flex shrink-0 items-center justify-center gap-1.5 border-b border-[#a33a2a]/50 bg-[#4a1414]/80 py-1 text-[0.72rem] font-semibold tracking-wide text-[#f6c8b0]"
 
 const NEW_BUTTON_CLASS =
-    "absolute bottom-2 left-1/2 z-10 h-9 -translate-x-1/2 cursor-pointer rounded-full border border-[#b08a4a]/70 bg-black/80 px-3 text-[0.72rem] text-[#f3dcb0] shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+    "absolute bottom-2 left-1/2 z-10 h-11 -translate-x-1/2 cursor-pointer rounded-full border border-[#b08a4a]/70 bg-black/80 px-3 text-[0.72rem] text-[#f3dcb0] shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
 
 // 보내기 실패·전송 중 한 줄 (입력칸 바로 위, 말풍선별 표시는 없음)
 function StatusLine({ status, error }) {

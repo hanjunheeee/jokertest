@@ -1,6 +1,6 @@
 // 위 단계 줄 (카톡형): "제 2일 · 낮 토론 0:45" 한 줄, 누르면 진행 바 펼침·접기
-// TalkLayout이 위 줄 오른쪽에 씀, 날짜·단계 글·남은 시간은 진행 바와 같은 useTimebar 값
-import { useTimebar } from "@m/domains/game/ingame/hooks/timebar/useTimebar.js"
+// TalkLayout이 위 줄 오른쪽에 씀, 날짜·단계 글·남은 시간은 진행 바와 같은 선택 함수 (1초마다 셈)
+import { usePhaseClock } from "@m/domains/game/ingame/hooks/timebar/usePhaseClock.js"
 
 // 지금 그림 분위기(어두운 판 + 금빛 테두리)에 맞춘 알약 모양, 누르는 높이 44px
 const PILL_CLASS =
@@ -23,7 +23,7 @@ function shortClock(totalSec) {
 
 // expanded·onToggle은 TalkLayout이 가짐 (펼친 진행 바는 아래 timebar 자리에 그림)
 export default function PhaseLine({ expanded, onToggle }) {
-    const bar = useTimebar()
+    const bar = usePhaseClock()
     const label = plainLabel(bar.statusLabel)
     const hasTime = Number.isFinite(bar.remainingSec) && bar.remainingSec >= 0
     const urgent = hasTime && bar.remainingSec <= 10

@@ -9,8 +9,8 @@ import ExpandedTimer from "./ExpandedTimer.jsx"
 import ExpandButton from "./ExpandButton.jsx"
 
 // 데스크톱 상수가 칸 폭 기준 크기(cqi)를 쓰므로 inline-size 컨테이너로 감쌈
-export default function Timebar() {
-  const bar = useTimebar()
+export default function Timebar({ initialExpanded = false }) {
+  const bar = useTimebar(initialExpanded)
   const dayLabel = `제 ${bar.day}일`
   // 데스크톱과 같이 상태 글이 있을 때만 단계 머리·타이머를 그림
   const showTimer = bar.expanded && Boolean(bar.statusLabel)
