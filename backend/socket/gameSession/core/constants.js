@@ -73,6 +73,9 @@ const ROLE_REVEAL_DEADLINE_MS = 30000
 const PHASE_RETRY_DELAY_MS = 1000
 const PHASE_RETRY_MAX = 5
 
+// 판 끝 뒤 끊긴 사람 정리까지 60초 (그 안에 다시 붙으면 결과 화면 그대로 봄)
+const ENDED_SWEEP_DELAY_MS = 60000
+
 // 밤 연출 계약 버전
 const NIGHT_CONTRACT_VERSION = 1
 
@@ -115,6 +118,7 @@ module.exports = {
     ROLE_REVEAL_DEADLINE_MS,
     PHASE_RETRY_DELAY_MS,
     PHASE_RETRY_MAX,
+    ENDED_SWEEP_DELAY_MS,
     NIGHT_CONTRACT_VERSION,
     NIGHT_EVENT_TYPES,
     NIGHT_PERSPECTIVES,

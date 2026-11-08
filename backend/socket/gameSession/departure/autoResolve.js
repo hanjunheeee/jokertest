@@ -69,7 +69,7 @@ function maybeResolveTribunal(io, session) {
     const fields = { gameId: session.id }
     const resolvedPayload = isolateOr(null, label, { code: 'PAYLOAD_BUILD_ERROR', ...fields },
         () => gameSessionCore.buildTribunalVoteResolvedPayload(session))
-    const broadcastPayload = withTerminalFields(session, committed.terminal, resolvedPayload, label, fields)
+    const broadcastPayload = withTerminalFields(session, committed.terminal, resolvedPayload, label, fields, io)
 
     const recipients = resolveOrEmpty(io, session, label, fields)
     if (broadcastPayload) {

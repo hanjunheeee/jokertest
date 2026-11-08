@@ -137,3 +137,28 @@ test('known 2장 종료 필드: 결과 내용을 못 만들어도 승부 방송�
     assert.equal(merged.gameId, session.id)
     assert.equal(merged.dayIndex, session.dayIndex)
 })
+
+test('BE-020: 판 끝 순간 연결 없던 사람은 정리 예약 뒤 끝난 판에서 빠지고, 다 빠지면 판이 장부에서 지워진다', () => {
+    const { scheduleEndedSweep } = require('../../socket/gameSession/departure/end')
+    const { session, uuids, io, sockets } = commitSession('ended-sweep')
+    const [stayer, ...gone] = uuids
+    for (const uuid of gone) io.sockets.sockets.delete(sockets.get(uuid).id)
+    session.phase = 'ENDED'
+    session.winResult = { winner: 'CITIZEN', reason: 'ALL_JOKERS_ELIMINATED' }
+
+    const timers = []
+    scheduleEndedSweep(io, session, { setTimeoutFn: (fn) => { timers.push(fn); return timers.length }, delayMs: 0 })
+    assert.equal(timers.length, 1)
+    timers[0]()
+
+    const bound = new Map(gameSessionCore.__getStateSnapshotForTests().playerSession)
+    for (const uuid of gone) assert.equal(bound.has(uuid), false, '연결 없던 사람은 빠짐')
+    assert.equal(bound.get(stayer), session.id, '붙어 있는 사람은 결과 화면 그대로')
+
+    // 남은 사람도 끊긴 뒤 다시 정리하면 판째로 지워짐
+    io.sockets.sockets.delete(sockets.get(stayer).id)
+    scheduleEndedSweep(io, session, { setTimeoutFn: (fn) => { timers.push(fn); return timers.length }, delayMs: 0 })
+    timers[1]()
+    const after = gameSessionCore.__getStateSnapshotForTests()
+    assert.equal(after.gameSessions.some(([id]) => id === session.id), false)
+})

@@ -19,6 +19,9 @@ const disconnectGraceRuns = new Map()
 // 판 id → 이탈 뒤 바로 판정할 자리 표식 (낮 투표 라운드·재판 후보 좌표)
 const departureResolveMarks = new Map()
 
+// 판 id → 끝난 판 끊긴 사람 정리 예약 (판 끝 뒤 안 돌아온 사람 때문에 판이 장부에 남지 않게)
+const endedSweepRuns = new Map()
+
 // 밤 마무리 중인 판 id (같은 밤 두 번 확정 막기)
 const nightFinalizeInFlight = new Set()
 
@@ -43,6 +46,7 @@ module.exports = {
     tribunalRuns,
     disconnectGraceRuns,
     departureResolveMarks,
+    endedSweepRuns,
     nightFinalizeInFlight,
     phaseHooks,
     setPhaseHooks,

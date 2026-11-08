@@ -10,6 +10,7 @@ const {
     tribunalRuns,
     disconnectGraceRuns,
     departureResolveMarks,
+    endedSweepRuns,
     nightFinalizeInFlight,
 } = require('../core/state')
 const {
@@ -23,6 +24,7 @@ const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { stopTribunalTimer } = require('../phase/tribunal')
+const { cancelEndedSweep } = require('../departure/end')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./ready')
 const {
     handleSubmitNightAction,
@@ -71,6 +73,7 @@ function __resetStateForTests() {
     gameRecordService.setEmitToUser(null)
     kickReceiptStore.__resetKickReceiptsForTests()
     departureResolveMarks.clear()
+    for (const gameId of [...endedSweepRuns.keys()]) cancelEndedSweep(gameId)
     nightFinalizeInFlight.clear()
     resetNightReceipts()
     // 타이머 run 끄기 (끄면서 보관함에서 지우니 키 먼저 복사), 마지막은 전적 재시도

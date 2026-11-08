@@ -14,6 +14,7 @@ const { startDayPhaseTimer, syncSessionPhaseTimers } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { markDeparturePending, clearDepartureMark } = require('./marks')
 const { maybeResolveDayVote, maybeResolveTribunal } = require('./autoResolve')
+const { scheduleEndedSweep } = require('./end')
 
 // 참가자 이탈 반영: core 커밋 뒤 단계는 하나씩 격리, 커밋은 되돌리지 않음 (지도 12-⑦⑧⑨⑩)
 function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LEFT', onCommitted = null } = {}) {
@@ -82,6 +83,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     if (applied.terminal) {
         clearDepartureMark(session.id)
         step('PERSIST_START_ERROR', () => persistTerminalSession(session, { completed: true }))
+        step('ENDED_SWEEP_SCHEDULE_ERROR', () => scheduleEndedSweep(io, session))
         step('ROLE_REVEAL_TIMER_STOP_ERROR', () => stopRoleRevealTimer(session.id))
         step('TIMER_SYNC_ERROR', () => syncSessionPhaseTimers(io, session))
         return applied

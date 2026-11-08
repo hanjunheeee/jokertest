@@ -138,7 +138,7 @@ function handleResolveTribunalVote(io, socket, uuid, payload, callback, deps = {
     const fieldsInSession = { uuid, gameId: prepared.session.id }
     const resolvedPayload = isolateOr(null, label, { code: 'PAYLOAD_BUILD_ERROR', ...fieldsInSession },
         () => gameSessionCore.buildTribunalVoteResolvedPayload(prepared.session))
-    const broadcastPayload = withTerminalFields(prepared.session, committed.terminal, resolvedPayload, label, fieldsInSession)
+    const broadcastPayload = withTerminalFields(prepared.session, committed.terminal, resolvedPayload, label, fieldsInSession, io)
 
     // 결과 내용 못 만들었으면 확정은 됐어도 INTERNAL_ERROR로 답함
     if (!resolvedPayload) {

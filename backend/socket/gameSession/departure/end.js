@@ -1,10 +1,13 @@
 // 판 끝 정리 파일
-// core가 판 지운 뒤 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드
+// core가 판 지운 뒤 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드·끊긴 사람 정리 예약
 // 판 끝 마무리는 나가기·끊김, 종료 필드는 재판·밤·이탈 뒤 판정, 대기방 정리는 나가기·추방이 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
 const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr, isolateWithError } = require('../../common/isolate')
+const { ENDED_SWEEP_DELAY_MS } = require('../core/constants')
+const { endedSweepRuns } = require('../core/state')
+const { isUuidConnected } = require('../connection/ownership')
 const { detachAllGraces } = require('../connection/grace')
 const { buildSessionEndContext } = require('../delivery/eligibility')
 const { detachFromGameChannel, emitToGameChannel } = require('../delivery/broadcast')
@@ -15,9 +18,9 @@ const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { stopTribunalTimer } = require('../phase/tribunal')
 const { clearDepartureMark } = require('./marks')
 
-// 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
+// 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작·끊긴 사람 정리 예약, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
 // 종료 필드 만들다 던지면 원래 내용 그대로, 원래 내용을 못 만들었으면 판 id·날짜는 붙여 보냄 (어느 판 종료인지 모르던 것)
-function withTerminalFields(session, terminal, payload, label, fields) {
+function withTerminalFields(session, terminal, payload, label, fields, io = null) {
     if (!terminal) return payload
     let merged = payload
     isolate(label, { code: 'TERMINAL_BUILD_ERROR', ...fields }, () => {
@@ -27,7 +30,47 @@ function withTerminalFields(session, terminal, payload, label, fields) {
             : { gameId: session.id, dayIndex: session.dayIndex, ...terminalFields }
     })
     persistTerminalSession(session, { completed: true })
+    if (io) isolate(label, { code: 'ENDED_SWEEP_SCHEDULE_ERROR', ...fields }, () => scheduleEndedSweep(io, session))
     return merged
+}
+
+// 끝난 판 끊긴 사람 정리 예약: 판 끝 순간 연결 없던 사람(죽은 뒤 끊김·유예 중 판 끝)은 떠난 명단에 안 들어가
+// 판이 장부·메모리에 남고 판 끝 정리가 안 돌던 것 (BE-020), 그 안에 다시 붙은 사람은 결과 화면 그대로
+function scheduleEndedSweep(io, session, deps = {}) {
+    if (!io || !session?.id || endedSweepRuns.has(session.id)) return null
+    const setTimeoutFn = deps.setTimeoutFn ?? setTimeout
+    const delayMs = Number.isInteger(deps.delayMs) && deps.delayMs >= 0 ? deps.delayMs : ENDED_SWEEP_DELAY_MS
+    const run = { session, timerId: null, clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout }
+    run.timerId = setTimeoutFn(() => {
+        if (endedSweepRuns.get(session.id) !== run) return
+        endedSweepRuns.delete(session.id)
+        isolateWithError('[끝난 판 끊긴 사람 정리 실패]', () => sweepDisconnectedFromEnded(io, session))
+    }, delayMs)
+    if (typeof run.timerId?.unref === 'function') run.timerId.unref()
+    endedSweepRuns.set(session.id, run)
+    return run
+}
+
+// 정리 예약 끄기 (판 끝 마무리·시험 초기화)
+function cancelEndedSweep(gameId) {
+    const run = endedSweepRuns.get(gameId)
+    if (!run) return
+    if (run.timerId !== null) run.clearTimeoutFn(run.timerId)
+    endedSweepRuns.delete(gameId)
+}
+
+// 끝난 판에 아직 묶인 사람 중 연결 없는 사람만 빼고, 마지막이면 판 끝 마무리까지
+function sweepDisconnectedFromEnded(io, session) {
+    if (session.phase !== 'ENDED') return
+    for (const uuid of [...session.players.keys()]) {
+        if (isUuidConnected(io, uuid)) continue
+        const result = gameSessionCore.endGameSessionForPlayer(uuid, 'PARTICIPANT_LEFT', session.id)
+        if (!result.ok) continue
+        if (result.sessionDeleted) {
+            finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
+            return
+        }
+    }
 }
 
 // matchmaking 쪽 방 상태 정리, 던져도 판 정리는 계속 (원본 에러 찍음)
@@ -37,8 +80,9 @@ function cleanupMatchmakingRooms(io, uuids, label) {
 
 // 판 지운 뒤 socket 쪽 마무리: 전적 저장 시작 → 타이머 정리 → 대기방 정리 → 종료 방송 → 채널 떼기, 단계마다 격리 (지도 07-③)
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
-    // 지워진 판의 밤 성공 수신 기록도 같이 비움
+    // 지워진 판의 밤 성공 수신 기록·끊긴 사람 정리 예약도 같이 비움
     deleteNightReceipts(session)
+    cancelEndedSweep(session?.id)
 
     // 종료 방송 받을 사람은 정리 전에 정해 둠 (다른 판·대기방으로 간 사람 빼기)
     const endContext = isolateOr(null, '[GameSession 종료 수신 문맥 구성 실패]', { code: 'END_CONTEXT_ERROR', gameId: session?.id },
@@ -92,6 +136,8 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
 
 module.exports = {
     withTerminalFields,
+    scheduleEndedSweep,
+    cancelEndedSweep,
     cleanupMatchmakingRooms,
     finalizeGameSessionEnd,
 }
