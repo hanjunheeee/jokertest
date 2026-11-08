@@ -487,10 +487,13 @@ test('밤 역할 채팅 commit: 그사이 낮이 됐으면 INVALID_PHASE', () =>
     assert.equal(core.commitJokerChatMessage(session, joker, p.sentAt).code, 'INVALID_PHASE');
 });
 
-test('밤 광대 채팅은 광대끼리만: 산 시민이 밤에 보내면 거절 (소켓_흐름.md 광대끼리만 보는 채팅)', () => {
-    const { session, citizens } = fullNight();
+test('밤 채팅은 같은 직업끼리 허용 (사용자 결정): 산 시민이 밤에 보내면 받아 주고, 받는 사람은 시민만', () => {
+    const { session, joker, citizens } = fullNight();
     const r = core.prepareJokerChatMessage(citizens[0], session.id, '시민끼리 밤 대화', fixedNow(1000));
-    assert.equal(r.ok, false);
+    assert.equal(r.ok, true);
+    const recipients = core.getChatRecipientUuids(session, 'CITIZEN');
+    assert.deepEqual([...recipients].sort(), [...citizens].sort());
+    assert.equal(recipients.includes(joker), false);
 });
 
 test('밤 역할 채팅 받는 사람: 광대 채널은 죽은 광대 포함, 의사 채널은 산 의사만', () => {

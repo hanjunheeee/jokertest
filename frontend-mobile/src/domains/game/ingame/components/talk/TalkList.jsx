@@ -1,4 +1,4 @@
-// 채팅방 (카톡형): 말·알림·이모티콘 줄을 아래부터 쌓아 보여 줌, 밤엔 위에 "조커 채팅" 표시
+// 채팅방 (카톡형): 말·알림·이모티콘 줄을 아래부터 쌓아 보여 줌, 밤엔 위에 "밤 · 같은 직업끼리" 표시
 // TalkLayout이 화면 대부분 칸에 씀, 값은 useTalkFeed (채팅 세션·참가자 컨텍스트 안)
 import { useRef } from "react"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
@@ -44,7 +44,7 @@ export default function TalkList() {
 
     return (
         <section aria-label="채팅" className={PANEL_CLASS} data-talk-list="">
-            {joker ? <p className={JOKER_BANNER_CLASS}>밤 · 조커 채팅</p> : null}
+            {joker ? <p className={JOKER_BANNER_CLASS}>밤 · 같은 직업끼리</p> : null}
             <div ref={scrollRef} className={SCROLL_CLASS} style={{ fontSize: chatFontSize(textScale, 0.95) }}>
                 <ul role="log" aria-label="채팅 내역" className="flex min-h-full flex-col justify-end">
                     {lines.map((line, index) => {
