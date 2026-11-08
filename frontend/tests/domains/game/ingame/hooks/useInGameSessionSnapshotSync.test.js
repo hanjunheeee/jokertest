@@ -198,15 +198,14 @@ function wrapApplySessionSnapshot() {
 }
 
 function snapshotStoreFacts() {
-  const { state, snapshotSeq, snapshotResultOwner, gameId } = useInGameStore.getState()
-  return { state, snapshotSeq, snapshotResultOwner, gameId }
+  const { state, snapshotSeq, gameId } = useInGameStore.getState()
+  return { state, snapshotSeq, gameId }
 }
 
 function assertStoreFactsUnchanged(before, message) {
   const after = snapshotStoreFacts()
   assert.equal(after.state, before.state, `${message}: state 참조가 바뀌었다`)
   assert.equal(after.snapshotSeq, before.snapshotSeq, `${message}: snapshotSeq가 올랐다`)
-  assert.equal(after.snapshotResultOwner, before.snapshotResultOwner, `${message}: 수신 증거가 바뀌었다`)
   assert.equal(after.gameId, before.gameId, `${message}: gameId가 바뀌었다`)
 }
 
@@ -806,11 +805,6 @@ test("F-23(SPLIT-1): 소속 A→B→A 왕복을 지나온 옛 응답은 아무�
   })
   assert.equal(applyCalls.length, 1, "현재 신원의 요청까지 막혔다")
   assert.equal(useInGameStore.getState().state.dayIndex, 4)
-  const owner = useInGameStore.getState().snapshotResultOwner
-  assert.ok(owner, "검증된 공개 결과에 수신 증거가 붙지 않았다")
-  assert.equal(owner.accountId, "player-1")
-  assert.equal(owner.gameId, "g1")
-  assert.equal(owner.snapshotSeq, useInGameStore.getState().snapshotSeq)
 
   hook.unmount()
 })
@@ -847,8 +841,6 @@ test("F-23(SPLIT-1): 연결이 끊긴 뒤 도착한 응답은 반영되지 않�
     await flushMicrotasks()
   })
   assert.equal(applyCalls.length, 1, "재연결 뒤의 정상 응답까지 막혔다")
-  assert.equal(useInGameStore.getState().snapshotResultOwner.socketId, "sock-2",
-    "수신 증거가 응답을 실제로 받은 연결을 가리키지 않는다")
 
   hook.unmount()
 })
@@ -947,9 +939,7 @@ test("F-23(AC-05): 기존 non-null 소속과 다른 소속을 주장하는 응�
 
   assert.equal(useInGameStore.getState().state.dayIndex, 4, "같은 소속의 정상 응답까지 막혔다")
   assert.equal(useInGameStore.getState().snapshotSeq, before.snapshotSeq + 1)
-  const owner = useInGameStore.getState().snapshotResultOwner
-  assert.ok(owner, "검증된 공개 결과에 수신 증거가 붙지 않았다")
-  assert.equal(owner.membershipId, "mem-a")
+  assert.equal(readMyMembership(), "mem-a")
 })
 
 test("F-23(AC-05): 소속을 싣지 않은(모른다고 말하는) 응답은 이 검사에 걸리지 않는다", () => {

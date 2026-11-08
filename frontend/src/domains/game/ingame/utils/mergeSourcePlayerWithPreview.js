@@ -48,7 +48,6 @@ export function mergeSourcePlayerWithPreview(player, preview) {
     ...(Object.hasOwn(player, "accountWinRate")
       ? { accountWinRate: player.accountWinRate }
       : {}),
-    deathReason: player.deathReason,
   }
 }
 

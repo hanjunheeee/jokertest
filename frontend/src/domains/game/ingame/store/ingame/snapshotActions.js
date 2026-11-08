@@ -14,7 +14,7 @@ import {
 import { adoptIdentityScope } from "./identityScope.js"
 import { clearQueue, records } from "./nightSuccessRecords.js"
 import { clearOnNightEntry, commitRecovery, planRecovery } from "./nightSuccessReception.js"
-import { buildFollowUpScope, buildResultOwner, commitWithReceipt } from "./receiptScope.js"
+import { buildFollowUpScope, commitWithReceipt } from "./receiptScope.js"
 
 export const snapshotActions = (set) => ({
   // 스냅샷 반영
@@ -50,7 +50,6 @@ export const snapshotActions = (set) => ({
         ...commitRecovery(recovery.entries, followUp(), willClear ? EMPTY_NIGHT_SUCCESS_QUEUE : current.nightSuccessQueue),
         ...buildWaitPatch(waitPlan.waiting, followUp(), gameId, patch.state),
         snapshotSeq,
-        snapshotResultOwner: buildResultOwner(receiptContext, gameId, patch.state, snapshotSeq),
       }
     }),
 
@@ -80,7 +79,6 @@ export const snapshotActions = (set) => ({
         ...patch,
         error: null,
         snapshotSeq,
-        snapshotResultOwner: buildResultOwner(receiptContext, gameId, patch.state, snapshotSeq),
         ...CLEARED_NIGHT_PRIVATE_RESULT,
         ...clearQueue(),
         ...commitRecovery(recovery.entries, followUp(), EMPTY_NIGHT_SUCCESS_QUEUE),

@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
 import { createRequire } from "node:module"
+import { register } from "node:module"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
@@ -22,6 +23,9 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const navigateCalls = []
+// 원본의 "@/" 별칭 경로를 풀어 주는 불러오기 도우미
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
+
 mock.module("react-router-dom", {
   namedExports: { useNavigate: () => (...args) => navigateCalls.push(args) },
 })

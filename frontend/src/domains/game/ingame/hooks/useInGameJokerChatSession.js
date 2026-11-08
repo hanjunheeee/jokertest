@@ -36,10 +36,11 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     }
   }, [])
 
-  // 세대 올려서 보낸 메시지의 응답을 버림
+  // 세대 올려서 보낸 메시지의 응답을 버리고 "전송 중" 표시를 풂 (응답이 버려져 안 풀리는 것 막기)
   const invalidate = () => {
     versionRef.current += 1
     sendingRef.current = false
+    dispatch({ type: "INVALIDATE", gameId: useInGameStore.getState().gameId })
   }
 
   // 연결 끊기거나 소켓 바뀌면 보낸 메시지 응답 버림

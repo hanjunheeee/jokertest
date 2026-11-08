@@ -1,7 +1,8 @@
-// 밤 사망 공개 목록 다듬기와 사망 연출 줄 항목 만들기
-// 사망 연출 훅(useInGameKillReveal)·스냅샷 낮 필드 검사가 사용
+// 밤 사망 공개 목록 다듬기
+// 스냅샷 낮 필드 검사(utils/snapshot/dayFields.js)가 사용
 
-// 서버가 보내는 사망 원인
+// 받아 주는 사망 원인: 서버는 광대·마녀사냥꾼·모름(UNKNOWN_NIGHT)만 보냄
+// OTHER는 서버가 안 보내지만 옛 기록 호환으로 받아 둠 (안내 글도 있음)
 export const DEATH_SOURCES = Object.freeze([
   "JOKER",
   "WITCH_HUNTER",
@@ -23,25 +24,4 @@ export function normalizeInGameNightDeathReveals(rawReveals) {
     normalized.push({ victimUuid: raw.victimUuid, source: raw.source })
   }
   return normalized
-}
-
-// 판·날짜·피해자·원인·계정·세대로 키를 만들어 겹치지 않는 줄 항목
-export function buildInGameKillRevealQueueItems({ gameId, authUuid, epoch, nightResult }) {
-  if (typeof gameId !== "string" || gameId.length === 0) return []
-  if (typeof authUuid !== "string" || authUuid.length === 0) return []
-  if (nightResult === null || typeof nightResult !== "object" || Array.isArray(nightResult)) return []
-  if (!Number.isInteger(nightResult.dayIndex) || nightResult.dayIndex < 0) return []
-
-  const reveals = normalizeInGameNightDeathReveals(nightResult.deathReveals)
-  if (reveals.length === 0) return []
-
-  const seen = new Set()
-  const items = []
-  for (const reveal of reveals) {
-    const id = `${gameId}|${nightResult.dayIndex}|${reveal.victimUuid}|${reveal.source}|${authUuid}|${epoch}`
-    if (seen.has(id)) continue
-    seen.add(id)
-    items.push({ id, victimUuid: reveal.victimUuid, source: reveal.source })
-  }
-  return items
 }

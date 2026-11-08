@@ -14,9 +14,6 @@ export const initialState = {
   // 스냅샷을 반영할 때마다 1씩 올림
   snapshotSeq: 0,
 
-  // 스냅샷이 들고 온 밤 결과의 주인 범위
-  snapshotResultOwner: null,
-
   // 아직 안 본 밤 성공 연출
   nightSuccessQueue: EMPTY_NIGHT_SUCCESS_QUEUE,
 

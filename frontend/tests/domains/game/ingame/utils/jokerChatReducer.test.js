@@ -88,13 +88,18 @@ test("jokerChatReducer: ACK가 다른 gameId면 ok 여부와 무관하게 state�
   assert.equal(nextFail, state)
 })
 
-test("jokerChatReducer: INVALIDATE가 같은 gameId면 status/error/messages가 초기화되고 draft는 보존된다", () => {
+test("jokerChatReducer: INVALIDATE가 같은 gameId면 보내는 중 표시만 풀고 메시지·입력은 보존된다", () => {
   const state = { gameId: "game-1", messages: [{ id: "m1" }], draft: "입력 중", status: "sending", error: "이전 오류" }
   const next = jokerChatReducer(state, { type: "INVALIDATE", gameId: "game-1" })
-  assert.deepEqual(next.messages, [])
+  assert.deepEqual(next.messages, [{ id: "m1" }])
   assert.equal(next.status, "idle")
   assert.equal(next.error, null)
   assert.equal(next.draft, "입력 중")
+})
+
+test("jokerChatReducer: INVALIDATE는 보내는 중이 아니면 참조까지 그대로다", () => {
+  const state = { gameId: "game-1", messages: [], draft: "", status: "idle", error: "오류" }
+  assert.equal(jokerChatReducer(state, { type: "INVALIDATE", gameId: "game-1" }), state)
 })
 
 test("jokerChatReducer: INVALIDATE가 다른 gameId면 state가 참조까지 완전히 불변이다", () => {

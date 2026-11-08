@@ -2,7 +2,8 @@
 // 나가기 보내기(hooks/exit/leave.js)가 사용, 보내기는 socket/session.js가 맡음
 import { emitLeave } from "../socket/session.js"
 
-// 나가기 함수 만들기: 소켓·판이 없으면 false, 보냈으면 true
+// 나가기 함수 만들기: 소켓·판이 없거나 연결이 끊겨 있으면 false, 보냈으면 true
+// 끊긴 소켓으로 보내면 기다리다 "결과 모름"이 되고 다시 붙은 뒤 늦게 나가질 수 있어 바로 연결 없음으로 알림
 export function createLeaveGameSessionRequest({
   getSocket,
   getCurrentGameId,
@@ -15,6 +16,7 @@ export function createLeaveGameSessionRequest({
   return () => {
     const socket = getSocket()
     if (!socket) return false
+    if (socket.connected === false) return false
 
     const requestedGameId = getCurrentGameId()
     if (!requestedGameId) return false

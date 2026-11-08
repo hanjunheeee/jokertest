@@ -993,3 +993,19 @@ test('CO S-1(AC-04): bootstrapSessionSnapshotPure도 같은 규칙을 그대로 
     null,
   )
 })
+
+test("known 3장 roster: 사진·테두리 id가 null이면 스냅샷을 거절하지 않고 null로 둔다(화면은 기본 그림)", () => {
+  const current = baseCurrent()
+  const response = baseResponse({
+    players: [
+      { uuid: "p1", nickname: "P1", isAlive: true, isConnected: true, accountProfilePhotoId: null, accountProfileBorderId: null },
+      { uuid: "p2", nickname: "P2", isAlive: true, isConnected: true },
+      { uuid: "p3", nickname: "P3", isAlive: true, isConnected: true },
+    ],
+  })
+  const result = applySessionSnapshotPure(current, response)
+  assert.notEqual(result, current)
+  const p1 = result.state.players.find((p) => p.uuid === "p1")
+  assert.equal(p1.accountProfilePhotoId, null)
+  assert.equal(p1.accountProfileBorderId, null)
+})

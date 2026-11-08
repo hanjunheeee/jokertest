@@ -1,6 +1,6 @@
 // 행동 패널 훅 입구: 밤 행동·낮 준비/투표/판정·재판 투표/판정 요청 훅을 모아 한 값으로 냄
 // 조작 Provider(InGameActionProvider)가 컨텍스트 값으로 씀 (판정 계산은 utils/dayVoteResolve.js)
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import {
   getInGameNightActionLabel,
@@ -34,18 +34,26 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const gameState = useInGameStore((s) => s.state)
   const error = useInGameStore((s) => s.error)
 
-  const [selectedNightTargetId, setSelectedNightTargetId] = useState(null)
-  const [selectedDayVoteTargetId, setSelectedDayVoteTargetId] = useState(null)
-
   const myRole = gameState?.self?.role
   const dayIndex = gameState?.dayIndex
+  const phase = gameState?.phase
   const dayPhase = resolveInGameDayPhase(gameState)
   const dayVoteRound = getDayVoteRound(gameState)
 
-  // 판·날짜·회차가 바뀌면 고른 투표 대상 비움
-  useEffect(() => {
-    setSelectedDayVoteTargetId(null)
-  }, [gameId, dayIndex, dayVoteRound])
+  // 고른 대상은 고른 때의 범위와 같이 적어 두고, 범위가 바뀌면 안 고른 것으로 봄
+  // 밤 대상은 판·날짜·단계, 투표 대상은 판·날짜·회차가 바뀌면 비움 (고른 카드가 다음 단계까지 강조되지 않게)
+  const nightScopeKey = `${gameId ?? ""}:${dayIndex ?? ""}:${phase ?? ""}`
+  const dayVoteScopeKey = `${gameId ?? ""}:${dayIndex ?? ""}:${dayVoteRound}`
+  const [nightPick, setNightPick] = useState({ key: null, id: null })
+  const [dayVotePick, setDayVotePick] = useState({ key: null, id: null })
+  const selectedNightTargetId = nightPick.key === nightScopeKey ? nightPick.id : null
+  const selectedDayVoteTargetId = dayVotePick.key === dayVoteScopeKey ? dayVotePick.id : null
+  const setSelectedNightTargetId = useCallback(
+    (id) => setNightPick({ key: nightScopeKey, id: id ?? null }), [nightScopeKey],
+  )
+  const setSelectedDayVoteTargetId = useCallback(
+    (id) => setDayVotePick({ key: dayVoteScopeKey, id: id ?? null }), [dayVoteScopeKey],
+  )
 
   // 밤 행동·낮 투표 대상 목록과 조작용 내 생존
   const { nightActionTargets, dayVoteTargets, selfAliveForControls } = useActionTargets(gameState)

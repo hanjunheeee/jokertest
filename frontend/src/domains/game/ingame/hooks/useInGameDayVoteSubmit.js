@@ -79,6 +79,8 @@ export function useInGameDayVoteSubmit() {
       onAccepted: (sfxEvent, requestScope) => playSubmitSfx(sfxEvent, requestScope, socket),
     })
     controllerRef.current = controller
+    // 새 컨트롤러의 처음 상태를 화면 상태로 맞춤 (밖의 상태를 들여오는 것이라 effect 안에서 둠)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState(controller.getState())
 
     return () => {

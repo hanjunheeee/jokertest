@@ -32,8 +32,8 @@ export function useKickPlayerRequest({
   const lastReceiptRef = useRef(null)
   const mountedRef = useRef(true)
   const sendLockRef = useRef(false)
+  // 상태 ref는 상태를 바꾸는 곳(applyStatus·보내기)이 같이 적음
   const statusRef = useRef(KICK_REQUEST_STATUS.IDLE)
-  statusRef.current = status
   const needsVerificationRef = useRef(false)
 
   // 상태는 ref에도 바로 적음 (같은 틱 안의 다음 판단이 새 값을 보게)
@@ -61,6 +61,8 @@ export function useKickPlayerRequest({
     lastReceiptRef.current = null
     sendLockRef.current = false
     needsVerificationRef.current = false
+    // 계정이 바뀌면 화면 상태도 처음으로 되돌려야 해서 effect 안에서 바로 바꿈
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNeedsVerification(false)
     setHasReceipt(false)
     setPendingTarget(null)

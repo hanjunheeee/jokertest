@@ -26,7 +26,9 @@ export function useInGameExit() {
 
   // 늦게 끝나는 정리도 최신 navigate를 쓰게 ref에 둠
   const navigateRef = useRef(navigate)
-  navigateRef.current = navigate
+  useEffect(() => {
+    navigateRef.current = navigate
+  }, [navigate])
 
   // 화면 살아 있음·정리 끝남·시간 재기·기다림·시도 번호 (hooks/exit/ 함수들이 같이 씀)
   const mountedRef = useRef(true)

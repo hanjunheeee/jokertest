@@ -1,7 +1,7 @@
 import { InGamePlayerSessionContext } from "../../../../../src/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import test from "node:test"
 import assert from "node:assert/strict"
-import React from "react"
+import React, { act } from "react"
 import { renderHook } from "@testing-library/react"
 import { JSDOM } from "jsdom"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -688,4 +688,36 @@ test("useInGameActionPanel: ENDED인데 winResult 형태가 잘못돼도(문자�
   assert.equal(captured.gameState.winResult, "malformed-not-an-object")
   assert.equal(captured.nightActionsLocked, true)
   assert.equal(captured.dayVoteControlsEnabled, false)
+})
+
+test("known 3장 useInGameActionPanel: 고른 밤 대상은 단계·날짜가 바뀌면 비워진다", () => {
+  ensureActionPanelClientEnvironment()
+  useInGameStore.setState({
+    gameId: "game-1",
+    state: {
+      phase: "NIGHT",
+      dayIndex: 1,
+      self: { role: "DOCTOR", uuid: "p1" },
+      players: [{ uuid: "p1", alive: true }, { uuid: "p2", alive: true }],
+      events: [],
+    },
+    error: null,
+  })
+  function Wrapper({ children }) {
+    return React.createElement(InGamePlayerSessionContext.Provider, { value: { players: [], localPlayerId: "p1" } }, children)
+  }
+  const rendered = renderHook(() => useInGameActionPanel(), { wrapper: Wrapper })
+  act(() => rendered.result.current.setSelectedNightTargetId("p2"))
+  assert.equal(rendered.result.current.selectedNightTargetId, "p2")
+
+  act(() => {
+    useInGameStore.setState((s) => ({ state: { ...s.state, phase: "DAY", dayIndex: 2, dayPhase: "DAY_DISCUSSION" } }))
+  })
+  assert.equal(rendered.result.current.selectedNightTargetId, null)
+
+  act(() => {
+    useInGameStore.setState((s) => ({ state: { ...s.state, phase: "NIGHT", dayIndex: 2, dayPhase: null } }))
+  })
+  assert.equal(rendered.result.current.selectedNightTargetId, null, "지난 밤 고른 대상이 다음 밤에 되살아났다")
+  rendered.unmount()
 })

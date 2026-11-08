@@ -37,23 +37,6 @@ export function isReceiptCurrent(receipt, current) {
   return true
 }
 
-// 스냅샷이 밤 결과를 들고 올 때 그 결과 주인 기록 (밤 결과 없으면 null)
-export function buildResultOwner(receipt, gameId, state, snapshotSeq) {
-  if (receipt === null || typeof receipt !== "object") return null
-  if (!state?.nightResult) return null
-  return Object.freeze({
-    accountId: receipt.accountId ?? null,
-    identityGeneration: receipt.identityGeneration ?? null,
-    gameId: gameId ?? null,
-    membershipId: readSelfMembershipId(state),
-    membershipEpoch: getMembershipEpoch(),
-    socketEpoch: receipt.socketEpoch,
-    socketId: receipt.socketId,
-    socketConnected: receipt.socketConnected,
-    snapshotSeq,
-  })
-}
-
 // 반영 뒤 상태 기준 수신 범위 (연출 복구·대기 복원의 주인으로 씀)
 export function buildFollowUpScope(receipt, gameId, state) {
   return Object.freeze({

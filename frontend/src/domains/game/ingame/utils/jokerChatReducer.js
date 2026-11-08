@@ -40,9 +40,11 @@ export function jokerChatReducer(state, action) {
       return { ...state, status: "idle", error: action.message }
     }
 
+    // 무효화(끊김·소켓 바뀜): 보내는 중 표시만 풂, 받은 메시지·입력은 둠
     case "INVALIDATE":
       if (action.gameId !== state.gameId) return state
-      return { ...state, status: "idle", error: null, messages: [] }
+      if (state.status !== "sending") return state
+      return { ...state, status: "idle", error: null }
 
     default:
       return state

@@ -4,6 +4,7 @@ import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
+import { register } from "node:module"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 function installDomGlobal(name, value) {
@@ -19,6 +20,9 @@ installDomGlobal("MutationObserver", dom.window.MutationObserver)
 installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(dom.window))
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+// 원본의 "@/" 별칭 경로를 풀어 주는 불러오기 도우미
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 mock.module("react-router-dom", { namedExports: { useNavigate: () => () => {} } })
 

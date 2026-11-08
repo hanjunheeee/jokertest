@@ -7,8 +7,9 @@ function hasValidOptionalFields(player) {
   if (Object.hasOwn(player, "isParticipating") && typeof player.isParticipating !== "boolean") return false
   if (Object.hasOwn(player, "membershipId") && player.membershipId !== null && !isNonEmptyString(player.membershipId)) return false
   if (Object.hasOwn(player, "themeIndex") && !isNonNegativeInteger(player.themeIndex)) return false
-  if (Object.hasOwn(player, "accountProfilePhotoId") && !isNonEmptyString(player.accountProfilePhotoId)) return false
-  if (Object.hasOwn(player, "accountProfileBorderId") && !isNonEmptyString(player.accountProfileBorderId)) return false
+  // 사진·테두리는 서버가 없으면 null로 보냄 (null이면 화면이 기본 그림을 씀)
+  if (Object.hasOwn(player, "accountProfilePhotoId") && player.accountProfilePhotoId !== null && !isNonEmptyString(player.accountProfilePhotoId)) return false
+  if (Object.hasOwn(player, "accountProfileBorderId") && player.accountProfileBorderId !== null && !isNonEmptyString(player.accountProfileBorderId)) return false
   if (Object.hasOwn(player, "accountCardFrameId") && player.accountCardFrameId !== null && !isNonEmptyString(player.accountCardFrameId)) return false
   if (Object.hasOwn(player, "accountTotalGames") && !isNonNegativeInteger(player.accountTotalGames)) return false
   if (Object.hasOwn(player, "accountWinRate")

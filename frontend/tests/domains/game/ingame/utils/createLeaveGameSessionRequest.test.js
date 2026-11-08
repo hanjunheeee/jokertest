@@ -145,3 +145,16 @@ test("AC-05: 계정·소속 접근자를 주지 않아도 기존 gameId 계약�
   emitted[0].ack({ ok: true })
   assert.equal(finalized.length, 1)
 })
+
+test("known 3장: 연결이 끊긴 소켓이면 나가기를 보내지 않고 false를 돌려준다(바로 연결 없음 안내)", () => {
+  const emitted = []
+  const socket = { id: "s1", connected: false, emit: (...args) => emitted.push(args) }
+  const leave = createLeaveGameSessionRequest({
+    getSocket: () => socket,
+    getCurrentGameId: () => "g1",
+    finalize: () => {},
+    onFailure: () => {},
+  })
+  assert.equal(leave(), false)
+  assert.equal(emitted.length, 0)
+})

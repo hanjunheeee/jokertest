@@ -22,7 +22,6 @@ export const sessionActions = (set) => ({
         state: normalizeGameState(state),
         hostUuid: pickHostUuid(state, hostUuid),
         error: null,
-        snapshotResultOwner: null,
         ...(nextGameId !== current.gameId
           ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearQueue(), nightPresentationWait: null }
           : {}),
@@ -133,7 +132,6 @@ export const sessionActions = (set) => ({
   clearGame: () =>
     set({
       gameId: null, state: null, hostUuid: null, error: null,
-      snapshotResultOwner: null,
       ...CLEARED_NIGHT_PRIVATE_RESULT,
       ...clearQueue(),
       nightPresentationWait: null,
