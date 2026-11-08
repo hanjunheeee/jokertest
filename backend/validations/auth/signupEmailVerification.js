@@ -2,25 +2,17 @@
 
 // 가입 이메일 인증 입력 검사 파일, 주소 맞추기·모양 확인 + 인증번호 요청·확인 미들웨어
 // routes/auth.routes.js가 미들웨어로 씀, 주소 맞추기·모양 확인은 가입·소셜 가입·인증 서비스도 씀
+const { isSingleEmailAddress } = require('../../utils/auth/emailAddress');
+
 const EMAIL_MAX_LENGTH = 100;
 
 // 앞뒤 공백 빼고 소문자 (대소문자·공백만 다른 주소를 같은 주소로 셈), 문자열 아니면 그대로
 const normalizeEmail = (email) => (typeof email === 'string' ? email.trim().toLowerCase() : email);
 
-// 주소 모양만 대충 봄: 100자 안, 공백 없음, @ 앞뒤 있음, 도메인에 점
+// 주소 모양: 앞뒤 빈칸 빼고 100자 안, 받는 사람 하나짜리 주소만 (쉼표·@ 두 개·꺾쇠·줄바꿈 거절)
 const validateEmailFormat = (email) => {
     if (typeof email !== 'string') return false;
-    const trimmed = email.trim();
-    if (!trimmed || trimmed.length > EMAIL_MAX_LENGTH) return false;
-    if (/\s/.test(trimmed)) return false;
-
-    const atIndex = trimmed.indexOf('@');
-    if (atIndex <= 0 || atIndex === trimmed.length - 1) return false;
-
-    const domain = trimmed.slice(atIndex + 1);
-    if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) return false;
-
-    return true;
+    return isSingleEmailAddress(email.trim(), { maxLength: EMAIL_MAX_LENGTH });
 };
 
 // 배열 아닌 객체 본문인지

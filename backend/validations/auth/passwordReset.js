@@ -2,6 +2,8 @@
 
 // 비번 재설정 입력 검사 파일, 메일 요청 주소 검사(미들웨어) · 링크 토큰 모양 확인
 // routes/auth.routes.js가 메일 요청 앞에 두고, 토큰 확인은 services/auth/passwordReset/confirm.js가 부름
+const { isSingleEmailAddress } = require('../../utils/auth/emailAddress');
+
 const EMAIL_MAX_LENGTH = 100;
 // 토큰 원문은 32바이트를 base64url로 쓴 43자
 const TOKEN_BYTES = 32;
@@ -10,22 +12,12 @@ const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 // 어느 칸이 틀렸는지 안 알려 주게 문구 하나만
 const INVALID_MESSAGE = '입력 형식이 올바르지 않습니다.';
 
-// 주소 모양만 대충 봄: 100자 안, 공백 없음, @ 앞뒤 있음, 도메인에 점
+// 주소 모양: 앞뒤 빈칸 빼고 100자 안, 받는 사람 하나짜리 주소만 (가입 인증과 같은 검사)
 const validateResetEmail = (email) => {
     if (typeof email !== 'string') return { ok: false, message: INVALID_MESSAGE };
 
     const trimmed = email.trim();
-    if (!trimmed) return { ok: false, message: INVALID_MESSAGE };
-    if (trimmed.length > EMAIL_MAX_LENGTH) return { ok: false, message: INVALID_MESSAGE };
-    if (/\s/.test(trimmed)) return { ok: false, message: INVALID_MESSAGE };
-
-    const atIndex = trimmed.indexOf('@');
-    if (atIndex <= 0 || atIndex === trimmed.length - 1) return { ok: false, message: INVALID_MESSAGE };
-
-    const domain = trimmed.slice(atIndex + 1);
-    if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) {
-        return { ok: false, message: INVALID_MESSAGE };
-    }
+    if (!isSingleEmailAddress(trimmed, { maxLength: EMAIL_MAX_LENGTH })) return { ok: false, message: INVALID_MESSAGE };
 
     return { ok: true, value: trimmed };
 };

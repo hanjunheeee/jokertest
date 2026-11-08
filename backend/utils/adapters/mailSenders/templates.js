@@ -3,6 +3,8 @@
 // 메일 문구 파일, 목적 5종 제목·본문 + 보내기 전 공통 확인(목적·받는 주소·기다리는 시간)
 // 메일 발송기 셋(gateway·smtp·memory)과 adapters/mail.js가 씀
 
+const { isSingleEmailAddress } = require('../../auth/emailAddress');
+
 // 메일 제목 앞 게임 이름 (데스크톱·모바일 화면 이름과 같게)
 const GAME_NAME = '가면무도회 살인사건';
 
@@ -73,12 +75,8 @@ const prepareMail = (template, params = {}) => {
     }
 };
 
-// 받는 주소: 비지 않은 254자 이하 글자, @ 있음, 줄바꿈 없음 (메일 머리말 끼워 넣기 막기)
-const isMailAddress = (to) => typeof to === 'string'
-    && to.length > 0
-    && to.length <= 254
-    && !/[\r\n]/.test(to)
-    && to.includes('@');
+// 받는 주소: 받는 사람 하나짜리 주소만 (쉼표로 여러 곳 보내기·줄바꿈 머리말 끼워 넣기 막기)
+const isMailAddress = (to) => isSingleEmailAddress(to);
 
 // 기다리는 시간은 양의 정수일 때만, 아니면 기본값
 const readTimeoutMs = (raw, fallback) => {

@@ -72,8 +72,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 본문 읽기: 100kb 제한·읽기 실패는 코드만·__proto__ 같은 키 거절 (보안 점검 2026-11-09)
+for (const middleware of require("./middlewares/bodyGuard.middleware").bodyGuards()) app.use(middleware);
 app.use(cookieParser());
 // 상태 확인은 요청 로그 앞 (docker healthcheck가 30초마다 불러 로그 안 채우게)
 app.use("/health", require("./routes/health.routes"));

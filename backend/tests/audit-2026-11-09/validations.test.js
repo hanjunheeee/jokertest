@@ -196,9 +196,12 @@ test('아이디 찾기 미들웨어: 틀리면 400 {ok:false, code:INVALID_INPUT
 
 // 비번 재설정
 test('비번 재설정 주소: 100자 통과, 101자 거절', () => {
-    const local = 'a'.repeat(100 - '@b.com'.length);
-    assert.equal(passwordReset.validateResetEmail(`${local}@b.com`).ok, true);
-    assert.equal(passwordReset.validateResetEmail(`a${local}@b.com`).ok, false);
+    // @ 앞은 64자까지라 도메인을 늘려 100자 만듦
+    const local = 'a'.repeat(60);
+    const domain = `${'b'.repeat(100 - 60 - 1 - '.com'.length)}.com`;
+    assert.equal(`${local}@${domain}`.length, 100);
+    assert.equal(passwordReset.validateResetEmail(`${local}@${domain}`).ok, true);
+    assert.equal(passwordReset.validateResetEmail(`${local}@b${domain}`).ok, false);
 });
 
 test('비번 재설정 주소: @ 없음·@로 시작·끝·도메인 점 없음·점으로 끝·공백은 거절', () => {

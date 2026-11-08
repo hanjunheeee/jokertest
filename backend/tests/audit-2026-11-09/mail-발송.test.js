@@ -99,9 +99,12 @@ test('문구 준비: 모르는 목적은 던지고, params가 null이라 문구�
 });
 
 test('받는 주소: 254자까지·@ 있음·줄바꿈 없음만 통과', () => {
-    const local = 'a'.repeat(254 - '@x.io'.length);
-    assert.equal(templates.isMailAddress(`${local}@x.io`), true);
-    assert.equal(templates.isMailAddress(`a${local}@x.io`), false);
+    // @ 앞은 64자까지라 도메인을 늘려 254자 만듦 (도메인 한 칸 63자까지)
+    const domainOf = (last) => `${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(last)}.io`;
+    const local = 'a'.repeat(64);
+    assert.equal(`${local}@${domainOf(58)}`.length, 254);
+    assert.equal(templates.isMailAddress(`${local}@${domainOf(58)}`), true);
+    assert.equal(templates.isMailAddress(`${local}@${domainOf(59)}`), false);
     assert.equal(templates.isMailAddress('a@b.io\nBcc: c@d.io'), false);
     assert.equal(templates.isMailAddress('a@b.io\r'), false);
     assert.equal(templates.isMailAddress('ab.io'), false);
