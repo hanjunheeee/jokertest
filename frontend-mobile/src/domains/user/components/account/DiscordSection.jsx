@@ -1,14 +1,15 @@
-// Discord 계정 연결 칸 (연결 결과 문구 + 연결하기 버튼)
+// Discord 계정 연결 칸 (연결 결과 문구 + 연결하기 버튼 + 연결 확인 창)
 // AccountPanel이 씀, 동작은 useDiscordLink
 
 import { useDiscordLink } from "@m/domains/user/hooks/account/useDiscordLink.js"
 import ConfirmButton from "./ConfirmButton.jsx"
+import DiscordLinkConfirmDialog from "./DiscordLinkConfirmDialog.jsx"
 import Feedback from "./Feedback.jsx"
 import SectionTitle from "./SectionTitle.jsx"
 
 // 결과 문구는 눌러서 닫음
 export default function DiscordSection() {
-    const { message, clearMessage, startLink } = useDiscordLink()
+    const { message, clearMessage, startLink, confirmOpen, confirmLink, cancelLink } = useDiscordLink()
 
     return (
         <section className="flex flex-col gap-1.5">
@@ -29,6 +30,7 @@ export default function DiscordSection() {
                     <ConfirmButton label="연결하기" />
                 </div>
             </form>
+            <DiscordLinkConfirmDialog open={confirmOpen} onConfirm={confirmLink} onCancel={cancelLink} />
         </section>
     )
 }
