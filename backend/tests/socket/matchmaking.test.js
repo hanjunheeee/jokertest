@@ -772,7 +772,15 @@ test('create_room: 성공 후 store 반영을 가정하는 room 객체는 재사
     const socket = createFakeSocket('uuid-cb')
     const io = createFakeIo([socket])
     let callbackCallCount = 0
-    const wrappedCallback = (res) => { callbackCallCount += 1; return res }
+    let committedAtCallback = null
+    // 콜백 받는 순간 장부에 방·소속이 이미 들어가 있는지 (이름대로 "커밋 뒤에만" 확인, BE-076)
+    const wrappedCallback = (res) => {
+        callbackCallCount += 1
+        const snapshot = matchmaking.__getStateSnapshotForTests()
+        committedAtCallback = snapshot.gameRooms.some(([id]) => id === res.room?.roomId)
+            && snapshot.playerRoom.some(([uuid, roomId]) => uuid === 'uuid-cb' && roomId === res.room?.roomId)
+        return res
+    }
 
     const result = await new Promise((resolve) => {
         handleCreateRoom(io, socket, 'uuid-cb', validSettingsPayload(), (res) => {
@@ -783,6 +791,7 @@ test('create_room: 성공 후 store 반영을 가정하는 room 객체는 재사
 
     assert.equal(result.ok, true)
     assert.equal(callbackCallCount, 1)
+    assert.equal(committedAtCallback, true, '성공 콜백이 장부 커밋 전에 불렸다')
 })
 
 test('join_room_by_code: socket.join() 실패 시 방 상태가 변하지 않고 실패 응답을 보낸다', async () => {

@@ -325,3 +325,38 @@ test('입장 시도 기한이 지나 지울 때도 초대에 중단 기록을 �
     await waitUntil(() => inviteCalls.interrupted.length > 0)
     assert.deepEqual(inviteCalls.interrupted, [{ inviteId: 'inv-y', attemptId: 'adm-y', reason: 'EXPIRED' }])
 })
+
+test('BE-025: 코드 입장 시도가 1분에 한도를 넘으면 DB 안 가고 바로 거절', async () => {
+    const { JOIN_ATTEMPT_LIMIT } = require('../../socket/matchmaking/join/entryLimits')
+    const io = createFakeIo()
+    const socket = addSocket(io, 'bf-user')
+    let lookups = 0
+    matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => { lookups += 1; return { uuid, nickname: uuid } } })
+
+    for (let i = 0; i < JOIN_ATTEMPT_LIMIT + 1; i += 1) {
+        await handleJoinRoomByCode(io, socket, 'bf-user', `WRONG${i}`)
+    }
+
+    const failed = socket.emitted.filter((e) => e.event === 'room_join_failed')
+    assert.equal(failed.at(-1).payload.code, 'TOO_MANY_JOIN_ATTEMPTS')
+    assert.equal(lookups, 0, '틀린 코드는 방 찾기에서 끝나 DB를 안 불러야 함')
+})
+
+
+test('BE-030: 다른 방 영수증이 많이 쌓여도 내 방 영수증은 밀려나지 않는다', () => {
+    const receipts = require('../../socket/matchmaking/settings/receipts')
+    const { roomSettingsUpdateResults } = require('../../socket/matchmaking/core/state')
+    const expiresAt = Date.now() + 60_000
+    receipts.recordSettingsResult('mine', { roomId: 'room-mine', expiresAt })
+    for (let i = 0; i < 600; i += 1) {
+        receipts.recordSettingsResult(`busy-${i % 20}-${i}`, { roomId: `room-busy-${i % 20}`, expiresAt })
+    }
+    assert.equal(roomSettingsUpdateResults.has('mine'), true, '다른 방 때문에 10분 전에 밀려나면 안 됨')
+
+    for (let i = 0; i < receipts.MAX_SETTINGS_RESULTS_PER_ROOM + 5; i += 1) {
+        receipts.recordSettingsResult(`flood-${i}`, { roomId: 'room-flood', expiresAt })
+    }
+    const floodCount = [...roomSettingsUpdateResults.values()].filter((e) => e.roomId === 'room-flood').length
+    assert.equal(floodCount, receipts.MAX_SETTINGS_RESULTS_PER_ROOM)
+    assert.equal(roomSettingsUpdateResults.has('flood-0'), false, '한 방 안에선 오래된 것부터 지움')
+})

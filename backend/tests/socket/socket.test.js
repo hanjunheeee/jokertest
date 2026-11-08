@@ -206,7 +206,8 @@ test('F-26(AC-03): 재가입이 거부되면 그 작업만 해제되어 다음 �
     socket.__testables.registerConnectionHandlers(io, fakeSocket)
 
     await fakeSocket.joinCalled
-    await gameSessionSocketLayer.resyncSessionRouting(fakeSocket, 'f26r-a').catch(() => {})
+    // 첫 재가입은 거부돼야 함 (삼키면 거부 안 돼도 통과, BE-077)
+    await assert.rejects(gameSessionSocketLayer.resyncSessionRouting(fakeSocket, 'f26r-a'))
     assert.equal(fakeSocket.rooms.has(session.channelId), false)
 
     fakeSocket.joinShouldReject = false

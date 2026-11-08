@@ -14,8 +14,11 @@ function getSettingsVersion(room) {
 // 영수증 10분 보관
 const SETTINGS_RESULT_TTL_MS = 10 * 60 * 1000
 
-// 영수증 최대 500개
-const MAX_SETTINGS_RESULTS = 500
+// 영수증 방마다 최대 50개 (방이 많아도 남의 방 영수증이 10분 전에 밀려나지 않게, BE-030)
+const MAX_SETTINGS_RESULTS_PER_ROOM = 50
+
+// 영수증 서버 전체 최대 10000개 (메모리 지키는 마지막 막, 보통은 방마다 한도·10분 기한이 먼저 걸림)
+const MAX_SETTINGS_RESULTS = 10000
 
 // 영수증 열쇠 (사람·방·요청 id)
 function settingsUpdateResultKey(uuid, roomId, requestId) {
@@ -30,8 +33,21 @@ function pruneSettingsResults(now = Date.now()) {
     enforceResultCapacity()
 }
 
-// 500개 넘으면 오래된 것부터 지움 (Map은 넣은 순서라 맨 앞이 가장 오래됨)
-function enforceResultCapacity() {
+// 한도 넘으면 오래된 것부터 지움 (Map은 넣은 순서라 앞쪽이 오래됨)
+// roomId 주면 그 방 한도 먼저 맞춤
+function enforceResultCapacity(roomId = null) {
+    if (roomId !== null) {
+        let count = 0
+        for (const entry of roomSettingsUpdateResults.values()) {
+            if (entry.roomId === roomId) count += 1
+        }
+        for (const [key, entry] of roomSettingsUpdateResults) {
+            if (count <= MAX_SETTINGS_RESULTS_PER_ROOM) break
+            if (entry.roomId !== roomId) continue
+            roomSettingsUpdateResults.delete(key)
+            count -= 1
+        }
+    }
     while (roomSettingsUpdateResults.size > MAX_SETTINGS_RESULTS) {
         const oldest = roomSettingsUpdateResults.keys().next().value
         if (oldest === undefined) break
@@ -42,7 +58,7 @@ function enforceResultCapacity() {
 // 설정 저장 결과 영수증 남기기
 function recordSettingsResult(key, entry) {
     roomSettingsUpdateResults.set(key, entry)
-    enforceResultCapacity()
+    enforceResultCapacity(entry?.roomId ?? null)
 }
 
 // 방 없어지면 그 방 영수증 지움
@@ -57,6 +73,7 @@ module.exports = {
     getSettingsVersion,
     SETTINGS_RESULT_TTL_MS,
     MAX_SETTINGS_RESULTS,
+    MAX_SETTINGS_RESULTS_PER_ROOM,
     settingsUpdateResultKey,
     pruneSettingsResults,
     enforceResultCapacity,

@@ -1,0 +1,41 @@
+// 입장 시도 제한 파일
+// 사람별 코드 입장 시도 횟수 제한, join(코드·공개 방)이 봄 (코드 맞히기 막기, BE-025)
+
+// 1분에 코드 입장 시도 20번까지 (정상 사용엔 넉넉, 6자리 코드 맞히기엔 턱없이 적음)
+const JOIN_ATTEMPT_WINDOW_MS = 60 * 1000
+const JOIN_ATTEMPT_LIMIT = 20
+
+// 사람별 시도 묶음 (uuid → { startedAt, count })
+const joinAttemptsByUuid = new Map()
+
+// 기한 지난 시도 묶음 지우기 (사람이 많을 때만, 따로 타이머 없음)
+function pruneJoinAttempts(now) {
+    if (joinAttemptsByUuid.size < 1000) return
+    for (const [uuid, entry] of joinAttemptsByUuid) {
+        if (now - entry.startedAt >= JOIN_ATTEMPT_WINDOW_MS) joinAttemptsByUuid.delete(uuid)
+    }
+}
+
+// 코드 입장 시도 하나 세기, 한도 넘으면 false
+function takeJoinAttempt(uuid, now = Date.now()) {
+    pruneJoinAttempts(now)
+    const entry = joinAttemptsByUuid.get(uuid)
+    if (!entry || now - entry.startedAt >= JOIN_ATTEMPT_WINDOW_MS) {
+        joinAttemptsByUuid.set(uuid, { startedAt: now, count: 1 })
+        return true
+    }
+    entry.count += 1
+    return entry.count <= JOIN_ATTEMPT_LIMIT
+}
+
+// 시험용: 시도 묶음 비우기
+function __resetEntryLimitsForTests() {
+    joinAttemptsByUuid.clear()
+}
+
+module.exports = {
+    JOIN_ATTEMPT_WINDOW_MS,
+    JOIN_ATTEMPT_LIMIT,
+    takeJoinAttempt,
+    __resetEntryLimitsForTests,
+}

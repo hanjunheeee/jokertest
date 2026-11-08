@@ -12,6 +12,10 @@ const { detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembe
 const { deps } = require('../core/deps')
 const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList, buildPublicRoomList } = require('../room/view')
 const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
+const { takeJoinAttempt } = require('./entryLimits')
+
+// 입장 시도 너무 많음 거절 코드 (roomJoinErrors 표에 없는 새 코드, 화면은 문구를 그대로 띄움)
+const TOO_MANY_JOIN_ATTEMPTS = 'TOO_MANY_JOIN_ATTEMPTS'
 const { getSupportedRoomSizes } = require('../core/config')
 const { countRoomOccupancy } = require('../admission/attempts')
 
@@ -28,6 +32,12 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     const normalizedCode = String(roomCode ?? '').trim()
     if (!normalizedCode) {
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.CODE_REQUIRED, '방 코드를 입력해주세요.')
+        return
+    }
+
+    // 사람별 코드 입장 시도 횟수 제한 (서버가 끌어다 넣는 자동 입장은 안 셈, BE-025)
+    if (!autoJoin && !takeJoinAttempt(uuid)) {
+        emitRoomJoinFailed(socket, TOO_MANY_JOIN_ATTEMPTS, '입장 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.')
         return
     }
 
@@ -88,32 +98,9 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     }
 
     try {
-        // 계정·프로필 읽기, 계정 없으면 거절
-        const [user, accountProfile] = await Promise.all([
-            deps.userRepository.findByUuid(uuid),
-            loadPlayerProfile(uuid),
-        ])
-        if (!user) {
-            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, '사용자 정보를 찾을 수 없습니다.')
-            return
-        }
-
-        // 기다린 사이 다른 방 들어갔거나 판 끝 정리됐으면 거절 (지도 01-④)
-        if (playerRoom.has(uuid)) {
-            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
-            return
-        }
-
-        if (getGeneration(uuid) !== generationAtReservation) {
-            emitRoomJoinFailed(
-                socket,
-                ROOM_JOIN_ERROR_CODES.SESSION_ENDED,
-                '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.',
-            )
-            return
-        }
-
-        // 방 찾기: 코드 방 id 받은 요청이면 그 방만 (종류·코드도 맞아야 함), 아니면 코드로 찾음
+        // 방 찾기 먼저 (DB 읽기 전, 틀린 코드 시도가 DB를 두 번씩 안 부르게, BE-025)
+        // 코드 방 id 받은 요청이면 그 방만 (종류·코드도 맞아야 함), 아니면 코드로 찾음
+        // 찾은 방이 DB 기다리는 사이 사라지면 join 뒤 확인이 거름
         let room
         if (expectedRoom?.accessType === 'code') {
             room = gameRooms.get(expectedRoom.roomId)
@@ -151,6 +138,31 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
                 return
             }
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드와 일치하는 방이 없습니다.')
+            return
+        }
+
+        // 계정·프로필 읽기, 계정 없으면 거절
+        const [user, accountProfile] = await Promise.all([
+            deps.userRepository.findByUuid(uuid),
+            loadPlayerProfile(uuid),
+        ])
+        if (!user) {
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, '사용자 정보를 찾을 수 없습니다.')
+            return
+        }
+
+        // 기다린 사이 다른 방 들어갔거나 판 끝 정리됐으면 거절 (지도 01-④)
+        if (playerRoom.has(uuid)) {
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM, '이미 참여 중인 방이 있습니다.')
+            return
+        }
+
+        if (getGeneration(uuid) !== generationAtReservation) {
+            emitRoomJoinFailed(
+                socket,
+                ROOM_JOIN_ERROR_CODES.SESSION_ENDED,
+                '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.',
+            )
             return
         }
 

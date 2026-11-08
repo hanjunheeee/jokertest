@@ -679,7 +679,8 @@ test('AC-05 · 결과 기록은 삽입 시점에도 상한을 지키고, 가장 
     const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
 
     const results = () => matchmaking.__getStateSnapshotForTests().roomSettingsUpdateResults
-    const MAX = 500
+    // 상한은 방마다 (BE-030: 서버 전체 500개 한도가 남의 방 영수증을 밀어내던 것)
+    const MAX = require('../../socket/matchmaking/settings/receipts').MAX_SETTINGS_RESULTS_PER_ROOM
 
     for (let i = 0; i < MAX; i += 1) {
         const res = await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',

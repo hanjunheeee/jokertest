@@ -127,6 +127,10 @@ const {
     handleGetGameInviteResult,
     __seedAdmissionAttemptForTests,
 } = require('./matchmaking/admission/accept')
+// 코드 입장 시도 횟수 (시험 초기화용)
+const {
+    __resetEntryLimitsForTests,
+} = require('./matchmaking/join/entryLimits')
 // 판 끝·판 나가기·게임 추방 때 대기방 흔적 정리
 const {
     cleanupRoomStateForSessionParticipants,
@@ -266,6 +270,7 @@ function __resetStateForTests() {
     pendingRoomRemovals.clear()
     presenceConfirmedTick.clear()
     resetRoomPresenceTick()
+    __resetEntryLimitsForTests()
 }
 
 // 시험용: 15초 안 기다리고 끊김 빼기 예약 바로 실행
