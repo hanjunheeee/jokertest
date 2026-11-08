@@ -42,11 +42,13 @@ export function computePanelLocks({
     gameState?.phase !== "NIGHT"
 
   // 토론 준비: 낮 토론 단계에서 아직 안 냈을 때
+  // 낮 세부 단계 값이 없으면(모름) 잠금 (서버는 늘 값을 줘서, 없으면 잘못 받은 상태로 봄)
   const dayReadyControlsEnabled =
     !interactionBlocked &&
     !isGameEnded &&
     gameState?.phase === "DAY" &&
     dayPhase === INGAME_DAY_PHASES.DISCUSSION &&
+    gameState?.dayPhase === INGAME_DAY_PHASES.DISCUSSION &&
     selfAliveForControls &&
     dayReadyStatus === "idle"
 

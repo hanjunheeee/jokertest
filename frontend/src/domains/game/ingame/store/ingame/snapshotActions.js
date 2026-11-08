@@ -45,6 +45,8 @@ export const snapshotActions = (set) => ({
       return {
         ...patch,
         ...nightEntryPatch,
+        // 새 밤으로 들어가면 지난 밤 개인 결과(조사·확인 결과) 비움 (실시간 경로와 같게)
+        ...(willClear ? CLEARED_NIGHT_PRIVATE_RESULT : {}),
         ...commitRecovery(recovery.entries, followUp(), willClear ? EMPTY_NIGHT_SUCCESS_QUEUE : current.nightSuccessQueue),
         ...buildWaitPatch(waitPlan.waiting, followUp(), gameId, patch.state),
         snapshotSeq,

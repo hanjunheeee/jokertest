@@ -5,10 +5,10 @@
 export const TIMEOUT_MS = 5000
 
 // 서버가 실패 문구를 안 줬을 때
-export const FAILED_MSG = "?먯젙?섏? 紐삵뻽?듬땲??"
+export const FAILED_MSG = "판정하지 못했습니다."
 
 // 보낼 때 연결이 없을 때
-export const OFFLINE_MSG = "?쒕쾭 ?곌껐???뺤씤?????놁뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂."
+export const OFFLINE_MSG = "서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요."
 
 // 응답이 시간 안에 안 올 때
-export const NO_ACK_MSG = "?붿껌???묐떟?섏? ?딆뒿?덈떎. ?ㅼ떆 ?쒕룄?댁＜?몄슂."
+export const NO_ACK_MSG = "요청이 응답하지 않습니다. 다시 시도해주세요."

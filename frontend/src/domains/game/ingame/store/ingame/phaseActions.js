@@ -7,6 +7,7 @@ import {
 } from "../../constants/store/ingameStore.js"
 import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
 import { applyPlayerEliminatedPure } from "../applyPlayerEliminated.js"
+import { clearSelfActed } from "../../utils/store/selfActed.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { commitWithReceipt } from "./receiptScope.js"
 
@@ -44,6 +45,7 @@ export const phaseActions = (set) => ({
           phase: payload.phase,
           dayIndex: payload.dayIndex,
           dayPhase: isFirstDay ? "DAY_DISCUSSION" : null,
+          ...clearSelfActed(current.state),
           ...(isFirstDay ? { dayPhaseDeadline: dayPhaseDeadline ?? null } : { ...CLEARED_DAY_PHASE_TIMER }),
         },
         ...(isLegacyFirstNight ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearQueue() } : {}),
@@ -107,6 +109,7 @@ export const phaseActions = (set) => ({
           dayVoteResolution: null,
           dayPhaseDeadline: dayPhaseDeadline ?? null,
           ...CLEARED_NIGHT_TURN,
+          ...clearSelfActed(current.state),
           players: mergeAlive(current.state.players, aliveByUuid),
         },
       }
@@ -167,7 +170,7 @@ export const phaseActions = (set) => ({
       if (current.state.dayPhase === "DAY_VOTE") return current
 
       // 투표 마감 시각은 실려 왔을 때만 바꿈 (틀리면 거절)
-      const nextState = { ...current.state, dayPhase: "DAY_VOTE" }
+      const nextState = { ...current.state, dayPhase: "DAY_VOTE", ...clearSelfActed(current.state) }
       const dayPhaseDeadline = parseDayPhaseDeadlineField(parsed)
       if (dayPhaseDeadline === null) return current
       if (dayPhaseDeadline !== undefined) nextState.dayPhaseDeadline = dayPhaseDeadline

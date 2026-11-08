@@ -1,4 +1,4 @@
-// 카드에서 판 추방 훅: 대상 목록·요청 만들기·보내기 전 소속 확인
+// 카드에서 판 추방 훅: 대상 목록·요청 만들기·결과 모를 때 소속 다시 확인
 // 조작 Provider(카드 메뉴용)·설정 추방 창이 따로 사용, 스냅샷 묻기는 socket/session.js를 부름
 import { useCallback, useMemo } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
@@ -7,6 +7,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { captureVerificationGuard } from "./kick/guards.js"
 import { useKickPlayerRequest } from "./useKickPlayerRequest.js"
 import { askSnapshot } from "../socket/session.js"
+import { KICK_ACK_TIMEOUT_MS } from "../constants/ingameKick.js"
 
 // 판 추방 대상·진행 상태와 추방 함수 (보내기 흐름은 useKickPlayerRequest)
 export function useInGameKickFromCard() {
@@ -32,7 +33,7 @@ export function useInGameKickFromCard() {
     return `${current.state.bootEpoch ?? ""}:${current.gameId}:${myMembershipId ?? ""}`
   }, [authUuid])
 
-  // 보내기 전에 스냅샷을 다시 받아 내 소속이 아직 맞는지 확인
+  // 추방 결과를 모를 때 스냅샷을 다시 받아 내 소속이 아직 맞는지 확인 (응답 기한 지나면 실패)
   const verifyMembership = useCallback(() => new Promise((resolve) => {
     const socket = getSocket()
     const current = useInGameStore.getState()
@@ -41,7 +42,14 @@ export function useInGameKickFromCard() {
     const gameIdAtRequest = current.gameId
     // 결과는 한 번만 알림
     let settled = false
-    const finish = (ok) => { if (!settled) { settled = true; resolve(ok) } }
+    let timer = null
+    const finish = (ok) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(ok)
+    }
+    timer = setTimeout(() => finish(false), KICK_ACK_TIMEOUT_MS)
     // 물을 때 계정·소켓·범위·참여 수정 번호를 잡아 둠
     const isStillCurrent = captureVerificationGuard({
       socket,

@@ -158,9 +158,17 @@ export function useKickPlayerRequest({
       getMembershipScopeId,
     })
 
-    // 옛 응답은 버림, 성공이면 성공, 아니면 서버 코드로 실패 (잠금 풂)
+    // 옛 응답은 버림, 응답 기한이 지나면 결과 모름(잠금은 그대로, 결과 확인으로 정함)
+    // 성공이면 성공, 아니면 서버 코드로 실패 (잠금 풂)
     emitKick(socket, scope, request, (response) => {
       if (!isStillCurrent()) return
+
+      if (response?.timedOut === true) {
+        setPendingTarget(null)
+        applyStatus(KICK_REQUEST_STATUS.UNKNOWN)
+        setErrorCode(null)
+        return
+      }
 
       sendLockRef.current = false
       setPendingTarget(null)

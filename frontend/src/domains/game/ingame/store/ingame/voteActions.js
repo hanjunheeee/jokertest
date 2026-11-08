@@ -8,6 +8,7 @@ import {
 import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../../utils/dayVoteRound.js"
 import { applyTribunalResolvedPure } from "../applyTribunalResolved.js"
+import { clearSelfActed } from "../../utils/store/selfActed.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { clearOnNightEntry } from "./nightSuccessReception.js"
 import { commitWithReceipt } from "./receiptScope.js"
@@ -69,10 +70,12 @@ export const voteActions = (set) => ({
             dayVoteResolution,
             tribunal: { defendantUuid },
             ...CLEARED_DAY_PHASE_TIMER,
+            ...clearSelfActed(current.state),
           },
         }
       }
       // 동표·기권: 바로 밤으로, 낮 마감 시각·밤 개인 결과·성공 연출 비움
+      // 받아 둔 밤 차례는 안 지움 (밤 첫 차례 방송이 이 판정보다 먼저 올 수 있음, 낮 시작 때 이미 비워서 옛 차례는 없음)
       if (outcome === "TIE" || outcome === "ABSTAINED") {
         return {
           state: {
@@ -81,7 +84,8 @@ export const voteActions = (set) => ({
             dayPhase: null,
             dayVoteResolution,
             ...CLEARED_DAY_PHASE_TIMER,
-            ...CLEARED_NIGHT_TURN,
+            ...(current.state.nightTurnRole ? {} : CLEARED_NIGHT_TURN),
+            ...clearSelfActed(current.state),
           },
           ...CLEARED_NIGHT_PRIVATE_RESULT,
           ...clearQueue(),
@@ -98,6 +102,7 @@ export const voteActions = (set) => ({
       if (patch.state?.phase !== "NIGHT") return patch
       return {
         ...patch,
+        state: { ...patch.state, ...clearSelfActed(patch.state) },
         ...clearPrivateOnNightEntry(current),
         ...clearOnNightEntry(current.state, patch.state),
       }

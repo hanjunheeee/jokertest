@@ -842,7 +842,7 @@ test("AC-03: 이 사건 이전에 캡처된 낮은 세대는 최신 참여 상�
   assert.equal(useInGameStore.getState().state.players.find((p) => p.uuid === TARGET).isParticipating, false)
 })
 
-test("AC-03: 피고 이탈 취소(CANCELLED)는 유죄 판정과 구별돼 tribunal을 비우고 같은 날 밤으로만 넘긴다", () => {
+test("AC-03·FE-002: 피고 이탈 취소(CANCELLED)는 유죄 판정과 구별돼 tribunal을 비우고 같은 날 밤으로 넘기며 나간 피고만 죽음 처리한다", () => {
   const current = {
     gameId: "g1",
     state: {
@@ -861,7 +861,9 @@ test("AC-03: 피고 이탈 취소(CANCELLED)는 유죄 판정과 구별돼 tribu
   assert.notEqual(next, current)
   assert.equal(next.state.phase, "NIGHT")
   assert.equal(next.state.tribunal, null)
-  assert.equal(next.state.players.find((p) => p.uuid === "d1").alive, true)
+  // FE-002: 나간 피고는 죽음 처리, 다른 사람은 그대로
+  assert.equal(next.state.players.find((p) => p.uuid === "d1").alive, false)
+  assert.equal(next.state.players.find((p) => p.uuid === "p2").alive, true)
 
   for (const bad of [
     { ...cancelled, phase: "ENDED" },
@@ -1175,4 +1177,52 @@ test("V-2(AC-03): 서버 state.hostUuid가 있으면 폴백 인자보다 그 값
   assert.equal(useInGameStore.getState().hostUuid, HOST, "서버 state.hostUuid가 폴백에 밀렸다")
   assert.equal(renderHook(() => useInGameSettingIsHost()).result.current, false,
     "설정 경로가 옛 방 단계 복사본으로 방관리를 열어줬다")
+})
+
+test("FE-016: 결과 모름 뒤 재확인이 실패하면 실패 문구를 띄우고(대기는 유지) 결과 확인을 다시 할 수 있다", async () => {
+  const socket = setUp()
+  const { result } = mountKick({ verifyMembership: () => Promise.resolve(false) })
+
+  act(() => result.current.requestConfirm(currentTargets()[0]))
+  act(() => result.current.confirmKick(currentTargets()))
+  act(() => result.current.lookupResult())
+  await act(async () => { socket.emitted[1].ack({ ok: true, status: "UNKNOWN" }) })
+
+  assert.equal(result.current.status, KICK_REQUEST_STATUS.FAILED)
+  assert.equal(result.current.errorCode, "VERIFY_FAILED")
+  assert.equal(result.current.isAwaitingResolution, true)
+  assert.equal(result.current.canLookupResult, true)
+})
+
+test("known 3장 useKickPlayerRequest: 추방 요청 응답이 기한 안에 없으면 보내는 중에 멈추지 않고 결과 모름이 된다", () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    setUp()
+    const { result } = mountKick()
+    act(() => result.current.requestConfirm(currentTargets()[0]))
+    act(() => result.current.confirmKick(currentTargets()))
+    assert.equal(result.current.status, KICK_REQUEST_STATUS.SENDING)
+    act(() => mock.timers.tick(8000))
+    assert.equal(result.current.status, KICK_REQUEST_STATUS.UNKNOWN)
+    assert.equal(result.current.canLookupResult, true)
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("known 3장 useKickPlayerRequest: 결과 조회 응답이 기한 안에 없으면 NO_RESPONSE 실패로 둔다", () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    setUp()
+    const { result } = mountKick()
+    act(() => result.current.requestConfirm(currentTargets()[0]))
+    act(() => result.current.confirmKick(currentTargets()))
+    act(() => mock.timers.tick(8000))
+    act(() => result.current.lookupResult())
+    act(() => mock.timers.tick(8000))
+    assert.equal(result.current.status, KICK_REQUEST_STATUS.FAILED)
+    assert.equal(result.current.errorCode, "NO_RESPONSE")
+  } finally {
+    mock.timers.reset()
+  }
 })
