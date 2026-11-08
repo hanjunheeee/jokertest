@@ -6,10 +6,13 @@ export const POLL_MS = 2000
 export const MAX_AUTO_CHECKS = 5
 // 토스 결제 SDK 주소
 export const SDK_URL = "https://js.tosspayments.com/v2/standard"
-// 주문 id·결제 키·클라이언트 키 모양 (클라이언트 키는 테스트 키만 받음)
+// 주문 id·결제 키 모양
 export const ORDER_ID = /^[A-Za-z0-9_-]{6,64}$/
 export const PAYMENT_KEY = /^[A-Za-z0-9_=+/.-]{1,200}$/
-export const CLIENT_KEY = /^test_ck_[A-Za-z0-9_=+/-]{8,200}$/
+// 클라이언트 키 모양: 개발 화면은 테스트 키만(실수로 실제 결제 막기), 빌드한 화면은 운영 키도 (어느 키 줄지는 서버가 정함, 모바일도 같은 값)
+const TEST_CLIENT_KEY = /^test_ck_[A-Za-z0-9_=+/-]{8,200}$/
+const ANY_CLIENT_KEY = /^(?:test|live)_ck_[A-Za-z0-9_=+/-]{8,200}$/
+export const CLIENT_KEY = import.meta.env?.PROD === true ? ANY_CLIENT_KEY : TEST_CLIENT_KEY
 // 서버 주문 상태 전체·진행 중으로 보는 상태·진행 중 주문 최대 개수
 export const ORDER_STATUSES = ["CREATED", "CONFIRMING", "PENDING_GRANT", "GRANTED", "FAILED", "CANCELED", "EXPIRED", "REFUNDED"]
 export const OPEN_ORDER_STATUSES = ["CONFIRMING", "PENDING_GRANT"]

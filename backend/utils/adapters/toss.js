@@ -1,8 +1,9 @@
 'use strict';
 
-// 토스페이먼츠 어댑터 파일, 결제 승인·결제 조회 요청 + 응답을 정해진 결과 모양으로 바꾸기 + 키 읽기
+// 토스페이먼츠 어댑터 파일, 결제 승인·결제 조회 요청 + 응답을 정해진 결과 모양으로 바꾸기 + 키 읽기(운영 live·개발 test)
 // 충전 서비스가 topup/helpers.js adapterOf로 꺼내 씀 (시험은 가짜를 넣음)
 const { createError } = require('../appError');
+const { isProduction } = require('../../config/nodeEnv');
 
 // 토스 API 주소 · 같은 주문 승인을 두 번 보내도 한 번만 처리되게 주문마다 같은 멱등 키
 const TOSS_API_ORIGIN = 'https://api.tosspayments.com';
@@ -11,10 +12,18 @@ const paymentUrl = (paymentKey) => `${TOSS_API_ORIGIN}/v1/payments/${encodeURICo
 const idempotencyKeyOf = (orderId) => `topup-confirm:${orderId}`;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-// 시험용 키만 받음 (test_ck_·test_sk_ 앞말 + 정해진 글자 8~200자), 운영 키는 설정 없음으로 봄
+// 키 모양: 앞말 + 정해진 글자 8~200자
 const KEY_BODY = /^[A-Za-z0-9_=+/-]{8,200}$/;
-const CLIENT_KEY_PREFIX = 'test_ck_';
-const SECRET_KEY_PREFIX = 'test_sk_';
+
+// 키 묶음 둘: 시험(test_)·운영(live_), 환경값 이름도 나눔 (N-7)
+const KEY_SETS = Object.freeze({
+    test: Object.freeze({
+        mode: 'test', clientName: 'TOSS_TEST_CLIENT_KEY', secretName: 'TOSS_TEST_SECRET_KEY', clientPrefix: 'test_ck_', secretPrefix: 'test_sk_',
+    }),
+    live: Object.freeze({
+        mode: 'live', clientName: 'TOSS_LIVE_CLIENT_KEY', secretName: 'TOSS_LIVE_SECRET_KEY', clientPrefix: 'live_ck_', secretPrefix: 'live_sk_',
+    }),
+});
 
 // 키가 없거나 모양이 틀리면 503 (어느 키가 틀렸는지는 안 알림)
 const configMissing = () => createError('결제 설정이 올바르지 않습니다.', 503, 'CONFIG_MISSING');
@@ -26,21 +35,47 @@ const isValidKey = (value, prefix) => (
     && KEY_BODY.test(value.slice(prefix.length))
 );
 
+const hasValue = (value) => typeof value === 'string' && value.trim() !== '';
+
+// 운영 키 이름이 하나라도 채워졌는지
+const hasLiveKeys = (env) => hasValue(env.TOSS_LIVE_CLIENT_KEY) || hasValue(env.TOSS_LIVE_SECRET_KEY);
+
+// 쓸 키 묶음: 운영 + 운영 키 이름 채워짐 → live (모양 틀려도 시험 키로 안 내려감, 503)
+// 나머지(운영인데 운영 키 없음·개발·시험) → test, 개발은 운영 키 있어도 안 씀 (실수로 실제 결제 막기)
+const pickKeySet = (env) => (isProduction(env) && hasLiveKeys(env) ? KEY_SETS.live : KEY_SETS.test);
+
 // 결제창에 줄 클라이언트 키만 (비밀 키 없어도 됨)
 const readClientKey = (env = process.env) => {
-    const clientKey = env.TOSS_TEST_CLIENT_KEY;
-    if (!isValidKey(clientKey, CLIENT_KEY_PREFIX)) throw configMissing();
+    const set = pickKeySet(env);
+    const clientKey = env[set.clientName];
+    if (!isValidKey(clientKey, set.clientPrefix)) throw configMissing();
     return clientKey;
 };
 
-// 승인·조회용: 클라이언트 키·비밀 키 둘 다 맞아야 함
+// 승인·조회용: 같은 묶음의 클라이언트 키·비밀 키 둘 다 맞아야 함 (시험·운영 키 섞기 안 됨)
 const readConfig = (env = process.env) => {
-    const clientKey = env.TOSS_TEST_CLIENT_KEY;
-    const secretKey = env.TOSS_TEST_SECRET_KEY;
-    if (!isValidKey(clientKey, CLIENT_KEY_PREFIX) || !isValidKey(secretKey, SECRET_KEY_PREFIX)) {
+    const set = pickKeySet(env);
+    const clientKey = env[set.clientName];
+    const secretKey = env[set.secretName];
+    if (!isValidKey(clientKey, set.clientPrefix) || !isValidKey(secretKey, set.secretPrefix)) {
         throw configMissing();
     }
     return { clientKey, secretKey };
+};
+
+// 켤 때 경고 글 (없으면 null), 키 값은 안 넣음
+// 운영인데 시험 키로 돌면 결제해도 돈이 안 들어옴 → 경고만 하고 켬
+const describeKeyWarning = (env = process.env) => {
+    const set = pickKeySet(env);
+    const valid = isValidKey(env[set.clientName], set.clientPrefix) && isValidKey(env[set.secretName], set.secretPrefix);
+    if (!isProduction(env)) {
+        return hasLiveKeys(env) ? '개발·시험 환경이라 토스 운영 키(TOSS_LIVE_*)는 안 씀, 시험 키(TOSS_TEST_*)만 씀' : null;
+    }
+    if (set.mode === 'live') {
+        return valid ? null : '토스 운영 키(TOSS_LIVE_CLIENT_KEY·TOSS_LIVE_SECRET_KEY) 모양이 틀리거나 하나가 빠짐 — 충전이 "설정 대기"(503)';
+    }
+    if (valid) return '운영인데 토스 시험 키(TOSS_TEST_*)로 돎 — 결제해도 돈이 안 들어옴, TOSS_LIVE_CLIENT_KEY·TOSS_LIVE_SECRET_KEY 넣기';
+    return '토스 키 없음 — 충전이 "설정 대기"(503)';
 };
 
 // 토스 인증 헤더: 비밀 키 + ':' 을 base64로
@@ -194,6 +229,8 @@ module.exports = {
     createTossAdapter,
     readConfig,
     readClientKey,
+    describeKeyWarning,
+    KEY_SETS,
     CONFIRM_URL,
     paymentUrl,
     basicAuthHeader,

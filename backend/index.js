@@ -30,6 +30,10 @@ try {
     console.warn(`[STARTUP] 경고 — ${error.message} (개발이라 계속, 운영이면 시작 거부)`);
 }
 
+// 토스 키 상태: 운영인데 시험 키면 돈이 안 들어와 경고만 (N-7, 키 값은 안 찍음)
+const tossKeyWarning = require("./utils/adapters/toss").describeKeyWarning();
+if (tossKeyWarning) console.warn(`[STARTUP] 경고 — ${tossKeyWarning}`);
+
 // 모델 불러오기부터 실패할 수 있음 (DB 주소 없음 등)
 let db;
 try {
