@@ -12,9 +12,11 @@ const findOrCreateBySource = (db, { userId, sourceKey, defaults }, transaction) 
 });
 
 // 같은 사람·출처 키 알림 하나 (동시 만들기에 졌을 때 있던 것 꺼내기)
-const findBySource = (db, { userId, sourceKey }, transaction) => db.Notification.findOne({
+// latest 참이면 잠금 읽기로 최신 커밋 값 봄 (REPEATABLE READ 스냅샷엔 남이 막 만든 행이 안 보이기 때문)
+const findBySource = (db, { userId, sourceKey, latest = false }, transaction) => db.Notification.findOne({
     where: { user_id: userId, source_key: sourceKey },
     transaction,
+    ...(latest && transaction?.LOCK?.SHARE ? { lock: transaction.LOCK.SHARE } : {}),
 });
 
 // 같은 사람·출처 키 유일 제약에 걸린 건지 (다른 유일 오류는 아님)
@@ -32,10 +34,11 @@ const isDuplicateSourceError = (error, db, userId, sourceKey) => {
     return error?.fields?.user_id === userId && error?.fields?.source_key === sourceKey;
 };
 
-// 그 사람 알림 최근 것부터 (같은 시각이면 id 큰 것 먼저)
-const listByUser = (db, userId) => db.Notification.findAll({
+// 그 사람 알림 최근 것부터 limit개 (같은 시각이면 id 큰 것 먼저)
+const listByUser = (db, userId, limit) => db.Notification.findAll({
     where: { user_id: userId },
     order: [['created_at', 'DESC'], ['id', 'DESC']],
+    ...(Number.isInteger(limit) && limit > 0 ? { limit } : {}),
 });
 
 // 그 사람의 그 알림 하나 (남의 알림은 못 건드리게 user_id도 같이 봄)

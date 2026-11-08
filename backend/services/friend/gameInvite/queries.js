@@ -19,8 +19,7 @@ async function getReceiverSnapshot(receiverId) {
     }
 
     return await withTransaction(db, async (t) => {
-        // 받는 계정 잠그고 시간 지난 초대 먼저 만료
-        await lockReceiver(db, receiverId, t);
+        // 시간 지난 초대 먼저 만료 (조건부 UPDATE라 계정 행 잠금 없이도 대기인 것만 바뀜, 읽기가 친구·초대 처리와 줄 안 서게)
         await expireDueInvites(db, receiverId, now(), t);
 
         const rows = await gameInviteRepository.listReceivedWithSender(db, { receiverId, status: INVITE_STATUS.PENDING }, t);

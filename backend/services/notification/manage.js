@@ -7,13 +7,13 @@ const notificationRepository = require('../../repositories/notification');
 const { withTransaction } = require('../../repositories/common');
 const { getDeps } = require('./deps');
 const { toPublicNotification } = require('./notify');
-const { UUID_PATTERN } = require('./constants');
+const { UUID_PATTERN, NOTIFICATION_LIST_LIMIT } = require('./constants');
 
-// 내 알림 최근 것부터 (계정 없으면 빈 목록)
+// 내 알림 최근 것부터 최대 100개 (계정 없으면 빈 목록)
 const listForUser = async (userId) => {
     if (typeof userId !== 'string' || userId.length === 0) return [];
     const { db } = getDeps();
-    const rows = await notificationRepository.listByUser(db, userId);
+    const rows = await notificationRepository.listByUser(db, userId, NOTIFICATION_LIST_LIMIT);
     return rows.map(toPublicNotification);
 };
 

@@ -41,7 +41,8 @@ const createNotification = async ({ userId, type, sourceKey, title, body, target
     } catch (error) {
         // 동시에 같은 키 만들다 유일 제약 걸리면 있던 것 돌려줌 (다른 오류는 그대로 던짐)
         if (!notificationRepository.isDuplicateSourceError(error, db, userId, sourceKey)) throw error;
-        const existing = await notificationRepository.findBySource(db, { userId, sourceKey }, options.transaction);
+        // 잠금 읽기로 남이 막 커밋한 행까지 봄 (스냅샷 읽기면 null 받을 수 있음)
+        const existing = await notificationRepository.findBySource(db, { userId, sourceKey, latest: true }, options.transaction);
         return { created: false, notification: toPublicNotification(existing) };
     }
 };

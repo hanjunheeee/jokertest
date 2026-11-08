@@ -54,9 +54,10 @@ async function cancelPendingInvitesBetween(uuidA, uuidB, reason, options = {}) {
     const rows = await gameInviteRepository.listBetween(db, { uuidA, uuidB, status: INVITE_STATUS.PENDING }, options.transaction);
     if (rows.length === 0) return [];
 
-    // 여기부터 진짜 바뀜: 한 번에 취소 (바깥 트랜잭션 따라 같이 되돌려짐)
+    // 여기부터 진짜 바뀜: 아직 대기인 것만 한 번에 취소 (바깥 트랜잭션 따라 같이 되돌려짐)
     await gameInviteRepository.endManyInTransaction(db, {
         ids: rows.map((row) => row.id), status: INVITE_STATUS.CANCELLED, endReason: reason, decidedAt: now,
+        onlyStatus: INVITE_STATUS.PENDING,
     }, options.transaction);
 
     // 전송은 안 함 (관계 무효 사건 받고 화면이 초대 다시 받음)
@@ -72,17 +73,22 @@ async function cancelPendingInvitesForRoom(roomId, reason) {
     const rows = await gameInviteRepository.listForRoom(db, { roomId, status: INVITE_STATUS.PENDING });
     if (rows.length === 0) return [];
 
-    // 여기부터 진짜 바뀜: 한 번에 취소 (트랜잭션 없음)
+    // 여기부터 진짜 바뀜: 아직 대기인 것만 한 번에 취소 (트랜잭션 없음, 그사이 끝난 초대는 안 덮음)
+    const decidedAt = now();
     await gameInviteRepository.endMany(db, {
-        ids: rows.map((row) => row.id), status: INVITE_STATUS.CANCELLED, endReason: reason, decidedAt: now(),
+        ids: rows.map((row) => row.id), status: INVITE_STATUS.CANCELLED, endReason: reason, decidedAt,
+        onlyStatus: INVITE_STATUS.PENDING,
     });
 
-    // 올라간 revision 보이게 하나씩 다시 읽어 전송
+    // 올라간 revision 보이게 하나씩 다시 읽어, 이번에 취소된 것만 전송·돌려줌
+    const cancelledIds = [];
     for (const row of rows) {
         const fresh = await gameInviteRepository.findInvite(db, row.id);
+        if (!fresh || fresh.status !== INVITE_STATUS.CANCELLED || fresh.end_reason !== reason) continue;
+        cancelledIds.push(row.id);
         emitInviteUpdated([row.receiver_id, row.sender_id], toPublicInvite(fresh));
     }
-    return rows.map((row) => row.id);
+    return cancelledIds;
 }
 
 module.exports = {

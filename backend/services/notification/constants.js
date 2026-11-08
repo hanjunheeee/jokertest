@@ -29,6 +29,9 @@ const achievementSourceKey = (achievementId) => `achievement:${achievementId}:gr
 // 같은 초대 알림 두 번 안 만들게 출처 키 (초대 효과음 id로도 씀)
 const gameInviteSourceKey = (inviteId) => `game-invite:${inviteId}:received`;
 
+// 알림 목록 한 번에 돌려주는 최대 수 (쌓인 알림 전부 읽기 막기, 최근 것부터)
+const NOTIFICATION_LIST_LIMIT = 100;
+
 // 읽음 처리 때 알림 id 모양 확인
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -39,4 +42,5 @@ module.exports = {
     achievementSourceKey,
     gameInviteSourceKey,
     UUID_PATTERN,
+    NOTIFICATION_LIST_LIMIT,
 };

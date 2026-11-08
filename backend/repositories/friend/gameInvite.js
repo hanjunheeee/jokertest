@@ -101,14 +101,21 @@ const listBetween = (db, { uuidA, uuidB, status }, transaction) => {
 };
 
 // 여러 초대를 한 번에 끝냄, revision 1 올림 (바깥 트랜잭션 따라 같이 되돌려짐)
-const endManyInTransaction = (db, { ids, status, endReason, decidedAt }, transaction) => db.GameInvite.update(
+// onlyStatus 주면 그 상태인 것만 바꿈 (읽은 뒤 그사이 끝난 초대 안 덮기)
+const endManyInTransaction = (db, { ids, status, endReason, decidedAt, onlyStatus }, transaction) => db.GameInvite.update(
     {
         status,
         end_reason: endReason,
         decided_at: decidedAt,
         revision: db.sequelize.literal('revision + 1'),
     },
-    { where: { id: { [db.Sequelize.Op.in]: ids } }, transaction },
+    {
+        where: {
+            id: { [db.Sequelize.Op.in]: ids },
+            ...(onlyStatus === undefined ? {} : { status: onlyStatus }),
+        },
+        transaction,
+    },
 );
 
 // 방의 그 상태 초대, id·보낸 사람·받는 사람만 (방 없어지거나 시작될 때)
@@ -117,15 +124,21 @@ const listForRoom = (db, { roomId, status }) => db.GameInvite.findAll({
     attributes: ['id', 'sender_id', 'receiver_id'],
 });
 
-// 여러 초대를 한 번에 끝냄, revision 1 올림 (트랜잭션 없이)
-const endMany = (db, { ids, status, endReason, decidedAt }) => db.GameInvite.update(
+// 여러 초대를 한 번에 끝냄, revision 1 올림 (트랜잭션 없이) → [바뀐 수]
+// onlyStatus 주면 그 상태인 것만 바꿈 (잠금 없이 읽은 뒤 그사이 수락·거절·만료된 초대 안 덮기)
+const endMany = (db, { ids, status, endReason, decidedAt, onlyStatus }) => db.GameInvite.update(
     {
         status,
         end_reason: endReason,
         decided_at: decidedAt,
         revision: db.sequelize.literal('revision + 1'),
     },
-    { where: { id: { [db.Sequelize.Op.in]: ids } } },
+    {
+        where: {
+            id: { [db.Sequelize.Op.in]: ids },
+            ...(onlyStatus === undefined ? {} : { status: onlyStatus }),
+        },
+    },
 );
 
 // 그 시도가 아직 입장 확인 전일 때만 입장 결과 바꾸기 → [바뀐 수] (옛 시도·이미 정한 결과는 안 덮음)

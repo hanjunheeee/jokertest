@@ -71,7 +71,8 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
     return decision;
 }
 
-// 입장 확정: 방에 넣기(publish) 되면 입장됨 기록, 커밋 실패면 unpublish로 되돌림
+// 입장 확정: 방에 넣기(publish) 되면 입장됨 기록, 방에 넣은 뒤 트랜잭션 안 오류·커밋 실패면 unpublish로 되돌림
+// (어느 쪽이든 입장됨 기록이 되돌려져 방에만 남는 사람 막기)
 async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoch, publish, unpublish }) {
     const { db, now } = getDeps();
     // 방에 넣은 뒤 실패했는지 알려고 표시
@@ -132,7 +133,7 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
             return { ok: true, invite: toPublicInvite(row), alreadyPublished: false };
         });
     } catch (error) {
-        // 커밋 실패: 방에 넣었으면 되돌리고, 결과 모름으로 답함
+        // 트랜잭션 안 오류·커밋 실패: 기록이 되돌려졌으니 방에 넣었으면 같이 되돌리고, 결과 모름으로 답함
         if (publishedInTransaction) {
             try { unpublish?.(); } catch (compensationError) {
                 console.error('[초대 입장 보상 실패]', compensationError);
