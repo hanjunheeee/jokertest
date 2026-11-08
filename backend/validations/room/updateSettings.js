@@ -260,7 +260,8 @@ function validateUpdateRoomSettingsPayload(payload) {
         nightActionTime,
         ...roleComposition.value,
     }
-    if (times.tribunalTime !== undefined) settings.tribunalTime = times.tribunalTime
+    // 재판 시간이 낮 투표 시간과 같으면 안 담음 (칸 없음 = 낮 투표 시간 따라감, 같은 설정 저장이 바뀜으로 안 잡히게)
+    if (times.tribunalTime !== undefined && times.tribunalTime !== dayVoteTime) settings.tribunalTime = times.tribunalTime
     if (times.roleNightActionTimes !== undefined) settings.roleNightActionTimes = times.roleNightActionTimes
 
     return {

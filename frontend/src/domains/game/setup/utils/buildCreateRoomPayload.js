@@ -2,6 +2,7 @@
 // GameSetupPanel·resolveNextGameCreateRoomPayload가 씀, 시험도 씀
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
 import { collectSpecifiedRoleTimes } from "./roomSettingsForm/nightTimes.js"
+import { pickTribunalTime } from "./roomSettingsForm/tribunalTime.js"
 
 // 방 만들기 payload 만들기
 export function buildCreateRoomPayload({ checks, ranges, roleComposition, specifiedRoleNightActionTimes }) {
@@ -23,6 +24,10 @@ export function buildCreateRoomPayload({ checks, ranges, roleComposition, specif
     voteReveal: checks["vote-reveal"],
     roleCompositionMode: mode,
   }
+
+  // 재판 시간은 낮 투표 시간과 다를 때만 실음 (안 실으면 서버가 낮 투표 시간을 씀)
+  const tribunalTime = pickTribunalTime(ranges)
+  if (tribunalTime !== null) payload.tribunalTime = tribunalTime
 
   // 직업별 밤 시간은 있을 때만 실음
   const roleNightActionTimes = collectSpecifiedRoleTimes(ranges, specifiedRoleNightActionTimes)

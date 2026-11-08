@@ -174,7 +174,7 @@ test('validateRoleNightActionTimes는 클라이언트 객체를 그대로 담지
 })
 
 // 재판 시간 (사용자 결정 2026-11-09: 방 설정 칸, 기본 = 낮 투표 시간)
-test('재판 시간: 안 보내면 칸 없음(낮 투표 시간을 따라감), 15~120초 15초 간격만 받음', () => {
+test('재판 시간: 안 보내거나 낮 투표 시간과 같으면 칸 없음(낮 투표 시간을 따라감), 15~120초 15초 간격만 받음', () => {
     const omitted = validateCreateRoomPayload(validPayload())
     assert.equal(omitted.ok, true)
     assert.equal(Object.hasOwn(omitted.value.settings, 'tribunalTime'), false)
@@ -182,7 +182,8 @@ test('재판 시간: 안 보내면 칸 없음(낮 투표 시간을 따라감), 1
     for (const seconds of [15, 30, 45, 60, 75, 90, 105, 120]) {
         const result = validateCreateRoomPayload(validPayload({ tribunalTime: seconds }))
         assert.equal(result.ok, true, `${seconds}초`)
-        assert.equal(result.value.settings.tribunalTime, seconds)
+        // 낮 투표 시간(60초)과 같으면 담지 않음
+        assert.equal(result.value.settings.tribunalTime, seconds === 60 ? undefined : seconds)
     }
     for (const bad of [0, 10, 20, 135, 150, -15, 30.5, '30', null, true]) {
         const result = validateCreateRoomPayload(validPayload({ tribunalTime: bad }))

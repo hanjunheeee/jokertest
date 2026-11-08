@@ -12,6 +12,7 @@ export const ALLOWED_SETTING_KEYS = Object.freeze([
   "roleCounts",
   "dayDiscussionTime",
   "dayVoteTime",
+  "tribunalTime",
   "nightActionTime",
   "roleNightActionTimes",
   "lightsOut",

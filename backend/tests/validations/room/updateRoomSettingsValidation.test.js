@@ -219,6 +219,11 @@ test('재판 시간: 바꾸기 요청에 넣을 수 있고, 안 넣으면 칸 �
     assert.equal(set.ok, true)
     assert.equal(set.value.settings.tribunalTime, 45)
 
+    // 낮 투표 시간과 같은 값은 칸 없음과 같음 (같은 설정 저장이 바뀜으로 안 잡히게)
+    const same = validateUpdateRoomSettingsPayload(validPayload({ tribunalTime: 60 }))
+    assert.equal(same.ok, true)
+    assert.equal(Object.hasOwn(same.value.settings, 'tribunalTime'), false)
+
     for (const bad of [0, 10, 135, '45', null]) {
         const result = validateUpdateRoomSettingsPayload(validPayload({ tribunalTime: bad }))
         assert.equal(result.ok, false, `${String(bad)}는 거절`)

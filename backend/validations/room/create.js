@@ -117,7 +117,8 @@ function validateCreateRoomPayload(payload) {
         nightActionTime,
         voteReveal,
     }
-    if (tribunal.value !== undefined) settings.tribunalTime = tribunal.value
+    // 재판 시간이 낮 투표 시간과 같으면 안 담음 (칸 없음 = 낮 투표 시간 따라감, 같은 설정 저장이 바뀜으로 안 잡히게)
+    if (tribunal.value !== undefined && tribunal.value !== dayVoteTime) settings.tribunalTime = tribunal.value
     if (roleTimes.value !== undefined) settings.roleNightActionTimes = roleTimes.value
 
     return { ok: true, value: { accessType, settings } }

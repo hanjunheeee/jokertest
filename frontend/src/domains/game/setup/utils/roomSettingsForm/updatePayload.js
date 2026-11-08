@@ -2,6 +2,7 @@
 // matching/hooks/room/useSettingsSave가 씀
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../../constants/roleComposition.js"
 import { collectSpecifiedRoleTimes } from "./nightTimes.js"
+import { pickTribunalTime } from "./tribunalTime.js"
 
 // 방 설정 바꾸기 payload 만들기
 export function buildUpdateRoomSettingsPayload({
@@ -31,6 +32,10 @@ export function buildUpdateRoomSettingsPayload({
     dayVoteTime: ranges?.["day-vote-time"],
     nightActionTime: ranges?.["night-action-time"],
   }
+
+  // 재판 시간은 낮 투표 시간과 다를 때만 실음 (안 실으면 서버가 낮 투표 시간을 씀)
+  const tribunalTime = pickTribunalTime(ranges)
+  if (tribunalTime !== null) payload.tribunalTime = tribunalTime
 
   // 직업별 밤 시간은 있을 때만 실음
   const roleNightActionTimes = collectSpecifiedRoleTimes(ranges, specifiedRoleNightActionTimes)

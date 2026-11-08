@@ -418,7 +418,7 @@ test("F-23(AC-02) · 설정 항목 정의·폼/요청 키·store 상태 키가 �
     ["private-lobby", "max-players", "joker-count", "lights-out", "soul-betting"],
     "일반 탭 설정 항목 정의가 바뀌었다")
   assert.deepEqual(MEETING_GAME_SETUP.map((item) => item.id), [
-    "day-discussion-time", "day-vote-time", "night-action-time",
+    "day-discussion-time", "day-vote-time", "tribunal-time", "night-action-time",
     "night-action-time-joker", "night-action-time-doctor",
     "night-action-time-guard", "night-action-time-witch-hunter",
     "vote-reveal",

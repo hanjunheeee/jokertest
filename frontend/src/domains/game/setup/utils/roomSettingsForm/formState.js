@@ -9,6 +9,9 @@ import {
   RANGE_ID_TO_SETTING_KEY,
   ERROR_CODES as ERR,
   STEPPER_ITEMS_BY_ID,
+  DAY_VOTE_TIME_ID,
+  TRIBUNAL_TIME_ID,
+  TRIBUNAL_TIME_SETTING_KEY,
 } from "../../constants/roomSettingsForm.js"
 import { validateRoleComposition } from "../roleComposition.js"
 import { isPlainObject } from "../../../shared/utils/valueChecks.js"
@@ -21,6 +24,18 @@ function fitsStepper(id, value) {
   if (value < item.min || value > item.max) return false
   const step = Number.isInteger(item.step) && item.step > 0 ? item.step : 1
   return (value - item.min) % step === 0
+}
+
+// 재판 시간 칸 채우기: 서버 칸 없으면 낮 투표 시간, 있으면 그 값 (칸이 못 보이는 값이면 false)
+function fillTribunalTime(settings, ranges) {
+  const tribunalTime = settings[TRIBUNAL_TIME_SETTING_KEY]
+  if (tribunalTime === undefined) {
+    ranges[TRIBUNAL_TIME_ID] = ranges[DAY_VOTE_TIME_ID]
+    return true
+  }
+  if (!fitsStepper(TRIBUNAL_TIME_ID, tribunalTime)) return false
+  ranges[TRIBUNAL_TIME_ID] = tribunalTime
+  return true
 }
 
 // 항목 정의의 기본값으로 폼 채우기
@@ -60,6 +75,11 @@ export function buildRoomSettingsFormState(source) {
       return { ok: false, code: ERR.OUT_OF_RANGE, field: key }
     }
     ranges[id] = value
+  }
+
+  // 재판 시간: 서버 칸이 없으면(옛 방·옛 저장값) 낮 투표 시간과 같은 값
+  if (!fillTribunalTime(settings, ranges)) {
+    return { ok: false, code: ERR.OUT_OF_RANGE, field: TRIBUNAL_TIME_SETTING_KEY }
   }
 
   // 체크 항목은 있을 때만 덮음

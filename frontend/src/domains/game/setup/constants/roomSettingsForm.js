@@ -9,6 +9,11 @@ import {
 // 전체 밤 행동 시간 항목 id (직업별 밤 시간의 기본값)
 export const OVERALL_NIGHT_ACTION_TIME_ID = "night-action-time"
 
+// 낮 투표 시간·재판 시간 항목 id (재판 시간은 서버 칸이 없을 수 있어 아래 짝 표 밖에서 따로 다룸)
+export const DAY_VOTE_TIME_ID = "day-vote-time"
+export const TRIBUNAL_TIME_ID = "tribunal-time"
+export const TRIBUNAL_TIME_SETTING_KEY = "tribunalTime"
+
 // 숫자 고르기 항목 id → 서버 설정 키
 export const RANGE_ID_TO_SETTING_KEY = Object.freeze({
   "max-players": "maxPlayers",

@@ -90,6 +90,17 @@ export const MEETING_GAME_SETUP = [
     defaultValue: 60,
     unit: "초",
   },
+  // 재판 시간: 처음엔 낮 투표 시간과 같은 값, 안 건드리면 낮 투표 시간을 따라감 (사용자 결정 2026-11-09)
+  {
+    id: "tribunal-time",
+    type: "stepper",
+    label: "재판 시간 조절",
+    min: 15,
+    max: 120,
+    step: 15,
+    defaultValue: 60,
+    unit: "초",
+  },
   {
     id: "night-action-time",
     type: "stepper",
