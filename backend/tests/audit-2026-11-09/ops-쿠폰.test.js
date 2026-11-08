@@ -193,5 +193,6 @@ test('쿠폰 경로: economy 라우터에 /coupons/redeem POST가 로그인·제
     const layer = router.stack.find((l) => l.route?.path === '/coupons/redeem');
     assert.ok(layer, '경로 없음');
     assert.equal(layer.route.methods.post, true);
-    assert.equal(layer.route.stack.length, 3);
+    // 로그인 · 계정 제한 · ip 제한(보안 점검 2026-11-09) · 처리기
+    assert.equal(layer.route.stack.length, 4);
 });
