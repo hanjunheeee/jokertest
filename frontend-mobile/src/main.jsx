@@ -3,6 +3,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@m/app/index.css'
+// 뒤로 가기 문: 라우터(App 안에서 만들어짐)보다 먼저 popstate를 받아야 해서 App 위에 둠
+import '@m/shared/ads/backGate.js'
 import App from '@m/app/App'
 import { handleAuthUnauthorized } from '@/domains/auth/api/unauthorized'
 import { setUnauthorizedHandler } from '@/shared/api/response'

@@ -57,6 +57,8 @@ export function useResultPage() {
     return {
         stage,
         view,
+        // 판 없이 ?outcome= 로 본 미리보기인지 (한 판 끝 광고 판 번호 고를 때 씀)
+        isPreview: !live && previewRequested,
         completeIntro,
         returnToMatching,
         isReturning,

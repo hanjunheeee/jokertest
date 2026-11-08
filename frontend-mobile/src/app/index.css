@@ -142,18 +142,34 @@
     display: none;
   }
 
+  /* 하단 광고 줄: 위로 8px 띄우고 320×50 칸, 바닥 버튼 줄과 붙지 않게 가는 선 */
+  .mobile-ad-banner {
+    @apply relative z-30 flex shrink-0 items-start justify-center overflow-hidden border-t border-[#3a2a1c] bg-[#0d0805] pt-2;
+    height: 3.625rem;
+  }
+
+  /* 광고 줄 높이 + 홈 막대: fixed 뒤로 버튼 등이 이만큼 올라감, 줄 없으면 0 */
+  .mobile-shell {
+    --mobile-ad-h: 0px;
+  }
+
+  .mobile-shell:has(> .mobile-ad-banner) {
+    --mobile-ad-h: calc(3.625rem + env(safe-area-inset-bottom, 0px));
+  }
+
   /* 게임 모드 선택: 3장 세로·1.2배·겹침 — 크기는 유지, translate로 우하단 뒤로가기 비움 */
   .mode-card-stack {
     transform: translateY(clamp(-2rem, -7vh, -3.75rem));
   }
 
   .mode-card-stack > button {
-    width: min(88vw, calc((100svh - 6rem) / 3 / 1.878 * 1.2));
+    /* 하단 광고 줄 높이만큼 카드도 줄임 (뒤로 버튼과 안 겹치게) */
+    width: min(88vw, calc((100svh - 6rem - var(--mobile-ad-h, 0px)) / 3 / 1.878 * 1.2));
     max-width: 100%;
   }
 
   .mode-card-stack > button:not(:first-child) {
-    margin-top: calc((100svh - 6rem) * -0.1);
+    margin-top: calc((100svh - 6rem - var(--mobile-ad-h, 0px)) * -0.1);
   }
 
   @media (orientation: landscape) {
@@ -162,11 +178,11 @@
     }
 
     .mode-card-stack > button {
-      width: min(68vw, calc((100svh - 5.5rem) / 3 / 1.878 * 1.2));
+      width: min(68vw, calc((100svh - 5.5rem - var(--mobile-ad-h, 0px)) / 3 / 1.878 * 1.2));
     }
 
     .mode-card-stack > button:not(:first-child) {
-      margin-top: calc((100svh - 5.5rem) * -0.1);
+      margin-top: calc((100svh - 5.5rem - var(--mobile-ad-h, 0px)) * -0.1);
     }
   }
 
