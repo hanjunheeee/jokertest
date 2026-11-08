@@ -1,5 +1,5 @@
 // 판 진행 이벤트 손잡이 (판 끝·추방·방·계정·이모지): 판 정리·화면 이동·캐시·말풍선
-// 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦, 판 정리 함수는 끊김 감시도 씀
+// 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦 (끊김 때는 판 정리 안 함, 판 정리는 판 끝·추방·나가기·판 없음 응답만)
 import { useMatchingStore, isCurrentRoomKickEvent } from "../../../matching/store/matchingStore.js"
 import { rememberRoomReady } from "../../../shared/utils/partyMatchingRejoin.js"
 import { isCurrentGameKickEvent, useInGameStore } from "../../store/ingameStore.js"

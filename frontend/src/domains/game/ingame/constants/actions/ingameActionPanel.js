@@ -14,41 +14,12 @@ export const META_CLASS = "text-[0.7rem] leading-tight text-[#cdbb9e]"
 
 export const SECTION_CLASS = "mt-3 space-y-2"
 
-export const CAPTION_CLASS =
-  "text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-[#caa565]/80"
-
 export const BTN_ROW_CLASS = "flex flex-wrap gap-2"
-
-export const STATUS_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#e7d3ae]/90"
 
 export const ERROR_TEXT_CLASS = "text-[0.7rem] leading-snug text-[#ff9d8d]"
 
-export const ERROR_BANNER_CLASS =
-  "mt-2 rounded-md border border-red-400/30 bg-red-950/45 px-2.5 py-1.5 text-[0.72rem] leading-snug text-red-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-
 export const BTN_CLASS =
   "min-h-8 rounded border border-[#d8b982]/35 bg-[#2b1c15]/85 px-3 py-1.5 text-xs text-[#f8ead2] transition hover:border-[#f3d28d] hover:bg-[#53321f] disabled:cursor-not-allowed disabled:opacity-40"
-
-export const TARGET_BTN_CLASS =
-  "min-h-8 rounded border border-[#927556]/45 bg-black/35 px-2 py-1 text-left text-xs text-[#f8ead2] transition hover:border-[#f3d28d] disabled:cursor-not-allowed disabled:opacity-40"
-
-export const SELECTED_TARGET_BTN_CLASS =
-  `${TARGET_BTN_CLASS} border-[#f3d28d] bg-[#5b321d]/80`
-
-export const TARGET_GRID_CLASS = "grid max-h-36 grid-cols-2 gap-2 overflow-y-auto pr-1"
-
-export const TARGET_NAME_CLASS = "block truncate text-[0.78rem] font-medium text-[#f8ead2]"
-
-export const TARGET_STATUS_ROW_CLASS =
-  "flex items-center gap-1 text-[0.62rem] font-medium tracking-wide text-[#cdbb9e]/85"
-
-export const TARGET_STATUS_DOT_ALIVE_CLASS =
-  "h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/80 shadow-[0_0_4px_rgba(52,211,153,0.7)]"
-
-export const TARGET_STATUS_DOT_DEAD_CLASS = "h-1.5 w-1.5 shrink-0 rounded-full bg-red-400/70"
-
-export const TARGET_STATUS_DOT_DISCONNECTED_CLASS =
-  "h-1.5 w-1.5 shrink-0 rounded-full bg-neutral-400/60"
 
 // 역할별로 밤 행동을 시작하는 dayIndex (마녀사냥꾼만 늦게 시작)
 const NIGHT_ACTION_MIN_DAY_INDEX = Object.freeze({
@@ -92,8 +63,6 @@ export function isSelfTargetAllowedForNightAction(role) {
 // 재판 투표·판정 버튼 이름과 안내 글
 export const TRIBUNAL_VOTE_GUILTY_LABEL = "유죄"
 export const TRIBUNAL_VOTE_NOT_GUILTY_LABEL = "무죄"
-export const TRIBUNAL_VOTE_SUBMIT_LABEL = "투표 제출"
-export const TRIBUNAL_VOTE_SUBMITTING_LABEL = "제출 중..."
 export const TRIBUNAL_DEFENDANT_NOTICE = "당신은 피고인입니다. 투표할 수 없습니다."
 export const TRIBUNAL_VOTE_SUBMITTED_NOTICE = "투표가 완료되었습니다."
 export const TRIBUNAL_DEAD_NOTICE = "사망한 참가자는 투표할 수 없습니다."
@@ -102,24 +71,8 @@ export const TRIBUNAL_RESOLVE_RESOLVING_LABEL = "판정 중..."
 export const TRIBUNAL_RESOLVE_DONE_LABEL = "판정 완료"
 
 // 낮 토론·투표 준비 버튼 이름과 안내 글
-export const DAY_DISCUSSION_CAPTION = "토론 진행"
 export const DAY_DISCUSSION_NOTICE = "토론 중입니다. 투표는 아직 열리지 않았습니다."
 export const DAY_VOTE_READY_LABEL = "투표 시작 준비"
 export const DAY_VOTE_READY_SENDING_LABEL = "준비 중..."
 export const DAY_VOTE_READY_DONE_LABEL = "준비 완료"
-export const DAY_DEAD_NOTICE = "사망한 참가자는 낮 진행에 참여할 수 없습니다."
 
-// 이긴 팀 → 승리 문구 (모르는 값이면 null)
-export function getInGameWinResultLabel(winResult) {
-  if (!winResult || typeof winResult !== "object") return null
-  if (winResult.winner === "CITIZEN") return "시민 진영 승리"
-  if (winResult.winner === "JOKER") return "JOKER 진영 승리"
-  return null
-}
-
-// 판 사건 한 줄 글 (종류 행동한 사람 -> 대상)
-export function formatInGameEvent(event) {
-  const actor = event.actorId ? ` ${event.actorId}` : ""
-  const target = event.targetId ? ` -> ${event.targetId}` : ""
-  return `${event.type}${actor}${target}`
-}
