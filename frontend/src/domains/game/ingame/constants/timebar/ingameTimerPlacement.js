@@ -9,6 +9,16 @@ export const PLACEMENT_STORAGE_KEY = "joker.ingame.timerPlacement"
 
 const VALID_PLACEMENTS = new Set(Object.values(INGAME_TIMER_PLACEMENT))
 
+// 브라우저 저장소 (막힌 브라우저는 꺼내기만 해도 던지므로 그때는 없음으로 봄)
+function readDefaultStorage() {
+  if (typeof window === "undefined") return null
+  try {
+    return window.localStorage ?? null
+  } catch {
+    return null
+  }
+}
+
 // 주소 ?timerPlacement= 값 (아는 값 아니면 null)
 export function readInGameTimerPlacementFromSearch(search) {
   const raw = new URLSearchParams(search).get("timerPlacement")
@@ -25,7 +35,7 @@ export function readInGameTimerPlacement(options = {}) {
   if (fromQuery) return fromQuery
 
   // 저장소가 막혀 던져도 기본값으로 넘어감
-  const storage = options.storage ?? (typeof window !== "undefined" ? window.localStorage : null)
+  const storage = options.storage ?? readDefaultStorage()
   if (storage) {
     try {
       const stored = storage.getItem(PLACEMENT_STORAGE_KEY)
@@ -42,7 +52,7 @@ export function readInGameTimerPlacement(options = {}) {
 }
 
 // 고른 자리 저장 (모르는 값·저장소 없으면 안 함, 못 써도 화면은 그대로)
-export function writeInGameTimerPlacement(placement, storage = typeof window !== "undefined" ? window.localStorage : null) {
+export function writeInGameTimerPlacement(placement, storage = readDefaultStorage()) {
   if (!VALID_PLACEMENTS.has(placement) || !storage) return
   try {
     storage.setItem(PLACEMENT_STORAGE_KEY, placement)

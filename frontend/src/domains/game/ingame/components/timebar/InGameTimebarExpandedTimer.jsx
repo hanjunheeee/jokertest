@@ -61,7 +61,7 @@ export default function InGameTimebarExpandedTimer({
           className={markerClassName}
           style={{ left: `${markerLeftPercent}%`, opacity: markerOpacity }}
         />
-        <span className={digitsClassName} role="timer" aria-live="polite">
+        <span className={digitsClassName} role="timer">
           {clockText}
         </span>
       </div>

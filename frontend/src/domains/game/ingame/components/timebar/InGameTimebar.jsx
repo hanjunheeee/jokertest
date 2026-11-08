@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   DAY_TIMEBAR_ACTIVE_PHASE,
   INGAME_DAY_TIMEBAR_PHASES,
@@ -103,11 +103,12 @@ export default function InGameTimebar({
   const expandDisabled = timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
   const isExpanded = expandDisabled ? false : expanded
 
-  useEffect(() => {
-    if (expandDisabled) setExpanded(false)
-  }, [expandDisabled])
+  // 채팅 쪽 배치로 바뀌면 펼침을 접어 둠 (다시 바꿔도 접힌 채 시작)
+  if (expandDisabled && expanded) setExpanded(false)
 
-  const internalProgress = useTurnProgress(phaseTurnDeadline)
+  // 바깥에서 진행 값을 받으면 안에서 또 세지 않음
+  const ownsProgress = remainingRatioProp === undefined && remainingSecProp === undefined
+  const internalProgress = useTurnProgress(ownsProgress ? phaseTurnDeadline : null)
   const remainingRatio = remainingRatioProp ?? internalProgress.remainingRatio
   const remainingSec = remainingSecProp ?? internalProgress.remainingSec
   const showTimerOnTimebar =
