@@ -4,20 +4,21 @@
 const kickReceiptStore = require('../../kickReceiptStore')
 const gameSession = require('../../../game-core/gameSession')
 const channelMembership = require('../../channelMembership')
-const { rejectIfInGame, emitRoomJoinFailed, describeJoinFailure } = require('./guards')
+const { rejectIfInGame, emitRoomJoinFailed, describeVanishedRoom } = require('./guards')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = require('../core/state')
 const { acquireRoomTransition, getGeneration, releaseRoomTransition } = require('./transition')
 const { detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership, isCanonicalOrUnknown, findLiveSocket } = require('../room/membership')
 const { deps } = require('../core/deps')
 const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList, buildPublicRoomList } = require('../room/view')
-const { isStartedRoomMark } = require('./startedMarks')
+const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
 const { getSupportedRoomSizes } = require('../core/config')
 const { countRoomOccupancy } = require('../admission/attempts')
 
 // 코드로 방 입장: 검사 → 잠금 → 프로필 → 방 찾기 → 채널 → 명단 추가 확정 → 알림
 // expectedRoom 있으면 그 방 id·종류만 받음 (목록에서 고른 방·자동 입장·방 id 같이 보낸 요청)
-async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null) {
+// autoJoin = 서버가 끌어다 넣는 자동 입장 (본인이 고른 이동이 아니라 결과 화면 이동 표시 안 함)
+async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null, { autoJoin = false } = {}) {
     // 게임 중이면 거절 (지도 01-②)
     if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
@@ -55,6 +56,8 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         return
     }
     const generationAtReservation = getGeneration(uuid)
+    // 결과 화면에서 본인이 시작한 입장이면 표시 (판 끝 정리가 이 요청·자리를 안 건드리게, known 1-16)
+    if (!autoJoin) markPartyOriginToken(uuid, transitionToken)
 
     // 채널 붙은 방·명단 확정 여부 (실패 때 채널 뗄지 판단)
     let joinedRoomId = null
@@ -116,14 +119,9 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
             room = gameRooms.get(expectedRoom.roomId)
             // 그 방이 없으면 판 상태·시작 표시로 이유 고름 (지도 01-⑤)
             if (!room) {
-                const sessionState = gameSession.getRoomCodeSessionState({
-                    roomCode: normalizedCode,
-                    roomId: expectedRoom.roomId,
-                })
-                if (sessionState !== null) {
-                    emitRoomJoinFailed(socket, ...describeJoinFailure(sessionState.phase))
-                } else if (isStartedRoomMark(`id:${expectedRoom.roomId}`)) {
-                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.')
+                const vanished = describeVanishedRoom({ roomCode: normalizedCode, roomId: expectedRoom.roomId })
+                if (vanished) {
+                    emitRoomJoinFailed(socket, ...vanished)
                 } else {
                     emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
                 }
@@ -143,13 +141,9 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         // 못 찾으면 이유 고르기 (지도 01-⑤): 판 있음 → 시작됨·끝남, 시작 표시만 → 끝남
         // 공개방 고른 요청 → 방 없음, 직접 친 코드 → 코드 틀림
         if (!room) {
-            const sessionState = gameSession.getRoomCodeSessionState({ roomCode: normalizedCode })
-            if (sessionState !== null) {
-                emitRoomJoinFailed(socket, ...describeJoinFailure(sessionState.phase))
-                return
-            }
-            if (isStartedRoomMark(`code:${normalizedCode}`)) {
-                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.SESSION_ENDED, '이미 끝난 게임의 방입니다.')
+            const vanished = describeVanishedRoom({ roomCode: normalizedCode })
+            if (vanished) {
+                emitRoomJoinFailed(socket, ...vanished)
                 return
             }
             if (expectedRoom) {
@@ -196,8 +190,9 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         if (gameRooms.get(room.id) !== room) {
             detachJoinedRoomChannel(room.id)
             joinedRoomId = null
-            if (isStartedRoomMark(`id:${room.id}`)) {
-                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+            const vanished = describeVanishedRoom({ roomCode: room.code, roomId: room.id })
+            if (vanished) {
+                emitRoomJoinFailed(socket, ...vanished)
                 return
             }
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
@@ -251,23 +246,35 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         room.players.set(uuid, player)
         playerRoom.set(uuid, room.id)
         committed = true
+        if (!autoJoin) markPartyOriginObject(uuid, player)
         socket.data.activeRoomId = room.id
 
         // 확정 뒤에야 방송 제외 풂 (지도 01-⑥)
         releaseJoinExclusion()
 
         // 나한테 방 정보, 방 사람들한테 (나 빼고) 새 사람, 목록 갱신
-        socket.emit('room_joined', buildRoomPayload(room))
-        channelMembership.emitToChannel(
-            io, room.id, 'player_joined_room',
-            { player: { ...player }, canStart: computeCanStart(room) },
-            { senderSocket: socket },
-        )
+        // 확정 뒤라 알림마다 따로 잡음 (하나 던져도 나머지 보내고, 화면엔 실패 대신 입장이 감)
+        try {
+            socket.emit('room_joined', buildRoomPayload(room))
+        } catch (emitErr) {
+            console.error('[코드 참가 입장 알림 실패]', emitErr)
+        }
+        try {
+            channelMembership.emitToChannel(
+                io, room.id, 'player_joined_room',
+                { player: { ...player }, canStart: computeCanStart(room) },
+                { senderSocket: socket },
+            )
+        } catch (emitErr) {
+            console.error('[코드 참가 방송 실패]', emitErr)
+        }
         emitPublicRoomList(io)
     } catch (err) {
-        // 확정 전 실패면 붙은 채널 떼고 실패 알림 (확정 뒤면 명단 그대로)
+        // 확정 전 실패면 붙은 채널 떼고 실패 알림
+        // 확정 뒤면 명단에 이미 있어서 실패 알림 안 보냄 (명단엔 있는데 화면은 실패 보는 어긋남 막기)
         console.error('[코드 참가 에러]', err)
-        if (joinedRoomId && !committed) {
+        if (committed) return
+        if (joinedRoomId) {
             detachJoinedRoomChannel(joinedRoomId)
         }
         emitRoomJoinFailed(
@@ -303,8 +310,9 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
     // 방 없으면 시작 표시로 이유 고름
     const room = gameRooms.get(roomId)
     if (!room) {
-        if (isStartedRoomMark(`id:${roomId}`)) {
-            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.')
+        const vanished = describeVanishedRoom({ roomId })
+        if (vanished) {
+            emitRoomJoinFailed(socket, ...vanished)
             return
         }
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
@@ -321,12 +329,15 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
 }
 
 // 끝난 판 사람을 방장이 만든 다음 방에 자동 입장
+// 그 끝난 판 방장이 만든 방일 때만 (방장 아닌 참가자가 만든 방에 남을 끌고 가지 않게, BE-005)
 async function autoJoinPartyToRoom(io, hostUuid, room) {
-    // 방 만든 사람이 끝난 판에 남아 있고 방 코드 있을 때만
-    const gameId = gameSession.getEndedGameId(hostUuid)
-    if (!gameId || typeof room?.code !== 'string' || room.code.length === 0) return
-    const participantUuids = gameSession.getEndedPlayerUuids(gameId, { excludeUuid: hostUuid })
-    for (const participantUuid of participantUuids) {
+    const ctx = gameSession.getEndedPartyContext(hostUuid)
+    if (!ctx?.gameId || typeof room?.code !== 'string' || room.code.length === 0) return
+    const gameId = ctx.gameId
+    for (const participantUuid of ctx.participantUuids) {
+        // 방이 없어졌거나 자리 다 찼으면 남은 사람은 조용히 그만 (넘친 사람 화면에 "가득 참" 실패 안 뜨게, BE-029)
+        if (gameRooms.get(room.id) !== room) return
+        if (countRoomOccupancy(room) >= (room.settings?.maxPlayers ?? getSupportedRoomSizes()[0])) return
         // 이미 방·처리 중·줄에 있거나 연결 없으면 조용히 건너뜀 (실패 알림 안 뜨게)
         if (playerRoom.has(participantUuid)) continue
         if (pendingRoomTransitions.has(participantUuid)) continue
@@ -341,6 +352,7 @@ async function autoJoinPartyToRoom(io, hostUuid, room) {
                 participantUuid,
                 room.code,
                 { roomId: room.id, accessType: room.accessType ?? 'code' },
+                { autoJoin: true },
             )
         } catch (err) {
             console.error('[종료된 판 파티 자동 재입장 실패]', { participantUuid, gameId, err })

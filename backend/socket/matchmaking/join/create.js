@@ -14,6 +14,7 @@ const { leaveSocketRoomSafely } = require('../room/membership')
 const { generateUniqueRoomCode } = require('../../../utils/roomCode')
 const { notifyPartyOfRoom } = require('./party')
 const { autoJoinPartyToRoom } = require('./join')
+const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
 
 // 방 만들기 요청: 게임 중이면 거절, 처리 중 잠금 걸고 진행
 function handleCreateRoom(io, socket, uuid, payload, callback) {
@@ -61,8 +62,12 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
         return
     }
     const generationAtReservation = getGeneration(uuid)
+    // 결과 화면에서 시작한 방 만들기면 표시 (판 끝 정리가 이 요청·자리를 안 건드리게, known 1-16)
+    markPartyOriginToken(uuid, transitionToken)
 
+    // 안에서 다 잡지만 혹시 새는 거절도 로그만 (처리 안 된 거절로 서버가 꺼지지 않게, BE-032)
     createAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation, transitionToken)
+        .catch((err) => console.error('[방 생성 처리 에러]', err))
 }
 
 // 방 만들기: 계정 읽기 → 채널 넣기 → 코드 뽑기 → 방 등록 → 답 → 끝난 판 사람들 부르기
@@ -144,6 +149,7 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
 
         // 여기부터 진짜 바뀜: 코드 뽑기~방 등록 사이 await 없음, 같은 코드 두 방 막기 (지도 09-⑦)
         room.players.get(uuid).membershipId = kickReceiptStore.nextMembershipId()
+        markPartyOriginObject(uuid, room.players.get(uuid))
         gameRooms.set(roomId, room)
         playerRoom.set(uuid, roomId)
         socket.data.activeRoomId = roomId
@@ -163,9 +169,14 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
     // 성공 답은 try 밖에서, 답장이 던져도 "생성 실패"가 또 안 나감 (지도 09-⑨)
     try {
         callback({ ok: true, room: buildRoomPayload(room) })
-        notifyPartyOfRoom(io, uuid, room)
     } catch (ackError) {
         console.error('[방 생성 ack 실패]', ackError)
+    }
+    // 파티 알림은 답장과 따로 잡음 (답장이 던져도 끝난 판 사람들 알림은 감)
+    try {
+        notifyPartyOfRoom(io, uuid, room)
+    } catch (err) {
+        console.error('[종료된 판 파티 매칭 방 알림 실패]', err)
     }
     // 끝난 판 사람들 자동 입장, 실패해도 만든 방은 그대로
     try {

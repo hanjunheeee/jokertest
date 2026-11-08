@@ -2,15 +2,15 @@
 // 방장 게임 시작 요청 + 시작 직전 프로필 잡기, matchmaking.js가 사건 받아 부름 (지도 02)
 const gameSession = require('../../../game-core/gameSession')
 const { playerRoom, gameRooms } = require('../core/state')
-const { getSettingsVersion, forgetSettingsResults } = require('../settings/receipts')
+const { getSettingsVersion } = require('../settings/receipts')
 const { deps } = require('../core/deps')
 const { BOOT_EPOCH } = require('../core/constants')
 const { ROOM_SETTINGS_ERROR_CODES } = require('../../../validations/room/updateSettings')
 const { getMinPlayers, isDevMatchmaking } = require('../core/config')
 const { resolveRoleComposition } = require('../../../game-core/core/rules/roleComposition')
-const { hasPendingAdmission, invalidateRoomAttempts } = require('../admission/attempts')
+const { hasPendingAdmission } = require('../admission/attempts')
 const { resolveParticipantSockets } = require('./membership')
-const { cancelRoomInvitesAsync } = require('../admission/release')
+const { disposeRoom } = require('./dispose')
 const { rememberStartedRoom } = require('../join/startedMarks')
 const { emitPublicRoomList } = require('./view')
 
@@ -297,7 +297,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
     }
 
     // 여기부터 진짜 바뀜: 판 장부에 넣고 이모지 상태 붙임
-    // 방 지우고 입장 시도·영수증·초대 정리, 시작 표시 남김 (터지면 되돌리지 않고 실패만 답함)
+    // 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 시작 표시 남김 (터지면 되돌리지 않고 실패만 답함)
     try {
         gameSession.commitGameSession(prepared.session)
         prepared.session.emojiPaletteByUuid = captured.emojiPaletteByUuid instanceof Map
@@ -305,10 +305,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
             : new Map()
         prepared.session.emojiRateLimit = new Map()
         room.players.forEach((_, u) => playerRoom.delete(u))
-        gameRooms.delete(roomId)
-        invalidateRoomAttempts(roomId, 'ROOM_STARTED')
-        forgetSettingsResults(roomId)
-        cancelRoomInvitesAsync(roomId, 'ROOM_STARTED')
+        disposeRoom(roomId, 'ROOM_STARTED')
         rememberStartedRoom(room)
     } catch (err) {
         console.error('[GameSession commit 에러 — 상태가 부분 반영됐을 수 있음]', err)

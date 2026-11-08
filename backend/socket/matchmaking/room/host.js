@@ -3,13 +3,12 @@
 const channelMembership = require('../../channelMembership')
 const kickReceiptStore = require('../../kickReceiptStore')
 const { BOOT_EPOCH } = require('../core/constants')
-const { getAdmissionAttempt, invalidateRoomAttempts } = require('../admission/attempts')
+const { getAdmissionAttempt } = require('../admission/attempts')
 const { rejectIfInGame } = require('../join/guards')
 const { playerRoom, gameRooms } = require('../core/state')
 const { resolveParticipantSockets } = require('./membership')
-const { commitRoomDeparture, notifyRoomDeparture } = require('./leave')
-const { forgetSettingsResults } = require('../settings/receipts')
-const { cancelRoomInvitesAsync } = require('../admission/release')
+const { commitRoomDeparture, notifyRoomDeparture, cancelRoomRetention } = require('./leave')
+const { disposeRoom } = require('./dispose')
 const { emitPublicRoomList } = require('./view')
 
 // 방장 강퇴: 같은 요청 다시 오면 영수증으로 결과 재생, 내용 다르면 거절
@@ -183,24 +182,60 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     notifyRoomDeparture(io, outcome, targetSockets)
 }
 
-// 방장 방 지우기: 입장 시도·초대 정리하고 공개 목록 새로
-function handleDeleteRoom(io, uuid) {
-    // 방에 있는 방장만 (아니면 답 없이 무시, ack 없는 사건)
+// 방장 방 지우기: 입장 시도·초대 정리, 남은 사람 소켓 채널 떼고 공개 목록 새로 (BE-026)
+// callback은 있을 때만 답 (옛 화면은 ack 없이 보냄), getCurrentSocketId로 밀려난 옛 탭 요청 거름
+function handleDeleteRoom(io, uuid, { socket = null, callback = null, getCurrentSocketId = null } = {}) {
+    // 답 한 번만, ack가 던져도 처리기는 그대로
+    const respond = (result) => {
+        if (typeof callback !== 'function') return
+        try { callback(result) } catch (ackErr) { console.error('[방 삭제 ack 실패]', ackErr) }
+    }
+    // 끊긴 소켓·새 탭에 밀린 옛 소켓 요청은 거절
+    if (socket && (socket.data?.user?.uuid !== uuid || socket.connected === false)) {
+        respond({ ok: false, code: 'STALE_SOCKET', message: '연결이 만료되었습니다. 다시 시도해주세요.' })
+        return
+    }
+    if (socket && typeof getCurrentSocketId === 'function' && getCurrentSocketId(uuid) !== socket.id) {
+        respond({ ok: false, code: 'STALE_SOCKET', message: '연결이 만료되었습니다. 다시 시도해주세요.' })
+        return
+    }
+    // 방에 있는 방장만
     const roomId = playerRoom.get(uuid)
-    if (!roomId) return
+    if (!roomId) {
+        respond({ ok: false, code: 'NOT_IN_ROOM', message: '참여 중인 방이 없습니다.' })
+        return
+    }
 
     const room = gameRooms.get(roomId)
-    if (!room || room.hostUuid !== uuid) return
+    if (!room || room.hostUuid !== uuid) {
+        respond({ ok: false, code: 'NOT_HOST', message: '방장만 방을 삭제할 수 있습니다.' })
+        return
+    }
 
-    // 여기부터 진짜 바뀜: 방 사람들한테 먼저 알리고 명단·방·입장 시도·영수증·초대 정리
+    // 여기부터 진짜 바뀜: 방 사람들한테 먼저 알리고 명단·방·입장 시도·영수증·우편함·초대 정리
     channelMembership.emitToChannel(io, roomId, 'room_deleted', {})
 
-    room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
-    gameRooms.delete(roomId)
-    invalidateRoomAttempts(roomId, 'ROOM_DELETED')
-    forgetSettingsResults(roomId)
-    cancelRoomInvitesAsync(roomId, 'ROOM_DELETED')
+    const memberUuids = [...room.players.keys()]
+    for (const playerUuid of memberUuids) {
+        playerRoom.delete(playerUuid)
+        cancelRoomRetention(playerUuid)
+    }
+    disposeRoom(roomId, 'ROOM_DELETED')
+
+    // 남은 사람 소켓 채널·지금 방 표시 떼기 (없어진 방 방송·끊김 처리가 남지 않게, 하나 실패해도 계속)
+    const memberSet = new Set(memberUuids)
+    for (const s of io?.sockets?.sockets?.values?.() ?? []) {
+        if (!memberSet.has(s?.data?.user?.uuid)) continue
+        if (s.data.activeRoomId === roomId) delete s.data.activeRoomId
+        if (!s.rooms?.has?.(roomId)) continue
+        try {
+            s.leave(roomId)
+        } catch (err) {
+            console.error('[방 삭제 채널 정리 실패]', err)
+        }
+    }
     emitPublicRoomList(io)
+    respond({ ok: true, roomId })
 }
 
 module.exports = {

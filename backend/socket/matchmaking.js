@@ -172,7 +172,13 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         )
     )
     // 방 안 행동: 방장 지우기·시작, 준비, 설정 저장·결과 묻기, 나가기, 강퇴
-    socket.on('delete_room',       () => handleDeleteRoom(io, uuid))
+    // 방 지우기: 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
+    socket.on('delete_room', (payload, callback) =>
+        handleDeleteRoom(io, uuid, {
+            socket,
+            callback: typeof callback === 'function' ? callback : (typeof payload === 'function' ? payload : null),
+            getCurrentSocketId,
+        }))
     socket.on('start_game', (payload, callback) =>
         handleStartGame(io, socket, uuid, payload, callback, getCurrentSocketId).catch((err) =>
             console.error('\x1b[31m[게임 시작 에러]\x1b[0m', err)

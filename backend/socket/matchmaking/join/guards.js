@@ -3,7 +3,7 @@
 // matchmaking.js(코드 입장 받기)·join·create·queue·accept·room/host·settings가 사용
 const gameSession = require('../../../game-core/gameSession')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
-const { isStartedRoomMark } = require('./startedMarks')
+const { isStartedRoomMark, getStartedRoomCode } = require('./startedMarks')
 
 // 입장 실패는 전부 room_join_failed 한 통로로 보냄
 function emitRoomJoinFailed(socket, code, message, details = {}) {
@@ -74,6 +74,18 @@ function describeJoinFailure(phase) {
     return [ROOM_JOIN_ERROR_CODES.ROOM_ALREADY_STARTED, '이미 게임이 시작된 방입니다.']
 }
 
+// 시작돼 사라진 방 실패 이유: 판이 남아 있으면 판 단계로, 판도 없고 시작 표시만 있으면 끝난 판
+// 코드·방 id·공개 방 어느 길이든 같은 상황엔 같은 답 (길마다 SESSION_ENDED·ROOM_ALREADY_STARTED 섞이던 것)
+// 시작 표시도 없으면 null (부른 쪽이 방 없음·코드 틀림 고름)
+function describeVanishedRoom({ roomCode = null, roomId = null } = {}) {
+    const code = roomCode || (typeof roomId === 'string' && roomId ? getStartedRoomCode(roomId) : null)
+    const sessionState = gameSession.getRoomCodeSessionState({ roomCode: code, roomId })
+    if (sessionState !== null) return describeJoinFailure(sessionState.phase)
+    const marked = (typeof roomId === 'string' && roomId && isStartedRoomMark(`id:${roomId}`))
+        || (typeof roomCode === 'string' && roomCode && isStartedRoomMark(`code:${roomCode}`))
+    return marked ? describeJoinFailure('ENDED') : null
+}
+
 // 이 코드를 판(진행·끝남)이나 시작 표시가 잡고 있는지, 대기방 코드는 generateUniqueRoomCode가 봄
 function isRoomCodeReserved(code) {
     if (gameSession.getRoomCodeSessionState({ roomCode: code }) !== null) return true
@@ -88,5 +100,6 @@ module.exports = {
     JOIN_REQUEST_INVALID_MESSAGE,
     validateJoinRoomByCodeRequest,
     describeJoinFailure,
+    describeVanishedRoom,
     isRoomCodeReserved,
 }

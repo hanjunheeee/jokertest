@@ -1,14 +1,14 @@
 // 입장 되돌리기 파일
-// 명단에 넣은 입장 되돌리기·늦게 붙은 소켓 떼기 + 방 초대 취소 (지도 23)
+// 명단에 넣은 입장 되돌리기 + 늦게 붙은 소켓 떼기 (지도 23)
 // accept와 room 쪽(나가기·끊김·판 끝 정리·시작·삭제)이 사용
 const channelMembership = require('../../channelMembership')
 const { gameRooms, publishedAdmissions, playerRoom, roomAdmissionAttempts } = require('../core/state')
 const { releasePublished } = require('./attempts')
 const { isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership, isOwnedByOtherSocket } = require('../room/membership')
-const { forgetSettingsResults, getSettingsVersion } = require('../settings/receipts')
+const { getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('../room/view')
 const { BOOT_EPOCH } = require('../core/constants')
-const { deps } = require('../core/deps')
+const { disposeRoom } = require('../room/dispose')
 
 // 명단에 넣었던 입장 시도 되돌리기 (내가 넣은 것일 때만, 방 사람들한테 알림)
 function removePublished(io, socket, attempt) {
@@ -47,10 +47,9 @@ function removePublished(io, socket, attempt) {
     }
     // 내가 뺀 게 아니면 알릴 것 없음
     if (!stillMine || !room) return
-    // 빈 방이 됐으면 방과 설정 영수증 지움
+    // 빈 방이 됐으면 공통 정리로 방·입장 시도·영수증·우편함·초대 같이 지움 (known 1-11)
     if (room.players.size === 0) {
-        gameRooms.delete(attempt.roomId)
-        forgetSettingsResults(attempt.roomId)
+        disposeRoom(attempt.roomId, 'ROOM_GONE')
         emitPublicRoomList(io)
         return
     }
@@ -108,15 +107,7 @@ function scheduleLateJoinCleanup(io, socket, roomId, uuid, attempt, joinPromise)
     }, () => {})
 }
 
-// 방이 없어지거나 시작되면 그 방 대기 초대 전부 취소 (안 기다림, 실패는 로그만)
-function cancelRoomInvitesAsync(roomId, reason) {
-    Promise.resolve()
-        .then(() => deps.gameInviteService.cancelPendingInvitesForRoom(roomId, reason))
-        .catch((err) => console.error('[방 소멸 초대 정리 실패]', err))
-}
-
 module.exports = {
     removePublished,
     scheduleLateJoinCleanup,
-    cancelRoomInvitesAsync,
 }

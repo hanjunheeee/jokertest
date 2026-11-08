@@ -2,12 +2,14 @@
 // 끝난 판 참가자가 다음 방 찾기 + 방장이 만든 다음 방 알리기 (지도 09)
 // matchmaking.js가 get_party_matching_room에 붙임, 알리기는 join/create가 방 만든 뒤 부름
 const gameSession = require('../../../game-core/gameSession')
-const { partyRoomByGameId } = require('../core/state')
+const { partyRoomByGameId, gameRooms } = require('../core/state')
 const { PARTY_ROOM_TTL_MS } = require('../core/constants')
 const { buildRoomPayload } = require('../room/view')
 const { findAllLiveSockets } = require('../room/membership')
 
 // 끝난 판의 다음 방 꺼내기 (30분 지났으면 지움, 따로 타이머 없음)
+// 그 방이 지워졌거나 시작돼 없으면 우편함도 지우고 없음 (없어진 방 돌려줘 입장 실패 되풀이 막기, known 1-5)
+// 있으면 지금 명단·설정으로 다시 만들어 줌 (넣을 때 찍은 옛 명단 말고)
 function readPartyRoom(gameId) {
     const entry = partyRoomByGameId.get(gameId)
     if (!entry) return null
@@ -15,7 +17,12 @@ function readPartyRoom(gameId) {
         partyRoomByGameId.delete(gameId)
         return null
     }
-    return entry.room
+    const live = gameRooms.get(entry.room?.roomId)
+    if (!live || (live.instanceId ?? null) !== (entry.room?.roomInstanceId ?? null)) {
+        partyRoomByGameId.delete(gameId)
+        return null
+    }
+    return buildRoomPayload(live)
 }
 
 // 끝난 판 참가자가 다음 방 묻기 (자격은 game-core가 확인)
@@ -39,26 +46,22 @@ function handleGetPartyMatchingRoom(uuid, payload, callback) {
 }
 
 // 방장이 다음 방 만들면 끝난 판 사람들한테 알리고 우편함에 넣음
+// 그 끝난 판 방장일 때만 (방장 아닌 참가자가 만든 방은 개인 방이라 남을 안 부르고 우편함도 안 덮음, BE-005)
 function notifyPartyOfRoom(io, hostUuid, room) {
-    // 끝난 판 방장이면 그 판 채널·받을 사람까지, 아니면 내가 남은 끝난 판 id만
     const ctx = gameSession.getEndedPartyContext(hostUuid)
-    const gameId = ctx?.gameId ?? gameSession.getEndedGameId(hostUuid)
-    if (!gameId) return
+    if (!ctx?.gameId) return
     const payload = {
-        gameId,
+        gameId: ctx.gameId,
         room: buildRoomPayload(room),
     }
     // 우편함에 먼저 넣음 (알림 놓친 사람은 get_party_matching_room으로 꺼냄)
-    partyRoomByGameId.set(gameId, { room: payload.room, createdAt: Date.now() })
-    // 판 채널 + 사람마다 연결된 소켓 전부에 알림, 실패는 로그만
+    partyRoomByGameId.set(ctx.gameId, { room: payload.room, createdAt: Date.now() })
+    // 판 채널에 한 번, 채널 밖 소켓에만 따로 (같은 소켓이 두 번 받지 않게), 실패는 로그만
     try {
-        if (ctx) {
-            io.to(ctx.channelId).emit('party_matching_room_ready', payload)
-        }
-        const participantUuids = ctx?.participantUuids
-            ?? gameSession.getEndedPlayerUuids(gameId, { excludeUuid: hostUuid })
-        for (const participantUuid of participantUuids) {
+        io.to(ctx.channelId).emit('party_matching_room_ready', payload)
+        for (const participantUuid of ctx.participantUuids) {
             for (const participantSocket of findAllLiveSockets(io, participantUuid)) {
+                if (participantSocket.rooms?.has?.(ctx.channelId)) continue
                 participantSocket.emit('party_matching_room_ready', payload)
             }
         }

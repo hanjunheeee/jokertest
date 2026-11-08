@@ -14,6 +14,8 @@ const { ROOM_JOIN_ERROR_CODES } = require('../../socket/roomJoinErrors')
 const { generateUniqueRoomCode } = require('../../utils/roomCode')
 
 matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
+// 판 끝 전적 저장이 진짜 저장소로 가면 개발 DB에 붙음 → 이 파일 동안 가짜로 막기 (BE-019)
+require('../../repositories/game/result').persistGameResultRecord = async () => {}
 
 const {
     callAsPromise,

@@ -10,6 +10,8 @@ matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
 })
+// 방 소멸 초대 정리가 진짜 서비스로 가면 개발 DB에 붙음 → 가짜로 막기 (BE-019)
+matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 const {
     callAsPromise,
     createFakeSocket,
@@ -82,6 +84,14 @@ test.afterEach(() => {
     matchmaking.__setEconomyServiceForTests(null)
 })
 
+// 자동 재입장 끝날 때까지 미뤄진 일만 비움 (실제 50ms 안 기다림, BE-073)
+async function waitForPlayerRoom(uuid, rounds = 200) {
+    for (let i = 0; i < rounds; i += 1) {
+        if (matchmaking.__getStateSnapshotForTests().playerRoom.some(([u]) => u === uuid)) return
+        await new Promise((resolve) => setImmediate(resolve))
+    }
+}
+
 function seedEndedGame(hostUuid, guestUuid) {
     const session = seedActiveGameForAccount([hostUuid, guestUuid])
     session.hostUuid = hostUuid
@@ -143,7 +153,7 @@ test('ENDED 판 방장 create_room 시 참가자는 클라이언트 join 없이 
     )
     assert.equal(createResponse.ok, true)
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await waitForPlayerRoom(guestUuid)
 
     const guestCurrent = await callAsPromise(handleGetCurrentRoom, guestUuid)
     assert.ok(guestCurrent.room, '참가자가 자동 재입장되지 않았다')
@@ -171,7 +181,7 @@ test('ENDED 판에서 로비로 이탈(leave_game_session)하면 자동 재입�
     )
     assert.equal(createResponse.ok, true)
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await waitForPlayerRoom(guestUuid)
 
     const guestBeforeLeave = await callAsPromise(handleGetCurrentRoom, guestUuid)
     assert.ok(guestBeforeLeave.room, '전제: 방장 create_room 후 참가자가 자동 재입장돼 있어야 한다')
@@ -220,7 +230,7 @@ test('ENDED 판에서 대기방으로 복귀한 뒤 전원 준비하면 start_ga
     )
     assert.equal(createResponse.ok, true)
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await waitForPlayerRoom(guestUuid)
 
     const guestCurrent = await callAsPromise(handleGetCurrentRoom, guestUuid)
     assert.ok(guestCurrent.room, '전제: 참가자가 자동 재입장돼 있어야 한다')

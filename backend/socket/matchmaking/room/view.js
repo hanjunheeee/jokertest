@@ -40,7 +40,7 @@ function buildRoomPayload(room) {
     }
 }
 
-// 참가자 프로필 읽기 (DB, 실패해도 기본값)
+// 참가자 프로필 읽기 (DB, 꾸밈이 없으면 기본값, 조회 실패는 던짐 → 방 만들기·입장이 실패로 답함)
 async function loadPlayerProfile(uuid) {
     const loadouts = await deps.economyService.getPublicProfileLoadouts([uuid])
     const loadout = loadouts[uuid] ?? { profilePhotoId: null, profileBorderId: null }

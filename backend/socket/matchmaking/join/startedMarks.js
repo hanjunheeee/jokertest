@@ -6,11 +6,17 @@ const { startedRoomMarks } = require('../core/state')
 // 표시 30분 보관
 const STARTED_ROOM_MARK_TTL_MS = 30 * 60 * 1000
 
+// 시작된 방 id → 방 코드 (방 id만 받은 입장도 판 상태를 코드로 찾게, 표시와 같이 지움)
+const startedRoomCodes = new Map()
+
 // 기한 지난 표시 지움 (새로 기억할 때 같이 치움, 따로 타이머 없음)
 function pruneStartedRoomMarks(now) {
     const threshold = now - STARTED_ROOM_MARK_TTL_MS
     for (const [mark, startedAt] of startedRoomMarks) {
         if (startedAt <= threshold) startedRoomMarks.delete(mark)
+    }
+    for (const roomId of startedRoomCodes.keys()) {
+        if (!startedRoomMarks.has(`id:${roomId}`)) startedRoomCodes.delete(roomId)
     }
 }
 
@@ -20,11 +26,21 @@ function rememberStartedRoom(room) {
     pruneStartedRoomMarks(now)
     if (typeof room?.code === 'string' && room.code) startedRoomMarks.set(`code:${room.code}`, now)
     if (typeof room?.id === 'string' && room.id) startedRoomMarks.set(`id:${room.id}`, now)
+    if (typeof room?.id === 'string' && room.id && typeof room?.code === 'string' && room.code) {
+        startedRoomCodes.set(room.id, room.code)
+    }
+}
+
+// 시작된 방의 코드 (표시가 살아 있을 때만)
+function getStartedRoomCode(roomId) {
+    if (!isStartedRoomMark(`id:${roomId}`)) return null
+    return startedRoomCodes.get(roomId) ?? null
 }
 
 // 시험용: 표시 전부 지움
 function __resetStartedMarksForTests() {
     startedRoomMarks.clear()
+    startedRoomCodes.clear()
 }
 
 // 이 코드·id가 시작돼 사라진 방인지 (기한 지났으면 지우고 아님)
@@ -42,6 +58,7 @@ module.exports = {
     STARTED_ROOM_MARK_TTL_MS,
     pruneStartedRoomMarks,
     rememberStartedRoom,
+    getStartedRoomCode,
     __resetStartedMarksForTests,
     isStartedRoomMark,
 }

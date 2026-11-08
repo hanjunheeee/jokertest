@@ -4,9 +4,10 @@ const channelMembership = require('../../channelMembership')
 const { presenceConfirmedTick, pendingRoomRemovals, playerRoom, gameRooms } = require('../core/state')
 const { findLiveSocket, detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('./membership')
 const { ROOM_RECONNECT_GRACE_MS, BOOT_EPOCH } = require('../core/constants')
-const { invalidateAttempt, compensateAttempt, invalidateRoomAttempts } = require('../admission/attempts')
-const { removePublished, cancelRoomInvitesAsync } = require('../admission/release')
-const { forgetSettingsResults, getSettingsVersion } = require('../settings/receipts')
+const { invalidateAttempt, compensateAttempt } = require('../admission/attempts')
+const { removePublished } = require('../admission/release')
+const { getSettingsVersion } = require('../settings/receipts')
+const { disposeRoom } = require('./dispose')
 const { emitPublicRoomList, computeCanStart } = require('./view')
 
 // "방에 있음" 확인 순번 시계 (벽시계 대신 하나씩 올림)
@@ -75,13 +76,12 @@ function commitRoomDeparture(io, socket, uuid, reason) {
     const removedPlayer = room.players.get(uuid)
     room.players.delete(uuid)
     playerRoom.delete(uuid)
+    // 방 떠나면 확인 순번 칸도 지움 (사람마다 쌓이기만 하던 장부, BE-033)
+    presenceConfirmedTick.delete(uuid)
 
-    // 마지막 사람이면 방 지우고 입장 시도·영수증·초대 정리
+    // 마지막 사람이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지움
     if (room.players.size === 0) {
-        gameRooms.delete(roomId)
-        invalidateRoomAttempts(roomId, 'ROOM_GONE')
-        forgetSettingsResults(roomId)
-        cancelRoomInvitesAsync(roomId, 'ROOM_GONE')
+        disposeRoom(roomId, 'ROOM_GONE')
         return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: true, hostChanged: false }
     }
 

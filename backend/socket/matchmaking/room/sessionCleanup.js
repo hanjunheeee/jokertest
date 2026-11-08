@@ -5,13 +5,19 @@ const channelMembership = require('../../channelMembership')
 const { bumpGeneration } = require('../join/transition')
 const { invalidateAttempt, compensateAttempt } = require('../admission/attempts')
 const { removePublished } = require('../admission/release')
-const { matchmakingQueue, playerRoom, gameRooms } = require('../core/state')
-const { forgetSettingsResults, getSettingsVersion } = require('../settings/receipts')
+const { matchmakingQueue, playerRoom, gameRooms, presenceConfirmedTick } = require('../core/state')
+const { getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('./view')
 const { BOOT_EPOCH } = require('../core/constants')
+const { disposeRoom } = require('./dispose')
+const { cancelRoomRetention } = require('./leave')
+const { hasPartyOrigin } = require('../join/partyOrigin')
 
 // 판 참가자 정리: 줄에서 빼고, 남은 대기방 소속·입장 시도 지우고, 세대 번호 올림
-function cleanupRoomStateForSessionParticipants(io, uuids) {
+// 끝난 판 결과 화면에서 다음 판 파티 방으로 옮겨 간(옮겨 가는 중인) 사람은 건너뜀 (known 1-16)
+// 그 사람은 판에 묶인 채 정상으로 새 방에 들어간 것이라 빼면 방금 들어간 방에서 쫓겨남
+function cleanupRoomStateForSessionParticipants(io, inputUuids) {
+    const uuids = [...inputUuids].filter((uuid) => !hasPartyOrigin(uuid))
     // 세대 번호 올려 그 전에 시작한 방 만들기·입장 요청이 커밋 못 하게, 입장 시도는 없애고 되돌림
     for (const uuid of uuids) {
         bumpGeneration(uuid)
@@ -47,9 +53,12 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
     }
 
     // 여기부터 진짜 바뀜: 명단·소속에서 뺌 (다 빼고 나서 방마다 방장·알림 정함)
+    // 15초 끊김 빼기 예약·방에 있음 확인 순번도 같이 지움 (나중에 엉뚱하게 안 돌게, known 1-11)
     for (const entry of affected) {
         entry.room.players.delete(entry.uuid)
         playerRoom.delete(entry.uuid)
+        cancelRoomRetention(entry.uuid)
+        presenceConfirmedTick.delete(entry.uuid)
     }
 
     // 방 채널에서 소켓 떼기 (하나 실패해도 계속)
@@ -78,10 +87,9 @@ function cleanupRoomStateForSessionParticipants(io, uuids) {
 
         const room = entry.room
         try {
-            // 빈 방이면 지우고 공개 목록만 새로 (알릴 사람 없음)
+            // 빈 방이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 공개 목록만 새로 (known 1-11)
             if (room.players.size === 0) {
-                gameRooms.delete(entry.roomId)
-                forgetSettingsResults(entry.roomId)
+                disposeRoom(entry.roomId, 'ROOM_GONE')
                 emitPublicRoomList(io)
                 continue
             }

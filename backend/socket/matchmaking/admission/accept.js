@@ -10,6 +10,7 @@ const { playerRoom, matchmakingQueue, gameRooms, roomAdmissionAttempts, publishe
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { getAdmissionAttempt, nextAttemptId, withAdmissionTimeout, countRoomOccupancy, compensateAttempt, releasePublished } = require('./attempts')
 const { acquireRoomTransition, getGeneration, releaseRoomTransition } = require('../join/transition')
+const { markPartyOriginToken, markPartyOriginObject } = require('../join/partyOrigin')
 const { deps } = require('../core/deps')
 const { getSupportedRoomSizes } = require('../core/config')
 const { loadPlayerProfile, computeCanStart, emitPublicRoomList, buildRoomPayload } = require('../room/view')
@@ -72,6 +73,8 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
 
     // 세대 번호 기억 (그사이 판 끝 정리되면 명단 넣기 거절)
     const generationAtRequest = getGeneration(uuid)
+    // 결과 화면에서 시작한 수락이면 표시 (판 끝 정리가 이 입장을 안 끊게, known 1-16)
+    markPartyOriginToken(uuid, transitionToken)
     const attemptId = nextAttemptId()
     const startedAt = Date.now()
     // 전체 대기 중 남은 시간
@@ -139,6 +142,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             expiresAt: startedAt + TOTAL_TIMEOUT_MS,
         }
         roomAdmissionAttempts.set(uuid, attempt)
+        markPartyOriginObject(uuid, attempt)
 
         // 초대를 이 시도로 수락 기록 (DB, 이미 처리된 초대·차단이면 거절)
         // 끝남 표시: 되돌리기가 이 기록 끝난 뒤에 중단 기록하려고 봄
@@ -162,7 +166,13 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             deps.userRepository.findByUuid(uuid),
             loadPlayerProfile(uuid),
         ]), 'PROFILE_TIMEOUT')
+        // 수락은 이미 기록됐으니 시도 없애고 중단 기록도 남김 (초대가 수락·결과 모름으로 남지 않게)
         if (!user) {
+            if (roomAdmissionAttempts.get(uuid) === attempt) {
+                roomAdmissionAttempts.delete(uuid)
+                attempt.invalidated = 'USER_NOT_FOUND'
+                compensateAttempt(attempt, 'USER_NOT_FOUND')
+            }
             respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.USER_NOT_FOUND, message: '사용자 정보를 찾을 수 없습니다.' })
             return
         }
@@ -242,6 +252,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             playerRoom.set(uuid, current.id)
             attempt.phase = 'published'
             publishedAdmissions.set(uuid, attempt)
+            markPartyOriginObject(uuid, player)
             socket.data.activeRoomId = current.id
             return { ok: true }
         }
@@ -441,9 +452,8 @@ function __seedAdmissionAttemptForTests(uuid, attempt) {
     if (seeded.phase === 'published') publishedAdmissions.set(uuid, seeded)
 }
 
+// 대기 시간 값은 내보내지 않음 (값 복사라 시험이 바꾼 값이 안 보여 틀린 값이 됨, BE-035)
 module.exports = {
-    STEP_TIMEOUT_MS,
-    TOTAL_TIMEOUT_MS,
     __setAdmissionTimeoutsForTests,
     handleAcceptGameInvite,
     handleGetGameInviteResult,

@@ -26,8 +26,11 @@ function getAdmissionAttempt(uuid) {
     const attempt = roomAdmissionAttempts.get(uuid)
     if (!attempt) return null
     // 명단에 넣은 시도는 영수증 기다리는 중이라 기한 안 봄
+    // 기한 지나 지울 땐 없앤 표시·중단 기록도 남김 (수락만 기록되고 결과 모름으로 남지 않게)
     if (attempt.phase !== 'published' && attempt.expiresAt <= Date.now()) {
         roomAdmissionAttempts.delete(uuid)
+        attempt.invalidated = attempt.invalidated ?? 'EXPIRED'
+        compensateAttempt(attempt, 'EXPIRED')
         return null
     }
     return attempt
@@ -63,9 +66,11 @@ function compensateAttempt(attempt, reason) {
 // 방 없어지거나 시작될 때 그 방 입장 시도 전부 없애고 중단 기록
 function invalidateRoomAttempts(roomId, reason) {
     // 돌면서 지우니 복사본으로 돎
+    // 없앤 표시도 남김: 수락 흐름 catch가 "다른 곳이 이미 함"으로 알고 또 기록 안 하게
     for (const [uuid, attempt] of [...roomAdmissionAttempts]) {
         if (attempt.roomId !== roomId) continue
         roomAdmissionAttempts.delete(uuid)
+        attempt.invalidated = reason ?? 'INVALIDATED'
         compensateAttempt(attempt, reason)
     }
 }
@@ -108,8 +113,8 @@ function withAdmissionTimeout(promise, ms, code) {
     })
 }
 
+// 순번 값은 내보내지 않음 (값 복사라 늘 0, BE-035)
 module.exports = {
-    admissionAttemptSeq,
     nextAttemptId,
     releasePublished,
     getAdmissionAttempt,
