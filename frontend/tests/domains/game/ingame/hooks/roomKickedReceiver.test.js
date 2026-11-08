@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { act, createElement } from "react"
 import { JSDOM } from "jsdom"
+import { register } from "node:module"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/",
@@ -23,6 +24,9 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
+
+// 원본의 "@/" 별칭 경로를 풀어 주는 불러오기 도우미
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 const { renderHook } = await import("@testing-library/react")
 const { MemoryRouter, useLocation } = await import("react-router-dom")
