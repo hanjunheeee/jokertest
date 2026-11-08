@@ -3,7 +3,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 
 // data-setting-row 줄들의 첫 줄 위~마지막 줄 아래 재기, 줄 없으면 null
-function measureSettingRows(listEl) {
+export function measureSettingRows(listEl) {
   const rows = listEl.querySelectorAll("[data-setting-row]")
   if (!rows.length) return null
 
@@ -11,8 +11,9 @@ function measureSettingRows(listEl) {
   const firstRect = rows[0].getBoundingClientRect()
   const lastRect = rows[rows.length - 1].getBoundingClientRect()
 
+  // 스크롤된 만큼 더해 내용 기준으로 잼 (스크롤된 채 창 크기가 바뀌면 막대가 위로 밀리던 것)
   return {
-    top: firstRect.top - wrapRect.top,
+    top: firstRect.top - wrapRect.top + (listEl.scrollTop || 0),
     height: lastRect.bottom - firstRect.top,
   }
 }
@@ -39,8 +40,10 @@ export function useScrollbarSync(activeTab, visible) {
     const listEl = listRef.current
     if (!listEl) return undefined
 
+    // 목록 칸뿐 아니라 줄마다도 봄 (줄 높이만 바뀌면 목록 칸 크기는 그대로라 못 따라갔음)
     const observer = new ResizeObserver(() => syncScrollbarHeight())
     observer.observe(listEl)
+    for (const row of listEl.querySelectorAll("[data-setting-row]")) observer.observe(row)
     window.addEventListener("resize", syncScrollbarHeight)
 
     return () => {
