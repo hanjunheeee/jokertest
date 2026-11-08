@@ -334,9 +334,10 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
     stubUserRepository(t, { users: [user] });
     const memory = useMemoryMailAdapter(t);
 
-    const originalSync = db.sequelize.sync;
-    db.sequelize.sync = async () => db.sequelize;
-    t.after(() => { db.sequelize.sync = originalSync; });
+    const schemaReadiness = require("../../db/schemaReadiness");
+    const originalEnsure = schemaReadiness.ensureSchemaReady;
+    schemaReadiness.ensureSchemaReady = async () => ({ ready: true });
+    t.after(() => { schemaReadiness.ensureSchemaReady = originalEnsure; });
 
     const net = require("node:net");
     const findFreePort = () => new Promise((resolve, reject) => {

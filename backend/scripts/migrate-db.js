@@ -26,8 +26,12 @@ const addSignupEmailVerification = require('../db/migrations/0016-signup-email-v
 const addSocialSignupEmail = require('../db/migrations/0017-social-signup-email');
 const addCurrencyProductsTopupOrders = require('../db/migrations/0018-add-currency-products-topup-orders');
 const addEmojiPalettes = require('../db/migrations/0019-add-emoji-palettes');
+const addOauthStatesUserFk = require('../db/migrations/0020-add-oauth-states-user-fk');
+const addUserSessionsRefreshIndexes = require('../db/migrations/0021-add-user-sessions-refresh-indexes');
+const alignIndexNames = require('../db/migrations/0022-align-index-names');
+const uuidTypeRoomAndBannedBy = require('../db/migrations/0023-uuid-type-room-and-banned-by');
 // 적용 순서 그대로 (새 마이그레이션은 끝에 붙임)
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes, addOauthStatesUserFk, addUserSessionsRefreshIndexes, alignIndexNames, uuidTypeRoomAndBannedBy];
 
 // 첫 낱말은 명령, 나머지는 --confirm · --name (값은 띄어 쓰거나 = 로)
 const parseArgs = (argv) => {

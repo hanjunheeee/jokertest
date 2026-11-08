@@ -69,8 +69,8 @@ test("DB 연결 실패 시 재시도 없이 한 번만 종료된다", () => {
 });
 
 test("정상 기동 후 REST 요청과 소켓 핸드셰이크가 동작한다", async (t) => {
-    const db = require("../../models");
-    db.sequelize.sync = async () => db.sequelize;
+    // DB 없이 띄우려고 표 준비 확인만 바꿔 끼움
+    require("../../db/schemaReadiness").ensureSchemaReady = async () => ({ ready: true });
 
     process.env.PORT = String(await findFreePort());
 

@@ -1,4 +1,4 @@
-// 서버 시작 파일, Express 앱 + socket.io를 http 서버에 붙이고 DB 동기화 뒤 열기
+// 서버 시작 파일, Express 앱 + socket.io를 http 서버에 붙이고 DB 표 준비 확인 뒤 열기
 // npm start·dev가 돌림, 시험이 require해 씀 (시작 로그·종료 코드를 시험이 봄)
 require("dotenv").config();
 
@@ -9,11 +9,11 @@ const cors         = require("cors");
 const morgan       = require("morgan");
 
 // 시작 실패: 이유를 한 줄로 줄여 남기고 종료 코드 1 (스택 트레이스는 안 찍음)
-const failStartup = (error) => {
+const failStartup = (error, label = "DB 연결") => {
     const reason = String(error?.message ?? error ?? "unknown error")
         .replace(/\s+/g, " ")
         .trim();
-    console.error(`[STARTUP] 실패 — DB 연결: ${reason}`);
+    console.error(`[STARTUP] 실패 — ${label}: ${reason}`);
     process.exit(1);
 };
 
@@ -82,18 +82,21 @@ const io = initSocket(server, { corsOrigin: getCorsOrigin() });
 
 const port = Number(process.env.PORT) || 4000;
 
-// 없는 표만 모델대로 만듦 (있는 표는 안 바꿈, 표 바꾸기는 마이그레이션 몫) → 성공해야 포트 열기
-db.sequelize.sync({force: false})
+// 표는 마이그레이션만 만듦 (모델대로 만드는 sync는 안 씀, 마이그레이션이 건너뛰어 모양이 갈림)
+// 연결 + 마이그레이션 이력 확인 → 성공해야 포트 열기 (운영은 안 돌린 게 있으면 시작 거부)
+// 시험이 바꿔 끼울 수 있게 모듈 객체로 부름
+const schemaReadiness = require("./db/schemaReadiness");
+schemaReadiness.ensureSchemaReady(db.sequelize)
     .then(() => {
         const pool = db.sequelize.options.pool ?? {};
         server.listen(port, () => {
             console.log(
-                `[STARTUP] 성공 — port=${port} DB 연결·동기화 완료; pool max=${pool.max} min=${pool.min} idle=${pool.idle}ms acquire=${pool.acquire}ms`
+                `[STARTUP] 성공 — port=${port} DB 연결·마이그레이션 확인 완료; pool max=${pool.max} min=${pool.min} idle=${pool.idle}ms acquire=${pool.acquire}ms`
             );
         });
     })
     .catch((err) => {
-        failStartup(err);
+        failStartup(err, err?.code === schemaReadiness.SCHEMA_NOT_READY ? "DB 표 준비 안 됨" : "DB 연결");
     })
 
 module.exports = { app, server, io };

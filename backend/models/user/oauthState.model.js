@@ -8,7 +8,8 @@ module.exports = (sequelize, DataTypes) => {
       autoIncrement: true,
     },
     // state 원문은 안 남기고 해시만
-    state_hash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    // 유일 인덱스 이름은 마이그레이션(0005·0022)과 같게
+    state_hash: { type: DataTypes.STRING(64), allowNull: false, unique: 'oauth_states_state_hash_unique' },
     // login(소셜 로그인) 또는 link(로그인한 계정에 소셜 연결)
     purpose: { type: DataTypes.STRING(20), allowNull: false },
     // link일 때만 채움, 연결할 계정과 그 세션
@@ -24,7 +25,17 @@ module.exports = (sequelize, DataTypes) => {
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: false,
+    indexes: [
+      { name: 'oauth_states_user_id', fields: ['user_id'] },
+    ],
   });
+
+  // 없는 계정을 가리키는 state 막기, 실제 외래키는 마이그레이션 0005·0020이 걺 (규칙도 같이 NO ACTION)
+  OAuthState.associate = (models) => {
+    OAuthState.belongsTo(models.User, {
+      foreignKey: 'user_id', targetKey: 'uuid', onDelete: 'NO ACTION', onUpdate: 'NO ACTION',
+    });
+  };
 
   return OAuthState;
 };

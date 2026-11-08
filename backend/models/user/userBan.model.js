@@ -6,8 +6,8 @@ module.exports = (sequelize, DataTypes) => {
     user_id: { type: DataTypes.UUID, allowNull: false },
     // 정지된 사람한테 그대로 보여 줌
     reason: { type: DataTypes.TEXT },
-    // 정지한 사람 칸, 정수라 계정 uuid는 못 담음
-    banned_by: { type: DataTypes.INTEGER },
+    // 정지한 사람 계정 uuid, 넣는 곳 아직 없음 (마이그레이션 0023)
+    banned_by: { type: DataTypes.UUID },
     // 영구 정지거나 end_at이 아직 안 지났으면 정지 중
     is_permanent: { type: DataTypes.BOOLEAN, defaultValue: false },
     start_at: { type: DataTypes.DATE },

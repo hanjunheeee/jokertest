@@ -14,7 +14,8 @@ COPY backend/ ./
 # 앱은 PORT가 없으면 4000을 씁니다(backend/index.js). 문서 목적의 선언입니다.
 EXPOSE 4000
 
-# npm을 거치지 않고 node를 PID 1로 띄웁니다. docker stop의 SIGTERM이 중간 셸에
-# 가로막히지 않고 프로세스까지 그대로 전달됩니다.
+# 표는 마이그레이션만 만듦 → 서버보다 migrate 먼저 (실패하면 서버 안 켬)
+# migrate 끝나면 exec로 셸을 node로 바꿈 → node가 PID 1, docker stop의 SIGTERM이 바로 닿음
+# 여러 대 동시에 켜도 migrate는 DB 잠금으로 한 번에 하나만 돎
 USER node
-CMD ["node", "index.js"]
+CMD ["sh", "-c", "node scripts/migrate-db.js migrate && exec node index.js"]

@@ -8,15 +8,17 @@ module.exports = (sequelize, DataTypes) => {
     receiver_id: { type: DataTypes.UUID, allowNull: false },
     // 만들 때 늘 ACCEPTED
     status: { type: DataTypes.STRING(20), defaultValue: 'ACCEPTED' },
-    created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    updated_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    // 마이그레이션·DB와 같이 NOT NULL (Sequelize가 늘 채움)
+    created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+    updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
   }, {
     tableName: 'friendships',
     timestamps: true,
     createdAt: 'created_at',
     updatedAt: 'updated_at',
     indexes: [
-      { unique: true, fields: ['requester_id', 'receiver_id'] },
+      // 이름은 마이그레이션(0001·0022)과 같게
+      { name: 'friendships_requester_receiver', unique: true, fields: ['requester_id', 'receiver_id'] },
     ],
   });
 

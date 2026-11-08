@@ -779,9 +779,10 @@ test("AC-06: 실제 index.js로 발송→확인을 왕복해도 콘솔·접근 �
     stubUserRepository(t, { users: [] });
     const memory = useMemoryMailAdapter(t);
 
-    const originalSync = db.sequelize.sync;
-    db.sequelize.sync = async () => db.sequelize;
-    t.after(() => { db.sequelize.sync = originalSync; });
+    const schemaReadiness = require("../../db/schemaReadiness");
+    const originalEnsure = schemaReadiness.ensureSchemaReady;
+    schemaReadiness.ensureSchemaReady = async () => ({ ready: true });
+    t.after(() => { schemaReadiness.ensureSchemaReady = originalEnsure; });
 
     const net = require("node:net");
     const findFreePort = () => new Promise((resolve, reject) => {

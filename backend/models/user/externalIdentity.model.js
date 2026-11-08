@@ -20,6 +20,7 @@ module.exports = (sequelize, DataTypes) => {
     updatedAt: 'updated_at',
     indexes: [
       { name: 'external_identities_provider_subject_unique', unique: true, fields: ['provider', 'subject'] },
+      { name: 'external_identities_user_id', fields: ['user_id'] },
     ],
   });
 

@@ -58,7 +58,7 @@ const EXISTING_TABLES = [
             id:           'INTEGER',
             user_id:      'UUID',
             reason:       'TEXT',
-            banned_by:    'INTEGER',
+            banned_by:    'UUID',
             is_permanent: 'BOOLEAN',
             start_at:     'DATE',
             end_at:       'DATE',
@@ -105,7 +105,7 @@ const EXISTING_TABLES = [
             user_id:         'UUID',
             status:          'STRING(20)',
             last_active_at:  'DATE',
-            current_room_id: 'INTEGER',
+            current_room_id: 'UUID',
         },
     },
     {
@@ -248,7 +248,7 @@ test('social_signup_intents: email만 nullable이고 나머지 제약·타입은
     for (const column of ['intent_token_hash', 'provider', 'subject', 'expires_at']) {
         assert.equal(attributes[column].allowNull, false, `${column}는 NOT NULL이어야 한다`);
     }
-    assert.equal(attributes.intent_token_hash.unique, true);
+    assert.equal(attributes.intent_token_hash.unique, 'social_signup_intents_token_hash_unique');
     assert.equal(attributes.consumed_at.allowNull, true);
 });
 

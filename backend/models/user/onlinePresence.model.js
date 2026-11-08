@@ -6,8 +6,8 @@ module.exports = (sequelize, DataTypes) => {
     status: { type: DataTypes.STRING(20), defaultValue: 'ONLINE' },
     // 상태 저장할 때마다 지금으로
     last_active_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    // 값을 넣는 곳 없음 (정수라 uuid 방 id도 못 담음)
-    current_room_id: { type: DataTypes.INTEGER },
+    // 값을 넣는 곳 없음, 방 id가 uuid라 같은 모양으로 (마이그레이션 0023)
+    current_room_id: { type: DataTypes.UUID },
   }, {
     tableName: 'online_presence',
     timestamps: false,

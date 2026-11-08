@@ -8,7 +8,8 @@ module.exports = (sequelize, DataTypes) => {
       autoIncrement: true,
     },
     // 브라우저에 준 토큰은 원문 없이 해시만
-    intent_token_hash: { type: DataTypes.STRING(64), allowNull: false, unique: true },
+    // 유일 인덱스 이름은 마이그레이션(0005·0022)과 같게
+    intent_token_hash: { type: DataTypes.STRING(64), allowNull: false, unique: 'social_signup_intents_token_hash_unique' },
     provider: { type: DataTypes.STRING(30), allowNull: false },
     subject: { type: DataTypes.STRING(255), allowNull: false },
     // 소셜 쪽이 확인한 이메일, null이면 가입 폼에서 이메일 인증을 따로 받음

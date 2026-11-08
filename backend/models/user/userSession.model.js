@@ -21,6 +21,11 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     tableName: 'user_sessions',
     timestamps: false,
+    // 갱신 때 두 해시 칸으로 세션 찾기 (마이그레이션 0021)
+    indexes: [
+      { name: 'user_sessions_refresh_token_hash', fields: ['refresh_token_hash'] },
+      { name: 'user_sessions_refresh_previous_hash', fields: ['refresh_previous_hash'] },
+    ],
   });
 
   // 더 옛 토큰 해시는 refresh_token_history 표에 따로 둠 (모델 없이 쿼리로 씀)
