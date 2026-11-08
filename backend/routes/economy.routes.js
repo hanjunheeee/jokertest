@@ -48,7 +48,14 @@ const couponRateLimit = createRateLimiter({
     keyOf: (req) => `coupon:${req.user.uuid}`,
     message: "쿠폰 입력이 너무 많습니다. 잠시 후 다시 시도해주세요.",
 });
-router.post("/coupons/redeem", verifyToken, couponRateLimit, playerOpsController.redeemCoupon);
+// 같은 ip 10분 30번 (계정 여러 개로 쿠폰 번호 맞히기 막기, 보안 점검 2026-11-09)
+const couponIpRateLimit = createRateLimiter({
+    windowMs: 10 * 60 * 1000,
+    max: 30,
+    keyOf: (req) => `coupon-ip:${req.ip}`,
+    message: "쿠폰 입력이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+});
+router.post("/coupons/redeem", verifyToken, couponRateLimit, couponIpRateLimit, playerOpsController.redeemCoupon);
 
 // 재화 상품·다이아 충전 주문 (오류 응답 모양은 errorHandler 충전 범위가 정함)
 router.get("/currency-products",               verifyToken, requireSelf, listCurrencyProducts);

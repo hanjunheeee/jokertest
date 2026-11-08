@@ -196,6 +196,33 @@ test('약관 링크: 글자 앞뒤 공백·탭 섞은 javascript: 도 null', () 
     assert.equal(toPublicTerms(termsRow('java\tscript:alert(1)')).url, null);
 });
 
+// ── 쿠폰 번호 맞히기 ──
+
+test('쿠폰 HTTP: 계정을 바꿔 가며 넣어도 같은 ip는 10분 30번까지, 31번째 429', async (t) => {
+    loginAs(t);
+    const couponService = require('../../services/ops/coupon');
+    let tried = 0;
+    swap(t, couponService, 'redeemCoupon', async () => { tried += 1; return { granted: [] }; });
+    const base = await startRouterServer(t, [['/economy', freshRouter('../../routes/economy.routes')]]);
+    for (let i = 0; i < 30; i += 1) {
+        const res = await send(base, 'POST', '/economy/coupons/redeem', { cookie: cookieFor(`bot-${i}`), body: { code: `GUESS-${i}` } });
+        assert.equal(res.status, 201, `${i}`);
+    }
+    const res = await json(await send(base, 'POST', '/economy/coupons/redeem', { cookie: cookieFor('bot-31'), body: { code: 'GUESS-31' } }));
+    assert.equal(res.status, 429);
+    assert.equal(res.body.code, 'RATE_LIMITED');
+    assert.equal(tried, 30);
+});
+
+test('쿠폰 HTTP: 한 계정은 1분 10번까지 (ip 제한보다 먼저)', async (t) => {
+    loginAs(t);
+    const couponService = require('../../services/ops/coupon');
+    swap(t, couponService, 'redeemCoupon', async () => ({ granted: [] }));
+    const base = await startRouterServer(t, [['/economy', freshRouter('../../routes/economy.routes')]]);
+    for (let i = 0; i < 10; i += 1) await send(base, 'POST', '/economy/coupons/redeem', { cookie: cookieFor('one'), body: { code: `C-${i}` } });
+    assert.equal((await send(base, 'POST', '/economy/coupons/redeem', { cookie: cookieFor('one'), body: { code: 'C-11' } })).status, 429);
+});
+
 // 시험 파일끼리 안 섞이게 express 앱은 매번 새로
 test('준비 확인: express 라우터 새로 부르기가 된다', () => {
     assert.equal(typeof express.Router, 'function');
