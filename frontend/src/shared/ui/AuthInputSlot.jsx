@@ -23,6 +23,7 @@ export default function AuthInputSlot({
   disabled = false,
   inputMode,
   inputTestId,
+  ariaLabel,
 }) {
   const [passwordVisible, setPasswordVisible] = useState(false)
 
@@ -45,6 +46,8 @@ export default function AuthInputSlot({
           value={value}
           onChange={onChange}
           placeholder={placeholder}
+          // 라벨 없이 placeholder만 있으면 글자를 쓰는 순간 화면 읽기로 칸 이름을 모름 → 이름 따로 둠
+          aria-label={ariaLabel ?? placeholder}
           autoComplete={autoComplete}
           disabled={disabled}
           inputMode={inputMode}

@@ -367,6 +367,8 @@ test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패�
       null,
       "쓰기 실패를 삼키면 저장된 것처럼 보인다",
     )
+    // FE-037: 화면이 안내할 수 있게 스토어에도 실패 표시
+    assert.equal(fresh.useSettingsStorageStatus.getState().writeFailed, true)
   } finally {
     installDomGlobal("localStorage", realLocalStorage)
     console.warn = originalWarn
@@ -375,6 +377,7 @@ test("F-15(AC-06): localStorage 쓰기가 실패하면 던지지 않되 실패�
   fresh.useSettingsStore.getState().setGeneralTextSize(GENERAL_SETTING_TEXT_SIZE.defaultValue)
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(fresh.getSettingsStorageWriteError(), null)
+  assert.equal(fresh.useSettingsStorageStatus.getState().writeFailed, false, "다시 저장되면 안내도 풂")
 })
 
 function installThrowingLocalStorageGetter(error) {

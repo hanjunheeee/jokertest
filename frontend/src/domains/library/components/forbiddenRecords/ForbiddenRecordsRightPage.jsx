@@ -25,6 +25,9 @@ import PublicAsset from "../../../../shared/ui/PublicAsset"
 
 const MotionPublicAsset = motion.create(PublicAsset)
 
+const RETRY_BUTTON_CLASS =
+  "mt-2 cursor-pointer rounded border border-[#6b5a44] bg-black/30 px-3 py-1 app-text-scaled [--app-text-size:14px] text-[#f5f0e6] hover:bg-black/45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f5f0e6]"
+
 function ForbiddenRecordsOverlayArt({ pageIndex, src }) {
   return (
     <MotionPublicAsset
@@ -43,7 +46,7 @@ function ForbiddenRecordsOverlayArt({ pageIndex, src }) {
 export default function ForbiddenRecordsRightPage({ pageIndex = 0, targetAchievementId = null }) {
   const { id, right } = getForbiddenRecordsPage(pageIndex)
   const { locked, unlockCondition, unlockProgress, unlockRewards, progressUnit, clearIllust, body } = right
-  const { achievements, status, error } = useAchievements()
+  const { achievements, status, error, retry } = useAchievements()
   const achievement = achievements?.find((entry) => entry.id === id)
   const { challengeCleared, displayedProgress } = resolveForbiddenRecordChallengeState({
     achievement, status, error, unlockProgress, progressUnit,
@@ -96,6 +99,12 @@ export default function ForbiddenRecordsRightPage({ pageIndex = 0, targetAchieve
             progress={displayedProgress}
             rewards={unlockRewards}
           />
+          {/* 업적을 못 불러오면 다시 받을 길이 없었음 → 다시 시도 */}
+          {status === "error" ? (
+            <button type="button" onClick={() => { void retry() }} className={RETRY_BUTTON_CLASS} data-achievements-retry="">
+              다시 시도
+            </button>
+          ) : null}
         </motion.div>
       </div>
     </div>

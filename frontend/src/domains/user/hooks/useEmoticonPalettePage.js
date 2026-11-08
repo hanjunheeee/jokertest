@@ -42,13 +42,16 @@ export function useEmoticonPalettePage() {
     setNotice(null)
     setSaveSuccessOpen(false)
     const result = await save()
+    // 먼저 보낸 저장이 아직 진행 중이면 그쪽이 잠금을 풂
+    if (result.code === "IN_PROGRESS") return
     setSaving(false)
 
     if (result.ok) {
       setSaveSuccessOpen(true)
       return
     }
-    if (result.code === "REVISION_MISMATCH") {
+    // 충돌은 스토어 안내가 맡고, 이미 저장 중·계정 바뀜으로 버린 결과는 실패 문구를 안 띄움
+    if (result.code === "REVISION_MISMATCH" || result.code === "IN_PROGRESS" || result.stale === true) {
       return
     }
     setNotice({

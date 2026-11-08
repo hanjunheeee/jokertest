@@ -1,6 +1,6 @@
 // 비밀번호 바꾸기 폼 훅 (입력·보내기·결과 문구)
 // 계정 관리 폼 훅(useAccountForm)이 씀
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { updatePasswordApi } from "@/domains/user/api/user.api"
 
 // 지금·새 비밀번호 입력과 결과 문구
@@ -10,6 +10,9 @@ export function usePasswordForm() {
     const [pwMsg, setPwMsg] = useState(null)
 
     const [pwLoading, setPwLoading] = useState(false)
+
+    // 같은 순간 두 번 눌러도 한 번만 보냄 (첫 요청이 세션을 끊어 둘째가 401로 로그아웃될 수 있음)
+    const submittingRef = useRef(false)
 
     // 입력칸 name으로 값 넣기
     const handlePwChange = (e) => {
@@ -23,17 +26,23 @@ export function usePasswordForm() {
 
         // 두 칸 중 하나라도 비면 안 보냄
         if (!pwForm.currentPassword || !pwForm.newPassword) return
+        if (submittingRef.current) return
+        submittingRef.current = true
 
         setPwLoading(true)
         setPwMsg(null)
         try {
-            await updatePasswordApi(pwForm)
+            const result = await updatePasswordApi(pwForm)
+            // 응답이 없으면(공통 401 처리로 로그아웃·이동됨) 성공으로 안 봄
+            if (result === undefined) return
 
             setPwForm({ currentPassword: "", newPassword: ""})
-            setPwMsg({ type: "success", text: "비밀번호가 변경되었습니다."})
+            // 서버가 지금 세션까지 끊어서 다시 로그인해야 함을 같이 알림
+            setPwMsg({ type: "success", text: "비밀번호가 변경되었습니다. 다시 로그인해 주세요."})
         } catch (err) {
-            setPwMsg({ type: "error", text: err.message ?? "변경에 실패했습니다." })
+            setPwMsg({ type: "error", text: err?.message ?? "변경에 실패했습니다." })
         } finally {
+            submittingRef.current = false
             setPwLoading(false)
         }
     }

@@ -25,7 +25,8 @@ export default function SoundControl({ audioRef = getGlobalBgmRef() }) {
         disabled={disabled}
         onClick={toggleMute}
         className={`relative z-10 shrink-0 ${SOUND_CONTROL_CLASSES.iconSize} ${SOUND_CONTROL_CLASSES.iconOverlap} cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90`}
-        aria-label={disabled ? "배경음 사용 안 함" : isSilent ? "음소거 해제" : "음소거"}
+        // 눌림(aria-pressed)이 켜짐·꺼짐을 알리니 이름은 고정 (바뀌는 이름과 같이 쓰면 "음소거 해제, 눌림"처럼 꼬임)
+        aria-label={disabled ? "배경음 사용 안 함" : "음소거"}
         title={disabled ? "배경음 사용 안 함" : undefined}
         aria-pressed={isSilent}
       >

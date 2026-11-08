@@ -16,13 +16,15 @@ function createMemoryStorage() {
 }
 
 // 저장소 묶음 만듦: resolve는 persist가 부르고, 실패 기록은 get/clear로 봄
-export function createSettingsStorage() {
+// onChange(실패 여부)는 실패가 생기거나 풀릴 때 불림 (화면 안내용)
+export function createSettingsStorage(onChange = null) {
   let lastError = null
 
   // 실패 기록 남기고 콘솔 경고
   const report = (error, message) => {
     lastError = error
     console.warn(`[settings] ${message}`, error)
+    onChange?.(true)
   }
 
   // 저장소 접근부터 막힌 경우: 메모리로 돌고 쓸 때마다 실패를 남김
@@ -73,6 +75,7 @@ export function createSettingsStorage() {
       setItem: (name, value) => {
         try {
           localStorage.setItem(name, value)
+          if (lastError !== null) onChange?.(false)
           lastError = null
         } catch (error) {
           report(error, "기기 저장에 실패했습니다 — 이번 세션에만 유지됩니다.")

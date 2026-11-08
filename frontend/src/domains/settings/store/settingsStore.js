@@ -6,6 +6,9 @@ import { SETTINGS_STORAGE_KEY } from "../constants/settingsStorage.js"
 import { GENERAL_CHECK_STORAGE_IDS, mergePersistedSettings } from "../utils/persistedSettings.js"
 import { createSettingsStorage } from "./settings/storage.js"
 import { settingsState } from "./settings/state.js"
+import { useSettingsStorageStatus } from "./settings/storageStatus.js"
+
+export { useSettingsStorageStatus }
 
 // 시험이 쓰는 이름 그대로 다시 내보냄 (src는 안 씀)
 export {
@@ -23,7 +26,10 @@ export {
 } from "../utils/persistedSettings.js"
 
 // 저장 실패 기록은 이 모듈마다 따로 둠 (시험이 새 모듈로 다시 불러 확인함)
-const storage = createSettingsStorage()
+// 실패하면 저장 상태 표시를 켜 설정 화면이 "새로고침하면 사라짐"을 안내함
+const storage = createSettingsStorage((failed) => {
+  if (useSettingsStorageStatus.getState().writeFailed !== failed) useSettingsStorageStatus.setState({ writeFailed: failed })
+})
 
 // 마지막 저장 실패 꺼내기 (시험만 씀)
 export function getSettingsStorageWriteError() {

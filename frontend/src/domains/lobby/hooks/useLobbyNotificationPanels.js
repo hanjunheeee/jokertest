@@ -1,6 +1,6 @@
 // 로비 알림 창·친구 목록 패널 열림 상태 (주소의 알림 대상 id로 친구 패널 열기)
 // LobbyPage·시험이 씀
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 
 import { useNotificationsStore } from "../../notifications/store/notifications.store.js"
 import {
@@ -28,18 +28,23 @@ export function parseInviteTargetId(searchParams) {
 export function useLobbyNotificationPanels({ searchParams, navigate } = {}) {
   const notificationsOpen = useNotificationsStore((state) => state.open)
 
-  const [friendListOpen, setFriendListOpen] = useState(false)
-
-  const [friendRequestOpenSignal, setFriendRequestOpenSignal] = useState(0)
-
   const friendRequestTargetId = parseFriendRequestTargetId(searchParams)
   const gameInviteTargetId = parseInviteTargetId(searchParams)
 
+  const [friendListOpen, setFriendListOpen] = useState(
+    () => friendRequestTargetId !== null || gameInviteTargetId !== null,
+  )
+
+  const [friendRequestOpenSignal, setFriendRequestOpenSignal] = useState(0)
+
   // 주소에 대상이 있으면 친구 패널을 엶, 같은 주소로 다시 와도 신호 값으로 다시 엶
-  useEffect(() => {
-    if (friendRequestTargetId === null && gameInviteTargetId === null) return
-    setFriendListOpen(true)
-  }, [friendRequestTargetId, gameInviteTargetId, friendRequestOpenSignal])
+  // effect 안 setState 대신 그리는 중에 대상·신호 바뀜을 보고 맞춤
+  const openKey = `${friendRequestTargetId}|${gameInviteTargetId}|${friendRequestOpenSignal}`
+  const [seenOpenKey, setSeenOpenKey] = useState(openKey)
+  if (seenOpenKey !== openKey) {
+    setSeenOpenKey(openKey)
+    if (friendRequestTargetId !== null || gameInviteTargetId !== null) setFriendListOpen(true)
+  }
 
   // 알림 창 열고 닫기는 알림 스토어가 맡음
   const openNotifications = useCallback(() => {

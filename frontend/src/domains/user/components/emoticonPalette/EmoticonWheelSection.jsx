@@ -9,14 +9,14 @@ import {
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
 import { emoticonItemOf } from "@/domains/user/utils/emoticonPalette/items.js"
 
-// 불러오기 전·저장 중에는 저장·취소를 잠금, 불러오기 전엔 바퀴 칸도 잠금
+// 불러오기 전·저장 중에는 저장·취소·바퀴 칸 모두 잠금 (저장 응답이 저장 중 편집을 덮지 않게)
 export default function EmoticonWheelSection({ page }) {
   return (
     <section aria-label="이모티콘 팔레트" className={WHEEL_SECTION_CLASS}>
       <EmoticonPaletteWheel
         slots={page.selectedSlots}
         selectedSlotIndex={page.selectedSlotIndex}
-        disabled={!page.isReady}
+        disabled={!page.isReady || page.saving}
         resolveItem={emoticonItemOf}
         onSelectSlot={page.selectSlot}
       />

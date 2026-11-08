@@ -5,18 +5,16 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
 // 페이지 번호·포털 준비 여부를 돌려줌
 export function useTutorialPager({ open, onClose, slideCount }) {
-  const [mounted, setMounted] = useState(false)
+  // 브라우저에서만 포털을 그림 (document.body가 있을 때)
+  const mounted = typeof document !== "undefined"
   const [pageIndex, setPageIndex] = useState(0)
 
-  // document.body가 생긴 뒤에만 포털을 그림
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    // 열 때마다 첫 페이지부터
+  // 열 때마다 첫 페이지부터 (effect 안 setState 대신 그리는 중에 열림 바뀜을 보고 맞춤)
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
     if (open) setPageIndex(0)
-  }, [open])
+  }
 
   // 열려 있을 때만 키를 받음, Esc는 취소 소리를 내고 닫음
   useEffect(() => {

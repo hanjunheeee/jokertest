@@ -4,10 +4,11 @@
 // 깼음은 보상 받음(granted) 기준으로 봄
 export function resolveForbiddenRecordChallengeState({ achievement, status, error, unlockProgress, progressUnit }) {
   const challengeCleared = achievement?.granted ?? false;
-  // 진행도: 업적 있음 → 현재/목표, 불러오는 중·실패 문구, 그 밖은 예시 글자
+  // 진행도: 업적 있음 → 현재/목표, 받기 전(idle)·불러오는 중·실패 문구, 그 밖은 예시 글자
+  // 받기 전엔 "1/3회 완료" 같은 예시가 진짜 진행도처럼 잠깐 보여 불러오는 중으로 봄
   const displayedProgress = achievement
     ? `${Math.min(achievement.current, achievement.threshold)}/${achievement.threshold}${progressUnit ?? ""}`
-    : status === "loading"
+    : status === "loading" || status === "idle"
       ? "진행률을 불러오는 중…"
       : status === "error"
         ? (error ?? "진행률을 불러오지 못했습니다")

@@ -70,7 +70,7 @@ export default function ProfileEditOverlay({ open, onClose }) {
             onClick={handleClose}
           />
 
-          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS}>
             <motion.div
               role="dialog"
               aria-modal="true"

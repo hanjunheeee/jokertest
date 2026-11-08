@@ -11,7 +11,7 @@ import {
 } from "@/domains/user/constants/accountPanelStyle.js"
 import ConfirmButton from "@/domains/user/components/AccountPanel/ConfirmButton.jsx"
 import FeedbackMsg from "@/domains/user/components/AccountPanel/FeedbackMsg.jsx"
-import { resolveDiscordLinkMessage } from "@/domains/user/hooks/useDiscordAccountLink.js"
+import { resolveDiscordLinkMessage, startDiscordLink } from "@/domains/user/hooks/useDiscordAccountLink.js"
 import { API_BASE_URL } from "@/shared/env.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
@@ -40,7 +40,7 @@ export default function DiscordAccountLink() {
     const confirmed = window.confirm("Discord 계정을 이 계정에 연결하시겠습니까?")
     dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
     if (!confirmed) return
-    window.location.href = `${API_BASE_URL}/auth/discord/link`
+    void startDiscordLink(`${API_BASE_URL}/auth/discord/link`)
   }
 
   return (

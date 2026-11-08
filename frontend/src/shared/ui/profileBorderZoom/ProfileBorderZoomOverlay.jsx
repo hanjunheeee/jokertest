@@ -1,7 +1,7 @@
 // 프로필 테두리 확대 창 (어두운 뒤판 + 가운데 창, body에 포털로 띄움)
 // library 초대된 손님 직업 도전·store 화면 겹창이 씀
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useState } from "react"
+import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import ProfileBorderZoomPanel from "@/shared/ui/profileBorderZoom/ProfileBorderZoomPanel.jsx"
 import {
@@ -10,15 +10,14 @@ import {
   ZOOM_TRANSITION,
 } from "@/shared/ui/profileBorderZoom/profileBorderZoomLayout.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import { useDialogFocus } from "@/shared/hooks/useDialogFocus.js"
 
 // 뒤판·Esc로 닫고, 창 안 클릭은 뒤판까지 안 번지게 막음
 export default function ProfileBorderZoomOverlay({ open, item, onClose }) {
-  const [mounted, setMounted] = useState(false)
-
-  // document.body가 생긴 뒤에만 포털을 그림
-  useEffect(() => {
-    setMounted(true)
-  }, [])
+  // 브라우저에서만 포털을 그림 (document.body가 있을 때)
+  const mounted = typeof document !== "undefined"
+  const dialogRef = useRef(null)
+  useDialogFocus(Boolean(open && item), dialogRef)
 
   useEffect(() => {
     // 열려 있을 때만 Esc 받음, 닫을 때 취소 소리
@@ -53,8 +52,11 @@ export default function ProfileBorderZoomOverlay({ open, item, onClose }) {
             onClick={onClose}
           />
 
-          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS}>
             <motion.div
+              ref={dialogRef}
+              tabIndex={-1}
+              style={{ outline: "none" }}
               role="dialog"
               aria-modal="true"
               aria-label={`${item.label} 프로필 테두리 보기`}

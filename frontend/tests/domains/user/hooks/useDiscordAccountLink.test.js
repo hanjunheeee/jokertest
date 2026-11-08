@@ -4,6 +4,7 @@ import {
   DEFAULT_DISCORD_LINK_ERROR_MESSAGE,
   mapDiscordLinkErrorCode,
   resolveDiscordLinkMessage,
+  startDiscordLink,
 } from "../../../../src/domains/user/hooks/useDiscordAccountLink.js"
 
 test("resolveDiscordLinkMessage: socialLinkSuccess가 있으면 success 메시지를 돌려준다", () => {
@@ -38,4 +39,18 @@ test("mapDiscordLinkErrorCode: 상속된 프로토타입 키는 값으로 새지
   assert.equal(mapDiscordLinkErrorCode("__proto__"), DEFAULT_DISCORD_LINK_ERROR_MESSAGE)
   assert.equal(mapDiscordLinkErrorCode("constructor"), DEFAULT_DISCORD_LINK_ERROR_MESSAGE)
   assert.equal(mapDiscordLinkErrorCode("toString"), DEFAULT_DISCORD_LINK_ERROR_MESSAGE)
+})
+
+test("FE-011: 연결 시작 전에 토큰부터 갱신하고, 갱신되면 연결 주소로 감", async () => {
+  const went = []
+  const ok = await startDiscordLink("http://api/auth/discord/link", { refresh: async () => true, go: (url) => went.push(url) })
+  assert.equal(ok, true)
+  assert.deepEqual(went, ["http://api/auth/discord/link"])
+})
+
+test("FE-011: 갱신이 안 되면 401 글자 화면 대신 로그인 화면으로 감", async () => {
+  const went = []
+  const ok = await startDiscordLink("http://api/auth/discord/link", { refresh: async () => false, go: (url) => went.push(url) })
+  assert.equal(ok, false)
+  assert.deepEqual(went, ["/login"])
 })

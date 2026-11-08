@@ -529,3 +529,28 @@ test("loadForGame: 폐기된 앞 요청이 거부돼도 새 요청의 상태·�
   assert.deepEqual(useEmojiPaletteStore.getState().gameSlots, GAME_SLOTS)
   assert.deepEqual(unhandled, [], "폐기된 요청의 거부가 처리되지 않은 rejection으로 샜다")
 })
+
+test("FE-042·3장: 저장 중엔 다시 저장해도 요청 한 번, 칸 편집도 안 받아 응답이 편집을 덮지 않음", async () => {
+  resetWorld()
+  await loadReady()
+  const deferred = createDeferred()
+  handleRequest = async ({ method }) => {
+    if (method === "PUT" || method === "PATCH" || method === "POST") return await deferred.promise
+    throw new Error(`unexpected ${method}`)
+  }
+  const callsBefore = calls.length
+  const first = useEmojiPaletteStore.getState().save()
+  const second = await useEmojiPaletteStore.getState().save()
+  assert.equal(second.code, "IN_PROGRESS")
+  assert.equal(calls.length - callsBefore, 1, "같은 버전으로 두 번 저장 안 함")
+
+  useEmojiPaletteStore.getState().selectSlot(3)
+  assert.equal(useEmojiPaletteStore.getState().selectedSlotIndex, 0, "저장 중 칸 고르기 안 받음")
+
+  deferred.resolve(json(200, { ok: true, slots: DEFAULT_SLOTS, revision: "r2" }))
+  const result = await first
+  assert.equal(result.ok, true)
+  assert.equal(useEmojiPaletteStore.getState().saveInFlight, false)
+  useEmojiPaletteStore.getState().selectSlot(3)
+  assert.equal(useEmojiPaletteStore.getState().selectedSlotIndex, 3)
+})

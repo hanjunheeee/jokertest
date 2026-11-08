@@ -1,5 +1,7 @@
 // Discord 계정 연결 결과 문구 (서버가 주소에 붙여 준 성공 표시·오류 코드 → 안내 문구)
-// DiscordAccountLink·시험이 씀 (이름은 훅이지만 훅은 없음)
+// DiscordAccountLink·시험이 씀 (이름은 훅이지만 훅은 없음), 연결 시작(startDiscordLink)은 모바일도 씀
+import { refreshAccessToken } from "../../../shared/api/client.js"
+import { useAuthStore } from "../../auth/store/auth.store.js"
 
 // 오류 코드별 문구
 export const ERROR_MSGS = {
@@ -40,4 +42,17 @@ export function resolveDiscordLinkMessage({ socialLinkSuccess, socialLinkError }
     return { type: "error", text: mapDiscordLinkErrorCode(socialLinkError) }
   }
   return null
+}
+
+// 연결 시작: 페이지째 이동이라 토큰 자동 갱신이 안 됨 → 먼저 갱신하고 이동 (만료된 채 가면 401 글자 화면에서 멈춤, FE-011)
+// 갱신이 안 되면 로그인 풀림으로 보고 로그인 화면으로
+export async function startDiscordLink(linkUrl, { refresh = refreshAccessToken, go = (url) => { window.location.href = url } } = {}) {
+  const refreshed = await refresh()
+  if (refreshed) {
+    go(linkUrl)
+    return true
+  }
+  useAuthStore.getState().logout()
+  go("/login")
+  return false
 }

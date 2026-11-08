@@ -1,7 +1,9 @@
 // 튜토리얼 창 (어두운 뒤판·슬라이드 그림·페이지 이동 줄, body에 포털로 띄움)
 // 일반 설정 탭이 씀
 import { AnimatePresence, motion } from "framer-motion"
+import { useRef } from "react"
 import { createPortal } from "react-dom"
+import { useDialogFocus } from "@/shared/hooks/useDialogFocus.js"
 import { TUTORIAL_GUIDE_SLIDES } from "@/shared/constants/tutorialAssets.js"
 import {
   BACKDROP_CLASS,
@@ -24,6 +26,8 @@ export default function TutorialGuideOverlay({
 }) {
   const slideCount = slides.length
   const { mounted, pageIndex, setPageIndex } = useTutorialPager({ open, onClose, slideCount })
+  const dialogRef = useRef(null)
+  useDialogFocus(Boolean(open) && slideCount > 0, dialogRef)
 
   // 포털 준비 전이거나 슬라이드가 없으면 안 그림
   if (!mounted || slideCount === 0) return null
@@ -46,6 +50,9 @@ export default function TutorialGuideOverlay({
 
           <div className={SHELL_CLASS}>
             <motion.div
+              ref={dialogRef}
+              tabIndex={-1}
+              style={{ outline: "none" }}
               role="dialog"
               aria-modal="true"
               aria-label={ariaLabel}

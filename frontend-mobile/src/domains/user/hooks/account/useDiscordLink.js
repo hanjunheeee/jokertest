@@ -2,7 +2,7 @@
 // DiscordSection이 씀, 문구 표는 데스크톱 resolveDiscordLinkMessage 그대로
 
 import { useSearchParams } from "react-router-dom"
-import { resolveDiscordLinkMessage } from "@/domains/user/hooks/useDiscordAccountLink.js"
+import { resolveDiscordLinkMessage, startDiscordLink } from "@/domains/user/hooks/useDiscordAccountLink.js"
 import { API_BASE_URL } from "@/shared/env.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 
@@ -34,7 +34,7 @@ export function useDiscordLink() {
         const confirmed = window.confirm("Discord 계정을 이 계정에 연결하시겠습니까?")
         dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
         if (!confirmed) return
-        window.location.href = LINK_START_URL
+        void startDiscordLink(LINK_START_URL)
     }
 
     return { message, clearMessage, startLink }

@@ -13,6 +13,8 @@ export const createInitialState = () => ({
   status: "idle",
   error: null,
   conflict: null,
+  // 저장 요청 중 (같은 버전 두 번 저장·저장 중 편집이 응답에 덮이는 것 막기)
+  saveInFlight: false,
   gameSlots: null,
   gameScopeKey: null,
   gameStatus: "idle",

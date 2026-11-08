@@ -6,6 +6,34 @@ import { assignSlot, normalizeSlots } from "../../utils/emoticonPalette/slots.js
 import { createInitialState, currentChecker } from "./state.js"
 import { clearGameRequest } from "./gameActions.js"
 
+// 저장 요청 한 번 보내고 결과를 반영 (save가 잠금을 걸고 부름)
+async function runSave(set, isCurrent, slots, expectedRevision) {
+  try {
+    const response = await saveEmojiPaletteApi({ slots, expectedRevision })
+    if (!isCurrent()) return { ok: false, stale: true }
+
+    const savedSlots = normalizeSlots(response?.slots ?? slots)
+    const revision = typeof response?.revision === "string" ? response.revision : null
+    set({ slots: savedSlots, selectedSlots: [...savedSlots], revision, conflict: null, error: null })
+    return { ok: true, revision, slots: savedSlots }
+  } catch (error) {
+    if (!isCurrent()) return { ok: false, stale: true }
+
+    if (error?.revision !== undefined) {
+      const conflictSlots = normalizeSlots(error.slots)
+      set({
+        slots: conflictSlots,
+        selectedSlots: [...conflictSlots],
+        revision: error.revision,
+        conflict: { revision: error.revision, slots: conflictSlots },
+      })
+      return { ok: false, code: error.code, status: error.status, revision: error.revision, slots: conflictSlots }
+    }
+    // 그 밖의 실패는 편집 칸을 그대로 둠
+    return { ok: false, code: error?.code, status: error?.status }
+  }
+}
+
 export const editActions = (set, get) => ({
   // 불러오기: 서버 칸으로 저장 칸·편집 칸을 같이 맞춤, 늦게 온 옛 응답은 버림
   load: async () => {
@@ -37,57 +65,41 @@ export const editActions = (set, get) => ({
 
   // 편집은 불러오기가 끝난 뒤에만 받음
   selectSlot: (index) => {
-    if (get().status !== "ready") return
+    if (get().status !== "ready" || get().saveInFlight) return
     if (!Number.isInteger(index) || index < 0 || index >= EMOJI_PALETTE_SLOT_COUNT) return
     set({ selectedSlotIndex: index })
   },
 
   // 고른 칸에 이모티콘 넣기 (다른 칸에 있으면 자리 바꿈, 불러오기 전엔 안 받음)
   assignItem: (itemId) => {
-    if (get().status !== "ready") return
+    if (get().status !== "ready" || get().saveInFlight) return
     if (typeof itemId !== "string" || itemId.length === 0) return
 
     set((state) => ({ selectedSlots: assignSlot(state.selectedSlots, state.selectedSlotIndex, itemId) }))
   },
 
   // 버전 충돌이면 서버 칸으로 되돌리고 충돌 정보를 남김
+  // 저장 중엔 다시 저장·칸 편집을 안 받음, 끝나면 풂
   save: async () => {
     if (get().status !== "ready") return { ok: false, code: "NOT_READY" }
+    if (get().saveInFlight) return { ok: false, code: "IN_PROGRESS" }
 
     const isCurrent = currentChecker(get)
 
     const slots = [...get().selectedSlots]
     const expectedRevision = get().revision
+    set({ saveInFlight: true })
 
     try {
-      const response = await saveEmojiPaletteApi({ slots, expectedRevision })
-      if (!isCurrent()) return { ok: false, stale: true }
-
-      const savedSlots = normalizeSlots(response?.slots ?? slots)
-      const revision = typeof response?.revision === "string" ? response.revision : null
-      set({ slots: savedSlots, selectedSlots: [...savedSlots], revision, conflict: null, error: null })
-      return { ok: true, revision, slots: savedSlots }
-    } catch (error) {
-      if (!isCurrent()) return { ok: false, stale: true }
-
-      if (error?.revision !== undefined) {
-        const conflictSlots = normalizeSlots(error.slots)
-        set({
-          slots: conflictSlots,
-          selectedSlots: [...conflictSlots],
-          revision: error.revision,
-          conflict: { revision: error.revision, slots: conflictSlots },
-        })
-        return { ok: false, code: error.code, status: error.status, revision: error.revision, slots: conflictSlots }
-      }
-      // 그 밖의 실패는 편집 칸을 그대로 둠
-      return { ok: false, code: error?.code, status: error?.status }
+      return await runSave(set, isCurrent, slots, expectedRevision)
+    } finally {
+      if (isCurrent()) set({ saveInFlight: false })
     }
   },
 
   // 저장 안 한 편집을 버리고 마지막 저장 칸으로 돌림
   cancel: () => {
-    if (get().status !== "ready") return
+    if (get().status !== "ready" || get().saveInFlight) return
     set((state) => ({ selectedSlots: [...state.slots], conflict: null }))
   },
 

@@ -1,16 +1,19 @@
 // 알림 창 열 때 포커스 기억, 닫으면 되돌리고 삭제 오류 지움
 // 알림 창(NotificationModal.js)이 씀
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 
 import { useNotificationsStore } from "../../store/notifications.store.js"
 
-// 열리는 렌더에서 바로 기억해야 창 안 버튼으로 포커스가 가기 전 요소를 잡음
+// 창 안 버튼으로 포커스가 가기 전 요소를 잡아야 함
 export function useRestoreFocus(open) {
   const restoreRef = useRef(null)
 
-  if (open && restoreRef.current === null && typeof document !== "undefined") {
-    restoreRef.current = document.activeElement
-  }
+  // 창 닫기 버튼 초점 주기(보통 effect)보다 먼저 도는 layout effect에서 기억함
+  useLayoutEffect(() => {
+    if (open && restoreRef.current === null && typeof document !== "undefined") {
+      restoreRef.current = document.activeElement
+    }
+  }, [open])
 
   // 닫혀 있을 때만: 기억 지우고 삭제 오류 지운 뒤 포커스 되돌림
   useEffect(() => {

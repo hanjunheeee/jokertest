@@ -150,7 +150,8 @@ test("AC-01/AC-06: 실제 FORBIDDEN_RECORDS_SPREAD_META 7개 전부가 unlockCon
     assert.equal(errored.displayedProgress, "네트워크 오류")
 
     const idle = resolveForbiddenRecordChallengeState({ achievement: null, status: "idle", error: null, unlockProgress, progressUnit })
-    assert.equal(idle.displayedProgress, unlockProgress, "idle 상태에서는 정적 더미 진행률을 그대로 보여줘야 한다(원문 보존)")
+    // FE-047: 받기 전(idle) 예시 진행도가 진짜처럼 보여 불러오는 중으로 바꿈
+    assert.equal(idle.displayedProgress, "진행률을 불러오는 중…", "idle(받기 전)엔 예시 진행률 대신 불러오는 중")
 
     const pending = resolveForbiddenRecordChallengeState({
       achievement: { current: 3, threshold: 3, achieved: true, granted: false }, status: "success", error: null, unlockProgress, progressUnit,
@@ -315,7 +316,7 @@ test("AC-01/AC-06: ForbiddenRecordsRightPage.jsx가 개발용 더미 대신 useA
   assertWires("domains/library/components/forbiddenRecords/ForbiddenRecordsRightPage.jsx", [
     [/import \{ useAchievements \} from "[^"]*useAchievements\.js"/, "useAchievements 훅을 import하지 않는다"],
     [/import \{ resolveForbiddenRecordChallengeState \} from "[^"]*resolveForbiddenRecordChallengeState\.js"/, "실제 실행 가능한 순수 함수로 클리어·진행률을 계산하지 않는다(CODEX-2 재검토 AC-01)"],
-    [/const \{ achievements, status, error \} = useAchievements\(\)/, "훅에서 achievements·status·error를 꺼내지 않는다"],
+    [/const \{ achievements, status, error(, retry)? \} = useAchievements\(\)/, "훅에서 achievements·status·error를 꺼내지 않는다"],
     [/const achievement = achievements\?\.find\(\(entry\) => entry\.id === id\)/, "spread id로 서버 업적을 찾지 않는다"],
     [/const \{ challengeCleared, displayedProgress \} = resolveForbiddenRecordChallengeState\(\{/, "달성 여부를 순수 함수로 위임하지 않는다"],
     [/progress=\{displayedProgress\}/, "화면에 서버 진행률을 표시하지 않는다"],

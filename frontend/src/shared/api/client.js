@@ -43,10 +43,21 @@ export const refreshAccessToken = () => {
     return refreshPromise;
 };
 
+// 토큰 만료 말고 401을 로그아웃 없이 오류로 던짐 (비밀번호 변경처럼 401이 "입력 틀림"인 요청용)
+const throwUnauthorizedInline = async (response) => {
+    const body = await response.json().catch(() => ({}));
+    const error = new Error(body.message || "인증에 실패했습니다.");
+    error.status = 401;
+    if (body.code) error.code = body.code;
+    throw error;
+};
+
 // 응답 풀기는 response.js에 맡김, _isRetry는 다시 보낸 요청 표시
+// options.unauthorizedInline이 참이면 (갱신 뒤에도 남은) 401을 공통 로그아웃 처리로 안 넘김
 export const apiClient = async (endpoint, options = {}, _isRetry = false) => {
     const url = `${BASE_URL}${endpoint}`;
-    const requestOptions = createRequestOptions(options);
+    const { unauthorizedInline = false, ...fetchOptions } = options;
+    const requestOptions = createRequestOptions(fetchOptions);
 
     const response = await fetch(url, requestOptions);
 
@@ -63,6 +74,10 @@ export const apiClient = async (endpoint, options = {}, _isRetry = false) => {
         }
     }
 
+    if (response.status === 401 && unauthorizedInline) {
+        await throwUnauthorizedInline(response);
+    }
+
     return await handleApiResponse(response);
 };
 
@@ -71,6 +86,6 @@ export const api = {
     get:    (endpoint)       => apiClient(endpoint),
     post:   (endpoint, body) => apiClient(endpoint, { method: "POST",   body: JSON.stringify(body) }),
     put:    (endpoint, body) => apiClient(endpoint, { method: "PUT",    body: JSON.stringify(body) }),
-    patch:  (endpoint, body) => apiClient(endpoint, { method: "PATCH",  body: JSON.stringify(body) }),
+    patch:  (endpoint, body, extra = {}) => apiClient(endpoint, { method: "PATCH", body: JSON.stringify(body), ...extra }),
     delete: (endpoint)       => apiClient(endpoint, { method: "DELETE" }),
 };
