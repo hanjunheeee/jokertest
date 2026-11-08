@@ -11,9 +11,10 @@ exports.findByEmail = async (email, options = {}) => {
     return await db.User.findOne(findOptions);
 };
 
-// 닉네임으로 계정 (가입·닉네임 바꾸기 중복 확인)
-exports.findByNickname = async (nickname) => {
-    return await db.User.findOne({ where: { nickname } });
+// 닉네임으로 계정 (가입·닉네임 바꾸기 중복 확인, 가입은 트랜잭션 안에서)
+exports.findByNickname = async (nickname, options = {}) => {
+    const { transaction } = options;
+    return await db.User.findOne({ where: { nickname }, transaction });
 };
 
 // uuid로 계정 (트랜잭션·잠금·쿼리 로그 끄기를 부르는 쪽이 정함)

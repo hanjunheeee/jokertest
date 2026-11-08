@@ -467,13 +467,15 @@ test("DISCORD_CLIENT_SECRET 환경변수가 없으면 코드 교환이 하드코
     );
 });
 
-test("GET /auth/discord/link은 인증 없이 호출하면 401이고 state는 발급되지 않는다", async (t) => {
+test("GET /auth/discord/link은 인증 없이 호출하면 계정 화면으로 SESSION_EXPIRED를 붙여 돌려보내고 state는 발급되지 않는다", async (t) => {
     const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {});
     const base = await startServer(t);
 
     const res = await rawGet(base, "/auth/discord/link");
 
-    assert.equal(res.statusCode, 401);
+    // 브라우저가 바로 여는 주소라 JSON 401 화면에 머물지 않게 (BE-016)
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=SESSION_EXPIRED`);
     assert.equal(social.calls.length, 0, "인증되지 않은 요청은 issueOAuthState까지 도달하면 안 됩니다");
 });
 
@@ -630,4 +632,44 @@ test("연결을 취소하면(error 파라미터) state는 소비되지만 linkEx
     });
     assert.equal(second.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=STATE_REUSED`,
         "취소된 콜백도 state를 소비해야 같은 state로의 재시도가 막힙니다");
+});
+
+// 2026-11-09 버그 수정: 디스코드 왕복 중 access가 만료돼도 연결은 끝나야 함 (세션 살아 있는지는 다시 봄)
+test("access 토큰이 만료된 채 연결 콜백으로 돌아와도 세션이 살아 있으면 연결을 마친다(known-issues 디스코드 콜백)", async (t) => {
+    stubAuthGate(t);
+    stubModule(t, discordOAuthService, DISCORD_KEYS, {
+        exchangeCodeForProfile: async () => ({ subject: "discord-sub-expired", email: null }),
+    });
+    const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        consumeOAuthState: async () => ({ purpose: "link", userId: LINK_UUID, sessionId: LINK_SESSION_ID }),
+        linkExternalIdentityForValidatedSession: async () => ({ provider: "discord", subject: "discord-sub-expired", user_id: LINK_UUID }),
+    });
+    const base = await startServer(t);
+
+    const expiredAccess = jwt.sign(
+        { uuid: LINK_UUID, role: "USER", sessionId: LINK_SESSION_ID, exp: Math.floor(Date.now() / 1000) - 60 },
+        process.env.JWT_SECRET,
+    );
+    const attempt = jwt.sign({ fp: "link-fp-1", purpose: "link", provider: "discord" }, process.env.JWT_SECRET, { expiresIn: 600 });
+    const res = await rawGet(base, "/auth/discord/link/callback?code=c&state=s", {
+        cookie: `accessToken=${expiredAccess}; oauthAttempt=${attempt}`,
+    });
+
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkSuccess=discord`);
+    assert.equal(social.lastCall("linkExternalIdentityForValidatedSession").args[0].userId, LINK_UUID);
+    assert.ok(findSetCookie(res.headers, "oauthAttempt"), "시도 쿠키는 지워야 합니다");
+});
+
+test("연결 콜백에 세션이 끝난 토큰이면 JSON 401 대신 계정 화면으로 SESSION_EXPIRED를 붙여 돌려보내고 시도 쿠키를 지운다", async (t) => {
+    stubAuthGate(t, { sessionActive: false });
+    const social = stubModule(t, socialAuthService, SOCIAL_KEYS, {});
+    const base = await startServer(t);
+
+    const res = await rawGet(base, "/auth/discord/link/callback?code=c&state=s", { cookie: linkAccessTokenCookie() });
+
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=SESSION_EXPIRED`);
+    assert.match(findSetCookie(res.headers, "oauthAttempt") ?? "", /^oauthAttempt=;/);
+    assert.equal(social.calls.length, 0);
 });

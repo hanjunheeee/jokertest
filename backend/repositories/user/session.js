@@ -25,8 +25,15 @@ exports.markOnlineSessionsOffline = async (user_id, options = {}) => {
     );
 };
 
-// 마지막 성공 로그인 기록에 로그아웃 시각 + 그 세션 끊기
+// 그 세션 끊고, 끊긴 게 있을 때만 마지막 성공 로그인 기록에 로그아웃 시각
+// 이미 끊긴 옛 세션 로그아웃이 새 기기 로그인 기록을 닫지 않게 (한 사람 한 세션이라 마지막 기록이 지금 세션 것)
 exports.recordLogout = async (user_id, session_id) => {
+    const [revokedCount] = await db.UserSession.update(
+        { is_online: false, revoked_at: new Date() },
+        { where: { id: session_id, user_id, is_online: true } }
+    );
+    if (!revokedCount) return;
+
     const lastLogin = await db.LoginHistory.findOne({
         where: { user_id, success: true, logout_at: null },
         order: [['login_at', 'DESC']],
@@ -35,8 +42,4 @@ exports.recordLogout = async (user_id, session_id) => {
     if (lastLogin) {
         await lastLogin.update({ logout_at: new Date() });
     }
-    await db.UserSession.update(
-        { is_online: false, revoked_at: new Date() },
-        { where: { id: session_id, user_id, is_online: true } }
-    );
 };

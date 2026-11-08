@@ -1,4 +1,4 @@
-// 인증 요청 수 제한 만드는 파일, 가입 인증번호·아이디 찾기·비번 재설정 제한 정의
+// 인증 요청 수 제한 만드는 파일, 로그인·가입 인증번호·아이디 찾기·비번 재설정 제한 정의
 // routes/auth.routes.js가 불러올 때 한 번 만듦 (시험은 라우트를 다시 불러 새 카운터 받음)
 const crypto = require("crypto");
 
@@ -86,7 +86,42 @@ const buildPasswordResetRateLimiters = (env, createRateLimiter) => {
     };
 };
 
+// 너무 많으면 화면에 띄울 문구
+const TOO_MANY_MESSAGE = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+
+// 로그인·이메일 중복 확인·refresh·소셜 가입 ip 제한
+// 로그인 ip 제한은 흔한 비번 뿌리기·남의 계정 잠그기 반복 막기, refresh는 PC방처럼 ip 하나에 여럿이라 넉넉히
+const buildAccountRateLimiters = (env, createRateLimiter) => {
+    const tenMinutes = 10 * 60 * 1000;
+    const login = createRateLimiter({
+        windowMs: toPositiveInt(env.LOGIN_IP_WINDOW_MS, tenMinutes),
+        max:      toPositiveInt(env.LOGIN_IP_MAX, 50),
+        keyOf:    (req) => `login-ip:${req.ip}`,
+        message:  "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+    });
+    const checkEmail = createRateLimiter({
+        windowMs: toPositiveInt(env.CHECK_EMAIL_IP_WINDOW_MS, tenMinutes),
+        max:      toPositiveInt(env.CHECK_EMAIL_IP_MAX, 60),
+        keyOf:    (req) => `check-email-ip:${req.ip}`,
+        message:  TOO_MANY_MESSAGE,
+    });
+    const refresh = createRateLimiter({
+        windowMs: toPositiveInt(env.REFRESH_IP_WINDOW_MS, tenMinutes),
+        max:      toPositiveInt(env.REFRESH_IP_MAX, 600),
+        keyOf:    (req) => `refresh-ip:${req.ip}`,
+        message:  TOO_MANY_MESSAGE,
+    });
+    const socialSignup = createRateLimiter({
+        windowMs: toPositiveInt(env.SOCIAL_SIGNUP_IP_WINDOW_MS, tenMinutes),
+        max:      toPositiveInt(env.SOCIAL_SIGNUP_IP_MAX, 60),
+        keyOf:    (req) => `social-signup-ip:${req.ip}`,
+        message:  TOO_MANY_MESSAGE,
+    });
+    return { login, checkEmail, refresh, socialSignup };
+};
+
 module.exports = {
+    buildAccountRateLimiters,
     buildSignupCodeRateLimiters,
     buildFindIdRateLimiters,
     buildPasswordResetRateLimiters,

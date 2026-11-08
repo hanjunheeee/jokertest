@@ -8,8 +8,15 @@ const economyService = require('../../services/economy');
 const ALLOWED_SAVE_FIELDS = new Set(['slots', 'expectedRevision']);
 
 // 오류를 ok·code·message 모양으로, revision 충돌이면 지금 팔레트도 같이 보냄 (화면이 바로 맞춤)
+// 예상 못 한 오류(500)는 고정 문구·코드로 답하고 서버 로그에 남김 (내부 문구 안 내보내기)
 const respondWithError = (res, error) => {
     const status = typeof error?.status === 'number' ? error.status : 500;
+    if (status >= 500) {
+        console.error('\x1b[31m%s\x1b[0m', error?.stack || error);
+        return res.status(500).json({
+            ok: false, code: 'EMOJI_PALETTE_ERROR', message: '이모티콘 팔레트 처리 중 오류가 발생했습니다.',
+        });
+    }
     const body = {
         ok: false,
         code: error?.code ?? 'EMOJI_PALETTE_ERROR',

@@ -90,6 +90,12 @@ const createFakeUserRepository = () => {
             usersByUuid.set(user.uuid, user);
             usersByEmail.set(user.email, user.uuid);
         },
+        async checkActiveBan() {
+            return null;
+        },
+        async createLoginHistory() {
+            return {};
+        },
         async createSocialSignupIntent(data) {
             socialSignupIntents.set(data.intent_token_hash, { ...data, id: crypto.randomUUID(), consumed_at: null });
         },

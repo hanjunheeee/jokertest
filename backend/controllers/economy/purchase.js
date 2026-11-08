@@ -15,6 +15,11 @@ const {
 } = require("../../validations/economy");
 const { serializeLedgerEntry } = require("./serializers");
 
+// 참조 id 길이 상한: 묶음은 장부 참조 id가 "참조 id::item::아이템 id"라 장부 칸(150자)에 들어가게 120자까지
+const MAX_PURCHASE_REFERENCE_LENGTH = 120;
+const isValidPurchaseReference = (value) => typeof value === "string"
+    && value.length > 0 && value.length <= MAX_PURCHASE_REFERENCE_LENGTH;
+
 // POST /purchase: 아이템 하나 구매 (새로 사면 201, 같은 참조 id 다시 오면 200)
 // 참조 id는 같은 구매가 두 번 와도 한 번만 사게 받음
 exports.purchaseItem = async (req, res, next) => {
@@ -22,7 +27,8 @@ exports.purchaseItem = async (req, res, next) => {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_PURCHASE_FIELDS, "UNKNOWN_PURCHASE_FIELD");
         const { itemId, referenceEventId } = body;
-        if (typeof itemId !== "string" || typeof referenceEventId !== "string") {
+        // 참조 id가 너무 길면 저장 실패 500 대신 400
+        if (typeof itemId !== "string" || !isValidPurchaseReference(referenceEventId)) {
             throw createError("itemId와 referenceEventId가 필요합니다.", 400, "INVALID_PURCHASE_REQUEST");
         }
         const result = await economyService.purchaseItem({ userId: req.user.uuid, itemId, referenceEventId });
@@ -30,7 +36,13 @@ exports.purchaseItem = async (req, res, next) => {
             idempotent: result.idempotent,
             ledgerEntry: serializeLedgerEntry(result.ledgerEntry),
         });
-    } catch (error) { next(error); }
+    } catch (error) {
+        // 없는 계정이면 외래 키 오류 500 대신 404 (지갑·장부가 계정을 가리킴)
+        if (error?.name === "SequelizeForeignKeyConstraintError") {
+            return next(createError("지급 대상 계정을 찾을 수 없습니다.", 404, "GRANT_TARGET_NOT_FOUND"));
+        }
+        next(error);
+    }
 };
 
 // POST /purchases/bulk: 묶음 구매 (검사 순서: 모르는 필드 → 참조 id → items → 항목마다 필드·itemId)
@@ -39,7 +51,7 @@ exports.purchaseItems = async (req, res, next) => {
         const body = req.body ?? {};
         rejectUnknownFields(body, ALLOWED_BULK_PURCHASE_FIELDS, "UNKNOWN_BULK_PURCHASE_FIELD");
         const { items, referenceEventId } = body;
-        if (typeof referenceEventId !== "string") {
+        if (!isValidPurchaseReference(referenceEventId)) {
             throw createError("referenceEventId가 필요합니다.", 400, "INVALID_BULK_PURCHASE_REQUEST");
         }
         if (!Array.isArray(items) || items.length === 0) {
@@ -125,5 +137,11 @@ exports.grantReward = async (req, res, next) => {
             idempotent: result.idempotent,
             ledgerEntry: serializeLedgerEntry(result.ledgerEntry),
         });
-    } catch (error) { next(error); }
+    } catch (error) {
+        // 없는 계정이면 외래 키 오류 500 대신 404 (지갑·장부가 계정을 가리킴)
+        if (error?.name === "SequelizeForeignKeyConstraintError") {
+            return next(createError("지급 대상 계정을 찾을 수 없습니다.", 404, "GRANT_TARGET_NOT_FOUND"));
+        }
+        next(error);
+    }
 };

@@ -3,7 +3,7 @@
 // 시험이 issueSessionForUser·signup을 이 객체에서 갈아끼우기 때문에 입구 남김
 const { issueSessionForUser } = require('./session');
 const { signup, checkEmailAvailability } = require('./signup');
-const { login, logout } = require('./login');
+const { login, logout, logoutByRefreshToken } = require('./login');
 const { refresh } = require('./refresh');
 // 비번 바꾸기 (profile 컨트롤러가 씀)
 const { changePassword } = require('./password');
@@ -15,5 +15,6 @@ module.exports = {
     login,
     refresh,
     logout,
+    logoutByRefreshToken,
     changePassword,
 };

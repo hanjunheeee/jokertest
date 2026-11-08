@@ -20,14 +20,19 @@ const verifyOAuthAttempt = (token) => {
 // 모바일 시작이면 시도 표에 client 넣음 (데스크톱은 시도 표 그대로)
 const clientMark = (client) => (client === "mobile" ? { client: "mobile" } : {});
 
+// 이 브라우저가 받은 그 가입 의도의 소셜 가입 시도 표인지 (남이 만든 가입 링크로 가입하기 막기)
+const isSignupAttemptFor = (attempt, intentToken) => attempt?.purpose === "signup"
+    && typeof intentToken === "string" && intentToken !== ""
+    && attempt?.intentToken === intentToken;
+
 // 같은 가입 의도의 소셜 가입 시도 표이고 로그인 유지였을 때만 참 (다른 시도 표는 안 믿음)
-const rememberMeForSignup = (attempt, intentToken) => attempt?.purpose === "signup"
-    && attempt?.intentToken === intentToken
+const rememberMeForSignup = (attempt, intentToken) => isSignupAttemptFor(attempt, intentToken)
     && attempt?.rememberMe === true;
 
 module.exports = {
     signOAuthAttempt,
     verifyOAuthAttempt,
     rememberMeForSignup,
+    isSignupAttemptFor,
     clientMark,
 };

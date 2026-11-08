@@ -12,6 +12,9 @@ const walletRepository = require('../../repositories/economy/wallet');
 const requestRepository = require('../../repositories/economy/purchaseRequest');
 const { withTransaction, isUniqueConstraintName } = require('../../repositories/common');
 
+// 요청 참조 id 길이 상한 (아이템 id는 표에서 22자까지라 붙여도 150자 안)
+const MAX_PURCHASE_REFERENCE_LENGTH = 120;
+
 // 묶음 안 아이템마다 장부 참조 id (요청 id + 아이템 id)
 const deriveItemReferenceId = (referenceEventId, itemId) => `${referenceEventId}::item::${itemId}`;
 
@@ -23,6 +26,10 @@ const purchaseItems = async ({ userId, items, referenceEventId }, db = defaultDb
     // 참조 id·아이템 목록 모양 확인 (빈 목록·같은 아이템 두 번 거절)
     if (typeof referenceEventId !== 'string' || referenceEventId.length === 0) {
         throw createError('참조 사건 ID(referenceEventId)가 필요합니다.', 400, 'MISSING_REFERENCE_EVENT_ID');
+    }
+    // 장부 참조 id가 "참조 id::item::아이템 id"라 장부 칸(150자)에 들어가게 120자까지 (넘으면 저장 실패 500)
+    if (referenceEventId.length > MAX_PURCHASE_REFERENCE_LENGTH) {
+        throw createError('참조 사건 ID가 너무 깁니다.', 400, 'REFERENCE_EVENT_ID_TOO_LONG');
     }
     if (!Array.isArray(items) || items.length === 0) {
         throw createError('구매할 상품 목록이 비어 있습니다.', 400, 'EMPTY_PURCHASE_ITEMS');

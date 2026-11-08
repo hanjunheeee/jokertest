@@ -74,6 +74,17 @@ exports.completeSocialSignup = async ({
         let accountEmail = intent.email;
         const emailSnapshot = intent.email;
 
+        // 제공자 이메일이면 의도 만든 뒤 그 이메일로 가입한 계정이 생겼는지 다시 봄 (일반 409 대신 EMAIL_CONFLICT)
+        if (intent.email !== null) {
+            const existingByProviderEmail = await userRepository.findByEmail(intent.email, { transaction });
+            if (existingByProviderEmail) {
+                throw createError(
+                    "이미 가입된 이메일입니다. 기존 계정으로 로그인한 뒤 소셜 계정을 연결해주세요.",
+                    409, "EMAIL_CONFLICT",
+                );
+            }
+        }
+
         // 제공자 이메일 없으면 직접 넣은 이메일 + 인증 증명 받음
         if (intent.email === null) {
             if (!validateEmailFormat(email)) {
@@ -106,7 +117,7 @@ exports.completeSocialSignup = async ({
         }
 
         // 닉네임 중복 409
-        const existingNickname = await userRepository.findByNickname(nicknameResult.value);
+        const existingNickname = await userRepository.findByNickname(nicknameResult.value, { transaction });
         if (existingNickname) {
             throw createError("이미 사용 중인 닉네임입니다.", 409);
         }
@@ -133,6 +144,13 @@ exports.completeSocialSignup = async ({
         }, { transaction });
         await userRepository.markIntentConsumed(intent.id, { transaction });
         await economyService.ensureDefaultEntitlements(user.uuid, db, { transaction });
+        // 가입 마무리도 로그인이라 기록 남김 (로그아웃이 이 기록을 닫음)
+        await userRepository.createLoginHistory({
+            user_id:    user.uuid,
+            ip_address: reqInfo.ip,
+            user_agent: reqInfo.userAgent,
+            success:    true,
+        }, { transaction });
 
         // 같은 트랜잭션에서 세션 발급 (account 입구 객체로 불러 시험 패치 먹게)
         const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);

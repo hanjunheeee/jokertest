@@ -44,7 +44,7 @@ exports.signup = async (userData) => {
             throw createError("이미 사용 중인 이메일입니다.", 409);
         }
 
-        const existingNickname = await userRepository.findByNickname(normalizedNickname);
+        const existingNickname = await userRepository.findByNickname(normalizedNickname, { transaction });
         if (existingNickname) {
             throw createError("이미 사용 중인 닉네임입니다.", 409);
         }

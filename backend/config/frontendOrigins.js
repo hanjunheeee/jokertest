@@ -12,13 +12,15 @@ const getAllowedOrigins = () =>
     [process.env.FRONTEND_URL, process.env.FRONTEND_MOBILE_URL].map(clean).filter(Boolean);
 
 // cors origin 값: 모바일 없으면 지금처럼 FRONTEND_URL 그대로, 있으면 목록
-const getCorsOrigin = () => (mobileUrl() ? getAllowedOrigins() : process.env.FRONTEND_URL);
+// 끝 슬래시는 다듬음 (브라우저 Origin엔 끝 슬래시가 없음)
+const getCorsOrigin = () => (mobileUrl() ? getAllowedOrigins() : (clean(process.env.FRONTEND_URL) || process.env.FRONTEND_URL));
 
 // client는 "mobile"만 인정, 나머지는 전부 데스크톱
 const parseClient = (value) => (value === "mobile" ? "mobile" : "desktop");
 
 // 모바일에서 시작했고 모바일 주소 있을 때만 모바일로, 나머지는 FRONTEND_URL 그대로
+// 끝 슬래시 다듬어 ...//login 주소 막기
 const resolveFrontendBase = (client) =>
-    (client === "mobile" && mobileUrl() ? mobileUrl() : process.env.FRONTEND_URL);
+    (client === "mobile" && mobileUrl() ? mobileUrl() : (clean(process.env.FRONTEND_URL) || process.env.FRONTEND_URL));
 
 module.exports = { getAllowedOrigins, getCorsOrigin, parseClient, resolveFrontendBase };

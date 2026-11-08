@@ -55,6 +55,10 @@ const findSetCookie = (res, name) => res.headers.getSetCookie().find((c) => c.st
 
 const TOKEN = generateToken({ uuid: "uuid-1", role: "USER", sessionId: "session-1" });
 
+// 이 브라우저가 받은 가입 시도 쿠키 (가입 마무리·의도 확인은 이 쿠키 없으면 거절)
+const signupAttemptCookie = (intentToken, rememberMe = false) =>
+    `oauthAttempt=${jwt.sign({ intentToken, rememberMe, purpose: "signup" }, process.env.JWT_SECRET, { expiresIn: 1800 })}`;
+
 const postJson = (base, path, body, extraHeaders = {}) =>
     fetch(`${base}${path}`, {
         method:  "POST",
@@ -75,7 +79,7 @@ test("가입 완료 성공 시 accessToken 세션 쿠키를 발급하고 이전 
 
     const res = await postJson(base, "/auth/social/signup/complete",
         { intentToken: "intent-1", nickname: "소셜닉" },
-        { cookie: "refreshToken=stale-persistent-refresh-token" },
+        { cookie: `refreshToken=stale-persistent-refresh-token; ${signupAttemptCookie("intent-1")}` },
     );
     const body = await res.json();
 
@@ -122,7 +126,7 @@ test("SIGNUP_REQUIRED 콜백이 남긴 서명 쿠키에 rememberMe:true가 있�
     assert.match(refreshCookie, /^refreshToken=remembered-refresh-token/);
 });
 
-test("쿠키의 intentToken이 지금 제출된 것과 다르면(다른 시도의 쿠키 재사용) rememberMe는 false로 떨어진다", async (t) => {
+test("쿠키의 intentToken이 지금 제출된 것과 다르면(남이 만든 가입 링크) 가입을 거절하고 서비스를 부르지 않는다(BE-008)", async (t) => {
     const { calls } = stubSocialAuthService(t, {
         completeSocialSignup: async () => ({
             user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
@@ -136,12 +140,15 @@ test("쿠키의 intentToken이 지금 제출된 것과 다르면(다른 시도�
         { intentToken: "intent-1", nickname: "소셜닉" },
         { cookie: `oauthAttempt=${attemptCookie}` },
     );
+    const body = await res.json();
 
-    assert.equal(res.status, 200);
-    assert.equal(calls[0].args[0].rememberMe, false);
+    assert.equal(res.status, 400);
+    assert.equal(body.code, "INTENT_EXPIRED");
+    assert.equal(calls.length, 0, "남의 가입 의도로는 계정을 만들면 안 됩니다");
+    assert.equal(findSetCookie(res, "accessToken"), undefined);
 });
 
-test("서명 쿠키가 없거나 다른 비밀키로 위조되었으면 요청 본문의 rememberMe는 무시되고 항상 false가 전달된다(F-06 R-IMPL #2)", async (t) => {
+test("서명 쿠키가 없거나 다른 비밀키로 위조되었으면 가입을 거절하고 본문의 rememberMe도 안 믿는다(F-06 R-IMPL #2, BE-008)", async (t) => {
     const { calls } = stubSocialAuthService(t, {
         completeSocialSignup: async () => ({
             user: { uuid: "new-uuid", nickname: "소셜닉", role: "USER" },
@@ -152,17 +159,25 @@ test("서명 쿠키가 없거나 다른 비밀키로 위조되었으면 요청 �
 
     const noCookieRes = await postJson(base, "/auth/social/signup/complete",
         { intentToken: "intent-1", nickname: "소셜닉", rememberMe: true });
-    assert.equal(calls[0].args[0].rememberMe, false);
 
     const forged = jwt.sign({ intentToken: "intent-1", rememberMe: true, purpose: "signup" }, "wrong-secret", { expiresIn: 1800 });
     const forgedRes = await postJson(base, "/auth/social/signup/complete",
         { intentToken: "intent-1", nickname: "소셜닉", rememberMe: true },
         { cookie: `oauthAttempt=${forged}` },
     );
-    assert.equal(calls[1].args[0].rememberMe, false);
 
-    assert.equal(noCookieRes.status, 200);
-    assert.equal(forgedRes.status, 200);
+    assert.equal(noCookieRes.status, 400);
+    assert.equal((await noCookieRes.json()).code, "INTENT_EXPIRED");
+    assert.equal(forgedRes.status, 400);
+    assert.equal(calls.length, 0, "시도 쿠키 없이는 서비스까지 가면 안 됩니다");
+
+    // 본문 rememberMe:true여도 쿠키가 rememberMe:false면 false
+    const okRes = await postJson(base, "/auth/social/signup/complete",
+        { intentToken: "intent-1", nickname: "소셜닉", rememberMe: true },
+        { cookie: signupAttemptCookie("intent-1", false) },
+    );
+    assert.equal(okRes.status, 200);
+    assert.equal(calls[0].args[0].rememberMe, false);
 });
 
 test("가입 자격이 만료되면(INTENT_EXPIRED) 서비스 오류의 status·code가 그대로 응답에 실린다", async (t) => {
@@ -176,7 +191,8 @@ test("가입 자격이 만료되면(INTENT_EXPIRED) 서비스 오류의 status·
     });
     const base = await startServer(t);
 
-    const res = await postJson(base, "/auth/social/signup/complete", { intentToken: "expired", nickname: "닉" });
+    const res = await postJson(base, "/auth/social/signup/complete", { intentToken: "expired", nickname: "닉" },
+        { cookie: signupAttemptCookie("expired") });
     const body = await res.json();
 
     assert.equal(res.status, 400);
@@ -248,7 +264,7 @@ test("완료 요청에 email_verified·verified·provider·subject·rememberMe�
         provider: "google",
         subject: "attacker-subject",
         rememberMe: true,
-    });
+    }, { cookie: signupAttemptCookie("intent-1") });
 
     assert.equal(res.status, 200);
     const passed = calls[0].args[0];
@@ -278,7 +294,8 @@ test("서비스가 증명을 거부하면(SIGNUP_PROOF_REQUIRED/INVALID) 401 cod
             const base = await startServer(t2);
 
             const res = await postJson(base, "/auth/social/signup/complete",
-                { intentToken: "intent-1", nickname: "소셜닉", birthDate: "2000-01-01", email: "a@example.com" });
+                { intentToken: "intent-1", nickname: "소셜닉", birthDate: "2000-01-01", email: "a@example.com" },
+                { cookie: signupAttemptCookie("intent-1") });
             const body = await res.json();
 
             assert.equal(res.status, 401);
@@ -300,7 +317,7 @@ test("intent 조회는 intentToken만 서비스에 넘기고 emailVerificationRe
         emailVerificationRequired: false,
         email_verified: true,
         provider: "google",
-    });
+    }, { cookie: signupAttemptCookie("intent-1") });
     const body = await res.json();
 
     assert.equal(res.status, 200);
@@ -322,7 +339,8 @@ test("만료·소비된 intent 조회는 서비스 오류의 status·code가 그
     });
     const base = await startServer(t);
 
-    const res = await postJson(base, "/auth/social/signup/intent", { intentToken: "consumed" });
+    const res = await postJson(base, "/auth/social/signup/intent", { intentToken: "consumed" },
+        { cookie: signupAttemptCookie("consumed") });
     const body = await res.json();
 
     assert.equal(res.status, 409);

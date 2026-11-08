@@ -6,7 +6,7 @@ const { resolveOAuthAccount, handleOAuthCallback } = require('./resolve');
 const { getSocialSignupIntent, completeSocialSignup } = require('./signup');
 const { linkExternalIdentityForValidatedSession, linkExternalIdentity } = require('./link');
 // 시도 표 서명·확인·판정 + 시도 표 유효 시간 (컨트롤러 쿠키가 씀)
-const { signOAuthAttempt, verifyOAuthAttempt, rememberMeForSignup } = require('./attempt');
+const { signOAuthAttempt, verifyOAuthAttempt, rememberMeForSignup, isSignupAttemptFor } = require('./attempt');
 const { ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require('./constants');
 // 시작한 기기(client) 판정 · 콜백 뒤 돌아갈 프런트 주소 (컨트롤러가 config 직접 안 부르게)
 const { parseClient, resolveFrontendBase } = require('../../../config/frontendOrigins');
@@ -27,6 +27,7 @@ module.exports = {
     signOAuthAttempt,
     verifyOAuthAttempt,
     rememberMeForSignup,
+    isSignupAttemptFor,
     ATTEMPT_TTL_SECONDS,
     INTENT_TTL_SECONDS,
     parseClient,

@@ -14,8 +14,8 @@ exports.globalErrorHandler = (err, req, res, next) => {
         return next(err);
     }
 
-    // 아이디 찾기: 400·500 코드만 (내부 문구 안 보이기)
-    const findIdRequestPath = String(req.originalUrl || req.url || '').split('?')[0].replace(/\/+$/, '');
+    // 아이디 찾기: 400·500 코드만 (내부 문구 안 보이기), 라우터가 대소문자 안 가려서 소문자로 봄
+    const findIdRequestPath = String(req.originalUrl || req.url || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
     if (findIdRequestPath === '/auth/find-id') {
         const status = (err.status || err.statusCode) === 400 ? 400 : 500;
         const code = status === 400 ? 'INVALID_INPUT' : 'SERVER_ERROR';
@@ -159,15 +159,21 @@ exports.globalErrorHandler = (err, req, res, next) => {
         return res.status(500).json({ ok: false, code: 'SERVER_ERROR', message: '서버 내부에서 에러가 발생했습니다.' });
     }
 
-    // 범위 밖 오류: 스택 빨간 글씨 로그 + 문구·코드 그대로, 스택은 운영 아닐 때만 응답에
-    console.error('\x1b[31m%s\x1b[0m', err.stack);
-
+    // 범위 밖 오류: 500대만 스택 빨간 글씨 로그 (401·404 같은 보통 거절로 로그 넘치지 않게)
     const statusCode = err.status || err.statusCode || 500;
+    const isServerError = statusCode >= 500;
+    if (isServerError) {
+        console.error('\x1b[31m%s\x1b[0m', err.stack);
+    }
 
+    // 개발·시험 환경일 때만 500대 원래 문구·스택을 응답에 (NODE_ENV 빠뜨려도 안 나가게)
+    // 그 밖엔 500대는 고정 문구 (DB 표·제약 이름 같은 내부 문구 안 내보내기), 코드도 앱이 정한 것만
+    const exposeInternals = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    const hideInternals = isServerError && !exposeInternals;
     res.status(statusCode).json({
         success: false,
-        message: err.message || '서버 내부에서 에러가 발생했습니다.',
-        code: err.code,
-        error: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+        message: hideInternals ? '서버 내부에서 에러가 발생했습니다.' : (err.message || '서버 내부에서 에러가 발생했습니다.'),
+        code: hideInternals && err.name !== 'AppError' ? undefined : err.code,
+        error: exposeInternals ? err.stack : undefined,
     });
 };

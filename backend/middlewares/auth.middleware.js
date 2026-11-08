@@ -42,3 +42,23 @@ exports.verifyToken = async (req, res, next) => {
     req.user = decoded;
     next();
 };
+
+// 응답 없이 로그인 확인만 (JSON 401 대신 화면으로 돌려보낼 경로가 씀)
+// 서명 틀림·세션 끊김·정지면 { ok: false, reason }, 통과면 { ok: true, user }
+// allowExpired면 만료된 access도 받음 (세션 살아 있는지는 resolveSession이 봄)
+exports.authenticateRequest = async (req, { allowExpired = false } = {}) => {
+    const token = req.cookies?.accessToken;
+    if (!token) return { ok: false, reason: "NO_TOKEN" };
+
+    let decoded;
+    try {
+        decoded = sessionLifecycle.verifyAccessToken(token, { ignoreExpiration: allowExpired });
+    } catch (error) {
+        return { ok: false, reason: error?.name === "TokenExpiredError" ? "TOKEN_EXPIRED" : "TOKEN_INVALID" };
+    }
+
+    // DB 오류는 그대로 던짐 (부르는 쪽 catch가 처리)
+    const result = await sessionLifecycle.resolveSession(decoded);
+    if (!result.ok) return { ok: false, reason: result.status === 403 ? "BANNED" : "SESSION_ENDED" };
+    return { ok: true, user: decoded };
+};

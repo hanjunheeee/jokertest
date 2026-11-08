@@ -56,7 +56,7 @@ exports.refresh = async (rawRefreshToken) => {
         if (cappedTtlSeconds <= 0) return { type: "expired" };
 
         // 역할은 지금 계정 값으로 넣음
-        const user = await userRepository.findByUuid(session.user_id);
+        const user = await userRepository.findByUuid(session.user_id, { transaction });
         const accessToken = generateToken({
             uuid:      session.user_id,
             role:      user?.role,

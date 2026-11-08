@@ -7,7 +7,7 @@ const { createError } = require("../../../utils/appError");
 const { generateOpaqueToken, hashValue } = require('./tokens');
 const { INTENT_TTL_MS } = require('./constants');
 
-// 연결된 계정 있으면 세션 발급, 없으면 이메일 충돌 확인 뒤 가입 의도 만듦
+// 연결된 계정 있으면 상태·정지 확인 뒤 기록·세션 발급, 없으면 이메일 충돌 확인 뒤 가입 의도 만듦
 exports.resolveOAuthAccount = async ({
     provider, subject, email, cancelled, rememberMe = false, reqInfo = {},
 }) => {
@@ -31,6 +31,21 @@ exports.resolveOAuthAccount = async ({
             if (!user) {
                 throw createError("연결된 계정을 찾을 수 없습니다.", 404, "LINKED_USER_MISSING");
             }
+            // 이메일 로그인과 같게 쓸 수 없는 계정·정지 계정은 세션 안 줌 (사유는 화면에 안 보냄)
+            if (user.status && user.status !== "ACTIVE") {
+                throw createError("이용할 수 없는 계정입니다.", 403, "ACCOUNT_INACTIVE");
+            }
+            const activeBan = await userRepository.checkActiveBan(user.uuid);
+            if (activeBan) {
+                throw createError("정지된 계정입니다.", 403, "ACCOUNT_BANNED");
+            }
+            // 이메일 로그인처럼 로그인 기록 남김 (로그아웃이 이 기록을 닫음)
+            await userRepository.createLoginHistory({
+                user_id:    user.uuid,
+                ip_address: reqInfo.ip,
+                user_agent: reqInfo.userAgent,
+                success:    true,
+            }, { transaction });
             // 같은 트랜잭션에서 세션 발급 (account 입구 객체로 불러 시험 패치 먹게)
             const session = await authService.issueSessionForUser(user, { rememberMe: rememberMe === true }, reqInfo, transaction);
             return { status: "LOGIN", user, ...session };

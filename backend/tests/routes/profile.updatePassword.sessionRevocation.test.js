@@ -68,6 +68,7 @@ const getProfile = (base) =>
     fetch(`${base}/user/me/profile`, { headers: { cookie: `accessToken=${TOKEN}`, Connection: "close" } });
 
 const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
+    require("../../services/auth/account/password").__resetWrongPasswordAttemptsForTests();
     const original = {
         transaction:  db.sequelize.transaction,
         User:         db.User,
@@ -253,8 +254,11 @@ test("현재 비밀번호가 틀리면 트랜잭션은 열리지만(동시 로�
     t.after(() => { db.sequelize.transaction = original; });
 
     const res = await patchPassword(base, { currentPassword: "wrong", newPassword: "new-pw-456" });
+    const body = await res.json();
 
-    assert.equal(res.status, 401);
+    // known-issues 1-4: 401이면 화면 공통 처리가 로그아웃시킴 → 400 + 코드
+    assert.equal(res.status, 400);
+    assert.equal(body.code, "CURRENT_PASSWORD_INVALID");
     assert.equal(opened, true, "비밀번호 확인도 동시 로그인과 직렬화되도록 유저 행을 잠근 트랜잭션 안에서 일어나야 합니다");
     assert.equal(calls.length, 0, "비밀번호가 틀리면 User.update/UserSession.update 중 어느 것도 실행되면 안 됩니다");
 });

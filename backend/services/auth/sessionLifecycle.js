@@ -4,7 +4,11 @@ const jwt              = require("jsonwebtoken");
 const userRepository    = require("../../repositories/user");
 
 // 서명 틀리거나 만료면 jwt가 던짐, 잡는 건 부르는 쪽 몫
-exports.verifyAccessToken = (token) => {
+// ignoreExpiration은 로그아웃·디스코드 연결 콜백만 (세션 살아 있는지는 따로 봄)
+exports.verifyAccessToken = (token, { ignoreExpiration = false } = {}) => {
+    if (ignoreExpiration) {
+        return jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    }
     return jwt.verify(token, process.env.JWT_SECRET);
 };
 

@@ -4,7 +4,18 @@ const socialAuthService = require("../../services/auth/social");
 const { getDeviceType, getClientIp } = require("../../utils/request");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
 const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions } = require('./cookies');
+const { createError } = require("../../utils/appError");
 const { verifyOAuthAttempt, INTENT_TTL_SECONDS } = socialAuthService;
+
+// 이 브라우저가 받은 가입 시도 쿠키 없으면 거절 (남이 만든 ?socialIntent= 링크로 가입하면 그 사람 소셜 계정에 묶임)
+// 화면이 만료 화면으로 가게 INTENT_EXPIRED로 답함
+// 의도 토큰 자체가 없으면 그대로 서비스가 INTENT_INVALID로 거절
+const assertSignupAttempt = (attempt, intentToken) => {
+    if (typeof intentToken !== "string" || !intentToken) return;
+    if (!socialAuthService.isSignupAttemptFor(attempt, intentToken)) {
+        throw createError("가입 가능 시간이 만료되었거나 다른 브라우저에서 연 가입 링크입니다. 다시 로그인해주세요.", 400, "INTENT_EXPIRED");
+    }
+};
 
 // 가입 마무리 → 시도 쿠키 지움 → 세션 쿠키
 exports.completeSocialSignup = async (req, res, next) => {
@@ -21,6 +32,7 @@ exports.completeSocialSignup = async (req, res, next) => {
 
         // 로그인 유지는 본문 말고 같은 의도의 시도 쿠키에서만 가져옴
         const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
+        assertSignupAttempt(attempt, intentToken);
         const rememberMe = socialAuthService.rememberMeForSignup(attempt, intentToken);
 
         const { user, token, refreshToken, refreshTokenExpiresAt } = await socialAuthService.completeSocialSignup({
@@ -57,6 +69,7 @@ exports.completeSocialSignup = async (req, res, next) => {
 exports.getSocialSignupIntent = async (req, res, next) => {
     try {
         const { intentToken } = req.body ?? {};
+        assertSignupAttempt(verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]), intentToken);
 
         const { emailVerificationRequired } = await socialAuthService.getSocialSignupIntent({ intentToken });
 

@@ -15,6 +15,8 @@ const ROOM_JOIN_ERROR_CODES = Object.freeze({
     SESSION_ENDED: 'SESSION_ENDED',
     DISCONNECTED: 'DISCONNECTED',
     INTERNAL_ERROR: 'INTERNAL_ERROR',
+    // 짧은 시간에 입장 시도가 몰림 (코드 맞히기 막기)
+    TOO_MANY_JOIN_ATTEMPTS: 'TOO_MANY_JOIN_ATTEMPTS',
 })
 
 module.exports = { ROOM_JOIN_ERROR_CODES }

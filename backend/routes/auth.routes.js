@@ -12,7 +12,7 @@ const { discordLinkStart, discordLinkCallback } = require("../controllers/auth/d
 const { verifyToken }        = require("../middlewares/auth.middleware");
 const { createRateLimiter }  = require("../middlewares/rateLimit.middleware");
 const {
-    buildSignupCodeRateLimiters, buildFindIdRateLimiters, buildPasswordResetRateLimiters,
+    buildSignupCodeRateLimiters, buildFindIdRateLimiters, buildPasswordResetRateLimiters, buildAccountRateLimiters,
 } = require("../middlewares/authRateLimit.middleware");
 const { validateFindIdRequest } = require("../validations/auth/findId");
 const { findId }             = require("../controllers/auth/accountRecovery");
@@ -26,10 +26,13 @@ const {
     requestSignupCode, verifySignupCode,
 } = require("../controllers/auth/signupEmailVerification");
 
+// 로그인·중복 확인·refresh·소셜 가입 ip 제한 (env는 불러올 때 한 번 읽음)
+const accountLimiters = buildAccountRateLimiters(process.env, createRateLimiter);
+
 // 이메일·비번 가입, 이메일 중복 확인, 로그인 (로그인 전이라 verifyToken 없음)
 router.post("/signup", signup);
-router.get("/check-email", checkEmail);
-router.post("/login", login);
+router.get("/check-email", accountLimiters.checkEmail, checkEmail);
+router.post("/login", accountLimiters.login, login);
 
 // 가입 인증 설정(번호 자리 수·제한 횟수)은 불러올 때 env에서 한 번 읽음
 const codeConfig = getSignupEmailConfig(process.env);
@@ -91,15 +94,16 @@ router.get("/password-reset/verify", resetCheckIpLimiter, verifyPasswordReset);
 router.post("/password-reset/confirm", resetCheckIpLimiter, confirmPasswordReset);
 
 // refresh는 access 만료 뒤에 부르므로 verifyToken 안 붙임
-router.post("/refresh", refresh);
+router.post("/refresh", accountLimiters.refresh, refresh);
 
 router.get("/me", verifyToken, me);
-router.post("/logout", verifyToken, logout);
+// 로그아웃은 access가 없거나 만료여도 refresh 쿠키로 세션 찾아 끊음 (확인은 컨트롤러 몫)
+router.post("/logout", logout);
 
 // 소셜 가입 마무리·가입 의도 확인 (가입 전이라 시도 쿠키·의도 토큰으로 확인)
-router.post("/social/signup/complete", completeSocialSignup);
+router.post("/social/signup/complete", accountLimiters.socialSignup, completeSocialSignup);
 
-router.post("/social/signup/intent", getSocialSignupIntent);
+router.post("/social/signup/intent", accountLimiters.socialSignup, getSocialSignupIntent);
 
 // 구글·디스코드 로그인 시작·콜백
 router.get("/google", googleAuthStart);
@@ -108,7 +112,8 @@ router.get("/discord", discordAuthStart);
 router.get("/discord/callback", discordAuthCallback);
 
 // 디스코드 계정 연결은 로그인한 사람만 (콜백도 시작한 세션과 같은지 봄)
-router.get("/discord/link", verifyToken, discordLinkStart);
-router.get("/discord/link/callback", verifyToken, discordLinkCallback);
+// 로그인 확인은 컨트롤러 몫: 실패면 JSON 401 대신 계정 화면으로 돌려보냄, 콜백은 만료된 access도 받음
+router.get("/discord/link", discordLinkStart);
+router.get("/discord/link/callback", discordLinkCallback);
 
 module.exports = router;

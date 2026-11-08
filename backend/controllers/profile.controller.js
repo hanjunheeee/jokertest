@@ -22,7 +22,8 @@ exports.getMyProfile = async (req, res, next) => {
 // 닉네임 바꾸기, 규칙·중복 실패는 서비스가 준 상태·문구로
 exports.updateNickname = async (req, res, next) => {
     try {
-        const { nickname } = req.body;
+        // 본문 없는 요청도 400으로 (구조 분해 TypeError로 500 막기)
+        const { nickname } = req.body ?? {};
         const result = await userService.changeNickname(req.user.uuid, nickname);
         if (!result.ok) {
             return res.status(result.status).json({ success: false, message: result.message });
@@ -37,8 +38,9 @@ exports.updateNickname = async (req, res, next) => {
 // 비번 바꾸기: 두 칸 다 있는지 → 새 비번 규칙 → 현재 비번 맞는지 (바뀌면 접속 세션 끊김)
 exports.updatePassword = async (req, res, next) => {
     try {
-        const { currentPassword, newPassword } = req.body;
-        if (!currentPassword || !newPassword) {
+        const { currentPassword, newPassword } = req.body ?? {};
+        // 글자 아닌 값도 400 (bcrypt가 던져 500 되는 것 막기)
+        if (typeof currentPassword !== "string" || typeof newPassword !== "string" || !currentPassword || !newPassword) {
             return res.status(400).json({ success: false, message: "현재 비밀번호와 새 비밀번호를 입력해주세요." });
         }
         // 새 비번은 가입과 같은 규칙 (서비스는 규칙 안 봄)
@@ -49,11 +51,22 @@ exports.updatePassword = async (req, res, next) => {
 
         const outcome = await authService.changePassword({ uuid: req.user.uuid, currentPassword, newPassword });
 
+        // 너무 많이 틀렸으면 429 (잠시 뒤 다시)
+        if (outcome.locked) {
+            return res.status(429).json({
+                success: false, code: "PASSWORD_CHANGE_LOCKED",
+                message: "현재 비밀번호를 여러 번 잘못 입력했습니다. 잠시 후 다시 시도해주세요.",
+            });
+        }
+        // 틀린 현재 비번은 400 (401이면 화면 공통 처리가 로그아웃시킴)
         if (!outcome.ok) {
-            return res.status(401).json({ success: false, message: "현재 비밀번호가 올바르지 않습니다." });
+            return res.status(400).json({
+                success: false, code: "CURRENT_PASSWORD_INVALID", message: "현재 비밀번호가 올바르지 않습니다.",
+            });
         }
 
-        res.status(200).json({ success: true, message: "비밀번호가 변경되었습니다." });
+        // 지금 세션도 끊겨서 다시 로그인해야 함을 같이 알림
+        res.status(200).json({ success: true, message: "비밀번호가 변경되었습니다.", reloginRequired: true });
     } catch (error) {
         next(error);
     }

@@ -17,7 +17,8 @@ const requireSelf = (req, res, next) => {
     next();
 };
 
-// 관리자 보상 지급 권한: DB 계정 role이 ADMIN·QA일 때만 통과 (토큰 role 말고 지금 DB 값 봄)
+// 관리자 보상 지급 권한: DB 계정 role이 ADMIN이거나, 운영 아닐 때 QA면 통과 (토큰 role 말고 지금 DB 값 봄)
+// QA 지급은 시험용이라 운영에선 막음
 // next()는 try 밖 (처리기에서 난 오류가 다시 catch로 와서 next 두 번 부르는 일 막기)
 const requireEconomyAdmin = async (req, res, next) => {
     let actingAccount;
@@ -28,7 +29,8 @@ const requireEconomyAdmin = async (req, res, next) => {
         return next(error || "route");
     }
     // 계정 못 찾아도 권한 없음으로 403
-    if (!actingAccount || (actingAccount.role !== "ADMIN" && actingAccount.role !== "QA")) {
+    const qaAllowed = process.env.NODE_ENV !== "production" && actingAccount?.role === "QA";
+    if (!actingAccount || (actingAccount.role !== "ADMIN" && !qaAllowed)) {
         return next(createError("권한이 없습니다.", 403, "ECONOMY_ADMIN_ONLY"));
     }
     return next();

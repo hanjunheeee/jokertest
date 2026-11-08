@@ -502,3 +502,45 @@ test('빈 userId로 getStatusForUser를 부르면 빈 배열이다', async () =>
     const status = await achievementService.getStatusForUser('');
     assert.deepEqual(status, []);
 });
+
+// 2026-11-09 버그 수정 BE-064: 이미 받은 업적은 지급 트랜잭션을 다시 열지 않는다
+test('BE-064: 두 번째 평가에서는 이미 받은 업적의 지급 행 만들기·트랜잭션을 건너뛴다', async () => {
+    const { db } = createFakeDb();
+    let findOrCreateCalls = 0;
+    const originalFindOrCreate = db.AchievementGrant.findOrCreate;
+    db.AchievementGrant.findOrCreate = async (...args) => { findOrCreateCalls += 1; return originalFindOrCreate(...args); };
+    const economyService = createFakeEconomyService();
+    const repos = createFakeProgressRepos({ 'user-a': { completedGames: 3, roleWins: {} } });
+    __internal.__setDepsForTests({ db, economyService, ...repos });
+
+    await achievementService.evaluateAndGrantForUser('user-a');
+    const firstCalls = findOrCreateCalls;
+    const second = await achievementService.evaluateAndGrantForUser('user-a');
+
+    assert.equal(firstCalls, 1);
+    assert.equal(findOrCreateCalls, firstCalls, '받은 업적은 다시 지급 시도하면 안 된다');
+    const record1 = second.find((r) => r.id === 'record-1-masquerade');
+    assert.equal(record1.achieved, true);
+    assert.equal(record1.granted, false);
+});
+
+// 2026-11-09 버그 수정 BE-066: 업적 하나 지급이 던져도 뒤 업적은 그 판에 평가된다
+test('BE-066: 앞 업적 보상 지급이 실패해도 평가 전체가 던지지 않고 뒤 업적은 지급된다', async (t) => {
+    const errors = [];
+    const originalError = console.error;
+    console.error = (...args) => { errors.push(args); };
+    t.after(() => { console.error = originalError; });
+
+    const { db, achievementGrants } = createFakeDb();
+    const economyService = createFakeEconomyService({ failReferenceEventId: 'achievement:noble-win-10:GOLD' });
+    const repos = createFakeProgressRepos({ 'user-v': { completedGames: 30, survivals: 30, wins: 30, voteParticipations: 10, roleWins: { CITIZEN: 30 } } });
+    __internal.__setDepsForTests({ db, economyService, ...repos });
+
+    const results = await achievementService.evaluateAndGrantForUser('user-v');
+
+    const noble10 = results.find((r) => r.id === 'noble-win-10');
+    assert.equal(noble10.granted, false, '실패한 업적은 이번엔 안 받음 (다음 평가 때 다시)');
+    assert.ok(results.find((r) => r.id === 'noble-win-20').granted, '뒤 업적은 계속 지급');
+    assert.equal(achievementGrants.some((g) => g.achievement_id === 'noble-win-10'), false, '실패한 업적 지급 행은 되돌려짐');
+    assert.ok(errors.some((args) => args[1]?.code === 'ACHIEVEMENT_GRANT_ERROR'));
+});

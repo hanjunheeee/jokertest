@@ -16,8 +16,10 @@ const toConflictError = (error) => {
         ...(Array.isArray(fields) ? fields : Object.keys(fields)),
     ].filter(Boolean).map(String);
 
-    // 표에 없는 칸이면 일반 문구
-    const hit = UNIQUE_CONFLICTS.find(({ field }) => hints.some((hint) => hint.includes(field)));
+    // 표에 없는 칸이면 일반 문구, MySQL이 묶음 제약을 칸 이름 둘로 주면 provider·subject 둘 다로 소셜 계정 문구
+    const pairHint = hints.includes("provider") && hints.includes("subject") ? ["provider_subject"] : [];
+    const allHints = [...hints, ...pairHint];
+    const hit = UNIQUE_CONFLICTS.find(({ field }) => allHints.some((hint) => hint.includes(field)));
     return createError(hit?.message ?? "이미 사용 중인 값입니다.", 409);
 };
 

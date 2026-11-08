@@ -15,9 +15,10 @@ const { withTransaction } = require('../../repositories/common');
 
 // 보유·칸 종류 확인 뒤 revision 맞을 때만 바꿈 (다른 곳에서 바꿨으면 409)
 const equipItem = async ({ userId, slot, itemId, expectedRevision }, db = defaultDb()) => {
-    // 모르는 칸·빈 아이템 id 거절
-    const expectedType = SLOT_TO_ITEM_TYPE[slot];
-    const column = SLOT_TO_LOADOUT_COLUMN[slot];
+    // 모르는 칸·빈 아이템 id 거절 (toString 같은 물려받은 이름은 표에 없는 칸으로 봄)
+    const knownSlot = typeof slot === 'string' && Object.hasOwn(SLOT_TO_ITEM_TYPE, slot) && Object.hasOwn(SLOT_TO_LOADOUT_COLUMN, slot);
+    const expectedType = knownSlot ? SLOT_TO_ITEM_TYPE[slot] : undefined;
+    const column = knownSlot ? SLOT_TO_LOADOUT_COLUMN[slot] : undefined;
     if (!expectedType || !column) {
         throw createError('알 수 없는 장착 슬롯입니다.', 400, 'UNKNOWN_EQUIP_SLOT');
     }

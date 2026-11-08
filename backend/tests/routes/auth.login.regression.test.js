@@ -68,8 +68,9 @@ test("정상 로그인은 세션을 만들고 sessionId가 담긴 토큰을 발�
     assert.equal(sessionArg.user_id, "uuid-1");
     assert.equal(sessionArg.is_online, true);
 
+    // 정지 확인은 비번 맞은 뒤 (비번 모르는 사람에게 정지 사유 안 보이기)
     assert.deepEqual(names(), [
-        "findByEmail", "checkActiveBan", "createLoginHistory",
+        "findByEmail", "createLoginHistory", "checkActiveBan",
         "updateUser", "markOnlineSessionsOffline", "createUserSession",
     ]);
 
