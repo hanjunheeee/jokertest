@@ -8,6 +8,7 @@ const { createError } = require("../../../utils/appError");
 const { validateNickname, validateBirthDate } = require("../../../validations/auth/signup");
 const db = require("../../../repositories/common/db");
 const economyService = require("../../economy");
+const bannedWords = require("../../ops/bannedWords");
 const signupEmailVerificationService = require("../signupEmailVerification");
 const {
     normalizeEmail: normalizeSignupEmail, validateEmailFormat,
@@ -47,6 +48,10 @@ exports.completeSocialSignup = async ({
     const nicknameResult = validateNickname(nickname);
     if (!nicknameResult.ok) {
         throw createError(nicknameResult.message, 400);
+    }
+    // 금지어 든 닉네임 거절 (금지어 표 비면 안 막음)
+    if (bannedWords.containsBannedWord(nicknameResult.value)) {
+        throw createError("사용할 수 없는 단어가 들어간 닉네임입니다.", 400, "NICKNAME_BANNED_WORD");
     }
     const birthDateResult = validateBirthDate(birthDate);
     if (!birthDateResult.ok) {

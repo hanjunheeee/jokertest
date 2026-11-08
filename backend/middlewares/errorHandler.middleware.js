@@ -88,6 +88,7 @@ exports.globalErrorHandler = (err, req, res, next) => {
             PRODUCT_STOPPED: { status: 409, message: '판매가 중지된 상품입니다.' },
             PRODUCT_VERSION_MISMATCH: { status: 409, message: '상품 정보가 변경되었습니다.' },
             ORDER_NOT_FOUND: { status: 404, message: '주문을 찾을 수 없습니다.' },
+            ORDER_REFUNDED: { status: 409, message: '환불된 주문입니다.' },
             NOT_OWNER: { status: 403, message: '다른 계정의 주문에는 접근할 수 없습니다.' },
             AMOUNT_MISMATCH: { status: 400, message: '결제 금액이 주문과 다릅니다.' },
             PAYMENT_KEY_MISMATCH: { status: 409, message: '이 주문에 이미 다른 결제키가 연결되어 있습니다.' },

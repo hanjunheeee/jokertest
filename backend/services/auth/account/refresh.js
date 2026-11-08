@@ -6,6 +6,13 @@ const { createError }         = require("../../../utils/appError");
 const { ACCESS_TOKEN_SHORT_TTL_SECONDS, REFRESH_TOKEN_GRACE_MS, capAccessTokenTtlSeconds } = require("../../../utils/auth/cookieOptions");
 const { hashRefreshToken, deriveRotatedToken } = require('./tokens');
 
+// 계정 상태 ACTIVE 아니면(관리자 비활성 등) 정지와 같은 흐름: 세션 전부 끊고 거절 (상태 없으면 통과)
+const rejectInactive = async (user, userId, transaction) => {
+    if (!user?.status || user.status === "ACTIVE") return null;
+    await userRepository.markOnlineSessionsOffline(userId, { transaction });
+    return { type: "inactive" };
+};
+
 // 없음 → 폐기 → 만료 → 정지 → 재사용 → 유효 시간 → 새 토큰 (직전 토큰은 짧은 유예 안에서만 같은 결과)
 exports.refresh = async (rawRefreshToken) => {
     // 쿠키 없으면 DB 안 감
@@ -38,6 +45,9 @@ exports.refresh = async (rawRefreshToken) => {
             return { type: "banned", reason: activeBan.reason };
         }
 
+        const user = await userRepository.findByUuid(session.user_id, { transaction });
+        const inactive = await rejectInactive(user, session.user_id, transaction);
+        if (inactive) return inactive;
         // 지금 토큰이거나, 유예 시간 안의 직전 토큰만 통과
         const isFreshMatch = session.refresh_token_hash === presentedHash;
         const isGraceMatch = !isFreshMatch
@@ -55,8 +65,7 @@ exports.refresh = async (rawRefreshToken) => {
         const cappedTtlSeconds = capAccessTokenTtlSeconds(ACCESS_TOKEN_SHORT_TTL_SECONDS, session.refresh_token_expires_at, now);
         if (cappedTtlSeconds <= 0) return { type: "expired" };
 
-        // 역할은 지금 계정 값으로 넣음
-        const user = await userRepository.findByUuid(session.user_id, { transaction });
+        // 역할은 위에서 읽은 지금 계정 값으로
         const accessToken = generateToken({
             uuid:      session.user_id,
             role:      user?.role,
@@ -104,6 +113,7 @@ exports.refresh = async (rawRefreshToken) => {
             throw createError("로그인 유지 기간이 만료되었습니다. 다시 로그인해주세요.", 401);
         case "banned":
             throw createError(`정지된 계정입니다. 사유: ${outcome.reason || "운영정책 위반"}`, 403);
+        case "inactive": throw createError("이용할 수 없는 계정입니다.", 403, "ACCOUNT_INACTIVE");
         case "reuse":
             throw createError("갱신 자격 재사용이 감지되어 모든 세션이 종료되었습니다. 다시 로그인해주세요.", 401);
         default:

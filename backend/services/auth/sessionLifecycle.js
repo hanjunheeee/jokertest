@@ -35,10 +35,17 @@ exports.resolveSession = async (decoded) => {
         return { ok: false, status: 401, message: "로그인 유지 기간이 만료되었습니다. 다시 로그인해주세요." };
     }
 
-    // 정지 중이면 그 사람 세션 전부 끊고 403
+    // 정지 중이면 그 사람 세션 전부 끊고 403 (소켓은 code로 끊는 까닭 알림)
     if (activeBan) {
         await userRepository.markOnlineSessionsOffline(decoded.uuid);
-        return { ok: false, status: 403, message: `정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}` };
+        return { ok: false, status: 403, code: "ACCOUNT_BANNED", message: `정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}` };
+    }
+
+    // 계정 상태가 ACTIVE 아니면(관리자 비활성 등) 정지와 같은 흐름 (상태 없는 줄은 통과)
+    const accountStatus = session.User?.status ?? null;
+    if (accountStatus && accountStatus !== "ACTIVE") {
+        await userRepository.markOnlineSessionsOffline(decoded.uuid);
+        return { ok: false, status: 403, code: "ACCOUNT_INACTIVE", message: "이용할 수 없는 계정입니다." };
     }
 
     return { ok: true };

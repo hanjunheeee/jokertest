@@ -12,6 +12,8 @@ const ORDER_STATUS = Object.freeze({
     FAILED: 'FAILED',
     CANCELED: 'CANCELED',
     EXPIRED: 'EXPIRED',
+    // 관리자 서버가 환불한 주문 (게임 서버는 바꾸지 않고 보여 주기만, 다시 확인·지급 안 함)
+    REFUNDED: 'REFUNDED',
 });
 
 // 끝난 실패 상태 (다시 확인 안 함)

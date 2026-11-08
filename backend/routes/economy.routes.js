@@ -21,6 +21,8 @@ const { listCurrencyProducts,
         confirmOrder,
         listOpenOrders,
         getOrder }            = require("../controllers/economy/topup");
+const { createRateLimiter } = require("../middlewares/rateLimit.middleware");
+const playerOpsController   = require("../controllers/ops/player");
 
 // 계정 읽기: 경로 userId가 로그인한 본인일 때만
 router.get("/accounts/:userId/wallet",       verifyToken, requireSelf, getWallet);
@@ -38,6 +40,15 @@ router.post("/equip-profile", verifyToken, equipProfile);
 
 // 관리자 보상 지급: DB 계정 role 확인 뒤에만
 router.post("/admin/grant", verifyToken, requireEconomyAdmin, grantReward);
+
+// 쿠폰 사용: 로그인 uuid로만, 한 사람 1분에 10번 (틀린 코드 마구 넣기 막기)
+const couponRateLimit = createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyOf: (req) => `coupon:${req.user.uuid}`,
+    message: "쿠폰 입력이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+});
+router.post("/coupons/redeem", verifyToken, couponRateLimit, playerOpsController.redeemCoupon);
 
 // 재화 상품·다이아 충전 주문 (오류 응답 모양은 errorHandler 충전 범위가 정함)
 router.get("/currency-products",               verifyToken, requireSelf, listCurrencyProducts);

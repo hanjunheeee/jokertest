@@ -9,6 +9,8 @@ const db                      = require("../../../repositories/common/db");
 const economyService          = require("../../economy");
 const signupEmailVerificationService = require("../signupEmailVerification");
 const { normalizeEmail: normalizeSignupEmail } = require("../../../validations/auth/signupEmailVerification");
+// 금지어 든 닉네임 거절 (금지어 표 비면 안 막음)
+const bannedWords = require("../../ops/bannedWords");
 
 // 입력 검사 → 증명 있나 → 해시 → (트랜잭션) 증명 소비 → 이메일·닉네임 중복 → 만들기
 exports.signup = async (userData) => {
@@ -18,6 +20,9 @@ exports.signup = async (userData) => {
         throw createError(parsed.message, parsed.status ?? 400);
     }
     const { email: normalizedEmail, password, nickname: normalizedNickname, birthDate } = parsed.value;
+    if (bannedWords.containsBannedWord(normalizedNickname)) {
+        throw createError("사용할 수 없는 단어가 들어간 닉네임입니다.", 400, "NICKNAME_BANNED_WORD");
+    }
 
     // 이메일 인증 증명 없으면 해시 전에 거절
     const signupProof = userData?.signupProof;

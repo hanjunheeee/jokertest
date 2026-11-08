@@ -220,7 +220,9 @@ test('0023: 값이 하나라도 있으면 타입을 안 바꾸고 멈춤', async
 
 test('migrate-db 목록: 0020~0023이 이 순서로 끝에 붙고 이름이 겹치지 않음', () => {
     const names = MIGRATIONS.map((migration) => migration.name);
-    assert.deepEqual(names.slice(-4), [
+    // 뒤에 새 마이그레이션이 붙어도 0020~0023 네 개가 이어져 있는지만 봄
+    const start = names.indexOf('0020-add-oauth-states-user-fk');
+    assert.deepEqual(names.slice(start, start + 4), [
         '0020-add-oauth-states-user-fk',
         '0021-add-user-sessions-refresh-indexes',
         '0022-align-index-names',

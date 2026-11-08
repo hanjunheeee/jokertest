@@ -14,6 +14,8 @@ exports.findActiveSession = async (id, user_id) => {
     return await db.UserSession.findOne({
         where:      { id, user_id, is_online: true, revoked_at: null },
         attributes: ['id', 'user_id', 'is_online', 'revoked_at', 'refresh_token_expires_at'],
+        // 계정 상태도 같은 쿼리로 (ACTIVE 아니면 세션 확인이 끊음, 따로 DB 안 감)
+        include: [{ model: db.User, attributes: ['status'], required: false }],
     });
 };
 

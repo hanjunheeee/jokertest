@@ -77,6 +77,8 @@ const confirmTopupOrder = async ({ userId, orderId, paymentKey, amount }, deps =
             return { status: ORDER_STATUS.GRANTED, balanceDiamond: await loadGrantedBalance(db, decision.order) };
         case 'TERMINAL':
             throw paymentFailed();
+        case 'REFUNDED':
+            throw createError('환불된 주문입니다.', 409, 'ORDER_REFUNDED');
         case 'BUSY':
             throw processingError();
         case 'PENDING_GRANT':

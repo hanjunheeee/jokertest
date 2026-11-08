@@ -5,6 +5,7 @@ const userRepository            = require("../repositories/user");
 const roleStatisticsQueries     = require("./game/roleStatistics/queries");
 const roleStatisticsPolicy      = require("./game/roleStatistics");
 const { validateNickname }      = require("../validations/auth/signup");
+const bannedWords               = require("./ops/bannedWords");
 
 // 프로필 행 없으면 null, 있으면 응답 data 객체 (조회 순서: 프로필 → 최고 승률 직업 → 직업 통계)
 exports.getMyProfile = async (uuid) => {
@@ -51,6 +52,10 @@ exports.changeNickname = async (uuid, nickname) => {
     }
     // 내 지금 닉네임과 같으면 통과, 남이 쓰면 거절
     const normalizedNickname = nicknameResult.value;
+    // 금지어 든 닉네임 거절 (금지어 표 비면 안 막음)
+    if (bannedWords.containsBannedWord(normalizedNickname)) {
+        return { ok: false, status: 400, code: "NICKNAME_BANNED_WORD", message: "사용할 수 없는 단어가 들어간 닉네임입니다." };
+    }
     const existingUser = await userRepository.findByNickname(normalizedNickname);
     if (existingUser && existingUser.uuid !== uuid) {
         return { ok: false, status: 409, message: "이미 사용 중인 닉네임입니다." };

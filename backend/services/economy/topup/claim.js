@@ -37,6 +37,8 @@ const claimOrder = async (db, adapter, deps, { userId, orderId, paymentKey = nul
 
         // 끝났거나 지급 대기면 잡지 않고 상태만 알림
         if (order.status === ORDER_STATUS.GRANTED) return { kind: 'GRANTED', order };
+        // 환불된 주문은 결제사에 다시 묻지도 지급하지도 않음
+        if (order.status === ORDER_STATUS.REFUNDED) return { kind: 'REFUNDED', order };
         if (FAILURE_STATUSES.has(order.status)) return { kind: 'TERMINAL', order };
         if (order.status === ORDER_STATUS.PENDING_GRANT) return { kind: 'PENDING_GRANT', order };
 

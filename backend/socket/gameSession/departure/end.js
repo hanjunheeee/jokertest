@@ -17,6 +17,7 @@ const { stopDayPhaseTimer } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { stopTribunalTimer } = require('../phase/tribunal')
 const { clearDepartureMark } = require('./marks')
+const chatBuffer = require('../../../services/ops/chatBuffer')
 
 // 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작·끊긴 사람 정리 예약, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
 // 종료 필드 만들다 던지면 원래 내용 그대로, 원래 내용을 못 만들었으면 판 id·날짜는 붙여 보냄 (어느 판 종료인지 모르던 것)
@@ -83,6 +84,8 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     // 지워진 판의 밤 성공 수신 기록·끊긴 사람 정리 예약도 같이 비움
     deleteNightReceipts(session)
     cancelEndedSweep(session?.id)
+    // 판 채팅 보관은 이때부터 10분만 (결과 화면 신고용)
+    isolateWithError('[판 채팅 보관 끝 표시 실패]', () => chatBuffer.markGameEnded(session?.id))
 
     // 종료 방송 받을 사람은 정리 전에 정해 둠 (다른 판·대기방으로 간 사람 빼기)
     const endContext = isolateOr(null, '[GameSession 종료 수신 문맥 구성 실패]', { code: 'END_CONTEXT_ERROR', gameId: session?.id },

@@ -24,6 +24,12 @@ function isLongTokenExpired(user, now = Date.now()) {
     return exp * 1000 <= now;
 }
 
+// 끊을 때 실을 code: 정지·비활성은 그 까닭, 나머지는 세션 끝 (화면은 code 모르면 전처럼 로그아웃)
+const ACCOUNT_DISCONNECT_CODES = new Set(["ACCOUNT_BANNED", "ACCOUNT_INACTIVE"]);
+function disconnectCodeOf(result) {
+    return ACCOUNT_DISCONNECT_CODES.has(result?.code) ? result.code : "SESSION_EXPIRED";
+}
+
 // 세션 검사 한 번: 토큰 만료 먼저 보고 세션·정지 확인
 async function checkSocketSession(socket) {
     if (isLongTokenExpired(socket.data.user)) {
@@ -73,7 +79,7 @@ function wrapSocketWithSessionGuard(socket) {
                 // 끊긴 세션이면 답 함수에 알리고 까닭 알린 뒤 연결 끊음, 처리기는 안 부름
                 if (!result.ok) {
                     replyRejected(args, "SESSION_EXPIRED", result.message);
-                    socket.emit("force_disconnect", { message: result.message, code: "SESSION_EXPIRED" });
+                    socket.emit("force_disconnect", { message: result.message, code: disconnectCodeOf(result) });
                     socket.disconnect(true);
                     return;
                 }
@@ -117,7 +123,7 @@ function startSessionRevocationWatcher(socket) {
                 if (stopped) return;
                 failures = 0;
                 if (!result.ok) {
-                    socket.emit("force_disconnect", { message: result.message, code: "SESSION_EXPIRED" });
+                    socket.emit("force_disconnect", { message: result.message, code: disconnectCodeOf(result) });
                     socket.disconnect(true);
                 }
             })

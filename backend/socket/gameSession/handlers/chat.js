@@ -28,6 +28,20 @@ const {
     resolveJokerTeammateSockets,
     emitToEachEligible,
 } = require('../delivery/broadcast')
+// 운영: 판 채팅 보관(신고 증거, 원문) · 금지어 가리기(보내는 글만)
+const chatBuffer = require('../../../services/ops/chatBuffer')
+const bannedWords = require('../../../services/ops/bannedWords')
+
+// 확정된 채팅 원문 보관 (실패해도 채팅 전송은 계속)
+function keepForEvidence(gameId, entry) {
+    attempt(() => chatBuffer.recordGameChatMessage(gameId, entry))
+}
+
+// 금지어 가린 글 (가리다 던지면 원문 그대로)
+function maskedText(text) {
+    const masked = attempt(() => bannedWords.maskBannedWords(text))
+    return masked.threw ? text : masked.value
+}
 
 // 조커 채팅 ack
 const respondJokerChat = labeledResponder('[조커 채팅 오류]')
@@ -95,6 +109,16 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
         commitLogs(label, uuid, prepared.session.id))
     if (!committed) return
 
+    // 원문 보관 (같은 직업 밤 채팅, 채널 = 직업)
+    keepForEvidence(prepared.session.id, {
+        channel: prepared.channel ?? gameSessionCore.CHAT_CHANNELS.JOKER,
+        senderUuid: prepared.actorUuid,
+        nickname: prepared.session.players?.get?.(prepared.actorUuid)?.nickname ?? null,
+        text: prepared.sanitizedText,
+        sentAt: prepared.sentAt,
+    })
+    const outboundText = maskedText(prepared.sanitizedText)
+
     // 답 먼저, 그다음 소켓마다 보내기 직전 자격 다시 보고 하나씩
     ackInSession({ ok: true })
 
@@ -102,7 +126,7 @@ function handleSubmitJokerChatMessage(io, socket, uuid, payload, callback, deps 
         (teammateSocket) => teammateSocket.emit('joker_chat_message', {
             gameId: prepared.session.id,
             senderUuid: prepared.actorUuid,
-            text: prepared.sanitizedText,
+            text: outboundText,
             messageId,
             sentAt: prepared.sentAt,
         }))
@@ -171,6 +195,16 @@ function handleSubmitGameChatMessage(io, socket, uuid, payload, callback, deps =
         return
     }
 
+    // 원문 보관 (낮·재판·죽은 사람 채팅, 채널 그대로)
+    keepForEvidence(outbound.gameId, {
+        channel: prepared.channel,
+        senderUuid: outbound.senderUuid,
+        nickname: outbound.nickname,
+        text: outbound.text,
+        sentAt: outbound.sentAt,
+    })
+    const outboundText = maskedText(outbound.text)
+
     // 답 먼저, 그다음 소켓마다 보내기 직전 자격 다시 보고 하나씩
     ackInSession({ ok: true })
 
@@ -180,7 +214,7 @@ function handleSubmitGameChatMessage(io, socket, uuid, payload, callback, deps =
             messageId: outbound.messageId,
             senderUuid: outbound.senderUuid,
             nickname: outbound.nickname,
-            text: outbound.text,
+            text: outboundText,
             sentAt: outbound.sentAt,
             dayIndex: outbound.dayIndex,
         }))

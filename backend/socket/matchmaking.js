@@ -135,19 +135,23 @@ const {
 const {
     cleanupRoomStateForSessionParticipants,
 } = require('./matchmaking/room/sessionCleanup')
+// 점검 중 거절 (방 만들기·시작·코드 입장·자동 매칭만)
+const { rejectDuringMaintenance } = require('./matchmaking/join/maintenanceGate')
 
 // 소켓 하나에 방·매칭 사건 받기 등록, async 처리기는 catch로 에러만 남김 (처리 안 된 거절 막기)
 // getCurrentSocketId = 계정의 지금 소켓 id, 옛 탭 요청 거르려고 방장 행동·설정·시작에 넘김
 function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = {}) {
     // 자동 매칭 줄 서기·빠지기
-    socket.on('join_matchmaking', () =>
-        handleJoinMatchmaking(io, socket, uuid).catch((err) =>
+    socket.on('join_matchmaking', () => {
+        if (rejectDuringMaintenance(socket, null)) return undefined
+        return handleJoinMatchmaking(io, socket, uuid).catch((err) =>
             console.error('\x1b[31m[매칭 진입 에러]\x1b[0m', err)
         )
-    )
+    })
     socket.on('leave_matchmaking', () => handleLeaveMatchmaking(uuid))
     // 코드 입장: 요청 모양 틀리면 실패 알림만 보내고 끝 (ack 없는 사건)
     socket.on('join_room_by_code', (payload) => {
+        if (rejectDuringMaintenance(socket, null)) return undefined
         const validated = validateJoinRoomByCodeRequest(payload)
         if (!validated.ok) {
             emitRoomJoinFailed(socket, validated.code, validated.message)
@@ -165,7 +169,10 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         )
     })
     // 방 만들기·지금 방·다음 방·공개 방 목록·공개 방 입장
-    socket.on('create_room', (payload, callback) => handleCreateRoom(io, socket, uuid, payload, callback))
+    socket.on('create_room', (payload, callback) => {
+        if (rejectDuringMaintenance(socket, typeof callback === 'function' ? callback : () => {})) return undefined
+        return handleCreateRoom(io, socket, uuid, payload, callback)
+    })
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
     socket.on('get_party_matching_room', (payload, callback) =>
         handleGetPartyMatchingRoom(uuid, payload, callback))
@@ -183,11 +190,12 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
             callback: typeof callback === 'function' ? callback : (typeof payload === 'function' ? payload : null),
             getCurrentSocketId,
         }))
-    socket.on('start_game', (payload, callback) =>
-        handleStartGame(io, socket, uuid, payload, callback, getCurrentSocketId).catch((err) =>
+    socket.on('start_game', (payload, callback) => {
+        if (rejectDuringMaintenance(socket, typeof callback === 'function' ? callback : () => {})) return undefined
+        return handleStartGame(io, socket, uuid, payload, callback, getCurrentSocketId).catch((err) =>
             console.error('\x1b[31m[게임 시작 에러]\x1b[0m', err)
         )
-    )
+    })
     socket.on('set_ready', (payload, callback) => handleSetReady(io, socket, uuid, payload, callback))
     socket.on(ROOM_SETTINGS_EVENTS.UPDATE_ROOM_SETTINGS, (payload, callback) =>
         handleUpdateRoomSettings(io, socket, uuid, payload, callback, getCurrentSocketId))
