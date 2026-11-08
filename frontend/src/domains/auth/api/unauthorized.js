@@ -15,7 +15,8 @@ const PUBLIC_AUTH_PATHS = new Set([
 export const handleAuthUnauthorized = async (errorData) => {
     useAuthStore.getState().logout();
 
-    const path = window.location.pathname;
+    // 끝 빗금은 떼고 봄 (/find-id/·/password-reset/?token= 으로 열어도 안 튕기게)
+    const path = window.location.pathname.replace(/\/+$/, "") || "/";
     if (PUBLIC_AUTH_PATHS.has(path)) {
         throw new Error(errorData.message || "인증에 실패했습니다.");
     }

@@ -24,8 +24,9 @@ const buildResetUrl = (rawToken) => {
     }
     if (target.protocol !== 'http:' && target.protocol !== 'https:') return null;
 
-    // 앱 주소 뒤에 /password-reset 붙이고 쿼리는 token 하나만
-    target.pathname = `${target.pathname.replace(/\/+$/, '')}/password-reset`;
+    // 앱 주소 뒤에 /password-reset 붙이고 쿼리는 token 하나만 (이미 /password-reset으로 끝나면 안 붙임)
+    const basePath = target.pathname.replace(/\/+$/, '');
+    target.pathname = basePath.endsWith('/password-reset') ? basePath : `${basePath}/password-reset`;
     target.search = '';
     target.searchParams.set('token', rawToken);
     return target.toString();
