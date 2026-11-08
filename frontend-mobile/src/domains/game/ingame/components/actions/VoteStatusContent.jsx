@@ -14,7 +14,6 @@ const OUTCOME_LABELS = Object.freeze({
   TRIBUNAL: "재판 회부",
   TIE: "동점",
   ABSTAINED: "기권 다수",
-  REVOTE: "재투표",
 })
 
 const UNRESOLVED_LABEL = "집계 전"
