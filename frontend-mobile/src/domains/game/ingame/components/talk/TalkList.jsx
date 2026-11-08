@@ -1,4 +1,4 @@
-// 채팅방 (카톡형): 말·알림·이모티콘 줄을 아래부터 쌓아 보여 줌, 밤엔 위에 "밤 · 같은 직업끼리" 표시
+// 채팅방 (카톡형): 말·알림·이모티콘 줄을 아래부터 쌓아 보여 줌, 밤엔 위에 "밤 · 같은 직업끼리", 죽은 뒤엔 "죽은 사람끼리" 표시
 // TalkLayout이 화면 대부분 칸에 씀, 값은 useTalkFeed (채팅 세션·참가자 컨텍스트 안)
 import { useRef } from "react"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
@@ -21,6 +21,10 @@ const SCROLL_CLASS =
 const JOKER_BANNER_CLASS =
     "flex shrink-0 items-center justify-center gap-1.5 border-b border-[#a33a2a]/50 bg-[#4a1414]/80 py-1 text-[0.72rem] font-semibold tracking-wide text-[#f6c8b0]"
 
+// 죽은 사람끼리 띠 (회색, 말풍선 색과 맞춤)
+const DEAD_BANNER_CLASS =
+    "flex shrink-0 items-center justify-center gap-1.5 border-b border-[#8a8a8a]/50 bg-[#2e2e2e]/85 py-1 text-[0.72rem] font-semibold tracking-wide text-[#dcdcdc]"
+
 const NEW_BUTTON_CLASS =
     "absolute bottom-2 left-1/2 z-10 h-11 -translate-x-1/2 cursor-pointer rounded-full border border-[#b08a4a]/70 bg-black/80 px-3 text-[0.72rem] text-[#f3dcb0] shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
 
@@ -37,14 +41,15 @@ function StatusLine({ status, error }) {
 
 export default function TalkList() {
     const scrollRef = useRef(null)
-    const { lines, joker, session } = useTalkFeed()
+    const { lines, joker, dead, session } = useTalkFeed()
     const { getPlayerById, getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
     const { textScale, showTime, nicknameColor } = useChatDisplaySettings()
     const { unseen, scrollToBottom } = useStickToBottom(scrollRef, lines)
 
     return (
         <section aria-label="채팅" className={PANEL_CLASS} data-talk-list="">
-            {joker ? <p className={JOKER_BANNER_CLASS}>밤 · 같은 직업끼리</p> : null}
+            {dead ? <p className={DEAD_BANNER_CLASS} data-dead-chat-banner="">죽은 사람끼리</p> : null}
+            {!dead && joker ? <p className={JOKER_BANNER_CLASS}>밤 · 같은 직업끼리</p> : null}
             <div ref={scrollRef} className={SCROLL_CLASS} style={{ fontSize: chatFontSize(textScale, 0.95) }}>
                 <ul role="log" aria-label="채팅 내역" className="flex min-h-full flex-col justify-end">
                     {lines.map((line, index) => {

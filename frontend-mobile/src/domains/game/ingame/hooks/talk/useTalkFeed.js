@@ -1,5 +1,5 @@
 // 카톡형 채팅방 목록: 채팅 세션 말 + 시스템 알림 + 받은 이모티콘을 시각 순 한 줄 목록으로
-// TalkList가 씀, 밤 조커 채팅 여부는 데스크톱 채팅 세션이 고르는 조건 그대로
+// TalkList가 씀, 밤 조커 채팅 여부·죽은 사람끼리 여부는 데스크톱 채팅 세션이 고르는 조건 그대로
 import { useMemo } from "react"
 import { useInGameChatSessionContext } from "@/domains/game/ingame/components/chat/InGameChatSessionContext.js"
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
@@ -37,5 +37,8 @@ export function useTalkFeed() {
         [session.messages, notices, emojis, localPlayerId, joker, getPlayerById],
     )
 
-    return { lines, joker, session }
+    // 죽은 뒤엔 죽은 사람끼리 채팅 (채팅 세션이 알려 줌)
+    const dead = session.isDeadChat === true
+
+    return { lines, joker, dead, session }
 }

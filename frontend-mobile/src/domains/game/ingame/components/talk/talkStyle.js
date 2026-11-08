@@ -1,4 +1,4 @@
-// 카톡형 채팅방 공통 모양: 말풍선 색(남·나·조커), 글자 모양, 초상 크기
+// 카톡형 채팅방 공통 모양: 말풍선 색(남·나·조커·죽은 사람), 글자 모양, 초상 크기
 // components/talk 아래 부품들이 씀, 색은 지금 그림(양피지·금빛·어두운 나무)에서 고름
 
 // 말풍선 바탕 (꼬리 쪽 모서리만 덜 둥글게)
@@ -9,9 +9,13 @@ export const BUBBLE_CLASS = {
     mine: `${BUBBLE_BASE} rounded-2xl rounded-tr-sm border border-[#a8823e]/70 bg-[#d9b46a] text-[#2a1206]`,
     jokerOther: `${BUBBLE_BASE} rounded-2xl rounded-tl-sm border border-[#a33a2a]/70 bg-[#4a1414] text-[#f6dcc8]`,
     jokerMine: `${BUBBLE_BASE} rounded-2xl rounded-tr-sm border border-[#c2503c]/70 bg-[#7a2418] text-[#ffe6d6]`,
+    // 죽은 사람끼리 말: 회색 (산 사람 말과 구분)
+    deadOther: `${BUBBLE_BASE} rounded-2xl rounded-tl-sm border border-[#8a8a8a]/60 bg-[#3a3a3a] text-[#dcdcdc]`,
+    deadMine: `${BUBBLE_BASE} rounded-2xl rounded-tr-sm border border-[#a0a0a0]/70 bg-[#5a5a5a] text-[#f0f0f0]`,
 }
 
 export function bubbleClass(line) {
+    if (line.dead) return line.mine ? BUBBLE_CLASS.deadMine : BUBBLE_CLASS.deadOther
     if (line.joker) return line.mine ? BUBBLE_CLASS.jokerMine : BUBBLE_CLASS.jokerOther
     return line.mine ? BUBBLE_CLASS.mine : BUBBLE_CLASS.other
 }

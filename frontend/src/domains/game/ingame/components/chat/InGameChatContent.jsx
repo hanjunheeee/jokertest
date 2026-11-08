@@ -32,6 +32,10 @@ const CHAT_ROOT_CLASS =
 const CHAT_ROOT_BOARD_CLASS =
   `${CHAT_ROOT_CLASS} cursor-pointer`
 
+// 죽은 사람끼리 표시 (채팅 목록 칸 맨 위 가운데, 회색)
+const DEAD_CHAT_BADGE_CLASS =
+  "absolute left-1/2 top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#9a9a9a]/60 bg-black/70 px-2 py-0.5 text-[0.62rem] font-semibold tracking-wide text-[#d4d4d4]"
+
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
 
@@ -46,6 +50,7 @@ export default function InGameChatContent({
   status = null,
   error = null,
   truncateDraftOnInput = true,
+  isDeadChat = false,
   showEmbeddedPhaseTimer = false,
   embeddedPhaseTimerStatusLabel = null,
   embeddedPhaseTimerRemainingRatio = 0,
@@ -150,6 +155,16 @@ export default function InGameChatContent({
             textFieldWidth={textFieldWidth}
           />
         </div>
+
+        {/* 죽은 뒤엔 죽은 사람끼리 말함 (목록 칸 흐림에 안 묻히게 따로 둠) */}
+        {isDeadChat ? (
+          <div
+            className="pointer-events-none absolute"
+            style={getMsgListInset(variant, { withEmbeddedPhaseTimer: showEmbeddedPhaseTimer })}
+          >
+            <p className={DEAD_CHAT_BADGE_CLASS} data-dead-chat-badge="">죽은 사람끼리</p>
+          </div>
+        ) : null}
 
         <div
           className={TEXT_FIELD_ROW_CLASS}

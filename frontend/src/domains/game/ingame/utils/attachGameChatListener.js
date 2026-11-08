@@ -16,6 +16,7 @@ export function attachGameChatListener({ socket, eventName, channel, handler, ge
       currentGameId: context.gameId,
       currentAuthUuid: context.authUuid,
       currentViewChannel: context.viewChannel,
+      currentReadChannels: context.readChannels ?? null,
     })
     if (!accepted) return
 

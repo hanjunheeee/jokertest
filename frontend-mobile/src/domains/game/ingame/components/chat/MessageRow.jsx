@@ -12,10 +12,14 @@ function formatTime(sentAt) {
     return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
 }
 
-// themeStyles 있고 닉네임 색 켜졌을 때만 색·그림자 (데스크톱 resolveInGameChatPlayerColor와 같음)
+// 죽은 사람 채팅 줄 글자색 (회색, 데스크톱 InGameChatMessageRow와 같음)
+const DEAD_CHAT_STYLE = Object.freeze({ color: "#a9a9a9" })
+
+// themeStyles 있고 닉네임 색 켜졌을 때만 색·그림자 (데스크톱 resolveInGameChatPlayerColor와 같음), 죽은 사람 말은 회색
 export default function MessageRow({ message, themeStyles, nicknameColor, showTime }) {
-    const colored = Boolean(themeStyles) && nicknameColor
-    const colorStyle = colored ? { color: themeStyles.color, textShadow: THEME_TEXT_SHADOW } : undefined
+    const dead = message.channel === "DEAD"
+    const colored = !dead && Boolean(themeStyles) && nicknameColor
+    const colorStyle = dead ? DEAD_CHAT_STYLE : colored ? { color: themeStyles.color, textShadow: THEME_TEXT_SHADOW } : undefined
     const colorClass = colored ? THEME_TEXT_RENDER_CLASS : ""
     const time = showTime ? formatTime(message.sentAt) : null
 

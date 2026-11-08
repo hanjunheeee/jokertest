@@ -24,12 +24,20 @@ export function resolveInGameSelfAliveForControls(state, localSessionPlayer) {
   return isSessionPlayerAlive(localSessionPlayer)
 }
 
-// 밤에 살아 있는 시민 쪽·조커만 (조커는 죽어도 됨)
+// 밤 같은 직업 채팅 직업들
+const NIGHT_CHAT_ROLES = ["JOKER", "CITIZEN", "DOCTOR", "GUARD", "WITCH_HUNTER"]
+
+// 밤 같은 직업 채팅을 쓸 수 있는지: 밤에 산 사람만 (죽은 사람은 죽은 사람 채팅, 사용자 결정 2026-11-09)
 export function isJokerNightChatEligible(state) {
   if (state?.phase !== "NIGHT") return false
   const alive = selectInGameSelfAlive(state)
-  if (alive === null) return false
-  const role = state?.self?.role
-  if (!["JOKER", "CITIZEN", "DOCTOR", "GUARD", "WITCH_HUNTER"].includes(role)) return false
-  return alive || role === "JOKER"
+  if (alive !== true) return false
+  return NIGHT_CHAT_ROLES.includes(state?.self?.role)
+}
+
+// 밤 같은 직업 채팅을 받아 볼 수 있는지: 쓸 수 있는 사람 + 죽은 광대 (서버가 죽은 광대한테도 보냄, 읽기만)
+export function canReadRoleNightChat(state) {
+  if (isJokerNightChatEligible(state)) return true
+  if (state?.phase !== "NIGHT") return false
+  return selectInGameSelfAlive(state) === false && state?.self?.role === "JOKER"
 }

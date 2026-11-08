@@ -15,6 +15,7 @@ export default function InGameTribunalPresentationChatPanel({
   status = null,
   error = null,
   truncateDraftOnInput = false,
+  isDeadChat = false,
 }) {
   return (
     <div
@@ -31,6 +32,7 @@ export default function InGameTribunalPresentationChatPanel({
         status={status}
         error={error}
         truncateDraftOnInput={truncateDraftOnInput}
+        isDeadChat={isDeadChat}
       />
     </div>
   )

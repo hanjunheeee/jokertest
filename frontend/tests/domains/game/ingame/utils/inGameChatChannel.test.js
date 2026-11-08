@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   INGAME_CHAT_CHANNELS,
+  resolveInGameChatReadChannels,
   resolveInGameChatSendChannel,
   resolveInGameChatViewChannel,
 } from "../../../../../src/domains/game/ingame/utils/inGameChatChannel.js"
@@ -42,30 +43,34 @@ test("생존자 TRIBUNAL: DAY 내역을 보며 최후의 반론 중에도 DAY로
   assert.equal(resolveInGameChatSendChannel(state), INGAME_CHAT_CHANNELS.DAY)
 })
 
-test("사망자 NIGHT: 보기·전송 모두 null이다(밤에는 어떤 채팅도 보거나 보낼 수 없다)", () => {
+test("사망자 NIGHT: 보기·전송 모두 DEAD다 (죽은 사람끼리, 사용자 규칙)", () => {
   const state = buildState({ phase: "NIGHT", alive: false })
-  assert.equal(resolveInGameChatViewChannel(state), null)
-  assert.equal(resolveInGameChatSendChannel(state), null)
+  assert.equal(resolveInGameChatViewChannel(state), INGAME_CHAT_CHANNELS.DEAD)
+  assert.equal(resolveInGameChatSendChannel(state), INGAME_CHAT_CHANNELS.DEAD)
 })
 
-test("사망한 JOKER의 NIGHT만 JOKER 보기·전송이 허용된다", () => {
+test("사망한 JOKER의 NIGHT도 보기·전송은 DEAD다 (JOKER 채널은 읽기만, 사용자 규칙)", () => {
   const state = buildState({ phase: "NIGHT", alive: false, role: "JOKER" })
-  assert.equal(resolveInGameChatViewChannel(state), INGAME_CHAT_CHANNELS.JOKER)
-  assert.equal(resolveInGameChatSendChannel(state), INGAME_CHAT_CHANNELS.JOKER)
+  assert.equal(resolveInGameChatViewChannel(state), INGAME_CHAT_CHANNELS.DEAD)
+  assert.equal(resolveInGameChatSendChannel(state), INGAME_CHAT_CHANNELS.DEAD)
 })
 
-test("사망자 DAY: DAY를 열람하지만 전송은 할 수 없다", () => {
+test("사망자 DAY: DEAD로 보내고, DEAD·DAY를 같이 받는다 (사용자 규칙)", () => {
   const state = buildState({ phase: "DAY", alive: false })
-  assert.equal(resolveInGameChatViewChannel(state), INGAME_CHAT_CHANNELS.DAY)
-  assert.equal(resolveInGameChatSendChannel(state), null)
+  assert.equal(resolveInGameChatViewChannel(state), INGAME_CHAT_CHANNELS.DEAD)
+  assert.equal(resolveInGameChatSendChannel(state), INGAME_CHAT_CHANNELS.DEAD)
+  assert.deepEqual(resolveInGameChatReadChannels(resolveInGameChatViewChannel(state)),
+    [INGAME_CHAT_CHANNELS.DEAD, INGAME_CHAT_CHANNELS.DAY])
 })
 
-test("사망자 TRIBUNAL/ROLE_REVEAL: 채팅이 열리지 않는다", () => {
-  for (const phase of ["TRIBUNAL", "ROLE_REVEAL"]) {
-    const state = buildState({ phase, alive: false })
-    assert.equal(resolveInGameChatViewChannel(state), null)
-    assert.equal(resolveInGameChatSendChannel(state), null)
-  }
+test("사망자 TRIBUNAL은 DEAD, ROLE_REVEAL은 채팅이 열리지 않는다 (사용자 규칙)", () => {
+  const tribunal = buildState({ phase: "TRIBUNAL", alive: false })
+  assert.equal(resolveInGameChatViewChannel(tribunal), INGAME_CHAT_CHANNELS.DEAD)
+  assert.equal(resolveInGameChatSendChannel(tribunal), INGAME_CHAT_CHANNELS.DEAD)
+
+  const reveal = buildState({ phase: "ROLE_REVEAL", alive: false })
+  assert.equal(resolveInGameChatViewChannel(reveal), null)
+  assert.equal(resolveInGameChatSendChannel(reveal), null)
 })
 
 test("생존 여부를 알 수 없으면 보기·전송 모두 null이다(fail-closed)", () => {

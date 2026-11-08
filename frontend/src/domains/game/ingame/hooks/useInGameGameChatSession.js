@@ -6,10 +6,10 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { gameChatReducer, initialGameChatState, selectGameChatView } from "../utils/gameChatReducer.js"
 import { attachGameChatListener } from "../utils/attachGameChatListener.js"
-import { INGAME_CHAT_CHANNELS } from "../utils/inGameChatChannel.js"
+import { INGAME_CHAT_CHANNELS, resolveInGameChatReadChannels } from "../utils/inGameChatChannel.js"
+import { selectGameChatMessages } from "../utils/selectGameChatMessages.js"
 import { selectOwnedGameChatContext } from "../utils/selectOwnedGameChatContext.js"
 import { sanitizeJokerChatText, mapJokerChatSanitizeCodeToMessage } from "../utils/chatText.js"
-import { toJokerChatUiMessage } from "../utils/jokerChatReceive.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitGameChat } from "../socket/chat.js"
@@ -87,10 +87,15 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
     const getContext = () => {
       const currentAuthUuid = useAuthStore.getState().user?.uuid ?? null
       if (socketAuthUuid === null || currentAuthUuid !== socketAuthUuid) {
-        return { gameId: null, authUuid: null, viewChannel: null }
+        return { gameId: null, authUuid: null, viewChannel: null, readChannels: [] }
       }
       const owned = selectOwnedGameChatContext(useInGameStore.getState(), socketAuthUuid)
-      return { gameId: owned.gameId, authUuid: socketAuthUuid, viewChannel: owned.viewChannel }
+      return {
+        gameId: owned.gameId,
+        authUuid: socketAuthUuid,
+        viewChannel: owned.viewChannel,
+        readChannels: resolveInGameChatReadChannels(owned.viewChannel),
+      }
     }
     const handler = (channel, parsed, context) =>
       dispatch({
@@ -212,7 +217,9 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
     draft: view.draft,
     setDraft: (draft) =>
       dispatch({ type: "DRAFT", gameId: ownedGameId, authUuid, channel: viewChannel, draft }),
-    messages: view.messages.map((m) => toJokerChatUiMessage(m, getPlayerById)).filter(Boolean),
+    // 죽은 사람 채널이면 낮 채팅도 섞음 (줄마다 채널, 화면이 죽은 사람 말을 회색으로)
+    messages: selectGameChatMessages(state, ownedGameId, authUuid, viewChannel, getPlayerById),
+    isDeadChat: viewChannel === INGAME_CHAT_CHANNELS.DEAD,
     send,
     status: view.status,
     error: view.error,

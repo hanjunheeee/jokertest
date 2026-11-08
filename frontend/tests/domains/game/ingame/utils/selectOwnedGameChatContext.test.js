@@ -27,12 +27,12 @@ test("selectOwnedGameChatContext: 인증 계정이 소유한 상태면 gameId와
   assert.deepEqual(alive, { gameId: GAME_ID, viewChannel: "DAY", sendChannel: "DAY" })
 
   const dead = selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState({ phase: "DAY", alive: false }) }, ME)
-  assert.deepEqual(dead, { gameId: GAME_ID, viewChannel: "DAY", sendChannel: null })
+  assert.deepEqual(dead, { gameId: GAME_ID, viewChannel: "DEAD", sendChannel: "DEAD" })
 })
 
-test("selectOwnedGameChatContext: 밤의 사망자는 소유자여도 두 채널이 모두 null이다(밤 채팅 차단)", () => {
+test("selectOwnedGameChatContext: 밤의 사망자도 죽은 사람 채널을 보고 보낸다 (사용자 규칙)", () => {
   const deadAtNight = selectOwnedGameChatContext({ gameId: GAME_ID, state: buildState({ phase: "NIGHT", alive: false }) }, ME)
-  assert.deepEqual(deadAtNight, { gameId: GAME_ID, viewChannel: null, sendChannel: null })
+  assert.deepEqual(deadAtNight, { gameId: GAME_ID, viewChannel: "DEAD", sendChannel: "DEAD" })
 })
 
 test("selectOwnedGameChatContext: 밤의 생존자는 자기 역할 채널을 보고 보낸다", () => {

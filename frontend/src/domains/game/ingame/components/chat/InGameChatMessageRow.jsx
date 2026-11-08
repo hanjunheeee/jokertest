@@ -46,13 +46,17 @@ function formatChatMessageTime(sentAt) {
   return `${hours}:${minutes}`
 }
 
-// 보낸 사람 색은 테마 색 (닉네임 색 설정 끄면 기본색)
+// 죽은 사람 채팅 줄 글자색 (회색, 테마 색 대신)
+const DEAD_CHAT_TEXT_STYLE = Object.freeze({ color: "#a9a9a9" })
+
+// 보낸 사람 색은 테마 색 (닉네임 색 설정 끄면 기본색), 죽은 사람 채팅 줄은 회색
 export default function InGameChatMessageRow({
   playerId = null,
   senderName,
   text,
   textFieldWidth = 0,
   sentAt = null,
+  channel = null,
 }) {
   const variant = useChatVariant()
   const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
@@ -62,10 +66,10 @@ export default function InGameChatMessageRow({
   const showTimeEnabled = useSettingsStore(selectShowTimeEnabled)
   const chatTextSize = useSettingsStore(selectChatTextSize)
 
-  const { style: themedTextStyle, className: themedTextClass } = resolveInGameChatPlayerColor(
-    themeStyles,
-    nicknameColorEnabled,
-  )
+  const playerColor = resolveInGameChatPlayerColor(themeStyles, nicknameColorEnabled)
+  const isDeadLine = channel === "DEAD"
+  const themedTextStyle = isDeadLine ? DEAD_CHAT_TEXT_STYLE : playerColor.style
+  const themedTextClass = isDeadLine ? "" : playerColor.className
 
   const chatTextScaleStyle = getInGameChatTextScaleStyle(chatTextSize)
 
@@ -80,7 +84,7 @@ export default function InGameChatMessageRow({
       : 0
 
   return (
-    <li className={MSG_ROW_CLASS} style={chatTextScaleStyle}>
+    <li className={MSG_ROW_CLASS} style={chatTextScaleStyle} data-chat-channel={channel ?? undefined}>
       {formattedTime ? (
         <span className={getInGameChatMessageTimeClass(variant)}>{formattedTime}</span>
       ) : null}

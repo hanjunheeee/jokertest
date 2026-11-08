@@ -68,6 +68,7 @@ export default function InGameChatMessageList({
               text={message.text}
               textFieldWidth={textFieldWidth}
               sentAt={message.sentAt}
+              channel={message.channel ?? null}
             />
           ))}
         </ul>

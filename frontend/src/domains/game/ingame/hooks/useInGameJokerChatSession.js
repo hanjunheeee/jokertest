@@ -6,7 +6,7 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { jokerChatReducer, selectJokerChatView } from "../utils/jokerChatReducer.js"
 import { attachJokerChatListener, toJokerChatUiMessage } from "../utils/jokerChatReceive.js"
 import { sanitizeJokerChatText, mapJokerChatSanitizeCodeToMessage } from "../utils/chatText.js"
-import { isJokerNightChatEligible } from "../utils/selfAlive.js"
+import { canReadRoleNightChat, isJokerNightChatEligible } from "../utils/selfAlive.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitJokerChat } from "../socket/chat.js"
@@ -59,9 +59,9 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     dispatch({ type: "GAME_CHANGED", gameId: externalGameId })
   }, [externalGameId])
 
-  // 조커 밤 채팅을 쓸 수 있을 때만 받기
+  // 밤 같은 직업 채팅을 볼 수 있을 때만 받기 (죽은 광대는 읽기만)
   useEffect(() => {
-    if (!socket || !isJokerNightChatEligible(gameState)) return undefined
+    if (!socket || !canReadRoleNightChat(gameState)) return undefined
     return attachJokerChatListener(
       socket,
       (parsed) =>

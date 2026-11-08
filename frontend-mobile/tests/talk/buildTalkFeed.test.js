@@ -58,3 +58,30 @@ test("같은 사람이 이어 말하면 묶음, 알림 뒤나 사람이 바뀌�
     const groups = feed.map((line, index) => startsGroup(line, feed[index - 1]))
     assert.deepEqual(groups, [true, false, false, true])
 })
+
+// 죽은 사람끼리 채팅 (사용자 결정 2026-11-09): 죽은 뒤엔 낮 말·죽은 사람 말이 섞여 오고 줄마다 채널이 붙음
+test("죽은 뒤 목록: 죽은 사람 말은 dead(회색), 낮 말은 보통, 같은 직업 말은 조커색", () => {
+    const feed = buildTalkFeed({
+        messages: [
+            { id: 1, playerId: "a", text: "낮", sentAt: 1, channel: "DAY" },
+            { id: 2, playerId: "b", text: "죽은 사람", sentAt: 2, channel: "DEAD" },
+            { id: 3, playerId: "c", text: "광대", sentAt: 3, channel: "JOKER" },
+        ],
+        joker: true,
+    })
+    assert.deepEqual(feed.map((line) => [line.text, line.dead, line.joker]), [
+        ["낮", false, false],
+        ["죽은 사람", true, false],
+        ["광대", false, true],
+    ])
+})
+
+test("같은 사람이라도 낮 말 → 죽은 사람 말로 바뀌면 새 묶음", () => {
+    const feed = buildTalkFeed({
+        messages: [
+            { id: 1, playerId: "a", text: "살아서", sentAt: 1, channel: "DAY" },
+            { id: 2, playerId: "a", text: "죽어서", sentAt: 2, channel: "DEAD" },
+        ],
+    })
+    assert.deepEqual(feed.map((line, index) => startsGroup(line, feed[index - 1])), [true, true])
+})

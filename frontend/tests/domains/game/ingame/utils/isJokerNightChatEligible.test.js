@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { isJokerNightChatEligible } from "../../../../../src/domains/game/ingame/utils/selfAlive.js"
+import { canReadRoleNightChat, isJokerNightChatEligible } from "../../../../../src/domains/game/ingame/utils/selfAlive.js"
 
 test("isJokerNightChatEligible: state가 null이면 false다", () => {
   assert.equal(isJokerNightChatEligible(null), false)
@@ -35,8 +35,10 @@ test("isJokerNightChatEligible: phase가 ROLE_REVEAL이고 self.team이 JOKER여
   assert.equal(isJokerNightChatEligible(jokerState({ phase: "ROLE_REVEAL" })), false)
 })
 
-test("isJokerNightChatEligible: 사망한 JOKER도 NIGHT이면 true다(죽은 광대만의 확정 특례)", () => {
-  assert.equal(isJokerNightChatEligible(jokerState({ alive: false })), true)
+test("isJokerNightChatEligible: 사망한 JOKER는 NIGHT이어도 false다 — 읽기만 (canReadRoleNightChat, 사용자 규칙)", () => {
+  assert.equal(isJokerNightChatEligible(jokerState({ alive: false })), false)
+  assert.equal(canReadRoleNightChat(jokerState({ alive: false })), true)
+  assert.equal(canReadRoleNightChat(jokerState({ alive: false, phase: "DAY" })), false)
 })
 
 test("isJokerNightChatEligible: 사망한 비-JOKER는 NIGHT이어도 false다", () => {

@@ -231,7 +231,7 @@ test("생존자는 day_chat_message_received만 렌더하고 dead_chat_message_r
   hook.unmount()
 })
 
-test("낮의 사망자는 공개 DAY 메시지를 렌더하고 퇴역한 DEAD 메시지는 무시한다", () => {
+test("낮의 사망자는 DAY 메시지를 계속 읽고 DEAD 메시지도 같이 렌더한다, 줄마다 채널이 붙는다 (사용자 규칙)", () => {
   seedStore({ phase: "DAY", alive: false })
   const fake = createFakeChatSocket()
   setFakeSocket(fake.socket)
@@ -243,9 +243,10 @@ test("낮의 사망자는 공개 DAY 메시지를 렌더하고 퇴역한 DEAD �
   act(() => fake.socket.trigger(dead.event, dead.payload))
 
   assert.deepEqual(
-    hook.result.current.messages.map((m) => m.text),
-    ["낮 대화"],
+    hook.result.current.messages.map((m) => [m.text, m.channel]),
+    [["낮 대화", "DAY"], ["사망자 대화", "DEAD"]],
   )
+  assert.equal(hook.result.current.isDeadChat, true)
 
   hook.unmount()
 })
@@ -278,7 +279,7 @@ test("생존자의 NIGHT에서는 공개 채팅을 보낼 수 없다(emit 없음
   hook.unmount()
 })
 
-test("사망자는 NIGHT에 보지도 보내지도 못한다(밤 사망자 채팅 차단)", () => {
+test("사망자는 NIGHT에도 죽은 사람끼리 말하고 받는다 (사용자 규칙)", () => {
   seedStore({ phase: "NIGHT", alive: false })
   const fake = createFakeChatSocket()
   setFakeSocket(fake.socket)
@@ -287,12 +288,27 @@ test("사망자는 NIGHT에 보지도 보내지도 못한다(밤 사망자 채�
   act(() => hook.result.current.setDraft("밤의 사망자 대화"))
   act(() => hook.result.current.send())
 
-  assert.equal(fake.emitWithAckCalls.length, 0)
-  assert.equal(hook.result.current.draft, "")
+  assert.equal(fake.emitWithAckCalls.length, 1)
+  assert.equal(fake.emitWithAckCalls[0].event, "submit_game_chat_message")
+  assert.deepEqual(fake.emitWithAckCalls[0].payload, { gameId: GAME_ID, text: "밤의 사망자 대화" })
 
-  const dead = broadcast({ channel: "DEAD", id: "night-dead" })
+  const dead = broadcast({ channel: "DEAD", id: "night-dead", text: "밤 사망자" })
+  act(() => fake.socket.trigger(dead.event, dead.payload))
+  assert.deepEqual(hook.result.current.messages.map((m) => m.text), ["밤 사망자"])
+
+  hook.unmount()
+})
+
+test("생존자는 DEAD를 안 받고 사망자 표시도 없다 (사용자 규칙)", () => {
+  seedStore({ phase: "NIGHT", alive: true })
+  const fake = createFakeChatSocket()
+  setFakeSocket(fake.socket)
+
+  const hook = renderChat()
+  const dead = broadcast({ channel: "DEAD", id: "alive-night-dead" })
   act(() => fake.socket.trigger(dead.event, dead.payload))
   assert.deepEqual(hook.result.current.messages, [])
+  assert.equal(hook.result.current.isDeadChat, false)
 
   hook.unmount()
 })
@@ -384,7 +400,9 @@ test("생존→사망 이후 도착한 DAY 실패 응답은 사망자 화면에 
 
   assert.equal(hook.result.current.error, null)
   assert.equal(hook.result.current.status, "idle")
-  assert.equal(hook.result.current.draft, "생전에 보낸 문장")
+  // 죽으면 죽은 사람 채널 입력칸으로 바뀜 (낮 채널 초안은 낮 채널에 남음, 사용자 규칙)
+  assert.equal(hook.result.current.draft, "")
+  assert.equal(hook.result.current.isDeadChat, true)
 
   hook.unmount()
 })
@@ -528,7 +546,7 @@ test("socket이 교체되면 이전 socket으로 보낸 요청의 응답은 반�
   hook.unmount()
 })
 
-test("DAY 오류가 남아있는 상태로 사망하면 오류는 지워지고 DAY는 열람 전용이 된다", async () => {
+test("DAY 오류가 남아있는 상태로 사망하면 오류는 지워지고 DAY는 열람 전용, 말은 DEAD로 간다 (사용자 규칙)", async () => {
   seedStore({ phase: "DAY", alive: true })
   const fake = createFakeChatSocket()
   setFakeSocket(fake.socket)
@@ -548,11 +566,12 @@ test("DAY 오류가 남아있는 상태로 사망하면 오류는 지워지고 D
   })
 
   assert.equal(hook.result.current.error, null)
-  assert.equal(hook.result.current.draft, "실패할 문장")
+  assert.equal(hook.result.current.draft, "", "죽은 사람 채널 입력칸은 비어 있음")
 
   act(() => hook.result.current.setDraft("사망자 문장"))
   act(() => hook.result.current.send())
-  assert.equal(fake.emitWithAckCalls.length, 1, "사망자는 DAY를 읽을 수 있지만 새 메시지를 발행할 수 없다")
+  assert.equal(fake.emitWithAckCalls.length, 2, "사망자는 DAY를 읽기만 하고 말은 DEAD로 보낸다")
+  assert.deepEqual(fake.emitWithAckCalls[1].payload, { gameId: GAME_ID, text: "사망자 문장" })
 
   hook.unmount()
 })

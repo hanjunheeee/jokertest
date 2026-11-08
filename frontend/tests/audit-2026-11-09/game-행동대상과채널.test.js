@@ -19,11 +19,13 @@ import {
   resolveInGameRoleRevealAllies,
 } from "../../src/domains/game/ingame/utils/roleReveal.js"
 import {
+  canReadRoleNightChat,
   isJokerNightChatEligible,
   resolveInGameSelfAliveForControls,
   selectInGameSelfAlive,
 } from "../../src/domains/game/ingame/utils/selfAlive.js"
 import {
+  resolveInGameChatReadChannels,
   resolveInGameChatSendChannel,
   resolveInGameChatViewChannel,
 } from "../../src/domains/game/ingame/utils/inGameChatChannel.js"
@@ -152,27 +154,36 @@ test("내 생존(조작 화면): 판 값이 없으면 세션 참가자 상태로
   assert.equal(resolveInGameSelfAliveForControls(st("DAY", "DOCTOR", true), { status: "dead" }), true)
 })
 
-test("조커 밤 채팅 자격: 밤에 살아 있는 사람, 조커는 죽어도 됨", () => {
-  assert.equal(isJokerNightChatEligible(st("NIGHT", "JOKER", false)), true)
+test("밤 같은 직업 채팅 자격: 밤에 산 사람만 쓰고, 죽은 광대는 읽기만 (사용자 규칙)", () => {
+  assert.equal(isJokerNightChatEligible(st("NIGHT", "JOKER", false)), false)
+  assert.equal(isJokerNightChatEligible(st("NIGHT", "JOKER", true)), true)
   assert.equal(isJokerNightChatEligible(st("NIGHT", "DOCTOR", false)), false)
   assert.equal(isJokerNightChatEligible(st("DAY", "JOKER", true)), false)
+  assert.equal(canReadRoleNightChat(st("NIGHT", "JOKER", false)), true)
+  assert.equal(canReadRoleNightChat(st("NIGHT", "DOCTOR", false)), false)
+  assert.equal(canReadRoleNightChat(st("DAY", "JOKER", false)), false)
 })
 
-test("보낼 채널: 낮·재판엔 살아 있을 때만 낮 채널", () => {
+test("보낼 채널: 산 사람은 낮·재판엔 낮 채널, 죽은 사람은 죽은 사람 채널 (사용자 규칙)", () => {
   assert.equal(resolveInGameChatSendChannel(st("DAY", "GUARD", true)), "DAY")
   assert.equal(resolveInGameChatSendChannel(st("TRIBUNAL", "GUARD", true)), "DAY")
-  assert.equal(resolveInGameChatSendChannel(st("DAY", "GUARD", false)), null)
+  assert.equal(resolveInGameChatSendChannel(st("DAY", "GUARD", false)), "DEAD")
+  assert.equal(resolveInGameChatSendChannel(st("TRIBUNAL", "GUARD", false)), "DEAD")
 })
 
-test("보낼 채널: 밤엔 같은 직업끼리(내 직업 채널), 죽으면 조커만 그대로", () => {
+test("보낼 채널: 밤엔 같은 직업끼리(내 직업 채널), 죽으면 죽은 광대도 죽은 사람 채널 (사용자 규칙)", () => {
   assert.equal(resolveInGameChatSendChannel(st("NIGHT", "DOCTOR", true)), "DOCTOR")
   assert.equal(resolveInGameChatSendChannel(st("NIGHT", "WITCH_HUNTER", true)), "WITCH_HUNTER")
-  assert.equal(resolveInGameChatSendChannel(st("NIGHT", "DOCTOR", false)), null)
-  assert.equal(resolveInGameChatSendChannel(st("NIGHT", "JOKER", false)), "JOKER")
+  assert.equal(resolveInGameChatSendChannel(st("NIGHT", "DOCTOR", false)), "DEAD")
+  assert.equal(resolveInGameChatSendChannel(st("NIGHT", "JOKER", false)), "DEAD")
 })
 
-test("볼 채널: 낮엔 죽어도 낮 채널, 끝난 판은 살아 있을 때만", () => {
-  assert.equal(resolveInGameChatViewChannel(st("DAY", "CITIZEN", false)), "DAY")
+test("볼 채널: 죽은 사람은 죽은 사람 채널(낮 채팅도 같이 받음), 끝난 판은 살아 있을 때만 (사용자 규칙)", () => {
+  assert.equal(resolveInGameChatViewChannel(st("DAY", "CITIZEN", false)), "DEAD")
+  assert.equal(resolveInGameChatViewChannel(st("NIGHT", "CITIZEN", false)), "DEAD")
+  assert.deepEqual(resolveInGameChatReadChannels("DEAD"), ["DEAD", "DAY"])
+  assert.deepEqual(resolveInGameChatReadChannels("DAY"), ["DAY"])
+  assert.deepEqual(resolveInGameChatReadChannels(null), [])
   assert.equal(resolveInGameChatViewChannel(st("ENDED", "CITIZEN", true)), "DAY")
   assert.equal(resolveInGameChatViewChannel(st("ENDED", "CITIZEN", false)), null)
   assert.equal(resolveInGameChatViewChannel({ phase: "DAY" }), null)
@@ -216,6 +227,11 @@ test("낮 채팅 받기: 로그인·지금 판·지금 보는 채널일 때만",
   assert.equal(shouldAcceptGameChatMessage({ ...ok, messageGameId: "h" }), false)
   assert.equal(shouldAcceptGameChatMessage({ ...ok, messageChannel: "DEAD" }), false)
   assert.equal(shouldAcceptGameChatMessage({ ...ok, currentViewChannel: null }), false)
+  // 죽은 사람: 죽은 사람 채널 + 낮 채널 받음 (사용자 규칙)
+  const dead = { ...ok, currentViewChannel: "DEAD", currentReadChannels: ["DEAD", "DAY"] }
+  assert.equal(shouldAcceptGameChatMessage({ ...dead, messageChannel: "DEAD" }), true)
+  assert.equal(shouldAcceptGameChatMessage({ ...dead, messageChannel: "DAY" }), true)
+  assert.equal(shouldAcceptGameChatMessage({ ...dead, messageChannel: "JOKER" }), false)
 })
 
 test("늦은 응답 가리기: 소켓이 끊겼거나 바뀌었거나 판이 바뀌면 늦은 응답", () => {
