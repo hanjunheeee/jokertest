@@ -78,6 +78,10 @@ async function createLocalAccounts(db, count) {
         has_local_password: true,
     }));
     await db.User.bulkCreate(rows);
+    // 가입과 같게 기본 사진·테두리·이모티콘 지급 (안 하면 첫 방 만들기·입장이 지급 25건을 떠안아 실제보다 느리게 잼)
+    const economyService = require("../../services/economy");
+    const created = await db.User.findAll({ where: { email: rows.map((row) => row.email) }, attributes: ["uuid"] });
+    await Promise.all(created.map((user) => economyService.ensureDefaultEntitlements(user.uuid, db)));
     return rows.map((row) => ({ email: row.email, password }));
 }
 

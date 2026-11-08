@@ -1,11 +1,17 @@
 'use strict';
 
-// 장부 저장소 파일, 참조 id로 찾기 · 한 줄 만들기 · 최근 목록
+// 장부 저장소 파일, 참조 id로 찾기(하나·여러 개) · 한 줄 만들기 · 최근 목록
 // 장부 거래·거래 목록 서비스가 economyModels(db)를 넘겨 부름
 
 // 같은 사람·같은 참조 id 장부 행 (이미 처리한 거래인지, 트랜잭션 주면 그 안에서)
 const findByReference = (models, { userId, referenceEventId }, transaction = null) => models.EconomyLedgerEntry.findOne({
     where: { user_id: userId, reference_event_id: referenceEventId },
+    ...(transaction ? { transaction } : {}),
+});
+
+// 같은 사람·참조 id 여러 개 장부 행 한 번에 (기본 지급 이미 했는지 한 번에 보려고, 트랜잭션 주면 그 안에서)
+const findByReferences = (models, { userId, referenceEventIds }, transaction = null) => models.EconomyLedgerEntry.findAll({
+    where: { user_id: userId, reference_event_id: referenceEventIds },
     ...(transaction ? { transaction } : {}),
 });
 
@@ -21,6 +27,7 @@ const listEntries = (models, userId, limit) => models.EconomyLedgerEntry.findAll
 
 module.exports = {
     findByReference,
+    findByReferences,
     createEntry,
     listEntries,
 };

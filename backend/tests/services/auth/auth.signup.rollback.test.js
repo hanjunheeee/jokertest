@@ -57,6 +57,11 @@ const createEconomyFakes = () => {
             const pool = [...(staged ? staged.entitlements : []), ...committedEntitlements];
             return pool.find((e) => e.user_id === where.user_id && e.item_id === where.item_id) ?? null;
         },
+        // 기본 지급이 가진 것 한 번에 묻기 (item_id는 목록)
+        async findAll({ where }) {
+            const pool = [...(staged ? staged.entitlements : []), ...committedEntitlements];
+            return pool.filter((e) => e.user_id === where.user_id && where.item_id.includes(e.item_id));
+        },
     };
 
     const EconomyLoadout = {
@@ -99,6 +104,11 @@ const createEconomyFakes = () => {
             if (!where.reference_event_id) return null;
             const pool = [...(staged ? staged.ledgerEntries : []), ...committedLedgerEntries];
             return pool.find((e) => e.user_id === where.user_id && e.reference_event_id === where.reference_event_id) ?? null;
+        },
+        // 기본 지급이 받은 것 한 번에 묻기 (reference_event_id는 목록)
+        async findAll({ where }) {
+            const pool = [...(staged ? staged.ledgerEntries : []), ...committedLedgerEntries];
+            return pool.filter((e) => e.user_id === where.user_id && where.reference_event_id.includes(e.reference_event_id));
         },
     };
 
