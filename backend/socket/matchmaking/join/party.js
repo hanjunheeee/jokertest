@@ -5,7 +5,7 @@ const gameSession = require('../../../game-core/gameSession')
 const { partyRoomByGameId, gameRooms } = require('../core/state')
 const { PARTY_ROOM_TTL_MS } = require('../core/constants')
 const { buildRoomPayload } = require('../room/view')
-const { findAllLiveSockets } = require('../room/membership')
+const { userChannelOf } = require('../../emitter')
 
 // 끝난 판의 다음 방 꺼내기 (30분 지났으면 지움, 따로 타이머 없음)
 // 그 방이 지워졌거나 시작돼 없으면 우편함도 지우고 없음 (없어진 방 돌려줘 입장 실패 되풀이 막기, known 1-5)
@@ -56,14 +56,12 @@ function notifyPartyOfRoom(io, hostUuid, room) {
     }
     // 우편함에 먼저 넣음 (알림 놓친 사람은 get_party_matching_room으로 꺼냄)
     partyRoomByGameId.set(ctx.gameId, { room: payload.room, createdAt: Date.now() })
-    // 판 채널에 한 번, 채널 밖 소켓에만 따로 (같은 소켓이 두 번 받지 않게), 실패는 로그만
+    // 판 채널에 한 번, 채널 밖 소켓에만 계정 채널로 따로 (판 채널 빼서 같은 소켓이 두 번 받지 않게), 실패는 로그만
     try {
         io.to(ctx.channelId).emit('party_matching_room_ready', payload)
-        for (const participantUuid of ctx.participantUuids) {
-            for (const participantSocket of findAllLiveSockets(io, participantUuid)) {
-                if (participantSocket.rooms?.has?.(ctx.channelId)) continue
-                participantSocket.emit('party_matching_room_ready', payload)
-            }
+        const participantChannels = ctx.participantUuids.map(userChannelOf).filter(Boolean)
+        if (participantChannels.length > 0) {
+            io.to(participantChannels).except(ctx.channelId).emit('party_matching_room_ready', payload)
         }
     } catch (err) {
         console.error('[종료된 판 파티 매칭 방 알림 실패]', err)

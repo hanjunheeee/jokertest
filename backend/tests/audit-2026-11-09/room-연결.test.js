@@ -189,10 +189,19 @@ function presenceFakes(t) {
     t.mock.method(matchmaking, 'resyncRoomChannelOnReconnect', async () => {});
     return saved;
 }
+// 가짜 io: to(채널)은 그 채널 든 소켓(소켓 id 채널 포함)에만 감, sent엔 받은 소켓 id로 남김
 function presenceIo(sockets) {
     const map = new Map(sockets.map((s) => [s.id, s]));
     const sent = [];
-    return { sockets: { sockets: map }, sent, to: (id) => ({ emit: (event, payload) => sent.push({ id, event, payload }) }) };
+    const to = (channel) => ({
+        emit: (event, payload) => {
+            for (const s of map.values()) {
+                if (s.id !== channel && !s.rooms?.has?.(channel)) continue;
+                sent.push({ id: s.id, event, payload });
+            }
+        },
+    });
+    return { sockets: { sockets: map }, sent, to };
 }
 
 test('한 계정 한 소켓: 같은 세션 새 탭이면 옛 소켓에 REPLACED_BY_SAME_SESSION', async (t) => {
@@ -241,8 +250,11 @@ test('접속 상태: 접속하면 ONLINE 저장, 접속 중인 친구에게만 f
     const saved = presenceFakes(t);
     t.mock.method(presenceService, 'getAcceptedFriendUuids', async () => ['f-on', 'f-off']);
     onlineUsers.set('f-on', 'sock-f');
+    // 접속 중인 친구는 계정 채널(user:f-on)에 든 소켓 하나, 접속 안 한 친구 채널은 비어 있음
+    const friendSocket = makeSocket({ id: 'sock-f', user: { uuid: 'f-on' } });
+    friendSocket.rooms = new Set(['sock-f', 'user:f-on']);
     const socket = makeSocket({ id: 'mine' });
-    const io = presenceIo([socket]);
+    const io = presenceIo([socket, friendSocket]);
     await presence.handleConnection(io, socket, 'me');
     assert.deepEqual(saved, [['me', 'ONLINE']]);
     assert.deepEqual(io.sent, [{ id: 'sock-f', event: 'friend_status_change', payload: { uuid: 'me', status: 'ONLINE' } }]);

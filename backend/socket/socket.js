@@ -14,7 +14,7 @@ const gameSession     = require("./gameSession");
 const concurrencyService = require("../services/presence/concurrency");
 const { logRejection } = require("./common/isolate");
 // 접속 목록·io·사용자 전송은 emitter (서비스가 socket.js 안 거치고 보내게)
-const { onlineUsers, setIo, emitToUser } = require("./emitter");
+const { onlineUsers, setIo, emitToUser, joinUserChannel } = require("./emitter");
 const { registerNotificationHandlers } = require("./connection/notifications");
 // 웹소켓만 쓰는 화면은 cors가 안 걸려 Origin을 직접 검사 (DP-034)
 const { createOriginGuard } = require("./connection/originCheck");
@@ -78,6 +78,9 @@ function registerConnectionHandlers(io, socket) {
     wrapSocketWithSessionGuard(socket);
 
     const sessionWatcher = startSessionRevocationWatcher(socket);
+
+    // 계정 전용 채널 넣기 (한 사람 보내기는 이 채널로, 접속 목록 등록·옛 탭 끊기보다 먼저)
+    joinUserChannel(socket, uuid);
 
     // 접속 상태·판 채널 다시 잇기는 안 기다림 (실패해도 로그만, 연결은 유지)
     handleConnection(io, socket, uuid).catch(logRejection("\x1b[31m[소켓 접속 처리 에러]\x1b[0m"));

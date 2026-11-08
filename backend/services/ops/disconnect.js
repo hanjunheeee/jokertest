@@ -13,17 +13,15 @@ const DISCONNECT_REASONS = Object.freeze({
     ADMIN_DISCONNECT: '운영자에 의해 연결이 종료되었습니다.',
 });
 
+const emitter = require('../../socket/emitter');
+
 const defaultDeps = () => ({
-    getIo: require('../../socket/emitter').getIo,
+    getIo: emitter.getIo,
     userRepository: require('../../repositories/user'),
 });
 
-// 그 사람 소켓 전부 (같은 계정 옛 탭까지)
-const socketsOf = (io, uuid) => {
-    const sockets = io?.sockets?.sockets;
-    if (!sockets || typeof sockets.values !== 'function') return [];
-    return [...sockets.values()].filter((socket) => socket?.data?.user?.uuid === uuid);
-};
+// 그 사람 소켓 전부 = 계정 채널 소켓 (같은 계정 옛 탭까지, 서버 여러 대면 다른 서버 것도)
+const socketsOf = (io, uuid) => emitter.fetchUserSockets(uuid, io);
 
 // 왜 끊는지: 정지 → 상태 ACTIVE 아님 → 그 밖 (DB 다시 봄, 관리자 서버 말만 믿지 않음)
 const resolveReason = async (uuid, userRepository) => {
@@ -43,7 +41,7 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
     if (code !== 'ADMIN_DISCONNECT') {
         await deps.userRepository.markOnlineSessionsOffline(uuid);
     }
-    const sockets = socketsOf(deps.getIo(), uuid);
+    const sockets = await socketsOf(deps.getIo(), uuid);
     for (const socket of sockets) {
         try {
             socket.emit('force_disconnect', { code, message: DISCONNECT_REASONS[code] });

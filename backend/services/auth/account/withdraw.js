@@ -47,17 +47,21 @@ const REJECTIONS = {
 };
 
 // 그 사람 소켓 전부에 까닭 알리고 끊음 (주기 검사 안 기다림)
-const disconnectSockets = (uuid) => {
-    const sockets = emitter.getIo()?.sockets?.sockets;
-    if (!sockets || typeof sockets.values !== "function") return 0;
-    let count = 0;
-    for (const socket of [...sockets.values()]) {
-        if (socket?.data?.user?.uuid !== uuid) continue;
+// 계정 채널로 찾음 (서버 여러 대면 다른 서버 연결도 같이 끊김)
+// 찾기 실패해도 탈퇴는 이미 끝남 → 로그만 (남은 연결은 세션 주기 검사가 끊음)
+const disconnectSockets = async (uuid) => {
+    let sockets;
+    try {
+        sockets = await emitter.fetchUserSockets(uuid, emitter.getIo());
+    } catch (error) {
+        console.error("[탈퇴 소켓 찾기 실패]", error?.name ?? "Error");
+        return 0;
+    }
+    for (const socket of sockets) {
         socket.emit("force_disconnect", { code: "ACCOUNT_WITHDRAWN", message: "회원 탈퇴가 완료되었습니다." });
         socket.disconnect(true);
-        count += 1;
     }
-    return count;
+    return sockets.length;
 };
 
 // 판 중 → 409, 틀린 횟수 넘음 → 429, 본인 확인 실패 → 400, 성공 → { ok: true }
@@ -88,7 +92,7 @@ exports.withdrawAccount = async ({ uuid, password, confirmEmail }, { now = Date.
         throw createError(message, status, rejection);
     }
     wrongAttempts.delete(uuid);
-    disconnectSockets(uuid);
+    await disconnectSockets(uuid);
     return { ok: true };
 };
 

@@ -2,10 +2,11 @@
 // socket/connection/presence.js가 접속·끊김 때 부름 (시험은 이 모듈 함수 갈아끼움)
 const friendshipRepository = require("../../repositories/friend/friendship");
 const onlinePresenceRepository = require("../../repositories/presence/onlinePresence");
+const { getServerId } = require("../../config/serverId");
 
-// 접속 상태 한 줄 넣거나 고침 (마지막 활동 시각도 같이)
+// 접속 상태 한 줄 넣거나 고침 (마지막 활동 시각·이 서버 이름도 같이)
 exports.setPresence = async (uuid, status) => {
-    await onlinePresenceRepository.upsertOnlinePresence(uuid, status);
+    await onlinePresenceRepository.upsertOnlinePresence(uuid, status, getServerId());
 };
 
 // 수락한 친구 관계마다 내 반대편 uuid만 (접속 상태 알릴 사람)
@@ -20,6 +21,6 @@ exports.getAcceptedFriendUuids = async (uuid) => {
 };
 
 // 서버 켤 때 접속 상태 되돌리기 (BE-015), index.js가 포트 열기 전 시각을 넘겨 부름
-// 서버 한 대 기준: 여러 대가 되면 서버별 접속 기록으로 바꿔야 함 (다른 서버 접속자까지 지움)
-exports.resetPresencesOnBoot = async (bootAt = new Date()) =>
-    onlinePresenceRepository.markOfflineBefore(bootAt);
+// 이 서버 이름 줄만 (서버 여러 대면 다른 서버 접속자는 그대로, 한 대면 전부 같은 이름이라 예전과 같음)
+exports.resetPresencesOnBoot = async (bootAt = new Date(), serverId = getServerId()) =>
+    onlinePresenceRepository.markOfflineBefore(bootAt, serverId);

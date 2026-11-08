@@ -4,7 +4,7 @@
 const presenceService = require("../../services/presence/status");
 const matchmaking     = require("../matchmaking");
 // 접속 목록은 emitter의 Map 하나만 씀 (socket.js·서비스와 같은 객체)
-const { onlineUsers } = require("../emitter");
+const { onlineUsers, userChannelOf } = require("../emitter");
 
 // 계정마다 접속 상태 저장 줄 (빠른 재접속 때 ONLINE·OFFLINE 저장 순서 뒤바뀜 막기)
 const presenceLines = new Map();
@@ -83,14 +83,14 @@ async function handleDisconnect(io, socket, uuid) {
     ]);
 }
 
-// 수락한 친구 중 접속 중인 사람에게만 보냄
+// 수락한 친구 중 접속 중인 사람에게만 보냄 (친구 계정 채널로, 접속 안 한 친구 채널은 비어 아무도 안 받음)
 async function broadcastFriendStatus(io, uuid, status) {
     const friendUuids = await presenceService.getAcceptedFriendUuids(uuid);
 
     friendUuids.forEach((friendUuid) => {
-        const friendSocketId = onlineUsers.get(friendUuid);
-        if (friendSocketId) {
-            io.to(friendSocketId).emit("friend_status_change", { uuid, status });
+        const channel = userChannelOf(friendUuid);
+        if (channel) {
+            io.to(channel).emit("friend_status_change", { uuid, status });
         }
     });
 }

@@ -79,14 +79,27 @@ async function handleJoinMatchmaking(io, socket, uuid) {
 
     const payload = buildRoomPayload(room)
 
-    // 줄 설 때 소켓을 채널에 넣고 match_found 알림 (그 소켓 없으면 건너뜀)
+    // 줄 설 때 소켓을 채널에 넣고 match_found 알림 (이 서버 소켓이면 지금 방 표시까지)
+    // 이 서버에 없으면 그 소켓 id 채널로 (서버 여러 대면 어댑터가 다른 서버 소켓에 넣고 보냄, 한 대면 끊긴 소켓이라 아무 일 없음)
     players.forEach(({ socketId }) => {
+        const matchFound = { ...payload, players: payload.players.map((p) => ({ ...p })) }
         const s = io.sockets.sockets.get(socketId)
-        if (!s) return
+        if (!s) {
+            joinAndNotifyRemoteSocket(io, socketId, roomId, matchFound)
+            return
+        }
         s.join(roomId)
         s.data.activeRoomId = roomId
-        s.emit('match_found', { ...payload, players: payload.players.map((p) => ({ ...p })) })
+        s.emit('match_found', matchFound)
     })
+}
+
+// 다른 서버 소켓: 소켓 id 채널로 방 채널 넣기 + 알림 (지금 방 표시는 그 서버 끊김 처리가 못 봄, 빠른 매칭 켤 때 다시 볼 것)
+function joinAndNotifyRemoteSocket(io, socketId, roomId, matchFound) {
+    const target = io.in?.(socketId)
+    if (typeof target?.socketsJoin !== 'function') return
+    target.socketsJoin(roomId)
+    io.to(socketId).emit('match_found', matchFound)
 }
 
 // 자동 매칭 줄에서 빠지기

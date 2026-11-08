@@ -127,14 +127,22 @@ const createReportDb = ({ resultPlayers = [] } = {}) => {
     };
 };
 
-// 가짜 소켓 io (끊기·알림 시험용)
-const createFakeIo = (sockets) => ({
-    sockets: { sockets: new Map(sockets.map((socket) => [socket.id, socket])) },
-});
+// 가짜 소켓 io (끊기·알림 시험용), in(채널).fetchSockets()는 그 채널 든 소켓만
+const createFakeIo = (sockets) => {
+    const map = new Map(sockets.map((socket) => [socket.id, socket]));
+    return {
+        sockets: { sockets: map },
+        in: (channel) => ({
+            fetchSockets: async () => [...map.values()].filter((socket) => socket.rooms?.has?.(channel)),
+        }),
+    };
+};
 
+// 가짜 소켓: 자기 id 채널 + 계정 채널(user:<uuid>)에 든 채로 만듦 (연결 처리기가 넣는 것과 같게)
 const createSocketStub = (id, uuid) => {
     const socket = {
         id,
+        rooms: new Set([id, `user:${uuid}`]),
         data: { user: { uuid } },
         emitted: [],
         disconnected: false,

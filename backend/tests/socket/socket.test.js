@@ -154,7 +154,9 @@ test('F-26(AC-06): registerConnectionHandlers는 canonical 등록 → 채널 재
     releaseJoin()
     await shared
 
-    assert.deepEqual(fakeSocket.joined, [session.channelId], '같은 범위의 재가입이 두 번 join했다')
+    // 계정 전용 채널(user:<uuid>)은 연결 때 따로 한 번 넣음 (판 채널 재가입 셈에서 뺌)
+    assert.deepEqual(fakeSocket.joined.filter((room) => room === 'user:f26o-a'), ['user:f26o-a'])
+    assert.deepEqual(fakeSocket.joined.filter((room) => !room.startsWith('user:')), [session.channelId], '같은 범위의 재가입이 두 번 join했다')
     assert.equal(fakeSocket.rooms.has(session.channelId), true)
     assert.deepEqual(fakeSocket.left, [], '정상 재가입이 스스로 되돌려졌다')
     assert.equal(fakeSocket.data.activeGameId, session.id)

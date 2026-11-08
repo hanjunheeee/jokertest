@@ -8,6 +8,8 @@ module.exports = (sequelize, DataTypes) => {
     last_active_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     // 값을 넣는 곳 없음, 방 id가 uuid라 같은 모양으로 (마이그레이션 0023)
     current_room_id: { type: DataTypes.UUID },
+    // 이 접속을 받은 서버 이름 (SERVER_ID, 마이그레이션 0029), 서버 켤 때 자기 줄만 OFFLINE으로 되돌리기용
+    server_id: { type: DataTypes.STRING(64) },
   }, {
     tableName: 'online_presence',
     timestamps: false,

@@ -41,7 +41,8 @@ function createShutdown({
             force?.unref?.();
 
             await step("새 연결 막기", () => { if (server?.listening) server.close(); });
-            await step("점검 안내", () => io?.emit(SHUTDOWN_EVENT, SHUTDOWN_NOTICE));
+            // 이 서버 접속자에게만 (서버 여러 대 어댑터 붙여도 남의 서버 사람은 안 건드림), local 없는 가짜 io는 그냥 emit
+            await step("점검 안내", () => (io?.local ?? io)?.emit(SHUTDOWN_EVENT, SHUTDOWN_NOTICE));
             await wait(graceMs);
             await step("소켓 닫기", () => new Promise((resolve) => (io ? io.close(() => resolve()) : resolve())));
             await step("DB 닫기", () => closeDb?.());

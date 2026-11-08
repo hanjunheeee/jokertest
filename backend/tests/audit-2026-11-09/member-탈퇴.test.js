@@ -108,13 +108,18 @@ test('탈퇴: 연결 정리 중 실패하면 계정 닫기까지 안 감 (트랜
 test('탈퇴: 그 사람 소켓 전부에 ACCOUNT_WITHDRAWN 알리고 끊음 (남의 소켓은 그대로)', async (t) => {
     const { row } = setUp(t);
     const events = [];
+    // 소켓은 연결 때처럼 계정 채널(user:<uuid>)에 든 채, 가짜 io는 in(채널).fetchSockets()로 그 채널 소켓만 줌
     const fakeSocket = (uuid) => ({
         data: { user: { uuid } },
+        rooms: new Set([`user:${uuid}`]),
         emit: (name, payload) => events.push([uuid, name, payload.code]),
         disconnect: () => events.push([uuid, 'disconnect']),
     });
     const sockets = new Map([['a', fakeSocket(row.uuid)], ['b', fakeSocket('someone-else')], ['c', fakeSocket(row.uuid)]]);
-    swap(t, emitter, 'getIo', () => ({ sockets: { sockets } }));
+    swap(t, emitter, 'getIo', () => ({
+        sockets: { sockets },
+        in: (channel) => ({ fetchSockets: async () => [...sockets.values()].filter((s) => s.rooms.has(channel)) }),
+    }));
     await authService.withdrawAccount({ uuid: row.uuid, password: PASSWORD });
     assert.deepEqual(events, [
         [row.uuid, 'force_disconnect', 'ACCOUNT_WITHDRAWN'], [row.uuid, 'disconnect'],

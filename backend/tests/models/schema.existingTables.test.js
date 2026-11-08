@@ -104,6 +104,7 @@ const EXISTING_TABLES = [
             status:          'STRING(20)',
             last_active_at:  'DATE',
             current_room_id: 'UUID',
+            server_id:       'STRING(64)',
         },
     },
     {
