@@ -10,6 +10,12 @@ const { loadPublicLoadouts } = require('./list');
 const userLookup = require('../../repositories/user/lookup');
 const { withTransaction } = require('../../repositories/common');
 
+// 거절된 뒤 같은 사람에게 다시 신청 못 하는 시간 (신청·알림·효과음 되풀이 막기)
+const DECLINE_RESEND_COOLDOWN_MS = 10 * 60 * 1000;
+
+// 결과 다시 묻기 한 번에 받는 id 최대 수 (큰 IN 조회 막기)
+const MAX_RESULT_IDS = 100;
+
 // 두 계정 순서대로 잠금 → 상태·차단·이미 친구·이미 요청 확인 → 요청 + 알림
 exports.sendFriendRequest = async (myUuid, receiverId) => {
     // 받는 사람 없거나 나 자신이면 거절
@@ -37,15 +43,22 @@ exports.sendFriendRequest = async (myUuid, receiverId) => {
             // 둘 중 누가 차단했으면 403
             await assertNotBlocked(myUuid, receiverId, { transaction: t });
 
-            // 이미 친구거나 어느 쪽이든 대기 신청 있으면 409
-            const existingFriendship = await friendshipRepository.findExistingFriendship(myUuid, receiverId);
+            // 이미 친구거나 어느 쪽이든 대기 신청 있으면 409 (같은 트랜잭션으로 읽어 연결 하나만 씀)
+            const existingFriendship = await friendshipRepository.findExistingFriendship(myUuid, receiverId, { transaction: t });
             if (existingFriendship) {
                 throw createError('이미 친구인 유저입니다.', 409);
             }
 
-            const existingRequest = await friendRequestRepository.findPendingRequest(myUuid, receiverId);
+            const existingRequest = await friendRequestRepository.findPendingRequest(myUuid, receiverId, { transaction: t });
             if (existingRequest) {
                 throw createError('이미 친구 신청 중입니다.', 409);
+            }
+
+            // 내 신청이 방금 거절됐으면 잠시 동안 429 (거절 직후 되풀이 신청 막기)
+            const since = new Date(Date.now() - DECLINE_RESEND_COOLDOWN_MS);
+            const recentlyDeclined = await friendRequestRepository.findRecentlyDeclined(myUuid, receiverId, since, { transaction: t });
+            if (recentlyDeclined) {
+                throw createError('거절된 친구 신청은 잠시 뒤 다시 보낼 수 있습니다.', 429);
             }
 
             // 여기부터 진짜 바뀜: 신청 행 → 보낸 사람 닉네임으로 받는 사람 알림
@@ -84,9 +97,17 @@ exports.acceptRequest = async (myUuid, requestId) => {
         if (!identified) throw createError('친구 요청을 찾을 수 없습니다.', 404);
 
         // 두 계정 순서대로 잠금 (보내기·차단과 같은 순서라 교착 막기)
-        await friendshipRepository.lockAccountsInOrder(
+        const accounts = await friendshipRepository.lockAccountsInOrder(
             [identified.requester_id, identified.receiver_id], { transaction: t },
         );
+
+        // 보내기와 같게 계정 없으면 404 · 활성 아니면 403 (정지·탈퇴 계정과 친구 맺기 막기)
+        if (accounts.length < 2 || accounts.some((account) => !account)) {
+            throw createError('사용자를 찾을 수 없습니다.', 404);
+        }
+        if (accounts.some((account) => account.status !== 'ACTIVE')) {
+            throw createError('친구 요청을 수락할 수 없는 계정입니다.', 403);
+        }
 
         // 잠근 뒤 다시 읽음 (그사이 처리됐는지 보려고)
         const request = await friendRequestRepository.findRequestById(requestId, {
@@ -106,7 +127,7 @@ exports.acceptRequest = async (myUuid, requestId) => {
         await friendRequestRepository.updateFriendRequestStatus(requestId, 'ACCEPTED', { transaction: t });
 
         const existingFriendship = await friendshipRepository.findExistingFriendship(
-            request.requester_id, request.receiver_id,
+            request.requester_id, request.receiver_id, { transaction: t },
         );
         if (!existingFriendship) {
             await friendshipRepository.createFriendship(request.requester_id, request.receiver_id, { transaction: t });
@@ -168,6 +189,11 @@ exports.getIncomingRequests = async (myUuid) => {
 
 // 요청들 지금 상태 다시 묻기 (내가 보냈거나 받은 것만)
 exports.getRequestResults = async (myUuid, requestIds) => {
+    // id 너무 많으면 400 (DB 안 감)
+    if (Array.isArray(requestIds) && requestIds.length > MAX_RESULT_IDS) {
+        throw createError(`요청 id는 한 번에 ${MAX_RESULT_IDS}개까지 받을 수 있습니다.`, 400);
+    }
+
     // 양의 정수 id만 겹침 없이, 하나도 없으면 DB 안 감
     const ids = [...new Set(
         (Array.isArray(requestIds) ? requestIds : [])

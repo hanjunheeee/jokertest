@@ -18,7 +18,7 @@ const economyService = require('../../../services/economy');
 const repositoryKeys = [
     [friendshipRepository, ['findFriendship', 'findExistingFriendship', 'createFriendship', 'lockAccountsInOrder']],
     [friendRequestRepository, ['searchUsersByNickname', 'cancelPendingRequestsBetween', 'createFriendRequest', 'updateFriendRequestStatus']],
-    [blockRepository, ['findBlockedCounterpartUuids', 'findFavoriteFriendIds', 'setFriendFavorite', 'findBlocksOwnedBy', 'deleteBlock']],
+    [blockRepository, ['findBlockedCounterpartUuids', 'findFavoriteFriendIds', 'setFriendFavorite', 'findBlocksOwnedBy', 'deleteBlock', 'findBlocksBetween']],
     [onlinePresenceRepository, ['findOnlinePresences']],
 ];
 
@@ -26,6 +26,7 @@ const stubFriendRepository = (t, overrides) => {
     const stubs = {
         findBlockedCounterpartUuids: async () => [],
         findFavoriteFriendIds: async () => [],
+        findBlocksBetween: async () => [],
         ...overrides,
     };
     const unknown = Object.keys(stubs).filter((key) => !repositoryKeys.some(([, keys]) => keys.includes(key)));

@@ -28,6 +28,12 @@ exports.setFriendFavorite = async (myUuid, friendId, desired) => {
         throw createError('친구가 아닌 사용자는 즐겨찾기할 수 없습니다.', 404);
     }
 
+    // 둘 중 누가 차단했으면 403 (차단한 친구는 목록에서 빠지므로 즐겨찾기도 막음)
+    const blocks = await blockRepository.findBlocksBetween(myUuid, friendId);
+    if (blocks.length > 0) {
+        throw createError('차단 관계인 사용자는 즐겨찾기할 수 없습니다.', 403);
+    }
+
     const favorite = await blockRepository.setFriendFavorite(myUuid, friendId, desired);
     return { friendId, favorite };
 };

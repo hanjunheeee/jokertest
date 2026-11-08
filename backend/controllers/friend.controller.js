@@ -38,7 +38,8 @@ exports.searchUsers = async (req, res, next) => {
 // 친구 신청 저장 뒤 받는 사람에게 알림
 exports.sendFriendRequest = async (req, res, next) => {
     try {
-        const { receiverId } = req.body;
+        // 본문 없는 요청도 400으로 (Express 5는 본문 없으면 req.body가 비어 있음)
+        const { receiverId } = req.body ?? {};
 
         if (!receiverId) {
             return next(createError('receiverId가 필요합니다.', 400));
