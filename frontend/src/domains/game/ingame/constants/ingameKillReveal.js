@@ -1,5 +1,5 @@
 // 사망 공개 상수 (기본 이름·건너뛰기·다시 재생 표시·연출 모양)
-// 사망 공개 훅(useInGameKillReveal)·밤 성공 사망 영상이 씀
+// 밤 성공 사망 영상(useNightSuccessKillVideo)이 씀 (사망 공개 줄 세우기 훅은 안 써서 지움)
 
 // 기본 이름·건너뛰기 글·다시 재생 표시 속성
 export const UNKNOWN_NICKNAME = "한 플레이어"
