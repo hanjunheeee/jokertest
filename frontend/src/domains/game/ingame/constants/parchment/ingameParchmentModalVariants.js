@@ -33,7 +33,7 @@ const NOTIFS_CONFIRM_BTN_CLASS =
   `${CONFIRM_BTN_CLASS_RAISED_FOCUS} shrink-0`
 
 // 창 종류별 설정 (역할 보기·단계 안내·밤 차례·알림 등 7개)
-export const MODAL_VARIANTS = Object.freeze({
+const MODAL_VARIANTS = Object.freeze({
   roleReveal: Object.freeze({
     animation: "parchment-unfold",
     backdropClass:

@@ -58,8 +58,12 @@ export function useInGamePlayerCardMenu() {
     requestIdRef, latestContextRef, localPlayerIdRef, mountedRef,
   }
 
+  // 그리는 중 항목 만들기(getItems)가 이번 값을 읽어야 해서 그리는 중에 맞춤 (효과로 옮기면 한 번 늦음)
+  // eslint-disable-next-line react-hooks/refs -- 위 이유
   latestContextRef.current = ctx
+  // eslint-disable-next-line react-hooks/refs -- 위 이유
   localPlayerIdRef.current = localPlayerId
+  // eslint-disable-next-line react-hooks/refs -- 위 이유
   openPlayerIdRef.current = openPlayerId
 
   // 컨텍스트에서 읽은 지금 단계 값 (아래 범위 키에 씀)

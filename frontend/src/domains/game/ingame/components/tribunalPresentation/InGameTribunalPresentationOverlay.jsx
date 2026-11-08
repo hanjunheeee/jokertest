@@ -1,7 +1,8 @@
 // 재판 연출 창: 피고 카드·투표 버튼 먼저, 잠시 뒤 옆에 채팅 열림
 // 재판 연출 문지기(Gate)·재판 연출 미리보기 화면이 사용
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import {
   TRIBUNAL_VOTE_GUILTY_LABEL,
@@ -45,8 +46,7 @@ function TribunalVoteButton({ label, assetSrc, disabled, onClick, motionDelay })
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className={ACTION_BTN_CLASS}
-      style={{ outline: "none" }}
+      className={`${ACTION_BTN_CLASS} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3d28d]`}
       variants={BTN_MOTION}
       initial={reduceMotion ? false : "hidden"}
       animate={reduceMotion ? undefined : "visible"}
@@ -74,6 +74,9 @@ export default function InGameTribunalPresentationOverlay({
   onDevResolve = null,
 }) {
   const reduceMotion = useReducedMotion()
+  // 연출 동안 초점을 창 안으로 옮기고 가둠 (아래 화면은 잠겨 있음, Esc로는 안 닫힘)
+  const shellRef = useRef(null)
+  useInGameModalLayer({ open: open && Boolean(defendant), containerRef: shellRef })
   // 열린 연출 열쇠(피고 id), 채팅을 연 열쇠 (열쇠가 다르면 intro)
   const layoutKey = open ? `${defendant?.id ?? ""}` : null
   const [splitKey, setSplitKey] = useState(null)
@@ -103,8 +106,12 @@ export default function InGameTribunalPresentationOverlay({
     <AnimatePresence>
       {open ? (
         <div
+          ref={shellRef}
+          tabIndex={-1}
           className={SHELL_CLASS}
-          role="presentation"
+          role="dialog"
+          aria-modal="true"
+          aria-label="재판"
           data-ingame-tribunal-presentation=""
           data-ingame-tribunal-layout={layoutPhase}
         >

@@ -784,7 +784,7 @@ test("AC-01/AC-04: 전용 영상이 없는 TARGET 조합(INVESTIGATE-TARGET·CON
 
 test("AC-04: 임시 연출을 backdrop/Escape로 닫으면 SKIPPED로 보고된다", () => {
   const finishes = []
-  const { container, unmount } = renderPresentation({
+  const { unmount } = renderPresentation({
     current: { eventId: "pending-investigate", type: "INVESTIGATE", gameId: GAME_ID, nightDayIndex: 1, perspectives: ["TARGET"] },
     open: true,
     finish: (outcome) => finishes.push(outcome),

@@ -1,7 +1,5 @@
 // 투표 현황 창 모양: 덮개·틀·제목·현황 줄·투표 목록·버튼
 // 투표 현황 창·내용·버튼과 추방 창·친구 초대 창 모양이 사용
-import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
-
 // 열고 닫을 때 움직임과 덮개·가운데 정렬
 export const PANEL_TRANSITION = {
   duration: 0.32,
@@ -67,42 +65,16 @@ export const STATUS_UNRESOLVED_WRAP_CLASS =
 export const STATUS_UNRESOLVED_CLASS =
   "text-center font-subheading text-[clamp(1.2rem,4.2cqi,1.5rem)] font-bold text-[#e0c9a3] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
-// 투표 목록 칸·줄·프로필·이름·표 수·왕관
-export const INGAME_VOTE_GRID_CLASS =
-  `grid h-full min-h-0 grid-cols-2 gap-x-[clamp(0.52rem,2.1cqi,0.82rem)] gap-y-[clamp(0.33rem,1.12cqi,0.52rem)] overflow-y-auto overscroll-contain pr-[clamp(0.35rem,1.2cqi,0.55rem)] ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
-
-export const INGAME_VOTE_ROW_CLASS = "relative min-w-0 list-none"
-
+// 투표 목록 줄 안쪽·프로필 칸
 export const ROW_INNER_CLASS =
   "flex min-w-0 items-center gap-[clamp(0.27rem,1.12cqi,0.42rem)] rounded-sm border border-[#3a2818]/70 bg-[#120a06]/45 px-[clamp(0.27rem,1.12cqi,0.42rem)] py-[clamp(0.24rem,0.82cqi,0.36rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
 
 export const PROFILE_WRAP_CLASS =
   "relative size-[clamp(2.78rem,9.75cqi,3.52rem)] shrink-0 overflow-hidden rounded-[2px] border border-[#5a4030]/70 bg-[#1a1008]/80"
 
-export const INGAME_VOTE_NAME_CLASS =
-  "min-w-0 flex-1 truncate font-subheading text-[clamp(1.3rem,4.6cqi,1.62rem)] font-bold leading-tight text-white"
-
-export const COUNT_WRAP_CLASS =
-  "flex shrink-0 items-center gap-[clamp(0.12rem,0.52cqi,0.18rem)] tabular-nums"
-
-export const INGAME_VOTE_COUNT_CLASS =
-  "font-subheading text-[clamp(1.3rem,4.6cqi,1.62rem)] font-bold leading-none"
-
-export const COUNT_ACTIVE_CLASS = "text-[#d62828]"
-export const COUNT_IDLE_CLASS = "text-[#8a8078]"
-
-export const INGAME_VOTE_CROWN_CLASS =
-  "font-subheading text-[clamp(1.17rem,4.15cqi,1.48rem)] leading-none text-[#d62828]"
-
 // 체크 칸·체크 표시
 export const CHECKBOX_CLASS =
   "interactive-scale relative block w-[clamp(1.42rem,4.8cqi,1.72rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"
-
-export const CHECKBOX_IMG_CLASS =
-  "block h-auto w-full select-none"
-
-export const CHECKMARK_CLASS =
-  "pointer-events-none absolute inset-[12%] block h-auto w-[76%] select-none"
 
 // 아래 제출 버튼
 export const FOOTER_CLASS =
@@ -110,12 +82,6 @@ export const FOOTER_CLASS =
 
 export const SUBMIT_BTN_CLASS =
   "interactive-scale relative block w-[clamp(7.5rem,28cqi,9.5rem)] cursor-pointer border-0 bg-transparent p-0 leading-none"
-
-export const SUBMIT_BTN_IMG_CLASS =
-  "block h-auto w-full select-none"
-
-export const SUBMIT_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center pb-[2%] pt-[clamp(0.12rem,0.45cqi,0.18rem)] font-subheading text-[clamp(1.08rem,3.8cqi,1.35rem)] font-bold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 // 투표 현황 열기 버튼
 export const TOGGLE_BTN_WRAP_CLASS = "relative shrink-0 self-end"

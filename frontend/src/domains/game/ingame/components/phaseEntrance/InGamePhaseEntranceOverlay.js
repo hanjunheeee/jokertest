@@ -13,6 +13,8 @@ export default function InGamePhaseEntranceOverlay({ open, phase, onConfirm }) {
 
   if (!active) return null
 
+  // 확인 버튼 ref는 그리는 중에 읽지 않고 양피지 창에 넘기기만 함
+  // eslint-disable-next-line react-hooks/refs -- ref 객체를 자식에 넘기는 것이라 읽기 아님
   return createElement(InGameParchmentModalBase, {
     variantKey: "phaseEntrance",
     onDismiss: onConfirm,

@@ -9,8 +9,6 @@ export const INGAME_CHAT_FRAME_SCALE = 1
 // 한 번에 보낼 수 있는 글자 수
 export const INPUT_MAX_LENGTH = 150
 
-export const MAX_MSG_LENGTH = INPUT_MAX_LENGTH
-
 // 채팅 틀·보내기·닫기 버튼 그림
 export const INGAME_CHAT_ASSETS = {
   frame: "/frame/ingame-chatting/인게임-채팅창프레임2.png",

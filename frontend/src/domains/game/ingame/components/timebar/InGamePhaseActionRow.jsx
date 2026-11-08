@@ -9,21 +9,10 @@ import {
   BTN_CLASS,
   BTN_ROW_CLASS,
 } from "../../constants/actions/ingameActionPanel.js"
+import { INGAME_PHASE_ACTIONS, PHASE_ACTION_ATTR } from "../../constants/timebar/ingamePhaseActions.js"
 
 // 버튼 줄 모양 (오른쪽 정렬)
 const PHASE_ACTION_ROW_CLASS = `justify-end ${BTN_ROW_CLASS}`
-
-// 단계 행동 표시 이름과 값들 (구석 패널 버튼도 같은 표시, 시험이 찾음)
-export const PHASE_ACTION_ATTR = "data-ingame-phase-action"
-
-export const INGAME_PHASE_ACTIONS = Object.freeze({
-  DAY_READY: "dayReady",
-  DAY_VOTE_ABSTAIN: "dayVoteAbstain",
-  DAY_VOTE_RESOLVE: "dayVoteResolve",
-  TRIBUNAL_RESOLVE: "tribunalResolve",
-  NIGHT_SKIP: "nightSkip",
-  NIGHT_RESOLVE: "nightResolve",
-})
 
 // 지금 단계에 맞는 버튼 목록, 글자는 보내는 중·끝남 따라 바뀜
 function buildPhaseActions(ctx) {

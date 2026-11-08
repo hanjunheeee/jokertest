@@ -1,3 +1,8 @@
+// 사망 뒤 선택 창: 계속 보기·나가기와 나가기 진행 안내
+// 인게임 화면이 사용, 초점은 창 안으로 옮기고 가둠 (Esc로는 안 닫힘: 꼭 골라야 함)
+import { useRef } from "react"
+import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
+
 const OVERLAY_CLASS =
   "absolute inset-0 z-[68] flex items-center justify-center bg-black/70 px-6"
 
@@ -26,8 +31,12 @@ function exitNotice(exitStatus, exitErrorCode) {
   return null
 }
 
-export default function InGameDeadParticipantChoice({
-  open,
+export default function InGameDeadParticipantChoice({ open, ...props }) {
+  if (!open) return null
+  return <DeadParticipantChoicePanel {...props} />
+}
+
+function DeadParticipantChoicePanel({
   onKeepWatching,
   onLeave,
   onRetry,
@@ -35,13 +44,14 @@ export default function InGameDeadParticipantChoice({
   exitStatus = "idle",
   exitErrorCode = null,
 }) {
-  if (!open) return null
+  const dialogRef = useRef(null)
+  useInGameModalLayer({ open: true, containerRef: dialogRef })
 
   const notice = exitNotice(exitStatus, exitErrorCode)
   const busy = exitStatus === "pending"
 
   return (
-    <div className={OVERLAY_CLASS} role="dialog" aria-modal="true" aria-label="사망 후 선택">
+    <div ref={dialogRef} tabIndex={-1} className={OVERLAY_CLASS} role="dialog" aria-modal="true" aria-label="사망 후 선택">
       <div className={PANEL_CLASS}>
         <span className="text-lg font-bold">당신은 사망했습니다.</span>
         <span className="text-sm text-neutral-300">

@@ -80,7 +80,8 @@ mock.module("@/shared/socket/socketClient.js", {
 })
 
 const { act, render, cleanup, fireEvent } = await import("@testing-library/react")
-const { default: InGamePhaseActionRow, INGAME_PHASE_ACTIONS } = await import("../../../../../../src/domains/game/ingame/components/timebar/InGamePhaseActionRow.jsx")
+const { default: InGamePhaseActionRow } = await import("../../../../../../src/domains/game/ingame/components/timebar/InGamePhaseActionRow.jsx")
+const { INGAME_PHASE_ACTIONS } = await import("../../../../../../src/domains/game/ingame/constants/timebar/ingamePhaseActions.js")
 const { default: InGameCornerActionPanel } = await import("../../../../../../src/domains/game/ingame/components/actions/InGameCornerActionPanel.jsx")
 const { InGameActionContext } = await import("../../../../../../src/domains/game/ingame/context/InGameActionContext.jsx")
 const { InGamePlayerSessionProvider } = await import("../../../../../../src/domains/game/ingame/components/InGamePlayerSessionProvider.jsx")

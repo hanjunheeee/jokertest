@@ -8,6 +8,7 @@ import {
   TOGGLE_BTN_WRAP_CLASS,
 } from "../../constants/vote/ingameVoteLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
 
 // 모양은 기본값이 있고 구석 패널이 자기 모양으로 바꿔 넘김
 export default function InGameVoteToggleButton({
@@ -23,8 +24,7 @@ export default function InGameVoteToggleButton({
         type="button"
         aria-label="투표 현황 열기"
         onClick={onClick}
-        className={buttonClassName}
-        style={{ outline: "none" }}
+        className={`${buttonClassName} ${INGAME_FOCUS_RING_CLASS}`}
       >
         <PublicAsset
           src={INGAME_VOTE_ASSETS.toggleButton}

@@ -2,6 +2,7 @@ import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { act } from "react"
 import { JSDOM } from "jsdom"
+import { register } from "node:module"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
 
@@ -21,6 +22,10 @@ installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(do
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const navigateCalls = []
+
+// 불러오는 파일 중 @/ 별칭을 쓰는 것이 있어 별칭 풀이를 켬
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
+
 mock.module("react-router-dom", {
   namedExports: { useNavigate: () => (...args) => navigateCalls.push(args) },
 })

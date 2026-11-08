@@ -2,17 +2,17 @@
 // 움직이는 양피지 창(InGameParchmentModalAnimated)이 사용
 
 // 움직임 줄이기 켰을 때 거의 바로
-export const REDUCED_TRANSITION = {
+const REDUCED_TRANSITION = {
   duration: 0.01,
 }
 
 // 펼치기 움직임 (커지기도 같은 시간 씀)
-export const PARCHMENT_UNFOLD_TRANSITION = {
+const PARCHMENT_UNFOLD_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1],
 }
 
-export const SCALE_TRANSITION =
+const SCALE_TRANSITION =
   PARCHMENT_UNFOLD_TRANSITION
 
 // 움직임 이름 → 처음·나타남·사라짐 모양 (모르는 이름이면 null)

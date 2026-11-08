@@ -1,28 +1,16 @@
 // 움직이는 양피지 창: 펼침·확대 움직임 있는 뒤 막·창·확인 버튼
 // 역할 공개 창·밤 차례 안내 창이 사용, 모양은 constants/parchment/의 variant
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
-import { useEffect } from "react"
-import { dispatchUiSfx } from "../../../../../shared/hooks/useSfxRuntime.js"
+import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import { PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
 import { getMotionPreset } from "../../constants/parchment/ingameParchmentModalMotion.js"
 import { getInGameParchmentModalVariant } from "../../constants/parchment/ingameParchmentModalVariants.js"
 import InGameParchmentConfirmButton from "./InGameParchmentConfirmButton.js"
 import InGameParchmentPanel from "./InGameParchmentPanelBase.js"
 
-// 열렸을 때 Esc로 닫기 (ModalBase에도 같은 훅이 따로 있음)
+// 열렸을 때 Esc로 닫기 (겹친 창 중 맨 위만, ModalBase도 같은 공용 훅)
 function useParchmentModalEscape(onDismiss, open) {
-  useEffect(() => {
-    if (!open || !onDismiss) return undefined
-
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return
-      dispatchUiSfx("ui-cancel", event)
-      onDismiss()
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, onDismiss])
+  useInGameModalLayer({ open: Boolean(open && onDismiss), onClose: onDismiss, moveFocus: false, trapFocus: false })
 }
 
 // 열림 따라 들어오고 나가는 움직임, 움직임 줄이기 설정이면 짧게

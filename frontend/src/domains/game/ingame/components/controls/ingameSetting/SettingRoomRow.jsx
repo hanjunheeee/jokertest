@@ -11,6 +11,7 @@ import {
   ROOM_ROW_TITLE_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import CheckBox from "@/shared/ui/CheckBox.jsx"
+import { INGAME_FOCUS_RING_CLASS } from "../../../constants/ingameFocusRing.js"
 
 // variant가 action이면 링크 버튼(danger면 붉은 글자), 아니면 체크 칸
 export default function SettingRoomRow({
@@ -37,12 +38,11 @@ export default function SettingRoomRow({
         <button
           type="button"
           onClick={onAction}
-          className={
+          className={`${
             actionTone === "danger"
               ? ROOM_ACTION_LINK_DANGER_CLASS
               : ROOM_ACTION_LINK_CLASS
-          }
-          style={{ outline: "none" }}
+          } ${INGAME_FOCUS_RING_CLASS}`}
         >
           {actionLabel}
         </button>

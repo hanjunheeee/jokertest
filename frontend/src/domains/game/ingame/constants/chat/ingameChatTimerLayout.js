@@ -24,7 +24,7 @@ const EMBEDDED_TIMER_STACK_INSET_FRAME_CLOSEUP = {
 }
 
 // 채팅 틀 안, 메시지 목록 위 층
-export const EMBEDDED_TIMER_WRAP_CLASS =
+const EMBEDDED_TIMER_WRAP_CLASS =
   "pointer-events-none absolute z-[4] flex min-h-0 flex-col items-center justify-end gap-0 [container-type:inline-size]"
 
 const EMBEDDED_TIMER_WRAP_CLASS_CLOSEUP =

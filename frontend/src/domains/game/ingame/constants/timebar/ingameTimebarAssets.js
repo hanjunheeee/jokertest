@@ -1,5 +1,5 @@
 // 위쪽 진행 바 그림·단계 순서·상태 글, 판 단계 → 바 단계 바꾸기
-// 진행 바·확대 타이머·단계 머리·InGamePage·InGamePlayArea·진행 바 상태 글 고르기가 사용
+// 진행 바·확대 타이머·단계 머리·InGamePage·진행 바 상태 글 고르기가 사용
 import { formatInGameTimebarPhaseTag } from "../../utils/timebar/format.js"
 
 // 진행 바 틀(접힘·확대)·확대 버튼·타이머 바·화살표·단계 그림·단계 머리 판

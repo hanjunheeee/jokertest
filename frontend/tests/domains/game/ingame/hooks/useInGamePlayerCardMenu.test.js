@@ -1004,7 +1004,8 @@ test("AC-03: 메뉴가 열린 카드 위의 mousedown은 바깥 클릭으로 처
   })
   assert.equal(menuIsOpen(view.container), true)
   assert.equal(
-    menuNode(view.container).closest('[role="button"]') === other, true,
+    // 메뉴는 카드 누름 칸과 형제로 같은 자리 칸 안에 뜸
+    menuNode(view.container).parentElement === other.parentElement, true,
     "다른 카드를 눌렀는데 메뉴가 그 카드로 옮겨가지 않았다",
   )
 })

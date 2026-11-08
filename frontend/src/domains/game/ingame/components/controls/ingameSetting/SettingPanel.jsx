@@ -13,13 +13,15 @@ export default function SettingPanel({
   onClose,
   timerPlacement,
   onCycleTimerPlacement,
+  interactionLocked = false,
 }) {
   const [kickModalOpen, setKickModalOpen] = useState(false)
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
   const roomCode = useInGameStore((s) => s.state?.roomCode ?? null)
 
-  // 설정 창이 닫히면 위 창 둘도 닫음 (다시 열 때 남아 있지 않게, 그리는 중에 맞춤)
-  if (!open && (kickModalOpen || roomCodeOpen)) {
+  // 설정 창이 닫히거나 연출로 화면이 잠기면 위 창 둘도 닫음
+  // (위 창은 body에 떠서 화면 잠금 밖이라 잠긴 동안 키보드로 조작되지 않게, 그리는 중에 맞춤)
+  if ((!open || interactionLocked) && (kickModalOpen || roomCodeOpen)) {
     setKickModalOpen(false)
     setRoomCodeOpen(false)
   }
@@ -42,12 +44,12 @@ export default function SettingPanel({
       </SidePanel>
 
       <SettingKickPlayerModal
-        open={open && kickModalOpen}
+        open={open && !interactionLocked && kickModalOpen}
         onClose={() => setKickModalOpen(false)}
       />
 
       <RoomCodeViewModal
-        open={open && roomCodeOpen}
+        open={open && !interactionLocked && roomCodeOpen}
         onClose={() => setRoomCodeOpen(false)}
         roomCode={roomCode}
       />

@@ -20,15 +20,8 @@ export const NICKNAME_CLASS =
 export const ROLE_NAME_CLASS =
   "font-display text-[clamp(1.65rem,4.8vw,2.65rem)] font-medium tracking-wide text-[#3a1a0c] antialiased"
 
-export const TEAM_BADGE_CLASS =
-  "mt-1 inline-block rounded-full border border-[#6b4321]/50 bg-[#3a1a0c]/10 px-3 py-0.5 text-[0.7rem] font-semibold tracking-wide text-[#5b3a20]"
-
 export const DESC_CLASS =
   "text-[clamp(0.88rem,2.2vw,1.02rem)] leading-relaxed text-[#4a2c14]"
-
-// 역할 그림
-export const STANDING_WRAP_CLASS =
-  "mx-auto flex w-full justify-center py-[clamp(0.35rem,1vw,0.55rem)]"
 
 export const STANDING_IMG_CLASS =
   "h-[clamp(7rem,22vw,11rem)] w-auto object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,0.35)]"
@@ -51,8 +44,4 @@ export const PRIMARY_BTN_CLASS =
 export const PANEL_TRANSITION = {
   duration: 0.42,
   ease: [0.22, 1, 0.36, 1],
-}
-
-export const PANEL_REDUCED_TRANSITION = {
-  duration: 0.01,
 }

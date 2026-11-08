@@ -1,6 +1,8 @@
 // 판 화면 왼쪽 옆 창 틀: 뒤 덮개·틀 그림·닫기 버튼·안쪽 여백
 // 설정 창(SettingPanel)·전적 목록 창(PlayerRecordListPanel)이 사용
 import { AnimatePresence, motion } from "framer-motion"
+import { useRef } from "react"
+import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import { PANEL_ASSETS } from "../../constants/controls/ingameSidePanelAssets.js"
 import {
   BACKDROP_CLASS,
@@ -21,6 +23,10 @@ export default function SidePanel({
   closeAriaLabel = ariaLabel,
   children,
 }) {
+  // 맨 위 창이면 Esc로 닫기, 초점은 창 안으로 옮기고 가둠
+  const panelRef = useRef(null)
+  useInGameModalLayer({ open, onClose, containerRef: panelRef })
+
   // 덮개·닫기 버튼 누르면 닫기, 창 안 클릭은 바깥으로 안 번지게 막기
   return (
     <AnimatePresence>
@@ -38,6 +44,8 @@ export default function SidePanel({
           />
 
           <motion.aside
+            ref={panelRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label={ariaLabel}
@@ -58,8 +66,7 @@ export default function SidePanel({
               type="button"
               aria-label={closeAriaLabel}
               onClick={onClose}
-              className={CLOSE_BTN_CLASS}
-              style={{ outline: "none" }}
+              className={`${CLOSE_BTN_CLASS} outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3d28d]`}
             >
               <PublicAsset
                 src={PANEL_ASSETS.closeButton}

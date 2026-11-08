@@ -92,7 +92,6 @@ export default function InGameChatMessageRow({
       </span>
       <span
         className={`${getInGameChatMessageBodyClass(variant)} ${themedTextClass}`.trim()}
-        aria-readonly="true"
         style={{
           ...themedTextStyle,
           ...(messageMaxWidth > 0 ? { maxWidth: messageMaxWidth } : undefined),

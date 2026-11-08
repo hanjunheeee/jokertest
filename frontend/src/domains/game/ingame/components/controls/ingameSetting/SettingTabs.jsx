@@ -10,6 +10,7 @@ import {
   TAB_NAV_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { INGAME_FOCUS_RING_CLASS } from "../../../constants/ingameFocusRing.js"
 
 // 탭 버튼 하나 (고른 탭이면 밝은 그림, aria-pressed로도 알림)
 function SettingTabButton({ tab, active, onSelect }) {
@@ -21,9 +22,8 @@ function SettingTabButton({ tab, active, onSelect }) {
     <button
       type="button"
       onClick={() => onSelect(tab.id)}
-      className={TAB_BTN_CLASS}
+      className={`${TAB_BTN_CLASS} ${INGAME_FOCUS_RING_CLASS}`}
       aria-pressed={active}
-      style={{ outline: "none" }}
     >
       <PublicAsset
         src={active ? INGAME_SETTING_ASSETS.tabActive : INGAME_SETTING_ASSETS.tabInactive}

@@ -28,6 +28,7 @@ export function usePendingSubmit(r, { cancelPending, closeMenu }) {
     if (selected !== pending.targetId) return
 
     // 소비한 것으로 적고 한 번만 보낸 뒤 닫음
+    // eslint-disable-next-line react-hooks/immutability -- r은 ref 묶음이라 .current 고치기는 정상 (효과 안에서만)
     r.consumedRef.current = pending.requestId
     r.pendingRef.current = null
     if (pending.kind === KINDS.DAY_VOTE) live.submitDayVote()

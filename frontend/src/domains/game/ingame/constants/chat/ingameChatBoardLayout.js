@@ -1,14 +1,10 @@
 // 판 위 채팅 창 모양: 패널 폭·기울기·목록(타이머 켰을 때 포함)/입력/상태 줄 자리
 // 채팅 틀(InGameChatShell)과 채팅 레이아웃 상수가 사용
-import { INGAME_CHAT_FRAME_SCALE } from "./ingameChatAssets.js"
 import {
   CONTENT_SHIFT_LEFT_FRAME,
   mapFrameInsetToLayoutBox,
 } from "./ingameChatFrameLayout.js"
 import { EMBEDDED_TIMER_LIST_OFFSET_FRAME } from "./ingameChatTimerLayout.js"
-
-// 틀 배율을 되돌린 폭
-export const WIDTH_PERCENT = `${100 / INGAME_CHAT_FRAME_SCALE}%`
 
 // 틀 그림 기준 목록·입력·상태 줄 자리 (% 값)
 const MSG_LIST_INSET_FRAME = {
@@ -39,7 +35,7 @@ const PANEL_WIDTH_BASE = {
   maxRem: 30,
 }
 
-export const PANEL_SIZE_SCALE = 1.08
+const PANEL_SIZE_SCALE = 1.08
 
 // 배율 곱한 값 (소수 셋째 자리까지)
 function scaleChatPanelWidth(value, scale = PANEL_SIZE_SCALE) {
@@ -47,7 +43,7 @@ function scaleChatPanelWidth(value, scale = PANEL_SIZE_SCALE) {
 }
 
 // 패널 폭 (화면 폭 따라 늘지만 최소·최대 rem 안에서)
-export function getPanelWidthStyle(
+function getPanelWidthStyle(
   scale = PANEL_SIZE_SCALE,
 ) {
   return {
@@ -59,7 +55,7 @@ export function getPanelWidthStyle(
 export const PANEL_POSITION_CLASS =
   "absolute left-1/2 top-[47.5%] z-20 overflow-visible [container-type:inline-size]"
 
-export const PANEL_PERSPECTIVE = {
+const PANEL_PERSPECTIVE = {
   rotateX: 20,
   perspective: 1100,
 }

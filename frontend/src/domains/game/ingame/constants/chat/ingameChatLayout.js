@@ -58,10 +58,10 @@ export function getInGameChatTextTypographyClass(variant = "board") {
 // 설정 글자 크기 CSS 변수와 그 변수를 곱한 글자 모양
 export const INGAME_CHAT_TEXT_SCALE_CSS_VAR = "--ingame-chat-text-scale"
 
-export const TEXT_TYPOGRAPHY_SCALED_CLASS =
+const TEXT_TYPOGRAPHY_SCALED_CLASS =
   "font-subheading text-[clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 
-export const CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS =
+const CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS =
   "font-subheading text-[clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
 
 export const INGAME_CHAT_TEXT_SCALED_FONT_SIZE =
@@ -119,7 +119,7 @@ export function getInGameChatInputPlaceholderClass(variant = "board") {
 }
 
 // 종류별 본문 오른쪽 여백
-export function getTextWrapTrimClass(variant = "board") {
+function getTextWrapTrimClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_TEXT_WRAP_TRIM_CLASS
   return variant === "closeup"
     ? CLOSEUP_TEXT_WRAP_TRIM_CLASS
@@ -136,7 +136,7 @@ export function getInGameChatMessageSenderClass(variant = "board") {
 }
 
 // 종류별 한 줄 입력 높이·입력칸 고정 높이
-export function getInputSingleLineHeightClass(variant = "board") {
+function getInputSingleLineHeightClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_INPUT_SINGLE_LINE_HEIGHT_CLASS
   return variant === "closeup"
     ? CLOSEUP_INPUT_SINGLE_LINE_HEIGHT_CLASS
@@ -162,17 +162,14 @@ export const TEXT_WRAP_CLASS =
 export const TEXT_WRAP_TRIM_CLASS =
   "pr-[clamp(0.85rem,3.2cqi,1.35rem)]"
 
-export const INPUT_WRAP_TRIM_CLASS =
+const INPUT_WRAP_TRIM_CLASS =
   "pr-[clamp(1.55rem,5.2cqi,2.45rem)]"
 
-export const INPUT_SINGLE_LINE_HEIGHT_CLASS =
+const INPUT_SINGLE_LINE_HEIGHT_CLASS =
   "max-h-[clamp(0.98rem,4.32cqi,1.26rem)]"
 
-export const INPUT_VIEWPORT_FIXED_HEIGHT_CLASS =
+const INPUT_VIEWPORT_FIXED_HEIGHT_CLASS =
   "h-[clamp(1.68rem,6.85cqi,2.12rem)]"
-
-export const INPUT_MULTI_LINE_VIEWPORT_HEIGHT_CLASS =
-  INPUT_VIEWPORT_FIXED_HEIGHT_CLASS
 
 // 입력칸 감싸기·빈칸/채움 정렬·자리 글·위쪽 흐림
 export const INPUT_VIEWPORT_WRAP_BASE_CLASS =
@@ -183,33 +180,17 @@ export const INPUT_VIEWPORT_EMPTY_CLASS = "flex items-center"
 export const INPUT_VIEWPORT_FILLED_CLASS =
   "flex flex-col justify-end"
 
-export const INPUT_PLACEHOLDER_CLASS =
-  `pointer-events-none absolute inset-y-0 left-0 z-[1] flex items-center ${INPUT_WRAP_TRIM_CLASS} ${TEXT_TYPOGRAPHY_CLASS} text-[#4a2814]`
-
 export const INPUT_VIEWPORT_MASK_CLASS =
   "[mask-image:linear-gradient(to_bottom,transparent_0%,#000_22%,#000_100%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,#000_22%,#000_100%)]"
 
 export const INPUT_VIEWPORT_NO_MASK_CLASS =
   "[mask-image:none] [-webkit-mask-image:none]"
 
-export const INPUT_VIEWPORT_WRAP_CLASS =
-  `${INPUT_VIEWPORT_WRAP_BASE_CLASS} ${INPUT_VIEWPORT_MASK_CLASS} ${INPUT_MULTI_LINE_VIEWPORT_HEIGHT_CLASS}`
-
-// 판 위 채팅 입력칸·여러 줄/한 줄 보기 칸 모양
-export const INGAME_CHAT_INPUT_CLASS =
-  `block w-full resize-none border-0 bg-transparent p-0 outline-none placeholder:text-[#4a2814] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${TEXT_TYPOGRAPHY_CLASS}`
-
 export const INPUT_VIEWPORT_MULTILINE_CLASS =
   `h-full min-h-0 overflow-y-auto overscroll-contain box-border ${TEXT_WRAP_CLASS} ${INPUT_WRAP_TRIM_CLASS}`
 
-export const INPUT_VIEWPORT_SINGLELINE_CLASS =
-  `overflow-hidden box-border ${TEXT_WRAP_CLASS} ${INPUT_WRAP_TRIM_CLASS} ${INPUT_SINGLE_LINE_HEIGHT_CLASS}`
-
-export const INPUT_VIEWPORT_CLASS =
-  INPUT_VIEWPORT_MULTILINE_CLASS
-
 // 입력칸 왼쪽 띄움과 종류별 고르기
-export const INPUT_SHIFT_CLASS =
+const INPUT_SHIFT_CLASS =
   "ml-[clamp(1.4rem,7.6cqi,2.35rem)]"
 
 export function getInputShiftClass(variant = "board") {
@@ -220,7 +201,7 @@ export function getInputShiftClass(variant = "board") {
 }
 
 // 보내기 버튼 모양과 종류별 고르기
-export const SEND_BTN_SHIFT_CLASS =
+const SEND_BTN_SHIFT_CLASS =
   "-translate-x-[clamp(1.15rem,6.2cqi,1.85rem)]"
 
 const SEND_BTN_CLASS =
@@ -269,13 +250,7 @@ export const MSG_LIST_INNER_CLASS =
 export const MSG_LIST_SPACER_CLASS =
   "min-h-0 flex-1 list-none"
 
-export const MSG_READ_ONLY_CLASS = "select-none"
-
-export const MSG_BODY_CLASS =
-  `min-w-0 box-border ${MSG_READ_ONLY_CLASS} ${TEXT_TYPOGRAPHY_CLASS} ${TEXT_WRAP_CLASS} ${TEXT_WRAP_TRIM_CLASS}`
-
-export const MSG_SENDER_CLASS =
-  `shrink-0 ${MSG_READ_ONLY_CLASS} ${TEXT_TYPOGRAPHY_CLASS}`
+const MSG_READ_ONLY_CLASS = "select-none"
 
 export const MSG_ROW_CLASS =
   `flex min-w-0 list-none items-start gap-[0.25em] ${MSG_READ_ONLY_CLASS}`

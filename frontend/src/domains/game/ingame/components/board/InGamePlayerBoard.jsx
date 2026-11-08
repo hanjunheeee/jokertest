@@ -63,50 +63,58 @@ export default function InGamePlayerBoard() {
         const activeEmoji = emojiByUuid[player.id] ?? null
         const isSelf = isInGameSelfPlayer(player.id, localPlayerId)
         return (
+          // 카드 누름 칸과 메뉴·팔레트를 형제로 둠 (누를 수 있는 것 안에 또 버튼이 들어가지 않게)
           <div
             key={player.id}
             ref={(node) => cardMenu.registerAnchor(player.id, node)}
-            className="absolute pointer-events-auto cursor-pointer"
+            className="absolute pointer-events-auto"
             style={buildSlotStyle(presets[index])}
-            role="button"
-            tabIndex={0}
-            onClick={() => cardMenu.openMenu(player.id)}
-            onMouseDown={(event) => {
-              // 우클릭 누르는 순간 엶 (OS마다 우클릭 메뉴 시점이 달라 끌어 고르기가 어긋나지 않게)
-              if (event.button !== 2 || !isSelf || emojiScopeKey === null) return
-              setEmojiPaletteTargetId(player.id)
-            }}
-            onContextMenu={(event) => {
-              if (!isSelf) return
-              event.preventDefault()
-              if (emojiScopeKey === null) return
-              setEmojiPaletteTargetId(player.id)
-            }}
-            onKeyDown={(event) => {
-              if (event.target !== event.currentTarget) return
-              if (event.key !== "Enter" && event.key !== " ") return
-              cardMenu.openMenu(player.id)
-            }}
           >
-            <InGamePlayerCard
-              portraitSrc={player.portraitSrc}
-              frameSrc={player.frameSrc}
-              nickname={player.nickname}
-              status={player.status}
-              theme={player.theme}
-              voteHighlight={
-                player.id === actionCtx?.selectedDayVoteTargetId
-                || player.id === actionCtx?.selectedNightTargetId
-              }
-              isSelf={isSelf}
-              className="w-full"
-            />
-            {activeEmoji ? (
-              <InGameEmojiBubble
-                key={`${player.id}-${activeEmoji.sentAt}`}
-                itemId={activeEmoji.itemId}
+            <div
+              className="relative w-full cursor-pointer rounded-full outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3d28d]"
+              role="button"
+              tabIndex={0}
+              aria-haspopup="menu"
+              aria-expanded={cardMenu.isOpen(player.id)}
+              onClick={() => cardMenu.openMenu(player.id)}
+              onMouseDown={(event) => {
+                // 우클릭 누르는 순간 엶 (OS마다 우클릭 메뉴 시점이 달라 끌어 고르기가 어긋나지 않게)
+                if (event.button !== 2 || !isSelf || emojiScopeKey === null) return
+                setEmojiPaletteTargetId(player.id)
+              }}
+              onContextMenu={(event) => {
+                if (!isSelf) return
+                event.preventDefault()
+                if (emojiScopeKey === null) return
+                setEmojiPaletteTargetId(player.id)
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return
+                if (event.key !== "Enter" && event.key !== " ") return
+                event.preventDefault()
+                cardMenu.openMenu(player.id)
+              }}
+            >
+              <InGamePlayerCard
+                portraitSrc={player.portraitSrc}
+                frameSrc={player.frameSrc}
+                nickname={player.nickname}
+                status={player.status}
+                theme={player.theme}
+                voteHighlight={
+                  player.id === actionCtx?.selectedDayVoteTargetId
+                  || player.id === actionCtx?.selectedNightTargetId
+                }
+                isSelf={isSelf}
+                className="w-full"
               />
-            ) : null}
+              {activeEmoji ? (
+                <InGameEmojiBubble
+                  key={`${player.id}-${activeEmoji.sentAt}`}
+                  itemId={activeEmoji.itemId}
+                />
+              ) : null}
+            </div>
             {cardMenu.isOpen(player.id) ? (
               <InGamePlayerCardMenu
                 menuRef={cardMenu.menuRef}

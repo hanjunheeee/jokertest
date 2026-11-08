@@ -12,7 +12,7 @@ import {
   VOTE_TOGGLE_BTN_LABEL_CLASS,
   VOTE_TOGGLE_WRAP_CLASS,
 } from "../../constants/actions/ingameCornerActionLayout.js"
-import { PHASE_ACTION_ATTR } from "../timebar/InGamePhaseActionRow.jsx"
+import { PHASE_ACTION_ATTR } from "../../constants/timebar/ingamePhaseActions.js"
 
 // 단계에 맞는 버튼만 보이고, 보일 게 없으면 패널째 안 그림
 export default function InGameCornerActionPanel({ onVoteStatusClick }) {

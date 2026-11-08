@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
 import InGameBackground from "../components/InGameBackground.jsx"
 import InGamePlayerBoard from "../components/board/InGamePlayerBoard.jsx"
 import InGameChatShell from "../components/chat/InGameChatShell.jsx"
 import { InGameChatSessionProvider } from "../components/chat/InGameChatSessionProvider.jsx"
-import SettingKickPlayerModalContent from "../components/controls/kickPlayer/SettingKickPlayerModalContent.jsx"
 import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOverlay.jsx"
 import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
@@ -51,69 +50,23 @@ import { useInGameTribunalExpulsionPresentation } from "../hooks/useInGameTribun
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
 import { useInGameSidePanel } from "../hooks/useInGameSidePanel.js"
 import { useInGameActionPanel } from "../hooks/useInGameActionPanel.js"
-import { useInGameKickFromCard } from "../hooks/useInGameKickFromCard.js"
 import { useTurnProgress } from "../hooks/timebar/useTurnProgress.js"
 import { useTimerPlacement } from "../hooks/timebar/useTimerPlacement.js"
 
+// 판 조작 값(행동 줄·카드 메뉴·재판 연출이 같이 봄)을 컨텍스트로 넣음
+// 카드에서 여는 추방 창은 열 길이 없어 걷어 냄 (추방은 설정 창 방관리 탭의 추방 창만)
 export function InGameActionProvider({ interactionBlocked = false, children }) {
   const actionPanelValue = useInGameActionPanel({ interactionBlocked })
-
   const hostUuid = useInGameStore((s) => s.hostUuid ?? null)
-  const kick = useInGameKickFromCard()
-  const [kickDialogTargetUuid, setKickDialogTargetUuid] = useState(null)
-  const [isKickDialogOpen, setIsKickDialogOpen] = useState(false)
-  const { requestConfirmByUuid, cancelConfirm, confirmKick, targets } = kick
-
-  const openKickConfirm = useCallback((uuid) => {
-    setKickDialogTargetUuid(uuid)
-    setIsKickDialogOpen(true)
-    requestConfirmByUuid(uuid)
-  }, [requestConfirmByUuid])
-
-  const closeKickDialog = useCallback(() => {
-    cancelConfirm()
-    setIsKickDialogOpen(false)
-  }, [cancelConfirm])
 
   const actionContextValue = {
     ...actionPanelValue,
     hostUuid,
-    isSending: kick.isSending,
-    requestConfirmByUuid: openKickConfirm,
   }
 
   return (
     <InGameActionContext.Provider value={actionContextValue}>
       {children}
-      {isKickDialogOpen ? (
-        <div role="dialog" aria-label="추방" data-kick-dialog-target={kickDialogTargetUuid ?? ""}>
-          <button type="button" data-testid="kick-dialog-close" onClick={closeKickDialog}>
-            닫기
-          </button>
-          <SettingKickPlayerModalContent
-            targets={targets}
-            pendingTarget={kick.pendingTarget}
-            status={kick.status}
-            errorCode={kick.errorCode}
-            isSending={kick.isSending}
-            canLookupResult={kick.canLookupResult}
-            isAwaitingResolution={kick.isAwaitingResolution}
-            onRequestConfirm={kick.requestConfirm}
-            onCancelConfirm={closeKickDialog}
-            onConfirmKick={() => confirmKick(targets)}
-            onLookupResult={kick.lookupResult}
-          />
-        </div>
-      ) : null}
-      {!isKickDialogOpen && (kick.canLookupResult || kick.isSending || kick.isAwaitingResolution) ? (
-        <button
-          type="button"
-          data-testid="kick-dialog-reopen"
-          onClick={() => setIsKickDialogOpen(true)}
-        >
-          추방 결과 조회
-        </button>
-      ) : null}
     </InGameActionContext.Provider>
   )
 }
@@ -255,6 +208,7 @@ export default function InGamePage() {
               onClose={sidePanel.close}
               timerPlacement={timerPlacement}
               onCycleTimerPlacement={cycleTimerPlacement}
+              interactionLocked={surfaceLocked}
             />
             <InGameVoteStatusPanel
               open={voteStatusOpen}

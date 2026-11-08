@@ -25,7 +25,7 @@ register(new URL("../../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.ur
 
 const { render, cleanup, fireEvent } = await import("@testing-library/react")
 const { default: InGameCornerActionPanel } = await import("../../../../../../src/domains/game/ingame/components/actions/InGameCornerActionPanel.jsx")
-const { INGAME_PHASE_ACTIONS } = await import("../../../../../../src/domains/game/ingame/components/timebar/InGamePhaseActionRow.jsx")
+const { INGAME_PHASE_ACTIONS } = await import("../../../../../../src/domains/game/ingame/constants/timebar/ingamePhaseActions.js")
 const { InGameActionContext } = await import("../../../../../../src/domains/game/ingame/context/InGameActionContext.jsx")
 const { INGAME_CORNER_ACTION_ASSETS } = await import("../../../../../../src/domains/game/ingame/constants/actions/ingameCornerActionAssets.js")
 const { INGAME_VOTE_ASSETS } = await import("../../../../../../src/domains/game/ingame/constants/vote/ingameVoteAssets.js")

@@ -15,7 +15,7 @@ export const ANNOUNCEMENT_MS = 2600
 export const CLOSE_LABEL = "확인"
 
 // 안내할 역할·날짜인지 (날짜가 이상하면 안 함)
-export function isAnnounceableNightTurnRole(role, dayIndex) {
+function isAnnounceableNightTurnRole(role, dayIndex) {
   if (typeof role !== "string" || role.length === 0) return false
   if (!Number.isInteger(dayIndex) || dayIndex < 0) return false
   return INGAME_NIGHT_TURN_ANNOUNCEMENTS.some((turn) => turn.role === role)

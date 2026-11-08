@@ -1,7 +1,7 @@
 // 채팅 크게 보기 창: 큰 모양 채팅 내용, Esc·뒤 막·닫기 버튼으로 닫힘
 // InGameChatShell이 씀
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect } from "react"
+import { useRef } from "react"
 import { INGAME_CHAT_ASSETS } from "../../constants/chat/ingameChatAssets.js"
 import {
   BACKDROP_CLASS,
@@ -13,7 +13,7 @@ import {
 } from "../../constants/chat/ingameChatCloseupLayout.js"
 import InGameChatContent from "./InGameChatContent.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
-import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 
 // 열렸을 때만 그림, 내용은 InGameChatContent를 closeup 모양으로
 export default function InGameChatCloseupOverlay({
@@ -31,21 +31,10 @@ export default function InGameChatCloseupOverlay({
   embeddedPhaseTimerRemainingRatio = 0,
   embeddedPhaseTimerRemainingSec = null,
 }) {
-  // 열렸을 때만 Esc로 닫기 (닫는 소리 같이 냄)
-  useEffect(() => {
-    if (!open) return undefined
+  // 열렸을 때 맨 위 창이면 Esc로 닫기(닫는 소리 같이), 초점은 창 안으로 옮기고 가둠
+  const dialogRef = useRef(null)
+  useInGameModalLayer({ open, onClose, containerRef: dialogRef })
 
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return
-      dispatchUiSfx("ui-cancel", event)
-      onClose()
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, onClose])
-
-  // 창 안 누름은 뒤 막 닫기로 번지지 않게 막음
   return (
     <AnimatePresence>
       {open ? (
@@ -62,11 +51,11 @@ export default function InGameChatCloseupOverlay({
             onClick={onClose}
           />
 
-          <div
-            className={PANEL_WRAP_CLASS}
-            aria-hidden={!open}
-          >
+          <div className={PANEL_WRAP_CLASS}>
+            {/* 창 안 누름은 뒤 막 닫기로 번지지 않게 막음 */}
             <motion.div
+              ref={dialogRef}
+              tabIndex={-1}
               role="dialog"
               aria-modal="true"
               aria-label="채팅 클로즈업"

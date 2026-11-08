@@ -4,7 +4,7 @@
 // 안내하는 단계와 단계별 글
 export const ENTRANCE_PHASES = Object.freeze(["DAY", "NIGHT"])
 
-export const ENTRANCE_MSGS = Object.freeze({
+const ENTRANCE_MSGS = Object.freeze({
   DAY: "낮이 되었습니다",
   NIGHT: "밤이 되었습니다",
 })

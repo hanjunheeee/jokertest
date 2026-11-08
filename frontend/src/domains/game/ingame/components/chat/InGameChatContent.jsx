@@ -116,6 +116,18 @@ export default function InGameChatContent({
           className={CHAT_FRAME_IMAGE_CLASS}
         />
 
+        {/* 키보드로도 크게 보기 열기 (평소엔 숨김, Tab으로 오면 보임) */}
+        {isBoard && onOpenCloseup ? (
+          <button
+            type="button"
+            data-chat-interactive
+            className="sr-only focus:not-sr-only focus:absolute focus:right-2 focus:top-2 focus:z-20 focus:rounded focus:bg-black/80 focus:px-2 focus:py-1 focus:text-xs focus:text-white"
+            onClick={() => onOpenCloseup()}
+          >
+            채팅 크게 보기
+          </button>
+        ) : null}
+
         {showEmbeddedPhaseTimer ? (
           <InGamePhaseTurnTimerPanel
             placement={INGAME_TIMER_PLACEMENT.CHAT}

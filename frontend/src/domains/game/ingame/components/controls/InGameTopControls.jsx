@@ -1,6 +1,10 @@
 // 판 화면 왼쪽 위 버튼 줄: 나가기·전적 목록·설정·내 역할 보기
 // InGamePage가 사용, 역할 보기 버튼 그림·이름은 시험도 가져감
-import { INGAME_CONTROLS_ASSETS } from "../../constants/controls/ingameControlsAssets.js"
+import {
+  INGAME_CONTROLS_ASSETS,
+  INGAME_ROLE_REVEAL_BUTTON_LABEL,
+  INGAME_ROLE_REVEAL_BUTTON_SRC,
+} from "../../constants/controls/ingameControlsAssets.js"
 import {
   BTN_CLASS,
   BTN_IMG_CLASS,
@@ -9,6 +13,7 @@ import {
 } from "../../constants/controls/ingameControlsLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
+import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
 
 // 그림 버튼 하나 (sfxOwner가 explicit이면 공용 클릭음 빠짐)
 function ControlButton({
@@ -24,18 +29,13 @@ function ControlButton({
       data-sfx-owner={sfxOwner}
       aria-label={ariaLabel}
       onClick={onClick}
-      className={BTN_CLASS}
-      style={{ outline: "none" }}
+      className={`${BTN_CLASS} ${INGAME_FOCUS_RING_CLASS}`}
     >
       <PublicAsset src={src} alt="" className={imgClassName} />
     </button>
   )
 }
 
-// 내 역할 보기 버튼 그림·이름 (시험이 같은 값으로 버튼을 찾음)
-export const INGAME_ROLE_REVEAL_BUTTON_SRC = "/button/직업모달 표시버튼2.png".normalize("NFD")
-
-export const INGAME_ROLE_REVEAL_BUTTON_LABEL = "내 역할 보기"
 
 // 버튼 줄: 누르면 받은 함수만 부름, 창 여닫기는 InGamePage 쪽이 맡음
 export default function InGameTopControls({

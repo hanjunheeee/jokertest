@@ -15,6 +15,7 @@ import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../constants/controls/kickP
 import { THEME_TEXT_RENDER_CLASS } from "../../../../../../shared/constants/ingamePlayerTheme.js"
 import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { INGAME_FOCUS_RING_CLASS } from "../../../constants/ingameFocusRing.js"
 
 // 고른 대상이면 버튼 글이 확인 중, 색 정보가 오면 이름에 색 입힘
 export default function SettingKickPlayerRow({
@@ -53,8 +54,7 @@ export default function SettingKickPlayerRow({
           }
           onClick={onKick}
           disabled={disabled}
-          className={ACTION_BTN_CLASS}
-          style={{ outline: "none" }}
+          className={`${ACTION_BTN_CLASS} ${INGAME_FOCUS_RING_CLASS}`}
         >
           <PublicAsset
             src={PLAYER_ASSETS.kickActionButton}

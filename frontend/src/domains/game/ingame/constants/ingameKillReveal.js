@@ -1,9 +1,7 @@
-// 사망 공개 상수와 안내 글 만들기 (밤 사망·재판 처형, 영상·건너뛰기)
+// 사망 공개 상수 (기본 이름·건너뛰기·다시 재생 표시·연출 모양)
 // 사망 공개 훅(useInGameKillReveal)·밤 성공 사망 영상이 씀
 
-// 사망 영상 경로·기본 이름·건너뛰기 글·다시 재생 표시 속성
-export const ANIM_VIDEO_URL = "/video-direction/night-success-kill-target-stacked.mp4"
-
+// 기본 이름·건너뛰기 글·다시 재생 표시 속성
 export const UNKNOWN_NICKNAME = "한 플레이어"
 
 export const INGAME_KILL_REVEAL_SKIP_LABEL = "건너뛰기"
@@ -12,38 +10,6 @@ export const INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR = "data-ingame-kill-reveal-re
 
 // 영상이 안 끝날 때 넘어가는 시간
 export const INGAME_KILL_REVEAL_FALLBACK_TIMEOUT_MS = 12000
-
-// 재판 처형에서 온 사망 표시
-export const TRIBUNAL_SOURCE = "TRIBUNAL"
-
-// 사망 원인별 안내 글 (모르는 원인이면 null)
-export function buildRevealMsg(source, victimNickname) {
-  const nickname =
-    typeof victimNickname === "string" && victimNickname.length > 0
-      ? victimNickname
-      : UNKNOWN_NICKNAME
-
-  if (source === "JOKER") return `광대들이 ${nickname} 님을 죽였습니다.`
-  if (source === "WITCH_HUNTER") return `마녀사냥꾼이 ${nickname} 님을 처단했습니다.`
-  if (source === "OTHER" || source === "UNKNOWN_NIGHT") return `${nickname} 님이 밤사이 사망했습니다.`
-  if (source === TRIBUNAL_SOURCE) return `${nickname} 님이 처형되었습니다.`
-  return null
-}
-
-// 피해자 이름 찾기 (못 찾으면 한 플레이어)
-export function resolveRevealNickname(players, victimUuid) {
-  if (!Array.isArray(players)) return UNKNOWN_NICKNAME
-  if (typeof victimUuid !== "string" || victimUuid.length === 0) {
-    return UNKNOWN_NICKNAME
-  }
-  const found = players.find(
-    (player) => player !== null && typeof player === "object" && player.uuid === victimUuid,
-  )
-  if (!found || typeof found.nickname !== "string" || found.nickname.length === 0) {
-    return UNKNOWN_NICKNAME
-  }
-  return found.nickname
-}
 
 // 사망 연출 덮개·영상·캔버스·글·건너뛰기 버튼 모양
 export const REVEAL_BACKDROP_CLASS =
@@ -54,9 +20,6 @@ export const REVEAL_PANEL_WRAP_CLASS =
 
 export const VIDEO_CLASS =
   "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 bg-black object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
-
-export const CANVAS_CLASS =
-  "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
 
 export const MSG_CLASS =
   "max-w-[min(48rem,92vw)] text-center font-subheading text-[clamp(1rem,3vw,1.6rem)] font-bold tracking-wide text-[#f8ead2]"

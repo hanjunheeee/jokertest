@@ -13,10 +13,10 @@ export const INGAME_PREVIEW_PLAYER_COUNT = 10
 export const POSITION_CLASS =
   "absolute inset-0 z-10 pointer-events-none [perspective:1800px]"
 
-export const SLOT_BASE_WIDTH =
+const SLOT_BASE_WIDTH =
   "clamp(6.2rem, 13.65cqw, 9.75rem)"
 
-export const SLOT_ZONES = {
+const SLOT_ZONES = {
   top: {
     transformOrigin: "50% 100%",
     scale: 0.94,
@@ -63,7 +63,7 @@ function deriveSlotTransform(zone, left) {
   return {}
 }
 
-export function resolveSlotPreset(slot) {
+function resolveSlotPreset(slot) {
   const { zone, left, top, ...overrides } = slot
   const profile = SLOT_ZONES[zone] ?? SLOT_ZONES.bottom
   const derived = deriveSlotTransform(zone, left)
@@ -78,9 +78,6 @@ export function resolveSlotPreset(slot) {
     ...overrides,
   }
 }
-
-export const SLOT_PRESETS_10 =
-  INGAME_PLAYER_LAYOUT_10.map(resolveSlotPreset)
 
 export function getSlotPresets(
   playerCount = INGAME_PREVIEW_PLAYER_COUNT,

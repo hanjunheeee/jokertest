@@ -27,7 +27,6 @@ export default function InGameRoleRevealOverlay({
       variantKey="roleReveal"
       onDismiss={onClose}
       confirmLabel={primaryLabel}
-      wrapProps={{ "aria-hidden": !open }}
     >
       <div className={HEADER_CLASS}>
         {roleInfo.nickname ? (

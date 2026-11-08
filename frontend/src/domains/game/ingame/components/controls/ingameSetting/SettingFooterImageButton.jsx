@@ -7,6 +7,7 @@ import {
   SETTING_FOOTER_ACTION_BTN_WRAP_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { INGAME_FOCUS_RING_CLASS } from "../../../constants/ingameFocusRing.js"
 
 export default function SettingFooterImageButton({
   ariaLabel,
@@ -23,8 +24,7 @@ export default function SettingFooterImageButton({
         aria-label={ariaLabel}
         title={title}
         onClick={onClick}
-        className={ROOM_CODE_BTN_CLASS}
-        style={{ outline: "none" }}
+        className={`${ROOM_CODE_BTN_CLASS} ${INGAME_FOCUS_RING_CLASS}`}
         {...(timerPlacementDevMarker ? { "data-ingame-timer-placement-dev": "" } : {})}
       >
         <PublicAsset

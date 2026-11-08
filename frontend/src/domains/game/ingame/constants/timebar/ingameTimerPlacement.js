@@ -5,7 +5,7 @@ export const INGAME_TIMER_PLACEMENT = Object.freeze({
   CHAT: "chat",
 })
 
-export const PLACEMENT_STORAGE_KEY = "joker.ingame.timerPlacement"
+const PLACEMENT_STORAGE_KEY = "joker.ingame.timerPlacement"
 
 const VALID_PLACEMENTS = new Set(Object.values(INGAME_TIMER_PLACEMENT))
 

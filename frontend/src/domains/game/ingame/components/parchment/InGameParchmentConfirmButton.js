@@ -9,6 +9,7 @@ import {
   PARCHMENT_CONFIRM_LABEL,
 } from "../../constants/parchment/ingameParchmentConfirmButton.js"
 import { publicAsset } from "../../../../../shared/utils/publicAsset.js"
+import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
 
 // 그림 버튼 하나, buttonRef로 바깥에서 초점 줄 수 있음
 export default function InGameParchmentConfirmButton({
@@ -24,8 +25,8 @@ export default function InGameParchmentConfirmButton({
       type: "button",
       ref: buttonRef,
       "aria-label": label,
-      className,
-      style: { outline: "none" },
+      // 초점 테두리를 따로 정한 모양이 아니면 공용 초점 테두리를 붙임
+      className: className.includes("focus-visible:") ? `outline-none ${className}` : `${className} ${INGAME_FOCUS_RING_CLASS}`,
       "data-sfx-kind": sfxKind,
       onClick,
     },

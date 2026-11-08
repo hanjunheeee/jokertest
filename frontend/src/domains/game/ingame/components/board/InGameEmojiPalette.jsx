@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef } from "react"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 import { useInGameEmojiSend } from "../../hooks/useInGameEmojiSend.js"
+import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import { findInGameEmoticonItem } from "../../utils/findInGameEmoticonItem.js"
 
 // 틀 그림·시험이 찾는 표시·읽어 주는 이름
@@ -58,7 +59,10 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
     onCloseRef.current = onClose
   }, [onClose])
 
-  // 판 바깥 누름·Esc 키 감시 (판 안쪽 누름은 무시)
+  // Esc는 겹친 창 중 맨 위일 때만 닫음 (초점은 안 옮김: 우클릭 끌어 고르기 방해 안 하게)
+  useInGameModalLayer({ open: true, onClose, moveFocus: false, trapFocus: false, cancelSfx: false })
+
+  // 판 바깥 누름 감시 (판 안쪽 누름은 무시)
   useEffect(() => {
     const close = () => {
       if (typeof onCloseRef.current === "function") onCloseRef.current()
@@ -77,15 +81,9 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
         setTimeout(() => document.removeEventListener("click", swallowClick, { capture: true }), 0)
       }, { capture: true, once: true })
     }
-    const handleKeyDown = (event) => {
-      if (event.key !== "Escape") return
-      close()
-    }
     document.addEventListener("mousedown", handleMouseDown)
-    document.addEventListener("keydown", handleKeyDown)
     return () => {
       document.removeEventListener("mousedown", handleMouseDown)
-      document.removeEventListener("keydown", handleKeyDown)
     }
   }, [])
 

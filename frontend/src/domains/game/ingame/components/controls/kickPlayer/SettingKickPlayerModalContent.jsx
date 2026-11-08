@@ -1,5 +1,5 @@
 // 추방 창 내용: 안내 글·추방 확인 칸·결과 글·대상 목록
-// 설정 추방 창·InGamePage 카드 추방 창·GameMatchingPage가 사용
+// 설정 추방 창·GameMatchingPage가 사용
 import { useRef } from "react"
 import { resolvePlayerRecordListProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {

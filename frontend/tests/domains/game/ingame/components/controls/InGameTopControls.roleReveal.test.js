@@ -28,11 +28,11 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 register(new URL("../../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 
 const { render, cleanup, fireEvent } = await import("@testing-library/react")
+const { default: InGameTopControls } = await import("../../../../../../src/domains/game/ingame/components/controls/InGameTopControls.jsx")
 const {
-  default: InGameTopControls,
   INGAME_ROLE_REVEAL_BUTTON_LABEL,
   INGAME_ROLE_REVEAL_BUTTON_SRC,
-} = await import("../../../../../../src/domains/game/ingame/components/controls/InGameTopControls.jsx")
+} = await import("../../../../../../src/domains/game/ingame/constants/controls/ingameControlsAssets.js")
 
 const REPO_ROOT = new URL("../../../../../../../", import.meta.url)
 

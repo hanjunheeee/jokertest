@@ -7,6 +7,7 @@ import {
 } from "../../constants/chat/ingameChatLayout.js"
 import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
 
 // 누르면 onSend, 크기·자리는 variant별 모양값
 export default function InGameChatSendButton({
@@ -18,10 +19,9 @@ export default function InGameChatSendButton({
   return (
     <button
       type="button"
-      className={`${getSendBtnClass(variant)} ${className}`.trim()}
+      className={`${getSendBtnClass(variant)} ${className} ${INGAME_FOCUS_RING_CLASS}`.trim()}
       aria-label="채팅 보내기"
       onClick={onSend}
-      style={{ outline: "none" }}
     >
       <PublicAsset
         src={INGAME_CHAT_ASSETS.sendButton}

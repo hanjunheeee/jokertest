@@ -7,6 +7,7 @@ import {
   CORNER_ACTION_BTN_LABEL_CLASS,
   CORNER_ACTION_BTN_WRAP_CLASS,
 } from "../../constants/actions/ingameCornerActionLayout.js"
+import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
 
 // 나머지 속성(...rest)은 button에 그대로 붙임 (단계 행동 표시 달기용)
 export default function InGameImageActionButton({
@@ -26,8 +27,7 @@ export default function InGameImageActionButton({
         aria-label={label}
         disabled={disabled}
         onClick={onClick}
-        className={className}
-        style={{ outline: "none" }}
+        className={`${className} ${INGAME_FOCUS_RING_CLASS}`}
         {...rest}
       >
         <PublicAsset src={src} alt="" className={imgClassName} />
