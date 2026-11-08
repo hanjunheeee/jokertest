@@ -1119,6 +1119,29 @@ test('AC-04 · 게임이 먼저 시작되면 이후 설정 저장은 거부되�
     assert.equal(gameSessionCore.getActiveSessionRoutingInfo('host-a')?.gameId, started.gameId)
 })
 
+test('역할 공개(사용자 결정 2026-11-09) · 게임 시작 때 바로 10초 역할 공개 마감이 걸린다(확인을 기다리지 않음)', async () => {
+    const gameSessionSocketLayer = require('../../socket/gameSession')
+    const { __getRoleRevealRunForTests, stopRoleRevealTimer } = gameSessionSocketLayer.__testables
+    const io = createFakeIo([])
+    const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 4, jokerCount: 1 })
+    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await callAsPromise(handleSetReady, io, hostSocket, 'host-a', readyPayload(room))
+    await callAsPromise(handleSetReady, io, joinerSocket, 'p1', readyPayload(room))
+
+    const before = Date.now()
+    const started = await new Promise((resolve) =>
+        handleStartGame(io, hostSocket, 'host-a', startPayload(room), resolve))
+    assert.equal(started.ok, true, started.message)
+
+    const run = __getRoleRevealRunForTests(started.gameId)
+    try {
+        assert.notEqual(run, null, '아무도 확인을 안 보냈는데 마감이 걸려 있어야 한다')
+        assert.ok(run.deadline >= before + 10_000 && run.deadline <= Date.now() + 10_000, '마감은 10초')
+    } finally {
+        stopRoleRevealTimer(started.gameId)
+    }
+})
+
 test('AC-05 · 세션이 만들어진 뒤 대기방 설정 객체를 바꿔도 그 판의 역할·제한시간은 소급 변경되지 않는다', async () => {
     const room = {
         id: 'room-immutable',

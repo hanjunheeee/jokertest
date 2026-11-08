@@ -14,6 +14,8 @@ const deps = {
     userRepository: userService,
     economyService,
     gameResultRepository: roleStatisticsQueries,
+    // 판 시작 직후 부를 함수 (역할 공개 마감 걸기), socket/gameSession.js가 넣어 줌 (고리 require 막기)
+    onGameStarted: null,
 }
 
 // socket.js가 접속 목록 넣어 줌

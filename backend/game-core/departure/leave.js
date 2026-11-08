@@ -5,8 +5,7 @@ const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
 const { releasePlayerSession } = require('../core/registry/write')
 const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap } = require('../phase/tribunal/ballots')
 const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal/constants')
-const { isRoleRevealComplete } = require('../setup/roleAck')
-const { enterDayPhase, getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day/state')
+const { getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day/state')
 const { DAY_PHASES } = require('../phase/day/constants')
 const { getDayVoterUuids } = require('../phase/day/ballots')
 const { hasForfeited, getParticipationRevision } = require('../queries/participation')
@@ -144,14 +143,9 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
     }
 }
 
-// 나간 사람 때문에 다 찬 단계면 넘김 (역할 확인 → 낮, 토론 → 투표)
+// 나간 사람 때문에 다 찬 단계면 넘김 (토론 → 투표)
+// 역할 공개는 확인을 안 기다려 여기서 안 넘김, 10초 마감만 넘김 (사용자 결정 2026-11-09)
 function advanceStalledPhase(session) {
-    // 역할 확인 중: 남은 사람 다 확인했으면 첫 낮으로 (지도 03-⑤)
-    if (session.phase === 'ROLE_REVEAL') {
-        if (!isRoleRevealComplete(session)) return { transitioned: null }
-        enterDayPhase(session)
-        return { transitioned: 'DAY' }
-    }
     // 낮 토론 중: 남은 산 사람 다 준비했으면 투표로
     if (session.phase === 'DAY' && getDayPhase(session) === DAY_PHASES.DISCUSSION) {
         const eligibleUuids = getDayVoterUuids(session)

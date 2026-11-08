@@ -5,6 +5,8 @@ const gameRecordService = require('../services/game/record')
 const { persistTerminalSession, setEmitToUser } = gameRecordService
 const gameAchievementService = require('../services/game/achievementHooks')
 const kickReceiptStore = require('./kickReceiptStore')
+const { deps: matchmakingDeps } = require('./matchmaking/core/deps')
+const { isolate } = require('./common/isolate')
 const { NIGHT_TURN_STAGES } = require('./gameSession/core/constants')
 const { nightTurnRuns, roleRevealRuns, tribunalRuns, setPhaseHooks } = require('./gameSession/core/state')
 const {
@@ -89,6 +91,10 @@ setPhaseHooks({
     advanceNightTurn,
     resolveTribunalNow: maybeResolveTribunal,
 })
+
+// 판 시작 직후 역할 공개 10초 마감 걸기: matchmaking 시작 처리가 부름, 던져도 시작 답은 그대로 (사용자 결정 2026-11-09)
+matchmakingDeps.onGameStarted = (io, session) => isolate('[역할 공개 마감 시작 실패]', { code: 'TIMER_START_ERROR', gameId: session?.id },
+    () => ensureRoleRevealTimer(io, session))
 
 module.exports = {
     registerGameHandlers,

@@ -21,6 +21,8 @@ const {
     acknowledgeDayVoteReady,
     submitNightAction,
     submitDayVote,
+    prepareDayVoteResolution,
+    commitDayVoteResolution,
     commitNightResolution,
     buildNightResultAppliedPayload,
     getSessionSnapshotForPlayer,
@@ -46,7 +48,7 @@ const {
     commitJokerTrioSessionAtNight,
     nightSessionOf3,
     commitTrioSessionAtDay,
-    advanceQuadToRevote,
+    commitQuadSessionAtDay,
     buildSnapQuadSession,
     ackAll,
     resolveJokerOnlyNight,
@@ -1386,21 +1388,27 @@ test('assertValidSessionForCommit: dayVotes가 비어있지 않은 session으로
     assert.throws(() => commitGameSession(candidate.session), /dayVotes/)
 })
 
-test('getSessionSnapshotForPlayer: 재투표 진행 중 DAY 스냅샷은 dayVoteResolution에 round와 revoteExcludedUuids를 노출하고 비밀은 새지 않는다', () => {
-    const { session, uuidA, uuidC } = advanceQuadToRevote('room-snap-revote')
+test('getSessionSnapshotForPlayer(사용자 규칙 변경): 재판으로 간 스냅샷의 dayVoteResolution은 round 1·revoteExcludedUuids 빈 배열이고 비밀은 새지 않는다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-snap-revote' })
+    submitDayVote(uuidA, session.id, uuidC)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+    submitDayVote(uuidD, session.id, uuidC)
+    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
+    assert.deepEqual(commitDayVoteResolution(prepared.session, prepared.resolution), { ok: true })
 
     const result = getSessionSnapshotForPlayer(uuidA, session.id)
 
     assert.equal(result.ok, true)
-    assert.equal(result.snapshot.phase, 'DAY')
+    assert.equal(result.snapshot.phase, 'TRIBUNAL')
     assert.equal(result.snapshot.dayIndex, 1)
     assert.deepEqual(result.snapshot.dayVoteResolution, {
         round: 1,
-        outcome: 'REVOTE',
-        tribunalTargetUuid: null,
+        outcome: 'TRIBUNAL',
+        tribunalTargetUuid: uuidC,
         publicVoteCount: 4,
         publicAbstainCount: 0,
-        revoteExcludedUuids: [uuidA, uuidC].sort(),
+        revoteExcludedUuids: [],
     })
 
     assertNoForbiddenPrivateData(result.snapshot, collectOtherPlayerRoleSecrets(session, uuidA))

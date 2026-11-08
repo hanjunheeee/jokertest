@@ -331,6 +331,8 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
             }
         }
     })
+    // 역할 공개 10초 마감 바로 걸기, 확인 안 기다림 (사용자 결정 2026-11-09, 거는 함수는 gameSession.js가 넣어 줌)
+    deps.onGameStarted?.(io, prepared.session)
     emitPublicRoomList(io)
 
     respond({ ok: true, gameId: prepared.session.id })

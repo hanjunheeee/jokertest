@@ -317,23 +317,23 @@ test('submitNightAction: 커밋 직후 nightActions는 항상 빈 Map이다', ()
     assert.equal(candidate.session.nightActions.size, 0)
 })
 
-test('submitNightAction(JOKER no-op): 자기 자신을 대상으로 제출(사전 제출 없음) → {ok:true, gameId} + Map 완전 no-op', () => {
+test('submitNightAction(JOKER 동료 거절, 사용자 규칙 변경): 자기 자신을 대상으로 내면 TARGET_IS_ALLY이고 Map은 불변이다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     const [self] = jokerUuids
 
     const result = submitNightAction(self, session.id, self)
 
-    assert.deepEqual(result, { ok: true, gameId: session.id })
+    assert.deepEqual(result, { ok: false, code: 'TARGET_IS_ALLY' })
     assert.equal(session.nightActions.has(self), false)
 })
 
-test('submitNightAction(JOKER no-op): 다른 JOKER를 대상으로 제출(사전 제출 없음) → {ok:true, gameId} + Map 완전 no-op', () => {
+test('submitNightAction(JOKER 동료 거절, 사용자 규칙 변경): 다른 JOKER를 대상으로 내면 TARGET_IS_ALLY이고 Map은 불변이다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     const [actor, teammate] = jokerUuids
 
     const result = submitNightAction(actor, session.id, teammate)
 
-    assert.deepEqual(result, { ok: true, gameId: session.id })
+    assert.deepEqual(result, { ok: false, code: 'TARGET_IS_ALLY' })
     assert.equal(session.nightActions.has(actor), false)
 })
 
@@ -347,7 +347,7 @@ test('submitNightAction(JOKER): CITIZEN 진영 대상 제출 → {ok:true, gameI
     assert.equal(session.nightActions.get(actor), citizenUuid)
 })
 
-test('submitNightAction(JOKER no-op 회귀): 기존 유효한 시민 표는 이후 다른 JOKER 대상 제출로 파괴되지 않는다', () => {
+test('submitNightAction(JOKER 동료 거절 회귀): 기존 유효한 시민 표는 이후 다른 JOKER 대상 제출(거절)로 파괴되지 않는다', () => {
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
     const [actor, teammate] = jokerUuids
 
@@ -356,22 +356,22 @@ test('submitNightAction(JOKER no-op 회귀): 기존 유효한 시민 표는 이�
 
     const result = submitNightAction(actor, session.id, teammate)
 
-    assert.deepEqual(result, { ok: true, gameId: session.id })
+    assert.deepEqual(result, { ok: false, code: 'TARGET_IS_ALLY' })
     assert.equal(session.nightActions.get(actor), citizenUuid)
 })
 
-test('submitNightAction(JOKER no-op 회귀): 기존 유효한 시민 표는 이후 자기 자신 대상 제출로도 파괴되지 않는다', () => {
+test('submitNightAction(JOKER 동료 거절 회귀): 기존 유효한 시민 표는 이후 자기 자신 대상 제출(거절)로도 파괴되지 않는다', () => {
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight()
     const [actor] = jokerUuids
 
     submitNightAction(actor, session.id, citizenUuid)
     const result = submitNightAction(actor, session.id, actor)
 
-    assert.deepEqual(result, { ok: true, gameId: session.id })
+    assert.deepEqual(result, { ok: false, code: 'TARGET_IS_ALLY' })
     assert.equal(session.nightActions.get(actor), citizenUuid)
 })
 
-test('submitNightAction(JOKER no-op 회귀): 기존 명시적 SKIP도 이후 다른 JOKER 대상 제출로 파괴되지 않는다', () => {
+test('submitNightAction(JOKER 동료 거절 회귀): 기존 명시적 SKIP도 이후 다른 JOKER 대상 제출(거절)로 파괴되지 않는다', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     const [actor, teammate] = jokerUuids
 
@@ -380,7 +380,7 @@ test('submitNightAction(JOKER no-op 회귀): 기존 명시적 SKIP도 이후 다
 
     const result = submitNightAction(actor, session.id, teammate)
 
-    assert.deepEqual(result, { ok: true, gameId: session.id })
+    assert.deepEqual(result, { ok: false, code: 'TARGET_IS_ALLY' })
     assert.equal(session.nightActions.get(actor), null)
 })
 
@@ -440,13 +440,13 @@ test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 �
     assert.equal(session.nightActions.get(doctorUuid), citizenUuid)
 })
 
-test('9라운드 회귀: JOKER no-op 성공에서도 core가 반환하는 gameId는 client 원본이 아닌 canonical session.id다', () => {
+test('9라운드 회귀: JOKER 동료 지목 거절에서도 gameId 앞뒤 공백은 trim 후 같은 세션으로 판정된다(TARGET_IS_ALLY)', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-abc-joker', gameIdFn: () => 'abc' })
     const [actor, teammate] = jokerUuids
 
     const result = submitNightAction(actor, '\n  abc  \n', teammate)
 
-    assert.deepEqual(result, { ok: true, gameId: 'abc' })
+    assert.deepEqual(result, { ok: false, code: 'TARGET_IS_ALLY' })
     assert.equal(session.nightActions.has(actor), false)
 })
 

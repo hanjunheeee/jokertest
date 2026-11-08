@@ -7,7 +7,7 @@ const { ROLE_TEAMS } = require('../../core/rules/roles')
 const { SELF_TARGET_ROLES } = require('./constants')
 
 // 밤 행동 대상 받기 (밤·산 사람·내 차례·대상 조건 맞을 때만)
-// 광대가 광대를 고르면 성공처럼 답하지만 기록 안 함
+// 광대가 광대(나 포함)를 고르면 거절 (사용자 결정 2026-11-09)
 function submitNightAction(uuid, gameId, targetId) {
     // 판 id 확인 + 내 판·판 안의 나 찾기 (옛 판 화면에서 보낸 것 거절)
     const found = findActorSession(uuid, gameId)
@@ -44,9 +44,9 @@ function submitNightAction(uuid, gameId, targetId) {
             return { ok: false, code: 'TARGET_NOT_DEAD' }
         }
 
-        // 광대가 광대(나 포함) 찍으면 기록 없이 ok만
+        // 광대가 광대(나 포함) 찍으면 거절 (동료 광대 지목 막기)
         if (actor.role === 'JOKER' && ROLE_TEAMS[targetPlayer.role] === 'JOKER') {
-            return { ok: true, gameId: session.id }
+            return { ok: false, code: 'TARGET_IS_ALLY' }
         }
 
         // 자기 자신은 의사만 고를 수 있음

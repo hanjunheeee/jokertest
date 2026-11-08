@@ -90,7 +90,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     return applied
 }
 
-// 이탈로 막혀 있던 단계 풀기: 다 확인·준비됐으면 다음 단계로, 남은 사람 다 냈으면 바로 판정
+// 이탈로 막혀 있던 단계 풀기: 다 준비됐으면 다음 단계로, 남은 사람 다 냈으면 바로 판정
 function advanceAfterDeparture(io, session, applied) {
     const label = '[이탈 후 단계 진행 실패]'
     // 단계마다 격리, 실패는 로그만
@@ -102,18 +102,9 @@ function advanceAfterDeparture(io, session, applied) {
         return
     }
 
-    // 남은 사람이 다 확인·준비했으면 core가 다음 단계로 넘김
+    // 남은 사람이 다 준비했으면 core가 다음 단계로 넘김 (역할 공개는 마감 타이머만 넘김)
     const advanced = isolateOr({ transitioned: null }, label, { code: 'ADVANCE_ERROR', gameId: session.id },
         () => gameSessionCore.advanceStalledPhase(session))
-
-    // 역할 확인 끝나 첫 낮으로: 역할 공개 마감 끄고 낮 타이머 먼저 + 단계 방송 (새 마감 시각 실으려고, known 1-13)
-    if (advanced.transitioned === 'DAY') {
-        step('ROLE_REVEAL_TIMER_STOP_ERROR', () => stopRoleRevealTimer(session.id))
-        step('TIMER_START_ERROR', () => startDayPhaseTimer(io, session))
-        step('PHASE_DELIVERY_ERROR',
-            () => emitToGameChannel(io, session, 'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session)))
-        return
-    }
 
     // 토론 끝나 투표로: 투표 타이머 먼저 걸고 낮 단계 방송 (새 마감 시각 실으려고)
     if (advanced.transitioned === 'DAY_VOTE') {

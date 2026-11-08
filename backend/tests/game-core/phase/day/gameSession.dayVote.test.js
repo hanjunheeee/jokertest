@@ -35,7 +35,6 @@ const {
     advanceDayToVotePhase,
     commitTrioSessionAtDay,
     commitQuadSessionAtDay,
-    advanceQuadToRevote,
     resolveTribunalVotes,
     assertNoForbiddenPrivateData,
     collectOtherPlayerRoleSecrets,
@@ -402,7 +401,7 @@ test('submitDayVote: 서로 다른 GameSession은 독립된 dayVotes Map을 가�
     assert.notEqual(dayA.session.dayVotes, dayB.session.dayVotes)
 })
 
-test('commitDayVoteResolution: 1라운드 동점은 REVOTE이고 phase를 DAY에 남긴 채 라운드와 제외 집합만 바꾼다', () => {
+test('commitDayVoteResolution(사용자 규칙 변경): 동점이면 재투표 없이 TIE로 바로 NIGHT, 라운드 1·제외 빈 값 그대로다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-tie-1' })
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
@@ -410,26 +409,23 @@ test('commitDayVoteResolution: 1라운드 동점은 REVOTE이고 phase를 DAY에
 
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     assert.equal(prepared.ok, true)
-    assert.equal(prepared.resolution.outcome, 'REVOTE')
+    assert.equal(prepared.resolution.outcome, 'TIE')
     assert.equal(prepared.resolution.tribunalTargetUuid, null)
     assert.equal(prepared.resolution.round, 1)
-    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidB, uuidC].sort())
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [])
 
-    commitDayVoteResolution(prepared.session, prepared.resolution)
+    assert.deepEqual(commitDayVoteResolution(prepared.session, prepared.resolution), { ok: true })
 
-    assert.equal(session.phase, 'DAY')
+    assert.equal(session.phase, 'NIGHT')
     assert.equal(session.dayIndex, 1)
     assert.equal(session.tribunal, null)
     assert.equal(session.dayVoteResolution, prepared.resolution)
-    assert.equal(session.dayVoteRound, 2)
-    assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuidA, uuidB, uuidC].sort())
-    assert.equal(session.dayVotes.size, 0)
-
-    const stale = prepareDayVoteResolution(uuidB, session.id, session.dayIndex)
-    assert.deepEqual(stale, { ok: false, code: 'ACTIONS_PENDING' })
+    assert.equal(session.dayVoteRound, 1)
+    assert.equal(session.dayVoteExcludedUuids.size, 0)
+    for (const player of session.players.values()) assert.equal(player.alive, true)
 })
 
-test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_VOTE_RESOLUTION_MISMATCH이고 라운드·표가 불변이다', () => {
+test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_VOTE_RESOLUTION_MISMATCH이고 단계·라운드가 불변이다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-revote-recommit' })
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
@@ -437,19 +433,16 @@ test('commitDayVoteResolution: 이미 소비된 resolution의 재-commit은 DAY_
 
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     commitDayVoteResolution(prepared.session, prepared.resolution)
-
-    submitDayVote(uuidA, session.id, null)
-    assert.equal(session.dayVotes.size, 1)
+    assert.equal(session.phase, 'NIGHT')
 
     const second = commitDayVoteResolution(session, prepared.resolution)
 
     assert.deepEqual(second, { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' })
-    assert.equal(session.dayVoteRound, 2)
-    assert.equal(session.dayVotes.size, 1)
-    assert.equal(session.phase, 'DAY')
+    assert.equal(session.dayVoteRound, 1)
+    assert.equal(session.phase, 'NIGHT')
 })
 
-test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합이 달라진 준비 결과는 커밋되지 않는다', () => {
+test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보(표 묶음)가 달라진 준비 결과는 커밋되지 않는다', () => {
     const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-tie-set' })
 
     submitDayVote(uuidA, session.id, uuidC)
@@ -457,8 +450,8 @@ test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합�
     submitDayVote(uuidC, session.id, uuidA)
     submitDayVote(uuidD, session.id, uuidA)
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    assert.equal(prepared.resolution.outcome, 'REVOTE')
-    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidC].sort())
+    assert.equal(prepared.resolution.outcome, 'TIE')
+    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [])
 
     submitDayVote(uuidA, session.id, uuidD)
     submitDayVote(uuidB, session.id, uuidD)
@@ -474,9 +467,10 @@ test('commitDayVoteResolution: 집계 수치가 같아도 동률 후보 집합�
     assert.equal(session.phase, 'DAY')
 
     const reprepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    assert.deepEqual(reprepared.resolution.revoteExcludedUuids, [uuidB, uuidD].sort())
+    assert.equal(reprepared.resolution.outcome, 'TIE')
     assert.equal(commitDayVoteResolution(reprepared.session, reprepared.resolution).ok, true)
-    assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuidB, uuidD].sort())
+    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayVoteExcludedUuids.size, 0)
 })
 
 test('commitDayVoteResolution: 집계도 동률 집합도 그대로인 **표 교환**은 커밋되지 않는다', () => {
@@ -487,7 +481,7 @@ test('commitDayVoteResolution: 집계도 동률 집합도 그대로인 **표 교
     submitDayVote(uuidC, session.id, uuidD)
     submitDayVote(uuidD, session.id, uuidC)
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    assert.equal(prepared.resolution.outcome, 'REVOTE')
+    assert.equal(prepared.resolution.outcome, 'TIE')
     const preparedTie = [...prepared.resolution.revoteExcludedUuids].sort()
 
     assert.equal(submitDayVote(uuidA, session.id, uuidC).ok, true)
@@ -626,7 +620,7 @@ test('prepareDayVoteResolution: 사망한 참가자는 eligible voter에서 제�
 
     assert.equal(prepared.ok, true)
     assert.equal(prepared.resolution.publicVoteCount, 2)
-    assert.equal(prepared.resolution.outcome, 'REVOTE')
+    assert.equal(prepared.resolution.outcome, 'TIE')
 })
 
 test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가리키면 TARGET_NOT_A_PARTICIPANT다', () => {
@@ -641,7 +635,7 @@ test('prepareDayVoteResolution: eligible voter의 표가 사망한 대상을 가
     assert.deepEqual(result, { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' })
 })
 
-test('buildDayVoteResolvedPayload: REVOTE 이후에는 phase가 DAY, 재투표 종결(ABSTAINED) 이후에는 NIGHT를 노출한다', () => {
+test('buildDayVoteResolvedPayload(사용자 규칙 변경): 동점(TIE) 뒤 phase는 NIGHT, round는 1, revoteExcludedUuids는 빈 배열이다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-payload-phase-1' })
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidC)
@@ -649,77 +643,38 @@ test('buildDayVoteResolvedPayload: REVOTE 이후에는 phase가 DAY, 재투표 �
 
     const first = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     commitDayVoteResolution(first.session, first.resolution)
-    const revotePayload = buildDayVoteResolvedPayload(first.session, first.resolution)
+    const payload = buildDayVoteResolvedPayload(first.session, first.resolution)
 
-    assert.equal(revotePayload.phase, 'DAY')
-    assert.equal(revotePayload.outcome, 'REVOTE')
-    assert.equal(revotePayload.round, 1)
-    assert.deepEqual(revotePayload.revoteExcludedUuids.sort(), [uuidA, uuidB, uuidC].sort())
-
-    submitDayVote(uuidA, session.id, null)
-    submitDayVote(uuidB, session.id, null)
-    submitDayVote(uuidC, session.id, null)
-
-    const second = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    assert.equal(second.resolution.outcome, 'ABSTAINED')
-    assert.equal(second.resolution.round, 2)
-    commitDayVoteResolution(second.session, second.resolution)
-    const finalPayload = buildDayVoteResolvedPayload(second.session, second.resolution)
-
-    assert.equal(finalPayload.phase, 'NIGHT')
-    assert.equal(finalPayload.outcome, 'ABSTAINED')
-    assert.equal(finalPayload.round, 2)
-    assert.deepEqual(finalPayload.revoteExcludedUuids, [])
+    assert.equal(payload.phase, 'NIGHT')
+    assert.equal(payload.outcome, 'TIE')
+    assert.equal(payload.round, 1)
+    assert.equal(payload.tribunalTargetUuid, null)
+    assert.deepEqual(payload.revoteExcludedUuids, [])
 })
 
-test('submitDayVote: 재투표 라운드에서 동점자였던 플레이어에게 투표하면 TARGET_EXCLUDED_FROM_REVOTE이고 dayVotes는 불변이다', () => {
-    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-excluded')
-    const before = new Map(session.dayVotes)
+test('submitDayVote(사용자 규칙 변경): 재투표 제외가 없어 누구든(자기 말고) 찍을 수 있고 TARGET_EXCLUDED_FROM_REVOTE는 안 나온다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-revote-excluded' })
+    session.dayVoteExcludedUuids = new Set([uuidA, uuidC])
 
-    assert.deepEqual(submitDayVote(uuidB, session.id, uuidA), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
-    assert.deepEqual(submitDayVote(uuidD, session.id, uuidC), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
-    assert.deepEqual(session.dayVotes, before)
-
-    assert.deepEqual(submitDayVote(uuidA, session.id, uuidB), { ok: true })
-    assert.equal(session.dayVotes.get(uuidA), uuidB)
-    assert.deepEqual(submitDayVote(uuidC, session.id, null), { ok: true })
-    assert.equal(session.dayVotes.get(uuidC), null)
+    assert.deepEqual(submitDayVote(uuidB, session.id, uuidA), { ok: true })
+    assert.deepEqual(submitDayVote(uuidD, session.id, uuidC), { ok: true })
+    assert.equal(session.dayVotes.get(uuidB), uuidA)
+    assert.equal(session.dayVotes.get(uuidD), uuidC)
 })
 
-test('재투표에서 단독 최다 득표가 나오면 기존 계약대로 TRIBUNAL로 전이한다', () => {
-    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-tribunal')
-    submitDayVote(uuidA, session.id, uuidB)
-    submitDayVote(uuidB, session.id, uuidD)
-    submitDayVote(uuidC, session.id, uuidB)
-    submitDayVote(uuidD, session.id, uuidB)
-
-    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-
-    assert.equal(prepared.resolution.outcome, 'TRIBUNAL')
-    assert.equal(prepared.resolution.tribunalTargetUuid, uuidB)
-    assert.equal(prepared.resolution.round, 2)
-    assert.deepEqual(prepared.resolution.excludedUuids, [uuidA, uuidC].sort())
-    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [])
-
-    commitDayVoteResolution(prepared.session, prepared.resolution)
-
-    assert.equal(session.phase, 'TRIBUNAL')
-    assert.equal(session.tribunal.defendantUuid, uuidB)
-})
-
-test('재투표도 동점이면 outcome은 TIE이고 처형 없이 NIGHT로 진행한다(3라운드는 없다)', () => {
-    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-tie')
+test('4인 2:2 동점(사용자 규칙 변경): 재투표·재판 없이 TIE로 바로 NIGHT, 아무도 안 죽는다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-revote-tie' })
     const aliveBefore = new Map([...session.players].map(([uuid, p]) => [uuid, p.alive]))
 
-    submitDayVote(uuidA, session.id, uuidB)
-    submitDayVote(uuidB, session.id, uuidD)
-    submitDayVote(uuidC, session.id, uuidD)
-    submitDayVote(uuidD, session.id, uuidB)
+    submitDayVote(uuidA, session.id, uuidC)
+    submitDayVote(uuidB, session.id, uuidC)
+    submitDayVote(uuidC, session.id, uuidA)
+    submitDayVote(uuidD, session.id, uuidA)
 
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
 
     assert.equal(prepared.resolution.outcome, 'TIE')
-    assert.equal(prepared.resolution.round, 2)
+    assert.equal(prepared.resolution.round, 1)
     assert.equal(prepared.resolution.tribunalTargetUuid, null)
     assert.deepEqual(prepared.resolution.revoteExcludedUuids, [])
 
@@ -727,11 +682,11 @@ test('재투표도 동점이면 outcome은 TIE이고 처형 없이 NIGHT로 진�
 
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.tribunal, null)
-    for (const [uuid, p] of session.players) assert.equal(p.alive, aliveBefore.get(uuid), `${uuid} 생존 상태 불변`)
+    for (const [uuid, p] of session.players) assert.equal(p.alive, aliveBefore.get(uuid), uuid + ' 생존 상태 불변')
 })
 
-test('enterDayPhase: 재투표로 올라간 라운드와 제외 집합은 다음 낮에 최초 투표 상태로 되돌아간다', () => {
-    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-revote-reset')
+test('enterDayPhase: 동점으로 밤을 넘긴 다음 낮도 라운드 1·제외 빈 값으로 시작한다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-revote-reset' })
     submitDayVote(uuidA, session.id, uuidB)
     submitDayVote(uuidB, session.id, uuidD)
     submitDayVote(uuidC, session.id, uuidD)
@@ -879,17 +834,6 @@ test('acknowledgeDayVoteReady: gameId/세션 검증은 acknowledgeRoleReveal과 
     assert.equal(session.dayVoteReadyUuids.size, 0)
 })
 
-test('재투표(요구 3): REVOTE는 DAY_VOTE 안의 반복이라 준비를 다시 요구하지 않는다', () => {
-    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-dp-revote')
-
-    assert.equal(session.phase, 'DAY')
-    assert.equal(session.dayPhase, 'DAY_VOTE')
-    assert.equal(session.dayVoteRound, 2)
-    assert.deepEqual(submitDayVote(uuidB, session.id, uuidD), { ok: true })
-    assert.deepEqual(submitDayVote(uuidD, session.id, uuidB), { ok: true })
-    assert.deepEqual(submitDayVote(uuidA, session.id, uuidC), { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' })
-})
-
 test('전원 기권(요구 4): 유효 투표 0이면 처형 없이 밤으로 넘어간다', () => {
     const { session, uuidA, uuidB, uuidC } = commitTrioSessionAtDay({ id: 'room-dp-abstain' })
     for (const uuid of [uuidA, uuidB, uuidC]) submitDayVote(uuid, session.id, null)
@@ -897,20 +841,6 @@ test('전원 기권(요구 4): 유효 투표 0이면 처형 없이 밤으로 넘
     const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
     assert.equal(prepared.resolution.outcome, 'ABSTAINED')
     assert.deepEqual(commitDayVoteResolution(prepared.session, prepared.resolution), { ok: true })
-
-    assert.equal(session.phase, 'NIGHT')
-    assert.equal(session.tribunal, null)
-    for (const player of session.players.values()) assert.equal(player.alive, true)
-})
-
-test('전원 기권(요구 4): 재투표 2라운드에서 전원 기권해도 처형 없이 밤으로 넘어간다', () => {
-    const { session, uuidA, uuidB, uuidC, uuidD } = advanceQuadToRevote('room-dp-abstain-revote')
-    for (const uuid of [uuidA, uuidB, uuidC, uuidD]) submitDayVote(uuid, session.id, null)
-
-    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    assert.equal(prepared.resolution.outcome, 'ABSTAINED')
-    assert.equal(prepared.resolution.round, 2)
-    commitDayVoteResolution(prepared.session, prepared.resolution)
 
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.tribunal, null)
@@ -951,14 +881,16 @@ test('buildDayPhaseChangedPayload: 공개 키가 정확히 4개뿐이고 참가�
     assertNoForbiddenPrivateData(payload, collectOtherPlayerRoleSecrets(session, uuidA))
 })
 
-test('buildDayPhaseChangedPayload: 재투표가 열린 낮에는 현재 라운드를 그대로 싣는다', () => {
-    const { session } = advanceQuadToRevote('room-dp-payload-revote')
+test('buildDayPhaseChangedPayload(사용자 규칙 변경): 재투표가 없어 round 칸은 늘 1이다', () => {
+    const { session, uuidA, uuidB, uuidC, uuidD } = commitQuadSessionAtDay({ id: 'room-dp-payload-revote' })
     assert.deepEqual(buildDayPhaseChangedPayload(session), {
         gameId: session.id,
         dayIndex: 1,
         dayPhase: 'DAY_VOTE',
-        round: 2,
+        round: 1,
     })
+    for (const uuid of [uuidA, uuidB, uuidC, uuidD]) submitDayVote(uuid, session.id, null)
+    assert.equal(buildDayPhaseChangedPayload(session).round, 1)
 })
 
 test('buildSessionSnapshot: dayPhase는 DAY에서만 실리고 hasActedThisPhase는 하위 구간별 제출을 따른다', () => {

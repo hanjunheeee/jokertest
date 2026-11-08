@@ -8,7 +8,7 @@ function enterDayPhase(session) {
     session.phase = 'DAY'
     session.dayIndex += 1
     session.dayPhase = DAY_PHASES.DISCUSSION
-    // 준비·표·재투표 제외·효과음 기록 새 그릇으로 (지난 날 것 안 섞이게)
+    // 준비·표·효과음 기록 새 그릇으로 (지난 날 것 안 섞이게), 투표 번호 1·제외 빈 값은 옛 칸 유지용
     session.dayVoteReadyUuids = new Set()
     session.dayVotes = new Map()
     session.dayVoteRound = 1
@@ -29,12 +29,12 @@ function enterDayVotePhase(session) {
     session.dayVoteReadyUuids = new Set()
 }
 
-// 몇 번째 투표인지 (재투표면 2, 이상한 값이면 1)
+// 몇 번째 투표인지: 재투표 없어 늘 1 (방송·스냅샷 round 칸용으로 남김)
 function getDayVoteRound(session) {
     return Number.isInteger(session.dayVoteRound) && session.dayVoteRound >= 1 ? session.dayVoteRound : 1
 }
 
-// 이번 투표에서 뽑을 수 없는 사람 (재투표 때)
+// 이번 투표에서 뽑을 수 없는 사람: 재투표 없어 늘 빈 값 (옛 칸 읽는 쪽용으로 남김)
 function getDayVoteExcludedUuids(session) {
     return session.dayVoteExcludedUuids instanceof Set ? session.dayVoteExcludedUuids : new Set()
 }

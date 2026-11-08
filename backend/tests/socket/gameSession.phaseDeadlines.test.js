@@ -1,4 +1,4 @@
-// 단계 마감 시험: 역할 공개 마감(BE-002)·재판 마감(BE-003)·낮 투표 마감 요청자(known 1-1)·재투표 마감 시각 방송(known 1-13)
+// 단계 마감 시험: 역할 공개 10초 마감(BE-002, 사용자 결정 2026-11-09)·재판 마감(BE-003)·낮 투표 마감 요청자(known 1-1)·동점 뒤 밤(사용자 결정 2026-11-09)
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -134,25 +134,29 @@ function toDayVote(session) {
     gameSessionCore.enterDayVotePhase(session)
 }
 
-test('BE-002: 역할 공개 중 안 누른 사람이 끊긴 채 안 돌아와도 마감 때 첫 낮으로 넘어가고 그 사람은 끊김 탈락한다', () => {
+test('BE-002(사용자 규칙 변경): 모두 확인을 보내도 넘어가지 않고 10초 마감 때 무조건 첫 낮으로, 끊긴 사람은 유예 만료로 탈락한다', () => {
     const { session, uuids } = commitFivePlayerSession('reveal-stall')
     const { io, sockets, trigger } = wireSession(session)
     const clock = createManualClock()
     const [absent, ...present] = uuids
 
-    // 안 누른 사람 끊김 (유예는 다음 단계까지)
+    // 끊긴 사람 (유예는 다음 단계까지)
     sockets.get(absent).connected = false
     beginDisconnectGrace(io, session, absent, clock)
     ensureRoleRevealTimer(io, session, clock)
 
-    // 나머지는 전부 확인, 그래도 끊긴 사람 때문에 아직 역할 공개
-    for (const uuid of present) assert.equal(trigger(uuid, 'acknowledge_role_reveal', { gameId: session.id }).ok, true)
+    // 나머지 확인은 ok만 받고 단계는 그대로 (서버는 확인 안 기다림)
+    for (const uuid of present) {
+        assert.deepEqual(trigger(uuid, 'acknowledge_role_reveal', { gameId: session.id }), { ok: true })
+    }
     assert.equal(session.phase, 'ROLE_REVEAL')
+    assert.equal(session.roleRevealAcks.size, 0, '확인은 기록도 안 함')
 
-    clock.advance(30_000 - 1)
+    clock.advance(10_000 - 1)
     assert.equal(session.phase, 'ROLE_REVEAL', '마감 직전엔 그대로')
     clock.advance(1)
-    assert.equal(session.phase, 'DAY', '마감 때 첫 낮으로')
+    assert.equal(session.phase, 'DAY', '10초 마감 때 첫 낮으로')
+    assert.equal(session.dayIndex, 1)
     assert.equal(session.players.get(absent).alive, false, '끊긴 채 안 돌아온 사람은 유예 만료로 탈락')
     const phaseChanged = io.broadcasts.filter((b) => b.event === 'game_phase_changed')
     assert.equal(phaseChanged.length, 1)
@@ -160,16 +164,34 @@ test('BE-002: 역할 공개 중 안 누른 사람이 끊긴 채 안 돌아와도
     assert.equal(__getRoleRevealRunForTests(session.id), null)
 })
 
-test('BE-002: 역할 확인이 하나라도 오면 역할 공개 마감이 걸리고, 전원 확인으로 넘어가면 꺼진다', () => {
+test('BE-002(사용자 규칙 변경): 아무도 확인 안 보내도 10초 마감 때 첫 낮으로, 확인 이벤트는 마감을 새로 걸거나 끄지 않는다', () => {
     const { session, uuids } = commitFivePlayerSession('reveal-auto')
-    const { trigger } = wireSession(session)
+    const { io, trigger } = wireSession(session)
+    const clock = createManualClock()
 
-    trigger(uuids[0], 'acknowledge_role_reveal', { gameId: session.id })
-    assert.notEqual(__getRoleRevealRunForTests(session.id), null)
+    // 확인만으로는 마감이 안 걸림 (판 시작 때 거는 것)
+    assert.deepEqual(trigger(uuids[0], 'acknowledge_role_reveal', { gameId: session.id }), { ok: true })
+    assert.equal(__getRoleRevealRunForTests(session.id), null)
 
-    for (const uuid of uuids.slice(1)) trigger(uuid, 'acknowledge_role_reveal', { gameId: session.id })
+    ensureRoleRevealTimer(io, session, clock)
+    for (const uuid of uuids) trigger(uuid, 'acknowledge_role_reveal', { gameId: session.id })
+    assert.equal(session.phase, 'ROLE_REVEAL', '전원 확인해도 안 넘어감')
+    assert.notEqual(__getRoleRevealRunForTests(session.id), null, '전원 확인해도 마감은 그대로')
+
+    clock.advance(10_000)
     assert.equal(session.phase, 'DAY')
     assert.equal(__getRoleRevealRunForTests(session.id), null)
+})
+
+test('acknowledge_role_reveal(사용자 규칙 변경): 옛 화면이 아무 모양으로 보내도 ok만 답하고 판은 그대로다', () => {
+    const { session, uuids } = commitFivePlayerSession('reveal-legacy')
+    const { trigger } = wireSession(session)
+
+    for (const payload of [{ gameId: session.id }, { gameId: 'other' }, null, 'x', {}]) {
+        assert.deepEqual(trigger(uuids[0], 'acknowledge_role_reveal', payload), { ok: true })
+    }
+    assert.equal(session.phase, 'ROLE_REVEAL')
+    assert.equal(session.roleRevealAcks.size, 0)
 })
 
 test('BE-003: 재판 중 한 명이 표를 안 내도 마감 때 기권으로 채우고 판정한다', () => {
@@ -219,15 +241,14 @@ test('known 1-1: 판 첫 사람이 나간 판도 낮 투표 마감 타이머가 
     assert.notEqual(session.dayVoteResolution, null, '첫 사람이 나가도 마감 판정이 됨')
 })
 
-test('known 1-13: 재투표로 가면 day_vote_resolved에 새 라운드 마감 시각이 실린다', () => {
+test('known 1-13 → 사용자 규칙 변경: 동점이면 재투표 없이 day_vote_resolved(outcome TIE, round 1, revoteExcludedUuids 빈 배열) 뒤 바로 밤이다', () => {
     const { session, uuids } = commitFivePlayerSession('revote-deadline')
     const { io, sockets } = wireSession(session)
     const clock = createManualClock()
     toDayVote(session)
     startDayPhaseTimer(io, session, { ...clock, voteDurationMs: 30_000 })
-    const firstDeadline = session.dayPhaseDeadline
 
-    // 2:2 동표 + 1 기권(마감 채움) → 재투표
+    // 2:2 동표 + 1 기권(마감 채움)
     const [a, b, c, d] = uuids
     gameSessionCore.submitDayVote(a, session.id, c)
     gameSessionCore.submitDayVote(b, session.id, c)
@@ -237,12 +258,13 @@ test('known 1-13: 재투표로 가면 day_vote_resolved에 새 라운드 마감 
 
     const resolved = directEmits(sockets, 'day_vote_resolved')
     assert.equal(resolved.length > 0, true)
-    assert.equal(resolved[0].outcome, 'REVOTE')
-    assert.equal(session.phase, 'DAY')
-    assert.notEqual(session.dayPhaseDeadline, firstDeadline)
     for (const payload of resolved) {
-        assert.equal(payload.dayPhaseDeadline, session.dayPhaseDeadline, '옛 라운드 마감 시각이 아니라 새 마감 시각')
+        assert.equal(payload.outcome, 'TIE')
+        assert.equal(payload.round, 1)
+        assert.equal(payload.phase, 'NIGHT')
+        assert.deepEqual(payload.revoteExcludedUuids, [])
     }
+    assert.equal(session.phase, 'NIGHT')
 })
 
 test('BE-023: 마지막 턴 뒤 밤 자동 마무리가 한 번 실패해도 잠깐 뒤 다시 해서 낮으로 넘어간다', () => {

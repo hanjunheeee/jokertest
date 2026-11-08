@@ -46,15 +46,11 @@ function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) 
     }
 }
 
-// 죽은 이유 하나로 정하기 (하나로 안 정해지면 모름)
+// 죽은 이유 정하기: 광대가 노린 사람이면 광대, 아니면 모름 (밤에 죽이는 건 광대뿐)
 function resolveNightDeathSource(resolution, victimUuid) {
-    // 광대 암살·마녀사냥꾼 처형 중 이 사람 겨눈 쪽 모으기
-    const attributions = []
-    if (resolution?.assassinationTargetId === victimUuid) attributions.push(PUBLIC_NIGHT_DEATH_SOURCES.JOKER)
-    if (resolution?.witchHunterExecutionTargetId === victimUuid) {
-        attributions.push(PUBLIC_NIGHT_DEATH_SOURCES.WITCH_HUNTER)
-    }
-    return attributions.length === 1 ? attributions[0] : PUBLIC_NIGHT_DEATH_SOURCES.UNKNOWN_NIGHT
+    return resolution?.assassinationTargetId === victimUuid
+        ? PUBLIC_NIGHT_DEATH_SOURCES.JOKER
+        : PUBLIC_NIGHT_DEATH_SOURCES.UNKNOWN_NIGHT
 }
 
 // 밤 사망 공개 목록 (중복 빼고)

@@ -1,7 +1,7 @@
 // 낮 표 받기 파일
 // 낮 투표 받기 + 투표 효과음 이벤트, socket 쪽이 gameSession.js 통해서 사용
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
-const { isVoteRoundResolved, getDayVoteRound, getDayPhase, getDayVoteExcludedUuids } = require('./state')
+const { isVoteRoundResolved, getDayVoteRound, getDayPhase } = require('./state')
 const { DAY_PHASES } = require('./constants')
 const { getSessionById } = require('../../queries/byId')
 
@@ -32,11 +32,8 @@ function submitDayVote(uuid, gameId, targetId) {
         const target = session.players.get(targetId)
         if (!target) return { ok: false, code: 'INVALID_TARGET' }
         if (!target.alive) return { ok: false, code: 'TARGET_NOT_ALIVE' }
-        // 나 자신·재투표에서 빠진 사람은 못 찍음
+        // 나 자신은 못 찍음
         if (targetId === uuid) return { ok: false, code: 'SELF_TARGET_NOT_ALLOWED' }
-        if (getDayVoteExcludedUuids(session).has(targetId)) {
-            return { ok: false, code: 'TARGET_EXCLUDED_FROM_REVOTE' }
-        }
     }
 
     // 여기부터 진짜 바뀜: 표 적기 (다시 내면 덮어씀), 효과음 번호 올림

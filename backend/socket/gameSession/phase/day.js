@@ -49,7 +49,7 @@ function callCoreOrLog(label, gameId, throwCode, call) {
     return result
 }
 
-// 지금 낮 단계(토론·투표)에 맞는 마감 타이머 다시 걸기 (토론→투표·재투표 때마다)
+// 지금 낮 단계(토론·투표)에 맞는 마감 타이머 다시 걸기 (토론→투표 때마다)
 function scheduleDayPhaseTimer(run) {
     const { session } = run
     // 옛 타이머부터 끔, 낮이 아니면 run째 지움
@@ -150,7 +150,7 @@ function expireDayVote(run) {
 }
 
 // 낮 투표 판정 결과 방송 + 다음 단계 타이머, 순서는 다음 단계에 따라 (버튼·마감·이탈 뒤 판정이 같이 씀)
-// 낮(재투표)에 남으면 타이머 먼저: 새 라운드 마감 시각을 결과에 실음 (옛 마감 시각 실리던 것, known 1-13)
+// 낮에 남으면 타이머 먼저 (재투표 없어져 지금은 안 생김, 사용자 결정 2026-11-09 · known 1-13)
 // 재판·밤으로 가면 방송 먼저: 유예 만료 이탈·밤 턴 방송이 판정 결과보다 앞서지 않게
 function announceDayVoteResolved(io, session, resolution, label, fields, deliver) {
     const syncTimers = () => isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))

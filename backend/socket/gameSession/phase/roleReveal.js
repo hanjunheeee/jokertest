@@ -9,7 +9,7 @@ const { emitToGameChannel } = require('../delivery/broadcast')
 const { announceDayStep } = require('./day')
 
 // 역할 공개 마감 걸기: 판마다 하나, 이미 걸렸으면 그대로 (처음 건 마감 유지)
-// 역할 확인이 하나라도 오거나 누가 끊기면 부름, 안 누른 사람이 끊긴 채 안 돌아와도 마감 때 넘어가게
+// 판 시작 때 부름 (끊길 때도 부르지만 이미 걸려 있어 그대로), 사람 확인 안 기다리고 마감 때 무조건 첫 낮으로
 function ensureRoleRevealTimer(io, session, deps = {}) {
     if (!session || session.phase !== 'ROLE_REVEAL') return null
     const existing = roleRevealRuns.get(session.id)
@@ -24,7 +24,7 @@ function ensureRoleRevealTimer(io, session, deps = {}) {
     return run
 }
 
-// 역할 공개 마감 끄기: 다 확인해 넘어갔을 때·판 끝·시험 초기화
+// 역할 공개 마감 끄기: 판 끝·시험 초기화
 function stopRoleRevealTimer(gameId) {
     const run = roleRevealRuns.get(gameId)
     if (!run) return
@@ -32,7 +32,7 @@ function stopRoleRevealTimer(gameId) {
     roleRevealRuns.delete(gameId)
 }
 
-// 역할 공개 마감: 아직 역할 공개면 안 누른 사람 있어도 첫 낮으로 + 낮 타이머(끊긴 사람 유예 만료 포함) + 단계 방송
+// 역할 공개 마감: 아직 역할 공개면 첫 낮으로 + 낮 타이머(끊긴 사람 유예 만료 포함) + 단계 방송
 function expireRoleReveal(run) {
     const { io, session } = run
     // 옛 run이면 무시 (다시 걸었거나 꺼짐), 맞으면 먼저 뗌
@@ -46,7 +46,7 @@ function expireRoleReveal(run) {
         () => gameSessionCore.forceCompleteRoleReveal(session))
     if (!forced?.ok || !forced.transitioned) return
 
-    // 확인 버튼으로 넘어갈 때와 같은 순서: 낮 타이머 먼저 (방송에 새 마감 시각 실으려고)
+    // 낮 타이머 먼저 (방송에 새 마감 시각 실으려고)
     announceDayStep(io, session, '[phase 변경 알림 전송 실패]', () =>
         emitToGameChannel(io, session, 'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session)))
 }

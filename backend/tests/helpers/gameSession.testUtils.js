@@ -255,24 +255,6 @@ function commitQuadSessionAtDay({ id = 'room-revote', advanceToVote = true } = {
     return { session, uuidA, uuidB, uuidC, uuidD }
 }
 
-function advanceQuadToRevote(id) {
-    const fixture = commitQuadSessionAtDay({ id })
-    const { session, uuidA, uuidB, uuidC, uuidD } = fixture
-    submitDayVote(uuidA, session.id, uuidC)
-    submitDayVote(uuidB, session.id, uuidC)
-    submitDayVote(uuidC, session.id, uuidA)
-    submitDayVote(uuidD, session.id, uuidA)
-
-    const prepared = prepareDayVoteResolution(uuidA, session.id, session.dayIndex)
-    assert.equal(prepared.resolution.outcome, 'REVOTE')
-    assert.deepEqual(prepared.resolution.revoteExcludedUuids, [uuidA, uuidC].sort())
-    commitDayVoteResolution(prepared.session, prepared.resolution)
-    assert.equal(session.phase, 'DAY')
-    assert.equal(session.dayVoteRound, 2)
-
-    return { ...fixture, firstResolution: prepared.resolution }
-}
-
 function castAllVotes(session, votesByUuid) {
     for (const [voterUuid, vote] of Object.entries(votesByUuid)) {
         submitTribunalVote(voterUuid, session.id, session.dayIndex, vote)
@@ -475,7 +457,6 @@ module.exports = {
     advanceDayToVotePhase,
     commitTrioSessionAtDay,
     commitQuadSessionAtDay,
-    advanceQuadToRevote,
     castAllVotes,
     makeWinConditionSession,
     buildSnapQuadSession,

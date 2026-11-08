@@ -1,12 +1,13 @@
 // 역할 공개 확인 파일
 // 역할 확인 버튼 받기·마감 때 넘기기 + 전원 확인됐는지
-// socket 쪽이 gameSession.js 통해서 사용, 전원 확인 검사는 나가기 쪽도 씀
+// 마감 넘기기는 socket 역할 공개 타이머가 씀, 확인 기록은 시험만 씀
 const { findActorSession } = require('../core/registry/lookup')
 const { enterDayPhase } = require('../phase/day/state')
 const { isParticipatingInSession } = require('../queries/participation')
 const { isRegisteredSession } = require('../queries/byId')
 
 // "역할 확인" 누른 사람 기록, 전원 확인되면 첫 낮으로
+// socket은 더 안 부름 (서버는 확인 안 기다리고 10초 마감만 씀, 사용자 결정 2026-11-09), 시험이 첫 낮으로 넘길 때 씀
 function acknowledgeRoleReveal(uuid, gameId) {
     // 판 id 확인 + 내 판 찾기, 내가 판에 있는지 (지난 판 화면에서 보낸 것 거절)
     const found = findActorSession(uuid, gameId, { requireActor: false })
@@ -38,7 +39,7 @@ function isRoleRevealComplete(session) {
     return pending.every((player) => session.roleRevealAcks.has(player.uuid))
 }
 
-// 역할 공개 마감: 안 누른 사람이 남아도 첫 낮으로 (끊긴 사람·알림 실패로 판이 멈추지 않게, BE-002)
+// 역할 공개 마감: 확인 여부 상관없이 첫 낮으로 (사용자 결정 2026-11-09, BE-002)
 // socket 역할 공개 마감 타이머만 부름, 남은 참여자가 없으면 안 넘김
 function forceCompleteRoleReveal(session) {
     if (!session || !isRegisteredSession(session)) return { ok: false, code: 'SESSION_NOT_FOUND' }

@@ -4,9 +4,9 @@
 const { normalizeGameId, findSessionForActor } = require('../../core/registry/lookup')
 const { isRegisteredSession } = require('../../queries/byId')
 const { assertSessionNotEnded, enterNightPhase } = require('../../core/rules/terminal')
-const { getDayVoteRound, getResolutionRound, getDayPhase, getDayVoteExcludedUuids, isVoteRoundResolved } = require('./state')
+const { getDayVoteRound, getResolutionRound, getDayPhase, isVoteRoundResolved } = require('./state')
 const { DAY_PHASES } = require('./constants')
-const { getDayVoterUuids, tallyDayVoteOutcome, buildDayBallotSnap, uuidListsEqual, dayBallotSnapsEqual } = require('./ballots')
+const { getDayVoterUuids, tallyDayVoteOutcome, buildDayBallotSnap, dayBallotSnapsEqual } = require('./ballots')
 
 // 낮 판정 준비: 표 세서 결과 정함, 아직 확정 안 함
 function prepareDayVoteResolution(uuid, gameId, dayIndex) {
@@ -51,9 +51,8 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
         }
     }
 
-    // 표 세기, 1라운드 동률이면 재투표
+    // 표 세기: 최다 1명이면 재판, 동률·전원 기권이면 밤 (재투표 없음, 사용자 결정 2026-11-09)
     const tally = tallyDayVoteOutcome(session)
-    const isRevote = tally.outcome === 'TIE' && currentRound === 1
     // 결과만 만들어 돌려줌, 판은 안 바꿈 (표 묶음은 commit 비교용)
     return {
         ok: true,
@@ -62,18 +61,19 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
             gameId: session.id,
             dayIndex: session.dayIndex,
             round: currentRound,
-            outcome: isRevote ? 'REVOTE' : tally.outcome,
+            outcome: tally.outcome,
             tribunalTargetUuid: tally.tribunalTargetUuid,
             publicVoteCount: tally.publicVoteCount,
             publicAbstainCount: tally.publicAbstainCount,
-            excludedUuids: Object.freeze([...getDayVoteExcludedUuids(session)].sort()),
-            revoteExcludedUuids: Object.freeze(isRevote ? [...tally.tiedTargetUuids] : []),
+            // 재투표 없어 늘 빈 값 (방송 칸은 옛 화면 위해 남김)
+            excludedUuids: Object.freeze([]),
+            revoteExcludedUuids: Object.freeze([]),
             ballotSnapshot: buildDayBallotSnap(session),
         },
     }
 }
 
-// 낮 판정 확정: 그사이 표 안 바뀌었으면 재판·재투표·밤 중 하나로
+// 낮 판정 확정: 그사이 표 안 바뀌었으면 재판·밤 중 하나로
 function commitDayVoteResolution(session, resolution) {
     // 그사이 판이 끝났으면 거절
     const endedCheck = assertSessionNotEnded(session)
@@ -101,21 +101,12 @@ function commitDayVoteResolution(session, resolution) {
 
     // 다시 세도 결과·수가 같은지
     const recheck = tallyDayVoteOutcome(session)
-    const recheckOutcome = recheck.outcome === 'TIE' && getDayVoteRound(session) === 1 ? 'REVOTE' : recheck.outcome
     if (
-        recheckOutcome !== resolution.outcome ||
+        recheck.outcome !== resolution.outcome ||
         recheck.tribunalTargetUuid !== resolution.tribunalTargetUuid ||
         recheck.publicVoteCount !== resolution.publicVoteCount ||
         recheck.publicAbstainCount !== resolution.publicAbstainCount
     ) {
-        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
-    }
-    // 재투표 제외 목록·이번 제외 목록이 같은지
-    const recheckRevoteExcluded = recheckOutcome === 'REVOTE' ? [...recheck.tiedTargetUuids].sort() : []
-    if (!uuidListsEqual(recheckRevoteExcluded, resolution.revoteExcludedUuids ?? [])) {
-        return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
-    }
-    if (!uuidListsEqual([...getDayVoteExcludedUuids(session)].sort(), resolution.excludedUuids ?? [])) {
         return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
     // 지금 표 묶음이 prepare 때랑 같은지 (지도 04-⑦)
@@ -139,15 +130,8 @@ function commitDayVoteResolution(session, resolution) {
             defendantUuid: resolution.tribunalTargetUuid,
             votes: new Map(),
         }
-    } else if (resolution.outcome === 'REVOTE') {
-        // 재투표: 투표 번호 +1, 동률자 빼고 표 새로
-        session.tribunal = null
-        session.dayVoteRound = getResolutionRound(resolution) + 1
-        session.dayVoteExcludedUuids = new Set(resolution.revoteExcludedUuids ?? [])
-        session.dayVotes = new Map()
-        session.dayVoteSfx = new Map()
     } else {
-        // 그 외(전원 기권·2라운드 동률): 바로 밤으로, 밤 기록 새로
+        // 그 외(동률·전원 기권): 바로 밤으로, 밤 기록 새로
         session.tribunal = null
         enterNightPhase(session)
     }

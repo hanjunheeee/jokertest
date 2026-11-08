@@ -66,8 +66,8 @@ const NIGHT_TURN_STAGES = Object.freeze({
 const NIGHT_WAIT_DEFAULT_MS = 12000
 const NIGHT_WAIT_MAX_MS = 2147483647
 
-// 역할 공개 마감 30초: 화면은 들어오자마자 확인을 보냄, 끊긴 사람·알림 실패로 판이 멈추지 않게 (BE-002)
-const ROLE_REVEAL_DEADLINE_MS = 30000
+// 역할 공개 10초: 판 시작 때 걸고, 사람 확인 안 기다리고 지나면 무조건 첫 낮으로 (사용자 결정 2026-11-09)
+const ROLE_REVEAL_DEADLINE_MS = 10000
 
 // 타이머 쪽 판정·확정 실패 때 다시 해 보기: 1초 간격 최대 5번 (그사이 겹친 요청이 끝나면 풀림)
 const PHASE_RETRY_DELAY_MS = 1000

@@ -1,6 +1,5 @@
 // 낮 투표함 파일
 // 투표할 사람·표 묶음·세기 + 묶음 비교, 낮 판정·준비·나가기·진행 표시·socket 낮 진행이 사용
-const { getDayVoteExcludedUuids } = require('./state')
 
 // 낮 투표할 수 있는 사람 (산 사람)
 function getDayVoterUuids(session) {
@@ -21,16 +20,15 @@ function uuidListsEqual(left, right) {
     return true
 }
 
-// 낮 표 세기: 최다 득표자 한 명이면 재판, 동률이면 재투표 또는 밤
+// 낮 표 세기: 최다 득표자 한 명이면 재판, 동률·전원 기권이면 밤
 function tallyDayVoteOutcome(session) {
     const eligibleVoterUuids = getDayVoterUuids(session)
-    const excludedUuids = getDayVoteExcludedUuids(session)
     const voteCounts = new Map()
     let abstainCount = 0
-    // 기권·안 낸 표·재투표 제외자 표는 기권으로 셈
+    // 기권·안 낸 표는 기권으로 셈
     for (const voterUuid of eligibleVoterUuids) {
         const targetId = session.dayVotes.get(voterUuid)
-        if (targetId === null || targetId === undefined || excludedUuids.has(targetId)) {
+        if (targetId === null || targetId === undefined) {
             abstainCount += 1
             continue
         }

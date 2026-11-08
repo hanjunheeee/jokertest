@@ -199,7 +199,7 @@ test('AC-02: 실제 DB 경합(동시 요청)에서도 같은 집계 키는 정�
     assert.equal(await db.VoteParticipation.count({ where: { game_id: gameId } }), 1);
 });
 
-test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day_index당 사건 수는 라운드 1에서 확정된 그대로다', async (t) => {
+test('AC-03(사용자 규칙 변경): 3인 전원 동점이면 재투표 없이 밤으로 가고 day_index당 사건 수는 그대로다', async (t) => {
     if (unavailable(t)) return;
     await setUp();
 
@@ -217,48 +217,11 @@ test('AC-03: 3인 전원 동점 재투표(2라운드 전원 기권)에서도 day
     assert.equal(prepared.ok, true);
     const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution);
     assert.equal(committed.ok, true);
-    assert.equal(session.phase, 'DAY', 'REVOTE는 phase를 DAY에 남긴다');
-    assert.equal(session.dayIndex, dayIndexBefore, '재투표는 day_index를 바꾸지 않는다');
+    assert.equal(prepared.resolution.outcome, 'TIE');
+    assert.equal(session.phase, 'NIGHT', '동점이면 바로 밤');
+    assert.equal(session.dayIndex, dayIndexBefore, '동점 판정은 day_index를 바꾸지 않는다');
 
-    for (const uuid of [a, b, c]) {
-        const response = await submitVote(session, uuid, null);
-        assertVoteAckOk(response);
-    }
-
-    assert.equal(await countVoteParticipations(session.id), 3, '재투표(같은 day_index)는 이미 기록된 사건 수를 넘지 않는다');
-});
-
-test('AC-03/A-01: 최초 라운드에서 기권한 참가자가 재투표에서 비기권으로 돌아서도 새 사건이 생기지 않는다', async (t) => {
-    if (unavailable(t)) return;
-    await setUp();
-
-    const [a, b, c] = [await createLocalUser('vp3ra'), await createLocalUser('vp3rb'), await createLocalUser('vp3rc')];
-    const session = createRunningSessionAtDayVote([a, b, c]);
-    registerOnline([a, b, c]);
-
-    await submitVote(session, a, b);
-    const bAbstainResponse = await submitVote(session, b, null);
-    assertVoteAckOk(bAbstainResponse);
-    await submitVote(session, c, a);
-    assert.equal(await countVoteParticipations(session.id), 2, '기권한 b를 제외한 a·c의 사건만 저장되어야 한다');
-
-    const prepared = gameSessionCore.prepareDayVoteResolution(a, session.id, session.dayIndex);
-    assert.equal(prepared.ok, true);
-    assert.equal(prepared.resolution.outcome, 'REVOTE');
-    const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution);
-    assert.equal(committed.ok, true);
-
-    const bRevoteResponse = await submitVote(session, b, c);
-    assertVoteAckOk(bRevoteResponse, '재투표 제출 자체는 ack가 성공해야 한다');
-    assert.equal(bRevoteResponse.sfxEvent.round, 2);
-    await submitVote(session, a, c);
-
-    assert.equal(await countVoteParticipations(session.id), 2, '재투표의 비기권 제출은 새 사건을 만들지 않는다');
-    assert.equal(
-        await db.VoteParticipation.count({ where: { game_id: session.id, user_id: b } }),
-        0,
-        '최초 라운드에 기권한 b는 재투표에서 비기권으로 돌아서도 사건이 생기면 안 된다',
-    );
+    assert.equal(await countVoteParticipations(session.id), 3, '동점 판정은 이미 기록된 사건 수를 바꾸지 않는다');
 });
 
 test('AC-03: TRIBUNAL 전이는 그 낮의 비기권 사건 수를 바꾸지 않는다', async (t) => {

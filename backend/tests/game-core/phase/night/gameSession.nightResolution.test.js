@@ -214,18 +214,18 @@ test('공개 사망 reveal: 실제 JOKER 암살 사망은 source JOKER인 공개
     assert.equal(session.players.get(victimUuid).alive, false)
 })
 
-test('공개 사망 reveal: 판정이 처형을 비모호적으로 귀속시킨 경우에만 source가 WITCH_HUNTER다', () => {
+test('공개 사망 reveal (사용자 규칙 변경): 마녀사냥꾼 처형 갈래가 없어 옛 처형 칸이 있어도 source는 WITCH_HUNTER가 아니다', () => {
     const resolution = { assassinationTargetId: null, witchHunterExecutionTargetId: 'v1' }
 
-    assert.equal(resolveNightDeathSource(resolution, 'v1'), 'WITCH_HUNTER')
-    assert.deepEqual(buildNightDeathReveals(resolution, ['v1']), [{ victimUuid: 'v1', source: 'WITCH_HUNTER' }])
+    assert.equal(resolveNightDeathSource(resolution, 'v1'), 'UNKNOWN_NIGHT')
+    assert.deepEqual(buildNightDeathReveals(resolution, ['v1']), [{ victimUuid: 'v1', source: 'UNKNOWN_NIGHT' }])
 })
 
-test('공개 사망 reveal: 귀속이 없거나(모르는 밤 사망) 둘 이상으로 모호하면 UNKNOWN_NIGHT이고 행위자 정보를 지어내지 않는다', () => {
+test('공개 사망 reveal: 광대 암살 대상이면 JOKER, 귀속이 없으면(모르는 밤 사망) UNKNOWN_NIGHT이고 행위자 정보를 지어내지 않는다', () => {
     assert.equal(resolveNightDeathSource({ assassinationTargetId: 'other' }, 'v1'), 'UNKNOWN_NIGHT')
     assert.equal(
         resolveNightDeathSource({ assassinationTargetId: 'v1', witchHunterExecutionTargetId: 'v1' }, 'v1'),
-        'UNKNOWN_NIGHT',
+        'JOKER',
     )
     assert.equal(resolveNightDeathSource({}, 'v1'), 'UNKNOWN_NIGHT')
 
@@ -235,12 +235,12 @@ test('공개 사망 reveal: 귀속이 없거나(모르는 밤 사망) 둘 이상
 })
 
 test('공개 사망 reveal: 서로 다른 다수 사망은 canonical 적용 순서를 유지한 결정적 목록이고 victim 기준으로 중복 제거된다', () => {
-    const resolution = { assassinationTargetId: 'v2', witchHunterExecutionTargetId: 'v1' }
+    const resolution = { assassinationTargetId: 'v2' }
 
     const reveals = buildNightDeathReveals(resolution, ['v1', 'v2', 'v1', 'v3', 'v2'])
 
     assert.deepEqual(reveals, [
-        { victimUuid: 'v1', source: 'WITCH_HUNTER' },
+        { victimUuid: 'v1', source: 'UNKNOWN_NIGHT' },
         { victimUuid: 'v2', source: 'JOKER' },
         { victimUuid: 'v3', source: 'UNKNOWN_NIGHT' },
     ])
@@ -295,7 +295,7 @@ test('공개 사망 reveal: 공개 화이트리스트가 정확히 [source, vict
     assert.equal(serializedPayload.includes('protectedTargetIds'), false)
     assert.equal(serializedPayload.includes('assassinationTargetId'), false)
     assert.equal(serializedPayload.includes('nightActions'), false)
-    assert.deepEqual(Object.keys(PUBLIC_NIGHT_DEATH_SOURCES).sort(), ['JOKER', 'UNKNOWN_NIGHT', 'WITCH_HUNTER'])
+    assert.deepEqual(Object.keys(PUBLIC_NIGHT_DEATH_SOURCES).sort(), ['JOKER', 'UNKNOWN_NIGHT'])
     assert.ok(Object.hasOwn(PUBLIC_NIGHT_DEATH_SOURCES, payload.deathReveals[0].source))
 })
 

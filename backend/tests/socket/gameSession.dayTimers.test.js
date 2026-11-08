@@ -306,7 +306,7 @@ test('day vote timer: 아무도 투표하지 않고 만료되면 전원 기권�
     assert.equal(clock.pendingCount(), 0, '낮을 벗어났으므로 남은 낮 타이머가 없다')
 })
 
-test('day vote timer: 1라운드 동점이면 재투표가 열리고 그 라운드의 제한시간이 다시 걸린다', async () => {
+test('day vote timer(사용자 규칙 변경): 동점이면 재투표 없이 바로 밤으로 가고 낮 타이머가 남지 않는다', async () => {
     const { session, uuids, castVote, clock } = startAtDayVote({
         id: 'room-vote-revote',
         settings: { dayVoteTime: 30 },
@@ -317,17 +317,12 @@ test('day vote timer: 1라운드 동점이면 재투표가 열리고 그 라운�
 
     clock.advance(30_000)
 
-    assert.equal(session.dayVoteResolution.outcome, 'REVOTE')
-    assert.equal(session.phase, 'DAY', '재투표는 낮에 머문다')
-    assert.equal(gameSessionCore.getDayVoteRound(session), 2)
-    assert.deepEqual([...session.dayVoteExcludedUuids].sort(), [uuids[2], uuids[3]].sort())
-    assert.equal(session.dayVotes.size, 0, '재투표는 빈 표로 시작한다')
-    assert.equal(clock.pendingCount(), 1, '2라운드 투표 제한시간이 새로 걸렸다')
-
-    clock.advance(30_000)
-    assert.equal(session.dayVoteResolution.outcome, 'ABSTAINED')
-    assert.equal(session.dayVoteResolution.round, 2)
-    assert.equal(session.phase, 'NIGHT')
+    assert.equal(session.dayVoteResolution.outcome, 'TIE')
+    assert.equal(session.dayVoteResolution.round, 1)
+    assert.equal(session.phase, 'NIGHT', '동점이면 바로 밤')
+    assert.equal(gameSessionCore.getDayVoteRound(session), 1)
+    assert.equal(session.dayVoteExcludedUuids.size, 0)
+    assert.equal(clock.pendingCount(), 0, '낮을 벗어났으므로 남은 낮 타이머가 없다')
 })
 
 test('day vote timer: 만료 전에 전원이 투표해도 제한시간까지는 판정하지 않는다', async () => {

@@ -35,14 +35,20 @@ function getAliveActorUuidsForRole(session, role) {
     return getEligibleNightActorUuids(session).filter((uuid) => session.players.get(uuid)?.role === role)
 }
 
-// 이 판 밤 차례 (판에 없는 역할은 뺌)
+// 이 판 오늘 밤 차례 (판에 없는 역할·오늘 밤 행동 못 하는 역할은 뺌)
+// 마녀사냥꾼은 첫날 밤 차례 자체를 건너뜀 (차례 안내 방송 안 나감, 사용자 결정 2026-11-09)
 function getNightTurnOrder(session) {
-    // 역할 구성 기록이 없으면 기본 순서 그대로
-    const composition = session?.roleComposition
+    const order = filterComposedRoles(session?.roleComposition)
+    const dayIndex = session?.dayIndex
+    if (!Number.isInteger(dayIndex)) return order
+    return Object.freeze(order.filter((role) => isEligibleForNightAction(role, dayIndex)))
+}
+
+// 역할 구성에 한 명 이상 있는 역할만 (구성 기록 없거나 다 빠지면 기본 순서)
+function filterComposedRoles(composition) {
     if (!composition || typeof composition !== 'object') return NIGHT_TURN_ORDER
-    // 한 명 이상 있는 역할만 남김, 다 빠지면 기본 순서
     const order = NIGHT_TURN_ORDER.filter((role) => Number.isInteger(composition[role]) && composition[role] > 0)
-    return order.length > 0 ? Object.freeze(order) : NIGHT_TURN_ORDER
+    return order.length > 0 ? order : NIGHT_TURN_ORDER
 }
 
 // 이 역할 사람 전부 냈는지

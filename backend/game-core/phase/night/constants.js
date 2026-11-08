@@ -29,10 +29,9 @@ const EMPTY_COMPLETED_ROLES = Object.freeze({ has: () => false, size: 0 })
 // 자기 자신 고를 수 있는 역할: 의사만
 const SELF_TARGET_ROLES = new Set(['DOCTOR'])
 
-// 밤에 죽은 이유 공개 이름: 광대 · 마녀사냥꾼 · 모름
+// 밤에 죽은 이유 공개 이름: 광대 · 모름 (마녀사냥꾼은 죽은 사람 역할 확인만이라 원인 아님, 사용자 결정 2026-11-09)
 const PUBLIC_NIGHT_DEATH_SOURCES = Object.freeze({
     JOKER: 'JOKER',
-    WITCH_HUNTER: 'WITCH_HUNTER',
     UNKNOWN_NIGHT: 'UNKNOWN_NIGHT',
 })
 

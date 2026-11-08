@@ -294,15 +294,15 @@ test('night turn: 그 역할 생존자 전원이 제출을 마치는 순간, 시
     ])
 })
 
-test('night turn: JOKER 동료 지목은 기록 없는 no-op이라 전원 제출로 계산되지 않는다', () => {
+test('night turn: JOKER 동료 지목은 TARGET_IS_ALLY로 거절되고 전원 제출로 계산되지 않는다 (사용자 규칙 변경)', () => {
     const { session, jokerUuids } = commitJokerTrioSessionAtNight()
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
 
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
 
-    assert.deepEqual(submit(jokerUuids[0], jokerUuids[1]), { ok: true })
-    assert.deepEqual(submit(jokerUuids[1], jokerUuids[0]), { ok: true })
+    assert.deepEqual(submit(jokerUuids[0], jokerUuids[1]), { ok: false, code: 'TARGET_IS_ALLY', message: '요청을 처리할 수 없습니다.' })
+    assert.deepEqual(submit(jokerUuids[1], jokerUuids[0]), { ok: false, code: 'TARGET_IS_ALLY', message: '요청을 처리할 수 없습니다.' })
     assert.equal(session.nightActions.size, 0)
     assert.deepEqual(turnEventLog(io), [['night_turn_started', 'JOKER']])
 
@@ -346,8 +346,8 @@ test('night turn: 무인 턴 지연은 난수값과 무관하게 항상 턴 제�
     assert.equal(computeEmptyTurnDelayMs(NIGHT_TURN_DURATION_MS, () => 1), Math.floor(upper))
 })
 
-test('night turn: dayIndex 때문에 아직 능력이 없는 WITCH_HUNTER 턴도 무인 턴과 같은 지연 경로로 끝난다', () => {
-    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({ dayIndex: 0 })
+test('night turn(사용자 결정): 첫날 밤(dayIndex 1)엔 마녀사냥꾼 차례를 아예 안 열고(차례 방송 없음) 경비원 뒤 바로 밤을 마무리한다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid, witchHunterUuid } = commitFullRoleSessionAtNight({ id: 'wh-first-night', dayIndex: 1 })
     assert.equal(session.players.get(witchHunterUuid).alive, true)
     const { io, submit } = wireSession(session)
     const clock = createManualClock()
@@ -355,11 +355,30 @@ test('night turn: dayIndex 때문에 아직 능력이 없는 WITCH_HUNTER 턴도
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     for (const uuid of [jokerUuid, doctorUuid, guardUuid]) submit(uuid, null)
 
-    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
-    clock.advance(NIGHT_TURN_DURATION_MS)
+    assert.deepEqual(turnEventLog(io), [
+        ['night_turn_started', 'JOKER'],
+        ['night_turn_ended', 'JOKER'],
+        ['night_turn_started', 'DOCTOR'],
+        ['night_turn_ended', 'DOCTOR'],
+        ['night_turn_started', 'GUARD'],
+        ['night_turn_ended', 'GUARD'],
+    ])
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '마녀사냥꾼 차례가 열리지 않는다')
+    assert.equal(session.phase, 'DAY', '경비원 차례 뒤 바로 밤이 끝난다')
+    assert.deepEqual(gameSessionCore.getNightTurnOrder({ ...session, dayIndex: 1 }), ['JOKER', 'DOCTOR', 'GUARD'])
+})
 
-    assert.deepEqual(turnEventLog(io).at(-1), ['night_turn_ended', 'WITCH_HUNTER'])
-    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), null, '마지막 턴이 끝나면 턴 상태가 정리된다')
+test('night turn(사용자 결정): 둘째 밤(dayIndex 2)부터는 마녀사냥꾼 차례가 열린다', () => {
+    const { session, jokerUuid, doctorUuid, guardUuid } = commitFullRoleSessionAtNight({ id: 'wh-second-night', dayIndex: 2 })
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    for (const uuid of [jokerUuid, doctorUuid, guardUuid]) submit(uuid, null)
+
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
+    assert.deepEqual(turnEventLog(io).at(-1), ['night_turn_started', 'WITCH_HUNTER'])
+    assert.deepEqual(gameSessionCore.getNightTurnOrder(session), ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
 })
 
 function payloadKeyWords(key) {
@@ -1113,42 +1132,27 @@ test('night turn: [conceal 회귀 8/27] 은폐를 위해 판정을 되돌리지 
     assert.equal(gameSessionCore.isRoleTurnComplete(session, 'DOCTOR'), true, '무인 역할은 공집합이라 제출 대기가 없다')
 })
 
-test('night turn: [conceal 회귀 8/27] 아직 능력이 없는 WITCH_HUNTER의 턴이 전멸 턴과 구별되지 않는다', () => {
-    const capture = ({ id, dayIndex, wipe }) => {
-        const fixture = commitFullRoleSessionAtNight({ id, dayIndex })
-        const { session } = fixture
-        if (wipe) session.players.get(fixture.witchHunterUuid).alive = false
-        const { io, submit } = wireSession(session)
-        const clock = createManualClock()
-        const stamped = stampBroadcastTimes(io, clock)
-        startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-        for (const uuid of [fixture.jokerUuid, fixture.doctorUuid, fixture.guardUuid]) {
-            assert.deepEqual(submit(uuid, null), { ok: true })
-        }
-        assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
-
-        const startedAt = clock.now()
-        const durationMs = appliedDurationMs(session, 'WITCH_HUNTER')
-        clock.advance(durationMs)
-        const started = stamped.find((b) => b.event === 'night_turn_started' && b.payload.role === 'WITCH_HUNTER')
-        const ended = stamped.find((b) => b.event === 'night_turn_ended' && b.payload.role === 'WITCH_HUNTER')
-        assert.ok(started && ended, 'WITCH_HUNTER 턴도 시작과 종료를 모두 방송한다')
-        return {
-            events: stamped.slice(stamped.indexOf(started), stamped.indexOf(ended) + 1).map((b) => b.event),
-            payloadKeys: Object.keys(started.payload).sort().join(','),
-            deadlineOffset: started.payload.deadline - startedAt,
-            turnLengthMs: ended.at - started.at,
-        }
+test('night turn: [conceal 회귀 8/27 → 사용자 결정 2026-11-09] 둘째 밤 이후 마녀사냥꾼이 전멸해도 차례는 그대로 열리고 닫힌다', () => {
+    const fixture = commitFullRoleSessionAtNight({ id: 'regress-wh-wiped', dayIndex: 2 })
+    const { session } = fixture
+    session.players.get(fixture.witchHunterUuid).alive = false
+    const { io, submit } = wireSession(session)
+    const clock = createManualClock()
+    const stamped = stampBroadcastTimes(io, clock)
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    for (const uuid of [fixture.jokerUuid, fixture.doctorUuid, fixture.guardUuid]) {
+        assert.deepEqual(submit(uuid, null), { ok: true })
     }
+    assert.equal(gameSessionCore.getCurrentNightTurnRole(session), 'WITCH_HUNTER')
 
-    const ineligible = capture({ id: 'regress-wh-ineligible', dayIndex: 0, wipe: false })
-    const wipedOut = capture({ id: 'regress-wh-wiped', dayIndex: 2, wipe: true })
-
-    assert.deepEqual(ineligible.events, wipedOut.events, 'WH 턴 구간의 이벤트 종류·순서가 다르다')
-    assert.deepEqual(ineligible.events, NIGHT_TURN_EVENTS)
-    assert.equal(ineligible.payloadKeys, wipedOut.payloadKeys, 'WH 턴 payload의 필드 집합이 다르다')
-    assert.equal(ineligible.deadlineOffset, wipedOut.deadlineOffset, 'deadline이 자격 유무에 따라 달라졌다')
-    assert.equal(ineligible.turnLengthMs, wipedOut.turnLengthMs, '턴 길이가 자격 유무에 따라 달라졌다')
+    clock.advance(appliedDurationMs(session, 'WITCH_HUNTER'))
+    const started = stamped.find((b) => b.event === 'night_turn_started' && b.payload.role === 'WITCH_HUNTER')
+    const ended = stamped.find((b) => b.event === 'night_turn_ended' && b.payload.role === 'WITCH_HUNTER')
+    assert.ok(started && ended, '전멸한 마녀사냥꾼 차례도 시작과 종료를 모두 방송한다')
+    assert.deepEqual(
+        stamped.slice(stamped.indexOf(started), stamped.indexOf(ended) + 1).map((b) => b.event),
+        NIGHT_TURN_EVENTS,
+    )
 })
 
 test('night turn: [conceal 회귀] 무인 턴이 즉시 끝나지 않는다(공집합 전원제출 판정 회귀)', () => {
@@ -1647,8 +1651,9 @@ test('AC-01(F-25b): 무인 턴만으로 진행되는 밤도 마지막 무인 턴
     const clock = createManualClock()
     const observed = captureCommitEvents()
 
+    // 첫날 밤이라 마녀사냥꾼 차례는 없음 (광대·의사·경비원 세 차례, 사용자 결정 2026-11-09)
     startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
-    clock.advance(NIGHT_TURN_DURATION_MS * 3)
+    clock.advance(NIGHT_TURN_DURATION_MS * 2)
     assert.equal(session.phase, 'NIGHT')
     assert.deepEqual(observed.events, [])
 
@@ -2270,14 +2275,15 @@ test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업�
     run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     clock.advance(NIGHT_TURN_DURATION_MS * 4)
 
-    assert.deepEqual(seen.map((entry) => entry.role), ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+    // 첫날 밤이라 마녀사냥꾼 차례는 아예 안 열림 (사용자 결정 2026-11-09)
+    assert.deepEqual(seen.map((entry) => entry.role), ['JOKER', 'DOCTOR', 'GUARD'])
     for (const entry of seen) {
         assert.equal(entry.stage, NIGHT_TURN_STAGES.PRESENTATION_WAIT, `${entry.role}: 사건이 없어도 대기를 거친다`)
         assert.deepEqual(entry.events, [], `${entry.role}: 사건 없는 역할의 계약은 비어 있다`)
         assert.equal(entry.pendingTimers, 0, '대기용 타이머는 생기지 않는다')
     }
-    assert.deepEqual(seen.map((entry) => entry.revision), [1, 2, 3, 4])
-    assert.equal(seen[3].status, 'NO_ACTOR', '아직 능력이 없는 마녀사냥꾼은 무행위자다')
+    assert.deepEqual(seen.map((entry) => entry.revision), [1, 2, 3])
+    assert.equal(io.broadcasts.some((b) => b.event === 'night_turn_started' && b.payload.role === 'WITCH_HUNTER'), false)
     assert.equal(session.phase, 'DAY')
     assert.equal(observed.countOf('NIGHT_DEATH_FINALIZED'), 0)
     assert.equal(observed.winEvaluations('NIGHT'), 1)
@@ -2286,7 +2292,7 @@ test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업�
 })
 
 test('AC-06(F-25, 2026-09-22 개정): 구성이 없는 구버전 세션에서는 존재하지 않는 직업의 턴도 완료 계약을 남기고 순서를 건너뛰지 않는다', () => {
-    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'f25-no-role' })
+    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'f25-no-role', dayIndex: 2 })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
 
