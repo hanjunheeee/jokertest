@@ -44,4 +44,11 @@ function assertLocalDatabase(databaseUrl, nodeEnv) {
     if (!isLocalHost(host)) throw new Error(`시험 계정은 로컬 DB에만 만듦 (지금 DB 호스트: ${host})`);
 }
 
-module.exports = { REMOTE_FLAG, parseTarget, parseBlockedList, checkTargetAllowed, assertLocalDatabase, isLocalHost };
+// 소켓에 붙일 Origin: 준 값 있으면 그 origin, 없으면 로컬 아닌 대상만 대상 주소 (운영 서버는 Origin 없는 소켓 거절, DP-034)
+// 로컬은 안 붙임 (개발 서버는 Origin 없어도 받음)
+function resolveOriginHeader({ frontendOrigin = "", targetOrigin, local }) {
+    if (frontendOrigin) return parseTarget(frontendOrigin).origin;
+    return local ? null : targetOrigin;
+}
+
+module.exports = { REMOTE_FLAG, parseTarget, parseBlockedList, checkTargetAllowed, assertLocalDatabase, isLocalHost, resolveOriginHeader };

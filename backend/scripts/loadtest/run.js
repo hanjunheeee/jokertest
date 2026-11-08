@@ -6,7 +6,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env"), quiet
 const { Stats } = require("./stats");
 const { Bot, sleep } = require("./bot");
 const { playGame } = require("./game");
-const { checkTargetAllowed, assertLocalDatabase, REMOTE_FLAG } = require("./target");
+const { checkTargetAllowed, assertLocalDatabase, resolveOriginHeader, REMOTE_FLAG } = require("./target");
 const { loadAccountsFile, createLocalAccounts, deleteLocalAccounts } = require("./accounts");
 
 // ── 설정값 읽기 ──
@@ -30,7 +30,10 @@ const DEFAULTS = {
 };
 
 function parseArgs(argv) {
-    const opts = { ...DEFAULTS, accounts: null, allowRemote: false, internalKey: process.env.LOADTEST_INTERNAL_KEY || "", json: false };
+    const opts = {
+        ...DEFAULTS, accounts: null, allowRemote: false, internalKey: process.env.LOADTEST_INTERNAL_KEY || "", json: false,
+        frontendOrigin: process.env.LOADTEST_FRONTEND_ORIGIN || "",
+    };
     const camel = (s) => s.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase());
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
@@ -62,6 +65,7 @@ const HELP = `부하 시험 (docs/부하시험.md)
   --poll-ms 1000 --chat-chance 0.5 --ramp-ms 50 --timeout-ms 10000 --game-max-min 15
   --accounts <파일>        [{email,password}] 목록 (실서버용, gitignore)
   --internal-key <키>      서버 INTERNAL_API_KEY (또는 LOADTEST_INTERNAL_KEY) → 서버 메모리·지연 같이 봄
+  --frontend-origin <주소> 소켓 Origin 헤더 (또는 LOADTEST_FRONTEND_ORIGIN), 로컬 아닌 대상은 안 주면 대상 주소, 서버 FRONTEND_URL과 맞춰야 운영 서버가 받음
   --json                   마지막에 JSON 결과도 출력`;
 
 // ── 서버 숫자 엿보기 (/health 내부 열쇠 칸 + /internal/live) ──
@@ -140,7 +144,9 @@ function printStageTable(rows) {
 // ── 가짜 사용자 준비 ──
 
 async function prepareBots(origin, accounts, stats, opts) {
-    const bots = accounts.map((account, index) => new Bot({ origin, account, index: index + 1, stats, timeoutMs: opts.timeoutMs }));
+    const bots = accounts.map((account, index) => new Bot({
+        origin, account, index: index + 1, stats, timeoutMs: opts.timeoutMs, originHeader: opts.originHeader,
+    }));
     const ready = [];
     await Promise.all(bots.map(async (bot, i) => {
         await sleep(i * opts.rampMs);
@@ -221,6 +227,7 @@ async function main() {
     const { origin, local } = checkTargetAllowed({
         target: opts.target, allowRemote: opts.allowRemote, accountsFile: opts.accounts, blocked: process.env.LOADTEST_BLOCKED_TARGETS,
     });
+    opts.originHeader = resolveOriginHeader({ frontendOrigin: opts.frontendOrigin, targetOrigin: origin, local });
     const needed = opts.players * (opts.mode === "step" ? Math.max(...opts.stageList) : opts.games);
 
     // 계정: 파일이 있으면 파일, 없으면(로컬만) 로컬 DB에 만들고 끝나면 지움
@@ -239,7 +246,7 @@ async function main() {
     if (accounts.length < needed) throw new Error(`계정이 모자람: 필요 ${needed}, 있음 ${accounts.length}`);
     accounts = accounts.slice(0, needed);
 
-    console.log(`[부하] 대상 ${origin} · 방식 ${opts.mode} · 판당 ${opts.players}명 · 사용자 ${needed}명`);
+    console.log(`[부하] 대상 ${origin} · 방식 ${opts.mode} · 판당 ${opts.players}명 · 사용자 ${needed}명 · 소켓 Origin ${opts.originHeader ?? "없음"}`);
     const sampler = startServerSampler(origin, opts.internalKey, opts.sampleMs);
     const setupStats = new Stats();
     let bots = [];

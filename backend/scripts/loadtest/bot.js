@@ -9,8 +9,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
 class Bot {
-    constructor({ origin, account, index, stats, timeoutMs = 10000 }) {
+    // originHeader: 소켓 접속 때 붙일 Origin (운영 서버는 Origin 없는 소켓 거절, DP-034)
+    constructor({ origin, account, index, stats, timeoutMs = 10000, originHeader = null }) {
         this.origin = origin;
+        this.originHeader = originHeader;
         this.account = account;
         this.index = index;
         this.stats = stats;
@@ -51,13 +53,13 @@ class Bot {
         this.cookie = access;
     }
 
-    // 소켓 접속: 화면처럼 쿠키 실어 websocket, 끊김은 내가 끊은 것 빼고 셈
+    // 소켓 접속: 화면처럼 쿠키(+ 정해진 Origin) 실어 websocket, 끊김은 내가 끊은 것 빼고 셈
     connect() {
         return new Promise((resolve, reject) => {
             const started = performance.now();
             const socket = io(this.origin, {
                 transports: ["websocket"],
-                extraHeaders: { cookie: this.cookie },
+                extraHeaders: this.originHeader ? { cookie: this.cookie, origin: this.originHeader } : { cookie: this.cookie },
                 reconnection: true,
                 reconnectionAttempts: 5,
                 timeout: this.timeoutMs,

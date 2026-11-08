@@ -16,6 +16,8 @@ const { logRejection } = require("./common/isolate");
 // 접속 목록·io·사용자 전송은 emitter (서비스가 socket.js 안 거치고 보내게)
 const { onlineUsers, setIo, emitToUser } = require("./emitter");
 const { registerNotificationHandlers } = require("./connection/notifications");
+// 웹소켓만 쓰는 화면은 cors가 안 걸려 Origin을 직접 검사 (DP-034)
+const { createOriginGuard } = require("./connection/originCheck");
 
 // 판·대기방도 같은 접속 목록 Map을 봄 (지금 소켓인지 가리기용)
 gameSession.setOnlineUsersRegistry(onlineUsers);
@@ -26,13 +28,15 @@ gameSession.setEmitToUser(emitToUser);
 
 // socket.io 서버 켜기: 접속 인증 걸고 연결마다 처리기 붙임, 동시 접속 기록 주기도 켬
 // CORS 주소는 index.js가 config에서 받아 넘김 (안 넘기면 FRONTEND_URL)
-function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL } = {}) {
+// allowRequest: Origin이 허용 목록(데스크톱·모바일)일 때만, Origin 없으면 운영 거절·개발 허용
+function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL, allowRequest = createOriginGuard() } = {}) {
     const io = new Server(httpServer, {
         cors: {
             origin:      corsOrigin,
             credentials: true,
             methods:     ["GET", "POST"],
         },
+        allowRequest,
     });
 
     // 서비스가 emitter로 보낼 수 있게 io 먼저 넣음
