@@ -1,0 +1,16 @@
+# 운영 서버에서만 docker-compose.yml 위에 겹쳐 씀 (로컬은 이 파일 안 씀)
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+# 쓰는 법: docs/배포_설정.md
+services:
+  frontend:
+    # 80·443만 엶 (로컬 8080 자리는 버림, compose 2.24 이상 !override)
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      # HTTPS 조각 → default.conf의 include가 읽음
+      - ./nginx/tls:/etc/nginx/tls:ro
+      # certbot이 서버에 받아 둔 인증서
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      # 인증서 갱신 확인 파일 (certbot renew --webroot -w /var/www/certbot)
+      - /var/www/certbot:/var/www/certbot:ro

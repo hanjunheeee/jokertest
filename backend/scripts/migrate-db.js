@@ -67,7 +67,7 @@ const runStatus = async (db) => {
     const hasFailed = rows.some((r) => r.status === 'failed');
     const hasStuckRunning = rows.some((r) => r.status === 'running');
     if (hasFailed) {
-        console.log('\n실패 이력이 있습니다. docs/requirements/2026-09-09-f01-migration-runbook.md의 복구 절차를 먼저 수행하세요.');
+        console.log('\n실패 이력이 있습니다. docs/마이그레이션_복구.md의 복구 절차를 먼저 수행하세요.');
     }
     if (hasStuckRunning) {
         console.log('\nrunning 상태로 멈춘 이력이 있습니다 — 이전 실행이 중단됐거나 이력 기록 자체가 실패한 흔적입니다. 실제 DB 상태를 확인한 뒤 복구 절차를 수행하세요.');
@@ -82,7 +82,7 @@ const runMigrate = async (db) => {
     if (blockedBefore.length > 0) {
         console.error('다음 마이그레이션에 실패/미완료(running) 이력이 있어 무조건 재적용을 차단합니다:');
         printStatusTable(blockedBefore);
-        console.error('\ndocs/requirements/2026-09-09-f01-migration-runbook.md의 복구 절차를 수행한 뒤 resolve-failure로 이력을 정리하세요.');
+        console.error('\ndocs/마이그레이션_복구.md의 복구 절차를 수행한 뒤 resolve-failure로 이력을 정리하세요.');
         return 1;
     }
 
