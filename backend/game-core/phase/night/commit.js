@@ -11,6 +11,7 @@ const { isParticipatingInSession, getParticipationRevision } = require('../../qu
 const { isRegisteredSession } = require('../../queries/byId')
 const { DEATH_REASONS } = require('../../result/constants')
 const { enterDayPhase } = require('../day/state')
+const { recordNightMvpPoints } = require('../../result/mvp')
 
 // 죽은 사람이 낸 밤 행동 지움
 function expireDeadPlayerNightEffects(session, deadUuids) {
@@ -91,6 +92,8 @@ function commitNightResolution(session, resolution) {
         victim.deathReason = DEATH_REASONS.ASSASSINATION
         observeNightCommit('NIGHT_DEATH_FINALIZED', { gameId: session.id, victimUuid, reason: DEATH_REASONS.ASSASSINATION })
     }
+    // MVP 점수 쌓기 (밤 행동 지우기 전에, 누가 누구 골랐는지 봐야 함)
+    recordNightMvpPoints(session, resolution, victimUuid)
     // 죽은 사람이 낸 밤 행동은 지움
     expireDeadPlayerNightEffects(session, victimUuid === null ? [] : [victimUuid])
 

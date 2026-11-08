@@ -323,7 +323,13 @@ test('AC-04: 마지막 비-JOKER가 유예 만료로 사망하면 그 자리에�
         [...eliminated.payload.winResult.reveals].sort((a, b) => a.uuid.localeCompare(b.uuid)),
         [...expectedReveals].sort((a, b) => a.uuid.localeCompare(b.uuid)),
     )
-    assert.deepEqual(eliminated.payload.winResult, { winner: 'JOKER', reveals: eliminated.payload.winResult.reveals })
+    // MVP: 이긴 광대 팀에서 한 명 (광대 혼자라 그 광대)
+    const jokerUuid = [...session.players.values()].find((player) => player.role === 'JOKER').uuid
+    assert.deepEqual(eliminated.payload.winResult, {
+        winner: 'JOKER',
+        reveals: eliminated.payload.winResult.reveals,
+        mvp: { uuid: jokerUuid },
+    })
     const victimReveal = eliminated.payload.winResult.reveals.find((reveal) => reveal.uuid === victimUuid)
     assert.equal(victimReveal.alive, false)
     assert.equal(victimReveal.deathReason, 'DISCONNECT')

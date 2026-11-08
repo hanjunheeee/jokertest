@@ -7,6 +7,7 @@ const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession, enterN
 const { DEATH_REASONS } = require('../../result/constants')
 const { TRIBUNAL_PENDING, getTribunalVoterUuids, buildTribunalBallotSnap, tallyTribunalBallots, isSameBallots, } = require('./ballots')
 const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('./constants')
+const { recordTribunalMvpPoints } = require('../../result/mvp')
 
 // 재판 판정 준비: 표 세서 결과 정하고 보관함에 넣음, 아직 확정 안 함
 function prepareTribunalVoteResolution(uuid, gameId, dayIndex) {
@@ -119,6 +120,8 @@ function commitTribunalVoteResolution(session, resolution) {
     tribunal.counts = { guilty: resolution.counts.guilty, notGuilty: resolution.counts.notGuilty }
     tribunal.executedUuid = resolution.executedUuid
     tribunal.resolved = true
+    // MVP 점수 쌓기 (광대 피고한테 유죄 낸 시민)
+    recordTribunalMvpPoints(session, resolution)
 
     // 다 쓴 보관함 비움
     TRIBUNAL_PENDING.delete(session)

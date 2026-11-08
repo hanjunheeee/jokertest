@@ -48,7 +48,7 @@ export function buildGameResultViewModel(winResult, selfUuid, selfTeam = null) {
   // 내 진영이 이긴 진영이면 승리, 그 밖엔 패배
   const outcome = winningTeam !== null && resolvedSelfTeam === winningTeam ? "win" : "lose"
 
-  // MVP는 참가자 줄에서 uuid로 찾음 (없으면 null, 서버가 아직 mvp를 안 보내 지금은 늘 null이라 MVP 칸이 숨음)
+  // MVP는 참가자 줄에서 uuid로 찾음 (서버가 이긴 팀 한 명을 보냄, 없거나 명단에 없으면 null이라 MVP 칸이 숨음)
   const mvpUuid = isPlainObject(winResult?.mvp) ? winResult.mvp.uuid : null
   const mvp =
     typeof mvpUuid === "string" && mvpUuid.length > 0
