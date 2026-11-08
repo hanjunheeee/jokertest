@@ -46,22 +46,44 @@ function deepFreezeRecord(value) {
     return value
 }
 
+// 다시 해도 안 되는 저장 실패인지 (제약 위반·값 검사 실패는 같은 레코드로 몇 번을 해도 같음)
+const PERMANENT_PERSIST_ERRORS = new Set([
+    'SequelizeUniqueConstraintError',
+    'SequelizeForeignKeyConstraintError',
+    'SequelizeValidationError',
+])
+function isPermanentPersistError(err) {
+    return PERMANENT_PERSIST_ERRORS.has(err?.name)
+}
+
 // 저장 한 번 시도: 동기로 던져도 실패 Promise로 바꿔 재시도 길로
 function attemptTerminalPersist(run) {
     run.attempt += 1
     let pending
     try {
-        pending = Promise.resolve(gameResultRepository.persistGameResultRecord(run.record))
+        const persistRecord = deps.persistRecord ?? gameResultRepository.persistGameResultRecord
+        pending = Promise.resolve(persistRecord(run.record))
     } catch (err) {
         pending = Promise.reject(err)
     }
-    // 성공이면 끝내기, 실패면 기록하고 재시도 예약
+    // 성공이면 끝내기, 실패면 기록하고 재시도 예약 (다시 해도 안 되는 실패면 그만, 60초마다 끝없이 안 돌게)
     pending
         .then(() => finishTerminalPersist(run))
-        .catch(() => {
+        .catch((err) => {
+            if (isPermanentPersistError(err)) {
+                console.error('[전적 저장 실패]', { code: 'PERSIST_ABANDONED', gameId: run.gameId, attempt: run.attempt, error: err?.name })
+                abandonTerminalPersist(run)
+                return
+            }
             console.error('[전적 저장 실패]', { code: 'PERSIST_ERROR', gameId: run.gameId, attempt: run.attempt })
             scheduleRetry(run)
         })
+}
+
+// 저장 포기: 작업만 지움 (세션 표식은 남아 같은 판을 또 저장하지 않음)
+function abandonTerminalPersist(run) {
+    if (terminalPersistRuns.get(run.gameId) === run) terminalPersistRuns.delete(run.gameId)
+    clearPersistTimer(run)
 }
 
 // 재시도 예약: 아직 이 run이 그 판 작업일 때만 (프로세스 종료는 안 막음)

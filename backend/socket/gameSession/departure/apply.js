@@ -11,6 +11,7 @@ const { emitSelfProgress } = require('../delivery/progress')
 const { reevaluateNightWait } = require('../phase/night/wait')
 const { maybeEndNightTurn } = require('../phase/night/turn')
 const { startDayPhaseTimer, syncSessionPhaseTimers } = require('../phase/day')
+const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { markDeparturePending, clearDepartureMark } = require('./marks')
 const { maybeResolveDayVote, maybeResolveTribunal } = require('./autoResolve')
 
@@ -68,8 +69,8 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
             () => emitToGameChannel(io, session, 'session_participation_changed', participationPayload))
     }
 
-    // 기권 처리된 표는 각자에게만 (누가 누굴 찍었는지 안 새게)
-    emitSelfProgress(io, session)
+    // 기권 처리된 표는 각자에게만 (누가 누굴 찍었는지 안 새게), 던져도 뒷처리 계속
+    step('SELF_PROGRESS_ERROR', () => emitSelfProgress(io, session))
 
     // 피고가 나가 재판 취소됐으면 취소 결과 방송
     if (applied.tribunalCancelled) {
@@ -80,7 +81,8 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     // 승부 났으면 전적 저장은 시작만 하고 타이머 정리 (지도 12-⑩)
     if (applied.terminal) {
         clearDepartureMark(session.id)
-        persistTerminalSession(session, { completed: true })
+        step('PERSIST_START_ERROR', () => persistTerminalSession(session, { completed: true }))
+        step('ROLE_REVEAL_TIMER_STOP_ERROR', () => stopRoleRevealTimer(session.id))
         step('TIMER_SYNC_ERROR', () => syncSessionPhaseTimers(io, session))
         return applied
     }
@@ -105,11 +107,12 @@ function advanceAfterDeparture(io, session, applied) {
     const advanced = isolateOr({ transitioned: null }, label, { code: 'ADVANCE_ERROR', gameId: session.id },
         () => gameSessionCore.advanceStalledPhase(session))
 
-    // 역할 확인 끝나 첫 낮으로: 단계 방송 + 낮 타이머
+    // 역할 확인 끝나 첫 낮으로: 역할 공개 마감 끄고 낮 타이머 먼저 + 단계 방송 (새 마감 시각 실으려고, known 1-13)
     if (advanced.transitioned === 'DAY') {
+        step('ROLE_REVEAL_TIMER_STOP_ERROR', () => stopRoleRevealTimer(session.id))
+        step('TIMER_START_ERROR', () => startDayPhaseTimer(io, session))
         step('PHASE_DELIVERY_ERROR',
             () => emitToGameChannel(io, session, 'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(session)))
-        step('TIMER_START_ERROR', () => startDayPhaseTimer(io, session))
         return
     }
 

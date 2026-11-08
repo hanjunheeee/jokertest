@@ -36,6 +36,7 @@ function tallyTribunalBallots(ballotSnapshot, defendantUuid) {
         if (choice === 'GUILTY') guilty += 1
         else if (choice === 'NOT_GUILTY') notGuilty += 1
     }
+    // 기권(마감 때 안 낸 사람)은 어느 쪽에도 안 셈
     // 유죄가 더 많아야 유죄, 같으면 무죄
     const outcome = guilty > notGuilty ? 'GUILTY' : 'NOT_GUILTY'
     return { counts: { guilty, notGuilty }, outcome, executedUuid: outcome === 'GUILTY' ? defendantUuid : null }

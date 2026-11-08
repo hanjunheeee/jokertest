@@ -20,7 +20,7 @@ const {
     emitToEachEligible,
 } = require('../delivery/broadcast')
 const { emitProgressAfterSubmit } = require('../delivery/progress')
-const { syncSessionPhaseTimers, attachDayPhaseDeadline } = require('../phase/day')
+const { announceDayVoteResolved } = require('../phase/day')
 const { resolveAfterDeparture } = require('../departure/autoResolve')
 
 // 낮 투표 제출 효과음 (기록 없거나 읽다 던지면 null, 효과음 없이 답함)
@@ -140,17 +140,12 @@ function handleResolveDayVote(io, socket, uuid, payload, callback, deps = {}) {
     // 누른 사람한테 답 먼저, 그다음 판 전체 방송
     ackInSession(resolutionReply())
 
-    // 받는 사람 먼저 모으고 결과 방송, 그다음 단계 타이머
+    // 받는 사람 먼저 모으고 결과 방송 + 다음 단계 타이머 (순서는 announceDayVoteResolved가 정함)
     const fieldsInSession = { uuid, gameId: prepared.session.id }
     const recipients = resolveOrEmpty(io, prepared.session, label, fieldsInSession, resolveParticipantSockets)
-    const dayVoteResolvedPayload = attachDayPhaseDeadline(
-        gameSessionCore.buildDayVoteResolvedPayload(prepared.session, prepared.resolution),
-        prepared.session,
-    )
-    emitToEachEligible(prepared.session, recipients, label, fieldsInSession,
-        (recipientSocket) => recipientSocket.emit('day_vote_resolved', dayVoteResolvedPayload))
-
-    isolate(label, { code: 'TIMER_SYNC_ERROR', ...fieldsInSession }, () => syncSessionPhaseTimers(io, prepared.session))
+    announceDayVoteResolved(io, prepared.session, prepared.resolution, label, fieldsInSession, (dayVoteResolvedPayload) =>
+        emitToEachEligible(prepared.session, recipients, label, fieldsInSession,
+            (recipientSocket) => recipientSocket.emit('day_vote_resolved', dayVoteResolvedPayload)))
 }
 
 module.exports = {

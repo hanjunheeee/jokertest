@@ -9,6 +9,7 @@ const { nightTurnRuns } = require('../core/state')
 const { pickTrimmedGameId, acceptRequest } = require('../core/requests')
 const { canProcessDisconnectFor, consumeOwnership } = require('../connection/ownership')
 const { beginDisconnectGrace } = require('../connection/grace')
+const { ensureRoleRevealTimer } = require('../phase/roleReveal')
 const { detachFromGameChannel } = require('../delivery/broadcast')
 const { reevaluateNightWait } = require('../phase/night/wait')
 const { cleanupMatchmakingRooms, finalizeGameSessionEnd } = require('../departure/end')
@@ -102,10 +103,13 @@ async function onDisconnect(io, socket, uuid) {
     if (expectedGameId === undefined) return
 
     // 살아 있는 참가자: 유예 걸고 연출 기다림만 다시 봄
+    // 역할 공개 중이면 마감도 걸어 둠 (안 누른 채 끊긴 사람 때문에 판이 안 멈추게, BE-002)
     const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
     if (graceTarget) {
         beginDisconnectGrace(io, graceTarget.session, uuid)
         reevaluateOnDisconnect(graceTarget.session.id)
+        isolate('[역할 공개 마감 시작 실패]', { code: 'TIMER_START_ERROR', gameId: graceTarget.session.id },
+            () => ensureRoleRevealTimer(io, graceTarget.session))
         return
     }
 

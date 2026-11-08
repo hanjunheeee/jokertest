@@ -1,10 +1,21 @@
 // 재판 투표 받기 파일
-// 유죄·무죄 표 받기 + 효과음 이벤트, socket 쪽이 gameSession.js 통해서 사용
+// 유죄·무죄 표 받기(마감 기권 포함) + 효과음 이벤트, socket 쪽이 gameSession.js 통해서 사용
 const { normalizeGameId, findActorSession } = require('../../core/registry/lookup')
 const { getSessionById } = require('../../queries/byId')
+const { TRIBUNAL_ABSTAIN } = require('./constants')
 
-// 재판 표 받기 (재판 중, 투표 자격 있는 사람만)
+// 재판 표 받기 (재판 중, 투표 자격 있는 사람만), 사람이 고르는 건 유죄·무죄만
 function submitTribunalVote(uuid, gameId, dayIndex, vote) {
+    return recordTribunalVote(uuid, gameId, dayIndex, vote, { allowAbstain: false })
+}
+
+// 재판 마감 기권 표: 안 낸 사람을 기권으로 채워 판정할 수 있게 (BE-003, socket 재판 마감 타이머만 부름)
+function submitTribunalAbstention(uuid, gameId, dayIndex) {
+    return recordTribunalVote(uuid, gameId, dayIndex, TRIBUNAL_ABSTAIN, { allowAbstain: true })
+}
+
+// 표 기록 공통: 검사 순서는 사람 표·기권 표 같음
+function recordTribunalVote(uuid, gameId, dayIndex, vote, { allowAbstain }) {
     // 판 id 확인(공백 안 자름) + 내 판·판 안의 나 찾기
     const found = findActorSession(uuid, gameId, { trim: false })
     if (!found.ok) return found
@@ -46,8 +57,9 @@ function submitTribunalVote(uuid, gameId, dayIndex, vote) {
     if (!actor.alive) return { ok: false, code: 'PLAYER_NOT_ALIVE' }
     if (uuid === defendantUuid) return { ok: false, code: 'DEFENDANT_CANNOT_VOTE' }
 
-    // 유죄·무죄 둘 중 하나만
-    if (vote !== 'GUILTY' && vote !== 'NOT_GUILTY') return { ok: false, code: 'INVALID_TRIBUNAL_VOTE' }
+    // 유죄·무죄 둘 중 하나만 (기권은 마감 때만)
+    const isAbstain = allowAbstain && vote === TRIBUNAL_ABSTAIN
+    if (vote !== 'GUILTY' && vote !== 'NOT_GUILTY' && !isAbstain) return { ok: false, code: 'INVALID_TRIBUNAL_VOTE' }
 
     // 한 사람 한 표, 바꾸기 없음
     if (tribunal.votes.has(uuid)) return { ok: false, code: 'TRIBUNAL_VOTE_ALREADY_SUBMITTED' }
@@ -74,4 +86,4 @@ function readTribunalVoteSfx(uuid, gameId) {
     })
 }
 
-module.exports = { submitTribunalVote, readTribunalVoteSfx }
+module.exports = { submitTribunalVote, submitTribunalAbstention, readTribunalVoteSfx }

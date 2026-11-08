@@ -11,6 +11,8 @@ const { detachFromGameChannel, emitToGameChannel } = require('../delivery/broadc
 const { deleteNightReceipts } = require('../phase/night/receipts')
 const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
+const { stopRoleRevealTimer } = require('../phase/roleReveal')
+const { stopTribunalTimer } = require('../phase/tribunal')
 const { clearDepartureMark } = require('./marks')
 
 // 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
@@ -49,10 +51,12 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
         })
     })
 
-    // 밤 턴·낮 타이머·이탈 표식·끊김 유예 전부 끔 (지워진 판에 늦게 안 돌게)
+    // 밤 턴·낮·역할 공개·재판 타이머·이탈 표식·끊김 유예 전부 끔 (지워진 판에 늦게 안 돌게)
     isolateWithError('[GameSession 종료 시 타이머 정리 실패]', () => {
         stopNightTurnSequence(session.id)
         stopDayPhaseTimer(session.id)
+        stopRoleRevealTimer(session.id)
+        stopTribunalTimer(session.id)
         clearDepartureMark(session.id)
         detachAllGraces(session.id)
     })

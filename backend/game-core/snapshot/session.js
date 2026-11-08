@@ -23,6 +23,14 @@ function canIncludeVoteFields(session) {
     return false
 }
 
+// 재판 마감 시각 칸: 재판 중이고 socket 재판 타이머가 적어 둔 값 있을 때만 (BE-003)
+function buildPublicTribunalDeadlineField(session) {
+    if (session?.phase !== 'TRIBUNAL') return {}
+    const deadline = session.tribunalDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return {}
+    return { tribunalDeadline: deadline }
+}
+
 // 보는 사람 기준 판 스냅샷 (내 역할·진행·투표·재판·밤 결과)
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
@@ -42,9 +50,10 @@ function buildSessionSnapshot(session, uuid) {
         selfProgressSeq: session.selfProgressSeq ?? 0,
         // 낮이면 토론·투표 중 어느 쪽인지
         ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
-        // 새로고침해도 타이머가 이어지게 낮·밤 차례 마감 시각
+        // 새로고침해도 타이머가 이어지게 낮·밤 차례·재판 마감 시각
         ...buildPublicDayPhaseDeadlineField(session),
         ...buildPublicNightTurnTimerFields(session),
+        ...buildPublicTribunalDeadlineField(session),
         players: [...session.players.values()].map((player, index) => ({
             uuid: player.uuid,
             nickname: player.nickname,

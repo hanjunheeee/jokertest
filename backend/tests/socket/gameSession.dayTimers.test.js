@@ -29,12 +29,17 @@ test.beforeEach(() => {
     gameSessionSocketLayer.__resetStateForTests()
     gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
     gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests(async () => ({ recorded: true }))
+    // 판 끝 전적 저장·업적 평가가 진짜 저장소로 가면 켜진 개발 DB에 붙음 → 가짜로 막기 (BE-019)
+    gameSessionSocketLayer.__testables.__setGameResultPersistForTests(async () => {})
+    gameSessionSocketLayer.__testables.__setEvaluateAchievementsForTests(async () => {})
 })
 test.afterEach(() => {
     gameSessionCore.__resetStateForTests()
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
     gameSessionSocketLayer.__testables.__setRecordVoteParticipationForTests()
+    gameSessionSocketLayer.__testables.__setGameResultPersistForTests()
+    gameSessionSocketLayer.__testables.__setEvaluateAchievementsForTests()
 })
 
 function createManualClock(startMs = 1_000_000) {

@@ -1,9 +1,10 @@
 // 역할 공개 확인 파일
-// 역할 확인 버튼 받기 + 전원 확인됐는지
+// 역할 확인 버튼 받기·마감 때 넘기기 + 전원 확인됐는지
 // socket 쪽이 gameSession.js 통해서 사용, 전원 확인 검사는 나가기 쪽도 씀
 const { findActorSession } = require('../core/registry/lookup')
 const { enterDayPhase } = require('../phase/day/state')
 const { isParticipatingInSession } = require('../queries/participation')
+const { isRegisteredSession } = require('../queries/byId')
 
 // "역할 확인" 누른 사람 기록, 전원 확인되면 첫 낮으로
 function acknowledgeRoleReveal(uuid, gameId) {
@@ -37,7 +38,20 @@ function isRoleRevealComplete(session) {
     return pending.every((player) => session.roleRevealAcks.has(player.uuid))
 }
 
+// 역할 공개 마감: 안 누른 사람이 남아도 첫 낮으로 (끊긴 사람·알림 실패로 판이 멈추지 않게, BE-002)
+// socket 역할 공개 마감 타이머만 부름, 남은 참여자가 없으면 안 넘김
+function forceCompleteRoleReveal(session) {
+    if (!session || !isRegisteredSession(session)) return { ok: false, code: 'SESSION_NOT_FOUND' }
+    if (session.phase !== 'ROLE_REVEAL') return { ok: false, code: 'INVALID_PHASE' }
+    const participating = [...session.players.values()].some((player) => isParticipatingInSession(session, player.uuid))
+    if (!participating) return { ok: true, transitioned: false, session }
+    // 여기부터 진짜 바뀜: 첫 낮으로
+    enterDayPhase(session)
+    return { ok: true, transitioned: true, session }
+}
+
 module.exports = {
     acknowledgeRoleReveal,
+    forceCompleteRoleReveal,
     isRoleRevealComplete,
 }

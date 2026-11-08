@@ -66,6 +66,13 @@ const NIGHT_TURN_STAGES = Object.freeze({
 const NIGHT_WAIT_DEFAULT_MS = 12000
 const NIGHT_WAIT_MAX_MS = 2147483647
 
+// 역할 공개 마감 30초: 화면은 들어오자마자 확인을 보냄, 끊긴 사람·알림 실패로 판이 멈추지 않게 (BE-002)
+const ROLE_REVEAL_DEADLINE_MS = 30000
+
+// 타이머 쪽 판정·확정 실패 때 다시 해 보기: 1초 간격 최대 5번 (그사이 겹친 요청이 끝나면 풀림)
+const PHASE_RETRY_DELAY_MS = 1000
+const PHASE_RETRY_MAX = 5
+
 // 밤 연출 계약 버전
 const NIGHT_CONTRACT_VERSION = 1
 
@@ -105,6 +112,9 @@ module.exports = {
     NIGHT_TURN_STAGES,
     NIGHT_WAIT_DEFAULT_MS,
     NIGHT_WAIT_MAX_MS,
+    ROLE_REVEAL_DEADLINE_MS,
+    PHASE_RETRY_DELAY_MS,
+    PHASE_RETRY_MAX,
     NIGHT_CONTRACT_VERSION,
     NIGHT_EVENT_TYPES,
     NIGHT_PERSPECTIVES,

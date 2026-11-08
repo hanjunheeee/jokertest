@@ -6,6 +6,8 @@ const kickReceiptStore = require('../../kickReceiptStore')
 const {
     nightTurnRuns,
     dayPhaseRuns,
+    roleRevealRuns,
+    tribunalRuns,
     disconnectGraceRuns,
     departureResolveMarks,
     nightFinalizeInFlight,
@@ -19,6 +21,8 @@ const { detachAllGraces } = require('../connection/grace')
 const { resetNightReceipts } = require('../phase/night/receipts')
 const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
+const { stopRoleRevealTimer } = require('../phase/roleReveal')
+const { stopTribunalTimer } = require('../phase/tribunal')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./ready')
 const {
     handleSubmitNightAction,
@@ -72,6 +76,8 @@ function __resetStateForTests() {
     // 타이머 run 끄기 (끄면서 보관함에서 지우니 키 먼저 복사), 마지막은 전적 재시도
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)
+    for (const gameId of [...roleRevealRuns.keys()]) stopRoleRevealTimer(gameId)
+    for (const gameId of [...tribunalRuns.keys()]) stopTribunalTimer(gameId)
     for (const gameId of [...disconnectGraceRuns.keys()]) detachAllGraces(gameId)
     gameRecordService.__resetTerminalPersistForTests()
 }

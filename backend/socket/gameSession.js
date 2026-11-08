@@ -6,7 +6,7 @@ const { persistTerminalSession, setEmitToUser } = gameRecordService
 const gameAchievementService = require('../services/game/achievementHooks')
 const kickReceiptStore = require('./kickReceiptStore')
 const { NIGHT_TURN_STAGES } = require('./gameSession/core/constants')
-const { nightTurnRuns, setPhaseHooks } = require('./gameSession/core/state')
+const { nightTurnRuns, roleRevealRuns, tribunalRuns, setPhaseHooks } = require('./gameSession/core/state')
 const {
     resolveNightWaitMs,
     computeEmptyTurnDelayMs,
@@ -52,7 +52,10 @@ const {
     startNightTurnSequence,
     stopNightTurnSequence,
 } = require('./gameSession/phase/night/turn')
-const { startDayPhaseTimer, stopDayPhaseTimer } = require('./gameSession/phase/day')
+const { startDayPhaseTimer, stopDayPhaseTimer, syncSessionPhaseTimers } = require('./gameSession/phase/day')
+const { ensureRoleRevealTimer, stopRoleRevealTimer } = require('./gameSession/phase/roleReveal')
+const { startTribunalTimer, stopTribunalTimer } = require('./gameSession/phase/tribunal')
+const { maybeResolveTribunal } = require('./gameSession/departure/autoResolve')
 const { finalizeNightForSession } = require('./gameSession/phase/night/finalize')
 const { finalizeGameSessionEnd } = require('./gameSession/departure/end')
 const { applyParticipantDeparture } = require('./gameSession/departure/apply')
@@ -84,6 +87,7 @@ setPhaseHooks({
     applyParticipantDeparture,
     finalizeNightForSession,
     advanceNightTurn,
+    resolveTribunalNow: maybeResolveTribunal,
 })
 
 module.exports = {
@@ -122,6 +126,7 @@ module.exports = {
         detachSocketFromChannel,
         __getTerminalPersistRunsForTests: gameRecordService.__getTerminalPersistRunsForTests,
         __setTerminalPersistTimersForTests: gameRecordService.__setTerminalPersistTimersForTests,
+        __setGameResultPersistForTests: gameRecordService.__setGameResultPersistForTests,
         resolveJokerTeammateSockets,
         resolveChatRecipientSockets,
         resolveSessionSockets,
@@ -150,6 +155,13 @@ module.exports = {
         resolveNightTurnDurationMs,
         startDayPhaseTimer,
         stopDayPhaseTimer,
+        syncSessionPhaseTimers,
+        ensureRoleRevealTimer,
+        stopRoleRevealTimer,
+        __getRoleRevealRunForTests: (gameId) => roleRevealRuns.get(gameId) ?? null,
+        startTribunalTimer,
+        stopTribunalTimer,
+        __getTribunalRunForTests: (gameId) => tribunalRuns.get(gameId) ?? null,
         beginDisconnectGrace,
         cancelDisconnectGrace,
         expireDisconnectGrace,

@@ -3,7 +3,7 @@
 // 다 돌면 밤 마무리는 phaseHooks로 부름 (finalize가 이 파일을 require해서 고리 막기)
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isolate, isolateOr, tryOr } = require('../../../common/isolate')
-const { NIGHT_TURN_STAGES } = require('../../core/constants')
+const { NIGHT_TURN_STAGES, PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../../core/constants')
 const { nightTurnRuns, disconnectGraceRuns, phaseHooks } = require('../../core/state')
 const {
     pickTimerFns,
@@ -33,6 +33,35 @@ function completeNightRoleSafely(session, role) {
     return tryOr({ ok: false, code: 'ROLE_COMPLETE_UNEXPECTED_ERROR' }, () => gameSessionCore.completeNightRole(session, role))
 }
 
+// 타이머 쪽 확정 실패 때 잠깐 뒤 다시 (최대 PHASE_RETRY_MAX번, 밤이 타이머 없이 멈추지 않게), 걸었으면 true
+function retryNightStepLater(run, label, fields, retry) {
+    if ((run.retries ?? 0) >= PHASE_RETRY_MAX) {
+        console.error(label, { code: 'RETRY_EXHAUSTED', ...fields })
+        return false
+    }
+    run.retries = (run.retries ?? 0) + 1
+    clearRunTimer(run)
+    run.timerId = run.setTimeoutFn(retry, PHASE_RETRY_DELAY_MS)
+    return true
+}
+
+// 밤 마무리 부르기: 실패면 잠깐 뒤 다시 (run은 이미 지워져 있어 같은 시계로 따로 셈, BE-023)
+// 겹친 마무리가 도는 중이면 그쪽에 맡김, 그사이 밤이 끝났거나 새 밤 run이 생겼으면 그만
+function finalizeNightWithRetry(run, attempt = 0) {
+    const { session } = run
+    if (session.phase !== 'NIGHT' || session.dayIndex !== run.nightDayIndex) return
+    if (nightTurnRuns.has(session.id)) return
+    const result = isolateOr(null, '[밤 자동 마무리 실패]', { code: 'FINALIZE_ERROR', gameId: session.id },
+        () => phaseHooks.finalizeNightForSession(run.io, session))
+    if (result?.ok || result?.code === 'NIGHT_FINALIZE_IN_PROGRESS') return
+    if (session.phase !== 'NIGHT' || session.nightResolution !== null) return
+    if (attempt >= PHASE_RETRY_MAX) {
+        console.error('[밤 자동 마무리 실패]', { code: 'RETRY_EXHAUSTED', gameId: session.id, lastCode: result?.code })
+        return
+    }
+    run.setTimeoutFn(() => finalizeNightWithRetry(run, attempt + 1), PHASE_RETRY_DELAY_MS)
+}
+
 // 다음 역할 턴 열기: 판에 없는 역할은 확정만 하고 건너뜀, 다 돌았으면 밤 마무리
 function advanceNightTurn(run) {
     const { session } = run
@@ -49,19 +78,24 @@ function advanceNightTurn(run) {
         const completed = completeNightRoleSafely(session, absentRole)
         if (!completed.ok) {
             console.error('[밤 부재 역할 확정 실패]', { code: completed.code, role: absentRole, gameId: session.id })
+            // 이 역할부터 다시 열게 한 칸 되돌리고 잠깐 뒤 다시 (멈춘 채 두지 않음)
+            run.index -= 1
+            retryNightStepLater(run, '[밤 부재 역할 확정 실패]', { role: absentRole, gameId: session.id },
+                () => advanceNightTurn(run))
             return
         }
         run.index += 1
     }
-    // 다 돌았으면 run 멈추고 밤 마무리
+    // 다 돌았으면 run 멈추고 밤 마무리 (실패면 잠깐 뒤 다시)
     if (run.index >= gameSessionCore.NIGHT_TURN_ORDER.length) {
         stopNightTurnSequence(session.id)
         // 밤 마무리는 night/finalize 것을 주입받아 부름 (require 고리 막기)
-        phaseHooks.finalizeNightForSession(run.io, session)
+        finalizeNightWithRetry(run)
         return
     }
 
-    // 여기부터 진짜 바뀜: 이 역할 턴 열고 마감 시각 방송
+    // 여기부터 진짜 바뀜: 이 역할 턴 열고 마감 시각 방송 (다시 해 보기 횟수는 턴마다 새로)
+    run.retries = 0
     const role = gameSessionCore.NIGHT_TURN_ORDER[run.index]
     session.nightTurnRole = role
     run.stage = NIGHT_TURN_STAGES.SUBMITTING
@@ -112,10 +146,11 @@ function endNightTurn(run, role) {
     const { session } = run
     if (!isSubmittingNightTurn(run, role)) return
 
-    // 확정 실패면 턴 안 닫고 로그만
+    // 확정 실패면 턴 안 닫고 잠깐 뒤 다시 (마감 타이머가 이미 지나 아무도 안 닫는 것 막기)
     const completed = completeNightRoleSafely(session, role)
     if (!completed.ok) {
         console.error('[밤 역할 확정 실패]', { code: completed.code, role, gameId: session.id })
+        retryNightStepLater(run, '[밤 역할 확정 실패]', { role, gameId: session.id }, () => endNightTurn(run, role))
         return
     }
 

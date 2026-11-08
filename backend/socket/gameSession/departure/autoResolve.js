@@ -7,7 +7,8 @@ const {
     emitToEachEligible,
     deliverToParticipants,
 } = require('../delivery/broadcast')
-const { syncSessionPhaseTimers, attachDayPhaseDeadline } = require('../phase/day')
+const { syncSessionPhaseTimers, announceDayVoteResolved } = require('../phase/day')
+const { pickRequesterUuid } = require('../core/requester')
 const { clearDepartureMark, hasDepartureResolveMark } = require('./marks')
 const { withTerminalFields } = require('./end')
 
@@ -21,16 +22,6 @@ function resolveAfterDeparture(io, uuid, gameId) {
         return
     }
     if (session.phase === 'TRIBUNAL') maybeResolveTribunal(io, session)
-}
-
-// 판정 prepare에 넣을 이름: 아직 이 판에 참여 중인 첫 사람 (없으면 null)
-function pickRequesterUuid(session) {
-    for (const player of session.players.values()) {
-        if (!gameSessionCore.isParticipatingInSession(session, player.uuid)) continue
-        if (gameSessionCore.getActiveSessionForDeparture(player.uuid, session.id) !== session) continue
-        return player.uuid
-    }
-    return null
 }
 
 // 이탈로 남은 사람 다 냈으면 낮 투표 바로 판정 (남은 참가자 한 명 이름으로 prepare)
@@ -47,32 +38,29 @@ function maybeResolveDayVote(io, session) {
     const committed = gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution)
     if (!committed.ok) return
 
-    // 확정됐으니 표식 지우고 결과 방송·타이머 맞춤
+    // 확정됐으니 표식 지우고 결과 방송·타이머 맞춤 (순서는 announceDayVoteResolved가 정함)
     clearDepartureMark(session.id)
 
     const label = '[이탈 후 낮 투표 판정 실패]'
     const fields = { gameId: session.id }
-    const resolvedPayload = attachDayPhaseDeadline(
-        gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution),
-        session,
-    )
-    deliverToParticipants(io, session, 'day_vote_resolved', resolvedPayload, label, fields)
-    isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))
+    announceDayVoteResolved(io, session, prepared.resolution, label, fields,
+        (resolvedPayload) => deliverToParticipants(io, session, 'day_vote_resolved', resolvedPayload, label, fields))
 }
 
-// 이탈로 남은 사람 다 냈으면 재판 바로 판정 (남은 참가자 한 명 이름으로 prepare)
+// 남은 사람 다 냈으면 재판 바로 판정 (남은 참가자 한 명 이름으로 prepare), 확정했으면 true
+// 이탈 뒤 바로 판정·재판 마감 타이머(안 낸 사람 기권 채운 뒤)가 씀
 function maybeResolveTribunal(io, session) {
     // 남은 참가자 없으면 prepare에 넣을 이름 없음
     const requesterUuid = pickRequesterUuid(session)
-    if (!requesterUuid) return
+    if (!requesterUuid) return false
 
     // 아직 다 안 냈거나 이미 끝난 재판이면 그만
     const prepared = gameSessionCore.prepareTribunalVoteResolution(requesterUuid, session.id, session.dayIndex)
-    if (!prepared.ok) return
+    if (!prepared.ok) return false
 
     // 여기부터 진짜 바뀜: 판정 확정 (그사이 표 바뀌었으면 core가 거절)
     const committed = gameSessionCore.commitTribunalVoteResolution(prepared.session, prepared.resolution)
-    if (!committed.ok) return
+    if (!committed.ok) return false
 
     // 확정됐으니 표식 지우고 결과 방송(승부 났으면 종료 필드)·타이머 맞춤
     clearDepartureMark(session.id)
@@ -89,6 +77,7 @@ function maybeResolveTribunal(io, session) {
     }
 
     isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))
+    return true
 }
 
 module.exports = {

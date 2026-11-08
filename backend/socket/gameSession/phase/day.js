@@ -1,12 +1,15 @@
 // 낮 타이머 파일
-// 낮 토론·투표 마감 타이머(마감 시각 방송에 붙이기 포함) + 판 단계에 맞게 밤·낮 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
+// 낮 토론·투표 마감 타이머(마감 시각 방송에 붙이기·판정 결과 방송 순서 포함) + 판 단계에 맞게 밤·낮·재판 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
-const { isolate } = require('../../common/isolate')
+const { isolate, isolateWithError } = require('../../common/isolate')
+const { PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../core/constants')
 const { dayPhaseRuns } = require('../core/state')
+const { pickRequesterUuid } = require('../core/requester')
 const { pickTimerFns, clearRunTimer, fillAbstentions } = require('../core/timers')
 const { expireGracesAtBoundary } = require('../connection/grace')
 const { emitToGameChannel, deliverToParticipants } = require('../delivery/broadcast')
 const { startNightTurnSequence, stopNightTurnSequence } = require('./night/turn')
+const { startTribunalTimer, stopTribunalTimer } = require('./tribunal')
 
 // 낮 단계 방송, 던져도 타이머 진행은 계속
 function emitDayPhaseEvent(run, event, payload) {
@@ -17,6 +20,7 @@ function emitDayPhaseEvent(run, event, payload) {
 // 지금 판이 낮이고 타이머 걸 때 적어 둔 날짜·낮 단계·투표 라운드 그대로인지
 function matchesDayState(run) {
     const { session } = run
+    if (!run.scheduledFor) return false
     if (session.phase !== 'DAY') return false
     if (session.dayIndex !== run.scheduledFor.dayIndex) return false
     if (gameSessionCore.getDayPhase(session) !== run.scheduledFor.dayPhase) return false
@@ -64,6 +68,8 @@ function scheduleDayPhaseTimer(run) {
         dayPhase,
         round: gameSessionCore.getDayVoteRound(session),
     }
+    run.retries = 0
+    run.scheduleSeq = (run.scheduleSeq ?? 0) + 1
     run.deadline = run.nowFn() + durationMs
     // 판에도 마감 시각 적어 둠 (방송·스냅샷이 화면 타이머용으로 실음)
     session.dayPhaseDeadline = run.deadline
@@ -88,6 +94,18 @@ function expireDayDiscussion(run) {
     emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
 }
 
+// 투표 마감 판정이 안 됐을 때: 같은 단계 그대로면 잠깐 뒤 다시 (최대 PHASE_RETRY_MAX번, 단계가 멈추지 않게)
+function retryDayVoteLater(run, label) {
+    if (!isLiveDayRun(run)) return
+    if ((run.retries ?? 0) >= PHASE_RETRY_MAX) {
+        console.error(label, { code: 'RETRY_EXHAUSTED', gameId: run.session.id })
+        return
+    }
+    run.retries = (run.retries ?? 0) + 1
+    clearRunTimer(run)
+    run.timerId = run.setTimeoutFn(() => expireDayVote(run), PHASE_RETRY_DELAY_MS)
+}
+
 // 투표 마감: 안 낸 사람 기권으로 채우고 판정·방송, 다음 단계 타이머로 (지도 04-⑥)
 function expireDayVote(run) {
     const { session } = run
@@ -103,45 +121,64 @@ function expireDayVote(run) {
         session.id,
     )
 
-    // 판정 준비: 누른 사람이 없어 판 첫 사람 이름으로 부름
+    // 판정 준비: 누른 사람이 없어 아직 참여 중인 사람 이름으로 부름 (나간 사람 이름이면 실패함, known 1-1)
     const label = '[낮 투표 만료 판정 실패]'
-    const requesterUuid = session.players.keys().next().value
+    const requesterUuid = pickRequesterUuid(session)
+    if (!requesterUuid) return
     const prepared = callCoreOrLog(label, session.id, 'PREPARE_UNEXPECTED_ERROR',
         () => gameSessionCore.prepareDayVoteResolution(requesterUuid, session.id, session.dayIndex))
-    if (!prepared) return
+    if (!prepared) {
+        retryDayVoteLater(run, label)
+        return
+    }
     // 버튼이 먼저 판정했으면 타이머만 다시 걸기
     if (prepared.alreadyResolved) {
         scheduleDayPhaseTimer(run)
         return
     }
 
-    // 확정 실패면 로그만, 방송·타이머 없음
+    // 확정 실패면 잠깐 뒤 다시 (그사이 표가 바뀐 경쟁이면 다음 판정이 맞춤)
     const committed = callCoreOrLog(label, session.id, 'COMMIT_ERROR',
         () => gameSessionCore.commitDayVoteResolution(prepared.session, prepared.resolution))
-    if (!committed) return
+    if (!committed) {
+        retryDayVoteLater(run, label)
+        return
+    }
 
-    const resolvedPayload = attachDayPhaseDeadline(
-        gameSessionCore.buildDayVoteResolvedPayload(session, prepared.resolution),
-        session,
-    )
-    deliverToParticipants(run.io, session, 'day_vote_resolved', resolvedPayload, label, { gameId: session.id })
+    announceDayVoteResolved(run.io, session, prepared.resolution, label, { gameId: session.id },
+        (payload) => deliverToParticipants(run.io, session, 'day_vote_resolved', payload, label, { gameId: session.id }))
+}
 
-    // 재판·재투표·밤 중 바뀐 단계에 맞게 타이머 다시 맞춤, 던져도 로그만 (타이머 콜백 밖으로 안 샘)
-    isolate(label, { code: 'TIMER_SYNC_ERROR', gameId: session.id }, () => syncSessionPhaseTimers(run.io, session))
+// 낮 투표 판정 결과 방송 + 다음 단계 타이머, 순서는 다음 단계에 따라 (버튼·마감·이탈 뒤 판정이 같이 씀)
+// 낮(재투표)에 남으면 타이머 먼저: 새 라운드 마감 시각을 결과에 실음 (옛 마감 시각 실리던 것, known 1-13)
+// 재판·밤으로 가면 방송 먼저: 유예 만료 이탈·밤 턴 방송이 판정 결과보다 앞서지 않게
+function announceDayVoteResolved(io, session, resolution, label, fields, deliver) {
+    const syncTimers = () => isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))
+    const staysDay = session.phase === 'DAY'
+    if (staysDay) syncTimers()
+    const payload = attachDayPhaseDeadline(gameSessionCore.buildDayVoteResolvedPayload(session, resolution), session)
+    deliver(payload)
+    if (!staysDay) syncTimers()
 }
 
 // 낮 타이머 시작: 판마다 run 하나 (토론·투표 길이는 방 설정, 없으면 기본값)
 function startDayPhaseTimer(io, session, deps = {}) {
     if (!session) return null
     // 단계 경계라 끊김 유예부터 끝냄 (이탈로 판이 바뀔 수 있어 낮 확인은 그 뒤)
+    const runBefore = dayPhaseRuns.get(session.id)
+    const seqBefore = runBefore?.scheduleSeq
     expireGracesAtBoundary(session)
     if (session.phase !== 'DAY') {
         stopDayPhaseTimer(session.id)
         return null
     }
 
-    // 같은 낮 안에선 run 다시 씀 (길이 설정은 처음 만들 때만 읽음)
+    // 유예 만료(이탈 반영)가 안에서 이미 지금 단계 타이머를 다시 걸었으면 또 안 검 (방송된 마감 그대로, BE-024)
     let run = dayPhaseRuns.get(session.id)
+    const rescheduledInside = run && (run !== runBefore || run.scheduleSeq !== seqBefore)
+    if (rescheduledInside && matchesDayState(run)) return run
+
+    // 같은 낮 안에선 run 다시 씀 (길이 설정은 처음 만들 때만 읽음)
     if (!run) {
         const timerSettings = session.timerSettings
         // 방 설정 초 → ms, 없거나 이상한 값이면 기본값
@@ -188,11 +225,20 @@ function attachDayPhaseDeadline(payload, session) {
     return { ...payload, dayPhaseDeadline: deadline }
 }
 
-// 판 단계에 맞게 타이머 맞추기: 낮이면 낮 타이머만, 밤이면 밤 턴만, 그 밖엔 둘 다 끔
+// 낮 타이머 다시 걸기 + 낮 단계 바뀜 방송, 타이머 먼저 (방송에 새 마감 시각 실으려고)
+// 한쪽이 던져도 다른 쪽은 함 (방송 실패는 원본 에러 찍음), 역할 확인·투표 준비·역할 공개 마감이 씀
+function announceDayStep(io, session, emitLabel, emitStep) {
+    isolate('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: session.id }, () => startDayPhaseTimer(io, session))
+    isolateWithError(emitLabel, emitStep)
+}
+
+// 판 단계에 맞게 타이머 맞추기: 낮이면 낮 타이머만, 밤이면 밤 턴만, 재판이면 재판 마감만, 그 밖엔 다 끔
 function syncSessionPhaseTimers(io, session) {
     if (!session) return null
     // 단계 경계라 끊김 유예부터 끝냄
     expireGracesAtBoundary(session)
+
+    if (session.phase !== 'TRIBUNAL') stopTribunalTimer(session.id)
 
     if (session.phase === 'DAY') {
         stopNightTurnSequence(session.id)
@@ -205,6 +251,9 @@ function syncSessionPhaseTimers(io, session) {
     }
 
     stopNightTurnSequence(session.id)
+    if (session.phase === 'TRIBUNAL') {
+        return startTribunalTimer(io, session)
+    }
     return null
 }
 
@@ -213,4 +262,6 @@ module.exports = {
     stopDayPhaseTimer,
     syncSessionPhaseTimers,
     attachDayPhaseDeadline,
+    announceDayVoteResolved,
+    announceDayStep,
 }

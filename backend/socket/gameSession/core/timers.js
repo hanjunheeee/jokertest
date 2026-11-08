@@ -16,6 +16,13 @@ function pickTimerFns(deps, nowFallback = Date.now) {
     }
 }
 
+// run 시계로 타이머 걸기, 진짜 타이머면 unref (마감 타이머가 프로세스 종료를 안 막게)
+function setRunTimer(run, fn, delayMs) {
+    run.timerId = run.setTimeoutFn(fn, delayMs)
+    if (typeof run.timerId?.unref === 'function') run.timerId.unref()
+    return run.timerId
+}
+
 // run 타이머 끄고 비움 (늦게 온 옛 타이머가 턴·단계를 또 닫지 못하게, 지도 05-⑩)
 function clearRunTimer(run) {
     if (run.timerId !== null) {
@@ -79,6 +86,7 @@ function fillAbstentions(voterUuids, hasSubmitted, submitAbstain, label, gameId)
 
 module.exports = {
     pickTimerFns,
+    setRunTimer,
     clearRunTimer,
     deactivateWaitToken,
     resolveNightWaitMs,

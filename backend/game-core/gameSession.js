@@ -11,8 +11,9 @@ const { DEATH_REASONS } = require('./result/constants')
 const { resolveGameSource, buildGameResultRecord } = require('./result/record')
 const { buildTerminalFields } = require('./result/winReveal')
 // 재판은 phase/tribunal
-const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('./phase/tribunal/constants')
-const { submitTribunalVote, readTribunalVoteSfx } = require('./phase/tribunal/vote')
+const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS, TRIBUNAL_ABSTAIN } = require('./phase/tribunal/constants')
+const { submitTribunalVote, submitTribunalAbstention, readTribunalVoteSfx } = require('./phase/tribunal/vote')
+const { getTribunalVoterUuids } = require('./phase/tribunal/ballots')
 const { prepareTribunalVoteResolution, commitTribunalVoteResolution, buildTribunalVoteResolvedPayload } = require('./phase/tribunal/resolve')
 // 판 조회는 queries
 const {
@@ -102,7 +103,7 @@ const { assertValidSessionForCommit, commitGameSession } = require('./setup/comm
 const {
     buildGameStartedPayload,
 } = require('./setup/startPayload')
-const { acknowledgeRoleReveal } = require('./setup/roleAck')
+const { acknowledgeRoleReveal, forceCompleteRoleReveal } = require('./setup/roleAck')
 // 밤은 phase/night
 const {
     isEligibleForNightAction,
@@ -147,6 +148,7 @@ module.exports = {
     buildGameStartedPayload,
     endGameSessionForPlayer,
     acknowledgeRoleReveal,
+    forceCompleteRoleReveal,
     buildPhaseChangedPayload,
     // 낮 단계·투표
     DAY_PHASES,
@@ -206,6 +208,7 @@ module.exports = {
     getActiveSessionForDeparture,
     // 재판 취소 이름
     TRIBUNAL_CANCELLED,
+    TRIBUNAL_ABSTAIN,
     TRIBUNAL_CANCEL_REASONS,
     // 끊김 유예 대상·기권 확인
     getDisconnectGraceTarget,
@@ -218,6 +221,8 @@ module.exports = {
     commitDayVoteResolution,
     buildDayVoteResolvedPayload,
     submitTribunalVote,
+    submitTribunalAbstention,
+    getTribunalVoterUuids,
     prepareTribunalVoteResolution,
     commitTribunalVoteResolution,
     buildTribunalVoteResolvedPayload,

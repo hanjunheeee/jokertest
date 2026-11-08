@@ -1,14 +1,15 @@
 // 확인·준비 핸들러 파일
 // 역할 확인·낮 투표 준비 (다 되면 낮 타이머·다음 단계 방송), register가 등록·시험은 gameSession.js로 부름
 const gameSessionCore = require('../../../game-core/gameSession')
-const { isolate, isolateWithError } = require('../../common/isolate')
+const { isolate } = require('../../common/isolate')
 const { respond } = require('../../common/replies')
 const { pickGameId, acceptRequest, acceptCoreResult, registryLogs } = require('../core/requests')
 const { emitToGameChannel } = require('../delivery/broadcast')
 const { emitSelfProgress } = require('../delivery/progress')
-const { startDayPhaseTimer } = require('../phase/day')
+const { announceDayStep } = require('../phase/day')
+const { ensureRoleRevealTimer, stopRoleRevealTimer } = require('../phase/roleReveal')
 
-// 역할 확인 요청: 다 확인하면 낮으로 넘기고 낮 타이머 시작
+// 역할 확인 요청: 다 확인하면 낮으로 넘기고 낮 타이머 시작, 아직이면 역할 공개 마감 걸기 (BE-002)
 function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
     // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
@@ -26,18 +27,15 @@ function handleAcknowledgeRoleReveal(io, socket, uuid, payload, callback) {
 
     ack({ ok: true })
 
-    // 다 확인했으면 낮 타이머 + 낮 진입 방송
+    // 다 확인했으면 역할 공개 마감 끄고 낮 타이머 + 낮 진입 방송
     if (result.transitioned) {
+        stopRoleRevealTimer(result.session.id)
         announceDayStep(io, result.session, '[phase 변경 알림 전송 실패]', () =>
             emitToGameChannel(io, result.session, 'game_phase_changed', gameSessionCore.buildPhaseChangedPayload(result.session)))
+        return
     }
-}
-
-// 낮 타이머 다시 걸기 + 낮 단계 바뀜 방송, 타이머 먼저 (방송에 새 마감 시각 실으려고)
-// 한쪽이 던져도 다른 쪽은 함 (방송 실패는 원본 에러 찍음)
-function announceDayStep(io, session, emitLabel, emitStep) {
-    isolate('[낮 타이머 시작 실패]', { code: 'TIMER_START_ERROR', gameId: session.id }, () => startDayPhaseTimer(io, session))
-    isolateWithError(emitLabel, emitStep)
+    // 아직 안 누른 사람 있음: 마감 걸어 둠 (끊긴 채 안 돌아오거나 알림이 실패해도 마감 때 넘어가게)
+    isolate('[역할 공개 마감 시작 실패]', { code: 'TIMER_START_ERROR', gameId }, () => ensureRoleRevealTimer(io, result.session))
 }
 
 // 낮 투표 준비 요청: 다 준비하면 토론 → 투표로 넘기고 타이머 다시 걸기
