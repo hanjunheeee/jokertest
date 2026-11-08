@@ -1,5 +1,6 @@
 // 소셜 가입 입력 칸 (불러오는 중 표시, 이메일+인증, 닉네임, 생년월일, 가입·취소 버튼)
 // social/SocialSignupForm.jsx가 입력 화면에서 씀, signup = 데스크톱 useSocialSignup 결과
+import TermsAgreement from "@m/domains/auth/components/terms/TermsAgreement.jsx"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
@@ -69,6 +70,8 @@ export default function SocialFields({
       {emailVerificationRequired && !canSubmit && !isSubmitting && (
         <p className={HINT_TEXT_CLASS}>이메일 인증을 완료해야 가입할 수 있습니다.</p>
       )}
+      <TermsAgreement signupTerms={signup.signupTerms} />
+
       {visibleError && <p role="alert" className={ERROR_TEXT_CLASS}>{visibleError}</p>}
 
       <ImageButton

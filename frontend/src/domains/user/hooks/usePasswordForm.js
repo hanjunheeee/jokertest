@@ -2,9 +2,13 @@
 // 계정 관리 폼 훅(useAccountForm)이 씀
 import { useRef, useState } from "react"
 import { updatePasswordApi } from "@/domains/user/api/user.api"
+import { forceRelogin } from "../../../shared/utils/forceRelogin.js"
 
-// 지금·새 비밀번호 입력과 결과 문구
-export function usePasswordForm() {
+// 다시 로그인 안내를 읽을 시간 (그 뒤 로그인 화면으로)
+export const RELOGIN_DELAY_MS = 1500
+
+// 지금·새 비밀번호 입력과 결과 문구, 서버가 reloginRequired를 주면 안내 뒤 로그인 화면으로
+export function usePasswordForm({ onReloginRequired = () => forceRelogin(), reloginDelayMs = RELOGIN_DELAY_MS } = {}) {
     const [pwForm, setPwForm] = useState({ currentPassword: "", newPassword: ""})
 
     const [pwMsg, setPwMsg] = useState(null)
@@ -39,6 +43,8 @@ export function usePasswordForm() {
             setPwForm({ currentPassword: "", newPassword: ""})
             // 서버가 지금 세션까지 끊어서 다시 로그인해야 함을 같이 알림
             setPwMsg({ type: "success", text: "비밀번호가 변경되었습니다. 다시 로그인해 주세요."})
+            // 지금 세션도 끊겼으니 잠깐 안내를 보여 준 뒤 로그인 화면으로
+            if (result?.reloginRequired === true) setTimeout(onReloginRequired, reloginDelayMs)
         } catch (err) {
             setPwMsg({ type: "error", text: err?.message ?? "변경에 실패했습니다." })
         } finally {

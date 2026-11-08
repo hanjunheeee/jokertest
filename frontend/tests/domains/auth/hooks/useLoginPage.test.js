@@ -60,6 +60,19 @@ mock.module("../../../../src/domains/auth/api/auth.api.js", {
   },
 })
 
+// 약관 목록 (필수 2개) — 가입 전 전체 동의 눌러야 보내짐
+const TERMS_FIXTURE = [
+  { id: 1, kind: "TERMS", version: "v1", title: "이용약관", body: "자리", url: null, effectiveAt: "2026-11-01T00:00:00.000Z", required: true },
+  { id: 2, kind: "PRIVACY", version: "v1", title: "개인정보 처리방침", body: "자리", url: null, effectiveAt: "2026-11-01T00:00:00.000Z", required: true },
+]
+mock.module("../../../../src/domains/auth/api/terms.api.js", {
+  namedExports: {
+    getCurrentTermsApi: async () => ({ terms: TERMS_FIXTURE }),
+    getMyPendingTermsApi: async () => ({ pending: [] }),
+    agreeTermsApi: async () => ({ pending: [] }),
+  },
+})
+
 const authState = {
   user: null,
   isLoggedIn: false,
@@ -199,6 +212,12 @@ test("생년월일이 미래 날짜면 회원가입 요청을 보내지 않는�
   hook.unmount()
 })
 
+// 약관 불러오기 기다린 뒤 전체 동의 (필수 2개 + 만 14세)
+const agreeAllTerms = async (hook) => {
+  await act(async () => { await Promise.resolve() })
+  act(() => { hook.result.current.signupTerms.toggleAll() })
+}
+
 const completeSignupEmailVerification = async (hook, { code = "123456" } = {}) => {
   await act(async () => {
     await hook.result.current.handleRequestSignupCode()
@@ -228,6 +247,7 @@ test("유효한 회원가입 입력은 이메일 인증 완료 후 signupApi를 
   assert.equal(hook.result.current.canSubmitSignup, false, "인증 전에는 제출할 수 없어야 한다")
 
   await completeSignupEmailVerification(hook)
+  await agreeAllTerms(hook)
   assert.equal(hook.result.current.signupEmailVerification.stage, "verified")
   assert.equal(hook.result.current.canSubmitSignup, true, "인증 완료 후에는 제출할 수 있어야 한다")
 
@@ -248,6 +268,8 @@ test("유효한 회원가입 입력은 이메일 인증 완료 후 signupApi를 
     nickname: "테스트닉",
     birthDate: "2000-01-01",
     signupProof: "proof-token-1",
+    agreedTermsVersionIds: [1, 2],
+    ageConfirmed: true,
   })
   assert.equal(alertMessages.length, 1, "가입 완료 안내가 한 번 떠야 한다")
   assert.equal(hook.result.current.isSignupMode, false, "가입 성공 후 로그인 모드로 돌아가야 한다")
@@ -270,6 +292,7 @@ test("AC-02: 같은 틱에 제출을 두 번 호출해도 가입 API 호출은 �
     fillSignupFields(hook)
   })
   await completeSignupEmailVerification(hook)
+  await agreeAllTerms(hook)
   assert.equal(hook.result.current.canSubmitSignup, true)
 
   await act(async () => {

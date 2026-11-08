@@ -1,9 +1,10 @@
-// 상점 위 줄 (왼쪽 뒤로 가기, 오른쪽 보유 재화)
+// 상점 위 줄 (왼쪽 뒤로 가기, 오른쪽 쿠폰 입력·보유 재화)
 // pages/StorePage가 씀
 import { motion } from "framer-motion"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
 import CurrencyBalance from "./CurrencyBalance.jsx"
+import CouponButton from "./CouponButton.jsx"
 
 // 위 줄 그림 버튼 (누르는 칸 44px, 폰 폭에 소리 막대 자리가 없어 음소거 아이콘만)
 const ICON_BTN_CLASS = "flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0"
@@ -26,6 +27,7 @@ export default function StoreTopBar({ visible, onBack, balanceGold, balanceDiamo
                 style={NO_OUTLINE}
             />
             <span aria-hidden="true" className="min-w-0 flex-1" />
+            <CouponButton />
             <CurrencyBalance
                 balanceGold={balanceGold}
                 balanceDiamond={balanceDiamond}

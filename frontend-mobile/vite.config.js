@@ -4,11 +4,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
+// 빌드 버전을 화면에 넣고 version.json으로 내보냄 (데스크톱과 같은 플러그인)
+import { appVersionPlugin } from '../frontend/scripts/appVersionPlugin.mjs'
 
 const at = (p) => fileURLToPath(new URL(p, import.meta.url))
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), appVersionPlugin()],
   // 그림·소리·영상 304MB를 두 벌로 안 두기
   publicDir: at('../frontend/public'),
   resolve: {

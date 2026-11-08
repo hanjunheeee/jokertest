@@ -1,4 +1,4 @@
-// 상점 화면 (입장 영상 뒤 배경·보유 재화·상점 패널·뒤로 가기)
+// 상점 화면 (입장 영상 뒤 배경·보유 재화·쿠폰 입력·상점 패널·뒤로 가기)
 // app/routes/index.jsx의 /store 경로가 씀
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
@@ -8,6 +8,7 @@ import PageSoundControlArea from "@/shared/ui/PageBackgroundMusic.jsx"
 import StoreEntryBackground from "../components/StoreEntryBackground.jsx"
 import StorePanel from "../components/panel/StorePanel.jsx"
 import StoreCurrencyBalance from "../components/StoreCurrencyBalance.jsx"
+import StoreCouponButton from "../components/StoreCouponButton.jsx"
 import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
 import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
@@ -50,6 +51,7 @@ export default function StorePage() {
         status={economyStatus}
         onRetry={retryEconomySummary}
       />
+      <StoreCouponButton visible={introDone} />
       <StorePanel visible={introDone} />
 
       {/* 로비로 돌아가기, 영상 중엔 누르기 막음 */}

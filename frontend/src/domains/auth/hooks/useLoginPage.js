@@ -6,6 +6,7 @@ import { getMeApi } from "../api/auth.api.js"
 import { selectIsAuthenticated, useAuthStore } from "../store/auth.store.js"
 import { useSignupEmailVerification } from "./useSignupEmailVerification.js"
 import { useLoginSubmit } from "./login/useLoginSubmit.js"
+import { useSignupTerms } from "./terms/useSignupTerms.js"
 
 // 시험이 이 경로로 가져가는 이름 (화면 코드는 원래 파일에서 가져감)
 export { SOCIAL_ERROR_MESSAGES, DEFAULT_SOCIAL_ERROR_MESSAGE } from "../constants/socialMessages.js"
@@ -32,12 +33,16 @@ export function useLoginPage() {
     reset: resetVerification,
   } = useSignupEmailVerification({ email: formData.email, active: isSignupMode })
 
+  // 약관 동의·만 14세 확인도 가입 모드에서만 불러옴
+  const signupTerms = useSignupTerms({ active: isSignupMode })
+
   const navigate = useNavigate()
   const isAuthenticated = useAuthStore(selectIsAuthenticated)
   const login = useAuthStore((state) => state.login)
 
   const { isSubmitting, handleSubmit } = useLoginSubmit({
     formData, rememberMe, isSignupMode, setIsSignupMode, buildSignupPayload, resetVerification, login, navigate,
+    signupTerms,
   })
 
   // 로그인 화면에 오면 "일부러 로그아웃함" 표시를 지움
@@ -74,6 +79,7 @@ export function useLoginPage() {
     handleSignupCodeChange,
     handleRequestSignupCode,
     handleVerifySignupCode,
+    signupTerms,
     // 가입 버튼은 증명 있고 보내는 중 아닐 때만
     canSubmitSignup: hasValidSignupProof && !isSubmitting,
   }

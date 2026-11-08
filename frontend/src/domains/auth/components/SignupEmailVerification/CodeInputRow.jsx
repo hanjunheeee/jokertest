@@ -24,7 +24,7 @@ export default function CodeInputRow({ stage, code, canVerify, isVerifying, onCo
         data-testid="signup-code-verify"
         onClick={onVerify}
         disabled={!canVerify}
-        className="cursor-pointer rounded bg-white/10 px-1.5 py-0.5 text-[11px] text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+        className="cursor-pointer rounded bg-white/10 px-1.5 py-0.5 app-text-scaled [--app-text-size:11px] text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isVerifying ? "확인 중..." : "확인"}
       </button>

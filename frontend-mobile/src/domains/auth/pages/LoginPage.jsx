@@ -55,6 +55,7 @@ export default function LoginPage() {
             handleVerifySignupCode: page.handleVerifySignupCode,
           }}
           canSubmitSignup={page.canSubmitSignup}
+          signupTerms={page.signupTerms}
         />
       ) : (
         <LoginForm

@@ -13,6 +13,7 @@ export const ERROR_MSGS = {
   STATE_FINGERPRINT_MISMATCH: "요청 출처가 일치하지 않습니다. 다시 시도해주세요.",
   STATE_USER_MISMATCH: "연결 요청을 시작한 세션과 일치하지 않습니다. 다시 로그인 후 시도해주세요.",
   SESSION_REVOKED: "세션이 만료되었습니다. 다시 로그인 후 시도해주세요.",
+  SESSION_EXPIRED: "로그인 유지 시간이 지났습니다. 다시 로그인 후 시도해주세요.",
   IDENTITY_ALREADY_LINKED: "이미 다른 계정에 연결된 Discord 계정입니다.",
   PROVIDER_INVALID: "Discord 계정 정보를 확인할 수 없습니다.",
   DISCORD_OAUTH_NOT_CONFIGURED: "지금은 Discord 계정 연결을 사용할 수 없습니다.",

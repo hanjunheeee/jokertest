@@ -13,6 +13,14 @@ const SOCKET_URL = API_BASE_URL;
 // 서버 force_disconnect code: 같은 로그인 세션(같은 브라우저 다른 탭)에 밀림
 export const SAME_SESSION_REPLACED = "REPLACED_BY_SAME_SESSION";
 
+// 서버 force_disconnect code → 기본 문구 (서버 문구가 없을 때)
+export const FORCE_DISCONNECT_MESSAGES = {
+    ACCOUNT_BANNED: "정지된 계정입니다. 운영정책을 확인해주세요.",
+    ACCOUNT_INACTIVE: "이용할 수 없는 계정입니다.",
+    ACCOUNT_WITHDRAWN: "회원 탈퇴가 완료되었습니다.",
+    SESSION_EXPIRED: "로그인 유지 시간이 지났습니다. 다시 로그인해주세요.",
+};
+
 // 로그인이면 연결, 로그아웃·계정이 바뀌면 끊고 다시 연결 (계정 uuid도 의존값)
 export function useSocket() {
     const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
@@ -52,7 +60,7 @@ export function useSocket() {
                     alert(payload?.message || "같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.");
                     return;
                 }
-                alert(payload?.message || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
+                alert(payload?.message || FORCE_DISCONNECT_MESSAGES[payload?.code] || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
                 logout();
                 window.location.replace("/login");
             },

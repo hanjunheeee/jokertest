@@ -10,7 +10,9 @@ import CandidateRow from "./CandidateRow.jsx"
 
 // 데스크톱 FriendRequestTab과 같은 갈래: 검색어가 없으면 목록을 안 그리고, 결과가 없을 때만 오류·검색 중·결과 없음 한 줄
 export default function AddTab({ onBack, onBlock, blockingIds }) {
-  const { query, setQuery, results, searching, isSearching, sentIds, errorMsg, handleSearch, handleSend } = useFriendSearch()
+  const {
+    query, setQuery, results, searching, isSearching, sentIds, sendingIds, sendErrors, errorMsg, handleSearch, handleSend,
+  } = useFriendSearch()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -34,6 +36,8 @@ export default function AddTab({ onBack, onBlock, blockingIds }) {
                   key={candidate.id}
                   candidate={candidate}
                   sent={sentIds.has(candidate.id)}
+                  sending={sendingIds?.has?.(candidate.id) === true}
+                  sendError={sendErrors?.[candidate.id] ?? null}
                   blocking={blockingIds.has(candidate.id)}
                   onSend={handleSend}
                   onBlock={onBlock}

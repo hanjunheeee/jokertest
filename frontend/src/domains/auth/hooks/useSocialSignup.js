@@ -6,6 +6,7 @@ import { useAuthStore } from "../store/auth.store.js"
 import { useSignupEmailVerification } from "./useSignupEmailVerification.js"
 import { useIntentLoad } from "./socialSignup/useIntentLoad.js"
 import { submitSignup } from "./socialSignup/submit.js"
+import { useSignupTerms } from "./terms/useSignupTerms.js"
 
 // status는 가입 진행 단계, intentStatus는 가입 정보 불러오기(loading·ready·error)
 export function useSocialSignup(intentToken) {
@@ -28,6 +29,9 @@ export function useSocialSignup(intentToken) {
     active: intentStatus === "ready" && emailVerificationRequired,
     attemptKey: `${typeof intentToken === "string" ? intentToken : ""}:${intentAttempt}`,
   })
+
+  // 약관 동의·만 14세 확인 (가입 정보 준비되면 불러옴)
+  const signupTerms = useSignupTerms({ active: intentStatus === "ready" })
 
   // 가입 정보 불러오기 (token·다시 시도 바뀔 때마다)
   useIntentLoad({
@@ -58,7 +62,7 @@ export function useSocialSignup(intentToken) {
 
   // 보내기(submit.js)에 넘길 상태·ref·인증 묶음
   const submitCtx = {
-    intentToken, intentStatus, emailVerificationRequired, verification,
+    intentToken, intentStatus, emailVerificationRequired, verification, signupTerms,
     submittingRef, genRef: intentGenRef, setStatus, setErrorMessage, login, navigate,
   }
   // 가입 완료 보내기 (검사·요청은 submit.js가 함)
@@ -86,5 +90,6 @@ export function useSocialSignup(intentToken) {
     handleSignupCodeChange: verification.handleSignupCodeChange,
     handleRequestSignupCode: verification.handleRequestSignupCode,
     handleVerifySignupCode: verification.handleVerifySignupCode,
+    signupTerms,
   }
 }

@@ -1,4 +1,4 @@
-// 계정 관리 패널 (닉네임·비밀번호 바꾸기·Discord 연결, 로그인 틀 그림을 같이 씀)
+// 계정 관리 패널 (닉네임·이메일·비밀번호 바꾸기·회원 탈퇴·Discord 연결, 로그인 틀 그림을 같이 씀)
 // AccountPage가 씀
 import { motion } from "framer-motion"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
@@ -16,6 +16,9 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import NicknameSection from "@/domains/user/components/AccountPanel/NicknameSection.jsx"
 import PasswordSection from "@/domains/user/components/AccountPanel/PasswordSection.jsx"
 import DiscordAccountLink from "@/domains/user/components/DiscordAccountLink.jsx"
+import EmailChangeSection from "@/domains/user/components/AccountPanel/EmailChangeSection.jsx"
+import WithdrawSection from "@/domains/user/components/AccountPanel/WithdrawSection.jsx"
+import { useMyAccount } from "@/domains/user/hooks/member/useMyAccount.js"
 import { useAccountForm } from "@/domains/user/hooks/useAccountForm.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
@@ -33,6 +36,8 @@ export default function AccountPanel() {
     pwLoading,
     handlePasswordSubmit,
   } = useAccountForm()
+  // 이메일·비번 유무 (이메일 바꾸기·탈퇴 본인 확인 칸 고르기)
+  const { account, setEmail } = useMyAccount()
 
   return (
     <div className={POSITION_CLASS}>
@@ -59,6 +64,8 @@ export default function AccountPanel() {
                 onSubmit={handleNicknameSubmit}
               />
 
+              <EmailChangeSection account={account} onChanged={setEmail} />
+
               <PasswordSection
                 pwForm={pwForm}
                 handlePwChange={handlePwChange}
@@ -66,6 +73,8 @@ export default function AccountPanel() {
                 pwLoading={pwLoading}
                 onSubmit={handlePasswordSubmit}
               />
+
+              <WithdrawSection account={account} />
 
               <DiscordAccountLink />
             </div>

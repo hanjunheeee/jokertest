@@ -1,6 +1,7 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { JSDOM } from "jsdom"
+import { AGREED_TERMS_PAYLOAD, mockAgreedSignupTerms } from "../../../helpers/agreedSignupTerms.js"
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true })
 for (const [name, value] of Object.entries({
@@ -48,6 +49,9 @@ mock.module("../../../../src/domains/auth/api/auth.api.js", {
     },
   },
 })
+
+// 약관 동의는 "전부 동의함"으로 (약관 자체 시험은 따로)
+mockAgreedSignupTerms(mock, new URL("../../../../src/domains/auth/hooks/terms/useSignupTerms.js", import.meta.url).href)
 
 const authState = {
   login: (user) => loggedInUsers.push(user),
@@ -213,6 +217,7 @@ test("emailVerificationRequired:true면 인증 전 제출이 막히고, 인증 �
     birthDate: "2000-01-01",
     email: "social-self@example.com",
     signupProof: "social-proof-xyz",
+    ...AGREED_TERMS_PAYLOAD,
   })
   assert.equal(hook.result.current.status, "done")
   hook.unmount()

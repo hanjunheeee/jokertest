@@ -42,9 +42,13 @@ export const getSocialSignupIntentApi = async ({ intentToken }) => {
     return await api.post('/auth/social/signup/intent', { intentToken });
 };
 
-// 소셜 가입 완료 (인증이 필요했으면 email·signupProof도)
-export const completeSocialSignupApi = async ({ intentToken, nickname, birthDate, email, signupProof }) => {
-    return await api.post('/auth/social/signup/complete', { intentToken, nickname, birthDate, email, signupProof });
+// 소셜 가입 완료 (인증이 필요했으면 email·signupProof도, 약관 동의 id·만 14세 확인 같이)
+export const completeSocialSignupApi = async ({
+    intentToken, nickname, birthDate, email, signupProof, agreedTermsVersionIds, ageConfirmed,
+}) => {
+    return await api.post('/auth/social/signup/complete', {
+        intentToken, nickname, birthDate, email, signupProof, agreedTermsVersionIds, ageConfirmed,
+    });
 };
 
 // 닉네임·생년월일로 아이디 찾기, 가린 이메일 받음

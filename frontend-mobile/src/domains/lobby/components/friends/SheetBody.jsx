@@ -21,6 +21,9 @@ export default function SheetBody({ sheet }) {
         onBack={onBack}
         incomingRequests={sync.incomingRequests}
         incomingError={sync.incomingError}
+        incomingLoaded={sync.incomingLoaded === true}
+        requestErrors={sync.requestErrors}
+        onDecline={sync.handleDeclineRequest ?? null}
         processingRequestIds={sync.processingRequestIds}
         acceptAllResult={sync.acceptAllResult}
         onAccept={sync.handleAcceptRequest}

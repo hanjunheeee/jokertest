@@ -1,12 +1,15 @@
-// 계정 관리 패널 (로그인 틀 그림 안에 닉네임 · 비밀번호 · Discord 연결)
+// 계정 관리 패널 (로그인 틀 그림 안에 닉네임 · 이메일 · 비밀번호 · 회원 탈퇴 · Discord 연결)
 // AccountPage가 씀, 폼 값은 데스크톱 useAccountForm 그대로
 
 import { motion } from "framer-motion"
 import { useAccountForm } from "@/domains/user/hooks/useAccountForm.js"
+import { useMyAccount } from "@/domains/user/hooks/member/useMyAccount.js"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 import DiscordSection from "./DiscordSection.jsx"
+import EmailSection from "./EmailSection.jsx"
+import WithdrawSection from "./WithdrawSection.jsx"
 import NicknameSection from "./NicknameSection.jsx"
 import PasswordSection from "./PasswordSection.jsx"
 
@@ -28,6 +31,8 @@ const FRAME_STYLE = {
 // 내용이 길면 틀이 세로로 늘어나고 화면이 스크롤 (틀 안 스크롤 없음)
 export default function AccountPanel() {
     const form = useAccountForm()
+    // 이메일·비번 유무 (이메일 바꾸기·탈퇴 본인 확인 칸 고르기)
+    const { account, setEmail } = useMyAccount()
 
     return (
         <motion.div
@@ -44,6 +49,7 @@ export default function AccountPanel() {
                     nicknameLoading={form.nicknameLoading}
                     onSubmit={form.handleNicknameSubmit}
                 />
+                <EmailSection account={account} onChanged={setEmail} />
                 <PasswordSection
                     pwForm={form.pwForm}
                     handlePwChange={form.handlePwChange}
@@ -51,6 +57,7 @@ export default function AccountPanel() {
                     pwLoading={form.pwLoading}
                     onSubmit={form.handlePasswordSubmit}
                 />
+                <WithdrawSection account={account} />
                 <DiscordSection />
             </div>
         </motion.div>

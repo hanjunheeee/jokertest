@@ -5,7 +5,7 @@ import { SOCIAL_SIGNUP_TEXT } from "../../constants/socialMessages.js"
 import { isCompletedSignupUser, submitErrorView } from "../../utils/socialErrors.js"
 import { validateBirthDate, validateNickname } from "../../validation/signupValidation.js"
 
-// 보내기 전 검사: token → 가입 정보 준비 → 닉네임 → 생년월일(넣었을 때만) → 이메일 인증 순서
+// 보내기 전 검사: token → 가입 정보 준비 → 닉네임 → 생년월일(넣었을 때만) → 약관·만 14세 → 이메일 인증 순서
 function checkInput(ctx, { nickname, birthDate }) {
   if (typeof ctx.intentToken !== "string" || !ctx.intentToken) {
     return { ok: false, status: "expired", message: SOCIAL_SIGNUP_TEXT.sessionExpired }
@@ -23,6 +23,10 @@ function checkInput(ctx, { nickname, birthDate }) {
     if (!birthDateResult.ok) return { ok: false, status: "error", message: birthDateResult.message }
     birthDateValue = birthDateResult.value
   }
+
+  // 약관 훅을 안 넘긴 옛 호출은 건너뜀 (서버가 다시 검사)
+  const termsBlock = ctx.signupTerms ? ctx.signupTerms.blockMessage : null
+  if (termsBlock) return { ok: false, status: "error", message: termsBlock }
 
   let proof
   if (ctx.emailVerificationRequired) {
@@ -57,6 +61,7 @@ export async function submitSignup(ctx, { nickname, birthDate }) {
       birthDate: input.birthDate,
       email: input.proof?.email,
       signupProof: input.proof?.signupProof,
+      ...(ctx.signupTerms?.buildPayload() ?? {}),
     })
     if (ctx.genRef.current !== submitGen) return
     // uuid 있는 user가 안 오면 통신 실패로 봄

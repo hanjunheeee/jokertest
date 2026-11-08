@@ -1,10 +1,10 @@
 // 로그인 상태 유지 체크 상자 (그림 상자 + 체크 표시)
-// components/LoginForm/LoginOptions.jsx가 사용
+// components/LoginForm/LoginOptions.jsx·약관 동의 칸이 사용 (글자는 label로 바꿀 수 있음)
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 그림 상자를 쓰려고 진짜 checkbox 대신 button + role=checkbox
-export default function RememberMeCheckbox({ checked, onChange }) {
+export default function RememberMeCheckbox({ checked, onChange, label = "로그인 상태 유지" }) {
   // 누를 때마다 켬·끔 뒤집기
   const toggle = () => onChange(!checked)
 
@@ -28,7 +28,7 @@ export default function RememberMeCheckbox({ checked, onChange }) {
         ) : null}
       </span>
 
-      <span className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body">로그인 상태 유지</span>
+      <span className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body">{label}</span>
     </button>
   )
 }

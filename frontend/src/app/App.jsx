@@ -12,6 +12,9 @@ import { useSocket } from "@/shared/hooks/useSocket"
 import { useAppTextScaleSync } from "@/app/useAppTextScaleSync.js"
 import { useSfxRuntime } from "@/shared/hooks/useSfxRuntime.js"
 import GlobalBgmLayer from "@/shared/ui/GlobalBgmLayer.jsx"
+// 약관 재동의 창·새 버전 안내 띠 (라우터 바깥에 한 번만)
+import TermsReconsentGate from "@/domains/auth/components/terms/TermsReconsentGate.jsx"
+import AppUpdateNotice from "@/shared/ui/AppUpdateNotice.jsx"
 
 export default function App() {
     // 라우터가 그려지기 전에 세션 확인 중으로 둠 (FE-010)
@@ -34,6 +37,8 @@ export default function App() {
         <>
             <GlobalBgmLayer />
             <RouterProvider router={router} />
+            <TermsReconsentGate />
+            <AppUpdateNotice router={router} />
         </>
     )
 }

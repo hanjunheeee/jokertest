@@ -3,6 +3,7 @@ import test, { mock } from "node:test"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"
+import { AGREED_TERMS_PAYLOAD, mockAgreedSignupTerms } from "../../../helpers/agreedSignupTerms.js"
 
 const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
   url: "http://localhost/login",
@@ -100,6 +101,9 @@ installDomGlobal("fetch", (url, options) => {
 mock.module("../../../../src/shared/env.js", {
   namedExports: { API_BASE_URL: "" },
 })
+
+// 약관 동의는 "전부 동의함"으로 (약관 칸 자체 시험은 따로)
+mockAgreedSignupTerms(mock, new URL("../../../../src/domains/auth/hooks/terms/useSignupTerms.js", import.meta.url).href)
 
 const { render, act, cleanup, fireEvent } = await import("@testing-library/react")
 const { MemoryRouter, Routes, Route } = await import("react-router-dom")
@@ -249,7 +253,7 @@ test("AC-01: 제공자 검증 intent는 메일 API 없이 완료되고 email·si
   await act(async () => { fireEvent.click(submitButton(view)) })
 
   const [complete] = callsTo("/auth/social/signup/complete")
-  assert.deepEqual(JSON.parse(complete.options.body), { intentToken: INTENT, nickname: "소셜닉", birthDate: "2000-01-01" })
+  assert.deepEqual(JSON.parse(complete.options.body), { intentToken: INTENT, nickname: "소셜닉", birthDate: "2000-01-01", ...AGREED_TERMS_PAYLOAD })
   assert.equal(fetchCalls.some((c) => c.url.startsWith("/auth/signup/email-code")), false)
   assert.equal(useAuthStore.getState().isLoggedIn, true)
   assert.ok(view.container.textContent.includes("LOBBY_STUB"), "성공하면 로비로 이동해야 한다")
@@ -323,7 +327,7 @@ test("AC-02/AC-04: 미인증 제출 차단→발송→60초 대기→오답 남�
   const completes = callsTo("/auth/social/signup/complete")
   assert.equal(completes.length, 1)
   assert.deepEqual(JSON.parse(completes[0].options.body), {
-    intentToken: INTENT, nickname: "소셜닉", birthDate: "2000-01-01", email: SECOND_EMAIL, signupProof: SECOND_PROOF,
+    intentToken: INTENT, nickname: "소셜닉", birthDate: "2000-01-01", email: SECOND_EMAIL, signupProof: SECOND_PROOF, ...AGREED_TERMS_PAYLOAD,
   })
   assert.ok(view.container.textContent.includes("LOBBY_STUB"))
 

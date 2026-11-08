@@ -1,5 +1,6 @@
 // 소셜 가입 스크롤 칸 안쪽 (불러오는 중 표시, 이메일+인증, 닉네임, 생년월일, 버튼)
 // components/SocialSignupForm.jsx가 입력 화면에서 씀, signup = useSocialSignup 결과
+import SignupTermsAgreement from "@/domains/auth/components/terms/SignupTermsAgreement.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import { MailIcon, ProfileIcon, SignupCalendarIcon } from "@/shared/ui/InputIcons.jsx"
@@ -73,12 +74,14 @@ export default function SocialSignupFields({
         compact
       />
 
+      <SignupTermsAgreement signupTerms={signup.signupTerms} />
+
       {/* 인증이 필요한데 아직 보낼 수 없으면 안내 (보내는 중엔 숨김) */}
       {emailVerificationRequired && !canSubmit && !isSubmitting && (
         <p className={SIGNUP_HINT_TEXT_CLASS}>이메일 인증을 완료해야 가입할 수 있습니다.</p>
       )}
 
-      {visibleError && <p role="alert" className="px-2 text-[11px] text-red-400">{visibleError}</p>}
+      {visibleError && <p role="alert" className="px-2 app-text-scaled [--app-text-size:11px] text-red-400">{visibleError}</p>}
 
       <div className={SUBMIT_BTN_WRAP_CLASS}>
         <AuthImageButton

@@ -24,6 +24,10 @@ export const SOCIAL_ERROR_MESSAGES = {
   DISCORD_PROFILE_FETCH_FAILED: "Discord 프로필 조회에 실패했습니다. 다시 시도해주세요.",
   DISCORD_PROFILE_INVALID: "Discord 계정 정보를 확인할 수 없습니다.",
   DISCORD_OAUTH_TIMEOUT: "Discord 응답이 지연되었습니다. 다시 시도해주세요.",
+  // 연결된 계정이 정지·비활성·탈퇴로 없어진 경우 (서버 resolve.js 코드)
+  ACCOUNT_BANNED: "정지된 계정입니다. 운영정책을 확인해주세요.",
+  ACCOUNT_INACTIVE: "이용할 수 없는 계정입니다.",
+  LINKED_USER_MISSING: "연결된 계정을 찾을 수 없습니다. 탈퇴한 계정이면 새로 가입해주세요.",
 }
 // 표에 없는 코드일 때 문구
 export const DEFAULT_SOCIAL_ERROR_MESSAGE = "소셜 로그인에 실패했습니다. 다시 시도해주세요."

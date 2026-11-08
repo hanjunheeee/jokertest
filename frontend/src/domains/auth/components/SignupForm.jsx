@@ -1,4 +1,4 @@
-// 일반 가입 모드 칸 (입력 칸, 이메일 인증, 가입 버튼, 로그인 전환)
+// 일반 가입 모드 칸 (입력 칸, 이메일 인증, 약관 동의, 가입 버튼, 로그인 전환)
 // pages/LoginPage.jsx가 가입 모드일 때 사용
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
@@ -14,11 +14,13 @@ import AuthModeSwitchPrompt from "@/domains/auth/components/AuthModeSwitchPrompt
 import SignupEmailVerification from "@/domains/auth/components/SignupEmailVerification.jsx"
 import SignupFields from "@/domains/auth/components/SignupForm/SignupFields.jsx"
 import SignupScrollArea from "@/domains/auth/components/SignupScrollArea.jsx"
+import SignupTermsAgreement from "@/domains/auth/components/terms/SignupTermsAgreement.jsx"
 
 // canSubmitSignup이 거짓이면 안내 띄우고 가입 버튼 잠금 (인증 전·보내는 중)
 export default function SignupForm({
   formData, onChange, onSwitchToLogin,
   emailVerification, onSignupCodeChange, handleRequestSignupCode, handleVerifySignupCode, canSubmitSignup,
+  signupTerms = null,
 }) {
   return (
     <div className={SIGNUP_FORM_BODY_CLASS}>
@@ -37,6 +39,8 @@ export default function SignupForm({
           handleRequestSignupCode={handleRequestSignupCode}
           handleVerifySignupCode={handleVerifySignupCode}
         />
+
+        <SignupTermsAgreement signupTerms={signupTerms} />
 
         {!canSubmitSignup && (
           <p className={SIGNUP_HINT_TEXT_CLASS}>이메일 인증을 완료해야 가입할 수 있습니다.</p>

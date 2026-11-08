@@ -1,4 +1,4 @@
-// 로그인·일반 가입 제출 (가입은 입력 검사와 이메일 인증 확인 뒤 요청)
+// 로그인·일반 가입 제출 (가입은 입력 검사·약관 동의·이메일 인증 확인 뒤 요청)
 // hooks/useLoginPage.js가 사용, 막히면 alert로 알림
 import { useRef, useState } from "react"
 import { loginApi, signupApi } from "../../api/auth.api.js"
@@ -7,6 +7,7 @@ import { validateSignupForm } from "../../validation/signupValidation.js"
 // 보내는 중 표시(isSubmitting)와 제출 처리(handleSubmit)를 돌려줌
 export function useLoginSubmit({
   formData, rememberMe, isSignupMode, setIsSignupMode, buildSignupPayload, resetVerification, login, navigate,
+  signupTerms = null,
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   // state는 다음 그림에야 바뀌어서 같은 순간 두 번 누름은 ref로 막음
@@ -29,6 +30,13 @@ export function useLoginSubmit({
           return
         }
 
+        // 약관 동의·만 14세 확인 (약관 훅을 안 넘긴 옛 호출은 건너뜀, 서버가 다시 검사)
+        const termsBlock = signupTerms ? signupTerms.blockMessage : null
+        if (termsBlock) {
+          alert(termsBlock)
+          return
+        }
+
         signupPayload = buildSignupPayload()
         if (!signupPayload) {
           alert("이메일 인증을 완료해주세요.")
@@ -40,7 +48,9 @@ export function useLoginSubmit({
       try {
         if (isSignupMode) {
           // 가입되면 로그인 모드로 돌리고 인증을 비움
-          const result = await signupApi({ ...formData, signupProof: signupPayload.signupProof })
+          const result = await signupApi({
+            ...formData, signupProof: signupPayload.signupProof, ...(signupTerms?.buildPayload() ?? {}),
+          })
           // success:true가 와야 가입된 걸로 봄
           if (result?.success !== true) {
             alert("서버와 연결할 수 없습니다. 다시 시도해주세요.")
@@ -49,6 +59,7 @@ export function useLoginSubmit({
           alert("회원가입이 완료되었습니다! 로그인해주세요.")
           setIsSignupMode(false)
           resetVerification()
+          signupTerms?.reset()
         } else {
           // 로그인되면 store에 넣고 로비로
           const { user } = await loginApi({ ...formData, rememberMe })

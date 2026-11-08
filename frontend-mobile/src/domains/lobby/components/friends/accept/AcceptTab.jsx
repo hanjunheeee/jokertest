@@ -11,10 +11,11 @@ import AcceptToolbar from "./AcceptToolbar.jsx"
 import RequestRow from "./RequestRow.jsx"
 
 // 데스크톱 FriendAcceptTab과 같은 순서·문구, 검색은 이 탭 안에서만 거름
-// 대상 신청 없음 안내는 목록 오류가 없을 때만 (데스크톱 패널처럼 받았는지는 따로 안 봄)
+// 대상 신청 없음 안내는 목록을 다 받았고 오류가 없을 때만 (데스크톱 FriendAcceptTab처럼 incomingLoaded로 판정)
 export default function AcceptTab({
   onBack, incomingRequests, incomingError, processingRequestIds, acceptAllResult,
   onAccept, onBlock, onAcceptAll, onRefresh, targetRequestId,
+  incomingLoaded = false, requestErrors = {}, onDecline = null,
 }) {
   const { query, setQuery, isFiltering, filteredItems } = useFriendListLocalFilter(
     incomingRequests,
@@ -22,7 +23,7 @@ export default function AcceptTab({
   )
   const visible = isFiltering ? filteredItems : incomingRequests
   const summary = buildAcceptAllSummary(acceptAllResult)
-  const targetMissing = incomingError === null && targetRequestId != null
+  const targetMissing = incomingLoaded && incomingError === null && targetRequestId != null
     && !incomingRequests.some((request) => request.request_id === targetRequestId)
 
   return (
@@ -61,7 +62,9 @@ export default function AcceptTab({
                 request={request}
                 processing={processingRequestIds?.has?.(request.request_id) === true}
                 targeted={targetRequestId != null && request.request_id === targetRequestId}
+                error={requestErrors?.[request.request_id] ?? null}
                 onAccept={onAccept}
+                onDecline={onDecline}
                 onBlock={onBlock}
               />
             ))

@@ -23,6 +23,7 @@ export default function LoginPage() {
     handleRequestSignupCode,
     handleVerifySignupCode,
     canSubmitSignup,
+    signupTerms,
   } = useLoginPage()
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -71,6 +72,7 @@ export default function LoginPage() {
           handleRequestSignupCode={handleRequestSignupCode}
           handleVerifySignupCode={handleVerifySignupCode}
           canSubmitSignup={canSubmitSignup}
+          signupTerms={signupTerms}
           />
         ) : (
           <LoginForm
