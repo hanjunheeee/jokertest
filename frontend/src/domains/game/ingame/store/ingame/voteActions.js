@@ -5,7 +5,6 @@ import {
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,
 } from "../../constants/store/ingameStore.js"
-import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../../utils/dayVoteRound.js"
 import { applyTribunalResolvedPure } from "../applyTribunalResolved.js"
 import { clearSelfActed } from "../../utils/store/selfActed.js"
@@ -19,11 +18,11 @@ function clearPrivateOnNightEntry(current) {
 }
 
 export const voteActions = (set) => ({
-  // 낮 투표 판정 반영: 재투표·재판·동표/기권(밤으로)
+  // 낮 투표 판정 반영: 재판·동표/기권(밤으로), 재투표는 삭제돼 안 받음
   applyDayVoteResolvedToPhase: (gameId, dayIndex, resolution = {}) =>
     set((current) => {
       const { outcome, defendantUuid, round = 1 } = resolution
-      // 그 판·그 낮·그 회차일 때만
+      // 그 판·그 낮·그 번호일 때만
       if (typeof gameId !== "string" || gameId.trim().length === 0) return current
       if (!Number.isInteger(dayIndex)) return current
       if (!current.gameId || !current.state) return current
@@ -31,8 +30,7 @@ export const voteActions = (set) => ({
       if (current.state.phase !== "DAY") return current
       if (dayIndex !== current.state.dayIndex) return current
       if (round !== getDayVoteRound(current.state)) return current
-      const rosterIds = new Set((current.state.players ?? []).map((p) => p.uuid))
-      const roundFields = parseDayVoteRoundFields(resolution, rosterIds)
+      const roundFields = parseDayVoteRoundFields(resolution)
       if (!roundFields) return current
       const dayVoteResolution = {
         outcome,
@@ -40,23 +38,6 @@ export const voteActions = (set) => ({
         ...roundFields,
         publicVoteCount: resolution.publicVoteCount,
         publicAbstainCount: resolution.publicAbstainCount,
-      }
-
-      // 재투표: 투표 중일 때만, 회차 올리고 본인 행동 표시 풀기 (새 마감 시각은 실려 왔을 때만)
-      if (outcome === "REVOTE") {
-        if (current.state.dayPhase !== "DAY_VOTE") return current
-        const revoteState = {
-          ...current.state,
-          dayVoteRound: round + 1,
-          dayVoteExcludedUuids: [...roundFields.revoteExcludedUuids],
-          dayVoteResolution,
-          tribunal: null,
-          self: { ...current.state.self, hasActedThisPhase: false },
-        }
-        const dayPhaseDeadline = parseDayPhaseDeadlineField(resolution)
-        if (dayPhaseDeadline === null) return current
-        if (dayPhaseDeadline !== undefined) revoteState.dayPhaseDeadline = dayPhaseDeadline
-        return { state: revoteState }
       }
 
       // 재판: 피고가 있어야 함, 낮을 벗어나 낮 마감 시각 비움

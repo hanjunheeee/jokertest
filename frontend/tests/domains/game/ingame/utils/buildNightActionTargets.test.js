@@ -79,6 +79,16 @@ test("isAlly:true인 항목은 name에 '· 동료 JOKER' 접미사가 붙고 sel
   )
   assert.equal(result.name, "B · 동료 JOKER")
   assert.equal(result.selectable, false)
+  // 동료 표시: 카드 메뉴가 동료 광대 카드의 밤 항목을 숨기는 데 씀 (서버가 동료 지목을 거절함)
+  assert.equal(result.ally, true)
+})
+
+test("동료가 아닌 항목엔 ally 칸 자체가 없다", () => {
+  const [result] = buildNightActionTargets(
+    [{ id: "u2", nickname: "B", status: INGAME_PLAYER_STATUS.ALIVE }],
+    { localPlayerId: "other", selfTargetAllowed: true },
+  )
+  assert.equal(Object.hasOwn(result, "ally"), false)
 })
 
 test("isAlly가 없거나 false인 항목은 name이 원래 nickname 그대로고 selectable:true다", () => {

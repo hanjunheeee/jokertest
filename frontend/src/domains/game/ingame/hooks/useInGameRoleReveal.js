@@ -1,10 +1,13 @@
 // 역할 공개 훅: 판에 들어오면 내 역할 창을 한 번 띄우고 닫기·다시 열기
-// 오버레이 묶음 훅(useInGameOverlayStack)이 사용, 서버 알림은 useInGameRoleRevealAck
+// 오버레이 묶음 훅(useInGameOverlayStack)이 사용
+// 서버는 확인을 안 기다리고 10초 뒤 첫 낮으로 넘김 → 확인은 화면에서만 닫음, 저절로 연 창은 10초 뒤 저절로 닫힘 (사용자 결정 2026-11-09)
 import { useEffect, useRef, useState } from "react"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getInGameRoleRevealInfo } from "../utils/roleReveal.js"
-import { useInGameRoleRevealAck } from "./useInGameRoleRevealAck.js"
+
+// 저절로 연 역할 창이 열려 있는 시간 (서버 역할 공개 시간과 같게)
+export const INGAME_ROLE_REVEAL_AUTO_CLOSE_MS = 10000
 
 // 역할 창 열림·역할 정보와 닫기·다시 열기
 export function useInGameRoleReveal() {
@@ -12,16 +15,22 @@ export function useInGameRoleReveal() {
   const self = useInGameStore((s) => s.state?.self ?? null)
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
 
-  // 역할 봤다고 서버에 알림 (창 열림과 따로 감)
-  useInGameRoleRevealAck()
-
   const [open, setOpen] = useState(false)
   // 판·계정마다 한 번만 자동으로 띄우려고 둠
   const revealedIdentityRef = useRef(null)
+  // 저절로 닫기 예약 (사람이 닫거나 다시 열면 끔)
+  const autoCloseTimerRef = useRef(null)
 
   const roleInfo = getInGameRoleRevealInfo(self, { authUuid })
 
-  // 역할 정보가 생기면 그 판·계정에서 처음 한 번만 엶
+  // 저절로 닫기 예약 끄기
+  const cancelAutoClose = () => {
+    if (autoCloseTimerRef.current === null) return
+    clearTimeout(autoCloseTimerRef.current)
+    autoCloseTimerRef.current = null
+  }
+
+  // 역할 정보가 생기면 그 판·계정에서 처음 한 번만 엶, 10초 뒤 저절로 닫음
   useEffect(() => {
     if (!gameId || !authUuid || !roleInfo) return
 
@@ -30,13 +39,25 @@ export function useInGameRoleReveal() {
 
     revealedIdentityRef.current = identity
     setOpen(true)
+    cancelAutoClose()
+    autoCloseTimerRef.current = setTimeout(() => {
+      autoCloseTimerRef.current = null
+      setOpen(false)
+    }, INGAME_ROLE_REVEAL_AUTO_CLOSE_MS)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, authUuid, self])
 
-  // 닫기, 역할 정보가 있을 때만 다시 열기
-  const close = () => setOpen(false)
+  // 화면 빠지면 예약 끔
+  useEffect(() => cancelAutoClose, [])
+
+  // 닫기(화면에서만), 역할 정보가 있을 때만 다시 열기 (다시 연 창은 사람이 닫을 때까지 둠)
+  const close = () => {
+    cancelAutoClose()
+    setOpen(false)
+  }
   const reopen = () => {
     if (!roleInfo) return
+    cancelAutoClose()
     setOpen(true)
   }
 

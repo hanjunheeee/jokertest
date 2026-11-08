@@ -105,7 +105,6 @@ export const phaseActions = (set) => ({
           dayIndex: payload.dayIndex,
           dayPhase: "DAY_DISCUSSION",
           dayVoteRound: 1,
-          dayVoteExcludedUuids: [],
           dayVoteResolution: null,
           dayPhaseDeadline: dayPhaseDeadline ?? null,
           ...CLEARED_NIGHT_TURN,

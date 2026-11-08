@@ -69,11 +69,11 @@ export function useDayVoteResolve({ gameId, dayIndex, dayVoteRound, open }) {
       const parsed = parseDayVoteResolvedPayload({ payload, gameId, dayIndex })
       if (!parsed) return
       if ((parsed.round ?? 1) !== dayVoteRound) return
-      // 내 요청이 진행 중이어도 방송 결과가 우선, 재투표면 다시 누를 수 있게 idle로 둠
+      // 내 요청이 진행 중이어도 방송 결과가 우선
       versionRef.current += 1
       ackingRef.current = false
       if (!mountedRef.current) return
-      setStatus(parsed.outcome === "REVOTE" ? "idle" : "resolved")
+      setStatus("resolved")
       setError(null)
       setResolution({ outcome: parsed.outcome, tribunalTargetUuid: parsed.tribunalTargetUuid })
     }

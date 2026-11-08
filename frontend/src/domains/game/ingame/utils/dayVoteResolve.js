@@ -1,20 +1,20 @@
 // 낮 투표 판정 계산: 판정 응답·무효화 조각, 판정 방송 검사 (상태를 안 건드리는 순수 계산)
 // 판정 훅(useDayVoteResolve)·낮 이벤트 손잡이가 사용, 행동 패널 입구가 다시 내보냄
 import { FAILED_MSG } from "../constants/actions/dayVoteResolve.js"
-import { parseDayPhaseDeadlineField } from "./dayPhase.js"
 import { parseDayVoteRoundFields } from "./dayVoteRound.js"
 
 // 받는 판정 결과·다음 단계 이름과 표 수 검사
-const RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED", "REVOTE"])
-const RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL", "DAY"])
+// 재투표 삭제로 REVOTE·낮 그대로는 안 받음 (사용자 결정 2026-11-09)
+const RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAINED"])
+const RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL"])
 
 const isNonNegativeInteger = (value) => Number.isInteger(value) && value >= 0
 
-// 판정 요청 응답 → 상태 조각 (재투표면 다시 idle, 실패면 문구)
+// 판정 요청 응답 → 상태 조각 (실패면 문구)
 export function computeDayVoteResolveAckPatch(response) {
   if (response?.ok) {
     return {
-      status: response.outcome === "REVOTE" ? "idle" : "resolved",
+      status: "resolved",
       error: null,
       resolution: { outcome: response.outcome ?? null, tribunalTargetUuid: response.tribunalTargetUuid ?? null },
     }
@@ -42,12 +42,8 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
   const roundFields = parseDayVoteRoundFields(payload)
   if (!roundFields) return null
 
-  // 재투표: 낮 그대로, 피고 없음, 기권보다 표가 많음
-  if (payload.outcome === "REVOTE") {
-    if (payload.phase !== "DAY" || payload.tribunalTargetUuid !== null) return null
-    if (payload.publicVoteCount <= payload.publicAbstainCount) return null
   // 재판: 피고가 있고 기권보다 표가 많음
-  } else if (payload.outcome === "TRIBUNAL") {
+  if (payload.outcome === "TRIBUNAL") {
     if (payload.phase !== "TRIBUNAL") return null
     if (typeof payload.tribunalTargetUuid !== "string" || payload.tribunalTargetUuid.length === 0) return null
     if (payload.publicVoteCount <= payload.publicAbstainCount) return null
@@ -63,10 +59,6 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     if (payload.publicVoteCount !== payload.publicAbstainCount) return null
   }
 
-  // 재투표면 새 투표 마감 시각 (있을 때만, 틀리면 거절)
-  const dayPhaseDeadline = payload.outcome === "REVOTE" ? parseDayPhaseDeadlineField(payload) : undefined
-  if (dayPhaseDeadline === null) return null
-
   return {
     gameId: payload.gameId,
     dayIndex: payload.dayIndex,
@@ -76,7 +68,6 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     publicVoteCount: payload.publicVoteCount,
     publicAbstainCount: payload.publicAbstainCount,
     ...roundFields,
-    ...(dayPhaseDeadline !== undefined ? { dayPhaseDeadline } : {}),
   }
 }
 

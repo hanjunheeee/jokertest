@@ -1,6 +1,6 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
-import React, { act } from "react"
+import { act } from "react"
 import { JSDOM } from "jsdom"
 
 const dom = new JSDOM(
@@ -36,12 +36,30 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const { renderHook } = await import("@testing-library/react")
 
+// 시험마다 바꿔 끼우는 가짜 소켓 (보낸 알림 기록)
+let fakeSocket = null
 mock.module("../../../../../src/shared/socket/socketClient.js", {
   namedExports: {
-    getSocket: () => null,
+    getSocket: () => fakeSocket,
     subscribeSocket: () => () => {},
   },
 })
+
+function createRecordingSocket() {
+  const emitted = []
+  const socket = {
+    connected: true,
+    on() {},
+    off() {},
+    timeout() { return socket },
+    emit(event) { emitted.push(event) },
+    emitWithAck(event) {
+      emitted.push(event)
+      return Promise.resolve({ ok: true })
+    },
+  }
+  return { socket, emitted }
+}
 
 const { useInGameStore } = await import("../../../../../src/domains/game/ingame/store/ingameStore.js")
 const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
@@ -257,4 +275,55 @@ test("이전 계정/게임의 stale self(uuid 불일치)는 자동으로 열리�
   assert.equal(hook.result.current.roleInfo, null)
 
   hook.unmount()
+})
+
+// 역할 공개 10초·확인은 화면만 (사용자 결정 2026-11-09)
+test("역할 공개 창은 확인을 서버에 안 보냄 (서버가 확인 안 기다리고 10초 뒤 넘김)", async () => {
+  const { socket, emitted } = createRecordingSocket()
+  fakeSocket = socket
+  try {
+    seedStore({ gameId: "g1", playerUuid: "player-1", nickname: "Alice", role: "CITIZEN", phase: "ROLE_REVEAL" })
+    seedAuth("player-1")
+    const hook = renderHook(() => useInGameRoleReveal())
+    assert.equal(hook.result.current.open, true)
+    act(() => hook.result.current.close())
+    await act(async () => { await Promise.resolve() })
+    assert.deepEqual(emitted, [])
+    hook.unmount()
+  } finally {
+    fakeSocket = null
+  }
+})
+
+test("저절로 연 역할 창은 10초 지나면 저절로 닫힘", () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    seedStore({ gameId: "g1", playerUuid: "player-1", nickname: "Alice", role: "CITIZEN", phase: "ROLE_REVEAL" })
+    seedAuth("player-1")
+    const hook = renderHook(() => useInGameRoleReveal())
+    assert.equal(hook.result.current.open, true)
+    act(() => mock.timers.tick(9999))
+    assert.equal(hook.result.current.open, true)
+    act(() => mock.timers.tick(1))
+    assert.equal(hook.result.current.open, false)
+    hook.unmount()
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("'내 역할 보기'로 다시 연 창은 10초 지나도 안 닫힘 (사람이 닫을 때까지)", () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    seedStore({ gameId: "g1", playerUuid: "player-1", nickname: "Alice", role: "CITIZEN", phase: "DAY" })
+    seedAuth("player-1")
+    const hook = renderHook(() => useInGameRoleReveal())
+    act(() => hook.result.current.close())
+    act(() => hook.result.current.reopen())
+    act(() => mock.timers.tick(10000))
+    assert.equal(hook.result.current.open, true)
+    hook.unmount()
+  } finally {
+    mock.timers.reset()
+  }
 })

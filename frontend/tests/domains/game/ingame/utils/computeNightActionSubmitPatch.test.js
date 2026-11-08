@@ -22,3 +22,8 @@ test("세 경우 모두 status는 항상 'idle'이다(재제출 가능 정책의
   assert.equal(computeNightActionSubmitPatch({ ok: false, message: "X" }).status, "idle")
   assert.equal(computeNightActionSubmitPatch({ ok: false }).status, "idle")
 })
+
+test("동료 광대 지목 거절(TARGET_IS_ALLY)이면 서버 기본 문구 대신 동료 안내 문구", () => {
+  const result = computeNightActionSubmitPatch({ ok: false, code: "TARGET_IS_ALLY", message: "요청을 처리할 수 없습니다." })
+  assert.deepEqual(result, { status: "idle", error: "동료 광대는 고를 수 없습니다." })
+})

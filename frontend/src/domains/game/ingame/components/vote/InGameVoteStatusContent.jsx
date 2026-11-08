@@ -13,7 +13,6 @@ const OUTCOME_LABELS = Object.freeze({
   TRIBUNAL: "재판 회부",
   TIE: "동점",
   ABSTAINED: "기권 다수",
-  REVOTE: "재투표",
 })
 
 export const INGAME_VOTE_STATUS_UNRESOLVED_LABEL = "집계 전"

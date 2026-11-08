@@ -7,13 +7,12 @@ export function isSessionPlayerAlive(sessionPlayer) {
   return sessionPlayer?.status !== INGAME_PLAYER_STATUS.DEAD
 }
 
-// 낮 투표 대상: 살아 있고 나·제외 대상이 아닌 참가자
-export function buildDayVoteTargets(sessionPlayers, { localPlayerId, excludedUuids = [] } = {}) {
+// 낮 투표 대상: 살아 있고 내가 아닌 참가자 (재투표 삭제로 제외 대상 없음)
+export function buildDayVoteTargets(sessionPlayers, { localPlayerId } = {}) {
   if (!Array.isArray(sessionPlayers)) return []
-  const excluded = new Set(excludedUuids)
 
   return sessionPlayers
-    .filter((player) => isSessionPlayerAlive(player) && player.id !== localPlayerId && !excluded.has(player.id))
+    .filter((player) => isSessionPlayerAlive(player) && player.id !== localPlayerId)
     .map((player) => ({
       id: player.id,
       name: player.nickname,
@@ -23,6 +22,7 @@ export function buildDayVoteTargets(sessionPlayers, { localPlayerId, excludedUui
 }
 
 // 밤 행동 대상: 동료는 못 고름, 마녀사냥꾼은 죽은 사람만 고름
+// 동료 광대엔 ally 표시 (서버가 동료 지목을 거절해 카드 메뉴가 밤 항목을 숨김)
 export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed, role } = {}) {
   if (!Array.isArray(players)) return []
 
@@ -36,5 +36,6 @@ export function buildNightActionTargets(players, { localPlayerId, selfTargetAllo
       selectable: !player.isAlly && (role === "WITCH_HUNTER"
         ? player.status === INGAME_PLAYER_STATUS.DEAD
         : player.status !== INGAME_PLAYER_STATUS.DEAD),
+      ...(player.isAlly ? { ally: true } : {}),
     }))
 }

@@ -23,5 +23,6 @@ export const PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS = new Set(["ROLE_REVEAL", "NIGHT
 
 // 아는 낮 세부 단계·투표 결과·재판 결과 (모르면 스냅샷 안 받음)
 export const KNOWN_DAY_PHASES = new Set(["DAY_DISCUSSION", "DAY_VOTE"])
-export const DAY_VOTE_OUTCOMES = new Set(["ABSTAINED", "TIE", "TRIBUNAL", "REVOTE"])
+// 재투표는 삭제돼 낮 투표 결과에서 뺌 (사용자 결정 2026-11-09)
+export const DAY_VOTE_OUTCOMES = new Set(["ABSTAINED", "TIE", "TRIBUNAL"])
 export const TRIBUNAL_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])

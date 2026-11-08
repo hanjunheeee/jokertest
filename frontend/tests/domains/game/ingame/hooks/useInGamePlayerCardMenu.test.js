@@ -324,6 +324,18 @@ test("AC-01: 밤 항목은 내 역할 턴일 때만 뜨고, 선택 불가 대상
   myTurn.unmount()
 })
 
+test("광대 밤 차례에 동료 광대 카드엔 밤 항목을 숨긴다 (서버가 동료 지목을 거절함)", () => {
+  const rendered = renderMenuHookWithContext(nightContext({
+    nightActionTargets: [
+      { id: "u2", name: "B", alive: true, connected: true, selectable: true },
+      { id: "u3", name: "C · 동료 JOKER", alive: true, connected: true, selectable: false, ally: true },
+    ],
+  }))
+  assert.deepEqual(rendered.result.current.getItems("u3"), [])
+  assert.equal(rendered.result.current.getItems("u2")[0].kind, INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION)
+  rendered.unmount()
+})
+
 test("AC-01: 밤 항목은 nightActionsLocked·submitting에서 각각 잠긴다", () => {
   const locked = renderMenuHookWithContext(nightContext({ nightActionsLocked: true }))
   assert.equal(locked.result.current.getItems("u2")[0].disabledReason,

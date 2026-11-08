@@ -61,9 +61,11 @@ function tribunalItems(ctx, selfAlive) {
 }
 
 // 밤 내 차례: 이 사람에게 이미 행동했으면 취소, 아니면 행동
+// 동료 광대 카드면 항목 없음 (서버가 동료 지목을 거절함, 잠긴 항목보다 덜 헷갈림)
 function nightItem(ctx, targetId, selfAlive) {
-  const inTargets = Array.isArray(ctx.nightActionTargets)
-    && ctx.nightActionTargets.some((target) => target.id === targetId && target.selectable)
+  const targets = Array.isArray(ctx.nightActionTargets) ? ctx.nightActionTargets : []
+  if (targets.some((target) => target.id === targetId && target.ally === true)) return null
+  const inTargets = targets.some((target) => target.id === targetId && target.selectable)
   const submitting = ctx.nightActionStatus === "submitting"
   const actedTarget = ctx?.nightActionLastSubmittedTargetId ?? null
 
@@ -112,7 +114,8 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
 
   // 밤 내 차례일 때 다른 사람 카드: 행동 또는 취소
   if (phase === "NIGHT" && ctx.isNightTurnActor && !isSelf) {
-    items.push(nightItem(ctx, targetId, selfAlive))
+    const night = nightItem(ctx, targetId, selfAlive)
+    if (night) items.push(night)
   }
 
   return items

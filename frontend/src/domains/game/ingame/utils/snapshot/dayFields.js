@@ -21,14 +21,13 @@ function readNightResult(response, roster) {
   return nightResult
 }
 
-// 낮 투표 판정: 결과 이름·회차 필드·재투표는 투표 중일 때만·재판이면 피고가 명단 안
+// 낮 투표 판정: 결과 이름·번호 필드·재판이면 피고가 명단 안
 function readDayVoteResolution(response, roster) {
   const raw = response.dayVoteResolution
   if (!isPlainObject(raw)) return BAD
   if (!DAY_VOTE_OUTCOMES.has(raw.outcome)) return BAD
-  const roundFields = parseDayVoteRoundFields(raw, new Set(roster.keys()))
+  const roundFields = parseDayVoteRoundFields(raw)
   if (!roundFields) return BAD
-  if (raw.outcome === "REVOTE" && (response.phase !== "DAY" || response.dayPhase !== "DAY_VOTE")) return BAD
   if (raw.outcome === "TRIBUNAL") {
     if (!isNonEmptyString(raw.tribunalTargetUuid)) return BAD
     if (!roster.has(raw.tribunalTargetUuid)) return BAD
@@ -36,7 +35,6 @@ function readDayVoteResolution(response, roster) {
     return BAD
   }
   if (!isNonNegativeInteger(raw.publicVoteCount) || !isNonNegativeInteger(raw.publicAbstainCount)) return BAD
-  if (raw.outcome === "REVOTE" && raw.publicVoteCount <= raw.publicAbstainCount) return BAD
   return {
     outcome: raw.outcome,
     tribunalTargetUuid: raw.outcome === "TRIBUNAL" ? raw.tribunalTargetUuid : null,

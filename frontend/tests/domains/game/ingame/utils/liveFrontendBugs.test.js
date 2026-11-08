@@ -10,18 +10,21 @@ import { getPlayerDisplayName } from "../../../../../src/domains/game/ingame/uti
 const players = ["p1", "p2", "p3", "p4", "p5"].map((id) => ({
   id, uuid: id, nickname: id.toUpperCase(), status: "alive", alive: true,
 }))
-const revote = {
-  gameId: "live-regression", dayIndex: 2, phase: "DAY", round: 1,
-  outcome: "REVOTE", tribunalTargetUuid: null, publicVoteCount: 5,
-  publicAbstainCount: 1, revoteExcludedUuids: ["p2", "p3"],
+// 재투표 삭제 뒤 동점 판정: 서버는 옛 칸(round 1·빈 제외 명단)을 계속 실어 보냄 (사용자 결정 2026-11-09)
+const tie = {
+  gameId: "live-regression", dayIndex: 2, phase: "NIGHT", round: 1,
+  outcome: "TIE", tribunalTargetUuid: null, publicVoteCount: 5,
+  publicAbstainCount: 1, excludedUuids: [], revoteExcludedUuids: [],
 }
+const revote = { ...tie, phase: "DAY", outcome: "REVOTE", revoteExcludedUuids: ["p2", "p3"] }
 function snapshot() {
   return {
-    ok: true, gameId: revote.gameId, phase: "DAY", dayIndex: 2, dayPhase: "DAY_VOTE",
+    ok: true, gameId: tie.gameId, phase: "TRIBUNAL", dayIndex: 2,
     players: players.map((p) => ({ uuid: p.id, nickname: p.nickname, isAlive: true, isConnected: true })),
     self: { uuid: "p1", nickname: "P1", role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false },
-    dayVoteResolution: { round: 1, outcome: "REVOTE", tribunalTargetUuid: null,
-      publicVoteCount: 5, publicAbstainCount: 1, revoteExcludedUuids: ["p2", "p3"] },
+    dayVoteResolution: { round: 1, outcome: "TRIBUNAL", tribunalTargetUuid: "p2",
+      publicVoteCount: 5, publicAbstainCount: 1, revoteExcludedUuids: [] },
+    tribunal: { defendantUuid: "p2", resolved: false },
   }
 }
 test("BUG-082: WH can target dead players; other roles cannot", () => {
@@ -33,61 +36,51 @@ test("BUG-082: WH can target dead players; other roles cannot", () => {
   assert.equal(doctor.find((p) => p.id === "dead").selectable, false)
   assert.equal(doctor.find((p) => p.id === "p1").selectable, true)
 })
-test("BUG-083: parse REVOTE and retain round/excluded candidates", () => {
-  const parsed = parseDayVoteResolvedPayload({ payload: revote, gameId: revote.gameId, dayIndex: 2 })
-  assert.deepEqual(parsed, revote)
-  assert.notEqual(parsed.revoteExcludedUuids, revote.revoteExcludedUuids)
-  assert.equal(computeDayVoteResolveAckPatch({ ok: true, outcome: "REVOTE" }).status, "idle")
+test("재투표 삭제: 동점 판정은 옛 빈 칸이 실려도 받고 바로 밤, 요청 응답도 끝남(resolved)", () => {
+  const parsed = parseDayVoteResolvedPayload({ payload: tie, gameId: tie.gameId, dayIndex: 2 })
+  assert.equal(parsed.outcome, "TIE")
+  assert.equal(parsed.phase, "NIGHT")
+  assert.equal(Object.hasOwn(parsed, "revoteExcludedUuids"), false)
+  assert.equal(computeDayVoteResolveAckPatch({ ok: true, outcome: "TIE" }).status, "resolved")
 })
-test("BUG-083: excluded candidates cannot receive a second-round vote", () => {
-  const targets = buildDayVoteTargets(players, { localPlayerId: "p1", excludedUuids: ["p2", "p3"] })
-  assert.deepEqual(targets.map((p) => p.id), ["p4", "p5"])
+test("재투표 삭제: REVOTE 판정 방송은 안 받음 (서버가 더는 안 보냄)", () => {
+  assert.equal(parseDayVoteResolvedPayload({ payload: revote, gameId: revote.gameId, dayIndex: 2 }), null)
 })
-test("BUG-083: second round is kept; duplicate first-round resolution is ignored", () => {
-  useInGameStore.setState({ gameId: revote.gameId, state: { phase: "DAY", dayIndex: 2,
+test("재투표 삭제: 스토어는 REVOTE를 무시하고 동점이면 밤으로", () => {
+  useInGameStore.setState({ gameId: tie.gameId, state: { phase: "DAY", dayIndex: 2,
     dayPhase: "DAY_VOTE", players, self: { uuid: "p1", hasActedThisPhase: true } } })
-  const apply = () => useInGameStore.getState().applyDayVoteResolvedToPhase(revote.gameId, 2, revote)
-  apply()
+  const before = useInGameStore.getState().state
+  useInGameStore.getState().applyDayVoteResolvedToPhase(tie.gameId, 2, revote)
+  assert.equal(useInGameStore.getState().state, before)
+  useInGameStore.getState().applyDayVoteResolvedToPhase(tie.gameId, 2, tie)
   const state = useInGameStore.getState().state
-  assert.equal(state.dayVoteRound, 2)
-  assert.equal(state.phase, "DAY")
-  assert.equal(state.self.hasActedThisPhase, false)
-  assert.deepEqual(state.dayVoteExcludedUuids, ["p2", "p3"])
-  apply()
-  assert.equal(useInGameStore.getState().state, state)
-  useInGameStore.getState().applyDayVoteResolvedToPhase(revote.gameId, 2, {
-    outcome: "TRIBUNAL", defendantUuid: "p4", round: 2,
-  })
-  assert.equal(useInGameStore.getState().state.tribunal.defendantUuid, "p4")
-  assert.equal(useInGameStore.getState().state.dayVoteResolution.outcome, "TRIBUNAL")
+  assert.equal(state.phase, "NIGHT")
+  assert.equal(state.dayVoteResolution.outcome, "TIE")
+  assert.equal(Object.hasOwn(state, "dayVoteExcludedUuids"), false)
 })
-test("BUG-084: reload bootstraps REVOTE with the same eligible targets", () => {
+test("재투표 삭제: 스냅샷은 옛 빈 제외 칸이 와도 받고 투표 번호는 1, 제외 명단 칸은 안 만듦", () => {
   const patch = bootstrapSessionSnapshotPure(snapshot())
   assert.ok(patch)
-  assert.equal(patch.state.dayVoteRound, 2)
-  assert.deepEqual(patch.state.dayVoteExcludedUuids, ["p2", "p3"])
-  assert.deepEqual(buildDayVoteTargets(players, { localPlayerId: "p1", excludedUuids: patch.state.dayVoteExcludedUuids }).map((p) => p.id), ["p4", "p5"])
+  assert.equal(patch.state.dayVoteRound, 1)
+  assert.equal(Object.hasOwn(patch.state, "dayVoteExcludedUuids"), false)
+  assert.equal(patch.state.dayVoteResolution.outcome, "TRIBUNAL")
 })
-test("REVOTE rejects malformed round, duplicate/unknown excluded candidates and wrong phase", () => {
-  for (const override of [{ round: 0 }, { round: 2 }, { round: null }, { round: "1" }, { phase: "NIGHT" },
-    { revoteExcludedUuids: [] }, { revoteExcludedUuids: ["p2", "p2"] }]) {
-    assert.equal(parseDayVoteResolvedPayload({ payload: { ...revote, ...override }, gameId: revote.gameId, dayIndex: 2 }), null)
-  }
-  const invalid = snapshot()
-  invalid.dayVoteResolution.revoteExcludedUuids = ["p2", "unknown"]
-  assert.equal(bootstrapSessionSnapshotPure(invalid), null)
+test("낮 투표 대상은 산 다른 사람 전부 (재투표 제외 없음)", () => {
+  assert.deepEqual(buildDayVoteTargets(players, { localPlayerId: "p1" }).map((p) => p.id), ["p2", "p3", "p4", "p5"])
 })
 test("BUG-080: defendant display resolves the public nickname, not raw UUID", () => {
   assert.equal(getPlayerDisplayName(players, "p3"), "P3")
   assert.equal(getPlayerDisplayName(players, "missing-private-id"), "알 수 없는 참가자")
   assert.equal(getPlayerDisplayName(players, null), "없음")
 })
-test("second-round exclusions and resolution are cleared on the next day", () => {
+test("다음 낮이면 지난 판정이 지워지고 투표 번호는 1", () => {
   useInGameStore.setState(bootstrapSessionSnapshotPure(snapshot()))
-  useInGameStore.getState().applyNightResultAppliedPayload({ gameId: revote.gameId,
+  useInGameStore.setState((current) => ({ state: { ...current.state, phase: "NIGHT", tribunal: null } }))
+  useInGameStore.getState().applyNightResultAppliedPayload({ gameId: tie.gameId,
     phase: "DAY", dayIndex: 3, players: players.map((p) => ({ uuid: p.uuid, alive: true })) })
   const state = useInGameStore.getState().state
+  assert.equal(state.dayIndex, 3)
   assert.equal(state.dayVoteRound, 1)
-  assert.deepEqual(state.dayVoteExcludedUuids, [])
+  assert.equal(Object.hasOwn(state, "dayVoteExcludedUuids"), false)
   assert.equal(state.dayVoteResolution, null)
 })

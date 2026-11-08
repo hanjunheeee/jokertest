@@ -52,7 +52,7 @@ export function applySessionSnapshotPure(current, response) {
   const versions = readVersions(response, current.state)
   if (versions === BAD) return current
 
-  // 새 판 상태 (재투표 판정이면 다음 회차·제외 명단을 이어 받음)
+  // 새 판 상태
   const hostUuid = orNull(response.hostUuid)
   const { dayVoteResolution } = day
   const nextState = {
@@ -77,8 +77,7 @@ export function applySessionSnapshotPure(current, response) {
     winResult,
     nightResult: day.nightResult,
     dayVoteResolution,
-    dayVoteRound: dayVoteResolution?.outcome === "REVOTE" ? dayVoteResolution.round + 1 : (dayVoteResolution?.round ?? 1),
-    dayVoteExcludedUuids: dayVoteResolution?.outcome === "REVOTE" ? [...dayVoteResolution.revoteExcludedUuids] : [],
+    dayVoteRound: dayVoteResolution?.round ?? 1,
     ...(isPublicProgress(response.progress) ? { progress: { ...response.progress } } : {}),
   }
 
