@@ -17,6 +17,19 @@ const failStartup = (error, label = "DB 연결") => {
     process.exit(1);
 };
 
+// 직접 켤 때(npm start·docker·pm2)만 로그 파일·종료 처리 붙임 (시험이 require할 땐 안 붙임)
+const isMain = require.main === module;
+const logFile = isMain ? require("./utils/logFile").createLogFileFromEnv() : null;
+if (logFile) require("./utils/logFile").teeConsoleToLogFile(logFile);
+
+// 필수 환경값: 운영은 비면 시작 거부, 개발은 경고만 (로컬 .env 덜 채워도 켜지게)
+try {
+    require("./config/requiredEnv").assertRequiredEnv();
+} catch (error) {
+    if (process.env.NODE_ENV === "production") failStartup(error, "환경값");
+    console.warn(`[STARTUP] 경고 — ${error.message} (개발이라 계속, 운영이면 시작 거부)`);
+}
+
 // 모델 불러오기부터 실패할 수 있음 (DB 주소 없음 등)
 let db;
 try {
@@ -32,11 +45,15 @@ const friendRouter   = require("./routes/friend.routes");
 const gameRouter     = require("./routes/game.routes");
 const economyRouter  = require("./routes/economy.routes");
 const notificationRouter = require("./routes/notification.routes");
+const reportRouter   = require("./routes/report.routes");
+const internalRouter = require("./routes/internal.routes");
 const { initSocket } = require("./socket/socket");
 const { getCorsOrigin } = require("./config/frontendOrigins");
 
 const app = express();
 
+// 모든 응답에 기본 보안 헤더 (Express 이름 헤더 빼기)
+app.use(require("./middlewares/securityHeaders.middleware").securityHeaders);
 // 프런트 주소(데스크톱·모바일 목록)에서만 쿠키 실은 요청 받음
 app.use(cors({ origin: getCorsOrigin(), credentials: true }));
 
@@ -54,13 +71,18 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-// 요청 로그 주소: 비번 재설정·가입 경로는 뒤를 가림 (토큰·이메일이 로그에 안 남게)
+// 상태 확인은 요청 로그 앞 (docker healthcheck가 30초마다 불러 로그 안 채우게)
+app.use("/health", require("./routes/health.routes"));
+// 요청 로그 주소: 비번 재설정·가입 경로는 뒤를 가림, 나머지는 쿼리 뺀 경로만 (토큰·이메일이 로그에 안 남게)
 morgan.token("safe-url", (req) => (
     isPasswordResetPath(req) ? "/auth/password-reset/[REDACTED]"
         : isSignupPath(req) ? "/auth/signup/[REDACTED]"
-        : (req.originalUrl || req.url)
+        : require("./utils/request").safeRequestPath(req)
 ));
-app.use(morgan(":method :safe-url :status :response-time ms"));
+// 로그 파일 있으면 화면·파일 둘 다
+app.use(morgan(":method :safe-url :status :response-time ms", logFile ? {
+    stream: { write: (line) => { process.stdout.write(line); logFile.write(line); } },
+} : undefined));
 // 프록시 한 단계 뒤에 있다고 보고 req.ip를 정함
 app.set("trust proxy", 1);
 
@@ -71,6 +93,9 @@ app.use("/friends", friendRouter);
 app.use("/game", gameRouter);
 app.use("/economy", economyRouter);
 app.use("/notifications", notificationRouter);
+app.use("/reports", reportRouter);
+// 관리자 서버 전용 (INTERNAL_API_KEY 없으면 꺼짐)
+app.use("/internal", internalRouter);
 
 // 라우터 뒤: 없는 경로 404 → 마지막 오류 처리
 app.use(notFoundHandler);
@@ -82,12 +107,25 @@ const io = initSocket(server, { corsOrigin: getCorsOrigin() });
 
 const port = Number(process.env.PORT) || 4000;
 
+// 종료 신호·예상 못 한 오류: 새 연결 막고 점검 안내 → 소켓·DB 닫고 종료 (다시 켜기는 docker·pm2)
+if (isMain) {
+    const { createShutdown, installProcessHandlers } = require("./utils/processLifecycle");
+    installProcessHandlers({
+        shutdown: createShutdown({ server, io, closeDb: () => db.sequelize.close(), logFile }),
+    });
+}
+
 // 표는 마이그레이션만 만듦 (모델대로 만드는 sync는 안 씀, 마이그레이션이 건너뛰어 모양이 갈림)
 // 연결 + 마이그레이션 이력 확인 → 성공해야 포트 열기 (운영은 안 돌린 게 있으면 시작 거부)
 // 시험이 바꿔 끼울 수 있게 모듈 객체로 부름
 const schemaReadiness = require("./db/schemaReadiness");
 schemaReadiness.ensureSchemaReady(db.sequelize)
     .then(() => {
+        // 점검·금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 꺼짐·빈 목록으로 시작)
+        require("./services/ops/maintenance").reloadMaintenance()
+            .catch((err) => console.warn("[STARTUP] 점검 상태 못 읽음 —", err?.name ?? "Error"));
+        require("./services/ops/bannedWords").reloadBannedWords()
+            .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
         const pool = db.sequelize.options.pool ?? {};
         server.listen(port, () => {
             console.log(
