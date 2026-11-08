@@ -1,6 +1,14 @@
 services:
   db:
     image: mysql:8.4
+    # 죽으면 docker가 바로 다시 켬 (손으로 docker stop 한 것만 안 켬)
+    restart: unless-stopped
+    # docker 로그 크기 제한 (파일 10MB × 5개까지만, 디스크 꽉 차는 것 막기)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     environment:
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
@@ -37,6 +45,28 @@ services:
       - DB_POOL_MIN=${DB_POOL_MIN:-0}
       - DB_POOL_IDLE=${DB_POOL_IDLE:-10000}
       - DB_POOL_ACQUIRE=${DB_POOL_ACQUIRE:-30000}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
+      # 로그 파일은 아래 backend_logs 볼륨(/app/logs)에 날짜별로
+      - LOG_DIR=/app/logs
+      - LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-14}
+    volumes:
+      - backend_logs:/app/logs
+    # 죽으면 바로 다시 켬, /health가 3번 연속 실패하면 unhealthy 표시
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch(\"http://127.0.0.1:\"+(process.env.PORT||4000)+\"/health\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    # 종료 신호 뒤 정리(점검 안내·DB 닫기) 기다리는 시간
+    stop_grace_period: 15s
+    # docker 로그 크기 제한 (파일 10MB × 5개까지만, 디스크 꽉 차는 것 막기)
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     depends_on:
       db:
         condition: service_healthy
@@ -47,6 +77,7 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    restart: unless-stopped
     depends_on:
       - backend
     ports:
@@ -54,3 +85,4 @@ services:
 
 volumes:
   mysql_data:
+  backend_logs:

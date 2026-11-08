@@ -11,6 +11,9 @@ RUN npm ci --omit=dev
 
 COPY backend/ ./
 
+# 로그 폴더는 node 사용자가 쓸 수 있게 (compose가 여기에 backend_logs 볼륨을 붙임)
+RUN mkdir -p /app/logs && chown node:node /app/logs
+
 # 앱은 PORT가 없으면 4000을 씁니다(backend/index.js). 문서 목적의 선언입니다.
 EXPOSE 4000
 

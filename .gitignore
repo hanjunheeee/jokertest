@@ -44,3 +44,8 @@ frontend/.tmp-*/
 
 # 원본 MOV(100MB+ 가능) — 런타임은 video-direction/*.mp4 만 사용
 frontend/public/video-direction/*.mov
+
+# 서버 로그 파일 (backend/logs/app-YYYY-MM-DD.log)
+logs/
+# 부하 시험 계정 목록 (실서버용 비번 들어 있음)
+loadtest-accounts*.json
