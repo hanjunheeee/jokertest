@@ -1,5 +1,5 @@
 // 동그란 프로필 사진 + 테두리 그림 (데스크톱 PlayerProfilePortrait와 같은 겹침)
-// 추방 줄·기록 줄이 씀, 데스크톱 shared/ui는 못 불러서 따로 둠
+// 기록 줄이 씀, 데스크톱 shared/ui는 못 불러서 따로 둠
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { PLAYER_PROFILE_ASSETS } from "@/shared/constants/playerProfileAssets.js"
 

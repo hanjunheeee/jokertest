@@ -1,5 +1,5 @@
 // 인게임 시트 그림 버튼 모양 (그림을 칸에 맞춰 늘리고 글자 겹침, 높이 44px 이상)
-// 탭 줄·방 코드 버튼·추방 줄·추방 확인·복사 버튼이 공용 ImageButton에 넘김
+// 탭 줄·방 코드 버튼·복사 버튼이 공용 ImageButton에 넘김
 
 // 데스크톱 그림 버튼과 같은 흰 글자·그림자, 글자색은 부르는 쪽 labelClassName으로 덧붙임
 export const SHEET_BUTTON_LOOK = {

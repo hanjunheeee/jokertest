@@ -7,7 +7,7 @@ import { publicAsset } from "@/shared/utils/publicAsset.js"
 // 데스크톱 옆 창과 같은 시간·곡선
 export const SHEET_TRANSITION = PANEL_TRANSITION
 
-// 층: 기본 시트(설정·기록) 위에 겹 창(추방·방 코드)이 뜸 → 뒤판·판 z값 짝
+// 층: 기본 시트(설정·기록) 위에 겹 창(방 코드)이 뜸 → 뒤판·판 z값 짝
 export const SHEET_LAYERS = {
   base: { backdrop: "z-[60]", panel: "z-[61]" },
   top: { backdrop: "z-[64]", panel: "z-[65]" },

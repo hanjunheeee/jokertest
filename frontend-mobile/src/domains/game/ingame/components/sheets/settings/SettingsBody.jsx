@@ -5,9 +5,9 @@ import RoomTab from "./RoomTab.jsx"
 import SoundTab from "./SoundTab.jsx"
 
 // 탭 이름에 맞는 본문
-export default function SettingsBody({ activeTab, onOpenKickPlayer, volumes, onVolumeChange, sfxMuted, onSfxMutedChange }) {
+export default function SettingsBody({ activeTab, volumes, onVolumeChange, sfxMuted, onSfxMutedChange }) {
   if (activeTab === "chat") return <ChatTab />
-  if (activeTab === "room") return <RoomTab onOpenKickPlayer={onOpenKickPlayer} />
+  if (activeTab === "room") return <RoomTab />
   return (
     <SoundTab
       volumes={volumes}
