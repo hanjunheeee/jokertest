@@ -39,15 +39,18 @@ export default function InGamePlayerBoard() {
     selectInGameEmojiScope({ gameId: emojiGameId, state: emojiGameState }, authUuid, identityGeneration),
   )
 
-  const [emojiPaletteTargetId, setEmojiPaletteTargetId] = useState(null)
+  // 팔레트 연 카드와 그때 범위 (범위가 바뀌면 열린 팔레트는 없는 것으로 봄)
+  const [emojiPalette, setEmojiPalette] = useState(null)
+  const emojiPaletteTargetId = emojiPalette !== null && emojiPalette.scopeKey === emojiScopeKey
+    ? emojiPalette.targetId
+    : null
+  const setEmojiPaletteTargetId = (targetId) => {
+    setEmojiPalette(targetId === null ? null : { targetId, scopeKey: emojiScopeKey })
+  }
 
   useEffect(() => {
     if (emojiScopeKey === null) return
     useEmojiPaletteStore.getState().loadForGame(readEmojiScope())
-  }, [emojiScopeKey])
-
-  useEffect(() => {
-    setEmojiPaletteTargetId(null)
   }, [emojiScopeKey])
 
   const handleEmojiSelect = () => {
@@ -68,6 +71,11 @@ export default function InGamePlayerBoard() {
             role="button"
             tabIndex={0}
             onClick={() => cardMenu.openMenu(player.id)}
+            onMouseDown={(event) => {
+              // 우클릭 누르는 순간 엶 (OS마다 우클릭 메뉴 시점이 달라 끌어 고르기가 어긋나지 않게)
+              if (event.button !== 2 || !isSelf || emojiScopeKey === null) return
+              setEmojiPaletteTargetId(player.id)
+            }}
             onContextMenu={(event) => {
               if (!isSelf) return
               event.preventDefault()

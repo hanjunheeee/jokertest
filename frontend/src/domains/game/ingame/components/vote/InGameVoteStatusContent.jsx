@@ -18,8 +18,18 @@ const OUTCOME_LABELS = Object.freeze({
 
 export const INGAME_VOTE_STATUS_UNRESOLVED_LABEL = "집계 전"
 
+// 재판 대상 이름 모를 때 쓰는 이름
+const UNKNOWN_TARGET_LABEL = "알 수 없는 플레이어"
+
 export default function InGameVoteStatusContent() {
   const dayVoteResolution = useInGameStore((s) => s.state?.dayVoteResolution ?? null)
+  // 재판 대상은 id 대신 판 명단의 닉네임으로 보여 줌
+  const tribunalTargetNickname = useInGameStore((s) => {
+    const targetUuid = s.state?.dayVoteResolution?.tribunalTargetUuid ?? null
+    if (!targetUuid) return null
+    const found = (s.state?.players ?? []).find((player) => player?.uuid === targetUuid)
+    return typeof found?.nickname === "string" && found.nickname.length > 0 ? found.nickname : UNKNOWN_TARGET_LABEL
+  })
 
   if (!dayVoteResolution) {
     return (
@@ -65,7 +75,7 @@ export default function InGameVoteStatusContent() {
           <div className={STATUS_ROW_CLASS}>
             <dt className={STATUS_TERM_CLASS}>재판 대상</dt>
             <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-tribunal-target">
-              {tribunalTargetUuid ?? "없음"}
+              {tribunalTargetUuid ? tribunalTargetNickname : "없음"}
             </dd>
           </div>
         </dl>

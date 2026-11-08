@@ -164,3 +164,19 @@ test("CO S-1(AC-05): formatPlayerRecordStats는 두 값이 모두 정수일 때�
     assert.equal(formatPlayerRecordStats(input), PLAYER_RECORD_STATS_UNAVAILABLE_LABEL)
   }
 })
+
+test("FE-020: 목록 사진·테두리는 줄 순서 기본 그림이 아니라 그 사람 계정 아이템을 따라감", () => {
+  const { resolvePlayerRecordListProfileAssets, getPlayerRecordListFallbackProfileAssets } = recordListData
+  const own = resolvePlayerRecordListProfileAssets(
+    { accountProfilePhotoId: "player-profile-기사", accountProfileBorderId: "profile-border-귀족" }, 0,
+  )
+  assert.equal(own.profilePhotoSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(own.profileBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+
+  // 보드 카드 사진이 있으면 그것을 씀 (같은 사람이 보드와 목록에서 같게 보임)
+  const board = resolvePlayerRecordListProfileAssets({ portraitSrc: "/board/a.png" }, 3)
+  assert.equal(board.profilePhotoSrc, "/board/a.png")
+
+  // 아무것도 없을 때만 줄 순서 기본 그림
+  assert.deepEqual(resolvePlayerRecordListProfileAssets({}, 2), getPlayerRecordListFallbackProfileAssets(2))
+})

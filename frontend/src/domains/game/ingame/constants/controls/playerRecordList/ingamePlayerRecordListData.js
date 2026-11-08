@@ -1,3 +1,8 @@
+import {
+  resolveAccountProfileBorderSrc,
+  resolveAccountProfilePhotoSrc,
+} from "@/shared/utils/resolveAccountProfileAssets.js"
+
 const PROFILE_BASE = "/shopItem/player-profile/"
 const BORDER_BASE = "/shopItem/player- profileborder/"
 
@@ -53,4 +58,19 @@ export function formatPlayerRecordStats({ totalGames, winRate } = {}) {
 
 export function getPlayerRecordListFallbackProfileAssets(index = 0) {
   return getPlayerRecordListProfileAssets(index)
+}
+
+// 그 사람 사진·테두리 (보드 카드와 같은 사진 먼저, 계정 아이템, 둘 다 없을 때만 줄 순서 기본 그림)
+export function resolvePlayerRecordListProfileAssets(player, index = 0) {
+  const fallback = getPlayerRecordListFallbackProfileAssets(index)
+  const portraitSrc = typeof player?.portraitSrc === "string" && player.portraitSrc.length > 0
+    ? player.portraitSrc
+    : null
+  return {
+    profilePhotoSrc: portraitSrc
+      ?? resolveAccountProfilePhotoSrc(player?.accountProfilePhotoId)
+      ?? fallback.profilePhotoSrc,
+    profileBorderSrc: resolveAccountProfileBorderSrc(player?.accountProfileBorderId)
+      ?? fallback.profileBorderSrc,
+  }
 }

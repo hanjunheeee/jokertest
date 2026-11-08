@@ -122,7 +122,7 @@ test("탭 전환 상태도 같은 store에 반영된다 — 패널을 다시 열
   reopened.unmount()
 })
 
-test("방관리 탭은 방장에게만 보이고, 탭 전환 뒤 방장이 아니게 되면 기본 탭으로 돌아온다", () => {
+test("방관리 탭은 방장에게만 보이고, 방장 아니면 기본 탭을 보여 주되 기억한 탭은 안 덮음", () => {
   resetSettingsStore()
 
   const notHost = renderHook(() => useInGameSettingPanel({ isHost: false }))
@@ -144,11 +144,17 @@ test("방관리 탭은 방장에게만 보이고, 탭 전환 뒤 방장이 아�
   assert.equal(host.result.current.activeTab, "room")
 
   host.rerender({ isHost: false })
+  assert.equal(host.result.current.activeTab, INGAME_SETTING_DEFAULT_TAB, "방장 아니면 처음 그림부터 기본 탭")
   host.unmount()
 
-  const demoted = renderHook(() => useInGameSettingPanel({ isHost: false }))
+  // 방장 정보가 오기 전(아직 방장 아님으로 봄)에도 기억한 탭은 안 덮어 씀
+  const demoted = renderHook((props) => useInGameSettingPanel(props), { initialProps: { isHost: false } })
   assert.equal(demoted.result.current.activeTab, INGAME_SETTING_DEFAULT_TAB)
-  assert.equal(useSettingsStore.getState().inGameSettingTab, INGAME_SETTING_DEFAULT_TAB)
+  assert.equal(useSettingsStore.getState().inGameSettingTab, "room")
+
+  // 방장 정보가 늦게 오면 고른 탭으로 돌아감
+  demoted.rerender({ isHost: true })
+  assert.equal(demoted.result.current.activeTab, "room")
 
   demoted.unmount()
 })

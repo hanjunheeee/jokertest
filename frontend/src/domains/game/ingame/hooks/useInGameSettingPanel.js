@@ -1,6 +1,6 @@
 // 설정 창 탭·소리 훅: 고른 탭 기억, 방장 아니면 방장 탭 숨기기, 소리 설정 값
 // 설정 창 내용(SettingPanelContent)이 사용, 고른 탭은 settings 스토어에 둠
-import { useEffect, useMemo } from "react"
+import { useMemo } from "react"
 import {
   INGAME_SETTING_DEFAULT_TAB,
   INGAME_SETTING_TABS,
@@ -14,18 +14,17 @@ export function useInGameSettingPanel({ isHost = false } = {}) {
   const setActiveTab = useSettingsStore((s) => s.setInGameSettingTab)
   const { volumes, setVolume, sfxMuted, setSfxMuted } = useSoundSettings()
 
-  const activeTab = storedTab ?? INGAME_SETTING_DEFAULT_TAB
-
   const visibleTabs = useMemo(
     () => INGAME_SETTING_TABS.filter((tab) => !tab.hostOnly || isHost),
     [isHost],
   )
 
-  // 고른 탭이 안 보이게 되면(방장이 바뀜) 기본 탭으로
-  useEffect(() => {
-    if (visibleTabs.some((tab) => tab.id === activeTab)) return
-    setActiveTab(INGAME_SETTING_DEFAULT_TAB)
-  }, [activeTab, visibleTabs, setActiveTab])
+  // 고른 탭이 지금 안 보이면(방장 아님·방장 정보 아직 안 옴) 기본 탭을 보여 주기만 함
+  // 기억한 탭은 안 덮음: 방장 정보가 늦게 와도 방장은 고른 탭으로 돌아감, 방장 아닌 사람에게 방장 탭이 한 번도 안 그려짐
+  const preferredTab = storedTab ?? INGAME_SETTING_DEFAULT_TAB
+  const activeTab = visibleTabs.some((tab) => tab.id === preferredTab)
+    ? preferredTab
+    : INGAME_SETTING_DEFAULT_TAB
 
   return { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted }
 }

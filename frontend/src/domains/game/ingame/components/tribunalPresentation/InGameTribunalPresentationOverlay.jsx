@@ -74,29 +74,23 @@ export default function InGameTribunalPresentationOverlay({
   onDevResolve = null,
 }) {
   const reduceMotion = useReducedMotion()
-  const [layoutPhase, setLayoutPhase] = useState("intro")
+  // 열린 연출 열쇠(피고 id), 채팅을 연 열쇠 (열쇠가 다르면 intro)
+  const layoutKey = open ? `${defendant?.id ?? ""}` : null
+  const [splitKey, setSplitKey] = useState(null)
 
-  // 열릴 때·피고 바뀔 때 intro부터, 움직임 줄이기면 바로 split
+  // 닫히면 채팅 연 기록 지움 (다시 열면 intro부터)
+  if (layoutKey === null && splitKey !== null) setSplitKey(null)
+
+  // 열릴 때·피고 바뀔 때 정한 시간 뒤 채팅 열기, 움직임 줄이기면 기다리지 않음
   useEffect(() => {
-    // 닫히면 처음 단계로 되돌림
-    if (!open) {
-      setLayoutPhase("intro")
-      return undefined
-    }
-
-    // 움직임 줄이기 설정이면 기다리지 않음
-    if (reduceMotion) {
-      setLayoutPhase("split")
-      return undefined
-    }
-
-    setLayoutPhase("intro")
+    if (layoutKey === null || reduceMotion) return undefined
     const timer = window.setTimeout(() => {
-      setLayoutPhase("split")
+      setSplitKey(layoutKey)
     }, INTRO_HOLD_MS)
-
     return () => window.clearTimeout(timer)
-  }, [open, reduceMotion, defendant?.id])
+  }, [layoutKey, reduceMotion])
+
+  const layoutPhase = layoutKey !== null && (reduceMotion || splitKey === layoutKey) ? "split" : "intro"
 
   // 피고 없으면 안 그림
   if (!defendant) return null
@@ -113,7 +107,6 @@ export default function InGameTribunalPresentationOverlay({
           role="presentation"
           data-ingame-tribunal-presentation=""
           data-ingame-tribunal-layout={layoutPhase}
-          aria-hidden={!open}
         >
           <motion.div
             className={BACKDROP_CLASS}

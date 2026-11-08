@@ -1,5 +1,5 @@
 // 채팅 틀: 보드 구석 채팅(타이머 자리가 채팅이면 틀 안 타이머)과 크게 보기 창, 재판 연출 중엔 숨김
-// 인게임 화면·InGamePlayArea가 사용, 채팅 값은 채팅 세션 컨텍스트에서 꺼냄
+// 인게임 화면이 사용, 채팅 값은 채팅 세션 컨텍스트에서 꺼냄
 import { useState } from "react"
 import {
   PANEL_POSITION_CLASS,
@@ -28,6 +28,9 @@ export default function InGameChatShell({
   const [closeupOpen, setCloseupOpen] = useState(false)
   const tribunalPresentationOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
   const chatProps = useInGameChatSessionContext()
+
+  // 재판 연출이 뜨면 크게 보기도 닫음 (끝난 뒤 저절로 다시 뜨지 않게)
+  if (tribunalPresentationOpen && closeupOpen) setCloseupOpen(false)
 
   // 재판 연출이 자기 채팅을 띄우므로 겹치지 않게 숨김
   if (tribunalPresentationOpen) return null

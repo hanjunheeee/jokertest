@@ -1,8 +1,11 @@
 // 추방 창 내용: 안내 글·추방 확인 칸·결과 글·대상 목록
 // 설정 추방 창·InGamePage 카드 추방 창·GameMatchingPage가 사용
 import { useRef } from "react"
-import { getPlayerRecordListFallbackProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
-import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../../constants/controls/kickPlayer/ingameKickPlayerData.js"
+import { resolvePlayerRecordListProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
+import {
+  INGAME_KICK_PLAYER_MODAL_COPY,
+  resolveKickErrorMessage,
+} from "../../../constants/controls/kickPlayer/ingameKickPlayerData.js"
 import {
   MODAL_NOTICE_CLASS,
   MODAL_SCROLL_CLASS,
@@ -27,13 +30,14 @@ export default function SettingKickPlayerModalContent({
   onConfirmKick,
   onLookupResult,
   getThemeStylesByPlayerId = null,
+  getProfileAssetsByPlayerId = null,
 }) {
   const scrollRef = useRef(null)
 
   // 고른 대상 있으면 확인 칸, 추방은 지금 목록을 같이 넘겨 다시 확인
   // 실패·결과 모름이면 오류 글, 결과 묻기 버튼은 성공 전까지만
   // 목록 다시 확인 중이면 새로 못 고른다는 안내
-  // 프로필 그림은 줄 순서대로 기본 그림을 돌려 씀
+  // 프로필 그림은 그 사람 것 (부르는 쪽이 주거나 대상 값), 없을 때만 줄 순서 기본 그림
   return (
     <>
       <p className={MODAL_SUBTITLE_CLASS}>
@@ -64,7 +68,9 @@ export default function SettingKickPlayerModalContent({
       ) : null}
 
       {status === KICK_REQUEST_STATUS.FAILED ? (
-        <p role="alert" data-testid="kick-error">{errorCode}</p>
+        <p role="alert" data-testid="kick-error" data-kick-error-code={errorCode ?? ""}>
+          {resolveKickErrorMessage(errorCode)}
+        </p>
       ) : null}
       {status === KICK_REQUEST_STATUS.UNKNOWN ? (
         <p role="alert" data-testid="kick-unknown">
@@ -96,7 +102,13 @@ export default function SettingKickPlayerModalContent({
         >
           {targets.map((player, index) => {
             const { profilePhotoSrc, profileBorderSrc } =
-              getPlayerRecordListFallbackProfileAssets(index)
+              getProfileAssetsByPlayerId?.(player.uuid) ?? resolvePlayerRecordListProfileAssets(player, index)
+            // 소속 id가 둘 다 있을 때만 그걸로, 없으면 uuid로 (null끼리 같다고 여러 줄이 함께 확인 중 되지 않게)
+            const isPending = Boolean(pendingTarget) && (
+              pendingTarget.membershipId && player.membershipId
+                ? pendingTarget.membershipId === player.membershipId
+                : pendingTarget.uuid === player.uuid
+            )
 
             return (
               <SettingKickPlayerRow
@@ -105,7 +117,7 @@ export default function SettingKickPlayerModalContent({
                 name={player.nickname}
                 profilePhotoSrc={profilePhotoSrc}
                 profileBorderSrc={profileBorderSrc}
-                isPending={pendingTarget?.membershipId === player.membershipId}
+                isPending={isPending}
                 disabled={isSending}
                 themeStyles={getThemeStylesByPlayerId ? getThemeStylesByPlayerId(player.uuid) : null}
                 onKick={() => onRequestConfirm?.(player)}

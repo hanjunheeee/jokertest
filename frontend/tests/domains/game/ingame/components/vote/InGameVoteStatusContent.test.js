@@ -64,7 +64,7 @@ function seedState(dayVoteResolution) {
         phase: "DAY",
         dayIndex: 1,
         dayPhase: "DAY_VOTE",
-        players: [{ uuid: "u1", nickname: "A", alive: true }],
+        players: [{ uuid: "u1", nickname: "A", alive: true }, { uuid: "u2", nickname: "B", alive: true }],
         self: { uuid: "u1", nickname: "A", role: "CITIZEN", team: "CITIZEN" },
         ...(dayVoteResolution ? { dayVoteResolution } : {}),
       },
@@ -93,7 +93,7 @@ test("AC-04: dayVoteResolution이 있으면 서버가 준 집계 네 값을 그�
 
   assert.equal(textOf(view.container, "vote-status-public-vote-count"), "3")
   assert.equal(textOf(view.container, "vote-status-public-abstain-count"), "2")
-  assert.equal(textOf(view.container, "vote-status-tribunal-target"), "u2")
+  assert.equal(textOf(view.container, "vote-status-tribunal-target"), "B", "재판 대상은 id가 아니라 닉네임")
   assert.match(textOf(view.container, "vote-status-outcome"), /재판 회부|TRIBUNAL/)
   assert.equal(view.container.querySelector('[data-testid="vote-status-unresolved"]'), null,
     "집계가 있는데 '집계 전'이 함께 떴다")

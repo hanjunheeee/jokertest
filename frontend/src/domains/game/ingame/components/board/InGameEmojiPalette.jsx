@@ -1,6 +1,6 @@
 // 이모지 팔레트: 내 카드 우클릭 때 뜨는 8칸 둥근 판, 고르면 이모지 보냄
 // 플레이어 보드(InGamePlayerBoard)가 사용, 보내기는 useInGameEmojiSend
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 
 import PublicAsset from "@/shared/ui/PublicAsset"
 
@@ -54,17 +54,28 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
   const rootRef = useRef(null)
   // 닫기 함수는 ref로 들고 있어 바깥 누름 감시를 한 번만 붙임
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   // 판 바깥 누름·Esc 키 감시 (판 안쪽 누름은 무시)
   useEffect(() => {
     const close = () => {
       if (typeof onCloseRef.current === "function") onCloseRef.current()
     }
+    // 같은 누름의 click이 아래 요소(다른 카드 등)로 가지 않게 한 번만 막음, 손 떼면 막기 풀림
+    const swallowClick = (event) => {
+      event.stopPropagation()
+      event.preventDefault()
+    }
     const handleMouseDown = (event) => {
       const node = rootRef.current
       if (node && node.contains(event.target)) return
       close()
+      document.addEventListener("click", swallowClick, { capture: true, once: true })
+      document.addEventListener("mouseup", () => {
+        setTimeout(() => document.removeEventListener("click", swallowClick, { capture: true }), 0)
+      }, { capture: true, once: true })
     }
     const handleKeyDown = (event) => {
       if (event.key !== "Escape") return

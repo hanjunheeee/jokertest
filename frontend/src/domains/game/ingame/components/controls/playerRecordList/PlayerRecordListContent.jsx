@@ -1,6 +1,6 @@
 import { useRef } from "react"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
-import { getPlayerRecordListFallbackProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
+import { resolvePlayerRecordListProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
   SCROLL_CLASS,
   SCROLL_WRAP_CLASS,
@@ -27,7 +27,8 @@ export default function PlayerRecordListContent() {
           aria-label="플레이어 전적 목록"
         >
           {players.map((player, index) => {
-            const fallbackProfile = getPlayerRecordListFallbackProfileAssets(index)
+            // 보드 카드와 같은 사람 사진, 없을 때만 기본 그림
+            const profile = resolvePlayerRecordListProfileAssets(player, index)
             const hasRecord =
               Object.hasOwn(player, "accountTotalGames") && Object.hasOwn(player, "accountWinRate")
 
@@ -38,8 +39,8 @@ export default function PlayerRecordListContent() {
                 name={player.nickname}
                 totalGames={hasRecord ? player.accountTotalGames : undefined}
                 winRate={hasRecord ? player.accountWinRate : undefined}
-                profilePhotoSrc={fallbackProfile.profilePhotoSrc}
-                profileBorderSrc={fallbackProfile.profileBorderSrc}
+                profilePhotoSrc={profile.profilePhotoSrc}
+                profileBorderSrc={profile.profileBorderSrc}
               />
             )
           })}

@@ -11,7 +11,15 @@ import {
   TRIBUNAL_RESOLVE_RESOLVING_LABEL,
 } from "../../constants/actions/ingameActionPanel.js"
 import { resolveInGameTribunalPresentationNotice } from "../../utils/resolveInGameTribunalPresentationNotice.js"
+import { pickInGameJobPortrait } from "../../utils/pickInGameJobPortrait.js"
+import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
 import InGameTribunalPresentationOverlay from "./InGameTribunalPresentationOverlay.jsx"
+
+// 보드 목록에 피고가 없을 때 쓰는 이름
+const UNKNOWN_DEFENDANT_NICKNAME = "알 수 없는 플레이어"
+
+// 판정 버튼은 개발 빌드에서만 (실제 판은 서버 마감 타이머가 판정)
+const SHOW_DEV_RESOLVE = import.meta.env?.DEV === true
 
 // 재판 중·피고 있음·판정 전일 때만 띄움 (채팅 틀·인게임 화면도 같은 조건)
 export default function InGameTribunalPresentationGate() {
@@ -20,14 +28,27 @@ export default function InGameTribunalPresentationGate() {
   const defendantUuid = useInGameStore((s) => s.state?.tribunal?.defendantUuid ?? null)
   const tribunalResolved = useInGameStore((s) => s.state?.tribunal?.resolved === true)
   const { players } = useInGamePlayerSessionContext()
+  const storeDefendantNickname = useInGameStore((s) => {
+    const found = (s.state?.players ?? []).find((player) => player?.uuid === defendantUuid)
+    return typeof found?.nickname === "string" && found.nickname.length > 0 ? found.nickname : null
+  })
 
   const open = phase === "TRIBUNAL" && Boolean(defendantUuid) && !tribunalResolved
 
   // 피고는 보드 플레이어 목록에서 찾음 (카드 그림·이름 같이 쓰려고)
-  const defendant = useMemo(
-    () => (defendantUuid ? players.find((player) => player.id === defendantUuid) ?? null : null),
-    [defendantUuid, players],
-  )
+  // 못 찾아도 기본 그림으로 띄움: 채팅 틀은 재판 중이면 숨으므로, 안 띄우면 채팅이 둘 다 사라짐
+  const defendant = useMemo(() => {
+    if (!defendantUuid) return null
+    const found = players.find((player) => player.id === defendantUuid)
+    if (found) return found
+    return {
+      id: defendantUuid,
+      nickname: storeDefendantNickname ?? UNKNOWN_DEFENDANT_NICKNAME,
+      portraitSrc: pickInGameJobPortrait(0),
+      status: INGAME_PLAYER_STATUS.ALIVE,
+      theme: null,
+    }
+  }, [defendantUuid, players, storeDefendantNickname])
 
   const tribunalVoteHasSubmitted = ctx?.tribunalVoteHasSubmitted === true
 
@@ -52,8 +73,10 @@ export default function InGameTribunalPresentationGate() {
 
   const voteButtonsEnabled = Boolean(ctx?.tribunalVoteControlsEnabled)
 
-  // 판정 버튼 글자: 끝남 → 판정 중 → 기본
-  const devResolveLabel = ctx?.gameState?.tribunal?.resolved === true
+  // 판정 버튼 글자: 개발 빌드 아니면 없음, 끝남 → 판정 중 → 기본
+  const devResolveLabel = !SHOW_DEV_RESOLVE
+    ? null
+    : ctx?.gameState?.tribunal?.resolved === true
     ? TRIBUNAL_RESOLVE_DONE_LABEL
     : ctx?.tribunalResolveLocked
       ? TRIBUNAL_RESOLVE_RESOLVING_LABEL
@@ -62,7 +85,7 @@ export default function InGameTribunalPresentationGate() {
 
   const chatProps = useInGameChatSessionContext()
 
-  // 재판 아니거나 피고를 목록에서 못 찾으면 안 띄움
+  // 재판 아니면 안 띄움
   if (!open || !defendant) return null
 
   return (

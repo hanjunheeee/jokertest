@@ -53,7 +53,7 @@ export default function InGameVoteStatusPanel({ open, onClose }) {
             onClick={onClose}
           />
 
-          <div className={PANEL_WRAP_CLASS} aria-hidden={!open}>
+          <div className={PANEL_WRAP_CLASS}>
             <motion.div
               role="dialog"
               aria-modal="true"
@@ -94,7 +94,7 @@ export default function InGameVoteStatusPanel({ open, onClose }) {
                 style={INGAME_VOTE_PANEL_INSET}
               >
                 <p className={SUBTITLE_CLASS}>
-                  각 플레이어가 받은 투표 수입니다.
+                  오늘 낮 투표 집계 결과입니다.
                 </p>
                 <InGameVoteStatusContent />
               </div>

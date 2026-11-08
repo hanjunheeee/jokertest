@@ -572,3 +572,32 @@ test("AC-03: 늦은 ACK는 그 사이 판이 바뀌면 화면에 적용되지 �
   }
   assert.equal(sendEmojiEmits(socket).length, 1)
 })
+
+test("우클릭 누르는 순간(mousedown button=2) 팔레트가 열려 OS와 상관없이 끌어 고를 수 있다", async () => {
+  const socket = setUp()
+  const view = mountBoard()
+  await settle()
+
+  act(() => { fireEvent.mouseDown(slotOf(view.container, "본인"), { button: 2 }) })
+  const palette = paletteOf(view.container)
+  assert.ok(palette, "우클릭 누름으로 팔레트가 열리지 않았다")
+  act(() => { fireEvent.mouseUp(cellFor(palette, "안녕 보내기"), { button: 2 }) })
+  await settle()
+  assert.equal(sendEmojiEmits(socket).length, 1)
+})
+
+test("팔레트 바깥을 눌러 닫으면 그 누름이 아래 카드 메뉴를 열지 않는다", async () => {
+  setUp({ phase: "DAY", dayPhase: "DAY_VOTE" })
+  const view = mountBoard()
+  await settle()
+
+  assert.ok(openPalette(view.container))
+  const other = slotOf(view.container, "상대")
+  act(() => {
+    fireEvent.mouseDown(other, { button: 0 })
+    fireEvent.mouseUp(other, { button: 0 })
+    fireEvent.click(other)
+  })
+  assert.equal(paletteOf(view.container), null, "바깥 누름으로 팔레트가 닫히지 않았다")
+  assert.equal(cardMenuOf(view.container), null, "닫는 누름이 아래 카드 메뉴까지 열었다")
+})
