@@ -1,8 +1,8 @@
 // 입력 칸 모양 모음 (화면마다 여백·글자·보기 버튼 class 한 벌씩)
 // InputSlot이 이름으로 고름
-const TEXT = "text-white placeholder:text-white/55"
+// 입력 글자는 16px 이상(iOS 확대 막기), 작게 보일 건 안내 글자만
 const LOGIN_TEXT =
-  "font-subheading text-white placeholder:text-white/55 app-text-scaled [--app-text-size:13px] placeholder:app-text-scaled placeholder:[--app-text-size:11px]"
+  "font-subheading text-white placeholder:text-white/55 app-input-text placeholder:app-text-scaled placeholder:[--app-text-size:11px]"
 const IMG_BLOCK = "absolute inset-0 block h-full w-full select-none"
 
 export const INPUT_SLOT_LOOKS = {
@@ -37,8 +37,8 @@ export const INPUT_SLOT_LOOKS = {
     img: IMG_BLOCK,
     row: "absolute inset-0 flex items-center gap-1.5 pl-[8.5%] pr-0.5",
     input: "h-full min-w-0 flex-1 bg-transparent outline-none",
-    text: "font-subheading text-white app-text-scaled [--app-text-size:12px]",
-    toggle: "flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0",
+    text: "font-subheading text-white app-input-text",
+    toggle: "-my-0.5 flex size-11 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0",
     spacer: "w-2.5 shrink-0",
     namedByPlaceholder: true,
   },

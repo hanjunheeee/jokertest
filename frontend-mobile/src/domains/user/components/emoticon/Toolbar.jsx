@@ -25,7 +25,7 @@ export default function Toolbar({ page }) {
           disabled={disabled}
           onChange={(event) => page.setQuery(event.target.value)}
           placeholder="이모티콘 이름 검색"
-          className="absolute inset-0 w-full bg-transparent pl-8 pr-2 font-subheading text-xs leading-none text-[#f5f0e6] outline-none placeholder:text-[#f5f0e6]/55 disabled:opacity-50"
+          className="absolute inset-0 w-full bg-transparent pl-8 pr-2 font-subheading app-input-text leading-none text-[#f5f0e6] outline-none placeholder:text-xs placeholder:text-[#f5f0e6]/55 disabled:opacity-50"
         />
       </div>
 

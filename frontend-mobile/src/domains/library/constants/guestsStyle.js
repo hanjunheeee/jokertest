@@ -9,8 +9,9 @@ export const JOB_TITLE_CLASS =
 export const JOB_TAB_LABEL_CLASS =
   "relative z-10 truncate font-subheading app-text-scaled [--app-text-size:0.7rem] font-bold tracking-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+// 그림은 32px(가로 28px), 누르는 자리만 before로 위아래 늘려 44px
 export const JOB_TAB_BTN_CLASS =
-  "relative flex h-8 min-w-0 items-center justify-center border-0 bg-transparent px-0.5 py-0 leading-none transition-transform duration-150 active:scale-95 land:h-7"
+  "relative flex h-8 before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-[''] land:before:-inset-y-2 min-w-0 items-center justify-center border-0 bg-transparent px-0.5 py-0 leading-none transition-transform duration-150 active:scale-95 land:h-7"
 
 // 전적·도전과제 표 칸 (살짝 들어간 양피지 톤, 구분선 대신 블록으로 나눔)
 export const INVITED_TABLE_PANEL_CLASS =

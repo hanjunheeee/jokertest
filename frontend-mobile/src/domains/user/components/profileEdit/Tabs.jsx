@@ -8,9 +8,10 @@ import {
 import { STORE_ASSETS } from "@/shared/constants/storeAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-// 탭 버튼: 데스크톱 최대 폭(9.5rem), 위 줄에 들어가게 남는 폭을 나눠 가짐, 높이 44px
+// 탭 버튼: 데스크톱 최대 폭(9.5rem), 위 줄에 들어가게 남는 폭을 나눠 가짐
+// 그림은 36px, 누르는 자리만 before로 위아래 늘려 44px
 const BTN_CLASS =
-  "relative h-9 min-w-0 max-w-[8.5rem] flex-1 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity active:opacity-90 land:h-10 land:max-w-[9rem]"
+  "relative h-9 before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] min-w-0 max-w-[8.5rem] flex-1 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity active:opacity-90 land:h-10 land:max-w-[9rem]"
 
 // 그림 비율(215x65)이 버튼 칸과 거의 같아 칸에 맞춰 깖
 const IMG_CLASS = "absolute inset-0 block h-full w-full select-none object-fill"

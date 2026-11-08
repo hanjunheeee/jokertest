@@ -58,6 +58,11 @@
   font-size: calc(var(--app-text-size, 1rem) * var(--app-text-scale, 1));
 }
 
+/* 입력칸 글자: 배율 적용하되 16px 아래로 안 내려감 (iOS는 16px 미만 입력칸을 누르면 화면 확대) */
+@utility app-input-text {
+  font-size: max(16px, calc(var(--app-text-size, 1rem) * var(--app-text-scale, 1)));
+}
+
 /* 안전영역 비키기 (노치·홈 막대) */
 @utility safe-pt {
   padding-top: env(safe-area-inset-top, 0px);

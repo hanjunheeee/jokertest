@@ -14,8 +14,9 @@ const WEAR_ERROR_CLASS = "m-0 text-center font-subheading text-sm text-[#ff6b6b]
 const BTN_CLASS =
   "interactive-scale relative block min-h-11 w-[min(100%,14rem)] cursor-pointer border-0 bg-transparent p-0 leading-none land:w-[11rem] disabled:cursor-not-allowed"
 
+// 작은 버튼: 그림은 36px, 누르는 자리만 before로 위아래 늘려 44px
 const BTN_COMPACT_CLASS =
-  "interactive-scale relative block min-h-9 w-[min(100%,10.5rem)] cursor-pointer border-0 bg-transparent p-0 leading-none land:w-[9.5rem] disabled:cursor-not-allowed"
+  "interactive-scale relative block min-h-9 before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] w-[min(100%,10.5rem)] cursor-pointer border-0 bg-transparent p-0 leading-none land:w-[9.5rem] disabled:cursor-not-allowed"
 
 const LABEL_COMPACT_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading app-text-scaled [--app-text-size:0.72rem] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"

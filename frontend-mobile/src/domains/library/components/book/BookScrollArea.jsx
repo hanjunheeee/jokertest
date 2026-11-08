@@ -1,7 +1,7 @@
-// 책 본문 스크롤 (친구 초대 FriendInviteModalContent와 같은 h-full scroll + shared Scrollbar)
+// 책 본문 스크롤 (h-full 스크롤 + 모바일 그림 스크롤 막대)
 // book/BookSheet.jsx가 씀
 import { useRef } from "react"
-import Scrollbar from "@/shared/ui/Scrollbar.jsx"
+import Scrollbar from "@m/shared/ui/scroll/Scrollbar.jsx"
 import {
   BOOK_SCROLL_AREA_CLASS,
   BOOK_SCROLL_WRAP_CLASS,

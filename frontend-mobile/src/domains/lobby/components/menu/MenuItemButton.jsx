@@ -8,7 +8,7 @@ const SUPPORT_LINK_UNSET_HINT = "고객센터 연결이 아직 설정되지 않�
 
 // 누르는 칸 44px 이상, 크기 움직임은 데스크톱 interactive-scale 그대로 (hover 없는 폰은 눌림만), 빨강 필터는 hover 대신 누를 때
 const BTN_CLASS =
-    "interactive-scale group flex min-h-10 w-full items-center justify-center gap-1.5 leading-none disabled:cursor-default land:w-auto"
+    "interactive-scale group flex min-h-11 w-full items-center justify-center gap-1.5 leading-none disabled:cursor-default land:w-auto"
 
 // 빨강 필터는 데스크톱 .lobby-menu-btn__img처럼 메뉴 글자·디스코드 그림 둘 다에 씀
 const RED_FILTER_CLASS =

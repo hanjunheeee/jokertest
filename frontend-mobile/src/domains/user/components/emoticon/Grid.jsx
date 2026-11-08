@@ -1,4 +1,4 @@
-// 이모티콘 판 목록 (데스크톱과 같이 고정 높이 스크롤 + 공용 Scrollbar, 휠·드래그)
+// 이모티콘 판 목록 (데스크톱과 같이 고정 높이 스크롤 + 모바일 그림 스크롤 막대)
 // EmoticonPalettePage가 씀
 import { useRef } from "react"
 import Plate from "@m/domains/user/components/emoticon/Plate.jsx"
@@ -9,7 +9,7 @@ import {
   GRID_SCROLL_CLASS,
   GRID_SCROLL_WRAP_CLASS,
 } from "@/domains/user/constants/emoticonPaletteLayoutStyle.js"
-import Scrollbar from "@/shared/ui/Scrollbar.jsx"
+import Scrollbar from "@m/shared/ui/scroll/Scrollbar.jsx"
 
 // 모바일만 열 수 다름 (폰 3·가로 4·넓으면 5)
 const LIST_CLASS = `${GRID_CLASS} md:grid-cols-5 land:grid-cols-4`

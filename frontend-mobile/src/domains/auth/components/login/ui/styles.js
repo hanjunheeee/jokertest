@@ -3,7 +3,7 @@
 
 // 글자 링크: 손가락으로 누르기 쉽게 높이 44px
 export const LINK_CLASS =
-  "inline-flex min-h-10 cursor-pointer items-center border-0 bg-transparent px-1 font-subheading font-bold text-amber-800 underline-offset-2 hover:underline app-text-scaled [--app-text-size:13px] [-webkit-text-stroke:0.35px_currentColor] [paint-order:stroke_fill]"
+  "inline-flex min-h-11 cursor-pointer items-center border-0 bg-transparent px-1 font-subheading font-bold text-amber-800 underline-offset-2 hover:underline app-text-scaled [--app-text-size:13px] [-webkit-text-stroke:0.35px_currentColor] [paint-order:stroke_fill]"
 
 // 액자 머리글 한 줄
 export const HEADER_TEXT_CLASS =

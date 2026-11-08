@@ -19,6 +19,7 @@ export default function SearchBar({ label, placeholder, value, onChange, onSubmi
   return (
     <form role="search" aria-label={label} onSubmit={handleSubmit} className={`${SEARCH_ZONE_CLASS} land:mb-1.5 land:py-0.5`}>
       <p className={`${SEARCH_LABEL_CLASS} land:hidden`}>{label}</p>
+      {/* 그림은 28px, 입력칸 누르는 자리는 위아래로 늘려 44px · 글자 16px 이상(iOS 확대 막기) */}
       <div className="relative h-7 w-full">
         <PublicAsset
           src={FRIEND_LIST_ASSETS.searchInput}
@@ -33,7 +34,7 @@ export default function SearchBar({ label, placeholder, value, onChange, onSubmi
           value={value}
           onChange={onChange}
           aria-label={label}
-          className="absolute inset-0 w-full bg-transparent pl-6 pr-1 font-subheading app-text-scaled [--app-text-size:12px] leading-none text-white/85 outline-none placeholder:text-white/65"
+          className="absolute inset-x-0 top-1/2 h-11 w-full -translate-y-1/2 bg-transparent pl-6 pr-1 font-subheading app-input-text leading-none text-white/85 outline-none placeholder:text-white/65 placeholder:app-text-scaled placeholder:[--app-text-size:12px]"
         />
       </div>
     </form>

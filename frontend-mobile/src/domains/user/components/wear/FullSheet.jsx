@@ -38,6 +38,46 @@ const CENTERED_CLOSE_BTN_CLASS =
 
 const CENTERED_CLOSE_ICON_CLASS = "block h-10 w-10 select-none object-contain land:h-11 land:w-11"
 
+const CLOSE_BTN_CLASS =
+  "interactive-scale flex h-11 w-11 shrink-0 items-center justify-center border-0 bg-transparent p-0"
+
+const CLOSE_ICON_CLASS = "block h-10 w-10 select-none object-contain"
+
+// 시트 머리 줄 + 본문 (전체 화면은 머리 줄 오른쪽에 닫기, 가운데 창은 판 모서리에 닫기)
+function SheetBody({ title, header, headerRowClass, closeButton, children }) {
+  return (
+    <>
+      <div className={headerRowClass}>
+        {title ? <h2 className={`min-w-0 flex-1 truncate ${LIST_TITLE_CLASS}`}>{title}</h2> : null}
+        {header ? <div className="flex min-w-0 flex-1 items-center justify-center">{header}</div> : null}
+        {closeButton}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+    </>
+  )
+}
+
+// 가운데 창: 뒤판 누르면 닫힘 (소리는 handleClose 하나만 냄)
+function CenteredSheet({ label, className, closeButton, onClose, children }) {
+  return (
+    <div>
+      <button
+        type="button"
+        aria-label={`${label} 닫기`}
+        className={CENTERED_BACKDROP_CLASS}
+        data-sfx-owner="explicit"
+        onClick={onClose}
+      />
+      <div className={CENTERED_WRAP_CLASS}>
+        <motion.div role="dialog" aria-modal="true" aria-label={label} {...CENTERED_MOTION} className={CENTERED_PANEL_OUTER_CLASS}>
+          {closeButton}
+          <div className={`${CENTERED_PANEL_INNER_CLASS} ${className}`}>{children}</div>
+        </motion.div>
+      </div>
+    </div>
+  )
+}
+
 // 판 색·테두리(className)와 위 줄 아래 선(headerClassName)은 창마다 데스크톱 값으로 넘김
 // 데스크톱 팝업 틀 그림은 가로형이라 세로 화면엔 단색 판 + 테두리로 대신함
 export default function FullSheet({
@@ -51,7 +91,7 @@ export default function FullSheet({
   variant = "fullscreen",
   children,
 }) {
-  // 닫기 그림 버튼: 취소 소리 뒤 닫음
+  // 닫기 그림 버튼·뒤판: 취소 소리 뒤 닫음
   const handleClose = () => {
     dispatchUiSfx("ui-cancel")
     onClose()
@@ -62,57 +102,29 @@ export default function FullSheet({
     ? `flex h-12 shrink-0 items-center gap-1.5 border-b px-3 ${headerClassName}`
     : `flex h-14 shrink-0 items-center gap-2 border-b pl-4 pr-1.5 land:h-12 ${headerClassName}`
 
-  const closeBtnClass =
-    "interactive-scale flex h-11 w-11 shrink-0 items-center justify-center border-0 bg-transparent p-0"
-
-  const closeIconClass = "block h-10 w-10 select-none object-contain"
-
   const closeButton = (
     <CloseButton
       label={`${label} 닫기`}
       onClick={handleClose}
       src={SKIN_CARD_WEAR_ASSETS.popupCloseButton}
       data-sfx-owner="explicit"
-      className={isCentered ? CENTERED_CLOSE_BTN_CLASS : closeBtnClass}
-      iconClassName={isCentered ? CENTERED_CLOSE_ICON_CLASS : closeIconClass}
+      className={isCentered ? CENTERED_CLOSE_BTN_CLASS : CLOSE_BTN_CLASS}
+      iconClassName={isCentered ? CENTERED_CLOSE_ICON_CLASS : CLOSE_ICON_CLASS}
     />
   )
 
-  const sheetBody = (
-    <>
-      <div className={headerRowClass}>
-        {title ? <h2 className={`min-w-0 flex-1 truncate ${LIST_TITLE_CLASS}`}>{title}</h2> : null}
-        {header ? <div className="flex min-w-0 flex-1 items-center justify-center">{header}</div> : null}
-        {isCentered ? null : closeButton}
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-    </>
+  const body = (
+    <SheetBody title={title} header={header} headerRowClass={headerRowClass} closeButton={isCentered ? null : closeButton}>
+      {children}
+    </SheetBody>
   )
 
   return (
     <SheetPortal open={open} onClose={onClose}>
       {isCentered ? (
-        <div key="full-sheet-centered">
-          <button
-            type="button"
-            aria-label={`${label} 닫기`}
-            className={CENTERED_BACKDROP_CLASS}
-            data-sfx-kind="ui-cancel"
-            onClick={handleClose}
-          />
-          <div className={CENTERED_WRAP_CLASS}>
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-label={label}
-              {...CENTERED_MOTION}
-              className={CENTERED_PANEL_OUTER_CLASS}
-            >
-              {closeButton}
-              <div className={`${CENTERED_PANEL_INNER_CLASS} ${className}`}>{sheetBody}</div>
-            </motion.div>
-          </div>
-        </div>
+        <CenteredSheet key="full-sheet-centered" label={label} className={className} closeButton={closeButton} onClose={handleClose}>
+          {body}
+        </CenteredSheet>
       ) : (
         <motion.div
           key="full-sheet"
@@ -122,7 +134,7 @@ export default function FullSheet({
           {...SHEET_MOTION}
           className={`fixed inset-0 z-[60] flex flex-col border-t safe-pt safe-pb safe-px ${className}`}
         >
-          {sheetBody}
+          {body}
         </motion.div>
       )}
     </SheetPortal>
