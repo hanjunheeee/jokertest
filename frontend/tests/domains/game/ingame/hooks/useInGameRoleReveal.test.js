@@ -327,3 +327,28 @@ test("'내 역할 보기'로 다시 연 창은 10초 지나도 안 닫힘 (사�
     mock.timers.reset()
   }
 })
+
+test("저절로 연 역할 창은 10초 전이라도 첫 낮으로 넘어가면(game_phase_changed DAY) 닫힘", () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1", nickname: "Alice", role: "CITIZEN", phase: "ROLE_REVEAL" })
+  seedAuth("player-1")
+  const hook = renderHook(() => useInGameRoleReveal())
+  assert.equal(hook.result.current.open, true)
+  act(() => {
+    useInGameStore.setState((current) => ({ state: { ...current.state, phase: "DAY", dayIndex: 1 } }))
+  })
+  assert.equal(hook.result.current.open, false)
+  hook.unmount()
+})
+
+test("역할 공개 중 '내 역할 보기'로 다시 연 창은 낮으로 넘어가도 안 닫힘", () => {
+  seedStore({ gameId: "g1", playerUuid: "player-1", nickname: "Alice", role: "CITIZEN", phase: "ROLE_REVEAL" })
+  seedAuth("player-1")
+  const hook = renderHook(() => useInGameRoleReveal())
+  act(() => hook.result.current.close())
+  act(() => hook.result.current.reopen())
+  act(() => {
+    useInGameStore.setState((current) => ({ state: { ...current.state, phase: "DAY", dayIndex: 1 } }))
+  })
+  assert.equal(hook.result.current.open, true)
+  hook.unmount()
+})

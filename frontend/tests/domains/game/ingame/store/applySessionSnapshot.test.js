@@ -193,8 +193,8 @@ test("F-23(AC-05) 허용되지 않은 source·roster 밖 uuid·형태가 틀린 
   const result = applySessionSnapshotPure(current, response)
 
   assert.notEqual(result, current)
+  // 마녀사냥꾼 처형은 규칙에서 빠져 WITCH_HUNTER 원인도 받지 않음
   assert.deepEqual(result.state.nightResult.deathReveals, [
-    { victimUuid: "p3", source: "WITCH_HUNTER" },
     { victimUuid: "p2", source: "OTHER" },
   ])
 })
