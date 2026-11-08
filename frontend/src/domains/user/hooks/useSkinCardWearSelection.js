@@ -30,14 +30,15 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     previewMode, setPreviewMode,
     draftSkinsByJob, setDraftSkinsByJob,
     draftCardFrameId, setDraftCardFrameId,
-    edited,
+    // 이름 끝을 Ref로 받아 ref임을 드러냄 (그리기 밖에서만 바꿈)
+    edited: editedRef,
   } = useWearDraft(initialSkinsByJob, initialCardFrameId)
   const {
     confirmStatus, setConfirmStatus,
     confirmError, setConfirmError,
-    savingRef, saveGeneration,
+    savingRef, saveGeneration: saveGenerationRef,
     confirmLoadout,
-  } = useWearConfirm(draftSkinsByJob, draftCardFrameId, edited)
+  } = useWearConfirm(draftSkinsByJob, draftCardFrameId, editedRef)
 
   const entitlements = useEconomyStore((state) => state.entitlements)
 
@@ -73,16 +74,16 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     setSelectedItemId(item.id)
 
     if (item.itemType === "skin" && item.jobId) {
-      edited.current.add(item.jobId)
+      editedRef.current.add(item.jobId)
       setDraftSkinsByJob((prev) => ({ ...prev, [item.jobId]: item.id }))
       return
     }
 
     if (item.itemType === "card") {
-      edited.current.add("card")
+      editedRef.current.add("card")
       setDraftCardFrameId(item.id)
     }
-  }, [savingRef, edited, setSelectedItemId, setDraftSkinsByJob, setDraftCardFrameId])
+  }, [savingRef, editedRef, setSelectedItemId, setDraftSkinsByJob, setDraftCardFrameId])
 
   // 스킨 미리보기 중 탭을 바꾸면 그 직업 초안 스킨을 고른 것으로 보임
   const handleJobSelect = useCallback(
@@ -122,8 +123,8 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
 
   // 받은 장착값으로 처음부터 다시 시작, 저장 세대를 올려 진행 중 저장 결과를 버림
   const resetDraft = useCallback(({ skinsByJob, cardFrameId }) => {
-    edited.current.clear()
-    saveGeneration.current += 1
+    editedRef.current.clear()
+    saveGenerationRef.current += 1
     savingRef.current = false
     setActiveJobIndex(0)
     setPreviewMode(SKIN_CARD_WEAR_PREVIEW_MODE_SKIN)
@@ -132,7 +133,7 @@ export function useSkinCardWearSelection({ initialSkinsByJob, initialCardFrameId
     setSelectedItemId(resolveInitialSkinSelection(skinsByJob))
     setConfirmStatus(SKIN_CARD_WEAR_CONFIRM_STATUS.IDLE)
     setConfirmError(null)
-  }, [edited, saveGeneration, savingRef, setActiveJobIndex, setPreviewMode, setDraftSkinsByJob, setDraftCardFrameId, setSelectedItemId, setConfirmStatus, setConfirmError])
+  }, [editedRef, saveGenerationRef, savingRef, setActiveJobIndex, setPreviewMode, setDraftSkinsByJob, setDraftCardFrameId, setSelectedItemId, setConfirmStatus, setConfirmError])
 
   return {
     listItems,

@@ -1022,7 +1022,7 @@ test("AC-05 · 조회 뒤에 시작한 저장의 실패 스냅샷과 결과 조�
   socket.answer = () => HOLD
   let timedOutSave
   await act(async () => { timedOutSave = result.current.saveRoomSettings(formStateFromStore()) })
-  const requestId = socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).payload.requestId
+  assert.ok(socket.lastOf(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS).payload.requestId, "저장 요청에 요청 번호가 실려야 한다")
   await act(async () => { socket.failHold(SOCKET_EVENTS.UPDATE_ROOM_SETTINGS); await timedOutSave })
   assert.equal(result.current.hasPendingSettingsResult, true)
 

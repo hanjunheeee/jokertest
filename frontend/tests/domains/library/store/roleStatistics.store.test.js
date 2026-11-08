@@ -193,7 +193,7 @@ test("지연 응답: 요청이 끝나기 전에 계정이 바뀌면 늦게 도�
 test("직업 탭을 바꾸는 동안 이전 직업으로 보낸 요청은 다른 직업 키를 덮어쓰지 않는다", async () => {
   resetStore()
   const nobleDeferred = createDeferred()
-  getMyRoleStatisticsImpl = async (jobKey) => ALL_ROLE_STATS
+  getMyRoleStatisticsImpl = async () => ALL_ROLE_STATS
   getRoleRankingImpl = async (role) => {
     if (role === "CITIZEN") {
       await nobleDeferred.promise

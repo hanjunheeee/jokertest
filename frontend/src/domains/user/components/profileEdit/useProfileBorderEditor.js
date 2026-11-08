@@ -37,19 +37,28 @@ export function useProfileBorderEditor({ open, onClose }) {
   const pendingSaveRef = useRef(false)
   const hasEditedRef = useRef(false)
 
-  // 열 때마다 세션을 새로 열고 초안·저장 상태를 지금 장착으로 되돌림, 지갑이 없으면 받음
+  // 열 때마다(지갑 세대 바뀜 포함) 초안·저장 상태를 지금 장착으로 되돌림 (그리는 자리에서 바로, 닫히면 표시 지움)
+  const draftKey = open ? `open:${generation}` : null
+  const [appliedDraftKey, setAppliedDraftKey] = useState(null)
+  if (appliedDraftKey !== draftKey) {
+    setAppliedDraftKey(draftKey)
+    if (open) {
+      setActiveTab(PROFILE_EDIT_TAB_PHOTO)
+      const latestLoadout = useEconomyStore.getState().loadout
+      setDraftPhotoItemId(latestLoadout.selectedProfilePhotoId ?? DEFAULT_PROFILE_PHOTO_ITEM_ID)
+      setDraftBorderItemId(latestLoadout.selectedProfileBorderId ?? DEFAULT_PROFILE_BORDER_ITEM_ID)
+      setConfirmStatus("idle")
+      setConfirmError(null)
+      setConfirmUncertain(false)
+    }
+  }
+
+  // 열 때마다 세션을 새로 열고 고친 표시 지움, 지갑이 없으면 받음
   useEffect(() => {
     editorSessionRef.current += 1
     pendingSaveRef.current = false
     if (!open) return
     hasEditedRef.current = false
-    setActiveTab(PROFILE_EDIT_TAB_PHOTO)
-    const latestLoadout = useEconomyStore.getState().loadout
-    setDraftPhotoItemId(latestLoadout.selectedProfilePhotoId ?? DEFAULT_PROFILE_PHOTO_ITEM_ID)
-    setDraftBorderItemId(latestLoadout.selectedProfileBorderId ?? DEFAULT_PROFILE_BORDER_ITEM_ID)
-    setConfirmStatus("idle")
-    setConfirmError(null)
-    setConfirmUncertain(false)
 
     const latestStatus = useEconomyStore.getState().status
     if (latestStatus === "idle" || latestStatus === "error") {

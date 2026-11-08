@@ -1,7 +1,7 @@
 // 스킨·카드 장착 창 (배경 + 대화상자, Esc·배경 누르면 닫힘)
 // MyPageLayout·시험이 씀
 import { AnimatePresence, motion } from "framer-motion"
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import {
   BACKDROP_CLASS,
   PANEL_WRAP_CLASS,
@@ -19,7 +19,8 @@ export default function SkinCardWearOverlay({ open, onClose }) {
   const lifecycle = useRef(0)
   const dirty = useRef(false)
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  // 늘 최신 닫기 함수 (그린 뒤 바로 바꿈, 그리는 중엔 ref 안 건드림)
+  useLayoutEffect(() => { onCloseRef.current = onClose })
   const appliedSkinsByJob = useSkinCardWearStore((state) => state.skinsByJob)
   const appliedCardFrameId = useSkinCardWearStore((state) => state.cardFrameId)
   const fetchSummary = useEconomyStore((state) => state.fetchSummary)

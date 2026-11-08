@@ -108,7 +108,7 @@ mock.module("@/shared/socket/socketClient.js", {
 const { renderHook, render, cleanup, fireEvent } = await import("@testing-library/react")
 const { MemoryRouter, RouterProvider, createMemoryRouter } = await import("react-router-dom")
 const {
-  useInGameStore, readInGameReceiptScope, selectNightSuccessQueue,
+  useInGameStore, selectNightSuccessQueue,
 } = await import("../../../../src/domains/game/ingame/store/ingameStore.js")
 const { useAuthStore } = await import("../../../../src/domains/auth/store/auth.store.js")
 const { useSettingsStore } = await import("../../../../src/domains/settings/store/settingsStore.js")

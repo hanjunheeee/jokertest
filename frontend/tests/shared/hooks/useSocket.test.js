@@ -21,8 +21,22 @@ mock.module("../../../src/shared/env.js", {
 });
 
 const setSocketCalls = [];
+// 공용 소켓 칸 가짜: 넣은 기록 + 훅이 돌려줄 값 읽기·구독 (useSocket이 useSyncExternalStore로 읽음)
+let currentSocket = null;
+const socketListeners = new Set();
 mock.module("../../../src/shared/socket/socketClient.js", {
-  namedExports: { setSocket: (s) => setSocketCalls.push(s) },
+  namedExports: {
+    setSocket: (s) => {
+      setSocketCalls.push(s);
+      currentSocket = s;
+      socketListeners.forEach((listener) => listener());
+    },
+    getSocket: () => currentSocket,
+    subscribeSocket: (listener) => {
+      socketListeners.add(listener);
+      return () => socketListeners.delete(listener);
+    },
+  },
 });
 
 let refreshImpl = async () => true;
@@ -299,4 +313,17 @@ test("언마운트하면 server_shutdown 손잡이도 지워 늦게 온 안내�
   authState.isLoggedIn = false;
   socket.fire("server_shutdown", { code: "SERVER_SHUTDOWN" });
   assert.deepEqual(alerts, []);
+});
+
+test("돌려주는 값: 로그인하면 만든 소켓, 언마운트(정리)하면 공용 칸이 비워짐", async () => {
+  resetAll();
+  authState.isLoggedIn = true;
+  const hook = renderHook(() => useSocket());
+  await act(async () => {});
+
+  assert.equal(hook.result.current, createdSockets[0], "만든 소켓을 돌려줘야 합니다");
+
+  hook.unmount();
+  assert.equal(setSocketCalls.at(-1), null, "정리하면 공용 소켓 칸을 비워야 합니다");
+  authState.isLoggedIn = false;
 });

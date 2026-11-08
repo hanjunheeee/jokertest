@@ -15,7 +15,7 @@ test("readInGameTimerPlacementFromSearch: timerPlacement 쿼리", () => {
 test("readInGameTimerPlacement: 쿼리 > storage > prod 기본 timebar", () => {
   const storage = {
     _v: null,
-    getItem(k) {
+    getItem() {
       return this._v
     },
     setItem(k, v) {

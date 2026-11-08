@@ -1,9 +1,9 @@
 // 로그인 동안 공용 소켓 연결 유지: 강제 끊김이면 로그아웃, 인증 실패면 토큰 갱신 뒤 다시 연결, 서버 점검이면 안내만
 // App이 씀, 연결 만들기·이벤트 받기는 shared/socket/connection.js가 맡음
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { connectSocket, onConnection } from "../socket/connection.js";
 import { useAuthStore } from "../../domains/auth/store/auth.store.js";
-import { setSocket } from "../socket/socketClient.js";
+import { getSocket, setSocket, subscribeSocket } from "../socket/socketClient.js";
 import { refreshAccessToken } from "../api/client.js";
 import { API_BASE_URL } from "../env.js";
 import { SERVER_SHUTDOWN_NOTICE } from "../constants/connectionSocket.js";
@@ -29,7 +29,8 @@ export function useSocket() {
 
     const logout = useAuthStore((state) => state.logout);
 
-    const [socketInstance, setSocketInstance] = useState(null);
+    // 돌려줄 소켓은 공용 소켓 칸(socketClient.js)을 그대로 읽음, 넣고 빼면 다시 그림
+    const socketInstance = useSyncExternalStore(subscribeSocket, getSocket);
 
     const socketRef = useRef(null);
 
@@ -40,9 +41,7 @@ export function useSocket() {
 
         socketRef.current = socket;
 
-        setSocketInstance(socket);
-
-        // 다른 영역은 socketClient.js로 같은 소켓을 꺼내 씀
+        // 다른 영역도 socketClient.js로 같은 소켓을 꺼내 씀 (이 훅의 돌려주는 값도 여기서 바뀜)
         setSocket(socket);
 
         // 토큰 갱신 뒤 다시 연결은 2번까지, cancelled는 정리 뒤 늦게 온 결과 무시용
@@ -113,8 +112,6 @@ export function useSocket() {
             socketRef.current = null;
 
             setSocket(null);
-
-            setSocketInstance(null);
         };
     }, [isLoggedIn, accountUuid, logout]);
 

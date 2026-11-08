@@ -1,6 +1,6 @@
 // 가입 이메일 인증 상태 (받기·확인·남은 시간·가입 증명), 요청은 emailVerification 폴더가 맡음
 // hooks/useLoginPage.js(일반 가입), hooks/useSocialSignup.js(소셜 가입)가 사용
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { INITIAL_VERIFICATION, VERIFY_TEXT } from "../constants/emailVerification.js"
 import { sendCode } from "./emailVerification/send.js"
 import { verifyCode } from "./emailVerification/verify.js"
@@ -12,19 +12,21 @@ const TICKING_STAGES = new Set(["codeSent", "codeExpired", "locked"])
 export function useSignupEmailVerification({ email = "", active = true, attemptKey = "" } = {}) {
   const [state, setState] = useState(INITIAL_VERIFICATION)
 
-  // genRef 바뀌면 진행 중 응답 버림, inFlightRef로 요청 하나씩만, forceTick은 다시 그리기용
+  // genRef 바뀌면 진행 중 응답 버림, inFlightRef로 요청 하나씩만
   const genRef = useRef(0)
   const inFlightRef = useRef(false)
-  const [, forceTick] = useState(0)
+  // 남은 초 셀 때 쓰는 지금 시각 (1초마다·받기/확인 결과 들어올 때 새로 잼, 그리는 중엔 시계 안 봄)
+  const [now, setNow] = useState(() => Date.now())
 
   // 켜짐·시도 키·주소가 바뀌면 그린 그 자리에서 바로 처음으로 (옛 인증이 한 번도 안 보이게)
   const resetSignature = `${active ? "1" : "0"}\u0000${attemptKey ?? ""}\u0000${email}`
   const [appliedSignature, setAppliedSignature] = useState(resetSignature)
   if (appliedSignature !== resetSignature) {
     setAppliedSignature(resetSignature)
-    genRef.current += 1
     setState(INITIAL_VERIFICATION)
   }
+  // 처음으로 돌린 그 커밋 안에서 진행 중 응답 버림 (응답이 끼어들 틈 없게 layout effect)
+  useLayoutEffect(() => { genRef.current += 1 }, [resetSignature])
 
   // 화면을 나가면 진행 중 요청 응답을 버림
   useEffect(() => () => { genRef.current += 1 }, [])
@@ -40,7 +42,7 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
         }
         return prev
       })
-      forceTick((tick) => tick + 1)
+      setNow(Date.now())
     }, 1000)
     return () => clearInterval(id)
   }, [state.stage])
@@ -51,8 +53,13 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
     setState((prev) => ({ ...prev, code: value }))
   }
 
+  // 받기·확인 결과를 넣을 때 지금 시각도 같이 잼, 결과 안에서 마감 시각을 잰 뒤에 재야 남은 초가 하나 더 안 붙음 (예: 45초 → 46초 막기)
+  const setStateAndNow = (update) => {
+    setState(update)
+    setNow(() => Date.now())
+  }
   // 받기·확인은 이번에 그린 상태(current)를 보고 판단함
-  const ctx = { email, active, current: state, setState, genRef, inFlightRef }
+  const ctx = { email, active, current: state, setState: setStateAndNow, genRef, inFlightRef }
   // 인증번호 받기·재발송
   const handleRequestSignupCode = () => sendCode(ctx)
   // 인증번호 확인
@@ -78,8 +85,7 @@ export function useSignupEmailVerification({ email = "", active = true, attemptK
     setState(INITIAL_VERIFICATION)
   }
 
-  // 남은 초는 그릴 때마다 지금 시각으로 다시 셈
-  const now = Date.now()
+  // 남은 초는 마지막으로 잰 지금 시각으로 셈
   const resendRemainingSec = state.resendAvailableAt !== null
     ? Math.max(0, Math.ceil((state.resendAvailableAt - now) / 1000))
     : 0

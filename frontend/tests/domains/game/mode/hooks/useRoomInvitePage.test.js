@@ -29,7 +29,7 @@ register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 const { mock } = await import("node:test")
 mock.module("react-router-dom", { namedExports: { useNavigate: () => () => {}, useLocation: () => ({ state: null }) } })
 const { renderHook, cleanup } = await import("@testing-library/react")
-const { useAuthStore } = await import("../../../../../src/domains/auth/store/auth.store.js")
+await import("../../../../../src/domains/auth/store/auth.store.js")
 const { setSocket } = await import("../../../../../src/shared/socket/socketClient.js")
 const { useRoomInvitePage } = await import("../../../../../src/domains/game/mode/hooks/useRoomInvitePage.js")
 

@@ -1,6 +1,6 @@
 // 알림 창 (목록·읽음·보러 가기·읽은 메시지 삭제)
 // 로비 친구 영역(LobbyFriendArea.jsx)이 씀, 항목·본문·바닥 줄은 modal/ 아래
-import { createElement, useRef } from "react"
+import { createElement } from "react"
 
 import { useNotificationsStore } from "../store/notifications.store.js"
 import { resolveBodyState, selectVisibleNotifications } from "../utils/visibleNotifications.js"
@@ -26,7 +26,6 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
 
   // 훅은 닫혀 있어도 돌림, 닫힐 때 포커스 되돌리기 위함
   useRestoreFocus(open)
-  const closeButtonRef = useRef(null)
   useAutoMarkRead(open, status, generalChecks)
 
   if (!open) return null
@@ -62,7 +61,6 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
     NotificationModalShell,
     {
       onDismiss: onClose,
-      closeButtonRef,
       wrapperProps: { "data-notification-modal": "true" },
     },
     createElement(

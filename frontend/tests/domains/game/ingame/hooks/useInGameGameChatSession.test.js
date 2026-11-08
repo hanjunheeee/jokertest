@@ -1,6 +1,6 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
-import React, { act } from "react"
+import { act } from "react"
 import { JSDOM } from "jsdom"
 
 const dom = new JSDOM(

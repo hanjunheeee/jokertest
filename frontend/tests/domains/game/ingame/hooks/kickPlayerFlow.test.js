@@ -962,7 +962,8 @@ test("V-2(AC-03): 낮 투표 구간에는 투표 오버레이만 뜨고 추방 �
 function setUpCardWithFallbackHost({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION" } = {}) {
   const socket = createFakeSocket()
   socket.connected = true
-  const { hostUuid: _serverHostUuid, ...stateWithoutHostUuid } = gameState({
+  // 서버가 hostUuid를 안 실어 준 상태 (방장은 다른 길로 찾아야 함)
+  const stateWithoutHostUuid = gameState({
     dayPhase,
     players: CARD_ROSTER,
     self: {
@@ -971,6 +972,7 @@ function setUpCardWithFallbackHost({ selfUuid = HOST, dayPhase = "DAY_DISCUSSION
       role: "CITIZEN", team: "CITIZEN", hasActedThisPhase: false,
     },
   })
+  delete stateWithoutHostUuid.hostUuid
   act(() => {
     useAuthStore.setState({ user: { uuid: selfUuid }, isLoggedIn: true })
     useInGameStore.getState().clearGame()

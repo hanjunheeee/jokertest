@@ -1,6 +1,5 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
-import { readFile } from "node:fs/promises"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
 import React from "react"

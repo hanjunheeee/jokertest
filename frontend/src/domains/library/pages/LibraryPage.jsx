@@ -1,6 +1,6 @@
 // 서고 화면 (/library): 배경·책·뒤로 버튼·소리 조절
 // app/routes/index.jsx가 씀
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import LibraryBackground from "../components/LibraryBackground.jsx"
 import LibraryBookShell from "../components/book/LibraryBookShell.jsx"
@@ -29,16 +29,17 @@ export default function LibraryPage() {
   // 직업 순번을 여기서 들어야 알림으로 들어올 때 바꿀 수 있음
   const [jobIndex, setJobIndex] = useState(0)
 
-  // 업적 id가 바뀌면 그 업적 있는 탭·쪽·직업으로, 모르는 id면 그대로
-  useEffect(() => {
+  // 업적 id가 바뀌면 그 업적 있는 탭·쪽·직업으로, 모르는 id면 그대로 (그리는 자리에서 바로 옮김)
+  const [placedAchievementId, setPlacedAchievementId] = useState(null)
+  if (placedAchievementId !== targetAchievementId) {
+    setPlacedAchievementId(targetAchievementId)
     const location = resolveAchievementLocation(targetAchievementId)
-    if (location === null) return
-
-    setActiveTabId(location.tabId)
-    goToPage(location.pageIndex, location.tabId)
-    if (location.jobIndex !== null) setJobIndex(location.jobIndex)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetAchievementId])
+    if (location !== null) {
+      setActiveTabId(location.tabId)
+      goToPage(location.pageIndex, location.tabId)
+      if (location.jobIndex !== null) setJobIndex(location.jobIndex)
+    }
+  }
 
   return (
     <div className={LIBRARY_PAGE_ROOT_CLASS}>

@@ -36,22 +36,22 @@ function useEscape(onDismiss, active = true) {
   }, [active, onDismiss])
 }
 
-// 열리면 닫기 버튼에 포커스 줌, focusKey가 바뀌면 다시 줌
-function useCloseFocus(closeButtonRef, focusKey) {
+// 열리면(닫기 버튼이 생기면) 포커스 줌, focusKey가 바뀌면 다시 줌
+function useCloseFocus(closeButton, focusKey) {
   useEffect(() => {
-    closeButtonRef?.current?.focus()
-  }, [focusKey, closeButtonRef])
+    closeButton?.focus()
+  }, [focusKey, closeButton])
 }
 
 // 닫기 버튼 그리기, 닫기 함수가 없으면 안 그림
-function renderCloseButton({ onDismiss, closeButtonRef }) {
+function renderCloseButton({ onDismiss, setCloseButton }) {
   if (!onDismiss) return null
 
   return createElement(
     "button",
     {
       type: "button",
-      ref: closeButtonRef,
+      ref: setCloseButton,
       "aria-label": "닫기",
       className: MODAL_CLOSE_BTN_CLASS,
       "data-sfx-kind": "ui-cancel",
@@ -70,15 +70,16 @@ function renderCloseButton({ onDismiss, closeButtonRef }) {
 // 틀 그림이 안 뜨면 그림 없는 대체 틀로 바꿔 그림
 export default function NotificationModalShell({
   onDismiss,
-  closeButtonRef,
   focusKey,
   wrapperProps = {},
   children,
 }) {
   const [frameFailed, setFrameFailed] = useState(false)
+  // 열릴 때 포커스 줄 닫기 버튼 (그려진 버튼을 받아 둠, 대체 틀로 바뀌면 새 버튼)
+  const [closeButton, setCloseButton] = useState(null)
 
   useEscape(onDismiss, Boolean(onDismiss))
-  useCloseFocus(closeButtonRef, focusKey)
+  useCloseFocus(closeButton, focusKey)
 
   // 내용 칸: 틀 그림 안쪽 여백에 맞춤, 대체 틀이면 여백 없음
   const contentNode = createElement(
@@ -98,7 +99,7 @@ export default function NotificationModalShell({
     ? createElement(
         "div",
         { className: MODAL_FALLBACK_FRAME_CLASS, "data-notification-fallback": "true" },
-        renderCloseButton({ onDismiss, closeButtonRef }),
+        renderCloseButton({ onDismiss, setCloseButton }),
         contentNode,
       )
     : createElement(
@@ -113,7 +114,7 @@ export default function NotificationModalShell({
           onError: () => setFrameFailed(true),
         }),
         createElement("p", { className: MODAL_TITLE_CLASS, "data-notification-heading": "true" }, "알림"),
-        renderCloseButton({ onDismiss, closeButtonRef }),
+        renderCloseButton({ onDismiss, setCloseButton }),
         contentNode,
       )
 

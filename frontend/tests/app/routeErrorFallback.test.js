@@ -62,7 +62,7 @@ mock.module("../../src/shared/api/client.js", {
 const { render, act, cleanup, waitFor } = await import("@testing-library/react")
 const { RouterProvider } = await import("react-router-dom")
 const { router } = await import("../../src/app/routes/index.jsx")
-const { useAuthStore } = await import("../../src/domains/auth/store/auth.store.js")
+await import("../../src/domains/auth/store/auth.store.js")
 
 test.afterEach(() => cleanup())
 

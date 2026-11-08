@@ -61,7 +61,7 @@ if (cookieDescriptor) {
     get() { return cookieDescriptor.get.call(dom.window.document) },
     set(value) {
       cookieWrites.push(String(value))
-      return cookieDescriptor.set.call(dom.window.document, value)
+      cookieDescriptor.set.call(dom.window.document, value)
     },
   })
 }

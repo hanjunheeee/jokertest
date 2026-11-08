@@ -126,23 +126,6 @@ const NIGHT_RESULT_APPLIED = Object.freeze({
   deathReveals: [{ victimUuid: OTHER_UUID, source: "JOKER" }],
 })
 
-function applyDaySnapshot() {
-  act(() => {
-    useInGameStore.getState().applySessionSnapshot({
-      ok: true,
-      gameId: GAME_ID,
-      phase: "DAY",
-      dayIndex: 2,
-      dayPhase: "DAY_DISCUSSION",
-      players: [
-        { uuid: SELF_UUID, nickname: "나", isAlive: true, isConnected: true },
-        { uuid: OTHER_UUID, nickname: "상대", isAlive: false, isConnected: true },
-      ],
-      self: buildSelf(),
-    })
-  })
-}
-
 const readResult = () => useInGameStore.getState().nightPrivateResult
 
 

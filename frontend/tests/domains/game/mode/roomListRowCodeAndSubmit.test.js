@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { createElement, useState } from "react"
@@ -71,16 +71,6 @@ function git(args) {
   })
 }
 
-function assertRemoteRefExists() {
-  let resolved = ""
-  try {
-    resolved = git(["rev-parse", "--verify", `${REMOTE_REF}^{commit}`]).trim()
-  } catch (error) {
-    assert.fail(`원격 비교 대상(${REMOTE_REF})을 찾지 못해 차이를 확인할 수 없다: ${error.message}`)
-  }
-  assert.match(resolved, /^[0-9a-f]{40}$/, `${REMOTE_REF}가 커밋을 가리키지 않는다`)
-}
-
 function resolveModuleTarget(module, fileRelativeToSrc) {
   const posixFile = fileRelativeToSrc.split(path.sep).join("/")
   if (module.startsWith("@/")) return module.slice(2)
@@ -138,62 +128,6 @@ function collectImports(source, fileRelativeToSrc) {
   return { byLine, statements }
 }
 
-function diffHunksAgainstRemote(repoRelativePath) {
-  const output = git(["diff", "-U0", REMOTE_REF, "--", repoRelativePath])
-  const hunks = []
-  let hunk = null
-  let oldLine = 0
-  let newLine = 0
-
-  for (const raw of output.split("\n")) {
-    const line = raw.replace(/\r$/, "")
-    const header = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/)
-    if (header) {
-      oldLine = Number(header[1])
-      newLine = Number(header[2])
-      hunk = { added: [], removed: [] }
-      hunks.push(hunk)
-      continue
-    }
-    if (!hunk) continue
-    if (line.startsWith("+")) {
-      hunk.added.push({ lineNumber: newLine, text: line.slice(1) })
-      newLine += 1
-      continue
-    }
-    if (line.startsWith("-")) {
-      hunk.removed.push({ lineNumber: oldLine, text: line.slice(1) })
-      oldLine += 1
-    }
-  }
-
-  return hunks
-}
-
-function markReindentedLines(hunk) {
-  const reindented = new Set()
-  const removedByText = new Map()
-
-  for (const entry of hunk.removed) {
-    const key = entry.text.trim()
-    if (!removedByText.has(key)) removedByText.set(key, [])
-    removedByText.get(key).push(entry)
-  }
-
-  for (const entry of hunk.added) {
-    const candidates = removedByText.get(entry.text.trim())
-    if (!candidates?.length) continue
-    const matchIndex = candidates.findIndex((removed) => removed.text !== entry.text)
-    if (matchIndex === -1) continue
-
-    const [removed] = candidates.splice(matchIndex, 1)
-    reindented.add(`+${entry.lineNumber}`)
-    reindented.add(`-${removed.lineNumber}`)
-  }
-
-  return reindented
-}
-
 const F15_FONT_SIZE_UTILITY = /text-\[(clamp\([^\]]*\)|[0-9.]+(?:rem|px|em))\]/g
 
 function toF15ScaledTypography(text) {
@@ -221,193 +155,6 @@ function markF15ScaledTypographyLines(hunk) {
   }
 
   return scaled
-}
-
-const ALLOWED_LOCAL_CONTRACT_DIFFS = {
-  "domains/game/mode/components/roomList/RoomListRow.jsx": [
-    [/^const \{ stage, current, max, title/, "AC-04: 코드 표시를 room 객체 전체로 계산한다"],
-    [
-      /rowCode|resolveRoomListRowCode|isCode|accessType/,
-      "AC-04: 코드 방 배지가 고정 문구 대신 방 코드 값을 표시한다",
-    ],
-    [
-      /settingsSummary|summarizeRoomListSettings|ROOM_LIST_ROW_SETTINGS_CLASS/,
-      "F-20 AC-03: 서버가 승인한 직업 구성·제한시간 요약을 목록 행과 aria-label에 표시한다" +
-        " — 요약 문자열은 utils/summarizeRoomListSettings.js가 만들고 이 행은 표시만 한다",
-    ],
-    [
-      /^statusLabel \? `, \$\{statusLabel\}` : ""$|^\}`\}$|^\}\$\{statusLabel \? `, \$\{statusLabel\}` : ""\}`\}$/,
-      "같은 계약: aria-label에 설정 요약을 끼워 넣으며 기존 마감/진행중 표시가 여러 줄로 나뉘었다" +
-        " — 읽어주는 내용의 순서와 값은 그대로다",
-    ],
-    [
-      /^import \{ ROOM_LIST_ROW_BOTTOM_ROW_CLASS[\s\S]*roomListLayout\.js"$/,
-      "같은 계약: 요약 표시용 스타일 상수(ROOM_LIST_ROW_SETTINGS_CLASS)가 같은 import 문장에 더해져" +
-        " 원격과 가져오는 이름 집합이 달라졌다(출처 파일은 그대로다)",
-    ],
-    [
-      /ROOM_LIST_ROW_HEADER_ROW_CLASS|ROOM_LIST_ROW_HEADER_DIVIDER_CLASS|settingsLine|showStatusBadges/,
-      "목록 행 2줄 레이아웃: 윗줄 방장 이름(의 방), 아랫줄 설정 요약·인원 — 단계 배지는 aria-label만 유지",
-    ],
-    [
-      /ROOM_LIST_ROW_TITLE_CLASS\}\>\{title\}/,
-      "같은 레이아웃: 방 이름을 윗줄 헤더로 옮겼다",
-    ],
-    [
-      /ROOM_LIST_ROW_STAGE_BADGE_CLASS|ROOM_LIST_ROW_TOP_ROW_CLASS/,
-      "같은 레이아웃: 단계 배지·구 TOP_ROW import를 헤더 2줄 구조로 대체했다",
-    ],
-  ],
-  "domains/game/mode/components/roomList/RoomListShell.jsx": [
-    [
-      /selectedRoom|onEnterRoom|onJoinByCode/,
-      "로컬 입장 계약: 코드 방은 버튼을 잠그는 대신 코드 입력 화면으로 방 id를 넘긴다",
-    ],
-    [/"코드 (필요|입력)"/, "같은 계약: 코드 방 입장 버튼 라벨"],
-  ],
-  "domains/game/mode/components/RoomCodeInput.jsx": [
-    [
-      /^import \{ (ROOM_CODE_INPUT_ATTRIBUTES, )?useRoomCodeInput \} from "[^"]*useRoomCodeInput\.js"$/,
-      "로컬 훅 계약: 원격은 훅만 가져왔지만 여기서는 칸 속성 상수도 같은 훅에서 가져온다",
-    ],
-    [
-      /ROOM_CODE_INPUT_ATTRIBUTES/,
-      "로컬 훅 계약: 칸 속성의 출처를 useRoomCodeInput 한곳으로 유지한다",
-    ],
-    [
-      /^(type|inputMode|autoComplete|autoCorrect|autoCapitalize|spellCheck|maxLength)=/,
-      "같은 계약: 화면에 흩어져 있던 인라인 속성을 훅의 상수로 대체했다",
-    ],
-  ],
-  "domains/game/mode/pages/MultiplayEntryPage.jsx": [
-    [
-      /onJoinByCode|navigate\("\/roomInvite"/,
-      "로컬 입장 계약: 목록에서 고른 코드 방의 id를 코드 입력 화면으로 전달한다",
-    ],
-  ],
-  "domains/game/matching/components/RoomCodeViewModal.jsx": [
-    [
-      /^import \{ (useEffect, )?(useId, )?useRef, useState \} from "react"$/,
-      "로컬 복사 계약: 복사 오류 문구와 복사 버튼을 잇는 id를 useId로 만든다",
-    ],
-    [
-      /copyGenerationRef|invalidateCopyFeedback|^useEffect\(\(\) => \{$|^return \(\) => \{$|^const generation = |^\/\/ eslint-disable-next-line react-hooks\/exhaustive-deps$/,
-      "F-24 AC-01: 복사 완료는 비동기다 — 닫힘·코드 교체·언마운트마다 세대를 올려, 늦게 도착한" +
-        " 옛 완료가 지금 화면의 '복사됨'과 타이머를 건드리지 못하게 한다",
-    ],
-    [
-      /useSyncExternalStore|useAuthStore|subscribeSocket|authUuid|identityGeneration|socketId/,
-      "F-24 AC-01: 무효화 경계는 코드 문자열만이 아니다 — 같은 코드를 표시하는 동안에도 계정이" +
-        " 갈아끼워지거나(A→B→A 포함) 연결이 교체되면 보류 중인 복사 결과를 버린다",
-    ],
-    [
-      /isValidRoomCode|canCopy|ROOM_CODE_COPY_RESULTS|resolveRoomCodeCopyStatus|[cC]opyStatus|COPY_BTN_(DISABLED_)?CLASS/,
-      "F-24 AC-01: 확인할 수 없는 코드에는 복사 진입 자체를 열지 않고, 도달한 상태를 흔들리지" +
-        " 않는 코드로 노출한다",
-    ],
-    [
-      /^const handleClose = \(\) => \{$|^\}$|^\},$|^\)$/,
-      "같은 두 계약: 세대 무효화를 effect·공통 핸들러로 묶으며 블록 경계 줄이 옮겨졌다",
-    ],
-    [
-      /resolveRoomCodeCopy|normalizeRoomCode|displayRoomCode|ROOM_CODE_COPY_ERRORS|outcome/,
-      "로컬 복사 계약: 복사 가능 여부 판정을 utils/roomCode.js에 맡긴다",
-    ],
-    [
-      /[cC]opyError|COPY_ERROR_CLASS|role="alert"|aria-describedby|^<\/p>$/,
-      "같은 계약: 복사 실패 사유를 role=alert 영역으로 읽어준다",
-    ],
-    [/^return$/, "같은 계약: 복사할 수 없는 상태면 클립보드를 건드리지 않고 빠져나온다"],
-    [/copyFeedbackTimerRef|clearCopyFeedbackTimer|setCopied\(false\)/, "같은 계약: 복사 피드백 타이머 정리"],
-    [/clipboard\.writeText|value=\{roomCode\}/, "같은 계약: 표시값과 복사값을 같은 문자열에서 낸다"],
-    [/^<\/?>$/, "같은 계약: 복사 버튼과 오류 문구를 함께 담기 위한 fragment"],
-    [
-      /^<\/span>$/,
-      "같은 계약: fragment로 감싸며 마크업이 밀려 닫는 </span>가 짝과 다른 hunk로 갈라졌다" +
-        " — 개수가 원격과 같다는 것은 아래 '마크업 구조는 원격과 같다' 테스트가 확인한다",
-    ],
-  ],
-  "domains/game/setup/components/GameSetupPanel.jsx": [
-    [
-      /roomSettingsForm\.js"$/,
-      "F-20 AC-03/AC-06: 편집 모드가 쓰는 계약(비편집 항목 목록·직업별 시간 지정 병합)을 공용 변환기에서 가져온다",
-    ],
-    [
-      /^export default function GameSetupPanel\(\{$|^(visible|isCreating|onCreateGame|mode = "create"|initialFormState = null|formResetKey = null|submitLabel|submitBusyLabel|submitDisabled = false),$|^\}\) \{$|^export default function GameSetupPanel\(\{ visible, isCreating, onCreateGame \}\) \{$/,
-      "F-20 AC-01/AC-03: 한 패널을 생성·편집 두 모드로 쓰기 위해 props가 늘어 여러 줄 서명이 됐다",
-    ],
-    [
-      /isEditMode|hiddenItemIds|submitLabel|submitBusyLabel|submitDisabled/,
-      "F-20 A-06: 편집 모드는 D-12 추가 규칙 세 항목을 그리지 않고, 제출 버튼 라벨·진행 표시가 모드별로 다르다",
-    ],
-    [
-      /useSetupTabState\(ALL_SETUP_ITEMS|^(initialState: initialFormState|resetKey: formResetKey|initialComposition: initialFormState\?\.roleComposition \?\? null),$|^\}\)$/,
-      "F-20 AC-03/AC-05: 폼이 서버 확정 설정에서 시작하고, 방·설정 버전이 교체되면 이전 초안을 버린다",
-    ],
-    [
-      /editedRoleTimeIds|appliedResetKey|NIGHT_TIME_ID_TO_ROLE|handleSetRange|setRange=\{(handleSetRange|setRange)\}|^setRange\(id, next\)$/,
-      "F-20 AC-03: 이번 편집에서 실제로 값이 바뀐 직업별 밤 시간을 추적해 저장 요청에 싣는다",
-    ],
-    [
-      /handleSubmitClick|handleCreateClick/,
-      "F-20 AC-03: 같은 버튼이 생성·저장 두 제출을 담당해 핸들러 이름이 모드 중립으로 바뀌었다",
-    ],
-    [
-      /composition|specifiedRoleNightActionTimes|^onCreateGame\(\{$|^(checks|ranges),$/,
-      "F-20 AC-03: 편집 제출은 요청 조립 없이 폼 상태를 그대로 넘기고, 생성 제출은 기존 변환기를 그대로 쓴다",
-    ],
-    [
-      /^<MeetingGameSetupTab( checks=\{checks\} ranges=\{ranges\} setCheck=\{setCheck\} setRange=\{setRange\} \/>)?$|^(checks=\{checks\}|ranges=\{ranges\}|setCheck=\{setCheck\}|hiddenItemIds=\{hiddenItemIds\}|\/>)$/,
-      "같은 계약: 회의&투표 탭에도 숨김 항목을 넘기느라 한 줄 JSX가 여러 줄로 늘어났다(넘기는 값은 그대로)",
-    ],
-    [
-      /^(label=\{submitLabel|busyLabel=\{submitBusyLabel|busy=\{isCreating\}|disabled=\{isCreating \|\| submitDisabled)/,
-      "같은 계약: 제출 버튼의 라벨·진행 표시·비활성 조건이 모드별 값을 받는다",
-    ],
-  ],
-  "domains/game/setup/components/RoleCompositionSection.jsx": [],
-  "domains/game/mode/constants/roomListLayout.js": [
-    [
-      /^export const ROOM_LIST_ROW_SETTINGS_CLASS =$|^"pointer-events-none min-w-0 shrink truncate font-subheading/,
-      "F-20 AC-03: 목록 행에 추가된 설정 요약 표시의 스타일 상수다" +
-        " — 기존 행 스타일 상수는 그대로 두고 새 상수만 덧붙였다",
-    ],
-    [
-      /ROOM_LIST_ROW_HEADER_ROW_CLASS|ROOM_LIST_ROW_HEADER_DIVIDER_CLASS|justify-end|leading-tight/,
-      "목록 행 2줄 레이아웃: 헤더·구분선 상수와 오버레이·제목·설정 스타일 조정",
-    ],
-    [
-      /ROOM_LIST_ROW_TOP_ROW_CLASS|justify-between gap-\[clamp\(0\.05rem|ROOM_LIST_ROW_BOTTOM_ROW_CLASS|leading-none text-\[#f3d28d\]|pb-\[(1\.5|2\.5|3\.5|1|2|4|9)%\]/,
-      "같은 레이아웃: TOP_ROW·justify-between 오버레이·BOTTOM_ROW·제목 스타일·하단 여백 조정",
-    ],
-  ],
-  "domains/game/setup/hooks/useSetupContentScrollOnRoleModeChange.js": [],
-}
-
-function openBracketDelta(text) {
-  const opened = (text.match(/[({]/g) ?? []).length
-  const closed = (text.match(/[)}]/g) ?? []).length
-  return opened - closed
-}
-
-function makeCommentClassifier() {
-  let inBlockComment = false
-
-  return (text) => {
-    const line = text.trim()
-    if (inBlockComment) {
-      if (line.includes("*/")) inBlockComment = false
-      return true
-    }
-    if (line === "") return true
-    if (line.startsWith("//")) return true
-    if (line.startsWith("*")) return true
-    if (line.startsWith("/*") || line.startsWith("{/*")) {
-      inBlockComment = !line.includes("*/")
-      return true
-    }
-    return false
-  }
 }
 
 test("AC-01: F-15 배율 전환 면제는 '값 보존 + 그 밖은 그대로'일 때만 성립한다", () => {
@@ -461,38 +208,6 @@ test("AC-01: 이식한 파일의 상대 경로 import는 실제 파일을 가리
     }
   }
 })
-
-const DESIGNATED_TESTS = [
-  "domains/game/mode/hooks/__tests__/useRoomCodeInput.test.js",
-  "domains/game/matching/utils/__tests__/roomCode.test.js",
-  "domains/game/setup/utils/__tests__/roleComposition.test.js",
-  "domains/game/setup/utils/__tests__/buildCreateRoomPayload.test.js",
-  "domains/game/setup/hooks/__tests__/useRoleCompositionState.test.js",
-]
-
-function expandTestGlob(frontendRoot, pattern) {
-  const segments = pattern.split("/")
-  assert.deepEqual(
-    segments,
-    ["src", "**", "__tests__", "*.test.js"],
-    `실행 대상 glob 모양이 바뀌었다: ${pattern}`,
-  )
-
-  const found = new Set()
-  const walk = (dir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        walk(full)
-        continue
-      }
-      if (path.basename(dir) === "__tests__" && entry.name.endsWith(".test.js")) found.add(full)
-    }
-  }
-  walk(path.join(frontendRoot, segments[0]))
-
-  return found
-}
 
 test("AC-02: 라우터가 이식한 화면 3개(멀티플레이·방코드·게임 설정)를 그린다", () => {
   assertWires("app/routes/index.jsx", [

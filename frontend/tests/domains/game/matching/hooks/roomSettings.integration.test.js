@@ -122,7 +122,7 @@ matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async 
 const { createFakeSocket, createFakeIo, validSettingsPayload, readyPayload } = matchmakingFixtures
 const {
   handleCreateRoom, handleUpdateRoomSettings, handleGetCurrentRoom, handleGetPublicRooms,
-  handleJoinRoomByCode, handleSetReady, handleGetRoomSettingsUpdateResult,
+  handleJoinRoomByCode, handleSetReady,
 } = matchmaking.__testables
 
 function findSpectatorKeys(value, path = "$") {

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 import { register } from "node:module"
-import { existsSync } from "node:fs"
-import { fileURLToPath, pathToFileURL } from "node:url"
+import { pathToFileURL } from "node:url"
 import path from "node:path"
 import { JSDOM } from "jsdom"
 

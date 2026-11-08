@@ -23,12 +23,18 @@ export function useResetPage(token) {
     return () => { unmountedRef.current = true }
   }, [])
 
-  // 링크가 바뀌면 입력·에러 비우고 제출 잠금 풂 (링크 확인 effect보다 먼저 돎)
-  useEffect(() => {
+  // 링크가 바뀌면 입력·에러 비움 (그리는 자리에서 바로, 링크 확인 effect보다 먼저)
+  const [shownToken, setShownToken] = useState(token)
+  if (shownToken !== token) {
+    setShownToken(token)
     setPassword("")
     setPasswordConfirm("")
     setFormError("")
     setLinkInvalidReason(token ? "" : "INVALID")
+  }
+
+  // 링크가 바뀌면 제출 잠금 풂 (ref는 그리기 밖에서만 바꿈)
+  useEffect(() => {
     submittingRef.current = false
   }, [token])
 

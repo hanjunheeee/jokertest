@@ -842,7 +842,7 @@ test("A-06: SFX 로드가 영원히 정착하지 않아도 읽음 API와 목록 
   assert.equal(selectUnreadCount(useNotificationsStore.getState().items, buildDefaultGeneralChecks()), 0)
 })
 
-test("A-06: 로드 reject·해시 불일치·play 실패가 나도 목록 반영과 읽음이 그대로 완료된다", async (t) => {
+test("A-06: 로드 reject·해시 불일치·play 실패가 나도 목록 반영과 읽음이 그대로 완료된다", async () => {
   loginAs(ACCOUNT_A)
   __setNotificationsApiForTests({
     fetchNotificationsApi: async () => [],

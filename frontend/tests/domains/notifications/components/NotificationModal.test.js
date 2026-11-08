@@ -407,7 +407,7 @@ test("읽은 메시지 삭제 버튼이 readAt 있는 항목을 모두 지운다
   assert.equal(view.container.querySelector('[data-notification-state="empty"]')?.textContent, "표시할 알림이 없습니다.")
 })
 
-test("읽은 메시지 삭제는 미확인 알림은 남긴다", async (t) => {
+test("읽은 메시지 삭제는 미확인 알림은 남긴다", async () => {
   setNotificationsApiForTests({
     deleteReadNotificationsApi: async () => ({}),
   })

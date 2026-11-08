@@ -48,7 +48,10 @@ const cookieHeader = () => [...cookieJar].map(([name, value]) => `${name}=${valu
 async function testFetch(input, init = {}) {
   const raw = String(input)
   const url = raw.startsWith("http") ? raw : `${apiBase}${raw}`
-  const { credentials, cache, headers: givenHeaders, ...rest } = init
+  // credentials·cache는 브라우저 전용이라 빼고 보냄
+  const { headers: givenHeaders, ...rest } = init
+  delete rest.credentials
+  delete rest.cache
   const headers = { ...(givenHeaders || {}) }
   if (!headers.cookie) {
     const jarCookie = cookieHeader()

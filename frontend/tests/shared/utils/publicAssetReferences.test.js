@@ -360,7 +360,7 @@ for (const file of SOURCE_FILES) {
 }
 
 const MEMBER_CHAIN_RE =
-  /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^\[\]()]*\])*$/
+  /^[A-Za-z_$][\w$]*(?:\??\.[A-Za-z_$][\w$]*|\[[^[\]()]*\])*$/
 
 function classifyCallArg(argText, file) {
   const trimmed = argText.trim()
@@ -477,7 +477,7 @@ for (const file of SOURCE_FILES) {
 
     if (classification.kind === "literal") {
       const lit = readStringLiteralAt(argText, 0)
-      let value = null
+      let value
       if (lit.quote === "`") {
         const { parts, exprs } = splitTemplateLiteral(lit.raw)
         value = exprs.length === 0 ? unescapeLiteral(parts[0]) : null

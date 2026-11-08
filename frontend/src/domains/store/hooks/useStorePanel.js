@@ -58,10 +58,16 @@ export function useStorePanel() {
     }
     storePurchase.activate(authUserId)
     storePurchase.check()
+  }, [authUserId])
+
+  // 계정이 바뀌면 일괄구매 끔 (그리는 자리에서 바로, 옛 계정 선택이 한 번도 안 보이게)
+  const [bulkAccountId, setBulkAccountId] = useState(authUserId)
+  if (bulkAccountId !== authUserId) {
+    setBulkAccountId(authUserId)
     setBulkMode(false)
     setBulkSelectedIds(new Set())
     setBulkPurchaseOpen(false)
-  }, [authUserId])
+  }
 
   // 일괄구매로 고른 상품 목록 (확인 창에 넘김)
   const bulkSelectedItems = useMemo(
@@ -156,14 +162,16 @@ export function useStorePanel() {
     storePurchase.purchase(bulkSelectedItems.map((item) => item.id))
   }
 
-  // 분류가 바뀌면 고른 상품을 새 목록에 맞추고 확대 창·일괄구매를 닫음
-  useEffect(() => {
+  // 분류가 바뀌면 고른 상품을 새 목록에 맞추고 확대 창·일괄구매를 닫음 (처음 그릴 때도 한 번, 그리는 자리에서 바로)
+  const [syncedItems, setSyncedItems] = useState(null)
+  if (syncedItems !== visibleItems) {
+    setSyncedItems(visibleItems)
     setSelectedItem((prev) => visibleItems.find((item) => item.id === prev?.id) ?? visibleItems[0] ?? null)
     setSkinZoomItem(null)
     setBulkMode(false)
     setBulkSelectedIds(new Set())
     setBulkPurchaseOpen(false)
-  }, [visibleItems])
+  }
 
   return {
     categories, activeCategory, selectCategory, visibleItems,
