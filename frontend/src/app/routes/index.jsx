@@ -19,9 +19,12 @@ import TribunalPresentationPreviewPage from "@/domains/game/ingame/pages/Tribuna
 import SettingPage from "@/domains/settings/pages/SettingPage.jsx";
 import StorePage from "@/domains/store/pages/StorePage.jsx";
 import LibraryPage from "@/domains/library/pages/LibraryPage.jsx";
+import RouteErrorScreen from "@/app/RouteErrorScreen.jsx";
 export const router = createBrowserRouter([
     {
     element: <ViewportShell />,
+    // 화면 하나가 터져도 돌아갈 버튼이 있는 오류 화면 (FE-013)
+    errorElement: <RouteErrorScreen />,
     children: [
       { path: "/", element: <LoginPage /> },
       { path: "/login", element: <LoginPage /> },
@@ -51,6 +54,8 @@ export const router = createBrowserRouter([
           { path: "/podium", element: <Navigate to="/lobby" replace /> },
         ],
       },
+      // 없는 주소 (FE-013)
+      { path: "*", element: <RouteErrorScreen notFound /> },
     ],
   },
 ])
