@@ -26,7 +26,7 @@ if (logFile) require("./utils/logFile").teeConsoleToLogFile(logFile);
 try {
     require("./config/requiredEnv").assertRequiredEnv();
 } catch (error) {
-    if (process.env.NODE_ENV === "production") failStartup(error, "환경값");
+    if (require("./config/requiredEnv").isStartupFatal(error)) failStartup(error, "환경값"); // 운영 + 모르는 NODE_ENV는 거부
     console.warn(`[STARTUP] 경고 — ${error.message} (개발이라 계속, 운영이면 시작 거부)`);
 }
 
@@ -124,6 +124,9 @@ schemaReadiness.ensureSchemaReady(db.sequelize)
         // 점검·금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 꺼짐·빈 목록으로 시작)
         require("./services/ops/maintenance").reloadMaintenance()
             .catch((err) => console.warn("[STARTUP] 점검 상태 못 읽음 —", err?.name ?? "Error"));
+        // 재시작 전 남은 ONLINE 줄을 OFFLINE으로 (BE-015, 포트 열기 전 시각 기준이라 새로 붙은 사람은 안 덮음)
+        require("./services/presence/status").resetPresencesOnBoot(new Date())
+            .catch((err) => console.warn("[STARTUP] 접속 상태 못 되돌림 —", err?.name ?? "Error"));
         require("./services/ops/bannedWords").reloadBannedWords()
             .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
         const pool = db.sequelize.options.pool ?? {};

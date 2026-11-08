@@ -22,3 +22,13 @@ exports.upsertOnlinePresence = async (userId, status) => {
         last_active_at: new Date(),
     });
 };
+
+// 기준 시각 전 활동한 접속 줄을 전부 OFFLINE으로 (서버 켤 때, 끊김 처리 못 돌고 죽은 서버가 남긴 ONLINE 지우기)
+// 기준 시각 뒤에 붙은 사람 줄은 안 건드림 (켜자마자 다시 붙은 사람이 오프라인으로 덮이지 않게), 바뀐 줄 수 돌려줌
+exports.markOfflineBefore = async (cutoff) => {
+    const [changed] = await db.OnlinePresence.update(
+        { status: "OFFLINE" },
+        { where: { status: { [Op.ne]: "OFFLINE" }, last_active_at: { [Op.lt]: cutoff } } },
+    );
+    return changed;
+};

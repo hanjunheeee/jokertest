@@ -1,6 +1,6 @@
 // 방 정보 파일
 // 방 정보 내용 만들기 + 공개 방 목록 만들기·방송
-const { getMinPlayers } = require('../core/config')
+const { getRequiredPlayers } = require('../core/config')
 const { resolveRoleComposition } = require('../../../game-core/core/rules/roleComposition')
 const { hasPendingAdmission } = require('../admission/attempts')
 const { BOOT_EPOCH } = require('../core/constants')
@@ -12,9 +12,8 @@ const { gameRooms } = require('../core/state')
 // 시작 가능한지 (인원·전원 준비·입장 중인 사람 없음)
 function computeCanStart(room) {
     const players = [...room.players.values()]
-    const configuredMinimum = getMinPlayers()
-    const roomCapacity = room.settings?.maxPlayers ?? configuredMinimum
-    const requiredPlayers = Math.min(configuredMinimum, roomCapacity)
+    // 서버 시작 판정과 같은 인원 기준 (운영 5명, 화면 표시와 실제 시작이 안 어긋나게)
+    const requiredPlayers = getRequiredPlayers(room.settings?.maxPlayers)
     const jokerCount = room.settings?.jokerCount ?? 0
 
     if (players.length < requiredPlayers) return false
