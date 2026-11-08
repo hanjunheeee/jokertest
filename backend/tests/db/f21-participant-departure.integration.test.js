@@ -55,10 +55,9 @@ const gameResultRepository = require('../../repositories/game/result');
 const gameSessionCore = require('../../game-core/gameSession');
 const gameSessionSocketLayer = require('../../socket/gameSession');
 const achievementService = require('../../services/achievement');
-const kickReceiptStore = require('../../socket/kickReceiptStore');
 const { hashPassword } = require('../../utils/auth/credentials');
 
-const { handleKickGamePlayer, handleLeaveGameSession, __getTerminalPersistRunsForTests } =
+const { handleLeaveGameSession, __getTerminalPersistRunsForTests } =
     gameSessionSocketLayer.__testables;
 
 test.after(async () => {
@@ -285,114 +284,10 @@ function assertItemRewardGranted(reward, label) {
     );
 }
 
-const kickPayload = (session, hostUuid, targetUuid) => ({
-    requestId: `db-kick-${crypto.randomUUID()}`,
-    bootEpoch: kickReceiptStore.BOOT_EPOCH,
-    roomId: session.roomId,
-    roomInstanceId: session.roomInstanceId,
-    requesterMembershipId: session.players.get(hostUuid).membershipId,
-    targetUuid,
-    targetMembershipId: session.players.get(targetUuid).membershipId,
-    gameId: session.id,
-});
-
 const playerRowsOf = async (gameId) => db.GameResultPlayer.findAll({
     where: { game_id: gameId }, order: [['user_id', 'ASC']], raw: true,
 });
 const statsOf = async (userId) => db.UserStats.findOne({ where: { user_id: userId }, raw: true });
-
-test('AC-03: 추방으로 끝난 판과 일반 이탈로 끝난 판은 식별자를 빼면 전적·통계·업적·원장·소유권이 정확히 같다', async (t) => {
-    if (unavailable(t)) return;
-    await setUp();
-
-    const kickHost = await createLocalUser('kh');
-    const kickStay = await createLocalUser('ks');
-    const kickGone = await createLocalUser('kg');
-    const leaveHost = await createLocalUser('lh');
-    const leaveStay = await createLocalUser('ls');
-    const leaveGone = await createLocalUser('lg');
-
-    await seedCompletedHistory([kickHost, kickStay, kickGone], ITEM_REWARD_WINS);
-    await seedCompletedHistory([leaveHost, leaveStay, leaveGone], ITEM_REWARD_WINS);
-
-    const evaluations = captureAchievementEvaluations(t);
-    const io = createFakeIo();
-
-    const kicked = commitTerminalReadySession({
-        roomId: 'db-room-kick', gameId: crypto.randomUUID(),
-        hostUuid: kickHost, uuids: [kickHost, kickStay, kickGone],
-    });
-    makeSessionRewardEligible(kicked);
-    handleKickGamePlayer(io, connectSocket(io, kickHost), kickHost, kickPayload(kicked, kickHost, kickGone), () => {});
-    assert.equal(kicked.phase, 'ENDED', '3인 판에서 한 명이 빠지면 parity로 종결돼야 한다');
-    assert.ok(await waitForPersistSettled(), '추방 판의 저장이 끝나지 않았다');
-
-    const left = commitTerminalReadySession({
-        roomId: 'db-room-leave', gameId: crypto.randomUUID(),
-        hostUuid: leaveHost, uuids: [leaveHost, leaveStay, leaveGone],
-    });
-    makeSessionRewardEligible(left);
-    handleLeaveGameSession(io, connectSocket(io, leaveGone), leaveGone, { gameId: left.id }, () => {});
-    assert.equal(left.phase, 'ENDED');
-    assert.ok(await waitForPersistSettled(), '이탈 판의 저장이 끝나지 않았다');
-    assert.ok(await evaluations.settled(), '업적 평가가 끝나지 않았다');
-
-    const kickedHeader = await db.GameResult.findOne({ where: { id: kicked.id }, raw: true });
-    const leftHeader = await db.GameResult.findOne({ where: { id: left.id }, raw: true });
-    assert.ok(kickedHeader && leftHeader, '두 판 모두 game_results에 저장돼야 한다');
-    assert.equal(kickedHeader.completed, leftHeader.completed);
-    assert.equal(kickedHeader.winner, leftHeader.winner);
-    assert.equal(kickedHeader.win_reason, leftHeader.win_reason);
-    assert.equal(kickedHeader.player_count, leftHeader.player_count);
-
-    const normalize = (rows, mapping) => rows
-        .map((row) => ({
-            slot: mapping[row.user_id],
-            role: row.role,
-            team: row.team,
-            won: row.won,
-            is_alive: Boolean(row.is_alive),
-            death_reason: row.death_reason,
-        }))
-        .sort((a, b) => a.slot.localeCompare(b.slot));
-
-    const kickedRows = normalize(await playerRowsOf(kicked.id), {
-        [kickHost]: 'host', [kickStay]: 'stay', [kickGone]: 'gone',
-    });
-    const leftRows = normalize(await playerRowsOf(left.id), {
-        [leaveHost]: 'host', [leaveStay]: 'stay', [leaveGone]: 'gone',
-    });
-
-    assert.equal(kickedRows.length, 3);
-    assert.deepEqual(kickedRows, leftRows, '추방과 일반 이탈의 참가자 행이 달라졌다');
-    const gone = kickedRows.find((row) => row.slot === 'gone');
-    assert.equal(gone.is_alive, false);
-    assert.equal(gone.death_reason, 'DISCONNECT');
-
-    for (const [a, b] of [[kickHost, leaveHost], [kickStay, leaveStay], [kickGone, leaveGone]]) {
-        const statsA = await statsOf(a);
-        const statsB = await statsOf(b);
-        assert.equal(statsA.total_games, statsB.total_games);
-        assert.equal(statsA.survival_count, statsB.survival_count);
-        assert.equal(statsA.execution_count, statsB.execution_count);
-        assert.equal(statsA.most_played_role, statsB.most_played_role);
-        assert.equal(statsA.total_games, 1, '이 판이 실제로 집계돼야 한다');
-    }
-
-    for (const [a, b] of [[kickHost, leaveHost], [kickStay, leaveStay], [kickGone, leaveGone]]) {
-        const rewardA = await rewardSnapshotFor(a);
-        const rewardB = await rewardSnapshotFor(b);
-        assert.ok(
-            rewardA.grants.length > 0,
-            '보상 조건을 심었는데도 업적 지급이 하나도 없다 — 이 비교는 아무것도 증명하지 못한다',
-        );
-        assert.ok(rewardA.ledger > 0, '업적을 지급했는데 재화 원장 항목이 없다');
-        assert.ok(rewardA.entitlements > 0, '업적을 지급했는데 소유권이 없다');
-        assertItemRewardGranted(rewardA, '추방 판');
-        assertItemRewardGranted(rewardB, '일반 이탈 판');
-        assert.deepEqual(rewardA, rewardB, '추방과 일반 이탈의 보상 결과가 달라졌다');
-    }
-});
 
 test('A-09: 첫 저장이 실패해도 재시도가 **같은 레코드**를 실제 DB에 커밋한다 — 그 사이 세션이 정리돼도 ended_at·roster는 불변이다', async (t) => {
     if (unavailable(t)) return;
@@ -432,7 +327,7 @@ test('A-09: 첫 저장이 실패해도 재시도가 **같은 레코드**를 실�
         roomId: 'db-room-retry', gameId: crypto.randomUUID(), hostUuid: host, uuids: [host, stay, gone],
     });
     withClockOnSecondBoundary(() => {
-        handleKickGamePlayer(io, connectSocket(io, host), host, kickPayload(session, host, gone), () => {});
+        handleLeaveGameSession(io, connectSocket(io, gone), gone, { gameId: session.id }, () => {});
     });
     assert.equal(session.phase, 'ENDED');
     assert.equal(
@@ -487,7 +382,7 @@ test('A-05: 재시도와 중복 종료를 거쳐도 업적 지급·원장 항목
         roomId: 'db-room-ach', gameId: crypto.randomUUID(), hostUuid: host, uuids: participants,
     });
     makeSessionRewardEligible(session);
-    handleKickGamePlayer(io, connectSocket(io, host), host, kickPayload(session, host, gone), () => {});
+    handleLeaveGameSession(io, connectSocket(io, gone), gone, { gameId: session.id }, () => {});
     assert.ok(await waitForPersistSettled(), '저장이 끝나지 않았다');
     assert.ok(await evaluations.settled(), '업적 평가가 끝나지 않았다');
     const evaluationsAfterFirst = evaluations.count();

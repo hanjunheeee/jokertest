@@ -1,13 +1,11 @@
 // 추방 요청 모양 검사 파일
 // 추방 요청·결과 조회 payload가 허용 키·식별자 모양인지
-// index 거쳐 gameSession 추방(요청·결과 조회)·matchmaking 방장 추방(요청)이 씀
+// index 거쳐 matchmaking 방장 추방(요청)·gameSession 결과 조회가 씀
 const { isPlainObject, hasOnlyKeys } = require('../common/shape')
 const {
     MAX_IDENTIFIER_LENGTH,
-    KICK_COMMANDS,
     KICK_ERROR_CODES,
     ROOM_KICK_KEYS,
-    GAME_KICK_KEYS,
     KICK_RESULT_QUERY_KEYS,
 } = require('./constants')
 
@@ -24,19 +22,17 @@ function invalidRequest() {
     return { ok: false, code: KICK_ERROR_CODES.INVALID_REQUEST, message: '잘못된 요청입니다.' }
 }
 
-// 추방 요청 검사: 허용 키만, 키마다 식별자 모양, 통과면 허용 키만 복사 (방 추방은 판 id null)
-function validateKickPayload(payload, command) {
+// 추방 요청 검사: 허용 키만, 키마다 식별자 모양, 통과면 허용 키만 복사 (대기방 추방 키만)
+function validateKickPayload(payload) {
     if (!isPlainObject(payload)) return invalidRequest()
 
-    // 종류별 허용 키만, 빠진 키·모양 틀린 값도 거절
-    const allowed = command === KICK_COMMANDS.GAME ? GAME_KICK_KEYS : ROOM_KICK_KEYS
-    if (!hasOnlyKeys(payload, allowed)) return invalidRequest()
-    if (!allowed.every((key) => isIdentifier(payload[key]))) return invalidRequest()
+    // 허용 키만, 빠진 키·모양 틀린 값도 거절
+    if (!hasOnlyKeys(payload, ROOM_KICK_KEYS)) return invalidRequest()
+    if (!ROOM_KICK_KEYS.every((key) => isIdentifier(payload[key]))) return invalidRequest()
 
     // 허용 키만 새 객체로 복사 (받은 객체 그대로 안 씀)
     const value = {}
-    for (const key of allowed) value[key] = payload[key]
-    if (command !== KICK_COMMANDS.GAME) value.gameId = null
+    for (const key of ROOM_KICK_KEYS) value[key] = payload[key]
     return { ok: true, value }
 }
 

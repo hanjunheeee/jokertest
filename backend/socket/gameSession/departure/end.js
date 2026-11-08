@@ -1,6 +1,6 @@
 // 판 끝 정리 파일
 // core가 판 지운 뒤 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드·끊긴 사람 정리 예약
-// 판 끝 마무리는 나가기·끊김, 종료 필드는 재판·밤·이탈 뒤 판정, 대기방 정리는 나가기·추방이 씀
+// 판 끝 마무리는 나가기·끊김, 종료 필드는 재판·밤·이탈 뒤 판정, 대기방 정리는 나가기가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
 const { persistTerminalSession } = require('../../../services/game/record')

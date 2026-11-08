@@ -50,7 +50,7 @@ function resyncSessionRouting(socket, uuid) {
         if (!socket.rooms.has(routing.channelId)) {
             await socket.join(routing.channelId)
 
-            // join 기다리는 사이 추방·이탈·유예 만료·새 탭 교체가 없었는지 다시 봄 (지도 08-⑨)
+            // join 기다리는 사이 이탈·유예 만료·새 탭 교체가 없었는지 다시 봄 (지도 08-⑨)
             const current = gameSessionCore.getActiveSessionRoutingInfo(uuid)
             const stillLatest = routingWorkBySocket.get(socket)?.token === token
             const stillSameSession =

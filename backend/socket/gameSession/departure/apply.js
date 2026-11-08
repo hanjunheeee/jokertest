@@ -1,5 +1,5 @@
 // 참가자 이탈 반영 파일
-// 이탈 커밋 뒤 방송·유예·전적 + 막혀 있던 단계 풀기, 나가기·추방·끊김 유예 만료가 씀
+// 이탈 커밋 뒤 방송·유예·전적 + 막혀 있던 단계 풀기, 나가기·끊김 유예 만료가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr } = require('../../common/isolate')
@@ -17,7 +17,7 @@ const { maybeResolveDayVote, maybeResolveTribunal } = require('./autoResolve')
 const { scheduleEndedSweep } = require('./end')
 
 // 참가자 이탈 반영: core 커밋 뒤 단계는 하나씩 격리, 커밋은 되돌리지 않음 (지도 12-⑦⑧⑨⑩)
-function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LEFT', onCommitted = null } = {}) {
+function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LEFT' } = {}) {
     const label = '[참가자 이탈 처리 실패]'
     // 커밋이 던지면 뒤 방송·판정 안 하고 INTERNAL_ERROR
     let applied
@@ -32,9 +32,6 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
 
     // 여기부터 진짜 바뀜 (이미 커밋됨): 뒤 단계 실패는 로그만
     const step = (code, run) => isolate(label, { code, uuid, gameId: session.id }, run)
-
-    // 부른 쪽 커밋 직후 처리 (추방이면 영수증·채널 떼기)
-    if (typeof onCommitted === 'function') step('COMMIT_HOOK_ERROR', () => onCommitted(applied))
 
     // 승부 안 났으면 판정 자리 표식 (남은 사람이 다 내면 바로 판정)
     if (!applied.terminal) markDeparturePending(session)

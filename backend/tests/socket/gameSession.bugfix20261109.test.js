@@ -1,4 +1,4 @@
-// 2026-11-09 게임 진행 소켓 버그 수정 시험: BE-004 사망 방장 추방 · BE-021 판 없는 계정 추방 영수증 · BE-022 사망자 이모티콘
+// 2026-11-09 게임 진행 소켓 버그 수정 시험: 게임 중 추방 없앰(BE-004·BE-021 시험은 추방과 같이 지움) · BE-022 사망자 이모티콘
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test'
 
 const test = require('node:test')
@@ -9,8 +9,7 @@ const gameSessionCore = require('../../game-core/gameSession')
 const kickReceiptStore = require('../../socket/kickReceiptStore')
 const { createFakeSocket, createFakeIo, countingCallback } = require('../helpers/matchmakingFixtures')
 
-const { handleKickGamePlayer, handleGetKickResult, handleSendEmoji } = gameSessionSocketLayer.__testables
-const CODES = kickReceiptStore.KICK_ERROR_CODES
+const { handleGetKickResult, handleSendEmoji } = gameSessionSocketLayer.__testables
 const BOOT = kickReceiptStore.BOOT_EPOCH
 
 function createConventionFollowingRegistry() {
@@ -36,9 +35,6 @@ test.afterEach(() => {
     gameSessionSocketLayer.__testables.__setEvaluateAchievementsForTests()
 })
 
-let seq = 0
-const nextRequestId = () => `bf-req-${++seq}`
-
 // 5명 판, 첫 사람이 방장, 낮으로
 function commitSession(id) {
     const uuids = Array.from({ length: 5 }, (_, i) => `${id}-u${i}`)
@@ -63,57 +59,30 @@ function commitSession(id) {
     return { session, uuids, io, sockets, host: uuids[0] }
 }
 
-function kickPayload(session, hostUuid, targetUuid, overrides = {}) {
-    return {
-        requestId: nextRequestId(),
-        bootEpoch: BOOT,
-        roomId: session.roomId,
-        roomInstanceId: session.roomInstanceId,
-        requesterMembershipId: session.players.get(hostUuid)?.membershipId ?? 'mem-none',
-        targetUuid,
-        targetMembershipId: session.players.get(targetUuid)?.membershipId ?? 'mem-none',
-        gameId: session.id,
-        ...overrides,
-    }
-}
-
 function call(handler, io, socket, uuid, payload) {
     const { callback, getResponse } = countingCallback()
     handler(io, socket, uuid, payload, callback)
     return getResponse()
 }
 
-test('BE-004: 죽은 방장은 산 참가자를 추방할 수 없고 대상은 그대로 산다', () => {
-    const { session, uuids, io, sockets, host } = commitSession('deadhost')
-    session.players.get(host).alive = false
-    const target = uuids[1]
-    const res = call(handleKickGamePlayer, io, sockets.get(host), host, kickPayload(session, host, target))
-    assert.equal(res.ok, false)
-    assert.equal(res.code, CODES.NOT_HOST)
-    assert.equal(session.players.get(target).alive, true)
-    assert.equal(gameSessionCore.isParticipatingInSession(session, target), true)
-})
+test('게임 중 추방 없앰: kick_game_player는 등록 안 되고 옛 화면이 보내도 아무 일 없음, 결과 조회는 그대로', () => {
+    const { session, uuids, io, sockets, host } = commitSession('nokick')
+    const socket = sockets.get(host)
+    gameSessionSocketLayer.registerGameHandlers(io, socket, host)
+    assert.equal(socket.listenerCount('kick_game_player'), 0)
+    assert.equal(socket.listenerCount('get_kick_result'), 1)
+    assert.equal(gameSessionSocketLayer.__testables.handleKickGamePlayer, undefined)
 
-test('BE-004: 죽은 방장도 죽은 참가자 추방은 그대로 된다 (승부에 영향 없음)', () => {
-    const { session, uuids, io, sockets, host } = commitSession('deadhost-dead')
-    session.players.get(host).alive = false
-    const target = uuids[2]
-    session.players.get(target).alive = false
-    const res = call(handleKickGamePlayer, io, sockets.get(host), host, kickPayload(session, host, target))
-    assert.equal(res.ok, true, JSON.stringify(res))
-})
+    // 옛 화면이 보낸 추방 요청: 듣는 곳 없어 판·참가자 그대로
+    const { callback, getCalls } = countingCallback()
+    socket.trigger('kick_game_player', { gameId: session.id, targetUuid: uuids[1] }, callback)
+    assert.equal(getCalls(), 0)
+    assert.equal(gameSessionCore.isParticipatingInSession(session, uuids[1]), true)
+    assert.equal(io.broadcasts.length, 0)
 
-test('BE-021: 판 없는 계정의 추방 요청은 영수증 자리를 차지하지 않는다', () => {
-    const { session, io } = commitSession('noreceipt')
-    const outsider = 'outsider-1'
-    const socket = createFakeSocket(outsider)
-    io.sockets.sockets.set(socket.id, socket)
-    const payload = kickPayload(session, outsider, `${session.id}-x`, { requesterMembershipId: 'm', targetUuid: 'someone', targetMembershipId: 'm2' })
-    const res = call(handleKickGamePlayer, io, socket, outsider, payload)
-    assert.equal(res.code, CODES.SESSION_NOT_FOUND)
-    // 영수증이 없으니 결과 조회는 UNKNOWN
-    const lookup = call(handleGetKickResult, io, socket, outsider, { bootEpoch: BOOT, requestId: payload.requestId })
-    assert.equal(lookup.code ?? lookup.status, CODES.UNKNOWN)
+    // 대기방 추방 화면이 쓰는 결과 조회는 남음 (영수증 없으면 UNKNOWN)
+    const lookup = call(handleGetKickResult, io, socket, host, { bootEpoch: BOOT, requestId: 'never-sent' })
+    assert.equal(lookup.status, 'UNKNOWN')
 })
 
 test('BE-022: 죽은 사람의 이모티콘은 PLAYER_NOT_ALIVE로 거절되고 방송되지 않는다', () => {

@@ -74,7 +74,7 @@ const { handleSubmitDayVote, handleResolveDayVote } = require('./gameSession/han
 const { handleCastTribunalVote, handleResolveTribunalVote } = require('./gameSession/handlers/tribunal')
 const { handleLeaveGameSession, onDisconnect } = require('./gameSession/handlers/leave')
 const { handleGetSessionSnapshot } = require('./gameSession/handlers/snapshot')
-const { handleKickGamePlayer, handleGetKickResult } = require('./gameSession/handlers/kick')
+const { handleGetKickResult } = require('./gameSession/handlers/kickResult')
 const {
     registerGameHandlers,
     getActiveGamePresenceSnapshot,
@@ -118,7 +118,6 @@ module.exports = {
         handleLeaveGameSession,
         handleGetSessionSnapshot,
         handleSendEmoji,
-        handleKickGamePlayer,
         handleGetKickResult,
         applyParticipantDeparture,
         finalizeGameSessionEnd,

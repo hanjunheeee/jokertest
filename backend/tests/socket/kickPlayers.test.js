@@ -34,7 +34,6 @@ const {
 } = matchmaking.__testables
 
 const {
-    handleKickGamePlayer,
     handleGetKickResult,
     handleLeaveGameSession,
     handleGetSessionSnapshot,
@@ -145,9 +144,15 @@ function kickRoomPlayer(io, socket, uuid, payload, getCurrentSocketId = conventi
     return { response: getResponse(), calls: getCalls() }
 }
 
-function kickGamePlayer(io, socket, uuid, payload) {
+// 게임 중 추방은 없앰 (2026-11-09): 이탈 뒤 결과를 보는 시험은 서버 쪽 이탈 확정이나 본인 나가기로 대신함
+function departGamePlayer(io, session, uuid) {
+    const response = gameSessionSocketLayer.__testables.applyParticipantDeparture(io, session, uuid, { reason: 'PLAYER_LEFT' })
+    return { response }
+}
+
+function leaveGamePlayer(io, socket, uuid, session) {
     const { callback, getResponse, getCalls } = countingCallback()
-    handleKickGamePlayer(io, socket, uuid, payload, callback)
+    handleLeaveGameSession(io, socket, uuid, { gameId: session.id }, callback)
     return { response: getResponse(), calls: getCalls() }
 }
 
@@ -169,20 +174,6 @@ function commitDeterministicSession({ roomId, gameId, hostUuid, uuids }) {
     gameSessionCore.commitGameSession(prepared.session)
     gameSessionCore.__testables.enterDayPhase(prepared.session)
     return prepared.session
-}
-
-function gameKickPayload(session, hostUuid, targetUuid, overrides = {}) {
-    return {
-        requestId: nextRequestId(),
-        bootEpoch: BOOT,
-        roomId: session.roomId,
-        roomInstanceId: session.roomInstanceId,
-        requesterMembershipId: session.players.get(hostUuid).membershipId,
-        targetUuid,
-        targetMembershipId: session.players.get(targetUuid).membershipId,
-        gameId: session.id,
-        ...overrides,
-    }
 }
 
 const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve))
@@ -307,42 +298,6 @@ test('AC-01(배선): registerMatchmakingHandlers로 실제 배선한 kick_room_p
     assert.equal(rooms.find(([id]) => id === room.roomId)[1].players.length, 1)
 })
 
-test('AC-01(게임): 방장이 아닌 참가자의 진행 중 추방은 NOT_HOST이고 생존·roster가 불변이다', async () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-g1', gameId: 'game-g1', hostUuid: 'g1-a', uuids: ['g1-a', 'g1-b', 'g1-c', 'g1-d'],
-    })
-    const io = createFakeIo([])
-
-    const honest = kickGamePlayer(io, createFakeSocket('g1-b'), 'g1-b', gameKickPayload(session, 'g1-b', 'g1-c'))
-    assert.equal(honest.response.code, CODES.NOT_HOST)
-
-    const forged = kickGamePlayer(io, createFakeSocket('g1-b'), 'g1-b', gameKickPayload(session, 'g1-a', 'g1-c'))
-    assert.equal(forged.response.ok, false)
-    assert.equal(forged.response.code, CODES.STALE_MEMBERSHIP)
-
-    assert.equal(session.players.get('g1-c').alive, true)
-    assert.equal(session.players.size, 4)
-    assert.equal(io.broadcasts.length, 0)
-})
-
-test('AC-01(게임): 방장 권한은 서버 세션이 승계한 hostUuid 하나로만 판정된다 — 방장이 빠지면 새 방장만 성공한다', async () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-g2', gameId: 'game-g2', hostUuid: 'g2-a', uuids: ['g2-a', 'g2-b', 'g2-c', 'g2-d'],
-    })
-    const io = createFakeIo([])
-    assert.equal(session.hostUuid, 'g2-a')
-
-    handleLeaveGameSession(io, createFakeSocket('g2-a'), 'g2-a', { gameId: session.id }, countingCallback().callback)
-    assert.equal(session.hostUuid, 'g2-b')
-
-    const oldHost = kickGamePlayer(io, createFakeSocket('g2-a'), 'g2-a', gameKickPayload(session, 'g2-b', 'g2-c'))
-    assert.equal(oldHost.response.ok, false)
-
-    const newHost = kickGamePlayer(io, createFakeSocket('g2-b'), 'g2-b', gameKickPayload(session, 'g2-b', 'g2-c'))
-    assert.equal(newHost.response.ok, true)
-    assert.equal(gameSessionCore.isParticipatingInSession(session, 'g2-c'), false)
-})
-
 test('AC-02: 방장이 추방하면 서버 Map·계정 소속·채널이 함께 정리되고 잔류자의 준비 상태는 보존된다', async () => {
     const { io, sockets, room } = await setupRoom('kh-7', ['kj-9', 'kj-10'], { maxPlayers: 4 })
     await callAsPromise(handleSetReady, io, sockets['kh-7'], 'kh-7', readyPayload(room))
@@ -424,13 +379,13 @@ test('AC-02: 방장이 마지막 참가자를 추방해 방이 사라져도 영�
     assert.equal(looked.replayed, true)
 })
 
-test('AC-03: 진행 중 생존자 추방은 DISCONNECT 사망 1회와 참여 종료 1회를 만들고 roster·잔류자 세션은 그대로다', () => {
+test('AC-03: 진행 중 생존자 이탈은 DISCONNECT 사망 1회와 참여 종료 1회를 만들고 roster·잔류자 세션은 그대로다', () => {
     const session = commitDeterministicSession({
         roomId: 'room-g3', gameId: 'game-g3', hostUuid: 'g3-a', uuids: ['g3-a', 'g3-b', 'g3-c', 'g3-d'],
     })
     const io = createFakeIo([])
 
-    const { response } = kickGamePlayer(io, createFakeSocket('g3-a'), 'g3-a', gameKickPayload(session, 'g3-a', 'g3-d'))
+    const { response } = departGamePlayer(io, session, 'g3-d')
 
     assert.equal(response.ok, true)
     assert.equal(session.players.get('g3-d').alive, false)
@@ -448,7 +403,7 @@ test('AC-03: 진행 중 생존자 추방은 DISCONNECT 사망 1회와 참여 종
     }
 })
 
-test('AC-03(A-06): 이미 사망했지만 참여 중인 대상도 추방할 수 있고, 기존 사망 원인과 사망 사건 수가 보존된다', () => {
+test('AC-03(A-06): 이미 사망했지만 참여 중인 대상도 이탈할 수 있고, 기존 사망 원인과 사망 사건 수가 보존된다', () => {
     const session = commitDeterministicSession({
         roomId: 'room-g4', gameId: 'game-g4', hostUuid: 'g4-a', uuids: ['g4-a', 'g4-b', 'g4-c', 'g4-d'],
     })
@@ -457,7 +412,7 @@ test('AC-03(A-06): 이미 사망했지만 참여 중인 대상도 추방할 수 
     victim.alive = false
     victim.deathReason = 'EXECUTION'
 
-    const { response } = kickGamePlayer(io, createFakeSocket('g4-a'), 'g4-a', gameKickPayload(session, 'g4-a', 'g4-d'))
+    const { response } = departGamePlayer(io, session, 'g4-d')
 
     assert.equal(response.ok, true)
     assert.equal(victim.deathReason, 'EXECUTION')
@@ -466,42 +421,12 @@ test('AC-03(A-06): 이미 사망했지만 참여 중인 대상도 추방할 수 
     assert.equal(io.broadcasts.filter((b) => b.event === 'session_participation_changed').length, 1)
 })
 
-test('AC-03: 추방과 명시적 이탈은 같은 초기 상태에서 **같은** 사망·전적 레코드를 만든다', () => {
-    const kicked = commitDeterministicSession({
-        roomId: 'room-g5', gameId: 'game-g5', hostUuid: 'g5-a', uuids: ['g5-a', 'g5-b', 'g5-c', 'g5-d'],
-    })
-    const left = commitDeterministicSession({
-        roomId: 'room-g6', gameId: 'game-g6', hostUuid: 'g5-a2', uuids: ['g5-a2', 'g5-b2', 'g5-c2', 'g5-d2'],
-    })
-    const io = createFakeIo([])
-
-    kickGamePlayer(io, createFakeSocket('g5-a'), 'g5-a', gameKickPayload(kicked, 'g5-a', 'g5-d'))
-    handleLeaveGameSession(io, createFakeSocket('g5-d2'), 'g5-d2', { gameId: left.id }, countingCallback().callback)
-
-    const normalize = (session, suffix) => gameSessionCore
-        .buildGameResultRecord(session, { completed: false, endedAt: 0 })
-        .players
-        .map((row) => ({
-            user_id: row.user_id.replace(suffix, ''),
-            role: row.role,
-            team: row.team,
-            won: row.won,
-            is_alive: row.is_alive,
-            death_reason: row.death_reason,
-        }))
-
-    assert.deepEqual(normalize(kicked, /$^/), normalize(left, /2$/))
-    const row = normalize(kicked, /$^/).find((r) => r.user_id === 'g5-d')
-    assert.equal(row.is_alive, false)
-    assert.equal(row.death_reason, 'DISCONNECT')
-})
-
-test('AC-03: 진행 중 추방 뒤에도 잔류자의 스냅샷에는 사망한 이탈자가 roster에 남고 isParticipating만 false다', () => {
+test('AC-03: 진행 중 이탈 뒤에도 잔류자의 스냅샷에는 사망한 이탈자가 roster에 남고 isParticipating만 false다', () => {
     const session = commitDeterministicSession({
         roomId: 'room-g7', gameId: 'game-g7', hostUuid: 'g7-a', uuids: ['g7-a', 'g7-b', 'g7-c', 'g7-d'],
     })
     const io = createFakeIo([])
-    kickGamePlayer(io, createFakeSocket('g7-a'), 'g7-a', gameKickPayload(session, 'g7-a', 'g7-d'))
+    departGamePlayer(io, session, 'g7-d')
 
     const stayerSocket = createFakeSocket('g7-b')
     stayerSocket.rooms.add(session.channelId)
@@ -722,22 +647,6 @@ test('AC-04(형태): 허용 목록 밖의 키·비문자열·빈 문자열 paylo
     assert.equal(snapshotRooms(), before)
 })
 
-test('AC-04(게임): 종료된 세션과 이미 빠진 대상에 대한 신규 추방은 거부된다', () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-g8', gameId: 'game-g8', hostUuid: 'g8-a', uuids: ['g8-a', 'g8-b', 'g8-c', 'g8-d'],
-    })
-    const io = createFakeIo([])
-
-    kickGamePlayer(io, createFakeSocket('g8-a'), 'g8-a', gameKickPayload(session, 'g8-a', 'g8-d'))
-    const again = kickGamePlayer(io, createFakeSocket('g8-a'), 'g8-a', gameKickPayload(session, 'g8-a', 'g8-d'))
-    assert.equal(again.response.code, CODES.ALREADY_LEFT)
-
-    session.phase = 'ENDED'
-    const ended = kickGamePlayer(io, createFakeSocket('g8-a'), 'g8-a', gameKickPayload(session, 'g8-a', 'g8-c'))
-    assert.equal(ended.response.code, CODES.GAME_ALREADY_ENDED)
-    assert.equal(session.players.get('g8-c').alive, true)
-})
-
 test('AC-05(대기방): 추방 뒤 도착한 대상의 자발적 이탈은 두 번째 제거·방송을 만들지 않는다', async () => {
     const { io, sockets, room } = await setupRoom('kh-24', ['kj-34', 'kj-35'])
     kickRoomPlayer(io, sockets['kh-24'], 'kh-24', roomKickPayload(room, 'kh-24', 'kj-35'))
@@ -748,36 +657,6 @@ test('AC-05(대기방): 추방 뒤 도착한 대상의 자발적 이탈은 두 �
     assert.equal(io.broadcasts.filter((b) => b.event === 'player_left_room').length, leftBefore)
     const stored = matchmaking.__getStateSnapshotForTests().gameRooms.find(([id]) => id === room.roomId)[1]
     assert.equal(stored.players.length, 2)
-})
-
-test('AC-05(게임): 추방과 명시적 이탈이 겹쳐도 사망·참여 종료는 각각 정확히 한 번이다', () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-g9', gameId: 'game-g9', hostUuid: 'g9-a', uuids: ['g9-a', 'g9-b', 'g9-c', 'g9-d'],
-    })
-    const io = createFakeIo([])
-
-    kickGamePlayer(io, createFakeSocket('g9-a'), 'g9-a', gameKickPayload(session, 'g9-a', 'g9-d'))
-    const { callback, getResponse } = countingCallback()
-    handleLeaveGameSession(io, createFakeSocket('g9-d'), 'g9-d', { gameId: session.id }, callback)
-
-    assert.deepEqual(getResponse(), { ok: true })
-    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
-    assert.equal(io.broadcasts.filter((b) => b.event === 'session_participation_changed').length, 1)
-})
-
-test('AC-05(게임): 대상이 먼저 나간 뒤 도착한 추방은 ALREADY_LEFT이고 새 사망을 만들지 않는다', () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-g10', gameId: 'game-g10', hostUuid: 'g10-a', uuids: ['g10-a', 'g10-b', 'g10-c', 'g10-d'],
-    })
-    const io = createFakeIo([])
-    const payload = gameKickPayload(session, 'g10-a', 'g10-d')
-
-    handleLeaveGameSession(io, createFakeSocket('g10-d'), 'g10-d', { gameId: session.id }, countingCallback().callback)
-    const { response } = kickGamePlayer(io, createFakeSocket('g10-a'), 'g10-a', payload)
-
-    assert.equal(response.ok, false)
-    assert.equal(response.code, CODES.ALREADY_LEFT)
-    assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
 })
 
 test('AC-05: 시작 외형 조회 중 추방이 끼어들면 그 시작 요청은 ROOM_STATE_CHANGED로 실패한다', async () => {
@@ -862,12 +741,12 @@ test('AC-06(대기방): 추방된 대상이 다시 들어온 뒤 도착한 옛 �
     assert.equal(rejoinSocket.rooms.has(room.roomId), true)
 })
 
-test('AC-06(게임): 진행 중 추방된 대상의 같은 gameId 복귀는 거부되고 비밀이 하나도 실리지 않는다', () => {
+test('AC-06(게임): 진행 중 이탈한 대상의 같은 gameId 복귀는 거부되고 비밀이 하나도 실리지 않는다', () => {
     const session = commitDeterministicSession({
         roomId: 'room-g11', gameId: 'game-g11', hostUuid: 'g11-a', uuids: ['g11-a', 'g11-b', 'g11-c', 'g11-d'],
     })
     const io = createFakeIo([])
-    kickGamePlayer(io, createFakeSocket('g11-a'), 'g11-a', gameKickPayload(session, 'g11-a', 'g11-d'))
+    departGamePlayer(io, session, 'g11-d')
 
     assert.equal(gameSessionCore.isForfeitedFromSession(session.id, 'g11-d'), true)
 
@@ -882,12 +761,12 @@ test('AC-06(게임): 진행 중 추방된 대상의 같은 gameId 복귀는 거�
     }
 })
 
-test('AC-06(게임): 추방된 계정은 다른 새 게임에는 참여할 수 있고, 옛 게임 정리가 그 새 소속을 지우지 않는다', () => {
+test('AC-06(게임): 이탈한 계정은 다른 새 게임에는 참여할 수 있고, 옛 게임 정리가 그 새 소속을 지우지 않는다', () => {
     const oldSession = commitDeterministicSession({
         roomId: 'room-g12', gameId: 'game-g12', hostUuid: 'g12-a', uuids: ['g12-a', 'g12-b', 'g12-c', 'g12-d'],
     })
     const io = createFakeIo([])
-    kickGamePlayer(io, createFakeSocket('g12-a'), 'g12-a', gameKickPayload(oldSession, 'g12-a', 'g12-d'))
+    departGamePlayer(io, oldSession, 'g12-d')
     assert.equal(gameSessionCore.__getStateSnapshotForTests().playerSession.some(([u]) => u === 'g12-d'), false)
 
     const newSession = commitDeterministicSession({
@@ -905,7 +784,7 @@ test('AC-06(게임): 추방된 계정은 다른 새 게임에는 참여할 수 �
     )
 })
 
-test('AC-05: 재동기화의 join이 끝나기 전에 추방이 확정되면 그 채널 가입은 되돌려진다', async () => {
+test('AC-05: 재동기화의 join이 끝나기 전에 이탈이 확정되면 그 채널 가입은 되돌려진다', async () => {
     const session = commitDeterministicSession({
         roomId: 'room-rs1', gameId: 'game-rs1', hostUuid: 'rs1-a', uuids: ['rs1-a', 'rs1-b', 'rs1-c', 'rs1-d'],
     })
@@ -917,7 +796,7 @@ test('AC-05: 재동기화의 join이 끝나기 전에 추방이 확정되면 그
     const resyncing = gameSessionSocketLayer.resyncSessionRouting(targetSocket, 'rs1-d')
     await targetSocket.joinCalled
 
-    const kicked = kickGamePlayer(io, createFakeSocket('rs1-a'), 'rs1-a', gameKickPayload(session, 'rs1-a', 'rs1-d'))
+    const kicked = departGamePlayer(io, session, 'rs1-d')
     assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
 
     releaseJoin()
@@ -974,7 +853,7 @@ test('AC-06: 이미 배제된 계정의 재접속은 채널 가입 자체를 시
         roomId: 'room-rs4', gameId: 'game-rs4', hostUuid: 'rs4-a', uuids: ['rs4-a', 'rs4-b', 'rs4-c', 'rs4-d'],
     })
     const io = createFakeIo([])
-    kickGamePlayer(io, createFakeSocket('rs4-a'), 'rs4-a', gameKickPayload(session, 'rs4-a', 'rs4-d'))
+    departGamePlayer(io, session, 'rs4-d')
 
     const socket = createFakeSocket('rs4-d')
     await gameSessionSocketLayer.resyncSessionRouting(socket, 'rs4-d')
@@ -1000,7 +879,7 @@ test('AC-06: 무효 가입을 되돌리는 leave가 **비동기로 거부**되�
     const resyncing = gameSessionSocketLayer.resyncSessionRouting(targetSocket, 'rs5-d')
     await targetSocket.joinCalled
 
-    kickGamePlayer(io, createFakeSocket('rs5-a'), 'rs5-a', gameKickPayload(session, 'rs5-a', 'rs5-d'))
+    departGamePlayer(io, session, 'rs5-d')
 
     releaseJoin()
     await resyncing
@@ -1073,21 +952,6 @@ function seedForeignReceipts(count, prefix) {
     }
 }
 
-function snapshotSession(session) {
-    return JSON.stringify({
-        phase: session.phase,
-        hostUuid: session.hostUuid,
-        dayIndex: session.dayIndex,
-        participationRevision: session.participationRevision ?? 0,
-        players: [...session.players.values()].map((player) => ({
-            uuid: player.uuid,
-            alive: player.alive,
-            deathReason: player.deathReason ?? null,
-            isParticipating: player.isParticipating !== false,
-            membershipId: player.membershipId ?? null,
-        })),
-    })
-}
 
 const REJECTION_LIMIT = kickReceiptStore.KICK_REJECTION_RECEIPT_MAX_ENTRIES
 
@@ -1137,57 +1001,6 @@ test('AC-04(대기방·포화): 거부를 보존할 수 없으면 확정 거부 
     assert.equal(looked.status, 'UNKNOWN', '미결정인데 결과가 확정된 것처럼 보인다')
 })
 
-test('AC-04(게임·마지막 거부 자리): 기록된 NOT_HOST는 방장 승계 뒤에도 그대로이고 판은 그대로다', () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-gr1', gameId: 'game-gr1', hostUuid: 'gr1-a', uuids: ['gr1-a', 'gr1-b', 'gr1-c', 'gr1-d'],
-    })
-    const io = createFakeIo([])
-    seedForeignReceipts(REJECTION_LIMIT - 1, 'sat-game')
-
-    const payload = gameKickPayload(session, 'gr1-b', 'gr1-d')
-    const first = kickGamePlayer(io, createFakeSocket('gr1-b'), 'gr1-b', payload)
-    assert.equal(first.response.code, CODES.NOT_HOST)
-    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT, '거부가 기록되지 않았다')
-
-    handleLeaveGameSession(io, createFakeSocket('gr1-a'), 'gr1-a', { gameId: session.id }, countingCallback().callback)
-    assert.equal(session.hostUuid, 'gr1-b')
-
-    const before = snapshotSession(session)
-    const broadcastsBefore = io.broadcasts.length
-    const replay = kickGamePlayer(io, createFakeSocket('gr1-b'), 'gr1-b', payload)
-
-    assert.equal(replay.response.ok, false)
-    assert.equal(replay.response.code, CODES.NOT_HOST, '포화 근처의 거부가 승계 뒤에 실행됐다')
-    assert.equal(replay.response.replayed, true)
-    assert.equal(snapshotSession(session), before)
-    assert.equal(io.broadcasts.length, broadcastsBefore)
-    assert.equal(gameSessionCore.isParticipatingInSession(session, 'gr1-d'), true)
-
-    const looked = getKickResult(io, createFakeSocket('gr1-b'), 'gr1-b', { bootEpoch: BOOT, requestId: payload.requestId })
-    assert.equal(looked.code, CODES.NOT_HOST)
-    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
-})
-
-test('AC-04(게임·포화): 거부를 보존할 수 없으면 확정 거부 대신 **미결정**으로 답하고 판은 그대로다', () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-gr2', gameId: 'game-gr2', hostUuid: 'gr2-a', uuids: ['gr2-a', 'gr2-b', 'gr2-c', 'gr2-d'],
-    })
-    const io = createFakeIo([])
-    seedForeignReceipts(REJECTION_LIMIT, 'full-game')
-    const before = snapshotSession(session)
-
-    const payload = gameKickPayload(session, 'gr2-b', 'gr2-d')
-    const { response } = kickGamePlayer(io, createFakeSocket('gr2-b'), 'gr2-b', payload)
-
-    assert.equal(response.ok, false)
-    assert.equal(response.code, CODES.RECEIPT_CAPACITY, '보존되지 않는 확정 거부를 돌려줬다')
-    assert.equal(snapshotSession(session), before)
-    assert.equal(io.broadcasts.length, 0)
-    assert.equal(kickReceiptStore.__getKickReceiptCountForTests(), REJECTION_LIMIT)
-    const looked = getKickResult(io, createFakeSocket('gr2-b'), 'gr2-b', { bootEpoch: BOOT, requestId: payload.requestId })
-    assert.equal(looked.status, 'UNKNOWN')
-})
-
 test('AC-04(A-08): 거부 기록은 커밋 자리를 잠식하지 않는다 — 수위를 넘어도 실제 추방은 그대로 성공한다', async () => {
     const { io, sockets, room } = await setupRoom('rk-6', ['rk-7'])
 
@@ -1219,36 +1032,7 @@ test('AC-04(A-08): 거부 기록은 커밋 자리를 잠식하지 않는다 — 
     assert.equal(response.status, 'KICKED')
 })
 
-test('AC-04(게임): 진행 중 추방의 영수증은 **어떤 방송보다 먼저** 확정된다', () => {
-    const session = commitDeterministicSession({
-        roomId: 'room-rc1', gameId: 'game-rc1', hostUuid: 'rc1-a', uuids: ['rc1-a', 'rc1-b', 'rc1-c', 'rc1-d'],
-    })
-    const payload = gameKickPayload(session, 'rc1-a', 'rc1-d')
-    const receiptKey = kickReceiptStore.kickReceiptKey(BOOT, 'rc1-a', payload.requestId)
-
-    const observed = []
-    const io = {
-        sockets: { sockets: new Map() },
-        broadcasts: [],
-        to() {
-            return {
-                emit(event) {
-                    observed.push({ event, hadReceipt: kickReceiptStore.lookupKickReceipt(receiptKey) !== null })
-                },
-            }
-        },
-    }
-
-    const { response } = kickGamePlayer(io, createFakeSocket('rc1-a'), 'rc1-a', payload)
-
-    assert.equal(response.ok, true)
-    assert.ok(observed.length >= 2, '사망·참여 변화 방송이 실제로 일어나야 한다')
-    for (const entry of observed) {
-        assert.equal(entry.hadReceipt, true, `${entry.event} 방송 시점에 영수증이 아직 없었다`)
-    }
-})
-
-test('AC-05(게임): 추방 대상의 채널 leave가 비동기로 거부되면 그 연결을 끊는다', async () => {
+test('AC-05(게임): 나간 대상의 채널 leave가 비동기로 거부되면 그 연결을 끊는다', async () => {
     const session = commitDeterministicSession({
         roomId: 'room-rc2', gameId: 'game-rc2', hostUuid: 'rc2-a', uuids: ['rc2-a', 'rc2-b', 'rc2-c', 'rc2-d'],
     })
@@ -1257,7 +1041,7 @@ test('AC-05(게임): 추방 대상의 채널 leave가 비동기로 거부되면 
     const disconnects = trackDisconnect(targetSocket)
     const io = createFakeIo([targetSocket])
 
-    const { response } = kickGamePlayer(io, createFakeSocket('rc2-a'), 'rc2-a', gameKickPayload(session, 'rc2-a', 'rc2-d'))
+    const { response } = leaveGamePlayer(io, targetSocket, 'rc2-d', session)
     await flushMicrotasks()
 
     assert.equal(response.ok, true)
@@ -1272,7 +1056,7 @@ function deferred() {
     return { promise, resolve, reject }
 }
 
-test('AC-05(게임): 추방된 대상이 **새 대기방**을 가진 뒤 도착한 옛 채널 정리 실패는 그 연결을 끊지 않는다', async () => {
+test('AC-05(게임): 나간 대상이 **새 대기방**을 가진 뒤 도착한 옛 채널 정리 실패는 그 연결을 끊지 않는다', async () => {
     const session = commitDeterministicSession({
         roomId: 'room-own1', gameId: 'game-own1', hostUuid: 'own1-a', uuids: ['own1-a', 'own1-b', 'own1-c', 'own1-d'],
     })
@@ -1282,7 +1066,7 @@ test('AC-05(게임): 추방된 대상이 **새 대기방**을 가진 뒤 도착�
     const disconnects = trackDisconnect(targetSocket)
     const io = createFakeIo([targetSocket])
 
-    const kicked = kickGamePlayer(io, createFakeSocket('own1-a'), 'own1-a', gameKickPayload(session, 'own1-a', 'own1-d'))
+    const kicked = leaveGamePlayer(io, targetSocket, 'own1-d', session)
     assert.equal(kicked.response.ok, true)
 
     const created = await callAsPromise(
@@ -1351,7 +1135,7 @@ test('AC-03: roster 첫 참가자가 바로 그 이탈자여도 이탈 직후 �
     }
     assert.equal(session.dayVoteResolution, null, '이탈 전에는 제한시간까지 기다린다')
 
-    kickGamePlayer(io, sockets['dv1-h'], 'dv1-h', gameKickPayload(session, 'dv1-h', 'dv1-t'))
+    leaveGamePlayer(io, sockets['dv1-t'], 'dv1-t', session)
 
     assert.notEqual(session.dayVoteResolution, null, '이탈 직후 재평가가 일어나지 않았다')
     assert.equal(session.dayVoteResolution.outcome, 'ABSTAINED')
@@ -1369,7 +1153,7 @@ test('AC-03: 이탈 뒤 **마지막 제출**이 들어오면 그 제출 직후 �
     await castDayVote(io, sockets, 'dv2-h', session.id, 'dv2-c')
     await castDayVote(io, sockets, 'dv2-b', session.id, 'dv2-c')
 
-    kickGamePlayer(io, sockets['dv2-h'], 'dv2-h', gameKickPayload(session, 'dv2-h', 'dv2-t'))
+    leaveGamePlayer(io, sockets['dv2-t'], 'dv2-t', session)
     assert.equal(session.dayVoteResolution, null, '아직 dv2-c가 제출하지 않았다')
     assert.equal(session.phase, 'DAY')
 
@@ -1400,7 +1184,7 @@ test('AC-03: 이탈 뒤 마지막 제출이 **비기권**이면 그 제출 직�
 
     await castDayVote(io, sockets, 'dv4-h', session.id, 'dv4-c')
     await castDayVote(io, sockets, 'dv4-b', session.id, 'dv4-c')
-    kickGamePlayer(io, sockets['dv4-h'], 'dv4-h', gameKickPayload(session, 'dv4-h', 'dv4-t'))
+    leaveGamePlayer(io, sockets['dv4-t'], 'dv4-t', session)
     assert.equal(session.dayVoteResolution, null, '아직 dv4-c가 제출하지 않았다')
 
     const ack = await castDayVote(io, sockets, 'dv4-c', session.id, 'dv4-b')
@@ -1421,7 +1205,7 @@ test('AC-03: 마지막 비기권 제출의 **참여 저장이 실패해도** 이
 
     await castDayVote(io, sockets, 'dv5-h', session.id, 'dv5-c')
     await castDayVote(io, sockets, 'dv5-b', session.id, 'dv5-c')
-    kickGamePlayer(io, sockets['dv5-h'], 'dv5-h', gameKickPayload(session, 'dv5-h', 'dv5-t'))
+    leaveGamePlayer(io, sockets['dv5-t'], 'dv5-t', session)
     assert.equal(session.dayVoteResolution, null)
 
     const ack = await castDayVote(io, sockets, 'dv5-c', session.id, 'dv5-b')
@@ -1490,7 +1274,7 @@ test('AC-03: 재판 유권자 이탈 뒤 마지막 제출이 들어오면 그 �
 
     castTribunalVote(io, sockets, 'tv1-h', session, 'NOT_GUILTY')
     castTribunalVote(io, sockets, 'tv1-b', session, 'NOT_GUILTY')
-    kickGamePlayer(io, sockets['tv1-h'], 'tv1-h', gameKickPayload(session, 'tv1-h', 'tv1-t'))
+    leaveGamePlayer(io, sockets['tv1-t'], 'tv1-t', session)
 
     assert.equal(session.tribunal.resolved !== true, true, '아직 tv1-c가 제출하지 않았다')
     assert.equal(session.phase, 'TRIBUNAL')
@@ -1535,7 +1319,7 @@ test('AC-03: 피고 이탈의 개인 진행 사건은 새 단계(NIGHT)를 싣�
         return originalEmit(...args)
     }
 
-    const { response } = kickGamePlayer(io, hostSocket, 'sp1-h', gameKickPayload(session, 'sp1-h', 'sp1-d'))
+    const { response } = leaveGamePlayer(io, sockets['sp1-d'], 'sp1-d', session)
     assert.equal(response.ok, true, JSON.stringify(response))
     assert.equal(session.phase, 'NIGHT')
     assert.equal(session.dayIndex, dayIndexAtTribunal, '취소는 같은 날의 밤으로만 넘긴다')
@@ -1740,7 +1524,7 @@ test('AC-03: 이탈 방송은 공개 진행 수를 싣고, 정규화된 본인 �
     clearDelivered(sockets)
     const beforeBroadcasts = io.broadcasts.length
 
-    const kicked = kickGamePlayer(io, sockets['pg-h'], 'pg-h', gameKickPayload(session, 'pg-h', 'pg-c'))
+    const kicked = leaveGamePlayer(io, sockets['pg-c'], 'pg-c', session)
     assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
 
     const changed = io.broadcasts.slice(beforeBroadcasts)
@@ -1770,7 +1554,7 @@ test('AC-03: 이탈 뒤의 평범한 제출도 서버가 본인 값을 다시 �
         roomId: 'room-rs', gameId: 'game-rs', hostUuid: 'rs-h', uuids,
     })
 
-    const kicked = kickGamePlayer(io, sockets['rs-h'], 'rs-h', gameKickPayload(session, 'rs-h', 'rs-c'))
+    const kicked = leaveGamePlayer(io, sockets['rs-c'], 'rs-c', session)
     assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
     const atDeparture = sockets['rs-a'].emitted.filter((e) => e.event === 'session_self_progress')
     assert.equal(atDeparture.length, 1)
@@ -1809,7 +1593,7 @@ test('AC-03: 토론 준비도 같은 갱신을 받는다(준비 수가 이탈 �
     }
     const io = createFakeIo(Object.values(sockets))
 
-    const kicked = kickGamePlayer(io, sockets['dr-h'], 'dr-h', gameKickPayload(session, 'dr-h', 'dr-c'))
+    const kicked = leaveGamePlayer(io, sockets['dr-c'], 'dr-c', session)
     assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
     const atDeparture = sockets['dr-a'].emitted.filter((e) => e.event === 'session_self_progress')
     assert.equal(atDeparture.length, 1)
@@ -1832,7 +1616,7 @@ test('AC-03: 토론 준비도 같은 갱신을 받는다(준비 수가 이탈 �
     assert.ok(afterReady[0].payload.selfProgressSeq > atDeparture[0].payload.selfProgressSeq)
 })
 
-test('AC-03: 참여 변화 payload 조립이 실패해도 확정된 추방·개인 진행·ACK·영수증은 그대로다', async (t) => {
+test('AC-03: 참여 변화 payload 조립이 실패해도 확정된 이탈·개인 진행·ACK는 그대로다', async (t) => {
     const uuids = ['iso-h', 'iso-a', 'iso-b', 'iso-c']
     const { session, io, sockets } = setupSessionAtDayVote({
         roomId: 'room-iso', gameId: 'game-iso', hostUuid: 'iso-h', uuids,
@@ -1841,8 +1625,7 @@ test('AC-03: 참여 변화 payload 조립이 실패해도 확정된 추방·개�
     gameSessionCore.buildParticipationChangedPayload = () => { throw new Error('조립 실패(테스트 주입)') }
     t.after(() => { gameSessionCore.buildParticipationChangedPayload = original })
 
-    const payload = gameKickPayload(session, 'iso-h', 'iso-c')
-    const kicked = kickGamePlayer(io, sockets['iso-h'], 'iso-h', payload)
+    const kicked = leaveGamePlayer(io, sockets['iso-c'], 'iso-c', session)
 
     assert.equal(kicked.calls, 1)
     assert.equal(kicked.response.ok, true, JSON.stringify(kicked.response))
@@ -1853,12 +1636,6 @@ test('AC-03: 참여 변화 payload 조립이 실패해도 확정된 추방·개�
     assert.equal(io.broadcasts.filter((b) => b.event === 'player_eliminated').length, 1)
     assert.equal(io.broadcasts.filter((b) => b.event === 'session_participation_changed').length, 0)
     assert.equal(sockets['iso-a'].emitted.filter((e) => e.event === 'session_self_progress').length, 1)
-
-    const replay = getKickResult(io, sockets['iso-h'], 'iso-h',
-        { bootEpoch: payload.bootEpoch, requestId: payload.requestId })
-    assert.equal(replay.ok, true, JSON.stringify(replay))
-    assert.equal(replay.status, 'KICKED')
-    assert.equal(replay.replayed, true)
 })
 
 test('AC-03: 종결 커밋 뒤 payload 조립이 실패해도 종결 저장과 결과 방송은 그대로 일어난다', async (t) => {
@@ -1879,8 +1656,7 @@ test('AC-03: 종결 커밋 뒤 payload 조립이 실패해도 종결 저장과 �
         gameSessionCore.buildParticipationChangedPayload = originalBuild
     })
 
-    const payload = gameKickPayload(session, 'isoT-h', 'isoT-b')
-    const kicked = kickGamePlayer(io, sockets['isoT-h'], 'isoT-h', payload)
+    const kicked = leaveGamePlayer(io, sockets['isoT-b'], 'isoT-b', session)
     await flushMicrotasks()
 
     assert.equal(kicked.calls, 1)
@@ -1892,10 +1668,6 @@ test('AC-03: 종결 커밋 뒤 payload 조립이 실패해도 종결 저장과 �
     const eliminated = io.broadcasts.filter((b) => b.event === 'player_eliminated')
     assert.equal(eliminated.length, 1)
     assert.ok(eliminated[0].payload.winResult, '종결 결과가 실리지 않았다')
-
-    const replay = getKickResult(io, sockets['isoT-h'], 'isoT-h',
-        { bootEpoch: payload.bootEpoch, requestId: payload.requestId })
-    assert.equal(replay.status, 'KICKED')
 })
 
 test('AC-03: 스냅샷도 같은 공개 진행 수와 **본인** 정규화 표를 복원한다', async () => {
@@ -1904,7 +1676,7 @@ test('AC-03: 스냅샷도 같은 공개 진행 수와 **본인** 정규화 표�
         roomId: 'room-sn', gameId: 'game-sn', hostUuid: 'sn-h', uuids,
     })
     await castDayVote(io, sockets, 'sn-a', session.id, 'sn-c')
-    kickGamePlayer(io, sockets['sn-h'], 'sn-h', gameKickPayload(session, 'sn-h', 'sn-c'))
+    leaveGamePlayer(io, sockets['sn-c'], 'sn-c', session)
 
     const snapshot = gameSessionCore.getSessionSnapshotForPlayer('sn-a', session.id).snapshot
     assert.equal(snapshot.progress.kind, 'DAY_VOTE')

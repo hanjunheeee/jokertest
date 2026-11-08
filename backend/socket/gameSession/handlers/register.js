@@ -36,7 +36,7 @@ const { handleSubmitDayVote, handleResolveDayVote } = require('./dayVote')
 const { handleCastTribunalVote, handleResolveTribunalVote } = require('./tribunal')
 const { handleLeaveGameSession } = require('./leave')
 const { handleGetSessionSnapshot } = require('./snapshot')
-const { handleKickGamePlayer, handleGetKickResult } = require('./kick')
+const { handleGetKickResult } = require('./kickResult')
 
 // 게임 이벤트 핸들러 등록, 등록 때 이 소켓의 연결 소유권도 기록 (disconnect 판정용)
 function registerGameHandlers(io, socket, uuid) {
@@ -56,8 +56,7 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('get_session_snapshot', (payload, callback) => handleGetSessionSnapshot(io, socket, uuid, payload, callback))
     socket.on('acknowledge_night_action_success', (payload, callback) =>
         handleAckNightSuccess(io, socket, uuid, payload, callback))
-    socket.on(kickReceiptStore.KICK_EVENTS.KICK_GAME_PLAYER, (payload, callback) =>
-        handleKickGamePlayer(io, socket, uuid, payload, callback))
+    // 게임 중 추방(kick_game_player)은 없앰, 결과 조회는 대기방 추방 화면이 씀
     socket.on(kickReceiptStore.KICK_EVENTS.GET_KICK_RESULT, (payload, callback) =>
         handleGetKickResult(io, socket, uuid, payload, callback))
 }

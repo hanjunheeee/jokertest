@@ -1,6 +1,6 @@
 // 추방 영수증 보관함 파일
 // 요청별 결정 기록(만료·한도) + 요청 지문, 부팅 id·자리 id 만들기
-// index 거쳐 gameSession·matchmaking 추방이 씀, 부팅 id·자리 id는 matchmaking 입장도 씀
+// index 거쳐 matchmaking 대기방 추방·gameSession 결과 조회가 씀, 부팅 id·자리 id는 matchmaking 입장도 씀
 const crypto = require('crypto')
 const {
     KICK_RECEIPT_TTL_MS,
@@ -68,7 +68,6 @@ function fingerprintKickRequest(command, value) {
         value.requesterMembershipId,
         value.targetUuid,
         value.targetMembershipId,
-        value.gameId ?? null,
     ])
 }
 
