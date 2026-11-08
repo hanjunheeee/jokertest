@@ -31,6 +31,7 @@ const {
     handleGetSessionSnapshot,
     finalizeGameSessionEnd,
     __setEvaluateAchievementsForTests,
+    __setGameResultPersistForTests,
 } = gameSessionSocketLayer.__testables
 
 function createConventionFollowingRegistry() {
@@ -51,6 +52,8 @@ test.beforeEach(() => {
     gameSessionSocketLayer.__resetStateForTests()
     gameSessionSocketLayer.setOnlineUsersRegistry(createConventionFollowingRegistry())
     __setEvaluateAchievementsForTests(async () => {})
+    // 판 끝 전적 저장이 진짜 저장소로 가면 켜진 개발 DB에 씀 → 가짜로 막기 (BE-019와 같은 문제)
+    __setGameResultPersistForTests(async () => {})
     matchmaking.__setUserRepositoryForTests({ findByUuid: async (uuid) => ({ uuid, nickname: uuid }) })
     matchmaking.__setEconomyServiceForTests({
         getPublicProfileLoadouts: async (userIds) =>
@@ -69,6 +72,7 @@ test.afterEach(() => {
     matchmaking.__resetStateForTests()
     gameSessionSocketLayer.__resetStateForTests()
     __setEvaluateAchievementsForTests()
+    __setGameResultPersistForTests()
 })
 
 function connect(io, uuid, options = {}) {
