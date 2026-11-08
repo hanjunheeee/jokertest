@@ -7,7 +7,6 @@ module.exports = (sequelize, DataTypes) => {
     user_id: { type: DataTypes.UUID, allowNull: false },
     ip_address: { type: DataTypes.STRING(45) },
     connected_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-    last_ping_at: { type: DataTypes.DATE },
     // 로그아웃·새 로그인·재사용 감지 때 false + revoked_at 채움
     is_online: { type: DataTypes.BOOLEAN, defaultValue: true },
     // 지금 refresh 토큰 해시 (로그인 유지 안 하면 null)

@@ -15,7 +15,6 @@ const EXISTING_TABLES = [
             password_hash:      'STRING(255)',
             nickname:           'STRING(50)',
             email:              'STRING(100)',
-            phone:              'STRING(20)',
             role:               'STRING(20)',
             status:             'STRING(20)',
             profile_image_url:  'TEXT',
@@ -40,7 +39,6 @@ const EXISTING_TABLES = [
             user_id:                     'UUID',
             ip_address:                  'STRING(45)',
             connected_at:                'DATE',
-            last_ping_at:                'DATE',
             is_online:                   'BOOLEAN',
             refresh_token_hash:          'STRING(64)',
             refresh_previous_hash:       'STRING(64)',
@@ -103,7 +101,6 @@ const EXISTING_TABLES = [
             user_id:         'UUID',
             status:          'STRING(20)',
             last_active_at:  'DATE',
-            current_room_id: 'UUID',
             server_id:       'STRING(64)',
         },
     },
@@ -134,21 +131,6 @@ const EXISTING_TABLES = [
             request_type: 'STRING(30)',
             ip_address:   'STRING(45)',
             created_at:   'DATE',
-        },
-    },
-    {
-        model: 'TrafficLog',
-        tableName: 'traffic_logs',
-        pk: ['id'],
-        notNull: ['url', 'method'],
-        columns: {
-            id:               'INTEGER',
-            url:              'TEXT',
-            method:           'STRING(10)',
-            response_status:  'INTEGER',
-            ip_address:       'STRING(45)',
-            response_time_ms: 'INTEGER',
-            accessed_at:      'DATE',
         },
     },
     {
@@ -194,6 +176,8 @@ const NEW_MODELS = [
     'SignupEmailVerification',
     'EconomyCurrencyProduct', 'EconomyTopupOrder',
     'TermsVersion', 'UserTermsAgreement',
+    // 운영 표 (마이그레이션 0024)
+    'AdminUser', 'AdminAuditLog', 'BannedWord', 'Coupon', 'CouponRedemption', 'MaintenanceState', 'Report', 'ReportChatEvidence',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

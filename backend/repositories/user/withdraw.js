@@ -13,13 +13,12 @@ const WITHDRAWN_STATUS = 'WITHDRAWN';
 const anonymousEmailOf = (uuid) => `withdrawn-${uuid}@withdrawn.invalid`;
 const anonymousNicknameOf = (uuid) => `탈퇴${String(uuid).replace(/-/g, '')}`;
 
-// 계정 줄: 상태 WITHDRAWN·이메일·닉네임 바꿈·생일·전화·사진 지움 → deleted_at 채움 (행은 남음)
+// 계정 줄: 상태 WITHDRAWN·이메일·닉네임 바꿈·생일·사진 지움 → deleted_at 채움 (행은 남음)
 const closeAccount = async (uuid, { transaction }) => {
     await db.User.update({
         email: anonymousEmailOf(uuid),
         nickname: anonymousNicknameOf(uuid),
         status: WITHDRAWN_STATUS,
-        phone: null,
         profile_image_url: null,
         birth_date: null,
         failed_login_count: 0,

@@ -12,7 +12,6 @@ module.exports = (sequelize, DataTypes) => {
     password_hash: { type: DataTypes.STRING(255), allowNull: false },
     nickname: { type: DataTypes.STRING(50), allowNull: false, unique: true },
     email: { type: DataTypes.STRING(100), allowNull: false, unique: true },
-    phone: { type: DataTypes.STRING(20) },
     // 토큰에 실어 보냄, 지금은 늘 USER
     role: { type: DataTypes.STRING(20), defaultValue: 'USER' },
     // ACTIVE가 아니면 친구 신청·초대·검색에서 빠짐
