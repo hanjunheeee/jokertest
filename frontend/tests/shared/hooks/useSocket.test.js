@@ -239,3 +239,23 @@ test("cleanup(언마운트) 이후 늦게 도착한 갱신 응답은 소켓을 �
 
   assert.equal(socket.connectCallCount, 0, "cleanup 이후에는 재연결하면 안 됩니다");
 });
+
+test("1-15: force_disconnect가 같은 브라우저 다른 탭(REPLACED_BY_SAME_SESSION)이면 안내만 하고 로그아웃·이동 안 함", async () => {
+  resetAll();
+  authState.isLoggedIn = true;
+  const alerts = [];
+  // jsdom location은 갈아끼울 수 없어 로그아웃 호출로 이동 여부를 봄 (두 갈래 모두 logout과 이동이 붙어 다님)
+  globalThis.alert = (message) => alerts.push(message);
+  const hook = renderHook(() => useSocket());
+  await act(async () => {});
+
+  act(() => { createdSockets[0].fire("force_disconnect", { code: "REPLACED_BY_SAME_SESSION", message: "다른 창에서 열림" }); });
+  assert.deepEqual(alerts, ["다른 창에서 열림"]);
+  assert.equal(logoutCalls.length, 0);
+
+  act(() => { createdSockets[0].fire("force_disconnect", { code: "REPLACED_BY_OTHER_LOGIN", message: "다른 기기" }); });
+  assert.equal(logoutCalls.length, 1, "다른 기기 로그인이면 예전처럼 로그아웃");
+
+  hook.unmount();
+  authState.isLoggedIn = false;
+});

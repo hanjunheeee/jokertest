@@ -9,6 +9,9 @@ import { API_BASE_URL } from "../env.js";
 
 const SOCKET_URL = API_BASE_URL;
 
+// 서버 force_disconnect code: 같은 로그인 세션(같은 브라우저 다른 탭)에 밀림
+export const SAME_SESSION_REPLACED = "REPLACED_BY_SAME_SESSION";
+
 // 로그인이면 연결, 로그아웃·계정이 바뀌면 끊고 다시 연결 (계정 uuid도 의존값)
 export function useSocket() {
     const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
@@ -41,8 +44,13 @@ export function useSocket() {
 
         // 받는 순서는 예전 그대로: 강제 끊김 → 연결 → 연결 실패
         const offConnection = onConnection(socket, {
-            // 다른 곳 로그인으로 서버가 끊으면 알리고 로그아웃
+            // 같은 브라우저 다른 탭이 밀어낸 것이면 안내만 (로그아웃·/login 가면 쿠키로 다시 로그인돼 탭끼리 번갈아 끊김, known 1-15)
+            // 다른 기기·다른 로그인이면 알리고 로그아웃
             forceDisconnect: (payload) => {
+                if (payload?.code === SAME_SESSION_REPLACED) {
+                    alert(payload?.message || "같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.");
+                    return;
+                }
                 alert(payload?.message || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
                 logout();
                 window.location.replace("/login");
