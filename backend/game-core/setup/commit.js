@@ -138,18 +138,23 @@ function commitGameSession(session) {
         throw new Error(`Room에 이미 활성 GameSession 존재: ${session.roomId}`)
     }
     // 참가자가 옛 판에 남아 있을 때: 끝난 판이면 거기서 빼고, 아직 묶여 있으면 throw
+    // 검사를 먼저 다 끝내고 정리는 그 뒤 (뒤쪽 참가자에서 throw 나면 앞 사람만 옛 판에서 빠진 채 남던 것, known 1-12)
+    const endedLeftovers = []
     for (const uuid of session.players.keys()) {
         const existingGameId = getPlayerGameId(uuid)
-        if (existingGameId && existingGameId !== session.id) {
-            const existingSession = getSessionById(existingGameId)
-            if (existingSession?.phase === 'ENDED') {
-                endGameSessionForPlayer(uuid, 'SUPERSEDED_BY_NEW_GAME', existingGameId)
-            } else if (isMatchmakingBlocked(uuid)) {
-                throw new Error(`참가자가 이미 다른 GameSession에 속함: ${uuid}`)
-            }
+        if (!existingGameId || existingGameId === session.id) continue
+        const existingSession = getSessionById(existingGameId)
+        if (existingSession?.phase === 'ENDED') {
+            endedLeftovers.push([uuid, existingGameId])
+        } else if (isMatchmakingBlocked(uuid)) {
+            throw new Error(`참가자가 이미 다른 GameSession에 속함: ${uuid}`)
         }
     }
-    // 여기부터 진짜 바뀜: 장부 3개에 같이 넣음 = 판 생김
+    // 여기부터 진짜 바뀜: 끝난 옛 판에서 빼기
+    for (const [uuid, existingGameId] of endedLeftovers) {
+        endGameSessionForPlayer(uuid, 'SUPERSEDED_BY_NEW_GAME', existingGameId)
+    }
+    // 장부 3개에 같이 넣음 = 판 생김
     registerGameSession(session)
 }
 

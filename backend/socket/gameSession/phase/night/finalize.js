@@ -79,8 +79,8 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
         // 승부 났으면 종료 필드 붙이고 전적 저장 시작 (저장은 안 기다림)
         const nightResultAppliedPayload = withTerminalFields(targetSession, applied.terminal, appliedPayload, label, fields)
 
-        // 버튼 누른 사람에게 먼저 답함 (결과 내용 못 만들었으면 INTERNAL_ERROR)
-        if (onResult) onResult(nightResultAppliedPayload ? { ok: true } : internalErrorReply())
+        // 버튼 누른 사람에게 먼저 답함 (결과 내용 못 만들었으면 승부 종료 필드만 있어도 INTERNAL_ERROR)
+        if (onResult) onResult(appliedPayload ? { ok: true } : internalErrorReply())
 
         // 밤 턴 멈추고 낮 타이머 (판 끝났으면 낮 타이머는 안 걸림)
         isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => {

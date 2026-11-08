@@ -37,7 +37,12 @@ function endGameSessionForPlayer(uuid, reason, expectedGameId) {
         return { ok: false, code: 'STALE_SESSION_MISMATCH' }
     }
 
+    // 판 장부엔 없는데 내 판 기록만 남은 경우: 남은 기록만 지우고 거절 (session.phase 읽다 TypeError 나던 것)
     const session = gameSessions.get(gameId)
+    if (!session) {
+        playerSession.delete(uuid)
+        return { ok: false, code: 'SESSION_NOT_FOUND' }
+    }
 
     // 끝난 판: 결과 화면 닫은 사람만 하나씩 뺌
     if (session.phase === 'ENDED') {

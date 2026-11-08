@@ -39,7 +39,9 @@ function buildGameResultRecord(session, {
                 : player.deathReason ?? null
         const team = player.team ?? ROLE_TEAMS[player.role] ?? null
         // 이겼는지: 끝난 판은 팀 비교, 깨진 판은 나간 사람만 패, 나머지는 null
-        const won = completed ? team === winner : interruptedLeaver ? false : null
+        // 산 채로 판을 떠난 사람(나가기·추방·끊김 탈락)은 편이 이겨도 패 (BE-007), 죽은 뒤 나간 사람은 편 결과 그대로
+        const abandonedAlive = player.deathReason === DEATH_REASONS.DISCONNECT
+        const won = completed ? team === winner && !abandonedAlive : interruptedLeaver ? false : null
 
         players.push({
             game_id: session.id,

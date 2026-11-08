@@ -10,22 +10,26 @@ const { cleanupMatchmakingRooms } = require('../departure/end')
 const { applyParticipantDeparture } = require('../departure/apply')
 
 // 게임 추방 판단 검사: 처음 걸린 거절 이유 { rejection: [코드, 문구] } 또는 통과면 { session, target }
-// 자기 추방·끝난 판·다른 방 인스턴스·옛 자리·방장 아님·이미 나감을 막음 (지도 11-②⑦ · 12-⑥)
+// 자기 추방·끝난 판·다른 방 인스턴스·옛 자리·방장 아님·사망 방장의 생존자 추방·이미 나감을 막음 (지도 11-②⑦ · 12-⑥)
+// 요청자가 그 판 참가자인지 확인 전 거절은 unrecorded: 영수증 안 남김 (판 없는 계정이 요청 id만 바꿔 공용 자리 채우기 막기, BE-021)
 function checkGameKick(uuid, input, CODES) {
     // 자기 추방은 판 찾기 전에 바로 거절
-    if (input.targetUuid === uuid) return { rejection: [CODES.SELF_KICK, '자신을 추방할 수 없습니다.'] }
+    if (input.targetUuid === uuid) return { rejection: [CODES.SELF_KICK, '자신을 추방할 수 없습니다.'], unrecorded: true }
 
     // 요청이 가리킨 판·방이 지금 내 판 그대로인지
+    const notFound = { rejection: [CODES.SESSION_NOT_FOUND, '참여 중인 게임을 찾을 수 없습니다.'], unrecorded: true }
     const session = gameSessionCore.getActiveSessionForDeparture(uuid, input.gameId)
-    if (!session) return { rejection: [CODES.SESSION_NOT_FOUND, '참여 중인 게임을 찾을 수 없습니다.'] }
+    if (!session) return notFound
     if (session.phase === 'ENDED') return { rejection: [CODES.GAME_ALREADY_ENDED, '이미 종료된 게임입니다.'] }
     if ((session.roomInstanceId ?? session.roomId) !== input.roomInstanceId || session.roomId !== input.roomId) {
-        return { rejection: [CODES.SESSION_NOT_FOUND, '참여 중인 게임을 찾을 수 없습니다.'] }
+        return notFound
     }
 
     // 요청자가 그 자리 그대로인 방장인지
     const requester = session.players.get(uuid)
-    if (!requester) return { rejection: [CODES.NOT_A_PARTICIPANT, '참여 중인 게임을 찾을 수 없습니다.'] }
+    if (!requester) {
+        return { rejection: [CODES.NOT_A_PARTICIPANT, '참여 중인 게임을 찾을 수 없습니다.'], unrecorded: true }
+    }
     if ((requester.membershipId ?? null) !== input.requesterMembershipId) {
         return { rejection: [CODES.STALE_MEMBERSHIP, '게임 정보가 변경되었습니다. 다시 불러와주세요.'] }
     }
@@ -36,6 +40,10 @@ function checkGameKick(uuid, input, CODES) {
     if (!target) return { rejection: [CODES.NOT_A_PARTICIPANT, '이 게임의 참가자가 아닙니다.'] }
     if (!gameSessionCore.isParticipatingInSession(session, input.targetUuid)) {
         return { rejection: [CODES.ALREADY_LEFT, '이미 게임에서 나간 참가자입니다.'] }
+    }
+    // 죽은 방장은 산 사람을 못 쫓음 (추방은 끊김 사망이라 승부를 바로 낼 수 있어, 죽은 방장 혼자 결과·전적을 정하던 것, BE-004)
+    if (requester.alive !== true && target.alive === true) {
+        return { rejection: [CODES.NOT_HOST, '사망한 방장은 살아 있는 참가자를 추방할 수 없습니다.'] }
     }
     if ((target.membershipId ?? null) !== input.targetMembershipId) {
         return { rejection: [CODES.STALE_MEMBERSHIP, '대상이 변경되었습니다. 다시 확인해주세요.'] }
@@ -100,7 +108,8 @@ function handleKickGamePlayer(io, socket, uuid, payload, callback) {
     // 판단 검사, 걸리면 영수증 남기고 거절
     const checked = checkGameKick(uuid, input, CODES)
     if (checked.rejection) {
-        decideReject(...checked.rejection)
+        if (checked.unrecorded) reject(...checked.rejection)
+        else decideReject(...checked.rejection)
         return
     }
     const { session, target } = checked

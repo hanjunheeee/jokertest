@@ -16,9 +16,10 @@ const { getPlayerGameId, getSessionById } = require('../queries/byId')
 // 스냅샷에 낮·재판 칸 넣어도 되는지
 function canIncludeVoteFields(session) {
     if (session.phase === 'DAY' || session.phase === 'TRIBUNAL') return true
-    // 끝난 판은 밤 결과 날짜가 지금 날짜와 다를 때만 (밤에 끝난 판이면 뺌)
+    // 끝난 판은 밤에 끝난 판만 뺌: 밤 결과 날짜가 지금 날짜와 같으면 밤에 끝남
+    // 첫 밤 전(1일째 낮·재판)에 끝난 판은 밤 결과가 없어도 그날 투표·재판 칸을 실음
     if (session.phase === 'ENDED') {
-        return session.nightResolution !== null && session.nightResolution.dayIndex !== session.dayIndex
+        return !session.nightResolution || session.nightResolution.dayIndex !== session.dayIndex
     }
     return false
 }
@@ -29,6 +30,14 @@ function buildPublicTribunalDeadlineField(session) {
     const deadline = session.tribunalDeadline
     if (!Number.isFinite(deadline) || deadline <= 0) return {}
     return { tribunalDeadline: deadline }
+}
+
+// 지난밤 내 개인 결과 칸 (경비원 조사·마녀사냥꾼 확인·광대 실패), 보는 사람 것만 (BE-036)
+// 판정 순간 한 번만 보내서 새로고침·끊김이면 다시 못 보던 것
+function buildSelfNightResultField(session, uuid) {
+    const privateResults = session.nightResolution?.privateResults
+    if (!(privateResults instanceof Map) || !privateResults.has(uuid)) return {}
+    return { nightActionResult: { dayIndex: session.nightResolution.dayIndex, ...privateResults.get(uuid) } }
 }
 
 // 보는 사람 기준 판 스냅샷 (내 역할·진행·투표·재판·밤 결과)
@@ -68,6 +77,7 @@ function buildSessionSnapshot(session, uuid) {
             ...buildViewerRoleFields(session, viewer),
             hasActedThisPhase: computeHasActed(session, uuid),
             ...buildSelfFields(session, uuid),
+            ...buildSelfNightResultField(session, uuid),
         },
         progress: buildPublicProgress(session),
     }

@@ -16,13 +16,15 @@ const { stopTribunalTimer } = require('../phase/tribunal')
 const { clearDepartureMark } = require('./marks')
 
 // 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
-// 종료 필드 만들다 던지면 원래 내용 그대로
+// 종료 필드 만들다 던지면 원래 내용 그대로, 원래 내용을 못 만들었으면 판 id·날짜는 붙여 보냄 (어느 판 종료인지 모르던 것)
 function withTerminalFields(session, terminal, payload, label, fields) {
     if (!terminal) return payload
     let merged = payload
     isolate(label, { code: 'TERMINAL_BUILD_ERROR', ...fields }, () => {
         const terminalFields = gameSessionCore.buildTerminalFields(session)
-        merged = payload ? { ...payload, ...terminalFields } : terminalFields
+        merged = payload
+            ? { ...payload, ...terminalFields }
+            : { gameId: session.id, dayIndex: session.dayIndex, ...terminalFields }
     })
     persistTerminalSession(session, { completed: true })
     return merged

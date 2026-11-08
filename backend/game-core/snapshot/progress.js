@@ -5,12 +5,13 @@ const { getDayVoterUuids } = require('../phase/day/ballots')
 const { getDayPhase, getDayVoteRound, getDayVoteReadyUuids } = require('../phase/day/state')
 const { DAY_PHASES } = require('../phase/day/constants')
 const { getTribunalVoterUuids } = require('../phase/tribunal/ballots')
+const { isParticipatingInSession } = require('../queries/participation')
 
 // 지금 단계에서 몇 명 했는지 / 몇 명 해야 하는지 (밤은 숫자 숨김)
 function buildPublicProgress(session) {
-    // 역할 확인: 참여 중인 사람 중 확인한 수
+    // 역할 확인: 참여 중인 사람 중 확인한 수 (기권자 빼는 기준은 전원 확인 검사와 같게)
     if (session.phase === 'ROLE_REVEAL') {
-        const pending = [...session.players.values()].filter((p) => p.isParticipating !== false)
+        const pending = [...session.players.values()].filter((p) => isParticipatingInSession(session, p.uuid))
         const acks = session.roleRevealAcks instanceof Set ? session.roleRevealAcks : new Set()
         return {
             kind: 'ROLE_REVEAL',

@@ -22,8 +22,9 @@ const NIGHT_RECOVERY_STATES = Object.freeze({
     DEATH_CANDIDATE: 'DEATH_CANDIDATE',
 })
 
-// 끝난 역할 없음 (빈 목록 하나 같이 사용)
-const EMPTY_COMPLETED_ROLES = Object.freeze(new Set())
+// 끝난 역할 없음 (빈 목록 하나 같이 사용), has만 있는 읽기 전용 모양
+// Object.freeze(new Set())는 add를 못 막아 누가 넣으면 모든 판에 샘
+const EMPTY_COMPLETED_ROLES = Object.freeze({ has: () => false, size: 0 })
 
 // 자기 자신 고를 수 있는 역할: 의사만
 const SELF_TARGET_ROLES = new Set(['DOCTOR'])

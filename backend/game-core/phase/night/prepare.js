@@ -2,7 +2,7 @@
 // 밤 결과·개인 결과 계산(확정 안 함), socket 밤 판정 요청·자동 마무리가 사용
 const { findActorSession } = require('../../core/registry/lookup')
 const { assertSessionNotEnded } = require('../../core/rules/terminal')
-const { getNightProgress, createNightProgress } = require('./progress')
+const { getNightProgress, createNightProgress, isRecoveryBlockedState } = require('./progress')
 const { NIGHT_TURN_ORDER } = require('./constants')
 const { getEligibleNightActorUuids, matchesTargetLifeRule } = require('./actors')
 const { applyNightRoleStep, computeNightRoleStep, closeNightHealing } = require('./roleStep')
@@ -115,9 +115,11 @@ function prepareNightResolutionForSession(session) {
     }
 
     // 그 역할 산 사람마다 개인 결과 하나씩 (받는 사람 uuid로 꺼냄)
+    // 광대한테 찍혀 행동이 막힌 사람은 안 줌 (막힌 경비원·마녀사냥꾼이 같은 역할 동료 결과를 받던 것)
     const privateResults = new Map()
     for (const player of session.players.values()) {
         if (player.alive !== true) continue
+        if (isRecoveryBlockedState(progress.recoveryStates.get(player.uuid))) continue
         const buildResult = privateBuilders.get(player.role)
         if (buildResult !== undefined) privateResults.set(player.uuid, buildResult())
     }

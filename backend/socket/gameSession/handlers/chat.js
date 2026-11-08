@@ -214,6 +214,12 @@ function handleSendEmoji(io, socket, uuid, payload, callback) {
         return
     }
 
+    // 죽은 사람은 안 됨 (말풍선이 산 사람 포함 판 전체에 떠서 죽은 뒤 신호 주기 막기, BE-022)
+    if (session.players.get(uuid)?.alive !== true) {
+        reject('PLAYER_NOT_ALIVE')
+        return
+    }
+
     // 마지막으로 보낸 지 너무 짧으면 거절 (말풍선 도배 막기)
     const sentAt = Date.now()
     const rateLimit = session.emojiRateLimit instanceof Map ? session.emojiRateLimit : null

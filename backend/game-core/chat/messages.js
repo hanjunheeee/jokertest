@@ -82,7 +82,9 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
 
     // 채널 = 내 역할, 마지막으로 보낸 지 0.5초 안 됐으면 거절
     const channel = actor.role
-    const lastSentAt = getChatRateLimitMap(session, channel).get(uuid)
+    const rateLimitMap = getChatRateLimitMap(session, channel)
+    if (!(rateLimitMap instanceof Map)) return { ok: false, code: 'INVALID_CHAT_CHANNEL' }
+    const lastSentAt = rateLimitMap.get(uuid)
     if (lastSentAt !== undefined && sentAt - lastSentAt < CHAT_MIN_INTERVAL_MS) {
         return { ok: false, code: 'RATE_LIMITED' }
     }
