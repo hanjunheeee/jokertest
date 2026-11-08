@@ -1224,7 +1224,7 @@ test('prepareJokerChatMessage: 정상 호출은 성공하고 jokerChatRateLimit�
 })
 
 test('prepareJokerChatMessage: gameId가 공백만이면 INVALID_GAME_ID다', () => {
-    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-2' })
+    const { jokerUuids } = commitJokerTrioSessionAtNight({ id: 'room-pjc-2' })
     const [actor] = jokerUuids
 
     const result = prepareJokerChatMessage(actor, '   ', 'hello')
@@ -1881,7 +1881,8 @@ test('prepareGameChatMessage: 성공 반환값의 키는 정확한 화이트리�
     assert.equal(result.message.sentAt, result.sentAt)
     assert.equal(typeof result.message.messageId, 'string')
     assert.equal(result.message.messageId.length > 0, true)
-    const { session: _session, ...publicish } = result
+    const publicish = { ...result }
+    delete publicish.session
     const serialized = JSON.stringify(publicish)
     for (const secret of ['JOKER', 'role', 'team', 'alive', 'allies']) {
         assert.equal(serialized.includes(secret), false, `${secret}가 노출되면 안 된다`)

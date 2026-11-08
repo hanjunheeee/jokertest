@@ -48,7 +48,8 @@ const createFakeTopupDb = () => {
                 if (patch.payment_key && [...orderRows.values()].some((other) => other !== row && other.payment_key === patch.payment_key)) {
                     throw uniqueError('duplicate payment_key');
                 }
-                const { update, ...before } = row;
+                const before = { ...row };
+                delete before.update;
                 Object.assign(row, patch);
                 track(options.transaction, () => Object.assign(row, before));
             };
@@ -86,7 +87,8 @@ const createFakeTopupDb = () => {
             if (walletRows.has(user_id)) throw uniqueError('duplicate wallet');
             const row = { user_id, balance_gold, balance_diamond };
             row.update = async (patch, updateOptions = {}) => {
-                const { update, ...before } = row;
+                const before = { ...row };
+                delete before.update;
                 Object.assign(row, patch);
                 track(updateOptions.transaction, () => Object.assign(row, before));
             };

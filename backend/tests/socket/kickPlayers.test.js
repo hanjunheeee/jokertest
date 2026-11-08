@@ -134,10 +134,6 @@ function roomKickPayload(room, hostUuid, targetUuid, overrides = {}) {
     }
 }
 
-const kickRoom = (io, socket, uuid, payload) =>
-    callAsPromise(handleKickRoomPlayer, io, socket, uuid, payload)
-        .then((res) => res, (err) => { throw err })
-
 function kickRoomPlayer(io, socket, uuid, payload, getCurrentSocketId = conventionSocketId) {
     const { callback, getResponse, getCalls } = countingCallback()
     handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSocketId)
@@ -1502,7 +1498,7 @@ test('AC-05(게임): 되돌린 가입이 완료되기 전에 그 소속마저 �
         roomId: 'room-rj', gameId: 'game-rj', hostUuid: 'rj-h', uuids,
     })
     const target = createFakeSocket('rj-t')
-    const io = createFakeIo([createFakeSocket('rj-h'), target])
+    createFakeIo([createFakeSocket('rj-h'), target])
     target.rooms.add(session.channelId)
 
     let releaseJoin

@@ -82,7 +82,7 @@ test('A-07: 재실행해도 실패했던 계정이 다음 실행 대상에서 �
     const db = createFakeUserDb(['user-broken']);
     let attempt = 0;
     const achievementService = {
-        async evaluateAndGrantForUser(userId) {
+        async evaluateAndGrantForUser() {
             attempt += 1;
             if (attempt === 1) throw new Error('first attempt fails');
             return [{ id: 'record-1-masquerade', achieved: true, granted: true }];

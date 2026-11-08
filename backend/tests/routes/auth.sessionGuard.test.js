@@ -1,8 +1,9 @@
 process.env.JWT_SECRET = "session-guard-test-secret";
 
 const test         = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert       = require("node:assert/strict");
-const { once }     = require("node:events");
 const crypto       = require("node:crypto");
 const jwt          = require("jsonwebtoken");
 const express      = require("express");
@@ -21,8 +22,8 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
 
     return `http://127.0.0.1:${server.address().port}`;

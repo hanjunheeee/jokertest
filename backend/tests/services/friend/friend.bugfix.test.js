@@ -25,7 +25,7 @@ const stubTransaction = (t) => {
 };
 
 // 보내기 기본 가짜 묶음 (부른 옵션 기록)
-const stubSendPath = (t, overrides = {}) => {
+const stubSendPath = (t) => {
     const seen = {};
     const transaction = stubTransaction(t);
     t.mock.method(friendshipRepository, 'lockAccountsInOrder', async (uuids) => uuids.map((uuid) => ({ uuid, status: 'ACTIVE' })));

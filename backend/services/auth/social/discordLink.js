@@ -4,14 +4,17 @@ const crypto = require("crypto");
 const discordOAuthService = require("../oauth/discord");
 const { signOAuthAttempt, clientMark } = require("./attempt");
 const { ATTEMPT_TTL_SECONDS } = require("./constants");
+// 같은 폴더 함수는 입구 말고 원래 파일 모듈 객체로 (입구가 이 값으로 이어 줘 시험 패치 먹음, 순환 require 없음)
+const stateModule = require("./state");
+const linkModule = require("./link");
 
 // 지문 만들고 로그인한 세션으로 연결 state 발급 → 시도 표 서명
 exports.startDiscordLink = async ({ userId, sessionId, client }) => {
     // 지문 원문은 시도 쿠키에만, state 행엔 해시 (다른 브라우저로 콜백 막기)
     const browserFingerprint = crypto.randomBytes(32).toString("base64url");
 
-    // 연결 state는 지금 세션에 묶음 (입구 객체로 불러 시험 패치 먹게)
-    const { state } = await require('./index').issueOAuthState({
+    // 연결 state는 지금 세션에 묶음 (모듈 객체로 불러 시험 패치 먹게)
+    const { state } = await stateModule.issueOAuthState({
         purpose: "link", userId, sessionId, browserFingerprint,
     });
 
@@ -30,7 +33,7 @@ exports.completeDiscordLink = async ({ attempt, query, user }) => {
     const rawState = query.state;
 
     // 취소여도 state 먼저 소비 (같은 state 다시 못 쓰게)
-    const consumed = await require('./index').consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
+    const consumed = await stateModule.consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
 
     // 연결 시작한 세션과 지금 세션이 다르면 거절 (남의 연결 state 끼워 넣기 막기)
     if (consumed.userId !== user.uuid || consumed.sessionId !== user.sessionId) {
@@ -48,8 +51,8 @@ exports.completeDiscordLink = async ({ attempt, query, user }) => {
 
     const profile = await discordOAuthService.exchangeCodeForProfile(query.code, { purpose: "link" });
 
-    // 연결은 세션 다시 확인하고 붙임 (입구 객체로 불러 시험 패치 먹게)
-    await require('./index').linkExternalIdentityForValidatedSession({
+    // 연결은 세션 다시 확인하고 붙임 (모듈 객체로 불러 시험 패치 먹게)
+    await linkModule.linkExternalIdentityForValidatedSession({
         userId: user.uuid,
         sessionId: user.sessionId,
         provider: "discord",

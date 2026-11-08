@@ -8,30 +8,18 @@ const {
 const gameSession = require('../game-core/gameSession')
 const gameInviteModule = require('../services/friend/gameInvite')
 const kickReceiptStore = require('./kickReceiptStore')
-const channelMembership = require('./channelMembership')
-// 대기방·매칭 장부 (초대 연결·시험 손잡이가 씀)
+// 대기방·매칭 장부 (초대 연결이 씀)
 const {
     matchmakingQueue,
     gameRooms,
     playerRoom,
-    partyRoomByGameId,
     pendingRoomTransitions,
-    roomAdmissionAttempts,
-    publishedAdmissions,
-    roomSettingsUpdateResults,
-    startedRoomMarks,
-    pendingRoomRemovals,
-    presenceConfirmedTick,
 } = require('./matchmaking/core/state')
 // 방 크기 규칙·자동 매칭 켜기
 const {
     __setRandomMatchmakingEnabledForTests,
     getSupportedRoomSizes,
 } = require('./matchmaking/core/config')
-// 설정 저장 영수증 지우기 (시험 방 지우기용)
-const {
-    forgetSettingsResults,
-} = require('./matchmaking/settings/receipts')
 // 시작돼 사라진 방 표시
 const {
     __resetStartedMarksForTests,
@@ -66,7 +54,6 @@ const {
 // 초대 입장 시도 기록·방 인원 세기
 const {
     getAdmissionAttempt,
-    invalidateRoomAttempts,
     hasPendingAdmission,
     countRoomOccupancy,
 } = require('./matchmaking/admission/attempts')
@@ -97,7 +84,6 @@ const {
     commitRoomDeparture,
     notifyRoomDeparture,
     removeFromRoom,
-    resetRoomPresenceTick,
 } = require('./matchmaking/room/leave')
 // 방장 강퇴·방 지우기
 const {
@@ -110,27 +96,31 @@ const {
     onDisconnect,
     handleGetCurrentRoom,
 } = require('./matchmaking/room/reconnect')
-// 코드·공개 방 입장, 공개 방 목록
+// 코드 입장
 const {
     handleJoinRoomByCode,
+} = require('./matchmaking/join/join')
+// 공개방 고르기 입장, 공개 방 목록
+const {
     handleJoinPublicRoom,
     handleGetPublicRooms,
-} = require('./matchmaking/join/join')
+} = require('./matchmaking/join/publicRooms')
 // 방 만들기
 const {
     handleCreateRoom,
 } = require('./matchmaking/join/create')
 // 초대 수락 입장
 const {
-    __setAdmissionTimeoutsForTests,
     handleAcceptGameInvite,
-    handleGetGameInviteResult,
-    __seedAdmissionAttemptForTests,
 } = require('./matchmaking/admission/accept')
-// 코드 입장 시도 횟수 (시험 초기화용)
+// 초대 입장 기다리는 시간 (시험이 줄임)
 const {
-    __resetEntryLimitsForTests,
-} = require('./matchmaking/join/entryLimits')
+    __setAdmissionTimeoutsForTests,
+} = require('./matchmaking/admission/timeouts')
+// 초대 수락 결과 다시 묻기
+const {
+    handleGetGameInviteResult,
+} = require('./matchmaking/admission/result')
 // 판 끝·판 나가기·게임 추방 때 대기방 흔적 정리
 const {
     cleanupRoomStateForSessionParticipants,
@@ -261,108 +251,20 @@ gameInviteModule.__setRoomAccessForRuntime({
     },
 })
 
-// 시험용: 장부·영수증·제외 기록 전부 비우고 끊김 예약 타이머 끔 (세대 번호 장부는 그대로)
-function __resetStateForTests() {
-    matchmakingQueue.clear()
-    gameRooms.clear()
-    playerRoom.clear()
-    pendingRoomTransitions.clear()
-    roomAdmissionAttempts.clear()
-    publishedAdmissions.clear()
-    startedRoomMarks.clear()
-    roomSettingsUpdateResults.clear()
-    partyRoomByGameId.clear()
-    kickReceiptStore.__resetKickReceiptsForTests()
-    channelMembership.__resetChannelExclusionsForTests()
-    for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
-    pendingRoomRemovals.clear()
-    presenceConfirmedTick.clear()
-    resetRoomPresenceTick()
-    __resetEntryLimitsForTests()
-}
-
-// 시험용: 15초 안 기다리고 끊김 빼기 예약 바로 실행
-function __flushRoomRetentionForTests() {
-    for (const pending of [...pendingRoomRemovals.values()]) {
-        clearTimeout(pending.timer)
-        pending.run()
-    }
-}
-
-// 시험용: 끊김 빼기 예약 목록 [uuid, 방 id]
-function __getPendingRoomRemovalsForTests() {
-    return [...pendingRoomRemovals.entries()].map(([uuid, { roomId }]) => [uuid, roomId])
-}
-
-// 시험용: 장부 복사본 (설정은 깊은 복사, 시험이 고쳐도 진짜 장부 안 바뀌게)
-function __getStateSnapshotForTests() {
-    return {
-        matchmakingQueue: [...matchmakingQueue.entries()],
-        gameRooms: [...gameRooms.entries()].map(([id, room]) => [
-            id,
-            {
-                ...room,
-                players: [...room.players.entries()],
-                settings: room.settings === undefined || room.settings === null
-                    ? room.settings
-                    : JSON.parse(JSON.stringify(room.settings)),
-            },
-        ]),
-        playerRoom: [...playerRoom.entries()],
-        roomSettingsUpdateResults: [...roomSettingsUpdateResults.entries()].map(([key, entry]) => [key, {
-            roomId: entry.roomId,
-            changed: entry.changed,
-            settingsVersion: entry.settingsVersion,
-        }]),
-        pendingRoomTransitions: [...pendingRoomTransitions.keys()],
-        roomAdmissionAttempts: [...roomAdmissionAttempts.entries()].map(([uuid, attempt]) => [uuid, {
-            attemptId: attempt.attemptId,
-            inviteId: attempt.inviteId,
-            roomId: attempt.roomId,
-            roomInstanceId: attempt.roomInstanceId,
-            phase: attempt.phase,
-            socketId: attempt.socketId,
-        }]),
-        bootEpoch: BOOT_EPOCH,
-    }
-}
-
-// 시험용: 매칭 줄에 바로 넣기 (검사 없이)
-function __seedMatchmakingQueueForTests(uuid, entry) {
-    matchmakingQueue.set(uuid, entry)
-}
-
-// 시험용: 방 바로 넣기
-function __seedRoomForTests(room) {
-    gameRooms.set(room.id, room)
-}
-
-// 시험용: 소속 장부 바로 넣기
-function __seedPlayerRoomForTests(uuid, roomId) {
-    playerRoom.set(uuid, roomId)
-}
-
-// 시험용: 알림 없이 방 지우기 (소속·입장 시도·영수증만 같이 정리, 초대는 안 건드림)
-function __removeRoomForTests(roomId) {
-    const room = gameRooms.get(roomId)
-    if (room) {
-        room.players.forEach((_, playerUuid) => playerRoom.delete(playerUuid))
-    }
-    gameRooms.delete(roomId)
-    invalidateRoomAttempts(roomId, 'ROOM_GONE')
-    forgetSettingsResults(roomId)
-}
-
-// 시험용: 이 서버 부팅 번호
-function __getBootEpochForTests() {
-    return BOOT_EPOCH
-}
-
-// 시험용: 입장 시도 기한 지난 걸로 만들기 (다음 조회 때 사라짐, 명단에 넣은 시도는 안 사라짐)
-function __expireAdmissionAttemptForTests(uuid) {
-    const attempt = roomAdmissionAttempts.get(uuid)
-    if (attempt) attempt.expiresAt = Date.now() - 1
-}
+// 시험 손잡이 (장부 비우기·넣기·복사본, matchmaking/testHooks.js)
+const {
+    __resetStateForTests,
+    __flushRoomRetentionForTests,
+    __getPendingRoomRemovalsForTests,
+    __getStateSnapshotForTests,
+    __seedMatchmakingQueueForTests,
+    __seedRoomForTests,
+    __seedPlayerRoomForTests,
+    __removeRoomForTests,
+    __getBootEpochForTests,
+    __expireAdmissionAttemptForTests,
+    __seedAdmissionAttemptForTests,
+} = require('./matchmaking/testHooks')
 
 // 앞 6개는 socket.js·connection·판 쪽이 씀, 나머지는 시험용 (ROOM_RECONNECT_GRACE_MS는 쓰는 곳 없음)
 module.exports = {

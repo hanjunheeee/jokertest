@@ -115,7 +115,7 @@ test("rememberMe를 지정하지 않으면 oauthAttempt 쿠키에 rememberMe:fal
 
 test("재로그인(LOGIN) 콜백은 state를 먼저 소비한 뒤 제공자를 불러 세션 쿠키를 세팅하고 /lobby로 리다이렉트한다(AC-01, R-IMPL #3 순서)", async (t) => {
     const callOrder = [];
-    const google = stubModule(t, googleOAuthService, GOOGLE_KEYS, {
+    stubModule(t, googleOAuthService, GOOGLE_KEYS, {
         exchangeCodeForProfile: async (code) => {
             callOrder.push("exchange");
             assert.equal(code, "auth-code-1");

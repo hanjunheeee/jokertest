@@ -15,7 +15,7 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   // 다른 표와 관계 없음
-  AccountFindRequest.associate = (models) => {
+  AccountFindRequest.associate = () => {
   };
 
   return AccountFindRequest;

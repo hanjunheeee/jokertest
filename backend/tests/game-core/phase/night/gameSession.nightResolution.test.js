@@ -602,7 +602,7 @@ test('AC-03(F-25a): 의사가 자기 자신을 치료 대상으로 지정해도 
     assert.equal(prepared.resolution.recoveryStates.get(doctorUuid), 'RECOVERED')
     assert.equal(prepared.resolution.pendingEliminationTargetId, null)
 
-    const applied = commitNightResolution(prepared.session, prepared.resolution)
+    commitNightResolution(prepared.session, prepared.resolution)
     assert.equal(session.players.get(doctorUuid).alive, true)
 })
 

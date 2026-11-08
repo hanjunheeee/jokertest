@@ -220,7 +220,7 @@ const createRacyFakeDb = () => {
     let insertHappened = false;
 
     const AchievementGrant = {
-        async findOrCreate({ where, defaults, transaction }) {
+        async findOrCreate({ where, defaults }) {
             if (insertHappened) {
                 const error = new UniqueConstraintError({ errors: [], fields: { achievement_grants_user_achievement_unique: `${where.user_id}-${where.achievement_id}` } });
                 throw error;

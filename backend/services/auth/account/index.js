@@ -1,7 +1,9 @@
 // 이메일·비번 계정 입구, 세션 발급·가입·로그인·refresh·비번 바꾸기·탈퇴 묶어 내보냄
 // controllers/auth/account.js·auth/session.js·profile.controller.js, social/resolve.js·social/signup.js, 같은 폴더 login.js가 부름
 // 시험이 issueSessionForUser·signup을 이 객체에서 갈아끼우기 때문에 입구 남김
-const { issueSessionForUser } = require('./session');
+// issueSessionForUser는 session.js 값으로 이어 둠 (login.js가 입구 말고 session.js로 불러도 패치 먹게, 순환 require 없음)
+const sessionModule = require('./session');
+const { forwardExports } = require('../../../utils/forwardExports');
 const { signup, checkEmailAvailability } = require('./signup');
 const { login, logout, logoutByRefreshToken } = require('./login');
 const { refresh } = require('./refresh');
@@ -11,7 +13,6 @@ const { changePassword } = require('./password');
 const { withdrawAccount } = require('./withdraw');
 
 module.exports = {
-    issueSessionForUser,
     signup,
     checkEmailAvailability,
     login,
@@ -21,3 +22,4 @@ module.exports = {
     changePassword,
     withdrawAccount,
 };
+forwardExports(module.exports, sessionModule, ['issueSessionForUser']);

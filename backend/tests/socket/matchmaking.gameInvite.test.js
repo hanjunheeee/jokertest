@@ -845,7 +845,7 @@ test('review5 #1: 늦게 도착한 옛 시도의 보상이 그 사이 확정된 
     t.after(() => matchmaking.__setAdmissionTimeoutsForTests())
 
     const afterPublish = deferred()
-    const { io, hostSocket, guestSocket, room, service } = await setupRoomWithInvite(t, {
+    const { io, hostSocket, guestSocket, room } = await setupRoomWithInvite(t, {
         gates: { afterPublish: afterPublish.promise, receiptShouldFail: true },
     })
 

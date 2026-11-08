@@ -1,10 +1,11 @@
 // 초대 수락 입장 파일
-// accept_game_invite·get_game_invite_result 받기, matchmaking.js가 붙임 (지도 23)
+// accept_game_invite 받기, matchmaking.js가 붙임 (지도 23), 결과 다시 묻기는 admission/result.js
 // 순서: 초대 확인 → 자리 잡기 → 수락 기록 → 채널 넣기 → 영수증 안에서 명단 넣기
 const kickReceiptStore = require('../../kickReceiptStore')
 const gameSession = require('../../../game-core/gameSession')
 const channelMembership = require('../../channelMembership')
-const { ADMISSION_STEP_MS, ADMISSION_TOTAL_MS, BOOT_EPOCH } = require('../core/constants')
+const { BOOT_EPOCH } = require('../core/constants')
+const { getStepTimeoutMs, getTotalTimeoutMs } = require('./timeouts')
 const { rejectIfInGame } = require('../join/guards')
 const { playerRoom, matchmakingQueue, gameRooms, roomAdmissionAttempts, publishedAdmissions } = require('../core/state')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
@@ -17,16 +18,13 @@ const { loadPlayerProfile, computeCanStart, emitPublicRoomList, buildRoomPayload
 const { scheduleLateJoinCleanup, removePublished } = require('./release')
 const { isCanonicalOrUnknown, isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
 
-// 입장 단계 하나 기다리는 시간 (시험이 줄임)
-let STEP_TIMEOUT_MS = ADMISSION_STEP_MS
-
-// 입장 전체 기다리는 시간 (시험이 줄임)
-let TOTAL_TIMEOUT_MS = ADMISSION_TOTAL_MS
-
-// 시험용: 입장 대기 시간 바꾸기
-function __setAdmissionTimeoutsForTests({ step, total } = {}) {
-    STEP_TIMEOUT_MS = Number.isFinite(step) ? step : ADMISSION_STEP_MS
-    TOTAL_TIMEOUT_MS = Number.isFinite(total) ? total : ADMISSION_TOTAL_MS
+// 실패 되돌리기 때 붙었던 채널 떼기, 다른 길로 이미 앉았으면 그대로 둠 (되돌리기 네 곳이 같이 씀)
+function detachUnlessSeated(io, socket, uuid, channelId) {
+    if (isSeatedInRoom(uuid, channelId)) return
+    detachSocketFromChannel(socket, channelId, '[초대 입장 정리 실패]', {
+        ownsChannel: () => isSeatedInRoom(uuid, channelId) && isCanonicalSocket(io, uuid, socket, channelId),
+        keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
+    })
 }
 
 // 초대 수락 입장: 자리 미리 잡고 단계마다 시간 제한, 실패하면 되돌림
@@ -78,10 +76,10 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
     const attemptId = nextAttemptId()
     const startedAt = Date.now()
     // 전체 대기 중 남은 시간
-    const remaining = () => Math.max(0, TOTAL_TIMEOUT_MS - (Date.now() - startedAt))
+    const remaining = () => Math.max(0, getTotalTimeoutMs() - (Date.now() - startedAt))
     // 단계 하나 기다리기: 단계 한도와 남은 시간 중 짧은 쪽, 다 썼으면 1ms로 바로 시간 초과
     const step = (promise, code) => withAdmissionTimeout(
-        promise, Math.min(STEP_TIMEOUT_MS, remaining() || 1), code,
+        promise, Math.min(getStepTimeoutMs(), remaining() || 1), code,
     )
 
     // 입장 시도·채널 붙은 방 기억 (실패 때 되돌릴 대상)
@@ -139,7 +137,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             generation: generationAtRequest,
             socketId: socket.id,
             phase: 'reserved',
-            expiresAt: startedAt + TOTAL_TIMEOUT_MS,
+            expiresAt: startedAt + getTotalTimeoutMs(),
         }
         roomAdmissionAttempts.set(uuid, attempt)
         markPartyOriginObject(uuid, attempt)
@@ -201,14 +199,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             || socket.data?.user?.uuid !== uuid
             || !isCanonicalOrUnknown(io, uuid, socket, room.id)) {
             // 다른 길로 이미 앉았으면 채널 그대로 둠
-            if (!isSeatedInRoom(uuid, room.id)) {
-                detachSocketFromChannel(socket, room.id, '[초대 입장 정리 실패]', {
-                    ownsChannel: () =>
-                        isSeatedInRoom(uuid, room.id)
-                        && isCanonicalSocket(io, uuid, socket, room.id),
-                    keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
-                })
-            }
+            detachUnlessSeated(io, socket, uuid, room.id)
             joinedRoomId = null
             if (roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
             compensateAttempt(attempt, 'CANONICAL_SOCKET_REPLACED')
@@ -272,17 +263,9 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         if (!finalized.ok) {
             if (attempt.phase === 'published') removePublished(io, socket, attempt)
             roomAdmissionAttempts.delete(uuid)
+            // 다른 길로 이미 앉았으면 채널 그대로 둠
             if (joinedRoomId) {
-                const cleanupChannelId = joinedRoomId
-                // 다른 길로 이미 앉았으면 채널 그대로 둠
-                if (!isSeatedInRoom(uuid, cleanupChannelId)) {
-                    detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
-                        ownsChannel: () =>
-                            isSeatedInRoom(uuid, cleanupChannelId)
-                            && isCanonicalSocket(io, uuid, socket, cleanupChannelId),
-                        keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
-                    })
-                }
+                detachUnlessSeated(io, socket, uuid, joinedRoomId)
                 joinedRoomId = null
             }
             respond({
@@ -314,17 +297,9 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             if (attempt.phase === 'published') removePublished(io, socket, attempt)
             if (roomAdmissionAttempts.get(uuid) === attempt) roomAdmissionAttempts.delete(uuid)
             releasePublished(attempt)
+            // 다른 길로 이미 앉았으면 채널 그대로 둠
             if (joinedRoomId) {
-                const cleanupChannelId = joinedRoomId
-                // 다른 길로 이미 앉았으면 채널 그대로 둠
-                if (!isSeatedInRoom(uuid, cleanupChannelId)) {
-                    detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
-                        ownsChannel: () =>
-                            isSeatedInRoom(uuid, cleanupChannelId)
-                            && isCanonicalSocket(io, uuid, socket, cleanupChannelId),
-                        keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
-                    })
-                }
+                detachUnlessSeated(io, socket, uuid, joinedRoomId)
                 joinedRoomId = null
             }
             respond({ ok: false, code: 'UNKNOWN', unknown: true, message: '입장 결과를 확인하지 못했습니다.' })
@@ -358,18 +333,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
             compensateAttempt(own, timedOut ? error.admissionTimeout : 'ACCEPT_FAILED')
         }
         // 붙었던 채널 떼기 (다른 길로 이미 앉았으면 그대로)
-        if (joinedRoomId) {
-            const cleanupChannelId = joinedRoomId
-            if (!isSeatedInRoom(uuid, cleanupChannelId)) {
-                detachSocketFromChannel(socket, cleanupChannelId, '[초대 입장 정리 실패]', {
-                    ownsChannel: () =>
-                        isSeatedInRoom(uuid, cleanupChannelId)
-                        && isCanonicalSocket(io, uuid, socket, cleanupChannelId),
-                    keepsConnection: () => hasRoomMembership(uuid) || hasLiveGameMembership(uuid),
-                })
-            }
-            joinedRoomId = null
-        }
+        if (joinedRoomId) detachUnlessSeated(io, socket, uuid, joinedRoomId)
         // 시간 초과는 들어갔는지 모르니 결과 모름, 서비스가 낸 오류면 그 문구 그대로
         respond({
             ok: false,
@@ -385,77 +349,7 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
     }
 }
 
-// 수락 결과 ack 잃었을 때 결과 다시 알려 주기 (지도 23-⑩)
-async function handleGetGameInviteResult(uuid, payload, callback) {
-    if (typeof callback !== 'function') return
-    // 요청 모양: 초대 id 필수, 시도 id는 보냈으면 그 시도 결과만 봄
-    const inviteId = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
-        ? payload.inviteId : null
-    const attemptId = typeof payload === 'object' && payload !== null && !Array.isArray(payload)
-        ? payload.attemptId : undefined
-    if (typeof inviteId !== 'string' || inviteId.length === 0) {
-        callback({ ok: false, code: 'INVALID_REQUEST' })
-        return
-    }
-
-    // 아직 입장 처리 중이면 기다리라고 답함
-    if (getAdmissionAttempt(uuid)) {
-        callback({ ok: true, pending: true, entered: false })
-        return
-    }
-
-    // 초대 결과 읽기 (DB), 내 초대 아니면 없음, 다른 시도 결과면 옛 시도라고 답함
-    const outcome = await deps.gameInviteService.getAttemptOutcome({ receiverId: uuid, inviteId, attemptId })
-    if (!outcome.known) {
-        callback({ ok: false, code: 'INVITE_NOT_FOUND' })
-        return
-    }
-    if (outcome.staleAttempt) {
-        callback({ ok: true, entered: false, invite: outcome.invite, staleAttempt: true })
-        return
-    }
-
-    // 들어감 = PUBLISHED 기록 + 같은 서버 + 지금 그 방(같은 인스턴스) 명단에 있음
-    const roomId = playerRoom.get(uuid)
-    const room = roomId ? gameRooms.get(roomId) : null
-    const entered = outcome.entryOutcome === 'PUBLISHED'
-        && outcome.bootEpoch === BOOT_EPOCH
-        && room !== null && room !== undefined
-        && room.id === outcome.roomId
-        && (room.instanceId ?? room.id) === outcome.roomInstanceId
-        && room.players.has(uuid)
-
-    callback({
-        ok: true,
-        entered,
-        invite: outcome.invite,
-        room: entered ? buildRoomPayload(room) : null,
-    })
-}
-
-// 시험용: 입장 시도 하나 심기 (published면 되돌릴 권리까지)
-function __seedAdmissionAttemptForTests(uuid, attempt) {
-    const seeded = {
-        attemptId: attempt.attemptId ?? nextAttemptId(),
-        accountUuid: uuid,
-        inviteId: attempt.inviteId ?? null,
-        roomId: attempt.roomId,
-        room: gameRooms.get(attempt.roomId) ?? null,
-        roomInstanceId: attempt.roomInstanceId ?? gameRooms.get(attempt.roomId)?.instanceId ?? attempt.roomId,
-        bootEpoch: BOOT_EPOCH,
-        generation: getGeneration(uuid),
-        socketId: attempt.socketId ?? null,
-        phase: attempt.phase ?? 'reserved',
-        expiresAt: Date.now() + TOTAL_TIMEOUT_MS,
-    }
-    roomAdmissionAttempts.set(uuid, seeded)
-    if (seeded.phase === 'published') publishedAdmissions.set(uuid, seeded)
-}
-
-// 대기 시간 값은 내보내지 않음 (값 복사라 시험이 바꾼 값이 안 보여 틀린 값이 됨, BE-035)
+// 대기 시간은 admission/timeouts.js 읽기 함수로만 (값 복사하면 시험이 바꾼 값이 안 보임, BE-035)
 module.exports = {
-    __setAdmissionTimeoutsForTests,
     handleAcceptGameInvite,
-    handleGetGameInviteResult,
-    __seedAdmissionAttemptForTests,
 }

@@ -5,13 +5,16 @@ const crypto = require("crypto");
 const discordOAuthService = require("../oauth/discord");
 const { signOAuthAttempt, clientMark } = require("./attempt");
 const { ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require("./constants");
+// 같은 폴더 함수는 입구 말고 원래 파일 모듈 객체로 (입구가 이 값으로 이어 줘 시험 패치 먹음, 순환 require 없음)
+const stateModule = require("./state");
+const resolveModule = require("./resolve");
 
-// 지문 만들고 로그인 state 발급 → 시도 표 서명 (state 소비·계정 찾기는 입구 객체로 불러 시험 패치 먹게)
+// 지문 만들고 로그인 state 발급 → 시도 표 서명 (state 소비·계정 찾기는 모듈 객체로 불러 시험 패치 먹게)
 exports.startDiscordLogin = async ({ rememberMe, client }) => {
     // 지문 원문은 시도 쿠키에만, state 행엔 해시 (다른 브라우저로 콜백 막기)
     const browserFingerprint = crypto.randomBytes(32).toString("base64url");
 
-    const { state } = await require('./index').issueOAuthState({ purpose: "login", browserFingerprint });
+    const { state } = await stateModule.issueOAuthState({ purpose: "login", browserFingerprint });
 
     const attemptToken = signOAuthAttempt(
         { fp: browserFingerprint, rememberMe, purpose: "login", provider: "discord", ...clientMark(client) },
@@ -27,7 +30,7 @@ exports.completeDiscordLogin = async ({ attempt, query, reqInfo }) => {
     const rememberMe = attempt?.purpose === "login" && attempt?.provider === "discord" && attempt?.rememberMe === true;
 
     // 취소여도 state 먼저 소비 (같은 state 다시 못 쓰게)
-    await require('./index').consumeOAuthState(query.state, { browserFingerprint, purpose: "login" });
+    await stateModule.consumeOAuthState(query.state, { browserFingerprint, purpose: "login" });
 
     // 제공자 화면에서 취소했으면 프로필 안 받음 (취소 오류는 계정 찾기가 던짐)
     const cancelled = query.error !== undefined;
@@ -39,7 +42,7 @@ exports.completeDiscordLogin = async ({ attempt, query, reqInfo }) => {
         email = profile.email;
     }
 
-    const result = await require('./index').resolveOAuthAccount({
+    const result = await resolveModule.resolveOAuthAccount({
         provider: "discord", subject, email, cancelled, rememberMe, reqInfo,
     });
 

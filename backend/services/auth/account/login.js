@@ -1,11 +1,12 @@
 // 로그인·로그아웃 파일, 잠금·비번·정지 확인 뒤 세션 발급 · 로그아웃 기록 남기고 그 세션 끊기
 // controllers/auth/account.js(로그인)·auth/session.js(로그아웃)가 account 입구로 부름
-// 세션 발급은 입구 객체로 불러 시험 패치 먹게 (저장소도 모듈 객체로 불러 시험 패치 그대로 먹게)
+// 세션 발급은 session.js 모듈 객체로 불러 시험 패치 먹게 (입구가 이 값으로 이어 줌, 저장소도 모듈 객체로)
 const userRepository          = require("../../../repositories/user");
 const { comparePassword, hashPassword } = require("../../../utils/auth/credentials");
 const crypto                  = require("crypto");
 const { createError }         = require("../../../utils/appError");
 const { hashRefreshToken }    = require("./tokens");
+const sessionModule           = require("./session");
 
 // 실패 몇 번에 잠그나·얼마나 잠그나
 const MAX_FAILED_LOGINS = 5;
@@ -55,6 +56,7 @@ exports.login = async (loginData, reqInfo) => {
             user_id:    user.uuid,
             ip_address: reqInfo.ip,
             user_agent: reqInfo.userAgent,
+            device_type: reqInfo.deviceType,
             success:    isMatch,
         }, { transaction });
 
@@ -93,9 +95,9 @@ exports.login = async (loginData, reqInfo) => {
             last_login_at:      new Date(),
         }, { transaction });
 
-        // 같은 트랜잭션에서 세션 발급 (입구 객체로 불러 시험 패치 먹게)
+        // 같은 트랜잭션에서 세션 발급 (모듈 객체로 불러 시험 패치 먹게)
         const { token, refreshToken, refreshTokenExpiresAt } =
-            await require('./index').issueSessionForUser(user, { rememberMe }, reqInfo, transaction);
+            await sessionModule.issueSessionForUser(user, { rememberMe }, reqInfo, transaction);
 
         return { value: { user, token, refreshToken, refreshTokenExpiresAt } };
     });

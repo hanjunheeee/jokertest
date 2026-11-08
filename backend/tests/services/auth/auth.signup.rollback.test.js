@@ -291,7 +291,7 @@ const SIGNUP_INPUT = {
 };
 
 test("user_stats 생성이 실패하면 user도 함께 롤백되어 두 테이블 모두 비어 있다", async (t) => {
-    const { committed, signupVerificationFake } = setupFakeDb(t, { statsCreateFails: true });
+    const { committed } = setupFakeDb(t, { statsCreateFails: true });
     const { signupProof } = await prepareSignupProof(SIGNUP_INPUT.email);
 
     await assert.rejects(

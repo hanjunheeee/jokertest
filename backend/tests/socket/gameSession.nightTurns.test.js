@@ -2292,7 +2292,7 @@ test('AC-06(F-25): 무인 역할·미제출 만료·존재하지 않는 직업�
 })
 
 test('AC-06(F-25, 2026-09-22 개정): 구성이 없는 구버전 세션에서는 존재하지 않는 직업의 턴도 완료 계약을 남기고 순서를 건너뛰지 않는다', () => {
-    const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'f25-no-role', dayIndex: 2 })
+    const { session, jokerUuids } = commitJokerTrioSessionAtNight({ id: 'f25-no-role', dayIndex: 2 })
     const { io, sockets, submit } = wireSession(session)
     const clock = createManualClock()
 
@@ -3596,10 +3596,10 @@ test('AC-06(F-27a): 사건이 없는 턴은 통지 없이 즉시 해제되고, �
 test('구성 0 역할(광대 2·귀족 1 판의 의사·경비원·마녀사냥꾼)은 night_turn_started/ended가 0회이고, 판정 자료에는 NO_ROLE로 남으며, 광대 턴만 돈 뒤 밤이 정상 확정된다', () => {
     const { session, jokerUuids, citizenUuid } = commitJokerTrioSessionAtNight({ id: 'comp-zero-skip', keepComposition: true })
     assert.deepEqual(gameSessionCore.getNightTurnOrder(session), ['JOKER'], '구성이 있는 역할만 턴 순서에 남는다')
-    const { io, sockets, submit } = wireSession(session)
+    const { io, submit } = wireSession(session)
     const clock = createManualClock()
 
-    const run = startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
+    startNightTurnSequence(io, session, { ...clock, randomFn: () => 0.5 })
     const startedRoles = () => io.broadcasts.filter((b) => b.event === 'night_turn_started').map((b) => b.payload.role)
     assert.deepEqual(startedRoles(), ['JOKER'], '광대 턴만 시작된다')
 

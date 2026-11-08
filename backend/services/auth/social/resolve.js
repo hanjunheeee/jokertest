@@ -1,11 +1,13 @@
 // 소셜 계정 찾기 파일, 외부 계정 → 로그인 또는 가입 의도 · 콜백 흐름
 // social 입구로 social/googleLogin.js·discordLogin.js가 부름 (handleOAuthCallback은 시험만 부름)
-// 콜백 흐름은 입구 객체로 state 소비·계정 찾기를 부름 (시험 패치 먹게)
+// 콜백 흐름은 모듈 객체로 state 소비·계정 찾기를 부름 (시험 패치 먹게)
 const userRepository = require("../../../repositories/user");
 const authService = require("../account");
 const { createError } = require("../../../utils/appError");
 const { generateOpaqueToken, hashValue } = require('./tokens');
 const { INTENT_TTL_MS } = require('./constants');
+// 같은 폴더 함수는 입구 말고 원래 파일 모듈 객체로 (입구가 이 값으로 이어 줘 시험 패치 먹음, 순환 require 없음)
+const stateModule = require('./state');
 
 // 연결된 계정 있으면 상태·정지 확인 뒤 기록·세션 발급, 없으면 이메일 충돌 확인 뒤 가입 의도 만듦
 exports.resolveOAuthAccount = async ({
@@ -44,6 +46,7 @@ exports.resolveOAuthAccount = async ({
                 user_id:    user.uuid,
                 ip_address: reqInfo.ip,
                 user_agent: reqInfo.userAgent,
+                device_type: reqInfo.deviceType,
                 success:    true,
             }, { transaction });
             await userRepository.updateUser(user.uuid, { last_login_at: new Date() }, { transaction });
@@ -91,7 +94,7 @@ exports.resolveOAuthAccount = async ({
 exports.handleOAuthCallback = async ({
     provider, subject, email, rawState, browserFingerprint, cancelled, rememberMe = false, reqInfo = {},
 }) => {
-    await require('./index').consumeOAuthState(rawState, { browserFingerprint, purpose: "login" });
+    await stateModule.consumeOAuthState(rawState, { browserFingerprint, purpose: "login" });
 
-    return await require('./index').resolveOAuthAccount({ provider, subject, email, cancelled, rememberMe, reqInfo });
+    return await exports.resolveOAuthAccount({ provider, subject, email, cancelled, rememberMe, reqInfo });
 };

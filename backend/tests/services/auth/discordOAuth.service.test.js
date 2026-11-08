@@ -258,7 +258,7 @@ test("DISCORD_CLIENT_ID/REDIRECT_URI가 설정되어 있으면 인가 URL에 하
     assert.match(url, /state=state-abc/);
 });
 
-test("purpose:link로 인가 URL을 만들면 DISCORD_REDIRECT_URI가 아니라 DISCORD_LINK_REDIRECT_URI가 실린다(AC-04)", async (t) => {
+test("purpose:link로 인가 URL을 만들면 DISCORD_REDIRECT_URI가 아니라 DISCORD_LINK_REDIRECT_URI가 실린다(AC-04)", async () => {
     const loginUrl = discordOAuthService.buildAuthorizationUrl("state-login", { purpose: "login" });
     const linkUrl  = discordOAuthService.buildAuthorizationUrl("state-link", { purpose: "link" });
 

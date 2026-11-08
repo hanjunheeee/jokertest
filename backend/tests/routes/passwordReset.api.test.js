@@ -6,6 +6,8 @@ process.env.PASSWORD_RESET_CHECK_IP_MAX = "1000";
 process.env.PASSWORD_RESET_APP_URL = "https://frontend.example.test";
 
 const test = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { once } = require("node:events");
@@ -95,8 +97,8 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     return `http://127.0.0.1:${server.address().port}`;
 };
@@ -340,14 +342,13 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
     t.after(() => { schemaReadiness.ensureSchemaReady = originalEnsure; });
 
     const net = require("node:net");
-    const findFreePort = () => new Promise((resolve, reject) => {
+    // fetch 금지 포트(윈도 동적 포트와 겹침)를 피한 빈 포트
+    const findFreePort = async () => {
         const probe = net.createServer();
-        probe.once("error", reject);
-        probe.listen(0, "127.0.0.1", () => {
-            const { port } = probe.address();
-            probe.close(() => resolve(port));
-        });
-    });
+        const { port } = await listenOnFetchablePort(probe);
+        await new Promise((resolve) => probe.close(resolve));
+        return port;
+    };
     const originalPort = process.env.PORT;
     process.env.PORT = String(await findFreePort());
     t.after(() => {
@@ -417,7 +418,7 @@ test("AC-06: 실제 index.js로 재설정을 왕복해도 콘솔·접근 로그�
     }
 });
 
-test("제한기: 대상 이메일별 한도를 넘으면 429 RATE_LIMITED다", async (t) => {
+test("제한기: 대상 이메일별 한도를 넘으면 429 RATE_LIMITED다", async () => {
     const { createRateLimiter } = require("../../middlewares/rateLimit.middleware");
     let now = 0;
     const limiter = createRateLimiter({ windowMs: 60_000, max: 3, keyOf: () => "email:fixed", now: () => now });

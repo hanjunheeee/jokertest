@@ -332,7 +332,7 @@ test('F-26(AC-03): 비동기 구간 뒤 이 소켓의 최신 작업이 아니게
     let releaseJoin
     const joinGate = new Promise((resolve) => { releaseJoin = resolve })
     const fakeSocket = createFakeSocket('f26t-a', { joinGate })
-    const io = createFakeIo([fakeSocket])
+    createFakeIo([fakeSocket])
     socket.__getOnlineUsersForTests().set('f26t-a', fakeSocket.id)
     const resyncing = gameSessionSocketLayer.resyncSessionRouting(fakeSocket, 'f26t-a')
     await fakeSocket.joinCalled

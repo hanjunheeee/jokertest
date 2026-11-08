@@ -1,6 +1,8 @@
 process.env.JWT_SECRET = "login-regression-test-secret";
 
 const test   = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert = require("node:assert/strict");
 const jwt    = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
@@ -75,7 +77,7 @@ test("정상 로그인은 세션을 만들고 sessionId가 담긴 토큰을 발�
     ]);
 
     assert.deepEqual(calls.find((call) => call.name === "createLoginHistory").args[0], {
-        user_id: "uuid-1", ip_address: "127.0.0.1", user_agent: "jest-ua", success: true,
+        user_id: "uuid-1", ip_address: "127.0.0.1", user_agent: "jest-ua", device_type: "PC", success: true,
     });
 });
 
@@ -185,7 +187,6 @@ test("5회째 실패는 계정을 잠그고 423을 반환한다", async (t) => {
 
 const express      = require("express");
 const cookieParser = require("cookie-parser");
-const { once }     = require("node:events");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
 const startAuthServer = async (t) => {
@@ -196,8 +197,8 @@ const startAuthServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
 
     return `http://127.0.0.1:${server.address().port}`;

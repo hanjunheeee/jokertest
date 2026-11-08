@@ -5,9 +5,10 @@ process.env.DATABASE_URL = TEST_DB_URL || 'mysql://test:test@localhost:3306/test
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'f33-emoji-palette-integration-test-secret';
 
 const test = require('node:test');
+const http = require('node:http');
+const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { once } = require('node:events');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 
@@ -120,8 +121,8 @@ const startRouteServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     return `http://127.0.0.1:${server.address().port}`;
 };

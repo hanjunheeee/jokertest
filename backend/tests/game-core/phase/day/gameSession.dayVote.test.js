@@ -1237,7 +1237,8 @@ test('buildTribunalVoteResolvedPayload: 공개 payload 화이트리스트 (GUILT
     assert.equal(guiltyPayload.executedRole, guiltySetup.session.players.get('tm3').role)
     assert.equal(JSON.stringify(guiltyPayload).includes('ballotSnapshot'), false)
     assert.equal(JSON.stringify(guiltyPayload).includes('voterUuid'), false)
-    const { executedRole: _executedRole, ...guiltyWithoutExecutedRole } = guiltyPayload
+    const guiltyWithoutExecutedRole = { ...guiltyPayload }
+    delete guiltyWithoutExecutedRole.executedRole
     assert.equal(JSON.stringify(guiltyWithoutExecutedRole).includes('role'), false)
 
     const notGuiltySetup = setupTribunalReadySession({ uuids: ['tn1', 'tn2', 'tn3'], defendantUuid: 'tn3' })

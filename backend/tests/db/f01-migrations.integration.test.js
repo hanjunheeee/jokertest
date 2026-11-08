@@ -76,7 +76,7 @@ const restoreDatabaseInto = async (targetSequelize, dump) => {
     try {
         const existing = await queryInterface.showAllTables();
         for (const table of existing) await queryInterface.dropTable(table);
-        for (const [table, { createSql }] of Object.entries(dump)) {
+        for (const [, { createSql }] of Object.entries(dump)) {
             await targetSequelize.query(createSql);
         }
         for (const [table, { rows }] of Object.entries(dump)) {

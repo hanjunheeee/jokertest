@@ -2,6 +2,8 @@
 // social 입구로 social/discordLink.js가 부름 (state까지 보는 linkExternalIdentity는 시험만 부름)
 const userRepository = require("../../../repositories/user");
 const { createError } = require("../../../utils/appError");
+// 같은 폴더 함수는 입구 말고 원래 파일 모듈 객체로 (입구가 이 값으로 이어 줘 시험 패치 먹음, 순환 require 없음)
+const stateModule = require("./state");
 
 // 세션 살아 있나 → 이미 다른 계정에 붙었나 → 붙임 (같은 계정이면 그대로)
 const linkExternalIdentityForValidatedSession = async ({ userId, sessionId, provider, subject, email }) => {
@@ -44,7 +46,7 @@ const linkExternalIdentityForValidatedSession = async ({ userId, sessionId, prov
 
 exports.linkExternalIdentityForValidatedSession = linkExternalIdentityForValidatedSession;
 
-// state 소비 → state 발급 세션과 같은지 → 연결 (state 소비는 입구 객체로 불러 시험 패치 먹게)
+// state 소비 → state 발급 세션과 같은지 → 연결 (state 소비는 모듈 객체로 불러 시험 패치 먹게)
 exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, email, rawState, browserFingerprint }) => {
     // 로그인 안 했으면 state 소비 전에 거절
     if (!userId || !sessionId) {
@@ -52,7 +54,7 @@ exports.linkExternalIdentity = async ({ userId, sessionId, provider, subject, em
     }
 
     // 연결 시작한 세션과 다르면 거절 (남의 연결 state 끼워 넣기 막기)
-    const consumed = await require('./index').consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
+    const consumed = await stateModule.consumeOAuthState(rawState, { browserFingerprint, purpose: "link" });
     if (consumed.userId !== userId || consumed.sessionId !== sessionId) {
         throw createError("연결 요청 세션과 state 발급 세션이 일치하지 않습니다.", 400, "STATE_USER_MISMATCH");
     }

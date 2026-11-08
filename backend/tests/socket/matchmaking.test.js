@@ -1859,7 +1859,7 @@ test('start_game: notify 중 한 참가자의 emit이 실패해도 나머지는 
 test('start_game: 참가자 중 한 명이 이미 다른 GameSession에 속해 있으면 새 Room 전체가 PLAYER_ALREADY_IN_SESSION으로 거부된다', async () => {
     const newHost = createFakeSocket('uuid-pais-new-host')
     const io = createFakeIo([newHost])
-    const { joinerSocket: sharedSocket, room } = await setupReadyRoomForStart(
+    const { room } = await setupReadyRoomForStart(
         io, 'uuid-pais-new-host', 'uuid-pais-shared', readyRoomHandlers,
     )
     const prepared = gameSession.prepareGameSession({

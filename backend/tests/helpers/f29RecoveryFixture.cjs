@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const http = require('node:http');
-const { once } = require('node:events');
+const { listenOnFetchablePort } = require('./fetchablePort');
 
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 
@@ -140,8 +140,7 @@ const createF29RecoveryFixture = async (t, options = {}) => {
         io = require('../../socket/socket').initSocket(server);
     }
 
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    await listenOnFetchablePort(server);
     const baseURL = `http://127.0.0.1:${server.address().port}`;
 
     const db = require('../../models');

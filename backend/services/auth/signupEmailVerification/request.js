@@ -96,9 +96,9 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         return { code, expiresInSec, resendAfterSec };
     });
 
-    // 행 만들기 충돌이면 입구로 처음부터 다시 (이번엔 행이 있어 잠금으로 들어감)
+    // 행 만들기 충돌이면 처음부터 다시 (이번엔 행이 있어 잠금으로 들어감, 모듈 객체로 불러 시험 패치 먹게)
     if (outcome.retry) {
-        return require('./index').requestSignupCode({ email }, { mailAdapter: injectedMailAdapter, now });
+        return exports.requestSignupCode({ email }, { mailAdapter: injectedMailAdapter, now });
     }
     if (outcome.tooSoon) {
         return { ok: false, code: 'RESEND_TOO_SOON', resendAfterSec: outcome.resendAfterSec };

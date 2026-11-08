@@ -12,6 +12,7 @@ process.env.SIGNUP_EMAIL_RESEND_COOLDOWN_MS = "300";
 process.env.SIGNUP_EMAIL_PROOF_TTL_MS = "1500";
 
 const test = require("node:test");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { once } = require("node:events");
@@ -207,7 +208,7 @@ test("AC-01: 발송 성공 응답은 ok/resendAfterSec/expiresInSec만 반환하
 
 test("AC-01: 확인 성공 응답은 ok/signupProof만 반환하고, 그 증명으로 가입 API를 호출하면 계정이 생성된다", async (t) => {
     stubSignupEmailVerificationModel(t);
-    const { byUuid } = stubUserRepository(t, { users: [] });
+    stubUserRepository(t, { users: [] });
     const memory = useMemoryMailAdapter(t);
     const base = await startServer(t);
 
@@ -787,14 +788,13 @@ test("AC-06: 실제 index.js로 발송→확인을 왕복해도 콘솔·접근 �
     t.after(() => { schemaReadiness.ensureSchemaReady = originalEnsure; });
 
     const net = require("node:net");
-    const findFreePort = () => new Promise((resolve, reject) => {
+    // fetch 금지 포트(윈도 동적 포트와 겹침)를 피한 빈 포트
+    const findFreePort = async () => {
         const probe = net.createServer();
-        probe.once("error", reject);
-        probe.listen(0, "127.0.0.1", () => {
-            const { port } = probe.address();
-            probe.close(() => resolve(port));
-        });
-    });
+        const { port } = await listenOnFetchablePort(probe);
+        await new Promise((resolve) => probe.close(resolve));
+        return port;
+    };
     const originalPort = process.env.PORT;
     process.env.PORT = String(await findFreePort());
     t.after(() => {

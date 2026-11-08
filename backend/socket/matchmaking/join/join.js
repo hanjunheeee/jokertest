@@ -1,6 +1,6 @@
 // 방 입장 파일
-// 코드·공개방 입장 + 끝난 판 사람 자동 입장 + 공개 방 목록 (지도 01·09)
-// matchmaking.js가 join_room_by_code 등 사건 셋에 붙임, 자동 입장은 join/create가 부름
+// 코드 입장 + 끝난 판 사람 자동 입장 (지도 01·09), 공개방 고르기·목록은 join/publicRooms.js
+// matchmaking.js가 join_room_by_code에 붙임, 자동 입장은 join/create가, 공개방 입장은 publicRooms가 부름
 const kickReceiptStore = require('../../kickReceiptStore')
 const gameSession = require('../../../game-core/gameSession')
 const channelMembership = require('../../channelMembership')
@@ -10,7 +10,7 @@ const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = requ
 const { acquireRoomTransition, getGeneration, releaseRoomTransition } = require('./transition')
 const { detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership, isCanonicalOrUnknown, findLiveSocket } = require('../room/membership')
 const { deps } = require('../core/deps')
-const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList, buildPublicRoomList } = require('../room/view')
+const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList } = require('../room/view')
 const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
 const { takeJoinAttempt } = require('./entryLimits')
 
@@ -301,45 +301,6 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     }
 }
 
-// 공개방 고르기 입장 (코드 입장 흐름 그대로 씀)
-async function handleJoinPublicRoom(io, socket, uuid, payload) {
-    // 게임 중이면 요청 모양보다 먼저 거절
-    if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
-        emitRoomJoinFailed(socket, code, message, { gameId })
-    )) return
-
-    // 요청 모양: 방 id 글자만
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.INVALID_REQUEST, '잘못된 요청입니다.')
-        return
-    }
-    const { roomId } = payload
-    if (typeof roomId !== 'string' || !roomId) {
-        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.INVALID_REQUEST, '잘못된 요청입니다.')
-        return
-    }
-
-    // 방 없으면 시작 표시로 이유 고름
-    const room = gameRooms.get(roomId)
-    if (!room) {
-        const vanished = describeVanishedRoom({ roomId })
-        if (vanished) {
-            emitRoomJoinFailed(socket, ...vanished)
-            return
-        }
-        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
-        return
-    }
-    // 코드 없이는 open 방만, code 방은 코드 쳐야 함
-    if (room.accessType !== 'open') {
-        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '이 방은 입장 코드가 필요합니다.')
-        return
-    }
-
-    // 그 방 코드로 코드 입장 흐름 탐, 고른 방 id·종류 같이 넘겨 다른 방 못 들어가게
-    await handleJoinRoomByCode(io, socket, uuid, room.code, { roomId: room.id, accessType: room.accessType })
-}
-
 // 끝난 판 사람을 방장이 만든 다음 방에 자동 입장
 // 그 끝난 판 방장이 만든 방일 때만 (방장 아닌 참가자가 만든 방에 남을 끌고 가지 않게, BE-005)
 async function autoJoinPartyToRoom(io, hostUuid, room) {
@@ -372,15 +333,7 @@ async function autoJoinPartyToRoom(io, hostUuid, room) {
     }
 }
 
-// 공개 방 목록 보내 주기 (답 받을 곳 없으면 안 함)
-function handleGetPublicRooms(callback) {
-    if (typeof callback !== 'function') return
-    callback({ ok: true, rooms: buildPublicRoomList() })
-}
-
 module.exports = {
     handleJoinRoomByCode,
-    handleJoinPublicRoom,
     autoJoinPartyToRoom,
-    handleGetPublicRooms,
 }

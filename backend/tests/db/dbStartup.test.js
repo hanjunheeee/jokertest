@@ -1,4 +1,5 @@
 const test   = require("node:test");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert = require("node:assert/strict");
 const path   = require("node:path");
 const net    = require("node:net");
@@ -7,14 +8,13 @@ const { once }        = require("node:events");
 
 const ENTRYPOINT = path.join(__dirname, "..", "..", "index.js");
 
-const findFreePort = () => new Promise((resolve, reject) => {
+// fetch 금지 포트(윈도 동적 포트와 겹침)를 피한 빈 포트
+const findFreePort = async () => {
     const probe = net.createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-        const { port } = probe.address();
-        probe.close(() => resolve(port));
-    });
-});
+    const { port } = await listenOnFetchablePort(probe);
+    await new Promise((resolve) => probe.close(resolve));
+    return port;
+};
 
 test("잘못된 DATABASE_URL로 기동하면 exit code 1로 종료된다", () => {
     const result = spawnSync(process.execPath, [ENTRYPOINT], {

@@ -35,7 +35,6 @@ const {
     handleLeaveGameSession,
     handleGetSessionSnapshot,
     handleSubmitGameChatMessage,
-    resolveJokerTeammateSockets,
     resolveChatRecipientSockets,
 } = gameSessionSocketLayer.__testables
 
@@ -765,7 +764,7 @@ test('9라운드 회귀: gameId 앞뒤에 개행·공백이 있어도 trim 후 �
 })
 
 test('9라운드 회귀: 같은 성공 제출에서 callback이 throw하면 CALLBACK_ERROR 로그의 gameId는 정확히 "abc"이고 원본 개행·공백 문자열은 어디에도 없다', (t) => {
-    const { session, doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc2', gameIdFn: () => 'abc' })
+    const { doctorUuid, citizenUuid } = commitFullRoleSessionAtNight({ id: 'room-abc2', gameIdFn: () => 'abc' })
     const errorSpy = t.mock.method(console, 'error', () => {})
 
     handleSubmitNightAction(createFakeSocket(doctorUuid), doctorUuid, { gameId: '\n  abc  \n', targetId: citizenUuid }, throwingCallback('late leak'))
@@ -3749,7 +3748,7 @@ test('get_session_snapshot: callback이 함수가 아니면 무동작이다(core
 })
 
 test('get_session_snapshot: payload 형태 오류(비객체/배열/gameId 타입 오류)는 INVALID_PAYLOAD이고 core를 호출하지 않는다', (t) => {
-    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-badpayload' })
+    const { io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-badpayload' })
     const [uuid] = uuids
     const socket = socketByUuid.get(uuid)
     const spy = t.mock.method(gameSessionCore, 'getSessionSnapshotForPlayer', () => {
@@ -3805,7 +3804,7 @@ test('get_session_snapshot: registry 불일치(SESSION_NOT_FOUND)는 INTERNAL_ER
 })
 
 test('get_session_snapshot: 잘못된 expected gameId는 GAME_ID_MISMATCH가 그대로 전달된다(INTERNAL_ERROR로 정규화되지 않음)', () => {
-    const { session, io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-gidmismatch' })
+    const { io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-gidmismatch' })
     const [uuid] = uuids
     const { callback, getResponse } = countingCallback()
 

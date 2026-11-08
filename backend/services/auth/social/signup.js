@@ -163,6 +163,7 @@ exports.completeSocialSignup = async ({
             user_id:    user.uuid,
             ip_address: reqInfo.ip,
             user_agent: reqInfo.userAgent,
+            device_type: reqInfo.deviceType,
             success:    true,
         }, { transaction });
 

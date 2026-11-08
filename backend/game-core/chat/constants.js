@@ -14,8 +14,9 @@ const EMOJI_MIN_INTERVAL_MS = 1000
 // prepare 뒤 5초 넘으면 commit 거절
 const CHAT_COMMIT_MAX_AGE_MS = 5000
 
-// 안 보이는 제어 문자·글 방향 바꾸는 문자 막기
+// 안 보이는 제어 문자·글 방향 바꾸는 문자 막기 (제어 문자를 일부러 잡는 거라 그 검사 규칙은 이 줄만 끔)
 const BAD_CHARS =
+    // eslint-disable-next-line no-control-regex -- 제어 문자 막기가 목적
     /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/
 
 // 채널 목록: 낮 · 죽은 사람 · 역할별

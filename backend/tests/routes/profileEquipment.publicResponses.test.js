@@ -2,6 +2,8 @@ process.env.JWT_SECRET = "profile-equipment-public-responses-test-secret";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const test         = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert       = require("node:assert/strict");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
@@ -46,8 +48,8 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await new Promise((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     return `http://127.0.0.1:${server.address().port}`;
 };

@@ -23,7 +23,7 @@ exports.discordAuthStart = async (req, res, next) => {
 };
 
 // 시도 쿠키 읽고 지움 → state 소비 → 프로필 → 로그인 또는 가입 의도
-exports.discordAuthCallback = async (req, res, next) => {
+exports.discordAuthCallback = async (req, res) => {
     // 시도 쿠키는 이 콜백에서만 쓰고 바로 지움 (성공·실패 상관없이)
     const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
     res.clearCookie(OAUTH_ATTEMPT_COOKIE, attemptCookieOptions(ATTEMPT_TTL_SECONDS));

@@ -4,6 +4,7 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@localhost:3306/test';
 
 const test   = require('node:test');
+const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 const assert = require('node:assert/strict');
 const fs     = require('node:fs');
 const os     = require('node:os');
@@ -199,7 +200,8 @@ const startHealthApp = async (t, { dbOk }) => {
     const express = require('express');
     const app = express();
     app.use('/health', require('../../routes/health.routes'));
-    const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    const server = require('node:http').createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     return `http://127.0.0.1:${server.address().port}/health`;
 };

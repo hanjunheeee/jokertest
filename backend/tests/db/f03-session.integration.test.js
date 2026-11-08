@@ -1,6 +1,8 @@
 'use strict';
 
 const test = require('node:test');
+const http = require('node:http');
+const { listenOnFetchablePort } = require('../helpers/fetchablePort');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
@@ -59,7 +61,6 @@ const resetSchema = async () => {
 
 const db = require('../../models');
 const authService = require('../../services/auth/account');
-const userRepository = require('../../repositories/user');
 const sessionLifecycle = require('../../services/auth/sessionLifecycle');
 const { hashPassword } = require('../../utils/auth/credentials');
 
@@ -220,7 +221,6 @@ test('AC-03/AC-05: 실제 로그아웃 후 HTTP 보호 요청·refresh·기존 �
     const express = require('express');
     const cookieParser = require('cookie-parser');
     const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
-    const { once } = require('node:events');
     const socketLayer = require('../../socket/socket');
     const fakeHandshakeSocket = (accessToken) => ({ handshake: { headers: { cookie: `accessToken=${accessToken}` } }, data: {} });
     const runAuthenticateSocket = (socket) =>
@@ -232,8 +232,8 @@ test('AC-03/AC-05: 실제 로그아웃 후 HTTP 보호 요청·refresh·기존 �
     app.use('/auth', require('../../routes/auth.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -277,7 +277,6 @@ test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 
     const express = require('express');
     const cookieParser = require('cookie-parser');
     const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
-    const { once } = require('node:events');
     const socketLayer = require('../../socket/socket');
     const fakeHandshakeSocket = (accessToken) => ({ handshake: { headers: { cookie: `accessToken=${accessToken}` } }, data: {} });
     const runAuthenticateSocket = (socket) =>
@@ -301,8 +300,8 @@ test('R-IMPL #7: 정지 감지 시 세션이 실제로 영구 폐기되고, 밴 
     app.use('/auth', require('../../routes/auth.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     const base = `http://127.0.0.1:${server.address().port}`;
 
@@ -357,7 +356,7 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 변경 요청 세션뿐 아니라,
 
     const rawTokenA = crypto.randomBytes(32).toString('base64url');
     const hashA = crypto.createHash('sha256').update(rawTokenA).digest('hex');
-    const sessionA = await db.UserSession.create({
+    await db.UserSession.create({
         id: crypto.randomUUID(),
         user_id: uuid,
         ip_address: '127.0.0.1',
@@ -372,7 +371,6 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 변경 요청 세션뿐 아니라,
     const express = require('express');
     const cookieParser = require('cookie-parser');
     const { notFoundHandler, globalErrorHandler } = require('../../middlewares/errorHandler.middleware');
-    const { once } = require('node:events');
 
     const app = express();
     app.use(express.json());
@@ -381,8 +379,8 @@ test('R-IMPL #7/AC-04: 비밀번호 변경은 변경 요청 세션뿐 아니라,
     app.use('/auth', require('../../routes/auth.routes'));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
-    const server = app.listen(0, '127.0.0.1');
-    await once(server, 'listening');
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     const base = `http://127.0.0.1:${server.address().port}`;
 

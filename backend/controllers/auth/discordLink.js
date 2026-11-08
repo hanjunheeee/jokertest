@@ -33,7 +33,7 @@ exports.discordLinkStart = async (req, res, next) => {
 };
 
 // state 소비 → 세션 같은지 → 취소 확인 → 프로필 → 연결 (흐름은 서비스 몫)
-exports.discordLinkCallback = async (req, res, next) => {
+exports.discordLinkCallback = async (req, res) => {
     // 시도 쿠키는 이 콜백에서만 쓰고 바로 지움 (성공·실패 상관없이)
     const attempt = verifyOAuthAttempt(req.cookies?.[OAUTH_ATTEMPT_COOKIE]);
     res.clearCookie(OAUTH_ATTEMPT_COOKIE, attemptCookieOptions(ATTEMPT_TTL_SECONDS));

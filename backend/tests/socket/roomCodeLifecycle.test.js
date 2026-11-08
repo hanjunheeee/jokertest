@@ -203,7 +203,7 @@ test('F-24(AC-02): 실제 TTL이 지나 시작 표식이 스스로 만료돼도 
 })
 
 test('F-24(AC-02): 종료 뒤 첫 이탈은 코드 예약을 풀지 않고, 마지막 이탈과 표식 만료가 모두 지나야 재발급된다', async () => {
-    const { io, hostSocket, joinerSocket, roomCode } =
+    const { hostSocket, joinerSocket, roomCode } =
         await startRealSession('ac02c-host', 'ac02c-join')
     const gameId = liveSession('ac02c-join').id
 

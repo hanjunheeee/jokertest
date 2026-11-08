@@ -7,8 +7,9 @@ process.env.LOGIN_IP_MAX = "3";
 process.env.CHECK_EMAIL_IP_MAX = "2";
 
 const test         = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert       = require("node:assert/strict");
-const { once }     = require("node:events");
 const crypto       = require("node:crypto");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
@@ -70,8 +71,8 @@ const startServer = async (t) => {
     app.use("/user", require("../../routes/user.routes"));
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     return `http://127.0.0.1:${server.address().port}`;
 };
@@ -312,10 +313,10 @@ test("known-issues 소셜 로그인 기록: 연결된 계정 로그인은 로그
     });
 
     const result = await socialAuthService.resolveOAuthAccount({
-        provider: "discord", subject: "s", email: null, cancelled: false, reqInfo: { ip: "1.2.3.4", userAgent: "ua" },
+        provider: "discord", subject: "s", email: null, cancelled: false, reqInfo: { ip: "1.2.3.4", userAgent: "ua", deviceType: "MOBILE" },
     });
     assert.equal(result.status, "LOGIN");
-    assert.deepEqual(argsOf("createLoginHistory")[0], { user_id: "uuid-1", ip_address: "1.2.3.4", user_agent: "ua", success: true });
+    assert.deepEqual(argsOf("createLoginHistory")[0], { user_id: "uuid-1", ip_address: "1.2.3.4", user_agent: "ua", device_type: "MOBILE", success: true });
 });
 
 test("known-issues 소셜 가입 이메일: 제공자 이메일로 그사이 가입한 계정이 있으면 일반 409 대신 EMAIL_CONFLICT", async (t) => {

@@ -4,9 +4,10 @@ process.env.FIND_ID_IP_MAX = "1000";
 process.env.FIND_ID_TARGET_MAX = "1000";
 
 const test         = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const { mock }     = require("node:test");
 const assert       = require("node:assert/strict");
-const { once }     = require("node:events");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
 
@@ -22,8 +23,8 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await once(server, "listening");
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
 
     return `http://127.0.0.1:${server.address().port}`;

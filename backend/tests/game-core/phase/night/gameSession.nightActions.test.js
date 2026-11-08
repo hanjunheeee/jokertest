@@ -264,7 +264,7 @@ test('submitNightAction: session.phase가 NIGHT가 아니면(ROLE_REVEAL) INVALI
     const candidate = buildSessionCandidate(room)
     commitGameSession(candidate.session)
     const session = candidate.session
-    const [uuid, player] = [...session.players.entries()].find(([, p]) => p.role !== 'JOKER')
+    const [uuid] = [...session.players.entries()].find(([, p]) => p.role !== 'JOKER')
 
     const result = submitNightAction(uuid, session.id, null)
 
@@ -288,7 +288,7 @@ test('submitNightAction: playerSession에 없는 uuid는 NOT_IN_SESSION이다', 
 })
 
 test('submitNightAction: gameId가 빈 문자열/공백만이면 INVALID_GAME_ID다', () => {
-    const { session, doctorUuid } = commitFullRoleSessionAtNight()
+    const { doctorUuid } = commitFullRoleSessionAtNight()
     assert.deepEqual(submitNightAction(doctorUuid, '', null), { ok: false, code: 'INVALID_GAME_ID' })
     assert.deepEqual(submitNightAction(doctorUuid, '   ', null), { ok: false, code: 'INVALID_GAME_ID' })
 })

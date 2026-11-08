@@ -2,6 +2,8 @@ process.env.JWT_SECRET = "economy-route-test-secret";
 process.env.DATABASE_URL = process.env.DATABASE_URL || "mysql://test:test@localhost:3306/test";
 
 const test         = require("node:test");
+const http = require("node:http");
+const { listenOnFetchablePort } = require("../helpers/fetchablePort");
 const assert       = require("node:assert/strict");
 const express      = require("express");
 const cookieParser = require("cookie-parser");
@@ -47,8 +49,8 @@ const startServer = async (t) => {
     app.use(notFoundHandler);
     app.use(globalErrorHandler);
 
-    const server = app.listen(0, "127.0.0.1");
-    await new Promise((resolve, reject) => { server.once("listening", resolve); server.once("error", reject); });
+    const server = http.createServer(app);
+    await listenOnFetchablePort(server);
     t.after(() => new Promise((resolve) => server.close(resolve)));
     return `http://127.0.0.1:${server.address().port}`;
 };
@@ -97,7 +99,7 @@ test("AC-06: 다른 계정의 거래 내역·소유품에 접근하면 403으로
 test("AC-06: 본인 계정 조회는 200으로 허용된다", async (t) => {
     stubAuthGate(t);
     stubService(t, {
-        getWalletSummary: async (userId) => ({ balanceGold: 42, balanceDiamond: 7, entitlements: [], loadout: {} }),
+        getWalletSummary: async () => ({ balanceGold: 42, balanceDiamond: 7, entitlements: [], loadout: {} }),
     });
     const base = await startServer(t);
 

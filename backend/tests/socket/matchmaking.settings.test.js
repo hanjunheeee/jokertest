@@ -1316,7 +1316,7 @@ test('AC-04 · 실제 이벤트 등록부가 set_ready·start_game payload를 �
 test('AC-05 · 재접속 재조회는 최신 서버 설정을 돌려주고, 방장이 바뀌어도 같은 설정을 본다', async () => {
     const io = createFakeIo([])
     const { hostSocket, room } = await createRoom(io, 'host-a', { maxPlayers: 8, jokerCount: 2 })
-    const joinerSocket = await joinRoom(io, room.roomCode, 'p1')
+    await joinRoom(io, room.roomCode, 'p1')
 
     await callAsPromise(handleUpdateRoomSettings, io, hostSocket, 'host-a',
         updatePayload(room.roomId, { accessType: 'code', maxPlayers: 6, dayDiscussionTime: 120 }))

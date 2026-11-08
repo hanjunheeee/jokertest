@@ -27,7 +27,6 @@ const addVoteParticipations = require('../../db/migrations/0008-add-vote-partici
 const addAchievementGrants = require('../../db/migrations/0009-add-achievement-grants');
 const addNotifications = require('../../db/migrations/0012-add-notifications');
 const addF19FriendsInvites = require('../../db/migrations/0013-f19-friends-invites');
-const addFindIdRequests = require('../../db/migrations/0014-find-id-requests');
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
 const {
     buildManagedSchema, resetManagedSchema,
