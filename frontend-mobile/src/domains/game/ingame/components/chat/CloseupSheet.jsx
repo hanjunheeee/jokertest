@@ -1,10 +1,8 @@
 // 채팅 크게 보기(클로즈업) 창: 뒤 막 + 틀 한 장 모양 큰 글씨 목록·입력 줄, Esc·뒤 막·닫기 그림으로 닫힘
 // ChatPanel이 씀 (데스크톱 InGameChatCloseupOverlay 대신), 화면 틀 fixed 갇힘 때문에 body로 portal
-import { useEffect } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import { INGAME_CHAT_ASSETS } from "@/domains/game/ingame/constants/chat/ingameChatAssets.js"
 import { PANEL_TRANSITION } from "@/domains/game/ingame/constants/chat/ingameChatCloseupLayout.js"
 import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardInset.js"
@@ -13,6 +11,7 @@ import FrameSlice from "./FrameSlice.jsx"
 import MessageList from "./MessageList.jsx"
 import { FRAME_ROOT_CLASS, FRAME_SLICE, listInsetStyle } from "./chatStyle.js"
 import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
+import { useEscapeClose } from "@m/shared/hooks/useEscapeClose.js"
 
 // 뒤 막은 데스크톱과 같은 검은 45%, 창 자리는 폰은 꽉 채움(안전영역 안쪽), 태블릿은 가운데
 const BACKDROP_CLASS = "fixed inset-0 z-[70] cursor-default border-0 bg-black/45 p-0"
@@ -26,17 +25,8 @@ export default function CloseupSheet({ open, onClose, session }) {
     const keyboardInset = useKeyboardInset()
     const focusRef = useDialogFocus()
 
-    // 열렸을 때만 Esc로 닫기 (닫는 소리 같이)
-    useEffect(() => {
-        if (!open) return undefined
-        const onKeyDown = (event) => {
-            if (event.key !== "Escape") return
-            dispatchUiSfx("ui-cancel", event)
-            onClose()
-        }
-        window.addEventListener("keydown", onKeyDown)
-        return () => window.removeEventListener("keydown", onKeyDown)
-    }, [open, onClose])
+    // 열렸을 때만 Esc로 닫기 (닫는 소리 같이, 겹친 창은 맨 위만)
+    useEscapeClose(open, onClose, { sfx: true })
 
     // 키보드가 덮은 만큼 아래를 비워 입력 줄이 키보드 바로 위에 옴
     return createPortal(

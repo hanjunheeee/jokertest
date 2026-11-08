@@ -34,6 +34,7 @@ export default function StorePanel({ visible, panel }) {
             transition={UI_REVEAL_TRANSITION}
             style={{ pointerEvents: visible ? "auto" : "none" }}
             aria-hidden={!visible}
+            inert={!visible || undefined}
         >
             <div className={PANEL_CLASS}>
                 {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}

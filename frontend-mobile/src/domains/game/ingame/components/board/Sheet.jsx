@@ -1,31 +1,17 @@
 // 아래에서 올라오는 시트 (뒤판·손잡이·제목 줄·닫기·스크롤 몸통), body로 portal
 // CardSheet가 씀 (panelRef는 데스크톱 카드 메뉴의 바깥 누름 판단에 넘김)
-import { useEffect } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
 import { STORE_ASSETS } from "@/shared/constants/storeAssets.js"
-import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import { useEscapeClose } from "@m/shared/hooks/useEscapeClose.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { BACKDROP_CLASS, CLOSE_BTN_CLASS, PANEL_CLASS, PARCHMENT_CLASS, SHEET_TITLE_CLASS, SHEET_TRANSITION } from "./sheetStyle.js"
 import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
 
-// 열린 동안 Esc로 닫기 (태블릿 키보드 대비)
-function useEscape(open, onClose) {
-    useEffect(() => {
-        if (!open) return undefined
-        const onKeyDown = (event) => {
-            if (event.key !== "Escape") return
-            dispatchUiSfx("ui-cancel", event)
-            onClose()
-        }
-        window.addEventListener("keydown", onKeyDown)
-        return () => window.removeEventListener("keydown", onKeyDown)
-    }, [open, onClose])
-}
-
 // 열렸을 때만 그림, 뒤판·Esc·닫기 버튼으로 닫음
 export default function Sheet({ open, title, closeLabel = "닫기", onClose, panelRef, children, ...rest }) {
-    useEscape(open, onClose)
+    // 열린 동안 Esc로 닫기 (태블릿 키보드 대비, 겹친 창은 맨 위만)
+    useEscapeClose(open, onClose, { sfx: true })
     // panelRef(카드 메뉴 바깥 누름 판단)도 같이 채움
     const focusRef = useDialogFocus(panelRef)
 

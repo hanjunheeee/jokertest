@@ -1,9 +1,7 @@
 // 투표 현황 창: 데스크톱 틀 그림·제목·닫기 버튼·부제 + 낮 투표 집계, 뒤 막·Esc로 닫기
 // 행동 줄(ActionRow)의 투표 현황 버튼이 엶, .mobile-shell 틀 밖에 그리려고 body로 포털
-import { useEffect } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
-import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { INGAME_VOTE_ASSETS } from "@/domains/game/ingame/constants/vote/ingameVoteAssets.js"
 import {
@@ -21,6 +19,7 @@ import {
 import { useVotePanelFit } from "../../hooks/actions/useVotePanelFit.js"
 import VoteStatusContent from "./VoteStatusContent.jsx"
 import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
+import { useEscapeClose } from "@m/shared/hooks/useEscapeClose.js"
 
 const TITLE = "투표 현황"
 
@@ -32,17 +31,8 @@ export default function VoteStatusPanel({ open, onClose, nameOf }) {
   const fit = useVotePanelFit(open)
   const focusRef = useDialogFocus()
 
-  // 열렸을 때만 Esc로 닫기 (닫는 소리 같이 냄)
-  useEffect(() => {
-    if (!open) return undefined
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape") return
-      dispatchUiSfx("ui-cancel", event)
-      onClose()
-    }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [open, onClose])
+  // 열렸을 때만 Esc로 닫기 (닫는 소리 같이, 겹친 창은 맨 위만)
+  useEscapeClose(open, onClose, { sfx: true })
 
   return createPortal(
     <AnimatePresence>
