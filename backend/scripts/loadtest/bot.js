@@ -183,7 +183,7 @@ class Bot {
     }
 
     // 답 받는 요청: 응답 시간 재고, 시간 초과·서버 오류는 오류로, 규칙 거절은 거절로
-    // 다른 Node 방이라는 답이면 옮긴 뒤 한 번만 다시 (초대 수락·다음 방 묻기)
+    // 다른 Node 방이라는 답이면 옮긴 뒤 한 번만 다시 (방 만들기·초대 수락·다음 방 묻기, MN-114)
     async request(event, payload, { moved = false } = {}) {
         const started = performance.now();
         try {

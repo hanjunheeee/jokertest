@@ -42,6 +42,7 @@ function hasPartyOrigin(uuid) {
 }
 
 module.exports = {
+    isInEndedGame,
     markPartyOriginToken,
     forgetPartyOriginToken,
     markPartyOriginObject,

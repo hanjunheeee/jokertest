@@ -14,8 +14,8 @@ const { leaveSocketRoomSafely } = require('../room/membership')
 const { generateUniqueRoomCode } = require('../../../utils/roomCode')
 const { notifyPartyOfRoom } = require('./party')
 const { autoJoinPartyToRoom } = require('./join')
-const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
-const { isRoomRoutingEnabled } = require('../cluster/roomRouting')
+const { markPartyOriginToken, markPartyOriginObject, isInEndedGame } = require('./partyOrigin')
+const { isRoomRoutingEnabled, rejectCreateOnDrainingNode } = require('../cluster/roomRouting')
 const { reserveRoomCode, releaseRoomCode } = require('../cluster/roomDirectory')
 
 // 방 만들기 요청: 게임 중이면 거절, 처리 중 잠금 걸고 진행
@@ -39,6 +39,9 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
         callback({ ok: false, message: '매칭 대기열에 남아있는 요청이 있습니다. 먼저 취소해주세요.' })
         return
     }
+    // 내 Node가 비우는 중이면 다른 Node로 (MN-114)
+    // 방에 든 사람은 위에서 거절, 결과 화면 방장은 파티가 따라오게 여기서 만듦
+    if (!isInEndedGame(uuid) && rejectCreateOnDrainingNode(callback)) return
 
     // 설정 값은 허용 목록만, 역할 구성은 따로 검사 (방장은 payload 말고 소켓 uuid, 지도 09-①)
     const validation = validateCreateRoomPayload(payload)

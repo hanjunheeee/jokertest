@@ -2,7 +2,7 @@
 // join/join·join/publicRooms·join/create·admission/accept·join/party가 부름, 단일 모드(REDIS_URL 없음)면 늘 null (지금과 같음)
 const cluster = require('../../../cluster')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
-const { ROUTABLE_NODE_ID } = require('../../connection/nodeRouting')
+const { ROUTABLE_NODE_ID, pickLeastBusyNode } = require('../../connection/nodeRouting')
 const { gameRooms } = require('../core/state')
 const { describeVanishedRoom, emitRoomJoinFailed } = require('../join/guards')
 
@@ -123,6 +123,16 @@ async function findPartyGameOwner(gameId) {
     return onOtherNode(found.node)
 }
 
+// 방 만들기: 내 Node가 draining이고 갈 곳 있으면 그 Node로 보냄 (MN-114) → 답했으면 true
+// 단일 모드·Redis 죽음·갈 곳 없음은 기다림 없이 false (여기서 그대로 만듦)
+function rejectCreateOnDrainingNode(callback) {
+    if (!cluster.isShared() || !cluster.nodes.isDraining()) return false
+    const node = pickLeastBusyNode()
+    if (!node) return false
+    callback({ ok: false, ...nodeFailure(ROOM_ON_OTHER_NODE, node), message: '다른 서버로 옮겨 방을 만듭니다.' })
+    return true
+}
+
 // Node 여러 개인지 (아니면 부르는 쪽이 기다림 없이 예전 그대로 감)
 const isRoomRoutingEnabled = () => cluster.isEnabled()
 
@@ -133,5 +143,6 @@ module.exports = {
     rejectIfRoomOnOtherNode,
     findInviteRoomOwner,
     findPartyGameOwner,
+    rejectCreateOnDrainingNode,
     ROOM_NODE_MESSAGES: MESSAGES,
 }
