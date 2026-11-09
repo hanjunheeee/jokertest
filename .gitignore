@@ -34,6 +34,8 @@ coverage/
 
 # 개인 학습 자료·보고서·임시 출력 (저장소에 안 올림)
 reports/
+!backend/admin/services/reports/
+!frontend/src/admin/domains/reports/
 .tours/
 output/
 
