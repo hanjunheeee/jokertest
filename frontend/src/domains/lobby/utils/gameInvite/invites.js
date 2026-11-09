@@ -7,7 +7,8 @@ export function compareSeq(left, right) {
     const b = String(right ?? "0").replace(/^0+(?=\d)/, "");
     if (!/^\d+$/.test(a) || !/^\d+$/.test(b)) return NaN;
     if (a.length !== b.length) return a.length - b.length;
-    return a < b ? -1 : a > b ? 1 : 0;
+    if (a === b) return 0;
+    return a < b ? -1 : 1;
 }
 
 // 서버가 준 초대 줄이 필수 칸을 다 갖췄는지

@@ -84,7 +84,9 @@ export const handleReturn = (search, { entryNeeded = false } = {}) => {
   // 돌아온 주문은 진행 중 주문 찾기에서 빼서 두 번 보이지 않게 함
   if (ret.orderId && (ret.mode === "fail" || ret.valid)) excluded.add(ret.orderId)
   // 같은 주소면 앞 확인을 같이 씀, 같은 주문이 확인 중이면 그것도 같이 씀
-  const key = ret.mode === "fail" ? `fail:${search}` : ret.valid ? `${ret.orderId}:${ret.paymentKey}:${ret.amount}` : `invalid:${search}`
+  let key = `invalid:${search}`
+  if (ret.mode === "fail") key = `fail:${search}`
+  else if (ret.valid) key = `${ret.orderId}:${ret.paymentKey}:${ret.amount}`
   const existing = returnRuns.get(key)
   if (existing) return existing.promise
   const sharing = ret.mode === "success" && ret.valid ? inFlightOrders.get(ret.orderId) : null

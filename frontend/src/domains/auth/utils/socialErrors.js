@@ -56,6 +56,14 @@ export function intentErrorView(error) {
   return { status, message }
 }
 
+// 증명 에러는 정한 문구, 5xx로 code를 버렸으면 통신 실패 문구, 아니면 서버 문구
+function submitErrorMessage(code, error) {
+  if (code === "SIGNUP_PROOF_REQUIRED") return SOCIAL_SIGNUP_TEXT.proofRequired
+  if (code === "SIGNUP_PROOF_INVALID") return SOCIAL_SIGNUP_TEXT.proofInvalid
+  if (code !== error?.code) return SOCIAL_SIGNUP_TEXT.generic
+  return error?.message || SOCIAL_SIGNUP_TEXT.cannotComplete
+}
+
 // 가입 완료 실패 → 가입 상태·문구, 인증 증명이 없거나 거절이면 proofLost
 export function submitErrorView(error) {
   const code = trustedErrorCode(error)
@@ -73,10 +81,6 @@ export function submitErrorView(error) {
     default:
   }
   const proofLost = code === "SIGNUP_PROOF_REQUIRED" || code === "SIGNUP_PROOF_INVALID"
-  // 증명 에러는 정한 문구, 5xx로 code를 버렸으면 통신 실패 문구, 아니면 서버 문구
-  const message = code === "SIGNUP_PROOF_REQUIRED" ? SOCIAL_SIGNUP_TEXT.proofRequired
-    : code === "SIGNUP_PROOF_INVALID" ? SOCIAL_SIGNUP_TEXT.proofInvalid
-      : code !== error?.code ? SOCIAL_SIGNUP_TEXT.generic
-        : error?.message || SOCIAL_SIGNUP_TEXT.cannotComplete
+  const message = submitErrorMessage(code, error)
   return { status, message, proofLost }
 }

@@ -8,8 +8,9 @@ export const ownedOptionsOf = (entitlements, itemType, srcForItemId) => entitlem
   .filter((item) => item.src != null)
 
 // 지갑 불러오기 실패 → error, 아직 → loading, 비었음 → empty
-export const listStatusOf = (economyStatus, options) =>
-  economyStatus === "error" ? "error"
-    : economyStatus === "idle" || economyStatus === "loading" ? "loading"
-      : options.length === 0 ? "empty"
-        : "ready"
+export const listStatusOf = (economyStatus, options) => {
+  if (economyStatus === "error") return "error"
+  if (economyStatus === "idle" || economyStatus === "loading") return "loading"
+  if (options.length === 0) return "empty"
+  return "ready"
+}

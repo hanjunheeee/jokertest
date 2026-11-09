@@ -29,11 +29,9 @@ export default function SkinCardWearListItem({
   owned = true,
   onSelect,
 }) {
-  const ariaLabel = equipped
-    ? `${item.name}, 착용 중`
-    : owned
-      ? item.name
-      : `${item.name}, 미보유`
+  let ariaLabel = `${item.name}, 미보유`
+  if (equipped) ariaLabel = `${item.name}, 착용 중`
+  else if (owned) ariaLabel = item.name
 
   return (
     <button

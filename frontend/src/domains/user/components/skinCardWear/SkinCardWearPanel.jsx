@@ -23,6 +23,13 @@ import SkinCardWearList from "./SkinCardWearList.jsx"
 import SkinCardWearPreview from "./SkinCardWearPreview.jsx"
 
 // 저장 중엔 안쪽을 inert로 잠그고, 실패·모름이면 오류 문구와 다시 시도 글자
+// 적용 버튼 글자: 저장 중 → 실패 → 기본 순
+function confirmLabel({ isSaving, hasFailed }) {
+  if (isSaving) return "저장 중..."
+  if (hasFailed) return "다시 시도"
+  return "적용"
+}
+
 export default function SkinCardWearPanel({
   listItems,
   selectedItemId,
@@ -117,7 +124,7 @@ export default function SkinCardWearPanel({
             className={CONFIRM_BTN_IMG_CLASS}
           />
           <span className={CONFIRM_BTN_LABEL_CLASS}>
-            {isSaving ? "저장 중..." : hasFailed ? "다시 시도" : "적용"}
+            {confirmLabel({ isSaving, hasFailed })}
           </span>
         </button>
       </div>

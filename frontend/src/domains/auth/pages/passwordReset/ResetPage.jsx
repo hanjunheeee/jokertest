@@ -14,6 +14,13 @@ const VERIFYING_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:1
 // 안내 화면에선 Enter로 제출돼도 아무것도 안 함
 const blockSubmit = (e) => e.preventDefault()
 
+// 만료·사용됨이 아니면 전부 잘못된 링크 문구
+function linkInvalidText(reason) {
+  if (reason === "EXPIRED") return RESET_TEXT.linkExpired
+  if (reason === "USED") return RESET_TEXT.linkUsed
+  return RESET_TEXT.linkInvalid
+}
+
 // 상태별 안내 문구·버튼 (ready·submitting이면 null이라 입력 화면)
 function noticeFor(reset, { goToLogin, goToRequest }) {
   switch (reset.status) {
@@ -25,13 +32,10 @@ function noticeFor(reset, { goToLogin, goToRequest }) {
         actionLabel: "다시 확인", onAction: reset.retryVerify,
       }
     case "linkInvalid":
-      // 만료·사용됨이 아니면 전부 잘못된 링크 문구
       return {
         role: "alert",
         className: RECOVERY_ALERT_CLASS,
-        text: reset.linkInvalidReason === "EXPIRED" ? RESET_TEXT.linkExpired
-          : reset.linkInvalidReason === "USED" ? RESET_TEXT.linkUsed
-          : RESET_TEXT.linkInvalid,
+        text: linkInvalidText(reset.linkInvalidReason),
         actionLabel: "다시 요청하기",
         onAction: goToRequest,
       }

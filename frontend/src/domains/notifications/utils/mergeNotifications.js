@@ -9,7 +9,9 @@ function compare(a, b) {
   const av = Number.isNaN(at) ? 0 : at
   const bv = Number.isNaN(bt) ? 0 : bt
   if (av !== bv) return bv - av
-  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+  if (a.id < b.id) return 1
+  if (a.id > b.id) return -1
+  return 0
 }
 
 // id 기준으로 합침, 읽음 시각은 더 이른 쪽을 남김

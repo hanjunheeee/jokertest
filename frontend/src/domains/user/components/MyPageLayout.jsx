@@ -23,6 +23,13 @@ import {
 } from "../constants/myPageLayoutStyle.js"
 import { useMyProfile } from "../../../shared/hooks/useMyProfile.js"
 
+// 전적 없음·새로 받기 실패·새로 받는 중 안내 글자
+function staleNoticeText(profile, error) {
+  if (!profile) return "전적을 불러오지 못했습니다."
+  if (error) return "최신 전적을 불러오지 못했습니다. 아래 값은 갱신 전 값일 수 있습니다."
+  return "전적이 갱신되었습니다. 최신 값을 불러오는 중입니다."
+}
+
 export default function MyPageLayout() {
   const navigate = useNavigate()
   const { profile, stats, description, loading, isStale, error, retry } = useMyProfile()
@@ -43,11 +50,7 @@ export default function MyPageLayout() {
       {isStale || (!loading && !profile) ? (
         <div role="status" className="absolute left-1/2 top-4 z-40 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#c9b892]/60 bg-black/70 px-4 py-2 text-[#f5f0e6]">
           <span>
-            {!profile
-              ? "전적을 불러오지 못했습니다."
-              : error
-                ? "최신 전적을 불러오지 못했습니다. 아래 값은 갱신 전 값일 수 있습니다."
-                : "전적이 갱신되었습니다. 최신 값을 불러오는 중입니다."}
+            {staleNoticeText(profile, error)}
           </span>
           <button
             type="button"

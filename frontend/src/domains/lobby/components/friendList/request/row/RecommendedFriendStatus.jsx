@@ -10,13 +10,14 @@ import {
 import { STATUS_TEXT } from "../../../../constants/recommendedFriend.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
+// 접속 중·접속 안 함만 색 따로, 나머지는 기본 색
+const STATUS_COLOR_CLASS = { ONLINE: "text-amber-100/85", OFFLINE: "text-white/35" }
+
 // 모르는 상태는 UNKNOWN으로 모아 글자·색을 정하고, 접속 중이 아니면 배지를 덮음
 export default function RecommendedFriendStatus({ status }) {
   const normalized = STATUS_TEXT[status] !== undefined ? status : "UNKNOWN"
   const statusText = STATUS_TEXT[normalized]
-  const statusColorClass = normalized === "ONLINE"
-    ? "text-amber-100/85"
-    : normalized === "OFFLINE" ? "text-white/35" : "text-white/50"
+  const statusColorClass = STATUS_COLOR_CLASS[normalized] ?? "text-white/50"
 
   return (
     <div className={RECOMMENDED_STATUS_WRAP_CLASS} data-presence-status={normalized}>

@@ -132,7 +132,9 @@ export const INGAME_MONEY_STORE_ITEMS = [
 // 서버 재화 상품 그림: 지급 재화·수량이 묶음 그림과 맞으면 그 그림, 아니면 null
 // utils/currencyParse.js toCurrencyStoreItem이 씀 (예: GOLD 100 → 금화-100.png)
 export function ingameMoneyIconOf(grantCurrency, amount) {
-  const key = grantCurrency === "GOLD" ? "gold" : grantCurrency === "DIAMOND" ? "diamond" : null
+  let key = null
+  if (grantCurrency === "GOLD") key = "gold"
+  else if (grantCurrency === "DIAMOND") key = "diamond"
   if (!key) return null
   return INGAME_MONEY_STORE_ITEMS.find((item) => item.id === `ingame-money-${key}-${amount}`)?.icon ?? null
 }

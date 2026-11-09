@@ -30,7 +30,9 @@ export function useSignupTerms({ active = true, loadTerms = getCurrentTermsApi }
 
   const current = loaded.attempt === attempt
   const terms = current ? loaded.terms : []
-  const status = !active ? "idle" : current ? loaded.status : "loading"
+  let status = "loading"
+  if (!active) status = "idle"
+  else if (current) status = loaded.status
 
   const toggle = useCallback((id) => setAgreedIds((prev) => toggleAgreedId(prev, id)), [])
 

@@ -20,11 +20,11 @@ export const loadoutActions = (set, get) => ({
       applyExtra: jobId
         ? (merged) => ({ selectedSkinsByJob: { ...merged.selectedSkinsByJob, [jobId]: itemId } })
         : undefined,
-      matches: (serverLoadout) => (jobId
-        ? (serverLoadout.selectedSkinsByJob?.[jobId] ?? null) === itemId
-        : field
-          ? serverLoadout[field] === itemId
-          : false),
+      matches: (serverLoadout) => {
+        if (jobId) return (serverLoadout.selectedSkinsByJob?.[jobId] ?? null) === itemId
+        if (field) return serverLoadout[field] === itemId
+        return false
+      },
       conflictCode: "SKIN_REVISION_CONFLICT",
       requireKnownRevision: isSkinOrCardSlot,
       replayOnConflict: !isSkinOrCardSlot,

@@ -37,12 +37,12 @@ export function validateEvent(event) {
   if (typeof kind !== "string" || kind.trim().length === 0) return null
   if (typeof eventId !== "string" || eventId.trim().length === 0) return null
 
-  const origin = event.origin === "restore" ? "restore" : event.origin === "live" ? "live" : null
-  if (origin === null) return null
+  if (event.origin !== "restore" && event.origin !== "live") return null
+  const origin = event.origin
 
-  const audioMode =
-    event.audioMode === "embedded" ? "embedded" : event.audioMode === undefined || event.audioMode === "separate" ? "separate" : null
-  if (audioMode === null) return null
+  // audioMode 안 적었으면 separate로 봄
+  const audioMode = event.audioMode === undefined ? "separate" : event.audioMode
+  if (audioMode !== "embedded" && audioMode !== "separate") return null
 
   return {
     kind,

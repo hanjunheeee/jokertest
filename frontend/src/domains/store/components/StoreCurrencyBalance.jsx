@@ -18,11 +18,9 @@ function StoreCurrencyItem({ icon, amount, label, status, onRetry }) {
   const isError = status === "error"
   const isReady = status === "ready"
 
-  const ariaLabel = isReady
-    ? `${label} ${amount}`
-    : isError
-      ? `${label} 불러오기 실패, 다시 시도하려면 선택하세요`
-      : `${label} 불러오는 중`
+  let ariaLabel = `${label} 불러오는 중`
+  if (isReady) ariaLabel = `${label} ${amount}`
+  else if (isError) ariaLabel = `${label} 불러오기 실패, 다시 시도하려면 선택하세요`
 
   return (
     <div className={CURRENCY_ITEM_CLASS} aria-label={ariaLabel}>

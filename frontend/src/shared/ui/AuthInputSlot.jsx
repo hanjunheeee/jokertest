@@ -27,7 +27,9 @@ export default function AuthInputSlot({
 }) {
   const [passwordVisible, setPasswordVisible] = useState(false)
 
-  const inputType = passwordToggle ? (passwordVisible ? "text" : "password") : type
+  // 비밀번호 보기 버튼 있으면 보기 상태가 type을 정함
+  let inputType = type
+  if (passwordToggle) inputType = passwordVisible ? "text" : "password"
 
   return (
     <div className={`relative w-full ${compact ? "origin-top -mb-0.5 scale-[0.97]" : ""}`}>

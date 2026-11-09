@@ -27,8 +27,10 @@ const showQueued = (orderId, started) => {
   const record = records.get(orderId)
   setActive(orderId)
   const confirming = inFlightOrders.has(orderId)
+  let status = record.serverStatus === "PENDING_GRANT" ? "pendingGrant" : "unknown"
+  if (confirming) status = "confirming"
   set({
-    status: confirming ? "confirming" : record.serverStatus === "PENDING_GRANT" ? "pendingGrant" : "unknown",
+    status,
     reason: null, order: { orderId, amount: record.amount }, autoChecks: record.pollCount, lookupFailed: false,
   })
   // 결제 확인 중이면 그 결과를 기다림
