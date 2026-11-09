@@ -3,7 +3,6 @@
 // 탈퇴 저장소 파일, 계정 알아볼 수 없게 바꾸고 닫기 · 딸린 연결(세션·소셜·친구·초대·접속·인증) 정리
 // 탈퇴 서비스(services/auth/account/withdraw.js)가 트랜잭션 안에서 부름, 전적·장부·동의 기록은 uuid로 남김
 const db = require('../../models');
-const { notifySessionsRevoked } = require('./revokeSignal');
 
 // 탈퇴 계정 표시 (전적에 남는 이름)
 const WITHDRAWN_NICKNAME_SNAPSHOT = '탈퇴한 사용자';
@@ -38,8 +37,7 @@ const detachAccount = async (uuid, oldEmail, { transaction, now = new Date() }) 
         { is_online: false, revoked_at: now },
         { where: { user_id: uuid, revoked_at: null }, transaction },
     );
-    // 소켓 세션 확인이 잠깐 저장한 "살아 있음"도 지움 (커밋 뒤, 소켓은 탈퇴 서비스가 바로 끊음)
-    notifySessionsRevoked(uuid, transaction);
+    // 세션 끊김 알림은 여기서 안 함: 탈퇴 서비스가 커밋 뒤 소켓 안내·끊기 다음에 보냄 (다른 Node에 안내가 먼저 닿게)
     await db.ExternalIdentity.destroy({ where: { user_id: uuid }, transaction });
     await db.Friendship.destroy({ where: either('requester_id', 'receiver_id'), transaction });
     await db.FriendRequest.destroy({ where: either('requester_id', 'receiver_id'), transaction });

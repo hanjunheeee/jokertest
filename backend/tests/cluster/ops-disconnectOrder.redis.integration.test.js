@@ -1,4 +1,4 @@
-// 즉시 끊기 순서 시험: 다른 Node 플레이어도 첫 안내가 정지·비활성 문구 (세션 내림 알림이 안내보다 먼저 가면 "세션 만료"로 끊김)
+// 즉시 끊기·탈퇴 순서 시험: 다른 Node 플레이어도 첫 안내가 정지·비활성·탈퇴 문구 (세션 내림 알림이 안내보다 먼저 가면 "세션 만료"로 끊김)
 // 앞 시험은 가짜 소켓(늘 돎), 뒤 시험은 진짜 Redis Node 둘 (npm run test:with-redis, REDIS_URL_TEST 없으면 건너뜀)
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db'
 
@@ -11,7 +11,12 @@ const { REDIS_URL_TEST, skipReason, sleep, uniquePrefix, waitFor, startRedisNode
 const cluster = require('../../cluster')
 const { quietLog } = require('../../cluster/testing/memoryCluster')
 const { disconnectUser } = require('../../services/ops/disconnect')
-const { notifySessionsRevoked } = require('../../repositories/user/revokeSignal')
+const { notifySessionsRevoked, onSessionsRevoked } = require('../../repositories/user/revokeSignal')
+const db = require('../../models')
+const userRepository = require('../../repositories/user')
+const gameSession = require('../../game-core/gameSession')
+const emitter = require('../../socket/emitter')
+const withdrawService = require('../../services/auth/account/withdraw')
 
 const UUID = 'aaaaaaaa-0000-4000-8000-0000000000dc'
 const FAST = { CLUSTER_HEARTBEAT_MS: '200', NODE_DEAD_AFTER_MS: '1000' }
@@ -100,5 +105,66 @@ test('즉시 끊기 순서(진짜 Redis): n1이 끊은 n2 플레이어의 첫 �
             assert.equal(first.payload.code, one.code, `${one.code} ${round + 1}번째: 첫 안내가 ${first.payload.code}`)
             player.socket.close()
         }
+    }
+})
+
+// ── 탈퇴: 진짜 탈퇴 서비스·저장소 함수, DB 모델만 가짜 (거래는 커밋 걸리는 시간 뒤 afterCommit 돌림) ──
+
+const WITHDRAW_MODELS = [
+    ['UserSession', 'update'], ['ExternalIdentity', 'destroy'], ['Friendship', 'destroy'], ['FriendRequest', 'destroy'],
+    ['FriendFavorite', 'destroy'], ['FriendBlock', 'destroy'], ['GameInvite', 'update'], ['OnlinePresence', 'destroy'],
+    ['PasswordResetToken', 'destroy'], ['SignupEmailVerification', 'destroy'], ['GameResultPlayer', 'update'],
+    ['User', 'update'], ['User', 'destroy'],
+]
+
+function mockWithdraw(t, io) {
+    withdrawService.__resetWithdrawAttemptsForTests()
+    t.mock.method(gameSession, 'isMatchmakingBlocked', () => false)
+    t.mock.method(emitter, 'getIo', () => io)
+    t.mock.method(userRepository, 'findByUuid', async () => ({ uuid: UUID, has_local_password: false, email: 'leave@example.com' }))
+    t.mock.method(userRepository, 'withTransaction', async (work) => {
+        const hooks = []
+        const result = await work({ LOCK: { UPDATE: 'UPDATE' }, afterCommit: (fn) => hooks.push(fn) })
+        await sleep(3)
+        for (const fn of hooks) fn()
+        return result
+    })
+    for (const [model, method] of WITHDRAW_MODELS) t.mock.method(db[model], method, async () => [1])
+    t.mock.method(db.sequelize, 'literal', (sql) => ({ literal: sql }))
+}
+
+test('탈퇴 순서: 안내·끊기 먼저, 세션 끊김 알림은 그 뒤 (커밋 뒤)', async (t) => {
+    const log = []
+    const socket = {
+        id: 's1',
+        emit: (event, payload) => log.push(`${event} ${payload.code}`),
+        disconnect: () => log.push('끊기'),
+    }
+    mockWithdraw(t, { in: () => ({ fetchSockets: async () => [socket] }) })
+    const off = onSessionsRevoked((uuid) => { if (uuid === UUID) log.push('세션 끊김 알림') })
+    t.after(off)
+    assert.deepEqual(await withdrawService.withdrawAccount({ uuid: UUID, confirmEmail: 'leave@example.com' }), { ok: true })
+    assert.deepEqual(log, ['force_disconnect ACCOUNT_WITHDRAWN', '끊기', '세션 끊김 알림'])
+})
+
+test('탈퇴 순서(진짜 Redis): n1에서 탈퇴한 n2 플레이어의 첫 안내 = 탈퇴 문구 (5번)', { skip: skipReason }, async (t) => {
+    const prefix = uniquePrefix()
+    t.after(() => cleanupPrefix(prefix))
+    const self = await startSelfNode(t, prefix)
+    const n2 = await startRedisNode(t, { url: REDIS_URL_TEST, serverId: 'n2', prefix, env: FAST })
+    await n2.node.nodes.refresh()
+    await cluster.nodes.refresh()
+    watchRevokeLikeSessionCheck(n2)
+    mockWithdraw(t, self.io)
+
+    for (let round = 0; round < 5; round += 1) {
+        const player = await connectUser(t, n2.port, UUID)
+        const closed = new Promise((resolve) => player.socket.once('disconnect', resolve))
+        assert.deepEqual(await withdrawService.withdrawAccount({ uuid: UUID, confirmEmail: 'leave@example.com' }), { ok: true })
+        await closed
+        await waitFor(async () => player.received.some((item) => item.event === 'force_disconnect'), { timeoutMs: 2000 })
+        const first = player.received.find((item) => item.event === 'force_disconnect')
+        assert.equal(first.payload.code, 'ACCOUNT_WITHDRAWN', `${round + 1}번째: 첫 안내가 ${first.payload.code}`)
+        player.socket.close()
     }
 })

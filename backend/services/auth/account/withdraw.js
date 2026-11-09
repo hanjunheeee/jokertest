@@ -8,6 +8,7 @@ const { createError } = require("../../../utils/appError");
 const { createAttemptCounter } = require("./attemptCounter");
 const { isInActiveGameAnywhere } = require("./activeGameCheck");
 const { fetchUserSocketsEverywhere } = require("../../ops/disconnect");
+const { notifySessionsRevoked } = require("../../../repositories/user/revokeSignal");
 
 // 비번 틀린 횟수 제한 (세션 훔친 사람이 맞혀 보며 탈퇴시키기 막기, Node 여러 개면 합쳐 셈 `wrong:wd:<uuid>`)
 const MAX_WRONG_ATTEMPTS = 5;
@@ -75,8 +76,13 @@ exports.withdrawAccount = async ({ uuid, password, confirmEmail }, { now = Date.
         const [status, message] = REJECTIONS[rejection];
         throw createError(message, status, rejection);
     }
+    // 커밋 뒤: 안내·끊기 먼저, 그다음 세션 끊김 알림 (알림이 먼저 가면 다른 Node가 바로 다시 확인해 "세션 만료"로 먼저 끊음)
+    try {
+        await disconnectSockets(uuid);
+    } finally {
+        notifySessionsRevoked(uuid);
+    }
     await wrongAttempts.clear(uuid);
-    await disconnectSockets(uuid);
     return { ok: true };
 };
 
