@@ -1,11 +1,11 @@
 'use strict';
 
 // 서버 다루기 파일, 시험 백엔드(4100) 꺼짐 시키기·다시 켜질 때까지 기다리기 + 시험 하나만 쓰는 백엔드 따로 띄우기
-// 서버 꺼짐 시험(@shutdown, serial 프로젝트)·요청 수 제한·시작 거부 시험(security)이 씀
+// 서버 꺼짐 시험(@shutdown, serial 프로젝트)·요청 수 제한·시작 거부 시험(security)이 씀, Node 여러 개면 Node 하나만 끄기·죽이기도
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { E2E, RUNTIME_DIR, SHUTDOWN_FLAG, BACKEND_DIR, readSecrets } = require('./env');
+const { E2E, RUNTIME_DIR, BACKEND_DIR, readSecrets, shutdownFlagFor } = require('./env');
 const { backendEnv } = require('./backendEnv');
 const { sleep, waitUntil } = require('./wait');
 
@@ -19,20 +19,50 @@ async function isUp(apiUrl = E2E.apiUrl) {
 }
 
 /**
+ * 끌 Node 고르기: Node 하나면 늘 그 하나(4100)
+ * 여러 개면 node(SERVER_ID) → 그 Node, uuid → 그 사람 판 Node(/e2e/users/:uuid/game의 node), 둘 다 없으면 전부
+ * (판 Node를 못 찾으면 전부 → 한 서버일 때와 같은 뜻)
+ */
+async function targetNodes({ node, uuid } = {}) {
+    if (!E2E.multiNode) return E2E.nodes;
+    if (node) {
+        const found = E2E.nodes.filter((n) => n.id === node);
+        if (found.length === 0) throw new Error(`모르는 Node: ${node} (있는 것: ${E2E.nodes.map((n) => n.id).join(', ')})`);
+        return found;
+    }
+    if (uuid) {
+        const game = await require('./internal').e2e.gameOf(uuid).catch(() => null);
+        const found = E2E.nodes.filter((n) => n.id === game?.node);
+        if (found.length > 0) return found;
+    }
+    return E2E.nodes;
+}
+
+// Node들이 다 꺼질 때까지 (Node 여러 개면 앞단 말고 Node 주소를 바로 봄)
+const waitNodesDown = (nodes, timeoutMs) =>
+    waitUntil(async () => (await Promise.all(nodes.map((n) => isUp(n.url)))).every((up) => !up), { timeoutMs, label: '백엔드가 안 꺼짐' });
+
+/**
  * 시험 백엔드(4100)에 종료 신호(SIGTERM) 보내기 — 서버가 접속자에게 server_shutdown 안내 → 소켓·DB 닫고 꺼짐
  * scripts/start-backend.js가 곧 다시 켬. @shutdown 태그 시험(serial 프로젝트, 한 번에 하나)에서만 쓸 것
  * @param {object} [o]
  * @param {boolean} [o.waitDown=true] 꺼질 때까지 기다림
+ * @param {string} [o.node] Node 여러 개: 끌 Node (SERVER_ID)
+ * @param {string} [o.uuid] Node 여러 개: 이 사람 판 Node를 끔
+ * @param {boolean} [o.kill=false] 정리 없이 바로 죽임 (SIGKILL 흉내, 안내 없음)
+ * @returns {Promise<string[]>} 끈 Node id
  */
-async function triggerShutdown({ waitDown = true, timeoutMs = 20000 } = {}) {
+async function triggerShutdown({ waitDown = true, timeoutMs = 20000, node, uuid, kill = false } = {}) {
+    const nodes = await targetNodes({ node, uuid });
     fs.mkdirSync(RUNTIME_DIR, { recursive: true });
-    fs.writeFileSync(SHUTDOWN_FLAG, String(Date.now()));
-    if (waitDown) await waitUntil(async () => !(await isUp()), { timeoutMs, label: '백엔드가 안 꺼짐' });
+    for (const n of nodes) fs.writeFileSync(`${shutdownFlagFor(n.id)}${kill ? '.kill' : ''}`, String(Date.now()));
+    if (waitDown) await waitNodesDown(nodes, timeoutMs);
+    return nodes.map((n) => n.id);
 }
 
-/** 시험 백엔드가 다시 켜질 때까지 (다음 시험 전에 꼭 부르기) */
+/** 시험 백엔드가 다시 켜질 때까지 (다음 시험 전에 꼭 부르기), Node 여러 개면 전부 */
 async function waitBackendUp({ timeoutMs = 60000 } = {}) {
-    await waitUntil(() => isUp(), { timeoutMs, label: '백엔드가 다시 안 켜짐' });
+    await waitUntil(async () => (await Promise.all(E2E.nodes.map((n) => isUp(n.url)))).every(Boolean), { timeoutMs, label: '백엔드가 다시 안 켜짐' });
 }
 
 /**
@@ -85,4 +115,4 @@ async function startExtraBackend({ port, defaultIpLimits = true, overrides = {},
     return { url, port: usePort, output: () => redact(output), stop };
 }
 
-module.exports = { isUp, triggerShutdown, waitBackendUp, startExtraBackend };
+module.exports = { isUp, triggerShutdown, waitBackendUp, startExtraBackend, targetNodes };

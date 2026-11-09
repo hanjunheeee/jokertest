@@ -2,10 +2,11 @@
 
 // 관리자 통로·시험 손잡이 부르기 파일, 시험 백엔드(4100)의 /internal(공지·끊기·점검·지금 상황)과 /e2e(역할·판 보기·단계 넘기기)
 // 열쇠는 .env.e2e의 INTERNAL_API_KEY (값은 화면·로그에 안 찍음), 시험·bots.js·game.js가 씀
+// Node 여러 개(E2E_NODES=2)면 늘 앞단(4100)으로 부름 → 서버가 주인 Node로 넘김(RPC), 다시 읽기 둘만 Node마다 바로 부름
 const { E2E, readSecrets } = require('./env');
 
-async function call(method, pathname, body) {
-    const res = await fetch(`${E2E.apiUrl}${pathname}`, {
+async function call(method, pathname, body, { baseUrl = E2E.apiUrl } = {}) {
+    const res = await fetch(`${baseUrl}${pathname}`, {
         method,
         headers: { 'content-type': 'application/json', 'x-internal-key': readSecrets().INTERNAL_API_KEY },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -21,6 +22,18 @@ async function must(method, pathname, body) {
     const r = await call(method, pathname, body);
     if (!r.ok) throw new Error(`${method} ${pathname} → ${r.status} ${JSON.stringify(r.body)}`);
     return r.body;
+}
+
+// 모든 Node에 바로 (Node 하나면 4100 한 번 = 예전과 같음)
+// 다시 읽기는 서버 방송(ops.reload)으로도 퍼지지만, 시험은 바로 다음 줄에서 결과를 봐서 방송 도착을 안 기다리게 Node마다 직접 부름
+async function mustEveryNode(method, pathname) {
+    const bodies = [];
+    for (const node of E2E.nodes) {
+        const r = await call(method, pathname, undefined, { baseUrl: node.url });
+        if (!r.ok) throw new Error(`${method} ${pathname} (${node.id}) → ${r.status} ${JSON.stringify(r.body)}`);
+        bodies.push(r.body);
+    }
+    return bodies[0];
 }
 
 // 정할 사람 중 대기방에 든 첫 사람의 방 id (아무도 없으면 undefined → 사람 예약)
@@ -46,9 +59,9 @@ const internal = {
     /** 정지·비활성 반영 즉시 끊기 */
     disconnect: (uuid) => must('POST', `/internal/users/${encodeURIComponent(uuid)}/disconnect`),
     /** 점검 한 줄 다시 읽기 (먼저 DB maintenance_state 표를 고친 뒤 부름) — 모든 시험에 걸리니 @serial 시험에서만 */
-    reloadMaintenance: () => must('POST', '/internal/maintenance/reload'),
+    reloadMaintenance: () => mustEveryNode('POST', '/internal/maintenance/reload'),
     /** 금지어 다시 읽기 (먼저 DB banned_words 표에 넣은 뒤 부름) — 낱말은 시험마다 무작위로 (다른 시험 채팅에 안 걸리게) */
-    reloadBannedWords: () => must('POST', '/internal/banned-words/reload'),
+    reloadBannedWords: () => mustEveryNode('POST', '/internal/banned-words/reload'),
     /** 대기방·진행 판 요약 (명단 없음) */
     live: () => must('GET', '/internal/live'),
     raw: call,
@@ -92,4 +105,4 @@ const e2e = {
     advance: (gameId) => must('POST', `/e2e/games/${encodeURIComponent(gameId)}/advance`),
 };
 
-module.exports = { internal, e2e, call };
+module.exports = { internal, e2e, call, mustEveryNode };
