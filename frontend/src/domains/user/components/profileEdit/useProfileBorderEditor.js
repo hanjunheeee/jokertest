@@ -132,7 +132,7 @@ export function useProfileBorderEditor({ open, onClose }) {
       let refreshUncertain = false
       if (!confirmedRejection) {
         await fetchSummary()
-        if (useEconomyStore.getState().status === "error") refreshUncertain = true
+        refreshUncertain = useEconomyStore.getState().status === "error"
       }
       if (isStale()) {
         return

@@ -65,12 +65,9 @@ export const apiClient = async (endpoint, options = {}, _isRetry = false) => {
     if (response.status === 401 && !_isRetry && endpoint !== "/auth/refresh") {
         // 본문은 response.js도 읽어야 해서 복사본으로 봄
         const body = await response.clone().json().catch(() => ({}));
-        if (body.code === "ACCESS_TOKEN_EXPIRED") {
-            const refreshed = await refreshAccessToken();
-            // 갱신 실패면 그대로 401 처리로 넘어감
-            if (refreshed) {
-                return apiClient(endpoint, options, true);
-            }
+        // 갱신 실패면 그대로 401 처리로 넘어감
+        if (body.code === "ACCESS_TOKEN_EXPIRED" && await refreshAccessToken()) {
+            return apiClient(endpoint, options, true);
         }
     }
 

@@ -20,13 +20,8 @@ export function useFullscreen() {
   // 이미 그 상태면 안 바꿈, 브라우저가 거절하면 실제 상태로 되돌림
   const setFullscreen = useCallback(async (next) => {
     try {
-      if (next) {
-        if (!document.fullscreenElement) {
-          await document.documentElement.requestFullscreen()
-        }
-      } else if (document.fullscreenElement) {
-        await document.exitFullscreen()
-      }
+      if (next && !document.fullscreenElement) await document.documentElement.requestFullscreen()
+      else if (!next && document.fullscreenElement) await document.exitFullscreen()
     } catch {
       setIsFullscreen(readIsFullscreen())
     }

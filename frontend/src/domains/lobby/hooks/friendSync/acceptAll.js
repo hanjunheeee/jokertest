@@ -6,6 +6,22 @@ import { useFriendStore } from "../../store/friend.store.js"
 import { classifyAcceptResults } from "../../utils/friend/acceptAll.js"
 import { isSameAccount } from "./requestOps.js"
 
+// 신청 id → 서버가 확인한 상태 표, 묻는 사이 계정이 바뀌면 null
+async function askResults(undeterminedIds, generation) {
+  const confirmedStatuses = new Map()
+  try {
+    const rows = await fetchFriendRequestResults(undeterminedIds)
+    if (!isSameAccount(generation)) return null
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (typeof row?.status === "string") confirmedStatuses.set(row.request_id, row.status)
+    }
+  } catch (error) {
+    if (!isSameAccount(generation)) return null
+    console.error("친구 요청 결과 확인 실패:", error.message)
+  }
+  return confirmedStatuses
+}
+
 // 단계마다 계정이 바뀌었는지 보고, 바뀌었으면 결과를 남기지 않고 잠금만 풂
 export async function runAcceptAll({ incomingRequests, lockRequests, unlockRequests, setAcceptAllResult, fetchFriends, fetchIncoming }) {
   const store = useFriendStore.getState()
@@ -29,19 +45,8 @@ export async function runAcceptAll({ incomingRequests, lockRequests, unlockReque
 
     // 실패한 요청은 실제로 처리됐을 수 있어 서버에 결과를 물음
     const undeterminedIds = locked.filter((_, index) => settled[index].status === "rejected")
-    const confirmedStatuses = new Map()
-    if (undeterminedIds.length > 0) {
-      try {
-        const rows = await fetchFriendRequestResults(undeterminedIds)
-        if (!isSameAccount(generation)) return
-        for (const row of Array.isArray(rows) ? rows : []) {
-          if (typeof row?.status === "string") confirmedStatuses.set(row.request_id, row.status)
-        }
-      } catch (error) {
-        if (!isSameAccount(generation)) return
-        console.error("친구 요청 결과 확인 실패:", error.message)
-      }
-    }
+    const confirmedStatuses = undeterminedIds.length > 0 ? await askResults(undeterminedIds, generation) : new Map()
+    if (confirmedStatuses === null) return
 
     // 성공·실패·미확정으로 나눔
     const { accepted, failed, unconfirmed } = classifyAcceptResults(locked, settled, confirmedStatuses)

@@ -12,6 +12,16 @@ import { DISCORD_SUPPORT_URL } from "@/shared/env.js"
 const LOGOUT_FAILED_CONFIRM =
   "로그아웃 요청이 실패했습니다. 이 기기 화면에서만 로그아웃할까요? (새로고침하면 다시 로그인될 수 있습니다) 취소를 누르면 그대로 남아 다시 시도할 수 있습니다."
 
+// 서버 로그아웃 성공이면 참, 실패면 이 기기에서만 로그아웃할지 물어 답을 줌
+async function logoutOrAsk() {
+  try {
+    await logoutApi()
+    return true
+  } catch {
+    return typeof window.confirm === "function" && window.confirm(LOGOUT_FAILED_CONFIRM)
+  }
+}
+
 // 고객센터 메뉴 id (링크로 열려 누름 처리에서 뺌)
 export const CUSTOMER_SUPPORT_MENU_ID = "customerSupport"
 
@@ -32,12 +42,7 @@ export function useLobbyMenuNav() {
 
     // 종료: 서버 로그아웃이 실패하면 쿠키 세션이 살아 있어 새로고침 때 다시 로그인됨 → 알리고 고르게 함
     if (itemId === "exit") {
-      try {
-        await logoutApi()
-      } catch {
-        const localOnly = typeof window.confirm === "function" && window.confirm(LOGOUT_FAILED_CONFIRM)
-        if (!localOnly) return
-      }
+      if (!(await logoutOrAsk())) return
       useAuthStore.getState().logout()
       navigate("/login")
       return

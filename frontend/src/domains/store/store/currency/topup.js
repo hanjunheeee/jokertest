@@ -37,6 +37,29 @@ export const loadProducts = () => {
 // 서버가 정한 코드·상태로 온 실패인지
 const isKnownError = (error, code, status) => error?.code === code && error.ok === false && error.status === status
 
+// 주문 만들기 실패: 설정 없음은 대기, 상품 바뀜·없음·중지는 목록을 다시 받음
+const showCreateOrderError = (error) => {
+  if (isKnownError(error, "CONFIG_MISSING", 503)) {
+    set({ status: "idle", configPending: true, reason: "CONFIG_MISSING" })
+    return
+  }
+  if (isKnownError(error, "PRODUCT_VERSION_MISMATCH", 409) || isKnownError(error, "PRODUCT_NOT_FOUND", 404)
+    || isKnownError(error, "PRODUCT_STOPPED", 409)) {
+    set({ status: "failed", reason: error.code, productsStale: true })
+    loadProducts()
+    return
+  }
+  set({ status: "failed", reason: "ORDER_CREATE_FAILED" })
+}
+
+// 결제창 실패: 사용자 취소·창 닫힘(약속이 안 끝남)·SDK 실패·그 밖 실패를 나눠 안내
+const showPaymentError = (error) => {
+  if (isCancelCode(error?.code)) set({ status: "canceled", reason: "USER_CANCEL" })
+  else if (error?.code === "PAYMENT_WINDOW_CLOSED") set({ status: "canceled", reason: "PAYMENT_WINDOW_CLOSED" })
+  else if (error?.code === "SDK_LOAD_FAILED") set({ status: "failed", reason: "SDK_LOAD_FAILED" })
+  else set({ status: "failed", reason: "PAYMENT_WINDOW_FAILED" })
+}
+
 // 상품 목록이 준비됐고 다른 주문이 안 돌 때만 시작함
 export const startTopup = async (product) => {
   const state = get()
@@ -51,17 +74,7 @@ export const startTopup = async (product) => {
     try {
       order = await currencyApi.createOrder({ productId: product.productId, version: product.version })
     } catch (error) {
-      if (started !== ctx.generation) return
-      // 설정 없음은 대기, 상품 바뀜·없음·중지는 목록을 다시 받음
-      if (isKnownError(error, "CONFIG_MISSING", 503)) {
-        set({ status: "idle", configPending: true, reason: "CONFIG_MISSING" })
-      } else if (isKnownError(error, "PRODUCT_VERSION_MISMATCH", 409) || isKnownError(error, "PRODUCT_NOT_FOUND", 404)
-        || isKnownError(error, "PRODUCT_STOPPED", 409)) {
-        set({ status: "failed", reason: error.code, productsStale: true })
-        loadProducts()
-      } else {
-        set({ status: "failed", reason: "ORDER_CREATE_FAILED" })
-      }
+      if (started === ctx.generation) showCreateOrderError(error)
       return
     }
     if (started !== ctx.generation) return
@@ -70,17 +83,13 @@ export const startTopup = async (product) => {
       set({ status: "idle", configPending: true, reason: "CONFIG_MISSING" })
       return
     }
-    // 결제창 열기, 사용자 취소·창 닫힘(약속이 안 끝남)·SDK 실패·그 밖 실패를 나눠 안내
+    // 결제창 열기, 실패는 showPaymentError가 나눠 안내
     set({ status: "payment", order: { orderId: order.orderId, amount: order.amount } })
     const watch = watchPaymentWindow()
     try {
       await Promise.race([requestTossTestPayment(order, window.location.origin), watch.promise])
     } catch (error) {
-      if (started !== ctx.generation || get().status !== "payment") return
-      if (isCancelCode(error?.code)) set({ status: "canceled", reason: "USER_CANCEL" })
-      else if (error?.code === "PAYMENT_WINDOW_CLOSED") set({ status: "canceled", reason: "PAYMENT_WINDOW_CLOSED" })
-      else if (error?.code === "SDK_LOAD_FAILED") set({ status: "failed", reason: "SDK_LOAD_FAILED" })
-      else set({ status: "failed", reason: "PAYMENT_WINDOW_FAILED" })
+      if (started === ctx.generation && get().status === "payment") showPaymentError(error)
     } finally {
       watch.stop()
     }

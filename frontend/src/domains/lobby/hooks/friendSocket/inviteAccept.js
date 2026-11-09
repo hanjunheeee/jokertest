@@ -32,6 +32,19 @@ const failWith = (inviteId, message) => {
     loadInviteSnapshotAndPlayNew();
 };
 
+// 수락 결과 다시 묻기, "처리 중"이면 기다렸다 몇 번 더, 끝내 모르면 null
+async function askResultAgain(socket, inviteId, canAskAgain) {
+    let recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
+    for (let tries = 1; recovered?.ok === true && recovered.pending === true && tries < INVITE_RESULT_MAX_TRIES; tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, INVITE_RESULT_RETRY_DELAY_MS));
+        if (!canAskAgain()) break;
+        recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
+    }
+    if (recovered?.ok !== true || recovered.pending === true) return null;
+    if (recovered.entered === true && recovered.room) return { ok: true, room: recovered.room, inviteId, recovered: true };
+    return { ok: false, code: "NOT_ENTERED", message: "방에 입장하지 못했습니다." };
+}
+
 // 수락 요청 하나를 끝까지 처리함, 끝나면 수락 잠금은 같은 작업 번호로만 풂
 export async function requestGameInviteAccept(inviteId) {
     // 초대 id가 없으면 거절
@@ -62,17 +75,7 @@ export async function requestGameInviteAccept(inviteId) {
         const canAskAgain = () => isSameConnection(socket, connectionId)
             && useGameInviteStore.getState().isCurrent(accountGeneration);
         if (result?.unknown === true && canAskAgain()) {
-            let recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
-            for (let tries = 1; recovered?.ok === true && recovered.pending === true && tries < INVITE_RESULT_MAX_TRIES; tries += 1) {
-                await new Promise((resolve) => setTimeout(resolve, INVITE_RESULT_RETRY_DELAY_MS));
-                if (!canAskAgain()) break;
-                recovered = await emitInviteResult(socket, inviteId, INVITE_VERIFY_TIMEOUT_MS);
-            }
-            if (recovered?.ok === true && recovered.pending !== true) {
-                result = recovered.entered === true && recovered.room
-                    ? { ok: true, room: recovered.room, inviteId, recovered: true }
-                    : { ok: false, code: "NOT_ENTERED", message: "방에 입장하지 못했습니다." };
-            }
+            result = await askResultAgain(socket, inviteId, canAskAgain) ?? result;
         }
 
         // 그사이 계정이 바뀌었으면 버림

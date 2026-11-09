@@ -22,6 +22,20 @@ export function clearAccountCacheStores() {
 export const ACCOUNT_CACHE_SCOPES = Object.freeze(["profile", "economy", "achievements"])
 
 // 고른 이름만 새로고침, invalidate면 무효화로 다시 받기
+function refreshStore(store, invalidate) {
+    // 무효화를 고르면 invalidate부터 (없으면 아래 일반 새로고침)
+    if (invalidate && typeof store.invalidate === "function") {
+        Promise.resolve(store.invalidate()).catch(() => {})
+        return
+    }
+    // 이미 받는 중이면 다시 안 부름 (무효화 때는 안 봄)
+    if (!invalidate && typeof store.isLoading === "function" && store.isLoading()) return
+    // refresh가 없으면 fetch를 씀
+    const run = typeof store.refresh === "function" ? store.refresh : store.fetch
+    if (typeof run !== "function") return
+    Promise.resolve(run()).catch(() => {})
+}
+
 export function refreshAccountCaches(scopes, { invalidate = false } = {}) {
     // 이름이 없으면 할 일 없음
     if (!Array.isArray(scopes) || scopes.length === 0) return
@@ -32,17 +46,7 @@ export function refreshAccountCaches(scopes, { invalidate = false } = {}) {
         // 등록 안 된 스토어는 건너뜀
         if (!store) continue
         try {
-            // 무효화를 고르면 invalidate부터 (없으면 아래 일반 새로고침)
-            if (invalidate && typeof store.invalidate === "function") {
-                Promise.resolve(store.invalidate()).catch(() => {})
-                continue
-            }
-            // 이미 받는 중이면 다시 안 부름 (무효화 때는 안 봄)
-            if (!invalidate && typeof store.isLoading === "function" && store.isLoading()) continue
-            // refresh가 없으면 fetch를 씀
-            const run = typeof store.refresh === "function" ? store.refresh : store.fetch
-            if (typeof run !== "function") continue
-            Promise.resolve(run()).catch(() => {})
+            refreshStore(store, invalidate)
         } catch {
             // 스토어 하나가 실패해도 다음 스토어 갱신은 계속함
         }

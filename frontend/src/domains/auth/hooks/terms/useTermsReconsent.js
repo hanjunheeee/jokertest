@@ -34,10 +34,8 @@ export function useTermsReconsent({ loadPending = getMyPendingTermsApi, sendAgre
       const data = await sendAgreement(pending.map((item) => item.id))
       setResult({ uuid: accountUuid, pending: Array.isArray(data?.pending) ? data.pending : [] })
     } catch (err) {
-      if (err?.code === "TERMS_VERSION_OUTDATED") {
-        const fresh = await loadPending().catch(() => null)
-        if (fresh) setResult({ uuid: accountUuid, pending: Array.isArray(fresh.pending) ? fresh.pending : [] })
-      }
+      const fresh = err?.code === "TERMS_VERSION_OUTDATED" ? await loadPending().catch(() => null) : null
+      if (fresh) setResult({ uuid: accountUuid, pending: Array.isArray(fresh.pending) ? fresh.pending : [] })
       setError(err?.message || "동의를 저장하지 못했습니다. 다시 시도해주세요.")
     } finally {
       setSubmitting(false)

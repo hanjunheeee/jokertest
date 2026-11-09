@@ -7,6 +7,23 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { SKIN_CARD_WEAR_CONFIRM_STATUS } from "../../constants/skinCardWear/skinCardWearConfirm.js"
 import { collectChangedSlots, isConfirmedEquipRejection, isStillUncertain } from "../../utils/skinCardWear/wearSave.js"
 
+// 칸마다 차례로 장착 보냄, 그사이 버릴 상황이면 { stale: true }
+async function sendSlots(changedSlots, isStale) {
+  let firstRejection = null
+  const uncertainSlots = []
+  for (const changedSlot of changedSlots) {
+    if (isStale()) return { stale: true }
+    try {
+      await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
+    } catch (error) {
+      if (isStale()) return { stale: true }
+      if (!isConfirmedEquipRejection(error)) uncertainSlots.push(changedSlot)
+      else if (!firstRejection) firstRejection = error
+    }
+  }
+  return { stale: false, firstRejection, uncertainSlots }
+}
+
 // 초안 장착값과 손댄 칸 기록을 받아 저장 함수를 만듦
 export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
   const [confirmStatus, setConfirmStatus] = useState(SKIN_CARD_WEAR_CONFIRM_STATUS.IDLE)
@@ -51,21 +68,9 @@ export function useWearConfirm(draftSkinsByJob, draftCardFrameId, edited) {
     try { onChanged?.() } catch { /* 알림 콜백 오류는 저장을 막지 않게 무시함 */ }
 
     // 칸마다 차례로 보냄: 확정 거절은 첫 것만 남기고, 나머지 오류는 결과 모름으로 모음
-    let firstRejection = null
-    const uncertainSlots = []
-    for (const changedSlot of changedSlots) {
-      if (isStale()) return finish({ ok: false, stale: true })
-      try {
-        await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
-      } catch (error) {
-        if (isStale()) return finish({ ok: false, stale: true })
-        if (isConfirmedEquipRejection(error)) {
-          if (!firstRejection) firstRejection = error
-        } else {
-          uncertainSlots.push(changedSlot)
-        }
-      }
-    }
+    const sent = await sendSlots(changedSlots, isStale)
+    if (sent.stale) return finish({ ok: false, stale: true })
+    const { firstRejection, uncertainSlots } = sent
 
     if (isStale()) return finish({ ok: false, stale: true })
 

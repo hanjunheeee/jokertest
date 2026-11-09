@@ -44,10 +44,9 @@ export function findGenericOwner(nativeEvent) {
   for (const node of path) {
     if (node === null || typeof node !== "object" || node.nodeType !== 1) continue
     if (typeof node.getAttribute === "function" && node.getAttribute("data-sfx-owner") === "explicit") return null
-    if (control === null && isActivatableControl(node)) {
-      if (isDisabledControl(node) || isSubmitControl(node)) return null
-      control = node
-    }
+    if (control !== null || !isActivatableControl(node)) continue
+    if (isDisabledControl(node) || isSubmitControl(node)) return null
+    control = node
   }
   return control
 }

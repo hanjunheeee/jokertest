@@ -1,6 +1,16 @@
 // 앱 시작 때 서버 세션으로 로그인 상태 맞추기, 보호 화면 통과 여부 고르기
 // app/App.jsx가 시작 때 부름, shared/ui/ProtectedRoute.jsx가 resolveProtectedRouteState 사용
 
+// 프로필을 못 받아도 세션은 살아 있어서 닉네임 없이(null) 로그인으로 둠
+async function fetchNickname(getMyProfile) {
+    try {
+        const profile = await getMyProfile()
+        return typeof profile?.nickname === "string" ? profile.nickname : null
+    } catch {
+        return null
+    }
+}
+
 // 서버 세션이 기준: 같은 계정이면 유지, 다른 계정이면 바꿈, 실패면 로그아웃
 export async function bootstrapSession({ getMe, getMyProfile, store }) {
     // 확인하는 동안 보호 화면은 기다림
@@ -13,19 +23,12 @@ export async function bootstrapSession({ getMe, getMyProfile, store }) {
 
         // 저장된 계정과 같으면 그대로, role만 서버 값으로
         const persisted = store.getState().user
-        if (persisted?.uuid === uuid) {
-            if (persisted.role !== me.role) store.getState().adoptRole(me.role)
-            return { outcome: "kept", uuid }
-        }
+        const kept = persisted?.uuid === uuid
+        if (kept && persisted.role !== me.role) store.getState().adoptRole(me.role)
+        if (kept) return { outcome: "kept", uuid }
 
         // 저장된 게 없거나 다른 계정이면 닉네임 받아 새로 로그인
-        let nickname = null
-        try {
-            const profile = await getMyProfile()
-            if (typeof profile?.nickname === "string") nickname = profile.nickname
-        } catch {
-            // 프로필을 못 받아도 세션은 살아 있어서 닉네임 없이 로그인으로 둠
-        }
+        const nickname = await fetchNickname(getMyProfile)
         store.getState().login({ uuid, role: me.role, nickname })
         return { outcome: persisted ? "replaced" : "adopted", uuid }
     } catch {

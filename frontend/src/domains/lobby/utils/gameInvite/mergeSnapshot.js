@@ -20,10 +20,7 @@ export function mergeSnapshot(state, data, ticket) {
     if (knownWorse) {
         pendingIds = state.snapshotPendingIds;
     } else if (sameBoundary) {
-        pendingIds = new Set();
-        for (const inviteId of state.snapshotPendingIds) {
-            if (incomingPendingIds.has(inviteId)) pendingIds.add(inviteId);
-        }
+        pendingIds = new Set([...state.snapshotPendingIds].filter((inviteId) => incomingPendingIds.has(inviteId)));
     } else {
         pendingIds = incomingPendingIds;
     }
