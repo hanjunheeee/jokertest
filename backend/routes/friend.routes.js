@@ -1,9 +1,9 @@
 // 친구 경로 파일, /friends 아래 친구·신청·즐겨찾기·차단·게임 초대 경로
-// index.js가 /friends에 붙임, 전부 로그인 필요 (처리기는 controllers/friend.controller.js)
+// index.js가 /friends에 붙임, 전부 로그인 필요 (처리기는 controllers/friend/)
 const express = require("express");
 const router  = express.Router();
 
-const friendController = require("../controllers/friend.controller");
+const friendController = require("../controllers/friend");
 const { verifyToken }  = require("../middlewares/auth.middleware");
 const { createRateLimiter } = require("../middlewares/rateLimit.middleware");
 

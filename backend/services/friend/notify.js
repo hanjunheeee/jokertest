@@ -1,5 +1,5 @@
 // 친구 사건 전송 파일, 효과음 사건 만들기 · 신청·수락·거절·차단 사건 보내기
-// controllers/friend.controller.js가 index.js 거쳐 서비스 다음에 부름 (전송 실패해도 응답은 그대로)
+// controllers/friend가 index.js 거쳐 서비스 다음에 부름 (전송 실패해도 응답은 그대로)
 const { emitToUser } = require("../../socket/emitter");
 
 // 효과음 사건 만들기, 요청·계정 id 없으면 null (소리 없이 사건만 보냄)

@@ -1,7 +1,7 @@
 'use strict';
 
 // 게임 초대 조회 파일, 받은 초대 모음 · 초대 하나
-// controllers/friend.controller.js가 gameInvite/index.js 거쳐 부름, 읽기 전에 만료부터 정리
+// controllers/friend가 gameInvite/index.js 거쳐 부름, 읽기 전에 만료부터 정리
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
 const { lockReceiver, expireDueInvites } = require('./guards');

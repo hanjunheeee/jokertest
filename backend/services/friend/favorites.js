@@ -1,5 +1,5 @@
 // 즐겨찾기 파일, 즐겨찾기 친구 id 목록 · 켜고 끄기
-// controllers/friend.controller.js가 index.js 거쳐 부름
+// controllers/friend가 index.js 거쳐 부름
 const friendshipRepository = require("../../repositories/friend/friendship");
 const blockRepository = require("../../repositories/friend/block");
 const { createError } = require("../../utils/appError");

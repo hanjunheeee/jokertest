@@ -1,5 +1,5 @@
 // 친구 목록 파일, 접속 상태 판정 · 공개 장착 · 친구 목록 · 닉네임 검색
-// controllers/friend.controller.js가 index.js 거쳐 부름, blocks.js·requests.js가 공개 장착 씀
+// controllers/friend가 index.js 거쳐 부름, blocks.js·requests.js가 공개 장착 씀
 const friendshipRepository = require("../../repositories/friend/friendship");
 const friendRequestRepository = require("../../repositories/friend/request");
 const blockRepository = require("../../repositories/friend/block");

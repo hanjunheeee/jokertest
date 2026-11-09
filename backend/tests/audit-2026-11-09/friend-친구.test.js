@@ -19,7 +19,7 @@ const notificationService = require('../../services/notification');
 const gameInviteService = require('../../services/friend/gameInvite');
 const emitter = require('../../socket/emitter');
 const friendService = require('../../services/friend');
-const friendController = require('../../controllers/friend.controller');
+const friendController = require('../../controllers/friend');
 
 // 바꿔 끼우기, 시험 끝나면 거꾸로 되돌림 (같은 함수 두 번 바꿔도 처음 것으로)
 const restoreStacks = new WeakMap();

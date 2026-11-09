@@ -1,5 +1,5 @@
 // 친구 요청 파일, 보내기 · 수락 · 거절 · 받은 목록 · 결과
-// controllers/friend.controller.js가 index.js 거쳐 부름, 보낼 때 받는 사람 알림도 같은 트랜잭션에서 만듦
+// controllers/friend가 index.js 거쳐 부름, 보낼 때 받는 사람 알림도 같은 트랜잭션에서 만듦
 const db = require("../../repositories/common/db");
 const friendshipRepository = require("../../repositories/friend/friendship");
 const friendRequestRepository = require("../../repositories/friend/request");

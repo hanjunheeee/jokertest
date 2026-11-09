@@ -1,5 +1,5 @@
 // 친구 입구, 친구 기능 13개 + 친구 사건 전송 5개 + 게임 초대 이름 16개 (시험 손잡이 뺌)
-// controllers/friend.controller.js·시험이 부름, 초대는 다들 ./gameInvite 입구로 바로 부름
+// controllers/friend·시험이 부름, 초대는 다들 ./gameInvite 입구로 바로 부름
 const { getFriendList, searchUsers } = require('./list');
 const { assertNotBlocked, getBlockedUsers, blockUser, unblockUser } = require('./blocks');
 const { sendFriendRequest, acceptRequest, declineRequest, getIncomingRequests, getRequestResults } = require('./requests');

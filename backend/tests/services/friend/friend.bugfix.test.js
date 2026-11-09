@@ -15,7 +15,7 @@ const friendRequestRepository = require('../../../repositories/friend/request');
 const blockRepository = require('../../../repositories/friend/block');
 const userLookup = require('../../../repositories/user/lookup');
 const notificationService = require('../../../services/notification');
-const friendController = require('../../../controllers/friend.controller');
+const friendController = require('../../../controllers/friend');
 
 // 가짜 트랜잭션: 콜백 바로 부름
 const stubTransaction = (t) => {

@@ -1,5 +1,5 @@
 // 차단 파일, 차단 확인 · 차단 목록 · 차단 · 해제
-// controllers/friend.controller.js가 index.js 거쳐 부름, requests.js가 차단 확인 씀
+// controllers/friend가 index.js 거쳐 부름, requests.js가 차단 확인 씀
 const db = require("../../repositories/common/db");
 const friendshipRepository = require("../../repositories/friend/friendship");
 const friendRequestRepository = require("../../repositories/friend/request");

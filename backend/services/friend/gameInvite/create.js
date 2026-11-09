@@ -1,7 +1,7 @@
 'use strict';
 
 // 게임 초대 만들기 파일, 방·계정·차단·친구·중복 확인 뒤 초대 하나 + 받는 사람 알림
-// controllers/friend.controller.js가 gameInvite/index.js 거쳐 부름
+// controllers/friend가 gameInvite/index.js 거쳐 부름
 const friendshipRepository = require('../../../repositories/friend/friendship');
 const notificationService = require('../../notification');
 const { createError } = require('../../../utils/appError');

@@ -1,7 +1,7 @@
 'use strict';
 
 // 게임 초대 끝내기 파일, 거절 · 둘 사이 취소 · 방 단위 취소
-// gameInvite/index.js 거쳐 controllers/friend.controller.js(거절)·friend/blocks.js(차단)·socket/matchmaking/admission/release.js(방)가 부름
+// gameInvite/index.js 거쳐 controllers/friend(거절)·friend/blocks.js(차단)·socket/matchmaking/admission/release.js(방)가 부름
 const { createError } = require('../../../utils/appError');
 const { getDeps } = require('./deps');
 const { lockReceiver, expireDueInvites } = require('./guards');
