@@ -10,6 +10,7 @@ const { resolveParticipantSockets } = require('./membership')
 const { commitRoomDeparture, notifyRoomDeparture, cancelRoomRetention } = require('./leave')
 const { disposeRoom } = require('./dispose')
 const { emitPublicRoomList } = require('./view')
+const { recordRoomKick } = require('./kickLimit')
 
 // 방장 강퇴: 같은 요청 다시 오면 영수증으로 결과 재생, 내용 다르면 거절
 function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSocketId) {
@@ -157,6 +158,8 @@ function handleKickRoomPlayer(io, socket, uuid, payload, callback, getCurrentSoc
     const targetSockets = resolveParticipantSockets(io, [input.targetUuid], room.id).get(input.targetUuid) ?? []
     // 여기부터 진짜 바뀜: 대상 방에서 빼고 성공 영수증 남김
     const outcome = commitRoomDeparture(io, null, input.targetUuid, 'KICKED_FROM_ROOM')
+    // 이 방에서 쫓겨난 횟수 셈 (3번째부터 이 방 입장 막음)
+    recordRoomKick(room, input.targetUuid)
     const result = {
         ok: true,
         status: 'KICKED',

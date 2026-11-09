@@ -17,6 +17,8 @@ const ROOM_JOIN_ERROR_CODES = Object.freeze({
     INTERNAL_ERROR: 'INTERNAL_ERROR',
     // 짧은 시간에 입장 시도가 몰림 (코드 맞히기 막기)
     TOO_MANY_JOIN_ATTEMPTS: 'TOO_MANY_JOIN_ATTEMPTS',
+    // 같은 방에서 3번 쫓겨남 (그 방엔 다시 못 들어옴, 방 없어지면 풀림)
+    KICKED_TOO_MANY_TIMES: 'KICKED_TOO_MANY_TIMES',
 })
 
 module.exports = { ROOM_JOIN_ERROR_CODES }

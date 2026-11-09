@@ -8,6 +8,7 @@ export const JOIN_FAILURE_MSGS = {
   CODE_REQUIRED: "입장 코드를 입력해주세요.",
   SESSION_ENDED: "이미 끝난 게임의 방이라 입장할 수 없습니다. 새 방을 만들어주세요.",
   INVALID_REQUEST: "잘못된 참가 요청입니다. 방 코드로는 일반 참가만 할 수 있습니다.",
+  KICKED_TOO_MANY_TIMES: "이 방에서 3번 추방되어 더 이상 들어갈 수 없습니다.",
 }
 
 // 입장 결과가 안 오거나 연결이 없을 때

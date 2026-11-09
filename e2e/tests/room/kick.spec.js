@@ -1,4 +1,4 @@
-// 강퇴: 방장만·대상 목록(나 빼고)·확인/취소·강퇴되면 방 목록으로·실패 안내 문구·강퇴된 사람 다시 입장
+// 강퇴: 방장만·대상 목록(나 빼고)·확인/취소·강퇴되면 방 목록으로·실패 안내 문구·강퇴된 사람 다시 입장(3번째부터 막힘)
 const { test, expect, ui, e2e } = require('../../helpers/fixtures');
 const h = require('./roomHelpers');
 
@@ -114,19 +114,32 @@ test.describe('강퇴', () => {
         }
     });
 
-    test('추방된 사람이 같은 코드로 다시 들어오려 하면 → 다시 못 들어옴', async ({ user, players }) => {
+    // 규칙(사용자 결정 2026-11-09): 쫓겨나도 다시 들어올 수 있음, 같은 방에서 3번째 추방부터 그 방 못 들어옴
+    test('추방된 사람은 1·2번째엔 같은 코드로 다시 들어오고, 3번째 추방 뒤엔 "3번 추방" 안내와 함께 못 들어옴', async ({ user, players }) => {
         const { room, guest } = await roomWithGuest(user, players);
-        await openKick(user.page);
-        await pickTarget(user.page, guest.account.nickname);
-        await user.page.getByTestId('kick-confirm-accept').click();
-        await expect(guest.page).toHaveURL(/\/multiplay$/);
+        const kickGuest = async () => {
+            await openKick(user.page);
+            await pickTarget(user.page, guest.account.nickname);
+            await user.page.getByTestId('kick-confirm-accept').click();
+            await expect(guest.page).toHaveURL(/\/multiplay$/);
+            await expect.poll(async () => (await e2e.roomOf(user.account.uuid)).players.length).toBe(1);
+        };
+
+        // 1·2번째 추방 뒤엔 다시 들어옴
+        for (let round = 1; round <= 2; round += 1) {
+            await kickGuest();
+            await ui.joinRoomByCodeUi(guest.page, room.roomCode);
+            await h.expectPartyCount(user.page, 2);
+        }
+
+        // 3번째 추방 뒤엔 거절 안내
+        await kickGuest();
         await guest.page.goto('/roomInvite');
         await guest.page.getByRole('textbox', { name: /방 코드/ }).first().click();
         await guest.page.keyboard.type(room.roomCode);
         const dialog = guest.page.waitForEvent('dialog', { timeout: 8000 }).then(async (d) => { const m = d.message(); await d.accept(); return m; }).catch(() => null);
         await guest.page.getByRole('button', { name: '참여하기' }).click();
-        const msg = await dialog;
-        // 기대: 입장 거절 (강퇴된 사람 막기)
-        expect(await e2e.roomOf(guest.account.uuid), `다시 들어감 (알림: ${msg})`).toBeNull();
+        expect(await dialog).toBe('이 방에서 3번 추방되어 더 이상 들어갈 수 없습니다.');
+        expect(await e2e.roomOf(guest.account.uuid)).toBeNull();
     });
 });

@@ -16,6 +16,7 @@ const { deps } = require('../core/deps')
 const { getSupportedRoomSizes } = require('../core/config')
 const { loadPlayerProfile, computeCanStart, emitPublicRoomList, buildRoomPayload } = require('../room/view')
 const { scheduleLateJoinCleanup, removePublished } = require('./release')
+const { isKickLimitReached, KICK_LIMIT_MESSAGE } = require('../room/kickLimit')
 const { isCanonicalOrUnknown, isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
 
 // 실패 되돌리기 때 붙었던 채널 떼기, 다른 길로 이미 앉았으면 그대로 둠 (되돌리기 네 곳이 같이 씀)
@@ -118,6 +119,11 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         const room = gameRooms.get(peek.roomId)
         if (!room || (room.instanceId ?? room.id) !== peek.roomInstanceId) {
             respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, message: '방을 찾을 수 없습니다.' })
+            return
+        }
+        // 이 방에서 3번 쫓겨난 사람은 초대로도 못 들어옴 (코드 입장과 같은 규칙)
+        if (isKickLimitReached(room, uuid)) {
+            respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.KICKED_TOO_MANY_TIMES, message: KICK_LIMIT_MESSAGE })
             return
         }
         const maxPlayers = room.settings?.maxPlayers ?? getSupportedRoomSizes()[0]

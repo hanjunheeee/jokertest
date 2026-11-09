@@ -13,6 +13,7 @@ const { deps } = require('../core/deps')
 const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList } = require('../room/view')
 const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
 const { takeJoinAttempt } = require('./entryLimits')
+const { isKickLimitReached, KICK_LIMIT_MESSAGE } = require('../room/kickLimit')
 
 // 입장 시도 너무 많음 거절 코드 (roomJoinErrors 표에 없는 새 코드, 화면은 문구를 그대로 띄움)
 const TOO_MANY_JOIN_ATTEMPTS = 'TOO_MANY_JOIN_ATTEMPTS'
@@ -138,6 +139,12 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
                 return
             }
             emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드와 일치하는 방이 없습니다.')
+            return
+        }
+
+        // 이 방에서 3번 쫓겨난 사람은 거절 (쫓겨나는 동안은 방 밖이라 여기 한 번만 봄)
+        if (isKickLimitReached(room, uuid)) {
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.KICKED_TOO_MANY_TIMES, KICK_LIMIT_MESSAGE)
             return
         }
 
