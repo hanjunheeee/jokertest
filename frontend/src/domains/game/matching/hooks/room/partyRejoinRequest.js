@@ -1,5 +1,5 @@
 // 파티 방 들어가기 요청·성공 반영·다른 Node면 한 번 옮겨 다시 보내기
-// usePartyRejoin·partyRejoinPoll이 씀, run은 usePartyRejoin이 붙을 때마다 새로 만드는 한 번치 상태
+// partyRejoinRun·partyRejoinPoll이 씀, run은 partyRejoinRun이 붙을 때마다 새로 만드는 한 번치 상태
 import { followRoomOwner } from '@/shared/socket/nodeMove.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useInGameStore } from '../../../ingame/store/ingameStore'

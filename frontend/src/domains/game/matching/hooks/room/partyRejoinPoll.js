@@ -1,5 +1,5 @@
 // 파티 방 주기적 묻기·이미 방에 넣어 줬는지 확인·기다리기 그만두기
-// usePartyRejoin이 씀, run은 usePartyRejoin이 붙을 때마다 새로 만드는 한 번치 상태
+// partyRejoinRun이 씀, run은 partyRejoinRun이 붙을 때마다 새로 만드는 한 번치 상태
 import { followRoomOwner } from '@/shared/socket/nodeMove.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { PARTY_WAIT_MAX_MS } from '../../constants/roomTiming.js'

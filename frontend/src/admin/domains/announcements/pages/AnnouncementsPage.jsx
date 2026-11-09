@@ -18,7 +18,8 @@ const TARGETS = Object.freeze([
 
 const EMPTY_FORM = Object.freeze({ title: '', body: '', target: 'online', picked: [] })
 
-export default function AnnouncementsPage() {
+// 공지 폼 상태·보내기 (확인 창 열림·보낸 결과 포함)
+function useAnnouncementForm() {
   const [form, setForm] = useState(EMPTY_FORM)
   // 요청 번호는 폼 하나에 하나 (실패 뒤 다시 눌러도 같은 번호 → 서버가 두 번 안 보냄)
   const [requestId, setRequestId] = useState(newRequestId)
@@ -30,9 +31,6 @@ export default function AnnouncementsPage() {
   const title = form.title.trim()
   const body = form.body.trim()
   const ready = title.length > 0 && body.length > 0 && (form.target === 'online' || form.picked.length > 0)
-  const change = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
-
-  const targetLine = form.target === 'online' ? '대상: 접속 중 전체' : `대상: 고른 사람 ${form.picked.length}명`
 
   const send = async () => {
     if (sendingRef.current) return
@@ -49,6 +47,34 @@ export default function AnnouncementsPage() {
       sendingRef.current = false
     }
   }
+  return { form, setForm, confirming, setConfirming, sent, title, body, ready, send }
+}
+
+// 받는 사람 고르기 칸 (접속 중 전체 / 고른 사람)
+function TargetFieldset({ form, change, setForm }) {
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="text-sm font-semibold">받는 사람</legend>
+      <div className="flex flex-wrap gap-4">
+        {TARGETS.map((option) => (
+          <label key={option.value} className="flex min-h-11 items-center gap-2">
+            <input type="radio" name="target" value={option.value} checked={form.target === option.value} onChange={change('target')} />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      {form.target === 'online'
+        ? <p className="text-sm text-muted">지금 접속한 사람에게 바로 보이고, 알림 목록에도 남아요.</p>
+        : <RecipientPicker picked={form.picked} onChange={(picked) => setForm((prev) => ({ ...prev, picked }))} />}
+    </fieldset>
+  )
+}
+
+export default function AnnouncementsPage() {
+  const { form, setForm, confirming, setConfirming, sent, title, body, ready, send } = useAnnouncementForm()
+  const change = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))
+
+  const targetLine = form.target === 'online' ? '대상: 접속 중 전체' : `대상: 고른 사람 ${form.picked.length}명`
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
@@ -65,20 +91,7 @@ export default function AnnouncementsPage() {
         <Field label="제목" value={form.title} onChange={change('title')} maxLength={TITLE_MAX} hint={`${form.title.length}/${TITLE_MAX}자`} />
         <Field as="textarea" label="본문" rows={5} value={form.body} onChange={change('body')} maxLength={BODY_MAX} hint={`${form.body.length}/${BODY_MAX}자`} />
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-semibold">받는 사람</legend>
-          <div className="flex flex-wrap gap-4">
-            {TARGETS.map((option) => (
-              <label key={option.value} className="flex min-h-11 items-center gap-2">
-                <input type="radio" name="target" value={option.value} checked={form.target === option.value} onChange={change('target')} />
-                {option.label}
-              </label>
-            ))}
-          </div>
-          {form.target === 'online'
-            ? <p className="text-sm text-muted">지금 접속한 사람에게 바로 보이고, 알림 목록에도 남아요.</p>
-            : <RecipientPicker picked={form.picked} onChange={(picked) => setForm((prev) => ({ ...prev, picked }))} />}
-        </fieldset>
+        <TargetFieldset form={form} change={change} setForm={setForm} />
 
         <div>
           <button type="submit" disabled={!ready} className="min-h-11 rounded bg-accent px-5 font-semibold text-accent-ink disabled:cursor-not-allowed disabled:opacity-50">

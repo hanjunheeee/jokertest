@@ -3,7 +3,40 @@
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { LockIcon } from "@/shared/ui/InputIcons.jsx"
-import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import RecoveryAlert from "./RecoveryAlert.jsx"
+
+// 새 비밀번호·확인 입력 칸
+function NewPasswordFields({ password, setPassword, passwordConfirm, setPasswordConfirm }) {
+  return (
+    <>
+      <label className="font-subheading app-text-scaled [--app-text-size:12px] font-bold text-text-body/80">
+        새 비밀번호
+        <AuthInputSlot
+          name="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="8~64자 비밀번호"
+          autoComplete="new-password"
+          leadingIcon={<LockIcon />}
+          passwordToggle
+        />
+      </label>
+
+      <label className="mt-1 font-subheading app-text-scaled [--app-text-size:12px] font-bold text-text-body/80">
+        새 비밀번호 확인
+        <AuthInputSlot
+          name="passwordConfirm"
+          value={passwordConfirm}
+          onChange={(e) => setPasswordConfirm(e.target.value)}
+          placeholder="비밀번호를 다시 입력하세요"
+          autoComplete="new-password"
+          leadingIcon={<LockIcon />}
+          passwordToggle
+        />
+      </label>
+    </>
+  )
+}
 
 // 보내는 중엔 fieldset으로 칸·버튼을 한 번에 잠금
 export default function NewPasswordForm({ status, password, setPassword, passwordConfirm, setPasswordConfirm, formError }) {
@@ -19,37 +52,14 @@ export default function NewPasswordForm({ status, password, setPassword, passwor
 
       <div className="mt-4 flex flex-1 flex-col gap-2">
         <fieldset disabled={isFormDisabled} className="contents">
-          <label className="font-subheading app-text-scaled [--app-text-size:12px] font-bold text-text-body/80">
-            새 비밀번호
-            <AuthInputSlot
-              name="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="8~64자 비밀번호"
-              autoComplete="new-password"
-              leadingIcon={<LockIcon />}
-              passwordToggle
-            />
-          </label>
+          <NewPasswordFields
+            password={password}
+            setPassword={setPassword}
+            passwordConfirm={passwordConfirm}
+            setPasswordConfirm={setPasswordConfirm}
+          />
 
-          <label className="mt-1 font-subheading app-text-scaled [--app-text-size:12px] font-bold text-text-body/80">
-            새 비밀번호 확인
-            <AuthInputSlot
-              name="passwordConfirm"
-              value={passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.target.value)}
-              placeholder="비밀번호를 다시 입력하세요"
-              autoComplete="new-password"
-              leadingIcon={<LockIcon />}
-              passwordToggle
-            />
-          </label>
-
-          {formError && (
-            <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
-              {formError}
-            </p>
-          )}
+          {formError && <RecoveryAlert>{formError}</RecoveryAlert>}
 
           <AuthImageButton
             type="submit"

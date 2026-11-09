@@ -52,9 +52,8 @@ function SearchForm({ initial, onSearch }) {
   )
 }
 
-export default function MembersPage() {
-  const [params, setParams] = useSearchParams()
-  const q = params.get('q') ?? ''
+// 찾는 말로 회원 찾기·더 보기, setAttempt로 다시 찾음
+function useMemberSearch(q) {
   // 찾은 결과는 찾는 말과 같이 둠 (말이 바뀌면 옛 결과는 안 그림)
   const [result, setResult] = useState(null)
   const [attempt, setAttempt] = useState(0)
@@ -84,7 +83,13 @@ export default function MembersPage() {
       setBusy(false)
     }
   }
+  return { shown, busy, more, setAttempt }
+}
 
+export default function MembersPage() {
+  const [params, setParams] = useSearchParams()
+  const q = params.get('q') ?? ''
+  const { shown, busy, more, setAttempt } = useMemberSearch(q)
   return (
     <section className="min-w-0">
       <PageHeader title="회원" description="회원을 찾아 상태를 보고, 상세에서 접속 종료·정지·해제를 해요." />

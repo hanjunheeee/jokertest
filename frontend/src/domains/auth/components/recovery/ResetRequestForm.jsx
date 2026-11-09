@@ -3,7 +3,7 @@
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
 import { MailIcon } from "@/shared/ui/InputIcons.jsx"
-import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
+import RecoveryAlert from "./RecoveryAlert.jsx"
 import { REQUEST_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
 
 // 보내는 중엔 fieldset으로 칸·버튼을 한 번에 잠금
@@ -25,23 +25,11 @@ export default function ResetRequestForm({ status, email, setEmail, formError, o
         />
       </label>
 
-      {formError && (
-        <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
-          {formError}
-        </p>
-      )}
+      {formError && <RecoveryAlert>{formError}</RecoveryAlert>}
 
       {/* 결과 알림: 요청 너무 많음·통신 실패 */}
-      {status === "rateLimited" && (
-        <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
-          {REQUEST_TEXT.rateLimited}
-        </p>
-      )}
-      {status === "failed" && (
-        <p role="alert" className={`${RECOVERY_ALERT_CLASS} mt-1 text-center`}>
-          {REQUEST_TEXT.failed}
-        </p>
-      )}
+      {status === "rateLimited" && <RecoveryAlert>{REQUEST_TEXT.rateLimited}</RecoveryAlert>}
+      {status === "failed" && <RecoveryAlert>{REQUEST_TEXT.failed}</RecoveryAlert>}
 
       <AuthImageButton
         type="submit"

@@ -10,6 +10,55 @@ import { onRoomList } from "../socket/rooms.js"
 import { usePublicRoomList } from "./usePublicRoomList.js"
 import { usePublicRoomJoin } from "./usePublicRoomJoin.js"
 
+// 붙인 소켓에 목록 갱신·입장 결과·다시 연결 방송 붙이고 목록 새로 물음, 떼는 함수 돌려줌
+function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms, navigate }) {
+  // 붙인 소켓이 지금 소켓일 때만 반영
+  const attachedSocket = socket
+  let owned = true
+  const isCurrent = () => owned && attachedSocket === getSocket()
+
+  // 목록 갱신 방송: 받은 목록으로 바꿈
+  const handleUpdated = ({ rooms: nextRooms } = {}) => {
+    if (!Array.isArray(nextRooms)) return
+    if (!isCurrent()) return
+    applyRoomList(nextRooms)
+  }
+  // 입장 성공: 끝난 판 지우고 방 넣고 대기방으로
+  // 내가 안 보낸 입장(판 끝난 뒤 서버가 넣어 준 파티 방 등)도 서버에선 이미 그 방 사람이라 따라감
+  const handleJoined = (room) => {
+    if (!isCurrent()) return
+    clearJoin()
+    useInGameStore.getState().clearGame()
+    useMatchingStore.getState().setRoom(room)
+    navigate("/game-matching")
+  }
+  // 입장 실패: 내가 보낸 입장 중일 때만 풀고 알림
+  const handleJoinFailed = (answer = {}) => {
+    if (!isCurrent()) return
+    failJoin(answer)
+  }
+  // 다시 연결되면 목록 새로 물음
+  const handleConnect = () => {
+    if (!isCurrent()) return
+    fetchRooms()
+  }
+
+  const off = onRoomList(attachedSocket, {
+    updated: handleUpdated,
+    joined: handleJoined,
+    joinFailed: handleJoinFailed,
+    connect: handleConnect,
+  })
+  fetchRooms()
+
+  // 떠날 때 옛 핸들러 막고 뗌, 들어가는 중 표시 지움
+  return () => {
+    owned = false
+    off()
+    clearJoin()
+  }
+}
+
 // 공개 방 목록·들어가기 상태
 export function usePublicRooms() {
   const navigate = useNavigate()
@@ -29,52 +78,7 @@ export function usePublicRooms() {
   // 소켓 붙이기: 목록 갱신·입장 결과·다시 연결 받고 목록 새로 물음
   useEffect(() => {
     if (!socket) return undefined
-
-    // 붙인 소켓이 지금 소켓일 때만 반영
-    const attachedSocket = socket
-    let owned = true
-    const isCurrent = () => owned && attachedSocket === getSocket()
-
-    // 목록 갱신 방송: 받은 목록으로 바꿈
-    const handleUpdated = ({ rooms: nextRooms } = {}) => {
-      if (!Array.isArray(nextRooms)) return
-      if (!isCurrent()) return
-      applyRoomList(nextRooms)
-    }
-    // 입장 성공: 끝난 판 지우고 방 넣고 대기방으로
-    // 내가 안 보낸 입장(판 끝난 뒤 서버가 넣어 준 파티 방 등)도 서버에선 이미 그 방 사람이라 따라감
-    const handleJoined = (room) => {
-      if (!isCurrent()) return
-      clearJoin()
-      useInGameStore.getState().clearGame()
-      useMatchingStore.getState().setRoom(room)
-      navigate("/game-matching")
-    }
-    // 입장 실패: 내가 보낸 입장 중일 때만 풀고 알림
-    const handleJoinFailed = (answer = {}) => {
-      if (!isCurrent()) return
-      failJoin(answer)
-    }
-    // 다시 연결되면 목록 새로 물음
-    const handleConnect = () => {
-      if (!isCurrent()) return
-      fetchRooms()
-    }
-
-    const off = onRoomList(attachedSocket, {
-      updated: handleUpdated,
-      joined: handleJoined,
-      joinFailed: handleJoinFailed,
-      connect: handleConnect,
-    })
-    fetchRooms()
-
-    // 떠날 때 옛 핸들러 막고 뗌, 들어가는 중 표시 지움
-    return () => {
-      owned = false
-      off()
-      clearJoin()
-    }
+    return attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms, navigate })
   }, [socket, fetchRooms, applyRoomList, navigate, clearJoin, failJoin])
 
   return { rooms, refreshRooms: fetchRooms, joinPublicRoom, isJoining }

@@ -52,13 +52,10 @@ function TermsForm({ form, onChange, fieldError, onSubmit }) {
   )
 }
 
-export default function TermsPage() {
+// 약관 버전 목록 불러오기, load()로 다시 읽음
+function useTermsList() {
   const [items, setItems] = useState(null)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [confirming, setConfirming] = useState(false)
-  const [fieldError, setFieldError] = useState(null)
-  const [done, setDone] = useState(null)
 
   const load = useCallback(() => {
     setError(null)
@@ -69,6 +66,34 @@ export default function TermsPage() {
   useEffect(() => {
     fetchTerms().then((result) => setItems(result.items), setError)
   }, [])
+  return { items, error, load }
+}
+
+// 넣기 전 확인 창 (종류·버전·시행일·필수 여부)
+function TermsConfirm({ form, onConfirm, onCancel }) {
+  return (
+    <ConfirmDialog
+      title="약관 새 버전을 넣을까요?"
+      lines={[
+        `종류: ${KIND_TEXT[form.kind]}`,
+        `버전: ${form.version.trim()}`,
+        `시행일: ${formatKst(kstInputToIso(form.effectiveAt))}`,
+        form.isRequired ? '필수 동의' : '선택 동의',
+        '넣은 뒤에는 고치거나 지울 수 없어요.',
+      ]}
+      confirmLabel="넣기"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
+  )
+}
+
+export default function TermsPage() {
+  const { items, error, load } = useTermsList()
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [confirming, setConfirming] = useState(false)
+  const [fieldError, setFieldError] = useState(null)
+  const [done, setDone] = useState(null)
 
   // 확인 창에서 누름: 실패는 창이 보여 주고, 칸 틀림이면 그 칸 표시
   const save = async () => {
@@ -94,21 +119,7 @@ export default function TermsPage() {
       {error ? <StatusNote state="error" error={error} onRetry={load} /> : null}
       {!items && !error ? <StatusNote state="loading" /> : null}
       {items ? <DataList columns={COLUMNS} rows={items} caption="약관 버전 목록" empty="아직 약관 버전이 없어요. 위에서 넣어 주세요." /> : null}
-      {confirming ? (
-        <ConfirmDialog
-          title="약관 새 버전을 넣을까요?"
-          lines={[
-            `종류: ${KIND_TEXT[form.kind]}`,
-            `버전: ${form.version.trim()}`,
-            `시행일: ${formatKst(kstInputToIso(form.effectiveAt))}`,
-            form.isRequired ? '필수 동의' : '선택 동의',
-            '넣은 뒤에는 고치거나 지울 수 없어요.',
-          ]}
-          confirmLabel="넣기"
-          onConfirm={save}
-          onCancel={() => setConfirming(false)}
-        />
-      ) : null}
+      {confirming ? <TermsConfirm form={form} onConfirm={save} onCancel={() => setConfirming(false)} /> : null}
     </section>
   )
 }

@@ -30,6 +30,32 @@ const toForm = (product) => (product
 
 const toBody = (form, keys) => Object.fromEntries(keys.map((key) => [key, NUMBER_FIELDS.includes(key) ? toNumber(form[key]) : form[key]]))
 
+// 새 상품일 때만: 상품 id·종류 칸
+function NewProductIdFields({ form, change, fieldError }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      <Field label="상품 id" name="productId" value={form.productId} onChange={change('productId')} error={fieldError('productId')}
+        hint="예: diamond-1100 (나중에 못 바꿈)" className="min-w-0 flex-1 basis-48" />
+      <Field label="종류" name="kind" as="select" value={form.kind} onChange={change('kind')} className="basis-56">
+        {Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </Field>
+    </div>
+  )
+}
+
+// 값·받는 양·덤·순서 칸 (금 사기 상품은 값이 다이아)
+function AmountFields({ form, change, fieldError, editing, product }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <Field label={(editing ? product.kind : form.kind) === 'GOLD_PURCHASE' ? '값(다이아)' : '값(원)'} name="payAmount" inputMode="numeric"
+        value={form.payAmount} onChange={change('payAmount')} error={fieldError('payAmount')} />
+      <Field label="받는 양" name="grantAmount" inputMode="numeric" value={form.grantAmount} onChange={change('grantAmount')} error={fieldError('grantAmount')} />
+      <Field label="덤" name="bonusAmount" inputMode="numeric" value={form.bonusAmount} onChange={change('bonusAmount')} error={fieldError('bonusAmount')} />
+      <Field label="순서" name="sortOrder" inputMode="numeric" value={form.sortOrder} onChange={change('sortOrder')} error={fieldError('sortOrder')} />
+    </div>
+  )
+}
+
 export default function ProductForm({ product, onSaved, onCancel }) {
   const editing = Boolean(product)
   const [form, setForm] = useState(() => toForm(product))
@@ -63,22 +89,10 @@ export default function ProductForm({ product, onSaved, onCancel }) {
     <form onSubmit={submit} aria-label={editing ? '상품 고치기' : '새 상품'} className="mb-6 flex flex-col gap-3 rounded border border-line bg-panel p-4">
       <h2 className="text-lg font-bold">{editing ? `상품 고치기 — ${product.productId} (${product.version}판)` : '새 상품'}</h2>
       {editing ? null : (
-        <div className="flex flex-wrap gap-3">
-          <Field label="상품 id" name="productId" value={form.productId} onChange={change('productId')} error={fieldError('productId')}
-            hint="예: diamond-1100 (나중에 못 바꿈)" className="min-w-0 flex-1 basis-48" />
-          <Field label="종류" name="kind" as="select" value={form.kind} onChange={change('kind')} className="basis-56">
-            {Object.entries(KIND_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </Field>
-        </div>
+        <NewProductIdFields form={form} change={change} fieldError={fieldError} />
       )}
       <Field label="이름" name="displayName" value={form.displayName} onChange={change('displayName')} error={fieldError('displayName')} maxLength={100} />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Field label={(editing ? product.kind : form.kind) === 'GOLD_PURCHASE' ? '값(다이아)' : '값(원)'} name="payAmount" inputMode="numeric"
-          value={form.payAmount} onChange={change('payAmount')} error={fieldError('payAmount')} />
-        <Field label="받는 양" name="grantAmount" inputMode="numeric" value={form.grantAmount} onChange={change('grantAmount')} error={fieldError('grantAmount')} />
-        <Field label="덤" name="bonusAmount" inputMode="numeric" value={form.bonusAmount} onChange={change('bonusAmount')} error={fieldError('bonusAmount')} />
-        <Field label="순서" name="sortOrder" inputMode="numeric" value={form.sortOrder} onChange={change('sortOrder')} error={fieldError('sortOrder')} />
-      </div>
+      <AmountFields form={form} change={change} fieldError={fieldError} editing={editing} product={product} />
       <Field label="판매" name="status" as="select" value={form.status} onChange={change('status')}>
         {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
       </Field>

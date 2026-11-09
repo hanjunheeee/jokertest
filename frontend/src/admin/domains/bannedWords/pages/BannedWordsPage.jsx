@@ -64,6 +64,22 @@ function useWordList(filter) {
   return { list, load }
 }
 
+// 찾기·상태 거르기 칸
+function WordFilter({ filter, setFilter }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-end gap-2">
+      <Field label="찾기" name="q" type="search" className="min-w-0 flex-1 basis-48" value={filter.q}
+        onChange={(event) => setFilter((old) => ({ ...old, q: event.target.value }))} />
+      <Field label="상태" name="active" as="select" value={filter.active}
+        onChange={(event) => setFilter((old) => ({ ...old, active: event.target.value }))}>
+        <option value="">전부</option>
+        <option value="true">켜짐</option>
+        <option value="false">꺼짐</option>
+      </Field>
+    </div>
+  )
+}
+
 export default function BannedWordsPage() {
   const [filter, setFilter] = useState({ q: '', active: '' })
   const { list, load } = useWordList(filter)
@@ -97,16 +113,7 @@ export default function BannedWordsPage() {
       <AddWordForm onAdded={afterChange} />
       <ReloadNote change={change} />
       {actionError ? <p role="alert" className="mb-4 text-sm text-danger">{adminErrorText(actionError)}</p> : null}
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <Field label="찾기" name="q" type="search" className="min-w-0 flex-1 basis-48" value={filter.q}
-          onChange={(event) => setFilter((old) => ({ ...old, q: event.target.value }))} />
-        <Field label="상태" name="active" as="select" value={filter.active}
-          onChange={(event) => setFilter((old) => ({ ...old, active: event.target.value }))}>
-          <option value="">전부</option>
-          <option value="true">켜짐</option>
-          <option value="false">꺼짐</option>
-        </Field>
-      </div>
+      <WordFilter filter={filter} setFilter={setFilter} />
       {list.state === 'loading' ? <StatusNote state="loading" /> : null}
       {list.state === 'error' ? <StatusNote state="error" error={list.error} onRetry={() => load()} /> : null}
       {list.state === 'ready' ? (

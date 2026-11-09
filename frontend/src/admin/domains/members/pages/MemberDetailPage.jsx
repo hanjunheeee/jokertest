@@ -90,8 +90,8 @@ function Summary({ member }) {
   )
 }
 
-export default function MemberDetailPage() {
-  const { uuid } = useParams()
+// 회원 상세 불러오기, reload()로 다시 읽음
+function useMemberDetail(uuid) {
   // 받은 상세는 어느 회원 것인지와 같이 둠 (다른 회원으로 옮기면 옛 것은 안 그림)
   const [loaded, setLoaded] = useState(null)
   const [version, setVersion] = useState(0)
@@ -111,6 +111,12 @@ export default function MemberDetailPage() {
   const current = loaded?.key === key ? loaded : null
   const detail = current?.detail ?? null
   const error = current?.error ?? null
+  return { detail, error, reload }
+}
+
+export default function MemberDetailPage() {
+  const { uuid } = useParams()
+  const { detail, error, reload } = useMemberDetail(uuid)
 
   const back = <Link to="/members" className="inline-flex min-h-11 items-center rounded border border-line px-3">회원 찾기로</Link>
   if (error?.code === 'MEMBER_NOT_FOUND') {

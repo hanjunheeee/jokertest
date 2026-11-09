@@ -72,10 +72,9 @@ function ReplyForm({ inquiryId, onSent }) {
   )
 }
 
-export default function InquiryDetailPage() {
-  const { id } = useParams()
+// 문의 하나 불러오기, load()로 다시 읽음
+function useInquiry(id) {
   const [view, setView] = useState({ state: 'loading', data: null, error: null })
-  const [sentNote, setSentNote] = useState(null)
   // 올리면 다시 읽음 (답 단 뒤·다시 불러오기)
   const [version, setVersion] = useState(0)
   const load = () => setVersion((old) => old + 1)
@@ -89,6 +88,13 @@ export default function InquiryDetailPage() {
     )
     return () => { alive = false }
   }, [id, version])
+  return { view, load }
+}
+
+export default function InquiryDetailPage() {
+  const { id } = useParams()
+  const { view, load } = useInquiry(id)
+  const [sentNote, setSentNote] = useState(null)
 
   const afterSent = (answer) => {
     setSentNote(answer.notified

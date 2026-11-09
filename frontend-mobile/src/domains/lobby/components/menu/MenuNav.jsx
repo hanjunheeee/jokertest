@@ -6,7 +6,7 @@ import MenuItemButton from "@m/domains/lobby/components/menu/MenuItemButton.jsx"
 import InquirySheet from "@m/domains/inquiry/InquirySheet.jsx"
 
 // 메뉴 표·누름 처리는 데스크톱 것 그대로, 세로는 한 열·폰 가로는 두 열
-// 고객센터도 보통 버튼으로 그림 (디스코드 링크 대신 게임 안 문의 창을 엶)
+// 고객센터도 보통 버튼으로 그림 (게임 안 문의 창을 엶)
 export default function MenuNav() {
     const { activeMenu, handleMenuClick, inquiryOpen, inquiryTargetId, closeInquiry } = useLobbyMenuNav()
 
@@ -21,7 +21,6 @@ export default function MenuNav() {
                         key={item.id}
                         item={item}
                         isActive={activeMenu === item.id}
-                        isSupport={false}
                         onSelect={handleMenuClick}
                     />
                 ))}

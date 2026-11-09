@@ -22,6 +22,28 @@ const columns = [
 // 금액 칸 글자 → 1 이상 정수 또는 null (예: '500' → 500, '0'·'1.5'·'' → null)
 const positiveAmount = (text) => (/^[1-9]\d{0,9}$/.test(text) && Number(text) <= 1_000_000_000 ? Number(text) : null)
 
+// 재화·금액·사유 칸 + 주기·뺏기 버튼
+function AdjustFields({ form, change, amount, ready, open }) {
+  return (
+    <>
+      <div className="flex flex-wrap gap-3">
+        <Field label="재화" as="select" name="currency" value={form.currency} onChange={change('currency')} className="basis-32">
+          <option value="GOLD">골드</option>
+          <option value="DIAMOND">다이아</option>
+        </Field>
+        <Field label="금액" name="amount" inputMode="numeric" value={form.amount} onChange={change('amount')}
+          hint="1 이상 정수" error={form.amount && amount === null ? '1 이상 10억 이하 정수로 적어 주세요.' : null} className="min-w-0 flex-1 basis-40" />
+      </div>
+      <Field label="사유" as="textarea" name="reason" rows={2} maxLength={REASON_MAX} value={form.reason} onChange={change('reason')}
+        hint="회원 기록에 남아요. 예: 버그로 잃은 골드 보상" />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={!ready} onClick={() => open('grant')} className={`${BUTTON} bg-accent text-accent-ink`}>주기</button>
+        <button type="button" disabled={!ready} onClick={() => open('revoke')} className={`${BUTTON} bg-danger text-danger-ink`}>뺏기</button>
+      </div>
+    </>
+  )
+}
+
 function AdjustForm({ uuid, onDone }) {
   const [form, setForm] = useState({ currency: 'GOLD', amount: '', reason: '' })
   // 금액·재화가 바뀌면 새 요청 번호 (같은 번호에 다른 내용이면 서버가 409로 막음)
@@ -55,20 +77,7 @@ function AdjustForm({ uuid, onDone }) {
   const revoke = confirming?.direction === 'revoke'
   return (
     <form className="mt-4 flex flex-col gap-3" onSubmit={(event) => event.preventDefault()} aria-label="골드·다이아 주고 뺏기">
-      <div className="flex flex-wrap gap-3">
-        <Field label="재화" as="select" name="currency" value={form.currency} onChange={change('currency')} className="basis-32">
-          <option value="GOLD">골드</option>
-          <option value="DIAMOND">다이아</option>
-        </Field>
-        <Field label="금액" name="amount" inputMode="numeric" value={form.amount} onChange={change('amount')}
-          hint="1 이상 정수" error={form.amount && amount === null ? '1 이상 10억 이하 정수로 적어 주세요.' : null} className="min-w-0 flex-1 basis-40" />
-      </div>
-      <Field label="사유" as="textarea" name="reason" rows={2} maxLength={REASON_MAX} value={form.reason} onChange={change('reason')}
-        hint="회원 기록에 남아요. 예: 버그로 잃은 골드 보상" />
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!ready} onClick={() => open('grant')} className={`${BUTTON} bg-accent text-accent-ink`}>주기</button>
-        <button type="button" disabled={!ready} onClick={() => open('revoke')} className={`${BUTTON} bg-danger text-danger-ink`}>뺏기</button>
-      </div>
+      <AdjustFields form={form} change={change} amount={amount} ready={ready} open={open} />
       {confirming ? (
         <ConfirmDialog
           title={revoke ? '정말 뺏을까요?' : '정말 줄까요?'}

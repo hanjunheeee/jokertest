@@ -29,11 +29,9 @@ const orderLines = (order) => [
   ['지급 시각', formatKst(order.grantedAt)],
 ]
 
-export default function OrderDetailPage() {
-  const { orderId } = useParams()
+// 주문 하나 불러오기 (주문·장부)
+function useOrder(orderId) {
   const [detail, setDetail] = useState({ state: 'loading', value: null, error: null })
-  const [refunding, setRefunding] = useState(false)
-  const [done, setDone] = useState(null)
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +43,28 @@ export default function OrderDetailPage() {
   }, [orderId])
 
   useEffect(() => { void load() }, [load])
+  return { detail, load }
+}
+
+// 주문 값 표 (상태 칸은 시험이 찾는 표시 붙음)
+function OrderFacts({ order }) {
+  return (
+    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 rounded border border-line bg-panel p-4 text-sm">
+      {orderLines(order).map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted">{label}</dt>
+          <dd className="min-w-0 break-words" data-testid={label === '상태' ? 'order-status' : undefined}>{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+export default function OrderDetailPage() {
+  const { orderId } = useParams()
+  const { detail, load } = useOrder(orderId)
+  const [refunding, setRefunding] = useState(false)
+  const [done, setDone] = useState(null)
 
   const afterRefund = (result) => {
     setRefunding(false)
@@ -66,14 +86,7 @@ export default function OrderDetailPage() {
               환불했어요. 다이아 {signedAmount(done.amount)}, 남은 다이아 {done.balanceAfter.toLocaleString('ko-KR')}
             </p>
           ) : null}
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 rounded border border-line bg-panel p-4 text-sm">
-            {orderLines(order).map(([label, value]) => (
-              <div key={label} className="contents">
-                <dt className="text-muted">{label}</dt>
-                <dd className="min-w-0 break-words" data-testid={label === '상태' ? 'order-status' : undefined}>{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <OrderFacts order={order} />
           {order.status === 'GRANTED' ? (
             <button type="button" onClick={() => setRefunding(true)} className="mt-4 min-h-11 rounded bg-danger px-4 font-semibold text-danger-ink">
               환불

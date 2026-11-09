@@ -79,11 +79,3 @@ test("desktop: API 요청은 쿠키 인증(credentials include)이고 Authorizat
   assert.match(client, /credentials: "include"/)
   assert.doesNotMatch(client, /Authorization/)
 })
-
-test("desktop: 고객센터 링크는 디스코드 주소만 통과 (javascript: 등 거절)", async () => {
-  const { resolveDiscordSupportUrl: check } = await import("../../src/shared/discordSupport.js")
-  assert.ok(check("https://discord.gg/abc123"))
-  for (const bad of ["javascript:alert(1)", "https://evil.example/invite/abc", "data:text/html,x", "http://discord.gg/abc"]) {
-    assert.ok(!check(bad), bad)
-  }
-})

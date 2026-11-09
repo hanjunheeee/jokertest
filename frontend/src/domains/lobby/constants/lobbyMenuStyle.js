@@ -4,11 +4,8 @@ export const LOBBY_MENU_NAV_CLASS = "mt-[clamp(1.25rem,3.5vh,2.5rem)] flex trans
 
 export const LOBBY_MENU_BTN_CLASS = "interactive-scale lobby-menu-btn block leading-none"
 
-// 고객센터 버튼: 메뉴 버튼 모양 + 옆에 디스코드 그림
+// 고객센터 버튼: 메뉴 버튼 모양 + 가운데 맞춤
 export const CUSTOMER_BTN_CLASS =
   `${LOBBY_MENU_BTN_CLASS} flex items-center justify-center gap-[clamp(0.35rem,0.75vw,0.55rem)]`
 
 export const LOBBY_MENU_IMG_CLASS = "lobby-menu-btn__img block h-[clamp(3.18rem,5.9vh,4.6rem)] w-auto max-w-[clamp(11.9rem,21.85vw,19rem)] select-none object-contain object-center"
-
-export const DISCORD_IMG_CLASS =
-  "lobby-menu-btn__img block aspect-square h-[clamp(2.85rem,5.2vh,4rem)] w-[clamp(2rem,6.2vh,3rem)] shrink-0 select-none object-cover object-center"

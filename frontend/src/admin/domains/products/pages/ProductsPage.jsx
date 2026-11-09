@@ -14,6 +14,24 @@ const grantText = (row) => {
   return `${name} ${row.grantAmount.toLocaleString('ko-KR')}${row.bonusAmount ? ` + 덤 ${row.bonusAmount.toLocaleString('ko-KR')}` : ''}`
 }
 
+// 목록 칸: 이름·종류·값·받는 양·판매·판·고치기 버튼
+function productColumns(setEditor) {
+  return [
+    { key: 'displayName', label: '이름', render: (row) => `${row.displayName}${row.valid ? '' : ' (규칙 어김: 상점에 안 보임)'}` },
+    { key: 'kind', label: '종류', render: (row) => KIND_LABELS[row.kind] ?? row.kind },
+    { key: 'price', label: '값', render: priceText },
+    { key: 'grant', label: '받는 양', render: grantText },
+    { key: 'status', label: '판매', render: (row) => STATUS_LABELS[row.status] ?? row.status },
+    { key: 'version', label: '판', render: (row) => row.version },
+    {
+      key: 'edit', label: '고치기', render: (row) => (
+        <button type="button" onClick={() => setEditor({ mode: 'edit', product: row })} aria-label={`${row.displayName} 고치기`}
+          className="min-h-11 rounded border border-line px-3">고치기</button>
+      ),
+    },
+  ]
+}
+
 export default function ProductsPage() {
   const [list, setList] = useState({ state: 'loading', items: [], error: null })
   // 폼: null(닫힘) · { mode:'new' } · { mode:'edit', product }
@@ -37,20 +55,7 @@ export default function ProductsPage() {
     void load()
   }
 
-  const columns = [
-    { key: 'displayName', label: '이름', render: (row) => `${row.displayName}${row.valid ? '' : ' (규칙 어김: 상점에 안 보임)'}` },
-    { key: 'kind', label: '종류', render: (row) => KIND_LABELS[row.kind] ?? row.kind },
-    { key: 'price', label: '값', render: priceText },
-    { key: 'grant', label: '받는 양', render: grantText },
-    { key: 'status', label: '판매', render: (row) => STATUS_LABELS[row.status] ?? row.status },
-    { key: 'version', label: '판', render: (row) => row.version },
-    {
-      key: 'edit', label: '고치기', render: (row) => (
-        <button type="button" onClick={() => setEditor({ mode: 'edit', product: row })} aria-label={`${row.displayName} 고치기`}
-          className="min-h-11 rounded border border-line px-3">고치기</button>
-      ),
-    },
-  ]
+  const columns = productColumns(setEditor)
 
   return (
     <section>

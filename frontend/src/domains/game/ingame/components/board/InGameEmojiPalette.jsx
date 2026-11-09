@@ -49,20 +49,17 @@ const SLOT_FILLED_CLASS = "cursor-pointer hover:border-[#e8c878] hover:bg-black/
 
 const SLOT_EMPTY_CLASS = "cursor-default opacity-40"
 
-// 고르면 보드에 알려 닫고 보내기, 바깥 누름·Esc면 닫힘
-export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
-  const { send } = useInGameEmojiSend()
-  const rootRef = useRef(null)
-  // 닫기 함수는 ref로 들고 있어 바깥 누름 감시를 한 번만 붙임
-  const onCloseRef = useRef(onClose)
+// 닫기 함수는 ref로 들고 있어 바깥 누름 감시를 한 번만 붙임
+function useLatestRef(value) {
+  const ref = useRef(value)
   useLayoutEffect(() => {
-    onCloseRef.current = onClose
-  }, [onClose])
+    ref.current = value
+  }, [value])
+  return ref
+}
 
-  // Esc는 겹친 창 중 맨 위일 때만 닫음 (초점은 안 옮김: 우클릭 끌어 고르기 방해 안 하게)
-  useInGameModalLayer({ open: true, onClose, moveFocus: false, trapFocus: false, cancelSfx: false })
-
-  // 판 바깥 누름 감시 (판 안쪽 누름은 무시)
+// 판 바깥 누름 감시 (판 안쪽 누름은 무시)
+function useOutsidePress(rootRef, onCloseRef) {
   useEffect(() => {
     const close = () => {
       if (typeof onCloseRef.current === "function") onCloseRef.current()
@@ -85,7 +82,48 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
     return () => {
       document.removeEventListener("mousedown", handleMouseDown)
     }
-  }, [])
+  }, [rootRef, onCloseRef])
+}
+
+// 칸 하나: 저장된 이모지가 없으면 빈 칸, 우클릭 떼기나 좌클릭으로 고름
+function EmojiSlot({ index, item, onPick }) {
+  const position = SLOT_POSITIONS[index]
+  return (
+    <button
+      type="button"
+      aria-label={item ? `${item.name} 보내기` : `${index + 1}번 칸 비어 있음`}
+      disabled={!item}
+      style={{ top: position.top, left: position.left }}
+      className={`${SLOT_BUTTON_CLASS} ${item ? SLOT_FILLED_CLASS : SLOT_EMPTY_CLASS}`}
+      onMouseUp={(event) => {
+        if (event.button !== 2) return
+        if (!item) return
+        onPick(event, item.id)
+      }}
+      onClick={(event) => {
+        event.stopPropagation()
+        if (event.button !== 0) return
+        if (!item) return
+        onPick(event, item.id)
+      }}
+    >
+      {item
+        ? <PublicAsset src={item.icon} alt={item.name} className="max-h-full max-w-full select-none" />
+        : null}
+    </button>
+  )
+}
+
+// 고르면 보드에 알려 닫고 보내기, 바깥 누름·Esc면 닫힘
+export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
+  const { send } = useInGameEmojiSend()
+  const rootRef = useRef(null)
+  const onCloseRef = useLatestRef(onClose)
+
+  // Esc는 겹친 창 중 맨 위일 때만 닫음 (초점은 안 옮김: 우클릭 끌어 고르기 방해 안 하게)
+  useInGameModalLayer({ open: true, onClose, moveFocus: false, trapFocus: false, cancelSfx: false })
+
+  useOutsidePress(rootRef, onCloseRef)
 
   // 고르면 바로 닫고 보내기, 보내기 실패는 팔레트가 이미 닫혀 조용히 넘김
   const dispatch = (event, itemId) => {
@@ -112,37 +150,15 @@ export default function InGameEmojiPalette({ slots = [], onSelect, onClose }) {
         className={FRAME_IMG_CLASS}
         aria-hidden="true"
       />
-      {Array.from({ length: INGAME_EMOJI_PALETTE_SLOT_COUNT }, (_, index) => {
+      {Array.from({ length: INGAME_EMOJI_PALETTE_SLOT_COUNT }, (_, index) => (
         // 칸마다 저장된 이모지 찾기, 없으면 빈 칸
-        const item = findInGameEmoticonItem(slots[index])
-        const position = SLOT_POSITIONS[index]
-        // 우클릭 떼기나 좌클릭으로 고름
-        return (
-          <button
-            key={`ingame-emoji-slot-${index}`}
-            type="button"
-            aria-label={item ? `${item.name} 보내기` : `${index + 1}번 칸 비어 있음`}
-            disabled={!item}
-            style={{ top: position.top, left: position.left }}
-            className={`${SLOT_BUTTON_CLASS} ${item ? SLOT_FILLED_CLASS : SLOT_EMPTY_CLASS}`}
-            onMouseUp={(event) => {
-              if (event.button !== 2) return
-              if (!item) return
-              dispatch(event, item.id)
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              if (event.button !== 0) return
-              if (!item) return
-              dispatch(event, item.id)
-            }}
-          >
-            {item
-              ? <PublicAsset src={item.icon} alt={item.name} className="max-h-full max-w-full select-none" />
-              : null}
-          </button>
-        )
-      })}
+        <EmojiSlot
+          key={`ingame-emoji-slot-${index}`}
+          index={index}
+          item={findInGameEmoticonItem(slots[index])}
+          onPick={dispatch}
+        />
+      ))}
     </div>
   )
 }

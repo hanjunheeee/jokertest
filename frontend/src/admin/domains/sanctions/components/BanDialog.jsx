@@ -23,6 +23,41 @@ const periodLine = (kind, days) => {
   return `기간: ${days}일 (${formatKst(new Date(Date.now() + days * DAY_MS).toISOString())}까지)`
 }
 
+// 종류(기간 바꾸기만)·일수(기간 정지만)·사유 칸
+function BanFields({ updating, kind, setKind, daysText, setDaysText, days, reason, setReason, reasonLabel }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {updating ? (
+        <Field label="종류" as="select" value={kind} onChange={(event) => setKind(event.target.value)}>
+          <option value="PERIOD">기간 정지</option>
+          <option value="PERMANENT">영구 정지</option>
+        </Field>
+      ) : null}
+      {kind === 'PERIOD' ? (
+        <Field
+          label="정지 일수"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={DAYS_MAX}
+          value={daysText}
+          onChange={(event) => setDaysText(event.target.value)}
+          error={days ? null : '1~3650일 사이로 넣어 주세요.'}
+        />
+      ) : null}
+      <Field
+        label={reasonLabel}
+        as="textarea"
+        rows={3}
+        maxLength={REASON_MAX}
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        hint={updating ? '플레이어에게 보이는 정지 사유는 그대로예요.' : '정지된 플레이어가 로그인할 때 이 사유를 봐요.'}
+      />
+    </div>
+  )
+}
+
 // mode 'ban' = 새로 정지(사유가 플레이어에게 보임) / 'update' = 기간 바꾸기(사유는 관리자 기록에만)
 // initialKind: 처음 고른 종류, ban: 바꿀 정지(update만), onDone(서버 응답): 끝나면 부름
 export default function BanDialog({ mode = 'ban', member, initialKind = 'PERIOD', ban, onDone, onCancel }) {
@@ -58,35 +93,7 @@ export default function BanDialog({ mode = 'ban', member, initialKind = 'PERIOD'
       onConfirm={submit}
       onCancel={onCancel}
     >
-      <div className="flex flex-col gap-3">
-        {updating ? (
-          <Field label="종류" as="select" value={kind} onChange={(event) => setKind(event.target.value)}>
-            <option value="PERIOD">기간 정지</option>
-            <option value="PERMANENT">영구 정지</option>
-          </Field>
-        ) : null}
-        {kind === 'PERIOD' ? (
-          <Field
-            label="정지 일수"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={DAYS_MAX}
-            value={daysText}
-            onChange={(event) => setDaysText(event.target.value)}
-            error={days ? null : '1~3650일 사이로 넣어 주세요.'}
-          />
-        ) : null}
-        <Field
-          label={reasonLabel}
-          as="textarea"
-          rows={3}
-          maxLength={REASON_MAX}
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          hint={updating ? '플레이어에게 보이는 정지 사유는 그대로예요.' : '정지된 플레이어가 로그인할 때 이 사유를 봐요.'}
-        />
-      </div>
+      <BanFields updating={updating} kind={kind} setKind={setKind} daysText={daysText} setDaysText={setDaysText} days={days} reason={reason} setReason={setReason} reasonLabel={reasonLabel} />
     </ConfirmDialog>
   )
 }

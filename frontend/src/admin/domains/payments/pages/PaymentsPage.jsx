@@ -29,6 +29,23 @@ const columns = [
   { key: 'open', label: '보기', render: (row) => <Link to={`orders/${row.orderId}`} className="text-accent underline">열기</Link> },
 ]
 
+// 주문 찾기 칸 (회원 UUID·상태·기간)
+function OrderSearchForm({ draft, change, search }) {
+  return (
+    <form onSubmit={search} role="search" aria-label="주문 찾기" className="mb-3 flex flex-wrap items-end gap-2">
+      <Field label="회원 UUID" name="userUuid" className="min-w-0 flex-1 basis-64" value={draft.userUuid} onChange={change('userUuid')}
+        placeholder="비우면 전체" />
+      <Field label="상태" name="status" as="select" value={draft.status} onChange={change('status')}>
+        <option value="">전부</option>
+        {Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </Field>
+      <Field label="시작 날짜" name="from" type="date" value={draft.from} onChange={change('from')} />
+      <Field label="끝 날짜" name="to" type="date" value={draft.to} onChange={change('to')} />
+      <button type="submit" className="min-h-11 rounded bg-accent px-4 font-semibold text-accent-ink">찾기</button>
+    </form>
+  )
+}
+
 function OrderList() {
   // 칸에 적는 값(draft)과 찾기 누른 값(filter)을 따로 → 글자 칠 때마다 서버를 안 부름
   const [draft, setDraft] = useState(EMPTY_FILTER)
@@ -62,17 +79,7 @@ function OrderList() {
   return (
     <section>
       <PageHeader title="결제" description="다이아 충전 주문을 찾아 보고, 지급된 주문은 환불할 수 있어요." />
-      <form onSubmit={search} role="search" aria-label="주문 찾기" className="mb-3 flex flex-wrap items-end gap-2">
-        <Field label="회원 UUID" name="userUuid" className="min-w-0 flex-1 basis-64" value={draft.userUuid} onChange={change('userUuid')}
-          placeholder="비우면 전체" />
-        <Field label="상태" name="status" as="select" value={draft.status} onChange={change('status')}>
-          <option value="">전부</option>
-          {Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </Field>
-        <Field label="시작 날짜" name="from" type="date" value={draft.from} onChange={change('from')} />
-        <Field label="끝 날짜" name="to" type="date" value={draft.to} onChange={change('to')} />
-        <button type="submit" className="min-h-11 rounded bg-accent px-4 font-semibold text-accent-ink">찾기</button>
-      </form>
+      <OrderSearchForm draft={draft} change={change} search={search} />
       {list.state === 'loading' ? <StatusNote state="loading" /> : null}
       {list.state === 'error' ? <StatusNote state="error" error={list.error} onRetry={() => load()} /> : null}
       {list.state === 'ready' ? (

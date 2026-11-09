@@ -29,6 +29,28 @@ const toNumber = (text) => {
   return /^\d{1,10}$/.test(trimmed) ? Number(trimmed) : trimmed
 }
 
+// 보상·횟수·기간 칸
+function CouponDetailFields({ form, change, fieldError }) {
+  return (
+    <>
+      <div className="flex flex-wrap gap-3">
+        <Field label="보상" name="rewardType" as="select" value={form.rewardType} onChange={change('rewardType')} className="basis-32">
+          <option value="GOLD">골드</option>
+          <option value="DIAMOND">다이아</option>
+        </Field>
+        <Field label="보상 양" name="rewardAmount" inputMode="numeric" value={form.rewardAmount} onChange={change('rewardAmount')}
+          error={fieldError('rewardAmount')} className="min-w-0 flex-1 basis-32" />
+        <Field label="쓸 수 있는 횟수" name="maxUses" inputMode="numeric" value={form.maxUses} onChange={change('maxUses')}
+          error={fieldError('maxUses')} hint="비우면 제한 없음 (한 사람은 한 번만)" className="min-w-0 flex-1 basis-40" />
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <Field label="시작 시각(한국)" name="startsAt" type="datetime-local" value={form.startsAt} onChange={change('startsAt')} error={fieldError('startsAt')} hint="비우면 바로" />
+        <Field label="끝 시각(한국)" name="endsAt" type="datetime-local" value={form.endsAt} onChange={change('endsAt')} error={fieldError('endsAt')} hint="비우면 끝 없음" />
+      </div>
+    </>
+  )
+}
+
 export default function CouponForm({ onCreated, onCancel }) {
   const [form, setForm] = useState({ ...EMPTY })
   const [busy, setBusy] = useState(false)
@@ -65,20 +87,7 @@ export default function CouponForm({ onCreated, onCancel }) {
     <form onSubmit={submit} aria-label="새 쿠폰" className="mb-6 flex flex-col gap-3 rounded border border-line bg-panel p-4">
       <h2 className="text-lg font-bold">새 쿠폰</h2>
       <Field label="쿠폰 코드" name="code" value={form.code} onChange={change('code')} error={fieldError('code')} hint="예: WELCOME-2026 (대문자로 저장)" maxLength={40} />
-      <div className="flex flex-wrap gap-3">
-        <Field label="보상" name="rewardType" as="select" value={form.rewardType} onChange={change('rewardType')} className="basis-32">
-          <option value="GOLD">골드</option>
-          <option value="DIAMOND">다이아</option>
-        </Field>
-        <Field label="보상 양" name="rewardAmount" inputMode="numeric" value={form.rewardAmount} onChange={change('rewardAmount')}
-          error={fieldError('rewardAmount')} className="min-w-0 flex-1 basis-32" />
-        <Field label="쓸 수 있는 횟수" name="maxUses" inputMode="numeric" value={form.maxUses} onChange={change('maxUses')}
-          error={fieldError('maxUses')} hint="비우면 제한 없음 (한 사람은 한 번만)" className="min-w-0 flex-1 basis-40" />
-      </div>
-      <div className="flex flex-wrap gap-3">
-        <Field label="시작 시각(한국)" name="startsAt" type="datetime-local" value={form.startsAt} onChange={change('startsAt')} error={fieldError('startsAt')} hint="비우면 바로" />
-        <Field label="끝 시각(한국)" name="endsAt" type="datetime-local" value={form.endsAt} onChange={change('endsAt')} error={fieldError('endsAt')} hint="비우면 끝 없음" />
-      </div>
+      <CouponDetailFields form={form} change={change} fieldError={fieldError} />
       {error && error.code !== 'INVALID_COUPON' ? <p role="alert" className="text-sm text-danger">{adminErrorText(error)}</p> : null}
       {error?.code === 'INVALID_COUPON' ? <p role="alert" className="text-sm text-danger">표시된 칸을 고쳐 주세요.</p> : null}
       <div className="flex flex-wrap gap-2">

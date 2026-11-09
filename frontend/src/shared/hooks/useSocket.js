@@ -50,6 +50,96 @@ function startNodeFollow(socket, isCancelled) {
     };
 }
 
+// 토큰 갱신 뒤 다시 연결은 2번까지
+const MAX_REAUTH_ATTEMPTS = 2;
+
+// 로그아웃하고 로그인 화면으로
+function logoutToLogin(logout) {
+    logout();
+    window.location.replace("/login");
+}
+
+// 같은 브라우저 다른 탭이 밀어낸 것이면 안내만 (로그아웃·/login 가면 쿠키로 다시 로그인돼 탭끼리 번갈아 끊김, known 1-15)
+// 다른 기기·다른 로그인이면 알리고 로그아웃
+function handleForceDisconnect(payload, logout) {
+    if (payload?.code === SAME_SESSION_REPLACED) {
+        alert(payload?.message || "같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.");
+        return;
+    }
+    alert(payload?.message || FORCE_DISCONNECT_MESSAGES[payload?.code] || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
+    logoutToLogin(logout);
+}
+
+// 인증 실패만 토큰 갱신 뒤 다시 연결, 두 번 넘게 실패하면 로그아웃
+// state: { reauthAttempts, reauthExhausted, cancelled } (cancelled는 정리 뒤 늦게 온 결과 무시용)
+function reauthAfterError(error, socket, state, logout) {
+    if (error.message !== "UNAUTHORIZED" || state.reauthExhausted || state.cancelled) return;
+
+    state.reauthAttempts += 1;
+    if (state.reauthAttempts > MAX_REAUTH_ATTEMPTS) {
+        state.reauthExhausted = true;
+        logoutToLogin(logout);
+        return;
+    }
+
+    refreshAccessToken().then((refreshed) => {
+        // 갱신 기다리는 사이 정리됐으면 무시
+        if (state.cancelled) return;
+
+        // 갱신되면 같은 소켓으로 다시 연결, 실패면 로그아웃
+        if (refreshed) {
+            socket.connect();
+        } else {
+            state.reauthExhausted = true;
+            logoutToLogin(logout);
+        }
+    });
+}
+
+// 소켓 받기 붙임, 받는 순서는 예전 그대로: 강제 끊김 → 연결 → 연결 실패
+// 돌려줌: 정리 함수 (늦게 온 갱신 무시, 쉬는 중 다시 붙기 취소, 받기 끔)
+function startConnectionHandlers(socket, logout) {
+    const state = { reauthAttempts: 0, reauthExhausted: false, cancelled: false };
+    const nodeFollow = startNodeFollow(socket, () => state.cancelled);
+
+    const offConnection = onConnection(socket, {
+        forceDisconnect: (payload) => handleForceDisconnect(payload, logout),
+        // 서버 점검·업데이트로 곧 끊김: 안내만 (모바일은 alert가 양피지 창), 로그아웃·끊기 안 함
+        // 끊긴 뒤엔 socket.io가 알아서 다시 연결, 판 중이면 connect 뒤 판 쪽 스냅샷 다시 묻기로 복구
+        serverShutdown: () => {
+            alert(SERVER_SHUTDOWN_NOTICE);
+        },
+        // 연결되면 재인증 횟수 처음부터
+        connect: () => {
+            state.reauthAttempts = 0;
+        },
+        // WRONG_NODE면 그 Node로, 아니면 재인증
+        connectError: (error) => {
+            if (nodeFollow.handle(error)) return;
+            console.error("[소켓 연결 실패]", error.message);
+            reauthAfterError(error, socket, state, logout);
+        },
+    });
+
+    return () => {
+        state.cancelled = true;
+        nodeFollow.stop();
+        offConnection();
+    };
+}
+
+// 로그인 → 로그아웃으로 바뀔 때 Node 힌트 지움 (다음 사람이 옛 Node로 안 가게)
+function useClearHintOnLogout(isLoggedIn) {
+    const wasLoggedInRef = useRef(isLoggedIn);
+    useEffect(() => {
+        if (wasLoggedInRef.current && !isLoggedIn) {
+            clearNodeHint();
+            setNodeHintAccount(null);
+        }
+        wasLoggedInRef.current = isLoggedIn;
+    }, [isLoggedIn]);
+}
+
 // 로그인이면 연결, 로그아웃·계정이 바뀌면 끊고 다시 연결 (계정 uuid도 의존값)
 export function useSocket() {
     const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
@@ -63,15 +153,7 @@ export function useSocket() {
 
     const socketRef = useRef(null);
 
-    // 로그인 → 로그아웃으로 바뀔 때 Node 힌트 지움 (다음 사람이 옛 Node로 안 가게)
-    const wasLoggedInRef = useRef(isLoggedIn);
-    useEffect(() => {
-        if (wasLoggedInRef.current && !isLoggedIn) {
-            clearNodeHint();
-            setNodeHintAccount(null);
-        }
-        wasLoggedInRef.current = isLoggedIn;
-    }, [isLoggedIn]);
+    useClearHintOnLogout(isLoggedIn);
 
     useEffect(() => {
         if (!isLoggedIn) return;
@@ -85,73 +167,12 @@ export function useSocket() {
         // 다른 영역도 socketClient.js로 같은 소켓을 꺼내 씀 (이 훅의 돌려주는 값도 여기서 바뀜)
         setSocket(socket);
 
-        // 토큰 갱신 뒤 다시 연결은 2번까지, cancelled는 정리 뒤 늦게 온 결과 무시용
-        const MAX_REAUTH_ATTEMPTS = 2;
-        let reauthAttempts = 0;
-        let reauthExhausted = false;
-        let cancelled = false;
-
-        const nodeFollow = startNodeFollow(socket, () => cancelled);
-
-        // 받는 순서는 예전 그대로: 강제 끊김 → 연결 → 연결 실패
-        const offConnection = onConnection(socket, {
-            // 같은 브라우저 다른 탭이 밀어낸 것이면 안내만 (로그아웃·/login 가면 쿠키로 다시 로그인돼 탭끼리 번갈아 끊김, known 1-15)
-            // 다른 기기·다른 로그인이면 알리고 로그아웃
-            forceDisconnect: (payload) => {
-                if (payload?.code === SAME_SESSION_REPLACED) {
-                    alert(payload?.message || "같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.");
-                    return;
-                }
-                alert(payload?.message || FORCE_DISCONNECT_MESSAGES[payload?.code] || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
-                logout();
-                window.location.replace("/login");
-            },
-            // 서버 점검·업데이트로 곧 끊김: 안내만 (모바일은 alert가 양피지 창), 로그아웃·끊기 안 함
-            // 끊긴 뒤엔 socket.io가 알아서 다시 연결, 판 중이면 connect 뒤 판 쪽 스냅샷 다시 묻기로 복구
-            serverShutdown: () => {
-                alert(SERVER_SHUTDOWN_NOTICE);
-            },
-            // 연결되면 재인증 횟수 처음부터
-            connect: () => {
-                reauthAttempts = 0;
-            },
-            // WRONG_NODE면 그 Node로, 인증 실패만 토큰 갱신 뒤 다시 연결, 두 번 넘게 실패하면 로그아웃
-            connectError: (error) => {
-                if (nodeFollow.handle(error)) return;
-                console.error("[소켓 연결 실패]", error.message);
-                if (error.message !== "UNAUTHORIZED" || reauthExhausted || cancelled) return;
-
-                reauthAttempts += 1;
-                if (reauthAttempts > MAX_REAUTH_ATTEMPTS) {
-                    reauthExhausted = true;
-                    logout();
-                    window.location.replace("/login");
-                    return;
-                }
-
-                refreshAccessToken().then((refreshed) => {
-                    // 갱신 기다리는 사이 정리됐으면 무시
-                    if (cancelled) return;
-
-                    // 갱신되면 같은 소켓으로 다시 연결, 실패면 로그아웃
-                    if (refreshed) {
-                        socket.connect();
-                    } else {
-                        reauthExhausted = true;
-                        logout();
-                        window.location.replace("/login");
-                    }
-                });
-            },
-        });
+        // 강제 끊김·점검 안내·재인증·WRONG_NODE 받기 시작
+        const stopHandlers = startConnectionHandlers(socket, logout);
 
         // 정리: 늦게 온 갱신 무시, 받기 끄고 끊고 공용 소켓 비움
         return () => {
-            cancelled = true;
-
-            nodeFollow.stop();
-
-            offConnection();
+            stopHandlers();
 
             socket.disconnect();
 

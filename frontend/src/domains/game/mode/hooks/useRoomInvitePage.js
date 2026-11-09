@@ -9,6 +9,35 @@ import { getSocket, subscribeSocket } from "@/shared/socket/socketClient.js"
 import { onJoinResult } from "../socket/rooms.js"
 import { useRoomCodeJoin } from "./useRoomCodeJoin.js"
 
+// 붙인 소켓의 입장 결과만 받음, 떼는 함수 돌려줌
+function attachJoinResult(socket, { clearJoin, failJoin, navigate }) {
+  const attachedSocket = socket
+  let owned = true
+  const isCurrent = () => owned && attachedSocket === getSocket()
+
+  // 입장 성공: 끝난 판 지우고 방 넣고 대기방으로
+  const handleRoomJoined = (payload) => {
+    if (!isCurrent()) return
+    clearJoin()
+    useInGameStore.getState().clearGame()
+    useMatchingStore.getState().setRoom(payload)
+    navigate("/game-matching")
+  }
+
+  // 입장 실패: 붙인 소켓 결과만 봄
+  const handleRoomJoinFailed = (answer = {}) => {
+    if (!isCurrent()) return
+    failJoin(answer)
+  }
+
+  const off = onJoinResult(attachedSocket, { joined: handleRoomJoined, failed: handleRoomJoinFailed })
+  // 소켓이 바뀌면 옛 소켓 결과는 안 받음 (보내는 중 표시는 제한 시간이 풂)
+  return () => {
+    owned = false
+    off()
+  }
+}
+
 export function useRoomInvitePage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -26,33 +55,10 @@ export function useRoomInvitePage() {
     return () => cancelAnimationFrame(frame)
   }, [])
 
+  // 소켓 붙이기: 입장 성공·실패 결과 받음
   useEffect(() => {
     if (!socket) return undefined
-    const attachedSocket = socket
-    let owned = true
-    const isCurrent = () => owned && attachedSocket === getSocket()
-
-    // 입장 성공: 끝난 판 지우고 방 넣고 대기방으로
-    const handleRoomJoined = (payload) => {
-      if (!isCurrent()) return
-      clearJoin()
-      useInGameStore.getState().clearGame()
-      useMatchingStore.getState().setRoom(payload)
-      navigate("/game-matching")
-    }
-
-    // 입장 실패: 붙인 소켓 결과만 봄
-    const handleRoomJoinFailed = (answer = {}) => {
-      if (!isCurrent()) return
-      failJoin(answer)
-    }
-
-    const off = onJoinResult(attachedSocket, { joined: handleRoomJoined, failed: handleRoomJoinFailed })
-    // 소켓이 바뀌면 옛 소켓 결과는 안 받음 (보내는 중 표시는 제한 시간이 풂)
-    return () => {
-      owned = false
-      off()
-    }
+    return attachJoinResult(socket, { clearJoin, failJoin, navigate })
   }, [socket, navigate, clearJoin, failJoin])
 
   // 여섯 자리가 다 찼을 때만 보냄, 목록에서 고른 방이면 방 id도 실음

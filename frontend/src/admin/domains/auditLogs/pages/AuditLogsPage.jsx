@@ -148,6 +148,33 @@ function useAuditLogList(filterKey) {
   return { view, loading, more, reload, loadMore }
 }
 
+// 결과 칸: 불러오는 중·오류·목록·더 보기
+function AuditResults({ loading, view, more, reload, loadMore }) {
+  return (
+    <>
+      {loading ? <StatusNote state="loading" /> : null}
+      {!loading && view.error ? <StatusNote state="error" error={view.error} onRetry={reload} /> : null}
+      {!loading && !view.error ? (
+        <DataList
+          caption="처리 이력"
+          columns={COLUMNS}
+          rows={view.items}
+          renderCard={(row) => <AuditRow row={row} />}
+          empty="이 거르기에 맞는 기록이 없어요. 칸이나 기간을 바꿔 보세요."
+        />
+      ) : null}
+      {!loading && more.error ? <StatusNote state="error" error={more.error} onRetry={loadMore} /> : null}
+      {!loading && view.nextBefore ? (
+        <div>
+          <button type="button" className={BUTTON} disabled={more.busy} onClick={loadMore}>
+            {more.busy ? '불러오는 중…' : '더 보기'}
+          </button>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 export default function AuditLogsPage() {
   const [kind, setKind] = useState('all')
   const [adminId, setAdminId] = useState('')
@@ -179,25 +206,7 @@ export default function AuditLogsPage() {
       </div>
       <MemberFilter member={member} onPick={setMember} />
 
-      {loading ? <StatusNote state="loading" /> : null}
-      {!loading && view.error ? <StatusNote state="error" error={view.error} onRetry={reload} /> : null}
-      {!loading && !view.error ? (
-        <DataList
-          caption="처리 이력"
-          columns={COLUMNS}
-          rows={view.items}
-          renderCard={(row) => <AuditRow row={row} />}
-          empty="이 거르기에 맞는 기록이 없어요. 칸이나 기간을 바꿔 보세요."
-        />
-      ) : null}
-      {!loading && more.error ? <StatusNote state="error" error={more.error} onRetry={loadMore} /> : null}
-      {!loading && view.nextBefore ? (
-        <div>
-          <button type="button" className={BUTTON} disabled={more.busy} onClick={loadMore}>
-            {more.busy ? '불러오는 중…' : '더 보기'}
-          </button>
-        </div>
-      ) : null}
+      <AuditResults loading={loading} view={view} more={more} reload={reload} loadMore={loadMore} />
     </div>
   )
 }

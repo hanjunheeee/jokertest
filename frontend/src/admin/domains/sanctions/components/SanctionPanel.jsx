@@ -47,37 +47,44 @@ function ActiveBanNote({ ban }) {
   )
 }
 
+// 강제 접속 종료 확인 창 (정지 아님)
+function KickDialog({ member, finish, close }) {
+  const target = `대상: ${member.nickname}`
+  return (
+    <ReasonDialog
+      title="강제 접속 종료"
+      lines={[target, '정지는 아니라서 바로 다시 들어올 수 있어요.']}
+      danger
+      confirmLabel="접속 끊기"
+      reasonLabel="끊는 사유 (관리자 기록에만 남아요)"
+      onSubmit={async (reason) => finish(disconnectText(await forceDisconnect(member.uuid, reason)))}
+      onCancel={close}
+    />
+  )
+}
+
+// 제재 해제 확인 창
+function UnbanDialog({ member, finish, close }) {
+  const target = `대상: ${member.nickname}`
+  return (
+    <ReasonDialog
+      title="제재 해제"
+      lines={[target, '해제하면 바로 다시 로그인할 수 있어요.']}
+      confirmLabel="해제하기"
+      reasonLabel="해제 사유"
+      onSubmit={async (reason) => {
+        const { liftedCount } = await unbanMember(member.uuid, reason)
+        finish(`정지 ${liftedCount}건을 풀었어요.`)
+      }}
+      onCancel={close}
+    />
+  )
+}
+
 // 지금 연 확인 창 하나 (open: 'kick' | 'unban' | 'PERIOD' | 'PERMANENT' | 'update' | null)
 function OpenDialog({ open, member, activeBan, finish, close }) {
-  const target = `대상: ${member.nickname}`
-  if (open === 'kick') {
-    return (
-      <ReasonDialog
-        title="강제 접속 종료"
-        lines={[target, '정지는 아니라서 바로 다시 들어올 수 있어요.']}
-        danger
-        confirmLabel="접속 끊기"
-        reasonLabel="끊는 사유 (관리자 기록에만 남아요)"
-        onSubmit={async (reason) => finish(disconnectText(await forceDisconnect(member.uuid, reason)))}
-        onCancel={close}
-      />
-    )
-  }
-  if (open === 'unban') {
-    return (
-      <ReasonDialog
-        title="제재 해제"
-        lines={[target, '해제하면 바로 다시 로그인할 수 있어요.']}
-        confirmLabel="해제하기"
-        reasonLabel="해제 사유"
-        onSubmit={async (reason) => {
-          const { liftedCount } = await unbanMember(member.uuid, reason)
-          finish(`정지 ${liftedCount}건을 풀었어요.`)
-        }}
-        onCancel={close}
-      />
-    )
-  }
+  if (open === 'kick') return <KickDialog member={member} finish={finish} close={close} />
+  if (open === 'unban') return <UnbanDialog member={member} finish={finish} close={close} />
   if (open === 'PERIOD' || open === 'PERMANENT') {
     return (
       <BanDialog

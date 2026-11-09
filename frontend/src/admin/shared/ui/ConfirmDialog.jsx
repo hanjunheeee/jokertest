@@ -5,6 +5,18 @@ import { adminErrorText } from '@/admin/shared/api/errorText'
 
 const BUTTON = 'min-h-11 rounded px-4 font-semibold disabled:cursor-not-allowed disabled:opacity-50'
 
+// 열리면 취소 버튼에 초점 (실수로 Enter 눌러도 처리 안 되게), Esc는 닫기 (처리 중엔 안 닫음)
+function useCancelFocusAndEsc(cancelRef, busy, onCancel) {
+  useEffect(() => {
+    cancelRef.current?.focus()
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !busy) onCancel?.()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [cancelRef, busy, onCancel])
+}
+
 // title: 창 제목, lines: 다시 보여 줄 줄들(예: ['대상: 가면1', '기간: 7일']), danger: 빨간 버튼
 // onConfirm: 누르면 부름(약속 돌려주면 끝날 때까지 처리 중), onCancel: 닫기
 // children: 사유 칸 같은 입력 자리, confirmDisabled: 사유 비었을 때 등 버튼 끄기
@@ -14,15 +26,7 @@ export default function ConfirmDialog({ title, lines = [], danger = false, confi
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  // 열리면 취소 버튼에 초점 (실수로 Enter 눌러도 처리 안 되게), Esc는 닫기
-  useEffect(() => {
-    cancelRef.current?.focus()
-    const onKey = (event) => {
-      if (event.key === 'Escape' && !busy) onCancel?.()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [busy, onCancel])
+  useCancelFocusAndEsc(cancelRef, busy, onCancel)
 
   const confirm = async () => {
     setBusy(true)

@@ -52,13 +52,9 @@ function Redemptions({ coupon, onClose }) {
   )
 }
 
-export default function CouponsPage() {
+// 쿠폰 목록 불러오기 (before 있으면 뒤에 붙임)
+function useCouponList() {
   const [list, setList] = useState({ state: 'loading', items: [], nextBefore: null, error: null })
-  const [creating, setCreating] = useState(false)
-  const [viewing, setViewing] = useState(null)
-  const [notice, setNotice] = useState(null)
-  const [actionError, setActionError] = useState(null)
-  const [busyId, setBusyId] = useState(null)
 
   const load = useCallback(async (before) => {
     try {
@@ -70,6 +66,52 @@ export default function CouponsPage() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+  return { list, load }
+}
+
+// 목록 칸: 코드·보상·쓴 수·기간·상태·바꾸기 버튼(켜고 끄기·쓴 사람)
+function couponColumns({ toggle, busyId, setViewing }) {
+  return [
+    { key: 'code', label: '코드' },
+    { key: 'reward', label: '보상', render: (row) => `${row.rewardType === 'DIAMOND' ? '다이아' : '골드'} ${row.rewardAmount.toLocaleString('ko-KR')}` },
+    { key: 'used', label: '쓴 수', render: (row) => `${row.usedCount} / ${row.maxUses ?? '제한 없음'}` },
+    { key: 'period', label: '기간', render: periodText },
+    { key: 'isActive', label: '상태', render: (row) => (row.isActive ? '켜짐' : '꺼짐') },
+    {
+      key: 'actions', label: '바꾸기', render: (row) => (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => toggle(row)} disabled={busyId === row.id} aria-label={`${row.code} ${row.isActive ? '끄기' : '켜기'}`}
+            className={ROW_BUTTON}>{row.isActive ? '끄기' : '켜기'}</button>
+          <button type="button" onClick={() => setViewing(row)} aria-label={`${row.code} 쓴 사람`} className={ROW_BUTTON}>쓴 사람</button>
+        </div>
+      ),
+    },
+  ]
+}
+
+// 목록 칸: 불러오는 중·오류·목록·더 보기
+function CouponListArea({ list, columns, load }) {
+  return (
+    <>
+      {list.state === 'loading' ? <StatusNote state="loading" /> : null}
+      {list.state === 'error' ? <StatusNote state="error" error={list.error} onRetry={() => load()} /> : null}
+      {list.state === 'ready' ? (
+        <DataList columns={columns} rows={list.items} caption="쿠폰 목록" empty="아직 쿠폰이 없어요. 새 쿠폰을 만들어 주세요." />
+      ) : null}
+      {list.state === 'ready' && list.nextBefore ? (
+        <button type="button" onClick={() => load(list.nextBefore)} className={`mt-3 ${ROW_BUTTON}`}>더 보기</button>
+      ) : null}
+    </>
+  )
+}
+
+export default function CouponsPage() {
+  const { list, load } = useCouponList()
+  const [creating, setCreating] = useState(false)
+  const [viewing, setViewing] = useState(null)
+  const [notice, setNotice] = useState(null)
+  const [actionError, setActionError] = useState(null)
+  const [busyId, setBusyId] = useState(null)
 
   const toggle = async (row) => {
     setBusyId(row.id)
@@ -91,22 +133,7 @@ export default function CouponsPage() {
     void load()
   }
 
-  const columns = [
-    { key: 'code', label: '코드' },
-    { key: 'reward', label: '보상', render: (row) => `${row.rewardType === 'DIAMOND' ? '다이아' : '골드'} ${row.rewardAmount.toLocaleString('ko-KR')}` },
-    { key: 'used', label: '쓴 수', render: (row) => `${row.usedCount} / ${row.maxUses ?? '제한 없음'}` },
-    { key: 'period', label: '기간', render: periodText },
-    { key: 'isActive', label: '상태', render: (row) => (row.isActive ? '켜짐' : '꺼짐') },
-    {
-      key: 'actions', label: '바꾸기', render: (row) => (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => toggle(row)} disabled={busyId === row.id} aria-label={`${row.code} ${row.isActive ? '끄기' : '켜기'}`}
-            className={ROW_BUTTON}>{row.isActive ? '끄기' : '켜기'}</button>
-          <button type="button" onClick={() => setViewing(row)} aria-label={`${row.code} 쓴 사람`} className={ROW_BUTTON}>쓴 사람</button>
-        </div>
-      ),
-    },
-  ]
+  const columns = couponColumns({ toggle, busyId, setViewing })
 
   return (
     <section>
@@ -117,14 +144,7 @@ export default function CouponsPage() {
       {creating ? <CouponForm onCreated={afterCreate} onCancel={() => setCreating(false)} /> : null}
       {notice ? <p role="status" className="mb-4 text-sm">{notice}</p> : null}
       {actionError ? <p role="alert" className="mb-4 text-sm text-danger">{adminErrorText(actionError)}</p> : null}
-      {list.state === 'loading' ? <StatusNote state="loading" /> : null}
-      {list.state === 'error' ? <StatusNote state="error" error={list.error} onRetry={() => load()} /> : null}
-      {list.state === 'ready' ? (
-        <DataList columns={columns} rows={list.items} caption="쿠폰 목록" empty="아직 쿠폰이 없어요. 새 쿠폰을 만들어 주세요." />
-      ) : null}
-      {list.state === 'ready' && list.nextBefore ? (
-        <button type="button" onClick={() => load(list.nextBefore)} className={`mt-3 ${ROW_BUTTON}`}>더 보기</button>
-      ) : null}
+      <CouponListArea list={list} columns={columns} load={load} />
       {viewing ? <Redemptions key={viewing.id} coupon={viewing} onClose={() => setViewing(null)} /> : null}
     </section>
   )

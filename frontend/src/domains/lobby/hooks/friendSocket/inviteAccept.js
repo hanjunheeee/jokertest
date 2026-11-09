@@ -64,6 +64,50 @@ async function acceptOnOwnerNode(socket, inviteId, firstResult) {
     return { result: await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS), connectionId };
 }
 
+// 수락 보내기 → 다른 Node 방이면 옮겨 한 번 다시 → 응답 못 받았으면 결과 다시 묻기
+// 돌려줌: { result, connectionId } — connectionId는 옮겼으면 옮긴 뒤 새 연결 id, 아니면 받은 그대로
+async function acceptWithRecovery(socket, inviteId, connectionId, accountGeneration) {
+    const first = await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS);
+    const accepted = await acceptOnOwnerNode(socket, inviteId, first);
+    let result = accepted.result;
+    // 옮겼으면 연결 id가 바뀜 → 옮긴 뒤 새 연결 기준으로 봄
+    if (accepted.connectionId !== undefined) connectionId = accepted.connectionId;
+
+    // 응답을 못 받았으면 같은 연결·같은 계정일 때만 결과를 다시 물음, "처리 중"이면 기다렸다 몇 번 더
+    const canAskAgain = () => isSameConnection(socket, connectionId)
+        && useGameInviteStore.getState().isCurrent(accountGeneration);
+    if (result?.unknown === true && canAskAgain()) {
+        result = await askResultAgain(socket, inviteId, canAskAgain) ?? result;
+    }
+    return { result, connectionId };
+}
+
+// 입장한 방 확인 뒤 들어가기: 그사이 재접속했거나 서버가 말하는 지금 방이 다르면 오류만 남김
+async function enterVerifiedRoom(socket, inviteId, result, connectionId, accountGeneration) {
+    // 그사이 재접속했으면 이 연결의 입장 결과를 믿지 않음
+    if (!isSameConnection(socket, connectionId)) {
+        failWith(inviteId, "연결이 바뀌어 입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.");
+        return { ok: false, code: "STALE_CONNECTION", unknown: true };
+    }
+
+    // 서버가 말하는 지금 방이 수락한 방과 같을 때만 들어감
+    const currentRoom = await emitCurrentRoom(socket, INVITE_VERIFY_TIMEOUT_MS);
+    const verifiedRoom = currentRoom?.ok === true ? currentRoom.room : null;
+    if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
+    if (!isSameConnection(socket, connectionId)
+        || verifiedRoom === null || typeof verifiedRoom !== "object"
+        || verifiedRoom.roomId !== result.room.roomId) {
+        failWith(inviteId, "입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.");
+        return { ok: false, code: "ROOM_NOT_CONFIRMED", unknown: true };
+    }
+
+    // 확인 끝: 옛 인게임 상태 비우고 방 넣고 대기실로 이동
+    useInGameStore.getState().clearGame();
+    useMatchingStore.getState().setRoom(verifiedRoom);
+    navigateToApp?.("/game-matching");
+    return { ...result, room: verifiedRoom };
+}
+
 // 수락 요청 하나를 끝까지 처리함, 끝나면 수락 잠금은 같은 작업 번호로만 풂
 export async function requestGameInviteAccept(inviteId) {
     // 초대 id가 없으면 거절
@@ -88,18 +132,9 @@ export async function requestGameInviteAccept(inviteId) {
     store.setInviteError(inviteId, null);
 
     try {
-        const first = await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS);
-        const accepted = await acceptOnOwnerNode(socket, inviteId, first);
-        let result = accepted.result;
-        // 옮겼으면 연결 id가 바뀜 → 옮긴 뒤 새 연결 기준으로 봄
-        if (accepted.connectionId !== undefined) connectionId = accepted.connectionId;
-
-        // 응답을 못 받았으면 같은 연결·같은 계정일 때만 결과를 다시 물음, "처리 중"이면 기다렸다 몇 번 더
-        const canAskAgain = () => isSameConnection(socket, connectionId)
-            && useGameInviteStore.getState().isCurrent(accountGeneration);
-        if (result?.unknown === true && canAskAgain()) {
-            result = await askResultAgain(socket, inviteId, canAskAgain) ?? result;
-        }
+        const accepted = await acceptWithRecovery(socket, inviteId, connectionId, accountGeneration);
+        const result = accepted.result;
+        connectionId = accepted.connectionId;
 
         // 그사이 계정이 바뀌었으면 버림
         if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
@@ -115,28 +150,7 @@ export async function requestGameInviteAccept(inviteId) {
             return result ?? { ok: false, code: "UNKNOWN" };
         }
 
-        // 그사이 재접속했으면 이 연결의 입장 결과를 믿지 않음
-        if (!isSameConnection(socket, connectionId)) {
-            failWith(inviteId, "연결이 바뀌어 입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.");
-            return { ok: false, code: "STALE_CONNECTION", unknown: true };
-        }
-
-        // 서버가 말하는 지금 방이 수락한 방과 같을 때만 들어감
-        const currentRoom = await emitCurrentRoom(socket, INVITE_VERIFY_TIMEOUT_MS);
-        const verifiedRoom = currentRoom?.ok === true ? currentRoom.room : null;
-        if (!useGameInviteStore.getState().isCurrent(accountGeneration)) return { ok: false, code: "STALE" };
-        if (!isSameConnection(socket, connectionId)
-            || verifiedRoom === null || typeof verifiedRoom !== "object"
-            || verifiedRoom.roomId !== result.room.roomId) {
-            failWith(inviteId, "입장 결과를 확인하지 못했습니다. 목록을 새로고침해 확인해주세요.");
-            return { ok: false, code: "ROOM_NOT_CONFIRMED", unknown: true };
-        }
-
-        // 확인 끝: 옛 인게임 상태 비우고 방 넣고 대기실로 이동
-        useInGameStore.getState().clearGame();
-        useMatchingStore.getState().setRoom(verifiedRoom);
-        navigateToApp?.("/game-matching");
-        return { ...result, room: verifiedRoom };
+        return await enterVerifiedRoom(socket, inviteId, result, connectionId, accountGeneration);
     } finally {
         // 성공·실패 모두 이 작업 번호의 잠금만 풂
         useGameInviteStore.getState().markAcceptPending(inviteId, false, operationId);

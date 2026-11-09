@@ -9,6 +9,21 @@ const OTP_LENGTH = 6
 // 숫자만 남기고 6자리까지 (예: '12a3' → '123', 붙여넣은 '123 456' → '123456')
 const onlyOtpDigits = (text) => text.replace(/\D/g, '').slice(0, OTP_LENGTH)
 
+// 제목·자동 로그아웃 안내
+function LoginHeading({ notice }) {
+  return (
+    <>
+      <div>
+        <h1 className="text-xl font-bold">관리자 로그인</h1>
+        <p className="mt-1 text-sm text-muted">가면무도회 살인사건 운영 화면</p>
+      </div>
+      {notice === 'ADMIN_SESSION_EXPIRED' ? (
+        <p role="status" className="rounded border border-line bg-page px-3 py-2 text-sm">{adminErrorText(notice)}</p>
+      ) : null}
+    </>
+  )
+}
+
 // notice: 자동 로그아웃으로 왔을 때 까닭 코드 (예: 'ADMIN_SESSION_EXPIRED')
 export default function LoginPage({ onLogin, notice }) {
   const [loginId, setLoginId] = useState('')
@@ -40,13 +55,7 @@ export default function LoginPage({ onLogin, notice }) {
   return (
     <main className="flex min-h-dvh items-start justify-center bg-page px-4 py-12 text-ink sm:items-center">
       <form onSubmit={submit} noValidate className="flex w-full max-w-sm flex-col gap-4 rounded border border-line bg-panel p-6">
-        <div>
-          <h1 className="text-xl font-bold">관리자 로그인</h1>
-          <p className="mt-1 text-sm text-muted">가면무도회 살인사건 운영 화면</p>
-        </div>
-        {notice === 'ADMIN_SESSION_EXPIRED' ? (
-          <p role="status" className="rounded border border-line bg-page px-3 py-2 text-sm">{adminErrorText(notice)}</p>
-        ) : null}
+        <LoginHeading notice={notice} />
         <Field label="아이디" name="loginId" autoComplete="username" autoCapitalize="none" spellCheck={false}
           value={loginId} onChange={(event) => setLoginId(event.target.value)} />
         <Field label="비밀번호" name="password" type="password" autoComplete="current-password"
