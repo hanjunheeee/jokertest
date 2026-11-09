@@ -175,7 +175,7 @@ test('nginx TLS: TLS 1.2·1.3만, http는 https로 돌림', () => {
 // ── 비밀값 ──
 
 test('env 예시: 비밀 칸(키·비번·토큰)은 비었거나 change 로 시작하는 자리표시만', () => {
-    for (const file of ['.env.example', 'backend/.env.example', 'frontend-mobile/.env.example']) {
+    for (const file of ['.env.example', 'backend/.env.example', 'frontend/.env.example', 'frontend-mobile/.env.example']) {
         for (const line of read(file).split(/\r?\n/)) {
             const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
             if (!match || !/(SECRET|PASSWORD|PASS|TOKEN|KEY)$/.test(match[1])) continue;

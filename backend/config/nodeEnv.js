@@ -7,8 +7,12 @@ const KNOWN_NODE_ENVS = new Set(["production", "development", "test"]);
 // 운영인지: 정확히 production일 때만 (값 없음·오타는 운영 아님, 오타는 시작 때 막음)
 const isProduction = (env = process.env) => env.NODE_ENV === "production";
 
-// 모르는 NODE_ENV인지 (값 없음은 개발로 침, 빈 글자·오타는 모름)
-const isUnknownNodeEnv = (env = process.env) =>
-    env.NODE_ENV !== undefined && !KNOWN_NODE_ENVS.has(env.NODE_ENV);
+// 모르는 NODE_ENV인지 (값 없음·빈 글자는 개발로 침, 오타는 모름)
+// 빈 글자도 없음으로 봄: .env 예시의 `NODE_ENV=`를 그대로 쓰면 개발에서도 시작 거부됐음 (2026-11-09)
+const isUnknownNodeEnv = (env = process.env) => {
+    const value = env.NODE_ENV;
+    if (value === undefined || String(value).trim() === "") return false;
+    return !KNOWN_NODE_ENVS.has(value);
+};
 
 module.exports = { KNOWN_NODE_ENVS, isProduction, isUnknownNodeEnv };

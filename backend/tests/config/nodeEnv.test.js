@@ -41,10 +41,18 @@ test('BE-028: 운영 판정은 정확히 production일 때만', () => {
 })
 
 test('BE-028: 모르는 NODE_ENV는 운영이 아니어도 시작 거부 (오타로 개발 규칙이 운영에 새지 않게)', () => {
-    for (const value of ['prod', 'staging', '']) {
+    for (const value of ['prod', 'staging', ' production ']) {
         const error = caught(() => assertRequiredEnv({ ...FULL, NODE_ENV: value }))
         assert.ok(error, value)
         assert.equal(isStartupFatal(error, { ...FULL, NODE_ENV: value }), true, value)
+    }
+})
+
+// .env 예시의 `NODE_ENV=`(빈 값) 그대로 써도 개발로 켜짐 (값 없음과 같게, 2026-11-09)
+test('NODE_ENV 빈 글자·빈칸은 값 없음과 같음: 시작 거부 안 하고 운영도 아님', () => {
+    for (const value of ['', '   ']) {
+        assert.equal(caught(() => assertRequiredEnv({ ...FULL, NODE_ENV: value })), null, JSON.stringify(value))
+        assert.equal(isProduction({ NODE_ENV: value }), false)
     }
 })
 
