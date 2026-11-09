@@ -1,5 +1,7 @@
 // 방 정보 파일
-// 방 정보 내용 만들기 + 공개 방 목록 만들기·방송
+// 방 정보 내용 만들기 + 공개 방 목록 만들기·방송 (Node 여러 개면 다른 Node 방도 합쳐 내 Node 사람에게만, matchmaking/cluster/roomListSync.js)
+const cluster = require('../../../cluster')
+const roomListSync = require('../cluster/roomListSync')
 const { getRequiredPlayers } = require('../core/config')
 const { resolveRoleComposition } = require('../../../game-core/core/rules/roleComposition')
 const { hasPendingAdmission } = require('../admission/attempts')
@@ -49,8 +51,9 @@ async function loadPlayerProfile(uuid) {
     }
 }
 
-// 공개 방 목록 만들기
+// 공개 방 목록 만들기 (이 Node 방만), Node 여러 개면 항목마다 node 칸 (MN-085)
 function buildPublicRoomList() {
+    const node = cluster.isEnabled() ? cluster.serverId() : null
     return [...gameRooms.values()]
         .filter((room) => room.accessType === 'open' || room.accessType === 'code')
         .map((room) => ({
@@ -62,7 +65,14 @@ function buildPublicRoomList() {
             status: room.players.size >= room.settings.maxPlayers ? 'full' : 'waiting',
             settingsVersion: getSettingsVersion(room),
             settings: buildEditableSettingsView(room.settings),
+            ...(node ? { node } : {}),
         }))
+}
+
+// 화면에 줄 목록: 단일 모드는 이 Node 방 그대로, Node 여러 개면 다른 Node 스냅샷과 합침 (MN-082)
+function buildMergedPublicRoomList() {
+    const local = buildPublicRoomList()
+    return cluster.isEnabled() ? roomListSync.mergedRooms(local) : local
 }
 
 // 공개 방 목록 방송 사이 최소 간격 (방 만들기·입장·준비·나가기마다 접속자 전원에게 목록 전체를 보내던 것 묶기)
@@ -73,17 +83,32 @@ const PUBLIC_ROOM_LIST_MIN_GAP_MS = 500
 const listBroadcastStates = new WeakMap()
 
 // 지금 목록을 전원에게 보냄
+// Node 여러 개면 내 방이 바뀌었을 때 스냅샷도 보내고, 방송은 내 Node 사람에게만 (io.local, 어댑터로 Redis 안 탐, MN-086)
 function sendPublicRoomList(io, state) {
     state.lastSentAt = Date.now()
     try {
-        io.emit('public_rooms_updated', { rooms: buildPublicRoomList() })
+        if (!cluster.isEnabled()) {
+            io.emit('public_rooms_updated', { rooms: buildPublicRoomList() })
+            return
+        }
+        const local = buildPublicRoomList()
+        roomListSync.publishLocalSnapshot(local)
+        const target = io.local ?? io
+        target.emit('public_rooms_updated', { rooms: roomListSync.mergedRooms(local) })
     } catch (error) {
         console.error('[공개방 목록 알림 실패]', error)
     }
 }
 
 // 공개 방 목록 전원에게 방송: 앞 방송에서 간격 지났으면 바로, 아니면 간격 끝에 한 번 (그때 목록을 새로 만들어 마지막 상태가 감)
+// 방이 바뀔 때마다 불림 → Node 여러 개면 방 디렉터리 맞추기·스냅샷 보낼 표시도 같이
 function emitPublicRoomList(io) {
+    roomListSync.markLocalRoomsChanged()
+    scheduleListBroadcast(io)
+}
+
+// 목록 방송 예약 (0.5초 묶음), 다른 Node 스냅샷을 받았을 때도 이것만 부름 (내 방은 안 바뀜)
+function scheduleListBroadcast(io) {
     if (typeof io?.emit !== 'function') return
     let state = listBroadcastStates.get(io)
     if (!state) {
@@ -112,11 +137,15 @@ function flushPublicRoomList(io) {
     sendPublicRoomList(io, state)
 }
 
+// 다른 Node 스냅샷 받으면 이 io로 다시 보내게 연결
+roomListSync.setRoomListHooks({ buildLocal: buildPublicRoomList, rebroadcast: scheduleListBroadcast })
+
 module.exports = {
     computeCanStart,
     buildRoomPayload,
     loadPlayerProfile,
     buildPublicRoomList,
+    buildMergedPublicRoomList,
     emitPublicRoomList,
     PUBLIC_ROOM_LIST_MIN_GAP_MS,
     flushPublicRoomList,

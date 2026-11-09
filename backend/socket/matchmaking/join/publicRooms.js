@@ -3,8 +3,9 @@
 const { rejectIfInGame, emitRoomJoinFailed, describeVanishedRoom } = require('./guards')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { gameRooms } = require('../core/state')
-const { buildPublicRoomList } = require('../room/view')
+const { buildMergedPublicRoomList } = require('../room/view')
 const { handleJoinRoomByCode } = require('./join')
+const { isRoomRoutingEnabled, findRemoteRoom } = require('../cluster/roomRouting')
 
 // 공개방 고르기 입장 (코드 입장 흐름 그대로 씀)
 async function handleJoinPublicRoom(io, socket, uuid, payload) {
@@ -32,6 +33,13 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
             emitRoomJoinFailed(socket, ...vanished)
             return
         }
+        // Node 여러 개: 다른 Node 방이면 그 Node로 옮기라고 답함 (단일 모드는 바로 null)
+        const remote = isRoomRoutingEnabled() ? await findRemoteRoom({ roomId }) : null
+        if (remote) {
+            const { code, message, ...details } = remote
+            emitRoomJoinFailed(socket, code, message, details)
+            return
+        }
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
         return
     }
@@ -45,10 +53,10 @@ async function handleJoinPublicRoom(io, socket, uuid, payload) {
     await handleJoinRoomByCode(io, socket, uuid, room.code, { roomId: room.id, accessType: room.accessType })
 }
 
-// 공개 방 목록 보내 주기 (답 받을 곳 없으면 안 함)
+// 공개 방 목록 보내 주기 (답 받을 곳 없으면 안 함), Node 여러 개면 전 Node 방 (MN-082)
 function handleGetPublicRooms(callback) {
     if (typeof callback !== 'function') return
-    callback({ ok: true, rooms: buildPublicRoomList() })
+    callback({ ok: true, rooms: buildMergedPublicRoomList() })
 }
 
 module.exports = {

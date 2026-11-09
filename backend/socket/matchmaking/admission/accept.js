@@ -18,6 +18,7 @@ const { loadPlayerProfile, computeCanStart, emitPublicRoomList, buildRoomPayload
 const { scheduleLateJoinCleanup, removePublished } = require('./release')
 const { isKickLimitReached, KICK_LIMIT_MESSAGE } = require('../room/kickLimit')
 const { isCanonicalOrUnknown, isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
+const { isRoomRoutingEnabled, findInviteRoomOwner } = require('../cluster/roomRouting')
 
 // 실패 되돌리기 때 붙었던 채널 떼기, 다른 길로 이미 앉았으면 그대로 둠 (되돌리기 네 곳이 같이 씀)
 function detachUnlessSeated(io, socket, uuid, channelId) {
@@ -108,6 +109,12 @@ async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
         )
         if (!peek.known) {
             respond({ ok: false, code: 'INVITE_NOT_FOUND', message: '초대를 찾을 수 없습니다.' })
+            return
+        }
+        // Node 여러 개: 초대한 방이 다른 Node면 그 Node로 옮기라고 답함 (code·node, 수락 기록 전이라 DB 그대로)
+        const elsewhere = isRoomRoutingEnabled() && !gameRooms.has(peek.roomId) ? await findInviteRoomOwner(peek, BOOT_EPOCH) : null
+        if (elsewhere) {
+            respond({ ok: false, ...elsewhere })
             return
         }
         if (peek.bootEpoch !== BOOT_EPOCH) {

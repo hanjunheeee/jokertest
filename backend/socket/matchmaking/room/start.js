@@ -299,7 +299,7 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         prepared.session.emojiRateLimit = new Map()
         room.players.forEach((_, u) => playerRoom.delete(u))
         disposeRoom(roomId, 'ROOM_STARTED')
-        rememberStartedRoom(room)
+        rememberStartedRoom(room, prepared.session.id)
     } catch (err) {
         console.error('[GameSession commit 에러 — 상태가 부분 반영됐을 수 있음]', err)
         respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임 시작 처리 중 오류가 발생했습니다.' })

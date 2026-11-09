@@ -1,7 +1,9 @@
 // 시작된 방 표시 파일
 // 시작돼 사라진 방 코드·id 기억 + 확인 ("이미 시작" vs "방 없음", 지도 01-⑤)
 // room/start가 기억, join·guards(코드 겹침)가 확인
+// Node 여러 개면 Redis startedcode:<CODE>에도 남김 (다른 Node 코드 입장도 "이미 시작", MN-015)
 const { startedRoomMarks } = require('../core/state')
+const { markRoomStarted } = require('../cluster/roomDirectory')
 
 // 표시 30분 보관
 const STARTED_ROOM_MARK_TTL_MS = 30 * 60 * 1000
@@ -20,8 +22,8 @@ function pruneStartedRoomMarks(now) {
     }
 }
 
-// 게임 시작한 방 코드·id 기억 (방 id 받은 입장은 id로, 코드만 받은 입장은 코드로 찾음)
-function rememberStartedRoom(room) {
+// 게임 시작한 방 코드·id 기억 (방 id 받은 입장은 id로, 코드만 받은 입장은 코드로 찾음), gameId는 Node 여러 개일 때 디렉터리용
+function rememberStartedRoom(room, gameId = null) {
     const now = Date.now()
     pruneStartedRoomMarks(now)
     if (typeof room?.code === 'string' && room.code) startedRoomMarks.set(`code:${room.code}`, now)
@@ -29,6 +31,7 @@ function rememberStartedRoom(room) {
     if (typeof room?.id === 'string' && room.id && typeof room?.code === 'string' && room.code) {
         startedRoomCodes.set(room.id, room.code)
     }
+    markRoomStarted(room, gameId)
 }
 
 // 시작된 방의 코드 (표시가 살아 있을 때만)

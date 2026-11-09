@@ -11,6 +11,19 @@ const { getGeneration, acquireRoomTransition, releaseRoomTransition } = require(
 const { deps } = require('../core/deps')
 const { generateRoomCode } = require('../../../utils/roomCode')
 const { buildRoomPayload } = require('../room/view')
+const cluster = require('../../../cluster')
+
+// 빠른 매칭 줄은 Node마다 따로라 Node 여러 개(REDIS_URL 있음)면 끔, 켜 놨으면 처음 한 번 경고 (MN-028)
+let clusterWarned = false
+function isRandomMatchAllowed() {
+    if (!isRandomMatchEnabled()) return false
+    if (!cluster.isEnabled()) return true
+    if (!clusterWarned) {
+        clusterWarned = true
+        console.warn('[빠른 매칭] Node 여러 개에서는 줄이 Node마다 쪼개져서 끔 (RANDOM_MATCH_ENABLED 무시)')
+    }
+    return false
+}
 
 // 자동 매칭 줄 서기, 인원 차면 방 만들어 넣음 (게임 중·방 안이면 거절)
 async function handleJoinMatchmaking(io, socket, uuid) {
@@ -20,7 +33,7 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     )) return
 
     // 스위치 꺼졌으면 조용히 무시 말고 꺼짐 알림 (화면 막힘만 믿지 않음, 지도 10-②)
-    if (!isRandomMatchEnabled()) {
+    if (!isRandomMatchAllowed()) {
         socket.emit('matchmaking_disabled', { message: '현재 빠른 매칭은 지원하지 않습니다.' })
         return
     }
@@ -108,6 +121,7 @@ function handleLeaveMatchmaking(uuid) {
 }
 
 module.exports = {
+    isRandomMatchAllowed,
     handleJoinMatchmaking,
     handleLeaveMatchmaking,
 }

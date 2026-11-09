@@ -12,7 +12,8 @@ const { detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembe
 const { deps } = require('../core/deps')
 const { loadPlayerProfile, buildRoomPayload, computeCanStart, emitPublicRoomList } = require('../room/view')
 const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
-const { takeJoinAttempt } = require('./entryLimits')
+const { takeJoinAttempt, isJoinLimitShared, takeSharedJoinAttempt } = require('./entryLimits')
+const { isRoomRoutingEnabled, rejectIfRoomOnOtherNode } = require('../cluster/roomRouting')
 const { isKickLimitReached, KICK_LIMIT_MESSAGE } = require('../room/kickLimit')
 
 // 입장 시도 너무 많음 거절 코드 (roomJoinErrors 표에 없는 새 코드, 화면은 문구를 그대로 띄움)
@@ -68,6 +69,12 @@ function findRoomForJoin(socket, normalizedCode, expectedRoom) {
 // expectedRoom 있으면 그 방 id·종류만 받음 (목록에서 고른 방·자동 입장·방 id 같이 보낸 요청)
 // autoJoin = 서버가 끌어다 넣는 자동 입장 (본인이 고른 이동이 아니라 결과 화면 이동 표시 안 함)
 async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = null, { autoJoin = false } = {}) {
+    // Node 여러 개: 시도 횟수를 Node끼리 합쳐 셈 (Redis 기다림이 있어 다른 검사보다 먼저, MN-019)
+    if (!autoJoin && isJoinLimitShared() && !(await takeSharedJoinAttempt(uuid))) {
+        emitRoomJoinFailed(socket, TOO_MANY_JOIN_ATTEMPTS, '입장 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.')
+        return
+    }
+
     // 게임 중이면 거절 (지도 01-②)
     if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
@@ -81,7 +88,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     }
 
     // 사람별 코드 입장 시도 횟수 제한 (서버가 끌어다 넣는 자동 입장은 안 셈, BE-025)
-    if (!autoJoin && !takeJoinAttempt(uuid)) {
+    if (!autoJoin && !isJoinLimitShared() && !takeJoinAttempt(uuid)) {
         emitRoomJoinFailed(socket, TOO_MANY_JOIN_ATTEMPTS, '입장 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.')
         return
     }
@@ -145,6 +152,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
     try {
         // 방 찾기 먼저 (DB 읽기 전, 틀린 코드 시도가 DB를 두 번씩 안 부르게, BE-025)
         // 찾은 방이 DB 기다리는 사이 사라지면 join 뒤 확인이 거름
+        if (isRoomRoutingEnabled() && await rejectIfRoomOnOtherNode(socket, normalizedCode, expectedRoom)) return
         const room = findRoomForJoin(socket, normalizedCode, expectedRoom)
         if (!room) return
 

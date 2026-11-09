@@ -6,6 +6,19 @@ const { partyRoomByGameId, gameRooms } = require('../core/state')
 const { PARTY_ROOM_TTL_MS } = require('../core/constants')
 const { buildRoomPayload } = require('../room/view')
 const { userChannelOf } = require('../../emitter')
+const { isRoomRoutingEnabled, findPartyGameOwner } = require('../cluster/roomRouting')
+const { gameSessions } = require('../../../game-core/core/registry/state')
+
+// Node 여러 개: 끝난 판이 이 Node에 없고 다른 Node에 있으면 { ok:false, code, node }로 답함 (조각 5 약속, MN-011)
+// 못 찾으면 예전처럼 방 없음, 답했으면(답할 예정이면) true
+function answerFromOtherNode(gameId, callback) {
+    if (!isRoomRoutingEnabled() || gameSessions.has(gameId)) return false
+    findPartyGameOwner(gameId).then(
+        (failure) => callback(failure ? { ok: false, gameId, ...failure } : { ok: true, gameId, room: null }),
+        () => callback({ ok: true, gameId, room: null }),
+    ).catch((err) => console.error('[다음 방 답 실패]', err))
+    return true
+}
 
 // 끝난 판의 다음 방 꺼내기 (30분 지났으면 지움, 따로 타이머 없음)
 // 그 방이 지워졌거나 시작돼 없으면 우편함도 지우고 없음 (없어진 방 돌려줘 입장 실패 되풀이 막기, known 1-5)
@@ -39,6 +52,7 @@ function handleGetPartyMatchingRoom(uuid, payload, callback) {
     }
     // 그 판 참가자 아니거나 기권했으면 방 없다고만 답함 (남의 판 다음 방 안 새게)
     if (!gameSession.canLookupPartyRoom(uuid, gameId)) {
+        if (answerFromOtherNode(gameId, callback)) return
         callback({ ok: true, gameId, room: null })
         return
     }
@@ -57,8 +71,10 @@ function notifyPartyOfRoom(io, hostUuid, room) {
     // 우편함에 먼저 넣음 (알림 놓친 사람은 get_party_matching_room으로 꺼냄)
     partyRoomByGameId.set(ctx.gameId, { room: payload.room, createdAt: Date.now() })
     // 판 채널에 한 번, 채널 밖 소켓에만 계정 채널로 따로 (판 채널 빼서 같은 소켓이 두 번 받지 않게), 실패는 로그만
+    // 판 채널은 이 Node 안에서만 (io.local, Redis 안 탐), 계정 채널은 다른 Node로 옮긴 사람에게도 감
     try {
-        io.to(ctx.channelId).emit('party_matching_room_ready', payload)
+        const local = io.local ?? io
+        local.to(ctx.channelId).emit('party_matching_room_ready', payload)
         const participantChannels = ctx.participantUuids.map(userChannelOf).filter(Boolean)
         if (participantChannels.length > 0) {
             io.to(participantChannels).except(ctx.channelId).emit('party_matching_room_ready', payload)

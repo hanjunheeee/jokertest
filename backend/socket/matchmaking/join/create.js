@@ -15,6 +15,8 @@ const { generateUniqueRoomCode } = require('../../../utils/roomCode')
 const { notifyPartyOfRoom } = require('./party')
 const { autoJoinPartyToRoom } = require('./join')
 const { markPartyOriginToken, markPartyOriginObject } = require('./partyOrigin')
+const { isRoomRoutingEnabled } = require('../cluster/roomRouting')
+const { reserveRoomCode, releaseRoomCode } = require('../cluster/roomDirectory')
 
 // 방 만들기 요청: 게임 중이면 거절, 처리 중 잠금 걸고 진행
 function handleCreateRoom(io, socket, uuid, payload, callback) {
@@ -76,6 +78,8 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
     let roomId = null
     let joined = false
     let room
+    // Node 여러 개일 때 Redis에 미리 잡은 코드 (방 등록 못 하면 놓음)
+    let reserved = null
 
     try {
         // 계정·프로필 읽기, 계정 없으면 거절
@@ -122,6 +126,9 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
         await socket.join(roomId)
         joined = true
 
+        // Node 여러 개: 코드를 Redis에 먼저 잡음 (Node끼리 같은 코드 막기, 기다림이 있어 아래 확인보다 앞, MN-018)
+        if (isRoomRoutingEnabled()) reserved = await reserveRoomCode(roomId, { isReserved: isRoomCodeReserved })
+
         // join 기다린 사이 끊김·판 끝 정리면 채널 떼고 거절 (지도 09-⑤④)
         if (!socket.connected) {
             await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
@@ -138,7 +145,10 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
         }
 
         // 코드 뽑기: 대기방·판·시작 표시가 잡은 코드 피함, 다 겹치면 실패 (지도 09-⑥)
-        const code = generateUniqueRoomCode(gameRooms, { isReserved: isRoomCodeReserved })
+        // Node 여러 개면 잡아 둔 코드를 내 Node에서 한 번 더 확인만 함
+        const code = isRoomRoutingEnabled()
+            ? reserved && generateUniqueRoomCode(gameRooms, { retry: 1, generator: () => reserved.code, isReserved: isRoomCodeReserved })
+            : generateUniqueRoomCode(gameRooms, { isReserved: isRoomCodeReserved })
         if (!code) {
             await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
             joined = false
@@ -164,6 +174,8 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
         return
     } finally {
         releaseRoomTransition(uuid, transitionToken)
+        // 잡은 코드로 방을 못 만들었으면 놓음
+        if (reserved?.claimed && gameRooms.get(roomId) !== room) releaseRoomCode(reserved.code, roomId)
     }
 
     // 성공 답은 try 밖에서, 답장이 던져도 "생성 실패"가 또 안 나감 (지도 09-⑨)
