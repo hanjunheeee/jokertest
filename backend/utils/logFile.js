@@ -1,11 +1,14 @@
-// 로그 파일 도구, 날짜별 파일(logs/app-YYYY-MM-DD.log)에 줄 모아 남기기 + 오래된 파일 정리 + 비밀값 가리기
+// 로그 파일 도구, 날짜별 파일(logs/app-YYYY-MM-DD.log, SERVER_ID 넣으면 app-<id>-날짜.log)에 줄 모아 남기기 + 오래된 파일 정리 + 비밀값 가리기
 // index.js가 켤 때 만들어 요청 로그(morgan)·console 출력을 같이 남김 (새 패키지 없이 Node 기본만)
 const fs   = require("fs");
 const path = require("path");
 const util = require("util");
 
-// 정리 대상 파일 이름 (이 모양 아닌 파일은 안 건드림)
-const FILE_PATTERN = /^app-(\d{4}-\d{2}-\d{2})\.log$/;
+// 정리 대상 파일 이름 (이 모양 아닌 파일은 안 건드림), 가운데 SERVER_ID는 있어도 없어도 됨
+// 같은 폴더에 pm2 Node 여럿이 써도 서로 날짜 지난 파일만 지움 (보관 일수가 같아서 괜찮음)
+const FILE_PATTERN = /^app-(?:[A-Za-z0-9_.-]+-)?(\d{4}-\d{2}-\d{2})\.log$/;
+// 파일 이름: serverId 있으면 app-<id>-날짜.log (같은 기계 Node끼리 안 겹치게, 8-4장)
+const fileNameFor = (key, serverId) => (serverId ? `app-${serverId}-${key}.log` : `app-${key}.log`);
 const DEFAULT_RETENTION_DAYS = 14;
 const DEFAULT_DIR = path.join(__dirname, "..", "logs");
 
@@ -73,7 +76,7 @@ const formatLine = (at, line) => {
 
 // 로그 파일 만들기 (시험이 폴더·보관 일수·시계·쓰기 타이머를 바꿔 넣음)
 function createLogFile({
-    dir = DEFAULT_DIR, retentionDays = DEFAULT_RETENTION_DAYS, now = () => new Date(),
+    dir = DEFAULT_DIR, retentionDays = DEFAULT_RETENTION_DAYS, now = () => new Date(), serverId = null,
     flushDelayMs = FLUSH_DELAY_MS, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
     reportError = writeStderr,
 } = {}) {
@@ -110,7 +113,7 @@ function createLogFile({
         }
         currentKey = key;
         try {
-            fd = fs.openSync(path.join(dir, `app-${key}.log`), "a");
+            fd = fs.openSync(path.join(dir, fileNameFor(key, serverId)), "a");
             openFailedUntil = 0;
         } catch (error) {
             openFailedUntil = atMs + REOPEN_DELAY_MS;
@@ -158,16 +161,24 @@ function createLogFile({
         flush,
         cleanup,
         close,
-        currentFile: () => (currentKey ? path.join(dir, `app-${currentKey}.log`) : null),
+        currentFile: () => (currentKey ? path.join(dir, fileNameFor(currentKey, serverId)) : null),
     };
 }
+
+// SERVER_ID를 직접 넣었을 때만 그 이름 (안 넣은 단일 서버는 파일 이름이 예전 그대로)
+const explicitServerId = (env = process.env) => {
+    const raw = typeof env.SERVER_ID === "string" ? env.SERVER_ID.trim() : "";
+    return require("../config/serverId").SERVER_ID_PATTERN.test(raw) ? raw : null;
+};
 
 // 환경값으로 만들기: LOG_DIR=off면 끔, 폴더를 못 만들면 경고만 하고 끔 (서버는 켬)
 function createLogFileFromEnv(env = process.env, warn = console.warn) {
     if (String(env.LOG_DIR ?? "").trim().toLowerCase() === "off") return null;
     const dir = env.LOG_DIR && env.LOG_DIR.trim() ? path.resolve(env.LOG_DIR.trim()) : DEFAULT_DIR;
     try {
-        const logFile = createLogFile({ dir, retentionDays: toPositiveInt(env.LOG_RETENTION_DAYS, DEFAULT_RETENTION_DAYS) });
+        const logFile = createLogFile({
+            dir, retentionDays: toPositiveInt(env.LOG_RETENTION_DAYS, DEFAULT_RETENTION_DAYS), serverId: explicitServerId(env),
+        });
         // process.exit 바로 부르는 길(켜기 실패 등)도 모은 줄 다 쓰고 끝나게
         process.once("exit", () => logFile.close());
         return logFile;
@@ -191,8 +202,23 @@ function teeConsoleToLogFile(logFile, target = console) {
     return () => Object.assign(target, originals);
 }
 
+// console 줄 앞에 [n2] 붙이기 (Node 여러 개 로그를 한 화면에서 가르기, 8-4장), 되돌리는 함수 돌려줌
+// 로그 파일 tee 다음에 붙여야(바깥에서 감싸야) 파일 줄에도 들어감
+function prefixConsoleWithServerId(serverId, target = console) {
+    const tag = `[${serverId}]`;
+    const originals = {};
+    for (const method of ["log", "info", "warn", "error"]) {
+        originals[method] = target[method];
+        target[method] = (...args) => originals[method].apply(target, [tag, ...args]);
+    }
+    return () => Object.assign(target, originals);
+}
+
 module.exports = {
     FILE_PATTERN,
+    fileNameFor,
+    explicitServerId,
+    prefixConsoleWithServerId,
     FLUSH_DELAY_MS,
     REOPEN_DELAY_MS,
     DEFAULT_RETENTION_DAYS,

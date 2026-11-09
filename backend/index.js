@@ -21,6 +21,9 @@ const failStartup = (error, label = "DB 연결") => {
 const isMain = require.main === module;
 const logFile = isMain ? require("./utils/logFile").createLogFileFromEnv() : null;
 if (logFile) require("./utils/logFile").teeConsoleToLogFile(logFile);
+// Node 여러 개: SERVER_ID 직접 넣었으면 console 줄 앞에 [n2] (tee 바깥에 붙여 파일 줄에도 들어감)
+const explicitServerId = require("./utils/logFile").explicitServerId();
+if (isMain && explicitServerId) require("./utils/logFile").prefixConsoleWithServerId(explicitServerId);
 
 // 필수 환경값: 운영은 비면 시작 거부, 개발은 경고만 (로컬 .env 덜 채워도 켜지게)
 try {
@@ -89,8 +92,11 @@ morgan.token("safe-url", (req) => {
 });
 // 요청 로그 맨 앞 접속 IP: trust proxy로 정한 진짜 사용자 IP (클라우드플레어·nginx IP 아님)
 morgan.token("client-ip", (req) => require("./utils/request").getClientIp(req));
+// SERVER_ID 넣었으면 요청 로그 맨 앞에 [n2] (안 넣은 단일 서버는 예전 줄 그대로)
+morgan.token("server-id", () => explicitServerId ?? "");
+const requestLogFormat = `${explicitServerId ? "[:server-id] " : ""}:client-ip :method :safe-url :status :response-time ms`;
 // 로그 파일 있으면 화면·파일 둘 다
-app.use(morgan(":client-ip :method :safe-url :status :response-time ms", logFile ? {
+app.use(morgan(requestLogFormat, logFile ? {
     stream: { write: (line) => { process.stdout.write(line); logFile.write(line); } },
 } : undefined));
 // 프록시 한 단계(nginx) 뒤에 있다고 보고 req.ip를 정함, 소켓 IP 읽기와 같은 값 (utils/request.js)
@@ -123,15 +129,27 @@ const port = Number(process.env.PORT) || 4000;
 if (isMain) {
     const { createShutdown, installProcessHandlers } = require("./utils/processLifecycle");
     installProcessHandlers({
-        shutdown: createShutdown({ server, io, closeDb: () => db.sequelize.close(), logFile }),
+        shutdown: createShutdown({
+            server, io, closeDb: () => db.sequelize.close(), logFile,
+            markDraining: () => require("./cluster").nodes.setDraining(true),
+            closeCluster: () => require("./cluster").close(),
+        }),
     });
 }
 
 // 표는 마이그레이션만 만듦 (모델대로 만드는 sync는 안 씀, 마이그레이션이 건너뛰어 모양이 갈림)
 // 연결 + 마이그레이션 이력 확인 → 성공해야 포트 열기 (운영은 안 돌린 게 있으면 시작 거부)
 // 시험이 바꿔 끼울 수 있게 모듈 객체로 부름
+// 그다음 Node 여러 개 켜기 (REDIS_URL 없으면 할 일 없음, Redis 못 붙어도 대체 동작으로 켬, 같은 SERVER_ID면 시작 거부)
+// io.adapter()는 initSocket 뒤라 여기서 붙임, bootEpoch는 초대·입장 시도와 같은 값 하나로
 const schemaReadiness = require("./db/schemaReadiness");
+const startCluster = () => require("./cluster").init({
+    io,
+    bootEpoch: require("./socket/kickReceiptStore").BOOT_EPOCH,
+    statsProvider: () => require("./utils/serverStats").collectHeartbeatStats(),
+});
 schemaReadiness.ensureSchemaReady(db.sequelize)
+    .then(startCluster)
     .then(() => {
         // 점검·금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 꺼짐·빈 목록으로 시작)
         require("./services/ops/maintenance").reloadMaintenance()
@@ -142,6 +160,9 @@ schemaReadiness.ensureSchemaReady(db.sequelize)
         require("./services/ops/bannedWords").reloadBannedWords()
             .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
         const pool = db.sequelize.options.pool ?? {};
+        // Node 수 × 풀 최대가 MySQL 한도에 가까우면 경고만 (MN-138)
+        const poolWarning = require("./config/cluster").describePoolWarning({ mode: require("./cluster").mode(), poolMax: pool.max });
+        if (poolWarning) console.warn(`[STARTUP] 경고 — ${poolWarning}`);
         server.listen(port, () => {
             console.log(
                 `[STARTUP] 성공 — port=${port} DB 연결·마이그레이션 확인 완료; pool max=${pool.max} min=${pool.min} idle=${pool.idle}ms acquire=${pool.acquire}ms`
@@ -149,6 +170,7 @@ schemaReadiness.ensureSchemaReady(db.sequelize)
         });
     })
     .catch((err) => {
+        if (err?.code === "DUPLICATE_SERVER_ID") failStartup(err, "SERVER_ID 중복");
         failStartup(err, err?.code === schemaReadiness.SCHEMA_NOT_READY ? "DB 표 준비 안 됨" : "DB 연결");
     })
 

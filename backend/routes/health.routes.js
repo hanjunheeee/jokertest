@@ -16,11 +16,20 @@ const hasInternalKey = (req) => {
     return crypto.timingSafeEqual(a, b);
 };
 
+// Node 여러 개 칸: serverId·redis(up|down|off)·draining (8-5장)
+// REDIS_URL·SERVER_ID 둘 다 안 넣은 단일 서버는 안 실음 → 응답이 예전과 똑같음
+// Redis down이어도 200 그대로 (대체 동작으로 돎), 표시만 함
+const clusterFields = () => {
+    const cluster = require("../cluster");
+    if (!cluster.isEnabled() && !cluster.config().serverIdExplicit) return {};
+    return { serverId: cluster.serverId(), redis: cluster.state(), draining: cluster.nodes.isDraining() };
+};
+
 // DB에 SELECT 1 → 되면 200, 안 되면 503 (DB는 부를 때 불러 시험이 바꿔 끼우게)
 // 열쇠 맞으면 server 칸: 메모리·이벤트 루프 지연·연결 수 (부하 시험이 읽음)
 router.get("/", async (req, res) => {
     res.set("Cache-Control", "no-store");
-    const extra = hasInternalKey(req) ? { server: require("../utils/serverStats").collectServerStats() } : {};
+    const extra = { ...clusterFields(), ...(hasInternalKey(req) ? { server: require("../utils/serverStats").collectServerStats() } : {}) };
     try {
         await require("../models").sequelize.query("SELECT 1");
         res.status(200).json({ ok: true, ...extra });

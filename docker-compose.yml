@@ -26,6 +26,29 @@ services:
       timeout: 5s
       retries: 20
 
+  # Node 여러 개가 나눠 쓰는 Redis (버스·RPC·위치 디렉터리·요청 제한·socket.io 어댑터)
+  # 캐시·신호 용도라 디스크에 안 남김, 키는 전부 수명 있음 → 메모리가 차면 수명 있는 키부터 뺌
+  # 포트는 밖으로 안 엶 (backend만 compose 망 안에서 붙음)
+  # 비번: 루트 .env(운영은 .env.production)의 REDIS_PASSWORD, 없으면 로컬용 기본값 (운영은 꼭 넣기)
+  #  URL에 넣으므로 영문·숫자로만 (특수문자는 %인코딩 필요)
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru", "--requirepass", "${REDIS_PASSWORD:-mmclocalonly}"]
+    environment:
+      # healthcheck의 redis-cli가 읽는 비번 (명령줄에 비번 안 보이게)
+      - REDISCLI_AUTH=${REDIS_PASSWORD:-mmclocalonly}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   backend:
     build:
       context: .
@@ -47,6 +70,10 @@ services:
       - PORT=4000
       # 로그 파일은 아래 backend_logs 볼륨(/app/logs)에 날짜별로
       - LOG_DIR=/app/logs
+      # Node 여러 개: 이 서비스가 n1 (늘리면 docker-compose.nodes.yml이 n2..를 더함), 다시 만들어도 같은 이름
+      - SERVER_ID=n1
+      # Redis 붙기 (빼면 단일 Node 모드 = 예전과 같음, 크게 망가졌을 때 되돌리기)
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-mmclocalonly}@redis:6379
     volumes:
       - backend_logs:/app/logs
     # 죽으면 바로 다시 켬, /health가 3번 연속 실패하면 unhealthy 표시
@@ -67,6 +94,8 @@ services:
         max-file: "5"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     expose:
       - "4000"
