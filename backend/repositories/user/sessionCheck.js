@@ -18,13 +18,17 @@ FROM user_sessions s
 LEFT JOIN users u ON u.uuid = s.user_id AND u.deleted_at IS NULL
 WHERE s.id IN (:ids) AND s.is_online = 1 AND s.revoked_at IS NULL`;
 
+// 지금 시각 → UTC 글자 (예: 2026-11-10T01:00:00.000Z → '2026-11-10 01:00:00.000')
+// raw 질의 replacements는 Date를 이 PC 시간대 글자로 바꿈(한국이면 9시간 앞), 모델·DB 연결은 UTC라 글자로 직접 넘기기
+const toUtcSqlText = (date) => date.toISOString().slice(0, 23).replace('T', ' ');
+
 // 세션 id 여럿 한 번에: 세션 id → 줄 Map (없거나 끊긴 세션은 빠짐)
 const querySessionStates = async (sessionIds) => {
     const rows = new Map();
     for (let i = 0; i < sessionIds.length; i += MAX_IDS_PER_QUERY) {
         const ids = sessionIds.slice(i, i + MAX_IDS_PER_QUERY);
         const found = await db.sequelize.query(SESSION_CHECK_SQL, {
-            replacements: { ids, now: new Date() },
+            replacements: { ids, now: toUtcSqlText(new Date()) },
             type: db.Sequelize.QueryTypes.SELECT,
         });
         for (const row of found) rows.set(row.session_id, row);
