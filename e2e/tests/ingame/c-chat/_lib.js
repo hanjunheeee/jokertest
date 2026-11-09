@@ -5,37 +5,18 @@
 const { expect } = require('@playwright/test');
 const { sleep } = require('../../../helpers/bots');
 const ui = require('../../../helpers/ui');
-const { internal } = require('../../../helpers/internal');
-const db = require('../../../helpers/db');
+const bannedWords = require('../../../helpers/bannedWords');
 
 // 확인 버튼 하나로 닫히는 양피지 창 이름 (단계 안내·밤 차례·밤 결과·알림·역할 보기)
 const CONFIRM_DIALOGS = ['단계 전환 안내', '밤 역할 안내', '밤 조사 결과', '알림', '내 역할 보기'];
 
-/** 덮개 창 닫기: 확인 창들 + (keepWatching면) 사망 뒤 선택에서 관전 계속하기 */
-async function dismissOverlays(page, { keepWatching = true, rounds = 4 } = {}) {
-    for (let r = 0; r < rounds; r += 1) {
-        let clicked = false;
-        for (const name of CONFIRM_DIALOGS) {
-            const dialog = page.getByRole('dialog', { name, exact: true });
-            if (await dialog.isVisible().catch(() => false)) {
-                await dialog.getByRole('button', { name: '확인' }).click({ timeout: 2000 }).catch(() => {});
-                clicked = true;
-            }
-        }
-        if (keepWatching) {
-            const dead = page.getByRole('dialog', { name: '사망 후 선택' });
-            if (await dead.isVisible().catch(() => false)) {
-                await dead.getByRole('button', { name: '관전 계속하기' }).click({ timeout: 2000 }).catch(() => {});
-                clicked = true;
-            }
-        }
-        if (!clicked) return;
-        await sleep(150);
-    }
+/** 덮개 창 닫기: 확인 창들 + (keepWatching면) 사망 뒤 선택에서 관전 계속하기 — 바퀴 사이 0.15초 쉼 */
+function dismissOverlays(page, { keepWatching = true, rounds = 4 } = {}) {
+    return ui.closeOverlays(page, { keepWatching, rounds, names: CONFIRM_DIALOGS, clickTimeoutMs: 2000, pauseMs: 150 });
 }
 
 const chatBox = (page) => page.getByRole('textbox', { name: '채팅 입력' });
-const chatLog = (page) => page.getByRole('log', { name: '채팅 내역' });
+const { chatLog } = ui;
 const sendButton = (page) => page.getByRole('button', { name: '채팅 보내기' });
 /** 채팅 줄 글자 모양: 닉네임: "글" */
 const line = (nickname, text) => `${nickname}:"${text}"`;
@@ -168,13 +149,11 @@ const uniq = (prefix) => `${prefix}${rand()}`;
 
 /** 금지어 넣고 다시 읽기 (한글+숫자로 닉네임에 안 걸림) → 단어, 끝나면 removeBannedWord */
 async function addBannedWord(word = `금칙${Math.floor(Math.random() * 1e8)}`) {
-    await db.query('INSERT INTO banned_words (word, is_active, created_at, updated_at) VALUES (?, 1, NOW(), NOW())', [word]);
-    await internal.reloadBannedWords();
+    await bannedWords.addBannedWords([word]);
     return word;
 }
-async function removeBannedWord(word) {
-    await db.query('DELETE FROM banned_words WHERE word = ?', [word]);
-    await internal.reloadBannedWords();
+function removeBannedWord(word) {
+    return bannedWords.removeBannedWords([word]);
 }
 
 /** 화면 소켓 글 엿보기: page.on('websocket') → 받은 socket.io 사건 [{event,payload}] (붙인 뒤 생긴 소켓만) */

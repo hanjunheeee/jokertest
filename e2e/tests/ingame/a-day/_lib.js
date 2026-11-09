@@ -3,16 +3,13 @@
 // 인게임 A(낮·투표·재판) 시험 공용 손잡이 파일, 판 차리기·단계 넘기기·봇 표 내기를 기다림 없이 정확하게
 // 봇 행동은 playBots(뒤에서 도는 것) 대신 소켓 요청을 하나씩 보내고 답을 기다림 → 단계 넘기기와 엇갈리지 않음
 const { expect } = require('../../../helpers/fixtures');
-const db = require('../../../helpers/db');
-const { internal } = require('../../../helpers/internal');
+const bannedWords = require('../../../helpers/bannedWords');
+const { chatLog } = require('../../../helpers/ui');
+const { customRoleSettings } = require('../../../helpers/game');
 const { sleep } = require('../../../helpers/bots');
 
 // 역할 직접 구성 (작은 판에서도 의사·경비원·마녀사냥꾼 넣기), 광대 수는 jokerCount와 같아야 함
-const customRoles = ({ JOKER = 1, DOCTOR = 0, GUARD = 0, WITCH_HUNTER = 0 } = {}) => ({
-    jokerCount: JOKER,
-    roleCompositionMode: 'custom',
-    roleCounts: { JOKER, DOCTOR, GUARD, WITCH_HUNTER },
-});
+const customRoles = customRoleSettings;
 
 /** 판 요약을 조건 맞을 때까지 기다림 (단계를 넘기지 않음) */
 async function waitState(t, match, { timeout = 20000, message = '판 상태 기다림' } = {}) {
@@ -143,9 +140,6 @@ async function sendChatOk(page, text, { scope = page } = {}) {
     await expect(input).toHaveValue('');
 }
 
-/** 채팅 내역 줄 (닉네임: "글") */
-const chatLog = (scope) => scope.getByRole('log', { name: '채팅 내역' });
-
 /** 봇 채팅 */
 async function botChat(t, bot, text) {
     return bot.request('submit_game_chat_message', { gameId: t.gameId, text });
@@ -154,14 +148,8 @@ async function botChat(t, bot, text) {
 /** 금지어 넣기 (시험마다 무작위, 다른 시험 글에 안 걸리게) → 지우기 함수 */
 const randomWord = (n = 6) => Array.from({ length: n }, () => 'qwxzjvk'[Math.floor(Math.random() * 7)]).join('');
 async function addBannedWords(words) {
-    for (const w of words) {
-        await db.query('INSERT INTO banned_words (word, is_active, created_at, updated_at) VALUES (?, 1, NOW(), NOW())', [w]);
-    }
-    await internal.reloadBannedWords();
-    return async () => {
-        for (const w of words) await db.query('DELETE FROM banned_words WHERE word = ?', [w]);
-        await internal.reloadBannedWords();
-    };
+    await bannedWords.addBannedWords(words);
+    return () => bannedWords.removeBannedWords(words);
 }
 
 /** 화면 타이머 남은 초 */

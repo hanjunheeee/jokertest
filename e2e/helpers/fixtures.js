@@ -16,6 +16,21 @@ const { internal, e2e } = require('./internal');
 const DESKTOP = { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl, locale: 'ko-KR', timezoneId: 'Asia/Seoul' };
 const MOBILE = { ...devices['Pixel 7'], viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, baseURL: E2E.mobileUrl, locale: 'ko-KR', timezoneId: 'Asia/Seoul' };
 
+/**
+ * 사람 하나 열기: 새 브라우저 context(자기 쿠키만) → 계정(없으면 새로) → 로그인(API) → 로비
+ * players 도우미와 b-night의 사람 바꿔 끼우기가 씀, onContext는 만들자마자 부름 (실패해도 닫히게 먼저 적어 둠)
+ * @returns {Promise<{ account:object, context:import('@playwright/test').BrowserContext, page:import('@playwright/test').Page }>}
+ */
+async function openPerson(browser, { mobile = false, account, lobby = true, login = true, onContext = () => {} } = {}) {
+    const context = await browser.newContext(mobile ? MOBILE : DESKTOP);
+    onContext(context);
+    const acc = account ?? await accountsLib.createAccount();
+    const page = await context.newPage();
+    if (login) await ui.loginViaApi(context, acc);
+    if (login && lobby) await ui.gotoLobby(page);
+    return { account: acc, context, page };
+}
+
 const test = base.test.extend({
     /**
      * 계정 만들기: await accounts.create({ nickname?, password?, birthDate?, emailVerified?, agreeTerms?, role? })
@@ -44,15 +59,9 @@ const test = base.test.extend({
         const opened = [];
         const isMobileProject = testInfo.project.name === 'mobile';
         await use({
-            add: async ({ mobile = isMobileProject, account, lobby = true, login = true } = {}) => {
-                const context = await browser.newContext(mobile ? MOBILE : DESKTOP);
-                opened.push(context);
-                const acc = account ?? await accountsLib.createAccount();
-                const page = await context.newPage();
-                if (login) await ui.loginViaApi(context, acc);
-                if (login && lobby) await ui.gotoLobby(page);
-                return { account: acc, context, page };
-            },
+            add: ({ mobile = isMobileProject, account, lobby = true, login = true } = {}) => openPerson(browser, {
+                mobile, account, lobby, login, onContext: (context) => opened.push(context),
+            }),
         });
         await Promise.all(opened.map((c) => c.close().catch(() => {})));
     },
@@ -90,4 +99,4 @@ const test = base.test.extend({
     ui: async ({}, use) => { await use(ui); },
 });
 
-module.exports = { test, expect: base.expect, E2E, DESKTOP, MOBILE, ui, mail, internal, e2e };
+module.exports = { test, expect: base.expect, E2E, DESKTOP, MOBILE, openPerson, ui, mail, internal, e2e };

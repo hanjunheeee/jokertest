@@ -50,23 +50,7 @@ const talk = {
 };
 
 /** 떠 있는 연출 창(단계 전환·밤 차례·밤 결과·역할 공개) 닫기, keepWatching이면 사망 선택도 '관전 계속하기' */
-async function clearOverlays(page, { keepWatching = true, rounds = 3 } = {}) {
-    for (let i = 0; i < rounds; i += 1) {
-        let closed = false;
-        for (const name of ['단계 전환 안내', '밤 역할 안내', '알림', '밤 조사 결과', '내 역할 보기']) {
-            const dialog = page.getByRole('dialog', { name, exact: true });
-            if (await dialog.isVisible().catch(() => false)) {
-                await dialog.getByRole('button', { name: '확인' }).click({ timeout: 3000 }).catch(() => {});
-                closed = true;
-            }
-        }
-        if (keepWatching && await talk.deadChoice(page).isVisible().catch(() => false)) {
-            await talk.deadChoice(page).getByRole('button', { name: '관전 계속하기' }).click({ timeout: 3000 }).catch(() => {});
-            closed = true;
-        }
-        if (!closed) return;
-    }
-}
+const clearOverlays = (page, { keepWatching = true, rounds = 3 } = {}) => ui.closeOverlays(page, { keepWatching, rounds });
 
 /**
  * 모바일 사람 + 봇으로 판 차리고 역할 공개 창 닫기

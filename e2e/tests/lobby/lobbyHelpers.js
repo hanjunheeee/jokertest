@@ -1,47 +1,10 @@
 'use strict';
 
-// 로비 시험 도우미 파일, 친구 맺기·신청을 API로 빨리 만들기 · 친구 패널·알림 창 열기
+// 로비 시험 도우미 파일, 친구 패널·알림 창 열기 (친구 맺기 준비는 helpers/friends.js 것 다시 내보냄)
 // tests/lobby 시험들이 씀 (시험 파일 아님) — 화면으로 보는 부분만 시험에서 누르고, 준비는 여기 API로
 const { expect } = require('@playwright/test');
-const { E2E } = require('../../helpers/env');
-
-const headers = { origin: E2E.desktopUrl };
-
-// 그 사람 브라우저 쿠키로 API 부르기 → data
-async function api(person, method, pathname, data) {
-    const res = await person.context.request.fetch(`${E2E.apiUrl}${pathname}`, { method, data, headers });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok()) throw new Error(`${method} ${pathname} → ${res.status()} ${body?.message ?? ''}`);
-    return body.data;
-}
-
-// 봇(소켓 봇)의 쿠키로 API 부르기
-async function botApi(bot, method, pathname, data) {
-    const res = await fetch(`${E2E.apiUrl}${pathname}`, {
-        method,
-        headers: { 'content-type': 'application/json', cookie: bot.cookie, origin: E2E.desktopUrl },
-        body: data === undefined ? undefined : JSON.stringify(data),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(`봇 ${method} ${pathname} → ${res.status} ${body?.message ?? ''}`);
-    return body.data;
-}
-
-// from → to 친구 신청 (API), to가 받은 신청 id 돌려줌
-async function sendRequest(from, to) {
-    await api(from, 'POST', '/friends/requests', { receiverId: to.account.uuid });
-    const incoming = await api(to, 'GET', '/friends/requests/incoming');
-    const row = incoming.find((r) => r.id === from.account.uuid);
-    if (!row) throw new Error('받은 신청 없음');
-    return row.request_id;
-}
-
-// 둘을 친구로 (API)
-async function makeFriends(a, b) {
-    const requestId = await sendRequest(a, b);
-    await api(b, 'PUT', `/friends/requests/${requestId}/accept`);
-    return requestId;
-}
+// 친구 맺기·API 부르기는 helpers/friends.js (방 시험도 같이 씀), 옛 이름 그대로 내보냄
+const { api, botApi, sendRequest, makeFriends } = require('../../helpers/friends');
 
 // 친구 패널 열기 → 패널(dialog)
 async function openFriendPanel(page) {

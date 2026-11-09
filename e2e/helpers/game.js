@@ -13,6 +13,17 @@ const ALLOWED_MAX_PLAYERS = [4, 5, 6, 7, 8, 9, 10];
 const fitMaxPlayers = (total) => ALLOWED_MAX_PLAYERS.find((n) => n >= total) ?? 10;
 
 /**
+ * 역할 직접 구성 방 설정 (작은 판에서도 의사·경비원·마녀사냥꾼 넣기), 광대 수는 jokerCount와 같아야 서버가 받음
+ * @example customRoleSettings({ JOKER: 1, DOCTOR: 1 }) // { jokerCount: 1, roleCompositionMode: 'custom', roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 0, WITCH_HUNTER: 0 } }
+ * @param {{JOKER?:number,DOCTOR?:number,GUARD?:number,WITCH_HUNTER?:number}} [counts]
+ * @param {object} [extra] 같이 덮어쓸 방 설정 (예: { nightActionTime: 60 })
+ */
+function customRoleSettings(counts, extra = {}) {
+    const roleCounts = { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0, ...counts };
+    return { jokerCount: roleCounts.JOKER, roleCompositionMode: 'custom', roleCounts, ...extra };
+}
+
+/**
  * 판 하나 차리기
  * @param {object} o
  * @param {{ page: import('@playwright/test').Page, account: {uuid:string} }[]} [o.humans] 브라우저 사람 (로그인된 page)
@@ -108,4 +119,4 @@ class Table {
     }
 }
 
-module.exports = { setupTable, Table, fitMaxPlayers, FAST_ROOM_SETTINGS };
+module.exports = { setupTable, Table, fitMaxPlayers, customRoleSettings, FAST_ROOM_SETTINGS };
