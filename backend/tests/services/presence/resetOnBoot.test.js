@@ -9,6 +9,7 @@ const assert = require('node:assert/strict')
 const db = require('../../../models')
 const presenceStatus = require('../../../services/presence/status')
 const { getServerId, DEFAULT_SERVER_ID } = require('../../../config/serverId')
+const cluster = require('../../../cluster')
 
 const { Op } = db.Sequelize
 
@@ -35,6 +36,17 @@ function installFakePresence(t, rows) {
     }
     t.after(() => { db.OnlinePresence = original })
     return { upserts }
+}
+
+// 이 Node 이름은 cluster 한 곳에서 받음 → 환경값 바꾼 뒤 cluster를 닫아야 새 값으로 다시 읽음 (진짜 서버는 켤 때 한 번)
+async function useServerIdEnv(t, value) {
+    const saved = process.env.SERVER_ID
+    process.env.SERVER_ID = value
+    await cluster.close()
+    t.after(async () => {
+        if (saved === undefined) delete process.env.SERVER_ID; else process.env.SERVER_ID = saved
+        await cluster.close()
+    })
 }
 
 const BOOT_AT = new Date('2026-11-09T10:00:00Z')
@@ -98,9 +110,7 @@ test('이름 없는 줄은 1시간 안에 활동했으면 안 건드림 (어느 
 })
 
 test('서버 이름 안 넘기면 SERVER_ID 환경값 이름으로 되돌림', async (t) => {
-    const saved = process.env.SERVER_ID
-    process.env.SERVER_ID = 'game-7'
-    t.after(() => { if (saved === undefined) delete process.env.SERVER_ID; else process.env.SERVER_ID = saved })
+    await useServerIdEnv(t, 'game-7')
     const rows = [
         { user_id: 'mine', status: 'ONLINE', last_active_at: before(5), server_id: 'game-7' },
         { user_id: 'other', status: 'ONLINE', last_active_at: before(5), server_id: DEFAULT_SERVER_ID },
@@ -112,9 +122,7 @@ test('서버 이름 안 넘기면 SERVER_ID 환경값 이름으로 되돌림', a
 })
 
 test('접속 상태 저장은 이 서버 이름을 같이 적음', async (t) => {
-    const saved = process.env.SERVER_ID
-    process.env.SERVER_ID = 'game-3'
-    t.after(() => { if (saved === undefined) delete process.env.SERVER_ID; else process.env.SERVER_ID = saved })
+    await useServerIdEnv(t, 'game-3')
     const { upserts } = installFakePresence(t, [])
 
     await presenceStatus.setPresence('u-1', 'ONLINE')
@@ -132,4 +140,20 @@ test('서버 이름: 비었거나 모양 틀리면 기본값 main, 맞으면 앞
     assert.equal(getServerId({ SERVER_ID: 'game 1' }), 'main')
     assert.equal(getServerId({ SERVER_ID: 'x'.repeat(65) }), 'main')
     assert.equal(getServerId({ SERVER_ID: ' game-1.kr_a ' }), 'game-1.kr_a')
+})
+
+test('단일 모드: 저장에 쓰는 이름 = cluster.serverId() = 예전 SERVER_ID 읽기 값 (안 넣으면 main)', async (t) => {
+    for (const value of [undefined, '', 'game 1', ' game-9 ']) {
+        const saved = process.env.SERVER_ID
+        if (value === undefined) delete process.env.SERVER_ID; else process.env.SERVER_ID = value
+        await cluster.close()
+        const { upserts } = installFakePresence(t, [])
+        await presenceStatus.setPresence('u-2', 'ONLINE')
+        assert.equal(cluster.mode(), 'off')
+        assert.equal(cluster.serverId(), getServerId(process.env))
+        assert.equal(upserts[0].server_id, getServerId(process.env))
+        if (saved === undefined) delete process.env.SERVER_ID; else process.env.SERVER_ID = saved
+        await cluster.close()
+    }
+    assert.equal(getServerId({}), DEFAULT_SERVER_ID)
 })

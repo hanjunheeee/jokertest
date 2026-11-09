@@ -109,7 +109,8 @@ test('MN-068: Node 여러 개면 OFFLINE은 조건부(이 서버 줄·이름 없
     assert.equal(conditional.values.status, 'OFFLINE')
     assert.equal(conditional.options.where.user_id, 'u1')
     const or = conditional.options.where[db.Sequelize.Op.or]
-    assert.deepEqual(or, [{ server_id: 'main' }, { server_id: null }])
+    // 이 서버 이름은 cluster 한 곳 (예전엔 SERVER_ID 환경값을 따로 읽어 'main'으로 어긋났음)
+    assert.deepEqual(or, [{ server_id: 'n1' }, { server_id: null }])
     // ONLINE은 그대로 upsert (새 Node가 줄을 가져감)
     assert.equal(calls[2].upsert.status, 'ONLINE')
 })
