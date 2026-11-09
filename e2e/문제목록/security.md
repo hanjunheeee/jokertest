@@ -18,7 +18,7 @@
 
 | 번호 | 시험 이름 | 재현 순서 | 기대 | 실제 | 의심 파일:줄 | 심각도 |
 |---|---|---|---|---|---|---|
-| S-01 | (앱 버그 아님) 따로 띄우는 백엔드가 켜질 때 server_id NULL 접속 줄까지 OFFLINE | 시험 백엔드(4100)가 도는 중에 따로 띄우는 백엔드를 켬 → 시작 때 `resetPresencesOnBoot`이 `server_id = ? OR server_id IS NULL`로 OFFLINE 처리 | 따로 띄운 서버는 제 server_id 줄만 건드림 | server_id 없는(NULL) 접속 줄까지 OFFLINE으로 바뀜 → 같은 시험 DB를 쓰는 다른 접속 표시에 영향 가능 | backend/services/presence/status.js `resetPresencesOnBoot` | 메모 |
+| S-01 | (앱 버그 아님) 따로 띄우는 백엔드가 켜질 때 server_id NULL 접속 줄까지 OFFLINE | 시험 백엔드(4100)가 도는 중에 따로 띄우는 백엔드를 켬 → 시작 때 `resetPresencesOnBoot`이 `server_id = ? OR server_id IS NULL`로 OFFLINE 처리 | 따로 띄운 서버는 제 server_id 줄만 건드림 | server_id 없는(NULL) 접속 줄까지 OFFLINE으로 바뀜 → 같은 시험 DB를 쓰는 다른 접속 표시에 영향 가능 | backend/services/presence/status.js `resetPresencesOnBoot` | 메모 | → 고침(cb54c031, 이름 없는 줄은 1시간 넘게 활동 없는 것만 OFFLINE)
 
 | S-02 | (시험 도우미) `startExtraBackend`가 "안 켜짐" 시간 초과로 던질 때 띄운 node를 안 죽임 | PC가 바빠 따로 띄운 백엔드가 제한 시간 안에 안 켜짐 → 오류만 던지고 자식 프로세스는 그대로 | 시간 초과면 자식도 끔 | 늦게 켜진 남은 프로세스가 그 포트를 잡고 있을 수 있음 (보안 시험은 남는 포트로 한 번 더 시도해서 피함) | e2e/helpers/servers.js `startExtraBackend` (waitUntil 실패 경로에 child.kill 없음) | 낮음 | → 고침(b154fd9f) 시간 초과·바로 꺼짐 때도 띄운 node 끄고 던짐
 | S-03 | (환경) 바쁠 때 따로 띄운 백엔드 켜지는 데 6~24초+ | 다른 파트 브라우저가 많이 돌 때 백엔드 시작 → sequelize 불러오기만 약 5초, 첫 DB 질의까지 6~24초 | 몇 초 | 첫 시험 실행 때 60초 제한을 넘겨 실패한 적 있음 → 보안 시험은 150초 + 남는 포트 재시도로 바꿈 | (앱 문제 아님) | 메모 | → 안 고침(환경 메모, 앱 문제 아님 — 화면 빌드본 서버로 CPU 줄임 b154fd9f)

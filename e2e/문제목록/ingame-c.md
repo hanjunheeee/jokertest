@@ -15,7 +15,7 @@
 | 번호 | 무엇 | 재현 | 영향 | 의심 파일:줄 | 심각도 |
 |---|---|---|---|---|---|
 | E1 | 실행 시작 정리(global-setup)가 **모든** e2e 계정(`e2e+%@example.test`)과 메일 폴더를 지움 | 에이전트 A가 시험 도는 중 에이전트 B가 `npx playwright test` 시작 | A의 계정이 지워져 A 시험이 중간에 깨짐 (여럿이 한 DB를 쓰는 2단계에서 서로 지움) — C 파트는 시작 정리를 뺀 따로 설정(scratchpad `pw.config.js`, globalSetup 없음)으로 돌림 | e2e/helpers/global-setup.js:11 (`ALL_E2E_EMAIL_LIKE`) | 높음 (병렬 실행 때) | → 고침(b154fd9f) 시작 정리는 6시간 넘은 것만
-| E2 | `accounts.createMany`/`table.setup`의 계정 동시 만들기가 가끔 DB 교착 | 판 시험 여럿 동시 (봇 계정 Promise.all) | `SequelizeDatabaseError: Deadlock found` 로 시험 시작 전에 실패 (깜빡임, 혼자 다시 돌리면 통과) | e2e/helpers/accounts.js:88 (`createAccounts` = Promise.all) · backend 가입 트랜잭션 | 중간 (깜빡임) | → 고침(b154fd9f) 하나씩 차례로 + 교착이면 다시
+| E2 | `accounts.createMany`/`table.setup`의 계정 동시 만들기가 가끔 DB 교착 | 판 시험 여럿 동시 (봇 계정 Promise.all) | `SequelizeDatabaseError: Deadlock found` 로 시험 시작 전에 실패 (깜빡임, 혼자 다시 돌리면 통과) | e2e/helpers/accounts.js:88 (`createAccounts` = Promise.all) · backend 가입 트랜잭션 | 중간 (깜빡임) | → 고침(b154fd9f) 하나씩 차례로 + 교착이면 다시 → 고침(8656f4f9, 서버 쪽 원인: 세션 끊기 UPDATE의 빈 틈 잠금 → 안 잠그는 읽기 + id로만 UPDATE, 재시도 없이 동시 로그인 시험 통과)
 | E3 | `db.query`에 JS `Date`를 넣으면 9시간 어긋나게 저장 | `INSERT INTO user_bans (... start_at) VALUES (?)`에 `new Date()` | 정지 시작이 9시간 뒤로 들어가 정지가 안 걸림 — C 파트는 `DATE_ADD(NOW(), INTERVAL ? SECOND)`로 씀 | e2e/helpers/db.js:38 (raw query replacements 날짜를 PC 시간대로 씀) | 낮음 (시험 작성 주의) | → 고침(b154fd9f) db.query가 Date를 UTC로 바꿈 + sqlTime 공용·README
 
 ## 실행 상태 (2026-11-09, 감독 요청으로 중간에 실행 멈춤 — 나머지는 3단계에서 감독이 돌림)
