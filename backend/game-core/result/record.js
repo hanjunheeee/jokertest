@@ -11,6 +11,39 @@ function resolveGameSource() {
     return process.env.NODE_ENV === 'test' ? 'test' : 'production'
 }
 
+// 죽은 이유: 산 사람은 없음, 판 깨지게 만든 나간 사람은 끊김, 나머지는 판에 적힌 이유
+function resolveDeathReason(player, isAlive, interruptedLeaver) {
+    if (isAlive) return null
+    if (interruptedLeaver) return DEATH_REASONS.DISCONNECT
+    return player.deathReason ?? null
+}
+
+// 이겼는지: 끝난 판은 팀 비교, 깨진 판은 나간 사람만 패, 나머지는 null
+// 산 채로 판을 떠난 사람(나가기·추방·끊김 탈락)은 편이 이겨도 패 (BE-007), 죽은 뒤 나간 사람은 편 결과 그대로
+function resolveWon(player, team, { completed, winner, interruptedLeaver }) {
+    if (completed) return team === winner && player.deathReason !== DEATH_REASONS.DISCONNECT
+    if (interruptedLeaver) return false
+    return null
+}
+
+// 사람 한 명 → 참가 기록 한 줄
+function buildPlayerRow(session, player, { completed, disconnectedUuid, winner }) {
+    // 판 깨지게 만든 나간 사람은 죽은 걸로 침 (끊김)
+    const interruptedLeaver = !completed && player.uuid === disconnectedUuid
+    const isAlive = interruptedLeaver ? false : player.alive === true
+    const team = player.team ?? ROLE_TEAMS[player.role] ?? null
+    return {
+        game_id: session.id,
+        user_id: player.uuid,
+        nickname_snapshot: player.nickname,
+        role: player.role,
+        team,
+        won: resolveWon(player, team, { completed, winner, interruptedLeaver }),
+        is_alive: isAlive,
+        death_reason: resolveDeathReason(player, isAlive, interruptedLeaver),
+    }
+}
+
 // 끝난 판 → 전적 기록 (참가자·역할·생존·통계)
 function buildGameResultRecord(session, {
     completed = session.phase === 'ENDED' && !!session.winResult,
@@ -29,38 +62,16 @@ function buildGameResultRecord(session, {
     const players = []
     const stats = []
     for (const player of session.players.values()) {
-        // 판 깨지게 만든 나간 사람은 죽은 걸로 침 (끊김)
-        const interruptedLeaver = !completed && player.uuid === disconnectedUuid
-        const isAlive = interruptedLeaver ? false : player.alive === true
-        const deathReason = isAlive
-            ? null
-            : interruptedLeaver
-                ? DEATH_REASONS.DISCONNECT
-                : player.deathReason ?? null
-        const team = player.team ?? ROLE_TEAMS[player.role] ?? null
-        // 이겼는지: 끝난 판은 팀 비교, 깨진 판은 나간 사람만 패, 나머지는 null
-        // 산 채로 판을 떠난 사람(나가기·추방·끊김 탈락)은 편이 이겨도 패 (BE-007), 죽은 뒤 나간 사람은 편 결과 그대로
-        const abandonedAlive = player.deathReason === DEATH_REASONS.DISCONNECT
-        const won = completed ? team === winner && !abandonedAlive : interruptedLeaver ? false : null
-
-        players.push({
-            game_id: session.id,
-            user_id: player.uuid,
-            nickname_snapshot: player.nickname,
-            role: player.role,
-            team,
-            won,
-            is_alive: isAlive,
-            death_reason: deathReason,
-        })
+        const row = buildPlayerRow(session, player, { completed, disconnectedUuid, winner })
+        players.push(row)
 
         // 승패 없는 사람은 통계에 안 셈
-        if (won === null) continue
+        if (row.won === null) continue
         stats.push({
             user_id: player.uuid,
             total_games: 1,
-            survival_count: isAlive ? 1 : 0,
-            execution_count: deathReason === DEATH_REASONS.EXECUTION ? 1 : 0,
+            survival_count: row.is_alive ? 1 : 0,
+            execution_count: row.death_reason === DEATH_REASONS.EXECUTION ? 1 : 0,
         })
     }
 

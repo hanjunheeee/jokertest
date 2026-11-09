@@ -10,9 +10,8 @@ const { endGameSessionForPlayer } = require('../core/registry/write')
 const { isMatchmakingBlocked } = require('../queries/live')
 const { hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries/byId')
 
-// 후보 판 모양 전부 검사 (조작·빠진 값 막기)
-function assertValidSessionForCommit(session) {
-    // 판 id·방 id가 있는지, 사람이 최소(운영 5·개발 2)~10명인지
+// 판 id·방 id가 있는지, 사람이 최소(운영 5·개발 2)~10명인지
+function assertIdsAndSize(session) {
     if (!session || typeof session.id !== 'string' || session.id.length === 0) {
         throw new Error('commitGameSession: 잘못된 session.id')
     }
@@ -25,7 +24,10 @@ function assertValidSessionForCommit(session) {
     if (session.players.size < getMinSupportedPlayers() || session.players.size > MAX_SUPPORTED_PLAYERS) {
         throw new Error(`commitGameSession: 지원하지 않는 인원(${session.players.size})`)
     }
-    // 기록 칸이 전부 제 모양이고 비어 있는지 (새 판인데 뭐가 들어 있으면 거절)
+}
+
+// 기록 칸이 전부 제 모양이고 비어 있는지 (새 판인데 뭐가 들어 있으면 거절)
+function assertEmptyRecords(session) {
     if (!(session.roleRevealAcks instanceof Set)) {
         throw new Error('commitGameSession: session.roleRevealAcks가 Set이 아님')
     }
@@ -68,7 +70,10 @@ function assertValidSessionForCommit(session) {
             `commitGameSession: session.dayVoteExcludedUuids가 비어있지 않음(size=${session.dayVoteExcludedUuids.size})`,
         )
     }
-    // 방송 채널 = 방 id, 역할 확인 단계·0일째로 시작
+}
+
+// 방송 채널 = 방 id, 역할 확인 단계·0일째로 시작, 광대 수 범위
+function assertStartState(session) {
     if (session.channelId !== session.roomId) {
         throw new Error('commitGameSession: channelId가 roomId와 일치하지 않음')
     }
@@ -82,7 +87,10 @@ function assertValidSessionForCommit(session) {
     if (!Number.isInteger(session.jokerCount) || session.jokerCount < 0 || session.jokerCount >= session.players.size) {
         throw new Error(`commitGameSession: 잘못된 session.jokerCount(${session.jokerCount})`)
     }
-    // 사람마다 uuid·닉네임·역할·생존 확인하면서 역할별 인원 셈
+}
+
+// 사람마다 uuid·닉네임·역할·생존 확인하면서 역할별 인원 셈
+function countCheckedRoles(session) {
     const actualCounts = { JOKER: 0, CITIZEN: 0, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 }
     for (const [key, player] of session.players) {
         if (!player || typeof player.uuid !== 'string' || player.uuid.length === 0) {
@@ -102,6 +110,11 @@ function assertValidSessionForCommit(session) {
         }
         actualCounts[player.role] += 1
     }
+    return actualCounts
+}
+
+// 실제 역할 인원이 기대 구성과 같은지
+function assertRoleCounts(session, actualCounts) {
     // 기대 인원: 구성 칸 없으면 광대 수로 계산, 있으면 그 구성이 맞는지 먼저 봄
     let expected
     if (session.roleComposition === undefined) {
@@ -123,6 +136,14 @@ function assertValidSessionForCommit(session) {
             .join(', ')
         throw new Error(`commitGameSession: ${detail}`)
     }
+}
+
+// 후보 판 모양 전부 검사 (조작·빠진 값 막기), 순서대로 보다 처음 틀린 곳에서 throw
+function assertValidSessionForCommit(session) {
+    assertIdsAndSize(session)
+    assertEmptyRecords(session)
+    assertStartState(session)
+    assertRoleCounts(session, countCheckedRoles(session))
 }
 
 // 판 장부 3개에 같이 넣기 (같은 방 두 번 시작이면 throw)
