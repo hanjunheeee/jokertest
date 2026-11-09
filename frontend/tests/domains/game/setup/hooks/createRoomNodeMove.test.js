@@ -1,6 +1,6 @@
 // 방 만들기 Node 이동 시험 (MN-114): 비우는 중인 서버가 ROOM_ON_OTHER_NODE로 답하면 그 Node로 옮긴 뒤 한 번만 다시 보냄
 // 데스크톱·모바일 같은 훅(useCreateRoom), 단일 서버 거절은 예전 그대로 알림
-import test, { mock } from "node:test"
+import test from "node:test"
 import assert from "node:assert/strict"
 import { register } from "node:module"
 import { JSDOM } from "jsdom"
