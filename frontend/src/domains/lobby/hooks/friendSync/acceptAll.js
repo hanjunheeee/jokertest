@@ -8,16 +8,18 @@ import { isSameAccount } from "./requestOps.js"
 
 // 신청 id → 서버가 확인한 상태 표, 묻는 사이 계정이 바뀌면 null
 async function askResults(undeterminedIds, generation) {
-  const confirmedStatuses = new Map()
+  let rows
   try {
-    const rows = await fetchFriendRequestResults(undeterminedIds)
-    if (!isSameAccount(generation)) return null
-    for (const row of Array.isArray(rows) ? rows : []) {
-      if (typeof row?.status === "string") confirmedStatuses.set(row.request_id, row.status)
-    }
+    rows = await fetchFriendRequestResults(undeterminedIds)
   } catch (error) {
     if (!isSameAccount(generation)) return null
     console.error("친구 요청 결과 확인 실패:", error.message)
+    return new Map()
+  }
+  if (!isSameAccount(generation)) return null
+  const confirmedStatuses = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (typeof row?.status === "string") confirmedStatuses.set(row.request_id, row.status)
   }
   return confirmedStatuses
 }

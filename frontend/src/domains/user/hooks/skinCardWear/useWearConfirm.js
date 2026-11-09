@@ -13,15 +13,23 @@ async function sendSlots(changedSlots, isStale) {
   const uncertainSlots = []
   for (const changedSlot of changedSlots) {
     if (isStale()) return { stale: true }
-    try {
-      await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
-    } catch (error) {
-      if (isStale()) return { stale: true }
-      if (!isConfirmedEquipRejection(error)) uncertainSlots.push(changedSlot)
-      else if (!firstRejection) firstRejection = error
-    }
+    const sent = await equipSlot(changedSlot)
+    if (sent.ok) continue
+    if (isStale()) return { stale: true }
+    if (!isConfirmedEquipRejection(sent.error)) uncertainSlots.push(changedSlot)
+    else if (!firstRejection) firstRejection = sent.error
   }
   return { stale: false, firstRejection, uncertainSlots }
+}
+
+// 칸 하나 장착, 던진 오류는 { ok: false, error }로 돌려줌
+async function equipSlot(changedSlot) {
+  try {
+    await useEconomyStore.getState().equip({ slot: changedSlot.slot, itemId: changedSlot.itemId })
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error }
+  }
 }
 
 // 초안 장착값과 손댄 칸 기록을 받아 저장 함수를 만듦
