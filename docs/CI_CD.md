@@ -44,7 +44,7 @@
 - e2e 실패 → Playwright 보고서(`e2e/reports/`)·trace·사진(`e2e/test-results/`)·서버 로그를 결과물(artifact)로 14일
 - GitLab 일정: Build → Pipeline schedules에서 `0 3 * * *`(Asia/Seoul) 만들기 → e2e full만 돎
 - 비밀값 검사가 기록 전체가 아니라 범위만 보는 이유: 옛 커밋에 남은 값(git 정리 할 일)은 기록을 다시 쓰기 전까지 늘 걸림 → 새로 들어오는 것만 막음. 처음 돌릴 때 가짜 값이 걸리면 그 모양만 `gitleaks.toml`에 넣기(진짜 값 넣지 않기)
-- 2026-11-09 로컬 확인: `test:with-db`에서 `tests/db/f17-notifications.integration.test.js` 'AC-07/R-IMPL#5'가 늘 실패(`force_disconnect` 2번 ≠ 1, 사건 검사 5초 같이 쓰기 바뀐 뒤) → 고치기 전엔 backend-db 일이 빨강
+- 2026-11-09 로컬 확인 때 `tests/db/f17-notifications.integration.test.js` 'AC-07/R-IMPL#5'가 늘 실패하던 것(`force_disconnect` 2번 ≠ 1, 사건 검사 5초 같이 쓰기 바뀐 뒤)은 고침(b0f6a74f, 이 서버가 세션 끊는 길로 바꿈) → 지금 f17 29/29 통과, backend-db 일 빨강 이유 아님 (`docs/부하시험.md` 11장)
 - 시험 DB root 비번 `ci-root-test-only`는 CI 안 서비스 컨테이너에서만 쓰는 값 (비밀 아님)
 
 ### 로컬에서 같은 스크립트 돌리기 (Git Bash·리눅스)
@@ -120,7 +120,8 @@ GitHub: Settings → Environments → `staging`·`production` 만들고 각각�
 | `VITE_API_BASE_URL` | `https://api.<도메인>` (경로 없이) | 화면 빌드 때 박힘 (꼭) |
 | `VITE_DISCORD_SUPPORT_URL`·`VITE_AD_PROVIDER`·`VITE_ADSENSE_*` | | 선택, `frontend/Dockerfile` ARG |
 | `SMOKE_API_URL`·`SMOKE_DESKTOP_URL`·`SMOKE_MOBILE_URL` | `https://api.<도메인>` · `https://<도메인>` · `https://m.<도메인>` | 배포 뒤 바깥 확인 |
-| `SMOKE_EXPECT_CLOUDFLARE` | `1` | 바깥 확인에서 클라우드플레어 거침(`cf-ray`)도 봄 |
+| `SMOKE_ADMIN_URL` | `https://admin.<도메인>` | (선택) 관리자 사이트 바깥 확인: 클라우드플레어면 Access 로그인으로 302, 아니면 200·`noindex` + api 주소 `/admin-api` 404·데스크톱 `/admin.html`에 관리자 화면 없음 (`docs/배포_설정.md` 8-5) |
+| `SMOKE_EXPECT_CLOUDFLARE` | `1` | 바깥 확인에서 클라우드플레어 거침(`cf-ray`)도 봄. 주의: 지금 `deploy.yml`·`gitlab-ci.yml`이 이 값을 `smoke.sh`로 안 넘김 → 서버·PC에서 손으로 `smoke.sh` 돌릴 때만 먹음 |
 | `DEPLOY_PORT` | `22` | SSH 포트 |
 
 ## 5. 승인 (production)
@@ -136,3 +137,5 @@ GitHub: Settings → Environments → `staging`·`production` 만들고 각각�
 3. GitHub/GitLab에 '4. 비밀값' 넣기 → staging 손으로 한 번 → `remote.sh status`로 태그 확인
 4. `deploy-check` 점검표(키 새로 받기·도메인·소켓 101·연기 시험) 따로 돌리기
 5. 클라우드플레어 대시보드·ACG 설정 (`docs/배포_설정.md` 6장). ACG 22번은 CI 러너가 들어올 수 있게 (GitHub 러너는 IP가 바뀜 → 자체 러너 또는 배포 때만 열기)
+6. 관리자 사이트: Access·`ADMIN_*`·관리자 계정 둘 (`docs/배포_설정.md` 8장), 그 뒤 `SMOKE_ADMIN_URL` 넣기
+7. 운영 열기 전 남은 것 전부: `docs/배포_설정.md` 9장 (실서버 부하 시험·시험 전용 값 없음·법·사업 빈칸)
