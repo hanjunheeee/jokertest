@@ -4,13 +4,13 @@
 // tests/auth 시험들이 씀 (시험 파일 아님 — 이름에 .spec 없음)
 const crypto = require('node:crypto');
 const { expect } = require('@playwright/test');
-const { RUN_ID, EMAIL_DOMAIN } = require('../../helpers/accounts');
+const { RUN_ID, EMAIL_DOMAIN, randomNickname } = require('../../helpers/accounts');
 const mail = require('../../helpers/mail');
 
 // 화면으로 가입할 새 주소 (실행 끝 정리 모양 e2e+<실행 번호>-…@example.test 안에서)
 const newEmail = (tag = 'su') => `e2e+${RUN_ID}-${tag}${crypto.randomBytes(5).toString('hex')}${EMAIL_DOMAIN}`;
 // 가입 규칙 안 닉네임 (8자)
-const newNickname = (prefix = 's') => `${prefix}${crypto.randomBytes(4).toString('hex')}`.slice(0, 8);
+const newNickname = (prefix = 's') => randomNickname(prefix);
 const newPassword = () => `Su!${crypto.randomBytes(9).toString('base64url')}7z`;
 
 // 오늘에서 years년 + days일 전 날짜 (YYYY-MM-DD, 한국 날짜 기준)

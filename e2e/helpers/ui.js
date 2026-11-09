@@ -4,6 +4,7 @@
 // 고르개 규칙: 화면 글자·aria-label·role 먼저 (README '고르개 규칙'), 시험·game.js가 씀
 const { expect } = require('@playwright/test');
 const { E2E } = require('./env');
+const { sleep } = require('./wait');
 
 /** 로비 인트로 영상이 뜨면 건너뛰기 (안 뜨면 그냥 지나감) */
 async function skipIntro(page, { timeoutMs = 3000 } = {}) {
@@ -39,7 +40,7 @@ async function loginViaApi(context, account, { rememberMe = false } = {}) {
         // 500은 새 계정 동시 첫 로그인 DB 교착 (README '알려진 문제') → 몇 번만 다시, 로그인 자체 시험은 loginViaUi를 씀
         if (res.status() < 500 || attempt >= 4) throw new Error(`API 로그인 실패 ${res.status()}`);
         console.warn(`[e2e] API 로그인 ${res.status()} → 다시 (${attempt})`);
-        await new Promise((resolve) => setTimeout(resolve, 150 * attempt + Math.random() * 200));
+        await sleep(150 * attempt + Math.random() * 200);
     }
 }
 
@@ -129,7 +130,7 @@ async function captureAlert(page, action, { timeoutMs = 10000, close = true } = 
                     if (close) await parchment.getByRole('button', { name: '확인' }).click().catch(() => {});
                     return text;
                 }
-                await new Promise((resolve) => setTimeout(resolve, 100));
+                await sleep(100);
             }
             throw new Error('양피지 안내 창 안 뜸');
         })();

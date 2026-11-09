@@ -4,11 +4,8 @@
 // tests/store·tests/mypage 시험이 씀 (시험 DB joker_e2e만, 계정은 시험마다 새로)
 const crypto = require('node:crypto');
 const { expect } = require('@playwright/test');
-const { backend, query } = require('../../helpers/db');
+const { backend, query, sqlTime } = require('../../helpers/db');
 const { skipIntro } = require('../../helpers/ui');
-
-// DB 시각 글자 (UTC) — 날 SQL에 Date를 그대로 넣으면 이 PC 시간대(KST)로 들어가 9시간 어긋남
-const sqlTime = (d) => (d ? new Date(d).toISOString().slice(0, 19).replace('T', ' ') : null);
 
 const rand = (n = 4) => crypto.randomBytes(n).toString('hex').toUpperCase();
 

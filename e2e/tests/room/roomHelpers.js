@@ -8,7 +8,7 @@ const { Table } = require('../../helpers/game');
 const ui = require('../../helpers/ui');
 const { E2E } = require('../../helpers/env');
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const { sleep } = require('../../helpers/wait');
 
 // ── 설정 화면 ──
 

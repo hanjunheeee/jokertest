@@ -7,6 +7,7 @@ const { E2E, BACKEND_DIR, readSecrets } = require('../../helpers/env');
 const sec = require('../../helpers/security');
 const servers = require('../../helpers/servers');
 const db = require('../../helpers/db');
+const { sleep } = require('../../helpers/wait');
 
 const jwt = require(path.join(BACKEND_DIR, 'node_modules', 'jsonwebtoken'));
 
@@ -36,7 +37,7 @@ async function login(account, { base = E2E.apiUrl, rememberMe = false } = {}) {
             return { cookie: access, refresh, both: [access, refresh].filter(Boolean).join('; '), uuid: r.json?.data?.user?.uuid };
         }
         if (r.status < 500 || attempt >= 4) throw new Error(`로그인 실패 ${r.status}`);
-        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
+        await sleep(200 * attempt);
     }
 }
 
@@ -130,7 +131,6 @@ async function loginErrorText(page, account, { password = 'Wrong!pass123', mobil
     return message;
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const rand = () => Math.random().toString(36).slice(2, 8);
 
 module.exports = { api, login, signToken, decodeCookie, unsignedToken, startSec, PRODUCTION, ban, expiredBan, setExpiredLock, loginErrorText, sleep, rand, sec, db, E2E, readSecrets };

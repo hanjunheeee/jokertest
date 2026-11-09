@@ -7,8 +7,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { E2E, RUNTIME_DIR, SHUTDOWN_FLAG, BACKEND_DIR, readSecrets } = require('./env');
 const { backendEnv } = require('./backendEnv');
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const { sleep, waitUntil } = require('./wait');
 
 async function isUp(apiUrl = E2E.apiUrl) {
     try {
@@ -17,15 +16,6 @@ async function isUp(apiUrl = E2E.apiUrl) {
     } catch {
         return false;
     }
-}
-
-async function waitUntil(fn, { timeoutMs, label }) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        if (await fn()) return;
-        await sleep(200);
-    }
-    throw new Error(`${label} (${timeoutMs}ms)`);
 }
 
 /**

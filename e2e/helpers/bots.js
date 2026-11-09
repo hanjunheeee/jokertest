@@ -6,8 +6,9 @@ const path = require('node:path');
 const { BACKEND_DIR, E2E } = require('./env');
 const { Bot } = require(path.join(BACKEND_DIR, 'scripts', 'loadtest', 'bot'));
 const { Stats } = require(path.join(BACKEND_DIR, 'scripts', 'loadtest', 'stats'));
+// sleep은 예전처럼 여기서도 내보냄 (tests/ingame 도우미가 bots에서 꺼내 씀)
+const { sleep } = require('./wait');
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 
 // 판 빨리 돌리는 방 설정 (서버가 받는 가장 짧은 값: 토론·투표·밤 30초, 재판 15초), 필요한 칸만 덮어 씀

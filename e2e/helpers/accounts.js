@@ -4,6 +4,7 @@
 // fixtures.js의 accounts 도우미와 전체 정리(global-teardown)가 씀, 모양은 backend/scripts/seed-dev-testers.js와 같음
 const crypto = require('node:crypto');
 const { backend } = require('./db');
+const { sleep } = require('./wait');
 
 // 이번 실행 번호 (같은 실행의 모든 작업자가 같은 값, playwright.config.js가 정함)
 const RUN_ID = process.env.E2E_RUN_ID || 'local';
@@ -26,8 +27,6 @@ const randomPassword = () => `E2e!${crypto.randomBytes(12).toString('base64url')
 
 // 닉네임: 2~8자·한글영문숫자만 규칙 안에서 겹치지 않게 (앞 글자로 누가 만든 건지 보임)
 const randomNickname = (prefix = 't') => `${prefix}${crypto.randomBytes(4).toString('hex')}`.slice(0, 8);
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 다시 하면 되는 DB 오류: 교착(1213)·잠금 기다림 초과(1205) — 서버·다른 작업자와 같은 표를 동시에 쓸 때 가끔
 const isRetryableLockError = (error) => {

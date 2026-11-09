@@ -4,12 +4,12 @@
 // tests/mobile/*.spec.js가 씀 (이름이 .spec이 아니라 시험으로 안 돎)
 const { expect } = require('@playwright/test');
 const ui = require('../../helpers/ui');
+const { sleep } = require('../../helpers/wait');
 
 // 서버 채팅 간격 0.5초 (backend game-core/chat/constants.js CHAT_MIN_INTERVAL_MS) → 조금 넉넉히
 const CHAT_GAP_MS = 600;
 // 서버 이모티콘 간격 1초 (EMOJI_MIN_INTERVAL_MS)
 const EMOJI_GAP_MS = 1100;
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 기본 지급 이모티콘 id·이름 (frontend store/constants/storeItems.js BASIC_EMOTICONS)
 const BASIC_EMOJI = Object.freeze({

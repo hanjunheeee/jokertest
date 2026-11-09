@@ -21,7 +21,7 @@ function josa(word, withFinal, withoutFinal) {
     return word + (hasFinal ? withFinal : withoutFinal);
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const { sleep } = require('../../../helpers/wait');
 
 /**
  * 직접 구성 방 설정: custom({ JOKER: 1, DOCTOR: 1 }) → 광대 수 맞춘 settings

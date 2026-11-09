@@ -4,7 +4,8 @@
 // 가입 인증·비번 재설정·이메일 바꾸기 시험이 씀 (진짜 메일은 안 나감: MAIL_TEST_OUTBOX_DIR, 운영이면 서버가 시작 거부)
 const fs = require('node:fs');
 const path = require('node:path');
-const { MAIL_DIR } = require('./env');
+const { MAIL_DIR, E2E } = require('./env');
+const { sleep } = require('./wait');
 
 // backend/utils/adapters/mailSenders/fileOutbox.js의 파일 이름 규칙과 같게
 const outboxFileOf = (to) => path.join(MAIL_DIR, `${String(to).toLowerCase().replace(/[^a-z0-9@.+_-]/g, '_')}.jsonl`);
@@ -33,7 +34,7 @@ async function waitForMail(to, { template, since = 0, timeoutMs = 10000 } = {}) 
         const found = readMails(to).filter((m) => (!template || m.template === template) && Date.parse(m.sentAt) >= since);
         if (found.length > 0) return found[found.length - 1];
         if (Date.now() > deadline) throw new Error(`메일 안 옴: ${template ?? '아무거나'} (${timeoutMs}ms)`);
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        await sleep(150);
     }
 }
 
@@ -50,7 +51,7 @@ async function waitForResetUrl(to, o = {}) {
 }
 
 // 링크의 앞 주소만 모바일 화면 주소로 (경로·token은 그대로)
-function toMobile(url, mobileOrigin = 'http://localhost:5274') {
+function toMobile(url, mobileOrigin = E2E.mobileUrl) {
     const u = new URL(url);
     return `${mobileOrigin}${u.pathname}${u.search}`;
 }
