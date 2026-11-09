@@ -1179,7 +1179,10 @@ test('BQ 통합: 발견 → 단건 조회가 CONFIRMING·PENDING_GRANT를 각각
     assert.equal(transactions.status, 200);
     assert.deepEqual(
         transactions.json.transactions.map((e) => [String(e.id), e.reason, e.currency, e.amount, e.balanceAfter, e.referenceEventId]),
-        ledgerRowsSeparate.map((e) => [String(e.id), e.reason, e.currency, e.amount, e.balance_after, e.reference_event_id]),
+        // 0골드 기본 지급 줄은 거래 내역에서 뺌 (장부엔 남음, 2026-11-09 store S-3)
+        ledgerRowsSeparate
+            .filter((e) => !(e.reason === 'DEFAULT_GRANT' && Number(e.amount) === 0))
+            .map((e) => [String(e.id), e.reason, e.currency, e.amount, e.balance_after, e.reference_event_id]),
     );
     for (const entry of transactions.json.transactions) {
         assert.deepEqual(Object.keys(entry).sort(), ['amount', 'balanceAfter', 'createdAt', 'currency', 'id', 'itemId', 'reason', 'referenceEventId']);

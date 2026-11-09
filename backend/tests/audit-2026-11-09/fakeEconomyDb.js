@@ -4,6 +4,8 @@
 // 지갑·장부·보유·장착·구매 요청·이모티콘 팔레트·재화 상품·업적 지급 행 + 트랜잭션 되돌리기·행 잠금
 // 장부·구매 요청 참조 id는 DB 칸 크기(150자)를 넘으면 진짜 MySQL처럼 실패하게 함
 
+const { Op } = require('sequelize');
+
 const REFERENCE_COLUMN_MAX = 150;
 
 // 진짜 MySQL "Data too long" 흉내
@@ -107,7 +109,10 @@ const createFakeEconomyDb = ({ products = [] } = {}) => {
             return ledgerEntries.find((e) => e.user_id === where.user_id && e.reference_event_id === where.reference_event_id) ?? null;
         },
         async findAll({ where, limit }) {
-            const rows = ledgerEntries.filter((e) => e.user_id === where.user_id).slice().sort((a, b) => b.id - a.id);
+            // [Op.not] 조건(거래 내역에서 뺄 줄)도 진짜 DB처럼 거름
+            const hidden = where[Op.not];
+            const isHidden = (e) => hidden && Object.entries(hidden).every(([key, value]) => e[key] === value);
+            const rows = ledgerEntries.filter((e) => e.user_id === where.user_id && !isHidden(e)).slice().sort((a, b) => b.id - a.id);
             return typeof limit === 'number' ? rows.slice(0, limit) : rows;
         },
     };
