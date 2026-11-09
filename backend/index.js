@@ -163,6 +163,8 @@ schemaReadiness.ensureSchemaReady(db.sequelize)
             .catch((err) => console.warn("[STARTUP] 접속 상태 못 되돌림 —", err?.name ?? "Error"));
         require("./services/ops/bannedWords").reloadBannedWords()
             .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
+        // 관리자 표 정리 6시간마다 (관리자 켜짐일 때만, unref라 서버 끄기 안 막음, Node마다 돌아도 지우기만이라 겹쳐도 됨)
+        if (require("./admin").isAdminEnabled()) require("./admin/services/core/cleanup").startAdminCleanup();
         const pool = db.sequelize.options.pool ?? {};
         // Node 수 × 풀 최대가 MySQL 한도에 가까우면 경고만 (MN-138)
         const poolWarning = require("./config/cluster").describePoolWarning({ mode: require("./cluster").mode(), poolMax: pool.max });
