@@ -8,6 +8,8 @@ const { MAIL_DIR } = require('./env');
 const accounts = require('./accounts');
 
 module.exports = async () => {
+    // 켜 둔 서버를 여럿이 같이 쓰면(E2E_REUSE=1) 남의 실행 계정·메일까지 지워짐 → 안 지움 (끝 정리는 실행 번호별이라 그대로)
+    if (process.env.E2E_REUSE === '1') return;
     const removed = await accounts.deleteAccountsLike(accounts.ALL_E2E_EMAIL_LIKE);
     fs.rmSync(MAIL_DIR, { recursive: true, force: true });
     fs.mkdirSync(MAIL_DIR, { recursive: true });
