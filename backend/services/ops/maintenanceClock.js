@@ -32,6 +32,28 @@ const abortAllForMaintenance = (io, message) => {
 // 시작 시각 큰 안내: 지금 상태 그대로 이 Node 접속자에게 (이미 보낸 안내면 안 감)
 const defaultSendActive = (io) => maintenanceNotice.broadcastState(io, maintenance.getMaintenanceState());
 
+// 강제 종료 결과 받는 쪽 모음 (시계마다 하나)
+function createForceEndListeners() {
+    const listeners = new Set();
+    return {
+        // 강제 종료 결과 알림 (하나 던져도 나머지는 받음)
+        notify: (report) => {
+            for (const listener of listeners) {
+                try {
+                    listener(report);
+                } catch (error) {
+                    console.error('[점검 강제 종료 알림 실패]', error?.name ?? 'Error');
+                }
+            }
+        },
+        // 강제 종료 결과 받기 (관리자 기록 MAINTENANCE_FORCE_END) → 끄는 함수
+        on: (listener) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    };
+}
+
 // 시계 하나 만들기 (시험은 가짜 타이머·가짜 끝내기를 넣어 Node 둘도 만듦)
 function createMaintenanceClock({
     setTimeoutFn = setTimeout,
@@ -45,22 +67,11 @@ function createMaintenanceClock({
     let timer = null;
     // 이미 끝낸 시작 시각 (60초 안전망으로 같은 상태 다시 읽어도 두 번 안 끝내게)
     let firedFor = null;
-    const forceEndListeners = new Set();
+    const forceEnd = createForceEndListeners();
 
     const clearTimer = () => {
         if (timer !== null) clearTimeoutFn(timer);
         timer = null;
-    };
-
-    // 강제 종료 결과 알림 (하나 던져도 나머지는 받음)
-    const notifyForceEnd = (report) => {
-        for (const listener of forceEndListeners) {
-            try {
-                listener(report);
-            } catch (error) {
-                console.error('[점검 강제 종료 알림 실패]', error?.name ?? 'Error');
-            }
-        }
     };
 
     // 시작 시각이 됨: 큰 안내 → 판·방 끝내기 → Node 결과 알림 (io 없으면 다음 맞추기 때 다시)
@@ -71,7 +82,7 @@ function createMaintenanceClock({
         firedFor = state.startsAt;
         sendActive(io, state);
         const { games, rooms } = abortAll(io, state.message);
-        notifyForceEnd({ node: nodeId(), games, rooms, startsAt: state.startsAt });
+        forceEnd.notify({ node: nodeId(), games, rooms, startsAt: state.startsAt });
     };
 
     // 다시 읽을 때마다: 타이머 지우고 다시 검 (켜짐 + 시작 시각 → 그 시각에, 지났으면 바로 / 아니면 안 걺)
@@ -95,12 +106,8 @@ function createMaintenanceClock({
     return {
         sync,
         stop: clearTimer,
-        notifyForceEnd,
-        // 강제 종료 결과 받기 (관리자 기록 MAINTENANCE_FORCE_END) → 끄는 함수
-        onForceEnd: (listener) => {
-            forceEndListeners.add(listener);
-            return () => forceEndListeners.delete(listener);
-        },
+        notifyForceEnd: forceEnd.notify,
+        onForceEnd: forceEnd.on,
     };
 }
 

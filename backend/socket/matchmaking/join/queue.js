@@ -72,6 +72,11 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     const roomSize = getSupportedRoomSizes().find((size) => queuedPlayers.length >= size)
     if (!roomSize) return
 
+    openMatchedRoom(io, queuedPlayers, roomSize)
+}
+
+// 인원 찬 줄로 방 만들기: 줄에서 빼기 → 방 등록 → 채널 넣고 match_found 알림
+function openMatchedRoom(io, queuedPlayers, roomSize) {
     // 여기부터 진짜 바뀜: 먼저 선 사람부터 줄에서 빼고 방 만들어 등록, 첫 사람이 방장
     const players = queuedPlayers.slice(0, roomSize)
     players.forEach((player) => matchmakingQueue.delete(player.uuid))

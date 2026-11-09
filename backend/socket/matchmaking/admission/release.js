@@ -16,16 +16,7 @@ function removePublished(io, socket, attempt) {
     if (!attempt || attempt.phase !== 'published') return
     const room = gameRooms.get(attempt.roomId)
 
-    // 아직 이 시도가 넣은 그 자리인지 (같은 방 인스턴스·같은 소속 번호)
-    // 그사이 다른 길로 새로 앉았으면 안 건드림
-    const ownsPublication = publishedAdmissions.get(attempt.accountUuid) === attempt
-    const seatedMembershipId = room?.players.get(attempt.accountUuid)?.membershipId
-    const stillMine = ownsPublication
-        && room === attempt.room
-        && room?.instanceId === attempt.roomInstanceId
-        && playerRoom.get(attempt.accountUuid) === attempt.roomId
-        && (attempt.publicationMembershipId === undefined
-            || seatedMembershipId === attempt.publicationMembershipId)
+    const stillMine = isStillMine(room, attempt)
     // 여기부터 진짜 바뀜: 명단·소속에서 뺌
     if (stillMine) {
         releasePublished(attempt)
@@ -53,6 +44,24 @@ function removePublished(io, socket, attempt) {
         emitPublicRoomList(io)
         return
     }
+    announceRelease(io, room, attempt)
+}
+
+// 아직 이 시도가 넣은 그 자리인지 (같은 방 인스턴스·같은 소속 번호)
+// 그사이 다른 길로 새로 앉았으면 안 건드림
+function isStillMine(room, attempt) {
+    const ownsPublication = publishedAdmissions.get(attempt.accountUuid) === attempt
+    const seatedMembershipId = room?.players.get(attempt.accountUuid)?.membershipId
+    return ownsPublication
+        && room === attempt.room
+        && room?.instanceId === attempt.roomInstanceId
+        && playerRoom.get(attempt.accountUuid) === attempt.roomId
+        && (attempt.publicationMembershipId === undefined
+            || seatedMembershipId === attempt.publicationMembershipId)
+}
+
+// 되돌린 뒤 남은 방 사람들한테 알림: 방장 바뀜(필요할 때만) → 나간 사람 → 공개 방 목록
+function announceRelease(io, room, attempt) {
     // 방장이 빠졌으면 남은 첫 사람이 방장, 방송 실패는 로그만
     if (!room.players.has(room.hostUuid)) {
         room.hostUuid = room.players.keys().next().value

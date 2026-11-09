@@ -30,6 +30,27 @@ const keysFromCerts = (body) => {
     return keys;
 };
 
+// 표 머리에서 kid 꺼내기, RS256 아니거나 kid 없으면 403
+const tokenKid = (token) => {
+    const decoded = typeof token === 'string' ? jwt.decode(token, { complete: true }) : null;
+    const kid = decoded?.header?.kid;
+    if (decoded?.header?.alg !== 'RS256' || typeof kid !== 'string') throw denied();
+    return kid;
+};
+
+// 공개키로 서명·aud·발급처 확인 → { email(소문자), claims }, 틀리거나 이메일 없으면 403
+const verifiedEmail = (token, key, { aud, issuer }) => {
+    let claims;
+    try {
+        claims = jwt.verify(token, key, { algorithms: ['RS256'], audience: aud, issuer });
+    } catch {
+        throw denied();
+    }
+    const email = typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : '';
+    if (!email) throw denied();
+    return { email, claims };
+};
+
 // 확인기 하나 만들기 (시험은 now·fetchImpl을 넣음)
 const createAccessVerifier = ({
     issuer, aud, certsUrl, fetchImpl = fetch, now = Date.now,
@@ -75,20 +96,10 @@ const createAccessVerifier = ({
 
     // 표 검증 → { email(소문자), claims }, 틀리면 403 / 공개키 못 받으면 503
     const verify = async (token) => {
-        const decoded = typeof token === 'string' ? jwt.decode(token, { complete: true }) : null;
-        const kid = decoded?.header?.kid;
-        if (decoded?.header?.alg !== 'RS256' || typeof kid !== 'string') throw denied();
+        const kid = tokenKid(token);
         const key = await keyFor(kid);
         if (!key) throw denied();
-        let claims;
-        try {
-            claims = jwt.verify(token, key, { algorithms: ['RS256'], audience: aud, issuer });
-        } catch {
-            throw denied();
-        }
-        const email = typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : '';
-        if (!email) throw denied();
-        return { email, claims };
+        return verifiedEmail(token, key, { aud, issuer });
     };
 
     return { verify };

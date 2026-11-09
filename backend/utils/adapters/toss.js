@@ -169,6 +169,13 @@ const interpretResponse = ({ status, bodyText }) => {
     return unknownResult('PROVIDER_RESPONSE_INVALID');
 };
 
+// 돌아온 결제가 보낸 키·주문·금액·원화와 같은지
+const matchesConfirmRequest = (payment, { paymentKey, orderId, amount }) =>
+    payment.paymentKey === paymentKey
+    && payment.orderId === orderId
+    && payment.totalAmount === amount
+    && payment.currency === 'KRW';
+
 // 어댑터 만들기 (환경 변수 읽기·전송·시간 한도를 바꿔 끼울 수 있음, 키는 부를 때마다 새로 읽음)
 const createTossAdapter = ({ getEnv = () => process.env, transport = defaultTransport, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) => {
     // 보내다 터지거나 응답 모양이 이상하면 결제 여부 모름으로
@@ -205,13 +212,8 @@ const createTossAdapter = ({ getEnv = () => process.env, transport = defaultTran
             },
             body: JSON.stringify({ paymentKey, orderId, amount }),
         });
-        if (result.ok || result.payment) {
-            const payment = result.payment;
-            const matches = payment.paymentKey === paymentKey
-                && payment.orderId === orderId
-                && payment.totalAmount === amount
-                && payment.currency === 'KRW';
-            if (!matches) return { ok: false, outcome: 'MISMATCH', code: 'PAYMENT_MISMATCH' };
+        if ((result.ok || result.payment) && !matchesConfirmRequest(result.payment, { paymentKey, orderId, amount })) {
+            return { ok: false, outcome: 'MISMATCH', code: 'PAYMENT_MISMATCH' };
         }
         return result;
     };

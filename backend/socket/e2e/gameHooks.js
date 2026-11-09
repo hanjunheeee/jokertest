@@ -1,7 +1,7 @@
 'use strict';
 
 // 브라우저 시험용 게임 손잡이 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기
-// routes/e2e.routes.js(E2E_HOOKS=1, 운영 아님)와 matchmaking/room/start.js(역할 미리 정하기 반영)가 씀, Node 여러 개 길은 remoteHooks.js
+// routes/e2e.routes.js(E2E_HOOKS=1, 운영 아님)와 matchmaking/room/startLaunch.js(역할 미리 정하기 반영)가 씀, Node 여러 개 길은 remoteHooks.js
 const { isE2eHooksEnabled } = require('../../config/e2eHooks');
 const cluster = require('../../cluster');
 const { GAME_ROLES } = require('../../game-core/core/rules/roles');

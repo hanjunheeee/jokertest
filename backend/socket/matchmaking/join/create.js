@@ -18,6 +18,10 @@ const { markPartyOriginToken, markPartyOriginObject, isInEndedGame } = require('
 const { isRoomRoutingEnabled, rejectCreateOnDrainingNode } = require('../cluster/roomRouting')
 const { reserveRoomCode, releaseRoomCode } = require('../cluster/roomDirectory')
 
+// 기다리는 사이 바뀌었을 때 거절 문구 (채널 넣기 전·뒤 둘 다 씀)
+const DISCONNECTED_MESSAGE = '연결이 끊어져 방을 생성하지 못했습니다.'
+const SESSION_ENDED_MESSAGE = '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.'
+
 // 방 만들기 요청: 게임 중이면 거절, 처리 중 잠금 걸고 진행
 function handleCreateRoom(io, socket, uuid, payload, callback) {
     // 답 받을 곳 없으면 안 만듦 (만든 방을 못 알림)
@@ -95,36 +99,15 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
             return
         }
 
-        // 기다린 사이 다른 방 들어갔거나 판 끝 정리됐으면 거절 (지도 09-④)
-        if (playerRoom.has(uuid)) {
-            callback({ ok: false, message: '이미 참여 중인 방이 있습니다.' })
+        // 기다린 사이 다른 방·판 끝 정리·끊김이면 거절 (지도 09-④⑤)
+        const beforeJoinMessage = checkBeforeJoin(socket, uuid, generationAtReservation)
+        if (beforeJoinMessage) {
+            callback({ ok: false, message: beforeJoinMessage })
             return
         }
 
-        if (getGeneration(uuid) !== generationAtReservation) {
-            callback({ ok: false, message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
-            return
-        }
-
-        // 끊겼으면 안 만듦, 아무도 안 치우는 빈 방 막기 (지도 09-⑤)
-        if (!socket.connected) {
-            callback({ ok: false, message: '연결이 끊어져 방을 생성하지 못했습니다.' })
-            return
-        }
-
-        // 방 객체: 방장·명단 = 나, 코드는 join 뒤에 뽑음 (아직 장부엔 안 넣음)
         roomId = crypto.randomUUID()
-        room = {
-            id: roomId,
-            instanceId: crypto.randomUUID(),
-            code: null,
-            hostUuid: uuid,
-            title: `${user.nickname}의 방`,
-            accessType,
-            players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false, ...accountProfile }]]),
-            settings,
-            settingsVersion: INIT_SETTINGS_VERSION,
-        }
+        room = buildNewRoom(roomId, uuid, user, accountProfile, { accessType, settings })
 
         await socket.join(roomId)
         joined = true
@@ -132,41 +115,17 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
         // Node 여러 개: 코드를 Redis에 먼저 잡음 (Node끼리 같은 코드 막기, 기다림이 있어 아래 확인보다 앞, MN-018)
         if (isRoomRoutingEnabled()) reserved = await reserveRoomCode(roomId, { isReserved: isRoomCodeReserved })
 
-        // join 기다린 사이 끊김·판 끝 정리면 채널 떼고 거절 (지도 09-⑤④)
-        if (!socket.connected) {
+        // join 기다린 사이 끊김·판 끝 정리·코드 못 뽑음이면 채널 떼고 거절 (지도 09-⑤④⑥)
+        const afterJoin = checkAfterJoin(socket, uuid, generationAtReservation, reserved)
+        if (!afterJoin.code) {
             await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
             joined = false
-            callback({ ok: false, message: '연결이 끊어져 방을 생성하지 못했습니다.' })
+            callback({ ok: false, message: afterJoin.message })
             return
         }
+        room.code = afterJoin.code
 
-        if (getGeneration(uuid) !== generationAtReservation) {
-            await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
-            joined = false
-            callback({ ok: false, message: '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.' })
-            return
-        }
-
-        // 코드 뽑기: 대기방·판·시작 표시가 잡은 코드 피함, 다 겹치면 실패 (지도 09-⑥)
-        // Node 여러 개면 잡아 둔 코드를 내 Node에서 한 번 더 확인만 함
-        const code = isRoomRoutingEnabled()
-            ? reserved && generateUniqueRoomCode(gameRooms, { retry: 1, generator: () => reserved.code, isReserved: isRoomCodeReserved })
-            : generateUniqueRoomCode(gameRooms, { isReserved: isRoomCodeReserved })
-        if (!code) {
-            await leaveSocketRoomSafely(socket, roomId, '[방 생성 정리 실패]')
-            joined = false
-            callback({ ok: false, message: '방 코드를 생성하지 못했습니다. 다시 시도해주세요.' })
-            return
-        }
-        room.code = code
-
-        // 여기부터 진짜 바뀜: 코드 뽑기~방 등록 사이 await 없음, 같은 코드 두 방 막기 (지도 09-⑦)
-        room.players.get(uuid).membershipId = kickReceiptStore.nextMembershipId()
-        markPartyOriginObject(uuid, room.players.get(uuid))
-        gameRooms.set(roomId, room)
-        playerRoom.set(uuid, roomId)
-        socket.data.activeRoomId = roomId
-        emitPublicRoomList(io)
+        registerRoom(io, socket, uuid, room)
     } catch (err) {
         // 실패면 붙은 채널만 뗌 (장부엔 맨 끝에만 써서 남은 흔적 없음)
         console.error('[방 생성 에러]', err)
@@ -181,7 +140,57 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
         if (reserved?.claimed && gameRooms.get(roomId) !== room) releaseRoomCode(reserved.code, roomId)
     }
 
-    // 성공 답은 try 밖에서, 답장이 던져도 "생성 실패"가 또 안 나감 (지도 09-⑨)
+    await answerAndCallParty(io, uuid, room, callback)
+}
+
+// 채널 넣기 전 확인: 다른 방에 들어감 → 판 끝 정리 → 끊김 순, 걸리면 거절 문구 (통과면 null)
+// 끊겼으면 안 만듦, 아무도 안 치우는 빈 방 막기
+function checkBeforeJoin(socket, uuid, generationAtReservation) {
+    if (playerRoom.has(uuid)) return '이미 참여 중인 방이 있습니다.'
+    if (getGeneration(uuid) !== generationAtReservation) return SESSION_ENDED_MESSAGE
+    if (!socket.connected) return DISCONNECTED_MESSAGE
+    return null
+}
+
+// 방 객체: 방장·명단 = 나, 코드는 join 뒤에 뽑음 (아직 장부엔 안 넣음)
+function buildNewRoom(roomId, uuid, user, accountProfile, { accessType, settings }) {
+    return {
+        id: roomId,
+        instanceId: crypto.randomUUID(),
+        code: null,
+        hostUuid: uuid,
+        title: `${user.nickname}의 방`,
+        accessType,
+        players: new Map([[uuid, { uuid, nickname: user.nickname, isReady: false, ...accountProfile }]]),
+        settings,
+        settingsVersion: INIT_SETTINGS_VERSION,
+    }
+}
+
+// 채널 넣은 뒤 확인 + 코드 뽑기: 통과면 { code }, 걸리면 { message }
+// 코드 뽑기는 대기방·판·시작 표시가 잡은 코드 피함, 다 겹치면 실패 (지도 09-⑥)
+// Node 여러 개면 잡아 둔 코드를 내 Node에서 한 번 더 확인만 함
+function checkAfterJoin(socket, uuid, generationAtReservation, reserved) {
+    if (!socket.connected) return { message: DISCONNECTED_MESSAGE }
+    if (getGeneration(uuid) !== generationAtReservation) return { message: SESSION_ENDED_MESSAGE }
+    const code = isRoomRoutingEnabled()
+        ? reserved && generateUniqueRoomCode(gameRooms, { retry: 1, generator: () => reserved.code, isReserved: isRoomCodeReserved })
+        : generateUniqueRoomCode(gameRooms, { isReserved: isRoomCodeReserved })
+    return code ? { code } : { message: '방 코드를 생성하지 못했습니다. 다시 시도해주세요.' }
+}
+
+// 여기부터 진짜 바뀜: 코드 뽑기~방 등록 사이 await 없음, 같은 코드 두 방 막기 (지도 09-⑦)
+function registerRoom(io, socket, uuid, room) {
+    room.players.get(uuid).membershipId = kickReceiptStore.nextMembershipId()
+    markPartyOriginObject(uuid, room.players.get(uuid))
+    gameRooms.set(room.id, room)
+    playerRoom.set(uuid, room.id)
+    socket.data.activeRoomId = room.id
+    emitPublicRoomList(io)
+}
+
+// 성공 답은 try 밖에서, 답장이 던져도 "생성 실패"가 또 안 나감 (지도 09-⑨)
+async function answerAndCallParty(io, uuid, room, callback) {
     try {
         callback({ ok: true, room: buildRoomPayload(room) })
     } catch (ackError) {
