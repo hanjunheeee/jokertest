@@ -6,6 +6,8 @@ import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
+import { followRoomOwner, nodeToMoveTo } from "@/shared/socket/nodeMove.js"
+import { NODE_MOVE_MESSAGES } from "@/shared/constants/connectionSocket.js"
 import {
   CREATE_ROOM_ERROR_MSGS,
   CURRENT_ROOM_MAX_POLL_ATTEMPTS,
@@ -17,6 +19,17 @@ import { leaveRoom } from "../../matching/socket/room.js"
 
 // 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// 비우는 중인 서버라는 거절이면 알려 준 Node로 옮김 (입장과 같은 함수, MN-114)
+// 돌려줌: 옮겼으면 true, 옮기기 실패면 false, 그런 거절 아니면 null
+const followCreateNode = (response) => new Promise((resolve) => {
+  const moving = followRoomOwner(response, {
+    isCurrent: () => true,
+    resend: () => resolve(true),
+    fail: () => resolve(false),
+  })
+  if (!moving) resolve(null)
+})
 
 // 방 만들기 상태·동작
 export function useCreateRoom({ navigate, accountId, identityGeneration }) {
@@ -124,13 +137,22 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
     scopeRef.current = scope
 
     try {
-      const response = await createRoom(socket, settings)
+      let response = await createRoom(socket, settings)
       // 그사이 계정·소켓·소속이 바뀌었으면 응답 버림
       if (!isCurrent(scope)) return
 
-      // 서버가 거절하면 이유 알림
+      // 다른 Node로 가라는 답이면 옮긴 뒤 한 번만 다시 보냄 (옮기면 소켓 id가 바뀌어 범위에 새로 적음)
+      const moved = await followCreateNode(response)
+      if (moved !== null) {
+        if (scopeRef.current !== scope) return
+        scope.socketId = getSocket()?.id ?? null
+        if (moved && isCurrent(scope)) response = await createRoom(socket, settings)
+        if (!isCurrent(scope)) return
+      }
+
+      // 서버가 거절하면 이유 알림 (옮긴 뒤에도 또 옮기라면 옮기기 실패 안내)
       if (!response.ok) {
-        showError(response.message)
+        showError(nodeToMoveTo(response) || moved === false ? NODE_MOVE_MESSAGES.ROOM_ON_OTHER_NODE : response.message)
         return
       }
 
