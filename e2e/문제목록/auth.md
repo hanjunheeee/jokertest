@@ -1,0 +1,9 @@
+# 문제 목록 — auth (로그인·가입·찾기·세션)
+
+2단계 브라우저 시험(desktop 1280×800)에서 나온 앱 문제. 앱 코드는 안 고침, 3단계에서 감독이 모아서 고침.
+
+| 번호 | 시험 이름 | 재현 순서 | 기대 | 실제 | 의심 파일:줄 | 심각도 |
+|---|---|---|---|---|---|---|
+| 1 | signup-form › 인증·약관까지 끝내면 → 회원가입 버튼이 눈에 보이고 눌러서 가입됨 | 데스크톱 1280×800 → 로그인 화면 → 회원가입 → 아무 상태(인증 전·후 같음) → 가입 칸을 끝까지 내림 | "회원가입" 그림 버튼이 14세 줄과 "이미 계정이 있으신가요?" 사이에 보이고 누를 수 있음 | 버튼을 감싼 칸 높이가 0으로 접혀(`overflow-hidden` + 세로 flex에서 줄어듦) 버튼이 안 보이고, 그 자리를 "이미 계정이 있으신가요?" 줄이 덮어 눌러도 안 먹음. 입력 칸에서 Enter로만 가입 가능 | frontend/src/domains/auth/constants/signupLayoutStyle.js:24-25 (`SUBMIT_BTN_WRAP_CLASS`에 `shrink-0` 없음, 부모는 SignupScrollArea.jsx:20 `flex flex-col`) | 높음 (마우스로는 가입 못 함) |
+| 2 | signup-form › 금지어가 든 닉네임이면 → "사용할 수 없는 단어가 들어간 닉네임입니다" 알림 | banned_words에 낱말 넣고 /internal/banned-words/reload → 가입 칸에 그 낱말 든 닉네임 + 이메일 인증·약관 → 가입 | "사용할 수 없는 단어가 들어간 닉네임입니다." 알림 | 서버가 500 `SERVER_ERROR`로 바꿔 보내 화면엔 "API 요청 중 에러가 발생했습니다." (무엇이 문제인지 모름). 서비스는 `NICKNAME_BANNED_WORD` 코드로 400을 던지지만 가입 경로 오류 처리기가 정한 코드 목록에 없는 코드는 전부 500으로 바꿈 | backend/middlewares/errorHandler.middleware.js:26-32 (`SIGNUP_SCOPED_ERRORS`에 `NICKNAME_BANNED_WORD` 없음), 던지는 곳 backend/services/auth/account/signup.js:25 | 중간 |
+| 3 | social-terms › Google 로그인을 누르면 → … "Google 로그인을 사용할 수 없습니다" 안내 / Discord 로그인을 누르면 → … | 소셜 키 없는 서버(시험 서버·키 빠진 운영) → 로그인 화면 → Google(또는 Discord) 로그인 | 로그인 화면으로 돌아와 `socialError=GOOGLE_OAUTH_NOT_CONFIGURED` 문구 "지금은 Google 로그인을 사용할 수 없습니다." (화면에 이 문구가 이미 준비돼 있음) | 시작 주소 `/auth/google`이 500 JSON을 그대로 보여 줌 (브라우저가 API 주소 4100에 머물고 원문 JSON, 개발 모드에선 스택까지). 시작 단계 오류는 `next(error)`로만 넘겨 로그인 화면으로 안 돌려보냄 | backend/controllers/auth/google.js:11-22 (googleAuthStart catch), backend/controllers/auth/discord.js 같은 자리 | 중간 |
