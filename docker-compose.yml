@@ -41,7 +41,7 @@ services:
     # 아래는 컨테이너 안에서 늘 같아야 하는 값만 (environment가 env_file보다 이김)
     # 나머지 키를 여기 ${VAR}로 다시 적으면 env_file 값을 빈 값으로 덮을 수 있어 안 적음
     environment:
-      # 값 없으면 production (빈 글자는 서버가 시작 거부)
+      # 값 없음·빈 글자면 production으로 채워 넘김 (서버는 빈 값을 개발로 보지만 여기선 안 샘)
       - NODE_ENV=${NODE_ENV:-production}
       # nginx가 backend:4000으로 보냄 → .env의 PORT와 상관없이 4000
       - PORT=4000
