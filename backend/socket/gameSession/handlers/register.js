@@ -31,7 +31,8 @@ const {
     handleResolveNight,
     handleAckNightSuccess,
 } = require('./night')
-const { handleSubmitJokerChatMessage, handleSubmitGameChatMessage, handleSendEmoji } = require('./chat')
+const { handleSubmitJokerChatMessage, handleSubmitGameChatMessage } = require('./chat')
+const { handleSendEmoji } = require('./emoji')
 const { handleSubmitDayVote, handleResolveDayVote } = require('./dayVote')
 const { handleCastTribunalVote, handleResolveTribunalVote } = require('./tribunal')
 const { handleLeaveGameSession } = require('./leave')

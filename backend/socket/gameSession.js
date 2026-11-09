@@ -70,8 +70,8 @@ const {
 const {
     handleSubmitJokerChatMessage,
     handleSubmitGameChatMessage,
-    handleSendEmoji,
 } = require('./gameSession/handlers/chat')
+const { handleSendEmoji } = require('./gameSession/handlers/emoji')
 const { handleSubmitDayVote, handleResolveDayVote } = require('./gameSession/handlers/dayVote')
 const { handleCastTribunalVote, handleResolveTribunalVote } = require('./gameSession/handlers/tribunal')
 const { handleLeaveGameSession, onDisconnect } = require('./gameSession/handlers/leave')
