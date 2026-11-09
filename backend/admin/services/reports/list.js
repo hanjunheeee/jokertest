@@ -50,7 +50,7 @@ const listReports = async ({ status, before, limit = 50 }, { db = defaultDb() } 
 
 // 신고 하나 (트랜잭션 안에서도 씀) → 없으면 null
 const findReport = async (id, { db = defaultDb(), transaction } = {}) => {
-    const [row] = await db.sequelize.query(`${REPORT_SELECT} WHERE r.id = :id`, {
+    const [row] = await db.sequelize.query(queryQueue.withTimeoutHint(`${REPORT_SELECT} WHERE r.id = :id`), {
         replacements: { id }, type: db.Sequelize.QueryTypes.SELECT, transaction,
     });
     return row ? toReport(row) : null;

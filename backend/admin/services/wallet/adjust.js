@@ -40,7 +40,11 @@ const toLedgerView = (row) => {
 };
 
 const assertMember = async (db, uuid, transaction) => {
-    const user = await db.User.findOne({ where: { uuid }, attributes: ['uuid'], transaction });
+    // 관리자 조회라 시간 제한 붙인 SQL (탈퇴 줄은 없는 회원과 같게)
+    const [user] = await db.sequelize.query(
+        queryQueue.withTimeoutHint('SELECT uuid FROM users WHERE uuid = :uuid AND deleted_at IS NULL LIMIT 1'),
+        { replacements: { uuid }, type: db.Sequelize.QueryTypes.SELECT, transaction },
+    );
     if (!user) throw memberNotFound();
 };
 

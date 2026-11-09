@@ -48,15 +48,17 @@ const countLive = async () => {
     }
 };
 
+// 관리자 조회라 시간 제한 붙인 SQL로 읽되, 모델 모양(JSON 칸 풀기 등)은 findAll과 같게
+const selectAsModel = (db, model, sql, replacements) => db.sequelize.query(queryQueue.withTimeoutHint(sql), {
+    replacements, model, mapToModel: true,
+});
+
 // 지금 시작 시각의 Node별 강제 종료 결과 (기록에서)
 // 예: [{ node:'n1', games:2, rooms:1, at:'…' }, { node:'n2', games:0, rooms:0, at:'…' }]
 const readForceEnds = async (startsAt, db) => {
     if (!startsAt) return [];
-    const rows = await db.AdminAuditLog.findAll({
-        where: { action: AUDIT_ACTIONS.MAINTENANCE_FORCE_END },
-        order: [['id', 'DESC']],
-        limit: FORCE_END_LOOKBACK,
-    });
+    const rows = await selectAsModel(db, db.AdminAuditLog, `SELECT * FROM admin_audit_logs WHERE action = :action
+        ORDER BY id DESC LIMIT :limit`, { action: AUDIT_ACTIONS.MAINTENANCE_FORCE_END, limit: FORCE_END_LOOKBACK });
     return rows
         .map((row) => ({ ...(row.after_value ?? {}), at: toIso(row.created_at) }))
         .filter((report) => report.startsAt === startsAt)
@@ -66,7 +68,7 @@ const readForceEnds = async (startsAt, db) => {
 // GET: 점검 상태 + 남은 판·방 + Node별 강제 종료 결과
 const getMaintenance = async ({ db = defaultDb() } = {}) => {
     const { maintenance, forceEnds } = await queryQueue.run(async () => {
-        const row = await db.MaintenanceState.findOne({ where: { id: ROW_ID } });
+        const [row] = await selectAsModel(db, db.MaintenanceState, 'SELECT * FROM maintenance_state WHERE id = :id', { id: ROW_ID });
         const current = toMaintenance(row);
         return { maintenance: current, forceEnds: await readForceEnds(current.startsAt, db) };
     });
