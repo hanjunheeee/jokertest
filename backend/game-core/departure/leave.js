@@ -10,6 +10,71 @@ const { DAY_PHASES } = require('../phase/day/constants')
 const { getDayVoterUuids } = require('../phase/day/ballots')
 const { hasForfeited, getParticipationRevision } = require('../queries/participation')
 
+// 방장이 나가면 아직 참여 중인 다음 사람한테 넘김 (없으면 null)
+function passHostOnLeave(session, uuid) {
+    if (session.hostUuid !== uuid) return { hostChanged: false, newHostUuid: session.hostUuid ?? null }
+    let newHostUuid = null
+    for (const candidate of session.players.values()) {
+        if (candidate.uuid === uuid) continue
+        if (candidate.isParticipating === false) continue
+        newHostUuid = candidate.uuid
+        break
+    }
+    session.hostUuid = newHostUuid
+    return { hostChanged: true, newHostUuid }
+}
+
+// 역할 확인·투표 준비·낮 표·밤 행동에서 나 빼기, 지운 것은 cleanup에 적음
+function removeFromRecords(session, uuid, cleanup) {
+    // 역할 확인·투표 준비 명단에서 빼기
+    if (session.roleRevealAcks instanceof Set) {
+        cleanup.removedRoleRevealAck = session.roleRevealAcks.delete(uuid)
+    }
+    if (session.dayVoteReadyUuids instanceof Set) {
+        cleanup.removedDayVoteReady = session.dayVoteReadyUuids.delete(uuid)
+    }
+    // 내 낮 표 지우고, 나를 찍은 표는 기권으로 바꿈
+    if (session.dayVotes instanceof Map) {
+        cleanup.removedDayVote = session.dayVotes.delete(uuid)
+        for (const [voterUuid, targetUuid] of session.dayVotes) {
+            if (targetUuid !== uuid) continue
+            session.dayVotes.set(voterUuid, null)
+            cleanup.normalizedVoterUuids.push(voterUuid)
+        }
+    }
+    // 내 밤 행동 지우고, 나를 고른 밤 행동은 빈 값으로
+    if (session.nightActions instanceof Map) {
+        session.nightActions.delete(uuid)
+        for (const [actorUuid, targetId] of session.nightActions) {
+            if (targetId === uuid) session.nightActions.set(actorUuid, null)
+        }
+    }
+}
+
+// 안 끝난 재판이면 내 재판 표 지움, 피고가 나갔으면 재판 취소하고 밤으로 (취소했으면 true)
+function removeFromTribunal(session, uuid, { wasDefendant, cleanup }) {
+    const tribunal = session.tribunal
+    if (!tribunal || tribunal.resolved === true) return false
+    if (tribunal.votes instanceof Map) {
+        cleanup.removedTribunalVote = tribunal.votes.delete(uuid)
+    }
+    if (!wasDefendant) return false
+    // 피고가 나갔으면 재판 취소: 보관함 비우고 그때까지 표만 셈
+    TRIBUNAL_PENDING.delete(session)
+    const counts = tallyTribunalBallots(
+        buildTribunalBallotSnap(session, tribunal),
+        tribunal.defendantUuid,
+    ).counts
+    // 취소 결과 기록, 처형 없이 바로 밤으로
+    tribunal.outcome = TRIBUNAL_CANCELLED
+    tribunal.cancelReason = TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT
+    tribunal.counts = { guilty: counts.guilty, notGuilty: counts.notGuilty }
+    tribunal.executedUuid = null
+    tribunal.resolved = true
+    enterNightPhase(session)
+    return true
+}
+
 // 게임 중 나가기: 산 사람이면 탈락, 방장 넘기기, 남은 표·준비·밤 행동에서 빼기
 // 피고가 나가면 재판 취소하고 밤으로
 function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT' } = {}) {
@@ -51,20 +116,7 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
     // 내 판 기록이 이 판일 때만 지움 (다른 판 기록 안 건드림, 지도 12-⑤)
     const released = releasePlayerSession(uuid, session.id)
 
-    // 방장이 나가면 아직 참여 중인 다음 사람한테 넘김 (없으면 null)
-    let hostChanged = false
-    let newHostUuid = session.hostUuid ?? null
-    if (session.hostUuid === uuid) {
-        newHostUuid = null
-        for (const candidate of session.players.values()) {
-            if (candidate.uuid === uuid) continue
-            if (candidate.isParticipating === false) continue
-            newHostUuid = candidate.uuid
-            break
-        }
-        session.hostUuid = newHostUuid
-        hostChanged = true
-    }
+    const { hostChanged, newHostUuid } = passHostOnLeave(session, uuid)
 
     // 뭘 지웠는지 socket 쪽에 알려 줄 기록
     const cleanup = {
@@ -78,52 +130,8 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
 
     // 승패 안 났을 때만 남은 기록에서 나 빼기
     if (!terminal) {
-        // 역할 확인·투표 준비 명단에서 빼기
-        if (session.roleRevealAcks instanceof Set) {
-            cleanup.removedRoleRevealAck = session.roleRevealAcks.delete(uuid)
-        }
-        if (session.dayVoteReadyUuids instanceof Set) {
-            cleanup.removedDayVoteReady = session.dayVoteReadyUuids.delete(uuid)
-        }
-        // 내 낮 표 지우고, 나를 찍은 표는 기권으로 바꿈
-        if (session.dayVotes instanceof Map) {
-            cleanup.removedDayVote = session.dayVotes.delete(uuid)
-            for (const [voterUuid, targetUuid] of session.dayVotes) {
-                if (targetUuid !== uuid) continue
-                session.dayVotes.set(voterUuid, null)
-                cleanup.normalizedVoterUuids.push(voterUuid)
-            }
-        }
-        // 내 밤 행동 지우고, 나를 고른 밤 행동은 빈 값으로
-        if (session.nightActions instanceof Map) {
-            session.nightActions.delete(uuid)
-            for (const [actorUuid, targetId] of session.nightActions) {
-                if (targetId === uuid) session.nightActions.set(actorUuid, null)
-            }
-        }
-
-        // 안 끝난 재판이면 내 재판 표 지움
-        if (session.tribunal && session.tribunal.resolved !== true) {
-            if (session.tribunal.votes instanceof Map) {
-                cleanup.removedTribunalVote = session.tribunal.votes.delete(uuid)
-            }
-            // 피고가 나갔으면 재판 취소: 보관함 비우고 그때까지 표만 셈
-            if (wasDefendant) {
-                TRIBUNAL_PENDING.delete(session)
-                const counts = tallyTribunalBallots(
-                    buildTribunalBallotSnap(session, session.tribunal),
-                    session.tribunal.defendantUuid,
-                ).counts
-                // 취소 결과 기록, 처형 없이 바로 밤으로
-                session.tribunal.outcome = TRIBUNAL_CANCELLED
-                session.tribunal.cancelReason = TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT
-                session.tribunal.counts = { guilty: counts.guilty, notGuilty: counts.notGuilty }
-                session.tribunal.executedUuid = null
-                session.tribunal.resolved = true
-                enterNightPhase(session)
-                tribunalCancelled = true
-            }
-        }
+        removeFromRecords(session, uuid, cleanup)
+        tribunalCancelled = removeFromTribunal(session, uuid, { wasDefendant, cleanup })
     }
 
     return {

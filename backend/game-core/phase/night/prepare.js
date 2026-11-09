@@ -21,78 +21,46 @@ function prepareNightResolution(uuid, gameId) {
     return prepareNightResolutionForSession(found.session)
 }
 
-// 밤 판정 준비: 역할 차례 결과로 죽을 사람·개인 결과 정하고 대장에 등록
-// 차례 진행했으면 그 기록 쓰고, 아니면 여기서 한 번에 계산
-function prepareNightResolutionForSession(session) {
-    // 진짜 판 장부에 있는 그 판인지
-    if (!isRegisteredSession(session)) return { ok: false, code: 'SESSION_NOT_FOUND' }
-
-    // 끝난 판이면 거절
-    const endedCheck1 = assertSessionNotEnded(session)
-    if (!endedCheck1.ok) return endedCheck1
-
-    // 아직 판정 안 된 밤일 때만
-    if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
-    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
-
-    // 오늘 밤 차례대로 진행했는지 (했으면 그 기록 사용)
+// 오늘 밤 진행 기록 고르기: 차례대로 진행했으면 그 기록, 아니면 여기서 한 번에 계산 (안 되면 거절 코드)
+function resolveNightProgress(session) {
     const sequencedProgress = getNightProgress(session)?.sequenced === true ? getNightProgress(session) : null
-
-    let progress
     if (sequencedProgress) {
         // 차례 진행: 네 역할 다 끝나고 치료도 마감됐을 때만
         for (const role of NIGHT_TURN_ORDER) {
             if (!sequencedProgress.completedRoles.has(role)) return { ok: false, code: 'ACTIONS_PENDING' }
         }
         if (!sequencedProgress.healingClosed) return { ok: false, code: 'ACTIONS_PENDING' }
-        progress = sequencedProgress
-    } else {
-        // 한 번에 계산: 행동할 사람 전부 냈는지
-        const eligibleActorUuids = getEligibleNightActorUuids(session)
-        for (const actorUuid of eligibleActorUuids) {
-            if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
-        }
-
-        // 고른 대상이 아직 판에 있고 생사 조건 맞는지 (그사이 바뀌었을 수 있음)
-        for (const actorUuid of eligibleActorUuids) {
-            const target = session.nightActions.get(actorUuid)
-            if (target !== null) {
-                const targetPlayer = session.players.get(target)
-                if (!targetPlayer) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
-                const actorRole = session.players.get(actorUuid)?.role
-                if (!matchesTargetLifeRule(actorRole, targetPlayer)) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
-            }
-        }
-
-        // 판에 안 붙인 임시 기록에 네 역할 차례를 한 번에 돌림 (판은 안 바뀜)
-        progress = createNightProgress(session, { sequenced: false })
-        for (const role of NIGHT_TURN_ORDER) {
-            applyNightRoleStep(progress, computeNightRoleStep(session, progress, role))
-        }
-        closeNightHealing(progress)
+        return { ok: true, progress: sequencedProgress }
     }
 
-    // 역할별로 정해진 대상 꺼내기
-    const assassinationTargetId = progress.roleTargets.get('JOKER') ?? null
-    const protectionTargetId = progress.roleTargets.get('DOCTOR') ?? null
-    const investigationTargetId = progress.roleTargets.get('GUARD') ?? null
-    const confirmationTargetId = progress.roleTargets.get('WITCH_HUNTER') ?? null
-
-    // 의사가 지킨 사람을 광대가 노렸으면 암살 막힘
-    const protectedTargetIds = new Set(protectionTargetId === null ? [] : [protectionTargetId])
-    const assassinationBlocked =
-        assassinationTargetId !== null && protectedTargetIds.has(assassinationTargetId)
-
-    // 죽을 사람이 이미 죽었거나 판에서 빠졌으면 희생자 없음 (지도 06-⑦)
-    let pendingEliminationTargetId = assassinationBlocked ? null : assassinationTargetId
-    if (pendingEliminationTargetId !== null) {
-        const candidate = session.players.get(pendingEliminationTargetId)
-        if (!candidate || candidate.alive !== true || !isParticipatingInSession(session, pendingEliminationTargetId)) {
-            pendingEliminationTargetId = null
-        }
+    // 한 번에 계산: 행동할 사람 전부 냈는지
+    const eligibleActorUuids = getEligibleNightActorUuids(session)
+    for (const actorUuid of eligibleActorUuids) {
+        if (!session.nightActions.has(actorUuid)) return { ok: false, code: 'ACTIONS_PENDING' }
     }
 
-    // 개인 결과 만드는 법을 역할별로: 경비원 조사·마녀사냥꾼 확인·광대 실패
+    // 고른 대상이 아직 판에 있고 생사 조건 맞는지 (그사이 바뀌었을 수 있음)
+    for (const actorUuid of eligibleActorUuids) {
+        const target = session.nightActions.get(actorUuid)
+        if (target === null) continue
+        const targetPlayer = session.players.get(target)
+        if (!targetPlayer) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+        const actorRole = session.players.get(actorUuid)?.role
+        if (!matchesTargetLifeRule(actorRole, targetPlayer)) return { ok: false, code: 'TARGET_NOT_A_PARTICIPANT' }
+    }
+
+    // 판에 안 붙인 임시 기록에 네 역할 차례를 한 번에 돌림 (판은 안 바뀜)
+    const progress = createNightProgress(session, { sequenced: false })
+    for (const role of NIGHT_TURN_ORDER) {
+        applyNightRoleStep(progress, computeNightRoleStep(session, progress, role))
+    }
+    closeNightHealing(progress)
+    return { ok: true, progress }
+}
+
+// 개인 결과: uuid → 결과 (경비원 조사·마녀사냥꾼 확인·광대 실패)
+function buildPrivateResults(session, progress, { investigationTargetId, confirmationTargetId, assassinationBlocked }) {
+    // 개인 결과 만드는 법을 역할별로
     const privateBuilders = new Map()
     if (investigationTargetId !== null && session.players.has(investigationTargetId)) {
         const role = session.players.get(investigationTargetId).role
@@ -123,6 +91,50 @@ function prepareNightResolutionForSession(session) {
         const buildResult = privateBuilders.get(player.role)
         if (buildResult !== undefined) privateResults.set(player.uuid, buildResult())
     }
+    return privateResults
+}
+
+// 밤 판정 준비: 역할 차례 결과로 죽을 사람·개인 결과 정하고 대장에 등록
+// 차례 진행했으면 그 기록 쓰고, 아니면 여기서 한 번에 계산
+function prepareNightResolutionForSession(session) {
+    // 진짜 판 장부에 있는 그 판인지
+    if (!isRegisteredSession(session)) return { ok: false, code: 'SESSION_NOT_FOUND' }
+
+    // 끝난 판이면 거절
+    const endedCheck1 = assertSessionNotEnded(session)
+    if (!endedCheck1.ok) return endedCheck1
+
+    // 아직 판정 안 된 밤일 때만
+    if (session.nightResolution !== null) return { ok: false, code: 'NIGHT_ALREADY_RESOLVED' }
+    if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
+
+    const progressCheck = resolveNightProgress(session)
+    if (!progressCheck.ok) return progressCheck
+    const { progress } = progressCheck
+
+    // 역할별로 정해진 대상 꺼내기
+    const assassinationTargetId = progress.roleTargets.get('JOKER') ?? null
+    const protectionTargetId = progress.roleTargets.get('DOCTOR') ?? null
+    const investigationTargetId = progress.roleTargets.get('GUARD') ?? null
+    const confirmationTargetId = progress.roleTargets.get('WITCH_HUNTER') ?? null
+
+    // 의사가 지킨 사람을 광대가 노렸으면 암살 막힘
+    const protectedTargetIds = new Set(protectionTargetId === null ? [] : [protectionTargetId])
+    const assassinationBlocked =
+        assassinationTargetId !== null && protectedTargetIds.has(assassinationTargetId)
+
+    // 죽을 사람이 이미 죽었거나 판에서 빠졌으면 희생자 없음 (지도 06-⑦)
+    let pendingEliminationTargetId = assassinationBlocked ? null : assassinationTargetId
+    if (pendingEliminationTargetId !== null) {
+        const candidate = session.players.get(pendingEliminationTargetId)
+        if (!candidate || candidate.alive !== true || !isParticipatingInSession(session, pendingEliminationTargetId)) {
+            pendingEliminationTargetId = null
+        }
+    }
+
+    const privateResults = buildPrivateResults(session, progress, {
+        investigationTargetId, confirmationTargetId, assassinationBlocked,
+    })
 
     // 판정 결과 묶음 (진행 기록은 복사해서 담음)
     const resolution = {

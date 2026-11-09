@@ -40,10 +40,49 @@ function buildSelfNightResultField(session, uuid) {
     return { nightActionResult: { dayIndex: session.nightResolution.dayIndex, ...privateResults.get(uuid) } }
 }
 
+// 사람 목록 (역할 없음, 모두에게 같음)
+function buildPublicPlayers(session) {
+    const themeIndices = buildPlayerThemeIndices(session)
+    return [...session.players.values()].map((player, index) => ({
+        uuid: player.uuid,
+        nickname: player.nickname,
+        isAlive: player.alive,
+        isParticipating: player.isParticipating !== false,
+        membershipId: player.membershipId ?? null,
+        themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
+        ...buildProfileFields(player),
+    }))
+}
+
+// 오늘 낮 투표 결과·재판 칸 넣기 (넣어도 되는 단계인지는 부른 쪽이 봄)
+function addVoteFields(session, fields) {
+    // 오늘 낮 투표 결과 (누가 누굴 찍었는지는 빼고 숫자만)
+    if (session.dayVoteResolution && session.dayVoteResolution.dayIndex === session.dayIndex) {
+        const { round, outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount, revoteExcludedUuids } =
+            buildDayVoteResolvedPayload(session, session.dayVoteResolution)
+        fields.dayVoteResolution = {
+            round,
+            outcome,
+            tribunalTargetUuid,
+            publicVoteCount,
+            publicAbstainCount,
+            revoteExcludedUuids,
+        }
+    }
+
+    // 오늘 재판: 끝났으면 결과까지, 아직이면 피고만
+    if (!session.tribunal || session.tribunal.dayIndex !== session.dayIndex) return
+    if (session.tribunal.resolved) {
+        const { defendantUuid, outcome, counts, executedUuid } = buildTribunalVoteResolvedPayload(session)
+        fields.tribunal = { defendantUuid, resolved: true, outcome, counts: { ...counts }, executedUuid }
+    } else {
+        fields.tribunal = { defendantUuid: session.tribunal.defendantUuid, resolved: false }
+    }
+}
+
 // 보는 사람 기준 판 스냅샷 (내 역할·진행·투표·재판·밤 결과)
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
-    const themeIndices = buildPlayerThemeIndices(session)
     // 모두에게 같은 칸: 판 정보·사람 목록(역할 없음)·진행 표시
     const fields = {
         gameId: session.id,
@@ -63,15 +102,7 @@ function buildSessionSnapshot(session, uuid) {
         ...buildPublicDayPhaseDeadlineField(session),
         ...buildPublicNightTurnTimerFields(session),
         ...buildPublicTribunalDeadlineField(session),
-        players: [...session.players.values()].map((player, index) => ({
-            uuid: player.uuid,
-            nickname: player.nickname,
-            isAlive: player.alive,
-            isParticipating: player.isParticipating !== false,
-            membershipId: player.membershipId ?? null,
-            themeIndex: themeIndices[index % PLAYER_THEME_PALETTE_SIZE],
-            ...buildProfileFields(player),
-        })),
+        players: buildPublicPlayers(session),
         // 나만 보는 칸: 내 역할·내가 이미 했는지·내가 낸 것
         self: {
             ...buildViewerRoleFields(session, viewer),
@@ -93,31 +124,7 @@ function buildSessionSnapshot(session, uuid) {
     }
 
     // 낮·재판 칸은 넣어도 되는 단계일 때만
-    if (canIncludeVoteFields(session)) {
-        // 오늘 낮 투표 결과 (누가 누굴 찍었는지는 빼고 숫자만)
-        if (session.dayVoteResolution && session.dayVoteResolution.dayIndex === session.dayIndex) {
-            const { round, outcome, tribunalTargetUuid, publicVoteCount, publicAbstainCount, revoteExcludedUuids } =
-                buildDayVoteResolvedPayload(session, session.dayVoteResolution)
-            fields.dayVoteResolution = {
-                round,
-                outcome,
-                tribunalTargetUuid,
-                publicVoteCount,
-                publicAbstainCount,
-                revoteExcludedUuids,
-            }
-        }
-
-        // 오늘 재판: 끝났으면 결과까지, 아직이면 피고만
-        if (session.tribunal && session.tribunal.dayIndex === session.dayIndex) {
-            if (session.tribunal.resolved) {
-                const { defendantUuid, outcome, counts, executedUuid } = buildTribunalVoteResolvedPayload(session)
-                fields.tribunal = { defendantUuid, resolved: true, outcome, counts: { ...counts }, executedUuid }
-            } else {
-                fields.tribunal = { defendantUuid: session.tribunal.defendantUuid, resolved: false }
-            }
-        }
-    }
+    if (canIncludeVoteFields(session)) addVoteFields(session, fields)
 
     // 판이 끝났으면 승패 결과
     if (session.winResult) fields.winResult = buildPublicWinResult(session)
