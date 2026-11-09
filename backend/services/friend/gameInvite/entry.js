@@ -71,6 +71,26 @@ async function recordAcceptDecision({ receiverId, inviteId, attemptId, bootEpoch
     return decision;
 }
 
+// 잠가 다시 읽은 초대의 받는 사람·시도·부팅·수락 상태 확인, 안 맞으면 거절 코드
+function entryRejectionCode(row, { receiverId, attemptId, bootEpoch }) {
+    if (!row) return 'INVITE_NOT_FOUND';
+    if (row.receiver_id !== receiverId) return 'NOT_RECEIVER';
+    if (row.attempt_id !== attemptId) return 'STALE_ATTEMPT';
+    if (row.boot_epoch !== bootEpoch) return 'SERVER_RESTARTED';
+    if (row.status !== INVITE_STATUS.ACCEPTED) return 'NOT_ACCEPTED';
+    return null;
+}
+
+// 계정 활성 아님·그사이 차단이면 중단 이유 (둘 다 아니면 null)
+async function entryInterruption(db, row, receiverId, t) {
+    const receiver = await lockReceiver(db, receiverId, t);
+    if (!receiver || receiver.status !== 'ACTIVE') return { endReason: 'ACCOUNT_UNAVAILABLE', code: 'ACCOUNT_UNAVAILABLE' };
+    if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
+        return { endReason: 'BLOCKED_BEFORE_ENTRY', code: 'BLOCKED' };
+    }
+    return null;
+}
+
 // 입장 확정: 방에 넣기(publish) 되면 입장됨 기록, 방에 넣은 뒤 트랜잭션 안 오류·커밋 실패면 unpublish로 되돌림
 // (어느 쪽이든 입장됨 기록이 되돌려져 방에만 남는 사람 막기)
 async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoch, publish, unpublish }) {
@@ -88,11 +108,8 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
 
             // 잠가 다시 읽고 받는 사람·시도·부팅·수락 상태 확인
             const row = await gameInviteRepository.lockInvite(db, inviteId, t);
-            if (!row) return { ok: false, code: 'INVITE_NOT_FOUND', published: false };
-            if (row.receiver_id !== receiverId) return { ok: false, code: 'NOT_RECEIVER', published: false };
-            if (row.attempt_id !== attemptId) return { ok: false, code: 'STALE_ATTEMPT', published: false };
-            if (row.boot_epoch !== bootEpoch) return { ok: false, code: 'SERVER_RESTARTED', published: false };
-            if (row.status !== INVITE_STATUS.ACCEPTED) return { ok: false, code: 'NOT_ACCEPTED', published: false };
+            const rejectionCode = entryRejectionCode(row, { receiverId, attemptId, bootEpoch });
+            if (rejectionCode) return { ok: false, code: rejectionCode, published: false };
             // 이미 입장 확정이면 그대로 성공 (다시 불러도 안전)
             if (row.entry_outcome === ENTRY_OUTCOME.PUBLISHED) {
                 return { ok: true, invite: toPublicInvite(row), alreadyPublished: true };
@@ -102,17 +119,11 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
                 return { ok: false, code: 'ENTRY_ALREADY_RESOLVED', published: false };
             }
 
-            // 계정이 활성 아니면 중단 기록하고 실패
-            const receiver = await lockReceiver(db, receiverId, t);
-            if (!receiver || receiver.status !== 'ACTIVE') {
-                await gameInviteRepository.saveInvite(row, { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'ACCOUNT_UNAVAILABLE' }, t);
-                return { ok: false, code: 'ACCOUNT_UNAVAILABLE', published: false };
-            }
-
-            // 그사이 차단됐으면 중단 기록하고 실패
-            if (await isBlockedBetween(row.sender_id, row.receiver_id, { transaction: t, lock: t.LOCK.SHARE })) {
-                await gameInviteRepository.saveInvite(row, { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: 'BLOCKED_BEFORE_ENTRY' }, t);
-                return { ok: false, code: 'BLOCKED', published: false };
+            // 계정 활성 아님·그사이 차단이면 중단 기록하고 실패
+            const interruption = await entryInterruption(db, row, receiverId, t);
+            if (interruption) {
+                await gameInviteRepository.saveInvite(row, { entry_outcome: ENTRY_OUTCOME.INTERRUPTED, end_reason: interruption.endReason }, t);
+                return { ok: false, code: interruption.code, published: false };
             }
 
             // 여기부터 진짜 바뀜: 방에 넣기, 안 되면 중단 기록
@@ -134,13 +145,16 @@ async function finalizeAcceptedEntry({ receiverId, inviteId, attemptId, bootEpoc
         });
     } catch (error) {
         // 트랜잭션 안 오류·커밋 실패: 기록이 되돌려졌으니 방에 넣었으면 같이 되돌리고, 결과 모름으로 답함
-        if (publishedInTransaction) {
-            try { unpublish?.(); } catch (compensationError) {
-                console.error('[초대 입장 보상 실패]', compensationError);
-            }
-        }
+        if (publishedInTransaction) undoPublish(unpublish);
         console.error('[초대 입장 확정 실패]', error);
         return { ok: false, code: 'RECEIPT_FAILED', published: publishedInTransaction, unknown: true };
+    }
+}
+
+// 방에 넣은 것 되돌리기, 되돌리기 실패는 로그만 (원래 실패 응답은 그대로)
+function undoPublish(unpublish) {
+    try { unpublish?.(); } catch (compensationError) {
+        console.error('[초대 입장 보상 실패]', compensationError);
     }
 }
 
