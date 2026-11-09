@@ -1,6 +1,6 @@
 'use strict';
 
-// 경제 입구 파일, 경제 함수·상수 23개 + 시험 손잡이(__internal) + 상품·충전 이름 내보냄
+// 경제 입구 파일, 경제 함수·상수 24개 + 시험 손잡이(__internal) + 상품·충전 이름 내보냄
 // controllers/economy·auth 가입 2곳·friend/list·achievement·game/roleStatistics·socket/matchmaking·db/backfillEconomy가 부름 (시험이 이 객체 함수 갈아끼움)
 const { CURRENCIES, FREE_CARD_FRAME_ID, SLOT_TO_ITEM_TYPE, DEFAULT_EMOJI_SLOTS, MAX_BALANCE } = require('./constants');
 const { ensureDefaultEntitlements } = require('./defaults');
@@ -9,7 +9,7 @@ const { purchaseItem, purchaseItems, getPurchaseResult } = require('./purchase')
 const { purchaseGold } = require('./goldPurchase');
 const { grantReward, grantAchievementCurrency, grantAchievementItem } = require('./grants');
 const { equipItem, equipProfileAppearance, getPublicProfileLoadouts, getGameStartLoadouts } = require('./loadout');
-const { getEmojiPalette, saveEmojiPalette } = require('./emojiPalette');
+const { getEmojiPalette, getEmojiPalettes, saveEmojiPalette } = require('./emojiPalette');
 const { buildSkinsByJob } = require('./helpers');
 const { applyLedgerTransaction } = require('./ledger');
 const { __internal } = require('./testing');
@@ -55,6 +55,7 @@ module.exports = {
     getPublicProfileLoadouts,
     getGameStartLoadouts,
     getEmojiPalette,
+    getEmojiPalettes,
     saveEmojiPalette,
     DEFAULT_EMOJI_SLOTS,
     buildSkinsByJob,

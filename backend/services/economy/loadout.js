@@ -7,7 +7,7 @@ const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb, buildSkinsByJob, isFreeJobSkin } = require('./helpers');
 const { SLOT_TO_ITEM_TYPE, SLOT_TO_LOADOUT_COLUMN, FREE_CARD_FRAME_ID, JOB_NAME_BY_SLOT, SKIN_ITEM_ID_PREFIX } = require('./constants');
-const { ensureDefaultEntitlements } = require('./defaults');
+const { ensureDefaultEntitlements, ensureDefaultsOnce } = require('./defaults');
 const { economyModels } = require('../../repositories/economy/models');
 const entitlementRepository = require('../../repositories/economy/entitlement');
 const loadoutRepository = require('../../repositories/economy/loadout');
@@ -141,6 +141,17 @@ const equipProfileAppearance = async ({ userId, photoItemId, borderItemId, expec
     });
 };
 
+// 기본 지급 확인(이 서버가 처음 보는 사람만) 뒤 장착 행들, 확인하며 방금 읽은 행은 다시 안 읽음
+// 예: 처음 보는 a + 이미 본 b → a는 확인 때 읽은 행, b만 listLoadouts (방 입장 질의 5 → 이미 본 사람 2)
+const loadLoadoutRows = async (userIds, db) => {
+    const checkedRows = await Promise.all(userIds.map((userId) => ensureDefaultsOnce(userId, db)));
+    const freshRows = checkedRows.filter((row) => row && userIds.includes(row.user_id));
+    const freshUserIds = new Set(freshRows.map((row) => row.user_id));
+    const restUserIds = userIds.filter((userId) => !freshUserIds.has(userId));
+    if (restUserIds.length === 0) return freshRows;
+    return [...freshRows, ...await loadoutRepository.listLoadouts(economyModels(db), restUserIds)];
+};
+
 // 남에게 보여도 되는 장착만 (사진·테두리, 사람마다 한 묶음)
 const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
     // 겹친 id·빈 id 뺌, 남는 게 없으면 빈 객체
@@ -148,9 +159,7 @@ const getPublicProfileLoadouts = async (userIds, db = defaultDb()) => {
     if (uniqueUserIds.length === 0) return {};
 
     // 처음 보는 계정도 기본 사진·테두리 갖게
-    const models = economyModels(db);
-    await Promise.all(uniqueUserIds.map((userId) => ensureDefaultEntitlements(userId, db)));
-    const loadouts = await loadoutRepository.listLoadouts(models, uniqueUserIds);
+    const loadouts = await loadLoadoutRows(uniqueUserIds, db);
 
     // 장착 행 없는 사람은 null로
     const byUserId = {};
@@ -171,9 +180,7 @@ const getGameStartLoadouts = async (userIds, db = defaultDb()) => {
     if (uniqueUserIds.length === 0) return {};
 
     // 처음 보는 계정도 기본 장착 갖게
-    const models = economyModels(db);
-    await Promise.all(uniqueUserIds.map((userId) => ensureDefaultEntitlements(userId, db)));
-    const loadouts = await loadoutRepository.listLoadouts(models, uniqueUserIds);
+    const loadouts = await loadLoadoutRows(uniqueUserIds, db);
 
     // 장착 행 없는 사람은 null로
     const byUserId = {};

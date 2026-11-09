@@ -1,6 +1,6 @@
 'use strict';
 
-// 보유 아이템 저장소 파일, 하나 찾기 · 여러 개 중 가진 것 · 만들기 · 전체 목록 · 종류별 목록
+// 보유 아이템 저장소 파일, 하나 찾기 · 여러 개 중 가진 것 · 만들기 · 전체 목록 · 종류별 목록(한 명·여러 명)
 // 장부 거래·장착·지갑 요약·팔레트 서비스가 economyModels(db)를 넘겨 부름
 
 // 그 아이템 보유 행 (트랜잭션 주면 그 안에서)
@@ -27,10 +27,16 @@ const listOwnedByType = (models, { userId, itemType }, transaction = null) => mo
     ...(transaction ? { transaction } : {}),
 });
 
+// 여러 사람 보유 중 한 종류만 한 번에 (판 시작 때 참가자 이모티콘 같이 읽기)
+const listOwnedByTypeAmong = (models, { userIds, itemType }) => models.EconomyEntitlement.findAll({
+    where: { user_id: userIds, item_type: itemType },
+});
+
 module.exports = {
     findOwned,
     findOwnedAmong,
     createOwned,
     listOwned,
     listOwnedByType,
+    listOwnedByTypeAmong,
 };

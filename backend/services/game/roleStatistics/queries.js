@@ -121,10 +121,8 @@ const toProgressRow = (playerRow) => ({
     is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
 })
 
-// 업적 보상 대상 판만 세어 판 수·생존·승리·직업별 승리 돌려줌
-async function getAchievementProgressStats(userId) {
-    const rows = await gameResultRepository.findProgressRows(userId)
-
+// 업적 보상 대상 판만 세어 판 수·생존·승리·직업별 승리 (한 사람 행들 → 진행 값)
+function summarizeProgressRows(rows) {
     // 끝까지 간 판·개발 아닌 판만 남김 (완료 값 1/0도 참/거짓으로)
     const eligibleRows = rows
         .filter((row) => isAchievementRewardEligibleGame({
@@ -154,11 +152,26 @@ async function getAchievementProgressStats(userId) {
     }
 }
 
+// 한 사람 업적 진행 값
+async function getAchievementProgressStats(userId) {
+    return summarizeProgressRows(await gameResultRepository.findProgressRows(userId))
+}
+
+// 여러 사람 업적 진행 값 → Map(사람 → 진행 값), 판 끝 평가가 사람마다 읽던 것을 한 번에
+async function getAchievementProgressStatsForUsers(userIds) {
+    const rowsByUser = new Map(userIds.map((userId) => [userId, []]))
+    for (const row of await gameResultRepository.findProgressRowsForUsers(userIds)) {
+        rowsByUser.get(row.user_id)?.push(row)
+    }
+    return new Map([...rowsByUser].map(([userId, rows]) => [userId, summarizeProgressRows(rows)]))
+}
+
 module.exports = {
     getMyRoleStatistics,
     getAccountRecordSummaries,
     getRoleRanking,
     getHighestWinRateRole,
     getAchievementProgressStats,
+    getAchievementProgressStatsForUsers,
     __setEconomyServiceForTests,
 }

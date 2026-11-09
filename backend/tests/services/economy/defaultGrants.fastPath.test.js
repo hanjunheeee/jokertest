@@ -48,7 +48,7 @@ test('기본 지급: 이미 다 받은 계정은 거래 0번·쓰기 0번, 묻�
     assert.equal(db._inspect.entitlements.filter((e) => e.user_id === userId).length, owned, '두 번 안 줌');
 });
 
-test('기본 지급: 시작 장착 5명 묻기도 사람마다 묻기 3번 + 장착 목록 1번', async () => {
+test('기본 지급: 시작 장착 5명 처음엔 사람마다 묻기 3번(확인 때 읽은 장착 행 그대로 씀), 이 서버가 본 뒤엔 장착 목록 1번', async () => {
     const db = createFakeEconomyDb();
     const users = ['a', 'b', 'c', 'd', 'e'];
     await Promise.all(users.map((u) => economy.ensureDefaultEntitlements(u, db)));
@@ -56,7 +56,12 @@ test('기본 지급: 시작 장착 5명 묻기도 사람마다 묻기 3번 + 장
     const loadouts = await economy.getGameStartLoadouts(users, db);
     assert.deepEqual(Object.keys(loadouts).sort(), users);
     assert.equal(calls.counts.get('transaction') ?? 0, 0);
-    assert.equal(calls.total(), users.length * 3 + 1);
+    assert.equal(calls.total(), users.length * 3);
+
+    // 같은 서버가 다시 물으면 기본 지급 확인 건너뜀 (입장·시작마다 3질의 아끼기, 2026-11-09)
+    calls.reset();
+    assert.deepEqual(await economy.getGameStartLoadouts(users, db), loadouts);
+    assert.equal(calls.total(), 1);
 });
 
 test('기본 지급: 하나만 빠진 계정은 그 하나만 장부 거래로 줌', async () => {

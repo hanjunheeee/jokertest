@@ -1,13 +1,13 @@
 'use strict';
 
-// 이모티콘 팔레트 파일, 보유 이모티콘 · 팔레트 조회/저장
+// 이모티콘 팔레트 파일, 보유 이모티콘 · 팔레트 조회(한 명·판 시작 여러 명)/저장
 // index 거쳐 controllers/economy/emojiPalette.js·socket/matchmaking/room/start.js가 부름
 const crypto = require('crypto');
 const catalog = require('./catalog');
 const { createError } = require('../../utils/appError');
 const { defaultDb } = require('./helpers');
 const { EMOJI_SLOT_COLUMNS, DEFAULT_EMOJI_SLOTS } = require('./constants');
-const { ensureDefaultEntitlements } = require('./defaults');
+const { ensureDefaultEntitlements, ensureDefaultsOnce } = require('./defaults');
 const { economyModels } = require('../../repositories/economy/models');
 const entitlementRepository = require('../../repositories/economy/entitlement');
 const emojiPaletteRepository = require('../../repositories/economy/emojiPalette');
@@ -56,6 +56,39 @@ const getEmojiPalette = async (userId, db = defaultDb()) => {
     };
 };
 
+// 판 시작용: 여러 사람 팔레트·보유 이모티콘을 읽기 2번으로 → Map(사람 → { slots, revision, owned })
+// 사람마다 기본 지급 확인 + 행 보장 거래 + 보유 읽기 하던 것, 팔레트 행 없는 사람이 있으면 넣기·다시 읽기 2번 더
+const getEmojiPalettes = async (userIds, db = defaultDb()) => {
+    const uniqueUserIds = [...new Set(userIds)].filter((id) => typeof id === 'string' && id.length > 0);
+    if (uniqueUserIds.length === 0) return new Map();
+
+    // 기본 이모티콘 먼저 보유하게 (이 서버가 이미 본 사람은 건너뜀)
+    await Promise.all(uniqueUserIds.map((userId) => ensureDefaultsOnce(userId, db)));
+    const models = economyModels(db);
+    const [paletteRows, ownedRows] = await Promise.all([
+        emojiPaletteRepository.listPalettes(models, uniqueUserIds),
+        entitlementRepository.listOwnedByTypeAmong(models, { userIds: uniqueUserIds, itemType: ITEM_TYPES.EMOTICON }),
+    ]);
+
+    // 행 없는 사람만 기본값으로 한 문장에 넣고 다시 읽음 (한 명 getEmojiPalette와 같은 기본값, 그사이 남이 만든 행이면 그 행)
+    const paletteByUser = new Map(paletteRows.map((row) => [row.user_id, row]));
+    const missing = uniqueUserIds.filter((userId) => !paletteByUser.has(userId));
+    if (missing.length > 0) {
+        await emojiPaletteRepository.insertMissingPalettes(models, missing.map(emojiPaletteDefaults));
+        for (const row of await emojiPaletteRepository.listPalettes(models, missing)) paletteByUser.set(row.user_id, row);
+    }
+
+    // 보유 이모티콘 사람별로 나눔, 예: [{a, e1}, {a, e2}, {b, e1}] → a: [e1, e2], b: [e1]
+    const ownedByUser = new Map(uniqueUserIds.map((userId) => [userId, []]));
+    for (const row of ownedRows) ownedByUser.get(row.user_id)?.push(row.item_id);
+
+    return new Map(uniqueUserIds.map((userId) => [userId, {
+        slots: emojiPaletteSlotsOf(paletteByUser.get(userId)),
+        revision: paletteByUser.get(userId).revision,
+        owned: ownedByUser.get(userId),
+    }]));
+};
+
 // 보유 안 한 이모티콘·revision 다름은 거절, 맞으면 저장
 const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = defaultDb()) => {
     // revision·칸 모양 먼저 (DB 안 건드리고 거절)
@@ -100,5 +133,6 @@ const saveEmojiPalette = async (userId, { slots, expectedRevision } = {}, db = d
 
 module.exports = {
     getEmojiPalette,
+    getEmojiPalettes,
     saveEmojiPalette,
 };

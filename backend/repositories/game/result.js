@@ -26,47 +26,52 @@ const findMostPlayedRoles = async (userIds, transaction) => {
     return new Map([...best].map(([userId, { role }]) => [userId, role]));
 };
 
+// 계정 통계 한 문장으로 더하기: 사람마다 판 수·생존·처형 더하기 + 많이 한 직업 바꾸기 (전엔 사람마다 2문장)
+// 예: a +1/+1/+0 DOCTOR, b +1/+0/+1 JOKER → UPDATE user_stats SET total_games = total_games + CASE user_id WHEN a THEN 1 WHEN b THEN 1 ELSE 0 END, … WHERE user_id IN (a, b)
+const addStatDeltas = (stats, mostPlayedRoles, transaction) => {
+    const replacements = { userIds: stats.map((delta) => delta.user_id) };
+    const whenLines = { total_games: [], survival_count: [], execution_count: [], most_played_role: [] };
+    stats.forEach((delta, index) => {
+        replacements[`u${index}`] = delta.user_id;
+        replacements[`t${index}`] = delta.total_games;
+        replacements[`s${index}`] = delta.survival_count;
+        replacements[`e${index}`] = delta.execution_count;
+        replacements[`r${index}`] = mostPlayedRoles.get(delta.user_id) ?? null;
+        whenLines.total_games.push(`WHEN :u${index} THEN :t${index}`);
+        whenLines.survival_count.push(`WHEN :u${index} THEN :s${index}`);
+        whenLines.execution_count.push(`WHEN :u${index} THEN :e${index}`);
+        whenLines.most_played_role.push(`WHEN :u${index} THEN :r${index}`);
+    });
+    const added = (column) => `${column} = ${column} + CASE user_id ${whenLines[column].join(" ")} ELSE 0 END`;
+    return db.sequelize.query(
+        `UPDATE user_stats SET ${added("total_games")}, ${added("survival_count")}, ${added("execution_count")}, `
+        + `most_played_role = CASE user_id ${whenLines.most_played_role.join(" ")} ELSE most_played_role END `
+        + "WHERE user_id IN (:userIds)",
+        { replacements, transaction },
+    );
+};
+
 // 한 판 전적 쓰기, 판·참가자·계정 통계를 한 트랜잭션으로 (중간 실패면 셋 다 되돌림)
 // 같은 판 id 다시 저장(동시 경합 포함)은 실패 아니고 persisted:false로 넘김
+// 거래 안 문장: 판 넣기 → 참가자 넣기 → 많이 한 직업 읽기 → 통계 한 문장 (전엔 사람 수 × 2 + 4)
 exports.persistGameResultRecord = async (record) => {
     const { result, players = [], stats = [] } = record;
 
     try {
         return await db.sequelize.transaction(async (transaction) => {
-            // 판 줄이 이미 있으면 아무것도 안 씀 (같은 판 통계 두 번 더하기 막기)
-            const [, created] = await db.GameResult.findOrCreate({
-                where: { id: result.id },
-                defaults: result,
-                transaction,
-            });
-
-            if (!created) return { persisted: false, gameId: result.id };
+            // 판 줄 넣기, 이미 있으면 판 키(PRIMARY)에 걸려 아래 catch가 persisted:false로 (같은 판 통계 두 번 더하기 막기)
+            // 먼저 읽고 넣던 findOrCreate(저장점·읽기·넣기 3문장) 대신 넣기 한 번, 판 키가 같은 판 두 번 저장을 막음
+            await db.GameResult.create(result, { transaction });
 
             if (players.length > 0) {
                 await db.GameResultPlayer.bulkCreate(players, { transaction });
             }
-
-            // 사람마다 판 수·생존·처형 더함
-            for (const delta of stats) {
-                await db.UserStats.increment(
-                    {
-                        total_games: delta.total_games,
-                        survival_count: delta.survival_count,
-                        execution_count: delta.execution_count,
-                    },
-                    { where: { user_id: delta.user_id }, transaction },
-                );
-            }
+            if (stats.length === 0) return { persisted: true, gameId: result.id };
 
             // 많이 한 직업: 이 판 사람들 직업별 판 수를 한 번에 묶어 셈 (BE-065, 사람마다 전체 기록 다시 읽지 않기)
             // 승패 정해진 판만, 방금 넣은 이 판 줄도 포함
             const mostPlayedRoles = await findMostPlayedRoles(stats.map((delta) => delta.user_id), transaction);
-            for (const delta of stats) {
-                await db.UserStats.update(
-                    { most_played_role: mostPlayedRoles.get(delta.user_id) ?? null },
-                    { where: { user_id: delta.user_id }, transaction },
-                );
-            }
+            await addStatDeltas(stats, mostPlayedRoles, transaction);
 
             return { persisted: true, gameId: result.id };
         });
@@ -143,6 +148,14 @@ exports.findRoleStatRows = (role) => findStatRowsWhere({ role });
 exports.findProgressRows = (userId) => db.GameResultPlayer.findAll({
     attributes: ["role", "won", "is_alive"],
     where: { user_id: userId },
+    include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
+    raw: true,
+    nest: true,
+});
+// 여러 사람 한 번에 (판 끝 업적 평가, 누구 행인지 user_id 붙임)
+exports.findProgressRowsForUsers = (userIds) => db.GameResultPlayer.findAll({
+    attributes: ["user_id", "role", "won", "is_alive"],
+    where: { user_id: { [db.Sequelize.Op.in]: userIds } },
     include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
     raw: true,
     nest: true,

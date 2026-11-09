@@ -13,6 +13,7 @@ const { resolveParticipantSockets } = require('./membership')
 const { disposeRoom } = require('./dispose')
 const { rememberStartedRoom } = require('../join/startedMarks')
 const { emitPublicRoomList } = require('./view')
+const { loadStartPalettes } = require('./startPalettes')
 const e2eGameHooks = require('../../e2e/gameHooks')
 
 // 프로필 읽는 사이 방장·명단·자리·준비·설정 버전이 그대로인지
@@ -44,16 +45,7 @@ async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtC
                 console.error('[matchmaking] 계정 전적 조회 실패 — 전적 없이 게임을 시작합니다', error)
                 return new Map()
             }),
-        Promise.all(uuids.map((uuid) => Promise.resolve()
-            .then(() => deps.economyService.getEmojiPalette(uuid))
-            .then((palette) => [uuid, {
-                slots: Array.isArray(palette?.slots) ? [...palette.slots] : [],
-                owned: Array.isArray(palette?.owned) ? [...palette.owned] : [],
-            }])
-            .catch((error) => {
-                console.error('[matchmaking] 이모지 팔레트 조회 실패 — 팔레트 없이 게임을 시작합니다', error)
-                return [uuid, { slots: [], owned: [] }]
-            }))),
+        loadStartPalettes(uuids),
     ])
 
     // 읽는 사이 방이 바뀌었으면 시작 안 함

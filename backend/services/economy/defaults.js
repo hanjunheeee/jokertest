@@ -95,7 +95,41 @@ const ensureDefaultEntitlements = async (userId, db = defaultDb(), { transaction
     return ensureDefaultLoadout(db, userId, externalTransaction);
 };
 
+// 기본 지급 확인 끝난 사람 기억 (db마다, 서버 켜진 동안): 방 입장·시작마다 장부·보유·장착 3질의 다시 묻던 것 줄이기
+// 기본 아이템은 받은 뒤 안 빠지고 기본 사진·테두리 칸도 다시 비지 않아 한 번 확인이면 충분, 새 기본 아이템은 배포(재시작) 때만 생김
+const CHECKED = true;
+const CHECKED_MAX = 50_000;
+const checkedByDb = new WeakMap();
+
+// 이 서버가 처음 보는 사람만 기본 지급 확인 → 방금 확인하며 읽은 장착 행, 이미 본 사람은 null
+// 같은 사람 확인이 겹치면(시작 때 장착·팔레트) 하나만 돌고 같은 답 나눔, 실패하면 기억 안 함
+const ensureDefaultsOnce = (userId, db = defaultDb()) => {
+    let checked = checkedByDb.get(db);
+    if (!checked) {
+        checked = new Map();
+        checkedByDb.set(db, checked);
+    }
+    const known = checked.get(userId);
+    if (known === CHECKED) return Promise.resolve(null);
+    if (known) return known;
+    // 너무 많이 쌓이면 통째로 비움 (다시 확인할 뿐이라 안전함)
+    if (checked.size >= CHECKED_MAX) checked.clear();
+    const pending = ensureDefaultEntitlements(userId, db).then(
+        (loadout) => { checked.set(userId, CHECKED); return loadout; },
+        (error) => { checked.delete(userId); throw error; },
+    );
+    checked.set(userId, pending);
+    return pending;
+};
+
+// 시험용: 확인 기억 비우기 (서버 막 켠 상태로 셈, db 안 주면 진짜 db 것)
+const forgetDefaultChecks = (db = defaultDb()) => {
+    checkedByDb.delete(db);
+};
+
 module.exports = {
     ensureDefaultLoadout,
     ensureDefaultEntitlements,
+    ensureDefaultsOnce,
+    forgetDefaultChecks,
 };

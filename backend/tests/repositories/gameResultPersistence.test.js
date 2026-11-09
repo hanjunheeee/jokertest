@@ -117,6 +117,7 @@ const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
     const original = {
         transaction:      db.sequelize.transaction,
+        query:            db.sequelize.query,
         GameResult:       db.GameResult,
         GameResultPlayer: db.GameResultPlayer,
         UserStats:        db.UserStats,
@@ -175,19 +176,20 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
         seenTransactions.push(options.transaction);
     };
 
+    // 판 줄 넣기: 이미 있거나 동시 경합이면 판 키 충돌 (진짜 DB처럼 유일 제약 오류)
+    const duplicateKeyError = (id) => {
+        const error = Object.create(db.Sequelize.UniqueConstraintError.prototype);
+        error.fields = { id };
+        error.parent = { constraint: "game_results_pkey" };
+        return error;
+    };
     db.GameResult = {
-        findOrCreate: async ({ where, defaults, transaction }) => {
-            requireTransaction({ transaction }, "findOrCreate(game_results)");
-            if (duplicateRace) {
-                const error = Object.create(db.Sequelize.UniqueConstraintError.prototype);
-                error.fields = { id: where.id };
-                error.parent = { constraint: "game_results_pkey" };
-                throw error;
-            }
-            const existing = committed.game_results.find((row) => row.id === where.id);
-            if (existing) return [existing, false];
-            staged.game_results.push(defaults);
-            return [defaults, true];
+        create: async (row, { transaction } = {}) => {
+            requireTransaction({ transaction }, "create(game_results)");
+            if (duplicateRace) throw duplicateKeyError(row.id);
+            if (committed.game_results.some((existing) => existing.id === row.id)) throw duplicateKeyError(row.id);
+            staged.game_results.push(row);
+            return row;
         },
         findOne: async () => null,
     };
@@ -239,17 +241,20 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
         },
     };
 
-    db.UserStats = {
-        increment: async (delta, options) => {
-            requireTransaction(options, "increment(user_stats)");
-            if (statsFails) throw new Error("user_stats 증분 실패");
-            staged.stats.push({ user_id: options.where.user_id, delta });
-        },
-        update: async (values, options) => {
-            requireTransaction(options, "update(user_stats most_played_role)");
-            staged.statsUpdates.push({ user_id: options.where.user_id, values });
-            return [1];
-        },
+    // 계정 통계 한 문장(UPDATE … CASE): 이름 붙은 값 u0·t0·s0·e0·r0 …를 사람별로 읽어 더함·바꿈
+    db.sequelize.query = async (sql, options) => {
+        requireTransaction(options, "query(user_stats)");
+        assert.match(sql, /^UPDATE user_stats SET/);
+        if (statsFails) throw new Error("user_stats 증분 실패");
+        const values = options.replacements;
+        for (let index = 0; values[`u${index}`] !== undefined; index += 1) {
+            const user_id = values[`u${index}`];
+            staged.stats.push({ user_id, delta: {
+                total_games: values[`t${index}`], survival_count: values[`s${index}`], execution_count: values[`e${index}`],
+            } });
+            staged.statsUpdates.push({ user_id, values: { most_played_role: values[`r${index}`] } });
+        }
+        return [[], {}];
     };
 
     db.User = {
@@ -262,6 +267,7 @@ const setupFakeDb = (t, { statsFails = false, duplicateRace = false } = {}) => {
 
     t.after(() => {
         db.sequelize.transaction = original.transaction;
+        db.sequelize.query       = original.query;
         db.GameResult            = original.GameResult;
         db.GameResultPlayer      = original.GameResultPlayer;
         db.UserStats             = original.UserStats;
@@ -312,7 +318,8 @@ test("AC-01: game_results·game_result_players·user_stats가 단일 트랜잭�
     assert.deepEqual(outcome, { persisted: true, gameId: "game-1" });
     assert.equal(committed.game_results.length, 1);
     assert.equal(committed.game_result_players.length, 3);
-    assert.ok(seenTransactions.length >= 5);
+    // 판 넣기·참가자 넣기·많이 한 직업 읽기·통계 한 문장 = 4번 다 같은 거래
+    assert.ok(seenTransactions.length >= 4);
     assert.equal(new Set(seenTransactions.map((tx) => tx.id)).size, 1);
 });
 

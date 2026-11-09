@@ -1,6 +1,6 @@
 'use strict';
 
-// 업적 진행 파일, 지표별 지금 값 · 기준 넘었나 · 진행 읽기
+// 업적 진행 파일, 지표별 지금 값 · 기준 넘었나 · 진행 읽기(한 명·여러 명)
 // evaluate.js(평가·상태)가 쓰고, index.js·testing.js가 내보냄
 const achievementDefinitions = require('./definitions');
 const METRICS = achievementDefinitions.METRICS;
@@ -31,8 +31,18 @@ const loadProgress = async (userId) => {
     return { ...gameStats, voteParticipations };
 };
 
+// 여러 사람 진행 값 한 번에 → Map(사람 → 진행 값), 판 끝 평가용 (사람마다 질의 2개 → 전원 2개)
+const loadProgressForUsers = async (userIds) => {
+    const [statsByUser, votesByUser] = await Promise.all([
+        getDeps().gameResultRepository.getAchievementProgressStatsForUsers(userIds),
+        getDeps().voteParticipationRepository.countEligibleDayVoteParticipationsForUsers(userIds),
+    ]);
+    return new Map(userIds.map((userId) => [userId, { ...statsByUser.get(userId), voteParticipations: votesByUser.get(userId) ?? 0 }]));
+};
+
 module.exports = {
     currentValueOf,
     meetsThreshold,
     loadProgress,
+    loadProgressForUsers,
 };

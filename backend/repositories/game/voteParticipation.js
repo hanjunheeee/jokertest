@@ -1,4 +1,4 @@
-// 낮 투표 참여 저장소 파일, 유효한 낮 투표 참여 한 번만 기록 · 업적에 셀 참여 수
+// 낮 투표 참여 저장소 파일, 유효한 낮 투표 참여 한 번만 기록 · 업적에 셀 참여 수(한 명·여러 명)
 // services/game/achievementHooks.js가 기록, 업적 진행이 deps.js 거쳐 셈
 const db = require("../../models");
 
@@ -39,6 +39,22 @@ exports.countEligibleDayVoteParticipations = async (userId) => {
         nest: true,
     });
     return rows.filter((row) => isEligibleGameResult(row.GameResult)).length;
+};
+
+// 여러 사람 한 번에 셈 → Map(사람 → 수), 참여 없는 사람은 0 (판 끝 업적 평가가 사람마다 읽던 것 묶기)
+exports.countEligibleDayVoteParticipationsForUsers = async (userIds) => {
+    const counts = new Map(userIds.map((userId) => [userId, 0]));
+    const rows = await db.VoteParticipation.findAll({
+        attributes: ["user_id", "game_id", "day_index"],
+        where: { user_id: { [db.Sequelize.Op.in]: userIds } },
+        include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
+        raw: true,
+        nest: true,
+    });
+    for (const row of rows) {
+        if (counts.has(row.user_id) && isEligibleGameResult(row.GameResult)) counts.set(row.user_id, counts.get(row.user_id) + 1);
+    }
+    return counts;
 };
 
 // 시험이 판 판정만 따로 확인하려고 꺼내 둠

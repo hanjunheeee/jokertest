@@ -1,9 +1,9 @@
 'use strict';
 
-// 업적 평가 파일, 기준 넘은 업적 지급 · 화면용 업적 상태
+// 업적 평가 파일, 기준 넘은 업적 지급(여러 명 미리 읽기 포함) · 화면용 업적 상태
 // 업적 입구(index.js) 거쳐 컨트롤러·services/game/achievementHooks.js가, recovery.js는 바로 부름
 const achievementDefinitions = require('./definitions');
-const { loadProgress, currentValueOf, meetsThreshold } = require('./progress');
+const { loadProgress, loadProgressForUsers, currentValueOf, meetsThreshold } = require('./progress');
 const { grantAchievement, notifyGranted } = require('./grant');
 const { getDeps } = require('./deps');
 const grantRepository = require('../../repositories/achievement');
@@ -11,13 +11,14 @@ const grantRepository = require('../../repositories/achievement');
 // 정의 순서대로 기준 넘은 것만 지급, 새로 지급되면 통지·알림 보냄
 // 이미 받은 업적은 트랜잭션 안 열고 건너뜀 (판 끝마다 참가자×업적 수만큼 트랜잭션 막기)
 // 업적 하나 지급이 던져도 뒤 업적은 계속 평가 (그 업적은 다음 판 평가 때 다시 시도)
-const evaluateAndGrantForUser = async (userId) => {
+// preloaded = 판 끝에 여러 명 한 번에 읽어 둔 [진행 값, 받은 목록] (없으면 이 사람 것만 읽음)
+const evaluateAndGrantForUser = async (userId, preloaded = null) => {
     // 계정 id 없으면 DB 안 읽고 빈 결과
     if (typeof userId !== 'string' || userId.length === 0) return [];
 
     // 진행 값·받은 목록은 한 번만 읽고 업적 전부에 같이 씀
     const { db } = getDeps();
-    const [progress, grants] = await Promise.all([
+    const [progress, grants] = Array.isArray(preloaded) ? preloaded : await Promise.all([
         loadProgress(userId),
         grantRepository.listGrantsByUser(db, userId),
     ]);
@@ -57,6 +58,18 @@ const evaluateAndGrantForUser = async (userId) => {
     return results;
 };
 
+// 판 끝 여러 명 평가 전에 진행 값·받은 목록을 한 번에 → Map(사람 → [진행 값, 받은 목록])
+// 사람마다 질의 3개 → 전원 3개, 지급은 그대로 업적마다 거래 하나 (유일 키로 한 번만)
+const preloadForUsers = async (userIds) => {
+    const [progressByUser, grants] = await Promise.all([
+        loadProgressForUsers(userIds),
+        grantRepository.listGrantsByUsers(getDeps().db, userIds),
+    ]);
+    const grantsByUser = new Map(userIds.map((userId) => [userId, []]));
+    for (const grant of grants) grantsByUser.get(grant.user_id)?.push(grant);
+    return new Map(userIds.map((userId) => [userId, [progressByUser.get(userId), grantsByUser.get(userId)]]));
+};
+
 // 진행 값과 지급 기록을 합쳐 화면용 상태 (업적 목록 화면)
 const getStatusForUser = async (userId) => {
     // 계정 id 없으면 빈 목록
@@ -86,5 +99,6 @@ const getStatusForUser = async (userId) => {
 
 module.exports = {
     evaluateAndGrantForUser,
+    preloadForUsers,
     getStatusForUser,
 };
