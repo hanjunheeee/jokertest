@@ -152,9 +152,10 @@ test('nginx: add_header 쓰는 location마다 보안 헤더 조각 include (안 
     }
 });
 
-test('nginx: 화면 두 사이트·API 모두 숨김 파일(.env·.git) 404', () => {
+test('nginx: 화면 두 사이트·API·관리자 모두 숨김 파일(.env·.git) 404', () => {
     const conf = read('nginx/default.conf');
-    assert.equal((conf.match(/location ~ \/\\\.\(\?!well-known\/\) \{\s*return 404;/g) ?? []).length, 3);
+    // 관리자 사이트(admin.)가 더해져 넷 (관리자 2-17)
+    assert.equal((conf.match(/location ~ \/\\\.\(\?!well-known\/\) \{\s*return 404;/g) ?? []).length, 4);
 });
 
 test('nginx 보안 헤더 조각: 틀 넣기 막기·MIME 추측 막기·CSP·HSTS 들어 있음, Dockerfile이 복사함', () => {

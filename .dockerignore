@@ -13,6 +13,8 @@ node_modules
 .gitignore
 npm-debug.log*
 **/dist
+# 관리자 화면 빌드 결과도 이미지 안에서 새로 만듦
+**/dist-admin
 
 # 디자인 참고 원본(PNG 등)은 빌드에 안 씀, 빌드 자료 크기만 키움
 frontend/design-reference

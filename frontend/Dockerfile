@@ -1,4 +1,4 @@
-# 화면 이미지 하나에 데스크톱·모바일 두 빌드 + nginx (API·소켓 프록시도 이 nginx가 맡음)
+# 화면 이미지 하나에 데스크톱·모바일·관리자 세 빌드 + nginx (API·소켓 프록시도 이 nginx가 맡음)
 # build context는 저장소 루트 (docker-compose.yml의 context: .) → COPY 경로에 폴더 이름을 붙임
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -32,6 +32,9 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
 # → 빌드마다 달라져서 새 버전 안내는 그대로 됨
 RUN test -n "$VITE_API_BASE_URL" || (echo "VITE_API_BASE_URL 비어 있음" && exit 1)
 RUN npm run build --prefix frontend && npm run build --prefix frontend-mobile
+# 관리자 화면은 따로 빌드 → dist-admin (API 주소 값 안 씀: 같은 주소의 /admin-api)
+# 플레이어 빌드 뒤에 돌려야 끝의 섞임 검사가 dist(관리자 글자 없음)·dist-admin(플레이어 글자 없음) 둘 다 봄
+RUN npm run build:admin --prefix frontend
 
 
 FROM nginx:1.27-alpine AS runner
@@ -42,6 +45,8 @@ COPY --from=build /app/frontend/dist /usr/share/nginx/html/desktop
 # 모바일은 화면 파일만: public 그림은 데스크톱 폴더 것을 nginx가 같이 씀 (같은 그림 두 벌 안 넣기)
 COPY --from=build /app/frontend-mobile/dist/index.html /app/frontend-mobile/dist/version.json /usr/share/nginx/html/mobile/
 COPY --from=build /app/frontend-mobile/dist/assets /usr/share/nginx/html/mobile/assets
+# 관리자 화면은 admin 폴더에만 (플레이어 desktop·mobile 폴더엔 admin.html 없음, admin.<도메인> 사이트만 이 폴더를 씀)
+COPY --from=build /app/frontend/dist-admin /usr/share/nginx/html/admin
 
 EXPOSE 80 443
 CMD ["nginx", "-g", "daemon off;"]

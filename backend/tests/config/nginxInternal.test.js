@@ -44,7 +44,8 @@ test('nginx: 화면 두 사이트는 /internal을 백엔드로 안 보냄 (API �
     const blocks = serverBlocks(read('nginx/default.conf'));
     const withInternal = blocks.filter((b) => INTERNAL_LOCATION.test(b));
     assert.equal(withInternal.length, 1);
-    for (const block of blocks.filter((b) => !/server_name api\./.test(b))) {
+    // 관리자 사이트(admin.)는 /admin-api만 넘김, /internal 없음은 위 길이 1로 확인 (관리자 2-17)
+    for (const block of blocks.filter((b) => !/server_name (api|admin)\./.test(b))) {
         assert.doesNotMatch(block, /proxy_pass/);
     }
 });

@@ -100,6 +100,7 @@ jobs:
       SMOKE_API_URL: ${{ vars.SMOKE_API_URL }}
       SMOKE_DESKTOP_URL: ${{ vars.SMOKE_DESKTOP_URL }}
       SMOKE_MOBILE_URL: ${{ vars.SMOKE_MOBILE_URL }}
+      SMOKE_ADMIN_URL: ${{ vars.SMOKE_ADMIN_URL }}
     steps:
       - uses: actions/checkout@v4
       - name: 서버에서 백업·migrate·up·확인
@@ -133,6 +134,7 @@ jobs:
       SMOKE_API_URL: ${{ vars.SMOKE_API_URL }}
       SMOKE_DESKTOP_URL: ${{ vars.SMOKE_DESKTOP_URL }}
       SMOKE_MOBILE_URL: ${{ vars.SMOKE_MOBILE_URL }}
+      SMOKE_ADMIN_URL: ${{ vars.SMOKE_ADMIN_URL }}
       ROLLBACK_TAG: ${{ inputs.rollback_tag }}
     steps:
       - uses: actions/checkout@v4

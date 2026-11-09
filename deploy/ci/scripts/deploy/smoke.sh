@@ -2,6 +2,8 @@
 # 배포 뒤 확인 파일(러너에서, 바깥 주소로), API /health 200 · 데스크톱·모바일 첫 화면 200 · 소켓 101 · 폰 302 저장 안 함
 # 받는 값: SMOKE_API_URL(예: https://api.example.com), SMOKE_DESKTOP_URL, SMOKE_MOBILE_URL — 비면 그 칸 건너뜀
 #   SMOKE_EXPECT_CLOUDFLARE=1 → 클라우드플레어를 거치는지(cf-ray)도 봄
+#   SMOKE_ADMIN_URL(예: https://admin.example.com) → 관리자 사이트: 클라우드플레어면 Access 로그인으로 302, 아니면 200·noindex,
+#     api 사이트 /admin-api 404 · 데스크톱 /admin.html에 관리자 화면 없음 (docs/배포_설정.md 8장)
 #   SMOKE_NODES=n1,n2,… (또는 SMOKE_EXPECT_NODES=2 → n1..n2) → Node마다 /health?node=<id>가 그 Node에서 답하는지(serverId)·redis up·draining 아님,
 #     소켓 101도 ?node=<id>로 Node마다 (nginx $arg_node 고르기·backup 확인, docs/배포_설정.md 7장)
 # 배포 확인용 브라우저 묶음(e2e/tests/prod-smoke)이 생기면 여기서 이어 부름 (지금은 없음 → 자리만)
@@ -86,6 +88,26 @@ fi
 if [ "${SMOKE_EXPECT_CLOUDFLARE:-0}" = "1" ]; then
     [ -n "${SMOKE_API_URL:-}" ] && expect_header "API 클라우드플레어 거침" '^cf-ray:' "${SMOKE_API_URL%/}/health"
     [ -n "${SMOKE_DESKTOP_URL:-}" ] && expect_header "데스크톱 클라우드플레어 거침" '^cf-ray:' "${SMOKE_DESKTOP_URL%/}/"
+fi
+
+# 관리자 페이지: Access 없이 열면 클라우드플레어 로그인으로 감 (원본까지 안 옴), api·플레이어 주소엔 관리자 없음
+if [ -n "${SMOKE_ADMIN_URL:-}" ]; then
+    if [ "${SMOKE_EXPECT_CLOUDFLARE:-0}" = "1" ]; then
+        expect_status "관리자 Access 없이 → 302" 302 "${SMOKE_ADMIN_URL%/}/"
+        expect_header "관리자 → Access 로그인" '^location: *https://[^/]+\.cloudflareaccess\.com/' "${SMOKE_ADMIN_URL%/}/"
+        expect_status "관리자 서버 경로 Access 없이 → 원본 안 옴" 302 "${SMOKE_ADMIN_URL%/}/admin-api/auth/me"
+    else
+        expect_status "관리자 첫 화면" 200 "${SMOKE_ADMIN_URL%/}/"
+        expect_header "관리자 noindex" '^x-robots-tag: *noindex' "${SMOKE_ADMIN_URL%/}/"
+    fi
+fi
+[ -n "${SMOKE_ADMIN_URL:-}" ] && [ -n "${SMOKE_API_URL:-}" ] && expect_status "api 주소 /admin-api 404" 404 "${SMOKE_API_URL%/}/admin-api/auth/me"
+if [ -n "${SMOKE_ADMIN_URL:-}" ] && [ -n "${SMOKE_DESKTOP_URL:-}" ]; then
+    if curl -s --max-time 10 "${SMOKE_DESKTOP_URL%/}/admin.html" | grep -q 'admin-root'; then
+        echo "실패 데스크톱 /admin.html에 관리자 화면"; fail=1
+    else
+        echo "OK   데스크톱 주소엔 관리자 화면 없음"
+    fi
 fi
 
 if [ -d "$ROOT/e2e/tests/prod-smoke" ]; then

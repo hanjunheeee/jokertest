@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CI 데스크톱 화면 시험 파일, npm ci → eslint → npm test → 빌드 (API 주소는 시험 값)
-# 빌드 결과(frontend/dist)는 확인만, 배포 이미지는 frontend/Dockerfile이 따로 빌드
+# 빌드 결과(frontend/dist·dist-admin)는 확인만, 배포 이미지는 frontend/Dockerfile이 따로 빌드
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 npm_ci frontend
@@ -13,3 +13,5 @@ if [ -n "${CI_BUILD_OUT_DIR:-}" ]; then
 else
     npm_run frontend build
 fi
+# 관리자 화면 빌드 (끝에 플레이어·관리자 빌드 섞임 검사, CI_BUILD_OUT_DIR와 상관없이 frontend/dist-admin)
+npm_run frontend build:admin

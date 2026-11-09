@@ -18,3 +18,9 @@ CHECK_NODE_IMAGE="${COMPOSE_PROJECT_NAME}-backend" bash "$ROOT/deploy/scripts/cl
 
 step "Node 여러 개 nginx -t (gen-nodes.js로 Node 3개 upstream, 꺼진 Node가 있어도 켜지는지)"
 bash "$ROOT/deploy/scripts/nginx-nodes-check.sh" 3
+
+step "관리자 사이트 확인 (admin.html·머리글·/admin-api → Node·api 사이트 /admin-api 404)"
+bash "$ROOT/deploy/ci/scripts/admin-site-check.sh"
+
+step "이미지 안 화면 폴더: 관리자 빌드는 admin 폴더에만"
+docker run --rm "${COMPOSE_PROJECT_NAME}-frontend" sh -c 'test -f /usr/share/nginx/html/admin/admin.html && ! test -e /usr/share/nginx/html/desktop/admin.html && ! test -e /usr/share/nginx/html/mobile/admin.html && ! test -e /usr/share/nginx/html/admin/index.html'     || { echo "관리자 빌드 폴더가 섞임" >&2; exit 1; }
