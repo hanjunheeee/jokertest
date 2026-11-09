@@ -78,7 +78,8 @@ test("로비 복귀 버튼은 로컬 기존 종료 경로(useInGameExit)의 requ
     source,
     /import \{ useInGameExit \} from "@\/domains\/game\/ingame\/hooks\/useInGameExit\.js"/,
   )
-  assert.match(source, /const \{ requestExit \} = useInGameExit\(\)/)
+  // "로비로"는 이름대로 로비로 감 (판 중 나가기 기본값 /multiplay와 다름, 모바일 M-4)
+  assert.match(source, /const \{ requestExit \} = useInGameExit\(\{ destination: "\/lobby" \}\)/)
   // 대기방 가는 중엔 로비 버튼도 잠김 (FE-029)
   assert.match(source, /onClick=\{\(\) => \{ if \(!isReturning\) requestExit\(\) \}\}/)
 })

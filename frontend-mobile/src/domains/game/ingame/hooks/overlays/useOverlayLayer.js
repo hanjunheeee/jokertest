@@ -50,9 +50,9 @@ export function useOverlayLayer() {
     // 죽은 사람은 대기 창이 안 덮음 → 밤에도 죽은 사람 채팅 씀 (다른 연출 미루기는 waitOpen 그대로)
     const waitCovers = waitOpen && nightWaitCoversSelf(gameState)
 
-    // 결과 화면 이동은 추방·밤 성공 연출이 끝난 뒤로 미룸
+    // 결과 화면 이동은 추방·밤 성공 연출(영상)이 끝난 뒤로 미룸, "최종 결과" 창만 남았으면 안 미룸 (데스크톱과 같음, 결과 X-1)
     useInGameResultNavigation({
-        hold: identityRebindPending || expulsionBusy || nightSuccess.open || nightSuccess.pending,
+        hold: identityRebindPending || expulsionBusy || nightSuccess.pending,
     })
 
     const deadChoice = useDeadChoice({

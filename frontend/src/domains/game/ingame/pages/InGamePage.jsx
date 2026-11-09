@@ -120,10 +120,11 @@ export default function InGamePage() {
   // 죽은 사람은 대기 창이 안 덮음 → 밤에도 죽은 사람 채팅 씀 (다른 연출 미루기는 대기 그대로)
   const nightPresentationWaitCovers = nightPresentationWaitOpen && nightWaitCoversSelf(gameState)
 
+  // 결과 화면 이동은 연출(영상)이 도는 동안만 미룸, 연출 뒤 "최종 결과" 창만 남았으면 안 미룸 (판 끝인데 확인 전까지 판 화면에 갇혔음, 결과 X-1)
   useInGameResultNavigation({
     hold: identityRebindPending
       || tribunalExpulsion.open || tribunalExpulsion.pending
-      || nightSuccessPresentation.open || nightSuccessPresentation.pending,
+      || nightSuccessPresentation.pending,
   })
 
   const needsDeadChoice = selectInGameDeadParticipantChoice(gameState, authUuid) && !keepWatchingChosen
