@@ -1,3 +1,5 @@
+// 명예의 전당 tailwind 클래스 모음
+// podium 컴포넌트들이 씀
 export const PODIUM_PAGE_ROOT_CLASS = "relative h-svh w-full overflow-hidden bg-black"
 
 export const PODIUM_BG_IMAGE_CLASS =

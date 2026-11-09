@@ -1,3 +1,5 @@
+// 초대받은 손님 오른쪽 숙련도 순위표와 쪽 넘기기
+// InvitedGuestsRankingCell이 씀, 순위 줄은 InvitedGuestsRankingRow
 import { useState } from "react"
 import InvitedGuestsRankingRow from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsRankingRow.jsx"
 import InvitedGuestsSectionTitle from "../../../../../domains/library/components/invitedGuests/shared/InvitedGuestsSectionTitle.jsx"

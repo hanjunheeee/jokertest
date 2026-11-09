@@ -1,3 +1,5 @@
+// 1~3등 카드 세 장 나란히
+// PodiumPage만 씀
 import PodiumTopPlayerCard from "./PodiumTopPlayerCard.jsx"
 import { TOP_THREE_WRAP_CLASS } from "../../constants/podiumLayoutStyle.js"
 

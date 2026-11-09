@@ -1,3 +1,5 @@
+// 스킨·카드 입기 창의 아이템 목록 (기본·상점·카드)
+// 입기 창 목록·선택 훅, 게임 직업 공개 화면이 씀
 import { SKIN_STORE_ITEMS } from "../../../store/constants/storeItems.js"
 import { INVITED_GUESTS_JOB_SPREAD_META } from "../../../../shared/constants/jobSpreadMeta.js"
 

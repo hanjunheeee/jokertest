@@ -1,3 +1,5 @@
+// 금지된 기록 책 오른쪽 쪽: 도전 그림·해금 상태 보여 줌
+// ForbiddenRecordsSpread가 씀, 업적 목록은 useAchievements에서 받음
 import { motion } from "framer-motion"
 import { useAchievements } from "../../../../domains/library/hooks/useAchievements.js"
 import { resolveForbiddenRecordChallengeState } from "../../../../domains/library/content/forbiddenRecords/resolveForbiddenRecordChallengeState.js"

@@ -1,3 +1,5 @@
+// 순위표 지금 쪽 번호 들고 표·화살표·점을 묶음
+// PodiumPage만 씀
 import { useMemo, useState } from "react"
 import PodiumRankingTable from "./PodiumRankingTable.jsx"
 import PodiumRankingTableNavArrow from "./PodiumRankingTableNavArrow.jsx"

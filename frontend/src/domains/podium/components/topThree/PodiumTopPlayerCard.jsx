@@ -1,3 +1,5 @@
+// 1~3등 한 사람 카드, 등수마다 크기·틀 다름
+// PodiumTopThree만 씀
 import { PODIUM_ASSETS } from "../../constants/podiumAssets.js"
 import {
   TOP_PLAYER_CARD_RANK1_CLASS,

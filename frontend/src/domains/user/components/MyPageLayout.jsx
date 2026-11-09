@@ -1,3 +1,5 @@
+// 마이페이지 본문: 기록 틀·운명 가면·버튼과 꾸미기 창 열기
+// pages/MyPage.jsx가 씀, 내 정보는 useMyProfile에서 받음
 import { motion } from "framer-motion"
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"

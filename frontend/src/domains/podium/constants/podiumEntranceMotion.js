@@ -1,3 +1,5 @@
+// 명예의 전당 들어올 때 움직임 값
+// PodiumPage만 씀
 export const CONTENT_DROP_INIT = {
   opacity: 0,
   y: -44,

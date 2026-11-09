@@ -1,3 +1,5 @@
+// 직업 펼침면 틀·도감·도전·내 기록을 한 쪽 모양으로 합침
+// invitedGuests/pages.js만 씀
 import {
   resolveAccountProfileBorderSrc,
   resolveAccountProfilePhotoSrc,

@@ -1,3 +1,5 @@
+// 명예의 전당 위쪽 제목 판
+// PodiumPage만 씀
 import { PODIUM_ASSETS } from "../constants/podiumAssets.js"
 import {
   HEADER_PLATE_CLASS,

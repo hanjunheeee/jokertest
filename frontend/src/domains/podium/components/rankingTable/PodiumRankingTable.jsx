@@ -1,3 +1,5 @@
+// 4등 아래 순위표 틀: 왼쪽·오른쪽 두 줄 묶음
+// PodiumRankingTableShell만 씀
 import PodiumRankingTableColumn from "./PodiumRankingTableColumn.jsx"
 import { PODIUM_ASSETS } from "../../constants/podiumAssets.js"
 import {

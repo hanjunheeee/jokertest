@@ -1,3 +1,5 @@
+// 명예의 전당 뒷배경 그림, 들어올 때 서서히 나타남
+// PodiumPage만 씀
 import { motion } from "framer-motion"
 import { PODIUM_ASSETS } from "../constants/podiumAssets.js"
 import { PODIUM_BG_IMAGE_CLASS } from "../constants/podiumLayoutStyle.js"

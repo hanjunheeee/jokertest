@@ -1,3 +1,5 @@
+// 순위표 앞·뒤 쪽 화살표 버튼
+// PodiumRankingTableShell만 씀
 import { PODIUM_ASSETS } from "../../constants/podiumAssets.js"
 import {
   TABLE_NAV_ARROW_BTN_BASE,

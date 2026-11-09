@@ -1,3 +1,5 @@
+// 직업별 내 기록·순위·업적 불러와 들고 있는 저장소
+// 데스크톱 InvitedGuestsSpread·모바일 useInvitedGuestsJob이 씀
 import { create } from "zustand";
 import { getMyRoleStatisticsApi, getRoleRankingApi } from "../api/roleStatistics.api.js";
 import { getMyAchievementsApi } from "../api/achievements.api.js";

@@ -1,3 +1,5 @@
+// 마이페이지 tailwind 클래스·나타나기 값 모음
+// 마이페이지 컴포넌트들과 모바일 마이페이지가 씀
 export const MY_PAGE_UI_FADE = {
   duration: 0.7,
   ease: [0.22, 1, 0.36, 1],

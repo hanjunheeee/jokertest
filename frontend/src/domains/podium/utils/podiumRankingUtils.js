@@ -1,3 +1,5 @@
+// 순위를 1~3등·표 쪽으로 자르는 계산
+// PodiumPage·PodiumRankingTableShell이 씀
 export const PODIUM_TABLE_START_RANK = 4
 export const TABLE_RANKS_PER_PAGE = 10
 export const TABLE_LEFT_COLUMN_SIZE = 5

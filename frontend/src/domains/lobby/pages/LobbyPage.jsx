@@ -1,3 +1,5 @@
+// 로비 화면: 배경·메뉴·친구 칸·알림 창을 한데 모음
+// 데스크톱·모바일 경로(routes)가 씀
 import { useNavigate, useSearchParams } from "react-router-dom"
 import LobbyBackground from "@/domains/lobby/components/LobbyBackground.jsx"
 import LobbyContentLayer from "@/domains/lobby/components/LobbyContentLayer.jsx"

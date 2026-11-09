@@ -1,3 +1,5 @@
+// 명예의 전당 가짜 순위 (서버 순위 API 아직 없음)
+// PodiumPage만 씀
 const PROFILE_BASE = "/shopItem/player-profile/"
 const BORDER_BASE = "/shopItem/player- profileborder/"
 

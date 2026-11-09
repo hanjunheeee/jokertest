@@ -1,3 +1,5 @@
+// 순위표 한 줄 묶음, 줄 모양은 서고 순위 줄 같이 씀
+// PodiumRankingTable만 씀
 import InvitedGuestsRankingRow from "../../../library/components/invitedGuests/shared/InvitedGuestsRankingRow.jsx"
 import {
   INVITED_GUESTS_TABLE_BODY_CLASS,

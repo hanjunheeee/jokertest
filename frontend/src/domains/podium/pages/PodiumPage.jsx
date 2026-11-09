@@ -1,3 +1,5 @@
+// 명예의 전당 화면: 1~3등 카드와 아래 순위표
+// 지금 경로(routes)에 안 걸림, 가짜 순위로 그림
 import { motion } from "framer-motion"
 import { useMemo } from "react"
 import { useNavigate } from "react-router-dom"

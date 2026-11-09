@@ -1,3 +1,5 @@
+// 앱 맨 바깥 틀: 소켓·친구·알림 받기와 글자 크기·효과음을 한 번만 켬
+// main.jsx(데스크톱)가 씀, 라우터 그리기 전에 세션 확인 중 표시부터 둠
 import { useEffect, useState } from "react"
 import { RouterProvider } from "react-router-dom";
 import { router } from "@/app/routes/index"

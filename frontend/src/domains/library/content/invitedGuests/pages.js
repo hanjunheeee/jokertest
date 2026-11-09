@@ -1,3 +1,5 @@
+// 초대받은 손님 책 쪽 목록과 쪽 하나 꺼내기
+// content/index.js가 다시 내보냄, 내 기록 있으면 그때 다시 합침
 import { INVITED_GUESTS_JOB_CATALOG } from "./jobCatalog.js"
 import { INVITED_GUESTS_JOB_CHALLENGES } from "./jobChallenges.js"
 import {
