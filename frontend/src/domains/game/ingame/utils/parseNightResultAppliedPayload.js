@@ -3,6 +3,25 @@
 import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
 import { parseDayPhaseDeadlineField } from "./dayPhase.js"
 
+// 판 끝 명단 → [{ uuid, isAlive }] (모양 틀림·중복·지금 명단과 사람 다르면 null)
+function readEndedPlayers(players, canonicalPlayerIds) {
+  const seenEndedUuids = new Set()
+  const endedPlayers = []
+  for (const player of players) {
+    if (player === null || typeof player !== "object" || Array.isArray(player)) return null
+    if (typeof player.uuid !== "string" || player.uuid.length === 0) return null
+    if (typeof player.isAlive !== "boolean") return null
+    if (seenEndedUuids.has(player.uuid)) return null
+    seenEndedUuids.add(player.uuid)
+    endedPlayers.push({ uuid: player.uuid, isAlive: player.isAlive })
+  }
+  if (seenEndedUuids.size !== canonicalPlayerIds.size) return null
+  for (const uuid of seenEndedUuids) {
+    if (!canonicalPlayerIds.has(uuid)) return null
+  }
+  return endedPlayers
+}
+
 // 지금 판·명단 기준 검사 → 반영할 조각 (틀리면 null)
 export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, canonicalPlayerIds, previouslyDeadUuids }) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null
@@ -28,20 +47,8 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
     }
 
     // 참가자 모양·중복 검사, 명단과 같은 사람들이어야 함
-    const seenEndedUuids = new Set()
-    const normalizedEndedPlayers = []
-    for (const player of players) {
-      if (player === null || typeof player !== "object" || Array.isArray(player)) return null
-      if (typeof player.uuid !== "string" || player.uuid.length === 0) return null
-      if (typeof player.isAlive !== "boolean") return null
-      if (seenEndedUuids.has(player.uuid)) return null
-      seenEndedUuids.add(player.uuid)
-      normalizedEndedPlayers.push({ uuid: player.uuid, isAlive: player.isAlive })
-    }
-    if (seenEndedUuids.size !== canonicalPlayerIds.size) return null
-    for (const uuid of seenEndedUuids) {
-      if (!canonicalPlayerIds.has(uuid)) return null
-    }
+    const normalizedEndedPlayers = readEndedPlayers(players, canonicalPlayerIds)
+    if (normalizedEndedPlayers === null) return null
     if (victimUuid !== null && !canonicalPlayerIds.has(victimUuid)) return null
 
     return {

@@ -70,11 +70,8 @@ export function parsePlayerEliminatedPayload({
     players.push({ uuid: normalized.uuid, alive: normalized.alive })
   }
   // 전에 죽은 사람이 되살아나면 거절
-  if (previouslyDeadUuids instanceof Set) {
-    for (const { uuid, alive } of players) {
-      if (alive === true && previouslyDeadUuids.has(uuid)) return null
-    }
-  }
+  if (previouslyDeadUuids instanceof Set
+    && players.some(({ uuid, alive }) => alive === true && previouslyDeadUuids.has(uuid))) return null
 
   // 피해자는 죽은 것으로 와야 함
   const victimEntry = players.find((p) => p.uuid === payload.victimUuid)

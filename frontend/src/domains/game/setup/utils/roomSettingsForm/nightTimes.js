@@ -14,18 +14,14 @@ export function mergeSpecifiedRoleTimes(serverSpecified, editedRoleTimeIds) {
 // 요청에 실을 직업별 밤 시간: 목록이 있으면 그 직업만, 없으면 폼에 있는 직업 전부, 하나도 없으면 null
 export function collectSpecifiedRoleTimes(ranges, specified) {
   const roleNightActionTimes = {}
-  if (Array.isArray(specified)) {
-    for (const role of specified) {
-      const id = ROLE_TO_NIGHT_TIME_ID[role]
-      if (id === undefined) continue
-      if (!Object.hasOwn(ranges ?? {}, id)) continue
-      roleNightActionTimes[role] = ranges[id]
-    }
-  } else {
-    for (const { role, id } of ROLE_NIGHT_ACTION_TIME_OPTIONS) {
-      if (!Object.hasOwn(ranges ?? {}, id)) continue
-      roleNightActionTimes[role] = ranges[id]
-    }
+  // 고른 직업이 오면 그 직업만, 아니면 전체 직업 (예: ["DOCTOR"] → [{ role: "DOCTOR", id: "doctor..." }])
+  const pairs = Array.isArray(specified)
+    ? specified.map((role) => ({ role, id: ROLE_TO_NIGHT_TIME_ID[role] }))
+    : ROLE_NIGHT_ACTION_TIME_OPTIONS
+  for (const { role, id } of pairs) {
+    if (id === undefined) continue
+    if (!Object.hasOwn(ranges ?? {}, id)) continue
+    roleNightActionTimes[role] = ranges[id]
   }
   return Object.keys(roleNightActionTimes).length > 0 ? roleNightActionTimes : null
 }

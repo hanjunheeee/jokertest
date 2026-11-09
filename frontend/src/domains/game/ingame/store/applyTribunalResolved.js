@@ -10,6 +10,23 @@ const RESOLVED_OUTCOMES = new Set(["GUILTY", "NOT_GUILTY"])
 const CANCELLED_OUTCOME = "CANCELLED"
 const TRIBUNAL_CANCEL_REASONS = new Set(["DEFENDANT_LEFT"])
 
+// 판 끝 명단 → uuid별 생존 (모양 틀림·중복·지금 명단과 사람 다르면 null)
+function readAliveByUuid(players, canonicalUuids) {
+  const aliveByUuid = new Map()
+  for (const p of players) {
+    if (p === null || typeof p !== "object" || Array.isArray(p)) return null
+    if (typeof p.uuid !== "string" || p.uuid.length === 0) return null
+    if (typeof p.isAlive !== "boolean") return null
+    if (aliveByUuid.has(p.uuid)) return null
+    aliveByUuid.set(p.uuid, p.isAlive)
+  }
+  if (aliveByUuid.size !== canonicalUuids.size) return null
+  for (const uuid of aliveByUuid.keys()) {
+    if (!canonicalUuids.has(uuid)) return null
+  }
+  return aliveByUuid
+}
+
 // 취소·판 끝·밤으로·같은 단계 머묾 넷으로 나눠 반영 (하나라도 안 맞으면 그대로)
 export function applyTribunalResolvedPure(current, payload) {
   // 사건 모양: 판 id·날짜·단계·피고
@@ -81,18 +98,8 @@ export function applyTribunalResolvedPure(current, payload) {
     // 명단 검사: 항목 모양, 같은 사람 두 번 없이 지금 명단과 똑같은 사람들
     const canonicalUuids = new Set((current.state.players ?? []).map((p) => p.uuid))
 
-    const aliveByUuid = new Map()
-    for (const p of payload.players) {
-      if (p === null || typeof p !== "object" || Array.isArray(p)) return current
-      if (typeof p.uuid !== "string" || p.uuid.length === 0) return current
-      if (typeof p.isAlive !== "boolean") return current
-      if (aliveByUuid.has(p.uuid)) return current
-      aliveByUuid.set(p.uuid, p.isAlive)
-    }
-    if (aliveByUuid.size !== canonicalUuids.size) return current
-    for (const uuid of aliveByUuid.keys()) {
-      if (!canonicalUuids.has(uuid)) return current
-    }
+    const aliveByUuid = readAliveByUuid(payload.players, canonicalUuids)
+    if (aliveByUuid === null) return current
 
     // 생존은 사건 값으로 덮고 재판 결과·승패 결과 기록
     const nextEndedPlayers = (current.state.players ?? []).map((p) => ({ ...p, alive: aliveByUuid.get(p.uuid) }))

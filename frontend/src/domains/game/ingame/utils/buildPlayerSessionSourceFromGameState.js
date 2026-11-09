@@ -13,6 +13,20 @@ const ROLE_TEAMS = {
 // 하나라도 틀리면 돌려주는 빈 결과
 const EMPTY_RESULT = Object.freeze({ sourcePlayers: null, localPlayerId: null })
 
+// 조커 동료 목록: 배열, 본인 아님, 명단 안 사람, 중복 없음
+function areValidAllies(allies, selfUuid, seenUuids) {
+  if (!Array.isArray(allies)) return false
+  const seenAllies = new Set()
+  for (const allyUuid of allies) {
+    if (typeof allyUuid !== "string" || allyUuid.length === 0) return false
+    if (allyUuid === selfUuid) return false
+    if (!seenUuids.has(allyUuid)) return false
+    if (seenAllies.has(allyUuid)) return false
+    seenAllies.add(allyUuid)
+  }
+  return true
+}
+
 // 참가자·본인 검사를 통과하면 화면용 참가자 목록과 내 id
 export function buildPlayerSessionSourceFromGameState(state) {
   // 참가자 검사: uuid·별명·생존·색 번호 모양, 같은 uuid 두 번이면 거절
@@ -40,15 +54,7 @@ export function buildPlayerSessionSourceFromGameState(state) {
   // 조커면 동료 목록 검사 (본인·명단 밖·중복이면 거절), 조커가 아닌데 오면 거절
   if (self.role === "JOKER") {
     if (!Object.hasOwn(self, "allies")) return EMPTY_RESULT
-    if (!Array.isArray(self.allies)) return EMPTY_RESULT
-    const seenAllies = new Set()
-    for (const allyUuid of self.allies) {
-      if (typeof allyUuid !== "string" || allyUuid.length === 0) return EMPTY_RESULT
-      if (allyUuid === self.uuid) return EMPTY_RESULT
-      if (!seenUuids.has(allyUuid)) return EMPTY_RESULT
-      if (seenAllies.has(allyUuid)) return EMPTY_RESULT
-      seenAllies.add(allyUuid)
-    }
+    if (!areValidAllies(self.allies, self.uuid, seenUuids)) return EMPTY_RESULT
   } else if (Object.hasOwn(self, "allies")) {
     return EMPTY_RESULT
   }
