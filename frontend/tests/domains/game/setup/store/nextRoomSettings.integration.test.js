@@ -120,6 +120,11 @@ matchmaking.__setEconomyServiceForTests({
   getPublicProfileLoadouts: async (ids) =>
     Object.fromEntries(ids.map((id) => [id, { profilePhotoId: null, profileBorderId: null }])),
   getGameStartLoadouts: async (ids) => Object.fromEntries(ids.map((id) => [id, {}])),
+  getEmojiPalette: async () => ({ slots: [], owned: [] }),
+})
+// 판 시작 때 전적 조회도 가짜로 (안 바꾸면 localhost:3306 개발 DB에 실제 접속 시도함)
+matchmaking.__setGameResultRepositoryForTests({
+  getAccountRecordSummaries: async (ids) => new Map(ids.map((id) => [id, { totalGames: 0, winRate: 0 }])),
 })
 matchmaking.__setGameInviteServiceForTests({ cancelPendingInvitesForRoom: async () => {} })
 
@@ -379,7 +384,8 @@ function createAppRouter() {
           { path: "/ingame", element: React.createElement(InGamePage) },
           { path: "/gameresult", element: React.createElement(GameResultPage) },
           { path: "/game-setup", element: React.createElement(GameSetupPage) },
-          { path: "/multiplay", element: React.createElement("div", null, "lobby") },
+          // 결과 화면 "로비로"는 /lobby로 감 (docs/버그수정_결정_2026-11-09.md 결과 화면 "로비로" 줄)
+          { path: "/lobby", element: React.createElement("div", null, "lobby") },
         ],
       },
     ],
@@ -471,7 +477,7 @@ async function leaveFromResultScreen({ router, view, connection }) {
     "결과 화면의 로비 버튼이 실제 이탈 요청을 보내지 않았다",
   )
   await waitFor(() => {
-    assert.equal(router.state.location.pathname, "/multiplay", "이탈이 로비로 옮기지 않았다")
+    assert.equal(router.state.location.pathname, "/lobby", "이탈이 로비로 옮기지 않았다")
   })
   confirmAnswer = false
 }
