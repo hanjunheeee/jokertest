@@ -10,7 +10,7 @@ const PLAYER_CONNECTION_EVENT = 'session_player_connection_changed'
 // 끊김 알린 사람만 다시 붙음 알림 (첫 접속·새로고침마다 알림 넘치지 않게)
 const announcedBySession = new WeakMap()
 
-function emitConnection(io, session, uuid, isConnected) {
+function emitConnection(io, session, uuid, { isConnected }) {
     isolate('[연결 상태 알림 실패]', { code: 'CONNECTION_NOTICE_ERROR', gameId: session.id },
         () => emitToGameChannel(io, session, PLAYER_CONNECTION_EVENT, { gameId: session.id, uuid, isConnected }))
 }
@@ -25,7 +25,7 @@ function announceDisconnected(io, session, uuid) {
     }
     if (announced.has(uuid)) return
     announced.add(uuid)
-    emitConnection(io, session, uuid, false)
+    emitConnection(io, session, uuid, { isConnected: false })
 }
 
 // 다시 붙음 알림: 끊겼다고 알린 사람만, 판이 끝났으면 안 보냄
@@ -33,7 +33,7 @@ function announceReconnected(io, session, uuid) {
     if (!io || !session) return
     if (!announcedBySession.get(session)?.delete(uuid)) return
     if (session.phase === 'ENDED') return
-    emitConnection(io, session, uuid, true)
+    emitConnection(io, session, uuid, { isConnected: true })
 }
 
 module.exports = {

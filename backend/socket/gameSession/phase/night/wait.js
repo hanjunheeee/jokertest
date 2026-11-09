@@ -66,31 +66,33 @@ function isNightPresentationWaitActive(gameId) {
     return !!run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT
 }
 
+// 사건 id → (uuid → 자리 id) 기다릴 명단 + 사건 있었는지 + 지금 받을 수 있는 사람 있는지
+function collectWaitingRecipients(run, session, contract) {
+    const waiting = new Map()
+    let hasEvents = false
+    let anyCurrentlyEligible = false
+    if (!contract || !Array.isArray(contract.events)) return { waiting, hasEvents, anyCurrentlyEligible }
+    for (const event of contract.events) {
+        for (const recipient of event.recipients ?? []) {
+            if (!isNonEmptyString(recipient.uuid)) continue
+            hasEvents = true
+            const byUuid = getOrCreate(waiting, event.eventId, () => new Map())
+            const membershipId = recipient.membershipId ?? null
+            byUuid.set(recipient.uuid, membershipId)
+            if (anyCurrentlyEligible) continue
+            if (isEligibleForWait(run, session, recipient.uuid, membershipId)) anyCurrentlyEligible = true
+        }
+    }
+    return { waiting, hasEvents, anyCurrentlyEligible }
+}
+
 // 연출 대기 시작: 사건 받은 사람 완료 신호를 기다리고, 나머지에겐 대기 알림, 상한 타이머 걸기 (지도 05-⑨)
 function activateNightWait(run, token) {
     if (!isCurrentWaitToken(run, token)) return
     const { session } = run
 
     // 사건별로 기다릴 사람 모으기, 지금 받을 수 있는 사람이 하나도 없으면 바로 풂
-    const contract = token.contract
-    const waiting = new Map()
-    let hasEvents = false
-    let anyCurrentlyEligible = false
-    if (contract && Array.isArray(contract.events)) {
-        for (const event of contract.events) {
-            for (const recipient of event.recipients ?? []) {
-                if (!isNonEmptyString(recipient.uuid)) continue
-                hasEvents = true
-                const byUuid = getOrCreate(waiting, event.eventId, () => new Map())
-                const membershipId = recipient.membershipId ?? null
-                byUuid.set(recipient.uuid, membershipId)
-                if (!anyCurrentlyEligible && isEligibleForWait(run, session, recipient.uuid, membershipId)) {
-                    anyCurrentlyEligible = true
-                }
-            }
-        }
-    }
-
+    const { waiting, hasEvents, anyCurrentlyEligible } = collectWaitingRecipients(run, session, token.contract)
     token.waiting = waiting
 
     if (!hasEvents || !anyCurrentlyEligible) {

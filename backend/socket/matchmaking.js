@@ -128,6 +128,13 @@ const {
 // 점검 중 거절 (방 만들기·시작·코드 입장·자동 매칭만)
 const { rejectDuringMaintenance } = require('./matchmaking/join/maintenanceGate')
 
+// 방 지우기 답 함수: 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
+function pickDeleteRoomCallback(payload, callback) {
+    if (typeof callback === 'function') return callback
+    if (typeof payload === 'function') return payload
+    return null
+}
+
 // 소켓 하나에 방·매칭 사건 받기 등록, async 처리기는 catch로 에러만 남김 (처리 안 된 거절 막기)
 // getCurrentSocketId = 계정의 지금 소켓 id, 옛 탭 요청 거르려고 방장 행동·설정·시작에 넘김
 function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = {}) {
@@ -173,11 +180,10 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
         )
     )
     // 방 안 행동: 방장 지우기·시작, 준비, 설정 저장·결과 묻기, 나가기, 강퇴
-    // 방 지우기: 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
     socket.on('delete_room', (payload, callback) =>
         handleDeleteRoom(io, uuid, {
             socket,
-            callback: typeof callback === 'function' ? callback : (typeof payload === 'function' ? payload : null),
+            callback: pickDeleteRoomCallback(payload, callback),
             getCurrentSocketId,
         }))
     socket.on('start_game', (payload, callback) => {
