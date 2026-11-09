@@ -1,0 +1,68 @@
+/* 관리자 화면 전용 색·글꼴 파일, 게임 꾸밈 없이 읽기 쉬운 업무 화면 (흰 바탕·회색 줄·강조색 하나·위험만 빨강)
+   main.jsx가 부름, 클래스는 src/admin 안만 훑음 → 플레이어 화면 클래스가 안 섞임 */
+@import "tailwindcss" source(none);
+@source "../";
+
+/* 화면 곳곳은 이 이름(bg-panel, text-muted, bg-danger …)만 씀 → 색은 아래 :root 한 곳에서 */
+@theme inline {
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --color-page: var(--admin-page);
+  --color-panel: var(--admin-panel);
+  --color-line: var(--admin-line);
+  --color-ink: var(--admin-ink);
+  --color-muted: var(--admin-muted);
+  --color-accent: var(--admin-accent);
+  --color-accent-ink: var(--admin-accent-ink);
+  --color-danger: var(--admin-danger);
+  --color-danger-ink: var(--admin-danger-ink);
+}
+
+/* 밝은 화면 (글자 대비 4.5:1 넘김: 회색 글자 5.9, 강조 6.9, 빨강 6.5) */
+:root {
+  color-scheme: light dark;
+  --admin-page: #f4f5f6;
+  --admin-panel: #ffffff;
+  --admin-line: #d5d9dd;
+  --admin-ink: #1c2226;
+  --admin-muted: #56616b;
+  --admin-accent: #1f5f8b;
+  --admin-accent-ink: #ffffff;
+  --admin-danger: #b42318;
+  --admin-danger-ink: #ffffff;
+}
+
+/* 어두운 화면은 기기 설정 따라감 (따로 바꾸는 버튼 없음) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --admin-page: #14181b;
+    --admin-panel: #1c2125;
+    --admin-line: #353d44;
+    --admin-ink: #e6e9eb;
+    --admin-muted: #a2acb4;
+    --admin-accent: #78b3dd;
+    --admin-accent-ink: #0b1720;
+    --admin-danger: #f27a68;
+    --admin-danger-ink: #1d0905;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--admin-page);
+  color: var(--admin-ink);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* 키보드로 옮겨 다닐 때 지금 자리가 보이게 */
+:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

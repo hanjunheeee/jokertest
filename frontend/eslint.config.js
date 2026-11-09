@@ -17,6 +17,10 @@ const TESTS = ['**/__tests__/**', 'tests/**', '**/*.test.{js,jsx,mjs}']
 const SOCKET_DIRS = ['src/domains/**/socket/**', 'src/shared/socket/**']
 const API_DIRS = ['src/domains/**/api/**', 'src/shared/api/**']
 
+// 관리자 화면(src/admin)은 따로 빌드 → 플레이어 코드와 서로 안 부름 (설계 4-2 세 겹 중 하나)
+const ADMIN_FILES = ['src/admin/**/*.{js,jsx}']
+const ADMIN_API_DIRS = ['src/admin/**/api/**']
+
 // 묶어 내보낼 땐 이름을 하나씩 적기 (RULES 11)
 const NO_EXPORT_STAR = {
   selector: 'ExportAllDeclaration[exported=null]',
@@ -46,9 +50,20 @@ const NO_HTTP_CALL = [
 const SOCKET_IMPORT = { name: 'socket.io-client', message: SOCKET_MSG }
 const AXIOS_IMPORT = { name: 'axios', message: FETCH_MSG }
 
+// 플레이어 쪽에서 관리자 코드 부르기 막기, 예: '@/admin/…' · './admin/…' · '../../admin/…'
+const NO_ADMIN_IMPORT = {
+  regex: String.raw`^(@/admin|\.\.?/(\.\./)*admin)(/|$)`,
+  message: '[admin-split] 플레이어 코드는 관리자 코드(src/admin)를 부르지 않음',
+}
+// 관리자 쪽에서 플레이어 코드 부르기 막기: '@/'는 '@/admin/…'만 됨
+const NO_PLAYER_IMPORT = {
+  regex: '^@/(?!admin(/|$))',
+  message: '[admin-split] 관리자 코드는 플레이어 코드(@/domains·@/shared·@/app)를 부르지 않음, @/admin/… 안에서 씀',
+}
+
 export default defineConfig([
   // 빌드 결과물·다른 작업이 만든 임시 복사본은 안 봄
-  globalIgnores(['dist', 'build', 'coverage', '.tmp*']),
+  globalIgnores(['dist', 'dist-admin', 'build', 'coverage', '.tmp*']),
 
   // 기본: 예전 설정 그대로 (react-hooks, react-refresh)
   {
@@ -83,7 +98,7 @@ export default defineConfig([
       'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
       'import-x/no-cycle': ['error', { ignoreExternal: true }],
       'no-restricted-syntax': ['error', NO_EXPORT_STAR, ...NO_SOCKET_CALL, ...NO_HTTP_CALL],
-      'no-restricted-imports': ['error', { paths: [SOCKET_IMPORT, AXIOS_IMPORT] }],
+      'no-restricted-imports': ['error', { paths: [SOCKET_IMPORT, AXIOS_IMPORT], patterns: [NO_ADMIN_IMPORT] }],
       // 매직 넘버: 너무 많이 나와서 끔 (보고서 참고)
       'no-magic-numbers': 'off',
       // 일부러 안 쓰는 값: _로 시작하는 인자, 나머지(...rest)로 빼려고 꺼낸 이름은 봐줌
@@ -97,7 +112,7 @@ export default defineConfig([
     ignores: TESTS,
     rules: {
       'no-restricted-syntax': ['error', NO_EXPORT_STAR, ...NO_HTTP_CALL],
-      'no-restricted-imports': ['error', { paths: [AXIOS_IMPORT] }],
+      'no-restricted-imports': ['error', { paths: [AXIOS_IMPORT], patterns: [NO_ADMIN_IMPORT] }],
     },
   },
 
@@ -107,7 +122,25 @@ export default defineConfig([
     ignores: TESTS,
     rules: {
       'no-restricted-syntax': ['error', NO_EXPORT_STAR, ...NO_SOCKET_CALL],
-      'no-restricted-imports': ['error', { paths: [SOCKET_IMPORT] }],
+      'no-restricted-imports': ['error', { paths: [SOCKET_IMPORT], patterns: [NO_ADMIN_IMPORT] }],
+    },
+  },
+
+  // 관리자 화면: 플레이어 코드 못 부름 (소켓·axios도 안 씀)
+  {
+    files: ADMIN_FILES,
+    ignores: TESTS,
+    rules: {
+      'no-restricted-imports': ['error', { paths: [SOCKET_IMPORT, AXIOS_IMPORT], patterns: [NO_PLAYER_IMPORT] }],
+    },
+  },
+
+  // 관리자 api/ 폴더: HTTP 호출은 됨 (adminClient·영역 api 파일)
+  {
+    files: ADMIN_API_DIRS,
+    ignores: TESTS,
+    rules: {
+      'no-restricted-syntax': ['error', NO_EXPORT_STAR, ...NO_SOCKET_CALL],
     },
   },
 

@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "dev:admin": "vite --config vite.admin.config.js",
+    "build:admin": "vite build --config vite.admin.config.js && node scripts/verify-admin-split.mjs",
     "lint": "eslint .",
     "check:depth": "node ../scripts/check-depth.mjs src",
     "check:utf8": "node scripts/verify-utf8.mjs",
