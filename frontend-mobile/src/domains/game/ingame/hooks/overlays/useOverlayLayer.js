@@ -14,6 +14,7 @@ import { useInGameNightSuccessPresentation } from "@/domains/game/ingame/hooks/u
 import { useInGameOverlayStack } from "@/domains/game/ingame/hooks/useInGameOverlayStack.js"
 import { useInGameTribunalExpulsionPresentation } from "@/domains/game/ingame/hooks/useInGameTribunalExpulsionPresentation.js"
 import { useInGameResultNavigation } from "@/domains/game/ingame/hooks/useInGameResultNavigation.js"
+import { nightWaitCoversSelf } from "@/domains/game/ingame/utils/selfAlive.js"
 import { useOverlayBridge } from "./overlayBridge.js"
 import { useDeadChoice } from "./useDeadChoice.js"
 
@@ -46,6 +47,8 @@ export function useOverlayLayer() {
         && gameState?.dayIndex === wait.nightDayIndex
         && isSameReceiptScope(wait.scope, readInGameReceiptScope({ accountId: authUuid, identityGeneration }))
     const waitOpen = waitOwned && !nightSuccess.open
+    // 죽은 사람은 대기 창이 안 덮음 → 밤에도 죽은 사람 채팅 씀 (다른 연출 미루기는 waitOpen 그대로)
+    const waitCovers = waitOpen && nightWaitCoversSelf(gameState)
 
     // 결과 화면 이동은 추방·밤 성공 연출이 끝난 뒤로 미룸
     useInGameResultNavigation({
@@ -62,7 +65,7 @@ export function useOverlayLayer() {
         && gameState.tribunal.resolved !== true
 
     const surfaceLocked = interactionBlocked || nightPrivateResult.open || deadChoice.open
-        || nightSuccess.open || waitOpen || tribunalOpen || tribunalExpulsion.open
+        || nightSuccess.open || waitCovers || tribunalOpen || tribunalExpulsion.open
 
     // 화면 틀이 읽을 잠금·역할 다시 보기 값 넘김
     const setOverlayState = useOverlayBridge((s) => s.setOverlayState)
@@ -91,6 +94,7 @@ export function useOverlayLayer() {
         nightSuccess,
         nightPrivateResult,
         waitOpen,
+        waitCovers,
         deadChoice,
         tribunalExpulsion,
     }

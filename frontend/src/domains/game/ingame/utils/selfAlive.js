@@ -1,5 +1,5 @@
-// 내 생존 고르기와 밤 조커 채팅 자격 보기
-// 행동 대상 훅·밤 이벤트 손잡이·채팅 채널·조커 채팅·채팅 틀 속성 훅이 사용
+// 내 생존 고르기와 밤 조커 채팅 자격·밤 대기 창 덮기 보기
+// 행동 대상 훅·밤 이벤트 손잡이·채팅 채널·조커 채팅·채팅 틀 속성 훅·인게임 화면 대기 창 잠금이 사용
 import { isSessionPlayerAlive } from "./actionTargets.js"
 
 // 판 참가자 목록에서 내 생존 (모르면 null)
@@ -22,6 +22,11 @@ export function resolveInGameSelfAliveForControls(state, localSessionPlayer) {
   if (canonicalAlive !== null) return canonicalAlive
 
   return isSessionPlayerAlive(localSessionPlayer)
+}
+
+// 밤 연출 대기 창이 내 화면을 덮는지: 죽은 사람은 안 덮음 (죽은 사람끼리 채팅은 밤에도 됨, 사용자 결정 2026-11-09), 생존 모르면 덮음
+export function nightWaitCoversSelf(state) {
+  return selectInGameSelfAlive(state) !== false
 }
 
 // 밤 같은 직업 채팅 직업들

@@ -1,5 +1,5 @@
 // 밤 연출 대기 창: 다른 사람 밤 성공 연출이 끝날 때까지 확인 버튼 없이 덮음
-// OverlayLayer가 씀, 열림은 스토어 대기 알림(useOverlayLayer의 waitOpen), 덮개·z순서는 데스크톱과 같음
+// OverlayLayer가 씀, 열림은 스토어 대기 알림(useOverlayLayer의 waitCovers, 죽은 사람은 안 띄움), 덮개·z순서는 데스크톱과 같음
 import { PRIVATE_RESULT_MSG_CLASS } from "@/domains/game/ingame/constants/ingameNightPrivateResult.js"
 import ParchmentFrame from "@m/shared/ui/modal/parchment/ParchmentFrame.jsx"
 import { NIGHT_WAIT_MSG } from "./overlayText.js"

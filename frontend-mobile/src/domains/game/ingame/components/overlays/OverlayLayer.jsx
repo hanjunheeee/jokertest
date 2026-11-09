@@ -37,7 +37,7 @@ export default function OverlayLayer() {
                     players={o.players}
                 />
             )}
-            <NightWaitOverlay open={o.waitOpen} />
+            <NightWaitOverlay open={o.waitCovers} />
             <NightPrivateResultOverlay
                 open={o.nightPrivateResult.open && !o.waitOpen}
                 kind={o.nightPrivateResult.kind}

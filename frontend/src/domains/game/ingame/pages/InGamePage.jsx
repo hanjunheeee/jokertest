@@ -37,6 +37,7 @@ import {
 } from "../utils/selectInGameSessionGuard.js"
 import { selectInGameTimebarStatusLabel } from "../utils/selectInGameTimebarStatusMessage.js"
 import { selectInGameDeadParticipantChoice } from "../utils/selectInGameDeadParticipantChoice.js"
+import { nightWaitCoversSelf } from "../utils/selfAlive.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import {
@@ -116,6 +117,8 @@ export default function InGamePage() {
     )
   const nightPresentationWaitOpen = nightPresentationWaitOwned
     && !nightSuccessPresentation.open
+  // 죽은 사람은 대기 창이 안 덮음 → 밤에도 죽은 사람 채팅 씀 (다른 연출 미루기는 대기 그대로)
+  const nightPresentationWaitCovers = nightPresentationWaitOpen && nightWaitCoversSelf(gameState)
 
   useInGameResultNavigation({
     hold: identityRebindPending
@@ -147,7 +150,7 @@ export default function InGamePage() {
 
   const surfaceLocked =
     interactionBlocked || nightPrivateResult.open || deadChoiceOpen
-    || nightSuccessPresentation.open || nightPresentationWaitOpen
+    || nightSuccessPresentation.open || nightPresentationWaitCovers
     || tribunalPresentationOpen || tribunalExpulsion.open
 
   const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
@@ -238,7 +241,7 @@ export default function InGamePage() {
           players={gameState?.players}
         />
       )}
-      <InGameNightPresentationWait open={nightPresentationWaitOpen} />
+      <InGameNightPresentationWait open={nightPresentationWaitCovers} />
       <InGameNightPrivateResultOverlay
         open={nightPrivateResult.open && !nightPresentationWaitOpen}
         kind={nightPrivateResult.kind}
