@@ -4,6 +4,7 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const { hasOnlineUsersRegistry, isCurrentSocketForUuid } = require('./ownership')
 const { cancelDisconnectGrace } = require('./grace')
 const { detachFromGameChannel } = require('../delivery/broadcast')
+const { announceReconnected } = require('./presenceNotice')
 
 // 판 채널 다시 넣기 작업: 소켓마다 진행 중 작업 하나 + activeGameId를 어느 작업이 썼는지 (늦은 작업이 덮어쓰지 않게)
 let sessionRoutingWorkSeq = 0
@@ -11,7 +12,8 @@ const routingWorkBySocket = new WeakMap()
 const gameIdOwnerBySocket = new WeakMap()
 
 // 재접속·새로고침 때 판 채널 다시 넣기: 같은 범위 작업은 하나로 묶고, join 사이 바뀌었으면 되돌림 (지도 08-⑨)
-function resyncSessionRouting(socket, uuid) {
+// io 주면 판 채널에 다시 들어간 뒤 판 사람들에게 다시 붙음 알림 (끊김 알린 사람만)
+function resyncSessionRouting(socket, uuid, io = null) {
     // 들어가 있는 판 없으면 넣을 채널 없음
     const routing = gameSessionCore.getActiveSessionRoutingInfo(uuid)
     if (!routing) return Promise.resolve()
@@ -66,6 +68,7 @@ function resyncSessionRouting(socket, uuid) {
                 && (token.session?.players?.get(uuid)?.membershipId ?? null) === token.membershipId
             if (stillMine) {
                 token.ready = true
+                announceReconnected(io, token.session, uuid)
                 return
             }
 
@@ -82,6 +85,7 @@ function resyncSessionRouting(socket, uuid) {
             return
         }
         token.ready = true
+        announceReconnected(io, token.session, uuid)
     }
 
     // 끝나면 진행 중 표시는 내 작업일 때만 지움 (새 작업 표시는 남김)

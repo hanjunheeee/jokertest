@@ -90,7 +90,7 @@ function registerConnectionHandlers(io, socket) {
     // 접속 상태·판 채널 다시 잇기는 안 기다림 (실패해도 로그만, 연결은 유지)
     handleConnection(io, socket, uuid).catch(logRejection("\x1b[31m[소켓 접속 처리 에러]\x1b[0m"));
 
-    gameSession.resyncSessionRouting(socket, uuid).catch(logRejection("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m"));
+    gameSession.resyncSessionRouting(socket, uuid, io).catch(logRejection("\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m"));
 
     // 대기방·판·알림 사건 등록, 옛 탭 요청 거르기용으로 지금 소켓 id 묻는 함수 넘김
     matchmaking.registerMatchmakingHandlers(io, socket, uuid, {

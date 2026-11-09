@@ -7,7 +7,8 @@ const { REPLY_MESSAGES, internalErrorReply, respond } = require('../../common/re
 const { IDEMPOTENT_LEAVE_CODES } = require('../core/constants')
 const { nightTurnRuns } = require('../core/state')
 const { pickTrimmedGameId, acceptRequest } = require('../core/requests')
-const { canProcessDisconnectFor, consumeOwnership } = require('../connection/ownership')
+const { canProcessDisconnectFor, consumeOwnership, isUuidConnected } = require('../connection/ownership')
+const { announceDisconnected } = require('../connection/presenceNotice')
 const { beginDisconnectGrace } = require('../connection/grace')
 const { ensureRoleRevealTimer } = require('../phase/roleReveal')
 const { detachFromGameChannel } = require('../delivery/broadcast')
@@ -107,6 +108,8 @@ async function onDisconnect(io, socket, uuid) {
     const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
     if (graceTarget) {
         beginDisconnectGrace(io, graceTarget.session, uuid)
+        // 판 사람들에게 끊김 알림 (새 탭이 벌써 붙었으면 안 보냄)
+        if (!isUuidConnected(io, uuid)) announceDisconnected(io, graceTarget.session, uuid)
         reevaluateOnDisconnect(graceTarget.session.id)
         isolate('[역할 공개 마감 시작 실패]', { code: 'TIMER_START_ERROR', gameId: graceTarget.session.id },
             () => ensureRoleRevealTimer(io, graceTarget.session))
@@ -117,6 +120,10 @@ async function onDisconnect(io, socket, uuid) {
     const reconnectState = gameSessionCore.getSessionSnapshotForPlayer(uuid, expectedGameId)
     if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) {
         reevaluateOnDisconnect(expectedGameId)
+        // 죽은 사람 끊김도 알림 (스냅샷 isConnected와 같게)
+        if (!isUuidConnected(io, uuid)) {
+            announceDisconnected(io, gameSessionCore.getActiveSessionForDeparture(uuid, expectedGameId), uuid)
+        }
         return
     }
 

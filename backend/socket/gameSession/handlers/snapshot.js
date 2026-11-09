@@ -7,6 +7,7 @@ const { pickOptionalGameId, acceptRequest, acceptCoreResult, registryLogs } = re
 const { isCurrentSocketForUuid, isUuidConnected } = require('../connection/ownership')
 const { cancelDisconnectGrace } = require('../connection/grace')
 const { resyncSessionRouting } = require('../connection/routing')
+const { announceReconnected } = require('../connection/presenceNotice')
 const { isEligibleRecipient, hasOutsideMembership } = require('../delivery/eligibility')
 const {
     getNightSuccessReceipts,
@@ -64,7 +65,7 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
         if (!isEligibleRecipient(recoverySession, socket, uuid)
             && !socket.rooms?.has?.(recoverySession.channelId)
             && gameSessionCore.getActiveSessionRoutingInfo(uuid)?.channelId === recoverySession.channelId) {
-            resyncSessionRouting(socket, uuid).catch(logRejection('\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m'))
+            resyncSessionRouting(socket, uuid, io).catch(logRejection('\x1b[31m[세션 라우팅 재동기화 에러]\x1b[0m'))
             ack({
                 ok: false,
                 code: 'SESSION_ROUTING_PENDING',
@@ -72,6 +73,9 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
             })
             return
         }
+
+        // 지금 탭이 판 채널에 있으면 판 사람들에게 다시 붙음 알림 (끊김 알린 사람만)
+        if (isCurrentSocketForUuid(uuid, socket, io)) announceReconnected(io, recoverySession, uuid)
 
         // 진행 중이고 그 밤 사건 완료 신호를 아직 받을 때면 못 끝낸 내 사건 모으기
         const receiptStore = getNightSuccessReceipts(recoverySession)
