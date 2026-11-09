@@ -68,12 +68,15 @@ test.describe('게임 모드·방 목록', () => {
         expect(await overflowX(user.page)).toBeLessThanOrEqual(0);
     });
 
-    test('방 카드를 누르면 → "선택한 방 입장" 버튼이 켜짐', async ({ user, bots }) => {
+    test('방 카드를 누르면 → 아래 입장 막대가 켜짐', async ({ user, bots }) => {
         const [bot] = await bots.spawn(1);
         await bot.createRoom({});
         await user.page.goto('/multiplay');
+        await expect(user.page.getByRole('button', { name: '선택한 방 입장' })).toBeDisabled();
         await roomCard(user.page, bot.nickname).click();
-        await expect(user.page.getByRole('button', { name: '선택한 방 입장' })).toBeEnabled();
+        // 고르면 아래 입장 막대 글이 바뀌고 눌 수 있게 됨
+        await expect(user.page.getByRole('button', { name: '선택한 방 입장' })).toHaveCount(0);
+        await expect(user.page.getByRole('button', { name: /입장/ }).last()).toBeEnabled();
     });
 
     test('방 목록에서 "코드로 참가"를 누르면 → 방 코드 한 칸 입력 화면으로 감', async ({ user }) => {

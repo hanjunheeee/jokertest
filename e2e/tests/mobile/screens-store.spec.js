@@ -30,13 +30,12 @@ test.describe('모바일 상점', () => {
         await expect(user.page.getByRole('button', { name: '광대 불멸 500' })).toHaveAttribute('aria-pressed', 'true');
     });
 
-    test('골드 0인 새 계정이 500골드 스킨을 구매하면 → 산 것이 안 되고 안내가 뜸', async ({ user }) => {
+    test('골드 0인 새 계정이 500골드 스킨을 구매하면 → "구매가 거부되었습니다" 안내가 뜨고 재화는 그대로', async ({ user }) => {
         await user.page.goto('/store');
         const info = user.page.getByRole('region', { name: '선택한 아이템 정보' });
         await info.getByRole('button', { name: '구매' }).click();
-        const notice = user.page.getByRole('dialog').or(user.page.getByRole('alertdialog')).or(user.page.getByRole('alert')).first();
-        await expect(notice).toBeVisible({ timeout: 10000 });
-        await expect(notice).toContainText(/부족|골드|구매/);
+        await expect(user.page.getByText('구매가 거부되었습니다. 재화는 차감되지 않았습니다.')).toBeVisible({ timeout: 10000 });
+        await expect(info.getByRole('button', { name: '구매' })).toBeVisible();
     });
 
     test('"쿠폰"을 누르면 → 쿠폰 입력 창이 375 폭 안에 열림', async ({ user }) => {

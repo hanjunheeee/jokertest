@@ -151,7 +151,17 @@ async function getExecuted(t, me, { deadChat, keepWatching = true, pages = [] } 
     for (const page of pages) {
         // 사망 후 선택 창은 처형 연출 뒤에 뜸 → 창이 뜰 때까지 기다렸다 닫음
         await expect(talk.deadChoice(page)).toBeVisible({ timeout: 30000 });
-        await clearOverlays(page, { keepWatching });
+        if (!keepWatching) continue;
+        // 처형 연출 등 앞 연출이 열리면 창이 잠깐 숨었다 다시 뜸 → '관전 계속하기'가 실제로 눌릴 때까지
+        let chosen = false;
+        await expect.poll(async () => {
+            await clearOverlays(page, { keepWatching: false });
+            const dialog = talk.deadChoice(page);
+            if (!chosen && await dialog.isVisible().catch(() => false)) {
+                chosen = await dialog.getByRole('button', { name: '관전 계속하기' }).click({ timeout: 3000 }).then(() => true, () => false);
+            }
+            return chosen && !(await dialog.isVisible().catch(() => false));
+        }, { timeout: 30000, intervals: [500] }).toBe(true);
     }
     return s;
 }
