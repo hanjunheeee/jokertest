@@ -1,4 +1,5 @@
 // 하단 줄: 왼쪽 책갈피 · 오른쪽 뒤로 (마이페이지와 같은 높이)
+// LibraryPage가 바닥에 씀, 책갈피는 BookmarkTabs
 import { motion } from "framer-motion"
 import {
     INNER_REVEAL_ANIMATE,

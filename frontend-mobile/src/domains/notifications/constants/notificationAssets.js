@@ -1,4 +1,5 @@
 // 모바일 알림 창 그림 (공통 상수는 데스크톱, 팝업 틀은 public/mobile, 대제목 판은 탑레벨 프레임)
+// 알림 창 NotificationSheet·줄·버튼·sheetStyle이 씀
 import { NOTIFICATION_ASSETS as DESKTOP_NOTIFICATION_ASSETS } from "@/domains/notifications/constants/notificationAssets.js"
 
 export const NOTIFICATION_ASSETS = {

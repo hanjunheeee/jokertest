@@ -1,4 +1,5 @@
 // 가입 보조 그림 버튼 (중복확인·인증번호 받기) — stretch보다 작게
+// 가입 칸 EmailCheck·EmailVerification이 씀
 import { IMAGE_BUTTON_LOOKS } from "@m/shared/ui/button/imageButtonLooks.js"
 
 const AUX_LABEL_TEXT = "px-0.5 leading-tight app-text-scaled [--app-text-size:8px]"
