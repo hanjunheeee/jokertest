@@ -293,8 +293,12 @@ test('이메일 가입: 증명이 없으면 해시·트랜잭션 전에 401 SIGN
     assert.equal(ctx.store.names().includes('withTransaction'), false);
 });
 
+// 가입 서비스는 진짜 시계로 증명 만료를 봄 → 진짜 시계를 가짜 시계 시각에 맞춤 (안 맞추면 그날 03:30Z 넘어 돌리면 만료로 실패, 2026-11-09)
+const pinRealClock = (t, ctx) => t.mock.timers.enable({ apis: ['Date'], now: ctx.clock.now().getTime() });
+
 test('이메일 가입: 맞는 증명이면 이메일 인증된 계정과 기본 지급, 같은 증명으로 두 번째 가입은 거절', async (t) => {
     const ctx = setUp(t);
+    pinRealClock(t, ctx);
     let grants = 0;
     swap(t, economyService, 'ensureDefaultEntitlements', async () => { grants += 1; });
     const signupProof = await proofFor(ctx);
@@ -307,6 +311,7 @@ test('이메일 가입: 맞는 증명이면 이메일 인증된 계정과 기본
 
 test('이메일 가입: 이메일 중복 409면 증명 소비도 되돌아가 다시 쓸 수 있다', async (t) => {
     const ctx = setUp(t);
+    pinRealClock(t, ctx);
     const signupProof = await proofFor(ctx);
     ctx.store.data.users.push({ uuid: 'u-dup', email: 'new@example.com', nickname: '먼저' });
     await assert.rejects(authService.signup({ ...SIGNUP_BODY, signupProof }), (e) => e.status === 409);
