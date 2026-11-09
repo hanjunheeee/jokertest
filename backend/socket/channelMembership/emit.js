@@ -1,5 +1,5 @@
 // 채널 방송 파일
-// 제외 목록 빼고 채널에 방송 + 못 빼면 소켓마다 직접(그것도 못 하면 폐기)
+// 제외 목록 빼고 채널에 방송 + 못 빼면 소켓마다 직접(그것도 못 하면 폐기), 방송은 이 Node 안에서만 (io.local)
 // index 거쳐 gameSession delivery/broadcast·matchmaking 입장·방 알림이 씀
 const { tryOr } = require('../common/isolate')
 const { getChannelExclusions } = require('./exclusions')
@@ -52,9 +52,11 @@ function emitToChannel(io, channelId, event, payload, options = null) {
             .filter((id) => typeof id === 'string' && id.length > 0)
 
         // 보낸 사람 있으면 그 소켓 기준 방송 (자기 자신은 안 받음)
-        const operator = senderSocket
+        // 방·판 채널 사람은 늘 이 Node에 있음 → local로 보냄 (Node 여러 개여도 어댑터로 Redis 안 탐, MN-021)
+        const target = senderSocket
             ? senderSocket.to?.(channelId)
             : io?.to?.(channelId)
+        const operator = target?.local ?? target
 
         // 받을 사람 재검사가 있으면 소켓마다 직접 보냄 (못 하면 방송 폐기)
         if (recipientFilter) {
