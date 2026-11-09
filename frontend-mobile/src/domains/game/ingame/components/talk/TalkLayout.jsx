@@ -11,21 +11,15 @@ import TopBar from "@m/domains/game/ingame/components/shell/TopBar.jsx"
 import Timebar from "@m/domains/game/ingame/components/timebar/Timebar.jsx"
 import PhaseLine from "./PhaseLine.jsx"
 import PortraitStrip from "./PortraitStrip.jsx"
+import { selectTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 import TalkList from "./TalkList.jsx"
-
-// 재판 연출이 떠 있는지 (ChatPanel과 같은 조건, 연출이 자기 채팅을 띄움)
-function selectTribunalPresentationOpen(s) {
-    const state = s.state
-    return state?.phase === "TRIBUNAL"
-        && Boolean(state?.tribunal?.defendantUuid)
-        && state.tribunal.resolved !== true
-}
 
 const SLOT_CLASS = "relative min-w-0 shrink-0"
 
 // page: useInGamePage 값, compactTyping: 낮은 화면에서 입력 중이면 띠·진행 바 접어 채팅방 자리 냄
 export default function TalkLayout({ page, compactTyping, locked }) {
     const session = useInGameChatSessionContext()
+    // 재판 연출이 뜨면 연출이 자기 채팅을 띄움 → 채팅방은 숨기고 입력칸은 뺌
     const tribunalOpen = useInGameStore(selectTribunalPresentationOpen)
     const [timebarOpen, setTimebarOpen] = useState(false)
     const [boardOpen, setBoardOpen] = useState(false)

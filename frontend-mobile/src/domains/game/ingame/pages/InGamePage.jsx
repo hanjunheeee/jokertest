@@ -40,6 +40,44 @@ const SLOT_CLASS = "relative min-w-0"
 const TYPING_TIME_CLASS = "hidden land:block"
 const TYPING_BOARD_CLASS = "hidden land:block"
 
+// 넓은 배치 (폰 가로·태블릿): 위 줄·진행 바·카드 판·채팅·행동 줄 칸 배치, 폰 세로는 TalkLayout
+// page: useInGamePage 값, compactTyping: 낮은 화면에서 입력 중이면 세로 칸 몇 개 접음
+function WideLayout({ page, compactTyping }) {
+  const { sidePanel, surfaceLocked } = page
+
+  return (
+    <div
+      className={`${GRID_CLASS} ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
+      inert={surfaceLocked || undefined}
+    >
+      <div className={`${SLOT_CLASS} [grid-area:top]`} data-slot="top">
+        <TopBar
+          onExit={page.requestExit}
+          onRecords={sidePanel.openRecords}
+          onSettings={sidePanel.openSettings}
+          onRoleReveal={page.reopenRoleReveal}
+          roleRevealAvailable={page.roleRevealAvailable && Boolean(page.reopenRoleReveal)}
+        />
+      </div>
+      <div className={`${SLOT_CLASS} px-2 land:pt-1 [grid-area:time] ${compactTyping ? TYPING_TIME_CLASS : ""}`} data-slot="timebar">
+        <Timebar />
+      </div>
+      <div
+        className={`${SLOT_CLASS} min-h-0 overflow-y-auto overscroll-contain px-1.5 [grid-area:board] ${compactTyping ? TYPING_BOARD_CLASS : ""}`}
+        data-slot="board"
+      >
+        <Board />
+      </div>
+      <div className={`${SLOT_CLASS} flex min-h-0 flex-col px-1.5 [grid-area:chat]`} data-slot="chat">
+        <ChatPanel />
+      </div>
+      <div className={`${SLOT_CLASS} px-1.5 pb-1 [grid-area:actions]`} data-slot="actions">
+        <ActionRow />
+      </div>
+    </div>
+  )
+}
+
 // 화면 (맞는 판이 아니면 아무것도 안 그림, 밖으로 보내기는 훅이 함)
 export default function InGamePage() {
   const page = useInGamePage()
@@ -61,37 +99,7 @@ export default function InGamePage() {
         <InGameChatSessionProvider>
           <ActionProvider interactionBlocked={interactionBlocked}>
             {wide ? null : <TalkLayout page={page} compactTyping={compactTyping} locked={surfaceLocked} />}
-            {wide ? (
-            <div
-              className={`${GRID_CLASS} ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
-              inert={surfaceLocked || undefined}
-            >
-              <div className={`${SLOT_CLASS} [grid-area:top]`} data-slot="top">
-                <TopBar
-                  onExit={page.requestExit}
-                  onRecords={sidePanel.openRecords}
-                  onSettings={sidePanel.openSettings}
-                  onRoleReveal={page.reopenRoleReveal}
-                  roleRevealAvailable={page.roleRevealAvailable && Boolean(page.reopenRoleReveal)}
-                />
-              </div>
-              <div className={`${SLOT_CLASS} px-2 land:pt-1 [grid-area:time] ${compactTyping ? TYPING_TIME_CLASS : ""}`} data-slot="timebar">
-                <Timebar />
-              </div>
-              <div
-                className={`${SLOT_CLASS} min-h-0 overflow-y-auto overscroll-contain px-1.5 [grid-area:board] ${compactTyping ? TYPING_BOARD_CLASS : ""}`}
-                data-slot="board"
-              >
-                <Board />
-              </div>
-              <div className={`${SLOT_CLASS} flex min-h-0 flex-col px-1.5 [grid-area:chat]`} data-slot="chat">
-                <ChatPanel />
-              </div>
-              <div className={`${SLOT_CLASS} px-1.5 pb-1 [grid-area:actions]`} data-slot="actions">
-                <ActionRow />
-              </div>
-            </div>
-            ) : null}
+            {wide ? <WideLayout page={page} compactTyping={compactTyping} /> : null}
 
             {/* 기록 시트는 플레이어 세션 컨텍스트를 읽어서 Provider 안에 둠 */}
             <RecordSheet open={sidePanel.recordsOpen} onClose={sidePanel.close} />

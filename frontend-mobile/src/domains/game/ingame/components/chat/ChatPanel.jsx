@@ -8,19 +8,13 @@ import Composer from "./Composer.jsx"
 import ExpandButton from "./ExpandButton.jsx"
 import FrameSlice from "./FrameSlice.jsx"
 import MessageList from "./MessageList.jsx"
+import { selectTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 import { FRAME_ROOT_CLASS, FRAME_SLICE, listInsetStyle } from "./chatStyle.js"
-
-// 재판 연출이 떠 있는지 (데스크톱 InGameChatShell과 같은 조건, 연출이 자기 채팅을 띄움)
-function selectTribunalPresentationOpen(s) {
-    const state = s.state
-    return state?.phase === "TRIBUNAL"
-        && Boolean(state?.tribunal?.defendantUuid)
-        && state.tribunal.resolved !== true
-}
 
 // 넓은 배치(폰 가로·태블릿) 전용: 목록 + 입력 줄 이어 붙여 데스크톱 틀 한 장 모양 (폰 세로는 TalkLayout)
 export default function ChatPanel() {
     const session = useInGameChatSessionContext()
+    // 재판 연출이 뜨면 연출이 자기 채팅을 띄움
     const tribunalOpen = useInGameStore(selectTribunalPresentationOpen)
     const [closeupOpen, setCloseupOpen] = useState(false)
     const openCloseup = useCallback(() => setCloseupOpen(true), [])
