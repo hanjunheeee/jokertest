@@ -28,7 +28,9 @@ const compareSeq = (left, right) => {
     const a = String(left ?? '0').replace(/^0+(?=\d)/, '');
     const b = String(right ?? '0').replace(/^0+(?=\d)/, '');
     if (a.length !== b.length) return a.length - b.length;
-    return a < b ? -1 : a > b ? 1 : 0;
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
 };
 
 module.exports = {

@@ -10,6 +10,13 @@ const productRepository = require('../../../repositories/economy/currencyProduct
 // db 안 넘기면 진짜 models (부를 때 require, 가짜 db 넘기는 시험은 진짜 DB 안 엶)
 const defaultDb = () => require('../../../repositories/common/db');
 
+// 글자 크기 비교로 정렬 (사는 곳 언어 규칙 안 탐)
+const compareText = (left, right) => {
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+};
+
 // 판매 중인 것만, 정렬 순서 → id 순
 const listCurrencyProducts = async ({ kind } = {}, db = defaultDb()) => {
     // 모르는 종류 거절
@@ -21,7 +28,7 @@ const listCurrencyProducts = async ({ kind } = {}, db = defaultDb()) => {
     return rows
         .map(normalizeProductRow)
         .filter((product) => product && product.status === STATUSES.ON_SALE)
-        .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.productId < b.productId ? -1 : (a.productId > b.productId ? 1 : 0)))
+        .sort((a, b) => (a.sortOrder - b.sortOrder) || compareText(a.productId, b.productId))
         .map(toPublicProduct);
 };
 

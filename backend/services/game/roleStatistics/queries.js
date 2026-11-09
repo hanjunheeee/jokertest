@@ -18,10 +18,16 @@ function __setEconomyServiceForTests(fakeEconomyService) {
 }
 
 // DB마다 참/거짓이 1/0으로 올 수 있어 맞춤, 승패 모르면 null
+const toWon = (won) => {
+    if (won === true || won === 1) return true
+    if (won === false || won === 0) return false
+    return null
+}
+
 const toRoleStatisticsRow = (playerRow) => ({
     user_id: playerRow.user_id,
     role: playerRow.role,
-    won: playerRow.won === true || playerRow.won === 1 ? true : playerRow.won === false || playerRow.won === 0 ? false : null,
+    won: toWon(playerRow.won),
     is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
 })
 

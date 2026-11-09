@@ -1,8 +1,8 @@
 'use strict';
-const { Op } = require('sequelize');
 
 // 장부 저장소 파일, 참조 id로 찾기(하나·여러 개) · 한 줄 만들기 · 최근 목록
 // 장부 거래·거래 목록 서비스가 economyModels(db)를 넘겨 부름
+const { Op } = require('sequelize');
 
 // 같은 사람·같은 참조 id 장부 행 (이미 처리한 거래인지, 트랜잭션 주면 그 안에서)
 const findByReference = (models, { userId, referenceEventId }, transaction = null) => models.EconomyLedgerEntry.findOne({

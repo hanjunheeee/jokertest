@@ -10,8 +10,15 @@ function buildRoleRanking(statsForRole, { minGames = RANKING_MIN_GAMES } = {}) {
         .sort((a, b) => (
             b.winRate - a.winRate ||
             b.games - a.games ||
-            (a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0)
+            compareText(a.user_id, b.user_id)
         ))
+}
+
+// 글자 크기 비교로 정렬 (사는 곳 언어 규칙 안 탐)
+function compareText(left, right) {
+    if (left < right) return -1
+    if (left > right) return 1
+    return 0
 }
 
 // 한 사람 직업 중 승률 가장 높은 것 하나, 같으면 승수·판 수·직업 순서

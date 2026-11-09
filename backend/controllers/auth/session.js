@@ -41,7 +41,8 @@ exports.refresh = async (req, res, next) => {
     try {
         const { accessToken, refreshToken, refreshTokenExpiresAt } = await authService.refresh(req.cookies.refreshToken);
 
-        res.cookie("accessToken", accessToken, buildSessionCookieOptions(true, refreshTokenExpiresAt));
+        const rememberMe = true;
+        res.cookie("accessToken", accessToken, buildSessionCookieOptions(rememberMe, refreshTokenExpiresAt));
         if (refreshToken) {
             res.cookie("refreshToken", refreshToken, buildRefreshCookieOptions(refreshTokenExpiresAt));
         }

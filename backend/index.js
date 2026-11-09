@@ -82,11 +82,11 @@ app.use(cookieParser());
 // 상태 확인은 요청 로그 앞 (docker healthcheck가 30초마다 불러 로그 안 채우게)
 app.use("/health", require("./routes/health.routes"));
 // 요청 로그 주소: 비번 재설정·가입 경로는 뒤를 가림, 나머지는 쿼리 뺀 경로만 (토큰·이메일이 로그에 안 남게)
-morgan.token("safe-url", (req) => (
-    isPasswordResetPath(req) ? "/auth/password-reset/[REDACTED]"
-        : isSignupPath(req) ? "/auth/signup/[REDACTED]"
-        : require("./utils/request").safeRequestPath(req)
-));
+morgan.token("safe-url", (req) => {
+    if (isPasswordResetPath(req)) return "/auth/password-reset/[REDACTED]";
+    if (isSignupPath(req)) return "/auth/signup/[REDACTED]";
+    return require("./utils/request").safeRequestPath(req);
+});
 // 로그 파일 있으면 화면·파일 둘 다
 app.use(morgan(":method :safe-url :status :response-time ms", logFile ? {
     stream: { write: (line) => { process.stdout.write(line); logFile.write(line); } },
