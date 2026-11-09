@@ -12,3 +12,6 @@ docker compose build
 
 step "nginx -t (화면 이미지 안 설정, backend 이름은 127.0.0.1로)"
 docker run --rm --add-host backend:127.0.0.1 "${COMPOSE_PROJECT_NAME}-frontend" nginx -t
+
+step "클라우드플레어 뒤 진짜 사용자 IP 확인 (nginx 설정 + 가짜 백엔드, 위조 무시·/internal·로그인 제한·소켓·폰 302 캐시)"
+CHECK_NODE_IMAGE="${COMPOSE_PROJECT_NAME}-backend" bash "$ROOT/deploy/scripts/cloudflare-ip-check/run.sh"

@@ -18,6 +18,8 @@ const { onlineUsers, setIo, emitToUser, joinUserChannel } = require("./emitter")
 const { registerNotificationHandlers } = require("./connection/notifications");
 // 웹소켓만 쓰는 화면은 cors가 안 걸려 Origin을 직접 검사 (DP-034)
 const { createOriginGuard } = require("./connection/originCheck");
+// 소켓 접속 IP 읽기 (Express req.ip와 같은 규칙)
+const { getSocketClientIp } = require("../utils/request");
 
 // 소켓 사건 하나 최대 크기 (보안 점검 2026-11-09)
 const MAX_SOCKET_MESSAGE_BYTES = 64 * 1024;
@@ -49,6 +51,11 @@ function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL, allowRe
     // 서비스가 emitter로 보낼 수 있게 io 먼저 넣음
     setIo(io);
 
+    // 접속 IP를 인증 앞에 정해 둠: nginx가 넘긴 진짜 사용자 IP (handshake.address는 nginx 컨테이너 IP)
+    io.use((socket, next) => {
+        socket.data.clientIp = getSocketClientIp(socket);
+        next();
+    });
     // 인증 못 받은 연결은 connection 처리기까지 못 옴
     io.use(authenticateSocket);
     io.on("connection", (socket) => registerConnectionHandlers(io, socket));

@@ -35,7 +35,7 @@
 | frontend-mobile | PR·push | 두 폴더 `npm ci`(데스크톱 src·public 같이 씀) → eslint → `npm test` → 빌드 (`frontend-mobile.sh`) |
 | e2e quick | PR만 | MySQL + e2e 서버 셋(백엔드 4100·빌드본 화면 5273·5274), desktop 프로젝트, `tests/auth·lobby·room·security`, `@game`·`@serial`·`@shutdown` 뺌, 작업자 2 (`e2e.sh quick`) |
 | e2e full | 하루 한 번(03:00 KST)·손으로 | 전부: desktop·mobile·mobile-safari(WebKit)·serial (`e2e.sh full`) |
-| docker | PR·push | `docker compose build`(push 안 함, 프로젝트 이름 `mmc-ci`) → 화면 이미지 안 `nginx -t` (`docker-build.sh`) |
+| docker | PR·push | `docker compose build`(push 안 함, 프로젝트 이름 `mmc-ci`) → 화면 이미지 안 `nginx -t` → 클라우드플레어 뒤 진짜 IP 확인(`deploy/scripts/cloudflare-ip-check/run.sh`, 잠깐 켜는 컨테이너) (`docker-build.sh`) |
 | audit | PR·push | 폴더 넷 `npm audit --audit-level=high` — 2026-11-09 높음 0이라 **하나라도 생기면 실패** (`audit.sh`) |
 | secrets | PR·push | gitleaks: 지금 파일 전체 + 이번 커밋 범위만 (`secrets-scan.sh`) |
 
@@ -77,7 +77,7 @@ MYSQL_ROOT_PASSWORD=ci-root-test-only CI_DB_PORT=3407 CI_DB_CONTAINER=mmc-ci-mys
 10. **켜기**: `docker compose -f docker-compose.yml -f docker-compose.prod.yml -f deploy/ci/compose.registry.yml --env-file .env.production up -d --no-build`
 11. **서버 안 확인**: `/health` 200(최대 3분) → `npm run admin -- check`(관리자 통로 열쇠 맞음·틀림·지금 상황)
 12. **점검 끄기**, 태그 기록(`.deploy/current_tag`·`previous_tag`)
-13. **바깥 확인**(러너에서): API `/health` 200 · 데스크톱·모바일 첫 화면 200 · 소켓 손잡기 101 — 배포 확인용 브라우저 묶음(`e2e/tests/prod-smoke`)은 아직 없음 → 생기면 `smoke.sh`에 이어 붙이기
+13. **바깥 확인**(러너에서, 클라우드플레어를 거쳐): API `/health` 200 · 데스크톱·모바일 첫 화면 200 · 소켓 손잡기 101 · 폰 302 `no-store`(클라우드플레어에 저장 안 됨) · `SMOKE_EXPECT_CLOUDFLARE=1`이면 `cf-ray` — 배포 확인용 브라우저 묶음(`e2e/tests/prod-smoke`)은 아직 없음 → 생기면 `smoke.sh`에 이어 붙이기
 14. **실패하면 되돌리기**(자동): 바로 전 태그로 `up -d` → `/health` → 점검 끔 → 바깥 확인. 손으로도: action `rollback`(태그 비우면 바로 전)
 
 - **DB는 자동으로 안 되돌림**: 새 마이그레이션이 데이터 모양을 바꿨거나 migrate가 실패했으면 백업 복원은 사람이 `docs/마이그레이션_복구.md` 2장대로 (백업 파일 이름은 되돌리기 로그·`.deploy/last_backup`)
@@ -99,7 +99,7 @@ GitHub: Settings → Environments → `staging`·`production` 만들고 각각�
 
 | 이름 | 무엇 | 만드는 법 |
 | --- | --- | --- |
-| `DEPLOY_HOST` | 서버 공인 IP 또는 도메인 | 네이버 클라우드 콘솔 |
+| `DEPLOY_HOST` | 서버 공인 IP (클라우드플레어는 SSH를 안 넘김 → 주황 구름 도메인 말고 IP 또는 회색 구름 이름) | 네이버 클라우드 콘솔 |
 | `DEPLOY_HOSTS` | (선택) 여러 대 쉼표 목록, 있으면 `DEPLOY_HOST` 대신 | |
 | `DEPLOY_USER` | SSH 계정 (docker 쓸 수 있는, root 아닌 계정 권장) | 서버에서 `sudo adduser deploy && sudo usermod -aG docker deploy` |
 | `DEPLOY_SSH_KEY` | 배포 전용 개인 키 **내용** 전체 | 내 PC: `ssh-keygen -t ed25519 -C mmc-deploy -f mmc_deploy -N ""` → `mmc_deploy.pub`를 서버 `~deploy/.ssh/authorized_keys`에, `mmc_deploy` 내용을 여기 |
@@ -120,6 +120,7 @@ GitHub: Settings → Environments → `staging`·`production` 만들고 각각�
 | `VITE_API_BASE_URL` | `https://api.<도메인>` (경로 없이) | 화면 빌드 때 박힘 (꼭) |
 | `VITE_DISCORD_SUPPORT_URL`·`VITE_AD_PROVIDER`·`VITE_ADSENSE_*` | | 선택, `frontend/Dockerfile` ARG |
 | `SMOKE_API_URL`·`SMOKE_DESKTOP_URL`·`SMOKE_MOBILE_URL` | `https://api.<도메인>` · `https://<도메인>` · `https://m.<도메인>` | 배포 뒤 바깥 확인 |
+| `SMOKE_EXPECT_CLOUDFLARE` | `1` | 바깥 확인에서 클라우드플레어 거침(`cf-ray`)도 봄 |
 | `DEPLOY_PORT` | `22` | SSH 포트 |
 
 ## 5. 승인 (production)
@@ -134,3 +135,4 @@ GitHub: Settings → Environments → `staging`·`production` 만들고 각각�
 2. `DEPLOY_PATH` 만들고 `.env.production` 넣기 (`docs/배포_설정.md` 4장), 인증서 받기(같은 문서 4-3)
 3. GitHub/GitLab에 '4. 비밀값' 넣기 → staging 손으로 한 번 → `remote.sh status`로 태그 확인
 4. `deploy-check` 점검표(키 새로 받기·도메인·소켓 101·연기 시험) 따로 돌리기
+5. 클라우드플레어 대시보드·ACG 설정 (`docs/배포_설정.md` 6장). ACG 22번은 CI 러너가 들어올 수 있게 (GitHub 러너는 IP가 바뀜 → 자체 러너 또는 배포 때만 열기)

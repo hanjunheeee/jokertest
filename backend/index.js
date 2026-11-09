@@ -87,12 +87,14 @@ morgan.token("safe-url", (req) => {
     if (isSignupPath(req)) return "/auth/signup/[REDACTED]";
     return require("./utils/request").safeRequestPath(req);
 });
+// 요청 로그 맨 앞 접속 IP: trust proxy로 정한 진짜 사용자 IP (클라우드플레어·nginx IP 아님)
+morgan.token("client-ip", (req) => require("./utils/request").getClientIp(req));
 // 로그 파일 있으면 화면·파일 둘 다
-app.use(morgan(":method :safe-url :status :response-time ms", logFile ? {
+app.use(morgan(":client-ip :method :safe-url :status :response-time ms", logFile ? {
     stream: { write: (line) => { process.stdout.write(line); logFile.write(line); } },
 } : undefined));
-// 프록시 한 단계 뒤에 있다고 보고 req.ip를 정함
-app.set("trust proxy", 1);
+// 프록시 한 단계(nginx) 뒤에 있다고 보고 req.ip를 정함, 소켓 IP 읽기와 같은 값 (utils/request.js)
+app.set("trust proxy", require("./utils/request").TRUST_PROXY_HOPS);
 
 // 경로 묶음마다 라우터
 app.use("/auth", authRouter);

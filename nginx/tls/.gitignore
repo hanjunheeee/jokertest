@@ -1,0 +1,4 @@
+# 원본 인증서·개인 키는 서버에만 (Cloudflare Origin CA를 여기 둘 때)
+*.pem
+*.key
+*.crt
