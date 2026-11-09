@@ -1,6 +1,6 @@
 'use strict';
 
-// 알림 저장소 파일, 출처 키로 한 번만 만들기·찾기 · 중복 오류 판정 · 목록 · 읽음 · 읽은 것 지우기
+// 알림 저장소 파일, 출처 키로 한 번만 만들기·찾기 · 중복 오류 판정 · 목록 · 읽음 · 읽은 것 지우기(안내는 숨김)
 // 알림 서비스(notification/create·manage)가 주입 db를 넘겨 부름 (시험은 가짜 db)
 const { Op } = require('sequelize');
 
@@ -34,17 +34,19 @@ const isDuplicateSourceError = (error, db, userId, sourceKey) => {
     return error?.fields?.user_id === userId && error?.fields?.source_key === sourceKey;
 };
 
-// 그 사람 알림 최근 것부터 limit개 (같은 시각이면 id 큰 것 먼저)
-const listByUser = (db, userId, limit) => db.Notification.findAll({
-    where: { user_id: userId },
+// 그 사람 알림 최근 것부터 limit개 (같은 시각이면 id 큰 것 먼저), hiddenType 주면 숨김 줄 뺌
+const listByUser = (db, userId, limit, hiddenType = null) => db.Notification.findAll({
+    where: { user_id: userId, ...(hiddenType ? { type: { [Op.ne]: hiddenType } } : {}) },
     order: [['created_at', 'DESC'], ['id', 'DESC']],
     ...(Number.isInteger(limit) && limit > 0 ? { limit } : {}),
 });
 
 // 그 사람의 그 알림 하나 (남의 알림은 못 건드리게 user_id도 같이 봄)
-const findForUser = (db, { notificationId, userId }, transaction) => db.Notification.findOne({
+// lock 참이면 행 잠금 읽기 (최신 커밋 값 + 같은 알림 동시 처리 줄 세우기)
+const findForUser = (db, { notificationId, userId, lock = false }, transaction) => db.Notification.findOne({
     where: { id: notificationId, user_id: userId },
     transaction,
+    ...(lock && transaction?.LOCK?.UPDATE ? { lock: transaction.LOCK.UPDATE } : {}),
 });
 
 // 아직 안 읽었을 때만 읽음 시각 넣기 (처음 읽은 시각 지키기)
@@ -53,13 +55,29 @@ const markReadIfUnread = (db, { notificationId, userId, readAt }, transaction) =
     { where: { id: notificationId, user_id: userId, read_at: null }, transaction },
 );
 
-// 그 사람 읽은 알림만 지움 → 지운 수
-const deleteReadByUser = (db, userId) => db.Notification.destroy({
+// 그 사람 읽은 알림만 지움 → 지운 수, keepSourceKeys 출처 키 줄은 안 지움 (숨김으로 따로 처리)
+const deleteReadByUser = (db, userId, keepSourceKeys = []) => db.Notification.destroy({
     where: {
         user_id: userId,
         read_at: { [Op.ne]: null },
+        ...(keepSourceKeys.length > 0 ? { source_key: { [Op.notIn]: keepSourceKeys } } : {}),
     },
 });
+
+// 읽은 안내 알림을 지우는 대신 숨김 줄로 바꿈 → 바꾼 수 (출처 키가 남아 접속 때 다시 안 만듦)
+// 이미 숨긴 줄은 안 셈
+const hideReadBySources = async (db, { userId, sourceKeys, hiddenType }) => {
+    if (sourceKeys.length === 0) return 0;
+    const [count] = await db.Notification.update({ type: hiddenType }, {
+        where: {
+            user_id: userId,
+            read_at: { [Op.ne]: null },
+            source_key: { [Op.in]: sourceKeys },
+            type: { [Op.ne]: hiddenType },
+        },
+    });
+    return count;
+};
 
 module.exports = {
     findOrCreateBySource,
@@ -69,4 +87,5 @@ module.exports = {
     findForUser,
     markReadIfUnread,
     deleteReadByUser,
+    hideReadBySources,
 };

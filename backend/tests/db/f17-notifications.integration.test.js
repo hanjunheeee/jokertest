@@ -478,10 +478,15 @@ test('읽음 확정된 알림만 DELETE /read로 지워지고 미확인 행은 �
     const body = await res.json();
     assert.equal(body.data.deletedCount, 1);
 
+    // 환영 안내는 줄 대신 숨김으로 남음 (지워도 접속 때 다시 안 생기게, 2026-11-09), 다른 읽은 알림은 진짜 지움
     const remaining = await db.Notification.findAll({ where: { user_id: owner } });
-    assert.equal(remaining.length, 1);
-    assert.equal(remaining[0].type, 'friend-request');
-    assert.equal(remaining[0].read_at, null);
+    const visible = remaining.filter((row) => row.type !== 'hidden');
+    assert.equal(visible.length, 1);
+    assert.equal(visible[0].type, 'friend-request');
+    assert.equal(visible[0].read_at, null);
+    assert.deepEqual(remaining.filter((row) => row.type === 'hidden').map((row) => row.id), [readRow.id]);
+    assert.deepEqual((await notificationService.listForUser(owner)).map((row) => row.type), ['friend-request']);
+    assert.equal((await notificationService.ensureSystemWelcome(owner)).created, false);
 });
 
 test('A-05: 다른 계정의 알림 id로 PATCH하면 404이고 어떤 행도 바뀌지 않는다', async (t) => {

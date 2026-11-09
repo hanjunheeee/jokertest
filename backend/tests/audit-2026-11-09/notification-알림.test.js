@@ -26,7 +26,13 @@ const uniqueError = (fields) => {
 const makeDb = (rows = [], hooks = {}) => {
     const calls = [];
     const same = (row, where) => Object.entries(where).every(([k, v]) => {
-        if (v !== null && typeof v === 'object' && Op.ne in v) return row[k] !== v[Op.ne];
+        if (v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+            // 진짜 DB처럼 여러 조건 함께 (ne·in·notIn)
+            if (Op.ne in v && row[k] === v[Op.ne]) return false;
+            if (Op.in in v && !v[Op.in].includes(row[k])) return false;
+            if (Op.notIn in v && v[Op.notIn].includes(row[k])) return false;
+            return true;
+        }
         return row[k] === v;
     });
     return {
@@ -233,6 +239,30 @@ test('읽은 것 지우기: 읽은 알림만 지우고 지운 수', async (t) =>
     const res = await notificationService.deleteReadForUser('me');
     assert.deepEqual(res, { deletedCount: 1 });
     assert.deepEqual(rows.map((r) => r.id), ['u1', 'x']);
+});
+
+// 브라우저 시험 lobby #1 (2026-11-09): 지운 "알림 기능 안내"가 다시 접속할 때마다 새로 생기던 문제
+test('읽은 것 지우기: 환영 알림은 지워도 다시 안 생김 (보낸 기록은 숨김 줄로 남김)', async (t) => {
+    const rows = [];
+    const { emitted } = setup(t, rows);
+    const welcomeKey = 'system:notifications-available:v1';
+
+    assert.equal((await notificationService.ensureSystemWelcome('me')).created, true);
+    assert.equal(emitted.length, 1);
+    await notificationService.markRead('me', ID);
+    const res = await notificationService.deleteReadForUser('me');
+    assert.deepEqual(res, { deletedCount: 1 });
+    assert.deepEqual(await notificationService.listForUser('me'), []);
+
+    // 다시 접속 (알림 준비) → 새로 안 만들고 소리도 안 남
+    assert.equal((await notificationService.ensureSystemWelcome('me')).created, false);
+    assert.equal(emitted.length, 1);
+    assert.deepEqual(await notificationService.listForUser('me'), []);
+    assert.equal(rows.filter((r) => r.source_key === welcomeKey).length, 1);
+
+    // 한 번 더 지워도 숨김 줄은 그대로 (세지도 않음)
+    assert.deepEqual(await notificationService.deleteReadForUser('me'), { deletedCount: 0 });
+    assert.equal(rows.filter((r) => r.source_key === welcomeKey).length, 1);
 });
 
 test('읽은 것 지우기: 계정 없으면 500', async (t) => {

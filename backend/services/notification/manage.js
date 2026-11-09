@@ -7,13 +7,13 @@ const notificationRepository = require('../../repositories/notification');
 const { withTransaction } = require('../../repositories/common');
 const { getDeps } = require('./deps');
 const { toPublicNotification } = require('./notify');
-const { UUID_PATTERN, NOTIFICATION_LIST_LIMIT } = require('./constants');
+const { UUID_PATTERN, NOTIFICATION_LIST_LIMIT, KEEP_RECORD_SOURCE_KEYS, HIDDEN_NOTIFICATION_TYPE } = require('./constants');
 
 // 내 알림 최근 것부터 최대 100개 (계정 없으면 빈 목록)
 const listForUser = async (userId) => {
     if (typeof userId !== 'string' || userId.length === 0) return [];
     const { db } = getDeps();
-    const rows = await notificationRepository.listByUser(db, userId, NOTIFICATION_LIST_LIMIT);
+    const rows = await notificationRepository.listByUser(db, userId, NOTIFICATION_LIST_LIMIT, HIDDEN_NOTIFICATION_TYPE);
     return rows.map(toPublicNotification);
 };
 
@@ -27,7 +27,9 @@ const markRead = async (userId, notificationId) => {
     const { db, now } = getDeps();
     return withTransaction(db, async (transaction) => {
         // 없거나 남의 알림이면 똑같이 404
-        const row = await notificationRepository.findForUser(db, { notificationId, userId }, transaction);
+        // 잠금 읽기: 같은 알림 동시 읽음 요청은 줄 서고, 늦은 쪽도 먼저 커밋된 읽음 시각을 봄
+        // (안 잠그면 늦은 쪽이 옛 스냅샷으로 다시 읽어 readAt 빈 값을 돌려줬음, 2026-11-09)
+        const row = await notificationRepository.findForUser(db, { notificationId, userId, lock: true }, transaction);
         if (!row) throw createError('알림을 찾을 수 없습니다.', 404);
 
         // 여기부터 진짜 바뀜: 안 읽은 때만 읽음 시각
@@ -42,6 +44,7 @@ const markRead = async (userId, notificationId) => {
 };
 
 // 읽은 알림만 지우고 지운 수 돌려줌
+// 한 번만 보내는 안내(환영 알림)는 줄을 지우면 접속 때 다시 생겨서 숨김 줄로 남김 (화면엔 지운 것과 같음)
 const deleteReadForUser = async (userId) => {
     // 계정 없으면 부른 쪽 잘못이라 500
     if (typeof userId !== 'string' || userId.length === 0) {
@@ -49,7 +52,11 @@ const deleteReadForUser = async (userId) => {
     }
 
     const { db } = getDeps();
-    const deletedCount = await notificationRepository.deleteReadByUser(db, userId);
+    const hiddenCount = await notificationRepository.hideReadBySources(db, {
+        userId, sourceKeys: KEEP_RECORD_SOURCE_KEYS, hiddenType: HIDDEN_NOTIFICATION_TYPE,
+    });
+    const destroyedCount = await notificationRepository.deleteReadByUser(db, userId, KEEP_RECORD_SOURCE_KEYS);
+    const deletedCount = destroyedCount + hiddenCount;
 
     return { deletedCount };
 };
