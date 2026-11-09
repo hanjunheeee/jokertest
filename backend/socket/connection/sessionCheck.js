@@ -2,13 +2,15 @@
 // socket/connection/auth.js가 부름 (사건 검사·접속 인증·주기 검사), sessionLifecycle은 모듈 객체로 불러 부를 때마다 읽음 (시험이 mock.method로 갈아끼움)
 const sessionLifecycle = require("../../services/auth/sessionLifecycle");
 const { onSessionsRevoked } = require("../../repositories/user/revokeSignal");
+const { cacheWindowMs, cacheFloorAt } = require("./sessionCachePolicy");
 
 // 주기 검사 간격 5초 (시험이 이 값만큼 가짜 시계 돌림)
 const SESSION_CHECK_INTERVAL_MS = 5000;
 
 // 사건 검사가 통과 결과를 같이 쓰는 시간 5초 = 주기 검사 간격 (주기 검사가 늘 새로 채워 사건은 거의 DB 안 감)
 // 이 서버에서 끊은 세션(로그아웃·비번 변경·새 로그인·정지 발견·탈퇴)은 끊김 알림으로 바로 지움
-// 다른 서버·관리자 서버가 끊은 세션은 늦어도 이 시간 안에 막힘 (관리자 정지는 즉시 끊기 통로가 따로 끊음)
+// 다른 Node가 끊은 세션은 버스 auth.revoked로 바로 지움, 관리자 서버가 끊은 세션은 늦어도 이 시간 안에 막힘
+// Redis down이면 방송을 못 믿어서 캐시 끔·살아나면 그 전 통과 안 믿음 (sessionCachePolicy.js)
 const EVENT_CHECK_CACHE_MS = SESSION_CHECK_INTERVAL_MS;
 
 // 확인 하나가 이 시간 넘게 답이 없으면 실패로 봄 (DB 연결이 말없이 멈추면 그 확인을 기다리는 소켓 전원이 멈추던 것 막기)
@@ -61,12 +63,17 @@ function rememberRevoked(uuid, at = Date.now()) {
     }
 }
 
-// 통과 결과가 아직 쓸 만한지: EVENT_CHECK_CACHE_MS 안 + 그 뒤 이 서버에서 끊김 없음
+// 이 시각 이하에 시작한 확인은 안 믿음: 그 사람 끊김 시각과 Redis 바닥 시각 중 늦은 것
+function distrustBefore(socket) {
+    const revoked = revokedAt.get(socket.data?.user?.uuid);
+    return Math.max(revoked ?? -Infinity, cacheFloorAt());
+}
+
+// 통과 결과가 아직 쓸 만한지: 믿는 시간(단일·up 5초, down 0) 안 + 그 뒤 끊김·Redis 바닥 없음
 function hasFreshPass(socket, now = Date.now()) {
     const { okAt } = stateOf(socket);
-    if (now - okAt >= EVENT_CHECK_CACHE_MS) return false;
-    const revoked = revokedAt.get(socket.data?.user?.uuid);
-    return revoked === undefined || okAt > revoked;
+    if (now - okAt >= cacheWindowMs(EVENT_CHECK_CACHE_MS)) return false;
+    return okAt > distrustBefore(socket);
 }
 
 // 세션 검사 한 번: 토큰 만료 먼저 보고 세션·정지 확인 (batch: 같은 차례 확인 여럿을 질의 하나로)
@@ -90,11 +97,10 @@ function withCheckTimeout(promise) {
 }
 
 // 확인 한 번, 통과면 묻기 시작한 시각을 통과 시각으로
-// 같은 소켓 확인이 진행 중이면 같이 기다림 (단 그 확인이 끊김 알림 전에 시작했으면 새로 물음)
+// 같은 소켓 확인이 진행 중이면 같이 기다림 (단 그 확인이 끊김 알림·Redis 바닥 전에 시작했으면 새로 물음)
 function runCheck(socket) {
     const state = stateOf(socket);
-    const revoked = revokedAt.get(socket.data?.user?.uuid);
-    if (state.pending && (revoked === undefined || state.pendingStartedAt > revoked)) return state.pending;
+    if (state.pending && state.pendingStartedAt > distrustBefore(socket)) return state.pending;
     const startedAt = Date.now();
     state.pendingStartedAt = startedAt;
     const pending = withCheckTimeout(checkSocketSession(socket))
@@ -122,8 +128,12 @@ function checkForEvent(socket) {
     return runCheck(socket);
 }
 
-// 이 서버에서 세션 끊기면(로그아웃·비번 변경·새 로그인·정지 발견·탈퇴) 그 사람 통과 결과 무효 (다음 사건부터 DB 다시 봄)
-onSessionsRevoked((uuid) => rememberRevoked(uuid));
+// 세션 끊기면(로그아웃·비번 변경·새 로그인·정지 발견·탈퇴) 그 사람 통과 결과 무효 (다음 사건부터 DB 다시 봄)
+// 다른 Node가 끊은 것이면 이 Node의 그 사람 소켓도 바로 다시 확인 (다음 사건·5초 주기 안 기다림)
+onSessionsRevoked((uuid, info) => {
+    rememberRevoked(uuid);
+    if (info?.remote) recheckUser(uuid);
+});
 
 // ── 주기 검사: 타이머 하나로 접속자 전원을 같은 차례에 확인 (확인이 한 질의로 묶임) ──
 const watchers = new Set();
@@ -133,43 +143,68 @@ function tickAll() {
     for (const watcher of watchers) watcher.tick();
 }
 
+// 그 사람 소켓만 바로 주기 검사 한 번 (같은 차례라 질의 하나로 묶임)
+function recheckUser(uuid) {
+    for (const watcher of watchers) {
+        if (watcher.socket.data?.user?.uuid === uuid) watcher.recheck();
+    }
+}
+
+// 주기 검사 답: 세션이 끊겼다는 답이면 바로 끊음
+function disconnectIfRevoked(socket, result) {
+    if (result.ok) return;
+    socket.emit("force_disconnect", { message: result.message, code: disconnectCodeOf(result) });
+    socket.disconnect(true);
+}
+
+// 주기 검사 실패: 연달아 실패가 쌓였을 때만 끊음 (세션 확인 못 한 연결을 끝없이 믿지는 않음), 로그엔 오류 이름만
+function disconnectAfterFailures(socket, err, failures) {
+    console.error("[31m[소켓 세션 주기 검사 실패][0m", err?.name ?? "UnknownError", { failures });
+    if (failures < WATCH_FAILURE_LIMIT) return;
+    socket.emit("force_disconnect", {
+        message: "세션 상태를 확인할 수 없어 연결이 종료되었습니다.",
+        code: "SESSION_CHECK_FAILED",
+    });
+    socket.disconnect(true);
+}
+
 // 사건 없어도 세션 끊김(로그아웃·비번 바꿈) 잡으려고 주기 검사, 검사 겹치지 않게 깃발 둠
 // 세션이 끊겼다는 답이면 바로 끊고, 검사 자체 실패(DB 오류)는 연달아 WATCH_FAILURE_LIMIT번일 때만 끊음
-// 실패 로그엔 오류 이름만 남김 (오류 문구에 민감 정보 섞일 수 있음)
 function startSessionRevocationWatcher(socket) {
     let checking = false;
     let stopped = false;
     let failures = 0;
+    // 검사 중에 다시 확인 부탁이 오면 끝난 뒤 한 번 더 (진행 중 검사는 끊김 전에 시작했을 수 있음)
+    let again = false;
 
     const watcher = {
         socket,
         tick() {
-            // 앞 검사가 안 끝났거나 멈췄으면 이번 차례 건너뜀
+            // 앞 검사가 안 끝났거나 멈췄으면 이번 차례 건너뜀, 기다리는 사이 멈췄으면(끊김) 결과 버림
             if (checking || stopped) return;
             checking = true;
             runCheck(socket)
-                // 기다리는 사이 멈췄으면(끊김) 결과 버림
                 .then((result) => {
                     if (stopped) return;
                     failures = 0;
-                    if (!result.ok) {
-                        socket.emit("force_disconnect", { message: result.message, code: disconnectCodeOf(result) });
-                        socket.disconnect(true);
-                    }
+                    disconnectIfRevoked(socket, result);
                 })
-                // 검사 실패는 다음 차례에 다시, 연달아 실패가 쌓였을 때만 끊음 (세션 확인 못 한 연결을 끝없이 믿지는 않음)
+                // 검사 실패는 다음 차례에 다시
                 .catch((err) => {
                     if (stopped) return;
                     failures += 1;
-                    console.error("[31m[소켓 세션 주기 검사 실패][0m", err?.name ?? "UnknownError", { failures });
-                    if (failures < WATCH_FAILURE_LIMIT) return;
-                    socket.emit("force_disconnect", {
-                        message: "세션 상태를 확인할 수 없어 연결이 종료되었습니다.",
-                        code: "SESSION_CHECK_FAILED",
-                    });
-                    socket.disconnect(true);
+                    disconnectAfterFailures(socket, err, failures);
                 })
-                .finally(() => { checking = false; });
+                .finally(() => {
+                    checking = false;
+                    if (again) { again = false; watcher.tick(); }
+                });
+        },
+        // 다른 Node 끊김 방송 받았을 때: 지금 바로, 검사 중이면 끝난 뒤 바로
+        recheck() {
+            if (stopped) return;
+            if (checking) { again = true; return; }
+            watcher.tick();
         },
     };
 
@@ -203,5 +238,5 @@ module.exports = {
     checkForEvent,
     markChecked,
     startSessionRevocationWatcher,
-    __testables: { hasFreshPass, rememberRevoked, revokedAt },
+    __testables: { hasFreshPass, rememberRevoked, revokedAt, recheckUser },
 };
