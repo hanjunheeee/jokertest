@@ -28,8 +28,9 @@ fi
 ssh_opts=(-i "$ssh_dir/key" -p "$port" -o UserKnownHostsFile="$ssh_dir/known_hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=15)
 
 # 서버에 올릴 파일: compose 셋·nginx(HTTPS 조각 붙이기용)·배포 스크립트 (git에 있는 그대로)
+# Node 여러 개: nodes.sh(remote.sh가 읽음)·gen-nodes.js(서버에서 upstream·docker-compose.nodes.yml 만들기)
 bundle="$ssh_dir/bundle.tar.gz"
-git -C "$ROOT" archive --format=tar.gz -o "$bundle" HEAD docker-compose.yml docker-compose.prod.yml nginx deploy/ci/compose.registry.yml deploy/ci/scripts/deploy/remote.sh
+git -C "$ROOT" archive --format=tar.gz -o "$bundle" HEAD docker-compose.yml docker-compose.prod.yml nginx deploy/ci/compose.registry.yml deploy/ci/scripts/deploy/remote.sh deploy/ci/scripts/deploy/nodes.sh deploy/scripts/gen-nodes.js
 
 # 서버에 넘길 값 (비밀 아님만 — 레지스트리 비번은 표준 입력으로 따로)
 remote_env() {

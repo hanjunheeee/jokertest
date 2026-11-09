@@ -1,6 +1,6 @@
 # CI (GitHub Actions) — 새 저장소로 옮길 때 .github/workflows/ci.yml 로 복사 (docs/CI_CD.md)
 # 할 일은 전부 deploy/ci/scripts/*.sh 에 있음 → GitLab(deploy/ci/gitlab-ci.yml)과 같은 스크립트를 부름
-# PR: 백엔드·DB·화면 둘·도커 빌드·보안 + 브라우저 빠른 묶음 / 하루 한 번·손으로: 브라우저 전체
+# PR: 백엔드·DB·화면 둘·도커 빌드·보안 + 브라우저 빠른 묶음 / 하루 한 번·손으로: 브라우저 전체 + Node 2개 브라우저 전체
 name: CI
 
 on:
@@ -16,7 +16,7 @@ on:
       e2e:
         description: 브라우저 시험 묶음
         type: choice
-        options: [full, quick, none]
+        options: [full, quick, multinode, none]
         default: full
 
 # 같은 브랜치·PR에 새 push가 오면 이전 실행 취소
@@ -113,7 +113,7 @@ jobs:
     # PR엔 빠른 묶음, 하루 한 번·손으로는 전체, 그냥 push엔 안 돎
     if: >-
       github.event_name == 'pull_request' || github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && inputs.e2e != 'none')
+      (github.event_name == 'workflow_dispatch' && inputs.e2e != 'none' && inputs.e2e != 'multinode')
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     services:
@@ -152,6 +152,55 @@ jobs:
             e2e/reports/
             e2e/test-results/
             e2e/.runtime/backend.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Node 2개 브라우저 전체 (밤마다·손으로 multinode): 백엔드 둘 + docker nginx 앞단 + Redis 서비스 (docs/배포_설정.md 7장)
+  e2e-multinode:
+    name: 브라우저 시험 Node 2개
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.e2e == 'multinode')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-test-only
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-test-only"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=3s --health-retries=20
+    env:
+      CI_DB_HOST: 127.0.0.1
+      CI_DB_PORT: "3306"
+      E2E_WORKERS: "2"
+      E2E_REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            frontend-mobile/package-lock.json
+            e2e/package-lock.json
+      - run: bash deploy/ci/scripts/e2e.sh multinode
+      - name: 실패 보고서·trace·Node 로그 올리기
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-multinode-${{ github.run_id }}
+          path: |
+            e2e/reports/
+            e2e/test-results/
+            e2e/.runtime/backend-*.log
           retention-days: 14
           if-no-files-found: ignore
 

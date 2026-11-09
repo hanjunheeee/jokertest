@@ -2,6 +2,8 @@
 # 배포 뒤 확인 파일(러너에서, 바깥 주소로), API /health 200 · 데스크톱·모바일 첫 화면 200 · 소켓 101 · 폰 302 저장 안 함
 # 받는 값: SMOKE_API_URL(예: https://api.example.com), SMOKE_DESKTOP_URL, SMOKE_MOBILE_URL — 비면 그 칸 건너뜀
 #   SMOKE_EXPECT_CLOUDFLARE=1 → 클라우드플레어를 거치는지(cf-ray)도 봄
+#   SMOKE_NODES=n1,n2,… (또는 SMOKE_EXPECT_NODES=2 → n1..n2) → Node마다 /health?node=<id>가 그 Node에서 답하는지(serverId)·redis up·draining 아님,
+#     소켓 101도 ?node=<id>로 Node마다 (nginx $arg_node 고르기·backup 확인, docs/배포_설정.md 7장)
 # 배포 확인용 브라우저 묶음(e2e/tests/prod-smoke)이 생기면 여기서 이어 부름 (지금은 없음 → 자리만)
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
 
@@ -29,6 +31,39 @@ if [ -n "${SMOKE_API_URL:-}" ]; then
         -H "Sec-WebSocket-Key: $(head -c 16 /dev/urandom | base64)" -H "Origin: ${origin%/}" \
         "${SMOKE_API_URL%/}/socket.io/?EIO=4&transport=websocket"
 fi
+# Node 여러 개: 확인할 Node 이름들 (SMOKE_NODES가 먼저, 없으면 SMOKE_EXPECT_NODES 수만큼 n1..)
+node_ids=""
+if [ -n "${SMOKE_NODES:-}" ]; then
+    node_ids="${SMOKE_NODES//,/ }"
+elif [ "${SMOKE_EXPECT_NODES:-0}" -gt 1 ] 2>/dev/null; then
+    node_ids="$(seq -f 'n%g' 1 "$SMOKE_EXPECT_NODES" | tr '\n' ' ')"
+fi
+
+# Node 하나: /health?node=<id> 답이 그 Node(serverId)·redis up·draining 아님인지 (몇 번 다시)
+expect_node() {
+    local id="$1" body="" ok=""
+    for _ in $(seq 1 "$retries"); do
+        body="$(curl -s --max-time 10 "${SMOKE_API_URL%/}/health?node=$id" || true)"
+        # 답 글자에서 바로 봄 (러너에 node 없어도 되게): 그 Node가 답했는지·redis up·draining 아님
+        if ! printf '%s' "$body" | grep -q "\"serverId\":\"$id\""; then ok="답한 Node 다름: ${body:0:80}"
+        elif ! printf '%s' "$body" | grep -q '"redis":"up"'; then ok="redis up 아님"
+        elif printf '%s' "$body" | grep -q '"draining":true'; then ok="draining"
+        else ok="OK"; fi
+        [ "$ok" = "OK" ] && { echo "OK   Node $id /health (serverId·redis up)"; return 0; }
+        sleep 6
+    done
+    echo "실패 Node $id /health ($ok)"; fail=1
+}
+if [ -n "$node_ids" ] && [ -n "${SMOKE_API_URL:-}" ]; then
+    for id in $node_ids; do
+        expect_node "$id"
+        expect_status "Node $id 소켓 101" 101 --http1.1 -N --max-time 5 \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
+            -H "Sec-WebSocket-Key: $(head -c 16 /dev/urandom | base64)" -H "Origin: ${origin%/}" \
+            "${SMOKE_API_URL%/}/socket.io/?EIO=4&transport=websocket&node=$id"
+    done
+fi
+
 [ -n "${SMOKE_DESKTOP_URL:-}" ] && expect_status "데스크톱 첫 화면" 200 "${SMOKE_DESKTOP_URL%/}/"
 # 모바일은 폰 UA로 (데스크톱 UA면 모바일 주소는 그대로, 폰 UA 데스크톱 주소는 m.으로 302)
 [ -n "${SMOKE_MOBILE_URL:-}" ] && expect_status "모바일 첫 화면" 200 -A "Mozilla/5.0 (Linux; Android 14; Pixel 7) Mobile" "${SMOKE_MOBILE_URL%/}/"

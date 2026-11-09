@@ -2,6 +2,7 @@
 # CI가 이 이름으로 빌드·push → 서버는 같은 이름으로 pull해서 켬 (서버에서 빌드 안 함)
 #   빌드(CI):  docker compose -f docker-compose.yml -f deploy/ci/compose.registry.yml build backend frontend
 #   켜기(서버): docker compose -f docker-compose.yml -f docker-compose.prod.yml -f deploy/ci/compose.registry.yml --env-file .env.production up -d --no-build
+# Node 여러 개: n2..(backend-n2..)는 docker-compose.nodes.yml이 같은 이름·태그를 씀 (서버에서 gen-nodes.js --registry가 만듦, 여기엔 안 적음)
 # IMAGE_REGISTRY 예: ghcr.io/<계정> 또는 <이름>.kr.ncr.ntruss.com (네이버 Container Registry), IMAGE_TAG: 커밋 해시(앞 12자)
 services:
   backend:

@@ -4,6 +4,9 @@
 # 배포 순서(docs/배포_설정.md·docs/마이그레이션_복구.md): 이미지 pull → 점검 켜기 → 판 0개까지 기다리기 → DB 백업 → migrate 상태·적용
 #   → up -d → /health·관리자 통로 점검 → 점검 끄기 → 태그 기록 (실패하면 멈추고 러너가 rollback 부름)
 # 받는 값: IMAGE_REGISTRY, DEPLOY_MAINTENANCE(1/0), DRAIN_MAX_MINUTES, DRAIN_FORCE(1이면 시간 넘어도 진행), RUN_MIGRATIONS(1/0), SERVER_ROLE
+# Node 여러 개(docs/배포_설정.md 7장, 함수는 nodes.sh): NODE_COUNT(셸 → .env.production → 코어 수)로 nginx upstream·docker-compose.nodes.yml을 만듦
+#   DEPLOY_ROLLING=auto(기본: Node 2개 이상이면 1)|1|0 — 1이면 점검 없이 Node 하나씩 (드레인 → 그 Node 판·방 0개 → 새 이미지 → /health ok·redis up)
+#   마이그레이션은 앞뒤 버전이 같이 돌 수 있는 것만. 깨지는 마이그레이션·처음 Node 여러 개로 바꾸는 배포는 DEPLOY_ROLLING=0 (점검 → 판 0개 → 전부)
 # 비밀값은 서버 .env.production에서만 (이 스크립트는 값 안 찍음)
 set -euo pipefail
 
@@ -22,25 +25,25 @@ current_tag() { cat "$STATE_DIR/current_tag" 2>/dev/null || true; }
 previous_tag() { cat "$STATE_DIR/previous_tag" 2>/dev/null || true; }
 
 # compose: 기본 + 운영(80·443·HTTPS) + 레지스트리 이미지 이름, 값은 .env.production (IMAGE_TAG는 셸 값이 이김)
+# Node 여러 개면 docker-compose.nodes.yml(gen-nodes.js가 만듦)도 겹침
 compose() {
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml -f deploy/ci/compose.registry.yml --env-file .env.production "$@"
+    local nodes=()
+    [ -f docker-compose.nodes.yml ] && nodes=(-f docker-compose.nodes.yml)
+    docker compose -f docker-compose.yml -f docker-compose.prod.yml -f deploy/ci/compose.registry.yml "${nodes[@]}" --env-file .env.production "$@"
 }
 
 running() { [ -n "$(compose ps -q --status running "$1" 2>/dev/null)" ]; }
+
+# Node 여러 개 함수 (node_count·gen_nodes·roll_to·switch_to·wait_healthy·internal_call_on …)
+source "$(dirname "${BASH_SOURCE[0]}")/nodes.sh"
 
 # 운영 DB에 root로 SQL (db 컨테이너 안 환경값 비번)
 db_sql() {
     compose exec -T db sh -c 'mysql --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' 2> >(grep -v "Using a password" >&2)
 }
 
-# 백엔드 컨테이너 안에서 관리자 통로 부르기 (열쇠는 컨테이너 환경값, 안 찍음)
-internal_call() {
-    local method="$1" path="$2" field="${3:-}"
-    compose exec -T -e CALL_METHOD="$method" -e CALL_PATH="$path" -e CALL_FIELD="$field" backend node -e '
-fetch("http://127.0.0.1:4000" + process.env.CALL_PATH, { method: process.env.CALL_METHOD, headers: { "X-Internal-Key": process.env.INTERNAL_API_KEY || "" } })
-  .then(async (r) => { if (!r.ok) { console.error("status " + r.status); process.exit(1); } const j = await r.json(); if (process.env.CALL_FIELD) console.log(j[process.env.CALL_FIELD]); })
-  .catch((e) => { console.error(e.message); process.exit(1); });'
-}
+# 백엔드(n1) 컨테이너 안에서 관리자 통로 부르기 (열쇠는 컨테이너 환경값, 안 찍음)
+internal_call() { internal_call_on backend "$@"; }
 
 # 점검 켜기/끄기: DB 한 줄 바꾸고 서버에 다시 읽게 (새 방·시작·코드 입장 막음, 진행 중 판은 그대로)
 set_maintenance() {
@@ -51,7 +54,11 @@ set_maintenance() {
     else
         printf "UPDATE maintenance_state SET is_enabled=0, message=NULL, updated_at=UTC_TIMESTAMP() WHERE id=1;\n" | db_sql
     fi
-    if running backend; then internal_call POST /internal/maintenance/reload >/dev/null || log "점검 다시 읽기 실패 (INTERNAL_API_KEY 확인)"; fi
+    # Node마다 다시 읽기 (방송 도착을 안 기다림, 옛 버전엔 방송이 없음)
+    local svc
+    for svc in $(running_backends); do
+        internal_call_on "$svc" POST /internal/maintenance/reload >/dev/null || log "$svc 점검 다시 읽기 실패 (INTERNAL_API_KEY 확인)"
+    done
     log "점검 $([ "$on" = 1 ] && echo 켬 || echo 끔)"
 }
 
@@ -97,22 +104,20 @@ migrate_db() {
     compose run --rm --no-deps backend node scripts/migrate-db.js status
 }
 
-# 백엔드가 /health 200 될 때까지 (최대 3분)
-wait_healthy() {
-    for _ in $(seq 1 36); do
-        if compose exec -T backend node -e 'fetch("http://127.0.0.1:4000/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))' 2>/dev/null; then
-            log "백엔드 /health 200"; return 0
-        fi
-        sleep 5
-    done
-    log "백엔드가 3분 안에 안 켜짐 → docker compose logs backend"; compose logs --tail 80 backend || true
-    return 1
-}
-
-switch_to() {
-    export IMAGE_TAG="$1"
-    compose up -d --no-build --remove-orphans
-    wait_healthy
+# 롤링 배포: 백업·마이그레이션 → Node 하나씩 → 관리자 점검 → 태그 기록 (점검 모드 안 켬)
+deploy_rolling() {
+    log "롤링 배포 (Node $(node_count)개, 점검 안 켬)"
+    if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
+        backup_db || { echo "backup" > "$STATE_DIR/last_failure_stage"; return 1; }
+        migrate_db || return 1
+    fi
+    local old; old="$(current_tag)"
+    roll_to "$IMAGE_TAG" || { echo "health" > "$STATE_DIR/last_failure_stage"; return 1; }
+    log "관리자 통로 점검 (npm run admin -- check)"
+    compose exec -T backend npm run --silent admin -- check || { echo "admin-check" > "$STATE_DIR/last_failure_stage"; return 1; }
+    if [ -n "$old" ] && [ "$old" != "$IMAGE_TAG" ]; then echo "$old" > "$STATE_DIR/previous_tag"; fi
+    echo "$IMAGE_TAG" > "$STATE_DIR/current_tag"
+    log "롤링 배포 끝: $IMAGE_TAG"
 }
 
 case "$action" in
@@ -126,6 +131,7 @@ case "$action" in
         rm -f "$STATE_DIR/last_failure_stage"
         log "배포 시작: $IMAGE_TAG (지금 $(current_tag || true), 역할 ${SERVER_ROLE:-primary})"
         compose pull backend frontend
+        if rolling; then deploy_rolling; exit $?; fi
         if [ "${DEPLOY_MAINTENANCE:-1}" = "1" ]; then
             set_maintenance 1
             wait_no_games || { echo "drain" > "$STATE_DIR/last_failure_stage"; set_maintenance 0; exit 1; }
@@ -152,7 +158,8 @@ case "$action" in
         [ -n "$target" ] || { log "되돌릴 태그가 없음 (첫 배포?) → 손으로 확인"; exit 1; }
         log "되돌리기: $target (실패 단계: $(cat "$STATE_DIR/last_failure_stage" 2>/dev/null || echo 없음))"
         compose pull backend frontend || true
-        switch_to "$target"
+        # Node 여러 개면 되돌리기도 하나씩 (판 안 끊김), 크게 망가졌으면 DEPLOY_ROLLING=0 또는 NODE_COUNT=1
+        if rolling; then roll_to "$target"; else switch_to "$target"; fi
         set_maintenance 0
         # previous_tag는 안 바꿈 (되돌린 뒤 또 되돌려도 나쁜 태그로 안 감)
         echo "$target" > "$STATE_DIR/current_tag"
