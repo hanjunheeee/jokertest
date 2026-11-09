@@ -13,6 +13,10 @@ module.exports = (sequelize, DataTypes) => {
     start_at: { type: DataTypes.DATE },
     end_at: { type: DataTypes.DATE },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+    // 0031 해제 칸: 해제할 때 end_at 지금·is_permanent 0도 같이 → 정지 판정은 이 칸 안 봄
+    lifted_at: { type: DataTypes.DATE, allowNull: true },
+    lifted_by: { type: DataTypes.UUID, allowNull: true },
+    lift_reason: { type: DataTypes.STRING(500), allowNull: true },
   }, {
     tableName: 'user_bans',
     timestamps: false,

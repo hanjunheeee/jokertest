@@ -110,6 +110,10 @@ app.use("/game", gameRouter);
 app.use("/economy", economyRouter);
 app.use("/notifications", notificationRouter);
 app.use("/reports", reportRouter);
+// 플레이어 문의 (플레이어 로그인 그대로)
+app.use("/inquiries", require("./routes/inquiry.routes"));
+// 관리자 페이지 (ADMIN_TOTP_KEY 없으면 꺼짐 = 404, 안쪽 순서는 admin/index.js)
+app.use("/admin-api", require("./admin"));
 // 관리자 서버 전용 (INTERNAL_API_KEY 없으면 꺼짐)
 app.use("/internal", internalRouter);
 // 브라우저 시험 전용 (E2E_HOOKS=1 + 운영 아닐 때만 붙임, 열쇠는 INTERNAL_API_KEY)

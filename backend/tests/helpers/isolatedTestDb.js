@@ -13,6 +13,8 @@ const addEmojiPalettes = require('../../db/migrations/0019-add-emoji-palettes');
 const addOperationsTables = require('../../db/migrations/0024-add-operations-tables');
 const addTermsAgreements = require('../../db/migrations/0026-add-terms-agreements');
 const dropUnusedTrafficLogs = require('../../db/migrations/0028-drop-unused-columns-traffic-logs');
+const addAdminPageTables = require('../../db/migrations/0031-add-admin-page-tables');
+const addInquiries = require('../../db/migrations/0032-add-inquiries');
 
 // 기준선(0001)이 만들고 뒤 마이그레이션이 지우는 표 (0028 traffic_logs, 2026-11-09)
 // 관리 목록엔 남김(일부만 적용한 시험 DB엔 있음), 행 비우기·있어야 하는 표 검사에선 뺌, 표 지우기 때 있으면 마지막에 지움
@@ -20,6 +22,11 @@ const TABLES_DROPPED_LATER = [dropUnusedTrafficLogs.DROPPED_TABLE];
 
 // 지울 때 자식 표 먼저 (신고 증거→신고, 감사 기록→관리자, 쿠폰 사용→쿠폰, 동의→약관 판)
 const OPERATIONS_DROP_ORDER = [
+    // 관리자 페이지 표 (0031·0032): 문의 답→문의, 세션·로그인 시도→관리자
+    addInquiries.TABLES.INQUIRY_REPLIES,
+    addInquiries.TABLES.INQUIRIES,
+    addAdminPageTables.TABLES.ADMIN_SESSIONS,
+    addAdminPageTables.TABLES.ADMIN_LOGIN_ATTEMPTS,
     addOperationsTables.TABLES.REPORT_CHAT_EVIDENCE,
     addOperationsTables.TABLES.REPORTS,
     addOperationsTables.TABLES.ADMIN_AUDIT_LOGS,

@@ -37,8 +37,10 @@ const dropUserStatsTitleReputation = require('../db/migrations/0027-drop-user-st
 const dropUnusedColumnsTrafficLogs = require('../db/migrations/0028-drop-unused-columns-traffic-logs');
 const addOnlinePresenceServerId = require('../db/migrations/0029-add-online-presence-server-id');
 const addConcurrentSnapshotServerId = require('../db/migrations/0030-add-concurrent-snapshot-server-id');
+const addAdminPageTables = require('../db/migrations/0031-add-admin-page-tables');
+const addInquiries = require('../db/migrations/0032-add-inquiries');
 // 적용 순서 그대로 (새 마이그레이션은 끝에 붙임)
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes, addOauthStatesUserFk, addUserSessionsRefreshIndexes, alignIndexNames, uuidTypeRoomAndBannedBy, addOperationsTables, addPeriodIndexes, addTermsAgreements, dropUserStatsTitleReputation, dropUnusedColumnsTrafficLogs, addOnlinePresenceServerId, addConcurrentSnapshotServerId];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addEconomyPurchaseRequests, addVoteParticipations, addAchievementGrants, addEconomyLoadoutRevision, addEconomyLoadoutJobSkins, addNotifications, addF19FriendsInvites, addFindIdRequests, addPasswordResetTokens, addSignupEmailVerification, addSocialSignupEmail, addCurrencyProductsTopupOrders, addEmojiPalettes, addOauthStatesUserFk, addUserSessionsRefreshIndexes, alignIndexNames, uuidTypeRoomAndBannedBy, addOperationsTables, addPeriodIndexes, addTermsAgreements, dropUserStatsTitleReputation, dropUnusedColumnsTrafficLogs, addOnlinePresenceServerId, addConcurrentSnapshotServerId, addAdminPageTables, addInquiries];
 
 // 첫 낱말은 명령, 나머지는 --confirm · --name (값은 띄어 쓰거나 = 로)
 const parseArgs = (argv) => {

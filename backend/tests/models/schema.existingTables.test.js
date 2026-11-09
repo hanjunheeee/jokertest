@@ -61,6 +61,10 @@ const EXISTING_TABLES = [
             start_at:     'DATE',
             end_at:       'DATE',
             created_at:   'DATE',
+            // 0031 해제 칸 (관리자 페이지 제재 해제 사유)
+            lifted_at:    'DATE',
+            lifted_by:    'UUID',
+            lift_reason:  'STRING(500)',
         },
     },
     {
@@ -178,6 +182,8 @@ const NEW_MODELS = [
     'TermsVersion', 'UserTermsAgreement',
     // 운영 표 (마이그레이션 0024)
     'AdminUser', 'AdminAuditLog', 'BannedWord', 'Coupon', 'CouponRedemption', 'MaintenanceState', 'Report', 'ReportChatEvidence',
+    // 관리자 페이지 표 (마이그레이션 0031·0032)
+    'AdminSession', 'AdminLoginAttempt', 'Inquiry', 'InquiryReply',
 ];
 
 test('기존 모델 목록에 추가·삭제·이름 충돌이 없다', () => {

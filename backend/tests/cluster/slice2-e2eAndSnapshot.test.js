@@ -105,5 +105,7 @@ test('0030: concurrent_snapshots.server_id 더하기, 두 번 돌려도 안전, 
     await migration0030.down(qi)
     assert.equal(calls.length, 2)
     const { MIGRATIONS } = require('../../scripts/migrate-db')
-    assert.equal(MIGRATIONS.at(-1).name, '0030-add-concurrent-snapshot-server-id')
+    // 목록에 0029 바로 뒤로 등록 (끝이 아닌 건 뒤에 0031·0032가 붙어서)
+    const names = MIGRATIONS.map((m) => m.name)
+    assert.equal(names[names.indexOf('0029-add-online-presence-server-id') + 1], '0030-add-concurrent-snapshot-server-id')
 })
