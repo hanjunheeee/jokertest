@@ -1,5 +1,5 @@
 // 서버 켤 때 접속 상태 되돌리기 시험 (BE-015), 재시작 전 ONLINE 줄은 OFFLINE으로, 켠 뒤 새로 붙은 줄은 그대로
-// 서버 이름(SERVER_ID)별: 자기 서버 줄 + 이름 없는 옛 줄만 되돌림, 다른 서버 접속자는 그대로 (서버 여러 대 대비)
+// 서버 이름(SERVER_ID)별: 자기 서버 줄 + 1시간 넘은 이름 없는 옛 줄만 되돌림, 다른 서버 접속자는 그대로 (서버 여러 대 대비)
 // 가짜 OnlinePresence 모델로 봄 (진짜 DB 안 씀)
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'mysql://test:test@127.0.0.1:1/test'
 
@@ -19,12 +19,12 @@ function installFakePresence(t, rows) {
     db.OnlinePresence = {
         update: async (values, { where }) => {
             let changed = 0
-            const serverIds = where[Op.or].map((branch) => branch.server_id)
+            // 갈래마다 (서버 이름 같음 + 그 갈래 기준 시각 전)
             for (const row of rows) {
                 const notOffline = row.status !== where.status[Op.ne]
-                const stale = row.last_active_at < where.last_active_at[Op.lt]
-                const mine = serverIds.includes(row.server_id ?? null)
-                if (notOffline && stale && mine) {
+                const hit = where[Op.or].some((branch) =>
+                    (row.server_id ?? null) === branch.server_id && row.last_active_at < branch.last_active_at[Op.lt])
+                if (notOffline && hit) {
                     Object.assign(row, values)
                     changed += 1
                 }
@@ -60,11 +60,11 @@ test('BE-015: 켤 때 기준 시각 전 ONLINE 줄은 OFFLINE, 켠 뒤 붙은 �
     ])
 })
 
-test('서버 여러 대: 켠 서버 이름 줄 + 이름 없는 옛 줄만 OFFLINE, 다른 서버 접속자는 그대로', async (t) => {
+test('서버 여러 대: 켠 서버 이름 줄 + 1시간 넘은 이름 없는 옛 줄만 OFFLINE, 다른 서버 접속자는 그대로', async (t) => {
     const rows = [
         { user_id: 'mine', status: 'ONLINE', last_active_at: before(10), server_id: 'game-1' },
-        { user_id: 'legacy', status: 'ONLINE', last_active_at: before(10), server_id: null },
-        { user_id: 'legacy-undefined', status: 'ONLINE', last_active_at: before(10) },
+        { user_id: 'legacy', status: 'ONLINE', last_active_at: before(61), server_id: null },
+        { user_id: 'legacy-undefined', status: 'ONLINE', last_active_at: before(120) },
         { user_id: 'other-server', status: 'ONLINE', last_active_at: before(10), server_id: 'game-2' },
     ]
     installFakePresence(t, rows)
@@ -77,6 +77,23 @@ test('서버 여러 대: 켠 서버 이름 줄 + 이름 없는 옛 줄만 OFFLIN
         ['legacy', 'OFFLINE'],
         ['legacy-undefined', 'OFFLINE'],
         ['other-server', 'ONLINE'],
+    ])
+})
+
+// 브라우저 시험 security S-01 (2026-11-09): 따로 띄운 서버가 켜질 때 막 붙은 이름 없는 줄까지 OFFLINE
+test('이름 없는 줄은 1시간 안에 활동했으면 안 건드림 (어느 서버 접속인지 모름)', async (t) => {
+    const rows = [
+        { user_id: 'legacy-fresh', status: 'ONLINE', last_active_at: before(10), server_id: null },
+        { user_id: 'legacy-59', status: 'IN_GAME', last_active_at: before(59) },
+        { user_id: 'legacy-old', status: 'ONLINE', last_active_at: before(90), server_id: null },
+    ]
+    installFakePresence(t, rows)
+
+    assert.equal(await presenceStatus.resetPresencesOnBoot(BOOT_AT, 'game-1'), 1)
+    assert.deepEqual(rows.map((r) => [r.user_id, r.status]), [
+        ['legacy-fresh', 'ONLINE'],
+        ['legacy-59', 'IN_GAME'],
+        ['legacy-old', 'OFFLINE'],
     ])
 })
 

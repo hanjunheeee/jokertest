@@ -24,17 +24,25 @@ exports.upsertOnlinePresence = async (userId, status, serverId) => {
     });
 };
 
+// 이름 없는 옛 줄(0029 전 저장)은 이만큼 더 오래된 것만 되돌림 (2026-11-09)
+// 어느 서버 줄인지 몰라서, 막 붙은 다른 서버(옛 버전) 접속자를 켜는 서버가 OFFLINE으로 덮지 않게
+const LEGACY_NULL_SERVER_STALE_MS = 60 * 60 * 1000;
+exports.LEGACY_NULL_SERVER_STALE_MS = LEGACY_NULL_SERVER_STALE_MS;
+
 // 기준 시각 전 활동한 이 서버 접속 줄을 OFFLINE으로 (서버 켤 때, 끊김 처리 못 돌고 죽은 서버가 남긴 ONLINE 지우기)
-// 이 서버 이름 줄 + 이름 없는 옛 줄(0029 전 저장)만, 다른 서버 접속자는 안 건드림
+// 이 서버 이름 줄 + 1시간 넘게 활동 없는 이름 없는 옛 줄만, 다른 서버 접속자는 안 건드림
 // 기준 시각 뒤에 붙은 사람 줄은 안 건드림 (켜자마자 다시 붙은 사람이 오프라인으로 덮이지 않게), 바뀐 줄 수 돌려줌
 exports.markOfflineBefore = async (cutoff, serverId) => {
+    const legacyCutoff = new Date(cutoff.getTime() - LEGACY_NULL_SERVER_STALE_MS);
     const [changed] = await db.OnlinePresence.update(
         { status: "OFFLINE" },
         {
             where: {
                 status: { [Op.ne]: "OFFLINE" },
-                last_active_at: { [Op.lt]: cutoff },
-                [Op.or]: [{ server_id: serverId }, { server_id: null }],
+                [Op.or]: [
+                    { server_id: serverId, last_active_at: { [Op.lt]: cutoff } },
+                    { server_id: null, last_active_at: { [Op.lt]: legacyCutoff } },
+                ],
             },
         },
     );
