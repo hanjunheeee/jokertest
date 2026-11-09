@@ -19,6 +19,9 @@ export function onNightTurn(socket, { onStarted, onEnded }) {
 // 밤 차례 끝만 받기
 export const onNightTurnEnded = (socket, fn) => listen(socket, "night_turn_ended", fn)
 
+// 밤 판정 끝만 받기 (그 밤 차례가 다 끝났다는 알림)
+export const onNightActionsResolved = (socket, fn) => listen(socket, "night_actions_resolved", fn)
+
 // 연출 대기 알림·차례 시작 받기 (스냅샷 충돌 감시용)
 export function onNightNotices(socket, onWait, onTurnStart) {
   socket.on("night_presentation_wait", onWait)

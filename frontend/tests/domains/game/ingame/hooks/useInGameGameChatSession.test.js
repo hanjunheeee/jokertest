@@ -646,3 +646,23 @@ test("반복되는 DAY 사이클(NIGHT을 지나 다시 DAY가 되어도)에서 
 
   hook.unmount()
 })
+
+test("인터넷이 끊겼으면 낮 채팅을 안 보내고 끊김 문구, 입력한 글은 남음 (다시 연결될 때 늦게 가서 두 번 가는 것 막기)", () => {
+  seedStore({ phase: "DAY", alive: true })
+  const fake = createFakeChatSocket()
+  setFakeSocket(fake.socket)
+  const hook = renderChat()
+  Object.defineProperty(globalThis.navigator, "onLine", { value: false, configurable: true })
+  try {
+    act(() => hook.result.current.setDraft("늦은 글"))
+    act(() => hook.result.current.send())
+    assert.equal(fake.emitWithAckCalls.length, 0)
+    assert.match(hook.result.current.error ?? "", /인터넷 연결이 끊겨/)
+    assert.equal(hook.result.current.draft, "늦은 글")
+  } finally {
+    delete globalThis.navigator.onLine
+  }
+  act(() => hook.result.current.send())
+  assert.equal(fake.emitWithAckCalls.length, 1, "연결되면 보냄")
+  hook.unmount()
+})

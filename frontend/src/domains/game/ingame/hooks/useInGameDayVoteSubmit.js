@@ -67,6 +67,7 @@ export function useInGameDayVoteSubmit() {
   const serverHasSubmitted = useInGameStore((s) => s.state?.self?.hasSubmittedDayVote)
   const serverSubmittedTargetId = useInGameStore((s) => s.state?.self?.dayVoteTargetUuid)
   const serverSubmissionRound = useInGameStore((s) => s.state?.self?.dayVoteRound)
+  const serverSubmissionDay = useInGameStore((s) => s.state?.self?.dayVoteDayIndex)
   const participationRevision = useInGameStore((s) => s.state?.participationRevision ?? 0)
 
   // 소켓마다 제출 컨트롤러 하나 (소켓 바뀌면 옛 것 버림, 시간 제한은 컨트롤러가 맡음)
@@ -114,9 +115,10 @@ export function useInGameDayVoteSubmit() {
     controllerRef.current?.submit({ gameId, dayIndex, targetId })
   }
 
-  // 서버가 이번 회차 제출 여부를 주면 그 값을 먼저 씀
+  // 서버가 이번 날·이번 회차 제출 여부를 주면 그 값을 먼저 씀 (날마다 회차가 1이라 날짜도 봄)
   const serverOwnsSubmission = typeof serverHasSubmitted === "boolean"
     && (!Number.isInteger(serverSubmissionRound) || serverSubmissionRound === dayVoteRound)
+    && (!Number.isInteger(serverSubmissionDay) || serverSubmissionDay === dayIndex)
 
   return {
     status: state.status,

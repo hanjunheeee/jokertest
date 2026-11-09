@@ -79,6 +79,12 @@ function nightItem(ctx, targetId, selfAlive) {
     disabledReason({ selfAlive, inTargets, submitting }))
 }
 
+// 밤 대상 목록에 내 칸이 고를 수 있게 들어 있는지 (의사만 목록에 본인이 들어감)
+function isSelfNightTarget(ctx, targetId) {
+  const targets = Array.isArray(ctx.nightActionTargets) ? ctx.nightActionTargets : []
+  return targets.some((target) => target.id === targetId && target.selectable === true)
+}
+
 // 대상 카드의 메뉴 항목 목록 (조작 막힘·판 끝이면 빈 목록)
 export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
   if (!ctx) return []
@@ -113,7 +119,8 @@ export function buildInGamePlayerCardMenuItems(ctx, targetId, localPlayerId) {
   }
 
   // 밤 내 차례일 때 다른 사람 카드: 행동 또는 취소
-  if (phase === "NIGHT" && ctx.isNightTurnActor && !isSelf) {
+  // 내 카드는 대상 목록에 내가 있을 때만 (의사 자기 보호, 서버 SELF_TARGET_ROLES와 같음)
+  if (phase === "NIGHT" && ctx.isNightTurnActor && (!isSelf || isSelfNightTarget(ctx, targetId))) {
     const night = nightItem(ctx, targetId, selfAlive)
     if (night) items.push(night)
   }

@@ -25,6 +25,7 @@ export default function InGameChatCloseupOverlay({
   onSend,
   status = null,
   error = null,
+  isDeadChat = false,
   truncateDraftOnInput = true,
   showEmbeddedPhaseTimer = false,
   embeddedPhaseTimerStatusLabel = null,
@@ -89,6 +90,7 @@ export default function InGameChatCloseupOverlay({
                 onSend={onSend}
                 status={status}
                 error={error}
+                isDeadChat={isDeadChat}
                 truncateDraftOnInput={truncateDraftOnInput}
                 showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
                 embeddedPhaseTimerStatusLabel={embeddedPhaseTimerStatusLabel}

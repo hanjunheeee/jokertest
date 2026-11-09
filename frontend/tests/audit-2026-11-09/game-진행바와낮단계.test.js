@@ -70,9 +70,11 @@ test("진행 바 마감: 밤엔 역할 차례 마감, 낮엔 낮 단계 마감",
   assert.equal(selectInGameTimebarPhaseDeadline({ phase: "DAY", nightTurnDeadline: 5, dayPhaseDeadline: 2000 }), 2000)
 })
 
-test("진행 바 마감: 재판·끝남 단계는 마감 없음", () => {
+test("진행 바 마감: 재판엔 재판 마감(낮 마감은 안 씀), 끝남은 마감 없음", () => {
   assert.equal(selectInGameTimebarPhaseDeadline({ phase: "TRIBUNAL", dayPhaseDeadline: 2000 }), null)
-  assert.equal(selectInGameTimebarPhaseDeadline({ phase: "ENDED", nightTurnDeadline: 2000 }), null)
+  assert.equal(selectInGameTimebarPhaseDeadline({ phase: "TRIBUNAL", tribunalDeadline: 3000, dayPhaseDeadline: 2000 }), 3000)
+  assert.equal(selectInGameTimebarPhaseDeadline({ phase: "TRIBUNAL", tribunalDeadline: 0 }), null)
+  assert.equal(selectInGameTimebarPhaseDeadline({ phase: "ENDED", nightTurnDeadline: 2000, tribunalDeadline: 2000 }), null)
 })
 
 test("진행 바 마감: 0·음수·글자 마감 시각과 틀린 상태는 null", () => {
@@ -134,6 +136,12 @@ test("낮 투표 판정 TRIBUNAL: 재판 단계·피고 있음·표가 기권보
   assert.equal(r.outcome, "TRIBUNAL")
   assert.equal(r.tribunalTargetUuid, "u-3")
   assert.equal(r.phase, "TRIBUNAL")
+})
+
+test("낮 투표 판정 TRIBUNAL: 재판 마감 시각이 실려 오면 같이 넘기고, 틀린 값은 뺌", () => {
+  assert.equal(parse(resolved({ tribunalDeadline: 5000 })).tribunalDeadline, 5000)
+  assert.equal(Object.hasOwn(parse(resolved({ tribunalDeadline: -1 })), "tribunalDeadline"), false)
+  assert.equal(Object.hasOwn(parse(resolved()), "tribunalDeadline"), false)
 })
 
 test("낮 투표 판정 TRIBUNAL: 피고 없거나 표=기권이거나 밤으로 가면 거절", () => {

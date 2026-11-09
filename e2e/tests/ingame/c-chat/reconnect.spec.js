@@ -205,22 +205,23 @@ test.describe('잠깐 끊김', () => {
         await c.expectLine(user.page, t.bots[1].nickname, text, { timeout: 20000 });
     });
 
-    test('오프라인일 때 채팅을 보내면 → 5초 뒤 "요청이 응답하지 않습니다" 오류가 뜸 @game', async ({ user, table, context }) => {
+    test('오프라인일 때 채팅을 보내면 → 바로 "인터넷 연결이 끊겨" 오류가 뜨고 글은 입력칸에 남음 @game', async ({ user, table, context }) => {
         await solo({ user, table });
         await c.readyToChat(user.page);
         await context.setOffline(true);
         await c.say(user.page, c.uniq('끊김중'), { expectCleared: false, ready: false });
-        await expect(user.page.getByRole('alert').filter({ hasText: '요청이 응답하지 않습니다. 다시 시도해주세요.' })).toBeVisible({ timeout: 10000 });
+        await expect(user.page.getByRole('alert').filter({ hasText: '인터넷 연결이 끊겨 보내지 못했습니다.' })).toBeVisible({ timeout: 10000 });
         await context.setOffline(false);
     });
 
-    test('오프라인 중 보낸 글이 시간 초과 오류가 났으면 → 다시 연결돼도 다른 사람에게 안 감 @game', async ({ user, table, context }) => {
+    test('오프라인 중 보낸 글은 끊김 오류로 바로 막혀 → 다시 연결돼도 다른 사람에게 안 감 @game', async ({ user, table, context }) => {
         const t = await solo({ user, table });
         await c.readyToChat(user.page);
         await context.setOffline(true);
         const text = c.uniq('늦은글');
         await c.say(user.page, text, { expectCleared: false, ready: false });
-        await expect(user.page.getByRole('alert').filter({ hasText: '요청이 응답하지 않습니다' })).toBeVisible({ timeout: 10000 });
+        // 끊긴 채로는 안 보내고 바로 끊김 문구 (보내 놓고 시간 초과면 다시 연결될 때 늦게 갔음)
+        await expect(user.page.getByRole('alert').filter({ hasText: '인터넷 연결이 끊겨' })).toBeVisible({ timeout: 10000 });
         await context.setOffline(false);
         await c.sleep(4000);
         // 오류를 본 사람은 안 갔다고 믿고 다시 보냄 → 늦게 가면 두 번 감

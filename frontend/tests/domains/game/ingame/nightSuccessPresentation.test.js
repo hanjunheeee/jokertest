@@ -470,6 +470,33 @@ test("AC-02(CODEX 반려 수정): KILL만 finish된 채 DAY 결과가 먼저 반
   session.close()
 })
 
+test("의사 없는 판(의사 차례 없음)도 밤 판정 끝(night_actions_resolved) 뒤엔 최종 결과가 뜸", () => {
+  seedNightSession({ dayIndex: 4 })
+  const session = openSession()
+
+  session.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "k4", nightDayIndex: 4, perspectives: ["TARGET"] }))
+  session.finish("COMPLETED")
+  session.deliver("night_actions_resolved", { gameId: GAME_ID, dayIndex: 4 })
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 5, selfAlive: false, victimUuid: SELF_UUID }))
+  assert.deepEqual(session.value.finalStatus, { targetId: SELF_UUID, alive: false })
+
+  session.close()
+})
+
+test("다른 밤·다른 판의 판정 끝은 치료 창을 닫지 않음", () => {
+  seedNightSession({ dayIndex: 6 })
+  const session = openSession()
+
+  session.deliver("night_action_success", buildSuccessPayload({ type: "KILL", eventId: "k6", nightDayIndex: 6, perspectives: ["TARGET"] }))
+  session.finish("COMPLETED")
+  session.deliver("night_actions_resolved", { gameId: GAME_ID, dayIndex: 5 })
+  session.deliver("night_actions_resolved", { gameId: "other-game", dayIndex: 6 })
+  session.deliver("night_result_applied", buildNightResultApplied({ dayIndex: 7, selfAlive: true }))
+  assert.equal(session.value.finalStatus, null)
+
+  session.close()
+})
+
 test("AC-03(CODEX 반려 수정): 옛 최종 표시의 늦은 onClose는 그 뒤에 세워진 새 최종 표시를 지우지 않는다", () => {
   seedNightSession({ dayIndex: 3 })
   const session = openSession()

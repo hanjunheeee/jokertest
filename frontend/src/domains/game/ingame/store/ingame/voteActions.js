@@ -50,6 +50,10 @@ export const voteActions = (set) => ({
             dayPhase: null,
             dayVoteResolution,
             tribunal: { defendantUuid },
+            // 재판 마감 시각 (판정에 실려 왔을 때만, 아니면 옛 값 지움)
+            tribunalDeadline: Number.isFinite(resolution.tribunalDeadline) && resolution.tribunalDeadline > 0
+              ? resolution.tribunalDeadline
+              : null,
             ...CLEARED_DAY_PHASE_TIMER,
             ...clearSelfActed(current.state),
           },

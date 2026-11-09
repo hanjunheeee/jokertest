@@ -17,18 +17,20 @@ import { sendLeave as sendLeaveNow } from "./exit/leave.js"
 import { lookupExitOutcome } from "./exit/outcome.js"
 
 
-// 나가기 상태와 나가기·다시 시도·결과 조회 함수
-export function useInGameExit() {
+// 나가기 상태와 나가기·다시 시도·결과 조회 함수 (destination = 나간 뒤 갈 화면, 판 중 나가기는 멀티 화면)
+export function useInGameExit({ destination = "/multiplay" } = {}) {
   const navigate = useNavigate()
   const blocker = useBlocker(isPopNavigationBlocked)
   const [exitStatus, setExitStatus] = useState(EXIT_STATUS.IDLE)
   const [exitErrorCode, setExitErrorCode] = useState(null)
 
-  // 늦게 끝나는 정리도 최신 navigate를 쓰게 ref에 둠
+  // 늦게 끝나는 정리도 최신 navigate·갈 화면을 쓰게 ref에 둠
   const navigateRef = useRef(navigate)
+  const destinationRef = useRef(destination)
   useEffect(() => {
     navigateRef.current = navigate
-  }, [navigate])
+    destinationRef.current = destination
+  }, [navigate, destination])
 
   // 화면 살아 있음·정리 끝남·시간 재기·기다림·시도 번호 (hooks/exit/ 함수들이 같이 씀)
   const mountedRef = useRef(true)
@@ -91,6 +93,7 @@ export function useInGameExit() {
       clearGame: () => useInGameStore.getState().clearGame(),
       clearRoom: () => useMatchingStore.getState().clearRoom(),
       navigate: (...args) => navigateRef.current(...args),
+      destination: destinationRef.current,
     })()
   }, [clearTimer])
 

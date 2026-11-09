@@ -5,6 +5,7 @@ import {
   PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS,
 } from "../../constants/store/sessionSnapshot.js"
 import { isPublicProgress } from "../store/gamePayload.js"
+import { tagDayVoteSubmissionDay } from "../store/selfActed.js"
 import { BAD, isNonEmptyString, isNonNegativeInteger, isPlainObject } from "./checks.js"
 import { buildPlayers, readRoster } from "./roster.js"
 import { buildSelf, readSelf } from "./self.js"
@@ -63,6 +64,7 @@ export function applySessionSnapshotPure(current, response) {
     dayPhaseDeadline: timer.dayPhaseDeadline,
     nightTurnRole: timer.nightTurnRole,
     nightTurnDeadline: timer.nightTurnDeadline,
+    tribunalDeadline: timer.tribunalDeadline,
     hostUuid,
     roomId: orNull(response.roomId),
     roomInstanceId: orNull(response.roomInstanceId),
@@ -72,7 +74,7 @@ export function applySessionSnapshotPure(current, response) {
     participationRevision: versions.participationRevision,
     selfProgressSeq: versions.selfProgressSeq,
     players: buildPlayers(response.players, current.state.players),
-    self: buildSelf(response.self, allies),
+    self: tagDayVoteSubmissionDay(buildSelf(response.self, allies), response.dayIndex),
     tribunal: day.tribunal,
     winResult,
     nightResult: day.nightResult,

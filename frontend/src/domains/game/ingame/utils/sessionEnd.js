@@ -18,11 +18,11 @@ export function isSessionGoneResponse(response) {
     && response.ok !== true && SESSION_GONE_CODES.has(response.code)
 }
 
-// 판·방 상태 지우고 멀티 화면으로 감
-export function createSessionEndFinalizer({ clearGame, clearRoom, navigate }) {
+// 판·방 상태 지우고 화면 옮김 (기본은 멀티 화면, 결과 화면 "로비로"는 로비)
+export function createSessionEndFinalizer({ clearGame, clearRoom, navigate, destination = "/multiplay" }) {
   return () => {
     clearGame()
     clearRoom()
-    navigate("/multiplay", { replace: true })
+    navigate(destination, { replace: true })
   }
 }

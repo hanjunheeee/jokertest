@@ -98,13 +98,13 @@ function createFakeSocket() {
   return { socket, emitCalls, emitWithAckCalls }
 }
 
-function buildState({ phase, dayIndex, nightTurnRole }) {
+function buildState({ phase, dayIndex, nightTurnRole, selfAlive }) {
   return {
     id: GAME_ID,
     phase,
     dayIndex,
     players: [
-      { uuid: SELF_UUID, nickname: "나" },
+      { uuid: SELF_UUID, nickname: "나", ...(typeof selfAlive === "boolean" ? { alive: selfAlive } : {}) },
       { uuid: OTHER_UUID, nickname: "상대" },
     ],
     self: {
@@ -119,13 +119,13 @@ function buildState({ phase, dayIndex, nightTurnRole }) {
   }
 }
 
-function applyCanonicalState({ phase, dayIndex, nightTurnRole }) {
+function applyCanonicalState({ phase, dayIndex, nightTurnRole, selfAlive }) {
   const serverNightTurnRole =
     phase === "NIGHT" && nightTurnRole === undefined ? "JOKER" : nightTurnRole
   act(() => {
     useInGameStore.getState().setGamePayload({
       gameId: GAME_ID,
-      state: buildState({ phase, dayIndex, nightTurnRole: serverNightTurnRole }),
+      state: buildState({ phase, dayIndex, nightTurnRole: serverNightTurnRole, selfAlive }),
     })
   })
 }
@@ -242,5 +242,42 @@ test("역할 턴 안내는 아래 게임 표면의 입력을 잠그지 않는다
     "역할 턴 안내가 떠 있어도 밤 행동 UI는 조작 가능하다",
   )
 
+  unmount()
+})
+
+test("죽은 사람: 단계 안내는 조작을 안 막고 저절로 닫히며, 밤 차례 안내는 안 뜸", () => {
+  mock.timers.enable({ apis: ["setTimeout"] })
+  try {
+    const { result, unmount } = mountLiveOverlayStack()
+    act(() => {
+      result.current.roleReveal.close()
+    })
+    applyCanonicalState({ phase: "NIGHT", dayIndex: 1, selfAlive: false })
+    assert.equal(result.current.phaseEntrance.open, true, "단계 안내는 잠깐 보임")
+    assert.equal(result.current.interactionBlocked, false, "죽은 사람 채팅을 막지 않음")
+
+    act(() => {
+      mock.timers.tick(2000)
+    })
+    assert.equal(result.current.phaseEntrance.open, false, "확인 없이 저절로 닫힘")
+    assert.equal(result.current.nightTurn.open, false, "죽은 사람은 밤 차례 안내 없음")
+    assert.equal(result.current.nightTurn.announcement, null)
+    unmount()
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+test("산 사람은 그대로: 단계 안내가 확인 전까지 조작을 막음", () => {
+  const { result, unmount } = mountLiveOverlayStack()
+  act(() => {
+    result.current.roleReveal.close()
+  })
+  applyCanonicalState({ phase: "NIGHT", dayIndex: 1, selfAlive: true })
+  assert.equal(result.current.interactionBlocked, true)
+  act(() => {
+    result.current.phaseEntrance.confirm()
+  })
+  assert.equal(result.current.nightTurn.open, true)
   unmount()
 })

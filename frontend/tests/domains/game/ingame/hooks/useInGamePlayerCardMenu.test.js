@@ -194,6 +194,31 @@ test("AC-01: 본인 카드에는 낮 투표·밤 행동 항목이 노출되지 �
   night.unmount()
 })
 
+test("의사 차례엔 내 카드에도 보호 항목이 뜸 (밤 대상 목록에 내가 있을 때만, 의사 자기 보호 허용)", () => {
+  const doctor = renderMenuHookWithContext(nightContext({
+    gameState: { id: GAME_ID, phase: "NIGHT", dayIndex: 1, nightTurnRole: "DOCTOR" },
+    nightTurnRole: "DOCTOR",
+    nightActionLabel: "보호",
+    nightActionTargets: [
+      { id: SELF_UUID, name: "A", alive: true, connected: true, selectable: true },
+      { id: "u2", name: "B", alive: true, connected: true, selectable: true },
+    ],
+  }))
+  const [selfItem] = doctor.result.current.getItems(SELF_UUID)
+  assert.equal(selfItem.kind, INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION)
+  assert.equal(selfItem.label, "보호")
+  assert.equal(selfItem.enabled, true)
+  doctor.unmount()
+
+  const selfActed = renderMenuHookWithContext(nightContext({
+    nightTurnRole: "DOCTOR",
+    nightActionLastSubmittedTargetId: SELF_UUID,
+    nightActionTargets: [{ id: SELF_UUID, name: "A", alive: true, connected: true, selectable: true }],
+  }))
+  assert.equal(selfActed.result.current.getItems(SELF_UUID)[0].kind, INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION_CANCEL)
+  selfActed.unmount()
+})
+
 test("AC-01: 투표 대상 목록에 없는 사람(사망자)은 항목이 뜨되 '대상이 아닙니다'로 잠긴다", () => {
   const rendered = renderMenuHookWithContext(dayVoteContext())
   const [item] = rendered.result.current.getItems("u4")

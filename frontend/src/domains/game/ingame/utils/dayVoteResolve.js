@@ -32,6 +32,11 @@ export function shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex })
 }
 
 // 판정 방송 검사: 결과별로 다음 단계·피고·공개 표 수가 맞아야 함 (틀리면 null)
+// 마감 시각 값 검사 (양수 숫자)
+function isValidDeadline(value) {
+  return Number.isFinite(value) && value > 0
+}
+
 export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
   if (!shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex })) return null
   if (!RESOLVED_PHASES.has(payload.phase)) return null
@@ -68,6 +73,10 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     publicVoteCount: payload.publicVoteCount,
     publicAbstainCount: payload.publicAbstainCount,
     ...roundFields,
+    // 재판 마감 시각은 실려 왔고 맞는 값일 때만 (없으면 스냅샷이 채움)
+    ...(payload.outcome === "TRIBUNAL" && isValidDeadline(payload.tribunalDeadline)
+      ? { tribunalDeadline: payload.tribunalDeadline }
+      : {}),
   }
 }
 

@@ -38,7 +38,8 @@ export default function GameResultPage() {
   const [introComplete, setIntroComplete] = useState(false)
   const live = useGameResultData()
   const preview = useGameResultPreview()
-  const { requestExit } = useInGameExit()
+  // "로비로" 버튼은 이름대로 로비로 감 (판 중 나가기는 멀티 화면)
+  const { requestExit } = useInGameExit({ destination: "/lobby" })
   const { requestReturnToMatching, isReturning } = useGameResultReturnToMatching()
 
   const bootstrapStatus = useInGameSessionSnapshotSync()

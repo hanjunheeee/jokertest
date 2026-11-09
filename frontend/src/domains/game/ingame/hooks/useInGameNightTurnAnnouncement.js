@@ -21,7 +21,8 @@ import {
 } from "../utils/reduceInGameNightTurnAnnouncement.js"
 import { onConnect } from "../socket/connection.js"
 
-export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
+// skip = 죽은 사람이라 안내를 안 보임 (차례 계산은 그대로)
+export function useInGameNightTurnAnnouncement({ hold = false, skip = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
   const dayIndex = useInGameStore((s) => s.state?.dayIndex ?? null)
   const nightTurnRole = useInGameStore((s) => selectInGameNightTurnRole(s.state ?? null))
@@ -74,8 +75,9 @@ export function useInGameNightTurnAnnouncement({ hold = false } = {}) {
     return () => clearTimeout(timer)
   }, [activeIdentity])
 
-  const announcement =
-    activeRole !== null ? getInGameNightTurnAnnouncement(activeRole, presentation.active?.dayIndex ?? null) : null
+  const announcement = activeRole !== null && !skip
+    ? getInGameNightTurnAnnouncement(activeRole, presentation.active?.dayIndex ?? null)
+    : null
 
   return {
     open: presentation.active !== null && announcement !== null,

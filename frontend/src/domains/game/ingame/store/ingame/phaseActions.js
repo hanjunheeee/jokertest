@@ -7,7 +7,7 @@ import {
 } from "../../constants/store/ingameStore.js"
 import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
 import { applyPlayerEliminatedPure } from "../applyPlayerEliminated.js"
-import { clearSelfActed } from "../../utils/store/selfActed.js"
+import { clearDayVoteSubmission, clearSelfActed } from "../../utils/store/selfActed.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { commitWithReceipt } from "./receiptScope.js"
 
@@ -98,9 +98,11 @@ export const phaseActions = (set) => ({
       if (dayPhaseDeadline === null) return current
 
       const aliveByUuid = new Map(payload.players.map((p) => [p.uuid, p.alive]))
+      // 지난 날 내 표 기록도 지움 (안 지우면 둘째 날 기권 버튼이 잠김)
+      const stateWithoutVote = { ...current.state, ...clearDayVoteSubmission(current.state) }
       return {
         state: {
-          ...current.state,
+          ...stateWithoutVote,
           phase: payload.phase,
           dayIndex: payload.dayIndex,
           dayPhase: "DAY_DISCUSSION",
@@ -108,7 +110,7 @@ export const phaseActions = (set) => ({
           dayVoteResolution: null,
           dayPhaseDeadline: dayPhaseDeadline ?? null,
           ...CLEARED_NIGHT_TURN,
-          ...clearSelfActed(current.state),
+          ...clearSelfActed(stateWithoutVote),
           players: mergeAlive(current.state.players, aliveByUuid),
         },
       }

@@ -1,5 +1,5 @@
 // 밤 성공 연출 훅: 대기열 맨 앞 연출을 고르고, 다 보면 끝맺음 알림
-// 인게임 화면·밤 성공 연출 컴포넌트가 사용, 의사 차례 끝 받기는 socket/night.js를 부름
+// 인게임 화면·밤 성공 연출 컴포넌트가 사용, 의사 차례 끝·판정 끝 받기는 socket/night.js를 부름
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
@@ -13,7 +13,7 @@ import {
   useInGameStore,
 } from "../store/ingameStore.js"
 import { getInGameSocketEpochId } from "../utils/getInGameSocketEpochId.js"
-import { onNightTurnEnded } from "../socket/night.js"
+import { onNightActionsResolved, onNightTurnEnded } from "../socket/night.js"
 
 // 의사 차례가 끝나면 그 밤엔 치료가 더 안 옴
 const HEAL_WINDOW_CLOSING_ROLE = "DOCTOR"
@@ -83,13 +83,14 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
     setTrack(null)
   }
 
-  // 의사 차례가 끝나면 그 밤 치료 창이 닫혔다고 적음
+  // 의사 차례가 끝나거나 그 밤 판정이 끝나면 그 밤 치료 창이 닫혔다고 적음
+  // (의사 없는 판은 의사 차례 자체가 없어 판정 끝이 마감 알림, 서버는 치료 연출을 판정 전에 보냄)
   useEffect(() => {
     if (!socket || typeof socket.on !== "function") return undefined
-    const handleNightTurnEnded = (payload) => {
+    const closeHealWindow = (payload, { requireDoctor }) => {
       // 모양이 틀리거나 의사 차례가 아니거나 다른 판이면 버림
       if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
-      if (payload.role !== HEAL_WINDOW_CLOSING_ROLE) return
+      if (requireDoctor && payload.role !== HEAL_WINDOW_CLOSING_ROLE) return
       if (typeof payload.gameId !== "string" || payload.gameId !== gameId) return
       if (!Number.isInteger(payload.dayIndex)) return
       // 범위와 밤을 같이 적어 두고, 최종 결과 고를 때 추적과 맞춰 봄
@@ -100,7 +101,12 @@ export function useInGameNightSuccessPresentation({ hold = false } = {}) {
           : { scopeKey, nightDayIndex: payload.dayIndex }
       ))
     }
-    return onNightTurnEnded(socket, handleNightTurnEnded)
+    const offTurnEnded = onNightTurnEnded(socket, (payload) => closeHealWindow(payload, { requireDoctor: true }))
+    const offResolved = onNightActionsResolved(socket, (payload) => closeHealWindow(payload, { requireDoctor: false }))
+    return () => {
+      offTurnEnded()
+      offResolved()
+    }
   }, [socket, gameId, scopeKey])
 
   // 연출 다 봄: 스토어에 끝맺음 알리고, 죽임·치료면 최종 결과 추적에 적음

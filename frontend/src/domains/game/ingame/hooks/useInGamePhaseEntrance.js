@@ -14,8 +14,11 @@ import {
 } from "../utils/reduceInGamePhaseEntrance.js"
 import { onConnect } from "../socket/connection.js"
 
-// 단계 입장 안내 상태와 확인 (앞 연출 중이면 hold로 미룸)
-export function useInGamePhaseEntrance({ hold = false } = {}) {
+// 죽은 사람 단계 안내가 저절로 닫히는 시간
+export const PHASE_ENTRANCE_AUTO_CLOSE_MS = 2000
+
+// 단계 입장 안내 상태와 확인 (앞 연출 중이면 hold로 미룸, autoClose = 죽은 사람이라 확인 없이 닫고 조작 안 막음)
+export function useInGamePhaseEntrance({ hold = false, autoClose = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
   const phase = useInGameStore((s) => s.state?.phase ?? null)
   const dayIndex = useInGameStore((s) => s.state?.dayIndex ?? null)
@@ -57,7 +60,16 @@ export function useInGamePhaseEntrance({ hold = false } = {}) {
     setPresentation((current) => confirmPhaseEntrance(current, activeIdentity))
   }, [activeIdentity])
 
-  // armed = 띄울 안내가 남아 있음 (밤 차례 안내를 미룸), blocking = 보이는 동안 조작 막음
+  // 죽은 사람은 잠깐 보이고 저절로 닫힘
+  useEffect(() => {
+    if (!autoClose || activeIdentity === null) return undefined
+    const timer = setTimeout(() => {
+      setPresentation((current) => confirmPhaseEntrance(current, activeIdentity))
+    }, PHASE_ENTRANCE_AUTO_CLOSE_MS)
+    return () => clearTimeout(timer)
+  }, [autoClose, activeIdentity])
+
+  // armed = 띄울 안내가 남아 있음 (밤 차례 안내를 미룸), blocking = 보이는 동안 조작 막음 (죽은 사람은 안 막음)
   return {
     open: presentation.active !== null,
     phase: activePhase,
@@ -66,6 +78,6 @@ export function useInGamePhaseEntrance({ hold = false } = {}) {
     identity: activeIdentity,
     confirm,
     armed: presentation.pending !== null || presentation.active !== null,
-    blocking: presentation.active !== null,
+    blocking: presentation.active !== null && !autoClose,
   }
 }

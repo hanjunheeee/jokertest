@@ -5,6 +5,7 @@ import {
   SELF_SUBMISSION_KEYS,
 } from "../../constants/store/ingameStore.js"
 import { isPublicProgress, normalizeGameState, pickHostUuid } from "../../utils/store/gamePayload.js"
+import { tagDayVoteSubmissionDay } from "../../utils/store/selfActed.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { isConfirmedWin } from "./terminalScope.js"
 
@@ -78,6 +79,21 @@ export const sessionActions = (set) => ({
       }
     }),
 
+  // 다른 사람 끊김·다시 붙음 반영 (서버 session_player_connection_changed, 스냅샷 isConnected와 같은 뜻)
+  applyPlayerConnectionChanged: (payload) =>
+    set((current) => {
+      if (!isPlainObject(payload)) return current
+      if (!current.gameId || !current.state) return current
+      if (payload.gameId !== current.gameId) return current
+      if (typeof payload.uuid !== "string" || payload.uuid.length === 0) return current
+      if (typeof payload.isConnected !== "boolean") return current
+      const players = Array.isArray(current.state.players) ? current.state.players : []
+      const index = players.findIndex((player) => player?.uuid === payload.uuid)
+      if (index < 0 || players[index].isConnected === payload.isConnected) return current
+      const nextPlayers = players.map((player, i) => (i === index ? { ...player, isConnected: payload.isConnected } : player))
+      return { state: { ...current.state, players: nextPlayers } }
+    }),
+
   // 본인 제출 상태 반영 (참여 버전이 뒤처지지 않고, 진행 순번이 더 새 것일 때만)
   applySelfProgress: (payload) =>
     set((current) => {
@@ -105,10 +121,16 @@ export const sessionActions = (set) => ({
         if (Object.hasOwn(payload.self, key)) nextSelf[key] = payload.self[key]
       }
 
+      // 낮 표 기록엔 받은 날짜를 붙임 (다음 날 같은 회차 1과 안 헷갈리게)
+      const submissionDay = Number.isInteger(payload.dayIndex) ? payload.dayIndex : current.state.dayIndex
+      const taggedSelf = Object.hasOwn(payload.self, "hasSubmittedDayVote")
+        ? tagDayVoteSubmissionDay(nextSelf, submissionDay)
+        : nextSelf
+
       return {
         state: {
           ...current.state,
-          self: nextSelf,
+          self: taggedSelf,
           ...(Number.isInteger(incomingSeq) ? { selfProgressSeq: incomingSeq } : {}),
           ...(isPublicProgress(payload.progress) ? { progress: { ...payload.progress } } : {}),
         },

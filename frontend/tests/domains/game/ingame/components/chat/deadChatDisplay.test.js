@@ -32,6 +32,9 @@ const { render, cleanup } = await import("@testing-library/react")
 const { default: InGameChatContent } = await import(
   "../../../../../../src/domains/game/ingame/components/chat/InGameChatContent.jsx"
 )
+const { default: InGameChatCloseupOverlay } = await import(
+  "../../../../../../src/domains/game/ingame/components/chat/InGameChatCloseupOverlay.jsx"
+)
 const { mergeChatMessagesByTime } = await import(
   "../../../../../../src/domains/game/ingame/utils/mergeChatMessages.js"
 )
@@ -57,6 +60,17 @@ test("죽은 뒤 채팅 칸: 위에 '죽은 사람끼리', 죽은 사람 말 줄
     assert.equal(span.style.color, "rgb(169, 169, 169)", "죽은 사람 말은 회색")
   }
   assert.equal(dayRow.querySelector("span").style.color, "rgb(255, 0, 0)", "낮 말은 테마 색")
+})
+
+test("채팅 크게 보기 창에도 죽은 뒤엔 '죽은 사람끼리' 표시 (채팅 틀이 넘긴 isDeadChat을 내용에 전달)", () => {
+  const view = render(React.createElement(InGameChatCloseupOverlay, { ...base, open: true, onClose: () => {}, messages, isDeadChat: true }))
+  const badge = document.body.querySelector("[role='dialog'] [data-dead-chat-badge]")
+  assert.ok(badge, "크게 보기 창에 죽은 사람끼리 표시가 없음")
+  view.unmount()
+
+  const alive = render(React.createElement(InGameChatCloseupOverlay, { ...base, open: true, onClose: () => {}, messages }))
+  assert.equal(document.body.querySelector("[role='dialog'] [data-dead-chat-badge]"), null)
+  alive.unmount()
 })
 
 test("산 사람 채팅 칸엔 '죽은 사람끼리' 표시가 없음", () => {

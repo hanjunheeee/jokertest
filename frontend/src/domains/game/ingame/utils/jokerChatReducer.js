@@ -4,21 +4,28 @@
 // 판이 바뀔 때 되돌릴 처음 값 (판 id 빼고)
 const INITIAL_SYNCED_STATE_BASE = { messages: [], draft: "", status: "idle", error: null }
 
-// 다른 판이면 처음 상태로 바꿈
-function withGameSync(state, gameId) {
+// 다른 판이면 처음 상태로 바꿈 (새로고침 전 그 판 기록이 있으면 채움)
+function withGameSync(state, gameId, restored = null) {
   if (gameId === state.gameId) return state
-  return { gameId, ...INITIAL_SYNCED_STATE_BASE }
+  return { gameId, ...INITIAL_SYNCED_STATE_BASE, messages: Array.isArray(restored) ? restored : [] }
 }
 
 // 판 바뀜·받기·입력·보내기·응답·무효화에 따라 상태 바꿈 (다른 판 동작은 무시)
 export function jokerChatReducer(state, action) {
   switch (action.type) {
-    case "GAME_CHANGED":
-      return withGameSync(state, action.gameId)
+    case "GAME_CHANGED": {
+      // 같은 판인데 아직 빈 채팅이면(계정이 늦게 잡힌 새로고침) 기록만 채움
+      if (action.gameId === state.gameId && state.messages.length === 0 && Array.isArray(action.restored)
+        && action.restored.length > 0) {
+        return { ...state, messages: action.restored }
+      }
+      return withGameSync(state, action.gameId, action.restored ?? null)
+    }
 
-    // 받기: 다른 판 메시지면 그 판으로 새로 시작하고 붙임
+    // 받기: 다른 판 메시지면 그 판으로 새로 시작하고 붙임 (이미 있는 말은 또 안 붙임)
     case "RECEIVE": {
       const synced = withGameSync(state, action.gameId)
+      if (synced.messages.some((m) => m.id === action.message?.id)) return synced
       return { ...synced, messages: [...synced.messages, action.message] }
     }
 

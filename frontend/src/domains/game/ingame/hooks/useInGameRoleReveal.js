@@ -1,10 +1,11 @@
-// 역할 공개 훅: 판에 들어오면 내 역할 창을 한 번 띄우고 닫기·다시 열기
+// 역할 공개 훅: 판에 들어오면 내 역할 창을 한 번 띄우고 닫기·다시 열기 (새로고침 뒤엔 다시 안 띄움)
 // 오버레이 묶음 훅(useInGameOverlayStack)이 사용
 // 서버는 확인을 안 기다리고 10초 뒤 첫 낮으로 넘김 → 확인은 화면에서만 닫음, 저절로 연 창은 10초 뒤나 역할 공개 단계가 끝나면 저절로 닫힘 (사용자 결정 2026-11-09)
 import { useEffect, useRef, useState } from "react"
 import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getInGameRoleRevealInfo } from "../utils/roleReveal.js"
+import { hasSeenRoleReveal, markRoleRevealSeen } from "../utils/ingameSessionMemory.js"
 
 // 저절로 연 역할 창이 열려 있는 시간 (서버 역할 공개 시간과 같게)
 export const INGAME_ROLE_REVEAL_AUTO_CLOSE_MS = 10000
@@ -41,6 +42,11 @@ export function useInGameRoleReveal() {
     if (revealedIdentityRef.current === identity) return
 
     revealedIdentityRef.current = identity
+    // 이 판에서 이미 봤으면(새로고침) 다시 안 띄움, "내 역할 보기"로는 열 수 있음
+    if (hasSeenRoleReveal(gameId, authUuid)) return
+    markRoleRevealSeen(gameId, authUuid)
+    // 탭 저장소(밖의 기억)를 보고 여는 것이라 effect 안에서 둠
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpen(true)
     setAutoOpenedInReveal(phase === "ROLE_REVEAL")
     cancelAutoClose()

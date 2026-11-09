@@ -1,4 +1,4 @@
-// 채팅 글 검사(금지 문자·빈 글·길이)와 검사 실패 문구
+// 채팅 글 검사(금지 문자·빈 글·길이)와 검사 실패 문구, 인터넷 끊김 보기
 // 게임·조커 채팅 세션 훅과 채팅 방송 검사가 사용
 
 // 글 길이 상한과 막는 글자(제어 문자·글 방향을 바꾸는 숨은 문자)
@@ -32,4 +32,12 @@ const FALLBACK_MESSAGE = "메시지를 보낼 수 없습니다."
 // 검사 실패 코드 → 화면 문구
 export function mapJokerChatSanitizeCodeToMessage(code) {
   return SANITIZE_CODE_MESSAGES[code] ?? FALLBACK_MESSAGE
+}
+
+// 인터넷이 끊겼을 때 보내기 막는 문구
+export const CHAT_OFFLINE_MESSAGE = "인터넷 연결이 끊겨 보내지 못했습니다. 연결되면 다시 보내 주세요."
+
+// 브라우저가 인터넷 끊김을 알고 있는지 (끊긴 채 보내면 소켓에 쌓였다가 다시 연결될 때 늦게 감 → 오류 본 사람이 또 보내면 두 번 감)
+export function isBrowserOffline() {
+  return typeof navigator !== "undefined" && navigator?.onLine === false
 }

@@ -19,6 +19,7 @@ const SESSION_EVENTS = [
   ["night_presentation_wait", "nightPresentationWait"],
   ["day_vote_resolved", "dayVoteResolved"],
   ["day_phase_changed", "dayPhaseChanged"],
+  ["session_player_connection_changed", "playerConnectionChanged"],
   ["tribunal_vote_resolved", "tribunalVoteResolved"],
 ]
 

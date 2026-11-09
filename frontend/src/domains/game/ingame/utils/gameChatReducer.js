@@ -43,11 +43,16 @@ function isCurrentIdentity(state, action) {
   )
 }
 
-// 판·계정이 바뀌면 처음 상태로 되돌림 (같으면 그대로)
-function withIdentitySync(state, gameId, authUuid) {
+// 판·계정이 바뀌면 처음 상태로 되돌림 (같으면 그대로), 새로고침 전 그 판 기록이 있으면 채움
+function withIdentitySync(state, gameId, authUuid, restored = null) {
   const identity = normalizeIdentity(gameId, authUuid)
   if (identity.gameId === state.gameId && identity.authUuid === state.authUuid) return state
-  return { ...initialGameChatState(), ...identity }
+  const next = { ...initialGameChatState(), ...identity }
+  if (identity.gameId === null || restored === null || typeof restored !== "object") return next
+  for (const channel of [INGAME_CHAT_CHANNELS.DAY, INGAME_CHAT_CHANNELS.DEAD]) {
+    if (Array.isArray(restored[channel])) next[channel] = { ...next[channel], messages: restored[channel] }
+  }
+  return next
 }
 
 // 보내던 것 버리기: 세대 올리고 보낸 표식 지움 (메시지·입력은 둠)
@@ -65,12 +70,14 @@ function invalidateChannel(channelState) {
 export function gameChatReducer(state, action) {
   switch (action.type) {
     case "CONTEXT_CHANGED":
-      return withIdentitySync(state, action.gameId, action.authUuid)
+      return withIdentitySync(state, action.gameId, action.authUuid, action.restored ?? null)
 
     case "RECEIVE": {
       if (!isCurrentIdentity(state, action)) return state
       if (!isKnownChannel(action.channel)) return state
       const channelState = state[action.channel]
+      // 이미 있는 말(새로고침 전 기록)이면 또 안 붙임
+      if (channelState.messages.some((m) => m.id === action.message?.id)) return state
       return {
         ...state,
         [action.channel]: { ...channelState, messages: [...channelState.messages, action.message] },

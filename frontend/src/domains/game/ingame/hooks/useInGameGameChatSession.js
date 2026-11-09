@@ -9,8 +9,14 @@ import { attachGameChatListener } from "../utils/attachGameChatListener.js"
 import { INGAME_CHAT_CHANNELS, resolveInGameChatReadChannels } from "../utils/inGameChatChannel.js"
 import { selectGameChatMessages } from "../utils/selectGameChatMessages.js"
 import { selectOwnedGameChatContext } from "../utils/selectOwnedGameChatContext.js"
-import { sanitizeJokerChatText, mapJokerChatSanitizeCodeToMessage } from "../utils/chatText.js"
+import {
+  CHAT_OFFLINE_MESSAGE,
+  isBrowserOffline,
+  mapJokerChatSanitizeCodeToMessage,
+  sanitizeJokerChatText,
+} from "../utils/chatText.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
+import { loadChatHistory, saveChatHistory } from "../utils/ingameSessionMemory.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitGameChat } from "../socket/chat.js"
 
@@ -69,10 +75,27 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
     }
   }, [socket])
 
+  // 판·계정이 바뀌면 새로 시작, 새로고침 전 그 판 기록이 있으면 채움
   useEffect(() => {
     invalidate()
-    dispatch({ type: "CONTEXT_CHANGED", gameId: ownedGameId, authUuid })
+    dispatch({
+      type: "CONTEXT_CHANGED",
+      gameId: ownedGameId,
+      authUuid,
+      restored: loadChatHistory("game", ownedGameId, authUuid),
+    })
   }, [ownedGameId, authUuid])
+
+  // 그 판 채팅 기록을 탭 저장소에 둠 (새로고침해도 이어 보기)
+  const dayMessages = state[INGAME_CHAT_CHANNELS.DAY].messages
+  const deadMessages = state[INGAME_CHAT_CHANNELS.DEAD].messages
+  useEffect(() => {
+    if (state.gameId === null || state.authUuid === null) return
+    saveChatHistory("game", state.gameId, state.authUuid, {
+      [INGAME_CHAT_CHANNELS.DAY]: dayMessages,
+      [INGAME_CHAT_CHANNELS.DEAD]: deadMessages,
+    })
+  }, [state.gameId, state.authUuid, dayMessages, deadMessages])
 
   useEffect(() => {
     invalidate()
@@ -143,6 +166,18 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
         authUuid: requestAuthUuid,
         channel: requestChannel,
         message: mapJokerChatSanitizeCodeToMessage(sanitized.code),
+      })
+      return
+    }
+
+    // 인터넷 끊김이면 안 보냄 (보낸 뒤 시간 초과 오류가 나도 다시 연결되면 늦게 가서 두 번 갈 수 있음)
+    if (isBrowserOffline()) {
+      dispatch({
+        type: "LOCAL_ERROR",
+        gameId: requestGameId,
+        authUuid: requestAuthUuid,
+        channel: requestChannel,
+        message: CHAT_OFFLINE_MESSAGE,
       })
       return
     }

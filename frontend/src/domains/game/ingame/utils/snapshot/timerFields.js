@@ -1,4 +1,4 @@
-// 스냅샷의 낮 마감 시각·밤 차례 타이머 검사 (순수 계산, 새로고침 뒤 타이머 이어 가기용)
+// 스냅샷의 낮 마감 시각·밤 차례 타이머·재판 마감 검사 (순수 계산, 새로고침 뒤 타이머 이어 가기용)
 // 틀리면 BAD (utils/snapshot/applySnapshot.js가 사용)
 import { KNOWN_NIGHT_TURN_ROLES } from "../nightTurn.js"
 import { BAD } from "./checks.js"
@@ -37,11 +37,23 @@ function readNightTurnTimer(response, currentState) {
   return EMPTY_NIGHT_TURN
 }
 
-// 낮 마감 시각 + 밤 차례 역할·마감 (하나라도 틀리면 BAD)
+// 재판 마감 시각: 재판 중에만 씀, 틀린 값이면 버림 (스냅샷 전체를 버리진 않음)
+function readTribunalDeadline(response, currentState) {
+  if (response.phase !== "TRIBUNAL") return null
+  const deadline = response.tribunalDeadline
+  if (Number.isFinite(deadline) && deadline > 0) return deadline
+  // 칸이 없으면 같은 날 재판 중 받아 둔 값 유지
+  if (currentState?.phase === "TRIBUNAL" && currentState.dayIndex === response.dayIndex) {
+    return currentState.tribunalDeadline ?? null
+  }
+  return null
+}
+
+// 낮 마감 시각 + 밤 차례 역할·마감 + 재판 마감 (하나라도 틀리면 BAD)
 export function readTimerFields(response, currentState) {
   const dayPhaseDeadline = readDayPhaseDeadline(response)
   if (dayPhaseDeadline === BAD) return BAD
   const nightTurn = readNightTurnTimer(response, currentState)
   if (nightTurn === BAD) return BAD
-  return { dayPhaseDeadline, ...nightTurn }
+  return { dayPhaseDeadline, ...nightTurn, tribunalDeadline: readTribunalDeadline(response, currentState) }
 }

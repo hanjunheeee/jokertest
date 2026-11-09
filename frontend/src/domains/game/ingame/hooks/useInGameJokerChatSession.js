@@ -5,9 +5,16 @@ import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClie
 import { useInGameStore } from "../store/ingameStore.js"
 import { jokerChatReducer, selectJokerChatView } from "../utils/jokerChatReducer.js"
 import { attachJokerChatListener, toJokerChatUiMessage } from "../utils/jokerChatReceive.js"
-import { sanitizeJokerChatText, mapJokerChatSanitizeCodeToMessage } from "../utils/chatText.js"
+import {
+  CHAT_OFFLINE_MESSAGE,
+  isBrowserOffline,
+  mapJokerChatSanitizeCodeToMessage,
+  sanitizeJokerChatText,
+} from "../utils/chatText.js"
 import { canReadRoleNightChat, isJokerNightChatEligible } from "../utils/selfAlive.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
+import { loadChatHistory, saveChatHistory } from "../utils/ingameSessionMemory.js"
+import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { onDisconnect } from "../socket/connection.js"
 import { emitJokerChat } from "../socket/chat.js"
 
@@ -53,26 +60,37 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
     }
   }, [socket])
 
-  // 판 바뀌면 응답 버리고 채팅 비움
+  // 판 바뀌면 응답 버리고 채팅 비움, 새로고침 전 그 판 기록이 있으면 채움
+  const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
   useEffect(() => {
     invalidate()
-    dispatch({ type: "GAME_CHANGED", gameId: externalGameId })
-  }, [externalGameId])
+    const restored = loadChatHistory("role", externalGameId, authUuid)
+    dispatch({ type: "GAME_CHANGED", gameId: externalGameId, restored: restored?.ROLE ?? null })
+  }, [externalGameId, authUuid])
 
-  // 밤 같은 직업 채팅을 볼 수 있을 때만 받기 (죽은 광대는 읽기만)
+  // 그 판 같은 직업 채팅 기록을 탭 저장소에 둠
   useEffect(() => {
-    if (!socket || !canReadRoleNightChat(gameState)) return undefined
+    if (!state.gameId || !authUuid) return
+    saveChatHistory("role", state.gameId, authUuid, { ROLE: state.messages })
+  }, [state.gameId, state.messages, authUuid])
+
+  // 받기는 늘 붙여 두고, 받는 순간 스토어로 밤 같은 직업 채팅을 볼 수 있는지 봄 (죽은 광대는 읽기만)
+  // 밤으로 바뀐 뒤 손잡이를 붙이면 느린 화면에선 그 사이 온 첫 말이 빠졌음
+  useEffect(() => {
+    if (!socket) return undefined
     return attachJokerChatListener(
       socket,
-      (parsed) =>
+      (parsed) => {
+        if (!canReadRoleNightChat(useInGameStore.getState().state ?? null)) return
         dispatch({
           type: "RECEIVE",
           gameId: parsed.gameId,
           message: { id: parsed.id, senderUuid: parsed.senderUuid, text: parsed.text, sentAt: parsed.sentAt },
-        }),
+        })
+      },
       () => useInGameStore.getState().gameId,
     )
-  }, [socket, gameState])
+  }, [socket])
 
   // 보내기: 글 다듬기에서 걸리면 보내지 않고 오류만 보여 줌
   const send = () => {
@@ -97,6 +115,12 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
         message: mapJokerChatSanitizeCodeToMessage(sanitized.code),
         requestDraft,
       })
+      return
+    }
+
+    // 인터넷 끊김이면 안 보냄 (늦게 가서 두 번 가는 것 막기, 낮 채팅과 같음)
+    if (isBrowserOffline()) {
+      dispatch({ type: "ACK", gameId: requestGameId, ok: false, message: CHAT_OFFLINE_MESSAGE, requestDraft })
       return
     }
 
