@@ -30,7 +30,7 @@ try {
     require("./config/requiredEnv").assertRequiredEnv();
     // 서명 키가 짧거나 예시 값이면 운영은 시작 거부 (토큰 위조 막기)
     require("./config/requiredEnv").assertStrongSecrets();
-    // 브라우저 시험 전용 값(E2E_HOOKS·MAIL_TEST_OUTBOX_DIR)이 운영에 있으면 시작 거부
+    // 브라우저 시험 전용 값(E2E_HOOKS·MAIL_TEST_OUTBOX_DIR·가짜 소셜 제공자 주소)이 운영에 있으면 시작 거부
     require("./config/e2eHooks").assertNoE2eInProduction();
 } catch (error) {
     if (require("./config/requiredEnv").isStartupFatal(error)) failStartup(error, "환경값"); // 운영 + 모르는 NODE_ENV는 거부

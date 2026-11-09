@@ -1,5 +1,5 @@
 // 소셜 콜백 시험: Google·Discord 로그인 콜백과 Discord 연결 콜백이 state·지문·세션을 보고 화면으로 돌려보내는 흐름
-// 빈칸 채우기(소셜) 상 4·5·6 중 제공자 응답 없이 되는 곳만 (state 확인·취소·세션 다름), 성공 로그인·연결은 제공자 주소가 코드에 박혀 있어 못 함
+// 빈칸 채우기(소셜) 상 4·5·6 중 제공자 응답 없이 되는 곳 (state 확인·취소·세션 다름), 성공 로그인·연결은 social-provider.spec.js(가짜 제공자)
 const { test, expect, ui, E2E } = require('../../helpers/fixtures');
 const social = require('./socialHelpers');
 

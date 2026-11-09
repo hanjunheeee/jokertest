@@ -1,14 +1,18 @@
 // Google OAuth 주소 상수 파일, 인가·토큰·프로필 주소
 // 같은 폴더 flow.js·index.js가 씀 (시험이 토큰·프로필 주소로 가짜 fetch를 나눔)
+const { getOAuthTestBaseUrl } = require("../../../../config/e2eHooks");
+
+// 브라우저 시험 가짜 제공자 주소 (E2E_HOOKS=1이고 GOOGLE_OAUTH_BASE_URL 있을 때만, 운영이면 시작 거부), 없으면 null
+const TEST_BASE = getOAuthTestBaseUrl("GOOGLE_OAUTH_BASE_URL");
 
 // 로그인 화면으로 보낼 인가 주소
-const GOOGLE_AUTH_ENDPOINT      = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_AUTH_ENDPOINT      = TEST_BASE ? `${TEST_BASE}/o/oauth2/v2/auth` : "https://accounts.google.com/o/oauth2/v2/auth";
 
 // 인가 코드를 access 토큰으로 바꾸는 주소
-const GOOGLE_TOKEN_ENDPOINT     = "https://oauth2.googleapis.com/token";
+const GOOGLE_TOKEN_ENDPOINT     = TEST_BASE ? `${TEST_BASE}/token` : "https://oauth2.googleapis.com/token";
 
 // access 토큰으로 프로필 받는 주소
-const GOOGLE_USERINFO_ENDPOINT  = "https://openidconnect.googleapis.com/v1/userinfo";
+const GOOGLE_USERINFO_ENDPOINT  = TEST_BASE ? `${TEST_BASE}/v1/userinfo` : "https://openidconnect.googleapis.com/v1/userinfo";
 
 exports.GOOGLE_TOKEN_ENDPOINT = GOOGLE_TOKEN_ENDPOINT;
 
