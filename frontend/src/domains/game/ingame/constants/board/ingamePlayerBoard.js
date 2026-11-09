@@ -1,3 +1,5 @@
+// 인원수별 카드 자리 고르기·자리 모양 값
+// 카드 판·플레이어 정보 훅·미리보기가 씀
 import {
   INGAME_PLAYER_LAYOUT_10,
   LAYOUTS_BY_COUNT,

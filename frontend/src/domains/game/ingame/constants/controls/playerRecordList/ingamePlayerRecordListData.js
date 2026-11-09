@@ -1,3 +1,5 @@
+// 플레이어 기록 목록 사진·테두리 경로 고르기
+// 기록 목록·강퇴·친구 초대·결과 화면이 같이 씀
 import {
   resolveAccountProfileBorderSrc,
   resolveAccountProfilePhotoSrc,

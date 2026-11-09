@@ -1,3 +1,5 @@
+// 투표 현황 목록 내용
+// InGameVoteStatusPanel이 씀
 import {
   SCROLL_WRAP_CLASS,
   STATUS_ROW_CLASS,

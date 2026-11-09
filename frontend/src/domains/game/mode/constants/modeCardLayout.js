@@ -1,3 +1,5 @@
+// 모드 고르기 카드 모양 값
+// 모드 카드·모바일 ModeCard가 씀
 export const MODE_CARD_BUTTON_CLASS = "interactive-scale min-w-0 flex-1"
 
 export const FRAME_IMG_CLASS =

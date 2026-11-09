@@ -1,3 +1,5 @@
+// 방 코드 입력해 들어가는 화면
+// 경로 /roomInvite가 씀
 import { motion } from "framer-motion"
 import LabelledActionButton from "@/domains/game/shared/components/LabelledActionButton.jsx"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"

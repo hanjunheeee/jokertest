@@ -1,3 +1,5 @@
+// 방 코드 글자 칸
+// RoomCodeFrame이 씀
 import {
   ROOM_CODE_INPUT_ATTRIBUTES,
   useRoomCodeInput,

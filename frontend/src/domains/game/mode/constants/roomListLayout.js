@@ -1,3 +1,5 @@
+// 방 목록 화면 모양 값
+// 방 목록 부품·모바일 RoomCard가 씀
 export const ROOM_LIST_SHELL_CLASS =
   "absolute left-1/2 top-[52%] z-10 flex h-[clamp(40rem,76vh,50rem)] w-[min(60rem,80vw)] min-h-0 max-w-full -translate-x-1/2 -translate-y-1/2 flex-col gap-[clamp(0.45rem,1vh,0.65rem)] px-[clamp(0.35rem,0.9vw,0.65rem)]"
 

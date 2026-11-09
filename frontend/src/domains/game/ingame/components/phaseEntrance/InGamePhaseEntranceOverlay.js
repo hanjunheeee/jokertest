@@ -1,3 +1,5 @@
+// 낮·밤 들어갈 때 뜨는 확인 창
+// InGamePage가 씀
 import { createElement, useRef } from "react"
 import {
   getEntranceMsg,

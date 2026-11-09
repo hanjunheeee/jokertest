@@ -1,3 +1,5 @@
+// 살아 있음·죽음에 맞는 카드 틀 고르기
+// 카드·미리보기·결과 화면·모바일 카드가 씀
 import {
   INGAME_PLAYER_ALIVE_FRAME_VARIANTS,
   INGAME_PLAYER_DEAD_FRAME_VARIANTS,

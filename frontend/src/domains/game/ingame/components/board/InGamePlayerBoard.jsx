@@ -1,3 +1,5 @@
+// 인게임 가운데 플레이어 카드 판 (인원수별 자리 배치)
+// InGamePage가 씀
 import { useContext, useEffect, useState } from "react"
 import {
   POSITION_CLASS,

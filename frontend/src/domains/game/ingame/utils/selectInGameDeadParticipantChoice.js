@@ -1,3 +1,5 @@
+// 죽은 사람 선택 창 띄울지 판단
+// InGamePage·모바일 useDeadChoice가 씀
 export function selectInGameDeadParticipantChoice(gameState, authUuid) {
   if (gameState === null || typeof gameState !== "object") return false
   if (gameState.phase === "ENDED") return false

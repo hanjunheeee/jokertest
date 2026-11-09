@@ -1,3 +1,5 @@
+// 인게임 화면 전체 (카드 판·채팅·시간 바·알림 창 모음)
+// 경로 /ingame이 씀
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
 import InGameBackground from "../components/InGameBackground.jsx"

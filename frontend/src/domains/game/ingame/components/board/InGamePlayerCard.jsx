@@ -1,3 +1,5 @@
+// 플레이어 카드 한 장 (틀·사진·이름표·상태 표시)
+// 카드 판·재판 연출·상점 스킨 미리보기가 같이 씀
 import {
   INGAME_PLAYER_ASSETS,
   FRAME_IMG_CLASS,

@@ -1,3 +1,5 @@
+// 옆 패널 열고 닫는 움직임·자리 값
+// SidePanel·모바일 시트가 씀
 export const PANEL_TRANSITION = {
   duration: 0.35,
   ease: [0.22, 1, 0.36, 1],

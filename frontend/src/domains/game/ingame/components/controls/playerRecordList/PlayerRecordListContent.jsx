@@ -1,3 +1,5 @@
+// 플레이어 기록 목록 내용 (스크롤 목록)
+// PlayerRecordListPanel이 씀
 import { useRef } from "react"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
 import { resolvePlayerRecordListProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"

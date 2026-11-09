@@ -1,3 +1,5 @@
+// 판 시작 때 내 직업·같은 편 보여 주는 창
+// InGamePage가 씀
 import {
   ALLY_CHIP_CLASS,
   ALLY_LIST_CLASS,

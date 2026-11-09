@@ -1,3 +1,5 @@
+// 방 목록 한 줄 (이름·인원·들어가기)
+// RoomListPanel이 씀
 import { ROOM_LIST_ASSETS } from "../../constants/roomListAssets.js"
 import {
   ROOM_LIST_ROW_BOTTOM_ROW_CLASS,

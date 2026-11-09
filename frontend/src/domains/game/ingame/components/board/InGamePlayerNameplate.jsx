@@ -1,3 +1,5 @@
+// 카드 아래 이름표
+// InGamePlayerCard가 씀
 import {
   INGAME_PLAYER_NAMEPLATE_CLASS,
 } from "../../constants/board/ingamePlayerAssets.js"

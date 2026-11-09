@@ -1,3 +1,5 @@
+// 위쪽 시간 바 (낮 단계·남은 시간)
+// InGamePage가 씀
 import { useState } from "react"
 import {
   DAY_TIMEBAR_ACTIVE_PHASE,

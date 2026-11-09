@@ -1,3 +1,5 @@
+// 밤 차례 알림 창
+// InGamePage가 씀
 import {
   MSG_CLASS,
   META_CLASS,

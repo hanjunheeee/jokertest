@@ -1,3 +1,5 @@
+// 설정 창 항목 값 (소리·채팅·방)
+// 설정 탭·채팅 줄·모바일 설정 탭이 같이 씀
 export { SOUND_SETTING_VOLUMES as INGAME_SETTING_SOUND_VOLUMES } from "../../../../../../shared/constants/soundSettings.js"
 
 export const INGAME_SETTING_SFX_MUTE = {

@@ -1,3 +1,5 @@
+// 멀티 화면 (방 목록·방 만들기·코드 입장)
+// 경로 /multiplay가 씀
 import { useNavigate } from "react-router-dom"
 import GameModeTypeIndicator from "../components/GameModeTypeIndicator.jsx"
 import ModeBackground from "../components/ModeBackground.jsx"

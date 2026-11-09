@@ -1,3 +1,5 @@
+// 직업 구성 상태 (모드·직업별 수)
+// GameSetupPanel·모바일 설정 폼 훅이 씀
 import { useMemo, useState } from "react"
 import {
   CUSTOM_ROLE_KEYS,

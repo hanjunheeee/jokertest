@@ -1,3 +1,5 @@
+// 게임 준비 화면 (방 설정 고르고 만들기)
+// 경로 /game-setup이 씀
 import GameSetupBackground from "../components/GameSetupBackground.jsx"
 import GameSetupPanel from "../components/GameSetupPanel.jsx"
 import GameSetupPageControls from "../components/GameSetupPageControls.jsx"

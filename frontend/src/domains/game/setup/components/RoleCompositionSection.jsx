@@ -1,3 +1,5 @@
+// 직업 구성 고르기 칸 (기본·직접 고르기)
+// GeneralGameSetupTab이 씀
 import {
   CITIZEN_ROLE_LABEL,
   CUSTOM_ROLE_KEYS,

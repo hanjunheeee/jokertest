@@ -1,3 +1,5 @@
+// 카드 틀 모양 따라 테두리 선 그리기
+// InGamePlayerCard가 씀
 import { publicAsset } from "@/shared/utils/publicAsset"
 
 function buildFrameMaskStyle(frameSrc) {

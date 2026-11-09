@@ -1,3 +1,5 @@
+// 방 코드 입력 틀 (그림 + 글자 칸)
+// 방 코드 보기 창·방 초대 화면이 씀
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
 import {
   FOOTER_INSET,

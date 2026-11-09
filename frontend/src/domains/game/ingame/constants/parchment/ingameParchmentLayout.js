@@ -1,3 +1,5 @@
+// 양피지 창 그림·틀 모양 값
+// 양피지 창 바탕·모바일 양피지 틀이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../../shared/constants/customScrollbarStyles.js"
 
 export const IMG_URL = "/frame/양피지 모달.png".normalize("NFD")

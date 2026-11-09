@@ -1,4 +1,5 @@
 // 설정 창 아래 공통 그림 버튼 (방 코드·개발용 타이머 자리 등)
+// 방 코드 버튼·타이머 자리 버튼이 씀
 import { INGAME_SETTING_ASSETS } from "../../../constants/controls/ingameSetting/ingameSettingAssets.js"
 import {
   ROOM_CODE_BTN_CLASS,

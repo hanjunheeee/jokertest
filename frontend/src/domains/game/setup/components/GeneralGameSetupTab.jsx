@@ -1,3 +1,5 @@
+// 게임 준비 일반 탭 (직업 구성 칸)
+// GameSetupPanel이 씀
 import { useMemo } from "react"
 import { GENERAL_GAME_SETUP } from "../constants/gameSetupOptions.js"
 import RoleCompositionSection from "./RoleCompositionSection.jsx"

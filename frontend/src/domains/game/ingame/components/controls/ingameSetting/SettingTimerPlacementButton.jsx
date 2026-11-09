@@ -1,4 +1,5 @@
 // 개발용: 설정 창 아래 타이머 자리 전환 (시간 바 ↔ 채팅 틀), Ctrl+Shift+T와 동일
+// 설정 창 내용(SettingPanelContent)이 씀
 import { INGAME_TIMER_PLACEMENT } from "../../../constants/timebar/ingameTimerPlacement.js"
 import { SETTING_FOOTER_TIMER_PLACEMENT_BTN_WRAP_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
 import SettingFooterImageButton from "./SettingFooterImageButton.jsx"

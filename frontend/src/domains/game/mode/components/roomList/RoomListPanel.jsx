@@ -1,3 +1,5 @@
+// 방 목록 칸 (줄 모음)
+// RoomListShell이 씀
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
 import {
   ROOM_LIST_GRID_CLASS,
