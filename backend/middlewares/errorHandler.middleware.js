@@ -30,6 +30,8 @@ exports.globalErrorHandler = (err, req, res, next) => {
         TERMS_AGREEMENT_REQUIRED: { status: 400, message: '필수 약관에 동의해주세요.' },
         AGE_CONFIRM_REQUIRED: { status: 400, message: '만 14세 이상인지 확인해주세요.' },
         AGE_UNDER_14: { status: 400, message: '만 14세 미만은 가입할 수 없습니다.' },
+        // 금지어 든 닉네임 (빠져 있어 500 + "API 요청 중 에러"로 나갔음, 2026-11-09)
+        NICKNAME_BANNED_WORD: { status: 400, message: '사용할 수 없는 단어가 들어간 닉네임입니다.' },
     };
     const signupScopedPath = String(req.originalUrl || req.url || '')
         .split('?')[0].replace(/\/+$/, '').toLowerCase();
