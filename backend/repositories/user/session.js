@@ -1,6 +1,7 @@
 // 세션 저장소 파일, 세션 만들기 · 살아 있는 세션 찾기 · 그 사람 세션 전부 끊기 · 로그아웃 기록
 // user/index.js 거쳐 로그인·refresh·비번·세션 확인·소셜 연결 서비스가 씀
 const db              = require("../../models");
+const { notifySessionsRevoked } = require("./revokeSignal");
 
 // 세션 한 줄
 exports.createUserSession = async (sessionData, options = {}) => {
@@ -30,10 +31,13 @@ exports.markOnlineSessionsOffline = async (user_id, options = {}) => {
     const rows = await db.UserSession.findAll(readOptions);
     // 끊을 것 없으면 UPDATE 안 함 (빈 사람 첫 로그인)
     if (rows.length === 0) return [0];
-    return await db.UserSession.update(
+    const result = await db.UserSession.update(
         { is_online: false, revoked_at: new Date() },
         { where: { id: rows.map((row) => row.id), revoked_at: null }, ...options }
     );
+    // 소켓 세션 확인이 잠깐 저장한 "살아 있음"을 지움 (거래면 커밋 뒤, 다음 사건부터 DB 다시 봄)
+    notifySessionsRevoked(user_id, transaction);
+    return result;
 };
 
 // 그 세션 끊고, 끊긴 게 있을 때만 마지막 성공 로그인 기록에 로그아웃 시각
@@ -44,6 +48,7 @@ exports.recordLogout = async (user_id, session_id) => {
         { where: { id: session_id, user_id, is_online: true } }
     );
     if (!revokedCount) return;
+    notifySessionsRevoked(user_id);
 
     const lastLogin = await db.LoginHistory.findOne({
         where: { user_id, success: true, logout_at: null },

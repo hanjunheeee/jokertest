@@ -105,13 +105,14 @@ test('사건 검사: 검사 자체가 터지면 SESSION_CHECK_FAILED 답, 연결
     assert.equal(socket.disconnected, 0);
 });
 
-test('사건 검사: 1초 안 두 번째 사건은 DB 검사 안 함 (가짜 시계)', async (t) => {
+// 저장 시간은 1초 → 5초(주기 검사 간격)로 늘림 (부하 줄이기 2026-11-09, docs/부하시험.md 11번)
+test('사건 검사: 저장 시간(5초) 안 두 번째 사건은 DB 검사 안 함 (가짜 시계)', async (t) => {
     t.mock.timers.enable({ apis: ['Date'], now: 1_000_000 });
     const resolve = t.mock.method(sessionLifecycle, 'resolveSession', async () => ({ ok: true }));
     const socket = auth.wrapSocketWithSessionGuard(makeSocket());
     socket.on('do', () => {});
     await socket.fire('do');
-    t.mock.timers.tick(999);
+    t.mock.timers.tick(auth.EVENT_CHECK_CACHE_MS - 1);
     await socket.fire('do');
     assert.equal(resolve.mock.callCount(), 1);
     t.mock.timers.tick(1);

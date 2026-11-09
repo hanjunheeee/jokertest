@@ -40,6 +40,8 @@ function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL, allowRe
             methods:     ["GET", "POST"],
         },
         allowRequest,
+        // 웹소켓만 받음: 화면(데스크톱·모바일)·부하 시험 봇·e2e 도우미 다 웹소켓만 씀, polling 길 막아 받는 길 하나로 (부하 줄이기 2026-11-09)
+        transports: ["websocket"],
         // 사건 하나 최대 64KB (기본 1MB, 큰 메시지로 메모리 쓰게 하기 막기, 채팅·설정은 몇 KB)
         maxHttpBufferSize: MAX_SOCKET_MESSAGE_BYTES,
     });

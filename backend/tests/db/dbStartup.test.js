@@ -104,8 +104,9 @@ test("정상 기동 후 REST 요청과 소켓 핸드셰이크가 동작한다", 
     assert.equal(missingRes.status, 404);
     assert.equal(missingBody.success, false);
 
+    // 서버는 웹소켓만 받음(2026-11-09) → polling 요청엔 engine.io가 "Transport unknown"(400)으로 답함 = socket.io가 붙어 있음
     const handshakeRes  = await fetch(`${base}/socket.io/?EIO=4&transport=polling`);
     const handshakeBody = await handshakeRes.text();
-    assert.equal(handshakeRes.status, 200, "socket.io가 http 서버에 부착되지 않았습니다");
-    assert.match(handshakeBody, /"sid"/, "engine.io 핸드셰이크 응답에 sid가 없습니다");
+    assert.equal(handshakeRes.status, 400, "socket.io가 http 서버에 부착되지 않았습니다 (붙어 있으면 polling을 400으로 거절)");
+    assert.match(handshakeBody, /Transport unknown/, "engine.io가 아닌 다른 곳이 답했습니다");
 });

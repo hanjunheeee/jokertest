@@ -1,4 +1,4 @@
-// 로그 파일 도구, 날짜별 파일(logs/app-YYYY-MM-DD.log)에 한 줄씩 남기기 + 오래된 파일 정리 + 비밀값 가리기
+// 로그 파일 도구, 날짜별 파일(logs/app-YYYY-MM-DD.log)에 줄 모아 남기기 + 오래된 파일 정리 + 비밀값 가리기
 // index.js가 켤 때 만들어 요청 로그(morgan)·console 출력을 같이 남김 (새 패키지 없이 Node 기본만)
 const fs   = require("fs");
 const path = require("path");
@@ -18,7 +18,10 @@ const toDateKey = (date) => {
 // 비밀값 가리기: 비번·토큰·쿠키·키 값, Bearer 값, JWT 모양, 접속 주소 안 비번
 const SECRET_KEY_PATTERN =
     /((?:password|passwd|pwd|token|accesstoken|refreshtoken|secret|cookie|set-cookie|authorization|api[_-]?key|x-internal-key)["']?\s*[:=]\s*["']?)([^"'\s,;&}]+)/gi;
-const maskSecrets = (text) => String(text)
+// 가릴 것이 있을 만한 줄인지 먼저 한 번만 봄 (아래 정규식 4개가 걸 수 있는 낱말을 다 담음, 대부분 줄은 여기서 끝)
+const MAYBE_SECRET = /bearer|eyj|:\/\/|pass|pwd|token|secret|cookie|authorization|api|key/i;
+const maskSecrets = (text) => (MAYBE_SECRET.test(String(text)) ? maskAll(String(text)) : String(text));
+const maskAll = (text) => text
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/g, "Bearer [REDACTED]")
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, "[REDACTED_JWT]")
     .replace(/([a-z][a-z0-9+.-]*:\/\/[^:/\s@]+:)[^@\s]+@/gi, "$1[REDACTED]@")
@@ -30,54 +33,119 @@ const toPositiveInt = (value, fallback) => {
     return Number.isInteger(n) && n > 0 ? n : fallback;
 };
 
-// 로그 파일 만들기 (시험이 폴더·보관 일수·시계를 바꿔 넣음)
-// 쓰기는 동기: 바로 종료(process.exit)·예상 못 한 오류 때도 마지막 줄이 안 사라지게
-function createLogFile({ dir = DEFAULT_DIR, retentionDays = DEFAULT_RETENTION_DAYS, now = () => new Date() } = {}) {
+// 모아 쓰기: 줄을 모았다가 FLUSH_DELAY_MS 뒤(또는 FLUSH_MAX_BYTES 넘으면 바로) 한 번에 씀
+// 줄마다 쓰면 50판에서 1초 수백 번 쓰기 (부하시험.md 8번), 끄기·예상 못 한 오류 땐 close()·exit가 남은 줄 다 씀
+const FLUSH_DELAY_MS = 200;
+const FLUSH_MAX_BYTES = 64 * 1024;
+// 파일 못 열면(권한 등) 이만큼 쉬었다 다시 열어 봄 (전엔 줄마다 다시 열기 → CPU 3%)
+const REOPEN_DELAY_MS = 60 * 1000;
+
+// 보관 일수 지난 파일 지우기 (오늘 포함 retentionDays일만 남김)
+const removeOldFiles = (dir, retentionDays, today) => {
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() - (retentionDays - 1));
+    const cutoffKey = toDateKey(cutoff);
+    const removed = [];
+    for (const name of fs.readdirSync(dir)) {
+        const match = FILE_PATTERN.exec(name);
+        if (!match || match[1] >= cutoffKey) continue;
+        try {
+            fs.unlinkSync(path.join(dir, name));
+            removed.push(name);
+        } catch { /* 지우기 실패는 다음 정리 때 다시 */ }
+    }
+    return removed;
+};
+
+// 로그 파일 자체 문제 알림은 표준 오류로만 (console로 쓰면 다시 로그 파일로 돌아옴)
+const writeStderr = (message) => {
+    try { process.stderr.write(`${message}\n`); } catch { /* 표준 오류도 못 쓰면 그만 */ }
+};
+
+// 파일에 남길 한 줄: 시각 + 색 글자 뺀 가린 글, 줄바꿈 하나로 맞춤
+const formatLine = (at, line) => {
+    const raw = String(line);
+    // 화면용 색 글자(\x1b[31m 등)는 파일에선 뺌
+    // eslint-disable-next-line no-control-regex
+    const plain = raw.includes("\x1b") ? raw.replace(/\x1b\[[0-9;]*m/g, "") : raw;
+    return `${at.toISOString()} ${maskSecrets(plain).replace(/\s+$/, "")}\n`;
+};
+
+// 로그 파일 만들기 (시험이 폴더·보관 일수·시계·쓰기 타이머를 바꿔 넣음)
+function createLogFile({
+    dir = DEFAULT_DIR, retentionDays = DEFAULT_RETENTION_DAYS, now = () => new Date(),
+    flushDelayMs = FLUSH_DELAY_MS, setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
+    reportError = writeStderr,
+} = {}) {
     fs.mkdirSync(dir, { recursive: true });
     let fd = null;
     let currentKey = null;
+    let buffer = [];
+    let bufferBytes = 0;
+    let flushTimer = null;
+    let openFailedUntil = 0;
 
-    // 보관 일수 지난 파일 지우기 (오늘 포함 retentionDays일만 남김)
-    const cleanup = () => {
-        const cutoff = now();
-        cutoff.setDate(cutoff.getDate() - (retentionDays - 1));
-        const cutoffKey = toDateKey(cutoff);
-        const removed = [];
-        for (const name of fs.readdirSync(dir)) {
-            const match = FILE_PATTERN.exec(name);
-            if (!match || match[1] >= cutoffKey) continue;
-            try {
-                fs.unlinkSync(path.join(dir, name));
-                removed.push(name);
-            } catch { /* 지우기 실패는 다음 정리 때 다시 */ }
+    const cleanup = () => removeOldFiles(dir, retentionDays, now());
+
+    // 모은 줄 지금 파일에 한 번에 (동기, 실패해도 서버는 안 멈춤)
+    const flush = () => {
+        if (flushTimer !== null) {
+            clearTimeoutFn(flushTimer);
+            flushTimer = null;
         }
-        return removed;
+        if (buffer.length === 0) return;
+        const text = buffer.join("");
+        buffer = [];
+        bufferBytes = 0;
+        if (fd === null) return;
+        try { fs.writeSync(fd, text); } catch { /* 디스크 문제는 화면 로그로만 */ }
     };
 
-    // 날짜 바뀌면 옛 파일 닫고 새 파일 열기 + 정리
-    const openFor = (key) => {
+    // 날짜 바뀌면 모은 줄 옛 파일에 쓰고 닫은 뒤 새 파일 열기 + 정리, 못 열면 REOPEN_DELAY_MS 동안 안 열어 봄
+    const openFor = (key, atMs) => {
+        flush();
         if (fd !== null) {
             try { fs.closeSync(fd); } catch { /* 이미 닫힘 */ }
+            fd = null;
         }
-        fd = fs.openSync(path.join(dir, `app-${key}.log`), "a");
         currentKey = key;
-        cleanup();
+        try {
+            fd = fs.openSync(path.join(dir, `app-${key}.log`), "a");
+            openFailedUntil = 0;
+        } catch (error) {
+            openFailedUntil = atMs + REOPEN_DELAY_MS;
+            reportError(`[LOG] 로그 파일을 못 엶 — ${REOPEN_DELAY_MS / 1000}초 뒤 다시 열어 봄: ${error.code ?? error.message}`);
+            return;
+        }
+        try { cleanup(); } catch { /* 정리 실패는 다음 날 다시 */ }
     };
 
-    // 한 줄 쓰기: 시각 + 가린 글, 줄바꿈 하나로 맞춤 (쓰기 실패해도 서버는 안 멈춤)
+    // 한 줄 쓰기: 시각 + 가린 글, 줄바꿈 하나로 맞춤 → 모아 두고 조금 뒤 한 번에 씀
     const write = (line) => {
         try {
             const at = now();
+            const atMs = at.getTime();
             const key = toDateKey(at);
-            if (key !== currentKey) openFor(key);
-            // 화면용 색 글자(\x1b[31m 등)는 파일에선 뺌
-            // eslint-disable-next-line no-control-regex
-            const text = maskSecrets(String(line).replace(/\x1b\[[0-9;]*m/g, "")).replace(/\s+$/, "");
-            fs.writeSync(fd, `${at.toISOString()} ${text}\n`);
+            if (key !== currentKey || (fd === null && atMs >= openFailedUntil)) openFor(key, atMs);
+            // 파일 못 여는 동안은 버림 (화면 로그엔 그대로 나감)
+            if (fd === null) return;
+            const entry = formatLine(at, line);
+            buffer.push(entry);
+            bufferBytes += entry.length;
+            if (bufferBytes >= FLUSH_MAX_BYTES) {
+                flush();
+                return;
+            }
+            if (flushTimer === null) {
+                flushTimer = setTimeoutFn(flush, flushDelayMs);
+                flushTimer?.unref?.();
+            }
         } catch { /* 디스크 문제는 화면 로그로만 */ }
     };
 
+    // 남은 줄 다 쓰고 닫기 (끄기 처리·exit가 부름, 여러 번 불러도 됨)
     const close = () => {
+        flush();
         if (fd === null) return;
         try { fs.closeSync(fd); } catch { /* 이미 닫힘 */ }
         fd = null;
@@ -87,6 +155,7 @@ function createLogFile({ dir = DEFAULT_DIR, retentionDays = DEFAULT_RETENTION_DA
     return {
         dir,
         write,
+        flush,
         cleanup,
         close,
         currentFile: () => (currentKey ? path.join(dir, `app-${currentKey}.log`) : null),
@@ -98,7 +167,10 @@ function createLogFileFromEnv(env = process.env, warn = console.warn) {
     if (String(env.LOG_DIR ?? "").trim().toLowerCase() === "off") return null;
     const dir = env.LOG_DIR && env.LOG_DIR.trim() ? path.resolve(env.LOG_DIR.trim()) : DEFAULT_DIR;
     try {
-        return createLogFile({ dir, retentionDays: toPositiveInt(env.LOG_RETENTION_DAYS, DEFAULT_RETENTION_DAYS) });
+        const logFile = createLogFile({ dir, retentionDays: toPositiveInt(env.LOG_RETENTION_DAYS, DEFAULT_RETENTION_DAYS) });
+        // process.exit 바로 부르는 길(켜기 실패 등)도 모은 줄 다 쓰고 끝나게
+        process.once("exit", () => logFile.close());
+        return logFile;
     } catch (error) {
         warn(`[LOG] 로그 파일을 못 엶 — 화면 로그만 씀: ${error.code ?? error.message}`);
         return null;
@@ -121,6 +193,8 @@ function teeConsoleToLogFile(logFile, target = console) {
 
 module.exports = {
     FILE_PATTERN,
+    FLUSH_DELAY_MS,
+    REOPEN_DELAY_MS,
     DEFAULT_RETENTION_DAYS,
     toDateKey,
     maskSecrets,

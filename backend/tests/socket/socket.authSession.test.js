@@ -8,6 +8,7 @@ const express      = require("express");
 const cookieParser = require("cookie-parser");
 
 const db = require("../../models");
+const { useModelSessionCheck } = require("../helpers/sessionCheckFallback");
 const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 
@@ -41,6 +42,8 @@ const startServer = async (t) => {
 };
 
 const stubAuthStorage = (t) => {
+    // 소켓 세션 확인 묶음 질의도 아래 가짜 표로 (옛 두 질의 길)
+    useModelSessionCheck(t);
     const originals = {
         UserSession:    db.UserSession,
         UserBan:        db.UserBan,

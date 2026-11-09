@@ -2,6 +2,7 @@
 // middlewares/auth.middleware.js·socket/connection/auth.js가 부름 (요청마다·소켓 접속·사건마다·5초마다)
 const jwt              = require("jsonwebtoken");
 const userRepository    = require("../../repositories/user");
+const sessionCheckRepository = require("../../repositories/user/sessionCheck");
 
 // 서명 방식은 HS256 하나만 받음 (다른 방식으로 바꿔 서명한 토큰 막기)
 const ACCESS_TOKEN_ALGORITHMS = ["HS256"];
@@ -21,17 +22,21 @@ exports.verifyAccessToken = (token, { ignoreExpiration = false } = {}) => {
 };
 
 // 토큰 속 세션이 아직 살아 있고 정지 아닌지, 거절은 상태 코드·문구로 돌려줌
-exports.resolveSession = async (decoded) => {
+// batch: 소켓 쪽(접속·사건·5초 주기)만 켬, 세션·계정 상태·정지를 질의 하나로 + 같은 차례 확인 여럿을 한 번에 물음
+// (http 요청 확인은 옛 두 질의 그대로, 판정은 둘 다 아래 같은 줄)
+exports.resolveSession = async (decoded, { batch = false } = {}) => {
     // uuid·세션 id 없는 토큰은 세션 못 찾으므로 바로 거절
     if (!decoded?.uuid || !decoded?.sessionId) {
         return { ok: false, status: 401, message: "유효하지 않거나 만료된 토큰입니다." };
     }
 
     // 세션·정지 같이 조회 (따로 기다리지 않게)
-    const [session, activeBan] = await Promise.all([
-        userRepository.findActiveSession(decoded.sessionId, decoded.uuid),
-        userRepository.checkActiveBan(decoded.uuid),
-    ]);
+    const [session, activeBan] = batch
+        ? await sessionCheckRepository.loadSessionCheck(decoded.sessionId, decoded.uuid)
+        : await Promise.all([
+            userRepository.findActiveSession(decoded.sessionId, decoded.uuid),
+            userRepository.checkActiveBan(decoded.uuid),
+        ]);
 
     // 끊긴 세션이면 401 (is_online은 true·1 둘 다 받음)
     if (!session || (session.is_online !== true && session.is_online !== 1)) {

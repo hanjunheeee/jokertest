@@ -7,6 +7,7 @@ const path = require('path');
 const Sequelize = require('sequelize');
 const process = require('process');
 const { buildPoolConfig } = require('../config/dbPool');
+const { pickQueryLogging } = require('../config/dbLogging');
 
 const basename = path.basename(__filename);
 
@@ -22,11 +23,14 @@ let sequelize;
 // 연결 풀 크기: config 값 위에 DB_POOL_* 환경 변수 덮어씀
 const pool = buildPoolConfig(config.pool);
 
+// 질의 로그: 운영은 끔, 개발은 DB_LOG_QUERIES=1일 때만 (config.json에 logging 없어 전엔 늘 찍었음)
+const logging = pickQueryLogging(env);
+
 // 지금 config.json은 세 환경 다 DATABASE_URL 주소로 연결함
 if(config.use_env_variable) {
-    sequelize = new Sequelize(process.env[config.use_env_variable], { ...config, pool });
+    sequelize = new Sequelize(process.env[config.use_env_variable], { ...config, pool, logging });
 } else {
-    sequelize = new Sequelize(config.database, config.username, config.password, { ...config, pool });
+    sequelize = new Sequelize(config.database, config.username, config.password, { ...config, pool, logging });
 }
 
 // 하위 폴더까지 돌며 모델 파일마다 정의함 (index.js·숨김 파일·시험 파일은 뺌)

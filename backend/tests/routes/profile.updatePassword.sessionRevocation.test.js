@@ -10,6 +10,7 @@ const bcrypt        = require("bcrypt");
 const crypto         = require("node:crypto");
 
 const db = require("../../models");
+const { useModelSessionCheck } = require("../helpers/sessionCheckFallback");
 const { generateToken } = require("../../utils/auth/credentials");
 const { notFoundHandler, globalErrorHandler } = require("../../middlewares/errorHandler.middleware");
 const authService  = require("../../services/auth/account");
@@ -69,6 +70,8 @@ const getProfile = (base) =>
 
 const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
     require("../../services/auth/account/password").__resetWrongPasswordAttemptsForTests();
+    // 소켓 세션 확인 묶음 질의도 아래 가짜 표로 (옛 두 질의 길)
+    useModelSessionCheck(t);
     const original = {
         transaction:  db.sequelize.transaction,
         User:         db.User,
