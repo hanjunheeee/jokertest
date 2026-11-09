@@ -22,10 +22,14 @@ const addLoadoutRevision = require('../../db/migrations/0010-add-economy-loadout
 const addEconomyLoadoutJobSkins = require('../../db/migrations/0011-add-economy-loadout-job-skins');
 const addPasswordResetTokens = require('../../db/migrations/0015-password-reset-tokens');
 const addSignupEmailVerification = require('../../db/migrations/0016-signup-email-verification');
+// 정지 모델이 0031 해제 칸(lifted_at 등)까지 읽음 → 0031과 그 앞 표(0024 관리자 계정·기록)·0032 같이 올림
+const addOperationsTables = require('../../db/migrations/0024-add-operations-tables');
+const addAdminPageTables = require('../../db/migrations/0031-add-admin-page-tables');
+const addInquiries = require('../../db/migrations/0032-add-inquiries');
 const { buildManagedSchema, resetManagedSchema } = require('../helpers/isolatedTestDb');
 const { prepareSignupProof } = require('../helpers/signupProof');
 
-const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification];
+const MIGRATIONS = [baseline, expandNicknameSnapshot, addRefreshTokenRotation, addRefreshTokenHistory, addSocialAuth, addEconomy, addLoadoutRevision, addEconomyLoadoutJobSkins, addPasswordResetTokens, addSignupEmailVerification, addOperationsTables, addAdminPageTables, addInquiries];
 const { managedTables: MANAGED_TABLES, dropOrder: DROP_ORDER } = buildManagedSchema({
     baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner,
 });

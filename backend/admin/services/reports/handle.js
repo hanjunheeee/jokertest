@@ -10,11 +10,15 @@ const { findReport } = require('./list');
 
 const defaultDb = () => require('../../../repositories/common/db');
 
+// 날짜 → UTC 글자 (raw 질의에 Date를 그대로 넘기면 서버 시간대 글자로 바뀌어 9시간 어긋남)
+// 예: 2026-11-10T01:00:00.000Z → '2026-11-10 01:00:00.000'
+const toUtcSqlText = (date) => date.toISOString().slice(0, 23).replace('T', ' ');
+
 const notFound = () => createError('없는 신고예요. 목록을 새로 불러와 주세요.', 404, 'REPORT_NOT_FOUND');
 
 // OPEN → 새 상태로 바꾸기 (트랜잭션 안), 바뀐 줄 0이면 없음 404 / 이미 처리됨 409 { handledBy, handledAt }
 const claimReport = async ({ req, id, status }, { db, transaction }) => {
-    const now = new Date();
+    const now = toUtcSqlText(new Date());
     const [, affected] = await db.sequelize.query(
         `UPDATE reports SET status = :status, handled_by_admin_id = :adminId, handled_at = :now
         WHERE id = :id AND status = 'OPEN'`,

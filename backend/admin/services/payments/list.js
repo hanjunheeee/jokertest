@@ -9,6 +9,10 @@ const defaultDb = () => require('../../../repositories/common/db');
 
 const isoOf = (value) => (value ? new Date(value).toISOString() : null);
 
+// 날짜 → UTC 글자 (raw 질의에 Date를 그대로 넘기면 서버 시간대 글자로 바뀌어 9시간 어긋남)
+// 예: 2026-11-10T01:00:00.000Z → '2026-11-10 01:00:00.000'
+const toUtcSqlText = (date) => new Date(date).toISOString().slice(0, 23).replace('T', ' ');
+
 const ORDER_COLUMNS = `o.order_id, o.user_id, u.nickname, o.product_id, o.version, o.order_name, o.pay_amount, o.grant_amount,
     o.bonus_amount, o.status, o.failure_code, o.created_at, o.approved_at, o.granted_at`;
 
@@ -42,8 +46,8 @@ const buildWhere = ({ userUuid, status, from, to }, cursorId) => {
     const replacements = {};
     if (userUuid) { where.push('o.user_id = :userUuid'); replacements.userUuid = userUuid; }
     if (status) { where.push('o.status = :status'); replacements.status = status; }
-    if (from) { where.push('o.created_at >= :from'); replacements.from = from; }
-    if (to) { where.push('o.created_at < :to'); replacements.to = to; }
+    if (from) { where.push('o.created_at >= :from'); replacements.from = toUtcSqlText(from); }
+    if (to) { where.push('o.created_at < :to'); replacements.to = toUtcSqlText(to); }
     if (cursorId) {
         where.push(`(o.created_at < ${CURSOR_AT} OR (o.created_at = ${CURSOR_AT} AND o.order_id < :cursorId))`);
         replacements.cursorId = cursorId;
