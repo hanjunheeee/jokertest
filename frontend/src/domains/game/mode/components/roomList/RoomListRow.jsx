@@ -27,6 +27,13 @@ import PublicAsset from "../../../../../shared/ui/PublicAsset.jsx"
 
 const STAGE_LABELS = { 1: "1단계", 2: "2단계", 3: "3단계" }
 
+// 진행중이 마감보다 먼저, 둘 다 아니면 배지 글자 없음
+function pickStatusLabel({ isInProgress, isFull }) {
+  if (isInProgress) return "진행중"
+  if (isFull) return "마감"
+  return null
+}
+
 export default function RoomListRow({ room, selected, onSelect }) {
   const { stage, current, max, title, displayStatus, settings } = room
   const settingsSummary = summarizeRoomListSettings(settings)
@@ -37,7 +44,7 @@ export default function RoomListRow({ room, selected, onSelect }) {
   const isJoinable = !isFull && !isInProgress
   const rowCode = resolveRoomListRowCode(room)
   const stageLabel = STAGE_LABELS[stage]
-  const statusLabel = isInProgress ? "진행중" : isFull ? "마감" : null
+  const statusLabel = pickStatusLabel({ isInProgress, isFull })
   const showStatusBadges = rowCode.visible || isInProgress || isFull
 
   return (

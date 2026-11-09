@@ -22,6 +22,13 @@ const UNKNOWN_DEFENDANT_NICKNAME = "알 수 없는 플레이어"
 const SHOW_DEV_RESOLVE = import.meta.env?.DEV === true
 
 // 재판 중·피고 있음·판정 전일 때만 띄움 (채팅 틀·인게임 화면도 같은 조건)
+function pickDevResolveLabel(ctx) {
+  if (!SHOW_DEV_RESOLVE) return null
+  if (ctx?.gameState?.tribunal?.resolved === true) return TRIBUNAL_RESOLVE_DONE_LABEL
+  if (ctx?.tribunalResolveLocked) return TRIBUNAL_RESOLVE_RESOLVING_LABEL
+  return TRIBUNAL_RESOLVE_LABEL
+}
+
 export default function InGameTribunalPresentationGate() {
   const ctx = useContext(InGameActionContext)
   const phase = useInGameStore((s) => s.state?.phase ?? null)
@@ -74,13 +81,7 @@ export default function InGameTribunalPresentationGate() {
   const voteButtonsEnabled = Boolean(ctx?.tribunalVoteControlsEnabled)
 
   // 판정 버튼 글자: 개발 빌드 아니면 없음, 끝남 → 판정 중 → 기본
-  const devResolveLabel = !SHOW_DEV_RESOLVE
-    ? null
-    : ctx?.gameState?.tribunal?.resolved === true
-    ? TRIBUNAL_RESOLVE_DONE_LABEL
-    : ctx?.tribunalResolveLocked
-      ? TRIBUNAL_RESOLVE_RESOLVING_LABEL
-      : TRIBUNAL_RESOLVE_LABEL
+  const devResolveLabel = pickDevResolveLabel(ctx)
   const devResolveEnabled = Boolean(ctx?.tribunalResolveControlsEnabled)
 
   const chatProps = useInGameChatSessionContext()

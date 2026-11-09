@@ -14,6 +14,18 @@ import { INGAME_PHASE_ACTIONS, PHASE_ACTION_ATTR } from "../../constants/timebar
 // 버튼 줄 모양 (오른쪽 정렬)
 const PHASE_ACTION_ROW_CLASS = `justify-end ${BTN_ROW_CLASS}`
 
+// 상태별 버튼 글자, 표에 없으면 기본 글자
+const DAY_READY_LABELS = new Map([["sending", DAY_VOTE_READY_SENDING_LABEL], ["ready", DAY_VOTE_READY_DONE_LABEL]])
+const DAY_VOTE_RESOLVE_LABELS = new Map([["resolving", "집계 중..."], ["resolved", "집계 완료"]])
+const NIGHT_RESOLVE_LABELS = new Map([["resolving", "판정 중..."], ["resolved", "판정 완료"]])
+
+// 재판은 끝남이 판정 중보다 먼저
+function tribunalResolveLabel(ctx) {
+  if (ctx.gameState?.tribunal?.resolved === true) return "판정 완료"
+  if (ctx.tribunalResolveLocked) return "판정 중..."
+  return "재판 판정"
+}
+
 // 지금 단계에 맞는 버튼 목록, 글자는 보내는 중·끝남 따라 바뀜
 function buildPhaseActions(ctx) {
   const phase = ctx.gameState?.phase ?? null
@@ -23,11 +35,7 @@ function buildPhaseActions(ctx) {
   if (phase === "DAY" && ctx.dayPhase === "DAY_DISCUSSION") {
     actions.push({
       action: INGAME_PHASE_ACTIONS.DAY_READY,
-      label: ctx.dayReadyStatus === "sending"
-        ? DAY_VOTE_READY_SENDING_LABEL
-        : ctx.dayReadyStatus === "ready"
-          ? DAY_VOTE_READY_DONE_LABEL
-          : DAY_VOTE_READY_LABEL,
+      label: DAY_READY_LABELS.get(ctx.dayReadyStatus) ?? DAY_VOTE_READY_LABEL,
       enabled: Boolean(ctx.dayReadyControlsEnabled),
       onClick: ctx.submitDayReady,
     })
@@ -37,11 +45,7 @@ function buildPhaseActions(ctx) {
   if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
     actions.push({
       action: INGAME_PHASE_ACTIONS.DAY_VOTE_RESOLVE,
-      label: ctx.dayVoteResolveStatus === "resolving"
-        ? "집계 중..."
-        : ctx.dayVoteResolveStatus === "resolved"
-          ? "집계 완료"
-          : "낮 집계",
+      label: DAY_VOTE_RESOLVE_LABELS.get(ctx.dayVoteResolveStatus) ?? "낮 집계",
       enabled: Boolean(ctx.dayVoteResolveControlsEnabled),
       onClick: ctx.resolveDayVote,
     })
@@ -51,11 +55,7 @@ function buildPhaseActions(ctx) {
   if (phase === "TRIBUNAL") {
     actions.push({
       action: INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE,
-      label: ctx.gameState?.tribunal?.resolved === true
-        ? "판정 완료"
-        : ctx.tribunalResolveLocked
-          ? "판정 중..."
-          : "재판 판정",
+      label: tribunalResolveLabel(ctx),
       enabled: Boolean(ctx.tribunalResolveControlsEnabled),
       onClick: ctx.resolveTribunalVote,
     })
@@ -65,11 +65,7 @@ function buildPhaseActions(ctx) {
   if (phase === "NIGHT" && ctx.isNightTurnActor) {
     actions.push({
       action: INGAME_PHASE_ACTIONS.NIGHT_RESOLVE,
-      label: ctx.resolveNightStatus === "resolving"
-        ? "판정 중..."
-        : ctx.resolveNightStatus === "resolved"
-          ? "판정 완료"
-          : "밤 종료",
+      label: NIGHT_RESOLVE_LABELS.get(ctx.resolveNightStatus) ?? "밤 종료",
       enabled: ctx.resolveNightStatus === "idle",
       onClick: ctx.resolveNight,
     })

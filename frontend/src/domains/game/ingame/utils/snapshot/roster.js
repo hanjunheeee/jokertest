@@ -40,6 +40,12 @@ export function readRoster(players, currentPlayers) {
   return byUuid
 }
 
+// 색 번호: 온 값 → 지금 명단의 값 → 없음(undefined)
+function pickThemeIndex(player, themeIndexByUuid) {
+  if (isNonNegativeInteger(player.themeIndex)) return player.themeIndex
+  return themeIndexByUuid.get(player.uuid)
+}
+
 // 새 명단 만들기 (색 번호가 없으면 지금 명단의 색을 이어 씀, 계정 꾸밈 필드는 온 것만)
 export function buildPlayers(players, currentPlayers) {
   const themeIndexByUuid = new Map(
@@ -48,22 +54,21 @@ export function buildPlayers(players, currentPlayers) {
       .map((p) => [p.uuid, p.themeIndex]),
   )
 
-  return players.map((p) => ({
-    uuid: p.uuid,
-    nickname: p.nickname,
-    alive: p.isAlive,
-    isConnected: p.isConnected,
-    isParticipating: p.isParticipating !== false,
-    ...(Object.hasOwn(p, "membershipId") ? { membershipId: p.membershipId } : {}),
-    ...(isNonNegativeInteger(p.themeIndex)
-      ? { themeIndex: p.themeIndex }
-      : themeIndexByUuid.has(p.uuid)
-        ? { themeIndex: themeIndexByUuid.get(p.uuid) }
-        : {}),
-    ...(Object.hasOwn(p, "accountProfilePhotoId") ? { accountProfilePhotoId: p.accountProfilePhotoId } : {}),
-    ...(Object.hasOwn(p, "accountProfileBorderId") ? { accountProfileBorderId: p.accountProfileBorderId } : {}),
-    ...(Object.hasOwn(p, "accountCardFrameId") ? { accountCardFrameId: p.accountCardFrameId } : {}),
-    ...(Object.hasOwn(p, "accountTotalGames") ? { accountTotalGames: p.accountTotalGames } : {}),
-    ...(Object.hasOwn(p, "accountWinRate") ? { accountWinRate: p.accountWinRate } : {}),
-  }))
+  return players.map((p) => {
+    const themeIndex = pickThemeIndex(p, themeIndexByUuid)
+    return {
+      uuid: p.uuid,
+      nickname: p.nickname,
+      alive: p.isAlive,
+      isConnected: p.isConnected,
+      isParticipating: p.isParticipating !== false,
+      ...(Object.hasOwn(p, "membershipId") ? { membershipId: p.membershipId } : {}),
+      ...(themeIndex !== undefined ? { themeIndex } : {}),
+      ...(Object.hasOwn(p, "accountProfilePhotoId") ? { accountProfilePhotoId: p.accountProfilePhotoId } : {}),
+      ...(Object.hasOwn(p, "accountProfileBorderId") ? { accountProfileBorderId: p.accountProfileBorderId } : {}),
+      ...(Object.hasOwn(p, "accountCardFrameId") ? { accountCardFrameId: p.accountCardFrameId } : {}),
+      ...(Object.hasOwn(p, "accountTotalGames") ? { accountTotalGames: p.accountTotalGames } : {}),
+      ...(Object.hasOwn(p, "accountWinRate") ? { accountWinRate: p.accountWinRate } : {}),
+    }
+  })
 }

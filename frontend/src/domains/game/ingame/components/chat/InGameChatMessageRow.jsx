@@ -76,12 +76,10 @@ export default function InGameChatMessageRow({
   const formattedTime = showTimeEnabled ? formatChatMessageTime(sentAt) : null
 
   // 글 최대 너비는 입력칸 너비 기준, 크게 보기·재판 모양은 조금 좁게
-  const messageMaxWidth =
-    textFieldWidth > 0
-      ? variant === "closeup" || variant === "tribunal"
-        ? textFieldWidth * 0.92
-        : textFieldWidth
-      : 0
+  // 크게 보기·재판 틀은 글 칸을 조금 좁힘, 칸 너비 모르면 0
+  const narrowsInFrame = variant === "closeup" || variant === "tribunal"
+  let messageMaxWidth = 0
+  if (textFieldWidth > 0) messageMaxWidth = narrowsInFrame ? textFieldWidth * 0.92 : textFieldWidth
 
   return (
     <li className={MSG_ROW_CLASS} style={chatTextScaleStyle} data-chat-channel={channel ?? undefined}>

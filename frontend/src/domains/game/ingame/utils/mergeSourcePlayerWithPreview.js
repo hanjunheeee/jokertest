@@ -4,14 +4,16 @@ import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.
 import { resolveInGamePlayerTheme } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { resolveAccountCardFrameSrc } from "./pickInGamePlayerFrame.js"
 
+// 상태: 끊김을 먼저 보고, 그다음 생존
+function playerStatus(player) {
+  if (!player.connected) return INGAME_PLAYER_STATUS.DISCONNECTED
+  if (player.alive) return INGAME_PLAYER_STATUS.ALIVE
+  return INGAME_PLAYER_STATUS.DEAD
+}
+
 // 실제 참가자 값으로 미리보기 칸 덮어쓰기 (계정 사진·카드 테두리가 있으면 그걸 씀)
 export function mergeSourcePlayerWithPreview(player, preview) {
-  // 상태: 끊김을 먼저 보고, 그다음 생존
-  const status = !player.connected
-    ? INGAME_PLAYER_STATUS.DISCONNECTED
-    : player.alive
-      ? INGAME_PLAYER_STATUS.ALIVE
-      : INGAME_PLAYER_STATUS.DEAD
+  const status = playerStatus(player)
 
   const resolvedAccountPhotoSrc = Object.hasOwn(player, "accountProfilePhotoId")
     ? resolveInGameAccountProfilePhotoSrc(player.accountProfilePhotoId)

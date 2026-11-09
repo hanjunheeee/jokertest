@@ -166,7 +166,8 @@ export default function InGameTribunalPresentationOverlay({
                       motionDelay={0.28}
                     />
                   </motion.div>
-                ) : noticeText ? (
+                ) : null}
+                {!showVoteButtons && noticeText ? (
                   <p className={NOTICE_CLASS}>
                     {noticeText}
                   </p>

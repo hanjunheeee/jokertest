@@ -11,11 +11,8 @@ export function resolveNightSuccessVideo(entry) {
   if (!Array.isArray(perspectives)) return null
 
   // 쓴 사람 시점이 있으면 그것, 없으면 대상 시점
-  const perspective = perspectives.includes("USER")
-    ? "USER"
-    : perspectives.includes("TARGET")
-      ? "TARGET"
-      : null
+  // 예: ["TARGET", "USER"] → "USER", ["TARGET"] → "TARGET", [] → null
+  const perspective = ["USER", "TARGET"].find((key) => perspectives.includes(key)) ?? null
   if (perspective === null) return null
 
   // 효과음 목록의 밤 성공 영상 표에서 종류-시점 키로 찾음

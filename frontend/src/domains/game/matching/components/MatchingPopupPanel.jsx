@@ -20,6 +20,13 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 
 // 대기방 가운데 팝업
+// 요청 중이 먼저, 그다음 준비 여부
+function pickReadyLabel({ isSettingReady, isReady }) {
+  if (isSettingReady) return MATCHING_POPUP_COPY.readyPending
+  if (isReady) return MATCHING_POPUP_COPY.readyOff
+  return MATCHING_POPUP_COPY.readyOn
+}
+
 export default function MatchingPopupPanel({
   visible,
   slots,
@@ -38,7 +45,7 @@ export default function MatchingPopupPanel({
   onLeaveRoom,
 }) {
   // 준비 버튼 글자: 요청 중 / 준비취소 / 준비완료, 준비한 상태면 취소(부정) 버튼 그림 씀
-  const readyLabel = isSettingReady ? MATCHING_POPUP_COPY.readyPending : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn
+  const readyLabel = pickReadyLabel({ isSettingReady, isReady })
   const readySrc = isReady ? GAME_MATCHING_ASSETS.deleteRoomButton : GAME_MATCHING_ASSETS.startGameButton
   // 요청 중이거나 방 확인 전이면 준비 버튼 잠금
   const readyDisabled = isSettingReady || !isRoomVerified

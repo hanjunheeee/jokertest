@@ -120,13 +120,14 @@ export function useInGameDayVoteSubmit() {
     && (!Number.isInteger(serverSubmissionRound) || serverSubmissionRound === dayVoteRound)
     && (!Number.isInteger(serverSubmissionDay) || serverSubmissionDay === dayIndex)
 
+  let lastSubmittedTargetId = state.lastSubmittedTargetId
+  if (serverOwnsSubmission) lastSubmittedTargetId = serverHasSubmitted ? (serverSubmittedTargetId ?? null) : null
+
   return {
     status: state.status,
     error: state.error,
     hasSubmitted: serverOwnsSubmission ? serverHasSubmitted : state.hasSubmitted,
-    lastSubmittedTargetId: serverOwnsSubmission
-      ? (serverHasSubmitted ? (serverSubmittedTargetId ?? null) : null)
-      : state.lastSubmittedTargetId,
+    lastSubmittedTargetId,
     submitDayVote,
   }
 }

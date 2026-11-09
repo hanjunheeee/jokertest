@@ -101,10 +101,8 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   const wrapClass = [
     INPUT_VIEWPORT_WRAP_BASE_CLASS,
     viewportFixedHeightClass,
-    hasText
-      ? showLinePeek
-        ? INPUT_VIEWPORT_FILLED_CLASS
-        : INPUT_VIEWPORT_EMPTY_CLASS
+    hasText && showLinePeek
+      ? INPUT_VIEWPORT_FILLED_CLASS
       : INPUT_VIEWPORT_EMPTY_CLASS,
     showLinePeek
       ? INPUT_VIEWPORT_MASK_CLASS
@@ -119,10 +117,8 @@ const InGameChatInput = forwardRef(function InGameChatInput(
   // 첫 줄이거나 한 줄이면 가운데 한 줄 모양, 그 밖은 여러 줄 모양
   const textareaClass = [
     inputClass,
-    hasText
-      ? useCenteredFirstLineViewport || !isVisualMultiLine
-        ? viewportSinglelineClass
-        : INPUT_VIEWPORT_MULTILINE_CLASS
+    hasText && isVisualMultiLine && !useCenteredFirstLineViewport
+      ? INPUT_VIEWPORT_MULTILINE_CLASS
       : viewportSinglelineClass,
   ].join(" ")
 
