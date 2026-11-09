@@ -1,0 +1,5 @@
+node_modules/
+.runtime/
+reports/
+test-results/
+.env.e2e

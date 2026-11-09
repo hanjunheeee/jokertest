@@ -13,6 +13,7 @@ const { resolveParticipantSockets } = require('./membership')
 const { disposeRoom } = require('./dispose')
 const { rememberStartedRoom } = require('../join/startedMarks')
 const { emitPublicRoomList } = require('./view')
+const e2eGameHooks = require('../../e2e/gameHooks')
 
 // 프로필 읽는 사이 방장·명단·자리·준비·설정 버전이 그대로인지
 function isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture) {
@@ -265,6 +266,8 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
         respond({ ok: false, code: prepared.code, message: '게임을 시작할 수 없습니다.' })
         return
     }
+    // 브라우저 시험(E2E_HOOKS=1, 운영 아님)만: 미리 정한 역할로 바꿔 끼움 (역할별 인원은 그대로, 꺼져 있으면 아무것도 안 함)
+    e2eGameHooks.applyRolePresets(prepared.session)
 
     // 참가자 전원 받을 소켓 있는지 (한 명이라도 없으면 시작 안 함, 판 넣기 전이라 되돌릴 것 없음)
     let uuidToSockets

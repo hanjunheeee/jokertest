@@ -2,17 +2,21 @@
 // run 시계·타이머 함수 고르기·끄기·밤 턴·연출 대기 시간 정하기 + 마감 때 기권 채우기, 밤 턴·낮·끊김 유예 run이 같이 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
+const { isE2eHooksEnabled } = require('../../../config/e2eHooks')
+const e2eTimers = require('../../e2e/timers')
 const {
     NIGHT_WAIT_DEFAULT_MS,
     NIGHT_WAIT_MAX_MS,
 } = require('./constants')
 
 // run에 넣을 시계·타이머 함수: 시험이 넣은 것 먼저, 없으면 진짜 것 (부를 때마다 전역 값을 읽음)
+// 브라우저 시험(E2E_HOOKS=1, 운영 아님)이면 기억하는 타이머 (시험이 단계를 바로 넘길 수 있게, 시간은 그대로)
 function pickTimerFns(deps, nowFallback = Date.now) {
+    const tracked = isE2eHooksEnabled()
     return {
         nowFn: deps.nowFn ?? nowFallback,
-        setTimeoutFn: deps.setTimeoutFn ?? setTimeout,
-        clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout,
+        setTimeoutFn: deps.setTimeoutFn ?? (tracked ? e2eTimers.trackedSetTimeout : setTimeout),
+        clearTimeoutFn: deps.clearTimeoutFn ?? (tracked ? e2eTimers.trackedClearTimeout : clearTimeout),
     }
 }
 

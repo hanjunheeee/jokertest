@@ -27,6 +27,8 @@ try {
     require("./config/requiredEnv").assertRequiredEnv();
     // 서명 키가 짧거나 예시 값이면 운영은 시작 거부 (토큰 위조 막기)
     require("./config/requiredEnv").assertStrongSecrets();
+    // 브라우저 시험 전용 값(E2E_HOOKS·MAIL_TEST_OUTBOX_DIR)이 운영에 있으면 시작 거부
+    require("./config/e2eHooks").assertNoE2eInProduction();
 } catch (error) {
     if (require("./config/requiredEnv").isStartupFatal(error)) failStartup(error, "환경값"); // 운영 + 모르는 NODE_ENV는 거부
     console.warn(`[STARTUP] 경고 — ${error.message} (개발이라 계속, 운영이면 시작 거부)`);
@@ -102,6 +104,8 @@ app.use("/notifications", notificationRouter);
 app.use("/reports", reportRouter);
 // 관리자 서버 전용 (INTERNAL_API_KEY 없으면 꺼짐)
 app.use("/internal", internalRouter);
+// 브라우저 시험 전용 (E2E_HOOKS=1 + 운영 아닐 때만 붙임, 열쇠는 INTERNAL_API_KEY)
+if (require("./config/e2eHooks").isE2eHooksEnabled()) app.use("/e2e", require("./routes/e2e.routes"));
 
 // 라우터 뒤: 없는 경로 404 → 마지막 오류 처리
 app.use(notFoundHandler);
