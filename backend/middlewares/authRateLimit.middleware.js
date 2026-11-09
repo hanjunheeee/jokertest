@@ -41,10 +41,12 @@ const buildSignupCodeRateLimiters = (codeConfig, createRateLimiter) => {
 };
 
 // 아이디 찾기 제한 2개 (ip, 찾는 닉네임), env는 부르는 때 읽음, 닉네임 키도 해시로
+// 키가 `ip:…`로 같은 제한 셋(아이디 찾기 ip·재설정 요청 ip·재설정 확인 ip)은 name 붙임 → Redis `rl:<이름>:ip:…`가 안 겹침 (창·최대가 같아도)
 const buildFindIdRateLimiters = (env, createRateLimiter) => {
     const findIdIpLimiter = createRateLimiter({
         windowMs: toPositiveInt(env.FIND_ID_WINDOW_MS, 600000),
         max:      toPositiveInt(env.FIND_ID_IP_MAX, 10),
+        name:     "find-id-ip",
         keyOf:    (req) => `ip:${req.ip}`,
     });
 
@@ -62,6 +64,7 @@ const buildPasswordResetRateLimiters = (env, createRateLimiter) => {
     const resetRequestIpLimiter = createRateLimiter({
         windowMs: toPositiveInt(env.PASSWORD_RESET_REQUEST_WINDOW_MS, 60 * 60 * 1000),
         max:      toPositiveInt(env.PASSWORD_RESET_REQUEST_IP_MAX, 10),
+        name:     "reset-request-ip",
         keyOf:    (req) => `ip:${req.ip}`,
     });
 
@@ -77,6 +80,7 @@ const buildPasswordResetRateLimiters = (env, createRateLimiter) => {
     const resetCheckIpLimiter = createRateLimiter({
         windowMs: toPositiveInt(env.PASSWORD_RESET_CHECK_WINDOW_MS, 10 * 60 * 1000),
         max:      toPositiveInt(env.PASSWORD_RESET_CHECK_IP_MAX, 20),
+        name:     "reset-check-ip",
         keyOf:    (req) => `ip:${req.ip}`,
     });
     return {
