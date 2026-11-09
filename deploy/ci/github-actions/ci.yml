@@ -1,0 +1,193 @@
+# CI (GitHub Actions) — 새 저장소로 옮길 때 .github/workflows/ci.yml 로 복사 (docs/CI_CD.md)
+# 할 일은 전부 deploy/ci/scripts/*.sh 에 있음 → GitLab(deploy/ci/gitlab-ci.yml)과 같은 스크립트를 부름
+# PR: 백엔드·DB·화면 둘·도커 빌드·보안 + 브라우저 빠른 묶음 / 하루 한 번·손으로: 브라우저 전체
+name: CI
+
+on:
+  pull_request:
+    branches: [main, "feature/**"]
+  push:
+    branches: [main, "feature/**"]
+  schedule:
+    # 매일 03:00 KST (UTC 18:00) — 브라우저 시험 전체
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: 브라우저 시험 묶음
+        type: choice
+        options: [full, quick, none]
+        default: full
+
+# 같은 브랜치·PR에 새 push가 오면 이전 실행 취소
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # CI 안에서만 쓰는 시험 DB root 비번 (진짜 비밀 아님, 서비스 컨테이너와 같은 값)
+  MYSQL_ROOT_PASSWORD: ci-root-test-only
+  VITE_API_BASE_URL: http://api.ci.test
+
+jobs:
+  backend:
+    name: 백엔드 (eslint·시험)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: bash deploy/ci/scripts/backend.sh
+
+  backend-db:
+    name: 백엔드 DB 시험 (MySQL)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    # 시험 전부를 하나씩(--test-concurrency=1) + 진짜 DB 시험이라 김
+    timeout-minutes: 60
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-test-only
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-test-only"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      CI_DB_HOST: 127.0.0.1
+      CI_DB_PORT: "3306"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: bash deploy/ci/scripts/backend-db.sh
+
+  frontend:
+    name: 데스크톱 화면 (eslint·시험·빌드)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: bash deploy/ci/scripts/frontend.sh
+
+  frontend-mobile:
+    name: 모바일 화면 (eslint·시험·빌드)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend-mobile/package-lock.json
+      - run: bash deploy/ci/scripts/frontend-mobile.sh
+
+  e2e:
+    name: 브라우저 시험 (${{ github.event_name == 'pull_request' && 'quick' || github.event_name == 'schedule' && 'full' || inputs.e2e || 'skip' }})
+    # PR엔 빠른 묶음, 하루 한 번·손으로는 전체, 그냥 push엔 안 돎
+    if: >-
+      github.event_name == 'pull_request' || github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.e2e != 'none')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-test-only
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-test-only"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      CI_DB_HOST: 127.0.0.1
+      CI_DB_PORT: "3306"
+      # 러너 2코어 → 작업자 2
+      E2E_WORKERS: "2"
+      E2E_MODE: ${{ github.event_name == 'pull_request' && 'quick' || github.event_name == 'schedule' && 'full' || inputs.e2e }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            frontend-mobile/package-lock.json
+            e2e/package-lock.json
+      - run: bash deploy/ci/scripts/e2e.sh "$E2E_MODE"
+      - name: 실패 보고서·trace 올리기
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ env.E2E_MODE }}-${{ github.run_id }}
+          path: |
+            e2e/reports/
+            e2e/test-results/
+            e2e/.runtime/backend.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  docker:
+    name: 도커 이미지 빌드·nginx -t
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash deploy/ci/scripts/docker-build.sh
+
+  audit:
+    name: 의존성 취약점 (npm audit high)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: bash deploy/ci/scripts/audit.sh
+
+  secrets:
+    name: 비밀값 새는 것 (gitleaks)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 이번 커밋 범위 정하기
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # 새 브랜치 첫 push는 before가 0000… → 범위 없이 지금 파일만
+          if [ -n "$BASE_SHA" ] && [ "${BASE_SHA//0/}" != "" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            echo "SECRET_SCAN_RANGE=$BASE_SHA..$HEAD_SHA" >> "$GITHUB_ENV"
+          fi
+      - run: bash deploy/ci/scripts/secrets-scan.sh

@@ -1,0 +1,159 @@
+# CD (GitHub Actions) — 새 저장소로 옮길 때 .github/workflows/deploy.yml 로 복사 (docs/CI_CD.md)
+# 자동 배포 없음: 손으로(환경 고르기) 또는 v* 태그 push 때만. production은 GitHub Environments 승인(required reviewers) 걸기
+# 순서: 이미지 빌드·태그(커밋 해시)·push → SSH → 점검 켜기·판 0개 기다리기 → DB 백업 → migrate → up -d → /health·admin check → 바깥 확인(smoke) → 실패면 되돌리기
+# 할 일은 deploy/ci/scripts/deploy/*.sh (GitLab deploy/ci/gitlab-ci.yml과 같음)
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 어느 환경
+        type: choice
+        options: [staging, production]
+        default: staging
+      action:
+        description: 할 일
+        type: choice
+        options: [deploy, rollback, status]
+        default: deploy
+      rollback_tag:
+        description: "rollback 때 태그 (비우면 바로 전 태그)"
+        type: string
+        required: false
+      skip_maintenance:
+        description: 점검 켜기·판 끝날 때까지 기다리기 건너뛰기
+        type: boolean
+        default: false
+      drain_max_minutes:
+        description: 판 끝날 때까지 최대 몇 분
+        type: number
+        default: 30
+  push:
+    tags: ["v*"]
+
+# 같은 환경에 배포 둘이 겹치지 않게 (진행 중인 배포는 취소 안 함)
+concurrency:
+  group: deploy-${{ inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  TARGET_ENV: ${{ inputs.environment || 'production' }}
+  ACTION: ${{ inputs.action || 'deploy' }}
+
+jobs:
+  build:
+    name: 이미지 빌드·push
+    if: (inputs.action || 'deploy') == 'deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    # 환경별 vars(VITE_*·IMAGE_REGISTRY)를 읽으려고 환경을 붙임 (승인은 deploy 일에서 한 번 더)
+    environment: ${{ inputs.environment || 'production' }}
+    outputs:
+      image_tag: ${{ steps.push.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: push
+        env:
+          IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+          # GHCR면 비밀값 없어도 이 실행의 토큰으로 올림, 네이버 Container Registry면 REGISTRY_* 비밀값
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_DISCORD_SUPPORT_URL: ${{ vars.VITE_DISCORD_SUPPORT_URL }}
+          VITE_AD_PROVIDER: ${{ vars.VITE_AD_PROVIDER }}
+          VITE_ADSENSE_CLIENT: ${{ vars.VITE_ADSENSE_CLIENT }}
+          VITE_ADSENSE_SLOT_BANNER: ${{ vars.VITE_ADSENSE_SLOT_BANNER }}
+          VITE_ADSENSE_SLOT_INTERSTITIAL: ${{ vars.VITE_ADSENSE_SLOT_INTERSTITIAL }}
+        run: |
+          set -o pipefail
+          bash deploy/ci/scripts/deploy/build-push.sh | tee build.log
+          grep '^image_tag=' build.log | tail -1 >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: 서버 배포 (${{ inputs.environment || 'production' }})
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # production 환경엔 Settings → Environments → Required reviewers 걸기 → 여기서 승인 기다림
+    environment:
+      name: ${{ inputs.environment || 'production' }}
+      url: ${{ vars.SMOKE_DESKTOP_URL }}
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      # 서버 여러 대(곧): 쉼표 목록, 앞의 하나만 백업·마이그레이션 — 각 서버 .env.production에 SERVER_ID·REDIS_URL
+      DEPLOY_HOSTS: ${{ secrets.DEPLOY_HOSTS }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+      DEPLOY_MAINTENANCE: ${{ inputs.skip_maintenance && '0' || '1' }}
+      DRAIN_MAX_MINUTES: ${{ inputs.drain_max_minutes || 30 }}
+      SMOKE_API_URL: ${{ vars.SMOKE_API_URL }}
+      SMOKE_DESKTOP_URL: ${{ vars.SMOKE_DESKTOP_URL }}
+      SMOKE_MOBILE_URL: ${{ vars.SMOKE_MOBILE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 서버에서 백업·migrate·up·확인
+        run: bash deploy/ci/scripts/deploy/ship.sh deploy "${{ needs.build.outputs.image_tag }}"
+      - name: 바깥에서 확인 (/health·첫 화면·소켓 101)
+        run: bash deploy/ci/scripts/deploy/smoke.sh
+
+  rollback:
+    name: 되돌리기 (${{ inputs.environment || 'production' }})
+    # 배포가 실패하면 자동으로, 또는 손으로 action=rollback
+    needs: [build, deploy]
+    if: >-
+      always() && (
+        (inputs.action || 'deploy') == 'rollback' ||
+        needs.deploy.result == 'failure'
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: ${{ inputs.environment || 'production' }}
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_HOSTS: ${{ secrets.DEPLOY_HOSTS }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME || github.actor }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
+      SMOKE_API_URL: ${{ vars.SMOKE_API_URL }}
+      SMOKE_DESKTOP_URL: ${{ vars.SMOKE_DESKTOP_URL }}
+      SMOKE_MOBILE_URL: ${{ vars.SMOKE_MOBILE_URL }}
+      ROLLBACK_TAG: ${{ inputs.rollback_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash deploy/ci/scripts/deploy/ship.sh rollback "$ROLLBACK_TAG"
+      - run: bash deploy/ci/scripts/deploy/smoke.sh
+
+  status:
+    name: 서버 상태 보기
+    if: inputs.action == 'status'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_HOSTS: ${{ secrets.DEPLOY_HOSTS }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      IMAGE_REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash deploy/ci/scripts/deploy/ship.sh status

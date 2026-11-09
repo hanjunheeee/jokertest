@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# CI용 docker 가로채기 파일, 앱 DB 준비 스크립트의 `docker exec -i <이름> sh -c 'mysql -uroot ...'`만 node(mysql-root.cjs)로 돌림
+# lib/db.sh가 PATH 맨 앞에 넣음 — 그 밖의 docker 명령은 진짜 docker로 그대로 넘김 (없으면 실패)
+set -euo pipefail
+
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "${1:-}" = "exec" ]; then
+    args=("${@:2}")
+    i=0
+    # 옵션(-i 등) 건너뛰고 컨테이너 이름 다음이 sh -c 'mysql ...'인지 봄
+    while [ $i -lt ${#args[@]} ] && [[ "${args[$i]}" == -* ]]; do i=$((i + 1)); done
+    i=$((i + 1))
+    if [ "${args[$i]:-}" = "sh" ] && [ "${args[$((i + 1))]:-}" = "-c" ] && [[ "${args[$((i + 2))]:-}" == mysql* ]]; then
+        exec node "$self_dir/../mysql-root.cjs"
+    fi
+fi
+
+# 진짜 docker 찾기 (이 폴더는 빼고)
+IFS=: read -r -a dirs <<< "$PATH"
+for d in "${dirs[@]}"; do
+    [ "$d" = "$self_dir" ] && continue
+    if [ -x "$d/docker" ]; then exec "$d/docker" "$@"; fi
+done
+echo "[ci-docker-shim] 진짜 docker가 없음: docker $*" >&2
+exit 127

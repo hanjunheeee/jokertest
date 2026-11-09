@@ -1,0 +1,36 @@
+# 비밀값 검사(gitleaks) 설정, 기본 규칙 그대로 + 시험 키 모양·예시 값·받은 패키지 폴더는 허용
+# deploy/ci/scripts/secrets-scan.sh가 씀 — 진짜 키를 허용 목록에 넣지 않기 (넣을 땐 값 말고 모양만)
+title = "MMC gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "시험 값·예시 값·생성물"
+# 받은 패키지·빌드 결과·시험 실행 폴더·로컬 비밀 파일(원래 git에 안 올라감)
+paths = [
+    '''(^|/)node_modules/''',
+    '''(^|/)dist/''',
+    '''(^|/)\.runtime/''',
+    '''(^|/)test-results/''',
+    '''(^|/)reports/''',
+    '''(^|/)package-lock\.json$''',
+    '''(^|/)\.env\.example$''',
+    '''^backend/\.env\.test$''',
+    # 단위 시험 파일: 가짜 키(live_ck_abcdefghijkl1234 같은 모양 검사용)·가짜 토큰을 일부러 넣어 둠
+    '''(^|/)tests/.*\.test\.(c|m)?js$''',
+    '''\.(png|jpe?g|webp|gif|mp4|mp3|wav|ogg|woff2?|ttf|ico)$''',
+]
+# 토스 시험 키(test_ck_·test_sk_·test_gck_·test_gsk_ 로 시작)·자리 값·CI 안에서만 쓰는 시험 비번
+regexes = [
+    '''test_g?(ck|sk)_[A-Za-z0-9]+''',
+    '''(?i)change[-_]?me''',
+    '''(?i)example\.(com|test)''',
+    '''ci-root-test-only''',
+    '''mysql://test:test@localhost''',
+]
+stopwords = [
+    "placeholder",
+    "dummy",
+    "<",
+]
