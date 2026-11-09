@@ -50,6 +50,7 @@ module.exports = async () => {
     let removed = 0;
     try {
         removed = await accounts.deleteStaleAccounts(hours);
+        removed += await require('./adminAccounts').deleteStaleAdmins(hours);
     } catch (error) {
         // 정리 실패로 시험을 막지 않음 (다음 실행이 다시 지움)
         console.warn(`[e2e] 오래된 계정 지우기 실패 (다음 실행 때 다시): ${String(error?.message ?? error).slice(0, 120)}`);

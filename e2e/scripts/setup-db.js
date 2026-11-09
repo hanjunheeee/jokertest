@@ -46,6 +46,8 @@ const buildEnv = (reset) => {
         JWT_SECRET: current.JWT_SECRET || randomToken(48),
         SIGNUP_EMAIL_HMAC_SECRET: current.SIGNUP_EMAIL_HMAC_SECRET || randomToken(48),
         INTERNAL_API_KEY: current.INTERNAL_API_KEY || randomToken(48),
+        // 관리자 OTP 비밀 잠금 열쇠 (16진수 64자, 시험 DB의 관리자 OTP 비밀이 이 열쇠로 잠겨서 있던 값 살림)
+        ADMIN_TOTP_KEY: current.ADMIN_TOTP_KEY || crypto.randomBytes(32).toString('hex'),
     };
     for (const key of ['TOSS_TEST_SECRET_KEY', 'TOSS_TEST_SECURITY_KEY', 'TOSS_TEST_CLIENT_KEY']) {
         if (backendEnv[key]) env[key] = backendEnv[key];

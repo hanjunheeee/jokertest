@@ -8,6 +8,7 @@
 | 백엔드 | `http://localhost:4100` (`scripts/start-backend.js`가 켬, 꺼지면 다시 켬) |
 | 데스크톱 화면 | `http://localhost:5273` (`scripts/serve-front.js desktop` — 기본 빌드본, `E2E_FRONT=dev`면 vite 개발 서버) |
 | 모바일 화면 | `http://localhost:5274` (`scripts/serve-front.js mobile` — 같음) |
+| 관리자 화면 | `http://localhost:5275` (`scripts/serve-front.js admin` — 늘 빌드본, `/admin-api`는 4100으로 넘김, 클라우드플레어 Access 흉내 — 아래 '관리자 시험') |
 | 비밀값 | `e2e/.env.e2e` (git 안 올라감, 처음 `npm run db:setup`이 무작위로 만듦, 토스 시험 키만 backend/.env에서 옮김) |
 | 서버 로그 | `e2e/.runtime/backend.log` (SQL까지 다 있음) |
 | 받은 메일 | `e2e/.runtime/mail/<주소>.jsonl` (진짜 메일 안 나감) |
@@ -62,7 +63,21 @@ npx playwright test         # 전부: desktop·mobile 동시 → 끝나면 seria
 | desktop | `tests/` 중 `mobile/` 밖 전부 | 1280×800, 5273 |
 | mobile | `tests/mobile/**` | 375×812 세로 + 터치 (Pixel 7 바탕), 5274 |
 | mobile-safari | `tests/mobile/**` 그대로 한 번 더 (아이폰 사파리) | 375×812 세로 + 터치 (iPhone 13 바탕, WebKit), 5274 |
-| serial | 이름에 `@serial`·`@shutdown` 붙은 시험 (어느 폴더든) | desktop·mobile·mobile-safari 다 끝난 뒤 한 번에 하나 |
+| serial | 이름에 `@serial`·`@shutdown` 붙은 시험 (어느 폴더든, `admin/phone` 빼고) | desktop·mobile·mobile-safari·admin·admin-phone 다 끝난 뒤 한 번에 하나 |
+| admin | `tests/admin/**` 중 `phone/` 밖 (관리자 화면) | 1280×800, 5275 |
+| admin-phone | `tests/admin/phone/**` (관리자 휴대폰 크기) | 375×812 + 터치, 5275 |
+| admin-phone-serial | `tests/admin/phone/**` 중 `@serial` | serial 끝난 뒤 한 번에 하나 |
+
+### 관리자 시험 (tests/admin)
+
+- 다른 프로젝트(desktop·mobile·mobile-safari)는 `admin/**`를 안 돌림. 관리자만: `npx playwright test --project=admin --project=admin-phone`
+- **문 1 (클라우드플레어 Access) 흉내**: 화면 서버(`scripts/admin-gate.js`)가 켤 때 RSA 열쇠를 새로 만들어 공개키를 `/__e2e/access-certs`로 주고(백엔드 `ADMIN_ACCESS_CERTS_URL`), 브라우저에 쿠키 `e2e_access_email`이 있을 때만 그 이메일로 서명한 표를 `Cf-Access-Jwt-Assertion`에 붙임. 쿠키 없으면 백엔드가 403 → "접근 권한 없음" 화면. 백엔드는 Access 켠 채(`required`)로 진짜 검증 코드 그대로 돎.
+- **가짜 IP**: 쿠키 `e2e_client_ip`를 화면 서버가 `X-Forwarded-For`로 넘김 → 시험마다 IP가 달라 로그인 잠금(IP 15분 20번)·로그인 요청 수(1분 10번)가 서로 안 섞임 (`allowAccess`가 무작위로 정함).
+- 도우미: `helpers/adminAccounts.js` — `createAdmin({ email })`(아이디 `e2e-<실행 번호>-…`, 실행 끝에 지움) · `otpNow(secret)` · `loginAsAdmin(page, account)` · `setAdminSessionIdle(page, 분)`(DB 세션 시각 당김) / `helpers/adminAccess.js` — `allowAccess(context, email)` · `denyAccess(context)` · `useClientIp(context, ip?)`
+- 같은 OTP 번호는 한 번만 받음 → 한 계정으로 두 번 로그인하면 `loginAsAdmin`이 다음 30초 칸까지 기다림.
+- 서버 전체에 걸리는 관리자 시험(점검·전체 공지)은 이름에 `@serial`, 주소는 `E2E.adminUrl` 직접 (serial 프로젝트는 baseURL이 데스크톱).
+- 환경값: 백엔드에 `ADMIN_TOTP_KEY`(`.env.e2e`, `db:setup`이 처음 한 번 만듦)·`ADMIN_ORIGIN=http://localhost:5275`·`ADMIN_ACCESS_TEAM_DOMAIN`·`ADMIN_ACCESS_AUD`(시험 값, `helpers/env.js`)·`ADMIN_ACCESS_CERTS_URL`을 넣음 (`helpers/backendEnv.js`, 밖의 `ADMIN_*` 값은 안 섞음).
+- 관리자 화면 코드를 고치면 화면 서버를 다시 켜야 반영(빌드본). 손으로: `node scripts/serve-front.js admin`.
 
 ### 아이폰 사파리 (mobile-safari)
 

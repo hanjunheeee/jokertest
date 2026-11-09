@@ -34,9 +34,14 @@ const E2E = Object.freeze({
     backendPort: 4100,
     desktopPort: 5273,
     mobilePort: 5274,
+    adminPort: 5275,
     apiUrl: 'http://localhost:4100',
     desktopUrl: 'http://localhost:5273',
     mobileUrl: 'http://localhost:5274',
+    // 관리자 화면 (scripts/serve-front.js admin — /admin-api는 4100으로 넘김, 클라우드플레어 Access 흉내 표 붙임)
+    adminUrl: 'http://localhost:5275',
+    // 시험용 Access 팀·AUD 값 (가짜, 화면 서버가 서명하고 백엔드가 같은 값으로 확인)
+    adminAccess: Object.freeze({ teamDomain: 'mmc-e2e.cloudflareaccess.com', aud: 'mmc-e2e-access-aud' }),
     // Node 여러 개 (계획 4-1): 나누기 rr(일부러 번갈아)·least, 앞단 node(작은 프록시)·nginx(docker), 시험 Redis
     nodeCount: NODE_COUNT,
     multiNode: MULTI_NODE,

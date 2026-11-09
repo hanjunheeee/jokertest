@@ -24,6 +24,8 @@ module.exports = async () => {
         if (process.env.E2E_KEEP_ACCOUNTS === '1') return;
         const removed = await accounts.deleteAccountsLike(accounts.RUN_EMAIL_LIKE);
         console.log(`[e2e] 이번 실행 계정 ${removed}개 지움`);
+        const admins = await require('./adminAccounts').deleteRunAdmins();
+        if (admins > 0) console.log(`[e2e] 이번 실행 관리자 계정 ${admins}개 지움`);
     } catch (error) {
         console.warn(`[e2e] 이번 실행 계정 지우기 실패 (시험 결과와 상관없음): ${String(error?.message ?? error).slice(0, 160)}`);
     } finally {

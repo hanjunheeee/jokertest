@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// 시험 화면 띄우기 파일, 데스크톱(5273)·모바일(5274) 화면을 빌드본(기본) 또는 vite 개발 서버로 켬 — node scripts/serve-front.js desktop|mobile
+// 시험 화면 띄우기 파일, 데스크톱(5273)·모바일(5274)·관리자(5275) 화면을 빌드본(기본) 또는 vite 개발 서버로 켬 — node scripts/serve-front.js desktop|mobile|admin
 // playwright.config.js webServer·감독의 서버 켜 두기 스크립트가 부름, 빌드본은 화면 고칠 때마다 다시 켜야 반영 (README '화면 서버')
 const fs = require('node:fs');
 const http = require('node:http');
@@ -25,6 +25,16 @@ const APPS = Object.freeze({
         // 모바일도 데스크톱 public을 그대로 씀 (frontend-mobile/vite.config.js publicDir)
         publicDir: path.join(ROOT, 'frontend', 'public'),
         port: E2E.mobilePort,
+    },
+    // 관리자: 입구 admin.html, public 없음, /admin-api·Access 흉내는 admin-gate.js (개발 서버 모드 없음 → 늘 빌드본)
+    admin: {
+        dir: path.join(ROOT, 'frontend'),
+        config: path.join(E2E_DIR, 'vite', 'admin.config.mjs'),
+        outDir: path.join(E2E_DIR, '.runtime', 'front', 'admin'),
+        publicDir: null,
+        entry: 'admin.html',
+        buildOnly: true,
+        port: E2E.adminPort,
     },
 });
 
@@ -90,19 +100,21 @@ function sendFile(req, res, { file, stat }, cacheControl) {
 }
 
 /**
- * 빌드본 정적 서버: 빌드 폴더 → public 폴더 → (확장자 없는 주소면) index.html (화면 안 주소 이동용)
+ * 빌드본 정적 서버: (gate가 맡으면 gate) → 빌드 폴더 → public 폴더 → (확장자 없는 주소면) index.html (화면 안 주소 이동용)
+ * 관리자는 입구가 admin.html → /members 같은 화면 주소로 바로 들어와도 admin.html
  * localhost 두 주소(127.0.0.1·::1)에만 붙음 — 같은 망 다른 기기엔 안 보임
  */
-function serveStatic(name, app) {
+function serveStatic(name, app, gate = null) {
     // 확인용으로 다른 포트에 띄울 때만 E2E_FRONT_PORT (평소엔 5273·5274 그대로)
     const port = Number(process.env.E2E_FRONT_PORT || app.port);
-    const index = path.join(app.outDir, 'index.html');
+    const index = path.join(app.outDir, app.entry ?? 'index.html');
     if (!fs.existsSync(index)) throw new Error(`빌드본 없음: ${index}`);
     const handler = (req, res) => {
+        if (gate?.(req, res)) return;
         if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); res.end(); return; }
         let pathname;
         try { pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname); } catch { res.writeHead(400); res.end(); return; }
-        const found = fileUnder(app.outDir, pathname) ?? fileUnder(app.publicDir, pathname);
+        const found = fileUnder(app.outDir, pathname) ?? (app.publicDir ? fileUnder(app.publicDir, pathname) : null);
         if (found) {
             // 이름에 해시가 붙은 빌드 조각만 오래 둠, 나머지는 매번 확인
             const immutable = pathname.startsWith('/assets/') && found.file.startsWith(app.outDir + path.sep);
@@ -129,9 +141,10 @@ function serveStatic(name, app) {
 async function main() {
     const name = process.argv[2];
     const app = APPS[name];
-    if (!app) throw new Error('쓰는 법: node scripts/serve-front.js desktop|mobile');
-    const mode = (process.env.E2E_FRONT || 'build').toLowerCase();
-    if (mode !== 'build' && mode !== 'dev') throw new Error(`E2E_FRONT는 build 또는 dev (받은 값 ${mode})`);
+    if (!app) throw new Error('쓰는 법: node scripts/serve-front.js desktop|mobile|admin');
+    const asked = (process.env.E2E_FRONT || 'build').toLowerCase();
+    const mode = app.buildOnly ? 'build' : asked;
+    if (asked !== 'build' && asked !== 'dev') throw new Error(`E2E_FRONT는 build 또는 dev (받은 값 ${asked})`);
     // 화면이 부를 백엔드는 늘 시험 백엔드 (frontend/.env의 개발 주소를 덮음, vite는 이미 있는 환경값이 먼저)
     process.env.VITE_API_BASE_URL = E2E.apiUrl;
     // tailwind 등이 지금 폴더 기준으로 찾는 것 맞추기 (예전 'cd frontend && vite'와 같게)
@@ -145,7 +158,7 @@ async function main() {
         log(name, `vite 개발 서버 켬 http://localhost:${app.port}`);
         closer = { close: () => server.close() };
     } else {
-        const reuseBuild = process.env.E2E_FRONT_REBUILD === '0' && fs.existsSync(path.join(app.outDir, 'index.html'));
+        const reuseBuild = process.env.E2E_FRONT_REBUILD === '0' && fs.existsSync(path.join(app.outDir, app.entry ?? 'index.html'));
         if (reuseBuild) {
             log(name, '빌드 건너뜀 (E2E_FRONT_REBUILD=0, 있던 빌드본 씀)');
         } else {
@@ -157,7 +170,9 @@ async function main() {
             await vite.build({ configFile: app.config, root: app.dir, mode: 'development', logLevel: 'warn' });
             log(name, `빌드 끝 (${Math.round((Date.now() - started) / 1000)}초)`);
         }
-        closer = await serveStatic(name, app);
+        // 관리자만 앞단(Access 흉내·/admin-api 넘기기)을 붙임
+        const gate = name === 'admin' ? require('./admin-gate').createAdminGate() : null;
+        closer = await serveStatic(name, app, gate);
     }
     const stop = () => {
         Promise.resolve(closer?.close()).catch(() => {}).finally(() => process.exit(0));

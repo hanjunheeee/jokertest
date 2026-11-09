@@ -19,9 +19,20 @@ const RAISED_IP_LIMITS = Object.freeze({
 
 // 백엔드에 줄 환경값: 시험 DB·시험 포트·시험 손잡이, 진짜 메일·소셜 키는 안 줌 (backend/.env는 cwd를 바꿔 안 읽게 함)
 // 지금 환경에서 백엔드 설정 이름은 전부 뺌 (밖에서 넘어온 DB 주소·메일·소셜 키가 섞이지 않게)
-const BACKEND_KEY_PATTERN = /^(DATABASE_URL|JWT_|MAIL_|PASSWORD_RESET_|SIGNUP_|GOOGLE_|DISCORD_|TOSS_|INTERNAL_|GAME_|E2E_|LOGIN_|FRONTEND_|NODE_OPTIONS$|NODE_ENV$|PORT$|LOG_|SERVER_ID$|NIGHT_|CHECK_EMAIL_|REFRESH_|SOCIAL_|FIND_ID_|REDIS_|CLUSTER_|NODE_COUNT$|NODE_DEAD_|DB_MAX_CONNECTIONS$)/i;
+const BACKEND_KEY_PATTERN = /^(DATABASE_URL|JWT_|MAIL_|PASSWORD_RESET_|SIGNUP_|GOOGLE_|DISCORD_|TOSS_|INTERNAL_|GAME_|E2E_|LOGIN_|FRONTEND_|NODE_OPTIONS$|NODE_ENV$|PORT$|LOG_|SERVER_ID$|NIGHT_|CHECK_EMAIL_|REFRESH_|SOCIAL_|FIND_ID_|REDIS_|CLUSTER_|NODE_COUNT$|NODE_DEAD_|DB_MAX_CONNECTIONS$|ADMIN_)/i;
 // 위 목록에 REDIS_·CLUSTER_도 있음 → 밖의 REDIS_URL이 섞여 단일 서버가 Redis 모드로 켜지는 일 막기 (Node 여러 개는 아래 node 칸으로만 넣음)
 const baseEnv = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => !BACKEND_KEY_PATTERN.test(key)));
+
+// 관리자 페이지 시험 값: Access는 켠 채(required) 시험 화면 서버(5275)가 주는 공개키로 확인, 화면 주소 = 5275
+// OTP 잠금 열쇠는 .env.e2e 값 (없으면 관리자 페이지 꺼짐 → npm run db:setup 다시)
+const adminEnv = (secrets) => ({
+    ...(secrets.ADMIN_TOTP_KEY ? { ADMIN_TOTP_KEY: secrets.ADMIN_TOTP_KEY } : {}),
+    ADMIN_ORIGIN: E2E.adminUrl,
+    ADMIN_ACCESS_MODE: 'required',
+    ADMIN_ACCESS_TEAM_DOMAIN: E2E.adminAccess.teamDomain,
+    ADMIN_ACCESS_AUD: E2E.adminAccess.aud,
+    ADMIN_ACCESS_CERTS_URL: `${E2E.adminUrl}/__e2e/access-certs`,
+});
 
 /**
  * 백엔드 환경값 만들기
@@ -44,6 +55,7 @@ const backendEnv = (secrets, { port = E2E.backendPort, defaultIpLimits = false, 
         ...(secrets.TOSS_TEST_SECRET_KEY ? { TOSS_TEST_SECRET_KEY: secrets.TOSS_TEST_SECRET_KEY } : {}),
         ...(secrets.TOSS_TEST_SECURITY_KEY ? { TOSS_TEST_SECURITY_KEY: secrets.TOSS_TEST_SECURITY_KEY } : {}),
         ...(secrets.TOSS_TEST_CLIENT_KEY ? { TOSS_TEST_CLIENT_KEY: secrets.TOSS_TEST_CLIENT_KEY } : {}),
+        ...adminEnv(secrets),
         FRONTEND_URL: E2E.desktopUrl,
         FRONTEND_MOBILE_URL: E2E.mobileUrl,
         PASSWORD_RESET_APP_URL: E2E.desktopUrl,

@@ -1,4 +1,4 @@
-// 브라우저 시험 설정 파일, 시험 전용 백엔드(4100)·데스크톱(5273)·모바일(5274)을 띄우고 프로젝트 셋(desktop·mobile·serial)으로 돌림
+// 브라우저 시험 설정 파일, 시험 전용 백엔드(4100)·데스크톱(5273)·모바일(5274)·관리자(5275)를 띄우고 프로젝트(desktop·mobile·serial·admin·admin-phone)로 돌림
 // npx playwright test (e2e 폴더) — 개발 서버(4000·5173·5174)·개발 DB와 안 겹침, 자세한 건 README.md
 // Node 여러 개: E2E_NODES=2 [E2E_LB=rr|least] [E2E_PROXY=node|nginx] [E2E_REDIS_URL=…] npx playwright test
 //   → 4100 앞단 뒤에 Node 둘(4101·4102)·시험 Redis, tests/multinode/** 도 돌고 @single-node(한 서버라야 뜻 있는 시험)는 뺌
@@ -21,11 +21,16 @@ const frontTimeout = frontMode === 'dev' ? 120_000 : 420_000;
 const multi = E2E.multiNode;
 // 한 서버 가정 시험 빼기 / 1개일 땐 multinode 폴더를 안 돌림
 const withSingleNode = (re) => (multi ? new RegExp(`${re.source}|@single-node`) : re);
-const desktopIgnore = multi ? ['mobile/**', 'multinode/mobile/**'] : ['mobile/**', 'multinode/**'];
+// 관리자 시험(tests/admin/**)은 admin·admin-phone 프로젝트만 돌림 → 다른 프로젝트는 뺌
+const ADMIN_TESTS = 'admin/**';
+const desktopIgnore = multi ? ['mobile/**', 'multinode/mobile/**', ADMIN_TESTS] : ['mobile/**', 'multinode/**', ADMIN_TESTS];
 const mobileMatch = multi ? ['mobile/**/*.spec.js', 'multinode/mobile/**/*.spec.js'] : ['mobile/**/*.spec.js'];
-const serialIgnore = multi ? [] : ['multinode/**'];
+// 관리자 @serial(점검·전체 공지)은 serial에서 돎(주소는 E2E.adminUrl 직접), 휴대폰 크기 것만 admin-phone-serial로
+const serialIgnore = multi ? ['admin/phone/**'] : ['multinode/**', 'admin/phone/**'];
 // 글 모양 'mobile/**'는 아무 깊이에서나 맞음 → 1개일 땐 multinode/mobile도 따로 빼야 함
-const mobileIgnore = multi ? [] : ['multinode/**'];
+const mobileIgnore = multi ? [ADMIN_TESTS] : ['multinode/**', ADMIN_TESTS];
+// 관리자 휴대폰 크기: 세로 375×812 + 터치
+const adminPhoneUse = { ...devices['Pixel 7'], viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, baseURL: E2E.adminUrl };
 module.exports = defineConfig({
     testDir: './tests',
     // 판 시험은 한 판에 1~3분 → 넉넉히, 기대 기다림도 길게
@@ -97,8 +102,34 @@ module.exports = defineConfig({
             testIgnore: serialIgnore,
             workers: 1,
             fullyParallel: false,
-            dependencies: ['desktop', 'mobile', 'mobile-safari'],
+            dependencies: ['desktop', 'mobile', 'mobile-safari', 'admin', 'admin-phone'],
             use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl },
+        },
+        {
+            // 관리자 화면 PC 크기 (tests/admin/** 중 phone 밖), 5275
+            name: 'admin',
+            testMatch: ['admin/**/*.spec.js'],
+            testIgnore: ['admin/phone/**'],
+            grepInvert: withSingleNode(/@serial|@shutdown/),
+            use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.adminUrl },
+        },
+        {
+            // 관리자 화면 휴대폰 크기 (tests/admin/phone/**)
+            name: 'admin-phone',
+            testMatch: ['admin/phone/**/*.spec.js'],
+            grepInvert: withSingleNode(/@serial|@shutdown/),
+            use: adminPhoneUse,
+        },
+        {
+            // 관리자 휴대폰 크기 중 서버 전체에 걸리는 것 — serial 다 끝난 뒤 한 개씩
+            name: 'admin-phone-serial',
+            testMatch: ['admin/phone/**/*.spec.js'],
+            grep: /@serial|@shutdown/,
+            ...(multi ? { grepInvert: /@single-node/ } : {}),
+            workers: 1,
+            fullyParallel: false,
+            dependencies: ['serial'],
+            use: adminPhoneUse,
         },
     ],
     webServer: [
@@ -129,6 +160,15 @@ module.exports = defineConfig({
             env: { VITE_API_BASE_URL: E2E.apiUrl, E2E_FRONT: frontMode },
             reuseExistingServer: reuse,
             timeout: frontTimeout,
+            stdout: 'pipe',
+        },
+        {
+            // 관리자 화면 + /admin-api 넘기기 + Access 흉내 (늘 빌드본)
+            name: 'admin',
+            command: 'node scripts/serve-front.js admin',
+            url: E2E.adminUrl,
+            reuseExistingServer: reuse,
+            timeout: 420_000,
             stdout: 'pipe',
         },
     ],
