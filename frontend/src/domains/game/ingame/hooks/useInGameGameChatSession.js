@@ -1,5 +1,5 @@
 // 낮·죽은 사람 채팅 세션 훅: 채널별 받기·보내기와 입력 상태
-// 채팅 틀 속성 훅(useInGameChatShellProps)이 사용, 보내기·끊김 받기는 socket/ 함수를 부름
+// 채팅 세션 Provider(InGameChatSessionProvider)가 사용, 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useReducer, useRef, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"

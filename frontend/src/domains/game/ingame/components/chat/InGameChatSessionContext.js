@@ -1,5 +1,5 @@
 // 채팅 세션 컨텍스트: 채팅 틀·재판 연출이 같이 쓰는 입력·메시지·보내기 값
-// InGameChatSessionProvider가 값 넣음, 채팅 틀·재판 연출 문지기가 꺼내 씀
+// InGameChatSessionProvider가 값 넣음(낮·밤 채팅 고르기도 거기), 채팅 틀·재판 연출·모바일 채팅이 꺼내 씀
 import { createContext, useContext } from "react"
 
 // Provider 밖이면 null
