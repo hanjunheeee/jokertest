@@ -10,4 +10,4 @@
 
 - 330개 중 돌려 본 것: role-reveal 44 전부 통과, phase-notice-timer 34 전부 통과, day-chat 56 통과(처음 8개는 시험 잘못 — 닉네임·글 사이 띄어쓰기 → 고친 뒤 다시 돌려 통과), day-ready 25 통과(2개 시험 잘못 고친 뒤 통과), day-vote 58 중 57 통과 + 1개 실패 = 위 1번 앱 문제, day-flow 33 통과(1개는 역할 미리 정하기를 여러 명 걸어 못 맞춘 시험 잘못 → 고침, 고친 뒤 아직 안 돌림), tribunal 59 중 앞 41개 통과 (뒤 18개 = 재판 시간 '안 정한 방·90/30·시간 초과 셋'·피고가 나감 4·인원별 12는 아직 안 돌림), vote-extra 21 아직 안 돌림.
 - 깜빡임: 아직 못 봄 (재시도 없이 한 번씩만 돌림).
-- 시험 바깥 문제 (앱 아님, 감독 참고): ① `helpers/global-setup.js`가 시작할 때 모든 e2e 계정·메일을 지움 → 여러 에이전트가 같은 DB로 동시에 돌면 남의 시험 계정이 중간에 지워질 수 있음 (이 파트는 시작 정리를 뺀 감싼 설정으로 돌림). ② 실행 끝 계정 지우기(`helpers/accounts.js` deleteAccounts)가 `game_result_players` 외래키에 막혀 `SequelizeForeignKeyConstraintError`로 실패함 (판이 끝난 계정).
+- 시험 바깥 문제 (앱 아님, 감독 참고): ① `helpers/global-setup.js`가 시작할 때 모든 e2e 계정·메일을 지움 → 여러 에이전트가 같은 DB로 동시에 돌면 남의 시험 계정이 중간에 지워질 수 있음 (이 파트는 시작 정리를 뺀 감싼 설정으로 돌림). ② 실행 끝 계정 지우기(`helpers/accounts.js` deleteAccounts)가 `game_result_players` 외래키에 막혀 `SequelizeForeignKeyConstraintError`로 실패함 (판이 끝난 계정). → 고침(b154fd9f) ① 시작 정리는 오래된 것만 ② 끝 정리 외래키 다시
