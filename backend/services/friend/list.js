@@ -8,16 +8,28 @@ const economyService = require("../economy");
 
 // 접속 행이 ONLINE이어도 이 서버 접속 목록에 없으면 OFFLINE (BE-015)
 // 서버가 꺼지거나 재시작되면 끊김 처리가 안 돌아 ONLINE 행이 남음, 소켓 서버가 안 켜졌으면(시험 등) 행 그대로
-const isListedOnline = (uuid) => {
+// Node 여러 개면 다른 Node 줄은 그 Node가 살아 있을 때만 ONLINE (MN-070·071)
+const isListedOnline = (uuid, presence) => {
     const emitter = require("../../socket/emitter");
     if (!emitter.getIo()) return true;
-    return emitter.onlineUsers.has(uuid);
+    if (emitter.onlineUsers.has(uuid)) return true;
+    return isOnOtherLiveNode(presence);
+};
+
+// 줄의 서버 이름이 살아 있는 다른 Node인지 (단일 모드·내 줄·이름 없는 옛 줄은 false = 예전 판정)
+// Redis가 죽어 확인 못 하면 줄을 믿음 (다른 Node 접속자가 전부 OFFLINE으로 보이지 않게)
+const isOnOtherLiveNode = (presence) => {
+    const cluster = require("../../cluster");
+    const serverId = presence?.server_id;
+    if (!cluster.isEnabled() || !serverId || serverId === cluster.serverId()) return false;
+    if (!cluster.isShared()) return true;
+    return cluster.nodes.isAlive(serverId);
 };
 
 // 접속 행 상태를 이 서버 접속 목록과 맞춤
 const liveStatusOf = (uuid, presence) => {
     if (!presence) return null;
-    if (presence.status === 'ONLINE' && !isListedOnline(uuid)) return 'OFFLINE';
+    if (presence.status === 'ONLINE' && !isListedOnline(uuid, presence)) return 'OFFLINE';
     return presence.status;
 };
 

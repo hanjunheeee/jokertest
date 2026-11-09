@@ -5,6 +5,9 @@ const presenceService = require("../../services/presence/status");
 const matchmaking     = require("../matchmaking");
 // 접속 목록은 emitter의 Map 하나만 씀 (socket.js·서비스와 같은 객체)
 const { onlineUsers, userChannelOf } = require("../emitter");
+// Node 여러 개: 노드 넘는 옛 탭 밀어내기·conn 기록 (단일 모드면 아무것도 안 함)
+const replace = require("./replace");
+const cluster = require("../../cluster");
 
 // 계정마다 접속 상태 저장 줄 (빠른 재접속 때 ONLINE·OFFLINE 저장 순서 뒤바뀜 막기)
 const presenceLines = new Map();
@@ -22,19 +25,9 @@ function enqueuePresence(uuid, task) {
 }
 
 // 옛 소켓을 밀어낸 까닭: 같은 로그인 세션(같은 브라우저 다른 탭)인지 다른 로그인인지 (known 1-15)
-// 화면이 같은 세션이면 로그아웃 대신 "다른 탭에서 열림"으로 다룰 수 있게 code만 더함
+// 화면이 같은 세션이면 로그아웃 대신 "다른 탭에서 열림"으로 다룰 수 있게 code만 더함 (글은 replace.js와 같이 씀)
 function describeReplacement(existingSocket, socket) {
-    const sameSession = typeof socket?.data?.user?.sessionId === "string"
-        && existingSocket?.data?.user?.sessionId === socket.data.user.sessionId;
-    return sameSession
-        ? {
-            message: "같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.",
-            code: "REPLACED_BY_SAME_SESSION",
-        }
-        : {
-            message: "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.",
-            code: "REPLACED_BY_OTHER_LOGIN",
-        };
+    return replace.describeReplacementBySession(existingSocket?.data?.user?.sessionId, socket?.data?.user?.sessionId);
 }
 
 // 한 계정 한 소켓 지키려고 옛 소켓은 표시 남기고 끊음
@@ -54,7 +47,7 @@ async function handleConnection(io, socket, uuid) {
         }
     }
 
-    // 접속 상태 저장(줄 서서)·친구 알림·대기방 채널 다시 넣기는 같이 돌림
+    // 접속 상태 저장(줄 서서)·친구 알림·대기방 채널 다시 넣기·다른 Node 옛 탭 알림은 같이 돌림
     // 저장 차례가 왔을 때 이미 다른 소켓으로 바뀌었거나 끊겼으면 안 씀 (늦은 ONLINE이 덮지 않게)
     await Promise.all([
         enqueuePresence(uuid, async () => {
@@ -63,11 +56,14 @@ async function handleConnection(io, socket, uuid) {
         }),
         broadcastFriendStatus(io, uuid, "ONLINE"),
         matchmaking.resyncRoomChannelOnReconnect(socket, uuid),
+        replace.announceConnection(socket, uuid),
     ]);
 }
 
 // 밀려난 옛 소켓·이미 새 소켓으로 바뀐 계정은 그냥 끝냄 (새 접속을 오프라인으로 덮지 않기)
 async function handleDisconnect(io, socket, uuid) {
+    // 이 소켓이 적은 conn은 내 값 그대로일 때만 지움 (밀려난 소켓이어도, 단일 모드면 할 일 없음)
+    replace.forgetConnection(socket, uuid).catch(() => false);
     if (socket.data.forcedLogout) return;
     if (onlineUsers.get(uuid) !== socket.id) return;
 
@@ -79,20 +75,40 @@ async function handleDisconnect(io, socket, uuid) {
             if (onlineUsers.has(uuid)) return;
             await presenceService.setPresence(uuid, "OFFLINE");
         }),
-        broadcastFriendStatus(io, uuid, "OFFLINE"),
+        announceOffline(io, uuid),
     ]);
 }
 
+// 잠깐 기다리기 (종료를 붙잡지 않게 unref)
+const wait = (ms) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+});
+
+// 친구에게 OFFLINE 알리기
+// 단일 모드는 바로 (지금과 같음), Node 여러 개면 1.5초 미루고 그사이 다시 붙었거나 다른 Node에 붙어 있으면 안 보냄
+// (로비 → 방 Node 이동 때 친구 화면에 OFFLINE이 깜빡이는 것 막기, MN-067)
+async function announceOffline(io, uuid) {
+    if (!cluster.isEnabled()) return broadcastFriendStatus(io, uuid, "OFFLINE");
+    const delayMs = cluster.config().presenceOfflineDelayMs;
+    if (delayMs > 0) await wait(delayMs);
+    if (onlineUsers.has(uuid)) return;
+    if (await replace.isConnectedElsewhere(uuid).catch(() => false)) return;
+    await broadcastFriendStatus(io, uuid, "OFFLINE");
+}
+
 // 수락한 친구 중 접속 중인 사람에게만 보냄 (친구 계정 채널로, 접속 안 한 친구 채널은 비어 아무도 안 받음)
+// Node 여러 개면 채널 묶어 한 번에 보냄 (어댑터가 친구 수만큼 Redis에 안 보내게)
 async function broadcastFriendStatus(io, uuid, status) {
     const friendUuids = await presenceService.getAcceptedFriendUuids(uuid);
+    const channels = friendUuids.map(userChannelOf).filter(Boolean);
+    const payload = { uuid, status };
 
-    friendUuids.forEach((friendUuid) => {
-        const channel = userChannelOf(friendUuid);
-        if (channel) {
-            io.to(channel).emit("friend_status_change", { uuid, status });
-        }
-    });
+    if (cluster.isEnabled()) {
+        if (channels.length > 0) io.to(channels).emit("friend_status_change", payload);
+        return;
+    }
+    channels.forEach((channel) => io.to(channel).emit("friend_status_change", payload));
 }
 
 module.exports = {

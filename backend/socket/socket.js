@@ -20,6 +20,11 @@ const { registerNotificationHandlers } = require("./connection/notifications");
 const { createOriginGuard } = require("./connection/originCheck");
 // 소켓 접속 IP 읽기 (Express req.ip와 같은 규칙)
 const { getSocketClientIp } = require("../utils/request");
+// Node 여러 개: 접속 길잡이·장부 → Redis 위치 맞추기·노드 넘는 밀어내기·죽은 Node 줄 청소 (단일 모드면 그냥 지나감)
+const { nodeRouting } = require("./connection/nodeRouting");
+const { startLocationSync } = require("./connection/locationSync");
+const { startReplaceSync } = require("./connection/replace");
+const { startJanitor } = require("./connection/janitor");
 
 // 소켓 사건 하나 최대 크기 (보안 점검 2026-11-09)
 const MAX_SOCKET_MESSAGE_BYTES = 64 * 1024;
@@ -58,7 +63,14 @@ function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL, allowRe
     });
     // 인증 못 받은 연결은 connection 처리기까지 못 옴
     io.use(authenticateSocket);
+    // 이 사람 방·판이 다른 Node에 있으면 WRONG_NODE로 거절 → 화면이 그 Node로 다시 붙음 (인증 다음이라 uuid 있음)
+    io.use(nodeRouting);
     io.on("connection", (socket) => registerConnectionHandlers(io, socket));
+
+    // 장부 → Redis 위치, 다른 Node 새 접속 알림 받기, 청소 담당 (여러 번 불러도 한 번만)
+    startLocationSync();
+    startReplaceSync();
+    startJanitor();
 
     // 접속 수·판 수 주기 기록 (판 수는 gameSession이 셈)
     concurrencyService.startConcurrentSnapshotScheduler({

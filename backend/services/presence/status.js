@@ -5,7 +5,13 @@ const onlinePresenceRepository = require("../../repositories/presence/onlinePres
 const { getServerId } = require("../../config/serverId");
 
 // 접속 상태 한 줄 넣거나 고침 (마지막 활동 시각·이 서버 이름도 같이)
+// Node 여러 개(REDIS_URL 있음)면 OFFLINE은 이 서버 줄일 때만 씀 → 다른 Node의 ONLINE을 안 덮음 (MN-068)
+// 단일 모드는 예전 그대로 upsert (cluster는 부를 때 읽음, 순환 require 피하기)
 exports.setPresence = async (uuid, status) => {
+    if (status === "OFFLINE" && require("../../cluster").isEnabled()) {
+        await onlinePresenceRepository.markOfflineIfOwner(uuid, getServerId());
+        return;
+    }
     await onlinePresenceRepository.upsertOnlinePresence(uuid, status, getServerId());
 };
 
