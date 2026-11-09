@@ -35,7 +35,12 @@ npx playwright test         # 전부: desktop·mobile 동시 → 끝나면 seria
 |---|---|---|
 | desktop | `tests/` 중 `mobile/` 밖 전부 | 1280×800, 5273 |
 | mobile | `tests/mobile/**` | 375×812 세로 + 터치 (Pixel 7 바탕), 5274 |
-| serial | 이름에 `@serial`·`@shutdown` 붙은 시험 (어느 폴더든) | desktop·mobile 다 끝난 뒤 한 번에 하나 |
+| mobile-safari | `tests/mobile/**` 그대로 한 번 더 (아이폰 사파리) | 375×812 세로 + 터치 (iPhone 13 바탕, WebKit), 5274 |
+| serial | 이름에 `@serial`·`@shutdown` 붙은 시험 (어느 폴더든) | desktop·mobile·mobile-safari 다 끝난 뒤 한 번에 하나 |
+
+### 아이폰 사파리 (mobile-safari)
+
+모바일 시험을 WebKit(사파리 엔진)으로 한 번 더 돌림 — 기본 `npx playwright test`에 들어 있음. 처음 한 번 `npx playwright install webkit`(WebKit 26.5, playwright webkit v2336)로 브라우저 받기. 사파리만: `npm run test:safari` (= `--project=mobile-safari`), 켜 둔 서버 쓰면 `E2E_REUSE=1`. 윈도우의 WebKit은 진짜 아이폰과 글꼴·키보드·주소창 높이가 달라서, 픽셀 위치보다 동작(누르기·알림·소켓)을 보는 데 씀. 사파리에서만 깨지는 것은 `문제목록/safari.md`에 적음.
 
 ## 2단계 파트 표 (합계 2000)
 

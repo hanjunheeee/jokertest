@@ -57,12 +57,25 @@ module.exports = defineConfig({
             },
         },
         {
+            // 아이폰 사파리 (WebKit) — 모바일 시험을 그대로 한 번 더, 사파리에서만 다른 동작 잡기
+            name: 'mobile-safari',
+            testMatch: ['mobile/**/*.spec.js'],
+            grepInvert: /@serial|@shutdown/,
+            use: {
+                ...devices['iPhone 13'],
+                viewport: { width: 375, height: 812 },
+                isMobile: true,
+                hasTouch: true,
+                baseURL: E2E.mobileUrl,
+            },
+        },
+        {
             // 서버 전체에 걸리는 시험 (서버 꺼짐·점검·전체 공지) — 다른 시험이 다 끝난 뒤 한 개씩
             name: 'serial',
             grep: /@serial|@shutdown/,
             workers: 1,
             fullyParallel: false,
-            dependencies: ['desktop', 'mobile'],
+            dependencies: ['desktop', 'mobile', 'mobile-safari'],
             use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl },
         },
     ],
