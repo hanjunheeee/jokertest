@@ -4,11 +4,12 @@
 // 충전 서비스가 topup/helpers.js adapterOf로 꺼내 씀 (시험은 가짜를 넣음)
 const { createError } = require('../appError');
 const { isProduction } = require('../../config/nodeEnv');
+const { isE2eHooksEnabled } = require('../../config/e2eHooks');
 
 // 토스 API 주소 · 같은 주문 승인을 두 번 보내도 한 번만 처리되게 주문마다 같은 멱등 키
 const TOSS_API_ORIGIN = 'https://api.tosspayments.com';
 const CONFIRM_URL = `${TOSS_API_ORIGIN}/v1/payments/confirm`;
-const paymentUrl = (paymentKey) => `${TOSS_API_ORIGIN}/v1/payments/${encodeURIComponent(paymentKey)}`;
+const paymentUrl = (paymentKey, origin = TOSS_API_ORIGIN) => `${origin}/v1/payments/${encodeURIComponent(paymentKey)}`;
 const idempotencyKeyOf = (orderId) => `topup-confirm:${orderId}`;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -36,6 +37,12 @@ const isValidKey = (value, prefix) => (
 );
 
 const hasValue = (value) => typeof value === 'string' && value.trim() !== '';
+
+// 토스 주소: 브라우저 시험(E2E_HOOKS=1, 운영 아님)에 TOSS_API_BASE_URL 있을 때만 가짜 승인 서버로, 아니면 진짜 주소
+// 운영에 이 값이 있으면 서버가 시작 거부 (config/e2eHooks.js), 끝 빗금 뗌
+const apiOriginOf = (env = process.env) => (
+    isE2eHooksEnabled(env) && hasValue(env.TOSS_API_BASE_URL) ? env.TOSS_API_BASE_URL.trim().replace(/\/+$/, '') : TOSS_API_ORIGIN
+);
 
 // 운영 키 이름이 하나라도 채워졌는지
 const hasLiveKeys = (env) => hasValue(env.TOSS_LIVE_CLIENT_KEY) || hasValue(env.TOSS_LIVE_SECRET_KEY);
@@ -186,8 +193,10 @@ const createTossAdapter = ({ getEnv = () => process.env, transport = defaultTran
 
     // 결제 승인: 같은 주문엔 같은 멱등 키, 돌아온 결제가 보낸 키·주문·금액·원화와 다르면 MISMATCH
     const confirmPayment = async ({ paymentKey, orderId, amount }) => {
-        const { secretKey } = readConfig(getEnv());
-        const result = await send(CONFIRM_URL, {
+        const env = getEnv();
+        const { secretKey } = readConfig(env);
+        const origin = apiOriginOf(env);
+        const result = await send(origin === TOSS_API_ORIGIN ? CONFIRM_URL : `${origin}/v1/payments/confirm`, {
             method: 'POST',
             headers: {
                 Authorization: basicAuthHeader(secretKey),
@@ -209,8 +218,9 @@ const createTossAdapter = ({ getEnv = () => process.env, transport = defaultTran
 
     // 결제 조회 (승인 결과를 모를 때 다시 확인), 다른 결제 키가 오면 MISMATCH
     const getPayment = async ({ paymentKey }) => {
-        const { secretKey } = readConfig(getEnv());
-        const result = await send(paymentUrl(paymentKey), {
+        const env = getEnv();
+        const { secretKey } = readConfig(env);
+        const result = await send(paymentUrl(paymentKey, apiOriginOf(env)), {
             method: 'GET',
             headers: { Authorization: basicAuthHeader(secretKey) },
         });
@@ -233,6 +243,7 @@ module.exports = {
     KEY_SETS,
     CONFIRM_URL,
     paymentUrl,
+    apiOriginOf,
     basicAuthHeader,
     idempotencyKeyOf,
 };
