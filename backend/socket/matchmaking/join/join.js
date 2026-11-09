@@ -20,6 +20,50 @@ const TOO_MANY_JOIN_ATTEMPTS = 'TOO_MANY_JOIN_ATTEMPTS'
 const { getSupportedRoomSizes } = require('../core/config')
 const { countRoomOccupancy } = require('../admission/attempts')
 
+// 코드 방 id 받은 요청: 그 방만 (종류·코드도 맞아야 함), 못 찾으면 실패 알림 보내고 null
+function findExpectedCodeRoom(socket, normalizedCode, expectedRoom) {
+    const room = gameRooms.get(expectedRoom.roomId)
+    // 그 방이 없으면 판 상태·시작 표시로 이유 고름 (지도 01-⑤)
+    if (!room) {
+        const vanished = describeVanishedRoom({ roomCode: normalizedCode, roomId: expectedRoom.roomId })
+        if (vanished) {
+            emitRoomJoinFailed(socket, ...vanished)
+        } else {
+            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
+        }
+        return null
+    }
+    if (room.accessType !== 'code') {
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '비밀 방을 찾을 수 없습니다.')
+        return null
+    }
+    if (room.code !== normalizedCode) {
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드가 올바르지 않습니다.')
+        return null
+    }
+    return room
+}
+
+// 들어갈 방 찾기: 코드 방 id 받은 요청이면 그 방만, 아니면 코드로 찾음 (못 찾으면 실패 알림 보내고 null)
+function findRoomForJoin(socket, normalizedCode, expectedRoom) {
+    if (expectedRoom?.accessType === 'code') return findExpectedCodeRoom(socket, normalizedCode, expectedRoom)
+    const room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
+    if (room) return room
+    // 못 찾으면 이유 고르기 (지도 01-⑤): 판 있음 → 시작됨·끝남, 시작 표시만 → 끝남
+    // 공개방 고른 요청 → 방 없음, 직접 친 코드 → 코드 틀림
+    const vanished = describeVanishedRoom({ roomCode: normalizedCode })
+    if (vanished) {
+        emitRoomJoinFailed(socket, ...vanished)
+        return null
+    }
+    if (expectedRoom) {
+        emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
+        return null
+    }
+    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드와 일치하는 방이 없습니다.')
+    return null
+}
+
 // 코드로 방 입장: 검사 → 잠금 → 프로필 → 방 찾기 → 채널 → 명단 추가 확정 → 알림
 // expectedRoom 있으면 그 방 id·종류만 받음 (목록에서 고른 방·자동 입장·방 id 같이 보낸 요청)
 // autoJoin = 서버가 끌어다 넣는 자동 입장 (본인이 고른 이동이 아니라 결과 화면 이동 표시 안 함)
@@ -100,47 +144,9 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
 
     try {
         // 방 찾기 먼저 (DB 읽기 전, 틀린 코드 시도가 DB를 두 번씩 안 부르게, BE-025)
-        // 코드 방 id 받은 요청이면 그 방만 (종류·코드도 맞아야 함), 아니면 코드로 찾음
         // 찾은 방이 DB 기다리는 사이 사라지면 join 뒤 확인이 거름
-        let room
-        if (expectedRoom?.accessType === 'code') {
-            room = gameRooms.get(expectedRoom.roomId)
-            // 그 방이 없으면 판 상태·시작 표시로 이유 고름 (지도 01-⑤)
-            if (!room) {
-                const vanished = describeVanishedRoom({ roomCode: normalizedCode, roomId: expectedRoom.roomId })
-                if (vanished) {
-                    emitRoomJoinFailed(socket, ...vanished)
-                } else {
-                    emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '방을 찾을 수 없습니다.')
-                }
-                return
-            }
-            if (room.accessType !== 'code') {
-                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '비밀 방을 찾을 수 없습니다.')
-                return
-            }
-            if (room.code !== normalizedCode) {
-                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드가 올바르지 않습니다.')
-                return
-            }
-        } else {
-            room = [...gameRooms.values()].find((candidate) => candidate.code === normalizedCode)
-        }
-        // 못 찾으면 이유 고르기 (지도 01-⑤): 판 있음 → 시작됨·끝남, 시작 표시만 → 끝남
-        // 공개방 고른 요청 → 방 없음, 직접 친 코드 → 코드 틀림
-        if (!room) {
-            const vanished = describeVanishedRoom({ roomCode: normalizedCode })
-            if (vanished) {
-                emitRoomJoinFailed(socket, ...vanished)
-                return
-            }
-            if (expectedRoom) {
-                emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND, '공개 방을 찾을 수 없습니다.')
-                return
-            }
-            emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_CODE_MISMATCH, '입장 코드와 일치하는 방이 없습니다.')
-            return
-        }
+        const room = findRoomForJoin(socket, normalizedCode, expectedRoom)
+        if (!room) return
 
         // 이 방에서 3번 쫓겨난 사람은 거절 (쫓겨나는 동안은 방 밖이라 여기 한 번만 봄)
         if (isKickLimitReached(room, uuid)) {

@@ -13,6 +13,17 @@ const { disposeRoom } = require('./dispose')
 const { cancelRoomRetention } = require('./leave')
 const { hasPartyOrigin } = require('../join/partyOrigin')
 
+// 그 방 채널에 붙은 그 사람 소켓 전부
+function findOwnedSockets(io, uuid, roomId) {
+    const ownedSockets = []
+    for (const s of io.sockets.sockets.values()) {
+        if (s.data?.user?.uuid !== uuid) continue
+        if (!s.rooms?.has(roomId)) continue
+        ownedSockets.push(s)
+    }
+    return ownedSockets
+}
+
 // 판 참가자 정리: 줄에서 빼고, 남은 대기방 소속·입장 시도 지우고, 세대 번호 올림
 // 끝난 판 결과 화면에서 다음 판 파티 방으로 옮겨 간(옮겨 가는 중인) 사람은 건너뜀 (known 1-16)
 // 그 사람은 판에 묶인 채 정상으로 새 방에 들어간 것이라 빼면 방금 들어간 방에서 쫓겨남
@@ -42,14 +53,7 @@ function cleanupRoomStateForSessionParticipants(io, inputUuids) {
         }
 
         // 그 방 채널에 붙은 그 사람 소켓 전부 (나중에 떼려고)
-        const ownedSockets = []
-        for (const s of io.sockets.sockets.values()) {
-            if (s.data?.user?.uuid !== uuid) continue
-            if (!s.rooms?.has(roomId)) continue
-            ownedSockets.push(s)
-        }
-
-        affected.push({ uuid, roomId, room, ownedSockets })
+        affected.push({ uuid, roomId, room, ownedSockets: findOwnedSockets(io, uuid, roomId) })
     }
 
     // 여기부터 진짜 바뀜: 명단·소속에서 뺌 (다 빼고 나서 방마다 방장·알림 정함)
@@ -84,48 +88,52 @@ function cleanupRoomStateForSessionParticipants(io, inputUuids) {
     for (const entry of affected) {
         if (processedRoomIds.has(entry.roomId)) continue
         processedRoomIds.add(entry.roomId)
+        settleRoomAfterRemoval(io, entry, removedUuidsByRoom.get(entry.roomId) ?? [])
+    }
+}
 
-        const room = entry.room
+// 방 하나 마무리: 빈 방 지우기 또는 방장 넘기기 → 빠진 사람 알림 → 공개 목록 새로
+function settleRoomAfterRemoval(io, entry, removedUuids) {
+    const room = entry.room
+    try {
+        // 빈 방이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 공개 목록만 새로 (known 1-11)
+        if (room.players.size === 0) {
+            disposeRoom(entry.roomId, 'ROOM_GONE')
+            emitPublicRoomList(io)
+            return
+        }
+        // 방장이 빠졌으면 남은 사람 중 먼저 들어온 사람에게
+        if (!room.players.has(room.hostUuid)) {
+            room.hostUuid = room.players.keys().next().value
+            channelMembership.emitToChannel(io, entry.roomId, 'host_changed', {
+                hostUuid: room.hostUuid,
+                canStart: computeCanStart(room),
+                roomId: entry.roomId,
+                roomInstanceId: room.instanceId ?? null,
+                bootEpoch: BOOT_EPOCH,
+                settingsVersion: getSettingsVersion(room),
+            })
+        }
+    } catch (err) {
+        console.error('[세션 종료 Room 정리 실패]', err)
+    }
+
+    // 빠진 사람마다 나감 알림 (하나 실패해도 계속)
+    for (const removedUuid of removedUuids) {
         try {
-            // 빈 방이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 공개 목록만 새로 (known 1-11)
-            if (room.players.size === 0) {
-                disposeRoom(entry.roomId, 'ROOM_GONE')
-                emitPublicRoomList(io)
-                continue
-            }
-            // 방장이 빠졌으면 남은 사람 중 먼저 들어온 사람에게
-            if (!room.players.has(room.hostUuid)) {
-                room.hostUuid = room.players.keys().next().value
-                channelMembership.emitToChannel(io, entry.roomId, 'host_changed', {
-                    hostUuid: room.hostUuid,
-                    canStart: computeCanStart(room),
-                    roomId: entry.roomId,
-                    roomInstanceId: room.instanceId ?? null,
-                    bootEpoch: BOOT_EPOCH,
-                    settingsVersion: getSettingsVersion(room),
-                })
-            }
+            channelMembership.emitToChannel(io, entry.roomId, 'player_left_room', {
+                uuid: removedUuid,
+                canStart: computeCanStart(room),
+                roomId: entry.roomId,
+                roomInstanceId: room.instanceId ?? null,
+                bootEpoch: BOOT_EPOCH,
+            })
         } catch (err) {
             console.error('[세션 종료 Room 정리 실패]', err)
         }
-
-        // 빠진 사람마다 나감 알림 (하나 실패해도 계속)
-        for (const removedUuid of removedUuidsByRoom.get(entry.roomId) ?? []) {
-            try {
-                channelMembership.emitToChannel(io, entry.roomId, 'player_left_room', {
-                    uuid: removedUuid,
-                    canStart: computeCanStart(room),
-                    roomId: entry.roomId,
-                    roomInstanceId: room.instanceId ?? null,
-                    bootEpoch: BOOT_EPOCH,
-                })
-            } catch (err) {
-                console.error('[세션 종료 Room 정리 실패]', err)
-            }
-        }
-
-        emitPublicRoomList(io)
     }
+
+    emitPublicRoomList(io)
 }
 
 module.exports = {
