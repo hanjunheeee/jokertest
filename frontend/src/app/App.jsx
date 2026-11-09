@@ -17,6 +17,8 @@ import GlobalBgmLayer from "@/shared/ui/GlobalBgmLayer.jsx"
 // 약관 재동의 창·새 버전 안내 띠 (라우터 바깥에 한 번만)
 import TermsReconsentGate from "@/domains/auth/components/terms/TermsReconsentGate.jsx"
 import AppUpdateNotice from "@/shared/ui/AppUpdateNotice.jsx"
+// 점검 큰 안내 (판 안·대기방·로비 어디서든)
+import MaintenanceNotice from "@/domains/maintenance/components/MaintenanceNotice.jsx"
 
 export default function App() {
     // 라우터가 그려지기 전에 세션 확인 중으로 둠 (FE-010)
@@ -41,6 +43,7 @@ export default function App() {
             <RouterProvider router={router} />
             <TermsReconsentGate />
             <AppUpdateNotice router={router} />
+            <MaintenanceNotice socket={socket} navigate={(path, opts) => router.navigate(path, opts)} />
         </>
     )
 }

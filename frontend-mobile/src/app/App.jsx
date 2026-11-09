@@ -18,6 +18,8 @@ import ParchmentAlertHost from "@m/shared/ui/modal/parchment/ParchmentAlertHost.
 // 약관 재동의 창·새 버전 안내 띠 (라우터 바깥에 한 번만)
 import TermsReconsent from "@m/domains/auth/components/terms/TermsReconsent.jsx"
 import UpdateNotice from "@m/shared/ui/UpdateNotice.jsx"
+// 점검 큰 안내 (판 안·대기방·로비 어디서든)
+import MaintenanceNotice from "@m/domains/maintenance/MaintenanceNotice.jsx"
 
 export default function App() {
     // 라우터가 그려지기 전에 세션 확인 중으로 둠 (데스크톱 FE-010과 같게)
@@ -45,6 +47,7 @@ export default function App() {
             <RouterProvider router={router} />
             <TermsReconsent />
             <UpdateNotice router={router} />
+            <MaintenanceNotice socket={socket} navigate={(path, opts) => router.navigate(path, opts)} />
         </>
     )
 }
