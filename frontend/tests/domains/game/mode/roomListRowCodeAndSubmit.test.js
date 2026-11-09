@@ -477,7 +477,9 @@ test("하니스와 실제 소스가 같은 연결을 쓴다(RoomCodeInput·페�
     [/label="참여하기"[\s\S]*?onClick=\{joinRoom\}/, "참여하기 버튼이 joinRoom에 연결돼 있지 않다"],
   ])
 
+  // 입장 요청 보내기는 useRoomCodeJoin.js로 나뉨 (코드 분리, 두 파일 같이 읽음)
   const invitePageHook = readSrc("domains/game/mode/hooks/useRoomInvitePage.js")
+    + readSrc("domains/game/mode/hooks/useRoomCodeJoin.js")
   const guard = invitePageHook.match(/if \(roomCode\.length < (\d+)\) return/)
   assert.ok(guard, "제출 길이 가드가 없다")
   assert.equal(Number(guard[1]), ROOM_CODE_LENGTH, "페이지 가드와 하니스 가드의 자릿수가 다르다")
