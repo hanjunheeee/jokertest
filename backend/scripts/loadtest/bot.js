@@ -1,9 +1,22 @@
 // 부하 시험 가짜 사용자 파일, 로그인 → 소켓 접속 → 요청마다 응답 시간 재기 → 판 단계 보고 채팅·투표·밤 행동 흉내
-// game.js가 판 하나에 여럿 묶어 씀 (화면이 보내는 사건 이름·모양 그대로)
+// game.js가 판 하나에 여럿 묶어 씀 (화면이 보내는 사건 이름·모양 그대로, Node 여러 개 이동 약속도 화면과 같음)
 const { io } = require("socket.io-client");
 
 // 규칙대로 거절한 것과 서버 문제를 나눔 (서버 문제만 오류율에 셈)
 const SERVER_ERROR_CODES = new Set(["INTERNAL_ERROR", "DELIVERY_ERROR"]);
+
+// Node 여러 개 이동 약속 (계획 4-5, 화면 shared/constants/connectionSocket.js와 같은 값)
+// WRONG_NODE: 접속 거절 → data.node로 다시 붙음, 30초에 3번 넘으면 아무 Node로 한 번 더, 그래도 튕기면 실패
+// ROOM_ON_OTHER_NODE: 입장·요청 거절 → node로 옮긴 뒤 같은 요청 한 번만 다시
+const NODE_BOUNCE_LIMIT = 3;
+const NODE_BOUNCE_WINDOW_MS = 30000;
+const NODE_MOVE_TIMEOUT_MS = 10000;
+const NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+// 답이 사건(room_join_failed)으로 오는 입장 요청
+const JOIN_EVENTS = new Set(["join_room_by_code", "join_public_room"]);
+
+const isNodeId = (node) => typeof node === "string" && NODE_ID_PATTERN.test(node);
+const ownerNodeOf = (answer) => (answer?.code === "ROOM_ON_OTHER_NODE" && isNodeId(answer.node) ? answer.node : null);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -22,6 +35,10 @@ class Bot {
         this.cookie = null;
         this.closing = false;
         this.waiters = new Map();
+        // 지금 가는 Node·WRONG_NODE 튕긴 때·답 기다리는 입장 요청 { event, payload, moved }
+        this.node = null;
+        this.bounces = [];
+        this.pendingJoin = null;
     }
 
     // 단계가 바뀌면 숫자를 새 Stats에 모으게
@@ -73,6 +90,7 @@ class Bot {
                 resolve();
             });
             socket.on("connect_error", (err) => {
+                if (this.followWrongNode(err)) return;
                 if (settled) return;
                 settled = true;
                 this.stats.connectFail += 1;
@@ -83,15 +101,77 @@ class Bot {
             socket.on("disconnect", (reason) => {
                 if (!this.closing && reason !== "io client disconnect") this.stats.disconnects += 1;
             });
-            // 기다리는 사건 (방 입장·판 시작)
+            // 기다리는 사건 (방 입장·판 시작), 다른 Node 방 거절은 옮긴 뒤 다시 보내고 안 넘김
             for (const event of ["room_joined", "room_join_failed", "game_started"]) {
                 socket.on(event, (payload) => {
+                    if (event === "room_join_failed" && this.retryJoinOnOwnerNode(payload)) return;
+                    if (event !== "game_started") this.pendingJoin = null;
                     const waiter = this.waiters.get(event);
                     if (waiter) { this.waiters.delete(event); waiter(payload); }
                     this.lastEvents = { ...(this.lastEvents ?? {}), [event]: payload };
                 });
             }
         });
+    }
+
+    // 다음 접속이 갈 Node (?node=) 바꾸기, 같은 소켓 그대로 (socket.io는 접속 때마다 io.opts.query를 읽음)
+    pointAt(node) {
+        const opts = this.socket.io.opts;
+        if (!opts.query || typeof opts.query !== "object") opts.query = {};
+        if (isNodeId(node)) opts.query.node = node;
+        else delete opts.query.node;
+        this.node = isNodeId(node) ? node : null;
+    }
+
+    // WRONG_NODE면 알려 준 Node로 다시 붙음 (미들웨어 거절 뒤엔 socket.io가 스스로 안 붙음), 맡았으면 true
+    followWrongNode(err) {
+        if (err?.message !== "WRONG_NODE" || this.closing) return false;
+        const now = Date.now();
+        this.bounces = this.bounces.filter((at) => now - at < NODE_BOUNCE_WINDOW_MS);
+        this.bounces.push(now);
+        if (this.bounces.length > NODE_BOUNCE_LIMIT + 1) return false;
+        this.stats.rejection("socket:WRONG_NODE");
+        this.pointAt(this.bounces.length <= NODE_BOUNCE_LIMIT ? err?.data?.node : null);
+        this.socket.connect();
+        return true;
+    }
+
+    // 지금 소켓을 node로 옮겨 다시 붙음 (끊고 query 바꿔 다시 붙기), 붙으면 true, 시간 초과면 false
+    moveToNode(node) {
+        if (!this.socket || !isNodeId(node)) return Promise.resolve(false);
+        const started = performance.now();
+        return new Promise((resolve) => {
+            const finish = (ok) => {
+                clearTimeout(timer);
+                this.socket.off("connect", onConnect);
+                if (ok) this.stats.latency("socket:node_move", performance.now() - started);
+                else this.stats.error("socket:node_move_timeout");
+                resolve(ok);
+            };
+            const onConnect = () => finish(true);
+            const timer = setTimeout(() => finish(false), NODE_MOVE_TIMEOUT_MS);
+            this.socket.on("connect", onConnect);
+            this.pointAt(node);
+            this.socket.disconnect();
+            this.socket.connect();
+        });
+    }
+
+    // 입장 거절이 다른 Node 방이면 처음 한 번만 옮긴 뒤 같은 요청 다시, 맡았으면 true
+    // 옮기기 실패면 NODE_UNAVAILABLE 거절로 기다리는 쪽에 넘김
+    retryJoinOnOwnerNode(answer) {
+        const join = this.pendingJoin;
+        const node = ownerNodeOf(answer);
+        if (!join || join.moved || !node) return false;
+        join.moved = true;
+        this.moveToNode(node).then((ok) => {
+            if (this.pendingJoin !== join) return;
+            if (ok) { this.socket.emit(join.event, join.payload); return; }
+            this.pendingJoin = null;
+            const waiter = this.waiters.get("room_join_failed");
+            if (waiter) { this.waiters.delete("room_join_failed"); waiter({ code: "NODE_UNAVAILABLE" }); }
+        });
+        return true;
     }
 
     // 사건 하나 올 때까지 (이미 왔으면 바로)
@@ -103,10 +183,13 @@ class Bot {
     }
 
     // 답 받는 요청: 응답 시간 재고, 시간 초과·서버 오류는 오류로, 규칙 거절은 거절로
-    async request(event, payload) {
+    // 다른 Node 방이라는 답이면 옮긴 뒤 한 번만 다시 (초대 수락·다음 방 묻기)
+    async request(event, payload, { moved = false } = {}) {
         const started = performance.now();
         try {
             const reply = await this.socket.timeout(this.timeoutMs).emitWithAck(event, payload);
+            const node = moved ? null : ownerNodeOf(reply);
+            if (node && await this.moveToNode(node)) return this.request(event, payload, { moved: true });
             this.stats.latency(event, performance.now() - started);
             if (reply && reply.ok === false) {
                 const code = reply.code ?? "NO_CODE";
@@ -120,7 +203,11 @@ class Bot {
         }
     }
 
-    emit(event, payload) { this.socket?.emit(event, payload); }
+    // 답 함수 없는 보내기, 입장 요청이면 다른 Node 거절 때 다시 보내려고 기억함
+    emit(event, payload) {
+        if (JOIN_EVENTS.has(event)) this.pendingJoin = { event, payload, moved: false };
+        this.socket?.emit(event, payload);
+    }
 
     // 판 한 바퀴: 판이 끝날 때까지 스냅샷 보고 단계마다 한 번씩 행동
     async playUntilEnded(gameId, { pollMs, chatChance, maxMs }) {

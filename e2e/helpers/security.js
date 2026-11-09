@@ -1,10 +1,38 @@
 'use strict';
 
-// 보안 시험 도우미 파일, XSS 실행 잡기(콘솔·대화상자·표식 함수) · 응답 헤더·쿠키 읽기 · 소켓 직접 열기(다른 Origin 포함)
+// 보안 시험 도우미 파일, XSS 실행 잡기(콘솔·대화상자·표식 함수) · 응답 헤더·쿠키 읽기 · 소켓 직접 열기(다른 Origin 포함, Node 이동 약속 따름)
 // tests/security/*.spec.js가 씀 (근거 항목은 docs/보안_점검_2026-11-09.md)
 const path = require('node:path');
 const { BACKEND_DIR, E2E } = require('./env');
 const { io } = require(path.join(BACKEND_DIR, 'node_modules', 'socket.io-client'));
+
+// Node 여러 개 이동 약속 (계획 4-5, 화면 shared/constants/connectionSocket.js와 같은 값)
+// WRONG_NODE 접속 거절은 data.node로 다시 붙음(3번까지, 넘으면 아무 Node로 한 번 더) · ROOM_ON_OTHER_NODE 답은 옮긴 뒤 한 번만 다시
+const NODE_BOUNCE_LIMIT = 3;
+const NODE_MOVE_TIMEOUT_MS = 10000;
+const isNodeId = (node) => typeof node === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(node);
+
+/** 다음 접속이 갈 Node (?node=) 바꾸기, 같은 소켓 그대로 (socket.io는 접속 때마다 io.opts.query를 읽음) */
+function pointSocketAtNode(socket, node) {
+    const opts = socket.io.opts;
+    if (!opts.query || typeof opts.query !== 'object') opts.query = {};
+    if (isNodeId(node)) opts.query.node = node;
+    else delete opts.query.node;
+}
+
+/** 소켓을 node로 옮겨 다시 붙음 (끊고 다시 붙기), 붙으면 true, 시간 초과면 false */
+function moveSocketToNode(socket, node, timeoutMs = NODE_MOVE_TIMEOUT_MS) {
+    if (!isNodeId(node)) return Promise.resolve(false);
+    return new Promise((resolve) => {
+        const finish = (ok) => { clearTimeout(timer); socket.off('connect', onConnect); resolve(ok); };
+        const onConnect = () => finish(true);
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        socket.on('connect', onConnect);
+        pointSocketAtNode(socket, node);
+        socket.disconnect();
+        socket.connect();
+    });
+}
 
 /**
  * XSS 덫 놓기 (page.goto 전에 부름): 실행되면 window.__xssHit(표식)이 불려 기록됨 + alert·confirm·prompt 대화상자도 기록
@@ -118,24 +146,48 @@ async function loginCookie(account, apiUrl = E2E.apiUrl, headers = {}) {
  * @param {string|null} [o.cookie] 'accessToken=...' (없으면 비로그인)
  * @param {string|null} [o.origin] Origin 머리 (null이면 안 붙임)
  * @param {string} [o.url] 기본 시험 백엔드
- * @returns {Promise<{ socket: import('socket.io-client').Socket|null, connected: boolean, error: string|null, events: {event:string,payload:any}[], emitAck:(event:string,payload?:any,timeoutMs?:number)=>Promise<any>, close:()=>void }>}
+ * @param {string|null} [o.node] 처음부터 갈 Node (?node=), 없으면 아무 Node
+ * @returns {Promise<{ socket: import('socket.io-client').Socket|null, connected: boolean, error: string|null, events: {event:string,payload:any}[], emitAck:(event:string,payload?:any,timeoutMs?:number)=>Promise<any>, moveToNode:(node:string)=>Promise<boolean>, close:()=>void }>}
  */
-function openRawSocket({ cookie = null, origin = E2E.desktopUrl, url = E2E.apiUrl, timeoutMs = 8000 } = {}) {
+function openRawSocket({ cookie = null, origin = E2E.desktopUrl, url = E2E.apiUrl, timeoutMs = 8000, node = null } = {}) {
     return new Promise((resolve) => {
         const extraHeaders = {};
         if (cookie) extraHeaders.cookie = cookie;
         if (origin) extraHeaders.origin = origin;
-        const socket = io(url, { transports: ['websocket'], extraHeaders, reconnection: false, timeout: timeoutMs });
+        const query = isNodeId(node) ? { query: { node } } : {};
+        const socket = io(url, { transports: ['websocket'], extraHeaders, reconnection: false, timeout: timeoutMs, ...query });
         const events = [];
         socket.onAny((event, payload) => events.push({ event, payload }));
+        // 답 받는 요청, 다른 Node 방이라는 답이면 옮긴 뒤 한 번만 다시
+        const ackOnce = (event, payload, ms) => socket.timeout(ms).emitWithAck(event, payload).catch((e) => ({ timeout: true, error: String(e?.message ?? e) }));
         const api = {
             socket,
             events,
-            emitAck: (event, payload, ms = 5000) => socket.timeout(ms).emitWithAck(event, payload).catch((e) => ({ timeout: true, error: String(e?.message ?? e) })),
+            emitAck: async (event, payload, ms = 5000) => {
+                const reply = await ackOnce(event, payload, ms);
+                const owner = reply?.code === 'ROOM_ON_OTHER_NODE' ? reply.node : null;
+                if (owner && await moveSocketToNode(socket, owner)) return ackOnce(event, payload, ms);
+                return reply;
+            },
+            moveToNode: (target) => moveSocketToNode(socket, target),
             close: () => socket.close(),
         };
-        socket.once('connect', () => resolve({ ...api, connected: true, error: null }));
-        socket.once('connect_error', (err) => { socket.close(); resolve({ ...api, connected: false, error: String(err?.message ?? err) }); });
+        let settled = false;
+        let bounces = 0;
+        socket.once('connect', () => { settled = true; resolve({ ...api, connected: true, error: null }); });
+        socket.on('connect_error', (err) => {
+            // WRONG_NODE면 알려 준 Node로 (미들웨어 거절 뒤엔 socket.io가 스스로 안 붙음)
+            if (err?.message === 'WRONG_NODE' && bounces <= NODE_BOUNCE_LIMIT) {
+                bounces += 1;
+                pointSocketAtNode(socket, bounces <= NODE_BOUNCE_LIMIT ? err?.data?.node : null);
+                socket.connect();
+                return;
+            }
+            if (settled) return;
+            settled = true;
+            socket.close();
+            resolve({ ...api, connected: false, error: String(err?.message ?? err) });
+        });
     });
 }
 
