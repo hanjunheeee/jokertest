@@ -629,7 +629,7 @@ test("스캔이 실제로 publicAsset(...) 호출과 리터럴/템플릿 에셋 
   assert.ok(literalCandidateCount > 0, "리터럴 에셋 경로를 하나도 못 찾았다 — 스캔이 깨졌을 수 있다")
   assert.ok(
     resolvedTemplateCandidateCount > 0,
-    "해석된 동적 템플릿(예: `${DIR}/x.png`)을 하나도 못 찾았다 — DIR-상수 보간 스캔이 깨졌을 수 있다",
+    "해석된 동적 템플릿(예: `${DIR}/x.webp`)을 하나도 못 찾았다 — DIR-상수 보간 스캔이 깨졌을 수 있다",
   )
 })
 
@@ -671,7 +671,7 @@ test("pickInGamePlayerFrame.js — resolveAccountCardFrameSrc(player-card-*) 9�
 
 test("[합성] 존재하지 않는 최상위 디렉터리 참조는 조용히 무시되지 않고 실패로 잡힌다", () => {
   const failures = []
-  checkAssetPathExists("/이런디렉터리는없다/x.png", "synthetic", failures)
+  checkAssetPathExists("/이런디렉터리는없다/x.webp", "synthetic", failures)
   assert.equal(failures.length, 1)
   assert.match(failures[0], /존재하지 않는 최상위 디렉터리/)
 })
@@ -699,13 +699,13 @@ test("[합성] 선행 슬래시가 없는 경로도 존재 여부가 정상적�
   assert.equal(hit.length, 0, hit.join("\n"))
 
   const miss = []
-  checkAssetPathExists(`${sampleTopDir}/이런파일은없다.png`, "synthetic (no leading slash, missing)", miss)
+  checkAssetPathExists(`${sampleTopDir}/이런파일은없다.webp`, "synthetic (no leading slash, missing)", miss)
   assert.equal(miss.length, 1)
   assert.match(miss[0], /public에 없는 에셋 경로/)
 })
 
 test("[합성] 정적 백틱 리터럴(보간 없음)도 문자열 리터럴로 식별된다", () => {
-  const content = "const X = `/frame/x.png`\n"
+  const content = "const X = `/frame/x.webp`\n"
   const literals = findStringLiterals(content)
   assert.equal(literals.length, 1)
   assert.equal(literals[0].quote, "`")

@@ -5,7 +5,7 @@ import { NAVIGATION_ASSETS } from "@/shared/constants/navigationAssets.js"
 import { INGAME_CONTROLS_ASSETS } from "@/domains/game/ingame/constants/controls/ingameControlsAssets.js"
 
 // 내 역할 보기 그림·이름 (데스크톱 InGameTopControls와 같은 값)
-const ROLE_REVEAL_SRC = "/button/직업모달 표시버튼2.png".normalize("NFD")
+const ROLE_REVEAL_SRC = "/button/직업모달 표시버튼2.webp".normalize("NFD")
 const ROLE_REVEAL_LABEL = "내 역할 보기"
 
 // 누를 자리 44px 그림 버튼

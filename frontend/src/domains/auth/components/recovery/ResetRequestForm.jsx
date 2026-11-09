@@ -45,7 +45,7 @@ export default function ResetRequestForm({ status, email, setEmail, formError, o
 
       <AuthImageButton
         type="submit"
-        src="/button/버튼 프레임2.png"
+        src="/button/버튼 프레임2.webp"
         label={status === "submitting" ? "전송 중" : "재설정 링크 보내기"}
         visibleLabel={status === "submitting" ? "전송 중" : "재설정 링크 보내기"}
         disabled={isFormDisabled}

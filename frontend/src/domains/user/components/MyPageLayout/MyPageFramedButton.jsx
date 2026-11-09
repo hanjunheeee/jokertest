@@ -15,7 +15,7 @@ export default function MyPageFramedButton({ label, onClick }) {
       onClick={onClick}
       className={ACTION_BTN_CLASS}
     >
-      <PublicAsset src="/button/버튼 프레임1.png" alt="" className={ACTION_BTN_IMG_CLASS} />
+      <PublicAsset src="/button/버튼 프레임1.webp" alt="" className={ACTION_BTN_IMG_CLASS} />
       <span className={ACTION_BTN_TEXT_CLASS}>{label}</span>
     </button>
   )

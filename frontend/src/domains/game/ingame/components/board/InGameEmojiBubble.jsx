@@ -5,7 +5,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 import { findInGameEmoticonItem } from "../../utils/findInGameEmoticonItem.js"
 
 // 말풍선 틀 그림과 시험이 찾는 표시 이름
-export const INGAME_EMOJI_BUBBLE_SRC = "/frame/emoji/speech-bubble.png"
+export const INGAME_EMOJI_BUBBLE_SRC = "/frame/emoji/speech-bubble.webp"
 
 export const INGAME_EMOJI_BUBBLE_ATTR = "data-ingame-emoji-bubble"
 

@@ -17,7 +17,7 @@ const LABEL_SIZE = {
 }
 
 // 제출 버튼이라 form 안에 둠 (Enter 제출도 같이 됨)
-export default function RecoveryButton({ src = "/button/버튼 프레임2.png", label, disabled, labelSize = "small" }) {
+export default function RecoveryButton({ src = "/button/버튼 프레임2.webp", label, disabled, labelSize = "small" }) {
   return (
     <ImageButton
       type="submit"

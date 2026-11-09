@@ -3,7 +3,7 @@
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 // 쪽 바탕: 데스크톱 책 그림은 가로 펼침면이라 한 쪽만 못 잘라 씀 → 같은 결의 양피지 그림
-export const PARCHMENT_SRC = "/frame/양피지 모달.png".normalize("NFD")
+export const PARCHMENT_SRC = "/frame/양피지 모달.webp".normalize("NFD")
 
 // 목차: 책 프레임 상단 중앙에 반쯤 걸침 (데스크톱 libraryLayoutStyle과 같은 배치)
 export const BOOK_TOC_WRAP_CLASS =

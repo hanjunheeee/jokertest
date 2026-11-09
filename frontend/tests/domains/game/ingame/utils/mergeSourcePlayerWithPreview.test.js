@@ -5,7 +5,7 @@ import { INGAME_PLAYER_STATUS } from "../../../../../src/domains/game/shared/con
 import { INGAME_PLAYER_THEME_PALETTE } from "../../../../../src/shared/constants/ingamePlayerTheme.js"
 
 function preview() {
-  return { id: "player-slot-1", nickname: "플레이어 1", portraitSrc: "p.png", frameSrc: "f.png", themeIndex: 0, theme: {} }
+  return { id: "player-slot-1", nickname: "플레이어 1", portraitSrc: "p.webp", frameSrc: "f.webp", themeIndex: 0, theme: {} }
 }
 
 test("서버 themeIndex가 있으면 preview의 색을 덮어쓰고 theme도 그 인덱스로 다시 계산된다", () => {
@@ -116,7 +116,7 @@ test("유효한 accountProfilePhotoId가 있으면 preview의 더미 portraitSrc
     { id: "u1", name: "A", connected: true, alive: true, accountProfilePhotoId: "player-profile-기사" },
     preview(),
   )
-  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.png".normalize("NFD"))
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.webp".normalize("NFD"))
 })
 
 test("accountProfileBorderId가 있어도 frameSrc는 건드리지 않는다(직업 스킨/카드 프레임 소유 유지)", () => {
@@ -124,7 +124,7 @@ test("accountProfileBorderId가 있어도 frameSrc는 건드리지 않는다(직
     { id: "u1", name: "A", connected: true, alive: true, accountProfileBorderId: "profile-border-귀족" },
     preview(),
   )
-  assert.equal(result.frameSrc, "f.png", "인게임 카드의 frameSrc는 계정 테두리가 아니라 스킨 소유다")
+  assert.equal(result.frameSrc, "f.webp", "인게임 카드의 frameSrc는 계정 테두리가 아니라 스킨 소유다")
 })
 
 test("accountProfilePhotoId가 알 수 없는(카탈로그 규칙과 다른) 값이면 preview의 더미 portraitSrc를 그대로 둔다", () => {
@@ -132,7 +132,7 @@ test("accountProfilePhotoId가 알 수 없는(카탈로그 규칙과 다른) 값
     { id: "u1", name: "A", connected: true, alive: true, accountProfilePhotoId: "../../../etc/passwd" },
     preview(),
   )
-  assert.equal(result.portraitSrc, "p.png")
+  assert.equal(result.portraitSrc, "p.webp")
 })
 
 test("유효한 accountProfileBorderId가 있어도 인게임 카드에는 accountBorderSrc를 만들지 않는다(원형 프레임 미표시)", () => {
@@ -149,7 +149,7 @@ test("유효한 accountCardFrameId가 있으면 preview의 더미 frameSrc 대�
     { id: "u1", name: "A", connected: true, alive: true, accountCardFrameId: "player-card-왕관" },
     preview(),
   )
-  assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(왕관).png".normalize("NFC"))
+  assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(왕관).webp".normalize("NFC"))
   assert.equal(result.accountCardFrameId, "player-card-왕관")
 })
 
@@ -179,9 +179,9 @@ test("accountCardFrameId가 있어도 portraitSrc는 ingame 사각형 자산으�
     },
     preview(),
   )
-  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.png".normalize("NFD"))
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.webp".normalize("NFD"))
   assert.equal(Object.hasOwn(result, "accountBorderSrc"), false)
-  assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).png".normalize("NFC"))
+  assert.equal(result.frameSrc, "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(사슬).webp".normalize("NFC"))
 })
 
 test("계정 전적이 있으면 그대로 복사된다(0판 0%도 서버가 말한 사실이므로 옮긴다)", () => {
@@ -229,7 +229,7 @@ test("계정 전적이 붙어도 기존 프로필·테마·역할 처리는 그�
   assert.equal(result.role, "JOKER")
   assert.equal(result.team, "JOKER")
   assert.equal(result.themeIndex, 4)
-  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.png".normalize("NFD"))
+  assert.equal(result.portraitSrc, "/shopItem/player-profile/ingame/프로필-기사_사각형.webp".normalize("NFD"))
   assert.equal(result.status, INGAME_PLAYER_STATUS.ALIVE)
   assert.equal(result.accountTotalGames, 3)
 })

@@ -3,7 +3,7 @@
 
 export const MODAL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1] }
 
-export const POPUP_CLOSE_BUTTON = "/button/팝업 닫기 버튼.png"
+export const POPUP_CLOSE_BUTTON = "/button/팝업 닫기 버튼.webp"
 
 // 복사 버튼: 쓸 수 있을 때 / 못 쓸 때
 export const COPY_BTN_CLASS =

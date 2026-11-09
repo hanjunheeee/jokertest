@@ -62,7 +62,7 @@ export default function FindIdForm({ status, nickname, setNickname, birthDate, s
 
       <AuthImageButton
         type="submit"
-        src="/button/버튼 프레임2.png"
+        src="/button/버튼 프레임2.webp"
         label={status === "submitting" ? "조회 중" : "아이디 찾기"}
         visibleLabel={status === "submitting" ? "조회 중" : "아이디 찾기"}
         visibleLabelClassName="app-text-scaled [--app-text-size:16px]"

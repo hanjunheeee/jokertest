@@ -4,7 +4,7 @@ import { NOTIFICATION_ASSETS as DESKTOP_NOTIFICATION_ASSETS } from "@/domains/no
 
 export const NOTIFICATION_ASSETS = {
   ...DESKTOP_NOTIFICATION_ASSETS,
-  popupFrame: "/mobile/매칭 팝업 프레임-모바일.png".normalize("NFD"),
-  itemSlot: "/mobile/입력창1-모바일.png".normalize("NFD"),
-  titlePlate: "/frame/탑레벨 프레임_1_.png".normalize("NFD"),
+  popupFrame: "/mobile/매칭 팝업 프레임-모바일.webp".normalize("NFD"),
+  itemSlot: "/mobile/입력창1-모바일.webp".normalize("NFD"),
+  titlePlate: "/frame/탑레벨 프레임_1_.webp".normalize("NFD"),
 }

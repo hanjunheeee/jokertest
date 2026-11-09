@@ -12,7 +12,7 @@ export const SHEET_TABS = [
 ]
 
 // 시트 닫기 버튼 그림 (상점 팝업과 같은 그림)
-export const CLOSE_BUTTON_SRC = "/button/팝업 닫기 버튼.png".normalize("NFD")
+export const CLOSE_BUTTON_SRC = "/button/팝업 닫기 버튼.webp".normalize("NFD")
 
 // 닫기: 프레임 모서리에 걸침 (안쪽보다 바깥·위로 반쯤 빼기)
 export const CLOSE_BTN_CLASS =

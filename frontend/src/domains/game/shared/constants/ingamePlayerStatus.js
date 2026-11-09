@@ -32,8 +32,8 @@ export function isStatusActive(status) {
 
 // 상태 배지 그림
 export const INGAME_PLAYER_STATUS_ASSETS = {
-  dead: "/frame/ingame-status/게임사망상태.png",
-  disconnected: "/frame/ingame-status/연결끊김상태.png",
+  dead: "/frame/ingame-status/게임사망상태.webp",
+  disconnected: "/frame/ingame-status/연결끊김상태.webp",
 }
 
 // 배지 자리 (초상화 틀 안쪽)

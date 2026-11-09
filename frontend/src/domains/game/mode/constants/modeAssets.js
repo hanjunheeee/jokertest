@@ -1,16 +1,16 @@
 // 모드 선택 화면 배경·카드 목록 (id·이름·설명·틀 그림·준비중)
 // GameModeOptionsArea·ModeBackground가 씀, id는 GameModePage가 갈 곳 가를 때 씀
 export const MODE_SCREEN_ASSETS = {
-  bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
+  bg: "/bg/게임모드 선택창 뒷배경.webp".normalize("NFD"),
 }
 
 // 카드 틀 그림 (createGame·findGame은 지금 안 씀)
 const MODE_FRAMES = {
-  singlePlay: "/frame/gameMode/싱글플레이 프레임.png",
-  multiPlay: "/frame/gameMode/멀티플레이 프레임.png",
-  secretBanquet: "/frame/gameMode/비밀연회장 프레임.png",
-  createGame: "/frame/gameMode/게임 만들기 프레임.png",
-  findGame: "/frame/gameMode/게임 찾기 프레임.png",
+  singlePlay: "/frame/gameMode/싱글플레이 프레임.webp",
+  multiPlay: "/frame/gameMode/멀티플레이 프레임.webp",
+  secretBanquet: "/frame/gameMode/비밀연회장 프레임.webp",
+  createGame: "/frame/gameMode/게임 만들기 프레임.webp",
+  findGame: "/frame/gameMode/게임 찾기 프레임.webp",
 }
 
 // 모드 카드 목록 (single은 준비중이라 눌리지 않음)

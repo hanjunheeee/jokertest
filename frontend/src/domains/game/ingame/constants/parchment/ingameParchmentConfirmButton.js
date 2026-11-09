@@ -3,7 +3,7 @@
 
 // 버튼 그림과 글
 export const BTN_ASSET =
-  "/button/버튼(수락 및 긍정).png".normalize("NFD")
+  "/button/버튼(수락 및 긍정).webp".normalize("NFD")
 
 export const PARCHMENT_CONFIRM_LABEL = "확인"
 

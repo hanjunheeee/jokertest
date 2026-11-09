@@ -9,25 +9,25 @@ const nfc = (assetPath) => assetPath.normalize("NFC")
 
 // 산 사람·죽은 사람 카드 틀 8종 (같은 자리끼리 짝)
 export const INGAME_PLAYER_ALIVE_FRAME_VARIANTS = [
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(베이스).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(가면).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(그레이).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(모래시계).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(보석).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(사슬).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(악마).png`),
-  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(왕관).png`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(베이스).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(가면).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(그레이).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(모래시계).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(보석).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(사슬).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(악마).webp`),
+  nfc(`${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(왕관).webp`),
 ]
 
 export const INGAME_PLAYER_DEAD_FRAME_VARIANTS = [
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(베이스) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(가면) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(그레이) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(모래시계) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(보석) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(사슬) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(악마) 사망상태.png`),
-  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(왕관) 사망상태.png`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(베이스) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(가면) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(그레이) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(모래시계) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(보석) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(사슬) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(악마) 사망상태.webp`),
+  nfc(`${PLAYER_CARD_DEAD_DIR}/인게임-플레이어프레임(왕관) 사망상태.webp`),
 ]
 
 // 기본 카드 틀 (첫 번째 산 사람 틀)

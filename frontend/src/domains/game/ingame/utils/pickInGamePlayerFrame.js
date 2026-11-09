@@ -18,7 +18,7 @@ export function resolveAccountCardFrameSrc(itemId) {
   if (typeof itemId !== "string" || !itemId.startsWith(CARD_ITEM_ID_PREFIX)) return null
   const variant = itemId.slice(CARD_ITEM_ID_PREFIX.length)
   if (!variant) return null
-  return `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(${variant}).png`.normalize("NFC")
+  return `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(${variant}).webp`.normalize("NFC")
 }
 
 export function resolveInGamePlayerFrameSrc(aliveFrameSrc, status) {

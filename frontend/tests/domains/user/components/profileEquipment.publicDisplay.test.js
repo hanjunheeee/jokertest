@@ -146,8 +146,8 @@ test("친구 목록 자산 해석 자체는 순수 함수 계약을 따른다 �
 })
 
 test("서고 랭킹: 실제 InvitedGuestsRankingRow를 마운트하면 profileSrc/profileBorderSrc가 실제 DOM img src로 그려진다", () => {
-  const profileSrc = "/shopItem/player-profile/프로필-기사.png".normalize("NFD")
-  const profileBorderSrc = "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD")
+  const profileSrc = "/shopItem/player-profile/프로필-기사.webp".normalize("NFD")
+  const profileBorderSrc = "/shopItem/player- profileborder/프로필프레임-귀족.webp".normalize("NFD")
   const { container } = render(React.createElement("table", null, React.createElement("tbody", null,
     React.createElement(InvitedGuestsRankingRow, {
       rank: 1, profileSrc, profileBorderSrc, nickname: "닉1", playCount: 12, winRate: 0.5,
@@ -160,7 +160,7 @@ test("서고 랭킹: 실제 InvitedGuestsRankingRow를 마운트하면 profileSr
 })
 
 test("서고 랭킹: 실제 장착 테두리가 없는 참가자(profileBorderSrc=null)는 테두리 img를 그리지 않고 사진만 그린다", () => {
-  const profileSrc = "/shopItem/player-profile/프로필-금빛가면.png"
+  const profileSrc = "/shopItem/player-profile/프로필-금빛가면.webp"
   const { container } = render(React.createElement("table", null, React.createElement("tbody", null,
     React.createElement(InvitedGuestsRankingRow, {
       rank: 2, profileSrc, profileBorderSrc: null, nickname: "닉2", playCount: 10, winRate: 0.3,
@@ -198,10 +198,10 @@ test("서고 랭킹: 상위 변환(mergeInvitedGuestsSpreads)은 이제 reposito
   const [spread] = mergeInvitedGuestsSpreads(spreadMeta, catalog, challenges, jobState)
   const [withAppearance, withoutAppearance] = spread.right.ranking
 
-  assert.equal(withAppearance.profileSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
-  assert.equal(withAppearance.profileBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+  assert.equal(withAppearance.profileSrc, "/shopItem/player-profile/프로필-기사.webp".normalize("NFD"))
+  assert.equal(withAppearance.profileBorderSrc, "/shopItem/player- profileborder/프로필프레임-귀족.webp".normalize("NFD"))
   assert.equal(withoutAppearance.profileBorderSrc, null, "실제 장착 테두리가 없으면 기존처럼 null로 남아 테두리 없이 그려야 한다")
-  assert.equal(withoutAppearance.profileSrc, "/shopItem/player-profile/프로필-금빛가면.png", "계정 사진도 없으면 기존 하드코딩 기본 사진으로 대체되어야 한다")
+  assert.equal(withoutAppearance.profileSrc, "/shopItem/player-profile/프로필-금빛가면.webp", "계정 사진도 없으면 기존 하드코딩 기본 사진으로 대체되어야 한다")
 })
 
 const installEquipmentApi = (loadout) => {

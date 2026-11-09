@@ -37,7 +37,7 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
 
       <ImageButton
         type="submit"
-        src="/button/버튼 프레임2.png"
+        src="/button/버튼 프레임2.webp"
         ariaLabel="로그인"
         label="로그인"
         labelClassName="app-text-scaled [--app-text-size:20px]"

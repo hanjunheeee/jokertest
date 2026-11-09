@@ -22,13 +22,13 @@ test("추방 실패: 코드(ALREADY_LEFT) 대신 안내 글, 모르는 코드는
 })
 
 test("추방 대상 줄: 계정 사진이 있으면 줄 순서 기본 그림이 아니라 그 사람 사진", () => {
-    const player = { uuid: "u-1", membershipId: "m-1", nickname: "가", portraitSrc: "/test/내사진.png" }
+    const player = { uuid: "u-1", membershipId: "m-1", nickname: "가", portraitSrc: "/test/내사진.webp" }
     const expected = resolvePlayerRecordListProfileAssets(player, 0)
     const page = { kickModalOpen: true, closeKickModal: () => {}, kickTargets: [player], kickPendingTarget: null, kickStatus: null, isKicking: false }
     const view = render(React.createElement(KickSheet, { page }))
     const srcs = [...document.querySelectorAll('[data-testid="kick-sheet"] img')].map((img) => decodeURI(img.getAttribute("src") ?? ""))
-    assert.equal(expected.profilePhotoSrc, "/test/내사진.png")
-    assert.ok(srcs.some((src) => src.endsWith("/test/내사진.png")), srcs.join(","))
+    assert.equal(expected.profilePhotoSrc, "/test/내사진.webp")
+    assert.ok(srcs.some((src) => src.endsWith("/test/내사진.webp")), srcs.join(","))
     const fallback = decodeURI(getPlayerRecordListFallbackProfileAssets(0).profilePhotoSrc)
     assert.equal(srcs.some((src) => src.endsWith(fallback)), false)
     view.unmount()

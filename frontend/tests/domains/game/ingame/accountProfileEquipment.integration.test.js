@@ -418,22 +418,22 @@ test("F-13 AC-05 R-IMPL: 재접속 스냅샷의 isConnected:false/isAlive:false�
 
 test("F-13 AC-05: InGamePlayerBoard는 alive/dead/disconnected 상태에서 ingame 사각형 초상만 렌더하고 원형 계정 테두리는 그리지 않는다", () => {
   const finalPlayers = [
-    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.png", frameSrc: "/frame.png", theme: {} },
-    { id: "p2", nickname: "사망자", status: INGAME_PLAYER_STATUS.DEAD, portraitSrc: "/p2-portrait.png", frameSrc: "/frame.png", theme: {} },
-    { id: "p3", nickname: "끊김", status: INGAME_PLAYER_STATUS.DISCONNECTED, portraitSrc: "/p3-portrait.png", frameSrc: "/frame.png", theme: {} },
+    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.webp", frameSrc: "/frame.webp", theme: {} },
+    { id: "p2", nickname: "사망자", status: INGAME_PLAYER_STATUS.DEAD, portraitSrc: "/p2-portrait.webp", frameSrc: "/frame.webp", theme: {} },
+    { id: "p3", nickname: "끊김", status: INGAME_PLAYER_STATUS.DISCONNECTED, portraitSrc: "/p3-portrait.webp", frameSrc: "/frame.webp", theme: {} },
   ]
 
   const imgSrcs = renderBoard(finalPlayers, "p1")
 
-  assert.ok(imgSrcs.includes("/p1-portrait.png") && imgSrcs.includes("/p2-portrait.png") && imgSrcs.includes("/p3-portrait.png"), "세 참가자 모두 서로 다른 실제 초상이 렌더되어야 한다")
-  assert.ok(!imgSrcs.includes("/p1-border.png") && !imgSrcs.includes("/p2-border.png"), "원형 계정 테두리 자산은 DOM에 나타나면 안 된다")
-  const frameImgCount = imgSrcs.filter((src) => src.startsWith("/frame.png")).length
+  assert.ok(imgSrcs.includes("/p1-portrait.webp") && imgSrcs.includes("/p2-portrait.webp") && imgSrcs.includes("/p3-portrait.webp"), "세 참가자 모두 서로 다른 실제 초상이 렌더되어야 한다")
+  assert.ok(!imgSrcs.includes("/p1-border.webp") && !imgSrcs.includes("/p2-border.webp"), "원형 계정 테두리 자산은 DOM에 나타나면 안 된다")
+  const frameImgCount = imgSrcs.filter((src) => src.startsWith("/frame.webp")).length
   assert.equal(frameImgCount, finalPlayers.length * 2, "직업 프레임은(그림자 레이어 + 본체 레이어) 참가자마다 그대로 유지되어야 한다")
 })
 
 test("F-13 AC-05: InGamePlayerCard는 role을 props로 받지도 렌더하지도 않는다(비밀 유지) — 실제 DOM 텍스트에 role 값이 노출되지 않는다", () => {
   const finalPlayers = [
-    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.png", frameSrc: "/frame.png", theme: {}, role: "JOKER", team: "JOKER" },
+    { id: "p1", nickname: "호스트", status: INGAME_PLAYER_STATUS.ALIVE, portraitSrc: "/p1-portrait.webp", frameSrc: "/frame.webp", theme: {}, role: "JOKER", team: "JOKER" },
   ]
   const { container } = render(
     React.createElement(

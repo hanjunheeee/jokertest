@@ -30,8 +30,8 @@ function createSkinStoreItem(closeupFileStem, price = 500) {
     id: `player-skin-${standingStem}`,
     category: "스킨",
     name: displayName,
-    icon: `${PLAYER_SKIN_CLOSEUP_ASSET_DIR}/${closeupFileStem}.png`.normalize("NFD"),
-    iconZoom: `${PLAYER_SKIN_STANDING_ASSET_DIR}/${standingStem}.png`.normalize("NFD"),
+    icon: `${PLAYER_SKIN_CLOSEUP_ASSET_DIR}/${closeupFileStem}.webp`.normalize("NFD"),
+    iconZoom: `${PLAYER_SKIN_STANDING_ASSET_DIR}/${standingStem}.webp`.normalize("NFD"),
     priceAmount: String(price),
     grade: jobBase,
     description: `직업 스킨 「${displayName}」. 인게임 플레이어 초상에 장착할 수 있습니다.`,
@@ -45,7 +45,7 @@ function createProfileBorderItem(tier, price) {
     id: `profile-border-${tier}`,
     category: "프로필 테두리",
     name: `${tier}`,
-    icon: `${PROFILE_BORDER_ASSET_DIR}/프로필프레임-${tier}.png`.normalize("NFD"),
+    icon: `${PROFILE_BORDER_ASSET_DIR}/프로필프레임-${tier}.webp`.normalize("NFD"),
     priceAmount: String(price),
     grade: tier,
     description: `${tier} 등급 프로필 테두리. 로비·마이페이지·친구 목록 프로필에 장착할 수 있습니다.`,
@@ -59,9 +59,9 @@ function createPlayerCardItem(variant, price = 500) {
     id: `player-card-${variant}`,
     category: "플레이어 카드",
     name: variant,
-    icon: `${PLAYER_CARD_ALIVE_ASSET_DIR}/인게임-플레이어프레임(${variant}).png`.normalize("NFD"),
+    icon: `${PLAYER_CARD_ALIVE_ASSET_DIR}/인게임-플레이어프레임(${variant}).webp`.normalize("NFD"),
     iconDead:
-      `${PLAYER_CARD_DEAD_ASSET_DIR}/인게임-플레이어프레임(${variant}) 사망상태.png`.normalize("NFD"),
+      `${PLAYER_CARD_DEAD_ASSET_DIR}/인게임-플레이어프레임(${variant}) 사망상태.webp`.normalize("NFD"),
     priceAmount: String(price),
     grade: variant,
     description: `인게임 플레이어 카드 프레임 「${variant}」. 대국 중 내 플레이어 카드에 장착할 수 있습니다.`,
@@ -113,7 +113,7 @@ function createIngameMoneyItem(currencyKey, amount) {
     id: `ingame-money-${currencyKey}-${amount}`,
     category: "인게임 재화",
     name: `${config.label} ${amount}개`,
-    icon: `${INGAME_MONEY_ASSET_DIR}/${config.folder}/${config.filePrefix}-${amount}.png`.normalize(
+    icon: `${INGAME_MONEY_ASSET_DIR}/${config.folder}/${config.filePrefix}-${amount}.webp`.normalize(
       "NFD",
     ),
     priceAmount: STORE_PRICE_PENDING,
@@ -130,7 +130,7 @@ export const INGAME_MONEY_STORE_ITEMS = [
 ]
 
 // 서버 재화 상품 그림: 지급 재화·수량이 묶음 그림과 맞으면 그 그림, 아니면 null
-// utils/currencyParse.js toCurrencyStoreItem이 씀 (예: GOLD 100 → 금화-100.png)
+// utils/currencyParse.js toCurrencyStoreItem이 씀 (예: GOLD 100 → 금화-100.webp)
 export function ingameMoneyIconOf(grantCurrency, amount) {
   let key = null
   if (grantCurrency === "GOLD") key = "gold"
@@ -163,7 +163,7 @@ export const EMOTICON_STORE_ITEMS = [
     id: `emoji-basic-${slug}`,
     category: "이모티콘",
     name,
-    icon: `/shopItem/basic/emoji/${slug}.png`,
+    icon: `/shopItem/basic/emoji/${slug}.webp`,
     priceAmount: "0",
     grade: "기본",
     description: `기본 이모티콘 「${name}」. 모든 계정에 기본 지급됩니다.`,
@@ -174,7 +174,7 @@ export const EMOTICON_STORE_ITEMS = [
     id: `emoji-${slug}`,
     category: "이모티콘",
     name,
-    icon: `/shopItem/emoji/${slug}.png`,
+    icon: `/shopItem/emoji/${slug}.webp`,
     priceAmount: String(EMOTICON_PRICE_GOLD_PLACEHOLDER),
     grade: "상점",
     description: `상점 이모티콘 「${name}」. 골드로 구매해 소유할 수 있습니다.`,

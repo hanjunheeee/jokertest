@@ -62,9 +62,9 @@ const NAMES_WITHOUT_SQUARE_SUFFIX = new Set(["화관쓴소녀"])
 // 사진 파일 이름 (_사각형이 안 붙는 이름이 따로 있음)
 function photoFileName(name) {
   if (NAMES_WITHOUT_SQUARE_SUFFIX.has(name)) {
-    return `프로필-${name}.png`
+    return `프로필-${name}.webp`
   }
-  return `프로필-${name}_사각형.png`
+  return `프로필-${name}_사각형.webp`
 }
 
 // 계정 사진 아이템 id → 인게임 사진 경로 (모르는 id면 null)

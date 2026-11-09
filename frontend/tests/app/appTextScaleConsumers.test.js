@@ -110,7 +110,7 @@ function ScaleHarness() {
       onChange: () => {},
       ariaLabel: "예시 슬라이더",
     }),
-    React.createElement(Dropdown, { value: "선택값", inputFieldSrc: "/x.png" }),
+    React.createElement(Dropdown, { value: "선택값", inputFieldSrc: "/x.webp" }),
     React.createElement(GeneralSettingsTab),
   )
 }

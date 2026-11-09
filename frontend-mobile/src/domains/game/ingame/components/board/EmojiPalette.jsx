@@ -6,7 +6,7 @@ import { useInGameEmojiSend } from "@/domains/game/ingame/hooks/useInGameEmojiSe
 import { findInGameEmoticonItem } from "@/domains/game/ingame/utils/findInGameEmoticonItem.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
-const FRAME_SRC = "/frame/emoji/palette-frame.png"
+const FRAME_SRC = "/frame/emoji/palette-frame.webp"
 const PALETTE_ATTR = "data-ingame-emoji-palette"
 const PALETTE_LABEL = "이모티콘 팔레트"
 const SLOT_COUNT = 8

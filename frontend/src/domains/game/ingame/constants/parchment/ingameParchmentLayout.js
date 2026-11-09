@@ -2,7 +2,7 @@
 // 양피지 창 바탕·모바일 양피지 틀이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../../../shared/constants/customScrollbarStyles.js"
 
-export const IMG_URL = "/frame/양피지 모달.png".normalize("NFD")
+export const IMG_URL = "/frame/양피지 모달.webp".normalize("NFD")
 
 export const FRAME_CLASS =
   "pointer-events-auto relative aspect-[3/2] w-[min(40rem,92cqw,132svh)] select-none"

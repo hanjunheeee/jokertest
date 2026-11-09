@@ -22,7 +22,7 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
 
         <AuthImageButton
           type="submit"
-          src="/button/버튼 프레임2.png"
+          src="/button/버튼 프레임2.webp"
           label="로그인"
           visibleLabel="로그인"
           visibleLabelClassName="app-text-scaled [--app-text-size:22px]"

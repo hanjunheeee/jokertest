@@ -11,7 +11,7 @@ export const INPUT_MAX_LENGTH = 150
 
 // 채팅 틀·보내기·닫기 버튼 그림
 export const INGAME_CHAT_ASSETS = {
-  frame: "/frame/ingame-chatting/인게임-채팅창프레임2.png",
-  sendButton: "/button/버튼(미선택).png",
-  closeButton: "/button/팝업 닫기 버튼.png",
+  frame: "/frame/ingame-chatting/인게임-채팅창프레임2.webp",
+  sendButton: "/button/버튼(미선택).webp",
+  closeButton: "/button/팝업 닫기 버튼.webp",
 }

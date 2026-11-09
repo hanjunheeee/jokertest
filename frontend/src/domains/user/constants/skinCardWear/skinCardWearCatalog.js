@@ -49,11 +49,11 @@ function resolveBasicJobId(stem) {
 }
 
 function resolveBasicCloseupSrc(stem) {
-  return `${BASIC_CLOSEUP_DIR}/${stem}_클로즈업.png`.normalize("NFD")
+  return `${BASIC_CLOSEUP_DIR}/${stem}_클로즈업.webp`.normalize("NFD")
 }
 
 function createBasicSkinItem(stem) {
-  const standingSrc = `${BASIC_STANDING_DIR}/${stem}.png`.normalize("NFD")
+  const standingSrc = `${BASIC_STANDING_DIR}/${stem}.webp`.normalize("NFD")
   const closeupSrc = resolveBasicCloseupSrc(stem)
 
   return {
@@ -83,7 +83,7 @@ function mapPremiumSkinItem(item) {
 
 function createPlayerCardItem(variant) {
   const frameSrc =
-    `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(${variant}).png`.normalize("NFD")
+    `${PLAYER_CARD_ALIVE_DIR}/인게임-플레이어프레임(${variant}).webp`.normalize("NFD")
 
   return {
     id: `player-card-${variant}`,

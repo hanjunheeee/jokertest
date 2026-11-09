@@ -298,7 +298,7 @@ test('new accounts without a portrait use the granted gold-mask asset instead of
     byJobKey: {noble:{status:'success',myStats:null,ranking,error:null}}
   })
   for (const row of pages.find(p => p.jobKey === 'noble').right.ranking) {
-    assert.equal(row.profileSrc, '/shopItem/player-profile/프로필-금빛가면.png')
+    assert.equal(row.profileSrc, '/shopItem/player-profile/프로필-금빛가면.webp')
     assert.ok(row.profileSrc.startsWith('/'))
   }
 })

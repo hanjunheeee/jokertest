@@ -9,7 +9,7 @@ import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import { findInGameEmoticonItem } from "../../utils/findInGameEmoticonItem.js"
 
 // 틀 그림·시험이 찾는 표시·읽어 주는 이름
-export const FRAME_SRC = "/frame/emoji/palette-frame.png"
+export const FRAME_SRC = "/frame/emoji/palette-frame.webp"
 
 export const INGAME_EMOJI_PALETTE_ATTR = "data-ingame-emoji-palette"
 

@@ -5,5 +5,5 @@ import { PLAYER_CARD_OVERLAY_ASSETS } from "../board/ingamePlayerCardOverlayAsse
 // 기권은 카드 메뉴 취소 버튼 그림을 같이 씀
 export const INGAME_CORNER_ACTION_ASSETS = {
   abstain: PLAYER_CARD_OVERLAY_ASSETS.cancelButton,
-  skip: "/button/버튼(미선택).png".normalize("NFD"),
+  skip: "/button/버튼(미선택).webp".normalize("NFD"),
 }

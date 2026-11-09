@@ -24,13 +24,13 @@ test.beforeEach(() => {
 })
 
 test("public 주소: 앞에 / 붙이고 한글을 인코딩", () => {
-  assert.equal(publicAsset("frame/사망.png"), `/frame/${encodeURIComponent("사망")}.png`)
-  assert.equal(publicAsset("/a b.png"), "/a%20b.png")
+  assert.equal(publicAsset("frame/사망.webp"), `/frame/${encodeURIComponent("사망")}.webp`)
+  assert.equal(publicAsset("/a b.webp"), "/a%20b.webp")
 })
 
 test("public 주소: 같은 이름의 NFD·NFC 경로가 같은 주소가 됨", () => {
-  const nfc = "/shopItem/광대1.png".normalize("NFC")
-  const nfd = "/shopItem/광대1.png".normalize("NFD")
+  const nfc = "/shopItem/광대1.webp".normalize("NFC")
+  const nfd = "/shopItem/광대1.webp".normalize("NFD")
   assert.notEqual(nfc, nfd)
   assert.equal(publicAsset(nfd), publicAsset(nfc))
 })

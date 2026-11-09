@@ -106,7 +106,7 @@ const PHOTO_NAMES_IN_DISPLAY_ORDER = [
   "영주", "화관쓴소녀", "암살자", "역병의사", "그림자", "음유시인", "드워프", "귀부인",
 ]
 
-const photoAssetSrcForName = (name) => `${PROFILE_PHOTO_BASE}프로필-${name}.png`.normalize("NFD")
+const photoAssetSrcForName = (name) => `${PROFILE_PHOTO_BASE}프로필-${name}.webp`.normalize("NFD")
 
 // 무료 사진 그림 목록 (지금 아무도 안 씀)
 export const FREE_PHOTOS = PHOTO_NAMES_IN_DISPLAY_ORDER.map(photoAssetSrcForName)
@@ -142,7 +142,7 @@ export const borderAssetSrcForItemId = (itemId) => {
   if (typeof itemId !== "string" || !itemId.startsWith(BORDER_ITEM_ID_PREFIX)) return null
   const tier = itemId.slice(BORDER_ITEM_ID_PREFIX.length)
   if (!tier) return null
-  return `${PROFILE_BORDER_BASE}프로필프레임-${tier}.png`.normalize("NFD")
+  return `${PROFILE_BORDER_BASE}프로필프레임-${tier}.webp`.normalize("NFD")
 }
 
 // 탭 id·이름

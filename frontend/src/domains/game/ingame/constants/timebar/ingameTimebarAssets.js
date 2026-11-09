@@ -4,21 +4,21 @@ import { formatInGameTimebarPhaseTag } from "../../utils/timebar/format.js"
 
 // 진행 바 틀(접힘·확대)·확대 버튼·타이머 바·화살표·단계 그림·단계 머리 판
 export const INGAME_TIMEBAR_ASSETS = {
-  frame: "/frame/ingame-timebar/진행바 프레임.png",
-  frameExpanded: "/frame/ingame-timebar/진행바(확대) 프레임.png",
-  expandButton: "/button/확대표시 버튼.png",
-  timerFrame: "/frame/ingame-timebar/타이머바 프레임.png",
-  timerGauge: "/frame/ingame-timebar/타이머바 게이지.png",
-  timerCenterMarker: "/frame/ingame-timebar/타이머바 중앙마커.png",
-  indicatorArrow: "/frame/ingame-timebar/지시화살표.png",
-  nightNode: "/frame/ingame-timebar/밤시간 노드.png",
-  resultNode: "/frame/ingame-timebar/결과발표 노드.png",
-  discussionNode: "/frame/ingame-timebar/토론 노드.png",
-  voteNode: "/frame/ingame-timebar/추방투표 노드.png",
-  phaseHeaderPlate: "/frame/탑레벨 프레임_1_.png",
+  frame: "/frame/ingame-timebar/진행바 프레임.webp",
+  frameExpanded: "/frame/ingame-timebar/진행바(확대) 프레임.webp",
+  expandButton: "/button/확대표시 버튼.webp",
+  timerFrame: "/frame/ingame-timebar/타이머바 프레임.webp",
+  timerGauge: "/frame/ingame-timebar/타이머바 게이지.webp",
+  timerCenterMarker: "/frame/ingame-timebar/타이머바 중앙마커.webp",
+  indicatorArrow: "/frame/ingame-timebar/지시화살표.webp",
+  nightNode: "/frame/ingame-timebar/밤시간 노드.webp",
+  resultNode: "/frame/ingame-timebar/결과발표 노드.webp",
+  discussionNode: "/frame/ingame-timebar/토론 노드.webp",
+  voteNode: "/frame/ingame-timebar/추방투표 노드.webp",
+  phaseHeaderPlate: "/frame/탑레벨 프레임_1_.webp",
   /** 채팅 클로즈업 내장 단계 타이머 — 단계 머리 판만 결과 화면 틀 사용 */
   phaseHeaderPlateChatCloseup:
-    "/frame/gameResult/게임 결과 프레임.png".normalize("NFD"),
+    "/frame/gameResult/게임 결과 프레임.webp".normalize("NFD"),
 }
 
 // 바에 그리는 단계 순서 (밤 → 결과 → 토론 → 투표)

@@ -52,7 +52,7 @@ export const PANEL_ACTION_BTN_ROW_CLASS = "flex w-full justify-end"
 export const INPUT_WRAP_CLASS = "w-full max-w-full"
 
 // 확인 버튼
-export const CONFIRM_BTN_SRC = "/button/버튼(수락 및 긍정).png".normalize("NFD")
+export const CONFIRM_BTN_SRC = "/button/버튼(수락 및 긍정).webp".normalize("NFD")
 export const CONFIRM_BTN_CLASS =
   "relative ml-auto block w-[clamp(5.4rem,10vw,7.6rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-40"
 export const CONFIRM_BTN_IMG_CLASS = "block h-auto w-full select-none"

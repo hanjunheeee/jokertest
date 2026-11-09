@@ -53,7 +53,7 @@ export default function NewPasswordForm({ status, password, setPassword, passwor
 
           <AuthImageButton
             type="submit"
-            src="/button/버튼 프레임1.png"
+            src="/button/버튼 프레임1.webp"
             label={status === "submitting" ? "변경 중" : "비밀번호 변경"}
             visibleLabel={status === "submitting" ? "변경 중" : "비밀번호 변경"}
             disabled={isFormDisabled}

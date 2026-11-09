@@ -19,7 +19,7 @@ const toRankingRowDisplay = (entry) => ({
     resolveAccountProfilePhotoSrc(entry.accountProfilePhotoId) ||
     entry.profile_image_url ||
     entry.profileSrc ||
-    "/shopItem/player-profile/프로필-금빛가면.png",
+    "/shopItem/player-profile/프로필-금빛가면.webp",
   profileBorderSrc: resolveAccountProfileBorderSrc(entry.accountProfileBorderId),
   nickname: entry.nickname,
   playCount: entry.games,

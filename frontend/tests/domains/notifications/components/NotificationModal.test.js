@@ -137,7 +137,7 @@ test("AC-06: 모달은 매칭 팝업 프레임 셸(dialog·backdrop·확인 버�
 
   const frame = view.container.querySelector('img[aria-hidden="true"]')
   assert.ok(frame, "매칭 팝업 프레임 이미지가 렌더돼야 한다")
-  assert.match(decodeURIComponent(frame.getAttribute("src")), /매칭 팝업 프레임\.png/)
+  assert.match(decodeURIComponent(frame.getAttribute("src")), /매칭 팝업 프레임\.webp/)
 
   assert.ok(view.container.querySelector('[data-notification-heading="true"]'), "프레임 상단 제목")
   assert.ok(view.container.querySelector('[aria-label="알림 닫기"]'), "backdrop 닫기 버튼")
@@ -146,7 +146,7 @@ test("AC-06: 모달은 매칭 팝업 프레임 셸(dialog·backdrop·확인 버�
   assert.ok(closeButton, "우상단 닫기 버튼")
   assert.match(
     decodeURIComponent(closeButton.querySelector("img").getAttribute("src")),
-    /팝업 닫기 버튼\.png/,
+    /팝업 닫기 버튼\.webp/,
   )
   assert.equal(closeButton.getAttribute("data-sfx-kind"), "ui-cancel", "닫기는 취소음 표식을 쓴다")
 })
@@ -362,17 +362,17 @@ test("AC-06: 알림 항목은 입력창 슬롯·수락 액션 버튼 리소스�
 
   const slotImg = item.querySelector("img")
   assert.ok(slotImg)
-  assert.match(decodeURIComponent(slotImg.getAttribute("src")), /입력창1\.png/)
+  assert.match(decodeURIComponent(slotImg.getAttribute("src")), /입력창1\.webp/)
   assert.ok(slotImg.className.includes("object-fill"), "슬롯 배경은 세로로 늘려 채운다")
 
   const openBtn = view.container.querySelector('[data-notification-action="open-target"] img')
   assert.ok(openBtn)
-  assert.match(decodeURIComponent(openBtn.getAttribute("src")), /버튼\(수락 및 긍정\)\.png/)
-  assert.ok(NOTIFICATION_ASSETS.actionButtonPrimary.normalize("NFC").includes("버튼(수락 및 긍정).png"))
+  assert.match(decodeURIComponent(openBtn.getAttribute("src")), /버튼\(수락 및 긍정\)\.webp/)
+  assert.ok(NOTIFICATION_ASSETS.actionButtonPrimary.normalize("NFC").includes("버튼(수락 및 긍정).webp"))
 
   const deleteBtn = view.container.querySelector('[data-notification-action="delete-read"]')
   assert.ok(deleteBtn, "좌측 하단 삭제 버튼이 있어야 한다")
-  assert.match(decodeURIComponent(deleteBtn.querySelector("img").getAttribute("src")), /버튼\(미선택\)\.png/)
+  assert.match(decodeURIComponent(deleteBtn.querySelector("img").getAttribute("src")), /버튼\(미선택\)\.webp/)
   assert.ok(view.container.querySelector("[data-notification-footer]"))
 })
 

@@ -155,13 +155,13 @@ test("storeItems: EMOTICON_STORE_ITEMS는 설계도 §0의 23종이고 기본 8�
   for (const item of EMOTICON_STORE_ITEMS) assert.equal(item.category, "이모티콘")
   for (const [itemId] of BASIC_EMOTICONS) {
     const item = EMOTICON_STORE_ITEMS.find((entry) => entry.id === itemId)
-    assert.equal(item.icon, `/shopItem/basic/emoji/${itemId.replace("emoji-basic-", "")}.png`)
+    assert.equal(item.icon, `/shopItem/basic/emoji/${itemId.replace("emoji-basic-", "")}.webp`)
     assert.equal(Number(item.priceAmount), 0)
     assert.equal(item.tag, "기본 지급")
   }
   for (const [itemId] of SHOP_EMOTICONS) {
     const item = EMOTICON_STORE_ITEMS.find((entry) => entry.id === itemId)
-    assert.equal(item.icon, `/shopItem/emoji/${itemId.replace("emoji-", "")}.png`)
+    assert.equal(item.icon, `/shopItem/emoji/${itemId.replace("emoji-", "")}.webp`)
     assert.equal(Number(item.priceAmount), 500)
     assert.notEqual(item.tag, "기본 지급")
   }

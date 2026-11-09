@@ -8,20 +8,20 @@ const PHOTO_ITEM_ID_PREFIX = "player-profile-"
 const PROFILE_BORDER_BASE = "/shopItem/player- profileborder/"
 const BORDER_ITEM_ID_PREFIX = "profile-border-"
 
-// player-profile-이름 → 프로필-이름.png, 모양이 다르면 null
+// player-profile-이름 → 프로필-이름.webp, 모양이 다르면 null
 export function resolveAccountProfilePhotoSrc(itemId) {
   if (typeof itemId !== "string" || !itemId.startsWith(PHOTO_ITEM_ID_PREFIX)) return null
   const name = itemId.slice(PHOTO_ITEM_ID_PREFIX.length)
   if (!name) return null
-  return `${PROFILE_PHOTO_BASE}프로필-${name}.png`.normalize("NFD")
+  return `${PROFILE_PHOTO_BASE}프로필-${name}.webp`.normalize("NFD")
 }
 
-// profile-border-등급 → 프로필프레임-등급.png, 모양이 다르면 null
+// profile-border-등급 → 프로필프레임-등급.webp, 모양이 다르면 null
 export function resolveAccountProfileBorderSrc(itemId) {
   if (typeof itemId !== "string" || !itemId.startsWith(BORDER_ITEM_ID_PREFIX)) return null
   const tier = itemId.slice(BORDER_ITEM_ID_PREFIX.length)
   if (!tier) return null
-  return `${PROFILE_BORDER_BASE}프로필프레임-${tier}.png`.normalize("NFD")
+  return `${PROFILE_BORDER_BASE}프로필프레임-${tier}.webp`.normalize("NFD")
 }
 
 // 못 찾으면 기본 사진·평민 테두리

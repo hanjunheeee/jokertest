@@ -4,10 +4,10 @@ import { BANNER_FRAME_IMG_CLASS } from "./myPageBannerStyle.js"
 
 // 배경·배너 틀·피의 기록 틀·운명의 가면 틀 그림
 export const MY_PAGE_ASSETS = {
-  bg: "/bg/마이페이지 뒷배경.png".normalize("NFD"),
-  myPageButtonFrame: "/frame/mypage/마이페이지 이동 버튼 프레임(칭호삭제).png".normalize("NFD"),
-  bloodRecordFrame: "/frame/mypage/피의 기록 프레임.png",
-  fateMaskFrame: "/frame/mypage/운명의 가면 프레임.png",
+  bg: "/bg/마이페이지 뒷배경.webp".normalize("NFD"),
+  myPageButtonFrame: "/frame/mypage/마이페이지 이동 버튼 프레임(칭호삭제).webp".normalize("NFD"),
+  bloodRecordFrame: "/frame/mypage/피의 기록 프레임.webp",
+  fateMaskFrame: "/frame/mypage/운명의 가면 프레임.webp",
 }
 
 // 마이페이지 배너 설정 (버튼 기본값과 같고 초상만 켬)

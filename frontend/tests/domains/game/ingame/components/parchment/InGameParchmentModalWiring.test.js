@@ -11,8 +11,8 @@ const roleRevealUrl = new URL("../../../../../../src/domains/game/ingame/compone
 const nightTurnUrl = new URL("../../../../../../src/domains/game/ingame/components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx", import.meta.url)
 const phaseEntranceUrl = new URL("../../../../../../src/domains/game/ingame/components/phaseEntrance/InGamePhaseEntranceOverlay.js", import.meta.url)
 
-const PARCHMENT_IMAGE_PATH = "/frame/양피지 모달.png"
-const CONFIRM_BUTTON_IMAGE_PATH = "/button/버튼(수락 및 긍정).png"
+const PARCHMENT_IMAGE_PATH = "/frame/양피지 모달.webp"
+const CONFIRM_BUTTON_IMAGE_PATH = "/button/버튼(수락 및 긍정).webp"
 
 let overlayDom = null
 

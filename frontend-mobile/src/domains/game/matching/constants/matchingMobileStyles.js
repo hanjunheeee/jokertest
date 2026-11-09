@@ -2,7 +2,7 @@
 // 대기방 위 줄·방장 버튼·가운데 틀·자리·바닥 줄이 씀, 글자 모양은 데스크톱 matchingPopupStyles 최소 크기 기준
 
 // 뒤로 가기 그림 (데스크톱 MotionBackButton 그림)
-export const BACK_BUTTON_SRC = "/button/뒤로가기 버튼2.png".normalize("NFD")
+export const BACK_BUTTON_SRC = "/button/뒤로가기 버튼2.webp".normalize("NFD")
 
 // 위 줄 동그란 아이콘 버튼 (누를 자리 44px)
 export const ICON_BTN_CLASS =

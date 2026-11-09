@@ -43,7 +43,7 @@ export default function NewPasswordForm({ status, password, setPassword, passwor
 
       {formError && <RecoveryAlert>{formError}</RecoveryAlert>}
 
-      <RecoveryButton src="/button/버튼 프레임1.png" label={isSubmitting ? "변경 중" : "비밀번호 변경"} disabled={isSubmitting} />
+      <RecoveryButton src="/button/버튼 프레임1.webp" label={isSubmitting ? "변경 중" : "비밀번호 변경"} disabled={isSubmitting} />
     </fieldset>
   )
 }

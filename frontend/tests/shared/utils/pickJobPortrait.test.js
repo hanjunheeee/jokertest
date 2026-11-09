@@ -31,7 +31,7 @@ test("standing 초상은 승인된 10칸 슬롯을 순서대로 담는다", () =
   assert.equal(JOB_STANDING_PORTRAITS.length, SLOT_COUNT)
   assert.deepEqual(
     JOB_STANDING_PORTRAITS.map(fileNameOf),
-    APPROVED_JOB_SLOTS.map((job) => `${job}.png`.normalize("NFC")),
+    APPROVED_JOB_SLOTS.map((job) => `${job}.webp`.normalize("NFC")),
   )
 })
 
@@ -39,7 +39,7 @@ test("closeup 초상은 승인된 10칸 슬롯을 순서대로 담는다", () =>
   assert.equal(JOB_CLOSEUP_PORTRAITS.length, SLOT_COUNT)
   assert.deepEqual(
     JOB_CLOSEUP_PORTRAITS.map(fileNameOf),
-    APPROVED_JOB_SLOTS.map((job) => `${job}_클로즈업.png`.normalize("NFC")),
+    APPROVED_JOB_SLOTS.map((job) => `${job}_클로즈업.webp`.normalize("NFC")),
   )
 })
 
@@ -47,20 +47,20 @@ test("pickJobPortrait는 슬롯 index를 승인된 직업 초상에 그대로 �
   APPROVED_JOB_SLOTS.forEach((job, index) => {
     assert.equal(
       fileNameOf(pickJobPortrait(index)),
-      `${job}_클로즈업.png`.normalize("NFC"),
+      `${job}_클로즈업.webp`.normalize("NFC"),
       `슬롯 ${index}는 ${job}이어야 합니다`,
     )
   })
 })
 
 test("index가 슬롯 수를 넘으면 10칸 주기로 처음 슬롯부터 다시 돈다", () => {
-  assert.equal(fileNameOf(pickJobPortrait(SLOT_COUNT)), "귀족1_클로즈업.png".normalize("NFC"))
+  assert.equal(fileNameOf(pickJobPortrait(SLOT_COUNT)), "귀족1_클로즈업.webp".normalize("NFC"))
 
   for (let index = 0; index < SLOT_COUNT * 3; index += 1) {
     const job = APPROVED_JOB_SLOTS[index % SLOT_COUNT]
     assert.equal(
       fileNameOf(pickJobPortrait(index)),
-      `${job}_클로즈업.png`.normalize("NFC"),
+      `${job}_클로즈업.webp`.normalize("NFC"),
       `슬롯 ${index}는 ${job}이어야 합니다`,
     )
   }
@@ -78,7 +78,7 @@ test("소비 경로 pickInGameJobPortrait도 같은 슬롯 매핑을 돌려준�
     const job = APPROVED_JOB_SLOTS[index % SLOT_COUNT]
     assert.equal(
       fileNameOf(pickInGameJobPortrait(index)),
-      `${job}_클로즈업.png`.normalize("NFC"),
+      `${job}_클로즈업.webp`.normalize("NFC"),
       `전적목록 ${index}번 줄은 ${job} 초상을 보여줘야 합니다`,
     )
     assert.equal(pickInGameJobPortrait(index), pickJobPortrait(index))

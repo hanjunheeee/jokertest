@@ -1,14 +1,14 @@
 // 대기방 그림 경로·팝업 문구·미리보기용 가짜 자리
 // 대기방 컴포넌트·RoomCodeViewModal·useMatchingPage·chunkPlayerSlots가 씀
 export const GAME_MATCHING_ASSETS = {
-  bg: "/bg/게임모드 선택창 뒷배경.png".normalize("NFD"),
-  popupFrame: "/frame/매칭 팝업 프레임.png",
-  silhouetteReady: "/frame/매칭 준비 실루엣.png",
-  silhouetteNotReady: "/frame/매칭 미준비 실루엣.png",
-  startGameButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
-  deleteRoomButton: "/button/버튼(취소 및 부정).png".normalize("NFD"),
-  roomCodeViewButton: "/button/버튼(수락 및 긍정).png".normalize("NFD"),
-  roomCodeShareFrame: "/frame/방코드 발송 프레임.png",
+  bg: "/bg/게임모드 선택창 뒷배경.webp".normalize("NFD"),
+  popupFrame: "/frame/매칭 팝업 프레임.webp",
+  silhouetteReady: "/frame/매칭 준비 실루엣.webp",
+  silhouetteNotReady: "/frame/매칭 미준비 실루엣.webp",
+  startGameButton: "/button/버튼(수락 및 긍정).webp".normalize("NFD"),
+  deleteRoomButton: "/button/버튼(취소 및 부정).webp".normalize("NFD"),
+  roomCodeViewButton: "/button/버튼(수락 및 긍정).webp".normalize("NFD"),
+  roomCodeShareFrame: "/frame/방코드 발송 프레임.webp",
 }
 
 // 방 코드 가짜 값 (지금 부르는 곳 없음)

@@ -59,7 +59,7 @@ test("A-12: 서버 loadout 조회 결과가 편집기를 한 번도 열지 않�
 
   const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
   assert.equal(selectedBorderItemId, "profile-border-귀족")
-  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.webp".normalize("NFD"))
 })
 
 test("A-08: 계정 A에서 시작한 fetchSummary가 계정 B로 전환된 뒤 늦게 도착하면 B의 표시 테두리를 바꾸지 않는다", async () => {
@@ -118,6 +118,6 @@ test("로그아웃 후 표시는 기본값으로 돌아가고, 재로그인(같�
   assert.equal(useProfileCustomizationStore.getState().selectedBorderItemId, "profile-border-남작")
   assert.equal(
     useProfileCustomizationStore.getState().frameSrc,
-    "/shopItem/player- profileborder/프로필프레임-남작.png".normalize("NFD"),
+    "/shopItem/player- profileborder/프로필프레임-남작.webp".normalize("NFD"),
   )
 })

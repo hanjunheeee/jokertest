@@ -440,7 +440,7 @@ test("builder가 만든 sourcePlayers를 실제 mergeSourcePlayerWithPreview에 
     }),
   )
 
-  const preview = { id: "slot", nickname: "미리보기", portraitSrc: "p.png", frameSrc: "f.png", themeIndex: 0, theme: {} }
+  const preview = { id: "slot", nickname: "미리보기", portraitSrc: "p.webp", frameSrc: "f.webp", themeIndex: 0, theme: {} }
   const merged = result.sourcePlayers.map((player) => mergeSourcePlayerWithPreview(player, preview))
 
   assert.equal(merged[0].accountTotalGames, 3)

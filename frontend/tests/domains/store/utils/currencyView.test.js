@@ -85,8 +85,8 @@ test("상품 칸: 수량 맞는 묶음 그림을 쓰고, 없으면 재화 표시
     productId: "dia-50", kind: "DIAMOND_TOPUP", displayName: "다이아 50개", payCurrency: "KRW", payAmount: 5500,
     grantCurrency: "DIAMOND", grantAmount: 50, bonusAmount: 0, version: 1,
   })
-  assert.match(toCurrencyStoreItem(product).icon.normalize("NFC"), /다이아-50\.png$/)
-  assert.equal(toCurrencyStoreItem({ ...product, grantAmount: 77 }).icon.normalize("NFC"), "/button/재화 표시(다이아).png")
+  assert.match(toCurrencyStoreItem(product).icon.normalize("NFC"), /다이아-50\.webp$/)
+  assert.equal(toCurrencyStoreItem({ ...product, grantAmount: 77 }).icon.normalize("NFC"), "/button/재화 표시(다이아).webp")
   assert.equal(toCurrencyStoreItem(product).id, "currency:dia-50")
   assert.equal(parseProduct({ ...product, payCurrency: "DIAMOND" }), null)
 })

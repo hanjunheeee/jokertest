@@ -951,7 +951,7 @@ test("F-13 AC-03(CODEX-4): 실제 ProfileEditOptionGrid를 마운트하면 사�
   const afterGrid = renderGrid()
   const borderImgs = [...afterGrid.container.querySelectorAll("img")]
   assert.equal(borderImgs.length, 2, "업적으로 방금 획득한 테두리가 재오픈 없이도 실제 DOM 옵션에 즉시 추가되어야 한다")
-  const expectedNewBorderSrc = encodeURI("/shopItem/player- profileborder/프로필프레임-광대.png".normalize("NFC"))
+  const expectedNewBorderSrc = encodeURI("/shopItem/player- profileborder/프로필프레임-광대.webp".normalize("NFC"))
   assert.ok(borderImgs.some((img) => img.getAttribute("src") === expectedNewBorderSrc), "방금 업적으로 획득한 테두리 이미지가 실제 DOM에 없다")
   afterGrid.unmount()
 })

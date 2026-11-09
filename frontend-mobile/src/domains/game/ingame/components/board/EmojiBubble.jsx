@@ -4,7 +4,7 @@ import { findInGameEmoticonItem } from "@/domains/game/ingame/utils/findInGameEm
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 
 // 말풍선 틀 그림·시험이 찾는 표시 (데스크톱과 같은 값)
-const BUBBLE_SRC = "/frame/emoji/speech-bubble.png"
+const BUBBLE_SRC = "/frame/emoji/speech-bubble.webp"
 const BUBBLE_ATTR = "data-ingame-emoji-bubble"
 
 // 자리·크기는 데스크톱 그대로 (카드 바로 위 가운데, 카드 폭 42%·최대 4.5rem)

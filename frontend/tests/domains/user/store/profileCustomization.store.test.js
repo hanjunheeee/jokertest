@@ -60,7 +60,7 @@ test("applyEquippedPhoto는 서버 itemId를 실제 표시 자산으로 바꾸�
 
   const { photoSrc, frameSrc, selectedPhotoItemId } = useProfileCustomizationStore.getState()
   assert.equal(selectedPhotoItemId, "player-profile-기사")
-  assert.equal(photoSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(photoSrc, "/shopItem/player-profile/프로필-기사.webp".normalize("NFD"))
   assert.equal(frameSrc, PLAYER_PROFILE_ASSETS.defaultBorder)
 })
 
@@ -82,7 +82,7 @@ test("applyEquippedBorder는 서버 itemId를 실제 표시 자산으로 바꿔 
 
   const { frameSrc, selectedBorderItemId } = useProfileCustomizationStore.getState()
   assert.equal(selectedBorderItemId, "profile-border-귀족")
-  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.webp".normalize("NFD"))
 })
 
 test("applyEquippedBorder(null)은 기본 테두리로 되돌린다", () => {
@@ -119,9 +119,9 @@ test("economy store의 fetchSummary가 loadout을 채우면 사진·테두리 �
 
   const { photoSrc, frameSrc, selectedPhotoItemId, selectedBorderItemId } = useProfileCustomizationStore.getState()
   assert.equal(selectedPhotoItemId, "player-profile-기사")
-  assert.equal(photoSrc, "/shopItem/player-profile/프로필-기사.png".normalize("NFD"))
+  assert.equal(photoSrc, "/shopItem/player-profile/프로필-기사.webp".normalize("NFD"))
   assert.equal(selectedBorderItemId, "profile-border-귀족")
-  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"))
+  assert.equal(frameSrc, "/shopItem/player- profileborder/프로필프레임-귀족.webp".normalize("NFD"))
 })
 
 test("계정을 전환하면(economy store reset) 표시 사진·테두리도 기본값으로 되돌아간다(F-13 AC-04)", async () => {

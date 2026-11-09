@@ -10,14 +10,14 @@ import { PLAYER_PROFILE_ASSETS } from "../../../src/shared/constants/playerProfi
 test("유효한 player-profile-* itemId는 실제 사진 자산 경로로 바뀐다", () => {
   assert.equal(
     resolveAccountProfilePhotoSrc("player-profile-기사"),
-    "/shopItem/player-profile/프로필-기사.png".normalize("NFD"),
+    "/shopItem/player-profile/프로필-기사.webp".normalize("NFD"),
   )
 })
 
 test("유효한 profile-border-* itemId는 실제 테두리 자산 경로로 바뀐다", () => {
   assert.equal(
     resolveAccountProfileBorderSrc("profile-border-귀족"),
-    "/shopItem/player- profileborder/프로필프레임-귀족.png".normalize("NFD"),
+    "/shopItem/player- profileborder/프로필프레임-귀족.webp".normalize("NFD"),
   )
 })
 

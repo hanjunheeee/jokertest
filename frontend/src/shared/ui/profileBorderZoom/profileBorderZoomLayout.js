@@ -7,7 +7,7 @@ export const ZOOM_TRANSITION = {
 }
 
 export const PROFILE_BORDER_ZOOM_CLOSE_BUTTON_SRC =
-  "/button/팝업 닫기 버튼.png".normalize("NFD")
+  "/button/팝업 닫기 버튼.webp".normalize("NFD")
 
 export const BACKDROP_CLASS =
   "fixed inset-0 z-40 cursor-default border-0 bg-[#1a0f0a]/62 p-0 backdrop-blur-[4px]"

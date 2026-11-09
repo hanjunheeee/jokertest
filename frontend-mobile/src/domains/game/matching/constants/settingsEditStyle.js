@@ -3,7 +3,7 @@
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 // 양피지 그림 (서버 파일 이름이 NFC·NFD 어느 쪽이어도 보이게 두 겹), 가운데 종이 부분만
-const PARCHMENT = "/frame/양피지 모달.png"
+const PARCHMENT = "/frame/양피지 모달.webp"
 export const PARCHMENT_STYLE = {
   backgroundColor: "#cdb48c",
   backgroundImage: `url("${publicAsset(PARCHMENT)}"), url("${encodeURI(PARCHMENT.normalize("NFD"))}")`,

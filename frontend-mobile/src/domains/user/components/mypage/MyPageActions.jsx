@@ -5,7 +5,7 @@ import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 
 // 데스크톱 MyPageFramedButton 그림·글자 모양, 그림 비율 그대로 (칸 폭 160px 이상이라 높이 44px 넘음)
 // 데스크톱 hover 흐림을 누를 때로 옮김, 가로 화면은 줄 폭을 줄여 버튼 높이를 낮춤
-const FRAME_SRC = "/button/버튼 프레임1.png"
+const FRAME_SRC = "/button/버튼 프레임1.webp"
 const FRAME_LOOK = {
     button: "relative block w-full cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity active:opacity-85",
     img: "block h-auto w-full select-none",
