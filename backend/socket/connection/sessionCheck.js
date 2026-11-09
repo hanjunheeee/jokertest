@@ -11,6 +11,10 @@ const SESSION_CHECK_INTERVAL_MS = 5000;
 // 다른 서버·관리자 서버가 끊은 세션은 늦어도 이 시간 안에 막힘 (관리자 정지는 즉시 끊기 통로가 따로 끊음)
 const EVENT_CHECK_CACHE_MS = SESSION_CHECK_INTERVAL_MS;
 
+// 확인 하나가 이 시간 넘게 답이 없으면 실패로 봄 (DB 연결이 말없이 멈추면 그 확인을 기다리는 소켓 전원이 멈추던 것 막기)
+// 실패면 사건은 SESSION_CHECK_FAILED 답, 주기 검사는 실패로 셈, 다음 확인은 새로 물음 (부하 시험 2026-11-09에 겪음)
+const SESSION_CHECK_TIMEOUT_MS = 5000;
+
 // 주기 검사가 DB 오류로 이만큼 연달아 실패해야 끊음 (DB 잠깐 흔들림에 접속자 전원 끊김 막기, BE-010)
 const WATCH_FAILURE_LIMIT = 3;
 
@@ -71,6 +75,20 @@ async function checkSocketSession(socket) {
     return sessionLifecycle.resolveSession(socket.data.user, { batch: true });
 }
 
+// 답이 SESSION_CHECK_TIMEOUT_MS 안에 안 오면 실패로 (늦게 온 답은 버림)
+function withCheckTimeout(promise) {
+    let timer = null;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const error = new Error("세션 확인 시간 초과");
+            error.name = "SessionCheckTimeout";
+            reject(error);
+        }, SESSION_CHECK_TIMEOUT_MS);
+        timer.unref?.();
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 // 확인 한 번, 통과면 묻기 시작한 시각을 통과 시각으로
 // 같은 소켓 확인이 진행 중이면 같이 기다림 (단 그 확인이 끊김 알림 전에 시작했으면 새로 물음)
 function runCheck(socket) {
@@ -79,7 +97,7 @@ function runCheck(socket) {
     if (state.pending && (revoked === undefined || state.pendingStartedAt > revoked)) return state.pending;
     const startedAt = Date.now();
     state.pendingStartedAt = startedAt;
-    const pending = checkSocketSession(socket)
+    const pending = withCheckTimeout(checkSocketSession(socket))
         .then((result) => {
             if (result?.ok) state.okAt = Math.max(state.okAt, startedAt);
             return result;
@@ -177,6 +195,7 @@ function startSessionRevocationWatcher(socket) {
 
 module.exports = {
     SESSION_CHECK_INTERVAL_MS,
+    SESSION_CHECK_TIMEOUT_MS,
     EVENT_CHECK_CACHE_MS,
     WATCH_FAILURE_LIMIT,
     isLongTokenExpired,

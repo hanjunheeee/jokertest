@@ -161,3 +161,28 @@ test('질의 로그: 운영은 늘 끔, 개발은 DB_LOG_QUERIES=1일 때만 con
     assert.equal(pickQueryLogging(undefined, { DB_LOG_QUERIES: '0' }), false)
     assert.equal(db.sequelize.options.logging, false, '시험 환경(값 없음)도 끔')
 })
+
+test('확인 시간 초과: DB가 말없이 안 답하면 정한 시간 뒤 실패로 답하고(연결 유지), 다음 사건은 새로 물음', async (t) => {
+    let calls = 0
+    t.mock.method(sessionLifecycle, 'resolveSession', () => {
+        calls += 1
+        if (calls === 1) return new Promise(() => {})
+        return Promise.resolve({ ok: true })
+    })
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const socket = auth.wrapSocketWithSessionGuard(makeSocket('stuck'))
+    let handled = 0
+    socket.on('chat', () => { handled += 1 })
+
+    let ack = null
+    const first = socket.fire('chat', (res) => { ack = res })
+    await flush(2)
+    t.mock.timers.tick(sessionCheck.SESSION_CHECK_TIMEOUT_MS)
+    await first
+    assert.equal(ack?.code, 'SESSION_CHECK_FAILED')
+    assert.equal(socket.disconnected, 0)
+
+    await socket.fire('chat')
+    assert.equal(calls, 2, '멈춘 확인을 계속 기다리지 않고 새로 물음')
+    assert.equal(handled, 1)
+})
