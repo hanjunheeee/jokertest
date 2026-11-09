@@ -440,3 +440,26 @@ test("GOOGLE_CLIENT_ID/REDIRECT_URI가 설정되어 있으면 인가 URL에 하�
     assert.match(url, /redirect_uri=https/);
     assert.match(url, /state=state-abc/);
 });
+
+// 소셜 키 없는 서버 (브라우저 시험 auth #3, 2026-11-09): JSON 500 화면 말고 로그인 화면으로 돌려보냄
+test("Google 키가 없으면 GET /auth/google은 로그인 화면 socialError=GOOGLE_OAUTH_NOT_CONFIGURED로 돌려보내고 시도 쿠키를 안 남긴다", async (t) => {
+    const realBuild = googleOAuthService.buildAuthorizationUrl;
+    const saved = { id: process.env.GOOGLE_CLIENT_ID, uri: process.env.GOOGLE_REDIRECT_URI };
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_REDIRECT_URI;
+    t.after(() => {
+        if (saved.id !== undefined) process.env.GOOGLE_CLIENT_ID = saved.id;
+        if (saved.uri !== undefined) process.env.GOOGLE_REDIRECT_URI = saved.uri;
+    });
+    stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        issueOAuthState: async () => ({ state: "no-key-state", expiresAt: new Date() }),
+    });
+    stubModule(t, googleOAuthService, GOOGLE_KEYS, { buildAuthorizationUrl: (...args) => realBuild(...args) });
+    const base = await startServer(t);
+
+    const res = await rawGet(base, "/auth/google?client=mobile");
+
+    assert.equal(res.statusCode, 302);
+    assert.match(res.headers.location, /\/login\?socialError=GOOGLE_OAUTH_NOT_CONFIGURED$/);
+    assert.equal(findSetCookie(res.headers, "oauthAttempt"), undefined);
+});

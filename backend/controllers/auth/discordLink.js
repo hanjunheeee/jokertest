@@ -2,33 +2,36 @@
 // routes/auth.routes.js가 부름 (로그인 확인은 여기서), 결과는 계정 화면(/account)으로 돌려보냄
 const socialAuthService = require("../../services/auth/social");
 const discordOAuthService = require("../../services/auth/oauth/discord");
-const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions } = require('./cookies');
+const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions, redirectStartError } = require('./cookies');
 const { verifyOAuthAttempt, ATTEMPT_TTL_SECONDS } = require("../../services/auth/social");
 const { authenticateRequest } = require("../../middlewares/auth.middleware");
 
 // 브라우저가 바로 여는 주소라 로그인 실패도 계정 화면 code로 (JSON 401 화면에 머물지 않게)
 const SESSION_EXPIRED_CODE = "SESSION_EXPIRED";
 
-// 로그인 확인 → 지금 세션에 묶인 연결용 state 발급 → 시도 쿠키 → 인가 주소로
-exports.discordLinkStart = async (req, res, next) => {
+// 로그인 확인 → 지금 세션에 묶인 연결용 state 발급 → 인가 주소 → 시도 쿠키 → 디스코드로
+// 시작 실패(키 없음 등)도 계정 화면 code로 (JSON 500 화면에 머물지 않게, 2026-11-09)
+exports.discordLinkStart = async (req, res) => {
+    const client = socialAuthService.parseClient(req.query.client);
+    const frontendBase = socialAuthService.resolveFrontendBase(client);
     try {
         // access 만료·세션 끊김이면 계정 화면으로 (화면이 refresh 뒤 다시 누르게)
         const auth = await authenticateRequest(req);
         if (!auth.ok) {
-            const frontendBase = socialAuthService.resolveFrontendBase(socialAuthService.parseClient(req.query.client));
             return res.redirect(`${frontendBase}/account?socialLinkError=${SESSION_EXPIRED_CODE}`);
         }
         req.user = auth.user;
 
         const { state, attemptToken } = await socialAuthService.startDiscordLink({
-            userId: req.user.uuid, sessionId: req.user.sessionId,
-            client: socialAuthService.parseClient(req.query.client),
+            userId: req.user.uuid, sessionId: req.user.sessionId, client,
         });
+        // 키 없으면 여기서 던짐 → 시도 쿠키 안 남김
+        const authorizationUrl = discordOAuthService.buildAuthorizationUrl(state, { purpose: "link" });
         res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, attemptCookieOptions(ATTEMPT_TTL_SECONDS));
 
-        res.redirect(discordOAuthService.buildAuthorizationUrl(state, { purpose: "link" }));
+        res.redirect(authorizationUrl);
     } catch (error) {
-        next(error);
+        redirectStartError(res, frontendBase, error, { page: "account", param: "socialLinkError" });
     }
 };
 

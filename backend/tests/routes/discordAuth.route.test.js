@@ -673,3 +673,62 @@ test("연결 콜백에 세션이 끝난 토큰이면 JSON 401 대신 계정 화�
     assert.match(findSetCookie(res.headers, "oauthAttempt") ?? "", /^oauthAttempt=;/);
     assert.equal(social.calls.length, 0);
 });
+
+// 소셜 키 없는 서버 (브라우저 시험 auth #3·mypage M-2, 2026-11-09): JSON 500 화면 말고 화면 주소로 돌려보냄
+const withoutEnv = (t, names) => {
+    const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+    for (const name of names) delete process.env[name];
+    t.after(() => {
+        for (const [name, value] of Object.entries(saved)) {
+            if (value === undefined) delete process.env[name]; else process.env[name] = value;
+        }
+    });
+};
+
+test("Discord 키가 없으면 GET /auth/discord는 로그인 화면 socialError=DISCORD_OAUTH_NOT_CONFIGURED로 돌려보내고 시도 쿠키를 안 남긴다", async (t) => {
+    const realBuild = discordOAuthService.buildAuthorizationUrl;
+    withoutEnv(t, ["DISCORD_CLIENT_ID", "DISCORD_REDIRECT_URI"]);
+    stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        issueOAuthState: async () => ({ state: "no-key-state", expiresAt: new Date() }),
+    });
+    stubModule(t, discordOAuthService, DISCORD_KEYS, { buildAuthorizationUrl: (...args) => realBuild(...args) });
+    const base = await startServer(t);
+
+    const res = await rawGet(base, "/auth/discord");
+
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/login?socialError=DISCORD_OAUTH_NOT_CONFIGURED`);
+    assert.equal(findSetCookie(res.headers, "oauthAttempt"), undefined);
+});
+
+test("Discord 키가 없으면 GET /auth/discord/link는 계정 화면 socialLinkError=DISCORD_OAUTH_NOT_CONFIGURED로 돌려보낸다", async (t) => {
+    const realBuild = discordOAuthService.buildAuthorizationUrl;
+    withoutEnv(t, ["DISCORD_CLIENT_ID", "DISCORD_LINK_REDIRECT_URI"]);
+    stubAuthGate(t);
+    stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        issueOAuthState: async () => ({ state: "no-key-link-state", expiresAt: new Date() }),
+    });
+    stubModule(t, discordOAuthService, DISCORD_KEYS, { buildAuthorizationUrl: (...args) => realBuild(...args) });
+    const base = await startServer(t);
+
+    const res = await rawGet(base, "/auth/discord/link", { cookie: linkAccessTokenCookie() });
+
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/account?socialLinkError=DISCORD_OAUTH_NOT_CONFIGURED`);
+    assert.equal(findSetCookie(res.headers, "oauthAttempt"), undefined);
+});
+
+test("시작 단계에서 코드 없는 오류가 나도 로그인 화면 socialError=OAUTH_FAILED로 돌려보낸다 (JSON 500 아님)", async (t) => {
+    stubModule(t, socialAuthService, SOCIAL_KEYS, {
+        issueOAuthState: async () => { throw new Error("db down"); },
+    });
+    const base = await startServer(t);
+    const originalError = console.error;
+    console.error = () => {};
+    t.after(() => { console.error = originalError; });
+
+    const res = await rawGet(base, "/auth/discord");
+
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, `${process.env.FRONTEND_URL}/login?socialError=OAUTH_FAILED`);
+});

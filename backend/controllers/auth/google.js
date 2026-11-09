@@ -4,21 +4,23 @@ const socialAuthService = require("../../services/auth/social");
 const googleOAuthService = require("../../services/auth/oauth/google");
 const { getDeviceType, getClientIp } = require("../../utils/request");
 const { buildSessionCookieOptions, buildRefreshCookieOptions, clearRefreshCookie } = require("../../utils/auth/cookieOptions");
-const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions } = require('./cookies');
+const { OAUTH_ATTEMPT_COOKIE, attemptCookieOptions, redirectStartError } = require('./cookies');
 const { verifyOAuthAttempt, ATTEMPT_TTL_SECONDS, INTENT_TTL_SECONDS } = require("../../services/auth/social");
 
-// state 발급 → 시도 쿠키(브라우저 지문·로그인 유지) → 구글 인가 주소로
-exports.googleAuthStart = async (req, res, next) => {
+// state 발급 → 인가 주소 → 시도 쿠키(브라우저 지문·로그인 유지) → 구글로
+// 시작 실패(키 없음 등)도 로그인 화면 code로 (브라우저가 여는 주소라 JSON 500 화면에 머물지 않게, 2026-11-09)
+exports.googleAuthStart = async (req, res) => {
+    const client = socialAuthService.parseClient(req.query.client);
     try {
         const rememberMe = req.query.rememberMe === "true";
-        const { state, attemptToken } = await socialAuthService.startGoogleLogin({
-            rememberMe, client: socialAuthService.parseClient(req.query.client),
-        });
+        const { state, attemptToken } = await socialAuthService.startGoogleLogin({ rememberMe, client });
+        // 키 없으면 여기서 던짐 → 시도 쿠키 안 남김
+        const authorizationUrl = googleOAuthService.buildAuthorizationUrl(state);
         res.cookie(OAUTH_ATTEMPT_COOKIE, attemptToken, attemptCookieOptions(ATTEMPT_TTL_SECONDS));
 
-        res.redirect(googleOAuthService.buildAuthorizationUrl(state));
+        res.redirect(authorizationUrl);
     } catch (error) {
-        next(error);
+        redirectStartError(res, socialAuthService.resolveFrontendBase(client), error);
     }
 };
 
