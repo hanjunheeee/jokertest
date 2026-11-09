@@ -35,11 +35,13 @@ in_node() {
     esac
 }
 
-# 관리자 통로 부르기 (열쇠는 컨테이너 환경값, 안 찍음) → field 값 한 줄 또는 실패
+# 관리자 통로 부르기 (열쇠는 컨테이너 환경값, 안 찍음) → field 값 한 줄 또는 실패, body는 JSON 글 (드레인 끄기 등)
 internal_call_on() {
-    local target="$1" method="$2" path="$3" field="${4:-}"
-    in_node "$target" env CALL_METHOD="$method" CALL_PATH="$path" CALL_FIELD="$field" node -e '
-fetch("http://127.0.0.1:4000" + process.env.CALL_PATH, { method: process.env.CALL_METHOD, headers: { "X-Internal-Key": process.env.INTERNAL_API_KEY || "" } })
+    local target="$1" method="$2" path="$3" field="${4:-}" body="${5:-}"
+    in_node "$target" env CALL_METHOD="$method" CALL_PATH="$path" CALL_FIELD="$field" CALL_BODY="$body" node -e '
+const body = process.env.CALL_BODY || undefined;
+const headers = { "X-Internal-Key": process.env.INTERNAL_API_KEY || "", ...(body ? { "Content-Type": "application/json" } : {}) };
+fetch("http://127.0.0.1:4000" + process.env.CALL_PATH, { method: process.env.CALL_METHOD, headers, body })
   .then(async (r) => { if (!r.ok) { console.error("status " + r.status); process.exit(1); } const j = await r.json(); if (process.env.CALL_FIELD) console.log(j[process.env.CALL_FIELD]); })
   .catch((e) => { console.error(e.message); process.exit(1); });'
 }
@@ -75,16 +77,18 @@ const n=(Array.isArray(j)?j:(j.nodes||[])).find(x=>x.id===process.env.NODE_ID);c
 }
 
 # 드레인 → 그 Node 판·방 0개까지, DRAIN_MAX_MINUTES(기본 40) 넘으면 DRAIN_FORCE=1일 때만 진행
+# 시간 넘겨 멈출 땐 드레인 다시 끔 (안 끄면 그 Node가 다시 켤 때까지 새 로비 접속·방 만들기를 안 받음)
 drain_node() {
     local id="$1" target="$2" until left
-    internal_call_on "$target" POST "/internal/nodes/$id/drain" >/dev/null || { log "$id 드레인 통로 없음(옛 버전?) → 이번 배포는 DEPLOY_ROLLING=0으로"; return 1; }
+    internal_call_on "$target" POST "/internal/nodes/$id/drain" >/dev/null || { log "$id 드레인 통로 없음(옛 버전·INTERNAL_API_KEY 32자 미만?) → 이번 배포는 DEPLOY_ROLLING=0으로"; return 1; }
     until=$(( $(date +%s) + ${DRAIN_MAX_MINUTES:-40} * 60 ))
     while :; do
         left="$(node_load "$target" "$id")"
         [ "$left" = "0" ] && { log "$id 판·방 0개"; return 0; }
         if [ "$(date +%s)" -ge "$until" ]; then
             [ "${DRAIN_FORCE:-0}" = "1" ] && { log "$id 판·방 $left 남음, DRAIN_FORCE=1 → 진행"; return 0; }
-            log "$id 판·방이 ${DRAIN_MAX_MINUTES:-40}분 안에 안 끝남 ($left) → 멈춤 (그 Node만 점검 안내 뒤 DRAIN_FORCE=1)"; return 1
+            internal_call_on "$target" POST "/internal/nodes/$id/drain" "" '{"draining":false}' >/dev/null || log "$id 드레인 끄기 실패 → 그 Node 다시 켜기 전까지 새 접속 안 받음"
+            log "$id 판·방이 ${DRAIN_MAX_MINUTES:-40}분 안에 안 끝남 ($left) → 드레인 끄고 멈춤 (그 Node만 점검 안내 뒤 DRAIN_FORCE=1)"; return 1
         fi
         log "$id 남은 판·방 $left → 15초 뒤 다시"; sleep 15
     done
@@ -105,7 +109,7 @@ stop_removed_nodes() {
     done
 }
 
-# Node 하나씩 바꾸기: 드레인 → 새 이미지로 다시 만들기 → /health (새 부팅은 드레인 꺼진 채 켜짐) → 줄어든 Node 끔 → nginx
+# Node 하나씩 바꾸기: 드레인 → 새 이미지로 다시 만들기(같은 태그여도) → /health (새 부팅은 드레인 꺼진 채 켜짐) → 줄어든 Node 끔 → nginx
 roll_to() {
     export IMAGE_TAG="$1"
     gen_nodes
@@ -115,7 +119,8 @@ roll_to() {
         svc="$(service_of "$id")"
         if running "$svc"; then drain_node "$id" "$svc" || return 1; fi
         log "$id 바꾸기 ($svc → $IMAGE_TAG)"
-        compose up -d --no-build --no-deps "$svc"
+        # 늘 다시 만듦: 태그가 같으면(되돌리기·같은 태그 다시 배포) compose가 그대로 둬서 드레인 켜진 채 남음 → 새 부팅은 드레인 꺼짐
+        compose up -d --no-build --no-deps --force-recreate "$svc"
         wait_healthy "$svc" || return 1
     done
     stop_removed_nodes || return 1
