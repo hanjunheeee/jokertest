@@ -288,7 +288,11 @@ test('day vote timer: 미투표 생존자의 표가 기권으로 집계되고 �
 
     const delivered = directEmits(sockets, 'day_vote_resolved')
     assert.equal(delivered.length, session.players.size, '참가자 전원이 판정 결과를 받는다')
-    assert.deepEqual(delivered[0][1], gameSessionCore.buildDayVoteResolvedPayload(session, resolution))
+    // 재판으로 가면 재판 마감 시각도 실림 (2026-11-09, 실시간 재판 남은 시간)
+    assert.deepEqual(delivered[0][1], {
+        ...gameSessionCore.buildDayVoteResolvedPayload(session, resolution),
+        tribunalDeadline: session.tribunalDeadline,
+    })
     assert.equal(channelBroadcasts(io, 'day_vote_resolved').length, 0, '개별 emit 경로를 그대로 쓴다')
 })
 

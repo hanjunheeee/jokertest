@@ -347,3 +347,48 @@ test('BE-003: 재판 중 스냅샷에 재판 마감 시각이 실린다 (칸 더
     assert.equal(snap.ok, true)
     assert.equal(snap.snapshot.tribunalDeadline, session.tribunalDeadline)
 })
+
+// 인게임 화면 시험 (2026-11-09): 실시간으로 재판에 들어가면 남은 시간이 안 보이던 문제
+// day_vote_resolved를 재판 타이머보다 먼저 보내 tribunalDeadline이 안 실렸음 → 재판으로 갈 땐 타이머 먼저 걸고 마감을 실음
+test('재판으로 넘어가는 day_vote_resolved엔 tribunalDeadline이 실리고 판에 적힌 재판 마감과 같다', () => {
+    const { session, uuids } = commitFivePlayerSession('tribunal-deadline-live', { dayVoteTime: 30, tribunalTime: 45 })
+    const { io, sockets } = wireSession(session)
+    const clock = createManualClock()
+    toDayVote(session)
+    startDayPhaseTimer(io, session, { ...clock, voteDurationMs: 30_000 })
+
+    const defendant = uuids[1]
+    for (const uuid of uuids) gameSessionCore.submitDayVote(uuid, session.id, uuid === defendant ? uuids[0] : defendant)
+    clock.advance(30_000)
+
+    assert.equal(session.phase, 'TRIBUNAL')
+    const resolved = directEmits(sockets, 'day_vote_resolved')
+    assert.equal(resolved.length, uuids.length)
+    for (const payload of resolved) {
+        assert.equal(payload.phase, 'TRIBUNAL')
+        assert.equal(Number.isFinite(payload.tribunalDeadline), true, JSON.stringify(payload))
+        assert.equal(payload.tribunalDeadline, session.tribunalDeadline)
+        assert.equal(Object.hasOwn(payload, 'dayPhaseDeadline'), false)
+    }
+    // 마감은 하나 (방송 뒤 타이머 맞추기가 새로 안 걺)
+    assert.equal(__getTribunalRunForTests(session.id).deadline, session.tribunalDeadline)
+})
+
+test('밤으로 넘어가는 day_vote_resolved엔 tribunalDeadline이 없다', () => {
+    const { session, uuids } = commitFivePlayerSession('tribunal-deadline-night')
+    const { io, sockets } = wireSession(session)
+    const clock = createManualClock()
+    toDayVote(session)
+    startDayPhaseTimer(io, session, { ...clock, voteDurationMs: 30_000 })
+    const [a, b, c, d] = uuids
+    gameSessionCore.submitDayVote(a, session.id, c)
+    gameSessionCore.submitDayVote(b, session.id, c)
+    gameSessionCore.submitDayVote(c, session.id, a)
+    gameSessionCore.submitDayVote(d, session.id, a)
+    clock.advance(30_000)
+
+    assert.equal(session.phase, 'NIGHT')
+    for (const payload of directEmits(sockets, 'day_vote_resolved')) {
+        assert.equal(Object.hasOwn(payload, 'tribunalDeadline'), false)
+    }
+})

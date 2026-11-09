@@ -152,13 +152,29 @@ function expireDayVote(run) {
 // 낮 투표 판정 결과 방송 + 다음 단계 타이머, 순서는 다음 단계에 따라 (버튼·마감·이탈 뒤 판정이 같이 씀)
 // 낮에 남으면 타이머 먼저 (재투표 없어져 지금은 안 생김, 사용자 결정 2026-11-09 · known 1-13)
 // 재판·밤으로 가면 방송 먼저: 유예 만료 이탈·밤 턴 방송이 판정 결과보다 앞서지 않게
+// 재판이면 재판 마감만 방송 전에 걸어 결과에 tribunalDeadline 실음 (안 실으면 새로고침해야 남은 시간 보였음, 2026-11-09)
+// 재판 마감 걸기는 방송·유예 만료가 없어 판정 결과보다 앞서는 사건 없음, 뒤 타이머 맞추기는 같은 마감을 그대로 씀
 function announceDayVoteResolved(io, session, resolution, label, fields, deliver) {
     const syncTimers = () => isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))
     const staysDay = session.phase === 'DAY'
     if (staysDay) syncTimers()
-    const payload = attachDayPhaseDeadline(gameSessionCore.buildDayVoteResolvedPayload(session, resolution), session)
+    if (session.phase === 'TRIBUNAL') {
+        isolate(label, { code: 'TIMER_START_ERROR', ...fields }, () => startTribunalTimer(io, session))
+    }
+    const payload = attachTribunalDeadline(
+        attachDayPhaseDeadline(gameSessionCore.buildDayVoteResolvedPayload(session, resolution), session), session,
+    )
     deliver(payload)
     if (!staysDay) syncTimers()
+}
+
+// 재판 중이고 마감이 걸려 있으면 방송에 재판 마감 시각 붙임 (스냅샷 tribunalDeadline과 같은 값)
+function attachTribunalDeadline(payload, session) {
+    if (payload === null || typeof payload !== 'object') return payload
+    if (session?.phase !== 'TRIBUNAL') return payload
+    const deadline = session.tribunalDeadline
+    if (!Number.isFinite(deadline) || deadline <= 0) return payload
+    return { ...payload, tribunalDeadline: deadline }
 }
 
 // 낮 타이머 시작: 판마다 run 하나 (토론·투표 길이는 방 설정, 없으면 기본값)
