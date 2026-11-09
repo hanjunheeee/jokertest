@@ -127,6 +127,10 @@ const {
 } = require('./matchmaking/room/sessionCleanup')
 // 점검 중 거절 (방 만들기·시작·코드 입장·자동 매칭만)
 const { rejectDuringMaintenance } = require('./matchmaking/join/maintenanceGate')
+// Node 여러 개: 초대 방 접근자(다른 Node는 RPC)·공개 방 목록 합치기·빠른 매칭 끄기
+const { createInviteAccess } = require('./matchmaking/cluster/inviteAccess')
+const { bindRoomListIo } = require('./matchmaking/cluster/roomListSync')
+const { isRandomMatchAllowed } = require('./matchmaking/join/queue')
 
 // 방 지우기 답 함수: 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
 function pickDeleteRoomCallback(payload, callback) {
@@ -138,6 +142,9 @@ function pickDeleteRoomCallback(payload, callback) {
 // 소켓 하나에 방·매칭 사건 받기 등록, async 처리기는 catch로 에러만 남김 (처리 안 된 거절 막기)
 // getCurrentSocketId = 계정의 지금 소켓 id, 옛 탭 요청 거르려고 방장 행동·설정·시작에 넘김
 function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = {}) {
+    // Node 여러 개: 다른 Node 방 목록을 이 io로 보냄 + 빠른 매칭 켜 놨으면 경고 (단일 모드는 아무것도 안 함)
+    bindRoomListIo(io)
+    isRandomMatchAllowed()
     // 자동 매칭 줄 서기·빠지기
     socket.on('join_matchmaking', () => {
         if (rejectDuringMaintenance(socket, null)) return undefined
@@ -220,8 +227,8 @@ function registerMatchmakingHandlers(io, socket, uuid, { getCurrentSocketId } = 
 }
 
 // 초대 서비스에 방 상태 읽는 함수 묶음 넣어 줌 (이 파일 처음 불릴 때 한 번)
-// 서비스가 socket을 거꾸로 require 안 하게 하려는 것
-gameInviteModule.__setRoomAccessForRuntime({
+// 서비스가 socket을 거꾸로 require 안 하게 하려는 것, Node 여러 개면 내 Node에 없을 때 다른 Node에 RPC (cluster/inviteAccess.js)
+gameInviteModule.__setRoomAccessForRuntime(createInviteAccess({
     bootEpoch: BOOT_EPOCH,
 
     // 보내는 사람이 지금 있는 방 id
@@ -255,7 +262,7 @@ gameInviteModule.__setRoomAccessForRuntime({
         if (getAdmissionAttempt(uuid)) return { available: false, code: 'RECEIVER_TRANSITIONING' }
         return { available: true, code: null }
     },
-})
+}))
 
 // 시험 손잡이 (장부 비우기·넣기·복사본, matchmaking/testHooks.js)
 const {

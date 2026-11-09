@@ -29,9 +29,10 @@ function assertInviteInput({ senderId, receiverId, creationKey }) {
 }
 
 // 보낸 사람 대기방 확인: 없음·꽉 참이면 409, 기대한 방과 다르면 ROOM_STATE_CHANGED
-function requireSenderRoom(senderId, expected = null) {
-    const currentId = getRoomAccess().getRoomIdForUser(senderId);
-    const current = currentId ? getRoomAccess().describeRoomForInvite(currentId) : null;
+// 방 접근자는 Node 여러 개면 다른 Node 방을 RPC로 읽어서 기다림 (방 정보의 bootEpoch = 방 Node 값)
+async function requireSenderRoom(senderId, expected = null) {
+    const currentId = await getRoomAccess().getRoomIdForUser(senderId);
+    const current = currentId ? await getRoomAccess().describeRoomForInvite(currentId) : null;
     if (!current) throw createError('초대를 보낼 대기방이 없습니다.', 409);
     if (current.isFull) throw createError('방이 가득 차 초대를 보낼 수 없습니다.', 409);
     if (expected !== null
@@ -66,7 +67,7 @@ async function assertFriendInvitable(senderId, receiverId, t) {
 async function insertInviteWithNotification(db, invite, room, t) {
     const { senderId, receiverId, normalizedKey, bootEpoch, createdAt, expiresAt } = invite;
     const sender = await userLookup.findNickname(db, senderId, t);
-    requireSenderRoom(senderId, room);
+    await requireSenderRoom(senderId, room);
 
     const inviteRow = await gameInviteRepository.createInviteRow(db, {
         id: getDeps().newId(),
@@ -101,7 +102,7 @@ async function writeInvite(db, invite, t) {
     await lockInviteAccounts(senderId, receiverId, t);
 
     // 잠그는 사이 방 바뀌었을 수 있어 다시 확인
-    const room = requireSenderRoom(senderId);
+    const room = await requireSenderRoom(senderId);
 
     // 같은 만들기 키면 처음 초대 그대로 (다시 보내도 안전), 다른 상대·방이면 409
     const existing = await gameInviteRepository.findByCreationKey(db, { senderId, creationKey: normalizedKey }, t);
@@ -129,7 +130,7 @@ async function writeInvite(db, invite, t) {
     }
 
     // 받는 사람이 지금 초대 받을 수 있는지 (판정은 matchmaking 방 접근자가 함)
-    const availability = getRoomAccess().describeReceiverAvailability(receiverId);
+    const availability = await getRoomAccess().describeReceiverAvailability(receiverId);
     if (!availability.available) {
         throw createError('지금은 상대를 초대할 수 없습니다.', 409, availability.code);
     }
@@ -143,15 +144,16 @@ async function createInvite({ senderId, receiverId, creationKey }) {
     const normalizedKey = assertInviteInput({ senderId, receiverId, creationKey });
 
     // 트랜잭션 열기 전에 한 번 (방 없으면 DB 안 감)
-    requireSenderRoom(senderId);
+    const senderRoom = await requireSenderRoom(senderId);
 
     // 부팅 epoch 같이 저장 (서버 다시 켜지면 옛 초대 수락 거절용)
+    // 방 Node 값을 씀: 초대 HTTP가 방 없는 Node로 와도 방 Node에서 수락이 SERVER_RESTARTED로 안 막힘 (위험 #18, MN-004·005)
     const createdAt = now();
     const invite = {
         senderId,
         receiverId,
         normalizedKey,
-        bootEpoch: getRoomAccess().bootEpoch,
+        bootEpoch: senderRoom.bootEpoch ?? getRoomAccess().bootEpoch,
         createdAt,
         expiresAt: new Date(createdAt.getTime() + INVITE_TTL_MS),
     };
