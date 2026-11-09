@@ -97,6 +97,7 @@ test("S-2: 서버 장부 이유 코드는 전부 우리말로 보임 (영어 코
     DIAMOND_TOPUP: "다이아 충전", GOLD_PURCHASE: "골드 구매", PURCHASE: "상점 구매", DEFAULT_GRANT: "기본 지급",
     ACHIEVEMENT_REWARD: "업적 보상", COUPON_REWARD: "쿠폰 보상", REWARD: "보상",
     QA_TEST_GRANT_GOLD: "시험 지급", QA_TEST_GRANT_DIAMOND: "시험 지급", EVENT_COMPENSATION_GOLD: "이벤트 보상",
+    ADMIN_GRANT: "운영팀 지급", ADMIN_REVOKE: "운영팀 회수", TOPUP_REFUND: "충전 환불",
   }
   for (const [code, label] of Object.entries(expected)) assert.equal(historyReasonLabel(code), label, code)
   // 모르는 코드도 영어 그대로 말고 "기타"

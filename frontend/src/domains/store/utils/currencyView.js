@@ -95,6 +95,7 @@ const HISTORY_REASONS = {
   DIAMOND_TOPUP: "다이아 충전", GOLD_PURCHASE: "골드 구매", PURCHASE: "상점 구매", DEFAULT_GRANT: "기본 지급", ACHIEVEMENT_REWARD: "업적 보상",
   COUPON_REWARD: "쿠폰 보상", REWARD: "보상",
   QA_TEST_GRANT_GOLD: "시험 지급", QA_TEST_GRANT_DIAMOND: "시험 지급", EVENT_COMPENSATION_GOLD: "이벤트 보상",
+  ADMIN_GRANT: "운영팀 지급", ADMIN_REVOKE: "운영팀 회수", TOPUP_REFUND: "충전 환불",
 }
 const HISTORY_CURRENCIES = { DIAMOND: "다이아", GOLD: "골드" }
 export const historyReasonLabel = (reason) =>
