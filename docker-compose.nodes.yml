@@ -1,0 +1,4 @@
+# 생성 파일, 손으로 고치지 말고 다시 만들기: node deploy/scripts/gen-nodes.js (docs/배포_설정.md 7장)
+# Node 1개: n1 = docker-compose.yml의 backend, 나머지는 아래 (같은 이미지·환경값, SERVER_ID만 다름)
+# 쓰는 법: docker compose -f docker-compose.yml [-f docker-compose.prod.yml] -f docker-compose.nodes.yml up -d
+services: {}

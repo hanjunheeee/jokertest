@@ -1,5 +1,6 @@
 # 운영 서버에서만 docker-compose.yml 위에 겹쳐 씀 (로컬은 이 파일 안 씀)
 # docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+# Node 여러 개면 -f docker-compose.nodes.yml도 (deploy/scripts/gen-nodes.js가 만듦)
 # 쓰는 법: docs/배포_설정.md
 services:
   frontend:
@@ -14,3 +15,17 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       # 인증서 갱신 확인 파일 (certbot renew --webroot -w /var/www/certbot)
       - /var/www/certbot:/var/www/certbot:ro
+      # Node 여러 개: remote.sh가 NODE_COUNT로 다시 만든 mmc-upstreams.conf를 읽게 조각 폴더째 붙임
+      # (파일 하나만 붙이면 새로 쓴 파일을 못 봄 → 폴더로, 바꾼 뒤 nginx -s reload)
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+
+  # 운영 Redis 비번은 꼭 넣기 (.env.production의 REDIS_PASSWORD, 없으면 compose가 바로 멈춤)
+  # 로컬 기본값(mmclocalonly)으로 운영이 켜지는 것 막기, URL에 들어가므로 영문·숫자만
+  redis:
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD 필요 (.env.production, 영문·숫자만)}"]
+    environment:
+      - REDISCLI_AUTH=${REDIS_PASSWORD:?REDIS_PASSWORD 필요 (.env.production, 영문·숫자만)}
+
+  backend:
+    environment:
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD 필요 (.env.production, 영문·숫자만)}@redis:6379
