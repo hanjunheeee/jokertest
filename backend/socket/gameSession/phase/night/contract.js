@@ -65,6 +65,56 @@ function buildNightRecipients(session, socketIdByUuid, actorUuids, targetId) {
     return recipients
 }
 
+// 사건 고르기: 죽이기·살리기는 밤 기록에서, 조사·확인은 이 턴 결과 났고 대상 있을 때만
+function pickEventDescriptors(role, progress, step) {
+    const eventType = NIGHT_EVENT_TYPES[role] ?? null
+    const descriptors = []
+    if (eventType === 'KILL' || eventType === 'HEAL') {
+        for (const event of progress?.events ?? []) {
+            if (event?.type !== eventType) continue
+            descriptors.push({ type: event.type, targetId: event.targetId ?? null })
+        }
+    } else if (eventType !== null && step.status === 'RESOLVED' && typeof step.targetId === 'string') {
+        descriptors.push({ type: eventType, targetId: step.targetId })
+    }
+    return descriptors
+}
+
+// 회복 대기·사망 후보인 행동자인지
+function isRecoveryBlocked(progress, actorUuid, states) {
+    const state = progress?.recoveryStates?.get(actorUuid)
+    return state === states.PENDING_RECOVERY || state === states.DEATH_CANDIDATE
+}
+
+// 행동자 모으기 (회복 대기·사망 후보 행동자는 의사 빼고 제외)
+function collectActorUuids(session, role, progress) {
+    const actorUuids = []
+    const submissions = isolateOr([], '[밤 연출 계약 오류]', { code: 'ACTOR_COLLECT_ERROR', role, gameId: session.id },
+        () => gameSessionCore.collectRoleNightSubmissions(session, role))
+    const states = gameSessionCore.NIGHT_RECOVERY_STATES
+    for (const submission of submissions) {
+        if ((submission?.target ?? null) === null) continue
+        if (role !== 'DOCTOR' && isRecoveryBlocked(progress, submission.actorUuid, states)) continue
+        if (!actorUuids.includes(submission.actorUuid)) actorUuids.push(submission.actorUuid)
+    }
+    return actorUuids
+}
+
+// 받을 수 있는 계정마다 소켓 하나 고정 (다른 판·대기방 소속 생긴 계정은 뺌)
+function pinRecipientSockets(io, session, role) {
+    const socketIdByUuid = new Map()
+    const candidates = isolateOr([], '[밤 연출 계약 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', role, gameId: session.id },
+        () => resolveSessionSockets(io, session))
+    for (const candidate of candidates) {
+        const uuid = candidate?.data?.user?.uuid ?? null
+        if (!isNonEmptyString(uuid)) continue
+        if (socketIdByUuid.has(uuid)) continue
+        if (!isSessionOnlyRecipient(session, candidate, uuid)) continue
+        socketIdByUuid.set(uuid, typeof candidate.id === 'string' ? candidate.id : null)
+    }
+    return socketIdByUuid
+}
+
 // 밤 연출 계약 만들기: 이 역할 턴 성공 사건 + 받을 사람(행동자·대상 소켓), 같은 리비전은 저장본 재사용
 function buildNightPresentationContract(run, completed) {
     const { io, session } = run
@@ -82,47 +132,11 @@ function buildNightPresentationContract(run, completed) {
     const recoveryStates = {}
     for (const [uuid, state] of progress?.recoveryStates ?? []) recoveryStates[uuid] = state
 
-    // 사건 고르기: 죽이기·살리기는 밤 기록에서, 조사·확인은 이 턴 결과 났고 대상 있을 때만
-    const eventType = NIGHT_EVENT_TYPES[role] ?? null
-    const descriptors = []
-    if (eventType === 'KILL' || eventType === 'HEAL') {
-        for (const event of progress?.events ?? []) {
-            if (event?.type !== eventType) continue
-            descriptors.push({ type: event.type, targetId: event.targetId ?? null })
-        }
-    } else if (eventType !== null && step.status === 'RESOLVED' && typeof step.targetId === 'string') {
-        descriptors.push({ type: eventType, targetId: step.targetId })
-    }
-
-    // 사건이 있으면 행동자 모으기 (회복 대기·사망 후보 행동자는 의사 빼고 제외)
-    const actorUuids = []
-    if (descriptors.length > 0) {
-        const submissions = isolateOr([], '[밤 연출 계약 오류]', { code: 'ACTOR_COLLECT_ERROR', role, gameId: session.id },
-            () => gameSessionCore.collectRoleNightSubmissions(session, role))
-        const states = gameSessionCore.NIGHT_RECOVERY_STATES
-        for (const submission of submissions) {
-            if ((submission?.target ?? null) === null) continue
-            if (role !== 'DOCTOR') {
-                const state = progress?.recoveryStates?.get(submission.actorUuid)
-                if (state === states.PENDING_RECOVERY || state === states.DEATH_CANDIDATE) continue
-            }
-            if (!actorUuids.includes(submission.actorUuid)) actorUuids.push(submission.actorUuid)
-        }
-    }
-
-    // 받을 수 있는 계정마다 소켓 하나 고정 (다른 판·대기방 소속 생긴 계정은 뺌)
-    const socketIdByUuid = new Map()
-    if (descriptors.length > 0) {
-        const candidates = isolateOr([], '[밤 연출 계약 오류]', { code: 'RECIPIENT_RESOLVE_ERROR', role, gameId: session.id },
-            () => resolveSessionSockets(io, session))
-        for (const candidate of candidates) {
-            const uuid = candidate?.data?.user?.uuid ?? null
-            if (!isNonEmptyString(uuid)) continue
-            if (socketIdByUuid.has(uuid)) continue
-            if (!isSessionOnlyRecipient(session, candidate, uuid)) continue
-            socketIdByUuid.set(uuid, typeof candidate.id === 'string' ? candidate.id : null)
-        }
-    }
+    const descriptors = pickEventDescriptors(role, progress, step)
+    // 사건이 있을 때만 행동자·받을 소켓 모음
+    const hasEvents = descriptors.length > 0
+    const actorUuids = hasEvents ? collectActorUuids(session, role, progress) : []
+    const socketIdByUuid = hasEvents ? pinRecipientSockets(io, session, role) : new Map()
 
     // 사건 id는 판·밤·역할·리비전·순번으로 (완료 신호·재접속 복구가 이 id로 찾음)
     const contract = {

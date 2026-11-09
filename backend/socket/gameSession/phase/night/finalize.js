@@ -13,6 +13,42 @@ const { stopNightTurnSequence } = require('./turn')
 const { startDayPhaseTimer, attachDayPhaseDeadline } = require('../day')
 const { withTerminalFields } = require('../../departure/end')
 
+// 소켓 하나에 밤 결과 보내기: 판정 끝 → 내 개인 결과(있으면) → 공개 결과
+function deliverNightResult(recipientSocket, targetSession, resolution, { nightResultAppliedPayload, label, fields }) {
+    // 보내기 직전 다시 봄: 자격 잃었거나 다른 판·대기방 소속 생긴 소켓은 뺌
+    if (!stillEligible(targetSession, recipientSocket)) return
+    const recipientUuid = recipientSocket.data?.user?.uuid ?? null
+    if (recipientUuid !== null && hasOutsideMembership(targetSession, recipientUuid)) return
+
+    isolate(label, { code: 'DELIVERY_ERROR', ...fields },
+        () => recipientSocket.emit('night_actions_resolved', { gameId: targetSession.id, dayIndex: resolution.dayIndex }))
+
+    // 내 개인 결과는 효과음 사건 붙여 나한테만
+    const privateResult = resolution.privateResults?.get(recipientUuid)
+    if (privateResult !== undefined) {
+        isolate(label, { code: 'PRIVATE_DELIVERY_ERROR', ...fields },
+            () => recipientSocket.emit('night_action_result', {
+                gameId: targetSession.id,
+                dayIndex: resolution.dayIndex,
+                ...privateResult,
+                sfxEvent: {
+                    eventId: `game:${targetSession.id}:night:${resolution.dayIndex}:${privateResult.actionType}`,
+                    accountId: recipientUuid,
+                    gameId: targetSession.id,
+                    origin: 'live',
+                },
+            }))
+    }
+
+    // 공개 결과엔 위에서 건 새 낮 마감 시각 붙임 (화면 낮 타이머 시작용)
+    if (!nightResultAppliedPayload) return
+    isolate(label, { code: 'DELIVERY_ERROR', ...fields },
+        () => recipientSocket.emit(
+            'night_result_applied',
+            attachDayPhaseDeadline(nightResultAppliedPayload, targetSession),
+        ))
+}
+
 // 밤 마무리 관문: 자동 마무리·'밤 종료' 버튼 둘 다 여기로 모음, 같은 밤 두 번 확정 못 함 (지도 06-④⑤)
 function finalizeNightForSession(io, session, { prepared = null, deps = {}, onResult = null } = {}) {
     // prepare·commit·소켓 모으기는 시험이 바꿔 넣을 수 있음
@@ -91,39 +127,7 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
         // 소켓마다 하나씩: 판정 끝 → 내 개인 결과(있으면) → 공개 결과 (지도 06-⑧)
         const recipients = resolveOrEmpty(io, targetSession, label, fields, resolveParticipantSockets)
         for (const recipientSocket of recipients) {
-            // 보내기 직전 다시 봄: 자격 잃었거나 다른 판·대기방 소속 생긴 소켓은 뺌
-            if (!stillEligible(targetSession, recipientSocket)) continue
-            const recipientUuid = recipientSocket.data?.user?.uuid ?? null
-            if (recipientUuid !== null && hasOutsideMembership(targetSession, recipientUuid)) continue
-
-            isolate(label, { code: 'DELIVERY_ERROR', ...fields },
-                () => recipientSocket.emit('night_actions_resolved', { gameId: targetSession.id, dayIndex: resolution.dayIndex }))
-
-            // 내 개인 결과는 효과음 사건 붙여 나한테만
-            const privateResult = resolution.privateResults?.get(recipientUuid)
-            if (privateResult !== undefined) {
-                isolate(label, { code: 'PRIVATE_DELIVERY_ERROR', ...fields },
-                    () => recipientSocket.emit('night_action_result', {
-                        gameId: targetSession.id,
-                        dayIndex: resolution.dayIndex,
-                        ...privateResult,
-                        sfxEvent: {
-                            eventId: `game:${targetSession.id}:night:${resolution.dayIndex}:${privateResult.actionType}`,
-                            accountId: recipientUuid,
-                            gameId: targetSession.id,
-                            origin: 'live',
-                        },
-                    }))
-            }
-
-            // 공개 결과엔 위에서 건 새 낮 마감 시각 붙임 (화면 낮 타이머 시작용)
-            if (nightResultAppliedPayload) {
-                isolate(label, { code: 'DELIVERY_ERROR', ...fields },
-                    () => recipientSocket.emit(
-                        'night_result_applied',
-                        attachDayPhaseDeadline(nightResultAppliedPayload, targetSession),
-                    ))
-            }
+            deliverNightResult(recipientSocket, targetSession, resolution, { nightResultAppliedPayload, label, fields })
         }
 
         return { ok: true, victimUuid: applied.victimUuid, terminal: applied.terminal ?? null }
