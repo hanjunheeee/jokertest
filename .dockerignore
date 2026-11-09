@@ -13,3 +13,6 @@ node_modules
 .gitignore
 npm-debug.log*
 **/dist
+
+# 디자인 참고 원본(PNG 등)은 빌드에 안 씀, 빌드 자료 크기만 키움
+frontend/design-reference
