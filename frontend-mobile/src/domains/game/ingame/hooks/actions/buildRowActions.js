@@ -45,14 +45,26 @@ export function buildCornerActions(ctx, openVoteStatus) {
   return actions
 }
 
+// 낮 준비 버튼 글: 보내는 중 / 준비 끝 / 준비
+function dayReadyLabel(status) {
+  if (status === "sending") return DAY_VOTE_READY_SENDING_LABEL
+  if (status === "ready") return DAY_VOTE_READY_DONE_LABEL
+  return DAY_VOTE_READY_LABEL
+}
+
+// 재판 판정 버튼 글: 판정 끝 / 판정 중(잠김) / 판정
+function tribunalResolveLabel(ctx) {
+  if (ctx.gameState?.tribunal?.resolved === true) return TRIBUNAL_RESOLVE_DONE_LABEL
+  if (ctx.tribunalResolveLocked) return TRIBUNAL_RESOLVE_RESOLVING_LABEL
+  return TRIBUNAL_RESOLVE_LABEL
+}
+
 // 단계 행동 줄: 낮 준비 · 낮 집계 · 재판 판정 · 밤 종료 (데스크톱 InGamePhaseActionRow와 같은 순서·조건)
 export function buildPhaseActions(ctx) {
   const phase = ctx.gameState?.phase ?? null
   const actions = []
   if (phase === "DAY" && ctx.dayPhase === "DAY_DISCUSSION") {
-    const label = ctx.dayReadyStatus === "sending"
-      ? DAY_VOTE_READY_SENDING_LABEL
-      : ctx.dayReadyStatus === "ready" ? DAY_VOTE_READY_DONE_LABEL : DAY_VOTE_READY_LABEL
+    const label = dayReadyLabel(ctx.dayReadyStatus)
     actions.push(entry(ROW_ACTIONS.DAY_READY, label, Boolean(ctx.dayReadyControlsEnabled), ctx.submitDayReady, "phase"))
   }
   if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
@@ -60,9 +72,7 @@ export function buildPhaseActions(ctx) {
     actions.push(entry(ROW_ACTIONS.DAY_VOTE_RESOLVE, label, Boolean(ctx.dayVoteResolveControlsEnabled), ctx.resolveDayVote, "phase"))
   }
   if (phase === "TRIBUNAL") {
-    const label = ctx.gameState?.tribunal?.resolved === true
-      ? TRIBUNAL_RESOLVE_DONE_LABEL
-      : ctx.tribunalResolveLocked ? TRIBUNAL_RESOLVE_RESOLVING_LABEL : TRIBUNAL_RESOLVE_LABEL
+    const label = tribunalResolveLabel(ctx)
     actions.push(entry(ROW_ACTIONS.TRIBUNAL_RESOLVE, label, Boolean(ctx.tribunalResolveControlsEnabled), ctx.resolveTribunalVote, "phase"))
   }
   if (phase === "NIGHT" && ctx.isNightTurnActor) {

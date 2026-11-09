@@ -16,6 +16,13 @@ const FRAME_STYLE = {
   backgroundSize: "100% 100%",
 }
 
+// 상태 배지 글: 진행중 / 마감 / 없음(대기)
+function statusLabelOf(displayStatus) {
+  if (displayStatus === "in_progress") return "진행중"
+  if (displayStatus === "full") return "마감"
+  return null
+}
+
 // 방 카드 (room.displayStatus는 목록 훅이 붙여 줌)
 export default function RoomCard({ room, selected, onSelect }) {
   const { stage, current, max, title, displayStatus, settings } = room
@@ -26,7 +33,7 @@ export default function RoomCard({ room, selected, onSelect }) {
   const isInProgress = displayStatus === "in_progress"
   const isJoinable = !isFull && !isInProgress
   const stageLabel = STAGE_LABELS[stage]
-  const statusLabel = isInProgress ? "진행중" : isFull ? "마감" : null
+  const statusLabel = statusLabelOf(displayStatus)
 
   const ariaLabel = [
     `${stageLabel ? `${stageLabel} ` : ""}${title}, ${current}/${max}명`,

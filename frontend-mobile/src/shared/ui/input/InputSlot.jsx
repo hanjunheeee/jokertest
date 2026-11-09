@@ -12,6 +12,12 @@ function toneOf(look, type, value) {
   return value ? look.dateFilled : look.dateEmpty
 }
 
+// 입력 칸 type: 비밀번호 보기 버튼이 있으면 보기 상태로 text/password, 없으면 받은 type
+function inputTypeOf(type, passwordToggle, passwordVisible) {
+  if (!passwordToggle) return type
+  return passwordVisible ? "text" : "password"
+}
+
 // 높이는 look.wrap이 정함 (그림은 칸에 맞게 늘림), passwordToggle이면 보기 상태로 password/text를 고름
 // look = inputSlotLooks 이름 또는 같은 모양 객체 (한 화면만 쓰는 모양은 그 화면이 객체로 넘김)
 export default function InputSlot({
@@ -21,7 +27,7 @@ export default function InputSlot({
 }) {
   const style = typeof look === "string" ? INPUT_SLOT_LOOKS[look] : look
   const [passwordVisible, setPasswordVisible] = useState(false)
-  const inputType = passwordToggle ? (passwordVisible ? "text" : "password") : type
+  const inputType = inputTypeOf(type, passwordToggle, passwordVisible)
 
   return (
     <div className={style.wrap}>

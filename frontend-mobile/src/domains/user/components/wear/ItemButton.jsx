@@ -24,9 +24,16 @@ const kindLabelOf = (item) => {
 // 데스크톱 항목 모양 그대로, 누르는 칸만 56px 이상
 const BTN_CLASS = `${LIST_ITEM_BTN_CLASS} min-h-14 active:bg-[#1a1008]/28`
 
+// 읽어 주는 글: 착용 중 / 보유 / 미보유
+function itemAriaLabel(name, equipped, owned) {
+  if (equipped) return `${name}, 착용 중`
+  if (owned) return name
+  return `${name}, 미보유`
+}
+
 // 미보유면 잠그고 흐리게(데스크톱 0.4), 착용 중이면 체크 표시
 export default function ItemButton({ item, selected, equipped, owned, onSelect }) {
-  const ariaLabel = equipped ? `${item.name}, 착용 중` : owned ? item.name : `${item.name}, 미보유`
+  const ariaLabel = itemAriaLabel(item.name, equipped, owned)
 
   return (
     <button

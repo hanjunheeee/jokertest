@@ -6,6 +6,14 @@ import { deriveRoomDisplayStatus, isRoomClosedForEntry } from "@/domains/game/mo
 // 한 쪽 방 수 (데스크톱과 같음)
 export const PAGE_SIZE = 12
 
+// 입장 버튼 글: 꽉 찬 방·진행 중 방은 코드 방이어도 "마감" (잠긴 버튼에 "코드 입력"이 뜨지 않게)
+function enterLabelOf({ isJoining, isFull, needsCode }) {
+  if (isJoining) return "입장 중"
+  if (isFull) return "마감"
+  if (needsCode) return "코드 입력"
+  return "입장하기"
+}
+
 // 쪽·고른 방·입장 버튼 상태와 처리 함수
 export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode }) {
   const [selectedRoomId, setSelectedRoomId] = useState(null)
@@ -54,8 +62,7 @@ export function useRoomListPaging({ rooms, isJoining, onEnterRoom, onJoinByCode 
   }
 
   const enterDisabled = !selectedRoom || isFull || isJoining
-  // 꽉 찬 방·진행 중 방은 코드 방이어도 "마감" (잠긴 버튼에 "코드 입력"이 뜨지 않게)
-  const enterLabel = isJoining ? "입장 중" : isFull ? "마감" : needsCode ? "코드 입력" : "입장하기"
+  const enterLabel = enterLabelOf({ isJoining, isFull, needsCode })
 
   return {
     pageRooms,

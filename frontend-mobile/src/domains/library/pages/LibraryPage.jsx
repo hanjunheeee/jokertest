@@ -14,6 +14,14 @@ import { useBookPager } from "@m/domains/library/hooks/useBookPager.js"
 import { useLibraryLocation } from "@m/domains/library/hooks/useLibraryLocation.js"
 import { useTwoColumn } from "@m/domains/library/hooks/useTwoColumn.js"
 
+// 스크롤 맨 위로 되돌릴 기준 값: 폰 한 쪽은 금지 탭이면 쪽, 초대 탭이면 직업마다 / 두 쪽 펼침은 셋 다
+// 예: 폰 금지 탭 3쪽 → "forbiddenRecords-3", 두 쪽 펼침 → "forbiddenRecords-3-0-two"
+function scrollKeyOf(location, mergedSpread, isForbidden) {
+  if (!mergedSpread) return `${location.activeTabId}-${location.pageIndex}-${location.jobIndex}-two`
+  if (isForbidden) return `${location.activeTabId}-${location.pageIndex}`
+  return `${location.activeTabId}-${location.jobIndex}`
+}
+
 // 위치 상태·넘김은 모바일 훅, 탭 내용은 탭별 화면이 그림
 export default function LibraryPage() {
   const navigate = useNavigate()
@@ -22,11 +30,7 @@ export default function LibraryPage() {
   const isForbidden = location.activeTabId === LIBRARY_TABS.forbiddenRecords.id
   const mergedSpread = !twoColumn
   const pager = useBookPager(location, twoColumn, { mergedSpread })
-  const scrollKey = mergedSpread
-    ? isForbidden
-      ? `${location.activeTabId}-${location.pageIndex}`
-      : `${location.activeTabId}-${location.jobIndex}`
-    : `${location.activeTabId}-${location.pageIndex}-${location.jobIndex}-two`
+  const scrollKey = scrollKeyOf(location, mergedSpread, isForbidden)
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-black">

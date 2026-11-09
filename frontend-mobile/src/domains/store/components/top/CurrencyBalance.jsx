@@ -10,15 +10,18 @@ import {
     CURRENCY_ITEM_CLASS,
 } from "@/domains/store/constants/storeLayoutStyle.js"
 
+// 읽어 주는 글: 다 받음 / 실패 / 불러오는 중
+function currencyAriaLabel(label, amount, status) {
+    if (status === "ready") return `${label} ${amount}`
+    if (status === "error") return `${label} 불러오기 실패, 다시 시도하려면 선택하세요`
+    return `${label} 불러오는 중`
+}
+
 // 재화 한 칸 (데스크톱 StoreCurrencyItem과 같은 상태 셋·같은 모양 class)
 function CurrencyItem({ icon, amount, label, status, onRetry }) {
     const isError = status === "error"
     const isReady = status === "ready"
-    const ariaLabel = isReady
-        ? `${label} ${amount}`
-        : isError
-            ? `${label} 불러오기 실패, 다시 시도하려면 선택하세요`
-            : `${label} 불러오는 중`
+    const ariaLabel = currencyAriaLabel(label, amount, status)
 
     return (
         <div className={`${CURRENCY_ITEM_CLASS} min-w-0`} aria-label={ariaLabel}>

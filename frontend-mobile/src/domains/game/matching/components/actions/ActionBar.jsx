@@ -5,6 +5,13 @@ import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import NoticeBanner from "./NoticeBanner.jsx"
 import { ACTION_BUTTON_LOOK } from "../../constants/matchingMobileStyles.js"
 
+// 준비 버튼 글: 요청 중 / 준비취소 / 준비완료
+function readyLabelOf(isSettingReady, isReady) {
+  if (isSettingReady) return MATCHING_POPUP_COPY.readyPending
+  if (isReady) return MATCHING_POPUP_COPY.readyOff
+  return MATCHING_POPUP_COPY.readyOn
+}
+
 // 바닥 줄 (page = useMatchingPage 값 묶음)
 export default function ActionBar({ page }) {
   const {
@@ -15,9 +22,7 @@ export default function ActionBar({ page }) {
   } = page
 
   // 준비 버튼: 요청 중 / 준비취소 / 준비완료, 준비한 상태면 취소 그림
-  const readyLabel = isSettingReady
-    ? MATCHING_POPUP_COPY.readyPending
-    : isReady ? MATCHING_POPUP_COPY.readyOff : MATCHING_POPUP_COPY.readyOn
+  const readyLabel = readyLabelOf(isSettingReady, isReady)
   const readySrc = isReady ? GAME_MATCHING_ASSETS.deleteRoomButton : GAME_MATCHING_ASSETS.startGameButton
   // 요청 중이거나 방 확인 전이면 준비 잠금
   const readyDisabled = isSettingReady || !isRoomVerified
