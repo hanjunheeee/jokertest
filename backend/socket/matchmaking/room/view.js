@@ -65,15 +65,51 @@ function buildPublicRoomList() {
         }))
 }
 
-// 공개 방 목록 전원에게 방송
-function emitPublicRoomList(io) {
-    if (typeof io?.emit !== 'function') return
+// 공개 방 목록 방송 사이 최소 간격 (방 만들기·입장·준비·나가기마다 접속자 전원에게 목록 전체를 보내던 것 묶기)
+// 판 여럿을 한꺼번에 차리면 1초에 수십 번 × 접속자 수백 명 → 0.5초에 한 번, 마지막 상태는 꼭 보냄 (부하 줄이기 2026-11-09)
+const PUBLIC_ROOM_LIST_MIN_GAP_MS = 500
 
+// io마다 방송 상태 (서버엔 io 하나, 시험은 io를 새로 만들어 서로 안 섞임)
+const listBroadcastStates = new WeakMap()
+
+// 지금 목록을 전원에게 보냄
+function sendPublicRoomList(io, state) {
+    state.lastSentAt = Date.now()
     try {
         io.emit('public_rooms_updated', { rooms: buildPublicRoomList() })
     } catch (error) {
         console.error('[공개방 목록 알림 실패]', error)
     }
+}
+
+// 공개 방 목록 전원에게 방송: 앞 방송에서 간격 지났으면 바로, 아니면 간격 끝에 한 번 (그때 목록을 새로 만들어 마지막 상태가 감)
+function emitPublicRoomList(io) {
+    if (typeof io?.emit !== 'function') return
+    let state = listBroadcastStates.get(io)
+    if (!state) {
+        state = { lastSentAt: -Infinity, timer: null }
+        listBroadcastStates.set(io, state)
+    }
+    if (state.timer !== null) return
+    const waitMs = PUBLIC_ROOM_LIST_MIN_GAP_MS - (Date.now() - state.lastSentAt)
+    if (waitMs <= 0) {
+        sendPublicRoomList(io, state)
+        return
+    }
+    state.timer = setTimeout(() => {
+        state.timer = null
+        sendPublicRoomList(io, state)
+    }, waitMs)
+    state.timer.unref?.()
+}
+
+// 시험용: 간격 기다리는 목록 방송을 지금 보냄 (기다리는 게 없으면 아무것도 안 함)
+function flushPublicRoomList(io) {
+    const state = listBroadcastStates.get(io)
+    if (!state || state.timer === null) return
+    clearTimeout(state.timer)
+    state.timer = null
+    sendPublicRoomList(io, state)
 }
 
 module.exports = {
@@ -82,4 +118,6 @@ module.exports = {
     loadPlayerProfile,
     buildPublicRoomList,
     emitPublicRoomList,
+    PUBLIC_ROOM_LIST_MIN_GAP_MS,
+    flushPublicRoomList,
 }

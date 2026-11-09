@@ -4,6 +4,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const matchmaking = require('../../socket/matchmaking')
+// 목록 방송은 0.5초에 한 번으로 묶임 (부하 줄이기 2026-11-09) → 확인 전에 기다리는 방송 바로 보냄
+const { flushPublicRoomList } = require('../../socket/matchmaking/room/view')
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
@@ -341,6 +343,7 @@ test('AC-02: 추방은 대상에게 room_kicked 개인 사건을, 잔류자에�
     assert.equal(left.length, 1)
     assert.equal(left[0].payload.uuid, 'kj-12')
     assert.equal(left[0].payload.membershipId, targetSeat.membershipId)
+    flushPublicRoomList(io)
     assert.equal(io.broadcasts.filter((b) => b.event === 'public_rooms_updated').length, 1)
 })
 

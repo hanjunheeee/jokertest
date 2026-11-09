@@ -4,6 +4,8 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const matchmaking = require('../../socket/matchmaking')
+// 목록 방송은 0.5초에 한 번으로 묶임 (부하 줄이기 2026-11-09) → 확인 전에 기다리는 방송 바로 보냄
+const { flushPublicRoomList } = require('../../socket/matchmaking/room/view')
 matchmaking.__setGameResultRepositoryForTests({
     getAccountRecordSummaries: async (userIds) =>
         new Map(userIds.map((id) => [id, { totalGames: 0, winRate: 0 }])),
@@ -131,6 +133,7 @@ test('join_public_room은 open 방에 참가시키고 실시간 목록 인원을
         handleCreateRoom, io, openHost, 'public-open-host', settings('open'),
     )
     await handleJoinPublicRoom(io, joiner, 'public-joiner', { roomId: openResult.room.roomId })
+    flushPublicRoomList(io)
 
     const joinedEvent = joiner.emitted.find((entry) => entry.event === 'room_joined')
     assert.ok(joinedEvent)
@@ -185,6 +188,7 @@ test('방 삭제 후 public_rooms_updated 방송에서 해당 방이 사라진�
 
     io.emitted.length = 0
     handleDeleteRoom(io, 'delete-broadcast-host')
+    flushPublicRoomList(io)
 
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, '방 삭제 후 목록 방송이 있어야 합니다')
@@ -208,6 +212,7 @@ test('참가자 disconnect 후 public_rooms_updated 방송에 인원 감소가 �
     io.emitted.length = 0
     matchmaking.onDisconnect(io, joiner, 'disconnect-broadcast-joiner')
     matchmaking.__flushRoomRetentionForTests()
+    flushPublicRoomList(io)
 
     const broadcast = io.emitted.find((entry) => entry.event === 'public_rooms_updated')
     assert.ok(broadcast, 'disconnect 후 목록 방송이 있어야 합니다')
