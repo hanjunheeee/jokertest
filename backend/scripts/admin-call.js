@@ -8,7 +8,11 @@ const BASE_URL = (process.env.ADMIN_CALL_BASE_URL || `http://localhost:${process
 
 const HELP = `쓰는 법 (backend 폴더에서):
   npm run admin -- check                                  통로 점검 한 번에 (열쇠 맞음·틀림·지금 상황)
-  npm run admin -- live                                  지금 대기방·판 수
+  npm run admin -- live                                  지금 대기방·판 수 (Node 여러 개면 전 Node 합침)
+  npm run admin -- live <node>                           그 Node 것만 (예: live n2)
+  npm run admin -- cluster                               Node 목록 (판·방·접속 수·drain)
+  npm run admin -- drain <node>                          그 Node 새 접속·방 만들기를 다른 Node로 (판은 계속)
+  npm run admin -- undrain <node>                        drain 끄기
   npm run admin -- announce "제목" "본문"                  접속 중인 사람 전체에게 공지
   npm run admin -- announce "제목" "본문" <uuid,uuid>      고른 사람에게만 공지
   npm run admin -- disconnect <uuid>                      그 사람 바로 끊기 (정지·비활성 반영)
@@ -19,7 +23,17 @@ const HELP = `쓰는 법 (backend 폴더에서):
 // 명령 → 부를 경로·보낼 값
 const buildRequest = (args) => {
     const [command, ...rest] = args;
-    if (command === "live") return { method: "GET", path: "/internal/live" };
+    if (command === "live") {
+        return { method: "GET", path: rest[0] ? `/internal/live?node=${encodeURIComponent(rest[0])}` : "/internal/live" };
+    }
+    if (command === "cluster") return { method: "GET", path: "/internal/cluster" };
+    if ((command === "drain" || command === "undrain") && rest[0]) {
+        return {
+            method: "POST",
+            path: `/internal/nodes/${encodeURIComponent(rest[0])}/drain`,
+            body: { draining: command === "drain" },
+        };
+    }
     if (command === "maintenance-reload") return { method: "POST", path: "/internal/maintenance/reload" };
     if (command === "banned-words-reload") return { method: "POST", path: "/internal/banned-words/reload" };
     if (command === "disconnect" && rest[0]) {

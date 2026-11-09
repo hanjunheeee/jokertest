@@ -72,6 +72,9 @@ const containsBannedWord = (text) => {
 // 시험용: 목록 바로 넣기
 const __setWordsForTests = (list = []) => { words = prepareWords(list); };
 
+// 다른 Node가 다시 읽었다는 방송·60초 안전망·Redis 살아남 때 다시 읽음 (reloadSync.js, 내보낸 함수로 불러 시험 갈아끼우기 먹게)
+require('./reloadSync').registerReloadable('bannedWords', () => module.exports.reloadBannedWords());
+
 module.exports = {
     MAX_WORD_LENGTH,
     MAX_WORDS,

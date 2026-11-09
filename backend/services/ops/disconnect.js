@@ -1,8 +1,9 @@
 'use strict';
 
 // 즉시 끊기 파일, 관리자 서버가 정지·비활성 처리한 사람의 접속을 바로 끊음 (주기 검사 5초 안 기다림)
-// 내부 API POST /internal/users/:uuid/disconnect가 부름, 정지·상태는 DB를 다시 봐서 code 고름
+// 내부 API POST /internal/users/:uuid/disconnect가 부름, 정지·상태는 DB를 다시 봐서 code 고름 (탈퇴 끊기도 소켓 찾기를 같이 씀)
 const { createError } = require('../../utils/appError');
+const cluster = require('../../cluster');
 
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -20,8 +21,14 @@ const defaultDeps = () => ({
     userRepository: require('../../repositories/user'),
 });
 
-// 그 사람 소켓 전부 = 계정 채널 소켓 (같은 계정 옛 탭까지, 서버 여러 대면 다른 서버 것도)
-const socketsOf = (io, uuid) => emitter.fetchUserSockets(uuid, io);
+// 그 사람 소켓 전부 = 계정 채널 소켓 (같은 계정 옛 탭까지) → { sockets, partial }
+// 단일 모드는 예전 그대로, Node 여러 개면 전 Node (Redis down·시간 초과면 내 Node만 + partial:true)
+const fetchUserSocketsEverywhere = async (uuid, io) => {
+    if (!cluster.isEnabled()) return { sockets: await emitter.fetchUserSockets(uuid, io), partial: false };
+    const channel = emitter.userChannelOf(uuid);
+    if (!channel || typeof io?.in !== 'function') return { sockets: [], partial: false };
+    return cluster.fetchSockets(channel, io);
+};
 
 // 왜 끊는지: 정지 → 상태 ACTIVE 아님 → 그 밖 (DB 다시 봄, 관리자 서버 말만 믿지 않음)
 const resolveReason = async (uuid, userRepository) => {
@@ -41,7 +48,7 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
     if (code !== 'ADMIN_DISCONNECT') {
         await deps.userRepository.markOnlineSessionsOffline(uuid);
     }
-    const sockets = await socketsOf(deps.getIo(), uuid);
+    const { sockets, partial } = await fetchUserSocketsEverywhere(uuid, deps.getIo());
     for (const socket of sockets) {
         try {
             socket.emit('force_disconnect', { code, message: DISCONNECT_REASONS[code] });
@@ -50,7 +57,9 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
             console.error('[즉시 끊기 실패]', error?.name ?? 'Error');
         }
     }
-    return { uuid, code, disconnected: sockets.length };
+    // partial은 Node 여러 개 모드에만 실음 (단일 모드 답 모양은 예전 그대로)
+    const result = { uuid, code, disconnected: sockets.length };
+    return cluster.isEnabled() ? { ...result, partial } : result;
 };
 
-module.exports = { DISCONNECT_REASONS, disconnectUser };
+module.exports = { DISCONNECT_REASONS, disconnectUser, fetchUserSocketsEverywhere };

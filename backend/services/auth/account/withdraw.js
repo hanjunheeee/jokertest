@@ -2,33 +2,17 @@
 // controllers/auth/withdraw.js가 account 입구로 부름, 저장소·판 상태는 모듈 객체로 불러 시험 갈아끼우기 먹게
 const userRepository  = require("../../../repositories/user");
 const withdrawRepository = require("../../../repositories/user/withdraw");
-const gameSession     = require("../../../game-core/gameSession");
 const emitter         = require("../../../socket/emitter");
 const { comparePassword } = require("../../../utils/auth/credentials");
 const { createError } = require("../../../utils/appError");
+const { createAttemptCounter } = require("./attemptCounter");
+const { isInActiveGameAnywhere } = require("./activeGameCheck");
+const { fetchUserSocketsEverywhere } = require("../../ops/disconnect");
 
-// 비번 틀린 횟수 제한 (세션 훔친 사람이 맞혀 보며 탈퇴시키기 막기, 서버 메모리)
+// 비번 틀린 횟수 제한 (세션 훔친 사람이 맞혀 보며 탈퇴시키기 막기, Node 여러 개면 합쳐 셈 `wrong:wd:<uuid>`)
 const MAX_WRONG_ATTEMPTS = 5;
 const WRONG_WINDOW_MS = 15 * 60 * 1000;
-const wrongAttempts = new Map();
-
-const wrongCountOf = (uuid, nowMs) => {
-    const entry = wrongAttempts.get(uuid);
-    if (!entry || nowMs - entry.windowStart >= WRONG_WINDOW_MS) {
-        wrongAttempts.delete(uuid);
-        return 0;
-    }
-    return entry.count;
-};
-const recordWrong = (uuid, nowMs) => {
-    const entry = wrongAttempts.get(uuid);
-    if (entry && nowMs - entry.windowStart < WRONG_WINDOW_MS) entry.count += 1;
-    else wrongAttempts.set(uuid, { windowStart: nowMs, count: 1 });
-};
-
-// 진행 중인 판에 있는지 (끝난 판·기권은 통과)
-const isInActiveGame = (uuid) => gameSession.isMatchmakingBlocked(uuid)
-    && Boolean(gameSession.getActiveSessionRoutingInfo(uuid));
+const wrongAttempts = createAttemptCounter({ kind: "wd", windowMs: WRONG_WINDOW_MS });
 
 // 본인 확인: 비번 있는 계정은 비번, 소셜 전용은 계정 이메일을 그대로 다시 씀 (대소문자·앞뒤 빈칸 무시)
 const confirmOwner = async (user, { password, confirmEmail }) => {
@@ -47,12 +31,12 @@ const REJECTIONS = {
 };
 
 // 그 사람 소켓 전부에 까닭 알리고 끊음 (주기 검사 안 기다림)
-// 계정 채널로 찾음 (서버 여러 대면 다른 서버 연결도 같이 끊김)
-// 찾기 실패해도 탈퇴는 이미 끝남 → 로그만 (남은 연결은 세션 주기 검사가 끊음)
+// 계정 채널로 찾음 (Node 여러 개면 다른 Node 연결도, Redis down·시간 초과면 내 Node만 = 강제 끊기와 같게)
+// 찾기 실패해도 탈퇴는 이미 끝남 → 로그만 (남은 연결은 세션 주기 검사·끊김 방송이 끊음)
 const disconnectSockets = async (uuid) => {
     let sockets;
     try {
-        sockets = await emitter.fetchUserSockets(uuid, emitter.getIo());
+        ({ sockets } = await fetchUserSocketsEverywhere(uuid, emitter.getIo()));
     } catch (error) {
         console.error("[탈퇴 소켓 찾기 실패]", error?.name ?? "Error");
         return 0;
@@ -64,12 +48,12 @@ const disconnectSockets = async (uuid) => {
     return sockets.length;
 };
 
-// 판 중 → 409, 틀린 횟수 넘음 → 429, 본인 확인 실패 → 400, 성공 → { ok: true }
+// 판 중(어느 Node든) → 409, 판 확인 못 함 → 503, 틀린 횟수 넘음 → 429, 본인 확인 실패 → 400, 성공 → { ok: true }
 exports.withdrawAccount = async ({ uuid, password, confirmEmail }, { now = Date.now } = {}) => {
-    if (isInActiveGame(uuid)) {
+    if (await isInActiveGameAnywhere(uuid)) {
         throw createError("진행 중인 게임이 끝난 뒤에 탈퇴할 수 있습니다.", 409, "WITHDRAW_IN_GAME");
     }
-    if (wrongCountOf(uuid, now()) >= MAX_WRONG_ATTEMPTS) {
+    if ((await wrongAttempts.count(uuid, now())) >= MAX_WRONG_ATTEMPTS) {
         throw createError("여러 번 잘못 입력했습니다. 잠시 후 다시 시도해주세요.", 429, "WITHDRAW_LOCKED");
     }
 
@@ -87,14 +71,14 @@ exports.withdrawAccount = async ({ uuid, password, confirmEmail }, { now = Date.
     });
 
     if (rejection) {
-        if (rejection === "WITHDRAW_PASSWORD_INVALID") recordWrong(uuid, now());
+        if (rejection === "WITHDRAW_PASSWORD_INVALID") await wrongAttempts.record(uuid, now());
         const [status, message] = REJECTIONS[rejection];
         throw createError(message, status, rejection);
     }
-    wrongAttempts.delete(uuid);
+    await wrongAttempts.clear(uuid);
     await disconnectSockets(uuid);
     return { ok: true };
 };
 
 // 시험이 횟수 지우기
-exports.__resetWithdrawAttemptsForTests = () => wrongAttempts.clear();
+exports.__resetWithdrawAttemptsForTests = () => wrongAttempts.resetForTests();

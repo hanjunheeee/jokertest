@@ -1,4 +1,4 @@
-// 동시 접속 기록 표(concurrent_snapshots) 모델, 찍은 시각마다 전체·로비·게임 중·방 수 한 줄
+// 동시 접속 기록 표(concurrent_snapshots) 모델, 찍은 시각마다 전체·로비·게임 중·방 수 한 줄 (Node 여러 개면 Node마다 한 줄)
 // models/index.js가 읽음, 동시 접속 저장소가 한 줄씩 쌓음 (읽는 코드 없음)
 module.exports = (sequelize, DataTypes) => {
   const ConcurrentSnapshot = sequelize.define('ConcurrentSnapshot', {
@@ -8,6 +8,8 @@ module.exports = (sequelize, DataTypes) => {
     lobby: { type: DataTypes.INTEGER, allowNull: false },
     in_game: { type: DataTypes.INTEGER, allowNull: false },
     room_count: { type: DataTypes.INTEGER, allowNull: false },
+    // 이 줄을 쓴 Node (SERVER_ID, 마이그레이션 0030), 단일 모드 줄은 비어 있음
+    server_id: { type: DataTypes.STRING(64), allowNull: true },
   }, {
     tableName: 'concurrent_snapshots',
     timestamps: false,

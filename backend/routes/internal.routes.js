@@ -12,7 +12,7 @@ const createInternalRouter = ({ env = process.env, now = Date.now, max = 120, wi
 
     // 꺼졌으면 여기서 바로 빠짐 → 제한 → 열쇠 (틀린 열쇠 시도도 제한에 셈)
     router.use(skipWhenDisabled({ env }));
-    router.use(createRateLimiter({ windowMs, max, now, keyOf: (req) => `internal:${req.ip}` }));
+    router.use(createRateLimiter({ windowMs, max, now, name: "internal", keyOf: (req) => `internal:${req.ip}` }));
     router.use(requireInternalKey({ env }));
 
     // 관리자 서버만 읽으니 응답은 저장 금지
@@ -23,6 +23,9 @@ const createInternalRouter = ({ env = process.env, now = Date.now, max = 120, wi
     router.post("/maintenance/reload", internalController.reloadMaintenance);
     router.post("/banned-words/reload", internalController.reloadBannedWords);
     router.get("/live", internalController.getLive);
+    // Node 여러 개 운영: Node 목록·하나씩 바꾸기 전 drain (8-5·8-6장)
+    router.get("/cluster", internalController.getCluster);
+    router.post("/nodes/:id/drain", internalController.drainNode);
 
     return router;
 };

@@ -2,7 +2,9 @@
 
 // 운영 알림 파일, 관리자 서버가 보낸 공지를 알림으로 저장 + 접속 중이면 바로 보냄
 // 내부 API POST /internal/announcements가 부름, 저장·전송은 기존 알림 서비스 그대로 (같은 공지 id는 한 번만)
+// 'online' 대상: 단일 모드는 이 서버 접속자, Node 여러 개면 DB 접속 줄 중 살아 있는 Node 줄 + 이 Node 접속자
 const { createError } = require('../../utils/appError');
+const cluster = require('../../cluster');
 
 // 한 번에 보낼 수 있는 대상 수·글 길이 (알림 표 칸 크기와 같음)
 const MAX_TARGETS = 5000;
@@ -17,6 +19,8 @@ const announcementSourceKey = (announcementId) => `announcement:${announcementId
 const defaultDeps = () => ({
     notificationService: require('../notification'),
     onlineUsers: require('../../socket/emitter').onlineUsers,
+    db: require('../../repositories/common/db'),
+    cluster,
 });
 
 // 요청 모양 검사: 공지 id·제목·본문 + 전체(target 'online') 또는 uuid 목록
@@ -64,10 +68,29 @@ const sendToOne = async (deps, userId, { sourceKey, title, body, announcementId 
     }
 };
 
+// Node 여러 개 'online' 대상: ONLINE 줄 중 그 줄 server_id Node가 살아 있는 것 + 이 Node 접속자 (죽은 Node 줄은 빠짐)
+// Redis down이면 살아 있는 Node가 나뿐이라 내 Node 접속자만 (알림은 DB에 남아 다음 접속 때 보임)
+const onlineAcrossNodes = async (deps) => {
+    const rows = await deps.db.OnlinePresence.findAll({
+        where: { status: 'ONLINE' }, attributes: ['user_id', 'server_id'], raw: true, limit: MAX_TARGETS,
+    });
+    const recipients = new Set(deps.onlineUsers.keys());
+    for (const row of rows) {
+        if (row.server_id && deps.cluster.nodes.isAlive(row.server_id)) recipients.add(row.user_id);
+    }
+    return [...recipients].slice(0, MAX_TARGETS);
+};
+
+// 'online' 받을 사람 목록 (단일 모드는 예전 그대로 이 서버 접속자)
+const onlineRecipients = async (deps) => {
+    if (!deps.cluster?.isEnabled()) return [...deps.onlineUsers.keys()].slice(0, MAX_TARGETS);
+    return onlineAcrossNodes(deps);
+};
+
 // 보내기: 대상마다 알림 저장(같은 공지 id면 있던 것) → 새로 만든 것만 소켓 전송, 한 사람 실패는 세기만
 const sendAnnouncement = async (input, deps = defaultDeps()) => {
     const { announcementId, title, body, target, userUuids } = validateAnnouncement(input);
-    const recipients = target === 'online' ? [...deps.onlineUsers.keys()].slice(0, MAX_TARGETS) : userUuids;
+    const recipients = target === 'online' ? await onlineRecipients(deps) : userUuids;
     const sourceKey = announcementSourceKey(announcementId);
 
     const counts = { created: 0, duplicated: 0, failed: 0 };
@@ -84,4 +107,5 @@ module.exports = {
     announcementSourceKey,
     validateAnnouncement,
     sendAnnouncement,
+    onlineRecipients,
 };

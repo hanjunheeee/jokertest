@@ -1,8 +1,9 @@
 'use strict';
 
 // 브라우저 시험용 게임 손잡이 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기
-// routes/e2e.routes.js(E2E_HOOKS=1, 운영 아님)와 matchmaking/room/start.js(역할 미리 정하기 반영)가 씀
+// routes/e2e.routes.js(E2E_HOOKS=1, 운영 아님)와 matchmaking/room/start.js(역할 미리 정하기 반영)가 씀, Node 여러 개 길은 remoteHooks.js
 const { isE2eHooksEnabled } = require('../../config/e2eHooks');
+const cluster = require('../../cluster');
 const { GAME_ROLES } = require('../../game-core/core/rules/roles');
 const { getSessionById, getPlayerGameId } = require('../../game-core/queries/byId');
 const { gameRooms, playerRoom } = require('../matchmaking/core/state');
@@ -110,13 +111,17 @@ function applyRolePresets(session) {
         roomPresets.delete(session.roomId);
         for (const [uuid, role] of roomEntry.presets) if (session.players.has(uuid)) wanted.set(uuid, role);
     }
+    const consumed = [];
     for (const p of players) {
         const entry = userPresets.get(p.uuid);
         if (!entry) continue;
         userPresets.delete(p.uuid);
+        consumed.push(p.uuid);
         // 방 예약이 먼저 (더 좁은 예약)
         if (!wanted.has(p.uuid)) wanted.set(p.uuid, entry.role);
     }
+    // 사람 예약은 전 Node에 넣어 둠 → 여기서 쓴 것은 다른 Node 것도 지움 (뒷판에 잘못 쓰이지 않게)
+    if (consumed.length > 0 && cluster.isShared()) void cluster.rpc.callAll('e2e.clear', { uuids: consumed });
     if (wanted.size === 0) return [];
     const unmet = assignRoles(players, wanted);
     if (unmet.length > 0) console.warn('[e2e] 역할 미리 정하기 못 맞춤 (그 역할 자리가 모자람)', { gameId: session.id, count: unmet.length });

@@ -1,7 +1,7 @@
 'use strict';
 
 // 점검 모드 파일, DB 점검 한 줄을 메모리에 들고 있다가 방 만들기·시작·코드 입장 거절할지 답함
-// index.js 시작 때 한 번·내부 API reload 때 다시 읽음, socket/matchmaking.js가 거절 여부 물음 (진행 중 판은 안 건드림)
+// index.js 시작 때 한 번·내부 API reload 때·다른 Node 방송 때 다시 읽음, socket/matchmaking.js가 거절 여부 물음 (진행 중 판은 안 건드림)
 
 const MAINTENANCE_CODE = 'MAINTENANCE';
 const DEFAULT_MESSAGE = '서버 점검 중입니다. 점검이 끝난 뒤 다시 시도해주세요.';
@@ -73,6 +73,9 @@ const __setStateForTests = (next = {}) => {
         ends_at: next.endsAt ?? null,
     }, new Date());
 };
+
+// 다른 Node가 다시 읽었다는 방송·60초 안전망·Redis 살아남 때 다시 읽음 (reloadSync.js, 내보낸 함수로 불러 시험 갈아끼우기 먹게)
+require('./reloadSync').registerReloadable('maintenance', () => module.exports.reloadMaintenance());
 
 module.exports = {
     MAINTENANCE_CODE,

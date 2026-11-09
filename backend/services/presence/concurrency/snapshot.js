@@ -1,6 +1,12 @@
 // 동시 접속 스냅샷 파일, 지금 접속 수 세기 + 한 줄 저장
 // scheduler.js가 주기마다 부르고, 입구(index.js) 거쳐 시험도 바로 부름
 const snapshotRepository = require('../../../repositories/presence/concurrentSnapshot')
+const cluster = require('../../../cluster')
+
+// Node 여러 개면 줄마다 어느 Node 숫자인지 (Node마다 한 줄씩 쌓임, 합은 읽는 쪽이 같은 시각끼리), 단일 모드는 예전 줄 모양 그대로
+function nodeColumn() {
+    return cluster.isEnabled() ? { server_id: cluster.serverId() } : {}
+}
 
 // 접속 Map·판 참가자 Set으로 로비/게임 중 수 나눠 셈
 function getCurrentSnapshot(onlineUsers, gameSnapshot) {
@@ -34,7 +40,7 @@ async function captureSnapshot({
 } = {}) {
     try {
         const current = getCurrentSnapshot(onlineUsers, getGameSnapshot())
-        await snapshotRepository.saveSnapshot({ captured_at: now(), ...current }, { model })
+        await snapshotRepository.saveSnapshot({ captured_at: now(), ...current, ...nodeColumn() }, { model })
         return true
     } catch {
         console.error('[동시 접속 스냅샷 저장 실패]', { code: 'CONCURRENT_SNAPSHOT_FAILED' })

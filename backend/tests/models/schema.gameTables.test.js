@@ -47,6 +47,8 @@ const EXPECTED_TABLES = {
       lobby: { type: 'INTEGER', allowNull: false },
       in_game: { type: 'INTEGER', allowNull: false },
       room_count: { type: 'INTEGER', allowNull: false },
+      // 마이그레이션 0030 (Node 여러 개, 2026-11-09)
+      server_id: { type: 'STRING(64)', allowNull: true },
     },
   },
 };

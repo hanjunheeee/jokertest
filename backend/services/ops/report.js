@@ -2,6 +2,7 @@
 
 // 신고 접수 파일, 모양 검사 → 같은 판에 둘 다 있었는지 → 같은 판 같은 대상 중복 막기 → 신고 저장 + 채팅 증거 저장
 // controllers/ops/report.js가 부름, 처리(OPEN → RESOLVED·DISMISSED)는 관리자 서버 몫
+// 판이 다른 Node에 있으면 판 Node에 RPC로 물음 (gameLookup.js), 못 물으면 DB만·증거 없이
 const { createError } = require('../../utils/appError');
 const { isUniqueConstraintName } = require('../../repositories/common');
 
@@ -14,6 +15,7 @@ const defaultDeps = () => ({
     db: require('../../repositories/common/db'),
     gameSessions: require('../../game-core/core/registry/state').gameSessions,
     chatBuffer: require('./chatBuffer'),
+    gameLookup: require('./gameLookup'),
     now: () => new Date(),
 });
 
@@ -42,12 +44,14 @@ const validateReport = (body, reporterId) => {
     return { targetUuid, gameId, reasonCode, memo: trimmedMemo };
 };
 
-// 둘 다 그 판에 있었는지: 메모리 판 먼저, 없으면 저장된 판 결과
+// 둘 다 그 판에 있었는지: 이 Node 메모리 판 → 다른 Node 진행 판(RPC) → 저장된 판 결과
 const bothPlayedIn = async (gameId, reporterId, targetUuid, deps) => {
     const session = deps.gameSessions.get(gameId);
     if (session?.players instanceof Map) {
         return session.players.has(reporterId) && session.players.has(targetUuid);
     }
+    const remote = deps.gameLookup ? await deps.gameLookup.remoteParticipants(gameId, [reporterId, targetUuid]) : null;
+    if (remote) return remote.both === true;
     const count = await deps.db.GameResultPlayer.count({ where: { game_id: gameId, user_id: [reporterId, targetUuid] } });
     return count === 2;
 };
@@ -93,9 +97,12 @@ const submitReport = async ({ reporterId, body }, deps = defaultDeps()) => {
     return { reportId, evidenceSaved };
 };
 
-// 판 채팅 묶음 저장 (버퍼에 없으면 저장 안 함)
+// 판 채팅 묶음 저장: 이 Node 버퍼 → 없으면 판 Node 버퍼(RPC) → 그래도 없으면 저장 안 함
 const saveChatEvidence = async ({ reportId, gameId }, deps) => {
-    const messages = deps.chatBuffer.getGameChatMessages(gameId);
+    let messages = deps.chatBuffer.getGameChatMessages(gameId);
+    if ((!Array.isArray(messages) || messages.length === 0) && deps.gameLookup) {
+        messages = await deps.gameLookup.remoteChatEvidence(gameId);
+    }
     if (!Array.isArray(messages) || messages.length === 0 || reportId === null || reportId === undefined) return false;
     await deps.db.ReportChatEvidence.create({ report_id: reportId, game_id: gameId, messages, saved_at: deps.now() });
     return true;
