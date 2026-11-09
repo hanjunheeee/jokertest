@@ -17,7 +17,8 @@
     "test:with-db":"node --env-file=.env.test --env-file=.env.testdb --test --test-concurrency=1",
     "lint": "eslint .",
     "check:depth": "node ../scripts/check-depth.mjs .",
-    "admin": "node scripts/admin-call.js"
+    "admin": "node scripts/admin-call.js",
+    "admin:account": "node admin/scripts/admin-account.js"
   },
   "keywords": [],
   "author": "",

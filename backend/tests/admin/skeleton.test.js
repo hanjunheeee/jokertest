@@ -92,6 +92,8 @@ test('AD-004: 영역 빈 라우터 전부 로그인 없이 막힘 (읽기·쓰�
     const base = await startServer(t);
     for (const route of AREA_PATHS) {
         for (const method of ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']) {
+            // 로그인 자체는 로그인 전에 열려 있어야 함 (0-2가 채움, 막힘은 auth.integration·access 시험이 봄)
+            if (method === 'POST' && route === '/auth/login') continue;
             const res = await call(base, method, `/admin-api${route}`, method === 'GET' || method === 'DELETE' ? undefined : {});
             assert.equal(res.status, 401, `${method} ${route}`);
             assert.equal(res.body.code, 'ADMIN_LOGIN_REQUIRED', `${method} ${route}`);
@@ -100,7 +102,11 @@ test('AD-004: 영역 빈 라우터 전부 로그인 없이 막힘 (읽기·쓰�
 });
 
 test('AD-004: Access 확인 빈 자리는 기본(required)이면 403, 운영이면 off 값도 무시', async (t) => {
-    withEnv(t, { ADMIN_TOTP_KEY: TOTP_KEY, ADMIN_ACCESS_MODE: undefined, NODE_ENV: 'test' });
+    // 팀·AUD 값: 운영에선 없으면 관리자 페이지가 아예 꺼짐(404, AD-014) → 켜진 채로 off 무시를 보려고 넣음
+    withEnv(t, {
+        ADMIN_TOTP_KEY: TOTP_KEY, ADMIN_ACCESS_MODE: undefined, NODE_ENV: 'test',
+        ADMIN_ACCESS_TEAM_DOMAIN: 'myteam', ADMIN_ACCESS_AUD: 'aud-1', ADMIN_ACCESS_CERTS_URL: undefined,
+    });
     const base = await startServer(t);
     const blocked = await call(base, 'GET', '/admin-api/members');
     assert.equal(blocked.status, 403);

@@ -39,7 +39,9 @@ const MOUNTS = Object.freeze([AUTH_MOUNT, ...AREA_MOUNTS]);
 const TOTP_KEY_PATTERN = /^[0-9a-fA-F]{64}$/;
 
 // OTP 잠금 열쇠가 없거나 모양이 틀리면 관리자 페이지 전체 꺼짐 (요청 때마다 봄 → 시험·재설정 바로 반영)
-const isAdminEnabled = (env = process.env) => TOTP_KEY_PATTERN.test(String(env.ADMIN_TOTP_KEY ?? ''));
+// 운영은 클라우드플레어 팀·AUD 값까지 있어야 켬 (문 1 확인 못 하는 채로 열리지 않게)
+const isAdminEnabled = (env = process.env) => TOTP_KEY_PATTERN.test(String(env.ADMIN_TOTP_KEY ?? ''))
+    && require('./config').isProductionAccessReady(env);
 
 // 꺼짐이면 이 라우터를 건너뜀 → 뒤 404 처리기 (없는 경로와 같은 모양이라 있는지도 안 드러남)
 const skipWhenDisabled = (req, res, next) => (isAdminEnabled() ? next() : next('router'));
