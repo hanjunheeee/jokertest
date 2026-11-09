@@ -5,6 +5,7 @@ import {
   mapDiscordLinkErrorCode,
   resolveDiscordLinkMessage,
   startDiscordLink,
+  SESSION_LOST_CODE,
 } from "../../../../src/domains/user/hooks/useDiscordAccountLink.js"
 
 test("resolveDiscordLinkMessage: socialLinkSuccess가 있으면 success 메시지를 돌려준다", () => {
@@ -41,16 +42,44 @@ test("mapDiscordLinkErrorCode: 상속된 프로토타입 키는 값으로 새지
   assert.equal(mapDiscordLinkErrorCode("toString"), DEFAULT_DISCORD_LINK_ERROR_MESSAGE)
 })
 
-test("FE-011: 연결 시작 전에 토큰부터 갱신하고, 갱신되면 연결 주소로 감", async () => {
+test("FE-011: 연결 시작 전에 세션부터 확인하고, 확인되면 연결 주소로 감", async () => {
   const went = []
-  const ok = await startDiscordLink("http://api/auth/discord/link", { refresh: async () => true, go: (url) => went.push(url) })
+  const lost = []
+  const ok = await startDiscordLink("http://api/auth/discord/link", {
+    check: async () => true, go: (url) => went.push(url), onSessionLost: (code) => lost.push(code),
+  })
   assert.equal(ok, true)
   assert.deepEqual(went, ["http://api/auth/discord/link"])
+  assert.deepEqual(lost, [])
 })
 
-test("FE-011: 갱신이 안 되면 401 글자 화면 대신 로그인 화면으로 감", async () => {
+test("M-1: 세션 확인이 안 되면 로그아웃·로그인 화면 이동 없이 '다시 로그인 후 연결' 안내 코드만 넘김", async () => {
   const went = []
-  const ok = await startDiscordLink("http://api/auth/discord/link", { refresh: async () => false, go: (url) => went.push(url) })
+  const lost = []
+  const ok = await startDiscordLink("http://api/auth/discord/link", {
+    check: async () => false, go: (url) => went.push(url), onSessionLost: (code) => lost.push(code),
+  })
   assert.equal(ok, false)
-  assert.deepEqual(went, ["/login"])
+  assert.deepEqual(went, [])
+  assert.deepEqual(lost, [SESSION_LOST_CODE])
+  assert.equal(mapDiscordLinkErrorCode(SESSION_LOST_CODE), "로그인이 만료되었습니다. 다시 로그인 후 연결해 주세요.")
+})
+
+test("M-1: 기본 세션 확인은 /auth/refresh를 먼저 부르지 않음 (access 살아 있으면 /auth/me 한 번만)", async () => {
+  const calls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url) => {
+    calls.push(String(url))
+    return new Response(JSON.stringify({ success: true, data: {} }), { status: 200, headers: { "Content-Type": "application/json" } })
+  }
+  try {
+    const went = []
+    const ok = await startDiscordLink("http://api/auth/discord/link", { go: (url) => went.push(url) })
+    assert.equal(ok, true)
+    assert.deepEqual(went, ["http://api/auth/discord/link"])
+    assert.equal(calls.length, 1)
+    assert.match(calls[0], /\/auth\/me$/)
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })

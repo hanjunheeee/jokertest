@@ -869,6 +869,18 @@ test("회귀: 기존 스킨 상품은 기존 일괄구매 POST로 구매한다",
   assert.equal(posts(ORDERS).length, 0)
 })
 
+test("S-1: 일반 아이템을 사면 → 잔액 요약과 함께 거래 내역도 다시 받음", async () => {
+  await newWorld()
+  route("POST", BULK_POST, () => json(200, { results: [] }))
+  const view = await mountStore()
+  await waitBalance(view, DIAMOND_LABEL, "유료 재화 100")
+  const historyCalls = count("GET", TRANSACTIONS)
+  await click(view, "구매")
+  await waitFor(() => assert.equal(posts(BULK_POST).length, 1))
+  await waitFor(() => assert.equal(count("GET", TRANSACTIONS), historyCalls + 1))
+  await waitFor(() => assert.equal(storePurchase.store.getState().status, "confirmed", "다시 받기가 구매 완료를 결과 모름으로 바꾸지 않음"))
+})
+
 function makeController(idPrefix = "r") {
   const goldPosts = [], lookups = [], refreshes = [], legacyPosts = []
   const behavior = {

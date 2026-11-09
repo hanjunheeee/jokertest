@@ -34,13 +34,24 @@ export default function DiscordAccountLink() {
     }, { replace: true })
   }
 
+  // 주소에 오류 코드 붙임 → 위 결과 문구로 보임
+  const showLinkError = (code) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete("socialLinkSuccess")
+      next.set("socialLinkError", code)
+      return next
+    }, { replace: true })
+  }
+
   // 연결하기: 한 번 더 묻고, 그렇다면 서버 연결 주소로 이동
   const handleLinkDiscord = (e) => {
     e.preventDefault()
     const confirmed = window.confirm("Discord 계정을 이 계정에 연결하시겠습니까?")
     dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
     if (!confirmed) return
-    void startDiscordLink(`${API_BASE_URL}/auth/discord/link`)
+    // 세션 확인 안 되면 로그아웃 대신 주소에 코드 붙여 안내 문구 띄움
+    void startDiscordLink(`${API_BASE_URL}/auth/discord/link`, { onSessionLost: showLinkError })
   }
 
   return (

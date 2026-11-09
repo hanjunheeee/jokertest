@@ -136,3 +136,30 @@ test("NotificationModal.js:37: 숨긴 종류의 읽은 알림만 있으면 '읽�
   assert.equal(button.disabled, true)
   await act(async () => { root.unmount() })
 })
+
+test("lobby 3번: 창 열자마자 자동 읽음 중에 보러 가기를 눌러도 같은 알림 읽음은 한 번만 보내고 이동 허락(ok)", async () => {
+  // 서버처럼: 같은 알림 읽음이 동시에 두 번 오면 늦은 쪽은 읽음 시각 없는 줄을 돌려줌
+  const sent = []
+  let inFlight = 0
+  let resolveFirst
+  __setNotificationsApiForTests({
+    fetchNotificationsApi: async () => [row({ id: "a" })],
+    markNotificationReadApi: (id) => {
+      sent.push(id)
+      inFlight += 1
+      if (inFlight > 1) return Promise.resolve(row({ id, readAt: null }))
+      return new Promise((resolve) => { resolveFirst = () => { inFlight -= 1; resolve(row({ id, readAt: READ_AT })) } })
+    },
+  })
+  await useNotificationsStore.getState().loadSnapshot()
+
+  const auto = useNotificationsStore.getState().markVisibleUnreadAsRead(buildDefaultGeneralChecks())
+  const click = useNotificationsStore.getState().markRead("a")
+  await flush()
+  resolveFirst()
+  const [autoResult, clickResult] = await Promise.all([auto, click])
+  assert.deepEqual(sent, ["a"], "같은 알림 읽음 요청은 한 번만")
+  assert.equal(autoResult.ok, true)
+  assert.equal(clickResult.ok, true, "보러 가기 이동이 막히지 않음")
+  assert.deepEqual(useNotificationsStore.getState().readErrors, {})
+})

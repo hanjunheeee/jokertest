@@ -22,8 +22,9 @@ export const SIGNUP_SCROLLBAR_CLASS =
 export const SIGNUP_HINT_TEXT_CLASS =
   "px-2 text-center font-subheading app-text-scaled [--app-text-size:12px] leading-snug text-black"
 
+// shrink-0: 세로 flex 스크롤 칸에서 overflow-hidden 칸은 높이 0까지 줄어 버튼이 안 보였음 (1280×800)
 export const SUBMIT_BTN_WRAP_CLASS =
-  "mx-auto mt-0.5 w-[94%] max-h-[2.65rem] overflow-hidden"
+  "mx-auto mt-0.5 w-[94%] max-h-[2.65rem] shrink-0 overflow-hidden"
 
 export const SUBMIT_BTN_CLASS =
   "block w-full origin-top scale-[0.62] cursor-pointer"

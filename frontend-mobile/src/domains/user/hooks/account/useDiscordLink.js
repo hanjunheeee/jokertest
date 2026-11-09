@@ -30,6 +30,16 @@ export function useDiscordLink() {
         }, { replace: true })
     }
 
+    // 주소에 오류 코드 붙임 → 위 결과 문구로 보임
+    const showLinkError = (code) => {
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete("socialLinkSuccess")
+            next.set("socialLinkError", code)
+            return next
+        }, { replace: true })
+    }
+
     // 연결하기: 바로 안 가고 확인 창부터
     const startLink = (event) => {
         event.preventDefault()
@@ -39,7 +49,8 @@ export function useDiscordLink() {
     // 확인 창 연결: 서버 연결 주소로 이동 (소리는 버튼 data-sfx-kind가 냄)
     const confirmLink = () => {
         setConfirmOpen(false)
-        void startDiscordLink(LINK_START_URL)
+        // 세션 확인 안 되면 로그아웃 대신 주소에 코드 붙여 안내 문구 띄움
+        void startDiscordLink(LINK_START_URL, { onSessionLost: showLinkError })
     }
 
     // 확인 창 취소·덮개·Esc: 닫기만 (소리는 버튼·Esc 처리가 냄)

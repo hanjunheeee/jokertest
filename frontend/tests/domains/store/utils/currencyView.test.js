@@ -90,3 +90,15 @@ test("상품 칸: 수량 맞는 묶음 그림을 쓰고, 없으면 재화 표시
   assert.equal(toCurrencyStoreItem(product).id, "currency:dia-50")
   assert.equal(parseProduct({ ...product, payCurrency: "DIAMOND" }), null)
 })
+
+test("S-2: 서버 장부 이유 코드는 전부 우리말로 보임 (영어 코드 그대로 안 나옴)", async () => {
+  const { historyReasonLabel } = await import("../../../../src/domains/store/utils/currencyView.js")
+  const expected = {
+    DIAMOND_TOPUP: "다이아 충전", GOLD_PURCHASE: "골드 구매", PURCHASE: "상점 구매", DEFAULT_GRANT: "기본 지급",
+    ACHIEVEMENT_REWARD: "업적 보상", COUPON_REWARD: "쿠폰 보상", REWARD: "보상",
+    QA_TEST_GRANT_GOLD: "시험 지급", QA_TEST_GRANT_DIAMOND: "시험 지급", EVENT_COMPENSATION_GOLD: "이벤트 보상",
+  }
+  for (const [code, label] of Object.entries(expected)) assert.equal(historyReasonLabel(code), label, code)
+  // 모르는 코드도 영어 그대로 말고 "기타"
+  assert.equal(historyReasonLabel("SOMETHING_NEW"), "기타")
+})

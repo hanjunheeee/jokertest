@@ -90,11 +90,15 @@ export const goldFeedbackOf = (state, product = null) => {
 
 // 거래 내역 한 줄 글자 (이유·재화 이름, 시각, +붙인 수량)
 // 예) ("DIAMOND_TOPUP") → "다이아 충전" / (110) → "+110" / (-10) → "-10"
+// 이유 코드는 서버 장부에 쓰는 것 전부 (economy·ops/coupon·관리자 지급 표 REWARD_CATALOG), 모르는 코드는 "기타"
 const HISTORY_REASONS = {
   DIAMOND_TOPUP: "다이아 충전", GOLD_PURCHASE: "골드 구매", PURCHASE: "상점 구매", DEFAULT_GRANT: "기본 지급", ACHIEVEMENT_REWARD: "업적 보상",
+  COUPON_REWARD: "쿠폰 보상", REWARD: "보상",
+  QA_TEST_GRANT_GOLD: "시험 지급", QA_TEST_GRANT_DIAMOND: "시험 지급", EVENT_COMPENSATION_GOLD: "이벤트 보상",
 }
 const HISTORY_CURRENCIES = { DIAMOND: "다이아", GOLD: "골드" }
-export const historyReasonLabel = (reason) => HISTORY_REASONS[reason] ?? reason
+export const historyReasonLabel = (reason) =>
+  Object.prototype.hasOwnProperty.call(HISTORY_REASONS, reason) ? HISTORY_REASONS[reason] : "기타"
 export const historyCurrencyLabel = (currency) => HISTORY_CURRENCIES[currency] ?? currency
 export const formatHistoryTime = (value) => {
   const date = new Date(value)

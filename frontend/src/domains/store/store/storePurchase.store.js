@@ -21,13 +21,18 @@ const refreshAfterGold = (result) => {
   currencyHistory.load()
 }
 
+// 일반 구매 뒤 요약·거래 내역 다시 받음 (거래 내역 빼먹으면 새로 고칠 때까지 구매 줄 안 보임)
+// 약속(Promise)을 돌려줘야 함: 구매 흐름이 refresh().catch()로 부름
+const refreshAfterItems = () =>
+  Promise.all([useEconomyStore.getState().fetchSummary(), currencyHistory.load()])
+
 // 기기 저장소·요청 함수 넣어 만듦 (골드는 충전 API, 일반은 묶음 구매 API)
 export const storePurchase = createPurchaseController({
   storage: () => window.localStorage,
   post: (payload) => purchaseApi.bulk(payload),
   postGold: (payload) => currencyApi.purchaseGold(payload),
   lookup: (id, kind) => kind === "GOLD" ? currencyApi.lookupGoldPurchase(id) : purchaseApi.lookup(id),
-  refresh: (result) => result ? refreshAfterGold(result) : useEconomyStore.getState().fetchSummary(),
+  refresh: (result) => result ? refreshAfterGold(result) : refreshAfterItems(),
   randomId: () => crypto.randomUUID(),
 })
 // 지금 로그인 계정으로 붙이고, 계정이 바뀌면 다시 붙임
