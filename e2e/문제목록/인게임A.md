@@ -4,7 +4,7 @@
 
 | 번호 | 시험 이름 | 재현 순서 | 기대 | 실제 | 의심 파일:줄 | 심각도 |
 |---|---|---|---|---|---|---|
-| 1 | day-vote › 막힌 표 › 둘째 날에도 → 기권 버튼이 다시 켜져 있음 / vote-extra › 첫날 카드로 찍은 사람도 → 둘째 날 기권 버튼이 켜져 있음 | 5인 판 → 첫날 낮 투표에서 기권(또는 카드로 아무나 투표) → 마감(동점·재판 어느 쪽이든) → 밤 → 둘째 날 낮 투표 | 둘째 날 투표가 열리면 기권 버튼이 다시 켜짐 (새 날 새 투표) | 기권 버튼이 잠긴 채 남음 (첫날 아무것도 안 낸 사람은 켜짐). 카드 '투표하기'는 켜져 있어 찍기는 되지만 기권은 못 함 | frontend/src/domains/game/ingame/store/ingame/phaseActions.js:100-113 (새 낮으로 넘어갈 때 `self.hasSubmittedDayVote`·`dayVoteTargetUuid`·`dayVoteRound`를 안 비움) + hooks/useInGameDayVoteSubmit.js:113-115 (서버 제출 값을 회차만 보고 믿음, 날짜는 안 봄 — 날마다 회차가 1이라 첫날 값이 둘째 날에도 이김). 값은 sessionActions.js:85-115 내 진행 받기가 넣음 | 중간 (둘째 날부터 기권 못 함, 모바일도 같은 store면 같음) |
+| 1 | day-vote › 막힌 표 › 둘째 날에도 → 기권 버튼이 다시 켜져 있음 / vote-extra › 첫날 카드로 찍은 사람도 → 둘째 날 기권 버튼이 켜져 있음 | 5인 판 → 첫날 낮 투표에서 기권(또는 카드로 아무나 투표) → 마감(동점·재판 어느 쪽이든) → 밤 → 둘째 날 낮 투표 | 둘째 날 투표가 열리면 기권 버튼이 다시 켜짐 (새 날 새 투표) | 기권 버튼이 잠긴 채 남음 (첫날 아무것도 안 낸 사람은 켜짐). 카드 '투표하기'는 켜져 있어 찍기는 되지만 기권은 못 함 | frontend/src/domains/game/ingame/store/ingame/phaseActions.js:100-113 (새 낮으로 넘어갈 때 `self.hasSubmittedDayVote`·`dayVoteTargetUuid`·`dayVoteRound`를 안 비움) + hooks/useInGameDayVoteSubmit.js:113-115 (서버 제출 값을 회차만 보고 믿음, 날짜는 안 봄 — 날마다 회차가 1이라 첫날 값이 둘째 날에도 이김). 값은 sessionActions.js:85-115 내 진행 받기가 넣음 | 중간 (둘째 날부터 기권 못 함, 모바일도 같은 store면 같음) | → 고침(3286c6ad)
 
 ## 실행 상태 (2026-11-09, 감독 지시로 중간에 멈춤)
 
