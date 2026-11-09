@@ -34,10 +34,33 @@ function backend() {
     return loaded;
 }
 
-// SQL 한 줄 (확인용), 결과 줄 배열
+/**
+ * DB 시각 글자 (UTC, 'YYYY-MM-DD HH:MM:SS') — 앱은 시각을 UTC로 적음
+ * 날 SQL 값에 JS Date를 그대로 넣으면 이 PC 시간대(KST)로 바뀌어 9시간 어긋남 → 이 함수로 바꿔 넣기 (query는 Date를 알아서 바꿈)
+ * @param {Date|number|string|null} [at] Date·ms·날짜 글자 — 인자 없으면 지금, null·undefined를 넘기면 null
+ * @example sqlTime() // '2026-11-09 03:25:51'  ·  sqlTime(Date.now() + 3600e3) // 한 시간 뒤
+ */
+function sqlTime(...args) {
+    if (args.length === 0) return new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const [at] = args;
+    if (at === null || at === undefined) return null;
+    const date = at instanceof Date ? at : new Date(at);
+    if (Number.isNaN(date.getTime())) throw new Error(`sqlTime: 날짜가 아님 (${String(at)})`);
+    return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+// 넣을 값 속 Date만 UTC 글자로 (배열·{이름: 값} 둘 다)
+const fixDates = (replacements) => {
+    const fix = (v) => (v instanceof Date ? sqlTime(v) : v);
+    if (Array.isArray(replacements)) return replacements.map(fix);
+    if (replacements && typeof replacements === 'object') return Object.fromEntries(Object.entries(replacements).map(([k, v]) => [k, fix(v)]));
+    return replacements;
+};
+
+// SQL 한 줄 (확인용), 결과 줄 배열 — 값에 Date가 있으면 UTC 글자로 바꿔 넣음 (9시간 어긋남 막기)
 async function query(sql, replacements = []) {
     const { db } = backend();
-    const [rows] = await db.sequelize.query(sql, { replacements });
+    const [rows] = await db.sequelize.query(sql, { replacements: fixDates(replacements) });
     return rows;
 }
 
@@ -48,4 +71,4 @@ async function close() {
     loaded = null;
 }
 
-module.exports = { backend, query, close };
+module.exports = { backend, query, close, sqlTime };

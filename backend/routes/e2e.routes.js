@@ -14,20 +14,29 @@ const createE2eRouter = ({ env = process.env } = {}) => {
     router.use(requireInternalKey({ env }));
     router.use((req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
 
-    // POST /e2e/role-presets { presets: { uuid: "JOKER" } } → 다음 판 시작 때 그 역할로
+    // POST /e2e/role-presets { presets: { uuid: "JOKER" }, roomId? } → 다음 판 시작 때 그 역할로 (roomId 주면 그 방 판에만)
     router.post("/role-presets", (req, res) => {
         try {
-            const size = gameHooks.setRolePresets(req.body?.presets);
-            res.json({ ok: true, pending: size });
+            const size = gameHooks.setRolePresets(req.body?.presets, { roomId: req.body?.roomId ?? undefined });
+            res.json({ ok: true, pending: size, scope: req.body?.roomId ? "room" : "users" });
         } catch (error) {
             res.status(400).json({ ok: false, code: "INVALID_PRESETS", message: error.message });
         }
     });
 
-    // DELETE /e2e/role-presets { uuids?: [] } → 미리 정한 것 지우기 (없으면 전부)
+    // DELETE /e2e/role-presets { uuids?: [], roomId?, all? } → 미리 정한 것 지우기
+    // 전부 지우기는 all: true일 때만 (병렬로 도는 남의 시험 예약까지 지우지 않게, 빈 본문은 400)
     router.delete("/role-presets", (req, res) => {
-        gameHooks.clearRolePresets(req.body?.uuids);
-        res.json({ ok: true });
+        const { uuids, roomId, all } = req.body ?? {};
+        if (all === true) {
+            gameHooks.clearRolePresets();
+            return res.json({ ok: true, cleared: "all" });
+        }
+        if (!Array.isArray(uuids) && !roomId) {
+            return res.status(400).json({ ok: false, code: "INVALID_TARGET", message: "uuids·roomId·all: true 중 하나" });
+        }
+        gameHooks.clearRolePresets({ uuids: Array.isArray(uuids) ? uuids : undefined, roomId: roomId || undefined });
+        return res.json({ ok: true });
     });
 
     // GET /e2e/users/:uuid/game → 그 사람 판 요약 (역할·생존·단계)

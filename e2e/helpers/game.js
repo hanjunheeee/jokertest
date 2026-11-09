@@ -40,7 +40,8 @@ async function setupTable({ humans = [], bots: botCount = 1, settings = {}, role
 
     const table = new Table({ room, bots, humans });
     const presets = typeof roles === 'function' ? roles({ humans, bots }) : roles;
-    if (presets && Object.keys(presets).length > 0) await e2e.setRoles(presets);
+    // 이 방 예약 (병렬로 도는 다른 판과 안 섞임)
+    if (presets && Object.keys(presets).length > 0) await e2e.setRoles(presets, { roomId: room.roomId });
 
     const started = await host.startGame(room.roomId, room.settingsVersion);
     table.gameId = started.gameId;

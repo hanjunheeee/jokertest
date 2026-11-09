@@ -10,7 +10,7 @@
     "test:fast": "playwright test --grep-invert @game",
     "test:game": "playwright test --grep @game",
     "test:safari": "playwright test --project=mobile-safari",
-    "test:shutdown": "playwright test --project=shutdown",
+    "test:shutdown": "playwright test --project=serial --no-deps",
     "report": "playwright show-report reports/html"
   },
   "devDependencies": {

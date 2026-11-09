@@ -46,9 +46,31 @@ const internal = {
 };
 
 const e2e = {
-    /** 다음 판 시작 때 역할 정하기: { [uuid]: 'JOKER'|'DOCTOR'|'GUARD'|'WITCH_HUNTER'|'CITIZEN' } (방 설정 역할 수 안에서) */
-    setRoles: (presets) => must('POST', '/e2e/role-presets', { presets }),
-    clearRoles: (uuids) => must('DELETE', '/e2e/role-presets', uuids ? { uuids } : {}),
+    /**
+     * 다음 판 시작 때 역할 정하기: { [uuid]: 'JOKER'|'DOCTOR'|'GUARD'|'WITCH_HUNTER'|'CITIZEN' } (방 설정 역할 수 안에서)
+     * 방 예약: roomId를 주거나, 안 주면 정할 사람 중 대기방에 든 사람의 방을 찾아 그 방 판에만 씀 (못 찾으면 사람 예약)
+     * 예약은 방·사람마다 따로라 병렬 시험끼리 안 섞임, 사슬 바꿈(가→나, 나→다)도 서버가 맞춤
+     * @param {Record<string,string>} presets
+     * @param {{ roomId?: string }} [o]
+     * @returns {Promise<{ ok:true, pending:number, scope:'room'|'users' }>}
+     */
+    setRoles: async (presets, { roomId } = {}) => {
+        let target = roomId;
+        if (!target) {
+            for (const uuid of Object.keys(presets ?? {})) {
+                const r = await call('GET', `/e2e/users/${encodeURIComponent(uuid)}/room`);
+                if (r.ok && r.body?.room?.roomId) { target = r.body.room.roomId; break; }
+            }
+        }
+        return must('POST', '/e2e/role-presets', target ? { presets, roomId: target } : { presets });
+    },
+    /**
+     * 예약 지우기: clearRoles([uuid...]) · clearRoles({ uuids, roomId }) — 전부는 clearRoles({ all: true }) (남의 시험 예약도 지워지니 @serial에서만)
+     */
+    clearRoles: (target) => {
+        if (target === undefined) throw new Error('clearRoles()는 지울 것을 줘야 함: [uuid...] · { roomId } · { all: true }(@serial에서만)');
+        return must('DELETE', '/e2e/role-presets', Array.isArray(target) ? { uuids: target } : target);
+    },
     /** 그 사람 판 요약 { gameId, phase, dayIndex, dayPhase, nightTurnRole, tribunal, players:[{uuid,nickname,role,alive}] } 없으면 null */
     gameOf: async (uuid) => {
         const r = await call('GET', `/e2e/users/${encodeURIComponent(uuid)}/game`);

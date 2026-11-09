@@ -94,16 +94,53 @@ async function expectChat(page, text) {
 }
 
 /**
- * 화면이 window.alert로 알리는 문구 받기 (로그인 실패·가입 완료 등) — action을 돌리는 동안 뜬 첫 대화상자
+ * 화면이 window.alert로 알리는 문구 받기 (로그인 실패·가입 완료 등) — action을 돌리는 동안·뒤에 뜬 첫 알림
+ * 데스크톱: 브라우저 대화상자를 뜨자마자 받아 닫음 (누르는 도중 떠도 click이 안 멈춤)
+ * 모바일: window.alert를 양피지 안내 창(alertdialog "안내")으로 바꿔 둠 → 그 글을 읽고 "확인" 누름 (close:false면 안 닫음)
+ * @param {import('@playwright/test').Page} page
+ * @param {() => Promise<any>} action 알림을 띄울 동작 (누르기 등)
+ * @param {{ timeoutMs?: number, close?: boolean }} [o]
  * @returns {Promise<string>} 문구
  */
-async function captureAlert(page, action, { timeoutMs = 10000 } = {}) {
-    const dialogPromise = page.waitForEvent('dialog', { timeout: timeoutMs });
-    await action();
-    const dialog = await dialogPromise;
-    const message = dialog.message();
-    await dialog.accept().catch(() => {});
-    return message;
+async function captureAlert(page, action, { timeoutMs = 10000, close = true } = {}) {
+    let onDialog = null;
+    const native = new Promise((resolve) => {
+        onDialog = (dialog) => {
+            page.off('dialog', onDialog);
+            const message = dialog.message();
+            dialog.accept().catch(() => {}).finally(() => resolve(message));
+        };
+        page.on('dialog', onDialog);
+    });
+    const parchment = page.getByRole('alertdialog', { name: '안내' }).last();
+    // 누르기 전부터 떠 있던 양피지 창은 이번 알림이 아님 → 그 글과 다른 글이 뜰 때까지
+    const staleText = await parchment.isVisible().catch(() => false) ? await parchment.getByRole('paragraph').first().innerText().catch(() => null) : null;
+    let timer = null;
+    let settled = false;
+    try {
+        await action();
+        const deadline = Date.now() + timeoutMs;
+        const fromParchment = (async () => {
+            while (!settled && Date.now() < deadline) {
+                await parchment.waitFor({ state: 'visible', timeout: Math.max(1, deadline - Date.now()) });
+                if (settled) return null;
+                const text = await parchment.getByRole('paragraph').first().innerText().catch(() => '');
+                if (staleText === null || text !== staleText) {
+                    if (close) await parchment.getByRole('button', { name: '확인' }).click().catch(() => {});
+                    return text;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+            throw new Error('양피지 안내 창 안 뜸');
+        })();
+        fromParchment.catch(() => {}); // 대화상자가 먼저 오면 이쪽 기다림은 버림
+        const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`알림이 안 뜸 (${timeoutMs}ms)`)), timeoutMs); });
+        return await Promise.race([native, fromParchment, timeout]);
+    } finally {
+        settled = true;
+        clearTimeout(timer);
+        page.off('dialog', onDialog);
+    }
 }
 
 // 역할 이름 화면 글자

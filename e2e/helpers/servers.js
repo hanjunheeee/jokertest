@@ -73,20 +73,26 @@ async function startExtraBackend({ port, defaultIpLimits = true, overrides = {},
 
     if (expectExit) {
         const code = await Promise.race([exited, sleep(timeoutMs).then(() => 'TIMEOUT')]);
-        if (code === 'TIMEOUT') { child.kill(); throw new Error('따로 띄운 백엔드가 안 꺼짐 (시작 거부 안 됨)'); }
+        if (code === 'TIMEOUT') { child.kill(); await exited; throw new Error('따로 띄운 백엔드가 안 꺼짐 (시작 거부 안 됨)'); }
         return { code, output: redact(output) };
     }
     const url = `http://localhost:${usePort}`;
-    await Promise.race([
-        waitUntil(() => isUp(url), { timeoutMs, label: `따로 띄운 백엔드 ${usePort} 안 켜짐` }),
-        exited.then((code) => { throw new Error(`따로 띄운 백엔드가 바로 꺼짐 code=${code}: ${redact(output).slice(-500)}`); }),
-    ]);
-    return {
-        url,
-        port: usePort,
-        output: () => redact(output),
-        stop: async () => { if (child.exitCode === null) { child.kill(); await exited; } },
-    };
+    const stop = async () => { if (child.exitCode === null && child.signalCode === null) { child.kill(); await exited; } };
+    // 시험 프로세스가 먼저 끝나도 남지 않게
+    const killOnExit = () => { try { child.kill(); } catch { /* 이미 꺼짐 */ } };
+    process.once('exit', killOnExit);
+    exited.then(() => process.off('exit', killOnExit));
+    try {
+        await Promise.race([
+            waitUntil(() => isUp(url), { timeoutMs, label: `따로 띄운 백엔드 ${usePort} 안 켜짐` }),
+            exited.then((code) => { throw new Error(`따로 띄운 백엔드가 바로 꺼짐 code=${code}: ${redact(output).slice(-500)}`); }),
+        ]);
+    } catch (error) {
+        // 시간 초과여도 띄운 node는 꼭 끔 (늦게 켜져 포트를 잡고 남지 않게 — 문제목록 security S-02)
+        await stop().catch(() => {});
+        throw error;
+    }
+    return { url, port: usePort, output: () => redact(output), stop };
 }
 
 module.exports = { isUp, triggerShutdown, waitBackendUp, startExtraBackend };

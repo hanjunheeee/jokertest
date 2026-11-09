@@ -9,6 +9,10 @@ const { E2E } = require('./helpers/env');
 if (!process.env.E2E_RUN_ID) process.env.E2E_RUN_ID = `${Date.now().toString(36)}${crypto.randomBytes(2).toString('hex')}`;
 
 const reuse = process.env.E2E_REUSE === '1';
+// 화면 서버: build(기본, 빌드본 + 작은 정적 서버 — CPU 적게) 또는 dev(vite 개발 서버), scripts/serve-front.js
+const frontMode = (process.env.E2E_FRONT || 'build').toLowerCase();
+// 빌드는 처음 한 번 1~3분 걸려서 넉넉히
+const frontTimeout = frontMode === 'dev' ? 120_000 : 420_000;
 module.exports = defineConfig({
     testDir: './tests',
     // 판 시험은 한 판에 1~3분 → 넉넉히, 기대 기다림도 길게
@@ -24,7 +28,8 @@ module.exports = defineConfig({
         ['html', { outputFolder: 'reports/html', open: 'never' }],
         ['json', { outputFile: 'reports/results.json' }],
     ],
-    outputDir: 'test-results',
+    // 실패 사진·trace: 실행마다 따로 (여럿이 같이 돌려도 서로 안 지움), E2E_OUTPUT_DIR로 바꿈
+    outputDir: process.env.E2E_OUTPUT_DIR || path.join('test-results', process.env.E2E_RUN_ID),
     globalSetup: require.resolve('./helpers/global-setup.js'),
     globalTeardown: require.resolve('./helpers/global-teardown.js'),
     use: {
@@ -91,21 +96,21 @@ module.exports = defineConfig({
         },
         {
             name: 'desktop',
-            command: 'node node_modules/vite/bin/vite.js --config ../e2e/vite/desktop.config.mjs',
-            cwd: path.join(__dirname, '..', 'frontend'),
+            command: 'node scripts/serve-front.js desktop',
             url: E2E.desktopUrl,
-            env: { VITE_API_BASE_URL: E2E.apiUrl },
+            env: { VITE_API_BASE_URL: E2E.apiUrl, E2E_FRONT: frontMode },
             reuseExistingServer: reuse,
-            timeout: 120_000,
+            timeout: frontTimeout,
+            stdout: 'pipe',
         },
         {
             name: 'mobile',
-            command: 'node node_modules/vite/bin/vite.js --config ../e2e/vite/mobile.config.mjs',
-            cwd: path.join(__dirname, '..', 'frontend-mobile'),
+            command: 'node scripts/serve-front.js mobile',
             url: E2E.mobileUrl,
-            env: { VITE_API_BASE_URL: E2E.apiUrl },
+            env: { VITE_API_BASE_URL: E2E.apiUrl, E2E_FRONT: frontMode },
             reuseExistingServer: reuse,
-            timeout: 120_000,
+            timeout: frontTimeout,
+            stdout: 'pipe',
         },
     ],
 });

@@ -6,12 +6,12 @@
 |---|---|
 | 시험 DB | docker `jokertest-db-1` 안 `joker_e2e` (계정 `mmc_e2e`, 이 DB만 권한) |
 | 백엔드 | `http://localhost:4100` (`scripts/start-backend.js`가 켬, 꺼지면 다시 켬) |
-| 데스크톱 화면 | `http://localhost:5273` (frontend vite, 캐시 폴더 따로) |
-| 모바일 화면 | `http://localhost:5274` (frontend-mobile vite, 캐시 폴더 따로) |
+| 데스크톱 화면 | `http://localhost:5273` (`scripts/serve-front.js desktop` — 기본 빌드본, `E2E_FRONT=dev`면 vite 개발 서버) |
+| 모바일 화면 | `http://localhost:5274` (`scripts/serve-front.js mobile` — 같음) |
 | 비밀값 | `e2e/.env.e2e` (git 안 올라감, 처음 `npm run db:setup`이 무작위로 만듦, 토스 시험 키만 backend/.env에서 옮김) |
 | 서버 로그 | `e2e/.runtime/backend.log` (SQL까지 다 있음) |
 | 받은 메일 | `e2e/.runtime/mail/<주소>.jsonl` (진짜 메일 안 나감) |
-| 결과 | `reports/html` (npm run report), `reports/results.json`, 실패 사진·trace는 `test-results/` |
+| 결과 | `reports/html` (npm run report), `reports/results.json`, 실패 사진·trace는 `test-results/<실행 번호>/` (실행마다 따로) |
 
 ## 띄우는 법
 
@@ -28,6 +28,32 @@ npx playwright test         # 전부: desktop·mobile 동시 → 끝나면 seria
 - 서버 꺼짐 같은 serial만: `npm run test:shutdown` (= `--project=serial --no-deps`)
 - 시험 DB 새로: `npm run db:reset` · 계정 남기기: `E2E_KEEP_ACCOUNTS=1`
 - 동시 수: `E2E_WORKERS=8` (기본 6)
+
+### 바꿀 수 있는 값 (환경값)
+
+| 값 | 기본 | 무엇 |
+|---|---|---|
+| `E2E_REUSE=1` | 꺼짐 | 켜 둔 서버(4100·5273·5274) 그대로 씀 |
+| `E2E_FRONT` | `build` | 화면 서버: `build` = 빌드본 + 작은 정적 서버(CPU 적게), `dev` = vite 개발 서버(고친 화면 바로 반영) |
+| `E2E_FRONT_REBUILD=0` | 꺼짐 | build일 때 있던 빌드본(`.runtime/front/<desktop·mobile>`)을 다시 안 빌드하고 씀 |
+| `E2E_RUN_ID` | 자동(시각+무작위) | 실행 번호 — 계정 이메일 `e2e+<번호>-…@example.test`·결과 폴더 이름 |
+| `E2E_OUTPUT_DIR` | `test-results/<실행 번호>` | 실패 사진·trace 폴더 (`--output`과 같음) |
+| `E2E_STALE_HOURS` | `6` | 실행 시작 정리가 지우는 "오래된" 기준 시간 |
+| `E2E_KEEP_ACCOUNTS=1` | 꺼짐 | 실행 끝에 이번 실행 계정 안 지움 |
+
+### 화면 서버 (빌드본이 기본)
+
+- `E2E_FRONT=build`(기본): 시작할 때 화면을 한 번 빌드(데스크톱·모바일 각각 몇 초, `VITE_API_BASE_URL=http://localhost:4100`) → `.runtime/front/<desktop·mobile>`에 두고 작은 정적 서버로 5273·5274에 줌. 그림·소리(`frontend/public` 200MB)는 베끼지 않고 public 폴더에서 바로 줌, 화면 안 주소(`/lobby` 등)는 index.html. vite 개발 서버보다 CPU를 훨씬 덜 씀(파일마다 바꾸기·감시 없음).
+- 빌드는 **개발 모드 값 그대로**(`NODE_ENV=development` → `import.meta.env.DEV === true`): 개발 전용 길·버튼·토스 테스트 키 검사가 개발 서버와 같음. 빌드라서 `version.json`(새 버전 안내용)이 생김.
+- **화면 코드를 고치면 화면 서버를 다시 켜야 반영됨**(빌드본은 안 바뀜). 고치면서 바로 보려면 `E2E_FRONT=dev`.
+- 손으로 하나만: `node scripts/serve-front.js desktop` (확인용 다른 포트: `E2E_FRONT_PORT=5283`).
+
+### 여럿이 같이 돌릴 때 (켜 둔 서버 + `E2E_REUSE=1`)
+
+- **실행 시작 정리는 오래된 것만**: 만든 지 `E2E_STALE_HOURS`(6)시간 넘은 e2e 계정, 그만큼 안 쓴 메일 파일, `test-results/` 아래 지난 실행 폴더. 지금 도는 남의 실행 계정·메일은 안 지움(예전엔 전부 지워서 남의 시험이 깨짐 — 문제목록 ingame-c E1).
+- **실행 끝 정리는 이번 실행(`E2E_RUN_ID`) 계정만**. 지우는 사이 서버가 그 계정 기록을 새로 쓰면(판 끝 `game_result_players`·접속 기록) 외래키에 막힘 → 딸린 줄부터 다시 지움(몇 번까지). 그래도 못 지우면 경고만(시험 결과에 오류로 안 섞임), 남은 건 6시간 뒤 다음 실행이 지움.
+- 실패 사진·trace는 실행마다 `test-results/<실행 번호>/` → 서로 안 지움.
+- 역할 미리 정하기는 방·사람마다 따로 예약(아래 'game.js') → 병렬 판끼리 안 섞임.
 
 ## 프로젝트 셋
 
@@ -84,7 +110,7 @@ npx playwright test         # 전부: desktop·mobile 동시 → 끝나면 seria
 - **판 시험은 `@game`** 태그 (한 판 10~30초 — `npm run test:fast`에서 빠짐).
 - **고르개**: 화면 글자 · `getByRole(이름)` · aria-label 먼저. 꼭 필요할 때만 화면 코드에 `data-testid`를 **최소로** 추가(동작 안 바꿈, 고치기 직전 그 파일을 다시 읽고 남의 변경 살리기, 커밋은 `git commit -- <그 파일>`).
 - **기다림**: `page.waitForTimeout` 대신 `expect(...).toBeVisible()` · `toHaveURL` · `expect.poll`. 판 단계는 기다리지 말고 `table.advanceUntil`.
-- 화면이 `window.alert`로 알리는 곳(로그인 실패·가입 완료·서버 꺼짐 안내)은 `ui.captureAlert(page, () => 누르기)` 또는 `page.waitForEvent('dialog')`.
+- 화면이 `window.alert`로 알리는 곳(로그인 실패·가입 완료·서버 꺼짐 안내)은 `ui.captureAlert(page, () => 누르기)` — 데스크톱 대화상자(누르는 도중 떠도 안 멈춤)와 모바일 양피지 안내 창(`alertdialog "안내"`, 모바일은 `window.alert`를 이 창으로 바꿔 둠) 둘 다 읽고 닫음. `page.waitForEvent('dialog')`는 데스크톱에서만 됨(모바일은 안 옴).
 - 로비에 처음 오면 인트로 영상이 뜸 → `ui.gotoLobby(page)` / `ui.skipIntro(page)`.
 - 토스 결제창은 **열고 닫기만**. 카드사·간편결제 고르기, 카드 번호 입력, 결제 완료는 하지 않음.
 - 개발 서버(4000·5173·5174)·개발 DB(`joker`·`joker_realgame`)·백엔드 시험 DB(`pluto_f01_20260909_al`)는 건드리지 않음.
@@ -127,7 +153,7 @@ await t.advanceUntil('NIGHT');        // 또는 (s) => s.players.find(...).alive
 const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, nightTurnRole, tribunal, winResult, players:[{uuid,nickname,role,alive}] }
 ```
 
-- **역할 고정**: `roles`(또는 `e2e.setRoles({ uuid: 'JOKER' })`를 시작 전에). 같은 판 안에서 역할을 서로 바꿔 끼우므로 **역할별 인원은 방 설정 그대로** — 자동 구성은 6명부터 의사, 8명 경비원, 10명 마녀사냥꾼. 작은 판에서 특수 역할이 필요하면 `settings: { roleCompositionMode: 'custom', roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 } }` (광대 수는 `jokerCount`와 같아야 함). 못 맞춘 역할은 서버 로그에 `[e2e] 역할 미리 정하기 못 맞춤`.
+- **역할 고정**: `roles`(또는 `e2e.setRoles({ uuid: 'JOKER' })`를 시작 전에). **방 예약**: `table.setup`은 그 방 id로 예약 → 그 방 판에만 씀. `e2e.setRoles`를 직접 부르면 정할 사람 중 대기방에 든 사람의 방을 찾아 방 예약(못 찾으면 그 사람 예약 — 그 사람이 든 판에만), 15분 안 쓰면 버림. 판 시작 때 바라는 사람에게 그 역할, 나머지는 되도록 원래 역할 그대로 — **사슬 바꿈(나→경비원, 경비원이던 봇→광대)도 맞춤**. 같은 판 안에서 역할을 서로 바꿔 끼우므로 **역할별 인원은 방 설정 그대로** — 자동 구성은 6명부터 의사, 8명 경비원, 10명 마녀사냥꾼. 작은 판에서 특수 역할이 필요하면 `settings: { roleCompositionMode: 'custom', roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 } }` (광대 수는 `jokerCount`와 같아야 함). 못 맞춘 역할은 서버 로그에 `[e2e] 역할 미리 정하기 못 맞춤`.
 - **짧은 시간**: 방 설정 최소값(토론·투표·밤 30초, 재판 15초)이 기본. 그래도 기다리지 말고 **`t.advance()`/`t.advanceUntil()`로 지금 단계 마감 타이머를 바로 돌림**(시간 설정 값은 그대로라 화면 타이머 숫자 시험도 됨). 역할 공개 10초도 바로 넘김.
 - **봇 행동 지정** (`t.playBots(plan)` 또는 봇마다 `(bot, i) => plan`): `dayChat`, `readyForVote`(기본 true), `dayVote`(`'random'`·`'abstain'`·`'skip'`·uuid·닉네임·함수), `tribunal`(`'GUILTY'`·`'NOT_GUILTY'`·`'skip'`=안 내서 마감 때 기권·함수), `night`(대상, 광대는 동료 빼고), `jokerChat`, `deadChat`(죽은 뒤 한 번), `pollMs`.
 - **처형시키기**: 봇 `dayVote: 대상, tribunal: 'GUILTY'` → `advanceUntil(대상 alive === false)`. **밤에 죽이기**: 광대 봇을 `roles`로 정하고 `night: 대상` → `advanceUntil('DAY')`. (예: `tests/ingame/execute-by-bots.spec.js`)
@@ -142,7 +168,7 @@ const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, ni
 | `internal.disconnect(uuid)` | 정지·비활성 반영 즉시 끊기 |
 | `internal.reloadMaintenance()` · `reloadBannedWords()` | DB 표 고친 뒤 다시 읽기 (점검은 @serial) |
 | `internal.live()` | 대기방·진행 판 요약 |
-| `e2e.setRoles({uuid: ROLE})` · `clearRoles()` | 다음 판 시작 때 역할 |
+| `e2e.setRoles({uuid: ROLE}, { roomId? })` · `clearRoles([uuid…])` · `clearRoles({ roomId })` | 다음 판 시작 때 역할 (방·사람 예약, 위 'game.js'). 전부 지우기는 `clearRoles({ all: true })`(남의 예약도 지우니 @serial에서만), 인자 없는 `clearRoles()`는 던짐 |
 | `e2e.gameOf(uuid)` · `e2e.game(gameId)` | 판 요약 (역할·생존·단계) |
 | `e2e.roomOf(uuid)` | 대기방 (코드·방장·준비) |
 | `e2e.advance(gameId)` | 지금 단계 바로 끝내기 |
@@ -155,7 +181,7 @@ const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, ni
 
 ### ui.js — 화면 공통
 
-`skipIntro` · `gotoLobby` · `loginViaUi` · `loginViaApi` · `joinRoomByCodeUi(page, code)` (데스크톱 6칸·모바일 1칸 둘 다) · `readyUi` · `readRoleReveal(page)` → '광대' 등 · `closePhaseNotice` · `sendChat` · `expectChat` · `captureAlert(page, action)` · `ROLE_LABELS`.
+`skipIntro` · `gotoLobby` · `loginViaUi` · `loginViaApi` · `joinRoomByCodeUi(page, code)` (데스크톱 6칸·모바일 1칸 둘 다) · `readyUi` · `readRoleReveal(page)` → '광대' 등 · `closePhaseNotice` · `sendChat` · `expectChat` · `captureAlert(page, action, { timeoutMs=10000, close=true })` → 알림 문구 (데스크톱 대화상자·모바일 양피지 창 둘 다, 누르기 전부터 떠 있던 양피지 창은 빼고) · `ROLE_LABELS`.
 
 ### security.js — 보안
 
@@ -163,7 +189,7 @@ const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, ni
 
 ### servers.js — 서버
 
-`triggerShutdown()` (깃발 파일 → 서버 안에서 SIGTERM → 접속자에게 `server_shutdown` 알림 → 꺼짐, 곧 다시 켜짐) · `waitBackendUp()` (**@shutdown 시험은 finally에서 꼭**) · `startExtraBackend({ port?, defaultIpLimits=true, overrides, expectExit })` (시험 하나만 쓰는 백엔드, 같은 시험 DB·포트 4150+작업자 번호, 화면 없음).
+`triggerShutdown()` (깃발 파일 → 서버 안에서 SIGTERM → 접속자에게 `server_shutdown` 알림 → 꺼짐, 곧 다시 켜짐) · `waitBackendUp()` (**@shutdown 시험은 finally에서 꼭**) · `startExtraBackend({ port?, defaultIpLimits=true, overrides, expectExit, timeoutMs=60000 })` (시험 하나만 쓰는 백엔드, 같은 시험 DB·포트는 준 값 또는 4150+작업자 번호, 화면 없음). 안 켜짐(시간 초과)·바로 꺼짐으로 던질 때도 띄운 node를 끄고 던짐, 시험 프로세스가 끝나도 끔.
 
 ### toss.js — 토스 결제창
 
@@ -172,6 +198,9 @@ const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, ni
 ### db.js · accounts.js
 
 `require('../../helpers/db').query(sql, [값])` — 시험 DB 확인·정지 줄 넣기 등 (주소가 `joker_e2e`가 아니면 던짐). 계정 지우기는 실행 끝에 이번 실행(`E2E_RUN_ID`) 것만 자동.
+
+- **시각은 UTC**: 앱은 DB에 UTC로 적음. 날 SQL 값에 JS `Date`를 그대로 넘기면 sequelize가 이 PC 시간대(KST)로 바꿔 **9시간 어긋남**(정지 시작이 9시간 뒤 → 정지 안 걸림, 문제목록 ingame-c E3). `query`는 넘긴 값 속 `Date`를 알아서 UTC 글자로 바꿈. 글자로 직접 만들 땐 `const { sqlTime } = require('../../helpers/db')` → `sqlTime()` 지금, `sqlTime(Date.now() + 3600e3)` 한 시간 뒤 → `'2026-11-09 03:25:51'`. SQL 안에서는 `UTC_TIMESTAMP()`·`NOW()`(연결 시간대가 +00:00이라 같음)도 됨.
+- `accounts.createMany(n)`·봇 계정은 **하나씩 차례로** 만듦(동시에 만들면 가끔 DB 교착 — 문제목록 ingame-c E2), 계정 하나 만들기도 교착이면 몇 번 다시.
 
 ## 본보기 시험 (2026-11-09 전부 통과)
 
