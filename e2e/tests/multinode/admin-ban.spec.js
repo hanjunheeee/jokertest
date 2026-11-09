@@ -1,4 +1,4 @@
-// Node 여러 개 — 관리자 정지 (AD-085): 정지 요청은 n1으로, 플레이어는 n2 로비 → 정지 즉시 튕김
+// Node 여러 개 — 관리자 정지 (AD-085): 정지 요청은 n1으로, 플레이어는 n2 로비 → 정지 즉시 튕김 + 첫 안내가 정지 문구
 // E2E_NODES=2에서만 돎, 관리자 화면(5275)의 정지 요청 주소에 ?node=를 붙여 받는 Node를 고름
 const mn = require('./_mn');
 const { createAdmin, loginAsAdmin } = require('../../helpers/adminAccounts');
@@ -25,9 +25,9 @@ test('AD-085: n2에 붙은 플레이어를 n1이 받은 정지로 즉시 튕김'
         await dialog.getByLabel('정지 일수').fill('1');
         await dialog.getByLabel(/정지 사유/).fill('욕설');
 
-        // 다른 Node 소켓은 안내(force_disconnect)와 끊기가 어댑터 다른 길로 가서 끊기가 먼저 닿으면 "세션 만료" 안내가 뜸
-        // → 안내 문구 대신 "바로 튕김 + 다시 로그인하면 정지 사유"로 확인 (안내 순서는 services/ops/disconnect.js 몫)
-        await captureAlert(target.page, () => dialog.getByRole('button', { name: '정지하기' }).click(), { timeoutMs: 15000 });
+        // 다른 Node 플레이어도 첫 안내가 "정지된 계정"이어야 함 (세션 내림을 끊기 뒤로 미뤄 "세션 만료"가 먼저 안 뜸)
+        const notice = await captureAlert(target.page, () => dialog.getByRole('button', { name: '정지하기' }).click(), { timeoutMs: 15000 });
+        expect(notice).toContain('정지된 계정');
         await expect(target.page).toHaveURL(/\/login/, { timeout: 15000 });
         await expect(admin.getByText('접속 1곳을 바로 끊었어요', { exact: false }).first()).toBeVisible();
 

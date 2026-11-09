@@ -39,15 +39,14 @@ const resolveReason = async (uuid, userRepository) => {
     return 'ADMIN_DISCONNECT';
 };
 
-// 끊기: 정지·비활성이면 세션도 내림 (새로고침으로 다시 못 들어오게), 접속 없으면 끊은 수 0
+// 끊기: 안내·끊기 먼저, 그다음 정지·비활성이면 세션 내림 (새로고침으로 다시 못 들어오게), 접속 없으면 끊은 수 0
+// 세션 내림이 먼저면 내림 알림(버스)을 받은 다른 Node가 바로 다시 확인해 "세션 만료"로 먼저 끊어 버림 → 정지 안내가 못 닿음
+// 안내·끊기 먼저 해도 다시 들어오기는 막힘 (정지·상태는 이미 DB에 있어 접속 확인에서 걸림)
 const disconnectUser = async (uuid, deps = defaultDeps()) => {
     if (typeof uuid !== 'string' || !UUID_PATTERN.test(uuid)) {
         throw createError('uuid 모양이 아닙니다.', 400, 'INVALID_UUID');
     }
     const code = await resolveReason(uuid, deps.userRepository);
-    if (code !== 'ADMIN_DISCONNECT') {
-        await deps.userRepository.markOnlineSessionsOffline(uuid);
-    }
     const { sockets, partial } = await fetchUserSocketsEverywhere(uuid, deps.getIo());
     for (const socket of sockets) {
         try {
@@ -56,6 +55,9 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
         } catch (error) {
             console.error('[즉시 끊기 실패]', error?.name ?? 'Error');
         }
+    }
+    if (code !== 'ADMIN_DISCONNECT') {
+        await deps.userRepository.markOnlineSessionsOffline(uuid);
     }
     // partial은 Node 여러 개 모드에만 실음 (단일 모드 답 모양은 예전 그대로)
     const result = { uuid, code, disconnected: sockets.length };
