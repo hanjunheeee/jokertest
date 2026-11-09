@@ -1,5 +1,6 @@
 // 대기방·매칭 장부 파일 (Map 12개)
 // matchmaking 안 파일들만 사용, 밖은 matchmaking.js 함수로만 건드림
+const { ObservableMap } = require('../../../game-core/core/tools/observableMap')
 
 // 자동 매칭 줄 선 사람 (uuid → 줄 정보), 인원 차면 방 만들고 빠짐
 const matchmakingQueue = new Map()
@@ -8,7 +9,8 @@ const matchmakingQueue = new Map()
 const gameRooms = new Map()
 
 // 누가 어느 대기방에 있나 (uuid → 방 id), gameRooms랑 같이 움직임
-const playerRoom = new Map()
+// 지켜보는 Map: 바뀌면 Node 여러 개일 때 Redis loc:<uuid>도 고침 (socket/connection/locationSync.js), 쓰는 법은 보통 Map과 같음
+const playerRoom = new ObservableMap()
 
 // 끝난 판 → 방장이 만든 다음 방 (우편함, 30분)
 const partyRoomByGameId = new Map()

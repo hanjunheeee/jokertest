@@ -1,11 +1,13 @@
 // 게임 판 장부 3개 모아 둔 파일
 // game-core 안 파일들만 require 해서 사용, socket 쪽은 gameSession.js 함수로만 건드림
+// gameSessions·playerSession은 지켜보는 Map: 바뀌면 Node 여러 개일 때 Redis game:<id>·loc:<uuid>도 고침 (socket/connection/locationSync.js)
+const { ObservableMap } = require('../tools/observableMap')
 
 // 판 id → 판 전체. 진행 중인 판이랑, 끝났는데 아직 다 안 나간 판도 존재
-const gameSessions = new Map()
+const gameSessions = new ObservableMap()
 
 // 사람 uuid → 판 id. 한 사람이 판 두 개에 못 들어가 막기
-const playerSession = new Map()
+const playerSession = new ObservableMap()
 
 // 방 id → 판 id. 같은 방에서 판이 두 번 안 열리게 막기
 const roomGameSession = new Map()
