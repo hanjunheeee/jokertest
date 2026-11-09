@@ -139,11 +139,10 @@ async function getAchievementProgressStats(userId) {
     let wins = 0
     for (const row of eligibleRows) {
         if (row.is_alive) survivals += 1
-        if (row.won) {
-            wins += 1
-            if (typeof row.role === 'string') {
-                roleWinsByRole.set(row.role, (roleWinsByRole.get(row.role) ?? 0) + 1)
-            }
+        if (!row.won) continue
+        wins += 1
+        if (typeof row.role === 'string') {
+            roleWinsByRole.set(row.role, (roleWinsByRole.get(row.role) ?? 0) + 1)
         }
     }
 

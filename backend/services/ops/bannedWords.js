@@ -36,6 +36,18 @@ const reloadBannedWords = async ({ db = defaultDb() } = {}) => {
 
 const getBannedWordCount = () => words.length;
 
+// 금지어 하나가 나오는 자리마다 *로 바꿈, 하나라도 바꿨으면 true
+const maskWord = (chars, lower, word) => {
+    let changed = false;
+    let from = lower.indexOf(word);
+    while (from !== -1) {
+        for (let i = from; i < from + word.length; i += 1) chars[i] = '*';
+        changed = true;
+        from = lower.indexOf(word, from + word.length);
+    }
+    return changed;
+};
+
 // 채팅 가리기: 금지어 자리를 같은 길이 *로 (대소문자 안 가림), 목록 비면 그대로
 const maskBannedWords = (text) => {
     if (typeof text !== 'string' || text.length === 0 || words.length === 0) return text;
@@ -45,12 +57,7 @@ const maskBannedWords = (text) => {
     const chars = base.split('');
     let changed = false;
     for (const word of words) {
-        let from = lower.indexOf(word);
-        while (from !== -1) {
-            for (let i = from; i < from + word.length; i += 1) chars[i] = '*';
-            changed = true;
-            from = lower.indexOf(word, from + word.length);
-        }
+        if (maskWord(chars, lower, word)) changed = true;
     }
     return changed ? chars.join('') : text;
 };

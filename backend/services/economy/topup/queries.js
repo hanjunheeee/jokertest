@@ -10,6 +10,18 @@ const { tryGrant, loadGrantedBalance } = require('./grant');
 const { claimOrder } = require('./claim');
 const { processClaimed } = require('./confirm');
 
+// 확인 중 주문을 잡아서 결제사에 다시 물음 (응답 놓친 주문 복구)
+const recoverConfirmingOrder = async (db, adapter, deps, { userId, orderId }) => {
+    try {
+        const decision = await claimOrder(db, adapter, deps, { userId, orderId });
+        if (decision.kind === 'CLAIMED') await processClaimed(db, adapter, deps, decision);
+        else if (decision.kind === 'PENDING_GRANT') await tryGrant(db, deps, orderId);
+    } catch (error) {
+        // 결제 설정 없으면 복구 건너뛰고 지금 상태만
+        if (error?.code !== 'CONFIG_MISSING') throw error;
+    }
+};
+
 // 남의 주문 거절, 지급 대기·확인 중이면 복구 시도 뒤 최신 상태
 const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
     const db = dbOf(deps);
@@ -22,19 +34,11 @@ const getTopupOrder = async ({ userId, orderId }, deps = {}) => {
     if (!order) throw orderNotFound();
     if (order.user_id !== userId) throw notOwner();
 
-    // 지급 대기면 지급 다시 시도
+    // 지급 대기면 지급 다시 시도, 확인 중이면 결제사에 다시 물음
     if (order.status === ORDER_STATUS.PENDING_GRANT) {
         await tryGrant(db, deps, orderId);
-    // 확인 중이면 잡아서 결제사에 다시 물음 (응답 놓친 주문 복구)
     } else if (order.status === ORDER_STATUS.CONFIRMING) {
-        try {
-            const decision = await claimOrder(db, adapter, deps, { userId, orderId });
-            if (decision.kind === 'CLAIMED') await processClaimed(db, adapter, deps, decision);
-            else if (decision.kind === 'PENDING_GRANT') await tryGrant(db, deps, orderId);
-        } catch (error) {
-            // 결제 설정 없으면 복구 건너뛰고 지금 상태만
-            if (error?.code !== 'CONFIG_MISSING') throw error;
-        }
+        await recoverConfirmingOrder(db, adapter, deps, { userId, orderId });
     }
 
     // 복구 뒤 다시 읽어 최신 상태로

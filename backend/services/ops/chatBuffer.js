@@ -22,14 +22,18 @@ const sweep = (nowMs) => {
     }
 };
 
+// 끝난 판 중 가장 먼저 넣은 판 id (없으면 null)
+const firstEndedGameId = () => {
+    for (const [gameId, entry] of buffers) {
+        if (entry.endedAt !== null) return gameId;
+    }
+    return null;
+};
+
 // 판 수 상한: 끝난 판 먼저, 없으면 가장 오래된 판 버림
 const enforceGameLimit = () => {
     while (buffers.size > MAX_GAMES) {
-        let victim = null;
-        for (const [gameId, entry] of buffers) {
-            if (entry.endedAt !== null) { victim = gameId; break; }
-        }
-        buffers.delete(victim ?? buffers.keys().next().value);
+        buffers.delete(firstEndedGameId() ?? buffers.keys().next().value);
     }
 };
 

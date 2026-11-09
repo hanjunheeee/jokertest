@@ -28,6 +28,25 @@ const notifyGranted = (userId, definition) => {
     }
 };
 
+// 보상 하나 주기: 재화·아이템 (모르는 종류는 건너뜀)
+const grantReward = async ({ economyService, db, transaction }, userId, definition, reward) => {
+    if (reward.type === 'CURRENCY') {
+        await economyService.grantAchievementCurrency({
+            userId,
+            currency: reward.currency,
+            amount: reward.amount,
+            referenceEventId: `achievement:${definition.id}:${reward.currency}`,
+        }, db, { transaction });
+    } else if (reward.type === 'ITEM') {
+        await economyService.grantAchievementItem({
+            userId,
+            itemId: reward.itemId,
+            itemType: reward.itemType,
+            referenceEventId: `achievement:${definition.id}:ITEM`,
+        }, db, { transaction });
+    }
+};
+
 // 이미 받은 업적이면 granted false (유일 제약으로 두 번 지급 막기)
 const grantAchievement = async (userId, definition) => {
     const { db, economyService } = getDeps();
@@ -49,21 +68,7 @@ const grantAchievement = async (userId, definition) => {
 
         // 여기부터 진짜 바뀜: 재화·아이템 보상 (참조 id로 같은 보상 두 번 안 쌓임)
         for (const reward of definition.rewards) {
-            if (reward.type === 'CURRENCY') {
-                await economyService.grantAchievementCurrency({
-                    userId,
-                    currency: reward.currency,
-                    amount: reward.amount,
-                    referenceEventId: `achievement:${definition.id}:${reward.currency}`,
-                }, db, { transaction });
-            } else if (reward.type === 'ITEM') {
-                await economyService.grantAchievementItem({
-                    userId,
-                    itemId: reward.itemId,
-                    itemType: reward.itemType,
-                    referenceEventId: `achievement:${definition.id}:ITEM`,
-                }, db, { transaction });
-            }
+            await grantReward({ economyService, db, transaction }, userId, definition, reward);
         }
 
         // 알림 행도 같은 트랜잭션, 방송은 커밋 뒤 evaluate.js 몫

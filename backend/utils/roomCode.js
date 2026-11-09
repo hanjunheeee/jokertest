@@ -15,22 +15,23 @@ function generateRoomCode() {
     return code
 }
 
+// 예약 판정이 터지면 예약된 걸로 침 (모르는 코드는 안 씀)
+function isReservedSafe(isReserved, code) {
+    try {
+        return isReserved(code) === true
+    } catch (err) {
+        console.error('[방 코드 예약 판정 실패]', err)
+        return true
+    }
+}
+
 // 지금 방들과 안 겹치고 예약도 안 된 코드, retry번 안에 못 찾으면 null
 function generateUniqueRoomCode(existingRoomsMap, { retry = 5, generator = generateRoomCode, isReserved } = {}) {
     for (let attempt = 0; attempt < retry; attempt += 1) {
         const code = generator()
         const taken = [...existingRoomsMap.values()].some((room) => room.code === code)
         if (taken) continue
-        // 예약 판정이 터지면 예약된 걸로 침 (모르는 코드는 안 씀)
-        if (typeof isReserved === 'function') {
-            let reserved = true
-            try {
-                reserved = isReserved(code) === true
-            } catch (err) {
-                console.error('[방 코드 예약 판정 실패]', err)
-            }
-            if (reserved) continue
-        }
+        if (typeof isReserved === 'function' && isReservedSafe(isReserved, code)) continue
         return code
     }
     return null

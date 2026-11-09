@@ -82,6 +82,15 @@ function fail(code, message) {
     return { ok: false, code, message }
 }
 
+// 정한 키 중 값 있는 것만 새 객체로
+function pickDefined(source, keys) {
+    const picked = {}
+    for (const key of keys) {
+        if (source[key] !== undefined) picked[key] = source[key]
+    }
+    return picked
+}
+
 // 바꿀 수 있는 칸만 뽑은 보기, 역할 수·직업별 시간은 아는 역할만 (저장된 모르는 칸 안 내보내기)
 function buildEditableSettingsView(settings) {
     const source = isPlainObject(settings) ? settings : {}
@@ -90,21 +99,9 @@ function buildEditableSettingsView(settings) {
         if (key === 'roleCounts' || key === 'roleNightActionTimes') continue
         if (source[key] !== undefined) view[key] = source[key]
     }
-    if (isPlainObject(source.roleCounts)) {
-        const roleCounts = {}
-        for (const role of CUSTOM_ROLE_KEYS) {
-            if (source.roleCounts[role] !== undefined) roleCounts[role] = source.roleCounts[role]
-        }
-        view.roleCounts = roleCounts
-    }
+    if (isPlainObject(source.roleCounts)) view.roleCounts = pickDefined(source.roleCounts, CUSTOM_ROLE_KEYS)
     if (isPlainObject(source.roleNightActionTimes)) {
-        const roleNightActionTimes = {}
-        for (const role of ROLE_NIGHT_ACTION_TIME_KEYS) {
-            if (source.roleNightActionTimes[role] !== undefined) {
-                roleNightActionTimes[role] = source.roleNightActionTimes[role]
-            }
-        }
-        view.roleNightActionTimes = roleNightActionTimes
+        view.roleNightActionTimes = pickDefined(source.roleNightActionTimes, ROLE_NIGHT_ACTION_TIME_KEYS)
     }
     return view
 }

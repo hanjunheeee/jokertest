@@ -9,6 +9,18 @@ const { generateRawToken, hashToken, buildResetUrl } = require('./tokens');
 const { TOKEN_TTL_MS } = require('./constants');
 const resetTokenRepository = require('../../../repositories/auth/passwordResetToken');
 
+// 소셜 전용 계정이면 안내 메일, 아니면 재설정 링크 메일 (앱 주소 설정 없어 링크 못 만들면 안 보냄)
+const sendResetMail = async (mailer, issued) => {
+    if (issued.socialOnly) {
+        await mailer.sendMail({ to: issued.toEmail, template: 'SOCIAL_LOGIN_GUIDE', params: {} });
+        return;
+    }
+    const resetUrl = buildResetUrl(issued.rawToken);
+    if (resetUrl) {
+        await mailer.sendMail({ to: issued.toEmail, template: 'PASSWORD_RESET', params: { resetUrl } });
+    }
+};
+
 // 소셜 전용 계정이면 소셜 로그인 안내 메일, 아니면 재설정 메일
 exports.requestPasswordReset = async ({ email }, { mailAdapter: injectedMailAdapter } = {}) => {
     const mailer = injectedMailAdapter ?? mailAdapter.createHttpMailAdapter();
@@ -44,15 +56,7 @@ exports.requestPasswordReset = async ({ email }, { mailAdapter: injectedMailAdap
 
     // 메일은 트랜잭션 끝난 뒤 (데드락 재시도 때 메일 겹치지 않게)
     try {
-        if (issued.socialOnly) {
-            await mailer.sendMail({ to: issued.toEmail, template: 'SOCIAL_LOGIN_GUIDE', params: {} });
-        } else {
-            // 앱 주소 설정 없어 링크 못 만들면 메일 안 보냄
-            const resetUrl = buildResetUrl(issued.rawToken);
-            if (resetUrl) {
-                await mailer.sendMail({ to: issued.toEmail, template: 'PASSWORD_RESET', params: { resetUrl } });
-            }
-        }
+        await sendResetMail(mailer, issued);
     } catch {
         // 메일 실패는 삼킴 (응답이 달라지면 가입 여부 드러남)
     }

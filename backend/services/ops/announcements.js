@@ -43,37 +43,39 @@ const validateAnnouncement = (body) => {
     return { announcementId, title: title.trim(), body: text.trim(), target: 'users', userUuids: [...new Set(userUuids)] };
 };
 
+// 한 사람에게 저장·전송, 결과는 created·duplicated·failed 중 하나
+const sendToOne = async (deps, userId, { sourceKey, title, body, announcementId }) => {
+    try {
+        const saved = await deps.notificationService.createNotification({
+            userId,
+            type: deps.notificationService.NOTIFICATION_TYPES.SYSTEM,
+            sourceKey,
+            title,
+            body,
+            target: { kind: 'announcement', announcementId },
+        });
+        if (!saved.created) return 'duplicated';
+        deps.notificationService.emitNotificationCreated(userId, saved.notification);
+        return 'created';
+    } catch (error) {
+        // 없는 계정(외래 키)·DB 오류: 다른 사람 전송은 계속, 로그엔 오류 이름만
+        console.error('[운영 알림 저장 실패]', error?.name ?? 'Error');
+        return 'failed';
+    }
+};
+
 // 보내기: 대상마다 알림 저장(같은 공지 id면 있던 것) → 새로 만든 것만 소켓 전송, 한 사람 실패는 세기만
 const sendAnnouncement = async (input, deps = defaultDeps()) => {
     const { announcementId, title, body, target, userUuids } = validateAnnouncement(input);
     const recipients = target === 'online' ? [...deps.onlineUsers.keys()].slice(0, MAX_TARGETS) : userUuids;
     const sourceKey = announcementSourceKey(announcementId);
 
-    let created = 0;
-    let duplicated = 0;
-    let failed = 0;
+    const counts = { created: 0, duplicated: 0, failed: 0 };
     for (const userId of recipients) {
-        try {
-            const result = await deps.notificationService.createNotification({
-                userId,
-                type: deps.notificationService.NOTIFICATION_TYPES.SYSTEM,
-                sourceKey,
-                title,
-                body,
-                target: { kind: 'announcement', announcementId },
-            });
-            if (result.created) {
-                created += 1;
-                deps.notificationService.emitNotificationCreated(userId, result.notification);
-            } else {
-                duplicated += 1;
-            }
-        } catch (error) {
-            // 없는 계정(외래 키)·DB 오류: 다른 사람 전송은 계속, 로그엔 오류 이름만
-            failed += 1;
-            console.error('[운영 알림 저장 실패]', error?.name ?? 'Error');
-        }
+        const outcome = await sendToOne(deps, userId, { sourceKey, title, body, announcementId });
+        counts[outcome] += 1;
     }
+    const { created, duplicated, failed } = counts;
     return { announcementId, target, recipientCount: recipients.length, created, duplicated, failed };
 };
 
