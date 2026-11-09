@@ -29,7 +29,8 @@ exports.resolveOAuthAccount = async ({
 
         if (existingIdentity) {
             // 연결은 있는데 계정 행이 없으면 404
-            const user = await userRepository.findByUuid(existingIdentity.user_id, { transaction });
+            // 계정 행도 잠금 (같은 사람 이메일 로그인과 줄 세우기, 세션 끊기 읽기가 그 뒤 커밋까지 보게)
+            const user = await userRepository.findByUuid(existingIdentity.user_id, { transaction, lock: transaction.LOCK.UPDATE });
             if (!user) {
                 throw createError("연결된 계정을 찾을 수 없습니다.", 404, "LINKED_USER_MISSING");
             }

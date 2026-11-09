@@ -15,6 +15,8 @@ const stubStorage = (t, { findOne, banFindOne = async () => null, update }) => {
     const updateCalls     = [];
     db.UserSession = {
         findOne,
+        // 끊기는 안 잠그는 읽기로 그 사람 세션 id 찾고 id로만 UPDATE (2026-11-09 동시 로그인 교착)
+        findAll: async ({ where }) => [{ id: `open-session-of-${where.user_id}` }],
         update: update ?? (async (values, options) => { updateCalls.push({ values, options }); return [1]; }),
     };
     db.UserBan = { findOne: banFindOne };
@@ -73,7 +75,7 @@ test("활성 밴이 있으면 세션이 유효해도 403이고, 이 계정의 �
     assert.equal(updateCalls.length, 1, "밴 감지 시 세션 전체 폐기(UPDATE)가 실행되어야 합니다");
     assert.equal(updateCalls[0].values.is_online, false);
     assert.ok(updateCalls[0].values.revoked_at instanceof Date);
-    assert.deepEqual(updateCalls[0].options.where, { user_id: "uuid-1", revoked_at: null });
+    assert.deepEqual(updateCalls[0].options.where, { id: ["open-session-of-uuid-1"], revoked_at: null });
 });
 
 test("세션이 온라인이고 밴이 없으면 통과한다", async (t) => {

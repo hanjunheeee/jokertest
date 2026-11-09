@@ -151,13 +151,19 @@ const setupFakeDb = (t, { markOfflineFails = false } = {}) => {
             assert.ok(staged, "UserSession.update이 트랜잭션 밖에서 실행되었습니다");
             assert.ok(options?.transaction, "markOnlineSessionsOffline에 transaction 옵션이 전달되지 않았습니다");
             if (markOfflineFails) throw new Error("세션 폐기 실패");
+            // 끊기는 그 사람 세션 id 목록으로 옴 (2026-11-09 동시 로그인 교착), 옛 user_id 조건도 받음
             const revoked = [];
+            const targetIds = Array.isArray(options.where.id) ? options.where.id : null;
             for (const [id, session] of sessions) {
-                if (session.user_id === options.where.user_id && session.is_online === true) revoked.push(id);
+                const targeted = targetIds ? targetIds.includes(id) : session.user_id === options.where.user_id;
+                if (targeted && session.is_online === true) revoked.push(id);
             }
             staged.revokedIds.push(...revoked);
             return [revoked.length];
         },
+        findAll: async ({ where }) => [...sessions.values()]
+            .filter((session) => session.user_id === where.user_id && session.revoked_at === null)
+            .map((session) => ({ id: session.id })),
         create: async (sessionData) => {
             calls.push({ name: "UserSession.create", sessionData });
             assert.ok(staged, "createUserSession이 트랜잭션 밖에서 실행되었습니다");

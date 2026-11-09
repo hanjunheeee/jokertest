@@ -163,6 +163,7 @@ test("활성 밴은 이미 로그인된 토큰도 다음 REST 요청에서 403�
     const updateCalls = [];
     db.UserSession = {
         findOne: async () => ({ id: "session-1", user_id: "uuid-1", is_online: true }),
+        findAll: async () => [{ id: "session-1" }],
         update: async (values, options) => { updateCalls.push({ values, options }); return [1]; },
     };
     db.UserBan = { findOne: async () => ({ reason: "운영 정지" }) };
