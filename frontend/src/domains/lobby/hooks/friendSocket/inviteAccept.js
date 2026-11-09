@@ -1,7 +1,9 @@
-// 게임 초대 수락 흐름 (수락 요청 → 결과 모르면 다시 묻기 → 지금 방 확인 → 방 화면으로 이동)
+// 게임 초대 수락 흐름 (수락 요청 → 다른 Node 방이면 옮겨 한 번 다시 → 결과 모르면 다시 묻기 → 지금 방 확인 → 방 화면으로 이동)
 // 소켓 훅 입구(useFriendSocketEvents)가 다시 내보내 패널 초대 훅·시험이 씀, 이동 함수 등록도 그 훅이 함
 import { useGameInviteStore } from "../../store/gameInvite.store.js";
 import { getSocket } from "../../../../shared/socket/socketClient.js";
+import { moveToNode, nodeToMoveTo } from "../../../../shared/socket/nodeMove.js";
+import { NODE_ERROR_CODES, NODE_MOVE_MESSAGES } from "../../../../shared/constants/connectionSocket.js";
 import { useMatchingStore } from "../../../game/matching/store/matchingStore.js";
 import { useInGameStore } from "../../../game/ingame/store/ingameStore.js";
 import {
@@ -45,6 +47,23 @@ async function askResultAgain(socket, inviteId, canAskAgain) {
     return { ok: false, code: "NOT_ENTERED", message: "방에 입장하지 못했습니다." };
 }
 
+// 다른 Node 방이라는 거절이면 그 Node로 옮겨 한 번만 다시 수락 (서버는 DB를 안 건드리고 거절해서 다시 보내도 됨)
+// 돌려줌: { result, connectionId } — connectionId는 옮긴 뒤 새 연결 id (안 옮겼으면 undefined)
+// 옮기기 실패면 NODE_UNAVAILABLE, 그사이 소켓이 바뀌면 결과 모름
+async function acceptOnOwnerNode(socket, inviteId, firstResult) {
+    const node = nodeToMoveTo(firstResult);
+    if (!node) return { result: firstResult, connectionId: undefined };
+    try {
+        await moveToNode(node);
+    } catch {
+        const code = NODE_ERROR_CODES.NODE_UNAVAILABLE;
+        return { result: { ok: false, code, message: NODE_MOVE_MESSAGES[code] }, connectionId: null };
+    }
+    if (socket !== getSocket()) return { result: { ok: false, code: "STALE_CONNECTION", unknown: true }, connectionId: null };
+    const connectionId = socket.id ?? null;
+    return { result: await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS), connectionId };
+}
+
 // 수락 요청 하나를 끝까지 처리함, 끝나면 수락 잠금은 같은 작업 번호로만 풂
 export async function requestGameInviteAccept(inviteId) {
     // 초대 id가 없으면 거절
@@ -63,13 +82,17 @@ export async function requestGameInviteAccept(inviteId) {
     }
 
     // 지금 연결 id·작업 번호 기억하고 잠금, 그 초대 옛 오류 지움
-    const connectionId = socket.id ?? null;
+    let connectionId = socket.id ?? null;
     const operationId = store.beginAcceptOperation();
     store.markAcceptPending(inviteId, true, operationId);
     store.setInviteError(inviteId, null);
 
     try {
-        let result = await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS);
+        const first = await emitAcceptInvite(socket, inviteId, INVITE_ACCEPT_TIMEOUT_MS);
+        const accepted = await acceptOnOwnerNode(socket, inviteId, first);
+        let result = accepted.result;
+        // 옮겼으면 연결 id가 바뀜 → 옮긴 뒤 새 연결 기준으로 봄
+        if (accepted.connectionId !== undefined) connectionId = accepted.connectionId;
 
         // 응답을 못 받았으면 같은 연결·같은 계정일 때만 결과를 다시 물음, "처리 중"이면 기다렸다 몇 번 더
         const canAskAgain = () => isSameConnection(socket, connectionId)

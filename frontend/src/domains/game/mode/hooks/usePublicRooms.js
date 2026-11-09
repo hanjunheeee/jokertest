@@ -1,11 +1,14 @@
 // 공개 방 목록 받기·갱신 반영, 공개 방 들어가기
-// MultiplayEntryPage가 씀, 소켓이 바뀌면 새 소켓에 다시 붙고 목록을 새로 물음
+// MultiplayEntryPage가 씀(모바일도 같음), 소켓이 바뀌면 새 소켓에 다시 붙고 목록을 새로 물음
+// 다른 Node 방이라는 거절이면 그 Node로 옮긴 뒤 같은 방에 한 번만 다시 들어가기 (옮기는 동안도 들어가는 중)
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { PUBLIC_ROOM_JOIN_TIMEOUT_MS } from "@/domains/game/mode/constants/roomListSocket.js"
 import { getSocket, subscribeSocket } from "@/shared/socket/socketClient.js"
+import { followRoomOwner } from "@/shared/socket/nodeMove.js"
+import { NODE_MOVE_MESSAGES } from "@/shared/constants/connectionSocket.js"
 import { askRooms, joinPublic, onRoomList } from "../socket/rooms.js"
 
 // 공개 방 목록·들어가기 상태
@@ -21,6 +24,8 @@ export function usePublicRooms() {
   const fetchVerRef = useRef(0)
   const joiningRef = useRef(false)
   const joinTimerRef = useRef(null)
+  // 이번 들어가기 { roomId, moved } (Node 옮긴 뒤 다시 보낼 때 씀, 옮기기는 한 번만)
+  const attemptRef = useRef(null)
 
   // 목록 묻기: 늦게 온 응답·다른 소켓 응답은 버림 (갱신 방송이 오면 버전 올라감)
   const fetchRooms = useCallback(async () => {
@@ -40,15 +45,53 @@ export function usePublicRooms() {
     }
   }, [])
 
-  // 들어가는 중 표시·제한 시간 지움
-  const clearJoin = useCallback(() => {
-    joiningRef.current = false
+  // 제한 시간 타이머만 지움
+  const stopJoinTimer = useCallback(() => {
     if (joinTimerRef.current !== null) {
       window.clearTimeout(joinTimerRef.current)
       joinTimerRef.current = null
     }
-    if (!disposedRef.current) setIsJoining(false)
   }, [])
+
+  // 들어가는 중 표시·제한 시간 지움
+  const clearJoin = useCallback(() => {
+    joiningRef.current = false
+    attemptRef.current = null
+    stopJoinTimer()
+    if (!disposedRef.current) setIsJoining(false)
+  }, [stopJoinTimer])
+
+  // 공개 방 들어가기 보내고 제한 시간 걸기 (처음·Node 옮긴 뒤 다시 보내기 같이 씀)
+  const sendJoin = useCallback((socket, roomId) => {
+    joinPublic(socket, roomId)
+    stopJoinTimer()
+    joinTimerRef.current = window.setTimeout(() => {
+      joinTimerRef.current = null
+      clearJoin()
+    }, PUBLIC_ROOM_JOIN_TIMEOUT_MS)
+  }, [clearJoin, stopJoinTimer])
+
+  // 다른 Node 방이라는 거절이면 처음 한 번만 그 Node로 옮겨 다시 보냄, 옮기기 시작했으면 true
+  const retryOnOwnerNode = useCallback((answer) => {
+    const attempt = attemptRef.current
+    if (!attempt || attempt.moved) return false
+    const moving = followRoomOwner(answer, {
+      isCurrent: () => !disposedRef.current && joiningRef.current && attemptRef.current === attempt,
+      resend: () => {
+        const current = getSocket()
+        if (current) sendJoin(current, attempt.roomId)
+        else clearJoin()
+      },
+      fail: () => {
+        clearJoin()
+        alert(NODE_MOVE_MESSAGES.ROOM_ON_OTHER_NODE)
+      },
+    })
+    if (!moving) return false
+    attempt.moved = true
+    stopJoinTimer()
+    return true
+  }, [clearJoin, sendJoin, stopJoinTimer])
 
   // 화면 살아 있는지 표시
   useEffect(() => {
@@ -82,11 +125,12 @@ export function usePublicRooms() {
       navigate("/game-matching")
     }
     // 입장 실패: 다시 누를 수 있게 풀고 알림 (내가 보낸 입장 중일 때만, FE-032)
-    const handleJoinFailed = ({ message } = {}) => {
+    const handleJoinFailed = (answer = {}) => {
       if (!isCurrent()) return
       if (!joiningRef.current) return
+      if (retryOnOwnerNode(answer)) return
       clearJoin()
-      alert(message ?? "공개 방에 참여할 수 없습니다.")
+      alert(answer.message ?? NODE_MOVE_MESSAGES[answer.code] ?? "공개 방에 참여할 수 없습니다.")
     }
     // 다시 연결되면 목록 새로 물음
     const handleConnect = () => {
@@ -110,7 +154,7 @@ export function usePublicRooms() {
       off()
       clearJoin()
     }
-  }, [socket, fetchRooms, navigate, clearJoin])
+  }, [socket, fetchRooms, navigate, clearJoin, retryOnOwnerNode])
 
   // 공개 방 들어가기: 응답 방송이 안 오면 제한 시간 뒤 다시 누를 수 있게 풂
   const joinPublicRoom = useCallback((roomId) => {
@@ -122,13 +166,9 @@ export function usePublicRooms() {
 
     joiningRef.current = true
     setIsJoining(true)
-    joinPublic(socket, roomId)
-
-    joinTimerRef.current = window.setTimeout(() => {
-      joinTimerRef.current = null
-      clearJoin()
-    }, PUBLIC_ROOM_JOIN_TIMEOUT_MS)
-  }, [clearJoin])
+    attemptRef.current = { roomId, moved: false }
+    sendJoin(socket, roomId)
+  }, [sendJoin])
 
   return { rooms, refreshRooms: fetchRooms, joinPublicRoom, isJoining }
 }

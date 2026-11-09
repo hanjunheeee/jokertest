@@ -481,11 +481,13 @@ test("하니스와 실제 소스가 같은 연결을 쓴다(RoomCodeInput·페�
   const guard = invitePageHook.match(/if \(roomCode\.length < (\d+)\) return/)
   assert.ok(guard, "제출 길이 가드가 없다")
   assert.equal(Number(guard[1]), ROOM_CODE_LENGTH, "페이지 가드와 하니스 가드의 자릿수가 다르다")
+  // 입장 요청 모양을 담아 두고 보냄 (Node 옮긴 뒤 같은 요청을 한 번 다시 보내려고, 조각 5)
   assert.match(
     invitePageHook,
-    /joinByCode\(current, \{\s*roomCode,/,
+    /const payload = \{\s*roomCode,[\s\S]*?sendJoin\(current, payload\)/,
     "입력값이 그대로 제출 payload에 실리지 않는다",
   )
+  assert.match(invitePageHook, /joinByCode\(socket, payload\)/, "담아 둔 payload를 그대로 보내지 않는다")
 })
 
 test("방코드 보기 모달은 정규화된 코드 값을 프레임에 표시한다", () => {
