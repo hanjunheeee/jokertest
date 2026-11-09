@@ -776,9 +776,11 @@ test('AC-07/R-IMPL#5: registerConnectionHandlers가 등록한 notifications_read
     assert.deepEqual(await fireGuardedReady(s), { ok: true, created: true });
     assert.equal(await db.Notification.count({ where: { user_id: userId } }), 1);
 
-    await db.UserSession.update({ is_online: false }, { where: { id: `session-${userId}` } });
-    // 사건 검사 통과는 1초 저장됨 (BE-012) → 그 뒤 사건부터 막히고, 거절은 답 함수로 알림 (BE-042, 2a7d570e 2026-11-09)
-    await new Promise((resolve) => setTimeout(resolve, socket.__testables.EVENT_CHECK_CACHE_MS + 50));
+    // 이 서버가 세션을 끊는 길(로그아웃·새 로그인·비번 변경과 같은 저장소 함수)로 끊음
+    // → 끊김 알림이 저장된 통과 결과를 바로 지워 다음 사건부터 막힘, 거절은 답 함수로 알림 (BE-042)
+    // 전엔 DB만 바꾸고 저장 시간(1초)을 기다렸음. 저장 시간이 5초(= 주기 검사 간격)로 바뀐 뒤(부하 줄이기 2026-11-09)
+    // 5초를 기다리면 주기 검사가 먼저 끊어 force_disconnect가 두 번 셈됨 (진짜 소켓은 끊긴 뒤 사건이 안 옴)
+    await require('../../repositories/user/session').markOnlineSessionsOffline(userId);
     const rejectedAck = await fireGuardedReady(s);
     assert.equal(rejectedAck?.ok, false);
     assert.equal(rejectedAck?.code, 'SESSION_EXPIRED');
