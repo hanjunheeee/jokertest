@@ -32,7 +32,8 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     }
 
     // 여기부터 진짜 바뀜: 판 id·세션 둘 다 표식 남기고 첫 시도
-    const run = { gameId, record: deepFreezeRecord(record), participantUuids, attempt: 0, timerId: null }
+    // 점검 강제 종료 판(abortReason)은 무효라 업적 평가 안 함 (보상 장부 안 생김)
+    const run = { gameId, record: deepFreezeRecord(record), participantUuids, attempt: 0, timerId: null, skipAchievements: Boolean(session.abortReason) }
     terminalPersistRuns.set(gameId, run)
     getBySession().set(session, run)
     attemptTerminalPersist(run)
@@ -124,6 +125,7 @@ function finishTerminalPersist(run) {
 
     // 프로필은 바로, 경제·업적은 보상 지급 끝난 뒤 (다시 읽을 때 보상 보이게)
     invalidateAccountCaches(run.participantUuids, run.gameId, ['profile'])
+    if (run.skipAchievements) return
     Promise.resolve(gameAchievementService.evaluateForUsers(run.participantUuids, run.gameId))
         .then(() => invalidateAccountCaches(run.participantUuids, run.gameId, ['economy', 'achievements']))
         .catch(() => {

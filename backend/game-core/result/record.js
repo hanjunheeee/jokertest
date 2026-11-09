@@ -83,7 +83,8 @@ function buildGameResultRecord(session, {
             started_at: new Date(session.startedAt ?? resolvedEndedAt.getTime()),
             ended_at: resolvedEndedAt,
             winner,
-            win_reason: completed ? (WIN_REASON_BY_WINNER[winner] ?? null) : ABORTED_WIN_REASON,
+            // 점검 강제 종료 판은 MAINTENANCE (abortReason은 점검 판 끝내기가 붙임), 나머지 깨진 판은 ABORTED
+            win_reason: completed ? (WIN_REASON_BY_WINNER[winner] ?? null) : (session.abortReason ?? ABORTED_WIN_REASON),
             day_index: session.dayIndex,
             player_count: session.players.size,
             // 판 설정은 복사해서 넣음 (나중에 판이 바뀌어도 기록은 그대로)

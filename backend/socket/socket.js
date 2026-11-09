@@ -16,6 +16,9 @@ const { logRejection } = require("./common/isolate");
 // 접속 목록·io·사용자 전송은 emitter (서비스가 socket.js 안 거치고 보내게)
 const { onlineUsers, setIo, emitToUser, joinUserChannel } = require("./emitter");
 const { registerNotificationHandlers } = require("./connection/notifications");
+// 점검 큰 안내(접속할 때 켜짐이면 한 번)·점검 시계(시작 시각에 이 Node 판·방 끝냄)
+const maintenanceNotice = require("../services/ops/maintenanceNotice");
+const { startMaintenanceClock } = require("../services/ops/maintenanceClock");
 // 웹소켓만 쓰는 화면은 cors가 안 걸려 Origin을 직접 검사 (DP-034)
 const { createOriginGuard } = require("./connection/originCheck");
 // 소켓 접속 IP 읽기 (Express req.ip와 같은 규칙)
@@ -71,6 +74,8 @@ function initSocket(httpServer, { corsOrigin = process.env.FRONTEND_URL, allowRe
     startLocationSync();
     startReplaceSync();
     startJanitor();
+    // 점검 다시 읽을 때마다 시작 시각 타이머 맞추고 바뀐 안내 보냄 (io 생긴 뒤라 여기서)
+    startMaintenanceClock();
 
     // 접속 수·판 수 주기 기록 (판 수는 gameSession이 셈)
     concurrencyService.startConcurrentSnapshotScheduler({
@@ -119,6 +124,7 @@ function registerConnectionHandlers(io, socket) {
     });
     gameSession.registerGameHandlers(io, socket, uuid);
     registerNotificationHandlers(socket, uuid);
+    maintenanceNotice.sendOnConnect(socket);
 
     registerDisconnectHandler(io, socket, uuid, sessionWatcher);
 }
