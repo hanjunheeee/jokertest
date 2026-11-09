@@ -1,6 +1,6 @@
 # CI/CD (GitLab) — 새 저장소가 GitLab이면 저장소 루트에 .gitlab-ci.yml 로 복사 (docs/CI_CD.md)
 # GitHub Actions(deploy/ci/github-actions/*.yml)와 같은 스크립트(deploy/ci/scripts)를 부름 → 할 일이 따로 놀지 않음
-# MR: 백엔드·DB·화면 둘·도커·보안 + 브라우저 빠른 묶음 / 일정(Schedules)·손으로(Run pipeline): 브라우저 전체
+# MR: 백엔드·DB·화면 둘·도커·보안 + 브라우저 빠른 묶음 / 일정(Schedules)·손으로(Run pipeline): 브라우저 전체 + Node 2개 브라우저 전체
 # 배포: 손으로(▶) 또는 v* 태그 — production은 Settings → CI/CD → Protected environments 승인 걸기
 
 workflow:
@@ -30,6 +30,11 @@ variables:
   ROLLBACK_TAG:
     value: ""
     description: rollback 때 태그 (비우면 바로 전 태그)
+  # 손으로 돌릴 때 브라우저 묶음 (GitHub workflow_dispatch e2e와 같음), 일정은 둘 다 돎
+  E2E:
+    value: full
+    options: [full, multinode, none]
+    description: 브라우저 시험 묶음 (손으로 돌릴 때)
 
 default:
   image: node:22-bookworm
@@ -123,11 +128,43 @@ e2e-quick:
 
 e2e-full:
   <<: *e2e
-  # 일정(매일 03:00 KST로 만들기)·손으로 실행 때만
+  # 일정(매일 03:00 KST로 만들기)·손으로 실행 때만 (손으로는 E2E가 full일 때)
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "schedule" || ($CI_PIPELINE_SOURCE == "web" && $E2E == "full")
   script:
     - bash deploy/ci/scripts/e2e.sh full
+
+# Node 2개 브라우저 전체 (GitHub ci.yml e2e-multinode와 같은 일): 백엔드 둘 + 앞단 + Redis 서비스 (docs/배포_설정.md 7장)
+# 일정(밤 03:00 KST)·손으로(Run pipeline에 E2E=multinode) 때만
+# 앞단은 node(lb-proxy.js): Playwright 이미지엔 docker가 없고, dind 안 nginx는 일 컨테이너의 4101·4102를 못 부름 → nginx 규칙 확인은 GitHub 쪽·docker-build.sh nginx -t가 맡음
+e2e-multinode:
+  <<: *e2e
+  timeout: 150m
+  services:
+    - name: mysql:8.4
+      alias: mysql
+      variables:
+        MYSQL_ROOT_PASSWORD: ci-root-test-only
+    - name: redis:7.4-alpine
+      alias: redis
+  variables:
+    CI_DB_HOST: mysql
+    CI_DB_PORT: "3306"
+    E2E_WORKERS: "2"
+    E2E_INSTALL_BROWSERS: "0"
+    E2E_REDIS_URL: redis://redis:6379
+    E2E_PROXY: node
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || ($CI_PIPELINE_SOURCE == "web" && $E2E == "multinode")
+  artifacts:
+    when: on_failure
+    expire_in: 14 days
+    paths:
+      - e2e/reports/
+      - e2e/test-results/
+      - e2e/.runtime/backend-*.log
+  script:
+    - bash deploy/ci/scripts/e2e.sh multinode
 
 audit:
   stage: security
