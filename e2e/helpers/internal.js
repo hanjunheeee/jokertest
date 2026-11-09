@@ -23,6 +23,15 @@ async function must(method, pathname, body) {
     return r.body;
 }
 
+// 정할 사람 중 대기방에 든 첫 사람의 방 id (아무도 없으면 undefined → 사람 예약)
+async function firstRoomIdOf(uuids) {
+    for (const uuid of uuids) {
+        const r = await call('GET', `/e2e/users/${encodeURIComponent(uuid)}/room`);
+        if (r.ok && r.body?.room?.roomId) return r.body.room.roomId;
+    }
+    return undefined;
+}
+
 const internal = {
     /**
      * 공지 (모양은 backend/services/ops/announcements.js)
@@ -55,13 +64,7 @@ const e2e = {
      * @returns {Promise<{ ok:true, pending:number, scope:'room'|'users' }>}
      */
     setRoles: async (presets, { roomId } = {}) => {
-        let target = roomId;
-        if (!target) {
-            for (const uuid of Object.keys(presets ?? {})) {
-                const r = await call('GET', `/e2e/users/${encodeURIComponent(uuid)}/room`);
-                if (r.ok && r.body?.room?.roomId) { target = r.body.room.roomId; break; }
-            }
-        }
+        const target = roomId || await firstRoomIdOf(Object.keys(presets ?? {}));
         return must('POST', '/e2e/role-presets', target ? { presets, roomId: target } : { presets });
     },
     /**

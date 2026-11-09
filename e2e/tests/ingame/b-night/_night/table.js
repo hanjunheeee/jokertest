@@ -45,10 +45,8 @@ async function advanceUntilSettled(t, match, { stepDelayMs = 400, maxSteps = 60,
         const s = await t.state();
         if (!s) return null;
         if (match(s)) return s;
-        if (s.phase === 'ENDED') {
-            if (allowEnd) return s;
-            throw new Error(`판이 먼저 끝남 (winner=${s.winResult?.winner})`);
-        }
+        if (s.phase === 'ENDED' && allowEnd) return s;
+        if (s.phase === 'ENDED') throw new Error(`판이 먼저 끝남 (winner=${s.winResult?.winner})`);
         await sleep(settleMsFor(s));
         const again = await t.state();
         if (!again) return null;
