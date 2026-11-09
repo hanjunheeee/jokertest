@@ -5,6 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 source "$ROOT/deploy/ci/scripts/lib/db.sh"
 
 npm_ci backend
+# 백엔드 시험 하나(tests/routes/topup.security.test.js)가 화면 빌드 결과에 서버 비밀값이 안 섞이는지 보려고 frontend를 빌드함
+npm_ci frontend
 ci_db_prepare
 npm_run backend test:db:setup
 npm_run backend test:with-db

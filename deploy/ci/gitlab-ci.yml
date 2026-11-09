@@ -62,7 +62,7 @@ backend-db:
   stage: test
   <<: [*test-rules, *mysql]
   # 시험 전부를 하나씩 + 진짜 DB 시험이라 김
-  timeout: 1h
+  timeout: 90m
   variables:
     # 서비스 이름 mysql → 스크립트가 127.0.0.1:3306으로 이어 줌 (lib/db.sh)
     CI_DB_HOST: mysql

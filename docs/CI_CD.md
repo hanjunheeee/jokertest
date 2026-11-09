@@ -29,8 +29,8 @@
 
 | 일 | 언제 | 무엇 (스크립트) |
 | --- | --- | --- |
-| backend | PR·push | `npm ci` → eslint → `npm test`(DB 없는 기본) → `test:game-core` (`backend.sh`) |
-| backend-db | PR·push | MySQL 8.4 서비스 → `test:db:setup`(시험 전용 DB·계정) → `test:with-db` (`backend-db.sh`) |
+| backend | PR·push | `npm ci`(backend + frontend — 시험 하나가 화면을 빌드함) → eslint → `npm test`(DB 없는 기본) → `test:game-core` (`backend.sh`) |
+| backend-db | PR·push | MySQL 8.4 서비스 → `test:db:setup`(시험 전용 DB·계정) → `test:with-db`(시험 전부 하나씩, 로컬 약 37분 → 제한 90분) (`backend-db.sh`) |
 | frontend | PR·push | `npm ci` → eslint → `npm test` → 빌드(`VITE_API_BASE_URL=http://api.ci.test`) (`frontend.sh`) |
 | frontend-mobile | PR·push | 두 폴더 `npm ci`(데스크톱 src·public 같이 씀) → eslint → `npm test` → 빌드 (`frontend-mobile.sh`) |
 | e2e quick | PR만 | MySQL + e2e 서버 셋(백엔드 4100·빌드본 화면 5273·5274), desktop 프로젝트, `tests/auth·lobby·room·security`, `@game`·`@serial`·`@shutdown` 뺌, 작업자 2 (`e2e.sh quick`) |
@@ -44,6 +44,7 @@
 - e2e 실패 → Playwright 보고서(`e2e/reports/`)·trace·사진(`e2e/test-results/`)·서버 로그를 결과물(artifact)로 14일
 - GitLab 일정: Build → Pipeline schedules에서 `0 3 * * *`(Asia/Seoul) 만들기 → e2e full만 돎
 - 비밀값 검사가 기록 전체가 아니라 범위만 보는 이유: 옛 커밋에 남은 값(git 정리 할 일)은 기록을 다시 쓰기 전까지 늘 걸림 → 새로 들어오는 것만 막음. 처음 돌릴 때 가짜 값이 걸리면 그 모양만 `gitleaks.toml`에 넣기(진짜 값 넣지 않기)
+- 2026-11-09 로컬 확인: `test:with-db`에서 `tests/db/f17-notifications.integration.test.js` 'AC-07/R-IMPL#5'가 늘 실패(`force_disconnect` 2번 ≠ 1, 사건 검사 5초 같이 쓰기 바뀐 뒤) → 고치기 전엔 backend-db 일이 빨강
 - 시험 DB root 비번 `ci-root-test-only`는 CI 안 서비스 컨테이너에서만 쓰는 값 (비밀 아님)
 
 ### 로컬에서 같은 스크립트 돌리기 (Git Bash·리눅스)

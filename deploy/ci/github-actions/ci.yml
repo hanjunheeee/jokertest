@@ -44,7 +44,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
       - run: bash deploy/ci/scripts/backend.sh
 
   backend-db:
@@ -52,7 +54,7 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     # 시험 전부를 하나씩(--test-concurrency=1) + 진짜 DB 시험이라 김
-    timeout-minutes: 60
+    timeout-minutes: 90
     services:
       mysql:
         image: mysql:8.4
@@ -71,7 +73,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
       - run: bash deploy/ci/scripts/backend-db.sh
 
   frontend:
