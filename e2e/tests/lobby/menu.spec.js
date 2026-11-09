@@ -36,17 +36,13 @@ test.describe('로비 메뉴 이동', () => {
         await expect(page.getByRole('button', { name: '인트로 건너뛰기' })).toHaveCount(0);
     });
 
-    test('고객센터는 → 주소가 없으면 잠긴 버튼과 안내, 있으면 새 창 링크', async ({ user }) => {
+    // 관리자(2-15): 고객센터가 디스코드 링크 대신 게임 안 문의 창을 엶 (결정.md 2026-11-09 설계) → 예전 링크·잠김 기대를 바꿈
+    test('고객센터를 누르면 → 주소는 그대로 로비, 문의 창이 열림', async ({ user }) => {
         const { page } = user;
-        const link = menu(page).getByRole('link', { name: '고객센터' });
-        if (await link.count()) {
-            await expect(link).toHaveAttribute('target', '_blank');
-            await expect(link).toHaveAttribute('href', /^https?:\/\//);
-        } else {
-            const button = menu(page).getByRole('button', { name: '고객센터' });
-            await expect(button).toBeDisabled();
-            await expect(button).toHaveAttribute('title', '고객센터 연결이 아직 설정되지 않았습니다.');
-        }
+        await expect(menu(page).getByRole('link', { name: '고객센터' })).toHaveCount(0);
+        await menu(page).getByRole('button', { name: '고객센터' }).click();
+        await expect(page.getByRole('dialog', { name: '고객센터 문의' })).toBeVisible();
+        await expect(page).toHaveURL(/\/lobby$/);
     });
 });
 

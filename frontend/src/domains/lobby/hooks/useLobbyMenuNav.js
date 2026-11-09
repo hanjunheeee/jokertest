@@ -1,12 +1,11 @@
-// 로비 메뉴 누름 처리 (화면 이동·종료는 로그아웃·고객센터 주소)
-// LobbyMenuNav가 씀
-import { useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
+// 로비 메뉴 누름 처리 (화면 이동·종료는 로그아웃·고객센터는 문의 창 열고 닫기)
+// LobbyMenuNav·모바일 MenuNav가 씀
+import { useCallback, useState } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { logoutApi } from "@/domains/auth/api/auth.api"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { LOBBY_MENU_ROUTES } from "@/domains/lobby/constants/lobbyMenu.js"
-import { resolveDiscordSupportUrl } from "@/shared/discordSupport.js"
-import { DISCORD_SUPPORT_URL } from "@/shared/env.js"
+import { INQUIRY_PARAM, toInquiryIdText } from "@/shared/constants/notificationTargets.js"
 
 // 서버 로그아웃 실패 때 묻는 글 (확인 = 이 기기에서만 로그아웃)
 const LOGOUT_FAILED_CONFIRM =
@@ -22,21 +21,56 @@ async function logoutOrAsk() {
   }
 }
 
-// 고객센터 메뉴 id (링크로 열려 누름 처리에서 뺌)
+// 고객센터 메뉴 id (경로 이동 대신 문의 창을 엶)
 export const CUSTOMER_SUPPORT_MENU_ID = "customerSupport"
 
-// 지금 고른 메뉴·누름 처리·고객센터 주소를 줌
+// 주소의 문의 id (알림 "문의 답 보기"가 실음), 없거나 이상하면 null
+// 예) ?inquiryId=7 → "7" / ?inquiryId=abc → null
+export function parseInquiryTargetId(searchParams) {
+  const raw = typeof searchParams?.get === "function" ? searchParams.get(INQUIRY_PARAM) : null
+  return toInquiryIdText(raw)
+}
+
+// 문의 창 열림: 고객센터 누름 또는 주소에 문의 id가 새로 들어옴, 닫으면 주소의 id도 지움
+function useInquiryWindowState(navigate) {
+  const [searchParams] = useSearchParams()
+  const inquiryTargetId = parseInquiryTargetId(searchParams)
+  const [inquiryOpen, setInquiryOpen] = useState(() => inquiryTargetId !== null)
+
+  // 그리는 중에 대상 바뀜을 보고 엶 (effect 안 setState 안 씀)
+  const [seenTargetId, setSeenTargetId] = useState(inquiryTargetId)
+  if (seenTargetId !== inquiryTargetId) {
+    setSeenTargetId(inquiryTargetId)
+    if (inquiryTargetId !== null) setInquiryOpen(true)
+  }
+
+  const openInquiry = useCallback(() => setInquiryOpen(true), [])
+  // id가 남아 있으면 같은 알림을 다시 눌러도 주소가 안 바뀌어 안 열림 → 닫을 때 지움
+  const closeInquiry = useCallback(() => {
+    setInquiryOpen(false)
+    if (inquiryTargetId === null) return
+    const rest = new URLSearchParams(searchParams.toString())
+    rest.delete(INQUIRY_PARAM)
+    const search = rest.toString()
+    navigate({ search: search ? `?${search}` : "" }, { replace: true })
+  }, [inquiryTargetId, navigate, searchParams])
+
+  return { inquiryOpen, inquiryTargetId, openInquiry, closeInquiry }
+}
+
+// 지금 고른 메뉴·누름 처리·문의 창 열림을 줌
 export function useLobbyMenuNav() {
   const navigate = useNavigate()
 
   const [activeMenu, setActiveMenu] = useState("gameplay")
-
-  // 디스코드 고객센터 주소는 한 번만 계산
-  const supportUrl = useMemo(() => resolveDiscordSupportUrl(DISCORD_SUPPORT_URL), [])
+  const inquiry = useInquiryWindowState(navigate)
 
   const handleMenuClick = async (itemId) => {
-    // 고객센터는 링크가 직접 엶
-    if (itemId === CUSTOMER_SUPPORT_MENU_ID) return
+    // 고객센터는 고른 메뉴 표시 없이 문의 창만 엶
+    if (itemId === CUSTOMER_SUPPORT_MENU_ID) {
+      inquiry.openInquiry()
+      return
+    }
 
     setActiveMenu(itemId)
 
@@ -53,5 +87,5 @@ export function useLobbyMenuNav() {
     if (route) navigate(route)
   }
 
-  return { activeMenu, handleMenuClick, supportUrl }
+  return { activeMenu, handleMenuClick, ...inquiry }
 }

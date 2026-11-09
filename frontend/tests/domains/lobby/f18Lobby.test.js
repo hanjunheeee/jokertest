@@ -187,7 +187,7 @@ test("F-18 AC-01: 로비 오른쪽의 독립 Discord 버튼이 더 이상 렌더
   assert.equal(view.queryAllByLabelText("고객센터").length, 1)
 })
 
-test("F-18 AC-02: 고객센터는 왼쪽 메뉴 목록의 마지막 항목 하나뿐이고, 고객센터 프레임과 Discord 로고가 같은 요소 안에 있다", async () => {
+test("F-18 AC-02: 고객센터는 왼쪽 메뉴 목록의 마지막 항목 하나뿐이고, 고객센터 프레임 그림이 그 요소 안에 있다", async () => {
   resetAll()
   const view = await mountLobby()
 
@@ -199,38 +199,35 @@ test("F-18 AC-02: 고객센터는 왼쪽 메뉴 목록의 마지막 항목 하�
   assert.equal(menuChildren.length, LOBBY_MENU_ITEMS.length)
   assert.equal(menuChildren[menuChildren.length - 1], supportElements[0])
 
+  // 관리자(2-15): 고객센터가 디스코드 대신 게임 안 문의 창을 열어 디스코드 그림은 뺌 (결정.md 2026-11-09 설계 "문의 창은 고객센터 자리")
   const images = Array.from(supportElements[0].querySelectorAll("img")).map((img) => img.getAttribute("src"))
-  assert.deepEqual(images, [
-    publicAsset(LOBBY_MENU_BUTTONS.customerSupport),
-    publicAsset(LOBBY_ASSETS.discordLogo),
-  ])
+  assert.deepEqual(images, [publicAsset(LOBBY_MENU_BUTTONS.customerSupport)])
+  assert.equal(LOBBY_ASSETS.discordLogo.length > 0, true)
 
   assert.equal(view.queryAllByLabelText("고객센터").length, 1)
   assert.equal(view.queryAllByText("고객센터").length, 0, "별도의 고객센터 텍스트 버튼이 생겼습니다.")
 })
 
-test("F-18 AC-03: 지원 URL이 미설정이면 고객센터는 비활성 버튼이고 href·외부 이동을 만들지 않는다", async () => {
+// 관리자(2-15): 예전 "주소 없으면 잠긴 버튼" 기대는 디스코드 링크 시절 것 → 문의 창 여는 버튼으로 바뀜 (외부 이동·경로 이동 없음은 그대로)
+test("F-18 AC-03: 고객센터는 외부 링크·경로 이동 없이 게임 안 문의 창을 연다", async () => {
   resetAll()
   const view = await mountLobby()
 
   const support = getSupportElement(view)
 
-  assert.equal(support.tagName, "BUTTON", "미설정 상태에서는 링크(a)를 만들면 안 됩니다.")
-  assert.equal(support.disabled, true)
+  assert.equal(support.tagName, "BUTTON")
+  assert.equal(support.disabled, false)
   assert.equal(support.getAttribute("href"), null)
   assert.equal(support.getAttribute("aria-current"), null, "고객센터에는 선택 표시를 붙이지 않습니다.")
-  assert.ok(
-    (support.getAttribute("title") ?? "").length > 0,
-    "연결이 설정되지 않았다는 안내가 있어야 합니다.",
-  )
 
   const nav = view.getByRole("navigation", { name: "로비 메뉴" })
   assert.equal(nav.querySelectorAll("a[href]").length, 0, "추측한 대체 URL로 링크를 만들면 안 됩니다.")
 
   await act(async () => { fireEvent.click(support) })
 
-  assert.equal(windowOpenCalls.length, 0, "미설정 상태에서 외부 이동이 발생했습니다.")
+  assert.equal(windowOpenCalls.length, 0, "외부 이동이 발생했습니다.")
   assert.equal(currentPath, "/lobby", "고객센터는 앱 내부 경로로 이동하지 않습니다.")
+  await waitFor(() => assert.ok(document.body.querySelector('[data-testid="inquiry-window"]')))
 })
 
 test("F-18 AC-03: 일반 메뉴는 기존 내부 이동 경로를 그대로 유지한다", async () => {
