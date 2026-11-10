@@ -10,6 +10,7 @@ const { getAdmissionAttempt } = require('../admission/attempts')
 const { getGeneration, acquireRoomTransition, releaseRoomTransition } = require('./transition')
 const { deps } = require('../core/deps')
 const { generateRoomCode } = require('../../../utils/roomCode')
+const { INIT_SETTINGS_VERSION } = require('../settings/receipts')
 const { buildRoomPayload } = require('../room/view')
 const cluster = require('../../../cluster')
 
@@ -24,6 +25,9 @@ function isRandomMatchAllowed() {
     }
     return false
 }
+
+// 계정 읽는 동안 도착한 취소를 기억하는 표 (줄에 아직 안 들어가 지울 게 없어서 따로 둠)
+const pendingJoins = new Map()
 
 // 자동 매칭 줄 서기, 인원 차면 방 만들어 넣음 (게임 중·방 안이면 거절)
 async function handleJoinMatchmaking(io, socket, uuid) {
@@ -47,12 +51,17 @@ async function handleJoinMatchmaking(io, socket, uuid) {
     const transitionToken = acquireRoomTransition(uuid)
     if (transitionToken === null) return
 
+    const pendingJoin = { cancelled: false }
+    pendingJoins.set(uuid, pendingJoin)
     let user
     try {
         user = await deps.userRepository.findByUuid(uuid)
     } finally {
         releaseRoomTransition(uuid, transitionToken)
+        if (pendingJoins.get(uuid) === pendingJoin) pendingJoins.delete(uuid)
     }
+    // 기다리는 사이 취소가 왔으면 줄에 안 넣음
+    if (pendingJoin.cancelled) return
     // 기다린 사이 판 끝 정리됐거나 방·초대 입장이 생겼으면 줄에 안 넣음
     if (!user) return
     if (getGeneration(uuid) !== generationAtRequest) return
@@ -91,7 +100,17 @@ function openMatchedRoom(io, queuedPlayers, roomSize) {
         membershipId: kickReceiptStore.nextMembershipId(),
     }]))
 
-    const room = { id: roomId, instanceId: crypto.randomUUID(), code: roomCode, hostUuid, players: playersMap }
+    // 설정이 없으면 시작 때 광대 수 검사에서 막힘, 정원은 방 크기·광대는 1명(운영 최소)·코드로만 들어옴
+    const room = {
+        id: roomId,
+        instanceId: crypto.randomUUID(),
+        code: roomCode,
+        hostUuid,
+        accessType: 'code',
+        players: playersMap,
+        settings: { maxPlayers: roomSize, jokerCount: 1 },
+        settingsVersion: INIT_SETTINGS_VERSION,
+    }
     gameRooms.set(roomId, room)
     players.forEach((p) => playerRoom.set(p.uuid, roomId))
 
@@ -123,6 +142,8 @@ function joinAndNotifyRemoteSocket(io, socketId, roomId, matchFound) {
 // 자동 매칭 줄에서 빠지기
 function handleLeaveMatchmaking(uuid) {
     matchmakingQueue.delete(uuid)
+    const pendingJoin = pendingJoins.get(uuid)
+    if (pendingJoin) pendingJoin.cancelled = true
 }
 
 module.exports = {
