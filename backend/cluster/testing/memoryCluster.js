@@ -108,6 +108,15 @@ function structureOps(c) {
             c.ensure(setKey, "set", () => new Set()).value.add(member);
             return { existed: Boolean(before), prevBootEpoch: prev };
         },
+        // 켜기 표시 잡기 (redis scripts.js CLAIM_NODE와 같은 규칙)
+        claimNode: async (claimKey, nodeKey, bootEpoch, pxMs) => {
+            const holder = c.getString(claimKey);
+            const hash = await hgetall(nodeKey);
+            const cur = hash.bootEpoch || null;
+            if (holder !== null && holder !== bootEpoch && holder !== cur) return { claimed: false, bootEpoch: holder, lastSeen: null };
+            c.putString(claimKey, bootEpoch, pxMs);
+            return { claimed: true, bootEpoch: cur, lastSeen: hash.lastSeen || null };
+        },
         hgetall,
         hgetallMany: async (keys) => Promise.all(keys.map((key) => hgetall(key))),
         smembers: async (key) => { const e = c.live(key); return e?.kind === "set" ? [...e.value] : []; },

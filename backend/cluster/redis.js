@@ -183,6 +183,11 @@ function createRedisOps(cmd, isUp) {
             const [existed, prev] = await cmd.mmcHeartbeat(2, key, setKey, pxMs, member, ...flat);
             return { existed: existed === 1, prevBootEpoch: prev || null };
         }),
+        // 켜기 표시 잡기 (같은 이름 두 대가 같은 순간 켜도 하나만 잡힘) → { claimed, bootEpoch, lastSeen }
+        claimNode: (claimKey, nodeKey, bootEpoch, pxMs) => run(async () => {
+            const [claimed, epoch, lastSeen] = await cmd.mmcClaimNode(2, claimKey, nodeKey, bootEpoch, pxMs);
+            return { claimed: claimed === 1, bootEpoch: epoch || null, lastSeen: lastSeen || null };
+        }),
         hgetall: (key) => run(() => cmd.hgetall(key)),
         hgetallMany: (keys) => run(async () => {
             const rows = await keys.reduce((pipe, key) => pipe.hgetall(key), cmd.pipeline()).exec();

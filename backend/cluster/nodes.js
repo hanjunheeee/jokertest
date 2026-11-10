@@ -52,6 +52,8 @@ async function beat(c) {
     const { existed, prevBootEpoch } = await c.backend.ops.heartbeat(c.nodeKey(id), c.setKey, id, fields, c.deadAfterMs);
     const first = c.st.beats === 0;
     c.st.beats += 1;
+    // 첫 하트비트부터는 hash가 이름을 지킴 → 켜기 표시 풂 (켜자마자 죽은 뒤 다시 켤 때 표시가 hash보다 오래 남아 막지 않게)
+    if (first) await c.backend.ops.delIfEquals(c.claimKey, c.bootEpoch).catch(() => {});
     if (!first && !existed) c.onLost();
     if (!first && existed && prevBootEpoch && prevBootEpoch !== c.bootEpoch && !c.st.conflictLogged) {
         c.st.conflictLogged = true;
@@ -60,29 +62,37 @@ async function beat(c) {
     await refresh(c);
 }
 
-// 켜기 전 같은 이름 검사 (MN-118): 남의 bootEpoch hash가 있으면 한 주기 넘게 기다려 lastSeen이 바뀌는지 봄
-// 바뀌면 살아 있는 다른 프로세스 → 켜기 거부, 안 바뀌면(죽은 옛 프로세스 흔적) 이어받음
+const duplicate = (c) => clusterError(CODES.DUPLICATE_SERVER_ID, `같은 SERVER_ID(${c.serverId})가 이미 돌고 있음`);
+
+// 켜기 전 같은 이름 검사 (MN-118): 먼저 켜기 표시를 한 번에 잡음 → 같은 순간 켠 두 대 중 하나만 잡힘
+// 표시를 잡았는데 남의 bootEpoch hash가 있으면 한 주기 넘게 기다려 lastSeen이 바뀌는지 봄
+// 바뀌면 살아 있는 다른 프로세스 → 표시 풀고 켜기 거부, 안 바뀌면(죽은 옛 프로세스 흔적) 이어받음
 async function claim(c) {
-    if (!up(c)) return { checked: false };
+    if (!up(c)) throw clusterError(CODES.CLUSTER_UNAVAILABLE);
     const key = c.nodeKey(c.serverId);
-    const before = await c.backend.ops.hgetall(key);
-    if (!before?.bootEpoch || before.bootEpoch === c.bootEpoch) return { checked: true };
+    const before = await c.backend.ops.claimNode(c.claimKey, key, c.bootEpoch, c.claimHoldMs);
+    if (!before.claimed) throw duplicate(c);
+    if (!before.bootEpoch || before.bootEpoch === c.bootEpoch) return { checked: true };
     await new Promise((resolve) => setTimeout(resolve, c.heartbeatMs + 500));
     const after = await c.backend.ops.hgetall(key);
-    if (after?.bootEpoch && after.bootEpoch !== c.bootEpoch && after.lastSeen !== before.lastSeen) {
-        throw clusterError(CODES.DUPLICATE_SERVER_ID, `같은 SERVER_ID(${c.serverId})가 이미 돌고 있음`);
+    if (after?.bootEpoch && after.bootEpoch !== c.bootEpoch && (after.lastSeen || null) !== before.lastSeen) {
+        await c.backend.ops.delIfEquals(c.claimKey, c.bootEpoch).catch(() => {});
+        throw duplicate(c);
     }
     return { checked: true };
 }
 
 // Node 목록 만들기, statsProvider: () => { games, rooms, online, loopP95 } (실패해도 하트비트는 감)
+// connectWaitMs: 켜기 표시를 잡은 뒤 첫 하트비트까지 구독을 기다리는 최대 시간 (표시 수명 계산에 씀)
 function createNodes({
-    backend, prefix, serverId, bootEpoch, heartbeatMs, deadAfterMs, version = "",
+    backend, prefix, serverId, bootEpoch, heartbeatMs, deadAfterMs, connectWaitMs = 0, version = "",
     statsProvider = () => ({}), onLost = () => {}, log = console, now = () => Date.now(),
 }) {
     const c = {
         backend, serverId, bootEpoch, heartbeatMs, deadAfterMs, version, statsProvider, onLost, log, now,
         nodeKey: (id) => `${prefix}:node:${id}`, setKey: `${prefix}:nodes`, startedAt: now(),
+        // 켜기 표시: 잡은 뒤 첫 하트비트까지(기다림 한 주기 + 구독 기다림) 넉넉히 + 죽음 판정 한 번 → 켜다 죽으면 그만큼 지나 풀림
+        claimKey: `${prefix}:node:${serverId}:claim`, claimHoldMs: heartbeatMs + 500 + connectWaitMs + deadAfterMs,
         st: { draining: false, timer: null, beats: 0, conflictLogged: false, others: new Map() },
     };
     const safeBeat = () => beat(c).catch(() => { /* down이면 다음 차례에 */ });
@@ -97,10 +107,14 @@ function createNodes({
             c.st.timer.unref?.();
         },
         // 끄기: 하트비트 멈추고 내 hash 지움 (다른 Node가 바로 죽음으로 봄)
+        // 하트비트를 안 켠 Node(같은 이름 검사에 걸림·준비 전)는 hash가 남의 것 → 내 켜기 표시만 풂
         async stop() {
+            const started = c.st.timer !== null;
             clearInterval(c.st.timer);
             c.st.timer = null;
             if (!up(c)) return;
+            await backend.ops.delIfEquals(c.claimKey, bootEpoch).catch(() => {});
+            if (!started) return;
             await backend.ops.del(c.nodeKey(serverId)).catch(() => {});
             await backend.ops.srem(c.setKey, serverId).catch(() => {});
         },

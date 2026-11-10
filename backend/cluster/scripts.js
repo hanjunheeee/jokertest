@@ -66,7 +66,18 @@ redis.call('PEXPIRE', KEYS[1], ARGV[1])
 redis.call('SADD', KEYS[2], ARGV[2])
 return {existed, prev}`;
 
+// 켜기 표시 잡기 (같은 이름 검사): 다른 부팅이 켜는 중(표시는 있는데 하트비트는 아직 그 부팅 아님)이면 0
+// 아니면 표시를 내 것으로 두고 1 + 지금 하트비트의 bootEpoch·lastSeen → 읽기와 잡기 사이에 끼어들기 없음
+const CLAIM_NODE = `
+local holder = redis.call('GET', KEYS[1])
+local cur = redis.call('HGET', KEYS[2], 'bootEpoch') or ''
+local seen = redis.call('HGET', KEYS[2], 'lastSeen') or ''
+if holder and holder ~= ARGV[1] and holder ~= cur then return {0, holder, ''} end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return {1, cur, seen}`;
+
 const SCRIPTS = Object.freeze({
+    mmcClaimNode: CLAIM_NODE,
     mmcDelIfOwner: DEL_IF_OWNER,
     mmcDelIfEquals: DEL_IF_EQUALS,
     mmcWriteTracked: WRITE_TRACKED,

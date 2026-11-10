@@ -56,11 +56,14 @@ async function locateIn({ read, nodes, serverId }, key) {
 // 디렉터리 만들기
 // - 읽기는 던지지 않음: { available:false }면 Redis를 못 씀(단일 모드·down) → 부른 쪽이 대체 동작
 // - 쓰기·지우기는 성공 true / 못 함 false
-function createDirectory({ backend, prefix, serverId, bootEpoch, nodes }) {
+// - isReady: 켤 때 정리(cleanupStale)가 끝났는지. 끝나기 전엔 못 씀으로 답함 → 정리 전에 쓴 새 키가 옛 부팅 키와 같이 지워지지 않게
+function createDirectory({ backend, prefix, serverId, bootEpoch, nodes, isReady = () => true }) {
     const trackKey = `${prefix}:node:${serverId}:keys`;
-    const available = () => Boolean(backend) && backend.state() === "up";
+    const available = () => Boolean(backend) && backend.state() === "up" && isReady();
     const unavailable = { available: false, value: null };
-    const read = (key) => attempt(backend, unavailable, async (ops) => ({ available: true, value: decode(await ops.get(key)) }));
+    // 쓰는 곳 모두 준비 끝난 뒤에만 (켤 때 정리만 준비 전에 씀)
+    const ready = (fallback, fn) => (isReady() ? attempt(backend, fallback, fn) : Promise.resolve(fallback));
+    const read = (key) => ready(unavailable, async (ops) => ({ available: true, value: decode(await ops.get(key)) }));
 
     return {
         keys: createKeys(prefix),
@@ -71,13 +74,13 @@ function createDirectory({ backend, prefix, serverId, bootEpoch, nodes }) {
         // 쓰기: ttlMs 수명, nx면 없을 때만 (방 코드 미리 잡기), 이 Node가 쓴 키 목록에도 남김 (켤 때 정리용)
         write: (key, value, { ttlMs, nx = false } = {}) => (!Number.isInteger(ttlMs) || ttlMs <= 0
             ? Promise.resolve(false)
-            : attempt(backend, false, (ops) => ops.writeTracked(key, encode(value), { pxMs: ttlMs, nx, trackKey, trackPxMs: TRACK_TTL_MS }))),
+            : ready(false, (ops) => ops.writeTracked(key, encode(value), { pxMs: ttlMs, nx, trackKey, trackPxMs: TRACK_TTL_MS }))),
         // 내 것일 때만 지움 (값의 node가 나 + bootEpoch가 있으면 내 부팅) → 옮긴 뒤 옛 Node가 새 값을 안 지움 (CAS)
-        removeIfOwned: (key) => attempt(backend, false, (ops) => ops.delIfOwner(key, serverId, bootEpoch, trackKey)),
+        removeIfOwned: (key) => ready(false, (ops) => ops.delIfOwner(key, serverId, bootEpoch, trackKey)),
         // 값이 똑같을 때만 지움 (roomcode처럼 값이 node가 아닌 키)
-        removeIfValue: (key, expected) => attempt(backend, false, (ops) => ops.delIfEquals(key, encode(expected), trackKey)),
+        removeIfValue: (key, expected) => ready(false, (ops) => ops.delIfEquals(key, encode(expected), trackKey)),
         // 순번 늘리기 (connseq) → 숫자, 못 쓰면 null
-        nextSeq: (key, ttlMs = TTL.conn) => attempt(backend, null, (ops) => ops.incrWithTtl(key, ttlMs)),
+        nextSeq: (key, ttlMs = TTL.conn) => ready(null, (ops) => ops.incrWithTtl(key, ttlMs)),
         // 켤 때 정리: 옛 부팅이 쓴 키 중 아직 그 값 그대로인 것만 지움 → 지운 수, 못 하면 null
         cleanupStale: () => attempt(backend, null, (ops) => ops.cleanupTracked(trackKey)),
     };

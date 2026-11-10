@@ -154,13 +154,15 @@ const startCluster = () => require("./cluster").init({
 });
 schemaReadiness.ensureSchemaReady(db.sequelize)
     .then(startCluster)
+    // 점검 상태는 포트 열기 전에 다 읽음 (점검 중 다시 켠 Node가 읽기 끝나기 전 요청에 점검 꺼짐으로 답하지 않게)
+    // 표 없거나 실패해도 서버는 켬, 꺼짐으로 시작
+    .then(() => require("./services/ops/maintenance").reloadMaintenance()
+        .catch((err) => console.warn("[STARTUP] 점검 상태 못 읽음 —", err?.name ?? "Error")))
     .then(() => {
-        // 점검·금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 꺼짐·빈 목록으로 시작)
-        require("./services/ops/maintenance").reloadMaintenance()
-            .catch((err) => console.warn("[STARTUP] 점검 상태 못 읽음 —", err?.name ?? "Error"));
         // 재시작 전 남은 ONLINE 줄을 OFFLINE으로 (BE-015, 포트 열기 전 시각 기준이라 새로 붙은 사람은 안 덮음)
         require("./services/presence/status").resetPresencesOnBoot(new Date())
             .catch((err) => console.warn("[STARTUP] 접속 상태 못 되돌림 —", err?.name ?? "Error"));
+        // 금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 빈 목록으로 시작)
         require("./services/ops/bannedWords").reloadBannedWords()
             .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
         // 관리자 표 정리 6시간마다 (관리자 켜짐일 때만, unref라 서버 끄기 안 막음, Node마다 돌아도 지우기만이라 겹쳐도 됨)
