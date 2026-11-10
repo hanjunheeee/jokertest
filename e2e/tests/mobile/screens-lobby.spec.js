@@ -64,9 +64,11 @@ test.describe('모바일 로비', () => {
         await user.page.getByRole('button', { name: '친구 목록' }).click();
         const sheet = user.page.getByRole('dialog', { name: '친구 목록' });
         await sheet.getByRole('tab', { name: '친구 추가' }).click();
-        const search = sheet.getByRole('searchbox').first();
+        // 탭을 바꾸면 창 이름이 그 탭 이름('친구 신청')으로 바뀜 (getAriaLabel)
+        const addSheet = user.page.getByRole('dialog', { name: '친구 신청' });
+        const search = addSheet.getByRole('searchbox').first();
         await search.fill(other.nickname);
         await search.press('Enter');
-        await expect(sheet.getByText(other.nickname)).toBeVisible({ timeout: 10000 });
+        await expect(addSheet.getByText(other.nickname)).toBeVisible({ timeout: 10000 });
     });
 });

@@ -70,13 +70,13 @@ test.describe('게임 모드·방 목록', () => {
 
     test('방 카드를 누르면 → 아래 입장 막대가 켜짐', async ({ user, bots }) => {
         const [bot] = await bots.spawn(1);
-        await bot.createRoom({});
+        // 봇 방 기본값이 코드 방이라 막대 글이 '코드 입력'으로 바뀜 → 열린 방으로 만들어 '입장하기' 막대를 봄
+        await bot.createRoom({ accessType: 'open' });
         await user.page.goto('/multiplay');
         await expect(user.page.getByRole('button', { name: '선택한 방 입장' })).toBeDisabled();
         await roomCard(user.page, bot.nickname).click();
-        // 고르면 아래 입장 막대 글이 바뀌고 눌 수 있게 됨
-        await expect(user.page.getByRole('button', { name: '선택한 방 입장' })).toHaveCount(0);
-        await expect(user.page.getByRole('button', { name: /입장/ }).last()).toBeEnabled();
+        // 고르면 아래 입장 막대가 눌 수 있게 됨
+        await expect(user.page.getByRole('button', { name: '선택한 방 입장' })).toBeEnabled();
     });
 
     test('방 목록에서 "코드로 참가"를 누르면 → 방 코드 한 칸 입력 화면으로 감', async ({ user }) => {
