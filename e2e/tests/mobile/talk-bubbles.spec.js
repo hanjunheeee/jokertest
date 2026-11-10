@@ -205,7 +205,8 @@ test.describe('입력칸 보내기', () => {
         await talk.send(user.page).click();
         await expect(talk.mine(user.page).filter({ hasText: '빠른 첫째' })).toBeVisible();
         await talk.input(user.page).fill('빠른 둘째');
-        await talk.send(user.page).click();
+        // 사파리는 버튼 누르기 확인(스크롤·멈춤 검사)만 0.4초 가까이 걸려 0.5초를 넘기므로 같은 보내기인 Enter로 바로 보냄
+        await talk.input(user.page).press('Enter');
         await expect(talk.chat(user.page).getByRole('alert')).toBeVisible();
         await expect(talk.mine(user.page).filter({ hasText: '빠른 둘째' })).toHaveCount(0);
     });

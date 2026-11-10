@@ -72,14 +72,27 @@ test.describe('인게임 설정 시트', () => {
     });
 
     test('방코드 창에서 "방코드 복사"를 누르면 → 클립보드에 방 코드가 들어가고 "복사됨"으로 바뀜 @game', async ({ user, table }) => {
-        await user.context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        // WebKit은 clipboard-read/write 권한 이름을 몰라 오류 → 권한 주기는 크로미움만, 복사 결과 확인은 아래에서 브라우저별로 함
+        const isWebkit = user.page.context().browser().browserType().name() === 'webkit';
+        if (!isWebkit) await user.context.grantPermissions(['clipboard-read', 'clipboard-write']);
         const t = await startTalkGame(table, user, { bots: 2 });
         const sheet = await openSettings(user.page);
         await sheet.getByRole('button', { name: '방 코드 보기' }).click();
         const code = user.page.getByRole('dialog', { name: '방코드' });
+        if (isWebkit) {
+            await user.page.evaluate(() => {
+                const real = navigator.clipboard.writeText.bind(navigator.clipboard);
+                navigator.clipboard.writeText = (text) => { window.__e2eCopied = text; return real(text); };
+            });
+        }
         await code.getByRole('button', { name: '방코드 복사' }).click();
         await expect(code.getByRole('button', { name: '방코드 복사됨' })).toBeVisible();
-        expect(await user.page.evaluate(() => navigator.clipboard.readText())).toBe(t.roomCode);
+        if (!isWebkit) {
+            expect(await user.page.evaluate(() => navigator.clipboard.readText())).toBe(t.roomCode);
+            return;
+        }
+        // 사파리는 읽기 권한을 줄 수 없고 붙여넣기도 안 먹음 → 복사 직전에 심어 둔 가로채기에 실제로 넘어간 글자를 확인
+        expect(await user.page.evaluate(() => window.__e2eCopied)).toBe(t.roomCode);
     });
 });
 

@@ -112,6 +112,8 @@ test.describe('세로 ↔ 가로 돌리기', () => {
         const t = await startTalkGame(table, user, { bots: 2 });
         await toDay(t, user.page);
         await user.page.setViewportSize({ width: 812, height: 375 });
+        // 사파리는 크기가 바뀐 뒤 칸 배치로 바뀌기까지 한 박자 느림 → 바뀌기 전 세로 입력칸에 쓰면 사라지므로 칸 채팅이 뜰 때까지 기다림
+        await expect(wideChat(user.page)).toBeVisible();
         await user.page.getByRole('textbox', { name: '채팅 입력' }).fill('가로에서 쓴 말');
         await user.page.getByRole('button', { name: '채팅 보내기' }).click();
         await expect(wideChat(user.page).getByRole('log', { name: '채팅 내역' })).toContainText('가로에서 쓴 말');
@@ -145,6 +147,8 @@ test.describe('세로 ↔ 가로 돌리기', () => {
         const t = await startTalkGame(table, user, { bots: 2 });
         await toDay(t, user.page);
         await user.page.setViewportSize({ width: 812, height: 375 });
+        // 칸 배치로 바뀌기 전 세로 입력칸에 초점을 주면 바뀔 때 초점이 사라지므로 칸 채팅이 뜰 때까지 기다림
+        await expect(wideChat(user.page)).toBeVisible();
         await user.page.getByRole('textbox', { name: '채팅 입력' }).focus();
         await expect(user.page.locator('[data-compact-typing]')).toHaveCount(1);
         await expect(slot(user.page, 'board')).toBeVisible();
