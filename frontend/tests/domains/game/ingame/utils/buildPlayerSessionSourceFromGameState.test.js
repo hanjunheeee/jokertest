@@ -448,3 +448,11 @@ test("builder가 만든 sourcePlayers를 실제 mergeSourcePlayerWithPreview에 
   assert.equal(Object.hasOwn(merged[1], "accountTotalGames"), false)
   assert.equal(Object.hasOwn(merged[1], "accountWinRate"), false)
 })
+
+test("판에서 빠진 참가자(isParticipating:false)만 left:true가 붙는다", () => {
+  const state = validState()
+  state.players[1] = { ...state.players[1], alive: false, isParticipating: false }
+  const result = buildPlayerSessionSourceFromGameState(state)
+  assert.equal(result.sourcePlayers[1].left, true)
+  assert.equal(Object.hasOwn(result.sourcePlayers[0], "left"), false)
+})

@@ -4,8 +4,10 @@ import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.
 import { resolveInGamePlayerTheme } from "../../../../shared/constants/ingamePlayerTheme.js"
 import { resolveAccountCardFrameSrc } from "./pickInGamePlayerFrame.js"
 
-// 상태: 끊김을 먼저 보고, 그다음 생존
+// 상태: 판에서 빠져 죽은 사람은 사망, 그다음 끊김, 그다음 생존
+// 빠진 사람은 다시 붙어도 판에 못 돌아와서 끊김 배지가 안 맞음 (죽은 채 판에 남은 사람은 끊김 먼저 그대로)
 function playerStatus(player) {
+  if (player.left === true && !player.alive) return INGAME_PLAYER_STATUS.DEAD
   if (!player.connected) return INGAME_PLAYER_STATUS.DISCONNECTED
   if (player.alive) return INGAME_PLAYER_STATUS.ALIVE
   return INGAME_PLAYER_STATUS.DEAD

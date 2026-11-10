@@ -71,6 +71,8 @@ export function buildPlayerSessionSourceFromGameState(state) {
       alive: player.alive,
       themeIndex: player.themeIndex,
     }
+    // 판에서 빠진 사람 표시 (끊김 배지 대신 사망 배지 고르는 데 씀)
+    if (player.isParticipating === false) entry.left = true
     if (player.uuid === self.uuid) {
       entry.role = self.role
       entry.team = self.team

@@ -233,3 +233,10 @@ test("계정 전적이 붙어도 기존 프로필·테마·역할 처리는 그�
   assert.equal(result.status, INGAME_PLAYER_STATUS.ALIVE)
   assert.equal(result.accountTotalGames, 3)
 })
+
+test("판에서 빠져 죽은 사람(left)은 끊겨 있어도 DEAD, 죽은 채 판에 남아 끊긴 사람은 DISCONNECTED 그대로", () => {
+  const left = mergeSourcePlayerWithPreview({ id: "u1", name: "A", connected: false, alive: false, left: true }, preview())
+  assert.equal(left.status, INGAME_PLAYER_STATUS.DEAD)
+  const stayed = mergeSourcePlayerWithPreview({ id: "u2", name: "B", connected: false, alive: false }, preview())
+  assert.equal(stayed.status, INGAME_PLAYER_STATUS.DISCONNECTED)
+})
