@@ -9,20 +9,12 @@ const { normalizeEmail } = require('../../../validations/auth/signupEmailVerific
 const { PURPOSE, requireConfig } = require('./config');
 const { generateNumericCode, hashCode } = require('./codes');
 const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
-const { isUniqueConstraintName } = require('../../../repositories/common');
 
-// 이메일당 인증 행 하나, 잠가서 동시 요청 줄 세움, 없으면 만듦 (동시에 만들다 유일 충돌이면 null = 처음부터 다시)
+// 이메일당 인증 행 하나, 먼저 만들어 두고 잠가 읽어 동시 요청 줄 세움
+// 잠가 읽기 먼저 하면 없는 행엔 빈 틈 잠금만 걸려, 처음 쓰는 주소로 동시에 오면 서로 넣기를 막아 교착(500)이었음
 const lockOrCreateRow = async (normalizedEmail, transaction) => {
-    const row = await verificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
-    if (row) return row;
-    try {
-        return await verificationRepository.createVerification({
-            email: normalizedEmail, purpose: PURPOSE, generation: 0, attempts: 0,
-        }, transaction);
-    } catch (error) {
-        if (!isUniqueConstraintName(error)) throw error;
-        return null;
-    }
+    await verificationRepository.ensureVerificationRow({ email: normalizedEmail, purpose: PURPOSE }, transaction);
+    return verificationRepository.lockByEmail({ email: normalizedEmail, purpose: PURPOSE }, transaction);
 };
 
 // 다시 보내기 대기 시간 남은 초 (안 남았으면 0)
@@ -61,7 +53,6 @@ const saveNextGeneration = (row, { codeHash, codeExpiresAt, sentAt }, transactio
 // 트랜잭션 안: 행 잠금 → 대기 시간 → (이미 가입이면 코드 없이) 새 세대 저장
 const writeSignupCode = async ({ normalizedEmail, nowMs, config }, transaction) => {
     const row = await lockOrCreateRow(normalizedEmail, transaction);
-    if (!row) return { retry: true };
 
     // 다시 보내기 대기 시간 안이면 남은 초 알려 주고 거절
     const waitSec = resendWaitSecOf(row, nowMs, config);
@@ -87,7 +78,7 @@ const writeSignupCode = async ({ normalizedEmail, nowMs, config }, transaction) 
     return { code, expiresInSec, resendAfterSec };
 };
 
-// 행 잠금 → 대기 시간 확인 → 새 세대 코드 저장 → 메일, 동시에 행 만들다 겹치면 처음부터 다시
+// 행 잠금 → 대기 시간 확인 → 새 세대 코드 저장 → 메일
 exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter, now = () => new Date() } = {}) => {
     // 설정 먼저 확인, 메일·시각은 넘겨받은 것 먼저 (시험 도우미가 넘김)
     const config = requireConfig();
@@ -99,10 +90,6 @@ exports.requestSignupCode = async ({ email }, { mailAdapter: injectedMailAdapter
         (transaction) => writeSignupCode({ normalizedEmail, nowMs, config }, transaction),
     );
 
-    // 행 만들기 충돌이면 처음부터 다시 (이번엔 행이 있어 잠금으로 들어감, 모듈 객체로 불러 시험 패치 먹게)
-    if (outcome.retry) {
-        return exports.requestSignupCode({ email }, { mailAdapter: injectedMailAdapter, now });
-    }
     if (outcome.tooSoon) {
         return { ok: false, code: 'RESEND_TOO_SOON', resendAfterSec: outcome.resendAfterSec };
     }

@@ -19,7 +19,7 @@ const mailAdapter = require('../../utils/adapters/mail');
 const { hashCode } = require('../../services/auth/signupEmailVerification/codes');
 const { buildResetUrl } = require('../../services/auth/passwordReset/tokens');
 const { getSignupEmailConfig } = require('../../config/signupEmailVerification');
-const { useAuthStore, swap, createClock, uniqueError } = require('./authFakes');
+const { useAuthStore, swap, createClock } = require('./authFakes');
 // 약관 동의·만 14세 검사는 통과로 (그 검사는 member-약관 시험 몫)
 require('../helpers/termsStub').passSignupTermsForFile();
 
@@ -146,19 +146,20 @@ test('인증번호: 앞자리가 0인 번호도 자리 수를 채워 보낸다',
     assert.equal(lastCode(ctx), '000042');
 });
 
-test('인증번호: 행을 동시에 만들다 유일 충돌이 나면 처음부터 다시 해서 한 통만 보낸다', async (t) => {
+// 유일 충돌 뒤 처음부터 다시 하던 길은 없앰 (request.js가 행을 겹치면 바꾸기로 먼저 만든 뒤 잠가 읽음, 교착 500 고침)
+test('인증번호: 다른 요청이 행을 막 만들어 둬도 새로 안 만들고 그 행을 잠가 써서 한 통만 보낸다', async (t) => {
     const ctx = setUp(t);
-    let first = true;
-    ctx.store.hooks.createVerification = (row) => {
-        if (!first) return;
-        first = false;
-        ctx.store.data.verifications.push({ id: 'ver-race', ...row, sent_at: null, code_hash: null });
-        throw uniqueError('race');
+    ctx.store.hooks.ensureVerificationRow = ({ email, purpose }) => {
+        if (ctx.store.data.verifications.length > 0) return;
+        ctx.store.data.verifications.push({ id: 'ver-race', email, purpose, generation: 0, attempts: 0, sent_at: null, code_hash: null });
     };
     const result = await requestCode(ctx);
     assert.equal(result.ok, true);
     assert.equal(ctx.mail.outbox.length, 1);
     assert.equal(ctx.store.data.verifications.length, 1);
+    assert.equal(ctx.store.data.verifications[0].id, 'ver-race');
+    assert.equal(ctx.store.data.verifications[0].generation, 1);
+    assert.deepEqual(ctx.store.names().filter((name) => ['ensureVerificationRow', 'lockByEmail'].includes(name)), ['ensureVerificationRow', 'lockByEmail']);
 });
 
 test('인증번호: 자리 수 설정 8이면 8자리 번호', async (t) => {

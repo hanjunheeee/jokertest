@@ -140,6 +140,17 @@ const createAuthStore = ({ clock = () => new Date() } = {}) => {
             data.verifications.push(entry);
             return entry;
         },
+        // 진짜는 겹치면 바꾸기(있으면 그대로) → 없을 때만 넣음
+        ensureVerificationRow: async ({ email, purpose }) => {
+            if (hooks.ensureVerificationRow) hooks.ensureVerificationRow({ email, purpose });
+            if (data.verifications.some((v) => v.email === email && v.purpose === purpose)) return null;
+            const entry = {
+                id: nextId('ver'), email, purpose, generation: 0, attempts: 0, code_hash: null, code_expires_at: null,
+                code_consumed_at: null, sent_at: null, proof_hash: null, proof_expires_at: null, proof_consumed_at: null,
+            };
+            data.verifications.push(entry);
+            return entry;
+        },
         updateVerification: async (id, patch) => {
             const v = data.verifications.find((x) => x.id === id);
             if (v) Object.assign(v, patch);
