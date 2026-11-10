@@ -5,9 +5,11 @@ const { SCRIPTS } = require("./scripts");
 
 // 연결 옵션: 명령 쪽은 오프라인 줄 끔 + 1초 시간 초과 (줄 쌓임·무한 대기 막기, 실측은 README)
 // 구독 쪽은 줄 켬 (끊긴 동안 subscribe가 거절로 새지 않고, 다시 붙을 때 자동 재구독)
+// 명령 쪽 답 못 받은 명령 다시 보내기 끔: Redis는 이미 처리했는데 답만 잃은 명령을 다시 붙을 때 또 보내 RPC·셈·알림이 두 번 됨
+// → 그 명령은 1초 시간 초과로 거절되고 부른 쪽은 down 때와 같은 대체 동작
 const retryStrategy = (times) => Math.min(times * 200, 2000);
 const commandOptions = (config, role) => ({
-    lazyConnect: true, enableOfflineQueue: false, maxRetriesPerRequest: 1,
+    lazyConnect: true, enableOfflineQueue: false, maxRetriesPerRequest: 1, autoResendUnfulfilledCommands: false,
     commandTimeout: config.healthTimeoutMs, retryStrategy,
     connectionName: `${config.prefix}:${config.serverId}:${role}`,
 });
