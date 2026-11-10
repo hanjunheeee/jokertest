@@ -24,7 +24,9 @@ npx playwright test         # 전부: desktop·mobile 동시 → 끝나면 seria
 ```
 
 - 서버 셋은 Playwright가 알아서 켜고 끝나면 끔. 이미 켜 둔 걸 쓰려면 `E2E_REUSE=1`.
-- 한 파트만: `npx playwright test tests/room` · 한 프로젝트만: `--project=mobile`
+- 한 파트만: `npx playwright test --no-deps tests/room` · 한 프로젝트만: `--project=mobile`
+  - `--no-deps` 꼭 붙이기: serial 프로젝트가 앞 프로젝트(desktop·mobile 등)를 먼저 돌리게 묶여 있어 안 붙이면 파일 거르기가 앞 프로젝트에 안 먹고 전부 돎 (`E2E_NODES=2`에서도 같음)
+  - 다만 `--no-deps`면 serial 시험(서버 끄기 등)이 다른 프로젝트와 같이 돌 수 있음 → serial은 `--project=serial`로 따로
 - 판 시험 빼고: `npm run test:fast` · 판 시험만: `npm run test:game`
 - 서버 꺼짐 같은 serial만: `npm run test:shutdown` (= `--project=serial --no-deps`)
 - 시험 DB 새로: `npm run db:reset` · 계정 남기기: `E2E_KEEP_ACCOUNTS=1`

@@ -81,14 +81,27 @@ class E2eBot extends Bot {
     }
 
     /** 코드로 입장 → room_joined payload */
-    async joinByCode(roomCode) {
-        const since = Date.now();
+    // 서버 2개면 첫 답이 ROOM_ON_OTHER_NODE(방 있는 Node로 옮겨 다시)일 수 있음 → 부모 봇이 옮긴 뒤 다시 보내고 그 답은 안 넘김
+    // 그래서 events(onAny, 걸러지기 전 답)가 아니라 부모가 걸러 넘기는 waiters로 끝 답만 받음
+    async joinByCode(roomCode, { timeoutMs = 20000 } = {}) {
+        const answer = new Promise((resolve) => {
+            const handlers = new Map();
+            const finish = (kind, payload) => {
+                clearTimeout(timer);
+                // 내가 건 것만 지움 (다음 입장이 건 것을 지우지 않게)
+                for (const [event, fn] of handlers) if (this.waiters.get(event) === fn) this.waiters.delete(event);
+                resolve({ kind, payload });
+            };
+            handlers.set('room_joined', (p) => finish('joined', p));
+            handlers.set('room_join_failed', (p) => finish('failed', p));
+            const timer = setTimeout(() => finish('timeout', null), timeoutMs);
+            for (const [event, fn] of handlers) this.waiters.set(event, fn);
+        });
         this.emit('join_room_by_code', { roomCode });
-        const result = await Promise.race([
-            this.waitForEvent('room_joined', { since }),
-            this.waitForEvent('room_join_failed', { since }).then((p) => { throw new Error(`봇${this.index} 입장 실패: ${JSON.stringify(p)}`); }),
-        ]);
-        return result;
+        const { kind, payload } = await answer;
+        if (kind === 'joined') return payload;
+        if (kind === 'failed') throw new Error(`봇${this.index} 입장 실패: ${JSON.stringify(payload)}`);
+        throw new Error(`봇${this.index} 사건 안 옴: room_joined`);
     }
 
     async setReady(roomId, settingsVersion, isReady = true) {

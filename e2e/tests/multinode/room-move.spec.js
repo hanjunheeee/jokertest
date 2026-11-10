@@ -146,10 +146,15 @@ test.describe('다른 Node 사람끼리 한 판 (MN-006~008·010·022·024)', ()
         test.setTimeout(240_000);
         const { host, room } = await hostOnN1(bots);
         const me = await onNode.person(N2);
-        const gameId = await startCrossNodeGame({ host, room, humans: [me], guests: await mn.botsOn(bots, 2, N2) });
+        const guests = await mn.botsOn(bots, 2, N2);
+        const gameId = await startCrossNodeGame({ host, room, humans: [me], guests });
         const gameNode = await mn.gameNodeOf(me.account.uuid);
-        const plays = [host].map((b) => b.play(gameId));
-        for (let i = 0; i < 60 && (await e2e.game(gameId))?.phase !== 'ENDED'; i += 1) await e2e.advance(gameId).catch(() => {});
+        // 판이 끝나려면 표·밤 행동이 있어야 함 (판 길이 끝 없음) → 봇 전부 움직이고, 넘긴 뒤 봇이 따라 행동할 틈을 줌 (MN-006과 같은 모양)
+        const plays = [host, ...guests].map((b) => b.play(gameId));
+        for (let i = 0; i < 60 && (await e2e.game(gameId))?.phase !== 'ENDED'; i += 1) {
+            await e2e.advance(gameId).catch(() => {});
+            await sleep(400);
+        }
         await Promise.all(plays.map((p) => p.stop()));
         await h.waitResult(me.page);
         await me.page.getByRole('button', { name: '대기방으로' }).click();

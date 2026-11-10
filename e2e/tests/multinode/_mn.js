@@ -5,6 +5,7 @@
 const { test: base, expect, E2E, openPerson, internal, e2e } = require('../../helpers/fixtures');
 const accountsLib = require('../../helpers/accounts');
 const servers = require('../../helpers/servers');
+const { call } = require('../../helpers/internal');
 const { sleep } = require('../../helpers/wait');
 
 const NODE_IDS = E2E.nodes.map((n) => n.id);
@@ -71,8 +72,10 @@ async function routedServerId(node) {
 }
 
 /** 그 사람 판이 도는 Node (/e2e/users/:uuid/game의 node, 조각 2) */
+// node는 응답에서 game 옆 칸 ({ ok, game, node }) — e2e.gameOf는 game만 돌려줘서 늘 비어 있었음, 그래서 직접 부름
 async function gameNodeOf(uuid) {
-    return (await e2e.gameOf(uuid))?.node ?? null;
+    const r = await call('GET', `/e2e/users/${encodeURIComponent(uuid)}/game`);
+    return r.ok ? (r.body?.node ?? null) : null;
 }
 
 /** 관리자 통로 Node 목록 (/internal/cluster, 조각 2) → [{ id, games, rooms, draining, alive, ... }] */
