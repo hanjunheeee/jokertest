@@ -168,11 +168,17 @@ test.describe('같은 방 안 전달 (MN-017·020)', () => {
         const { host, room } = await hostOnN1(bots);
         const me = await onNode.person(N2);
         await ui.joinRoomByCodeUi(me.page, room.roomCode);
-        await h.botUpdateSettings(host, { dayDiscussionTime: 90 });
-        await expect(me.page.getByText(/토론 90초/)).toBeVisible({ timeout: 15000 });
+        // 대기방엔 방 설정 글이 없음('토론 90초'는 방 목록 줄에만, frontend mode/utils/summarizeRoomListSettings.js)
+        // → 손님 눈에 보이는 설정 바뀜 = 준비가 풀려 버튼이 준비완료로 돌아옴 (서버 1개 settings-edit.spec.js와 같은 확인)
+        await ui.readyUi(me.page);
+        await expect(me.page.getByRole('button', { name: '준비취소' })).toBeVisible();
+        const saved = await h.botUpdateSettings(host, { dayDiscussionTime: 90 });
+        expect(saved?.ok).toBe(true);
+        await expect(me.page.getByRole('button', { name: '준비완료' })).toBeVisible({ timeout: 15000 });
         const live = await e2e.roomOf(host.uuid);
+        expect(live.settings.dayDiscussionTime).toBe(90);
         await host.setReady(room.roomId, live.settingsVersion);
-        await expect(h.readySilhouettes(me.page)).not.toHaveCount(0);
+        await expect(h.readySilhouettes(me.page)).toHaveCount(1);
     });
 
     test('MN-017 다른 Node에서 온 사람이 강퇴되면 → 옮김 없이 방 목록으로, 다시 입장 제한 그대로', async ({ onNode }) => {

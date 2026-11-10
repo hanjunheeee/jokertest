@@ -4,9 +4,24 @@ const { execFileSync } = require('node:child_process');
 const mn = require('./_mn');
 const servers = require('../../helpers/servers');
 const { sleep } = require('../../helpers/wait');
+const { call } = require('../../helpers/internal');
+const { query } = require('../../helpers/db');
 
 const { test, expect, E2E, e2e, NODE_IDS } = mn;
 const [N1, N2] = NODE_IDS;
+
+// 판 Node에 바로 묻기·넘기기: Redis가 멈추면 앞단이 고른 다른 Node는 판 Node에 못 물어 404 → 앞단으로 부르면 절반이 빈 답
+// (backend/socket/e2e/remoteHooks.js askOtherNodes가 cluster.isShared() = Redis up일 때만 다른 Node에 물음)
+const nodeUrl = (id) => E2E.nodes.find((n) => n.id === id).url;
+async function gameAt(node, gameId) {
+    const r = await call('GET', `/e2e/games/${encodeURIComponent(gameId)}`, undefined, { baseUrl: nodeUrl(node) });
+    return r.ok ? r.body.game : null;
+}
+async function advanceAt(node, gameId) {
+    const r = await call('POST', `/e2e/games/${encodeURIComponent(gameId)}/advance`, {}, { baseUrl: nodeUrl(node) });
+    if (!r.ok) throw new Error(`advance ${node} → ${r.status} ${JSON.stringify(r.body)}`);
+    return r.body;
+}
 
 // 봇 방장 방 + 봇 손님 → 판 시작 (모두 host Node) → { host, guests, gameId }
 async function gameOn(bots, node, guestNode = node) {
@@ -19,7 +34,12 @@ async function gameOn(bots, node, guestNode = node) {
     return { host, guests, gameId };
 }
 
-test.afterEach(async () => { await servers.waitBackendUp({ timeoutMs: 90000 }); });
+test.afterEach(async () => {
+    await servers.waitBackendUp({ timeoutMs: 90000 });
+    // 앞단도 다시 그 Node로 보낼 때까지: 붙기 실패한 Node는 앞단이 5초 동안 뒤로 미룸(scripts/lb-proxy.js FAIL_TIMEOUT_MS)
+    // → 바로 다음 시험의 ?node=n2 봇이 n1에 붙어 버림 (MN-108 뒤 MN-113에서 n2 봇도 server_shutdown 받음)
+    for (const id of NODE_IDS) await expect.poll(() => mn.routedServerId(id), { timeout: 15000 }).toBe(id);
+});
 
 test('MN-107 n2를 정리 없이 죽여도 → n1 판은 계속 돎 @shutdown @game', async ({ bots }) => {
     const { gameId } = await gameOn(bots, N1);
@@ -75,15 +95,21 @@ test('MN-120 앞단이 ?node=로 고름: 아는 값은 그 Node, 모르는 값·
 test('MN-105 Redis가 멈춘 동안 판이 끝까지 가고, 살아난 뒤 다른 Node끼리 새 판 @shutdown @game', async ({ bots }) => {
     test.skip(E2E.redisUrlGiven, '시험 Redis가 docker mmc-redis-test일 때만 (멈추기·풀기를 docker로 함)');
     test.setTimeout(240_000);
-    const { gameId } = await gameOn(bots, N1);
+    const { host, guests, gameId } = await gameOn(bots, N1);
+    expect(await mn.gameNodeOf(host.uuid)).toBe(N1);
+    // 판이 끝나려면 밤 행동·표가 있어야 함 (단계 넘기기만으론 아무도 안 죽어 낮·밤만 되풀이) → 봇 전부 움직임 (MN-010과 같은 모양)
+    const plays = [host, ...guests].map((b) => b.play(gameId));
     execFileSync('docker', ['pause', 'mmc-redis-test']);
     try {
-        for (let i = 0; i < 60 && (await e2e.game(gameId))?.phase !== 'ENDED'; i += 1) {
-            await e2e.advance(gameId).catch(() => {});
-            await sleep(300);
+        for (let i = 0; i < 60 && (await gameAt(N1, gameId))?.phase !== 'ENDED'; i += 1) {
+            await advanceAt(N1, gameId);
+            await sleep(400);
         }
-        expect((await e2e.game(gameId))?.phase ?? 'ENDED').toBe('ENDED');
+        expect((await gameAt(N1, gameId))?.phase).toBe('ENDED');
+        // 멈춘 동안에도 판 결과는 저장됨 (계획 092: 같은 Node 판은 방송·타이머·저장 계속)
+        await expect.poll(async () => Number((await query('SELECT COUNT(*) AS n FROM game_results WHERE id = ?', [gameId]))[0].n), { timeout: 15000 }).toBe(1);
     } finally {
+        await Promise.all(plays.map((p) => p.stop()));
         execFileSync('docker', ['unpause', 'mmc-redis-test']);
     }
     await expect.poll(async () => (await mn.nodeHealth(N1))?.redis, { timeout: 15000 }).toBe('up');

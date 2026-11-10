@@ -10,6 +10,8 @@ const { Stats } = require(path.join(BACKEND_DIR, 'scripts', 'loadtest', 'stats')
 const { sleep } = require('./wait');
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
+// 한도 넘게 튕긴 뒤 다시 붙기 전 쉬는 시간 (화면 frontend shared/constants/connectionSocket.js NODE_BOUNCE_RETRY_MS와 같음)
+const NODE_BOUNCE_RETRY_MS = 5000;
 
 // 판 빨리 돌리는 방 설정 (서버가 받는 가장 짧은 값: 토론·투표·밤 30초, 재판 15초), 필요한 칸만 덮어 씀
 // 역할 수는 roleCounts로 (예: { DOCTOR: 1, GUARD: 0 }) — 규칙은 backend/validations/room/create.js
@@ -218,8 +220,23 @@ class E2eBot extends Bot {
         }
     }
 
+    // WRONG_NODE 따라가기: 화면처럼 한도를 넘어도 그만두지 않고 5초마다 아무 Node로 다시 붙음
+    // (frontend shared/socket/connection.js followWrongNode·NODE_BOUNCE_RETRY_MS 5초)
+    // 부모 봇(부하 시험)은 한도 넘으면 그만둠 → 판 Node가 막 죽어 하트비트(10초 수명)가 남은 동안 살아 있는 Node가 죽은 Node로 계속 보내면 소켓이 영영 안 붙었음 (MN-108)
+    followWrongNode(err) {
+        if (super.followWrongNode(err)) return true;
+        if (err?.message !== 'WRONG_NODE' || this.closing) return false;
+        this.pointAt(null);
+        clearTimeout(this.bounceRetryTimer);
+        this.bounceRetryTimer = setTimeout(() => {
+            if (!this.closing && !this.socket.connected) this.socket.connect();
+        }, NODE_BOUNCE_RETRY_MS);
+        return true;
+    }
+
     async close() {
         this.playing = false;
+        clearTimeout(this.bounceRetryTimer);
         await super.close();
     }
 }
