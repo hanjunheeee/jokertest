@@ -109,20 +109,33 @@ async function isConnectedElsewhere(uuid) {
     return Boolean(found.available && found.node && !found.self && found.alive);
 }
 
-// Redis 살아남 → 내 소켓 conn 다시 적기 (없을 때만, 그사이 다른 Node가 적었으면 그대로)
+// 살아난 뒤 내 conn 다시 적기 (없을 때만), 이미 다른 Node가 더 큰 순번으로 적었으면 내 탭이 옛것이라 밀어냄
+// 끊긴 사이 온 conn.replaced 알림은 다시 안 오기 때문에 conn 값으로 비교함 (한 계정이 두 서버에 남지 않게)
+async function resyncOwnConnection(socket, uuid, entry) {
+    const key = cluster.directory.keys().conn(uuid);
+    const wrote = await cluster.directory.write(key, entry.value, { ttlMs: cluster.TTL.conn, nx: true });
+    if (wrote || !socket) return;
+    const { available, value } = await cluster.directory.read(key);
+    if (!available || !value || value.node === cluster.serverId() || !Number.isInteger(value.seq)) return;
+    if (value.seq <= entry.value.seq) return;
+    // 읽는 사이 끊겼거나 같은 Node 새 소켓으로 바뀌었으면 손대지 않음
+    if (socket.connected === false || emitter.onlineUsers.get(uuid) !== socket.id) return;
+    kickLocal(socket, uuid, value.sessionId);
+}
+
+// Redis 살아남 → 내 소켓 conn 다시 적기 (없을 때만, 다른 Node 값이 더 큰 순번이면 내 탭 밀어냄)
 // 죽은 동안 붙어 순번 없는 소켓은 이제 순번 받고 알림 (계정당 소켓 하나로 맞춤)
 async function resyncConnections() {
     if (!cluster.isShared()) return;
     const sockets = emitter.getIo()?.sockets?.sockets;
-    const keys = cluster.directory.keys();
     const jobs = [];
     for (const [uuid, socketId] of emitter.onlineUsers) {
         const entry = connValues.get(uuid);
+        const socket = sockets?.get(socketId);
         if (entry?.socketId === socketId) {
-            jobs.push(cluster.directory.write(keys.conn(uuid), entry.value, { ttlMs: cluster.TTL.conn, nx: true }));
+            jobs.push(resyncOwnConnection(socket, uuid, entry));
             continue;
         }
-        const socket = sockets?.get(socketId);
         if (socket) jobs.push(announceConnection(socket, uuid));
     }
     await Promise.all(jobs.map((job) => Promise.resolve(job).catch(() => false)));
