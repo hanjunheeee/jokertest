@@ -173,7 +173,8 @@ test('MN-051: 탈퇴 → 다른 Node 소켓도 ACCOUNT_WITHDRAWN (Node 여러 �
     // 어댑터가 다른 Node 소켓까지 모아 주는 io 흉내
     t.mock.method(emitter, 'getIo', () => ({ in: (ch) => { channels.push(ch); return { fetchSockets: async () => [remote] } } }))
     assert.deepEqual(await withdrawService.withdrawAccount({ uuid, confirmEmail: 'a@b.c' }), { ok: true })
-    assert.deepEqual(channels, [`user:${uuid}`])
+    // 두 번 다 계정 채널: 처음은 소켓 찾기, 다음은 다른 Node가 안내·끊기를 다 처리했는지 기다리기 (묶음 6)
+    assert.deepEqual(channels, [`user:${uuid}`, `user:${uuid}`])
     assert.equal(remote.emitted[0].payload.code, 'ACCOUNT_WITHDRAWN')
     assert.equal(remote.disconnected, true)
 })

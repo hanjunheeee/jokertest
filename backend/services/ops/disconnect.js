@@ -30,6 +30,15 @@ const fetchUserSocketsEverywhere = async (uuid, io) => {
     return cluster.fetchSockets(channel, io);
 };
 
+// 다른 Node 소켓에 보낸 안내·끊기를 그 Node가 다 처리할 때까지 기다림 (이 뒤에 세션 내림 알림 보내기)
+// 안내·끊기는 어댑터 보내기 연결, 세션 내림 알림은 버스(명령 연결)라 서로 다른 연결 → 다른 Node 도착 순서 보장 없음
+// 같은 어댑터 연결로 소켓 찾기를 한 번 더 보냄: 다른 Node는 받은 차례대로 처리하므로 답이 오면 앞의 안내·끊기는 이미 끝남
+// 내 Node 소켓(server 있음)만이면 안내·끊기가 바로 끝나서 안 기다림
+const waitOtherNodesHandled = async (uuid, io, sockets) => {
+    if (!sockets.some((socket) => !socket.server)) return;
+    await fetchUserSocketsEverywhere(uuid, io);
+};
+
 // 왜 끊는지: 정지 → 상태 ACTIVE 아님 → 그 밖 (DB 다시 봄, 관리자 서버 말만 믿지 않음)
 const resolveReason = async (uuid, userRepository) => {
     const ban = await userRepository.checkActiveBan(uuid);
@@ -47,7 +56,8 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
         throw createError('uuid 모양이 아닙니다.', 400, 'INVALID_UUID');
     }
     const code = await resolveReason(uuid, deps.userRepository);
-    const { sockets, partial } = await fetchUserSocketsEverywhere(uuid, deps.getIo());
+    const io = deps.getIo();
+    const { sockets, partial } = await fetchUserSocketsEverywhere(uuid, io);
     for (const socket of sockets) {
         try {
             socket.emit('force_disconnect', { code, message: DISCONNECT_REASONS[code] });
@@ -57,6 +67,7 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
         }
     }
     if (code !== 'ADMIN_DISCONNECT') {
+        await waitOtherNodesHandled(uuid, io, sockets);
         await deps.userRepository.markOnlineSessionsOffline(uuid);
     }
     // partial은 Node 여러 개 모드에만 실음 (단일 모드 답 모양은 예전 그대로)
@@ -64,4 +75,4 @@ const disconnectUser = async (uuid, deps = defaultDeps()) => {
     return cluster.isEnabled() ? { ...result, partial } : result;
 };
 
-module.exports = { DISCONNECT_REASONS, disconnectUser, fetchUserSocketsEverywhere };
+module.exports = { DISCONNECT_REASONS, disconnectUser, fetchUserSocketsEverywhere, waitOtherNodesHandled };

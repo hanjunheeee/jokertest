@@ -7,7 +7,7 @@ const { comparePassword } = require("../../../utils/auth/credentials");
 const { createError } = require("../../../utils/appError");
 const { createAttemptCounter } = require("./attemptCounter");
 const { isInActiveGameAnywhere } = require("./activeGameCheck");
-const { fetchUserSocketsEverywhere } = require("../../ops/disconnect");
+const { fetchUserSocketsEverywhere, waitOtherNodesHandled } = require("../../ops/disconnect");
 const { notifySessionsRevoked } = require("../../../repositories/user/revokeSignal");
 
 // 비번 틀린 횟수 제한 (세션 훔친 사람이 맞혀 보며 탈퇴시키기 막기, Node 여러 개면 합쳐 셈 `wrong:wd:<uuid>`)
@@ -35,9 +35,10 @@ const REJECTIONS = {
 // 계정 채널로 찾음 (Node 여러 개면 다른 Node 연결도, Redis down·시간 초과면 내 Node만 = 강제 끊기와 같게)
 // 찾기 실패해도 탈퇴는 이미 끝남 → 로그만 (남은 연결은 세션 주기 검사·끊김 방송이 끊음)
 const disconnectSockets = async (uuid) => {
+    const io = emitter.getIo();
     let sockets;
     try {
-        ({ sockets } = await fetchUserSocketsEverywhere(uuid, emitter.getIo()));
+        ({ sockets } = await fetchUserSocketsEverywhere(uuid, io));
     } catch (error) {
         console.error("[탈퇴 소켓 찾기 실패]", error?.name ?? "Error");
         return 0;
@@ -46,6 +47,8 @@ const disconnectSockets = async (uuid) => {
         socket.emit("force_disconnect", { code: "ACCOUNT_WITHDRAWN", message: "회원 탈퇴가 완료되었습니다." });
         socket.disconnect(true);
     }
+    // 다른 Node가 탈퇴 안내·끊기를 다 처리한 뒤에 세션 끊김 알림이 가게 기다림
+    await waitOtherNodesHandled(uuid, io, sockets);
     return sockets.length;
 };
 

@@ -75,34 +75,42 @@ async function startSelfNode(t, prefix) {
 }
 
 // n2의 소켓 세션 확인 흉내: 내림 알림(버스)을 받자마자 그 사람 소켓을 "세션 만료"로 끊음 (DB 확인 시간 0 = 가장 빠른 경우)
+// 받은 내림 알림 수를 돌려줌: 한 번 돌 때마다 그 알림이 n2에 닿은 뒤 다음 번으로 (늦게 닿은 앞 번 알림이 다음 번 소켓을 끊지 않게)
 function watchRevokeLikeSessionCheck(n2) {
+    const seen = { count: 0 }
     n2.node.bus.on(cluster.BUS_TYPES.AUTH_REVOKED, async (msg) => {
+        seen.count += 1
         const sockets = await n2.io.local.in(`user:${msg.uuid}`).fetchSockets()
         for (const socket of sockets) {
             socket.emit('force_disconnect', { code: 'SESSION_EXPIRED', message: '세션이 만료되었습니다. 다시 로그인해주세요.' })
             socket.disconnect(true)
         }
     })
+    return seen
 }
 
-test('즉시 끊기 순서(진짜 Redis): n1이 끊은 n2 플레이어의 첫 안내 = 정지·비활성·관리자 끊기 문구 (세 code × 5번)', { skip: skipReason }, async (t) => {
+// 시간 제한: 끊기가 n2에 안 닿으면 끊김을 영영 기다려 멈춤 → 실패로 보이게
+test('즉시 끊기 순서(진짜 Redis): n1이 끊은 n2 플레이어의 첫 안내 = 정지·비활성·관리자 끊기 문구 (세 code × 5번)', { skip: skipReason, timeout: 30000 }, async (t) => {
     const prefix = uniquePrefix()
     t.after(() => cleanupPrefix(prefix))
     const self = await startSelfNode(t, prefix)
     const n2 = await startRedisNode(t, { url: REDIS_URL_TEST, serverId: 'n2', prefix, env: FAST })
     await n2.node.nodes.refresh()
     await cluster.nodes.refresh()
-    watchRevokeLikeSessionCheck(n2)
+    const revoked = watchRevokeLikeSessionCheck(n2)
 
     for (const one of CASES) {
         for (let round = 0; round < 5; round += 1) {
             const player = await connectUser(t, n2.port, UUID)
             const closed = new Promise((resolve) => player.socket.once('disconnect', resolve))
-            await disconnectUser(UUID, { getIo: () => self.io, userRepository: fakeRepo(one) })
+            const before = revoked.count
+            const result = await disconnectUser(UUID, { getIo: () => self.io, userRepository: fakeRepo(one) })
+            assert.deepEqual([result.disconnected, result.partial], [1, false], `${one.code} ${round + 1}번째: n2 소켓을 못 찾음`)
             await closed
             await waitFor(async () => player.received.some((item) => item.event === 'force_disconnect'), { timeoutMs: 2000 })
             const first = player.received.find((item) => item.event === 'force_disconnect')
             assert.equal(first.payload.code, one.code, `${one.code} ${round + 1}번째: 첫 안내가 ${first.payload.code}`)
+            if (one.code !== 'ADMIN_DISCONNECT') await waitFor(async () => revoked.count > before, { timeoutMs: 2000 })
             player.socket.close()
         }
     }
@@ -147,24 +155,26 @@ test('탈퇴 순서: 안내·끊기 먼저, 세션 끊김 알림은 그 뒤 (커
     assert.deepEqual(log, ['force_disconnect ACCOUNT_WITHDRAWN', '끊기', '세션 끊김 알림'])
 })
 
-test('탈퇴 순서(진짜 Redis): n1에서 탈퇴한 n2 플레이어의 첫 안내 = 탈퇴 문구 (5번)', { skip: skipReason }, async (t) => {
+test('탈퇴 순서(진짜 Redis): n1에서 탈퇴한 n2 플레이어의 첫 안내 = 탈퇴 문구 (5번)', { skip: skipReason, timeout: 30000 }, async (t) => {
     const prefix = uniquePrefix()
     t.after(() => cleanupPrefix(prefix))
     const self = await startSelfNode(t, prefix)
     const n2 = await startRedisNode(t, { url: REDIS_URL_TEST, serverId: 'n2', prefix, env: FAST })
     await n2.node.nodes.refresh()
     await cluster.nodes.refresh()
-    watchRevokeLikeSessionCheck(n2)
+    const revoked = watchRevokeLikeSessionCheck(n2)
     mockWithdraw(t, self.io)
 
     for (let round = 0; round < 5; round += 1) {
         const player = await connectUser(t, n2.port, UUID)
         const closed = new Promise((resolve) => player.socket.once('disconnect', resolve))
+        const before = revoked.count
         assert.deepEqual(await withdrawService.withdrawAccount({ uuid: UUID, confirmEmail: 'leave@example.com' }), { ok: true })
         await closed
         await waitFor(async () => player.received.some((item) => item.event === 'force_disconnect'), { timeoutMs: 2000 })
         const first = player.received.find((item) => item.event === 'force_disconnect')
         assert.equal(first.payload.code, 'ACCOUNT_WITHDRAWN', `${round + 1}번째: 첫 안내가 ${first.payload.code}`)
+        await waitFor(async () => revoked.count > before, { timeoutMs: 2000 })
         player.socket.close()
     }
 })
