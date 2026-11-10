@@ -237,7 +237,10 @@ test.describe('타이머 위치·방 코드', () => {
         await panel(user.page).getByRole('button', { name: '방 코드 보기' }).click();
         const dialog = user.page.getByRole('dialog', { name: '방코드' });
         await expect(dialog).toBeVisible();
-        await expect(dialog).toContainText(t.roomCode);
+        // 방 코드는 글자 칸 6개의 값으로 보여 줌 (글이 아니라 칸 값이라 칸마다 봄)
+        const cells = dialog.getByRole('group', { name: '방 코드 6자리' }).getByRole('textbox');
+        await expect(cells).toHaveCount(t.roomCode.length);
+        for (let i = 0; i < t.roomCode.length; i += 1) await expect(cells.nth(i)).toHaveValue(t.roomCode[i]);
     });
 
     test('방 코드 창 닫기를 누르면 → 방 코드 창만 닫히고 설정 창은 남음 @game', async ({ user, table }) => {
@@ -268,5 +271,8 @@ test('채팅 글자 크기 슬라이더를 움직이면 → 옆 숫자도 같이
     const slider = panel(user.page).getByRole('slider', { name: '채팅 글자 크기' });
     await slider.focus();
     await user.page.keyboard.press('Home');
-    await expect(panel(user.page).getByText('0', { exact: true })).toBeVisible();
+    // 숫자는 화면 읽기용 글과 눈으로 보는 옆 숫자 둘이라 밀대 줄의 옆 숫자만 봄
+    const sideNumber = panel(user.page).locator('[data-setting-row]').filter({ has: user.page.getByRole('slider', { name: '채팅 글자 크기' }) }).locator('xpath=./span[@aria-hidden="true"]');
+    await expect(sideNumber).toHaveText('0');
+    await expect(sideNumber).toBeVisible();
 });

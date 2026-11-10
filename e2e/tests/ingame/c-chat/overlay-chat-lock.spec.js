@@ -1,9 +1,15 @@
-// 덮개 창과 채팅: 단계 안내·밤 역할 안내·역할 보기 창이 떠 있으면 채팅 칸이 잠기고(inert) 확인하면 풀림, 재판 연출 동안 채팅 자리 바뀜
+// 덮개 창과 채팅: 단계 안내 창은 채팅 칸을 잠그고(inert) 확인하면 풀림, 밤 역할 안내·역할 보기 창은 뒤 막이 덮어 막음, 재판 연출 동안 채팅 자리 바뀜
 // 죽은 사람은 밤 연출 대기 창이 안 덮음 (63300196 고친 것), 역할 공개 단계엔 채팅이 아무 데도 안 감
 const { test, expect } = require('../../../helpers/fixtures');
 const c = require('./_lib');
 
 const inert = (page) => c.chatBox(page).evaluate((el) => Boolean(el.closest('[inert]')));
+// 채팅 칸 가운데를 눌렀을 때 받는 게 채팅 칸인지 (덮개 창 뒤 막이 덮으면 false)
+const chatTakesClick = (page) => c.chatBox(page).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return Boolean(hit && el.contains(hit));
+});
 
 async function solo({ user, table, role = 'CITIZEN', bots = 3 }) {
     return c.startGame(table, { humans: [user], bots, roles: ({ bots: b }) => (role === 'JOKER' ? { [user.account.uuid]: 'JOKER' } : { [user.account.uuid]: role, [b[0].account.uuid]: 'JOKER' }) });
@@ -46,22 +52,26 @@ test('밤이 되면 → "밤이 되었습니다" 안내 뒤 "광대의 시간입
     await expect(user.page.getByRole('dialog', { name: '밤 역할 안내' })).toContainText('광대의 시간입니다', { timeout: 15000 });
 });
 
-test('밤 역할 안내 창이 떠 있으면 → 채팅 칸이 잠기고, 확인하면 풀림 @game', async ({ user, table }) => {
+// 밤 역할 안내·역할 공개 창은 화면을 inert로 안 잠그고 창 뒤 막이 덮어서 막는 게 처음부터 정한 동작임
+// (b76fa84f useInGameOverlayStack "역할 공개 재열람이나 밤 역할 턴 안내는 아래 화면을 잠그지 않는다", 화면 단위 시험 useInGameOverlayStack.nightTurn.test.js가 고정)
+test('밤 역할 안내 창이 떠 있으면 → 뒤 막이 채팅 칸을 덮어 못 누르고, 확인하면 누를 수 있음 @game', async ({ user, table }) => {
     const t = await solo({ user, table, role: 'JOKER' });
     await c.phaseTo(t, 'NIGHT');
     const notice = user.page.getByRole('dialog', { name: '단계 전환 안내' });
     await notice.getByRole('button', { name: '확인' }).click({ timeout: 15000 });
     const night = user.page.getByRole('dialog', { name: '밤 역할 안내' });
     await expect(night).toBeVisible({ timeout: 15000 });
-    expect(await inert(user.page)).toBe(true);
+    expect(await chatTakesClick(user.page)).toBe(false);
     await night.getByRole('button', { name: '확인' }).click();
-    await expect.poll(() => inert(user.page)).toBe(false);
+    await expect(night).toHaveCount(0);
+    await expect.poll(() => chatTakesClick(user.page)).toBe(true);
+    expect(await inert(user.page)).toBe(false);
 });
 
-test('역할 공개 창이 떠 있는 동안 → 채팅 칸이 잠겨 있음 @game', async ({ user, table }) => {
+test('역할 공개 창이 떠 있는 동안 → 뒤 막이 채팅 칸을 덮어 못 누름 @game', async ({ user, table }) => {
     await table.setup({ humans: [user], bots: 1, roles: { [user.account.uuid]: 'JOKER' } });
     await expect(user.page.getByRole('dialog', { name: '내 역할 보기' })).toBeVisible({ timeout: 20000 });
-    expect(await inert(user.page)).toBe(true);
+    expect(await chatTakesClick(user.page)).toBe(false);
 });
 
 test('역할 공개 단계에서 채팅을 보내도 → 봇에게 안 감 (낮 채널 열리기 전) @game', async ({ user, table }) => {

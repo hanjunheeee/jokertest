@@ -25,7 +25,11 @@ test.describe('열기·닫기', () => {
 
     test('채팅 틀의 빈 곳(단계 글)을 누르면 → 클로즈업 창이 열림 @game', async ({ user, table }) => {
         await solo({ user, table });
-        await user.page.getByRole('complementary', { name: '채팅' }).getByText(/\[낮-/).click();
+        // 단계 글은 눌림을 안 받는 글(pointer-events-none)이라 그 자리를 마우스로 누름 → 밑의 채팅 틀이 받음
+        const label = user.page.getByRole('complementary', { name: '채팅' }).getByText(/\[낮-/);
+        await expect(label).toBeVisible();
+        const box = await label.boundingBox();
+        await user.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         await expect(closeup(user.page)).toBeVisible();
     });
 
@@ -102,6 +106,8 @@ test.describe('클로즈업 안 채팅', () => {
         await openByKeyboard(user.page);
         await closeup(user.page).getByRole('textbox', { name: '채팅 입력' }).fill('쓰다만글');
         await user.page.keyboard.press('Escape');
+        // 닫히는 움직임 동안은 입력칸이 둘이라 창이 사라진 뒤 작은 칸을 봄
+        await expect(closeup(user.page)).toHaveCount(0);
         await expect(c.chatBox(user.page)).toHaveValue('쓰다만글');
     });
 
