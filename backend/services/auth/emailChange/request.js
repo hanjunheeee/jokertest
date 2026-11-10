@@ -5,7 +5,6 @@
 const userRepository = require('../../../repositories/user');
 const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
 const mailAdapterModule = require('../../../utils/adapters/mail');
-const { isUniqueConstraintName } = require('../../../repositories/common');
 const { comparePassword } = require('../../../utils/auth/credentials');
 const { createError } = require('../../../utils/appError');
 const { requireConfig } = require('../signupEmailVerification/config');
@@ -29,15 +28,9 @@ const prepareCode = async ({ uuid, email, currentPassword, config, nowMs }, tran
         throw createError('이미 사용 중인 이메일입니다.', 409, 'EMAIL_IN_USE');
     }
 
-    let row = await verificationRepository.lockByEmail({ email, purpose: PURPOSE }, transaction);
-    if (!row) {
-        try {
-            row = await verificationRepository.createVerification({ email, purpose: PURPOSE, generation: 0, attempts: 0 }, transaction);
-        } catch (error) {
-            if (!isUniqueConstraintName(error)) throw error;
-            return { retry: true };
-        }
-    }
+    // 행을 먼저 만들어 두고 잠가 읽기, 없는 행을 먼저 잠가 읽으면 같은 새 주소 요청끼리 빈 틈 잠금이 서로 넣기를 막아 교착(500)이었음
+    await verificationRepository.ensureVerificationRow({ email, purpose: PURPOSE }, transaction);
+    const row = await verificationRepository.lockByEmail({ email, purpose: PURPOSE }, transaction);
     if (row.sent_at) {
         const elapsed = nowMs - new Date(row.sent_at).getTime();
         if (elapsed < config.resendCooldownMs) {
@@ -65,7 +58,7 @@ const prepareCode = async ({ uuid, email, currentPassword, config, nowMs }, tran
 // 번호 보내기, 성공이면 { ok, expiresInSec, resendAfterSec }
 exports.requestEmailChangeCode = async (
     { uuid, newEmail, currentPassword },
-    { mailAdapter, now = () => new Date(), retried = false } = {},
+    { mailAdapter, now = () => new Date() } = {},
 ) => {
     const config = requireConfig();
     const email = parseNewEmail(newEmail);
@@ -75,11 +68,6 @@ exports.requestEmailChangeCode = async (
     const outcome = await userRepository.withTransaction((transaction) => prepareCode(
         { uuid, email, currentPassword, config, nowMs }, transaction,
     ));
-    // 동시에 행 만들다 겹치면 한 번만 다시
-    if (outcome.retry && !retried) {
-        return exports.requestEmailChangeCode({ uuid, newEmail, currentPassword }, { mailAdapter, now, retried: true });
-    }
-    if (outcome.retry) throw createError('잠시 후 다시 시도해주세요.', 409, 'EMAIL_CHANGE_BUSY');
     if (outcome.tooSoonSec) {
         const error = createError(`${outcome.tooSoonSec}초 뒤에 다시 보낼 수 있습니다.`, 429, 'RESEND_TOO_SOON');
         error.resendAfterSec = outcome.tooSoonSec;
