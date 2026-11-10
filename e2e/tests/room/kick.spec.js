@@ -123,6 +123,9 @@ test.describe('강퇴', () => {
             await user.page.getByTestId('kick-confirm-accept').click();
             await expect(guest.page).toHaveURL(/\/multiplay$/);
             await expect.poll(async () => (await e2e.roomOf(user.account.uuid)).players.length).toBe(1);
+            // 추방이 끝나도 추방 창은 안 닫힘(남은 목록을 계속 보여 주는 설계, useKickPlayerRequest SUCCEEDED) → 닫아야 방장 버튼이 다시 나옴
+            await kickDialog(user.page).getByRole('button', { name: '플레이어 추방 닫기' }).click();
+            await expect(kickDialog(user.page)).toBeHidden();
         };
 
         // 1·2번째 추방 뒤엔 다시 들어옴

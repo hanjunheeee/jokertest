@@ -61,7 +61,8 @@ test('광대 피고에게 혼자 유죄를 넣은 시민 봇은 → 시민 승 �
 });
 
 test('광대 피고 재판이 무죄로 끝나도 → 그때 넣은 시민 유죄 표가 점수로 남아 MVP를 가름 @game', async ({ user, table }) => {
-    const t = await n.setup(table, { humans: [user], bots: 5, humanRoles: ['CITIZEN'], botRoles: ['JOKER', 'CITIZEN', 'CITIZEN', 'CITIZEN', 'CITIZEN'] });
+    // 6명 자동 구성은 의사 1명이 끼어 시민이 4명뿐이라 광대1+시민5를 직접 구성으로 고정함
+    const t = await n.setup(table, { humans: [user], bots: 5, settings: n.custom({ JOKER: 1 }), humanRoles: ['CITIZEN'], botRoles: ['JOKER', 'CITIZEN', 'CITIZEN', 'CITIZEN', 'CITIZEN'] });
     await ui.readRoleReveal(user.page);
     const [j, c1, , , c4] = t.bots;
     // 첫날: c1 유죄, c2·c3 무죄 → 무죄 / 둘째 날: c4만 유죄 → 처형 → c1 1점(무죄 재판), c4 1점, 동점·둘 다 생존 → 앞자리 c1
@@ -303,7 +304,7 @@ test('광대에게 찍혀 죽은 경비원이 광대를 조사했어도 → 0점
 });
 
 test('광대 아닌 피고에게 넣은 시민 유죄 표는 → 점수가 아니라서 광대 피고에 유죄를 넣은 시민이 MVP @game', async ({ user, table }) => {
-    const t = await n.setup(table, { humans: [user], bots: 5, humanRoles: ['CITIZEN'], botRoles: ['JOKER', 'CITIZEN', 'CITIZEN', 'CITIZEN', 'CITIZEN'] });
+    const t = await n.setup(table, { humans: [user], bots: 5, settings: n.custom({ JOKER: 1 }), humanRoles: ['CITIZEN'], botRoles: ['JOKER', 'CITIZEN', 'CITIZEN', 'CITIZEN', 'CITIZEN'] });
     await ui.readRoleReveal(user.page);
     const [j, c1, c2, c3] = t.bots;
     // 1낮 c3 피고 c1만 유죄 → 처형(0점) / 2낮 광대 피고 c2만 유죄 → 시민 승 (c2 1점)

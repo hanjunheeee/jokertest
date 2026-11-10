@@ -202,7 +202,9 @@ test("F-18 AC-02: 고객센터는 왼쪽 메뉴 목록의 마지막 항목 하�
   // 관리자(2-15): 고객센터가 디스코드 대신 게임 안 문의 창을 열어 디스코드 그림은 뺌 (결정.md 2026-11-09 설계 "문의 창은 고객센터 자리")
   const images = Array.from(supportElements[0].querySelectorAll("img")).map((img) => img.getAttribute("src"))
   assert.deepEqual(images, [publicAsset(LOBBY_MENU_BUTTONS.customerSupport)])
-  assert.equal(LOBBY_ASSETS.discordLogo.length > 0, true)
+  // 상수 길이만 보던 늘 참 확인 대신, 로비 화면 어디에도 디스코드 그림이 안 그려지는지 봄
+  const drawnSrcs = Array.from(view.container.querySelectorAll("img")).map((img) => img.getAttribute("src"))
+  assert.equal(drawnSrcs.includes(LOBBY_ASSETS.discordLogo), false, "로비에 디스코드 그림이 남아 있습니다.")
 
   assert.equal(view.queryAllByLabelText("고객센터").length, 1)
   assert.equal(view.queryAllByText("고객센터").length, 0, "별도의 고객센터 텍스트 버튼이 생겼습니다.")

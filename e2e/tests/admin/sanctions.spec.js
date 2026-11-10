@@ -65,7 +65,7 @@ test.describe('관리자 제재', () => {
         }
     });
 
-    test('AD-083: 강제 접속 종료 → 플레이어 끊김 안내, 정지는 아님', async ({ page, players }) => {
+    test('AD-083: 강제 접속 종료 → 플레이어 끊김 안내, 정지는 아님', async ({ page, browser, players }) => {
         const target = await players.add();
         await loginAsAdmin(page, await createAdmin());
         await page.goto(`/members/${target.account.uuid}`);
@@ -78,6 +78,12 @@ test.describe('관리자 제재', () => {
         await expect(page.getByText('접속 1곳을 바로 끊었어요', { exact: false }).first()).toBeVisible();
         const bans = await query('SELECT id FROM user_bans WHERE user_id = ?', [target.account.uuid]);
         expect(bans).toHaveLength(0);
-        await loginViaUi(target.page, target.account);
+        // 강제 종료는 소켓만 끊고 로그인 쿠키는 그대로라 같은 창의 /login은 로비로 감 → 정지가 아님은 새 창(쿠키 없음)으로 다시 로그인되는지로 봄
+        const context = await browser.newContext({ baseURL: E2E.desktopUrl });
+        try {
+            await loginViaUi(await context.newPage(), target.account);
+        } finally {
+            await context.close();
+        }
     });
 });

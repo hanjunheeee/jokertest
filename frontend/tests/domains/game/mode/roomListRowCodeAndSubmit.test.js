@@ -478,18 +478,19 @@ test("하니스와 실제 소스가 같은 연결을 쓴다(RoomCodeInput·페�
   ])
 
   // 입장 요청 보내기는 useRoomCodeJoin.js로 나뉨 (코드 분리, 두 파일 같이 읽음)
-  const invitePageHook = readSrc("domains/game/mode/hooks/useRoomInvitePage.js")
-    + readSrc("domains/game/mode/hooks/useRoomCodeJoin.js")
-  const guard = invitePageHook.match(/if \(roomCode\.length < (\d+)\) return/)
+  const invitePageSrc = readSrc("domains/game/mode/hooks/useRoomInvitePage.js")
+  const codeJoinSrc = readSrc("domains/game/mode/hooks/useRoomCodeJoin.js")
+  const guard = invitePageSrc.match(/if \(roomCode\.length < (\d+)\) return/)
   assert.ok(guard, "제출 길이 가드가 없다")
   assert.equal(Number(guard[1]), ROOM_CODE_LENGTH, "페이지 가드와 하니스 가드의 자릿수가 다르다")
-  // 입장 요청 모양을 담아 두고 보냄 (Node 옮긴 뒤 같은 요청을 한 번 다시 보내려고, 조각 5)
+  // 입장 요청 모양은 useRoomInvitePage가 만들어 startJoin에 넘기고, 보내기는 useRoomCodeJoin이 함 (파일마다 따로 확인, 두 파일을 이어 붙이지 않음)
   assert.match(
-    invitePageHook,
-    /const payload = \{\s*roomCode,[\s\S]*?sendJoin\(current, payload\)/,
+    invitePageSrc,
+    /const payload = \{\s*roomCode,[\s\S]*?startJoin\(payload\)/,
     "입력값이 그대로 제출 payload에 실리지 않는다",
   )
-  assert.match(invitePageHook, /joinByCode\(socket, payload\)/, "담아 둔 payload를 그대로 보내지 않는다")
+  assert.match(codeJoinSrc, /attemptRef\.current = \{ payload, moved: false \}[\s\S]*?sendJoin\(current, payload\)/, "담아 둔 payload를 그대로 sendJoin에 넘기지 않는다")
+  assert.match(codeJoinSrc, /joinByCode\(socket, payload\)/, "담아 둔 payload를 그대로 보내지 않는다")
 })
 
 test("방코드 보기 모달은 정규화된 코드 값을 프레임에 표시한다", () => {
