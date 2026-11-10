@@ -10,7 +10,7 @@ const { useStickToBottom } = await import("@m/domains/game/ingame/hooks/talk/use
 function makeScroller() {
     const el = document.createElement("div")
     Object.defineProperty(el, "scrollHeight", { configurable: true, get: () => el._height ?? 1000 })
-    Object.defineProperty(el, "clientHeight", { configurable: true, get: () => 300 })
+    Object.defineProperty(el, "clientHeight", { configurable: true, get: () => el._view ?? 300 })
     el.scrollTop = 0
     return el
 }
@@ -87,6 +87,43 @@ test("직접 맨 아래까지 내리면 unseen 풀리고 다음 새 줄은 따�
     el._height = 1500
     rerender([line(1), line(2), line(3)])
     assert.equal(el.scrollTop, 1500)
+})
+
+test("맨 아래 보던 중 칸만 줄어든 뒤 scroll 사건이 와도 → 맨 아래 붙음 유지, 다시 내림", () => {
+    const { el, result, rerender } = setup([line(1)])
+    scrollTo(el, 700)
+    // 카드 판 펼침으로 보이는 칸 300 → 60, 위치는 그대로라 틈 240
+    el._view = 60
+    scrollTo(el, 700)
+    assert.equal(el.scrollTop, 1000)
+    el._height = 1200
+    rerender([line(1), line(2)])
+    assert.equal(el.scrollTop, 1200)
+    assert.equal(result.current.unseen, false)
+})
+
+test("칸이 줄면서 위치도 조금 올라간 scroll 사건(사파리)이 와도 → 맨 아래 붙음 유지", () => {
+    const { el, result, rerender } = setup([line(1)])
+    scrollTo(el, 700)
+    // 사파리 실제 값 모양: 보이는 칸 300 → 60, 위치 700 → 673
+    el._view = 60
+    scrollTo(el, 673)
+    assert.equal(el.scrollTop, 1000)
+    el._height = 1200
+    rerender([line(1), line(2)])
+    assert.equal(el.scrollTop, 1200)
+    assert.equal(result.current.unseen, false)
+})
+
+test("칸이 줄어든 뒤라도 손으로 위로 올리면 → 붙음 풀림", () => {
+    const { el, result, rerender } = setup([line(1)])
+    scrollTo(el, 700)
+    el._view = 60
+    scrollTo(el, 700)
+    scrollTo(el, 500)
+    rerender([line(1), line(2)])
+    assert.equal(el.scrollTop, 500)
+    assert.equal(result.current.unseen, true)
 })
 
 test("줄이 없으면 아무것도 안 함", () => {

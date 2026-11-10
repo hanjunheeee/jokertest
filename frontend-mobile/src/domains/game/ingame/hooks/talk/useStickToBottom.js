@@ -31,8 +31,20 @@ export function useStickToBottom(scrollRef, lines) {
     useEffect(() => {
         const el = scrollRef.current
         if (!el) return undefined
+        let lastTop = el.scrollTop
+        let lastHeight = el.clientHeight
         const onScroll = () => {
             const near = el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX
+            // 칸 높이가 바뀌었거나 위로 안 올렸으면 사용자가 올린 게 아님 → 맨 아래 붙음 유지
+            // (카드 판 펼침 때 사파리는 높이 재기보다 scroll 사건이 먼저 오고 위치도 조금 올려 둠)
+            const resized = el.clientHeight !== lastHeight
+            const movedUp = el.scrollTop < lastTop
+            lastTop = el.scrollTop
+            lastHeight = el.clientHeight
+            if (!near && (resized || !movedUp) && nearBottomRef.current) {
+                el.scrollTop = el.scrollHeight
+                return
+            }
             nearBottomRef.current = near
             if (near) setUnseen(false)
         }
@@ -41,6 +53,8 @@ export function useStickToBottom(scrollRef, lines) {
             ? null
             : new ResizeObserver(() => {
                 if (nearBottomRef.current) el.scrollTop = el.scrollHeight
+                lastTop = el.scrollTop
+                lastHeight = el.clientHeight
             })
         observer?.observe(el)
         return () => {

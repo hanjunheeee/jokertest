@@ -69,8 +69,11 @@ for (const size of SIZES) {
             }
         });
 
-        test(`${size.name}이면 → 진행 바에 낮 상태 글과 타이머가 보임 @game`, async ({ user, table }) => {
+        test(`${size.name}이면 → 진행 바를 펼치면 낮 상태 글과 타이머가 보임 @game`, async ({ user, table }) => {
             await wideDay(table, user, size);
+            // 넓은 배치 진행 바는 처음 접힘(데스크톱과 같음, 9faad08a·useTimebar.js) → 펼쳐야 단계 머리·타이머가 그려짐
+            await expect(slot(user.page, 'timebar').getByRole('timer')).toHaveCount(0);
+            await slot(user.page, 'timebar').getByRole('button', { name: '시간흐름바 확대' }).click();
             await expect(slot(user.page, 'timebar').getByRole('timer')).toBeVisible();
             await expect(slot(user.page, 'timebar')).toContainText('[낮-토론과 투표]');
         });
