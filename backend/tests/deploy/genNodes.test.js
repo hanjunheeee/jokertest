@@ -35,7 +35,7 @@ test("MN-135 docker: upstream map·compose 서비스·Node 목록이 같은 Node
     assert.deepEqual(Object.keys(mapEntries(upstreams)), ["n1", "n2", "n3"]);
     assert.deepEqual(serversOf(upstreams, "mmc_any").map((s) => s.addr), ["backend:4000", "backend-n2:4000", "backend-n3:4000"]);
     const compose = gen.renderComposeNodes(nodes);
-    assert.deepEqual([...compose.matchAll(/^  (backend-n\d+):$/gm)].map((m) => m[1]), ["backend-n2", "backend-n3"]);
+    assert.deepEqual([...compose.matchAll(/^ {2}(backend-n\d+):$/gm)].map((m) => m[1]), ["backend-n2", "backend-n3"]);
     assert.deepEqual([...compose.matchAll(/SERVER_ID=(\S+)/g)].map((m) => m[1]), ["n2", "n3"]);
     assert.match(compose, /file: docker-compose\.yml/);
     assert.doesNotMatch(compose, /image:/);

@@ -285,8 +285,10 @@ test('AD-027: 영역 쓰기 — CSRF 머리글 없거나 틀리면 403, 맞으�
     assert.equal(wrong.status, 403);
     const ok = await app.agent.post('/admin-api/members', {});
     assert.equal(ok.status, 404);
+    // 회원 찾기(GET /)가 생겨 조건 없이 부르면 400 → 403(쓰기 확인 막힘)만 아니면 통과한 것
     const read = await app.agent.get('/admin-api/members', { headers: { 'x-admin-csrf': undefined } });
-    assert.equal(read.status, 404, '읽기는 머리글 없어도 쓰기 확인 통과');
+    assert.equal(read.status, 400, '읽기는 머리글 없어도 쓰기 확인 통과(조건 없는 회원 찾기는 400)');
+    assert.equal(read.body.code, 'INVALID_INPUT');
 });
 
 test('AD-028: 플레이어 accessToken(role=ADMIN 포함)으로 /admin-api → 401', async (t) => {

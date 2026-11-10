@@ -545,6 +545,10 @@ test('AC-05: has_local_password backfill은 0015 이전에 실제로 존재하�
 
     const savedAttribute = db.User.rawAttributes.has_local_password;
     db.User.removeAttribute('has_local_password');
+    // 0015 앞 표에는 정지 해제 칸(0031)이 아직 없음 → 로그인의 정지 확인이 못 읽게 모델에서 잠깐 뺌
+    const BAN_LIFT_COLUMNS = ['lifted_at', 'lifted_by', 'lift_reason'];
+    const savedBanAttributes = Object.fromEntries(BAN_LIFT_COLUMNS.map((c) => [c, db.UserBan.rawAttributes[c]]));
+    BAN_LIFT_COLUMNS.forEach((c) => db.UserBan.removeAttribute(c));
 
     let localOnly;
     let socialIntentPreserved;
@@ -584,6 +588,8 @@ test('AC-05: has_local_password backfill은 0015 이전에 실제로 존재하�
     } finally {
         db.User.rawAttributes.has_local_password = savedAttribute;
         db.User.refreshAttributes();
+        Object.assign(db.UserBan.rawAttributes, savedBanAttributes);
+        db.UserBan.refreshAttributes();
     }
 
     await migrationRunner.applyMigrations({ sequelize, migrations: MIGRATIONS });
