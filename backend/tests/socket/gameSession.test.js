@@ -3803,6 +3803,16 @@ test('get_session_snapshot: registry 불일치(SESSION_NOT_FOUND)는 INTERNAL_ER
     assert.deepEqual(getResponse(), { ok: false, code: 'INTERNAL_ERROR', message: '요청을 처리하지 못했습니다.' })
 })
 
+test('get_session_snapshot: 판이 사라졌고(서버 다시 켜짐) 나도 아무 판에 없으면 SESSION_NOT_FOUND를 그대로 알림 (화면이 판을 지우게)', () => {
+    const { io } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-vanished' })
+    const formerUuid = 'former-player-uuid'
+    const { callback, getResponse } = countingCallback()
+
+    handleGetSessionSnapshot(io, createFakeSocket(formerUuid), formerUuid, { gameId: 'game-gone-after-restart' }, callback)
+
+    assert.deepEqual(getResponse(), { ok: false, code: 'SESSION_NOT_FOUND', message: '요청을 처리할 수 없습니다.' })
+})
+
 test('get_session_snapshot: 잘못된 expected gameId는 GAME_ID_MISMATCH가 그대로 전달된다(INTERNAL_ERROR로 정규화되지 않음)', () => {
     const { io, uuids, socketByUuid } = commitFourPlayerSessionWithSocketsAtNight({ id: 'room-snap-gidmismatch' })
     const [uuid] = uuids

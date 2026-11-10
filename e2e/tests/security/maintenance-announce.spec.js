@@ -4,6 +4,7 @@
 const { test, expect } = require('../../helpers/fixtures');
 const sec = require('../../helpers/security');
 const { api, login, db } = require('./_sec');
+const { FAST_ROOM_SETTINGS } = require('../../helpers/bots');
 
 // 점검 켜고 끄기 (반드시 finally에서 꺼서 다른 시험을 안 막음)
 async function setMaintenance(internal, enabled, message = '서버 점검 중입니다.') {
@@ -45,7 +46,8 @@ test.describe('점검 모드 @serial', () => {
         await setMaintenance(internal, true);
         await setMaintenance(internal, false);
         const [bot] = await bots.spawn(1);
-        const reply = await bot.request('create_room', {});
+        // 빈 값은 점검과 상관없이 공개 방식 없음으로 거절됨(validations/room/create.js), 다른 방 시험과 같은 설정으로 만들기
+        const reply = await bot.request('create_room', FAST_ROOM_SETTINGS);
         expect(reply?.ok).toBe(true);
     });
 });

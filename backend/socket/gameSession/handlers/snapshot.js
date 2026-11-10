@@ -16,6 +16,16 @@ const {
     isNightAckWindowOpen,
 } = require('../phase/night/receipts')
 const { resolveNightWaitForSnap } = require('../phase/night/wait')
+const { normalizeGameId } = require('../../../game-core/core/registry/lookup')
+const { getPlayerGameId, hasSessionId } = require('../../../game-core/queries/byId')
+
+// 물은 판이 이 서버에 없고 나도 아무 판에 없음 = 판이 사라짐 (서버 다시 켜짐 등)
+// 장부 어긋남이 아니라서 숨기지 않고 판 없음으로 알림, 화면이 판을 지우고 멀티 화면으로 가게 하기
+function isVanishedSession(uuid, gameId) {
+    if (getPlayerGameId(uuid)) return false
+    const normalized = normalizeGameId(gameId)
+    return normalized !== '' && !hasSessionId(normalized)
+}
 
 // 스냅샷 거절 답: 유예 만료로 빠진 사람은 다시 못 들어온다고 알림
 function snapshotRejectedReply(code) {
@@ -61,6 +71,12 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
     const fields = acceptRequest(ack, uuid, socket, payload, pickOptionalGameId)
     if (!fields) return
     const { gameId } = fields
+
+    // 사라진 판이면 판 없음 그대로 답함 (아래 core 결과는 NOT_A_PARTICIPANT라 INTERNAL_ERROR로 숨겨져 화면이 판에 갇혔음)
+    if (isVanishedSession(uuid, gameId)) {
+        ack(snapshotRejectedReply('SESSION_NOT_FOUND'))
+        return
+    }
 
     // 판 상태 받기, 유예 만료로 빠진 사람은 전용 문구로 거절
     const result = acceptCoreResult(ack, () => gameSessionCore.getSessionSnapshotForPlayer(uuid, gameId), {
