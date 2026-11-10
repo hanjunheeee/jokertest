@@ -1,4 +1,5 @@
-// 카드 메뉴: 카드 누르면 "플레이어 행동" 메뉴 (토론 중 투표 잠김·투표 단계 투표/취소·밤 내 차례 행동/취소·동료 광대 없음·죽은 사람 잠김), 닫기(취소·Esc·바깥)
+// 카드 메뉴: 카드 누르면 "플레이어 행동" 메뉴 (토론 중 투표 잠김·투표 단계 투표/취소·밤 내 차례 행동/취소·죽은 사람 잠김), 닫기(Esc·바깥·다른 카드)
+// 띄울 항목이 없는 카드(내 카드·동료 광대·내 차례 아닌 밤)는 메뉴가 안 뜸 (useInGamePlayerCardMenu openMenu, 9/23부터 같음)
 // 우클릭은 내 카드에서만 이모티콘 팔레트 (emoji.spec.js), 다른 카드 우클릭은 아무것도 안 뜸
 const { test, expect } = require('../../../helpers/fixtures');
 const c = require('./_lib');
@@ -18,6 +19,13 @@ async function openMenu(page, nickname) {
     await c.dismissOverlays(page);
     await c.card(page, nickname).click();
     await expect(menu(page)).toBeVisible();
+}
+// 카드를 눌러도 메뉴가 안 뜨는지 (안 뜨는 것을 보려고 잠깐 기다림)
+async function expectNoMenu(page, cardLocator) {
+    await c.dismissOverlays(page);
+    await cardLocator.click();
+    await c.sleep(400);
+    await expect(menu(page)).toHaveCount(0);
 }
 
 test.describe('낮 토론', () => {
@@ -39,18 +47,16 @@ test.describe('낮 토론', () => {
         await expect(c.card(user.page, t.bots[1].nickname)).toHaveAttribute('aria-expanded', 'true');
     });
 
-    test('토론 중 내 카드를 누르면 → 행동 없이 "취소"만 보임 @game', async ({ user, table }) => {
+    test('토론 중 내 카드를 누르면 → 행동 메뉴가 안 뜸 @game', async ({ user, table }) => {
         await solo({ user, table });
-        await c.selfCard(user.page, user.account.nickname).click();
-        await expect(menu(user.page).getByRole('menuitem')).toHaveCount(1);
-        await expect(menu(user.page).getByRole('menuitem', { name: '취소', exact: true })).toBeVisible();
+        await expectNoMenu(user.page, c.selfCard(user.page, user.account.nickname));
     });
 
-    test('메뉴의 취소를 누르면 → 메뉴가 닫힘 @game', async ({ user, table }) => {
-        await solo({ user, table });
-        await c.selfCard(user.page, user.account.nickname).click();
-        await menu(user.page).getByRole('menuitem', { name: '취소', exact: true }).click();
-        await expect(menu(user.page)).toHaveCount(0);
+    test('메뉴가 열린 채 내 카드를 누르면 → 메뉴가 닫히고 내 카드 메뉴도 안 뜸 @game', async ({ user, table }) => {
+        const t = await solo({ user, table });
+        await openMenu(user.page, t.bots[1].nickname);
+        await expectNoMenu(user.page, c.selfCard(user.page, user.account.nickname));
+        await expect(c.card(user.page, t.bots[1].nickname)).toHaveAttribute('aria-expanded', 'false');
     });
 
     test('메뉴가 열린 채 Esc를 누르면 → 메뉴가 닫힘 @game', async ({ user, table }) => {
@@ -127,13 +133,10 @@ test.describe('낮 투표', () => {
         }, { timeout: 10000 }).toBe(1);
     });
 
-    test('투표 단계에 내 카드를 누르면 → 투표 항목 없이 취소만 @game', async ({ user, table }) => {
+    test('투표 단계에 내 카드를 누르면 → 행동 메뉴가 안 뜸 (나는 못 찍음) @game', async ({ user, table }) => {
         const t = await solo({ user, table });
         await toVote(t);
-        await c.dismissOverlays(user.page);
-        await c.selfCard(user.page, user.account.nickname).click();
-        await expect(menu(user.page).getByRole('menuitem', { name: '투표하기', exact: true })).toHaveCount(0);
-        await expect(menu(user.page).getByRole('menuitem', { name: '취소', exact: true })).toBeVisible();
+        await expectNoMenu(user.page, c.selfCard(user.page, user.account.nickname));
     });
 
     test('죽은 내가 투표 단계에 카드를 누르면 → 투표하기가 "사망한 플레이어는 행동할 수 없습니다"로 잠김 @game', async ({ user, table }) => {
@@ -158,8 +161,11 @@ test.describe('밤 내 차례', () => {
         await expect(menu(user.page).getByRole('menuitem', { name: '암살' })).toBeEnabled();
     });
 
-    test('암살을 누르면 → 다시 열었을 때 "취소하기"로 바뀜 @game', async ({ user, table }) => {
-        const t = await solo({ user, table, role: 'JOKER', until: (s) => s.phase === 'NIGHT' && s.nightTurnRole === 'JOKER' });
+    test('광대 둘 중 내가 암살을 누르면 → 다시 열었을 때 "취소하기"로 바뀜 @game', async ({ user, table }) => {
+        // 광대 혼자면 내자마자 그 차례가 닫혀 다시 못 엶 (서버 handlers/night.js), 동료 광대 봇은 안 내게 둠
+        const t = await c.startGame(table, { humans: [user], bots: 4, settings: { jokerCount: 2 }, roles: ({ bots: b }) => ({ [user.account.uuid]: 'JOKER', [b[0].account.uuid]: 'JOKER' }) });
+        await t.advanceUntil((s) => s.phase === 'NIGHT' && s.nightTurnRole === 'JOKER', { stepDelayMs: 500 });
+        await c.readyToChat(user.page);
         await openMenu(user.page, t.bots[1].nickname);
         await menu(user.page).getByRole('menuitem', { name: '암살' }).click();
         await expect.poll(async () => {
@@ -168,19 +174,16 @@ test.describe('밤 내 차례', () => {
         }, { timeout: 10000 }).toBe(1);
     });
 
-    test('동료 광대 카드를 누르면 → 암살 항목 없이 취소만 @game', async ({ user, table }) => {
+    test('동료 광대 카드를 누르면 → 행동 메뉴가 안 뜸 @game', async ({ user, table }) => {
         const t = await c.startGame(table, { humans: [user], bots: 4, settings: { jokerCount: 2 }, roles: ({ bots: b }) => ({ [user.account.uuid]: 'JOKER', [b[0].account.uuid]: 'JOKER' }) });
         await t.advanceUntil((s) => s.phase === 'NIGHT' && s.nightTurnRole === 'JOKER', { stepDelayMs: 500 });
-        await openMenu(user.page, t.bots[0].nickname);
-        await expect(menu(user.page).getByRole('menuitem', { name: '암살' })).toHaveCount(0);
-        await expect(menu(user.page).getByRole('menuitem', { name: '취소', exact: true })).toBeVisible();
+        await c.readyToChat(user.page);
+        await expectNoMenu(user.page, c.card(user.page, t.bots[0].nickname));
     });
 
-    test('광대 차례에 시민인 내가 카드를 누르면 → 밤 행동 항목이 없음 @game', async ({ user, table }) => {
+    test('광대 차례에 시민인 내가 카드를 누르면 → 행동 메뉴가 안 뜸 @game', async ({ user, table }) => {
         const t = await solo({ user, table, until: (s) => s.phase === 'NIGHT' && s.nightTurnRole === 'JOKER' });
-        await openMenu(user.page, t.bots[1].nickname);
-        await expect(menu(user.page).getByRole('menuitem', { name: '암살' })).toHaveCount(0);
-        await expect(menu(user.page).getByRole('menuitem')).toHaveCount(1);
+        await expectNoMenu(user.page, c.card(user.page, t.bots[1].nickname));
     });
 
     test('의사 차례에 의사인 내가 카드를 누르면 → "보호"가 눌림 @game', async ({ user, table }) => {
@@ -195,9 +198,8 @@ test.describe('밤 내 차례', () => {
         await expect(menu(user.page).getByRole('menuitem', { name: '조사' })).toBeEnabled();
     });
 
-    test('광대 차례에 의사인 내가 카드를 누르면 → 아직 내 차례가 아니라 보호 항목이 없음 @game', async ({ user, table }) => {
+    test('광대 차례에 의사인 내가 카드를 누르면 → 아직 내 차례가 아니라 행동 메뉴가 안 뜸 @game', async ({ user, table }) => {
         const t = await solo({ user, table, role: 'DOCTOR', settings: CUSTOM({ DOCTOR: 1 }), until: (s) => s.phase === 'NIGHT' && s.nightTurnRole === 'JOKER' });
-        await openMenu(user.page, t.bots[1].nickname);
-        await expect(menu(user.page).getByRole('menuitem', { name: '보호' })).toHaveCount(0);
+        await expectNoMenu(user.page, c.card(user.page, t.bots[1].nickname));
     });
 });

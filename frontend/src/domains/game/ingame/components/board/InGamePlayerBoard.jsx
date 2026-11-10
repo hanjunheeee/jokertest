@@ -59,8 +59,11 @@ export default function InGamePlayerBoard() {
     setEmojiPaletteTargetId(null)
   }
 
+  // 팔레트가 열린 동안 판을 채팅 칸(z-20) 위로 올림 (판이 z-10 층이라 팔레트 칸이 채팅 칸 밑에 깔려 못 누르던 것 막기)
+  const boardStyle = emojiPaletteTargetId !== null ? { zIndex: 25 } : undefined
+
   return (
-    <div className={POSITION_CLASS}>
+    <div className={POSITION_CLASS} style={boardStyle}>
       {players.map((player, index) => {
         const activeEmoji = emojiByUuid[player.id] ?? null
         const isSelf = isInGameSelfPlayer(player.id, localPlayerId)

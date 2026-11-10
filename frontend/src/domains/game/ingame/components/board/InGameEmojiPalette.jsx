@@ -61,6 +61,8 @@ function useLatestRef(value) {
 // 판 바깥 누름 감시 (판 안쪽 누름은 무시)
 function useOutsidePress(rootRef, onCloseRef) {
   useEffect(() => {
+    // 팔레트를 연 그 우클릭 누름은 바깥 누름으로 안 봄 (누르는 순간 열려 같은 누름이 문서까지 올라와 바로 닫히던 것 막기)
+    const openedAt = performance.now()
     const close = () => {
       if (typeof onCloseRef.current === "function") onCloseRef.current()
     }
@@ -70,6 +72,7 @@ function useOutsidePress(rootRef, onCloseRef) {
       event.preventDefault()
     }
     const handleMouseDown = (event) => {
+      if (event.timeStamp <= openedAt) return
       const node = rootRef.current
       if (node && node.contains(event.target)) return
       close()
