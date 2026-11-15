@@ -83,7 +83,7 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     cleanupMatchmakingRooms(io, [uuid], '[ENDED 게임 이탈 시 matchmaking 정리 실패]')
 }
 
-// 소켓 끊김: 진짜 주인 소켓일 때만, 진행 중 판이면 유예만 걸고 판은 그대로 (지도 08-①②⑤)
+// 소켓 끊김: 진짜 주인 소켓일 때만, 진행 중 판이면 산 사람은 60초 유예만 걸고 판은 그대로 (지도 08-①②⑤)
 async function onDisconnect(io, socket, uuid) {
     // 주인 소켓 아니면 무시, 맞으면 소유 기록 소비 (같은 끊김 두 번 처리 막기)
     if (!canProcessDisconnectFor(io, socket, uuid)) return
@@ -93,7 +93,7 @@ async function onDisconnect(io, socket, uuid) {
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
 
-    // 살아 있는 참가자: 유예 걸고 판 사람들에게 끊김 알림
+    // 살아 있는 참가자: 60초 유예 걸고 판 사람들에게 끊김 알림 (60초 지나면 탈락·탈주 기록)
     // 역할 공개 중이면 마감도 걸어 둠 (안 누른 채 끊긴 사람 때문에 판이 안 멈추게, BE-002)
     const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
     if (graceTarget) {
@@ -105,7 +105,8 @@ async function onDisconnect(io, socket, uuid) {
         return
     }
 
-    // 죽은 참가자 등 유예 없는 사람: 판이 진행 중이면 자리·재입장 권리 그대로
+    // 죽은 참가자 등 유예 없는 사람: 판이 진행 중이면 자리·재입장 권리 그대로 (관전 중 새로고침이면 판으로 돌아옴)
+    // 다른 방 입장·방 만들기는 막지 않음 (죽은 사람은 매칭 안 막음, 결정 [임시] 2), 판 끝 골드도 그대로
     const reconnectState = gameSessionCore.getSessionSnapshotForPlayer(uuid, expectedGameId)
     if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) {
         // 죽은 사람 끊김도 알림 (스냅샷 isConnected와 같게)

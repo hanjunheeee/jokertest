@@ -1,5 +1,5 @@
 // 판 열기 파일
-// 판 후보 마지막 검사 + 장부에 넣기 (여기서 진짜 판 생김)
+// 판 후보 마지막 검사 + 장부에 넣기 (여기서 진짜 판 생김, 옛 판에 남은 사람은 그때 옛 판에서 뺌)
 // matchmaking이 게임 시작 때 gameSession.js 통해서 사용
 const { getMinSupportedPlayers, MAX_SUPPORTED_PLAYERS, INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { RATE_FIELD } = require('../chat/constants')
@@ -8,6 +8,8 @@ const { computeRoleComposition, validateResolvedComposition } = require('../core
 const { registerGameSession } = require('../core/registry/write')
 const { endGameSessionForPlayer } = require('../core/registry/write')
 const { isMatchmakingBlocked } = require('../queries/live')
+const { isParticipatingInSession } = require('../queries/participation')
+const { commitParticipantDeparture } = require('../departure/leave')
 const { hasSessionId, hasRoomSession, getPlayerGameId, getSessionById } = require('../queries/byId')
 
 // 판 id·방 id가 있는지, 사람이 최소(운영 5·개발 2)~10명인지
@@ -147,6 +149,7 @@ function assertValidSessionForCommit(session) {
 }
 
 // 판 장부 3개에 같이 넣기 (같은 방 두 번 시작이면 throw)
+// 돌려줌: 진행 중 옛 판에서 빠진 죽은 사람 목록 → [{ uuid, gameId, departure }] (옛 판 사람들에게 알릴 때 씀)
 function commitGameSession(session) {
     // 후보 모양부터 검사 (틀리면 throw)
     assertValidSessionForCommit(session)
@@ -158,9 +161,10 @@ function commitGameSession(session) {
     if (hasRoomSession(session.roomId)) {
         throw new Error(`Room에 이미 활성 GameSession 존재: ${session.roomId}`)
     }
-    // 참가자가 옛 판에 남아 있을 때: 끝난 판이면 거기서 빼고, 아직 묶여 있으면 throw
+    // 참가자가 옛 판에 남아 있을 때: 끝난 판이면 거기서 빼고, 진행 중 판의 죽은 사람도 거기서 빼고, 산 사람이면 throw
     // 검사를 먼저 다 끝내고 정리는 그 뒤 (뒤쪽 참가자에서 throw 나면 앞 사람만 옛 판에서 빠진 채 남던 것, known 1-12)
     const endedLeftovers = []
+    const liveLeftovers = []
     for (const uuid of session.players.keys()) {
         const existingGameId = getPlayerGameId(uuid)
         if (!existingGameId || existingGameId === session.id) continue
@@ -169,14 +173,23 @@ function commitGameSession(session) {
             endedLeftovers.push([uuid, existingGameId])
         } else if (isMatchmakingBlocked(uuid)) {
             throw new Error(`참가자가 이미 다른 GameSession에 속함: ${uuid}`)
+        } else if (existingSession && isParticipatingInSession(existingSession, uuid)) {
+            liveLeftovers.push([uuid, existingSession])
         }
     }
     // 여기부터 진짜 바뀜: 끝난 옛 판에서 빼기
     for (const [uuid, existingGameId] of endedLeftovers) {
         endGameSessionForPlayer(uuid, 'SUPERSEDED_BY_NEW_GAME', existingGameId)
     }
+    // 진행 중 옛 판의 죽은 사람은 죽은 뒤 나가기와 같게 뺌 (기권 명단만, 편 결과·판 끝 골드 그대로, 옛 판 방송도 안 받게)
+    const releasedFromLive = []
+    for (const [uuid, existingSession] of liveLeftovers) {
+        const departure = commitParticipantDeparture(existingSession, uuid, { reason: 'SUPERSEDED_BY_NEW_GAME' })
+        if (departure.ok) releasedFromLive.push({ uuid, gameId: existingSession.id, departure })
+    }
     // 장부 3개에 같이 넣음 = 판 생김
     registerGameSession(session)
+    return releasedFromLive
 }
 
 module.exports = {

@@ -4,7 +4,7 @@
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isolate, isolateOr, tryOr } = require('../../../common/isolate')
 const { NIGHT_TURN_STAGES, PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../../core/constants')
-const { nightTurnRuns, disconnectGraceRuns, phaseHooks } = require('../../core/state')
+const { nightTurnRuns, phaseHooks } = require('../../core/state')
 const {
     pickTimerFns,
     clearRunTimer,
@@ -12,7 +12,6 @@ const {
     resolveNightTurnDurationMs,
     fillAbstentions,
 } = require('../../core/timers')
-const { expireGracesAtBoundary, expireDisconnectGrace } = require('../../connection/grace')
 const { emitToGameChannel } = require('../../delivery/broadcast')
 const { isCurrentNightRun, isSubmittingNightTurn } = require('./checks')
 const { pullRunDeadline, announceSettleStarted } = require('../settle')
@@ -112,18 +111,10 @@ function advanceNightTurn(run) {
     settleNightTurnIfComplete(session.id)
 }
 
-// 밤 턴 마감: 그 역할 끊김 유예를 먼저 끝내고, 안 낸 사람은 기권으로 채운 뒤 턴 닫음 (지도 08-⑥)
+// 밤 턴 마감: 안 낸 사람은 기권으로 채운 뒤 턴 닫음 (끊긴 사람도 기권, 끊김 유예는 따로 60초)
 function expireNightTurn(run, role) {
     const { session } = run
     if (!isSubmittingNightTurn(run, role)) return
-
-    // 그 역할 끊긴 사람 유예는 턴 마감 때 끝냄 (아직 안 붙었으면 이탈 처리)
-    for (const graceRun of [...(disconnectGraceRuns.get(session.id)?.values() ?? [])]) {
-        if (session.players.get(graceRun.uuid)?.role !== role) continue
-        expireDisconnectGrace(graceRun)
-    }
-    // 유예 만료(이탈 처리)가 턴을 바꿨으면 멈춤 (단계는 안 봄, 기권은 계속 채움)
-    if (!isCurrentNightRun(run) || session.nightTurnRole !== role) return
 
     fillAbstentions(
         gameSessionCore.getAliveActorUuidsForRole(session, role),
@@ -163,7 +154,7 @@ function endNightTurn(run, role) {
 
 // 지금 역할 산 행동자가 다 골랐으면 턴 마감을 지금+5초로 당기고 판 전원에 알림, 당겼으면 새 마감 시각 (아니면 null)
 // 1명이어도 같음, 5초 안엔 고른 대상 바꾸기 됨 (다시 내면 덮어씀, 5초는 다시 안 셈), 빈 턴은 무작위 타이머에 맡김
-// 당긴 마감엔 바로 턴 닫기: 다 냈으니 기권 채울 것 없음, 낸 뒤 끊긴 사람 유예를 앞당겨 끝내지 않게
+// 당긴 마감엔 바로 턴 닫기: 다 냈으니 기권 채울 것 없음
 function settleNightTurnIfComplete(gameId) {
     const run = nightTurnRuns.get(gameId)
     if (!run) return null
@@ -186,9 +177,6 @@ function settleNightTurnIfComplete(gameId) {
 // 밤 턴 순서 시작: 밤마다 run 하나, 이미 있으면 그대로 (시계·타이머는 시험이 넣을 수 있음)
 function startNightTurnSequence(io, session, deps = {}) {
     if (!session || session.phase !== 'NIGHT') return null
-    // 단계 경계라 끊김 유예부터 끝냄, 이탈로 판이 끝났을 수 있어 밤인지 다시 봄
-    expireGracesAtBoundary(session)
-    if (session.phase !== 'NIGHT') return null
     const existing = nightTurnRuns.get(session.id)
     if (existing) return existing
 

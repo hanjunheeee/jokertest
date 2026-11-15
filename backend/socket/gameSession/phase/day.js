@@ -6,7 +6,7 @@ const { PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../core/constants')
 const { dayPhaseRuns } = require('../core/state')
 const { pickRequesterUuid } = require('../core/requester')
 const { pickTimerFns, clearRunTimer, fillAbstentions } = require('../core/timers')
-const { expireGracesAtBoundary } = require('../connection/grace')
+const { detachGracesIfEnded } = require('../connection/grace')
 const { emitToGameChannel, deliverToParticipants } = require('../delivery/broadcast')
 const { startNightTurnSequence, stopNightTurnSequence } = require('./night/turn')
 const { startTribunalTimer, stopTribunalTimer } = require('./tribunal')
@@ -70,7 +70,6 @@ function scheduleDayPhaseTimer(run) {
         round: gameSessionCore.getDayVoteRound(session),
     }
     run.retries = 0
-    run.scheduleSeq = (run.scheduleSeq ?? 0) + 1
     run.deadline = run.nowFn() + durationMs
     // 판에도 마감 시각 적어 둠 (방송·스냅샷이 화면 타이머용으로 실음)
     session.dayPhaseDeadline = run.deadline
@@ -174,9 +173,9 @@ function settleDayVoteIfComplete(gameId) {
 
 // 낮 투표 판정 결과 방송 + 다음 단계 타이머, 순서는 다음 단계에 따라 (투표 마감이 씀)
 // 낮에 남으면 타이머 먼저 (재투표 없어져 지금은 안 생김, 사용자 결정 2026-11-09 · known 1-13)
-// 재판·밤으로 가면 방송 먼저: 유예 만료 이탈·밤 턴 방송이 판정 결과보다 앞서지 않게
+// 재판·밤으로 가면 방송 먼저: 밤 턴 방송이 판정 결과보다 앞서지 않게
 // 재판이면 재판 마감만 방송 전에 걸어 결과에 tribunalDeadline 실음 (안 실으면 새로고침해야 남은 시간 보였음, 2026-11-09)
-// 재판 마감 걸기는 방송·유예 만료가 없어 판정 결과보다 앞서는 사건 없음, 뒤 타이머 맞추기는 같은 마감을 그대로 씀
+// 재판 마감 걸기는 방송이 없어 판정 결과보다 앞서는 사건 없음, 뒤 타이머 맞추기는 같은 마감을 그대로 씀
 function announceDayVoteResolved(io, session, resolution, label, fields, deliver) {
     const syncTimers = () => isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => syncSessionPhaseTimers(io, session))
     const staysDay = session.phase === 'DAY'
@@ -203,20 +202,14 @@ function attachTribunalDeadline(payload, session) {
 // 낮 타이머 시작: 판마다 run 하나 (토론·투표 길이는 방 설정, 없으면 기본값)
 function startDayPhaseTimer(io, session, deps = {}) {
     if (!session) return null
-    // 단계 경계라 끊김 유예부터 끝냄 (이탈로 판이 바뀔 수 있어 낮 확인은 그 뒤)
-    const runBefore = dayPhaseRuns.get(session.id)
-    const seqBefore = runBefore?.scheduleSeq
-    expireGracesAtBoundary(session)
+    // 승부 났으면 남은 끊김 유예도 뗌 (끊김 유예는 단계가 바뀌어도 60초 그대로라 여기서 만료 안 함)
+    detachGracesIfEnded(session)
     if (session.phase !== 'DAY') {
         stopDayPhaseTimer(session.id)
         return null
     }
 
-    // 유예 만료(이탈 반영)가 안에서 이미 지금 단계 타이머를 다시 걸었으면 또 안 검 (방송된 마감 그대로, BE-024)
     let run = dayPhaseRuns.get(session.id)
-    const rescheduledInside = run && (run !== runBefore || run.scheduleSeq !== seqBefore)
-    if (rescheduledInside && matchesDayState(run)) return run
-
     // 같은 낮 안에선 run 다시 씀 (길이 설정은 처음 만들 때만 읽음)
     if (!run) {
         const timerSettings = session.timerSettings
@@ -276,8 +269,8 @@ function announceDayStep(io, session, emitLabel, emitStep) {
 // 판 단계에 맞게 타이머 맞추기: 낮이면 낮 타이머만, 밤이면 밤 턴만, 재판이면 재판 마감만, 그 밖엔 다 끔
 function syncSessionPhaseTimers(io, session) {
     if (!session) return null
-    // 단계 경계라 끊김 유예부터 끝냄
-    expireGracesAtBoundary(session)
+    // 승부 났으면 남은 끊김 유예도 뗌 (단계 경계라도 끊김 유예는 안 끝냄, 60초 그대로)
+    detachGracesIfEnded(session)
 
     if (session.phase !== 'TRIBUNAL') stopTribunalTimer(session.id)
 

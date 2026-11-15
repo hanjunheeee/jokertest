@@ -70,6 +70,14 @@ async function advance(gameId) {
     return remote.value ? remote : { value: local, node: null };
 }
 
+// 끊김 60초 바로 끝내기: 판 있는 Node 타이머만 돌릴 수 있음
+async function expireGraces(gameId) {
+    const local = gameHooks.expireSessionGraces(gameId);
+    if (local.ok) return sameNode(local);
+    const remote = await askOtherNodes('e2e.expireGraces', { gameId }, keys().game(gameId));
+    return remote.value ? remote : { value: local, node: null };
+}
+
 const asId = (value) => (typeof value === 'string' && value.length > 0 && value.length <= 128 ? value : null);
 
 // 다른 Node가 시키는 것 (E2E_HOOKS 켜진 Node만), 처리기는 이 Node 장부만 봄 (다시 다른 Node로 안 넘김)
@@ -86,10 +94,11 @@ function registerHandlers() {
     cluster.rpc.register('e2e.describeUserRoom', (args) => gameHooks.describeRoomByUser(asId(args?.uuid)));
     cluster.rpc.register('e2e.describeGame', (args) => gameHooks.describeSession(gameHooks.getSessionById(asId(args?.gameId))));
     cluster.rpc.register('e2e.advance', (args) => gameHooks.advanceSession(asId(args?.gameId)));
+    cluster.rpc.register('e2e.expireGraces', (args) => gameHooks.expireSessionGraces(asId(args?.gameId)));
 }
 
 if (isE2eHooksEnabled()) registerHandlers();
 
 module.exports = {
-    setRolePresets, clearRolePresets, describeUserGame, describeUserRoom, describeGame, advance, registerHandlers,
+    setRolePresets, clearRolePresets, describeUserGame, describeUserRoom, describeGame, advance, expireGraces, registerHandlers,
 };

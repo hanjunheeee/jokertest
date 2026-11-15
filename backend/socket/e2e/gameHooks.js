@@ -1,6 +1,6 @@
 'use strict';
 
-// 브라우저 시험용 게임 손잡이 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기
+// 브라우저 시험용 게임 손잡이 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기·끊김 60초 바로 끝내기
 // routes/e2e.routes.js(E2E_HOOKS=1, 운영 아님)와 matchmaking/room/startLaunch.js(역할 미리 정하기 반영)가 씀, Node 여러 개 길은 remoteHooks.js
 const { isE2eHooksEnabled } = require('../../config/e2eHooks');
 const cluster = require('../../cluster');
@@ -192,6 +192,18 @@ function advanceSession(gameId) {
     return { ok: true, fired: null, before, after: session.phase };
 }
 
+// 그 판 끊김 유예(60초) 타이머를 지금 바로 돌림 → 돌린 사람 uuid 목록 (단계 넘기기와 따로, 시험이 60초를 안 기다리게)
+// 다시 붙었거나 이미 죽은 사람은 타이머가 돌아도 탈락 안 함 (진짜 만료와 같은 검사)
+function expireSessionGraces(gameId) {
+    const session = getSessionById(gameId);
+    if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' };
+    const fired = [];
+    for (const [uuid, run] of [...(runs.disconnectGraceRuns.get(gameId) ?? [])]) {
+        if (e2eTimers.fireNow(run.timerId)) fired.push(uuid);
+    }
+    return { ok: true, fired, after: getSessionById(gameId)?.phase ?? 'GONE' };
+}
+
 module.exports = {
     setRolePresets,
     clearRolePresets,
@@ -202,5 +214,6 @@ module.exports = {
     findSessionByUser,
     describeRoomByUser,
     advanceSession,
+    expireSessionGraces,
     getSessionById,
 };

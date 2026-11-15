@@ -1,7 +1,8 @@
 // 참가자 이탈 반영 파일
-// 이탈 커밋 뒤 방송·유예·전적 + 막혀 있던 단계 풀기(표가 다 차면 5초 뒤 판정), 나가기·끊김 유예 만료가 씀
+// 이탈 커밋 뒤 방송·유예·탈주 기록·전적 + 막혀 있던 단계 풀기(표가 다 차면 5초 뒤 판정), 나가기·끊김 유예 만료가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const { persistTerminalSession } = require('../../../services/game/record')
+const { recordDesertion, DESERTION_REASONS } = require('../../../services/game/desertion')
 const { isolate, isolateOr } = require('../../common/isolate')
 const { cancelDisconnectGrace } = require('../connection/grace')
 const { emitToGameChannel } = require('../delivery/broadcast')
@@ -11,6 +12,12 @@ const { startDayPhaseTimer, syncSessionPhaseTimers, settleDayVoteIfComplete } = 
 const { settleTribunalIfComplete } = require('../phase/tribunal')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { scheduleEndedSweep } = require('./end')
+
+// 탈주로 적는 이탈 이유: 산 채로 나가기·끊긴 뒤 60초 못 돌아옴 (죽은 뒤 나감·점검·결과 화면 나가기는 여기 안 옴, 결정 "탈주 벌" ①②)
+const DESERTION_REASON_BY_DEPARTURE = Object.freeze({
+    PLAYER_LEFT: DESERTION_REASONS.LEFT_ALIVE,
+    DISCONNECT_GRACE_EXPIRED: DESERTION_REASONS.DISCONNECT_TIMEOUT,
+})
 
 // 참가자 이탈 반영: core 커밋 뒤 단계는 하나씩 격리, 커밋은 되돌리지 않음 (지도 12-⑦⑧⑨⑩)
 function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LEFT' } = {}) {
@@ -31,6 +38,14 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
 
     // 끊김 유예 중이었으면 같이 끝냄 (유예 타이머가 두 번째 사망 시도 못 하게, 지도 12-⑦)
     step('GRACE_CANCEL_ERROR', () => cancelDisconnectGrace(session.id, uuid))
+
+    // 산 채로 떠났으면 탈주 기록 (대기 시간 막힘은 부르는 순간 메모리에 걸림, DB 쓰기는 안 기다림·절대 안 던짐)
+    const desertionReason = applied.wasAlive ? DESERTION_REASON_BY_DEPARTURE[reason] : undefined
+    if (desertionReason) {
+        step('DESERTION_RECORD_ERROR', () => {
+            void recordDesertion({ userId: uuid, gameId: session.id, reason: desertionReason })
+        })
+    }
 
     // 사망 방송: 승부 났으면 종료 필드 실음 (만들다 던지면 거기까지 만든 내용으로 보냄)
     if (applied.eliminated) {

@@ -1,5 +1,5 @@
 // socket gameSession 상수 파일
-// 내부 전용 거절 코드 묶음·밤 턴 단계·다시 해 보기 값, 핸들러·요청 검사·타이머·밤 단계가 씀
+// 내부 전용 거절 코드 묶음·밤 턴 단계·다시 해 보기 값·끊김 기다림 길이, 핸들러·요청 검사·타이머·밤 단계·끊김 유예가 씀
 
 // core 거절 코드 중 밖에 그대로 보이면 안 되는 것 (INTERNAL_ERROR로 바꿔 답함, 지도 03-⑥ · 06-⑨)
 const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
@@ -63,6 +63,9 @@ const NIGHT_TURN_STAGES = Object.freeze({
 // 역할 공개 10초: 판 시작 때 걸고, 사람 확인 안 기다리고 지나면 무조건 첫 낮으로 (사용자 결정 2026-11-09)
 const ROLE_REVEAL_DEADLINE_MS = 10000
 
+// 판 중 산 사람이 끊기면 기다려 주는 시간 60초: 서버가 끊김을 알아챈 때부터 셈, 단계가 바뀌어도 그대로 (사용자 결정 2026-11-16)
+const DISCONNECT_GRACE_MS = 60000
+
 // 타이머 쪽 판정·확정 실패 때 다시 해 보기: 1초 간격 최대 5번 (그사이 겹친 요청이 끝나면 풀림)
 const PHASE_RETRY_DELAY_MS = 1000
 const PHASE_RETRY_MAX = 5
@@ -83,6 +86,7 @@ module.exports = {
     IDEMPOTENT_LEAVE_CODES,
     NIGHT_TURN_STAGES,
     ROLE_REVEAL_DEADLINE_MS,
+    DISCONNECT_GRACE_MS,
     PHASE_RETRY_DELAY_MS,
     PHASE_RETRY_MAX,
 }

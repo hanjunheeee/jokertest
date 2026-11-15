@@ -15,15 +15,16 @@ function getActiveSessionRoutingInfo(uuid) {
     return { gameId: session.id, channelId: session.channelId }
 }
 
-// 게임 중이라 매칭 못 들어가는지 (기권한 사람은 풀어 줌)
+// 게임 중이라 매칭 못 들어가는지: 진행 중 판의 산 사람만 막음 (기권·죽은 사람·끝난 판은 풀어 줌)
+// 죽은 사람은 판 자리는 남겨 둔 채 다른 방 입장·방 만들기만 됨 (결정 "죽은 사람은 다음 판 가능", [임시] 2)
 function isMatchmakingBlocked(uuid) {
     // 판에 없거나 기권했으면 매칭 가능
     const routing = getActiveSessionRoutingInfo(uuid)
     if (!routing || isForfeitedFromSession(routing.gameId, uuid)) return false
     // 끝난 판에 남은 건 막지 않음, 진행 중 판만 막음
     const session = gameSessions.get(routing.gameId)
-    if (!session) return false
-    return session.phase !== 'ENDED'
+    if (!session || session.phase === 'ENDED') return false
+    return session.players.get(uuid)?.alive === true
 }
 
 // 방 코드로 판 상태 찾기 ("이미 시작" 구분용)
