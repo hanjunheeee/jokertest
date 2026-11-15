@@ -1,5 +1,5 @@
-// 밤 성공 사망 영상 재생 훅: 재생·감시 타이머·프레임 합치기·소리 맞추기, 끝나면 결과를 한 번만 알림
-// 밤 성공 사망 영상 컴포넌트(InGameNightSuccessKillVideo)가 사용 (재생 기록 하나를 모든 단계가 같이 고쳐 써서 한 파일에 둠)
+// 암살 영상 재생 훅: 재생·감시 타이머·프레임 합치기·소리 맞추기, 끝나면 결과를 한 번만 알림
+// 낮 시작 연출의 영상 창(PC InGameNightSuccessKillVideo, 모바일 KillVideo)이 사용 (재생 기록 하나를 모든 단계가 같이 고쳐 써서 한 파일에 둠)
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getSfxMix, subscribeSfxMix } from "../../../../shared/hooks/useSfxRuntime.js"
 import {

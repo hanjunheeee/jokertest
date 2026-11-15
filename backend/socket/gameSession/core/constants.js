@@ -1,6 +1,5 @@
 // socket gameSession 상수 파일
-// 내부 전용 거절 코드 묶음·밤 턴 단계·연출 대기·밤 성공 ACK 값·거절 문구, 핸들러·요청 검사·타이머·밤 단계·이탈 반영이 씀
-const { REPLY_MESSAGES } = require('../../common/replies')
+// 내부 전용 거절 코드 묶음·밤 턴 단계·다시 해 보기·정리 시간 값, 핸들러·요청 검사·타이머·밤 단계·판 끝 정리가 씀
 
 // core 거절 코드 중 밖에 그대로 보이면 안 되는 것 (INTERNAL_ERROR로 바꿔 답함, 지도 03-⑥ · 06-⑨)
 const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
@@ -54,17 +53,12 @@ const NIGHT_INTERNAL_CODES = withInternalOnly('UNKNOWN_RESOLUTION_SOURCE', 'STAL
 // 나가기를 또 보내도 성공으로 답하는 코드 (이미 빠짐, 지도 12-⑥)
 const IDEMPOTENT_LEAVE_CODES = new Set(['ALREADY_LEFT', 'NOT_A_PARTICIPANT'])
 
-// 밤 턴 run 단계: 제출 받는 중 → 연출 대기 → 다음 턴, 멈추면 STOPPED
+// 밤 턴 run 단계: 제출 받는 중 → 턴 닫힘(바로 다음 턴), 멈추면 STOPPED
 const NIGHT_TURN_STAGES = Object.freeze({
     IDLE: 'IDLE',
     SUBMITTING: 'SUBMITTING',
-    PRESENTATION_WAIT: 'PRESENTATION_WAIT',
     STOPPED: 'STOPPED',
 })
-
-// 연출 대기 상한: 기본 12초, setTimeout 최대값까지만 (지도 05-⑨)
-const NIGHT_WAIT_DEFAULT_MS = 12000
-const NIGHT_WAIT_MAX_MS = 2147483647
 
 // 역할 공개 10초: 판 시작 때 걸고, 사람 확인 안 기다리고 지나면 무조건 첫 낮으로 (사용자 결정 2026-11-09)
 const ROLE_REVEAL_DEADLINE_MS = 10000
@@ -75,30 +69,6 @@ const PHASE_RETRY_MAX = 5
 
 // 판 끝 뒤 끊긴 사람 정리까지 60초 (그 안에 다시 붙으면 결과 화면 그대로 봄)
 const ENDED_SWEEP_DELAY_MS = 60000
-
-// 밤 연출 계약 버전
-const NIGHT_CONTRACT_VERSION = 1
-
-// 역할 → 밤 성공 사건 종류
-const NIGHT_EVENT_TYPES = Object.freeze({
-    JOKER: 'KILL',
-    DOCTOR: 'HEAL',
-    GUARD: 'INVESTIGATE',
-    WITCH_HUNTER: 'CONFIRM',
-})
-
-// 사건 받는 쪽 시점 (행동자 / 대상), 이 순서로 보냄
-const NIGHT_PERSPECTIVES = Object.freeze(['USER', 'TARGET'])
-
-// 밤 성공 완료 ACK: 허용 키·결과 값 (지도 05-⑩)
-const NIGHT_ACK_KEYS = new Set(['gameId', 'nightDayIndex', 'eventId', 'outcome'])
-const NIGHT_SUCCESS_OUTCOMES = new Set(['COMPLETED', 'ERROR', 'SKIPPED'])
-
-// 밤 성공 완료 거절 코드 → 답 문구
-const NIGHT_REJECT_MESSAGES = Object.freeze({
-    NOT_ELIGIBLE: REPLY_MESSAGES.REJECTED,
-    STALE_EVENT: '더 이상 유효하지 않은 사건입니다.',
-})
 
 module.exports = {
     INTERNAL_ONLY_CODES,
@@ -113,16 +83,8 @@ module.exports = {
     NIGHT_INTERNAL_CODES,
     IDEMPOTENT_LEAVE_CODES,
     NIGHT_TURN_STAGES,
-    NIGHT_WAIT_DEFAULT_MS,
-    NIGHT_WAIT_MAX_MS,
     ROLE_REVEAL_DEADLINE_MS,
     PHASE_RETRY_DELAY_MS,
     PHASE_RETRY_MAX,
     ENDED_SWEEP_DELAY_MS,
-    NIGHT_CONTRACT_VERSION,
-    NIGHT_EVENT_TYPES,
-    NIGHT_PERSPECTIVES,
-    NIGHT_ACK_KEYS,
-    NIGHT_SUCCESS_OUTCOMES,
-    NIGHT_REJECT_MESSAGES,
 }

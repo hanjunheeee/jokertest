@@ -1,5 +1,5 @@
-// 밤 소켓: 밤 차례·판정 받기, 밤 행동·판정 요청·성공 연출 확인 보내기
-// 밤 훅·스냅샷 동기화·session.js 묶음과 스토어의 성공 연출 확인이 사용
+// 밤 소켓: 밤 차례·판정 받기, 밤 행동·판정 요청 보내기
+// 밤 훅·스냅샷 동기화·session.js 묶음이 사용
 import { listen } from "./connection.js"
 
 // 밤 차례 시작·끝 받기 (소켓·손잡이가 모자라면 아무것도 안 붙임)
@@ -16,20 +16,10 @@ export function onNightTurn(socket, { onStarted, onEnded }) {
   }
 }
 
-// 밤 차례 끝만 받기
-export const onNightTurnEnded = (socket, fn) => listen(socket, "night_turn_ended", fn)
-
-// 밤 판정 끝만 받기 (그 밤 차례가 다 끝났다는 알림)
-export const onNightActionsResolved = (socket, fn) => listen(socket, "night_actions_resolved", fn)
-
-// 연출 대기 알림·차례 시작 받기 (스냅샷 충돌 감시용)
-export function onNightNotices(socket, onWait, onTurnStart) {
-  socket.on("night_presentation_wait", onWait)
-  socket.on("night_turn_started", onTurnStart)
-  return () => {
-    socket.off("night_presentation_wait", onWait)
-    socket.off("night_turn_started", onTurnStart)
-  }
+// 밤 차례 시작 받기 (스냅샷 충돌 감시용)
+// 연출 대기 알림은 없어짐 → 첫 손잡이는 받지 않음 (부르는 쪽이 아직 두 개를 넘겨 자리만 둠)
+export function onNightNotices(socket, _onWait, onTurnStart) {
+  return listen(socket, "night_turn_started", onTurnStart)
 }
 
 // 밤 판정 세 사건 받기 (판정 끝·개인 결과·결과 적용)
@@ -52,9 +42,4 @@ export function emitNightAction(socket, ms, gameId, targetId) {
 // 밤 판정 요청 (응답 기다림)
 export function emitResolveNight(socket, ms, gameId) {
   return socket.timeout(ms).emitWithAck("resolve_night", { gameId })
-}
-
-// 밤 성공 연출 다 봤다고 알림 (응답은 콜백으로 받음)
-export function emitNightSuccessAck(socket, payload, onAck) {
-  socket.emit("acknowledge_night_action_success", payload, onAck)
 }

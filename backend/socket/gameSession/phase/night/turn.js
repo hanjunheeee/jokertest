@@ -8,8 +8,6 @@ const { nightTurnRuns, disconnectGraceRuns, phaseHooks } = require('../../core/s
 const {
     pickTimerFns,
     clearRunTimer,
-    deactivateWaitToken,
-    resolveNightWaitMs,
     computeEmptyTurnDelayMs,
     resolveNightTurnDurationMs,
     fillAbstentions,
@@ -17,10 +15,6 @@ const {
 const { expireGracesAtBoundary, expireDisconnectGrace } = require('../../connection/grace')
 const { emitToGameChannel } = require('../../delivery/broadcast')
 const { isCurrentNightRun, isSubmittingNightTurn } = require('./checks')
-const { buildNightPresentationContract } = require('./contract')
-const { ensureNightReceipts } = require('./receipts')
-const { emitNightSuccessEvents } = require('./notify')
-const { beginNightWait, activateNightWait } = require('./wait')
 
 // 밤 턴 방송, 던져도 턴 진행은 계속
 function emitNightTurnEvent(run, event, payload) {
@@ -141,7 +135,7 @@ function expireNightTurn(run, role) {
     endNightTurn(run, role)
 }
 
-// 역할 턴 닫기: 결과 확정 → 성공 사건 개별 전달 → 턴 끝 방송 → 연출 대기 (지도 05-⑧⑩)
+// 역할 턴 닫기: 결과 확정 → 턴 끝 방송 → 바로 다음 턴 (능력 결과는 밤 끝 개인 결과로만 감)
 function endNightTurn(run, role) {
     const { session } = run
     if (!isSubmittingNightTurn(run, role)) return
@@ -154,22 +148,16 @@ function endNightTurn(run, role) {
         return
     }
 
-    // 계약 만들기가 던져도 턴은 닫음 (사건 전달만 빠짐)
-    const contract = isolateOr(null, '[밤 연출 계약 오류]', { code: 'CONTRACT_BUILD_ERROR', role, gameId: session.id },
-        () => buildNightPresentationContract(run, completed))
-
-    // 여기부터 진짜 바뀜: 마감 타이머 끄고 연출 대기로
+    // 여기부터 진짜 바뀜: 마감 타이머 끄고 턴 닫힘 표시, 지금 역할·마감 시각 비움
     clearRunTimer(run)
     run.deadline = null
+    run.stage = NIGHT_TURN_STAGES.IDLE
+    session.nightTurnRole = null
+    session.nightTurnDeadline = null
 
-    // 대기 단계부터 들어감 (턴 닫힘 표시), 사건·턴 끝 방송 뒤 대기 켬
-    const wait = beginNightWait(run, completed, contract)
-    if (contract) {
-        isolate('[밤 성공 사건 전달 오류]', { code: 'SUCCESS_EVENT_ERROR', role, gameId: session.id },
-            () => emitNightSuccessEvents(run, contract))
-    }
+    // 턴 끝 방송 뒤 기다림 없이 다음 역할 턴 열기
     emitNightTurnEvent(run, 'night_turn_ended', gameSessionCore.buildNightTurnEndedPayload(session, role))
-    activateNightWait(run, wait)
+    advanceNightTurn(run)
 }
 
 // 지금 역할 산 행동자가 다 냈으면 마감 안 기다리고 턴 닫음 (빈 턴은 타이머에 맡김)
@@ -192,9 +180,6 @@ function startNightTurnSequence(io, session, deps = {}) {
     const existing = nightTurnRuns.get(session.id)
     if (existing) return existing
 
-    // 사건 보내기 전에 이 밤 수신 기록 칸 열기
-    ensureNightReceipts(session)
-
     const run = {
         io,
         session,
@@ -203,13 +188,9 @@ function startNightTurnSequence(io, session, deps = {}) {
         deadline: null,
         nightDayIndex: session.dayIndex,
         stage: NIGHT_TURN_STAGES.IDLE,
-        wait: null,
-        waitSeq: 0,
-        contracts: new Map(),
         randomFn: deps.randomFn ?? Math.random,
         ...pickTimerFns(deps),
         durationMs: deps.turnDurationMs ?? null,
-        presentationWaitTimeoutMs: resolveNightWaitMs(deps),
     }
     // 여기부터 진짜 바뀜: run 등록, 차례 진행 표시 (밤 판정이 차례 기록을 쓰게)
     nightTurnRuns.set(session.id, run)
@@ -218,14 +199,12 @@ function startNightTurnSequence(io, session, deps = {}) {
     return run
 }
 
-// 밤 턴 순서 멈춤: 밤 끝·판 끝·낮 전환·시험 초기화 때 타이머·대기 끄고 run 지움
+// 밤 턴 순서 멈춤: 밤 끝·판 끝·낮 전환·시험 초기화 때 타이머 끄고 run 지움
 function stopNightTurnSequence(gameId) {
     const run = nightTurnRuns.get(gameId)
     if (!run) return
     clearRunTimer(run)
     run.deadline = null
-    if (run.wait) deactivateWaitToken(run, run.wait)
-    run.wait = null
     run.stage = NIGHT_TURN_STAGES.STOPPED
     nightTurnRuns.delete(gameId)
     // 지금 역할 표시·마감 시각도 지움 (다음 밤은 새 run이 다시 정함)

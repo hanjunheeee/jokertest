@@ -15,8 +15,6 @@ const SESSION_EVENTS = [
   ["game_phase_changed", "phaseChanged"],
   ["night_result_applied", "nightResultApplied"],
   ["night_action_result", "nightActionResult"],
-  ["night_action_success", "nightActionSuccess"],
-  ["night_presentation_wait", "nightPresentationWait"],
   ["day_vote_resolved", "dayVoteResolved"],
   ["day_phase_changed", "dayPhaseChanged"],
   ["session_player_connection_changed", "playerConnectionChanged"],

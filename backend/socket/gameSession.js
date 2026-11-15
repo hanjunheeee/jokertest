@@ -10,7 +10,6 @@ const { isolate } = require('./common/isolate')
 const { NIGHT_TURN_STAGES } = require('./gameSession/core/constants')
 const { nightTurnRuns, roleRevealRuns, tribunalRuns, setPhaseHooks } = require('./gameSession/core/state')
 const {
-    resolveNightWaitMs,
     computeEmptyTurnDelayMs,
     resolveNightTurnDurationMs,
 } = require('./gameSession/core/timers')
@@ -36,20 +35,6 @@ const {
     resolveJokerTeammateSockets,
 } = require('./gameSession/delivery/broadcast')
 const {
-    buildNightPresentationContract,
-    buildNightPayload,
-} = require('./gameSession/phase/night/contract')
-const { getNightSuccessReceipts } = require('./gameSession/phase/night/receipts')
-const { emitNightSuccessEvents, emitNightWait } = require('./gameSession/phase/night/notify')
-const {
-    beginNightWait,
-    releaseNightPresentationWait,
-    isNightPresentationWaitActive,
-    activateNightWait,
-    reevaluateNightWait,
-} = require('./gameSession/phase/night/wait')
-const {
-    advanceNightTurn,
     endNightTurn,
     startNightTurnSequence,
     stopNightTurnSequence,
@@ -62,11 +47,7 @@ const { finalizeNightForSession } = require('./gameSession/phase/night/finalize'
 const { finalizeGameSessionEnd } = require('./gameSession/departure/end')
 const { applyParticipantDeparture } = require('./gameSession/departure/apply')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./gameSession/handlers/ready')
-const {
-    handleSubmitNightAction,
-    handleResolveNight,
-    handleAckNightSuccess,
-} = require('./gameSession/handlers/night')
+const { handleSubmitNightAction, handleResolveNight } = require('./gameSession/handlers/night')
 const {
     handleSubmitJokerChatMessage,
     handleSubmitGameChatMessage,
@@ -88,7 +69,6 @@ const {
 setPhaseHooks({
     applyParticipantDeparture,
     finalizeNightForSession,
-    advanceNightTurn,
     resolveTribunalNow: maybeResolveTribunal,
 })
 
@@ -142,20 +122,8 @@ module.exports = {
         recordOwnership,
         startNightTurnSequence,
         stopNightTurnSequence,
-        buildNightPresentationContract,
-        beginNightWait,
-        releaseNightPresentationWait,
-        isNightPresentationWaitActive,
         NIGHT_TURN_STAGES,
-        activateNightWait,
-        reevaluateNightWait,
-        emitNightWait,
-        resolveNightWaitMs,
         __getNightTurnRunForTests: (gameId) => nightTurnRuns.get(gameId) ?? null,
-        buildNightPayload,
-        emitNightSuccessEvents,
-        handleAckNightSuccess,
-        __getNightSuccessReceiptsForTests: (session) => getNightSuccessReceipts(session) ?? null,
         computeEmptyTurnDelayMs,
         resolveNightTurnDurationMs,
         startDayPhaseTimer,

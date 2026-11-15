@@ -1,12 +1,12 @@
 // 판 정보 액션 묶음: 판 시작 정보·참여 바뀜·본인 진행·종료 결과 무효화·오류·비우기
 // 입구 파일이 create 할 때 펼쳐 씀
 import {
+  CLEARED_DAWN_REPORT,
   CLEARED_NIGHT_PRIVATE_RESULT,
   SELF_SUBMISSION_KEYS,
 } from "../../constants/store/ingameStore.js"
 import { isPublicProgress, normalizeGameState, pickHostUuid } from "../../utils/store/gamePayload.js"
 import { tagDayVoteSubmissionDay } from "../../utils/store/selfActed.js"
-import { clearQueue } from "./nightSuccessRecords.js"
 import { isConfirmedWin } from "./terminalScope.js"
 
 // 사건 모양 검사용 (배열·null 빼고 객체만)
@@ -14,7 +14,7 @@ const isPlainObject = (value) => value !== null && typeof value === "object" && 
 
 export const sessionActions = (set) => ({
   // 판 시작 정보 넣기, 매칭 방의 판 시작 사건이 부름
-  // 다른 판으로 바뀌면 밤 개인 결과·성공 연출·연출 대기를 비움
+  // 다른 판으로 바뀌면 밤 개인 결과·낮 시작 연출을 비움
   setGamePayload: ({ gameId, state, hostUuid }) =>
     set((current) => {
       const nextGameId = gameId ?? state?.id ?? null
@@ -24,7 +24,7 @@ export const sessionActions = (set) => ({
         hostUuid: pickHostUuid(state, hostUuid),
         error: null,
         ...(nextGameId !== current.gameId
-          ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearQueue(), nightPresentationWait: null }
+          ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...CLEARED_DAWN_REPORT }
           : {}),
       }
     }),
@@ -155,7 +155,6 @@ export const sessionActions = (set) => ({
     set({
       gameId: null, state: null, hostUuid: null, error: null,
       ...CLEARED_NIGHT_PRIVATE_RESULT,
-      ...clearQueue(),
-      nightPresentationWait: null,
+      ...CLEARED_DAWN_REPORT,
     }),
 })

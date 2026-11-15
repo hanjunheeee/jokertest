@@ -3,12 +3,9 @@
 const gameSessionCore = require('../../../game-core/gameSession')
 const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr } = require('../../common/isolate')
-const { NIGHT_TURN_STAGES } = require('../core/constants')
-const { nightTurnRuns } = require('../core/state')
 const { cancelDisconnectGrace } = require('../connection/grace')
 const { emitToGameChannel } = require('../delivery/broadcast')
 const { emitSelfProgress } = require('../delivery/progress')
-const { reevaluateNightWait } = require('../phase/night/wait')
 const { maybeEndNightTurn } = require('../phase/night/turn')
 const { startDayPhaseTimer, syncSessionPhaseTimers } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
@@ -125,13 +122,8 @@ function advanceAfterDeparture(io, session, applied) {
         return
     }
 
-    // 밤: 연출 대기 중이면 기다릴 사람 다시 보고, 아니면 그 역할 다 냈는지
+    // 밤: 지금 역할 남은 사람이 다 냈으면 턴 닫음
     if (session.phase === 'NIGHT') {
-        const run = nightTurnRuns.get(session.id)
-        if (run && run.stage === NIGHT_TURN_STAGES.PRESENTATION_WAIT && run.wait) {
-            step('WAIT_REEVALUATE_ERROR', () => reevaluateNightWait(run, run.wait))
-            return
-        }
         step('TURN_COMPLETION_ERROR', () => maybeEndNightTurn(session.id))
     }
 }

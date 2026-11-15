@@ -1,20 +1,21 @@
-// 밤 성공 영상 창: 합친 그림 캔버스와 숨긴 원본 영상, 막히면 다시 재생·건너뛰기
-// 밤 성공 연출(InGameNightSuccessPresentation)이 영상 자료가 있을 때 띄움, 재생은 useNightSuccessKillVideo
+// 암살 영상 창: 합친 그림 캔버스와 숨긴 원본 영상, 아래에 글 한 줄, 막히면 다시 재생·건너뛰기
+// 낮 시작 연출(InGameDawnReport)이 살해당한 사람이 있을 때 띄움, 재생은 useNightSuccessKillVideo
 import { useNightSuccessKillVideo } from "../../hooks/useNightSuccessKillVideo.js"
 import {
   HIDDEN_VIDEO_STYLE,
-  ROLE_VIDEO_CLASS,
-} from "../../constants/ingameNightSuccess.js"
+  STACKED_CANVAS_CLASS,
+} from "../../utils/ingameStackedAlphaPlayback.js"
 import {
   REVEAL_BACKDROP_CLASS,
   REVEAL_PANEL_WRAP_CLASS,
   INGAME_KILL_REVEAL_RETRY_SURFACE_ATTR,
   REVEAL_SKIP_BTN_CLASS,
   INGAME_KILL_REVEAL_SKIP_LABEL,
+  MSG_CLASS,
 } from "../../constants/ingameKillReveal.js"
 
-// 이름은 Kill이지만 치료·조사·확인 영상도 여기서, 재생·끝 알림은 훅이 맡음
-export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
+// eventId = 연출 열쇠(바뀌면 처음부터), message = 영상 아래 글 (어두운 덮개 위 밝은 글자)
+export default function InGameNightSuccessKillVideo({ eventId, src, finish, message = null }) {
   const {
     videoRef, canvasRef, status, handleEnded, handleError, handleSkip, handleRetry,
   } = useNightSuccessKillVideo({ eventId, src, finish })
@@ -24,7 +25,7 @@ export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
       <div className={REVEAL_PANEL_WRAP_CLASS}>
         <canvas
           ref={canvasRef}
-          className={ROLE_VIDEO_CLASS}
+          className={STACKED_CANVAS_CLASS}
           data-ingame-night-success-canvas=""
         />
         <video
@@ -39,6 +40,9 @@ export default function InGameNightSuccessKillVideo({ eventId, src, finish }) {
           aria-hidden="true"
           data-ingame-night-success-source-video=""
         />
+        {message ? (
+          <p className={MSG_CLASS} role="status" data-ingame-dawn-report-message="">{message}</p>
+        ) : null}
         {/* 자동 재생이 막히면 화면 전체를 눌러 다시 재생 */}
         {status === "retry" ? (
           <>

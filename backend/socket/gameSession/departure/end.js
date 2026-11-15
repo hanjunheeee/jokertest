@@ -11,7 +11,6 @@ const { isUuidConnected } = require('../connection/ownership')
 const { detachAllGraces } = require('../connection/grace')
 const { buildSessionEndContext } = require('../delivery/eligibility')
 const { detachFromGameChannel, emitToGameChannel } = require('../delivery/broadcast')
-const { deleteNightReceipts } = require('../phase/night/receipts')
 const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
@@ -81,8 +80,7 @@ function cleanupMatchmakingRooms(io, uuids, label) {
 
 // 판 지운 뒤 socket 쪽 마무리: 전적 저장 시작 → 타이머 정리 → 대기방 정리 → 종료 방송 → 채널 떼기, 단계마다 격리 (지도 07-③)
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
-    // 지워진 판의 밤 성공 수신 기록·끊긴 사람 정리 예약도 같이 비움
-    deleteNightReceipts(session)
+    // 지워진 판의 끊긴 사람 정리 예약도 같이 끔
     cancelEndedSweep(session?.id)
     // 판 채팅 보관은 이때부터 10분만 (결과 화면 신고용)
     isolateWithError('[판 채팅 보관 끝 표시 실패]', () => chatBuffer.markGameEnded(session?.id))

@@ -5,14 +5,12 @@ const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { REPLY_MESSAGES, internalErrorReply, respond } = require('../../common/replies')
 const { IDEMPOTENT_LEAVE_CODES } = require('../core/constants')
-const { nightTurnRuns } = require('../core/state')
 const { pickTrimmedGameId, acceptRequest } = require('../core/requests')
 const { canProcessDisconnectFor, consumeOwnership, isUuidConnected } = require('../connection/ownership')
 const { announceDisconnected } = require('../connection/presenceNotice')
 const { beginDisconnectGrace } = require('../connection/grace')
 const { ensureRoleRevealTimer } = require('../phase/roleReveal')
 const { detachFromGameChannel } = require('../delivery/broadcast')
-const { reevaluateNightWait } = require('../phase/night/wait')
 const { cleanupMatchmakingRooms, finalizeGameSessionEnd } = require('../departure/end')
 const { applyParticipantDeparture } = require('../departure/apply')
 
@@ -85,14 +83,6 @@ function handleLeaveGameSession(io, socket, uuid, payload, callback) {
     cleanupMatchmakingRooms(io, [uuid], '[ENDED 게임 이탈 시 matchmaking 정리 실패]')
 }
 
-// 끊긴 사람을 연출 기다림에서 빼 보기 (기다리던 사람이 끊기면 상한까지 안 기다리게, 지도 05-⑨)
-function reevaluateOnDisconnect(gameId) {
-    const run = nightTurnRuns.get(gameId)
-    if (!run || !run.wait) return
-    isolate('[연결 종료 처리 실패]', { code: 'WAIT_REEVALUATE_ERROR', gameId },
-        () => reevaluateNightWait(run, run.wait))
-}
-
 // 소켓 끊김: 진짜 주인 소켓일 때만, 진행 중 판이면 유예만 걸고 판은 그대로 (지도 08-①②⑤)
 async function onDisconnect(io, socket, uuid) {
     // 주인 소켓 아니면 무시, 맞으면 소유 기록 소비 (같은 끊김 두 번 처리 막기)
@@ -103,14 +93,13 @@ async function onDisconnect(io, socket, uuid) {
     const expectedGameId = socket?.data?.activeGameId
     if (expectedGameId === undefined) return
 
-    // 살아 있는 참가자: 유예 걸고 연출 기다림만 다시 봄
+    // 살아 있는 참가자: 유예 걸고 판 사람들에게 끊김 알림
     // 역할 공개 중이면 마감도 걸어 둠 (안 누른 채 끊긴 사람 때문에 판이 안 멈추게, BE-002)
     const graceTarget = gameSessionCore.getDisconnectGraceTarget(uuid, expectedGameId)
     if (graceTarget) {
         beginDisconnectGrace(io, graceTarget.session, uuid)
         // 판 사람들에게 끊김 알림 (새 탭이 벌써 붙었으면 안 보냄)
         if (!isUuidConnected(io, uuid)) announceDisconnected(io, graceTarget.session, uuid)
-        reevaluateOnDisconnect(graceTarget.session.id)
         isolate('[역할 공개 마감 시작 실패]', { code: 'TIMER_START_ERROR', gameId: graceTarget.session.id },
             () => ensureRoleRevealTimer(io, graceTarget.session))
         return
@@ -119,7 +108,6 @@ async function onDisconnect(io, socket, uuid) {
     // 죽은 참가자 등 유예 없는 사람: 판이 진행 중이면 자리·재입장 권리 그대로
     const reconnectState = gameSessionCore.getSessionSnapshotForPlayer(uuid, expectedGameId)
     if (reconnectState.ok && ['ROLE_REVEAL', 'DAY', 'NIGHT', 'TRIBUNAL'].includes(reconnectState.snapshot.phase)) {
-        reevaluateOnDisconnect(expectedGameId)
         // 죽은 사람 끊김도 알림 (스냅샷 isConnected와 같게)
         if (!isUuidConnected(io, uuid)) {
             announceDisconnected(io, gameSessionCore.getActiveSessionForDeparture(uuid, expectedGameId), uuid)

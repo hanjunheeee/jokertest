@@ -1,5 +1,12 @@
-// 위아래로 쌓은 투명 영상 재생 도우미: 타이머·프레임 끄기, 합쳐 그리기, 소리 맞추기
-// 밤 성공 사망 영상 훅(useNightSuccessKillVideo)이 사용 (lifetime = 재생 한 번의 기록)
+// 위아래로 쌓은 투명 영상 재생 도우미: 타이머·프레임 끄기, 합쳐 그리기, 소리 맞추기, 캔버스 모양
+// 암살 영상 훅(useNightSuccessKillVideo)·영상 창(PC InGameNightSuccessKillVideo, 모바일 KillVideo)이 사용 (lifetime = 재생 한 번의 기록)
+
+// 합친 그림 캔버스 모양
+export const STACKED_CANVAS_CLASS =
+  "max-h-[62svh] w-[min(48rem,92vw)] rounded border border-[#6b4321]/60 object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+
+// 원본 영상은 숨기고 캔버스에 합친 그림만 보여 줌
+export const HIDDEN_VIDEO_STYLE = Object.freeze({ display: "none" })
 
 // 재생 감시 타이머 끄기
 export function cancelPlaybackWatchdog(lifetime) {

@@ -26,11 +26,10 @@ const endedSweepRuns = new Map()
 const nightFinalizeInFlight = new Set()
 
 // 아래 파일이 위 파일 함수를 부를 자리 (require 고리 막기, 입구 gameSession.js가 불러올 때 채움)
-// 끊김 유예 만료 → 이탈 반영, 밤 턴 다 돎 → 밤 마무리, 연출 대기 풂 → 다음 밤 턴, 재판 마감 → 재판 판정
+// 끊김 유예 만료 → 이탈 반영, 밤 턴 다 돎 → 밤 마무리, 재판 마감 → 재판 판정
 const phaseHooks = {
     applyParticipantDeparture: null,
     finalizeNightForSession: null,
-    advanceNightTurn: null,
     resolveTribunalNow: null,
 }
 

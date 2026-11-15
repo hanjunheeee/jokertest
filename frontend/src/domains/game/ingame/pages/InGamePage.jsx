@@ -10,8 +10,7 @@ import InGameRoleRevealOverlay from "../components/roleReveal/InGameRoleRevealOv
 import InGamePhaseEntranceOverlay from "../components/phaseEntrance/InGamePhaseEntranceOverlay.js"
 import InGameNightTurnAnnouncementOverlay from "../components/nightTurn/InGameNightTurnAnnouncementOverlay.jsx"
 import InGameNightPrivateResultOverlay from "../components/nightPrivateResult/InGameNightPrivateResultOverlay.jsx"
-import InGameNightSuccessPresentation from "../components/InGameNightSuccessPresentation.jsx"
-import InGameNightPresentationWait from "../components/InGameNightPresentationWait.jsx"
+import InGameDawnReport from "../components/dawnReport/InGameDawnReport.jsx"
 import InGameDeadParticipantChoice from "../components/deadChoice/InGameDeadParticipantChoice.jsx"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import { InGameActionContext } from "../context/InGameActionContext.jsx"
@@ -26,9 +25,7 @@ import InGameTribunalExpulsionOverlay from "../components/tribunalExpulsion/InGa
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import {
   getIdentityScopeVersion,
-  isSameReceiptScope,
-  readInGameReceiptScope,
-  selectNightPresentationWait,
+  selectDawnReport,
   subscribeIdentityScope,
   useInGameStore,
 } from "../store/ingameStore.js"
@@ -39,7 +36,6 @@ import {
 } from "../utils/selectInGameSessionGuard.js"
 import { selectInGameTimebarStatusLabel } from "../utils/selectInGameTimebarStatusMessage.js"
 import { selectInGameDeadParticipantChoice } from "../utils/selectInGameDeadParticipantChoice.js"
-import { nightWaitCoversSelf } from "../utils/selfAlive.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import {
@@ -47,7 +43,6 @@ import {
   useInGameSnapshotRebindPending,
 } from "../hooks/useInGameSessionSnapshotSync.js"
 import { useInGameNightPrivateResult } from "../hooks/useInGameNightPrivateResult.js"
-import { useInGameNightSuccessPresentation } from "../hooks/useInGameNightSuccessPresentation.js"
 import { useInGameOverlayStack } from "../hooks/useInGameOverlayStack.js"
 import { useInGameTribunalExpulsionPresentation } from "../hooks/useInGameTribunalExpulsionPresentation.js"
 import { useInGameResultNavigation } from "../hooks/useInGameResultNavigation.js"
@@ -96,37 +91,29 @@ export default function InGamePage() {
   const tribunalExpulsion = useInGameTribunalExpulsionPresentation({
     hold: false,
   })
+  const expulsionBusy = tribunalExpulsion.open || tribunalExpulsion.pending
+
+  // 낮 시작 연출 (밤에 죽은 사람·의사 살림): 남아 있으면 pending, 추방 영상이 끝난 뒤 열림
+  // 차례: 낮 시작 연출 → "낮이 되었습니다"·밤 개인 결과, 판이 끝났으면 연출 → 결과 화면
+  const dawnReport = useInGameStore(selectDawnReport)
+  const dawnReportPending = dawnReport !== null
+  const dawnReportOpen = dawnReportPending && !expulsionBusy
+  const finishDawnReport = () => {
+    if (dawnReport) useInGameStore.getState().finishDawnReport(dawnReport.key)
+  }
+
   const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack({
-    deathRevealActive: tribunalExpulsion.open || tribunalExpulsion.pending,
+    deathRevealActive: expulsionBusy,
+    dawnReportActive: dawnReportPending,
   })
 
-  const nightSuccessPresentation = useInGameNightSuccessPresentation({
-    hold: roleReveal.open || tribunalExpulsion.open || tribunalExpulsion.pending,
-  })
   const nightPrivateResult = useInGameNightPrivateResult({
-    hold: roleReveal.open || tribunalExpulsion.open || tribunalExpulsion.pending
-      || nightSuccessPresentation.open,
+    hold: roleReveal.open || expulsionBusy || dawnReportPending,
   })
 
-  const nightPresentationWait = useInGameStore(selectNightPresentationWait)
-  const nightPresentationWaitOwned = nightPresentationWait !== null
-    && nightPresentationWait.gameId === gameId
-    && gameState?.phase === "NIGHT"
-    && gameState?.dayIndex === nightPresentationWait.nightDayIndex
-    && isSameReceiptScope(
-      nightPresentationWait.scope,
-      readInGameReceiptScope({ accountId: authUuid, identityGeneration }),
-    )
-  const nightPresentationWaitOpen = nightPresentationWaitOwned
-    && !nightSuccessPresentation.open
-  // 죽은 사람은 대기 창이 안 덮음 → 밤에도 죽은 사람 채팅 씀 (다른 연출 미루기는 대기 그대로)
-  const nightPresentationWaitCovers = nightPresentationWaitOpen && nightWaitCoversSelf(gameState)
-
-  // 결과 화면 이동은 연출(영상)이 도는 동안만 미룸, 연출 뒤 "최종 결과" 창만 남았으면 안 미룸 (판 끝인데 확인 전까지 판 화면에 갇혔음, 결과 X-1)
+  // 결과 화면 이동은 추방 영상·낮 시작 연출이 끝난 뒤로 미룸 (밤 암살로 판이 끝나면 연출 뒤 결과 화면)
   useInGameResultNavigation({
-    hold: identityRebindPending
-      || tribunalExpulsion.open || tribunalExpulsion.pending
-      || nightSuccessPresentation.pending,
+    hold: identityRebindPending || expulsionBusy || dawnReportPending,
   })
 
   const needsDeadChoice = selectInGameDeadParticipantChoice(gameState, authUuid) && !keepWatchingChosen
@@ -142,9 +129,8 @@ export default function InGamePage() {
 
   const deadChoiceOpen = (needsDeadChoice || needsExitRecovery)
     && !roleReveal.open
-    && !nightSuccessPresentation.open
+    && !dawnReportPending
     && !nightPrivateResult.open
-    && !nightPresentationWaitOpen
 
   const tribunalPresentationOpen =
     gameState?.phase === "TRIBUNAL"
@@ -153,7 +139,7 @@ export default function InGamePage() {
 
   const surfaceLocked =
     interactionBlocked || nightPrivateResult.open || deadChoiceOpen
-    || nightSuccessPresentation.open || nightPresentationWaitCovers
+    || dawnReportOpen
     || tribunalPresentationOpen || tribunalExpulsion.open
 
   const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
@@ -227,36 +213,32 @@ export default function InGamePage() {
       </InGamePlayerSessionProvider>
 
       <InGameNightTurnAnnouncementOverlay
-        open={nightTurn.open && !nightPresentationWaitOpen}
+        open={nightTurn.open}
         announcement={nightTurn.announcement}
         onClose={nightTurn.close}
       />
       <InGamePhaseEntranceOverlay
-        open={phaseEntrance.open && !nightPresentationWaitOpen}
+        open={phaseEntrance.open}
         phase={phaseEntrance.phase}
         onConfirm={phaseEntrance.confirm}
       />
-      {nightPresentationWaitOpen ? null : (
-        <InGameRoleRevealOverlay
-          open={roleReveal.open}
-          onClose={roleReveal.close}
-          roleInfo={roleReveal.roleInfo}
-          players={gameState?.players}
-        />
-      )}
-      <InGameNightPresentationWait open={nightPresentationWaitCovers} />
+      <InGameRoleRevealOverlay
+        open={roleReveal.open}
+        onClose={roleReveal.close}
+        roleInfo={roleReveal.roleInfo}
+        players={gameState?.players}
+      />
       <InGameNightPrivateResultOverlay
-        open={nightPrivateResult.open && !nightPresentationWaitOpen}
+        open={nightPrivateResult.open}
         kind={nightPrivateResult.kind}
         label={nightPrivateResult.label}
         onConfirm={nightPrivateResult.confirm}
       />
-      <InGameNightSuccessPresentation
-        current={nightSuccessPresentation.current}
-        open={nightSuccessPresentation.open}
-        finish={nightSuccessPresentation.finish}
-        finalStatus={nightSuccessPresentation.finalStatus}
-        onClose={nightSuccessPresentation.onClose}
+      <InGameDawnReport
+        key={dawnReport?.key ?? "none"}
+        report={dawnReport}
+        open={dawnReportOpen}
+        onFinish={finishDawnReport}
       />
       <InGameDeadParticipantChoice
         open={deadChoiceOpen}

@@ -1,5 +1,5 @@
-// 밤 성공 연출 항목 → 재생할 영상 주소 고르기 (쓴 사람 시점을 먼저)
-// 밤 성공 연출 화면·밤 성공 연출 훅이 사용
+// 영상 종류·시점 → 재생할 영상 주소 고르기 (쓴 사람 시점을 먼저)
+// 낮 시작 연출(PC InGameDawnReport, 모바일 DawnReportOverlay)이 암살 영상을 고를 때 사용 (밤 성공 영상 파일은 그대로 둠)
 import { SFX_MANIFEST } from "../../../../shared/audio/sfxManifest.js"
 
 // 종류·시점으로 영상 표에서 찾기 (모양이 틀리거나 없으면 null)

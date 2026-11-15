@@ -8,7 +8,6 @@ const { NIGHT_INTERNAL_CODES } = require('../../core/constants')
 const { nightFinalizeInFlight } = require('../../core/state')
 const { stillEligible, hasOutsideMembership } = require('../../delivery/eligibility')
 const { resolveSessionSockets, resolveOrEmpty } = require('../../delivery/broadcast')
-const { isNightPresentationWaitActive } = require('./wait')
 const { stopNightTurnSequence } = require('./turn')
 const { startDayPhaseTimer, attachDayPhaseDeadline } = require('../day')
 const { withTerminalFields } = require('../../departure/end')
@@ -57,10 +56,9 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
     const resolveParticipantSockets = deps.resolveParticipantSockets ?? resolveSessionSockets
     const label = '[밤 행동 판정 오류]'
 
-    // 연출 대기 중이면 아직 턴이 남음, 마무리 중이면 겹친 호출이라 거절
+    // 마무리 중이면 겹친 호출이라 거절
     const gameId = session?.id
     if (!isNonEmptyString(gameId)) return { ok: false, code: 'SESSION_NOT_FOUND' }
-    if (isNightPresentationWaitActive(gameId)) return { ok: false, code: 'ACTIONS_PENDING' }
     if (nightFinalizeInFlight.has(gameId)) return { ok: false, code: 'NIGHT_FINALIZE_IN_PROGRESS' }
 
     // 마무리 중 표시 (어디서 끝나든 finally가 지움)
@@ -106,11 +104,13 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
         }
 
         // 여기부터 진짜 바뀜 (확정됨): 뒤 실패는 로그만, 되돌리지 않음
+        // 의사가 살렸는지도 실음 (낮 시작 때 모두에게 "의사가 살렸다" 문구, 누구였는지는 안 실음)
         const appliedPayload = isolateOr(null, label, { code: 'PAYLOAD_BUILD_ERROR', ...fields },
             () => gameSessionCore.buildNightResultAppliedPayload(
                 targetSession,
                 applied.victimUuid,
                 resolution.publicDeathReveals,
+                { doctorSaved: resolution.doctorSaved === true },
             ))
         // 승부 났으면 종료 필드 붙이고 전적 저장 시작 (저장은 안 기다림)
         const nightResultAppliedPayload = withTerminalFields(targetSession, applied.terminal, appliedPayload, label, fields, io)

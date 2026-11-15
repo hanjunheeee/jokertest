@@ -1,14 +1,15 @@
-// 단계 진행 액션 묶음: 첫 단계 넘어감·사망·밤 결과 적용·밤 차례·낮 단계 (낮 마감 시각 같이 반영)
+// 단계 진행 액션 묶음: 첫 단계 넘어감·사망·밤 결과 적용(낮 시작 연출 같이)·밤 차례·낮 단계 (낮 마감 시각 같이 반영)
 // 입구가 create 때 펼쳐 씀, 판 진행 손잡이가 사건을 넘김 (첫 단계만 파싱 없이)
 import {
+  CLEARED_DAWN_REPORT,
   CLEARED_DAY_PHASE_TIMER,
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,
 } from "../../constants/store/ingameStore.js"
 import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
+import { buildDawnReport, readDawnKilledUuids } from "../../utils/dawnReport.js"
 import { applyPlayerEliminatedPure } from "../applyPlayerEliminated.js"
 import { clearLastDaySubmissions, clearSelfActed } from "../../utils/store/selfActed.js"
-import { clearQueue } from "./nightSuccessRecords.js"
 import { commitWithReceipt } from "./receiptScope.js"
 
 // 사건 모양 검사용 (객체인지·판 id가 있는지)
@@ -16,8 +17,26 @@ const isPlainObject = (value) => value !== null && typeof value === "object" && 
 const hasGameId = (value) => typeof value.gameId === "string" && value.gameId.trim().length > 0
 
 // uuid별 생존 값으로 명단 덮기 (값이 없는 사람은 그대로)
-function mergeAlive(players, aliveByUuid) {
-  return players.map((p) => (aliveByUuid.has(p.uuid) ? { ...p, alive: aliveByUuid.get(p.uuid) } : p))
+// 광대에게 죽은 사람은 nightKilled 표시 (모바일 채팅 알림 줄이 "살해당했습니다"로 씀)
+function mergeAlive(players, aliveByUuid, killedUuids = new Set()) {
+  return players.map((p) => {
+    if (!aliveByUuid.has(p.uuid)) return p
+    const next = { ...p, alive: aliveByUuid.get(p.uuid) }
+    if (killedUuids.has(p.uuid)) next.nightKilled = true
+    return next
+  })
+}
+
+// 밤 결과 → 낮 시작 연출 (그 밤 날짜·넣기 전 명단으로 닉네임 찾음)
+function readDawnReport(current, payload) {
+  return buildDawnReport({
+    gameId: current.gameId,
+    nightDayIndex: current.state.dayIndex,
+    victimUuid: payload.victimUuid ?? null,
+    deathReveals: payload.deathReveals,
+    doctorSaved: payload.doctorSaved === true,
+    players: current.state.players,
+  })
 }
 
 export const phaseActions = (set) => ({
@@ -48,7 +67,7 @@ export const phaseActions = (set) => ({
           ...clearSelfActed(current.state),
           ...(isFirstDay ? { dayPhaseDeadline: dayPhaseDeadline ?? null } : { ...CLEARED_DAY_PHASE_TIMER }),
         },
-        ...(isLegacyFirstNight ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...clearQueue() } : {}),
+        ...(isLegacyFirstNight ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...CLEARED_DAWN_REPORT } : {}),
       }
     }),
 
@@ -57,6 +76,7 @@ export const phaseActions = (set) => ({
     commitWithReceipt(receipt, set, (current) => applyPlayerEliminatedPure(current, parsed)),
 
   // 밤 결과 적용: 끝났으면 ENDED로, 아니면 다음 낮 토론으로
+  // 낮 시작 연출도 같이 넣음 (판이 끝나도 넣음 → 연출 뒤 결과 화면, 보여 줄 것 없으면 비움)
   applyNightResultAppliedPayload: (payload, receipt = null) =>
     commitWithReceipt(receipt, set, (current) => {
       // 지금 판이고 아직 안 끝났을 때만
@@ -73,6 +93,7 @@ export const phaseActions = (set) => ({
         if (payload.dayIndex < current.state.dayIndex) return current
 
         const aliveByUuid = new Map(payload.players.map((p) => [p.uuid, p.isAlive]))
+        const dawnReport = readDawnReport(current, payload)
         return {
           state: {
             ...current.state,
@@ -81,9 +102,10 @@ export const phaseActions = (set) => ({
             dayPhase: null,
             ...CLEARED_DAY_PHASE_TIMER,
             ...CLEARED_NIGHT_TURN,
-            players: mergeAlive(current.state.players, aliveByUuid),
+            players: mergeAlive(current.state.players, aliveByUuid, readDawnKilledUuids(dawnReport)),
             ...(payload.winResult ? { winResult: payload.winResult } : {}),
           },
+          dawnReport,
         }
       }
 
@@ -98,6 +120,7 @@ export const phaseActions = (set) => ({
       if (dayPhaseDeadline === null) return current
 
       const aliveByUuid = new Map(payload.players.map((p) => [p.uuid, p.alive]))
+      const dawnReport = readDawnReport(current, payload)
       // 지난 날 내 낮 표·재판 표 기록도 지움 (안 지우면 둘째 날 기권 버튼·재판 단추가 잠김)
       const stateWithoutVote = { ...current.state, ...clearLastDaySubmissions(current.state) }
       return {
@@ -111,12 +134,13 @@ export const phaseActions = (set) => ({
           dayPhaseDeadline: dayPhaseDeadline ?? null,
           ...CLEARED_NIGHT_TURN,
           ...clearSelfActed(stateWithoutVote),
-          players: mergeAlive(current.state.players, aliveByUuid),
+          players: mergeAlive(current.state.players, aliveByUuid, readDawnKilledUuids(dawnReport)),
         },
+        dawnReport,
       }
     }),
 
-  // 밤 역할 차례 시작 (같은 밤·같은 차례면 그대로, 차례가 오면 연출 대기는 끝)
+  // 밤 역할 차례 시작 (같은 밤·같은 차례면 그대로)
   applyNightTurnStarted: (parsed) =>
     set((current) => {
       // 지금 판의 그 날이고 역할·마감 값이 제대로일 때만
@@ -139,7 +163,6 @@ export const phaseActions = (set) => ({
 
       return {
         state: { ...current.state, nightTurnRole: parsed.role, nightTurnDeadline: parsed.deadline },
-        ...(current.nightPresentationWait !== null ? { nightPresentationWait: null } : {}),
       }
     }),
 

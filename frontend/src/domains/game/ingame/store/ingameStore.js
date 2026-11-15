@@ -29,13 +29,12 @@ export const useInGameStore = create((set) => ({
 bindStore(useInGameStore)
 adoptIdentityScope(null, null)
 watchStore(useInGameStore)
-watchAuth()
+watchAuth(useInGameStore)
 
 // 나눈 파일의 범위 함수·고르개를 여기서 다시 내보냄 (바깥 import 경로 유지)
 export { getIdentityScopeVersion, subscribeIdentityScope } from "./ingame/identityScope.js"
 export { noteConnectionRebound } from "./ingame/connectionScope.js"
 export { readInGameReceiptScope } from "./ingame/receiptScope.js"
 export { isTerminalResultFromOtherAccount } from "./ingame/terminalScope.js"
-export { readNightSuccessReceiptScope } from "./ingame/nightSuccessRecords.js"
-export { selectNightPresentationWait, selectNightSuccessQueue } from "./ingame/initialState.js"
+export { selectDawnReport } from "./ingame/initialState.js"
 export { isSameReceiptScope } from "../utils/store/scope.js"

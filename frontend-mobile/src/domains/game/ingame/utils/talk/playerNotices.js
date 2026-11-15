@@ -1,12 +1,13 @@
-// 시스템 알림 줄 만들기: 참가자 상태가 바뀐 사람마다 알림 한 줄 (처형·사망·끊김)
+// 시스템 알림 줄 만들기: 참가자 상태가 바뀐 사람마다 알림 한 줄 (처형·사망·밤 살해·끊김)
 // useSystemNotices가 씀, 순수 함수라 tests/talk에서 바로 시험
 
 // 상태 값은 데스크톱 INGAME_PLAYER_STATUS와 같음 (순수 함수라 별칭 import 없이 둠)
 const DEAD = "dead"
 const DISCONNECTED = "disconnected"
 
-// 바뀐 상태 → 알림 문구
-function noticeText(nickname, nextStatus) {
+// 바뀐 상태 → 알림 문구 (광대에게 죽은 사람은 낮 시작 연출과 같은 글, 직업은 안 보임)
+function noticeText(nickname, nextStatus, nightKilled) {
+    if (nextStatus === DEAD && nightKilled) return `지난밤 ${nickname}님이 살해당했습니다`
     if (nextStatus === DEAD) return `${nickname}님이 죽었습니다`
     if (nextStatus === DISCONNECTED) return `${nickname}님의 연결이 끊겼습니다`
     return null
@@ -22,6 +23,7 @@ function lifeOf(player) {
 }
 
 // 판 참가자(서버 모양) → 알림 계산용 명단 (연결 여부를 모르면 연결된 것으로 봄)
+// nightKilled = 밤 결과로 광대에게 죽음 (스토어 밤 결과 적용이 붙임)
 export function toNoticePlayers(rawPlayers) {
     if (!Array.isArray(rawPlayers)) return null
     return rawPlayers.map((player) => ({
@@ -29,6 +31,7 @@ export function toNoticePlayers(rawPlayers) {
         nickname: player.nickname ?? "",
         alive: player.alive !== false,
         connected: player.isConnected !== false,
+        nightKilled: player.nightKilled === true,
     }))
 }
 
@@ -49,7 +52,7 @@ export function diffPlayerNotices(prevPlayers, nextPlayers, at) {
         const prev = prevById.get(player.id)
         if (!prev) continue
         const status = noticeStatus(prev, lifeOf(player))
-        const text = status ? noticeText(player.nickname ?? "", status) : null
+        const text = status ? noticeText(player.nickname ?? "", status, player.nightKilled === true) : null
         if (text) notices.push({ id: `${player.id}-${status}-${at}`, at, text })
     }
     return notices

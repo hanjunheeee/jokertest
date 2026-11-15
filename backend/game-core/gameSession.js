@@ -189,9 +189,6 @@ module.exports = {
     completeNightRole,
     isNightRoleCompleted,
     markNightSequenced,
-    getNightProgress,
-    collectRoleNightSubmissions,
-    NIGHT_RECOVERY_STATES,
     commitNightResolution,
     // 끊김 탈락·나가기·참여 변경 방송
     commitDisconnectElimination,

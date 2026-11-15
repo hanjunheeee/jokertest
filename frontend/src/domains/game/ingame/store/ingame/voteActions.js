@@ -1,6 +1,7 @@
 // 투표 결과 액션 묶음: 낮 투표 판정·재판 판정 반영 (낮 마감 시각 같이 반영)
 // 입구 파일이 create 할 때 펼쳐 씀, 판 진행 이벤트 손잡이(낮)가 넘김
 import {
+  CLEARED_DAWN_REPORT,
   CLEARED_DAY_PHASE_TIMER,
   CLEARED_NIGHT_PRIVATE_RESULT,
   CLEARED_NIGHT_TURN,
@@ -8,13 +9,11 @@ import {
 import { getDayVoteRound, parseDayVoteRoundFields } from "../../utils/dayVoteRound.js"
 import { applyTribunalResolvedPure } from "../applyTribunalResolved.js"
 import { clearSelfActed, clearTribunalVoteSubmission } from "../../utils/store/selfActed.js"
-import { clearQueue } from "./nightSuccessRecords.js"
-import { clearOnNightEntry } from "./nightSuccessReception.js"
 import { commitWithReceipt } from "./receiptScope.js"
 
-// 밤에 들어설 때 개인 결과 지우는 조각 (이미 밤이면 그대로 둠)
-function clearPrivateOnNightEntry(current) {
-  return current.state?.phase === "NIGHT" ? null : CLEARED_NIGHT_PRIVATE_RESULT
+// 밤에 들어설 때 개인 결과·지난 낮 시작 연출 지우는 조각 (이미 밤이면 그대로 둠)
+function clearOnNightEntry(current) {
+  return current.state?.phase === "NIGHT" ? null : { ...CLEARED_NIGHT_PRIVATE_RESULT, ...CLEARED_DAWN_REPORT }
 }
 
 // 재판 없이 밤으로 가는 판정 결과 (동표·기권이 최다 득표 이상·전원 기권)
@@ -64,7 +63,7 @@ export const voteActions = (set) => ({
           },
         }
       }
-      // 동표·기권: 바로 밤으로, 낮 마감 시각·밤 개인 결과·성공 연출 비움
+      // 동표·기권: 바로 밤으로, 낮 마감 시각·밤 개인 결과·지난 낮 시작 연출 비움
       // 받아 둔 밤 차례는 안 지움 (밤 첫 차례 방송이 이 판정보다 먼저 올 수 있음, 낮 시작 때 이미 비워서 옛 차례는 없음)
       if (NIGHT_OUTCOMES.has(outcome)) {
         return {
@@ -78,7 +77,7 @@ export const voteActions = (set) => ({
             ...clearSelfActed(current.state),
           },
           ...CLEARED_NIGHT_PRIVATE_RESULT,
-          ...clearQueue(),
+          ...CLEARED_DAWN_REPORT,
         }
       }
       return current
@@ -93,8 +92,7 @@ export const voteActions = (set) => ({
       return {
         ...patch,
         state: { ...patch.state, ...clearSelfActed(patch.state) },
-        ...clearPrivateOnNightEntry(current),
-        ...clearOnNightEntry(current.state, patch.state),
+        ...clearOnNightEntry(current),
       }
     }),
 })

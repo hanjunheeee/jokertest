@@ -19,18 +19,13 @@ const {
     recordOwnership,
 } = require('../connection/ownership')
 const { detachAllGraces } = require('../connection/grace')
-const { resetNightReceipts } = require('../phase/night/receipts')
 const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { stopTribunalTimer } = require('../phase/tribunal')
 const { cancelEndedSweep } = require('../departure/end')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./ready')
-const {
-    handleSubmitNightAction,
-    handleResolveNight,
-    handleAckNightSuccess,
-} = require('./night')
+const { handleSubmitNightAction, handleResolveNight } = require('./night')
 const { handleSubmitJokerChatMessage, handleSubmitGameChatMessage } = require('./chat')
 const { handleSendEmoji } = require('./emoji')
 const { handleSubmitDayVote, handleResolveDayVote } = require('./dayVote')
@@ -55,8 +50,6 @@ function registerGameHandlers(io, socket, uuid) {
     socket.on('send_emoji', (payload, callback) => handleSendEmoji(io, socket, uuid, payload, callback))
     socket.on('leave_game_session', (payload, callback) => handleLeaveGameSession(io, socket, uuid, payload, callback))
     socket.on('get_session_snapshot', (payload, callback) => handleGetSessionSnapshot(io, socket, uuid, payload, callback))
-    socket.on('acknowledge_night_action_success', (payload, callback) =>
-        handleAckNightSuccess(io, socket, uuid, payload, callback))
     // 게임 중 추방(kick_game_player)은 없앰, 결과 조회는 대기방 추방 화면이 씀
     socket.on(kickReceiptStore.KICK_EVENTS.GET_KICK_RESULT, (payload, callback) =>
         handleGetKickResult(io, socket, uuid, payload, callback))
@@ -67,7 +60,7 @@ function getActiveGamePresenceSnapshot() {
     return gameSessionCore.getActiveGamePresenceSnapshot()
 }
 
-// 시험용 초기화: 접속 목록·사용자 전송·추방 영수증·표식·밤 기록 비우고 타이머 run 4종 전부 끔
+// 시험용 초기화: 접속 목록·사용자 전송·추방 영수증·표식 비우고 타이머 run 4종 전부 끔
 function __resetStateForTests() {
     setOnlineUsersRegistry(null)
     gameRecordService.setEmitToUser(null)
@@ -75,7 +68,6 @@ function __resetStateForTests() {
     departureResolveMarks.clear()
     for (const gameId of [...endedSweepRuns.keys()]) cancelEndedSweep(gameId)
     nightFinalizeInFlight.clear()
-    resetNightReceipts()
     // 타이머 run 끄기 (끄면서 보관함에서 지우니 키 먼저 복사), 마지막은 전적 재시도
     for (const gameId of [...nightTurnRuns.keys()]) stopNightTurnSequence(gameId)
     for (const gameId of [...dayPhaseRuns.keys()]) stopDayPhaseTimer(gameId)

@@ -1,5 +1,5 @@
 // 스냅샷 핸들러 파일
-// 새로고침 복구 스냅샷 (판 상태·못 받은 밤 성공·연출 대기), register가 등록·시험은 gameSession.js로 부름
+// 새로고침 복구 스냅샷 (판 상태·연결 표시), register가 등록·시험은 gameSession.js로 부름
 const gameSessionCore = require('../../../game-core/gameSession')
 const { logRejection } = require('../../common/isolate')
 const { rejectedReply, respond } = require('../../common/replies')
@@ -8,14 +8,7 @@ const { isCurrentSocketForUuid, isUuidConnected } = require('../connection/owner
 const { cancelDisconnectGrace } = require('../connection/grace')
 const { resyncSessionRouting } = require('../connection/routing')
 const { announceReconnected } = require('../connection/presenceNotice')
-const { isEligibleRecipient, hasOutsideMembership } = require('../delivery/eligibility')
-const {
-    getNightSuccessReceipts,
-    copyNightSuccessPayload,
-    collectPendingRecords,
-    isNightAckWindowOpen,
-} = require('../phase/night/receipts')
-const { resolveNightWaitForSnap } = require('../phase/night/wait')
+const { isEligibleRecipient } = require('../delivery/eligibility')
 const { normalizeGameId } = require('../../../game-core/core/registry/lookup')
 const { getPlayerGameId, hasSessionId } = require('../../../game-core/queries/byId')
 
@@ -39,29 +32,7 @@ function snapshotRejectedReply(code) {
     return rejectedReply(code)
 }
 
-// 진행 중이고 그 밤 사건 완료 신호를 아직 받을 때면 못 끝낸 내 사건 모으기 (다시 보낼 payload 목록)
-function collectNightSuccessRecovery(io, socket, uuid, recoverySession) {
-    const receiptStore = getNightSuccessReceipts(recoverySession)
-    if (!receiptStore || recoverySession.phase === 'ENDED') return []
-    if (!isNightAckWindowOpen(recoverySession, receiptStore.nightDayIndex)) return []
-    const membershipId = recoverySession.players.get(uuid)?.membershipId ?? null
-    const pending = collectPendingRecords(receiptStore, uuid, membershipId)
-    // 지금 소켓·받을 자격·다른 소속 없음 다 맞을 때만 다시 보냄 (옛 탭·다른 판 막기)
-    if (pending.length === 0) return []
-    if (!isCurrentSocketForUuid(uuid, socket, io)) return []
-    if (!isEligibleRecipient(recoverySession, socket, uuid)) return []
-    if (hasOutsideMembership(recoverySession, uuid)) return []
-    // 여기부터 진짜 바뀜: 수신 기록을 이 소켓에 다시 묶음 (완료 신호를 이 소켓에서 받게)
-    const payloads = []
-    for (const record of pending) {
-        record.socket = socket
-        record.socketId = socket.id
-        payloads.push(copyNightSuccessPayload(record.payload))
-    }
-    return payloads
-}
-
-// 새로고침 복구 스냅샷: 내 판 상태 + 못 받은 밤 성공 사건 + 연출 대기 여부 (지도 08-⑦⑩)
+// 새로고침 복구 스냅샷: 내 판 상태 + 사람마다 연결 표시 (지난 낮 시작 연출은 다시 안 틂, 지도 08-⑦)
 function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
     // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
@@ -94,10 +65,8 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
         isConnected: isUuidConnected(io, player.uuid),
     }))
 
-    // 아직 참여 중인 판이면 판 채널·밤 사건·연출 대기까지 봄
+    // 아직 참여 중인 판이면 판 채널까지 봄
     const recoverySession = gameSessionCore.getActiveSessionForDeparture(uuid, result.snapshot.gameId)
-    const nightSuccessRecovery = []
-    let presentationWaiting = false
     if (recoverySession) {
         // 판엔 있는데 이 소켓이 아직 판 채널 밖이면 채널 다시 넣고 잠시 뒤 다시 달라고 답함
         if (!isEligibleRecipient(recoverySession, socket, uuid)
@@ -114,20 +83,13 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
 
         // 지금 탭이 판 채널에 있으면 판 사람들에게 다시 붙음 알림 (끊김 알린 사람만)
         if (isCurrentSocketForUuid(uuid, socket, io)) announceReconnected(io, recoverySession, uuid)
-
-        nightSuccessRecovery.push(...collectNightSuccessRecovery(io, socket, uuid, recoverySession))
-
-        // 남의 사건 연출을 기다리는 중이면 대기 표시 (대기 알림 대상에도 넣음)
-        presentationWaiting = resolveNightWaitForSnap(recoverySession, uuid)
     }
 
-    // 판 상태 + 연결 표시 + 다시 보낼 밤 사건 + 대기 표시
+    // 판 상태 + 연결 표시
     ack({
         ok: true,
         ...result.snapshot,
         players,
-        nightSuccessRecovery,
-        presentationWaiting,
     })
 }
 

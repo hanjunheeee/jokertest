@@ -136,6 +136,12 @@ function prepareNightResolutionForSession(session) {
         investigationTargetId, confirmationTargetId, assassinationBlocked,
     })
 
+    // 의사가 살림: 암살이 막혔고 노린 사람이 아직 판에 산 채로 있을 때만 (낮 시작 때 모두에게 알림)
+    const savedPlayer = assassinationBlocked ? session.players.get(assassinationTargetId) : null
+    const doctorSaved = !!savedPlayer
+        && savedPlayer.alive === true
+        && isParticipatingInSession(session, assassinationTargetId)
+
     // 판정 결과 묶음 (진행 기록은 복사해서 담음)
     const resolution = {
         gameId: session.id,
@@ -143,6 +149,7 @@ function prepareNightResolutionForSession(session) {
         assassinationTargetId,
         protectedTargetIds,
         pendingEliminationTargetId,
+        doctorSaved,
         privateResults,
         roleSteps: progress.roleSteps.map((step) => ({ ...step })),
         events: progress.events.map((event) => ({ ...event })),
