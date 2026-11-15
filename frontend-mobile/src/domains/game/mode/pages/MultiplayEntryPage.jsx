@@ -1,8 +1,9 @@
-// 방 목록 화면 (/multiplay): 위 줄(뒤로·멀티플레이·소리) + 방 만들기/코드로 참가 + 방 카드(안에 쪽 넘김) + 바닥 입장 버튼
+// 방 목록 화면 (/multiplay): 위 줄(뒤로·멀티플레이·소리) + 방 만들기/코드로 참가 + 방 카드(안에 쪽 넘김) + 바닥 입장 버튼, 들어올 때 남은 판·대기방 자리 정리
 // app/routes/index.jsx가 씀, 목록 받기·입장은 데스크톱 usePublicRooms 그대로
 import { useNavigate } from "react-router-dom"
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
 import { usePublicRooms } from "@/domains/game/mode/hooks/usePublicRooms.js"
+import { useLobbyEntryCleanup } from "@/domains/game/shared/hooks/useLobbyEntryCleanup.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import ModeBackdrop from "@m/domains/game/mode/components/common/ModeBackdrop.jsx"
 import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
@@ -16,6 +17,8 @@ import { useRoomListPaging } from "@m/domains/game/mode/hooks/useRoomListPaging.
 // 방 목록 화면
 export default function MultiplayEntryPage() {
   const navigate = useNavigate()
+  // 들어올 때 서버가 남은 판·대기방 자리를 지움 (판 중 산 사람이면 판 화면으로)
+  useLobbyEntryCleanup()
   const { rooms, joinPublicRoom, isJoining } = usePublicRooms()
 
   // 코드 방을 골랐으면 방 id를 실어 코드 입력 화면으로

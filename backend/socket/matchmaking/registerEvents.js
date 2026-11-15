@@ -1,5 +1,5 @@
 // 대기방·매칭 사건 등록 파일
-// 방 밖(줄·코드·만들기·목록) + 방 안·초대 사건 받기 등록, matchmaking.js의 registerMatchmakingHandlers가 차례로 부름
+// 방 밖(줄·코드·만들기·목록·로비 입장 정리) + 방 안·초대 사건 받기 등록, matchmaking.js의 registerMatchmakingHandlers가 차례로 부름
 const { ROOM_SETTINGS_EVENTS } = require('../../validations/room/updateSettings')
 const kickReceiptStore = require('../kickReceiptStore')
 const { emitRoomJoinFailed, validateJoinRoomByCodeRequest } = require('./join/guards')
@@ -11,6 +11,7 @@ const { handleReturnToRoom } = require('./room/returnRoom')
 const { removeFromRoom } = require('./room/leave')
 const { handleKickRoomPlayer, handleDeleteRoom } = require('./room/host')
 const { handleGetCurrentRoom } = require('./room/reconnect')
+const { handleEnterLobby } = require('./room/lobbyEntry')
 const { handleJoinRoomByCode } = require('./join/join')
 const { handleJoinPublicRoom, handleGetPublicRooms } = require('./join/publicRooms')
 const { handleCreateRoom } = require('./join/create')
@@ -26,7 +27,7 @@ function pickDeleteRoomCallback(payload, callback) {
     return null
 }
 
-// 방 밖 사건: 자동 매칭 줄, 코드 입장, 방 만들기·지금 방·판 끝 뒤 같은 방으로·공개 방 목록·공개 방 입장
+// 방 밖 사건: 자동 매칭 줄, 코드 입장, 방 만들기·지금 방·판 끝 뒤 같은 방으로·공개 방 목록·공개 방 입장·로비 입장 정리
 // async 처리기는 catch로 에러만 남김 (처리 안 된 거절 막기)
 function registerLobbyEvents(io, socket, uuid) {
     // 자동 매칭 줄 서기·빠지기
@@ -61,6 +62,10 @@ function registerLobbyEvents(io, socket, uuid) {
         return handleCreateRoom(io, socket, uuid, payload, callback)
     })
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
+    // 로비·방 목록·모드·설정 화면이 들어옴: 끝난 판·대기방 자리·처리 중 입장·매칭 줄 정리 (점검 중에도 받음, 지우기만 해서)
+    // 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
+    socket.on('enter_lobby', (payload, callback) =>
+        handleEnterLobby(io, socket, uuid, typeof callback === 'function' ? callback : payload))
     // 결과 화면 "대기방으로": 누른 사람만 판 끝 뒤 다시 연 같은 방에 들어감 (답에 방 내용)
     socket.on('return_to_room', (payload, callback) => {
         if (rejectDuringMaintenance(socket, typeof callback === 'function' ? callback : () => {})) return undefined
