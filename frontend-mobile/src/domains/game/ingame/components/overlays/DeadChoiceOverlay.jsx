@@ -1,6 +1,7 @@
-// 사망 후 선택 창: 관전 계속하기·게임 나가기, 나가기 실패·결과 모름이면 다시 시도·결과 확인
-// OverlayLayer가 씀, 열림·선택은 useDeadChoice (나가기는 화면 틀의 useInGameExit 손잡이), 글·색은 데스크톱과 같음
+// 사망 후 선택 창: 관전 계속하기·게임 나가기(벌 없음 안내), 나가기 실패·결과 모름이면 다시 시도·결과 확인
+// OverlayLayer가 씀, 열림·선택은 useDeadChoice (나가기는 화면 틀의 useInGameExit 손잡이), 글·색은 데스크톱과 같음 (상태 안내 글은 데스크톱 exitConfirm.js에서 같이 씀)
 import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
+import { selectExitStatusNotice } from "@/domains/game/ingame/utils/exitConfirm.js"
 
 const PANEL_CLASS =
     "flex w-[min(28rem,92vw)] flex-col items-center gap-4 rounded-2xl bg-neutral-900/95 px-8 py-7 text-center text-white shadow-2xl land:gap-3 land:py-5"
@@ -15,20 +16,6 @@ const PRIMARY_BTN_CLASS = `${BTN_BASE_CLASS} bg-amber-500/90 text-black active:b
 
 const SECONDARY_BTN_CLASS = `${BTN_BASE_CLASS} bg-neutral-700 text-white active:bg-neutral-600`
 
-// 나가기 상태별 안내 글 (데스크톱과 같은 글, 데스크톱 화면 파일 안에만 있어서 옮겨 둠)
-function exitNotice(exitStatus, exitErrorCode) {
-    if (exitStatus === "pending") return "나가는 중입니다…"
-    if (exitStatus === "failed") {
-        if (exitErrorCode === "OFFLINE") return "연결이 끊겨 나가기를 보내지 못했습니다. 다시 시도해 주세요."
-        if (exitErrorCode === "STILL_PARTICIPATING") return "아직 이 게임에 남아 있습니다. 다시 시도해 주세요."
-        return "나가기에 실패했습니다. 다시 시도해 주세요."
-    }
-    if (exitStatus === "unresolved") {
-        return "나가기 결과를 확인하지 못했습니다. 결과 확인 후 다시 시도할 수 있습니다."
-    }
-    return null
-}
-
 // 버튼 글·순서·막힘 조건은 데스크톱과 같음 (나가기 손잡이 못 받았으면 나가기만 막음)
 export default function DeadChoiceOverlay({
     open,
@@ -42,7 +29,7 @@ export default function DeadChoiceOverlay({
     const focusRef = useDialogFocus()
     if (!open) return null
 
-    const notice = exitNotice(exitStatus, exitErrorCode)
+    const notice = selectExitStatusNotice(exitStatus, exitErrorCode)
     const busy = exitStatus === "pending"
 
     return (
@@ -58,6 +45,12 @@ export default function DeadChoiceOverlay({
                 <span className="text-sm text-neutral-300">
                     남은 경기를 계속 지켜보거나, 지금 게임에서 나갈 수 있습니다.
                 </span>
+                {/* 벌 없음 안내는 사망으로 열렸을 때만 (산 사람 나가기 실패로도 이 창이 열려서) */}
+                {exitStatus === "idle" ? (
+                    <span className="text-sm text-neutral-300">
+                        사망한 뒤라 나가도 탈주가 아니며, 골드는 판이 끝나면 그대로 받습니다.
+                    </span>
+                ) : null}
 
                 {notice ? <span role="status" className="text-sm text-amber-300">{notice}</span> : null}
 

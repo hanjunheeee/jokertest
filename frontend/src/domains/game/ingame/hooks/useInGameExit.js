@@ -1,5 +1,5 @@
-// 판 나가기 훅: 나가기 확인·보내기·다시 시도·결과 조회 상태, 뒤로 가기 막기
-// 인게임 화면·결과 화면이 사용 (보내기·조회 본체는 hooks/exit/)
+// 판 나가기 훅: 나가기 확인(판 중 산 사람·죽은 사람·결과 화면마다 다른 글)·보내기·다시 시도·결과 조회 상태, 뒤로 가기 막기
+// 인게임 화면·결과 화면이 사용 (보내기·조회 본체는 hooks/exit/, 결과 화면은 실패하면 알림 창도 띄움)
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { useBlocker, useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
@@ -10,7 +10,12 @@ import {
   useInGameStore,
 } from "../store/ingameStore.js"
 import { createSessionEndFinalizer } from "../utils/sessionEnd.js"
-import { createExitConfirmController, isPopNavigationBlocked } from "../utils/exitConfirm.js"
+import {
+  createExitConfirmController,
+  isPopNavigationBlocked,
+  selectExitConfirmMessage,
+  selectResultExitFailureNotice,
+} from "../utils/exitConfirm.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import { EXIT_STATUS } from "../constants/ingameExit.js"
 import { sendLeave as sendLeaveNow } from "./exit/leave.js"
@@ -18,7 +23,13 @@ import { lookupExitOutcome } from "./exit/outcome.js"
 
 
 // 나가기 상태와 나가기·다시 시도·결과 조회 함수 (destination = 나간 뒤 갈 화면, 판 중 나가기는 멀티 화면)
-export function useInGameExit({ destination = "/multiplay" } = {}) {
+// onResultScreen: 결과 화면인지 (로비로 가는 건 결과 화면뿐이라 기본은 destination으로 판단)
+// alertExitFailure: 실패·결과 모름을 알림 창으로 띄울지 (결과 화면엔 안내 자리가 없어 기본 켬, 인게임은 사망 후 선택 창이 안내함)
+export function useInGameExit({
+  destination = "/multiplay",
+  onResultScreen = destination === "/lobby",
+  alertExitFailure = onResultScreen,
+} = {}) {
   const navigate = useNavigate()
   const blocker = useBlocker(isPopNavigationBlocked)
   const [exitStatus, setExitStatus] = useState(EXIT_STATUS.IDLE)
@@ -118,14 +129,28 @@ export function useInGameExit({ destination = "/multiplay" } = {}) {
   const sendLeave = useCallback(() => sendLeaveNow(ctx), [ctx])
 
   // 확인 창에서 고르면 나가기 보내기 (기다리는 중·끝났으면 막기, 고른 쪽 효과음)
+  // 글은 누르는 순간의 판 상태로 고름 (산 사람만 패배·골드·탈주 제한 안내)
   const requestExit = useCallback(() => {
     if (pendingRef.current || settledRef.current) return false
+    const message = selectExitConfirmMessage({
+      onResultScreen,
+      gameState: useInGameStore.getState().state ?? null,
+      selfUuid: useAuthStore.getState().user?.uuid ?? null,
+    })
     return createExitConfirmController({
-      confirm: window.confirm,
+      confirm: (text) => window.confirm(text),
       requestLeave: sendLeave,
       onDecision: (kind) => dispatchUiSfx(kind),
+      message,
     })()
-  }, [sendLeave])
+  }, [sendLeave, onResultScreen])
+
+  // 결과 화면: 실패·결과 모름이면 알림 창으로 다시 누르라고 알림 (안 띄우면 화면이 그대로라 눌렸는지 모름)
+  useEffect(() => {
+    if (!alertExitFailure) return
+    const notice = selectResultExitFailureNotice(exitStatus, exitErrorCode)
+    if (notice) window.alert(notice)
+  }, [alertExitFailure, exitStatus, exitErrorCode])
 
   // 실패하면 확인 창 없이 다시 보내기
   const retryExit = useCallback(() => sendLeave(), [sendLeave])

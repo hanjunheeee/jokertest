@@ -1,7 +1,8 @@
-// 사망 뒤 선택 창: 계속 보기·나가기와 나가기 진행 안내
+// 사망 뒤 선택 창: 계속 보기·나가기, 나가도 벌 없음 안내와 나가기 진행 안내
 // 인게임 화면이 사용, 초점은 창 안으로 옮기고 가둠 (Esc로는 안 닫힘: 꼭 골라야 함)
 import { useRef } from "react"
 import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
+import { selectExitStatusNotice } from "../../utils/exitConfirm.js"
 
 const OVERLAY_CLASS =
   "absolute inset-0 z-[68] flex items-center justify-center bg-black/70 px-6"
@@ -17,19 +18,6 @@ const BUTTON_BASE_CLASS =
 const PRIMARY_BUTTON_CLASS = `${BUTTON_BASE_CLASS} bg-amber-500/90 text-black hover:bg-amber-400`
 
 const SECONDARY_BUTTON_CLASS = `${BUTTON_BASE_CLASS} bg-neutral-700 text-white hover:bg-neutral-600`
-
-function exitNotice(exitStatus, exitErrorCode) {
-  if (exitStatus === "pending") return "나가는 중입니다…"
-  if (exitStatus === "failed") {
-    if (exitErrorCode === "OFFLINE") return "연결이 끊겨 나가기를 보내지 못했습니다. 다시 시도해 주세요."
-    if (exitErrorCode === "STILL_PARTICIPATING") return "아직 이 게임에 남아 있습니다. 다시 시도해 주세요."
-    return "나가기에 실패했습니다. 다시 시도해 주세요."
-  }
-  if (exitStatus === "unresolved") {
-    return "나가기 결과를 확인하지 못했습니다. 결과 확인 후 다시 시도할 수 있습니다."
-  }
-  return null
-}
 
 export default function InGameDeadParticipantChoice({ open, ...props }) {
   if (!open) return null
@@ -47,7 +35,7 @@ function DeadParticipantChoicePanel({
   const dialogRef = useRef(null)
   useInGameModalLayer({ open: true, containerRef: dialogRef })
 
-  const notice = exitNotice(exitStatus, exitErrorCode)
+  const notice = selectExitStatusNotice(exitStatus, exitErrorCode)
   const busy = exitStatus === "pending"
 
   return (
@@ -57,6 +45,12 @@ function DeadParticipantChoicePanel({
         <span className="text-sm text-neutral-300">
           남은 경기를 계속 지켜보거나, 지금 게임에서 나갈 수 있습니다.
         </span>
+        {/* 벌 없음 안내는 사망으로 열렸을 때만 (산 사람 나가기 실패로도 이 창이 열려서) */}
+        {exitStatus === "idle" ? (
+          <span className="text-sm text-neutral-300">
+            사망한 뒤라 나가도 탈주가 아니며, 골드는 판이 끝나면 그대로 받습니다.
+          </span>
+        ) : null}
 
         {notice ? (
           <span role="status" className="text-sm text-amber-300">{notice}</span>
