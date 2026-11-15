@@ -1,4 +1,4 @@
-// 재판 연출 문지기: 재판 중·피고 있음·판정 전일 때 피고·투표·안내·채팅 값 모아 연출 창 띄움
+// 재판 연출 문지기: 재판 중·피고 있음·판정 전일 때 피고·투표·안내·채팅 값 모아 연출 창 띄움, 표 거절 까닭 글도 띄움
 // OverlayLayer가 씀, 투표·판정은 행동 컨텍스트, 채팅은 채팅 세션 컨텍스트 (데스크톱 Gate와 같은 판단)
 import { useContext, useMemo } from "react"
 import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionContext.jsx"
@@ -10,10 +10,15 @@ import {
     TRIBUNAL_RESOLVE_LABEL,
     TRIBUNAL_RESOLVE_RESOLVING_LABEL,
 } from "@/domains/game/ingame/constants/actions/ingameActionPanel.js"
+import { NOTICE_CLASS } from "@/domains/game/ingame/constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 import { resolveInGameTribunalPresentationNotice } from "@/domains/game/ingame/utils/resolveInGameTribunalPresentationNotice.js"
 import TribunalOverlay from "./TribunalOverlay.jsx"
 
 const NO_PLAYERS = []
+
+// 거절 까닭 글 자리: 연출 창(z-55) 위 맨 위 가운데(노치 피함), 단추는 그대로 눌리게 클릭은 통과
+const VOTE_ERROR_WRAP_CLASS = "pointer-events-none fixed inset-x-0 top-0 z-[56] flex justify-center px-4 safe-pt"
+const VOTE_ERROR_TEXT_CLASS = `${NOTICE_CLASS} mt-3 max-w-full rounded-md bg-black/70 px-4 py-2`
 
 // 판정 버튼 글자: 끝남 → 판정 중 → 기본
 function resolveLabel(ctx) {
@@ -53,20 +58,36 @@ export default function TribunalGate() {
         hasSubmitted,
         status: ctx?.tribunalVoteStatus ?? "idle",
     })
+    // 서버가 표를 거절했거나 응답이 없으면 그 까닭 글 (다시 누르면 지워짐)
+    // 연출 창은 단추가 보일 때 안내 글을 안 그려서 창 밖에 따로 띄움
+    const voteErrorText = ctx?.tribunalVoteStatus !== "submitting"
+        && typeof ctx?.tribunalVoteError === "string"
+        && ctx.tribunalVoteError.trim().length > 0
+        ? ctx.tribunalVoteError
+        : null
 
     return (
-        <TribunalOverlay
-            defendant={defendant}
-            showVoteButtons={showVoteButtons}
-            noticeText={noticeText}
-            voteButtonsEnabled={Boolean(ctx?.tribunalVoteControlsEnabled)}
-            voteSubmitting={ctx?.tribunalVoteStatus === "submitting"}
-            onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
-            onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
-            chatProps={chatProps}
-            devResolveLabel={ctx ? resolveLabel(ctx) : null}
-            devResolveEnabled={Boolean(ctx?.tribunalResolveControlsEnabled)}
-            onDevResolve={() => ctx?.resolveTribunalVote?.()}
-        />
+        <>
+            <TribunalOverlay
+                defendant={defendant}
+                showVoteButtons={showVoteButtons}
+                noticeText={noticeText}
+                voteButtonsEnabled={Boolean(ctx?.tribunalVoteControlsEnabled)}
+                voteSubmitting={ctx?.tribunalVoteStatus === "submitting"}
+                onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
+                onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
+                chatProps={chatProps}
+                devResolveLabel={ctx ? resolveLabel(ctx) : null}
+                devResolveEnabled={Boolean(ctx?.tribunalResolveControlsEnabled)}
+                onDevResolve={() => ctx?.resolveTribunalVote?.()}
+            />
+            {voteErrorText ? (
+                <div className={VOTE_ERROR_WRAP_CLASS}>
+                    <p role="alert" className={VOTE_ERROR_TEXT_CLASS} data-ingame-tribunal-vote-error="">
+                        {voteErrorText}
+                    </p>
+                </div>
+            ) : null}
+        </>
     )
 }

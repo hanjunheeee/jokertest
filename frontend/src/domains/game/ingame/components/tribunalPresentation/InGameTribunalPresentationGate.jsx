@@ -1,4 +1,4 @@
-// 재판 연출 문지기: 재판 중일 때 피고·투표 버튼·안내·채팅 값을 모아 연출 창 띄움
+// 재판 연출 문지기: 재판 중일 때 피고·투표 버튼·안내·채팅 값을 모아 연출 창 띄움, 표 거절 까닭 글도 띄움
 // 인게임 화면이 사용, 투표·판정은 조작 컨텍스트, 채팅은 채팅 세션 컨텍스트에서 꺼냄
 import { useContext, useMemo } from "react"
 import { InGameActionContext } from "../../context/InGameActionContext.jsx"
@@ -10,6 +10,7 @@ import {
   TRIBUNAL_RESOLVE_LABEL,
   TRIBUNAL_RESOLVE_RESOLVING_LABEL,
 } from "../../constants/actions/ingameActionPanel.js"
+import { NOTICE_CLASS } from "../../constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 import { resolveInGameTribunalPresentationNotice } from "../../utils/resolveInGameTribunalPresentationNotice.js"
 import { pickInGameJobPortrait } from "../../utils/pickInGameJobPortrait.js"
 import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
@@ -17,6 +18,10 @@ import InGameTribunalPresentationOverlay from "./InGameTribunalPresentationOverl
 
 // 보드 목록에 피고가 없을 때 쓰는 이름
 const UNKNOWN_DEFENDANT_NICKNAME = "알 수 없는 플레이어"
+
+// 거절 까닭 글 자리: 연출 창(z-55·56) 위 가운데 위쪽, 단추는 그대로 눌리게 클릭은 통과
+const VOTE_ERROR_WRAP_CLASS = "pointer-events-none absolute inset-x-0 top-[8%] z-[57] flex justify-center px-4"
+const VOTE_ERROR_TEXT_CLASS = `${NOTICE_CLASS} max-w-[min(32rem,90%)] rounded-md bg-black/70 px-4 py-2`
 
 // 판정 버튼은 개발 빌드에서만 (실제 판은 서버 마감 타이머가 판정)
 const SHOW_DEV_RESOLVE = import.meta.env?.DEV === true
@@ -80,6 +85,14 @@ export default function InGameTribunalPresentationGate() {
 
   const voteButtonsEnabled = Boolean(ctx?.tribunalVoteControlsEnabled)
 
+  // 서버가 표를 거절했거나 응답이 없으면 그 까닭 글 (다시 누르면 지워짐)
+  // 연출 창은 단추가 보일 때 안내 글을 안 그려서 창 밖에 따로 띄움
+  const voteErrorText = ctx?.tribunalVoteStatus !== "submitting"
+    && typeof ctx?.tribunalVoteError === "string"
+    && ctx.tribunalVoteError.trim().length > 0
+    ? ctx.tribunalVoteError
+    : null
+
   // 판정 버튼 글자: 개발 빌드 아니면 없음, 끝남 → 판정 중 → 기본
   const devResolveLabel = pickDevResolveLabel(ctx)
   const devResolveEnabled = Boolean(ctx?.tribunalResolveControlsEnabled)
@@ -90,19 +103,28 @@ export default function InGameTribunalPresentationGate() {
   if (!open || !defendant) return null
 
   return (
-    <InGameTribunalPresentationOverlay
-      open
-      defendant={defendant}
-      showVoteButtons={showVoteButtons}
-      noticeText={noticeText}
-      voteButtonsEnabled={voteButtonsEnabled}
-      voteSubmitting={ctx?.tribunalVoteStatus === "submitting"}
-      onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
-      onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
-      chatProps={chatProps}
-      devResolveLabel={devResolveLabel}
-      devResolveEnabled={devResolveEnabled}
-      onDevResolve={() => ctx?.resolveTribunalVote?.()}
-    />
+    <>
+      <InGameTribunalPresentationOverlay
+        open
+        defendant={defendant}
+        showVoteButtons={showVoteButtons}
+        noticeText={noticeText}
+        voteButtonsEnabled={voteButtonsEnabled}
+        voteSubmitting={ctx?.tribunalVoteStatus === "submitting"}
+        onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
+        onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
+        chatProps={chatProps}
+        devResolveLabel={devResolveLabel}
+        devResolveEnabled={devResolveEnabled}
+        onDevResolve={() => ctx?.resolveTribunalVote?.()}
+      />
+      {voteErrorText ? (
+        <div className={VOTE_ERROR_WRAP_CLASS}>
+          <p role="alert" className={VOTE_ERROR_TEXT_CLASS} data-ingame-tribunal-vote-error="">
+            {voteErrorText}
+          </p>
+        </div>
+      ) : null}
+    </>
   )
 }

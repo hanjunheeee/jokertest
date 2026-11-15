@@ -11,10 +11,13 @@ import {
 } from "../../constants/vote/ingameVoteLayout.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 
+// 판정 결과 → 화면 글 (모바일 VoteStatusContent도 같은 글)
 const OUTCOME_LABELS = Object.freeze({
   TRIBUNAL: "재판 회부",
   TIE: "동점",
-  ABSTAINED: "기권 다수",
+  // 기권이 최다 득표 이상이라 재판 없이 밤 (2026-11-16 규칙)
+  ABSTAIN_MAJORITY: "기권이 많아 재판 없음",
+  ABSTAINED: "전원 기권",
 })
 
 export const INGAME_VOTE_STATUS_UNRESOLVED_LABEL = "집계 전"

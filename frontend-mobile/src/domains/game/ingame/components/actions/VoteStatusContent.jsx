@@ -13,7 +13,9 @@ import Row from "./VoteStatusRow.jsx"
 const OUTCOME_LABELS = Object.freeze({
   TRIBUNAL: "재판 회부",
   TIE: "동점",
-  ABSTAINED: "기권 다수",
+  // 기권이 최다 득표 이상이라 재판 없이 밤 (2026-11-16 규칙)
+  ABSTAIN_MAJORITY: "기권이 많아 재판 없음",
+  ABSTAINED: "전원 기권",
 })
 
 const UNRESOLVED_LABEL = "집계 전"

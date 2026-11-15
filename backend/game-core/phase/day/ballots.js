@@ -20,7 +20,7 @@ function uuidListsEqual(left, right) {
     return true
 }
 
-// 낮 표 세기: 최다 득표자 한 명이면 재판, 동률·전원 기권이면 밤
+// 낮 표 세기: 최다 득표가 기권보다 많고 한 명이면 재판, 기권이 최다 득표 이상·동률·전원 기권이면 밤
 function tallyDayVoteOutcome(session) {
     const eligibleVoterUuids = getDayVoterUuids(session)
     const voteCounts = new Map()
@@ -48,6 +48,12 @@ function tallyDayVoteOutcome(session) {
     for (const votes of voteCounts.values()) {
         if (votes > winnerVotes) winnerVotes = votes
     }
+
+    // 기권이 최다 득표 이상이면 재판 없이 밤 (사용자 결정 2026-11-16, 동률보다 먼저 봄)
+    if (winnerVotes <= abstainCount) {
+        return { outcome: 'ABSTAIN_MAJORITY', tribunalTargetUuid: null, tiedTargetUuids: [], publicVoteCount, publicAbstainCount }
+    }
+
     const topTargetUuids = [...voteCounts.entries()]
         .filter(([, votes]) => votes === winnerVotes)
         .map(([target]) => target)

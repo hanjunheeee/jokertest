@@ -7,7 +7,7 @@ import {
 } from "../../constants/store/ingameStore.js"
 import { getDayVoteRound, parseDayVoteRoundFields } from "../../utils/dayVoteRound.js"
 import { applyTribunalResolvedPure } from "../applyTribunalResolved.js"
-import { clearSelfActed } from "../../utils/store/selfActed.js"
+import { clearSelfActed, clearTribunalVoteSubmission } from "../../utils/store/selfActed.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { clearOnNightEntry } from "./nightSuccessReception.js"
 import { commitWithReceipt } from "./receiptScope.js"
@@ -16,6 +16,9 @@ import { commitWithReceipt } from "./receiptScope.js"
 function clearPrivateOnNightEntry(current) {
   return current.state?.phase === "NIGHT" ? null : CLEARED_NIGHT_PRIVATE_RESULT
 }
+
+// 재판 없이 밤으로 가는 판정 결과 (동표·기권이 최다 득표 이상·전원 기권)
+const NIGHT_OUTCOMES = new Set(["TIE", "ABSTAIN_MAJORITY", "ABSTAINED"])
 
 export const voteActions = (set) => ({
   // 낮 투표 판정 반영: 재판·동표/기권(밤으로), 재투표는 삭제돼 안 받음
@@ -41,11 +44,13 @@ export const voteActions = (set) => ({
       }
 
       // 재판: 피고가 있어야 함, 낮을 벗어나 낮 마감 시각 비움
+      // 지난 재판 표 냈음 표시도 지움 (안 지우면 둘째 날 재판에서 단추 대신 "투표 완료"가 뜸)
       if (outcome === "TRIBUNAL") {
         if (typeof defendantUuid !== "string" || defendantUuid.length === 0) return current
+        const stateWithoutTribunalVote = { ...current.state, ...clearTribunalVoteSubmission(current.state) }
         return {
           state: {
-            ...current.state,
+            ...stateWithoutTribunalVote,
             phase: "TRIBUNAL",
             dayPhase: null,
             dayVoteResolution,
@@ -55,13 +60,13 @@ export const voteActions = (set) => ({
               ? resolution.tribunalDeadline
               : null,
             ...CLEARED_DAY_PHASE_TIMER,
-            ...clearSelfActed(current.state),
+            ...clearSelfActed(stateWithoutTribunalVote),
           },
         }
       }
       // 동표·기권: 바로 밤으로, 낮 마감 시각·밤 개인 결과·성공 연출 비움
       // 받아 둔 밤 차례는 안 지움 (밤 첫 차례 방송이 이 판정보다 먼저 올 수 있음, 낮 시작 때 이미 비워서 옛 차례는 없음)
-      if (outcome === "TIE" || outcome === "ABSTAINED") {
+      if (NIGHT_OUTCOMES.has(outcome)) {
         return {
           state: {
             ...current.state,
