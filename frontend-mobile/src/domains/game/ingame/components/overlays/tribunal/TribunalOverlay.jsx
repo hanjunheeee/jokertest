@@ -41,7 +41,7 @@ function useStageInsetStyle() {
     }
 }
 
-// 투표 버튼 못 보이면 안내 문구, 판정 버튼은 글자 받았을 때만
+// 투표 버튼 못 보이면 안내 문구 (판정은 표가 다 차면 서버가 5초 뒤 함)
 export default function TribunalOverlay({
     defendant,
     showVoteButtons = false,
@@ -51,9 +51,6 @@ export default function TribunalOverlay({
     onVoteGuilty,
     onVoteNotGuilty,
     chatProps = null,
-    devResolveLabel = null,
-    devResolveEnabled = false,
-    onDevResolve = null,
 }) {
     const reduced = useReducedMotion()
     const layoutPhase = useTribunalIntro(defendant?.id ?? null)
@@ -98,9 +95,6 @@ export default function TribunalOverlay({
                                 voteDisabled={!voteButtonsEnabled || voteSubmitting}
                                 onVoteGuilty={onVoteGuilty}
                                 onVoteNotGuilty={onVoteNotGuilty}
-                                devResolveLabel={devResolveLabel}
-                                devResolveEnabled={devResolveEnabled}
-                                onDevResolve={onDevResolve}
                             />
                         </motion.div>
                     </motion.div>

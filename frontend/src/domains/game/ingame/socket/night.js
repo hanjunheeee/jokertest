@@ -17,8 +17,7 @@ export function onNightTurn(socket, { onStarted, onEnded }) {
 }
 
 // 밤 차례 시작 받기 (스냅샷 충돌 감시용)
-// 연출 대기 알림은 없어짐 → 첫 손잡이는 받지 않음 (부르는 쪽이 아직 두 개를 넘겨 자리만 둠)
-export function onNightNotices(socket, _onWait, onTurnStart) {
+export function onNightNotices(socket, onTurnStart) {
   return listen(socket, "night_turn_started", onTurnStart)
 }
 

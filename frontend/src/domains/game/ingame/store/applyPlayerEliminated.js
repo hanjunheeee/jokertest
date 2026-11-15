@@ -36,6 +36,7 @@ export function applyPlayerEliminatedPure(current, parsed) {
         ...CLEARED_NIGHT_TURN,
         players: nextPlayers,
         ...(parsed.winResult ? { winResult: parsed.winResult } : {}),
+        resultClosesAt: parsed.resultClosesAt ?? null,
       },
     }
   }

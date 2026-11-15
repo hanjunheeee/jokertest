@@ -1,5 +1,5 @@
 // 방 만들기 요청·지금 내 방 묻기·로비 입장 알리기
-// setup useCreateRoom·result useGameResultReturnToMatching·로비 입장 정리 훅(useLobbyEntryCleanup)이 씀
+// 방 만들기는 setup createRoomRequest, 내 방 묻기는 그것과 결과 화면 "대기방으로" 훅, 로비 입장은 useLobbyEntryCleanup이 씀
 import {
   CREATE_ROOM_TIMEOUT_MS,
   CURRENT_ROOM_TIMEOUT_MS,
@@ -10,7 +10,7 @@ import {
 export const askRoom = (socket) =>
   socket.timeout(CURRENT_ROOM_TIMEOUT_MS).emitWithAck(SOCKET_EVENTS.GET_CURRENT_ROOM, {})
 
-// 방 만들기 (결과 화면에선 방장이 다음 판 방을 만들 때 씀)
+// 방 만들기 (게임 설정 화면만 씀, 판 끝 뒤엔 서버가 같은 방을 다시 열어 결과 화면은 안 씀)
 export const createRoom = (socket, settings) =>
   socket.timeout(CREATE_ROOM_TIMEOUT_MS).emitWithAck(SOCKET_EVENTS.CREATE_ROOM, settings)
 

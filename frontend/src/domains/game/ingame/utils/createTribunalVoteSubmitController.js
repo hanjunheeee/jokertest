@@ -9,10 +9,10 @@ import {
 // 응답 기다리는 시간 (넘으면 시간 초과 문구)
 export const ACK_TIMEOUT_MS = 5000
 
-// 시간 초과·응답 없음·응답 모양 틀림 때 상태 조각
-const TIMEOUT_PATCH = { status: "idle", submittedVote: null, error: "요청 시간이 초과되었습니다." }
-const NO_ACK_PATCH = { status: "idle", submittedVote: null, error: "요청에 응답하지 않습니다. 다시 시도해주세요." }
-const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제출하지 못했습니다. 다시 시도해주세요." }
+// 시간 초과·응답 없음·응답 모양 틀림 때 상태 조각 (거절 코드는 비움, 지난 거절 까닭 글이 남지 않게)
+const TIMEOUT_PATCH = { status: "idle", submittedVote: null, error: "요청 시간이 초과되었습니다.", errorCode: null }
+const NO_ACK_PATCH = { status: "idle", submittedVote: null, error: "요청에 응답하지 않습니다. 다시 시도해주세요.", errorCode: null }
+const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제출하지 못했습니다. 다시 시도해주세요.", errorCode: null }
 
 // 컨트롤러 만들기 (상태는 안에 들고, 바뀔 때마다 onStateChange로 알림)
 export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {

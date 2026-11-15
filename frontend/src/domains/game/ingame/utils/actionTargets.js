@@ -3,8 +3,10 @@
 import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
 import { getRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
 
-// 죽은 상태만 아니면 살아 있음으로 봄
+// 생사: 실린 alive 값을 먼저 봄 (배지가 끊김이어도 죽은 사람은 죽음), 없으면 죽은 상태만 아니면 살아 있음
+// 예: { status: "disconnected", alive: false } → false, { status: "disconnected" } → true
 export function isSessionPlayerAlive(sessionPlayer) {
+  if (typeof sessionPlayer?.alive === "boolean") return sessionPlayer.alive
   return sessionPlayer?.status !== INGAME_PLAYER_STATUS.DEAD
 }
 
@@ -22,7 +24,7 @@ export function buildDayVoteTargets(sessionPlayers, { localPlayerId } = {}) {
     }))
 }
 
-// 밤 행동 대상: 광대만 동료를 못 고름, 마녀사냥꾼은 죽은 사람만 고름
+// 밤 행동 대상: 광대만 동료를 못 고름, 마녀사냥꾼은 죽은 사람만 고름 (생사는 끊김과 따로 봄)
 // 동료는 이름 뒤에 내 직업 이름 붙임, 막힌 동료 광대엔 ally 표시 (서버가 광대의 동료 지목만 거절해 카드 메뉴가 밤 항목을 숨김)
 export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed, role } = {}) {
   if (!Array.isArray(players)) return []
@@ -33,14 +35,13 @@ export function buildNightActionTargets(players, { localPlayerId, selfTargetAllo
     .filter((player) => selfTargetAllowed || player.id !== localPlayerId)
     .map((player) => {
       const blockedAlly = player.isAlly === true && role === "JOKER" // 의사끼리는 서로 지켜 줄 수 있어 안 막음
+      const alive = isSessionPlayerAlive(player)
       return {
         id: player.id,
         name: player.isAlly && roleName ? `${player.nickname} · 동료 ${roleName}` : player.nickname, // → "민수 · 동료 의사"
-        alive: player.status !== INGAME_PLAYER_STATUS.DEAD,
+        alive,
         connected: player.status !== INGAME_PLAYER_STATUS.DISCONNECTED,
-        selectable: !blockedAlly && (role === "WITCH_HUNTER"
-          ? player.status === INGAME_PLAYER_STATUS.DEAD
-          : player.status !== INGAME_PLAYER_STATUS.DEAD),
+        selectable: !blockedAlly && (role === "WITCH_HUNTER" ? !alive : alive),
         ...(blockedAlly ? { ally: true } : {}),
       }
     })

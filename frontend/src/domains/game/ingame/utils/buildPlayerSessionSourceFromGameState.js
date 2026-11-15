@@ -54,15 +54,17 @@ export function buildPlayerSessionSourceFromGameState(state) {
   if (self.team !== ROLE_TEAMS[self.role]) return EMPTY_RESULT
 
   // 시민 아니면 동료 목록 검사 (본인·명단 밖·중복이면 거절), 시민인데 오면 거절
+  // 광대만 목록이 꼭 있어야 함, 의사·경비원·마녀사냥꾼은 없으면 동료 없음으로 봄 (옛 서버 값이 섞여도 판 화면이 안 비게)
   const allyVisible = ALLY_VISIBLE_ROLES.has(self.role)
+  const hasAllies = Object.hasOwn(self, "allies")
   if (allyVisible) {
-    if (!Object.hasOwn(self, "allies")) return EMPTY_RESULT
-    if (!areValidAllies(self.allies, self.uuid, seenUuids)) return EMPTY_RESULT
-  } else if (Object.hasOwn(self, "allies")) {
+    if (!hasAllies && self.role === "JOKER") return EMPTY_RESULT
+    if (hasAllies && !areValidAllies(self.allies, self.uuid, seenUuids)) return EMPTY_RESULT
+  } else if (hasAllies) {
     return EMPTY_RESULT
   }
 
-  const allyIds = allyVisible ? new Set(self.allies) : null
+  const allyIds = allyVisible && hasAllies ? new Set(self.allies) : null
 
   // 화면용 참가자: 본인엔 직업·팀, 동료엔 동료 표시, 계정 꾸밈은 온 것만
   const sourcePlayers = state.players.map((player) => {

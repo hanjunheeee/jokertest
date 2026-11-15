@@ -1,7 +1,7 @@
-// 스냅샷의 승패 결과·낮 단계·단계 역행·버전 검사 (순수 계산)
+// 스냅샷의 승패 결과·결과 화면 닫힘 시각·낮 단계·단계 역행·버전 검사 (순수 계산)
 // 필드가 없으면 null, 틀리면 BAD (utils/snapshot/applySnapshot.js가 사용)
 import { KNOWN_DAY_PHASES, PHASE_PROGRESS_RANK } from "../../constants/store/sessionSnapshot.js"
-import { normalizePublicWinResult } from "../normalizePublicWinResult.js"
+import { normalizePublicWinResult, readResultClosesAtField } from "../normalizePublicWinResult.js"
 import { BAD, isNonNegativeInteger } from "./checks.js"
 
 // 승패 결과: 끝난 판엔 꼭 있어야 하고, 끝나지 않은 판엔 오면 안 됨
@@ -14,6 +14,15 @@ export function readWinResult(response) {
   }
   if (Object.hasOwn(response, "winResult")) return BAD
   return null
+}
+
+// 결과 화면 닫힘 시각: 끝난 판만, 스냅샷에 없으면 이미 끝난 판 상태에 담긴 값 그대로 (안 끝난 판은 null)
+// 예: { phase: "ENDED", resultClosesAt: 1180000 } → 1180000, { phase: "DAY" } → null
+export function readSnapshotResultClosesAt(response, currentState) {
+  if (response.phase !== "ENDED") return null
+  const value = readResultClosesAtField(response)
+  if (value !== null) return value
+  return currentState?.phase === "ENDED" ? (currentState.resultClosesAt ?? null) : null
 }
 
 // 낮 단계: 낮엔 아는 이름으로 꼭 있어야 하고, 낮이 아니면 오면 안 됨

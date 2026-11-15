@@ -1,5 +1,5 @@
 // 공용 소켓을 다른 Node로 옮겨 다시 붙이기와 "다른 Node 방" 답 따라가기 (옮긴 뒤 같은 요청 한 번만 다시)
-// 방 코드·공개 방 입장 훅, 파티 방 다시 들어가기, 초대 수락 흐름이 씀 (소켓 칸은 socketClient.js 것을 그대로 씀)
+// 방 코드·공개 방 입장(joinAttempt), 방 만들기(createRoomRequest), 초대 수락 흐름이 씀 (소켓 칸은 socketClient.js 것을 그대로 씀)
 import { NODE_ERROR_CODES, NODE_MOVE_TIMEOUT_MS } from "../constants/connectionSocket.js"
 import { pointSocketAtNode } from "./connection.js"
 import { isNodeId, saveNodeHint } from "./nodeHint.js"

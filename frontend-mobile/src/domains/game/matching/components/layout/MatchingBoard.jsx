@@ -59,7 +59,7 @@ export default function MatchingBoard({ visible, slots, waitingMessage = "", onR
         <div className="absolute inset-0 flex min-h-0 flex-col items-stretch overflow-hidden" style={CONTENT_INSET}>
           <p className={BOARD_PROMPT_CLASS}>{MATCHING_POPUP_COPY.prompt}</p>
           <SlotGrid slots={slots} />
-          {/* 기다림 문구 있을 때만 (파티 방 기다리는 중) */}
+          {/* 기다림 문구 있을 때만 (판 끝 뒤 원래 방장 자리를 남겨 둔 동안) */}
           {waitingMessage ? <p className={BOARD_WAITING_CLASS}>{waitingMessage}</p> : null}
         </div>
       </motion.div>

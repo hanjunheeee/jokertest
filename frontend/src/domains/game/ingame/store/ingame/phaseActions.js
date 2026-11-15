@@ -104,6 +104,8 @@ export const phaseActions = (set) => ({
             ...CLEARED_NIGHT_TURN,
             players: mergeAlive(current.state.players, aliveByUuid, readDawnKilledUuids(dawnReport)),
             ...(payload.winResult ? { winResult: payload.winResult } : {}),
+            // 결과 화면 닫힘 시각 (파싱에서 이미 검사함, 없으면 null)
+            resultClosesAt: payload.resultClosesAt ?? null,
           },
           dawnReport,
         }

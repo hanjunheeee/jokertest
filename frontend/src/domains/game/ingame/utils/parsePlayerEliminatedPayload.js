@@ -1,6 +1,6 @@
 // 사망 방송 검사: 지금 판·날짜·단계, 피해자·명단 생존이 맞을 때만 (판 끝이면 승패 포함)
 // 낮 이벤트 손잡이(hooks/sessionEvents/dayHandlers.js)가 사용
-import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
+import { normalizePublicWinResult, readResultClosesAtField } from "./normalizePublicWinResult.js"
 
 // 빈칸 아닌 글자 (앞뒤 공백만 있어도 빈칸)
 function isNonEmptyString(value) {
@@ -85,5 +85,7 @@ export function parsePlayerEliminatedPayload({
     players,
     terminal: isTerminal,
     winResult,
+    // 판 끝이면 결과 화면 닫힘 시각 (없으면 null)
+    resultClosesAt: isTerminal ? readResultClosesAtField(payload) : null,
   }
 }

@@ -5,7 +5,6 @@ import { onNightTurn } from "./night.js"
 // 판 진행 공개 사건과 받을 손잡이 이름 (등록 순서 그대로 둠)
 const SESSION_EVENTS = [
   ["game_ended", "gameEnded"],
-  ["party_matching_room_ready", "partyRoomReady"],
   ["emoji_shown", "emojiShown"],
   ["player_eliminated", "playerEliminated"],
   ["session_participation_changed", "participationChanged"],

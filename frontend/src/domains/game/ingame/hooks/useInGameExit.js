@@ -1,5 +1,5 @@
 // 판 나가기 훅: 나가기 확인(판 중 산 사람·죽은 사람·결과 화면마다 다른 글)·보내기·다시 시도·결과 조회 상태, 뒤로 가기 막기
-// 인게임 화면·결과 화면이 사용 (보내기·조회 본체는 hooks/exit/, 결과 화면은 실패하면 알림 창도 띄움)
+// 인게임 화면·결과 화면이 사용 (보내기·조회 본체는 hooks/exit/, 실패 알림 창은 켠 화면만)
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { useBlocker, useNavigate } from "react-router-dom"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
@@ -24,7 +24,7 @@ import { lookupExitOutcome } from "./exit/outcome.js"
 
 // 나가기 상태와 나가기·다시 시도·결과 조회 함수 (destination = 나간 뒤 갈 화면, 판 중 나가기는 멀티 화면)
 // onResultScreen: 결과 화면인지 (로비로 가는 건 결과 화면뿐이라 기본은 destination으로 판단)
-// alertExitFailure: 실패·결과 모름을 알림 창으로 띄울지 (결과 화면엔 안내 자리가 없어 기본 켬, 인게임은 사망 후 선택 창이 안내함)
+// alertExitFailure: 실패·결과 모름을 알림 창으로 띄울지 (기본은 결과 화면일 때 켬, 지금 PC·모바일 결과 화면은 버튼 위에 안내를 그려 끄고 부름, 인게임은 사망 후 선택 창이 안내함)
 export function useInGameExit({
   destination = "/multiplay",
   onResultScreen = destination === "/lobby",
@@ -145,7 +145,7 @@ export function useInGameExit({
     })()
   }, [sendLeave, onResultScreen])
 
-  // 결과 화면: 실패·결과 모름이면 알림 창으로 다시 누르라고 알림 (안 띄우면 화면이 그대로라 눌렸는지 모름)
+  // 알림 창을 켰으면: 실패·결과 모름일 때 다시 누르라고 알림 (안 띄우면 화면이 그대로라 눌렸는지 모름)
   useEffect(() => {
     if (!alertExitFailure) return
     const notice = selectResultExitFailureNotice(exitStatus, exitErrorCode)

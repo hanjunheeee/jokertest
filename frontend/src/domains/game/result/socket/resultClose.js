@@ -1,5 +1,6 @@
-// 결과 화면 닫힘: 서버가 판 끝 180초 뒤 결과 화면을 닫는 사건 받기·닫힘 시각 읽기
-// hooks/useGameResultReturnToMatching의 결과 화면 닫힘 훅이 씀 (인게임 사건 묶음은 3차에 다른 단위가 고쳐 따로 둠)
+// 결과 화면 닫힘: 서버가 판 끝 180초 뒤 결과 화면을 닫는 사건 받기·닫힘 시각 읽기·남은 초 세기
+// hooks/useGameResultReturnToMatching의 결과 화면 닫힘 훅이 씀
+import { readResultClosesAtField } from "../../ingame/utils/normalizePublicWinResult.js"
 
 // 결과 화면 머무는 최대 초 (서버 180초와 같음, 기기 시계가 앞서도 이보다 크게 안 보이게)
 export const RESULT_CLOSE_SECONDS = 180
@@ -10,12 +11,12 @@ export function onResultClosed(socket, handler) {
   return () => socket.off("game_result_closed", handler)
 }
 
-// 닫힘 시각 읽기: 맨 위나 승패 결과 안의 ms 시각, 없거나 틀리면 null
+// 닫힘 시각 읽기: 판 상태·스냅샷 답 맨 위의 ms 시각, 없거나 틀리면 null
+// 판 상태엔 판 끝 방송을 받을 때 담김, 새로고침 뒤엔 스냅샷 답에서 읽음
 // 예: { resultClosesAt: 1763290000000 } → 1763290000000, { winResult: { winner: "JOKER" } } → null
 export function readResultClosesAt(source) {
   if (source === null || typeof source !== "object") return null
-  const value = source.resultClosesAt ?? source.winResult?.resultClosesAt ?? null
-  return Number.isFinite(value) && value > 0 ? value : null
+  return readResultClosesAtField(source)
 }
 
 // 남은 초: 닫힘 시각까지 올림한 초, 0 아래·최대 초 위는 자름, 시각 없으면 null

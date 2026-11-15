@@ -19,8 +19,6 @@ import {
   CHAT_WRAP_CLASS,
   CLUSTER_CLASS,
   INTRO_HOLD_MS,
-  DEV_RESOLVE_BTN_CLASS,
-  DEV_RESOLVE_WRAP_CLASS,
   LEFT_COLUMN_CLASS,
   NOTICE_CLASS,
   ROW_CLASS,
@@ -69,9 +67,6 @@ export default function InGameTribunalPresentationOverlay({
   onVoteGuilty,
   onVoteNotGuilty,
   chatProps = null,
-  devResolveLabel = null,
-  devResolveEnabled = false,
-  onDevResolve = null,
 }) {
   const reduceMotion = useReducedMotion()
   // 연출 동안 초점을 창 안으로 옮기고 가둠 (아래 화면은 잠겨 있음, Esc로는 안 닫힘)
@@ -101,7 +96,7 @@ export default function InGameTribunalPresentationOverlay({
   // 채팅은 split 단계이고 채팅 값 있을 때만
   const showChat = layoutPhase === "split" && chatProps
 
-  // 투표 버튼 못 보이면 대신 안내 문구, 판정 버튼은 글자 받았을 때만
+  // 투표 버튼 못 보이면 대신 안내 문구 (판정은 표가 다 차면 서버가 5초 뒤 함)
   return (
     <AnimatePresence>
       {open ? (
@@ -190,20 +185,6 @@ export default function InGameTribunalPresentationOverlay({
               </AnimatePresence>
               </div>
             </div>
-
-            {devResolveLabel ? (
-              <div className={DEV_RESOLVE_WRAP_CLASS}>
-                <button
-                  type="button"
-                  className={DEV_RESOLVE_BTN_CLASS}
-                  data-dev-tribunal-resolve=""
-                  disabled={!devResolveEnabled}
-                  onClick={() => onDevResolve?.()}
-                >
-                  {devResolveLabel}
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}

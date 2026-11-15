@@ -1,4 +1,4 @@
-// 공개 승패 결과 다듬기: 이긴 쪽, 직업 공개 목록·받은 판 골드 (모양 틀린 항목은 뺌)
+// 공개 승패 결과 다듬기: 이긴 쪽, 직업 공개 목록·받은 판 골드 (모양 틀린 항목은 뺌), 결과 화면 닫힘 시각 읽기
 // 재판 판정 반영·밤 결과·사망 방송 검사와 스냅샷 승패 검사가 사용
 
 // 받는 이긴 쪽·팀 이름
@@ -55,4 +55,12 @@ export function normalizePublicWinResult(raw) {
   }
 
   return winResult
+}
+
+// 판 끝 칸 맨 위의 결과 화면 닫힘 시각 (판 끝 + 180초, ms), 없거나 틀리면 null
+// 판 상태에 담아 두어 결과 화면이 판 상태를 다시 안 물어도 우측 위 타이머를 바로 셈
+// 예: { resultClosesAt: 1763290000000 } → 1763290000000, {} → null
+export function readResultClosesAtField(payload) {
+  const value = payload?.resultClosesAt
+  return Number.isFinite(value) && value > 0 ? value : null
 }

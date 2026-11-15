@@ -1,5 +1,5 @@
 // 그림 체크박스 (그림 30px, 누르는 칸 48px)
-// settings/CheckRow.jsx·RoomRow.jsx가 씀, 그림은 데스크톱 인게임 설정 체크 칸 그대로
+// settings/CheckRow.jsx가 씀, 그림은 데스크톱 인게임 설정 체크 칸 그대로
 import { INGAME_SETTING_ASSETS } from "@/domains/game/ingame/constants/controls/ingameSetting/ingameSettingAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 

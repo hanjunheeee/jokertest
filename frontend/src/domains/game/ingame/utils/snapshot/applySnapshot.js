@@ -10,7 +10,7 @@ import { BAD, isNonEmptyString, isNonNegativeInteger, isPlainObject } from "./ch
 import { buildPlayers, readRoster } from "./roster.js"
 import { buildSelf, readSelf } from "./self.js"
 import { readDayFields } from "./dayFields.js"
-import { goesBackward, readDayPhase, readVersions, readWinResult } from "./phaseFields.js"
+import { goesBackward, readDayPhase, readSnapshotResultClosesAt, readVersions, readWinResult } from "./phaseFields.js"
 import { normRoomSettingsSource } from "./roomSettings.js"
 import { readTimerFields } from "./timerFields.js"
 
@@ -77,6 +77,7 @@ export function applySessionSnapshotPure(current, response) {
     self: tagDayVoteSubmissionDay(buildSelf(response.self, allies), response.dayIndex),
     tribunal: day.tribunal,
     winResult,
+    resultClosesAt: readSnapshotResultClosesAt(response, current.state),
     nightResult: day.nightResult,
     dayVoteResolution,
     dayVoteRound: dayVoteResolution?.round ?? 1,

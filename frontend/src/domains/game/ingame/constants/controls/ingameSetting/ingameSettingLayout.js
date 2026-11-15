@@ -1,4 +1,4 @@
-// 설정 창 모양: 탭 줄·밀대 줄·체크 줄·방관리 줄·방 코드 버튼·스크롤
+// 설정 창 모양: 탭 줄·밀대 줄·체크 줄·방 코드 버튼·스크롤
 // components/controls/ingameSetting/ 파일들이 사용
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
@@ -63,24 +63,6 @@ export const SLIDER_KNOB_CLASS =
 // 체크 칸
 export const CHECKBOX_CLASS =
   "relative block w-[clamp(1.35rem,1.85vw,1.55rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
-
-// 방관리 줄 판·제목·설명·링크 (위험 링크는 붉은색)
-export const ROOM_ROW_PLATE_CLASS =
-  "flex w-full items-center gap-[clamp(0.35rem,1.2vw,0.55rem)] rounded-sm border border-[#3a2818]/75 bg-[#120a06]/50 px-[clamp(0.38rem,1.6%,0.52rem)] py-[clamp(0.32rem,0.78vh,0.42rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-
-export const ROOM_ROW_TEXT_CLASS =
-  "flex min-w-0 flex-1 flex-col gap-[clamp(0.06rem,0.22vh,0.1rem)]"
-
-export const ROOM_ROW_TITLE_CLASS = ROW_LABEL_CLASS
-
-export const ROOM_ROW_DESC_CLASS =
-  "font-subheading text-[clamp(0.62rem,0.82vw,0.74rem)] font-medium leading-snug text-[#ebe2cc]/78 [text-shadow:0_1px_2px_rgba(0,0,0,0.65)]"
-
-export const ROOM_ACTION_LINK_CLASS =
-  "interactive-scale shrink-0 cursor-pointer border-0 bg-transparent p-0 font-subheading text-[clamp(0.72rem,0.95vw,0.86rem)] font-bold leading-none text-[#e8f0dc] underline decoration-[#c4a574]/85 decoration-1 underline-offset-[0.18em] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
-
-export const ROOM_ACTION_LINK_DANGER_CLASS =
-  "interactive-scale shrink-0 cursor-pointer border-0 bg-transparent p-0 font-subheading text-[clamp(0.72rem,0.95vw,0.86rem)] font-bold leading-none text-[#ffb4b4] underline decoration-[#c95555]/90 decoration-1 underline-offset-[0.18em] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 // 설정 창 아래 액션 버튼 줄 (방 코드·개발 타이머 자리 등, 오른쪽 아래)
 export const SETTING_FOOTER_ACTIONS_WRAP_CLASS =

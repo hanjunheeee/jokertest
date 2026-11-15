@@ -5,7 +5,6 @@
 export const SOCKET_EVENTS = {
   CREATE_ROOM: "create_room",
   GET_CURRENT_ROOM: "get_current_room",
-  GET_PARTY_MATCHING_ROOM: "get_party_matching_room",
   UPDATE_ROOM_SETTINGS: "update_room_settings",
   GET_ROOM_SETTINGS_UPDATE_RESULT: "get_room_settings_update_result",
   ROOM_SETTINGS_UPDATED: "room_settings_updated",

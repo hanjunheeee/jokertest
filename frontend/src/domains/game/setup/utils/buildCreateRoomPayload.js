@@ -1,5 +1,5 @@
 // 설정 폼 값 → 방 만들기 요청 payload
-// GameSetupPanel·resolveNextGameCreateRoomPayload가 씀, 시험도 씀
+// 게임 설정 화면(GameSetupPanel)·모바일 useSetupForm이 씀
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../constants/roleComposition.js"
 import { collectSpecifiedRoleTimes } from "./roomSettingsForm/nightTimes.js"
 import { pickTribunalTime } from "./roomSettingsForm/tribunalTime.js"

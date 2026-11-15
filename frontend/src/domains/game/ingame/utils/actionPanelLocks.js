@@ -2,7 +2,7 @@
 // 행동 패널(useInGameActionPanel)이 렌더마다 부름
 import { INGAME_DAY_PHASES } from "./dayPhase.js"
 
-// 낮 투표·밤 행동·토론 준비·재판 투표·재판 판정 버튼의 잠금과 열림
+// 낮 투표·밤 행동·토론 준비·재판 투표 버튼의 잠금과 열림 (판정은 표가 다 차면 서버가 5초 뒤 함)
 // connected: 지금 공용 소켓이 붙어 있는지 (재판 버튼만 봄)
 export function computePanelLocks({
   interactionBlocked,
@@ -12,33 +12,27 @@ export function computePanelLocks({
   dayPhase,
   selfAliveForControls,
   isNightTurnActor,
-  resolveNightStatus,
-  dayVoteResolveStatus,
   dayReadyStatus,
   tribunalVoteSubmit,
-  tribunalResolveStatus,
   connected,
 }) {
   const isGameEnded = gameState?.phase === "ENDED"
 
-  // 낮 투표: 판정 중이거나 판정이 끝나면 잠금
-  const dayVoteResolveLocked = dayVoteResolveStatus !== "idle" || interactionBlocked
+  // 낮 투표: 낮 투표 단계에 살아 있을 때 (판정되면 단계가 바뀌어 저절로 잠김)
   const dayVoteControlsEnabled =
     !interactionBlocked &&
     !isGameEnded &&
     gameState?.phase === "DAY" &&
     dayPhase === INGAME_DAY_PHASES.VOTE &&
-    selfAliveForControls &&
-    !dayVoteResolveLocked
+    selfAliveForControls
 
-  // 밤 행동: 살아 있고 지금 내 역할 차례이며 밤 판정 전일 때만
+  // 밤 행동: 살아 있고 지금 내 역할 차례인 밤일 때만
   const nightActionAlive = selfAliveForControls
   const nightActionsLocked =
     interactionBlocked ||
     isGameEnded ||
     !nightActionAlive ||
     !isNightTurnActor ||
-    resolveNightStatus !== "idle" ||
     gameState?.phase !== "NIGHT"
 
   // 토론 준비: 낮 토론 단계에서 아직 안 냈을 때
@@ -52,9 +46,8 @@ export function computePanelLocks({
     selfAliveForControls &&
     dayReadyStatus === "idle"
 
-  // 재판: 판정 요청 중이거나 이미 판정됐으면 투표·판정 둘 다 잠금
-  const tribunalResolveLocked =
-    interactionBlocked || tribunalResolveStatus !== "idle" || gameState?.tribunal?.resolved === true
+  // 재판: 이미 판정됐으면 투표 잠금
+  const tribunalResolveLocked = interactionBlocked || gameState?.tribunal?.resolved === true
 
   // 재판 투표: 피고가 아니고 살아 있고 아직 안 냈을 때, 연결돼 있어야 함
   const tribunalVoteControlsEnabled =
@@ -70,25 +63,12 @@ export function computePanelLocks({
     !tribunalResolveLocked &&
     connected
 
-  // 재판 판정 요청: 재판 중이고 잠기지 않았고 연결돼 있을 때
-  const tribunalResolveControlsEnabled =
-    !interactionBlocked &&
-    !isGameEnded &&
-    Boolean(gameState) &&
-    typeof gameId === "string" &&
-    Number.isInteger(dayIndex) &&
-    gameState?.phase === "TRIBUNAL" &&
-    !tribunalResolveLocked &&
-    connected
-
   return {
-    dayVoteResolveLocked,
     dayVoteControlsEnabled,
     nightActionAlive,
     nightActionsLocked,
     dayReadyControlsEnabled,
     tribunalResolveLocked,
     tribunalVoteControlsEnabled,
-    tribunalResolveControlsEnabled,
   }
 }

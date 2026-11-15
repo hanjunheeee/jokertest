@@ -28,7 +28,7 @@ export default function MatchingPopupContent({ slots, waitingMessage = "" }) {
 
       <MatchingPartySlots slots={slots} />
 
-      {/* 기다림 문구 있을 때만 (파티 방 기다리는 중) */}
+      {/* 기다림 문구 있을 때만 (판 끝 뒤 원래 방장 자리를 남겨 둔 동안) */}
       {waitingMessage ? (
         <p className={WAITING_MSG_CLASS}>{waitingMessage}</p>
       ) : null}

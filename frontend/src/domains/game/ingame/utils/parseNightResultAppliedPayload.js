@@ -1,6 +1,6 @@
 // 밤 결과 적용 방송 검사: 판 끝 또는 다음 낮, 명단·죽은 사람이 맞을 때만 (낮 시작 연출용 사망 공개·의사 살림도 같이 읽음)
 // 밤 이벤트 손잡이(hooks/sessionEvents/nightHandlers.js)가 사용
-import { normalizePublicWinResult } from "./normalizePublicWinResult.js"
+import { normalizePublicWinResult, readResultClosesAtField } from "./normalizePublicWinResult.js"
 import { parseDayPhaseDeadlineField } from "./dayPhase.js"
 import { normalizeInGameNightDeathReveals } from "./nightDeathReveals.js"
 
@@ -72,6 +72,7 @@ export function parseNightResultAppliedPayload({ payload, gameId, dayIndex, cano
       players: normalizedEndedPlayers,
       victimUuid,
       winResult,
+      resultClosesAt: readResultClosesAtField(payload),
       ...readDawnFields(payload, endedDeadUuids, previouslyDeadUuids),
     }
   }

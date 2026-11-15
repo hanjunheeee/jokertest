@@ -18,7 +18,6 @@ export const ROOM_CODE_DUMMY = "123456"
 export const MATCHING_POPUP_COPY = {
   title: "멀티 플레이 매칭",
   prompt: "무도회 속에 숨어든 광대를 찾아 떠나시겠습니까?",
-  awaitingHostRoom: "방장이 새 방을 만드는 중입니다. 잠시만 기다려 주세요.",
   partyLabel: "파티 인원",
   startGame: "게임시작",
   deleteRoom: "방 삭제하기",

@@ -12,6 +12,7 @@ import {
 } from "@/domains/game/shared/constants/gameSetupSocket.js"
 import { getSocket, subscribeSocket } from "@/shared/socket/socketClient.js"
 import { askRoom } from "@/domains/game/shared/socket/room.js"
+import { leaveRoom } from "@/domains/game/matching/socket/room.js"
 import { askSnapshot, returnToRoom } from "../socket/room.js"
 import { computeResultSecondsLeft, onResultClosed, readResultClosesAt } from "../socket/resultClose.js"
 
@@ -108,17 +109,35 @@ export function useGameResultReturnToMatching() {
       navigate("/game-matching", { replace: true })
     }
 
+    // 8초 넘어 늦게 온 성공 답: 서버엔 방 자리가 생겼는데 화면은 모름
+    // 결과 화면에 그대로 있으면 그 방으로, 떠났으면(로비 등) 방에서 나감 (방 만들기 늦은 답과 같은 방식)
+    // 이미 방 화면에 있으면(방 찾기로 들어감) 그대로, 계정이 바뀌었으면 새 계정 방을 건드리지 않게 아무것도 안 함
+    const handleLateAnswer = (late) => {
+      if (!late?.ok || !late.room) return
+      if ((useAuthStore.getState().user?.uuid ?? null) !== accountId) return
+      if (useMatchingStore.getState().isInRoom) return
+      if (mountedRef.current && !inFlightRef.current) {
+        enterRoom(late.room)
+        return
+      }
+      if (!mountedRef.current) leaveRoom()
+    }
+
     inFlightRef.current = true
     setIsReturning(true)
     setReturnError(null)
     try {
       let response
       try {
-        response = await returnToRoom(socket, gameId)
+        response = await returnToRoom(socket, gameId, handleLateAnswer)
       } catch {
         response = undefined
       }
-      if (!isCurrent()) return
+      if (!isCurrent()) {
+        // 답을 기다리는 사이 화면을 떠남: 성공 답이면 서버 방 자리가 남지 않게 나감
+        if (response?.ok && response.room && !mountedRef.current) handleLateAnswer(response)
+        return
+      }
       if (response?.ok && response.room) {
         enterRoom(response.room)
         return
@@ -145,7 +164,7 @@ export function useGameResultReturnToMatching() {
 }
 
 // 결과 화면 180초: 서버가 준 닫힘 시각(판 끝 시각 + 180초) 하나로 셈, 서버가 닫으면 판·방 지우고 로비로
-// 닫힘 시각이 판 상태에 없으면 판 상태를 한 번 물어 받음, 한 번 받은 시각은 그 판 동안 안 바꿈
+// 판 끝 방송을 받을 때 판 상태에 담긴 값을 먼저 씀, 없을 때만(새로고침) 판 상태를 한 번 물어 받음
 export function useGameResultCloseTimer() {
   const navigate = useNavigate()
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)

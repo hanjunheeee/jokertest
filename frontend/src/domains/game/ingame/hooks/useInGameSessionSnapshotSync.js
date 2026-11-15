@@ -8,7 +8,7 @@ import {
   useInGameStore,
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
-import { readTurnStartObservationTarget, readWaitObservationTarget } from "../utils/snapshot/nightObservation.js"
+import { readTurnStartObservationTarget } from "../utils/snapshot/nightObservation.js"
 import { onConnect } from "../socket/connection.js"
 import { onNightNotices } from "../socket/night.js"
 import { setIdentityRebindPending } from "./snapshotSync/rebindPending.js"
@@ -100,15 +100,11 @@ export function useInGameSessionSnapshotSync() {
       book.set(key, (book.get(key) ?? 0) + 1)
     }
 
-    const observeWaitNotice = (payload) => {
-      if (!isObservableNow()) return
-      noteNightObservation(readWaitObservationTarget(payload))
-    }
     const observeTurnStart = (payload) => {
       if (!isObservableNow()) return
       noteNightObservation(readTurnStartObservationTarget(payload))
     }
-    const offNightNotices = onNightNotices(socket, observeWaitNotice, observeTurnStart)
+    const offNightNotices = onNightNotices(socket, observeTurnStart)
 
     // 예약된 다시 묻기 끄기
     const cancelScheduledRetry = () => {

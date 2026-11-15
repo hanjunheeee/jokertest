@@ -1,5 +1,5 @@
 // 수신 범위: 지금 범위 읽기·받은 증거가 아직 유효한지·증거 붙여 상태 바꾸기
-// 액션 묶음·밤 성공 받기·종료 결과 범위·스토어 감시가 사용, 훅은 입구를 통해 씀
+// 액션 묶음·종료 결과 범위·스토어 감시가 사용, 훅은 입구를 통해 씀
 import { getSocket } from "../../../../../shared/socket/socketClient.js"
 import { readSelfMembershipId } from "../../utils/store/scope.js"
 import { getStore } from "./storeRef.js"
@@ -35,20 +35,6 @@ export function isReceiptCurrent(receipt, current) {
   if (receipt.socketId !== (getSocket()?.id ?? null)) return false
   if (receipt.socketConnected !== (getSocket()?.connected === true)) return false
   return true
-}
-
-// 반영 뒤 상태 기준 수신 범위 (연출 복구·대기 복원의 주인으로 씀)
-export function buildFollowUpScope(receipt, gameId, state) {
-  return Object.freeze({
-    accountId: receipt?.accountId ?? null,
-    identityGeneration: receipt?.identityGeneration ?? null,
-    gameId: gameId ?? null,
-    membershipId: readSelfMembershipId(state),
-    membershipEpoch: getMembershipEpoch(),
-    socketEpoch: getSocketEpoch(),
-    socketId: receipt?.socketId ?? null,
-    socketConnected: receipt?.socketConnected ?? false,
-  })
 }
 
 // 증거를 붙여 상태 바꾸기: 증거가 지금 범위와 다르면 그대로 둠

@@ -1,6 +1,6 @@
 // 재판 판정 반영 계산: 재판 결과 사건으로 바뀔 조각 만들기 (상태는 안 건드림)
 // 투표 결과 액션(voteActions의 applyTribunalResolved)이 사용
-import { normalizePublicWinResult } from "../utils/normalizePublicWinResult.js"
+import { normalizePublicWinResult, readResultClosesAtField } from "../utils/normalizePublicWinResult.js"
 import { isNonNegativeInteger } from "../../shared/utils/valueChecks.js"
 
 // 정상 판정 결과 값
@@ -117,6 +117,8 @@ export function applyTribunalResolvedPure(current, payload) {
         },
         players: nextEndedPlayers,
         winResult,
+        // 결과 화면 닫힘 시각 (판 끝 칸 맨 위, 없으면 null)
+        resultClosesAt: readResultClosesAtField(payload),
       },
     }
   }

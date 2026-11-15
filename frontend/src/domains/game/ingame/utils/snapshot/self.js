@@ -8,9 +8,10 @@ import { BAD, isNonEmptyString, isPlainObject } from "./checks.js"
 const ALLY_VISIBLE_ROLES = new Set(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
 
 // 같은 직업 동료 목록 검사 (본인·명단 밖·중복이면 BAD), 시민인데 목록이 오면 BAD
+// 광대만 목록이 꼭 있어야 함, 의사·경비원·마녀사냥꾼은 없으면 동료 없음([])으로 봄 (옛 서버·옛 스냅샷이 섞여도 판 화면이 안 비게)
 function readAllies(self, roster) {
   if (!ALLY_VISIBLE_ROLES.has(self.role)) return Object.hasOwn(self, "allies") ? BAD : null
-  if (!Object.hasOwn(self, "allies")) return BAD
+  if (!Object.hasOwn(self, "allies")) return self.role === "JOKER" ? BAD : []
   if (!Array.isArray(self.allies)) return BAD
   const seen = new Set()
   for (const allyUuid of self.allies) {

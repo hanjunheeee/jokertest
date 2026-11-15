@@ -53,11 +53,14 @@ export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
   const display = getRoleRevealDisplay(self.role)
   if (!display) return null
 
-  // 시민 아니면 동료 목록이 꼭 있어야 함 (혼자면 빈 목록)
+  // 시민 아니면 동료 목록 (혼자면 빈 목록), 광대만 꼭 있어야 함
+  // 의사·경비원·마녀사냥꾼은 목록이 없으면 동료 없음으로 봄 (옛 서버 값이 섞여도 직업 공개가 안 빠지게), 있는데 배열이 아니면 거절
   let allies = null
   if (ALLY_VISIBLE_ROLES.has(self.role)) {
-    if (!Array.isArray(self.allies)) return null
-    allies = [...self.allies]
+    const hasAllies = Object.hasOwn(self, "allies") && self.allies !== undefined
+    if (!hasAllies && self.role === "JOKER") return null
+    if (hasAllies && !Array.isArray(self.allies)) return null
+    allies = hasAllies ? [...self.allies] : []
   }
 
   return {

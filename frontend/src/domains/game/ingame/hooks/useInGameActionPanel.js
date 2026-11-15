@@ -17,9 +17,6 @@ import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
 import { useInGameDayDiscussionReady } from "./useInGameDayDiscussionReady.js"
 import { useActionTargets } from "./actionPanel/useActionTargets.js"
 
-// 판정 단추가 없어져 판정 요청 상태는 늘 처음 값 (잠금 계산이 아직 이 값을 받음)
-const NO_RESOLVE_REQUEST = "idle"
-
 // 행동 패널 값 만들기 (요청 훅 부르는 순서가 곧 effect 순서라 바꾸지 않음)
 export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const gameId = useInGameStore((s) => s.gameId)
@@ -78,11 +75,8 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayPhase,
     selfAliveForControls,
     isNightTurnActor,
-    resolveNightStatus: NO_RESOLVE_REQUEST,
-    dayVoteResolveStatus: NO_RESOLVE_REQUEST,
     dayReadyStatus: dayReady.status,
     tribunalVoteSubmit,
-    tribunalResolveStatus: NO_RESOLVE_REQUEST,
     connected: Boolean(getSocket()?.connected),
   })
 

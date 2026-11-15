@@ -1,5 +1,5 @@
 // 서버 방 설정 → 설정 폼 첫 값 (못 나타내는 값이면 오류 코드)
-// resolveRestore·resolveNextGameCreateRoomPayload·useSettingsEdit이 씀
+// 대기방 설정 바꾸기(useSettingsEdit)가 씀, 입구 roomSettingsForm.js로도 내보냄
 import { CUSTOM_ROLE_KEYS, ROLE_COMPOSITION_MODES } from "../../constants/roleComposition.js"
 import { ROLE_NIGHT_ACTION_TIME_OPTIONS } from "../../constants/gameSetupOptions.js"
 import {

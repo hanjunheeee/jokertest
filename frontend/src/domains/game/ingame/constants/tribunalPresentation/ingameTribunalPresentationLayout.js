@@ -40,13 +40,6 @@ export const ACTION_BTN_LABEL_CLASS =
 export const NOTICE_CLASS =
   "pointer-events-none text-center font-subheading text-[clamp(0.78rem,2.8vw,0.95rem)] font-semibold leading-snug text-white/75 [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
-// 재판 판정 버튼 자리(아래 가운데)와 모양
-export const DEV_RESOLVE_WRAP_CLASS =
-  "pointer-events-auto absolute bottom-[clamp(0.85rem,3vh,1.25rem)] left-1/2 z-[57] -translate-x-1/2"
-
-export const DEV_RESOLVE_BTN_CLASS =
-  "min-h-[2.85rem] cursor-pointer rounded-md border border-white/25 bg-black/50 px-6 py-2.5 font-subheading text-[clamp(0.92rem,2.8cqi,1.12rem)] font-semibold leading-tight text-white/75 transition hover:border-white/40 hover:bg-black/65 hover:text-white/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/25 disabled:hover:bg-black/50 disabled:hover:text-white/75"
-
 // 채팅이 나뉘어 나오기 전 처음 모습 보여 주는 시간
 export const INTRO_HOLD_MS = 1000
 

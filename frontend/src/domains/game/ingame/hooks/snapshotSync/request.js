@@ -1,4 +1,4 @@
-// 스냅샷 묻기: 시도 예산 잡기, 묻기, 응답을 판 복구·스냅샷 반영으로 넘기기
+// 스냅샷 묻기: 시도 예산 잡기, 묻기, 응답을 판 복구·스냅샷 반영으로 넘기기 (끊겨 판에서 빠졌으면 까닭 글 띄움)
 // 스냅샷 동기화 훅(useInGameSessionSnapshotSync)이 effect마다 만듦, 묻기는 socket/session.js
 import { useInGameStore } from "../../store/ingameStore.js"
 import { useMatchingStore } from "../../../matching/store/matchingStore.js"
@@ -16,12 +16,26 @@ const isRoutingPending = (response) =>
   response !== null && typeof response === "object"
   && response.ok !== true && response.code === SESSION_ROUTING_PENDING_CODE
 
+// 끊김 기다림(60초)이 지나 판에서 빠졌다는 거절 코드와 서버 글이 없을 때 쓸 글
+const FORFEITED_CODE = "FORFEITED_FROM_SESSION"
+const FORFEITED_FALLBACK_MESSAGE = "연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다."
+
+// 끊겨서 판에서 빠졌으면 까닭 글을 알림 창으로 (안 띄우면 말없이 방 목록으로 가서 왜 나왔는지 모름)
+function alertIfForfeited(response) {
+  if (response?.code !== FORFEITED_CODE) return
+  const message = typeof response.message === "string" && response.message.length > 0
+    ? response.message
+    : FORFEITED_FALLBACK_MESSAGE
+  window.alert(message)
+}
+
 // 판이 있는데 서버가 판 없음이라 하면 판·방 정리 (끝난 판의 결과 화면은 그대로 둠)
-// 화면 이동은 인게임 화면의 "맞는 판 아님" 검사가 맡음
-function clearGoneSession(requestGameId) {
+// 화면 이동은 인게임 화면의 "맞는 판 아님" 검사가 맡음 (방 목록), 그 전에 빠진 까닭 글을 보여 줌
+function clearGoneSession(requestGameId, response) {
   const { gameId, state } = useInGameStore.getState()
   if (gameId !== requestGameId) return
   if (state?.phase === "ENDED") return
+  alertIfForfeited(response)
   useInGameStore.getState().clearGame()
   useMatchingStore.getState().clearRoom()
 }
@@ -36,7 +50,7 @@ function applyResponse(ctx, a, response) {
   if (isRoutingPending(response) && a.scheduleRetry()) return
   if (a.requestGameId && isSessionGoneResponse(response)) {
     a.finishRebindUnapplied(scopeOnArrival)
-    clearGoneSession(a.requestGameId)
+    clearGoneSession(a.requestGameId, response)
     return
   }
   if (a.hasConflictingNightObservation(response)) {
@@ -48,6 +62,7 @@ function applyResponse(ctx, a, response) {
   if (!a.requestGameId) {
     if (response?.ok !== true) {
       a.finishRebindUnapplied(scopeOnArrival)
+      alertIfForfeited(response)
       ctx.setBootstrapStatus("missing")
       return
     }

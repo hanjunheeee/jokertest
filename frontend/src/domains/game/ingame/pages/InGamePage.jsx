@@ -36,6 +36,7 @@ import {
 } from "../utils/selectInGameSessionGuard.js"
 import { selectInGameTimebarStatusLabel } from "../utils/selectInGameTimebarStatusMessage.js"
 import { selectInGameDeadParticipantChoice } from "../utils/selectInGameDeadParticipantChoice.js"
+import { selectInGameSelfAlive } from "../utils/selfAlive.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameExit } from "../hooks/useInGameExit.js"
 import {
@@ -117,6 +118,8 @@ export default function InGamePage() {
   })
 
   const needsDeadChoice = selectInGameDeadParticipantChoice(gameState, authUuid) && !keepWatchingChosen
+  // 산 사람이 나가기에 실패해도 이 창이 열려서 사망 글은 죽은 사람에게만
+  const selfDead = selectInGameSelfAlive(gameState) === false
 
   const exitRecoveryKey = `${choiceScopeKey}|${exitAttemptId}`
   const [acknowledgedExitRecovery, setAcknowledgedExitRecovery] = useState(null)
@@ -242,6 +245,7 @@ export default function InGamePage() {
       />
       <InGameDeadParticipantChoice
         open={deadChoiceOpen}
+        selfDead={selfDead}
         onKeepWatching={handleKeepWatching}
         onLeave={requestExit}
         onRetry={retryExit}
