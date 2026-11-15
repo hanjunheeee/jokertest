@@ -1,5 +1,5 @@
-// 전적 기록 만드는 파일
-// 판 → DB 전적 기록 + 테스트 판 구분, 전적 저장·판 만들기가 사용
+// 전적 기록 만드는 파일, 판 → DB 전적 기록 + 테스트 판 구분 + 판 골드 받을 사람·값
+// 전적 저장·판 만들기·판 결과 공개(winReveal.js)가 사용
 const { ROLE_TEAMS } = require('../core/rules/roles')
 const { observeNightCommit } = require('../core/tools/observer')
 const { ABORTED_WINNER, ABORTED_WIN_REASON, WIN_REASON_BY_WINNER, DEATH_REASONS } = require('./constants')
@@ -18,10 +18,16 @@ function resolveDeathReason(player, isAlive, interruptedLeaver) {
     return player.deathReason ?? null
 }
 
+// 산 채로 판을 떠났는지 (나가기·추방·끊김 탈락 = 탈주), 죽은 뒤 나간 사람은 아님
+// 승패·판 골드가 같이 봄 (둘이 다르게 판단하지 않게)
+function leftWhileAlive(player) {
+    return player?.deathReason === DEATH_REASONS.DISCONNECT
+}
+
 // 이겼는지: 끝난 판은 팀 비교, 깨진 판은 나간 사람만 패, 나머지는 null
-// 산 채로 판을 떠난 사람(나가기·추방·끊김 탈락)은 편이 이겨도 패 (BE-007), 죽은 뒤 나간 사람은 편 결과 그대로
+// 산 채로 판을 떠난 사람은 편이 이겨도 패 (BE-007), 죽은 뒤 나간 사람은 편 결과 그대로
 function resolveWon(player, team, { completed, winner, interruptedLeaver }) {
-    if (completed) return team === winner && player.deathReason !== DEATH_REASONS.DISCONNECT
+    if (completed) return team === winner && !leftWhileAlive(player)
     if (interruptedLeaver) return false
     return null
 }
@@ -104,4 +110,28 @@ function buildGameResultRecord(session, {
     }
 }
 
-module.exports = { resolveGameSource, buildGameResultRecord }
+// 한 사람이 받을 판 골드: 끝까지 간 판·점검 강제 종료 아님·탈주 아님이면 판 시작 때 적어 둔 값, 아니면 0
+// 판 시작 때 값이라 판 중에 관리자가 바꿔도 이 판은 그대로
+function resolveGameGoldReward(session, player) {
+    if (session?.phase !== 'ENDED' || !session.winResult || session.abortReason) return 0
+    if (!player || leftWhileAlive(player)) return 0
+    const amount = session.goldReward
+    return Number.isInteger(amount) && amount > 0 ? amount : 0
+}
+
+// 판 골드 줄 사람 묶음 (모두 같은 값) → { amount, userIds } 또는 줄 사람 없으면 null
+// 예: 5명 판·1명 탈주·값 1 → { amount: 1, userIds: ['u1', 'u2', 'u3', 'u4'] }
+function buildGameGoldGrant(session) {
+    if (!(session?.players instanceof Map)) return null
+    let amount = 0
+    const userIds = []
+    for (const player of session.players.values()) {
+        const reward = resolveGameGoldReward(session, player)
+        if (reward <= 0 || typeof player.uuid !== 'string' || !player.uuid) continue
+        amount = reward
+        userIds.push(player.uuid)
+    }
+    return userIds.length > 0 ? { amount, userIds } : null
+}
+
+module.exports = { resolveGameSource, buildGameResultRecord, leftWhileAlive, resolveGameGoldReward, buildGameGoldGrant }

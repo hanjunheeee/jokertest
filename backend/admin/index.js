@@ -25,6 +25,7 @@ const AREA_MOUNTS = Object.freeze([
     { path: '/reports', file: 'reports' },
     { path: '/maintenance', file: 'maintenance' },
     { path: '/banned-words', file: 'bannedWords' },
+    { path: '/game-settings', file: 'gameSettings' },
     { path: '/payments', file: 'payments' },
     { path: '/products', file: 'products' },
     { path: '/coupons', file: 'coupons' },

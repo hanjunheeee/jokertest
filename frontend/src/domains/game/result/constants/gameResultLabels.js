@@ -1,4 +1,4 @@
-// 결과 화면 글자: 직업 이름·버튼·내 정보 배지·이긴 진영
+// 결과 화면 글자: 직업 이름·버튼·내 정보 배지·받은 판 골드·이긴 진영
 // 결과 컴포넌트·GameResultPage·buildGameResultViewModel이 씀
 
 // 직업 이름 (시민은 화면 이름 "귀족")
@@ -20,6 +20,12 @@ export const GAME_RESULT_LOBBY_BUTTON_LABEL = "로비로"
 
 // 내 줄 배지
 export const SELF_INFO_BADGE_LABEL = "내 정보"
+
+// 받은 판 골드 글자 (0 이하면 안 보여서 null), 예: 1 → "+1골드"
+export function formatGoldRewardLabel(goldReward) {
+  if (!Number.isInteger(goldReward) || goldReward <= 0) return null
+  return `+${goldReward}골드`
+}
 
 // 이긴 진영 글자
 export const WINNING_TEAM_LABELS = {

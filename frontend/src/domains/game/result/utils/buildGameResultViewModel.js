@@ -1,4 +1,4 @@
-// 판 결과(winResult)를 결과 화면 값으로: 승패·이긴 진영·참가자 줄
+// 판 결과(winResult)를 결과 화면 값으로: 승패·이긴 진영·참가자 줄(받은 판 골드 포함)
 // hooks/useGameResultData가 씀, 시험도 씀
 import { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } from "../../ingame/constants/board/ingamePlayerAssets.js"
 import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
@@ -21,6 +21,12 @@ function resolveRevealCardStatus(reveal) {
   return INGAME_PLAYER_STATUS.DEAD
 }
 
+// 받은 판 골드 (없거나 틀리면 0 → 화면에 안 보임)
+function resolveGoldReward(reveal) {
+  if (!isPlainObject(reveal)) return 0
+  return Number.isInteger(reveal.goldReward) && reveal.goldReward > 0 ? reveal.goldReward : 0
+}
+
 // 결과 화면 값 만들기
 export function buildGameResultViewModel(winResult, selfUuid, selfTeam = null) {
   const reveals = Array.isArray(winResult?.reveals) ? winResult.reveals : []
@@ -37,6 +43,7 @@ export function buildGameResultViewModel(winResult, selfUuid, selfTeam = null) {
     portraitSrc: pickInGameJobPortrait(index),
     frameSrc: pickJobPortrait(index, INGAME_PLAYER_ALIVE_FRAME_VARIANTS),
     cardStatus: resolveRevealCardStatus(reveal),
+    goldReward: resolveGoldReward(reveal),
   }))
 
   // 내 진영: 공개 목록에 내가 있으면 그 진영, 없으면 넘겨받은 진영

@@ -1,6 +1,7 @@
 // 판 결과 공개 파일
-// 끝난 판 승패 + 전원 역할 공개, 스냅샷·종료 방송이 사용
+// 끝난 판 승패 + 전원 역할·받은 판 골드 공개, 스냅샷·종료 방송이 사용
 const { ROLE_DEFINITIONS } = require('../core/rules/roles')
+const { resolveGameGoldReward } = require('./record')
 
 // 단계·생존 목록 + 끝났으면 승패 붙임
 function buildTerminalFields(session) {
@@ -20,7 +21,7 @@ function buildPublicWinResult(session) {
     return { ...session.winResult, reveals: buildRoleReveals(session) }
 }
 
-// 전원 역할·팀·생존·죽은 이유 공개
+// 전원 역할·팀·생존·죽은 이유·받은 판 골드 공개 (탈주·점검 강제 종료면 골드 0, DB 안 봄)
 function buildRoleReveals(session) {
     return [...session.players.values()].map((player) => ({
         uuid: player.uuid,
@@ -29,6 +30,7 @@ function buildRoleReveals(session) {
         team: ROLE_DEFINITIONS[player.role]?.team ?? null,
         alive: player.alive,
         deathReason: player.alive ? null : (player.deathReason ?? null),
+        goldReward: resolveGameGoldReward(session, player),
     }))
 }
 

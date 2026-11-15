@@ -1,5 +1,5 @@
 // 판 띄우기 파일
-// 검사 끝난 방으로 판 만들기 → 방 지우기 → 시작 방송, start.js handleStartGame이 부름 (지도 02)
+// 검사 끝난 방으로 판 만들기(판 골드 값 적어 둠) → 방 지우기 → 시작 방송, start.js handleStartGame이 부름 (지도 02)
 const gameSession = require('../../../game-core/gameSession')
 const { playerRoom } = require('../core/state')
 const { deps } = require('../core/deps')
@@ -8,6 +8,7 @@ const { disposeRoom } = require('./dispose')
 const { rememberStartedRoom } = require('../join/startedMarks')
 const { emitPublicRoomList } = require('./view')
 const e2eGameHooks = require('../../e2e/gameHooks')
+const gameSettings = require('../../../services/ops/gameSettings')
 
 // 준비 단계 실패 답 (부를 때마다 새 객체)
 const internalErrorResponse = () => ({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
@@ -53,6 +54,8 @@ function prepareLaunch(io, roomId, captured, respond) {
     }
     // 브라우저 시험(E2E_HOOKS=1, 운영 아님)만: 미리 정한 역할로 바꿔 끼움 (역할별 인원은 그대로, 꺼져 있으면 아무것도 안 함)
     e2eGameHooks.applyRolePresets(prepared.session)
+    // 이 판 끝에 줄 골드를 지금 값으로 적어 둠 (메모리 값이라 DB 안 부름, 판 중에 관리자가 바꿔도 이 판은 그대로)
+    prepared.session.goldReward = gameSettings.getGameGoldReward()
 
     const uuidToSockets = findParticipantSockets(io, prepared.session, roomId, respond)
     if (!uuidToSockets) return null

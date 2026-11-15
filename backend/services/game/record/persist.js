@@ -1,12 +1,17 @@
-// 전적 저장 파일, 저장 시작 · 시도 · 재시도 · 끝내기 + 저장 뒤 캐시 무효화 신호
+// 전적 저장 파일, 저장 시작 · 시도 · 재시도 · 끝내기 + 저장 뒤 판 골드 지급 · 캐시 무효화 신호
 // 전적 입구(index.js) 거쳐 socket gameSession 종료 길이 부름, testing.js는 타이머 끄기만
 // 저장은 시작만 하고 안 기다림 (판정 방송이 DB 안 기다리게), 사건 이름은 글자 그대로 (프론트 시험이 읽음)
 const gameSessionCore = require('../../../game-core/gameSession')
+const { buildGameGoldGrant } = require('../../../game-core/result/record')
 const gameResultRepository = require('../../../repositories/game/result')
+const economyGrants = require('../../economy/grants')
 const gameAchievementService = require('../achievementHooks')
 const { terminalPersistRuns, getBySession, confirmedGameIds } = require('./state')
 const { RETRY_DELAYS_MS, MAX_DELAY_MS, CONFIRMED_MAX } = require('./constants')
 const { deps } = require('./deps')
+
+// 판 골드 지급 함수 (null이면 진짜 장부, 시험이 가짜로 바꿈)
+const goldDeps = { grantGameRewards: null }
 
 // 판 끝 전적 저장 시작, 같은 판은 한 번만 (지도 07-③)
 function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
@@ -20,11 +25,14 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     // 레코드·원 참가자 명단은 처음 한 번만 만들어 고정 (재시도마다 달라지지 않게)
     let record
     let participantUuids
+    let goldGrant
     try {
         record = gameSessionCore.buildGameResultRecord(session, { completed, disconnectedUuid })
         participantUuids = session?.players instanceof Map
             ? [...session.players.values()].map((p) => p.uuid)
             : []
+        // 판 골드 받을 사람·값도 지금 고정 (끝까지 간 판만, 탈주·점검 강제 종료는 빠짐)
+        goldGrant = record.result.completed ? buildGameGoldGrant(session) : null
     } catch {
         // 레코드 못 만들면 기록만 하고 그만 (종료 처리 안 막게)
         console.error('[전적 저장 실패]', { code: 'RECORD_BUILD_ERROR', gameId })
@@ -32,8 +40,12 @@ function persistTerminalSession(session, { completed, disconnectedUuid } = {}) {
     }
 
     // 여기부터 진짜 바뀜: 판 id·세션 둘 다 표식 남기고 첫 시도
-    // 점검 강제 종료 판(abortReason)은 무효라 업적 평가 안 함 (보상 장부 안 생김)
-    const run = { gameId, record: deepFreezeRecord(record), participantUuids, attempt: 0, timerId: null, skipAchievements: Boolean(session.abortReason) }
+    // 점검 강제 종료 판(abortReason)은 무효라 업적 평가·판 골드 안 함 (보상 장부 안 생김)
+    const run = {
+        gameId, record: deepFreezeRecord(record), participantUuids, attempt: 0, timerId: null,
+        skipAchievements: Boolean(session.abortReason),
+        goldGrant: session.abortReason ? null : deepFreezeRecord(goldGrant),
+    }
     terminalPersistRuns.set(gameId, run)
     getBySession().set(session, run)
     attemptTerminalPersist(run)
@@ -112,7 +124,7 @@ function clearPersistTimer(run) {
     run.timerId = null
 }
 
-// 저장 확인: 작업 지우고 확인 표시, 그다음 프로필 → (업적 평가 뒤) 경제·업적 캐시 무효화 신호
+// 저장 확인: 작업 지우고 확인 표시, 그다음 프로필 → (판 골드·업적 평가 뒤) 경제·업적 캐시 무효화 신호
 function finishTerminalPersist(run) {
     // 초기화로 바뀐 작업이면 남의 작업 안 지움
     if (terminalPersistRuns.get(run.gameId) === run) terminalPersistRuns.delete(run.gameId)
@@ -126,11 +138,68 @@ function finishTerminalPersist(run) {
     // 프로필은 바로, 경제·업적은 보상 지급 끝난 뒤 (다시 읽을 때 보상 보이게)
     invalidateAccountCaches(run.participantUuids, run.gameId, ['profile'])
     if (run.skipAchievements) return
-    Promise.resolve(gameAchievementService.evaluateForUsers(run.participantUuids, run.gameId))
+    // 판 골드 먼저, 업적은 그 뒤 (같은 지갑을 두 거래가 동시에 잠그지 않게), 캐시 신호는 둘 다 끝나고 판에 한 번
+    grantGameGold(run)
+        .then(() => gameAchievementService.evaluateForUsers(run.participantUuids, run.gameId))
         .then(() => invalidateAccountCaches(run.participantUuids, run.gameId, ['economy', 'achievements']))
         .catch(() => {
             console.error('[업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId: run.gameId })
         })
+}
+
+// 다시 해도 안 되는 판 골드 실패인지 (DB 제약·값 검사·잘못된 요청 4xx)
+function isPermanentGoldError(err) {
+    if (isPermanentPersistError(err)) return true
+    return Number.isInteger(err?.status) && err.status >= 400 && err.status < 500
+}
+
+// 판 골드 한 번 시도: 판 하나에 거래 하나(받을 사람 전원), 참조 id가 판마다 하나라 다시 해도 한 번만 줌
+// 안 던짐 → 됐으면 true, 실패면 재시도 예약하고 false (업적 평가는 안 기다리게 바로 넘어감)
+function grantGameGold(run, attempt = 1) {
+    const grant = run.goldGrant
+    if (!grant) return Promise.resolve(false)
+    // 저장 함수를 가짜로 바꾼 시험이면 골드도 가짜가 있을 때만 (개발 DB에 안 붙게)
+    const grantFn = goldDeps.grantGameRewards ?? (deps.persistRecord ? null : economyGrants.grantGameRewards)
+    if (typeof grantFn !== 'function') return Promise.resolve(false)
+    let pending
+    try {
+        pending = Promise.resolve(grantFn({
+            userIds: [...grant.userIds],
+            amount: grant.amount,
+            referenceEventId: economyGrants.gameRewardReferenceOf(run.gameId),
+        }))
+    } catch (err) {
+        pending = Promise.reject(err)
+    }
+    return pending
+        .then(() => true)
+        .catch((err) => {
+            const error = err?.code ?? err?.name
+            // 다시 해도 안 되거나 재시도 다 썼으면 기록만 (같은 참조 id라 나중에 손으로 다시 해도 두 번 안 줌)
+            if (isPermanentGoldError(err) || attempt > RETRY_DELAYS_MS.length) {
+                console.error('[판 골드 지급 실패]', { code: 'GAME_GOLD_ABANDONED', gameId: run.gameId, attempt, error })
+                return false
+            }
+            console.error('[판 골드 지급 실패]', { code: 'GAME_GOLD_ERROR', gameId: run.gameId, attempt, error })
+            scheduleGoldRetry(run, attempt)
+            return false
+        })
+}
+
+// 판 골드 재시도 예약 (1초 → 5초 → 30초, 그 뒤 그만), 되면 받은 사람에게 경제 캐시 신호
+function scheduleGoldRetry(run, attempt) {
+    const setTimeoutFn = deps.setTimeoutFn
+    const timerId = setTimeoutFn(() => {
+        grantGameGold(run, attempt + 1).then((granted) => {
+            if (granted) invalidateAccountCaches(run.goldGrant.userIds, run.gameId, ['economy'])
+        })
+    }, RETRY_DELAYS_MS[attempt - 1])
+    if (typeof timerId?.unref === 'function') timerId.unref()
+}
+
+// 시험용: 판 골드 지급 함수 갈아끼우기 (없으면 진짜 장부, 단 저장 함수가 가짜면 안 줌)
+function __setGameGoldGrantForTests(fn) {
+    goldDeps.grantGameRewards = typeof fn === 'function' ? fn : null
 }
 
 // 원 참가자 각자에게 캐시 무효화 신호 (채널에 없어도, 내용은 판 id·범위만, 지도 07-⑦)
@@ -152,4 +221,5 @@ function invalidateAccountCaches(uuids, gameId, scopes) {
 module.exports = {
     persistTerminalSession,
     clearPersistTimer,
+    __setGameGoldGrantForTests,
 }

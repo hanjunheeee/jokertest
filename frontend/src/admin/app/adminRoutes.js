@@ -1,5 +1,5 @@
 // 관리자 메뉴·경로 표 파일, 줄 하나 = { path, label, page } (메뉴 순서 = 이 순서)
-// AdminApp(경로)·AdminLayout(메뉴)이 씀, 영역 화면 파일은 각 단위가 채우고 이 표는 안 고침
+// AdminApp(경로)·AdminLayout(메뉴)이 씀, 영역 화면 파일은 각 단위가 채우고 이 표는 새 영역이 생길 때만 한 줄 더함
 import DashboardPage from '@/admin/domains/dashboard/pages/DashboardPage'
 import MembersPage from '@/admin/domains/members/pages/MembersPage'
 import MemberDetailPage from '@/admin/domains/members/pages/MemberDetailPage'
@@ -9,6 +9,7 @@ import ReportsPage from '@/admin/domains/reports/pages/ReportsPage'
 import InquiriesPage from '@/admin/domains/inquiries/pages/InquiriesPage'
 import MaintenancePage from '@/admin/domains/maintenance/pages/MaintenancePage'
 import BannedWordsPage from '@/admin/domains/bannedWords/pages/BannedWordsPage'
+import GameSettingsPage from '@/admin/domains/gameSettings/pages/GameSettingsPage'
 import PaymentsPage from '@/admin/domains/payments/pages/PaymentsPage'
 import ProductsPage from '@/admin/domains/products/pages/ProductsPage'
 import CouponsPage from '@/admin/domains/coupons/pages/CouponsPage'
@@ -30,6 +31,7 @@ export const adminRoutes = Object.freeze([
   { path: '/inquiries', label: '문의', page: InquiriesPage },
   { path: '/maintenance', label: '점검', page: MaintenancePage },
   { path: '/banned-words', label: '금지어', page: BannedWordsPage },
+  { path: '/game-settings', label: '판 설정', page: GameSettingsPage },
   { path: '/payments', label: '결제', page: PaymentsPage },
   { path: '/products', label: '상품', page: ProductsPage },
   { path: '/coupons', label: '쿠폰', page: CouponsPage },

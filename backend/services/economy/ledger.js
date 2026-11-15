@@ -1,6 +1,6 @@
 'use strict';
 
-// 장부 거래 파일, 지갑 행 보장 + 잔액 바꾸고 장부 쓰기 한 트랜잭션
+// 장부 거래 파일, 지갑 행 보장 + 잔액 바꾸고 장부 쓰기 한 트랜잭션 (여러 사람 한 트랜잭션도)
 // defaults·purchase·goldPurchase·grants·topup/grant.js가 부름 (돈·보유는 다 여기로, 같은 참조 id는 한 번만)
 const { createError } = require('../../utils/appError');
 const { isValidCurrency, isBoundedAmount, payloadMatches, referenceConflictError } = require('./helpers');
@@ -139,7 +139,51 @@ const applyLedgerTransaction = async (db, {
     }
 };
 
+// 사람 id 순서 (여러 지갑을 늘 같은 순서로 잠가 서로 기다리다 막히지 않게)
+const byUserId = (a, b) => {
+    if (a.userId < b.userId) return -1;
+    return a.userId > b.userId ? 1 : 0;
+};
+
+// 여러 사람 장부를 한 트랜잭션으로 (판 보상처럼 사람 수만큼 거래를 따로 열지 않게), 아이템 없는 돈 움직임만
+// 잔액 한도에 걸린 사람만 빼고 나머지는 같이 커밋, 그 밖 실패는 전부 되돌림 → 다시 하면 이미 쓴 줄은 처음 결과 그대로
+// 예: [{ userId:'u2', … }, { userId:'u1', … }] → { results: [{ userId:'u1', idempotent:false, walletBalance:11 }, …] }
+const applyLedgerBatch = async (db, entries) => {
+    if (!Array.isArray(entries) || entries.length === 0) return { results: [] };
+    const sorted = [...entries].sort(byUserId);
+    // 모양 먼저 다 봄 (하나라도 틀리면 지갑 안 건드림), 같은 사람 두 줄이면 거절
+    const seen = new Set();
+    for (const entry of sorted) {
+        if (typeof entry?.userId !== 'string' || entry.userId.length === 0 || seen.has(entry.userId)) {
+            throw createError('사람 id가 비었거나 겹칩니다.', 400, 'INVALID_USER_ID');
+        }
+        seen.add(entry.userId);
+        assertLedgerInput(entry);
+    }
+
+    const models = economyModels(db);
+    return withTransaction(models, async (t) => {
+        // 지갑 행 보장을 전원 먼저 (이 줄이 지갑을 잠가서, 같은 묶음이 동시에 와도 늦은 쪽은 앞 결과를 보고 다시 안 줌)
+        for (const { userId } of sorted) await ensureWalletRow(db, userId, t);
+        const results = [];
+        for (const { userId, reason, currency, amount, referenceEventId } of sorted) {
+            const input = { userId, reason, currency, amount, itemId: null, itemType: null, referenceEventId, entitlementSource: null };
+            const payload = { reason, itemId: null, currency, amount };
+            try {
+                const outcome = await writeLedger(models, input, payload, t);
+                results.push({ userId, idempotent: outcome.idempotent, walletBalance: outcome.walletBalance ?? null });
+            } catch (error) {
+                // 잔액 한도는 쓰기 전에 걸러져 그 사람만 빼도 됨 (한 사람 때문에 전원 못 받지 않게)
+                if (error?.code !== 'BALANCE_LIMIT_EXCEEDED') throw error;
+                results.push({ userId, skipped: true, code: error.code });
+            }
+        }
+        return { results };
+    });
+};
+
 module.exports = {
     ensureWalletRow,
     applyLedgerTransaction,
+    applyLedgerBatch,
 };

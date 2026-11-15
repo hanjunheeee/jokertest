@@ -1,9 +1,14 @@
-// 공개 승패 결과 다듬기: 이긴 쪽, 직업 공개 목록 (모양 틀린 항목은 뺌)
+// 공개 승패 결과 다듬기: 이긴 쪽, 직업 공개 목록·받은 판 골드 (모양 틀린 항목은 뺌)
 // 재판 판정 반영·밤 결과·사망 방송 검사와 스냅샷 승패 검사가 사용
 
 // 받는 이긴 쪽·팀 이름
 const KNOWN_WINNERS = new Set(["CITIZEN", "JOKER"])
 const KNOWN_TEAMS = new Set(["CITIZEN", "JOKER"])
+
+// 받은 판 골드: 1 이상 정수만, 없거나 틀리면 0 (못 받은 사람·옛 서버)
+function normalizeGoldReward(value) {
+  return Number.isInteger(value) && value > 0 ? value : 0
+}
 
 // 직업 공개 목록: 모양이 틀리거나 같은 사람이 두 번이면 그 항목만 뺌
 function normalizeRoleReveals(rawReveals) {
@@ -31,6 +36,7 @@ function normalizeRoleReveals(rawReveals) {
       team: raw.team,
       alive: raw.alive,
       deathReason: raw.alive ? null : (raw.deathReason ?? null),
+      goldReward: normalizeGoldReward(raw.goldReward),
     })
   }
   return normalized
