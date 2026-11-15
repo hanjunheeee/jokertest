@@ -81,7 +81,7 @@ async function startSec(n, { overrides = {}, defaultIpLimits = true, expectExit 
 
 // 운영 설정 (시험 손잡이·메일 파일 빼고)
 const PRODUCTION = Object.freeze({
-    NODE_ENV: 'production', E2E_HOOKS: undefined, MAIL_TEST_OUTBOX_DIR: undefined, E2E_SHUTDOWN_FLAG: undefined, GAME_DEV_MIN_PLAYERS: undefined,
+    NODE_ENV: 'production', E2E_HOOKS: undefined, MAIL_TEST_OUTBOX_DIR: undefined, E2E_SHUTDOWN_FLAG: undefined,
 });
 
 // 시험 프로세스의 DB 연결은 JS Date를 +9시간으로 적음(개발 설정 timezone) — 백엔드는 그 값을 그대로 읽어

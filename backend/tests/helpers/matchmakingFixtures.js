@@ -1,3 +1,5 @@
+// 매칭 시험 도우미 파일, 가짜 소켓·가짜 io·방 설정 값·시작 직전 방 만들기
+// 매칭·여러 Node 시험이 씀, 방·판은 5명 이상 (어느 환경에서나 5~10명 규칙)
 const gameSessionCore = require('../../game-core/gameSession')
 
 function callAsPromise(handler, ...args) {
@@ -209,23 +211,38 @@ function countingCallback() {
     return { callback, getCalls: () => calls, getResponse: () => response }
 }
 
+// 시작 바로 앞 방: 정원 5에 방장·참가자 + 채우는 사람 3명, 모두 준비 (5명 밑이면 시작 거절이라 다 채움)
 async function setupReadyRoomForStart(io, hostUuid, joinerUuid, { handleCreateRoom, handleJoinRoomByCode, handleSetReady }) {
     const hostSocket = io.sockets.sockets.get(`sock-${hostUuid}`) ?? createFakeSocket(hostUuid)
     io.sockets.sockets.set(hostSocket.id, hostSocket)
     const created = await callAsPromise(
-        handleCreateRoom, io, hostSocket, hostUuid, validSettingsPayload({ maxPlayers: 4, jokerCount: 1 }),
+        handleCreateRoom, io, hostSocket, hostUuid, validSettingsPayload({ maxPlayers: 5, jokerCount: 1 }),
     )
     const joinerSocket = createFakeSocket(joinerUuid)
     io.sockets.sockets.set(joinerSocket.id, joinerSocket)
     await handleJoinRoomByCode(io, joinerSocket, joinerUuid, created.room.roomCode)
+    const fillerUuids = [1, 2, 3].map((i) => `${hostUuid}-fill-${i}`) // 'host' → ['host-fill-1', 'host-fill-2', 'host-fill-3']
+    const fillerSockets = []
+    for (const fillerUuid of fillerUuids) {
+        const fillerSocket = createFakeSocket(fillerUuid)
+        io.sockets.sockets.set(fillerSocket.id, fillerSocket)
+        await handleJoinRoomByCode(io, fillerSocket, fillerUuid, created.room.roomCode)
+        fillerSockets.push(fillerSocket)
+    }
     await callAsPromise(handleSetReady, io, hostSocket, hostUuid, readyPayload(created.room))
     await callAsPromise(handleSetReady, io, joinerSocket, joinerUuid, readyPayload(created.room))
-    return { hostSocket, joinerSocket, room: created.room }
+    for (const fillerSocket of fillerSockets) {
+        const fillerUuid = fillerSocket.data.user.uuid
+        await callAsPromise(handleSetReady, io, fillerSocket, fillerUuid, readyPayload(created.room))
+    }
+    return { hostSocket, joinerSocket, fillerSockets, room: created.room }
 }
 
+// 진행 중 판 하나 심기 (uuids는 5~10명, 밖이면 판 만들기 거절 이유를 바로 알림)
 function seedActiveGameForAccount(uuids, { roomId = 'room-active-game', jokerCount = 1 } = {}) {
     const players = new Map(uuids.map((uuid) => [uuid, { uuid, nickname: `nick-${uuid}`, isReady: true }]))
     const prepared = gameSessionCore.prepareGameSession({ id: roomId, players, settings: { jokerCount } })
+    if (!prepared.ok) throw new Error(`seedActiveGameForAccount: 판 만들기 실패(${prepared.reason ?? prepared.code}) — 5~10명으로 부르기`)
     gameSessionCore.commitGameSession(prepared.session)
     return prepared.session
 }

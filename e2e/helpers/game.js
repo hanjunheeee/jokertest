@@ -8,8 +8,10 @@ const { spawnBots, FAST_ROOM_SETTINGS, sleep } = require('./bots');
 const { e2e } = require('./internal');
 const { joinRoomByCodeUi, readyUi } = require('./ui');
 
-// 서버가 받는 정원 (개발 최소 4, backend/validations/room/create.js)
-const ALLOWED_MAX_PLAYERS = [4, 5, 6, 7, 8, 9, 10];
+// 서버가 받는 정원 (5~10, backend/validations/room/create.js)
+const ALLOWED_MAX_PLAYERS = [5, 6, 7, 8, 9, 10];
+// 한 판 최소 인원 (서버가 어느 환경에서나 5명 밑 판은 시작 거절)
+const MIN_TABLE_PLAYERS = 5;
 const fitMaxPlayers = (total) => ALLOWED_MAX_PLAYERS.find((n) => n >= total) ?? 10;
 
 /**
@@ -27,7 +29,7 @@ function customRoleSettings(counts, extra = {}) {
  * 판 하나 차리기
  * @param {object} o
  * @param {{ page: import('@playwright/test').Page, account: {uuid:string} }[]} [o.humans] 브라우저 사람 (로그인된 page)
- * @param {number} [o.bots=1] 봇 수 (첫 봇이 방장, 최소 1)
+ * @param {number} [o.bots=1] 봇 수 (첫 봇이 방장, 최소 1, 사람+봇 합 5~10명)
  * @param {object} [o.settings] 방 설정 덮어쓰기 (기본 FAST_ROOM_SETTINGS: 토론·투표·밤 30초, 재판 15초, 광대 1)
  * @param {Record<string,string>|((ctx:{humans:any[],bots:any[]})=>Record<string,string>)} [o.roles] { uuid: 'JOKER' } 또는 함수
  * @param {boolean} [o.waitIngame=true] 사람 화면이 /ingame 될 때까지
@@ -35,6 +37,11 @@ function customRoleSettings(counts, extra = {}) {
  */
 async function setupTable({ humans = [], bots: botCount = 1, settings = {}, roles = null, waitIngame = true } = {}) {
     if (botCount < 1) throw new Error('봇 방장이 필요함 (bots >= 1) — 사람이 방장인 판은 화면으로 직접 만들기');
+    // 5명 밑 판은 서버가 시작을 거절함 → 봇 띄우기 전에 바로 알림 (시작 단계에서 헷갈리는 실패 막기)
+    const plannedTotal = humans.length + botCount;
+    if (plannedTotal < MIN_TABLE_PLAYERS) {
+        throw new Error(`판은 ${MIN_TABLE_PLAYERS}명 이상이어야 함 (지금 사람 ${humans.length} + 봇 ${botCount} = ${plannedTotal}명) — bots를 늘리기`);
+    }
     const botAccounts = await accounts.createAccounts(botCount, {});
     const bots = await spawnBots(botAccounts);
     const host = bots[0];

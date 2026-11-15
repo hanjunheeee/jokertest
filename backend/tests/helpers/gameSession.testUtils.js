@@ -1,3 +1,5 @@
+// 판 시험 도우미 파일, 판 만들기·단계 넘기기·비밀 새는지 검사
+// 백엔드 판 시험이 씀, 판은 늘 5명 이상 (어느 환경에서나 5~10명 규칙)
 const assert = require('node:assert/strict')
 
 const gameSession = require('../../game-core/gameSession')
@@ -23,8 +25,9 @@ function makePlayer(uuid, nickname = `nick-${uuid}`, extra = {}) {
     return { uuid, nickname, isReady: true, ...extra }
 }
 
+// 기본 5명 방 (5명 밑은 판 만들기에서 거절됨)
 function makeRoom({ id = 'room-1', players, jokerCount = 1 } = {}) {
-    const playerList = players ?? [makePlayer('u1'), makePlayer('u2'), makePlayer('u3')]
+    const playerList = players ?? ['u1', 'u2', 'u3', 'u4', 'u5'].map((uuid) => makePlayer(uuid))
     return {
         id,
         players: new Map(playerList.map((p) => [p.uuid, p])),
@@ -38,7 +41,7 @@ function sequenceRandom(sequence) {
 }
 
 function setupTribunalReadySession({
-    uuids = ['t1', 't2', 't3'],
+    uuids = ['t1', 't2', 't3', 't4', 't5'],
     defendantUuid = 't3',
     roomId = `tribunal-${uuids.join('-')}`,
     randomFn = Math.random,
@@ -82,6 +85,8 @@ function validSession(overrides = {}) {
             ['u1', { uuid: 'u1', nickname: 'A', role: GAME_ROLES.JOKER, alive: true }],
             ['u2', { uuid: 'u2', nickname: 'B', role: GAME_ROLES.CITIZEN, alive: true }],
             ['u3', { uuid: 'u3', nickname: 'C', role: GAME_ROLES.CITIZEN, alive: true }],
+            ['u4', { uuid: 'u4', nickname: 'D', role: GAME_ROLES.CITIZEN, alive: true }],
+            ['u5', { uuid: 'u5', nickname: 'E', role: GAME_ROLES.CITIZEN, alive: true }],
         ]),
         roleRevealAcks: new Set(),
         nightActions: new Map(),
@@ -126,8 +131,9 @@ function commitFullRoleSessionAtNight({ id = 'room-full', gameIdFn } = {}) {
     }
 }
 
-function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
-    const players = [makePlayer(`ja-${id}`), makePlayer(`jb-${id}`), makePlayer(`jc-${id}`)]
+// 5명·광대 2 첫 밤: 시민 하나 죽으면 2:2라 바로 광대 승
+function commitJokerPairSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
+    const players = Array.from({ length: 5 }, (_, i) => makePlayer(`j${i}-${id}`))
     const room = makeRoom({ id, players, jokerCount: 2 })
     const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
     const candidate = buildSessionCandidate(room, opts)
@@ -135,22 +141,15 @@ function commitJokerTrioSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
     const session = candidate.session
     ackAllAndRewindToFirstNight(session)
     const jokerUuids = [...session.players.values()].filter((p) => p.role === 'JOKER').map((p) => p.uuid)
-    const citizenUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
-    return { session, jokerUuids, citizenUuid }
+    const citizenUuids = [...session.players.values()].filter((p) => p.role !== 'JOKER').map((p) => p.uuid)
+    return { session, jokerUuids, citizenUuid: citizenUuids[0], citizenUuids }
 }
 
-function nightSessionOf3({ id = 'room-cnr' } = {}) {
-    const room = makeRoom({ id, players: [makePlayer('cnr-a'), makePlayer('cnr-b'), makePlayer('cnr-c')], jokerCount: 1 })
-    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
-    commitGameSession(candidate.session)
-    ackAllAndRewindToFirstNight(candidate.session)
-    return candidate.session
-}
-
-function nightSessionOf4NoWin({ id = 'room-cnr4' } = {}) {
+// 5명·광대 1 첫 밤: 한 명 죽어도 1:3이라 승부 안 남
+function nightSessionOf5NoWin({ id = 'room-cnr5' } = {}) {
     const room = makeRoom({
         id,
-        players: [makePlayer('cnr4-a'), makePlayer('cnr4-b'), makePlayer('cnr4-c'), makePlayer('cnr4-d')],
+        players: Array.from({ length: 5 }, (_, i) => makePlayer(`cnr5-${i}`)),
         jokerCount: 1,
     })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
@@ -160,7 +159,7 @@ function nightSessionOf4NoWin({ id = 'room-cnr4' } = {}) {
 }
 
 function commitAssassinationNight({ id = 'room-reveal' } = {}) {
-    const session = nightSessionOf4NoWin({ id })
+    const session = nightSessionOf5NoWin({ id })
     const jokerUuid = [...session.players.values()].find((p) => p.role === 'JOKER').uuid
     const victimUuid = [...session.players.values()].find((p) => p.role !== 'JOKER').uuid
     submitNightAction(jokerUuid, session.id, victimUuid)
@@ -225,8 +224,9 @@ function advanceDayToVotePhase(session) {
     assert.equal(session.dayPhase, 'DAY_VOTE')
 }
 
-function commitTrioSessionAtDay({ id = 'room-day', advanceToVote = true } = {}) {
-    const players = [makePlayer(`da-${id}`), makePlayer(`db-${id}`), makePlayer(`dc-${id}`)]
+// 첫 낮 판 (기본 5명·광대 1, 5~10명), 앞 다섯 명은 uuidA~uuidE로도 줌
+function commitSessionAtDay({ id = 'room-day', advanceToVote = true, playerCount = 5 } = {}) {
+    const players = Array.from({ length: playerCount }, (_, i) => makePlayer(`d${i}-${id}`))
     const room = makeRoom({ id, players, jokerCount: 1 })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
     commitGameSession(candidate.session)
@@ -236,23 +236,9 @@ function commitTrioSessionAtDay({ id = 'room-day', advanceToVote = true } = {}) 
     assert.equal(session.dayIndex, 1)
     assert.equal(session.dayPhase, 'DAY_DISCUSSION')
     if (advanceToVote) advanceDayToVotePhase(session)
-    const [uuidA, uuidB, uuidC] = [...session.players.keys()]
-    return { session, uuidA, uuidB, uuidC }
-}
-
-function commitQuadSessionAtDay({ id = 'room-revote', advanceToVote = true } = {}) {
-    const players = [makePlayer(`ra-${id}`), makePlayer(`rb-${id}`), makePlayer(`rc-${id}`), makePlayer(`rd-${id}`)]
-    const room = makeRoom({ id, players, jokerCount: 1 })
-    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
-    commitGameSession(candidate.session)
-    const session = candidate.session
-    for (const uuid of session.players.keys()) acknowledgeRoleReveal(uuid, session.id)
-    assert.equal(session.phase, 'DAY')
-    assert.equal(session.dayIndex, 1)
-    assert.equal(session.dayPhase, 'DAY_DISCUSSION')
-    if (advanceToVote) advanceDayToVotePhase(session)
-    const [uuidA, uuidB, uuidC, uuidD] = [...session.players.keys()]
-    return { session, uuidA, uuidB, uuidC, uuidD }
+    const uuids = [...session.players.keys()]
+    const [uuidA, uuidB, uuidC, uuidD, uuidE] = uuids
+    return { session, uuids, uuidA, uuidB, uuidC, uuidD, uuidE }
 }
 
 function castAllVotes(session, votesByUuid) {
@@ -263,13 +249,6 @@ function castAllVotes(session, votesByUuid) {
 
 function makeWinConditionSession(playerSpecs) {
     return { players: new Map(playerSpecs.map((p) => [p.uuid, p])) }
-}
-
-function buildSnapQuadSession({ id, uuids }) {
-    const room = makeRoom({ id, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount: 1 })
-    const candidate = buildSessionCandidate(room, { randomFn: () => 0 })
-    commitGameSession(candidate.session)
-    return candidate.session
 }
 
 function ackAll(session) {
@@ -377,7 +356,7 @@ function countRoles(session) {
     return counts
 }
 
-function setupGameChatSession({ id = 'room-gc', phase = 'DAY', uuids = ['gc1', 'gc2', 'gc3', 'gc4'], gameIdFn } = {}) {
+function setupGameChatSession({ id = 'room-gc', phase = 'DAY', uuids = ['gc1', 'gc2', 'gc3', 'gc4', 'gc5'], gameIdFn } = {}) {
     const room = makeRoom({ id, players: uuids.map((uuid) => makePlayer(uuid)), jokerCount: 1 })
     const opts = { randomFn: () => 0, ...(gameIdFn ? { gameIdFn } : {}) }
     const candidate = buildSessionCandidate(room, opts)
@@ -448,18 +427,15 @@ module.exports = {
     validSession,
     ackAllAndRewindToFirstNight,
     commitFullRoleSessionAtNight,
-    commitJokerTrioSessionAtNight,
-    nightSessionOf3,
-    nightSessionOf4NoWin,
+    commitJokerPairSessionAtNight,
+    nightSessionOf5NoWin,
     commitAssassinationNight,
     nightSessionWithDoctor,
     nightSessionWithDuplicateRole,
     advanceDayToVotePhase,
-    commitTrioSessionAtDay,
-    commitQuadSessionAtDay,
+    commitSessionAtDay,
     castAllVotes,
     makeWinConditionSession,
-    buildSnapQuadSession,
     ackAll,
     resolveJokerOnlyNight,
     resolveDayVotes,

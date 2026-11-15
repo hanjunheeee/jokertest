@@ -83,8 +83,8 @@ async function lineColor(page, text) {
 
 const deadBadge = (page) => page.getByText('죽은 사람끼리', { exact: true });
 
-/** 판 차리고 사람 모두 역할 공개 창 닫기 → Table */
-async function startGame(table, { humans, bots = 3, roles = null, settings = {} }) {
+/** 판 차리고 사람 모두 역할 공개 창 닫기 → Table (봇 기본 4: 사람 1명이면 5명 판) */
+async function startGame(table, { humans, bots = 4, roles = null, settings = {} }) {
     const t = await table.setup({ humans, bots, roles, settings });
     await Promise.all(humans.map((h) => ui.readRoleReveal(h.page)));
     return t;
