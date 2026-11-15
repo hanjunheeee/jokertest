@@ -5,7 +5,7 @@ const { sleep } = require("./bot");
 // 방 설정: 가장 짧은 시간들 (토론·투표·밤 30초), 광대 1명, 코드 입장
 const roomSettingsFor = (players) => ({
     accessType: "code",
-    maxPlayers: Math.max(4, Math.min(10, players)),
+    maxPlayers: Math.max(5, Math.min(10, players)),
     jokerCount: 1,
     dayDiscussionTime: 30,
     dayVoteTime: 30,

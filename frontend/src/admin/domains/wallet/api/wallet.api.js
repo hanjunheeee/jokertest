@@ -8,7 +8,7 @@ const walletPath = (uuid) => `/members/${encodeURIComponent(uuid)}/wallet`
 const LEDGER_REASONS = Object.freeze({
   ADMIN_GRANT: '관리자 지급', ADMIN_REVOKE: '관리자 회수', TOPUP_REFUND: '충전 환불', DIAMOND_TOPUP: '다이아 충전',
   GOLD_PURCHASE: '골드 구매', PURCHASE: '상점 구매', COUPON_REWARD: '쿠폰 보상', ACHIEVEMENT_REWARD: '업적 보상',
-  DEFAULT_GRANT: '기본 지급', EVENT_COMPENSATION_GOLD: '이벤트 보상',
+  DEFAULT_GRANT: '기본 지급', EVENT_COMPENSATION_GOLD: '이벤트 보상', GAME_REWARD: '판 보상',
 })
 export const ledgerReasonLabel = (reason) => LEDGER_REASONS[reason] ?? reason
 

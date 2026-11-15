@@ -44,7 +44,7 @@ exports.search = async (req, res) => {
     res.json({ ok: true, ...found });
 };
 
-// GET /admin-api/members/:uuid → { member, bans, reportsReceived, logins }
+// GET /admin-api/members/:uuid → { member, bans, reportsReceived, logins, desertions }
 exports.detail = async (req, res) => {
     const detail = await getMemberDetail(readUuid(req.params));
     res.json({ ok: true, ...detail });

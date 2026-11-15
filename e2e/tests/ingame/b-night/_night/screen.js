@@ -1,6 +1,6 @@
 'use strict';
 
-// 밤 시험 화면 글자·기록 파일, 역할·차례 글자 표·조사 붙이기 + 밤 연출 화면 기록·결과 화면 읽기
+// 밤 시험 화면 글자·기록 파일, 역할·차례 글자 표·조사 붙이기 + 밤·낮 시작 연출 화면 기록·결과 화면 읽기
 // _night/index.js가 다시 내보냄 (b-night 시험은 require('./_night')로 씀)
 const { expect } = require('@playwright/test');
 const { ROLE_LABELS } = require('../../../../helpers/ui');
@@ -24,19 +24,19 @@ function josa(word, withFinal, withoutFinal) {
 }
 
 /**
- * 화면 기록 걸기: 밤 역할 안내 창이 뜰 때마다 역할을 적음, autoConfirm이면 '단계 전환 안내'는 바로 확인 누름
+ * 화면 기록 걸기: 밤 역할 안내 창이 뜰 때마다 역할을, 낮 시작 연출 글 창·영상 아래 글이 뜰 때마다 종류·글을 적음, autoConfirm이면 '단계 전환 안내'는 바로 확인 누름
  * (판 화면에 들어온 뒤 부름, SPA라 결과 화면까지 기록이 남음)
  */
 async function recordUi(page, { autoConfirm = true } = {}) {
     await page.evaluate((auto) => {
         if (window.__nightRec) return;
-        const rec = { turns: [], privateResults: [], finals: [], kills: 0, waits: 0, entrances: [], videos: [] };
+        const rec = { turns: [], privateResults: [], dawnReports: [], dawnMessages: [], kills: 0, entrances: [], videos: [] };
         window.__nightRec = rec;
         let lastTurnEl = null;
         let lastPrivate = null;
-        let lastFinal = null;
+        let lastDawn = null;
+        let lastDawnMsg = null;
         let lastKill = null;
-        let lastWait = null;
         let lastEntrance = null;
         const scan = () => {
             const turnEl = document.querySelector('[data-night-turn-role]');
@@ -45,9 +45,14 @@ async function recordUi(page, { autoConfirm = true } = {}) {
             const priv = document.querySelector('[data-ingame-night-private-result]');
             if (priv && priv !== lastPrivate) rec.privateResults.push(priv.innerText.replace(/\s+/g, ' ').trim());
             lastPrivate = priv;
-            const fin = document.querySelector('[data-ingame-night-success-final]');
-            if (fin && fin !== lastFinal) rec.finals.push(fin.getAttribute('data-ingame-night-success-final'));
-            lastFinal = fin;
+            // 낮 시작 연출 글 창 종류 (SAVED·KILLED, 영상이 오류로 끝나 글 창으로 바뀐 때도 적힘)
+            const dawn = document.querySelector('[data-ingame-dawn-report]');
+            if (dawn && dawn !== lastDawn) rec.dawnReports.push(dawn.getAttribute('data-ingame-dawn-report'));
+            lastDawn = dawn;
+            // 암살 영상 아래 글 ('지난밤 ○○님이 살해당했습니다')
+            const dawnMsg = document.querySelector('[data-ingame-dawn-report-message]');
+            if (dawnMsg && dawnMsg !== lastDawnMsg) rec.dawnMessages.push(dawnMsg.innerText.replace(/\s+/g, ' ').trim());
+            lastDawnMsg = dawnMsg;
             const kill = document.querySelector('[data-ingame-night-success-kill]');
             if (kill && kill !== lastKill) rec.kills += 1;
             lastKill = kill;
@@ -55,9 +60,6 @@ async function recordUi(page, { autoConfirm = true } = {}) {
             const video = document.querySelector('[data-ingame-night-success-source-video]');
             const src = video ? (video.getAttribute('src') || '').split('/').pop() : null;
             if (src && src !== rec.videos[rec.videos.length - 1]) rec.videos.push(src);
-            const wait = document.querySelector('[data-ingame-night-presentation-wait]');
-            if (wait && wait !== lastWait) rec.waits += 1;
-            lastWait = wait;
             const ent = document.querySelector('[data-ingame-phase-entrance]');
             if (ent && ent !== lastEntrance) rec.entrances.push(ent.getAttribute('data-ingame-phase-entrance'));
             lastEntrance = ent;

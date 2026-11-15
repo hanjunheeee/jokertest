@@ -170,7 +170,7 @@ function describeRoomByUser(uuid) {
     };
 }
 
-// 지금 단계의 마감 타이머를 바로 돌림 (밤은 연출 대기 먼저), 돌린 이름 돌려줌 (없으면 null)
+// 지금 단계의 마감 타이머를 바로 돌림, 돌린 이름 돌려줌 (없으면 null)
 function advanceSession(gameId) {
     const session = getSessionById(gameId);
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' };
@@ -181,7 +181,7 @@ function advanceSession(gameId) {
     if (session.phase === 'TRIBUNAL') candidates.push(['TRIBUNAL', runs.tribunalRuns.get(gameId)?.timerId]);
     if (session.phase === 'NIGHT') {
         const nightRun = runs.nightTurnRuns.get(gameId);
-        candidates.push(['NIGHT_WAIT', nightRun?.wait?.timerId], ['NIGHT_TURN', nightRun?.timerId]);
+        candidates.push(['NIGHT_TURN', nightRun?.timerId]);
     }
     for (const [name, handle] of candidates) {
         if (e2eTimers.isPending(handle)) {

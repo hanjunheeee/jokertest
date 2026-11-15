@@ -1,5 +1,5 @@
 // 양피지 창 바탕: 뒤 막·창·양피지·확인 버튼, 움직임 없이 바로 뜸
-// 단계 입장·밤 개인 결과·밤 성공 창과 매칭 시작 막힘·이모티콘 저장 창이 사용
+// 단계 입장·밤 개인 결과·낮 시작 연출 글 창과 매칭 시작 막힘·이모티콘 저장 창이 사용
 import { createElement, useEffect } from "react"
 import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import { PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"

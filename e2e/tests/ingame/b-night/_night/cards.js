@@ -33,11 +33,11 @@ async function closeNotices(page, { names = ['단계 전환 안내', '밤 역할
     return closed;
 }
 
-/** 밤 성공 연출 끝 '최종 결과' 창 뜨면 확인 (광대·대상이 보는 창, 이름이 '밤 조사 결과'와 같아 따로 찾음) */
-async function closeFinalStatus(page) {
-    const final = page.locator('[data-ingame-night-success-final]');
+/** 낮 시작 연출 글 창('의사가 살려냈습니다' 등) 뜨면 확인 (모두가 보는 창, 이름이 다른 양피지 창과 같아 표시로 찾음) */
+async function closeDawnReport(page) {
+    const report = page.locator('[data-ingame-dawn-report]');
     // 감싼 div는 크기가 없어 isVisible이 늘 거짓 → 개수로 봄
-    if ((await final.count()) > 0) await final.getByRole('button', { name: '확인' }).click({ timeout: 2000 }).catch(() => {});
+    if ((await report.count()) > 0) await report.getByRole('button', { name: '확인' }).click({ timeout: 2000 }).catch(() => {});
 }
 
 /** 역할 공개 창 닫기 (떠 있으면) */
@@ -58,7 +58,7 @@ async function openCardMenu(page, nickname, { timeout = 25000 } = {}) {
     await expect(async () => {
         await closeRoleReveal(page);
         await closeNotices(page);
-        await closeFinalStatus(page);
+        await closeDawnReport(page);
         await keepWatching(page);
         if (!(await menu.isVisible().catch(() => false))) {
             await cardButton(page, nickname).click({ timeout: 1500 });
@@ -76,7 +76,7 @@ async function expectNoCardMenu(page, nickname) {
     await expect(async () => {
         await closeRoleReveal(page);
         await closeNotices(page);
-        await closeFinalStatus(page);
+        await closeDawnReport(page);
         await keepWatching(page);
         await cardButton(page, nickname).click({ timeout: 1500 });
     }).toPass({ timeout: 25000 });
@@ -114,6 +114,6 @@ async function nightSkipUi(page) {
 }
 
 module.exports = {
-    cardButton, cardStatus, expectCard, closeNotices, closeFinalStatus, closeRoleReveal, keepWatching,
+    cardButton, cardStatus, expectCard, closeNotices, closeDawnReport, closeRoleReveal, keepWatching,
     openCardMenu, expectNoCardMenu, nightActUi, skipButton, nightSkipUi,
 };

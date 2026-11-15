@@ -1,5 +1,5 @@
 // 밤 조사 결과 창 문구와 글자 모양
-// 밤 조사 결과 창·밤 연출 대기·밤 성공 연출이 씀
+// 밤 조사 결과 창(밤 끝 개인 결과)과 낮 시작 연출 글 창(PC InGameDawnReport, 모바일 DawnReportOverlay)이 씀
 
 // 확인 버튼·창 이름·덮개 이름
 export const CONFIRM_LABEL = "확인"

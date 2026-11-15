@@ -20,7 +20,7 @@ const NO_EXIT = Object.freeze({
     exitAttemptId: 0,
 })
 
-// blocked = 앞 연출(역할·밤 성공·밤 결과·대기)이 열려 있음
+// blocked = 앞 연출(역할 공개·낮 시작 연출·밤 개인 결과)이 열려 있음
 export function useDeadChoice({ blocked = false } = {}) {
     const gameId = useInGameStore((s) => s.gameId)
     const gameState = useInGameStore((s) => s.state)

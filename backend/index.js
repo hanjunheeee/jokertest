@@ -165,6 +165,12 @@ schemaReadiness.ensureSchemaReady(db.sequelize)
         // 금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 빈 목록으로 시작)
         require("./services/ops/bannedWords").reloadBannedWords()
             .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
+        // 탈주 막힘 한 번 읽기 (안 읽으면 다시 켠 직후 탈주 대기가 잠깐 안 걸림, 실패해도 서버는 켬)
+        require("./services/game/desertion").loadActiveDesertions()
+            .catch((err) => console.warn("[STARTUP] 탈주 기록 못 읽음 —", err?.name ?? "Error"));
+        // 판 설정 값 한 번 읽기 (안 읽으면 관리자가 바꾼 판 골드 대신 처음 값 1이 쓰일 수 있음, 실패해도 서버는 켬)
+        require("./services/ops/gameSettings").reloadGameSettings()
+            .catch((err) => console.warn("[STARTUP] 판 설정 값 못 읽음 —", err?.name ?? "Error"));
         // 관리자 표 정리 6시간마다 (관리자 켜짐일 때만, unref라 서버 끄기 안 막음, Node마다 돌아도 지우기만이라 겹쳐도 됨)
         if (require("./admin").isAdminEnabled()) require("./admin/services/core/cleanup").startAdminCleanup();
         const pool = db.sequelize.options.pool ?? {};

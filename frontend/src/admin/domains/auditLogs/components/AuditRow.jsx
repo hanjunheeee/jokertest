@@ -26,6 +26,7 @@ const ACTION_LABELS = Object.freeze({
   COUPON_CREATE: '쿠폰 만들기',
   COUPON_TOGGLE: '쿠폰 켜기·끄기',
   TERMS_CREATE: '약관 새 버전',
+  GAME_SETTING_UPDATE: '판 골드 바꿈',
 })
 
 const actionLabel = (action) => ACTION_LABELS[action] ?? action

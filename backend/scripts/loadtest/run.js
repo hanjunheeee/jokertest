@@ -49,7 +49,7 @@ function parseArgs(argv) {
         opts[key] = typeof DEFAULTS[key] === "number" ? Number(value) : value;
         if (typeof DEFAULTS[key] === "number" && !Number.isFinite(opts[key])) throw new Error(`--${name}은 숫자`);
     }
-    if (opts.players < 4 || opts.players > 10) throw new Error("--players는 4~10 (운영 규칙이면 5~10)");
+    if (opts.players < 5 || opts.players > 10) throw new Error("--players는 5~10");
     if (!["fixed", "step"].includes(opts.mode)) throw new Error("--mode는 fixed 또는 step");
     opts.stageList = String(opts.stages).split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
     return opts;
@@ -59,7 +59,7 @@ const HELP = `부하 시험 (docs/부하시험.md)
   --target <주소>          대상 (기본 ${DEFAULTS.target}), 로컬 아니면 ${REMOTE_FLAG} + --accounts 필요
   --mode fixed|step        fixed: 판 N개 한 번에 / step: 동시 판 수를 단계로 올림
   --games N --rounds R     fixed: 동시 판 수·몇 바퀴 (기본 2·1)
-  --players N              판당 인원 4~10 (기본 5)
+  --players N              판당 인원 5~10 (기본 5)
   --stages 1,5,10 --hold-min M   step: 단계별 동시 판 수·단계마다 유지 분
   --max-p95-ms 500 --max-error-rate 0.01   step: 넘으면 멈춤
   --poll-ms 1000 --chat-chance 0.5 --ramp-ms 50 --timeout-ms 10000 --game-max-min 15
