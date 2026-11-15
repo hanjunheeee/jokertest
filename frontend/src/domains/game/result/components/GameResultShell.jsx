@@ -1,4 +1,4 @@
-// 결과 화면 본체: 배경·승패 띠·참가자 목록·MVP 칸, 차례로 나타남
+// 결과 화면 본체: 배경·승패 띠·참가자 목록, 차례로 나타남
 // GameResultPage가 씀, 값은 실제 판(useGameResultData) 또는 미리보기
 import { motion } from "framer-motion"
 import { GAME_RESULT_ASSETS } from "../constants/gameResultAssets.js"
@@ -18,7 +18,6 @@ import {
   GAME_RESULT_SHELL_CLASS,
 } from "../constants/gameResultLayout.js"
 import GameResultBanner from "./GameResultBanner.jsx"
-import GameResultMvpPanel from "./GameResultMvpPanel.jsx"
 import GameResultPlayerList from "./GameResultPlayerList.jsx"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
@@ -29,7 +28,6 @@ export default function GameResultShell({
   winningTeam,
   players,
   selfUuid = null,
-  mvp,
 }) {
   // 배경도 승패 따라 바뀜
   const bgSrc =
@@ -53,7 +51,7 @@ export default function GameResultShell({
         animate={CONTENT_DROP_ANIMATE}
         transition={CONTENT_DROP_TRANSITION}
       >
-        {/* 띠 → 목록 → MVP 순서로 조금씩 늦게 나타남 */}
+        {/* 띠 → 목록 순서로 조금씩 늦게 나타남 */}
         <motion.div
           initial={INNER_REVEAL_INIT}
           animate={INNER_REVEAL_ANIMATE}
@@ -81,19 +79,6 @@ export default function GameResultShell({
               selfUuid={selfUuid}
             />
           </motion.div>
-          {/* MVP 있을 때만 */}
-          {mvp ? (
-            <motion.div
-              initial={INNER_REVEAL_INIT}
-              animate={INNER_REVEAL_ANIMATE}
-              transition={{
-                ...INNER_REVEAL_TRANSITION,
-                delay: INNER_REVEAL_DELAYS.mvp,
-              }}
-            >
-              <GameResultMvpPanel outcome={outcome} mvp={mvp} />
-            </motion.div>
-          ) : null}
         </div>
       </motion.div>
     </div>

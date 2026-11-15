@@ -38,11 +38,10 @@ export const INNER_REVEAL_TRANSITION = {
   ease: [0.22, 1, 0.36, 1],
 }
 
-// 안쪽 칸별 늦춤 (띠 → 목록 → MVP)
+// 안쪽 칸별 늦춤 (띠 → 목록)
 export const INNER_REVEAL_DELAYS = {
   banner: 0.28,
   playerList: 0.34,
-  mvp: 0.46,
 }
 
 // 대기방·로비 버튼 늦춤 (안쪽 다 나온 뒤)

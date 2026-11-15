@@ -1,4 +1,4 @@
-// 결과 화면 모양 상수 (틀·띠·목록·줄·MVP·버튼 자리)
+// 결과 화면 모양 상수 (틀·띠·목록·줄·버튼 자리)
 // 결과 컴포넌트·GameResultIntroVideo·GameResultPage가 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
@@ -30,9 +30,6 @@ export const FRAME_IMG_FILL_CLASS =
 export const FRAME_IMG_BLOCK_CLASS =
   "relative z-[2] block h-auto w-full select-none"
 
-export const PORTRAIT_FRAME_STACK_CLASS =
-  "relative z-[1] w-full overflow-visible"
-
 // 승패 띠
 export const BANNER_WRAP_CLASS =
   "relative w-[clamp(16rem,34vw,28rem)] shrink-0 overflow-visible [container-type:inline-size]"
@@ -43,7 +40,7 @@ export const BANNER_LABEL_CLASS =
 export const BANNER_LABEL_WIN_CLASS = "text-[#f0d8a8]"
 export const BANNER_LABEL_LOSE_CLASS = "text-[#d8d0c4]"
 
-// 본체 안쪽 (목록 + MVP)
+// 본체 안쪽 (참가자 목록)
 export const GAME_RESULT_BODY_CLASS =
   "mx-auto flex min-h-0 w-full max-w-[min(88vw,70rem)] flex-1 items-start justify-center gap-[clamp(3rem,9vw,6rem)] px-[clamp(0.75rem,2.5vw,2rem)] pb-[clamp(1.25rem,3.5vh,2.25rem)] pt-[clamp(0.5rem,1.1vh,0.85rem)]"
 
@@ -110,29 +107,6 @@ export const PLAYER_INFO_CLASS =
 
 export const PLAYER_SELF_BADGE_CLASS =
   "shrink-0 rounded-full border border-black/35 bg-black/10 px-[clamp(0.38rem,1.6cqi,0.55rem)] py-[clamp(0.1rem,0.28vh,0.16rem)] font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,2.2cqi,0.78rem)] font-bold leading-none text-black"
-
-// MVP 칸
-export const MVP_PANEL_CLASS =
-  "mt-[clamp(2.25rem,5.5vh,3.25rem)] flex h-[clamp(26rem,72vh,40rem)] w-[clamp(14rem,28vw,22rem)] max-w-[24rem] shrink-0 flex-col items-center justify-start [container-type:inline-size]"
-
-export const MVP_NAMEPLATE_WRAP_CLASS =
-  "relative mb-[clamp(1rem,2.8vh,1.5rem)] w-[clamp(15rem,100cqi,20rem)] shrink-0 overflow-visible"
-
-export const MVP_NAMEPLATE_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 z-[3] flex items-center justify-center px-[10%] pt-[3%] font-display app-text-scaled [--app-text-size:clamp(1.5rem,3.5cqi,1.8rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
-
-export const MVP_PORTRAIT_WRAP_CLASS =
-  "relative w-[clamp(14rem,94cqi,19rem)] shrink-0 overflow-visible [container-type:inline-size]"
-
-export const MVP_PLAYER_NAME_INSET = {
-  bottom: "3.1%",
-  left: "11%",
-  right: "11%",
-  height: "15%",
-}
-
-export const MVP_PLAYER_NAME_CLASS =
-  "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-display app-text-scaled [--app-text-size:clamp(1.15rem,8.8cqi,1.7rem)] font-medium leading-none tracking-normal text-black antialiased"
 
 // 대기방·로비 버튼 자리
 export const LOBBY_BTN_WRAP_CLASS =

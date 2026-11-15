@@ -1,13 +1,13 @@
 // 결과 화면 글자: 직업 이름·버튼·내 정보 배지·이긴 진영
 // 결과 컴포넌트·GameResultPage·buildGameResultViewModel이 씀
 
-// 직업 이름 (마녀사냥꾼도 "귀족"으로 보임)
+// 직업 이름 (시민은 화면 이름 "귀족")
 export const GAME_RESULT_JOB_LABELS = {
   JOKER: "광대",
   CITIZEN: "귀족",
   DOCTOR: "주치의",
   GUARD: "경비원",
-  WITCH_HUNTER: "귀족",
+  WITCH_HUNTER: "마녀사냥꾼",
 }
 
 // 버튼 글자

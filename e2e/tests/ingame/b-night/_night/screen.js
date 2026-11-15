@@ -87,9 +87,4 @@ async function reachResult(page, { timeout = 60000 } = {}) {
     }).toPass({ timeout: 45000 });
 }
 
-/** 결과 화면 MVP 칸 */
-function mvpPanel(page) {
-    return page.getByRole('complementary', { name: 'MVP 플레이어' });
-}
-
-module.exports = { ACTION_LABELS, TURN_MESSAGES, TURN_TAGS, ROLE_NAMES, josa, recordUi, readUi, reachResult, mvpPanel };
+module.exports = { ACTION_LABELS, TURN_MESSAGES, TURN_TAGS, ROLE_NAMES, josa, recordUi, readUi, reachResult };

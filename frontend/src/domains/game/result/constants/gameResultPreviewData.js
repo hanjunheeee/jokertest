@@ -36,10 +36,4 @@ export const GAME_RESULT_PREVIEW = {
   winningTeam: "JOKER",
   players,
   selfPlayerId: "p1",
-  mvpPlayerId: "p3",
-}
-
-// MVP 찾기 (없으면 첫 사람)
-export function getMvpPlayer(players, mvpPlayerId) {
-  return players.find((player) => player.id === mvpPlayerId) ?? players[0]
 }

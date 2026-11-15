@@ -12,7 +12,7 @@ export const INGAME_SQUARE_IMG_CLASS =
 export const STANDING_CROP_IMG_CLASS =
   "absolute top-0 left-1/2 block h-[200%] w-[112%] -translate-x-1/2 select-none object-cover object-[center_10%]"
 
-// 지금 화면은 ingameCard만 씀 (카드·결과 MVP)
+// 지금 화면은 ingameCard만 씀 (인게임 카드·모바일 카드 미리보기)
 export const PORTRAIT_VARIANTS = {
   ingameCard: {
     bgInset: {

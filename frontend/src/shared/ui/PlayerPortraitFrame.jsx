@@ -1,5 +1,5 @@
 // 플레이어 초상 틀 안쪽 (배경 그라데이션 + 초상 그림, 자리 값은 variant별)
-// ingame 플레이어 카드와 result MVP 패널이 씀
+// ingame 플레이어 카드가 씀
 import { getPortraitVariant } from "../constants/playerPortraitLayout.js"
 import PublicAsset from "./PublicAsset.jsx"
 

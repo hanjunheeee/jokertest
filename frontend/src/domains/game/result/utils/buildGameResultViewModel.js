@@ -1,4 +1,4 @@
-// 판 결과(winResult)를 결과 화면 값으로: 승패·이긴 진영·참가자 줄·MVP
+// 판 결과(winResult)를 결과 화면 값으로: 승패·이긴 진영·참가자 줄
 // hooks/useGameResultData가 씀, 시험도 씀
 import { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } from "../../ingame/constants/board/ingamePlayerAssets.js"
 import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
@@ -48,15 +48,8 @@ export function buildGameResultViewModel(winResult, selfUuid, selfTeam = null) {
   // 내 진영이 이긴 진영이면 승리, 그 밖엔 패배
   const outcome = winningTeam !== null && resolvedSelfTeam === winningTeam ? "win" : "lose"
 
-  // MVP는 참가자 줄에서 uuid로 찾음 (서버가 이긴 팀 한 명을 보냄, 없거나 명단에 없으면 null이라 MVP 칸이 숨음)
-  const mvpUuid = isPlainObject(winResult?.mvp) ? winResult.mvp.uuid : null
-  const mvp =
-    typeof mvpUuid === "string" && mvpUuid.length > 0
-      ? (players.find((player) => player.id === mvpUuid) ?? null)
-      : null
-
   const resolvedSelfUuid =
     typeof selfUuid === "string" && selfUuid.length > 0 ? selfUuid : null
 
-  return { outcome, winningTeam, players, mvp, selfUuid: resolvedSelfUuid }
+  return { outcome, winningTeam, players, selfUuid: resolvedSelfUuid }
 }

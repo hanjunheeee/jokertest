@@ -5,7 +5,6 @@ import { useSearchParams } from "react-router-dom"
 import {
   GAME_RESULT_OUTCOMES,
   GAME_RESULT_PREVIEW,
-  getMvpPlayer,
 } from "../constants/gameResultPreviewData.js"
 
 // 미리보기 화면 값 (모르는 outcome이면 가짜 판 기본값)
@@ -19,14 +18,12 @@ export function useGameResultPreview() {
       : GAME_RESULT_PREVIEW.outcome
 
     const players = GAME_RESULT_PREVIEW.players
-    const mvp = getMvpPlayer(players, GAME_RESULT_PREVIEW.mvpPlayerId)
 
     return {
       outcome,
       winningTeam: GAME_RESULT_PREVIEW.winningTeam,
       players,
       selfUuid: GAME_RESULT_PREVIEW.selfPlayerId,
-      mvp,
     }
   }, [outcomeParam])
 }

@@ -10,12 +10,6 @@ export const GAME_RESULT_ASSETS = {
     "/frame/gameResult/결과창 플레이어 목록 프레임(승리).webp".normalize("NFD"),
   playerListFrameLose:
     "/frame/gameResult/결과창 플레이어 목록 프레임(패배).webp".normalize("NFD"),
-  mvpNameplateFrameWin:
-    "/frame/gameResult/MVP 플레이어 명찰 프레임(승리).webp".normalize("NFD"),
-  mvpNameplateFrameLose:
-    "/frame/gameResult/MVP 플레이어 명찰 프레임(패배).webp".normalize("NFD"),
-  mvpPlayerFrame:
-    "/shopItem/player-card/playerframe-alive/인게임-플레이어프레임(베이스).webp".normalize("NFD"),
   lobbyButton: "/button/버튼(취소 및 부정).webp".normalize("NFD"),
   matchingButton: "/button/버튼(수락 및 긍정).webp".normalize("NFD"),
 }
@@ -30,11 +24,4 @@ export function resolvePlayerListFrame(outcome) {
   return outcome === "lose"
     ? GAME_RESULT_ASSETS.playerListFrameLose
     : GAME_RESULT_ASSETS.playerListFrameWin
-}
-
-// MVP 명찰 틀 (승패별)
-export function resolveMvpNameplateFrame(outcome) {
-  return outcome === "lose"
-    ? GAME_RESULT_ASSETS.mvpNameplateFrameLose
-    : GAME_RESULT_ASSETS.mvpNameplateFrameWin
 }
