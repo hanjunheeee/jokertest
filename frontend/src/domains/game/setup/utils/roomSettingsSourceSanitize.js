@@ -15,9 +15,6 @@ export const ALLOWED_SETTING_KEYS = Object.freeze([
   "tribunalTime",
   "nightActionTime",
   "roleNightActionTimes",
-  "lightsOut",
-  "soulBetting",
-  "voteReveal",
 ])
 
 // 원본 맨 위에 있어도 되는 키

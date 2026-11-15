@@ -1,4 +1,4 @@
-// 회의&투표 탭 내용 (낮 토론·투표·밤 시간·직업별 밤 시간·투표 공개)
+// 회의&투표 탭 내용 (낮 토론·투표·재판·밤 시간·직업별 밤 시간)
 // GameSetupPanel이 씀, 편집 모드면 숨길 항목을 hiddenItemIds로 받음
 import { useMemo } from "react"
 import { MEETING_GAME_SETUP } from "../constants/gameSetupOptions.js"

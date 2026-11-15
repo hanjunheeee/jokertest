@@ -23,15 +23,13 @@ export const RANGE_ID_TO_SETTING_KEY = Object.freeze({
   [OVERALL_NIGHT_ACTION_TIME_ID]: "nightActionTime",
 })
 
-// 체크 항목 id → 서버 설정 키
-export const CHECK_ID_TO_SETTING_KEY = Object.freeze({
-  "lights-out": "lightsOut",
-  "soul-betting": "soulBetting",
-  "vote-reveal": "voteReveal",
-})
+// 체크 항목 id → 서버 설정 키, 지금은 없음 (코드로만 참가는 공개 방식이라 따로 다룸)
+// 짝표는 남겨 둠: 폼 상태 계산이 이 이름으로 부름
+export const CHECK_ID_TO_SETTING_KEY = Object.freeze({})
 
-// 방을 만든 뒤엔 바꿀 수 없는 항목 (편집 모드에서 숨김)
-export const NON_EDITABLE_SETUP_ITEM_IDS = Object.freeze(["lights-out", "soul-betting", "vote-reveal"])
+// 방을 만든 뒤엔 바꿀 수 없는 항목 (편집 모드에서 숨김), 지금은 없음
+// 목록은 남겨 둠: PC·모바일 설정 패널이 이 이름으로 부름
+export const NON_EDITABLE_SETUP_ITEM_IDS = Object.freeze([])
 
 // 두 탭 항목 전부
 export const ALL_SETUP_ITEMS = [...GENERAL_GAME_SETUP, ...MEETING_GAME_SETUP]

@@ -51,8 +51,9 @@ const EDITABLE_ROOM_SETTING_KEYS = Object.freeze([
     'roleNightActionTimes',
 ])
 
-// 방 만들 때 정하고 안 바뀌는 칸 (바꾸기 때 옛 값을 그대로 이어 붙임)
-const PRESERVED_ROOM_SETTING_KEYS = Object.freeze(['lightsOut', 'soulBetting', 'voteReveal'])
+// 방 만들 때 정하고 안 바뀌는 칸 (바꾸기 때 옛 값을 그대로 이어 붙임), 지금은 없음
+// 목록은 남겨 둠: 설정 바꾸기 처리가 이 이름으로 부름, 옛 방에 남은 칸은 모르는 칸으로 걸러짐
+const PRESERVED_ROOM_SETTING_KEYS = Object.freeze([])
 
 // 바꾸기 요청 본문에 올 수 있는 칸 (그 밖 칸 하나라도 있으면 거절)
 const UPDATE_REQUEST_TOP_LEVEL_KEYS = Object.freeze([

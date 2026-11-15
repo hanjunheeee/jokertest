@@ -174,12 +174,9 @@ function validSettingsPayload(overrides = {}) {
         accessType: 'open',
         maxPlayers: 8,
         jokerCount: 2,
-        lightsOut: false,
-        soulBetting: false,
         dayDiscussionTime: 60,
         dayVoteTime: 60,
         nightActionTime: 90,
-        voteReveal: true,
         ...overrides,
     }
 }

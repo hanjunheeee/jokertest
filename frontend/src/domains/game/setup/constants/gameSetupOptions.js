@@ -33,21 +33,6 @@ export const GENERAL_GAME_SETUP = [
     max: MAX_SPECIAL_ROLE_COUNT,
     defaultValue: 2,
   },
-  {
-    id: "lights-out",
-    type: "checkbox",
-    label: "불이 꺼진 무도회",
-    description: "광대들은 서로의 정체를 모르며, 서로를 죽일 수도 있습니다.",
-    defaultChecked: false,
-  },
-  {
-    id: "soul-betting",
-    type: "checkbox",
-    label: "영혼의 베팅 활성화",
-    description:
-      "사망자는 다음 희생자에게 [영혼석]을 베팅하여 보상을 얻을 수 있습니다.",
-    defaultChecked: false,
-  },
 ]
 
 // 직업별 밤 시간 칸 범위 (전체 밤 시간과 같음)
@@ -112,11 +97,4 @@ export const MEETING_GAME_SETUP = [
     unit: "초",
   },
   ...ROLE_NIGHT_ACTION_TIME_ITEMS,
-  {
-    id: "vote-reveal",
-    type: "checkbox",
-    label: "투표 공개 여부",
-    description: "누가 누구를 투표했는지 투표 직후에 공개됩니다.",
-    defaultChecked: true,
-  },
 ]

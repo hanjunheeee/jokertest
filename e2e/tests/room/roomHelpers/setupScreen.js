@@ -61,20 +61,18 @@ const ROLE_LABEL = ROLE_LABELS;
 
 /**
  * 열린 설정 패널 칸 채우기 (만들기·편집 둘 다)
- * @param {object} o code·maxPlayers·jokers·lightsOut·soulBetting·custom({JOKER..})·discussion·vote·tribunal·night·roleNights({JOKER:60})·voteReveal
+ * @param {object} o code·maxPlayers·jokers·custom({JOKER..})·discussion·vote·tribunal·night·roleNights({JOKER:60})
  */
 async function fillSettings(page, o = {}) {
     await selectTab(page, '일반');
     if (o.code !== undefined) await setCheck(page, '코드로만 참가', o.code);
     if (o.maxPlayers !== undefined) await setStepper(page, '최대 플레이어 수', o.maxPlayers);
     if (o.jokers !== undefined && !o.custom) await setStepper(page, '광대(마피아) 플레이어 수', o.jokers);
-    if (o.lightsOut !== undefined) await setCheck(page, '불이 꺼진 무도회', o.lightsOut);
-    if (o.soulBetting !== undefined) await setCheck(page, '영혼의 베팅 활성화', o.soulBetting);
     if (o.custom) {
         await setChoice(page, '역할 구성', '직접 지정');
         for (const [role, n] of Object.entries(o.custom)) await setStepper(page, `${ROLE_LABEL[role]} 인원`, n);
     }
-    const meeting = ['discussion', 'vote', 'tribunal', 'night', 'roleNights', 'voteReveal'].some((k) => o[k] !== undefined);
+    const meeting = ['discussion', 'vote', 'tribunal', 'night', 'roleNights'].some((k) => o[k] !== undefined);
     if (!meeting) return;
     await selectTab(page, '회의&투표');
     if (o.discussion !== undefined) await setStepper(page, '낮 토론 시간 조절', o.discussion);
@@ -82,7 +80,6 @@ async function fillSettings(page, o = {}) {
     if (o.tribunal !== undefined) await setStepper(page, '재판 시간 조절', o.tribunal);
     if (o.night !== undefined) await setStepper(page, '밤 행동 시간 조절', o.night);
     for (const [role, n] of Object.entries(o.roleNights ?? {})) await setStepper(page, `${ROLE_LABEL[role]} 밤 시간 조절`, n);
-    if (o.voteReveal !== undefined) await setCheck(page, '투표 공개 여부', o.voteReveal);
 }
 
 /** 서버 방 요약이 생길 때까지 (방장 uuid로) */

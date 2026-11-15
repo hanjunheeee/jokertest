@@ -16,12 +16,9 @@ export function buildCreateRoomPayload({ checks, ranges, roleComposition, specif
     accessType: checks["private-lobby"] ? "code" : "open",
     maxPlayers: ranges["max-players"],
     jokerCount: ranges["joker-count"],
-    lightsOut: checks["lights-out"],
-    soulBetting: checks["soul-betting"],
     dayDiscussionTime: ranges["day-discussion-time"],
     dayVoteTime: ranges["day-vote-time"],
     nightActionTime: ranges["night-action-time"],
-    voteReveal: checks["vote-reveal"],
     roleCompositionMode: mode,
   }
 

@@ -31,11 +31,6 @@ function validateTribunalTime(raw) {
 const ROLE_NIGHT_ACTION_TIME_KEYS = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
 const ALLOWED_ROLE_NIGHT_ACTION_TIME = ALLOWED_NIGHT_ACTION_TIME
 
-// 참·거짓 값인지
-function isBoolean(value) {
-    return typeof value === 'boolean'
-}
-
 // 없으면 통과, 있으면 아는 역할·허용 값만 새 객체로 옮김 (받은 객체 그대로 안 씀)
 function validateRoleNightActionTimes(raw) {
     if (raw === undefined) return { ok: true, value: undefined }
@@ -66,14 +61,11 @@ function validateCreateRoomPayload(payload) {
         accessType,
         maxPlayers,
         jokerCount,
-        lightsOut,
-        soulBetting,
         dayDiscussionTime,
         dayVoteTime,
         tribunalTime,
         nightActionTime,
         roleNightActionTimes,
-        voteReveal,
     } = payload
 
     if (!ALLOWED_ACCESS_TYPES.includes(accessType)) {
@@ -89,9 +81,6 @@ function validateCreateRoomPayload(payload) {
     if (jokerCount >= maxPlayers) {
         return { ok: false, message: '광대 수는 최대 플레이어 수보다 적어야 합니다.' }
     }
-    if (!isBoolean(lightsOut)) return { ok: false, message: '불이 꺼진 무도회 값이 올바르지 않습니다.' }
-    if (!isBoolean(soulBetting)) return { ok: false, message: '영혼의 베팅 값이 올바르지 않습니다.' }
-    if (!isBoolean(voteReveal)) return { ok: false, message: '투표 공개 여부 값이 올바르지 않습니다.' }
     if (!ALLOWED_DAY_DISCUSSION_TIME.includes(dayDiscussionTime)) {
         return { ok: false, message: '낮 토론 시간 값이 올바르지 않습니다.' }
     }
@@ -107,15 +96,13 @@ function validateCreateRoomPayload(payload) {
     if (!roleTimes.ok) return roleTimes
 
     // 받은 본문 말고 검사한 칸만 새로 담음, 재판 시간·직업별 밤 시간은 보냈을 때만
+    // 모르는 칸(옛 화면이 싣던 칸 포함)은 안 담고 버림, 거절 안 함
     const settings = {
         maxPlayers,
         jokerCount,
-        lightsOut,
-        soulBetting,
         dayDiscussionTime,
         dayVoteTime,
         nightActionTime,
-        voteReveal,
     }
     // 재판 시간이 낮 투표 시간과 같으면 안 담음 (칸 없음 = 낮 투표 시간 따라감, 같은 설정 저장이 바뀜으로 안 잡히게)
     if (tribunal.value !== undefined && tribunal.value !== dayVoteTime) settings.tribunalTime = tribunal.value
