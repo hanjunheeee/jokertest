@@ -17,7 +17,7 @@ import PlayerProfilePortrait from "@/shared/ui/PlayerProfilePortrait.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { INGAME_FOCUS_RING_CLASS } from "../../../constants/ingameFocusRing.js"
 
-// 고른 대상이면 버튼 글이 확인 중, 색 정보가 오면 이름에 색 입힘
+// 고른 대상이면 버튼 글이 보내는 중, 색 정보가 오면 이름에 색 입힘
 export default function SettingKickPlayerRow({
   name,
   profilePhotoSrc,

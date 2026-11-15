@@ -65,8 +65,6 @@ export default function GameMatchingPage() {
     canLookupKickResult,
     isAwaitingKickResolution,
     requestKickConfirm,
-    cancelKickConfirm,
-    confirmKick,
     lookupKickResult,
     canOpenFriendInvite,
     friendInviteModalOpen,
@@ -157,8 +155,6 @@ export default function GameMatchingPage() {
           canLookupResult={canLookupKickResult}
           isAwaitingResolution={isAwaitingKickResolution}
           onRequestConfirm={requestKickConfirm}
-          onCancelConfirm={cancelKickConfirm}
-          onConfirmKick={confirmKick}
           onLookupResult={lookupKickResult}
         />
       </SettingKickPlayerModalShell>

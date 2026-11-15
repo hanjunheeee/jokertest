@@ -51,7 +51,7 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
         }
     }
 
-    // 표 세기: 최다 1명이면 재판, 동률·전원 기권이면 밤 (재투표 없음, 사용자 결정 2026-11-09)
+    // 표 세기: 최다 1명이고 기권보다 많으면 재판, 동률·전원 기권·기권이 많음(ABSTAIN_MAJORITY)이면 밤 (재투표 없음, 사용자 결정 2026-11-09·11-16)
     const tally = tallyDayVoteOutcome(session)
     // 결과만 만들어 돌려줌, 판은 안 바꿈 (표 묶음은 commit 비교용)
     return {
@@ -131,7 +131,7 @@ function commitDayVoteResolution(session, resolution) {
             votes: new Map(),
         }
     } else {
-        // 그 외(동률·전원 기권): 바로 밤으로, 밤 기록 새로
+        // 그 외(동률·전원 기권·기권이 많음): 바로 밤으로, 밤 기록 새로
         session.tribunal = null
         enterNightPhase(session)
     }

@@ -43,11 +43,8 @@ export const TEXT_ALIGN_LEFT_CLASS = "left-[-4%]"
 
 export const LABEL_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:4.4cqi] font-bold leading-tight text-[#ebe2cc]"
 
-// 배너·톱니·초상 className
+// 배너·초상 className
 export const ROOT_CLASS = "relative block [container-type:inline-size] leading-none"
-
-export const SETTINGS_BTN_CLASS = "group absolute z-10 cursor-pointer border-0 bg-transparent p-0 leading-none"
-export const SETTINGS_GEAR_IMG_CLASS = "interactive-scale-sm block h-full w-full select-none object-contain"
 
 export const PROFILE_WRAP_CLASS =
   "pointer-events-none absolute z-[2] aspect-square select-none"

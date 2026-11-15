@@ -176,7 +176,7 @@ async function advanceToEnd(t, { stepDelayMs = 450, maxSteps = 80 } = {}) {
     throw new Error('판이 안 끝남');
 }
 
-/** 봇 스냅샷의 공개 승패 (끝난 판, mvp·reveals 포함) */
+/** 봇 스냅샷의 공개 승패 (끝난 판, reveals 포함) */
 async function publicWinResult(t, botIndex = 0) {
     const snap = await t.bots[botIndex].snapshot(t.gameId);
     return snap?.winResult ?? null;

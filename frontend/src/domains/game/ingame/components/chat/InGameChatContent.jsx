@@ -1,4 +1,4 @@
-// 채팅 내용 틀: 틀 그림·메시지 목록·입력칸·보내기·상태 줄을 한 판에 배치
+// 채팅 내용 틀: 틀 그림·메시지 목록·입력칸·보내기·상태 줄을 한 판에 배치, 밤에 산 시민은 입력칸 대신 까닭 한 줄
 // 채팅 틀·크게 보기 창·재판 연출 채팅이 사용, 모양 차이는 variant로 나눔
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
@@ -24,6 +24,8 @@ import { InGameChatVariantContext } from "./InGameChatVariantContext.jsx"
 import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
 import InGamePhaseTurnTimerPanel from "../timebar/InGamePhaseTurnTimerPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { useInGameStore } from "../../store/ingameStore.js"
+import { isNightChatInputClosed, NIGHT_CHAT_CLOSED_TEXT } from "../../utils/inGameChatChannel.js"
 
 // 틀 바탕·틀 그림 모양 (보드 모양만 눌러서 크게 보기라 손가락 커서)
 const CHAT_ROOT_CLASS =
@@ -35,6 +37,10 @@ const CHAT_ROOT_BOARD_CLASS =
 // 죽은 사람끼리 표시 (채팅 목록 칸 맨 위 가운데, 회색)
 const DEAD_CHAT_BADGE_CLASS =
   "absolute left-1/2 top-0 z-10 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#9a9a9a]/60 bg-black/70 px-2 py-0.5 text-[0.62rem] font-semibold tracking-wide text-[#d4d4d4]"
+
+// 밤 시민 입력칸 닫힘 까닭 (어두운 바탕에 밝은 글자, 틀 그림 위에서도 보이게)
+const NIGHT_CLOSED_TEXT_CLASS =
+  "w-full truncate rounded bg-black/75 px-2 py-1 text-center text-[clamp(0.6rem,2.6cqi,0.85rem)] font-semibold text-[#f2e6cf]"
 
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
@@ -62,6 +68,8 @@ export default function InGameChatContent({
   const [textFieldWidth, setTextFieldWidth] = useState(0)
   const inputWrapRef = useRef(null)
   const isBoard = variant === "board"
+  // 밤에 산 시민은 보낼 채널이 없음 → 입력칸 닫음 (서버도 거절)
+  const inputClosed = useInGameStore((s) => isNightChatInputClosed(s.state))
 
   // 첫 프레임 뒤에 보이게 해서 자리 잡기 전 깜빡임 막기
   useEffect(() => {
@@ -89,7 +97,7 @@ export default function InGameChatContent({
       observer.disconnect()
       window.removeEventListener("resize", syncWidth)
     }
-  }, [layoutReady])
+  }, [layoutReady, inputClosed])
 
   // 보드 모양에서 빈 곳 누르면 크게 보기, 목록·입력 줄 누름은 제외
   const handleRootClick = (event) => {
@@ -171,24 +179,32 @@ export default function InGameChatContent({
           style={getTextFieldInset(variant)}
           data-chat-interactive
         >
-          <InGameChatInput
-            ref={inputWrapRef}
-            value={draft}
-            onChange={(event) =>
-              onDraftChange(
-                truncateDraftOnInput
-                  ? event.target.value.slice(0, INPUT_MAX_LENGTH)
-                  : event.target.value,
-              )
-            }
-            onSend={handleSend}
-            className={getInputShiftClass(variant)}
-            truncateDraftOnInput={truncateDraftOnInput}
-          />
-          <InGameChatSendButton
-            onSend={handleSend}
-            className={getSendBtnShiftClass(variant)}
-          />
+          {inputClosed ? (
+            <p role="status" className={NIGHT_CLOSED_TEXT_CLASS} data-night-chat-closed="">
+              {NIGHT_CHAT_CLOSED_TEXT}
+            </p>
+          ) : (
+            <>
+              <InGameChatInput
+                ref={inputWrapRef}
+                value={draft}
+                onChange={(event) =>
+                  onDraftChange(
+                    truncateDraftOnInput
+                      ? event.target.value.slice(0, INPUT_MAX_LENGTH)
+                      : event.target.value,
+                  )
+                }
+                onSend={handleSend}
+                className={getInputShiftClass(variant)}
+                truncateDraftOnInput={truncateDraftOnInput}
+              />
+              <InGameChatSendButton
+                onSend={handleSend}
+                className={getSendBtnShiftClass(variant)}
+              />
+            </>
+          )}
         </div>
 
         <div

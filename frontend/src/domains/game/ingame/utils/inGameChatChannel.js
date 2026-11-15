@@ -1,7 +1,7 @@
-// 채팅 채널 이름과 지금 보낼·볼·받을 채널 고르기 (단계·생존·직업 기준)
-// 내 판 채팅 문맥 고르기·낮 채팅 상태·낮 채팅 세션 훅이 사용
+// 채팅 채널 이름과 지금 보낼·볼·받을 채널 고르기, 밤 시민 입력칸 닫기 (단계·생존·직업 기준)
+// 내 판 채팅 문맥 고르기·낮 채팅 상태·낮 채팅 세션 훅·채팅 입력칸(PC·모바일)이 사용
 // 죽은 사람은 낮·재판·밤 상관없이 죽은 사람 채널로 말함, 낮 채팅은 읽기만 (사용자 결정 2026-11-09)
-import { selectInGameSelfAlive } from "./selfAlive.js"
+import { isJokerNightChatEligible, selectInGameSelfAlive } from "./selfAlive.js"
 
 // 채팅 채널 이름 (낮·죽은 사람·직업별 밤 채널)
 export const INGAME_CHAT_CHANNELS = Object.freeze({
@@ -14,10 +14,9 @@ export const INGAME_CHAT_CHANNELS = Object.freeze({
   WITCH_HUNTER: "WITCH_HUNTER",
 })
 
-// 밤에 직업별로 여는 채널
+// 밤에 직업별로 여는 채널, 시민은 뺌 (서버가 시민 밤 채팅 거절, 사용자 결정 2026-11-16)
 const NIGHT_ROLE_CHANNELS = new Set([
   INGAME_CHAT_CHANNELS.JOKER,
-  INGAME_CHAT_CHANNELS.CITIZEN,
   INGAME_CHAT_CHANNELS.DOCTOR,
   INGAME_CHAT_CHANNELS.GUARD,
   INGAME_CHAT_CHANNELS.WITCH_HUNTER,
@@ -65,3 +64,13 @@ export function resolveInGameChatReadChannels(viewChannel) {
   if (viewChannel === INGAME_CHAT_CHANNELS.DEAD) return [INGAME_CHAT_CHANNELS.DEAD, INGAME_CHAT_CHANNELS.DAY]
   return viewChannel ? [viewChannel] : []
 }
+
+// 밤에 산 사람인데 같은 직업 채팅이 없는 직업(시민)이면 입력칸 닫음 (죽은 사람은 죽은 사람 채팅이라 안 닫음)
+export function isNightChatInputClosed(state) {
+  if (state?.phase !== "NIGHT") return false
+  if (selectInGameSelfAlive(state) !== true) return false
+  return !isJokerNightChatEligible(state)
+}
+
+// 닫힌 입력칸 자리에 보일 까닭
+export const NIGHT_CHAT_CLOSED_TEXT = "밤에는 시민이 채팅을 쓸 수 없습니다"
