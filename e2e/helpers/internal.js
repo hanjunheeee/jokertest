@@ -1,6 +1,6 @@
 'use strict';
 
-// 관리자 통로·시험 손잡이 부르기 파일, 시험 백엔드(4100)의 /internal(공지·끊기·점검·지금 상황)과 /e2e(역할·판 보기·단계 넘기기)
+// 관리자 통로·시험 손잡이 부르기 파일, 시험 백엔드(4100)의 /internal(공지·끊기·점검·지금 상황)과 /e2e(역할·판 보기·단계 넘기기·60초·180초 바로 끝내기)
 // 열쇠는 .env.e2e의 INTERNAL_API_KEY (값은 화면·로그에 안 찍음), 시험·bots.js·game.js가 씀
 // Node 여러 개(E2E_NODES=2)면 늘 앞단(4100)으로 부름 → 서버가 주인 Node로 넘김(RPC), 다시 읽기 둘만 Node마다 바로 부름
 const { E2E, readSecrets } = require('./env');
@@ -105,6 +105,11 @@ const e2e = {
     advance: (gameId) => must('POST', `/e2e/games/${encodeURIComponent(gameId)}/advance`),
     /** 끊김 60초 기다림 바로 끝냄 (못 돌아온 것으로 탈락) → { fired: [uuid], after } */
     expireGraces: (gameId) => must('POST', `/e2e/games/${encodeURIComponent(gameId)}/expire-graces`),
+    /**
+     * 결과 화면 180초 바로 끝냄 (판 끝난 뒤에만): 남은 사람 화면에 game_result_closed → 로비, 방장 자리 끝, 아무도 안 온 방 지움
+     * → { fired, after } — 180초 규칙 자체를 보는 시험은 이걸 안 쓰고 진짜로 기다림 (@realtime)
+     */
+    closeResults: (gameId) => must('POST', `/e2e/games/${encodeURIComponent(gameId)}/close-results`),
 };
 
 module.exports = { internal, e2e, call, mustEveryNode };

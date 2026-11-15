@@ -3,7 +3,13 @@
 const assert = require('node:assert/strict')
 
 const gameSession = require('../../game-core/gameSession')
-const { buildSessionCandidate } = gameSession.__testables
+
+// 판 후보 만들기, 거절이면 이유 붙여 바로 멈춤 (5명 밑이면 PLAYER_COUNT_OUT_OF_RANGE, 안 보면 엉뚱한 곳에서 터짐)
+function buildSessionCandidate(room, opts) {
+    const candidate = gameSession.__testables.buildSessionCandidate(room, opts)
+    assert.equal(candidate.ok, true, `판 만들기 거절(${candidate.reason ?? candidate.code}) — 5~10명으로 부르기`)
+    return candidate
+}
 const {
     commitGameSession,
     acknowledgeRoleReveal,
@@ -145,11 +151,11 @@ function commitJokerPairSessionAtNight({ id = 'room-joker', gameIdFn } = {}) {
     return { session, jokerUuids, citizenUuid: citizenUuids[0], citizenUuids }
 }
 
-// 5명·광대 1 첫 밤: 한 명 죽어도 1:3이라 승부 안 남
+// 5명·광대 1 첫 밤: 한 명 죽어도 1:3이라 승부 안 남, uuid에 id 넣어 한 파일에서 여러 번 불러도 안 겹침
 function nightSessionOf5NoWin({ id = 'room-cnr5' } = {}) {
     const room = makeRoom({
         id,
-        players: Array.from({ length: 5 }, (_, i) => makePlayer(`cnr5-${i}`)),
+        players: Array.from({ length: 5 }, (_, i) => makePlayer(`cnr5-${id}-${i}`)),
         jokerCount: 1,
     })
     const candidate = buildSessionCandidate(room, { randomFn: () => 0 })

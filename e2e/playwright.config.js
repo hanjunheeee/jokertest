@@ -34,6 +34,7 @@ const adminPhoneUse = { ...devices['Pixel 7'], viewport: { width: 375, height: 8
 module.exports = defineConfig({
     testDir: './tests',
     // 판 시험은 한 판에 1~3분 → 넉넉히, 기대 기다림도 길게
+    // 이보다 긴 시험(180초·5분 진짜 기다림, 긴 @hard 판)은 그 시험 안에서 test.setTimeout으로만 늘림 (여기 값은 안 바꿈)
     timeout: 120_000,
     expect: { timeout: 10_000 },
     fullyParallel: true,
@@ -81,10 +82,12 @@ module.exports = defineConfig({
             },
         },
         {
-            // 아이폰 사파리 (WebKit) — 모바일 시험을 그대로 한 번 더, 사파리에서만 다른 동작 잡기
+            // 아이폰 사파리 (WebKit) — 모바일 시험 중 이름에 @safari 붙인 것만 한 번 더, 사파리에서만 다른 동작 잡기
+            // 전부 다시 돌리면 1시간 가까이 늘어서 고른 것만 (시험_계획.md 3-3, 결정.md 시험 임시 1)
             name: 'mobile-safari',
             testMatch: mobileMatch,
             testIgnore: mobileIgnore,
+            grep: /@safari/,
             grepInvert: withSingleNode(/@serial|@shutdown/),
             use: {
                 ...devices['iPhone 13'],

@@ -250,11 +250,14 @@ class Bot {
             await this.request("cast_tribunal_vote", {
                 gameId, dayIndex: s.dayIndex, vote: Math.random() < 0.7 ? "GUILTY" : "NOT_GUILTY",
             });
-        } else if (s.phase === "NIGHT" && s.nightTurnRole === me.role && targets.length > 0) {
+        } else if (s.phase === "NIGHT" && s.nightTurnRole === me.role && (targets.length > 0 || me.role === "WITCH_HUNTER")) {
             if (me.role === "JOKER" && allies.size > 0 && Math.random() < chatChance) {
                 await this.request("submit_joker_chat_message", { gameId, text: "부하 시험 광대 채팅" });
             }
-            await this.request("submit_night_action", { gameId, targetId: pick(targets).uuid });
+            // 마녀사냥꾼은 죽은 사람만 고름 (산 사람 고르면 늘 거절이라 차례가 마감까지 끎), 죽은 사람 없으면 건너뛰기(null)
+            const dead = (s.players ?? []).filter((p) => !p.isAlive && p.uuid !== me.uuid);
+            const targetId = me.role === "WITCH_HUNTER" ? (dead.length > 0 ? pick(dead).uuid : null) : pick(targets).uuid;
+            await this.request("submit_night_action", { gameId, targetId });
         } else {
             // 행동 없는 단계는 다음에 다시 봄
             done.delete(key);

@@ -132,7 +132,7 @@ class E2eBot extends Bot {
      * @param {boolean} [plan.readyForVote=true]      낮 토론에서 '투표 준비' 누르기
      * @param {*} [plan.dayVote='random']             낮 투표 대상
      * @param {'GUILTY'|'NOT_GUILTY'|'skip'|Function} [plan.tribunal='GUILTY']  재판 표 (skip = 안 냄 → 마감 때 기권)
-     * @param {*} [plan.night='random']               내 밤 차례 대상 (광대는 동료 빼고)
+     * @param {*} [plan.night='random']               내 밤 차례 대상 (광대는 동료 빼고, 마녀사냥꾼 random은 죽은 사람 중 — 없으면 건너뛰기)
      * @param {string|null} [plan.jokerChat]          광대 밤 채팅
      * @param {string|null} [plan.deadChat]           죽은 뒤 한 번 할 말 (낮·밤 다 죽은 사람 채팅으로 감)
      * @param {number} [plan.pollMs=400]
@@ -208,9 +208,13 @@ class E2eBot extends Bot {
             }
         } else if (s.phase === 'NIGHT' && s.nightTurnRole === me.role) {
             if (me.role === 'JOKER' && p.jokerChat) await this.request('submit_joker_chat_message', { gameId, text: p.jokerChat });
-            const candidates = me.role === 'JOKER' ? others.filter((pl) => !allies.has(pl.uuid)) : others;
+            // 마녀사냥꾼은 죽은 사람만 고를 수 있음 → random이면 죽은 사람 중에서, 없으면 건너뛰기(null)로 차례를 닫음
+            const isHunter = me.role === 'WITCH_HUNTER';
+            const dead = (s.players ?? []).filter((pl) => !pl.isAlive && pl.uuid !== me.uuid);
+            const candidates = me.role === 'JOKER' ? others.filter((pl) => !allies.has(pl.uuid)) : isHunter ? dead : others;
             const target = this.resolveTarget(p.night, ctx, candidates);
             if (target) await this.request('submit_night_action', { gameId, targetId: target });
+            else if (isHunter && p.night === 'random') await this.request('submit_night_action', { gameId, targetId: null });
         } else {
             // 행동 없는 단계는 다음 바퀴에 다시 봄
             done.delete(key);

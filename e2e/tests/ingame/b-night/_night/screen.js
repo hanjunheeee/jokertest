@@ -25,10 +25,11 @@ function josa(word, withFinal, withoutFinal) {
 
 /**
  * 화면 기록 걸기: 밤 역할 안내 창이 뜰 때마다 역할을, 낮 시작 연출 글 창·영상 아래 글이 뜰 때마다 종류·글을 적음, autoConfirm이면 '단계 전환 안내'는 바로 확인 누름
+ * autoConfirmDawn이면 낮 시작 연출 글 창(의사가 살렸음 등)도 바로 확인 (그 창 글·보임을 볼 시험은 끄고 직접 확인)
  * (판 화면에 들어온 뒤 부름, SPA라 결과 화면까지 기록이 남음)
  */
-async function recordUi(page, { autoConfirm = true } = {}) {
-    await page.evaluate((auto) => {
+async function recordUi(page, { autoConfirm = true, autoConfirmDawn = false } = {}) {
+    await page.evaluate(({ auto, autoDawn }) => {
         if (window.__nightRec) return;
         const rec = { turns: [], privateResults: [], dawnReports: [], dawnMessages: [], kills: 0, entrances: [], videos: [] };
         window.__nightRec = rec;
@@ -49,6 +50,11 @@ async function recordUi(page, { autoConfirm = true } = {}) {
             const dawn = document.querySelector('[data-ingame-dawn-report]');
             if (dawn && dawn !== lastDawn) rec.dawnReports.push(dawn.getAttribute('data-ingame-dawn-report'));
             lastDawn = dawn;
+            // 의사가 살렸을 때 글 창은 '확인'을 눌러야 닫히고 그동안 '낮이 되었습니다'가 뒤에 밀림 → 원하면 같이 누름
+            if (autoDawn && dawn) {
+                const btn = [...dawn.querySelectorAll('button')].find((b) => b.innerText.trim() === '확인');
+                if (btn) setTimeout(() => btn.click(), 50);
+            }
             // 암살 영상 아래 글 ('지난밤 ○○님이 살해당했습니다')
             const dawnMsg = document.querySelector('[data-ingame-dawn-report-message]');
             if (dawnMsg && dawnMsg !== lastDawnMsg) rec.dawnMessages.push(dawnMsg.innerText.replace(/\s+/g, ' ').trim());
@@ -70,7 +76,7 @@ async function recordUi(page, { autoConfirm = true } = {}) {
         };
         new MutationObserver(scan).observe(document.body, { childList: true, subtree: true, attributes: true });
         scan();
-    }, autoConfirm);
+    }, { auto: autoConfirm, autoDawn: autoConfirmDawn });
 }
 
 /** 화면 기록 읽기 */

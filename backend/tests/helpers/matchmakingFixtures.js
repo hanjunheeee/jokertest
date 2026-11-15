@@ -244,6 +244,29 @@ function seedActiveGameForAccount(uuids, { roomId = 'room-active-game', jokerCou
     return prepared.session
 }
 
+// 매칭 쪽 가짜 서비스 한 번에 넣기 (DB 안 감), 판 시작까지 가려면 외형·팔레트 칸도 있어야 함
+// 바꿀 것만 overrides로, 예: installFakeMatchmakingDeps(matchmaking, { userRepository: { findByUuid: async () => null } })
+function installFakeMatchmakingDeps(matchmaking, overrides = {}) {
+    const emptyLoadout = { profilePhotoId: null, profileBorderId: null }
+    const fakes = {
+        userRepository: { findByUuid: async (uuid) => ({ uuid, nickname: `닉-${uuid}` }) },
+        economyService: {
+            getPublicProfileLoadouts: async (ids) => Object.fromEntries(ids.map((id) => [id, { ...emptyLoadout }])),
+            getGameStartLoadouts: async (ids) => Object.fromEntries(ids.map((id) => [id, { ...emptyLoadout }])),
+            getEmojiPalettes: async (ids) => new Map(ids.map((id) => [id, { slots: [], owned: [] }])),
+            getEmojiPalette: async () => ({ slots: [], owned: [] }),
+        },
+        gameResultRepository: { getAccountRecordSummaries: async () => new Map() },
+        gameInviteService: { cancelPendingInvitesForRoom: async () => {} },
+        ...overrides,
+    }
+    matchmaking.__setUserRepositoryForTests(fakes.userRepository)
+    matchmaking.__setEconomyServiceForTests(fakes.economyService)
+    matchmaking.__setGameResultRepositoryForTests(fakes.gameResultRepository)
+    matchmaking.__setGameInviteServiceForTests(fakes.gameInviteService)
+    return fakes
+}
+
 module.exports = {
     callAsPromise,
     createFakeSocket,
@@ -255,4 +278,5 @@ module.exports = {
     countingCallback,
     setupReadyRoomForStart,
     seedActiveGameForAccount,
+    installFakeMatchmakingDeps,
 }

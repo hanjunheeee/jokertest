@@ -1,6 +1,6 @@
 'use strict';
 
-// 브라우저 시험용 게임 손잡이 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기·끊김 60초 바로 끝내기
+// 브라우저 시험용 게임 손잡이 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기·끊김 60초·결과 화면 180초 바로 끝내기
 // routes/e2e.routes.js(E2E_HOOKS=1, 운영 아님)와 matchmaking/room/startLaunch.js(역할 미리 정하기 반영)가 씀, Node 여러 개 길은 remoteHooks.js
 const { isE2eHooksEnabled } = require('../../config/e2eHooks');
 const cluster = require('../../cluster');
@@ -204,6 +204,17 @@ function expireSessionGraces(gameId) {
     return { ok: true, fired, after: getSessionById(gameId)?.phase ?? 'GONE' };
 }
 
+// 판 끝 180초 시계(결과 화면 닫기·방장 자리 끝·빈 방 지우기, departure/end.js)를 지금 바로 돌림 → { ok, fired, after }
+// 판이 다 나가 지워져도 방장 자리 정리 때문에 시계가 남을 수 있어서 판 장부가 아니라 시계 장부를 봄
+// 시계가 없으면(판이 안 끝남·이미 돎·다른 Node 판) ok:false → remoteHooks가 다른 Node에 물음
+function closeResultsNow(gameId) {
+    const run = runs.endedSweepRuns.get(gameId);
+    if (!run) return { ok: false, code: 'NO_RESULT_TIMER' };
+    // 손잡이 켜기 전에 건 시계는 장부에 없어 못 돌림 (fired:false)
+    const fired = e2eTimers.fireNow(run.timerId);
+    return { ok: true, fired, after: getSessionById(gameId)?.phase ?? 'GONE' };
+}
+
 module.exports = {
     setRolePresets,
     clearRolePresets,
@@ -215,5 +226,6 @@ module.exports = {
     describeRoomByUser,
     advanceSession,
     expireSessionGraces,
+    closeResultsNow,
     getSessionById,
 };

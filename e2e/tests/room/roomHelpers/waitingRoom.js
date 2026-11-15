@@ -38,6 +38,9 @@ async function botsJoinAndReady(bots, uuidOfHost, roomCode) {
  * @returns {Promise<Table>} gameId 들어 있음 (봇은 bots 도우미가 닫음)
  */
 async function hostGame({ host, guests = [], botList = [], roles = null, settings = {} }) {
+    // 5명 밑 판은 서버가 시작 거절 → 방 만들기 전에 바로 알림
+    const total = 1 + guests.length + botList.length;
+    if (total < 5) throw new Error(`판은 5명 이상이어야 함 (방장 1 + 손님 ${guests.length} + 봇 ${botList.length} = ${total}명) — botList를 늘리기`);
     const room = await createRoomUi(host, { jokers: 1, ...settings });
     for (const g of guests) await ui.joinRoomByCodeUi(g.page, room.roomCode);
     for (const g of guests) await ui.readyUi(g.page);

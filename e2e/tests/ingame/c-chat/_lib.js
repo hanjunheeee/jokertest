@@ -103,6 +103,8 @@ async function replan(t, plan) {
  * extra: 봇 계획에 더할 것 (deadChat 등)
  */
 async function executeByBots(t, targetUuid, extra = {}) {
+    // 최다 득표가 기권보다 많아야 재판 (사람은 기권으로 셈) → 모자라면 바로 알림
+    await t.assertBotsCanExecute(targetUuid);
     await replan(t, (bot) => ({
         dayVote: bot.account.uuid === targetUuid ? 'abstain' : targetUuid,
         tribunal: 'GUILTY',

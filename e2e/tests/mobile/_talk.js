@@ -127,6 +127,8 @@ async function botLeave(t, botIndex) {
 
 /** 봇들이 나를 처형하게 해서 내가 죽을 때까지 (봇은 밤에 아무도 안 찍음) */
 async function getExecuted(t, me, { deadChat, keepWatching = true, pages = [] } = {}) {
+    // 봇 표가 기권(사람·나)보다 많아야 재판 → 아니면 단계만 넘기다 시간 넘으니 바로 알림
+    await t.assertBotsCanExecute(me);
     t.playBots({ dayVote: me, tribunal: 'GUILTY', night: 'skip', deadChat });
     const s = await t.advanceUntil((g) => g.players.find((p) => p.uuid === me)?.alive === false, { stepDelayMs: 1200, maxSteps: 60 });
     // 내가 죽은 뒤엔 봇이 아무도 안 찍게 (판이 저절로 끝나지 않게)
@@ -150,8 +152,9 @@ async function getExecuted(t, me, { deadChat, keepWatching = true, pages = [] } 
     return s;
 }
 
-/** 봇 하나를 처형 (나머지 봇이 찍음, 사람은 아무것도 안 함) */
+/** 봇 하나를 처형 (나머지 봇이 찍음, 사람은 아무것도 안 함) — 사람이 많으면 봇 표가 모자라 던짐 (5명 판 사람 1·봇 4는 됨) */
 async function executeBot(t, victimUuid) {
+    await t.assertBotsCanExecute(victimUuid);
     t.playBots({ dayVote: victimUuid, tribunal: 'GUILTY', night: 'skip' });
     const s = await t.advanceUntil((g) => g.players.find((p) => p.uuid === victimUuid)?.alive === false, { stepDelayMs: 1200, maxSteps: 60 });
     await t.stopBots();

@@ -3,6 +3,8 @@
 # 브라우저 점검: 한 묶음 돌리고 실패 파일만 한 번 다시
 # 사용: bash run-phase.sh <이름> <nodes> <playwright 인자...>
 name="$1"; nodes="$2"; shift 2
+# 실패 다시 돌릴 때도 같은 거르기(--grep·--grep-invert)를 씀 (안 그러면 그 파일의 다른 단계 시험까지 돎)
+greps=(); for a in "$@"; do case "$a" in --grep=*|--grep-invert=*) greps+=("$a");; esac; done
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$HERE/../.run/br"; mkdir -p "$OUT"
 cd "$HERE/../../../e2e" || exit 1
@@ -32,7 +34,7 @@ if [ -s "$OUT/$name.failed.txt" ]; then
   projs=$(cut -d' ' -f1 "$OUT/$name.failed.txt" | sort -u | sed 's/^/--project=/' | tr '\n' ' ')
   files=$(cut -d' ' -f2 "$OUT/$name.failed.txt" | sort -u | tr '\n' ' ')
   s2=$(date +%s)
-  PLAYWRIGHT_JSON_OUTPUT_FILE="$OUT/$name-rerun.json" npx playwright test --retries=0 --workers=$w --no-deps --reporter=line,json $projs $files > "$OUT/$name-rerun.log" 2>&1
+  PLAYWRIGHT_JSON_OUTPUT_FILE="$OUT/$name-rerun.json" npx playwright test --retries=0 --workers=$w --no-deps --reporter=line,json "${greps[@]}" $projs $files > "$OUT/$name-rerun.log" 2>&1
   echo "[$name] $(date +%H:%M:%S) 다시 끝 rc=$? 걸린 $(( ($(date +%s)-s2)/60 ))분 run=$E2E_RUN_ID" | tee -a "$OUT/timeline.txt"
 fi
 kill $mon 2>/dev/null
