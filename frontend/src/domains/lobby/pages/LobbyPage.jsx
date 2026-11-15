@@ -43,7 +43,6 @@ export default function LobbyPage() {
           profile={profile}
           loading={profileLoading}
           onMyPage={() => navigate("/mypage")}
-          onAccount={() => navigate("/account")}
         />
         <LobbyFriendArea
           friendListOpen={friendListOpen}

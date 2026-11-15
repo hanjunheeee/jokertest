@@ -1,4 +1,4 @@
-// 내 프로필 배너 (배너 틀·초상·닉네임, 누르면 마이페이지, 톱니는 계정 화면)
+// 내 프로필 배너 (배너 틀·초상·닉네임, 누르면 마이페이지, 톱니는 장식)
 // 로비 TopBar가 씀
 import { useEffect } from "react"
 import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
@@ -13,9 +13,9 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import BannerPortrait from "@m/shared/ui/portrait/BannerPortrait.jsx"
 
-// 배너 본체는 버튼 하나 (누름 움직임은 데스크톱 interactive-scale), 톱니는 그 위에 겹친 따로 버튼 (안쪽에 버튼 넣지 않기)
-// 톱니 그림은 데스크톱 자리(위 14.5%·오른쪽 17%·폭 7.8cqi)의 가운데에 두고 누르는 칸만 44px로 키움
-export default function ProfileBanner({ profile, onMyPage, onAccount }) {
+// 배너 본체는 버튼 하나 (누름 움직임은 데스크톱 interactive-scale), 톱니는 그 위에 겹친 장식 그림 (단추 아님, 누름이 배너로 번지지 않게 따로 둠)
+// 톱니 그림은 데스크톱 자리(위 14.5%·오른쪽 17%·폭 7.8cqi)의 가운데에 둠
+export default function ProfileBanner({ profile, onMyPage }) {
     // 처음 그릴 때 지갑 요약 받기, 장착 초상이 이 응답으로 꾸미기 스토어에 들어옴 (데스크톱 BannerProfilePortrait와 같음)
     useEffect(() => {
         useEconomyStore.getState().fetchSummary()
@@ -42,18 +42,12 @@ export default function ProfileBanner({ profile, onMyPage, onAccount }) {
                 </span>
             </button>
 
-            <button
-                type="button"
-                aria-label="계정 설정"
-                onClick={onAccount}
-                className="group absolute right-[18.5%] top-[31%] z-10 flex h-11 w-11 translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center border-0 bg-transparent p-0"
+            <span
+                aria-hidden="true"
+                className="absolute right-[18.5%] top-[31%] z-10 block aspect-square w-[8.2cqi] min-w-[1.05rem] translate-x-1/2 -translate-y-1/2 select-none"
             >
-                <PublicAsset
-                    src={LOBBY_ASSETS.settingsGear}
-                    alt=""
-                    className="interactive-scale-sm aspect-square w-[8.2cqi] min-w-[1.05rem] select-none object-contain"
-                />
-            </button>
+                <PublicAsset src={LOBBY_ASSETS.settingsGear} alt="" className="block h-full w-full select-none object-contain" />
+            </span>
         </div>
     )
 }
