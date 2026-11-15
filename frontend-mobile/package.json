@@ -16,7 +16,7 @@
     "screenshots:capture": "node scripts/capture-ui-screenshots.mjs",
     "screenshots:gallery": "node scripts/build-screenshot-gallery.mjs",
     "screenshots": "npm run screenshots:capture && npm run screenshots:gallery",
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node ../tools/시험도구/ensure-tests.js tests && node --test \"tests/**/*.test.js\""
   },
   "dependencies": {
     "framer-motion": "^12.39.0",
