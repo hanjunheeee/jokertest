@@ -1,11 +1,12 @@
 // 재판 마감 타이머 파일
-// 재판 마감 걸기·끄기 + 마감 때 안 낸 사람 기권 채우고 판정 (BE-003), 판 단계 타이머 맞추기·판 끝 정리가 씀
+// 재판 마감 걸기·끄기·표가 다 차면 5초로 당기기 + 마감 때 안 낸 사람 기권 채우고 판정, 판 단계 타이머 맞추기·재판 표 핸들러·이탈·판 끝 정리가 씀
 // 판정·방송은 departure/autoResolve 것을 phaseHooks로 부름 (그 파일이 낮 타이머 파일을 require해서 고리 막기)
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../core/constants')
 const { tribunalRuns, phaseHooks } = require('../core/state')
 const { pickTimerFns, setRunTimer, clearRunTimer, fillAbstentions } = require('../core/timers')
+const { hasAllSubmitted, pullRunDeadline, announceSettleStarted } = require('./settle')
 
 // 지금 판이 그 재판 그대로인지 (같은 날·같은 피고·아직 안 끝남)
 function matchesTribunal(run) {
@@ -46,6 +47,8 @@ function startTribunalTimer(io, session, deps = {}) {
         dayIndex: session.dayIndex,
         defendantUuid: session.tribunal.defendantUuid,
         ...pickTimerFns(deps),
+        // 다 찬 뒤 판정까지 시간 (시험만 넣음, 없으면 settle 5초)
+        settleDelayMs: deps.settleDelayMs ?? null,
     }
     run.deadline = run.nowFn() + durationMs
     // 판에도 마감 시각 적어 둠 (스냅샷이 화면 타이머용으로 실음)
@@ -97,8 +100,28 @@ function expireTribunal(run) {
     setRunTimer(run, () => expireTribunal(run), PHASE_RETRY_DELAY_MS)
 }
 
+// 투표할 사람(산 사람 중 피고 빼고) 표가 다 찼으면 재판 마감을 지금+5초로 당기고 판 전원에 알림, 당겼으면 새 마감 시각 (아니면 null)
+// 재판 표 낸 뒤·이탈 반영 뒤 부름, 판정은 위 재판 마감이 그대로 함 (남은 시간 5초 이하·이미 당김이면 그대로)
+function settleTribunalIfComplete(gameId) {
+    const run = tribunalRuns.get(gameId)
+    if (!run || !matchesTribunal(run)) return null
+    const { session } = run
+    const voterUuids = gameSessionCore.getTribunalVoterUuids(session, run.defendantUuid)
+    if (!hasAllSubmitted(voterUuids, (voterUuid) => session.tribunal.votes.has(voterUuid))) return null
+
+    const pulled = pullRunDeadline(run, `TRIBUNAL:${run.dayIndex}:${run.defendantUuid}`)
+    if (!pulled) return null
+    // 판에도 당긴 마감 적어 둠 (새로고침 스냅샷이 줄어든 남은 시간 보임)
+    session.tribunalDeadline = pulled.deadline
+    run.retries = 0
+    setRunTimer(run, () => expireTribunal(run), pulled.delayMs)
+    announceSettleStarted(run, 'TRIBUNAL')
+    return pulled.deadline
+}
+
 module.exports = {
     startTribunalTimer,
     stopTribunalTimer,
+    settleTribunalIfComplete,
     resolveTribunalDurationMs,
 }

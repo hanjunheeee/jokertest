@@ -1,5 +1,5 @@
 // 밤 턴 순서 파일
-// 역할 턴 열기·마감·닫기 + 밤 턴 순서 시작·멈춤, 낮 타이머·밤 마무리·이탈·핸들러가 씀
+// 역할 턴 열기·마감·닫기(다 고르면 5초 뒤) + 밤 턴 순서 시작·멈춤, 낮 타이머·밤 마무리·이탈·핸들러가 씀
 // 다 돌면 밤 마무리는 phaseHooks로 부름 (finalize가 이 파일을 require해서 고리 막기)
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isolate, isolateOr, tryOr } = require('../../../common/isolate')
@@ -15,6 +15,7 @@ const {
 const { expireGracesAtBoundary, expireDisconnectGrace } = require('../../connection/grace')
 const { emitToGameChannel } = require('../../delivery/broadcast')
 const { isCurrentNightRun, isSubmittingNightTurn } = require('./checks')
+const { pullRunDeadline, announceSettleStarted } = require('../settle')
 
 // 밤 턴 방송, 던져도 턴 진행은 계속
 function emitNightTurnEvent(run, event, payload) {
@@ -106,9 +107,9 @@ function advanceNightTurn(run) {
         return
     }
 
-    // 마감 타이머 걸고, 벌써 다 낸 상태면 바로 닫음
+    // 마감 타이머 걸고, 벌써 다 낸 상태면 5초 뒤로 당김
     run.timerId = run.setTimeoutFn(() => expireNightTurn(run, role), durationMs)
-    maybeEndNightTurn(session.id)
+    settleNightTurnIfComplete(session.id)
 }
 
 // 밤 턴 마감: 그 역할 끊김 유예를 먼저 끝내고, 안 낸 사람은 기권으로 채운 뒤 턴 닫음 (지도 08-⑥)
@@ -160,15 +161,26 @@ function endNightTurn(run, role) {
     advanceNightTurn(run)
 }
 
-// 지금 역할 산 행동자가 다 냈으면 마감 안 기다리고 턴 닫음 (빈 턴은 타이머에 맡김)
-function maybeEndNightTurn(gameId) {
+// 지금 역할 산 행동자가 다 골랐으면 턴 마감을 지금+5초로 당기고 판 전원에 알림, 당겼으면 새 마감 시각 (아니면 null)
+// 1명이어도 같음, 5초 안엔 고른 대상 바꾸기 됨 (다시 내면 덮어씀, 5초는 다시 안 셈), 빈 턴은 무작위 타이머에 맡김
+// 당긴 마감엔 바로 턴 닫기: 다 냈으니 기권 채울 것 없음, 낸 뒤 끊긴 사람 유예를 앞당겨 끝내지 않게
+function settleNightTurnIfComplete(gameId) {
     const run = nightTurnRuns.get(gameId)
-    if (!run) return
-    const role = gameSessionCore.getCurrentNightTurnRole(run.session)
-    if (role === null) return
-    if (gameSessionCore.getAliveActorUuidsForRole(run.session, role).length === 0) return
-    if (!gameSessionCore.isRoleTurnComplete(run.session, role)) return
-    endNightTurn(run, role)
+    if (!run) return null
+    const { session } = run
+    const role = gameSessionCore.getCurrentNightTurnRole(session)
+    if (role === null || !isSubmittingNightTurn(run, role)) return null
+    if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) return null
+    if (!gameSessionCore.isRoleTurnComplete(session, role)) return null
+
+    const pulled = pullRunDeadline(run, `NIGHT:${run.nightDayIndex}:${role}`)
+    if (!pulled) return null
+    // 판에도 당긴 마감 적어 둠 (새로고침 스냅샷이 줄어든 남은 시간 보임)
+    session.nightTurnDeadline = pulled.deadline
+    run.retries = 0
+    run.timerId = run.setTimeoutFn(() => endNightTurn(run, role), pulled.delayMs)
+    announceSettleStarted(run, 'NIGHT', role)
+    return pulled.deadline
 }
 
 // 밤 턴 순서 시작: 밤마다 run 하나, 이미 있으면 그대로 (시계·타이머는 시험이 넣을 수 있음)
@@ -191,6 +203,8 @@ function startNightTurnSequence(io, session, deps = {}) {
         randomFn: deps.randomFn ?? Math.random,
         ...pickTimerFns(deps),
         durationMs: deps.turnDurationMs ?? null,
+        // 다 고른 뒤 턴 닫기까지 시간 (시험만 넣음, 없으면 settle 5초)
+        settleDelayMs: deps.settleDelayMs ?? null,
     }
     // 여기부터 진짜 바뀜: run 등록, 차례 진행 표시 (밤 판정이 차례 기록을 쓰게)
     nightTurnRuns.set(session.id, run)
@@ -215,7 +229,7 @@ function stopNightTurnSequence(gameId) {
 module.exports = {
     advanceNightTurn,
     endNightTurn,
-    maybeEndNightTurn,
+    settleNightTurnIfComplete,
     startNightTurnSequence,
     stopNightTurnSequence,
 }

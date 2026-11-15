@@ -36,25 +36,32 @@ const {
 } = require('./gameSession/delivery/broadcast')
 const {
     endNightTurn,
+    settleNightTurnIfComplete,
     startNightTurnSequence,
     stopNightTurnSequence,
 } = require('./gameSession/phase/night/turn')
-const { startDayPhaseTimer, stopDayPhaseTimer, syncSessionPhaseTimers } = require('./gameSession/phase/day')
+const {
+    startDayPhaseTimer,
+    stopDayPhaseTimer,
+    syncSessionPhaseTimers,
+    settleDayVoteIfComplete,
+} = require('./gameSession/phase/day')
 const { ensureRoleRevealTimer, stopRoleRevealTimer } = require('./gameSession/phase/roleReveal')
-const { startTribunalTimer, stopTribunalTimer } = require('./gameSession/phase/tribunal')
+const { startTribunalTimer, stopTribunalTimer, settleTribunalIfComplete } = require('./gameSession/phase/tribunal')
+const { SETTLE_DELAY_MS } = require('./gameSession/phase/settle')
 const { maybeResolveTribunal } = require('./gameSession/departure/autoResolve')
 const { finalizeNightForSession } = require('./gameSession/phase/night/finalize')
 const { finalizeGameSessionEnd } = require('./gameSession/departure/end')
 const { applyParticipantDeparture } = require('./gameSession/departure/apply')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./gameSession/handlers/ready')
-const { handleSubmitNightAction, handleResolveNight } = require('./gameSession/handlers/night')
+const { handleSubmitNightAction } = require('./gameSession/handlers/night')
 const {
     handleSubmitJokerChatMessage,
     handleSubmitGameChatMessage,
 } = require('./gameSession/handlers/chat')
 const { handleSendEmoji } = require('./gameSession/handlers/emoji')
-const { handleSubmitDayVote, handleResolveDayVote } = require('./gameSession/handlers/dayVote')
-const { handleCastTribunalVote, handleResolveTribunalVote } = require('./gameSession/handlers/tribunal')
+const { handleSubmitDayVote } = require('./gameSession/handlers/dayVote')
+const { handleCastTribunalVote } = require('./gameSession/handlers/tribunal')
 const { handleLeaveGameSession, onDisconnect } = require('./gameSession/handlers/leave')
 const { handleGetSessionSnapshot } = require('./gameSession/handlers/snapshot')
 const { handleGetKickResult } = require('./gameSession/handlers/kickResult')
@@ -94,13 +101,10 @@ module.exports = {
         handleSubmitNightAction,
         handleSubmitJokerChatMessage,
         handleSubmitGameChatMessage,
-        handleResolveNight,
         finalizeNightForSession,
         endNightTurn,
         handleSubmitDayVote,
-        handleResolveDayVote,
         handleCastTribunalVote,
-        handleResolveTribunalVote,
         handleLeaveGameSession,
         handleGetSessionSnapshot,
         handleSendEmoji,
@@ -135,6 +139,11 @@ module.exports = {
         startTribunalTimer,
         stopTribunalTimer,
         __getTribunalRunForTests: (gameId) => tribunalRuns.get(gameId) ?? null,
+        // 다 차면 5초 뒤 판정: 마감 당기기 셋 + 5초 값
+        settleDayVoteIfComplete,
+        settleTribunalIfComplete,
+        settleNightTurnIfComplete,
+        SETTLE_DELAY_MS,
         beginDisconnectGrace,
         cancelDisconnectGrace,
         expireDisconnectGrace,

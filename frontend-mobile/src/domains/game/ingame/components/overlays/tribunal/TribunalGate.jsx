@@ -1,15 +1,10 @@
 // 재판 연출 문지기: 재판 중·피고 있음·판정 전일 때 피고·투표·안내·채팅 값 모아 연출 창 띄움, 표 거절 까닭 글도 띄움
-// OverlayLayer가 씀, 투표·판정은 행동 컨텍스트, 채팅은 채팅 세션 컨텍스트 (데스크톱 Gate와 같은 판단)
+// OverlayLayer가 씀, 투표는 행동 컨텍스트, 채팅은 채팅 세션 컨텍스트 (데스크톱 Gate와 같은 판단, 판정은 서버가 5초 뒤 함)
 import { useContext, useMemo } from "react"
 import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionContext.jsx"
 import { InGameChatSessionContext } from "@/domains/game/ingame/components/chat/InGameChatSessionContext.js"
 import { InGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
-import {
-    TRIBUNAL_RESOLVE_DONE_LABEL,
-    TRIBUNAL_RESOLVE_LABEL,
-    TRIBUNAL_RESOLVE_RESOLVING_LABEL,
-} from "@/domains/game/ingame/constants/actions/ingameActionPanel.js"
 import { NOTICE_CLASS } from "@/domains/game/ingame/constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 import { resolveInGameTribunalPresentationNotice } from "@/domains/game/ingame/utils/resolveInGameTribunalPresentationNotice.js"
 import TribunalOverlay from "./TribunalOverlay.jsx"
@@ -19,13 +14,6 @@ const NO_PLAYERS = []
 // 거절 까닭 글 자리: 연출 창(z-55) 위 맨 위 가운데(노치 피함), 단추는 그대로 눌리게 클릭은 통과
 const VOTE_ERROR_WRAP_CLASS = "pointer-events-none fixed inset-x-0 top-0 z-[56] flex justify-center px-4 safe-pt"
 const VOTE_ERROR_TEXT_CLASS = `${NOTICE_CLASS} mt-3 max-w-full rounded-md bg-black/70 px-4 py-2`
-
-// 판정 버튼 글자: 끝남 → 판정 중 → 기본
-function resolveLabel(ctx) {
-    if (ctx?.gameState?.tribunal?.resolved === true) return TRIBUNAL_RESOLVE_DONE_LABEL
-    if (ctx?.tribunalResolveLocked) return TRIBUNAL_RESOLVE_RESOLVING_LABEL
-    return TRIBUNAL_RESOLVE_LABEL
-}
 
 // 컨텍스트가 없으면(Provider 밖) 버튼·채팅 없이 카드만
 export default function TribunalGate() {
@@ -77,9 +65,6 @@ export default function TribunalGate() {
                 onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
                 onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
                 chatProps={chatProps}
-                devResolveLabel={ctx ? resolveLabel(ctx) : null}
-                devResolveEnabled={Boolean(ctx?.tribunalResolveControlsEnabled)}
-                onDevResolve={() => ctx?.resolveTribunalVote?.()}
             />
             {voteErrorText ? (
                 <div className={VOTE_ERROR_WRAP_CLASS}>

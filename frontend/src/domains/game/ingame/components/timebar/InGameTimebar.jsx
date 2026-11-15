@@ -1,4 +1,4 @@
-// 위쪽 시간 바 (낮 단계·남은 시간)
+// 위쪽 시간 바 (낮 단계·남은 시간), 표가 다 차 마감이 당겨지면 저절로 펼쳐 "[5초 뒤 마감]"과 남은 초를 보임
 // InGamePage가 씀
 import { useState } from "react"
 import {
@@ -28,6 +28,9 @@ import {
   TRACK_NODES_LAYER_CLASS,
 } from "../../constants/timebar/ingameTimebarLayout.js"
 import { useTurnProgress } from "../../hooks/timebar/useTurnProgress.js"
+import { useInGameStore } from "../../store/ingameStore.js"
+import { selectInGamePhaseSettled } from "../../utils/selectInGameTimebarStatusMessage.js"
+import { PHASE_SETTLE_ATTR } from "../../constants/timebar/ingamePhaseActions.js"
 import InGamePhaseActionRow from "./InGamePhaseActionRow.jsx"
 import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
 import InGamePhaseTurnTimerPanel from "./InGamePhaseTurnTimerPanel.jsx"
@@ -103,7 +106,9 @@ export default function InGameTimebar({
 }) {
   const [expanded, setExpanded] = useState(false)
   const expandDisabled = timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
-  const isExpanded = expandDisabled ? false : expanded
+  // 마감이 당겨진 동안은 접혀 있어도 펼침 (접힌 바엔 남은 시간이 안 보여서), 끝나면 고른 대로
+  const settled = useInGameStore((s) => selectInGamePhaseSettled(s.state))
+  const isExpanded = expandDisabled ? false : (expanded || settled)
 
   // 채팅 쪽 배치로 바뀌면 펼침을 접어 둠 (다시 바꿔도 접힌 채 시작)
   if (expandDisabled && expanded) setExpanded(false)
@@ -117,8 +122,9 @@ export default function InGameTimebar({
     timerPlacement === INGAME_TIMER_PLACEMENT.TIMEBAR && isExpanded && statusLabel
 
   const dayLabel = `제 ${day}일`
+  // 마감이 당겨진 몇 초 동안은 접기를 안 받음 (끝나면 원래 고른 대로 돌아감)
   const toggleExpanded = () => {
-    if (expandDisabled) return
+    if (expandDisabled || settled) return
     setExpanded((current) => !current)
   }
 
@@ -126,6 +132,7 @@ export default function InGameTimebar({
     <div
       className={`${className} ${STACK_CLASS}`.trim()}
       aria-label={`${dayLabel} 시간 흐름`}
+      {...(settled ? { [PHASE_SETTLE_ATTR]: "" } : {})}
     >
       <div className="relative w-full leading-none">
         {showTimerOnTimebar ? (

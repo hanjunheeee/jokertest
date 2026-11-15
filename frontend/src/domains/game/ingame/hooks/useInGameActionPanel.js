@@ -1,5 +1,5 @@
-// 행동 패널 훅 입구: 밤 행동·낮 준비/투표/판정·재판 투표/판정 요청 훅을 모아 한 값으로 냄
-// 조작 Provider(InGameActionProvider)가 컨텍스트 값으로 씀 (판정 계산은 utils/dayVoteResolve.js)
+// 행동 패널 훅 입구: 밤 행동·낮 준비/투표·재판 투표 요청 훅을 모아 한 값으로 냄
+// 조작 Provider(InGameActionProvider)·모바일 ActionProvider가 컨텍스트 값으로 씀 (판정은 표가 다 차면 서버가 5초 뒤 함)
 import { useCallback, useMemo, useState } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import {
@@ -9,24 +9,16 @@ import {
 import { useInGameStore } from "../store/ingameStore.js"
 import { selectInGameNightTurnRole, isInGameNightTurnActor } from "../utils/nightTurn.js"
 import { getDayVoteRound } from "../utils/dayVoteRound.js"
-import { INGAME_DAY_PHASES, resolveInGameDayPhase } from "../utils/dayPhase.js"
+import { resolveInGameDayPhase } from "../utils/dayPhase.js"
 import { computePanelLocks } from "../utils/actionPanelLocks.js"
 import { useInGameNightActionSubmit } from "./useInGameNightActionSubmit.js"
 import { useInGameDayVoteSubmit } from "./useInGameDayVoteSubmit.js"
 import { useInGameTribunalVoteSubmit } from "./useInGameTribunalVoteSubmit.js"
-import { useInGameResolveNight } from "./useInGameResolveNight.js"
-import { useInGameTribunalVoteResolve } from "./useInGameTribunalVoteResolve.js"
 import { useInGameDayDiscussionReady } from "./useInGameDayDiscussionReady.js"
 import { useActionTargets } from "./actionPanel/useActionTargets.js"
-import { useDayVoteResolve } from "./actionPanel/useDayVoteResolve.js"
 
-// 낮 투표 판정 계산은 시험이 이 경로로 가져가서 다시 내보냄
-export {
-  computeDayVoteResolveAckPatch,
-  computeDayVoteResolveInvalidatePatch,
-  parseDayVoteResolvedPayload,
-  shouldApplyDayVoteResolvedPayload,
-} from "../utils/dayVoteResolve.js"
+// 판정 단추가 없어져 판정 요청 상태는 늘 처음 값 (잠금 계산이 아직 이 값을 받음)
+const NO_RESOLVE_REQUEST = "idle"
 
 // 행동 패널 값 만들기 (요청 훅 부르는 순서가 곧 effect 순서라 바꾸지 않음)
 export function useInGameActionPanel({ interactionBlocked = false } = {}) {
@@ -71,25 +63,11 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
 
   const nightActionSubmit = useInGameNightActionSubmit()
   const dayVoteSubmit = useInGameDayVoteSubmit()
-  const resolveNightRequest = useInGameResolveNight()
-
-  // 낮 투표 판정 버튼은 조작 막힘·판 끝이 아니고 낮 투표 단계일 때만 엶
-  const isGameEnded = gameState?.phase === "ENDED"
-  const dayVoteResolve = useDayVoteResolve({
-    gameId,
-    dayIndex,
-    dayVoteRound,
-    open: !interactionBlocked &&
-      !isGameEnded &&
-      gameState?.phase === "DAY" &&
-      dayPhase === INGAME_DAY_PHASES.VOTE,
-  })
-
   const dayReady = useInGameDayDiscussionReady()
   const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
-  const tribunalResolveRequest = useInGameTribunalVoteResolve()
 
   // 밤 차례·요청 상태·연결을 모아 버튼 잠금 한 번에 계산 (utils/actionPanelLocks.js)
+  // 표가 다 차 마감이 5초 뒤로 당겨져도 잠그지 않음 (그동안 낮 표·밤 대상 바꾸기 됨)
   const nightTurnRole = selectInGameNightTurnRole(gameState ?? null)
   const isNightTurnActor = isInGameNightTurnActor(nightTurnRole, myRole)
   const locks = computePanelLocks({
@@ -100,11 +78,11 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayPhase,
     selfAliveForControls,
     isNightTurnActor,
-    resolveNightStatus: resolveNightRequest.status,
-    dayVoteResolveStatus: dayVoteResolve.status,
+    resolveNightStatus: NO_RESOLVE_REQUEST,
+    dayVoteResolveStatus: NO_RESOLVE_REQUEST,
     dayReadyStatus: dayReady.status,
     tribunalVoteSubmit,
-    tribunalResolveStatus: tribunalResolveRequest.status,
+    tribunalResolveStatus: NO_RESOLVE_REQUEST,
     connected: Boolean(getSocket()?.connected),
   })
 
@@ -115,11 +93,6 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   }
   const abstainDayVote = () => {
     dayVoteSubmit.submitDayVote(null)
-  }
-
-  // 재판 판정 요청 (판정 중 막기는 판정 훅이 함)
-  const resolveTribunalVote = () => {
-    tribunalResolveRequest.resolveTribunalVote()
   }
 
   // 고른 대상으로 밤 행동, 건너뛰기는 null
@@ -167,12 +140,6 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     dayVoteError: dayVoteSubmit.error,
     dayVoteHasSubmitted: dayVoteSubmit.hasSubmitted,
     dayVoteLastSubmittedTargetId: dayVoteSubmit.lastSubmittedTargetId,
-    resolveDayVote: dayVoteResolve.resolve,
-    dayVoteResolveStatus: dayVoteResolve.status,
-    dayVoteResolveError: dayVoteResolve.error,
-    dayVoteResolution: dayVoteResolve.resolution,
-    dayVoteResolveLocked: locks.dayVoteResolveLocked,
-    dayVoteResolveControlsEnabled: dayVoteResolve.controlsEnabled,
     submitTribunalVote: tribunalVoteSubmit.submitTribunalVote,
     tribunalVoteStatus: tribunalVoteSubmit.status,
     tribunalVoteError: tribunalVoteSubmit.error,
@@ -181,24 +148,11 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     tribunalVoteIsDefendant: tribunalVoteSubmit.isDefendant,
     tribunalVoteAlive: tribunalVoteSubmit.alive,
     tribunalVoteControlsEnabled: locks.tribunalVoteControlsEnabled,
-    resolveTribunalVote,
-    tribunalResolveStatus: tribunalResolveRequest.status,
-    tribunalResolveError: tribunalResolveRequest.error,
-    // 재판 결과는 서버 상태 값이 있으면 그걸 먼저, 없으면 요청 응답 값
-    tribunalResolveOutcome: gameState?.tribunal?.outcome ?? tribunalResolveRequest.outcome,
-    tribunalResolveCounts: gameState?.tribunal?.counts ?? tribunalResolveRequest.counts,
-    tribunalResolveExecutedUuid: gameState?.tribunal?.executedUuid ?? tribunalResolveRequest.executedUuid,
-    tribunalResolveLocked: locks.tribunalResolveLocked,
-    tribunalResolveControlsEnabled: locks.tribunalResolveControlsEnabled,
     submitNightAction,
     skipNightAction,
     nightActionAlive: locks.nightActionAlive,
     nightActionsLocked: locks.nightActionsLocked,
     nightTurnRole,
     isNightTurnActor,
-    resolveNight: resolveNightRequest.resolveNight,
-    resolveNightStatus: resolveNightRequest.status,
-    resolveNightError: resolveNightRequest.error,
-    nightActionResult: resolveNightRequest.nightActionResult,
   }
 }

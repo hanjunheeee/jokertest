@@ -1,9 +1,10 @@
-// 판 진행 이벤트 손잡이 (낮·재판·사망·참여): 받은 사건을 파싱해 스토어에 넣고 효과음
+// 판 진행 이벤트 손잡이 (낮·재판·사망·참여·마감 당김): 받은 사건을 파싱해 스토어에 넣고 효과음
 // 판 진행 이벤트 훅(useGameSessionSocketEvents)이 구독 붙일 때마다 새로 만듦
 import { useInGameStore } from "../../store/ingameStore.js"
 import { parseDayVoteResolvedPayload } from "../../utils/dayVoteResolve.js"
 import { parseDayPhaseChangedPayload } from "../../utils/dayPhase.js"
 import { parsePlayerEliminatedPayload } from "../../utils/parsePlayerEliminatedPayload.js"
+import { applyPhaseSettleStarted } from "../../utils/selectInGameTimebarStatusMessage.js"
 import { currentAccountId, currentReceiptScope, isRegistrationScopeCurrent } from "./scope.js"
 import { originOf, playGameSfx, playResultSfxIfEnded } from "./sfx.js"
 
@@ -123,6 +124,16 @@ export function createDayHandlers(registered) {
     playResultSfxIfEnded(originOf(payload))
   }
 
+  // 표가 다 차 마감이 5초 뒤로 당겨짐 (낮 투표·재판·밤 차례 셋 다 이 알림 하나)
+  // 그 단계 마감 시각만 바꿈 → 시간 바·남은 초가 새 마감을 따라가고 "[5초 뒤 마감]" 글이 뜸
+  const phaseSettleStarted = (payload) => {
+    if (!isCurrent()) return
+    useInGameStore.setState((store) => {
+      const nextState = applyPhaseSettleStarted(store.state, store.gameId, payload)
+      return nextState ? { state: nextState } : store
+    })
+  }
+
   // 참여 여부 바뀜
   const participationChanged = (payload) => {
     if (!isCurrent()) return
@@ -141,6 +152,7 @@ export function createDayHandlers(registered) {
     dayPhaseChanged,
     tribunalVoteResolved,
     playerEliminated,
+    phaseSettleStarted,
     participationChanged,
     selfProgress,
   }

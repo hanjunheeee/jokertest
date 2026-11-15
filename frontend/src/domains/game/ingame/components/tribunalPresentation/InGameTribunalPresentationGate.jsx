@@ -1,15 +1,10 @@
 // 재판 연출 문지기: 재판 중일 때 피고·투표 버튼·안내·채팅 값을 모아 연출 창 띄움, 표 거절 까닭 글도 띄움
-// 인게임 화면이 사용, 투표·판정은 조작 컨텍스트, 채팅은 채팅 세션 컨텍스트에서 꺼냄
+// 인게임 화면이 사용, 투표는 조작 컨텍스트, 채팅은 채팅 세션 컨텍스트에서 꺼냄 (판정은 표가 다 차면 서버가 5초 뒤 함)
 import { useContext, useMemo } from "react"
 import { InGameActionContext } from "../../context/InGameActionContext.jsx"
 import { useInGameChatSessionContext } from "../chat/InGameChatSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
-import {
-  TRIBUNAL_RESOLVE_DONE_LABEL,
-  TRIBUNAL_RESOLVE_LABEL,
-  TRIBUNAL_RESOLVE_RESOLVING_LABEL,
-} from "../../constants/actions/ingameActionPanel.js"
 import { NOTICE_CLASS } from "../../constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 import { resolveInGameTribunalPresentationNotice } from "../../utils/resolveInGameTribunalPresentationNotice.js"
 import { pickInGameJobPortrait } from "../../utils/pickInGameJobPortrait.js"
@@ -23,17 +18,7 @@ const UNKNOWN_DEFENDANT_NICKNAME = "알 수 없는 플레이어"
 const VOTE_ERROR_WRAP_CLASS = "pointer-events-none absolute inset-x-0 top-[8%] z-[57] flex justify-center px-4"
 const VOTE_ERROR_TEXT_CLASS = `${NOTICE_CLASS} max-w-[min(32rem,90%)] rounded-md bg-black/70 px-4 py-2`
 
-// 판정 버튼은 개발 빌드에서만 (실제 판은 서버 마감 타이머가 판정)
-const SHOW_DEV_RESOLVE = import.meta.env?.DEV === true
-
 // 재판 중·피고 있음·판정 전일 때만 띄움 (채팅 틀·인게임 화면도 같은 조건)
-function pickDevResolveLabel(ctx) {
-  if (!SHOW_DEV_RESOLVE) return null
-  if (ctx?.gameState?.tribunal?.resolved === true) return TRIBUNAL_RESOLVE_DONE_LABEL
-  if (ctx?.tribunalResolveLocked) return TRIBUNAL_RESOLVE_RESOLVING_LABEL
-  return TRIBUNAL_RESOLVE_LABEL
-}
-
 export default function InGameTribunalPresentationGate() {
   const ctx = useContext(InGameActionContext)
   const phase = useInGameStore((s) => s.state?.phase ?? null)
@@ -93,10 +78,6 @@ export default function InGameTribunalPresentationGate() {
     ? ctx.tribunalVoteError
     : null
 
-  // 판정 버튼 글자: 개발 빌드 아니면 없음, 끝남 → 판정 중 → 기본
-  const devResolveLabel = pickDevResolveLabel(ctx)
-  const devResolveEnabled = Boolean(ctx?.tribunalResolveControlsEnabled)
-
   const chatProps = useInGameChatSessionContext()
 
   // 재판 아니면 안 띄움
@@ -114,9 +95,6 @@ export default function InGameTribunalPresentationGate() {
         onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
         onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
         chatProps={chatProps}
-        devResolveLabel={devResolveLabel}
-        devResolveEnabled={devResolveEnabled}
-        onDevResolve={() => ctx?.resolveTribunalVote?.()}
       />
       {voteErrorText ? (
         <div className={VOTE_ERROR_WRAP_CLASS}>

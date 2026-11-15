@@ -1,5 +1,5 @@
 // 낮 타이머 파일
-// 낮 토론·투표 마감 타이머(마감 시각 방송에 붙이기·판정 결과 방송 순서 포함) + 판 단계에 맞게 밤·낮·재판 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
+// 낮 토론·투표 마감 타이머(표가 다 차면 마감 5초로 당기기·판정 결과 방송 순서 포함) + 판 단계에 맞게 밤·낮·재판 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate, isolateWithError } = require('../../common/isolate')
 const { PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../core/constants')
@@ -10,6 +10,7 @@ const { expireGracesAtBoundary } = require('../connection/grace')
 const { emitToGameChannel, deliverToParticipants } = require('../delivery/broadcast')
 const { startNightTurnSequence, stopNightTurnSequence } = require('./night/turn')
 const { startTribunalTimer, stopTribunalTimer } = require('./tribunal')
+const { hasAllSubmitted, pullRunDeadline, announceSettleStarted } = require('./settle')
 
 // 낮 단계 방송, 던져도 타이머 진행은 계속
 function emitDayPhaseEvent(run, event, payload) {
@@ -131,7 +132,7 @@ function expireDayVote(run) {
         retryDayVoteLater(run, label)
         return
     }
-    // 버튼이 먼저 판정했으면 타이머만 다시 걸기
+    // 그사이 이미 판정됐으면 타이머만 다시 걸기
     if (prepared.alreadyResolved) {
         scheduleDayPhaseTimer(run)
         return
@@ -149,7 +150,29 @@ function expireDayVote(run) {
         (payload) => deliverToParticipants(run.io, session, 'day_vote_resolved', payload, label, { gameId: session.id }))
 }
 
-// 낮 투표 판정 결과 방송 + 다음 단계 타이머, 순서는 다음 단계에 따라 (버튼·마감·이탈 뒤 판정이 같이 씀)
+// 산 사람 표(기권 포함)가 다 찼으면 투표 마감을 지금+5초로 당기고 판 전원에 알림, 당겼으면 새 마감 시각 (아니면 null)
+// 표 낸 뒤·이탈 반영 뒤 부름, 판정은 위 투표 마감이 그대로 함 (남은 시간 5초 이하·이미 당김이면 그대로)
+// 끊긴 사람이 안 냈으면 다 찬 게 아니라 원래 마감까지 감
+function settleDayVoteIfComplete(gameId) {
+    const run = dayPhaseRuns.get(gameId)
+    if (!run || !isLiveDayRun(run)) return null
+    const { session } = run
+    if (run.scheduledFor.dayPhase !== gameSessionCore.DAY_PHASES.VOTE) return null
+    if (!hasAllSubmitted(gameSessionCore.getDayVoterUuids(session), (voterUuid) => session.dayVotes.has(voterUuid))) {
+        return null
+    }
+
+    const pulled = pullRunDeadline(run, `DAY_VOTE:${session.dayIndex}:${run.scheduledFor.round}`)
+    if (!pulled) return null
+    // 판에도 당긴 마감 적어 둠 (새로고침 스냅샷이 줄어든 남은 시간 보임)
+    session.dayPhaseDeadline = pulled.deadline
+    run.retries = 0
+    run.timerId = run.setTimeoutFn(() => expireDayVote(run), pulled.delayMs)
+    announceSettleStarted(run, 'DAY')
+    return pulled.deadline
+}
+
+// 낮 투표 판정 결과 방송 + 다음 단계 타이머, 순서는 다음 단계에 따라 (투표 마감이 씀)
 // 낮에 남으면 타이머 먼저 (재투표 없어져 지금은 안 생김, 사용자 결정 2026-11-09 · known 1-13)
 // 재판·밤으로 가면 방송 먼저: 유예 만료 이탈·밤 턴 방송이 판정 결과보다 앞서지 않게
 // 재판이면 재판 마감만 방송 전에 걸어 결과에 tribunalDeadline 실음 (안 실으면 새로고침해야 남은 시간 보였음, 2026-11-09)
@@ -212,6 +235,8 @@ function startDayPhaseTimer(io, session, deps = {}) {
                 secondsToMs(timerSettings?.dayDiscussionTime, gameSessionCore.DAY_DISCUSSION_DURATION_MS),
             voteDurationMs:
                 deps.voteDurationMs ?? secondsToMs(timerSettings?.dayVoteTime, gameSessionCore.DAY_VOTE_DURATION_MS),
+            // 다 찬 뒤 판정까지 시간 (시험만 넣음, 없으면 settle 5초)
+            settleDelayMs: deps.settleDelayMs ?? null,
         }
         dayPhaseRuns.set(session.id, run)
     }
@@ -277,7 +302,7 @@ module.exports = {
     startDayPhaseTimer,
     stopDayPhaseTimer,
     syncSessionPhaseTimers,
+    settleDayVoteIfComplete,
     attachDayPhaseDeadline,
-    announceDayVoteResolved,
     announceDayStep,
 }

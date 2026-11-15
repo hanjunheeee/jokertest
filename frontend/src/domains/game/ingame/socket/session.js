@@ -18,6 +18,8 @@ const SESSION_EVENTS = [
   ["day_vote_resolved", "dayVoteResolved"],
   ["day_phase_changed", "dayPhaseChanged"],
   ["session_player_connection_changed", "playerConnectionChanged"],
+  // 표가 다 차 마감이 5초 뒤로 당겨짐 (낮 투표·재판·밤 차례)
+  ["phase_settle_started", "phaseSettleStarted"],
   ["tribunal_vote_resolved", "tribunalVoteResolved"],
 ]
 

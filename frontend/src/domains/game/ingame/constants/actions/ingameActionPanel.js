@@ -1,5 +1,5 @@
 // 행동 패널 모양·문구와 밤 행동 종류·이름 고르기
-// 단계 버튼 줄·재판 연출·행동 패널 훅·카드 메뉴 유틸이 사용
+// 단계 버튼 줄·재판 연출·행동 패널 훅·카드 메뉴 유틸·모바일 행동 줄이 사용
 
 // 행동 패널 모양 (단계 버튼 줄이 BTN_CLASS·BTN_ROW_CLASS를 씀)
 export const PANEL_CLASS =
@@ -60,15 +60,12 @@ export function isSelfTargetAllowedForNightAction(role) {
   return role === "DOCTOR"
 }
 
-// 재판 투표·판정 버튼 이름과 안내 글
+// 재판 투표 버튼 이름과 안내 글 (재판 판정 단추는 없어짐, 표가 다 차면 서버가 5초 뒤 판정)
 export const TRIBUNAL_VOTE_GUILTY_LABEL = "유죄"
 export const TRIBUNAL_VOTE_NOT_GUILTY_LABEL = "무죄"
 export const TRIBUNAL_DEFENDANT_NOTICE = "당신은 피고인입니다. 투표할 수 없습니다."
 export const TRIBUNAL_VOTE_SUBMITTED_NOTICE = "투표가 완료되었습니다."
 export const TRIBUNAL_DEAD_NOTICE = "사망한 참가자는 투표할 수 없습니다."
-export const TRIBUNAL_RESOLVE_LABEL = "재판 판정"
-export const TRIBUNAL_RESOLVE_RESOLVING_LABEL = "판정 중..."
-export const TRIBUNAL_RESOLVE_DONE_LABEL = "판정 완료"
 
 // 낮 토론·투표 준비 버튼 이름과 안내 글
 export const DAY_DISCUSSION_NOTICE = "토론 중입니다. 투표는 아직 열리지 않았습니다."

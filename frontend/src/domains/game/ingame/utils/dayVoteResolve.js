@@ -1,6 +1,5 @@
-// 낮 투표 판정 계산: 판정 응답·무효화 조각, 판정 방송 검사 (상태를 안 건드리는 순수 계산)
-// 판정 훅(useDayVoteResolve)·낮 이벤트 손잡이가 사용, 행동 패널 입구가 다시 내보냄
-import { FAILED_MSG } from "../constants/actions/dayVoteResolve.js"
+// 낮 투표 판정 방송 검사 (상태를 안 건드리는 순수 계산, 판정은 표가 다 차면 서버가 5초 뒤 함)
+// 낮 이벤트 손잡이(sessionEvents/dayHandlers.js)가 사용
 import { parseDayVoteRoundFields } from "./dayVoteRound.js"
 
 // 받는 판정 결과·다음 단계 이름과 표 수 검사
@@ -11,18 +10,6 @@ const RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL"])
 
 const isNonNegativeInteger = (value) => Number.isInteger(value) && value >= 0
 
-// 판정 요청 응답 → 상태 조각 (실패면 문구)
-export function computeDayVoteResolveAckPatch(response) {
-  if (response?.ok) {
-    return {
-      status: "resolved",
-      error: null,
-      resolution: { outcome: response.outcome ?? null, tribunalTargetUuid: response.tribunalTargetUuid ?? null },
-    }
-  }
-  return { status: "idle", error: response?.message ?? FAILED_MSG, resolution: null }
-}
-
 // 방송이 지금 판·지금 낮 것인지
 export function shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false
@@ -32,12 +19,12 @@ export function shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex })
   return true
 }
 
-// 판정 방송 검사: 결과별로 다음 단계·피고·공개 표 수가 맞아야 함 (틀리면 null)
 // 마감 시각 값 검사 (양수 숫자)
 function isValidDeadline(value) {
   return Number.isFinite(value) && value > 0
 }
 
+// 판정 방송 검사: 결과별로 다음 단계·피고·공개 표 수가 맞아야 함 (틀리면 null)
 export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
   if (!shouldApplyDayVoteResolvedPayload({ payload, gameId, dayIndex })) return null
   if (!RESOLVED_PHASES.has(payload.phase)) return null
@@ -86,10 +73,4 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
       ? { tribunalDeadline: payload.tribunalDeadline }
       : {}),
   }
-}
-
-// 무효화 조각 (화면이 내려갔으면 null)
-export function computeDayVoteResolveInvalidatePatch(mounted) {
-  if (!mounted) return null
-  return { status: "idle", error: null, resolution: null }
 }
