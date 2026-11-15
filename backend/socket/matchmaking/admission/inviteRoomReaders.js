@@ -5,6 +5,7 @@ const { matchmakingQueue, gameRooms, playerRoom, pendingRoomTransitions } = requ
 const { getSupportedRoomSizes } = require('../core/config')
 const { BOOT_EPOCH } = require('../core/constants')
 const { getAdmissionAttempt, countRoomOccupancy } = require('./attempts')
+const { reservedSeatsFor } = require('../room/returnRoom')
 
 // 서비스가 socket을 거꾸로 require 안 하게 하려고 함수로 넘김
 const inviteRoomReaders = {
@@ -14,6 +15,7 @@ const inviteRoomReaders = {
     getRoomIdForUser: (uuid) => playerRoom.get(uuid) ?? null,
 
     // 초대에 실을 방 정보 (인원엔 입장 중 자리도 셈)
+    // 가득 참엔 판 끝 뒤 남겨 둔 방장 자리 1칸도 셈 (원래 방장은 결과 화면에 있어 초대 못 받음 → 받는 사람 누구든 1칸 덜)
     describeRoomForInvite: (roomId) => {
         const room = gameRooms.get(roomId)
         if (!room) return null
@@ -24,7 +26,7 @@ const inviteRoomReaders = {
             hostUuid: room.hostUuid,
             occupancy: countRoomOccupancy(room),
             maxPlayers,
-            isFull: countRoomOccupancy(room) >= maxPlayers,
+            isFull: countRoomOccupancy(room) + reservedSeatsFor(room, null) >= maxPlayers,
         }
     },
 

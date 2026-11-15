@@ -85,6 +85,9 @@ class Table {
     /** 지금 단계 바로 끝내기 → { fired, before, after } */
     advance() { return e2e.advance(this.gameId); }
 
+    /** 끊긴 사람 60초 기다림 바로 끝내기 (탭 닫은 사람 탈락) → { fired: [uuid], after } */
+    expireGraces() { return e2e.expireGraces(this.gameId); }
+
     /**
      * 조건 될 때까지 단계 넘기기
      * @param {string|((s:any)=>boolean)} target 단계 이름('DAY'·'NIGHT'·'TRIBUNAL'·'ENDED') 또는 판 요약을 받는 함수

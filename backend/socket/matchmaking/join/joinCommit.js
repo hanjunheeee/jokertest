@@ -5,7 +5,6 @@ const channelMembership = require('../../channelMembership')
 const { playerRoom } = require('../core/state')
 const { detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
 const { buildRoomPayload, computeCanStart, emitPublicRoomList } = require('../room/view')
-const { markPartyOriginObject } = require('./partyOrigin')
 
 // 이 입장 하나의 채널 다루기 묶음: 방송 제외 걸기·풀기, 채널 떼기
 function createJoinChannelGuard(io, socket, uuid) {
@@ -39,7 +38,7 @@ function createJoinChannelGuard(io, socket, uuid) {
 }
 
 // 명단 추가 = 입장 확정, 그 뒤 방송 제외 풀고 알림
-function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, { autoJoin, channel, progress }) {
+function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, { channel, progress }) {
     const player = {
         uuid,
         nickname: user.nickname,
@@ -50,7 +49,6 @@ function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, { 
     room.players.set(uuid, player)
     playerRoom.set(uuid, room.id)
     progress.committed = true
-    if (!autoJoin) markPartyOriginObject(uuid, player)
     socket.data.activeRoomId = room.id
 
     // 확정 뒤에야 방송 제외 풂 (지도 01-⑥)

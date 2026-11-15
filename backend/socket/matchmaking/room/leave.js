@@ -81,7 +81,7 @@ function commitRoomDeparture(io, socket, uuid, reason) {
     // 방 떠나면 확인 순번 칸도 지움 (사람마다 쌓이기만 하던 장부, BE-033)
     presenceConfirmedTick.delete(uuid)
 
-    // 마지막 사람이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지움
+    // 마지막 사람이면 공통 정리로 방·입장 시도·영수증·초대 지움
     // 판 끝 뒤 다시 연 방은 180초 끝까지 빈 채 둠 (결과 화면에 남은 사람이 "대기방으로"를 누를 수 있게, 방장 칸은 비움)
     if (room.players.size === 0) {
         if (room.returnHold) {

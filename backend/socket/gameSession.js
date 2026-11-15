@@ -29,6 +29,7 @@ const { resyncSessionRouting } = require('./gameSession/connection/routing')
 const { isEligibleRecipient, buildSessionEndContext } = require('./gameSession/delivery/eligibility')
 const {
     detachSocketFromChannel,
+    detachFromGameChannel,
     emitToGameChannel,
     resolveSessionSockets,
     resolveChatRecipientSockets,
@@ -51,8 +52,8 @@ const { startTribunalTimer, stopTribunalTimer, settleTribunalIfComplete } = requ
 const { SETTLE_DELAY_MS } = require('./gameSession/phase/settle')
 const { maybeResolveTribunal } = require('./gameSession/departure/autoResolve')
 const { finalizeNightForSession } = require('./gameSession/phase/night/finalize')
-const { finalizeGameSessionEnd } = require('./gameSession/departure/end')
-const { applyParticipantDeparture } = require('./gameSession/departure/apply')
+const { finalizeGameSessionEnd, leaveEndedSession } = require('./gameSession/departure/end')
+const { applyParticipantDeparture, announceSupersededDepartures } = require('./gameSession/departure/apply')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./gameSession/handlers/ready')
 const { handleSubmitNightAction } = require('./gameSession/handlers/night')
 const {
@@ -65,6 +66,7 @@ const { handleCastTribunalVote } = require('./gameSession/handlers/tribunal')
 const { handleLeaveGameSession, onDisconnect } = require('./gameSession/handlers/leave')
 const { handleGetSessionSnapshot } = require('./gameSession/handlers/snapshot')
 const { handleGetKickResult } = require('./gameSession/handlers/kickResult')
+const { setLobbyEntryHooks } = require('./matchmaking/room/lobbyEntry')
 const {
     registerGameHandlers,
     getActiveGamePresenceSnapshot,
@@ -78,10 +80,16 @@ setPhaseHooks({
     finalizeNightForSession,
     resolveTribunalNow: maybeResolveTribunal,
 })
+// 로비 입장 정리가 부를 판 쪽 함수 (죽은 사람 판 풀기·끝난 판 빼기·판 채널 떼기)
+setLobbyEntryHooks({ applyParticipantDeparture, leaveEndedSession, detachFromGameChannel })
 
 // 판 시작 직후 역할 공개 10초 마감 걸기: matchmaking 시작 처리가 부름, 던져도 시작 답은 그대로 (사용자 결정 2026-11-09)
 matchmakingDeps.onGameStarted = (io, session) => isolate('[역할 공개 마감 시작 실패]', { code: 'TIMER_START_ERROR', gameId: session?.id },
     () => ensureRoleRevealTimer(io, session))
+
+// 새 판 시작 때 옛 판에서 뺀 죽은 사람 알리기·옛 판 채널 떼기: matchmaking 시작 처리가 부름, 던져도 시작 답은 그대로
+matchmakingDeps.onLiveSeatsReleased = (io, released, socketsByUuid) => isolate('[새 판 시작 옛 판 정리 실패]', { code: 'SUPERSEDED_NOTICE_ERROR' },
+    () => announceSupersededDepartures(io, released, socketsByUuid))
 
 module.exports = {
     registerGameHandlers,

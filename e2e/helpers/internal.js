@@ -103,6 +103,8 @@ const e2e = {
     },
     /** 지금 단계 마감 타이머 바로 돌림 → { fired, before, after } */
     advance: (gameId) => must('POST', `/e2e/games/${encodeURIComponent(gameId)}/advance`),
+    /** 끊김 60초 기다림 바로 끝냄 (못 돌아온 것으로 탈락) → { fired: [uuid], after } */
+    expireGraces: (gameId) => must('POST', `/e2e/games/${encodeURIComponent(gameId)}/expire-graces`),
 };
 
 module.exports = { internal, e2e, call, mustEveryNode };

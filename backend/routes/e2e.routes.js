@@ -1,4 +1,4 @@
-// 브라우저 시험(e2e) 경로 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기 (Node 여러 개면 방·판 Node 것을 RPC로)
+// 브라우저 시험(e2e) 경로 파일, 역할 미리 정하기·판/방 들여다보기·지금 단계 바로 끝내기·끊김 기다림 바로 끝내기 (Node 여러 개면 방·판 Node 것을 RPC로)
 // index.js가 E2E_HOOKS=1이고 운영 아닐 때만 /e2e에 붙임 (운영이면 경로 자체 없음 + 값 있으면 시작 거부), 열쇠는 /internal과 같은 X-Internal-Key
 const express = require("express");
 
@@ -69,6 +69,14 @@ const createE2eRouter = ({ env = process.env } = {}) => {
     // POST /e2e/games/:gameId/advance → 지금 단계 마감 타이머 바로 돌림 (시간 설정은 그대로, 기다림만 줄임), 판 Node가 돌림
     router.post("/games/:gameId/advance", wrap(async (req, res) => {
         const { value: result, node } = await remoteHooks.advance(req.params.gameId);
+        if (!result.ok) return res.status(404).json(result);
+        return res.json({ ...result, node });
+    }));
+
+    // POST /e2e/games/:gameId/expire-graces → 끊김 60초 기다림 바로 끝냄 (못 돌아온 것으로 탈락·탈주 기록), 판 Node가 돌림
+    // 기다림이 단계와 상관없이 60초라 "탭 닫고 단계 넘기면 탈락"이 안 돼서 시험이 이걸로 바로 탈락시킴
+    router.post("/games/:gameId/expire-graces", wrap(async (req, res) => {
+        const { value: result, node } = await remoteHooks.expireGraces(req.params.gameId);
         if (!result.ok) return res.status(404).json(result);
         return res.json({ ...result, node });
     }));

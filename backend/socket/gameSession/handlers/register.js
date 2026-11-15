@@ -9,7 +9,6 @@ const {
     roleRevealRuns,
     tribunalRuns,
     disconnectGraceRuns,
-    departureResolveMarks,
     endedSweepRuns,
     nightFinalizeInFlight,
 } = require('../core/state')
@@ -24,6 +23,8 @@ const { stopDayPhaseTimer } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { stopTribunalTimer } = require('../phase/tribunal')
 const { cancelEndedSweep } = require('../departure/end')
+const { __resetReturnRoomsForTests } = require('../../matchmaking/room/returnRoom')
+const { __resetRoomDirectoryForTests } = require('../../matchmaking/cluster/roomDirectory')
 const { handleAcknowledgeRoleReveal, handleAcknowledgeDayVoteReady } = require('./ready')
 const { handleSubmitNightAction } = require('./night')
 const { handleSubmitJokerChatMessage, handleSubmitGameChatMessage } = require('./chat')
@@ -58,12 +59,11 @@ function getActiveGamePresenceSnapshot() {
     return gameSessionCore.getActiveGamePresenceSnapshot()
 }
 
-// 시험용 초기화: 접속 목록·사용자 전송·추방 영수증·표식 비우고 타이머 run 4종 전부 끔
+// 시험용 초기화: 접속 목록·사용자 전송·추방 영수증 비우고 타이머 run·180초 시계·끊김 유예 전부 끔
 function __resetStateForTests() {
     setOnlineUsersRegistry(null)
     gameRecordService.setEmitToUser(null)
     kickReceiptStore.__resetKickReceiptsForTests()
-    departureResolveMarks.clear()
     for (const gameId of [...endedSweepRuns.keys()]) cancelEndedSweep(gameId)
     nightFinalizeInFlight.clear()
     // 타이머 run 끄기 (끄면서 보관함에서 지우니 키 먼저 복사), 마지막은 전적 재시도
@@ -73,6 +73,9 @@ function __resetStateForTests() {
     for (const gameId of [...tribunalRuns.keys()]) stopTribunalTimer(gameId)
     for (const gameId of [...disconnectGraceRuns.keys()]) detachAllGraces(gameId)
     gameRecordService.__resetTerminalPersistForTests()
+    // 판 끝 뒤 다시 연 방 기록·판 동안 잡아 둔 방 코드도 비움 (180초 시계를 껐으니 남으면 다음 시험에 샘)
+    __resetReturnRoomsForTests()
+    __resetRoomDirectoryForTests()
 }
 
 // 시험용: 지금 넣어 둔 접속 목록 꺼내기

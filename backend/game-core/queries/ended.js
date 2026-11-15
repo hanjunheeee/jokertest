@@ -1,28 +1,8 @@
 // 끝난 판 찾기 파일
 // 끝난 판 남은 사람·결과 화면 닫힘 시각(판 끝 + 180초)·같은 방 자리 프로필, 매칭 쪽·판 끝 정리가 사용
-// 파티 함수 2개(getEndedPartyContext·canLookupPartyRoom)는 안 쓰는 join/party.js만 부름, 그 파일 지울 때 같이 지움
 const { gameSessions, playerSession } = require('../core/registry/state')
-const { normalizeGameId } = require('../core/registry/lookup')
 const { getActiveSessionRoutingInfo } = require('./live')
 const { isForfeitedFromSession } = require('./participation')
-
-// 끝난 판 방장이 다음 방 알릴 사람 목록 (방장·기권한 사람 빼고)
-function getEndedPartyContext(hostUuid) {
-    // 방장이 끝난 판에 있고 그 판 방장이 맞을 때만
-    const routing = getActiveSessionRoutingInfo(hostUuid)
-    if (!routing) return null
-    const session = gameSessions.get(routing.gameId)
-    if (!session || session.phase !== 'ENDED') return null
-    if (session.hostUuid !== hostUuid) return null
-    // 받을 사람 모으기 (방장 본인·기권한 사람 건너뜀)
-    const participantUuids = []
-    for (const uuid of session.players.keys()) {
-        if (uuid === hostUuid) continue
-        if (isForfeitedFromSession(session.id, uuid)) continue
-        participantUuids.push(uuid)
-    }
-    return { gameId: session.id, channelId: session.channelId, participantUuids }
-}
 
 // 끝난 판에 아직 남아 있는 사람의 판 id
 function getEndedGameId(uuid) {
@@ -33,17 +13,6 @@ function getEndedGameId(uuid) {
     const session = gameSessions.get(routing.gameId)
     if (!session || session.phase !== 'ENDED') return null
     return session.id
-}
-
-// 다음 방 우편함 볼 자격 있는지 (끝난 판 참가자, 기권 안 한 사람)
-function canLookupPartyRoom(uuid, gameId) {
-    // 판 id 모양 확인, 기권한 사람은 거절
-    if (!normalizeGameId(gameId, { trim: false })) return false
-    if (isForfeitedFromSession(gameId, uuid)) return false
-    // 끝난 판이고 그 판 참가자였는지
-    const session = gameSessions.get(gameId)
-    if (!session || session.phase !== 'ENDED') return false
-    return session.players.has(uuid)
 }
 
 // 결과 화면 머무는 시간 180초 (판 끝 시각부터 하나로 셈: 결과 화면 닫기·방장 자리·빈 방 지우기, 결정 [임시] 4)
@@ -102,9 +71,7 @@ function getEndedPlayerUuids(gameId, { excludeUuid = null } = {}) {
 }
 
 module.exports = {
-    getEndedPartyContext,
     getEndedGameId,
-    canLookupPartyRoom,
     getEndedPlayerUuids,
     RESULT_SCREEN_MS,
     getResultClosesAt,

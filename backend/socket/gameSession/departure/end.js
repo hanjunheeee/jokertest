@@ -15,7 +15,6 @@ const { stopNightTurnSequence } = require('../phase/night/turn')
 const { stopDayPhaseTimer } = require('../phase/day')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
 const { stopTribunalTimer } = require('../phase/tribunal')
-const { clearDepartureMark } = require('./marks')
 const chatBuffer = require('../../../services/ops/chatBuffer')
 
 // 승부 났으면 방송 내용에 종료 필드(전원 정체·결과 화면 닫힘 시각) 덧붙이고 전적 저장 시작·180초 시계 걸기, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
@@ -90,7 +89,7 @@ function closeEndedResults(io, session) {
 }
 
 // 한 사람을 끝난 판에서 빼기: 판 기록 지우기 → (넘긴 소켓) 판 채널 떼기 → 마지막이면 판 끝 마무리, 아니면 남겨 둔 방장 자리 정리
-// "대기방으로"(matchmaking/room/returnRoom.js)·180초 시계가 부름, 로비 입장 방어(단위 17)도 이걸 부르면 됨
+// "대기방으로"(matchmaking/room/returnRoom.js)·180초 시계·로비 입장 정리(matchmaking/room/lobbyEntry.js)가 부름
 // 이 끝난 판에 묶인 사람이 아니면(이미 빠짐·진행 중 판·다른 판) 아무것도 안 하고 { ok:false, code:'NOT_IN_ENDED_SESSION' }
 function leaveEndedSession(io, uuid, reason, gameId, { socket = null } = {}) {
     if (gameSessionCore.getEndedGameId(uuid) !== gameId) return { ok: false, code: 'NOT_IN_ENDED_SESSION' }
@@ -136,13 +135,12 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
         })
     })
 
-    // 밤 턴·낮·역할 공개·재판 타이머·이탈 표식·끊김 유예 전부 끔 (지워진 판에 늦게 안 돌게)
+    // 밤 턴·낮·역할 공개·재판 타이머·끊김 유예 전부 끔 (지워진 판에 늦게 안 돌게)
     isolateWithError('[GameSession 종료 시 타이머 정리 실패]', () => {
         stopNightTurnSequence(session.id)
         stopDayPhaseTimer(session.id)
         stopRoleRevealTimer(session.id)
         stopTribunalTimer(session.id)
-        clearDepartureMark(session.id)
         detachAllGraces(session.id)
     })
 

@@ -6,7 +6,6 @@ const {
     matchmakingQueue,
     gameRooms,
     playerRoom,
-    partyRoomByGameId,
     pendingRoomTransitions,
     roomAdmissionAttempts,
     publishedAdmissions,
@@ -22,8 +21,10 @@ const { getTotalTimeoutMs } = require('./admission/timeouts')
 const { getGeneration } = require('./join/transition')
 const { resetRoomPresenceTick } = require('./room/leave')
 const { __resetEntryLimitsForTests } = require('./join/entryLimits')
+const { __resetReturnRoomsForTests } = require('./room/returnRoom')
+const { __resetRoomDirectoryForTests } = require('./cluster/roomDirectory')
 
-// 시험용: 장부·영수증·제외 기록 전부 비우고 끊김 예약 타이머 끔 (세대 번호 장부는 그대로)
+// 시험용: 장부·영수증·제외 기록·판 끝 뒤 다시 연 방 기록·잡아 둔 방 코드 전부 비우고 끊김 예약 타이머 끔 (세대 번호 장부는 그대로)
 function __resetStateForTests() {
     matchmakingQueue.clear()
     gameRooms.clear()
@@ -33,7 +34,6 @@ function __resetStateForTests() {
     publishedAdmissions.clear()
     startedRoomMarks.clear()
     roomSettingsUpdateResults.clear()
-    partyRoomByGameId.clear()
     kickReceiptStore.__resetKickReceiptsForTests()
     channelMembership.__resetChannelExclusionsForTests()
     for (const pending of pendingRoomRemovals.values()) clearTimeout(pending.timer)
@@ -41,6 +41,8 @@ function __resetStateForTests() {
     presenceConfirmedTick.clear()
     resetRoomPresenceTick()
     __resetEntryLimitsForTests()
+    __resetReturnRoomsForTests()
+    __resetRoomDirectoryForTests()
 }
 
 // 시험용: 15초 안 기다리고 끊김 빼기 예약 바로 실행

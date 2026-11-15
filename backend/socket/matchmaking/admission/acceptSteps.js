@@ -5,12 +5,12 @@ const { BOOT_EPOCH } = require('../core/constants')
 const { gameRooms, roomAdmissionAttempts } = require('../core/state')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { getAdmissionAttempt, countRoomOccupancy, compensateAttempt } = require('./attempts')
-const { markPartyOriginObject } = require('../join/partyOrigin')
 const { deps } = require('../core/deps')
 const { getSupportedRoomSizes } = require('../core/config')
 const { loadPlayerProfile } = require('../room/view')
 const { getTotalTimeoutMs } = require('./timeouts')
 const { isKickLimitReached, KICK_LIMIT_MESSAGE } = require('../room/kickLimit')
+const { reservedSeatsFor } = require('../room/returnRoom')
 const { isCanonicalOrUnknown } = require('../room/membership')
 const { detachUnlessSeated } = require('./acceptContext')
 
@@ -41,8 +41,9 @@ function pickInvitedRoom({ uuid, respond }, peek, elsewhere) {
         respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.KICKED_TOO_MANY_TIMES, message: KICK_LIMIT_MESSAGE })
         return null
     }
+    // 판 끝 뒤 원래 방장 자리를 남겨 두는 중이면 1칸 덜 들어옴 (코드 입장·"대기방으로"와 같은 셈)
     const maxPlayers = room.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
-    if (countRoomOccupancy(room, uuid) >= maxPlayers) {
+    if (countRoomOccupancy(room, uuid) + reservedSeatsFor(room, uuid) >= maxPlayers) {
         respond({ ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_FULL, message: '방이 가득 찼습니다.' })
         return null
     }
@@ -66,7 +67,6 @@ function reserveSeat(ctx, room) {
         expiresAt: ctx.startedAt + getTotalTimeoutMs(),
     }
     roomAdmissionAttempts.set(uuid, ctx.attempt)
-    markPartyOriginObject(uuid, ctx.attempt)
 }
 
 // 초대를 이 시도로 수락 기록 시작 (DB, 이미 처리된 초대·차단이면 거절), 기다릴 약속 돌려줌

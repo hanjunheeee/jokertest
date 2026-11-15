@@ -12,7 +12,7 @@ const { BOOT_EPOCH } = require('../core/constants')
 const { getSupportedRoomSizes } = require('../core/config')
 const { INIT_SETTINGS_VERSION, getSettingsVersion } = require('../settings/receipts')
 const { countRoomOccupancy } = require('../admission/attempts')
-const { acquireRoomTransition, releaseRoomTransition } = require('../join/transition')
+const { acquireRoomTransition, releaseRoomTransition, getGeneration } = require('../join/transition')
 const { rejectIfDeserted, isRoomCodeReserved } = require('../join/guards')
 const { forgetStartedRoom } = require('../join/startedMarks')
 const { createJoinChannelGuard } = require('../join/joinCommit')
@@ -320,14 +320,18 @@ async function handleReturnToRoom(io, socket, uuid, payload, callback) {
         respond(returnFailure(ROOM_JOIN_ERROR_CODES.REQUEST_IN_PROGRESS))
         return
     }
+    // 잠금 뒤 세대 번호 기억: 기다리는 사이 로비 입장 정리가 오면 번호가 올라 자리 안 생김 (코드 입장·방 만들기와 같음)
+    const generationAtRequest = getGeneration(uuid)
     // 확정 전엔 방 방송 안 받게 막고 채널 넣기 (코드 입장과 같은 방식)
     const channel = createJoinChannelGuard(io, socket, uuid)
     let committed = false
     try {
         channel.exclude(target.id)
         await socket.join(target.id)
-        // 기다린 사이 방 사라짐·끊김·다른 방·결과 화면 닫힘·자리 다 참이면 채널 떼고 거절
-        const again = findReturnRoom(gameId) !== target
+        // 기다린 사이 로비 입장 정리·방 사라짐·끊김·다른 방·결과 화면 닫힘·자리 다 참이면 채널 떼고 거절
+        const again = getGeneration(uuid) !== generationAtRequest
+            ? returnFailure(ROOM_JOIN_ERROR_CODES.SESSION_ENDED)
+            : findReturnRoom(gameId) !== target
             ? returnFailure(ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND)
             : (checkBeforeReturn(socket, uuid, { holdsLock: true }) ?? checkReturnable(uuid, gameId, target))
         if (again) {

@@ -84,7 +84,7 @@ function toDay(t, pages, o = {}) { return goPhase(t, pages, 'DAY', { line: '낮 
 function toVote(t, pages, o = {}) {
     return goPhase(t, pages, 'DAY_VOTE', o).then(async (s) => {
         const list = Array.isArray(pages) ? pages : [pages];
-        for (const page of list) await expect(page.getByRole('button', { name: '기권' }).or(page.locator('[data-ingame-phase-action="dayVoteResolve"]')).first()).toBeVisible({ timeout: 15000 });
+        for (const page of list) await expect(page.getByRole('button', { name: '기권' }).first()).toBeVisible({ timeout: 15000 });
         return s;
     });
 }

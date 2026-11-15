@@ -1,5 +1,5 @@
 // 판 띄우기 파일
-// 검사 끝난 방으로 판 만들기(판 골드 값·추방 횟수 옮겨 담음) → 방 지우기(코드 키는 판 동안 잡아 둠) → 시작 방송, start.js handleStartGame이 부름 (지도 02)
+// 검사 끝난 방으로 판 만들기(판 골드 값·추방 횟수 옮겨 담음) → 방 지우기(코드 키는 판 동안 잡아 둠) → 시작 방송 → 옛 판에서 뺀 죽은 사람 알리기, start.js handleStartGame이 부름 (지도 02)
 const gameSession = require('../../../game-core/gameSession')
 const { playerRoom } = require('../core/state')
 const { deps } = require('../core/deps')
@@ -20,8 +20,10 @@ function launchGame(io, room, roomId, captured, callback) {
     const respond = respondOnce(callback)
     const ready = prepareLaunch(io, roomId, captured, respond)
     if (!ready) return
-    if (!commitLaunch(room, roomId, captured, ready.session, respond)) return
+    const released = commitLaunch(room, roomId, captured, ready.session, respond)
+    if (!released) return
     broadcastStart(io, ready)
+    announceReleasedSeats(io, released, ready.uuidToSockets)
     respond({ ok: true, gameId: ready.session.id })
 }
 
@@ -101,11 +103,12 @@ function buildStartPayloads(session, respond) {
 
 // 여기부터 진짜 바뀜: 판 장부에 넣고 이모지 상태 붙임
 // 추방 횟수는 판에 옮겨 담음 (방 객체에 묶여 방과 같이 사라짐, 판 끝 뒤 같은 방에서 "추방 3번 기록은 남음")
-// 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 시작 표시 남김 (터지면 되돌리지 않고 실패만 답함)
+// 공통 정리로 방·입장 시도·영수증·초대 지우고 시작 표시 남김 (터지면 되돌리지 않고 실패만 답함)
 // Node 여러 개면 방 코드 키는 판 동안 잡아 둠 (판 끝에 같은 코드로 방을 다시 열고, 그동안 다른 Node가 그 코드를 못 뽑게)
+// 돌려줌: 진행 중 옛 판에서 뺀 죽은 사람 목록 (없으면 []), 실패면 null
 function commitLaunch(room, roomId, captured, session, respond) {
     try {
-        gameSession.commitGameSession(session)
+        const released = gameSession.commitGameSession(session)
         session.emojiPaletteByUuid = captured.emojiPaletteByUuid instanceof Map
             ? captured.emojiPaletteByUuid
             : new Map()
@@ -115,11 +118,23 @@ function commitLaunch(room, roomId, captured, session, respond) {
         holdRoomCodeForGame(room)
         disposeRoom(roomId, 'ROOM_STARTED')
         rememberStartedRoom(room, session.id)
-        return true
+        return Array.isArray(released) ? released : []
     } catch (err) {
         console.error('[GameSession commit 에러 — 상태가 부분 반영됐을 수 있음]', err)
         respond({ ok: false, code: 'INTERNAL_ERROR', message: '게임 시작 처리 중 오류가 발생했습니다.' })
-        return false
+        return null
+    }
+}
+
+// 진행 중 옛 판에서 뺀 죽은 사람: 옛 판 사람들에게 참여 변경(방장 넘김 포함)·그 사람 옛 판 채널 떼기
+// 판 쪽 방송 함수라 socket/gameSession.js가 넣어 줌 (여기서 require 하면 matchmaking ↔ 판 고리), 던져도 시작 답은 그대로
+// 예: released = [{ uuid: 'u3', gameId: 'g-old', departure }] → 옛 판 g-old 채널에 session_participation_changed
+function announceReleasedSeats(io, released, uuidToSockets) {
+    if (released.length === 0) return
+    try {
+        deps.onLiveSeatsReleased?.(io, released, uuidToSockets)
+    } catch (err) {
+        console.error('[새 판 시작 옛 판 정리 실패]', err)
     }
 }
 

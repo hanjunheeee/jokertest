@@ -62,10 +62,6 @@ const {
 const {
     handleStartGame,
 } = require('./matchmaking/room/start')
-// 끝난 판 다음 방
-const {
-    handleGetPartyMatchingRoom,
-} = require('./matchmaking/join/party')
 // 방 나가기 (확정·알림 따로 부를 수 있음)
 const {
     commitRoomDeparture,
@@ -190,7 +186,6 @@ module.exports = {
         isRoomCodeReserved,
         isStartedRoomMark,
         handleGetCurrentRoom,
-        handleGetPartyMatchingRoom,
         handleGetPublicRooms,
         handleJoinPublicRoom,
         handleJoinMatchmaking,

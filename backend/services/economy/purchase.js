@@ -52,8 +52,9 @@ const reuseRequest = (stored, payload) => {
 // 상품 목록에 있고 파는 것만, 값은 서버 목록 값만 믿음
 const resolveCatalogItems = (itemIds) => itemIds.map((itemId) => {
     const catalogItem = catalog.getCatalogItem(itemId);
+    // 화면에 그대로 뜨는 글이라 상품 id는 안 섞음 (어느 상품인지는 부른 쪽이 앎)
     if (!catalogItem || catalogItem.purchasable !== true) {
-        throw createError(`존재하지 않거나 구매할 수 없는 상품입니다: ${itemId}`, 400, 'ITEM_NOT_PURCHASABLE');
+        throw createError('존재하지 않거나 구매할 수 없는 상품입니다.', 400, 'ITEM_NOT_PURCHASABLE');
     }
     return catalogItem;
 });

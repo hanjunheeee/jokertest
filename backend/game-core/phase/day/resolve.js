@@ -23,7 +23,7 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
     // 오늘 날짜 요청인지
     if (dayIndex !== session.dayIndex) return { ok: false, code: 'STALE_DAY_INDEX' }
 
-    // 이번 투표 이미 판정됐으면 결과만 줌, 다시 확정 안 함 (타이머·버튼 겹침, 지도 04-⑥)
+    // 이번 투표 이미 판정됐으면 결과만 줌, 다시 확정 안 함 (마감이 겹쳐 두 번 불린 때, 지도 04-⑥)
     // 요청 날짜 = 오늘 날짜 확인했으니 오늘 기준으로 봐도 같음
     const currentRound = getDayVoteRound(session)
     if (isVoteRoundResolved(session)) {

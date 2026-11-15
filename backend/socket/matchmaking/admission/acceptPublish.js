@@ -7,12 +7,12 @@ const { playerRoom, gameRooms, roomAdmissionAttempts, publishedAdmissions } = re
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { getAdmissionAttempt, withAdmissionTimeout, countRoomOccupancy, releasePublished } = require('./attempts')
 const { getGeneration } = require('../join/transition')
-const { markPartyOriginObject } = require('../join/partyOrigin')
 const { deps } = require('../core/deps')
 const { getSupportedRoomSizes } = require('../core/config')
 const { removePublished } = require('./release')
 const { isCanonicalOrUnknown } = require('../room/membership')
 const { detachUnlessSeated } = require('./acceptContext')
+const { reservedSeatsFor, claimHostIfVacant } = require('../room/returnRoom')
 
 // 명단 넣기: 영수증 트랜잭션 안에서 불림, await 없이 다 다시 보고 넣음 (지도 23-⑨)
 function createPublish(ctx, room, player) {
@@ -30,7 +30,7 @@ function createPublish(ctx, room, player) {
         if (socket.data?.user?.uuid !== uuid) return { ok: false, code: 'DISCONNECTED' }
         if (!isCanonicalOrUnknown(io, uuid, socket, room.id)) return { ok: false, code: 'DISCONNECTED' }
         if (socket.rooms && !socket.rooms.has(room.id)) return { ok: false, code: 'CHANNEL_LOST' }
-        // 같은 방 그대로·다른 방 없음·게임 중 아님 (기권한 판은 통과)·자리 남음
+        // 같은 방 그대로·다른 방 없음·게임 중 아님 (기권한 판은 통과)·자리 남음 (남겨 둔 방장 자리 1칸 빼고)
         const current = gameRooms.get(attempt.roomId)
         if (current !== room || (current.instanceId ?? current.id) !== attempt.roomInstanceId) {
             return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND }
@@ -40,7 +40,8 @@ function createPublish(ctx, room, player) {
         if (routing && !gameSession.isForfeitedFromSession(routing.gameId, uuid)) {
             return { ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME }
         }
-        if (countRoomOccupancy(current, uuid) >= (current.settings?.maxPlayers ?? getSupportedRoomSizes()[0])) {
+        const maxPlayers = current.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
+        if (countRoomOccupancy(current, uuid) + reservedSeatsFor(current, uuid) >= maxPlayers) {
             return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_FULL }
         }
         // 여기부터 진짜 바뀜: 명단에 넣고 시도를 published로, 되돌릴 권리 잡음
@@ -50,7 +51,8 @@ function createPublish(ctx, room, player) {
         playerRoom.set(uuid, current.id)
         attempt.phase = 'published'
         publishedAdmissions.set(uuid, attempt)
-        markPartyOriginObject(uuid, player)
+        // 판 끝 뒤 빈 채 남은 방에 처음 들어오면 이 사람이 방장 (방장 칸 비고 남겨 둔 자리도 없을 때만)
+        claimHostIfVacant(current, uuid)
         socket.data.activeRoomId = current.id
         return { ok: true }
     }

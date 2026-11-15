@@ -26,9 +26,7 @@ const {
 } = require('./queries/live')
 const { isForfeitedFromSession, isParticipatingInSession } = require('./queries/participation')
 const {
-    getEndedPartyContext,
     getEndedGameId,
-    canLookupPartyRoom,
     getEndedPlayerUuids,
     RESULT_SCREEN_MS,
     getResultClosesAt,
@@ -252,12 +250,10 @@ module.exports = {
     // 새로고침 복구용 스냅샷
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
-    // 판 찾기 (매칭·끝난 판·방 코드·접속 현황, 파티 함수 2개는 안 쓰는 join/party.js만 부름)
+    // 판 찾기 (매칭·끝난 판·방 코드·접속 현황)
     getActiveSessionRoutingInfo,
     isMatchmakingBlocked,
-    getEndedPartyContext,
     getEndedGameId,
-    canLookupPartyRoom,
     getEndedPlayerUuids,
     getRoomCodeSessionState,
     // 판 끝 180초 시계·같은 방 다시 열기 (결과 화면 닫힘 시각·묶인 사람·자리 프로필)

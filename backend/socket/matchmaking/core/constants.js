@@ -5,9 +5,6 @@ const kickReceiptStore = require('../../kickReceiptStore')
 // 서버 켤 때마다 바뀌는 부팅 번호, 추방 영수증과 같은 값 (옛 서버 초대·방 정보 거르기)
 const BOOT_EPOCH = kickReceiptStore.BOOT_EPOCH
 
-// 다음 방 우편함 30분 보관
-const PARTY_ROOM_TTL_MS = 30 * 60 * 1000
-
 // 끊긴 사람 방에서 빼기 전 기다리는 15초
 const ROOM_RECONNECT_GRACE_MS = 15 * 1000
 
@@ -22,7 +19,6 @@ const DESERTION_COOLDOWN = 'DESERTION_COOLDOWN'
 
 module.exports = {
     BOOT_EPOCH,
-    PARTY_ROOM_TTL_MS,
     ROOM_RECONNECT_GRACE_MS,
     ADMISSION_STEP_MS,
     ADMISSION_TOTAL_MS,

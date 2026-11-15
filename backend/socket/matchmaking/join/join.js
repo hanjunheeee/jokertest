@@ -22,7 +22,7 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         emitRoomJoinFailed(socket, TOO_MANY_JOIN_ATTEMPTS, TOO_MANY_JOIN_ATTEMPTS_MESSAGE)
         return
     }
-    const ctx = reserveJoin(io, socket, uuid, roomCode, { expectedRoom, autoJoin: false })
+    const ctx = reserveJoin(io, socket, uuid, roomCode, { expectedRoom })
     if (!ctx) return
     const { channel, progress } = ctx
 

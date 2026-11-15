@@ -34,18 +34,12 @@ const CHAT_EVENT_BY_CHANNEL = Object.freeze({
     DEAD: 'dead_chat_message_received',
 })
 
-// 밤 판정·낮 투표 판정 prepare: 대상이 판에 없는 것도 내부 사정 (둘이 같은 묶음 씀)
-const RESOLVE_INTERNAL_CODES = withInternalOnly('TARGET_NOT_A_PARTICIPANT')
-
 // 재판 표 제출: 재판 상태·문맥 어긋남도 내부 사정
 const CAST_INTERNAL_CODES = withInternalOnly(
     'TRIBUNAL_STATE_NOT_FOUND',
     'TRIBUNAL_CONTEXT_MISMATCH',
     'TRIBUNAL_RESOLUTION_MISMATCH',
 )
-
-// 재판 판정 prepare: 재판 상태 없음도 내부 사정
-const TRIBUNAL_INTERNAL_CODES = withInternalOnly('TRIBUNAL_STATE_NOT_FOUND')
 
 // 밤 판정 commit: 출처 모름·옛 판정도 내부 사정 (지도 06-⑨)
 const NIGHT_INTERNAL_CODES = withInternalOnly('UNKNOWN_RESOLUTION_SOURCE', 'STALE_RESOLUTION')
@@ -79,9 +73,7 @@ module.exports = {
     CHAT_PUBLIC_CODES,
     CHAT_NON_PUBLIC_CODES,
     CHAT_EVENT_BY_CHANNEL,
-    RESOLVE_INTERNAL_CODES,
     CAST_INTERNAL_CODES,
-    TRIBUNAL_INTERNAL_CODES,
     NIGHT_INTERNAL_CODES,
     IDEMPOTENT_LEAVE_CODES,
     NIGHT_TURN_STAGES,

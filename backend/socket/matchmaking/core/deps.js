@@ -16,6 +16,8 @@ const deps = {
     gameResultRepository: roleStatisticsQueries,
     // 판 시작 직후 부를 함수 (역할 공개 마감 걸기), socket/gameSession.js가 넣어 줌 (고리 require 막기)
     onGameStarted: null,
+    // 새 판 시작 때 진행 중 옛 판에서 뺀 죽은 사람 알리기·옛 판 채널 떼기, socket/gameSession.js가 넣어 줌 (같은 까닭)
+    onLiveSeatsReleased: null,
 }
 
 // socket.js가 접속 목록 넣어 줌

@@ -217,7 +217,7 @@ function handleDeleteRoom(io, uuid, { socket = null, callback = null, getCurrent
         return
     }
 
-    // 여기부터 진짜 바뀜: 방 사람들한테 먼저 알리고 명단·방·입장 시도·영수증·우편함·초대 정리
+    // 여기부터 진짜 바뀜: 방 사람들한테 먼저 알리고 명단·방·입장 시도·영수증·초대 정리
     channelMembership.emitToChannel(io, roomId, 'room_deleted', {})
 
     const memberUuids = [...room.players.keys()]

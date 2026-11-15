@@ -1,5 +1,5 @@
-// 다른 Node 방 찾기 파일, 내 Node에 없는 방·코드·초대 방·끝난 판이 어느 Node에 있는지 디렉터리로 보고 거절 답을 만듦
-// join/join·join/publicRooms·join/create·admission/accept·join/party가 부름, 단일 모드(REDIS_URL 없음)면 늘 null (지금과 같음)
+// 다른 Node 방 찾기 파일, 내 Node에 없는 방·코드·초대 방이 어느 Node에 있는지 디렉터리로 보고 거절 답을 만듦
+// join/join·join/publicRooms·join/create·admission/accept가 부름, 단일 모드(REDIS_URL 없음)면 늘 null (지금과 같음)
 const cluster = require('../../../cluster')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { ROUTABLE_NODE_ID, pickLeastBusyNode } = require('../../connection/nodeRouting')
@@ -115,14 +115,6 @@ async function findInviteRoomOwner(peek, localEpoch) {
     return null
 }
 
-// 다음 방 묻기: 끝난 판이 살아 있는 다른 Node에 있으면 그리로 → 거절 또는 null (MN-011)
-async function findPartyGameOwner(gameId) {
-    if (!cluster.isShared() || typeof gameId !== 'string' || !gameId) return null
-    const found = await cluster.directory.locate(keys().game(gameId))
-    if (!found.available || !found.node || found.self || !found.alive) return null
-    return onOtherNode(found.node)
-}
-
 // 방 만들기: 내 Node가 draining이고 갈 곳 있으면 그 Node로 보냄 (MN-114) → 답했으면 true
 // 단일 모드·Redis 죽음·갈 곳 없음은 기다림 없이 false (여기서 그대로 만듦)
 function rejectCreateOnDrainingNode(callback) {
@@ -142,7 +134,6 @@ module.exports = {
     findRemoteRoom,
     rejectIfRoomOnOtherNode,
     findInviteRoomOwner,
-    findPartyGameOwner,
     rejectCreateOnDrainingNode,
     ROOM_NODE_MESSAGES: MESSAGES,
 }

@@ -1,11 +1,13 @@
 // 참가자 이탈 반영 파일
 // 이탈 커밋 뒤 방송·유예·탈주 기록·전적 + 막혀 있던 단계 풀기(표가 다 차면 5초 뒤 판정), 나가기·끊김 유예 만료가 씀
+// + 새 판 시작 때 옛 판에서 뺀 죽은 사람 알리기 (matchmaking 시작 처리가 gameSession.js 통해 부름)
 const gameSessionCore = require('../../../game-core/gameSession')
+const { getSessionById } = require('../../../game-core/queries/byId')
 const { persistTerminalSession } = require('../../../services/game/record')
 const { recordDesertion, DESERTION_REASONS } = require('../../../services/game/desertion')
 const { isolate, isolateOr } = require('../../common/isolate')
 const { cancelDisconnectGrace } = require('../connection/grace')
-const { emitToGameChannel } = require('../delivery/broadcast')
+const { emitToGameChannel, detachFromGameChannel } = require('../delivery/broadcast')
 const { emitSelfProgress } = require('../delivery/progress')
 const { settleNightTurnIfComplete } = require('../phase/night/turn')
 const { startDayPhaseTimer, syncSessionPhaseTimers, settleDayVoteIfComplete } = require('../phase/day')
@@ -138,6 +140,29 @@ function advanceAfterDeparture(io, session, applied) {
     }
 }
 
+// 새 판 시작 때 진행 중 옛 판에서 뺀 죽은 사람 알리기 (빼기는 game-core setup/commit.js가 이미 함)
+// released 예: [{ uuid: 'u3', gameId: 'g-old', departure: { ok: true, victimUuid: 'u3', hostChanged: true, ... } }]
+// 그 사람 소켓 옛 판 채널 떼기 → 옛 판 사람들에게 참여 변경 (방장이 넘어갔으면 hostUuid가 새 방장, 나가기와 같은 모양)
+// 죽은 사람이라 표·밤 차례가 없어 단계 풀기는 안 함, 하나 실패해도 다음 사람 계속
+function announceSupersededDepartures(io, released, socketsByUuid) {
+    const label = '[새 판 시작 옛 판 정리 실패]'
+    for (const { uuid, gameId, departure } of Array.isArray(released) ? released : []) {
+        const session = getSessionById(gameId)
+        if (!session) continue
+        const step = (code, run) => isolate(label, { code, uuid, gameId }, run)
+        for (const s of socketsByUuid?.get?.(uuid) ?? []) {
+            step('CHANNEL_DETACH_ERROR', () => detachFromGameChannel(s, uuid, session.channelId, label, { gameId }))
+        }
+        const payload = isolateOr(null, label, { code: 'PARTICIPATION_PAYLOAD_BUILD_ERROR', uuid, gameId },
+            () => gameSessionCore.buildParticipationChangedPayload(session, departure?.victimUuid ?? uuid))
+        if (payload) {
+            step('PARTICIPATION_DELIVERY_ERROR',
+                () => emitToGameChannel(io, session, 'session_participation_changed', payload))
+        }
+    }
+}
+
 module.exports = {
     applyParticipantDeparture,
+    announceSupersededDepartures,
 }

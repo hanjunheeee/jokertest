@@ -43,13 +43,6 @@ function pickGameItem({ gameId, itemId }) {
     return { gameId, itemId }
 }
 
-// 판 id + 날짜 (정수, 지도 04-①)
-function pickGameDay({ gameId, dayIndex }) {
-    if (typeof gameId !== 'string') return null
-    if (!Number.isInteger(dayIndex)) return null
-    return { gameId, dayIndex }
-}
-
 // 요청 앞단 검사: 지금 소켓 → 객체 → 칸 모양 순서 (누가 보냈는지는 소켓 uuid로만, 지도 05-①②)
 // 통과면 { fields }, 아니면 { code } (STALE_SOCKET / INVALID_PAYLOAD)
 function readRequest(uuid, socket, payload, pickFields) {
@@ -150,7 +143,6 @@ module.exports = {
     pickGameTarget,
     pickGameText,
     pickGameItem,
-    pickGameDay,
     readRequest,
     acceptRequest,
     acceptCoreResult,

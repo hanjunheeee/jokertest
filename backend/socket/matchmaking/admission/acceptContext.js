@@ -7,7 +7,6 @@ const { playerRoom, matchmakingQueue } = require('../core/state')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { getAdmissionAttempt, nextAttemptId, withAdmissionTimeout } = require('./attempts')
 const { acquireRoomTransition, getGeneration } = require('../join/transition')
-const { markPartyOriginToken } = require('../join/partyOrigin')
 const { isSeatedInRoom, detachSocketFromChannel, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('../room/membership')
 
 // 답은 한 번만, callback이 던져도 밖으로 안 샘
@@ -96,8 +95,6 @@ function reserveAcceptRequest(io, socket, uuid, payload, respond) {
 
     // 세대 번호 기억 (그사이 판 끝 정리되면 명단 넣기 거절)
     const generationAtRequest = getGeneration(uuid)
-    // 결과 화면에서 시작한 수락이면 표시 (판 끝 정리가 이 입장을 안 끊게, known 1-16)
-    markPartyOriginToken(uuid, transitionToken)
     return createAcceptContext(io, socket, uuid, { inviteId, respond, transitionToken, generationAtRequest })
 }
 

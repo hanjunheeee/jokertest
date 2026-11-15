@@ -5,7 +5,6 @@ const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = require('../core/state')
 const { takeJoinAttempt, isJoinLimitShared } = require('./entryLimits')
 const { acquireRoomTransition, getGeneration } = require('./transition')
-const { markPartyOriginToken } = require('./partyOrigin')
 const { isKickLimitReached, KICK_LIMIT_MESSAGE } = require('../room/kickLimit')
 const { createJoinChannelGuard } = require('./joinCommit')
 
@@ -15,7 +14,7 @@ const TOO_MANY_JOIN_ATTEMPTS_MESSAGE = '입장 시도가 너무 많습니다. �
 
 // 토큰 꽂기 전 거절: 게임 중·탈주 대기·빈 코드·시도 횟수·이미 방·처리 중·줄
 // 통과면 다듬은 코드, 거절이면 실패 알림 보내고 null (예: ' AB12 ' → 'AB12')
-function rejectBeforeReservation(socket, uuid, roomCode, { autoJoin }) {
+function rejectBeforeReservation(socket, uuid, roomCode) {
     // 게임 중이면 거절 (지도 01-②)
     if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
@@ -32,8 +31,8 @@ function rejectBeforeReservation(socket, uuid, roomCode, { autoJoin }) {
         return null
     }
 
-    // 사람별 코드 입장 시도 횟수 제한 (서버가 끌어다 넣는 자동 입장은 안 셈, BE-025)
-    if (!autoJoin && !isJoinLimitShared() && !takeJoinAttempt(uuid)) {
+    // 사람별 코드 입장 시도 횟수 제한 (BE-025)
+    if (!isJoinLimitShared() && !takeJoinAttempt(uuid)) {
         emitRoomJoinFailed(socket, TOO_MANY_JOIN_ATTEMPTS, TOO_MANY_JOIN_ATTEMPTS_MESSAGE)
         return null
     }
@@ -59,8 +58,8 @@ function rejectBeforeReservation(socket, uuid, roomCode, { autoJoin }) {
 }
 
 // 앞 검사 → 처리 중 토큰 꽂기 → 세대 번호 기억, 이 입장 하나의 진행 묶음 돌려줌 (거절이면 알림 보내고 null)
-function reserveJoin(io, socket, uuid, roomCode, { expectedRoom, autoJoin }) {
-    const normalizedCode = rejectBeforeReservation(socket, uuid, roomCode, { autoJoin })
+function reserveJoin(io, socket, uuid, roomCode, { expectedRoom }) {
+    const normalizedCode = rejectBeforeReservation(socket, uuid, roomCode)
     if (normalizedCode === null) return null
 
     // 첫 await 전에 처리 중 토큰 꽂고 세대 번호 기억 (지도 01-③④)
@@ -70,13 +69,10 @@ function reserveJoin(io, socket, uuid, roomCode, { expectedRoom, autoJoin }) {
         return null
     }
     const generationAtReservation = getGeneration(uuid)
-    // 결과 화면에서 본인이 시작한 입장이면 표시 (판 끝 정리가 이 요청·자리를 안 건드리게, known 1-16)
-    if (!autoJoin) markPartyOriginToken(uuid, transitionToken)
 
     return {
         normalizedCode,
         expectedRoom,
-        autoJoin,
         transitionToken,
         generationAtReservation,
         // 채널 붙은 방·명단 확정 여부 (실패 때 채널 뗄지 판단)

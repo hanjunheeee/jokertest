@@ -1,9 +1,8 @@
 // 밤 마무리 파일
-// 밤 결과 확정·낮 타이머·결과 전달을 한 관문으로 (같은 밤 두 번 확정 막기), 밤 턴·밤 종료 버튼이 씀
+// 밤 결과 확정·낮 타이머·결과 전달을 한 관문으로 (같은 밤 두 번 확정 막기), 밤 턴이 다 돌면 부름
 const gameSessionCore = require('../../../../game-core/gameSession')
 const { isNonEmptyString } = require('../../../common/shape')
 const { isolate, isolateOr } = require('../../../common/isolate')
-const { rejectedReply, internalErrorReply } = require('../../../common/replies')
 const { NIGHT_INTERNAL_CODES } = require('../../core/constants')
 const { nightFinalizeInFlight } = require('../../core/state')
 const { stillEligible, hasOutsideMembership } = require('../../delivery/eligibility')
@@ -48,8 +47,8 @@ function deliverNightResult(recipientSocket, targetSession, resolution, { nightR
         ))
 }
 
-// 밤 마무리 관문: 자동 마무리·'밤 종료' 버튼 둘 다 여기로 모음, 같은 밤 두 번 확정 못 함 (지도 06-④⑤)
-function finalizeNightForSession(io, session, { prepared = null, deps = {}, onResult = null } = {}) {
+// 밤 마무리 관문: 밤 턴이 다 돌면 여기로, 같은 밤 두 번 확정 못 함 (지도 06-④⑤)
+function finalizeNightForSession(io, session, { deps = {} } = {}) {
     // prepare·commit·소켓 모으기는 시험이 바꿔 넣을 수 있음
     const prepareForSession = deps.prepareForSession ?? gameSessionCore.prepareNightResolutionForSession
     const commit = deps.commit ?? gameSessionCore.commitNightResolution
@@ -64,15 +63,12 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
     // 마무리 중 표시 (어디서 끝나든 finally가 지움)
     nightFinalizeInFlight.add(gameId)
     try {
-        // 버튼은 prepare 결과를 들고 옴, 자동 마무리는 여기서 prepare
-        let resolvedPrepared = prepared
-        if (!resolvedPrepared) {
-            try {
-                resolvedPrepared = prepareForSession(session)
-            } catch {
-                console.error(label, { code: 'PREPARE_UNEXPECTED_ERROR', uuid: undefined, gameId })
-                return { ok: false, code: 'INTERNAL_ERROR' }
-            }
+        let resolvedPrepared
+        try {
+            resolvedPrepared = prepareForSession(session)
+        } catch {
+            console.error(label, { code: 'PREPARE_UNEXPECTED_ERROR', gameId })
+            return { ok: false, code: 'INTERNAL_ERROR' }
         }
         // prepare 거절이면 그 코드 그대로
         if (!resolvedPrepared || resolvedPrepared.ok !== true) {
@@ -81,16 +77,15 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
 
         const targetSession = resolvedPrepared.session ?? session
         const resolution = resolvedPrepared.resolution
-        // 여기서부터 로그엔 버튼 누른 사람(자동이면 undefined)·확정할 판 id
-        const fields = { uuid: onResult?.uuid, gameId: targetSession.id }
+        // 여기서부터 로그엔 확정할 판 id
+        const fields = { gameId: targetSession.id }
 
         // 확정 실패: 내부 코드는 숨기고 INTERNAL_ERROR (지도 06-⑨)
         const failCommit = () => {
             console.error(label, { code: 'COMMIT_ERROR', ...fields })
-            if (onResult) onResult(internalErrorReply())
             return { ok: false, code: 'INTERNAL_ERROR' }
         }
-        // 확정: 던지거나 내부 코드면 숨김, 그 밖 거절은 코드 그대로 답함
+        // 확정: 던지거나 내부 코드면 숨김, 그 밖 거절은 코드 그대로
         let applied
         try {
             applied = commit(targetSession, resolution)
@@ -99,7 +94,6 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
         }
         if (!applied.ok) {
             if (NIGHT_INTERNAL_CODES.has(applied.code)) return failCommit()
-            if (onResult) onResult(rejectedReply(applied.code))
             return { ok: false, code: applied.code }
         }
 
@@ -114,9 +108,6 @@ function finalizeNightForSession(io, session, { prepared = null, deps = {}, onRe
             ))
         // 승부 났으면 종료 필드 붙이고 전적 저장 시작 (저장은 안 기다림)
         const nightResultAppliedPayload = withTerminalFields(targetSession, applied.terminal, appliedPayload, label, fields, io)
-
-        // 버튼 누른 사람에게 먼저 답함 (결과 내용 못 만들었으면 승부 종료 필드만 있어도 INTERNAL_ERROR)
-        if (onResult) onResult(appliedPayload ? { ok: true } : internalErrorReply())
 
         // 밤 턴 멈추고 낮 타이머 (판 끝났으면 낮 타이머는 안 걸림)
         isolate(label, { code: 'TIMER_SYNC_ERROR', ...fields }, () => {

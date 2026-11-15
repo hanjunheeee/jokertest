@@ -9,6 +9,7 @@ const { getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('../room/view')
 const { BOOT_EPOCH } = require('../core/constants')
 const { disposeRoom } = require('../room/dispose')
+const { nextHostAfterLeave } = require('../room/returnRoom')
 
 // 명단에 넣었던 입장 시도 되돌리기 (내가 넣은 것일 때만, 방 사람들한테 알림)
 function removePublished(io, socket, attempt) {
@@ -38,8 +39,14 @@ function removePublished(io, socket, attempt) {
     }
     // 내가 뺀 게 아니면 알릴 것 없음
     if (!stillMine || !room) return
-    // 빈 방이 됐으면 공통 정리로 방·입장 시도·영수증·우편함·초대 같이 지움 (known 1-11)
+    // 빈 방이 됐으면 공통 정리로 방·입장 시도·영수증·초대 같이 지움 (known 1-11)
+    // 판 끝 뒤 다시 연 방은 180초 끝까지 빈 채 둠 (방 나가기와 같음, 결과 화면 사람이 "대기방으로"를 누를 수 있게)
     if (room.players.size === 0) {
+        if (room.returnHold) {
+            if (room.hostUuid === attempt.accountUuid) room.hostUuid = null
+            emitPublicRoomList(io)
+            return
+        }
         disposeRoom(attempt.roomId, 'ROOM_GONE')
         emitPublicRoomList(io)
         return
@@ -62,12 +69,14 @@ function isStillMine(room, attempt) {
 
 // 되돌린 뒤 남은 방 사람들한테 알림: 방장 바뀜(필요할 때만) → 나간 사람 → 공개 방 목록
 function announceRelease(io, room, attempt) {
-    // 방장이 빠졌으면 남은 첫 사람이 방장, 방송 실패는 로그만
-    if (!room.players.has(room.hostUuid)) {
-        room.hostUuid = room.players.keys().next().value
+    // 방장이 빠졌으면 남은 첫 사람이 방장 (원래 방장 자리를 남겨 두는 중이면 방장 칸은 비워 둠), 방송 실패는 로그만
+    // 방장 칸이 이미 비어 있던 방(남겨 둔 자리)은 바뀐 것 없음
+    if (room.hostUuid != null && !room.players.has(room.hostUuid)) {
+        room.hostUuid = nextHostAfterLeave(room)
         try {
             channelMembership.emitToChannel(io, attempt.roomId, 'host_changed', {
                 hostUuid: room.hostUuid,
+                reservedHostUuid: room.returnHold?.reservedHostUuid ?? null,
                 canStart: computeCanStart(room),
                 roomInstanceId: room.instanceId ?? null,
                 bootEpoch: BOOT_EPOCH,
