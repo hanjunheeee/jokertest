@@ -1,4 +1,4 @@
-// 대기방 강퇴: 대상 목록·확인 창·강퇴 요청
+// 대기방 강퇴: 대상 목록·강퇴 창 열고 닫기·누르면 바로 강퇴
 // useMatchingPage가 씀, 요청 보내기·결과 확인은 인게임과 같이 쓰는 useKickPlayerRequest에 맡김
 import { useCallback, useMemo, useState } from "react"
 import { useMatchingStore, selectRoomMembershipId } from "../store/matchingStore.js"
@@ -6,7 +6,7 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { askRoomCb } from "../socket/room.js"
 import { captureVerificationGuard } from "../../ingame/hooks/kick/guards.js"
-import { useKickPlayerRequest } from "../../ingame/hooks/useKickPlayerRequest.js"
+import { KICK_REQUEST_STATUS, useKickPlayerRequest } from "../../ingame/hooks/useKickPlayerRequest.js"
 
 // 대기방 강퇴 상태·동작
 export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
@@ -90,6 +90,7 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
 
   // 보내기·결과 확인은 강퇴 요청 훅에 맡김
   const kick = useKickPlayerRequest({ buildRequest, getMembershipScopeId, verifyMembership })
+  const { reset: resetKick, status: kickStatus } = kick
 
   // 강퇴 대상: 나를 뺀, 소속 id가 있는 사람
   const targets = useMemo(() => (players ?? [])
@@ -101,23 +102,27 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
       membershipId: player.membershipId,
     })), [players, myUuid])
 
-  // 강퇴 가능할 때만 창 엶
+  // 강퇴 가능할 때만 창 엶 (지난 성공 표시는 지우고 엶)
   const openKickModal = useCallback(() => {
     if (!canKick) return
+    if (kickStatus === KICK_REQUEST_STATUS.SUCCEEDED) resetKick()
     setModalOpen(true)
-  }, [canKick])
+  }, [canKick, kickStatus, resetKick])
 
   // 닫으면 진행 상태도 지움
   const closeKickModal = useCallback(() => {
     setModalOpen(false)
-    kick.reset()
-  }, [kick.reset])
+    resetKick()
+  }, [resetKick])
+
+  // 강퇴 성공이면 창을 닫음 (목록에서 그 줄이 빠지는 것 말고는 된 줄 몰라서)
+  if (modalOpen && kickStatus === KICK_REQUEST_STATUS.SUCCEEDED) setModalOpen(false)
 
   // 강퇴 자격 잃으면 창을 닫음 (되찾아도 저절로 다시 안 열리게)
   // 강퇴 보내는 중·결과 확인 중이면 그대로 둠 (방 다시 확인하는 잠깐 사이에 결과 창이 사라지지 않게)
   const kickInProgress = Boolean(kick.isSending || kick.isAwaitingResolution)
   if (modalOpen && !canKick && !kickInProgress) setModalOpen(false)
-  const effectiveOpen = modalOpen && canKick
+  const effectiveOpen = modalOpen && canKick && kickStatus !== KICK_REQUEST_STATUS.SUCCEEDED
 
   return {
     canKick,
@@ -127,14 +132,13 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
     closeKickModal,
     kickTargets: targets,
     kickPendingTarget: kick.pendingTarget,
-    kickStatus: kick.status,
+    kickStatus,
     kickErrorCode: kick.errorCode,
     isKicking: kick.isSending,
     canLookupKickResult: kick.canLookupResult,
     isAwaitingKickResolution: kick.isAwaitingResolution,
-    requestKickConfirm: kick.requestConfirm,
-    cancelKickConfirm: kick.cancelConfirm,
-    confirmKick: () => kick.confirmKick(targets),
+    // 줄 "추방" 누름 = 바로 강퇴 (이름은 대기방 페이지가 읽는 옛 이름 그대로)
+    requestKickConfirm: kick.kickPlayer,
     lookupKickResult: kick.lookupResult,
   }
 }

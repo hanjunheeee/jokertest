@@ -1,4 +1,4 @@
-// 추방 요청 훅: 대상 확인 → 보내기 → 결과(성공·실패·모름) 상태, 결과 다시 묻기
+// 추방 요청 훅: 누르면 바로 보내기 → 결과(성공·실패·모름) 상태, 결과 다시 묻기
 // 대기방 추방 훅(useMatchingRoomKick)이 사용 (판 안 추방은 기능을 뺌), 보내기는 socket/kick.js (확인·조회는 hooks/kick/)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
@@ -12,7 +12,7 @@ import { lookupKickResult } from "./kick/lookupResult.js"
 export { KICK_EVENTS } from "../socket/kick.js"
 export { KICK_REQUEST_STATUS } from "../constants/ingameKick.js"
 
-// 추방 진행 상태와 고르기·보내기·결과 조회 함수
+// 추방 진행 상태와 보내기·결과 조회 함수
 export function useKickPlayerRequest({
   buildRequest,
   getMembershipScopeId = () => null,
@@ -69,55 +69,20 @@ export function useKickPlayerRequest({
     setErrorCode(null)
   }, [authUuid, applyStatus])
 
-  // 대상 고르기: 보내는 중·소속 확인 기다리는 중이면 막기
-  const requestConfirm = useCallback((target) => {
+  // 줄의 "추방"을 누르면 바로 보냄 (확인 단계 없음, 2026-11-16 결정)
+  // 보내는 중·결과 모름(잠금)·소속 다시 확인 기다리는 중이면 막기 (두 번 빠르게 눌러도 한 번만 가게)
+  const kickPlayer = useCallback((picked) => {
     // 대상 uuid·소속 id가 없으면 안 받음
-    if (!target || typeof target.uuid !== "string" || !target.uuid) return
-    if (typeof target.membershipId !== "string" || !target.membershipId) return
+    if (!picked || typeof picked.uuid !== "string" || !picked.uuid) return
+    if (typeof picked.membershipId !== "string" || !picked.membershipId) return
     if (sendLockRef.current) return
     if (statusRef.current === KICK_REQUEST_STATUS.SENDING) return
     if (needsVerificationRef.current) return
-    setPendingTarget({
-      uuid: target.uuid,
-      membershipId: target.membershipId,
-      nickname: typeof target.nickname === "string" ? target.nickname : "",
+    const target = {
+      uuid: picked.uuid,
+      membershipId: picked.membershipId,
+      nickname: typeof picked.nickname === "string" ? picked.nickname : "",
       scopeId: getMembershipScopeId(),
-    })
-    setErrorCode(null)
-    applyStatus(KICK_REQUEST_STATUS.CONFIRMING)
-  }, [getMembershipScopeId, applyStatus])
-
-  // 고르기 취소 (확인 중이었으면 처음으로)
-  const cancelConfirm = useCallback(() => {
-    setPendingTarget(null)
-    if (statusRef.current === KICK_REQUEST_STATUS.CONFIRMING) applyStatus(KICK_REQUEST_STATUS.IDLE)
-  }, [applyStatus])
-
-  // 추방 보내기: 고른 뒤 내 소속·대상 소속이 그대로일 때만
-  const confirmKick = useCallback((currentTargets = null) => {
-    const target = pendingTarget
-    if (!target) return
-    if (sendLockRef.current) return
-    if (statusRef.current === KICK_REQUEST_STATUS.SENDING) return
-
-    // 대상 비우고 실패로
-    const fail = (code) => {
-      setPendingTarget(null)
-      applyStatus(KICK_REQUEST_STATUS.FAILED)
-      setErrorCode(code)
-    }
-
-    // 고른 뒤 내 소속 범위나 대상 소속이 바뀌었으면 실패
-    if (target.scopeId !== getMembershipScopeId()) {
-      fail("STALE_MEMBERSHIP")
-      return
-    }
-    if (Array.isArray(currentTargets)) {
-      const seated = currentTargets.find((entry) => entry?.uuid === target.uuid)
-      if (!seated || seated.membershipId !== target.membershipId) {
-        fail("STALE_MEMBERSHIP")
-        return
-      }
     }
 
     // 소켓이 없으면 실패
@@ -146,6 +111,7 @@ export function useKickPlayerRequest({
     const scopeId = target.scopeId
     statusRef.current = KICK_REQUEST_STATUS.SENDING
     setHasReceipt(true)
+    setPendingTarget(target)
     setStatus(KICK_REQUEST_STATUS.SENDING)
     setErrorCode(null)
 
@@ -171,7 +137,10 @@ export function useKickPlayerRequest({
         return
       }
 
+      // 답이 정해졌으니 잠금 풀고 영수증도 버림 (결과 확인 단추는 결과 모를 때만)
       sendLockRef.current = false
+      lastReceiptRef.current = null
+      setHasReceipt(false)
       setPendingTarget(null)
       if (response && response.ok === true) {
         applyStatus(KICK_REQUEST_STATUS.SUCCEEDED)
@@ -181,7 +150,7 @@ export function useKickPlayerRequest({
       applyStatus(KICK_REQUEST_STATUS.FAILED)
       setErrorCode(typeof response?.code === "string" ? response.code : "UNKNOWN_ERROR")
     })
-  }, [pendingTarget, buildRequest, getMembershipScopeId, applyStatus])
+  }, [buildRequest, getMembershipScopeId, applyStatus])
 
   // 결과 조회에 넘길 ref·상태 바꾸기 묶음
   const lookupCtx = useMemo(() => ({
@@ -193,9 +162,13 @@ export function useKickPlayerRequest({
   // 지난 요청 결과 다시 묻기 (본체는 hooks/kick/lookupResult.js)
   const lookupResult = useCallback(() => lookupKickResult(lookupCtx), [lookupCtx])
 
-  // 진행 중 응답 버리고 처음으로 (보내기 잠금·영수증은 그대로 둠)
+  // 진행 중 응답 버리고 처음으로 (결과 모름 잠금이 남아 있으면 영수증도 그대로 둠, 다시 열어 결과 확인하게)
   const reset = useCallback(() => {
     requestGenerationRef.current += 1
+    if (!sendLockRef.current) {
+      lastReceiptRef.current = null
+      setHasReceipt(false)
+    }
     setPendingTarget(null)
     applyStatus(KICK_REQUEST_STATUS.IDLE)
     setErrorCode(null)
@@ -208,9 +181,7 @@ export function useKickPlayerRequest({
     isSending: status === KICK_REQUEST_STATUS.SENDING,
     canLookupResult: hasReceipt,
     isAwaitingResolution: needsVerification,
-    requestConfirm,
-    cancelConfirm,
-    confirmKick,
+    kickPlayer,
     lookupResult,
     reset,
   }

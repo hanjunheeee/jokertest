@@ -1,5 +1,6 @@
-// 방장 버튼 줄: 방 설정 변경·참가자 추방
+// 방장 버튼 줄: 방 설정 변경·참가자 추방, 추방이 잠겼으면 까닭 글
 // GameMatchingPage가 씀, 다른 창(설정·강퇴·친구 초대)이 떠 있으면 페이지가 안 그림
+import { useId } from "react"
 import { motion } from "framer-motion"
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
 import {
@@ -10,6 +11,11 @@ import {
 } from "../../../../shared/constants/matchingPopupStyles.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PublicAsset from "@/shared/ui/PublicAsset"
+import { INGAME_KICK_PLAYER_MODAL_COPY } from "../../ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
+
+// 추방 잠긴 까닭 글 칸 (마우스 올림 글은 안 보이는 일이 많아 화면에 글로 띄움, 어두운 바탕에 밝은 글자)
+const KICK_LOCKED_REASON_CLASS =
+  "max-w-[clamp(9rem,18vw,13rem)] rounded-sm border border-[#3a2818]/70 bg-[#120a06]/85 px-2 py-1 font-subheading text-[clamp(0.62rem,0.9vw,0.75rem)] font-bold leading-snug text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 // 방장 버튼 묶음
 export default function MatchingHostActionButtons({
@@ -20,8 +26,11 @@ export default function MatchingHostActionButtons({
   onOpenSettings,
   onOpenKickModal,
 }) {
+  const kickReasonId = useId()
+
   // 설정도 못 바꾸고 방장도 아니면 안 그림
   if (!canEditSettings && !isKickHost) return null
+  const showKickReason = isKickHost && !canKick
 
   return (
     <motion.div
@@ -51,14 +60,14 @@ export default function MatchingHostActionButtons({
           </span>
         </button>
       ) : null}
-      {/* 추방: 방장이면 보이되 방 확인 전엔 잠그고 title로 이유 보임 */}
+      {/* 추방: 방장이면 보이되 방 확인 전엔 잠그고 옆에 까닭 글 */}
       {isKickHost ? (
         <button
           type="button"
           onClick={canKick ? onOpenKickModal : undefined}
           disabled={!canKick}
           aria-label={MATCHING_POPUP_COPY.kickParticipant}
-          title={canKick ? undefined : "방 정보를 서버에서 확인하는 중입니다"}
+          aria-describedby={showKickReason ? kickReasonId : undefined}
           className={HOST_ACTION_BTN_CLASS}
         >
           <span className={BTN_SCALE_WRAP_CLASS}>
@@ -72,6 +81,11 @@ export default function MatchingHostActionButtons({
             </span>
           </span>
         </button>
+      ) : null}
+      {showKickReason ? (
+        <p id={kickReasonId} role="status" data-testid="kick-locked-reason" className={KICK_LOCKED_REASON_CLASS}>
+          {INGAME_KICK_PLAYER_MODAL_COPY.lockedReason}
+        </p>
       ) : null}
     </motion.div>
   )

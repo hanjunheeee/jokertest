@@ -1,4 +1,4 @@
-// 참가자 추방 창: 투표 창 틀 + 안내 글·진행 표시·대상 목록
+// 참가자 추방 창: 투표 창 틀 + 안내 글·진행 표시·대상 목록, 줄의 "추방"을 누르면 바로 보냄
 // GameMatchingPage가 씀, 값·동작은 데스크톱 useMatchingRoomKick 그대로 (데스크톱 SettingKickPlayerModal과 같은 틀·글)
 import { INGAME_KICK_PLAYER_MODAL_COPY as COPY } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
 import { resolvePlayerRecordListProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
@@ -12,7 +12,7 @@ export default function KickSheet({ page }) {
   const {
     kickModalOpen, closeKickModal, kickTargets: targets, kickPendingTarget: pendingTarget,
     kickStatus, kickErrorCode, isKicking, canLookupKickResult, isAwaitingKickResolution,
-    requestKickConfirm, cancelKickConfirm, confirmKick, lookupKickResult,
+    requestKickConfirm: kickPlayer, lookupKickResult,
   } = page
 
   return (
@@ -27,15 +27,10 @@ export default function KickSheet({ page }) {
       <p className={NOTICE_CLASS}>{COPY.notice}</p>
 
       <KickStatus
-        targets={targets}
-        pendingTarget={pendingTarget}
         status={kickStatus}
         errorCode={kickErrorCode}
-        isSending={isKicking}
         canLookupResult={canLookupKickResult}
         isAwaitingResolution={isAwaitingKickResolution}
-        onCancelConfirm={cancelKickConfirm}
-        onConfirmKick={confirmKick}
         onLookupResult={lookupKickResult}
       />
 
@@ -57,7 +52,7 @@ export default function KickSheet({ page }) {
               profileBorderSrc={profileBorderSrc}
               isPending={pendingTarget?.membershipId === player.membershipId}
               disabled={isKicking}
-              onKick={() => requestKickConfirm?.(player)}
+              onKick={() => kickPlayer?.(player)}
             />
           )
         })}

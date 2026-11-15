@@ -1,4 +1,4 @@
-// 추방 대상 한 줄: 프로필·이름·추방 버튼 (고른 대상이면 "확인 중")
+// 추방 대상 한 줄: 프로필·이름·추방 버튼 (보내는 대상이면 "보내는 중")
 // KickSheet가 씀, 문구·그림·줄 판은 데스크톱 SettingKickPlayerRow와 같음
 import { INGAME_KICK_PLAYER_MODAL_COPY as COPY } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
 import { PLAYER_ASSETS } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerAssets.js"
