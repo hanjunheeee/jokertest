@@ -1,4 +1,4 @@
-// 내 역할 공개 창: 닉네임·역할 이름·설명·동료 광대, 확인 누르면 화면에서만 닫힘, 10초 지나면 저절로 닫힘 (서버는 확인을 안 기다림)
+// 내 역할 공개 창: 닉네임·역할 이름·설명·같은 직업 동료, 확인 누르면 화면에서만 닫힘, 10초 지나면 저절로 닫힘 (서버는 확인을 안 기다림)
 // OverlayLayer가 씀, 값은 useInGameRoleReveal(useInGameOverlayStack 안), 글자 모양은 데스크톱 상수 그대로
 import { useEffect, useLayoutEffect, useRef } from "react"
 import {
@@ -34,7 +34,7 @@ function useAutoClose(open, onClose) {
     }, [open])
 }
 
-// roleInfo 없으면 안 그림, 동료 광대는 판 참가자 닉네임으로 바꿔 보임 (데스크톱과 같음)
+// roleInfo 없으면 안 그림, 같은 직업 동료는 판 참가자 닉네임으로 바꿔 보임 (데스크톱과 같음, 시민은 동료 줄 없음)
 export default function RoleRevealOverlay({ open, onClose, roleInfo, players = [], primaryLabel = "확인" }) {
     useAutoClose(open && Boolean(roleInfo), onClose)
     if (!roleInfo) return null
@@ -58,7 +58,7 @@ export default function RoleRevealOverlay({ open, onClose, roleInfo, players = [
 
             {allies.length ? (
                 <div className={ALLY_SECTION_CLASS}>
-                    <p>동료 광대</p>
+                    <p>동료 {roleInfo.roleName}</p>
                     <ul className={ALLY_LIST_CLASS}>
                         {allies.map((ally) => (
                             <li key={ally.uuid} className={ALLY_CHIP_CLASS}>{ally.nickname}</li>

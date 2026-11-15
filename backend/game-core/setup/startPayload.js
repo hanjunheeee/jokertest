@@ -5,7 +5,10 @@ const { ROLE_TO_SKIN_JOB_ID, PLAYER_THEME_PALETTE_SIZE } = require('./constants'
 const { ROLE_TEAMS } = require('../core/rules/roles')
 const { buildRoomSettingsView } = require('../../validations/room/updateSettings')
 
-// 보는 사람 기준 역할 칸 (광대끼리는 서로 보임)
+// 같은 직업끼리 서로 보이는 직업 (시민은 보일 까닭 없어서 뺌)
+const ALLY_VISIBLE_ROLES = new Set(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'])
+
+// 보는 사람 기준 역할 칸 (시민 뺀 같은 직업끼리 서로 보임)
 function buildViewerRoleFields(session, viewer) {
     // 판에 없는 사람이면 칸 없음
     if (!viewer) return null
@@ -19,12 +22,12 @@ function buildViewerRoleFields(session, viewer) {
         role: viewer.role,
         team: ROLE_TEAMS[viewer.role],
         ...(hasAccountSkin ? { accountSkinId: accountSkinsByJob[skinJobId] } : {}),
-        // 광대면 동료 광대 uuid 목록 붙임
-        ...(viewer.role === 'JOKER'
+        // 시민 아니면 같은 직업 다른 사람 uuid 목록 붙임 (혼자면 빈 목록)
+        ...(ALLY_VISIBLE_ROLES.has(viewer.role)
             ? {
                   allies: [...session.players.values()]
-                      .filter((p) => p.role === 'JOKER' && p.uuid !== viewer.uuid)
-                      .map((p) => p.uuid),
+                      .filter((p) => p.role === viewer.role && p.uuid !== viewer.uuid)
+                      .map((p) => p.uuid), // 의사 A가 보면 → ['의사B-uuid']
               }
             : {}),
     }

@@ -15,6 +15,9 @@ const ROLE_TEAMS = {
   WITCH_HUNTER: "CITIZEN",
 }
 
+// 같은 직업 동료가 보이는 직업 (시민은 동료 줄 없음)
+const ALLY_VISIBLE_ROLES = new Set(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
+
 // 직업 → 스킨 직업 id (서 있는 그림 찾기용)
 const ROLE_TO_SKIN_JOB_ID = {
   CITIZEN: "noble",
@@ -38,7 +41,7 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0
 }
 
-// 내 판 정보가 맞을 때만 직업 공개 화면 값 (조커면 동료 목록 포함)
+// 내 판 정보가 맞을 때만 직업 공개 화면 값 (시민 아니면 같은 직업 동료 목록 포함)
 export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
   if (self === null || typeof self !== "object" || Array.isArray(self)) return null
   if (!isNonEmptyString(authUuid)) return null
@@ -50,9 +53,9 @@ export function getInGameRoleRevealInfo(self, { authUuid } = {}) {
   const display = getRoleRevealDisplay(self.role)
   if (!display) return null
 
-  // 조커면 동료 목록이 꼭 있어야 함
+  // 시민 아니면 동료 목록이 꼭 있어야 함 (혼자면 빈 목록)
   let allies = null
-  if (self.role === "JOKER") {
+  if (ALLY_VISIBLE_ROLES.has(self.role)) {
     if (!Array.isArray(self.allies)) return null
     allies = [...self.allies]
   }

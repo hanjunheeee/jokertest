@@ -10,10 +10,12 @@ const ROLE_TEAMS = {
   GUARD: "CITIZEN",
   WITCH_HUNTER: "CITIZEN",
 }
+// 같은 직업 동료가 보이는 직업 (시민은 동료 목록 없음)
+const ALLY_VISIBLE_ROLES = new Set(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
 // 하나라도 틀리면 돌려주는 빈 결과
 const EMPTY_RESULT = Object.freeze({ sourcePlayers: null, localPlayerId: null })
 
-// 조커 동료 목록: 배열, 본인 아님, 명단 안 사람, 중복 없음
+// 같은 직업 동료 목록: 배열, 본인 아님, 명단 안 사람, 중복 없음
 function areValidAllies(allies, selfUuid, seenUuids) {
   if (!Array.isArray(allies)) return false
   const seenAllies = new Set()
@@ -51,15 +53,16 @@ export function buildPlayerSessionSourceFromGameState(state) {
   if (!Object.hasOwn(ROLE_TEAMS, self.role)) return EMPTY_RESULT
   if (self.team !== ROLE_TEAMS[self.role]) return EMPTY_RESULT
 
-  // 조커면 동료 목록 검사 (본인·명단 밖·중복이면 거절), 조커가 아닌데 오면 거절
-  if (self.role === "JOKER") {
+  // 시민 아니면 동료 목록 검사 (본인·명단 밖·중복이면 거절), 시민인데 오면 거절
+  const allyVisible = ALLY_VISIBLE_ROLES.has(self.role)
+  if (allyVisible) {
     if (!Object.hasOwn(self, "allies")) return EMPTY_RESULT
     if (!areValidAllies(self.allies, self.uuid, seenUuids)) return EMPTY_RESULT
   } else if (Object.hasOwn(self, "allies")) {
     return EMPTY_RESULT
   }
 
-  const allyIds = self.role === "JOKER" ? new Set(self.allies) : null
+  const allyIds = allyVisible ? new Set(self.allies) : null
 
   // 화면용 참가자: 본인엔 직업·팀, 동료엔 동료 표시, 계정 꾸밈은 온 것만
   const sourcePlayers = state.players.map((player) => {

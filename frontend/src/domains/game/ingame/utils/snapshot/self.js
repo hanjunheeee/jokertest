@@ -4,9 +4,12 @@ import { ROLE_TEAMS } from "../../constants/store/sessionSnapshot.js"
 import { SELF_SUBMISSION_KEYS } from "../../constants/store/ingameStore.js"
 import { BAD, isNonEmptyString, isPlainObject } from "./checks.js"
 
-// 조커 동료 목록 검사 (본인·명단 밖·중복이면 BAD), 조커가 아닌데 목록이 오면 BAD
+// 같은 직업 동료가 보이는 직업 (시민은 동료 목록 없음)
+const ALLY_VISIBLE_ROLES = new Set(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
+
+// 같은 직업 동료 목록 검사 (본인·명단 밖·중복이면 BAD), 시민인데 목록이 오면 BAD
 function readAllies(self, roster) {
-  if (self.role !== "JOKER") return Object.hasOwn(self, "allies") ? BAD : null
+  if (!ALLY_VISIBLE_ROLES.has(self.role)) return Object.hasOwn(self, "allies") ? BAD : null
   if (!Object.hasOwn(self, "allies")) return BAD
   if (!Array.isArray(self.allies)) return BAD
   const seen = new Set()
@@ -44,7 +47,7 @@ function copySubmissionFields(self) {
   return fields
 }
 
-// 새 본인 정보 만들기 (조커일 때만 동료 목록 넣음)
+// 새 본인 정보 만들기 (시민 아닐 때만 동료 목록 넣음)
 export function buildSelf(self, allies) {
   return {
     uuid: self.uuid,
@@ -54,6 +57,6 @@ export function buildSelf(self, allies) {
     hasActedThisPhase: self.hasActedThisPhase,
     ...(Object.hasOwn(self, "accountSkinId") ? { accountSkinId: self.accountSkinId } : {}),
     ...copySubmissionFields(self),
-    ...(self.role === "JOKER" ? { allies } : {}),
+    ...(ALLY_VISIBLE_ROLES.has(self.role) ? { allies } : {}),
   }
 }

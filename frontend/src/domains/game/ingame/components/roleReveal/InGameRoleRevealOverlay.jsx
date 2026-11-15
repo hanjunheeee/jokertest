@@ -43,7 +43,7 @@ export default function InGameRoleRevealOverlay({
 
       {allies.length ? (
         <div className={ALLY_SECTION_CLASS}>
-          <p>동료 광대</p>
+          <p>동료 {roleInfo.roleName}</p>
           <ul className={ALLY_LIST_CLASS}>
             {allies.map((ally) => (
               <li key={ally.uuid} className={ALLY_CHIP_CLASS}>
