@@ -1,4 +1,4 @@
-// 회원 상세 화면(/members/:uuid) 파일, 가입일·상태·접속 중 + 정지 기록(해제 사유)·받은 신고·최근 로그인 + 제재·지갑 칸
+// 회원 상세 화면(/members/:uuid) 파일, 가입일·상태·접속 중 + 정지 기록(해제 사유)·받은 신고·최근 로그인·탈주 기록 + 제재·지갑 칸
 // 경로 표(adminDetailRoutes)가 붙임, 제재 칸은 SanctionPanel(1-2), 골드·다이아 칸은 WalletPanel(2-8)이 채움
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -30,6 +30,18 @@ const REPORT_COLUMNS = [
   { key: 'createdAt', label: '신고 시각', render: (row) => formatKst(row.createdAt) },
   { key: 'reasonCode', label: '사유' },
   { key: 'status', label: '처리 상태' },
+]
+// 탈주 이유 글 (서버 값 LEFT_ALIVE·DISCONNECT_TIMEOUT)
+const DESERTION_REASON_TEXT = {
+  LEFT_ALIVE: '산 채로 나감',
+  DISCONNECT_TIMEOUT: '끊긴 뒤 1분 안에 못 돌아옴',
+}
+const DESERTION_COLUMNS = [
+  { key: 'desertedAt', label: '탈주 시각', render: (row) => formatKst(row.desertedAt) },
+  { key: 'reason', label: '이유', render: (row) => DESERTION_REASON_TEXT[row.reason] ?? row.reason },
+  { key: 'blockedUntil', label: '참여 막힘 끝', render: (row) => formatKst(row.blockedUntil) },
+  { key: 'active', label: '상태', render: (row) => (row.active ? '막힘 중' : '끝남') },
+  { key: 'gameId', label: '판', render: (row) => <code className="text-xs break-all">{row.gameId}</code> },
 ]
 const LOGIN_COLUMNS = [
   { key: 'at', label: '시각', render: (row) => formatKst(row.at) },
@@ -131,6 +143,8 @@ export default function MemberDetailPage() {
   if (!detail) return <section className="min-w-0"><PageHeader title="회원 상세" actions={back} /><StatusNote state="loading" /></section>
 
   const { member, bans, reportsReceived, logins } = detail
+  // 옛 서버 답엔 칸이 없을 수 있음
+  const desertions = detail.desertions ?? []
   const banned = bans.some((ban) => ban.active)
   return (
     <section className="min-w-0">
@@ -143,6 +157,9 @@ export default function MemberDetailPage() {
       </Section>
       <Section title="받은 신고">
         <DataList columns={REPORT_COLUMNS} rows={reportsReceived} caption="받은 신고" empty="받은 신고가 없어요." />
+      </Section>
+      <Section title="탈주 기록">
+        <DataList columns={DESERTION_COLUMNS} rows={desertions} caption="탈주 기록" empty="탈주 기록이 없어요." />
       </Section>
       <Section title="최근 로그인">
         {/* 같은 시각 줄이 있을 수 있어 순번을 줄 구별 값으로 */}

@@ -2,7 +2,7 @@
 // 방 만들기 요청 받기 + 잠금 뒤 실제로 만들기, matchmaking.js가 create_room에 붙임 (지도 09)
 const kickReceiptStore = require('../../kickReceiptStore')
 const crypto = require('crypto')
-const { rejectIfInGame, isRoomCodeReserved } = require('./guards')
+const { rejectIfInGame, rejectIfDeserted, isRoomCodeReserved } = require('./guards')
 const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = require('../core/state')
 const { validateCreateRoomPayload } = require('../../../validations/room/create')
 const { validateCreateRoomRoleComposition } = require('../../../game-core/core/rules/roleComposition')
@@ -22,13 +22,15 @@ const { reserveRoomCode, releaseRoomCode } = require('../cluster/roomDirectory')
 const DISCONNECTED_MESSAGE = '연결이 끊어져 방을 생성하지 못했습니다.'
 const SESSION_ENDED_MESSAGE = '게임 세션이 종료되어 요청을 처리하지 못했습니다. 다시 시도해주세요.'
 
-// 방 만들기 요청: 게임 중이면 거절, 처리 중 잠금 걸고 진행
+// 방 만들기 요청: 게임 중·탈주 대기 중이면 거절, 처리 중 잠금 걸고 진행
 function handleCreateRoom(io, socket, uuid, payload, callback) {
     // 답 받을 곳 없으면 안 만듦 (만든 방을 못 알림)
     if (typeof callback !== 'function') return
 
     // 게임 중을 먼저 봄, 나가기로 못 푸는 상태라 그 이유를 알려 줌 (지도 09-②)
     if (rejectIfInGame(uuid, (error) => callback({ ok: false, ...error }))) return
+    // 탈주 대기 시간 중이면 남은 시간 알려 주고 거절
+    if (rejectIfDeserted(uuid, (error) => callback({ ok: false, ...error }))) return
 
     // 이미 방·처리 중·줄에 있으면 거절 (지도 09-②)
     if (playerRoom.has(uuid)) {

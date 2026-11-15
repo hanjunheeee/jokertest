@@ -1,9 +1,11 @@
 // 입장 요청 검사 파일
-// 게임 중 거절·코드 입장 요청 검사·실패 알림·코드 겹침 확인 (지도 01-①②⑤ · 09-⑥)
+// 게임 중·탈주 대기 거절·코드 입장 요청 검사·실패 알림·코드 겹침 확인 (지도 01-①②⑤ · 09-⑥)
 // matchmaking.js(코드 입장 받기)·join·create·queue·accept·room/host·settings가 사용
 const gameSession = require('../../../game-core/gameSession')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { isStartedRoomMark, getStartedRoomCode } = require('./startedMarks')
+const { getDesertionBlock, desertionWaitMessage } = require('../../../services/game/desertion')
+const { DESERTION_COOLDOWN } = require('../core/constants')
 
 // 입장 실패는 전부 room_join_failed 한 통로로 보냄
 function emitRoomJoinFailed(socket, code, message, details = {}) {
@@ -23,6 +25,20 @@ function rejectIfInGame(uuid, respond) {
         code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME,
         message: ALREADY_IN_GAME_MESSAGE,
         gameId: routing.gameId,
+    })
+    return true
+}
+
+// 탈주 대기 시간 중이면 거절, 남은 시간·막힘 끝 같이 알려 줌 (메모리만 봄, DB 안 부름)
+// 예: 남은 299초 → { code:'DESERTION_COOLDOWN', message:'탈주로 4분 59초 뒤에 참여할 수 있습니다.', retryAfterMs:299000, blockedUntil:'…Z' }
+function rejectIfDeserted(uuid, respond) {
+    const block = getDesertionBlock(uuid)
+    if (!block) return false
+    respond({
+        code: DESERTION_COOLDOWN,
+        message: desertionWaitMessage(block.retryAfterMs),
+        retryAfterMs: block.retryAfterMs,
+        blockedUntil: new Date(block.blockedUntil).toISOString(),
     })
     return true
 }
@@ -96,6 +112,7 @@ module.exports = {
     emitRoomJoinFailed,
     ALREADY_IN_GAME_MESSAGE,
     rejectIfInGame,
+    rejectIfDeserted,
     JOIN_BY_CODE_KEYS,
     JOIN_REQUEST_INVALID_MESSAGE,
     validateJoinRoomByCodeRequest,

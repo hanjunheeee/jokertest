@@ -3,7 +3,7 @@
 // matchmaking.js가 join_matchmaking·leave_matchmaking에 붙임, 지금은 스위치 꺼져 있음
 const kickReceiptStore = require('../../kickReceiptStore')
 const crypto = require('crypto')
-const { rejectIfInGame, emitRoomJoinFailed } = require('./guards')
+const { rejectIfInGame, rejectIfDeserted, emitRoomJoinFailed } = require('./guards')
 const { isRandomMatchEnabled, getMinPlayers, getSupportedRoomSizes } = require('../core/config')
 const { playerRoom, matchmakingQueue, gameRooms } = require('../core/state')
 const { getAdmissionAttempt } = require('../admission/attempts')
@@ -29,11 +29,15 @@ function isRandomMatchAllowed() {
 // 계정 읽는 동안 도착한 취소를 기억하는 표 (줄에 아직 안 들어가 지울 게 없어서 따로 둠)
 const pendingJoins = new Map()
 
-// 자동 매칭 줄 서기, 인원 차면 방 만들어 넣음 (게임 중·방 안이면 거절)
+// 자동 매칭 줄 서기, 인원 차면 방 만들어 넣음 (게임 중·탈주 대기 중·방 안이면 거절)
 async function handleJoinMatchmaking(io, socket, uuid) {
     // 게임 중이면 스위치보다 먼저 거절 (지도 10-①)
     if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
+    )) return
+    // 탈주 대기 시간 중이면 남은 시간 알려 주고 거절
+    if (rejectIfDeserted(uuid, ({ code, message, ...details }) =>
+        emitRoomJoinFailed(socket, code, message, details)
     )) return
 
     // 스위치 꺼졌으면 조용히 무시 말고 꺼짐 알림 (화면 막힘만 믿지 않음, 지도 10-②)

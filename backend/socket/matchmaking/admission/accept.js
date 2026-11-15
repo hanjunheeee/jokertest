@@ -6,6 +6,7 @@ const { BOOT_EPOCH } = require('../core/constants')
 const { gameRooms, roomAdmissionAttempts } = require('../core/state')
 const { compensateAttempt, releasePublished } = require('./attempts')
 const { releaseRoomTransition } = require('../join/transition')
+const { rejectIfDeserted } = require('../join/guards')
 const { deps } = require('../core/deps')
 const { computeCanStart, emitPublicRoomList, buildRoomPayload } = require('../room/view')
 const { scheduleLateJoinCleanup, removePublished } = require('./release')
@@ -57,12 +58,15 @@ function failAccept(ctx, error) {
     })
 }
 
-// 초대 수락 입장: 자리 미리 잡고 단계마다 시간 제한, 실패하면 되돌림
+// 초대 수락 입장: 탈주 대기 중이면 거절, 자리 미리 잡고 단계마다 시간 제한, 실패하면 되돌림
 // await는 전부 여기만: 도우미가 기다리면 정원 확인과 자리 잡기, 답과 토큰 풀기 사이가 벌어짐
 async function handleAcceptGameInvite(io, socket, uuid, payload, callback) {
     // 답 받을 곳 없으면 시작 안 함 (결과 못 알리는 입장 막기)
     if (typeof callback !== 'function') return
-    const ctx = reserveAcceptRequest(io, socket, uuid, payload, createRespondOnce(callback))
+    const respond = createRespondOnce(callback)
+    // 탈주 대기 시간 중이면 초대 행을 읽기 전에 남은 시간 알려 주고 거절
+    if (rejectIfDeserted(uuid, (error) => respond({ ok: false, ...error }))) return
+    const ctx = reserveAcceptRequest(io, socket, uuid, payload, respond)
     if (!ctx) return
     try {
         // 초대 먼저 엿보기 (DB): 내 초대인지·어느 방인지·서버 재시작 전 초대인지, 방이 다른 Node면 그 Node 찾기

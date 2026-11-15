@@ -1,6 +1,6 @@
 // 코드 입장 앞 검사 파일
 // 처리 중 토큰 꽂기까지 + 들어갈 방 찾기, join/join.js가 부름 (전부 await 없음, 검사와 꽂기 사이 안 끊기게)
-const { rejectIfInGame, emitRoomJoinFailed, describeVanishedRoom } = require('./guards')
+const { rejectIfInGame, rejectIfDeserted, emitRoomJoinFailed, describeVanishedRoom } = require('./guards')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { playerRoom, pendingRoomTransitions, matchmakingQueue, gameRooms } = require('../core/state')
 const { takeJoinAttempt, isJoinLimitShared } = require('./entryLimits')
@@ -13,12 +13,16 @@ const { createJoinChannelGuard } = require('./joinCommit')
 const TOO_MANY_JOIN_ATTEMPTS = 'TOO_MANY_JOIN_ATTEMPTS'
 const TOO_MANY_JOIN_ATTEMPTS_MESSAGE = '입장 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.'
 
-// 토큰 꽂기 전 거절: 게임 중·빈 코드·시도 횟수·이미 방·처리 중·줄
+// 토큰 꽂기 전 거절: 게임 중·탈주 대기·빈 코드·시도 횟수·이미 방·처리 중·줄
 // 통과면 다듬은 코드, 거절이면 실패 알림 보내고 null (예: ' AB12 ' → 'AB12')
 function rejectBeforeReservation(socket, uuid, roomCode, { autoJoin }) {
     // 게임 중이면 거절 (지도 01-②)
     if (rejectIfInGame(uuid, ({ code, message, gameId }) =>
         emitRoomJoinFailed(socket, code, message, { gameId })
+    )) return null
+    // 탈주 대기 시간 중이면 남은 시간 알려 주고 거절 (공개 방 입장도 이 길로 옴)
+    if (rejectIfDeserted(uuid, ({ code, message, ...details }) =>
+        emitRoomJoinFailed(socket, code, message, details)
     )) return null
 
     // 코드 앞뒤 공백 다듬고 비었으면 거절

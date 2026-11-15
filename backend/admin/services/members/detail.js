@@ -1,6 +1,6 @@
 'use strict';
 
-// 회원 상세 파일, 가입일·상태·접속 중·정지 기록·받은 신고·최근 로그인 + 이메일 전체 보기
+// 회원 상세 파일, 가입일·상태·접속 중·정지 기록·받은 신고·최근 로그인·탈주 기록 + 이메일 전체 보기
 // members.controller.js가 부름, 접속 중 판단(onlineOf)·가리기(maskIp)는 회원 찾기(search.js)도 씀
 const { createError } = require('../../../utils/appError');
 const { maskEmail } = require('../../../utils/auth/maskEmail');
@@ -12,6 +12,7 @@ const queryQueue = require('../core/queryQueue');
 const BAN_ROWS = 50;
 const REPORT_ROWS = 50;
 const LOGIN_ROWS = 20;
+const DESERTION_ROWS = 50;
 
 const defaultDeps = () => ({
     db: require('../../../repositories/common/db'),
@@ -66,6 +67,9 @@ const REPORTS_SQL = `SELECT id, reason_code, status, created_at FROM reports
   WHERE target_id = :uuid ORDER BY id DESC LIMIT ${REPORT_ROWS}`;
 const LOGINS_SQL = `SELECT login_at, ip_address, success FROM login_history
   WHERE user_id = :uuid ORDER BY id DESC LIMIT ${LOGIN_ROWS}`;
+// 탈주 기록은 관리자가 볼 때만 읽음 (게임 서버는 메모리 막힘 표를 씀)
+const DESERTIONS_SQL = `SELECT id, game_id, reason, deserted_at, blocked_until FROM game_desertions
+  WHERE user_id = :uuid ORDER BY id DESC LIMIT ${DESERTION_ROWS}`;
 
 // 정지 줄 → 화면 모양 (누가 정지·해제했는지 관리자 아이디 같이)
 const banViewOf = (row, now) => ({
@@ -81,6 +85,16 @@ const banViewOf = (row, now) => ({
     liftedByLoginId: row.lifted_by_login ?? null,
     liftReason: row.lift_reason ?? null,
     active: isBanActive(row, now),
+});
+
+// 탈주 줄 → 화면 모양 (막힘 끝이 안 지났으면 active)
+const desertionViewOf = (row, now) => ({
+    id: Number(row.id),
+    gameId: row.game_id,
+    reason: row.reason,
+    desertedAt: iso(row.deserted_at),
+    blockedUntil: iso(row.blocked_until),
+    active: row.blocked_until !== null && new Date(row.blocked_until) > now,
 });
 
 const memberViewOf = (row, deps) => {
@@ -101,7 +115,7 @@ const memberViewOf = (row, deps) => {
     };
 };
 
-// 회원 상세 → { member, bans, reportsReceived, logins } (없으면 404)
+// 회원 상세 → { member, bans, reportsReceived, logins, desertions } (없으면 404)
 const getMemberDetail = async (uuid, deps = defaultDeps()) => {
     const rows = await deps.queue.run(async () => {
         const [member] = await select(deps.db, MEMBER_SQL, { uuid });
@@ -109,7 +123,8 @@ const getMemberDetail = async (uuid, deps = defaultDeps()) => {
         const bans = await select(deps.db, BANS_SQL, { uuid });
         const reports = await select(deps.db, REPORTS_SQL, { uuid });
         const logins = await select(deps.db, LOGINS_SQL, { uuid });
-        return { member, bans, reports, logins };
+        const desertions = await select(deps.db, DESERTIONS_SQL, { uuid });
+        return { member, bans, reports, logins, desertions };
     });
     if (!rows) throw notFound();
     const now = new Date();
@@ -120,6 +135,7 @@ const getMemberDetail = async (uuid, deps = defaultDeps()) => {
             id: Number(row.id), reasonCode: row.reason_code, status: row.status, createdAt: iso(row.created_at),
         })),
         logins: rows.logins.map((row) => ({ at: iso(row.login_at), ipMasked: maskIp(row.ip_address), success: Boolean(row.success) })),
+        desertions: rows.desertions.map((row) => desertionViewOf(row, now)),
     };
 };
 
