@@ -1,4 +1,4 @@
-// 고른 상품 설명 칸 (그림·이름·분류·등급·가격·구매 버튼)
+// 고른 상품 설명 칸 (그림·이름·분류·등급·가격·구매 버튼, 단추 바로 아래 꺼진 까닭·구매 결과 안내)
 // StorePanel이 고른 상품이 있을 때 씀
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { isStorePricePending } from "../../constants/storeItems.js"
@@ -47,6 +47,11 @@ function StorePurchaseButton({ onClick, disabled = false, owned = false, label =
   )
 }
 
+// 단추 아래 안내 자리: 안내가 하나도 없으면 자리도 안 생김
+const NOTICE_WRAP_CLASS = "mt-1 flex flex-col gap-1 empty:hidden"
+// 꺼진 까닭 줄: 설명 칸 바탕이 비치는 반투명이라 글자색·바탕색을 둘 다 정해 늘 보이게 (결과 안내 칸과 같은 색)
+const BLOCK_REASON_CLASS = "rounded border border-[#9c793d] bg-[#241a10] px-2 py-1 text-sm text-[#f3dfb4]"
+
 // 재화 단위 글자
 const CURRENCY_UNIT = { KRW: "원", DIAMOND: "다이아", GOLD: "골드" }
 // 금액 + 단위 (원화만 천 단위 쉼표)
@@ -61,6 +66,8 @@ export default function StoreSelectedItemDetail({
   purchaseDisabled = false,
   purchaseLabel = null,
   owned = false,
+  blockReason = null,
+  children = null,
 }) {
   return (
     <section className={DETAIL_SECTION_CLASS} aria-label="선택한 아이템 정보">
@@ -108,6 +115,12 @@ export default function StoreSelectedItemDetail({
             </div>
 
             <StorePurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} label={purchaseLabel} />
+          </div>
+
+          {/* 꺼진 까닭·구매 결과 안내는 구매 단추 바로 아래 (판 맨 위는 단추와 멀어 못 봄) */}
+          <div className={NOTICE_WRAP_CLASS}>
+            {blockReason ? <p role="status" data-testid="purchase-block-reason" className={BLOCK_REASON_CLASS}>{blockReason}</p> : null}
+            {children}
           </div>
         </div>
       </div>

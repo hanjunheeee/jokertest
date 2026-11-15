@@ -1,5 +1,5 @@
 // 구매 결과 안내 줄 (확인 중·완료·거절·결과 모름 + 결과 확인·다시 시도 버튼)
-// panel/StorePanel·bulk/BulkSummary가 씀
+// panel/StorePanel(구매 단추 바로 아래)·bulk/BulkSummary가 씀
 
 // 상태별 문구 (막힘·가격 바뀜은 문구 없이 오류 글만, 데스크톱 StorePurchaseFeedback과 같음)
 const MESSAGES = {

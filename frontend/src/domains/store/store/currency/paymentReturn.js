@@ -2,6 +2,7 @@
 // currencyPurchase.store.js가 handleReturn·discoverOpenOrders로 내보냄
 import { currencyApi } from "../../api/currency.api.js"
 import { CONFIRM_FAILURES } from "../../constants/currencyPurchase.js"
+import { TOSS_CANCEL_CODES, TOSS_FAIL_REASONS } from "../../constants/currencyMessages.js"
 import { parseReturn } from "../../utils/currencyParse.js"
 import {
   ctx, discoveryRuns, excluded, inFlightOrders, isActive, recordOf, records, refreshSummary, returnRuns, set, setActive,
@@ -75,6 +76,14 @@ const runReturn = async (ret, run, started) => {
   }
 }
 
+// 실패 복귀 안내: 결제사 코드가 없거나 사용자가 취소한 거면 취소 안내, 아니면 코드별 실패 이유
+// 예) null → 취소 / "REJECT_CARD_COMPANY" → 카드사 거절 / "XYZ" → 결제사 실패 + 코드 줄
+const failNoticeOf = (code) => {
+  if (!code || TOSS_CANCEL_CODES.has(code)) return { status: "canceled", reason: "PAYMENT_RETURN_FAILED", failCode: null }
+  const reason = TOSS_FAIL_REASONS[code] ?? "TOSS_OTHER"
+  return { status: "failed", reason, failCode: reason === "TOSS_OTHER" ? code : null }
+}
+
 // 돌아온 주소 하나당 확인은 한 번, 같은 주문의 확인이 돌고 있으면 그걸 같이 기다림
 export const handleReturn = (search, { entryNeeded = false } = {}) => {
   // 결제 복귀 주소가 아니거나 로그인 안 했으면 무시
@@ -93,14 +102,18 @@ export const handleReturn = (search, { entryNeeded = false } = {}) => {
   if (sharing) { returnRuns.set(key, sharing); return sharing.promise }
   const run = { entryPending: Boolean(entryNeeded && ret.mode === "success"), promise: null }
   returnRuns.set(key, run)
-  // 다른 주문이 보이는 중이면 실패·잘못된 주소 안내는 띄우지 않음
+  // 다른 주문이 보이는 중이면 그 주문 안내는 그대로 두고 실패·잘못된 주소 안내는 returnNotice 칸에 따로 남김
+  // (안 남기면 실패로 돌아와도 아무 글이 없음)
   const showNotice = !ctx.active
-  // 실패 복귀는 취소 안내, 잘못된 주소는 실패 안내, 정상 주소면 결제 확인 시작
+  // 실패 복귀는 결제사 코드별 안내, 잘못된 주소는 실패 안내, 정상 주소면 결제 확인 시작
   if (ret.mode === "fail") {
-    if (showNotice) set({ status: "canceled", reason: "PAYMENT_RETURN_FAILED", order: null })
+    const notice = failNoticeOf(ret.code)
+    if (showNotice) set({ ...notice, order: null })
+    else set({ returnNotice: notice })
     run.promise = Promise.resolve()
   } else if (!ret.valid) {
-    if (showNotice) set({ status: "failed", reason: "INVALID_RETURN", order: null })
+    if (showNotice) set({ status: "failed", reason: "INVALID_RETURN", failCode: null, order: null })
+    else set({ returnNotice: { status: "failed", reason: "INVALID_RETURN", failCode: null } })
     if (run.entryPending) { run.entryPending = false; run.promise = refreshSummary(started) } else run.promise = Promise.resolve()
   } else {
     inFlightOrders.set(ret.orderId, run)

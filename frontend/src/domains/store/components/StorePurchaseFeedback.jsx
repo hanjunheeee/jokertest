@@ -1,5 +1,5 @@
 // 구매 결과 안내 줄 (확인 중·완료·거절·결과 모름 + 결과 확인·다시 시도 버튼)
-// StorePanel·StoreBulkPurchaseSummary(일괄구매 합계)가 씀
+// StorePanel(구매 단추 바로 아래)·StoreBulkPurchaseSummary(일괄구매 합계)가 씀
 
 // 구매 상태 하나를 받아 안내 문구와 버튼을 보임
 export default function StorePurchaseFeedback({ state, onCheck, onRetry }) {
@@ -14,7 +14,8 @@ export default function StorePurchaseFeedback({ state, onCheck, onRetry }) {
   if (state.status === "idle" && !state.error) return null
   return (
     <div role="status" className="rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]">
-      <p>{messages[state.status]}</p>
+      {/* 막힘·가격 바뀜은 상태 문구가 없어 빈 첫 줄이 안 생기게 있을 때만 */}
+      {messages[state.status] ? <p>{messages[state.status]}</p> : null}
       {state.error ? <p>{state.error}</p> : null}
       {/* 결과 모름이면 결과 확인, 결과 모름·거절이면 다시 시도 */}
       {state.status === "unknown" ? <button type="button" className="mr-4 underline" onClick={onCheck}>결과 확인</button> : null}

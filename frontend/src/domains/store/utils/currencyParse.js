@@ -32,16 +32,25 @@ export const parseGoldBalances = (body, name) => {
   return { balanceGold: body.balanceGold, balanceDiamond: body.balanceDiamond }
 }
 
-// 결제창에서 돌아온 주소의 topup·orderId·paymentKey·amount 검사
+// 결제사 실패 코드 모양 (대문자·숫자·밑줄, 예 REJECT_CARD_COMPANY)
+const TOSS_FAIL_CODE = /^[A-Z0-9_]{1,64}$/
+
+// 결제창에서 돌아온 주소의 topup·orderId·code·paymentKey·amount 검사
 export const parseReturn = (search) => {
   const params = new URLSearchParams(search)
   const mode = params.get("topup")
   // topup 값이 없거나 다르면 결제 복귀 아님
   if (mode !== "success" && mode !== "fail") return null
-  // 실패 복귀는 주문 id만 챙김 (모양 틀리면 null)
+  // 실패 복귀는 주문 id와 결제사 실패 코드만 챙김 (모양 틀리면 null)
+  // 결제사 글(message)은 주소로 누구나 바꿔 넣을 수 있어 화면에 안 씀, 코드로 우리 글을 고름
   if (mode === "fail") {
     const failedOrderId = params.get("orderId") ?? ""
-    return { mode, orderId: ORDER_ID.test(failedOrderId) ? failedOrderId : null }
+    const failCode = params.get("code") ?? ""
+    return {
+      mode,
+      orderId: ORDER_ID.test(failedOrderId) ? failedOrderId : null,
+      code: TOSS_FAIL_CODE.test(failCode) ? failCode : null,
+    }
   }
   // 성공 복귀는 결제 키·주문 id·금액 모양이 다 맞아야 valid
   const paymentKey = params.get("paymentKey") ?? ""

@@ -3,6 +3,12 @@
 import { createStore } from "zustand/vanilla"
 import { goldRejectedStatus, idle, rejectedCodes } from "../constants/purchaseController.js"
 import { isGoldResultMissing, restore, unresolved, validText, validVersion } from "../utils/purchaseRecord.js"
+import { PURCHASE_AUTH_LOST, PURCHASE_NETWORK_FAILED } from "../constants/currencyMessages.js"
+
+// 서버 답 없이 실패한 요청인지 (인터넷 끊김이면 fetch가 TypeError로 "Failed to fetch" 같은 영어 글을 줌)
+const isNetworkError = (error) => error?.name === "TypeError" && typeof error.status !== "number"
+// 결과 모름 글: 서버 답이 있으면 서버 글, 답이 없으면 우리말 연결 끊김 글
+const unknownMessageOf = (error) => (isNetworkError(error) ? PURCHASE_NETWORK_FAILED : error?.message) || "구매 결과를 확인하지 못했습니다."
 
 // 저장소·요청 함수는 밖에서 받음 (시험에서 가짜로 바꿔 끼우기 위함)
 export function createPurchaseController({ storage, post, postGold, lookup, refresh, randomId }) {
@@ -16,6 +22,12 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
   const save = (state) => storage().setItem(key(account), JSON.stringify(state))
   // 기록부터 저장하고 화면 상태 바꿈, 저장 실패면 던져서 부른 쪽이 보내기를 멈춤
   const update = (state) => { save(state); store.setState(state, true) }
+  // 구매 도중 로그인이 풀리면(401 처리가 로그아웃 뒤 로그인 화면으로 보냄) 그 계정 기록에 결과 모름 + 까닭 글을 남김
+  // 다시 로그인하면 이 기록이 되살아나 단추 아래에 글과 결과 확인이 보임, 저장 실패는 다음 결과 확인에 맡김
+  const noteAuthLost = (owner, request) => {
+    if (!owner) return
+    try { storage().setItem(key(owner), JSON.stringify({ ...request, status: "unknown", error: PURCHASE_AUTH_LOST })) } catch { /* 기기 저장소 막힘 */ }
+  }
   // 계정이 바뀌면 그 계정의 기록을 되살림, 기록이 깨졌으면 구매를 막음
   const activate = (id) => {
     if (account === id) return
@@ -49,6 +61,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
     // 이어서면 같은 id, 새 구매면 새 id (서버가 같은 구매를 두 번 처리하지 않게 함)
     const request = { referenceEventId: recovering ? previous.referenceEventId : `shop:${randomId()}`, itemIds: ids, status: "pending", error: null }
     const started = generation
+    const owner = account
     // 그사이 계정이 바뀌었는지 (바뀌었으면 결과 버림)
     const current = () => started === generation
     busy = true
@@ -70,21 +83,26 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
         } catch (error) {
           if (!current()) return
           // 결과 없음일 때만 아래에서 다시 보냄, 확인만이거나 다른 오류면 결과 모름
+          // 연결 끊김이면 우리말 글, 로그인 풀림 글은 결과를 알 때까지 남김
           if (checkOnly || error.code !== "PURCHASE_RESULT_NOT_FOUND") {
-            update({ ...request, status: "unknown", error: "아직 구매 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인해 주세요." })
+            let note = "아직 구매 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인해 주세요."
+            if (isNetworkError(error)) note = PURCHASE_NETWORK_FAILED
+            else if (previous.error === PURCHASE_AUTH_LOST) note = PURCHASE_AUTH_LOST
+            update({ ...request, status: "unknown", error: note })
             return
           }
         }
       }
       // 구매 보내고 성공이면 확인 처리, 잔액 다시 받기 실패는 무시
       await post({ items: ids.map(itemId => ({ itemId })), referenceEventId: request.referenceEventId })
-      if (!current()) return
+      if (!current()) { noteAuthLost(owner, request); return }
       update({ ...request, status: "confirmed" })
       await refresh().catch(() => {})
     } catch (error) {
-      if (!current()) return
-      // 서버가 거절한 코드면 거절, 나머지는 결과 모름 (저장도 실패하면 화면만 결과 모름)
-      const state = { ...request, status: rejectedCodes.has(error.code) ? "rejected" : "unknown", error: error.message ?? "구매 결과를 확인하지 못했습니다." }
+      if (!current()) { noteAuthLost(owner, request); return }
+      // 서버가 거절한 코드면 거절(서버 글), 나머지는 결과 모름 (저장도 실패하면 화면만 결과 모름)
+      const rejected = rejectedCodes.has(error.code)
+      const state = { ...request, status: rejected ? "rejected" : "unknown", error: rejected ? (error.message || "구매가 거부되었습니다.") : unknownMessageOf(error) }
       try { update(state) } catch { store.setState({ ...request, status: "unknown", error: "구매 결과 저장에 실패했습니다. 결과 확인을 눌러 주세요." }, true) }
     } finally {
       // 계정이 바뀌었으면 새 계정 쪽 처리 중 표시는 건드리지 않음
@@ -112,6 +130,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       itemIds: [], productId, version, status: "pending", error: null, code: null,
     }
     const started = generation
+    const owner = account
     // 그사이 계정이 바뀌었는지 (바뀌었으면 결과 버림)
     const current = () => started === generation
     busy = true
@@ -135,12 +154,12 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       }
       // 물어본 결과가 없으면 새로 보냄, 성공이면 확인 처리 뒤 잔액 갱신
       result ??= await postGold({ productId, version, referenceEventId: request.referenceEventId })
-      if (!current()) return
+      if (!current()) { noteAuthLost(owner, request); return }
       const confirmed = { ...request, status: "confirmed" }
       try { update(confirmed) } catch { store.setState(confirmed, true) }
       try { await refresh(result) } catch { /* 잔액 갱신 실패는 구매 결과와 상관없어 무시함 */ }
     } catch (error) {
-      if (!current()) return
+      if (!current()) { noteAuthLost(owner, request); return }
       // 가격 바뀜·거절은 코드와 HTTP 상태가 둘 다 맞을 때만, 나머지는 결과 모름
       let state
       if (error.code === "PRODUCT_VERSION_MISMATCH" && error.ok === false && error.status === 409) {
@@ -148,7 +167,7 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       } else if (Object.hasOwn(goldRejectedStatus, error.code) && error.ok === false && error.status === goldRejectedStatus[error.code]) {
         state = { ...request, status: "rejected", code: error.code, error: error.message ?? "구매가 거부되었습니다." }
       } else {
-        state = { ...request, status: "unknown", error: "구매 결과를 확인하지 못했습니다." }
+        state = { ...request, status: "unknown", error: isNetworkError(error) ? PURCHASE_NETWORK_FAILED : "구매 결과를 확인하지 못했습니다." }
       }
       try { update(state) } catch { store.setState(state, true) }
     } finally {

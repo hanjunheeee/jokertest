@@ -1,4 +1,4 @@
-// 가게 패널 (구매 알림·재화 안내·상품 칸·고른 상품 설명·분류 사이드바, 상태는 useStorePanel)
+// 가게 패널 (재화 목록 상태·상품 칸·고른 상품 설명과 단추 아래 구매 안내·분류 사이드바, 상태는 useStorePanel)
 // StorePage가 씀
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset"
@@ -20,16 +20,45 @@ import {
   PANEL_SIDEBAR_CLASS,
 } from "../../constants/storeLayoutStyle.js"
 import { useStorePanel } from "../../hooks/useStorePanel.js"
-import { isPurchaseDisabled, isRealPurchaseCategory } from "../../utils/storePanel.js"
+import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
+import {
+  isRealPurchaseCategory, panelPurchaseBlockOf, splitCurrencyFeedbackPanel, topupReturnNotesOf,
+} from "../../utils/storePanel.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 import StorePurchaseFeedback from "../StorePurchaseFeedback.jsx"
 import StoreCurrencyFeedback from "../StoreCurrencyFeedback.jsx"
 
+// 결제 실패 복귀 덧붙임 글 칸 (재화 안내 칸과 같은 색)
+const RETURN_NOTES_CLASS = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
+
+// 구매 결과 안내 묶음: 일반 구매 결과·골드 구매/충전 결과·결제 실패 복귀 덧붙임 글
+function PurchaseResults({ panel, resultOnly }) {
+  const returnNotes = topupReturnNotesOf(panel.currencyPanel.currency)
+  return (
+    <>
+      {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}
+      {panel.purchaseState.kind !== "GOLD" && <StorePurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />}
+      <StoreCurrencyFeedback panel={resultOnly} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+      {returnNotes.length ? (
+        <div role="status" data-testid="topup-return-notes" className={RETURN_NOTES_CLASS}>
+          {returnNotes.map((note) => <p key={note}>{note}</p>)}
+        </div>
+      ) : null}
+    </>
+  )
+}
+
 // 영상 끝나기 전엔 숨기고 누르기 막음, 확대·일괄구매 창은 패널 밖에 붙임
 export default function StorePanel({ visible = true }) {
   const panel = useStorePanel()
   const { activeCategory, currentItem, bulkMode, ownedItemIds } = panel
+  const balanceGold = useEconomyStore((state) => state.balanceGold)
+  // 단추 잠금과 꺼진 까닭 (잔액 미리 검사 포함)
+  const block = currentItem ? panelPurchaseBlockOf(panel, balanceGold) : null
+  // 고른 상품이 있으면 구매 결과는 단추 아래, 판 위엔 재화 목록 상태만 (없으면 전부 판 위)
+  const { listOnly, resultOnly } = splitCurrencyFeedbackPanel(panel)
+  const resultFeedback = <PurchaseResults panel={panel} resultOnly={resultOnly} />
 
   return (
     <>
@@ -44,9 +73,8 @@ export default function StorePanel({ visible = true }) {
           <PublicAsset src={STORE_ASSETS.panelFrame} alt="" className={STORE_PANEL_FRAME_CLASS} />
 
           <div className={PANEL_CONTENT_CLASS} style={STORE_PANEL_INNER_PAD}>
-            {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}
-            {panel.purchaseState.kind !== "GOLD" && <StorePurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />}
-            <StoreCurrencyFeedback panel={panel} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+            {currentItem ? null : resultFeedback}
+            <StoreCurrencyFeedback panel={listOnly} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
             <div className={PANEL_MAIN_ROW_CLASS}>
               <div className={PANEL_GRID_COLUMN_CLASS}>
                 <div
@@ -83,16 +111,11 @@ export default function StorePanel({ visible = true }) {
                     onPurchaseClick={panel.handlePurchaseClick}
                     owned={!bulkMode && ownedItemIds.has(currentItem.id)}
                     purchaseLabel={bulkMode ? null : panel.purchaseLabel}
-                    purchaseDisabled={isPurchaseDisabled({
-                      currentItem,
-                      bulkMode,
-                      bulkSelectedIds: panel.bulkSelectedIds,
-                      ownedItemIds,
-                      purchaseLocked: panel.purchaseLocked,
-                      economyStatus: panel.economyStatus,
-                      currencyBlocked: panel.currencyBlocked,
-                    })}
-                  />
+                    purchaseDisabled={block.disabled}
+                    blockReason={block.reason}
+                  >
+                    {resultFeedback}
+                  </StoreSelectedItemDetail>
                 ) : null}
               </div>
 
