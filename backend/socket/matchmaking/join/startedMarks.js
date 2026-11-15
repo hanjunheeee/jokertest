@@ -1,9 +1,9 @@
 // 시작된 방 표시 파일
-// 시작돼 사라진 방 코드·id 기억 + 확인 ("이미 시작" vs "방 없음", 지도 01-⑤)
-// room/start가 기억, join·guards(코드 겹침)가 확인
+// 시작돼 사라진 방 코드·id 기억 + 확인 ("이미 시작" vs "방 없음", 지도 01-⑤) + 판 끝 뒤 같은 방이 다시 열리면 표시 지움
+// room/start가 기억, join·guards(코드 겹침)가 확인, room/returnRoom이 지움
 // Node 여러 개면 Redis startedcode:<CODE>에도 남김 (다른 Node 코드 입장도 "이미 시작", MN-015)
 const { startedRoomMarks } = require('../core/state')
-const { markRoomStarted } = require('../cluster/roomDirectory')
+const { markRoomStarted, clearRoomStarted } = require('../cluster/roomDirectory')
 
 // 표시 30분 보관
 const STARTED_ROOM_MARK_TTL_MS = 30 * 60 * 1000
@@ -34,6 +34,17 @@ function rememberStartedRoom(room, gameId = null) {
     markRoomStarted(room, gameId)
 }
 
+// 판 끝 뒤 같은 코드 방이 다시 열리면 옛 방 표시 지움 (안 지우면 그 방이 빈 채 없어진 뒤 코드 입장이 "방 없음" 대신 "이미 끝난 게임"으로 답함)
+// oldRoomId = 판 시작 전 방 id, gameId = 끝난 판 (Node 여러 개면 Redis 표시도 그 판 값일 때만 지움)
+function forgetStartedRoom(code, oldRoomId, gameId = null) {
+    if (typeof code === 'string' && code) startedRoomMarks.delete(`code:${code}`)
+    if (typeof oldRoomId === 'string' && oldRoomId) {
+        startedRoomMarks.delete(`id:${oldRoomId}`)
+        startedRoomCodes.delete(oldRoomId)
+    }
+    clearRoomStarted(code, gameId)
+}
+
 // 시작된 방의 코드 (표시가 살아 있을 때만)
 function getStartedRoomCode(roomId) {
     if (!isStartedRoomMark(`id:${roomId}`)) return null
@@ -61,6 +72,7 @@ module.exports = {
     STARTED_ROOM_MARK_TTL_MS,
     pruneStartedRoomMarks,
     rememberStartedRoom,
+    forgetStartedRoom,
     getStartedRoomCode,
     __resetStartedMarksForTests,
     isStartedRoomMark,

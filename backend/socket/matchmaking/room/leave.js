@@ -1,5 +1,6 @@
 // 방 나가기 파일
 // 방 나가기 확정·알림 + 끊긴 사람 15초 뒤 빼기, matchmaking.js·host(강퇴)·reconnect(끊김)가 씀 (지도 08·11)
+// 판 끝 뒤 다시 연 방은 180초 동안 비어도 안 없애고 원래 방장 자리를 남겨 둠 (room/returnRoom.js)
 const channelMembership = require('../../channelMembership')
 const { presenceConfirmedTick, pendingRoomRemovals, playerRoom, gameRooms } = require('../core/state')
 const { findLiveSocket, detachSocketFromChannel, isSeatedInRoom, isCanonicalSocket, hasRoomMembership, hasLiveGameMembership } = require('./membership')
@@ -9,6 +10,7 @@ const { removePublished } = require('../admission/release')
 const { getSettingsVersion } = require('../settings/receipts')
 const { disposeRoom } = require('./dispose')
 const { emitPublicRoomList, computeCanStart } = require('./view')
+const { nextHostAfterLeave } = require('./returnRoom')
 
 // "방에 있음" 확인 순번 시계 (벽시계 대신 하나씩 올림)
 let roomPresenceTick = 0
@@ -80,15 +82,20 @@ function commitRoomDeparture(io, socket, uuid, reason) {
     presenceConfirmedTick.delete(uuid)
 
     // 마지막 사람이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지움
+    // 판 끝 뒤 다시 연 방은 180초 끝까지 빈 채 둠 (결과 화면에 남은 사람이 "대기방으로"를 누를 수 있게, 방장 칸은 비움)
     if (room.players.size === 0) {
+        if (room.returnHold) {
+            if (room.hostUuid === uuid) room.hostUuid = null
+            return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: false, hostChanged: false }
+        }
         disposeRoom(roomId, 'ROOM_GONE')
         return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: true, hostChanged: false }
     }
 
-    // 방장이 나갔으면 남은 사람 중 먼저 들어온 사람이 방장
+    // 방장이 나갔으면 남은 사람 중 먼저 들어온 사람이 방장 (원래 방장 자리를 남겨 두는 중이면 방장 칸은 비워 둠)
     let hostChanged = false
     if (room.hostUuid === uuid) {
-        room.hostUuid = room.players.keys().next().value
+        room.hostUuid = nextHostAfterLeave(room)
         hostChanged = true
     }
     return { removed: true, uuid, roomId, room, removedPlayer, roomDeleted: false, hostChanged }
@@ -125,6 +132,7 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
         try {
             channelMembership.emitToChannel(io, roomId, 'host_changed', {
                 hostUuid: room.hostUuid,
+                reservedHostUuid: room.returnHold?.reservedHostUuid ?? null,
                 canStart: computeCanStart(room),
                 roomId,
                 roomInstanceId: room.instanceId ?? null,

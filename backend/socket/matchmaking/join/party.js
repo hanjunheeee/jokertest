@@ -1,6 +1,6 @@
-// 다음 방 우편함 파일
-// 끝난 판 참가자가 다음 방 찾기 + 방장이 만든 다음 방 알리기 (지도 09)
-// matchmaking.js가 get_party_matching_room에 붙임, 알리기는 join/create가 방 만든 뒤 부름
+// 다음 방 우편함 파일 (안 쓰임, 지울 파일)
+// 판 끝 뒤 같은 방(room/returnRoom.js)으로 바뀌어 get_party_matching_room 사건 등록·알리기 부르기가 빠짐
+// matchmaking.js 시험 손잡이만 남아 불러서 아직 못 지움
 const gameSession = require('../../../game-core/gameSession')
 const { partyRoomByGameId, gameRooms } = require('../core/state')
 const { PARTY_ROOM_TTL_MS } = require('../core/constants')

@@ -7,7 +7,7 @@ const { handleJoinMatchmaking, handleLeaveMatchmaking } = require('./join/queue'
 const { handleUpdateRoomSettings, handleGetRoomSettingsUpdateResult } = require('./settings/handlers')
 const { handleSetReady } = require('./room/ready')
 const { handleStartGame } = require('./room/start')
-const { handleGetPartyMatchingRoom } = require('./join/party')
+const { handleReturnToRoom } = require('./room/returnRoom')
 const { removeFromRoom } = require('./room/leave')
 const { handleKickRoomPlayer, handleDeleteRoom } = require('./room/host')
 const { handleGetCurrentRoom } = require('./room/reconnect')
@@ -16,7 +16,7 @@ const { handleJoinPublicRoom, handleGetPublicRooms } = require('./join/publicRoo
 const { handleCreateRoom } = require('./join/create')
 const { handleAcceptGameInvite } = require('./admission/accept')
 const { handleGetGameInviteResult } = require('./admission/result')
-// 점검 중 거절 (방 만들기·시작·코드 입장·자동 매칭만)
+// 점검 중 거절 (방 만들기·시작·코드 입장·자동 매칭·판 끝 뒤 같은 방으로)
 const { rejectDuringMaintenance } = require('./join/maintenanceGate')
 
 // 방 지우기 답 함수: 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
@@ -26,7 +26,7 @@ function pickDeleteRoomCallback(payload, callback) {
     return null
 }
 
-// 방 밖 사건: 자동 매칭 줄, 코드 입장, 방 만들기·지금 방·다음 방·공개 방 목록·공개 방 입장
+// 방 밖 사건: 자동 매칭 줄, 코드 입장, 방 만들기·지금 방·판 끝 뒤 같은 방으로·공개 방 목록·공개 방 입장
 // async 처리기는 catch로 에러만 남김 (처리 안 된 거절 막기)
 function registerLobbyEvents(io, socket, uuid) {
     // 자동 매칭 줄 서기·빠지기
@@ -61,8 +61,13 @@ function registerLobbyEvents(io, socket, uuid) {
         return handleCreateRoom(io, socket, uuid, payload, callback)
     })
     socket.on('get_current_room', (payload, callback) => handleGetCurrentRoom(uuid, callback))
-    socket.on('get_party_matching_room', (payload, callback) =>
-        handleGetPartyMatchingRoom(uuid, payload, callback))
+    // 결과 화면 "대기방으로": 누른 사람만 판 끝 뒤 다시 연 같은 방에 들어감 (답에 방 내용)
+    socket.on('return_to_room', (payload, callback) => {
+        if (rejectDuringMaintenance(socket, typeof callback === 'function' ? callback : () => {})) return undefined
+        return handleReturnToRoom(io, socket, uuid, payload, callback).catch((err) =>
+            console.error('\x1b[31m[대기방으로 돌아가기 에러]\x1b[0m', err)
+        )
+    })
     socket.on('get_public_rooms', (payload, callback) => handleGetPublicRooms(callback))
     socket.on('join_public_room', (payload) =>
         handleJoinPublicRoom(io, socket, uuid, payload).catch((err) =>

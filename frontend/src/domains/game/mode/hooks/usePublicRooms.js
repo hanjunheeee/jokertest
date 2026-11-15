@@ -24,7 +24,7 @@ function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms
     applyRoomList(nextRooms)
   }
   // 입장 성공: 끝난 판 지우고 방 넣고 대기방으로
-  // 내가 안 보낸 입장(판 끝난 뒤 서버가 넣어 준 파티 방 등)도 서버에선 이미 그 방 사람이라 따라감
+  // 내가 안 보낸 입장도 서버에선 이미 그 방 사람이라 따라감 (판 끝 뒤 서버가 끌어다 넣던 자동 입장은 없앰)
   const handleJoined = (room) => {
     if (!isCurrent()) return
     clearJoin()

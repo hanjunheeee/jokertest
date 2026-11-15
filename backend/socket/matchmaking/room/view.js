@@ -1,5 +1,5 @@
 // 방 정보 파일
-// 방 정보 내용 만들기 + 공개 방 목록 만들기·방송 (Node 여러 개면 다른 Node 방도 합쳐 내 Node 사람에게만, matchmaking/cluster/roomListSync.js)
+// 방 정보 내용 만들기(판 끝 뒤 남겨 둔 방장 자리 포함) + 공개 방 목록 만들기·방송 (Node 여러 개면 다른 Node 방도 합쳐 내 Node 사람에게만, matchmaking/cluster/roomListSync.js)
 const cluster = require('../../../cluster')
 const roomListSync = require('../cluster/roomListSync')
 const { getRequiredPlayers } = require('../core/config')
@@ -25,13 +25,20 @@ function computeCanStart(room) {
     return players.every((player) => player.isReady === true)
 }
 
-// 방 정보 내용 (명단·설정·버전·부팅 번호)
+// 판 끝 뒤 다시 연 방에서 원래 방장 자리를 남겨 두는 중이면 그 사람 uuid, 아니면 null (room/returnRoom.js가 채우고 비움)
+// 그동안 방장 칸(hostUuid)은 null, 정원에서 1칸 남겨 둠
+function reservedHostOf(room) {
+    return typeof room.returnHold?.reservedHostUuid === 'string' ? room.returnHold.reservedHostUuid : null
+}
+
+// 방 정보 내용 (명단·설정·버전·부팅 번호·남겨 둔 방장 자리)
 function buildRoomPayload(room) {
     return {
         roomId: room.id,
         roomCode: room.code,
         players: [...room.players.values()].map((player) => ({ ...player })),
-        hostUuid: room.hostUuid,
+        hostUuid: room.hostUuid ?? null,
+        reservedHostUuid: reservedHostOf(room),
         roomInstanceId: room.instanceId ?? null,
         bootEpoch: BOOT_EPOCH,
         canStart: computeCanStart(room),
@@ -52,17 +59,18 @@ async function loadPlayerProfile(uuid) {
 }
 
 // 공개 방 목록 만들기 (이 Node 방만), Node 여러 개면 항목마다 node 칸 (MN-085)
+// 0명 방은 뺌 (판 끝 뒤 다시 연 방은 첫 사람이 들어온 뒤부터 보임, 결정 [임시] 13), 남겨 둔 방장 자리도 찬 자리로 셈
 function buildPublicRoomList() {
     const node = cluster.isEnabled() ? cluster.serverId() : null
     return [...gameRooms.values()]
-        .filter((room) => room.accessType === 'open' || room.accessType === 'code')
+        .filter((room) => (room.accessType === 'open' || room.accessType === 'code') && room.players.size > 0)
         .map((room) => ({
             id: room.id,
             current: room.players.size,
             max: room.settings.maxPlayers,
             title: room.title,
             accessType: room.accessType,
-            status: room.players.size >= room.settings.maxPlayers ? 'full' : 'waiting',
+            status: room.players.size + (reservedHostOf(room) ? 1 : 0) >= room.settings.maxPlayers ? 'full' : 'waiting',
             settingsVersion: getSettingsVersion(room),
             settings: buildEditableSettingsView(room.settings),
             ...(node ? { node } : {}),

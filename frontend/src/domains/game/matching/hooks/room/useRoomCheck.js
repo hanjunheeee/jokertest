@@ -16,7 +16,7 @@ import { askRoom } from '../../socket/room.js'
 export function useRoomCheck(ctx, socket, onRoomDeleted) {
   useEffect(() => {
     const {
-      setSyncStatus, identityRef, applyGenRef, memberGenRef, mountedRef, awaitPartyRef,
+      setSyncStatus, identityRef, applyGenRef, memberGenRef, mountedRef,
       bumpRef, resyncRef, invalidateRef, applyVerified, dropRequests,
     } = ctx
     // 소켓 없으면 연결 기다림 표시만
@@ -152,11 +152,7 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
             return
           }
 
-          // 방 없음: 파티 방 기다리는 중이면 그대로 두고, 아니면 방 비우고 나감
-          if (awaitPartyRef.current && !useMatchingStore.getState().isInRoom) {
-            if (mountedRef.current) setSyncStatus('verified')
-            return
-          }
+          // 방 없음: 방 비우고 나감
           applyVerified(() => useMatchingStore.getState().clearRoom())
           advance()
           onRoomDeleted?.()

@@ -12,9 +12,6 @@ const { loadPlayerProfile, emitPublicRoomList, buildRoomPayload } = require('../
 const { INIT_SETTINGS_VERSION } = require('../settings/receipts')
 const { leaveSocketRoomSafely } = require('../room/membership')
 const { generateUniqueRoomCode } = require('../../../utils/roomCode')
-const { notifyPartyOfRoom } = require('./party')
-const { autoJoinPartyToRoom } = require('./join')
-const { markPartyOriginToken, markPartyOriginObject, isInEndedGame } = require('./partyOrigin')
 const { isRoomRoutingEnabled, rejectCreateOnDrainingNode } = require('../cluster/roomRouting')
 const { reserveRoomCode, releaseRoomCode } = require('../cluster/roomDirectory')
 
@@ -45,9 +42,8 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
         callback({ ok: false, message: '매칭 대기열에 남아있는 요청이 있습니다. 먼저 취소해주세요.' })
         return
     }
-    // 내 Node가 비우는 중이면 다른 Node로 (MN-114)
-    // 방에 든 사람은 위에서 거절, 결과 화면 방장은 파티가 따라오게 여기서 만듦
-    if (!isInEndedGame(uuid) && rejectCreateOnDrainingNode(callback)) return
+    // 내 Node가 비우는 중이면 다른 Node로 (MN-114), 방에 든 사람은 위에서 거절
+    if (rejectCreateOnDrainingNode(callback)) return
 
     // 설정 값은 허용 목록만, 역할 구성은 따로 검사 (방장은 payload 말고 소켓 uuid, 지도 09-①)
     const validation = validateCreateRoomPayload(payload)
@@ -73,15 +69,13 @@ function handleCreateRoom(io, socket, uuid, payload, callback) {
         return
     }
     const generationAtReservation = getGeneration(uuid)
-    // 결과 화면에서 시작한 방 만들기면 표시 (판 끝 정리가 이 요청·자리를 안 건드리게, known 1-16)
-    markPartyOriginToken(uuid, transitionToken)
 
     // 안에서 다 잡지만 혹시 새는 거절도 로그만 (처리 안 된 거절로 서버가 꺼지지 않게, BE-032)
     createAfterReservation(io, socket, uuid, validatedValue, callback, generationAtReservation, transitionToken)
         .catch((err) => console.error('[방 생성 처리 에러]', err))
 }
 
-// 방 만들기: 계정 읽기 → 채널 넣기 → 코드 뽑기 → 방 등록 → 답 → 끝난 판 사람들 부르기
+// 방 만들기: 계정 읽기 → 채널 넣기 → 코드 뽑기 → 방 등록 → 답 (끝난 판 사람을 부르지 않음, 판 끝 뒤 같은 방은 room/returnRoom.js)
 async function createAfterReservation(io, socket, uuid, { accessType, settings }, callback, generationAtReservation, transitionToken) {
     // 채널 붙었는지 기억 (실패 때 뗄 대상)
     let roomId = null
@@ -142,7 +136,7 @@ async function createAfterReservation(io, socket, uuid, { accessType, settings }
         if (reserved?.claimed && gameRooms.get(roomId) !== room) releaseRoomCode(reserved.code, roomId)
     }
 
-    await answerAndCallParty(io, uuid, room, callback)
+    answerCreated(room, callback)
 }
 
 // 채널 넣기 전 확인: 다른 방에 들어감 → 판 끝 정리 → 끊김 순, 걸리면 거절 문구 (통과면 null)
@@ -184,7 +178,6 @@ function checkAfterJoin(socket, uuid, generationAtReservation, reserved) {
 // 여기부터 진짜 바뀜: 코드 뽑기~방 등록 사이 await 없음, 같은 코드 두 방 막기 (지도 09-⑦)
 function registerRoom(io, socket, uuid, room) {
     room.players.get(uuid).membershipId = kickReceiptStore.nextMembershipId()
-    markPartyOriginObject(uuid, room.players.get(uuid))
     gameRooms.set(room.id, room)
     playerRoom.set(uuid, room.id)
     socket.data.activeRoomId = room.id
@@ -192,23 +185,11 @@ function registerRoom(io, socket, uuid, room) {
 }
 
 // 성공 답은 try 밖에서, 답장이 던져도 "생성 실패"가 또 안 나감 (지도 09-⑨)
-async function answerAndCallParty(io, uuid, room, callback) {
+function answerCreated(room, callback) {
     try {
         callback({ ok: true, room: buildRoomPayload(room) })
     } catch (ackError) {
         console.error('[방 생성 ack 실패]', ackError)
-    }
-    // 파티 알림은 답장과 따로 잡음 (답장이 던져도 끝난 판 사람들 알림은 감)
-    try {
-        notifyPartyOfRoom(io, uuid, room)
-    } catch (err) {
-        console.error('[종료된 판 파티 매칭 방 알림 실패]', err)
-    }
-    // 끝난 판 사람들 자동 입장, 실패해도 만든 방은 그대로
-    try {
-        await autoJoinPartyToRoom(io, uuid, room)
-    } catch (err) {
-        console.error('[종료된 판 파티 자동 재입장 일괄 실패]', err)
     }
 }
 

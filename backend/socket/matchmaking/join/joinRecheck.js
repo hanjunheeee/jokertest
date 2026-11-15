@@ -7,6 +7,7 @@ const { getGeneration } = require('./transition')
 const { isCanonicalOrUnknown } = require('../room/membership')
 const { getSupportedRoomSizes } = require('../core/config')
 const { countRoomOccupancy } = require('../admission/attempts')
+const { reservedSeatsFor } = require('../room/returnRoom')
 
 // 기다린 사이 다른 방 들어갔거나 판 끝 정리됐으면 거절 (지도 01-④)
 // beforeReject = 거절 알림 전 정리 (join 뒤면 채널 떼기)
@@ -82,9 +83,9 @@ function rejectIfRoomChanged(socket, uuid, room, ctx) {
     // join도 기다렸으니 다른 방·판 끝 정리 다시 확인
     if (rejectIfMovedOrEnded(socket, uuid, ctx.generationAtReservation, drop)) return true
 
-    // 자리 남았는지 (초대로 자리 잡은 사람도 셈), 여기서 명단 추가까지 await 없음 (지도 01-⑧)
+    // 자리 남았는지 (초대로 자리 잡은 사람·판 끝 뒤 남겨 둔 원래 방장 자리 1칸도 셈), 여기서 명단 추가까지 await 없음 (지도 01-⑧)
     const maxRoomSize = room.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
-    if (countRoomOccupancy(room, uuid) >= maxRoomSize) {
+    if (countRoomOccupancy(room, uuid) + reservedSeatsFor(room, uuid) >= maxRoomSize) {
         drop()
         emitRoomJoinFailed(socket, ROOM_JOIN_ERROR_CODES.ROOM_FULL, '방이 가득 찼습니다.')
         return true

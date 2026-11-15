@@ -1,5 +1,5 @@
 // 판 만들기 파일
-// 판 후보 만들기 + 시작 전 검사, matchmaking이 게임 시작 때 사용
+// 판 후보 만들기(판 끝 뒤 같은 방 다시 열 방 정보 옮겨 담기 포함) + 시작 전 검사, matchmaking이 게임 시작 때 사용
 const crypto = require('crypto')
 const { validateSessionInput, buildRoomSettingsSource, buildTimerSettings } = require('./input')
 const { resolveRoleComposition } = require('../core/rules/roleComposition')
@@ -8,6 +8,19 @@ const { INITIAL_GAME_PHASE, INITIAL_DAY_INDEX } = require('./constants')
 const { resolveGameSource } = require('../result/record')
 const { isMatchmakingBlocked } = require('../queries/live')
 const { hasRoomSession } = require('../queries/byId')
+
+// 판 끝 뒤 같은 방을 다시 열 때 쓸 방 정보 (방은 판 시작 때 지워져서 판에 옮겨 담음)
+// 설정은 통째 복사 (판 중에 방 원본이 바뀌어도 안 섞이게), 추방 횟수는 matchmaking이 판 시작 때 더 붙임
+// 예: → { code:'AB12CD', accessType:'code', title:'민수의 방', settings:{ maxPlayers:7, jokerCount:2, … }, kickCounts:null }
+function buildReturnRoomSource(room) {
+    return {
+        code: typeof room.code === 'string' && room.code ? room.code : null,
+        accessType: room.accessType ?? null,
+        title: typeof room.title === 'string' ? room.title : null,
+        settings: room.settings ? structuredClone(room.settings) : null,
+        kickCounts: null,
+    }
+}
 
 // 방 → 판 후보 (역할 나누고 판 기본값 채움, 아직 장부에 안 넣음)
 function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } = {}) {
@@ -34,6 +47,7 @@ function buildSessionCandidate(room, { randomFn, gameIdFn = crypto.randomUUID } 
         roomId: room.id,
         roomCode: typeof room.code === 'string' && room.code ? room.code : null,
         roomSettingsSource: buildRoomSettingsSource(room),
+        returnRoomSource: buildReturnRoomSource(room),
         channelId: room.id,
         hostUuid: room.hostUuid ?? null,
         roomInstanceId: room.instanceId ?? room.id,

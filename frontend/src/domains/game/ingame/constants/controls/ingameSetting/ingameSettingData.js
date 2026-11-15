@@ -15,15 +15,8 @@ export const INGAME_SETTING_TABS = [
 
 export const PREVIEW_AS_HOST = false
 
-export const INGAME_SETTING_ROOM_ROWS = [
-  {
-    kind: "checkbox",
-    id: "keep-settings-next-game",
-    title: "다음 게임 동일 설정 유지",
-    description: "현재 방 설정을 다음 게임에서도 유지합니다.",
-    defaultChecked: false,
-  },
-]
+// 방관리 탭 안내 (판이 끝나면 늘 같은 방으로 돌아가 유지 스위치가 필요 없음)
+export const INGAME_SETTING_ROOM_NOTICE = "게임이 끝나면 같은 방 코드·같은 설정으로 대기방이 다시 열립니다."
 
 export const INGAME_SETTING_DEFAULT_TAB = "chat"
 

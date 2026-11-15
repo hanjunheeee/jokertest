@@ -1,11 +1,9 @@
-// 게임 설정 화면 훅: 저장된 다음 게임 설정 복원·방 만들기·뒤로 가기
-// GameSetupPage가 씀
-import { useEffect, useMemo, useState } from "react"
+// 게임 설정 화면 훅: 방 만들기·뒤로 가기 (폼은 늘 기본값, 판 끝 뒤엔 서버가 같은 설정으로 방을 다시 열어 저장값 복원은 없앰)
+// GameSetupPage가 씀(모바일도 같음)
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
-import { useNextRoomSettingsStore } from "../store/nextRoomSettingsStore.js"
-import { resolveRestore } from "../utils/resolveRestore.js"
 import { useCreateRoom } from "./useCreateRoom.js"
 
 // 게임 설정 화면 값·동작
@@ -16,14 +14,8 @@ export function useGameSetupPage() {
 
   const accountId = useAuthStore((s) => s.user?.uuid ?? null)
   const identityGeneration = useAuthStore((s) => s.identityGeneration)
-  const readRestoreSource = useNextRoomSettingsStore((s) => s.readRestoreSource)
-
-  // 계정이 바뀌면 그 계정의 저장값으로 폼을 새로 채움
-  const restore = useMemo(() => {
-    // 계정 없으면 기본값
-    if (!accountId) return { formState: null, resetKey: `none:${identityGeneration}`, notice: "" }
-    return resolveRestore(readRestoreSource(accountId), `${accountId}:${identityGeneration}`)
-  }, [accountId, identityGeneration, readRestoreSource])
+  // 계정이 바뀌면 폼을 기본값으로 새로 채움 (폼 다시 채우기 키)
+  const formResetKey = `${accountId ?? "none"}:${identityGeneration}`
 
   // 첫 그림 다음 프레임에 화면 드러냄
   useEffect(() => {
@@ -53,8 +45,7 @@ export function useGameSetupPage() {
     isCreating,
     goBackToMultiplay,
     createGame,
-    initialFormState: restore.formState,
-    formResetKey: restore.resetKey,
-    restoreNotice: restore.notice,
+    initialFormState: null,
+    formResetKey,
   }
 }

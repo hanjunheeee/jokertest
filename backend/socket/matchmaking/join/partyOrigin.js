@@ -1,5 +1,5 @@
-// 끝난 판에서 온 이동 표시 파일
-// 결과 화면에서 본인이 시작한 방 요청·입장 시도·자리 표시 + 확인, join·create·accept가 표시하고 room/sessionCleanup이 봄 (known 1-16)
+// 끝난 판에서 온 이동 표시 파일 (안 쓰임, 지울 파일)
+// 표시는 joinChecks·joinCommit·transition·admission이 아직 하지만 읽는 곳 없음 (room/sessionCleanup이 대기방 자리를 안 건드리게 바뀜, 자동 입장 없어짐)
 const gameSession = require('../../../game-core/gameSession')
 const { gameRooms, playerRoom, roomAdmissionAttempts, pendingRoomTransitions } = require('../core/state')
 

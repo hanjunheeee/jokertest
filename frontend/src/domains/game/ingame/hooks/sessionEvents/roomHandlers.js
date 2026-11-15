@@ -1,7 +1,6 @@
 // 판 진행 이벤트 손잡이 (판 끝·대기방 추방·방·계정·이모지·연결 상태): 판 정리·화면 이동·캐시·말풍선·끊김 표시
 // 판 진행 이벤트 훅이 구독 붙일 때마다 새로 만듦 (끊김 때는 판 정리 안 함, 판 정리는 판 끝·나가기·판 없음 응답만, 판 안 추방은 기능을 뺌)
 import { useMatchingStore, isCurrentRoomKickEvent } from "../../../matching/store/matchingStore.js"
-import { rememberRoomReady } from "../../../shared/utils/partyMatchingRejoin.js"
 import { useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
 import { createGameEndedHandler, createSessionEndFinalizer } from "../../utils/sessionEnd.js"
@@ -58,17 +57,11 @@ export function createRoomHandlers(registered, navigate) {
     useInGameEmojiBubbleStore.getState().setActiveEmoji(payload.uuid, payload.itemId, payload.sentAt)
   }
 
-  // 파티 매칭 방 준비됨 (다시 들어갈 때 쓰려고 적어 둠)
-  const partyRoomReady = (payload) => {
-    if (!isCurrent()) return
-    rememberRoomReady(payload)
-  }
-
   // 다른 사람 끊김·다시 붙음: 명단 연결 상태만 바꿈 (카드 "연결 끊김"·모바일 시스템 줄이 따라감)
   const playerConnectionChanged = (payload) => {
     if (!isCurrent()) return
     useInGameStore.getState().applyPlayerConnectionChanged(payload)
   }
 
-  return { gameEnded, roomKicked, cacheInvalidated, emojiShown, partyRoomReady, playerConnectionChanged }
+  return { gameEnded, roomKicked, cacheInvalidated, emojiShown, playerConnectionChanged }
 }

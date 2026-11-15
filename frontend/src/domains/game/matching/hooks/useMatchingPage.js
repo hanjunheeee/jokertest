@@ -1,34 +1,24 @@
 // 대기방 화면 훅: 방·강퇴·친구 초대·설정 편집 훅을 묶어 화면 값으로 돌려줌
-// GameMatchingPage가 씀, 판 끝나고 돌아온 경우(파티 방 기다림)도 여기서 가름
+// GameMatchingPage가 씀(모바일도 같음), 판 끝나고 같은 방으로 돌아와도 처음 만든 방과 같은 길
 import { useCallback, useEffect, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
-import { MATCHING_POPUP_COPY } from "../constants/gameMatchingAssets.js"
+import { useNavigate } from "react-router-dom"
 import { useMatchingRoom } from "./useMatchingRoom"
 import { useMatchingRoomKick } from "./useMatchingRoomKick.js"
 import { useMatchingFriendInvite } from "./useMatchingFriendInvite.js"
 import { useSettingsEdit } from "./useSettingsEdit.js"
 import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
-import { clearRejoinGameId, readRejoinGameId } from "../../shared/utils/partyMatchingRejoin.js"
 import { buildSlots } from "../utils/chunkPlayerSlots.js"
 import { leaveRoom } from "../socket/room.js"
+
+// 판 끝 뒤 방장 자리를 비워 둔 동안 자리 아래 안내 (방장 없으면 시작·설정·추방 단추도 아무에게 안 보임)
+const HOST_SEAT_RESERVED_MESSAGE =
+  "방장 자리를 비워 두었습니다. 지난 판 방장이 오지 않으면 먼저 들어온 사람이 방장이 됩니다."
 
 // 대기방 화면 값·동작 묶음
 export function useMatchingPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const myUuid = useAuthStore((s) => s.user?.uuid)
-
-  // 결과 화면에서 왔거나 새로고침 전에 기다리던 판이 있으면 파티 방 기다림
-  const storedGameId = readRejoinGameId(myUuid)
-  const awaitRequested =
-    location.state?.awaitRoomAfterGameResult === true || Boolean(storedGameId)
-  // 파티 방에 들어가 확인까지 끝나면 기다림 끝 (그 뒤 방이 지워지면 목록으로 가게, known 1-5)
-  const [partyJoined, setPartyJoined] = useState(false)
-  const awaiting = awaitRequested && !partyJoined
-  const endedGameId = typeof location.state?.endedGameId === "string"
-    ? location.state.endedGameId
-    : storedGameId
 
   const [uiVisible, setUiVisible] = useState(false)
 
@@ -43,20 +33,11 @@ export function useMatchingPage() {
   const myPlayer = players.find((player) => player.uuid === myUuid)
   const isReady = Boolean(myPlayer?.isReady)
 
-  // 방이 사라지면 목록으로 (파티 방 기다리는 중엔 그대로 둠), 게임 시작하면 인게임으로
-  const handleRoomDeleted = useCallback(() => {
-    if (awaiting) return
-    navigate("/multiplay")
-  }, [navigate, awaiting])
+  // 방이 사라지면 목록으로, 게임 시작하면 인게임으로
+  const handleRoomDeleted = useCallback(() => navigate("/multiplay"), [navigate])
   const handleGameStarted = useCallback(() => navigate("/ingame"), [navigate])
-  // 파티 방 기다림을 그만두면(방 없어짐·시간 지남) 알리고 목록으로 (FE-005)
-  const handlePartyRejoinFailed = useCallback((message) => {
-    clearRejoinGameId(myUuid)
-    if (message) window.alert(message)
-    navigate("/multiplay", { replace: true })
-  }, [navigate, myUuid])
 
-  // 방 확인·방송·요청 (파티 방 기다리면 끝난 판 id 넘김)
+  // 방 확인·방송·요청
   const {
     deleteRoom, isDeleting, startGame, setReady, isStarting, isSettingReady, isRoomVerified,
     saveRoomSettings, verifyRoomSettingsResult, isSavingSettings, hasPendingSettingsResult, settingsError,
@@ -65,26 +46,13 @@ export function useMatchingPage() {
   } = useMatchingRoom({
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
-    endedGameId: awaiting ? endedGameId : null,
-    awaitPartyRoomRejoin: awaiting,
-    onPartyRejoinFailed: handlePartyRejoinFailed,
   })
 
-  // 기다리던 파티 방에 들어가 확인되면 기다림 끝으로 표시 (그리는 중에 바로 맞춤)
-  if (awaiting && isInRoom && isRoomVerified) setPartyJoined(true)
-
-  // 기다림이 끝났으면 화면 이동 기록의 기다림 표시도 지움 (새로고침해도 다시 안 기다리게)
-  const staleAwaitState = partyJoined && location.state?.awaitRoomAfterGameResult === true
-  useEffect(() => {
-    if (!staleAwaitState) return
-    navigate(location.pathname, { replace: true, state: null })
-  }, [staleAwaitState, navigate, location.pathname])
-
-  // 강퇴 (방 확인 끝나야 가능)
+  // 강퇴 (방 확인 끝나야 가능, 줄 "추방"이 바로 강퇴)
   const {
     canKick, isKickHost, kickModalOpen, openKickModal, closeKickModal,
     kickTargets, kickPendingTarget, kickStatus, kickErrorCode, isKicking, canLookupKickResult, isAwaitingKickResolution,
-    requestKickConfirm, cancelKickConfirm, confirmKick, lookupKickResult,
+    requestKickConfirm, lookupKickResult,
   } = useMatchingRoomKick({ isRoomVerified })
 
   // 친구 초대 (방에 있을 때만)
@@ -117,25 +85,23 @@ export function useMatchingPage() {
     return () => cancelAnimationFrame(frame)
   }, [])
 
-  // 뒤로: 방 나가기 알리고 방·기다리던 판 지운 뒤 목록으로
+  // 뒤로: 방 나가기 알리고 방 지운 뒤 목록으로
   const handleBack = () => {
     leaveRoom()
     clearRoom()
-    clearRejoinGameId(myUuid)
     navigate("/multiplay")
   }
 
   // 준비 누르면 지금과 반대로 요청
   const toggleReady = () => setReady(!isReady)
 
-  // 자리 목록·기다림 문구 (파티 방 기다리는 중이면 빈 자리 + 기다림 문구)
-  const slots = buildSlots({ isInRoom, players, awaiting })
-  // 인원 수는 실제 방 사람만 셈 (방 밖 미리보기 가짜 자리는 안 셈)
+  // 자리 목록 (판 끝 뒤 방장 자리를 비워 둔 방이면 맨 앞에 "방장 자리" 칸), 방장 자리 안내 문구
+  const hostSeatReserved = isInRoom && !hostUuid
+  const slots = buildSlots({ isInRoom, players, hostSeatReserved })
+  // 인원 수는 실제 방 사람만 셈 (방 밖 미리보기 가짜 자리·방장 자리 칸은 안 셈)
   const partyCount = isInRoom ? players.length : 0
 
-  const waitingMessage = !isInRoom && awaiting
-    ? MATCHING_POPUP_COPY.awaitingHostRoom
-    : ""
+  const waitingMessage = hostSeatReserved ? HOST_SEAT_RESERVED_MESSAGE : ""
 
   // 방 코드는 확인된 방에서만 보여 줌
   const canViewRoomCode = isInRoom && isRoomVerified
@@ -161,7 +127,7 @@ export function useMatchingPage() {
     toggleReady,
     canStart,
     isStarting,
-    // 방에 있고 확인까지 끝났을 때만 확인됨 (파티 방 기다리는 중엔 준비 버튼 잠기게, FE-031)
+    // 방에 있고 확인까지 끝났을 때만 확인됨 (확인 전엔 준비 버튼 잠기게, FE-031)
     isRoomVerified: isInRoom && isRoomVerified,
     startGame,
     deleteRoom,
@@ -195,8 +161,6 @@ export function useMatchingPage() {
     canLookupKickResult,
     isAwaitingKickResolution,
     requestKickConfirm,
-    cancelKickConfirm,
-    confirmKick,
     lookupKickResult,
     canOpenFriendInvite,
     friendInviteModalOpen,

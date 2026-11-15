@@ -1,11 +1,13 @@
 // 판 띄우기 파일
-// 검사 끝난 방으로 판 만들기(판 골드 값 적어 둠) → 방 지우기 → 시작 방송, start.js handleStartGame이 부름 (지도 02)
+// 검사 끝난 방으로 판 만들기(판 골드 값·추방 횟수 옮겨 담음) → 방 지우기(코드 키는 판 동안 잡아 둠) → 시작 방송, start.js handleStartGame이 부름 (지도 02)
 const gameSession = require('../../../game-core/gameSession')
 const { playerRoom } = require('../core/state')
 const { deps } = require('../core/deps')
 const { resolveParticipantSockets } = require('./membership')
 const { disposeRoom } = require('./dispose')
 const { rememberStartedRoom } = require('../join/startedMarks')
+const { copyRoomKicks } = require('./kickLimit')
+const { holdRoomCodeForGame } = require('../cluster/roomDirectory')
 const { emitPublicRoomList } = require('./view')
 const e2eGameHooks = require('../../e2e/gameHooks')
 const gameSettings = require('../../../services/ops/gameSettings')
@@ -98,7 +100,9 @@ function buildStartPayloads(session, respond) {
 }
 
 // 여기부터 진짜 바뀜: 판 장부에 넣고 이모지 상태 붙임
+// 추방 횟수는 판에 옮겨 담음 (방 객체에 묶여 방과 같이 사라짐, 판 끝 뒤 같은 방에서 "추방 3번 기록은 남음")
 // 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 시작 표시 남김 (터지면 되돌리지 않고 실패만 답함)
+// Node 여러 개면 방 코드 키는 판 동안 잡아 둠 (판 끝에 같은 코드로 방을 다시 열고, 그동안 다른 Node가 그 코드를 못 뽑게)
 function commitLaunch(room, roomId, captured, session, respond) {
     try {
         gameSession.commitGameSession(session)
@@ -106,7 +110,9 @@ function commitLaunch(room, roomId, captured, session, respond) {
             ? captured.emojiPaletteByUuid
             : new Map()
         session.emojiRateLimit = new Map()
+        if (session.returnRoomSource) session.returnRoomSource.kickCounts = copyRoomKicks(room)
         room.players.forEach((_, u) => playerRoom.delete(u))
+        holdRoomCodeForGame(room)
         disposeRoom(roomId, 'ROOM_STARTED')
         rememberStartedRoom(room, session.id)
         return true

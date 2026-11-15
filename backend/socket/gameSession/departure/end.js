@@ -1,13 +1,13 @@
 // 판 끝 정리 파일
-// core가 판 지운 뒤 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드·끊긴 사람 정리 예약
-// 판 끝 마무리는 나가기·끊김, 종료 필드는 재판·밤·이탈 뒤 판정, 대기방 정리는 나가기가 씀
+// core가 판 지운 뒤 마무리(전적 저장·타이머·대기방·종료 방송·채널) + 승부 난 방송에 종료 필드 + 판 끝 180초 시계(같은 방 다시 열기·결과 화면 닫기)
+// + 한 사람을 끝난 판에서 빼기, 판 끝 마무리는 나가기·끊김, 종료 필드는 재판·밤·이탈 뒤 판정, 대기방 정리는 나가기가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
 const matchmaking = require('../../matchmaking')
+const returnRoom = require('../../matchmaking/room/returnRoom')
 const { persistTerminalSession } = require('../../../services/game/record')
 const { isolate, isolateOr, isolateWithError } = require('../../common/isolate')
-const { ENDED_SWEEP_DELAY_MS } = require('../core/constants')
 const { endedSweepRuns } = require('../core/state')
-const { isUuidConnected } = require('../connection/ownership')
+const { pickTimerFns } = require('../core/timers')
 const { detachAllGraces } = require('../connection/grace')
 const { buildSessionEndContext } = require('../delivery/eligibility')
 const { detachFromGameChannel, emitToGameChannel } = require('../delivery/broadcast')
@@ -18,7 +18,7 @@ const { stopTribunalTimer } = require('../phase/tribunal')
 const { clearDepartureMark } = require('./marks')
 const chatBuffer = require('../../../services/ops/chatBuffer')
 
-// 승부 났으면 방송 내용에 종료 필드(전원 정체) 덧붙이고 전적 저장 시작·끊긴 사람 정리 예약, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
+// 승부 났으면 방송 내용에 종료 필드(전원 정체·결과 화면 닫힘 시각) 덧붙이고 전적 저장 시작·180초 시계 걸기, 저장은 안 기다림 (지도 06-⑩ · 07-①⑧)
 // 종료 필드 만들다 던지면 원래 내용 그대로, 원래 내용을 못 만들었으면 판 id·날짜는 붙여 보냄 (어느 판 종료인지 모르던 것)
 function withTerminalFields(session, terminal, payload, label, fields, io = null) {
     if (!terminal) return payload
@@ -34,24 +34,29 @@ function withTerminalFields(session, terminal, payload, label, fields, io = null
     return merged
 }
 
-// 끝난 판 끊긴 사람 정리 예약: 판 끝 순간 연결 없던 사람(죽은 뒤 끊김·유예 중 판 끝)은 떠난 명단에 안 들어가
-// 판이 장부·메모리에 남고 판 끝 정리가 안 돌던 것 (BE-020), 그 안에 다시 붙은 사람은 결과 화면 그대로
+// 판 끝 180초 시계 걸기 (판 끝 순간 한 번, 판 끝 시각부터 하나로 셈, 결정 [임시] 4)
+// 걸 때 같은 코드·설정 빈 대기방을 다시 열고(matchmaking/room/returnRoom.js), 180초에 결과 화면 남은 사람 내보내기 → 방장 자리·빈 방 정리
+// 판 끝 순간 끊겨 있던 사람(죽은 뒤 끊김·유예 중 판 끝)도 이때 빠짐 (예전 60초 정리를 합침, BE-020)
+// 이름은 예전 그대로 (이탈 반영 departure/apply.js가 부름), 같은 판에 두 번 불려도 한 번만
 function scheduleEndedSweep(io, session, deps = {}) {
     if (!io || !session?.id || endedSweepRuns.has(session.id)) return null
-    const setTimeoutFn = deps.setTimeoutFn ?? setTimeout
-    const delayMs = Number.isInteger(deps.delayMs) && deps.delayMs >= 0 ? deps.delayMs : ENDED_SWEEP_DELAY_MS
-    const run = { session, timerId: null, clearTimeoutFn: deps.clearTimeoutFn ?? clearTimeout }
+    const { nowFn, setTimeoutFn, clearTimeoutFn } = pickTimerFns(deps)
+    const closesAt = gameSessionCore.getResultClosesAt(session) ?? nowFn() + gameSessionCore.RESULT_SCREEN_MS
+    const delayMs = Number.isInteger(deps.delayMs) && deps.delayMs >= 0 ? deps.delayMs : Math.max(0, closesAt - nowFn())
+    isolateWithError('[판 끝 같은 방 다시 열기 실패]', () => returnRoom.reopenRoomAfterGame(io, session))
+    const run = { session, timerId: null, clearTimeoutFn }
     run.timerId = setTimeoutFn(() => {
         if (endedSweepRuns.get(session.id) !== run) return
         endedSweepRuns.delete(session.id)
-        isolateWithError('[끝난 판 끊긴 사람 정리 실패]', () => sweepDisconnectedFromEnded(io, session))
+        isolateWithError('[판 끝 결과 화면 닫기 실패]', () => closeEndedResults(io, session))
+        isolateWithError('[판 끝 같은 방 180초 정리 실패]', () => returnRoom.closeReturnHold(io, session.id))
     }, delayMs)
     if (typeof run.timerId?.unref === 'function') run.timerId.unref()
     endedSweepRuns.set(session.id, run)
     return run
 }
 
-// 정리 예약 끄기 (판 끝 마무리·시험 초기화)
+// 180초 시계 끄기 (판이 다시 연 방 없이 지워짐·시험 초기화)
 function cancelEndedSweep(gameId) {
     const run = endedSweepRuns.get(gameId)
     if (!run) return
@@ -59,18 +64,49 @@ function cancelEndedSweep(gameId) {
     endedSweepRuns.delete(gameId)
 }
 
-// 끝난 판에 아직 묶인 사람 중 연결 없는 사람만 빼고, 마지막이면 판 끝 마무리까지
-function sweepDisconnectedFromEnded(io, session) {
-    if (session.phase !== 'ENDED') return
-    for (const uuid of [...session.players.keys()]) {
-        if (isUuidConnected(io, uuid)) continue
-        const result = gameSessionCore.endGameSessionForPlayer(uuid, 'PARTICIPANT_LEFT', session.id)
-        if (!result.ok) continue
-        if (result.sessionDeleted) {
-            finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
-            return
+// 결과 화면 닫힘 알림: 판 채널에 붙은 그 사람 소켓에만 (다른 방에 이미 앉았으면 안 보냄, 그 화면은 대기방)
+// 예: { gameId:'g-1', reason:'RESULT_TIMEOUT' } → 화면은 로비로
+function notifyResultClosed(io, session, uuid) {
+    if (matchmaking.hasRoomMembership(uuid)) return
+    for (const s of io?.sockets?.sockets?.values?.() ?? []) {
+        if (s?.data?.user?.uuid !== uuid || !s.rooms?.has?.(session.channelId)) continue
+        try {
+            s.emit('game_result_closed', { gameId: session.id, reason: 'RESULT_TIMEOUT' })
+        } catch (err) {
+            console.error('[결과 화면 닫힘 알림 실패]', err)
         }
     }
+}
+
+// 180초: 결과 화면에 남은 사람(끊긴 채 남은 사람 포함) 알리고 끝난 판에서 뺌, 마지막이면 판 끝 마무리까지
+function closeEndedResults(io, session) {
+    if (session.phase !== 'ENDED') return
+    for (const uuid of gameSessionCore.getBoundEndedPlayerUuids(session.id)) {
+        isolate('[결과 화면 닫기 실패]', { code: 'RESULT_CLOSE_ERROR', uuid, gameId: session.id }, () => {
+            notifyResultClosed(io, session, uuid)
+            leaveEndedSession(io, uuid, 'RESULT_TIMEOUT', session.id)
+        })
+    }
+}
+
+// 한 사람을 끝난 판에서 빼기: 판 기록 지우기 → (넘긴 소켓) 판 채널 떼기 → 마지막이면 판 끝 마무리, 아니면 남겨 둔 방장 자리 정리
+// "대기방으로"(matchmaking/room/returnRoom.js)·180초 시계가 부름, 로비 입장 방어(단위 17)도 이걸 부르면 됨
+// 이 끝난 판에 묶인 사람이 아니면(이미 빠짐·진행 중 판·다른 판) 아무것도 안 하고 { ok:false, code:'NOT_IN_ENDED_SESSION' }
+function leaveEndedSession(io, uuid, reason, gameId, { socket = null } = {}) {
+    if (gameSessionCore.getEndedGameId(uuid) !== gameId) return { ok: false, code: 'NOT_IN_ENDED_SESSION' }
+    const result = gameSessionCore.endGameSessionForPlayer(uuid, reason, gameId)
+    if (!result.ok) return result
+    if (socket) {
+        isolateWithError('[끝난 판 채널 떼기 실패]', () => detachFromGameChannel(
+            socket, uuid, result.session.channelId, '[끝난 판 채널 떼기 실패]', { gameId },
+        ))
+    }
+    if (result.sessionDeleted) {
+        finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
+        return result
+    }
+    cleanupMatchmakingRooms(io, [uuid], '[끝난 판 빼기 matchmaking 정리 실패]')
+    return result
 }
 
 // matchmaking 쪽 방 상태 정리, 던져도 판 정리는 계속 (원본 에러 찍음)
@@ -80,8 +116,10 @@ function cleanupMatchmakingRooms(io, uuids, label) {
 
 // 판 지운 뒤 socket 쪽 마무리: 전적 저장 시작 → 타이머 정리 → 대기방 정리 → 종료 방송 → 채널 떼기, 단계마다 격리 (지도 07-③)
 function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
-    // 지워진 판의 끊긴 사람 정리 예약도 같이 끔
-    cancelEndedSweep(session?.id)
+    // 다시 연 같은 방이 있으면 180초 시계는 그대로 둠 (방장 자리·빈 방 정리), 없으면 시계 끄고 판 동안 잡아 둔 방 코드 놓음
+    isolateWithError('[판 끝 180초 시계 정리 실패]', () => {
+        if (!returnRoom.settleReturnOnSessionGone(session)) cancelEndedSweep(session?.id)
+    })
     // 판 채팅 보관은 이때부터 10분만 (결과 화면 신고용)
     isolateWithError('[판 채팅 보관 끝 표시 실패]', () => chatBuffer.markGameEnded(session?.id))
 
@@ -135,10 +173,14 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     })
 }
 
+// "대기방으로"가 끝난 판에서 빼는 함수를 쓰게 넣어 줌 (matchmaking이 이 파일을 require 하면 고리가 생겨서)
+returnRoom.setEndedSessionHooks({ leaveEndedSession })
+
 module.exports = {
     withTerminalFields,
     scheduleEndedSweep,
     cancelEndedSweep,
+    leaveEndedSession,
     cleanupMatchmakingRooms,
     finalizeGameSessionEnd,
 }

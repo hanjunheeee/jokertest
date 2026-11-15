@@ -1,10 +1,11 @@
-// 강퇴 횟수 파일, 같은 방에서 쫓겨난 횟수 세기 · 다시 들어와도 되나 (사용자 결정 2026-11-09)
-// room/host.js(강퇴 확정 때 셈)·join/join.js·admission/accept.js(입장 전 확인)가 씀
+// 강퇴 횟수 파일, 같은 방에서 쫓겨난 횟수 세기 · 다시 들어와도 되나 · 판 끝 뒤 같은 방으로 옮기기 (사용자 결정 2026-11-09)
+// room/host.js(강퇴 확정 때 셈)·join/join.js·admission/accept.js(입장 전 확인)·room/startLaunch.js·room/returnRoom.js(옮기기)가 씀
 
 // 같은 방에서 이 횟수만큼 쫓겨나면 그 방엔 못 들어옴 (1·2번째는 다시 들어옴)
 const ROOM_KICK_LIMIT = 3
 
 // 방 → (사람 → 쫓겨난 횟수), 방 객체에 묶어서 방이 없어지면 기록도 같이 없어짐
+// 판 시작 때 방이 지워지므로 복사해서 판에 옮겨 두고, 판 끝 뒤 같은 방을 다시 열 때 새 방 객체에 되돌림 ("추방 3번 기록은 남음")
 const kickCountsByRoom = new WeakMap()
 
 // 강퇴 확정 때 한 번 셈, 센 뒤 횟수 돌려줌
@@ -24,6 +25,19 @@ function isKickLimitReached(room, uuid) {
     return (kickCountsByRoom.get(room)?.get(uuid) ?? 0) >= ROOM_KICK_LIMIT
 }
 
+// 이 방 추방 횟수 복사 (없으면 null), 판 시작 때 판에 옮겨 담을 것
+// 예: → Map { 'uuid-b' => 2 }
+function copyRoomKicks(room) {
+    const counts = kickCountsByRoom.get(room)
+    return counts && counts.size > 0 ? new Map(counts) : null
+}
+
+// 옮겨 둔 추방 횟수를 다시 연 방 객체에 넣음 (Map 아니면 아무것도 안 함)
+function restoreRoomKicks(room, counts) {
+    if (!(counts instanceof Map) || counts.size === 0) return
+    kickCountsByRoom.set(room, new Map(counts))
+}
+
 // 입장 거절 문구 (화면 문구표에 없을 때 그대로 띄움)
 const KICK_LIMIT_MESSAGE = `이 방에서 ${ROOM_KICK_LIMIT}번 추방되어 더 이상 들어갈 수 없습니다.`
 
@@ -32,4 +46,6 @@ module.exports = {
     KICK_LIMIT_MESSAGE,
     recordRoomKick,
     isKickLimitReached,
+    copyRoomKicks,
+    restoreRoomKicks,
 }

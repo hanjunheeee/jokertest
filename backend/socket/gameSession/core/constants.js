@@ -1,5 +1,5 @@
 // socket gameSession 상수 파일
-// 내부 전용 거절 코드 묶음·밤 턴 단계·다시 해 보기·정리 시간 값, 핸들러·요청 검사·타이머·밤 단계·판 끝 정리가 씀
+// 내부 전용 거절 코드 묶음·밤 턴 단계·다시 해 보기 값, 핸들러·요청 검사·타이머·밤 단계가 씀
 
 // core 거절 코드 중 밖에 그대로 보이면 안 되는 것 (INTERNAL_ERROR로 바꿔 답함, 지도 03-⑥ · 06-⑨)
 const INTERNAL_ONLY_CODES = new Set(['SESSION_NOT_FOUND', 'NOT_A_PARTICIPANT'])
@@ -67,8 +67,7 @@ const ROLE_REVEAL_DEADLINE_MS = 10000
 const PHASE_RETRY_DELAY_MS = 1000
 const PHASE_RETRY_MAX = 5
 
-// 판 끝 뒤 끊긴 사람 정리까지 60초 (그 안에 다시 붙으면 결과 화면 그대로 봄)
-const ENDED_SWEEP_DELAY_MS = 60000
+// 판 끝 뒤 시간 값(결과 화면 180초)은 game-core RESULT_SCREEN_MS 하나만 씀 (판 끝 칸 resultClosesAt과 같은 값이어야 해서)
 
 module.exports = {
     INTERNAL_ONLY_CODES,
@@ -86,5 +85,4 @@ module.exports = {
     ROLE_REVEAL_DEADLINE_MS,
     PHASE_RETRY_DELAY_MS,
     PHASE_RETRY_MAX,
-    ENDED_SWEEP_DELAY_MS,
 }

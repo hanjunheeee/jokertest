@@ -5,17 +5,21 @@ import { PARTY_SLOTS_DUMMY_10 } from "../constants/gameMatchingAssets.js"
 // 한 줄 칸 수
 export const PLAYER_SLOT_COLUMNS = 5
 
-// 방에 있으면 사람 자리, 파티 방 기다리는 중이면 빈 목록, 그 밖엔 미리보기용 가짜 자리
-export function buildSlots({ isInRoom, players, awaiting }) {
-  if (isInRoom) {
-    return players.map((player) => ({
-      id: player.uuid,
-      ready: Boolean(player.isReady),
-      accountProfilePhotoId: player.accountProfilePhotoId,
-      accountProfileBorderId: player.accountProfileBorderId,
-    }))
-  }
-  return awaiting ? [] : PARTY_SLOTS_DUMMY_10
+// 판 끝 뒤 비워 둔 방장 자리 칸 id (사람 uuid와 안 겹치게)
+export const RESERVED_HOST_SLOT_ID = "reserved-host-seat"
+
+// 방에 있으면 사람 자리(방장 자리를 비워 둔 방이면 맨 앞에 방장 자리 칸), 방 밖이면 미리보기용 가짜 자리
+// 예: 방장 자리 비움 + 2명 → [{ id: "reserved-host-seat", reservedHost: true }, { id: "u1" }, { id: "u2" }]
+export function buildSlots({ isInRoom, players, hostSeatReserved = false }) {
+  if (!isInRoom) return PARTY_SLOTS_DUMMY_10
+  const playerSlots = players.map((player) => ({
+    id: player.uuid,
+    ready: Boolean(player.isReady),
+    accountProfilePhotoId: player.accountProfilePhotoId,
+    accountProfileBorderId: player.accountProfileBorderId,
+  }))
+  if (!hostSeatReserved) return playerSlots
+  return [{ id: RESERVED_HOST_SLOT_ID, ready: false, reservedHost: true }, ...playerSlots]
 }
 
 // 한 줄에 columns개씩 끊음

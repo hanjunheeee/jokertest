@@ -9,7 +9,7 @@ const { __resetStateForTests, __getStateSnapshotForTests, __deleteGameSessionOnl
 // 죽은 이유·전적 기록·결과 공개는 result
 const { DEATH_REASONS } = require('./result/constants')
 const { resolveGameSource, buildGameResultRecord } = require('./result/record')
-const { buildTerminalFields } = require('./result/winReveal')
+const { buildTerminalFields: buildTerminalFieldsOnly } = require('./result/winReveal')
 // 재판은 phase/tribunal
 const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS, TRIBUNAL_ABSTAIN } = require('./phase/tribunal/constants')
 const { submitTribunalVote, submitTribunalAbstention, readTribunalVoteSfx } = require('./phase/tribunal/vote')
@@ -30,7 +30,13 @@ const {
     getEndedGameId,
     canLookupPartyRoom,
     getEndedPlayerUuids,
+    RESULT_SCREEN_MS,
+    getResultClosesAt,
+    withResultClosesAt,
+    getBoundEndedPlayerUuids,
+    getEndedSeatProfile,
 } = require('./queries/ended')
+const { getSessionById } = require('./queries/byId')
 // 채팅·이모티콘은 chat
 const {
     CHAT_MAX_LENGTH,
@@ -93,7 +99,7 @@ const { commitDisconnectElimination, buildDisconnectPayload } = require('./depar
 const { commitParticipantDeparture, advanceStalledPhase } = require('./departure/leave')
 // 진행 표시·스냅샷은 snapshot
 const { buildPublicProgress, bumpSelfProgressSeq, buildSelfFields } = require('./snapshot/progress')
-const { buildSessionSnapshot, getSessionSnapshotForPlayer } = require('./snapshot/session')
+const { buildSessionSnapshot: buildSessionSnapshotOnly, getSessionSnapshotForPlayer: getSessionSnapshotOnly } = require('./snapshot/session')
 const { buildPhaseChangedPayload, buildParticipationChangedPayload } = require('./snapshot/payloads')
 // 판 만들기·역할 공개는 setup
 const { assignRoles } = require('./setup/assign')
@@ -135,6 +141,15 @@ const {
 } = require('./phase/night/payloads')
 const { expireDeadPlayerNightEffects, commitNightResolution } = require('./phase/night/commit')
 
+// 판 끝 칸·스냅샷엔 결과 화면 닫힘 시각(resultClosesAt)을 붙여 내보냄 (끝난 판만, 화면 우측 위 180초 타이머)
+// 값은 판 끝 시각에서 매번 같게 계산해서 종료 방송·새로고침 스냅샷이 같은 값
+const buildTerminalFields = (session) => withResultClosesAt(session, buildTerminalFieldsOnly(session))
+const buildSessionSnapshot = (session, uuid) => withResultClosesAt(session, buildSessionSnapshotOnly(session, uuid))
+function getSessionSnapshotForPlayer(uuid, expectedGameId) {
+    const result = getSessionSnapshotOnly(uuid, expectedGameId)
+    if (!result?.ok) return result
+    return { ...result, snapshot: withResultClosesAt(getSessionById(result.snapshot.gameId), result.snapshot) }
+}
 
 // 밖으로 내보내는 것 (socket 쪽이 쓰는 이름 그대로)
 module.exports = {
@@ -237,7 +252,7 @@ module.exports = {
     // 새로고침 복구용 스냅샷
     getSessionSnapshotForPlayer,
     buildSessionSnapshot,
-    // 판 찾기 (매칭·끝난 판 파티·방 코드·접속 현황)
+    // 판 찾기 (매칭·끝난 판·방 코드·접속 현황, 파티 함수 2개는 안 쓰는 join/party.js만 부름)
     getActiveSessionRoutingInfo,
     isMatchmakingBlocked,
     getEndedPartyContext,
@@ -245,6 +260,11 @@ module.exports = {
     canLookupPartyRoom,
     getEndedPlayerUuids,
     getRoomCodeSessionState,
+    // 판 끝 180초 시계·같은 방 다시 열기 (결과 화면 닫힘 시각·묶인 사람·자리 프로필)
+    RESULT_SCREEN_MS,
+    getResultClosesAt,
+    getBoundEndedPlayerUuids,
+    getEndedSeatProfile,
     getActiveGamePresenceSnapshot,
     // 여기부터 시험 전용 (운영 코드는 안 씀)
     __resetStateForTests,

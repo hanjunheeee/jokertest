@@ -1,139 +1,19 @@
 // 판 참가자 대기방 정리 파일
-// 판 참가자 대기방·줄·입장 시도 정리, gameSession departure/end가 matchmaking.js 거쳐 부름 (지도 02·07)
-// 판 끝·판에서 나가기·게임 중 추방 때 불림
-const channelMembership = require('../../channelMembership')
-const { bumpGeneration } = require('../join/transition')
-const { invalidateAttempt, compensateAttempt } = require('../admission/attempts')
-const { removePublished } = require('../admission/release')
-const { matchmakingQueue, playerRoom, gameRooms, presenceConfirmedTick } = require('../core/state')
-const { getSettingsVersion } = require('../settings/receipts')
-const { emitPublicRoomList, computeCanStart } = require('./view')
-const { BOOT_EPOCH } = require('../core/constants')
-const { disposeRoom } = require('./dispose')
-const { cancelRoomRetention } = require('./leave')
-const { hasPartyOrigin } = require('../join/partyOrigin')
+// 판에서 빠진 사람이 남겨 둔 방장 자리 풀기, gameSession departure/end가 matchmaking.js 거쳐 부름 (지도 02·07)
+// 판 끝·판에서 나가기 때 불림, 대기방 자리·입장 시도·처리 중 요청·매칭 줄은 안 건드림
+const { releaseReservedHostFor } = require('./returnRoom')
 
-// 그 방 채널에 붙은 그 사람 소켓 전부
-function findOwnedSockets(io, uuid, roomId) {
-    const ownedSockets = []
-    for (const s of io.sockets.sockets.values()) {
-        if (s.data?.user?.uuid !== uuid) continue
-        if (!s.rooms?.has(roomId)) continue
-        ownedSockets.push(s)
-    }
-    return ownedSockets
-}
-
-// 판 참가자 정리: 줄에서 빼고, 남은 대기방 소속·입장 시도 지우고, 세대 번호 올림
-// 끝난 판 결과 화면에서 다음 판 파티 방으로 옮겨 간(옮겨 가는 중인) 사람은 건너뜀 (known 1-16)
-// 그 사람은 판에 묶인 채 정상으로 새 방에 들어간 것이라 빼면 방금 들어간 방에서 쫓겨남
+// 판 참가자 정리: 끝난 판 원래 방장이 빠지면 같은 방에 남겨 둔 방장 자리를 끝내고 먼저 들어온 사람이 방장
+// 자리 빼기는 안 함: 판 끝 뒤 자리는 전부 본인이 "대기방으로"·코드로 고른 것 (서버가 끌어다 넣던 자동 입장 없어짐)
+// 빼면 결과 화면을 닫거나 끊긴 순간 방금 들어간 방에서 쫓겨남 (B06-4), 진행 중 판 사람은 처음부터 방·줄에 못 들어감
 function cleanupRoomStateForSessionParticipants(io, inputUuids) {
-    const uuids = [...inputUuids].filter((uuid) => !hasPartyOrigin(uuid))
-    // 세대 번호 올려 그 전에 시작한 방 만들기·입장 요청이 커밋 못 하게, 입장 시도는 없애고 되돌림
-    for (const uuid of uuids) {
-        bumpGeneration(uuid)
-        const attempt = invalidateAttempt(uuid, 'SESSION_ENDED')
-        if (attempt) {
-            removePublished(io, null, attempt)
-            compensateAttempt(attempt, 'SESSION_ENDED')
-        }
-    }
-
-    // 줄에서 빼고, 아직 대기방에 앉은 사람만 모음 (소속 장부만 남은 흔적은 바로 지움)
-    const affected = []
-    for (const uuid of uuids) {
-        matchmakingQueue.delete(uuid)
-
-        const roomId = playerRoom.get(uuid)
-        if (!roomId) continue
-        const room = gameRooms.get(roomId)
-        if (!room || !room.players.has(uuid)) {
-            playerRoom.delete(uuid)
-            continue
-        }
-
-        // 그 방 채널에 붙은 그 사람 소켓 전부 (나중에 떼려고)
-        affected.push({ uuid, roomId, room, ownedSockets: findOwnedSockets(io, uuid, roomId) })
-    }
-
-    // 여기부터 진짜 바뀜: 명단·소속에서 뺌 (다 빼고 나서 방마다 방장·알림 정함)
-    // 15초 끊김 빼기 예약·방에 있음 확인 순번도 같이 지움 (나중에 엉뚱하게 안 돌게, known 1-11)
-    for (const entry of affected) {
-        entry.room.players.delete(entry.uuid)
-        playerRoom.delete(entry.uuid)
-        cancelRoomRetention(entry.uuid)
-        presenceConfirmedTick.delete(entry.uuid)
-    }
-
-    // 방 채널에서 소켓 떼기 (하나 실패해도 계속)
-    for (const entry of affected) {
-        for (const s of entry.ownedSockets) {
-            try {
-                s.leave(entry.roomId)
-            } catch (err) {
-                console.error('[세션 종료 Room 소켓 정리 실패]', err)
-            }
-        }
-    }
-
-    // 방마다 빠진 사람 묶기 (나감 알림용)
-    const removedUuidsByRoom = new Map()
-    for (const entry of affected) {
-        if (!removedUuidsByRoom.has(entry.roomId)) removedUuidsByRoom.set(entry.roomId, [])
-        removedUuidsByRoom.get(entry.roomId).push(entry.uuid)
-    }
-
-    // 방마다 한 번만: 빈 방 지우기 또는 방장 넘기기 → 빠진 사람 알림 → 공개 목록 새로
-    const processedRoomIds = new Set()
-    for (const entry of affected) {
-        if (processedRoomIds.has(entry.roomId)) continue
-        processedRoomIds.add(entry.roomId)
-        settleRoomAfterRemoval(io, entry, removedUuidsByRoom.get(entry.roomId) ?? [])
-    }
-}
-
-// 방 하나 마무리: 빈 방 지우기 또는 방장 넘기기 → 빠진 사람 알림 → 공개 목록 새로
-function settleRoomAfterRemoval(io, entry, removedUuids) {
-    const room = entry.room
-    try {
-        // 빈 방이면 공통 정리로 방·입장 시도·영수증·우편함·초대 지우고 공개 목록만 새로 (known 1-11)
-        if (room.players.size === 0) {
-            disposeRoom(entry.roomId, 'ROOM_GONE')
-            emitPublicRoomList(io)
-            return
-        }
-        // 방장이 빠졌으면 남은 사람 중 먼저 들어온 사람에게
-        if (!room.players.has(room.hostUuid)) {
-            room.hostUuid = room.players.keys().next().value
-            channelMembership.emitToChannel(io, entry.roomId, 'host_changed', {
-                hostUuid: room.hostUuid,
-                canStart: computeCanStart(room),
-                roomId: entry.roomId,
-                roomInstanceId: room.instanceId ?? null,
-                bootEpoch: BOOT_EPOCH,
-                settingsVersion: getSettingsVersion(room),
-            })
-        }
-    } catch (err) {
-        console.error('[세션 종료 Room 정리 실패]', err)
-    }
-
-    // 빠진 사람마다 나감 알림 (하나 실패해도 계속)
-    for (const removedUuid of removedUuids) {
+    for (const uuid of inputUuids ?? []) {
         try {
-            channelMembership.emitToChannel(io, entry.roomId, 'player_left_room', {
-                uuid: removedUuid,
-                canStart: computeCanStart(room),
-                roomId: entry.roomId,
-                roomInstanceId: room.instanceId ?? null,
-                bootEpoch: BOOT_EPOCH,
-            })
+            releaseReservedHostFor(io, uuid)
         } catch (err) {
             console.error('[세션 종료 Room 정리 실패]', err)
         }
     }
-
-    emitPublicRoomList(io)
 }
 
 module.exports = {
