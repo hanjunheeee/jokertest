@@ -29,10 +29,10 @@ export function nightWaitCoversSelf(state) {
   return selectInGameSelfAlive(state) !== false
 }
 
-// 밤 같은 직업 채팅 직업들
-const NIGHT_CHAT_ROLES = ["JOKER", "CITIZEN", "DOCTOR", "GUARD", "WITCH_HUNTER"]
+// 밤 같은 직업 채팅 직업들, 시민은 뺌 (서버와 같음, 사용자 결정 2026-11-16)
+const NIGHT_CHAT_ROLES = ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]
 
-// 밤 같은 직업 채팅을 쓸 수 있는지: 밤에 산 사람만 (죽은 사람은 죽은 사람 채팅, 사용자 결정 2026-11-09)
+// 밤 같은 직업 채팅을 쓸 수 있는지: 밤에 산 사람 중 위 직업만 (죽은 사람은 죽은 사람 채팅, 사용자 결정 2026-11-09)
 export function isJokerNightChatEligible(state) {
   if (state?.phase !== "NIGHT") return false
   const alive = selectInGameSelfAlive(state)

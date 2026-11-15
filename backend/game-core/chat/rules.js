@@ -50,11 +50,19 @@ function resolveGameChatChannel(session, actor) {
     return { ok: true, channel: CHAT_CHANNELS.DAY }
 }
 
-// 받는 사람: 낮은 전원, 죽은 사람 채널은 죽은 사람만, 역할 채널은 같은 역할 산 사람 (광대는 죽어도 받음)
+// 밤 같은 직업 채팅 여는 직업, 시민은 뺌 (시민끼리 서로 알게 되는 것 막기, 사용자 결정 2026-11-16)
+const NIGHT_CHAT_ROLES = new Set([GAME_ROLES.JOKER, GAME_ROLES.DOCTOR, GAME_ROLES.GUARD, GAME_ROLES.WITCH_HUNTER])
+
+// 밤 같은 직업 채팅을 여는 직업인지 (예: 'DOCTOR' → true, 'CITIZEN' → false)
+function isNightChatRole(role) {
+    return NIGHT_CHAT_ROLES.has(role)
+}
+
+// 받는 사람: 낮은 전원, 죽은 사람 채널은 죽은 사람만, 역할 채널은 같은 역할 산 사람 (광대는 죽어도 받음, 시민 채널은 아무도 안 받음)
 function getChatRecipientUuids(session, channel) {
     const uuids = []
-    // 역할 이름인 채널인지
-    const roleChannel = Object.values(GAME_ROLES).includes(channel)
+    // 밤 채팅 여는 직업 채널인지 (시민 채널은 여기서 걸러짐)
+    const roleChannel = isNightChatRole(channel)
     for (const player of session.players.values()) {
         // 낮 채널: 판에 있는 사람 전부 (죽은 사람은 읽기만)
         if (channel === CHAT_CHANNELS.DAY) {
@@ -76,4 +84,5 @@ module.exports = {
     getChatRateLimitMap,
     resolveGameChatChannel,
     getChatRecipientUuids,
+    isNightChatRole,
 }

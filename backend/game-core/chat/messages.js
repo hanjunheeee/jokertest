@@ -6,7 +6,7 @@ const { findActorSession } = require('../core/registry/lookup')
 const { getPlayerGameId, getSessionById } = require('../queries/byId')
 const { assertSessionNotEnded } = require('../core/rules/terminal')
 const { CHAT_MIN_INTERVAL_MS, CHAT_COMMIT_MAX_AGE_MS } = require('./constants')
-const { sanitizeChatText, isInvalidClockValue, getChatRateLimitMap, resolveGameChatChannel } = require('./rules')
+const { sanitizeChatText, isInvalidClockValue, getChatRateLimitMap, resolveGameChatChannel, isNightChatRole } = require('./rules')
 
 // prepare가 만든 것만 commit 되게 기록, 밖에 안 내보냄
 // 키 = prepare가 돌려준 객체, 값 = 그때 값 복사본 (얼려 둠)
@@ -60,7 +60,7 @@ function isSamePrepared(prepared, capability) {
     )
 }
 
-// 밤 역할 채팅 검사, 산 사람만 (죽은 광대는 읽기만, 쓰기는 죽은 사람 채팅으로)
+// 밤 역할 채팅 검사, 산 광대·의사·경비원·마녀사냥꾼만 (시민은 못 씀, 죽은 광대는 읽기만, 쓰기는 죽은 사람 채팅으로)
 function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
     // 판 id 확인 + 내 판·나 찾기, 끝난 판·옛 판 화면에서 온 것 거절
     const found = findActorSession(uuid, gameId, { checkEnded: true })
@@ -70,6 +70,8 @@ function prepareJokerChatMessage(uuid, gameId, text, { now = Date.now } = {}) {
     // 밤에만, 산 사람만 (죽은 사람은 죽은 사람 채팅으로, 사용자 결정 2026-11-09)
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
     if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
+    // 시민은 밤 채팅 없음 (사용자 결정 2026-11-16)
+    if (!isNightChatRole(actor.role)) return { ok: false, code: 'NOT_ELIGIBLE' }
 
     // 글 검사
     const sanitized = sanitizeChatText(text)
@@ -103,6 +105,7 @@ function commitJokerChatMessage(session, uuid, sentAt) {
     if (!actor) return { ok: false, code: 'NOT_A_PARTICIPANT' }
     if (session.phase !== 'NIGHT') return { ok: false, code: 'INVALID_PHASE' }
     if (actor.alive !== true) return { ok: false, code: 'NOT_ELIGIBLE' }
+    if (!isNightChatRole(actor.role)) return { ok: false, code: 'NOT_ELIGIBLE' }
 
     // 보낸 시각 기록 = 다음 채팅 간격 계산 기준
     const rateLimitMap = getChatRateLimitMap(session, actor.role)
