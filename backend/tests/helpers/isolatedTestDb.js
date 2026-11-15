@@ -15,6 +15,8 @@ const addTermsAgreements = require('../../db/migrations/0026-add-terms-agreement
 const dropUnusedTrafficLogs = require('../../db/migrations/0028-drop-unused-columns-traffic-logs');
 const addAdminPageTables = require('../../db/migrations/0031-add-admin-page-tables');
 const addInquiries = require('../../db/migrations/0032-add-inquiries');
+const addGameDesertions = require('../../db/migrations/0033-add-game-desertions');
+const addGameSettings = require('../../db/migrations/0034-add-game-settings');
 
 // 기준선(0001)이 만들고 뒤 마이그레이션이 지우는 표 (0028 traffic_logs, 2026-11-09)
 // 관리 목록엔 남김(일부만 적용한 시험 DB엔 있음), 행 비우기·있어야 하는 표 검사에선 뺌, 표 지우기 때 있으면 마지막에 지움
@@ -22,6 +24,8 @@ const TABLES_DROPPED_LATER = [dropUnusedTrafficLogs.DROPPED_TABLE];
 
 // 지울 때 자식 표 먼저 (신고 증거→신고, 감사 기록→관리자, 쿠폰 사용→쿠폰, 동의→약관 판)
 const OPERATIONS_DROP_ORDER = [
+    // 탈주 기록 표 (0033): 사람 표를 가리켜 기준선 표보다 먼저
+    addGameDesertions.TABLES.GAME_DESERTIONS,
     // 관리자 페이지 표 (0031·0032): 문의 답→문의, 세션·로그인 시도→관리자
     addInquiries.TABLES.INQUIRY_REPLIES,
     addInquiries.TABLES.INQUIRIES,
@@ -37,10 +41,11 @@ const OPERATIONS_DROP_ORDER = [
     addTermsAgreements.TABLES.USER_TERMS_AGREEMENTS,
 ];
 
-// 마이그레이션이 처음 값을 넣어 두는 표 (점검 상태 한 줄·약관 판), 행 비우기에선 빼고 표 지우기 때만 지움
+// 마이그레이션이 처음 값을 넣어 두는 표 (점검 상태 한 줄·약관 판·판 설정 값), 행 비우기에선 빼고 표 지우기 때만 지움
 const SEEDED_TABLES = [
     addOperationsTables.TABLES.MAINTENANCE_STATE,
     addTermsAgreements.TABLES.TERMS_VERSIONS,
+    addGameSettings.TABLES.GAME_SETTINGS,
 ];
 
 const ALLOWED_DATABASE_NAMES = new Set([
