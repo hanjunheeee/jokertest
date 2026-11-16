@@ -1,5 +1,5 @@
-// 모바일 결과 화면 바닥 단추 시험: 가는 중엔 두 단추 다 잠김, 떠나기 실패 안내 자리, 결과 없으면 단추 하나, 뒤로 가기 확인 글
-// 목록 A08 모바일 A08-M-001~004·008·009 (돌리기: frontend-mobile 폴더에서 node --test tests/a08-result-actions.test.js)
+// 모바일 결과 화면 바닥 단추 시험: 가는 중엔 두 단추 다 잠김, 떠나기 실패 안내 자리, 결과 없으면 단추 하나, 뒤로 가기 확인 글, 끊겨 빠진 뒤 대기방으로 글
+// 목록 A08 모바일 A08-M-001~004·008~011 (돌리기: frontend-mobile 폴더에서 node --test tests/a08-result-actions.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -87,4 +87,28 @@ test("A08-M-009 결과 화면 다시 이어짐: 스냅샷 답 NOT_A_PARTICIPANT 
     await flush()
     assert.ok(socket.sentOf("get_session_snapshot").length >= 1, "다시 이어진 뒤 스냅샷을 안 물음")
     assert.ok(buttonNamed("대기방으로"), `결과 화면이 사라짐: ${buttonNames().join(" | ")}`)
+})
+
+// 결과 화면에서 끊겨 끝난 판에서 빠진 뒤 "대기방으로" → 서버 SESSION_ENDED: 시간이 남았으면 끊겨 빠졌다는 글, 다 지났으면 시간 지남 글 (사용자 결정 2026-11-16 일곱째)
+async function pressReturnAfterDrop(closesAt) {
+    const socket = fakeSocket({ acks: { return_to_room: { ok: false, code: "SESSION_ENDED" }, get_current_room: { ok: true, room: null } } })
+    seat({ n: 6, phase: "DAY" })
+    endGame({ roles: ["CITIZEN", "JOKER", "CITIZEN", "DOCTOR", "CITIZEN", "GUARD"], winner: "CITIZEN", closesAt })
+    view = await renderRoute(socket, React.createElement(GameResultPage), { path: "/gameresult" })
+    await skipIntro()
+    const button = buttonNamed("대기방으로")
+    assert.ok(button, `단추: ${buttonNames().join(" | ")}`)
+    await act(async () => { button.click() })
+    await waitUntil(() => document.querySelector('[data-testid="result-leave-notice"]') !== null, { label: "대기방으로 실패 글" })
+    return textOf(document.querySelector('[data-testid="result-leave-notice"]'))
+}
+
+test("A08-M-010 모바일 6명 판 결과 화면 120초 남음 + SESSION_ENDED → '연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요.'", async () => {
+    const text = await pressReturnAfterDrop(Date.now() + 120_000)
+    assert.equal(text, "연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요.")
+})
+
+test("A08-M-011 모바일 6명 판 결과 화면 시간 다 지남 + SESSION_ENDED → '결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.'", async () => {
+    const text = await pressReturnAfterDrop(Date.now() - 1_000)
+    assert.equal(text, "결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.")
 })

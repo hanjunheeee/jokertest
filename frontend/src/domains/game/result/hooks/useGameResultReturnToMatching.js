@@ -34,6 +34,8 @@ const RETURN_NO_ANSWER_MESSAGE =
 const RETURN_OFFLINE_MESSAGE =
   "연결이 끊겨 대기방으로 가지 못했습니다. 연결을 확인한 뒤 '대기방으로'를 다시 눌러 주세요."
 const RETURN_NO_GAME_MESSAGE = "끝난 판을 찾지 못해 대기방으로 갈 수 없습니다. '로비로'를 눌러 주세요."
+// SESSION_ENDED인데 결과 화면 시간이 남음(또는 모름) = 끊겨 끝난 판에서 빠진 것 (사용자 결정 2026-11-16 일곱째)
+const RETURN_DROPPED_MESSAGE = "연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요."
 
 // 남은 초 다시 세는 간격 (1초 단위로 보여서 반 초마다 봄)
 const RESULT_CLOSE_TICK_MS = 500
@@ -41,10 +43,13 @@ const RESULT_CLOSE_TICK_MS = 500
 // 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// 거절·답 없음 글 고르기 (답이 없으면 undefined로 옴)
-function describeReturnFailure(response) {
+// 거절·답 없음 글 고르기 (답이 없으면 undefined로 옴), closesAt = 결과 화면 닫힘 시각(모르면 null)
+// 서버는 "결과 화면 시간 지남"과 "끊겨 판에서 빠짐"을 같은 SESSION_ENDED로 줌 → 남은 초가 0일 때만 시간 지남 글
+// 예: SESSION_ENDED + 남은 120초 → 끊겨 빠짐 글, 남은 0초 → 시간 지남 글, 닫힘 시각 모름 → 끊겨 빠짐 글
+function describeReturnFailure(response, closesAt) {
   if (response === undefined) return RETURN_NO_ANSWER_MESSAGE
   const code = typeof response?.code === "string" ? response.code : null
+  if (code === "SESSION_ENDED" && computeResultSecondsLeft(closesAt, Date.now()) !== 0) return RETURN_DROPPED_MESSAGE
   if (code && Object.hasOwn(RETURN_FAILURE_MESSAGES, code)) return RETURN_FAILURE_MESSAGES[code]
   if (typeof response?.message === "string" && response.message.length > 0) return response.message
   return RETURN_DEFAULT_MESSAGE
@@ -149,7 +154,7 @@ export function useGameResultReturnToMatching() {
         enterRoom(recovered)
         return
       }
-      setReturnError(describeReturnFailure(response))
+      setReturnError(describeReturnFailure(response, readResultClosesAt(useInGameStore.getState().state)))
     } finally {
       // 끝나면 누르는 중 표시 풂
       inFlightRef.current = false

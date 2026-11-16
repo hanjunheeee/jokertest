@@ -1,4 +1,4 @@
-// 역할 공개 훅: 판에 들어오면 내 역할 창을 한 번 띄우고 닫기·다시 열기 (새로고침 뒤엔 다시 안 띄움)
+// 역할 공개 훅: 판에 들어오면 내 역할 창을 한 번 띄우고 닫기·다시 열기 (새로고침 뒤·재판·밤 중 돌아오면 안 띄움)
 // 오버레이 묶음 훅(useInGameOverlayStack)이 사용
 // 서버는 확인을 안 기다리고 10초 뒤 첫 낮으로 넘김 → 확인은 화면에서만 닫음, 저절로 연 창은 10초 뒤나 역할 공개 단계가 끝나면 저절로 닫힘 (사용자 결정 2026-11-09)
 import { useEffect, useRef, useState } from "react"
@@ -6,15 +6,28 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getInGameRoleRevealInfo } from "../utils/roleReveal.js"
 import { hasSeenRoleReveal, markRoleRevealSeen } from "../utils/ingameSessionMemory.js"
+import { INGAME_DAY_PHASES } from "../utils/dayPhase.js"
 
 // 저절로 연 역할 창이 열려 있는 시간 (서버 역할 공개 시간과 같게)
 export const INGAME_ROLE_REVEAL_AUTO_CLOSE_MS = 10000
+
+// 돌아왔을 때 역할 창을 저절로 안 띄우는 단계: 재판(변론·최종 투표)·밤
+// 투표·밤 행동 단추를 최대 10초 가려 놓칠 수 있어서 (사용자 결정 2026-11-16 일곱째 고를 것 4)
+const NO_AUTO_REVEAL_PHASES = new Set(["TRIBUNAL", "NIGHT"])
+
+// 저절로 안 띄우는 때인지: 재판·밤, 낮 투표(투표 단추를 가림)
+// 예: ("NIGHT", null) → true, ("DAY", "DAY_VOTE") → true, ("DAY", "DAY_DISCUSSION") → false, ("ROLE_REVEAL", null) → false
+function blocksAutoReveal(phase, dayPhase) {
+  if (NO_AUTO_REVEAL_PHASES.has(phase)) return true
+  return phase === "DAY" && dayPhase === INGAME_DAY_PHASES.VOTE
+}
 
 // 역할 창 열림·역할 정보와 닫기·다시 열기
 export function useInGameRoleReveal() {
   const gameId = useInGameStore((s) => s.gameId)
   const self = useInGameStore((s) => s.state?.self ?? null)
   const phase = useInGameStore((s) => s.state?.phase ?? null)
+  const dayPhase = useInGameStore((s) => s.state?.dayPhase ?? null)
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
 
   const [open, setOpen] = useState(false)
@@ -44,6 +57,8 @@ export function useInGameRoleReveal() {
     revealedIdentityRef.current = identity
     // 이 판에서 이미 봤으면(새로고침) 다시 안 띄움, "내 역할 보기"로는 열 수 있음
     if (hasSeenRoleReveal(gameId, authUuid)) return
+    // 새 탭·새 기기로 재판·밤·낮 투표 중 돌아옴: 안 띄움, 본 것으로도 안 적음 (낮 토론 중 다시 들어오면 그때 뜸)
+    if (blocksAutoReveal(phase, dayPhase)) return
     markRoleRevealSeen(gameId, authUuid)
     // 탭 저장소(밖의 기억)를 보고 여는 것이라 effect 안에서 둠
     // eslint-disable-next-line react-hooks/set-state-in-effect

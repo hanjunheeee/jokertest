@@ -97,11 +97,12 @@ test("A08-F-061 5명 판: 끊겨 \"대기방으로\" 실패 → 다시 이어짐
   await K.waitUntil(() => r.view.path() === "/game-matching", { label: "대기방으로 이동" })
 })
 
-test("A08-F-062 6명 판: 끊겨 \"대기방으로\" 실패 → 다시 이어짐(서버가 끊길 때 판에서 뺌: NOT_A_PARTICIPANT) → 결과 화면 그대로 → 다시 누르면 \"결과 화면 시간이 지나…\" 글", async () => {
+// 결과 화면 시간은 남았으니 "시간이 지나" 글은 사실과 다름 → 끊겨 빠졌다는 글 (사용자 결정 2026-11-16 일곱째)
+test("A08-F-062 6명 판: 끊겨 \"대기방으로\" 실패 → 다시 이어짐(서버가 끊길 때 판에서 뺌: NOT_A_PARTICIPANT) → 결과 화면 그대로 → 다시 누르면 \"연결이 끊겨 이 판에서 빠졌습니다…\" 글", async () => {
   const r = await openResultPage({ n: 6 })
   await cutAndReconnect(r, { ok: false, code: "NOT_A_PARTICIPANT", message: "요청이 거절되었습니다." })
   r.sock.answer("return_to_room", { ok: false, code: "SESSION_ENDED" })
   await K.click(returnButton())
-  await K.waitUntil(() => notice()?.textContent === "결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.", { label: "시간 지남 글" })
+  await K.waitUntil(() => notice()?.textContent === "연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요.", { label: "끊겨 빠짐 글" })
   assert.equal(r.view.path(), "/gameresult")
 })

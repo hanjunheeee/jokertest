@@ -1,5 +1,5 @@
 // "대기방으로" 훅 시험: 성공이면 판 지우고 방 넣고 대기방 화면, 보내는 사건은 return_to_room 하나, 거절 까닭 글, 답 없음·연결 없음·판 id 없음 글, 거절이어도 이미 방이면 그 방, 두 번 눌러도 한 번
-// 목록 docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md A08-F-020~032·037 (화면 상태)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md A08-F-020~032·037·063~064 (화면 상태)
 import test from "node:test"
 import assert from "node:assert/strict"
 import * as K from "../a07-result/resultKit.mjs"
@@ -60,7 +60,8 @@ const REJECT_CASES = [
   ["A08-F-022", "ROOM_NOT_FOUND", { code: "ROOM_NOT_FOUND" }, "대기방이 이미 없어져 돌아갈 수 없습니다. '로비로'를 눌러 주세요."],
   ["A08-F-023", "ROOM_FULL", { code: "ROOM_FULL" }, "대기방 정원이 가득 차 들어갈 수 없습니다."],
   ["A08-F-024", "KICKED_TOO_MANY_TIMES", { code: "KICKED_TOO_MANY_TIMES" }, "이 방에서 3번 추방되어 더 이상 들어갈 수 없습니다."],
-  ["A08-F-025", "SESSION_ENDED", { code: "SESSION_ENDED" }, "결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다."],
+  // 결과 화면 시간이 남았는데 SESSION_ENDED = 끊겨 끝난 판에서 빠진 것 (사용자 결정 2026-11-16 일곱째, 시간이 지난 때는 A08-F-063)
+  ["A08-F-025", "SESSION_ENDED(남은 시간 있음)", { code: "SESSION_ENDED" }, "연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요."],
   ["A08-F-026", "NODE_DRAINING", { code: "NODE_DRAINING" }, "서버 점검 준비 중이라 대기방으로 돌아갈 수 없습니다."],
   ["A08-F-027", "모르는 코드 + 서버 글", { code: "SOMETHING_NEW", message: "서버가 보낸 까닭 글" }, "서버가 보낸 까닭 글"],
   ["A08-F-028", "모르는 코드 + 글 없음", { code: "SOMETHING_NEW" }, "대기방으로 가지 못했습니다. '대기방으로'를 다시 눌러 주세요."],
@@ -127,4 +128,31 @@ test("A08-F-037 10명 판: 답 전 두 번 누름 → return_to_room 1번", asyn
   await K.flush()
   assert.equal(g.view.path(), "/game-matching")
   assert.equal(g.sock.sentOf("return_to_room").length, 1)
+})
+
+// ---------- A08-F-063~064 SESSION_ENDED 글 가르기: 서버는 "시간 지남"과 "끊겨 빠짐"을 같은 코드로 줌 → 화면이 아는 닫힘 시각으로 가름 ----------
+
+// 닫힘 시각을 정해 끝난 판 결과 화면에서 훅을 그림
+async function openReturnClosingAt(resultClosesAt) {
+  const sock = K.installFakeSocket()
+  const g = K.endedGame({ n: 6, resultClosesAt })
+  sock.answer("get_current_room", { ok: true, room: null })
+  const view = await K.renderAt("/gameresult", K.h(ReturnProbe), { shell: false })
+  return { ...g, sock, view }
+}
+
+test("A08-F-063 6명 판 결과 화면 시간이 다 지남(닫힘 시각 1초 전) + SESSION_ENDED → \"결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.\"", async () => {
+  const g = await openReturnClosingAt(Date.now() - 1_000)
+  g.sock.answer("return_to_room", { ok: false, code: "SESSION_ENDED" })
+  await press()
+  await K.waitUntil(() => errorText().length > 0, { label: "거절 글" })
+  assert.equal(errorText(), "결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.")
+})
+
+test("A08-F-064 6명 판 닫힘 시각 모름(판 상태에 없음) + SESSION_ENDED → \"연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요.\"", async () => {
+  const g = await openReturnClosingAt(null)
+  g.sock.answer("return_to_room", { ok: false, code: "SESSION_ENDED" })
+  await press()
+  await K.waitUntil(() => errorText().length > 0, { label: "거절 글" })
+  assert.equal(errorText(), "연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요.")
 })

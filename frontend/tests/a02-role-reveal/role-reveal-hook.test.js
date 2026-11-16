@@ -1,5 +1,5 @@
-// 역할 확인 창 열고 닫기·단계 시험: 시작 알림을 넣고 역할 창이 10초 뒤·확인·첫 낮 알림에 닫히는지, 다시 열리는지 봄 (화면 상태, 가짜 시계)
-// 목록 A02-F-108~115 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md)
+// 역할 확인 창 열고 닫기·단계 시험: 시작 알림을 넣고 역할 창이 10초 뒤·확인·첫 낮 알림에 닫히는지, 다시 열리는지, 재판·밤 중 돌아오면 안 뜨는지 봄 (화면 상태, 가짜 시계)
+// 목록 A02-F-108~115·222~226 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md)
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { React, RTL, installSocket, loginAs, resetAll, useInGameStore } from "./a02Render.mjs"
@@ -16,11 +16,12 @@ test.afterEach(() => {
 
 // 역할 창 열림을 글로 보여 주고 "확인" 단추로 닫는 작은 화면
 function RevealProbe() {
-  const { open, close, roleInfo } = useInGameRoleReveal()
+  const { open, close, reopen, roleInfo } = useInGameRoleReveal()
   return h("div", null,
     h("p", { "data-testid": "reveal" }, open ? "열림" : "닫힘"),
     roleInfo ? h("p", null, roleInfo.roleName) : null,
     h("button", { type: "button", onClick: close }, "확인"),
+    h("button", { type: "button", onClick: reopen }, "내 역할 보기"),
   )
 }
 const revealText = () => RTL.screen.getByTestId("reveal").textContent
@@ -114,4 +115,50 @@ test("A02-F-115 game_phase_changed 낮 → 판 단계 낮·토론, 1일째", () 
   assert.equal(state.phase, "DAY")
   assert.equal(state.dayPhase, "DAY_DISCUSSION")
   assert.equal(state.dayIndex, 1)
+})
+
+// ---------- A02-F-222~226 새 탭·새 기기로 판에 돌아옴 (사용자 결정 2026-11-16 일곱째 "고를 것 4") ----------
+// 재판·밤 중엔 역할 창을 안 띄움 (투표·밤 행동 단추를 최대 10초 가려 놓칠 수 있음), 낮 토론 중엔 지금대로 띄움
+
+// 탭 기억 없이(새 탭·새 기기) 그 단계 스냅샷으로 판을 채우고 창 그림
+function returnInPhase({ phase, dayPhase = null, dayIndex = 1 }) {
+  installSocket()
+  loginAs(ME)
+  const gameId = nextGameId("back")
+  const extra = dayPhase ? { dayPhase } : {}
+  RTL.act(() => {
+    useInGameStore.getState().bootstrapSessionSnapshot(buildSnapshot(SEATS, ME, { gameId, phase, dayIndex, extra }))
+  })
+  assert.equal(useInGameStore.getState().state?.phase, phase, "스냅샷을 스토어가 안 받음 (준비 잘못)")
+  RTL.render(h(RevealProbe))
+  return gameId
+}
+
+test("A02-F-222 7명 판 재판 중 새 탭으로 돌아옴 → 역할 창 안 열림", () => {
+  returnInPhase({ phase: "TRIBUNAL" })
+  assert.equal(revealText(), "닫힘")
+})
+
+test("A02-F-223 7명 판 밤 중 새 탭으로 돌아옴 → 역할 창 안 열림", () => {
+  returnInPhase({ phase: "NIGHT" })
+  assert.equal(revealText(), "닫힘")
+})
+
+test("A02-F-224 7명 판 낮 투표 중 새 탭으로 돌아옴 → 역할 창 안 열림 (투표 단추를 가리는 단계)", () => {
+  returnInPhase({ phase: "DAY", dayPhase: "DAY_VOTE" })
+  assert.equal(useInGameStore.getState().state.dayPhase, "DAY_VOTE")
+  assert.equal(revealText(), "닫힘")
+})
+
+test("A02-F-225 7명 판 낮 토론 중 새 탭으로 돌아옴 → 역할 창 열림 (지금대로)", () => {
+  returnInPhase({ phase: "DAY", dayPhase: "DAY_DISCUSSION" })
+  assert.equal(revealText(), "열림")
+})
+
+test("A02-F-226 7명 판 재판 중 돌아와 창이 안 뜸 → \"내 역할 보기\" 누르면 창 열림, 직업 이름 \"의사\"", () => {
+  returnInPhase({ phase: "TRIBUNAL" })
+  assert.equal(revealText(), "닫힘")
+  RTL.fireEvent.click(RTL.screen.getByRole("button", { name: "내 역할 보기" }))
+  assert.equal(revealText(), "열림")
+  assert.ok(RTL.screen.getByText("의사"), "직업 이름 \"의사\" 없음")
 })
