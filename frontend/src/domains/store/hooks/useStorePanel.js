@@ -1,7 +1,7 @@
 // 가게 패널 상태와 동작 (분류·선택 상품·미리보기·확대 창·일괄구매·구매 버튼, 재화 상품은 useCurrencyStore)
 // 데스크톱 StorePanel·모바일 StorePage가 씀
 // 선택·일괄구매·구매 버튼이 같은 선택 상태와 잠금을 함께 봐서 한 훅에 둠
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { getStoreItemsByCategory, isDefaultGrantStoreItem, STORE_ITEMS } from "../constants/storeItems.js"
 import { storePurchase, useStorePurchase } from "../store/storePurchase.store.js"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
@@ -128,6 +128,17 @@ export function useStorePanel() {
   const currentItem = selectedItem
     ? (visibleItems.find((item) => item.id === selectedItem.id) ?? selectedItem)
     : null
+
+  // 보이는 상품이 바뀌면 끝난 구매 결과 안내를 지움 (앞 상품의 실패 글·"다시 시도"가 새 상품 단추 아래에 남지 않게)
+  // 처음 그릴 땐 안 지움 (되살린 기록은 그대로 보임), 화면에 그려지기 전에 지워 옛 글이 잠깐도 안 보이게
+  const shownItemId = currentItem?.id ?? null
+  const resultItemIdRef = useRef(undefined)
+  useLayoutEffect(() => {
+    const previousItemId = resultItemIdRef.current
+    resultItemIdRef.current = shownItemId
+    if (previousItemId === undefined || previousItemId === shownItemId) return
+    storePurchase.dismissFinished()
+  }, [shownItemId])
 
   // 재화 상품이면 충전·골드 구매 글자, 아니면 기본 지급 글자
   const purchaseLabel = currentItem?.kind ? currencyPanel.labelOf(currentItem) : purchaseLabelOf(currentItem, ownedItemIds)

@@ -74,7 +74,7 @@ export const INVITED_GUESTS_JOB_CHALLENGES = {
   doctor: [
     {
       id: "doctor-win-10",
-      label: "주치의로 10회 승리",
+      label: "의사로 10회 승리",
       difficulty: 1,
       rewards: [
         { type: "currency", icon: INVITED_GUESTS_CURRENCY_ASSETS.gold50, count: 10 },
@@ -83,7 +83,7 @@ export const INVITED_GUESTS_JOB_CHALLENGES = {
     },
     {
       id: "doctor-win-20",
-      label: "주치의로 20회 승리",
+      label: "의사로 20회 승리",
       difficulty: 2,
       rewards: [
         { type: "currency", icon: INVITED_GUESTS_CURRENCY_ASSETS.gold50, count: 20 },
@@ -92,7 +92,7 @@ export const INVITED_GUESTS_JOB_CHALLENGES = {
     },
     {
       id: "doctor-win-30",
-      label: "주치의로 30회 승리",
+      label: "의사로 30회 승리",
       difficulty: 3,
       rewards: [
         {

@@ -9,8 +9,9 @@ import {
 
 const OPEN_BTN_CLASS =
   "absolute right-[2.5%] top-[calc(2.5%+3.4rem)] z-30 cursor-pointer rounded-md border border-[#8b7355]/50 bg-[#f5f0e6]/84 px-3 py-1 font-subheading app-text-scaled [--app-text-size:clamp(0.7rem,0.9vw,0.82rem)] font-bold text-[#2b1d10] shadow-[0_4px_14px_rgba(26,15,10,0.24)] hover:bg-[#f5f0e6] sm:right-[3%]"
+// 안내 글(예: WELCOME-2026)은 기본 반투명 회색이 흐려서 글자색 계열로 75%까지만 흐림
 const INPUT_CLASS =
-  "w-full rounded border border-[#8b6a3e] bg-white/70 px-3 py-2 font-subheading app-text-scaled [--app-text-size:14px] uppercase tracking-wider text-[#2b1d10] outline-none focus:border-[#5a3a1e]"
+  "w-full rounded border border-[#8b6a3e] bg-white/70 px-3 py-2 font-subheading app-text-scaled [--app-text-size:14px] uppercase tracking-wider text-[#2b1d10] outline-none placeholder:text-[#2b1d10]/75 focus:border-[#5a3a1e]"
 const SUCCESS_CLASS = "font-subheading app-text-scaled [--app-text-size:12px] font-bold text-[#2E6B3A]"
 
 export default function StoreCouponButton({ visible = true }) {

@@ -22,11 +22,13 @@ const HIDDEN_NOTIFICATION_IDS = new Set(["whisper"])
 const ROW_CLASS =
   "flex shrink-0 items-center justify-between gap-[clamp(1rem,2.5vw,2rem)] border-b border-[#c4a574]/35 py-[clamp(0.35rem,0.85vh,0.5rem)]"
 
+// 구역 제목: 어두운 편 나무 판 위 작은 글이라 옅은 갈색은 안 읽혀 흰 글
 const SECTION_TITLE_CLASS =
-  "shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-black tracking-wide text-[#3d2a1c]/72 first:pt-0"
+  "shrink-0 pt-[clamp(0.45rem,1vh,0.65rem)] font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-black tracking-wide text-white first:pt-0"
 
+// 줄 이름: 판 아래쪽 어두운 자리에서 짙은 갈색이 흐려 검정
 const LABEL_CLASS =
-  "min-w-0 flex-1 font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.5vw,1.18rem)] font-bold leading-snug text-[#140c08]"
+  "min-w-0 flex-1 font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.5vw,1.18rem)] font-bold leading-snug text-black"
 
 const ACTION_BTN_CLASS =
   "interactive-scale relative block w-[clamp(7.1rem,15vw,9.5rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none"

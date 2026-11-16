@@ -5,6 +5,8 @@ import StoreCurrencyHistory from "./StoreCurrencyHistory.jsx"
 
 const FEEDBACK_CLASS = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
 const ACTION_CLASS = "mr-4 underline disabled:opacity-50"
+// 글 줄 글자색: p는 전역 글자색(검정)이 먼저 먹어 칸 글자색을 안 물려받음 → 줄마다 정해야 어두운 바탕에서 보임
+const LINE_CLASS = "text-[#f3dfb4]"
 
 // 충전 진행 안내, 지급 대기·결과 모름이면 결과 확인 버튼
 function TopupFeedback({ currency, onCheck }) {
@@ -12,8 +14,8 @@ function TopupFeedback({ currency, onCheck }) {
   if (!view) return null
   return (
     <div role="status" data-testid="topup-feedback" className={FEEDBACK_CLASS}>
-      <p>{view.message}</p>
-      {view.notes.map((note) => <p key={note}>{note}</p>)}
+      <p className={LINE_CLASS}>{view.message}</p>
+      {view.notes.map((note) => <p key={note} className={LINE_CLASS}>{note}</p>)}
       {view.canCheck ? <button type="button" className={ACTION_CLASS} onClick={() => onCheck()}>결과 확인</button> : null}
     </div>
   )
@@ -25,8 +27,8 @@ function GoldFeedback({ state, currencyPanel, onCheck, onRetry, onGoTopup }) {
   if (!view) return null
   return (
     <div role="status" data-testid="gold-feedback" className={FEEDBACK_CLASS}>
-      {view.message ? <p>{view.message}</p> : null}
-      {view.detail ? <p>{view.detail}</p> : null}
+      {view.message ? <p className={LINE_CLASS}>{view.message}</p> : null}
+      {view.detail ? <p className={LINE_CLASS}>{view.detail}</p> : null}
       {view.canCheck ? <button type="button" className={ACTION_CLASS} onClick={onCheck}>결과 확인</button> : null}
       {view.canRetry ? <button type="button" className={ACTION_CLASS} onClick={onRetry}>다시 시도</button> : null}
       {/* 새 목록을 받은 뒤에만 새 조건 확인 */}

@@ -1,5 +1,5 @@
 // 모바일 서고 모양 class와 그림 경로 (양피지 쪽·잉크 글자·누르는 자리)
-// library/components 전부가 씀, 색·글꼴은 데스크톱 서고 constants와 같은 값
+// library/components 전부가 씀, 색·글꼴은 데스크톱 서고 constants 기준 (폰에서 안 읽히는 흐린 글만 더 짙게)
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
 // 쪽 바탕: 데스크톱 책 그림은 가로 펼침면이라 한 쪽만 못 잘라 씀 → 같은 결의 양피지 그림
@@ -22,7 +22,8 @@ export const BOOK_SCROLLBAR_CLASS =
 const INK = "font-subheading antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.08)]"
 export const INK_TITLE_CLASS = `${INK} text-[#120a06]`
 export const INK_BODY_CLASS = `${INK} text-[#1a1008]`
-export const INK_SOFT_CLASS = `${INK} text-[#3d2a1c]/85`
+// 흐린 잉크: 표 칸 양피지(중간 밝기)에서 #3d2a1c/85는 안 읽혀 한 단계 짙은 갈색
+export const INK_SOFT_CLASS = `${INK} text-[#2a1810]`
 
 // 쪽 제목 (h2)·칸 제목 (h3)·본문
 export const PAGE_TITLE_CLASS =
@@ -33,8 +34,9 @@ export const BODY_TEXT_CLASS =
   `${INK_BODY_CLASS} whitespace-pre-line app-text-scaled [--app-text-size:0.94rem] font-medium leading-[1.75]`
 export const SMALL_TEXT_CLASS =
   `${INK_BODY_CLASS} app-text-scaled [--app-text-size:0.86rem]`
+// 불러오는 중·실패·빈 목록 글: 흐림(opacity)을 빼야 표 칸 양피지 위에서 읽힘
 export const STATE_MSG_CLASS =
-  `${INK_BODY_CLASS} app-text-scaled [--app-text-size:0.86rem] leading-snug opacity-80`
+  `${INK_BODY_CLASS} app-text-scaled [--app-text-size:0.86rem] leading-snug`
 
 // 표 머리 (데스크톱 tableStyle과 같은 선 색, 글자 크기만 폰 고정, 줄은 데스크톱 TABLE_ROW_CLASS)
 export const TABLE_HEAD_ROW_CLASS =

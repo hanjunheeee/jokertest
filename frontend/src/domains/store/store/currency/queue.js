@@ -29,9 +29,16 @@ const showQueued = (orderId, started) => {
   const confirming = inFlightOrders.has(orderId)
   let status = record.serverStatus === "PENDING_GRANT" ? "pendingGrant" : "unknown"
   if (confirming) status = "confirming"
+  // 보이던 실패·취소 안내는 덧붙임 칸(returnNotice)으로 옮겨 둠 (안 옮기면 사람이 읽기 전에 이 주문 안내에 덮임)
+  // 코드 줄은 결제사 기타 실패일 때만 따라감 (안내 칸 쪽 코드 줄 규칙과 같음)
+  // 예) { status: "failed", reason: "TOSS_OTHER", failCode: "XYZ" } → returnNotice 같은 값 / { status: "done" } → 안 옮김
+  const { status: shownStatus, reason: shownReason, failCode: shownCode } = get()
+  const carried = shownStatus === "failed" || shownStatus === "canceled"
+    ? { returnNotice: { status: shownStatus, reason: shownReason, failCode: shownReason === "TOSS_OTHER" ? shownCode ?? null : null }, failCode: null }
+    : {}
   set({
     status,
-    reason: null, order: { orderId, amount: record.amount }, autoChecks: record.pollCount, lookupFailed: false,
+    reason: null, order: { orderId, amount: record.amount }, autoChecks: record.pollCount, lookupFailed: false, ...carried,
   })
   // 결제 확인 중이면 그 결과를 기다림
   if (confirming) return false

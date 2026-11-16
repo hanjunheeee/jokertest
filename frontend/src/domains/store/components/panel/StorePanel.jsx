@@ -31,6 +31,8 @@ import StoreCurrencyFeedback from "../StoreCurrencyFeedback.jsx"
 
 // 결제 실패 복귀 덧붙임 글 칸 (재화 안내 칸과 같은 색)
 const RETURN_NOTES_CLASS = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
+// 덧붙임 글 줄 글자색: p는 전역 글자색(검정)이 먼저 먹어 칸 글자색을 안 물려받음 → 줄마다 정해야 보임
+const RETURN_NOTE_LINE_CLASS = "text-[#f3dfb4]"
 
 // 구매 결과 안내 묶음: 일반 구매 결과·골드 구매/충전 결과·결제 실패 복귀 덧붙임 글
 function PurchaseResults({ panel, resultOnly }) {
@@ -42,7 +44,7 @@ function PurchaseResults({ panel, resultOnly }) {
       <StoreCurrencyFeedback panel={resultOnly} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
       {returnNotes.length ? (
         <div role="status" data-testid="topup-return-notes" className={RETURN_NOTES_CLASS}>
-          {returnNotes.map((note) => <p key={note}>{note}</p>)}
+          {returnNotes.map((note) => <p key={note} className={RETURN_NOTE_LINE_CLASS}>{note}</p>)}
         </div>
       ) : null}
     </>

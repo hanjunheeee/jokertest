@@ -4,21 +4,23 @@ import { currencyHistory, HISTORY_LIMIT, useCurrencyHistory } from "../store/cur
 import { formatHistoryAmount, formatHistoryTime, historyCurrencyLabel, historyReasonLabel } from "../utils/currencyView.js"
 
 const BOX_CLASS = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
+// 글 줄 글자색: p는 전역 글자색(검정)이 먼저 먹어 칸 글자색을 안 물려받음 → 줄마다 정해야 어두운 바탕에서 보임
+const LINE_CLASS = "text-[#f3dfb4]"
 
 // 불러오는 중·실패·없음·목록 중 하나를 보임
 export default function StoreCurrencyHistory() {
   const { status, transactions } = useCurrencyHistory()
   return (
     <section aria-label="재화 거래 내역" data-testid="currency-history" className={BOX_CLASS}>
-      <p className="font-semibold">최근 거래 내역 (최근 {HISTORY_LIMIT}건까지)</p>
-      {status === "idle" || status === "loading" ? <p role="status">거래 내역을 불러오는 중입니다…</p> : null}
+      <p className={`font-semibold ${LINE_CLASS}`}>최근 거래 내역 (최근 {HISTORY_LIMIT}건까지)</p>
+      {status === "idle" || status === "loading" ? <p role="status" className={LINE_CLASS}>거래 내역을 불러오는 중입니다…</p> : null}
       {status === "error" ? (
-        <p role="alert">
+        <p role="alert" className={LINE_CLASS}>
           거래 내역을 불러오지 못했습니다.{" "}
           <button type="button" className="underline" onClick={() => currencyHistory.load()}>내역 다시 불러오기</button>
         </p>
       ) : null}
-      {status === "ready" && transactions.length === 0 ? <p role="status">거래 내역이 없습니다.</p> : null}
+      {status === "ready" && transactions.length === 0 ? <p role="status" className={LINE_CLASS}>거래 내역이 없습니다.</p> : null}
       {status === "ready" && transactions.length > 0 ? (
         <ul className="max-h-16 overflow-y-auto">
           {transactions.map((entry) => (

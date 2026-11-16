@@ -97,8 +97,9 @@ export const REWARD_CURRENCY_CLASS = "flex items-center gap-[0.12rem]"
 export const REWARD_ICON_CLASS =
   "h-[clamp(1.15rem,1.55vw,1.3rem)] w-auto shrink-0 select-none object-contain"
 
+// 보상 개수(×30): 칸마다 종이 밝기가 달라 흰 글은 밝은 칸에서 흐림 → 짙은 갈색보다 한 단계 짙은 검정 (글꼴·크기는 다른 표 글과 같음)
 export const REWARD_COUNT_CLASS =
-  `${INVITED_GUESTS_TEXT} app-text-scaled [--app-text-size:clamp(0.74rem,0.98vw,0.86rem)] font-semibold tabular-nums`
+  "font-subheading antialiased text-black [text-shadow:0_1px_2px_rgba(0,0,0,0.08)] app-text-scaled [--app-text-size:clamp(0.74rem,0.98vw,0.86rem)] font-semibold tabular-nums"
 
 export const REWARD_BORDER_CLASS = "flex items-center gap-[0.2rem]"
 

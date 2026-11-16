@@ -21,7 +21,7 @@ export const INVITED_GUESTS_JOB_CATALOG = {
     standingImageClass: STANDING_IMG_LG_CLASS,
   },
   doctor: {
-    jobName: "주치의",
+    jobName: "의사",
     description:
       "그는 이 밤이 위험해질 것을 알고 있었다. 웃음이 많을수록, 술잔을 비워갈수록 사고는 늘어나기 마련이니까.\n\n주치의는 무도회에 초대받은 유일한 이방인이었다. 즐기러 온 것이 아니라, 대비하기 위해 불려온 사람. 그는 누구의 편도 아니었다. 귀족의 편도, 광대의 편도 아니었다.\n\n그저, 아직 끝나지 않은 숨을 하나라도 더 붙잡고 싶었을 뿐이다. 그러나 그의 선의는 누구도 증명할 수 없다. 그가 살린 숨결이 과연 누구의 것이었는지조차.",
     standingImage: INVITED_GUESTS_ASSETS.doctorStanding,

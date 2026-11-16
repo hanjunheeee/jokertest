@@ -1,4 +1,4 @@
-// 재화 충전·골드 구매·묶음 구매·거래 내역 HTTP 요청과 충전 응답 검사
+// 재화 충전·골드 구매·묶음 구매·거래 내역 HTTP 요청과 충전·구매 응답 검사
 // 충전 흐름(currency/·currencyPurchase.store.js)·가게 구매·거래 내역 스토어가 씀
 import { api } from "../../../shared/api/client.js"
 import { MAX_OPEN_ORDERS, OPEN_ORDER_STATUSES, ORDER_ID, ORDER_STATUSES } from "../constants/currencyPurchase.js"
@@ -58,10 +58,30 @@ export const currencyApi = {
   },
 }
 
+// 장부 줄 목록 모양인지 (배열이고 칸마다 객체, 빈 목록도 됨)
+const isLedgerList = (value) => Array.isArray(value) && value.every((entry) => entry !== null && typeof entry === "object")
+
+// 묶음 구매 답 검사: 처음 처리인지(idempotent)와 장부 줄 목록이 있어야 성공
+// 성공 번호(200)여도 모양이 틀리면 던짐 (구매 흐름이 완료가 아니라 결과 모름으로 두고 다시 묻게)
+const parseBulkResult = (body) => {
+  if (!body || typeof body !== "object" || typeof body.idempotent !== "boolean" || !isLedgerList(body.results)) {
+    throw brokenResponse("묶음 구매")
+  }
+  return body
+}
+
+// 구매 결과 다시 묻기 답 검사: 구매 종류와 장부 줄 목록이 있어야 "이미 됨"으로 봄
+const parsePurchaseLookup = (body) => {
+  if (!body || typeof body !== "object" || !isText(body.kind, 32) || !isLedgerList(body.results)) {
+    throw brokenResponse("구매 결과")
+  }
+  return body
+}
+
 // 가게 묶음 구매·구매 결과 다시 묻기·재화 거래 내역
 // 가게 구매 스토어·거래 내역 스토어가 씀
 export const purchaseApi = {
-  bulk: (payload) => api.post("/economy/purchases/bulk", payload),
-  lookup: (id) => api.get(`/economy/purchases/${encodeURIComponent(id)}`),
+  bulk: async (payload) => parseBulkResult(await api.post("/economy/purchases/bulk", payload)),
+  lookup: async (id) => parsePurchaseLookup(await api.get(`/economy/purchases/${encodeURIComponent(id)}`)),
   transactions: (account) => api.get(`/economy/accounts/${account}/transactions`),
 }

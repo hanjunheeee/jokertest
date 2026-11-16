@@ -14,8 +14,12 @@ const readErrorBody = async (response) => {
 };
 
 // 화면이 보는 서버 오류 정보(code·재전송 대기·남은 횟수 등)를 Error에 옮겨 붙임
+// 서버 글도 기본 글(fallbackMessage)도 없으면 message를 undefined로 둠
+// (Error 기본값은 빈 글자라, 그대로 두면 화면의 `error.message ?? "준비한 글"`이 빈 글자를 그림)
 const toApiError = (errorData, fallbackMessage) => {
-    const error = new Error(errorData.message || fallbackMessage);
+    const message = errorData.message || fallbackMessage;
+    const error = new Error(message);
+    if (!message) error.message = undefined;
     if (errorData.code) error.code = errorData.code;
     if (errorData.ok !== undefined) error.ok = errorData.ok;
     if (typeof errorData.resendAfterSec === "number") error.resendAfterSec = errorData.resendAfterSec;
@@ -48,9 +52,11 @@ const handleUnauthorized = async (response) => {
 };
 
 // 401 말고 실패 응답은 상태 코드를 붙여 던짐
+// 서버 답에 글이 없으면 여기서 기본 글을 안 채움 → 화면마다 준비한 실패 글이 나옴 (채우면 그 글이 늘 가려짐)
+// 화면 쪽 쓰는 법: error.message ?? "준비한 글" 또는 error.message || "준비한 글"
 const handleErrorResponse = async (response) => {
     const errorData = await readErrorBody(response);
-    const error = toApiError(errorData, "API 요청 중 에러가 발생했습니다.");
+    const error = toApiError(errorData);
     error.status = response.status;
     throw error;
 };

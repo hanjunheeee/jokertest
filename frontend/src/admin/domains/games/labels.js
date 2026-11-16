@@ -1,6 +1,6 @@
 // 지난 판 글자 파일, 직업·진영·끝난 이유·죽은 이유 코드 → 화면 글자 (모르는 코드는 그대로)
 // GamesPage·GameDetailPage가 씀 (관리자는 플레이어 화면 글자를 못 불러서 따로 둠, 마녀사냥꾼도 진짜 이름)
-const ROLE = { JOKER: '광대', CITIZEN: '귀족', DOCTOR: '주치의', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' }
+const ROLE = { JOKER: '광대', CITIZEN: '귀족', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' }
 const TEAM = { JOKER: '광대 진영', CITIZEN: '시민 진영', NONE: '없음' }
 const WIN_REASON = {
   ALL_JOKERS_ELIMINATED: '광대 전부 탈락',

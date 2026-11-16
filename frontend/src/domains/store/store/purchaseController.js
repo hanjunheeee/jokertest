@@ -182,11 +182,21 @@ export function createPurchaseController({ storage, post, postGold, lookup, refr
       store.setState({ ...store.getState(), error: "확인 상태를 저장하지 못했습니다. 다시 시도해 주세요." }, true)
     }
   }
+  // 끝난 결과(완료·거절·못 보냄) 안내 지우기: 다른 상품을 고를 때 씀 (결과 모름·기다림·막힘·가격 바뀜은 남김)
+  // 기록도 비워서 새로고침 뒤 다른 상품 단추 아래에 다시 안 뜨게 함, 저장이 막혀도 화면은 비움
+  const dismissFinished = () => {
+    const { status, error } = store.getState()
+    if (busy || unresolved(status) || status === "blocked" || status === "priceChanged") return
+    if (status === "idle" && !error) return
+    store.setState({ ...idle }, true)
+    if (!account) return
+    try { save({ ...idle }) } catch { /* 기기 저장소 막힘 */ }
+  }
   // 남은 기록이 골드 구매인지 (확인·다시 버튼이 어느 흐름을 탈지 정함)
   const isGold = () => store.getState().kind === "GOLD"
   // prepare: 일괄구매 창 열 때 끝난 결과만 지움 (결과 모름·막힘·가격 바뀜은 남김)
   return {
-    store, activate, acceptPriceChange,
+    store, activate, acceptPriceChange, dismissFinished,
     prepare: () => { const { status } = store.getState(); if (!unresolved(status) && status !== "blocked" && status !== "priceChanged") store.setState({ ...idle }, true) },
     purchase: (ids) => run(ids), purchaseGold: (product) => runGold("purchase", product),
     check: () => isGold() ? runGold("check") : run([], true),

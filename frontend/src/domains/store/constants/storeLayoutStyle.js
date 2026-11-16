@@ -52,14 +52,16 @@ export const STORE_SLOT_TOP_CLASS =
   "flex flex-col items-center bg-[#1a0f0a]/06 px-[clamp(0.35rem,0.75vw,0.55rem)] pt-[clamp(0.35rem,0.75vh,0.55rem)] pb-[clamp(0.25rem,0.55vh,0.4rem)]"
 
 // 상품 이름 (직업 줄·스킨명 줄)
+// 이름판 덧칠: /10이면 어두운 칸에서 검정 글도 흐려 /4로 옅게 (판 테두리·모양은 그대로)
 export const SLOT_NAME_WRAP_CLASS =
-  "flex min-h-[clamp(2.35rem,4.2vh,2.75rem)] w-full flex-col items-center justify-center gap-[clamp(0.05rem,0.15vh,0.1rem)] rounded-sm border border-[#2a1810]/12 bg-[#1a0f0a]/10 px-[clamp(0.3rem,0.55vw,0.45rem)] py-[clamp(0.2rem,0.45vh,0.3rem)] text-center [box-shadow:inset_0_1px_0_rgba(245,240,230,0.14)]"
+  "flex min-h-[clamp(2.35rem,4.2vh,2.75rem)] w-full flex-col items-center justify-center gap-[clamp(0.05rem,0.15vh,0.1rem)] rounded-sm border border-[#2a1810]/12 bg-[#1a0f0a]/4 px-[clamp(0.3rem,0.55vw,0.45rem)] py-[clamp(0.2rem,0.45vh,0.3rem)] text-center [box-shadow:inset_0_1px_0_rgba(245,240,230,0.14)]"
 
+// 칸 이름 두 줄: 칸 종이가 중간 밝기 갈색이라 회색·짙은 갈색도 흐림 → 둘 다 검정 (굵기로 위아래 구분)
 export const SLOT_NAME_JOB_CLASS =
-  "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,0.92vw,0.82rem)] font-bold leading-snug text-[#5c554d]"
+  "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,0.92vw,0.82rem)] font-bold leading-snug text-black"
 
 export const SLOT_NAME_TITLE_CLASS =
-  "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.12vw,1rem)] font-extrabold leading-snug text-[#140c08]"
+  "line-clamp-1 w-full font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.12vw,1rem)] font-extrabold leading-snug text-black"
 
 // 아래 이름 class 셋은 지금 부르는 곳 없음
 export const SLOT_NAME_LINE_CLASS = SLOT_NAME_TITLE_CLASS
@@ -76,11 +78,12 @@ export const STORE_SLOT_PRICE_CLASS =
 
 export const SLOT_PRICE_SELECTED_CLASS = "bg-[#1a0f0a]/32"
 
+// 칸 가격: 양피지 위 흰 숫자는 안 읽혀 검정
 export const SLOT_PRICE_TEXT_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold text-white"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold text-black"
 
 export const SLOT_PRICE_AMOUNT_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold tabular-nums text-white"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.95rem)] font-bold tabular-nums text-black"
 
 export const SLOT_PRICE_ICON_CLASS =
   "block h-[clamp(0.85rem,1.35vw,1rem)] w-auto shrink-0 select-none object-contain"
@@ -117,7 +120,7 @@ export const STORE_EMPTY_GRID_CLASS =
   "flex min-h-[clamp(12rem,28vh,16rem)] w-full items-center justify-center px-[clamp(0.75rem,1.5vw,1.25rem)]"
 
 export const EMPTY_MSG_CLASS =
-  "text-center font-display app-text-scaled [--app-text-size:clamp(1.35rem,2vw,1.65rem)] font-medium leading-snug text-[#2a1810]/55 antialiased"
+  "text-center font-display app-text-scaled [--app-text-size:clamp(1.35rem,2vw,1.65rem)] font-medium leading-snug text-[#2a1810] antialiased"
 
 export const STORE_GRID_CLASS =
   "grid grid-cols-4 gap-x-[clamp(0.5rem,1.05vw,0.75rem)] gap-y-[clamp(0.85rem,1.75vh,1.2rem)] p-[clamp(0.15rem,0.35vw,0.25rem)]"
@@ -145,11 +148,13 @@ export const SIDEBAR_HEADER_CLASS =
 export const SIDEBAR_LIST_CLASS =
   "flex min-h-0 flex-1 flex-col gap-[clamp(0.3rem,0.65vh,0.42rem)] overflow-hidden px-[clamp(0.5rem,0.95vw,0.75rem)] py-[clamp(0.45rem,0.9vh,0.65rem)]"
 
+// 분류 줄: 글자 불투명도 뺌, 마우스 올림은 어둡게 말고 밝게 (어둡게 하면 짙은 글이 흐려짐)
 export const CATEGORY_ROW_CLASS =
-  "w-full cursor-pointer rounded-sm px-[clamp(0.45rem,0.85vw,0.65rem)] py-[clamp(0.38rem,0.8vh,0.52rem)] text-left app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.1rem)] font-bold leading-snug transition-[background-color,color] bg-[#1a0f0a]/06 text-[#2a1810]/90 hover:bg-[#1a0f0a]/10"
+  "w-full cursor-pointer rounded-sm px-[clamp(0.45rem,0.85vw,0.65rem)] py-[clamp(0.38rem,0.8vh,0.52rem)] text-left app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.1rem)] font-bold leading-snug transition-[background-color,color] bg-[#1a0f0a]/06 text-[#2a1810] hover:bg-[#f5f0e6]/15"
 
+// 고른 분류: /32 덧칠로는 흰 글이 안 읽혀 덧칠만 /55로 짙게 (마우스를 올려도 /10으로 옅어지지 않게)
 export const CATEGORY_ROW_SELECTED_CLASS =
-  "bg-[#1a0f0a]/32 text-white [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
+  "bg-[#1a0f0a]/55 hover:bg-[#1a0f0a]/55! text-white [box-shadow:inset_0_1px_0_rgba(245,240,230,0.08)]"
 
 // 고른 상품 설명 칸
 export const DETAIL_SECTION_CLASS =
@@ -178,8 +183,9 @@ export const STORE_DETAIL_NAME_CLASS =
 export const STORE_DETAIL_TAG_CLASS =
   "rounded-sm bg-[#2a1810]/18 px-1.5 py-0.5 app-text-scaled [--app-text-size:clamp(0.65rem,0.9vw,0.75rem)] font-bold text-[#6b3a28]"
 
+// 설명 칸 글(갈래·가격 이름·가격): 갈색 종이 위 옅은 갈색·흰 글은 안 읽혀 짙은 색으로 맞춤 (갈래는 가장 어두운 칸이 있어 검정)
 export const STORE_DETAIL_META_CLASS =
-  "app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.9rem)] font-bold text-[#6b4a32]"
+  "app-text-scaled [--app-text-size:clamp(0.78rem,1.05vw,0.9rem)] font-bold text-black"
 
 export const DETAIL_META_DIVIDER_CLASS = "mx-1.5 text-[#8b7355]/70"
 
@@ -191,13 +197,13 @@ export const DETAIL_PRICE_GROUP_CLASS =
   "flex flex-wrap items-center gap-[clamp(0.35rem,0.65vw,0.5rem)]"
 
 export const DETAIL_PRICE_LABEL_CLASS =
-  "app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-bold text-[#3d1810]"
+  "app-text-scaled [--app-text-size:clamp(0.88rem,1.15vw,1rem)] font-bold text-[#1a1008]"
 
 export const DETAIL_PRICE_TEXT_CLASS =
-  "app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.08rem)] font-bold text-white"
+  "app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.08rem)] font-bold text-[#1a1008]"
 
 export const DETAIL_PRICE_AMOUNT_CLASS =
-  "app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.08rem)] font-bold tabular-nums text-white"
+  "app-text-scaled [--app-text-size:clamp(0.95rem,1.25vw,1.08rem)] font-bold tabular-nums text-[#1a1008]"
 
 export const DETAIL_PRICE_ICON_CLASS =
   "block h-[clamp(1.15rem,1.9vw,1.45rem)] w-auto shrink-0 select-none object-contain"
