@@ -146,7 +146,8 @@ exports.findRoleStatRows = (role) => findStatRowsWhere({ role });
 
 // 업적 진행용 판 기록 행 (깨진 판도 포함, 끝까지 갔는지·판 설정 붙임)
 exports.findProgressRows = (userId) => db.GameResultPlayer.findAll({
-    attributes: ["role", "won", "is_alive"],
+    // death_reason: 산 채로 나간 판(탈주)을 판 수에서 빼려고 같이 읽음
+    attributes: ["role", "won", "is_alive", "death_reason"],
     where: { user_id: userId },
     include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
     raw: true,
@@ -154,7 +155,7 @@ exports.findProgressRows = (userId) => db.GameResultPlayer.findAll({
 });
 // 여러 사람 한 번에 (판 끝 업적 평가, 누구 행인지 user_id 붙임)
 exports.findProgressRowsForUsers = (userIds) => db.GameResultPlayer.findAll({
-    attributes: ["user_id", "role", "won", "is_alive"],
+    attributes: ["user_id", "role", "won", "is_alive", "death_reason"],
     where: { user_id: { [db.Sequelize.Op.in]: userIds } },
     include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
     raw: true,

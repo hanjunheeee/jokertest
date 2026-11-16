@@ -26,7 +26,12 @@ exports.updateNickname = async (req, res, next) => {
         const { nickname } = req.body ?? {};
         const result = await userService.changeNickname(req.user.uuid, nickname);
         if (!result.ok) {
-            return res.status(result.status).json({ success: false, message: result.message });
+            // 서비스가 준 까닭 코드도 같이 실음 (금지어 거절 NICKNAME_BANNED_WORD)
+            return res.status(result.status).json({
+                success: false,
+                ...(result.code ? { code: result.code } : {}),
+                message: result.message,
+            });
         }
 
         res.status(200).json({ success: true, message: "닉네임이 변경되었습니다." });

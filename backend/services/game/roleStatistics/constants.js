@@ -8,7 +8,7 @@ const ROLE_CODES = Object.freeze(['CITIZEN', 'JOKER', 'DOCTOR', 'GUARD', 'WITCH_
 const ROLE_KOREAN_NAMES = Object.freeze({
     CITIZEN: '귀족',
     JOKER: '광대',
-    DOCTOR: '주치의',
+    DOCTOR: '의사',
     GUARD: '경비원',
     WITCH_HUNTER: '마녀사냥꾼',
 })

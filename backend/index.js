@@ -33,7 +33,7 @@ try {
     // 브라우저 시험 전용 값(E2E_HOOKS·MAIL_TEST_OUTBOX_DIR·가짜 소셜 제공자 주소)이 운영에 있으면 시작 거부
     require("./config/e2eHooks").assertNoE2eInProduction();
 } catch (error) {
-    if (require("./config/requiredEnv").isStartupFatal(error)) failStartup(error, "환경값"); // 운영 + 모르는 NODE_ENV는 거부
+    if (require("./config/requiredEnv").isStartupFatal(error)) failStartup(error, "환경값"); // 운영 + 모르는 NODE_ENV + 운영 주소인데 개발 값은 거부
     console.warn(`[STARTUP] 경고 — ${error.message} (개발이라 계속, 운영이면 시작 거부)`);
 }
 
@@ -47,6 +47,13 @@ try {
     db = require("./models");
 } catch (error) {
     failStartup(error);
+}
+
+// 재설정 메일 설정 상태: 운영인데 설정이 빠지면 메일이 안 나가도 화면은 모름 → 경고만 (빠진 설정 이름만, 값은 안 찍음)
+// 개발 PC는 메일 설정이 없는 게 보통이라 운영에서만 봄, 재설정 쪽이 모델을 불러서 모델 뒤에 둠
+if (require("./config/nodeEnv").isProduction()) {
+    const mailWarning = require("./services/auth/passwordReset").describeMailWarning();
+    if (mailWarning) console.warn(`[STARTUP] 경고 — ${mailWarning}`);
 }
 
 const { notFoundHandler, globalErrorHandler } = require("./middlewares/errorHandler.middleware");
@@ -158,19 +165,22 @@ schemaReadiness.ensureSchemaReady(db.sequelize)
     // 표 없거나 실패해도 서버는 켬, 꺼짐으로 시작
     .then(() => require("./services/ops/maintenance").reloadMaintenance()
         .catch((err) => console.warn("[STARTUP] 점검 상태 못 읽음 —", err?.name ?? "Error")))
+    // 금지어·탈주 막힘·판 설정도 포트 열기 전에 다 읽음 (점검 상태와 같은 까닭, 다시 켠 직후 금지어 닉네임·탈주 대기가 새지 않게)
+    // 셋은 서로 안 걸려 같이 읽음, 하나가 실패해도 경고만 찍고 서버는 켬
+    .then(() => Promise.all([
+        // 금지어 (표 없거나 실패하면 빈 목록으로 시작)
+        require("./services/ops/bannedWords").reloadBannedWords()
+            .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error")),
+        // 탈주 막힘 (실패는 그 함수가 스스로 삼키고 "[탈주] 막힘 기록 못 읽음" 경고를 찍음, 여기서 받을 오류 없음)
+        require("./services/game/desertion").loadActiveDesertions(),
+        // 판 설정 값 (못 읽으면 관리자가 바꾼 판 골드 대신 처음 값 1)
+        require("./services/ops/gameSettings").reloadGameSettings()
+            .catch((err) => console.warn("[STARTUP] 판 설정 값 못 읽음 —", err?.name ?? "Error")),
+    ]))
     .then(() => {
         // 재시작 전 남은 ONLINE 줄을 OFFLINE으로 (BE-015, 포트 열기 전 시각 기준이라 새로 붙은 사람은 안 덮음)
         require("./services/presence/status").resetPresencesOnBoot(new Date())
             .catch((err) => console.warn("[STARTUP] 접속 상태 못 되돌림 —", err?.name ?? "Error"));
-        // 금지어 한 번 읽기 (표 없거나 실패해도 서버는 켬, 빈 목록으로 시작)
-        require("./services/ops/bannedWords").reloadBannedWords()
-            .catch((err) => console.warn("[STARTUP] 금지어 못 읽음 —", err?.name ?? "Error"));
-        // 탈주 막힘 한 번 읽기 (안 읽으면 다시 켠 직후 탈주 대기가 잠깐 안 걸림, 실패해도 서버는 켬)
-        require("./services/game/desertion").loadActiveDesertions()
-            .catch((err) => console.warn("[STARTUP] 탈주 기록 못 읽음 —", err?.name ?? "Error"));
-        // 판 설정 값 한 번 읽기 (안 읽으면 관리자가 바꾼 판 골드 대신 처음 값 1이 쓰일 수 있음, 실패해도 서버는 켬)
-        require("./services/ops/gameSettings").reloadGameSettings()
-            .catch((err) => console.warn("[STARTUP] 판 설정 값 못 읽음 —", err?.name ?? "Error"));
         // 관리자 표 정리 6시간마다 (관리자 켜짐일 때만, unref라 서버 끄기 안 막음, Node마다 돌아도 지우기만이라 겹쳐도 됨)
         if (require("./admin").isAdminEnabled()) require("./admin/services/core/cleanup").startAdminCleanup();
         const pool = db.sequelize.options.pool ?? {};

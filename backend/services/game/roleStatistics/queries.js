@@ -114,11 +114,15 @@ async function getHighestWinRateRole(userId) {
     return selectMaskOfFateRole(aggregateRoleStatistics(rows))
 }
 
-// 업적 진행용 행 모양, 승리·생존을 참/거짓으로 맞춤
+// 산 채로 판을 떠난 줄의 죽은 이유 (game-core/result/constants.js DEATH_REASONS.DISCONNECT와 같은 글자, 승패·판 골드와 같은 기준)
+const DESERTED_DEATH_REASON = 'DISCONNECT'
+
+// 업적 진행용 행 모양, 승리·생존을 참/거짓으로 맞춤 + 탈주한 판인지
 const toProgressRow = (playerRow) => ({
     role: playerRow.role,
     won: playerRow.won === true || playerRow.won === 1,
     is_alive: playerRow.is_alive === true || playerRow.is_alive === 1,
+    deserted: playerRow.death_reason === DESERTED_DEATH_REASON,
 })
 
 // 업적 보상 대상 판만 세어 판 수·생존·승리·직업별 승리 (한 사람 행들 → 진행 값)
@@ -145,7 +149,8 @@ function summarizeProgressRows(rows) {
     }
 
     return {
-        completedGames: eligibleRows.length,
+        // 탈주한 판(산 채로 나감)은 "끝까지 한 판"이 아니라 판 수에서 뺌 (죽은 뒤 나간 판은 셈)
+        completedGames: eligibleRows.filter((row) => !row.deserted).length,
         survivals,
         wins,
         roleWinsByRole,

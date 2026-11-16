@@ -10,6 +10,7 @@ const LOCK_NAME = 'al_f01_schema_migrations';
 const LOCK_TIMEOUT_SECONDS = 30;
 
 // 이름 + up·down 원문으로 체크섬 (적용한 파일이 바뀌면 알아채기, 함수 안 주석도 들어감)
+// 한계: 함수 밖에 둔 값(처음 넣는 줄 목록 등)이 바뀐 것은 못 알아챔 — 셈법을 바꾸면 이미 적용한 것 전부가 "바뀜"으로 떠 운영이 멈추므로 그대로 둠
 const checksumOf = (migration) => {
     const source = JSON.stringify({
         name: migration.name,
