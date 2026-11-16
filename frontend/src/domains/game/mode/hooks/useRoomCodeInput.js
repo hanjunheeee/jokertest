@@ -42,7 +42,11 @@ export function useRoomCodeInput({ value, onChange, autoFocus, disabled, readOnl
   useEffect(() => {
     if (!autoFocus || disabled || readOnly) return
 
-    const timer = window.setTimeout(() => focusIndex(0), 280)
+    // 그사이 사람이 이미 칸에 치고 있으면 안 옮김 (첫 칸으로 끌고 가면 다음 글자가 앞 글자를 덮어씀)
+    const timer = window.setTimeout(() => {
+      if (inputRefs.current.includes(document.activeElement)) return
+      focusIndex(0)
+    }, 280)
     return () => window.clearTimeout(timer)
   }, [autoFocus, disabled, readOnly])
 

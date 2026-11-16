@@ -33,3 +33,15 @@ test("A01-F-587 ABCDEFGH 붙여넣기 → 6자까지만 ABCDEF", () => {
   act(() => view.result.current.handlePaste({ preventDefault() {}, clipboardData: { getData: () => "ABCDEFGH" } }))
   assert.equal(changes.at(-1), "ABCDEF")
 })
+
+test("A01-F-737 [버그] 화면이 뜨고 0.28초 안에 이미 칸에 치기 시작함 → 자동 초점이 첫 칸으로 끌고 가지 않음 (앞 글자를 덮어쓰지 않게)", async () => {
+  const React = await import("react")
+  const { render, screen } = await import("@testing-library/react")
+  const { default: RoomCodeInput } = await import("../../src/domains/game/mode/components/RoomCodeInput.jsx")
+  render(React.createElement(RoomCodeInput, { value: "7HY", onChange: () => {}, autoFocus: true }))
+  // 자동 초점(0.28초)보다 먼저 사람이 셋째 칸까지 침 → 넷째 칸에 초점
+  const fourth = screen.getByRole("textbox", { name: "방 코드 4번째 자리" })
+  fourth.focus()
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  assert.equal(document.activeElement?.getAttribute("aria-label"), "방 코드 4번째 자리")
+})

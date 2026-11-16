@@ -1,5 +1,5 @@
-// 서버 응답 풀기 공통 (401·실패 응답은 Error로 던지고, 성공이면 data만 꺼냄)
-// api client가 씀, 401 처리 함수는 main.jsx가 auth 것으로 등록
+// 서버 응답 풀기 공통 (401·정지 403은 auth 처리로, 나머지 실패 응답은 Error로 던지고, 성공이면 data만 꺼냄)
+// api client가 씀, 401·정지 처리 함수는 main.jsx가 auth 것으로 등록
 // shared가 auth 영역을 직접 안 부르게 바깥에서 받아 둠
 let unauthorizedHandler = null;
 
@@ -54,8 +54,12 @@ const handleUnauthorized = async (response) => {
 // 401 말고 실패 응답은 상태 코드를 붙여 던짐
 // 서버 답에 글이 없으면 여기서 기본 글을 안 채움 → 화면마다 준비한 실패 글이 나옴 (채우면 그 글이 늘 가려짐)
 // 화면 쪽 쓰는 법: error.message ?? "준비한 글" 또는 error.message || "준비한 글"
+// 정지 403(ACCOUNT_BANNED)은 세션이 끊긴 것이라 401과 같은 auth 처리로 넘김 (정지 안내 뒤 로그인 화면)
 const handleErrorResponse = async (response) => {
     const errorData = await readErrorBody(response);
+    if (response.status === 403 && errorData.code === "ACCOUNT_BANNED" && unauthorizedHandler) {
+        return await unauthorizedHandler(errorData);
+    }
     const error = toApiError(errorData);
     error.status = response.status;
     throw error;
@@ -75,7 +79,7 @@ export const handleApiResponse = async (response) => {
     }
 
     if (!response.ok) {
-        await handleErrorResponse(response);
+        return await handleErrorResponse(response);
     }
 
     return await parseResponseBody(response);

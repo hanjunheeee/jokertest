@@ -4,6 +4,7 @@ import { useRef, useState } from "react"
 import { updatePasswordApi } from "@/domains/user/api/user.api"
 import { validatePassword, validatePasswordConfirm } from "@/domains/auth/validation/signupValidation.js"
 import { forceRelogin } from "../../../shared/utils/forceRelogin.js"
+import { getSocket } from "../../../shared/socket/socketClient.js"
 
 // 다시 로그인 안내를 읽을 시간 (그 뒤 로그인 화면으로)
 export const RELOGIN_DELAY_MS = 1500
@@ -60,7 +61,11 @@ export function usePasswordForm({ onReloginRequired = () => forceRelogin(), relo
             // 서버가 지금 세션까지 끊어서 다시 로그인해야 함을 같이 알림
             setPwMsg({ type: "success", text: "비밀번호가 변경되었습니다. 다시 로그인해 주세요."})
             // 지금 세션도 끊겼으니 잠깐 안내를 보여 준 뒤 로그인 화면으로
-            if (result?.reloginRequired === true) setTimeout(onReloginRequired, reloginDelayMs)
+            if (result?.reloginRequired === true) {
+                // 소켓도 바로 끊음 (5초 세션 검사가 "세션 만료" 알림·로그인 화면 이동으로 이 안내를 먼저 가로채기 막기)
+                getSocket()?.disconnect()
+                setTimeout(onReloginRequired, reloginDelayMs)
+            }
         } catch (err) {
             setPwMsg({ type: "error", text: err?.message ?? "변경에 실패했습니다." })
         } finally {

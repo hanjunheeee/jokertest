@@ -88,6 +88,12 @@ function handleForceDisconnect(payload, logout, socket, state) {
         reconnectAfterServerCut(socket, state);
         return;
     }
+    // 정지는 http 정지 답(auth/api/unauthorized.js)이 먼저 알리고 로그아웃했으면(로그인 표시 꺼짐) 안내 또 안 띄움
+    // 정지만 건너뜀: http 401(세션 끊김)은 알림 없이 로그아웃해서 다른 까닭은 소켓 안내가 유일한 안내임
+    if (payload?.code === "ACCOUNT_BANNED" && !useAuthStore.getState().isLoggedIn) {
+        logoutToLogin(logout);
+        return;
+    }
     alert(payload?.message || FORCE_DISCONNECT_MESSAGES[payload?.code] || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
     logoutToLogin(logout);
 }

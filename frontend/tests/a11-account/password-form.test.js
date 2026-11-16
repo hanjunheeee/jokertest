@@ -1,5 +1,5 @@
-// 비밀번호 바꾸기 상태 시험 (훅 usePasswordForm: 빈칸·성공 뒤 1.5초 안내·로그인 화면으로·서버 거절 문구)
-// 목록 A11b 화면 상태 A11-F-550~557
+// 비밀번호 바꾸기 상태 시험 (훅 usePasswordForm: 빈칸·성공 뒤 1.5초 안내·로그인 화면으로·서버 거절 문구·성공 때 소켓 끊기)
+// 목록 A11b 화면 상태 A11-F-550~557·933~934
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
@@ -10,6 +10,7 @@ const { installFetch, HOLD, flushUi, submitEvent, renderRoutes, signIn, resetSto
 const { usePasswordForm } = await import("../../src/domains/user/hooks/usePasswordForm.js")
 const { forceRelogin } = await import("../../src/shared/utils/forceRelogin.js")
 const { useAuthStore } = await import("../../src/domains/auth/store/auth.store.js")
+const { setSocket } = await import("../../src/shared/socket/socketClient.js")
 
 const PATH = "/user/me/password"
 const OLD_PW = "TestOnly-Old-1"
@@ -132,4 +133,33 @@ test("A11-F-557 같은 순간 두 번 누름 → 요청 1번", async () => {
   await flushUi()
   assert.equal(net.to("PATCH", PATH).length, 1)
   await net.release("PATCH", PATH, SUCCESS)
+})
+
+// 공용 소켓 대역: 끊으면 connected가 false (서버 세션 검사 알림을 더 못 받음)
+function installSocket() {
+  const socket = { connected: true, disconnect() { this.connected = false } }
+  setSocket(socket)
+  return socket
+}
+
+test("A11-F-933 성공(reloginRequired) → 공용 소켓 바로 끊음 (5초 세션 검사의 '세션 만료' 알림이 1.5초 안내를 가로채 로그인 화면으로 먼저 보냄 — 브라우저 A11-E-534)", async (t) => {
+  t.after(() => setSocket(null))
+  const socket = installSocket()
+  const { box } = mountAt(SUCCESS)
+  fill(box, OLD_PW, NEW_PW)
+  await submit(box)
+  assert.equal(box.form.pwMsg?.text, "비밀번호가 변경되었습니다. 다시 로그인해 주세요.")
+  assert.equal(socket.connected, false)
+})
+
+test("A11-F-934 400 CURRENT_PASSWORD_INVALID → 소켓 그대로 (세션이 살아 있음)", async (t) => {
+  t.after(() => setSocket(null))
+  const socket = installSocket()
+  const { box } = mountAt({
+    status: 400,
+    body: { success: false, code: "CURRENT_PASSWORD_INVALID", message: "현재 비밀번호가 올바르지 않습니다." },
+  })
+  fill(box, "TestOnly-Wrong-1", NEW_PW)
+  await submit(box)
+  assert.equal(socket.connected, true)
 })

@@ -1,6 +1,7 @@
-// 401 공통 처리: 로그인 상태 지우고 로그인 화면으로
+// 401·정지 403 공통 처리: 로그인 상태 지우고 로그인 화면으로 (정지면 정지 안내 먼저)
 // main.jsx가 setUnauthorizedHandler로 shared/api/response.js에 넣어 씀
 import { useAuthStore } from "@/domains/auth/store/auth.store";
+import { SOCIAL_ERROR_MESSAGES } from "@/domains/auth/constants/socialMessages";
 
 // 세션 없이 들어갈 수 있는 인증 화면 — bootstrap getMe 401 시 /login으로 튕기면 안 됨
 const PUBLIC_AUTH_PATHS = new Set([
@@ -12,8 +13,13 @@ const PUBLIC_AUTH_PATHS = new Set([
 ]);
 
 // 로그인 상태부터 지움, 공개 인증·로그인 화면이면 이동 대신 에러
+// 정지(ACCOUNT_BANNED)는 로그인 중이던 때만 안내 (요청 여럿이 같이 정지 답을 받아도 첫 답이 로그아웃시켜 안내는 한 번)
 export const handleAuthUnauthorized = async (errorData) => {
+    const wasLoggedIn = useAuthStore.getState().isLoggedIn;
     useAuthStore.getState().logout();
+    if (errorData?.code === "ACCOUNT_BANNED" && wasLoggedIn) {
+        alert(errorData.message || SOCIAL_ERROR_MESSAGES.ACCOUNT_BANNED);
+    }
 
     // 끝 빗금은 떼고 봄 (/find-id/·/password-reset/?token= 으로 열어도 안 튕기게)
     const path = window.location.pathname.replace(/\/+$/, "") || "/";
