@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import FindIdForm from "@/domains/auth/components/recovery/FindIdForm.jsx"
+import SupportLink from "@/domains/auth/components/SupportLink.jsx"
 import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
 import { useFindId } from "@/domains/auth/hooks/recovery/useFindId.js"
 
@@ -45,6 +46,8 @@ export default function FindIdPage() {
             onRetry={find.backToIdle}
           />
         )}
+        {/* 로그인 못 하는 사람이 연락할 곳 (주소 없으면 안 보임) */}
+        <SupportLink className="mt-auto" />
       </div>
 
       <AuthFrameBackButton onClick={handleBack} />

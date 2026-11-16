@@ -22,6 +22,7 @@ export default function AuthInputSlot({
   compact = false,
   disabled = false,
   inputMode,
+  maxLength,
   inputTestId,
   ariaLabel,
 }) {
@@ -53,6 +54,7 @@ export default function AuthInputSlot({
           autoComplete={autoComplete}
           disabled={disabled}
           inputMode={inputMode}
+          maxLength={maxLength}
           data-testid={inputTestId}
           className={`min-w-0 flex-1 bg-transparent text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
             type === "date"
@@ -61,12 +63,12 @@ export default function AuthInputSlot({
           }`.trim()}
         />
 
-        {/* 비밀번호 칸만 보기 버튼 */}
+        {/* 비밀번호 칸만 보기 버튼 (어두운 입력칸 그림 위라 밝은 그림 색, 올리면 더 밝게, 키보드 초점 테두리는 문의 창 버튼과 같은 색) */}
         {passwordToggle ? (
           <button
             type="button"
             onClick={() => setPasswordVisible((v) => !v)}
-            className="group shrink-0 cursor-pointer border-0 bg-transparent p-0 text-neutral-600 transition-colors hover:text-neutral-800"
+            className="group shrink-0 cursor-pointer rounded-sm border-0 bg-transparent p-0 text-white/70 outline-none transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3d28d]"
             aria-label={passwordVisible ? "비밀번호 숨기기" : "비밀번호 보기"}
           >
             <span className="interactive-scale-sm block">

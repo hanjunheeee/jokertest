@@ -42,13 +42,16 @@ export function LockIcon({ className }) {
   return <Svg className={className}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Svg>
 }
 
+// 보기 버튼 그림은 색을 안 정함 → 버튼 글자색(inputSlotLooks의 toggle)을 그대로 따라감
+const TOGGLE_ICON_CLASS = "h-[1.125rem] w-[1.125rem] shrink-0"
+
 // 비밀번호 보기 버튼 (지금 가려진 상태)
-export function EyeIcon({ className }) {
+export function EyeIcon({ className = TOGGLE_ICON_CLASS }) {
   return <Svg className={className}><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.5" /></Svg>
 }
 
 // 비밀번호 숨기기 버튼 (지금 보이는 상태)
-export function EyeOffIcon({ className }) {
+export function EyeOffIcon({ className = TOGGLE_ICON_CLASS }) {
   return (
     <Svg className={className}>
       <path d="M3 3l18 18" />

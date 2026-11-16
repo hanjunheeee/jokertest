@@ -64,6 +64,7 @@ export default function LoginPage() {
           onChange={page.handleInputChange}
           onRememberMeChange={page.setRememberMe}
           onSwitchToSignup={() => page.setIsSignupMode(true)}
+          isSubmitting={page.isSubmitting}
         />
       )}
     </Scene>

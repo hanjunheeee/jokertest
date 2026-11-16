@@ -4,8 +4,9 @@ import { useNavigate } from "react-router-dom"
 import AuthScene from "@/domains/auth/components/AuthScene.jsx"
 import AuthFrameBackButton from "@/domains/auth/components/AuthFrameBackButton.jsx"
 import ResetRequestForm from "@/domains/auth/components/recovery/ResetRequestForm.jsx"
+import SupportLink from "@/domains/auth/components/SupportLink.jsx"
 import { RECOVERY_ALERT_CLASS } from "@/domains/auth/constants/recoveryLayoutStyle.js"
-import { REQUEST_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
+import { REQUEST_TEXT, resendWaitText } from "@/domains/auth/constants/recoveryMessages.js"
 import { useResetRequest } from "@/domains/auth/hooks/recovery/useResetRequest.js"
 
 // 보냈으면 안내 + 다시 보내기, 아니면 입력 칸
@@ -30,7 +31,20 @@ export function PasswordResetRequestPage() {
             <p role="status" className={`${RECOVERY_ALERT_CLASS} text-center`}>
               {REQUEST_TEXT.sent}
             </p>
-            <button type="button" onClick={request.handleResend} className="auth-text-link">다시 보내기</button>
+            {/* 1분 동안 단추 끄고 남은 초를 보임 (서버도 1분 안은 메일을 안 보냄) */}
+            <button
+              type="button"
+              onClick={request.handleResend}
+              disabled={request.resendWaitSec > 0}
+              className="auth-text-link disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              다시 보내기
+            </button>
+            {request.resendWaitSec > 0 && (
+              <p className="font-subheading app-text-scaled [--app-text-size:12px] text-text-body/80">
+                {resendWaitText(request.resendWaitSec)}
+              </p>
+            )}
           </div>
         ) : (
           <ResetRequestForm
@@ -41,6 +55,8 @@ export function PasswordResetRequestPage() {
             onRetry={request.backToIdle}
           />
         )}
+        {/* 로그인 못 하는 사람이 연락할 곳 (주소 없으면 안 보임) */}
+        <SupportLink className="mt-auto" />
       </div>
 
       <AuthFrameBackButton onClick={handleBack} />

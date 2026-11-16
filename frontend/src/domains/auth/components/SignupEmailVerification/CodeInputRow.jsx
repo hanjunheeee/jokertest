@@ -3,6 +3,7 @@
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 
 // 만료·잠김이면 입력 칸만 잠그고, 버튼은 canVerify로 따로 잠금
+// 인증번호는 6자리라 그 넘게 못 치게 함 (maxLength)
 export default function CodeInputRow({ stage, code, canVerify, isVerifying, onCodeChange, onVerify }) {
   return (
     <div className="flex items-center gap-1 px-0.5">
@@ -10,6 +11,7 @@ export default function CodeInputRow({ stage, code, canVerify, isVerifying, onCo
         <AuthInputSlot
           type="text"
           inputMode="numeric"
+          maxLength={6}
           name="signupEmailCode"
           inputTestId="signup-code-input"
           value={code}

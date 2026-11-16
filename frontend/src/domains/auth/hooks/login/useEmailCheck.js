@@ -3,10 +3,14 @@
 import { useRef, useState } from "react"
 import { checkEmailApi } from "../../api/auth.api.js"
 
-// 상태: idle / checking / available / duplicate / error
+// 너무 많이 눌러 서버가 막았는데 서버 글이 없을 때
+const RATE_LIMITED_TEXT = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."
+
+// 상태: idle / checking / available / duplicate / error, errorMessage는 429일 때만 (나머지 실패는 화면 기본 글)
 export function useEmailCheck(email) {
   const [status, setStatus] = useState("idle")
   const [checkedEmail, setCheckedEmail] = useState(null)
+  const [errorMessage, setErrorMessage] = useState(null)
 
   const latestRequestId = useRef(0)
 
@@ -14,6 +18,7 @@ export function useEmailCheck(email) {
   if (checkedEmail !== null && checkedEmail !== email) {
     setStatus("idle")
     setCheckedEmail(null)
+    setErrorMessage(null)
   }
 
   // 빈 주소는 안 물어봄, 마지막에 보낸 확인 응답만 반영
@@ -24,17 +29,20 @@ export function useEmailCheck(email) {
     const requestId = ++latestRequestId.current
     setStatus("checking")
     setCheckedEmail(null)
+    setErrorMessage(null)
     try {
       const { available } = await checkEmailApi(trimmed)
       if (latestRequestId.current !== requestId) return
       setStatus(available ? "available" : "duplicate")
       setCheckedEmail(trimmed)
-    } catch {
+    } catch (error) {
       if (latestRequestId.current !== requestId) return
       setStatus("error")
       setCheckedEmail(null)
+      // 너무 많이 눌러 막힌 것이면 서버 글 (늘 "실패했습니다"면 다시 눌러 더 막힘)
+      if (error?.status === 429) setErrorMessage(error.message || RATE_LIMITED_TEXT)
     }
   }
 
-  return { status, check }
+  return { status, check, errorMessage }
 }

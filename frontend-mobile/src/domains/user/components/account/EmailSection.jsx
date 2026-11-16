@@ -7,8 +7,9 @@ import { LockIcon, MailIcon } from "@m/shared/ui/input/InputIcons.jsx"
 import SectionTitle from "./SectionTitle.jsx"
 
 const CURRENT_CLASS = "break-all font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]"
+// 글자 링크 색은 로그인 화면 글자 링크와 같은 짙은 호박색 (양피지 위에서 읽히게)
 const LINK_CLASS =
-  "inline-flex min-h-11 cursor-pointer items-center self-start border-0 bg-transparent px-1 font-subheading font-bold text-amber-800 underline underline-offset-2 app-text-scaled [--app-text-size:0.8rem] disabled:opacity-50"
+  "inline-flex min-h-11 cursor-pointer items-center self-start border-0 bg-transparent px-1 font-subheading font-bold text-amber-950 underline underline-offset-2 app-text-scaled [--app-text-size:0.8rem] disabled:opacity-50"
 
 export default function EmailSection({ account, onChanged }) {
   const form = useEmailChangeForm({ account, onChanged })

@@ -2,6 +2,8 @@
 // AuthInputSlot.jsx·auth 입력 칸들·계정 비밀번호 칸이 사용
 // 1파일 1컴포넌트 예외: 10줄짜리 아이콘을 하나씩 나누면 파일만 늘어서 한곳에 모음
 const ICON_CLASS = "h-[20px] w-[20px] shrink-0 text-neutral-600"
+// 보기 버튼 그림은 색을 안 정함 → 버튼 글자색(밝은 색·올리면 더 밝게)을 그대로 따라감
+const TOGGLE_ICON_CLASS = "h-[20px] w-[20px] shrink-0"
 
 // 메일 칸
 export function MailIcon() {
@@ -56,7 +58,7 @@ export function LockIcon() {
 // 비밀번호 보기 버튼 (지금 가려진 상태)
 export function EyeIcon() {
   return (
-    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className={TOGGLE_ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
       <circle cx="12" cy="12" r="2.5" />
     </svg>
@@ -66,7 +68,7 @@ export function EyeIcon() {
 // 비밀번호 숨기기 버튼 (지금 보이는 상태)
 export function EyeOffIcon() {
   return (
-    <svg className={ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className={TOGGLE_ICON_CLASS} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 3l18 18" />
       <path d="M10.6 10.6a2.5 2.5 0 0 0 3.5 3.5" />
       <path d="M6.4 6.4C4 8.1 2.5 10 2 12s3.5 6 10 6c1.8 0 3.4-.4 4.8-1.1" />

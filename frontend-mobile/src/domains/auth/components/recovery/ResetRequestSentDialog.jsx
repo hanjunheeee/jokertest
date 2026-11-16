@@ -1,7 +1,7 @@
 // 재설정 링크 접수 안내: 양피지 + 확인·다시 보내기 (입력 화면은 그대로)
 // PasswordResetRequestPage.jsx가 status=sent 일 때 씀
 import { useEffect, useRef } from "react"
-import { REQUEST_TEXT } from "@/domains/auth/constants/recoveryMessages.js"
+import { REQUEST_TEXT, resendWaitText } from "@/domains/auth/constants/recoveryMessages.js"
 import { EMOTICON_PALETTE_ASSETS } from "@/domains/user/constants/emoticonPaletteAssets.js"
 import { getInGameParchmentModalVariant } from "@/domains/game/ingame/constants/parchment/ingameParchmentModalVariants.js"
 import ConfirmButton from "@m/shared/ui/modal/parchment/ConfirmButton.jsx"
@@ -14,7 +14,9 @@ const toFixed = (className) => className.replace(/^absolute /, "fixed ")
 const COMPACT_BTN = "!w-[6.6rem]"
 const COMPACT_LABEL = "px-0.5 !text-[0.84rem] leading-none whitespace-nowrap"
 
-export default function ResetRequestSentDialog({ open, onConfirm, onResend, resendDisabled = false }) {
+// resendWaitSec가 남아 있으면 다시 보내기를 끄고 남은 초를 보임 (서버도 1분 안은 메일을 안 보냄)
+export default function ResetRequestSentDialog({ open, onConfirm, onResend, resendDisabled = false, resendWaitSec = 0 }) {
+  const waiting = resendWaitSec > 0
   const confirmRef = useRef(null)
 
   useEffect(() => {
@@ -30,6 +32,7 @@ export default function ResetRequestSentDialog({ open, onConfirm, onResend, rese
           <div role="dialog" aria-modal="true" aria-live="polite" aria-label="재설정 요청 접수" className={VARIANT.panelClass}>
             <ParchmentFrame>
               <p className={PARCHMENT_ALERT_MSG_CLASS}>{REQUEST_TEXT.sent}</p>
+              {waiting && <p className={PARCHMENT_ALERT_MSG_CLASS}>{resendWaitText(resendWaitSec)}</p>}
               <div className="mt-0.5 flex w-full max-w-full flex-row flex-nowrap items-center justify-center gap-1">
                 <ConfirmButton
                   ref={confirmRef}
@@ -42,7 +45,7 @@ export default function ResetRequestSentDialog({ open, onConfirm, onResend, rese
                   label="다시 보내기"
                   src={EMOTICON_PALETTE_ASSETS.cancelButton}
                   onClick={onResend}
-                  disabled={resendDisabled}
+                  disabled={resendDisabled || waiting}
                   sfxKind="ui-cancel"
                   buttonClassName={COMPACT_BTN}
                   labelClassName={COMPACT_LABEL}

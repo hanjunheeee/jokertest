@@ -15,6 +15,7 @@
 2. `.env.example`을 `.env`로 복사. 값은 데스크톱 `frontend/.env`와 같음
    - `VITE_API_BASE_URL=http://localhost:4000`
    - `VITE_DISCORD_SUPPORT_URL` (고객센터, 선택)
+   - `VITE_SUPPORT_URL` (로그인·찾기 화면 고객센터 링크, https 주소나 mailto, 선택 — 비우면 링크 안 보임)
 3. API는 DB와 별도. `docker compose up -d db` 후 백엔드를 켜야 로그인됨 (`npm run dev:mobile`이 backend+모바일을 같이 켬)
 4. 백엔드 CORS에 5174를 열어야 로그인·소켓이 붙음 (`backend/.env`의 `FRONTEND_MOBILE_URL=http://localhost:5174`, 백엔드 0-B 작업)
 5. 개발 때는 `localhost`만 쓰기. `127.0.0.1`과 섞으면 쿠키가 안 실림

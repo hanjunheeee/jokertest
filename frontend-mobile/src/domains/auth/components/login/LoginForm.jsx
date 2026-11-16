@@ -7,9 +7,11 @@ import { LockIcon, MailIcon } from "@m/shared/ui/input/InputIcons.jsx"
 import { HEADER_TEXT_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 import LoginOptions from "@m/domains/auth/components/login/LoginOptions.jsx"
 import SocialButtons from "@m/domains/auth/components/login/SocialButtons.jsx"
+import SupportLink from "@m/domains/auth/components/SupportLink.jsx"
 
 // 제출은 바깥 액자 form이 받음 (로그인 버튼이 type=submit), name이 formData 키와 같아야 함
-export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup }) {
+// 보내는 중(isSubmitting)엔 로그인 버튼 꺼 둠 (답 오기 전에 또 누르기 막기)
+export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup, isSubmitting = false }) {
   return (
     <>
       <p className={HEADER_TEXT_CLASS}>계정을 로그인 하여 무도회에 입장하세요.</p>
@@ -42,10 +44,12 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
         label="로그인"
         labelClassName="app-text-scaled [--app-text-size:20px]"
         className="mx-auto w-[88%]"
+        disabled={isSubmitting}
       />
 
       <SocialButtons rememberMe={rememberMe} />
       <ModeSwitch question="계정이 없으신가요?" actionLabel="회원가입" onSwitch={onSwitchToSignup} />
+      <SupportLink />
     </>
   )
 }

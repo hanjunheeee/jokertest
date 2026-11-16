@@ -68,14 +68,15 @@ export const EMAIL_VERIFICATION_NOTICE_SLOT_CLASS = "shrink-0 px-1"
 export const EMAIL_VERIFICATION_NOTICE_SLOT_RESERVED_CLASS =
   "min-h-[1.35rem]"
 
+// 안내 줄은 양피지 위(옅은 흰 덧칠뿐)라 셋 다 가장 짙은 색 (옅은 흰·밝은 초록·red-800은 안 읽힘)
 export const EMAIL_VERIFICATION_NOTICE_ERROR_CLASS =
-  "app-text-scaled [--app-text-size:13px] leading-tight text-red-800"
+  "app-text-scaled [--app-text-size:13px] leading-tight text-red-950"
 
 export const EMAIL_VERIFICATION_NOTICE_INFO_CLASS =
-  "app-text-scaled [--app-text-size:11px] leading-tight text-white/70"
+  "app-text-scaled [--app-text-size:11px] leading-tight text-text-body"
 
 export const EMAIL_VERIFICATION_NOTICE_SUCCESS_CLASS =
-  "app-text-scaled [--app-text-size:11px] leading-tight text-emerald-400"
+  "app-text-scaled [--app-text-size:11px] leading-tight text-emerald-950"
 
 // 인증번호 받기 버튼 자리·글자
 export const CODE_SEND_BTN_CLASS =

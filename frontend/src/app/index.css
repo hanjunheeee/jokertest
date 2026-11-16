@@ -119,8 +119,9 @@
     filter: url(#lobby-menu-red);
   }
 
+  /* 글자 단추 색: amber-800은 양피지와 밝기가 비슷해 안 읽힘 → 가장 짙은 amber-950 */
   .auth-text-link {
-    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-amber-800 underline-offset-2 hover:underline;
+    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-amber-950 underline-offset-2 hover:underline;
     font-size: calc(13px * var(--app-text-scale, 1));
     font-weight: 700;
     -webkit-text-stroke: 0.35px currentColor;

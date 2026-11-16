@@ -14,10 +14,11 @@ const VERIFYING_TEXT_CLASS = "font-subheading app-text-scaled [--app-text-size:1
 // 안내 화면에선 Enter로 제출돼도 아무것도 안 함
 const blockSubmit = (e) => e.preventDefault()
 
-// 잘못된 링크 문구: 만료·사용됨이 아니면 전부 잘못된 링크
+// 잘못된 링크 문구: 만료·사용됨·밀려남이 아니면 전부 잘못된 링크
 function linkInvalidText(reason) {
   if (reason === "EXPIRED") return RESET_TEXT.linkExpired
   if (reason === "USED") return RESET_TEXT.linkUsed
+  if (reason === "SUPERSEDED") return RESET_TEXT.linkSuperseded
   return RESET_TEXT.linkInvalid
 }
 
@@ -32,7 +33,7 @@ function noticeFor(reset, { goToLogin, goToRequest }) {
         actionLabel: "다시 확인", onAction: reset.retryVerify,
       }
     case "linkInvalid":
-      // 만료·사용됨이 아니면 전부 잘못된 링크 문구
+      // 만료·사용됨·밀려남이 아니면 전부 잘못된 링크 문구
       return {
         role: "alert",
         className: RECOVERY_ALERT_CLASS,

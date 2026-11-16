@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react"
 import { verifyPasswordResetApi } from "../../api/auth.api.js"
 import { RESET_TEXT } from "../../constants/recoveryMessages.js"
 
+// 링크 자체가 못 쓰는 까닭 (SUPERSEDED = 새로 요청해 밀려남)
+export const LINK_PROBLEM_CODES = new Set(["EXPIRED", "USED", "INVALID", "SUPERSEDED"])
+
 // 같은 방문·같은 token이면 보낸 요청 하나를 같이 씀 (StrictMode로 effect가 두 번 돌아도 한 번만 보냄)
 export function useLinkCheck({ token, setStatus, setLinkInvalidReason, unmountedRef, visitIdRef }) {
   const [verifyFailedMessage, setVerifyFailedMessage] = useState(RESET_TEXT.verifyFailed)
@@ -44,10 +47,10 @@ export function useLinkCheck({ token, setStatus, setLinkInvalidReason, unmounted
       .then((result) => {
         // 정리됨·화면 나감·다른 방문이면 버림
         if (cancelled || unmountedRef.current || visitIdRef.current !== visitId) return
-        // 쓸 수 있음 / 만료·사용됨·잘못됨 / 그 밖은 확인 실패 (캐시 비워서 다시 확인 때 새로 보냄)
+        // 쓸 수 있음 / 만료·사용됨·밀려남·잘못됨 / 그 밖은 확인 실패 (캐시 비워서 다시 확인 때 새로 보냄)
         if (result?.ok === true && result.status === "VALID") {
           setStatus("ready")
-        } else if (result?.ok === false && (result.code === "EXPIRED" || result.code === "USED" || result.code === "INVALID")) {
+        } else if (result?.ok === false && LINK_PROBLEM_CODES.has(result.code)) {
           setLinkInvalidReason(result.code)
           setStatus("linkInvalid")
         } else {

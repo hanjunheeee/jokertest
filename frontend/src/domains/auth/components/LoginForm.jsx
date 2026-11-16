@@ -5,9 +5,11 @@ import AuthModeSwitchPrompt from "@/domains/auth/components/AuthModeSwitchPrompt
 import LoginFields from "@/domains/auth/components/LoginForm/LoginFields.jsx"
 import LoginOptions from "@/domains/auth/components/LoginForm/LoginOptions.jsx"
 import SocialLoginButtons from "@/domains/auth/components/LoginForm/SocialLoginButtons.jsx"
+import SupportLink from "@/domains/auth/components/SupportLink.jsx"
 
 // 제출은 바깥 액자 form이 받음 (로그인 버튼이 type=submit)
-export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup }) {
+// 보내는 중(isSubmitting)엔 로그인 버튼 꺼 둠 (답 오기 전에 또 누르기 막기)
+export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup, isSubmitting = false }) {
   return (
     <>
       <header className="text-center">
@@ -27,10 +29,12 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
           visibleLabel="로그인"
           visibleLabelClassName="app-text-scaled [--app-text-size:22px]"
           className="mt-1 cursor-pointer"
+          disabled={isSubmitting}
         />
 
         <SocialLoginButtons rememberMe={rememberMe} />
         <AuthModeSwitchPrompt question="계정이 없으신가요?" actionLabel="회원가입" onSwitch={onSwitchToSignup} />
+        <SupportLink />
       </div>
     </>
   )

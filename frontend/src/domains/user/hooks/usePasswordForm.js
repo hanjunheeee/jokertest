@@ -2,14 +2,18 @@
 // 계정 관리 폼 훅(useAccountForm)이 씀
 import { useRef, useState } from "react"
 import { updatePasswordApi } from "@/domains/user/api/user.api"
+import { validatePassword, validatePasswordConfirm } from "@/domains/auth/validation/signupValidation.js"
 import { forceRelogin } from "../../../shared/utils/forceRelogin.js"
 
 // 다시 로그인 안내를 읽을 시간 (그 뒤 로그인 화면으로)
 export const RELOGIN_DELAY_MS = 1500
 
-// 지금·새 비밀번호 입력과 결과 문구, 서버가 reloginRequired를 주면 안내 뒤 로그인 화면으로
+// 빈 칸 값 (확인 칸은 화면에서만 봄, 서버엔 안 보냄)
+const EMPTY_PW_FORM = { currentPassword: "", newPassword: "", newPasswordConfirm: "" }
+
+// 지금·새 비밀번호·확인 입력과 결과 문구, 서버가 reloginRequired를 주면 안내 뒤 로그인 화면으로
 export function usePasswordForm({ onReloginRequired = () => forceRelogin(), reloginDelayMs = RELOGIN_DELAY_MS } = {}) {
-    const [pwForm, setPwForm] = useState({ currentPassword: "", newPassword: ""})
+    const [pwForm, setPwForm] = useState(EMPTY_PW_FORM)
 
     const [pwMsg, setPwMsg] = useState(null)
 
@@ -31,6 +35,18 @@ export function usePasswordForm({ onReloginRequired = () => forceRelogin(), relo
         // 두 칸 중 하나라도 비면 안 보냄
         if (!pwForm.currentPassword || !pwForm.newPassword) return
         if (submittingRef.current) return
+        // 새 비번 규칙은 가입·재설정과 같은 검사로 먼저 막음 (서버도 같은 규칙)
+        const ruleResult = validatePassword(pwForm.newPassword)
+        if (!ruleResult.ok) {
+            setPwMsg({ type: "error", text: ruleResult.message })
+            return
+        }
+        // 새 비번을 잘못 치면 바로 로그아웃돼 못 들어옴 → 확인 칸과 다르면 안 보냄
+        const confirmResult = validatePasswordConfirm(pwForm.newPassword, pwForm.newPasswordConfirm)
+        if (!confirmResult.ok) {
+            setPwMsg({ type: "error", text: confirmResult.message })
+            return
+        }
         submittingRef.current = true
 
         setPwLoading(true)
@@ -40,7 +56,7 @@ export function usePasswordForm({ onReloginRequired = () => forceRelogin(), relo
             // 응답이 없으면(공통 401 처리로 로그아웃·이동됨) 성공으로 안 봄
             if (result === undefined) return
 
-            setPwForm({ currentPassword: "", newPassword: ""})
+            setPwForm(EMPTY_PW_FORM)
             // 서버가 지금 세션까지 끊어서 다시 로그인해야 함을 같이 알림
             setPwMsg({ type: "success", text: "비밀번호가 변경되었습니다. 다시 로그인해 주세요."})
             // 지금 세션도 끊겼으니 잠깐 안내를 보여 준 뒤 로그인 화면으로

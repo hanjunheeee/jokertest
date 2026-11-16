@@ -42,7 +42,7 @@ export function useLoginPage() {
 
   const { isSubmitting, handleSubmit } = useLoginSubmit({
     formData, rememberMe, isSignupMode, setIsSignupMode, buildSignupPayload, resetVerification, login, navigate,
-    signupTerms,
+    signupTerms, setFormData,
   })
 
   // 로그인 화면에 오면 "일부러 로그아웃함" 표시를 지움
@@ -80,6 +80,8 @@ export function useLoginPage() {
     handleRequestSignupCode,
     handleVerifySignupCode,
     signupTerms,
+    // 로그인 버튼은 보내는 중이면 꺼 둠
+    isSubmitting,
     // 가입 버튼은 증명 있고 보내는 중 아닐 때만
     canSubmitSignup: hasValidSignupProof && !isSubmitting,
   }

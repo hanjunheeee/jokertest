@@ -56,11 +56,11 @@ export function intentErrorView(error) {
   return { status, message }
 }
 
-// 증명 에러는 정한 문구, 5xx로 code를 버렸으면 통신 실패 문구, 아니면 서버 문구
+// 증명 에러는 정한 문구, 5xx면 통신 실패 문구 (code 없는 500도 서버 글 그대로 안 보임), 아니면 서버 문구
 function submitErrorMessage(code, error) {
   if (code === "SIGNUP_PROOF_REQUIRED") return SOCIAL_SIGNUP_TEXT.proofRequired
   if (code === "SIGNUP_PROOF_INVALID") return SOCIAL_SIGNUP_TEXT.proofInvalid
-  if (code !== error?.code) return SOCIAL_SIGNUP_TEXT.generic
+  if (typeof error?.status === "number" && error.status >= 500) return SOCIAL_SIGNUP_TEXT.generic
   return error?.message || SOCIAL_SIGNUP_TEXT.cannotComplete
 }
 

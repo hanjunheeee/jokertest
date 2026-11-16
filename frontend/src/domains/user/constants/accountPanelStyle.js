@@ -62,5 +62,6 @@ export const CONFIRM_BTN_TEXT_CLASS =
 // 결과 문구 (성공·실패 색)
 export const FEEDBACK_BASE_CLASS =
   "block w-full whitespace-nowrap font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1.05vw,0.84rem)] font-bold [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]"
-export const FEEDBACK_SUCCESS_CLASS = "text-[#2E6B3A]"
-export const FEEDBACK_ERROR_CLASS = "text-[#9C3D32]"
+// 계정 판 양피지와 밝기가 비슷하면 안 읽혀 같은 초록·빨강 계열에서 가장 짙게 (모바일 계정 화면도 이 값을 씀)
+export const FEEDBACK_SUCCESS_CLASS = "text-[#163a1e]"
+export const FEEDBACK_ERROR_CLASS = "text-[#5a0f08]"

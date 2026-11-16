@@ -18,6 +18,7 @@ export default function Toolbar({ page }) {
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 block h-full w-full select-none object-fill"
         />
+        {/* 안내 글 /75·잠금 흐림 70%: 목록을 못 받아 잠긴 채여도 안내 글이 읽힘 */}
         <input
           type="search"
           aria-label="이모티콘 검색"
@@ -25,7 +26,7 @@ export default function Toolbar({ page }) {
           disabled={disabled}
           onChange={(event) => page.setQuery(event.target.value)}
           placeholder="이모티콘 이름 검색"
-          className="absolute inset-0 w-full bg-transparent pl-8 pr-2 font-subheading app-input-text leading-none text-[#f5f0e6] outline-none placeholder:text-xs placeholder:text-[#f5f0e6]/55 disabled:opacity-50"
+          className="absolute inset-0 w-full bg-transparent pl-8 pr-2 font-subheading app-input-text leading-none text-[#f5f0e6] outline-none placeholder:text-xs placeholder:text-[#f5f0e6]/75 disabled:opacity-70"
         />
       </div>
 

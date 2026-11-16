@@ -7,8 +7,8 @@ import {
   EMAIL_CHECK_MSG_LAYER_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 
-// idle이면 아무것도 안 그림
-export default function EmailCheckMessage({ status }) {
+// idle이면 아무것도 안 그림, errorMessage는 막힘(429) 때 서버 글
+export default function EmailCheckMessage({ status, errorMessage = null }) {
   let message = null
   let toneClass = ""
 
@@ -23,7 +23,7 @@ export default function EmailCheckMessage({ status }) {
     message = "이미 사용 중인 이메일입니다."
     toneClass = EMAIL_CHECK_MSG_ERROR_CLASS
   } else if (status === "error") {
-    message = "중복 확인에 실패했습니다. 다시 시도해주세요."
+    message = errorMessage || "중복 확인에 실패했습니다. 다시 시도해주세요."
     toneClass = EMAIL_CHECK_MSG_ERROR_CLASS
   }
 

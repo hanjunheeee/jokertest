@@ -7,7 +7,7 @@ import { validateSignupForm } from "../../validation/signupValidation.js"
 // 보내는 중 표시(isSubmitting)와 제출 처리(handleSubmit)를 돌려줌
 export function useLoginSubmit({
   formData, rememberMe, isSignupMode, setIsSignupMode, buildSignupPayload, resetVerification, login, navigate,
-  signupTerms = null,
+  signupTerms = null, setFormData = null,
 }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   // state는 다음 그림에야 바뀌어서 같은 순간 두 번 누름은 ref로 막음
@@ -58,6 +58,8 @@ export function useLoginSubmit({
           }
           alert("회원가입이 완료되었습니다! 로그인해주세요.")
           setIsSignupMode(false)
+          // 가입 때 친 비번이 로그인 칸에 그대로 남지 않게 비움
+          setFormData?.((prev) => ({ ...prev, password: "", passwordConfirm: "" }))
           resetVerification()
           signupTerms?.reset()
         } else {

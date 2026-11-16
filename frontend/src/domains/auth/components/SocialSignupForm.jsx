@@ -50,7 +50,8 @@ export default function SocialSignupForm({ intentToken, onCancel }) {
   if (BLOCKED_STATUSES.has(status)) {
     return (
       <div className="mt-8 flex flex-1 flex-col items-center gap-4 text-center">
-        <p role="alert" className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-red-300">{errorMessage}</p>
+        {/* 양피지 위 오류 글: 옅은 빨강은 안 보여 가장 짙은 빨강 */}
+        <p role="alert" className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-red-950">{errorMessage}</p>
         <AuthImageButton type="button" onClick={onCancel} src={LOGIN_ASSETS.loginButton} label="로그인 화면으로" />
       </div>
     )

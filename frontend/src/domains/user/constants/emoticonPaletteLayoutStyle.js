@@ -52,8 +52,9 @@ export const SEARCH_WRAP_CLASS =
 
 export const SEARCH_FRAME_CLASS = "block h-auto w-full select-none"
 
+// 잠겼을 때 흐림(opacity)이 안내 글 흐림에 곱해져 안 보였음 → 둘을 곱해도 52%가 남게 (/65 × 80%)
 export const SEARCH_INPUT_CLASS =
-  "absolute inset-0 bg-transparent pl-[10.5%] pr-[6%] -translate-y-[0.07rem] font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.78rem)] leading-none text-[#f5f0e6] outline-none placeholder:text-[#f5f0e6]/55 disabled:cursor-not-allowed disabled:opacity-50"
+  "absolute inset-0 bg-transparent pl-[10.5%] pr-[6%] -translate-y-[0.07rem] font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.78rem)] leading-none text-[#f5f0e6] outline-none placeholder:text-[#f5f0e6]/65 disabled:cursor-not-allowed disabled:opacity-80"
 
 export const FILTER_WRAP_CLASS =
   "relative w-[clamp(5.5rem,14vw,7.75rem)] shrink-0"
@@ -61,8 +62,9 @@ export const FILTER_WRAP_CLASS =
 export const FILTER_FRAME_CLASS =
   "flex h-full min-h-[clamp(1.58rem,2.7vw,1.82rem)] items-center rounded-sm border border-[#8b7355]/55 bg-[#c9b892]/78 px-[clamp(0.45rem,0.85vw,0.65rem)] py-[0.06rem] shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_2px_8px_rgba(26,15,10,0.22)]"
 
+// 고르기 칸 글자: 칸 바탕이 밝은 종이색(#c9b892)이라 밝은 글은 안 보임 → 짙은 갈색
 export const FILTER_LABEL_CLASS =
-  "pointer-events-none min-w-0 flex-1 truncate font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.78rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.45)]"
+  "pointer-events-none min-w-0 flex-1 truncate font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,0.95vw,0.78rem)] font-bold text-[#1a1008]"
 
 export const FILTER_CHEVRON_CLASS =
   "pointer-events-none ml-1 h-[clamp(0.55rem,0.95vw,0.72rem)] w-[clamp(0.55rem,0.95vw,0.72rem)] shrink-0 select-none opacity-95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]"

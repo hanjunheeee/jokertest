@@ -26,9 +26,9 @@ export default function SocialSignupFields({
 
   return (
     <>
-      {/* 가입 정보 불러오는 중 표시 */}
+      {/* 가입 정보 불러오는 중 표시 (양피지 위라 흰 글 대신 기본 글자색) */}
       {isIntentLoading && (
-        <p data-testid="social-intent-loading" className="px-2 text-xs text-white/70">
+        <p data-testid="social-intent-loading" className="px-2 text-xs text-text-body">
           가입 정보를 불러오는 중입니다...
         </p>
       )}
@@ -81,7 +81,8 @@ export default function SocialSignupFields({
         <p className={SIGNUP_HINT_TEXT_CLASS}>이메일 인증을 완료해야 가입할 수 있습니다.</p>
       )}
 
-      {visibleError && <p role="alert" className="px-2 app-text-scaled [--app-text-size:11px] text-red-400">{visibleError}</p>}
+      {/* 양피지 위 오류 글이라 가장 짙은 빨강 */}
+      {visibleError && <p role="alert" className="px-2 app-text-scaled [--app-text-size:11px] text-red-950">{visibleError}</p>}
 
       <div className={SUBMIT_BTN_WRAP_CLASS}>
         <AuthImageButton

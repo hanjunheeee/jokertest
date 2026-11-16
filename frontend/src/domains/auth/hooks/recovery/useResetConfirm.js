@@ -4,6 +4,7 @@ import { useRef } from "react"
 import { confirmPasswordResetApi } from "../../api/auth.api.js"
 import { RESET_TEXT } from "../../constants/recoveryMessages.js"
 import { validatePassword, validatePasswordConfirm } from "../../validation/signupValidation.js"
+import { LINK_PROBLEM_CODES } from "./useLinkCheck.js"
 
 // 새 비밀번호 제출 처리(handleSubmit)를 돌려줌, 화면 상태는 useResetPage가 가짐
 export function useResetConfirm({
@@ -58,7 +59,7 @@ export function useResetConfirm({
         } else if (rejectedWithCode === "INVALID_PASSWORD") {
           setFormError(error.message || RESET_TEXT.badPassword)
           setStatus("ready")
-        } else if (rejectedWithCode === "INVALID" || rejectedWithCode === "EXPIRED" || rejectedWithCode === "USED") {
+        } else if (LINK_PROBLEM_CODES.has(rejectedWithCode)) {
           setLinkInvalidReason(rejectedWithCode)
           setStatus("linkInvalid")
         } else {

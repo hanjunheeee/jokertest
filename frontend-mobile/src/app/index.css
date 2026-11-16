@@ -275,8 +275,9 @@
     transform: scale(0.9);
   }
 
+  /* 글자 링크: 모바일 화면 글자 링크 class들과 같은 짙은 호박색 (amber-800은 양피지 위에서 안 읽힘) */
   .auth-text-link {
-    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-amber-800 underline-offset-2 hover:underline;
+    @apply cursor-pointer border-0 bg-transparent p-0 font-subheading text-amber-950 underline-offset-2 hover:underline;
     font-size: calc(13px * var(--app-text-scale, 1));
     font-weight: 700;
     -webkit-text-stroke: 0.35px currentColor;

@@ -1,5 +1,5 @@
 // 가입 입력 검사 (이메일·닉네임·생년월일·비밀번호) 규칙과 날짜 계산
-// 가입·소셜 가입·재설정·이메일 인증 훅과 validation/recovery.js가 사용, 경계값은 시험 fixture와 맞춤
+// 가입·소셜 가입·재설정·비번 바꾸기·이메일 인증 훅과 validation/recovery.js가 사용, 경계값은 시험 fixture와 맞춤
 
 // 닉네임 규칙
 export const NICKNAME_MIN_LENGTH = 2
@@ -10,6 +10,9 @@ export const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/
 export const PASSWORD_MIN_LENGTH = 8
 export const PASSWORD_MAX_LENGTH = 64
 export const PASSWORD_MAX_BYTES = 72
+// 영문 글자·숫자 하나씩은 꼭 (서버 검사와 같음, 그 밖 글자는 그대로 허용)
+const PASSWORD_LETTER_PATTERN = /[A-Za-z]/
+const PASSWORD_DIGIT_PATTERN = /[0-9]/
 
 // 인증번호 받기 전 이메일 길이 상한
 const EMAIL_MAX_LENGTH = 100
@@ -93,7 +96,7 @@ export function validateBirthDate(birthDate) {
   return { ok: true, value: birthDate.trim() }
 }
 
-// 비밀번호: 빈칸 → 글자 수 → 바이트 수 (서버 bcrypt가 72바이트까지만 써서 같은 상한으로 막음)
+// 비밀번호: 빈칸 → 글자 수 → 바이트 수 → 영문·숫자 섞임 (서버 bcrypt가 72바이트까지만 써서 같은 상한으로 막음)
 export function validatePassword(password) {
   if (typeof password !== "string" || password.length === 0) {
     return { ok: false, message: "비밀번호를 입력해주세요." }
@@ -103,6 +106,9 @@ export function validatePassword(password) {
   }
   if (new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES) {
     return { ok: false, message: `비밀번호는 ${PASSWORD_MAX_BYTES}바이트를 넘을 수 없습니다.` }
+  }
+  if (!PASSWORD_LETTER_PATTERN.test(password) || !PASSWORD_DIGIT_PATTERN.test(password)) {
+    return { ok: false, message: "비밀번호는 영문과 숫자를 모두 포함해야 합니다." }
   }
   return { ok: true, value: password }
 }

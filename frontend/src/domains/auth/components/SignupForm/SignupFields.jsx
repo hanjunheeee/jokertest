@@ -14,7 +14,7 @@ import { useEmailCheck } from "@/domains/auth/hooks/login/useEmailCheck.js"
 
 // 중복확인은 이 칸에서만 쓰여서 훅을 여기서 부름
 export default function SignupFields({ formData, handleInputChange }) {
-  const { status: emailCheckStatus, check: handleCheckEmail } = useEmailCheck(formData.email)
+  const { status: emailCheckStatus, errorMessage: emailCheckError, check: handleCheckEmail } = useEmailCheck(formData.email)
 
   return (
     <>
@@ -40,7 +40,7 @@ export default function SignupFields({ formData, handleInputChange }) {
           visibleLabelClassName={EMAIL_CHECK_BTN_LABEL_CLASS}
           className={EMAIL_CHECK_BTN_CLASS}
         />
-        <EmailCheckMessage status={emailCheckStatus} />
+        <EmailCheckMessage status={emailCheckStatus} errorMessage={emailCheckError} />
       </div>
 
       <AuthInputSlot
@@ -49,7 +49,7 @@ export default function SignupFields({ formData, handleInputChange }) {
         onChange={handleInputChange}
         leadingIcon={<LockIcon />}
         passwordToggle
-        placeholder="비밀번호를 입력하세요"
+        placeholder="비밀번호를 입력하세요 (8~64자, 영문·숫자 포함)"
         autoComplete="new-password"
         compact
       />

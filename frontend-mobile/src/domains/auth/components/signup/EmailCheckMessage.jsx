@@ -13,10 +13,11 @@ const MESSAGES = {
   error: { text: "중복 확인에 실패했습니다. 다시 시도해주세요.", tone: EMAIL_CHECK_MSG_ERROR_CLASS },
 }
 
-// 좁은 폰에선 낱말 단위 줄바꿈 허용 (데스크톱은 한 줄 고정)
-export default function EmailCheckMessage({ status }) {
-  const message = MESSAGES[status]
-  if (!message) return null
+// 좁은 폰에선 낱말 단위 줄바꿈 허용 (데스크톱은 한 줄 고정), errorMessage는 막힘(429) 때 서버 글
+export default function EmailCheckMessage({ status, errorMessage = null }) {
+  const found = MESSAGES[status]
+  if (!found) return null
+  const message = status === "error" && errorMessage ? { ...found, text: errorMessage } : found
 
   return (
     <p aria-live="polite" className={`min-w-0 flex-1 break-keep text-left leading-tight app-text-scaled [--app-text-size:13px] ${message.tone}`}>

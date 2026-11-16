@@ -4,7 +4,8 @@ import { isRouteErrorResponse, useRouteError } from "react-router-dom"
 
 const WRAP_CLASS =
   "flex min-h-svh w-full flex-col items-center justify-center gap-4 bg-[#14110e] px-4 text-center text-[#f5f0e6]"
-const TITLE_CLASS = "app-text-scaled [--app-text-size:22px] font-semibold"
+// 제목은 h1이라 전역 빨강(#b50000)이 먹어 어두운 바탕에서 안 보임 → 바탕 글자색을 직접 줌
+const TITLE_CLASS = "app-text-scaled [--app-text-size:22px] font-semibold text-[#f5f0e6]"
 const BODY_CLASS = "app-text-scaled [--app-text-size:15px] text-white/70"
 const BUTTON_CLASS =
   "cursor-pointer rounded border border-[#6b5a44] bg-black/40 px-4 py-2 app-text-scaled [--app-text-size:15px] hover:bg-black/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f5f0e6]"

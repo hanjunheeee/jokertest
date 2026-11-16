@@ -67,6 +67,7 @@ export default function AccountPanel() {
               <EmailChangeSection account={account} onChanged={setEmail} />
 
               <PasswordSection
+                account={account}
                 pwForm={pwForm}
                 handlePwChange={handlePwChange}
                 pwMsg={pwMsg}
