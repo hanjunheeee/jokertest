@@ -6,7 +6,7 @@ const { isolate, tryOr } = require('../../common/isolate')
 const { respond } = require('../../common/replies')
 const { pickGameTarget, acceptRequest, acceptCoreResult, registryLogs } = require('../core/requests')
 const { emitProgressAfterSubmit } = require('../delivery/progress')
-const { settleDayVoteIfComplete } = require('../phase/day')
+const { settleDayVoteIfComplete, deferDayVoteAchievement } = require('../phase/day')
 
 // 낮 투표 제출 효과음 (기록 없거나 읽다 던지면 null, 효과음 없이 답함)
 function buildDayVoteSfx(uuid, gameId) {
@@ -70,9 +70,9 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
         return
     }
 
-    // 답 먼저, 업적 평가는 기다리지 않음
+    // 답 먼저, 업적 평가는 낮 끝에 묶어 한 번 (그 낮 타이머가 없으면 전처럼 바로, 기다리지 않음)
     ackThenSettle({ ok: true, sfxEvent })
-    gameAchievementService.evaluateForUsers([uuid], gameId)
+    if (!deferDayVoteAchievement(gameId, dayIndex, uuid)) gameAchievementService.evaluateForUsers([uuid], gameId)
 }
 
 module.exports = {

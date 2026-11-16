@@ -1,6 +1,7 @@
 // 낮 타이머 파일
-// 낮 토론·투표 마감 타이머(표가 다 차면 마감 5초로 당기기·판정 결과 방송 순서 포함) + 판 단계에 맞게 밤·낮·재판 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
+// 낮 토론·투표 마감 타이머(표가 다 차면 마감 5초로 당기기·판정 결과 방송 순서·낮 끝 업적 평가 묶음 포함) + 판 단계에 맞게 밤·낮·재판 타이머 맞추기, 핸들러·이탈·밤 마무리가 씀
 const gameSessionCore = require('../../../game-core/gameSession')
+const gameAchievementService = require('../../../services/game/achievementHooks')
 const { isolate, isolateWithError } = require('../../common/isolate')
 const { PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../core/constants')
 const { dayPhaseRuns } = require('../core/state')
@@ -247,7 +248,28 @@ function startDayPhaseTimer(io, session, deps = {}) {
     return dayPhaseRuns.get(session.id) ?? null
 }
 
-// 낮 타이머 멈춤: 낮 벗어날 때·판 끝·시험 초기화 때 run째 지움
+// 낮 표 낸 사람 업적 평가를 그 낮 끝까지 미룸 → 미뤘으면 true
+// 표마다 평가하면 DB 읽기 3번씩이라 낮 run에 모아 낮 끝에 한 번 (이번 판 표는 판 끝 저장 뒤에야 세서 결과 같음)
+// 그 낮 run이 없으면(타이머 없음·이미 낮 끝) false → 부른 쪽이 바로 평가
+function deferDayVoteAchievement(gameId, dayIndex, uuid) {
+    const run = dayPhaseRuns.get(gameId)
+    if (!run || run.session.phase !== 'DAY' || run.session.dayIndex !== dayIndex) return false
+    run.achievementVoters ??= new Set()
+    run.achievementVoters.add(uuid)
+    return true
+}
+
+// 낮 끝 업적 평가: 모아 둔 사람 한 번에 (진행 값·받은 목록 읽기는 사람 수와 상관없이 3번)
+// 판이 지워지거나 점검으로 끝나도 여기 거침 → 표 낸 사람은 지금처럼 평가받음
+function evaluateDeferredAchievements(run) {
+    const voters = run.achievementVoters
+    run.achievementVoters = null
+    if (!voters || voters.size === 0) return
+    isolate('[낮 끝 업적 평가 실패]', { code: 'ACHIEVEMENT_EVAL_ERROR', gameId: run.session.id },
+        () => gameAchievementService.evaluateForUsers([...voters], run.session.id))
+}
+
+// 낮 타이머 멈춤: 낮 벗어날 때·판 끝·시험 초기화 때 run째 지움, 미뤄 둔 업적 평가도 이때 함
 function stopDayPhaseTimer(gameId) {
     const run = dayPhaseRuns.get(gameId)
     if (!run) return
@@ -257,6 +279,7 @@ function stopDayPhaseTimer(gameId) {
         run.session.dayPhaseDeadline = null
     }
     dayPhaseRuns.delete(gameId)
+    evaluateDeferredAchievements(run)
 }
 
 // 낮 타이머가 판에 적어 둔 마감 시각을 공개 방송 내용에 붙임 (낮이 아니거나 시각 없으면 그대로)
@@ -305,6 +328,7 @@ module.exports = {
     stopDayPhaseTimer,
     syncSessionPhaseTimers,
     settleDayVoteIfComplete,
+    deferDayVoteAchievement,
     attachDayPhaseDeadline,
     announceDayStep,
 }
