@@ -48,7 +48,8 @@ async function openSignup(page) {
 async function fillSignup(page, { email, password, passwordConfirm, nickname, birthDate } = {}) {
     const area = signupArea(page);
     if (email !== undefined) await area.getByRole('textbox', { name: '이메일을 입력하세요' }).fill(email);
-    if (password !== undefined) await area.getByPlaceholder('비밀번호를 입력하세요', { exact: true }).fill(password);
+    // 가입 비번 칸 자리 글엔 규칙이 붙음 (로그인 칸은 '비밀번호를 입력하세요' 그대로)
+    if (password !== undefined) await area.getByPlaceholder('비밀번호를 입력하세요 (8~64자, 영문·숫자 포함)', { exact: true }).fill(password);
     if (passwordConfirm !== undefined) await area.getByPlaceholder('비밀번호를 다시 입력하세요').fill(passwordConfirm);
     if (nickname !== undefined) await nicknameBox(area).fill(nickname);
     if (birthDate !== undefined) await birthBox(area).fill(birthDate);

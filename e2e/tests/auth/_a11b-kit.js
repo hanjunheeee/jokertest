@@ -17,7 +17,7 @@ const { finishGame, closeReveals, waitResult } = require('../room/roomHelpers/re
 
 // ── 화면 문구 (frontend/src/domains/auth/constants/recoveryMessages.js·서버 문구 그대로) ──
 const TEXT = Object.freeze({
-    requestSent: "재설정 요청을 접수했어요. 입력하신 주소로 가입된 계정이 있다면 재설정 링크가 담긴 메일이 도착합니다. 메일이 보이지 않으면 스팸함까지 확인한 뒤 아래 '다시 보내기'를 눌러주세요.",
+    requestSent: "재설정 요청을 접수했어요. 입력하신 주소로 가입된 계정이 있다면 재설정 링크가 담긴 메일이 도착합니다. 메일이 보이지 않으면 스팸함까지 확인한 뒤 아래 '다시 보내기'를 눌러주세요. 여러 번 요청했다면 가장 최근에 받은 메일의 링크만 쓸 수 있어요.",
     rateLimited: '너무 많은 요청입니다. 잠시 후 다시 시도해주세요.',
     linkExpired: '링크가 만료됐어요. 비밀번호 재설정을 다시 요청해주세요.',
     linkUsed: '이미 사용된 링크예요. 비밀번호가 이미 재설정되었다면 새 비밀번호로 로그인해주세요.',
@@ -133,7 +133,7 @@ async function shareSession(from, to) {
 
 // ── 비번 찾기·재설정 화면 ──
 const RESET_EMAIL_BOX = '가입할 때 등록한 이메일을 입력하세요';
-const newPasswordBox = (page) => page.getByPlaceholder('8~64자 비밀번호', { exact: true });
+const newPasswordBox = (page) => page.getByPlaceholder('8~64자 비밀번호 (영문·숫자 포함)', { exact: true });
 const newPasswordConfirmBox = (page) => page.getByPlaceholder('비밀번호를 다시 입력하세요', { exact: true });
 
 // 요청 화면에서 주소 넣고 보냄 → 응답 상태 번호
@@ -247,7 +247,7 @@ const currentPwBox = (page) => pwSection(page).getByPlaceholder('현재 비밀�
 async function fillPasswordChange(page, { current, next, confirm = next }) {
     const s = pwSection(page);
     await currentPwBox(page).fill(current);
-    await s.getByPlaceholder('새 비밀번호', { exact: true }).fill(next);
+    await s.getByPlaceholder('새 비밀번호 (8~64자, 영문·숫자 포함)', { exact: true }).fill(next);
     await s.getByPlaceholder('새 비밀번호 확인', { exact: true }).fill(confirm);
     return s.getByRole('button', { name: '변경', exact: true });
 }

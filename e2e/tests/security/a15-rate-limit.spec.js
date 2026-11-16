@@ -110,18 +110,20 @@ test.describe('A15 요청 수 제한 (따로 띄운 운영 기본 제한 서버 
         expect(mail.readMails(email).filter((m) => m.template === 'SIGNUP_CODE')).toHaveLength(5);
     });
 
-    test(`A15-E-047 PC 비밀번호 찾기 화면 같은 주소 4번째 → "${RESET_LIMITED}" 보임, 메일 3통`, async ({ page, accounts }) => {
+    test(`A15-E-047 PC 비밀번호 찾기 화면 같은 주소 4번째 → "${RESET_LIMITED}" 보임, 메일 1통`, async ({ page, accounts }) => {
         const acc = await accounts.create();
         expect(await B.requestResetUi(page, acc.email)).toBe(200);
+        await expect(B.requestSentNotice(page, false)).toBeVisible();
+        // "다시 보내기"는 보낸 뒤 1분 꺼짐(결정 2026-11-16) → 2~4번째는 요청 화면을 새로 열어 같은 주소로
+        await expect(page.getByRole('button', { name: '다시 보내기', exact: true })).toBeDisabled();
         for (let i = 2; i <= 4; i += 1) {
-            await expect(B.requestSentNotice(page, false)).toBeVisible();
-            const answered = page.waitForResponse(B.isPost('/auth/password-reset/request'));
-            await page.getByRole('button', { name: '다시 보내기' }).click();
-            expect((await answered).status(), `${i}번째`).toBe(i <= 3 ? 200 : 429);
+            expect(await B.requestResetUi(page, acc.email), `${i}번째`).toBe(i <= 3 ? 200 : 429);
+            if (i <= 3) await expect(B.requestSentNotice(page, false)).toBeVisible();
         }
         await expectReadable(page.getByText(RESET_LIMITED, { exact: true }));
+        // 1분 안 다시 요청은 서버가 메일 없이 건너뜀(1시간 3번 셈에는 들어감) → 첫 메일 1통만
         await mail.waitForMail(acc.email, { template: 'PASSWORD_RESET' });
-        expect(B.mailsOf(acc.email, 'PASSWORD_RESET')).toHaveLength(3);
+        expect(B.mailsOf(acc.email, 'PASSWORD_RESET')).toHaveLength(1);
     });
 
     test(`A15-E-048 PC 계정 관리 이메일 바꾸기 번호 6번째 → "${EMAIL_CODE_LIMITED}" 보임`, async ({ user }) => {

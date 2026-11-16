@@ -40,17 +40,21 @@ test('A11-E-504 소셜 전용 이메일로 요청 → 같은 안내, 메일 상�
     expect(k.mailsOf(acc.email, 'PASSWORD_RESET')).toHaveLength(0);
 });
 
-test('A11-E-519 같은 주소로 요청 4번 → 4번째에 "너무 많은 요청입니다…" 보임', async ({ page, accounts }) => {
+test('A11-E-519 같은 주소로 요청 4번 → 4번째에 "너무 많은 요청입니다…" 보임, 메일은 1통', async ({ page, accounts }) => {
     const acc = await accounts.create();
     expect(await k.requestResetUi(page, acc.email)).toBe(200);
     await expect(k.requestSentNotice(page, false)).toBeVisible();
-    // 결정(2026-11-16): "다시 보내기"는 보낸 뒤 1분 꺼짐 → 연달아 못 누름 (글은 아직 미정이라 이름 앞머리로만 찾음)
-    await expect(page.getByRole('button', { name: /^다시 보내기/ })).toBeDisabled();
-    // 2·3번째는 요청 화면을 새로 열어 같은 주소로 다시 (1시간 3번까지, 1분 기다림은 화면 단추에만 걸림)
+    // 결정(2026-11-16): "다시 보내기"는 보낸 뒤 1분 꺼짐 + 남은 초 글 → 연달아 못 누름
+    await expect(page.getByRole('button', { name: '다시 보내기', exact: true })).toBeDisabled();
+    await expect(page.getByText(/^\d+초 뒤 다시 보낼 수 있습니다\.$/)).toBeVisible();
+    // 2·3번째는 요청 화면을 새로 열어 같은 주소로 다시 — 서버는 1분 안이라 메일은 건너뛰지만 같은 접수 답, 1시간 3번 셈에는 들어감
     for (let i = 2; i <= 3; i += 1) {
         expect(await k.requestResetUi(page, acc.email), `${i}번째`).toBe(200);
         await expect(k.requestSentNotice(page, false)).toBeVisible();
     }
     expect(await k.requestResetUi(page, acc.email)).toBe(429);
     await expect(page.getByText(k.TEXT.rateLimited, { exact: true })).toBeVisible();
+    // 1분 안 다시 요청은 메일을 안 보냄 → 첫 메일 1통만
+    await k.resetLinkFor(acc.email);
+    expect(k.mailsOf(acc.email, 'PASSWORD_RESET')).toHaveLength(1);
 });
