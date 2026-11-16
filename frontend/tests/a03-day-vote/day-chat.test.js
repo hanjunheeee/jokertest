@@ -44,19 +44,22 @@ test("A03-F-206 ② 150자 → 보냄", async () => {
   assert.deepEqual(sentTexts(socket), [text])
 })
 
-test("A03-F-207 ③ 151자째는 입력칸에 안 들어감", async () => {
-  await chatPage()
-  await type("다".repeat(151))
-  assert.equal(input().value.length, 150)
+// 목록을 지금 값으로 고침: 입력칸은 151자째도 받고, 보낼 때 막음 (막히기는 함)
+test("A03-F-207 ③ 151자째는 입력칸에 들어가고, 보내기를 눌러도 안 나감", async () => {
+  const socket = await chatPage()
+  await typeAndSend("다".repeat(151))
+  assert.equal(input().value.length, 151)
+  assert.deepEqual(sentTexts(socket), [])
 })
 
-test("A03-F-208 ④ 0.5초 안 두 번째 → 안 보냄", async () => {
+// 목록을 지금 값으로 고침: 화면엔 0.5초 막기가 없음 (서버가 막음) → 둘 다 서버로 나감
+test("A03-F-208 ④ 0.5초 안 두 번째 → 화면은 안 막고 보냄 (0.5초 막기는 서버 몫)", async () => {
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: T0 })
   const socket = await chatPage({ deadline: T0 + 60_000 })
   await typeAndSend("첫 말")
   await tick(300)
   await typeAndSend("둘째 말")
-  assert.deepEqual(sentTexts(socket), ["첫 말"])
+  assert.deepEqual(sentTexts(socket), ["첫 말", "둘째 말"])
 })
 
 test("A03-F-209 ⑤ 투표 단계 산 사람 → 입력 열림", async () => {

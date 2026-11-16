@@ -36,6 +36,8 @@ const REJECTIONS = [
   ["A04-F-025", "INVALID_DAY_INDEX", "잘못된 요청입니다. 다시 시도해주세요."],
   ["A04-F-026", "INVALID_PAYLOAD", "잘못된 요청입니다. 다시 시도해주세요."],
   ["A04-F-027", "INTERNAL_ERROR", "서버에서 처리하지 못했습니다. 다시 시도해주세요."],
+  // 끝난 판에 낸 표는 서버가 GAME_ALREADY_ENDED로 거절 (서버 기본 글 "요청을 처리할 수 없습니다." 대신 까닭 글)
+  ["A04-F-280", "GAME_ALREADY_ENDED", "판이 끝나 투표할 수 없습니다."],
 ]
 
 REJECTIONS.forEach(([id, code, text]) => {

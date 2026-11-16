@@ -8,7 +8,7 @@ const { saveChatHistory } = await import("../../src/domains/game/ingame/utils/in
 
 test.afterEach(resetTable)
 
-const CLOSED_TEXT = "밤에는 시민이 채팅을 쓸 수 없습니다"
+const CLOSED_TEXT = "밤에는 귀족이 채팅을 쓸 수 없습니다"
 
 // 새로고침 흉내: 판 값을 비우고 서버 스냅샷으로 채운 뒤 인게임 화면을 처음부터 그림
 async function reloadPage(t, beforeMount = () => {}) {

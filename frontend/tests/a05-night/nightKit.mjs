@@ -40,7 +40,7 @@ export const uuidOf = (index) => `u${index + 1}`
 const TEAM = { JOKER: "JOKER", CITIZEN: "CITIZEN", DOCTOR: "CITIZEN", GUARD: "CITIZEN", WITCH_HUNTER: "CITIZEN" }
 
 // 직업 화면 이름 (e2e/helpers/ui.js ROLE_LABELS와 같음)
-export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "시민" }
+export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "귀족" }
 
 // 밤 행동 이름 (카드 메뉴 단추 글)
 export const NIGHT_ACTION_LABELS = { JOKER: "암살", DOCTOR: "보호", GUARD: "조사", WITCH_HUNTER: "확인" }
@@ -288,11 +288,14 @@ export function openCardMenu(container, nickname) {
   return [...menu.querySelectorAll("[role=menuitem]")]
 }
 
+// 단추에 보이는 글 (읽기 이름엔 대상 닉네임이 앞에 붙어서 보이는 글로 찾음, 예: 읽기 이름 "지영 암살" → 보이는 글 "암살")
+export const shownLabel = (button) => button.querySelector("span")?.textContent ?? ""
+
 // 카드 메뉴의 밤 행동 단추 (없으면 null)
 export function nightMenuItem(container, nickname, role) {
   const items = openCardMenu(container, nickname)
   const label = NIGHT_ACTION_LABELS[role]
-  const found = items.find((button) => button.getAttribute("aria-label") === label) ?? null
+  const found = items.find((button) => shownLabel(button) === label) ?? null
   // 다음 확인을 위해 메뉴를 닫음 (열린 채면 같은 카드를 다시 눌렀을 때 닫혀 버림)
   if (items.length > 0) act(() => { fireEvent.keyDown(document, { key: "Escape" }) })
   return found
@@ -301,7 +304,7 @@ export function nightMenuItem(container, nickname, role) {
 // 카드 메뉴를 연 채로 밤 행동 단추 꺼내기 (눌러 볼 때 씀, 없으면 null)
 export function openNightItem(container, nickname, role) {
   const items = openCardMenu(container, nickname)
-  return items.find((button) => button.getAttribute("aria-label") === NIGHT_ACTION_LABELS[role]) ?? null
+  return items.find((button) => shownLabel(button) === NIGHT_ACTION_LABELS[role]) ?? null
 }
 
 // 구석 행동 칸의 건너뛰기 단추 (없으면 null)

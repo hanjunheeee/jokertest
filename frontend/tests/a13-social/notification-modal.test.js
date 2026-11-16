@@ -62,10 +62,14 @@ test("A13-F-220 알림 1개 → 제목·본문·시각, 안 읽은 표시", asyn
   assert.ok(row.querySelector("time") || /\d{1,2}:\d{2}/.test(row.textContent), "알림 줄에 시각이 안 보임")
 })
 
-test("A13-F-221 갈 곳 이름 없는 target → 단추 \"보러 가기\"", async () => {
+// 갈 곳 이름이 없는데 갈 주소만 있는 경우는 안 생김 (주소를 아는 종류는 전부 이름도 있음) → 모르는 종류면 단추가 없는지 봄
+test("A13-F-221 모르는 종류의 target(kind: event) → 갈 곳 단추 없음, 제목·본문은 그대로", async () => {
   const item = note("n2", { target: { kind: "event", eventId: "e-1" } })
   render(h("ul", null, h(NotificationItem, { item, pending: false, error: null, onRead() {}, onOpenTarget() {}, onClearError() {} })))
-  assert.ok(screen.queryByRole("button", { name: "보러 가기" }), "\"보러 가기\" 단추가 없음")
+  const row = document.querySelector('[data-notification-id="n2"]')
+  assert.equal(row.querySelectorAll("button").length, 0)
+  assert.match(row.textContent, /제목 n2/)
+  assert.match(row.textContent, /본문 n2/)
 })
 
 test("A13-F-222 업적 알림 단추 → 기억의 서고 화면으로", async () => {

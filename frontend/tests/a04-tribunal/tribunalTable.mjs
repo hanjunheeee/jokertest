@@ -389,7 +389,7 @@ function attachServer(t) {
     return payload
   }
 
-  // 재판 없이 밤으로 가는 낮 판정 (동표·기권 많음·전원 기권)
+  // 재판 없이 밤으로 가는 낮 판정 (동표·기권 많음·전원 기권·피고로 뽑힌 사람이 끊겨 있음)
   t.nightOutcomePayload = (outcome) => {
     const alive = aliveCount()
     const abstain = outcome === "ABSTAINED" ? alive : (outcome === "ABSTAIN_MAJORITY" ? Math.ceil(alive / 2) : 1)
@@ -420,9 +420,11 @@ function attachServer(t) {
     })
   }
 
-  // 재판 결과 알림 (서버 buildTribunalVoteResolvedPayload + 판 끝 칸 모양)
+  // 재판 결과 알림 (서버 buildTribunalVoteResolvedPayload + 판 끝 칸 모양 — 표 수·처형된 사람 직업은 서버가 안 실음)
   // ended: 판이 끝나면 이긴 쪽 ("CITIZEN"·"JOKER")
-  t.resolvedPayload = (outcome, { counts, ended = null, defendantIndex = t.defendantIndex, gameId = t.gameId, dayIndex = t.dayIndex, resultClosesAt } = {}) => {
+  // counts·executedRole: 옛 서버처럼 그 칸이 실려 와도 화면에 안 새는지 볼 때만 넣음
+  // 결과 이름 DEFENDANT_DIED = 재판 도중 끊긴 피고가 60초 안에 못 돌아와 죽음 (취소와 달리 이유 칸 없음)
+  t.resolvedPayload = (outcome, { counts, executedRole, ended = null, defendantIndex = t.defendantIndex, gameId = t.gameId, dayIndex = t.dayIndex, resultClosesAt } = {}) => {
     const defendant = seats[defendantIndex]
     const executedUuid = outcome === "GUILTY" ? defendant.uuid : null
     const payload = {
@@ -432,9 +434,9 @@ function attachServer(t) {
       phase: ended ? "ENDED" : "NIGHT",
       defendantUuid: defendant.uuid,
       outcome,
-      counts: counts ?? (outcome === "GUILTY" ? { guilty: 3, notGuilty: 1 } : outcome === "NOT_GUILTY" ? { guilty: 1, notGuilty: 3 } : { guilty: 0, notGuilty: 0 }),
+      ...(counts ? { counts } : {}),
       executedUuid,
-      executedRole: executedUuid ? defendant.role : null,
+      ...(executedRole ? { executedRole } : {}),
     }
     if (!ended) return payload
     const aliveAfter = seats.map((s) => ({ uuid: s.uuid, isAlive: s.alive && s.uuid !== executedUuid }))
@@ -459,7 +461,7 @@ function attachServer(t) {
   t.resolve = async (outcome, options = {}) => {
     const payload = t.resolvedPayload(outcome, options)
     if (outcome === "GUILTY") seats[t.defendantIndex].alive = false
-    if (outcome === "CANCELLED") seats[t.defendantIndex].alive = false
+    if (outcome === "CANCELLED" || outcome === "DEFENDANT_DIED") seats[t.defendantIndex].alive = false
     t.phase = options.ended ? "ENDED" : "NIGHT"
     t.tribunalDeadline = null
     await t.say("tribunal_vote_resolved", payload)

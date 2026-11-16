@@ -1,5 +1,5 @@
 // 탈주 거절 글이 그 화면에 보이는지 시험(화면 부품): 방 만들기·코드 입력·공개 방 목록·초대 수락·매칭 화면, 읽기 프로그램이 읽는 칸
-// 목록 A09-끊김-나가기-탈주.md A09-F-233~239, 돌리기(frontend): node --experimental-test-module-mocks --test tests/a09-departure/desertion-reject-page.test.js
+// 목록 A09-끊김-나가기-탈주.md A09-F-233~239·238-2·238-3·239-2, 돌리기(frontend): node --experimental-test-module-mocks --test tests/a09-departure/desertion-reject-page.test.js
 // 목록 파일 칸은 desertion-reject.test.jsx지만 상태 시험 desertion-reject.test.js와 이름이 겹쳐 desertion-reject-page로 둠
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -136,4 +136,43 @@ test("A09-F-238 방 만들기 화면 탈주 거절 글이 role=alert 또는 stat
 test("A09-F-239 코드 입력 창 탈주 거절 글이 role=alert 또는 status 칸 안", async () => {
   await rejectOnCode()
   assert.ok(inLiveRegion(COOLDOWN_TEXT), `읽기 칸에 글 없음 (브라우저 알림 창: ${JSON.stringify(K.dialogs.alerts)})`)
+})
+
+// 화면에 남긴 거절 글 띠 (알림 창은 그대로 뜨고, 띠는 "확인"이나 다시 누르기로 지워짐)
+const notice = () => screen.queryByTestId("entry-failure-notice")
+
+test("A09-F-238-2 방 만들기 거절 글: 알림 창도 그대로 뜸 + 띠의 \"확인\" 누르면 띠가 사라짐", async () => {
+  await rejectOnSetup()
+  assert.ok(K.dialogs.alerts.includes(COOLDOWN_TEXT), "브라우저 알림 창이 안 뜸")
+  assert.ok(notice().textContent.includes(COOLDOWN_TEXT))
+  await K.click(within(notice()).getByRole("button", { name: "확인" }))
+  assert.equal(notice(), null)
+})
+
+test("A09-F-238-3 방 만들기 거절 뒤 다시 누름 → 답 오기 전엔 옛 거절 글이 없음", async () => {
+  const fake = K.signIn()
+  fake.answer("create_room", (payload, count) => (count === 1 ? REFUSAL : new Promise(() => {})))
+  await K.renderRoutes({ path: "/game-setup", element: h(GameSetupPage) })
+  const create = () => document.querySelector('button[aria-label="게임 만들기"]')
+  await K.click(create())
+  await K.flush(10)
+  assert.ok(notice()?.textContent.includes(COOLDOWN_TEXT))
+  await K.click(create())
+  await K.flush(5)
+  assert.equal(fake.sentOf("create_room").length, 2, "두 번째 create_room을 안 보냄")
+  assert.equal(notice(), null)
+})
+
+test("A09-F-239-2 코드 입력 거절 글: 거절 전엔 띠 없음 → 거절되면 띠에 그 글 → \"확인\" 누르면 사라짐", async () => {
+  const fake = K.signIn()
+  await K.renderRoutes({ path: "/roomInvite", element: h(RoomInvitePage) })
+  assert.equal(notice(), null, "거절 전인데 띠가 있음")
+  const boxes = within(screen.getByRole("group", { name: "방 코드 6자리" })).getAllByRole("textbox")
+  await K.RTL.act(async () => { fireEvent.paste(boxes[0], { clipboardData: { getData: () => "ABC234" } }) })
+  await K.click(screen.getByRole("button", { name: "참여하기" }))
+  await K.RTL.act(async () => { fake.fire("room_join_failed", BROADCAST_REFUSAL) })
+  await K.flush()
+  assert.ok(notice().textContent.includes(COOLDOWN_TEXT))
+  await K.click(within(notice()).getByRole("button", { name: "확인" }))
+  assert.equal(notice(), null)
 })

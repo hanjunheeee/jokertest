@@ -42,8 +42,8 @@ async function fillAndSubmit(hook, password, confirm = password) {
 // 규칙에 걸려 서버를 안 부르는 세 가지 (7자·65자·한글 25자)
 for (const [no, label, pw] of [
   ["525", "7자", "Test-07"],
-  ["526", "65자", "T".repeat(65)],
-  ["527", "한글 25자", "가".repeat(25)],
+  ["526", "65자", `${"T".repeat(64)}1`],
+  ["527", "한글 24자 + a1b(75바이트)", `${"가".repeat(24)}a1b`],
 ]) {
   test(`A11-F-${no} 새 비번 ${label} → 규칙 문구, 서버 안 부름`, async () => {
     const { net, hook } = await readyHook({ status: 200, body: { ok: true } })
@@ -132,7 +132,7 @@ test("A11-F-587 재설정 링크 화면 → token이 localStorage·sessionStorag
   })
   await flushUi()
   // 새 비번 넣고 저장까지 해 봄
-  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호"), { target: { value: GOOD_PW } })
+  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호 (영문·숫자 포함)"), { target: { value: GOOD_PW } })
   fireEvent.change(screen.getByPlaceholderText("비밀번호를 다시 입력하세요"), { target: { value: GOOD_PW } })
   fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }))
   await flushUi()

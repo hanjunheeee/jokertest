@@ -65,7 +65,7 @@ function tribunalGame(n) {
   return g
 }
 
-// 재판 유죄로 마지막 광대 처형 → 판 끝 (서버 buildTribunalVoteResolvedPayload + 판 끝 칸 모양, 지금 서버처럼 표 수·직업 칸도 실음)
+// 재판 유죄로 마지막 광대 처형 → 판 끝 (서버 buildTribunalVoteResolvedPayload + 판 끝 칸 모양, 표 수·직업 칸은 서버가 안 실음)
 function guiltyEndPayload(g) {
   g.seats[0].alive = false
   return {
@@ -74,9 +74,7 @@ function guiltyEndPayload(g) {
     phase: "ENDED",
     defendantUuid: g.seats[0].uuid,
     outcome: "GUILTY",
-    counts: { guilty: 3, notGuilty: 1 },
     executedUuid: g.seats[0].uuid,
-    executedRole: "JOKER",
     players: g.seats.map((s) => ({ uuid: s.uuid, isAlive: s.alive })),
     winResult: K.winResultOf(g.seats, "CITIZEN", 1),
     resultClosesAt: Date.now() + 180_000,

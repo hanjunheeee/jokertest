@@ -57,7 +57,7 @@ async function resetPage(verifyAnswer, confirmAnswer = { status: 200, body: { ok
 
 // 새 비번 두 칸 넣고 "비밀번호 변경"
 async function fillNewPassword(password, confirm = password) {
-  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호"), { target: { value: password } })
+  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호 (영문·숫자 포함)"), { target: { value: password } })
   fireEvent.change(screen.getByPlaceholderText("비밀번호를 다시 입력하세요"), { target: { value: confirm } })
   fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }))
   await flushUi()
@@ -102,9 +102,9 @@ test("A11-F-706 확인 중 → '링크를 확인하고 있어요'(role=status)",
   assert.equal(screen.getByRole("status").textContent, "링크를 확인하고 있어요")
 })
 
-test("A11-F-707 ready → 새 비번·확인 두 칸 + 안내 '8~64자 비밀번호'", async () => {
+test("A11-F-707 ready → 새 비번·확인 두 칸 + 안내 '8~64자 비밀번호 (영문·숫자 포함)'", async () => {
   await resetPage(VALID)
-  assert.ok(screen.getByLabelText("8~64자 비밀번호"))
+  assert.ok(screen.getByLabelText("8~64자 비밀번호 (영문·숫자 포함)"))
   assert.ok(screen.getByLabelText("비밀번호를 다시 입력하세요"))
   assert.equal(document.querySelectorAll("input[name='password'], input[name='passwordConfirm']").length, 2)
 })
@@ -242,6 +242,8 @@ test("A11-F-763 비번 바꾸기 성공 글 (계정 관리 화면)", async (t) =
   const section = screen.getByRole("heading", { name: "비밀번호 변경" }).closest("section")
   fireEvent.change(section.querySelector("input[name='currentPassword']"), { target: { value: "TestOnly-Old-1" } })
   fireEvent.change(section.querySelector("input[name='newPassword']"), { target: { value: "TestOnly-New-1" } })
+  // 확인 칸도 같은 값 (다르면 안 보냄 — a11e-password-section 시험이 봄)
+  fireEvent.change(section.querySelector("input[name='newPasswordConfirm']"), { target: { value: "TestOnly-New-1" } })
   await act(async () => {
     fireEvent.click(within(section).getByRole("button", { name: "변경" }))
     for (let i = 0; i < 6; i += 1) await Promise.resolve()

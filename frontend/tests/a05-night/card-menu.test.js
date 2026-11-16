@@ -15,7 +15,7 @@ const NIGHT_LABELS = new Set([...Object.values(kit.NIGHT_ACTION_LABELS), "밤 �
 // 카드 메뉴의 밤 단추 상태: 단추 없음 = "없음", 잠김 = "고를 수 없음", 눌림 = "고름" (보고 나서 메뉴 닫음)
 function menuState(view, index) {
   const items = kit.openCardMenu(view.container, kit.NICKS[index])
-  const night = items.find((button) => NIGHT_LABELS.has(button.getAttribute("aria-label"))) ?? null
+  const night = items.find((button) => NIGHT_LABELS.has(kit.shownLabel(button))) ?? null
   if (items.length > 0) kit.act(() => { kit.fireEvent.keyDown(document, { key: "Escape" }) })
   if (!night) return "없음"
   return night.disabled ? "고를 수 없음" : "고름"

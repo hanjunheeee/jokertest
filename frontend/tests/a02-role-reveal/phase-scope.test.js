@@ -4,12 +4,13 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import {
   LocationText, MemoryRouter, React, RTL, Route, Routes, installSocket, loginAs, renderActionContext, resetAll,
-  useAuthStore, useInGameStore,
+  useInGameStore,
 } from "./a02Render.mjs"
 import { autoCounts, buildGameStarted, firstOf, nextGameId, seatPlayers } from "./a02Fixtures.mjs"
 
 const { selectOwnedGameChatContext } = await import("../../src/domains/game/ingame/utils/selectOwnedGameChatContext.js")
-const { selectInGameEmojiScope } = await import("../../src/domains/game/ingame/utils/selectInGameEmojiScope.js")
+const { isInGameEmojiPhase } = await import("../../src/domains/game/ingame/utils/selectInGameEmojiScope.js")
+const { useInGameEmojiSend } = await import("../../src/domains/game/ingame/hooks/useInGameEmojiSend.js")
 const { buildInGamePlayerCardMenuItems, INGAME_CARD_MENU_ITEM_KINDS: KINDS } = await import(
   "../../src/domains/game/ingame/hooks/useInGamePlayerCardMenu.js"
 )
@@ -41,12 +42,19 @@ test("A02-F-116 역할 확인 단계 산 사람 → 채팅 쓸 수 없음(보낼
   assert.equal(chat.sendChannel, null)
 })
 
-test("A02-F-117 역할 확인 단계 산 사람 → 이모티콘 쓸 수 있음", () => {
-  const gameId = inRoleReveal()
-  const auth = useAuthStore.getState()
-  const scope = selectInGameEmojiScope(useInGameStore.getState(), auth.user.uuid, auth.identityGeneration)
-  assert.notEqual(scope, null)
-  assert.equal(scope.gameId, gameId)
+// 결정 2026-11-16 오전 둘째 "이모티콘": 낮에만 → 역할 확인 10초 동안은 안 됨 (서버도 INVALID_PHASE로 거절)
+test("A02-F-117 역할 확인 단계 산 사람 → 이모티콘 못 씀: 보내기를 불러도 send_emoji가 안 나감", async () => {
+  const socket = installSocket()
+  loginAs(ME)
+  const gameId = nextGameId("scope")
+  RTL.act(() => { useInGameStore.getState().setGamePayload(buildGameStarted(SEATS, ME, { gameId })) })
+  assert.equal(useInGameStore.getState().state.phase, "ROLE_REVEAL")
+  assert.equal(isInGameEmojiPhase(useInGameStore.getState().state), false)
+  // 이모티콘 보내기 훅을 직접 불러도 요청이 안 나가고 "못 보냄"으로 답함
+  const hook = RTL.renderHook(() => useInGameEmojiSend())
+  const result = await hook.result.current.send("emoji-basic-hello")
+  assert.equal(result.ok, false)
+  assert.equal(socket.sent.some((s) => s.event === "send_emoji"), false)
 })
 
 test("A02-F-118 역할 확인 단계 → 판 단추 줄에 투표·준비 없음", () => {

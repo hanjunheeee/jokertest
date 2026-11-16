@@ -74,10 +74,10 @@ test("A11-F-258 가입 정보 답 오기 전 → \"가입 정보를 불러오는
   await settle()
 })
 
-test("A11-F-259 만료 → \"소셜 로그인 세션이 만료되었습니다. 다시 시도해주세요.\" + 로그인으로", async () => {
+test("A11-F-259 만료 → 서버 글 그대로(\"가입 가능 시간이 만료되었습니다. 다시 로그인해주세요.\") + 로그인으로", async () => {
   // 서버가 만료일 때 주는 답 그대로
   await renderSocial({ status: 400, body: { success: false, message: "가입 가능 시간이 만료되었습니다. 다시 로그인해주세요.", code: "INTENT_EXPIRED" } })
-  assert.equal(screen.getByRole("alert").textContent.trim(), "소셜 로그인 세션이 만료되었습니다. 다시 시도해주세요.")
+  assert.equal(screen.getByRole("alert").textContent.trim(), "가입 가능 시간이 만료되었습니다. 다시 로그인해주세요.")
   assert.ok(screen.getByRole("button", { name: "로그인 화면으로" }))
 })
 

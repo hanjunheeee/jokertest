@@ -1,8 +1,8 @@
 // 낮 판정 뒤 다음 화면: 재판이면 재판 창, 동점·기권 많음·전원 기권이면 재판 창 없이 밤 — 화면 부품 시험
-// 목록 A03-낮투표.md 번호 A03-F-231~235
+// 목록 A03-낮투표.md 번호 A03-F-231~235, 241
 import test from "node:test"
 import assert from "node:assert/strict"
-import { NAMES, dayResolved, fakeSocket, fire, renderPage, resetAll, seat, uuidOf } from "./dayVoteHarness.mjs"
+import { NAMES, dayResolved, fakeSocket, fire, renderPage, resetAll, seat, useInGameStore, uuidOf } from "./dayVoteHarness.mjs"
 
 test.afterEach(() => resetAll())
 
@@ -42,4 +42,16 @@ test("A03-F-235 ⑤ [버그 9] 7명 1표 6기권 → 재판 창 안 그려짐·�
   await afterResolution(7, { outcome: "ABSTAIN_MAJORITY", alive: 7, abstain: 6 })
   assert.equal(tribunalDialog() === null, true, "재판 창이 그려짐")
   assert.ok(nightEntrance(), "밤 시작 창 있음")
+})
+
+test("A03-F-241 ⑥ DEFENDANT_DISCONNECTED(뽑힌 사람이 끊겨 있음) → 재판 창 없음·밤, 판 상태에 그 결과 이름", async () => {
+  // 6명 중 5명이 끊긴 한 사람을 찍음 (끊긴 사람 표는 마감에 기권) → 서버는 누가 뽑혔는지 안 싣고 밤으로 보냄
+  await afterResolution(6, { outcome: "DEFENDANT_DISCONNECTED", alive: 6, abstain: 1 })
+  assert.equal(tribunalDialog() === null, true, "재판 창이 그려짐")
+  assert.ok(nightEntrance(), "밤 시작 창 있음")
+  const state = useInGameStore.getState().state
+  assert.equal(state.phase, "NIGHT")
+  assert.equal(state.dayVoteResolution?.outcome, "DEFENDANT_DISCONNECTED")
+  assert.equal(state.dayVoteResolution?.tribunalTargetUuid, null)
+  assert.equal(state.tribunal ?? null, null)
 })

@@ -1,4 +1,4 @@
-// "다음 게임 설정 유지" 없앰 시험: 판 중 설정 창 방관리 탭에 스위치 없음·안내 한 줄, 판 뒤 새 방 만들기 화면은 처음 값, "방장이 새 방을 만드는 중" 기다림 화면 없음
+// "다음 게임 설정 유지" 없앰 시험: 판 중 설정 창에 방관리 탭이 없음(결정 2026-11-16 아침 12번)·스위치도 없음, 판 뒤 새 방 만들기 화면은 처음 값, "방장이 새 방을 만드는 중" 기다림 화면 없음
 // 목록 docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md A08-F-058~060 (화면 부품·상태)
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -13,20 +13,18 @@ test.afterEach(K.resetAll)
 
 const KEEP_SWITCH = "다음 게임 설정 유지"
 
-test("A08-F-058 7명 판: 방장의 방관리 탭 → \"다음 게임 설정 유지\" 스위치 없음, 다음 판 방 안내 한 줄", async () => {
+test("A08-F-058 7명 판: 방장의 판 중 설정 창 → 방관리 탭 없음(탭은 채팅·사운드 둘), \"다음 게임 설정 유지\" 스위치 없음", async () => {
   K.installFakeSocket()
   // 0번 자리가 방장, 나 = 방장
   K.liveGame({ n: 7, me: 0, roles: ["CITIZEN", "JOKER", "CITIZEN", "CITIZEN", "CITIZEN", "CITIZEN", "CITIZEN"] })
   await K.renderAt("/ingame", K.h(SettingPanel, { open: true, onClose: () => {}, timerPlacement: "top", onCycleTimerPlacement: () => {} }), { shell: false })
-  const tab = K.RTL.screen.getAllByRole("button").find((b) => b.textContent.includes("방관리"))
-  assert.ok(tab, "방장인데 방관리 탭이 없음")
-  await K.click(tab)
+  const tabs = [...document.querySelector('nav[aria-label="인게임 설정 탭"]').querySelectorAll("button")].map((b) => b.textContent.trim())
+  assert.deepEqual(tabs, ["채팅", "사운드"])
+  assert.equal(document.body.textContent.includes("방관리"), false, "방관리 글이 화면에 남음")
   assert.equal(document.body.textContent.includes(KEEP_SWITCH), false)
   assert.equal(K.RTL.screen.queryAllByRole("checkbox").some((box) => (box.getAttribute("aria-label") ?? "").includes("유지")), false)
   assert.equal(K.RTL.screen.queryAllByRole("switch").length, 0)
-  const notice = document.querySelector('[data-testid="ingame-room-tab-notice"]')
-  assert.ok(notice !== null, "다음 판 방 안내가 없음")
-  assert.equal(notice.textContent, "게임이 끝나면 같은 방 코드·같은 설정으로 대기방이 다시 열립니다.")
+  assert.equal(document.querySelector('[data-testid="ingame-room-tab-notice"]') === null, true, "방관리 탭 안내가 남음")
 })
 
 // 숫자 고르기 칸의 지금 숫자 (감소 단추 옆 칸), 예: "최대 플레이어 수" → 10

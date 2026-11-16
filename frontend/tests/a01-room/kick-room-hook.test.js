@@ -1,5 +1,5 @@
 // 화면 상태 시험: 대기방 추방 훅 — 방장·확인 끝일 때만 추방, 꺼진 까닭 조건, 성공하면 창 닫힘, 대상 목록, 요청 7칸, 결과 모름 뒤 방 다시 확인
-// 목록 A01-F-539~552 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md), 돌리기: node --experimental-test-module-mocks --test tests/a01-room/kick-room-hook.test.js
+// 목록 A01-F-539~552·540-2~540-5·547-2 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md), 돌리기: node --experimental-test-module-mocks --test tests/a01-room/kick-room-hook.test.js
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
@@ -33,6 +33,30 @@ test("A01-F-540 [버그 7] 방장 + 확인 전 → canKick: false, isKickHost: t
   const { view } = setup({ verified: false })
   assert.equal(view.result.current.canKick, false)
   assert.equal(view.result.current.isKickHost, true)
+})
+
+// 방 확인 상태 → 잠긴 까닭 글 (끊긴 창에 "확인하는 중"이 뜨지 않게 상태마다 다른 글)
+const LOCKED_REASONS = [
+  ["A01-F-540-2", "waiting_socket", "서버와 연결되어 있지 않아 추방할 수 없습니다."],
+  ["A01-F-540-3", "checking", "방 정보를 서버에서 확인하는 중이라 아직 추방할 수 없습니다."],
+  ["A01-F-540-4", "failed", "방 정보를 확인하지 못해 추방할 수 없습니다."],
+]
+for (const [no, status, text] of LOCKED_REASONS) {
+  test(`${no} [버그 7] 방장 + 방 확인 상태 ${status} → 잠긴 까닭 글 "${text}"`, () => {
+    signIn("host")
+    useFakeSocket()
+    useMatchingStore.getState().setRoom(roomOf({ n: 5, max: 6 }))
+    const view = renderHook(() => useMatchingRoomKick({ isRoomVerified: false, roomSyncStatus: status }))
+    assert.equal(view.result.current.kickLockedReason, text)
+  })
+}
+
+test("A01-F-540-5 추방할 수 있을 때·손님일 때 → 잠긴 까닭 글 없음", () => {
+  const host = setup()
+  assert.equal(host.view.result.current.kickLockedReason, null)
+  cleanup(); resetAll()
+  const guest = setup({ me: "guest-1", verified: false })
+  assert.equal(guest.view.result.current.kickLockedReason, null)
 })
 
 test("A01-F-541 손님 → isKickHost: false, canKick: false", () => {
@@ -158,4 +182,31 @@ test("A01-F-552 결과 모름 → 결과 확인(서버도 모름) → 지금 방
   assert.equal(targetOf(view, "guest-1"), undefined)
   assert.equal(useMatchingStore.getState().players.some((p) => p.uuid === "guest-1"), false)
   assert.equal(view.result.current.isAwaitingKickResolution, false)
+})
+
+test("A01-F-547-2 [버그 7] 보내는 중 연결 끊김 → 8초 뒤 결과 모름(보내는 중 아님) → 다시 붙어 창 열고 결과 확인 KICKED → 성공·창 닫힘", async (t) => {
+  const { fake, view } = setup()
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  fake.answer("kick_room_player", NO_ANSWER)
+  act(() => view.result.current.openKickModal())
+  act(() => view.result.current.requestKickConfirm(targetOf(view, "guest-1")))
+  // 연결이 끊김: 소켓 id 없어짐 + 방 확인 풀림
+  fake.connected = false
+  fake.id = undefined
+  view.rerender({ v: false })
+  assert.equal(view.result.current.isKicking, true)
+  act(() => t.mock.timers.tick(8000))
+  assert.equal(view.result.current.kickStatus, S.UNKNOWN)
+  assert.equal(view.result.current.isKicking, false, "8초가 지났는데 보내는 중에 멈춰 있음")
+  assert.equal(view.result.current.canLookupKickResult, true)
+  // 다시 붙음(새 소켓 id) + 방 확인 끝 → 창을 열면 결과 확인이 됨
+  fake.connected = true
+  fake.id = "sock-2"
+  view.rerender({ v: true })
+  act(() => view.result.current.openKickModal())
+  assert.equal(view.result.current.kickModalOpen, true)
+  fake.answer("get_kick_result", { ok: true, status: "KICKED" })
+  await act(async () => { view.result.current.lookupKickResult(); await flush() })
+  assert.equal(view.result.current.kickStatus, S.SUCCEEDED)
+  assert.equal(view.result.current.kickModalOpen, false)
 })

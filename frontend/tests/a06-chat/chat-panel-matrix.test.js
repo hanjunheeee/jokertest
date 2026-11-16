@@ -8,7 +8,7 @@ const { INTRO_HOLD_MS } = await import("../../src/domains/game/ingame/constants/
 
 test.afterEach(resetTable)
 
-const CLOSED_TEXT = "밤에는 시민이 채팅을 쓸 수 없습니다"
+const CLOSED_TEXT = "밤에는 귀족이 채팅을 쓸 수 없습니다"
 
 // 단계 5 (역할 확인·낮 토론·낮 투표·재판·밤)
 const PHASES = [

@@ -78,11 +78,14 @@ test("A10-F-007 판 스토어 gameId g1 + 답 g1 → 판 스토어 그대로, /i
 
 const BAD_IDS = [["A10-F-008", "''", ""], ["A10-F-009", "null", null], ["A10-F-010", "123", 123]]
 for (const [no, label, gameId] of BAD_IDS) {
-  test(`${no} [지금 동작] INGAME + gameId ${label} → 주소 그대로`, async (t) => {
+  test(`${no} INGAME + gameId ${label} → 주소 그대로, 방 스토어도 그대로`, async (t) => {
     setup(t, INGAME(gameId))
+    K.putRoom(K.roomOf({ roomId: "r1" }))
     const view = openLobby()
     await K.flush()
     assert.equal(view.path(), "/lobby")
+    // 판으로 가라는 답은 서버가 아무것도 안 지운 답 → 정리 답처럼 방 정보를 비우면 안 됨
+    assert.deepEqual(K.roomState(), { roomId: "r1", isInRoom: true })
   })
 }
 

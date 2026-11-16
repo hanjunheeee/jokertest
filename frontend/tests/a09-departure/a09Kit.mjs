@@ -44,7 +44,7 @@ export { h, InGamePage, GameResultPage }
 // 자리마다 닉네임 (직업 이름과 안 겹치는 낱말만), uuid는 a09-<판 번호>-p<자리>
 export const NICKS = ["여름", "가을", "겨울", "새벽", "노을", "구름", "바람", "이슬", "들꽃", "호수"]
 export const ROLE_TEAM = { JOKER: "JOKER", CITIZEN: "CITIZEN", DOCTOR: "CITIZEN", GUARD: "CITIZEN", WITCH_HUNTER: "CITIZEN" }
-export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "시민" }
+export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "귀족" }
 export const NIGHT_ACTION_LABELS = { JOKER: "암살", DOCTOR: "보호", GUARD: "조사", WITCH_HUNTER: "확인" }
 const ALLY_ROLES = new Set(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
 
@@ -513,12 +513,13 @@ export function cardButton(nickname) {
 }
 
 // 카드를 눌러 연 메뉴의 단추 목록 (안 열리면 빈 목록), 보고 나면 Esc로 닫음
+// label은 단추에 보이는 글 (밤 행동 단추의 읽기 이름엔 대상 닉네임이 앞에 붙음, 예: 읽기 이름 "지영 보호" → 보이는 글 "보호")
 export async function cardMenuButtons(nickname) {
   await click(cardButton(nickname))
   const slot = cardButton(nickname).parentElement
   const menu = slot.querySelector("[role=menu]")
   const items = menu ? [...menu.querySelectorAll("[role=menuitem]")] : []
-  const summary = items.map((b) => ({ label: b.getAttribute("aria-label"), enabled: !b.disabled }))
+  const summary = items.map((b) => ({ label: b.querySelector("span")?.textContent ?? b.getAttribute("aria-label"), enabled: !b.disabled }))
   if (menu) {
     await RTL.act(async () => { RTL.fireEvent.keyDown(document, { key: "Escape" }) })
   }

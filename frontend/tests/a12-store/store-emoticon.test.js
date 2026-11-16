@@ -1,4 +1,4 @@
-// 상점 이모티콘 칸 시험: 상점 15종 구매 단추·기본 8종 "기본 지급"·일괄구매 합에 들어감·옛 "준비중" 글 없음
+// 상점 이모티콘 칸 시험: 상점 15종 구매 단추·기본 8종은 목록에 없음·일괄구매 합에 들어감·옛 "준비중" 글 없음
 // 목록 A12-상점-결제.md A12-F-147~150 (옛 설계 F-33 2-1)
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -33,17 +33,13 @@ test("A12-F-147 이모티콘 분류 → 상점 15종 칸이 있고 고르면 켜
   assert.deepEqual(seen, SHOP.map((item) => ({ name: item.name, label: "구매", disabled: false })))
 })
 
-test("A12-F-148 기본 8종 → \"기본 지급\" 표시, 구매 단추 꺼짐", async () => {
+// 기본 8종은 모두가 이미 받은 것이라 살 것이 아님 → 상점 목록에서 일부러 뺌 (storeItems.js getStoreItemsByCategory)
+test("A12-F-148 기본 8종 → 상점 이모티콘 분류 목록에 안 나옴 (칸은 상점 15종뿐)", async () => {
   await emoticonStore()
   assert.equal(BASIC.length, 8)
-  const shown = []
-  for (const item of BASIC) {
-    const slot = kit.slotOf(item.name)
-    if (!slot) { shown.push({ name: item.name, inGrid: false }); continue }
-    await kit.click(slot)
-    shown.push({ name: item.name, inGrid: true, label: kit.buyLabel(), disabled: kit.buyButton().disabled })
-  }
-  assert.deepEqual(shown, BASIC.map((item) => ({ name: item.name, inGrid: true, label: "기본 지급", disabled: true })))
+  const shown = BASIC.map((item) => ({ name: item.name, inGrid: kit.slotOf(item.name) !== undefined }))
+  assert.deepEqual(shown, BASIC.map((item) => ({ name: item.name, inGrid: false })))
+  assert.equal(kit.slotButtons().length, SHOP.length)
 })
 
 test("A12-F-149 일괄구매에서 이모티콘 둘 고름 → 확인 창 합에 들어감 (500 + 500 = 1,000 골드)", async () => {

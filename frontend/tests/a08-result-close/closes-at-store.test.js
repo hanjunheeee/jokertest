@@ -52,11 +52,11 @@ test("A08-F-007 7명 판: 끝난 tribunal_vote_resolved → 판 상태 resultClo
   await listen()
   g.seats[0].alive = false
   const resultClosesAt = closesAtOf()
-  // 지금 서버가 보내는 모양 그대로 (표 수·처형된 사람 직업 칸 포함)
+  // 지금 서버가 보내는 모양 그대로 (표 수·처형된 사람 직업 칸은 서버가 안 실음)
   await sock.serverSays("tribunal_vote_resolved", {
     gameId: g.gameId, dayIndex: 1, phase: "ENDED",
-    defendantUuid: g.seats[0].uuid, outcome: "GUILTY", counts: { guilty: 5, notGuilty: 1 },
-    executedUuid: g.seats[0].uuid, executedRole: "JOKER",
+    defendantUuid: g.seats[0].uuid, outcome: "GUILTY",
+    executedUuid: g.seats[0].uuid,
     players: g.seats.map((s) => ({ uuid: s.uuid, isAlive: s.alive })),
     winResult: K.winResultOf(g.seats, "CITIZEN", 1),
     resultClosesAt,

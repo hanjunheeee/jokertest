@@ -1,4 +1,4 @@
-// 마이페이지 이모티콘 팔레트 화면 시험: 처음 8칸·칸 바꾸기·저장 몸·되돌리기·버전 충돌·안 가진 것 거절·목록엔 가진 것만·검색/거르기
+// 마이페이지 이모티콘 팔레트 화면 시험: 처음 8칸·칸 바꾸기·저장 몸·되돌리기·버전 충돌·안 가진 것 거절·목록은 23개 전부(안 가진 것 잠금)·검색/거르기
 // 목록 A12-상점-결제.md A12-F-135~144 (옛 설계 F-33 2-2), 서버는 가짜(GET·PUT /user/me/emoji-palette)
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -103,10 +103,20 @@ test("A12-F-140 안 가진 것 거절(400 NOT_OWNED) → 안내 글, 저장된 �
   assert.deepEqual(wheelNames(), SERVER_SLOTS.map(nameOf))
 })
 
-test("A12-F-141 왼쪽 목록엔 가진 것만: owned 9개 → 목록 9개", async () => {
+// 목록 단추 (칸마다 하나)
+const listButtons = () => listItems().map((li) => li.querySelector("button"))
+
+// 사용자 결정(2026-11-16 오전 둘째 8번 "지금대로"): 안 가진 것도 잠금 표시로 다 보임
+test("A12-F-141 왼쪽 목록은 23개 전부: owned 9개 → 가진 9개만 누를 수 있고 안 가진 14개는 잠금(미보유)", async () => {
   await palettePage()
   assert.equal(OWNED.length, 9)
-  assert.equal(listItems().length, 9)
+  assert.equal(EMOTICON_STORE_ITEMS.length, 23)
+  const buttons = listButtons()
+  assert.equal(buttons.length, 23)
+  const open = buttons.filter((button) => !button.disabled).map((button) => button.getAttribute("aria-label")).sort()
+  assert.deepEqual(open, OWNED.map((id) => `${nameOf(id)} 팔레트에 넣기`).sort())
+  const locked = buttons.filter((button) => button.disabled).map((button) => button.getAttribute("aria-label")).sort()
+  assert.deepEqual(locked, SHOP.filter((item) => item.id !== SHUSH.id).map((item) => `${item.name} (미보유)`).sort())
 })
 
 test("A12-F-142 목록 거르기: 검색 \"쉿\" → 1개", async () => {
@@ -130,7 +140,9 @@ test("A12-F-143 목록 거르기: \"기본\" → 기본 8종", async () => {
   assert.deepEqual(await gradeFilter("기본"), BASIC.map((item) => item.name))
 })
 
-test("A12-F-144 목록 거르기: \"상점\" → 산 것만 (쉿 조용히 1개)", async () => {
+test("A12-F-144 목록 거르기: \"상점\" → 상점 15종 전부, 산 것(쉿 조용히)만 누를 수 있고 나머지 14개는 잠금", async () => {
   await palettePage()
-  assert.deepEqual(await gradeFilter("상점"), ["쉿 조용히"])
+  assert.deepEqual(await gradeFilter("상점"), SHOP.map((item) => item.name))
+  const open = listButtons().filter((button) => !button.disabled).map((button) => button.getAttribute("aria-label"))
+  assert.deepEqual(open, ["쉿 조용히 팔레트에 넣기"])
 })

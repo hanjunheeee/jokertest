@@ -1,5 +1,5 @@
 // 재판 투표 조작 값 시험: 피고·죽은 사람·낸 사람 안내 글, 단추 켤 조건, 한 번만 보내기, 날짜·표 값, 거절·응답 없음 뒤 다시 누름
-// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-F-066~085 (A04-F-078은 결정 대기라 안 씀)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-F-066~085 (A04-F-078은 결정 2026-11-16 오전 둘째 6번: 끊긴 순간 누르면 "연결이 끊겼습니다" 글)
 import test from "node:test"
 import assert from "node:assert/strict"
 import { openTable, resetTable, RTL, useFakeClock, tick } from "./tribunalTable.mjs"
@@ -110,6 +110,27 @@ test("A04-F-077 [버그 8] 8명 판: 1일 submitted → 2일 재판 진입 → �
   await t.nextDay()
   await t.openTribunal(4)
   assert.equal(t.ctx().tribunalVoteStatus, "idle")
+})
+
+test("A04-F-078 7명 판: 연결이 끊긴 순간 \"유죄\" 누름 → \"연결이 끊겼습니다\" 글이 뜨고 표는 안 나감, 다시 붙으면 글 없어지고 누르면 나감", async () => {
+  const t = await tribunalTable(7)
+  // 끊김: 소켓이 끊긴 채 (끊김 알림까지 받음)
+  t.fake.socket.connected = false
+  await t.say("disconnect", "transport close")
+  const guilty = RTL.screen.getByRole("button", { name: "유죄" })
+  assert.equal(guilty.disabled, false, "끊겨도 단추는 눌려야 글을 띄울 수 있음")
+  await t.click(guilty)
+  assert.equal(t.sentOf("cast_tribunal_vote").length, 0, "끊긴 채 누른 표가 나감")
+  const alert = RTL.screen.getAllByRole("alert").find((el) => /연결이 끊겼습니다/.test(el.textContent))
+  assert.ok(alert, "끊김 글이 안 뜸")
+  assert.match(t.ctx().tribunalVoteError, /연결이 끊겼습니다/)
+  assert.equal(t.ctx().tribunalVoteStatus, "idle")
+  // 다시 붙음: 글이 지워지고, 누르면 표가 나감
+  t.fake.socket.connected = true
+  await t.say("connect")
+  assert.equal(t.ctx().tribunalVoteError, null)
+  await t.click(RTL.screen.getByRole("button", { name: "유죄" }))
+  assert.deepEqual(t.sentOf("cast_tribunal_vote").map((p) => p.vote), ["GUILTY"])
 })
 
 test("A04-F-079 6명 판: 행동 묶음 값에 재판 판정 보내기·판정 중 상태가 없음", async () => {

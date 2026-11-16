@@ -42,8 +42,8 @@ test("A05-F-166 6명 희생자 = 나(의사) → 다음 밤 의사 차례에도 
   t.dayToNight()
   assert.equal(t.store().state.phase, "NIGHT", "둘째 밤으로 못 감 (준비 잘못)")
   t.turnStarts("DOCTOR")
-  // 건너뛰기·카드 밤 단추는 없거나 잠겨 있어야 함 (눌러 고를 수 없음)
-  assert.notEqual(kit.skipButton(view.container)?.disabled, false, "건너뛰기 단추가 눌림")
+  // 죽은 사람 화면엔 건너뛰기 단추가 아예 없음 (C-026), 카드 밤 단추는 없거나 잠김
+  assert.equal(kit.skipButton(view.container) === null, true, "죽은 사람 화면에 건너뛰기 단추가 있음")
   for (const index of [0, 4]) {
     const item = kit.nightMenuItem(view.container, kit.NICKS[index], "DOCTOR")
     assert.notEqual(item?.disabled, false, `${kit.NICKS[index]} 카드 보호 단추가 눌림`)

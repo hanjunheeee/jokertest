@@ -74,9 +74,9 @@ const h = React.createElement
 // 자리마다 닉네임 (직업 이름과 안 겹치는 낱말만)
 export const NAMES = ["여름", "가을", "겨울", "새벽", "노을", "구름", "바람", "이슬", "햇살", "물결"]
 // 직업 화면 이름 (e2e/helpers/ui.js ROLE_LABELS와 같음)
-export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "시민" }
+export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "귀족" }
 // 글에 직업 이름이 섞였는지 볼 때 씀
-export const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/
+export const ROLE_WORDS = /광대|시민|귀족|의사|경비원|마녀사냥꾼/
 // 직업 → 팀 (서버 ROLE_TEAMS와 같음)
 const TEAM_OF = { JOKER: "JOKER", CITIZEN: "CITIZEN", DOCTOR: "CITIZEN", GUARD: "CITIZEN", WITCH_HUNTER: "CITIZEN" }
 // 카드 메뉴 밤 행동 단추 이름
@@ -453,11 +453,14 @@ export function cardOf(nickname) {
 export const cardInfo = (nickname) => document.querySelector(`[data-ingame-player-nickname="${nickname}"]`)
 
 // 카드 눌러 열린 메뉴 단추 [{ name, enabled, el }] (메뉴 안 열리면 빈 목록)
+// name은 단추에 보이는 글 (밤 행동 단추의 읽기 이름엔 대상 닉네임이 앞에 붙음, 예: 읽기 이름 "지영 암살" → 보이는 글 "암살")
 export async function openMenu(nickname) {
   await click(cardOf(nickname))
   const menu = cardOf(nickname).parentElement.querySelector("[role=menu]")
   if (!menu) return []
-  return [...menu.querySelectorAll("[role=menuitem]")].map((b) => ({ name: b.getAttribute("aria-label"), enabled: !b.disabled, el: b }))
+  return [...menu.querySelectorAll("[role=menuitem]")].map((b) => ({
+    name: b.querySelector("span")?.textContent ?? b.getAttribute("aria-label"), enabled: !b.disabled, el: b,
+  }))
 }
 // 메뉴 닫기
 export async function closeMenu() {

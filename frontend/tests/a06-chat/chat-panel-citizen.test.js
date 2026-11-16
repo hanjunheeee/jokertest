@@ -6,7 +6,7 @@ import { openTable, resetTable } from "./a06Kit.mjs"
 
 test.afterEach(resetTable)
 
-const CLOSED_TEXT = "밤에는 시민이 채팅을 쓸 수 없습니다"
+const CLOSED_TEXT = "밤에는 귀족이 채팅을 쓸 수 없습니다"
 const anyInput = () => document.querySelector('textarea[aria-label="채팅 입력"]')
 const chatEvents = (t) => t.sentOf("submit_game_chat_message").length + t.sentOf("submit_joker_chat_message").length
 

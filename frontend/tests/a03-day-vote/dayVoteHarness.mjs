@@ -40,7 +40,7 @@ export const NAMES = ["가람", "나래", "다솜", "라온", "마루", "바다"
 export const uuidOf = (i) => `p${i}`
 export const ROLE_TEAM = { JOKER: "JOKER", CITIZEN: "CITIZEN", DOCTOR: "CITIZEN", GUARD: "CITIZEN", WITCH_HUNTER: "CITIZEN" }
 // 화면 우리말 직업 이름 (e2e/helpers/ui.js ROLE_LABELS와 같음)
-export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "시민" }
+export const ROLE_LABELS = { JOKER: "광대", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼", CITIZEN: "귀족" }
 
 // 서버가 주는 모양의 명단 (죽음·끊김·나감은 번호로)
 export function roster(n, { dead = [], disconnected = [], left = [] } = {}) {

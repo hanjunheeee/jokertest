@@ -1,10 +1,10 @@
 // 토론 "투표 시작 준비" 단추(글·누름·꺼짐·키보드·읽히는 이름) 화면 부품 시험 — 인게임 화면을 그려 봄
-// 목록 A03-낮투표.md 번호 A03-F-154~165 (⑩은 정한 글 없어 지금 동작을 임시 정답으로 씀)
+// 목록 A03-낮투표.md 번호 A03-F-154~165, 244 (⑩은 정한 글 없어 지금 동작을 임시 정답으로 씀)
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
   GAME, buttonByName, click, dayPhaseChanged, dayResolved, deferred, fakeSocket, fire, firstDay, flush,
-  isTabReachable, menuItems, cardOf, nextDay, pressEnter, renderPage, resetAll, rtl, seat,
+  isTabReachable, loginOnly, menuItems, cardOf, nextDay, pressEnter, renderPage, resetAll, rtl, seat, snapshot, useInGameStore,
 } from "./dayVoteHarness.mjs"
 
 test.afterEach(() => resetAll())
@@ -117,4 +117,22 @@ test("A03-F-165 ⑫ 단추 이름이 읽힘(접근 이름 '투표 시작 준비'
   await discussionPage()
   const found = rtl.screen.getByRole("button", { name: "투표 시작 준비" })
   assert.equal(found === readyButton(), true)
+})
+
+// C-025를 고치며 생길 수 있는 되돌이: 스냅샷의 1일 준비 기록이 2일 토론에 남아 단추가 "준비 완료"로 잠기면 안 됨
+test("A03-F-244 6명 판: 1일 토론 중 새로고침(내 준비 기록 참) → '준비 완료', 2일 토론이 되면 다시 '투표 시작 준비'로 켜짐", async () => {
+  loginOnly()
+  const socket = fakeSocket({
+    acks: { get_session_snapshot: snapshot({ dayPhase: "DAY_DISCUSSION", extra: { dayPhaseDeadline: Date.now() + 60_000 }, self: { isDayVoteReady: true } }) },
+  })
+  await renderPage(socket)
+  assert.equal(readyButton()?.textContent, "준비 완료")
+  assert.equal(readyButton().disabled, true)
+  await fire(socket, "day_phase_changed", dayPhaseChanged({ deadline: Date.now() + 30_000 }))
+  await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
+  await fire(socket, "night_result_applied", nextDay({ n: 6, deadline: Date.now() + 60_000 }))
+  if (buttonByName("확인")) await click(buttonByName("확인"))
+  assert.equal(useInGameStore.getState().state.dayIndex, 2, "2일로 못 감 (준비 잘못)")
+  assert.equal(readyButton()?.textContent, "투표 시작 준비")
+  assert.equal(readyButton().disabled, false)
 })

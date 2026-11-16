@@ -72,21 +72,21 @@ test("A01-F-108 '역할 구성' 칸에 '자동'·'직접 지정', 처음 자동,
   for (const label of Object.values(ROLE_LABELS)) assert.ok(H.buttonNamed(`${label} 증가`) === null, `${label} 없음`)
 })
 
-test("A01-F-109 '직접 지정' 누름 → 광대·의사·경비원·마녀사냥꾼 인원 칸 + '시민: …명 (자동 계산)'", () => {
+test("A01-F-109 '직접 지정' 누름 → 광대·의사·경비원·마녀사냥꾼 인원 칸 + '귀족: …명 (자동 계산)'", () => {
   renderPanel()
   goCustom()
   for (const label of Object.values(ROLE_LABELS)) assert.ok(H.buttonNamed(`${label} 증가`), `${label} 있음`)
-  assert.match(bodyText(), /시민: \d+명 \(자동 계산\)/)
+  assert.match(bodyText(), /귀족: \d+명 \(자동 계산\)/)
 })
 
 // 정원 5~10 × 직접 J1 → 시민 정원-1명
 const CITIZEN_NOS = ["A01-F-110", "A01-F-111", "A01-F-112", "A01-F-113", "A01-F-114", "A01-F-115"]
 for (const [i, maxPlayers] of [5, 6, 7, 8, 9, 10].entries()) {
-  test(`${CITIZEN_NOS[i]} 정원 ${maxPlayers} 직접 J1 → '시민: ${maxPlayers - 1}명 (자동 계산)', '지정한 인원 합계: 1 / ${maxPlayers}명'`, () => {
+  test(`${CITIZEN_NOS[i]} 정원 ${maxPlayers} 직접 J1 → '귀족: ${maxPlayers - 1}명 (자동 계산)', '지정한 인원 합계: 1 / ${maxPlayers}명'`, () => {
     renderPanel()
     goCustom({ JOKER: 1 })
     H.stepTo(MAX, maxPlayers)
-    assert.ok(bodyText().includes(`시민: ${maxPlayers - 1}명 (자동 계산)`))
+    assert.ok(bodyText().includes(`귀족: ${maxPlayers - 1}명 (자동 계산)`))
     assert.ok(bodyText().includes(`지정한 인원 합계: 1 / ${maxPlayers}명`))
   })
 }
@@ -121,16 +121,16 @@ for (const [i, maxPlayers] of [5, 6, 7, 8, 9, 10].entries()) {
   })
 }
 
-test("A01-F-127 정원 5 J2D1G1W1 → '시민: 0명', 만들기 켜짐", () => {
+test("A01-F-127 정원 5 J2D1G1W1 → '귀족: 0명', 만들기 켜짐", () => {
   renderPanel()
   goCustom({ JOKER: 2, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 })
   H.stepTo(MAX, 5)
-  assert.ok(bodyText().includes("시민: 0명"))
+  assert.ok(bodyText().includes("귀족: 0명"))
   assert.equal(createButton().disabled, false)
 })
 
-test("A01-F-128 직접 지정 → 시민 수 안내 글", () => {
+test("A01-F-128 직접 지정 → 귀족 수 안내 글", () => {
   renderPanel()
   goCustom()
-  assert.ok(bodyText().includes("시민 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다."))
+  assert.ok(bodyText().includes("귀족 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다."))
 })

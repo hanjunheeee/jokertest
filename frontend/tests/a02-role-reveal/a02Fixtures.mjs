@@ -7,8 +7,8 @@ export const NICKNAMES = ["민수", "지원", "하늘", "도윤", "서연", "예
 // 직업 → 팀 (광대만 광대 팀)
 export const TEAM_OF = { JOKER: "JOKER", CITIZEN: "CITIZEN", DOCTOR: "CITIZEN", GUARD: "CITIZEN", WITCH_HUNTER: "CITIZEN" }
 
-// 화면에 나오는 직업 이름 (결정: 마녀사냥꾼, 귀족 아님)
-export const ROLE_NAME = { JOKER: "광대", CITIZEN: "시민", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼" }
+// 화면에 나오는 직업 이름 (결정: 마녀사냥꾼은 "마녀사냥꾼", 시민 직업은 "귀족"으로 통일)
+export const ROLE_NAME = { JOKER: "광대", CITIZEN: "귀족", DOCTOR: "의사", GUARD: "경비원", WITCH_HUNTER: "마녀사냥꾼" }
 
 // 같은 직업끼리 보이는 직업 (시민 뺌, 결정 "누가 보나")
 export const ALLY_ROLES = ["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"]

@@ -41,15 +41,14 @@ test("A02-F-187 역할 확인 단계 판 화면 → 채팅 입력칸·보내기 
   assert.equal(isOff(send), true, "보내기 꺼짐")
 })
 
-test("A02-F-188 역할 확인 단계 판 화면 → 이모티콘 단추 켜짐(내 카드 우클릭 → 이모티콘 보내기)", async () => {
+// 결정 2026-11-16 오전 둘째 "이모티콘": 낮에만 → 역할 확인 10초 동안은 팔레트가 안 열림
+test("A02-F-188 역할 확인 단계 판 화면 → 내 카드 우클릭해도 이모티콘 팔레트 안 열림, send_emoji 안 나감", async () => {
   const { me, socket } = await pageInRoleReveal()
   await dismissOverlays()
   RTL.fireEvent.contextMenu(cardOf(me.nickname))
-  await waitUntil(() => RTL.screen.queryByRole("button", { name: "안녕 보내기" }) !== null, { what: "이모티콘 칸 뜸" })
-  const emoji = RTL.screen.getByRole("button", { name: "안녕 보내기" })
-  assert.equal(emoji.disabled, false)
-  RTL.fireEvent.click(emoji)
-  await waitUntil(() => socket.sent.some((s) => s.event === "send_emoji"), { what: "이모티콘 보냄" })
+  await RTL.act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)) })
+  assert.equal(RTL.screen.queryByRole("button", { name: "안녕 보내기" }) === null, true, "이모티콘 칸이 뜸")
+  assert.equal(socket.sent.some((s) => s.event === "send_emoji"), false)
 })
 
 test("A02-F-189 역할 확인 단계 판 화면 → 투표·준비 단추 없음", async () => {
@@ -108,7 +107,7 @@ test("A02-F-192 첫 판 의사(동료 B) 끝 → 둘째 판 시민 → 창 다�
   RTL.act(() => { useInGameStore.getState().setGamePayload(buildGameStarted(second, meSecond, { gameId: nextGameId("f192-2nd") })) })
   await waitUntil(() => revealDialog() !== null, { what: "둘째 판 역할 창 뜸" })
   const text = revealDialog().textContent
-  assert.match(text, /시민/)
+  assert.match(text, /귀족/)
   assert.doesNotMatch(text, new RegExp(b.nickname))
   assert.doesNotMatch(text, /동료/)
 })

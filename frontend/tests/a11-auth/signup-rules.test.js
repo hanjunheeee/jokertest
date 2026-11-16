@@ -15,33 +15,35 @@ const form = (password, passwordConfirm = password) => ({
   email: "tester@example.com", nickname: "시험사람", birthDate: "2000-01-01", password, passwordConfirm,
 })
 const LENGTH_MESSAGE = "비밀번호는 8~64자여야 합니다."
+// 길이 경계 값 (끝 한 자는 숫자 — 영문+숫자 규칙엔 안 걸리고 길이만 보게)
+const mixed = (length) => `${"a".repeat(length - 1)}1`
 
 test("A11-F-001 비번 7자 → 화면이 거절, 서버와 같은 문구", () => {
-  const r = validateSignupForm(form("a".repeat(7)))
+  const r = validateSignupForm(form(mixed(7)))
   assert.equal(r.ok, false)
   assert.equal(r.message, LENGTH_MESSAGE)
 })
 
 test("A11-F-002 비번 8자 → 통과", () => {
-  assert.equal(validateSignupForm(form("a".repeat(8))).ok, true)
+  assert.equal(validateSignupForm(form(mixed(8))).ok, true)
 })
 
 test("A11-F-003 비번 64자 → 통과", () => {
-  assert.equal(validateSignupForm(form("a".repeat(64))).ok, true)
+  assert.equal(validateSignupForm(form(mixed(64))).ok, true)
 })
 
 test("A11-F-004 비번 65자 → 화면이 거절, 서버와 같은 문구", () => {
-  const r = validateSignupForm(form("a".repeat(65)))
+  const r = validateSignupForm(form(mixed(65)))
   assert.equal(r.ok, false)
   assert.equal(r.message, LENGTH_MESSAGE)
 })
 
-test("A11-F-005 한글 24자(72바이트) 비번 → 통과", () => {
-  assert.equal(validateSignupForm(form("가".repeat(24))).ok, true)
+test("A11-F-005 한글 23자 + a1b(72바이트) 비번 → 통과", () => {
+  assert.equal(validateSignupForm(form(`${"가".repeat(23)}a1b`)).ok, true)
 })
 
-test("A11-F-006 한글 25자(75바이트) 비번 → 72바이트 문구로 거절", () => {
-  const r = validateSignupForm(form("가".repeat(25)))
+test("A11-F-006 한글 24자 + a1b(75바이트) 비번 → 72바이트 문구로 거절", () => {
+  const r = validateSignupForm(form(`${"가".repeat(24)}a1b`))
   assert.equal(r.ok, false)
   assert.equal(r.message, "비밀번호는 72바이트를 넘을 수 없습니다.")
 })
@@ -54,8 +56,8 @@ test("A11-F-007 비번 확인 칸 다름 → 확인 문구", () => {
 
 // 같은 입력표 하나로 화면·서버 둘 다 돌려 줄마다 견줌 (서버 생일은 Date라 통과 여부·문구만 봄)
 const SHARED_ROWS = [
-  form("a".repeat(7)), form("a".repeat(8)), form("a".repeat(64)), form("a".repeat(65)),
-  form("가".repeat(24)), form("가".repeat(25)), form(" abcdefg"), form("abcdefg"),
+  form(mixed(7)), form(mixed(8)), form(mixed(64)), form(mixed(65)),
+  form(`${"가".repeat(23)}a1b`), form(`${"가".repeat(24)}a1b`), form(" abcdef1"), form("abcdef1"),
   form("testpass1", "testpass2"), form("testpass1", ""),
   { ...form("testpass1"), nickname: "가" }, { ...form("testpass1"), nickname: "가나" },
   { ...form("testpass1"), nickname: "가나다라마바사아" }, { ...form("testpass1"), nickname: "가나다라마바사아자" },

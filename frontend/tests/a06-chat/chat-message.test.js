@@ -63,12 +63,13 @@ function hasSelfMark(li) {
   return /\(나\)|\[나\]/.test(li.textContent)
 }
 
-test("A06-F-127 내 글과 남 글 구분: 내 uuid 줄에만 나 표시 [지금 동작]", async () => {
+// 결정 2026-11-16 오전 둘째 5번: 채팅 내 줄에 "나" 표시는 안 넣음
+test("A06-F-127 내 글과 남 글: 내 uuid 줄에도 남 줄에도 나 표시 없음 (결정: 안 넣음)", async () => {
   const t = await dayTable()
   await t.dayChat(0, "내가 씀")
   await t.dayChat(1, "남이 씀")
   const [mine, other] = t.rowEls("board")
-  assert.equal(hasSelfMark(mine), true, "내 줄에 나 표시가 없음")
+  assert.equal(hasSelfMark(mine), false, "내 줄에 나 표시가 있음")
   assert.equal(hasSelfMark(other), false, "남 줄에 나 표시가 있음")
 })
 

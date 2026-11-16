@@ -65,5 +65,5 @@ test("A11-F-726 로그아웃 상태로 /password-reset?token=<43자> → 그 화
   assert.equal(TOKEN.length, 43)
   const path = await openAt(`/password-reset?token=${TOKEN}`)
   assert.equal(path(), "/password-reset")
-  assert.ok(screen.getByLabelText("8~64자 비밀번호"))
+  assert.ok(screen.getByLabelText("8~64자 비밀번호 (영문·숫자 포함)"))
 })

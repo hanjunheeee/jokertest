@@ -357,7 +357,7 @@ function attachServer(t) {
     })
   }
 
-  // 재판 결과 → 밤 (서버 tribunal_vote_resolved 지금 모양 — 표 수·직업 칸까지, 처형되면 그 사람 죽음)
+  // 재판 결과 → 밤 (서버 tribunal_vote_resolved 지금 모양 — 표 수·직업 칸은 서버가 안 실음, 처형되면 그 사람 죽음)
   t.resolveTribunal = async (outcome) => {
     const defendantSeat = seats[t.defendantIndex]
     const executedUuid = outcome === "GUILTY" ? defendantSeat.uuid : null
@@ -369,9 +369,7 @@ function attachServer(t) {
       phase: "NIGHT",
       defendantUuid: defendantSeat.uuid,
       outcome,
-      counts: outcome === "GUILTY" ? { guilty: 3, notGuilty: 1 } : { guilty: 1, notGuilty: 3 },
       executedUuid,
-      executedRole: executedUuid ? defendantSeat.role : null,
     })
   }
 

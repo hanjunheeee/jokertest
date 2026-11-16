@@ -1,5 +1,5 @@
 // 이모티콘 팔레트 시험(jsdom, 인게임 화면 전체) — 단계 × 생존마다 내 카드 우클릭 + 칸 누름 결과, 남 카드, 팔레트 칸, 말풍선, 접근성
-// 목록 A06-판중-채팅.md 화면 PC 번호 A06-F-156~171 (재판·밤 기대는 결정 "2026-11-16 아침" 9번: 이모티콘은 낮에만)
+// 목록 A06-판중-채팅.md 화면 PC 번호 A06-F-156~171 (역할 확인·재판·밤 기대는 결정 "2026-11-16 오전 둘째 — 이모티콘": 낮에만, 팔레트도 안 열림)
 import test from "node:test"
 import assert from "node:assert/strict"
 import { openTable, resetTable, RTL, flush, startFakeClock, tick, EMOJI, EMOJI_NAMES } from "./a06Kit.mjs"
@@ -21,10 +21,10 @@ async function rightClickAndPick(t) {
 
 // 7명 판: 0번 광대, 나 = 2번 시민 (죽은 칸이면 나 죽음), 재판이면 피고 3번
 const PALETTE_TABLE = [
-  ["A06-F-156", "역할 확인 × 산", { phase: "ROLE_REVEAL" }, { sends: 1 }],
+  ["A06-F-156", "역할 확인 × 산", { phase: "ROLE_REVEAL" }, { palette: false, sends: 0 }],
   ["A06-F-157", "낮 × 산", { phase: "DAY" }, { sends: 1 }],
-  ["A06-F-158", "재판 × 산", { phase: "TRIBUNAL", defendant: 3 }, { sends: 0 }],
-  ["A06-F-159", "밤 × 산", { phase: "NIGHT" }, { sends: 0 }],
+  ["A06-F-158", "재판 × 산", { phase: "TRIBUNAL", defendant: 3 }, { palette: false, sends: 0 }],
+  ["A06-F-159", "밤 × 산", { phase: "NIGHT" }, { palette: false, sends: 0 }],
   ["A06-F-160", "결과 × 산", { phase: "ENDED" }, { palette: false, sends: 0 }],
   ["A06-F-161", "낮 × 죽은", { phase: "DAY", dead: [2] }, { bubble: false }],
   ["A06-F-162", "재판 × 죽은", { phase: "TRIBUNAL", defendant: 3, dead: [2] }, { bubble: false }],
@@ -125,4 +125,24 @@ test("A06-F-171 키보드로 팔레트 열고 보냄 (접근성): 내 카드 초
   })
   await flush()
   assert.equal(t.sentOf("send_emoji").length, 1)
+})
+
+// 결정 2026-11-16 오전 둘째 "이모티콘": 낮에만 → 열어 둔 팔레트는 밤이 되면 닫히고, 다음 낮에 저절로 다시 열리지 않음
+test("A06-F-201 6명 판: 낮에 팔레트를 연 채 밤이 됨 → 팔레트 닫힘, 다음 낮이 돼도 저절로 안 열림 (다시 우클릭하면 열림)", async () => {
+  const t = await openTable({ n: 6, me: 1, roles: { 0: "JOKER" }, phase: "DAY", view: "page" })
+  await t.rightClick(t.myCard())
+  assert.ok(t.palette() !== null, "낮에 팔레트가 안 열림 (준비 잘못)")
+  await t.toNight()
+  assert.equal(t.state().phase, "NIGHT", "밤으로 못 감 (준비 잘못)")
+  assert.equal(t.palette() === null, true, "밤인데 팔레트가 열려 있음")
+  await t.nextDay()
+  assert.equal(t.state().phase, "DAY", "다음 낮으로 못 감 (준비 잘못)")
+  assert.equal(t.palette() === null, true, "다음 낮에 팔레트가 저절로 다시 열림")
+  // "낮이 되었습니다" 같은 안내 창을 사람처럼 "확인"으로 닫은 뒤 (그동안은 판 화면이 잠김) 다시 우클릭
+  for (let i = 0; i < 3 && t.myCard().closest("[inert]"); i += 1) {
+    await t.click(RTL.screen.getAllByRole("button", { name: "확인" })[0])
+    await flush()
+  }
+  assert.equal(await t.rightClick(t.myCard()), true, "판 화면이 잠겨 우클릭을 못 함 (준비 잘못)")
+  assert.ok(t.palette() !== null, "다음 낮에 다시 우클릭해도 팔레트가 안 열림")
 })

@@ -164,6 +164,8 @@ test("A11-F-590 비번 바꾸기 성공 → 1.5초 뒤 로그인 정보 비고 /
   router = view.router
   act(() => box.form.handlePwChange({ target: { name: "currentPassword", value: PW } }))
   act(() => box.form.handlePwChange({ target: { name: "newPassword", value: "TestOnly-New-1" } }))
+  // 확인 칸도 같은 값 (다르면 안 보냄 — a11e-password-section 시험이 봄)
+  act(() => box.form.handlePwChange({ target: { name: "newPasswordConfirm", value: "TestOnly-New-1" } }))
   await act(async () => { await box.form.handlePasswordSubmit(submitEvent()) })
   assert.equal(useAuthStore.getState().isLoggedIn, true, "준비: 아직 로그인 상태")
   act(() => t.mock.timers.tick(1500))

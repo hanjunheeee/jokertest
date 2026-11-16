@@ -8,7 +8,7 @@ const { INTRO_HOLD_MS } = await import("../../src/domains/game/ingame/constants/
 
 test.afterEach(resetTable)
 
-const CLOSED_TEXT = "밤에는 시민이 채팅을 쓸 수 없습니다"
+const CLOSED_TEXT = "밤에는 귀족이 채팅을 쓸 수 없습니다"
 
 // 7명 낮 판, 0번 광대, 5번 의사, 나 = me번 시민 → 재판 시작 알림(피고 자리) → 처음 연출 1초 뒤 채팅 열림
 async function tribunalPage({ me = 1, defendant = 3, dead = [], uuid } = {}, before = async () => {}) {

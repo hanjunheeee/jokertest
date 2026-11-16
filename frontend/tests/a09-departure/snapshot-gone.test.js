@@ -138,7 +138,7 @@ test("A09-F-173 판 값이 빈 판 화면 → 스냅샷 답 SESSION_NOT_FOUND �
   assert.equal(K.path(), "/multiplay")
 })
 
-test("A09-F-174 8명 판 같은 판 FORFEITED_FROM_SESSION 답이 두 번 → 알림 1번 [지금 동작]", async () => {
+test("A09-F-174 8명 판 같은 판 FORFEITED_FROM_SESSION 답이 두 번(판 번호 없이 다시 물은 답도 탈락) → 알림 1번", async () => {
   const t = K.seat({ n: 8, me: 3, jokers: [0, 1] })
   t.fake.answer("get_session_snapshot", { ok: false, code: "FORFEITED_FROM_SESSION", message: SERVER_TEXT })
   await K.renderSnapshotProbe()

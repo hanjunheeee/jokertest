@@ -52,7 +52,7 @@ const NAME_CASES = [
   ["A02-F-121", "JOKER"], ["A02-F-122", "CITIZEN"], ["A02-F-123", "DOCTOR"], ["A02-F-124", "GUARD"], ["A02-F-125", "WITCH_HUNTER"],
 ]
 for (const [no, role] of NAME_CASES) {
-  test(`${no} ${ROLE_NAME[role]} 창 → 닉네임·직업 이름·설명 글 있음, "귀족" 없음`, () => {
+  test(`${no} ${ROLE_NAME[role]} 창 → 닉네임·직업 이름·설명 글 있음, "귀족"은 시민 직업 창에만`, () => {
     const me = firstOf(ALL_FIVE, role)
     const { dialog } = renderReveal(ALL_FIVE, me)
     assert.ok(dialog !== null, "창이 뜸")
@@ -62,7 +62,8 @@ for (const [no, role] of NAME_CASES) {
     // 이름·닉네임·동료 줄 말고 설명 문장이 한 줄 이상
     const description = lines.filter((t) => t !== me.nickname && t !== ROLE_NAME[role] && !t.startsWith("동료"))
     assert.ok(description.some((t) => t.length >= 10), `설명 글: ${JSON.stringify(lines)}`)
-    assert.doesNotMatch(dialog.textContent, /귀족/)
+    // "귀족"은 시민 직업만의 이름 (다른 직업 창엔 없음)
+    assert.equal(/귀족/.test(dialog.textContent), role === "CITIZEN")
   })
 }
 

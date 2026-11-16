@@ -139,7 +139,7 @@ test("A11-F-775 linkInvalid엔 새 비번 칸 없음", async () => {
 
 test("A11-F-776 socialOnly엔 칸 없음 + '로그인으로 이동'", async () => {
   await resetPage({ status: 200, body: { ok: true, status: "VALID" } }, { status: 400, body: { ok: false, code: "SOCIAL_ONLY" } })
-  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호"), { target: { value: "TestOnly-Pass-1" } })
+  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호 (영문·숫자 포함)"), { target: { value: "TestOnly-Pass-1" } })
   fireEvent.change(screen.getByPlaceholderText("비밀번호를 다시 입력하세요"), { target: { value: "TestOnly-Pass-1" } })
   fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }))
   await flushUi()

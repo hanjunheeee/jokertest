@@ -40,6 +40,9 @@ async function myNightPage(seats, me, { alive = {}, ackReply } = {}) {
   return { socket, gameId }
 }
 
+// 단추에 보이는 글
+const shownLabel = (button) => button.querySelector("span")?.textContent ?? ""
+
 // 카드를 눌러 연 메뉴의 단추들 (메뉴가 안 뜨면 빈 목록)
 async function openMenu(nickname) {
   RTL.fireEvent.click(cardOf(nickname))
@@ -50,16 +53,16 @@ async function openMenu(nickname) {
 // 광대 비교용: 시민 카드엔 암살 단추가 눌러짐 (조작이 막혀서 비어 보이는 것과 가르기), 확인 뒤 메뉴 닫음
 async function assertCanActOnCitizen(seats) {
   const citizen = ofRole(seats, "CITIZEN")[0]
-  const control = (await openMenu(citizen.nickname)).find((b) => b.getAttribute("aria-label") === "암살")
+  const control = (await openMenu(citizen.nickname)).find((b) => shownLabel(b) === "암살")
   assert.ok(Boolean(control) && control.disabled === false, "시민 카드엔 암살 단추 눌러짐")
   RTL.fireEvent.click(cardOf(citizen.nickname))
   await RTL.act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)) })
   assert.equal(RTL.screen.queryByRole("menu", { name: "플레이어 행동" }) === null, true, "메뉴 닫힘")
 }
 
-// 밤 행동 단추 이름 (직업마다)
+// 밤 행동 단추 이름 (직업마다), 단추는 보이는 글로 찾음 (읽기 이름엔 대상 닉네임이 앞에 붙음, 예: "민수 · 동료 의사 보호")
 const NIGHT_LABEL = { JOKER: "암살", DOCTOR: "보호", GUARD: "조사", WITCH_HUNTER: "확인" }
-const nightButton = (items, role) => items.find((b) => b.getAttribute("aria-label") === NIGHT_LABEL[role]) ?? null
+const nightButton = (items, role) => items.find((b) => shownLabel(b) === NIGHT_LABEL[role]) ?? null
 
 test("A02-F-193 의사: 동료 의사 카드의 밤 단추 눌러짐", async () => {
   const { seats, me, partner } = pairWithMinsu("DOCTOR", "f193")
@@ -100,7 +103,7 @@ test("A02-F-197 광대가 동료 광대 카드 누름 → 메뉴에 밤 항목 �
   await myNightPage(seats, me)
   await assertCanActOnCitizen(seats)
   const items = await openMenu(partner.nickname)
-  assert.deepEqual(items.map((b) => b.getAttribute("aria-label")).filter((l) => l === "암살" || l === "취소하기"), [])
+  assert.deepEqual(items.map((b) => shownLabel(b)).filter((l) => l === "암살" || l === "취소하기"), [])
 })
 
 test("A02-F-198 의사가 동료 의사 카드 누름 → 밤 항목 있음", async () => {

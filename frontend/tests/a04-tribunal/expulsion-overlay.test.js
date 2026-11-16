@@ -85,7 +85,7 @@ test("A04-F-237 7명 판: 추방 연출 끝 → \"밤이 되었습니다\" 안�
 
 test("A04-F-265 8명 판: 유죄 알림 executedRole 광대 → 추방 연출 글에 \"광대\" 없음", async () => {
   const t = await tribunalPage(8, { defendant: 0, jokers: [0, 5] })
-  const payload = await t.resolve("GUILTY")
+  const payload = await t.resolve("GUILTY", { executedRole: "JOKER" })
   assert.equal(payload.executedRole, "JOKER")
   assert.doesNotMatch(expulsionLayer().textContent, /광대/)
   await playUntilMessage()

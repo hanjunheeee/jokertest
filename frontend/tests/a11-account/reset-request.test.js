@@ -70,9 +70,13 @@ test("A11-F-508 200인데 ok가 true 아님 → 실패(성공으로 안 봄)", a
   assert.equal(hook.result.current.status, "failed")
 })
 
-test("A11-F-509 보냄 상태에서 '다시 보내기' → 같은 주소로 요청 1번 더", async () => {
+test("A11-F-509 보냄 상태에서 1분 뒤 '다시 보내기' → 같은 주소로 요청 1번 더", async (t) => {
+  // 다시 보내기는 1분 기다림 (2026-11-16 결정 다섯째 3) → 가짜 시계로 1분 넘김
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: Date.UTC(2026, 10, 16, 3, 0, 0) })
+  t.after(() => t.mock.timers.reset())
   const { net, hook } = await submitWith({ status: 200, body: { ok: true } })
   assert.equal(hook.result.current.status, "sent", "준비: 보냄")
+  act(() => t.mock.timers.tick(60 * 1000))
   // 입력 칸 값이 바뀌어도 다시 보내기는 보낸 주소로 감
   act(() => hook.result.current.setEmail("other-user@example.com"))
   act(() => hook.result.current.handleResend())

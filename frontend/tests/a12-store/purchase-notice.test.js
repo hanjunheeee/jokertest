@@ -158,7 +158,7 @@ test("A12-F-031 [지금 동작] 구매 성공 → 단추 \"보유중\"으로 꺼
   assert.doesNotMatch(kit.belowText(), /거부|확인이 필요|실패/)
 })
 
-test("A12-F-032 [지금 동작] 실패 뒤 다른 상품 고름 → 단추 아래 비어 있음", async () => {
+test("A12-F-032 [버그 2] 실패 뒤 다른 상품 고름 → 단추 아래 비어 있음 (앞 상품의 실패 글·다시 시도가 안 남음)", async () => {
   await skinStore({ answer: kit.reply(409, { success: false, code: "ITEM_ALREADY_OWNED", message: "이미 보유한 상품입니다." }) })
   await kit.pressBuy()
   assert.ok(kit.belowText().includes("이미 보유한 상품입니다."))

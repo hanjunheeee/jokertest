@@ -16,7 +16,7 @@ const ALL_FIVE = seatCode("J1D1G1W1C1", { gameTag: "info" })
 // A02-F-001~005 직업 이름·진영 (광대만 광대 진영)
 const NAME_CASES = [
   ["A02-F-001", "JOKER", "광대", "광대 진영"],
-  ["A02-F-002", "CITIZEN", "시민", "시민 진영"],
+  ["A02-F-002", "CITIZEN", "귀족", "시민 진영"],
   ["A02-F-003", "DOCTOR", "의사", "시민 진영"],
   ["A02-F-004", "GUARD", "경비원", "시민 진영"],
   ["A02-F-005", "WITCH_HUNTER", "마녀사냥꾼", "시민 진영"],
@@ -27,8 +27,8 @@ for (const [no, role, name, team] of NAME_CASES) {
     const info = infoOf(buildSelf(ALL_FIVE, me))
     assert.equal(info.roleName, name)
     assert.equal(info.teamLabel, team)
-    // 마녀사냥꾼을 귀족으로 부르지 않음
-    assert.doesNotMatch(info.roleName, /귀족/)
+    // "귀족"은 시민 직업만의 이름 (마녀사냥꾼 등 다른 직업을 귀족으로 부르지 않음)
+    if (role !== "CITIZEN") assert.doesNotMatch(info.roleName, /귀족/)
   })
 }
 
@@ -59,7 +59,7 @@ for (const [no, role] of SOLO_CASES) {
 test("A02-F-014 시민 self → 동료 목록 없음(null)", () => {
   const me = firstOf(ALL_FIVE, "CITIZEN")
   const info = infoOf(buildSelf(ALL_FIVE, me))
-  assert.equal(info.roleName, "시민")
+  assert.equal(info.roleName, "귀족")
   assert.equal(info.allies, null)
 })
 

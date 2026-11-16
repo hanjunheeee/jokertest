@@ -118,7 +118,7 @@ test("A09-F-180 7명 판 산 상태로 연 뒤 재판에서 처형됨 → 나가
   // 서버: 재판 유죄 → 나(피고) 처형, 밤으로
   await t.say("tribunal_vote_resolved", {
     gameId: t.gameId, dayIndex: 1, phase: "NIGHT", defendantUuid: t.me,
-    outcome: "GUILTY", counts: { guilty: 4, notGuilty: 1 }, executedUuid: t.me, executedRole: "CITIZEN",
+    outcome: "GUILTY", executedUuid: t.me,
   })
   assert.equal(t.player(2).alive, false, "처형이 판 값에 반영됨")
   K.dialogs.confirmAnswer = false

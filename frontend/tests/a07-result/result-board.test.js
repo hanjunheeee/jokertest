@@ -59,7 +59,7 @@ test("A07-F-052 7명 판: 빈 칸 없이 그려짐 (이름 빈 줄 0, 줄 사이
 const JOB_ROWS = [
   ["A07-F-053", "JOKER", "광대"],
   ["A07-F-054", "CITIZEN", "귀족"],
-  ["A07-F-055", "DOCTOR", "주치의"],
+  ["A07-F-055", "DOCTOR", "의사"],
   ["A07-F-056", "GUARD", "경비원"],
   ["A07-F-057", "WITCH_HUNTER", "마녀사냥꾼"],
 ]
@@ -72,11 +72,12 @@ for (const [no, role, label] of JOB_ROWS) {
   })
 }
 
-test("A07-F-058 5명 판: 마녀사냥꾼 1명 + 시민 3명 → 마녀사냥꾼 줄 \"마녀사냥꾼\", \"귀족\"은 시민 줄 3개뿐", async () => {
+test("A07-F-058 5명 판: 마녀사냥꾼 1명 + 시민 3명 → 마녀사냥꾼 줄 \"마녀사냥꾼\", \"귀족\"은 시민 줄 3개뿐, 직업 칸에 \"시민\" 글은 없음", async () => {
   const g = await renderBoard({ n: 5, me: 2, roles: ["JOKER", "WITCH_HUNTER", "CITIZEN", "CITIZEN", "CITIZEN"] })
   assert.equal(jobOf(rowOfName(g.seats[1].nickname)), "마녀사냥꾼")
-  const nobleRows = rows().filter((li) => jobOf(li) === "귀족").map(nameOf)
-  assert.deepEqual(nobleRows, [g.seats[2].nickname, g.seats[3].nickname, g.seats[4].nickname])
+  const citizenRows = rows().filter((li) => jobOf(li) === "귀족").map(nameOf)
+  assert.deepEqual(citizenRows, [g.seats[2].nickname, g.seats[3].nickname, g.seats[4].nickname])
+  assert.equal(rows().filter((li) => jobOf(li) === "시민").length, 0)
 })
 
 // 내 줄 받은 골드 (0이면 골드 칸 없음)

@@ -47,14 +47,15 @@ test("A09-F-127 8명 판 이미 처형된 5번 자리 player_eliminated → 그�
   assert.equal(t.state().phase, "DAY")
 })
 
-test("A09-F-128 10명 판 내가 탈락(player_eliminated victim = 나) → 판 비우고 빠진 까닭 글", async () => {
+// 목록을 지금 값으로 고침: 60초 탈락한 사람은 끊겨 있어 이 알림을 못 받는 게 보통 → 받아도 죽음만 표시 (판 비우기·까닭 글은 다시 붙을 때 스냅샷 답이 맡음)
+test("A09-F-128 10명 판 내가 탈락(player_eliminated victim = 나) → 내 카드만 죽음, 판은 그대로·알림 없음", async () => {
   const t = K.seat({ n: 10, me: 3, jokers: [0, 1] })
   await K.renderEventsOnly()
   await t.say("player_eliminated", t.eliminatedPayload(3))
   await K.flush()
-  assert.equal(K.useInGameStore.getState().gameId, null, "판이 그대로 남음")
-  assert.equal(K.dialogs.alerts.length, 1, `알림: ${JSON.stringify(K.dialogs.alerts)}`)
-  assert.ok(K.dialogs.alerts[0].includes("제외"), `글: ${K.dialogs.alerts[0]}`)
+  assert.equal(K.useInGameStore.getState().gameId, t.gameId, "판이 비워짐")
+  assert.equal(t.state().players.find((p) => p.uuid === t.uuid(3))?.alive, false)
+  assert.equal(K.dialogs.alerts.length, 0, `알림: ${JSON.stringify(K.dialogs.alerts)}`)
 })
 
 test("A09-F-129 7명 판 session_participation_changed 2번 자리 빠짐 → 그 사람 isParticipating false", async () => {

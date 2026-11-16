@@ -21,7 +21,7 @@ function endNightWith(t, lastRole, fields) {
   t.privateResult(fields)
 }
 
-const ALL_ROLES = [["JOKER", "광대"], ["CITIZEN", "시민"], ["DOCTOR", "의사"], ["GUARD", "경비원"], ["WITCH_HUNTER", "마녀사냥꾼"]]
+const ALL_ROLES = [["JOKER", "광대"], ["CITIZEN", "귀족"], ["DOCTOR", "의사"], ["GUARD", "경비원"], ["WITCH_HUNTER", "마녀사냥꾼"]]
 
 // 경비원 화면: 8명, 1 나(지영), 0 "민수" 조사
 ALL_ROLES.forEach(([role, name], i) => {

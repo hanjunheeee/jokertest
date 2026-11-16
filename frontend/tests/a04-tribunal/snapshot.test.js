@@ -1,5 +1,5 @@
 // 재판 중 스냅샷 시험: 새로고침·다시 붙음 때 재판 단계·피고·마감·내 표 여부가 들어가고, 옛 표시는 덮이며, 채팅 채널이 맞음
-// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-F-086~096
+// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-F-086~096, 275~278
 import test from "node:test"
 import assert from "node:assert/strict"
 import { openTable, resetTable, RTL } from "./tribunalTable.mjs"
@@ -105,4 +105,72 @@ test("A04-F-096 8명 판: 재판 중 죽은 사람의 보낼 채팅 채널 = 죽
   const t = await openTable({ n: 8, dead: [1] })
   await t.openTribunal(3)
   assert.equal(resolveInGameChatSendChannel(t.state()), "DEAD")
+})
+
+// A04-F-275~278 스냅샷의 재판 칸: 표 수 없이도 받음·취소/피고 사망으로 닫힌 재판도 받음·밤에 실려 오면 그 칸만 버림
+// 재판으로 끝난 판 스냅샷 (서버 모양: 재판 칸에 결과·처형된 사람만, 표 수 없음)
+function endedSnapshot(t, tribunal) {
+  const winResult = t.resolvedPayload("GUILTY", { ended: "CITIZEN" }).winResult
+  t.phase = "ENDED"
+  t.tribunalDeadline = null
+  const base = t.snapshot()
+  return {
+    ...base,
+    winResult,
+    resultClosesAt: Date.now() + 180_000,
+    dayVoteResolution: {
+      round: 1, outcome: "TRIBUNAL", tribunalTargetUuid: tribunal.defendantUuid,
+      publicVoteCount: base.players.length, publicAbstainCount: 0, revoteExcludedUuids: [],
+    },
+    tribunal,
+  }
+}
+
+test("A04-F-275 5명 판: 재판으로 끝난 판 스냅샷의 재판 칸에 표 수(counts)가 없어도 스냅샷을 받음", async () => {
+  const t = await openTable({ n: 5 })
+  await t.openTribunal(0)
+  const response = endedSnapshot(t, { defendantUuid: t.uuid(0), resolved: true, outcome: "GUILTY", executedUuid: t.uuid(0) })
+  await RTL.act(async () => {
+    t.store().applySessionSnapshot(response, null)
+  })
+  assert.equal(t.state().phase, "ENDED")
+  assert.equal(t.state().tribunal.outcome, "GUILTY")
+  assert.equal(t.state().tribunal.executedUuid, t.uuid(0))
+  assert.equal(Object.hasOwn(t.state().tribunal, "counts"), false)
+})
+
+for (const [i, outcome] of ["CANCELLED", "DEFENDANT_DIED"].entries()) {
+  test(`A04-F-${276 + i} 6명 판: 끝난 판 스냅샷의 재판 결과 ${outcome}(처형 없음) → 스냅샷을 받음`, async () => {
+    const t = await openTable({ n: 6 })
+    await t.openTribunal(3)
+    const response = endedSnapshot(t, { defendantUuid: t.uuid(3), resolved: true, outcome, executedUuid: null })
+    await RTL.act(async () => {
+      t.store().applySessionSnapshot(response, null)
+    })
+    assert.equal(t.state().phase, "ENDED")
+    assert.equal(t.state().tribunal.outcome, outcome)
+    assert.equal(t.state().tribunal.executedUuid, null)
+  })
+}
+
+test("A04-F-278 7명 판: 밤 스냅샷에 재판 칸이 실려 와도 스냅샷은 받고 재판 칸만 버림, 낮 판정 결과는 받음", async () => {
+  const t = await openTable({ n: 7, phase: "TRIBUNAL", defendant: 3 })
+  t.phase = "NIGHT"
+  t.tribunalDeadline = null
+  const base = t.snapshot()
+  const response = {
+    ...base,
+    dayVoteResolution: {
+      round: 1, outcome: "TRIBUNAL", tribunalTargetUuid: t.uuid(3),
+      publicVoteCount: base.players.length, publicAbstainCount: 0, revoteExcludedUuids: [],
+    },
+    tribunal: { defendantUuid: t.uuid(3), resolved: true, outcome: "NOT_GUILTY", executedUuid: null },
+  }
+  await RTL.act(async () => {
+    t.store().applySessionSnapshot(response, null)
+  })
+  assert.equal(t.state().phase, "NIGHT")
+  assert.equal(t.state().tribunal ?? null, null)
+  assert.equal(t.state().dayVoteResolution?.outcome, "TRIBUNAL")
+  assert.equal(t.state().dayVoteResolution?.tribunalTargetUuid, t.uuid(3))
 })

@@ -181,7 +181,7 @@ test("A11-F-764 재설정 저장 단추 '비밀번호 변경' → 보내는 중 
   })
   await flushUi()
   assert.ok(screen.getByRole("button", { name: "비밀번호 변경" }), "준비: 저장 단추")
-  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호"), { target: { value: PW } })
+  fireEvent.change(screen.getByPlaceholderText("8~64자 비밀번호 (영문·숫자 포함)"), { target: { value: PW } })
   fireEvent.change(screen.getByPlaceholderText("비밀번호를 다시 입력하세요"), { target: { value: PW } })
   fireEvent.click(screen.getByRole("button", { name: "비밀번호 변경" }))
   await flushUi()

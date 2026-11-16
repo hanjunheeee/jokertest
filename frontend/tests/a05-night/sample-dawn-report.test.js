@@ -24,7 +24,7 @@ test("견본-1 의사가 살린 밤: 낮 시작 글 창에 '살려냈습니다' 
   const dialog = screen.getByRole("dialog", { name: "단계 전환 안내" })
   assert.match(dialog.textContent, /지난밤 의사가 공격받은 사람을 살려냈습니다/)
   // 직업 이름이 글에 없음
-  assert.doesNotMatch(dialog.textContent, /광대|경비원|마녀사냥꾼|시민/)
+  assert.doesNotMatch(dialog.textContent, /광대|경비원|마녀사냥꾼|시민|귀족/)
   assert.equal(finished, 0)
 
   fireEvent.click(screen.getByRole("button", { name: "확인" }))

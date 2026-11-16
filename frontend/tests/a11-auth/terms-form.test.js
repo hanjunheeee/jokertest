@@ -84,10 +84,10 @@ test("A11-F-248 보기 창 닫기 → 창 없음, 체크 상태 그대로", asyn
 
 const TERMS_FAIL = { status: 500, body: { success: false, message: "서버 내부에서 에러가 발생했습니다." } }
 
-test("A11-F-249 GET /auth/terms 실패 → 실패 글 + \"다시 시도\" 단추", async () => {
+test("A11-F-249 GET /auth/terms 실패 → 실패 글 + \"다시 불러오기\" 단추", async () => {
   await renderTerms(TERMS_FAIL)
   assert.ok(screen.getByText(/약관을 불러오지 못했습니다/))
-  assert.ok(screen.getByRole("button", { name: "다시 시도" }))
+  assert.ok(screen.getByRole("button", { name: "다시 불러오기" }))
 })
 
 test("A11-F-250 실패 뒤 다시 누름 → 다시 불러와 약관 줄 보임", async () => {
@@ -146,13 +146,13 @@ test("A11-F-254 필수 다 골라 동의 → 창 사라짐", async () => {
   assert.equal(screen.queryByRole("dialog", { name: "약관이 바뀌었습니다" }), null)
 })
 
-test("A11-F-255 하나 덜 고름 → 동의 단추 꺼짐", async () => {
+test("A11-F-255 재동의 창엔 고르는 상자 없음 → \"모두 동의하고 계속\" 단추 하나, 켜져 있음", async () => {
   await renderGate()
   const dialog = screen.getByRole("dialog", { name: "약관이 바뀌었습니다" })
-  const boxes = within(dialog).queryAllByRole("checkbox")
-  assert.equal(boxes.length, PENDING.length, "재동의 창에 약관마다 고르는 상자가 없음")
-  await click(boxes[0])
-  assert.equal(within(dialog).getByRole("button", { name: "모두 동의하고 계속" }).disabled, true)
+  assert.equal(within(dialog).queryAllByRole("checkbox").length, 0)
+  const agreeButtons = within(dialog).getAllByRole("button", { name: "모두 동의하고 계속" })
+  assert.equal(agreeButtons.length, 1)
+  assert.equal(agreeButtons[0].disabled, false)
 })
 
 test("A11-F-270 로그인 화면(로그아웃 상태)에선 재동의 창 안 그림", async () => {

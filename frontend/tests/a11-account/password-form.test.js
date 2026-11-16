@@ -36,10 +36,11 @@ function mountAt(answer) {
   return { net, box, view }
 }
 
-// 두 칸 넣기
+// 칸 넣기 (확인 칸은 새 비번과 같게 넣음 — 다르면 안 보내는 것은 a11e-password-section 시험이 봄)
 function fill(box, currentPassword, newPassword) {
   act(() => box.form.handlePwChange({ target: { name: "currentPassword", value: currentPassword } }))
   act(() => box.form.handlePwChange({ target: { name: "newPassword", value: newPassword } }))
+  act(() => box.form.handlePwChange({ target: { name: "newPasswordConfirm", value: newPassword } }))
 }
 
 // 보내기 + 답 반영

@@ -25,13 +25,16 @@ test("A08-F-054 reservedHostUuid null → 안내 글 없음", async () => {
   assert.equal(document.body.textContent.includes("방장 자리를 비워 두었습니다"), false)
 })
 
-test("A08-F-055 정원 7, 2명 + 방장 자리 → 인원은 2명 (방장 자리 칸은 안 셈)", async () => {
+test("A08-F-055 정원 7, 2명 + 방장 자리 → 인원은 2명·\"2/7\" (방장 자리 칸은 안 셈)", async () => {
   await openMatching({ room: K.roomOf({ uuids: [B, C], hostUuid: null, reservedHostUuid: A, max: 7 }), me: C })
   // 자리 칸은 3개(방장 자리 + 2명)지만 인원은 2
   assert.equal(seatSlots().length, 3)
   const header = document.querySelector('[aria-label^="파티 인원"]')
   assert.ok(header !== null, "인원 머리말이 없음")
   assert.equal(header.getAttribute("aria-label"), "파티 인원 2명")
+  // 앉은 수/정원 숫자도 방장 자리 칸을 안 셈
+  const capacity = document.querySelector('[data-testid="matching-party-capacity"] [aria-hidden="true"]')
+  assert.equal(capacity?.textContent, "2/7")
 })
 
 test("A08-F-056 host_changed { hostUuid:B, reservedHostUuid:null } → B 방장 표시, 방장 자리 칸·안내 사라짐", async () => {

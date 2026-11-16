@@ -1,5 +1,5 @@
 // 화면 상태 시험: 추방 요청 훅 — 누르면 바로 보냄·성공·거절·8초 응답 없음·두 번 눌러도 한 번·결과 확인·계정 바뀜·늦은 답
-// 목록 A01-F-523~538 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md), 돌리기: node --experimental-test-module-mocks --test tests/a01-room/kick-request.test.js
+// 목록 A01-F-523~538·528-2~528-7 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md), 돌리기: node --experimental-test-module-mocks --test tests/a01-room/kick-request.test.js
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
@@ -178,4 +178,85 @@ test("A01-F-538 UNKNOWN → reset(창 닫음) → 다시 열면 결과 확인 �
   act(() => view.result.current.reset())
   assert.equal(view.result.current.status, S.IDLE)
   assert.equal(view.result.current.canLookupResult, true)
+})
+
+// 연결 끊김 흉내: socket.io는 끊기면 소켓 id가 없어지고, 다시 붙으면 새 id가 됨 (소켓 물건은 그대로)
+const dropConnection = (fake) => { fake.connected = false; fake.id = undefined }
+const reconnectAs = (fake, id) => { fake.connected = true; fake.id = id }
+
+test("A01-F-528-2 [버그 7] 보내는 중 연결이 끊김(소켓 id 없어짐) → 8초 뒤 UNKNOWN + 결과 확인 가능 (보내는 중에 안 멈춤)", (t) => {
+  const { fake, view } = setup()
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  fake.answer("kick_room_player", NO_ANSWER)
+  act(() => view.result.current.kickPlayer(TARGET))
+  dropConnection(fake)
+  act(() => t.mock.timers.tick(8000))
+  assert.equal(view.result.current.status, S.UNKNOWN)
+  assert.equal(view.result.current.isSending, false)
+  assert.equal(view.result.current.canLookupResult, true)
+})
+
+test("A01-F-528-3 [버그 7] 보내는 중 끊겼다 다시 붙음(소켓 id 바뀜) → 8초 뒤 UNKNOWN + 결과 확인 가능", (t) => {
+  const { fake, view } = setup()
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  fake.answer("kick_room_player", NO_ANSWER)
+  act(() => view.result.current.kickPlayer(TARGET))
+  dropConnection(fake)
+  act(() => t.mock.timers.tick(3000))
+  reconnectAs(fake, "sock-2")
+  act(() => t.mock.timers.tick(5000))
+  assert.equal(view.result.current.status, S.UNKNOWN)
+  assert.equal(view.result.current.canLookupResult, true)
+})
+
+// 끊긴 채 8초 → 결과 모름 → 다시 붙은 뒤(새 id) 결과 확인
+function unknownAfterDrop(t, fake, view) {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  fake.answer("kick_room_player", NO_ANSWER)
+  act(() => view.result.current.kickPlayer(TARGET))
+  dropConnection(fake)
+  act(() => t.mock.timers.tick(8000))
+  assert.equal(view.result.current.status, S.UNKNOWN, "끊긴 채 8초가 지났는데 결과 모름이 아님")
+  reconnectAs(fake, "sock-2")
+}
+
+test("A01-F-528-4 [버그 7] 끊겨서 결과 모름 → 다시 붙은 뒤 결과 확인, 답 KICKED → SUCCEEDED", async (t) => {
+  const { fake, view } = setup()
+  unknownAfterDrop(t, fake, view)
+  fake.answer("get_kick_result", { ok: true, status: "KICKED" })
+  await act(async () => { view.result.current.lookupResult(); await flush() })
+  assert.equal(fake.sentOf("get_kick_result").length, 1)
+  assert.equal(view.result.current.status, S.SUCCEEDED)
+})
+
+test("A01-F-528-5 [버그 7] 끊겨서 결과 모름 → 다시 붙은 뒤 결과 확인, 답 UNKNOWN → UNKNOWN 그대로(서버도 모름)", async (t) => {
+  const { fake, view } = setup()
+  unknownAfterDrop(t, fake, view)
+  fake.answer("get_kick_result", { ok: true, status: "UNKNOWN" })
+  await act(async () => { view.result.current.lookupResult(); await flush() })
+  assert.equal(view.result.current.status, S.UNKNOWN)
+  assert.equal(view.result.current.errorCode, null)
+})
+
+test("A01-F-528-6 소켓 id가 바뀐 뒤 옛 연결의 늦은 성공 답 → 성공으로 안 믿고 UNKNOWN + 결과 확인 가능", async () => {
+  const { fake, view } = setup()
+  fake.answer("kick_room_player", HOLD)
+  act(() => view.result.current.kickPlayer(TARGET))
+  dropConnection(fake)
+  reconnectAs(fake, "sock-2")
+  // 옛 연결로 보낸 요청의 답이 새 연결 뒤에 옴 → 답 내용은 안 믿음 (결과 확인으로 정함)
+  await act(async () => { fake.release("kick_room_player", { ok: true, status: "KICKED" }); await flush() })
+  assert.equal(view.result.current.status, S.UNKNOWN)
+  assert.equal(view.result.current.canLookupResult, true)
+})
+
+test("A01-F-528-7 소켓 id가 바뀐 뒤 옛 연결의 늦은 거절 답 → 실패로 안 믿고 UNKNOWN (오류 코드 없음)", async () => {
+  const { fake, view } = setup()
+  fake.answer("kick_room_player", HOLD)
+  act(() => view.result.current.kickPlayer(TARGET))
+  dropConnection(fake)
+  reconnectAs(fake, "sock-2")
+  await act(async () => { fake.release("kick_room_player", { ok: false, code: "ALREADY_LEFT" }); await flush() })
+  assert.equal(view.result.current.status, S.UNKNOWN)
+  assert.equal(view.result.current.errorCode, null)
 })

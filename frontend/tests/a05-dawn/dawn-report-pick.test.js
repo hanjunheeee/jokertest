@@ -8,7 +8,7 @@ const { buildDawnReport, buildDawnReportMessage } = await import("../../src/doma
 // 6명 명단 (닉네임만 씀), A = a0
 const roster = (nicknames = ["여름", "가을", "겨울", "새벽", "노을", "구름"]) =>
   nicknames.map((nickname, i) => ({ uuid: `a${i}`, nickname }))
-const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/
+const ROLE_WORDS = /광대|시민|귀족|의사|경비원|마녀사냥꾼/
 
 // 서버 밤 결과 → 연출 값 (판 g1, 1일 밤)
 const pick = (fields, { players = roster(), nightDayIndex = 1 } = {}) =>

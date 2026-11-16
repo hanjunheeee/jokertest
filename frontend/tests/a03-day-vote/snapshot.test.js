@@ -1,5 +1,5 @@
 // 새로고침 스냅샷(get_session_snapshot 답)으로 낮 판정·내 표·마감·준비가 다시 그려지는지 화면 상태 시험
-// 목록 A03-낮투표.md 번호 A03-F-077~088 (⑤는 정한 글 없어 지금 동작을 임시 정답으로 씀), 밤 스냅샷의 판정 칸은 C-006과 닿음
+// 목록 A03-낮투표.md 번호 A03-F-077~088, 242 (⑤는 정한 글 없어 지금 동작을 임시 정답으로 씀), 밤 스냅샷의 판정 칸은 C-006과 닿음
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
@@ -30,11 +30,12 @@ test("A03-F-077 ① 재판 스냅샷의 dayVoteResolution TRIBUNAL 받음", asyn
   assert.equal(state?.dayVoteResolution?.tribunalTargetUuid, uuidOf(2))
 })
 
-// A03-F-078~080 밤으로 간 판정 뒤 새로고침 (C-006: 서버가 이 칸을 안 실음, 실렸을 때 화면이 받는지)
+// A03-F-078~080, 242 밤으로 간 판정 뒤 새로고침 (C-006: 서버가 밤 스냅샷에도 이 칸을 실음, 화면이 받는지)
 ;[
   ["A03-F-078", "②", "TIE", { abstain: 0 }],
   ["A03-F-079", "③", "ABSTAIN_MAJORITY", { abstain: 5 }],
   ["A03-F-080", "④", "ABSTAINED", { abstain: 6 }],
+  ["A03-F-242", "⑬", "DEFENDANT_DISCONNECTED", { abstain: 1 }],
 ].forEach(([id, mark, outcome, counts]) => {
   test(`${id} ${mark} 판정 뒤 밤 스냅샷의 dayVoteResolution ${outcome} 받음 (C-006)`, async () => {
     const { state } = await refreshWith(snapshot({
@@ -78,7 +79,8 @@ test("A03-F-084 ⑧ 2일 스냅샷 → 1일 결과 없음, 투표 현황 '집계
 
 test("A03-F-085 ⑨ 죽은 나 스냅샷 → 표 잠김", async () => {
   await refreshWith(snapshot({ dead: [0], extra: { dayPhaseDeadline: Date.now() + 30_000 } }))
-  assert.equal(abstainButton()?.disabled, true)
+  // 죽은 사람 화면엔 기권 단추를 아예 안 그림 (준비·건너뛰기 단추와 같게, 모음 글 C-026) → 눌리는 기권이 없으면 됨
+  assert.notEqual(abstainButton()?.disabled, false, "죽은 사람 화면에 눌리는 기권 단추가 있음")
   const items = await readCardMenu(2)
   assert.equal(items.some((i) => i.name === "투표하기" && i.enabled), false)
 })

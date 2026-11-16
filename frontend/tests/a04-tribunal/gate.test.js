@@ -16,7 +16,7 @@ const { publicAsset } = await import("../../src/shared/utils/publicAsset.js")
 test.afterEach(resetTable)
 
 const { screen, within } = RTL
-const ROLE_WORDS = /광대|의사|경비원|마녀사냥꾼|시민/
+const ROLE_WORDS = /광대|의사|경비원|마녀사냥꾼|시민|귀족/
 
 // 재판 창 (없으면 null)
 const tribunalDialog = () => screen.queryByRole("dialog", { name: "재판" })
@@ -170,7 +170,7 @@ test("A04-F-227 [지금 동작] 7명 판: 재판 창 뒤 판 화면(사람 카�
 test("A04-F-232 10명 판: 재판 창 글·처형 결과 알림(executedRole) 뒤 화면에 직업 이름 없음", async () => {
   const t = await tribunalPage(10, { defendant: 0, jokers: [0, 5] })
   assert.doesNotMatch(tribunalDialog().textContent, ROLE_WORDS)
-  const payload = await t.resolve("GUILTY")
+  const payload = await t.resolve("GUILTY", { executedRole: "JOKER" })
   assert.equal(payload.executedRole, "JOKER")
   assert.equal(tribunalDialog(), null)
   assert.doesNotMatch(document.body.textContent, /광대/)
@@ -217,4 +217,16 @@ test("A04-F-270 8명 판: 피고 연결 끊김 알림이 와도 재판 창·단�
   assert.ok(tribunalDialog(), "재판 창이 닫힘")
   assert.equal(voteButton("유죄").disabled, false)
   assert.equal(voteButton("무죄").disabled, false)
+})
+
+// 결정 2026-11-16 오전 둘째 11번: 재판 도중 끊긴 피고가 60초 탈락하면 "재판 취소"가 아니라 그 사람이 죽은 것으로 보임
+test("A04-F-281 7명 판: 재판 도중 피고 탈락(player_eliminated + tribunal_vote_resolved DEFENDANT_DIED) → 재판 창 닫힘, 피고 카드 사망, 화면 어디에도 \"취소\" 글 없음", async () => {
+  const t = await tribunalPage(7)
+  assert.ok(tribunalDialog(), "재판 창이 안 뜸 (준비 잘못)")
+  await t.eliminate(3, { phase: "NIGHT" })
+  await t.resolve("DEFENDANT_DIED")
+  assert.equal(tribunalDialog() === null, true, "재판 창이 남음")
+  const card = document.querySelector(`[data-ingame-player-nickname="${t.nick(3)}"]`)
+  assert.equal(card?.getAttribute("data-ingame-player-status"), "dead")
+  assert.equal(/재판.{0,6}취소|취소.{0,6}재판/.test(document.body.textContent), false, "재판 취소 글이 보임")
 })

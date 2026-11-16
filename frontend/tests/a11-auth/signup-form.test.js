@@ -1,5 +1,5 @@
 // 일반 가입 칸 부품 시험 — 칸 구성·중복 확인 줄·인증 칸 단계와 글·가입 막힘 알림·가입 성공 뒤 로그인 칸
-// 목록 A11a 화면 부품 A11-F-216~242, A11-F-276~280 (jsdom에 진짜 로그인 화면을 그려 가입 칸으로 바꿈)
+// 목록 A11a 화면 부품 A11-F-216~242, A11-F-276~282 (jsdom에 진짜 로그인 화면을 그려 가입 칸으로 바꿈)
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
@@ -23,7 +23,9 @@ test.afterEach(() => {
 
 const label = {
   email: "이메일을 입력하세요",
-  password: "비밀번호를 입력하세요",
+  // 가입 비번 칸은 규칙 안내가 붙음, 로그인 칸은 그대로 (2026-11-16 결정 다섯째 2)
+  password: "비밀번호를 입력하세요 (8~64자, 영문·숫자 포함)",
+  loginPassword: "비밀번호를 입력하세요",
   passwordConfirm: "비밀번호를 다시 입력하세요",
   nickname: "사용할 닉네임을 입력하세요 (2~8자, 한글/영문/숫자)",
   birthDate: "생년월일을 선택하세요",
@@ -322,5 +324,14 @@ test("A11-F-280 가입 성공 알림 뒤 로그인 칸 → 비번 칸이 비어 
   await settle()
   assert.deepEqual(alerts, ["회원가입이 완료되었습니다! 로그인해주세요."])
   assert.ok(screen.getByRole("button", { name: "로그인" }))
-  assert.equal(input("password").value, "")
+  assert.equal(input("loginPassword").value, "")
+})
+
+test("A11-F-281 가입 비번 칸 안내 글에 \"8~64자, 영문·숫자 포함\"", async () => {
+  await renderSignup()
+  assert.equal(input("password").getAttribute("placeholder"), "비밀번호를 입력하세요 (8~64자, 영문·숫자 포함)")
+})
+
+test("A11-F-282 비번 영문만 8자로 가입 → \"비밀번호는 영문과 숫자를 모두 포함해야 합니다.\" 알림, 요청 0번", async () => {
+  await blockedBy({ password: "testpass", passwordConfirm: "testpass" }, "비밀번호는 영문과 숫자를 모두 포함해야 합니다.")
 })

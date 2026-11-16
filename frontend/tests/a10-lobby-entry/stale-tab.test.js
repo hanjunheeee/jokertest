@@ -62,6 +62,8 @@ test("A10-F-221 방장 대기방 + REPLACED_BY_SAME_SESSION → \"참가자 추�
   assert.ok(reasonId, "단추에 까닭 글이 이어짐")
   const reason = document.getElementById(reasonId)
   assert.ok(reason && reason.textContent.trim().length > 0, "까닭 글이 화면에 있음")
+  // 끊긴 창이니 "방 정보를 확인하는 중" 글이 아니라 끊김 글이어야 함
+  assert.equal(reason.textContent, "서버와 연결되어 있지 않아 추방할 수 없습니다.")
 })
 
 test("A10-F-222 같은 창 밀림 뒤 /lobby로 이동 → 서버가 받은 enter_lobby 0개", async () => {

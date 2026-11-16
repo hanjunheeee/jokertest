@@ -93,7 +93,7 @@ test("A05-F-606 재판 처형으로 판 끝(5명): 낮 시작 연출 없이 결�
   const after = g.seats.map((s, i) => ({ uuid: s.uuid, isAlive: i !== 0 }))
   await g.say("tribunal_vote_resolved", {
     gameId: g.gameId, dayIndex: 1, phase: "ENDED", defendantUuid: g.uuid(0), outcome: "GUILTY",
-    counts: { guilty: 4, notGuilty: 0 }, executedUuid: g.uuid(0), executedRole: "JOKER",
+    executedUuid: g.uuid(0),
     players: after,
     winResult: {
       winner: "CITIZEN",

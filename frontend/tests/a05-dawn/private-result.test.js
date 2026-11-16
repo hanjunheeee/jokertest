@@ -35,7 +35,7 @@ test("A05-F-572 8명 경비원 조사 결과(대상 A·의사) → 결과 창 �
   assert.match(dialog.textContent, /의사/)
 })
 
-test("A05-F-573 10명 마녀사냥꾼 확인 결과(죽은 C·시민) → 글에 C 닉네임과 \"시민\"", async () => {
+test("A05-F-573 10명 마녀사냥꾼 확인 결과(죽은 C·시민) → 글에 C 닉네임과 \"귀족\"", async () => {
   const g = await kit.openGame({ n: 10, me: 4, roles: { 0: "JOKER", 1: "JOKER", 4: "WITCH_HUNTER" }, dead: [6], dayIndex: 2 })
   await g.mountElement(React.createElement(PrivateResult))
   await g.turnStarts("WITCH_HUNTER")
@@ -44,7 +44,7 @@ test("A05-F-573 10명 마녀사냥꾼 확인 결과(죽은 C·시민) → 글에
   const dialog = kit.privateResultDialog()
   assert.ok(dialog, "결과 창이 안 뜸")
   assert.match(dialog.textContent, new RegExp(g.nick(6)))
-  assert.match(dialog.textContent, /시민/)
+  assert.match(dialog.textContent, /귀족/)
 })
 
 test("A05-F-574 7명 광대 암살 실패(ASSASSINATE success 거짓) → 실패 글", async () => {

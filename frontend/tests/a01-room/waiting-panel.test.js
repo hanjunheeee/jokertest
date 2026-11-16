@@ -75,6 +75,9 @@ test("A01-F-652 자리 표시: 준비한 사람 자리 \"준비완료\", 안 한
   assert.match(labelOf(all[0]), /준비완료/)
   assert.match(labelOf(all[1]), /대기중/)
   assert.match(labelOf(all[2]), /준비완료/)
+  // 그림 설명 글 말고 화면에 보이는 글로도 있음
+  assert.equal(all[0].textContent, "준비완료")
+  assert.equal(all[1].textContent, "대기중")
 })
 
 // 정원·지금 인원 → "파티 인원" 숫자
@@ -84,6 +87,8 @@ for (const [id, max, n] of [["A01-F-653", 5, 3], ["A01-F-654", 6, 5], ["A01-F-65
     const header = screen.getByLabelText(`파티 인원 ${n}명`)
     assert.match(header.textContent.replace(/\s+/g, " "), new RegExp(`파티 인원 ${n}명`))
     assert.equal(seats().length, n)
+    // 앉은 수/정원 숫자 (결정: 칸은 앉은 사람만큼, 숫자는 앉은 수/정원)
+    assert.equal(document.querySelector('[data-testid="matching-party-capacity"] [aria-hidden="true"]')?.textContent, `${n}/${max}`)
   })
 }
 
