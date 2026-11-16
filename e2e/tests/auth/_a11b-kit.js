@@ -306,12 +306,40 @@ async function openWithdrawConfirm(page, secret) {
     await expect(dialog).toBeVisible();
     return dialog;
 }
-// 확인 창에서 "탈퇴하기" → 응답 상태 번호
+// 탈퇴 요청의 서버 응답 상태 받을 준비 → { status: Promise<number> } (준비 뒤에 "탈퇴하기"를 누름)
+// 서버가 응답 전에 소켓으로 "탈퇴 완료" 끊기를 먼저 보냄 → 화면이 로그인 화면으로 가며 이 요청을 버려 브라우저 응답으로는 못 받음
+// 그래서 요청을 가로채 시험 쪽에서 서버에 그대로 보내고 서버가 준 상태를 씀, 화면엔 같은 응답을 돌려줌(이미 떠났으면 버림)
+async function watchWithdrawStatus(page, { timeoutMs = 15_000 } = {}) {
+    const pattern = '**/user/me/withdraw';
+    let handler = null;
+    let timer = null;
+    const status = new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`탈퇴 요청이 안 감 (${timeoutMs}ms)`)), timeoutMs);
+        // 가로채기 풀기는 이 요청을 다 처리한 뒤에 (처리 중에 풀면 브라우저 요청이 그대로 서버로 가서 탈퇴 요청이 두 번 감)
+        handler = async (route) => {
+            if (route.request().method() !== 'POST') return route.fallback();
+            try {
+                const res = await route.fetch();
+                resolve(res.status());
+                await route.fulfill({ response: res }).catch(() => {});
+            } catch (error) {
+                reject(error);
+                await route.abort().catch(() => {});
+            } finally {
+                await page.unroute(pattern, handler).catch(() => {});
+            }
+        };
+    }).finally(() => clearTimeout(timer));
+    status.catch(() => {}); // 기다리는 쪽이 받기 전에 실패해도 처리 안 된 실패로 안 뜨게
+    await page.route(pattern, handler);
+    return { status };
+}
+// 확인 창에서 "탈퇴하기" → 서버 응답 상태 번호
 async function withdrawUi(page, secret) {
     const dialog = await openWithdrawConfirm(page, secret);
-    const res = page.waitForResponse(isPost('/user/me/withdraw'));
+    const { status } = await watchWithdrawStatus(page);
     await dialog.getByRole('button', { name: '탈퇴하기' }).click();
-    return (await res).status();
+    return status;
 }
 
 // 닉네임 바꾸기 → 응답 상태 번호
@@ -403,7 +431,7 @@ module.exports = {
     gotoAccount, section, pwSection, emailSection, withdrawSection, nicknameSection, currentPwBox,
     fillPasswordChange, changePasswordUi, failCurrentPassword,
     sendEmailCode, resendEmailCode, confirmEmailCode, changeEmailUi,
-    openWithdrawConfirm, withdrawUi, changeNicknameUi,
+    openWithdrawConfirm, watchWithdrawStatus, withdrawUi, changeNicknameUi,
     banner, gearImage, gotoMyPage, statValue, fileNameOf,
     startCitizenGame, withdrawApi, expectWithdrawBlockedInGame, playCitizenWin,
 };

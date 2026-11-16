@@ -7,7 +7,7 @@ const { e2e } = require('../../helpers/internal');
 const { Table } = require('../../helpers/game');
 const ui = require('../../helpers/ui');
 const {
-    hostGame, createRoomUi, botsJoinAndReady, waitResult, finishGame, closeReveals, stepperRow, stepperValue, selectTab,
+    hostGame, createRoomUi, botsJoinAndReady, waitResult, finishGame, closeReveals, stepperRow, stepperValue, setStepper, selectTab,
 } = require('../room/roomHelpers');
 const N = require('../ingame/b-night/_night');
 const { expectReadable } = require('../../helpers/visible');
@@ -207,13 +207,19 @@ async function leaveGameUi(page) {
     }
 }
 
-/** 폰 결과 화면의 한 판 끝 광고 창 (광고 자리가 켜진 빌드·개발 서버에서만 뜸): 뜨면 "닫기"가 나올 때까지 기다렸다 닫음 */
+/**
+ * 폰 결과 화면의 한 판 끝 광고 창 (광고 자리가 켜진 빌드·개발 서버에서만 뜸): 뜨면 "닫기"가 나올 때까지 기다렸다 닫음
+ * 광고 꾸러미를 못 받으면 창이 "닫기" 전에 스스로 닫힘(InterstitialAd onEmpty) → 닫기 단추가 나오거나 창이 사라지거나 둘 중 하나까지
+ */
 async function closeAdIfShown(page) {
     const ad = page.getByRole('dialog', { name: '광고' });
     const shown = await ad.waitFor({ state: 'visible', timeout: 2500 }).then(() => true, () => false);
     if (!shown) return;
-    await ad.getByRole('button', { name: '닫기' }).click({ timeout: 10_000 });
-    await expect(ad).toHaveCount(0);
+    const close = ad.getByRole('button', { name: '닫기' });
+    await expect(async () => {
+        if (await close.isVisible().catch(() => false)) await close.click({ timeout: 2000 });
+        await expect(ad).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
 }
 
 /**
@@ -318,10 +324,19 @@ async function codeEntryAlert(page, code, { close = true } = {}) {
     return ui.captureAlert(page, () => page.getByRole('button', { name: '참여하기' }).click(), { close });
 }
 
-/** 폰 설정 화면에서 처음 값(정원 10·자동 구성·광대 1)으로 방 만들기 → 서버 방 값 */
-async function createRoomOnPhone(person) {
+/** 폰 설정 화면에서 처음 값(정원 10·자동 구성·광대 2)으로 방 만들기 → 서버 방 값 */
+function createRoomOnPhone(person) {
+    return openPhoneRoom(person);
+}
+
+/** 폰 설정 화면에서 방 만들기 (oneJoker면 광대 칸을 1로 내림 — 처음 값 광대 2는 5·6명 판에서 광대 봇을 하나로 못 정함) */
+async function openPhoneRoom(person, { oneJoker = false } = {}) {
     const page = person.page;
     await page.goto('/game-setup');
+    if (oneJoker) {
+        await selectTab(page, '일반');
+        await setStepper(page, '광대(마피아) 플레이어 수', 1);
+    }
     const make = page.getByRole('button', { name: '게임 만들기' });
     await expect(make).toBeEnabled();
     await make.click();
@@ -389,11 +404,12 @@ async function startByBot(hostBot, humans, botList, roles = null) {
 }
 
 /**
- * 폰 사람 방장 판 차리기 (폰 화면으로 처음 값 방 만듦 = 정원 10·자동 구성·광대 1): 손님은 코드로 입장, 사람은 시민·광대는 맨 뒤 봇
+ * 폰 사람 방장 판 차리기 (폰 화면으로 정원 10·자동 구성·광대 1 방 만듦): 손님은 코드로 입장, 사람은 시민·광대는 맨 뒤 봇
  * @returns {Promise<{ t:any, joker:any, botList:any[] }>} joker = 광대 봇(서버 값으로 다시 찾음)
  */
 async function seatPhoneHosted(bots, host, guests, botCount) {
-    const room = await createRoomOnPhone(host);
+    const room = await openPhoneRoom(host, { oneJoker: true });
+    expect(room.settings?.jokerCount, '방 광대 수').toBe(1);
     for (const g of guests) await ui.joinRoomByCodeUi(g.page, room.roomCode);
     const botList = await bots.spawn(botCount);
     await botsJoinAndReady(botList, U(host), room.roomCode);

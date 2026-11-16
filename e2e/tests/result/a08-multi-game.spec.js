@@ -282,14 +282,13 @@ test('A08-H-044 사람 5명 판: 같은 방 둘째 판도 역할 확인 → 낮 
     await expectSameRoomAgain(people, t.roomCode);
 });
 
-test('A08-H-049 7명 판(사람 3 + 봇 4): 같은 방 둘째 판 중 방장 ㄱ이 나감(ㄴ이 방장) → 판 끝 → ㄷ이 먼저 대기방으로 → 방장 자리 칸 → ㄴ이 들어오면 ㄴ이 방장 @game @hard', async ({ players, bots }) => {
+test('A08-H-049 7명 판(사람 3 + 봇 4): 같은 방 둘째 판 중 방장 ㄱ이 나감(판 자리 맨 앞의 참여 중인 사람이 방장) → 판 끝 → 방장 아닌 사람이 먼저 대기방으로 → 방장 자리 칸 → 그 방장이 들어오면 방장 @game @hard', async ({ players, bots }) => {
     test.setTimeout(480_000);
     const [a, b, c] = await openHumans(players, 3);
     const { t, joker, botList } = await seatHosted(bots, a, [b, c], 4);
     await jokerLeaves(t, joker);
     await allAtResult([a, b, c]);
 
-    // 들어온 순서가 둘째 판 자리 순서: ㄱ(방장) → ㄴ → ㄷ → 봇 3
     const backBots = botList.filter((bot) => bot !== joker);
     for (const p of [a, b, c]) await pressReturn(p.page);
     for (const bot of backBots) await botReturn(bot, t.gameId);
@@ -298,19 +297,30 @@ test('A08-H-049 7명 판(사람 3 + 봇 4): 같은 방 둘째 판 중 방장 ㄱ
     expect(t2.gameId, '새 판').not.toBe(t.gameId);
     const joker2 = await findJokerBot(t2, backBots);
 
-    // 둘째 판 중 방장 ㄱ이 산 채로 나감 → 다음 방장은 맨 앞자리부터 = ㄴ
+    // 둘째 판 중 방장 ㄱ이 산 채로 나감 → 다음 방장은 판 자리(판 시작 때 섞인 순서 = 서버 판 요약 players 순서)에서 맨 앞부터 처음 나오는 참여 중인 사람
+    // (결정 2026-11-16 "판 중에 방장이 빠질 때") — 방에 들어온 순서가 아니라서 ㄴ·ㄷ·봇 누구든 될 수 있음
     await closeReveals([a.page, b.page, c.page]);
     await leaveGameUi(a.page);
     await expect.poll(async () => (await t2.player(U(a)))?.isParticipating, { message: 'ㄱ이 판에서 빠짐' }).toBe(false);
     await jokerLeaves(t2, joker2);
     await allAtResult([b, c]);
+    // 광대 봇이 방장이었어도 나가면서 다음 사람에게 넘어감 → 끝난 판에 남은 참여 중인 사람 중 맨 앞
+    const host2 = (await t2.state()).players.find((p) => p.isParticipating !== false);
+    const hostHuman = [b, c].find((p) => U(p) === host2.uuid) ?? null;
+    const hostBot = backBots.find((bot) => U(bot) === host2.uuid) ?? null;
+    // 방장 아닌 사람이 먼저 "대기방으로" (방장이 ㄴ이면 ㄷ, ㄷ이면 ㄴ, 봇이면 ㄷ)
+    const first = hostHuman === c ? b : c;
+    const second = first === c ? b : c;
 
-    // 남겨 둔 방장 자리는 판이 끝날 때의 방장(ㄴ) 것
-    await pressReturn(c.page);
-    await expect(hostSeat(c.page)).toBeVisible();
-    await expect(startButton(c.page)).toHaveCount(0);
-    await pressReturn(b.page);
-    await expect(startButton(b.page)).toBeVisible();
-    await expect(hostSeat(c.page)).toHaveCount(0);
-    expect((await e2e.roomOf(U(b)))?.hostUuid, '서버 방장 = ㄴ').toBe(U(b));
+    // 남겨 둔 방장 자리는 판이 끝날 때의 방장 것 → 먼저 온 사람 화면엔 방장 자리 칸, "게임시작" 없음
+    await pressReturn(first.page);
+    await expect(hostSeat(first.page)).toBeVisible();
+    await expect(startButton(first.page)).toHaveCount(0);
+    // 방장이 들어오면 방장 자리 칸이 사라지고 그 사람이 방장
+    if (hostBot) await botReturn(hostBot, t2.gameId);
+    else await pressReturn(second.page);
+    if (hostHuman) await expect(startButton(hostHuman.page)).toBeVisible();
+    await expect(hostSeat(first.page)).toHaveCount(0);
+    await expect(startButton(first.page)).toHaveCount(0);
+    expect((await e2e.roomOf(U(first)))?.hostUuid, '서버 방장 = 판이 끝날 때의 방장').toBe(host2.uuid);
 });

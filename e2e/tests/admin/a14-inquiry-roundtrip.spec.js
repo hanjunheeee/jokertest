@@ -40,7 +40,9 @@ test(`${H(8)} PC 플레이어 문의 → 관리자 답 → PC 알림 → 모바�
     }
 
     // PC: 알림 종 → 문의 답 알림
-    await pc.page.getByRole('button', { name: '문의 창 닫기' }).first().click().catch(() => {});
+    // 창 안 X 단추로 닫음 (같은 이름 바탕 단추는 가운데가 창에 가려 못 누름)
+    await win.getByRole('button', { name: '문의 창 닫기' }).click();
+    await expect(win).toHaveCount(0);
     const bell = await k.openBell(pc.page);
     const item = k.bellItems(bell, title).filter({ hasText: '문의에 답이 왔어요' });
     await expect(item).toHaveCount(1);

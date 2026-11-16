@@ -67,8 +67,12 @@ async function closeAd(page) {
     const ad = page.getByRole('dialog', { name: '광고' });
     const shown = await ad.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
     if (!shown) return;
-    await ad.getByRole('button', { name: '닫기' }).click({ timeout: 10_000 });
-    await expect(ad).toHaveCount(0);
+    // 광고 꾸러미를 못 받으면 "닫기" 전에 창이 스스로 닫힘 → 닫기 단추가 나오거나 창이 사라지거나 둘 중 하나까지
+    const close = ad.getByRole('button', { name: '닫기' });
+    await expect(async () => {
+        if (await close.isVisible().catch(() => false)) await close.click({ timeout: 2000 });
+        await expect(ad).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
 }
 
 test('A07-H-029 모바일 사람 3 + 봇 7 = 10명 판 끝 → 세 화면 모두 골드 칸·직업 글·승패 띠·진영 띠가 읽힘 @game @hard @smoke', async ({ user, players, table }) => {

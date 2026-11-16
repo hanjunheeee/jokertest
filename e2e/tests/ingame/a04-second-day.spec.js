@@ -182,7 +182,7 @@ test('A04-E-166 PC 8명 판(나 경비원) 밤 조사 결과 창을 안 닫은 �
     await K.press(page, TEXT.GUILTY);
 });
 
-test('A04-E-169 PC 7명 판 1일 처형된 봇이 끊김 → 2일 낮 투표 때 그 카드는 사망, 누를 수 있는 "투표하기" 없음 @game', async ({ user, table }) => {
+test('A04-E-169 PC 7명 판 1일 처형된 봇이 끊김 → 2일 낮 투표 때 그 카드에 누를 수 있는 "투표하기" 없음 @game', async ({ user, table }) => {
     const t = await K.seat(table, user, { n: 7 });
     const page = user.page;
     const [executed, alive] = [t.bots[2], t.bots[3]];
@@ -195,8 +195,8 @@ test('A04-E-169 PC 7명 판 1일 처형된 봇이 끊김 → 2일 낮 투표 때
     await K.toDayOf(t, 2);
     await K.day.closeNotice(page, TEXT.DAY);
     await K.toVote(t);
-    // 죽은 채 끊겨도 "연결 끊김"(산 사람 모양)이 아니라 사망
-    await K.night.expectCard(page, executed.nickname, 'dead');
+    // 판에 남은 채 죽고 끊긴 사람 배지는 끊김 먼저 (화면 mergeSourcePlayerWithPreview.js playerStatus, 화면 시험이 잠가 둠) — 죽음은 아래 메뉴로 봄
+    await K.night.expectCard(page, executed.nickname, 'disconnected');
     // 견줄 것: 산 봇 카드엔 누를 수 있는 "투표하기"
     const menu = await K.night.openCardMenu(page, alive.nickname);
     await expect(menu.getByRole('menuitem', { name: '투표하기' })).toBeEnabled();

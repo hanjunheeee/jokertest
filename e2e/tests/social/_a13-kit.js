@@ -82,7 +82,9 @@ async function showList(page) {
 const friendRow = (page, uuid) => panel(page).locator(`li[data-friend-id="${uuid}"]`);
 // 폴더 머리 단추 (글 "일반 (1/3)"·"오프라인 (2)"·"즐겨찾기 (1)")
 const folderHead = (page, label) => panel(page).getByRole('button', { name: new RegExp(`^${label} \\(`) });
-const folderOf = (page, label) => panel(page).locator('section').filter({ has: folderHead(page, label) });
+// has 안 고르개는 section 안에서 찾음 → 창(dialog)부터 시작하면 못 찾아 page 고르개로 씀
+const folderOf = (page, label) => panel(page).locator('section')
+    .filter({ has: page.getByRole('button', { name: new RegExp(`^${label} \\(`) }) });
 
 /** 폴더가 접혀 있으면 펼침 (PC는 aria-expanded, 폰 머리는 그 표시가 없어 줄 목록이 있나로 봄) */
 async function openFolder(page, label) {

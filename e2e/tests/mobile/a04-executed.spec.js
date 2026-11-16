@@ -21,7 +21,11 @@ test('A04-E-063 내가 처형되면 추방 연출 뒤 사망 후 선택 창에 "
     const page = user.page;
     await getExecuted(table, user, 5);
     const dialog = trial.deadChoice(page);
-    await A.calm(page, () => expect(dialog).toBeVisible({ timeout: 1000 }), { keepWatching: false, timeout: 45000 });
+    // 모바일은 추방 영상 밑에 창이 먼저 깔림 → 영상·글이 다 끝나 창이 맨 위가 된 뒤에 읽힘을 봄
+    await A.calm(page, async () => {
+        await expect(trial.expulsion(page)).toHaveCount(0, { timeout: 1000 });
+        await expect(dialog).toBeVisible({ timeout: 1000 });
+    }, { keepWatching: false, timeout: 45000 });
     await A.readable(dialog.getByRole('button', { name: '관전 계속하기' }));
     await A.readable(dialog.getByRole('button', { name: '게임 나가기' }));
 });

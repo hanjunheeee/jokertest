@@ -174,14 +174,18 @@ test('A08-H-030 6명 판(정원 6): 원래 방장 ㄱ 빼고 5명이 들어간 �
     expect(request, '받은 친구 신청').toBeTruthy();
     await friends.botApi(friend, 'PUT', `/friends/requests/${request.request_id}/accept`);
 
-    // ㄴ 화면에서 친구 초대 → 친구가 수락 → 남겨 둔 방장 자리 때문에 가득 참
+    // ㄴ 화면에서 친구 초대 → 남겨 둔 방장 자리까지 세면 가득 참 → 서버가 보내기부터 거절(백엔드 A13-B-367과 같은 글), 친구에겐 초대가 안 감
     await b.page.getByRole('button', { name: '친구 초대', exact: true }).click();
-    await b.page.getByRole('dialog', { name: '친구초대' }).getByRole('button', { name: `${friend.nickname} 게임 초대` }).click();
-    const received = await friend.waitForEvent('game_invite_received');
-    const reply = await friend.request('accept_game_invite', { inviteId: received.invite.inviteId });
-    expect(reply?.ok, `초대 수락 답 ${JSON.stringify(reply)}`).toBe(false);
-    expect(reply.code, '거절 까닭').toBe('ROOM_FULL');
+    const inviteDialog = b.page.getByRole('dialog', { name: '친구초대' });
+    await inviteDialog.getByRole('button', { name: `${friend.nickname} 게임 초대` }).click();
+    const full = inviteDialog.getByRole('alert');
+    await expect(full).toHaveText('방이 가득 차 초대를 보낼 수 없습니다.');
+    await expectReadable(full);
+    expect(friend.events.filter((r) => r.event === 'game_invite_received'), '친구가 받은 초대').toHaveLength(0);
     expect(await seatsOf(U(b)), '서버 방 명단 그대로 5명').toHaveLength(5);
+    // 초대 창 닫기 (바깥 덮개 단추와 닫기 단추 이름이 같아 키로 닫음)
+    await b.page.keyboard.press('Escape');
+    await expect(inviteDialog).toHaveCount(0);
 
     await pressReturn(a.page);
     await expectHostBack(a, [b, c]);

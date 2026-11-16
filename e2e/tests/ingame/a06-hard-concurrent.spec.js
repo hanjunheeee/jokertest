@@ -175,7 +175,8 @@ test('A06-H-012 두 사람 번갈아 0.3초 (사람 2 + 봇 3 = 5명): 번갈아
     sentAt.push(Date.now());
     await expect(boxTwo).toHaveValue('');
     await boxTwo.fill(texts[3]);
-    await until(start + 900);
+    // 나의 둘째 글은 나의 첫 글이 실제로 나간 때부터 0.6초 뒤 (느린 날 첫 글 누름이 늦게 끝나면 처음 시각 기준으론 0.5초 안이 됨)
+    await until(Math.max(start + 900, sentAt[1] + 600));
     await boxTwo.press('Enter');
     sentAt.push(Date.now());
     // 이 케이스가 맞게 차려졌는지: 서로 다른 사람 사이는 0.5초 안, 같은 사람 사이는 0.5초 넘게

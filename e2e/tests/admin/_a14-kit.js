@@ -215,13 +215,19 @@ async function loginAlert(page, account) {
     return ui.captureAlert(page, () => page.getByRole('button', { name: '로그인', exact: true }).click());
 }
 
-/** 플레이어 로그인 화면 거쳐 로그인 → 로비가 아니어도 됨 (판 중이면 판 화면으로 감) */
+/**
+ * 플레이어 로그인 화면 거쳐 로그인 → 로비가 아니어도 됨 (판 중이면 판 화면으로 감)
+ * 세션이 살아 있으면(정지 없는 강제 끊기 뒤) 로그인 화면이 스스로 로비·판 화면으로 넘김 → 그땐 칸을 안 채우고 끝
+ */
 async function loginUi(page, account) {
     if (!/\/login/.test(page.url())) await page.goto('/login');
-    await page.getByPlaceholder('이메일을 입력하세요').fill(account.email);
-    await page.getByPlaceholder('비밀번호를 입력하세요').fill(account.password);
-    await page.getByRole('button', { name: '로그인', exact: true }).click();
-    await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
+    await expect(async () => {
+        if (!/\/login/.test(page.url())) return;
+        await page.getByPlaceholder('이메일을 입력하세요').fill(account.email, { timeout: 3000 });
+        await page.getByPlaceholder('비밀번호를 입력하세요').fill(account.password, { timeout: 3000 });
+        await page.getByRole('button', { name: '로그인', exact: true }).click({ timeout: 3000 });
+        await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
+    }).toPass({ timeout: 30_000 });
 }
 
 /**

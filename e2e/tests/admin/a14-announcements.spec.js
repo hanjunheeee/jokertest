@@ -91,7 +91,9 @@ test(`${E(51)} 확인 창 "보내기" 빠르게 두 번 → 플레이어 알림 
         const bell = await k.openBell(player.page);
         await expect(k.bellItems(bell, title)).toHaveCount(1);
         // 늦게 오는 두 번째 알림이 없는지 창을 다시 열어 한 번 더
-        await player.page.getByRole('button', { name: '알림 닫기' }).click();
+        // 창 안 "닫기" 단추로 닫음 ("알림 닫기"는 어두운 바탕 단추라 가운데가 창에 가려 못 누름)
+        await bell.getByRole('button', { name: '닫기', exact: true }).click();
+        await expect(bell).toHaveCount(0);
         await ui.gotoLobby(player.page);
         const again = await k.openBell(player.page);
         await expect(k.bellItems(again, title)).toHaveCount(1);

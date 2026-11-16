@@ -273,11 +273,15 @@ async function pastExpulsion(page) {
     }).toPass({ timeout: 30_000 });
 }
 
-/** 사망 창이 뜰 때까지 (추방 연출·단계 안내를 닫으면서) → 창 */
+/**
+ * 사망 창이 뜰 때까지 (추방 연출·단계 안내를 닫으면서) → 창
+ * 사망 창은 추방 영상이 도는 동안 영상 밑에 먼저 깔림 → 영상이 끝나 연출이 없어진 뒤라야 사람 눈에 보임
+ */
 async function waitDeadChoice(page) {
     const dialog = deadChoice(page);
     await expect(async () => {
         await calm(page);
+        await expect(expulsionOf(page)).toHaveCount(0, { timeout: 500 });
         await expect(dialog).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 40_000 });
     return dialog;
@@ -324,6 +328,23 @@ const noticeText = (page) => page.getByRole('alertdialog', { name: '안내' }).l
 const closeNotice = (page) => page.getByRole('alertdialog', { name: '안내' }).last().getByRole('button', { name: '확인' }).click();
 
 /**
+ * 폰 결과 화면의 한 판 끝 광고 창 닫기 (안 뜨면 appearMs 뒤 그냥 지나감) → 닫혔으면 true
+ * 광고를 못 불러오면 창이 뜨자마자 저절로 닫혀 "닫기"가 끝내 안 나옴(시험은 바깥 주소 막힘) → 저절로 닫힌 것도 닫힌 것으로 침
+ * 공용 ui.closeResultAd는 뜬 것을 본 뒤 "닫기"만 기다려 이 틈에 10초를 다 씀
+ */
+async function closeAd(page, { appearMs = 4000 } = {}) {
+    const ad = page.locator('[data-interstitial-ad]');
+    const shown = await ad.waitFor({ state: 'visible', timeout: appearMs }).then(() => true, () => false);
+    if (!shown) return false;
+    await expect(async () => {
+        if ((await ad.count()) === 0) return;
+        await ad.getByRole('button', { name: '닫기', exact: true }).click({ timeout: 1000 });
+        await expect(ad).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
+    return true;
+}
+
+/**
  * 봇 표로 광대 봇을 처형해 시민 승으로 판 끝 → 결과 화면까지 (사람은 안 냄)
  * @returns {Promise<{ joker:any, list:any }>} 처형된 광대 봇, 결과 명단 칸
  */
@@ -338,7 +359,7 @@ async function toCitizenWin(t, page) {
     await pastExpulsion(page);
     const list = await waitResult(page);
     // 폰 결과 화면은 결과판 1.5초 뒤 전면 광고 창이 덮음 → 닫아 둠 (뒤에서 결과 화면 단추를 누르거나 읽기 확인을 하므로)
-    if ((page.viewportSize()?.width ?? 1280) < 600) await ui.closeResultAd(page);
+    if ((page.viewportSize()?.width ?? 1280) < 600) await closeAd(page);
     return { joker, list };
 }
 
@@ -347,5 +368,5 @@ module.exports = {
     U, rowOf, roleOf, isUp, seat, botsOf, botOf, toDay, toNight, toVote, clear, botsVote, botsJudge, voteOut, execute,
     dropBot, returnBot, droppedAt, returnedAt, eliminatedAt, expire, sleepUntil, pinTimebar, timebar, expandBar, barSeconds,
     exitButton, deadChoice, leaveNotice, tribunalWindow, cardOf, badgeOf, withConfirm, pressExit, leaveAlive, calm, pastExpulsion, waitDeadChoice, pressDeadExit,
-    createRoomOk, createRoomAlert, joinByCodeAlert, pickPublicRoom, enterPicked, noticeText, closeNotice, toCitizenWin,
+    createRoomOk, createRoomAlert, joinByCodeAlert, pickPublicRoom, enterPicked, noticeText, closeNotice, closeAd, toCitizenWin,
 };

@@ -23,8 +23,9 @@ async function readyToChange(page, value) {
 // 처리 이력에서 그 관리자의 "판 골드 바꿈" 줄을 펼쳐 전·후 값 → { before, after }
 async function goldChange(page, admin) {
     const rows = await k.auditRows(page, admin);
-    const line = rows.filter({ hasText: '판 골드 바꿈' });
-    await expect(line).toHaveCount(1);
+    // 맨 위(가장 새) 줄 — 첫 관리자는 시작 때 1로 맞춘 줄(API)도 있어 줄이 둘
+    const line = rows.filter({ hasText: '판 골드 바꿈' }).first();
+    await expect(line).toBeVisible();
     await line.getByText('전후 값 보기').click();
     const read = async (i) => Number(/"goldReward":\s*(\d+)/.exec(await line.locator('pre').nth(i).innerText())?.[1]);
     await expectReadable(line.locator('pre').nth(1));

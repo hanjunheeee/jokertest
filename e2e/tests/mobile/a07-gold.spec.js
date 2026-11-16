@@ -70,8 +70,12 @@ async function closeAd(page) {
     const ad = page.getByRole('dialog', { name: '광고' });
     const shown = await ad.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
     if (!shown) return;
-    await ad.getByRole('button', { name: '닫기' }).click({ timeout: 10_000 });
-    await expect(ad).toHaveCount(0);
+    // 광고 꾸러미를 못 받으면 "닫기" 전에 창이 스스로 닫힘 → 닫기 단추가 나오거나 창이 사라지거나 둘 중 하나까지
+    const close = ad.getByRole('button', { name: '닫기' });
+    await expect(async () => {
+        if (await close.isVisible().catch(() => false)) await close.click({ timeout: 2000 });
+        await expect(ad).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
 }
 
 // 지갑 골드 (DB) · 그 값이 될 때까지 (판 골드는 판 끝 저장 뒤에 들어옴)

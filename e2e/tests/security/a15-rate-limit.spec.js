@@ -135,13 +135,11 @@ test.describe('A15 요청 수 제한 (따로 띄운 운영 기본 제한 서버 
         for (let i = 1; i <= 6; i += 1) {
             // 새 주소마다 다시 보내기 대기가 따로라 매번 다른 새 주소 (한 사람 1시간 5번 셈만 봄)
             await box.getByPlaceholder('새 이메일', { exact: true }).fill(`e2e+a15-change-${rand()}-${i}@example.test`);
+            // 주소를 고치면 화면이 번호 넣기 단계에서 처음 단계로 돌아감 → 매번 "번호 받기" (현재 비번 칸은 그대로 남음)
+            if (i === 1) await box.getByPlaceholder('현재 비밀번호', { exact: true }).fill(user.account.password);
+            await expect(box.getByPlaceholder('현재 비밀번호', { exact: true })).toHaveValue(user.account.password);
             const answered = page.waitForResponse((r) => r.url().includes('/user/me/email/code') && r.request().method() === 'POST');
-            if (i === 1) {
-                await box.getByPlaceholder('현재 비밀번호', { exact: true }).fill(user.account.password);
-                await box.getByRole('button', { name: '번호 받기', exact: true }).click();
-            } else {
-                await box.getByRole('button', { name: '인증번호 다시 받기', exact: true }).click();
-            }
+            await box.getByRole('button', { name: '번호 받기', exact: true }).click();
             statuses.push((await answered).status());
         }
         expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);

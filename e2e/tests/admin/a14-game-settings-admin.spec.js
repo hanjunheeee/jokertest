@@ -81,8 +81,13 @@ test(`${E(73)} 0으로 바꾸기 → "0골드", 처리 이력 줄 @serial`, asyn
         await expect(now(page)).toHaveText('0골드');
         await expectReadable(now(page));
         expect(await k.goldSetting()).toBe(0);
+        // 이 관리자 줄은 둘(시작 때 1로 맞춘 API 줄 + 화면에서 0으로 바꾼 줄) → 맨 위가 방금 바꾼 줄, 펼치면 후 값 0
         const rows = await k.auditRows(page, admin);
-        await expect(rows.filter({ hasText: '판 골드 바꿈' })).toHaveCount(1);
+        await expect(rows.filter({ hasText: '판 골드 바꿈' })).toHaveCount(2);
+        const line = rows.first();
+        await expect(line).toContainText('판 골드 바꿈');
+        await line.getByText('전후 값 보기').click();
+        await expect(line.locator('pre').nth(1)).toContainText('"goldReward": 0');
     }, { restore: true });
 });
 

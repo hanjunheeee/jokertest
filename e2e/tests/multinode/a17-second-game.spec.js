@@ -90,8 +90,10 @@ test('A17-H-038 서버 ㄱ 5명 판에서 처형된 ㄱ이 로비 → 서버 ㄴ
         await K9.clear(a.page);
         await expectReadable(N.cardStatus(a.page, nick(a)).getByText(nick(a), { exact: true }), { timeout: 2000 });
     }).toPass({ timeout: 30_000 });
-    // 새 판을 시작한 뒤 ㄱ 화면 소켓에 옛 판 번호가 실린 알림이 하나도 없음
-    const fromOld = frames.filter((r) => r.at >= freshStartedAt && r.payload?.gameId === old.t.gameId);
+    // 새 판을 시작한 뒤 ㄱ 화면 소켓에 옛 판 번호가 실린 판 알림이 하나도 없음
+    // 뺌: 계정 캐시 무효화(account_cache_invalidated) — 옛 판이 끝나 판 골드·기록이 바뀌었으니 지갑을 다시 읽으라는 내 계정 알림, 판에서 빠진 원 참가자에게도 보냄(서버 persist.js invalidateAccountCaches)
+    // 아래에서 보는 "옛 판 골드 +1"이 화면에 닿는 길이라 오는 게 맞음
+    const fromOld = frames.filter((r) => r.at >= freshStartedAt && r.payload?.gameId === old.t.gameId && r.event !== 'account_cache_invalidated');
     expect(fromOld.map((r) => r.event), '새 판 중 받은 옛 판 알림').toEqual([]);
 
     // 죽은 뒤 풀린 사람도 옛 판 골드는 받음: 장부 한 줄, 지갑 +1

@@ -330,14 +330,20 @@ test('A03-H-021 6명 판(사람 2) 끊긴 사람이 59초 안 돌아와 표 냄 
     const back = { ...await players.add({ account: h2.account, lobby: false }), mobile: false };
     await back.page.goto('/lobby');
     await expect(back.page).toHaveURL(/\/ingame/, { timeout: 20_000 });
+    // 새 창이라 역할 창이 다시 저절로 뜸(탭마다 한 번, 10초 뒤 닫힘) → 같이 닫음, 안 닫으면 카드 누르기가 10초 막혀 5초 재기가 어긋남
     await expect(async () => {
-        await ui.closeOverlays(back.page, { names: ['단계 전환 안내', '알림'], keepWatching: false, rounds: 2 });
+        await ui.closeOverlays(back.page, { names: ['단계 전환 안내', '알림', '내 역할 보기'], keepWatching: false, rounds: 2 });
+        await expect(back.page.getByRole('dialog', { name: '내 역할 보기' })).toHaveCount(0, { timeout: 1_000 });
         await expect(abstainButton(back.page)).toBeEnabled({ timeout: 1_000 });
     }).toPass({ timeout: 20_000 });
     const panel = await openStatus(h1.page);
+    // 메뉴를 먼저 열고 "투표하기" 누르기 바로 앞 시각을 다 찬 때로 잼 (메뉴 여는 시간이 5초에 안 섞이게)
+    const menu = await openMenu(back, names.get(X));
     const fullAt = Date.now();
     expect(fullAt - goneAt).toBeLessThan(59_000);
-    await cast(back, X, names);
+    await menu.getByRole('menuitem', { name: '투표하기' }).click();
+    await expect(menu).toBeHidden();
+    await expect(abstainButton(back.page)).toBeDisabled();
     await expectSettleShown(back);
     await expectFiveSeconds(t.bots[1], fullAt, 1);
     await expectOutcome(h1.page, panel, 'TRIBUNAL', names.get(X));
@@ -350,8 +356,11 @@ test('A03-H-032 6명 판(사람 2, 투표 90초) 끊긴 사람 60초 탈락으�
     const t = await openVoteMany(table, [h1, h2], 6, { settings: { dayVoteTime: 90 } });
     const names = await namesOf(t);
     const X = uuidOf(t.bots[0]);
-    const goneAt = Date.now();
+    const closeAt = Date.now();
     await h2.context.close();
+    // 60초는 서버가 끊김을 안 때부터 셈 → 판 사람들이 받는 끊김 알림 시각을 시작으로 잼 (탭 닫기가 늦게 닿는 만큼 안 섞이게)
+    const gone = await eventAt(t.bots[1], 'session_player_connection_changed', { since: closeAt, match: (p) => p.uuid === uuidOf(h2) && p.isConnected === false });
+    const goneAt = gone.at;
     const plan = new Map([[uuidOf(h1), X], ...t.bots.map((b) => [uuidOf(b), uuidOf(b) === X ? null : X])]);
     await cast(h1, X, names);
     const panel = await openStatus(h1.page);

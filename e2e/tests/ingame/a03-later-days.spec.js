@@ -361,7 +361,8 @@ test('A03-E-208 PC 같은 방 두 번째 판 (5명) 첫 낮 다 내면 5초·결
     await expect(user.page).toHaveURL(/\/game-matching/);
     let room = null;
     await expect.poll(async () => { room = await e2e.roomOf(U(user)); return room?.players?.length ?? 0; }, { message: '다섯 다 앉음' }).toBe(5);
-    expect(room.roomId, '같은 방').toBe(t.room.roomId);
+    // 같은 방 = 같은 방 코드 (판 끝에 서버가 같은 코드·설정으로 대기방을 새로 엶, 방 id는 새것 — 결정 2026-11-16 "대기방으로 — 방 코드", backend returnRoom.js)
+    expect(room.roomCode, '같은 방 코드').toBe(t.room.roomCode);
     const host = t.bots.find((b) => U(b) === room.hostUuid);
     expect(host, '방장이 봇').toBeTruthy();
 

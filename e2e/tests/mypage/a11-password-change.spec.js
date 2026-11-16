@@ -57,11 +57,19 @@ test('A11-E-532 비번 바꾸기 5번 틀린 뒤에도 로그인은 안 잠김 �
     await expect(fresh.page).toHaveURL(/\/lobby$/);
 });
 
-test('A11-E-533 새 비번 7자 → 서버 규칙 문구 보임, 비번 그대로', async ({ user, players }) => {
+test('A11-E-533 새 비번 7자 → 규칙 문구 보임(화면이 먼저 막음·서버도 400), 비번 그대로', async ({ user, players }) => {
     const { page, account } = user;
     await k.gotoAccount(page);
-    expect(await k.changePasswordUi(page, { current: account.password, next: k.SHORT_PASSWORD })).toBe(400);
+    // 화면이 가입·재설정과 같은 규칙으로 먼저 막음(2026-11-16 비밀번호 고침) → 요청 안 감, 같은 규칙 글
+    const patches = k.countRequests(page, '/user/me/password', 'PATCH');
+    const button = await k.fillPasswordChange(page, { current: account.password, next: k.SHORT_PASSWORD });
+    await button.click();
     await expect(k.pwSection(page).getByText(k.TEXT.passwordRule, { exact: true })).toBeVisible();
+    expect(patches.count, '짧은 새 비번은 화면에서 막혀 안 보냄').toBe(0);
+    // 서버도 같은 규칙: 화면을 건너 바로 보내도 400 + 같은 글
+    const direct = await k.apiCall(user.context, 'PATCH', '/user/me/password', { currentPassword: account.password, newPassword: k.SHORT_PASSWORD });
+    expect(direct.status).toBe(400);
+    expect(direct.body?.message).toBe(k.TEXT.passwordRule);
     // 비번이 안 바뀜 → 원래 비번으로 다른 브라우저 로그인 됨
     const fresh = await k.freshBrowser(players, account);
     await ui.loginViaUi(fresh.page, account);

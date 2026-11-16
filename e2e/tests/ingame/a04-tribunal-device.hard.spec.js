@@ -18,6 +18,10 @@ test('A04-H-026 재판 중 같은 계정으로 모바일에서 로그인하면 �
     const log = A.socketLog(phone.page);
     await phone.page.goto('/ingame');
     await expect(trial.win(phone.page)).toBeVisible({ timeout: 20000 });
+    // 새 기기(새 탭 기억)는 판에 처음 들어온 것으로 보고 역할 창을 한 번 띄움(useInGameRoleReveal, 10초 뒤 저절로 닫힘) → 확인으로 닫고 봄
+    const reveal = phone.page.getByRole('dialog', { name: '내 역할 보기' });
+    await reveal.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    await A.calm(phone.page, () => expect(reveal).toHaveCount(0, { timeout: 1000 }), { keepWatching: false });
     await A.expectCardReadable(phone.page, d.nickname);
     await A.expectButtonsReadable(phone.page);
     await expect(user.page).toHaveURL(/\/login/, { timeout: 20000 });
@@ -45,6 +49,11 @@ test('A04-H-037 재판 중 방장(사람)이 나가도 재판 그대로, 판이 
     // 재판 중엔 위 줄 "게임 나가기"가 잠겨 있어 뒤로 가기 → 나가기 확인 창으로 나감
     await A.leaveByBack(user.page);
     await expect.poll(async () => (await t.player(A.uuidOf(user)))?.alive, { message: '나간 방장은 죽은 것으로' }).toBe(false);
+    // 다음 방장 = 판 자리(판 시작 때 섞인 순서, 서버 판 요약 players 순서)에서 맨 앞부터 처음 나오는 참여 중인 사람 (결정 2026-11-16 "판 중에 방장이 빠질 때")
+    // 방 들어온 순서(방장 → 손님 → 봇)가 아님 — 봇이 될 수도 있음
+    const next = (await t.state()).players.find((p) => p.uuid !== A.uuidOf(user) && p.isParticipating !== false);
+    const nextHuman = [g1, g2].find((p) => A.uuidOf(p) === next.uuid) ?? null;
+    const nextBot = botList.find((b) => A.uuidOf(b) === next.uuid) ?? null;
     for (const p of [g1, g2]) {
         await expect(trial.win(p.page)).toBeVisible();
         await expect(trial.button(p.page, 'GUILTY')).toBeEnabled();
@@ -59,8 +68,15 @@ test('A04-H-037 재판 중 방장(사람)이 나가도 재판 그대로, 판이 
         await p.page.getByRole('button', { name: '대기방으로' }).click();
         await expect(p.page).toHaveURL(/\/game-matching/, { timeout: 15000 });
     }
-    // 방장은 맨 앞자리부터 찾은 다음 사람 = 손님 1
-    await expect(g1.page.getByRole('button', { name: '게임시작' })).toBeVisible();
-    await expect(g2.page.getByRole('button', { name: '게임시작' })).toHaveCount(0);
-    expect((await e2e.roomOf(A.uuidOf(g1)))?.hostUuid).toBe(A.uuidOf(g1));
+    // 판이 끝날 때의 방장 자리는 그 사람 것으로 남겨 둠 → 봇이면 봇도 "대기방으로" 해야 방장이 됨
+    if (nextBot) {
+        const reply = await nextBot.request('return_to_room', { gameId: t.gameId });
+        expect(reply?.ok, `방장 봇 대기방으로 답 ${JSON.stringify(reply)}`).toBe(true);
+    }
+    for (const p of [g1, g2]) {
+        const start = p.page.getByRole('button', { name: '게임시작' });
+        if (p === nextHuman) await expect(start).toBeVisible();
+        else await expect(start).toHaveCount(0);
+    }
+    expect((await e2e.roomOf(A.uuidOf(g1)))?.hostUuid, '서버 방장 = 판 자리 맨 앞의 참여 중인 사람').toBe(next.uuid);
 });

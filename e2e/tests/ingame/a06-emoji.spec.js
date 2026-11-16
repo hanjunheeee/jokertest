@@ -178,7 +178,9 @@ test('A06-E-094 역할 확인 중 이모티콘 안 됨 (6명 판) → 역할 확
     await expect(page.locator('[data-ingame-emoji-bubble]')).toHaveCount(0);
 
     // 낮이 되면 같은 우클릭으로 팔레트가 뜸 (막힌 까닭이 단계였다는 표시)
-    await a.toDay(t);
+    // 역할 창은 위에서 이미 닫음 → a.toDay(역할 창부터 기다림) 대신 단계만 넘기고 낮 안내 닫기
+    await t.advanceUntil('DAY');
+    await a.closeNotice(page, '낮이 되었습니다');
     await c.readyToChat(page);
     await openPalette(page, me.nickname);
 });

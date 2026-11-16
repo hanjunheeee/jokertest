@@ -136,6 +136,14 @@ test('A15-E-017 6명 판 1일 밤: 화면 저장소(localStorage·sessionStorage
     const asFrames = rows.map((r) => {
         try { return { event: `${r.area}:${r.key}`, data: JSON.parse(r.value) }; } catch { return { event: `${r.area}:${r.key}`, data: r.value }; }
     });
+    // 로그인 저장(auth-storage)의 user.role = 내 계정 권한(USER·ADMIN), 판 직업 아님 → 직업 이름이 아닐 때만 빼고 봄
+    const gameRoles = new Set(Object.values(k.rolesOf(s)));
+    for (const f of asFrames) {
+        const me = f.event === 'local:auth-storage' ? f.data?.state?.user : null;
+        if (!me || !Object.hasOwn(me, 'role')) continue;
+        expect(gameRoles.has(me.role), `auth-storage user.role "${me.role}"는 계정 권한이어야 함`).toBe(false);
+        delete me.role;
+    }
     const mates = k.sameRoleMates(s, uid(user));
     expect(k.leaksFor(asFrames, { viewer: uid(user), roles: k.rolesOf(s), allies: mates }), '저장소에 남의 직업').toEqual([]);
 });

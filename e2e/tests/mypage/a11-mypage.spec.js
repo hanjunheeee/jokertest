@@ -50,7 +50,12 @@ test('A11-E-564 꾸미기 창에서 가진 사진 고름 → 저장 → 배너 �
     await page.getByRole('button', { name: '프로필 수정', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: '프로필 수정' });
     // 지금 안 끼고 있는 사진 하나 고름 (기본 지급으로 사진은 다 가짐)
-    const option = dialog.getByRole('region', { name: '프로필 이미지 목록' }).locator('button[aria-pressed="false"]').first();
+    // 고른 칸은 자리 번호로 고정 (aria-pressed="false"로 찾으면 누른 뒤 다음 안 고른 칸으로 옮겨 감)
+    const options = dialog.getByRole('region', { name: '프로필 이미지 목록' }).locator('button[aria-pressed]');
+    await expect(options.first()).toBeVisible();
+    const index = (await options.evaluateAll((els) => els.map((el) => el.getAttribute('aria-pressed')))).indexOf('false');
+    expect(index, '안 끼고 있는 사진이 있음 (준비)').toBeGreaterThanOrEqual(0);
+    const option = options.nth(index);
     await expect(option).toBeVisible();
     const picked = k.fileNameOf(await option.locator('img').getAttribute('src'));
     expect(picked).toMatch(/^프로필-.+\.webp$/);

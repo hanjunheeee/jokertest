@@ -24,6 +24,17 @@ async function pcAndPhone(players, accounts) {
     return { account, pc, phone };
 }
 
+// 결과 화면 "로비로" → 확인 창 "로비로 나가시겠습니까?"에 확인 (안 받으면 브라우저가 취소로 닫아 결과 화면에 남음, a08-lobby-exit와 같은 창)
+async function leaveResultToLobby(page) {
+    let seen = null;
+    page.once('dialog', (dialog) => {
+        seen = { type: dialog.type(), message: dialog.message() };
+        dialog.accept().catch(() => {});
+    });
+    await page.getByRole('button', { name: '로비로', exact: true }).click();
+    await expect.poll(() => seen, { message: '"로비로" 확인 창' }).toEqual({ type: 'confirm', message: '로비로 나가시겠습니까?' });
+}
+
 test('A11-H-503 PC에서 비번 바꿈 → 폰 로비가 5초 안팎에 로그인 화면 @hard @realtime', async ({ players, accounts }) => {
     const { account, pc, phone } = await pcAndPhone(players, accounts);
     await k.gotoAccount(pc.page);
@@ -53,7 +64,7 @@ test('A11-H-505 판 끝나면 탈퇴 됨 (6명 판, 사람 1 + 봇 5): 판 중 4
     const t = await k.startCitizenGame(table, user, 6);
     await k.expectWithdrawBlockedInGame(t, user);
     await k.playCitizenWin(t, user);
-    await user.page.getByRole('button', { name: '로비로' }).click();
+    await leaveResultToLobby(user.page);
     await expect(user.page).toHaveURL(/\/lobby/, { timeout: 15_000 });
     await k.banner(user.page).click();
     await user.page.getByRole('button', { name: '계정 관리', exact: true }).click();
@@ -125,7 +136,7 @@ test('A11-H-510 판 1번 한 계정 (8명 판, 사람 1 + 봇 7) 탈퇴 → 같�
     await makeFriends(user, friend);
     const t = await k.startCitizenGame(table, user, 8);
     await k.playCitizenWin(t, user);
-    await user.page.getByRole('button', { name: '로비로' }).click();
+    await leaveResultToLobby(user.page);
     await expect(user.page).toHaveURL(/\/lobby/, { timeout: 15_000 });
     await k.gotoAccount(user.page);
     expect(await k.withdrawUi(user.page, user.account.password)).toBe(200);

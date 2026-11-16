@@ -102,8 +102,12 @@ async function closeAd(page) {
     const ad = page.getByRole('dialog', { name: '광고' });
     const shown = await ad.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false);
     if (!shown) return;
-    await ad.getByRole('button', { name: '닫기' }).click({ timeout: 10_000 });
-    await expect(ad).toHaveCount(0);
+    // 광고 꾸러미를 못 받으면 "닫기" 전에 창이 스스로 닫힘 → 닫기 단추가 나오거나 창이 사라지거나 둘 중 하나까지
+    const close = ad.getByRole('button', { name: '닫기' });
+    await expect(async () => {
+        if (await close.isVisible().catch(() => false)) await close.click({ timeout: 2000 });
+        await expect(ad).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
 }
 
 test('A07-H-005 PC 사람 3 + 모바일 사람 2 + 봇 2 = 7명 판 처음부터 끝까지 → PC·모바일 화면 모두 "시민 진영 승리"·같은 직업·내 줄 "+1골드" @game @hard @smoke', async ({ players, table }) => {

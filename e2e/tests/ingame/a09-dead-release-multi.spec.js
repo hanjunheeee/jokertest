@@ -56,10 +56,12 @@ test('A09-H-020 처형된 ㄱ이 탭을 닫고 새 방에서 ㄴ·ㄷ·봇 2와 
         () => seenByD.some((f) => f.event === 'session_participation_changed' && f.payload?.gameId === old.gameId && f.payload?.departedUuid === U(a)),
         { timeout: 15_000, message: 'ㄹ 화면이 받은 참여 바뀜 알림' },
     ).toBe(true);
+    // 옛 판에서 빠진 뒤부터 셈: 새 탭이 처음 붙을 땐 ㄱ이 아직 옛 판의 죽은 참가자라 옛 판 "ㄱ 다시 붙음" 알림을 받는 게 맞음
+    const releasedAt = Date.now();
     // 옛 판이 한 단계 더 가도 ㄱ 새 화면엔 옛 판 알림이 안 옴
     await old.advance();
-    await expect.poll(async () => seenByD.filter((f) => f.payload?.gameId === old.gameId).length, { timeout: 10_000 }).toBeGreaterThan(1);
-    expect(seenByA.filter((f) => f.payload?.gameId === old.gameId), 'ㄱ 새 화면이 받은 옛 판 알림').toEqual([]);
+    await expect.poll(async () => seenByD.filter((f) => f.at >= releasedAt && f.payload?.gameId === old.gameId).length, { timeout: 10_000 }).toBeGreaterThan(0);
+    expect(seenByA.filter((f) => f.at >= releasedAt && f.payload?.gameId === old.gameId), 'ㄱ 새 화면이 받은 옛 판 알림').toEqual([]);
     await expect(tab).toHaveURL(/\/ingame/);
 });
 

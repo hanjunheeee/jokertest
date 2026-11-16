@@ -19,7 +19,8 @@ const GUARD_CASES = [
 
 for (const c of GUARD_CASES) {
     test(`${c.no} 모바일 ${c.total}명 경비원 사람이 ${ROLE_NAMES[c.target]} 봇 조사: 결과 창에 닉네임과 "${ROLE_NAMES[c.target]}" 보임 @game${c.tag}`, async ({ user, table }) => {
-        const botRoles = c.target === 'CITIZEN' ? ['JOKER'] : ['JOKER', c.target];
+        // 광대 조사(E-121)는 광대 봇 하나가 곧 대상 (8명 판 광대 1이라 광대 둘을 달라고 하면 차리기에서 막힘)
+        const botRoles = c.target === 'CITIZEN' || c.target === 'JOKER' ? ['JOKER'] : ['JOKER', c.target];
         const g = await kit.seat(table, { humans: [user], bots: c.total - 1, humanRoles: ['GUARD'], botRoles, settings: c.settings });
         const page = user.page;
         const [joker] = g.bots.JOKER;

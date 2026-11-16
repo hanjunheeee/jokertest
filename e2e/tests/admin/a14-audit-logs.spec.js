@@ -59,6 +59,8 @@ test(`${E(77)} 기간 바꿈 줄 "전후 값 보기" 펼침 → 전·후 끝 시
     const w = await k.openAdmin(browser);
     try {
         const { ban } = await k.adminApi(w.page, 'POST', `/members/${U(member)}/bans`, { kind: 'PERIOD', days: 7, reason: '7일 정지' });
+        // "전" 값은 DB에서 읽은 것이라 초 아래가 없음 (DATETIME) → 정지 넣기 답(밀리초 붙음) 말고 회원 상세의 저장된 끝 시각과 비교
+        const stored = (await k.adminApi(w.page, 'GET', `/members/${U(member)}`)).bans.find((b) => b.id === ban.id);
         const changed = await k.adminApi(w.page, 'PATCH', `/members/${U(member)}/bans/${ban.id}`, { kind: 'PERIOD', days: 1, reason: '하루로' });
         const rows = await k.auditRows(w.page, w.admin, { kind: '제재·해제 이력' });
         const line = rows.filter({ hasText: '정지 기간 바꿈' });
@@ -66,7 +68,7 @@ test(`${E(77)} 기간 바꿈 줄 "전후 값 보기" 펼침 → 전·후 끝 시
         await line.getByText('전후 값 보기').click();
         const [before, after] = [line.locator('pre').nth(0), line.locator('pre').nth(1)];
         await expect(before).toBeVisible();
-        await expect(before).toContainText(ban.endAt);
+        await expect(before).toContainText(stored.endAt);
         await expect(after).toContainText(changed.ban.endAt);
         await expect(after).toContainText('"days": 1');
         await expectReadable(after);

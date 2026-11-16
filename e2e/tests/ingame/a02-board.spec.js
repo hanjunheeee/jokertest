@@ -37,9 +37,10 @@ async function openTable(table, user, { n, role = 'CITIZEN', custom = null }) {
     return night.setup(table, { humans: [user], bots: n - 1, settings, humanRoles: [role], botRoles: botRolesFor(counts, role) });
 }
 
-// 첫 낮까지 손잡이로: 역할 창 닫기(이미 닫혔으면 그냥 감) → 첫 낮 → "낮이 되었습니다" 닫기
+// 첫 낮까지 손잡이로: 역할 창이 뜰 때까지 기다려 닫기 → 첫 낮 → "낮이 되었습니다" 닫기
+// 창이 늦게 뜬 채 낮으로 넘기면 낮에 역할 창이 새로 떠서 낮 안내가 안 나옴(A02-E-116 흔들림) → 뜬 걸 보고 닫은 뒤 넘김
 async function toFirstDay(t, page) {
-    await night.closeRoleReveal(page);
+    await day.closeReveal(page);
     await t.advanceUntil('DAY');
     await day.closeNotice(page, '낮이 되었습니다');
 }

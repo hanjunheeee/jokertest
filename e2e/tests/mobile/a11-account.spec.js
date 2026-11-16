@@ -59,9 +59,10 @@ test('A11-E-599 모바일 탈퇴: 확인 창 안내 보임 → 탈퇴 → 로그
     await k.gotoAccount(page);
     const dialog = await k.openWithdrawConfirm(page, account.password);
     for (const line of k.WITHDRAW_NOTICE_LINES) await expect(dialog.getByText(line, { exact: true })).toBeVisible();
-    const res = page.waitForResponse(k.isPost('/user/me/withdraw'));
+    // 응답 전에 소켓 "탈퇴 완료"로 화면이 떠나 브라우저 응답이 버려짐 → 서버 상태는 가로채서 받음
+    const { status } = await k.watchWithdrawStatus(page);
     await dialog.getByRole('button', { name: '탈퇴하기' }).click();
-    expect((await res).status()).toBe(200);
+    expect(await status).toBe(200);
     await expect(page).toHaveURL(/\/login$/, { timeout: 10_000 });
 });
 

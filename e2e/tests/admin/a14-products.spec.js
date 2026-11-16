@@ -29,7 +29,8 @@ test(`${E(86)} 상품 값 바꿈 → 플레이어 상점 새 값 @serial @smoke`
 
         await store.gotoStore(player.page);
         await store.pickCategory(player.page, '인게임 재화');
-        await store.pickItem(player.page, displayName);
+        // 상품 칸 이름은 "이름 값" (예: '시험다이아0e10 1,300원') → 칸에도 새 값이 붙어 있어야 고를 수 있음
+        await store.pickItem(player.page, `${displayName} 1,300원`);
         const pay = store.detail(player.page).getByTestId('currency-pay');
         await expect(pay).toHaveText('1,300 원');
         await expectReadable(pay);

@@ -29,7 +29,11 @@ test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → �
     expect(resolved.outcome, '낮 판정 값').toBe('DEFENDANT_DISCONNECTED');
     expect(resolved.tribunalTargetUuid ?? null, '뽑힌 사람은 안 알림').toBeNull();
     await expect(talk.phaseLine(page)).toContainText('밤', { timeout: 15_000 });
-    await expectReadable(talk.phaseLine(page));
+    // 밤이 되면 "밤이 되었습니다" 단계 전환 안내 창이 단계 줄을 덮음 → 닫고 봄 (창이 조금 늦게 뜰 수 있어 닫기·읽기를 같이 다시 함)
+    await expect(async () => {
+        await clearOverlays(page);
+        await expectReadable(talk.phaseLine(page), { timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
     await expect(K.tribunalWindow(page)).toHaveCount(0);
     await expect(talk.slot(page, bot.nickname)).toHaveAccessibleName(`${bot.nickname}, 연결 끊김`);
     // 투표 현황 창: 왜 재판이 안 열렸는지 글 (밤 안내 창이 덮으면 닫고 엶)

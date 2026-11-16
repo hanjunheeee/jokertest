@@ -21,6 +21,9 @@ test('A15-H-008 같은 계정 브라우저 2개: 기기 1이 refresh 회전 → 
     // 기기 2 = 기기 1 쿠키 그대로 (같은 세션, 옛 refresh를 들고 있음)
     const two = await browser.newContext({ ...DESKTOP, storageState: await one.context.storageState() });
     try {
+        // 기기 2는 소켓을 안 붙임: 같은 세션 소켓이 붙으면 서버가 "같은 브라우저 다른 창"으로 보고 기기 1 소켓을 끊어
+        // 기기 1이 5초 세션 검사를 못 받게 됨 (같은 세션 탭끼리 밀어내기 규칙, known 1-15) — 이 시험은 회전·재사용만 봄
+        await two.routeWebSocket(/\/socket\.io\//, (ws) => { ws.close(); });
         const twoPage = await two.newPage();
         await ui.gotoLobby(twoPage);
         // 기기 1 회전 (브라우저 쿠키 그대로 씀, 새 refresh가 기기 1에만 들어감)

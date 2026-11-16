@@ -153,14 +153,16 @@ async function eventAt(bot, event, { since = 0, match = () => true, timeoutMs = 
     return { payload, at: row?.at ?? Date.now() };
 }
 
-// 다 찬 판정: 마지막 표 직전 시각(fullAt)부터 당김 알림 마감·판정 알림이 5초(±1.5) 뒤 → 판정 값
+// 다 찬 판정: 마지막 표 직전 시각(fullAt) 뒤 곧바로 당김(3초 안 — 누르기가 서버에 닿는 시간), 당김 알림부터 마감·판정 알림이 5초(±1.5) 뒤 → 판정 값
+// 5초는 서버가 다 찬 걸 안 때(당김 알림)부터 잼: 사파리 누르기가 느린 날 그 시간이 5초에 섞여 흔들렸음(A03-E-104)
 async function expectFiveSeconds(watcher, fullAt, day) {
     const settle = await eventAt(watcher, 'phase_settle_started', { since: fullAt, match: (p) => p.phase === 'DAY' && p.dayIndex === day });
     const resolved = await eventAt(watcher, 'day_vote_resolved', { since: fullAt, match: (p) => p.dayIndex === day });
-    expect(settle.payload.deadline - fullAt).toBeGreaterThanOrEqual(3_500);
-    expect(settle.payload.deadline - fullAt).toBeLessThanOrEqual(6_500);
-    expect(resolved.at - fullAt).toBeGreaterThanOrEqual(3_500);
-    expect(resolved.at - fullAt).toBeLessThanOrEqual(6_500);
+    expect(settle.at - fullAt).toBeLessThanOrEqual(3_000);
+    expect(settle.payload.deadline - settle.at).toBeGreaterThanOrEqual(3_500);
+    expect(settle.payload.deadline - settle.at).toBeLessThanOrEqual(6_500);
+    expect(resolved.at - settle.at).toBeGreaterThanOrEqual(3_500);
+    expect(resolved.at - settle.at).toBeLessThanOrEqual(6_500);
     return resolved.payload;
 }
 

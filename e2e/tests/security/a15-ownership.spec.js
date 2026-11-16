@@ -71,9 +71,15 @@ test('A15-E-067 B 알림 id로 A가 PATCH /notifications/:id/read → 404, B 알
     const res = await callAs(user, 'PATCH', `/notifications/${encodeURIComponent(mine.id)}/read`);
     expect(res.status).toBe(404);
     expect((await listOf()).find((x) => x.id === mine.id)?.readAt ?? null, 'B 알림 읽음 시각 그대로 없음').toBeNull();
-    // B 화면: 알림 단추에 안 읽음 1개 (창을 열면 읽음 처리돼서 단추만 봄)
+    // B 화면: 알림 단추의 안 읽음 수 = 서버의 안 읽은 알림 수 (그 알림 포함) — 창을 열면 읽음 처리돼서 단추만 봄
+    // 새 계정도 다른 알림(가입 때 받는 것 등)이 있을 수 있어 1개로 박지 않고 서버 수와 맞춤
     await ui.gotoLobby(b.page);
-    await expect(b.page.getByRole('button', { name: '알림 (읽지 않음 1개)' })).toBeVisible();
+    await expect.poll(async () => {
+        const unread = (await listOf()).filter((x) => !x.readAt);
+        if (!unread.some((x) => x.id === mine.id)) return 'B 알림이 읽음으로 바뀜';
+        const label = await b.page.getByRole('button', { name: /^알림( \(읽지 않음 \d+개\))?$/ }).getAttribute('aria-label').catch(() => null);
+        return label === `알림 (읽지 않음 ${unread.length}개)` ? 'OK' : `단추 "${label}" / 서버 안 읽음 ${unread.length}개`;
+    }, { timeout: 10_000, message: 'B 알림 단추 안 읽음 수' }).toBe('OK');
 });
 
 test('A15-E-068 B 문의 id로 A가 GET /inquiries/:id → 404', async ({ user, accounts }) => {

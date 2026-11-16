@@ -169,13 +169,17 @@ test('A02-H-008 광대 사람 둘(5명 J2C3) 1일 밤 → 서로의 카드에 �
         // 메뉴가 막힌 게 아님을 먼저: 시민 카드엔 암살 켜짐 (밤 행동 단추 읽기 이름은 "닉네임 암살"이라 끝 글로 찾음)
         const menu = await N.openCardMenu(me.page, citizen.nickname);
         await expect(menu.getByRole('menuitem', { name: /암살$/ })).toBeEnabled();
-        await N.cardButton(me.page, citizen.nickname).click();
+        // 메뉴가 카드 위를 덮어 카드를 다시 누를 수 없음 → Esc로 닫음 (화면 useMenuDismiss: 바깥 누름·Esc)
+        await me.page.keyboard.press('Escape');
         await expect(menu).toBeHidden();
         // 동료 카드: 메뉴가 안 열리거나, 열려도 눌러지는 암살 없음
         await N.cardButton(me.page, mate.account.nickname).click();
         await menu.waitFor({ state: 'visible', timeout: 1500 }).catch(() => {});
         const killOnMate = menu.getByRole('menuitem', { name: /암살$/ });
         expect((await killOnMate.count()) === 0 || (await killOnMate.isDisabled()), `${mate.account.nickname} 카드의 암살`).toBe(true);
-        if (await menu.isVisible().catch(() => false)) await N.cardButton(me.page, mate.account.nickname).click();
+        if (await menu.isVisible().catch(() => false)) {
+            await me.page.keyboard.press('Escape');
+            await expect(menu).toBeHidden();
+        }
     }
 });

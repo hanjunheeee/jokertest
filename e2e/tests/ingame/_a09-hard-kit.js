@@ -197,11 +197,14 @@ async function eventAt(bot, event, { since = 0, match = () => true, timeoutMs = 
     return { payload, at: row?.at ?? Date.now() };
 }
 
-/** 판 화면 새로고침 → 판 화면 그대로, 카드가 n장 다 그려질 때까지 */
+// 판 위 카드만 (재판 창이 피고 카드를 한 장 더 그려서 재판 중엔 판 인원 + 1장이 됨 → 재판 창 안 카드는 뺌)
+const BOARD_CARDS = 'xpath=//*[@data-ingame-player-nickname][not(ancestor::*[@data-ingame-tribunal-presentation])]';
+
+/** 판 화면 새로고침 → 판 화면 그대로, 판 위 카드가 n장 다 그려질 때까지 */
 async function reloadIngame(page, n) {
     await page.reload();
     await expect(page).toHaveURL(/\/ingame/);
-    await expect(page.locator('[data-ingame-player-nickname]')).toHaveCount(n, { timeout: 30_000 });
+    await expect(page.locator(BOARD_CARDS)).toHaveCount(n, { timeout: 30_000 });
 }
 
 /** 카드 글에 직업 이름이 없음 (끊겨 빠진 사람 직업 비공개) */
@@ -369,13 +372,17 @@ function minuteMs(text) {
     return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
 }
 
-/** 카드 메뉴에 "투표하기"가 없음 (메뉴가 아예 안 열려도 됨) */
+/**
+ * 카드 메뉴에 켜진 "투표하기"가 없음 (메뉴가 아예 안 열려도 됨)
+ * 투표 단계엔 남의 카드마다 "투표하기" 줄이 늘 있고 대상이 아니면 꺼진 채 "대상이 아닙니다"가 붙음 (화면 playerCardMenu.js의 dayVoteItem)
+ * B07-1 버그는 죽고 끊긴 사람 카드의 "투표하기"가 켜져 있던 것 → 켜진 것만 셈
+ */
 async function expectNoVoteItem(page, nickname) {
     await A.calm(page, () => night.cardButton(page, nickname).click({ timeout: 1500 }));
     const menu = page.getByRole('menu', { name: '플레이어 행동' });
     await page.waitForTimeout(600);
     if (await menu.isVisible().catch(() => false)) {
-        await expect(menu.getByRole('menuitem', { name: '투표하기', exact: true })).toHaveCount(0);
+        await expect(menu.getByRole('menuitem', { name: '투표하기', exact: true, disabled: false })).toHaveCount(0);
         await page.keyboard.press('Escape').catch(() => {});
     }
 }

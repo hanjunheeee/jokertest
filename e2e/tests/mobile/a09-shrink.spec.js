@@ -36,5 +36,9 @@ test('A09-E-100 모바일 8명 판, 봇 2명이 나가도 판이 다음 단계�
     const s = await K.toNight(t, 1);
     expect(s.phase).toBe('NIGHT');
     await expect(talk.phaseLine(page)).toContainText('밤', { timeout: 15_000 });
-    await expectReadable(talk.phaseLine(page));
+    // 밤이 되면 "밤이 되었습니다" 단계 전환 안내 창이 단계 줄을 덮음 → 닫고 봄 (창이 조금 늦게 뜰 수 있어 닫기·읽기를 같이 다시 함)
+    await expect(async () => {
+        await clearOverlays(page);
+        await expectReadable(talk.phaseLine(page), { timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
 });

@@ -5,7 +5,7 @@
 const { test, expect } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, startTalkGame, toDay, toVote, clearOverlays, getExecuted, executeBot } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays, getExecuted, executeBot } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -128,16 +128,32 @@ const OUTCOME_TEXT = Object.freeze({
 });
 
 // 판정 뒤 화면: 현황 결과 글 + 재판이면 재판 창(피고 이름), 밤이면 밤 안내·재판 창 없음
+// 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
+// (전엔 닫히는 움직임 동안 글을 읽어 맞았다 틀렸다 함 — A03-E-025·151·211·221)
 async function expectOutcome(page, panel, kind, targetNick) {
-    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     const tribunal = page.locator('[data-ingame-tribunal-presentation]');
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible();
+        await expect(tribunal).toBeVisible({ timeout: 15_000 });
         await expect(tribunal).toContainText(targetNick);
+        await expect(panel).toBeHidden();
         return;
     }
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toContainText('밤이 되었습니다');
     await expect(tribunal).toHaveCount(0);
+}
+
+// 재판을 아무도 판정 안 낸 채 끝내고(손잡이) 밤으로 → 현황 창을 다시 열면 그날 결과 "재판 회부" 그대로 → 창
+async function statusAfterTribunal(t, page) {
+    await toNight(t, page);
+    const panel = page.getByRole('dialog', { name: '투표 현황' });
+    await expect(async () => {
+        await clearOverlays(page);
+        if (!(await panel.isVisible())) await page.getByRole('button', { name: '투표 현황 열기' }).click({ timeout: 2_000 });
+        await expect(panel).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT.TRIBUNAL);
+    return panel;
 }
 
 // 카드 시트 닫기 (시트 안 '닫기')
@@ -179,14 +195,27 @@ async function expectOwnSlotHasNoSheet(page, otherNick) {
 }
 
 // 1일에 봇 하나를 봇 표로 처형(앞 단계라 손잡이로 빨리) → 2일 투표까지
+// 봇 처형이면 처형 연출(영상·글, 10초 남짓)이 끝날 때까지 기다린 뒤 넘김: 밤을 손잡이로 건너뛰면 연출이 2일 낮까지 남아 초상 띠를 덮고,
+// 그 뒤에 밀린 "낮이 되었습니다"도 늦게 뜸(A03-E-141) — 나를 처형하면 getExecuted가 연출 뒤 '사망 후 선택'까지 기다림
 async function dayTwoVoteAfter(t, page, { killMe = false, victim = null } = {}) {
     if (killMe) await getExecuted(t, uuidOf(t.humans[0]), { pages: [page] });
-    else await executeBot(t, victim);
+    else {
+        await executeBot(t, victim);
+        const expulsion = page.locator('[data-ingame-tribunal-expulsion]');
+        await expulsion.first().waitFor({ state: 'attached', timeout: 10_000 }).catch(() => {});
+        await expect(expulsion).toHaveCount(0, { timeout: 40_000 });
+    }
     await t.stopBots();
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_DISCUSSION');
     await clearOverlays(page);
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_VOTE');
-    await clearOverlays(page);
+    // 낮 안내가 뜬 뒤 닫히고 판 화면이 투표 단계가 될 때까지 (산 사람은 기권 단추, 죽은 나는 내 칸 사망 표시)
+    const ready = page.getByRole('button', { name: '기권' }).or(page.getByRole('button', { name: /, 나, 사망$/ })).first();
+    await expect(async () => {
+        await clearOverlays(page);
+        await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toHaveCount(0, { timeout: 1_000 });
+        await expect(ready).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 20_000 });
 }
 
 // ── 시험 ──
@@ -283,8 +312,8 @@ test('A03-E-151 모바일 7명 판 봇끼리 서로 찍어도 사람 화면엔 �
     const panel = await openStatus(user.page);
     await castBots(t, plan);
     await expectOutcome(user.page, panel, 'TRIBUNAL', names.get(X));
-    // 현황 창엔 재판 대상 말고 다른 사람 이름이 안 나옴
-    const text = await panel.innerText();
+    // 현황 창엔 재판 대상 말고 다른 사람 이름이 안 나옴 (재판 동안 창이 닫혀 있어 밤에 다시 연 창으로 봄)
+    const text = await (await statusAfterTribunal(t, user.page)).innerText();
     for (const uuid of ids.filter((u) => u !== X)) expect(text).not.toContain(names.get(uuid));
     expect(text).not.toContain(names.get(uuidOf(user)));
 });
@@ -301,11 +330,13 @@ test('A03-E-153 모바일 6명 판 재판으로 넘어간 뒤 → 낮 표 단추
     // 재판 중엔 기권 단추도 '투표하기'도 없음
     await expect(abstainButton(user.page)).toHaveCount(0);
     await expect(user.page.getByRole('menuitem', { name: '투표하기' })).toHaveCount(0);
-    // 결과·피고 그대로
-    await expect(panel.getByTestId('vote-status-outcome')).toHaveText('재판 회부');
+    // 피고 그대로
     const s = await t.state();
     expect(s.phase).toBe('TRIBUNAL');
     expect(s.tribunal?.defendantUuid).toBe(X);
+    // 결과 그대로: 재판 동안 현황 창이 닫혀 있음 → 밤에 다시 열어 "재판 회부"·재판 대상
+    const after = await statusAfterTribunal(t, user.page);
+    await expect(after.getByTestId('vote-status-tribunal-target')).toHaveText(names.get(X));
 });
 
 test('A03-E-155 모바일 7명 판(직접 지정 광대 2) 사람 광대가 동료 광대에게 투표 → 받아들여짐 @game', async ({ user, table }) => {
@@ -326,7 +357,8 @@ test('A03-E-155 모바일 7명 판(직접 지정 광대 2) 사람 광대가 동�
 test('A03-E-159 모바일 5명 판 투표 현황 창 열기 → 보임, 닫기 → 안 보임 @game', async ({ user, table }) => {
     await openVote(table, user, 5);
     const panel = await openStatus(user.page);
-    await expectReadable(panel.getByRole('heading', { name: '투표 현황' }));
+    // 제목은 누르기를 안 받는 글(pointer-events:none)이고 위에 투명한 내용 칸(바탕색 없음)이 겹쳐 있어 "가려짐"으로 잡힘 → 가려짐만 빼고 봄 (실패 그림에서 제목이 또렷이 보임)
+    await expectReadable(panel.getByRole('heading', { name: '투표 현황' }), { uncovered: false });
     await panel.getByRole('button', { name: '투표 현황 닫기' }).click();
     await expect(panel).toBeHidden();
 });

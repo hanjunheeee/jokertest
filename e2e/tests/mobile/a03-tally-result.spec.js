@@ -3,7 +3,7 @@
 // 모바일 낮 투표 결과 표 시험: 5~10명 판 × 결과 4(몰표·두 명 동점·1표 나머지 기권·전원 기권), 사람도 같이 내고 다 낸 뒤 진짜 5초 기다림
 // 목록 A03-낮투표.md A03-E-025~048 (모바일 몫), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a03-tally-result.spec.js
 const { test, expect } = require('../../helpers/fixtures');
-const { talk, startTalkGame, toDay, toVote } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -126,16 +126,32 @@ const OUTCOME_TEXT = Object.freeze({
 });
 
 // 판정 뒤 화면: 현황 결과 글 + 재판이면 재판 창(피고 이름), 밤이면 밤 안내·재판 창 없음
+// 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
+// (전엔 닫히는 움직임 동안 글을 읽어 맞았다 틀렸다 함 — A03-E-025·151·211·221)
 async function expectOutcome(page, panel, kind, targetNick) {
-    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     const tribunal = page.locator('[data-ingame-tribunal-presentation]');
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible();
+        await expect(tribunal).toBeVisible({ timeout: 15_000 });
         await expect(tribunal).toContainText(targetNick);
+        await expect(panel).toBeHidden();
         return;
     }
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toContainText('밤이 되었습니다');
     await expect(tribunal).toHaveCount(0);
+}
+
+// 재판을 아무도 판정 안 낸 채 끝내고(손잡이) 밤으로 → 현황 창을 다시 열면 그날 결과 "재판 회부" 그대로 → 창
+async function statusAfterTribunal(t, page) {
+    await toNight(t, page);
+    const panel = page.getByRole('dialog', { name: '투표 현황' });
+    await expect(async () => {
+        await clearOverlays(page);
+        if (!(await panel.isVisible())) await page.getByRole('button', { name: '투표 현황 열기' }).click({ timeout: 2_000 });
+        await expect(panel).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT.TRIBUNAL);
+    return panel;
 }
 
 // ── 시험 ──
@@ -171,6 +187,8 @@ SIZES.forEach((n, i) => {
             // 봇이 마지막 표 → 다 참 → 진짜 5초 뒤 판정 (손잡이 안 씀)
             await castBots(t, plan);
             await expectOutcome(user.page, panel, shape.outcome, names.get(X));
+            // 재판이면 재판 동안 현황 창이 닫혀 있음 → 밤에 다시 열어 "재판 회부"를 봄
+            if (shape.outcome === 'TRIBUNAL') await statusAfterTribunal(t, user.page);
         });
     });
 });

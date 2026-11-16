@@ -73,7 +73,8 @@ test('A15-E-041 PC 친구 검색 칸에 <script> → "검색 결과가 없습니
     const trap = await trappedLobby(page);
     const panel = await lobby.openFriendPanel(page);
     await lobby.openTab(page, '친구 추가');
-    const box = panel.getByRole('textbox', { name: '친구 검색' });
+    // 검색 칸은 type="search" → 역할 searchbox (A13 친구 검색 시험과 같음)
+    const box = panel.getByRole('searchbox', { name: '친구 검색' });
     await box.fill(`<script>window.__xssHit&&window.__xssHit('XSS-a15-041')</script>`);
     await box.press('Enter');
     await expect(panel.getByText('검색 결과가 없습니다.', { exact: true })).toBeVisible();

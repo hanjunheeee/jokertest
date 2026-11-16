@@ -10,7 +10,8 @@ const L = require('./a-day/_lib');
 const c = require('./c-chat/_lib');
 const K = require('./_a09-simple-kit');
 
-const cards = (page) => page.locator('[data-ingame-player-nickname]');
+// 판 위 카드만 (재판 창이 피고 카드를 한 장 더 그려서 재판 중엔 판 인원 + 1장이 됨 → 재판 창 안 카드는 뺌)
+const cards = (page) => page.locator('xpath=//*[@data-ingame-player-nickname][not(ancestor::*[@data-ingame-tribunal-presentation])]');
 const revealDialog = (page) => page.getByRole('dialog', { name: '내 역할 보기' });
 const dayNotice = (page) => page.getByRole('dialog', { name: '단계 전환 안내' }).filter({ hasText: '낮이 되었습니다' });
 // 펼친 시간 바의 단계 글 ("[낮-토론과 투표]" 같은 모양)

@@ -164,22 +164,36 @@ async function toVote(t, dayIndex = 1, { screens = true } = {}) {
     const s = await waitState(t, (g) => g.phase === 'DAY' && g.dayIndex === dayIndex && g.dayPhase === 'DAY_VOTE', { message: '낮 투표 기다림' });
     if (screens) {
         for (const h of livingHumans(t, s)) {
-            await calm(h.page, () => expect(h.page.getByRole('button', { name: '기권' }).first()).toBeVisible({ timeout: 1000 }));
+            // 손잡이로 밤을 건너뛰면 전날 추방 연출(영상 최대 12초)이 아직 덮고 있을 수 있음 → 끝날 때까지 (진짜 판은 밤 동안 끝남)
+            await calm(h.page, async () => {
+                await expect(trial.expulsion(h.page)).toHaveCount(0, { timeout: 1000 });
+                await expect(h.page.getByRole('button', { name: '기권' }).first()).toBeVisible({ timeout: 1000 });
+            });
         }
     }
     return s;
 }
 
-/** 화면으로 낮 투표: 카드 메뉴 "투표하기" → 기권 단추가 꺼지면 들어간 것 */
+/**
+ * 화면으로 낮 투표: 카드 메뉴 "투표하기" → 같은 카드 메뉴가 "투표취소"로 바뀌면 들어간 것
+ * 기권 단추가 꺼진 것만으론 표가 들어갔는지 모름 (단계 시작 안내·연출이 떠 있는 동안에도 꺼짐 — actionPanelLocks.js interactionBlocked)
+ */
 async function dayVoteUi(page, nickname) {
     const menu = page.getByRole('menu', { name: '플레이어 행동' });
     const abstain = page.getByRole('button', { name: '기권' }).first();
+    const cancel = menu.getByRole('menuitem', { name: '투표취소', exact: true });
     await calm(page, async () => {
-        if (await abstain.isDisabled().catch(() => false)) return;
         if (!(await menu.isVisible().catch(() => false))) await slot(page, nickname).click({ timeout: 1500 });
+        if (await cancel.isVisible().catch(() => false)) return;
         await menu.getByRole('menuitem', { name: '투표하기', exact: true }).click({ timeout: 1500 });
         await expect(abstain).toBeDisabled({ timeout: 3000 });
+        // 메뉴를 다시 열어 "투표취소"로 확인 (고르면 메뉴가 닫힘, 안 닫혔으면 이번 누름이 닫고 다음 바퀴가 엶)
+        await slot(page, nickname).click({ timeout: 1500 });
+        await expect(cancel).toBeVisible({ timeout: 1500 });
     });
+    // 확인하느라 연 메뉴 닫기 (Esc로 닫힘)
+    if (await menu.isVisible().catch(() => false)) await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
 }
 
 /** 봇들 낮 표 (같은 대상) */
