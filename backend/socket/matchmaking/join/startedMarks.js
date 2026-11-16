@@ -1,5 +1,5 @@
 // 시작된 방 표시 파일
-// 시작돼 사라진 방 코드·id 기억 + 확인 ("이미 시작" vs "방 없음", 지도 01-⑤) + 판 끝 뒤 같은 방이 다시 열리면 표시 지움
+// 시작돼 사라진 방 코드·id 기억 + 확인 ("이미 시작" vs "방 없음", 지도 01-⑤) + 판 끝 뒤 표시 지움 (같은 방이 다시 열릴 때·안 열고 끝날 때 둘 다)
 // room/start가 기억, join·guards(코드 겹침)가 확인, room/returnRoom이 지움
 // Node 여러 개면 Redis startedcode:<CODE>에도 남김 (다른 Node 코드 입장도 "이미 시작", MN-015)
 const { startedRoomMarks } = require('../core/state')
@@ -35,6 +35,7 @@ function rememberStartedRoom(room, gameId = null) {
 }
 
 // 판 끝 뒤 같은 코드 방이 다시 열리면 옛 방 표시 지움 (안 지우면 그 방이 빈 채 없어진 뒤 코드 입장이 "방 없음" 대신 "이미 끝난 게임"으로 답함)
+// 방을 안 열고 끝난 판(점검 강제 종료·비우는 중)도 지움 (안 지우면 그 코드로 방 만들기가 30분 동안 막힘)
 // oldRoomId = 판 시작 전 방 id, gameId = 끝난 판 (Node 여러 개면 Redis 표시도 그 판 값일 때만 지움)
 function forgetStartedRoom(code, oldRoomId, gameId = null) {
     if (typeof code === 'string' && code) startedRoomMarks.delete(`code:${code}`)

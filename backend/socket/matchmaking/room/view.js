@@ -1,5 +1,5 @@
 // 방 정보 파일
-// 방 정보 내용 만들기(판 끝 뒤 남겨 둔 방장 자리 포함) + 공개 방 목록 만들기·방송 (Node 여러 개면 다른 Node 방도 합쳐 내 Node 사람에게만, matchmaking/cluster/roomListSync.js)
+// 방 정보 내용 만들기(방 이름·판 끝 뒤 남겨 둔 방장 자리 포함) + 공개 방 목록 만들기·방송 (Node 여러 개면 다른 Node 방도 합쳐 내 Node 사람에게만, matchmaking/cluster/roomListSync.js)
 const cluster = require('../../../cluster')
 const roomListSync = require('../cluster/roomListSync')
 const { getRequiredPlayers } = require('../core/config')
@@ -31,11 +31,14 @@ function reservedHostOf(room) {
     return typeof room.returnHold?.reservedHostUuid === 'string' ? room.returnHold.reservedHostUuid : null
 }
 
-// 방 정보 내용 (명단·설정·버전·부팅 번호·남겨 둔 방장 자리)
+// 방 정보 내용 (방 이름·명단·설정·버전·부팅 번호·남겨 둔 방장 자리)
+// 방 이름(title)은 대기방 머리에 보이려고 실음, 공개 목록 title과 같은 글자, 이름 없는 방은 칸을 안 실음
+// 정원은 settings.maxPlayers, 앉은 수는 players 길이
 function buildRoomPayload(room) {
     return {
         roomId: room.id,
         roomCode: room.code,
+        ...(typeof room.title === 'string' && room.title ? { title: room.title } : {}),
         players: [...room.players.values()].map((player) => ({ ...player })),
         hostUuid: room.hostUuid ?? null,
         reservedHostUuid: reservedHostOf(room),

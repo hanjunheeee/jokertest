@@ -30,16 +30,14 @@ function createPublish(ctx, room, player) {
         if (socket.data?.user?.uuid !== uuid) return { ok: false, code: 'DISCONNECTED' }
         if (!isCanonicalOrUnknown(io, uuid, socket, room.id)) return { ok: false, code: 'DISCONNECTED' }
         if (socket.rooms && !socket.rooms.has(room.id)) return { ok: false, code: 'CHANNEL_LOST' }
-        // 같은 방 그대로·다른 방 없음·게임 중 아님 (기권한 판은 통과)·자리 남음 (남겨 둔 방장 자리 1칸 빼고)
+        // 같은 방 그대로·다른 방 없음·게임 중 아님·자리 남음 (남겨 둔 방장 자리 1칸 빼고)
+        // 게임 중은 방 만들기·코드 입장과 같은 판정: 진행 중 판의 산 사람만 막음 (죽은 사람·기권·끝난 판은 통과)
         const current = gameRooms.get(attempt.roomId)
         if (current !== room || (current.instanceId ?? current.id) !== attempt.roomInstanceId) {
             return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_NOT_FOUND }
         }
         if (playerRoom.has(uuid)) return { ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM }
-        const routing = gameSession.getActiveSessionRoutingInfo(uuid)
-        if (routing && !gameSession.isForfeitedFromSession(routing.gameId, uuid)) {
-            return { ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME }
-        }
+        if (gameSession.isMatchmakingBlocked(uuid)) return { ok: false, code: ROOM_JOIN_ERROR_CODES.ALREADY_IN_GAME }
         const maxPlayers = current.settings?.maxPlayers ?? getSupportedRoomSizes()[0]
         if (countRoomOccupancy(current, uuid) + reservedSeatsFor(current, uuid) >= maxPlayers) {
             return { ok: false, code: ROOM_JOIN_ERROR_CODES.ROOM_FULL }

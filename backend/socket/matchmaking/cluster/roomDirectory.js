@@ -38,7 +38,13 @@ async function claimCode(code, roomId) {
     // 이미 내 방 것이면 수명만 늘림
     if (current.value === roomId) return (await cluster.directory.write(key, roomId, { ttlMs })) ? 'claimed' : 'unavailable'
     // 그사이 지워졌으면 한 번만 다시
-    if (current.value === null) return (await cluster.directory.write(key, roomId, { ttlMs, nx: true })) ? 'claimed' : 'taken'
+    if (current.value === null) {
+        if (await cluster.directory.write(key, roomId, { ttlMs, nx: true })) return 'claimed'
+        // 또 못 썼는데 키가 여전히 비어 있으면 남이 잡은 게 아니라 Redis 쓰기가 안 되는 것 (읽기만 되는 동안) → 죽은 것처럼 대체 동작
+        const again = await cluster.directory.read(key)
+        if (!again.available || again.value === null) return 'unavailable'
+        return again.value === roomId ? 'claimed' : 'taken'
+    }
     // 판 끝에 같은 코드로 다시 연 방: 판 동안 잡아 둔 옛 방 값이면 새 방 값으로 덮어씀
     if (codeHandoffs.get(code) === current.value) return (await cluster.directory.write(key, roomId, { ttlMs })) ? 'claimed' : 'unavailable'
     return 'taken'

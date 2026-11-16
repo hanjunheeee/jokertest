@@ -32,9 +32,9 @@ const inviteRoomReaders = {
 
     // 받는 사람이 초대 받을 수 있는지: 판·방·줄·방 전환·입장 중이면 못 받음
     describeReceiverAvailability: (uuid) => {
-        // 판에 있으면 거절 (기권한 판은 통과, 끝난 결과 화면은 아직 판에 있는 것으로 봄)
-        const routing = gameSession.getActiveSessionRoutingInfo(uuid)
-        if (routing && !gameSession.isForfeitedFromSession(routing.gameId, uuid)) {
+        // 판에 있으면 거절: 진행 중 판의 산 사람(초대 수락과 같은 판정) + 끝난 판 결과 화면에 남은 사람
+        // 진행 중 판의 죽은 사람·기권한 사람은 받음 (죽은 사람은 다른 방에 갈 수 있음)
+        if (gameSession.isMatchmakingBlocked(uuid) || gameSession.getEndedGameId(uuid)) {
             return { available: false, code: 'RECEIVER_IN_GAME' }
         }
         if (playerRoom.has(uuid)) return { available: false, code: 'RECEIVER_IN_ROOM' }

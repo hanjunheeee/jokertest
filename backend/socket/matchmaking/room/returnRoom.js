@@ -20,6 +20,7 @@ const { handOffHeldRoomCode, releaseHeldRoomCode } = require('../cluster/roomDir
 const { generateUniqueRoomCode } = require('../../../utils/roomCode')
 const { buildRoomPayload, computeCanStart, emitPublicRoomList } = require('./view')
 const { disposeRoom } = require('./dispose')
+const { findLiveSocket } = require('./membership')
 const { restoreRoomKicks, isKickLimitReached, KICK_LIMIT_MESSAGE } = require('./kickLimit')
 
 // "대기방으로" 거절 코드 중 입장 거절 표에 없는 것 (Node가 비우는 중이라 방을 안 염)
@@ -97,11 +98,13 @@ function isNodeDraining() {
     return cluster.isEnabled() && cluster.nodes.isDraining() === true
 }
 
-// 판이 끝날 때의 방장이 아직 결과 화면에 있으면 그 사람 자리 남겨 둠 (결정 [임시] 8), 이미 나갔으면 null
-function pickReservedHost(session) {
+// 판이 끝날 때의 방장이 아직 결과 화면에 있고 붙어 있으면 그 사람 자리 남겨 둠 (결정 [임시] 8), 이미 나갔거나 끊겨 있으면 null
+// 끊긴 방장(60초 기다림 중 판 끝)에게 남기면 먼저 들어온 사람이 180초까지 방장이 못 됨 (결과 화면 끊김은 바로 빠짐과 같은 생각)
+function pickReservedHost(io, session) {
     const hostUuid = session.hostUuid
     if (typeof hostUuid !== 'string' || !hostUuid) return null
-    return gameSession.getEndedGameId(hostUuid) === session.id ? hostUuid : null
+    if (gameSession.getEndedGameId(hostUuid) !== session.id) return null
+    return findLiveSocket(io, hostUuid) ? hostUuid : null
 }
 
 // 같은 코드를 이 Node 다른 방이 쓰고 있으면 새 코드 (있으면 안 되는 일, 로그 남김)
@@ -111,8 +114,15 @@ function pickReturnCode(code) {
     return generateUniqueRoomCode(gameRooms, { isReserved: isRoomCodeReserved })
 }
 
+// 방을 다시 안 여는 길(점검 강제 종료·비우는 중·방 정보 없음): 옛 방 "시작됨" 표시 지우고 판 동안 잡아 둔 코드 놓음
+// 표시가 남으면 그 코드로 방 만들기가 30분 동안 막힘, 두 번 불려도 됨
+function releaseCodeWithoutReopen(session) {
+    forgetStartedRoom(session.roomCode, session.roomId, session.id)
+    releaseHeldRoomCode(session.roomId)
+}
+
 // 판 끝 순간 같은 코드·설정·추방 횟수로 빈 대기방 다시 열기 (방 id는 새로 뽑음, 같은 방 판 검사와 안 부딪히게)
-// 방장 칸은 비우고 원래 방장 자리를 180초 남겨 둠, 공개 방이라도 0명이면 목록엔 안 보임 (room/view.js)
+// 방장 칸은 비우고 원래 방장 자리를 180초 남겨 둠(끊겨 있던 방장은 안 남김), 공개 방이라도 0명이면 목록엔 안 보임 (room/view.js)
 // 같은 판에 두 번 불려도 한 번만, 열었으면 방, 안 열었으면 null
 function reopenRoomAfterGame(io, session) {
     if (!session?.id || returnRoomsByGameId.has(session.id) || skippedGameIds.has(session.id)) return null
@@ -121,7 +131,7 @@ function reopenRoomAfterGame(io, session) {
     const code = source?.code && source.settings && !isNodeDraining() ? pickReturnCode(source.code) : null
     if (!code) {
         if (source?.code) skippedGameIds.add(session.id)
-        releaseHeldRoomCode(session.roomId)
+        releaseCodeWithoutReopen(session)
         return null
     }
     const room = {
@@ -138,7 +148,7 @@ function reopenRoomAfterGame(io, session) {
         returnHold: {
             gameId: session.id,
             closesAt: gameSession.getResultClosesAt(session) ?? Date.now() + gameSession.RESULT_SCREEN_MS,
-            reservedHostUuid: pickReservedHost(session),
+            reservedHostUuid: pickReservedHost(io, session),
         },
     }
     restoreRoomKicks(room, source.kickCounts)
@@ -201,12 +211,12 @@ function closeReturnHold(io, gameId) {
 }
 
 // 판이 장부에서 지워질 때: 다시 연 방이 있으면 180초 시계를 그대로 둠 → true
-// 없으면(점검 강제 종료·비우는 중·방 정보 없음) 판 동안 잡아 둔 코드 놓고 false
+// 없으면(점검 강제 종료·비우는 중·방 정보 없음) "시작됨" 표시 지우고 판 동안 잡아 둔 코드 놓고 false
 function settleReturnOnSessionGone(session) {
     if (!session?.id) return false
     skippedGameIds.delete(session.id)
     if (returnRoomsByGameId.has(session.id)) return true
-    releaseHeldRoomCode(session.roomId)
+    releaseCodeWithoutReopen(session)
     return false
 }
 
