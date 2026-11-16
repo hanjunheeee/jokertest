@@ -358,7 +358,8 @@ test(`A05-E-671 시민 화면에도 "${SETTLE_TEXT}"가 읽힘 (6명): 봇 광�
     expectFiveSeconds((await settleSpan(g.page, from)).ms);
 });
 
-test(`A05-E-672 접어 둔 시간 줄에서도 다 고르면 "${SETTLE_TEXT}"가 보임 (5명) @game @realtime`, async ({ user, table }) => {
+// 세로 폰도 당김 5초 동안은 접어 둔 진행 바가 저절로 펼쳐짐 (사용자 결정 2026-11-16 아침 8, frontend-mobile TalkLayout.jsx)
+test(`A05-E-672 접어 둔 시간 줄이 다 고르면 저절로 펼쳐지고 "${SETTLE_TEXT}"가 보임 (5명) @game @realtime`, async ({ user, table }) => {
     const g = await openGame({ user, table }, { n: 5, role: 'JOKER' });
     const target = P(g.cast.CITIZEN.at(-1));
     await reachTurn(g, 'JOKER', 1);
@@ -370,6 +371,9 @@ test(`A05-E-672 접어 둔 시간 줄에서도 다 고르면 "${SETTLE_TEXT}"가
     await pick(g.page, talk.slot(g.page, target.nickname), '암살');
     await expectReadable(settleLabel(g.page));
     await expect(g.page.locator('[data-ingame-phase-settle]')).toHaveCount(1);
+    // 한 번도 안 펼쳤던 진행 바가 펼쳐져 보임 (단계 줄도 "펼침"으로 읽힘)
+    await expect(talk.phaseLine(g.page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(talk.timebarSlot(g.page)).toBeVisible();
 });
 
 test('A05-E-673 5초 중 새로고침 (6명): 고르고 1초 뒤 새로고침 → 남은 시간이 5초 이하로 보임 @game @realtime', async ({ user, table }) => {

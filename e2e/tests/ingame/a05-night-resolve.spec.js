@@ -19,10 +19,9 @@ test('A05-E-065 5명 시민 사람이 암살됨: 낮에 내 카드 사망, 둘�
     // 투표 단계로 (봇은 표를 안 냄 → 투표 시간 동안 화면을 볼 수 있음)
     await t.advance();
     await k.waitState(t, (s) => s.phase === 'DAY' && s.dayPhase === 'DAY_VOTE', '둘째 낮 투표 단계');
-    // 카드 메뉴의 투표 항목·기권 단추가 없거나 잠겨 있음
-    expect(await k.itemState(page, k.nick(citizen), k.VOTE_ITEM_NAMES), '산 사람 카드의 투표 항목').not.toBe('있음');
-    const abstain = page.locator('[data-ingame-phase-action="dayVoteAbstain"]');
-    if ((await abstain.count()) > 0) await expect(abstain).toBeDisabled();
+    // 죽은 사람 화면: 카드 메뉴의 "투표하기"는 꺼진 채 보이고, 기권 단추는 아예 안 그려짐 (utils/playerCardMenu.js·InGameCornerActionPanel.jsx)
+    expect(await k.itemState(page, k.nick(citizen), k.VOTE_ITEM_NAMES), '산 사람 카드의 투표 항목').toBe('잠김');
+    await expect(page.locator('[data-ingame-phase-action="dayVoteAbstain"]'), '죽은 사람 화면 기권 단추').toHaveCount(0);
     const s = await t.state();
     expect({ phase: s.phase, dayPhase: s.dayPhase }, '투표 단계 동안 본 것').toEqual({ phase: 'DAY', dayPhase: 'DAY_VOTE' });
 });
@@ -97,9 +96,13 @@ test('A05-E-162 8명 경비원 사람이 첫 밤 암살됨: 둘째 밤 경비원
     await n.toNight(t, { dayIndex: 2 });
     await k.nightShown(page, 2);
     await n.toTurn(t, 'GUARD', { dayIndex: 2 });
-    expect(await k.itemState(page, k.nick(joker)), '광대 카드 밤 항목').not.toBe('있음');
+    // 죽은 사람도 자기 직업 차례엔 밤 항목이 꺼진 채 보임 (utils/playerCardMenu.js, 까닭 "사망한 플레이어는 행동할 수 없습니다"), 건너뛰기 단추는 안 그려짐
+    expect(await k.itemState(page, k.nick(joker)), '광대 카드 밤 항목').toBe('잠김');
+    await expect(n.skipButton(page), '죽은 사람 화면 건너뛰기 단추').toHaveCount(0);
     await k.expectTurn(t, 'GUARD', 2);
-    expect(await k.itemState(page, k.nick(citizen)), '시민 카드 밤 항목').not.toBe('있음');
+    expect(await k.itemState(page, k.nick(citizen)), '시민 카드 밤 항목').toBe('잠김');
+    // 두 번째로 본 것도 그 차례 안이었음 (빈 차례는 무작위로 일찍 닫힘)
+    await k.expectTurn(t, 'GUARD', 2);
 });
 
 /**

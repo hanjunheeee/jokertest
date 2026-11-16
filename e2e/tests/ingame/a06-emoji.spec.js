@@ -1,7 +1,7 @@
 'use strict';
 
 // 이모티콘 브라우저 시험 (PC) — 내 카드 우클릭 팔레트·말풍선 3초·1초 간격(진짜 시간)·죽은 사람·역할 확인·밤·재판·결과 화면·팔레트 칸·키보드
-// 목록 A06-판중-채팅.md 번호 A06-E-088~100 (밤·재판 칸은 사용자 결정 "이모티콘은 낮에만"대로 "안 나감"으로 씀 — 모음 글 C-036)
+// 목록 A06-판중-채팅.md 번호 A06-E-088~100 (역할 확인·밤·재판 칸은 사용자 결정 "이모티콘은 낮에만"대로 "안 나감"으로 씀 — 모음 글 C-036)
 const { test, expect, ui, E2E } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const a = require('./a-day/_lib');
@@ -158,19 +158,29 @@ for (const [id, label, gapMs, expectedCount] of EMOJI_GAPS) {
     });
 }
 
-test('A06-E-094 역할 확인 중 이모티콘 (6명 판) → 역할 확인 10초 동안 보낸 이모티콘을 봇이 받음 @game', async ({ user, table }) => {
+// 역할 확인 10초도 "낮에만"에 들어감 (결정 셋째 장 "반장이 정하고 알린 것" 1) — 화면은 팔레트를 안 열고 서버는 INVALID_PHASE로 거절
+test('A06-E-094 역할 확인 중 이모티콘 안 됨 (6명 판) → 역할 확인 10초 동안은 내 카드를 우클릭해도 팔레트가 안 뜨고 봇이 받은 emoji_shown 0, 낮이 되면 팔레트가 뜸 (결정: 이모티콘은 낮에만) @game', async ({ user, table }) => {
     const t = await k.deal(table, user, { bots: 5, me: 'CITIZEN', botRoles: ['JOKER', 'DOCTOR'] });
     const page = user.page;
     const me = user.account;
     await ui.readRoleReveal(page);
-    await openPalette(page, me.nickname);
-    await slot(page, '사랑').click();
+    // 역할 확인 동안: 내 카드를 우클릭해도 팔레트가 안 뜸
+    await n.cardButton(page, me.nickname).click({ button: 'right' });
+    await expect(palette(page)).toHaveCount(0);
+    // 봇이 서버로 바로 보내도 거절됨
+    const reply = await botEmoji(t, 1, 'emoji-basic-grin');
+    expect(reply?.ok, '역할 확인 중 봇 이모티콘').toBe(false);
+    expect(reply?.code, '거절 코드').toBe('INVALID_PHASE');
     // 10초가 지나 낮이 돼 버렸으면 이 케이스를 본 게 아님
     expect((await t.state()).phase, '아직 역할 확인 단계').toBe('ROLE_REVEAL');
-    await expect.poll(
-        () => t.bots.filter((b) => emojiFrom(b, me.uuid).length === 1).length,
-        { message: '이모티콘 알림을 받은 봇 수' },
-    ).toBe(t.bots.length);
+    await k.settleBots(t);
+    expect(t.bots.filter((b) => b.events.some((r) => r.event === EMOJI_EVT)).length, '이모티콘 알림을 받은 봇 수').toBe(0);
+    await expect(page.locator('[data-ingame-emoji-bubble]')).toHaveCount(0);
+
+    // 낮이 되면 같은 우클릭으로 팔레트가 뜸 (막힌 까닭이 단계였다는 표시)
+    await a.toDay(t);
+    await c.readyToChat(page);
+    await openPalette(page, me.nickname);
 });
 
 test('A06-E-095 밤 이모티콘 (7명 판) → 밤에 산 사람이 보내려 해도 봇이 받은 emoji_shown 0 (결정: 이모티콘은 낮에만) @game', async ({ user, table }) => {

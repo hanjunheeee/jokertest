@@ -9,13 +9,13 @@ const {
 } = require('./table');
 const {
     cardButton, cardStatus, expectCard, closeNotices, closeDawnReport, closeRoleReveal, keepWatching,
-    openCardMenu, expectNoCardMenu, nightActUi, skipButton, nightSkipUi,
+    openCardMenu, expectNoCardMenu, nightMenuItem, nightActUi, skipButton, nightSkipUi,
 } = require('./cards');
 const { ACTION_LABELS, TURN_MESSAGES, TURN_TAGS, ROLE_NAMES, josa, recordUi, readUi, reachResult } = require('./screen');
 
 module.exports = {
     ACTION_LABELS, TURN_MESSAGES, TURN_TAGS, ROLE_NAMES, josa, sleep, custom, roles, setup, advanceUntilSettled, toTurn, toNight, toDay, toEnd, turnOrder, eventsOf,
     cardButton, cardStatus, expectCard, closeNotices, closeDawnReport, closeRoleReveal, keepWatching, openCardMenu, expectNoCardMenu,
-    nightActUi, skipButton, nightSkipUi, recordUi, readUi, waitDead, rowOf, aliveCount, reachResult, botNight,
+    nightMenuItem, nightActUi, skipButton, nightSkipUi, recordUi, readUi, waitDead, rowOf, aliveCount, reachResult, botNight,
     advanceToEnd, publicWinResult,
 };

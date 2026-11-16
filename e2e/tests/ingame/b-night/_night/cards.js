@@ -88,17 +88,26 @@ async function expectNoCardMenu(page, nickname) {
 }
 
 /**
+ * 카드 메뉴의 밤 행동 단추 ('암살'·'보호'·'조사'·'확인')
+ * PC는 읽기 이름 앞에 대상 이름이 붙음("닉네임 암살"·"닉네임 · 동료 의사 보호"), 모바일은 글 그대로 → 이름 끝이 그 글인 단추로 찾음
+ * ('취소하기'·'취소'는 안 걸림, 보이는 글은 PC·모바일 둘 다 그대로)
+ */
+function nightMenuItem(menu, label) {
+    return menu.getByRole('menuitem', { name: new RegExp(`(^| )${label}$`) });
+}
+
+/**
  * 밤 행동 화면으로 내기: 카드 누름 → 메뉴의 '암살'·'보호'·'조사'·'확인'
  */
 async function nightActUi(page, nickname, label) {
     const menu = await openCardMenu(page, nickname);
-    const item = menu.getByRole('menuitem', { name: label, exact: true });
+    const item = nightMenuItem(menu, label);
     await expect(item).toBeEnabled();
     await item.click();
     await expect(menu).toBeHidden();
 }
 
-/** 밤 건너뛰기 버튼 */
+/** 밤 건너뛰기 버튼 (산 사람의 내 차례에만 그려짐, 죽은 사람 화면엔 없음) */
 function skipButton(page) {
     return page.locator('[data-ingame-phase-action="nightSkip"]');
 }
@@ -115,5 +124,5 @@ async function nightSkipUi(page) {
 
 module.exports = {
     cardButton, cardStatus, expectCard, closeNotices, closeDawnReport, closeRoleReveal, keepWatching,
-    openCardMenu, expectNoCardMenu, nightActUi, skipButton, nightSkipUi,
+    openCardMenu, expectNoCardMenu, nightMenuItem, nightActUi, skipButton, nightSkipUi,
 };

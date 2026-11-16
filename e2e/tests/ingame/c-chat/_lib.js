@@ -15,13 +15,22 @@ function dismissOverlays(page, { keepWatching = true, rounds = 4 } = {}) {
     return ui.closeOverlays(page, { keepWatching, rounds, names: CONFIRM_DIALOGS, clickTimeoutMs: 2000, pauseMs: 150 });
 }
 
+/**
+ * 낮 시작 암살 영상이 못 끝나 뜬 "건너뛰기"를 누름 (영상이 돌면 스스로 끝나 단추가 안 뜸)
+ * 영상이 12초 안에 안 끝나거나 자동 재생이 막히면 화면이 건너뛰기를 누를 때까지 잠긴 채라, 채팅 칸을 기다리는 쪽이 넘겨 줌
+ */
+async function skipDawnVideo(page) {
+    const skip = page.locator('[data-ingame-night-success-kill]').getByRole('button', { name: '건너뛰기' });
+    if (await skip.isVisible().catch(() => false)) await skip.click({ timeout: 500 }).catch(() => {});
+}
+
 const chatBox = (page) => page.getByRole('textbox', { name: '채팅 입력' });
 const { chatLog } = ui;
 const sendButton = (page) => page.getByRole('button', { name: '채팅 보내기' });
 /** 채팅 줄 글자 모양: 닉네임: "글" */
 const line = (nickname, text) => `${nickname}:"${text}"`;
 
-/** 채팅 칸이 쓸 수 있게 될 때까지 (덮개 창 닫으면서, 화면 잠금 inert 풀릴 때까지) */
+/** 채팅 칸이 쓸 수 있게 될 때까지 (덮개 창 닫으면서, 화면 잠금 inert 풀릴 때까지) — 역할 확인 10초 동안은 입력칸이 꺼져 있어 낮이 될 때까지 기다림 */
 async function readyToChat(page, { timeoutMs = 25000, keepWatching = true } = {}) {
     const until = Date.now() + timeoutMs;
     for (;;) {
@@ -29,6 +38,7 @@ async function readyToChat(page, { timeoutMs = 25000, keepWatching = true } = {}
         // 재판 추방 연출: 글 단계에서 누르면 바로 끝남 (영상 단계 누름은 아무 일 없음)
         const expulsion = page.locator('[data-ingame-tribunal-expulsion]').last();
         if (await expulsion.isVisible().catch(() => false)) await expulsion.click({ timeout: 500, force: true }).catch(() => {});
+        await skipDawnVideo(page);
         const box = chatBox(page);
         const ok = await box.evaluate((el) => !el.closest('[inert]') && !el.disabled).catch(() => false);
         if (ok && await box.isVisible().catch(() => false)) return box;
@@ -175,20 +185,29 @@ function watchSocket(page) {
     return events;
 }
 
-/** 화면들이 밤(또는 낮) 단계 글까지 따라왔는지 + 채팅 칸 열림 (단계 바뀐 직후 다른 사람 화면이 늦게 따라오는 것 기다림) */
+/**
+ * 화면들이 밤(또는 낮) 단계 글까지 따라왔는지 + 채팅 칸 열림 (단계 바뀐 직후 다른 사람 화면이 늦게 따라오는 것 기다림)
+ * 단계 글('[밤-광대]' 등)은 빌드본에선 시간 바를 펼쳐야 보임 → 접혀 있으면 펼치고 봄 (개발 서버는 채팅 틀 안에 늘 보이고 펼침 단추가 없음)
+ * 밤의 산 시민은 입력칸이 닫혀 있어 못 씀 (채팅 칸이 열리는 사람 화면에만), 표가 다 차 5초 당김 중엔 글이 '[5초 뒤 마감]'으로 바뀜
+ */
 async function phaseReady(pages, label = /\[밤-/) {
     for (const page of pages) {
         await readyToChat(page);
-        await expect(page.getByText(label).first()).toBeVisible({ timeout: 15000 });
+        const expand = page.locator('[data-ingame-timebar-expand]');
+        await expect(async () => {
+            await dismissOverlays(page);
+            if ((await expand.count()) > 0 && (await expand.getAttribute('aria-expanded')) !== 'true') await expand.click({ timeout: 1500 });
+            await expect(page.getByText(label).first()).toBeVisible({ timeout: 1000 });
+        }).toPass({ timeout: 15000 });
     }
 }
 
-/** 다른 사람 카드(닉네임으로 시작하는 버튼) */
+/** 다른 사람 카드(닉네임으로 시작하는 버튼) — 같은 직업 동료 카드는 읽기 이름이 "닉네임 · 동료 의사"(죽으면 ", 사망")라 그대로 맞음 */
 const card = (page, nickname) => page.getByRole('button', { name: new RegExp(`^(사망 )?${nickname}`) });
 const selfCard = (page, nickname) => page.getByRole('button', { name: new RegExp(`^(사망 )?본인 ${nickname}`) });
 
 module.exports = {
     CONFIRM_DIALOGS, dismissOverlays, readyToChat, chatBox, chatLog, sendButton, line, say, expectLine, expectNoText,
     lineChannel, lineColor, deadBadge, startGame, isDead, replan, executeByBots, killAtNight, phaseTo,
-    botSay, botNightSay, botGot, uniq, addBannedWord, removeBannedWord, watchSocket, card, selfCard, sleep, phaseReady,
+    botSay, botNightSay, botGot, uniq, addBannedWord, removeBannedWord, watchSocket, card, selfCard, sleep, phaseReady, skipDawnVideo,
 };

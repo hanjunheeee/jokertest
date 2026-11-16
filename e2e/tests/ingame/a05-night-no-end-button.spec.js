@@ -244,7 +244,8 @@ for (const actor of ACTORS) {
             }
             // 고르기 전 = 내 차례 조작이 열려 있음: 건너뛰기 단추가 켜져 있고, 카드 메뉴에 내 직업 행동 단추가 있음
             const menu = await n.openCardMenu(g.page, target.nickname);
-            await expect(menu.getByRole('menuitem', { name: label, exact: true })).toBeEnabled();
+            // PC 읽기 이름은 "닉네임 암살"처럼 대상 이름이 앞에 붙음 → 이름 끝이 그 글인 단추로 찾음
+            await expect(n.nightMenuItem(menu, label)).toBeEnabled();
             await expect(n.skipButton(g.page)).toBeEnabled();
             // 메뉴가 열린 채로도 "밤 종료"는 없음
             await expectNoEndNight(g.page);

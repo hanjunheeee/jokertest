@@ -366,7 +366,8 @@ test('A05-E-601 5명 판 광대 화면(밤 30초): 남은 3초에 고르면 5초
     await n.sleep(Math.max(0, deadline - 6000 - Date.now()));
     const menu = await n.openCardMenu(g.page, target.nickname);
     await n.sleep(Math.max(0, deadline - 3000 - Date.now()));
-    await menu.getByRole('menuitem', { name: '암살', exact: true }).click();
+    // PC 읽기 이름은 "닉네임 암살" → 이름 끝이 '암살'인 단추로 찾음
+    await n.nightMenuItem(menu, '암살').click();
     const closedAt = await nextShownAt(g.page, { day: 2 }, 1, 10_000);
     const log = await readWatch(g.page);
     const pickedAt = seen(log, 'pick').at(-1).at;

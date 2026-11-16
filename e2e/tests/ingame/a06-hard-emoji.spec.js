@@ -111,7 +111,8 @@ test('A06-H-017 세 사람 같은 순간 이모티콘 (사람 3 + 봇 2 = 5명):
     for (const b of t.bots) expect(b.events.filter((r) => r.event === EMOJI_EVT)).toHaveLength(3);
 });
 
-test('A06-H-018 역할 확인 중 두 사람 이모티콘 (사람 2 + 봇 4 = 6명): 역할 확인 10초 안에 보내면 서로 화면에 말풍선 @game @hard', async ({ user, players, table }) => {
+// 역할 확인 10초도 "낮에만"에 들어감 (결정 셋째 장 "반장이 정하고 알린 것" 1) — 화면은 팔레트를 안 열고 서버는 INVALID_PHASE로 거절
+test('A06-H-018 역할 확인 중 두 사람 이모티콘 (사람 2 + 봇 4 = 6명): 역할 확인 10초 동안은 두 사람 다 팔레트가 안 뜨고 말풍선 없음, 낮이 되면 서로 화면에 말풍선 (결정: 이모티콘은 낮에만) @game @hard', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const one = user;
     const two = await players.add();
@@ -120,7 +121,22 @@ test('A06-H-018 역할 확인 중 두 사람 이모티콘 (사람 2 + 봇 4 = 6�
         botRoles: ['JOKER', 'DOCTOR', 'CITIZEN', 'CITIZEN'],
     });
 
-    // 역할 확인 창을 닫은 뒤에도 10초가 끝날 때까지는 역할 확인 단계 (손잡이로 안 넘김)
+    // 역할 확인 창을 닫은 뒤에도 10초가 끝날 때까지는 역할 확인 단계 (손잡이로 안 넘김): 내 카드를 우클릭해도 팔레트가 안 뜸
+    await Promise.all([one, two].map((p) => night.cardButton(p.page, nick(p)).click({ button: 'right' })));
+    await Promise.all([one, two].map((p) => expect(palette(p.page)).toHaveCount(0)));
+    // 봇이 서버로 바로 보내도 거절됨
+    const reply = await t.bots[1].request('send_emoji', { gameId: t.gameId, itemId: EMOJI.hello.id });
+    expect([reply?.ok, reply?.code], '역할 확인 중 봇 이모티콘 답').toEqual([false, 'INVALID_PHASE']);
+    // 여기까지가 아직 역할 확인 10초 안이어야 이 케이스를 본 것
+    expect((await t.state()).phase).toBe('ROLE_REVEAL');
+    // 봇마다 서버를 한 번 다녀옴 → 그 앞에 나간 이모티콘 알림이 있었다면 이미 와 있음
+    await Promise.all(t.bots.map((b) => b.snapshot(t.gameId)));
+    for (const b of t.bots) expect(b.events.filter((r) => r.event === EMOJI_EVT)).toHaveLength(0);
+    await Promise.all([one, two].map((p) => expect(p.page.locator('[data-ingame-emoji-bubble]')).toHaveCount(0)));
+
+    // 낮이 되면 같은 두 사람이 보낸 것이 서로 화면에 뜸 (막힌 까닭이 단계였다는 표시)
+    await t.advanceUntil('DAY');
+    await Promise.all([one, two].map((p) => passNotice(p.page, DAY_NOTICE)));
     await Promise.all([openPalette(one), openPalette(two)]);
     await Promise.all([pickEmoji(one, EMOJI.hello), pickEmoji(two, EMOJI.love)]);
     await Promise.all([
@@ -128,6 +144,4 @@ test('A06-H-018 역할 확인 중 두 사람 이모티콘 (사람 2 + 봇 4 = 6�
         expect(bubbleOf(one.page, EMOJI.love)).toBeVisible(),
     ]);
     await Promise.all(t.bots.flatMap((b) => [hearsEmoji(b, one, EMOJI.hello), hearsEmoji(b, two, EMOJI.love)]));
-    // 봇이 받은 때가 아직 역할 확인 10초 안이어야 이 케이스를 본 것
-    expect((await t.state()).phase).toBe('ROLE_REVEAL');
 });

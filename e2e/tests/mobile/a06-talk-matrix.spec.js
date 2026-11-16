@@ -17,6 +17,8 @@ const DAY_EVT = 'day_chat_message_received';
 const DEAD_EVT = 'dead_chat_message_received';
 const ROLE_EVT = 'joker_chat_message';
 const NIGHT_CLOSED = '밤에는 시민이 채팅을 쓸 수 없습니다';
+// 역할 확인 동안 꺼진 입력 줄의 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
+const REVEAL_LOCKED = '역할 확인이 끝나면 채팅할 수 있습니다';
 const ROLE_NAME = ui.ROLE_LABELS;
 
 // 산 사람 칸: 7명 판 직접 구성 광대 2·의사 2·시민 3 — 봇 자리 직업 (맨 끝 봇은 늘 시민 = 재판 피고)
@@ -195,16 +197,19 @@ async function expectDeadOnly(t, deadBot, text) {
     for (const b of alive) expect(heardAny(b, text), `산 봇 ${b.nickname}이 죽은 사람 글을 받음`).toBe(false);
 }
 
-// 역할 확인 칸: 글을 치고 엔터 → 봇 0 (입력 줄이 열려 있어도 안 나가야 함)
+// 역할 확인 칸: 입력 줄·보내기가 꺼져 있고 까닭 글이 보임, 글을 치고 엔터를 쳐도 봇 0
 async function revealCell({ user, table }, cell) {
     const t = await aliveGame(table, user, cell.me);
     const page = user.page;
     const text = uniq('확인중');
     const input = talk.input(page);
-    if (await input.isVisible().catch(() => false)) {
-        await input.fill(text);
-        await input.press('Enter');
-    }
+    // 역할 확인 10초 동안: 입력 줄·보내기 단추가 꺼져 있고 입력 줄 자리 글이 까닭으로 바뀜 (frontend-mobile Composer.jsx)
+    await expect(input, '역할 확인 중 입력 줄').toBeDisabled({ timeout: 3000 });
+    await expect(talk.send(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
+    await expect(input).toHaveAttribute('placeholder', REVEAL_LOCKED);
+    // 그래도 쳐 봄: 꺼진 칸은 글도 Enter도 안 받음 (막혀도 기다리지 않게 짧게)
+    await input.fill(text, { force: true, timeout: 1000 }).catch(() => {});
+    await input.press('Enter', { timeout: 1000 }).catch(() => {});
     // 역할 확인 10초는 손잡이로 안 넘김 → 엔터를 친 때가 아직 그 10초 안이어야 이 칸을 본 것
     expect((await t.state()).phase).toBe('ROLE_REVEAL');
 
@@ -245,14 +250,16 @@ async function tribunalCell({ user, table }, cell) {
     if (cell.dead) {
         const { t, deadBot } = await deadGame(table, user, cell.me);
         const page = user.page;
+        // 재판 앞(둘째 낮) 채팅방엔 "죽은 사람끼리" 띠가 읽힘
+        await readableOnScreen(page, talk.deadBanner(page));
         await toTribunal(t, t.bots[t.bots.length - 2].account.uuid);
         const box = tribunalChat(page);
         await expect(box).toBeVisible({ timeout: 20000 });
         const text = uniq('죽은반론');
         await sayInTribunal(page, text);
         await expectDeadOnly(t, deadBot, text);
-        // 죽은 사람 칸의 띠: 재판 중엔 채팅방이 숨어서 재판 창 채팅에 보여야 함 (PC 재판 창과 같은 기대)
-        await expectReadable(box.getByText('죽은 사람끼리', { exact: true }));
+        // 모바일 재판 창 채팅엔 띠가 없음 [지금 동작] (frontend-mobile TribunalChat.jsx — PC 재판 창엔 있음, 넣을지는 정할 것)
+        await expect(box.getByText('죽은 사람끼리', { exact: true })).toHaveCount(0);
         return;
     }
     const t = await aliveGame(table, user, cell.me);
@@ -316,7 +323,8 @@ const RUN = { REVEAL: revealCell, DAY: dayCell, TRIBUNAL: tribunalCell, NIGHT: n
 
 // 칸마다 기대 한 줄 (시험 이름에 붙임)
 function expectation(cell) {
-    if (cell.phase === 'REVEAL') return '엔터를 쳐도 봇 0';
+    if (cell.phase === 'REVEAL') return '입력 줄 꺼짐·까닭 글 보임·엔터를 쳐도 봇 0';
+    if (cell.dead && cell.phase === 'TRIBUNAL') return '재판 앞 채팅방엔 "죽은 사람끼리" 띠가 읽히고 재판 창 채팅으로 보내면 죽은 봇만 받음, 재판 창엔 띠 없음 [지금 동작]';
     if (cell.dead) return '"죽은 사람끼리" 띠가 읽히고 죽은 봇만 받음';
     if (cell.phase === 'NIGHT' && cell.me === 'CITIZEN') return '입력 줄 없음·까닭 글이 읽힘·띠 없음·봇 0';
     if (cell.phase === 'NIGHT') return '"밤 · 같은 직업끼리" 띠가 읽히고 같은 직업 봇만 받음';

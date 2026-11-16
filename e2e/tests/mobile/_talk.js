@@ -19,14 +19,18 @@ const BASIC_EMOJI = Object.freeze({
     love: { id: 'emoji-basic-love', name: '사랑' },
 });
 
+// 칸 읽기 이름: "닉네임", 같은 직업 동료면 "닉네임 · 동료 의사", 그 뒤에 ", 나"·", 사망"·", 연결 끊김" (frontend-mobile utils/talk/slotLabel.js)
+// 닉네임으로 찾을 때 동료 글이 붙은 칸도 같이 맞게 함
+const slotName = (nickname) => new RegExp(`^${nickname}( · 동료 [^,]+)?(,|$)`);
+
 // 칸 고르개 (화면 글자·aria-label 먼저, 카톡형 칸 표시는 data-* 그대로)
 const talk = {
     layout: (page) => page.locator('[data-talk-layout]'),
     strip: (page) => page.getByRole('region', { name: '플레이어 초상 띠' }),
-    slot: (page, nickname) => talk.strip(page).getByRole('button', { name: new RegExp(`^${nickname}(,|$)`) }),
+    slot: (page, nickname) => talk.strip(page).getByRole('button', { name: slotName(nickname) }),
     mySlot: (page) => talk.strip(page).getByRole('button', { name: /, 나(,|$)/ }),
     board: (page) => page.getByRole('region', { name: '플레이어 카드' }),
-    boardSlot: (page, nickname) => talk.board(page).getByRole('button', { name: new RegExp(`^${nickname}(,|$)`) }),
+    boardSlot: (page, nickname) => talk.board(page).getByRole('button', { name: slotName(nickname) }),
     chat: (page) => page.getByRole('region', { name: '채팅', exact: true }),
     log: (page) => talk.chat(page).getByRole('log', { name: '채팅 내역' }),
     lines: (page) => talk.log(page).locator('li[data-talk-line]'),
@@ -80,11 +84,15 @@ async function goPhase(t, pages, target, { line, stepDelayMs = 400, keepWatching
 
 /** 낮 토론까지 (제 1일) */
 function toDay(t, pages, o = {}) { return goPhase(t, pages, 'DAY', { line: '낮 토론', ...o }); }
-/** 낮 투표까지 */
+/** 낮 투표까지 (산 사람 화면은 기권 단추가 뜰 때까지, 죽은 사람 화면엔 기권 단추가 없어 내 칸의 사망 표시로 대신 봄) */
 function toVote(t, pages, o = {}) {
     return goPhase(t, pages, 'DAY_VOTE', o).then(async (s) => {
         const list = Array.isArray(pages) ? pages : [pages];
-        for (const page of list) await expect(page.getByRole('button', { name: '기권' }).first()).toBeVisible({ timeout: 15000 });
+        for (const page of list) {
+            const abstain = page.getByRole('button', { name: '기권' });
+            const deadSelf = page.getByRole('button', { name: /, 나, 사망$/ });
+            await expect(abstain.or(deadSelf).first()).toBeVisible({ timeout: 15000 });
+        }
         return s;
     });
 }

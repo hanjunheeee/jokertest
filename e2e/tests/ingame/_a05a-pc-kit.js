@@ -9,7 +9,8 @@ const n = require('./b-night/_night');
 // 밤 차례가 도는 순서 (서버와 같음)
 const TURN_ORDER = Object.freeze(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER']);
 // 카드 메뉴의 밤 항목 이름 (직업 행동 넷 + 못 하는 날 기본 이름 + 낸 뒤 취소)
-// 이름 일부로 찾음: 단추 읽기 이름에 대상 닉네임이 붙게 고쳐져도(시험목록 "목록이 틀려 보이는 곳" A05-F-182~185) 그대로 맞게 — 메뉴 닫기 단추 "취소"는 안 걸림
+// 이름 일부로 찾음: 밤 행동 단추 읽기 이름 앞에 대상 이름이 붙어서("민수 암살") — 메뉴 닫기 단추 "취소"는 안 걸림
+// 항목 하나를 콕 집어 누를 땐 n.nightMenuItem(이름 끝이 그 글)을 씀
 const NIGHT_ITEM_NAMES = /암살|보호|조사|확인|밤 행동|취소하기/;
 // 카드 메뉴의 낮 투표 항목 이름
 const VOTE_ITEM_NAMES = /투표하기|투표취소/;
@@ -230,7 +231,8 @@ async function itemState(page, nickname, names = NIGHT_ITEM_NAMES) {
 /** 그 사람 카드 메뉴에 그 밤 항목이 있고 눌리며 눈에 읽히는지 (그림 단추라 대비는 안 봄) */
 async function expectNightItem(page, nickname, label) {
     const menu = await openMenu(page, nickname);
-    const item = menu.getByRole('menuitem', { name: label });
+    // 읽기 이름이 "민수 암살"·"민수 · 동료 의사 보호" 꼴 → 이름 끝이 그 글인 단추로 찾음
+    const item = n.nightMenuItem(menu, label);
     await expect(item).toBeEnabled();
     await expectReadable(item, { contrast: false });
     await closeMenu(page);
@@ -239,7 +241,7 @@ async function expectNightItem(page, nickname, label) {
 /** 밤 행동을 화면으로 냄: 카드 메뉴에서 '암살'·'보호'·'조사'·'확인'을 누름 → 서버가 받으면 건너뛰기 단추가 잠김 (거절이면 여기서 걸림) */
 async function actUi(page, nickname, label) {
     const menu = await openMenu(page, nickname);
-    const item = menu.getByRole('menuitem', { name: label });
+    const item = n.nightMenuItem(menu, label);
     await expect(item).toBeEnabled();
     await item.click();
     await expect(menu).toBeHidden();

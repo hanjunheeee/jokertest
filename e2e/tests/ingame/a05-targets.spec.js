@@ -58,28 +58,29 @@ const SCENE_NAMES = {
     WITCH_HUNTER: '10명 직접{마녀사냥꾼2} 판 둘째 밤(시민 1 처형)',
 };
 
-// [번호, 내 직업, 카드, 기대] — '있음' = 눌러 고를 수 있는 밤 항목이 있음, '없음' = 그런 항목이 없음(항목이 안 뜨거나 잠겨 있음)
+// [번호, 내 직업, 카드, 기대] — '있음' = 눌러 고를 수 있음, '잠김' = 항목은 보이나 못 누름, '없음' = 항목이 없어 메뉴가 안 열림
+// 화면 규칙(utils/playerCardMenu.js): 고를 수 없는 남의 카드는 잠긴 채 보임, 내 카드(의사 말고)·동료 광대 카드는 항목 자체가 없음
 const CARD_TABLE = [
     ['A05-E-015', 'JOKER', '동료 광대', '없음'],
     ['A05-E-016', 'JOKER', '자기', '없음'],
     ['A05-E-017', 'JOKER', '산 의사', '있음'],
-    ['A05-E-018', 'JOKER', '죽은 시민', '없음'],
+    ['A05-E-018', 'JOKER', '죽은 시민', '잠김'],
     ['A05-E-019', 'JOKER', '산 시민', '있음'],
     ['A05-E-020', 'DOCTOR', '자기', '있음'],
     ['A05-E-021', 'DOCTOR', '동료 의사', '있음'],
     ['A05-E-022', 'DOCTOR', '산 광대', '있음'],
-    ['A05-E-023', 'DOCTOR', '죽은 시민', '없음'],
+    ['A05-E-023', 'DOCTOR', '죽은 시민', '잠김'],
     ['A05-E-024', 'DOCTOR', '산 시민', '있음'],
     ['A05-E-025', 'GUARD', '자기', '없음'],
     ['A05-E-026', 'GUARD', '동료 경비원', '있음'],
     ['A05-E-027', 'GUARD', '산 광대', '있음'],
-    ['A05-E-028', 'GUARD', '죽은 시민', '없음'],
+    ['A05-E-028', 'GUARD', '죽은 시민', '잠김'],
     ['A05-E-029', 'GUARD', '산 시민', '있음'],
     ['A05-E-030', 'WITCH_HUNTER', '자기', '없음'],
-    ['A05-E-031', 'WITCH_HUNTER', '산 동료 마녀사냥꾼', '없음'],
-    ['A05-E-032', 'WITCH_HUNTER', '산 광대', '없음'],
+    ['A05-E-031', 'WITCH_HUNTER', '산 동료 마녀사냥꾼', '잠김'],
+    ['A05-E-032', 'WITCH_HUNTER', '산 광대', '잠김'],
     ['A05-E-033', 'WITCH_HUNTER', '죽은 사람', '있음'],
-    ['A05-E-034', 'WITCH_HUNTER', '산 시민', '없음'],
+    ['A05-E-034', 'WITCH_HUNTER', '산 시민', '잠김'],
 ];
 for (const [no, role, cardName, expected] of CARD_TABLE) {
     const action = n.ACTION_LABELS[role];
@@ -88,7 +89,7 @@ for (const [no, role, cardName, expected] of CARD_TABLE) {
         const { t, page, night, cards } = await SCENES[role](table, user);
         const name = k.nick(cards[cardName]);
         if (expected === '있음') await k.expectNightItem(page, name, action);
-        else expect(await k.itemState(page, name), `${cardName} 카드 밤 항목`).not.toBe('있음');
+        else expect(await k.itemState(page, name), `${cardName} 카드 밤 항목`).toBe(expected);
         // 내 차례 동안 본 것이어야 뜻이 있음
         await k.expectTurn(t, role, night);
     });
@@ -165,7 +166,8 @@ test('A05-E-041 5명 시민 사람: 밤(광대 차례)에 어느 카드에도 �
     await k.expectTurn(t, 'JOKER', 1);
 });
 
-test('A05-E-042 6명 의사 사람이 첫날 처형됨: 첫 밤 의사 차례에도 카드에 누를 수 있는 밤 항목 없음 @game', async ({ user, table }) => {
+// 죽어도 내 직업 차례엔 남의 카드에 "보호"가 잠긴 채 보임(까닭 "사망한 플레이어는 행동할 수 없습니다"), 내 카드는 고를 대상이 아니라 항목 없음
+test('A05-E-042 6명 의사 사람이 첫날 처형됨: 첫 밤 의사 차례에 산 시민 카드의 밤 항목은 잠김, 내 카드엔 없음 @game', async ({ user, table }) => {
     const { t, page } = await k.open(table, user, { bots: 5, me: 'DOCTOR', botRoles: ['JOKER', 'CITIZEN'] });
     const citizen = t.bots[1];
     await k.execute(t, user);
@@ -173,7 +175,7 @@ test('A05-E-042 6명 의사 사람이 첫날 처형됨: 첫 밤 의사 차례에
     await k.nightShown(page, 1);
     await k.expectDead(page, user);
     await n.toTurn(t, 'DOCTOR', { dayIndex: 1 });
-    expect(await k.itemState(page, k.nick(citizen)), '산 시민 카드 밤 항목').not.toBe('있음');
+    expect(await k.itemState(page, k.nick(citizen)), '산 시민 카드 밤 항목').toBe('잠김');
     await k.expectTurn(t, 'DOCTOR', 1);
-    expect(await k.itemState(page, k.nick(user)), '내 카드 밤 항목').not.toBe('있음');
+    expect(await k.itemState(page, k.nick(user)), '내 카드 밤 항목').toBe('없음');
 });

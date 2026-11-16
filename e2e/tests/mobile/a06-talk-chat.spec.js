@@ -18,6 +18,8 @@ const DAY_EVT = 'day_chat_message_received';
 const ROLE_EVT = 'joker_chat_message';
 const EMOJI_EVT = 'emoji_shown';
 const NIGHT_CLOSED = '밤에는 시민이 채팅을 쓸 수 없습니다';
+// 역할 확인 동안 꺼진 입력 줄의 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
+const REVEAL_LOCKED = '역할 확인이 끝나면 채팅할 수 있습니다';
 const NIGHT_NOTICE = '밤이 되었습니다';
 const TOO_LONG = '메시지는 150자 이하로 입력해주세요.';
 const OFFLINE = '인터넷 연결이 끊겨 보내지 못했습니다. 연결되면 다시 보내 주세요.';
@@ -362,15 +364,18 @@ test('A06-E-141 인터넷 끊김 (5명 판): 끊긴 채 보내면 끊김 문구�
     }
 });
 
-test('A06-E-142 역할 확인 중 보냄 (5명 판): 글을 치고 엔터를 쳐도 봇 0 @game', async ({ user, table }) => {
+test('A06-E-142 역할 확인 중 보냄 (5명 판): 입력 줄·보내기가 꺼져 있고 까닭 글이 보임, 글을 치고 엔터를 쳐도 봇 0 @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: FIVE });
     const page = user.page;
     const text = uniq('확인중');
     const input = talk.input(page);
-    if (await input.isVisible().catch(() => false)) {
-        await input.fill(text);
-        await input.press('Enter');
-    }
+    // 역할 확인 10초 동안: 입력 줄·보내기 단추가 꺼져 있고 입력 줄 자리 글이 까닭으로 바뀜 (frontend-mobile Composer.jsx)
+    await expect(input, '역할 확인 중 입력 줄').toBeDisabled({ timeout: 3000 });
+    await expect(talk.send(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
+    await expect(input).toHaveAttribute('placeholder', REVEAL_LOCKED);
+    // 그래도 쳐 봄: 꺼진 칸은 글도 Enter도 안 받음 (막혀도 기다리지 않게 짧게)
+    await input.fill(text, { force: true, timeout: 1000 }).catch(() => {});
+    await input.press('Enter', { timeout: 1000 }).catch(() => {});
     // 역할 확인 10초는 손잡이로 안 넘김 → 엔터를 친 때가 아직 그 10초 안이어야 이 케이스를 본 것
     expect((await t.state()).phase).toBe('ROLE_REVEAL');
 
@@ -383,18 +388,29 @@ test('A06-E-142 역할 확인 중 보냄 (5명 판): 글을 치고 엔터를 쳐
     await expect(talk.log(page)).not.toContainText(text);
 });
 
-test('A06-E-143 역할 확인 중 이모티콘 (6명 판): 내 초상을 길게 눌러 보내면 봇 전원이 받음 @game', async ({ user, table }) => {
+// 역할 확인 10초도 "낮에만"에 들어감 (결정 셋째 장 "반장이 정하고 알린 것" 1) — 화면은 팔레트를 안 열고 서버는 INVALID_PHASE로 거절
+test('A06-E-143 역할 확인 중 이모티콘 안 됨 (6명 판): 내 초상을 길게 눌러도 팔레트가 안 뜨고 봇이 받은 이모티콘 0, 낮이 되면 팔레트가 뜸 (결정: 이모티콘은 낮에만) @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
-    await openPalette(page);
-    await talk.palette(page).getByRole('button', { name: `${BASIC_EMOJI.hello.name} 보내기` }).click();
-    await Promise.all(t.bots.map((b) => b.waitForEvent(EMOJI_EVT, {
-        match: (p) => p?.uuid === user.account.uuid && p?.itemId === BASIC_EMOJI.hello.id,
-    })));
-    // 역할 확인 10초는 손잡이로 안 넘김 → 봇이 받은 때가 아직 그 10초 안이어야 이 케이스를 본 것
+    // 길게 누르기 0.45초 규칙만큼 진짜로 누르고 있음 → 역할 확인 동안은 팔레트가 안 뜸
+    await holdMySlot(page);
+    await page.waitForTimeout(700);
+    await page.mouse.up();
+    await expect(talk.palette(page)).toHaveCount(0);
+    // 봇이 서버로 바로 보내도 거절됨
+    const reply = await t.bots[1].request('send_emoji', { gameId: t.gameId, itemId: BASIC_EMOJI.hello.id });
+    expect([reply?.ok, reply?.code], '역할 확인 중 봇 이모티콘 답').toEqual([false, 'INVALID_PHASE']);
+    // 역할 확인 10초는 손잡이로 안 넘김 → 여기까지가 아직 그 10초 안이어야 이 케이스를 본 것
     expect((await t.state()).phase).toBe('ROLE_REVEAL');
-});
+    await settle(t);
+    for (const b of t.bots) expect(b.events.filter((r) => r.event === EMOJI_EVT)).toHaveLength(0);
+    await expect(talk.log(page).locator('[data-talk-emoji]')).toHaveCount(0);
 
+    // 낮이 되면 같은 길게 누르기로 팔레트가 뜸 (막힌 까닭이 단계였다는 표시)
+    await m.toDay(t, page);
+    await ready(page);
+    await openPalette(page);
+});
 test('A06-E-144 내 칸 길게 누르기 (5명 판): 내 초상을 0.45초 넘게 누르고 있으면 이모티콘 팔레트가 보임 @game @safari', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: FIVE });
     const page = user.page;

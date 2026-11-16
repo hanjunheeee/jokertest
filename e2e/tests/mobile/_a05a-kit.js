@@ -151,7 +151,7 @@ const phoneCard = (page, nickname) => page.locator('[data-strip-slot]').filter({
 /** 그 사람 카드 (폰은 초상 띠 칸, PC는 판 카드) */
 const card = (page, nickname) => (isPhone(page) ? phoneCard(page, nickname) : night.cardButton(page, nickname));
 const cardMenu = (page) => page.getByRole('menu', { name: '플레이어 행동' });
-// 메뉴 항목은 단추에 보이는 글로 고름 (PC는 읽기 이름에 대상 닉네임이 붙을 수 있어 이름으로 안 고름)
+// 메뉴 항목은 단추에 보이는 글로 고름 (PC 밤 행동 단추는 읽기 이름이 "닉네임 암살"처럼 대상 이름이 앞에 붙어 이름으로 안 고름)
 const menuItem = (menu, label) => menu.getByRole('menuitem').filter({ has: menu.page().getByText(label, { exact: true }) });
 const resultDialog = (page) => page.getByRole('dialog', { name: '밤 조사 결과', exact: true });
 const turnNotice = (page, role) => page.locator(`[data-night-turn-role="${role}"]`);
@@ -248,11 +248,12 @@ async function expectMyTurn(page, { timeout = 45000 } = {}) {
 }
 
 /**
- * 그 카드에 눌리는 밤 행동이 있나 → '있음' | '없음'
- * '없음' = 카드를 눌러도 메뉴가 안 열리거나, 열려도 그 행동 단추가 없거나 꺼져 있음 (눌러서 고를 수 없으면 없음)
+ * 그 카드의 밤 행동 단추가 어떤지 → '있음' | '잠김' | '없음'
+ * '있음' = 눌러 고를 수 있음, '잠김' = 단추는 보이나 꺼져 있음, '없음' = 단추가 없음 (항목이 없는 카드는 눌러도 메뉴가 안 열림)
+ * 화면 규칙(frontend utils/playerCardMenu.js, 폰·PC 같음): 고를 수 없는 남의 카드는 잠긴 채 보임, 내 카드(의사 말고)·동료 광대 카드는 항목이 없음
  * 카드 누르기가 성공한 뒤에만 봄 (창에 가려 못 누른 것을 '없음'으로 잘못 보지 않게)
  */
-async function itemState(page, nickname, role) {
+async function menuItemState(page, nickname, role) {
     const menu = cardMenu(page);
     await closeMenu(page);
     await expect(async () => {
@@ -262,9 +263,19 @@ async function itemState(page, nickname, role) {
     const opened = await menu.waitFor({ state: 'visible', timeout: 1500 }).then(() => true, () => false);
     if (!opened) return '없음';
     const item = menuItem(menu, ACTION_LABELS[role]);
-    const state = (await item.count()) > 0 && (await item.isEnabled()) ? '있음' : '없음';
+    let state = '없음';
+    if ((await item.count()) > 0) state = (await item.isEnabled()) ? '있음' : '잠김';
     await closeMenu(page);
     return state;
+}
+
+/**
+ * 그 카드에 눌리는 밤 행동이 있나 → '있음' | '없음'
+ * '없음' = 카드를 눌러도 메뉴가 안 열리거나, 열려도 그 행동 단추가 없거나 꺼져 있음 (눌러서 고를 수 없으면 없음)
+ * 잠김과 없음을 가르려면 menuItemState를 씀
+ */
+async function itemState(page, nickname, role) {
+    return (await menuItemState(page, nickname, role)) === '있음' ? '있음' : '없음';
 }
 
 /** 밤 행동 단추가 눈에 보이는지: 보임·크기·화면 안·안 가려짐 (그림 단추 위 글이라 대비는 안 셈) */
@@ -404,6 +415,6 @@ module.exports = {
     ACTION_LABELS, TURN_MESSAGES, ROLE_NAMES, TURN_ROLES, ASSASSIN_FAILED_TEXT, night,
     isPhone, uuidOf, nickOf, seat, waitState, executeByBots, toNight, stepToTurn, expectTurnFilled, watch, playNight, botPick,
     card, cardMenu, menuItem, resultDialog, turnNotice, deadCards, passDawn, passExpulsion, clearBlockers, closeMenu, openMenu, pick, pickNight, voteUi,
-    expectMyTurn, itemState, expectItemShown, confirmEntrance, expectTurnNotice, waitNoticeGone, expectDayShown, settleDawn,
+    expectMyTurn, itemState, menuItemState, expectItemShown, confirmEntrance, expectTurnNotice, waitNoticeGone, expectDayShown, settleDawn,
     expectResult, expectRoleResult, closeResult, expectNoResult, expectCardStatus, expectDeadShown, expectDeadCount, expectResultScreen,
 };

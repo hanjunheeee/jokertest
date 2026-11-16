@@ -448,7 +448,8 @@ test('A05-H-520 두 광대가 같은 순간 누름 (6명, 사람 2): 5초 표시
     // 두 화면 모두 카드 메뉴를 열어 두고 '암살'을 한꺼번에 누름
     const menus = [];
     for (const h of humans) menus.push(await night.openCardMenu(h.page, target.nickname));
-    await Promise.all(menus.map((menu) => menu.getByRole('menuitem', { name: '암살', exact: true }).click()));
+    // PC 읽기 이름은 "닉네임 암살" → 이름 끝이 '암살'인 단추로 찾음
+    await Promise.all(menus.map((menu) => night.nightMenuItem(menu, '암살').click()));
     await each(humans, (h) => expectSettleShown(h.page, marks[humans.indexOf(h)]));
     await waitDay(g.t, 2);
     // 화면마다 켜짐·꺼짐이 한 번씩, 서버 알림도 한 번씩

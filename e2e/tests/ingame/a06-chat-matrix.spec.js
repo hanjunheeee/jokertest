@@ -25,7 +25,7 @@ const SELVES = [
 
 // 칸마다 기대 (목록 기대값 그대로) → 시험 이름에 붙일 글
 function expectedLabel(phase, self) {
-    if (phase.id === 'REVEAL') return '받은 봇 0';
+    if (phase.id === 'REVEAL') return '입력칸 꺼짐 + 까닭 글 보임 + 받은 봇 0';
     if (self.dead) return '죽은 봇만 받음 + "죽은 사람끼리" 보임';
     if (phase.id !== 'NIGHT') return '봇 전원 받음';
     if (self.role === 'CITIZEN') return '입력칸 없음 + 까닭 글 보임 + 받은 봇 0';
@@ -50,16 +50,22 @@ function seating(self) {
     return { bots: 6, settings: customRoleSettings({ JOKER: 2, DOCTOR: 2 }), botRoles: byRole[self.role] };
 }
 
-// 역할 확인 10초 안: 역할 창을 닫고 채팅 칸에 글을 치고 Enter → 아무 봇도 못 받고 내 칸에도 줄이 없음
+// 역할 확인 동안 입력칸 자리에 뜨는 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
+const REVEAL_LOCKED_TEXT = '역할 확인이 끝나면 채팅할 수 있습니다';
+
+// 역할 확인 10초 안: 역할 창을 닫아도 입력칸·보내기가 꺼져 있고 까닭 글이 읽힘 → 아무 봇도 못 받고 내 칸에도 줄이 없음
 async function checkRoleReveal({ t, page, me }) {
     await ui.readRoleReveal(page);
     const text = c.uniq('확인중');
     const box = c.chatBox(page);
-    // 입력칸이 켜져 있으면 치고 Enter (꺼져 있으면 칠 수 없으니 그대로 봇 0)
-    if (await box.isEditable({ timeout: 1000 }).catch(() => false)) {
-        await box.fill(text);
-        await box.press('Enter');
-    }
+    // 꺼진 칸이라 칠 수 없음 (칸은 그대로 있고 꺼져 있기만 함), 까닭 글은 입력칸 자리에 보임
+    await expect(box, '역할 확인 중 입력칸').toBeDisabled({ timeout: 3000 });
+    await expect(c.sendButton(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
+    await expect(box).toHaveAttribute('title', REVEAL_LOCKED_TEXT);
+    await expectReadable(k.boardChat(page).getByText(REVEAL_LOCKED_TEXT, { exact: true }), { ...k.STATUS_READABLE, timeout: 3000 });
+    // 그래도 눌러 봄: 꺼진 칸은 글도 Enter도 안 받음
+    await box.fill(text, { force: true, timeout: 1000 }).catch(() => {});
+    await box.press('Enter', { timeout: 1000 }).catch(() => {});
     // 10초가 지나 낮이 돼 버렸으면 이 칸을 본 게 아님
     expect((await t.state()).phase, '아직 역할 확인 단계').toBe('ROLE_REVEAL');
     await k.settleBots(t);

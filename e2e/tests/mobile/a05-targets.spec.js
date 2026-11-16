@@ -27,28 +27,29 @@ const TARGETS = {
     citizen: (g, me, role, dead, living) => kit.nickOf(living),
 };
 
-// [번호, 사람 직업, 카드, 카드 이름, 밤 항목]
+// [번호, 사람 직업, 카드, 카드 이름, 밤 항목] — '있음' = 눌러 고를 수 있음, '잠김' = 단추는 보이나 꺼져 있음, '없음' = 단추가 없어 시트가 안 열림
+// 화면 규칙(frontend utils/playerCardMenu.js): 고를 수 없는 남의 카드는 잠긴 채 보임, 내 카드(의사 말고)·동료 광대 카드는 항목 자체가 없음
 const CASES = [
     ['A05-E-101', 'JOKER', 'ally', '동료 광대', '없음'],
     ['A05-E-102', 'JOKER', 'self', '자기', '없음'],
     ['A05-E-103', 'JOKER', 'doctor', '산 의사', '있음'],
-    ['A05-E-104', 'JOKER', 'dead', '죽은 시민', '없음'],
+    ['A05-E-104', 'JOKER', 'dead', '죽은 시민', '잠김'],
     ['A05-E-105', 'JOKER', 'citizen', '산 시민', '있음'],
     ['A05-E-106', 'DOCTOR', 'self', '자기', '있음'],
     ['A05-E-107', 'DOCTOR', 'ally', '동료 의사', '있음'],
     ['A05-E-108', 'DOCTOR', 'joker', '산 광대', '있음'],
-    ['A05-E-109', 'DOCTOR', 'dead', '죽은 시민', '없음'],
+    ['A05-E-109', 'DOCTOR', 'dead', '죽은 시민', '잠김'],
     ['A05-E-110', 'DOCTOR', 'citizen', '산 시민', '있음'],
     ['A05-E-111', 'GUARD', 'self', '자기', '없음'],
     ['A05-E-112', 'GUARD', 'ally', '동료 경비원', '있음'],
     ['A05-E-113', 'GUARD', 'joker', '산 광대', '있음'],
-    ['A05-E-114', 'GUARD', 'dead', '죽은 시민', '없음'],
+    ['A05-E-114', 'GUARD', 'dead', '죽은 시민', '잠김'],
     ['A05-E-115', 'GUARD', 'citizen', '산 시민', '있음'],
     ['A05-E-116', 'WITCH_HUNTER', 'self', '자기', '없음'],
-    ['A05-E-117', 'WITCH_HUNTER', 'ally', '산 동료 마녀사냥꾼', '없음'],
-    ['A05-E-118', 'WITCH_HUNTER', 'joker', '산 광대', '없음'],
+    ['A05-E-117', 'WITCH_HUNTER', 'ally', '산 동료 마녀사냥꾼', '잠김'],
+    ['A05-E-118', 'WITCH_HUNTER', 'joker', '산 광대', '잠김'],
     ['A05-E-119', 'WITCH_HUNTER', 'dead', '죽은 사람', '있음'],
-    ['A05-E-120', 'WITCH_HUNTER', 'citizen', '산 시민', '없음'],
+    ['A05-E-120', 'WITCH_HUNTER', 'citizen', '산 시민', '잠김'],
 ];
 
 for (const [no, role, target, targetName, expected] of CASES) {
@@ -66,7 +67,7 @@ for (const [no, role, target, targetName, expected] of CASES) {
         await kit.expectMyTurn(page);
 
         const nickname = TARGETS[target](g, user, role, dead, living);
-        expect(await kit.itemState(page, nickname, role)).toBe(expected);
+        expect(await kit.menuItemState(page, nickname, role)).toBe(expected);
         if (expected === '있음') await kit.expectItemShown(page, nickname, role);
     });
 }

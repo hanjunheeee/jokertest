@@ -195,13 +195,14 @@ test('A06-H-005 한 판 처음부터 끝까지 채팅 (사람 3 + 봇 5 = 8명):
     });
     const [jokerBot, guardBot] = t.bots;
 
-    // 1) 역할 확인 10초: 글을 치고 엔터를 쳐도 안 나감 (손잡이로 안 넘김 → 아직 그 10초 안인지 봄)
+    // 1) 역할 확인 10초: 입력칸·보내기가 꺼져 있어 글을 치고 엔터를 쳐도 안 나감 (손잡이로 안 넘김 → 아직 그 10초 안인지 봄)
     const blocked = uniq('확인중');
     const box = c.chatBox(doctor.page);
-    if (await box.isVisible().catch(() => false)) {
-        await box.fill(blocked);
-        await box.press('Enter');
-    }
+    await expect(box, '역할 확인 중 입력칸').toBeDisabled({ timeout: 3000 });
+    await expect(c.sendButton(doctor.page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
+    // 꺼진 칸이라 글도 Enter도 안 받음 (그래도 눌러 봄, 막혀도 기다리지 않게 짧게)
+    await box.fill(blocked, { force: true, timeout: 1000 }).catch(() => {});
+    await box.press('Enter', { timeout: 1000 }).catch(() => {});
     expect((await t.state()).phase).toBe('ROLE_REVEAL');
 
     // 2) 첫 낮: 둘이 대화, 봇 전원이 받음 (의사 소켓에서 낮 글보다 먼저 나간 글이 있었다면 봇에 이미 와 있음)

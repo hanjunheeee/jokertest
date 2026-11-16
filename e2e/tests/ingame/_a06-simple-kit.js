@@ -157,10 +157,11 @@ const inputIn = (scope) => scope.getByRole('textbox', { name: '채팅 입력' })
 const logIn = (scope) => scope.getByRole('log', { name: '채팅 내역' });
 const statusAlert = (scope) => scope.getByRole('alert');
 
-/** 덮개 창(단계 안내·밤 차례 안내·사망 뒤 선택)을 닫아 가며 그 요소가 사람 눈에 읽힐 때까지 */
+/** 덮개 창(단계 안내·밤 차례 안내·사망 뒤 선택)을 닫아 가며 그 요소가 사람 눈에 읽힐 때까지 (못 끝난 암살 영상의 건너뛰기도 누름) */
 async function readableOnceClear(page, locator, options = {}) {
     await expect(async () => {
         await c.dismissOverlays(page);
+        await c.skipDawnVideo(page);
         await expectReadable(locator, { ...options, timeout: 1500 });
     }).toPass({ timeout: 40_000 });
 }
@@ -180,13 +181,16 @@ async function noOverlays(page) {
 
 /**
  * 산 사람 화면에 "밤이 되었습니다"·"낮이 되었습니다" 안내가 뜰 때까지 → 확인 (화면이 그 단계까지 따라왔다는 표시)
- * 앞 연출(재판 추방 등)이 길 수 있어 넉넉히 기다림, 추방 연출은 눌러 넘김
+ * 앞 연출(재판 추방·낮 시작 암살 영상 등)이 길 수 있어 넉넉히 기다림, 추방 연출은 눌러 넘김
  */
 async function confirmNotice(page, text) {
     const dialog = page.getByRole('dialog', { name: '단계 전환 안내' }).filter({ hasText: text });
     await expect(async () => {
         const expulsion = page.locator('[data-ingame-tribunal-expulsion]').last();
         if (await expulsion.isVisible().catch(() => false)) await expulsion.click({ timeout: 500, force: true }).catch(() => {});
+        // 낮 안내는 낮 시작 연출(암살 영상·글 창) 뒤에 뜸 → 못 끝난 영상의 건너뛰기·글 창 확인을 넘김
+        await c.skipDawnVideo(page);
+        await n.closeDawnReport(page);
         await expect(dialog).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 45_000 });
     await dialog.getByRole('button', { name: '확인' }).click();

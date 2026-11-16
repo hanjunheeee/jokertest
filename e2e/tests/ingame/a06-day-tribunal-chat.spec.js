@@ -167,18 +167,20 @@ test('A06-E-063 사람이 처형되면 바로 죽은 사람 칸 (6명 판) → "
     expect(k.whoSaw(t.bots, text), '산 봇이 받음').toEqual([]);
 });
 
-test('A06-E-064 역할 확인 중 엔터 (5명 판) → 역할 확인 창이 떠 있는 동안 글 치고 엔터: 받은 봇 0, 칸에 줄 없음 @game', async ({ user, table }) => {
+test('A06-E-064 역할 확인 중 엔터 (5명 판) → 역할 확인 창이 떠 있는 동안 입력칸·보내기가 꺼져 있고 글 치고 엔터해도: 받은 봇 0, 칸에 줄 없음 @game', async ({ user, table }) => {
     const t = await k.deal(table, user, { bots: 4, me: 'CITIZEN', botRoles: ['JOKER'] });
     const page = user.page;
     await expect(page.getByRole('dialog', { name: '내 역할 보기' })).toBeVisible({ timeout: 20_000 });
 
-    // 창을 안 닫은 채 채팅 칸에 글을 넣고 Enter (칸이 없거나 못 쓰면 그대로 봇 0)
+    // 창을 안 닫은 채: 입력칸·보내기는 꺼져 있고 까닭이 붙어 있음 (frontend utils/inGameChatChannel.js)
     const text = c.uniq('확인창중');
     const box = c.chatBox(page);
-    if (await box.count() > 0) {
-        await box.fill(text, { force: true, timeout: 2000 }).catch(() => {});
-        await box.press('Enter', { timeout: 2000 }).catch(() => {});
-    }
+    await expect(box, '역할 확인 중 입력칸').toBeDisabled({ timeout: 3000 });
+    await expect(c.sendButton(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
+    await expect(box).toHaveAttribute('title', '역할 확인이 끝나면 채팅할 수 있습니다');
+    // 그래도 글을 넣고 Enter 해 봄 (꺼진 칸이라 안 들어감)
+    await box.fill(text, { force: true, timeout: 2000 }).catch(() => {});
+    await box.press('Enter', { timeout: 2000 }).catch(() => {});
     // 10초가 지나 낮이 돼 버렸으면 이 케이스를 본 게 아님
     expect((await t.state()).phase, '아직 역할 확인 단계').toBe('ROLE_REVEAL');
     await k.settleBots(t);

@@ -1,6 +1,6 @@
 'use strict';
 
-// 밤 시험 화면 글자·기록 파일, 역할·차례 글자 표·조사 붙이기 + 밤·낮 시작 연출 화면 기록·결과 화면 읽기
+// 밤 시험 화면 글자·기록 파일, 역할·차례 글자 표·조사 붙이기 + 밤 차례 안내·낮 시작 연출(암살 영상·글 창) 화면 기록·결과 화면 읽기
 // _night/index.js가 다시 내보냄 (b-night 시험은 require('./_night')로 씀)
 const { expect } = require('@playwright/test');
 const { ROLE_LABELS } = require('../../../../helpers/ui');
@@ -12,6 +12,7 @@ const TURN_MESSAGES = Object.freeze({
     GUARD: '경비원의 시간입니다',
     WITCH_HUNTER: '마녀사냥꾼의 시간입니다',
 });
+// 시간 바 상태 글 (PC 빌드본은 시간 바를 펼쳤을 때만 보임, 표가 다 차 마감이 당겨진 5초 동안은 '[5초 뒤 마감]'으로 바뀜)
 const TURN_TAGS = Object.freeze({ JOKER: '[밤-광대]', DOCTOR: '[밤-의사]', GUARD: '[밤-경비원]', WITCH_HUNTER: '[밤-마녀사냥꾼]' });
 // 역할 이름 화면 글자는 helpers/ui.js 것 그대로 (옛 이름 ROLE_NAMES)
 const ROLE_NAMES = ROLE_LABELS;
@@ -24,7 +25,8 @@ function josa(word, withFinal, withoutFinal) {
 }
 
 /**
- * 화면 기록 걸기: 밤 역할 안내 창이 뜰 때마다 역할을, 낮 시작 연출 글 창·영상 아래 글이 뜰 때마다 종류·글을 적음, autoConfirm이면 '단계 전환 안내'는 바로 확인 누름
+ * 화면 기록 걸기: 밤 역할 안내 창이 뜰 때마다 역할을, 내게만 오는 밤 결과 창·낮 시작 연출 글 창·암살 영상 아래 글이 뜰 때마다 종류·글을 적음, autoConfirm이면 '단계 전환 안내'는 바로 확인 누름
+ * 밤에는 영상이 없음 (암살 영상은 낮이 될 때 모두에게) → kills·videos는 낮 시작 연출의 암살 영상 창이 뜬 수·튼 영상 파일
  * autoConfirmDawn이면 낮 시작 연출 글 창(의사가 살렸음 등)도 바로 확인 (그 창 글·보임을 볼 시험은 끄고 직접 확인)
  * (판 화면에 들어온 뒤 부름, SPA라 결과 화면까지 기록이 남음)
  */
@@ -59,10 +61,11 @@ async function recordUi(page, { autoConfirm = true, autoConfirmDawn = false } = 
             const dawnMsg = document.querySelector('[data-ingame-dawn-report-message]');
             if (dawnMsg && dawnMsg !== lastDawnMsg) rec.dawnMessages.push(dawnMsg.innerText.replace(/\s+/g, ' ').trim());
             lastDawnMsg = dawnMsg;
+            // 암살 영상 창 (표시 이름은 옛 밤 성공 영상 것 그대로, 지금은 낮 시작 연출에서만 뜸)
             const kill = document.querySelector('[data-ingame-night-success-kill]');
             if (kill && kill !== lastKill) rec.kills += 1;
             lastKill = kill;
-            // 연출 영상 주소 (같은 창이 영상만 바꿔 이어 틀어서 주소가 바뀔 때마다 적음)
+            // 암살 영상 파일 이름 (주소가 바뀔 때마다 적음, 영상이 오류로 끝나 글 창으로 바뀌면 안 적힘)
             const video = document.querySelector('[data-ingame-night-success-source-video]');
             const src = video ? (video.getAttribute('src') || '').split('/').pop() : null;
             if (src && src !== rec.videos[rec.videos.length - 1]) rec.videos.push(src);
