@@ -1,6 +1,6 @@
 'use strict';
 
-// 보안 파트 공용 도구 파일, API 직접 부르기(쿠키 실어)·토큰 만들기(시험 키)·보안 파트 전용 따로 띄우는 백엔드(4190~4199)
+// 보안 파트 공용 도구 파일, API 직접 부르기(쿠키 실어)·토큰 만들기(시험 키)·보안 파트 전용 따로 띄우는 백엔드(4189·4191~4199)
 // tests/security/*.spec.js만 씀 (시험 파일 아님: 이름이 .spec.js가 아니라 Playwright가 안 돌림)
 const path = require('node:path');
 const { E2E, BACKEND_DIR, readSecrets } = require('../../helpers/env');
@@ -58,10 +58,12 @@ function unsignedToken(payload) {
 }
 
 // 보안 파트 전용 포트 (감독이 정함: 4190~4199, 다른 파트는 안 씀)
-const SEC_PORTS = [4190, 4191, 4192, 4193, 4194, 4195, 4196, 4197, 4198, 4199];
+// 0번 칸만 4189: 4190은 Chrome·Node fetch가 막는 포트(backend/tests/helpers/fetchablePort.js 목록)라 그 서버엔 요청이 안 나감
+// 4189는 다른 파트가 안 쓰는 번호 (가짜 소셜 제공자 4180~4187 바로 위), 칸 번호는 그대로라 부르는 쪽은 안 바뀜
+const SEC_PORTS = [4189, 4191, 4192, 4193, 4194, 4195, 4196, 4197, 4198, 4199];
 
 /**
- * 따로 띄우는 백엔드 (같은 시험 DB, API·소켓만): n은 0~9 (포트 4190+n, SERVER_ID e2e-sec-n)
+ * 따로 띄우는 백엔드 (같은 시험 DB, API·소켓만): n은 0~9 (포트 SEC_PORTS[n] = 0번 4189·나머지 4190+n, SERVER_ID e2e-sec-n)
  * 한 파일 안에서만 순서대로 씀 (켤 때 접속 표 정리가 다른 시험 줄에 닿을 수 있어 횟수 줄임 — 문제목록 S-01)
  */
 // PC가 바쁘면 백엔드 모듈 불러오기만 수십 초 걸림 → 못 켜지면 남는 포트(n+5)로 한 번 더
@@ -74,6 +76,8 @@ async function startSec(n, { overrides = {}, defaultIpLimits = true, expectExit 
         return await attempt(n);
     } catch (error) {
         if (!/안 켜짐/.test(String(error?.message))) throw error;
+        // 남는 칸이 없으면(n이 5 이상) 그대로 실패 (포트 없이 부르면 다른 파트 포트 4150+가 잡힘)
+        if (SEC_PORTS[n + 5] === undefined) throw error;
         console.warn(`[e2e-sec] 따로 띄운 백엔드 ${SEC_PORTS[n]} 늦음 → ${SEC_PORTS[n + 5]}로 다시`);
         return attempt(n + 5);
     }

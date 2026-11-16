@@ -1,7 +1,7 @@
 'use strict';
 
 // 모바일 광고 브라우저 시험 — 한 판 끝 광고 창(결과 화면 뒤 1.5초·5초 전엔 못 닫음·뒤로 가기는 광고만 다룸·판 끝 흐름 안 막음), 판 화면엔 광고 없음, 로비 광고 줄이 바닥 단추를 안 가림
-// 목록 A18-설정-배포-광고.md 번호 A18-E-016~020 — 광고 꾸러미 요청은 가짜로 바꾸고 다른 광고 주소는 막음(진짜 광고 계정으로 안 나감), E-016은 가짜 광고 값으로 빌드한 모바일 화면이 있어야 통과
+// 목록 A18-설정-배포-광고.md 번호 A18-E-016~020 — 광고 꾸러미 요청은 가짜로 바꾸고 다른 광고 주소는 막음(진짜 광고 계정으로 안 나감), E-016은 가짜 광고 값으로 빌드한 모바일 화면이 있어야 통과 (scripts/serve-front.js가 시험 빌드에 넣음)
 // 돌리지 않고 모임만: npx playwright test --list --no-deps tests/mobile/a18-ads.spec.js
 const { test, expect, ui, e2e } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');

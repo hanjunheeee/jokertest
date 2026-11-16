@@ -158,6 +158,8 @@ test('A18-H-009 점검 켜짐(시작 시각 지남)을 DB에만 넣고 서버 �
         await K.closeNotice(page);
         const text = await ui.captureAlert(page, () => page.getByRole('button', { name: '게임 만들기' }).click());
         expect(text).toBe(message);
+        // 알림 창을 닫은 뒤에도 까닭 글이 화면 띠에 남아 읽힘
+        await expectReadable(K.entryNotice(page).getByText(message, { exact: true }));
         expect(await e2e.roomOf(K.U(user)), '방 안 생김').toBeNull();
     } finally {
         await K.clearMaint();

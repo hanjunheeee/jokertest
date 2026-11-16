@@ -11,6 +11,9 @@ const H9 = require('../ingame/_a09-hard-kit');
 
 const { test, expect, e2e, mn, N1, N2, U, nick } = K;
 
+// 판 화면 시민 직업 이름 (공용 ui.ROLE_LABELS는 옛 이름 "시민")
+const CITIZEN_ROLE_NAME = '귀족';
+
 // 판은 서버 ㄱ(봇 전부), 사람은 서버 ㄴ 로비에서 출발 → 사람 1 + 봇 n-1 판, 첫 낮까지
 async function seatFromOtherNode(crowd, bots, n) {
     const me = await crowd.on(N2);
@@ -38,7 +41,7 @@ async function expectAliveIn(t, uuid) {
     expect(row?.isParticipating, '판에 남음').toBe(true);
 }
 
-test('A17-E-004 5명 판 낮에 힌트 없이 새로고침 → 판 화면 그대로, 같은 판·내 직업 시민 그대로 @game @smoke', async ({ crowd, bots }) => {
+test('A17-E-004 5명 판 낮에 힌트 없이 새로고침 → 판 화면 그대로, 같은 판·내 직업 시민(화면 이름 "귀족") 그대로 @game @smoke', async ({ crowd, bots }) => {
     test.setTimeout(180_000);
     const { me, t } = await seatFromOtherNode(crowd, bots, 5);
     // 힌트를 지우고 다시 엶 → 앞단이 아무 서버로 보내도 서버가 판 서버로 돌려보냄
@@ -49,7 +52,8 @@ test('A17-E-004 5명 판 낮에 힌트 없이 새로고침 → 판 화면 그대
     await expect(me.page).toHaveURL(/\/ingame/, { timeout: 20_000 });
     await expectMyCard(me.page, nick(me));
     await expectAliveIn(t, U(me));
-    await H9.expectMyRole(me.page, ui.ROLE_LABELS.CITIZEN);
+    // 내 역할 보기 창의 시민 직업 이름은 "귀족" (화면 ingameRoleRevealData.js, 결정 2026-11-16 셋째)
+    await H9.expectMyRole(me.page, CITIZEN_ROLE_NAME);
     expect((await t.player(U(me)))?.role, '서버 직업').toBe('CITIZEN');
 });
 

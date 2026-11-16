@@ -19,7 +19,7 @@ const TOO_MANY = '요청이 너무 많습니다. 잠시 후 다시 시도해주�
 const EMAIL_CODE_LIMITED = '인증번호 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.';
 const RESET_LIMITED = '너무 많은 요청입니다. 잠시 후 다시 시도해주세요.';
 
-// 이 파일의 따로 띄운 서버 (보안 전용 포트 1번 — 0번 4190은 브라우저가 막는 포트)
+// 이 파일의 따로 띄운 서버 (보안 전용 포트 1번 칸 = 4191)
 const SEC_SLOT = 1;
 
 // 없는 주소로 틀린 비번 n번 (계정 잠금 5번과 안 섞이게 매번 다른 주소) → 마지막 상태
@@ -156,6 +156,8 @@ test.describe('A15 요청 수 제한 (따로 띄운 운영 기본 제한 서버 
         const text = await J.codeAlert(page, code);
         expect(Date.now() - startedAt, '21번 시도가 1분 안').toBeLessThan(60_000);
         expect(text).toBe(J.MSG.TOO_MANY);
+        // PC는 알림 창을 닫은 뒤에도 까닭 글이 화면 띠에 남음 → 그 글이 사람 눈에 읽히는지
+        await J.expectEntryNotice(page, J.MSG.TOO_MANY);
         await expect(page).not.toHaveURL(/\/game-matching/);
         expect(await J.roomSize(host.account.uuid)).toBe(1);
     });

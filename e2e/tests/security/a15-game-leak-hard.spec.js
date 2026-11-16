@@ -13,10 +13,15 @@ const uid = (who) => who.account.uuid;
 const nick = (who) => who.nickname ?? who.account.nickname;
 const TEN = { JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 };
 
+// 결과판 직업 글 (화면 gameResultLabels.js: 시민 직업은 "귀족" — 결정 2026-11-16 셋째, 진영 이름 "시민 진영"은 그대로)
+const BOARD_JOB = Object.freeze({ JOKER: '광대', CITIZEN: '귀족', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
+
 // 결과판까지 가서 사람마다 직업 글이 보임 (결과판엔 모두 공개 — 05글 "승패 뒤에만 전원 직업")
 async function expectBoardJobs(page, people) {
     await r.reachBoard(page);
-    await r.expectJobs(page, people);
+    for (const [who, role] of people) {
+        await expect(r.rowOf(page, nick(who)).getByText(BOARD_JOB[role], { exact: true }), `${nick(who)} 줄 직업 글`).toBeVisible();
+    }
 }
 
 test('A15-H-001 사람 광대 1·사람 시민 1 + 봇 4 (6명) 판 처음부터 끝까지: 두 화면 받은 값·카드 글에 남의 직업 없음, 판 끝 결과판에만 6명 직업 @hard @game @smoke', async ({ user, players, table }) => {

@@ -14,7 +14,8 @@ const nick = (x) => x.nickname ?? x.account.nickname;
 
 // 화면·서버 글 (목록 A18 줄 그대로)
 const TEXT = Object.freeze({
-    MIN_PLAYERS: '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.',
+    // 방장 화면 "게임시작"이 꺼진 까닭 글 (화면 gameStartMessages.js startShortageMessage) → 예: startShort(4) = "5명부터 시작할 수 있습니다. (지금 4명)"
+    startShort: (count) => `5명부터 시작할 수 있습니다. (지금 ${count}명)`,
     SHUTDOWN: '서버 점검·업데이트로 잠시 연결이 끊깁니다. 잠시 뒤 자동으로 다시 연결돼요.',
     SCHEDULED_TITLE: '점검 예정이에요',
     ACTIVE_TITLE: '지금 점검 중이에요',
@@ -146,6 +147,9 @@ async function createRoomOk(who) {
     return room;
 }
 
+// PC 방 만들기·코드 입장 거절 까닭 띠 (브라우저 알림 창을 닫은 뒤에도 화면에 글이 남음, 휴대폰엔 없음)
+const entryNotice = (page) => page.getByTestId('entry-failure-notice');
+
 /** 방 만들기 화면에서 "게임 만들기" → 뜬 알림 글 (점검 큰 안내가 덮으면 먼저 닫음), close:false면 휴대폰 안내 창을 안 닫음 */
 async function createRoomAlert(page, o = {}) {
     await page.goto('/game-setup');
@@ -181,7 +185,7 @@ async function pushToEnd(page, label, side) {
 
 // ── 모바일 광고 (진짜 광고 꾸러미·계정으로 요청이 안 나가게) ──
 
-// 가짜 광고 값 (frontend-mobile/tests/a00-ads.mjs와 같은 값) — 광고 시험은 이 값으로 빌드한 모바일 화면이 있어야 "채워짐"까지 봄
+// 가짜 광고 값 (frontend-mobile/tests/a00-ads.mjs·helpers/outside.js FAKE_AD와 같은 값) — 모바일 시험 빌드는 scripts/serve-front.js가 이 값으로 만듦, 값이 다르면 "채워짐" 확인이 실패
 const FAKE_AD = Object.freeze({ client: 'ca-pub-0000000000000000', banner: '1111111111', interstitial: '2222222222' });
 
 // 광고 회사 주소 (진짜로 나가면 안 되는 곳)
@@ -271,7 +275,7 @@ module.exports = {
     U, nick, TEXT, LONG_TIMES, SLACK_MS, sleepUntil,
     writeMaint, setMaint, clearMaint, noticeDialog, noticeTitle, noticeRemaining, noticeLine, noticeButton, band, bandText,
     closeNotice, openBand, bandSecondsOf, dismissIfShown,
-    collectDialogs, parchment, parchmentText, restartBackend, createRoomOk, createRoomAlert,
+    collectDialogs, parchment, parchmentText, restartBackend, createRoomOk, createRoomAlert, entryNotice,
     arrow, stepValue, pushToEnd,
     FAKE_AD, guardAds, openPhone, adDialog, adClose, adBanner, adSlot, expectFakeFilled, centerIsOwn, overlaps,
 };

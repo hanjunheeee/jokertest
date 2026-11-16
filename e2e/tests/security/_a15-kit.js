@@ -11,7 +11,7 @@ const ui = require('../../helpers/ui');
 const n = require('../ingame/b-night/_night');
 const { listenOnFetchablePort } = require(path.join(BACKEND_DIR, 'tests', 'helpers', 'fetchablePort'));
 
-// 화면에 나오는 직업 이름 (결과판은 시민을 "귀족"으로, 서버 옛 이름 "주치의"도 같이 봄)
+// 화면에 나오는 직업 이름 (시민은 "귀족"·"시민" 둘 다, 의사 옛 이름 "주치의"도 같이 봄 — 남의 카드엔 어느 쪽도 없어야 함)
 const ROLE_TEXTS = Object.freeze(['광대', '시민', '귀족', '의사', '주치의', '경비원', '마녀사냥꾼']);
 const ROLE_CODES = new Set(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN']);
 
@@ -88,8 +88,13 @@ const OPEN_PATHS = new Set([
 ]);
 const pathKey = (p) => p.map((s) => (typeof s === 'number' ? '*' : s)).join('.');
 
-// 받은 값에서 "남에게 보여도 되는 칸"만 남긴 사본 (내 칸 self, 차례 직업 이름, 지금 차례 이름, 죽인 쪽 이름은 뺌), 남의 self면 문제로 적음
-function publicCopy(frame, viewer, problems) {
+// 내 밤 결과 알림: 경비원 조사·마녀사냥꾼 확인을 쓴 사람만 받고 맨 위 role 칸 = 내가 본 사람의 직업 (받을 값이라 샌 것 아님)
+const OWN_RESULT_EVENT = 'night_action_result';
+const OWN_RESULT_ROLES = new Set(['GUARD', 'WITCH_HUNTER']);
+
+// 받은 값에서 "남에게 보여도 되는 칸"만 남긴 사본 (내 칸 self, 차례 직업 이름, 지금 차례 이름, 5초 당김 표시의 차례 이름, 죽인 쪽 이름, 내 조사·확인 결과의 직업은 뺌), 남의 self면 문제로 적음
+// ownResult = 보는 사람이 경비원·마녀사냥꾼인지 (그 밖의 사람이 밤 결과 알림을 받으면 직업 칸을 안 빼 샌 것으로 잡힘)
+function publicCopy(frame, viewer, problems, ownResult = false) {
     const walk = (value, at) => {
         if (Array.isArray(value)) return value.map((x, i) => walk(x, [...at, i]));
         if (value === null || typeof value !== 'object') return value;
@@ -102,6 +107,9 @@ function publicCopy(frame, viewer, problems) {
             if (key === 'nightTurnRole') continue;
             if (key === 'source' && at.at(-2) === 'deathReveals') continue;
             if (key === 'role' && at.length === 0 && TURN_EVENTS.has(frame.event)) continue;
+            // 스냅샷의 5초 당김 표시(phaseSettle)의 role = 지금 밤 차례 직업 이름 (nightTurnRole과 같은 값, 낮·재판은 null)
+            if (key === 'role' && at.at(-1) === 'phaseSettle') continue;
+            if (key === 'role' && at.length === 0 && ownResult && frame.event === OWN_RESULT_EVENT) continue;
             out[key] = walk(val, [...at, key]);
         }
         return out;
@@ -146,13 +154,14 @@ function leaksFor(frames, { viewer, roles, allies = [] }) {
     const others = new Set(Object.keys(roles).filter((u) => u !== viewer && !mates.has(u)));
     const secrets = new Set([...others].map((u) => roles[u]));
     const problems = [];
+    const ownResult = OWN_RESULT_ROLES.has(roles[viewer]);
     for (const frame of frames) {
         if (frame.event === 'tribunal_vote_resolved' && frame.data && typeof frame.data === 'object') {
             for (const key of ['executedRole', 'counts']) {
                 if (Object.hasOwn(frame.data, key)) problems.push(`tribunal_vote_resolved: 칸 "${key}"가 실림`);
             }
         }
-        const copy = publicCopy(frame, viewer, problems);
+        const copy = publicCopy(frame, viewer, problems, ownResult);
         privateProblems(copy, secrets, frame.event, [], problems);
         pairProblems(copy, others, frame.event, [], problems);
     }

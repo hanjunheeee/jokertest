@@ -13,7 +13,7 @@ test.afterEach(async () => {
     await K.clearMaint();
 });
 
-test('A18-E-007 점검 중(관리자 글 "시험 점검이에요") 방 만들기 → 그 글이 보이고 알림 글도 그 글, 대기방 안 감 @serial @smoke', async ({ user }) => {
+test('A18-E-007 점검 중(관리자 글 "시험 점검이에요") 방 만들기 → 그 글이 보이고 알림 글·화면 띠 글도 그 글, 대기방 안 감 @serial @smoke', async ({ user }) => {
     const page = user.page;
     // 시작 시각 없이 켬: 바로 점검 중 (결정 아침 15번 — 도는 판·대기방은 안 닫고 새 방만 막음)
     await K.setMaint({ enabled: true, startsInMs: null, message: MESSAGE });
@@ -25,9 +25,10 @@ test('A18-E-007 점검 중(관리자 글 "시험 점검이에요") 방 만들기
     await expectReadable(K.noticeLine(page, MESSAGE));
     await K.closeNotice(page);
 
-    // "게임 만들기" → 알림 글 = 관리자 글 (PC는 브라우저 알림 창이라 글만 봄)
+    // "게임 만들기" → 알림 글 = 관리자 글, 알림 창을 닫은 뒤에도 까닭 글이 화면 띠에 남아 읽힘
     const text = await ui.captureAlert(page, () => page.getByRole('button', { name: '게임 만들기' }).click());
     expect(text).toBe(MESSAGE);
+    await expectReadable(K.entryNotice(page).getByText(MESSAGE, { exact: true }));
     await expect(page).toHaveURL(/\/game-setup/);
     expect(await e2e.roomOf(K.U(user)), '방 안 생김').toBeNull();
 });
@@ -48,6 +49,8 @@ test('A18-E-008 점검 켜기 전 만든 5명 정원 방 → 점검 켬 → 다�
     await page.keyboard.type(room.roomCode);
     const text = await ui.captureAlert(page, () => page.getByRole('button', { name: '참여하기' }).click());
     expect(text).toBe(MESSAGE);
+    // 알림 창을 닫은 뒤에도 까닭 글이 화면 띠에 남아 읽힘
+    await expectReadable(K.entryNotice(page).getByText(MESSAGE, { exact: true }));
     await expect(page).not.toHaveURL(/\/game-matching/);
     expect(await e2e.roomOf(K.U(user)), '입장 안 됨').toBeNull();
     expect((await e2e.roomOf(host.uuid))?.players, '방 인원 그대로').toHaveLength(1);
