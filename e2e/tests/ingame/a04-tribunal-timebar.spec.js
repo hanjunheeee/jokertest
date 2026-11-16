@@ -7,7 +7,7 @@ const K = require('./_a04-pc');
 
 const { TEXT, uuidOf } = K;
 
-// n명 판 차리고 낮에 시간 바를 펼쳐 둠 (재판 창이 뜨면 판 화면이 잠겨 펼치기를 못 누름) + 화면 기록
+// n명 판 차리고 낮에 시간 바를 펼쳐 둠 (재판 연출 중엔 저절로 펼쳐지지만, 재판 뒤 밤에도 단계 글을 보려면 내가 펼쳐 둬야 함) + 화면 기록
 async function seatWithBar(table, user, n, settings) {
     const t = await K.seat(table, user, { n, settings });
     await K.toFirstDay(t);

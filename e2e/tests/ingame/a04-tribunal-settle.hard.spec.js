@@ -1,6 +1,6 @@
 'use strict';
 
-// "다 누르면 5초 뒤 판정" 어려운 시험: 사람 여럿 화면이 같이 "[5초 뒤 마감]"을 보고 같이 닫힘, 아무도 안 누름, 5초 안에 피고 나감·새로고침, 큰 판 이틀 — 손잡이 없이 진짜 시간으로 기다림
+// "다 누르면 5초 뒤 판정" 어려운 시험: 사람 여럿 화면이 같이 "[5초 뒤 마감]"을 보고 같이 닫힘, 아무도 안 누름, 5초 안에 피고 나감(피고 사망·바로 밤)·새로고침, 큰 판 이틀 — 손잡이 없이 진짜 시간으로 기다림
 // 목록 A04-H-006·007·027·028·029·040 (시험목록/A04-재판.md "브라우저 — 어려움", @realtime)
 const { test, expect } = require('../../helpers/fixtures');
 const { hostGame } = require('../room/roomHelpers');
@@ -72,7 +72,7 @@ test('A04-H-027 아무도 안 누르면 15초 뒤 세 화면이 같이 밤으로
     expect(A.playerOf(s, A.uuidOf(d)).alive).toBe(true);
 });
 
-test('A04-H-028 5초 당김 1초 뒤 피고(사람)가 나가면 나머지 화면은 5초를 안 기다리고 바로 밤 (사람 3 + 봇 4 = 7명) @game @hard @realtime', async ({ user, players, table }) => {
+test('A04-H-028 5초 당김 1초 뒤 피고(사람)가 스스로 나가면 나머지 화면은 5초를 안 기다리고 바로 밤, 그 사람은 사망 (사람 3 + 봇 4 = 7명) @game @hard @realtime', async ({ user, players, table }) => {
     test.setTimeout(300_000);
     const [b, c] = await addPeople(players, 2);
     const { t } = await A.startTrial(table, { humans: [user, b, c], bots: 4, pick: () => c });
@@ -86,15 +86,18 @@ test('A04-H-028 5초 당김 1초 뒤 피고(사람)가 나가면 나머지 화�
     await A.leaveByBack(c.page);
     const closed = await closing;
     for (const at of closed) expect(pulled.deadline - at, '당긴 마감(5초)보다 먼저 닫힘').toBeGreaterThan(A.TOLERANCE_MS);
-    // 처형이 아니라 취소: 추방 연출 없이 밤
+    // 결정: 처형도 "재판 취소"도 아니라 피고 사망 — 추방 연출 없이 밤, 나간 사람 카드는 사망
     for (const p of [user, b]) {
         await expect(trial.nightNotice(p.page)).toBeVisible({ timeout: 10000 });
         await expect(trial.expulsion(p.page)).toHaveCount(0);
+        await expect(trial.seat(p.page, A.nickOf(c))).toHaveAttribute('data-ingame-player-status', 'dead', { timeout: 10000 });
     }
-    expect((await t.state()).phase).toBe('NIGHT');
+    const s = await t.state();
+    expect(s.phase).toBe('NIGHT');
+    expect(A.playerOf(s, A.uuidOf(c)).alive).toBe(false);
 });
 
-test('A04-H-029 5초 중 한 사람이 새로고침해도 줄어든 남은 시간이 보이고 다른 사람과 같은 때 판정 (사람 2 + 봇 6 = 8명) @game @hard @realtime', async ({ user, players, table }) => {
+test('A04-H-029 5초 중 한 사람이 새로고침해도 "[5초 뒤 마감]"·줄어든 남은 시간이 보이고 다른 사람과 같은 때 판정 (사람 2 + 봇 6 = 8명) @game @hard @realtime', async ({ user, players, table }) => {
     test.setTimeout(300_000);
     const [b] = await addPeople(players, 1);
     const { t, d } = await A.startTrial(table, { humans: [user, b], bots: 6 });
@@ -105,9 +108,14 @@ test('A04-H-029 5초 중 한 사람이 새로고침해도 줄어든 남은 시�
     const closingB = A.closedAt(b.page, { timeout: 10000 });
     await user.page.reload();
     await expect(trial.win(user.page)).toBeVisible({ timeout: 4000 });
-    // 새로고침 뒤 화면에 보이는 남은 시간을 읽어 둠 (판정 시각을 먼저 보고 아래에서 확인)
+    // 새로고침 뒤 화면에 보이는 남은 시간·"[5초 뒤 마감]" 글을 읽어 둠 (판정 시각을 먼저 보고 아래에서 확인)
     let shown = null;
-    await expect.poll(async () => { shown = await A.clockSeconds(user.page); return shown !== null; }, { timeout: 2500 }).toBe(true).catch(() => {});
+    let settleSeen = false;
+    await expect.poll(async () => {
+        settleSeen = settleSeen || await trial.settleLabel(user.page).isVisible().catch(() => false);
+        shown = (await A.clockSeconds(user.page)) ?? shown;
+        return shown !== null && settleSeen;
+    }, { timeout: 2500 }).toBe(true).catch(() => {});
     const [atA, atB] = await Promise.all([A.closedAt(user.page, { timeout: 8000 }), closingB]);
     A.expectNear(atA, pulled.deadline, '새로고침한 화면이 당겨진 마감에 닫힘');
     A.expectNear(atB, pulled.deadline, '다른 사람 화면이 당겨진 마감에 닫힘');
@@ -115,6 +123,8 @@ test('A04-H-029 5초 중 한 사람이 새로고침해도 줄어든 남은 시�
     // 120초 재판인데 새로고침 뒤 화면 남은 시간이 5초 이하로 보임
     expect(shown, '새로고침 뒤 시간 바에 남은 시간이 보임').not.toBeNull();
     expect(shown).toBeLessThanOrEqual(5);
+    // 당김 표시도 새로고침 뒤 살아 있음 (서버가 다시 준 판 값에 실림)
+    expect(settleSeen, '새로고침 뒤 시간 바에 "[5초 뒤 마감]"이 보임').toBe(true);
 });
 
 test('A04-H-040 큰 판 이틀: 1·2일 재판 모두 다 누르면 5초 뒤 판정, 다섯 화면(PC 3·모바일 2) 같이 (사람 5 + 봇 5 = 10명) @game @hard @realtime', async ({ user, players, table }) => {

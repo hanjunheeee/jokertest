@@ -1,7 +1,8 @@
 'use strict';
 
 // 재판 중 끊김·나가기 어려운 시험: 피고(사람)가 59초 안에 돌아옴·61초 탈락·스스로 나감, 투표자 새로고침·탭 닫힘·61초 탈락 뒤 5초 당김, 끊긴 피고가 처형된 뒤 돌아옴
-// 목록 A04-H-010~015·033 (시험목록/A04-재판.md "브라우저 — 어려움") — 60초는 손잡이 없이 진짜로 기다림, 끊긴 피고는 사용자 결정(2026-11-16 오전)대로
+// 목록 A04-H-010~015·033 (시험목록/A04-재판.md "브라우저 — 어려움") — 60초는 손잡이 없이 진짜로 기다림
+// 끊겨 탈락한 피고·스스로 나간 피고는 사용자 결정(2026-11-16 오전·낮)대로: "재판 취소"가 아니라 그 사람 사망으로 처리하고 밤
 const { test, expect } = require('../../helpers/fixtures');
 const A = require('./_a04-multi');
 
@@ -12,7 +13,7 @@ const GRACE_MS = 60_000;
 const expectSeat = (page, person, status, timeout = 10000) => expect(trial.seat(page, A.nickOf(person)))
     .toHaveAttribute('data-ingame-player-status', status, { timeout });
 
-// 재판이 처형 없이 끝나 밤: 재판 창 닫힘·추방 연출 없음·밤 안내
+// 재판이 처형 없이 닫혀 밤(피고 사망): 재판 창 닫힘·추방 연출 없음·밤 안내
 async function expectNightWithoutExpulsion(page) {
     await expect(trial.win(page)).toBeHidden({ timeout: 10000 });
     await expect(trial.nightNotice(page)).toBeVisible({ timeout: 10000 });
@@ -65,7 +66,7 @@ test('A04-H-011 피고(사람)가 끊긴 채 61초가 되면 다른 사람 화�
     expect(A.playerOf(s, user.account.uuid).alive).toBe(false);
 });
 
-test('A04-H-012 피고(사람)가 재판 중 판에서 나가면 나머지 두 화면은 재판 창이 닫히고 밤 (사람 3 + 봇 3 = 6명) @game @hard', async ({ user, players, table }) => {
+test('A04-H-012 피고(사람)가 재판 중 스스로 판에서 나가면 나머지 두 화면은 재판 창이 닫히고 추방 글 없이 밤, 그 사람은 사망 (사람 3 + 봇 3 = 6명) @game @hard', async ({ user, players, table }) => {
     test.setTimeout(300_000);
     const b = await players.add();
     const c = await players.add();
@@ -73,6 +74,7 @@ test('A04-H-012 피고(사람)가 재판 중 판에서 나가면 나머지 두 �
     await expect(trial.defendantNotice(c.page)).toBeVisible();
     // 재판 중엔 위 줄 "게임 나가기"가 잠겨 있어 뒤로 가기 → 나가기 확인 창으로 나감
     await A.leaveByBack(c.page);
+    // 결정: 스스로 나간 피고도 그 사람이 죽은 것으로 처리하고 밤 (처형이 아니라 추방 연출 없음)
     for (const p of [user, b]) {
         await expectNightWithoutExpulsion(p.page);
         await expectSeat(p.page, c, 'dead');

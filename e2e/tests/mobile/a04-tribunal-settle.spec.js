@@ -40,7 +40,7 @@ test('A04-E-037 남은 4초에 다 차면 당김 없이 원래 마감에 판정 
     expect(t.bots[0].events.filter((e) => e.event === 'phase_settle_started')).toHaveLength(0);
 });
 
-test('A04-E-101 다 찬 뒤 1초에 새로고침해도 줄어든 남은 시간이 보이고 그 시각에 판정 (모바일 6명) @game @realtime', async ({ user, table }) => {
+test('A04-E-101 다 찬 뒤 1초에 새로고침해도 단계 줄에 "5초 뒤 마감"·줄어든 남은 시간이 보이고 그 시각에 판정 (모바일 6명) @game @realtime', async ({ user, table }) => {
     const page = user.page;
     const { t, d } = await A.startTrial(table, { humans: [user], bots: 5, settings: { tribunalTime: 120 } });
     await A.botsTribunal(t, 'NOT_GUILTY', await A.votersOf(t, d));
@@ -50,7 +50,8 @@ test('A04-E-101 다 찬 뒤 1초에 새로고침해도 줄어든 남은 시간�
     await A.sleepUntil(pulled.deadline - 4000);
     await page.reload();
     await expect(trial.win(page)).toBeVisible({ timeout: 4000 });
-    // 120초 재판인데 새로고침 뒤 남은 시간이 5초 이하
+    // 당김 표시가 새로고침 뒤에도 살아 있음: 단계 줄 "5초 뒤 마감", 120초 재판인데 남은 시간이 5초 이하
+    await A.expectSettleShown(page, { timeout: 3000 });
     await expect.poll(async () => (await A.clockSeconds(page)) ?? 999, { timeout: 3000, message: '새로고침 뒤 단계 줄 남은 시간' }).toBeLessThanOrEqual(5);
     const closed = await A.closedAt(page, { timeout: 8000 });
     A.expectNear(closed, pulled.deadline, '당겨진 마감에 재판 창이 닫힘');

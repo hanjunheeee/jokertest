@@ -1,8 +1,9 @@
 'use strict';
 
-// 재판 중 나가기·끊김 브라우저 시험 (PC): 피고 봇이 나가면 취소·밤, 투표자·방장 봇이 나가도 재판 그대로, 끊긴 피고(결정 2026-11-16 오전)
+// 재판 중 나가기·끊김 브라우저 시험 (PC): 피고 봇이 나가면 피고 사망·밤, 투표자·방장 봇이 나가도 재판 그대로, 끊긴 피고(결정 2026-11-16 오전·낮)
 // 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-E-102·104·105·106·108·109
-// 끊긴 피고 줄(106·108·109)은 목록보다 뒤에 정한 결정대로 씀: 뽑히는 순간 이미 끊겨 있으면 재판 취소·밤 / 재판 도중 끊겨 60초 뒤 탈락하면 그 사람 사망으로 처리·밤
+// 피고가 빠지는 줄(102·106·108·109)은 결정대로 씀: 뽑히는 순간 이미 끊겨 있으면 재판을 안 열고 밤(누가 뽑혔는지 안 알림)
+// 재판 도중 스스로 나가거나 끊겨 60초 뒤 탈락하면 "재판 취소"가 아니라 그 사람 사망으로 처리·밤 (서버 값 DEFENDANT_DIED)
 const { test, expect } = require('../../helpers/fixtures');
 const K = require('./_a04-pc');
 
@@ -21,18 +22,31 @@ async function toTribunal(table, user, n, { bots = ['JOKER'], defendantIndex = 2
     return { t, defendant, page: user.page, voters: t.bots.filter((b) => b !== defendant) };
 }
 
-// 재판이 판정 없이 끝남: 창 닫힘, 추방 연출 한 번도 없음, 밤 안내
-async function expectClosedWithoutExpulsion(t, page) {
+// 재판이 판정 없이 닫힘(피고 사망): 창 닫힘, 추방 연출 한 번도 없음, 밤 안내, 피고는 서버·판 카드 다 사망
+async function expectDefendantDied(t, page, defendant) {
     await expect(K.tribunal(page)).toBeHidden({ timeout: 15000 });
     await K.expectNightNotice(page);
     expect((await K.readScreen(page)).expulsions).toHaveLength(0);
-    expect((await t.state()).phase).toBe('NIGHT');
+    const s = await t.state();
+    expect(s.phase).toBe('NIGHT');
+    expect(s.players.find((p) => p.uuid === uuidOf(defendant)).alive).toBe(false);
+    await K.night.expectCard(page, defendant.nickname, 'dead');
 }
 
-test('A04-E-102 PC 6명 판 재판 중 피고 봇이 나감 → 재판 창 닫힘, 추방 글 없이 밤 @game @smoke', async ({ user, table }) => {
-    const { t, defendant, page } = await toTribunal(table, user, 6);
+// 봇이 받은 재판 결과 알림: 처형(GUILTY)·취소(CANCELLED)가 아니라 피고 사망, 처형된 사람 없음
+async function expectDiedBroadcast(bot, since) {
+    const resolved = await bot.waitForEvent('tribunal_vote_resolved', { since, timeoutMs: 10000 });
+    expect(resolved.outcome).toBe('DEFENDANT_DIED');
+    expect(resolved.phase).toBe('NIGHT');
+    expect(resolved.executedUuid).toBeNull();
+}
+
+test('A04-E-102 PC 6명 판 재판 중 피고 봇이 스스로 나감 → (결정) 그 사람 사망으로 처리, 재판 창 닫히고 추방 글 없이 밤 @game @smoke', async ({ user, table }) => {
+    const { t, defendant, page, voters } = await toTribunal(table, user, 6);
+    const since = Date.now();
     expect((await leave(t, defendant))?.ok).toBe(true);
-    await expectClosedWithoutExpulsion(t, page);
+    await expectDiedBroadcast(voters[0], since);
+    await expectDefendantDied(t, page, defendant);
 });
 
 test('A04-E-104 PC 7명 판 재판 중 투표자 봇이 나감 → 재판 창·단추 그대로 @game', async ({ user, table }) => {
@@ -63,7 +77,7 @@ test('A04-E-105 PC 8명 판 재판 중 방장 봇이 나감 → 재판 그대로
     await K.expectVoteButtons(page);
 });
 
-test('A04-E-106 PC 6명 판 이미 끊긴 봇이 낮 투표 최다 득표 → (결정) 재판 취소하고 밤, 추방 글 없음 @game', async ({ user, table }) => {
+test('A04-E-106 PC 6명 판 이미 끊긴 봇이 낮 투표 최다 득표 → (결정) 재판을 안 열고 밤(누가 뽑혔는지 안 알림), 추방 글 없음 @game', async ({ user, table }) => {
     const t = await K.seat(table, user, { n: 6 });
     const page = user.page;
     const gone = t.bots[2];
@@ -72,11 +86,18 @@ test('A04-E-106 PC 6명 판 이미 끊긴 봇이 낮 투표 최다 득표 → (�
     await K.toVote(t);
     // 뽑히기 전에 끊김 (60초 기다리는 동안이라 판에는 산 채로 남음)
     gone.socket.disconnect();
+    // 서버가 끊김을 알아챈 뒤에 뽑혀야 이 규칙을 봄 → 내 화면 카드가 끊김 표시로 바뀔 때까지
+    await K.night.expectCard(page, gone.nickname, 'disconnected');
+    const since = Date.now();
     await K.day.botsVote(t, uuidOf(gone), t.bots.filter((b) => b !== gone));
     await t.advance();
     const after = await K.day.waitState(t, (g) => g.phase !== 'DAY');
     expect(after.phase).toBe('NIGHT');
     expect(after.players.find((p) => p.uuid === uuidOf(gone)).alive).toBe(true);
+    // 낮 판정 알림: 끊긴 피고라 재판 없음, 누가 뽑혔는지는 안 실림
+    const resolved = await t.bots[0].waitForEvent('day_vote_resolved', { since, timeoutMs: 10000 });
+    expect(resolved.outcome).toBe('DEFENDANT_DISCONNECTED');
+    expect(resolved.tribunalTargetUuid).toBeNull();
     await K.expectNightNotice(page);
     const rec = await K.readScreen(page);
     expect(rec.expulsions).toHaveLength(0);
@@ -93,13 +114,11 @@ test('A04-E-108 PC 8명 판 재판 도중 끊긴 피고 봇(60초 안) 유죄 �
 });
 
 test('A04-E-109 PC 7명 판 재판 도중 끊긴 피고 봇이 60초 뒤 탈락(손잡이) → (결정) 그 사람 사망으로 처리, 재판 창 닫히고 밤 @game', async ({ user, table }) => {
-    const { t, defendant, page } = await toTribunal(table, user, 7);
+    const { t, defendant, page, voters } = await toTribunal(table, user, 7);
+    const since = Date.now();
     defendant.socket.disconnect();
     // 서버가 끊김을 알아챈 뒤라야 60초 시계가 걸림 → 손잡이가 그 사람 시계를 돌릴 때까지
     await expect.poll(async () => (await t.expireGraces()).fired, { message: '끊긴 피고 60초 끝내기' }).toContain(uuidOf(defendant));
-    await expect(K.tribunal(page)).toBeHidden({ timeout: 15000 });
-    await K.expectNightNotice(page);
-    const s = await t.state();
-    expect(s.phase).toBe('NIGHT');
-    expect(s.players.find((p) => p.uuid === uuidOf(defendant)).alive).toBe(false);
+    await expectDiedBroadcast(voters[0], since);
+    await expectDefendantDied(t, page, defendant);
 });

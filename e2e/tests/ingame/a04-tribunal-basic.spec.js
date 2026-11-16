@@ -85,7 +85,7 @@ test('A04-E-082 PC 6명 판 재판 중 → 화면에 "재판 판정" 단추·글
 test('A04-E-084 PC 8명 판 재판 중 시간 바 → 행동 줄에 "재판 판정"·"낮 집계"·"밤 종료" 없음 @game', async ({ user, table }) => {
     const t = await K.seat(table, user, { n: 8 });
     await K.toFirstDay(t);
-    // 펼친 바에서 확인 (재판 창이 뜨면 판 화면이 잠겨 펼치기를 못 누름 → 낮에 펼쳐 둠)
+    // 펼친 바에서 확인 (재판 연출 중엔 바가 저절로 펼쳐져 있음 — 낮에 미리 펼쳐 둬도 같음)
     await K.expandBar(user.page);
     await K.openTribunal(t, uuidOf(t.bots[2]));
     await K.expectTribunal(user.page);

@@ -121,7 +121,7 @@ test('A04-E-036 PC 6명 판 재판 120초, 안 낸 봇이 나가서 다 참 → 
     expect(closedAt).toBeLessThan(deadline - 60_000);
 });
 
-test('A04-E-100 PC 7명 판 재판 120초, 다 찬 지 1초 뒤 새로고침 → 남은 시간 5초 이하, 당겨진 그 시각에 판정 @game @realtime', async ({ user, table }) => {
+test('A04-E-100 PC 7명 판 재판 120초, 다 찬 지 1초 뒤 새로고침 → 시간 바가 펼쳐진 채 "[5초 뒤 마감]"·남은 시간 5초 이하, 당겨진 그 시각에 판정 @game @realtime', async ({ user, table }) => {
     const { t, page, voters } = await toTribunal(table, user, 7, 120);
     await K.press(page, TEXT.GUILTY);
     const since = Date.now();
@@ -131,8 +131,12 @@ test('A04-E-100 PC 7명 판 재판 120초, 다 찬 지 1초 뒤 새로고침 →
     await page.reload();
     await K.expectTribunal(page);
     await K.calm(page);
-    // 새로고침하면 시간 바가 접힌 채로 뜨고 재판 창이 판 화면을 잠가 펼치기를 못 누름 → 값만 읽으려고 펼치기 사건을 직접 보냄
-    await K.timebar(page).getByRole('button', { name: '시간흐름바 확대' }).dispatchEvent('click');
+    // 재판 연출 중엔 시간 바가 늘 펼쳐져 있음 (새로고침해 접힌 채로 시작해도) → "시간흐름바 확대" 단추는 없고, 누르지 않고 펼쳐져 있는지 봄
+    const bar = K.timebar(page);
+    await expect(bar.getByRole('button', { name: '시간흐름바 접기' })).toHaveAttribute('aria-expanded', 'true', { timeout: 2000 });
+    await expect(bar.getByRole('button', { name: '시간흐름바 확대' })).toHaveCount(0);
+    // 당김 표시도 새로고침 뒤 살아 있음: "[5초 뒤 마감]" 글 + 남은 시간 5초 이하 (남은 몇 초 안에 다 봐야 해서 글은 보이는지만 봄)
+    await expect(bar.getByText(TEXT.SETTLE, { exact: true })).toBeVisible({ timeout: 2000 });
     await expect(K.barTimer(page)).toHaveText(/^00:0[0-5]$/, { timeout: 2000 });
     await expect(K.tribunal(page)).toBeHidden({ timeout: SETTLE_MS + 3000 });
     expect(Math.abs(Date.now() - settle.deadline)).toBeLessThanOrEqual(SLACK_MS);

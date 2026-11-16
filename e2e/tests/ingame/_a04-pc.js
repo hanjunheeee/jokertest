@@ -268,7 +268,10 @@ async function killHumanAtNight(t, user, joker) {
 
 // ───────── 시간 바 ─────────
 
-/** 접힌 시간 바 펼치기 (남은 시간·단계 글은 펼친 바에만 보임) — 판 화면이 안 잠긴 때(낮, 안내 창 닫은 뒤) 부름 */
+/**
+ * 접힌 시간 바 펼치기 (남은 시간·단계 글은 펼친 바에만 보임) — 판 화면이 안 잠긴 때(낮, 안내 창 닫은 뒤) 부름
+ * 재판 연출 중·마감이 당겨진 5초 동안은 바가 저절로 펼쳐져 있어 "확대" 단추가 없음(이름이 "접기") → 그때 불러도 누르지 않고 지나감
+ */
 async function expandBar(page) {
     const bar = timebar(page);
     const open = bar.getByRole('button', { name: '시간흐름바 확대' });
@@ -276,7 +279,7 @@ async function expandBar(page) {
     await expect(bar.getByRole('button', { name: '시간흐름바 접기' })).toBeVisible();
 }
 
-/** 시간 바 "[5초 뒤 마감]"이 읽히고 남은 시간이 5초 이하 (재판 중 시간 바는 잠긴 판 화면 안이라 가려짐 검사는 뺌) */
+/** 시간 바 "[5초 뒤 마감]"이 읽히고 남은 시간이 5초 이하 (재판 중 시간 바는 잠긴 판 화면 안이라 가려짐 검사는 뺌, 재판 중엔 바가 늘 펼쳐져 있음) */
 async function expectSettleShown(page) {
     await readable(timebar(page).getByText(TEXT.SETTLE, { exact: true }), { uncovered: false, timeout: 4000 });
     await expect(barTimer(page)).toHaveText(/^00:0[0-5]$/);

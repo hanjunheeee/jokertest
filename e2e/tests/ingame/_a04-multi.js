@@ -48,9 +48,10 @@ const trial = {
     deadChoice: (page) => page.getByRole('dialog', { name: '사망 후 선택' }),
     // 모바일 위 단계 줄 ("제 1일 · 재판 진행 0:14")
     phaseLine: (page) => page.locator('[data-talk-phase-line]'),
-    // PC 시간 바 상태 글 (마감이 당겨지면 시간 바가 펼쳐지며 보임)
+    // PC 시간 바 상태 글 (재판 연출 중엔 시간 바가 늘 펼쳐져 있고, 마감이 당겨지면 그 글이 "[5초 뒤 마감]"으로 바뀜 — 새로고침해도 그대로)
     settleLabel: (page) => page.getByText(`[${TEXT.settle}]`, { exact: true }),
     // 판 카드 상태 표시 (alive·dead·disconnected), 재판 창 카드와 겹치면 판 쪽이 먼저
+    // 판에서 빠진 사람(스스로 나감·끊겨 60초 못 돌아옴)은 dead — 재판 중 빠진 피고도 사망으로 처리됨
     seat: (page, nickname) => page.locator(`[data-ingame-player-nickname="${nickname}"]`).first(),
 };
 
@@ -71,9 +72,12 @@ async function pinTimebar(page) {
     });
 }
 
-/** 판 카드 누름 칸: PC는 카드 메뉴 단추, 모바일은 초상 띠·카드 판 칸 */
+/**
+ * 판 카드 누름 칸: PC는 카드 메뉴 단추, 모바일은 초상 띠·카드 판 칸
+ * 모바일 칸 읽기 이름: "닉네임", 같은 직업 동료면 "닉네임 · 동료 광대", 그 뒤에 ", 나"·", 사망"·", 연결 끊김" (frontend-mobile utils/talk/slotLabel.js)
+ */
 function slot(page, nickname) {
-    if (isMobile(page)) return page.getByRole('button', { name: new RegExp(`^${nickname}(,|$)`) }).first();
+    if (isMobile(page)) return page.getByRole('button', { name: new RegExp(`^${nickname}( · 동료 [^,]+)?(,|$)`) }).first();
     return page.locator('[role="button"][aria-haspopup="menu"]').filter({ has: page.locator(`[data-ingame-player-nickname="${nickname}"]`) });
 }
 
@@ -285,6 +289,7 @@ const expectNoticeReadable = (locator, o = {}) => readable(locator, { uncovered:
 
 /**
  * "5초 뒤 마감"이 보이는지: 모바일은 위 단계 줄(재판 덮개 아래라 글만 봄), PC는 펼쳐진 시간 바 글
+ * 당기는 중에 새로고침해도 그대로 보임 (서버가 다시 준 판 값에 당김 표시가 실림)
  * light면 PC도 보이는지만 봄 (화면 여럿을 5초 안에 다 볼 때 — 대비까지 재면 5초를 넘김)
  */
 async function expectSettleShown(page, { timeout = 4000, light = false } = {}) {

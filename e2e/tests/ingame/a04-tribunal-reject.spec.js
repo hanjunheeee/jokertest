@@ -54,13 +54,14 @@ test('A04-E-156 PC 5명 판 다 낸 뒤 화면 소켓으로 지운 판정 요청
     await expect(K.tribunal(page)).toBeVisible();
 });
 
-// 화면이 받은 값 속 직업 이름 찾기: 내 정보(self)·결정 대기 칸(executedRole)은 뺌 → ['players[2].role=JOKER', …]
+// 화면이 받은 값 속 직업 이름 찾기: 내 정보(self)만 뺌 → ['players[2].role=JOKER', …]
+// (재판 결과 알림의 처형된 사람 직업 칸 executedRole은 이제 값에서도 빠짐 — 결정 2026-11-16 아침 1번 → 남아 있으면 여기 걸림)
 const ROLE_VALUES = new Set(['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN']);
 function roleLeaks(value, path = '', out = []) {
     if (Array.isArray(value)) value.forEach((v, i) => roleLeaks(v, `${path}[${i}]`, out));
     else if (value !== null && typeof value === 'object') {
         for (const [key, v] of Object.entries(value)) {
-            if (key === 'executedRole' || key === 'self') continue;
+            if (key === 'self') continue;
             roleLeaks(v, path ? `${path}.${key}` : key, out);
         }
     } else if (typeof value === 'string' && ROLE_VALUES.has(value)) out.push(`${path}=${value}`);
@@ -72,7 +73,7 @@ function roleLeaks(value, path = '', out = []) {
     // 10명 판: 특수 직업 다 있음, 피고는 광대 2 중 하나 (판이 안 끝남)
     [160, 10, ['JOKER', 'JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'], 0],
 ].forEach(([no, n, bots, defendantIndex]) => {
-    test(`A04-E-${no} PC ${n}명 판 재판 진입부터 판정까지 화면이 받은 소켓 값 → 남의 직업 없음 @game`, async ({ user, table }) => {
+    test(`A04-E-${no} PC ${n}명 판 재판 진입부터 판정까지 화면이 받은 소켓 값 → 남의 직업 없음, 재판 결과 알림에 처형 직업·표 수 칸 없음 @game`, async ({ user, table }) => {
         // 소켓 엿보기는 붙인 뒤 생긴 소켓만 봄 → 판 차리기가 방 코드 화면을 새로 열 때 붙음
         const frames = c.watchSocket(user.page);
         const t = await K.seat(table, user, { n, bots });
@@ -94,5 +95,11 @@ function roleLeaks(value, path = '', out = []) {
         expect(window.map((f) => f.event)).toEqual(expect.arrayContaining(['day_vote_resolved', 'session_self_progress', 'tribunal_vote_resolved']));
         const leaks = window.flatMap((f) => roleLeaks(f.payload).map((hit) => `${f.event}: ${hit}`));
         expect(leaks).toEqual([]);
+        // 재판 결과 알림엔 처형된 사람 직업·표 수 칸 자체가 없음 (화면에 안 그려도 개발 도구로 보이면 직업이 샘)
+        const resolved = frames[to].payload;
+        expect(resolved.outcome).toBe('GUILTY');
+        expect(resolved.executedUuid).toBe(uuidOf(defendant));
+        expect(Object.keys(resolved)).not.toContain('executedRole');
+        expect(Object.keys(resolved)).not.toContain('counts');
     });
 });
