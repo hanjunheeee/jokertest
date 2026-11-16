@@ -3,7 +3,7 @@
 // 모바일 판 끝 뒤 같은 방 브라우저 시험 — 폰 결과 화면 남은 시간·"대기방으로"(같은 코드·설정·방장 자리)·"로비로"(확인 글·실패 안내·잠김)·새로고침·다음 판
 // 목록 A08-판끝-같은방.md 번호 A08-E-076~100 (사파리도: 076·079·083·087, 180초는 손잡이 closeResults로 넘김)
 const { test, expect } = require('../../helpers/fixtures');
-const { expectReadable, readability } = require('../../helpers/visible');
+const { expectReadable, readability, waitFullyShown } = require('../../helpers/visible');
 const { e2e } = require('../../helpers/internal');
 const ui = require('../../helpers/ui');
 const {
@@ -325,6 +325,8 @@ test('A08-E-098 [모바일] 6명 판: "방장 자리" 이름표 글자 대비 4.
     await pressReturn(page);
     const label = hostSeat(page).getByText('방장 자리', { exact: true });
     await expect(label).toBeVisible();
+    // 대기방 판은 들어올 때 0.9초 동안 서서히 나타남 → 다 나타난 뒤 잼 (들어오자마자 재면 투명도 0.1 장면이라 바탕이 어둡게 잡힘)
+    await waitFullyShown(label);
     const r = await readability(label);
     expect(r.inViewport, '화면 안').toBe(true);
     expect(r.ratio, `글자 ${r.color} · 바탕 ${r.background}`).toBeGreaterThanOrEqual(4.5);

@@ -19,6 +19,8 @@
 //   await expectAllReadable(page.getByRole('dialog').getByRole('button'));
 //   // 값만 받아 직접 보기 → { ratio, color, background, large, inViewport, coveredBy, ... }
 //   const r = await readability(locator); expect(r.ratio).toBeGreaterThan(7);
+//   // 화면이 서서히 나타나는 중이면 다 나타난 뒤 한 번만 재기 (readability는 안 기다림)
+//   await waitFullyShown(locator); const r = await readability(locator);
 //
 // 바탕색 찾는 법
 //   - 위로 올라가며 처음 불투명한 background-color (반투명은 겹쳐 섞음)
@@ -587,6 +589,23 @@ async function readability(locator, { method = 'auto', large, timeout } = {}) {
 }
 
 /**
+ * 서서히 나타나는 움직임이 끝날 때까지 기다림 — 자기와 조상 투명도를 곱한 값이 1이 되면 끝
+ * readability는 한 번만 재서 움직임 도중 덜 밝은 장면을 재기도 함 → 다 나타난 모습을 재야 할 때 먼저 부름
+ * 예: 폰 대기방 판은 0.9초 동안 투명도 0 → 1, 들어오자마자 재면 "방장 자리" 바탕이 rgb(113, 103, 88)로 잡혀 대비 3.37
+ * @param {import('@playwright/test').Locator} locator 하나만 가리켜야 함
+ * @param {{ timeout?: number }} [o] 기다리는 시간 (안 주면 expect 시간)
+ */
+async function waitFullyShown(locator, { timeout } = {}) {
+    // 겹친 투명도 → 예: 판 0.12 × 이름표 1 = 0.12, 다 나타나면 1
+    const shownOpacity = () => locator.evaluate((el) => {
+        let opacity = 1;
+        for (let node = el; node && node.nodeType === 1; node = node.parentElement) opacity *= Number.parseFloat(getComputedStyle(node).opacity || '1');
+        return opacity;
+    });
+    await expect.poll(shownOpacity, { message: '다 나타남 (겹친 투명도 1)', ...(timeout === undefined ? {} : { timeout }) }).toBe(1);
+}
+
+/**
  * 사람 눈에 읽히는지 확인 (하나) — 실패하면 무엇 때문인지 우리말로 던짐
  * @param {import('@playwright/test').Locator} locator
  * @param {object} [o]
@@ -698,6 +717,7 @@ module.exports = {
     expectButtonReadable,
     expectAllReadable,
     readability,
+    waitFullyShown,
     contrastRatio,
     parseColor,
     decodePng,

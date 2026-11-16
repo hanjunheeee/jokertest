@@ -304,22 +304,39 @@ async function pickRow(page, title) {
     return row;
 }
 
+// 쪽 넘김 단추 누르기 (1초 안에 못 누르면 false)
+// 켜진 것을 본 바로 뒤 쪽 수가 줄어 단추가 꺼지면 기본 15초를 다 기다려 부른 쪽 기한(expect.poll 15초)을 다 썼음
+const tapPager = (button) => button.click({ timeout: 1000 }).then(() => true, () => false);
+
+// 훑다 쪽이 바뀌어 끝까지 못 본 때 돌려주는 값 — null(줄 없음)과 다르게 둬서 "사라짐" 확인이 이 값으로 통과 안 하게 막기
+const SCAN_BROKEN = '(목록 훑기 못 끝냄 — 훑는 사이 쪽이 바뀜)';
+
 /**
  * 지금 목록에서 그 방 줄 읽는 이름 (첫 쪽부터 끝 쪽까지 한 번 훑음), 없으면 null
  * → '봇이름의 방, 3/9명, …' — 다른 시험 방이 생기고 없어져 쪽이 바뀌어도 다시 훑어 찾음
+ * 훑는 사이 쪽이 바뀌어 못 누르면 첫 쪽부터 다시 (세 번 다 끊기면 SCAN_BROKEN, null로 안 침)
  */
 async function rowLabel(page, title) {
     const panel = page.getByRole('region', { name: '공개 방 목록' });
     const prev = panel.getByRole('button', { name: '이전 페이지' });
-    while (await prev.isEnabled().catch(() => false)) await prev.click();
-    for (let i = 0; i < 30; i += 1) {
-        const row = panel.getByRole('button', { name: new RegExp(`^${escapeRe(title)},`) });
-        if (await row.count() > 0) return row.first().getAttribute('aria-label');
-        const next = panel.getByRole('button', { name: '다음 페이지' });
-        if (!(await next.isEnabled().catch(() => false))) return null;
-        await next.click();
+    const next = panel.getByRole('button', { name: '다음 페이지' });
+    const row = panel.getByRole('button', { name: new RegExp(`^${escapeRe(title)},`) });
+    for (let scan = 0; scan < 3; scan += 1) {
+        // 첫 쪽으로 (못 누른 건 그사이 꺼진 것 → 다시 켜졌나 봄, 쪽은 30개까지)
+        for (let i = 0; i < 30 && await prev.isEnabled().catch(() => false); i += 1) await tapPager(prev);
+        let broken = false;
+        for (let i = 0; i < 30 && !broken; i += 1) {
+            if (await row.count() > 0) {
+                // 센 바로 뒤 줄이 없어지면 다시 훑기
+                const label = await row.first().getAttribute('aria-label', { timeout: 1000 }).catch(() => null);
+                if (label !== null) return label;
+                broken = true;
+            } else if (!(await next.isEnabled().catch(() => false))) return null;
+            else if (!(await tapPager(next))) broken = true;
+        }
+        if (!broken) return null;
     }
-    return null;
+    return SCAN_BROKEN;
 }
 
 // ── 소켓 줄 가로채기 ───────────────────────────────────

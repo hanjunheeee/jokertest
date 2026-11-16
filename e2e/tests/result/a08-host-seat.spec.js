@@ -3,7 +3,7 @@
 // 판 끝 뒤 방장 자리 브라우저 시험 (PC) — 원래 방장 자리를 180초 남겨 둠("방장 자리" 칸·안내), 그동안 방장 단추 없음, 원래 방장이 오면·로비로 가면·180초 지나면 방장이 정해짐
 // 목록 A08-판끝-같은방.md 번호 A08-E-012~017·047·050·062·073·075 (180초는 손잡이 closeResults로 넘김)
 const { test, expect, ui } = require('../../helpers/fixtures');
-const { expectReadable, readability } = require('../../helpers/visible');
+const { expectReadable, readability, waitFullyShown } = require('../../helpers/visible');
 const { closeReveals, waitResult, hostGame, waitRoom } = require('../room/roomHelpers');
 const N = require('../ingame/b-night/_night');
 
@@ -229,6 +229,8 @@ test('A08-E-062 6명 판: "방장 자리" 이름표 글자 대비 4.5 이상 @ga
     const page = user.page;
     await backToRoom(page);
     await expect(reservedLabel(page)).toBeVisible();
+    // 대기방 판은 들어올 때 서서히 나타남 → 다 나타난 뒤 잼 (도중에 재면 다 나타난 모습과 다른 바탕을 잼)
+    await waitFullyShown(reservedLabel(page));
 
     const measured = await readability(reservedLabel(page));
     expect(measured.ratio, `글자 ${measured.color} / 바탕 ${measured.background}`).toBeGreaterThanOrEqual(4.5);
