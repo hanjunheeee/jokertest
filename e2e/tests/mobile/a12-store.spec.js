@@ -38,6 +38,18 @@ async function openItem(page, category, slot) {
     await st.pickItem(page, slot);
 }
 
+/**
+ * 같은 브라우저 새 탭이 붙으면 옛 탭에 뜨는 "다른 창에서 접속" 안내 창 닫기
+ * 모바일은 알림이 양피지 창이라 화면을 덮어 단추를 못 누름 (PC는 브라우저 대화상자라 알아서 닫힘), 안 뜨면 그냥 지나감
+ */
+async function closeOtherTabNotice(page) {
+    const notice = page.getByRole('alertdialog', { name: '안내' });
+    const shown = await notice.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false);
+    if (!shown) return;
+    await notice.getByRole('button', { name: '확인' }).click();
+    await expect(notice).toHaveCount(0);
+}
+
 /** 글이 단추 "바로 아래"인지: 단추 아래쪽에서 시작하고 사이가 60px 안 */
 async function expectRightBelow(notice, button) {
     const n = await notice.boundingBox();
@@ -129,6 +141,8 @@ test('A12-E-084 다른 탭에서 같은 스킨을 먼저 삼 → 이 탭에서 �
     await buyButton(other).click();
     await expect(st.detail(other).getByText(M.done)).toBeVisible();
 
+    // 새 탭이 붙어 이 탭에 뜬 안내 창부터 닫음 (화면을 덮음)
+    await closeOtherTabNotice(page);
     await buyButton(page).click();
     const notice = st.detail(page).getByText(M.owned);
     await expectReadable(notice);
@@ -254,6 +268,8 @@ test('A12-E-106 두 탭 팔레트 저장 → 늦은 탭에 충돌 안내가 읽�
     const other = await context.newPage();
     await openPalette(page);
     await openPalette(other);
+    // 새 탭이 붙어 첫 탭에 뜬 안내 창부터 닫음 (화면을 덮음)
+    await closeOtherTabNotice(page);
     await swap(page, 2, 1);
     const firstSaved = await slotNames(page);
     await page.getByRole('button', { name: '저장', exact: true }).click();

@@ -213,8 +213,8 @@ test.describe('충전 확인 (가짜 토스 승인 서버, 모바일)', () => {
     test.beforeAll(async ({}, workerInfo) => {
         test.setTimeout(200_000);
         const n = workerInfo.parallelIndex;
-        // 따로 띄운 백엔드 4160+작업자, 가짜 토스 4170+작업자 (다른 영역: 4150+ 기본·4190~ 보안)
-        fake = await startFakeToss(4170 + n);
+        // 따로 띄운 백엔드 4160+작업자, 가짜 토스 4200+작업자 (다른 영역: 4150+ 기본·4170+·4180+ 소셜·4190~ 보안)
+        fake = await startFakeToss(4200 + n);
         api = await servers.startExtraBackend({
             port: 4160 + n, defaultIpLimits: false, timeoutMs: 150_000,
             overrides: { SERVER_ID: `e2e-a12-toss-m${n}`, TOSS_API_BASE_URL: fake.url },

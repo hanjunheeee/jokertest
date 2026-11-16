@@ -163,13 +163,17 @@ test.describe('A11a 모바일', () => {
         await expectReadable(page.getByText('이미 사용 중인 이메일입니다.'));
     });
 
-    test('A11-E-099 모바일 인증 안 하고 가입: → 양피지 창 "이메일 인증을 완료해주세요."', async ({ page }) => {
+    test('A11-E-099 모바일 인증 안 하고 가입: → 가입 단추 꺼짐 + 안내 줄 "이메일 인증을 완료해야 가입할 수 있습니다.", Enter로도 요청 0번', async ({ page }) => {
+        const signupCalls = K.trackRequests(page, '/auth/signup');
         await K.prepareSignup(page, { verify: false });
         // 출처(F-31 2-3a): 인증 전엔 가입 단추 꺼짐 + 안내 줄
         await expect(K.signupSubmit(page)).toBeDisabled();
-        await expect(K.signupHint(page)).toBeVisible();
-        // 목록 기대: 가입을 누르면 양피지 창 (단추가 꺼져 있어 Enter로 보냄)
-        expect(await K.submitSignupByEnter(page)).toBe('이메일 인증을 완료해주세요.');
+        await expectReadable(K.signupHint(page));
+        // 꺼진 단추는 못 누르고 Enter 제출도 브라우저가 막음 → 양피지 창 없이 그대로
+        await K.nicknameBox(K.signupArea(page)).press('Enter');
+        await expect(K.signupSubmit(page)).toBeDisabled();
+        await expect(K.signupArea(page)).toBeVisible();
+        expect(signupCalls).toHaveLength(0);
     });
 
     test('A11-E-100 모바일 잠금 끝나면 들어감: 5번 틀려 잠김 → 잠금 끝 시각 옮김 → 맞는 비번 → 로비', async ({ page, accounts }) => {

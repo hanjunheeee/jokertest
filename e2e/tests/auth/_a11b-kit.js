@@ -122,8 +122,14 @@ async function loginFailAlert(page, email, password) {
     return quickAlert(page, () => page.getByRole('button', { name: '로그인', exact: true }).click());
 }
 
-// 로그아웃 단추가 없어서 "로그아웃 뒤"는 쿠키·저장소가 빈 새 브라우저로 봄
+// 계정 관리 화면엔 로그아웃 단추가 없어서 "로그아웃 뒤"는 쿠키·저장소가 빈 새 브라우저로 봄
 const freshBrowser = (players, account) => players.add({ account, login: false });
+
+// 한 사람 한 세션: 같은 계정으로 또 로그인하면 앞 브라우저 세션이 끊김 (backend/services/auth/account/session.js)
+// → "같은 세션을 가진 다른 브라우저"는 로그인한 쪽 쿠키를 그대로 옮겨 만듦 (to는 login:false로 연 것)
+async function shareSession(from, to) {
+    await to.context.addCookies(await from.context.cookies());
+}
 
 // ── 비번 찾기·재설정 화면 ──
 const RESET_EMAIL_BOX = '가입할 때 등록한 이메일을 입력하세요';
@@ -390,7 +396,7 @@ module.exports = {
     testPassword, SHORT_PASSWORD, WRONG_PASSWORD, freshEmail, freshNickname,
     apiCall, isPost, countRequests, blockSocket,
     resetLinkFor, tokenOf, mailsOf, expectNoMail, expireResetTokens, makeSocialOnly,
-    loginFailAlert, freshBrowser,
+    loginFailAlert, freshBrowser, shareSession,
     newPasswordBox, newPasswordConfirmBox, requestResetUi, requestResetApi, requestSentNotice, openResetLink, submitNewPassword, resetPasswordVia,
     eyeButtonOf, expectIconReadable, expectLabelReadable, expectNotClipped,
     findNicknameBox, findBirthBox, findIdUi, submitFindId, foundEmailText, findFailText,

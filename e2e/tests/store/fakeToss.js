@@ -1,7 +1,7 @@
 'use strict';
 
 // 가짜 토스 승인 서버 파일, 승인(POST /v1/payments/confirm)·결제 조회(GET /v1/payments/:key)를 결제 키 앞말로 나눠 답함
-// tests/store/topup-provider.spec.js만 씀 (따로 띄운 백엔드의 TOSS_API_BASE_URL로 들어감, 본 서버 4100은 진짜 주소 그대로)
+// a12-topup·a12-hard·mobile/a12-store-topup이 씀 (따로 띄운 백엔드의 TOSS_API_BASE_URL로 들어감, 본 서버 4100은 막다른 주소가 기본 — helpers/backendEnv.js)
 const http = require('node:http');
 
 // 결제 키 앞말 → 답: ok = 승인 끝(DONE) · reject = 카드 거절(400) · slow = 승인 응답을 늦게(백엔드 10초 한도 넘김), 조회는 승인 끝

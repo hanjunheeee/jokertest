@@ -24,7 +24,7 @@ test('A11-E-001 이메일 가입 처음부터 끝까지 (PC): 인증번호 → �
 const BLOCKED = [
     ['A11-E-002', '비번 7자', { password: K.testPw(7) }, '비밀번호는 8~64자여야 합니다.'],
     ['A11-E-003', '비번 65자', { password: K.testPw(65) }, '비밀번호는 8~64자여야 합니다.'],
-    ['A11-E-004', '한글 비번 25자(75바이트)', { password: K.koreanPw(25) }, '비밀번호는 72바이트를 넘을 수 없습니다.'],
+    ['A11-E-004', '한글 섞은 비번 27자(75바이트)', { password: K.koreanPw(27) }, '비밀번호는 72바이트를 넘을 수 없습니다.'],
     ['A11-E-005', '비번 확인 다름', { password: 'testpass1234', passwordConfirm: 'testpass1235' }, '비밀번호 확인이 일치하지 않습니다.'],
     ['A11-E-006', '닉네임 1자', { nickname: '가' }, '닉네임은 2~8자여야 합니다.'],
     ['A11-E-007', '닉네임 9자', { nickname: '가나다라마바사아자' }, '닉네임은 2~8자여야 합니다.'],
@@ -47,7 +47,7 @@ for (const [id, name, override, message] of BLOCKED) {
 const PASS_EDGE = [
     ['A11-E-010', '비번 8자', K.testPw(8)],
     ['A11-E-011', '비번 64자', K.testPw(64)],
-    ['A11-E-012', '한글 비번 24자(72바이트)', K.koreanPw(24)],
+    ['A11-E-012', '한글 섞은 비번 26자(72바이트)', K.koreanPw(26)],
 ];
 for (const [id, name, password] of PASS_EDGE) {
     test(`${id} 경계 값으로 가입 됨 (PC): ${name} → 가입 완료 → 그 비번으로 로그인 → 로비`, async ({ page }) => {
@@ -129,14 +129,16 @@ test('A11-E-020 약관 칸 (PC): 약관 "보기" → 전체 보기 창 글 보�
     await expect(dialog).toHaveCount(0);
 });
 
-test('A11-E-021 인증 안 하고 가입 (PC): 인증번호 안 받고 가입 → "이메일 인증을 완료해주세요."', async ({ page }) => {
+test('A11-E-021 인증 안 하고 가입 (PC): 인증번호 안 받음 → 가입 단추 꺼짐 + 안내 줄 "이메일 인증을 완료해야 가입할 수 있습니다.", Enter로도 요청 0번', async ({ page }) => {
     const signupCalls = K.trackRequests(page, '/auth/signup');
     await K.prepareSignup(page, { verify: false });
     // 출처(F-31 2-3a): 인증 전엔 가입 단추 꺼짐 + 안내 줄, 서버 호출 없음
     await expect(K.signupSubmit(page)).toBeDisabled();
-    await expect(K.signupHint(page)).toBeVisible();
-    // 목록 기대: 가입을 누르면 알림 (단추가 꺼져 있어 Enter로 보냄)
-    expect(await K.submitSignupByEnter(page)).toBe('이메일 인증을 완료해주세요.');
+    await expectReadable(K.signupHint(page));
+    // 꺼진 단추는 못 누르고 Enter 제출도 브라우저가 막음 → 알림 없이 그대로 (알림 글은 못 띄움)
+    await K.nicknameBox(K.signupArea(page)).press('Enter');
+    await expect(K.signupSubmit(page)).toBeDisabled();
+    await expect(K.signupArea(page)).toBeVisible();
     expect(signupCalls).toHaveLength(0);
 });
 

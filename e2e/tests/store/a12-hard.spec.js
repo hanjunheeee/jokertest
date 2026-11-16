@@ -90,6 +90,11 @@ async function outcomeOf(page, scope, texts) {
     return seen;
 }
 
+// 같은 계정 두 창 = 같은 브라우저(같은 로그인)의 탭 둘 → { page }
+// 한 사람 한 세션이라 다른 브라우저로 또 로그인하면 옛 브라우저가 로그아웃됨 (backend/services/auth/account/session.js)
+// 옛 탭에 뜨는 "다른 창에서 접속" 알림(브라우저 대화상자)은 Playwright가 바로 닫음, 구매 요청은 그대로 됨
+const secondTab = async (context) => ({ page: await context.newPage() });
+
 /** 쿠폰은 같은 ip 10분 30번 제한 → 이 화면의 쿠폰 요청만 다른 ip로 (서버는 프록시 1단 뒤 주소를 믿음) */
 async function spreadCouponIp(page) {
     const n = () => 1 + Math.floor(Math.random() * 250);
@@ -97,10 +102,10 @@ async function spreadCouponIp(page) {
     await page.route(COUPON_URL, (route) => route.continue({ headers: { ...route.request().headers(), 'x-forwarded-for': ip } }));
 }
 
-test('A12-H-001 같은 계정 두 브라우저가 같은 스킨을 동시에 삼 → 장부 1줄, 한 창 "보유중"·다른 창 "이미 보유한 상품입니다."가 단추 아래 읽힘 @hard @smoke', async ({ user, players }) => {
-    const { page, account } = user;
+test('A12-H-001 같은 계정 두 창(같은 브라우저 탭 둘)이 같은 스킨을 동시에 삼 → 장부 1줄, 한 창 "보유중"·다른 창 "이미 보유한 상품입니다."가 단추 아래 읽힘 @hard @smoke', async ({ user }) => {
+    const { page, account, context } = user;
     await st.grant(account.uuid, 'GOLD', 1000);
-    const second = await players.add({ account });
+    const second = await secondTab(context);
     await openItem(page, '스킨', SKIN.slot);
     await openItem(second.page, '스킨', SKIN.slot);
     await Promise.all([buyButton(page).click(), buyButton(second.page).click()]);
@@ -115,10 +120,10 @@ test('A12-H-001 같은 계정 두 브라우저가 같은 스킨을 동시에 삼
     expect((await st.wallet(account.uuid)).gold).toBe(500);
 });
 
-test('A12-H-002 같은 계정 두 창이 다른 스킨을 동시에, 잔액은 하나 값(500)만 → 하나만 됨, 다른 창 잔액 부족 글, 골드 0, 지갑 = 장부 합 @hard', async ({ user, players }) => {
-    const { page, account } = user;
+test('A12-H-002 같은 계정 두 창이 다른 스킨을 동시에, 잔액은 하나 값(500)만 → 하나만 됨, 다른 창 잔액 부족 글, 골드 0, 지갑 = 장부 합 @hard', async ({ user }) => {
+    const { page, account, context } = user;
     await st.grant(account.uuid, 'GOLD', 500);
-    const second = await players.add({ account });
+    const second = await secondTab(context);
     await openItem(page, '스킨', SKIN.slot);
     await openItem(second.page, '스킨', SKIN2.slot);
     await Promise.all([buyButton(page).click(), buyButton(second.page).click()]);
@@ -216,11 +221,11 @@ test('A12-H-007 탭 1이 구매를 보낸 사이 탭 2에서 로그아웃 → �
     expect((await st.wallet(account.uuid)).gold).toBe(0);
 });
 
-test('A12-H-008 골드 구매를 두 창에서 동시에, 다이아는 한 번 값(5)만 → 하나만 됨, 다른 창 다이아 부족 글 + 충전하러 가기 @hard', async ({ user, players }) => {
-    const { page, account } = user;
+test('A12-H-008 골드 구매를 두 창에서 동시에, 다이아는 한 번 값(5)만 → 하나만 됨, 다른 창 다이아 부족 글 + 충전하러 가기 @hard', async ({ user }) => {
+    const { page, account, context } = user;
     const product = await makeProduct('GOLD_PURCHASE', { pay: 5, grant: 50 });
     await st.grant(account.uuid, 'DIAMOND', 5);
-    const second = await players.add({ account });
+    const second = await secondTab(context);
     await openCurrency(page, product);
     await openCurrency(second.page, product);
     await Promise.all([page, second.page].map((p) => buyButton(p, '골드 구매').click()));
@@ -264,8 +269,8 @@ test.describe('어려움 — 충전 (가짜 토스 승인 서버)', () => {
     test.beforeAll(async ({}, workerInfo) => {
         test.setTimeout(200_000);
         const n = workerInfo.parallelIndex;
-        // 따로 띄운 백엔드 4160+작업자, 가짜 토스 4170+작업자 (다른 영역: 4150+ 기본·4190~ 보안)
-        fake = await startFakeToss(4170 + n);
+        // 따로 띄운 백엔드 4160+작업자, 가짜 토스 4200+작업자 (다른 영역: 4150+ 기본·4170+·4180+ 소셜·4190~ 보안)
+        fake = await startFakeToss(4200 + n);
         api = await servers.startExtraBackend({
             port: 4160 + n, defaultIpLimits: false, timeoutMs: 150_000,
             overrides: { SERVER_ID: `e2e-a12-toss-h${n}`, TOSS_API_BASE_URL: fake.url },
@@ -326,13 +331,13 @@ test.describe('어려움 — 충전 (가짜 토스 승인 서버)', () => {
         expect(await topupRows(account.uuid)).toHaveLength(1);
     });
 
-    test('A12-H-005 같은 성공 주소를 두 창에서 동시에 엶 → 둘 다 완료 글, 장부 1줄 @hard', async ({ user, players }) => {
+    test('A12-H-005 같은 성공 주소를 두 창에서 동시에 엶 → 둘 다 완료 글, 장부 1줄 @hard', async ({ user }) => {
         test.setTimeout(180_000);
         const { page, account, context } = user;
         const product = await makeProduct('DIAMOND_TOPUP', { pay: 1100, grant: 10 });
         const order = await createOrder(context, product);
         const url = successUrl(order, `pk_ok_${st.rand(6).toLowerCase()}`);
-        const second = await players.add({ account });
+        const second = await secondTab(context);
         await routeEconomy(page);
         await routeEconomy(second.page);
         await Promise.all([st.gotoStore(page, url), st.gotoStore(second.page, url)]);

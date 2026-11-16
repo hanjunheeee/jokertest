@@ -13,12 +13,14 @@ const SESSION_CHECK_MS = 5_000;
 const SLACK_MS = 1_500;
 
 // 한 사람이 PC·폰 둘: PC는 소켓을 막고(한 계정 소켓 하나라 PC가 붙으면 폰이 밀려남) 폰은 로비에 붙어 있음
+// 한 사람 한 세션이라 둘이 따로 로그인하면 먼저 한 쪽이 끊김 → 폰만 로그인하고 PC엔 그 세션 쿠키를 옮겨 넣음
 async function pcAndPhone(players, accounts) {
     const account = await accounts.create();
-    const pc = await players.add({ mobile: false, account, lobby: false });
+    const pc = await players.add({ mobile: false, account, login: false, lobby: false });
     await k.blockSocket(pc.context);
     const phone = await players.add({ mobile: true, account });
     await expect(phone.page).toHaveURL(/\/lobby$/);
+    await k.shareSession(phone, pc);
     return { account, pc, phone };
 }
 

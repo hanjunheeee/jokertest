@@ -13,10 +13,12 @@ const { decodePng, contrastRatio } = require('../../helpers/visible');
 const { startFakeOAuth } = require('./fakeOAuth');
 const { newEmail, newNickname, birthDateYearsAgo } = require('./authHelpers');
 
-// 누가 봐도 시험용인 비번 (길이만 맞춤) — 8자 'testpass', 그 뒤는 숫자
-const testPw = (len) => ('testpass' + '1234567890'.repeat(7)).slice(0, len);
-// 한글 비번 (한 글자 3바이트) — 24자 72바이트 / 25자 75바이트
-const koreanPw = (len) => '시험비번'.repeat(7).slice(0, len);
+// 누가 봐도 시험용인 비번 (길이만 맞춤) — 영문+숫자 섞기 규칙(결정 2026-11-16)에 맞게 앞 6자 'test12', 7자도 섞임
+// 예) testPw(7) → 'test123' · testPw(8) → 'test1234'
+const testPw = (len) => ('test12' + '3456789012'.repeat(7)).slice(0, len);
+// 한글 섞은 비번 (앞 'ab1' 3바이트 + 한글 한 글자 3바이트) — 섞기 규칙에 안 걸려 바이트 수만 시험됨
+// 예) koreanPw(26) → 'ab1시험비번…' 72바이트 / koreanPw(27) → 75바이트
+const koreanPw = (len) => 'ab1' + '시험비번'.repeat(7).slice(0, len - 3);
 // 보통 가입에 쓰는 비번 (12자)
 const PW = 'testpass1234';
 

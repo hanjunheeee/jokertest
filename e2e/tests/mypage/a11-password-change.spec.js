@@ -81,9 +81,10 @@ test('A11-E-534 변경 단추 빠르게 두 번 → PATCH /user/me/password 요�
 
 test('A11-E-538 같은 계정 다른 브라우저 → 비번 바꿈 → 그 브라우저 다음 이동에서 로그인 화면', async ({ user, players }) => {
     const { page, account } = user;
-    // 다른 브라우저: 같은 계정 로그인, 소켓은 막음 (붙이면 이 브라우저가 밀려나 시험이 섞임)
-    const other = await players.add({ account, lobby: false });
+    // 다른 브라우저: 같은 세션 쿠키를 옮겨 넣음 (따로 로그인하면 이 브라우저 세션이 먼저 끊김), 소켓은 막음 (붙이면 이 브라우저가 밀려나 시험이 섞임)
+    const other = await players.add({ account, login: false, lobby: false });
     await k.blockSocket(other.context);
+    await k.shareSession(user, other);
     await other.page.goto('/mypage');
     await expect(other.page.getByRole('button', { name: '계정 관리', exact: true })).toBeVisible();
     // 이 브라우저에서 비번 바꿈

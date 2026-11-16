@@ -96,7 +96,8 @@ test('A11-E-027 다시 보내기 60초 진짜로: 59초엔 단추 꺼짐 → 60�
     expect(elapsed).toBeLessThanOrEqual(61_500);
 });
 
-test('A11-E-028 인증 뒤 이메일 바꿈 (PC): 완료 글 사라짐·"인증번호 받기" → 가입 → "이메일 인증을 완료해주세요."', async ({ page }) => {
+test('A11-E-028 인증 뒤 이메일 바꿈 (PC): 완료 글 사라짐·"인증번호 받기" → 가입 단추 다시 꺼짐 + 안내 줄, 가입 요청 0번', async ({ page }) => {
+    const signupCalls = K.trackRequests(page, '/auth/signup');
     const v = await K.prepareSignup(page);
     await expect(K.codeNotice(page)).toHaveText('이메일 인증이 완료되었습니다.');
     // 주소 한 글자 바꿈 (맨 앞 e → f)
@@ -105,9 +106,11 @@ test('A11-E-028 인증 뒤 이메일 바꿈 (PC): 완료 글 사라짐·"인증�
     await expect(K.codeSend(page)).toHaveText('인증번호 받기');
     // 출처(F-31 2-3a): 인증이 풀리면 가입 단추 다시 꺼짐 + 안내 줄
     await expect(K.signupSubmit(page)).toBeDisabled();
-    await expect(K.signupHint(page)).toBeVisible();
-    // 목록 기대: 가입을 누르면 알림 (단추가 꺼져 있어 Enter로 보냄)
-    expect(await K.submitSignupByEnter(page)).toBe('이메일 인증을 완료해주세요.');
+    await expectReadable(K.signupHint(page));
+    // 꺼진 단추는 못 누르고 Enter 제출도 브라우저가 막음 → 알림 없이 그대로
+    await K.nicknameBox(K.signupArea(page)).press('Enter');
+    await expect(K.signupSubmit(page)).toBeDisabled();
+    expect(signupCalls).toHaveLength(0);
 });
 
 test('A11-E-029 이미 가입한 이메일로 인증번호 (PC): 화면은 처음 주소와 같음("재발송 (60초)"), 메일함 0통', async ({ page, accounts }) => {
