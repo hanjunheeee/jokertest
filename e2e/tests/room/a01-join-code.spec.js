@@ -1,7 +1,7 @@
 'use strict';
 
 // 방 코드로 대기방 들어오기 브라우저 시험 (PC) — 들어오면 "대기중", 소문자, 없는 코드·가득 참·시작된 방·3번 쫓겨남·탈주 대기 거절 글, 1분 20번 제한, 정원 10 마지막 자리
-// 목록 A01b-입장-준비-추방-초대.md 번호 A01-E-501~514 — PC는 거절 글이 브라우저 알림 창이라 글만 봄(대비는 못 봄)
+// 목록 A01b-입장-준비-추방-초대.md 번호 A01-E-501~514 — PC 거절 글은 브라우저 알림 창 + 닫은 뒤 화면에 남는 안내 띠(없는 코드·가득 참·3번 쫓겨남·탈주는 띠가 읽히는지도 봄)
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { createRoomUi } = require('./roomHelpers');
@@ -31,10 +31,12 @@ test('A01-E-502 소문자로 쳐도 들어옴 (정원 5 · 봇 3) → 칸에 대
     await K.expectParty(page, 4);
 });
 
-test('A01-E-503 없는 코드 → "입장 코드가 올바르지 않습니다. 코드를 다시 확인해주세요.", 코드 화면 그대로', async ({ user }) => {
+test('A01-E-503 없는 코드 → "입장 코드가 올바르지 않습니다. 코드를 다시 확인해주세요." (알림 + 화면 안내 띠 읽힘), 코드 화면 그대로', async ({ user }) => {
     const page = user.page;
     const text = await K.codeAlert(page, K.NO_SUCH_CODE);
     expect(text).toBe(MSG.CODE_WRONG);
+    // 알림 창을 닫은 뒤에도 같은 글이 화면 안내 띠에 남아 읽힘
+    await K.expectEntryNotice(page, MSG.CODE_WRONG);
     await expect(page).toHaveURL(/\/roomInvite/);
 });
 
@@ -42,6 +44,7 @@ test('A01-E-504 가득 찬 방 (정원 5 · 봇 5) → "방 정원이 가득 찼
     const page = user.page;
     const { code, host } = await K.botRoom(bots, { max: 5, count: 5 });
     expect(await K.codeAlert(page, code)).toBe(MSG.CODE_FULL);
+    await K.expectEntryNotice(page, MSG.CODE_FULL);
     await expect(page).not.toHaveURL(/\/game-matching/);
     expect(await K.roomSize(host.uuid)).toBe(5);
 });
@@ -59,6 +62,7 @@ test('A01-E-506 3번 쫓겨난 방 (정원 7 · 봇 방장 + 봇 3) → 4번째 
     const { code, host } = await K.botRoom(bots, { max: 7, count: 4 });
     await K.kickedThrice(user, host, code);
     expect(await K.codeAlert(page, code)).toBe(MSG.KICK3);
+    await K.expectEntryNotice(page, MSG.KICK3);
     await expect(page).not.toHaveURL(/\/game-matching/);
     expect(await K.roomSize(host.uuid)).toBe(4);
 });
@@ -71,6 +75,8 @@ test('A01-E-507 탈주 대기 중 (정원 6 · 봇 2) → "탈주로 4분 …초
     await K.desert(table, user);
     const text = await K.codeAlert(page, code);
     expect(text).toMatch(/^탈주로 4분 \d{1,2}초 뒤에 참여할 수 있습니다\.$/);
+    // 알림 창을 닫은 뒤에도 탈주 대기 글(알림과 같은 글)이 화면 안내 띠에 남아 읽힘
+    await K.expectEntryNotice(page, text);
     await expect(page).not.toHaveURL(/\/game-matching/);
 });
 

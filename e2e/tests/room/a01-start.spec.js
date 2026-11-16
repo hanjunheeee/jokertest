@@ -1,6 +1,6 @@
 'use strict';
 
-// PC 시작이 받아들여지나 브라우저 시험 — 정원 안 채워도 5명 이상 전원 준비면 시작, 4명·준비 안 함·구성 안 맞음·끊김 거절 글, 다시 붙음·막힘 뒤 다시·시작 따닥·목록에서 빠짐·손님 화면, 키보드, 판 인원·새 설정으로 시작
+// PC 시작이 받아들여지나 브라우저 시험 — 정원 안 채워도 5명 이상 전원 준비면 시작, 4명이면 단추 꺼짐 + 까닭 글, 준비 안 함·구성 안 맞음·끊김 거절 글, 다시 붙음·막힘 뒤 다시·시작 따닥·목록에서 빠짐·손님 화면, 키보드, 판 인원·새 설정으로 시작
 // 목록 A01a-방만들기-설정-시작.md 번호 A01-E-067~091·136~138·140, 돌리지 않고 모임만: npx playwright test --list tests/room/a01-start.spec.js
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -42,11 +42,21 @@ for (const [i, n] of [5, 6, 7, 8, 9, 10].entries()) {
     });
 }
 
-test('A01-E-073 사람 + 봇 3 = 4명 전원 준비 → 인원 조건 거절 글 읽힘, 대기방 그대로 @smoke', async ({ user, bots }) => {
-    const botList = await bots.spawn(3);
+test('A01-E-073 사람 + 봇 3 = 4명 전원 준비 → "게임시작" 꺼짐 + 까닭 글 "5명부터 시작할 수 있습니다. (지금 4명)" 읽힘, 대기방 그대로 / 봇 방장 4명 방 시작 요청은 서버가 인원 조건 글로 거절 @smoke', async ({ user, bots }) => {
+    const [host, ...rest] = await bots.spawn(7);
+    const botList = rest.splice(0, 3);
     await K.readyRoom(user, botList, { maxPlayers: 5, jokers: 1 });
-    await startButton(user.page).click();
+    // 5명보다 적으면 누르기 전에 꺼져 있음 (결정 2026-11-16 낮 셋째 5번) → 누르지 않고 꺼짐·까닭 글·판 없음을 봄
     await K.expectStartRejected(user, K.MSG.MIN_PLAYERS);
+    await expect(K.startLockedReason(user.page)).toHaveText(K.startLockedText(4));
+    // 서버 거절은 그대로 있음: 화면으론 못 보내니 봇 방장(봇 4명 전원 준비)이 시작 요청을 바로 보냄
+    const made = await host.createRoom({ accessType: 'code', maxPlayers: 5, jokerCount: 1 });
+    await K.botsJoin(rest, made.roomCode);
+    const live = await K.botsReady([host, ...rest], host.uuid);
+    const reply = await host.request('start_game', { roomId: live.roomId, expectedSettingsVersion: live.settingsVersion });
+    expect(reply?.ok).toBe(false);
+    expect(reply?.code).toBe('MIN_PLAYERS_NOT_MET');
+    expect(reply?.message).toBe(K.MSG.MIN_PLAYERS);
 });
 
 test('A01-E-074 6명 중 봇 1 준비 안 함 → "아직 준비하지 않은 참가자가 있습니다." 읽힘', async ({ user, bots }) => {
@@ -216,12 +226,16 @@ test('A01-E-090 위에서 사람 손님 준비 안 함 → 봇 방장 시작 거
     expect(await e2e.gameOf(K.U(user))).toBeNull();
 });
 
-test('A01-E-091 키보드: 막힘 창 → Enter → 닫힘, 초점이 대기방으로', async ({ user, bots }) => {
+test('A01-E-091 키보드: 막힘 창(5명 중 봇 1 준비 안 함) → Enter → 닫힘, 초점이 대기방으로', async ({ user, bots }) => {
     const page = user.page;
-    const botList = await bots.spawn(3);
-    await K.readyRoom(user, botList, { maxPlayers: 5, jokers: 1 });
+    // 4명 방은 "게임시작"이 미리 꺼져 막힘 창이 안 뜸 → 5명 중 봇 하나 준비 안 한 방으로 막힘 창을 띄움
+    const botList = await bots.spawn(4);
+    const room = await K.createRoomOn(user, { maxPlayers: 5, jokers: 1 });
+    await K.botsJoin(botList, room.roomCode);
+    await K.botsReady(botList.slice(0, 3), K.U(user));
+    await K.readyMe(page);
     await startButton(page).click();
-    await K.expectStartRejected(user, K.MSG.MIN_PLAYERS);
+    await K.expectStartRejected(user, K.MSG.NOT_READY);
     // 창이 뜨면 "확인"에 초점 → Enter로 닫음
     await expect(blockedDialog(page).getByRole('button', { name: '확인' })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -276,6 +290,10 @@ test('A01-E-138 5명 전원 준비, "설정 저장"과 "게임시작"을 거의 
         document.querySelector('button[aria-label="게임시작"]').click();
     });
     await expect.poll(async () => (await e2e.roomOf(K.U(user)))?.settings?.dayDiscussionTime ?? 'GONE', { timeout: 15_000 }).not.toBe(60);
+    // 시작 요청이 끝날 때까지 기다림 (끝나기 전에 "판이 있나"를 읽으면 그 뒤에 생긴 판을 놓쳐 그때그때 갈림): 판이 생겼거나 단추 글 "시작 중"이 풀림
+    // 여기서 못 기다려도 아래 확인은 그대로 함
+    await expect.poll(async () => Boolean(await e2e.gameOf(K.U(user))) || (await page.getByRole('button', { name: '시작 중' }).count()) === 0, { timeout: 10_000 })
+        .toBe(true).catch(() => {});
     const game = await e2e.gameOf(K.U(user));
     if (game) {
         const settings = await K.startedSettings(botList[0]);

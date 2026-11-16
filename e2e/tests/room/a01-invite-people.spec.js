@@ -22,7 +22,7 @@ async function hostInvites(host, friendNickname) {
     await K.closeInviteModal(host.page);
 }
 
-test('A01-H-511 초대 3분 지나면 수락 안 됨 (정원 6 · 사람 2) → 3분 5초 기다림 → 수락 → 실패 글, 대기방 안 감 @hard @realtime @smoke', async ({ user, players }) => {
+test('A01-H-511 초대 3분 지나면 수락 안 됨 (정원 6 · 사람 2) → 3분 5초 기다림 → 수락 → 실패 글, 대기방 안 감 @hard @realtime', async ({ user, players }) => {
     test.setTimeout(300_000);
     const a = user;
     const b = await players.add();
@@ -44,7 +44,7 @@ test('A01-H-511 초대 3분 지나면 수락 안 됨 (정원 6 · 사람 2) → 
     expect(await K.roomSize(K.U(a))).toBe(1);
 });
 
-test('A01-H-512 탈주 대기 중 세 길 다 막힘 (정원 6 · 사람 2 + 봇 3) → 코드·공개 목록·초대 수락 셋 다 "탈주로 …뒤에 참여할 수 있습니다." @hard @game', async ({ user, players, bots, table }) => {
+test('A01-H-512 탈주 대기 중 세 길 다 막힘 (정원 6 · 사람 2 + 봇 3) → 코드·공개 목록·초대 수락 셋 다 "탈주로 …뒤에 참여할 수 있습니다." @hard @game @smoke', async ({ user, players, bots, table }) => {
     test.setTimeout(300_000);
     const a = user;
     const b = await players.add();

@@ -1,6 +1,6 @@
 'use strict';
 
-// PC 탈주 대기 중 방 만들기 거절 브라우저 시험 — 산 채로 나간 뒤 "탈주로 ○분 ○초 뒤에…" 알림 글(1번째 5분·2번째 30분·3번째 1일), 다시 누르면 남은 초가 줆, 죽은 뒤 나감·끊김 60초 탈락
+// PC 탈주 대기 중 방 만들기 거절 브라우저 시험 — 산 채로 나간 뒤 "탈주로 ○분 ○초 뒤에…" 알림 글(1번째 5분·2번째 30분·3번째 1일)과 화면에 남는 안내 띠, 다시 누르면 남은 초가 줆, 죽은 뒤 나감·끊김 60초 탈락
 // 목록 A01a-방만들기-설정-시작.md 번호 A01-E-098~100·133~135, 돌리지 않고 모임만: npx playwright test --list tests/room/a01-desertion-create.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { e2e } = require('../../helpers/internal');
@@ -23,6 +23,8 @@ test('A01-E-098 5명 판 산 채로 나감 → 방 만들기 → "탈주로 4분
     await desertAlive(table, user);
     const text = await A9.createRoomAlert(user.page);
     expect(text).toMatch(/^탈주로 4분 5\d초 뒤에 참여할 수 있습니다\.$/);
+    // 알림 창을 닫은 뒤에도 같은 글이 화면 안내 띠에 남아 읽힘 (PC)
+    await K.expectEntryNotice(user.page, text);
     expect(await e2e.roomOf(K.U(user))).toBeNull();
 });
 
@@ -52,6 +54,7 @@ test('A01-E-100 6명 판에서 사람이 처형돼 죽은 뒤 나감 → 방 만
     await K.waitRoom(K.U(user));
 });
 
+// A01-E-133·134: DB에 넣는 줄은 이미 풀린 지난 탈주(그 줄만으론 안 막힘) — 서버가 진짜 탈주를 적을 때 오늘 줄 수를 DB에서 세어 몇 번째인지 정함
 test('A01-E-133 오늘 탈주 1줄 있는 계정이 5명 판 산 채로 나감 → "탈주로 29분 5x초 뒤에…" @game', async ({ user, table }) => {
     await K.seedTodayDesertions(K.U(user), 1);
     await desertAlive(table, user);

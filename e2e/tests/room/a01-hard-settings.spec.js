@@ -6,6 +6,8 @@ const { test, expect, ui } = require('../../helpers/fixtures');
 const { e2e } = require('../../helpers/internal');
 const { botsJoinAndReady } = require('./roomHelpers');
 const K = require('./_a01a-kit');
+// 화면 소켓 길목(답 붙잡기·끊기·다시 붙이기)은 추방 도우미 것 그대로 — 오프라인 흉내(context.setOffline)는 이미 열린 웹소켓을 못 끊음
+const { socketGate } = require('./_a01b-kick-kit');
 
 const roomOfHost = (host) => e2e.roomOf(K.U(host));
 const isReadyIn = (room, who) => Boolean(room?.players.find((p) => p.uuid === K.U(who))?.isReady);
@@ -119,19 +121,27 @@ test('A01-H-004 PC 방장 A + 모바일 손님 B + 봇 3: A 정원 8로 → B �
     expect(isReadyIn(await roomOfHost(A), B)).toBe(false);
 });
 
-test('A01-H-014 사람 2 + 봇 3: A 저장 직후 A 네트워크 끊었다 붙임 → 결과 다시 묻기로 A 화면 새 설정, B 화면과 같음 @hard', async ({ user, players, bots }) => {
+test('A01-H-014 사람 2 + 봇 3: A 저장 답이 오기 전에 A 연결이 끊겼다 붙음 → 결과 다시 묻기로 A 화면 새 설정, B 화면과 같음 @hard', async ({ user, players, bots }) => {
     const A = user;
     const B = await players.add();
+    // A 화면 소켓 길목은 방 만들기 전에 (그 뒤 새 소켓이 이 길로 감)
+    const gate = await socketGate(A.page);
     const room = await K.createRoomOn(A, { maxPlayers: 10, jokers: 1 });
     await ui.joinRoomByCodeUi(B.page, room.roomCode);
     await botsJoinAndReady(await bots.spawn(3), K.U(A), room.roomCode);
     await K.openEditor(A.page);
     await K.fill(A.page, { maxPlayers: 8 });
+    // 서버 → A 화면 값을 붙잡아 저장 답이 A에 안 닿게 함 (요청은 서버에 감)
+    gate.hold();
     await A.page.getByRole('button', { name: '설정 저장', exact: true }).click();
-    await A.context.setOffline(true);
-    // 서버는 이미 받아 저장함 → B 화면이 새 값을 받은 것을 보고 A를 다시 붙임
+    // 서버는 받아 저장함 → B 화면이 새 값을 받은 것을 보고 A 소켓을 끊음 (붙잡은 답은 끊긴 소켓과 함께 버려짐 = 답 잃음)
     await expect(K.capacity(B.page)).toHaveText('5/8');
-    await A.context.setOffline(false);
+    await gate.cut();
+    gate.release();
+    // 답을 못 받은 채 끊겼으니 "설정 저장 결과 확인" 단추가 뜸
+    await expect(A.page.getByRole('button', { name: '설정 저장 결과 확인' })).toBeVisible();
+    // 대기방 자리 남김 15초 안에 다시 붙임
+    await gate.restore();
     await expect(async () => {
         // 답을 못 받았으면 "설정 저장 결과 확인" 단추가 뜸 → 누르면 결과를 다시 물음
         const verify = A.page.getByRole('button', { name: '설정 저장 결과 확인' });

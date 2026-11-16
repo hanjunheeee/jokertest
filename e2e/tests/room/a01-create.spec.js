@@ -80,7 +80,8 @@ test('A01-E-026 만든 직후 방장 칸은 준비 표시 없음("대기중"), �
     const room = await K.createRoomOn(user);
     await expect(readySilhouettes(page)).toHaveCount(0);
     await expect(notReadySeats(page)).toHaveCount(1);
-    await expectReadable(page.getByText('대기중', { exact: true }));
+    // 자리 글은 누르기를 안 받는 글(pointer-events:none)이라 가운데 점 검사가 늘 아래 그림을 집음 → 가려짐 검사만 뺌
+    await expectReadable(page.getByText('대기중', { exact: true }), { uncovered: false });
     await expectReadable(page.getByRole('button', { name: '준비완료' }));
     expect(room.players.find((p) => p.uuid === K.U(user))?.isReady).toBe(false);
 });

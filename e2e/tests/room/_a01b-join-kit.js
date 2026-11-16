@@ -1,11 +1,12 @@
 'use strict';
 
-// A01b 대기방 입장·준비·초대 브라우저 시험이 같이 쓰는 작은 도우미 — 봇 방 차리기·자리 준비 글 읽기·코드 입장 알림·봇 추방·친구·초대·공개 목록 줄·소켓 줄 가로채기
+// A01b 대기방 입장·준비·초대 브라우저 시험이 같이 쓰는 작은 도우미 — 봇 방 차리기·자리 준비 글 읽기·코드 입장 알림과 실패 안내 띠·봇 추방·친구·초대·공개 목록 줄·소켓 줄 가로채기
 // tests/room/a01-join-*·a01-invite*·a01-ready·a01-gather-people, tests/mobile/a01-join-*·a01-invite·a01-ready만 씀 (이름이 _로 시작해 시험으로 안 셈, 공용 도우미는 불러만 씀)
 const crypto = require('node:crypto');
 const { expect } = require('@playwright/test');
 const ui = require('../../helpers/ui');
 const { e2e } = require('../../helpers/internal');
+const { expectReadable } = require('../../helpers/visible');
 const { customRoleSettings } = require('../../helpers/game');
 const { api, botApi } = require('../../helpers/friends');
 const { openFriendPanel, openTab } = require('../lobby/lobbyHelpers');
@@ -155,6 +156,15 @@ async function typeCode(page, code) {
 async function codeAlert(page, code, o = {}) {
     await typeCode(page, code);
     return ui.captureAlert(page, () => joinButton(page).click(), o);
+}
+
+/** PC 코드 입장 화면의 실패 안내 띠 글 (알림 창을 닫은 뒤에도 화면에 남음, 모바일엔 띠가 없음) */
+const entryNotice = (page) => page.getByTestId('entry-failure-notice').locator('span');
+
+/** 실패 안내 띠 글이 그 글(글자 또는 정규식)이고 읽힘 (PC만) */
+async function expectEntryNotice(page, text) {
+    await expect(entryNotice(page)).toHaveText(text);
+    await expectReadable(entryNotice(page));
 }
 
 /**
@@ -348,7 +358,7 @@ module.exports = {
     MSG, DESERTED, R, W, NO_SUCH_CODE, U, seats,
     botReady, botRoom, addBots, botsIntoHumanRoom, fixBotRoles, customRoleSettings, botGame, botDelete, roomSize,
     seatBadges, expectSeats, expectParty, waitVerified,
-    joinButton, typeCode, codeAlert, botKick, kickedThrice, desert,
+    joinButton, typeCode, codeAlert, entryNotice, expectEntryNotice, botKick, kickedThrice, desert,
     befriendBot, botInvite, inviteIdFor, botAccept, botDecline, openInvites, inviteRow, acceptButton, inviteError,
     openInviteModal, closeInviteModal, inviteFriendButton, invitingButton,
     enterButton, findRow, pickRow, rowLabel,

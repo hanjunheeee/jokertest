@@ -51,7 +51,8 @@ test('A01-E-035 봇 5명 정원 5 방 → "마감" 배지 읽힘, 줄 단추 꺼
     await openRoomList(user.page);
     const row = await rowOf(user.page, title);
     await expect(row).toContainText('5/5');
-    await expectReadable(row.getByText('마감', { exact: true }));
+    // 줄 안 글은 누르기를 안 받는 글(pointer-events:none)이라 가운데 점 검사가 늘 줄 단추를 집음 → 가려짐 검사만 뺌
+    await expectReadable(row.getByText('마감', { exact: true }), { uncovered: false });
     await expect(row).toBeDisabled();
 });
 
@@ -121,6 +122,7 @@ test('A01-E-042 공개 방 줄 제목·인원 글이 읽힘', async ({ user, bot
     const { title } = await botRoom(bots);
     await openRoomList(user.page);
     const row = await rowOf(user.page, title);
-    await expectReadable(row.getByText(title, { exact: true }));
-    await expectReadable(row.getByText('1/10', { exact: true }));
+    // 줄 안 글은 누르기를 안 받는 글(pointer-events:none) → 가려짐 검사만 빼고 보임·화면 안·대비를 봄
+    await expectReadable(row.getByText(title, { exact: true }), { uncovered: false });
+    await expectReadable(row.getByText('1/10', { exact: true }), { uncovered: false });
 });

@@ -1,6 +1,6 @@
 'use strict';
 
-// 시작 어려운 브라우저 시험 (사람 여럿) — 손님 탭 닫고 15초 안엔 연결 거절·16초 뒤 빠져 4명 거절(진짜 시간), 직접 구성 인원 모으기, 10명 시작 뒤 넷째 사람 목록에서 빠짐
+// 시작 어려운 브라우저 시험 (사람 여럿) — 손님 탭 닫고 15초 안엔 연결 거절·16초 뒤 빠져 4명이면 "게임시작" 꺼짐 + 까닭 글(진짜 시간), 직접 구성 인원 모으기, 10명 시작 뒤 넷째 사람 목록에서 빠짐
 // 목록 A01a-방만들기-설정-시작.md 번호 A01-H-005·007·013 (@hard), 돌리지 않고 모임만: npx playwright test --list tests/room/a01-hard-start.spec.js
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { e2e } = require('../../helpers/internal');
@@ -19,7 +19,7 @@ async function guestsReady(guests, roomCode) {
     for (const g of guests) await K.readyMe(g.page);
 }
 
-test('A01-H-005 사람 2 + 봇 3 전원 준비, B 탭 닫음 → 15초 안 시작은 연결 거절 / 16초 뒤 B 빠져 4명 → 인원 거절 @hard @realtime', async ({ user, players, bots }) => {
+test('A01-H-005 사람 2 + 봇 3 전원 준비, B 탭 닫음 → 15초 안 시작은 연결 거절 / 16초 뒤 B 빠져 4명 → "게임시작" 꺼짐 + 까닭 글 @hard @realtime', async ({ user, players, bots }) => {
     test.setTimeout(180_000);
     const A = user;
     const B = await players.add();
@@ -39,7 +39,7 @@ test('A01-H-005 사람 2 + 봇 3 전원 준비, B 탭 닫음 → 15초 안 시�
     expect((await e2e.roomOf(K.U(A))).players.some((p) => p.uuid === K.U(B)), '15초 전에 빠짐').toBe(true);
     // 15초(+허용 폭) 안에 빠져 4명
     await expect.poll(async () => (await e2e.roomOf(K.U(A))).players.length, { timeout: Math.max(1000, (closedAt + ROOM_GRACE_MS + SLACK_MS + 1000) - Date.now()) }).toBe(4);
-    await startButton(A.page).click();
+    // 4명이 되면 누르기 전에 꺼짐 (결정 2026-11-16 낮 셋째 5번) → 누르지 않고 꺼짐·까닭 글 "(지금 4명)"을 봄
     await K.expectStartRejected(A, K.MSG.MIN_PLAYERS);
 });
 

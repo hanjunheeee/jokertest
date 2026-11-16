@@ -1,6 +1,6 @@
 'use strict';
 
-// A01a(방 만들기·설정·시작) 브라우저 시험 몫 도우미 — 설정 칸 맞추기(PC·모바일 같이)·서버 방 값 읽기·시작 막힘·점검 켜고 끄기·탈주 줄 넣기
+// A01a(방 만들기·설정·시작) 브라우저 시험 몫 도우미 — 설정 칸 맞추기(PC·모바일 같이)·서버 방 값 읽기·시작 막힘(인원 모자람은 단추 꺼짐 + 까닭 글)·만들기 실패 안내 띠·점검 켜고 끄기·탈주 줄 넣기
 // tests/room/a01-*.spec.js·mobile/a01-*.spec.js·multinode/a01-room-list.spec.js만 씀 (공용 아님, 공용으로 올릴 후보는 보고에 적음)
 const crypto = require('node:crypto');
 const { expect } = require('@playwright/test');
@@ -16,6 +16,7 @@ const nick = (x) => x.account.nickname;
 const titleOf = (x) => `${nick(x)}의 방`;
 
 // 서버 거절 글 (목록 A01a 줄 그대로)
+// MIN_PLAYERS는 서버 답에만 남음: 화면은 5명보다 적으면 "게임시작"을 미리 꺼 둬서 이 글이 막힘 창에 안 뜸 (결정 2026-11-16 낮 셋째 5번)
 const MSG = Object.freeze({
     MIN_PLAYERS: '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.',
     NOT_READY: '아직 준비하지 않은 참가자가 있습니다.',
@@ -25,6 +26,9 @@ const MSG = Object.freeze({
     BELOW_OCCUPANCY: (n) => `현재 인원(${n}명)보다 적은 정원으로는 변경할 수 없습니다.`,
     MAINTENANCE_DEFAULT: '서버 점검 중입니다. 점검이 끝난 뒤 다시 시도해주세요.',
 });
+// 시작 최소 인원과 인원이 모자랄 때 방장 화면 까닭 글 → startLockedText(4) = '5명부터 시작할 수 있습니다. (지금 4명)'
+const MIN_START_PLAYERS = 5;
+const startLockedText = (n) => `${MIN_START_PLAYERS}명부터 시작할 수 있습니다. (지금 ${n}명)`;
 // 지운 설정 3칸 이름 (결정 "3칸 삭제")
 const REMOVED_LABELS = Object.freeze(['불이 꺼진 무도회', '영혼의 베팅', '투표 공개']);
 // 칸 이름 (PC·모바일 같은 글)
@@ -254,11 +258,41 @@ async function expectRolesTaken(gameId, presets) {
     return s;
 }
 
-/** 시작 막힘 창 글이 그 글이고 읽힘 + 대기방 그대로, 판 없음 */
+/** 방장 화면 "게임시작" 꺼진 까닭 글 칸 (5명보다 적을 때만 있음, 손님 화면엔 없음) */
+const startLockedReason = (page) => page.getByTestId('start-locked-reason');
+
+/** 만들기·코드 입장 화면의 실패 안내 띠 글 (PC만: 알림 창을 닫은 뒤에도 화면에 남음) */
+const entryNotice = (page) => page.getByTestId('entry-failure-notice').locator('span');
+
+/** 실패 안내 띠 글이 그 글(글자 또는 정규식)이고 읽힘 */
+async function expectEntryNotice(page, text) {
+    await expect(entryNotice(page)).toHaveText(text);
+    await expectReadable(entryNotice(page));
+}
+
+/** 인원이 모자란 방장 화면: "게임시작" 꺼짐 + 까닭 글(지금 서버 인원)이 읽힘 + 막힘 창 없음 (누르지 않고 봄) */
+async function expectStartLocked(who) {
+    const count = (await e2e.roomOf(U(who)))?.players?.length;
+    await expect(who.page.getByRole('button', { name: '게임시작' })).toBeDisabled();
+    const reason = startLockedReason(who.page);
+    await expect(reason).toHaveText(startLockedText(count));
+    await expectReadable(reason);
+    await expect(blockedDialog(who.page)).toHaveCount(0);
+}
+
+/**
+ * 시작이 막힘 + 대기방 그대로, 판 없음
+ * 인원 모자람(MSG.MIN_PLAYERS)이면 단추가 미리 꺼져 있어 막힘 창이 안 뜸 → 꺼짐 + 까닭 글로 봄 (부르는 쪽은 "게임시작"을 누르지 않음)
+ * 그 밖(준비 안 됨·구성 안 맞음·끊김·점검)은 누른 뒤 뜬 막힘 창 글이 그 글이고 읽힘
+ */
 async function expectStartRejected(who, message) {
-    const alert = blockedDialog(who.page).getByRole('alert');
-    await expect(alert).toHaveText(message);
-    await expectReadable(alert);
+    if (message === MSG.MIN_PLAYERS) {
+        await expectStartLocked(who);
+    } else {
+        const alert = blockedDialog(who.page).getByRole('alert');
+        await expect(alert).toHaveText(message);
+        await expectReadable(alert);
+    }
     await expect(who.page).toHaveURL(/\/game-matching/);
     expect(await e2e.gameOf(U(who)), '판이 생김').toBeNull();
     expect(await e2e.roomOf(U(who)), '대기방이 없어짐').not.toBeNull();
@@ -371,10 +405,11 @@ function waitSecondsOf(text) {
 }
 
 module.exports = {
-    U, nick, titleOf, MSG, REMOVED_LABELS, L, EDGES,
+    U, nick, titleOf, MSG, MIN_START_PLAYERS, startLockedText, REMOVED_LABELS, L, EDGES,
     arrow, valueOf, numberOf, setStep, setChoice, setCheck, selectTab, fill, expectEdges, expectNoRemovedFields,
     openSetupPage, waitRoom, createRoomOn, capacity, roomTitle, liveRoom, listedTitled, openShownCode,
-    botsJoin, botsReady, readyMe, readyRoom, autoRoles, expectRolesTaken, expectStartRejected, closeBlocked, startedSettings,
+    botsJoin, botsReady, readyMe, readyRoom, autoRoles, expectRolesTaken,
+    startLockedReason, expectStartLocked, expectStartRejected, entryNotice, expectEntryNotice, closeBlocked, startedSettings,
     openEditor, saveEditor, createAndDelete, tabTo,
     setMaint, clearMaint, dismissMaintNotice, seedTodayDesertions, waitSecondsOf, kstDayStartMs,
 };
