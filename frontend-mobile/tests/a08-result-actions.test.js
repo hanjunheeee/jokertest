@@ -1,5 +1,5 @@
 // 모바일 결과 화면 바닥 단추 시험: 가는 중엔 두 단추 다 잠김, 떠나기 실패 안내 자리, 결과 없으면 단추 하나, 뒤로 가기 확인 글
-// 목록 A08 모바일 A08-M-001~004·008 (돌리기: frontend-mobile 폴더에서 node --test tests/a08-result-actions.test.js)
+// 목록 A08 모바일 A08-M-001~004·008·009 (돌리기: frontend-mobile 폴더에서 node --test tests/a08-result-actions.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -70,4 +70,21 @@ test("A08-M-008 결과 화면 뒤로 가기 확인 글: 뒤로 가기 → '로�
     await waitUntil(() => confirms.length > 0, { label: "뒤로 가기 확인 창" })
     assert.equal(confirms.at(-1), "로비로 나가시겠습니까?")
     assert.equal(router.state.location.pathname, "/gameresult", "취소했는데 화면이 바뀜")
+})
+
+// 결과 화면에서 끊겼다 다시 이어져 스냅샷 답이 "그 판에 없음"이어도 받아 둔 결과·"대기방으로" 단추가 남음 (모바일도 같은 결과 값 훅)
+test("A08-M-009 결과 화면 다시 이어짐: 스냅샷 답 NOT_A_PARTICIPANT → 결과 화면·'대기방으로' 단추 그대로", async () => {
+    const socket = fakeSocket()
+    seat({ n: 5, phase: "DAY" })
+    endGame({ roles: ["CITIZEN", "JOKER", "CITIZEN", "DOCTOR", "CITIZEN"], winner: "CITIZEN" })
+    view = await renderRoute(socket, React.createElement(GameResultPage), { path: "/gameresult" })
+    await skipIntro()
+    assert.ok(buttonNamed("대기방으로"), `단추: ${buttonNames().join(" | ")}`)
+    socket.acks.get_session_snapshot = { ok: false, code: "NOT_A_PARTICIPANT", message: "요청이 거절되었습니다." }
+    socket.id = "sock-m1-again"
+    await act(async () => { socket.fire("connect") })
+    await flush()
+    await flush()
+    assert.ok(socket.sentOf("get_session_snapshot").length >= 1, "다시 이어진 뒤 스냅샷을 안 물음")
+    assert.ok(buttonNamed("대기방으로"), `결과 화면이 사라짐: ${buttonNames().join(" | ")}`)
 })
