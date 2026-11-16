@@ -50,6 +50,8 @@ test('A09-H-058 6명 판(사람 2 + 봇 4) ㄴ 오프라인 중 점검으로 판
     await K.sleepUntil(dropAt + GRACE_MS + TOL);
     await gate.open();
     expect(await H.desertionRows(U(b)), '탈주 줄 없음').toEqual([]);
+    // 옛 판 탭을 먼저 닫음: 다시 온라인이 된 옛 탭이 늦게 다시 붙으면 같은 세션 소켓 하나 규칙(known 1-15)으로 새 탭 소켓을 밀어내 방 만들기가 "네트워크" 실패였음
+    await b.page.close();
     const tab = await b.context.newPage();
     H.collectDialogs(tab);
     await K.createRoomOk(tab);

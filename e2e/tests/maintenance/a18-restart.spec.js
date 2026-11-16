@@ -104,6 +104,10 @@ test('A18-H-006 탈주 대기는 서버를 다시 켜도 남음: 5명 판(사람
     expect(first).toMatch(/^탈주로 (?:5분 0초|4분 \d{1,2}초) 뒤에 참여할 수 있습니다\.$/);
 
     await K.restartBackend();
+    // 끌 때 서버가 보낸 "서버 점검·업데이트로 …" 안내(양피지 창)는 닫기 전엔 화면을 새로 열어도 다시 뜸(못 닫은 안내 남김) → "게임 만들기"를 덮으니 글 확인 뒤 닫음
+    await expect(K.parchmentText(page)).toHaveText(K.TEXT.SHUTDOWN, { timeout: 10_000 });
+    await K.parchment(page).getByRole('button', { name: '확인' }).click();
+    await expect(K.parchment(page)).toHaveCount(0);
 
     const after = await K.createRoomAlert(page, { close: false });
     expect(after).toMatch(COOLDOWN_LEFT);

@@ -80,8 +80,9 @@ test('A17-H-027 탭1은 서버 ㄱ 로비 → 같은 브라우저 탭2를 서버
 test('A17-H-028 기기1은 서버 ㄱ 로비 → 기기2가 같은 계정으로 새 로그인해 서버 ㄴ으로 → 기기1에 "다른 기기 또는 브라우저에서 로그인…" 안내 + 로그인 화면 @hard', async ({ crowd }) => {
     const first = await crowd.on(N1);
     let second = null;
+    // 새 로그인도 서버 ㄴ이 받게 정함 (안 정하면 앞단이 돌아가며 나눠 서버 ㄱ이 받을 때도 있어, 다른 서버가 받은 새 로그인 길을 늘 보지 못함)
     const text = await ui.captureAlert(first.page, async () => {
-        second = await crowd.on(N2, { account: first.account });
+        second = await crowd.on(N2, { account: first.account, loginNode: N2 });
     }, { timeoutMs: 20_000 });
     expect(text).toBe(K.TEXT.otherLogin);
     await expectLoginScreen(first.page);

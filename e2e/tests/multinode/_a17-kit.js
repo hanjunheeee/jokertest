@@ -12,6 +12,8 @@ const { Table, fitMaxPlayers } = require('../../helpers/game');
 const { query } = require('../../helpers/db');
 const { api, botApi } = require('../../helpers/friends');
 const { createAdmin, loginAsAdmin } = require('../../helpers/adminAccounts');
+const { withRedis } = require('../../helpers/redis');
+const { redisPrefix } = require('../../helpers/env');
 const { closeReveals, hostGame, resultRow } = require('../room/roomHelpers');
 const L = require('../lobby/lobbyHelpers');
 const K8 = require('../result/_a08-hard-kit');
@@ -66,9 +68,20 @@ function pinScript([cookieName, hintKey, uuid, firstNode, noPin]) {
     } catch { /* 저장소·쿠키 막힘 (빈 화면 등) */ }
 }
 
+// 로그인 요청을 정한 서버로 (앞단이 주소의 ?node=를 보고 고름, a17-auth.spec.js와 같은 방법)
+// 새 로그인을 받은 서버가 옛 기기 서버와 같은지에 따라 옛 기기에 가는 끊김 까닭이 갈려서, 그 길을 정해 놓고 볼 때 씀
+async function loginOn(context, account, node) {
+    const res = await context.request.post(`${E2E.apiUrl}/auth/login?node=${encodeURIComponent(node)}`, {
+        data: { email: account.email, password: account.password, rememberMe: false },
+        headers: { origin: E2E.desktopUrl },
+    });
+    expect(res.ok(), `${node} 로그인 (${res.status()})`).toBe(true);
+}
+
 const test = mn.test.extend({
     /**
-     * 정한 서버 로비에 사람 하나: const me = await crowd.on(N2, { mobile?, account?, lobby? })
+     * 정한 서버 로비에 사람 하나: const me = await crowd.on(N2, { mobile?, account?, lobby?, loginNode? })
+     * loginNode를 주면 로그인 요청도 그 서버가 받음 (안 주면 앞단이 돌아가며 나눠서 어느 서버가 받을지 모름)
      * → { account, context, page, node, pin(node), unpin() } — pin은 다음 화면 열기·새로고침부터 그 서버를 먼저 두드림, unpin은 힌트를 안 건드림
      * (공용 onNode.person은 힌트가 처음 서버로 굳어 있어 "힌트를 다른 서버로 바꾸고 다시 열기"를 못 함)
      */
@@ -76,13 +89,14 @@ const test = mn.test.extend({
         const opened = [];
         const phone = testInfo.project.name.startsWith('mobile');
         await use({
-            on: async (node, { mobile = phone, account = null, lobby = true } = {}) => {
+            on: async (node, { mobile = phone, account = null, lobby = true, loginNode = null } = {}) => {
                 const acc = account ?? await accountsLib.createAccount();
                 const context = await browser.newContext(mobile ? MOBILE : DESKTOP);
                 opened.push(context);
                 await context.addInitScript(pinScript, [PIN_COOKIE, HINT_KEY, acc.uuid, node, NO_PIN]);
                 const page = await context.newPage();
-                await ui.loginViaApi(context, acc);
+                if (loginNode) await loginOn(context, acc, loginNode);
+                else await ui.loginViaApi(context, acc);
                 if (lobby) await ui.gotoLobby(page);
                 const pin = (next) => context.addCookies([{ name: PIN_COOKIE, value: next ?? NO_PIN, url: E2E.desktopUrl }]);
                 return { account: acc, context, page, node, pin, unpin: () => pin(null) };
@@ -240,6 +254,15 @@ async function waitRedis(state, ids = NODE_IDS, timeout = 20_000) {
     }
 }
 
+/**
+ * 그 사람 위치 기록(loc)이 Redis에서 빠질 때까지 (방·판에서 나온 뒤)
+ * Redis가 멈춘 동안 나가면 서버가 기록을 못 지우고, 살아난 뒤 0.5초 모아서 다시 맞추며 지움 (backend cluster/node.js createResync)
+ * /health가 up이어도 그 전엔 옛 기록이 남아 다른 서버가 이 사람을 옛 서버로 돌려보냄 → 살아난 뒤 다른 서버 로비로 보낼 땐 먼저 기다림
+ */
+async function waitLocCleared(uuid, timeout = 10_000) {
+    await expect.poll(() => withRedis((r) => r.get(`${redisPrefix()}:loc:${uuid}`)), { timeout, message: '위치 기록 지워짐' }).toBeNull();
+}
+
 // ── 관리자 ──
 
 /** 관리자 창 열기 (새 관리자 계정·Access 흉내·OTP 로그인) → { context, page, close } */
@@ -302,6 +325,6 @@ module.exports = {
     U, nick, PACE, TEXT, HINT_KEY,
     hintOf, dropHint, lobbyOn, startGame, startHosted, endByJoker, goldChip, rewardedUuids,
     nodeUrl, internalOn, gameAt, advanceAt, roomNodeOf, undrain, settleNodes,
-    pauseRedis, resumeRedis, waitRedis, openAdmin, adminApi, setGold,
+    pauseRedis, resumeRedis, waitRedis, waitLocCleared, openAdmin, adminApi, setGold,
     entryNotice, befriendBot, acceptInviteUi, collectDialogs,
 };

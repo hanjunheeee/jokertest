@@ -89,16 +89,19 @@ test('A11-H-506 이메일 바꿈 → 로그인 안 한 다른 브라우저에서
     await expect(other.page).toHaveURL(/\/lobby$/);
 });
 
-test('A11-H-508 인증번호 다시 받기 1분을 진짜로: 59초에 다시 → "(n초 뒤)", 61초에 다시 → 번호 받음 @hard @realtime', async ({ user }) => {
+test('A11-H-508 인증번호 다시 받기 1분을 진짜로: 58초에 다시 → "(n초 뒤)", 61초에 다시 → 번호 받음 @hard @realtime', async ({ user }) => {
     test.setTimeout(180_000);
     const { page, account } = user;
     await k.gotoAccount(page);
     const to = k.freshEmail('ec');
+    // 서버가 적는 보낸 시각 = 요청 받은 때, DB 시각 칸이 초 단위라 반올림으로 최대 0.5초 앞당겨짐
+    // → "60초 안" 쪽은 누르기 전 시각에서, "60초 지남" 쪽은 응답 뒤 시각에서 셈
+    // 58초: 반올림 0.5초 + 다시 누름이 서버에 닿기까지(바쁠 때 수백 ms) 여유 (59초는 바쁜 실행에서 서버로 60초를 넘겨 200이었음)
+    const beforeSend = Date.now();
     expect(await k.sendEmailCode(page, { newEmail: to, password: account.password })).toBe(200);
-    // 서버가 보낸 시각은 이 응답보다 앞 → 이 시각 기준 59초면 서버로도 60초 안
     const sentAt = Date.now();
-    await mail.waitForCode(to, 'EMAIL_CHANGE_CODE', { since: sentAt - 5_000 });
-    await sleep(sentAt + 59_000 - Date.now());
+    await mail.waitForCode(to, 'EMAIL_CHANGE_CODE', { since: beforeSend - 1_000 });
+    await sleep(beforeSend + 58_000 - Date.now());
     expect(await k.resendEmailCode(page)).toBe(429);
     await expect(k.emailSection(page).getByText(/\(\d+초 뒤\)$/)).toBeVisible();
     await sleep(sentAt + 61_000 - Date.now());

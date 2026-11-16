@@ -36,7 +36,7 @@ const showMarks = (page) => page.locator('[data-ingame-night-success-kill], [dat
 const P = (x) => ({ uuid: (x.account ?? x).uuid, nickname: (x.account ?? x).nickname });
 
 /**
- * 화면 기록 심기: 5초 표시가 켜지고 꺼진 때·연출이 뜬 때를 차례대로 적음 (화면 시계로 시각도 적음)
+ * 화면 기록 심기: 5초 표시가 켜지고 꺼진 때·연출이 뜬 때·카드 메뉴 행동을 실제로 누른 때를 차례대로 적음 (화면 시계로 시각도 적음)
  * 문서가 열릴 때마다 다시 심어서 새로고침 뒤 기록은 새로 시작함
  */
 async function watch(page) {
@@ -64,6 +64,11 @@ async function watch(page) {
             last.settled = settled;
         };
         new MutationObserver(scan).observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+        // 카드 메뉴 행동이 화면에 눌린 때 (사파리는 시험의 누르기 동작 자체가 1초 넘게 걸려 시험 쪽 시각으로는 "고른 직후"를 못 잼)
+        document.addEventListener('click', (event) => {
+            const item = event.target?.closest?.('[role="menuitem"]');
+            if (item) push('press', text(item));
+        }, true);
         scan();
     };
     await page.addInitScript(install);
@@ -132,6 +137,12 @@ async function openMenu(page, slot) {
         await expect(menu).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 25_000 });
     return menu;
+}
+
+/** 화면이 그 행동을 실제로 받은 시각 (from번째 기록 뒤 첫 누름, 없으면 null) */
+async function pressedAt(page, from) {
+    const press = (await logOf(page, from)).find((e) => e.kind === 'press');
+    return press ? press.at : null;
 }
 
 /** 열린 카드 시트에서 행동 누름 → 누른 시각(ms) */
@@ -258,9 +269,11 @@ for (const c of SOLO_CASES) {
         await reachTurn(g, c.role, c.dayIndex);
         const from = (await logOf(g.page)).length;
         const clickedAt = await pick(g.page, talk.slot(g.page, target.nickname), ACTION[c.role]);
+        // "고른 직후"는 화면이 누름을 받은 때부터 잼 (기록이 없으면 시험이 누르기 시작한 때)
+        const pressed = (await pressedAt(g.page, from)) ?? clickedAt;
         await expectReadable(settleLabel(g.page));
         const span = await settleSpan(g.page, from);
-        expect(span.on - clickedAt, '고른 직후 표시가 켜짐').toBeLessThanOrEqual(1500);
+        expect(span.on - pressed, '고른 직후 표시가 켜짐').toBeLessThanOrEqual(1500);
         expectFiveSeconds(span.ms);
         // 그 차례가 닫히고 다음으로 넘어감
         await waitState(g.t, (s) => !(s.phase === 'NIGHT' && s.dayIndex === c.dayIndex && s.nightTurnRole === c.role), '차례 닫힘');

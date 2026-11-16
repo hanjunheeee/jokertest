@@ -220,6 +220,7 @@ const badgeOf = (page, nickname) => cardOf(page, nickname).locator('img[src*="in
 /**
  * 동작이 띄운 확인 창(window.confirm) 글 받기 — accept면 확인, 아니면 취소 (그 사이 뜬 알림 창은 닫기만)
  * PC·모바일 둘 다 브라우저 확인 창이라 글만 봄
+ * 동작에는 "확인 창이 이미 떴는지" 묻는 함수를 넘김 (다시 누르기를 멈출 때 씀)
  * @returns {Promise<string>} 확인 창 글
  */
 async function withConfirm(page, action, { accept }) {
@@ -231,7 +232,7 @@ async function withConfirm(page, action, { accept }) {
     };
     page.on('dialog', onDialog);
     try {
-        await action();
+        await action(() => message !== null);
         await expect.poll(() => message, { timeout: 10_000, message: '확인 창이 뜸' }).not.toBeNull();
     } finally {
         page.off('dialog', onDialog);
@@ -241,10 +242,17 @@ async function withConfirm(page, action, { accept }) {
 
 /** 위 줄 "게임 나가기" 누르고 확인 창 글 받기 (연출 창이 판을 막으면 닫으면서) */
 function pressExit(page, { accept }) {
-    return withConfirm(page, async () => {
+    // 확인 창이 뜨면 다시 안 누름: 사파리는 확인 창이 떠 있는 동안 누르기가 안 끝나 1.5초를 넘기면 실패로 보이는데,
+    // 그사이 확인을 눌러 이미 방 목록으로 갔으면 단추가 없어 다시 누르기가 25초 내내 실패함
+    return withConfirm(page, async (confirmed) => {
         await expect(async () => {
+            if (confirmed()) return;
             await clear(page);
-            await exitButton(page).click({ timeout: 1500 });
+            try {
+                await exitButton(page).click({ timeout: 1500 });
+            } catch (err) {
+                if (!confirmed()) throw err;
+            }
         }).toPass({ timeout: 25_000 });
     }, { accept });
 }

@@ -219,7 +219,7 @@ test('A08-H-043 5명 판(사람 3 + 봇 2): ㄷ 결과 화면 새로고침 → �
     await expectNextGameTogether(seated);
 });
 
-test('A08-H-046 5명 판(사람 2 + 봇 3): ㄱ이 끊긴 채 "대기방으로" → 연결 안내 → 다시 붙어 누름 → "결과 화면 시간이 지나…" 글 → 코드로는 들어감 @game @hard', async ({ players, table }) => {
+test('A08-H-046 5명 판(사람 2 + 봇 3): ㄱ이 끊긴 채 "대기방으로" → 연결 안내 → 다시 붙어 누름 → "연결이 끊겨 이 판에서 빠졌습니다…" 글 → 코드로는 들어감 @game @hard', async ({ players, table }) => {
     test.setTimeout(360_000);
     const [a, b] = await openHumans(players, 2);
     const page = a.page;
@@ -233,11 +233,11 @@ test('A08-H-046 5명 판(사람 2 + 봇 3): ㄱ이 끊긴 채 "대기방으로" 
     await expect(leaveNotice(page)).toHaveText(TEXT.returnOffline);
     await expectReadable(leaveNotice(page));
 
-    // 끊기는 순간 서버는 그 판에서 바로 뺌 → 다시 붙어 눌러도 결과 화면 사람이 아님
+    // 끊기는 순간 서버는 그 판에서 바로 뺌 → 다시 붙어 눌러도 결과 화면 사람이 아님 (결과 화면 시간은 남아 끊겨 빠졌다는 글)
     await gate.restore();
     await expect(async () => {
         await returnButton(page).click();
-        await expect(leaveNotice(page)).toHaveText(TEXT.resultClosed, { timeout: 3000 });
+        await expect(leaveNotice(page)).toHaveText(TEXT.returnDropped, { timeout: 3000 });
     }).toPass({ timeout: 30_000 });
     await expectReadable(leaveNotice(page));
     await expect(page).toHaveURL(/\/gameresult/);

@@ -22,18 +22,22 @@ const RETURN_OFFLINE_NOTICE = "연결이 끊겨 대기방으로 가지 못했습
 /**
  * 소켓 줄 손잡이: 사람 화면의 웹소켓을 시험이 가운데서 이어 줌 → 줄 끊기·잇기, 보내는 글 붙잡기
  * 손잡이를 건 뒤에 새로 여는 웹소켓만 잡힘 → 판 차리기(코드 입장 때 화면을 새로 엶) 전에 걸기
- * - cut(): 화면 쪽 줄만 닫음, 서버 쪽은 열어 둔 채 아무것도 안 넘김 (인터넷이 조용히 끊긴 모양), 다시 붙으려는 줄도 바로 닫음
- * - restore(): 다시 붙게 둠 (화면의 socket.io가 스스로 다시 붙음)
+ * - cut(): 화면 쪽 줄만 닫음, 서버 쪽은 열어 둔 채 아무것도 안 넘김 (인터넷이 조용히 끊긴 모양), 다시 붙으려는 줄은 오프라인으로 실패시킴
+ * - restore(): 다시 붙게 두고 화면 소켓이 다시 붙을 때까지 기다림
+ * 다시 붙으려는 줄을 그냥 닫으면 화면 socket.io가 실패로 안 보고 접속 제한 20초를 다 기다림 → 그사이 서버가 끊김을 알아채 결과 화면 사람을 끝난 판에서 뺌
+ * 오프라인 실패는 오류로 보여 1~3초 뒤 다시 붙음 (방 시험 길목 _a01b-kick-kit.js와 같은 방식)
  * - hold() / release(): 화면 → 서버로 가는 글을 붙잡았다가 한꺼번에 보냄 (서버 답이 늦는 모양)
  */
 async function tapSocketLine(page) {
-    const line = { cut: false, holding: false, held: [], routes: new Set(), refused: 0 };
+    const line = { cut: false, holding: false, held: [], routes: new Set(), refused: 0, opened: 0 };
     await page.routeWebSocket(/\/socket\.io\//, async (ws) => {
         if (line.cut) {
             line.refused += 1;
-            await ws.close().catch(() => {});
+            // 오프라인이라 서버 연결이 실패 → 화면 소켓에 오류·닫힘이 감
+            ws.connectToServer();
             return;
         }
+        line.opened += 1;
         const server = ws.connectToServer();
         const route = { ws, dead: false };
         line.routes.add(route);
@@ -58,6 +62,7 @@ async function tapSocketLine(page) {
     return {
         async cut() {
             line.cut = true;
+            await page.context().setOffline(true);
             const refusedBefore = line.refused;
             for (const route of line.routes) {
                 route.dead = true;
@@ -68,7 +73,12 @@ async function tapSocketLine(page) {
             // 화면이 끊긴 걸 알고 다시 붙으려다 막힌 것까지 봄 (그래야 "연결 없음" 상태가 확실함)
             await expect.poll(() => line.refused, { timeout: 20_000, message: '화면이 다시 붙으려다 막힘' }).toBeGreaterThan(refusedBefore);
         },
-        restore() { line.cut = false; },
+        async restore() {
+            const openedBefore = line.opened;
+            line.cut = false;
+            await page.context().setOffline(false);
+            await expect.poll(() => line.opened, { timeout: 30_000, message: '화면 소켓이 다시 붙음' }).toBeGreaterThan(openedBefore);
+        },
         hold() { line.holding = true; },
         release() {
             line.holding = false;
@@ -309,7 +319,7 @@ test('A08-E-070 5명 판 결과 화면: 연결이 끊겨 "대기방으로" 실�
     await expect(leaveNotice(page)).toHaveText(RETURN_OFFLINE_NOTICE);
 
     // 줄을 다시 이음 → 화면이 스스로 다시 붙은 뒤 "다시 눌러 주세요" 대로 누르면 들어감 (아직 안 붙었으면 같은 안내가 다시 뜨니 될 때까지 누름)
-    line.restore();
+    await line.restore();
     await expect(async () => {
         if (!/\/game-matching/.test(page.url())) await returnButton(page).click({ timeout: 2000 });
         await expect(page).toHaveURL(/\/game-matching/, { timeout: 3000 });

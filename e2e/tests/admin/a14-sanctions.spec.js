@@ -62,7 +62,7 @@ test(`${E(23)} 정지 → 해제(사유) → 플레이어 로그인 됨, 상세 
     }
 });
 
-test(`${E(24)} 강제 접속 종료 → 플레이어 창 끊김 안내, 다시 로그인 됨`, async ({ browser, players }) => {
+test(`${E(24)} 강제 접속 종료(정지 아님) → 플레이어 창 끊김 안내, 로그인 화면으로 안 가고 로비에 남음`, async ({ browser, players }) => {
     const player = await k.openPlayer(players);
     const w = await k.openAdmin(browser);
     try {
@@ -70,9 +70,10 @@ test(`${E(24)} 강제 접속 종료 → 플레이어 창 끊김 안내, 다시 �
         const pushed = await ui.captureAlert(player.page, () => box.getByRole('button', { name: '접속 끊기' }).click());
         expect(pushed).toBe(TEXT.kickedPush);
         await expect(w.page.getByRole('region', { name: '제재' }).getByRole('status')).toContainText('바로 끊었어요.');
-        await expect(player.page).toHaveURL(/\/login/);
-        await k.loginUi(player.page, player.account);
-        await expect(player.page).toHaveURL(/\/lobby/);
+        // 결정 일곱째 5번: 정지가 아닌 강제 끊기는 안내만 띄우고 로그인 화면으로 안 보냄, 같은 화면에서 다시 붙음 (A17-H-026과 같음)
+        await expect(player.page).not.toHaveURL(/\/login/);
+        await expect(player.page).toHaveURL(/\/lobby$/, { timeout: 15_000 });
+        await expectReadable(player.page.getByRole('button', { name: '친구 목록' }), { contrast: false });
     } finally {
         await w.close();
     }

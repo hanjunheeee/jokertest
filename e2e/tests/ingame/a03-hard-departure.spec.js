@@ -330,7 +330,7 @@ test('A03-H-021 6명 판(사람 2) 끊긴 사람이 59초 안 돌아와 표 냄 
     const back = { ...await players.add({ account: h2.account, lobby: false }), mobile: false };
     await back.page.goto('/lobby');
     await expect(back.page).toHaveURL(/\/ingame/, { timeout: 20_000 });
-    // 새 창이라 역할 창이 다시 저절로 뜸(탭마다 한 번, 10초 뒤 닫힘) → 같이 닫음, 안 닫으면 카드 누르기가 10초 막혀 5초 재기가 어긋남
+    // 낮 투표 중 새 창으로 돌아오면 역할 창은 안 뜸(사용자 결정 2026-11-16 일곱째 고를 것 4) → 안내 창만 닫고 역할 창이 없는지 봄
     await expect(async () => {
         await ui.closeOverlays(back.page, { names: ['단계 전환 안내', '알림', '내 역할 보기'], keepWatching: false, rounds: 2 });
         await expect(back.page.getByRole('dialog', { name: '내 역할 보기' })).toHaveCount(0, { timeout: 1_000 });

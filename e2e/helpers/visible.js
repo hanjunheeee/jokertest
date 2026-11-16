@@ -33,9 +33,11 @@
 // 가려짐: 요소 가운데 + 글 상자 가운데·왼쪽 1/8·오른쪽 7/8 네 점에서, 위에 겹친 남의 요소 중 눈에 보이는 것(바탕색·그림·테두리·글)이 있으면 가려짐
 //   - 바탕 없는 투명 칸이 겹친 것은 가림 아님 (글이 그대로 보임), 반투명 막은 가림
 //   - 자기 조상·자식은 가림 아님, 가장자리 1~2px 겹침은 안 봄
+// 화면 안: 글 없는 그림은 부모 칸(overflow가 visible 아님)이 잘라 낸 뒤 보이는 부분으로 봄, 글이 있는 요소는 상자 전체로 봄(반쯤 잘린 글 통과 막기)
 // pointer-events:none인 글·알림 칸: 가려짐 확인 때만 잠깐 누를 수 있게 바꿔 봄 (안 그러면 아래 칸을 덮개로 봄)
 // 못 잡는 것: pointer-events:none인 덮개(elementsFromPoint가 지나침), 글자 그림자·테두리로만 읽히는 글
-const { expect } = require('@playwright/test');
+// 못 잰 때: 기한 안에 한 번도 못 쟀으면 짧게 쉬고 두 번까지 더 잼, 그래도 못 재면 막힌 단계·요소 수·크기·오류 글을 실패 글에 담음
+const { expect, test } = require('@playwright/test');
 const zlib = require('node:zlib');
 
 // WCAG AA(웹 접근성 기준): 보통 글 4.5, 큰 글 3
@@ -45,6 +47,12 @@ const MIN_RATIO_LARGE = 3;
 const MIN_OPACITY = 0.3;
 // 화면 끝 1px 정도는 반올림 차이로 넘칠 수 있음
 const EDGE_SLACK_PX = 1;
+// 기본 기한, 기한이 거의 다 가도 한 단계에 주는 최소 시간, 기한 뒤 더 재 보는 횟수(한 번도 못 쟀을 때만), 다시 잴 때 쉬는 틈
+// 한 번 재기가 기한보다 길면 예전엔 끝나기 전에 끊겨 "재지 못함"만 남았음 (CPU 100%에서 사파리 1.5~3초·PC 사진 5~9초)
+const DEFAULT_TIMEOUT_MS = 5000;
+const MIN_STEP_MS = 3000;
+const EXTRA_TRIES = 2;
+const RETRY_GAPS_MS = [100, 250, 500, 1000];
 
 /** 'rgb(1, 2, 3)'·'rgba(1, 2, 3, 0.5)' → { r, g, b, a } (못 읽으면 null) */
 function parseColor(text) {
@@ -147,9 +155,22 @@ function worstTenthRatio({ pixels, bpp }, textColor) {
     return ratios[Math.floor(ratios.length * 0.1)];
 }
 
-// 페이지 안에서 함 — action: 'measure' 잼 / 'hide' 글자 지움(사진 찍기 전) / 'show' 글자 되돌림
+// 페이지 안에서 함 — action: 'scroll' 화면 안으로 / 'measure' 잼 / 'hide' 글자 지움(사진 찍기 전) / 'show' 글자 되돌림
 // 셋이 같은 글 칸을 찾아야 해서 한 함수에 둠 (evaluate로 넘기는 함수는 바깥 함수를 못 부름)
 function inPage(el, action) {
+    // 화면 밖일 때만 가운데로 옮김 — scrollIntoViewIfNeeded는 "멈춰 있음"을 기다려 CPU 100% 사파리에서 1.5~8초 걸렸음 (움직임은 다시 재기가 맡음)
+    if (action === 'scroll') {
+        const r = el.getBoundingClientRect();
+        const outside = (box) => r.top < box.top - 1 || r.left < box.left - 1 || r.bottom > box.bottom + 1 || r.right > box.right + 1;
+        let out = outside({ top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth });
+        // 채팅 목록처럼 안에서 굴러가는 칸(auto·scroll)에 잘려 있어도 옮김 (말줄임 같은 hidden 칸은 안 건드림)
+        for (let p = el.parentElement; p && !out && p !== document.body; p = p.parentElement) {
+            const s = getComputedStyle(p);
+            if (/(auto|scroll|overlay)/.test(`${s.overflowX} ${s.overflowY}`)) out = outside(p.getBoundingClientRect());
+        }
+        if (r.width > 0 && r.height > 0 && out) el.scrollIntoView({ block: 'center', inline: 'center' });
+        return null;
+    }
     // 글이 실제로 그려지는 칸: 요소에 바로 붙은 글이 있으면 그 요소 그대로 (입력 칸도), 없으면 안쪽에서 눈에 보이는 첫 글 칸
     // 예: <button><img><span>준비완료</span></button> → span (글자색이 span에 걸려 있음)
     const hasOwnText = (node) => Array.from(node.childNodes).some((c) => c.nodeType === 3 && c.textContent.trim().length > 0);
@@ -316,7 +337,37 @@ function inPage(el, action) {
         else if (scan.sideColor) needsPixels = true;
     }
     const rect = el.getBoundingClientRect();
-    const isOwn = (n) => Boolean(n && (n === el || el.contains(n)));
+    // 조상 칸(overflow가 visible 아님)이 잘라 낸 뒤 실제로 그려지는 부분 → 다 잘렸으면 null
+    // 예: 배지 그림 scale-[1.35]라 상자는 x -1.3인데 부모(overflow:hidden)가 x 2.5부터 잘라 보이는 부분은 화면 안
+    // absolute는 자기 위치 기준 칸(위치 잡힌 조상)보다 아래 칸에 안 잘리고, fixed는 조상에 안 잘림 → 그 칸은 건너뜀(덜 잘라 보면 더 엄격함)
+    const visibleRectOf = (node) => {
+        const r = node.getBoundingClientRect();
+        let box = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+        let pos = getComputedStyle(node).position;
+        let escapes = pos === 'absolute' ? 'positioned' : pos === 'fixed' ? 'all' : null;
+        for (let p = node.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+            const s = getComputedStyle(p);
+            const boundary = s.position !== 'static' || s.transform !== 'none';
+            if (escapes === 'all' && s.transform === 'none') continue;
+            if (escapes === 'positioned' && !boundary) continue;
+            if (s.display !== 'inline' && (s.overflowX !== 'visible' || s.overflowY !== 'visible')) {
+                const pr = p.getBoundingClientRect();
+                const left = pr.left + p.clientLeft;
+                const top = pr.top + p.clientTop;
+                if (s.overflowX !== 'visible') box = { ...box, left: Math.max(box.left, left), right: Math.min(box.right, left + p.clientWidth) };
+                if (s.overflowY !== 'visible') box = { ...box, top: Math.max(box.top, top), bottom: Math.min(box.bottom, top + p.clientHeight) };
+            }
+            if (escapes && boundary) {
+                pos = s.position;
+                escapes = pos === 'absolute' ? 'positioned' : pos === 'fixed' ? 'all' : null;
+            }
+        }
+        const width = box.right - box.left;
+        const height = box.bottom - box.top;
+        return width > 0 && height > 0 ? { x: box.left, y: box.top, width, height } : null;
+    };
+    const visibleRect = visibleRectOf(el);
+    const isOwn =(n) => Boolean(n && (n === el || el.contains(n)));
     // 그 점에서 눈에 보이는 무언가를 그리는 요소인지 (안 그리는 투명 칸은 덮어도 글이 그대로 보임 → 가림 아님)
     // 그림·입력 칸·바탕색(반투명 막 포함)·바탕 그림·뒤 흐림·안쪽 그림자·자기 글·보이는 덧칸·그 점의 테두리 = 그림
     // 자식이 그 점에 그리면 자식이 겹친 목록에서 더 위에 나와 따로 걸림
@@ -425,39 +476,74 @@ function inPage(el, action) {
         coveredBy: covered ? `${describe(cover.hit)} (${cover.where})` : null,
         viewport: { width: window.innerWidth, height: window.innerHeight },
         rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+        visibleRect,
     };
+}
+
+// 어느 단계에서 막혔는지 오류에 붙여 둠 → 못 잰 까닭 글에 씀
+async function stage(name, fn) {
+    try {
+        return await fn();
+    } catch (error) {
+        if (error && typeof error === 'object' && !error.visibleStage) error.visibleStage = name;
+        throw error;
+    }
+}
+
+// 사진 찍기 전 Playwright가 글꼴 다 받기(document.fonts.ready)를 기다림 → 바깥 글꼴(신라 2MB, jsdelivr)이 늦게 오면 5~9초 막혔음
+// 글자는 지우고 바탕만 찍어서 글꼴이 덜 와도 바탕 값은 같음 → 이 사진에서만 안 기다림 (여러 창이 같이 찍으면 마지막 것이 끝날 때 되돌림)
+const NO_FONT_WAIT = 'PW_TEST_SCREENSHOT_NO_FONTS_READY';
+let fontWaitOff = 0;
+let fontWaitBefore;
+async function withoutFontWait(fn) {
+    if (fontWaitOff === 0) {
+        fontWaitBefore = process.env[NO_FONT_WAIT];
+        process.env[NO_FONT_WAIT] = '1';
+    }
+    fontWaitOff += 1;
+    try {
+        return await fn();
+    } finally {
+        fontWaitOff -= 1;
+        if (fontWaitOff === 0) {
+            if (fontWaitBefore === undefined) delete process.env[NO_FONT_WAIT];
+            else process.env[NO_FONT_WAIT] = fontWaitBefore;
+        }
+    }
 }
 
 // 글자만 지우고 글 상자 자리를 찍음 → PNG (글자 픽셀이 바탕 값에 안 섞이게)
 // 움직임 멈추기(animations: 'disabled')는 안 씀: 끝이 있는 움직임을 끝으로 건너뛰어 창이 일찍 닫히는 등 화면이 바뀜
-async function shootWithoutText(locator, clip) {
-    await locator.evaluate(inPage, 'hide');
+async function shootWithoutText(locator, clip, opt = {}) {
+    await stage('글자 지우기', () => locator.evaluate(inPage, 'hide', opt));
     try {
-        return await locator.page().screenshot({ clip, caret: 'hide', scale: 'css' });
+        return await stage('사진 찍기', () => withoutFontWait(() => locator.page().screenshot({ clip, caret: 'hide', scale: 'css', ...opt })));
     } finally {
-        // 찍는 사이 화면이 바뀌어 요소가 없어졌으면 되돌릴 것도 없음
-        await locator.evaluate(inPage, 'show').catch(() => {});
+        // 찍는 사이 화면이 바뀌어 요소가 없어졌으면 되돌릴 것도 없음 → 없어진 요소를 15초(기본) 기다리지 않게 1초만
+        await locator.evaluate(inPage, 'show', { timeout: 1000 }).catch(() => {});
     }
 }
 
 /**
  * 보임 값 재기 (확인은 안 함) — 직접 보고 싶을 때
  * @param {import('@playwright/test').Locator} locator 하나만 가리켜야 함
- * @param {{ method?: 'auto'|'dom'|'pixels', large?: boolean }} [o]
+ * @param {{ method?: 'auto'|'dom'|'pixels', large?: boolean, timeout?: number }} [o] timeout = 단계마다 기다리는 시간 (안 주면 Playwright 기본)
  * @returns {Promise<{ ratio:number|null, ratioP10:number|null, minRatio:number, large:boolean, color:string, background:string,
  *   backgroundFrom:'dom'|'image'|'pixels', backgroundBy:string|null,
  *   opacity:number, inViewport:boolean, rect:object, viewport:object, covered:boolean, coveredBy:string|null, hasText:boolean, textFrom:string }>}
  */
-async function readability(locator, { method = 'auto', large } = {}) {
-    await locator.scrollIntoViewIfNeeded();
-    const m = await locator.evaluate(inPage, 'measure');
+async function readability(locator, { method = 'auto', large, timeout } = {}) {
+    const opt = timeout === undefined ? {} : { timeout };
+    await stage('화면 안으로 옮기기', () => locator.evaluate(inPage, 'scroll', opt));
+    const m = await stage('스타일 재기', () => locator.evaluate(inPage, 'measure', opt));
     const textColor = parseColor(m.color);
     let background = null;
     let backgroundFrom = 'dom';
     let shot = null;
     // 그림 바탕·스타일로 모르는 바탕일 때만 사진 (평범한 글은 사진 없이 빠르게)
     if (m.clip && (method === 'pixels' || (method === 'auto' && m.bgKind !== 'dom'))) {
-        shot = decodePng(await shootWithoutText(locator, m.clip));
+        const png = await shootWithoutText(locator, m.clip, opt);
+        shot = await stage('사진 읽기', async () => decodePng(png));
         background = medianColor(shot);
         backgroundFrom = m.bgKind === 'image' ? 'image' : 'pixels';
     } else {
@@ -471,9 +557,11 @@ async function readability(locator, { method = 'auto', large } = {}) {
     const shown = textColor ? (textColor.a >= 1 ? textColor : blend(textColor, background)) : null;
     const ratio = shown ? Math.round(contrastRatio(shown, background) * 100) / 100 : null;
     const isLarge = large ?? (m.fontSize >= 24 || (m.fontSize >= 18.66 && m.fontWeight >= 700));
-    const { x, y, width, height } = m.rect;
-    const inViewport = width > 0 && height > 0 && x >= -EDGE_SLACK_PX && y >= -EDGE_SLACK_PX
-        && x + width <= m.viewport.width + EDGE_SLACK_PX && y + height <= m.viewport.height + EDGE_SLACK_PX;
+    // 화면 안 판정: 글 없는 그림(배지 등)은 부모가 잘라 낸 뒤 보이는 부분으로, 글이 있으면 예전처럼 요소 상자 전체로
+    // (글을 잘린 부분으로 재면 화면 끝에 반쯤 잘린 글도 통과함 → 글은 안 줄임)
+    const box = m.hasText ? m.rect : m.visibleRect;
+    const inViewport = Boolean(box) && box.width > 0 && box.height > 0 && box.x >= -EDGE_SLACK_PX && box.y >= -EDGE_SLACK_PX
+        && box.x + box.width <= m.viewport.width + EDGE_SLACK_PX && box.y + box.height <= m.viewport.height + EDGE_SLACK_PX;
     return {
         ratio,
         // 사진으로 쟀을 때 바탕 픽셀 중 글자와 대비가 나쁜 쪽 10% 자리 값 (참고만, 스타일로 쟀으면 ratio와 같음)
@@ -488,6 +576,8 @@ async function readability(locator, { method = 'auto', large } = {}) {
         opacity: m.opacity,
         inViewport,
         rect: m.rect,
+        // 부모 칸이 잘라 낸 뒤 보이는 부분 (다 잘렸으면 null)
+        visibleRect: m.visibleRect,
         viewport: m.viewport,
         covered: m.covered,
         coveredBy: m.coveredBy,
@@ -505,19 +595,59 @@ async function readability(locator, { method = 'auto', large } = {}) {
  * @param {boolean} [o.uncovered=true] 다른 것에 안 가려졌는지 볼지 (요소 가운데·글 가운데·글 양 끝)
  * @param {number} [o.minRatio] 대비 기준 덮어쓰기 (기준을 낮추는 데 쓰지 않음)
  * @param {'auto'|'dom'|'pixels'} [o.method='auto'] 바탕색 찾는 법
- * @param {number} [o.timeout] 보일 때까지 기다리는 시간 (기본 expect 시간)
+ * @param {number} [o.timeout] 보일 때까지 기다리는 시간이자 다시 재 보는 기한 (기본: 보임은 expect 시간, 재기는 5초)
  */
 async function expectReadable(locator, { large, contrast = true, uncovered = true, minRatio, method = 'auto', timeout } = {}) {
     await expect(locator).toBeVisible(timeout === undefined ? {} : { timeout });
+    const rules = { contrast, uncovered, minRatio };
     // 창이 열리는 움직임 중이면 가려짐·색이 잠깐 틀림 → 기준을 넘을 때까지 짧게 다시 봄
-    let last = null;
-    await expect.poll(async () => {
-        last = await readability(locator, { method, large });
-        return problemsOf(last, { contrast, uncovered, minRatio }).join(' / ') || 'OK';
-    }, { timeout: timeout ?? 5000, message: '읽히는지 확인' }).toBe('OK').catch(() => {
-        throw new Error(`사람 눈에 안 읽힘: ${problemsOf(last, { contrast, uncovered, minRatio }).join(' / ')}\n값: ${JSON.stringify(last)}`);
-    });
-    return last;
+    // 재기 한 번은 끝까지 기다림: 예전 expect.poll은 기한에 끊고 뒤에서 계속 돌게 둬서(글자 지우기·되돌리기가 다음 재기와 겹침) 값 없이 "재지 못함"만 남겼음
+    // 재다 난 오류도 삼키지 않고 다시 재 봄 (예전엔 첫 오류에 바로 끝나고 오류 글은 버려졌음)
+    return test.step('읽히는지 확인', async () => {
+        const deadline = Date.now() + (timeout ?? DEFAULT_TIMEOUT_MS);
+        let last = null;
+        let fail = null;
+        let tries = 0;
+        let extra = 0;
+        for (;;) {
+            tries += 1;
+            try {
+                last = await readability(locator, { method, large, timeout: Math.max(deadline - Date.now(), MIN_STEP_MS) });
+                fail = null;
+                if (problemsOf(last, rules).length === 0) return last;
+            } catch (error) {
+                fail = { stage: error?.visibleStage ?? '알 수 없음', message: firstLine(error) };
+            }
+            const now = Date.now();
+            if (now >= deadline) {
+                // 한 번이라도 쟀으면 그 값으로 판정, 한 번도 못 쟀으면 짧게 쉬고 두 번까지 더
+                if (last || extra >= EXTRA_TRIES) break;
+                extra += 1;
+            }
+            const gap = RETRY_GAPS_MS[Math.min(tries - 1, RETRY_GAPS_MS.length - 1)];
+            await new Promise((done) => { setTimeout(done, now >= deadline ? gap : Math.min(gap, deadline - now)); });
+        }
+        if (!last) throw new Error(`사람 눈에 안 읽힘: ${await whyNotMeasured(locator, fail, tries)}`);
+        const tail = fail ? `\n(마지막 재기는 못 함 — 단계 '${fail.stage}', 오류: ${fail.message})` : '';
+        throw new Error(`사람 눈에 안 읽힘: ${problemsOf(last, rules).join(' / ')}\n값: ${JSON.stringify(last)}${tail}`);
+    }, { box: true });
+}
+
+// 오류 첫 줄 (Playwright 글 색 코드 뺌)
+const firstLine = (error) => String(error?.message ?? error).replace(/\u001b\[[0-9;]*m/g, '').split('\n')[0].trim().slice(0, 240);
+
+// 한 번도 못 쟀을 때 까닭: 몇 번 해 봤나·막힌 단계·요소 수·크기·오류 글
+// 예: "재지 못함 — 3번 해 봄, 막힌 단계 '스타일 재기', 요소 없음(사라짐), 오류: locator.evaluate: Timeout 3000ms exceeded."
+async function whyNotMeasured(locator, fail, tries) {
+    const count = await locator.count().catch(() => null);
+    const box = count === 1 ? await locator.boundingBox({ timeout: 1000 }).catch(() => null) : null;
+    let size;
+    if (count === null) size = '요소 수 못 셈';
+    else if (count === 0) size = '요소 없음(사라짐)';
+    else if (count > 1) size = `요소 ${count}개(하나여야 함)`;
+    else if (!box) size = '크기 못 읽음(화면에 안 그려짐)';
+    else size = `크기 ${Math.round(box.width)}×${Math.round(box.height)}, 위치 ${Math.round(box.x)},${Math.round(box.y)}`;
+    return `재지 못함 — ${tries}번 해 봄, 막힌 단계 '${fail?.stage ?? '알 수 없음'}', ${size}, 오류: ${fail?.message ?? '없음'}`;
 }
 
 // 바탕을 잰 곳 → 오류 글 낱말
@@ -528,7 +658,10 @@ function problemsOf(r, { contrast, uncovered, minRatio }) {
     if (!r) return ['재지 못함'];
     const out = [];
     if (!(r.rect.width > 0 && r.rect.height > 0)) out.push(`크기 0 (${r.rect.width}×${r.rect.height})`);
-    if (!r.inViewport) out.push(`화면 밖 (위치 ${Math.round(r.rect.x)},${Math.round(r.rect.y)} 크기 ${Math.round(r.rect.width)}×${Math.round(r.rect.height)}, 화면 ${r.viewport.width}×${r.viewport.height})`);
+    // 그림이 부모 칸에 다 잘려 안 보이면 따로 알림, 화면 밖이면 보이는 부분 자리도 같이 적음
+    const v = r.visibleRect;
+    const seen = v ? `, 잘린 뒤 보이는 부분 ${Math.round(v.x)},${Math.round(v.y)} ${Math.round(v.width)}×${Math.round(v.height)}` : ', 부모 칸에 다 잘려 보이는 부분 없음';
+    if (!r.inViewport) out.push(`화면 밖 (위치 ${Math.round(r.rect.x)},${Math.round(r.rect.y)} 크기 ${Math.round(r.rect.width)}×${Math.round(r.rect.height)}${'visibleRect' in r ? seen : ''}, 화면 ${r.viewport.width}×${r.viewport.height})`);
     if (r.opacity < MIN_OPACITY) out.push(`거의 투명 (opacity ${r.opacity})`);
     if (uncovered && r.covered) out.push(`다른 것에 가려짐: ${r.coveredBy}`);
     if (contrast) {

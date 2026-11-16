@@ -110,6 +110,8 @@ test('A17-H-023 Redis 멈춘 동안 서버 ㄱ 7명 판에서 ㄱ이 산 채로 
         K.resumeRedis();
     }
     await K.waitRedis('up');
+    // 판 서버가 ㄱ의 옛 위치 기록(판 = 서버 ㄱ)을 지울 때까지 (안 그러면 서버 ㄴ이 ㄱ을 서버 ㄱ으로 돌려보냄)
+    await K.waitLocCleared(U(a));
 
     // 살아난 뒤 다른 서버도 막힘을 앎
     await K.lobbyOn(a, N2);

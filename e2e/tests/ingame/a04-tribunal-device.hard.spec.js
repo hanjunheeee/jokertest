@@ -18,10 +18,13 @@ test('A04-H-026 재판 중 같은 계정으로 모바일에서 로그인하면 �
     const log = A.socketLog(phone.page);
     await phone.page.goto('/ingame');
     await expect(trial.win(phone.page)).toBeVisible({ timeout: 20000 });
-    // 새 기기(새 탭 기억)는 판에 처음 들어온 것으로 보고 역할 창을 한 번 띄움(useInGameRoleReveal, 10초 뒤 저절로 닫힘) → 확인으로 닫고 봄
+    // 재판 중 새 기기로 돌아오면 역할 창을 안 띄움 (재판 단추를 가려 투표를 놓칠 수 있어서, 사용자 결정 2026-11-16 일곱째 고를 것 4)
+    // 판 상태를 받은 뒤 창이 뜰 틈(3초)을 줘도 안 뜸
     const reveal = phone.page.getByRole('dialog', { name: '내 역할 보기' });
-    await reveal.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-    await A.calm(phone.page, () => expect(reveal).toHaveCount(0, { timeout: 1000 }), { keepWatching: false });
+    const revealShown = await reveal.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false);
+    expect(revealShown, '재판 중 돌아왔는데 역할 창이 뜸').toBe(false);
+    // 다른 안내 창이 떠 있으면 닫고 봄 (전처럼)
+    await A.calm(phone.page, undefined, { keepWatching: false });
     await A.expectCardReadable(phone.page, d.nickname);
     await A.expectButtonsReadable(phone.page);
     await expect(user.page).toHaveURL(/\/login/, { timeout: 20000 });
