@@ -1,5 +1,5 @@
-// 모바일 투표 현황 창 시험: 낮 판정 결과 글 4가지([버그 9] 포함), 다음 날 낮이면 "집계 전"
-// 목록 A03 모바일 A03-M-001~004·012 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-vote-status.test.js)
+// 모바일 투표 현황 창 시험: 낮 판정 결과 글 4가지([버그 9] 포함), 다음 날 낮이면 "집계 전", 첫 줄 이름표 "투표 가능"
+// 목록 A03 모바일 A03-M-001~004·012·013 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-vote-status.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -57,4 +57,16 @@ test("A03-M-012 새 날 현황: 1일 결과(전원 기권) 뒤 2일 낮 → '집
     }
     assert.equal(cell("unresolved"), "집계 전")
     assert.equal(cell("outcome"), null, "2일 낮인데 1일 결과가 남음")
+})
+
+// 첫 줄 값이 산 사람 수(기권 포함)라 이름표를 "투표 가능"으로 봄 (사용자 결정 2026-11-17, 이름표만 바꿈)
+test("A03-M-013 7명 판 1표 6기권 판정 뒤 → 첫 줄 이름표 '투표 가능' 값 7, 기권 6, '득표' 이름표 없음", async () => {
+    const socket = await openStatus(7)
+    await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAIN_MAJORITY", alive: 7, abstain: 6 }))
+    const terms = [...(statusDialog()?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent.trim())
+    const voteTerm = statusDialog()?.querySelector('[data-testid="vote-status-public-vote-count"]')?.previousElementSibling?.textContent.trim() ?? null
+    assert.deepEqual(
+        { voteTerm, voteValue: cell("public-vote-count"), abstainValue: cell("public-abstain-count"), hasOldTerm: terms.includes("득표") },
+        { voteTerm: "투표 가능", voteValue: "7", abstainValue: "6", hasOldTerm: false },
+    )
 })

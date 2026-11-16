@@ -61,7 +61,8 @@ export default function InGameVoteStatusContent() {
       <div className={SCROLL_WRAP_CLASS}>
         <dl className={STATUS_SECTION_CLASS} aria-label="낮 투표 집계">
           <div className={STATUS_ROW_CLASS}>
-            <dt className={STATUS_TERM_CLASS}>득표</dt>
+            {/* 값이 산 사람 수(기권 포함)라 "득표" 대신 "투표 가능"으로 씀 (사용자 결정 2026-11-17) */}
+            <dt className={STATUS_TERM_CLASS}>투표 가능</dt>
             <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-public-vote-count">
               {publicVoteCount ?? "-"}
             </dd>

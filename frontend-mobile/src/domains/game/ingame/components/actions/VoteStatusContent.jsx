@@ -1,4 +1,4 @@
-// 투표 현황 내용: 낮 투표 집계(득표·기권·결과·재판 대상), 집계 전이면 안내 글
+// 투표 현황 내용: 낮 투표 집계(투표 가능·기권·결과·재판 대상), 집계 전이면 안내 글
 // 투표 현황 창(VoteStatusPanel)이 씀, 값은 데스크톱 스토어 dayVoteResolution, 모양은 데스크톱 상수
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import {
@@ -48,7 +48,8 @@ export default function VoteStatusContent({ nameOf }) {
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className={SCROLL_WRAP_CLASS}>
         <dl className={STATUS_SECTION_CLASS} aria-label="낮 투표 집계">
-          <Row term="득표" value={publicVoteCount ?? "-"} testId="vote-status-public-vote-count" />
+          {/* 값이 산 사람 수(기권 포함)라 "득표" 대신 "투표 가능"으로 씀 (사용자 결정 2026-11-17, PC와 같은 글) */}
+          <Row term="투표 가능" value={publicVoteCount ?? "-"} testId="vote-status-public-vote-count" />
           <Row term="기권" value={publicAbstainCount ?? "-"} testId="vote-status-public-abstain-count" />
           <Row term="결과" value={outcome === null ? "-" : (OUTCOME_LABELS[outcome] ?? outcome)} testId="vote-status-outcome" />
           <Row term="재판 대상" value={targetName} testId="vote-status-tribunal-target" />
