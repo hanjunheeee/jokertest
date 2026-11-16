@@ -260,14 +260,17 @@ async function sleepUntil(at) {
  * gate.drop.add('player_left_room')  서버 → 화면 그 알림만 버림 (대상이 나간 것을 방장 화면이 모르게)
  * gate.hold() / gate.release()        서버 → 화면 값을 붙잡았다가 순서대로 넘김 (= 답이 안 옴, 소켓은 그대로)
  * await gate.cut() / gate.restore()   소켓을 닫고 다시 붙기도 거절 / 다시 붙게 풂 (= 연결 끊김)
- * 오프라인(context.setOffline)은 이미 열린 웹소켓을 못 끊어 이 길목으로 대신함
+ * 오프라인(context.setOffline)은 이미 열린 웹소켓을 못 끊어 열린 것은 이 길목이 닫음
+ * 끊긴 동안 다시 붙기는 오프라인으로 실패시킴: 길목이 그냥 닫으면 화면 socket.io가 실패로 안 보고 접속 제한 20초를 다 기다려
+ * 다시 붙기가 20초 넘게 늦어짐(대기방 자리 남김 15초를 넘겨 방에서 빠짐), 오프라인 실패는 오류로 보여 1~3초 뒤 다시 붙음
  */
 async function socketGate(page) {
     const gate = { drop: new Set(), dropped: [], holding: false, held: [], offline: false, opened: 0, refused: 0, pairs: [] };
     await page.routeWebSocket(/\/socket\.io\//, (ws) => {
         if (gate.offline) {
             gate.refused += 1;
-            ws.close();
+            // 오프라인이라 서버 연결이 실패 → 화면 소켓에 오류·닫힘이 감
+            ws.connectToServer();
             return;
         }
         const server = ws.connectToServer();
@@ -293,6 +296,7 @@ async function socketGate(page) {
     };
     gate.cut = async () => {
         gate.offline = true;
+        await page.context().setOffline(true);
         const before = gate.refused;
         for (const { ws, server } of gate.pairs.splice(0)) {
             await Promise.resolve(ws.close()).catch(() => {});
@@ -303,6 +307,7 @@ async function socketGate(page) {
     gate.restore = async () => {
         const before = gate.opened;
         gate.offline = false;
+        await page.context().setOffline(false);
         await expect.poll(() => gate.opened, { timeout: 30_000, message: '화면 소켓이 다시 붙음' }).toBeGreaterThan(before);
     };
     return gate;

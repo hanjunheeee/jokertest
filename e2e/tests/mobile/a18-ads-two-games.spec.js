@@ -39,7 +39,8 @@ test('A18-H-010 모바일 5명 판(사람 1 + 봇 4) 두 번: 첫 판 결과 광
         expect(reply?.ok, `봇 대기방으로 답 ${JSON.stringify(reply)}`).toBe(true);
         room = reply.room;
     }
-    expect(room.roomId, '같은 방').toBe(t.room.roomId);
+    // 같은 방 = 같은 방 코드 (판 끝에 같은 코드로 다시 열고 방 id는 새로 뽑음, 결정「판 끝 뒤 대기방으로 — 방 코드」)
+    expect(room.roomCode, '같은 방 코드').toBe(t.roomCode);
     for (const bot of t.bots) await bot.setReady(room.roomId, room.settingsVersion);
     await page.getByRole('button', { name: '대기방으로', exact: true }).click();
     await expect(page).toHaveURL(/\/game-matching/, { timeout: 20_000 });

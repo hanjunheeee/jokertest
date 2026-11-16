@@ -137,7 +137,8 @@ test('A18-E-019 모바일 광고 창이 열린 동안 결과 화면 남은 시�
     await expect(K.adDialog(page)).toHaveCount(0);
     await toRoomButton(page).click();
     await expect(page).toHaveURL(/\/game-matching/, { timeout: 20_000 });
-    await expect.poll(async () => (await e2e.roomOf(K.U(phone)))?.roomId, { message: '들어간 방' }).toBe(t.room.roomId);
+    // 같은 방 = 같은 방 코드 (판 끝에 같은 코드로 다시 열고 방 id는 새로 뽑음, 결정「판 끝 뒤 대기방으로 — 방 코드」)
+    await expect.poll(async () => (await e2e.roomOf(K.U(phone)))?.roomCode, { message: '들어간 방 코드' }).toBe(t.roomCode);
 });
 
 test('A18-E-020 모바일 로비 광고 줄이 바닥 단추 줄 아래, 바닥 단추 가운데가 안 가려짐, 사이 8px 이상', async ({ players }) => {

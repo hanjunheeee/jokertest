@@ -28,14 +28,17 @@ test('A01-H-005 사람 2 + 봇 3 전원 준비, B 탭 닫음 → 15초 안 시�
     await botsJoinAndReady(await bots.spawn(3), K.U(A), room.roomCode);
     await K.readyMe(A.page);
 
-    const closedAt = Date.now();
+    // 서버 15초는 끊김을 안 순간부터 → 닫기 시작(이보다 앞서 안 끊김)·닫기 끝(이보다 늦게 안 앎) 두 시각으로 앞뒤를 봄
+    // 바쁠 때 탭 닫기에 몇 초 걸려 시작 시각으로만 재면 늦게 빠진 것처럼 보임
+    const closingAt = Date.now();
     await B.context.close();
+    const closedAt = Date.now();
     await startButton(A.page).click();
     await K.expectStartRejected(A, K.MSG.UNAVAILABLE);
     await K.closeBlocked(A.page);
 
     // 15초가 지나기 전엔 자리가 남음 (허용 폭만큼 앞에서 봄)
-    await A9.sleepUntil(closedAt + ROOM_GRACE_MS - SLACK_MS);
+    await A9.sleepUntil(closingAt + ROOM_GRACE_MS - SLACK_MS);
     expect((await e2e.roomOf(K.U(A))).players.some((p) => p.uuid === K.U(B)), '15초 전에 빠짐').toBe(true);
     // 15초(+허용 폭) 안에 빠져 4명
     await expect.poll(async () => (await e2e.roomOf(K.U(A))).players.length, { timeout: Math.max(1000, (closedAt + ROOM_GRACE_MS + SLACK_MS + 1000) - Date.now()) }).toBe(4);

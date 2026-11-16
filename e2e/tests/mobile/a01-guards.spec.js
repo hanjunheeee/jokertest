@@ -14,7 +14,8 @@ test('A01-E-131 모바일 5명 판 산 채로 나감 → 방 만들기 → 안�
     await A9.toDay(t);
     await A9.leaveAlive(page);
     const text = await A9.createRoomAlert(page, { close: false });
-    expect(text).toMatch(/^탈주로 4분 5\d초 뒤에 참여할 수 있습니다\.$/);
+    // 나간 직후 1초 안이면 "5분 0초" (서버가 초를 올림)
+    expect(text).toMatch(/^탈주로 (?:5분 0초|4분 5\d초) 뒤에 참여할 수 있습니다\.$/);
     await expectReadable(A9.noticeText(page));
     await A9.closeNotice(page);
     expect(await e2e.roomOf(K.U(user))).toBeNull();

@@ -138,10 +138,10 @@ test('A01-H-014 사람 2 + 봇 3: A 저장 답이 오기 전에 A 연결이 끊�
     await expect(K.capacity(B.page)).toHaveText('5/8');
     await gate.cut();
     gate.release();
-    // 답을 못 받은 채 끊겼으니 "설정 저장 결과 확인" 단추가 뜸
-    await expect(A.page.getByRole('button', { name: '설정 저장 결과 확인' })).toBeVisible();
-    // 대기방 자리 남김 15초 안에 다시 붙임
+    // 대기방 자리 남김 15초 안에 다시 붙임 — 단추(저장 답 기다림 8초)를 본 뒤 풀면 다시 붙기 간격이 늘어나 15초를 넘겨 방에서 빠짐
     await gate.restore();
+    // 답을 못 받은 채 끊겼으니 "설정 저장 결과 확인" 단추가 뜸 (다시 붙은 뒤에도 그 답은 안 옴)
+    await expect(A.page.getByRole('button', { name: '설정 저장 결과 확인' })).toBeVisible({ timeout: 15_000 });
     await expect(async () => {
         // 답을 못 받았으면 "설정 저장 결과 확인" 단추가 뜸 → 누르면 결과를 다시 물음
         const verify = A.page.getByRole('button', { name: '설정 저장 결과 확인' });

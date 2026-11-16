@@ -100,7 +100,8 @@ test('A18-H-006 탈주 대기는 서버를 다시 켜도 남음: 5명 판(사람
     await A9.toDay(t);
     await A9.leaveAlive(page);
     const first = await K.createRoomAlert(page);
-    expect(first).toMatch(A9.COOLDOWN_FIRST);
+    // 나간 직후 1초 안이면 "5분 0초" (서버가 초를 올림) — A9.COOLDOWN_FIRST는 4분대만 받음
+    expect(first).toMatch(/^탈주로 (?:5분 0초|4분 \d{1,2}초) 뒤에 참여할 수 있습니다\.$/);
 
     await K.restartBackend();
 

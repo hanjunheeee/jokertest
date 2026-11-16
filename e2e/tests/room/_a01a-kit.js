@@ -382,10 +382,12 @@ async function setMaint({ enabled, startsInMs = null, message = null }) {
 const clearMaint = () => setMaint({ enabled: false });
 
 /** 점검 큰 안내 창이 뜨면 단추로 닫음 (창이 화면 전체를 덮어 다른 단추를 못 누름) */
+// 창 자체로 봄: 휴대폰은 data-maintenance-notice가 크기 없는 감싼 칸이라 보임 검사에 늘 안 보임으로 걸림
 async function dismissMaintNotice(page) {
     const box = page.locator('[data-maintenance-notice]');
-    await expect(box).toBeVisible({ timeout: 15_000 });
-    await box.getByRole('button').first().click();
+    const dialog = page.getByRole('alertdialog').filter({ has: page.locator('#maintenance-notice-title') });
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole('button').first().click();
     await expect(box).toHaveCount(0);
 }
 

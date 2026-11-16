@@ -164,7 +164,7 @@ test('A10-H-007 사람 2 + 봇 4 = 6명 판, 방장 A 처형 → /lobby → 판 
     const a = user;
     const b = await players.add();
     // A가 화면으로 방을 만든 방장, B가 먼저 들어온 손님
-    const { t, joker } = await H.seatHosted(bots, a, [b], 4);
+    const { t, joker, botList } = await H.seatHosted(bots, a, [b], 4);
     await closeReveals([a.page, b.page]);
 
     await K.execute(t, U(a));
@@ -173,6 +173,9 @@ test('A10-H-007 사람 2 + 봇 4 = 6명 판, 방장 A 처형 → /lobby → 판 
 
     await endByJoker(t, joker, b.page);
     await H.pressReturn(b.page);
+    // A가 빠질 때 판 방장은 맨 앞자리(자리는 판 시작 때 섞임)의 참여 중인 사람에게 감 → 그 사람이 "지난 판 방장"으로 자리가 남음(결정 임시 8)
+    // 봇이 그 자리를 받았으면 B가 바로 방장이 아님 → 봇 전원 "로비로" → 남긴 자리 끝 → 먼저 들어온 B가 방장
+    for (const bot of botList) await H.botToLobby(bot, t.gameId);
     await expect.poll(async () => (await e2e.roomOf(U(b)))?.hostUuid, { message: '다시 연 방 방장' }).toBe(U(b));
     await expect(H.startButton(b.page)).toBeVisible({ timeout: 15_000 });
     await expectReadable(H.startButton(b.page).getByText('게임시작', { exact: true }));
