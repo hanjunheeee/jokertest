@@ -10,7 +10,7 @@ import { useMatchingStore } from "../store/matchingStore"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { buildSlots } from "../utils/chunkPlayerSlots.js"
 import { leaveRoom } from "../socket/room.js"
-import { MIN_START_PLAYERS, startNotReadyMessage, startShortageMessage } from "../constants/gameStartMessages.js"
+import { resolveMinStartPlayers, startNotReadyMessage, startShortageMessage } from "../constants/gameStartMessages.js"
 
 // 판 끝 뒤 방장 자리를 비워 둔 동안 자리 아래 안내 (방장 없으면 시작·설정·추방 단추도 아무에게 안 보임)
 const HOST_SEAT_RESERVED_MESSAGE =
@@ -18,9 +18,9 @@ const HOST_SEAT_RESERVED_MESSAGE =
 
 // 시작 단추가 꺼진 까닭 글 고르기 (방장만, 없으면 null)
 // 예: 3명 → "5명부터 시작할 수 있습니다. (지금 3명)", 5명 중 3명 준비 → "모두 준비해야 시작할 수 있습니다. (준비 3/5)"
-function pickStartLockedReason({ isHost, lacksPlayers, someoneNotReady, partyCount, readyCount }) {
+function pickStartLockedReason({ isHost, lacksPlayers, someoneNotReady, partyCount, readyCount, minStartPlayers }) {
   if (!isHost) return null
-  if (lacksPlayers) return startShortageMessage(partyCount)
+  if (lacksPlayers) return startShortageMessage(partyCount, minStartPlayers)
   if (someoneNotReady) return startNotReadyMessage(readyCount, partyCount)
   return null
 }
@@ -36,7 +36,7 @@ export function useMatchingPage() {
 
   const {
     isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom,
-    accessType, settings, settingsVersion, title,
+    accessType, settings, settingsVersion, title, minPlayers,
   } = useMatchingStore()
   // 방장·내 준비 여부는 방 상태에서 계산
   const isHost = isInRoom && myUuid === hostUuid
@@ -122,9 +122,11 @@ export function useMatchingPage() {
   // 준비 쪽은 서버가 준 canStart가 거짓이고 명단에도 준비 안 한 사람이 보일 때만 끔
   // → canStart가 거짓인데 명단은 전원 준비(역할 구성 안 맞음·입장 처리 중·값이 낡음)면 안 끄고 서버 거절 글에 맡김
   const readyCount = players.filter((player) => player?.isReady === true).length
-  const lacksPlayers = MIN_START_PLAYERS !== null && partyCount < MIN_START_PLAYERS
+  // 최소 인원은 서버가 방 값에 실어 보낸 값 (없거나 이상하면 5명)
+  const minStartPlayers = resolveMinStartPlayers(minPlayers)
+  const lacksPlayers = minStartPlayers !== null && partyCount < minStartPlayers
   const someoneNotReady = canStart !== true && readyCount < partyCount
-  const startLockedReason = pickStartLockedReason({ isHost, lacksPlayers, someoneNotReady, partyCount, readyCount })
+  const startLockedReason = pickStartLockedReason({ isHost, lacksPlayers, someoneNotReady, partyCount, readyCount, minStartPlayers })
 
   // 방 코드는 확인된 방에서만 보여 줌
   const canViewRoomCode = isInRoom && isRoomVerified

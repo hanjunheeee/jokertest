@@ -2,12 +2,16 @@
 // GameStartBlockedModal·hooks/room(useRoomRequests·useSettingsSave)·useMatchingPage가 씀
 import { GENERAL_GAME_SETUP } from '../../setup/constants/gameSetupOptions.js'
 
-// 시작 최소 인원: 방 만들기에서 고를 수 있는 가장 작은 정원과 같은 값 (서버 규칙도 같음, 숫자를 여기 또 적지 않으려고 거기서 읽음)
-// 그 항목을 못 찾으면 null → 단추를 미리 끄지 않음 (서버가 거절 글로 막음)
+// 시작 최소 인원 기본값: 방 만들기에서 고를 수 있는 가장 작은 정원과 같은 값 (숫자를 여기 또 적지 않으려고 거기서 읽음)
+// 서버가 방 값에 minPlayers를 안 실었을 때(옛 서버)만 씀, 그 항목도 못 찾으면 null → 단추를 미리 끄지 않음 (서버가 거절 글로 막음)
 export const MIN_START_PLAYERS = GENERAL_GAME_SETUP.find((item) => item.id === 'max-players')?.min ?? null
 
+// 쓸 시작 최소 인원: 서버가 준 값이 1 이상 정수면 그 값, 아니면 기본값 → 예: 6 → 6, 없음·"6"·0 → 5
+export const resolveMinStartPlayers = (fromServer) =>
+  Number.isSafeInteger(fromServer) && fromServer >= 1 ? fromServer : MIN_START_PLAYERS
+
 // 인원이 모자라 시작 단추가 꺼졌을 때 까닭 글 → 예: "5명부터 시작할 수 있습니다. (지금 3명)"
-export const startShortageMessage = (count) => `${MIN_START_PLAYERS}명부터 시작할 수 있습니다. (지금 ${count}명)`
+export const startShortageMessage = (count, minPlayers = MIN_START_PLAYERS) => `${minPlayers}명부터 시작할 수 있습니다. (지금 ${count}명)`
 
 // 준비 안 한 사람이 있어 시작 단추가 꺼졌을 때 까닭 글 → 예: "모두 준비해야 시작할 수 있습니다. (준비 3/5)"
 export const startNotReadyMessage = (readyCount, total) => `모두 준비해야 시작할 수 있습니다. (준비 ${readyCount}/${total})`

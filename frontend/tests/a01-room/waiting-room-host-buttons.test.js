@@ -1,5 +1,5 @@
 // 대기방 방장 단추·방 정보 시험(대기방 화면 전체 + 가짜 소켓): 설정 변경·시작 단추는 방장만, 시작 중 꺼짐, 방 이름·코드 보임, 방장 준비 안 됨, 코드 복사
-// 목록 A01a "화면 PC" A01-F-155~164·159-2~159-14·161-2~161-4, 5명 방(4명은 F-159 조건 안 맞는 방만)
+// 목록 A01a "화면 PC" A01-F-155~164·159-2~159-14·161-2~161-4·231~238, 5명 방(4명은 F-159 조건 안 맞는 방만)
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
@@ -144,6 +144,42 @@ test("A01-F-159-7 4명 방 손님 화면 → '게임시작' 단추도 까닭 글
   assert.ok(H.buttonNamed("게임시작") === null)
   assert.ok(startReason() === null)
 })
+
+// 서버가 방 값에 실어 보낸 시작 최소 인원(minPlayers)을 씀, 없거나 이상한 값이면 지금처럼 5명
+test("A01-F-231 방 값 minPlayers 6 + 5명 전원 준비 방장 → '게임시작' 꺼짐 + 까닭 글 \"6명부터 시작할 수 있습니다. (지금 5명)\", 눌러도 start_game 안 보냄", async () => {
+  const { socket } = H.renderMatchingPage({ room: H.roomOf({ n: 5, ready: ALL5, canStart: false, extra: { minPlayers: 6 } }) })
+  await waitVerified()
+  assert.equal(startButton().disabled, true)
+  assert.equal(startReason()?.textContent, "6명부터 시작할 수 있습니다. (지금 5명)")
+  assert.equal(startButton().getAttribute("aria-describedby"), startReason().id)
+  fireEvent.click(startButton())
+  assert.equal(socket.sentOf("start_game").length, 0)
+})
+
+test("A01-F-232 방 값 minPlayers 4 + 4명 전원 준비(canStart 참) 방장 → '게임시작' 켜짐, 까닭 글 없음", async () => {
+  H.renderMatchingPage({ room: H.roomOf({ n: 4, ready: ["host", "guest-1", "guest-2", "guest-3"], canStart: true, extra: { minPlayers: 4 } }) })
+  await waitVerified()
+  assert.equal(startButton().disabled, false)
+  assert.ok(startReason() === null)
+})
+
+// 칸 없음(옛 서버)·숫자 아님·1 미만·소수 → 5명 기준
+const BAD_MIN_PLAYERS = [
+  ["A01-F-233", "칸 없음", {}],
+  ["A01-F-234", "null", { minPlayers: null }],
+  ["A01-F-235", "글자 \"6\"", { minPlayers: "6" }],
+  ["A01-F-236", "0", { minPlayers: 0 }],
+  ["A01-F-237", "-1", { minPlayers: -1 }],
+  ["A01-F-238", "5.5", { minPlayers: 5.5 }],
+]
+for (const [no, label, extra] of BAD_MIN_PLAYERS) {
+  test(`${no} 방 값 minPlayers ${label} + 4명 전원 준비 방장 → 5명 기준: 꺼짐 + "5명부터 시작할 수 있습니다. (지금 4명)"`, async () => {
+    H.renderMatchingPage({ room: H.roomOf({ n: 4, ready: ["host", "guest-1", "guest-2", "guest-3"], extra }) })
+    await waitVerified()
+    assert.equal(startButton().disabled, true)
+    assert.equal(startReason()?.textContent, "5명부터 시작할 수 있습니다. (지금 4명)")
+  })
+}
 
 test("A01-F-160 누른 뒤 답 전 → 시작 단추 꺼짐", async () => {
   const later = H.deferred()

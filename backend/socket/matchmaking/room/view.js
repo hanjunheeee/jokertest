@@ -31,7 +31,7 @@ function reservedHostOf(room) {
     return typeof room.returnHold?.reservedHostUuid === 'string' ? room.returnHold.reservedHostUuid : null
 }
 
-// 방 정보 내용 (방 이름·명단·설정·버전·부팅 번호·남겨 둔 방장 자리)
+// 방 정보 내용 (방 이름·명단·설정·버전·부팅 번호·남겨 둔 방장 자리·시작 최소 인원)
 // 방 이름(title)은 대기방 머리에 보이려고 실음, 공개 목록 title과 같은 글자, 이름 없는 방은 칸을 안 실음
 // 정원은 settings.maxPlayers, 앉은 수는 players 길이
 function buildRoomPayload(room) {
@@ -45,6 +45,8 @@ function buildRoomPayload(room) {
         roomInstanceId: room.instanceId ?? null,
         bootEpoch: BOOT_EPOCH,
         canStart: computeCanStart(room),
+        // 시작 최소 인원, 화면이 시작 단추를 미리 끄는 데 씀 (숫자를 서버 한 곳에서만 고치려고)
+        minPlayers: getRequiredPlayers(),
         accessType: room.accessType ?? null,
         settingsVersion: getSettingsVersion(room),
         settings: buildRoomSettingsView(room.settings),

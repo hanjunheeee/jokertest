@@ -408,3 +408,79 @@ for (const [id, label, extra] of [
         assert.equal(payload.roomCode, 'ABCDEF');
     });
 }
+
+// ── 방 값에 시작 최소 인원 칸 (방 값이 나가는 길마다) ──
+// 약속: 칸 이름 minPlayers, 값은 서버 시작 판정이 쓰는 최소 인원 한 곳에서만 옴 (화면이 이 값으로 시작 단추를 미리 끔)
+const startMinimum = () => require('../../socket/matchmaking/core/config').getRequiredPlayers();
+
+test('A01-B-209 방 만들기 답 room.minPlayers = 서버 시작 최소 인원(5)', async (t) => {
+    const w = makeWorld(t);
+    w.connect('t209-host');
+    const made = await w.create('t209-host', { accessType: 'open', maxPlayers: 8 });
+    assert.equal(made.ok, true, made.message);
+    assert.equal(made.room.minPlayers, startMinimum());
+    assert.equal(made.room.minPlayers, 5);
+});
+
+test('A01-B-210 5명 정원 방에 코드 입장 → room_joined 값 minPlayers, 6명 정원 방 초대 수락 답 room.minPlayers', async (t) => {
+    const invites = makeInviteService();
+    const w = makeWorld(t, { depsOverrides: { gameInviteService: invites.service } });
+    for (const uuid of ['t210-a', 't210-b', 't210-c', 't210-d']) w.connect(uuid);
+    const open = await w.create('t210-a', { accessType: 'open', maxPlayers: 5 });
+    assert.equal(open.ok, true, open.message);
+    await w.join('t210-b', open.room.roomCode);
+    const joined = w.received('t210-b', 'room_joined').at(-1);
+    assert.ok(joined, '입장 알림 없음');
+    assert.equal(joined.minPlayers, startMinimum());
+    const code = await w.create('t210-c', { accessType: 'code', maxPlayers: 6 });
+    assert.equal(code.ok, true, code.message);
+    invites.addInvite('inv-t210', { receiverId: 't210-d', room: code.room, bootEpoch: w.matchmaking.__getBootEpochForTests() });
+    const accepted = await w.emit('t210-d', 'accept_game_invite', { inviteId: 'inv-t210' });
+    assert.equal(accepted.ok, true, `초대 수락 거절: ${accepted.code} ${accepted.message}`);
+    assert.equal(accepted.room.minPlayers, startMinimum());
+});
+
+test('A01-B-211 8명 정원 3명 방 방장·손님 get_current_room → 둘 다 room.minPlayers', async (t) => {
+    const w = makeWorld(t);
+    const room = await w.openRoom({ prefix: 't211', n: 3, maxPlayers: 8, readyAll: false });
+    for (const uuid of [room.host, room.guests[0]]) {
+        const current = await w.currentRoom(uuid);
+        assert.equal(current.minPlayers, startMinimum(), `${uuid}가 본 최소 인원`);
+    }
+});
+
+test('A01-B-212 5명 방 설정 바꾸기 옛 버전 거절 답·결과 다시 묻기 답의 room에도 minPlayers', async (t) => {
+    const w = makeWorld(t);
+    const room = await w.openRoom({ prefix: 't212', n: 5, readyAll: false });
+    const payload = await w.updatePayload(room.host, { maxPlayers: 9 });
+    assert.equal((await w.emit(room.host, 'update_room_settings', payload)).ok, true);
+    const conflict = await w.update(room.host, { maxPlayers: 8 }, { version: 1 });
+    assert.equal(conflict.code, 'SETTINGS_VERSION_CONFLICT');
+    assert.equal(conflict.room.minPlayers, startMinimum());
+    const asked = await w.emit(room.host, 'get_room_settings_update_result', { roomId: payload.roomId, requestId: payload.requestId });
+    assert.equal(asked.status, 'APPLIED');
+    assert.equal(asked.room.minPlayers, startMinimum());
+});
+
+test('A01-B-213 5명 판 끝 뒤 "대기방으로"(return_to_room) → 답 room.minPlayers', async (t) => {
+    const w = makeWorld(t);
+    const room = await w.openRoom({ prefix: 't213', n: 5, maxPlayers: 5, accessType: 'code' });
+    const started = await w.start(room.host);
+    assert.equal(started.ok, true, `시작 실패: ${started.code} ${started.message}`);
+    // 광대가 산 채로 나가면 판이 끝남 (광대 1명 판)
+    const roleOf = (uuid) => w.received(uuid, 'game_started').at(-1).state.self.role;
+    const joker = room.uuids.find((uuid) => roleOf(uuid) === 'JOKER');
+    const stayer = room.uuids.find((uuid) => uuid !== joker && uuid !== room.host);
+    const left = await w.mf.callAsPromise(w.G.handleLeaveGameSession, w.io, w.sock(joker), joker, { gameId: started.gameId });
+    assert.equal(left.ok, true, `나가기 거절: ${left.code}`);
+    assert.equal(w.byId.getSessionById(started.gameId)?.phase, 'ENDED', '판이 안 끝남 (시험 준비 틀림)');
+    const back = await w.emit(stayer, 'return_to_room', { gameId: started.gameId });
+    assert.equal(back.ok, true, `대기방으로 거절: ${back.code} ${back.message}`);
+    assert.equal(back.room.minPlayers, startMinimum());
+});
+
+test('A01-B-214 이름 없는 방(자동 매칭 방 모양)도 방 값에 minPlayers', (t) => {
+    const w = makeWorld(t);
+    const payload = w.view.buildRoomPayload(bareRoom());
+    assert.equal(payload.minPlayers, startMinimum());
+});

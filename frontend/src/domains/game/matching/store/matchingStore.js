@@ -48,6 +48,9 @@ export const useMatchingStore = create((set) => ({
 
     canStart: false,
 
+    // 서버가 방 값에 실어 보낸 시작 최소 인원, 칸이 없으면 null (화면은 null·이상한 값이면 5명으로 봄)
+    minPlayers: null,
+
     // 공개/코드 방, 방 설정, 설정 버전 (버전으로 옛 응답 가름)
     accessType: null,
     settings: null,
@@ -65,12 +68,12 @@ export const useMatchingStore = create((set) => ({
     setRoom: ({
         roomId, roomCode, players, hostUuid, canStart = false,
         accessType = null, settings = null, settingsVersion = null,
-        roomInstanceId = null, bootEpoch = null, title = null,
+        roomInstanceId = null, bootEpoch = null, title = null, minPlayers = null,
     }) =>
         set((s) => ({
             isSearching: false, isInRoom: true, roomId, roomCode, players, hostUuid, canStart,
             title: title ?? (s.isInRoom && s.roomId === roomId ? s.title : null),
-            accessType, settings, settingsVersion, roomInstanceId, bootEpoch,
+            accessType, settings, settingsVersion, roomInstanceId, bootEpoch, minPlayers,
             roomRevision: s.roomRevision + 1,
         })),
 
@@ -122,7 +125,7 @@ export const useMatchingStore = create((set) => ({
     clearRoom: () =>
         set((s) => ({
             isSearching: false, isInRoom: false, roomId: null, roomCode: null, title: null, players: [], hostUuid: null,
-            canStart: false,
+            canStart: false, minPlayers: null,
             roomInstanceId: null, bootEpoch: null,
             accessType: null, settings: null, settingsVersion: null,
             roomRevision: s.roomRevision + 1,
