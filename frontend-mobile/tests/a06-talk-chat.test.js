@@ -28,12 +28,12 @@ async function nightPage({ role, dead = false }) {
     return socket
 }
 
-test("A06-M-001 [단위 2] 밤 산 시민 입력 줄 닫힘: 글칸·보내기 없음, 까닭 글 '밤에는 시민이 채팅을 쓸 수 없습니다'", async () => {
+test("A06-M-001 [단위 2] 밤 산 시민 입력 줄 닫힘: 글칸·보내기 없음, 까닭 글 '밤에는 귀족이 채팅을 쓸 수 없습니다'", async () => {
     await nightPage({ role: "CITIZEN" })
     assert.ok(composer(), "입력 줄이 없음")
     assert.ok(chatInput() === null, "밤 시민에게 글칸이 있음")
     assert.ok(!composer().querySelector("button"), "밤 시민에게 보내기 단추가 있음")
-    assert.equal(textOf(composer().querySelector("[data-night-chat-closed]")), "밤에는 시민이 채팅을 쓸 수 없습니다")
+    assert.equal(textOf(composer().querySelector("[data-night-chat-closed]")), "밤에는 귀족이 채팅을 쓸 수 없습니다")
 })
 
 test("A06-M-002 밤 산 의사 입력 줄 열림: 글칸 있음", async () => {
@@ -44,7 +44,7 @@ test("A06-M-002 밤 산 의사 입력 줄 열림: 글칸 있음", async () => {
 test("A06-M-003 [단위 2] 밤 죽은 시민 입력 줄 열림: 글칸 있음, 까닭 글 없음", async () => {
     await nightPage({ role: "CITIZEN", dead: true })
     assert.ok(chatInput(), "밤 죽은 시민에게 글칸이 없음")
-    assert.ok(!textOf(shellBottom()).includes("밤에는 시민이 채팅을 쓸 수 없습니다"), "죽은 시민에게 닫힘 까닭 글")
+    assert.ok(!textOf(shellBottom()).includes("밤에는 귀족이 채팅을 쓸 수 없습니다"), "죽은 시민에게 닫힘 까닭 글")
 })
 
 test("A06-M-004 밤 의사 채팅방에 '밤 · 같은 직업끼리' 띠", async () => {

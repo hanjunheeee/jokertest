@@ -335,8 +335,10 @@ export function tribunalEntry({ n, defendant, dayIndex = 1, seconds = 60 }) {
     }
 }
 
-// 재판 결과 (서버 tribunal_vote_resolved 모양, 지금 서버처럼 직업·표 수가 실림)
-export function tribunalResolved({ defendant, outcome, dayIndex = 1, role = "CITIZEN", counts }) {
+// 재판 결과 (서버 tribunal_vote_resolved 모양 — 처형된 사람 직업·표 수는 서버가 안 실음, 결정 2026-11-16 아침 1번)
+// role·counts: 옛 서버처럼 그 칸이 실려 와도 화면에 안 새는지 볼 때만 넣음 (안 주면 지금 서버처럼 칸 없음)
+// DEFENDANT_DIED = 재판 도중 끊긴 피고가 탈락해 죽음(이유 칸 없음)
+export function tribunalResolved({ defendant, outcome, dayIndex = 1, role, counts }) {
     const executedUuid = outcome === "GUILTY" ? uuidOf(defendant) : null
     return {
         gameId: GAME,
@@ -344,9 +346,9 @@ export function tribunalResolved({ defendant, outcome, dayIndex = 1, role = "CIT
         phase: "NIGHT",
         defendantUuid: uuidOf(defendant),
         outcome,
-        counts: counts ?? (outcome === "GUILTY" ? { guilty: 4, notGuilty: 1 } : { guilty: 1, notGuilty: 4 }),
         executedUuid,
-        executedRole: executedUuid ? role : null,
+        ...(counts !== undefined ? { counts } : {}),
+        ...(role !== undefined ? { executedRole: executedUuid ? role : null } : {}),
     }
 }
 

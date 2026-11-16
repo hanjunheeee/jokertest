@@ -5,7 +5,7 @@ import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { buttonNamed, click, flush } from "./a00-kit.mjs"
-import { dayResolved, fakeSocket, fire, nextDay, renderPage, resetGame, seat, uuidOf } from "./a00-game.mjs"
+import { confirmEntrances, dayResolved, fakeSocket, fire, nextDay, renderPage, resetGame, seat, tribunalResolved, uuidOf } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -35,6 +35,13 @@ for (const [id, label, n, spec] of CASES) {
     test(`${id}${tag} 모바일 투표 현황 결과 글: ${spec.outcome} → "${label}"`, async () => {
         const socket = await openStatus(n)
         await fire(socket, "day_vote_resolved", dayResolved(spec))
+        // 재판이 열리면 투표 현황 창은 닫힘 (재판 창의 유죄·무죄 단추를 가려서, A04-M-013) → 재판이 끝난 뒤(무죄 → 밤) 다시 열어 결과 글을 봄
+        if (spec.outcome === "TRIBUNAL") {
+            await fire(socket, "tribunal_vote_resolved", tribunalResolved({ defendant: 2, outcome: "NOT_GUILTY" }))
+            await confirmEntrances()
+            click(buttonNamed("투표 현황 열기"))
+            await flush()
+        }
         assert.equal(cell("outcome"), label)
     })
 }

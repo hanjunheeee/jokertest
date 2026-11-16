@@ -1,5 +1,5 @@
-// 모바일 문의 시험: 너무 자주 쓰면(429) "잠시 뒤에 다시" 글, 문의 답 알림을 누르면 문의 시트가 그 문의로 열림
-// 목록 A13 모바일 A13-M-005·006 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-inquiry.test.js)
+// 모바일 문의 시험: 너무 자주 쓰면(429) "잠시 뒤에 다시" 글, 문의 답 알림을 누르면 문의 시트가 그 문의로 열림, 제목이 비면 보내기 꺼짐
+// 목록 A13 모바일 A13-M-005·006·009·010 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-inquiry.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, act } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -76,4 +76,42 @@ test("A13-M-006 모바일 문의 답 알림 탭: target inquiry 알림 '문의 �
     assert.equal(new URLSearchParams(router.state.location.search).get("inquiryId"), "7")
     assert.equal(sentHttp("GET", "/inquiries/7").length, 1)
     assert.ok(textOf(document.querySelector('[data-testid="inquiry-detail"]')).includes("판이 멈춤"))
+})
+
+// ── 009~010: 제목이 비면 보내기 꺼짐 (PC 문의 쓰기와 같은 규칙) ──
+
+// 문의 쓰기 탭을 열고 종류(버그)를 고름 → 보내기 단추 (종류까지 골라야 남는 까닭이 제목 하나뿐)
+async function openForm() {
+    serve({
+        "GET /inquiries": { status: 200, body: { ok: true, inquiries: [] } },
+        "POST /inquiries": { status: 201, body: { ok: true, inquiry: { id: 9, category: "BUG", title: "판이 멈춤", body: "낮에 멈췄어요", status: "OPEN", createdAt: "2026-11-16T01:00:00.000Z" } } },
+    })
+    signIn()
+    view = await renderRoute(fakeSocket(), React.createElement(InquirySheet, { open: true, onClose: () => {} }), { path: "/lobby" })
+    await flush(5)
+    click(document.querySelector('[data-testid="inquiry-tab-form"]'))
+    await flush()
+    click([...document.querySelectorAll('[role="radio"]')].find((b) => textOf(b) === "버그"))
+    return document.querySelector('[data-testid="inquiry-submit"]')
+}
+
+test("A13-M-009 모바일 문의 제목 비움(내용만 적음) → 보내기 꺼짐, 눌러도 요청 0", async () => {
+    const submit = await openForm()
+    typeInto(document.querySelector('[data-testid="inquiry-body"]'), "낮에 멈췄어요")
+    assert.equal(submit.disabled, true, "제목이 비었는데 보내기 단추가 켜져 있음")
+    click(submit)
+    await flush(5)
+    assert.equal(sentHttp("POST", "/inquiries").length, 0)
+})
+
+test("A13-M-010 모바일 문의 제목 빈칸만('   ') → 보내기 꺼짐, 글자를 넣으면 켜지고 보내짐", async () => {
+    const submit = await openForm()
+    typeInto(document.querySelector('[data-testid="inquiry-title"]'), "   ")
+    typeInto(document.querySelector('[data-testid="inquiry-body"]'), "낮에 멈췄어요")
+    assert.equal(submit.disabled, true, "제목이 빈칸뿐인데 보내기 단추가 켜져 있음")
+    typeInto(document.querySelector('[data-testid="inquiry-title"]'), "판이 멈춤")
+    assert.equal(submit.disabled, false, "제목을 적었는데 보내기 단추가 꺼져 있음")
+    click(submit)
+    await flush(5)
+    assert.equal(sentHttp("POST", "/inquiries").length, 1)
 })

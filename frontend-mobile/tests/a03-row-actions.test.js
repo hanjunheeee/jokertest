@@ -35,12 +35,13 @@ test("A03-M-008 5초 중 행동 줄: 당김 중 → '낮 집계' 없음, 기권 
     assert.equal(abstain.enabled, true, "5초 동안 기권이 꺼짐")
 })
 
-test("A03-M-009 죽은 사람 행동 줄: 죽은 나 → 기권 단추 없음, 카드를 눌러도 '투표하기' 없음", async () => {
+// 카드 시트의 '투표하기'는 PC 카드 메뉴와 같은 항목이라 죽은 사람에겐 꺼진 채 까닭 글과 같이 보임 (PC A13-F-246과 같은 규칙) → 눌리는 것이 없으면 됨
+test("A03-M-009 죽은 사람 행동 줄: 죽은 나 → 기권 단추 없음, 카드를 눌러도 눌리는 '투표하기' 없음", async () => {
     await dayPage({ dead: true })
     assert.ok(!rowNames().includes("기권"), `죽은 사람 행동 줄에 기권이 있음: ${JSON.stringify(rowButtons())}`)
     click(stripSlot(2))
     await flush()
-    assert.ok(!sheetItems().some((item) => item.name === "투표하기"), `카드 시트: ${JSON.stringify(sheetItems())}`)
+    assert.ok(!sheetItems().some((item) => item.name === "투표하기" && item.enabled), `카드 시트: ${JSON.stringify(sheetItems())}`)
 })
 
 test("A03-M-010 토론 준비 단추: 산 사람 토론 → '투표 시작 준비', 죽은 사람 → 없음", async () => {
