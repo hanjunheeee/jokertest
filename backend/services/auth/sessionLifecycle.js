@@ -31,7 +31,7 @@ exports.resolveSession = async (decoded, { batch = false } = {}) => {
     }
 
     // 세션·정지 같이 조회 (따로 기다리지 않게)
-    const [session, activeBan] = batch
+    const [session, activeBan, gone] = batch
         ? await sessionCheckRepository.loadSessionCheck(decoded.sessionId, decoded.uuid)
         : await Promise.all([
             userRepository.findActiveSession(decoded.sessionId, decoded.uuid),
@@ -40,6 +40,11 @@ exports.resolveSession = async (decoded, { batch = false } = {}) => {
 
     // 끊긴 세션이면 401 (is_online은 true·1 둘 다 받음)
     if (!session || (session.is_online !== true && session.is_online !== 1)) {
+        // 탈퇴한 계정의 남은 소켓이면 까닭을 실어 줌 (화면이 "세션 만료" 대신 탈퇴 안내를 띄움, 정지·비활성과 같은 모양)
+        // 소켓 쪽(batch)만 옴: http 요청 응답은 그대로 (탈퇴한 계정인지 밖에 안 알림)
+        if (gone?.withdrawn) {
+            return { ok: false, status: 401, code: "ACCOUNT_WITHDRAWN", message: "회원 탈퇴가 완료되었습니다." };
+        }
         return { ok: false, status: 401, message: "세션이 만료되었습니다. 다시 로그인해주세요." };
     }
 

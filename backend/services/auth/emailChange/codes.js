@@ -1,6 +1,6 @@
 'use strict';
 
-// 이메일 바꾸기 인증번호 파일, 목적 값 · 요청한 사람에 묶인 번호 해시 · 새 주소 검사·가리기
+// 이메일 바꾸기 인증번호 파일, 목적 값 · 요청한 사람에 묶인 번호 해시 · 요청한 사람 표시 · 새 주소 검사·가리기
 // 같은 폴더 request.js·confirm.js가 씀 (번호 만들기·설정은 가입 인증 것을 다시 씀)
 const crypto = require('crypto');
 const { normalizeEmail, validateEmailFormat } = require('../../../validations/auth/signupEmailVerification');
@@ -12,6 +12,12 @@ const PURPOSE = 'EMAIL_CHANGE';
 const hashChangeCode = ({ uuid, email, generation, code }, secret) => crypto
     .createHmac('sha256', secret)
     .update(`email-change-code-v1:${uuid}:${email}:${generation}:${code}`)
+    .digest('hex');
+
+// 요청한 사람 표시: uuid·새 주소로 해시 (인증 줄에 uuid 칸이 없어서, 탈퇴할 때 그 사람이 만든 줄을 이 값으로 찾음)
+const ownerTagOf = ({ uuid, email }, secret) => crypto
+    .createHmac('sha256', secret)
+    .update(`email-change-owner-v1:${uuid}:${email}`)
     .digest('hex');
 
 // 새 주소: 가입 모양 검사 + 쉼표·@ 두 개 거절 (한 번에 여러 곳 보내기 막기), 맞으면 소문자 주소
@@ -32,6 +38,7 @@ const maskEmail = (email) => {
 module.exports = {
     PURPOSE,
     hashChangeCode,
+    ownerTagOf,
     parseNewEmail,
     maskEmail,
 };

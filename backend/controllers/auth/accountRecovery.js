@@ -34,4 +34,5 @@ const findId = async (req, res) => {
     }
 };
 
-module.exports = { findId };
+// sanitizeIp는 비번 재설정 컨트롤러도 씀 (재설정 요청 기록)
+module.exports = { findId, sanitizeIp };

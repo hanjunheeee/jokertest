@@ -1,6 +1,7 @@
 // 세션 확인 묶음 저장소 파일, 소켓 세션 확인(세션·계정 상태·정지)을 질의 하나로 + 같은 차례 확인 여럿을 한 번에
 // sessionLifecycle.resolveSession(소켓 쪽 batch 길)이 부름, http 요청 확인은 옛 두 질의 그대로
 const db = require("../../models");
+const { WITHDRAWN_STATUS } = require("./withdraw");
 
 // 한 번에 묻는 세션 수 (IN 목록 너무 길어지지 않게)
 const MAX_IDS_PER_QUERY = 500;
@@ -36,10 +37,20 @@ const querySessionStates = async (sessionIds) => {
     return rows;
 };
 
+// 세션이 안 잡힌 사람 중 탈퇴한 계정 uuid 모음 (지운 계정 줄도 봄), 끊는 까닭을 고르는 데만 씀
+const queryWithdrawnUuids = async (uuids) => {
+    if (uuids.length === 0) return new Set();
+    const rows = await db.User.findAll({
+        where: { uuid: uuids, status: WITHDRAWN_STATUS }, attributes: ['uuid'], paranoid: false, raw: true,
+    });
+    return new Set(rows.map((row) => row.uuid));
+};
+
 // 줄 하나를 옛 두 질의 결과 모양으로: [세션(User.status 붙음) | null, 정지 | null]
 // 세션 주인이 토큰 uuid와 다르면 없음 (옛 질의 where의 user_id 조건)
-const toSessionAndBan = (row, uuid) => {
-    if (!row || row.user_id !== uuid) return [null, null];
+// 세션이 없는데 탈퇴한 계정이면 셋째 칸에 { withdrawn: true } (소켓을 "탈퇴" 까닭으로 끊게)
+const toSessionAndBan = (row, uuid, withdrawn = false) => {
+    if (!row || row.user_id !== uuid) return withdrawn ? [null, null, { withdrawn: true }] : [null, null];
     const session = {
         id: row.session_id,
         user_id: row.user_id,
@@ -58,13 +69,18 @@ const flush = async (batch) => {
     try {
         const ids = [...new Set(batch.map((item) => item.sessionId))];
         const rows = await querySessionStates(ids);
-        for (const item of batch) item.resolve(toSessionAndBan(rows.get(item.sessionId), item.uuid));
+        // 세션이 안 잡힌 사람만 탈퇴했는지 한 번에 물음 (보통은 0명이라 질의 없음)
+        const missing = batch.filter((item) => rows.get(item.sessionId)?.user_id !== item.uuid).map((item) => item.uuid);
+        const withdrawn = await queryWithdrawnUuids([...new Set(missing)]);
+        for (const item of batch) {
+            item.resolve(toSessionAndBan(rows.get(item.sessionId), item.uuid, withdrawn.has(item.uuid)));
+        }
     } catch (error) {
         for (const item of batch) item.reject(error);
     }
 };
 
-// 세션 하나 확인 신청 → [세션 | null, 정지 | null] (id·uuid 없으면 DB 안 감)
+// 세션 하나 확인 신청 → [세션 | null, 정지 | null] (id·uuid 없으면 DB 안 감), 세션 없는 탈퇴 계정이면 셋째 칸 { withdrawn: true }
 exports.loadSessionCheck = (sessionId, uuid) => {
     if (!sessionId || !uuid) return Promise.resolve([null, null]);
     return new Promise((resolve, reject) => {

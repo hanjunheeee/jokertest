@@ -29,7 +29,8 @@ const closeAccount = async (uuid, { transaction }) => {
 };
 
 // 딸린 연결 정리: 세션 끊기 · 소셜 연결 · 친구·신청·즐겨찾기·차단 · 대기 초대 취소 · 접속 줄 · 인증·재설정 줄
-const detachAccount = async (uuid, oldEmail, { transaction, now = new Date() }) => {
+// ownsEmailChangeRow: 이메일 바꾸기 인증 줄이 이 사람이 만든 줄인지 알려 주는 함수 (없으면 그 줄은 안 건드림)
+const detachAccount = async (uuid, oldEmail, { transaction, now = new Date(), ownsEmailChangeRow = null }) => {
     const { Op } = db.Sequelize;
     const either = (a, b) => ({ [Op.or]: [{ [a]: uuid }, { [b]: uuid }] });
 
@@ -53,6 +54,18 @@ const detachAccount = async (uuid, oldEmail, { transaction, now = new Date() }) 
     await db.PasswordResetToken.destroy({ where: { user_id: uuid }, transaction });
     if (typeof oldEmail === 'string' && oldEmail) {
         await db.SignupEmailVerification.destroy({ where: { email: oldEmail.toLowerCase() }, transaction, logging: false });
+    }
+    // 이메일 바꾸기로 새 주소에 만든 인증 줄도 지움 (새 주소 줄이라 위 옛 이메일 지우기에 안 걸림)
+    // 줄에 uuid 칸이 없어서 요청한 사람 표시가 있는 줄을 읽어 이 사람 것만 고름
+    if (typeof ownsEmailChangeRow === 'function') {
+        const rows = await db.SignupEmailVerification.findAll({
+            where: { purpose: 'EMAIL_CHANGE', proof_hash: { [Op.ne]: null } },
+            attributes: ['id', 'email', 'proof_hash'], raw: true, transaction, logging: false,
+        });
+        const ownIds = rows.filter(ownsEmailChangeRow).map((row) => row.id);
+        if (ownIds.length > 0) {
+            await db.SignupEmailVerification.destroy({ where: { id: ownIds }, transaction, logging: false });
+        }
     }
     // 전적은 이름 없이 남김
     await db.GameResultPlayer.update(

@@ -1,6 +1,6 @@
 'use strict';
 
-// 이메일 바꾸기 번호 보내기 파일, 본인 확인 → 새 주소 검사·중복 → 다시 보내기 대기 → 번호 저장 → 새 주소로 메일
+// 이메일 바꾸기 번호 보내기 파일, 틀림 횟수 → 본인 확인 → 새 주소 검사·중복 → 다시 보내기 대기 → 번호 저장 → 새 주소로 메일
 // 이메일 바꾸기 입구로 controllers/auth/emailChange.js가 부름, 가입 인증 표(목적 EMAIL_CHANGE)를 같이 씀
 const userRepository = require('../../../repositories/user');
 const verificationRepository = require('../../../repositories/auth/signupEmailVerification');
@@ -9,7 +9,8 @@ const { comparePassword } = require('../../../utils/auth/credentials');
 const { createError } = require('../../../utils/appError');
 const { requireConfig } = require('../signupEmailVerification/config');
 const { generateNumericCode } = require('../signupEmailVerification/codes');
-const { PURPOSE, hashChangeCode, parseNewEmail } = require('./codes');
+const { PURPOSE, hashChangeCode, ownerTagOf, parseNewEmail } = require('./codes');
+const { currentPasswordAttempts } = require('../account/password');
 
 // 트랜잭션 안: 계정 잠금 → 본인 확인 → 같은 주소·남이 쓰는 주소 거절 → 인증 행 잠금 → 대기 시간 → 새 번호
 const prepareCode = async ({ uuid, email, currentPassword, config, nowMs }, transaction) => {
@@ -48,7 +49,8 @@ const prepareCode = async ({ uuid, email, currentPassword, config, nowMs }, tran
         attempts: 0,
         code_consumed_at: null,
         sent_at: new Date(nowMs),
-        proof_hash: null,
+        // 가입 증명 칸은 이메일 바꾸기에선 안 씀 → 요청한 사람 표시를 넣어 둠 (탈퇴할 때 그 사람 줄만 찾아 지움)
+        proof_hash: ownerTagOf({ uuid, email }, config.hmacSecret),
         proof_expires_at: null,
         proof_consumed_at: null,
     }, transaction);
@@ -65,9 +67,22 @@ exports.requestEmailChangeCode = async (
     if (!email) throw createError('이메일 형식이 올바르지 않습니다.', 400, 'INVALID_INPUT');
     const nowMs = now().getTime();
 
-    const outcome = await userRepository.withTransaction((transaction) => prepareCode(
-        { uuid, email, currentPassword, config, nowMs }, transaction,
-    ));
+    // 현재 비번을 너무 많이 틀렸으면 비교 없이 거절 (세션 훔친 사람이 여기서 끝없이 맞혀 보기 막기, 비번 바꾸기와 같이 셈)
+    if (await currentPasswordAttempts.isLocked(uuid, nowMs)) {
+        throw createError('현재 비밀번호를 여러 번 잘못 입력했습니다. 잠시 후 다시 시도해주세요.', 429, 'EMAIL_CHANGE_LOCKED');
+    }
+
+    let outcome;
+    try {
+        outcome = await userRepository.withTransaction((transaction) => prepareCode(
+            { uuid, email, currentPassword, config, nowMs }, transaction,
+        ));
+    } catch (error) {
+        // 친 현재 비번이 틀렸으면 횟수 올림 (빈 칸은 안 셈)
+        const typed = typeof currentPassword === 'string' && currentPassword;
+        if (error?.code === 'CURRENT_PASSWORD_INVALID' && typed) await currentPasswordAttempts.recordWrong(uuid, nowMs);
+        throw error;
+    }
     if (outcome.tooSoonSec) {
         const error = createError(`${outcome.tooSoonSec}초 뒤에 다시 보낼 수 있습니다.`, 429, 'RESEND_TOO_SOON');
         error.resendAfterSec = outcome.tooSoonSec;

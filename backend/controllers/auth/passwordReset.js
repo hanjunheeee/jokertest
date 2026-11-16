@@ -3,20 +3,24 @@
 // 비밀번호 재설정 컨트롤러 파일, 메일 요청 · 링크 확인 · 새 비번 저장 응답 (전부 캐시 금지)
 // routes/auth.routes.js가 부름, 메일 요청은 오류를 삼키고 늘 200 (가입 여부 숨김), 나머지 오류는 500
 const passwordResetService = require('../../services/auth/passwordReset');
+const { getClientIp } = require('../../utils/request');
+const { sanitizeIp } = require('./accountRecovery');
 
 // 메일 요청: 검사 끝난 주소로 보냄, 결과 상관없이 같은 200
 exports.requestPasswordReset = async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
         const { email } = res.locals.passwordResetInput;
-        await passwordResetService.requestPasswordReset({ email });
+        // 조회 기록에 남길 IP (모양 이상한 값은 null)
+        const ipAddress = sanitizeIp(getClientIp(req));
+        await passwordResetService.requestPasswordReset({ email, ipAddress });
     } catch {
         // 실패해도 늘 같은 200 (가입 여부 숨김)
     }
     return res.status(200).json({ ok: true });
 };
 
-// 링크 확인: 토큰 안 씀 (메일 미리보기가 열어도 무해), 무효·사용됨·만료도 200에 code로
+// 링크 확인: 토큰 안 씀 (메일 미리보기가 열어도 무해), 무효·밀려남·사용됨·만료도 200에 code로
 exports.verifyPasswordReset = async (req, res) => {
     res.set('Cache-Control', 'no-store');
     try {
@@ -45,7 +49,10 @@ exports.confirmPasswordReset = async (req, res) => {
         if (result.ok) {
             return res.status(200).json({ ok: true });
         }
-        return res.status(result.status ?? 400).json({ ok: false, code: result.code });
+        // 새 비번 규칙 거절이면 서비스가 준 안내 글도 같이 (code만 가면 화면이 무엇이 틀렸는지 못 알림)
+        const rejection = { ok: false, code: result.code };
+        if (result.message) rejection.message = result.message;
+        return res.status(result.status ?? 400).json(rejection);
     } catch {
         return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
     }

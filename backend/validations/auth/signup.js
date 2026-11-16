@@ -10,6 +10,9 @@ const NICKNAME_PATTERN = /^[가-힣a-zA-Z0-9]+$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 64;
 const PASSWORD_MAX_BYTES = 72;
+// 영문 글자·숫자 하나씩은 꼭 (영문만·숫자만 같은 쉬운 비번 막기, 그 밖 글자는 그대로 허용)
+const PASSWORD_LETTER_PATTERN = /[A-Za-z]/;
+const PASSWORD_DIGIT_PATTERN = /[0-9]/;
 
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -67,7 +70,7 @@ const validateBirthDate = (birthDate) => {
     return { ok: true, value: parsed };
 };
 
-// 비번: 빈 값 → 글자 수 → 바이트 수 (다듬지 않고 원문 그대로)
+// 비번: 빈 값 → 글자 수 → 바이트 수 → 영문·숫자 섞임 (다듬지 않고 원문 그대로)
 const validatePassword = (password) => {
     if (typeof password !== 'string' || password.length === 0) {
         return { ok: false, message: '비밀번호를 입력해주세요.' };
@@ -77,6 +80,9 @@ const validatePassword = (password) => {
     }
     if (Buffer.byteLength(password, 'utf8') > PASSWORD_MAX_BYTES) {
         return { ok: false, message: `비밀번호는 ${PASSWORD_MAX_BYTES}바이트를 넘을 수 없습니다.` };
+    }
+    if (!PASSWORD_LETTER_PATTERN.test(password) || !PASSWORD_DIGIT_PATTERN.test(password)) {
+        return { ok: false, message: '비밀번호는 영문과 숫자를 모두 포함해야 합니다.' };
     }
     return { ok: true, value: password };
 };

@@ -10,9 +10,8 @@ const generateRawToken = () => crypto.randomBytes(32).toString('base64url');
 // DB에 넣을 토큰 해시 (DB가 새도 링크는 못 만들게)
 const hashToken = (raw) => crypto.createHash('sha256').update(raw).digest('hex');
 
-// 앱 주소가 없거나 http(s) 아니면 null (메일 안 보냄)
-const buildResetUrl = (rawToken) => {
-    const base = process.env.PASSWORD_RESET_APP_URL;
+// 앱 주소가 없거나 http(s) 아니면 null (메일 안 보냄), base는 시작 때 설정 검사가 넘길 때만 씀
+const buildResetUrl = (rawToken, base = process.env.PASSWORD_RESET_APP_URL) => {
     if (typeof base !== 'string' || !base.trim()) return null;
 
     // 못 읽는 주소면 null

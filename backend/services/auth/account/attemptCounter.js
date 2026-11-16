@@ -1,5 +1,5 @@
 // 틀린 횟수 세기 파일, 비번 바꾸기·탈퇴의 "현재 비번 틀림"을 창 안에서 셈 (단일 모드는 서버 메모리, Node 여러 개면 Redis로 합쳐 셈)
-// password.js(`wrong:pw:<uuid>`)·withdraw.js(`wrong:wd:<uuid>`)가 하나씩 만들어 씀
+// password.js(`wrong:pw:<uuid>`, 이메일 바꾸기도 이 횟수를 같이 씀)·withdraw.js(`wrong:wd:<uuid>`)가 하나씩 만들어 씀
 const cluster = require("../../../cluster");
 
 // 세는 곳 하나 만들기: kind = 'pw' | 'wd', windowMs = 창 길이

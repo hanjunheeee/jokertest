@@ -80,6 +80,7 @@ const publicProductOf = (candidate) => {
 };
 
 // 가입·인증번호: 코드 있는 오류는 표에 있는 것만 문구 그대로, 다른 코드는 500 (내부 코드 안 보이기)
+// 코드 없는 400은 가입 입력 규칙 글(닉네임·비번·생일)만 그대로
 const respondSignup = (err, res) => {
     res.set('Cache-Control', 'no-store');
     if (typeof err.code === 'string' && err.code) {
@@ -96,6 +97,11 @@ const respondSignup = (err, res) => {
             return res.status(409).json({ success: false, message: err.message });
         }
         return res.status(500).json({ ok: false, code: 'SERVER_ERROR' });
+    }
+    // 가입 입력 규칙 거절은 서비스가 실은 안내 글도 같이 보냄 (무엇이 틀렸는지 알게, 가입 여부와 상관없는 글)
+    // 앱이 안 만든 400(라이브러리 오류)은 글 없이 코드만 (입력 조각·내부 글 안 내보내기)
+    if (rawStatus === 400 && err.name === 'AppError' && typeof err.message === 'string' && err.message) {
+        return res.status(400).json({ ok: false, code: 'INVALID_INPUT', message: err.message });
     }
     return respondInvalidOrServer(res, rawStatus);
 };

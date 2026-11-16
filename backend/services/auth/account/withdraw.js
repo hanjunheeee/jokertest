@@ -9,6 +9,8 @@ const { createAttemptCounter } = require("./attemptCounter");
 const { isInActiveGameAnywhere } = require("./activeGameCheck");
 const { fetchUserSocketsEverywhere, waitOtherNodesHandled } = require("../../ops/disconnect");
 const { notifySessionsRevoked } = require("../../../repositories/user/revokeSignal");
+const { getSignupEmailConfig } = require("../../../config/signupEmailVerification");
+const { ownerTagOf } = require("../emailChange/codes");
 
 // 비번 틀린 횟수 제한 (세션 훔친 사람이 맞혀 보며 탈퇴시키기 막기, Node 여러 개면 합쳐 셈 `wrong:wd:<uuid>`)
 const MAX_WRONG_ATTEMPTS = 5;
@@ -29,6 +31,19 @@ const REJECTIONS = {
     WITHDRAW_PASSWORD_REQUIRED: [400, "비밀번호를 입력해주세요."],
     WITHDRAW_PASSWORD_INVALID: [400, "비밀번호가 올바르지 않습니다."],
     WITHDRAW_CONFIRM_MISMATCH: [400, "계정 이메일을 정확히 입력해주세요."],
+};
+
+// 이메일 바꾸기 인증 줄이 이 사람이 만든 줄인지 (요청한 사람 표시로 봄)
+// 인증 설정(비밀 키)이 없거나 틀리면 번호도 못 만들었으니 지울 줄이 없음 → null
+const emailChangeOwnerCheck = (uuid) => {
+    let secret = null;
+    try {
+        secret = getSignupEmailConfig(process.env).hmacSecret;
+    } catch {
+        secret = null;
+    }
+    if (!secret) return null;
+    return (row) => row.proof_hash === ownerTagOf({ uuid, email: row.email }, secret);
 };
 
 // 그 사람 소켓 전부에 까닭 알리고 끊음 (주기 검사 안 기다림)
@@ -69,7 +84,9 @@ exports.withdrawAccount = async ({ uuid, password, confirmEmail }, { now = Date.
         if (failed) return failed;
 
         // 여기부터 진짜 바뀜: 연결 정리 → 계정 닫기 (하나라도 실패하면 전부 되돌림)
-        await withdrawRepository.detachAccount(uuid, user.email, { transaction, now: new Date(now()) });
+        await withdrawRepository.detachAccount(uuid, user.email, {
+            transaction, now: new Date(now()), ownsEmailChangeRow: emailChangeOwnerCheck(uuid),
+        });
         await withdrawRepository.closeAccount(uuid, { transaction });
         return null;
     });

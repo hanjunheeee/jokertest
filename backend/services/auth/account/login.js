@@ -62,6 +62,10 @@ exports.login = async (loginData, reqInfo) => {
 
         // 틀리면 횟수 올리고 5번째면 15분 잠금
         if (!isMatch) {
+            // 소셜로만 가입한 계정은 비번이 없음 → 횟수·잠금 안 올림 (없는 비번인데 "잠겼습니다"가 뜨는 것 막기)
+            if (user.has_local_password === false) {
+                return { error: createError(LOGIN_FAILED_MESSAGE, 401) };
+            }
             const failCount   = previousFailCount + 1;
             const lockedUntil = failCount >= MAX_FAILED_LOGINS ? new Date(Date.now() + LOCK_MS) : null;
 

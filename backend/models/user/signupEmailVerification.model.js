@@ -17,6 +17,7 @@ module.exports = (sequelize, DataTypes) => {
     // 다시 보내기 대기 시간 계산용
     sent_at: { type: DataTypes.DATE, allowNull: true },
     // 번호 맞히면 주는 가입 증명의 해시, 가입할 때 한 번 쓰고 끝
+    // 이메일 바꾸기 줄(EMAIL_CHANGE)에선 가입 증명이 없어서 요청한 사람 표시를 넣음 (탈퇴할 때 그 사람 줄 찾기)
     proof_hash: { type: DataTypes.STRING(64), allowNull: true },
     proof_expires_at: { type: DataTypes.DATE, allowNull: true },
     proof_consumed_at: { type: DataTypes.DATE, allowNull: true },

@@ -1,7 +1,7 @@
 'use strict';
 
-// 아이디 찾기 요청 저장소 파일, 요청 기록 한 줄
-// 아이디 찾기 서비스(services/auth/accountRecovery.js)가 부름, 기록만 하고 읽는 곳 없음
+// 계정 찾기 요청 저장소 파일, 아이디 찾기·비번 재설정 요청 기록 한 줄
+// 아이디 찾기 서비스(services/auth/accountRecovery.js)·재설정 요청 서비스(passwordReset/request.js)가 부름, 기록만 하고 읽는 곳 없음
 const db = require('../../models');
 
 // 아이디 찾기 요청 기록, 이메일 없이 IP만 (쿼리 로그도 끔)
@@ -11,6 +11,14 @@ const recordFindId = (ipAddress) => db.AccountFindRequest.create({
     ip_address: ipAddress,
 }, { logging: false });
 
+// 비번 재설정 요청 기록, 이메일 없이 IP만 (계정이 있든 없든 같은 줄, 쿼리 로그도 끔)
+const recordPasswordReset = (ipAddress) => db.AccountFindRequest.create({
+    email: null,
+    request_type: 'PASSWORD_RESET',
+    ip_address: ipAddress,
+}, { logging: false });
+
 module.exports = {
     recordFindId,
+    recordPasswordReset,
 };
