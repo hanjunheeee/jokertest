@@ -9,6 +9,7 @@ import {
   RECOMMENDED_INFO_WRAP_CLASS,
   RECOMMENDED_NAME_CLASS,
   RECOMMENDED_ROW_CLASS,
+  ROW_FRAME_WRAP_CLASS,
   RECOMMENDED_ROW_CONTENT_CLASS,
   RECOMMENDED_ROW_FRAME_CLASS,
   RECOMMENDED_TEXT_WRAP_CLASS,
@@ -47,86 +48,89 @@ export default function IncomingFriendRow({
       data-notification-target={targeted ? "true" : undefined}
       aria-current={targeted ? "true" : undefined}
     >
-      <PublicAsset
-        src={FRIEND_LIST_ASSETS.rowFrame}
-        alt=""
-        className={RECOMMENDED_ROW_FRAME_CLASS}
-      />
-      <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_INFO_WRAP_CLASS}>
-          <PlayerProfilePortrait
-            photoSrc={portraitSrc}
-            frameSrc={frameSrc}
-            wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
-          />
-          <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
-            {error !== null ? (
-              <p role="alert" data-request-error={requestId} className={STATUS_DETAIL_ERROR_CLASS}>
-                {error}
-              </p>
-            ) : null}
+      <div className={ROW_FRAME_WRAP_CLASS}>
+        <PublicAsset
+          src={FRIEND_LIST_ASSETS.rowFrame}
+          alt=""
+          className={RECOMMENDED_ROW_FRAME_CLASS}
+        />
+        <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
+          <div className={RECOMMENDED_INFO_WRAP_CLASS}>
+            <PlayerProfilePortrait
+              photoSrc={portraitSrc}
+              frameSrc={frameSrc}
+              wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
+            />
+            <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
+              <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
+            </div>
           </div>
-        </div>
-        <div className={RECOMMENDED_ACTIONS_CLASS}>
-          {/* 차단 처리 함수와 신청자 id가 있을 때만 차단 버튼 */}
-          {onBlock !== null && typeof requesterId === "string" ? (
+          <div className={RECOMMENDED_ACTIONS_CLASS}>
+            {/* 차단 처리 함수와 신청자 id가 있을 때만 차단 버튼 */}
+            {onBlock !== null && typeof requesterId === "string" ? (
+              <button
+                type="button"
+                className={RECOMMENDED_ACTION_BTN_CLASS}
+                aria-label={`${name} 차단`}
+                title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다`}
+                aria-disabled={locked}
+                disabled={locked}
+                data-block-target={requesterId}
+                onClick={() => { if (!locked) onBlock(requesterId) }}
+                style={{ outline: "none" }}
+              >
+                <PublicAsset
+                  src={FRIEND_LIST_ASSETS.friendBlockButton}
+                  alt=""
+                  className={RECOMMENDED_ACTION_IMG_CLASS}
+                />
+              </button>
+            ) : null}
+            {/* 거절 처리 함수가 있을 때만 거절 버튼 (원치 않는 신청을 수락·차단 말고 치우기) */}
+            {onDecline !== null ? (
+              <button
+                type="button"
+                className={`relative ${RECOMMENDED_ACTION_BTN_CLASS}`}
+                aria-label={`${name} 거절`}
+                aria-disabled={locked}
+                disabled={locked}
+                data-decline-request={requestId}
+                onClick={() => { if (!locked) onDecline(requestId) }}
+                style={{ outline: "none" }}
+              >
+                <PublicAsset
+                  src={FRIEND_LIST_ASSETS.friendDeclineButton}
+                  alt=""
+                  className={RECOMMENDED_ACTION_IMG_CLASS}
+                />
+                <span aria-hidden="true" className={DECLINE_LABEL_CLASS}>거절</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className={RECOMMENDED_ACTION_BTN_CLASS}
-              aria-label={`${name} 차단`}
-              title={`${name} 차단 — 앞으로 신청·초대를 양쪽 모두 막습니다`}
+              aria-label={`${name} 수락`}
               aria-disabled={locked}
               disabled={locked}
-              data-block-target={requesterId}
-              onClick={() => { if (!locked) onBlock(requesterId) }}
+              data-accept-request={requestId}
+              onClick={() => { if (!locked) onAccept?.(requestId) }}
               style={{ outline: "none" }}
             >
               <PublicAsset
-                src={FRIEND_LIST_ASSETS.friendBlockButton}
+                src={FRIEND_LIST_ASSETS.friendAcceptButton}
                 alt=""
                 className={RECOMMENDED_ACTION_IMG_CLASS}
               />
             </button>
-          ) : null}
-          {/* 거절 처리 함수가 있을 때만 거절 버튼 (원치 않는 신청을 수락·차단 말고 치우기) */}
-          {onDecline !== null ? (
-            <button
-              type="button"
-              className={`relative ${RECOMMENDED_ACTION_BTN_CLASS}`}
-              aria-label={`${name} 거절`}
-              aria-disabled={locked}
-              disabled={locked}
-              data-decline-request={requestId}
-              onClick={() => { if (!locked) onDecline(requestId) }}
-              style={{ outline: "none" }}
-            >
-              <PublicAsset
-                src={FRIEND_LIST_ASSETS.friendDeclineButton}
-                alt=""
-                className={RECOMMENDED_ACTION_IMG_CLASS}
-              />
-              <span aria-hidden="true" className={DECLINE_LABEL_CLASS}>거절</span>
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={RECOMMENDED_ACTION_BTN_CLASS}
-            aria-label={`${name} 수락`}
-            aria-disabled={locked}
-            disabled={locked}
-            data-accept-request={requestId}
-            onClick={() => { if (!locked) onAccept?.(requestId) }}
-            style={{ outline: "none" }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendAcceptButton}
-              alt=""
-              className={RECOMMENDED_ACTION_IMG_CLASS}
-            />
-          </button>
+          </div>
         </div>
       </div>
+      {/* 실패 글은 줄 아래 한 줄 (줄 안 이름 칸은 좁아 글이 세로로 넘침) */}
+      {error !== null ? (
+        <p role="alert" data-request-error={requestId} className={STATUS_DETAIL_ERROR_CLASS}>
+          {error}
+        </p>
+      ) : null}
     </li>
   )
 }

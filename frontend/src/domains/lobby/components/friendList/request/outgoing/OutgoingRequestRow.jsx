@@ -11,6 +11,7 @@ import {
   RECOMMENDED_INFO_WRAP_CLASS,
   RECOMMENDED_NAME_CLASS,
   RECOMMENDED_ROW_CLASS,
+  ROW_FRAME_WRAP_CLASS,
   RECOMMENDED_ROW_CONTENT_CLASS,
   RECOMMENDED_ROW_FRAME_CLASS,
   RECOMMENDED_TEXT_WRAP_CLASS,
@@ -30,42 +31,45 @@ export default function OutgoingRequestRow({ request, onCancel, canceling = fals
 
   return (
     <li className={RECOMMENDED_ROW_CLASS} data-outgoing-request-id={requestId}>
-      <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_ROW_FRAME_CLASS} />
-      <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_INFO_WRAP_CLASS}>
-          <PlayerProfilePortrait
-            photoSrc={portraitSrc}
-            frameSrc={frameSrc}
-            wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
-          />
-          <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
-            {error !== null ? (
-              <p role="alert" data-cancel-error={requestId} className={STATUS_DETAIL_ERROR_CLASS}>
-                {error}
-              </p>
-            ) : null}
+      <div className={ROW_FRAME_WRAP_CLASS}>
+        <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_ROW_FRAME_CLASS} />
+        <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
+          <div className={RECOMMENDED_INFO_WRAP_CLASS}>
+            <PlayerProfilePortrait
+              photoSrc={portraitSrc}
+              frameSrc={frameSrc}
+              wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
+            />
+            <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
+              <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
+            </div>
+          </div>
+          <div className={RECOMMENDED_ACTIONS_CLASS}>
+            <button
+              type="button"
+              className={`relative ${RECOMMENDED_ACTION_BTN_CLASS} ${ACTION_BTN_FOCUS_CLASS}`}
+              aria-label={canceling ? `${name}에게 보낸 친구 신청 취소하는 중` : `${name}에게 보낸 친구 신청 취소`}
+              aria-disabled={canceling}
+              disabled={canceling}
+              data-cancel-request={requestId}
+              onClick={() => { if (!canceling) onCancel?.(requestId) }}
+            >
+              <PublicAsset
+                src={FRIEND_LIST_ASSETS.friendDeclineButton}
+                alt=""
+                className={RECOMMENDED_ACTION_IMG_CLASS}
+              />
+              <span aria-hidden="true" className={ACTION_BTN_LABEL_CLASS}>취소</span>
+            </button>
           </div>
         </div>
-        <div className={RECOMMENDED_ACTIONS_CLASS}>
-          <button
-            type="button"
-            className={`relative ${RECOMMENDED_ACTION_BTN_CLASS} ${ACTION_BTN_FOCUS_CLASS}`}
-            aria-label={canceling ? `${name}에게 보낸 친구 신청 취소하는 중` : `${name}에게 보낸 친구 신청 취소`}
-            aria-disabled={canceling}
-            disabled={canceling}
-            data-cancel-request={requestId}
-            onClick={() => { if (!canceling) onCancel?.(requestId) }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendDeclineButton}
-              alt=""
-              className={RECOMMENDED_ACTION_IMG_CLASS}
-            />
-            <span aria-hidden="true" className={ACTION_BTN_LABEL_CLASS}>취소</span>
-          </button>
-        </div>
       </div>
+      {/* 실패 글은 줄 아래 한 줄 (줄 안 이름 칸은 좁아 글이 세로로 넘침) */}
+      {error !== null ? (
+        <p role="alert" data-cancel-error={requestId} className={STATUS_DETAIL_ERROR_CLASS}>
+          {error}
+        </p>
+      ) : null}
     </li>
   )
 }

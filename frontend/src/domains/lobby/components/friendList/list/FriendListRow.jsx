@@ -7,8 +7,9 @@ import {
   FRIEND_ROW_INFO_CLASS,
   FRIEND_ROW_ITEM_CLASS,
   FRIEND_ROW_NAME_CLASS,
+  ROW_FRAME_WRAP_CLASS,
   ROW_PROFILE_PORTRAIT_WRAP_CLASS,
-  RECOMMENDED_ACTIONS_CLASS,
+  FRIEND_ROW_ACTIONS_CLASS,
   STATUS_DETAIL_ERROR_CLASS,
 } from "../../../constants/friendListStyle.js"
 import PlayerProfilePortrait from "../../../../../shared/ui/PlayerProfilePortrait.jsx"
@@ -55,64 +56,66 @@ export default function FriendListRow({
 
   return (
     <li className={FRIEND_ROW_ITEM_CLASS} data-friend-id={id}>
-      <PublicAsset
-        src={FRIEND_LIST_ASSETS.rowFrame}
-        alt=""
-        className={FRIEND_ROW_FRAME_CLASS}
-      />
-      <div className={ROW_CONTENT_CLASS}>
-        {/* 저장 중엔 별을 눌러도 다시 안 보냄 */}
-        <FriendListFavoriteStar
-          active={isFavorite}
-          onToggle={() => { if (!isSavingFavorite) setFavorite(id, !isFavorite) }}
+      <div className={ROW_FRAME_WRAP_CLASS}>
+        <PublicAsset
+          src={FRIEND_LIST_ASSETS.rowFrame}
+          alt=""
+          className={FRIEND_ROW_FRAME_CLASS}
         />
-        <PlayerProfilePortrait
-          photoSrc={portraitSrc}
-          frameSrc={frameSrc}
-          wrapClassName={ROW_PROFILE_PORTRAIT_WRAP_CLASS}
-        />
-        <div className={FRIEND_ROW_INFO_CLASS}>
-          <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
-          <FriendOnlineStatus online={online} />
-          {/* 즐겨찾기·초대 실패 문구는 줄 안에 보임 */}
-          {favoriteError !== null ? (
-            <p role="status" data-favorite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
-              {favoriteError}
-            </p>
-          ) : null}
-          {blockError !== null ? (
-            <p role="status" data-block-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
-              {blockError}
-            </p>
-          ) : null}
-          {sendError !== null ? (
-            <p role="status" data-invite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
-              {sendError}
-            </p>
-          ) : null}
-          <FriendUnfriendNotice id={id} confirming={confirmingUnfriend} error={unfriendRow.error} />
-        </div>
-        {/* 초대·차단 처리 함수가 있을 때만 버튼 칸 */}
-        {onInvite !== null || onBlock !== null ? (
-          <div className={RECOMMENDED_ACTIONS_CLASS}>
-            {onInvite !== null && !confirmingUnfriend ? (
-              <FriendInviteButton
-                id={id}
-                name={name}
-                onInvite={onInvite}
-                disabled={inviteDisabled}
-                sending={isSendingInvite}
-                disabledReason={inviteDisabledReason}
-              />
-            ) : null}
-            {onBlock !== null && !confirmingUnfriend ? (
-              <FriendBlockButton id={id} name={name} onBlock={onBlock} processing={blocking} />
-            ) : null}
-            {/* 묻는 동안엔 확인·취소 두 버튼만 보임 (잘못 누르기 줄이기) */}
-            {showUnfriend ? <FriendUnfriendButton id={id} name={name} {...unfriendRow} /> : null}
+        <div className={ROW_CONTENT_CLASS}>
+          {/* 저장 중엔 별을 눌러도 다시 안 보냄 */}
+          <FriendListFavoriteStar
+            active={isFavorite}
+            onToggle={() => { if (!isSavingFavorite) setFavorite(id, !isFavorite) }}
+          />
+          <PlayerProfilePortrait
+            photoSrc={portraitSrc}
+            frameSrc={frameSrc}
+            wrapClassName={ROW_PROFILE_PORTRAIT_WRAP_CLASS}
+          />
+          <div className={FRIEND_ROW_INFO_CLASS}>
+            <p className={FRIEND_ROW_NAME_CLASS}>{name}</p>
+            <FriendOnlineStatus online={online} />
           </div>
-        ) : null}
+          {/* 초대·차단 처리 함수가 있을 때만 버튼 칸 */}
+          {onInvite !== null || onBlock !== null ? (
+            <div className={FRIEND_ROW_ACTIONS_CLASS}>
+              {onInvite !== null && !confirmingUnfriend ? (
+                <FriendInviteButton
+                  id={id}
+                  name={name}
+                  onInvite={onInvite}
+                  disabled={inviteDisabled}
+                  sending={isSendingInvite}
+                  disabledReason={inviteDisabledReason}
+                />
+              ) : null}
+              {onBlock !== null && !confirmingUnfriend ? (
+                <FriendBlockButton id={id} name={name} onBlock={onBlock} processing={blocking} />
+              ) : null}
+              {/* 묻는 동안엔 확인·취소 두 버튼만 보임 (잘못 누르기 줄이기) */}
+              {showUnfriend ? <FriendUnfriendButton id={id} name={name} {...unfriendRow} /> : null}
+            </div>
+          ) : null}
+        </div>
       </div>
+      {/* 즐겨찾기·차단·초대 실패 문구와 끊기 묻는 글은 줄 아래 한 줄 (줄 안 이름 칸은 좁아 글이 세로로 넘침) */}
+      {favoriteError !== null ? (
+        <p role="status" data-favorite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
+          {favoriteError}
+        </p>
+      ) : null}
+      {blockError !== null ? (
+        <p role="status" data-block-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
+          {blockError}
+        </p>
+      ) : null}
+      {sendError !== null ? (
+        <p role="status" data-invite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
+          {sendError}
+        </p>
+      ) : null}
+      <FriendUnfriendNotice id={id} confirming={confirmingUnfriend} error={unfriendRow.error} />
     </li>
   )
 }

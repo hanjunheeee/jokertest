@@ -46,7 +46,13 @@ export function mergeSnapshot(state, data, ticket) {
 
     // 남길 줄: 기존·버퍼 줄은 늘 거르고, 옛·같은 경계 스냅샷이면 들어온 줄도 거름
     const keep = (invite) => survives(invite, pendingIds, effectiveCursor);
-    const retained = state.invites.filter(keep);
+    // 수락·거절이 실패해 오류 글이 붙은 줄은 스냅샷에서 빠져도 끝난 줄로 남김 (줄째 지우면 실패 까닭 글도 같이 사라짐)
+    // 끝난 줄이라 수락 단추가 없어지고 대기 초대 수·판 화면 안내에서도 빠짐
+    // 예: 시작된 방 초대 수락 실패 { inviteId: "inv-1", status: "PENDING" } + 오류 "방을 찾을 수 없습니다." → { inviteId: "inv-1", status: "CANCELLED" }
+    const failedGone = state.invites
+        .filter((invite) => !keep(invite) && state.inviteErrors?.[invite.inviteId] !== undefined)
+        .map((invite) => ({ ...invite, status: "CANCELLED" }));
+    const retained = [...state.invites.filter(keep), ...failedGone];
     const incoming = knownWorse || sameBoundary
         ? rows.filter(keep)
         : rows;

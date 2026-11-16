@@ -39,6 +39,9 @@ export const ACTION_BTN_CLASS =
 
 export const ACTION_IMG_CLASS = "block w-9 h-auto select-none"
 
+// 친구 줄 단추: 별·초상·이름·단추 둘이 한 줄이라 누르는 칸 옆 4px씩을 이웃과 겹쳐 그림 폭(36px)만 차지 (이름 칸이 눌려 세로로 쌓이던 것)
+export const FRIEND_ROW_BTN_CLASS = "-mx-1"
+
 // 탭 안 스크롤 목록 (안쪽 스크롤 하나만 둠)
 export const SCROLL_CLASS = "min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5"
 

@@ -6,6 +6,7 @@ import {
   RECOMMENDED_NAME_CLASS,
   PROFILE_PORTRAIT_WRAP_CLASS,
   RECOMMENDED_ROW_CLASS,
+  ROW_FRAME_WRAP_CLASS,
   RECOMMENDED_ROW_CONTENT_CLASS,
   RECOMMENDED_ROW_FRAME_CLASS,
   RECOMMENDED_TEXT_WRAP_CLASS,
@@ -36,38 +37,41 @@ export default function RecommendedFriendRow({
 
   return (
     <li className={RECOMMENDED_ROW_CLASS} data-candidate-id={id}>
-      <PublicAsset
-        src={FRIEND_LIST_ASSETS.rowFrame}
-        alt=""
-        className={RECOMMENDED_ROW_FRAME_CLASS}
-      />
-      <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_INFO_WRAP_CLASS}>
-          <PlayerProfilePortrait
-            photoSrc={portraitSrc}
-            frameSrc={frameSrc}
-            wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
-          />
-          <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
-            <RecommendedFriendStatus status={status} />
-            {sendError !== null ? (
-              <p role="alert" data-send-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
-                {sendError}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <RecommendedFriendActions
-          id={id}
-          name={name}
-          onSend={onSend}
-          onBlock={onBlock}
-          sent={sent}
-          sending={sending}
-          blocking={blocking}
+      <div className={ROW_FRAME_WRAP_CLASS}>
+        <PublicAsset
+          src={FRIEND_LIST_ASSETS.rowFrame}
+          alt=""
+          className={RECOMMENDED_ROW_FRAME_CLASS}
         />
+        <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
+          <div className={RECOMMENDED_INFO_WRAP_CLASS}>
+            <PlayerProfilePortrait
+              photoSrc={portraitSrc}
+              frameSrc={frameSrc}
+              wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
+            />
+            <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
+              <p className={RECOMMENDED_NAME_CLASS}>{name}</p>
+              <RecommendedFriendStatus status={status} />
+            </div>
+          </div>
+          <RecommendedFriendActions
+            id={id}
+            name={name}
+            onSend={onSend}
+            onBlock={onBlock}
+            sent={sent}
+            sending={sending}
+            blocking={blocking}
+          />
+        </div>
       </div>
+      {/* 실패 글은 줄 아래 한 줄 (줄 안 이름 칸은 좁아 글이 세로로 넘침) */}
+      {sendError !== null ? (
+        <p role="alert" data-send-error={id} className={STATUS_DETAIL_ERROR_CLASS}>
+          {sendError}
+        </p>
+      ) : null}
     </li>
   )
 }

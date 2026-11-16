@@ -25,10 +25,9 @@ export default function SentRow({ request, canceling = false, error = null, onCa
           onClick={() => onCancel?.(requestId)}
         />
       )}
-    >
-      {error !== null ? (
+      notes={error !== null ? (
         <p role="alert" data-cancel-error={requestId} className={STATUS_DETAIL_ERROR_CLASS}>{error}</p>
       ) : null}
-    </RowShell>
+    />
   )
 }

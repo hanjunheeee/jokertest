@@ -2,6 +2,7 @@
 // FriendRow가 로비 친구 시트의 줄에 그림
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
 import IconAction from "../parts/IconAction.jsx"
+import { FRIEND_ROW_BTN_CLASS } from "../sheetStyle.js"
 
 // 묻는 동안엔 처음 누른 자리가 "취소"로 바뀌고 확인은 그 왼쪽에 생김 (같은 자리를 두 번 눌러도 안 끊기게, 데스크톱 FriendUnfriendButton과 같음)
 export default function UnfriendActions({ id, name, confirming, processing, onAsk, onConfirm, onCancel }) {
@@ -12,6 +13,7 @@ export default function UnfriendActions({ id, name, confirming, processing, onAs
           src={FRIEND_LIST_ASSETS.friendDeclineButton}
           label={`${name} 친구 끊기 확인`}
           overlay="끊기"
+          className={FRIEND_ROW_BTN_CLASS}
           data-unfriend-confirm-button={id}
           onClick={onConfirm}
         />
@@ -20,6 +22,7 @@ export default function UnfriendActions({ id, name, confirming, processing, onAs
         src={FRIEND_LIST_ASSETS.friendDeclineButton}
         label={processing ? `${name} 친구 끊는 중` : confirming ? `${name} 친구 끊기 취소` : `${name} 친구 끊기`}
         overlay={confirming ? "취소" : "끊기"}
+        className={FRIEND_ROW_BTN_CLASS}
         disabled={processing}
         data-unfriend-friend={id}
         onClick={confirming ? onCancel : onAsk}

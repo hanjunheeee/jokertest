@@ -3,7 +3,7 @@
 import {
   ACTION_BTN_FOCUS_CLASS,
   ACTION_BTN_LABEL_CLASS,
-  RECOMMENDED_ACTION_BTN_CLASS,
+  FRIEND_ROW_LABEL_BTN_CLASS,
   RECOMMENDED_ACTION_IMG_CLASS,
 } from "../../../../constants/friendListStyle.js"
 import { FRIEND_LIST_ASSETS } from "../../../../constants/friendListAssets.js"
@@ -14,7 +14,7 @@ function LabelButton({ label, ariaLabel, disabled = false, onClick, ...rest }) {
   return (
     <button
       type="button"
-      className={`relative ${RECOMMENDED_ACTION_BTN_CLASS} ${ACTION_BTN_FOCUS_CLASS}`}
+      className={`relative ${FRIEND_ROW_LABEL_BTN_CLASS} ${ACTION_BTN_FOCUS_CLASS}`}
       aria-label={ariaLabel}
       aria-disabled={disabled}
       disabled={disabled}

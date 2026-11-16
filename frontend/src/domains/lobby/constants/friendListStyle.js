@@ -7,8 +7,9 @@ export const FRIEND_PANEL_TRANSITION = { duration: 0.35, ease: [0.22, 1, 0.36, 1
 
 export const PANEL_BACKDROP_CLASS = "absolute inset-0 z-20 cursor-default border-0 bg-black/25 p-0"
 
+// 1280 창에서 288px이면 친구 줄 이름 칸이 단추에 눌려 0이 되어 가장 좁을 때 20rem
 export const FRIEND_PANEL_CLASS =
-  "absolute right-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(17.5rem,22.5vw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
+  "absolute right-0 top-[2.5%] bottom-[clamp(7.5rem,13vh,10.5rem)] z-30 w-[clamp(20rem,25vw,25.5rem)] max-w-[26rem] sm:bottom-[clamp(8rem,14vh,11rem)]"
 
 export const PANEL_FRAME_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
@@ -71,7 +72,11 @@ export const FRIEND_ROW_ITEM_CLASS = "relative mt-2 w-full list-none"
 
 export const FRIEND_ROW_FRAME_CLASS = "block h-auto w-full select-none"
 
-export const ROW_CONTENT_CLASS = "absolute inset-0 flex items-center gap-1.5 px-[6%] py-[6%]"
+// 줄 그림과 그 위 내용 칸을 묶음 (줄 아래 글이 붙어 줄이 길어져도 내용 칸은 줄 그림 높이만)
+export const ROW_FRAME_WRAP_CLASS = "relative"
+
+// 별·초상·이름·단추 다섯이 한 줄이라 사이·옆 여백을 줄여 이름 칸 폭을 남김
+export const ROW_CONTENT_CLASS = "absolute inset-0 flex items-center gap-1 px-[4%] py-[6%]"
 
 export const ROW_FAVORITE_BTN_CLASS =
   "relative z-[2] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none transition-opacity hover:opacity-90"
@@ -82,13 +87,25 @@ export const ROW_FAVORITE_STAR_CLASS =
 export const ROW_FAVORITE_STAR_ACTIVE_CLASS =
   "block size-[clamp(1.05rem,1.45vw,1.25rem)] select-none text-[#e8c56a]"
 
+// 친구 줄 초상은 좁은 창에서 줄 높이만큼 작게 (이름 칸 폭 남기기), 넓은 창에선 다른 줄과 같은 3.6rem
 export const ROW_PROFILE_PORTRAIT_WRAP_CLASS =
-  "relative z-[2] size-[3.6rem] shrink-0 select-none"
+  "relative z-[2] size-[clamp(2.5rem,3.1vw,3.6rem)] shrink-0 select-none"
 
 export const PROFILE_PORTRAIT_WRAP_CLASS =
   "relative z-[2] size-[3.6rem] shrink-0 select-none"
 
-export const FRIEND_ROW_INFO_CLASS = "min-w-0 flex-1"
+// 단추가 늘어도 이름 칸이 0까지 눌리지 않게 최소 폭
+export const FRIEND_ROW_INFO_CLASS = "min-w-[3rem] flex-1"
+
+// 친구 줄 오른쪽 단추 칸·단추 (다른 줄보다 작게: 단추 둘에 이름 칸이 눌리던 것)
+export const FRIEND_ROW_ACTIONS_CLASS = "relative z-[2] flex shrink-0 items-center gap-1"
+
+export const FRIEND_ROW_ICON_BTN_CLASS =
+  "block w-[clamp(1.85rem,2.3vw,2.85rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
+
+// 글자 얹은 판 그림(끊기·확인·취소)은 글자가 들어가게 그림 단추보다 조금 넓게
+export const FRIEND_ROW_LABEL_BTN_CLASS =
+  "block w-[clamp(2.3rem,2.85vw,2.85rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
 export const FRIEND_ROW_NAME_CLASS =
   "truncate font-subheading app-text-scaled [--app-text-size:clamp(0.8rem,1.05vw,0.95rem)] leading-tight text-white"
@@ -112,12 +129,19 @@ export const STATUS_MSG_CLASS = "app-text-scaled [--app-text-size:16px]"
 
 export const STATUS_DETAIL_CLASS = "app-text-scaled [--app-text-size:14px]"
 
-// 줄 틀(어두운 비단) 위 옅은 글: /45는 작은 글에 흐려서 /60
-export const STATUS_DETAIL_MUTED_CLASS =
-  `${STATUS_DETAIL_CLASS} text-white/60`
+// 줄 아래 한 줄 글(실패·묻는 글·끝난 까닭): 줄 안 좁은 칸에선 글자마다 세로로 쌓여 줄 밖으로 넘쳐 줄 폭 전체로 뺌
+// 창 종이·폴더 어디에 와도 읽히게 글 뒤만 어둡게 깖, 위 간격은 줄 밖으로 삐져나온 초상에 안 가리게
+const ROW_NOTE_CLASS = `mt-2.5 rounded bg-black/60 px-2 py-1 leading-snug ${STATUS_DETAIL_CLASS}`
 
+export const STATUS_DETAIL_MUTED_CLASS =
+  `${ROW_NOTE_CLASS} text-white/80`
+
+// 분홍(red-300)은 종이 위에서 대비 2 안팎이라 어두운 바탕 위 옅은 빨강
 export const STATUS_DETAIL_ERROR_CLASS =
-  `${STATUS_DETAIL_CLASS} text-red-300/90`
+  `${ROW_NOTE_CLASS} text-red-200`
+
+export const ROW_NOTE_ASK_CLASS =
+  `${ROW_NOTE_CLASS} text-white`
 
 // 줄 없이 창 종이(중간 밝기 갈색) 위에 바로 뜨는 안내·빈 목록 글: 흰 글은 안 보여 검정 (아래 두 개도 같음)
 export const FILTER_EMPTY_CLASS =

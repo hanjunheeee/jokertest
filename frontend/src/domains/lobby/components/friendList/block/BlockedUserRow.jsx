@@ -8,6 +8,7 @@ import {
   RECOMMENDED_INFO_WRAP_CLASS,
   RECOMMENDED_NAME_CLASS,
   RECOMMENDED_ROW_CLASS,
+  ROW_FRAME_WRAP_CLASS,
   RECOMMENDED_ROW_CONTENT_CLASS,
   RECOMMENDED_ROW_FRAME_CLASS,
   RECOMMENDED_TEXT_WRAP_CLASS,
@@ -27,42 +28,45 @@ export default function BlockedUserRow({ user, onUnblock, processing, error = nu
 
   return (
     <li className={RECOMMENDED_ROW_CLASS} data-blocked-id={user.id}>
-      <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_ROW_FRAME_CLASS} />
-      <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
-        <div className={RECOMMENDED_INFO_WRAP_CLASS}>
-          <PlayerProfilePortrait
-            photoSrc={portraitSrc}
-            frameSrc={frameSrc}
-            wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
-          />
-          <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
-            <p className={RECOMMENDED_NAME_CLASS}>{user.name}</p>
-            {error !== null ? (
-              <p role="alert" data-unblock-error={user.id} className={STATUS_DETAIL_ERROR_CLASS}>
-                {error}
-              </p>
-            ) : null}
+      <div className={ROW_FRAME_WRAP_CLASS}>
+        <PublicAsset src={FRIEND_LIST_ASSETS.rowFrame} alt="" className={RECOMMENDED_ROW_FRAME_CLASS} />
+        <div className={RECOMMENDED_ROW_CONTENT_CLASS}>
+          <div className={RECOMMENDED_INFO_WRAP_CLASS}>
+            <PlayerProfilePortrait
+              photoSrc={portraitSrc}
+              frameSrc={frameSrc}
+              wrapClassName={PROFILE_PORTRAIT_WRAP_CLASS}
+            />
+            <div className={RECOMMENDED_TEXT_WRAP_CLASS}>
+              <p className={RECOMMENDED_NAME_CLASS}>{user.name}</p>
+            </div>
+          </div>
+          <div className={RECOMMENDED_ACTIONS_CLASS}>
+            <button
+              type="button"
+              className={RECOMMENDED_ACTION_BTN_CLASS}
+              aria-label={`${user.name} 차단 해제`}
+              aria-disabled={processing}
+              disabled={processing}
+              data-unblock-target={user.id}
+              onClick={() => { if (!processing) onUnblock(user.id) }}
+              style={{ outline: "none" }}
+            >
+              <PublicAsset
+                src={FRIEND_LIST_ASSETS.friendAcceptButton}
+                alt=""
+                className={RECOMMENDED_ACTION_IMG_CLASS}
+              />
+            </button>
           </div>
         </div>
-        <div className={RECOMMENDED_ACTIONS_CLASS}>
-          <button
-            type="button"
-            className={RECOMMENDED_ACTION_BTN_CLASS}
-            aria-label={`${user.name} 차단 해제`}
-            aria-disabled={processing}
-            disabled={processing}
-            data-unblock-target={user.id}
-            onClick={() => { if (!processing) onUnblock(user.id) }}
-            style={{ outline: "none" }}
-          >
-            <PublicAsset
-              src={FRIEND_LIST_ASSETS.friendAcceptButton}
-              alt=""
-              className={RECOMMENDED_ACTION_IMG_CLASS}
-            />
-          </button>
-        </div>
       </div>
+      {/* 실패 글은 줄 아래 한 줄 (줄 안 이름 칸은 좁아 글이 세로로 넘침) */}
+      {error !== null ? (
+        <p role="alert" data-unblock-error={user.id} className={STATUS_DETAIL_ERROR_CLASS}>
+          {error}
+        </p>
+      ) : null}
     </li>
   )
 }
