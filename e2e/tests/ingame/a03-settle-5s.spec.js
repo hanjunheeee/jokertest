@@ -355,7 +355,7 @@ test('A03-E-103 PC 6명 판 5초 중 새로고침 → 남은 초가 5 이하로 
     const filledAt = await castHuman(t, user.page, plan.get(me));
     await waitSettle(t, since);
     await reloadIngame(user.page);
-    // 새로 받은 판 값도 당긴 마감 → 30초로 돌아가지 않음 ("[5초 뒤 마감]" 글이 다시 뜨는지는 결정 대기 4라 안 봄)
+    // 새로 받은 판 값도 당긴 마감 → 30초로 돌아가지 않음 (당김 표시도 판 값에 실려 "[5초 뒤 마감]" 글·시간 바 펼침이 다시 뜸 — 5초가 짧아 여기선 남은 초만 봄)
     await expect.poll(async () => (await timerSec(user.page)) ?? 99, { timeout: 4000, message: '새로고침 뒤 남은 초' }).toBeLessThanOrEqual(5);
     const resolved = await expectResolvedAfter5s(t, { since, filledAt });
     expect(resolved.outcome).toBe('TIE');
@@ -373,7 +373,7 @@ test('A03-E-105 PC 8명 판 5초 중 새로고침 → 새로고침한 화면도 
     await reloadIngame(user.page);
     const resolved = await expectResolvedAfter5s(t, { since, filledAt });
     expect(resolved.outcome).toBe('TIE');
-    // 새로고침이 판정 뒤에 끝나도 결과가 보여야 함 (결정 2026-11-16 아침 4번 — 모음 글 C-006, 아직 코드에 없음)
+    // 새로고침이 판정 뒤에 끝나도 결과가 보여야 함 (결정 2026-11-16 아침 4번 — 밤 판 값에도 낮 판정이 실림, 모음 글 C-006)
     await expect(user.page.getByRole('dialog', { name: '재판' })).toHaveCount(0);
     await expectStatus(user.page, 'TIE', { abstain: 0 });
 });

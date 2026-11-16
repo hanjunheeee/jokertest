@@ -185,7 +185,7 @@ test('A03-H-040 서버 2대 7명 판, 다른 서버 로비에서 온 모바일 �
     const since = await openVote(t);
     const filledAt = await castAll(t, plan);
 
-    // 모바일(세로)은 위 단계 줄에 "5초 뒤 마감 0:0n" 한 줄 (펼친 진행 바는 접혀 있음)
+    // 모바일(세로)은 위 단계 줄에 "5초 뒤 마감 0:0n" 한 줄 (당김 동안 진행 바도 저절로 펼쳐지지만 여기선 단계 줄을 봄)
     await Promise.all(t.humans.map(async (h) => {
         const line = h.page.locator('[data-talk-phase-line]');
         await expect(line).toContainText('5초 뒤 마감', { timeout: 3000 });

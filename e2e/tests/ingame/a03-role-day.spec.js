@@ -12,6 +12,9 @@ const U = (x) => x.account.uuid;
 const ABILITY_NAMES = Object.freeze(['암살', '보호', '조사', '확인', '밤 행동', '취소하기', '건너뛰기']);
 // 판 화면 단추 중 능력 이름 (확인은 안내 창 단추와 겹쳐 카드 메뉴에서만 봄)
 const PAGE_ABILITY_NAMES = ABILITY_NAMES.filter((name) => name !== '확인');
+// 밤 행동 메뉴 단추는 읽기 이름 앞에 대상 이름이 붙음("닉네임 암살"·"닉네임 · 동료 의사 보호") → 이름이 능력 글이거나 그 글로 끝나는지로 봄
+const isAbilityName = (label, name) => label === name || label.endsWith(` ${name}`);
+const abilityNameRe = (name) => new RegExp(`(^| )${name}$`);
 
 // 인원별 자동 구성 특수 직업 (광대 1, 6명부터 의사, 8명부터 경비원, 10명부터 마녀사냥꾼 — 결정 "방 만들기" 자동 구성)
 function specialsOf(n) {
@@ -45,7 +48,7 @@ async function openTable(table, user, n, role) {
 async function expectNoAbilityButtons(page) {
     for (const name of PAGE_ABILITY_NAMES) {
         await expect(page.getByRole('button', { name, exact: true }), `능력 단추 "${name}"`).toHaveCount(0);
-        await expect(page.getByRole('menuitem', { name, exact: true }), `능력 메뉴 "${name}"`).toHaveCount(0);
+        await expect(page.getByRole('menuitem', { name: abilityNameRe(name) }), `능력 메뉴 "${name}"`).toHaveCount(0);
     }
     await expect(page.locator('[data-ingame-phase-action="nightSkip"]')).toHaveCount(0);
 }
@@ -96,7 +99,7 @@ CASES.forEach(({ n, role }, i) => {
         let votable = 0;
         for (const p of others) {
             const items = await readCardMenu(page, p.nickname);
-            const abilities = items.filter((it) => ABILITY_NAMES.includes(it.name)).map((it) => it.name);
+            const abilities = items.filter((it) => ABILITY_NAMES.some((name) => isAbilityName(it.name, name))).map((it) => it.name);
             expect(abilities, `${p.nickname} 카드 메뉴의 능력 항목`).toEqual([]);
             if (items.some((it) => it.name === '투표하기' && it.enabled)) votable += 1;
         }

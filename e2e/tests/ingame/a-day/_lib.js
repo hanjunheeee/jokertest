@@ -106,10 +106,14 @@ const uuidOf = (x) => x.account.uuid;
 
 /** 보드 카드 (남은 닉네임 그대로, 나는 '본인 닉네임') */
 // 죽은 사람 카드 이름은 "사망 닉네임", 끊긴 사람은 "연결 끊김 닉네임" (닉네임은 영문·숫자라 그대로 정규식에 넣음)
-const card = (page, nickname) => page.getByRole('button', { name: new RegExp(`^(사망 |연결 끊김 )?${nickname}$`) });
+// 같은 직업 동료 카드는 읽기 이름이 따로 붙음: "닉네임 · 동료 의사", 죽으면 "닉네임 · 동료 의사, 사망" → 그것도 같이 잡음
+const card = (page, nickname) => page.getByRole('button', {
+    name: new RegExp(`^((사망 |연결 끊김 )?${nickname}|${nickname} · 동료 [^,]+(, (사망|연결 끊김))?)$`),
+});
 const selfCard = (page, nickname) => page.getByRole('button', { name: new RegExp(`^(사망 |연결 끊김 )?본인 ${nickname}$`) });
 
 /** 카드 눌러 메뉴 항목 누르기 (투표하기·투표취소·유죄·무죄) */
+// 밤 행동 단추는 읽기 이름 앞에 대상 이름이 붙음("닉네임 암살") → item 글이 이름에 들어 있으면 잡힘 (부분 일치라 '암살'로 찾아짐)
 async function cardAction(page, nickname, item) {
     await card(page, nickname).click();
     const menu = page.getByRole('menu', { name: '플레이어 행동' });

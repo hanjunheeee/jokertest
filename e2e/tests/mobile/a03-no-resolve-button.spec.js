@@ -127,11 +127,18 @@ async function deadOnDayTwo(table, user, n) {
     return t;
 }
 
-// 2일 투표까지 (죽은 나)
+// 2일 투표까지 (죽은 나) — 죽은 사람에겐 기권 단추가 없어, 산 봇 카드 시트의 꺼진 "투표하기" 까닭 글로 화면이 투표 단계인지 봄 (토론이면 토론 안내 글)
 async function toDayTwoVote(t, page) {
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_VOTE');
     await clearOverlays(page);
-    await expect(abstainButton(page)).toBeDisabled();
+    const sheet = sheetOf(page);
+    await expect(async () => {
+        if (!(await sheet.isVisible())) await talk.slot(page, t.bots[0].nickname).click({ timeout: 1500 });
+        await expect(sheet.getByText('사망한 플레이어는 행동할 수 없습니다')).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
+    await sheet.getByRole('button', { name: '닫기' }).click();
+    await expect(sheet).toBeHidden();
+    await expect(abstainButton(page)).toHaveCount(0);
 }
 
 // 살아 있는 사람 전부 몰표로 다 내서 "5초 뒤 마감"이 보일 때까지 (사람 빼고 봇만이면 me 없이)

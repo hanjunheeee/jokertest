@@ -42,10 +42,11 @@ async function toMyNightTurn(table, user, { n, role, jokers = 1, custom = null }
     return { t, partner: t.bots[0], citizen };
 }
 
-// 이름이 "닉네임 · 동료 의사"인 밤 대상 단추 (카드 메뉴 단추 또는 다른 대상 단추)
+// 읽기 이름에 "닉네임 · 동료 의사"가 든 밤 대상 단추 (예: "닉네임 · 동료 의사 보호")
+// 카드 메뉴 단추만 봄 — 동료 카드도 읽기 이름이 "닉네임 · 동료 의사"라 화면 전체에서 찾으면 카드가 같이 잡힘
 function allyTarget(page, nickname, role) {
     const name = new RegExp(escapeRe(`${nickname} · 동료 ${ROLE_NAME[role]}`));
-    return page.getByRole('menuitem', { name }).or(page.getByRole('button', { name }));
+    return cardMenu(page).getByRole('menuitem', { name });
 }
 
 // 동료 카드 메뉴를 열면 "닉네임 · 동료 ○○" 단추가 눌러짐
@@ -91,7 +92,7 @@ for (const [no, n] of [[70, 5], [71, 10]]) {
         const page = user.page;
         const { partner, citizen } = await toMyNightTurn(table, user, { n, role: 'JOKER', jokers: 2 });
         await expectCanAttackCitizen(page, citizen);
-        // 동료 카드를 누름 → 메뉴가 뜨면 암살·동료 대상 단추가 다 꺼져 있어야 함
+        // 동료 카드를 누름 → 메뉴가 뜨면 암살·동료 대상 단추가 다 꺼져 있어야 함 (지금 화면은 동료 광대 카드에 메뉴를 안 엶 → 단추가 아예 없음)
         await night.cardButton(page, partner.nickname).click();
         const items = cardMenu(page).getByRole('menuitem', { name: /암살|동료 광대/ });
         const named = allyTarget(page, partner.nickname, 'JOKER');

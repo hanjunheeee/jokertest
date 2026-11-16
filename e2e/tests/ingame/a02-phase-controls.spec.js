@@ -1,6 +1,6 @@
 'use strict';
 
-// 역할 확인 단계 조작 브라우저 시험 (PC) — 채팅 막힘·이모티콘 됨·투표/준비 단추 없음·확인 뒤 판 안 가려짐·첫 낮 뒤 창 다시 안 뜸·역할 확인 중 나감
+// 역할 확인 단계 조작 브라우저 시험 (PC) — 채팅 막힘·이모티콘 안 됨(낮에만)·투표/준비 단추 없음·확인 뒤 판 안 가려짐·첫 낮 뒤 창 다시 안 뜸·역할 확인 중 나감
 // 목록 A02-판시작-역할.md 번호 A02-E-089~097 — 10초 안에 볼 것은 판이 열리자마자, E-095는 20초를 진짜로 지켜봄
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -40,59 +40,60 @@ async function expectStillRoleReveal(t) {
 // 봇이 받은 사건 시각 (없으면 null)
 const eventAt = (bot, event) => bot.events.find((r) => r.event === event)?.at ?? null;
 
-// 이모티콘 말풍선이 첫 낮 알림보다 먼저 나갔는지 (= 역할 확인 단계 안에서 나감), 지켜보는 봇 기준
-async function expectEmojiBeforeFirstDay(watcher) {
-    await expect.poll(() => eventAt(watcher, 'emoji_shown'), { message: '판 사람에게 이모티콘이 안 나감' }).not.toBeNull();
-    const dayAt = eventAt(watcher, 'game_phase_changed') ?? Infinity;
-    expect(eventAt(watcher, 'emoji_shown')).toBeLessThan(dayAt);
-}
+// 꺼진 채팅 입력칸에 보이는 까닭 글 (화면 utils/inGameChatChannel.js)
+const CHAT_LOCKED_HINT = '역할 확인이 끝나면 채팅할 수 있습니다';
 
-// 채팅을 못 쓰는지: 입력칸이 꺼짐(읽기만·inert 포함) 또는 보내기가 꺼짐
-async function chatBlocked(page) {
-    const input = page.getByRole('textbox', { name: '채팅 입력' });
-    const send = page.getByRole('button', { name: '채팅 보내기' });
-    await expect(input).toBeAttached();
-    await expect(send).toBeAttached();
-    const writable = await input.evaluate((el) => !el.disabled && !el.readOnly && !el.closest('[inert]'));
-    const sendOn = await send.evaluate((el) => !el.disabled && !el.closest('[inert]'));
-    return !writable || !sendOn;
-}
+// 말풍선 칸 (카드 위, 이모티콘이 판에 나가면 그려짐)
+const bubbleOn = (page, nickname) => night.cardButton(page, nickname).locator('[data-ingame-emoji-bubble]');
+const emojiPalette = (page) => page.getByRole('group', { name: '이모티콘 팔레트' });
 
-// 말풍선 그림 (카드 위, 마우스를 안 받는 칸이라 가려짐 검사는 못 함 → 보임·크기·화면 안만)
-const bubbleOn = (page, nickname) => night.cardButton(page, nickname).locator('[data-ingame-emoji-bubble]').getByRole('img', { name: HELLO.name });
-
-// A02-E-089~090: 역할 확인 중 채팅 막힘 (모음 글 C-027: 지금은 입력칸이 켜져 있음)
+// A02-E-089~090: 역할 확인 중 채팅 막힘 — 입력칸·보내기가 꺼지고 입력칸 자리에 까닭 글 (결정 "확인 10초: 채팅 못 씀")
 for (const [no, n] of [[89, 5], [90, 8]]) {
     const smoke = no === 89 ? ' @smoke' : '';
-    test(`A02-E-0${no} ${n}명 역할 확인 중 → 채팅 칸에 글이 안 써지거나 보내기 꺼짐 @game${smoke}`, async ({ user, table }) => {
+    test(`A02-E-0${no} ${n}명 역할 확인 중 → 채팅 입력칸·보내기 꺼짐, 까닭 글 보임 @game${smoke}`, async ({ user, table }) => {
+        const page = user.page;
         const t = await openTable(table, user, n);
-        await closeReveal(user.page);
-        expect(await chatBlocked(user.page), '역할 확인 중 채팅을 쓸 수 있음').toBe(true);
+        await closeReveal(page);
+        await expect(page.getByRole('textbox', { name: '채팅 입력' })).toBeDisabled();
+        await expect(page.getByRole('button', { name: '채팅 보내기' })).toBeDisabled();
+        await expect(page.getByText(CHAT_LOCKED_HINT, { exact: true }).first()).toBeVisible();
         await expectStillRoleReveal(t);
     });
 }
 
-test('A02-E-091 6명 역할 확인 중, 이모티콘 누름 → 내 카드 위 말풍선 보임 @game', async ({ user, table }) => {
+// 이모티콘은 낮에만 — 역할 확인 10초도 안 됨 (결정 2026-11-16 오전 "이모티콘" + 낮 "반장이 정하고 알린 것" 1번)
+test('A02-E-091 6명 역할 확인 중, 내 카드 오른쪽 누름 → 이모티콘 팔레트 안 열림·말풍선 없음 (낮이 되면 열림) @game', async ({ user, table }) => {
     const page = user.page;
     const t = await openTable(table, user, 6);
+    const mine = night.cardButton(page, user.account.nickname);
     await closeReveal(page);
-    // 내 카드 오른쪽 누름 → 이모티콘 팔레트 → 안녕
-    await night.cardButton(page, user.account.nickname).click({ button: 'right' });
-    const palette = page.getByRole('group', { name: '이모티콘 팔레트' });
-    await palette.getByRole('button', { name: `${HELLO.name} 보내기` }).click();
-    await expectReadable(bubbleOn(page, user.account.nickname), { contrast: false, uncovered: false });
-    await expectEmojiBeforeFirstDay(t.bots[0]);
+    // 판 화면이 다 그려진 뒤에 봄 (안 그려져서 "없음"이 맞는 것 막기)
+    await expect(page.locator('[data-ingame-player-nickname]')).toHaveCount(6);
+    // 내 카드 오른쪽 누름 → 팔레트가 안 열림, 말풍선도 안 그려짐
+    await mine.click({ button: 'right' });
+    await expect(emojiPalette(page)).toHaveCount(0);
+    await expect(bubbleOn(page, user.account.nickname)).toHaveCount(0);
+    expect(eventAt(t.bots[0], 'emoji_shown'), '판 사람에게 이모티콘이 나감').toBeNull();
+    await expectStillRoleReveal(t);
+    // 견줌: 첫 낮(손잡이로 감)엔 같은 누름으로 팔레트가 열림 (누르는 법이 틀려서 안 열린 것과 가르기)
+    await t.advanceUntil('DAY');
+    await day.closeNotice(page, '낮이 되었습니다');
+    await mine.click({ button: 'right' });
+    await expect(emojiPalette(page)).toBeVisible();
 });
 
-test('A02-E-092 7명 역할 확인 중, 봇이 이모티콘 → 내 화면 그 봇 카드 위 말풍선 @game', async ({ user, table }) => {
+test('A02-E-092 7명 역할 확인 중, 봇이 이모티콘 → 서버가 거절(INVALID_PHASE), 내 화면 그 봇 카드에 말풍선 없음 @game', async ({ user, table }) => {
     const page = user.page;
     const t = await openTable(table, user, 7);
     await closeReveal(page);
+    await expect(page.locator('[data-ingame-player-nickname]')).toHaveCount(7);
     const sender = t.bots[1];
     const reply = await sender.request('send_emoji', { gameId: t.gameId, itemId: HELLO.id });
-    expect(reply?.ok, `봇 이모티콘 거절: ${reply?.code}`).toBe(true);
-    await expectReadable(bubbleOn(page, sender.nickname), { contrast: false, uncovered: false });
-    await expectEmojiBeforeFirstDay(t.bots[0]);
+    expect(reply?.ok, '역할 확인 중 이모티콘이 받아들여짐').toBe(false);
+    expect(reply?.code).toBe('INVALID_PHASE');
+    await expectStillRoleReveal(t);
+    await expect(bubbleOn(page, sender.nickname)).toHaveCount(0);
+    expect(eventAt(t.bots[0], 'emoji_shown'), '판 사람에게 이모티콘이 나감').toBeNull();
 });
 
 test('A02-E-093 5명 역할 확인 중 → 투표·준비 단추 없음 @game', async ({ user, table }) => {

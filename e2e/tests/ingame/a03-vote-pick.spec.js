@@ -12,6 +12,8 @@ const nickOf = (t, uuid) => [...t.bots, ...t.humans].find((x) => U(x) === uuid).
 
 // 토론 중 카드 메뉴 "투표하기"에 붙는 까닭 글 (화면 constants/actions/ingameActionPanel.js)
 const DISCUSSION_NOTICE = '토론 중입니다. 투표는 아직 열리지 않았습니다.';
+// 죽은 사람 화면에서 투표 중 "투표하기"가 꺼진 까닭 글 (화면 constants/board/playerCardMenu.js)
+const DEAD_NOTICE = '사망한 플레이어는 행동할 수 없습니다';
 
 // 직업 전부 정함: 사람 role, 광대 jokers명(사람이 광대면 사람 포함)은 봇 앞자리부터, 나머지 시민
 function rolesFor({ role = 'CITIZEN', jokers = 1 } = {}) {
@@ -152,7 +154,7 @@ test('A03-E-140 PC 7명 판 2일(1명 죽음) 죽은 사람 카드엔 투표 없
     expect(await votableNicknames(t, page, U(user))).toEqual(want);
 });
 
-test('A03-E-142 PC 7명 판 2일 내가 죽으면 표·기권 단추 없음/꺼짐 @game', async ({ user, table }) => {
+test('A03-E-142 PC 7명 판 2일 내가 죽으면 기권 단추 없음, 누를 수 있는 투표하기 없음 @game', async ({ user, table }) => {
     test.setTimeout(180_000);
     const t = await openTable(table, user, 7);
     const page = user.page;
@@ -160,12 +162,17 @@ test('A03-E-142 PC 7명 판 2일 내가 죽으면 표·기권 단추 없음/꺼�
     await executeThenDay2(t, page, U(user), { humanDies: true });
     await t.advance();
     await L.waitState(t, (g) => g.dayIndex === 2 && g.dayPhase === 'DAY_VOTE');
-    // 기권: 없거나 꺼짐
-    const abstain = page.locator('[data-ingame-phase-action="dayVoteAbstain"]');
+    // 화면도 투표 단계로 바뀐 뒤 봄: 죽은 사람은 기권 단추가 없어, 산 봇 카드의 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글)
+    const menu = page.getByRole('menu', { name: '플레이어 행동' });
     await expect(async () => {
-        const count = await abstain.count();
-        if (count > 0) await expect(abstain).toBeDisabled({ timeout: 500 });
-    }).toPass({ timeout: 10000 });
+        if (!(await menu.isVisible())) await L.card(page, nickOf(t, U(t.bots[1]))).click({ timeout: 1500 });
+        await expect(menu.getByRole('menuitem', { name: '투표하기' })).toHaveAttribute('title', DEAD_NOTICE, { timeout: 1000 });
+    }).toPass({ timeout: 15000 });
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    // 기권 단추: 죽은 사람에겐 안 그림
+    await expect(page.locator('[data-ingame-phase-action="dayVoteAbstain"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '기권' })).toHaveCount(0);
     // 산 사람 카드 어디에도 누를 수 있는 투표하기 없음
     expect(await votableNicknames(t, page, U(user))).toEqual([]);
 });

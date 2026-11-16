@@ -64,11 +64,15 @@ async function expectAllyPressable(page, role, partnerNick) {
 }
 
 // 광대: 시민 카드엔 암살 눌러짐(메뉴가 막힌 게 아님을 먼저 봄) → 동료 카드엔 눌러지는 암살 없음
+// 동료 광대 카드는 항목이 없어 시트가 아예 안 열림 (화면 utils/playerCardMenu.js) → 열리길 기다리지 않고 잠깐만 봄
 async function expectAllyBlocked(page, partnerNick, citizenNick) {
     let sheet = await openSheet(page, citizenNick);
     await expect(sheet.getByRole('menuitem', { name: '암살', exact: true })).toBeEnabled();
     await closeSheet(page);
-    sheet = await openSheet(page, partnerNick);
+    sheet = talk.cardSheet(page);
+    await clearOverlays(page);
+    await talk.slot(page, partnerNick).click();
+    await sheet.waitFor({ state: 'visible', timeout: 1500 }).catch(() => {});
     const kill = sheet.getByRole('menuitem', { name: '암살', exact: true });
     expect((await kill.count()) === 0 || (await kill.isDisabled()), '동료 광대 카드의 암살 단추가 꺼져 있거나 없음').toBe(true);
 }

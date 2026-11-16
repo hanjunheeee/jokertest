@@ -1,12 +1,12 @@
 'use strict';
 
-// 모바일 역할 확인 10초 동안 조작 브라우저 시험 — 채팅 막힘·이모티콘 됨·투표·준비 단추 없음 + 폰 폭마다 역할 창이 화면 안에 읽힘
+// 모바일 역할 확인 10초 동안 조작 브라우저 시험 — 채팅 막힘·이모티콘 안 됨(낮에만)·투표·준비 단추 없음 + 폰 폭마다 역할 창이 화면 안에 읽힘
 // 목록 A02-판시작-역할.md 번호 A02-E-171~176 (사파리도: E-174), 조작은 판이 아직 역할 확인 단계일 때만 뜻이 있어 그때인지 서버 값으로 확인
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { customRoleSettings } = require('../../helpers/game');
 const { closeOverlays } = require('../../helpers/ui');
-const { talk, BASIC_EMOJI, overflowX } = require('./_talk');
+const { talk, toDay, overflowX } = require('./_talk');
 
 const revealDialog = (page) => page.getByRole('dialog', { name: '내 역할 보기' });
 
@@ -28,31 +28,30 @@ async function expectStillRevealPhase(t) {
     expect(s.phase, '아직 역할 확인 단계').toBe('ROLE_REVEAL');
 }
 
-test('A02-E-171 모바일 6명 역할 확인 중 → 채팅이 안 써지거나 보내기 꺼짐 @game @smoke', async ({ user, table }) => {
+// 역할 확인 동안은 입력칸·보내기가 꺼지고 입력칸 자리에 까닭 글 (결정 "확인 10초: 채팅 못 씀", 화면 utils/inGameChatChannel.js 글)
+test('A02-E-171 모바일 6명 역할 확인 중 → 채팅 입력칸·보내기 꺼짐, 까닭 글 @game @smoke', async ({ user, table }) => {
     const t = await openRevealPhase(table, user);
     const page = user.page;
+    await expect(talk.input(page)).toBeDisabled();
+    await expect(talk.send(page)).toBeDisabled();
+    await expect(talk.input(page)).toHaveAttribute('placeholder', '역할 확인이 끝나면 채팅할 수 있습니다');
     await expectStillRevealPhase(t);
-    // 글이 써지면 보내기는 꺼져 있어야 함 (빈 칸이라 꺼진 것과 가르려고 글을 넣어 봄)
-    const typed = await talk.input(page).fill('역할 확인 중 채팅', { timeout: 2000 }).then(() => true, () => false);
-    if (typed) {
-        const sendOn = await talk.send(page).isEnabled().catch(() => false);
-        await expectStillRevealPhase(t);
-        expect(sendOn, '글이 써졌는데 보내기가 켜져 있음').toBe(false);
-    }
 });
 
-test('A02-E-172 모바일 6명 역할 확인 중 이모티콘 → 내 띠 카드에 말풍선 보임 @game', async ({ user, table }) => {
+// 이모티콘은 낮에만 — 역할 확인 10초도 안 됨 (결정 2026-11-16 오전 "이모티콘" + 낮 "반장이 정하고 알린 것" 1번)
+test('A02-E-172 모바일 6명 역할 확인 중 내 칸 길게 누름 → 이모티콘 팔레트 안 열림·말풍선 없음 (낮이 되면 열림) @game', async ({ user, table }) => {
     const t = await openRevealPhase(table, user);
     const page = user.page;
-    // 내 칸 길게 누르기(안드로이드 contextmenu) → 팔레트
+    // 내 칸 길게 누르기(안드로이드 contextmenu) → 팔레트가 안 열림, 말풍선도 안 그려짐
     await talk.mySlot(page).dispatchEvent('contextmenu');
-    const palette = talk.palette(page);
-    await expect(palette).toBeVisible();
+    await expect(talk.palette(page)).toHaveCount(0);
+    await expect(talk.mySlot(page).locator('[data-ingame-emoji-bubble]')).toHaveCount(0);
+    expect(t.bots[0].events.some((r) => r.event === 'emoji_shown'), '판 사람에게 이모티콘이 나감').toBe(false);
     await expectStillRevealPhase(t);
-    await palette.getByRole('button', { name: `${BASIC_EMOJI.hello.name} 보내기` }).click();
-    // 서버가 받아 돌려준 이모티콘만 그려짐 (말풍선은 누름을 안 받는 칸이라 가려짐은 안 봄)
-    const bubble = talk.mySlot(page).locator(`[data-ingame-emoji-bubble="${BASIC_EMOJI.hello.id}"]`);
-    await expectReadable(bubble, { contrast: false, uncovered: false });
+    // 견줌: 첫 낮(손잡이로 감)엔 같은 누름으로 팔레트가 열림 (누르는 법이 틀려서 안 열린 것과 가르기)
+    await toDay(t, page);
+    await talk.mySlot(page).dispatchEvent('contextmenu');
+    await expect(talk.palette(page)).toBeVisible();
 });
 
 test('A02-E-173 모바일 6명 역할 확인 중 → 투표·준비 단추 없음 @game', async ({ user, table }) => {

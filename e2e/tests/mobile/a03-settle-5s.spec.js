@@ -312,7 +312,7 @@ test('A03-E-104 모바일 6명 판 5초 중 새로고침 → 남은 초 5 이하
     const { names, X, fullAt } = await humanLastMass(t, user);
     await expectSettleLine(user.page);
     await user.page.reload();
-    // 새로고침 뒤 단계 줄 시계가 5초 이하 (당긴 마감이 스냅샷에도 실림) — "[5초 뒤 마감]" 글이 다시 뜨는지는 결정 대기 4라 안 봄
+    // 새로고침 뒤 단계 줄 시계가 5초 이하 (당긴 마감·당김 표시가 판 값에도 실려 "5초 뒤 마감" 글도 다시 뜸 — 5초가 짧아 여기선 남은 초만 봄)
     await expect.poll(() => phaseClock(user.page).catch(() => null), { timeout: 4_000 }).toBeLessThanOrEqual(5);
     await expectFiveSeconds(t.bots[1], fullAt, 1);
     await expect(tribunalOf(user.page)).toBeVisible({ timeout: 10_000 });

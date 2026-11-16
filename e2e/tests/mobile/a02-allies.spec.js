@@ -1,6 +1,6 @@
 'use strict';
 
-// 모바일 역할 확인 창의 같은 직업 동료 브라우저 시험 — 동료 줄이 보이나·없어야 할 때 없나·10명 짝 판에서 남의 직업이 안 새나
+// 모바일 역할 확인 창의 같은 직업 동료 브라우저 시험 — 동료 줄이 보이나·없어야 할 때 없나·10명 짝 판에서 남의 직업이 안 새나(띠 카드의 "동료" 표시는 같은 직업 상대 한 장만)
 // 목록 A02-판시작-역할.md 번호 A02-E-135~157 (사파리도: E-135·E-147·E-153)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -112,10 +112,21 @@ SECRET_CASES.forEach(([no, role]) => {
             await expect(dialog.getByText(`동료 ${label}`, { exact: true })).toBeVisible();
             await expect(dialog.getByRole('listitem')).toHaveText([partner.nickname]);
         }
-        // 띠의 카드 10장: 닉네임만, 직업 글·동료 글 없음
-        await expect(talk.strip(user.page).getByRole('button', { name: new RegExp(`^${partner.nickname}(,|$)`) })).toHaveCount(1);
-        const stripText = await talk.strip(user.page).innerText();
+        // 띠의 카드 10장: 같은 직업 상대 한 장에만 "동료" 표시(읽기 이름 "닉네임 · 동료 ○○"), 나머지는 닉네임만 — 시민은 표시가 하나도 없음
+        const strip = talk.strip(user.page);
+        const badges = strip.locator('[data-ingame-ally-badge]');
+        if (role === 'CITIZEN') {
+            await expect(strip.getByRole('button', { name: new RegExp(`^${partner.nickname}(,|$)`) })).toHaveCount(1);
+            await expect(badges).toHaveCount(0);
+            await expect(strip.getByRole('button', { name: /동료/ })).toHaveCount(0);
+        } else {
+            await expect(strip.getByRole('button', { name: new RegExp(`^${partner.nickname} · 동료 ${label}(,|$)`) })).toHaveCount(1);
+            await expect(badges).toHaveCount(1);
+            await expect(badges).toHaveAttribute('data-ingame-ally-badge', `동료 ${label}`);
+            await expect(strip.getByRole('button', { name: /동료/ })).toHaveCount(1);
+        }
+        // 눈에 보이는 글엔 직업 이름이 없음 (동료 표시 글은 "동료" 두 글자뿐)
+        const stripText = await strip.innerText();
         expect(stripText).not.toMatch(ROLE_WORDS);
-        expect(stripText).not.toContain('동료');
     });
 });

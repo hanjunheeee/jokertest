@@ -55,6 +55,17 @@ async function humanDiesThenDay2(t, page) {
     await expect(page.getByRole('dialog', { name: '단계 전환 안내', exact: true })).toHaveCount(0, { timeout: 15000 });
 }
 
+// 죽은 사람 화면이 투표 단계로 바뀔 때까지: 죽으면 준비·기권 단추가 없어, 산 봇 카드의 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글) → 메뉴 닫음
+async function waitDeadVoteScreen(t, page) {
+    const menu = page.getByRole('menu', { name: '플레이어 행동' });
+    await expect(async () => {
+        if (!(await menu.isVisible())) await L.card(page, t.bots[1].account.nickname).click({ timeout: 1500 });
+        await expect(menu.getByRole('menuitem', { name: '투표하기' })).toHaveAttribute('title', '사망한 플레이어는 행동할 수 없습니다', { timeout: 1000 });
+    }).toPass({ timeout: 15000 });
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+}
+
 // 화면 어디에도 "낮 집계" 글·집계 단추가 없음 (잠긴 판 화면 안까지 DOM으로 봄, 현황 창 안 "낮 투표 집계" 표 이름은 단추 아님)
 async function expectNoResolveButton(page) {
     await expect(page.getByText('낮 집계')).toHaveCount(0);
@@ -105,8 +116,9 @@ test('A03-E-122 PC 6명 판 투표 · 죽은 사람 → "낮 집계" 단추 없�
     await humanDiesThenDay2(t, page);
     await t.advance();
     await L.waitState(t, (g) => g.dayIndex === 2 && g.dayPhase === 'DAY_VOTE');
-    // 화면도 투표 단계로 바뀐 뒤 봄 (토론 준비 단추가 사라짐)
-    await expect(page.getByRole('button', { name: /투표 시작 준비|준비 완료/ })).toHaveCount(0);
+    // 화면도 투표 단계로 바뀐 뒤 봄 (죽은 사람에겐 준비·기권 단추가 없음)
+    await waitDeadVoteScreen(t, page);
+    await expect(page.getByRole('button', { name: /투표 시작 준비|준비 완료|기권/ })).toHaveCount(0);
     await expectNoResolveButton(page);
 });
 

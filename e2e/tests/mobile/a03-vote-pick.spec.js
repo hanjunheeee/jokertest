@@ -68,11 +68,11 @@ const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
 const sheetOf = (page) => page.locator('[data-ingame-player-card-menu]');
 
-// 초상 띠 칸을 눌러 그 사람 카드 시트 열기
+// 초상 띠 칸을 눌러 그 사람 카드 시트 열기 (같은 직업 동료 시트는 이름이 "닉네임 · 동료 광대")
 async function openSheet(page, nick) {
     await talk.slot(page, nick).click();
     const sheet = sheetOf(page);
-    await expect(sheet).toHaveAttribute('aria-label', nick);
+    await expect(sheet).toHaveAttribute('aria-label', new RegExp(`^${nick}( · 동료 .+)?$`));
     return sheet;
 }
 
@@ -217,13 +217,21 @@ test('A03-E-141 모바일 7명 판 2일(봇 1명 죽음) → 죽은 사람 카�
     expect(await votableNicks(user.page, alive)).toEqual([...alive].sort());
 });
 
-test('A03-E-143 모바일 7명 판 2일 내가 죽음 → 기권 꺼짐·누를 수 있는 투표 없음 @game', async ({ user, table }) => {
+test('A03-E-143 모바일 7명 판 2일 내가 죽음 → 기권 단추 없음·누를 수 있는 투표 없음 @game', async ({ user, table }) => {
     test.setTimeout(240_000);
     const roles = rolePlan(7);
     const t = await startTalkGame(table, user, { bots: 6, roles });
     await expectRoles(t, roles);
     await dayTwoVoteAfter(t, user.page, { killMe: true });
-    await expect(abstainButton(user.page)).toBeDisabled();
+    // 화면도 투표 단계로 바뀐 뒤 봄: 죽은 사람은 기권 단추가 없어, 산 봇 카드 시트의 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글)
+    await expect(async () => {
+        const sheet = sheetOf(user.page);
+        if (!(await sheet.isVisible())) await talk.slot(user.page, t.bots[0].nickname).click({ timeout: 1500 });
+        await expect(sheet.getByText('사망한 플레이어는 행동할 수 없습니다')).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
+    await closeSheet(user.page);
+    // 기권 단추: 죽은 사람에겐 안 그림
+    await expect(abstainButton(user.page)).toHaveCount(0);
     expect(await votableNicks(user.page, t.bots.map((b) => b.nickname))).toEqual([]);
 });
 
