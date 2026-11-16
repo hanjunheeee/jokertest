@@ -16,9 +16,8 @@ function useMemberSearch() {
   const [error, setError] = useState(null)
   const text = query.trim()
 
-  const search = async (event) => {
-    event.preventDefault()
-    if (text.length < 2) return
+  const search = async () => {
+    if (text.length < 2 || state === 'loading') return
     setState('loading')
     setError(null)
     try {
@@ -30,7 +29,13 @@ function useMemberSearch() {
       setState('error')
     }
   }
-  return { query, setQuery, found, state, error, text, search }
+  // 칸에서 Enter: 바깥 공지 폼 보내기는 막고 찾기만 함 (한글 조합 중 Enter는 글자 확정이라 안 찾음)
+  const searchOnEnter = (event) => {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    if (!event.nativeEvent?.isComposing) search()
+  }
+  return { query, setQuery, found, state, error, text, search, searchOnEnter }
 }
 
 // 찾은 회원 목록, 이미 넣은 사람은 버튼 잠금
@@ -72,7 +77,7 @@ function PickedList({ picked, onRemove }) {
 
 // picked: [{ uuid, nickname }], onChange: 새 목록 받음
 export default function RecipientPicker({ picked, onChange }) {
-  const { query, setQuery, found, state, error, text, search } = useMemberSearch()
+  const { query, setQuery, found, state, error, text, search, searchOnEnter } = useMemberSearch()
   const pickedIds = new Set(picked.map((member) => member.uuid))
 
   const add = (member) => {
@@ -82,19 +87,21 @@ export default function RecipientPicker({ picked, onChange }) {
 
   return (
     <div className="flex flex-col gap-3 rounded border border-line p-3">
-      <form onSubmit={search} className="flex flex-wrap items-end gap-2">
+      {/* 공지 폼 안이라 폼 태그 안 씀 (폼 안 폼이면 브라우저가 "찾기"를 화면 다시 열기로 처리해 쓰던 공지가 날아감) */}
+      <div role="search" className="flex flex-wrap items-end gap-2">
         <Field
           label="받을 사람 찾기"
           hint="닉네임 앞부분(2자 이상) 또는 UUID"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={searchOnEnter}
           className="min-w-0 flex-1"
         />
-        <button type="submit" className={BUTTON} disabled={text.length < 2 || state === 'loading'}>찾기</button>
+        <button type="button" className={BUTTON} disabled={text.length < 2 || state === 'loading'} onClick={search}>찾기</button>
         {UUID_PATTERN.test(text) ? (
           <button type="button" className={BUTTON} onClick={() => add({ uuid: text })}>이 UUID 그대로 넣기</button>
         ) : null}
-      </form>
+      </div>
 
       {state === 'loading' ? <StatusNote state="loading" /> : null}
       {state === 'error' ? <StatusNote state="error" error={error} /> : null}
