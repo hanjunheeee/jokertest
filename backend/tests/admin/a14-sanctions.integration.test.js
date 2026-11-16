@@ -1,7 +1,7 @@
 'use strict';
 
 // 관리자 제재 시험: 강제 접속 종료·기간 정지·날짜 경계·기간 끝·영구·이미 정지·기간 바꾸기·해제·사유 빔·사유 길이·할 수 없는 대상 (시험 DB + 가짜 소켓 + 진짜 플레이어 로그인)
-// 목록 docs/게임_의도_2026-11-15/시험목록/A14-관리자.md A14-B-204~220 (돌리기: with-lock.sh testdb, 시험_도우미.md 3-3)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A14-관리자.md A14-B-204~220·281~282 (돌리기: with-lock.sh testdb, 시험_도우미.md 3-3)
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 // 모델이 읽는 주소를 시험 DB로 (값 없으면 닿지 않는 곳 → 건너뜀), 꼭 models require보다 먼저
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
@@ -204,4 +204,37 @@ test('A14-B-220 탈퇴 회원 정지 → 409 MEMBER_WITHDRAWN, 정지 줄 없음
     assert.equal(res.status, 409);
     assert.equal(res.body.code, 'MEMBER_WITHDRAWN');
     assert.equal((await bansOf(member.uuid)).length, 0);
+});
+
+// 정지 답의 시각 = 저장된 시각인지 (DB 칸은 초까지라 답에 밀리초가 붙으면 새로고침 때 최대 1초 달라 보임)
+// 시계를 "어떤 초 + 0.6초"로 고정 → 반올림이면 저장 값이 다음 초로 넘어가 어긋남이 늘 보임
+const iso = (value) => (value ? new Date(value).toISOString() : null);
+async function atSixTenths(t, run) {
+    t.mock.timers.enable({ apis: ['Date'], now: Math.floor(Date.now() / 1000) * 1000 + 600 });
+    try {
+        return await run();
+    } finally {
+        t.mock.timers.reset();
+    }
+}
+
+test('A14-B-281 정지 넣기 답의 startAt·endAt = DB에 저장된 값 (밀리초 없음, 시계 x.600초에도)', async (t) => {
+    if (H.noDb(t)) return;
+    const member = await H.createPlayer('s281');
+    const res = await atSixTenths(t, () => ban(member.uuid, week));
+    assert.equal(res.status, 201);
+    const [row] = await bansOf(member.uuid);
+    assert.equal(res.body.ban.endAt, iso(row.end_at));
+    assert.equal(res.body.ban.startAt, iso(row.start_at));
+});
+
+test('A14-B-282 기간 바꾸기 답의 endAt = DB에 저장된 값 (밀리초 없음, 시계 x.600초에도)', async (t) => {
+    if (H.noDb(t)) return;
+    const member = await H.createPlayer('s282');
+    assert.equal((await ban(member.uuid, week)).status, 201);
+    const [before] = await bansOf(member.uuid);
+    const res = await atSixTenths(t, () => ctx.app.agent.request('PATCH', `${path(member.uuid)}/bans/${before.id}`, { body: { kind: 'PERIOD', days: 3, reason: '3일로' } }));
+    assert.equal(res.status, 200);
+    const [after] = await bansOf(member.uuid);
+    assert.equal(res.body.ban.endAt, iso(after.end_at));
 });

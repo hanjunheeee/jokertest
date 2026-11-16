@@ -393,6 +393,94 @@ test('A09-B-460 7명 판 끝난 판에 든 적 없는 사람이 그 판 번호�
     assert.equal(snap.code, 'INTERNAL_ERROR');
 });
 
+// ---------- A09-B-461~466 스스로 나간 사람이 스냅샷을 물음 → "끊겨 제외" 답 아님 (끊겨 60초 탈락한 사람만 그 답) ----------
+// 나가기도 끊김 탈락과 같은 기권 명단에 들어 스스로 나간 사람에게도 FORFEITED_FROM_SESSION이 가던 것 (화면이 "연결이 끊겨 … 제외" 알림)
+const FORFEIT_TEXT = '연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다.';
+const snapshotNoId = (w, uuid) => gf.call(h.T.handleGetSessionSnapshot, w.io, w.sock(uuid), uuid, {});
+const assertNoForfeitReply = (snap, label) => {
+    assert.equal(snap.ok, false, label);
+    assert.notEqual(snap.code, 'FORFEITED_FROM_SESSION', label);
+    assert.notEqual(snap.message, FORFEIT_TEXT, label);
+};
+
+test('A09-B-461 6명 판 산 채로 나간 사람이 그 판 번호로 스냅샷 → NOT_A_PARTICIPANT (끊겨 제외 답 아님)', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 6 });
+    gf.toDay(s);
+    const [a] = gf.nonJokers(s);
+    assert.deepEqual(await w.leave(s, a), { ok: true });
+    const snap = await w.snapshot(s, a);
+    assertNoForfeitReply(snap, '번호 줌');
+    assert.equal(snap.code, 'NOT_A_PARTICIPANT');
+});
+
+test('A09-B-462 7명 판 산 채로 나간 사람이 판 번호 없이 스냅샷 → 끊겨 제외 답 아님', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 7 });
+    gf.toDay(s);
+    const [a] = gf.nonJokers(s);
+    await w.leave(s, a);
+    assertNoForfeitReply(await snapshotNoId(w, a), '번호 없음');
+});
+
+test('A09-B-463 8명 판 처형된 뒤 나간 사람이 번호 주고·번호 없이 스냅샷 → 둘 다 끊겨 제외 답 아님 (번호 주면 NOT_A_PARTICIPANT)', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 8 });
+    const [a] = gf.nonJokers(s);
+    w.execute(s, a);
+    assert.deepEqual(await w.leave(s, a), { ok: true });
+    const withId = await w.snapshot(s, a);
+    assertNoForfeitReply(withId, '번호 줌');
+    assert.equal(withId.code, 'NOT_A_PARTICIPANT');
+    assertNoForfeitReply(await snapshotNoId(w, a), '번호 없음');
+    T_stop(s);
+});
+
+test('A09-B-464 5명 판 산 채로 나간 뒤 판이 끝남(광대 처형) → 그 판 번호로 스냅샷 → NOT_A_PARTICIPANT', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 5 });
+    gf.toDay(s);
+    const [a] = gf.nonJokers(s);
+    await w.leave(s, a);
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    assert.equal(s.phase, 'ENDED');
+    const snap = await w.snapshot(s, a);
+    assertNoForfeitReply(snap, '끝난 판');
+    assert.equal(snap.code, 'NOT_A_PARTICIPANT');
+});
+
+test('A09-B-465 6명 판 A는 스스로 나가고 B는 끊겨 60초 탈락 → B만 FORFEITED_FROM_SESSION(번호 있든 없든), A는 아님', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 6 });
+    gf.toDay(s);
+    const [a, b] = gf.nonJokers(s);
+    await w.leave(s, a);
+    await w.disconnect(b);
+    w.tick(60_000);
+    assert.equal(s.players.get(b).alive, false, 'B가 60초 뒤 탈락 안 함');
+    w.connect(b);
+    for (const snap of [await w.snapshot(s, b), await snapshotNoId(w, b)]) {
+        assert.equal(snap.code, 'FORFEITED_FROM_SESSION');
+        assert.equal(snap.message, FORFEIT_TEXT);
+    }
+    assertNoForfeitReply(await w.snapshot(s, a), 'A 번호 줌');
+    assertNoForfeitReply(await snapshotNoId(w, a), 'A 번호 없음');
+    T_stop(s);
+});
+
+test('A09-B-466 7명 판 처형된 사람이 로비로 감(enter_lobby, 죽은 뒤 나가기와 같은 처리) → 그 판 번호로 스냅샷 → NOT_A_PARTICIPANT', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 7 });
+    const [a] = gf.nonJokers(s);
+    w.execute(s, a);
+    const entered = await w.enterLobby(a);
+    assert.equal(entered.ok, true);
+    const snap = await w.snapshot(s, a);
+    assertNoForfeitReply(snap, '로비 뒤');
+    assert.equal(snap.code, 'NOT_A_PARTICIPANT');
+    T_stop(s);
+});
+
 // 진짜 시계로 걸릴 수 있는 다음 단계 타이머 끄기 (가짜 시계라 안 돌지만 다음 시험에 안 넘어가게)
 function T_stop(s) {
     h.T.stopDayPhaseTimer(s.id);

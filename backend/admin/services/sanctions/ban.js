@@ -7,6 +7,8 @@ const audit = require('../core/audit');
 const { AUDIT_ACTIONS } = require('../core/auditActions');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 정지 시각은 초 아래 버림 (DB 칸이 초까지라 답의 시각이 저장 값과 같게, 예: 12:00:17.600 → 12:00:17)
+const toSecond = (date) => new Date(Math.floor(date.getTime() / 1000) * 1000);
 
 const defaultDb = () => require('../../../repositories/common/db');
 const defaultDisconnect = (uuid) => require('../../../services/ops/disconnect').disconnectUser(uuid);
@@ -63,8 +65,9 @@ const banMember = async ({ req, uuid, kind, days, reason }, { transaction, db = 
     if (current) {
         throw fail('이미 정지 중이에요. 기간을 바꾸려면 "기간 바꾸기"를 써 주세요.', 409, 'ALREADY_BANNED', { banId: current.id });
     }
+    const at = toSecond(now);
     const row = await db.UserBan.create({
-        user_id: uuid, reason, banned_by: req.admin.id, start_at: now, created_at: now, ...periodOf({ kind, days }, now),
+        user_id: uuid, reason, banned_by: req.admin.id, start_at: at, created_at: at, ...periodOf({ kind, days }, at),
     }, { transaction });
     const ban = banViewOf(row);
     await audit.record({
@@ -98,7 +101,7 @@ const updateBan = async ({ req, uuid, banId, kind, days, reason }, { db = defaul
         const active = await db.UserBan.count({ where: { id: banId, ...activeBanWhere(db, uuid, now) }, transaction });
         if (!active) throw fail('이미 끝났거나 풀린 정지예요.', 409, 'NOT_BANNED');
         const before = banViewOf(row);
-        await row.update(periodOf({ kind, days }, now), { transaction });
+        await row.update(periodOf({ kind, days }, toSecond(now)), { transaction });
         const ban = banViewOf(row);
         await audit.record({
             req, action: AUDIT_ACTIONS.BAN_UPDATE, targetType: 'member', targetId: uuid, before, after: { ban, kind, days: days ?? null }, reason,

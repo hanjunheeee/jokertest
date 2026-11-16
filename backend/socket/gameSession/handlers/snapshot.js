@@ -11,6 +11,7 @@ const { announceReconnected } = require('../connection/presenceNotice')
 const { isEligibleRecipient } = require('../delivery/eligibility')
 const { normalizeGameId } = require('../../../game-core/core/registry/lookup')
 const { getPlayerGameId, hasSessionId } = require('../../../game-core/queries/byId')
+const { hasLeftSessionByChoice } = require('../../../game-core/queries/participation')
 
 // 물은 판이 이 서버에 없고 나도 아무 판에 없음 = 판이 사라짐 (서버 다시 켜짐 등)
 // 장부 어긋남이 아니라서 숨기지 않고 판 없음으로 알림, 화면이 판을 지우고 멀티 화면으로 가게 하기
@@ -51,7 +52,9 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
 
     // 끝난 판에서 이미 나간 사람이 그 판을 물으면 그 판에 없음 그대로 답함 ("로비로" 답을 놓친 뒤 결과 확인)
     // 숨기면(INTERNAL_ERROR) 화면이 나간 줄 몰라 "결과 모름"에 머묾, 그 판 사람이었던 사람에게만 답해 새는 것 없음
-    if (gameSessionCore.hasLeftEndedSession(normalizeGameId(gameId), uuid)) {
+    // 판 중에 스스로 나간 사람도 같음 ("끊겨 제외" 답을 주면 화면이 끊긴 적 없는 사람에게 그 글을 띄움)
+    const askedGameId = normalizeGameId(gameId)
+    if (gameSessionCore.hasLeftEndedSession(askedGameId, uuid) || hasLeftSessionByChoice(askedGameId, uuid)) {
         ack(snapshotRejectedReply('NOT_A_PARTICIPANT'))
         return
     }

@@ -1,7 +1,7 @@
 // 게임 중 나가기 파일
 // 나간 사람 정리 + 멈춘 단계 넘기기, socket 나가기 처리가 사용 (지도 12)
 const { assertSessionNotEnded, enterNightPhase } = require('../core/rules/terminal')
-const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
+const { commitDisconnectElimination, recordForfeit, markLeftByChoice } = require('./eliminate')
 const { releasePlayerSession } = require('../core/registry/write')
 const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap } = require('../phase/tribunal/ballots')
 const { TRIBUNAL_DEFENDANT_DIED } = require('../phase/tribunal/constants')
@@ -108,6 +108,8 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
         // 이미 죽은 사람은 기권·떠난 명단에만 넣음
         recordForfeit(session, uuid)
     }
+    // 스스로 나간 사람은 따로 적음: 기권 명단은 끊김 탈락과 같이 쓰지만 스냅샷 답에 "끊겨 제외" 글을 안 주려고
+    if (reason === 'PLAYER_LEFT') markLeftByChoice(session, uuid)
 
     // 참여 끝 표시, 참여 번호 +1 (밤 판정이 그사이 바뀐 것 알아채게)
     player.isParticipating = false

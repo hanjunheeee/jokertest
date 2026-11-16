@@ -1,7 +1,7 @@
 'use strict';
 
-// 비번 재설정·비번 바꾸기·탈퇴 뒤 소켓 끊김 시험(시험 DB) — 세션 주기 검사 5초 안 끊김, 탈퇴는 주기 검사 안 기다리고 ACCOUNT_WITHDRAWN 먼저
-// 목록 A11-B-901~905 (docs/게임_의도_2026-11-15/시험목록/A11b-비번-이메일-탈퇴-마이페이지.md), 진짜 DB 세션을 봐서 돌리기는 with-lock.sh testdb (시험_도우미.md 3-3)
+// 비번 재설정·비번 바꾸기·탈퇴·정지 뒤 소켓 끊김 시험(시험 DB) — 세션 주기 검사 5초 안 끊김, 탈퇴는 주기 검사 안 기다리고 ACCOUNT_WITHDRAWN 먼저
+// 목록 A11-B-901~908 (docs/게임_의도_2026-11-15/시험목록/A11b-비번-이메일-탈퇴-마이페이지.md), 진짜 DB 세션을 봐서 돌리기는 with-lock.sh testdb (시험_도우미.md 3-3)
 // 틀(시험 DB 준비·사람·세션·메일)은 a11b-harness, 소켓 세상은 a10-world(진짜 연결 처리기 + 가짜 시계)
 const h = require('../db/a11b-harness');
 const { makeWorld } = require('./a10-world');
@@ -15,6 +15,8 @@ const passwordReset = require('../../services/auth/passwordReset');
 const { changePassword } = require('../../services/auth/account/password');
 const { withdrawAccount } = require('../../services/auth/account/withdraw');
 const withdrawRepository = require('../../repositories/user/withdraw');
+const userRepository = require('../../repositories/user');
+const sessionLifecycle = require('../../services/auth/sessionLifecycle');
 
 const { noDb, mailsTo, tokenOf } = h;
 
@@ -128,4 +130,56 @@ test('A11-B-905 탈퇴한 계정의 살아 있던 소켓 → 다음 세션 주�
     await w.tick(5_000);
     await waitFor(() => socket.connected === false, '탈퇴 뒤 세션 검사로 소켓 끊김');
     assert.equal(firstKickCode(w, socket), 'ACCOUNT_WITHDRAWN');
+});
+
+// 정지 직후 화면의 http 요청(지갑 등)이 소켓 검사보다 먼저 정지를 찾아 세션을 끊어 둔 경우 (브라우저 A11-H-005에서 겪음)
+// 세션이 이미 없어도 소켓은 "세션 만료"가 아니라 정지 까닭으로 끊겨야 함
+async function banFoundByHttpFirst(user, session, ban) {
+    await h.db.UserBan.create({ user_id: user.uuid, ...ban });
+    const httpResult = await sessionLifecycle.resolveSession(sessionLifecycle.verifyAccessToken(session.access));
+    assert.equal(httpResult.code, 'ACCOUNT_BANNED', '준비: http 요청이 정지를 먼저 찾음');
+    assert.equal(await h.db.UserSession.count({ where: { user_id: user.uuid, is_online: true } }), 0, '준비: 세션 끊김');
+}
+
+test('A11-B-906 http 요청이 정지를 먼저 찾아 세션을 끊은 뒤 → 세션 주기 검사(5초)가 force_disconnect ACCOUNT_BANNED·정지 사유 글로 끊음', async (t) => {
+    if (noDb(t)) return;
+    const w = makeWorld(t, { realDb: true, realSessions: true });
+    const user = await h.createLocalUser({ prefix: 'b' });
+    const session = await h.sessionFor(user.uuid);
+    const socket = await connectWith(w, user.uuid, session);
+    await banFoundByHttpFirst(user, session, { reason: '시험 정지', is_permanent: true });
+    assert.equal(socket.connected, true, '준비: 아직 붙어 있음');
+    await w.tick(5_000);
+    await waitFor(() => socket.connected === false, '정지 뒤 세션 검사로 소켓 끊김');
+    const kick = w.received(socket, 'force_disconnect')[0];
+    assert.equal(kick?.code, 'ACCOUNT_BANNED');
+    assert.equal(kick?.message, '정지된 계정입니다. 사유: 시험 정지');
+});
+
+test('A11-B-907 정지 없이 세션만 끊긴 소켓 → 세션 주기 검사가 지금대로 SESSION_EXPIRED로 끊음', async (t) => {
+    if (noDb(t)) return;
+    const w = makeWorld(t, { realDb: true, realSessions: true });
+    const user = await h.createLocalUser({ prefix: 'n' });
+    const socket = await connectWith(w, user.uuid, await h.sessionFor(user.uuid));
+    await userRepository.markOnlineSessionsOffline(user.uuid);
+    await w.tick(5_000);
+    await waitFor(() => socket.connected === false, '세션 끊긴 뒤 소켓 끊김');
+    const kick = w.received(socket, 'force_disconnect')[0];
+    assert.equal(kick?.code, 'SESSION_EXPIRED');
+    assert.equal(kick?.message, '세션이 만료되었습니다. 다시 로그인해주세요.');
+});
+
+test('A11-B-908 끝난 정지만 있는 계정의 세션이 끊김 → SESSION_EXPIRED (지난 정지는 까닭으로 안 씀)', async (t) => {
+    if (noDb(t)) return;
+    const w = makeWorld(t, { realDb: true, realSessions: true });
+    const user = await h.createLocalUser({ prefix: 'e' });
+    const socket = await connectWith(w, user.uuid, await h.sessionFor(user.uuid));
+    await h.db.UserBan.create({
+        user_id: user.uuid, reason: '지난 정지', is_permanent: false,
+        start_at: new Date(Date.now() - 2 * 86_400_000), end_at: new Date(Date.now() - 86_400_000),
+    });
+    await userRepository.markOnlineSessionsOffline(user.uuid);
+    await w.tick(5_000);
+    await waitFor(() => socket.connected === false, '세션 끊긴 뒤 소켓 끊김');
+    assert.equal(firstKickCode(w, socket), 'SESSION_EXPIRED');
 });

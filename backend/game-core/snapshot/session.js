@@ -11,7 +11,7 @@ const { buildNightResultAppliedPayload, buildPublicNightTurnTimerFields } = requ
 const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal/resolve')
 const { buildPublicWinResult } = require('../result/winReveal')
 const { normalizeGameId } = require('../core/registry/lookup')
-const { isForfeitedFromSession, isForfeitedFromAnySession } = require('../queries/participation')
+const { isForfeitedFromSession, isForfeitNoticeDue, isForfeitedFromAnySession } = require('../queries/participation')
 const { getPlayerGameId, getSessionById } = require('../queries/byId')
 
 // 스냅샷에 낮·재판 칸 넣어도 되는지
@@ -161,13 +161,13 @@ function buildSessionSnapshot(session, uuid) {
 // 사람 → 지금 판 스냅샷 (판 없거나 기권했으면 거절)
 function getSessionSnapshotForPlayer(uuid, expectedGameId) {
     const gameId = getPlayerGameId(uuid)
-    // 판에 없을 때: 그 판에서 기권한 거면 기권으로, 아니면 참가자 아님
+    // 판에 없을 때: 그 판에서 끊겨 빠진 거면 기권으로, 아니면 참가자 아님 (스스로 나간 사람도 참가자 아님 — "끊겨 제외" 글 안 줌)
     if (!gameId) {
         const normalized = normalizeGameId(expectedGameId)
-        if (normalized && isForfeitedFromSession(normalized, uuid)) {
+        if (normalized && isForfeitNoticeDue(normalized, uuid)) {
             return { ok: false, code: 'FORFEITED_FROM_SESSION' }
         }
-        // 판 번호 없이 물었으면(새로고침한 화면) 열린 판 기권 명단에서 찾음 (못 가리면 화면이 까닭 글 없이 방 목록으로 감)
+        // 판 번호 없이 물었으면(새로고침한 화면) 열린 판에서 끊겨 빠진 판을 찾음 (못 가리면 화면이 까닭 글 없이 방 목록으로 감)
         if (!normalized && isForfeitedFromAnySession(uuid)) {
             return { ok: false, code: 'FORFEITED_FROM_SESSION' }
         }

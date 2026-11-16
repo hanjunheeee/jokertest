@@ -21,6 +21,9 @@ exports.verifyAccessToken = (token, { ignoreExpiration = false } = {}) => {
     return decoded;
 };
 
+// 정지 거절 글 (사유 없으면 운영정책 위반)
+const banMessageOf = (ban) => `정지된 계정입니다. 사유: ${ban.reason || "운영정책 위반"}`;
+
 // 토큰 속 세션이 아직 살아 있고 정지 아닌지, 거절은 상태 코드·문구로 돌려줌
 // batch: 소켓 쪽(접속·사건·5초 주기)만 켬, 세션·계정 상태·정지를 질의 하나로 + 같은 차례 확인 여럿을 한 번에 물음
 // (http 요청 확인은 옛 두 질의 그대로, 판정은 둘 다 아래 같은 줄)
@@ -40,10 +43,14 @@ exports.resolveSession = async (decoded, { batch = false } = {}) => {
 
     // 끊긴 세션이면 401 (is_online은 true·1 둘 다 받음)
     if (!session || (session.is_online !== true && session.is_online !== 1)) {
-        // 탈퇴한 계정의 남은 소켓이면 까닭을 실어 줌 (화면이 "세션 만료" 대신 탈퇴 안내를 띄움, 정지·비활성과 같은 모양)
-        // 소켓 쪽(batch)만 옴: http 요청 응답은 그대로 (탈퇴한 계정인지 밖에 안 알림)
+        // 탈퇴·정지 계정의 남은 소켓이면 까닭을 실어 줌 (화면이 "세션 만료" 대신 탈퇴·정지 안내를 띄움, 비활성과 같은 모양)
+        // 소켓 쪽(batch)만 옴: http 요청 응답은 그대로 (끊긴 세션의 계정 상태를 밖에 안 알림)
         if (gone?.withdrawn) {
             return { ok: false, status: 401, code: "ACCOUNT_WITHDRAWN", message: "회원 탈퇴가 완료되었습니다." };
+        }
+        // 정지 직후 http 요청이 먼저 정지를 찾아 세션을 끊어 둔 경우도 정지 까닭으로 (아래 정지 거절과 같은 글)
+        if (gone?.ban) {
+            return { ok: false, status: 403, code: "ACCOUNT_BANNED", message: banMessageOf(gone.ban) };
         }
         return { ok: false, status: 401, message: "세션이 만료되었습니다. 다시 로그인해주세요." };
     }
@@ -56,7 +63,7 @@ exports.resolveSession = async (decoded, { batch = false } = {}) => {
     // 정지 중이면 그 사람 세션 전부 끊고 403 (소켓은 code로 끊는 까닭 알림)
     if (activeBan) {
         await userRepository.markOnlineSessionsOffline(decoded.uuid);
-        return { ok: false, status: 403, code: "ACCOUNT_BANNED", message: `정지된 계정입니다. 사유: ${activeBan.reason || "운영정책 위반"}` };
+        return { ok: false, status: 403, code: "ACCOUNT_BANNED", message: banMessageOf(activeBan) };
     }
 
     // 계정 상태가 ACTIVE 아니면(관리자 비활성 등) 정지와 같은 흐름 (상태 없는 줄은 통과)

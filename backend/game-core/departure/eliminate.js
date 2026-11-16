@@ -48,6 +48,12 @@ function recordForfeit(session, uuid) {
     session.detachedUuids.add(uuid)
 }
 
+// 스스로 나간 사람 명단에 넣음 (게임 나가기·죽은 뒤 로비로), 기권 명단과 같이 들어 있으면 끊김 탈락 아님
+function markLeftByChoice(session, uuid) {
+    if (!session.leftByChoiceUuids) session.leftByChoiceUuids = new Set()
+    session.leftByChoiceUuids.add(uuid)
+}
+
 // 끊김 탈락 방송 (생존 목록·탈락한 사람)
 function buildDisconnectPayload(session, victimUuid) {
     return {
@@ -63,5 +69,6 @@ function buildDisconnectPayload(session, victimUuid) {
 module.exports = {
     commitDisconnectElimination,
     recordForfeit,
+    markLeftByChoice,
     buildDisconnectPayload,
 }

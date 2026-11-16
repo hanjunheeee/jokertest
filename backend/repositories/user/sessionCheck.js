@@ -37,20 +37,38 @@ const querySessionStates = async (sessionIds) => {
     return rows;
 };
 
-// 세션이 안 잡힌 사람 중 탈퇴한 계정 uuid 모음 (지운 계정 줄도 봄), 끊는 까닭을 고르는 데만 씀
-const queryWithdrawnUuids = async (uuids) => {
-    if (uuids.length === 0) return new Set();
-    const rows = await db.User.findAll({
-        where: { uuid: uuids, status: WITHDRAWN_STATUS }, attributes: ['uuid'], paranoid: false, raw: true,
+// 세션이 안 잡힌 사람의 계정 상태 + 지금 걸린 정지 (지운 계정 줄도 봄), 정지 조건은 위 질의와 같음
+// 정지 직후 http 요청이 먼저 세션을 끊어 두면 소켓은 세션이 없어도 정지 까닭으로 끊어야 함 (안 보면 "세션 만료" 글이 뜸)
+const GONE_CHECK_SQL = `
+SELECT u.uuid, u.status,
+  (SELECT b.id FROM user_bans b WHERE b.user_id = u.uuid
+     AND (b.start_at IS NULL OR b.start_at <= :now) AND (b.is_permanent = 1 OR b.end_at > :now) ORDER BY b.id LIMIT 1) AS ban_id,
+  (SELECT b.reason FROM user_bans b WHERE b.user_id = u.uuid
+     AND (b.start_at IS NULL OR b.start_at <= :now) AND (b.is_permanent = 1 OR b.end_at > :now) ORDER BY b.id LIMIT 1) AS ban_reason
+FROM users u
+WHERE u.uuid IN (:uuids)`;
+
+// 세션이 안 잡힌 사람 uuid → 끊는 까닭 { withdrawn: true } | { ban } Map (탈퇴가 먼저, 둘 다 아니면 빠짐)
+// 끊는 까닭을 고르는 데만 씀, 보통은 0명이라 질의 없음 (질의 한 번에 탈퇴·정지 같이)
+const queryGoneReasons = async (uuids) => {
+    const reasons = new Map();
+    if (uuids.length === 0) return reasons;
+    const rows = await db.sequelize.query(GONE_CHECK_SQL, {
+        replacements: { uuids, now: toUtcSqlText(new Date()) },
+        type: db.Sequelize.QueryTypes.SELECT,
     });
-    return new Set(rows.map((row) => row.uuid));
+    for (const row of rows) {
+        if (row.status === WITHDRAWN_STATUS) reasons.set(row.uuid, { withdrawn: true });
+        else if (row.ban_id !== null && row.ban_id !== undefined) reasons.set(row.uuid, { ban: { id: row.ban_id, reason: row.ban_reason } });
+    }
+    return reasons;
 };
 
 // 줄 하나를 옛 두 질의 결과 모양으로: [세션(User.status 붙음) | null, 정지 | null]
 // 세션 주인이 토큰 uuid와 다르면 없음 (옛 질의 where의 user_id 조건)
-// 세션이 없는데 탈퇴한 계정이면 셋째 칸에 { withdrawn: true } (소켓을 "탈퇴" 까닭으로 끊게)
-const toSessionAndBan = (row, uuid, withdrawn = false) => {
-    if (!row || row.user_id !== uuid) return withdrawn ? [null, null, { withdrawn: true }] : [null, null];
+// 세션이 없는데 탈퇴·정지 계정이면 셋째 칸에 { withdrawn: true } | { ban } (소켓을 그 까닭으로 끊게)
+const toSessionAndBan = (row, uuid, gone = null) => {
+    if (!row || row.user_id !== uuid) return gone ? [null, null, gone] : [null, null];
     const session = {
         id: row.session_id,
         user_id: row.user_id,
@@ -69,18 +87,18 @@ const flush = async (batch) => {
     try {
         const ids = [...new Set(batch.map((item) => item.sessionId))];
         const rows = await querySessionStates(ids);
-        // 세션이 안 잡힌 사람만 탈퇴했는지 한 번에 물음 (보통은 0명이라 질의 없음)
+        // 세션이 안 잡힌 사람만 탈퇴·정지인지 한 번에 물음 (보통은 0명이라 질의 없음)
         const missing = batch.filter((item) => rows.get(item.sessionId)?.user_id !== item.uuid).map((item) => item.uuid);
-        const withdrawn = await queryWithdrawnUuids([...new Set(missing)]);
+        const goneReasons = await queryGoneReasons([...new Set(missing)]);
         for (const item of batch) {
-            item.resolve(toSessionAndBan(rows.get(item.sessionId), item.uuid, withdrawn.has(item.uuid)));
+            item.resolve(toSessionAndBan(rows.get(item.sessionId), item.uuid, goneReasons.get(item.uuid) ?? null));
         }
     } catch (error) {
         for (const item of batch) item.reject(error);
     }
 };
 
-// 세션 하나 확인 신청 → [세션 | null, 정지 | null] (id·uuid 없으면 DB 안 감), 세션 없는 탈퇴 계정이면 셋째 칸 { withdrawn: true }
+// 세션 하나 확인 신청 → [세션 | null, 정지 | null] (id·uuid 없으면 DB 안 감), 세션 없는 탈퇴·정지 계정이면 셋째 칸 { withdrawn: true } | { ban }
 exports.loadSessionCheck = (sessionId, uuid) => {
     if (!sessionId || !uuid) return Promise.resolve([null, null]);
     return new Promise((resolve, reject) => {
