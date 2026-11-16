@@ -22,7 +22,10 @@
 //
 // 바탕색 찾는 법
 //   - 위로 올라가며 처음 불투명한 background-color (반투명은 겹쳐 섞음)
-//   - 바탕이 그림·그라데이션이거나 body까지 불투명한 바탕이 없으면(떠 있는 창 등) 요소 사진을 찍어 픽셀 중앙값을 바탕으로 씀
+//   - 글 자리 다섯 점에서 화면에 겹친 요소를 위→아래로 봐서, 불투명한 바탕색보다 그림(<img>·<svg>·<canvas>·<video>·바탕 그림·덧칸 그림)이 먼저 나오면 그림 바탕
+//     (양피지·나무 판 그림은 글의 조상이 아니라 옆에 절대 위치로 깔린 <img>라 위로 올라가기만 하면 그 뒤 검정 막을 바탕으로 잘못 잡았음)
+//   - 그림 바탕·body까지 불투명한 바탕 없음(떠 있는 창)·옆 칸 색이 깔림이면 글자만 잠깐 투명하게 하고 글 상자를 찍어 픽셀 중앙값을 바탕으로 씀
+//     → backgroundFrom 'image'(그림) / 'pixels'(사진) / 'dom'(스타일), 사진이면 ratioP10(나쁜 쪽 10% 대비)도 같이 줌 (판정은 중앙값 기준)
 //   - method: 'dom' | 'pixels'로 한쪽만 쓰게 할 수 있음 (기본 'auto')
 // 그림 단추 (단추 안에 그림 + 글 칸이 따로 있는 것 — 대기방 "준비완료"·"게임시작" 등)
 //   - 글자색·글자 크기는 단추가 아니라 글이 실제로 그려지는 안쪽 글 칸에서 읽음 (단추에 바로 붙은 글이 없을 때만, 화면 읽기 전용으로 접어 둔 글은 건너뜀)
@@ -121,7 +124,7 @@ function decodePng(buf) {
     return { width, height, bpp, pixels: out };
 }
 
-// 사진 픽셀 중앙값 = 바탕색 어림 (글자 픽셀은 적어서 중앙값에 거의 안 걸림)
+// 사진 픽셀 중앙값 = 바탕색 어림 (글자는 찍을 때 지워 둬서 바탕 픽셀만 남음)
 function medianColor({ pixels, bpp }) {
     const rs = []; const gs = []; const bs = [];
     for (let i = 0; i < pixels.length; i += bpp) { rs.push(pixels[i]); gs.push(pixels[i + 1]); bs.push(pixels[i + 2]); }
@@ -129,8 +132,21 @@ function medianColor({ pixels, bpp }) {
     return { r: mid(rs), g: mid(gs), b: mid(bs), a: 1 };
 }
 
-// 페이지 안에서 잼: 글자색·바탕 층·투명도·글자 크기·가운데 점에 맨 위 요소
-function measureInPage(el) {
+// 바탕 픽셀마다 글자와 대비를 재서 나쁜 쪽 10% 자리 값 (판정엔 안 씀, 얼룩진 그림에서 글자색 쪽으로 쏠린 곳이 얼마나 되나 보기)
+// 예: 밝은 양피지에 어두운 얼룩 조금 → 중앙값 대비 9.8, ratioP10 7.1
+function worstTenthRatio({ pixels, bpp }, textColor) {
+    const ratios = [];
+    for (let i = 0; i < pixels.length; i += bpp) {
+        const bg = { r: pixels[i], g: pixels[i + 1], b: pixels[i + 2], a: 1 };
+        ratios.push(contrastRatio(textColor.a >= 1 ? textColor : blend(textColor, bg), bg));
+    }
+    ratios.sort((x, y) => x - y);
+    return ratios[Math.floor(ratios.length * 0.1)];
+}
+
+// 페이지 안에서 함 — action: 'measure' 잼 / 'hide' 글자 지움(사진 찍기 전) / 'show' 글자 되돌림
+// 셋이 같은 글 칸을 찾아야 해서 한 함수에 둠 (evaluate로 넘기는 함수는 바깥 함수를 못 부름)
+function inPage(el, action) {
     // 글이 실제로 그려지는 칸: 요소에 바로 붙은 글이 있으면 그 요소 그대로 (입력 칸도), 없으면 안쪽에서 눈에 보이는 첫 글 칸
     // 예: <button><img><span>준비완료</span></button> → span (글자색이 span에 걸려 있음)
     const hasOwnText = (node) => Array.from(node.childNodes).some((c) => c.nodeType === 3 && c.textContent.trim().length > 0);
@@ -147,20 +163,129 @@ function measureInPage(el) {
             if (hasOwnText(node) && drawn(node)) { textEl = node; break; }
         }
     }
+    // 글자 지우기·되돌리기: 글자색·그림자·획만 투명하게 (글 칸 자기 바탕·테두리는 그대로 남아 바탕으로 찍힘)
+    // 색 바뀜이 스르륵 움직이면 덜 지워진 채 찍히고, 되돌릴 때도 스르륵 다시 나타남 → 그동안만 움직임 끔
+    const HIDE = 'data-visible-check-hide';
+    const STILL = 'data-visible-check-still';
+    if (action === 'hide') {
+        if (!document.getElementById(HIDE)) {
+            const css = document.createElement('style');
+            css.id = HIDE;
+            css.textContent = `[${HIDE}], [${HIDE}] *, [${HIDE}]::placeholder, [${HIDE}] *::placeholder {`
+                + ' color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;'
+                + ' -webkit-text-stroke-width: 0 !important; text-decoration-color: transparent !important; caret-color: transparent !important; }'
+                + ` [${STILL}], [${STILL}] * { transition: none !important; }`;
+            document.head.appendChild(css);
+        }
+        textEl.setAttribute(STILL, '');
+        textEl.setAttribute(HIDE, '');
+        // 지운 모습이 한 번 그려진 뒤 찍게 두 장면 기다림 (창이 뒤에 있어 장면이 안 오면 0.2초 뒤 그냥 감)
+        return new Promise((done) => {
+            const timer = setTimeout(done, 200);
+            requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); done(); }));
+        });
+    }
+    if (action === 'show') {
+        // 찍는 사이 글 칸이 바뀌었어도 표시 붙은 것은 다 되돌림
+        for (const node of document.querySelectorAll(`[${HIDE}]`)) node.removeAttribute(HIDE);
+        // 움직임 끈 채로 색을 먼저 되돌려 둠 (자리 재기가 스타일을 바로 다시 계산시킴) → 그다음 움직임 켬, 스르륵 안 생김
+        document.body.getBoundingClientRect();
+        for (const node of document.querySelectorAll(`[${STILL}]`)) node.removeAttribute(STILL);
+        document.getElementById(HIDE)?.remove();
+        return null;
+    }
+    // 색 글을 rgb로 맞춤: Tailwind 4 색은 'oklch(0.87 0.005 56)'·'oklab(0 0 0 / 0.7)'로 나와 rgb만 읽는 셈이 못 읽음
+    // → 1칸 그림판에 칠해 다시 읽음 (rgb·rgba는 그대로), 예: 'oklch(1 0 0)' → 'rgba(255, 255, 255, 1)'
+    let pad = null;
+    const toRgb = (color) => {
+        if (!color || /^rgba?\(/i.test(color) || color === 'transparent') return color;
+        if (!pad) { const c = document.createElement('canvas'); c.width = 1; c.height = 1; pad = c.getContext('2d', { willReadFrequently: true }); }
+        pad.clearRect(0, 0, 1, 1);
+        pad.fillStyle = 'rgba(0, 0, 0, 0)';
+        pad.fillStyle = color;
+        pad.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = pad.getImageData(0, 0, 1, 1).data;
+        return `rgba(${r}, ${g}, ${b}, ${Math.round((a / 255) * 1000) / 1000})`;
+    };
     const style = getComputedStyle(textEl);
     const layers = [];
     let opacity = 1;
     let needsPixels = false;
     let foundOpaque = false;
+    // 글 뒤에 깔린 그림 요소 (없으면 null)
+    let pictureBehind = null;
+    // 'rgb(1, 2, 3)' → 1, 'rgba(0, 0, 0, 0)' → 0, 'transparent' → 0
+    const alphaOf = (color) => {
+        const parts = (/rgba?\(([^)]+)\)/.exec(color)?.[1] ?? '').split(/[\s,/]+/).filter(Boolean);
+        return parts.length >= 4 ? Number.parseFloat(parts[3]) / (parts[3].endsWith('%') ? 100 : 1) : parts.length === 3 ? 1 : 0;
+    };
+    // 그림을 그리는 칸인지: <img>·<canvas>·<video>·<svg>(안쪽 포함), 바탕 그림·그라데이션, 앞뒤 덧칸(::before·::after)의 바탕 그림
+    const paintsPicture = (node) => {
+        if (node.closest('svg') || ['IMG', 'CANVAS', 'VIDEO', 'PICTURE'].includes(node.tagName)) return true;
+        if (getComputedStyle(node).backgroundImage !== 'none') return true;
+        return ['::before', '::after'].some((which) => {
+            const p = getComputedStyle(node, which);
+            return p.content !== 'none' && p.content !== 'normal' && p.backgroundImage !== 'none';
+        });
+    };
+    // 글 상자: 글 줄들을 감싼 칸 (넓은 p라도 글이 있는 곳만), 입력 칸·글 없는 단추는 요소 칸 그대로
+    function textBox(node) {
+        if (hasOwnText(node)) {
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            const r = range.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) return r;
+        }
+        return node.getBoundingClientRect();
+    }
+    // 화면 밖으로 나간 부분은 잘라 냄, 다 나갔으면 null → 예: 글 상자 x -10 폭 100 → { x: 0, width: 90 }
+    const clipOf = (r) => {
+        const x0 = Math.max(0, Math.floor(r.left)); const y0 = Math.max(0, Math.floor(r.top));
+        const x1 = Math.min(window.innerWidth, Math.ceil(r.right)); const y1 = Math.min(window.innerHeight, Math.ceil(r.bottom));
+        return x1 - x0 >= 1 && y1 - y0 >= 1 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+    };
+    // 다섯 점에서 겹친 요소를 위→아래로 보며 글 아래 첫 그림·옆 칸 바탕색 찾기
+    // pointer-events:none인 그림(꾸밈 그림에 흔함)은 elementsFromPoint가 건너뜀 → 잴 때만 모두 누를 수 있게 했다가 바로 뺌 (그사이 화면은 안 그려짐)
+    function scanBelowText(node, tr) {
+        const xs = [tr.left + tr.width / 2, tr.left + tr.width * 0.15, tr.right - tr.width * 0.15];
+        const ys = [tr.top + tr.height / 2, tr.top + tr.height * 0.2, tr.bottom - tr.height * 0.2];
+        const points = [[xs[0], ys[0]], [xs[1], ys[1]], [xs[2], ys[1]], [xs[1], ys[2]], [xs[2], ys[2]]];
+        const css = document.createElement('style');
+        css.textContent = '*, *::before, *::after { pointer-events: auto !important; }';
+        document.head.appendChild(css);
+        const found = { picture: null, sideColor: null };
+        try {
+            for (const [x, y] of points) {
+                const stack = document.elementsFromPoint(x, y);
+                // 글 칸(또는 글 칸을 품은 조상)이 나오는 자리부터가 "글 아래" — 그 위는 덮개라 가려짐 확인 몫
+                const start = stack.findIndex((n) => n === node || n.contains(node));
+                for (let i = 0; i < stack.length; i += 1) {
+                    const n = stack[i];
+                    if (i < start) {
+                        // 글 칸 안쪽 그림(글 칸 안 absolute 그림 등)은 글 뒤 바탕으로 침
+                        if (node.contains(n) && n !== node && paintsPicture(n)) { found.picture = n; return found; }
+                        continue;
+                    }
+                    // 글 칸 자기 바탕 그림·덧칸 그림도 글자 뒤에 그려짐
+                    if (paintsPicture(n)) { found.picture = n; return found; }
+                    const a = alphaOf(toRgb(getComputedStyle(n).backgroundColor));
+                    const ancestor = n === node || n.contains(node);
+                    if (a > 0 && !ancestor && !found.sideColor) found.sideColor = n;
+                    if (a >= 1) break;
+                }
+            }
+        } finally {
+            css.remove();
+        }
+        return found;
+    }
     for (let node = textEl; node && node.nodeType === 1; node = node.parentElement) {
         const s = getComputedStyle(node);
         opacity *= Number.parseFloat(s.opacity || '1');
         if (foundOpaque) continue;
-        if (s.backgroundImage && s.backgroundImage !== 'none') { needsPixels = true; foundOpaque = true; continue; }
-        layers.push({ color: s.backgroundColor, tag: node.tagName });
-        // 'rgb(1, 2, 3)' → 1, 'rgba(0, 0, 0, 0)' → 0, 'transparent' → 0
-        const parts = (/rgba?\(([^)]+)\)/.exec(s.backgroundColor)?.[1] ?? '').split(/[\s,/]+/).filter(Boolean);
-        const alpha = parts.length >= 4 ? Number.parseFloat(parts[3]) / (parts[3].endsWith('%') ? 100 : 1) : parts.length === 3 ? 1 : 0;
+        if (s.backgroundImage && s.backgroundImage !== 'none') { needsPixels = true; foundOpaque = true; pictureBehind = node; continue; }
+        layers.push({ color: toRgb(s.backgroundColor), tag: node.tagName });
+        const alpha = alphaOf(toRgb(s.backgroundColor));
         if (alpha >= 1) {
             foundOpaque = true;
             // body·html 바탕만 찾았으면 떠 있는 창일 수 있어 사진으로 확인
@@ -174,8 +299,18 @@ function measureInPage(el) {
         const behindText = (r) => r.width > 0 && r.height > 0 && r.left < tr.right && tr.left < r.right && r.top < tr.bottom && tr.top < r.bottom;
         for (const media of el.querySelectorAll('img, svg, canvas, video')) {
             if (textEl.contains(media) || media.contains(textEl)) continue;
-            if (behindText(media.getBoundingClientRect())) { needsPixels = true; break; }
+            if (behindText(media.getBoundingClientRect())) { needsPixels = true; pictureBehind = media; break; }
         }
+    }
+    // 화면에서 실제로 겹친 순서로 글 아래를 봄 (위로 올라가기만 하면 옆 칸으로 깔린 그림을 놓침)
+    // 예: <div 틀><img 양피지 absolute><div 글 칸><p>낮이 되었습니다</p></div></div> — img는 p의 조상이 아니라 형제 쪽
+    // 글 상자 가운데·네 귀퉁이 쪽 다섯 점에서 아래로 내려가며, 불투명한 바탕색보다 그림이 먼저 나오면 그림 바탕
+    const textRect = textBox(textEl);
+    if (!pictureBehind && textRect.width > 0 && textRect.height > 0) {
+        const scan = scanBelowText(textEl, textRect);
+        if (scan.picture) { pictureBehind = scan.picture; needsPixels = true; }
+        // 조상이 아닌 칸(옆 칸)의 바탕색이 글 아래 깔림 → 위로 올라가며 본 색이 틀림, 사진으로 봄
+        else if (scan.sideColor) needsPixels = true;
     }
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
@@ -201,7 +336,7 @@ function measureInPage(el) {
     const fontSize = Number.parseFloat(style.fontSize) || 0;
     const fontWeight = Number.parseInt(style.fontWeight, 10) || 400;
     return {
-        color: style.color,
+        color: toRgb(style.color),
         layers,
         needsPixels,
         opacity,
@@ -211,6 +346,11 @@ function measureInPage(el) {
         hasText: (el.innerText || el.value || '').trim().length > 0,
         // 글자색을 읽은 곳: 'self' = 그 요소, 아니면 안쪽 글 칸
         textFrom: textEl === el ? 'self' : describe(textEl),
+        // 바탕을 어디서 잴지: 'dom' 스타일 / 'image' 글 뒤 그림이라 사진 / 'pixels' 그림은 아니지만 스타일로 모름(떠 있는 창·옆 칸 색)이라 사진
+        bgKind: pictureBehind ? 'image' : needsPixels ? 'pixels' : 'dom',
+        backgroundBy: pictureBehind ? describe(pictureBehind) : null,
+        // 사진 찍을 글 상자 (화면 안으로 자름, 사진은 화면 기준 자리)
+        clip: clipOf(textRect),
         covered,
         coveredBy: covered ? describe(hit) : null,
         viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -218,23 +358,38 @@ function measureInPage(el) {
     };
 }
 
+// 글자만 지우고 글 상자 자리를 찍음 → PNG (글자 픽셀이 바탕 값에 안 섞이게)
+// 움직임 멈추기(animations: 'disabled')는 안 씀: 끝이 있는 움직임을 끝으로 건너뛰어 창이 일찍 닫히는 등 화면이 바뀜
+async function shootWithoutText(locator, clip) {
+    await locator.evaluate(inPage, 'hide');
+    try {
+        return await locator.page().screenshot({ clip, caret: 'hide', scale: 'css' });
+    } finally {
+        // 찍는 사이 화면이 바뀌어 요소가 없어졌으면 되돌릴 것도 없음
+        await locator.evaluate(inPage, 'show').catch(() => {});
+    }
+}
+
 /**
  * 보임 값 재기 (확인은 안 함) — 직접 보고 싶을 때
  * @param {import('@playwright/test').Locator} locator 하나만 가리켜야 함
  * @param {{ method?: 'auto'|'dom'|'pixels', large?: boolean }} [o]
- * @returns {Promise<{ ratio:number|null, minRatio:number, large:boolean, color:string, background:string, backgroundFrom:'dom'|'pixels',
+ * @returns {Promise<{ ratio:number|null, ratioP10:number|null, minRatio:number, large:boolean, color:string, background:string,
+ *   backgroundFrom:'dom'|'image'|'pixels', backgroundBy:string|null,
  *   opacity:number, inViewport:boolean, rect:object, viewport:object, covered:boolean, coveredBy:string|null, hasText:boolean, textFrom:string }>}
  */
 async function readability(locator, { method = 'auto', large } = {}) {
     await locator.scrollIntoViewIfNeeded();
-    const m = await locator.evaluate(measureInPage);
+    const m = await locator.evaluate(inPage, 'measure');
     const textColor = parseColor(m.color);
     let background = null;
     let backgroundFrom = 'dom';
-    if (method === 'pixels' || (method === 'auto' && m.needsPixels)) {
-        const png = await locator.screenshot({ animations: 'disabled', caret: 'hide' });
-        background = medianColor(decodePng(png));
-        backgroundFrom = 'pixels';
+    let shot = null;
+    // 그림 바탕·스타일로 모르는 바탕일 때만 사진 (평범한 글은 사진 없이 빠르게)
+    if (m.clip && (method === 'pixels' || (method === 'auto' && m.bgKind !== 'dom'))) {
+        shot = decodePng(await shootWithoutText(locator, m.clip));
+        background = medianColor(shot);
+        backgroundFrom = m.bgKind === 'image' ? 'image' : 'pixels';
     } else {
         // 아래(불투명)부터 위로 겹침, 끝까지 없으면 흰 바탕
         background = { r: 255, g: 255, b: 255, a: 1 };
@@ -244,17 +399,22 @@ async function readability(locator, { method = 'auto', large } = {}) {
         }
     }
     const shown = textColor ? (textColor.a >= 1 ? textColor : blend(textColor, background)) : null;
+    const ratio = shown ? Math.round(contrastRatio(shown, background) * 100) / 100 : null;
     const isLarge = large ?? (m.fontSize >= 24 || (m.fontSize >= 18.66 && m.fontWeight >= 700));
     const { x, y, width, height } = m.rect;
     const inViewport = width > 0 && height > 0 && x >= -EDGE_SLACK_PX && y >= -EDGE_SLACK_PX
         && x + width <= m.viewport.width + EDGE_SLACK_PX && y + height <= m.viewport.height + EDGE_SLACK_PX;
     return {
-        ratio: shown ? Math.round(contrastRatio(shown, background) * 100) / 100 : null,
+        ratio,
+        // 사진으로 쟀을 때 바탕 픽셀 중 글자와 대비가 나쁜 쪽 10% 자리 값 (참고만, 스타일로 쟀으면 ratio와 같음)
+        ratioP10: shot && textColor ? Math.round(worstTenthRatio(shot, textColor) * 100) / 100 : ratio,
         minRatio: isLarge ? MIN_RATIO_LARGE : MIN_RATIO_NORMAL,
         large: isLarge,
         color: colorText(shown),
         background: colorText(background),
         backgroundFrom,
+        // 바탕으로 잡은 그림 요소 (그림 바탕일 때만)
+        backgroundBy: m.backgroundBy,
         opacity: m.opacity,
         inViewport,
         rect: m.rect,
@@ -290,6 +450,9 @@ async function expectReadable(locator, { large, contrast = true, uncovered = tru
     return last;
 }
 
+// 바탕을 잰 곳 → 오류 글 낱말
+const FROM_TEXT = { dom: '스타일', image: '그림', pixels: '사진' };
+
 // 기준에 안 맞는 것 목록 (우리말)
 function problemsOf(r, { contrast, uncovered, minRatio }) {
     if (!r) return ['재지 못함'];
@@ -302,7 +465,7 @@ function problemsOf(r, { contrast, uncovered, minRatio }) {
         const need = Math.max(minRatio ?? 0, r.minRatio);
         if (!r.hasText) out.push('글이 없어 대비를 못 셈 (그림 단추면 { contrast: false })');
         else if (r.ratio === null) out.push('글자색을 못 읽음');
-        else if (r.ratio < need) out.push(`대비 ${r.ratio} < ${need} (글자 ${r.color}, 바탕 ${r.background} — ${r.backgroundFrom === 'pixels' ? '사진' : '스타일'}에서)`);
+        else if (r.ratio < need) out.push(`대비 ${r.ratio} < ${need} (글자 ${r.color}, 바탕 ${r.background} — ${FROM_TEXT[r.backgroundFrom] ?? r.backgroundFrom}에서${r.backgroundFrom === 'dom' ? '' : `, 나쁜 쪽 10% 대비 ${r.ratioP10}`})`);
     }
     return out;
 }
