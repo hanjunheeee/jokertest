@@ -11,7 +11,7 @@ import {
     INGAME_SETTING_CHAT_CHECKBOXES,
     INGAME_SETTING_CHAT_SLIDER,
 } from "@/domains/game/ingame/constants/controls/ingameSetting/ingameSettingData.js"
-import { THEME_TEXT_RENDER_CLASS, THEME_TEXT_SHADOW } from "@/shared/constants/ingamePlayerTheme.js"
+import { CHAT_NAME_BAND_CLASS, resolveChatNameBand } from "@/domains/game/ingame/utils/chatNameBand.js"
 import { useSettingsStore } from "@/domains/settings/store/settingsStore.js"
 
 // 설정 id별 기본값 (안 건드렸으면 이 값)
@@ -31,24 +31,26 @@ function formatTime(sentAt) {
     return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
 }
 
-// 보낸 사람 색은 테마 색 (닉네임 색 설정 끄면 기본색)
-export default function TribunalChatRow({ playerId = null, senderName, text, sentAt = null }) {
+// 이름만 테마 색 띠 (닉네임 색 설정 끄면 기본색), 죽은 사람 줄은 회색 이름 띠, 말은 기본 글자색 (데스크톱 줄과 같은 규칙)
+export default function TribunalChatRow({ playerId = null, senderName, text, sentAt = null, channel = null }) {
     const session = useContext(InGamePlayerSessionContext)
     const themeStyles = playerId ? session?.getThemeStylesByPlayerId?.(playerId) ?? null : null
     const nickColorOn = useSettingsStore((s) => s.chatChecks?.["nickname-color"] ?? NICK_COLOR_DEFAULT)
     const showTime = useSettingsStore((s) => s.chatChecks?.["show-time"] ?? SHOW_TIME_DEFAULT)
     const textSize = useSettingsStore((s) => s.chatTextSize ?? INGAME_SETTING_CHAT_SLIDER.defaultValue)
 
-    const applyColor = Boolean(themeStyles) && nickColorOn
-    const colorStyle = applyColor ? { color: themeStyles.color, textShadow: THEME_TEXT_SHADOW } : undefined
-    const colorClass = applyColor ? THEME_TEXT_RENDER_CLASS : ""
+    const nameBand = resolveChatNameBand(themeStyles, nickColorOn, { dead: channel === "DEAD" })
     const time = showTime ? formatTime(sentAt) : null
 
     return (
         <li className={MSG_ROW_CLASS} style={getInGameChatTextScaleStyle(textSize)}>
             {time ? <span className={`shrink-0 ${TEXT_CLASS}`}>{time}</span> : null}
-            <span className={`shrink-0 ${TEXT_CLASS} ${colorClass}`.trim()} style={colorStyle}>{senderName}:</span>
-            <span className={`min-w-0 ${TEXT_CLASS} ${TEXT_WRAP_CLASS} ${colorClass}`.trim()} style={colorStyle}>
+            <span className={`shrink-0 ${TEXT_CLASS}`}>
+                {nameBand ? (
+                    <span className={CHAT_NAME_BAND_CLASS} style={nameBand.style} data-chat-name-band={nameBand.kind}>{senderName}</span>
+                ) : senderName}:
+            </span>
+            <span className={`min-w-0 ${TEXT_CLASS} ${TEXT_WRAP_CLASS}`}>
                 &quot;{text}&quot;
             </span>
         </li>

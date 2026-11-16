@@ -2,15 +2,17 @@
 // 카드 판 상수(ingamePlayerBoard.js)가 사용
 
 // 자리마다 화면 비율 위치(left·top %)와 구역(top·side·bottom), 기울기
+// 채팅 창 위에 앉는 맨 위 카드는 15%(9·10명 기울어진 두 장은 14%): 18%면 창 1280×800에서 이름판이 채팅 창 뒤로 들어감
+// 창 높이 720~1080 모두 이름판 아랫변이 채팅 창 윗변보다 위 (시험 a02-role-reveal/bug2-board-chat-gap.test.js가 셈)
 const INGAME_PLAYER_LAYOUT_4 = [
-  { left: 50, top: 18, zone: "top", rotate: 0, rotateX: -6 },
+  { left: 50, top: 15, zone: "top", rotate: 0, rotateX: -6 },
   { left: 82, top: 46, zone: "side", rotate: 10 },
   { left: 50, top: 81, zone: "bottomCenter", rotate: 0 },
   { left: 18, top: 46, zone: "side", rotate: -10 },
 ]
 
 const INGAME_PLAYER_LAYOUT_5 = [
-  { left: 50, top: 18, zone: "top", rotate: 0, rotateX: -6 },
+  { left: 50, top: 15, zone: "top", rotate: 0, rotateX: -6 },
   { left: 20, top: 42, zone: "top", scale: 0.95, rotate: -14, rotateX: -3 },
   { left: 80, top: 42, zone: "top", scale: 0.95, rotate: 14, rotateX: -3 },
   { left: 34, top: 82, zone: "bottomCenter", rotate: -2 },
@@ -18,7 +20,7 @@ const INGAME_PLAYER_LAYOUT_5 = [
 ]
 
 const INGAME_PLAYER_LAYOUT_6 = [
-  { left: 50, top: 18, zone: "top", rotate: 0, rotateX: -6 },
+  { left: 50, top: 15, zone: "top", rotate: 0, rotateX: -6 },
   { left: 82, top: 32, zone: "side", rotate: 10 },
   { left: 82, top: 62, zone: "side", rotate: 10 },
   { left: 50, top: 81, zone: "bottomCenter", rotate: 0 },
@@ -27,7 +29,7 @@ const INGAME_PLAYER_LAYOUT_6 = [
 ]
 
 const INGAME_PLAYER_LAYOUT_7 = [
-  { left: 50, top: 18, zone: "top", rotate: 0, rotateX: -6 },
+  { left: 50, top: 15, zone: "top", rotate: 0, rotateX: -6 },
   { left: 82, top: 30, zone: "side", rotate: 10 },
   { left: 82, top: 56, zone: "side", rotate: 10 },
   { left: 66, top: 82, zone: "bottomCenter", rotate: 2 },
@@ -49,8 +51,8 @@ const INGAME_PLAYER_LAYOUT_8 = [
 
 const INGAME_PLAYER_LAYOUT_9 = [
   { left: 21, top: 28, zone: "top", scale: 0.96, rotate: -9, rotateX: -1 },
-  { left: 40, top: 18, zone: "top", rotate: -6, rotateX: -4 },
-  { left: 59, top: 18, zone: "top", rotate: 6, rotateX: -4 },
+  { left: 40, top: 14, zone: "top", rotate: -6, rotateX: -4 },
+  { left: 59, top: 14, zone: "top", rotate: 6, rotateX: -4 },
   { left: 79, top: 28, zone: "top", scale: 0.96, rotate: 9, rotateX: -1 },
   { left: 18, top: 52, zone: "side", rotate: -10 },
   { left: 82, top: 52, zone: "side", rotate: 10 },
@@ -61,8 +63,8 @@ const INGAME_PLAYER_LAYOUT_9 = [
 
 export const INGAME_PLAYER_LAYOUT_10 = [
   { left: 21, top: 22, zone: "top", scale: 0.96, rotate: -9, rotateX: -1 },
-  { left: 40, top: 18, zone: "top", rotate: -6, rotateX: -4 },
-  { left: 59, top: 18, zone: "top", rotate: 6, rotateX: -4 },
+  { left: 40, top: 14, zone: "top", rotate: -6, rotateX: -4 },
+  { left: 59, top: 14, zone: "top", rotate: 6, rotateX: -4 },
   { left: 79, top: 22, zone: "top", scale: 0.96, rotate: 9, rotateX: -1 },
   { left: 18, top: 46, zone: "side", rotate: -10 },
   { left: 82, top: 46, zone: "side", rotate: 10 },

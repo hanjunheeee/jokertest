@@ -92,8 +92,11 @@ export const PLAYER_PROFILE_WRAP_CLASS =
 export const PLAYER_PROFILE_PHOTO_WRAP_CLASS =
   "absolute left-1/2 top-[46%] z-[1] aspect-square w-[67%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full"
 
+// 이름 글자색은 줄마다 하나만 붙임 (흰색·검정이 같이 붙으면 스타일 순서상 흰색이 이겨 내 줄 밝은 덧칠 위에서 안 읽힘)
 export const PLAYER_NAME_CLASS =
-  "min-w-0 flex-1 truncate font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,3.6cqi,1.18rem)] font-bold leading-tight text-white"
+  "min-w-0 flex-1 truncate font-subheading app-text-scaled [--app-text-size:clamp(0.95rem,3.6cqi,1.18rem)] font-bold leading-tight"
+
+export const PLAYER_NAME_OTHER_CLASS = "text-white"
 
 export const PLAYER_NAME_SELF_CLASS = "text-black [text-shadow:none]"
 

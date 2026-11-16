@@ -52,8 +52,9 @@ function getPanelWidthStyle(
 }
 
 // 판 가운데 자리와 뒤로 눕힌 기울기 값
+// 가운데 높이 50.5%: 47.5%면 창 높이 800 아래에서 맨 위 카드 이름판을 덮음 (맨 위 카드 자리와 같이 맞춘 값)
 export const PANEL_POSITION_CLASS =
-  "absolute left-1/2 top-[47.5%] z-20 overflow-visible [container-type:inline-size]"
+  "absolute left-1/2 top-[50.5%] z-20 overflow-visible [container-type:inline-size]"
 
 const PANEL_PERSPECTIVE = {
   rotateX: 20,

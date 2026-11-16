@@ -25,6 +25,7 @@ const ALLY_BADGE_CLASS =
 // 내 카드 금색 고리 (데스크톱 InGamePlayerCard와 같은 class)
 const SELF_RING_CLASS = "ring-2 ring-[#f3d28d]/80 ring-offset-2 ring-offset-black/40 rounded-full"
 
+// fitName: 이름을 줄임표 없이 다 보임 (재판 피고 카드만 켬, 판 위 작은 카드는 줄임표 그대로)
 // 틀 비율은 그림이 정함 (폭은 className으로), withE2e 끄면 시험 표시 안 붙임 (재판 피고 카드가 판 카드와 같은 선택자로 겹치지 않게)
 // allyLabel: 같은 직업 동료면 "동료 의사" 같은 글 (내 화면에만 옴, 없으면 표시 안 그림)
 export default function PlayerCard({
@@ -37,6 +38,7 @@ export default function PlayerCard({
     isSelf = false,
     allyLabel = null,
     withE2e = true,
+    fitName = false,
     className = "",
 }) {
     const styles = resolveInGamePlayerCardThemeStyles(theme, voteHighlight)
@@ -64,7 +66,7 @@ export default function PlayerCard({
                     <PublicAsset src={displayFrameSrc} alt="" className={FRAME_SHADOW_LAYER_CLASS} aria-hidden="true" />
                     <PublicAsset src={displayFrameSrc} alt="" className={FRAME_IMG_CLASS} />
                 </div>
-                <Nameplate nickname={nickname} theme={theme} voteHighlight={voteHighlight} />
+                <Nameplate nickname={nickname} theme={theme} voteHighlight={voteHighlight} fitName={fitName} />
             </div>
         </div>
     )

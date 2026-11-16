@@ -14,10 +14,8 @@ import {
 import { useSettingsStore } from "../../../../settings/store/settingsStore.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import { useChatVariant } from "./InGameChatVariantContext.jsx"
-import {
-  resolveInGameChatPlayerColor,
-  selectNicknameColorEnabled,
-} from "./resolveInGameChatPlayerColor.js"
+import { selectNicknameColorEnabled } from "./resolveInGameChatPlayerColor.js"
+import { CHAT_NAME_BAND_CLASS, resolveChatNameBand } from "../../utils/chatNameBand.js"
 
 // 시각 보이기 설정 id와 기본값 (설정 화면 목록 값 그대로)
 const SHOW_TIME_SETTING_ID = "show-time"
@@ -46,10 +44,7 @@ function formatChatMessageTime(sentAt) {
   return `${hours}:${minutes}`
 }
 
-// 죽은 사람 채팅 줄 글자색 (회색, 테마 색 대신)
-const DEAD_CHAT_TEXT_STYLE = Object.freeze({ color: "#a9a9a9" })
-
-// 보낸 사람 색은 테마 색 (닉네임 색 설정 끄면 기본색), 죽은 사람 채팅 줄은 회색
+// 이름만 테마 색 띠 (닉네임 색 설정 끄면 기본색·띠 없음), 죽은 사람 줄은 회색 이름 띠, 말은 늘 기본 글자색
 export default function InGameChatMessageRow({
   playerId = null,
   senderName,
@@ -66,10 +61,7 @@ export default function InGameChatMessageRow({
   const showTimeEnabled = useSettingsStore(selectShowTimeEnabled)
   const chatTextSize = useSettingsStore(selectChatTextSize)
 
-  const playerColor = resolveInGameChatPlayerColor(themeStyles, nicknameColorEnabled)
-  const isDeadLine = channel === "DEAD"
-  const themedTextStyle = isDeadLine ? DEAD_CHAT_TEXT_STYLE : playerColor.style
-  const themedTextClass = isDeadLine ? "" : playerColor.className
+  const nameBand = resolveChatNameBand(themeStyles, nicknameColorEnabled, { dead: channel === "DEAD" })
 
   const chatTextScaleStyle = getInGameChatTextScaleStyle(chatTextSize)
 
@@ -86,18 +78,16 @@ export default function InGameChatMessageRow({
       {formattedTime ? (
         <span className={getInGameChatMessageTimeClass(variant)}>{formattedTime}</span>
       ) : null}
-      <span
-        className={`${getInGameChatMessageSenderClass(variant)} ${themedTextClass}`.trim()}
-        style={themedTextStyle}
-      >
-        {senderName}:
+      <span className={getInGameChatMessageSenderClass(variant)}>
+        {nameBand ? (
+          <span className={CHAT_NAME_BAND_CLASS} style={nameBand.style} data-chat-name-band={nameBand.kind}>
+            {senderName}
+          </span>
+        ) : senderName}:
       </span>
       <span
-        className={`${getInGameChatMessageBodyClass(variant)} ${themedTextClass}`.trim()}
-        style={{
-          ...themedTextStyle,
-          ...(messageMaxWidth > 0 ? { maxWidth: messageMaxWidth } : undefined),
-        }}
+        className={getInGameChatMessageBodyClass(variant)}
+        style={messageMaxWidth > 0 ? { maxWidth: messageMaxWidth } : undefined}
       >
         &quot;{text}&quot;
       </span>

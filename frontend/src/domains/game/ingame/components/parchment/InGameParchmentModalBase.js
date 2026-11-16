@@ -12,6 +12,44 @@ function useParchmentModalEscape(onDismiss, active = true) {
   useInGameModalLayer({ open: active && Boolean(onDismiss), onClose: onDismiss, moveFocus: false, trapFocus: false })
 }
 
+// 방금 초점을 잃은 요소와 그 시각 (단추가 꺼지는 동안 초점이 몸통으로 빠진 뒤 창이 떠도 연 단추를 알기 위함)
+// 예: "게임시작" 누름 → 요청 중 단추 꺼짐(초점 빠짐) → 거절 → 막힘 창
+const RECENT_BLUR_MS = 5_000
+let recentBlur = null
+let blurWatchInstalled = false
+
+function watchRecentBlur() {
+  if (blurWatchInstalled || typeof document === "undefined") return
+  blurWatchInstalled = true
+  document.addEventListener("focusout", (event) => {
+    recentBlur = { element: event.target, at: Date.now() }
+  }, true)
+}
+
+// 열기 전 초점 자리: 지금 초점, 몸통이면 5초 안에 초점을 잃은 단추
+function findOpener() {
+  const active = document.activeElement
+  if (active && active !== document.body) return active
+  if (recentBlur && Date.now() - recentBlur.at <= RECENT_BLUR_MS && recentBlur.element?.tagName === "BUTTON") return recentBlur.element
+  return null
+}
+
+// 닫힐 때 열기 전 초점 자리로 되돌림 (확인 버튼에 초점을 옮긴 창만, 닫히며 초점이 몸통으로 빠지던 것 막기)
+// 그 자리가 사라졌거나 꺼졌거나 닫는 사이 다른 곳이 초점을 가져갔으면 그대로 둠, 아래 확인 버튼 초점보다 먼저 불러야 열기 전 자리를 잡음
+function useRestoreFocusOnClose(active) {
+  watchRecentBlur()
+  useEffect(() => {
+    if (!active || typeof document === "undefined") return undefined
+    const opener = findOpener()
+    return () => {
+      const current = document.activeElement
+      if (current && current !== document.body) return
+      if (!opener?.isConnected || opener.disabled || typeof opener.focus !== "function") return
+      opener.focus()
+    }
+  }, [active])
+}
+
 // 뜰 때·focusKey 바뀔 때 확인 버튼에 초점 (variant가 켠 창만)
 function useConfirmFocus(focusOnMount, confirmButtonRef, focusKey) {
   useEffect(() => {
@@ -35,6 +73,7 @@ export default function InGameParchmentModalBase({
   const variant = getInGameParchmentModalVariant(variantKey)
 
   useParchmentModalEscape(onDismiss, Boolean(onDismiss))
+  useRestoreFocusOnClose(variant.focusConfirmOnMount)
   useConfirmFocus(variant.focusConfirmOnMount, confirmButtonRef, focusKey)
 
   return createElement(

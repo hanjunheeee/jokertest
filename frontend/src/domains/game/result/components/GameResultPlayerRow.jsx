@@ -6,6 +6,7 @@ import {
   PLAYER_JOB_CLASS,
   PLAYER_JOB_SELF_CLASS,
   PLAYER_NAME_CLASS,
+  PLAYER_NAME_OTHER_CLASS,
   PLAYER_NAME_SELF_CLASS,
   PLAYER_PROFILE_PHOTO_WRAP_CLASS,
   PLAYER_PROFILE_WRAP_CLASS,
@@ -52,7 +53,7 @@ export default function GameResultPlayerRow({
             </span>
           ) : null}
           <p
-            className={`${PLAYER_NAME_CLASS}${isSelf ? ` ${PLAYER_NAME_SELF_CLASS}` : ""}`}
+            className={`${PLAYER_NAME_CLASS} ${isSelf ? PLAYER_NAME_SELF_CLASS : PLAYER_NAME_OTHER_CLASS}`}
           >
             {name}
           </p>

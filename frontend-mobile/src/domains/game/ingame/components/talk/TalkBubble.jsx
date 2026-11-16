@@ -1,6 +1,7 @@
 // 말풍선 한 줄: 남의 말은 왼쪽(초상 + 닉네임 + 말풍선), 내 말은 오른쪽, 이모티콘이면 말풍선 대신 큰 이모티콘
 // TalkList가 말·이모티콘 줄마다 씀, 묶음 첫 줄만 초상·닉네임
-// 닉네임 색은 테마 색에 밝은 양피지색을 섞음 → 남색·검붉은 테마도 어두운 채팅방에서 읽힘
+// 닉네임은 테마 색 그대로 + 색에 맞는 띠 (판 채팅 줄과 같은 규칙, 남색·검붉은 테마도 어두운 채팅방에서 읽힘)
+import { CHAT_NAME_BAND_CLASS, resolveChatNameBand } from "@/domains/game/ingame/utils/chatNameBand.js"
 import { findInGameEmoticonItem } from "@/domains/game/ingame/utils/findInGameEmoticonItem.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import TalkAvatar from "./TalkAvatar.jsx"
@@ -20,6 +21,13 @@ function EmojiBody({ itemId }) {
 function Body({ line }) {
     if (line.kind === "emoji") return <EmojiBody itemId={line.itemId} />
     return <p className={`${bubbleClass(line)} ${BUBBLE_TEXT_CLASS}`}>{line.text}</p>
+}
+
+// 닉네임 글: 색이 있으면 띠 칸 안 (색 설정 끔·색 없음이면 그냥 글), 죽은 사람 줄은 회색 띠
+function NameText({ name, themeColor, dead }) {
+    const band = resolveChatNameBand(themeColor ? { color: themeColor } : null, true, { dead: Boolean(dead) })
+    if (!band) return name
+    return <span className={CHAT_NAME_BAND_CLASS} style={band.style} data-chat-name-band={band.kind}>{name}</span>
 }
 
 // groupStart: 묶음 첫 줄 (초상·닉네임 보임), player·themeColor는 참가자 정보 (없으면 기본 테두리)
@@ -43,7 +51,7 @@ export default function TalkBubble({ line, groupStart, player, themeColor, showT
             {groupStart ? <TalkAvatar player={player} themeColor={themeColor} /> : <span aria-hidden className={`${AVATAR_SIZE_CLASS} shrink-0`} />}
             <div className="min-w-0">
                 {groupStart ? (
-                    <p className={NAME_CLASS} style={themeColor ? { color: `color-mix(in srgb, ${themeColor} 60%, #fff1d6)` } : undefined}>{line.name}</p>
+                    <p className={NAME_CLASS}><NameText name={line.name} themeColor={themeColor} dead={line.dead} /></p>
                 ) : null}
                 <div className="flex min-w-0 items-end gap-1">
                     <Body line={line} />
