@@ -1,4 +1,4 @@
-// 죽은 사람 채팅 칸 시험(jsdom, 인게임 화면 전체) — "죽은 사람끼리" 표시, 죽은 사람 말만 회색 줄, 밤에도 잠금·차례 안내 없이 씀
+// 죽은 사람 채팅 칸 시험(jsdom, 인게임 화면 전체) — "죽은 사람끼리" 표시, 죽은 사람 줄만 회색 이름 띠, 밤에도 잠금·차례 안내 없이 씀
 // 목록 A06-판중-채팅.md 화면 PC 번호 A06-F-113~119, A06-F-197~198
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -6,9 +6,9 @@ import { openTable, resetTable } from "./a06Kit.mjs"
 
 test.afterEach(resetTable)
 
-// 줄의 글자색 (죽은 사람 줄은 회색 #a9a9a9)
+// 줄의 이름 띠 글자색 (죽은 사람 줄은 회색 #a9a9a9 이름 띠, 말은 모든 줄이 기본색 — 결정 2026-11-16 밤 "말은 기본 글자색")
 const GRAY = "rgb(169, 169, 169)"
-const rowColor = (li) => li.querySelectorAll("span")[li.querySelectorAll("span").length - 1]?.style.color ?? ""
+const rowColor = (li) => li.querySelector("[data-chat-name-band]")?.style.color ?? ""
 // 줄 글 → 회색인지
 const grayByText = (rows) => Object.fromEntries(rows.map((li) => [li.textContent.replace(/^.*?"|"$/g, ""), rowColor(li) === GRAY]))
 
@@ -28,7 +28,7 @@ test("A06-F-114 죽은 사람 낮 → 크게 보기 모양에도 \"죽은 사람
   assert.equal(t.deadBadge("closeup")?.textContent, "죽은 사람끼리")
 })
 
-test("A06-F-115 낮 줄·죽은 사람 줄 → 죽은 사람 줄만 회색", async () => {
+test("A06-F-115 낮 줄·죽은 사람 줄 → 죽은 사람 줄만 회색 이름 띠", async () => {
   const t = await deadTable({ phase: "DAY" })
   await t.dayChat(1, "산사람말")
   await t.deadChat(4, "죽은사람말")
@@ -77,7 +77,7 @@ test("A06-F-119 죽은 사람에겐 밤 차례 알림이 와도 안내 창 없�
   assert.equal(t.sentOf("submit_game_chat_message").length, 1)
 })
 
-test("A06-F-197 크게 보기 창에서도 죽은 사람 줄 회색", async () => {
+test("A06-F-197 크게 보기 창에서도 죽은 사람 줄 회색 이름 띠", async () => {
   const t = await deadTable({ phase: "DAY" })
   await t.openCloseup()
   await t.dayChat(1, "산사람말")

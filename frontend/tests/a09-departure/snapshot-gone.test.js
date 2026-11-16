@@ -1,5 +1,5 @@
 // 판에서 빠졌다는 스냅샷 답 시험(화면 상태): 빠진 까닭 글·판 비우기·끝난 판은 그대로·다른 판 답 무시·찾는 중이면 다시 물음, 판 없이 물음, 결과 화면 새로고침
-// 목록 A09-끊김-나가기-탈주.md A09-F-060~073·172~174·183, 돌리기(frontend): node --experimental-test-module-mocks --test tests/a09-departure/snapshot-gone.test.js
+// 목록 A09-끊김-나가기-탈주.md A09-F-060~073·172~174·183·281~282, 돌리기(frontend): node --experimental-test-module-mocks --test tests/a09-departure/snapshot-gone.test.js
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import * as K from "./a09Kit.mjs"
@@ -145,6 +145,28 @@ test("A09-F-174 8명 판 같은 판 FORFEITED_FROM_SESSION 답이 두 번(판 �
   await K.flush(12)
   assert.ok(t.fake.sentOf("get_session_snapshot").length >= 2, `물은 수 ${t.fake.sentOf("get_session_snapshot").length}`)
   assert.equal(K.dialogs.alerts.length, 1, `알림: ${JSON.stringify(K.dialogs.alerts)}`)
+})
+
+// 스스로 나간 사람은 서버가 "그 판에 없음"(NOT_A_PARTICIPANT)·숨긴 답(INTERNAL_ERROR)으로 답함 → 까닭 글 없이 판만 비움
+test("A09-F-281 6명 판 스스로 나간 뒤 그 판 번호로 물은 답 NOT_A_PARTICIPANT → 알림 없이 판 비움", async () => {
+  const t = seatWithRoom({ n: 6, me: 1, jokers: [0] })
+  await K.renderSnapshotProbe()
+  await t.answer("get_session_snapshot", { ok: false, code: "NOT_A_PARTICIPANT", message: "요청이 거절되었습니다." })
+  await K.flush(6)
+  assert.deepEqual(K.dialogs.alerts, [])
+  assert.equal(K.useInGameStore.getState().gameId, null)
+})
+
+test("A09-F-282 7명 판 스스로 나가 판 값이 빈 화면 → 판 번호 없이 물은 답(NOT_A_PARTICIPANT·INTERNAL_ERROR) → 알림 없음", async () => {
+  for (const code of ["NOT_A_PARTICIPANT", "INTERNAL_ERROR"]) {
+    const t = K.seat({ n: 7, me: 2, jokers: [0], bootstrap: false })
+    t.fake.answer("get_session_snapshot", { ok: false, code, message: "요청이 거절되었습니다." })
+    await K.renderSnapshotProbe()
+    await K.flush(6)
+    assert.ok(t.fake.sentOf("get_session_snapshot").length >= 1, `${code}: 안 물음`)
+    assert.deepEqual(K.dialogs.alerts, [], `${code}: 알림 ${JSON.stringify(K.dialogs.alerts)}`)
+    K.reset()
+  }
 })
 
 test("A09-F-183 결과 화면(판 ENDED)에서 새로고침 → 스냅샷 거절 → \"게임 결과를 확인할 수 없습니다\" 상태", async () => {

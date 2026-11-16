@@ -1,5 +1,5 @@
 // 로그인 화면 부품 시험 — 칸 구성·자동 완성 이름·비번 보기·로그인 유지·소셜 단추 주소·실패 줄·보내는 중·가입 바꾸기
-// 목록 A11a 화면 부품 A11-F-201~215, A11-F-275 (jsdom에 진짜 로그인 화면을 그림, 서버는 가짜 답)
+// 목록 A11a 화면 부품 A11-F-201~215, A11-F-275·931 (jsdom에 진짜 로그인 화면을 그림, 서버는 가짜 답)
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
@@ -103,6 +103,13 @@ test("A11-F-210 Discord (유지 켬) → …/auth/discord?rememberMe=true", asyn
 test("A11-F-211 /login?socialError=OAUTH_CANCELLED → 화면에 \"소셜 로그인을 취소했습니다.\"(role=alert)", () => {
   renderLogin("/login?socialError=OAUTH_CANCELLED")
   assert.equal(screen.getByRole("alert").textContent.trim(), "소셜 로그인을 취소했습니다.")
+})
+
+test("A11-F-931 PC 소셜 실패 줄은 로그인 칸 뒤(액자 아래쪽)에 옴 — 맨 위면 액자 윗 장식(가면) 밑에 깔림", () => {
+  renderLogin("/login?socialError=OAUTH_CANCELLED")
+  const banner = screen.getByRole("alert")
+  const button = loginButton()
+  assert.ok(button.compareDocumentPosition(banner) & button.DOCUMENT_POSITION_FOLLOWING, "실패 줄이 로그인 단추보다 앞에 있음")
 })
 
 test("A11-F-212 다른 화면(아이디 찾기) 갔다 오면 주소에서 socialError 지워짐, 실패 줄 없음", async () => {

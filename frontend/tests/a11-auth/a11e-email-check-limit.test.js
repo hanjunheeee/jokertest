@@ -1,5 +1,5 @@
 // 가입 이메일 중복 확인을 너무 많이 눌러 서버가 429로 답할 때 서버 글이 보이는지 시험 (그 밖 실패는 그대로 "중복 확인에 실패했습니다.")
-// 목록 A11a 화면 상태 A11-F-102~104, 화면 부품 A11-F-283
+// 목록 A11a 화면 상태 A11-F-102~104, 화면 부품 A11-F-283·930
 import test from "node:test"
 import assert from "node:assert/strict"
 import { h, rtl, EMAIL, serve, resetAll } from "./a11Kit.mjs"
@@ -55,4 +55,11 @@ test("A11-F-283 가입 칸 중복 확인 429 → 결과 줄에 서버 글, 500�
   rtl.cleanup()
   await clickCheck({ status: 500, body: {} })
   assert.ok(rtl.screen.getByText(FAILED_TEXT))
+})
+
+test("A11-F-930 가입 칸 중복 확인 429 긴 글 → 결과 줄이 한 줄 고정 아님 (고정이면 앞부분이 단추 밑에 숨음)", async () => {
+  await clickCheck({ status: 429, body: { ok: false, code: "RATE_LIMITED", message: SERVER_TEXT } })
+  const line = rtl.screen.getByText(SERVER_TEXT)
+  // 줄 바꿈 막기·줄어들기 막기가 있으면 칸보다 긴 글이 왼쪽(단추 쪽)으로 삐져나감
+  assert.doesNotMatch(line.className, /whitespace-nowrap|shrink-0/)
 })

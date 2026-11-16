@@ -1,5 +1,5 @@
 // 결과판 화면 시험: 줄 수·이름·직업 글("마녀사냥꾼", "귀족"), MVP 없음, 내 줄에만 "+N골드", 내 정보 배지, 승패·진영 띠, 신고 단추, 결과 없음 안내, 옛 결과·줄 순서·닉네임 글자 그대로
-// 목록 docs/게임_의도_2026-11-15/시험목록/A07-승패-결과-골드.md A07-F-045~070·074·075·096~099 (화면 부품, 결과 화면 전체를 그려 봄)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A07-승패-결과-골드.md A07-F-045~070·074·075·096~099·104 (화면 부품, 결과 화면 전체를 그려 봄)
 import test from "node:test"
 import assert from "node:assert/strict"
 import * as K from "./resultKit.mjs"
@@ -219,4 +219,16 @@ test("A07-F-099 5명 판: 닉네임 끼워 넣기 글은 글자로만 (img 요�
   assert.equal(board().querySelectorAll('img[src="x"]').length, 0)
   assert.equal(document.querySelectorAll("img[onerror]").length, 0)
   assert.ok(g.seats[3].nickname === evil)
+})
+
+// 내 줄 이름은 검정 하나만, 남의 줄은 흰색 하나만 (두 글자색이 같이 붙으면 스타일 순서상 흰색이 이겨 밝은 덧칠 위에서 대비 4.1)
+// 계산: 흰 글 대비 3.99~4.1인 바탕 밝기면 검정 글 대비 약 5.1~5.3 (4.5 넘음)
+const TEXT_COLOR = /^text-(white|black|\[#[0-9a-f]+\])$/i
+const nameColors = (li) => [...(li.querySelector("p")?.classList ?? [])].filter((c) => TEXT_COLOR.test(c))
+test("A07-F-104 7명 판: \"내 정보\" 줄 이름 글자색 = text-black 하나, 남의 줄 이름 = text-white 하나", async () => {
+  const g = await renderBoard({ n: 7, me: 3 })
+  for (const li of rows()) {
+    const mine = nameOf(li) === g.seats[3].nickname
+    assert.deepEqual(nameColors(li), [mine ? "text-black" : "text-white"], `${nameOf(li)} 줄 이름 글자색`)
+  }
 })

@@ -1,5 +1,5 @@
 // 결과 화면 단추 시험: 대기방으로 누르는 중엔 "이동 중.."·두 단추 잠김, 로비로 가는 중에도 잠김, 안내는 마지막에 누른 단추 것, 실패 안내 자리, 결과 없음 화면
-// 목록 docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md A08-F-038~041·048 (화면 부품, 결과 화면 전체를 그려 봄)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md A08-F-038~041·048·061~062 (화면 부품, 결과 화면 전체를 그려 봄)
 import test from "node:test"
 import assert from "node:assert/strict"
 import * as K from "../a07-result/resultKit.mjs"
@@ -68,4 +68,40 @@ test("A08-F-048 결과 없음 → \"게임 결과를 확인할 수 없습니다\
   assert.ok(back !== null, "로비로 돌아가기 단추 없음")
   await K.click(back)
   assert.equal(view.path(), "/lobby")
+})
+
+// ---------- A08-F-061~062 결과 화면에서 끊겼다 다시 이어짐 → 결과 화면이 남아 "다시 눌러 주세요"대로 다시 누를 수 있음 ----------
+// 다시 이어질 때 스냅샷을 다시 묻는데, 그 답이 반영되지 않으면 받아 둔 승패 결과를 지워 "게임 결과를 확인할 수 없습니다"로 바뀌던 것
+
+// 끊긴 채 "대기방으로" → 연결 안내 → 새 소켓 번호로 다시 이어짐(스냅샷 답 snapshotAnswer)
+async function cutAndReconnect(r, snapshotAnswer) {
+  r.sock.connected = false
+  await K.click(returnButton())
+  await K.waitUntil(() => notice() !== null, { label: "연결 안내" })
+  assert.equal(notice().textContent, "연결이 끊겨 대기방으로 가지 못했습니다. 연결을 확인한 뒤 '대기방으로'를 다시 눌러 주세요.")
+  r.sock.answer("get_session_snapshot", snapshotAnswer)
+  r.sock.id = "sock-a07-again"
+  r.sock.connected = true
+  await r.sock.serverSays("connect")
+  await K.flush(12)
+  assert.ok(r.sock.sentOf("get_session_snapshot").length >= 2, "다시 이어진 뒤 스냅샷을 안 물음")
+  assert.equal(document.body.textContent.includes("게임 결과를 확인할 수 없습니다"), false, "결과 화면이 사라짐")
+  assert.ok(returnButton() !== null, "대기방으로 단추가 없음")
+}
+
+test("A08-F-061 5명 판: 끊겨 \"대기방으로\" 실패 → 다시 이어짐(스냅샷 답이 반영 안 됨: INTERNAL_ERROR) → 결과 화면 그대로 → 다시 누르면 대기방", async () => {
+  const r = await openResultPage({ n: 5 })
+  await cutAndReconnect(r, { ok: false, code: "INTERNAL_ERROR", message: "요청을 처리하지 못했습니다." })
+  r.sock.answer("return_to_room", { ok: true, room: K.roomOf({ uuids: r.seats.map((s) => s.uuid) }) })
+  await K.click(returnButton())
+  await K.waitUntil(() => r.view.path() === "/game-matching", { label: "대기방으로 이동" })
+})
+
+test("A08-F-062 6명 판: 끊겨 \"대기방으로\" 실패 → 다시 이어짐(서버가 끊길 때 판에서 뺌: NOT_A_PARTICIPANT) → 결과 화면 그대로 → 다시 누르면 \"결과 화면 시간이 지나…\" 글", async () => {
+  const r = await openResultPage({ n: 6 })
+  await cutAndReconnect(r, { ok: false, code: "NOT_A_PARTICIPANT", message: "요청이 거절되었습니다." })
+  r.sock.answer("return_to_room", { ok: false, code: "SESSION_ENDED" })
+  await K.click(returnButton())
+  await K.waitUntil(() => notice()?.textContent === "결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.", { label: "시간 지남 글" })
+  assert.equal(r.view.path(), "/gameresult")
 })

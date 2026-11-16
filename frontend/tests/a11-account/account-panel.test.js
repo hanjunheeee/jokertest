@@ -1,5 +1,5 @@
 // 계정 관리 화면 부품 시험 (닉네임·이메일 바꾸기·비번 바꾸기·회원 탈퇴 칸을 jsdom에 그려 글·칸·단추 확인) + 계정 관리·마이페이지 글
-// 목록 A11b 화면 부품 A11-F-727~741, A11-F-764~774
+// 목록 A11b 화면 부품 A11-F-727~741, A11-F-764~774, A11-F-932
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
@@ -162,6 +162,17 @@ test("A11-F-740 오류 결과가 결과 칸에 글로 들어감", async () => {
   assert.ok(message, `탈퇴 칸 글: ${section.textContent}`)
   // 결과 글이 "탈퇴" 단추와 같은 아래 줄에 있음
   assert.ok(message.closest("div").parentElement.contains(within(section).getByRole("button", { name: "탈퇴" })))
+})
+
+test("A11-F-932 계정 결과 긴 글이 한 줄 고정 아님 (고정이면 칸 폭을 넘는 끝이 잘림)", async () => {
+  const text = "여러 번 잘못 입력했습니다. 잠시 후 다시 시도해주세요."
+  await panel({ routes: { "POST /user/me/withdraw": { status: 429, body: { success: false, code: "WITHDRAW_LOCKED", message: text } } } })
+  openWithdraw(PW)
+  fireEvent.click(screen.getByRole("button", { name: "탈퇴하기" }))
+  await flushUi()
+  const message = [...sectionOf("회원 탈퇴").querySelectorAll("p")].find((p) => p.textContent === text)
+  assert.ok(message, `탈퇴 칸 글: ${sectionOf("회원 탈퇴").textContent}`)
+  assert.doesNotMatch(message.className, /whitespace-nowrap/)
 })
 
 test("A11-F-741 계정 정보 받는 중 → 이메일 '불러오는 중'", async () => {
