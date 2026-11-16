@@ -1,5 +1,7 @@
 // 방 설정 줄 모양 (방 설정 화면·대기방 설정 변경 시트가 같이 씀)
 // shared/settings 아래 줄·숫자 칸·역할 구성이 씀, 종이가 어두운 편이라 제목·요약은 검정, 오류는 짙은 빨강
+import { SETUP_ERROR_BAND_CLASS } from "@/domains/game/setup/constants/setupRowStyles.js"
+
 const TITLE = "font-subheading app-text-scaled font-bold leading-tight text-black"
 const DESC = "font-subheading app-text-scaled leading-snug text-[#2a1810]/85"
 
@@ -24,7 +26,8 @@ export const SETTING_LOOKS = {
       summary: "flex flex-col gap-1 py-3 text-center",
       line: "font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-snug text-black",
       note: "",
-      error: "text-[#300600]",
+      // 오류 글 뒤 밝은 띠 (데스크톱과 같은 값, 검정 글도 그 종이 위에선 4.5를 못 넘음)
+      error: `text-[#300600] ${SETUP_ERROR_BAND_CLASS}`,
       scrollOnCustom: true,
       scrollToSummary: true,
     },

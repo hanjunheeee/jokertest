@@ -50,12 +50,14 @@ export const EMAIL_CHECK_BTN_LABEL_CLASS =
 export const EMAIL_CHECK_MSG_LAYER_CLASS =
   "pointer-events-none col-start-1 row-start-1 flex min-w-0 items-center justify-end self-stretch pl-[8rem] pr-[2%]"
 
+// 긴 글(429 안내)은 두 줄로 꺾음 (한 줄 고정이면 앞부분이 단추 밑으로 숨었음)
 export const EMAIL_CHECK_MSG_CLASS =
-  "shrink-0 whitespace-nowrap app-text-scaled [--app-text-size:13px] leading-none"
+  "min-w-0 break-keep text-right app-text-scaled [--app-text-size:13px] leading-tight"
 
-export const EMAIL_CHECK_MSG_AVAILABLE_CLASS = "text-emerald-800"
+// 양피지 위라 아래 인증 안내 줄처럼 가장 짙은 초록·빨강 (-800은 대비 3.5~3.9로 흐림)
+export const EMAIL_CHECK_MSG_AVAILABLE_CLASS = "text-emerald-950"
 
-export const EMAIL_CHECK_MSG_ERROR_CLASS = "text-red-800"
+export const EMAIL_CHECK_MSG_ERROR_CLASS = "text-red-950"
 // 이메일 인증 칸: 틀·제목·안내 줄 자리·안내 글자 색(에러·안내·완료)
 export const EMAIL_VERIFICATION_BLOCK_CLASS =
   "mx-auto flex w-[97%] flex-col gap-0.5 rounded bg-white/10 px-1.5 py-1"

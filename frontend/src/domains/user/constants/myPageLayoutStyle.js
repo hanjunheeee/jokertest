@@ -37,6 +37,10 @@ export const BLOOD_RECORD_CONTENT_INSET = {
   right: "15%",
 }
 
+// 전적 줄 뒤 옅은 크림 덧칠 (가장자리는 흐리게 번짐) — 두루마리 그림이 어두워 검정 글도 대비 3.4라 글자색만으로 못 맞춤
+export const BLOOD_RECORD_CONTENT_WASH_CLASS =
+  "rounded-[0.5em] bg-[#f5ecd9]/45 shadow-[0_0_0.6em_0.35em_rgba(245,236,217,0.45)]"
+
 export const BLOOD_RECORD_ROW_LABEL_CLASS = "font-subheading app-text-scaled [--app-text-size:3.6cqi] min-w-0 break-keep font-bold leading-snug text-[#3d1810]"
 export const BLOOD_RECORD_ROW_VALUE_CLASS = "font-subheading app-text-scaled [--app-text-size:3.8cqi] min-w-0 break-keep text-right font-bold leading-snug tracking-wide text-[#2a0e08] tabular-nums"
 

@@ -13,6 +13,6 @@ export const HEADER_TEXT_CLASS =
 export const HINT_TEXT_CLASS =
   "px-2 text-center font-subheading leading-snug text-black app-text-scaled [--app-text-size:13px]"
 
-// 에러 한 줄 (빨강)
+// 에러 한 줄 (빨강), 양피지 위라 데스크톱 소셜 가입 오류 줄처럼 가장 짙은 빨강 (red-800은 대비 3.8로 흐림)
 export const ERROR_TEXT_CLASS =
-  "px-2 text-center font-subheading font-bold leading-snug text-red-800 app-text-scaled [--app-text-size:13px]"
+  "px-2 text-center font-subheading font-bold leading-snug text-red-950 app-text-scaled [--app-text-size:13px]"

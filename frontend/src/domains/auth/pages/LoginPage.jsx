@@ -56,13 +56,6 @@ export default function LoginPage() {
   return (
     <AuthScene onSubmit={handleSubmit} frameSize={isSignupMode ? "signup" : "default"}>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* 소셜 로그인 실패로 돌아왔으면 위에 실패 문구 */}
-        {socialView.mode === "socialError" && (
-          <p role="alert" className="mt-2 shrink-0 rounded bg-red-500/20 px-3 py-2 text-center text-xs text-red-950">
-            {socialView.message}
-          </p>
-        )}
-
         {isSignupMode ? (
           <SignupForm
           formData={formData}
@@ -84,6 +77,13 @@ export default function LoginPage() {
             onSwitchToSignup={() => setIsSignupMode(true)}
             isSubmitting={isSubmitting}
           />
+        )}
+
+        {/* 소셜 로그인 실패로 돌아왔으면 아래에 실패 문구 (위는 액자 가면 장식에 가려짐, 아래 종이가 어두워 밝은 띠) */}
+        {socialView.mode === "socialError" && (
+          <p role="alert" className="mt-2 shrink-0 rounded bg-red-100/90 px-3 py-2 text-center text-xs text-red-950">
+            {socialView.message}
+          </p>
         )}
       </div>
     </AuthScene>

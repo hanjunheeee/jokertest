@@ -15,7 +15,8 @@ export default function EmailCheckMessage({ status, errorMessage = null }) {
   // 상태별 문구·색
   if (status === "checking") {
     message = "이메일 확인 중..."
-    toneClass = "text-white/70"
+    // 옅은 흰 글은 양피지 위에서 안 읽혀 본문 글자색
+    toneClass = "text-text-body"
   } else if (status === "available") {
     message = "사용할 수 있는 이메일입니다."
     toneClass = EMAIL_CHECK_MSG_AVAILABLE_CLASS

@@ -7,7 +7,7 @@ import {
 
 // 상태별 문구·색, idle이면 없음
 const MESSAGES = {
-  checking: { text: "이메일 확인 중...", tone: "text-white/70" },
+  checking: { text: "이메일 확인 중...", tone: "text-text-body" },
   available: { text: "사용할 수 있는 이메일입니다.", tone: EMAIL_CHECK_MSG_AVAILABLE_CLASS },
   duplicate: { text: "이미 사용 중인 이메일입니다.", tone: EMAIL_CHECK_MSG_ERROR_CLASS },
   error: { text: "중복 확인에 실패했습니다. 다시 시도해주세요.", tone: EMAIL_CHECK_MSG_ERROR_CLASS },

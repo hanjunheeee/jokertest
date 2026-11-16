@@ -24,7 +24,8 @@ export const STATUS_CLASS =
   "text-center font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1.05vw,0.84rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const CONFLICT_CLASS = "text-[#e8c878]"
-export const NOTICE_ERROR_CLASS = "text-[#9C3D32]"
+// 저장 실패 글: 어두운 방 그림 위라 짙은 빨강(대비 2.6)은 안 읽혀 밝은 붉은색 (방 코드 창 오류 글과 같은 색)
+export const NOTICE_ERROR_CLASS = "text-[#ffb3a7]"
 
 export const SAVE_SUCCESS_MSG = "팔레트를 저장했습니다."
 

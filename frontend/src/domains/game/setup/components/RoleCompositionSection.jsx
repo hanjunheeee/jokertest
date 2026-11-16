@@ -10,18 +10,19 @@ import {
 import { getRoleCountRange } from "../utils/roleComposition.js"
 import SetupChoiceRow from "./rows/SetupChoiceRow.jsx"
 import SetupStepperRow from "./rows/SetupStepperRow.jsx"
+import { SETUP_ERROR_BAND_CLASS } from "../constants/setupRowStyles.js"
 
 const MODE_OPTIONS = ROLE_COMPOSITION_MODE_OPTIONS.map(({ mode, label }) => ({ value: mode, label }))
 
 const SUMMARY_CLASS =
   "flex shrink-0 flex-col items-center gap-[clamp(0.1rem,0.25vh,0.2rem)] border-b border-[#8b7355]/35 py-[clamp(0.15rem,0.32vh,0.26rem)] text-center last:border-b-0"
 
-// 요약 글은 검정, 오류 글은 짙은 빨강 (종이가 어두운 편이라 갈색·밝은 빨강은 흐림)
+// 요약 글은 검정, 오류 글은 짙은 빨강 + 밝은 띠 (종이가 어두운 편이라 갈색·밝은 빨강은 흐림)
 const SUMMARY_LINE_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-black"
 
 const SUMMARY_ERROR_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#300600]"
+  `font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#300600] ${SETUP_ERROR_BAND_CLASS}`
 
 export default function RoleCompositionSection({
   mode,
