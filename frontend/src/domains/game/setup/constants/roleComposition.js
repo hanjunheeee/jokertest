@@ -15,8 +15,8 @@ export const CUSTOM_ROLE_LABELS = Object.freeze({
   WITCH_HUNTER: "마녀사냥꾼",
 })
 
-// 시민 이름
-export const CITIZEN_ROLE_LABEL = "시민"
+// 시민 직업의 화면 이름 ("귀족"으로 통일, 사용자 결정 2026-11-16)
+export const CITIZEN_ROLE_LABEL = "귀족"
 
 // 특수 직업 하나당 최대 인원
 export const MAX_SPECIAL_ROLE_COUNT = 2

@@ -1,4 +1,4 @@
-// 대기방 화면: 배경·팝업·인원 머리말·뒤로/친구 초대·방장 버튼·강퇴 창·설정 편집
+// 대기방 화면: 배경·팝업(방 이름·앉은 수/정원·자리)·인원 머리말·뒤로/친구 초대·방장 버튼·강퇴 창·설정 편집
 // /game-matching 라우트가 씀, 값과 동작은 모두 useMatchingPage에서 받음
 import MatchingBackground from "../components/MatchingBackground.jsx"
 import MatchingPartyHeader from "../components/MatchingPartyHeader.jsx"
@@ -26,11 +26,14 @@ export default function GameMatchingPage() {
     slots,
     roomCode,
     partyCount,
+    partyMax,
+    roomTitle,
     isHost,
     isReady,
     isSettingReady,
     toggleReady,
     isStarting,
+    startLockedReason,
     isRoomVerified,
     startGame,
     deleteRoom,
@@ -54,6 +57,7 @@ export default function GameMatchingPage() {
     dismissSettingsResultNotice,
     canKick,
     isKickHost,
+    kickLockedReason,
     kickModalOpen,
     openKickModal,
     closeKickModal,
@@ -83,6 +87,9 @@ export default function GameMatchingPage() {
         visible={uiVisible}
         slots={slots}
         waitingMessage={waitingMessage}
+        roomTitle={roomTitle}
+        partyCount={partyCount}
+        partyMax={partyMax}
         roomCode={roomCode}
         roomCodeOpen={roomCodeOpen}
         onRoomCodeOpen={openRoomCode}
@@ -93,6 +100,7 @@ export default function GameMatchingPage() {
         isSettingReady={isSettingReady}
         onToggleReady={toggleReady}
         isStarting={isStarting}
+        startLockedReason={startLockedReason}
         isRoomVerified={isRoomVerified}
         onStartGame={startGame}
         onDeleteRoom={deleteRoom}
@@ -140,6 +148,7 @@ export default function GameMatchingPage() {
           canEditSettings={canEditSettings}
           isKickHost={isKickHost}
           canKick={canKick}
+          kickLockedReason={kickLockedReason}
           onOpenSettings={openSettings}
           onOpenKickModal={openKickModal}
         />

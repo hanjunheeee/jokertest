@@ -5,11 +5,12 @@ import { useMatchingStore, selectRoomMembershipId } from "../store/matchingStore
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
 import { askRoomCb } from "../socket/room.js"
+import { KICK_LOCKED_REASONS } from "../constants/roomMessages.js"
 import { captureVerificationGuard } from "../../ingame/hooks/kick/guards.js"
 import { KICK_REQUEST_STATUS, useKickPlayerRequest } from "../../ingame/hooks/useKickPlayerRequest.js"
 
-// 대기방 강퇴 상태·동작
-export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
+// 대기방 강퇴 상태·동작 (roomSyncStatus = 방 확인 상태, 잠긴 까닭 글 고르기용)
+export function useMatchingRoomKick({ isRoomVerified = false, roomSyncStatus = "checking" } = {}) {
   const [modalOpen, setModalOpen] = useState(false)
 
   const myUuid = useAuthStore((s) => s.user?.uuid ?? null)
@@ -20,6 +21,10 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   // 방장이고 방 확인이 끝났을 때만 강퇴 가능
   const isHost = Boolean(isInRoom && myUuid && myUuid === hostUuid)
   const canKick = Boolean(isHost && isRoomVerified)
+  // 방장인데 잠겼을 때만 까닭 글 (모르는 상태 값이면 "확인하는 중" 글)
+  const kickLockedReason = isHost && !canKick
+    ? (KICK_LOCKED_REASONS[roomSyncStatus] ?? KICK_LOCKED_REASONS.checking)
+    : null
 
   // 지금 소속 묶음 id (서버 부팅·방·방 인스턴스·내 소속), 바뀌면 진행 중 강퇴는 무효
   const getMembershipScopeId = useCallback(() => {
@@ -122,11 +127,13 @@ export function useMatchingRoomKick({ isRoomVerified = false } = {}) {
   // 강퇴 보내는 중·결과 확인 중이면 그대로 둠 (방 다시 확인하는 잠깐 사이에 결과 창이 사라지지 않게)
   const kickInProgress = Boolean(kick.isSending || kick.isAwaitingResolution)
   if (modalOpen && !canKick && !kickInProgress) setModalOpen(false)
-  const effectiveOpen = modalOpen && canKick && kickStatus !== KICK_REQUEST_STATUS.SUCCEEDED
+  // 창 열림 값도 보내는 중·결과 확인 중엔 자격을 안 봄 (자격까지 보면 방 확인이 한 번 끊기는 순간 창이 사라짐)
+  const effectiveOpen = modalOpen && (canKick || kickInProgress) && kickStatus !== KICK_REQUEST_STATUS.SUCCEEDED
 
   return {
     canKick,
     isKickHost: isHost,
+    kickLockedReason,
     kickModalOpen: effectiveOpen,
     openKickModal,
     closeKickModal,

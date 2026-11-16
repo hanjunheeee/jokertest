@@ -36,6 +36,8 @@ export function useRoom({ onRoomDeleted, onGameStarted }) {
     isStarting: ctx.isStarting,
     isSettingReady: ctx.isSettingReady,
     isRoomVerified: ctx.syncStatus === 'verified',
+    // 추방 단추 잠긴 까닭 글을 고르는 데 씀 (waiting_socket / checking / verified / failed)
+    roomSyncStatus: ctx.syncStatus,
     saveRoomSettings,
     verifyRoomSettingsResult,
     isSavingSettings: ctx.isSaving,

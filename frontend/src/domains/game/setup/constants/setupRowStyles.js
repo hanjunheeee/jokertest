@@ -6,5 +6,6 @@ export const SETUP_ROW_CLASS =
 export const SETUP_TITLE_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(1.22rem,1.75vw,1.42rem)] font-bold leading-tight text-[#1a1008]"
 
+// 설명 글: 방 만들기 종이가 어두운 편이라 흐린 갈색 대신 검정
 export const SETUP_DESC_CLASS =
-  "mt-0 font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] leading-snug text-[#2a1810]/85"
+  "mt-0 font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] leading-snug text-black"

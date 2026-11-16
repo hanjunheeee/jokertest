@@ -23,6 +23,7 @@ export default function MatchingHostActionButtons({
   canEditSettings,
   isKickHost,
   canKick,
+  kickLockedReason = null,
   onOpenSettings,
   onOpenKickModal,
 }) {
@@ -60,7 +61,7 @@ export default function MatchingHostActionButtons({
           </span>
         </button>
       ) : null}
-      {/* 추방: 방장이면 보이되 방 확인 전엔 잠그고 옆에 까닭 글 */}
+      {/* 추방: 방장이면 보이되 방 확인 전엔 잠그고 옆에 까닭 글 (끊김·확인 중·확인 실패마다 글이 다름) */}
       {isKickHost ? (
         <button
           type="button"
@@ -84,7 +85,7 @@ export default function MatchingHostActionButtons({
       ) : null}
       {showKickReason ? (
         <p id={kickReasonId} role="status" data-testid="kick-locked-reason" className={KICK_LOCKED_REASON_CLASS}>
-          {INGAME_KICK_PLAYER_MODAL_COPY.lockedReason}
+          {kickLockedReason ?? INGAME_KICK_PLAYER_MODAL_COPY.lockedReason}
         </p>
       ) : null}
     </motion.div>

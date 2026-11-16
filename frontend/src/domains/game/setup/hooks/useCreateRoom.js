@@ -38,13 +38,18 @@ function enterOrLeave(room, mountedRef, navigate) {
 // 방 만들기 상태·동작
 export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   const [isCreating, setIsCreating] = useState(false)
+  // 마지막 실패 까닭 글 (화면 안내 띠가 그림, 다시 누르면 지움)
+  const [createError, setCreateError] = useState(null)
   const creatingRef = useRef(false)
   const mountedRef = useMountedRef()
 
   // 화면을 떠났으면 알림 안 띄움
+  // 알림 창만 띄우면 닫은 뒤 까닭(탈주 대기 등)이 안 남고 화면 읽기가 못 읽어서 화면 글로도 남김
   const showError = (message) => {
     if (!mountedRef.current) return
-    alert(message ?? CREATE_ROOM_ERROR_MSGS.NETWORK)
+    const text = message ?? CREATE_ROOM_ERROR_MSGS.NETWORK
+    setCreateError(text)
+    alert(text)
   }
 
   // 요청 범위: 마지막 요청 하나만 살아 있음
@@ -75,11 +80,15 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
 
     creatingRef.current = true
     setIsCreating(true)
+    setCreateError(null)
     const scope = captureScope(socket, accountId, identityGeneration)
     scopeRef.current = scope
     await runCreate(socket, settings, scope, { scopeRef, isCurrent, enterRoom, showError, release })
   }
 
   // isBusy: 지금 만드는 중인지 (뒤로 가기 확인용)
-  return { isCreating, createGame, isBusy: () => creatingRef.current }
+  return {
+    isCreating, createGame, isBusy: () => creatingRef.current,
+    createError, dismissCreateError: () => setCreateError(null),
+  }
 }

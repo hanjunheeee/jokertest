@@ -8,6 +8,9 @@ export default function MatchingRoomPanelArea({
   visible,
   slots,
   waitingMessage = "",
+  roomTitle = null,
+  partyCount = 0,
+  partyMax = null,
   roomCode,
   roomCodeOpen,
   onRoomCodeOpen,
@@ -18,6 +21,7 @@ export default function MatchingRoomPanelArea({
   isSettingReady,
   onToggleReady,
   isStarting,
+  startLockedReason = null,
   isRoomVerified,
   onStartGame,
   onDeleteRoom,
@@ -32,6 +36,9 @@ export default function MatchingRoomPanelArea({
         visible={visible}
         slots={slots}
         waitingMessage={waitingMessage}
+        roomTitle={roomTitle}
+        partyCount={partyCount}
+        partyMax={partyMax}
         onRoomCodeView={onRoomCodeOpen}
         roomCodeDisabled={roomCodeDisabled}
         isHost={isHost}
@@ -39,6 +46,7 @@ export default function MatchingRoomPanelArea({
         isSettingReady={isSettingReady}
         onToggleReady={onToggleReady}
         isStarting={isStarting}
+        startLockedReason={startLockedReason}
         isRoomVerified={isRoomVerified}
         onStartGame={onStartGame}
         onDeleteRoom={onDeleteRoom}

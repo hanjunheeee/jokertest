@@ -70,7 +70,7 @@ export default function RoleComposition({ look: lookName, roleComposition, maxPl
             지정한 인원 합계: {Number.isInteger(fixedRoleCount) ? fixedRoleCount : "-"} / {maxPlayers}명
           </p>
           <p className={`${role.line} ${role.note}`}>
-            시민 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
+            귀족 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
           </p>
           {validation.ok ? null : (
             <p role="alert" className={`${role.line} ${role.error}`}>

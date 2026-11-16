@@ -23,7 +23,7 @@ export function useGameSetupPage() {
     return () => cancelAnimationFrame(frame)
   }, [])
 
-  const { isCreating, createGame, isBusy } = useCreateRoom({ navigate, accountId, identityGeneration })
+  const { isCreating, createGame, isBusy, createError, dismissCreateError } = useCreateRoom({ navigate, accountId, identityGeneration })
 
   // 만드는 중에 나가면 방이 생길 수 있다고 한 번 물음
   const goBackToMultiplay = () => {
@@ -45,6 +45,8 @@ export function useGameSetupPage() {
     isCreating,
     goBackToMultiplay,
     createGame,
+    createError,
+    dismissCreateError,
     initialFormState: null,
     formResetKey,
   }

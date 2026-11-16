@@ -16,11 +16,12 @@ const MODE_OPTIONS = ROLE_COMPOSITION_MODE_OPTIONS.map(({ mode, label }) => ({ v
 const SUMMARY_CLASS =
   "flex shrink-0 flex-col items-center gap-[clamp(0.1rem,0.25vh,0.2rem)] border-b border-[#8b7355]/35 py-[clamp(0.15rem,0.32vh,0.26rem)] text-center last:border-b-0"
 
+// 요약 글은 검정, 오류 글은 짙은 빨강 (종이가 어두운 편이라 갈색·밝은 빨강은 흐림)
 const SUMMARY_LINE_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#2a1810]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-black"
 
 const SUMMARY_ERROR_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#8c1c13]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(1.02rem,1.38vw,1.16rem)] font-bold leading-snug text-[#300600]"
 
 export default function RoleCompositionSection({
   mode,
@@ -72,7 +73,7 @@ export default function RoleCompositionSection({
               지정한 인원 합계: {Number.isInteger(fixedRoleCount) ? fixedRoleCount : "-"} / {maxPlayers}명
             </p>
             <p className={SUMMARY_LINE_CLASS}>
-              시민 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
+              귀족 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
             </p>
             {validation.ok ? null : <p className={SUMMARY_ERROR_CLASS}>{validation.message}</p>}
           </div>

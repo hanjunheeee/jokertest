@@ -47,7 +47,7 @@ export function useRoomInvitePage() {
   const [roomCode, setRoomCode] = useState("")
 
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
-  const { isJoining, clearJoin, failJoin, startJoin } = useRoomCodeJoin()
+  const { isJoining, clearJoin, failJoin, startJoin, joinError, dismissJoinError } = useRoomCodeJoin()
 
   // 다음 그리기 때 화면 보이기
   useEffect(() => {
@@ -81,6 +81,8 @@ export function useRoomInvitePage() {
     setRoomCode,
     joinRoom,
     isJoining,
+    joinError,
+    dismissJoinError,
     goBackToModeSelect,
   }
 }

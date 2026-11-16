@@ -8,11 +8,13 @@ import {
 import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 그림 버튼 하나
-export default function MatchingActionButton({ label, src, onClick, disabled }) {
+// describedBy = 꺼진 까닭 글 칸 id (읽어 주는 도구가 단추와 같이 읽음)
+export default function MatchingActionButton({ label, src, onClick, disabled, describedBy }) {
   return (
     <button
       type="button"
       aria-label={label}
+      aria-describedby={describedBy}
       onClick={onClick}
       disabled={disabled}
       className={ACTION_BTN_CLASS}

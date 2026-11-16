@@ -1,6 +1,9 @@
 // 친구 초대 목록 한 줄: 프로필·이름·전적·초대 버튼
 // FriendInviteModalContent가 씀, 전적 문구는 인게임 기록 목록과 같은 형식
-import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
+import {
+  formatPlayerRecordStats,
+  PLAYER_RECORD_STATS_EMPTY_LABEL,
+} from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { MODAL_ASSETS } from "../../constants/friendInviteModalAssets.js"
 import { MODAL_COPY } from "../../constants/friendInviteModalCopy.js"
 import {
@@ -54,6 +57,8 @@ export default function FriendInviteRow({
               {formatPlayerRecordStats({
                 totalGames: accountTotalGames,
                 winRate: accountWinRate,
+                // 친구 목록 답엔 전적이 없음 → "조회 실패"가 아니라 "기록 없음"
+                missingLabel: PLAYER_RECORD_STATS_EMPTY_LABEL,
               })}
             </p>
           </div>

@@ -1,9 +1,13 @@
-// 대기방 자리 그림: 한 줄 5칸, 준비/미준비 실루엣 (이름 없음), 판 끝 뒤 비워 둔 방장 자리는 흐린 실루엣 + "방장 자리"
+// 대기방 자리 그림: 한 줄 5칸, 준비/미준비 실루엣 + "준비완료"·"대기중" 글 (이름 없음), 판 끝 뒤 비워 둔 방장 자리는 흐린 실루엣 + "방장 자리"
 // MatchingBoard가 틀 안에 씀, 줄 나누기·크기 규칙은 데스크톱 MatchingPartySlots·PlayerSlotGrid와 같음
-import { GAME_MATCHING_ASSETS } from "@/domains/game/matching/constants/gameMatchingAssets.js"
+import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import { PLAYER_SLOT_COLUMNS, chunkPlayerSlots } from "@/domains/game/matching/utils/chunkPlayerSlots.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import {
+  SEAT_BADGE_COMPACT_CLASS,
+  SEAT_BADGE_LARGE_CLASS,
+  SEAT_BADGE_READY_CLASS,
+  SEAT_BADGE_WAITING_CLASS,
   SLOT_COMPACT_CLASS,
   SLOT_LARGE_CLASS,
   SLOT_NOT_READY_OFFSET_CLASS,
@@ -17,6 +21,7 @@ const RESERVED_HOST_LABEL_CLASS =
 export default function SlotGrid({ slots = [] }) {
   const rows = chunkPlayerSlots(slots, PLAYER_SLOT_COLUMNS)
   const slotClass = rows.length > 1 ? SLOT_COMPACT_CLASS : SLOT_LARGE_CLASS
+  const badgeClass = rows.length > 1 ? SEAT_BADGE_COMPACT_CLASS : SEAT_BADGE_LARGE_CLASS
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-[1.3cqw]">
@@ -39,12 +44,16 @@ export default function SlotGrid({ slots = [] }) {
               <span className={RESERVED_HOST_LABEL_CLASS} aria-hidden="true">방장 자리</span>
             </div>
           ) : (
-            <div key={slot.id} className="flex flex-col items-center" data-ready={slot.ready ? "" : undefined}>
+            <div key={slot.id} className="relative flex flex-col items-center" data-ready={slot.ready ? "" : undefined}>
               <PublicAsset
                 src={slot.ready ? GAME_MATCHING_ASSETS.silhouetteReady : GAME_MATCHING_ASSETS.silhouetteNotReady}
                 alt=""
                 className={`${slotClass}${slot.ready ? "" : ` ${SLOT_NOT_READY_OFFSET_CLASS}`}`}
               />
+              {/* 그림만으로는 준비 여부를 알기 어려워 글로도 보임 (화면 읽기도 이 글을 읽음) */}
+              <span className={`${badgeClass} ${slot.ready ? SEAT_BADGE_READY_CLASS : SEAT_BADGE_WAITING_CLASS}`}>
+                {slot.ready ? MATCHING_POPUP_COPY.readyBadge : MATCHING_POPUP_COPY.notReadyBadge}
+              </span>
             </div>
           )))}
         </div>

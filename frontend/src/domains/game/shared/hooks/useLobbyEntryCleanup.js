@@ -45,8 +45,9 @@ export function useLobbyEntryCleanup() {
     let active = true
     enterLobby(socket, (reply) => {
       if (!active || reply?.ok !== true) return
-      if (reply.redirect === "INGAME" && typeof reply.gameId === "string" && reply.gameId) {
-        goBackToGame(navigate, reply.gameId)
+      // 판으로 가라는 답이면 서버가 아무것도 안 지웠음 → 방 정보도 안 비움 (판 id가 이상하면 옮기지도 않음)
+      if (reply.redirect === "INGAME") {
+        if (typeof reply.gameId === "string" && reply.gameId) goBackToGame(navigate, reply.gameId)
         return
       }
       forgetRoom()

@@ -1,6 +1,9 @@
 // 친구 초대 목록 한 줄: 프로필·이름·전적·초대 버튼
 // FriendInviteSheet가 씀, 문구·그림·전적 형식·글자색은 데스크톱 FriendInviteRow와 같음
-import { formatPlayerRecordStats } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
+import {
+  formatPlayerRecordStats,
+  PLAYER_RECORD_STATS_EMPTY_LABEL,
+} from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { MODAL_ASSETS } from "@/domains/game/matching/constants/friendInviteModalAssets.js"
 import { MODAL_COPY } from "@/domains/game/matching/constants/friendInviteModalCopy.js"
 import { resolveAccountProfileAssets } from "@/shared/utils/resolveAccountProfileAssets.js"
@@ -26,7 +29,10 @@ export default function FriendInviteRow({ friend, inviting, onInvite }) {
           className="min-w-0 truncate font-subheading app-text-scaled [--app-text-size:0.8rem] font-bold leading-none text-white/55 tabular-nums"
           data-testid={`friend-invite-stats-${friend.id}`}
         >
-          {formatPlayerRecordStats({ totalGames: friend.accountTotalGames, winRate: friend.accountWinRate })}
+          {/* 친구 목록 답엔 전적이 없음 → "조회 실패"가 아니라 "기록 없음" (데스크톱과 같음) */}
+          {formatPlayerRecordStats({
+            totalGames: friend.accountTotalGames, winRate: friend.accountWinRate, missingLabel: PLAYER_RECORD_STATS_EMPTY_LABEL,
+          })}
         </p>
       </div>
       <ImageButton

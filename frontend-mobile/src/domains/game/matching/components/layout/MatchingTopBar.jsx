@@ -1,4 +1,4 @@
-// 대기방 위 줄: 뒤로 가기·파티 인원·친구 초대·음소거
+// 대기방 위 줄: 뒤로 가기·방 이름과 앉은 수/정원·파티 인원·친구 초대·음소거
 // GameMatchingPage가 씀, 데스크톱 구석 조작(왼쪽 아래 뒤로·오른쪽 아래 친구/소리)과 오른쪽 위 인원 머리말을 한 줄로 모음
 import { motion } from "framer-motion"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
@@ -13,12 +13,17 @@ import {
   PARTY_COUNT_CLASS,
   PARTY_ICON_CLASS,
   PARTY_TEXT_CLASS,
+  ROOM_CAPACITY_CLASS,
+  ROOM_INFO_ROW_CLASS,
+  ROOM_TITLE_CLASS,
 } from "../../constants/matchingMobileStyles.js"
 
 // 위 줄 (친구 초대는 방에 있을 때만, 데스크톱과 같은 조건)
 export default function MatchingTopBar({
   visible,
   partyCount,
+  partyMax = null,
+  roomTitle = null,
   onBack,
   canOpenFriendInvite,
   friendInviteOpen,
@@ -40,15 +45,32 @@ export default function MatchingTopBar({
         iconClassName="block h-10 w-10 select-none object-contain"
       />
 
-      {/* 파티 인원 (읽기 프로그램엔 한 문장으로, 데스크톱 MatchingPartyHeader) */}
-      <div
-        className="flex min-w-0 flex-1 items-center gap-2 pl-1"
-        aria-label={`${MATCHING_POPUP_COPY.partyLabel} ${partyCount}명`}
-      >
-        <PublicAsset src={GAME_MATCHING_ASSETS.silhouetteNotReady} alt="" className={PARTY_ICON_CLASS} />
-        <span className={PARTY_TEXT_CLASS}>
-          {MATCHING_POPUP_COPY.partyLabel} <span className={PARTY_COUNT_CLASS}>{partyCount}</span>명
-        </span>
+      <div className="flex min-w-0 flex-1 flex-col justify-center pl-1">
+        {/* 방 이름 + 앉은 수/정원 (값이 없는 쪽은 안 그림, 둘 다 없으면 줄째 안 그림) */}
+        {roomTitle || partyMax !== null ? (
+          <div className={ROOM_INFO_ROW_CLASS} data-testid="matching-room-info">
+            {roomTitle ? (
+              <h1 className={ROOM_TITLE_CLASS} data-testid="matching-room-title">{roomTitle}</h1>
+            ) : null}
+            {partyMax !== null ? (
+              <span className={ROOM_CAPACITY_CLASS} data-testid="matching-party-capacity">
+                <span aria-hidden="true">{partyCount}/{partyMax}</span>
+                <span className="sr-only">앉은 사람 {partyCount}명, 정원 {partyMax}명</span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* 파티 인원 (읽기 프로그램엔 한 문장으로, 데스크톱 MatchingPartyHeader) */}
+        <div
+          className="flex min-w-0 items-center gap-2"
+          aria-label={`${MATCHING_POPUP_COPY.partyLabel} ${partyCount}명`}
+        >
+          <PublicAsset src={GAME_MATCHING_ASSETS.silhouetteNotReady} alt="" className={PARTY_ICON_CLASS} />
+          <span className={PARTY_TEXT_CLASS}>
+            {MATCHING_POPUP_COPY.partyLabel} <span className={PARTY_COUNT_CLASS}>{partyCount}</span>명
+          </span>
+        </div>
       </div>
 
       {/* 친구 초대 (데스크톱 FriendListToggleButton과 같은 그림·이름, 누를 때마다 열고 닫음) */}

@@ -1,6 +1,7 @@
-// 방 코드 입력해 들어가는 화면
+// 방 코드 입력해 들어가는 화면 (입장 실패 안내 띠 포함)
 // 경로 /roomInvite가 씀
 import { motion } from "framer-motion"
+import EntryFailureNotice from "@/domains/game/shared/components/EntryFailureNotice.jsx"
 import LabelledActionButton from "@/domains/game/shared/components/LabelledActionButton.jsx"
 import RoomCodeFrame from "@/domains/game/mode/components/RoomCodeFrame.jsx"
 import { ROOM_INVITE_ASSETS } from "@/domains/game/mode/constants/roomInviteAssets.js"
@@ -17,7 +18,9 @@ import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
 export default function RoomInvitePage() {
-  const { uiVisible, roomCode, setRoomCode, joinRoom, isJoining, goBackToModeSelect } = useRoomInvitePage()
+  const {
+    uiVisible, roomCode, setRoomCode, joinRoom, isJoining, joinError, dismissJoinError, goBackToModeSelect,
+  } = useRoomInvitePage()
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">
@@ -75,6 +78,8 @@ export default function RoomInvitePage() {
         className={`${BACK_BUTTON_PAGE_POSITION_CLASS} z-20`}
         style={{ pointerEvents: uiVisible ? "auto" : "none" }}
       />
+
+      <EntryFailureNotice message={joinError} onDismiss={dismissJoinError} />
     </div>
   )
 }

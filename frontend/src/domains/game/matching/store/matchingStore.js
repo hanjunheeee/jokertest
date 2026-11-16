@@ -35,6 +35,9 @@ export const useMatchingStore = create((set) => ({
 
     roomCode: null,
 
+    // 방 이름 ("닉네임의 방"), 서버 방 값에 title 칸이 없으면 null
+    title: null,
+
     players: [],
 
     hostUuid: null,
@@ -58,13 +61,15 @@ export const useMatchingStore = create((set) => ({
     stopSearch: () => set({isSearching: false}),
 
     // 확인된 방 통째로 넣기 (안 온 값은 기본값)
+    // 방 이름은 같은 방이면 안 바뀜 → 이번 값에 title 칸이 없어도 같은 방이면 앞 이름을 둠 (다른 방이면 지움)
     setRoom: ({
         roomId, roomCode, players, hostUuid, canStart = false,
         accessType = null, settings = null, settingsVersion = null,
-        roomInstanceId = null, bootEpoch = null,
+        roomInstanceId = null, bootEpoch = null, title = null,
     }) =>
         set((s) => ({
             isSearching: false, isInRoom: true, roomId, roomCode, players, hostUuid, canStart,
+            title: title ?? (s.isInRoom && s.roomId === roomId ? s.title : null),
             accessType, settings, settingsVersion, roomInstanceId, bootEpoch,
             roomRevision: s.roomRevision + 1,
         })),
@@ -116,7 +121,7 @@ export const useMatchingStore = create((set) => ({
     // 방 비우기
     clearRoom: () =>
         set((s) => ({
-            isSearching: false, isInRoom: false, roomId: null, roomCode: null, players: [], hostUuid: null,
+            isSearching: false, isInRoom: false, roomId: null, roomCode: null, title: null, players: [], hostUuid: null,
             canStart: false,
             roomInstanceId: null, bootEpoch: null,
             accessType: null, settings: null, settingsVersion: null,

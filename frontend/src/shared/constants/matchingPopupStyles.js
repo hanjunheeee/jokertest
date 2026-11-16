@@ -18,8 +18,9 @@ export const START_GAME_BTN_AREA_CLASS =
 export const ACTION_BTN_ROW_CLASS =
   "pointer-events-auto mx-auto flex w-full max-w-[min(92%,36rem)] flex-wrap items-center justify-center gap-x-[clamp(0.55rem,1.15vw,0.85rem)] gap-y-[clamp(0.4rem,1vh,0.6rem)]"
 
+// 꺼진 단추는 반투명(방장 단추와 같은 모양) — 게임시작이 꺼져도 겉모습이 그대로라 눌러도 되는 줄 알았음
 export const ACTION_BTN_CLASS =
-  `group w-[clamp(8.5rem,18vw,11.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none ${MATCHING_BTN_FOCUS_CLASS}`
+  `group w-[clamp(8.5rem,18vw,11.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none disabled:cursor-not-allowed disabled:opacity-50 ${MATCHING_BTN_FOCUS_CLASS}`
 
 export const ACTION_BTN_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center whitespace-nowrap font-subheading app-text-scaled [--app-text-size:clamp(0.88rem,1.25vw,1.05rem)] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
@@ -69,8 +70,9 @@ export const PARTY_HEADER_CLASS =
 export const PARTY_TEXT_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(1.28rem,1.72vw,1.5rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
 
+// 인원 숫자: 어두운 배경 위라 진한 빨강(text-text-main)은 안 보여 밝은 빨강
 export const PARTY_COUNT_CLASS =
-  "font-display app-text-scaled [--app-text-size:clamp(1.55rem,2.1vw,1.82rem)] font-medium leading-none text-text-main tabular-nums antialiased"
+  "font-display app-text-scaled [--app-text-size:clamp(1.55rem,2.1vw,1.82rem)] font-medium leading-none text-[#ff8f87] tabular-nums antialiased"
 
 export const PARTY_ICON_CLASS =
   "block h-[clamp(1.9rem,2.65vw,2.35rem)] w-auto shrink-0 select-none object-contain opacity-95"
