@@ -8,7 +8,7 @@ const sessionLifecycle = require("../../services/auth/sessionLifecycle");
 // 결과 저장·주기 검사·토큰 만료 판정은 sessionCheck (사건 검사·주기 검사가 같은 결과를 같이 씀)
 const {
     SESSION_CHECK_INTERVAL_MS, EVENT_CHECK_CACHE_MS, WATCH_FAILURE_LIMIT,
-    disconnectCodeOf, checkForEvent, markChecked, startSessionRevocationWatcher,
+    disconnectNoticeOf, checkForEvent, markChecked, startSessionRevocationWatcher,
 } = require("./sessionCheck");
 
 // 사건의 마지막 인자가 답 함수면 거절 답 (화면이 제 시간 초과까지 "처리 중"으로 안 남게, BE-042)
@@ -80,8 +80,9 @@ function wrapSocketWithSessionGuard(socket, { countEvent = createEventRateLimite
                 }
                 // 끊긴 세션이면 답 함수에 알리고 까닭 알린 뒤 연결 끊음, 처리기는 안 부름
                 if (!result.ok) {
-                    replyRejected(args, "SESSION_EXPIRED", result.message);
-                    socket.emit("force_disconnect", { message: result.message, code: disconnectCodeOf(result) });
+                    const notice = disconnectNoticeOf(socket, result);
+                    replyRejected(args, "SESSION_EXPIRED", notice.message);
+                    socket.emit("force_disconnect", notice);
                     socket.disconnect(true);
                     return;
                 }

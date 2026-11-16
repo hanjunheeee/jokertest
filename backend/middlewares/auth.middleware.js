@@ -33,10 +33,10 @@ exports.verifyToken = async (req, res, next) => {
         return next(error);
     }
 
-    // 세션 죽었으면 쿠키 지우고 서비스가 준 상태·문구로
+    // 세션 죽었으면 쿠키 지우고 서비스가 준 상태·문구·code로 (화면이 ACCOUNT_BANNED 보고 정지 안내 띄움)
     if (!result.ok) {
         res.clearCookie("accessToken");
-        return next(createError(result.message, result.status));
+        return next(createError(result.message, result.status, result.code));
     }
 
     req.user = decoded;

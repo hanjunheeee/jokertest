@@ -46,6 +46,9 @@ const TOPUP_SCOPED_ERRORS = {
     REFERENCE_EVENT_CONFLICT: { status: 409, message: '참조 사건 ID가 이미 다른 요청에 사용되었습니다.' },
 };
 
+// 로그인 확인(auth.middleware)이 싣는 계정 403 code (충전 경로에서도 그대로 내보냄)
+const ACCOUNT_403_CODES = new Set(['ACCOUNT_BANNED', 'ACCOUNT_INACTIVE']);
+
 // 상품 바뀜 응답에 붙일 공개 필드와 타입 (다른 필드는 안 붙임)
 const PUBLIC_PRODUCT_FIELDS = {
     productId: 'string', kind: 'string', displayName: 'string', payCurrency: 'string',
@@ -140,10 +143,13 @@ const respondTopup = (err, req, res) => {
         }
         return res.status(401).json({ success: false, message: '로그인이 필요합니다.' });
     }
-    // 코드 없는 403: 정지면 사유 빼고 문구만
-    if (rawStatus === 403 && !rawCode) {
+    // 코드 없는 403·로그인 확인의 정지·쓸 수 없는 계정 403: 정지면 사유 빼고 문구만
+    // 로그인 확인 code는 그대로 실음 (화면이 ACCOUNT_BANNED 보고 정지 안내, 빼면 500으로 나감)
+    if (rawStatus === 403 && (!rawCode || ACCOUNT_403_CODES.has(rawCode))) {
         const banned = typeof err.message === 'string' && err.message.startsWith('정지된 계정입니다.');
-        return res.status(403).json({ success: false, message: banned ? '정지된 계정입니다.' : '접근 권한이 없습니다.' });
+        const body = { success: false, message: banned ? '정지된 계정입니다.' : '접근 권한이 없습니다.' };
+        if (rawCode) body.code = rawCode;
+        return res.status(403).json(body);
     }
     if (rawCode === 'ECONOMY_FORBIDDEN') {
         return res.status(403).json({ ok: false, code: 'ECONOMY_FORBIDDEN', message: '다른 계정의 경제 데이터에 접근할 수 없습니다.' });

@@ -1,7 +1,7 @@
 'use strict'
 
 // 서버 여러 대 운영 신호 시험(진짜 Redis) — 점검·금지어 다시 읽기, 공지, 강제 끊기·탈퇴·로그아웃·비번 바꾸기 끊김, 서버 꺼짐 안내, Node 비우기, Node 목록·지금 상황·/health
-// 목록 A17-B-159~182 (docs/게임_의도_2026-11-15/시험목록/A17-서버-여러대.md "운영 신호 · Node 비우기"), 159~175는 시험 DB도 씀 (주소 없으면 그 번호만 건너뜀)
+// 목록 A17-B-159~182·191 (docs/게임_의도_2026-11-15/시험목록/A17-서버-여러대.md "운영 신호 · Node 비우기"), 159~175·191은 시험 DB도 씀 (주소 없으면 그 번호만 건너뜀)
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL || ''
 // 모델이 읽는 주소: 시험 DB (없으면 닿지 않는 곳), 꼭 아래 require보다 먼저
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db'
@@ -651,6 +651,23 @@ test('A17-B-173 n1에서 비번 바꾸면 n2 다른 기기 소켓이 1초 안 �
     })
     assert.ok(res.status < 300, `비번 바꾸기 답: ${res.status} ${JSON.stringify(res.body)}`)
     assert.notEqual(await within(c.closed, 1000), null, 'n2 소켓이 1초 안 안 끊김')
+})
+
+// 새 기기 소켓이 붙기 전에 n1이 끊김 방송을 받아 바로 다시 확인해도 "세션 만료"가 아니라 다른 로그인 안내 (결정 MN-064, 브라우저 A17-H-028)
+test('A17-B-191 기기1 n1 접속 → 기기2 로그인이 n2로 (소켓 아직 안 붙음) → 기기1 첫 안내가 다른 로그인 안내', { skip: noRedisOrDb, timeout: 30000 }, async (t) => {
+    await ensureSchema()
+    const { n1, n2 } = await startOpsNodes(t)
+    const u = await createDbUser(n1.b, 'rl')
+    const c = await connectClient(t, n1, await issueToken(n1.b, u.uuid))
+    const { email } = await n1.b.models.User.findOne({ where: { uuid: u.uuid }, raw: true })
+    const res = await n2.http('POST', '/auth/login', { body: { email, password: u.password } })
+    assert.equal(res.status, 200, `기기2 로그인 답: ${res.status} ${JSON.stringify(res.body)}`)
+    assert.notEqual(await within(c.closed, 3000), null, 'n1 기기1 소켓이 3초 안 안 끊김')
+    const first = c.received.find((e) => e.event === 'force_disconnect')
+    assert.deepEqual(first?.payload, {
+        code: 'REPLACED_BY_OTHER_LOGIN',
+        message: '다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.',
+    })
 })
 
 test('A17-B-174 Redis 죽은 동안은 세션 확인을 사건마다 DB로 (저장해 둔 통과 안 씀)', { skip: noRedisOrDb, timeout: 30000 }, async (t) => {

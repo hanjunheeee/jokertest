@@ -3,6 +3,7 @@
 const sessionLifecycle = require("../../services/auth/sessionLifecycle");
 const { onSessionsRevoked } = require("../../repositories/user/revokeSignal");
 const { cacheWindowMs, cacheFloorAt } = require("./sessionCachePolicy");
+const { describeReplacementBySession } = require("./replace");
 
 // 주기 검사 간격 5초 (시험이 이 값만큼 가짜 시계 돌림)
 const SESSION_CHECK_INTERVAL_MS = 5000;
@@ -39,6 +40,13 @@ function isLongTokenExpired(user, now = Date.now()) {
 const ACCOUNT_DISCONNECT_CODES = new Set(["ACCOUNT_BANNED", "ACCOUNT_INACTIVE", "ACCOUNT_WITHDRAWN"]);
 function disconnectCodeOf(result) {
     return ACCOUNT_DISCONNECT_CODES.has(result?.code) ? result.code : "SESSION_EXPIRED";
+}
+
+// 끊을 때 보낼 안내 { message, code }: 새 로그인에 밀린 세션은 다른 Node 밀어내기(replace.js)와 같은 다른 로그인 안내
+// 새 기기 소켓이 붙기 전에 끊김 방송·5초 주기 검사가 먼저 봐도 "세션 만료"가 안 뜨게 (결정 MN-064)
+function disconnectNoticeOf(socket, result) {
+    if (result?.code === "REPLACED_BY_OTHER_LOGIN") return describeReplacementBySession(socket.data?.user?.sessionId, null);
+    return { message: result.message, code: disconnectCodeOf(result) };
 }
 
 // 소켓마다 확인 상태: 마지막 통과 시각(묻기 시작한 시각) · 진행 중 확인 (끊긴 소켓은 저절로 사라짐)
@@ -154,7 +162,7 @@ function recheckUser(uuid) {
 // 주기 검사 답: 세션이 끊겼다는 답이면 바로 끊음
 function disconnectIfRevoked(socket, result) {
     if (result.ok) return;
-    socket.emit("force_disconnect", { message: result.message, code: disconnectCodeOf(result) });
+    socket.emit("force_disconnect", disconnectNoticeOf(socket, result));
     socket.disconnect(true);
 }
 
@@ -236,6 +244,7 @@ module.exports = {
     WATCH_FAILURE_LIMIT,
     isLongTokenExpired,
     disconnectCodeOf,
+    disconnectNoticeOf,
     checkForEvent,
     markChecked,
     startSessionRevocationWatcher,

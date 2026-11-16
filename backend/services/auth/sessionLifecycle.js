@@ -24,6 +24,9 @@ exports.verifyAccessToken = (token, { ignoreExpiration = false } = {}) => {
 // 정지 거절 글 (사유 없으면 운영정책 위반)
 const banMessageOf = (ban) => `정지된 계정입니다. 사유: ${ban.reason || "운영정책 위반"}`;
 
+// 끊긴 세션 거절 글
+const SESSION_EXPIRED_MESSAGE = "세션이 만료되었습니다. 다시 로그인해주세요.";
+
 // 토큰 속 세션이 아직 살아 있고 정지 아닌지, 거절은 상태 코드·문구로 돌려줌
 // batch: 소켓 쪽(접속·사건·5초 주기)만 켬, 세션·계정 상태·정지를 질의 하나로 + 같은 차례 확인 여럿을 한 번에 물음
 // (http 요청 확인은 옛 두 질의 그대로, 판정은 둘 다 아래 같은 줄)
@@ -43,16 +46,23 @@ exports.resolveSession = async (decoded, { batch = false } = {}) => {
 
     // 끊긴 세션이면 401 (is_online은 true·1 둘 다 받음)
     if (!session || (session.is_online !== true && session.is_online !== 1)) {
-        // 탈퇴·정지 계정의 남은 소켓이면 까닭을 실어 줌 (화면이 "세션 만료" 대신 탈퇴·정지 안내를 띄움, 비활성과 같은 모양)
-        // 소켓 쪽(batch)만 옴: http 요청 응답은 그대로 (끊긴 세션의 계정 상태를 밖에 안 알림)
+        // 탈퇴·새 로그인에 밀린 소켓이면 까닭을 실어 줌 (화면이 "세션 만료" 대신 탈퇴·다른 로그인 안내를 띄움)
+        // 둘은 소켓 쪽(batch)만 옴: http 요청 응답은 그대로
         if (gone?.withdrawn) {
             return { ok: false, status: 401, code: "ACCOUNT_WITHDRAWN", message: "회원 탈퇴가 완료되었습니다." };
         }
-        // 정지 직후 http 요청이 먼저 정지를 찾아 세션을 끊어 둔 경우도 정지 까닭으로 (아래 정지 거절과 같은 글)
-        if (gone?.ban) {
-            return { ok: false, status: 403, code: "ACCOUNT_BANNED", message: banMessageOf(gone.ban) };
+        // 정지 중이면 세션이 이미 끊겼어도 정지 까닭으로 (아래 정지 거절과 같은 글, http·소켓 같음)
+        // 정지 직후 요청 여럿 중 하나가 먼저 세션을 끊어도 나머지가 401로 빠져 정지 안내 없이 로그인 화면으로 가던 것 막기
+        // 받는 쪽은 그 토큰을 가진 본인뿐이라 정지 글을 실어도 됨
+        const ban = gone?.ban ?? activeBan;
+        if (ban) {
+            return { ok: false, status: 403, code: "ACCOUNT_BANNED", message: banMessageOf(ban) };
         }
-        return { ok: false, status: 401, message: "세션이 만료되었습니다. 다시 로그인해주세요." };
+        // 같은 사람 살아 있는 다른 세션 = 새 로그인에 밀림 (글은 소켓 쪽이 다른 로그인 안내로 바꿔 보냄, 결정 MN-064)
+        if (gone?.replaced) {
+            return { ok: false, status: 401, code: "REPLACED_BY_OTHER_LOGIN", message: SESSION_EXPIRED_MESSAGE };
+        }
+        return { ok: false, status: 401, message: SESSION_EXPIRED_MESSAGE };
     }
 
     // 로그인 유지 세션은 refresh 만료 지나면 access 남아도 거절
