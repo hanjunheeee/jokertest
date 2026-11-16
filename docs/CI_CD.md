@@ -118,7 +118,7 @@ GitHub: Settings → Environments → `staging`·`production` 만들고 각각�
 | --- | --- | --- |
 | `IMAGE_REGISTRY` | `ghcr.io/<계정 소문자>` · `<이름>.kr.ncr.ntruss.com` · GitLab `$CI_REGISTRY_IMAGE` | 이미지 올릴 곳 |
 | `VITE_API_BASE_URL` | `https://api.<도메인>` (경로 없이) | 화면 빌드 때 박힘 (꼭) |
-| `VITE_DISCORD_SUPPORT_URL`·`VITE_AD_PROVIDER`·`VITE_ADSENSE_*` | | 선택, `frontend/Dockerfile` ARG |
+| `VITE_DISCORD_SUPPORT_URL`·`VITE_SUPPORT_URL`·`VITE_AD_PROVIDER`·`VITE_ADSENSE_*` | | 선택, `frontend/Dockerfile` ARG (`VITE_SUPPORT_URL`은 로그인·찾기 화면 고객센터 링크 — 비우면 안 보임) |
 | `SMOKE_API_URL`·`SMOKE_DESKTOP_URL`·`SMOKE_MOBILE_URL` | `https://api.<도메인>` · `https://<도메인>` · `https://m.<도메인>` | 배포 뒤 바깥 확인 |
 | `SMOKE_ADMIN_URL` | `https://admin.<도메인>` | (선택) 관리자 사이트 바깥 확인: 클라우드플레어면 Access 로그인으로 302, 아니면 200·`noindex` + api 주소 `/admin-api` 404·데스크톱 `/admin.html`에 관리자 화면 없음 (`docs/배포_설정.md` 8-5) |
 | `SMOKE_EXPECT_CLOUDFLARE` | `1` | 바깥 확인에서 클라우드플레어 거침(`cf-ray`)도 봄. 주의: 지금 `deploy.yml`·`gitlab-ci.yml`이 이 값을 `smoke.sh`로 안 넘김 → 서버·PC에서 손으로 `smoke.sh` 돌릴 때만 먹음 |

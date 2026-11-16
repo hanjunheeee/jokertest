@@ -61,7 +61,7 @@
 | A16-B-002 | 목록이 번호 차례대로, 빈 번호 없음 | `MIGRATIONS` 이름 앞 네 자리 → 0001, 0002, …, 0034 하나씩 늘어남 (0033 다음 0034, 0035 없음) | 명령 :44 (적용 순서 그대로·새 것은 끝에), 고치기 4장 ("0035부터는 안 씀") | 순수 | backend/tests/unit/a16-migration-runner.test.js |
 | A16-B-003 | 이름 = 파일 이름, 이름 겹침 없음 | 마이그레이션마다 `name` → `backend/db/migrations/<name>.js` 파일이 있음, 34개 이름이 서로 다름 | 복구 머리 (이력은 이름으로 한 줄), ERD schema_migrations (`name` 겹치면 안 됨) | 순수 | backend/tests/unit/a16-migration-runner.test.js |
 | A16-B-004 | 같은 마이그레이션의 체크섬은 늘 같음 | `checksumOf(0034)` 두 번 → 같은 글자, 16진수 64자 | 실행기 :12 | 순수 | backend/tests/unit/a16-migration-runner.test.js |
-| A16-B-005 | up 본문이 한 글자만 달라도 체크섬이 다름 | 0034 복사본에서 처음 값 1 → 2로 바꾼 up → 원본과 다른 값 | 실행기 :12 ("적용한 파일이 바뀌면 알아채기"), DB변경 D-01 (적용 뒤 바뀐 마이그레이션 거부) | 순수 | backend/tests/unit/a16-migration-runner.test.js |
+| A16-B-005 | [지금 동작] 함수 밖 "처음 넣는 값"만 바꾸면 체크섬이 같음 | 0034 복사본에서 up·down 함수 밖의 처음 값 1 → 2로만 바꿈 → 원본과 같은 값 (검사는 이름과 up·down 함수 글만 봄 — 못 알아채는 한계) | 실행기 :12 (이름 + up·down 원문), 모음 글 C-028 (셈법을 바꾸면 이미 적용한 34개가 전부 "바뀜"으로 떠 운영 DB가 멈출 수 있어 그대로 둠) | 순수 | backend/tests/unit/a16-migration-runner.test.js |
 | A16-B-006 | down이 있고 없고도 체크섬에 들어감 | 같은 이름·같은 up, down 함수 있음 / 없음 → 두 값이 다름 | 실행기 :12 (이름 + up·down 원문) | 순수 | backend/tests/unit/a16-migration-runner.test.js |
 | A16-B-007 | 함수 안 주석만 바꿔도 체크섬이 다름 | 0033 복사본 up 안에 주석 한 줄 더함 → 원본과 다른 값 | 실행기 :12 ("함수 안 주석도 들어감") | 순수 | backend/tests/unit/a16-migration-runner.test.js |
 | A16-B-008 | 이름만 달라도 체크섬이 다름 | up·down 같고 `name`만 `0034-x` → 다른 값 | 실행기 :12 | 순수 | backend/tests/unit/a16-migration-runner.test.js |
@@ -178,7 +178,7 @@
 |---|---|---|---|---|---|
 | A16-B-181 | 탈주 기록 표 칸 6개 | 끝까지 올린 DB `describeTable('game_desertions')` → 칸이 정확히 `id`(BIGINT, 기본 키, 자동 증가)·`user_id`(CHAR(36))·`game_id`(CHAR(36))·`reason`(VARCHAR(30))·`deserted_at`(DATETIME)·`blocked_until`(DATETIME) | 고치기 4장 | DB | backend/tests/db/a16-new-tables.integration.test.js |
 | A16-B-182 | 탈주 기록 칸은 다 꼭 있어야 함 | 칸 6개 모두 NULL 허용 아님 / (`user_id` 빈 채 넣기 → 거절) (`blocked_until` 빼고 넣기 → 거절) (`reason` 빈 값 → 거절) | 고치기 4장 (칸 정의), 결정「탈주 벌」(탈주 시각부터 셈 → 시각 칸 필요) | DB | backend/tests/db/a16-new-tables.integration.test.js |
-| A16-B-183 | [지금 동작] 탈주 시각을 안 주면 지금 시각 | `deserted_at` 빼고 넣기 → 넣은 순간 ±5초 | 출처 없음 (고치기 4장은 칸 종류만 적음) | DB | backend/tests/db/a16-new-tables.integration.test.js |
+| A16-B-183 | [지금 동작] 탈주 시각을 안 주면 넣기 거절 | `deserted_at` 빼고 넣기 → DB가 거절, 줄 안 생김 (DB 기본값이 없음 — 탈주를 적는 코드는 늘 시각을 줌) | 출처 없음 (고치기 4장은 칸 종류만 적음), 모음 글 "목록이 틀려 보이는 곳" A16-B-183 | DB | backend/tests/db/a16-new-tables.integration.test.js |
 | A16-B-184 | 이유 칸은 30자까지 | `reason` `LEFT_ALIVE` → 들어감 / 31자 → 거절(너무 김) | 고치기 4장 (`reason` STRING 30: `LEFT_ALIVE`·`DISCONNECT_TIMEOUT`) | DB | backend/tests/db/a16-new-tables.integration.test.js |
 | A16-B-185 | 탈주 기록 목차 3개 | `showIndex` → `game_desertions_user_game_unique`(`user_id`,`game_id` 차례, 유일) · `game_desertions_user_deserted_idx`(`user_id`,`deserted_at`, 유일 아님) · `game_desertions_blocked_until_idx`(`blocked_until`, 유일 아님) | 고치기 4장 (목차 3개) | DB | backend/tests/db/a16-new-tables.integration.test.js |
 | A16-B-186 | [단위 8] 한 판에 한 사람 탈주 줄 하나 | 같은 `user_id`·`game_id`로 SQL 직접 두 번 → 두 번째 겹침 거절(`game_desertions_user_game_unique`), 줄 1개 | 단위 8, 결정「탈주 벌」, 고치기 4장 ("한 판 한 줄") | DB | backend/tests/db/a16-new-tables.integration.test.js |
@@ -248,7 +248,7 @@
 
 | 번호 | 무엇을 확인하나 | 주는 것 → 기대하는 것 | 정답의 출처 | 종류 | 파일 |
 |---|---|---|---|---|---|
-| A16-B-251 | 외래키 전체 목록이 문서와 같음 | 끝까지 올린 DB의 `INFORMATION_SCHEMA.KEY_COLUMN_USAGE`(외래키만) → (표.칸 → 부모 표.칸) 목록이 아래 부록 2 "외래키 43개"와 정확히 같음 (더도 덜도 없음), `oauth_states.user_id` 외래키 이름은 `oauth_states_ibfk_1` | ERD 표마다 "이어지는 표", 고치기 4장 (0033 `user_id` → `users.uuid`), DB변경 D-02 (이름 `oauth_states_ibfk_1`) | DB | backend/tests/db/a16-foreign-keys.integration.test.js |
+| A16-B-251 | 외래키 전체 목록이 문서와 같음 | 끝까지 올린 DB의 `INFORMATION_SCHEMA.KEY_COLUMN_USAGE`(외래키만) → (표.칸 → 부모 표.칸) 목록이 아래 부록 2 "외래키 44개"와 정확히 같음 (더도 덜도 없음), `oauth_states.user_id` 외래키 이름은 `oauth_states_ibfk_1` | ERD 표마다 "이어지는 표", 고치기 4장 (0033 `user_id` → `users.uuid`), DB변경 D-02 (이름 `oauth_states_ibfk_1`) | DB | backend/tests/db/a16-foreign-keys.integration.test.js |
 | A16-B-252~255 | 문서가 "안 걸림"이라 한 칸은 없는 값도 받음 | 끝까지 올린 DB, 부모 줄 없이 넣기 (값 4): (`vote_participations.game_id` = 없는 판 → 들어감) (`reports.game_id` = 없는 판 + `handled_by_admin_id` = 없는 관리자 → 들어감) (`oauth_states.session_id` = 없는 세션 → 들어감) (`economy_topup_orders.product_id` = 없는 상품 → 들어감) | ERD vote_participations·game_results (판 진행 중에 적음), ERD reports ("판 저장 전에도 신고 받으려고"), ERD oauth_states ("세션은 끊겨도 줄이 남아서 일부러 안 걺"), ERD economy_topup_orders ("코드만 그렇게 씀") | DB | backend/tests/db/a16-foreign-keys.integration.test.js |
 | A16-B-256 | 신고를 지우면 채팅 증거도 같이 지워짐 | `reports` 1줄 + `report_chat_evidence` 2줄 → 그 신고 줄 지움 → 증거 0줄 | ERD report_chat_evidence ("신고 줄이 지워지면 같이 지워짐(CASCADE)") | DB | backend/tests/db/a16-foreign-keys.integration.test.js |
 | A16-B-257 | 문의를 지우면 답도 같이 지워짐 | `inquiries` 1줄 + `inquiry_replies` 2줄 → 그 문의 지움 → 답 0줄 | ERD inquiry_replies ("`onDelete: CASCADE`, 0032") | DB | backend/tests/db/a16-foreign-keys.integration.test.js |
@@ -284,7 +284,7 @@
 | 번호 | 무엇을 확인하나 | 주는 것 → 기대하는 것 | 정답의 출처 | 종류 | 파일 |
 |---|---|---|---|---|---|
 | A16-B-281 | 기준선 표가 일부만 있으면 멈춤 | 빈 DB에 기준선 14표 중 `users`·`login_history`만 만듦 → `applyMigrations` → 0001 오류 "14개 테이블 중 일부(2개)만 존재", 0001 줄 `failed`, 새 표 안 생김 | 머리 0001 ("일부만 존재하면 에러로 멈춘다"), 복구 3 | DB | backend/tests/db/a16-data-guard.integration.test.js |
-| A16-B-282 | 같은 모양 기준선 표가 이미 있으면 등록만 | 0001만 올림 → `schema_migrations` 표 지움(이력 없음 = sync로 만든 DB 흉내) → `applyMigrations` → 0001 `applied`, 표 14개는 그대로(줄 넣어 둔 것도 그대로), 이어서 끝까지 올라감 | 머리 0001 ("구조를 대조해 일치할 때만 등록(DDL 없이 통과)") | DB | backend/tests/db/a16-data-guard.integration.test.js |
+| A16-B-282 | [지금 동작] 같은 모양 기준선 표가 이미 있어도 0001이 멈춤 | 0001만 올림 → `schema_migrations` 표 지움(이력 없음 = sync로 만든 DB 흉내) → `applyMigrations` → 0001이 "기존 DB 구조가 F-01 기준선과 다릅니다"로 멈춤(이력 `failed`). 걸리는 것은 시각 칸 8곳의 DB 기본값뿐(`account_find_requests.created_at`·`password_reset_tokens.created_at`·`user_sessions.connected_at`·`user_bans.created_at`·`login_history.login_at`·`online_presence.last_active_at`·`friend_requests.created_at`·`traffic_logs.accessed_at` — 기대 `CURRENT_TIMESTAMP` / 실제 없음), 넣어 둔 줄은 그대로 | 모음 글 C-029 (있는 마이그레이션 파일은 안 고침 — 이미 0001을 지난 DB는 영향 없음, `docs/배포_설정.md` 9-9), 머리 0001 ("구조가 다르면 에러로 멈춘다") | DB | backend/tests/db/a16-data-guard.integration.test.js |
 | A16-B-283 | 기준선과 모양이 다르면 멈춤 | B-282처럼 만든 뒤 `users`에 칸 하나 더 함 → `applyMigrations` → 0001 오류(구조 다름), `users` 칸·줄 그대로 | 머리 0001 ("구조가 다르면 에러로 멈춘다"), 복구 3 ("sync로 만든 DB는 0001 구조 비교에서 거부될 수 있음") | DB | backend/tests/db/a16-data-guard.integration.test.js |
 | A16-B-284 | 0020: 없는 계정을 가리키는 줄이 있으면 멈춤 | 0019까지 올림 → `oauth_states_ibfk_1` 외래키를 떼고 없는 `user_id` 줄 하나 넣음 → 0020 올림 → 오류, 그 줄 안 지움, 외래키 안 생김 | DB변경 D-02 ("고아 행 있으면 지우지 않고 멈춤"), 머리 0020 | DB | backend/tests/db/a16-data-guard.integration.test.js |
 | A16-B-285 | 0028: 지울 칸에 값이 있으면 아무것도 안 지움 | 0027까지 올림 → `users.phone`에 값 하나 → 0028 올림 → 오류 "값이 1개 있어 안 지움", `users.phone`·`user_sessions.last_ping_at`·`online_presence.current_room_id`·`traffic_logs` 다 그대로 | DB변경 0028 ("값이 하나라도 있으면 아무것도 안 지우고 멈춤 — 반쯤 지운 채로 안 멈추게 먼저 다 봄") | DB | backend/tests/db/a16-data-guard.integration.test.js |
@@ -322,14 +322,16 @@
 
 | 번호 | 무엇 | 왜 |
 |---|---|---|
-| A16-B-183 | 탈주 시각 칸을 안 주면 DB가 지금 시각을 넣음 | 고치기 4장은 `deserted_at`(DATE)만 적고 기본값은 안 적음. 지금 동작(마이그레이션 표 정의의 기본값)을 임시 정답으로 |
+| A16-B-183 | 탈주 시각 칸을 안 주면 DB가 거절함 | 고치기 4장은 `deserted_at`(DATE)만 적고 기본값은 안 적음. 지금 동작(DB에 기본값이 안 생겨 넣기 실패, 코드는 늘 값을 줌)을 임시 정답으로 |
 | A16-B-276 | 표가 덜 올라간 DB면 줄 비우기를 안 함 | 도우미 코드뿐, 주석·문서 없음 |
+| A16-B-005 | 함수 밖 "처음 넣는 값"이 바뀐 것은 체크섬이 못 알아챔 | 모음 글 C-028. 셈법을 바꾸면 이미 적용한 34개 체크섬이 전부 달라져 운영 DB가 "바뀜"으로 멈출 수 있어 안 고침 → 지금 동작을 정답으로, 사용자에게 알림 |
+| A16-B-282 | 표 14개가 이미 있고 이력이 없는 DB는 0001에서 멈춤 | 모음 글 C-029. 있는 마이그레이션 파일은 안 고치는 규칙 → 지금 동작을 정답으로. 이미 0001을 지난 DB는 영향 없음 (`docs/배포_설정.md` 9-9) |
 | (번호 없음) | `friendships` (A,B)·(B,A) 두 줄을 DB가 못 막음 | DB변경 D-12 "낮음이라 보류". 막혀야 하는지 정해지지 않아 케이스 안 둠 (지금 앱이 잠금으로 막음 — A13 몫) |
 | (번호 없음) | `user_bans` 한 사람 정지 두 줄을 DB가 못 막음 | ERD user_bans "DB 제약은 없음, 코드가 막음" — DB 쪽은 막는 것이 없다는 뜻이라 여기서 안 봄, 코드 막음은 A14 몫 |
 | (번호 없음) | 되돌리기(down)를 부르는 명령이 없음 | `migrate-db.js`는 `status`·`migrate`·`resolve-failure`만. 운영은 백업 복원(복구 2장 A). down 시험은 함수 직접 부름 — 명령을 둘지 사용자 결정 |
 | (번호 없음) | `users.email` 대소문자만 다른 메일을 같은 메일로 볼지 | 문서에 없음, 시험 DB 문자 정렬(`utf8mb4_unicode_ci`)에 따라 달라짐 → 케이스 안 둠 |
 
-- `[지금 동작]` 케이스 수: 2 / 150 (약 1%) — 20% 아래.
+- `[지금 동작]` 케이스 수: 4 / 150 (약 3%) — 20% 아래. (B-005·183·276·282)
 - 머리 주석·실행기 주석을 출처로 쓴 줄이 많음(부탁 글이 출처로 지정). 결정.md에 없는 내용이라 "코드가 스스로 한 약속"을 정답으로 본 것 — 주석과 코드가 다르면 시험이 실패해 드러남.
 
 ## 받은 버그 케이스 확인
@@ -393,7 +395,7 @@
 
 - 모델 없는 표: `refresh_token_history`, `schema_migrations` (나머지 47개는 모델 있음).
 
-### 부록 2. 외래키 43개 (B-251 기대값)
+### 부록 2. 외래키 44개 (B-251 기대값)
 
 이 목록은 ERD 글의 "이어지는 표"에서 "DB 외래키 걸림"이라 한 것과 고치기 4장의 0033을 모은 것임. 부모가 적히지 않은 줄은 `users.uuid`.
 
@@ -407,7 +409,7 @@
 | `external_identities` | `user_id` |
 | `oauth_states` | `user_id` (이름 `oauth_states_ibfk_1`) |
 | `password_reset_tokens` | `user_id` |
-| `game_result_players` | `game_id` → `game_results.id` |
+| `game_result_players` | `game_id` → `game_results.id`, `user_id` (0001 기준선에 있음 — 처음 목록이 빠뜨린 것) |
 | `vote_participations` | `user_id` |
 | `user_stats` | `user_id` |
 | `achievement_grants` | `user_id` |
@@ -428,4 +430,4 @@
 | `game_desertions` | `user_id` |
 
 - 안 걸린 것(문서가 "코드만"·"일부러 안 걺"): `vote_participations.game_id`, `game_desertions.game_id`, `reports.game_id`·`handled_by_admin_id`, `oauth_states.session_id`, `user_bans.banned_by`·`lifted_by`, `terms_versions.created_by_admin_id`, `banned_words.created_by_admin_id`, `maintenance_state.updated_by_admin_id`, `coupons.created_by_admin_id`, `admin_login_attempts.admin_id`, `game_settings.updated_by`, `economy_topup_orders.product_id`, `economy_ledger_entries.reference_event_id`·`item_id`, `game_invites.room_id`, `notifications.source_key`. `social_signup_intents`·`signup_email_verifications`·`account_find_requests`·`concurrent_snapshots`·`game_results`·`economy_currency_products`·`admin_users`·`schema_migrations`는 잇는 칸 없음.
-- 43개 셈이 문서에서 빠뜨린 것 때문에 실제와 다르면 B-251이 실패함 → 그때 ERD 글과 마이그레이션을 같이 보고 어느 쪽이 맞는지 반장이 정함.
+- 44개 셈이 문서에서 빠뜨린 것 때문에 실제와 다르면 B-251이 실패함 → 그때 ERD 글과 마이그레이션을 같이 보고 어느 쪽이 맞는지 반장이 정함.
