@@ -1,4 +1,4 @@
-// 친구 요청 파일, 보내기 · 수락 · 거절 · 받은 목록 · 결과
+// 친구 요청 파일, 보내기 · 수락 · 거절 · 취소 · 받은 목록 · 보낸 목록 · 결과
 // controllers/friend가 index.js 거쳐 부름, 보낼 때 받는 사람 알림도 같은 트랜잭션에서 만듦
 const db = require("../../repositories/common/db");
 const friendshipRepository = require("../../repositories/friend/friendship");
@@ -152,6 +152,57 @@ exports.declineRequest = async (myUuid, requestId) => {
         // 여기부터 진짜 바뀜: 거절 표시
         await friendRequestRepository.updateFriendRequestStatus(requestId, 'DECLINED', { transaction: t });
         return { requesterId: request.requester_id };
+    });
+};
+
+// 내가 보낸 대기 요청만 취소 (받은 사람 목록에서 사라지고 다시 신청할 수 있게 됨)
+exports.cancelRequest = async (myUuid, requestId) => {
+    return await withTransaction(db, async (t) => {
+        // 잠글 두 계정 알려고 먼저 잠금 없이 읽음, 없으면 404
+        const identified = await friendRequestRepository.findRequestById(requestId);
+        if (!identified) throw createError('친구 요청을 찾을 수 없습니다.', 404);
+
+        // 수락·거절과 같은 순서로 두 계정 잠금 (동시에 온 수락과 한 줄로 세우기)
+        await friendshipRepository.lockAccountsInOrder(
+            [identified.requester_id, identified.receiver_id], { transaction: t },
+        );
+
+        // 잠근 뒤 다시 읽음 (그사이 수락·거절됐는지 보려고)
+        const request = await friendRequestRepository.findRequestById(requestId, {
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+        });
+
+        // 내가 보낸 대기 요청 아니면 거절
+        if (!request)                        throw createError('친구 요청을 찾을 수 없습니다.', 404);
+        if (request.requester_id !== myUuid) throw createError('권한이 없습니다.', 403);
+        if (request.status !== 'PENDING')    throw createError('이미 처리된 요청입니다.', 409);
+
+        // 여기부터 진짜 바뀜: 취소 표시 (지우지 않고 이력으로 남김, 차단 때 취소와 같은 상태)
+        await friendRequestRepository.updateFriendRequestStatus(requestId, 'CANCELLED', { transaction: t });
+        return { receiverId: request.receiver_id };
+    });
+};
+
+// 보낸 대기 요청 목록 + 받는 사람 공개 장착 (받은 요청 목록과 같은 줄 모양, id·name은 받는 사람)
+exports.getOutgoingRequests = async (myUuid) => {
+    const requests = await friendRequestRepository.findOutgoingRequests(myUuid);
+    const uuids = requests.map((req) => req.receiver_id);
+
+    const loadoutsByUuid = await loadPublicLoadouts(uuids);
+
+    // 받는 사람 행·장착 없으면 기본값 (화면 칸 안 비게)
+    return requests.map((req) => {
+        const loadout = loadoutsByUuid[req.receiver_id] ?? { profilePhotoId: null, profileBorderId: null };
+        return {
+            request_id: req.id,
+            id:         req.receiver_id,
+            name:       req.Receiver?.nickname ?? '알 수 없는 사용자',
+            profile:    req.Receiver?.profile_image_url || '/assets/default_profile.png',
+            created_at: req.created_at,
+            accountProfilePhotoId:  loadout.profilePhotoId,
+            accountProfileBorderId: loadout.profileBorderId,
+        };
     });
 };
 

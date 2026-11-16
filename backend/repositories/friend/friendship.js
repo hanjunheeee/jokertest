@@ -1,4 +1,4 @@
-// 친구 관계 저장소 파일, 친구 관계 찾기·만들기 + 친구·초대 쓰기 전 계정 잠금
+// 친구 관계 저장소 파일, 친구 관계 찾기·만들기·지우기 + 친구·초대 쓰기 전 계정 잠금
 // 친구·게임 초대·접속 상태 서비스가 모듈 객체로 부름 (시험이 함수를 바꿔 끼움)
 
 const db     = require("../../models");
@@ -41,6 +41,19 @@ exports.createFriendship = async (requesterId, receiverId, options = {}) => {
 // 두 사람 사이 친구 관계 하나 (누가 신청했든)
 exports.findExistingFriendship = async (uuidA, uuidB, options = {}) => {
     return await db.Friendship.findOne({
+        where: {
+            [Op.or]: [
+                { requester_id: uuidA, receiver_id: uuidB },
+                { requester_id: uuidB, receiver_id: uuidA },
+            ],
+        },
+        ...options,
+    });
+};
+
+// 두 사람 사이 친구 관계 줄 지우기 → 지운 수 (친구 끊기, 누가 신청했든)
+exports.deleteFriendshipBetween = async (uuidA, uuidB, options = {}) => {
+    return await db.Friendship.destroy({
         where: {
             [Op.or]: [
                 { requester_id: uuidA, receiver_id: uuidB },

@@ -5,6 +5,7 @@ const friendRequestRepository = require("../../repositories/friend/request");
 const blockRepository = require("../../repositories/friend/block");
 const onlinePresenceRepository = require("../../repositories/presence/onlinePresence");
 const economyService = require("../economy");
+const { createError } = require("../../utils/appError");
 
 // 접속 행이 ONLINE이어도 이 서버 접속 목록에 없으면 OFFLINE (BE-015)
 // 서버가 꺼지거나 재시작되면 끊김 처리가 안 돌아 ONLINE 행이 남음, 소켓 서버가 안 켜졌으면(시험 등) 행 그대로
@@ -87,6 +88,10 @@ exports.getFriendList = async (myUuid) => {
 
 // 닉네임 검색 (나·친구·보낸 대기 신청·차단 관계는 저장소가 뺌)
 exports.searchUsers = async (query, myUuid) => {
+    // 검색어 칸이 두 번 오면 배열로 넘어옴 → 글자가 아니면 400 (trim에서 터져 500 나던 것 막기)
+    if (query !== undefined && query !== null && typeof query !== 'string') {
+        throw createError('검색어는 글자 하나로 보내야 합니다.', 400);
+    }
     // 빈 검색어면 DB 안 감
     if (!query || query.trim().length < 1) return [];
 

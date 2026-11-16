@@ -1,4 +1,4 @@
-// 친구 사건 전송 파일, 효과음 사건 만들기 · 신청·수락·거절·차단 사건 보내기
+// 친구 사건 전송 파일, 효과음 사건 만들기 · 신청·수락·거절·취소·차단·끊기 사건 보내기
 // controllers/friend가 index.js 거쳐 서비스 다음에 부름 (전송 실패해도 응답은 그대로)
 const { emitToUser } = require("../../socket/emitter");
 
@@ -56,6 +56,16 @@ exports.notifyRequestDeclined = (requesterId, byUuid, requestId) => {
 // 차단 뒤 관계 무효 사건, 화면이 친구·초대 다시 받음 (컨트롤러가 두 사람 각각 부름)
 exports.notifyBlocked = (userId) => {
     emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'BLOCKED' }, 'FRIEND_BLOCK_NOTIFY_ERROR');
+};
+
+// 신청 취소 뒤 관계 무효 사건, 받은 쪽 화면이 받은 신청을 다시 받아 그 줄이 사라짐 (소리·알림 없이, 컨트롤러가 두 사람 각각 부름)
+exports.notifyRequestCancelled = (userId) => {
+    emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'REQUEST_CANCELLED' }, 'FRIEND_REQUEST_CANCEL_NOTIFY_ERROR');
+};
+
+// 친구 끊기 뒤 관계 무효 사건, 화면이 친구 목록을 다시 받아 그 줄이 사라짐 (소리·알림 없이, 컨트롤러가 두 사람 각각 부름)
+exports.notifyUnfriended = (userId) => {
+    emitFriendEventSafely(userId, 'friend_relation_invalidated', { reason: 'UNFRIENDED' }, 'FRIEND_UNFRIEND_NOTIFY_ERROR');
 };
 
 // 차단 풀기 뒤 관계 무효 사건 (컨트롤러가 푼 사람에게만 부름)

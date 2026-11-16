@@ -19,6 +19,19 @@ exports.findIncomingRequests = async (uuid) => {
     });
 };
 
+// 내가 보낸 대기 신청 + 받는 사람 프로필, 최근 신청 먼저 (보낸 신청 목록 화면)
+exports.findOutgoingRequests = async (uuid) => {
+    return await db.FriendRequest.findAll({
+        where: { requester_id: uuid, status: 'PENDING' },
+        include: [{
+            model:      db.User,
+            as:         'Receiver',
+            attributes: ['uuid', 'nickname', 'profile_image_url'],
+        }],
+        order: [['created_at', 'DESC'], ['id', 'DESC']],
+    });
+};
+
 // 두 사람 사이 대기 신청 하나, 누가 보냈든 (겹친 신청 막기, 트랜잭션은 부르는 쪽이 넘김)
 exports.findPendingRequest = async (uuidA, uuidB, options = {}) => {
     return await db.FriendRequest.findOne({
@@ -50,7 +63,7 @@ exports.findRequestById = async (requestId, options = {}) => {
     return await db.FriendRequest.findOne({ where: { id: requestId }, ...options });
 };
 
-// 신청 상태 바꾸고 응답 시각 남기기 (수락·거절)
+// 신청 상태 바꾸고 응답 시각 남기기 (수락·거절·보낸 사람 취소)
 exports.updateFriendRequestStatus = async (requestId, status, options = {}) => {
     return await db.FriendRequest.update(
         { status, responded_at: new Date() },

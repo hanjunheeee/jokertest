@@ -28,6 +28,19 @@ exports.setFriendFavorite = async (ownerId, friendId, desired, options = {}) => 
     return false;
 };
 
+// 두 사람이 서로 건 즐겨찾기 둘 다 지우기 → 지운 수 (친구 끊기)
+exports.deleteFavoritesBetween = async (uuidA, uuidB, options = {}) => {
+    return await db.FriendFavorite.destroy({
+        where: {
+            [Op.or]: [
+                { owner_id: uuidA, friend_id: uuidB },
+                { owner_id: uuidB, friend_id: uuidA },
+            ],
+        },
+        ...options,
+    });
+};
+
 // 내가 차단한 행 + 상대 프로필, 최근 차단 먼저 (차단 목록 화면)
 exports.findBlocksOwnedBy = async (ownerId, options = {}) => {
     return await db.FriendBlock.findAll({

@@ -1,4 +1,4 @@
-// 친구 목록·신청 컨트롤러 파일, 친구 목록·사람 찾기·신청 보내기·수락·거절·결과
+// 친구 목록·신청 컨트롤러 파일, 친구 목록·사람 찾기·신청 보내기·수락·거절·취소·보낸 목록·결과
 // routes/friend.routes.js가 friend/index.js 거쳐 부름, 상대 알림은 저장 끝난 뒤 보냄 (보내다 실패해도 응답은 그대로)
 const friendService = require("../../services/friend");
 const { createError } = require("../../utils/appError");
@@ -84,6 +84,37 @@ exports.declineRequest = async (req, res, next) => {
         friendService.notifyRequestDeclined(requesterId, req.user.uuid, requestId);
 
         res.status(200).json({ success: true, message: '친구 요청을 거절했습니다.', data: { request_id: requestId, status: 'DECLINED' } });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 보낸 친구 신청 목록 (아직 답이 안 온 것만, 캐시 금지)
+exports.getOutgoingRequests = async (req, res, next) => {
+    try {
+        const requests = await friendService.getOutgoingRequests(req.user.uuid);
+        res.set('Cache-Control', 'no-store');
+        res.status(200).json({ success: true, data: requests });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 취소 저장 뒤 나·받는 사람 둘 다 신청 목록 다시 읽게 알림 (받는 사람에게 알림 글·소리는 안 보냄)
+exports.cancelRequest = async (req, res, next) => {
+    try {
+        // 숫자 아닌 신청 id는 서비스 부르기 전 400
+        const requestId = parseInt(req.params.id, 10);
+        if (Number.isNaN(requestId)) {
+            return next(createError('유효하지 않은 요청 id입니다.', 400));
+        }
+
+        const { receiverId } = await friendService.cancelRequest(req.user.uuid, requestId);
+        for (const userId of [req.user.uuid, receiverId]) {
+            friendService.notifyRequestCancelled(userId);
+        }
+
+        res.status(200).json({ success: true, message: '친구 신청을 취소했습니다.', data: { request_id: requestId, status: 'CANCELLED' } });
     } catch (error) {
         next(error);
     }
