@@ -127,6 +127,28 @@ function needsRoute(browserName, options = {}, mode = process.env.E2E_OUTSIDE_RO
 
 const GUARDED = Symbol.for('mmc.e2e.outsideGuard');
 
+// 지금 도는 시험의 창 기본값 (baseURL·isMobile) — fixtures.js가 시험마다 넣고 끝나면 비움
+// 기본 page·user 창은 빈 값으로 만들어지고 프로젝트 값은 Playwright 안에서 나중에 붙음 → 이 값을 같이 봐야 모바일 창을 알아봄
+let contextDefaults = null;
+
+/**
+ * 이 시험의 창 기본값 알리기 (Playwright 규칙대로 시험이 안 넘긴 칸만 이 값으로 채워 봄)
+ * @param {{ baseURL?:string, isMobile?:boolean }|null} defaults null이면 비움
+ * @example setContextDefaults({ baseURL: 'http://localhost:5274', isMobile: true }) // 모바일 프로젝트 시험
+ */
+function setContextDefaults(defaults) {
+    contextDefaults = defaults ? { ...defaults } : null;
+}
+
+// 창 옵션에 기본값 채우기: 넘긴 칸이 먼저 → 예: ({ baseURL: 관리자 }) + 기본 { isMobile: true } → { isMobile: true, baseURL: 관리자 }
+const withDefaults = (options) => {
+    const out = { ...(options ?? {}) };
+    for (const [key, value] of Object.entries(contextDefaults ?? {})) {
+        if (!(key in out) && value !== undefined) out[key] = value;
+    }
+    return out;
+};
+
 /**
  * 브라우저가 만드는 모든 창에 바깥 막기를 걸게 함 (한 브라우저에 한 번만)
  * user·page(기본 창)·players.add·시험이 직접 부른 browser.newContext·browser.newPage가 전부 이 길로 감
@@ -138,7 +160,7 @@ function guardBrowser(browser) {
     const browserName = browser.browserType().name();
     browser.newContext = async (options, ...rest) => {
         const context = await original(options, ...rest);
-        if (needsRoute(browserName, options)) {
+        if (needsRoute(browserName, withDefaults(options))) {
             try {
                 await guardContext(context);
             } catch (error) {
@@ -155,5 +177,5 @@ function guardBrowser(browser) {
 
 module.exports = {
     FAKE_AD, FAKE_AD_ENV, FAKE_ADSENSE_JS, AD_DOMAINS, TOSS_DOMAINS, BLOCKED_DOMAINS, BLOCK_URL_PATTERN, PROBE_HOST,
-    isAdHost, isTossHost, isBlockedHost, isAdScript, chromiumArgs, guardContext, needsRoute, guardBrowser,
+    isAdHost, isTossHost, isBlockedHost, isAdScript, chromiumArgs, guardContext, needsRoute, guardBrowser, setContextDefaults,
 };

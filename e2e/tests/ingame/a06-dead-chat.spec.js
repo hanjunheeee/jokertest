@@ -56,7 +56,7 @@ test('A06-E-044 죽은 사람 낮 글은 산 봇이 못 받음 (8명 판, 봇 1�
     expect(k.whoSaw(await k.aliveBots(t), text), '산 봇이 받음').toEqual([]);
 });
 
-test('A06-E-045 죽은 봇 글이 회색 줄로 (8명 판) → 죽은 사람 칸에 그 글이 회색 글자로 보임 @game', async ({ user, table }) => {
+test('A06-E-045 죽은 봇 글이 회색 이름으로 (8명 판) → 죽은 사람 칸에 그 글의 이름(띠 칸)만 회색 글자로 보이고 말은 기본색 @game', async ({ user, table }) => {
     test.setTimeout(300_000);
     const { t, deadBot } = await k.twoDead(table, user);
     const page = user.page;
@@ -65,11 +65,13 @@ test('A06-E-045 죽은 봇 글이 회색 줄로 (8명 판) → 죽은 사람 칸
     const text = c.uniq('죽은봇말');
     await k.botSayOk(t, t.bots.indexOf(deadBot), text);
     await c.expectLine(page, deadBot.nickname, text);
-    // 회색 = 빨강·초록·파랑 값이 같고 흰색·검정이 아님
-    const [r, g, b] = rgbOf(await c.lineColor(page, text));
+    // 회색 = 빨강·초록·파랑 값이 같고 흰색·검정이 아님 (이제 줄 전체가 아니라 이름 띠 칸만 회색)
+    const [r, g, b] = rgbOf(await c.nameColor(page, text));
     expect([g, b], '회색 (세 값이 같음)').toEqual([r, r]);
     expect(r).toBeGreaterThan(60);
     expect(r).toBeLessThan(230);
+    // 말은 늘 기본 글자색: 이름 회색과 달라야 함 (회색이 말까지 번졌는지 확인)
+    expect(rgbOf(await c.lineColor(page, text)), '말은 회색이 아닌 기본색').not.toEqual([r, g, b]);
 });
 
 test('A06-E-046 죽은 사람도 낮 말을 읽음 (8명 판) → 산 봇 낮 채팅이 죽은 사람 칸에 보임 @game', async ({ user, table }) => {

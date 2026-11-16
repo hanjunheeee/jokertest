@@ -94,7 +94,7 @@ test('A09-H-003 8명 판(사람 2 + 봇 6) ㄴ이 오프라인 61초 → ㄴ 화
 
     // 61초 넘어 온라인 → 까닭 글 + 방 목록
     await K.sleepUntil(dropAt + GRACE_MS + TOL);
-    gate.open();
+    await gate.open();
     await H.expectForfeited(b.page, messages);
 });
 
@@ -329,7 +329,7 @@ test('A09-H-014 8명 판(사람 2 + 봇 6) ㄴ 오프라인 → 30초 안에 마
 
     // 끊긴 지 60초가 지나도 탈락·탈주 처리 없음
     await K.sleepUntil(dropAt + GRACE_MS + TOL);
-    gate.open();
+    await gate.open();
     expect(await H.desertionRows(U(b))).toEqual([]);
     const tab = await b.context.newPage();
     H.collectDialogs(tab);

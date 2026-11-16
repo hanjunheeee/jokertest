@@ -98,7 +98,7 @@ test('A09-H-052 [지금 동작] [5명 방] 사람 2 + 봇 3, 준비한 ㄴ이 �
     const cutAt = Date.now();
     await gate.cut();
     await K.sleepUntil(cutAt + ROOM_GRACE_MS - 3000);
-    gate.open();
+    await gate.open();
     await b.page.reload();
     await expect(b.page).toHaveURL(/\/game-matching/);
     await expect(b.page.getByRole('button', { name: '준비취소' })).toBeVisible({ timeout: 10_000 });

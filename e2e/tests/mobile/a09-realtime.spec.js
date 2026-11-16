@@ -36,7 +36,7 @@ test('A09-E-089 모바일 6명 판, 오프라인 59초 → 온라인 → 산 채
     // (60초 규칙·허용 폭은 그대로: 붙은 때가 60초 전인지 그대로 봄)
     await K.sleepUntil(droppedAt + 59_000 - RETURN_LEAD_MS);
     const since = Date.now();
-    gate.open();
+    await gate.open();
     await page.reload();
     const backAt = await K.returnedAt(t, me, since, { timeoutMs: 15_000 });
     expect(backAt - droppedAt, `끊긴 지 ${backAt - droppedAt}ms에 돌아옴 (60초 전이어야 함)`).toBeLessThan(K.GRACE_MS);
@@ -105,7 +105,7 @@ test('A09-E-112 모바일 7명 판(투표 30), 오프라인 35초 동안 투표 
     await K.sleepUntil(droppedAt + 35_000);
     const since = Date.now();
     // 길을 열면 화면 소켓이 스스로 다시 붙음 (다음 시도까지 최대 7.5초)
-    gate.open();
+    await gate.open();
     const backAt = await K.returnedAt(t, me, since, { timeoutMs: 15_000 });
     expect(backAt - droppedAt, '60초 전에 돌아옴').toBeLessThan(K.GRACE_MS);
 

@@ -105,7 +105,7 @@ test('A09-E-073 PC 6명 판, 네트워크 끊고 나가기 확인 → "게임에
         // 나가기가 안 갔으니 서버 판에선 산 채
         expect((await t.player(me)).alive).toBe(true);
     } finally {
-        gate.open();
+        await gate.open();
     }
 });
 

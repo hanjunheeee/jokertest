@@ -91,6 +91,15 @@ async function lineColor(page, text) {
     return row.locator('span').last().evaluate((el) => getComputedStyle(el).color);
 }
 
+/** 채팅 한 줄 보낸 사람 이름 칸(띠)의 글자색 (rgb) — 이름만 색을 입고 말은 늘 기본색이라 죽은 사람 줄의 회색은 여기서 봄, 띠가 없으면 시험이 실패함 */
+async function nameColor(page, text) {
+    const row = chatLog(page).getByRole('listitem').filter({ hasText: text }).first();
+    await expect(row).toBeVisible();
+    const band = row.locator('[data-chat-name-band]');
+    await expect(band, '이름 띠 칸').toHaveCount(1);
+    return band.evaluate((el) => getComputedStyle(el).color);
+}
+
 const deadBadge = (page) => page.getByText('죽은 사람끼리', { exact: true });
 
 /** 판 차리고 사람 모두 역할 공개 창 닫기 → Table (봇 기본 4: 사람 1명이면 5명 판) */
@@ -208,6 +217,6 @@ const selfCard = (page, nickname) => page.getByRole('button', { name: new RegExp
 
 module.exports = {
     CONFIRM_DIALOGS, dismissOverlays, readyToChat, chatBox, chatLog, sendButton, line, say, expectLine, expectNoText,
-    lineChannel, lineColor, deadBadge, startGame, isDead, replan, executeByBots, killAtNight, phaseTo,
+    lineChannel, lineColor, nameColor, deadBadge, startGame, isDead, replan, executeByBots, killAtNight, phaseTo,
     botSay, botNightSay, botGot, uniq, addBannedWord, removeBannedWord, watchSocket, card, selfCard, sleep, phaseReady, skipDawnVideo,
 };

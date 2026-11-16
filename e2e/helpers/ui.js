@@ -82,14 +82,18 @@ async function readRoleReveal(page, { close = true } = {}) {
  * 모바일 결과 화면의 한 판 끝 광고 창 닫기 — 결과판이 나타나고 1.5초 뒤 뜨고 5초 지나야 "닫기"가 나옴
  * 광고 창은 결과판을 덮어 "대기방으로"·"로비로"를 못 누르게 함 → 모바일 결과 화면에서 단추를 누르기 전에 부름
  * PC엔 광고가 없고, 이미 닫았거나 안 뜨면 appearMs 뒤 그냥 지나감 (광고 자체를 보는 시험은 부르지 않음)
- * @returns {Promise<boolean>} 닫았으면 true
+ * 광고 꾸러미를 못 받은 창은 "닫기" 전에 스스로 닫힘 → "닫기 누름"이나 "창 0개" 중 먼저 된 쪽으로 끝냄
+ * @returns {Promise<boolean>} 떴다가 닫혔으면 true
  */
 async function closeResultAd(page, { appearMs = 4000 } = {}) {
     const ad = page.locator('[data-interstitial-ad]');
     const shown = await ad.waitFor({ state: 'visible', timeout: appearMs }).then(() => true, () => false);
     if (!shown) return false;
-    await ad.getByRole('button', { name: '닫기', exact: true }).click({ timeout: 10_000 });
-    await expect(ad).toHaveCount(0);
+    await expect(async () => {
+        if ((await ad.count()) === 0) return;
+        await ad.getByRole('button', { name: '닫기', exact: true }).click({ timeout: 1000 });
+        await expect(ad).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     return true;
 }
 

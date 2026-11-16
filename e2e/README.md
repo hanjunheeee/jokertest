@@ -96,7 +96,7 @@ bash ../tools/시험도구/br/all.sh
 - 실행 시작 때 크로미움 시작 값이 진짜 먹는지 한 번 확인함. 안 먹으면 `E2E_OUTSIDE_ROUTE=all`로 바꿔 모든 창에 가로채기를 검 (경고 글이 찍힘)
 - 가로채기를 건 창은 브라우저 캐시(잠깐 저장해 두기)가 꺼짐(Playwright 규칙) → 그래서 꼭 필요한 창(모바일·사파리)에만 검
 - 시험이 자기 가로채기를 나중에 걸면 그쪽이 먼저 불림 → 광고 시험(`_a18-kit.js` `guardAds`)·충전 시험(`blockToss`)은 그대로 돎
-- **모바일 결과 화면의 한 판 끝 광고 창**: 결과판이 나오고 1.5초 뒤 뜨고, 5초 지나야 "닫기"가 나옴. 결과판을 덮으므로 단추를 누르기 전에 `ui.closeResultAd(page)`로 닫음
+- **모바일 결과 화면의 한 판 끝 광고 창**: 결과판이 나오고 1.5초 뒤 뜨고, 5초 지나야 "닫기"가 나옴. 결과판을 덮으므로 단추를 누르기 전에 `ui.closeResultAd(page)`로 닫음 (창이 스스로 닫혀도 끝남)
 - 아직 나가는 것: 글꼴 주소(`fonts.googleapis.com`·`cdn.jsdelivr.net`) — 막으면 글꼴이 바뀌어 자리·대비 확인이 달라져서 그대로 둠
 
 ## 5. 프로젝트 일곱
@@ -211,7 +211,7 @@ const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, ni
 |---|---|
 | `internal.js` | `internal.announceTo(uuids)` 공지 · `internal.disconnect(uuid)` 강제 끊기 · `reloadMaintenance()`·`reloadBannedWords()` 다시 읽기 · `e2e.setRoles`·`gameOf`·`roomOf`·`advance`·`expireGraces`·`closeResults` (열쇠는 `.env.e2e`) |
 | `ui.js` | `gotoLobby` · `loginViaUi`·`loginViaApi` · `joinRoomByCodeUi` · `readyUi` · `readRoleReveal` · `closeOverlays`(연출 창 닫기 — 못 끝난 암살 영상의 "건너뛰기"도 누름) · `closeResultAd`(모바일 광고 창 닫기) · `sendChat`·`expectChat` · `captureAlert` · `ROLE_LABELS` |
-| `visible.js` | `expectReadable(locator, { large?, contrast? })` · `expectAllReadable` · `readability` — 그림 단추는 안쪽 글 칸의 글자색을 읽음, `pointer-events:none` 글도 "안 가려짐"으로 바르게 봄 |
+| `visible.js` | `expectReadable(locator, { large?, contrast? })` · `expectAllReadable` · `readability` — 그림 단추는 안쪽 글 칸의 글자색을 읽음, `pointer-events:none` 글도 "안 가려짐"으로 바르게 봄, 가려짐은 요소 가운데 + 글 가운데·양 끝을 보고 바탕 없는 투명 칸은 가림으로 안 침 |
 | `accounts.js` | 계정 만들기·지우기, `randomNickname()`·`koreanNickname()`(한글로 시작하는 겹치지 않는 닉네임). 무작위 닉네임이 겹치면 새 닉네임으로 다시 만듦 |
 | `adminAccounts.js` · `adminAccess.js` | `createAdmin()` · `loginAsAdmin(page, account)` · `openAdminWindow(browser, { phone? })`(관리자 창 + 로그인) · `adminCall`·`adminApi(adminPage, method, path, data)`(관리자 API 부르기) · `allowAccess`·`denyAccess`(Access 통과 쿠키) |
 | `maintenance.js` | `setMaintenance({ enabled, startsInMs?, message? })` — `startsInMs`를 안 주면 **시작 시각 없이** 켬(새 판만 막음) · `clearMaintenance()` (`@serial` 시험만, finally에서 꼭 끔) |

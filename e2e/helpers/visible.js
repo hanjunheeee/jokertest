@@ -6,7 +6,7 @@
 // 쓰는 법
 //   const { expectReadable, expectAllReadable, readability, contrastRatio } = require('../../helpers/visible');
 //
-//   // 기본: 보임 + 크기 0 아님 + 화면 안 + 가운데가 안 가려짐 + 대비 4.5 이상 (큰 글자는 3 이상, 글자 크기 보고 알아서)
+//   // 기본: 보임 + 크기 0 아님 + 화면 안 + 안 가려짐(가운데·글 양 끝) + 대비 4.5 이상 (큰 글자는 3 이상, 글자 크기 보고 알아서)
 //   await expectReadable(page.getByRole('button', { name: '추방' }));
 //   await expectReadable(page.getByText('잔액이 부족합니다'));
 //   // 큰 글자로 치기 (24px 넘거나 18.66px 넘는 굵은 글자는 알아서 큰 글자로 봄)
@@ -30,8 +30,11 @@
 // 그림 단추 (단추 안에 그림 + 글 칸이 따로 있는 것 — 대기방 "준비완료"·"게임시작" 등)
 //   - 글자색·글자 크기는 단추가 아니라 글이 실제로 그려지는 안쪽 글 칸에서 읽음 (단추에 바로 붙은 글이 없을 때만, 화면 읽기 전용으로 접어 둔 글은 건너뜀)
 //   - 그 글 칸 뒤에 그림이 깔려 있으면 바탕색은 사진으로 봄 → 단추에 바로 expectReadable을 써도 됨
-// pointer-events:none인 글·알림 칸: 가운데 점 확인 때만 잠깐 누를 수 있게 바꿔 봄 (안 그러면 늘 "가려짐"으로 나옴)
-// 못 잡는 것: pointer-events:none인 덮개(elementFromPoint가 지나침), 글자 그림자·테두리로만 읽히는 글
+// 가려짐: 요소 가운데 + 글 상자 가운데·왼쪽 1/8·오른쪽 7/8 네 점에서, 위에 겹친 남의 요소 중 눈에 보이는 것(바탕색·그림·테두리·글)이 있으면 가려짐
+//   - 바탕 없는 투명 칸이 겹친 것은 가림 아님 (글이 그대로 보임), 반투명 막은 가림
+//   - 자기 조상·자식은 가림 아님, 가장자리 1~2px 겹침은 안 봄
+// pointer-events:none인 글·알림 칸: 가려짐 확인 때만 잠깐 누를 수 있게 바꿔 봄 (안 그러면 아래 칸을 덮개로 봄)
+// 못 잡는 것: pointer-events:none인 덮개(elementsFromPoint가 지나침), 글자 그림자·테두리로만 읽히는 글
 const { expect } = require('@playwright/test');
 const zlib = require('node:zlib');
 
@@ -313,21 +316,88 @@ function inPage(el, action) {
         else if (scan.sideColor) needsPixels = true;
     }
     const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
     const isOwn = (n) => Boolean(n && (n === el || el.contains(n)));
-    let hit = document.elementFromPoint(cx, cy);
-    // pointer-events:none인 요소는 elementFromPoint가 건너뛰어 늘 "가려짐"으로 나옴 → 잠깐 누를 수 있게 바꿔 다시 보고 바로 되돌림
-    if (!isOwn(hit) && getComputedStyle(el).pointerEvents === 'none') {
+    // 그 점에서 눈에 보이는 무언가를 그리는 요소인지 (안 그리는 투명 칸은 덮어도 글이 그대로 보임 → 가림 아님)
+    // 그림·입력 칸·바탕색(반투명 막 포함)·바탕 그림·뒤 흐림·안쪽 그림자·자기 글·보이는 덧칸·그 점의 테두리 = 그림
+    // 자식이 그 점에 그리면 자식이 겹친 목록에서 더 위에 나와 따로 걸림
+    const paintsAt = (n, x, y) => {
+        if (n.closest('svg') || ['IMG', 'CANVAS', 'VIDEO', 'PICTURE', 'IFRAME', 'EMBED', 'OBJECT', 'INPUT', 'TEXTAREA', 'SELECT'].includes(n.tagName)) return true;
+        let alpha = 1;
+        for (let p = n; p && p.nodeType === 1; p = p.parentElement) alpha *= Number.parseFloat(getComputedStyle(p).opacity || '1');
+        // 거의 완전히 투명(opacity 0 쪽)한 칸은 안 보임
+        if (alpha < 0.05) return false;
+        const s = getComputedStyle(n);
+        if (alphaOf(toRgb(s.backgroundColor)) > 0 || s.backgroundImage !== 'none') return true;
+        if ((s.backdropFilter && s.backdropFilter !== 'none') || /inset/.test(s.boxShadow)) return true;
+        if (hasOwnText(n)) return true;
+        const pseudoShows = ['::before', '::after'].some((which) => {
+            const ps = getComputedStyle(n, which);
+            if (ps.content === 'none' || ps.content === 'normal') return false;
+            return !/^(""|'')$/.test(ps.content) || ps.backgroundImage !== 'none' || alphaOf(toRgb(ps.backgroundColor)) > 0
+                || ['Top', 'Right', 'Bottom', 'Left'].some((side) => Number.parseFloat(ps[`border${side}Width`]) > 0 && ps[`border${side}Style`] !== 'none');
+        });
+        if (pseudoShows) return true;
+        // 테두리는 가장자리 띠에만 그려짐 → 그 점이 띠 안이면 그림 (예: 테두리만 있는 빈 틀 안쪽 글은 안 가림)
+        const band = (side) => {
+            const style = s[`border${side}Style`];
+            if (style === 'none' || style === 'hidden' || alphaOf(toRgb(s[`border${side}Color`])) <= 0) return 0;
+            return Number.parseFloat(s[`border${side}Width`]) || 0;
+        };
+        const r = n.getBoundingClientRect();
+        return x < r.left + band('Left') || x > r.right - band('Right') || y < r.top + band('Top') || y > r.bottom - band('Bottom');
+    };
+    // 한 점에서 위→아래로 보며 처음 나오는 "눈에 보이는 남의 요소" (없으면 null)
+    // 자기·자식이 먼저 나오거나 조상까지 내려오면(그 점엔 자기가 안 깔림 — 여러 줄 글 틈 등) 안 가려짐
+    const coverAt = (x, y) => {
+        for (const n of document.elementsFromPoint(x, y)) {
+            if (isOwn(n) || n.contains(el)) return null;
+            if (paintsAt(n, x, y)) return n;
+        }
+        return null;
+    };
+    // 볼 점: 요소 가운데(예전 점) + 글 상자 가운데·왼쪽 1/8·오른쪽 7/8 (글 앞뒤가 단추 밑에 들어간 것 잡기)
+    // 글 상자는 넘침을 자르는 조상(말줄임 등) 안으로 줄임 → 잘려 안 보이는 글 자리를 옆 칸으로 잘못 보지 않게
+    // 양 끝 점은 가장자리에서 1/8(최소 2px) 안쪽 → 1~2px 겹침은 가림 아님
+    const checkPoints = () => {
+        const points = [{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, where: '요소 가운데', keepOffscreen: true }];
+        let box = { left: textRect.left, right: textRect.right, top: textRect.top, bottom: textRect.bottom };
+        for (let node = textEl; node && node.nodeType === 1; node = node === el ? null : node.parentElement) {
+            const s = getComputedStyle(node);
+            if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+            const r = node.getBoundingClientRect();
+            box = { left: Math.max(box.left, r.left), right: Math.min(box.right, r.right), top: Math.max(box.top, r.top), bottom: Math.min(box.bottom, r.bottom) };
+        }
+        const w = box.right - box.left;
+        const h = box.bottom - box.top;
+        if (w > 0 && h > 0) {
+            const inset = Math.min(w / 2, Math.max(w / 8, 2));
+            const y = box.top + h / 2;
+            points.push({ x: box.left + w / 2, y, where: '글 가운데' }, { x: box.left + inset, y, where: '글 왼쪽' }, { x: box.right - inset, y, where: '글 오른쪽' });
+        }
+        for (const p of points) {
+            const inside = p.x >= 0 && p.y >= 0 && p.x < window.innerWidth && p.y < window.innerHeight;
+            // 화면 밖 점: 요소 가운데는 예전처럼 가려짐(덮은 것 없음)으로, 글 점은 건너뜀 (화면 밖은 inViewport가 따로 잡음)
+            if (!inside) {
+                if (p.keepOffscreen) return { hit: null, where: p.where };
+                continue;
+            }
+            const hit = coverAt(p.x, p.y);
+            if (hit) return { hit, where: p.where };
+        }
+        return null;
+    };
+    let cover = checkPoints();
+    // pointer-events:none인 요소는 elementsFromPoint가 건너뛰어 아래 칸을 덮개로 봄 → 잠깐 누를 수 있게 바꿔 다시 보고 바로 되돌림
+    if (cover && getComputedStyle(el).pointerEvents === 'none') {
         const before = el.getAttribute('style');
         el.style.setProperty('pointer-events', 'auto', 'important');
         try {
-            hit = document.elementFromPoint(cx, cy);
+            cover = checkPoints();
         } finally {
             if (before === null) el.removeAttribute('style'); else el.setAttribute('style', before);
         }
     }
-    const covered = !isOwn(hit);
+    const covered = Boolean(cover);
     const describe = (n) => {
         if (!n) return '없음';
         const label = n.getAttribute('aria-label') || (n.innerText || '').trim().slice(0, 30);
@@ -352,7 +422,7 @@ function inPage(el, action) {
         // 사진 찍을 글 상자 (화면 안으로 자름, 사진은 화면 기준 자리)
         clip: clipOf(textRect),
         covered,
-        coveredBy: covered ? describe(hit) : null,
+        coveredBy: covered ? `${describe(cover.hit)} (${cover.where})` : null,
         viewport: { width: window.innerWidth, height: window.innerHeight },
         rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
     };
@@ -432,7 +502,7 @@ async function readability(locator, { method = 'auto', large } = {}) {
  * @param {object} [o]
  * @param {boolean} [o.large] 큰 글자로 칠지 (안 주면 글자 크기 보고 정함)
  * @param {boolean} [o.contrast=true] 대비 볼지 (글 없는 그림 단추는 false)
- * @param {boolean} [o.uncovered=true] 가운데가 다른 것에 안 가려졌는지 볼지
+ * @param {boolean} [o.uncovered=true] 다른 것에 안 가려졌는지 볼지 (요소 가운데·글 가운데·글 양 끝)
  * @param {number} [o.minRatio] 대비 기준 덮어쓰기 (기준을 낮추는 데 쓰지 않음)
  * @param {'auto'|'dom'|'pixels'} [o.method='auto'] 바탕색 찾는 법
  * @param {number} [o.timeout] 보일 때까지 기다리는 시간 (기본 expect 시간)
@@ -460,7 +530,7 @@ function problemsOf(r, { contrast, uncovered, minRatio }) {
     if (!(r.rect.width > 0 && r.rect.height > 0)) out.push(`크기 0 (${r.rect.width}×${r.rect.height})`);
     if (!r.inViewport) out.push(`화면 밖 (위치 ${Math.round(r.rect.x)},${Math.round(r.rect.y)} 크기 ${Math.round(r.rect.width)}×${Math.round(r.rect.height)}, 화면 ${r.viewport.width}×${r.viewport.height})`);
     if (r.opacity < MIN_OPACITY) out.push(`거의 투명 (opacity ${r.opacity})`);
-    if (uncovered && r.covered) out.push(`가운데가 다른 것에 가려짐: ${r.coveredBy}`);
+    if (uncovered && r.covered) out.push(`다른 것에 가려짐: ${r.coveredBy}`);
     if (contrast) {
         const need = Math.max(minRatio ?? 0, r.minRatio);
         if (!r.hasText) out.push('글이 없어 대비를 못 셈 (그림 단추면 { contrast: false })');

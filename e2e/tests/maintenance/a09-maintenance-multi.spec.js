@@ -48,7 +48,7 @@ test('A09-H-058 6명 판(사람 2 + 봇 4) ㄴ 오프라인 중 점검으로 판
 
     // 끊긴 때부터 60초가 지나도 탈주로 안 적힘 (끊김 기다림도 판과 같이 끝남)
     await K.sleepUntil(dropAt + GRACE_MS + TOL);
-    gate.open();
+    await gate.open();
     expect(await H.desertionRows(U(b)), '탈주 줄 없음').toEqual([]);
     const tab = await b.context.newPage();
     H.collectDialogs(tab);

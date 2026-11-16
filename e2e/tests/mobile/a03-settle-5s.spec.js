@@ -4,7 +4,7 @@
 // 목록 A03-낮투표.md A03-E-073~078·080·082·084·098·100·102·104·107·109·112 (모바일 몫), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a03-settle-5s.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { sleep } = require('../../helpers/wait');
-const { talk, startTalkGame, toDay, toVote, clearOverlays, getExecuted } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays, getExecuted } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -126,17 +126,33 @@ const OUTCOME_TEXT = Object.freeze({
     ABSTAINED: '전원 기권',
 });
 
-// 판정 뒤 화면: 현황 결과 글 + 재판이면 재판 창(피고 이름), 밤이면 밤 안내·재판 창 없음
+// 판정 뒤 화면: 재판이면 재판 창(피고 이름) + 현황 창 닫힘, 밤이면 현황 결과 글 + 밤 안내·재판 창 없음
+// 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 결과 글·기권 수는 statusAfterTribunal로 밤에 다시 열어 봄
+// (닫히는 움직임 동안 글을 읽으면 맞았다 틀렸다 함 — a03-vote-pick.spec.js와 같은 방식)
 async function expectOutcome(page, panel, kind, targetNick) {
-    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     const tribunal = page.locator('[data-ingame-tribunal-presentation]');
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible();
+        await expect(tribunal).toBeVisible({ timeout: 15_000 });
         await expect(tribunal).toContainText(targetNick);
+        await expect(panel).toBeHidden();
         return;
     }
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toContainText('밤이 되었습니다');
     await expect(tribunal).toHaveCount(0);
+}
+
+// 재판을 아무도 판정 안 낸 채 끝내고(손잡이) 밤으로 → 현황 창을 다시 열면 그날 결과 "재판 회부" 그대로 → 창
+async function statusAfterTribunal(t, page) {
+    await toNight(t, page);
+    const panel = page.getByRole('dialog', { name: '투표 현황' });
+    await expect(async () => {
+        await clearOverlays(page);
+        if (!(await panel.isVisible())) await page.getByRole('button', { name: '투표 현황 열기' }).click({ timeout: 2_000 });
+        await expect(panel).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT.TRIBUNAL);
+    return panel;
 }
 
 // 단계 줄 남은 초 ("제 1일 · 5초 뒤 마감 0:04" → 4, 시계 없으면 null)
@@ -268,7 +284,8 @@ test('A03-E-098 모바일 6명 판 봇 1이 안 냄 → "5초 뒤 마감" 안 �
     await expect(talk.phaseLine(user.page)).not.toContainText('5초 뒤 마감');
     await expectAtDeadline(t.bots[1], deadline, 1);
     await expectOutcome(user.page, panel, 'TRIBUNAL', names.get(X));
-    await expect(panel.getByTestId('vote-status-public-abstain-count')).toHaveText('1');
+    // 재판 동안 현황 창이 닫혀 있음 → 밤에 다시 연 창의 기권 칸
+    await expect((await statusAfterTribunal(t, user.page)).getByTestId('vote-status-public-abstain-count')).toHaveText('1');
 });
 
 test('A03-E-100 모바일 6명 판 봇 1 소켓 끊김(60초 안) → 다 찬 것 아님, 원래 마감에 판정 @game @realtime', async ({ user, table }) => {
@@ -286,7 +303,8 @@ test('A03-E-100 모바일 6명 판 봇 1 소켓 끊김(60초 안) → 다 찬 �
     await expectAtDeadline(t.bots[1], deadline, 1);
     await expect(talk.phaseLine(user.page)).not.toContainText('5초 뒤 마감');
     await expectOutcome(user.page, panel, 'TRIBUNAL', names.get(X));
-    await expect(panel.getByTestId('vote-status-public-abstain-count')).toHaveText('1');
+    // 재판 동안 현황 창이 닫혀 있음 → 밤에 다시 연 창의 기권 칸
+    await expect((await statusAfterTribunal(t, user.page)).getByTestId('vote-status-public-abstain-count')).toHaveText('1');
 });
 
 test('A03-E-102 모바일 7명 판 안 낸 봇이 나감 → 남은 사람 다 냄 → 5초 뒤 판정 @game @realtime', async ({ user, table }) => {

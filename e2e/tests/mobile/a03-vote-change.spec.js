@@ -111,15 +111,18 @@ const OUTCOME_TEXT = Object.freeze({
     ABSTAINED: '전원 기권',
 });
 
-// 판정 뒤 화면: 현황 결과 글 + 재판이면 재판 창(피고 이름), 밤이면 밤 안내·재판 창 없음
+// 판정 뒤 화면: 재판이면 재판 창(피고 이름) + 현황 창 닫힘, 밤이면 현황 결과 글 + 밤 안내·재판 창 없음
+// 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지만 봄
+// (닫히는 움직임 동안 글을 읽으면 맞았다 틀렸다 함 — a03-vote-pick.spec.js와 같은 방식)
 async function expectOutcome(page, panel, kind, targetNick) {
-    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     const tribunal = page.locator('[data-ingame-tribunal-presentation]');
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible();
+        await expect(tribunal).toBeVisible({ timeout: 15_000 });
         await expect(tribunal).toContainText(targetNick);
+        await expect(panel).toBeHidden();
         return;
     }
+    await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toContainText('밤이 되었습니다');
     await expect(tribunal).toHaveCount(0);
 }

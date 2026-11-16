@@ -113,15 +113,19 @@ async function botsBy(t, role) {
 
 /**
  * 화면 소켓 길목 (그 사람 브라우저 창 전부, 판에 들어가기 전에 걸어야 그 뒤 소켓이 이 길로 감)
- * cut()  열린 소켓을 닫고 새 접속도 거절 → 서버는 바로 끊김을 앎 (= 그 사람이 오프라인)
- * open() 다시 붙게 풂 → 화면 소켓이 스스로 다시 붙음 (= 온라인)
+ * cut()  열린 소켓을 닫고 그 사람 창을 오프라인으로 → 서버는 바로 끊김을 앎 (= 그 사람이 오프라인)
+ * open() 온라인으로 되돌림 → 화면 소켓이 스스로 다시 붙음 (= 온라인), 돌려주는 약속을 기다리면 온라인이 된 뒤
+ * 끊긴 동안 다시 붙기는 오프라인으로 실패시킴: 길목이 그냥 닫으면 화면 socket.io가 실패로 안 보고 접속 제한 20초를 다 기다려
+ * 다시 붙기가 20초 넘게 늦어짐(60초 규칙 시험이 흔들림), 오프라인 실패는 오류로 보여 1~3초 뒤 다시 붙음 (_a01b-kick-kit.js 길목과 같은 방식)
+ * 오프라인(context.setOffline)은 이미 열린 웹소켓을 못 끊어 열린 것은 이 길목이 닫음
  */
 async function socketGate(person) {
     const gate = { offline: false, opened: 0, refused: 0, pairs: [] };
     await person.context.routeWebSocket(/\/socket\.io\//, (ws) => {
         if (gate.offline) {
             gate.refused += 1;
-            ws.close();
+            // 오프라인이라 서버 연결이 실패 → 화면 소켓에 오류·닫힘이 감
+            ws.connectToServer();
             return;
         }
         const server = ws.connectToServer();
@@ -130,12 +134,17 @@ async function socketGate(person) {
     });
     gate.cut = async () => {
         gate.offline = true;
+        await person.context.setOffline(true);
         for (const { ws, server } of gate.pairs.splice(0)) {
             await Promise.resolve(server.close()).catch(() => {});
             await Promise.resolve(ws.close()).catch(() => {});
         }
     };
-    gate.open = () => { gate.offline = false; };
+    // 길목 표시를 먼저 풂: 온라인이 되기 전 시도는 그냥 실패해 다시 붙음 (거꾸로면 표 없이 붙은 소켓이 생겨 다음 cut이 못 닫음)
+    gate.open = () => {
+        gate.offline = false;
+        return person.context.setOffline(false).catch(() => {});
+    };
     return gate;
 }
 
@@ -150,7 +159,7 @@ async function goOffline(t, person, gate) {
 async function goOnline(t, person, gate, { at = 0 } = {}) {
     await K.sleepUntil(at);
     const since = Date.now();
-    gate.open();
+    await gate.open();
     return K.returnedAt(t, U(person), since, { timeoutMs: 20_000 });
 }
 
@@ -171,13 +180,17 @@ async function statusAt(page, nickname, status, { timeout = 20_000 } = {}) {
 async function watchStatus(page, nickname) {
     await page.evaluate((name) => {
         window.__a09Status = window.__a09Status ?? {};
+        // 바뀐 때(ms)도 같이 적음 → statusSpans가 상태마다 얼마나 갔는지 셈
+        window.__a09StatusAt = window.__a09StatusAt ?? {};
         const log = [];
+        const at = [];
         window.__a09Status[name] = log;
+        window.__a09StatusAt[name] = at;
         let last;
         const scan = () => {
             const el = [...document.querySelectorAll('[data-ingame-player-nickname]')].find((e) => e.getAttribute('data-ingame-player-nickname') === name);
             const now = el ? el.getAttribute('data-ingame-player-status') : null;
-            if (now !== last) { log.push(now); last = now; }
+            if (now !== last) { log.push(now); at.push(performance.now()); last = now; }
         };
         new MutationObserver(scan).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-ingame-player-status'] });
         scan();
@@ -188,6 +201,27 @@ async function watchStatus(page, nickname) {
 async function statusSeen(page, nickname) {
     const raw = await page.evaluate((name) => window.__a09Status?.[name] ?? [], nickname);
     return raw.filter(Boolean).filter((v, i, list) => i === 0 || v !== list[i - 1]);
+}
+
+/**
+ * 적어 둔 상태마다 머문 시간 (카드가 잠깐 없던 때는 앞 상태에 붙이고 같은 값은 합침, 마지막 것은 지금까지)
+ * → 예: [{ status: 'alive', ms: 8000 }, { status: 'disconnected', ms: 1200 }, { status: 'alive', ms: 5000 }]
+ */
+async function statusSpans(page, nickname) {
+    const raw = await page.evaluate((name) => {
+        const log = window.__a09Status?.[name] ?? [];
+        const at = window.__a09StatusAt?.[name] ?? [];
+        const end = performance.now();
+        return log.map((status, i) => ({ status, ms: (i + 1 < at.length ? at[i + 1] : end) - at[i] }));
+    }, nickname);
+    const out = [];
+    for (const span of raw) {
+        const prev = out[out.length - 1];
+        if (!span.status) { if (prev) prev.ms += span.ms; continue; }
+        if (prev?.status === span.status) prev.ms += span.ms;
+        else out.push({ ...span });
+    }
+    return out;
 }
 
 /** 봇이 그 사건을 받은 때(ms)와 값 (since 뒤 것만) → { payload, at } */
@@ -390,7 +424,7 @@ async function expectNoVoteItem(page, nickname) {
 module.exports = {
     U, nick, TOL, GRACE_MS, REOPEN_AT_MS, ROOMY, FAST, TEXT, ROLE_WORDS,
     openPeople, compositionOf, rolePlan, seat, botsBy, socketGate, goOffline, goOnline,
-    expectStatus, statusAt, watchStatus, statusSeen, eventAt, reloadIngame, expectNoRoleOnCard, collectDialogs, expectForfeited,
+    expectStatus, statusAt, watchStatus, statusSeen, statusSpans, eventAt, reloadIngame, expectNoRoleOnCard, collectDialogs, expectForfeited,
     deadlineOf, phaseLabel, readClock, expectMyRole, toVote, pickDefendant, botsJudge, execute,
     desertionRows, gold, wonOf, openAdmin, adminApi, openDesertions, desertionCells, minuteMs, expectNoVoteItem,
 };

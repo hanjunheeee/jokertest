@@ -9,6 +9,13 @@ const N = require('../ingame/b-night/_night');
 
 const { test, expect, mn, N1, N2, U } = K;
 
+// 정지 없는 강제 끊기는 안내 글만 띄우고 /login으로 안 가며, 로비에 남아 다시 붙음(세션이 살아 있음)
+async function expectStaysInLobby(page) {
+    await expect(page).not.toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/lobby$/, { timeout: 15_000 });
+    await expectReadable(page.getByRole('button', { name: '친구 목록' }), { contrast: false });
+}
+
 // 로그인 화면으로 나왔는지: 주소 + "로그인" 단추가 눌리는 자리에 읽힘
 async function expectLoginScreen(page) {
     await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
@@ -37,7 +44,7 @@ test('A17-H-025 서버 ㄴ 6명 판 중인 사람을 관리자가 정지(요청�
     }
 });
 
-test('A17-H-026 서버 ㄴ 로비 사람을 관리자가 강제 끊기(요청은 서버 ㄱ이 받음) → 그 사람 화면 끊김 안내 + 로그인 화면 @hard', async ({ browser, crowd }) => {
+test('A17-H-026 서버 ㄴ 로비 사람을 관리자가 강제 끊기(요청은 서버 ㄱ이 받음) → 그 사람 화면 끊김 안내 + 로그인 화면으로 안 가고 로비에 남음 @hard', async ({ browser, crowd }) => {
     const me = await crowd.on(N2);
     const admin = await K.openAdmin(browser);
     try {
@@ -47,7 +54,7 @@ test('A17-H-026 서버 ㄴ 로비 사람을 관리자가 강제 끊기(요청은
             { timeoutMs: 20_000 },
         );
         expect(text).toBe(K.TEXT.adminCut);
-        await expectLoginScreen(me.page);
+        await expectStaysInLobby(me.page);
     } finally {
         await admin.close();
     }

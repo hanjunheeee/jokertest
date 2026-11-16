@@ -40,10 +40,37 @@ async function closeDawnReport(page) {
     if ((await report.count()) > 0) await report.getByRole('button', { name: '확인' }).click({ timeout: 2000 }).catch(() => {});
 }
 
-/** 역할 공개 창 닫기 (떠 있으면) */
+// 역할 창이 더는 저절로 안 뜨는 것으로 본 화면 (주소 바뀌면 다시 봄)
+const revealSettled = new WeakSet();
+const revealWatched = new WeakSet();
+// 판 상태가 막 온 때 창이 그려질 틈
+const REVEAL_GRACE_MS = 1500;
+
+/**
+ * 역할 공개 창 닫기 (떠 있으면, 아직 뜰 수 있으면 잠깐 기다렸다가)
+ * 창은 판 상태(카드)를 처음 받은 바로 뒤 뜸 → 판 차리자마자·새 기기로 들어온 직후엔 늦게 떠서 낮까지 남을 수 있음
+ * 카드가 안 왔으면 카드나 창까지(10초), 그 뒤 1.5초 더 봄 — 한 화면에서 한 번만, 그 뒤 부름은 떠 있는지만 봄 (되풀이로 불러도 안 느려짐)
+ */
 async function closeRoleReveal(page) {
     const dialog = page.getByRole('dialog', { name: '내 역할 보기' });
-    if (await dialog.isVisible().catch(() => false)) await dialog.getByRole('button', { name: '확인' }).click().catch(() => {});
+    if (!revealWatched.has(page)) {
+        revealWatched.add(page);
+        page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) revealSettled.delete(page); });
+    }
+    let shown = await dialog.isVisible().catch(() => false);
+    if (!shown && !revealSettled.has(page) && /\/ingame/.test(page.url())) {
+        const cards = page.locator('[data-ingame-player-nickname]');
+        if ((await cards.count().catch(() => 0)) === 0) {
+            await dialog.or(cards).first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
+        }
+        shown = await dialog.waitFor({ state: 'visible', timeout: REVEAL_GRACE_MS }).then(() => true, () => false);
+        revealSettled.add(page);
+    }
+    if (!shown) return;
+    // 한 번 뜬 창은 그 화면에서 다시 저절로 안 뜸
+    revealSettled.add(page);
+    await dialog.getByRole('button', { name: '확인' }).click().catch(() => {});
+    await dialog.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
 }
 
 /** '사망 후 선택' 창 뜨면 관전 계속하기 */

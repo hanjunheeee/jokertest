@@ -11,7 +11,7 @@ const { setupTable } = require('./game');
 const ui = require('./ui');
 const mail = require('./mail');
 const { internal, e2e } = require('./internal');
-const { guardBrowser } = require('./outside');
+const { guardBrowser, setContextDefaults } = require('./outside');
 
 // 사람 하나 = 계정 + 자기 쿠키만 가진 브라우저 context + page
 const DESKTOP = { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl, locale: 'ko-KR', timezoneId: 'Asia/Seoul' };
@@ -38,6 +38,14 @@ const test = base.test.extend({
     browser: [async ({ browser }, use) => {
         await use(guardBrowser(browser));
     }, { scope: 'worker' }],
+
+    // 이 시험의 창 기본값(프로젝트·test.use의 baseURL·isMobile)을 바깥 막기에 알림 — 창 만들기보다 먼저 돎(auto)
+    // 기본 page·user 창은 빈 값으로 만들어져 이게 없으면 모바일 창을 PC 창으로 봄 → 광고 꾸러미 가짜 답이 안 걸림
+    outsideDefaults: [async ({ baseURL, isMobile }, use) => {
+        setContextDefaults({ baseURL, isMobile });
+        await use();
+        setContextDefaults(null);
+    }, { auto: 'all-hooks-included' }],
 
     /**
      * 계정 만들기: await accounts.create({ nickname?, password?, birthDate?, emailVerified?, agreeTerms?, role? })

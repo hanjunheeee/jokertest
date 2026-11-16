@@ -20,9 +20,10 @@ const EXIT_RESULT_TEXT = '로비로 나가시겠습니까?';
 // 60초 못 돌아와 빠진 사람에게 뜨는 까닭 글
 const FORFEIT_TEXT = '연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다.';
 // 첫 탈주 직후 글: 5분에서 몇 초 지난 값 (나간 지 10초 안에 눌러 봄)
-const COOLDOWN_JUST_NOW = /^탈주로 4분 5\d초 뒤에 참여할 수 있습니다\.$/;
-// 첫 탈주 막힘 중 글: 5분 안 어느 때든 (목록 찾기처럼 몇 초 더 걸리는 길)
-const COOLDOWN_FIRST = /^탈주로 4분 \d{1,2}초 뒤에 참여할 수 있습니다\.$/;
+// 나간 직후 1초 안이면 "5분 0초" (서버가 초를 올림 — 남은 299.5초 → 5분 0초)
+const COOLDOWN_JUST_NOW = /^탈주로 (?:5분 0초|4분 5\d초) 뒤에 참여할 수 있습니다\.$/;
+// 첫 탈주 막힘 중 글: 5분 안 어느 때든 (목록 찾기처럼 몇 초 더 걸리는 길), 나간 직후 "5분 0초"도
+const COOLDOWN_FIRST = /^탈주로 (?:5분 0초|4분 \d{1,2}초) 뒤에 참여할 수 있습니다\.$/;
 // 진짜 시간 허용 폭 ±1.5초 (시험_계획 3-5, 늘려서 덮지 않음)
 const SLACK_MS = 1500;
 const GRACE_MS = 60_000;
@@ -330,7 +331,7 @@ const closeNotice = (page) => page.getByRole('alertdialog', { name: '안내' }).
 /**
  * 폰 결과 화면의 한 판 끝 광고 창 닫기 (안 뜨면 appearMs 뒤 그냥 지나감) → 닫혔으면 true
  * 광고를 못 불러오면 창이 뜨자마자 저절로 닫혀 "닫기"가 끝내 안 나옴(시험은 바깥 주소 막힘) → 저절로 닫힌 것도 닫힌 것으로 침
- * 공용 ui.closeResultAd는 뜬 것을 본 뒤 "닫기"만 기다려 이 틈에 10초를 다 씀
+ * (공용 ui.closeResultAd도 2026-11-16부터 같은 방식)
  */
 async function closeAd(page, { appearMs = 4000 } = {}) {
     const ad = page.locator('[data-interstitial-ad]');
