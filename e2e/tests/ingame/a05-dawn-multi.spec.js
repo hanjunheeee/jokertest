@@ -19,7 +19,7 @@ const FAIL_TEXT = '이번 밤의 암살이 실패했습니다.';
 const SETTLE_TEXT = '[5초 뒤 마감]';
 const investigateText = (nickname, roleName) => `조사 결과, ${nickname} 님의 역할은 ${roleName}입니다.`;
 const confirmText = (nickname, roleName) => `확인 결과, ${nickname} 님의 역할은 ${roleName}입니다.`;
-const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/;
+const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 // 5초·60초 규칙 허용 폭 (±1.5초, 더 늘리지 않음)
 const TOLERANCE_MS = 1500;
 
@@ -401,7 +401,7 @@ test('A05-H-505 경비원 조사 — 사람 3 (8명): 경비원 화면에만 조
             await each([target, citizen], (h) => expectQuietNight(h.page));
         },
     });
-    await expectReadable(privateResult(guard.page).getByText(investigateText(target.account.nickname, '시민'), { exact: true }), { timeout: 20_000 });
+    await expectReadable(privateResult(guard.page).getByText(investigateText(target.account.nickname, '귀족'), { exact: true }), { timeout: 20_000 });
     for (const h of [target, citizen]) {
         await expectPlainDay(h.page);
         expect((await logOf(h.page)).filter((e) => e.kind === 'result' || e.kind === 'wait'), '결과 창·기다림 창 기록').toEqual([]);
@@ -440,7 +440,7 @@ test('A05-H-506 마녀사냥꾼 확인 — 사람 2 (10명, 둘째 밤): 마녀�
             await settled(g, 'WITCH_HUNTER', 2);
         },
     });
-    await expectReadable(privateResult(hunter.page).getByText(confirmText(executed.account.nickname, '시민'), { exact: true }), { timeout: 20_000 });
+    await expectReadable(privateResult(hunter.page).getByText(confirmText(executed.account.nickname, '귀족'), { exact: true }), { timeout: 20_000 });
     // 확인당한 죽은 사람 화면: 결과 창·영상·글 창 기록이 없음
     expect((await g.t.state()).dayIndex).toBe(3);
     expect((await logOf(executed.page, marks[1])).filter((e) => ['result', 'kill', 'msg', 'report', 'wait'].includes(e.kind)), '죽은 사람 화면 기록').toEqual([]);

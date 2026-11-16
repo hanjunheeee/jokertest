@@ -11,7 +11,7 @@ const m = require('../mobile/_talk');
 
 // 단계 시간을 길게 둠: 단계는 손잡이로 넘기고, 확인하는 동안 진짜 마감이 끼어들지 않게 (이 파일은 마감 시간을 안 봄)
 const SLOW = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTime: 120, nightActionTime: 120 });
-const NIGHT_CLOSED = '밤에는 시민이 채팅을 쓸 수 없습니다';
+const NIGHT_CLOSED = '밤에는 귀족이 채팅을 쓸 수 없습니다';
 const DAY_NOTICE = '낮이 되었습니다';
 const NIGHT_NOTICE = '밤이 되었습니다';
 // 모바일 같은 직업 말풍선 바탕색 (카톡형 결정: 붉은색)

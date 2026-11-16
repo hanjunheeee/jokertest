@@ -108,7 +108,7 @@ test('A02-H-011 사람 5명 판 끝 → 모두 "대기방으로" → 둘째 판 
         }
         if (h === b) {
             // 첫 판 동료였던 A 이름도, "동료" 글도 없음
-            await expect(own.getByText('시민', { exact: true })).toBeVisible();
+            await expect(own.getByText('귀족', { exact: true })).toBeVisible();
             await expect(own).not.toContainText('동료');
             await expect(own).not.toContainText(a.account.nickname);
         }
@@ -170,7 +170,7 @@ test('A02-H-012 사람 3 + 봇 4 = 7명 판 끝 → 사람 3만 같은 방, 새 
     // B·C: 시민, 동료 글 없음 (B 창에 첫 판 동료 A 이름 없음)
     for (const h of [b, c]) {
         dialog = await openReveal(h.page);
-        await expect(dialog.getByText('시민', { exact: true })).toBeVisible();
+        await expect(dialog.getByText('귀족', { exact: true })).toBeVisible();
         await expect(dialog).not.toContainText('동료');
         await expect(dialog).not.toContainText(a.account.nickname);
     }

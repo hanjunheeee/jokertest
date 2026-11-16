@@ -16,7 +16,7 @@ const nick = (x) => x.account.nickname;
 const titleOf = (x) => `${nick(x)}의 방`;
 
 // 서버 거절 글 (목록 A01a 줄 그대로)
-// MIN_PLAYERS는 서버 답에만 남음: 화면은 5명보다 적으면 "게임시작"을 미리 꺼 둬서 이 글이 막힘 창에 안 뜸 (결정 2026-11-16 낮 셋째 5번)
+// MIN_PLAYERS·NOT_READY는 서버 답에만 남음: 화면은 5명보다 적거나 준비 안 한 사람이 있으면 "게임시작"을 미리 꺼 둬서 이 글이 막힘 창에 안 뜸 (결정 2026-11-16 낮 셋째 5번·넷째 1번)
 const MSG = Object.freeze({
     MIN_PLAYERS: '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.',
     NOT_READY: '아직 준비하지 않은 참가자가 있습니다.',
@@ -29,6 +29,8 @@ const MSG = Object.freeze({
 // 시작 최소 인원과 인원이 모자랄 때 방장 화면 까닭 글 → startLockedText(4) = '5명부터 시작할 수 있습니다. (지금 4명)'
 const MIN_START_PLAYERS = 5;
 const startLockedText = (n) => `${MIN_START_PLAYERS}명부터 시작할 수 있습니다. (지금 ${n}명)`;
+// 준비 안 한 사람이 있을 때 방장 화면 까닭 글 → startNotReadyText(3, 5) = '모두 준비해야 시작할 수 있습니다. (준비 3/5)'
+const startNotReadyText = (ready, total) => `모두 준비해야 시작할 수 있습니다. (준비 ${ready}/${total})`;
 // 지운 설정 3칸 이름 (결정 "3칸 삭제")
 const REMOVED_LABELS = Object.freeze(['불이 꺼진 무도회', '영혼의 베팅', '투표 공개']);
 // 칸 이름 (PC·모바일 같은 글)
@@ -258,7 +260,7 @@ async function expectRolesTaken(gameId, presets) {
     return s;
 }
 
-/** 방장 화면 "게임시작" 꺼진 까닭 글 칸 (5명보다 적을 때만 있음, 손님 화면엔 없음) */
+/** 방장 화면 "게임시작" 꺼진 까닭 글 칸 (5명보다 적거나 준비 안 한 사람이 있을 때만 있음, 손님 화면엔 없음) */
 const startLockedReason = (page) => page.getByTestId('start-locked-reason');
 
 /** 만들기·코드 입장 화면의 실패 안내 띠 글 (PC만: 알림 창을 닫은 뒤에도 화면에 남음) */
@@ -270,23 +272,31 @@ async function expectEntryNotice(page, text) {
     await expectReadable(entryNotice(page));
 }
 
-/** 인원이 모자란 방장 화면: "게임시작" 꺼짐 + 까닭 글(지금 서버 인원)이 읽힘 + 막힘 창 없음 (누르지 않고 봄) */
+/**
+ * 인원이 모자라거나 준비 안 한 사람이 있는 방장 화면: "게임시작" 꺼짐 + 까닭 글이 읽힘 + 막힘 창 없음 (누르지 않고 봄)
+ * 까닭 글은 지금 서버 방 값으로 만듦: 5명보다 적으면 인원 글이 먼저, 아니면 준비 글 (화면 pickStartLockedReason 순서)
+ */
 async function expectStartLocked(who) {
-    const count = (await e2e.roomOf(U(who)))?.players?.length;
     await expect(who.page.getByRole('button', { name: '게임시작' })).toBeDisabled();
     const reason = startLockedReason(who.page);
-    await expect(reason).toHaveText(startLockedText(count));
+    // 화면 명단이 서버 값을 따라잡을 때까지 (준비 알림이 늦게 올 수 있음)
+    await expect(async () => {
+        const players = (await e2e.roomOf(U(who)))?.players ?? [];
+        const ready = players.filter((p) => p.isReady).length;
+        const want = players.length < MIN_START_PLAYERS ? startLockedText(players.length) : startNotReadyText(ready, players.length);
+        await expect(reason).toHaveText(want, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     await expectReadable(reason);
     await expect(blockedDialog(who.page)).toHaveCount(0);
 }
 
 /**
  * 시작이 막힘 + 대기방 그대로, 판 없음
- * 인원 모자람(MSG.MIN_PLAYERS)이면 단추가 미리 꺼져 있어 막힘 창이 안 뜸 → 꺼짐 + 까닭 글로 봄 (부르는 쪽은 "게임시작"을 누르지 않음)
- * 그 밖(준비 안 됨·구성 안 맞음·끊김·점검)은 누른 뒤 뜬 막힘 창 글이 그 글이고 읽힘
+ * 인원 모자람(MSG.MIN_PLAYERS)·준비 안 됨(MSG.NOT_READY)이면 단추가 미리 꺼져 있어 막힘 창이 안 뜸 → 꺼짐 + 까닭 글로 봄 (부르는 쪽은 "게임시작"을 누르지 않음)
+ * 그 밖(구성 안 맞음·끊김·점검)은 누른 뒤 뜬 막힘 창 글이 그 글이고 읽힘
  */
 async function expectStartRejected(who, message) {
-    if (message === MSG.MIN_PLAYERS) {
+    if (message === MSG.MIN_PLAYERS || message === MSG.NOT_READY) {
         await expectStartLocked(who);
     } else {
         const alert = blockedDialog(who.page).getByRole('alert');
@@ -405,7 +415,7 @@ function waitSecondsOf(text) {
 }
 
 module.exports = {
-    U, nick, titleOf, MSG, MIN_START_PLAYERS, startLockedText, REMOVED_LABELS, L, EDGES,
+    U, nick, titleOf, MSG, MIN_START_PLAYERS, startLockedText, startNotReadyText, REMOVED_LABELS, L, EDGES,
     arrow, valueOf, numberOf, setStep, setChoice, setCheck, selectTab, fill, expectEdges, expectNoRemovedFields,
     openSetupPage, waitRoom, createRoomOn, capacity, roomTitle, liveRoom, listedTitled, openShownCode,
     botsJoin, botsReady, readyMe, readyRoom, autoRoles, expectRolesTaken,

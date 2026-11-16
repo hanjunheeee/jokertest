@@ -250,7 +250,7 @@ test('A05-E-567 10명 판 마녀사냥꾼 화면: 2일 밤 죽은 봇을 확인 
     const message = resultOf(g.page, 'CONFIRM').locator('p');
     await expectReadable(message, { timeout: 5000 });
     await expect(message).toContainText(dead.nickname);
-    await expect(message).toContainText('시민');
+    await expect(message).toContainText('귀족');
 });
 
 test('A05-E-568 10명 판 죽은 관전자 화면: 봇 마녀사냥꾼이 나를 확인해도 결과 창 없음 @game', async ({ user, table }) => {

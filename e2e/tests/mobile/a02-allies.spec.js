@@ -10,7 +10,7 @@ const { talk } = require('./_talk');
 
 const revealDialog = (page) => page.getByRole('dialog', { name: '내 역할 보기' });
 // 판 카드·띠에 나오면 안 되는 직업 글
-const ROLE_WORDS = /광대|의사|경비원|마녀사냥꾼|시민/;
+const ROLE_WORDS = /광대|의사|경비원|마녀사냥꾼|귀족|시민/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 
 // 역할 창 열린 채로 받기 — 10초에 저절로 닫혔으면 위 줄 "내 역할 보기"로 다시 엶
 async function openReveal(page) {

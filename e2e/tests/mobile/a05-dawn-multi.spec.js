@@ -11,7 +11,7 @@ const night = require('../ingame/b-night/_night');
 // 화면 글 (frontend utils/dawnReport.js·utils/selectInGameTimebarStatusMessage.js와 같은 글)
 const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
-const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/;
+const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 // 5초 규칙 허용 폭 (±1.5초, 더 늘리지 않음)
 const FIVE_MIN_MS = 3500;
 const FIVE_MAX_MS = 6500;

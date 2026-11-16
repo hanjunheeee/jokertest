@@ -315,7 +315,7 @@ test('A02-H-020 사람 2 + 봇 5 = 7명 판에서 A 죽음 → A 로비로 → B
     // A 새 판 역할 창, 판 화면엔 옛 판 봇 카드 없음
     const dialog = revealDialog(a.page);
     await expect(dialog).toBeVisible({ timeout: 20_000 });
-    await expect(dialog.getByText('시민', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('귀족', { exact: true })).toBeVisible();
     // 새 판 카드가 그려진 뒤에 옛 판 봇 카드가 없는지 봄
     await expect(N.cardStatus(a.page, b.account.nickname)).toHaveCount(1);
     const g2 = await e2e.gameOf(U(a));

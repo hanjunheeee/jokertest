@@ -59,22 +59,24 @@ test('A01-E-073 사람 + 봇 3 = 4명 전원 준비 → "게임시작" 꺼짐 + 
     expect(reply?.message).toBe(K.MSG.MIN_PLAYERS);
 });
 
-test('A01-E-074 6명 중 봇 1 준비 안 함 → "아직 준비하지 않은 참가자가 있습니다." 읽힘', async ({ user, bots }) => {
+test('A01-E-074 6명 중 봇 1 준비 안 함 → "게임시작" 꺼짐 + 까닭 글 "모두 준비해야 시작할 수 있습니다. (준비 5/6)" 읽힘, 판 안 열림', async ({ user, bots }) => {
     const botList = await bots.spawn(5);
     const room = await K.createRoomOn(user, { maxPlayers: 6, jokers: 1 });
     await K.botsJoin(botList, room.roomCode);
     await K.botsReady(botList.slice(0, 4), K.U(user));
     await K.readyMe(user.page);
-    await startButton(user.page).click();
+    // 준비 안 한 사람이 있으면 누르기 전에 꺼져 있음 (결정 2026-11-16 낮 넷째 1번) → 누르지 않고 꺼짐·까닭 글·판 없음을 봄
     await K.expectStartRejected(user, K.MSG.NOT_READY);
+    await expect(K.startLockedReason(user.page)).toHaveText(K.startNotReadyText(5, 6));
 });
 
-test('A01-E-075 5명, 사람 방장만 준비 안 함 → 같은 거절 글', async ({ user, bots }) => {
+test('A01-E-075 5명, 사람 방장만 준비 안 함 → "게임시작" 꺼짐 + 까닭 글 "(준비 4/5)" 읽힘 (방장도 셈)', async ({ user, bots }) => {
     const botList = await bots.spawn(4);
     await K.readyRoom(user, botList, { maxPlayers: 5, jokers: 1 }, { hostReady: false });
     await expect(user.page.getByRole('button', { name: '준비완료' })).toBeVisible();
-    await startButton(user.page).click();
+    // 서버 규칙: 방장까지 전원 준비 → 방장만 안 해도 미리 꺼짐 (누르지 않음)
     await K.expectStartRejected(user, K.MSG.NOT_READY);
+    await expect(K.startLockedReason(user.page)).toHaveText(K.startNotReadyText(4, 5));
 });
 
 // A01-E-076~077: 정원 10 J2D2G2W2, 지금 5 / 7명 → 구성 거절
@@ -146,16 +148,17 @@ test('A01-E-083 끊긴 봇이 다시 붙음 → 시작 → 판 화면 @game', as
     }).toPass({ timeout: 12_000 });
 });
 
-test('A01-E-084 준비 안 함 막힘 창 확인 → 닫힘 → 봇 준비 → 다시 시작 → 판 화면 @game', async ({ user, bots }) => {
+test('A01-E-084 준비 안 함으로 꺼진 "게임시작" → 봇 준비 → 단추 켜지고 까닭 글 사라짐 → 시작 → 판 화면 @game', async ({ user, bots }) => {
     const botList = await bots.spawn(4);
     const room = await K.createRoomOn(user, { maxPlayers: 5, jokers: 1 });
     await K.botsJoin(botList, room.roomCode);
     await K.botsReady(botList.slice(0, 3), K.U(user));
     await K.readyMe(user.page);
-    await startButton(user.page).click();
+    // 막힘 창 대신 미리 꺼짐 (결정 2026-11-16 낮 넷째 1번)
     await K.expectStartRejected(user, K.MSG.NOT_READY);
-    await K.closeBlocked(user.page);
     await K.botsReady([botList[3]], K.U(user));
+    await expect(startButton(user.page)).toBeEnabled();
+    await expect(K.startLockedReason(user.page)).toHaveCount(0);
     await startToIngame(user, K.autoRoles([user], botList));
 });
 
@@ -226,16 +229,13 @@ test('A01-E-090 위에서 사람 손님 준비 안 함 → 봇 방장 시작 거
     expect(await e2e.gameOf(K.U(user))).toBeNull();
 });
 
-test('A01-E-091 키보드: 막힘 창(5명 중 봇 1 준비 안 함) → Enter → 닫힘, 초점이 대기방으로', async ({ user, bots }) => {
+test('A01-E-091 키보드: 막힘 창(전원 준비 5명, 정원 10 광대2·의사2·경비원2·마녀사냥꾼2 구성 안 맞음) → Enter → 닫힘, 초점이 대기방으로', async ({ user, bots }) => {
     const page = user.page;
-    // 4명 방은 "게임시작"이 미리 꺼져 막힘 창이 안 뜸 → 5명 중 봇 하나 준비 안 한 방으로 막힘 창을 띄움
+    // 인원 모자람·준비 안 됨은 "게임시작"이 미리 꺼져 막힘 창이 안 뜸 → 단추가 켜져 있는 구성 안 맞음(A01-E-076과 같은 방)으로 막힘 창을 띄움
     const botList = await bots.spawn(4);
-    const room = await K.createRoomOn(user, { maxPlayers: 5, jokers: 1 });
-    await K.botsJoin(botList, room.roomCode);
-    await K.botsReady(botList.slice(0, 3), K.U(user));
-    await K.readyMe(page);
+    await K.readyRoom(user, botList, { maxPlayers: 10, custom: J2D2G2W2 });
     await startButton(page).click();
-    await K.expectStartRejected(user, K.MSG.NOT_READY);
+    await K.expectStartRejected(user, K.MSG.ROLE_MISMATCH);
     // 창이 뜨면 "확인"에 초점 → Enter로 닫음
     await expect(blockedDialog(page).getByRole('button', { name: '확인' })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -309,14 +309,14 @@ test('A01-E-138 5명 전원 준비, "설정 저장"과 "게임시작"을 거의 
     }
 });
 
-test('A01-E-140 10명 방(자리 꽉 참) 막힘 창 → 글·확인 단추가 안 가려지고 읽힘', async ({ user, bots }) => {
+test('A01-E-140 10명 방(자리 꽉 참, 전원 준비·봇 1 연결 끊음) 막힘 창 → 글·확인 단추가 안 가려지고 읽힘', async ({ user, bots }) => {
     const page = user.page;
+    // 준비 안 됨은 단추가 미리 꺼져 막힘 창이 안 뜸 → 단추가 켜져 있는 끊긴 참가자(A01-E-082와 같은 길, 15초 안)로 막힘 창을 띄움
     const botList = await bots.spawn(9);
-    const room = await K.createRoomOn(user, { maxPlayers: 10, jokers: 1 });
-    await K.botsJoin(botList, room.roomCode);
-    await K.botsReady(botList.slice(0, 8), K.U(user));
-    await K.readyMe(page);
+    await K.readyRoom(user, botList, { maxPlayers: 10, jokers: 1 });
+    botList[8].socket.disconnect();
+    await expect.poll(() => botList[8].socket.connected).toBe(false);
     await startButton(page).click();
-    await K.expectStartRejected(user, K.MSG.NOT_READY);
+    await K.expectStartRejected(user, K.MSG.UNAVAILABLE);
     await expectReadable(blockedDialog(page).getByRole('button', { name: '확인' }));
 });

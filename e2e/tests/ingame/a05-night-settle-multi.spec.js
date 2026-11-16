@@ -355,7 +355,7 @@ test('A05-H-516 경비원 사람 2명 (10명, 경비원 2): 둘 다 같은 사�
     await each(humans, (h) => expectSettleShown(h.page, marks[humans.indexOf(h)]));
     await waitDay(g.t, 2);
     await each(humans, (h) => expectReadable(
-        privateResult(h.page).getByText(investigateText(target.nickname, '시민'), { exact: true }), { timeout: 20_000 },
+        privateResult(h.page).getByText(investigateText(target.nickname, '귀족'), { exact: true }), { timeout: 20_000 },
     ));
 });
 
@@ -387,7 +387,7 @@ test('A05-H-517 마녀사냥꾼 사람 2명 (10명, 마녀사냥꾼 2, 둘째 �
     await each(humans, (h) => expectSettleShown(h.page, marks[humans.indexOf(h)]));
     await waitDay(g.t, 3);
     await each(humans, (h) => expectReadable(
-        privateResult(h.page).getByText(confirmText(dead.nickname, '시민'), { exact: true }), { timeout: 20_000 },
+        privateResult(h.page).getByText(confirmText(dead.nickname, '귀족'), { exact: true }), { timeout: 20_000 },
     ));
 });
 
@@ -540,9 +540,9 @@ test('A05-H-522 네 직업이 다 사람인 밤 (10명, 사람 5, 둘째 밤): �
     expect((await g.t.player(attacked.uuid)).alive).toBe(true);
     // 경비원·마녀사냥꾼 화면: 살림 글 창을 닫으면 결과 글
     await finishShow(guard.page);
-    await expectReadable(privateResult(guard.page).getByText(investigateText(checked.nickname, '시민'), { exact: true }));
+    await expectReadable(privateResult(guard.page).getByText(investigateText(checked.nickname, '귀족'), { exact: true }));
     await finishShow(hunter.page);
-    await expectReadable(privateResult(hunter.page).getByText(confirmText(dead.nickname, '시민'), { exact: true }));
+    await expectReadable(privateResult(hunter.page).getByText(confirmText(dead.nickname, '귀족'), { exact: true }));
     // 의사·시민 화면: 살림 글 창을 닫으면 바로 "낮이 되었습니다", 결과 창은 그 밤에 한 번도 없음
     for (const h of [doctor, citizen]) {
         await finishShow(h.page);

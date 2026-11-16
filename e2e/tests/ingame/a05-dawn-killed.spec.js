@@ -17,7 +17,7 @@ const DAY_ENTRANCE = '[data-ingame-phase-entrance="DAY"]';
 const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
 const DAY_TEXT = '낮이 되었습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
-const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/;
+const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 // 시간 바의 날짜 글 (밤은 그 날 숫자 그대로, 다음 낮은 +1) → dayBar(2) = '제 2일 시간 흐름'
 const dayBar = (dayIndex) => `제 ${dayIndex}일 시간 흐름`;

@@ -406,6 +406,8 @@ async function expectResultScreen(page, { outcome, team = '광대 진영 승리'
         await expect(page).toHaveURL(/\/gameresult/, { timeout: 1000 });
         await expect(banner).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout });
+    // 결과판 1.5초 뒤 뜨는 전면 광고 창이 이긴 편 글을 덮음 → 닫고 봄
+    await ui.closeResultAd(page);
     await expect(banner).toHaveText(outcome);
     await expectReadable(banner, { large: true, uncovered: false, timeout: 10000 });
     await expectReadable(page.getByText(team, { exact: true }), { timeout: 10000 });

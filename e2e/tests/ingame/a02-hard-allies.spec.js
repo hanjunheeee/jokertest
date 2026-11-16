@@ -85,7 +85,7 @@ TRIO_CASES.forEach((c, i) => {
         // A 창엔 B, B 창엔 A (위 확인이 서버 값으로 본 것과 같은지 이름으로 한 번 더)
         expect(s.players.filter((p) => p.role === c.role).map((p) => p.uuid).sort()).toEqual([U(a), U(b)].sort());
         const dialog = await openReveal(cc.page);
-        await expect(dialog.getByText('시민', { exact: true })).toBeVisible();
+        await expect(dialog.getByText('귀족', { exact: true })).toBeVisible();
         await expect(dialog).not.toContainText(a.account.nickname);
         await expect(dialog).not.toContainText(b.account.nickname);
         await expect(dialog).not.toContainText('동료');
@@ -100,7 +100,7 @@ test('A02-H-005 사람 2 + 봇 5 = 7명, 둘 다 시민 → 두 창 모두 동�
     expectRoles(s, wanted);
     for (const h of [a, b]) {
         const dialog = await openReveal(h.page);
-        await expect(dialog.getByText('시민', { exact: true })).toBeVisible();
+        await expect(dialog.getByText('귀족', { exact: true })).toBeVisible();
         await expect(dialog).not.toContainText('동료');
         await expect(dialog.getByRole('listitem')).toHaveCount(0);
     }

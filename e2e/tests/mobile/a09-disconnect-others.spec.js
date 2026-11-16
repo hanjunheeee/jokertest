@@ -107,6 +107,8 @@ test('A09-E-064 모바일 6명 판, 광대 봇 60초(손잡이) 탈락 → 시�
     const joker = K.botOf(t, await t.state(), 'JOKER');
     await dropAndExpire(t, joker);
     await waitResult(page);
+    // 결과판 1.5초 뒤 뜨는 전면 광고 창이 글을 덮음 → 닫고 봄
+    await ui.closeResultAd(page);
     await expectReadable(page.getByText('시민 진영 승리', { exact: true }));
     // 나는 시민이라 승리
     await expect(page.getByText(/^(승리|패배)$/)).toHaveText('승리');

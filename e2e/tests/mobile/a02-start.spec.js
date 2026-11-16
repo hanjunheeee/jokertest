@@ -5,6 +5,7 @@
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { e2e } = require('../../helpers/internal');
+const ui = require('../../helpers/ui');
 const { botsJoinAndReady, waitResult } = require('../room/roomHelpers');
 const { botLeave } = require('./_talk');
 
@@ -36,7 +37,7 @@ async function fillRoom(user, bots, room) {
     await expect(page.locator(`[aria-label="파티 인원 ${total}명"]`)).toHaveCount(1);
 }
 
-// 사람 시민·첫 봇 광대로 예약 → 게임시작 → 역할 창에 "시민"
+// 사람 시민·첫 봇 광대로 예약 → 게임시작 → 역할 창에 "귀족"(시민 직업 화면 이름)
 async function startAndSeeReveal(user, bots, room) {
     const page = user.page;
     await e2e.setRoles({ [user.account.uuid]: 'CITIZEN', [bots[0].account.uuid]: 'JOKER' }, { roomId: room.roomId });
@@ -45,7 +46,7 @@ async function startAndSeeReveal(user, bots, room) {
     const dialog = revealDialog(page);
     await expect(dialog).toBeVisible({ timeout: 20_000 });
     await expectReadable(dialog.getByText(user.account.nickname, { exact: true }));
-    await expectReadable(dialog.getByText('시민', { exact: true }));
+    await expectReadable(dialog.getByText('귀족', { exact: true }));
 }
 
 test('A02-E-177 모바일 사람 방장 5명 시작 → 역할 창 뜸 @game @safari @smoke', async ({ user, bots }) => {
@@ -90,5 +91,7 @@ test('A02-E-180 모바일 5명(광대 1·사람 시민) 역할 확인 중 광대
     const reply = await botLeave(t, jokerIndex);
     expect(reply?.ok, `광대 봇 나가기 답 ${JSON.stringify(reply)}`).toBe(true);
     await waitResult(page);
+    // 결과판 1.5초 뒤 뜨는 전면 광고 창이 글을 덮음 → 닫고 봄
+    await ui.closeResultAd(page);
     await expectReadable(page.getByText('시민 진영 승리', { exact: true }));
 });

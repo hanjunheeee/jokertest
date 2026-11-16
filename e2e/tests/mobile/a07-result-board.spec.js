@@ -16,8 +16,8 @@ const resultBoard = (page) => page.getByRole('region', { name: '가면무도회 
 // 봇 방장 판은 단계 시간을 가장 길게 둠 — 단계는 손잡이·"다 내면 5초"로만 넘어감 (화면을 누르거나 기다리는 동안 진짜 마감이 먼저 오면 흐름이 엇갈림)
 const PACE = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTime: 120, nightActionTime: 120 });
 
-// 결과판 직업 글 (PC와 같은 글 gameResultLabels.js) — 시민은 "시민"("귀족" 안 씀), 의사는 "의사"(결정 2026-11-16 아침 19번, "주치의" 안 씀)
-const RESULT_JOB = Object.freeze({ JOKER: '광대', CITIZEN: '시민', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
+// 결과판 직업 글 (PC와 같은 글 gameResultLabels.js) — 시민 직업은 "귀족"(결정 2026-11-16 셋째 8번), 의사는 "의사"(결정 2026-11-16 아침 19번, "주치의" 안 씀)
+const RESULT_JOB = Object.freeze({ JOKER: '광대', CITIZEN: '귀족', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
 
 // 서버가 정한 직업이 바라는 대로인지 (예약이 가끔 못 맞음 → 판이 다른 쪽으로 끝나는 것 막기)
 function expectRoles(s, wanted) {
@@ -129,7 +129,7 @@ test('A07-E-074 모바일 10명 판 결과판 마녀사냥꾼 줄 → "마녀사
     const { t } = await citizenWinBoard(table, user, 10, (bots) => ({ [U(bots[1])]: 'WITCH_HUNTER' }));
     const row = resultRow(page, t.bots[1].account.nickname);
     await expectReadable(row.getByText('마녀사냥꾼', { exact: true }));
-    // 시민 이름으로 잘못 나오면 안 됨 (지금 시민 글은 "시민", 예전 글은 "귀족")
+    // 시민 이름으로 잘못 나오면 안 됨 (시민 직업 글은 "귀족", 예전 글은 "시민" — 둘 다 없어야 함)
     await expect(row.getByText('시민', { exact: true })).toHaveCount(0);
     await expect(row.getByText('귀족', { exact: true })).toHaveCount(0);
 });

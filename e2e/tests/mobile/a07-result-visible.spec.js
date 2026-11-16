@@ -93,10 +93,10 @@ test('A07-H-029 모바일 사람 3 + 봇 7 = 10명 판 끝 → 세 화면 모두
         // 띠: 맨 위 승패 + 이긴 진영
         await expectReadable(h.page.getByText('승리', { exact: true }), { large: true });
         await expectReadable(list.getByText('시민 진영 승리', { exact: true }));
-        // 내 줄: 골드 칸 + 직업 글 (시민은 "시민" — 결과판에 "귀족" 안 씀)
+        // 내 줄: 골드 칸 + 직업 글 (시민 직업은 "귀족" — 결정 2026-11-16 셋째 8번)
         await expect(myChip(h)).toHaveText('+1골드');
         await expectReadable(myChip(h));
-        await expectReadable(resultRow(h.page, nick(h)).getByText('시민', { exact: true }));
+        await expectReadable(resultRow(h.page, nick(h)).getByText('귀족', { exact: true }));
         // 남의 줄 직업 글도 (스크롤해서) 읽힘
         await expectReadable(resultRow(h.page, nick(hunterBot)).getByText('마녀사냥꾼', { exact: true }));
         await expectReadable(resultRow(h.page, nick(jokerBot)).getByText('광대', { exact: true }));
@@ -127,7 +127,7 @@ test('A07-H-030 모바일 사람 2 + 봇 4 = 6명 판 끝 (사파리에서도) �
         await expectReadable(myChip(h));
         const hunterRow = resultRow(h.page, nick(hunterBot));
         await expectReadable(hunterRow.getByText('마녀사냥꾼', { exact: true }));
-        // 시민 이름으로 잘못 나오면 안 됨 (지금 시민 글은 "시민", 예전 글은 "귀족")
+        // 시민 이름으로 잘못 나오면 안 됨 (시민 직업 글은 "귀족", 예전 글은 "시민" — 둘 다 없어야 함)
         await expect(hunterRow.getByText('시민', { exact: true })).toHaveCount(0);
         await expect(hunterRow.getByText('귀족', { exact: true })).toHaveCount(0);
         await expect(h.page.getByText(/MVP/i)).toHaveCount(0);

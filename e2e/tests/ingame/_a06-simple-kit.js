@@ -18,7 +18,7 @@ const ROLE_EVT = 'joker_chat_message';
 const CHAT_EVENTS = Object.freeze([DAY_EVT, DEAD_EVT, ROLE_EVT]);
 
 // 밤 시민 입력칸 자리에 뜨는 까닭 글
-const CLOSED_TEXT = '밤에는 시민이 채팅을 쓸 수 없습니다';
+const CLOSED_TEXT = '밤에는 귀족이 채팅을 쓸 수 없습니다';
 
 // 입력칸 아래 상태 줄 읽힘 확인 값: 줄이 눌림을 안 받는 글이라 "가려짐" 검사는 못 씀, 바탕이 채팅 틀 그림이라 사진으로 대비를 잼
 const STATUS_READABLE = Object.freeze({ uncovered: false, method: 'pixels' });

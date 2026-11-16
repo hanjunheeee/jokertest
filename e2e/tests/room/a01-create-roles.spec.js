@@ -1,6 +1,6 @@
 'use strict';
 
-// PC 방 만들기 역할 직접 지정 브라우저 시험 — 남는 자리 시민 글, 합이 정원 넘으면 오류 글·만들기 꺼짐, 광대 0 못 고름, 시민 0명 방, 직접 지정 저장
+// PC 방 만들기 역할 직접 지정 브라우저 시험 — 남는 자리 귀족(시민 직업) 글, 합이 정원 넘으면 오류 글·만들기 꺼짐, 광대 0 못 고름, 시민 0명 방, 직접 지정 저장
 // 목록 A01a-방만들기-설정-시작.md 번호 A01-E-020~024, 돌리지 않고 모임만: npx playwright test --list tests/room/a01-create-roles.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -8,11 +8,11 @@ const K = require('./_a01a-kit');
 
 const summary = (page) => page.locator('[data-setup-role-composition-summary]');
 
-test('A01-E-020 정원 10 직접 지정 광대 1 → "시민: 9명 (자동 계산)" 읽힘 @smoke', async ({ user }) => {
+test('A01-E-020 정원 10 직접 지정 광대 1 → "귀족: 9명 (자동 계산)" 읽힘 @smoke', async ({ user }) => {
     const page = user.page;
     await K.openSetupPage(page);
     await K.fill(page, { maxPlayers: 10, custom: { JOKER: 1, DOCTOR: 0, GUARD: 0, WITCH_HUNTER: 0 } });
-    const line = summary(page).getByText('시민: 9명 (자동 계산)');
+    const line = summary(page).getByText('귀족: 9명 (자동 계산)');
     await expect(line).toBeVisible();
     await expectReadable(line);
 });

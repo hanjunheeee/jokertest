@@ -1,6 +1,6 @@
 'use strict';
 
-// 모바일 시작 브라우저 시험 — 4명이면 "게임시작" 꺼짐 + 까닭 글, 준비 안 함·구성 안 맞음·끊긴 봇이면 막힘 시트 글이 읽힘, 5명·10명이면 판 화면, 폭 360·375·412에서 시트 글·확인 단추 읽힘
+// 모바일 시작 브라우저 시험 — 4명·준비 안 함이면 "게임시작" 꺼짐 + 까닭 글, 구성 안 맞음·끊긴 봇이면 막힘 시트 글이 읽힘, 5명·10명이면 판 화면, 폭 360·375·412에서 시트 글·확인 단추 읽힘
 // 목록 A01a-방만들기-설정-시작.md 번호 A01-E-121~129 (사파리도: E-121), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a01-start.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -18,14 +18,15 @@ test('A01-E-121 모바일 4명 전원 준비 → "게임시작" 꺼짐 + 까닭 
     await expect(K.startLockedReason(user.page)).toHaveText(K.startLockedText(4));
 });
 
-test('A01-E-122 모바일 5명 중 봇 1 준비 안 함 → 준비 거절 글 읽힘', async ({ user, bots }) => {
+test('A01-E-122 모바일 5명 중 봇 1 준비 안 함 → "게임시작" 꺼짐 + 까닭 글 "모두 준비해야 시작할 수 있습니다. (준비 4/5)" 읽힘, 판 안 열림', async ({ user, bots }) => {
     const botList = await bots.spawn(4);
     const room = await K.createRoomOn(user, { maxPlayers: 5, jokers: 1 });
     await K.botsJoin(botList, room.roomCode);
     await K.botsReady(botList.slice(0, 3), K.U(user));
     await K.readyMe(user.page);
-    await startButton(user.page).click();
+    // 준비 안 한 사람이 있으면 누르기 전에 꺼져 있음 (결정 2026-11-16 낮 넷째 1번) → 누르지 않고 봄
     await K.expectStartRejected(user, K.MSG.NOT_READY);
+    await expect(K.startLockedReason(user.page)).toHaveText(K.startNotReadyText(4, 5));
 });
 
 test('A01-E-123 모바일 정원 10 광대2·의사2·경비원2·마녀사냥꾼2, 5명 → 구성 거절 글 읽힘', async ({ user, bots }) => {
@@ -60,19 +61,16 @@ test('A01-E-126 모바일 5명 전원 준비, 봇 1 끊김 → 연결 확인 거
     await K.expectStartRejected(user, K.MSG.UNAVAILABLE);
 });
 
-// A01-E-127~129: 폭마다 막힘 시트 (5명 중 봇 1 준비 안 함 거절 글 — 4명 방은 "게임시작"이 미리 꺼져 시트가 안 뜸)
+// A01-E-127~129: 폭마다 막힘 시트 (전원 준비 5명, 구성 안 맞음 거절 글 — 4명·준비 안 함 방은 "게임시작"이 미리 꺼져 시트가 안 뜸)
 for (const [no, width] of [[127, 360], [128, 375], [129, 412]]) {
-    test(`A01-E-${no} 모바일 폭 ${width} 막힘 시트(5명 중 봇 1 준비 안 함) → 글·확인 단추 읽힘`, async ({ user, bots }) => {
+    test(`A01-E-${no} 모바일 폭 ${width} 막힘 시트(전원 준비 5명, 정원 10 광대2·의사2·경비원2·마녀사냥꾼2 구성 안 맞음) → 글·확인 단추 읽힘`, async ({ user, bots }) => {
         const page = user.page;
         await page.setViewportSize({ width, height: 812 });
         const botList = await bots.spawn(4);
-        const room = await K.createRoomOn(user, { maxPlayers: 5, jokers: 1 });
-        await K.botsJoin(botList, room.roomCode);
-        await K.botsReady(botList.slice(0, 3), K.U(user));
-        await K.readyMe(page);
+        await K.readyRoom(user, botList, { maxPlayers: 10, custom: { JOKER: 2, DOCTOR: 2, GUARD: 2, WITCH_HUNTER: 2 } });
         await startButton(page).click();
         const sheet = blockedDialog(page);
-        await expect(sheet.getByRole('alert')).toHaveText(K.MSG.NOT_READY);
+        await expect(sheet.getByRole('alert')).toHaveText(K.MSG.ROLE_MISMATCH);
         await expectReadable(sheet.getByRole('alert'));
         await expectReadable(sheet.getByRole('button', { name: '확인' }));
     });

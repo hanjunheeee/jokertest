@@ -214,6 +214,8 @@ test('A03-E-209 모바일 5명 판 같은 방 두 번째 판 첫 낮 다 내면 
         const back = await bot.request('return_to_room', { gameId: firstGameId });
         expect(back?.ok, `봇 대기방으로 거절: ${back?.code}`).toBe(true);
     }
+    // 모바일 결과 화면은 결과판 1.5초 뒤 전면 광고 창이 덮음 → 닫고 누름
+    await ui.closeResultAd(user.page);
     await user.page.getByRole('button', { name: '대기방으로' }).click();
     await expect(user.page).toHaveURL(/\/game-matching/);
     const room = await e2e.roomOf(uuidOf(t.bots[0]));

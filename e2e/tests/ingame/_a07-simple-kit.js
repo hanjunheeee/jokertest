@@ -12,8 +12,8 @@ const day = require('./a-day/_lib');
 
 // 이긴 진영 띠 글 (화면 gameResultLabels.js)
 const WIN_TEXT = Object.freeze({ CITIZEN: '시민 진영 승리', JOKER: '광대 진영 승리' });
-// 결과판 직업 글 (화면 gameResultLabels.js) — 판 화면과 같은 이름: 시민은 "시민"("귀족" 아님), 의사는 "의사"("주치의" 아님, 결정 2026-11-16 아침 19번)
-const JOB_TEXT = Object.freeze({ JOKER: '광대', CITIZEN: '시민', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
+// 결과판 직업 글 (화면 gameResultLabels.js) — 판 화면과 같은 이름: 시민 직업은 "귀족"(결정 2026-11-16 셋째 8번), 의사는 "의사"("주치의" 아님, 아침 19번)
+const JOB_TEXT = Object.freeze({ JOKER: '광대', CITIZEN: '귀족', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
 // 단계가 저절로 안 넘어가게 가장 긴 시간으로 (단계는 손잡이로만 넘김 — 화면을 보는 동안 진짜 마감이 오면 흐름이 엇갈림)
 const LONG_TIMES = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTime: 120, nightActionTime: 120 });
 

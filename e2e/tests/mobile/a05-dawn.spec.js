@@ -13,7 +13,7 @@ const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니�
 const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 const DAY_TEXT = '낮이 되었습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
-const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/;
+const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 
 // 직접 구성에 넣는 직업 (시민은 남는 자리)
 const SPECIAL = ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER'];

@@ -2,7 +2,7 @@
 
 // 밤에 끊겨 빠지는 어려운 브라우저 시험 (PC, 사람 2명) — 보호를 고른 의사가 탈락해도 보호는 남음·암살을 고른 광대가 탈락해도 암살은 남음(둘 다 결정)·끊긴 동안 밤에 살해되면 탈주 아님
 // 목록 A09-끊김-나가기-탈주.md A09-H-032·033·048, 60초는 손잡이 / 보호는 사용자 결정(2026-11-16 아침 3번), 암살은 결정(낮 셋째 6번)대로 — 모이는지만: npx playwright test --list tests/ingame/a09-grace-night-multi.spec.js
-// 둘 다 그 직업 차례가 닫혀 고른 것이 정해진 뒤에 탈락시킴 (차례가 열려 있는 동안 탈락하면 고른 것이 지워지는 것은 지금 동작 — 백엔드 A09-B-192)
+// 둘 다 그 직업 차례가 닫혀 고른 것이 정해진 뒤에 탈락시킴 (차례가 열려 있는 동안 탈락해도 이미 낸 고름은 남음 — 결정 넷째 장·백엔드 A09-B-192·334~336, 이 파일은 닫힌 뒤 경우만 봄)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const night = require('./b-night/_night');

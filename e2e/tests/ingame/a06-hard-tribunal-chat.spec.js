@@ -11,7 +11,7 @@ const c = require('./c-chat/_lib');
 
 // 단계 시간을 길게 둠: 단계는 손잡이로 넘기고, 확인하는 동안 진짜 마감이 끼어들지 않게 (이 파일은 마감 시간을 안 봄)
 const SLOW = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTime: 120, nightActionTime: 120 });
-const NIGHT_CLOSED = '밤에는 시민이 채팅을 쓸 수 없습니다';
+const NIGHT_CLOSED = '밤에는 귀족이 채팅을 쓸 수 없습니다';
 const DAY_NOTICE = '낮이 되었습니다';
 // "죽은 사람끼리" 표시 읽힘 확인 값: 표시를 감싼 칸이 눌림을 안 받게 돼 있어 "가려짐" 검사는 못 씀 (보임·화면 안·대비는 봄)
 const BADGE_READABLE = Object.freeze({ uncovered: false });

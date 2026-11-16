@@ -7,7 +7,7 @@ const n = require('./b-night/_night');
 const k = require('./_a05a-pc-kit');
 
 // 화면에 나오는 직업 이름 (죽은 사람 카드에 이 글이 있으면 직업이 샌 것)
-const ROLE_WORDS = /광대|시민|의사|경비원|마녀사냥꾼/;
+const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 
 test('A05-E-065 5명 시민 사람이 암살됨: 낮에 내 카드 사망, 둘째 낮 투표 때 누를 수 있는 투표 단추가 없음 @game', async ({ user, table }) => {
     const { t, page } = await k.open(table, user, { bots: 4, me: 'CITIZEN', botRoles: ['JOKER', 'CITIZEN'], settings: { dayVoteTime: 60 } });

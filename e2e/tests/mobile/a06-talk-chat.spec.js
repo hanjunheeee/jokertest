@@ -17,7 +17,7 @@ const SLOW = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTi
 const DAY_EVT = 'day_chat_message_received';
 const ROLE_EVT = 'joker_chat_message';
 const EMOJI_EVT = 'emoji_shown';
-const NIGHT_CLOSED = '밤에는 시민이 채팅을 쓸 수 없습니다';
+const NIGHT_CLOSED = '밤에는 귀족이 채팅을 쓸 수 없습니다';
 // 역할 확인 동안 꺼진 입력 줄의 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
 const REVEAL_LOCKED = '역할 확인이 끝나면 채팅할 수 있습니다';
 const NIGHT_NOTICE = '밤이 되었습니다';
@@ -663,20 +663,26 @@ test('A06-E-158 밤 → 낮 (6명 판 사람 의사): 밤에 쓴 글은 낮 채�
     await expect(talk.nightBanner(page)).toHaveCount(0);
 });
 
-test('A06-E-159 폰 가로 크게 보기 시트 (6명 판): 시트를 연 채 밤이 되면 시트 입력 줄 자리에 까닭 글이 읽힘 @game', async ({ user, table }) => {
+test('A06-E-159 폰 가로 크게 보기 시트 (6명 판): 밤에 시트를 열면 시트 입력 줄 자리에 까닭 글이 읽힘 @game', async ({ user, table }) => {
     await user.page.setViewportSize(LANDSCAPE);
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
     await m.toDay(t, page, { line: undefined });
     await ready(page);
 
-    await page.getByRole('button', { name: '채팅 크게 보기' }).click();
+    const openSheet = () => page.getByRole('button', { name: '채팅 크게 보기' }).click({ timeout: 2000 });
+    await openSheet();
     const sheet = page.getByRole('dialog', { name: '채팅 클로즈업' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole('textbox', { name: '채팅 입력' })).toBeVisible();
 
+    // 단계 연출·밤 차례 안내가 뜨면 시트가 닫힘(결정 2026-11-16 판 화면 겹 창 닫기) → 안내를 넘긴 뒤 닫혀 있으면 다시 열어 봄
     await wideToNight(t, page);
-    await readableOnScreen(page, closedReason(sheet));
+    await expect(async () => {
+        await m.clearOverlays(page);
+        if (!(await sheet.isVisible().catch(() => false))) await openSheet();
+        await expectReadable(closedReason(sheet), { timeout: 1500 });
+    }).toPass({ timeout: 45_000 });
     await expect(sheet.getByRole('textbox', { name: '채팅 입력' })).toHaveCount(0);
 });
 

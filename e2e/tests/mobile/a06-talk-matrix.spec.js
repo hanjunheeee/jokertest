@@ -16,7 +16,7 @@ const SLOW = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTi
 const DAY_EVT = 'day_chat_message_received';
 const DEAD_EVT = 'dead_chat_message_received';
 const ROLE_EVT = 'joker_chat_message';
-const NIGHT_CLOSED = '밤에는 시민이 채팅을 쓸 수 없습니다';
+const NIGHT_CLOSED = '밤에는 귀족이 채팅을 쓸 수 없습니다';
 // 역할 확인 동안 꺼진 입력 줄의 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
 const REVEAL_LOCKED = '역할 확인이 끝나면 채팅할 수 있습니다';
 const ROLE_NAME = ui.ROLE_LABELS;
@@ -258,8 +258,11 @@ async function tribunalCell({ user, table }, cell) {
         const text = uniq('죽은반론');
         await sayInTribunal(page, text);
         await expectDeadOnly(t, deadBot, text);
-        // 모바일 재판 창 채팅엔 띠가 없음 [지금 동작] (frontend-mobile TribunalChat.jsx — PC 재판 창엔 있음, 넣을지는 정할 것)
-        await expect(box.getByText('죽은 사람끼리', { exact: true })).toHaveCount(0);
+        // 재판 창 채팅에도 "죽은 사람끼리" 띠 1개가 읽힘 (결정 2026-11-16 낮 넷째 4번, frontend-mobile TribunalChat.jsx)
+        const banner = box.locator('[data-dead-chat-banner]');
+        await expect(banner).toHaveCount(1);
+        await expect(banner).toHaveText('죽은 사람끼리');
+        await readableOnScreen(page, banner);
         return;
     }
     const t = await aliveGame(table, user, cell.me);
@@ -271,6 +274,8 @@ async function tribunalCell({ user, table }, cell) {
     await expect(box).toBeVisible({ timeout: 20000 });
     // 재판 중엔 바닥 입력 줄을 뺌 → 입력칸은 재판 창 것 하나
     await expect(page.getByRole('textbox', { name: '채팅 입력' })).toHaveCount(1);
+    // 산 사람 재판 창엔 "죽은 사람끼리" 띠 없음
+    await expect(box.locator('[data-dead-chat-banner]')).toHaveCount(0);
     const text = uniq('반론');
     await sayInTribunal(page, text);
     await Promise.all(t.bots.map((b) => hears(b, DAY_EVT, text)));
@@ -324,11 +329,11 @@ const RUN = { REVEAL: revealCell, DAY: dayCell, TRIBUNAL: tribunalCell, NIGHT: n
 // 칸마다 기대 한 줄 (시험 이름에 붙임)
 function expectation(cell) {
     if (cell.phase === 'REVEAL') return '입력 줄 꺼짐·까닭 글 보임·엔터를 쳐도 봇 0';
-    if (cell.dead && cell.phase === 'TRIBUNAL') return '재판 앞 채팅방엔 "죽은 사람끼리" 띠가 읽히고 재판 창 채팅으로 보내면 죽은 봇만 받음, 재판 창엔 띠 없음 [지금 동작]';
+    if (cell.dead && cell.phase === 'TRIBUNAL') return '재판 앞 채팅방엔 "죽은 사람끼리" 띠가 읽히고 재판 창 채팅에도 띠가 읽히고 보내면 죽은 봇만 받음';
     if (cell.dead) return '"죽은 사람끼리" 띠가 읽히고 죽은 봇만 받음';
     if (cell.phase === 'NIGHT' && cell.me === 'CITIZEN') return '입력 줄 없음·까닭 글이 읽힘·띠 없음·봇 0';
     if (cell.phase === 'NIGHT') return '"밤 · 같은 직업끼리" 띠가 읽히고 같은 직업 봇만 받음';
-    if (cell.phase === 'TRIBUNAL') return '재판 창 채팅으로 보내면 봇 전원이 받음';
+    if (cell.phase === 'TRIBUNAL') return '재판 창에 "죽은 사람끼리" 띠 없고 재판 창 채팅으로 보내면 봇 전원이 받음';
     return '띠 없이 보내면 봇 전원이 받음';
 }
 

@@ -206,6 +206,10 @@ test('A03-E-146 PC 5명 판 토론 중 안내 "토론 중입니다. 투표는 �
     await expect(item).toBeDisabled();
     await expect(item).toHaveAttribute('title', DISCUSSION_NOTICE);
     await expect(item).toContainText(DISCUSSION_NOTICE);
+    // 꺼진 "투표하기" 아래 보이는 까닭 글 한 줄 (마우스를 안 올려도 읽힘 — 결정 2026-11-16 낮 넷째 3번)
+    const reason = menu.locator('[data-ingame-card-menu-reason]').filter({ hasText: DISCUSSION_NOTICE });
+    await expect(reason).toHaveText(DISCUSSION_NOTICE);
+    await expectReadable(reason);
     await page.keyboard.press('Escape');
     // 토론 중엔 기권 단추도 없음
     await expect(page.locator('[data-ingame-phase-action="dayVoteAbstain"]')).toHaveCount(0);

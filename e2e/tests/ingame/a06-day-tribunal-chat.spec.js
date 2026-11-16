@@ -22,7 +22,9 @@ async function expectAllBotsHear(t, text) {
 }
 
 // 채팅 크게 보기 창 열기 (채팅 틀의 키보드용 단추)
+// 단계 안내·밤 차례 창이 뜨면 크게 보기가 닫히므로(결정 2026-11-16 판 화면 겹 창 닫기) 덮개 창이 다 닫힌 뒤에 엶
 async function openCloseup(page) {
+    await k.noOverlays(page);
     await page.getByRole('button', { name: '채팅 크게 보기' }).focus();
     await page.keyboard.press('Enter');
     await expect(k.closeupOf(page)).toBeVisible();
@@ -215,14 +217,20 @@ test('A06-E-066 결과 화면 엔터 (5명 판) → 판 끝 결과 화면에서 
     expect(t.bots.filter((b) => k.chatFrom(b, user.account.uuid)).length, '사람 채팅을 받은 봇 수').toBe(0);
 });
 
-test('A06-E-067 크게 보기 창 밤 시민 닫힘 (6명 판) → 크게 보기 창을 연 채 밤이 되면 그 창에 까닭 글이 읽힘 @game', async ({ user, table }) => {
+test('A06-E-067 크게 보기 창 밤 시민 닫힘 (6명 판) → 낮에 연 크게 보기는 밤 안내가 뜨면 닫힘, 밤에 다시 열면 그 창에 까닭 글이 읽힘 @game', async ({ user, table }) => {
     const t = await dayTable(table, user, 6);
     const page = user.page;
     const closeup = await openCloseup(page);
     await expect(k.inputIn(closeup)).toBeVisible();
 
+    // 밤 안내가 뜨면 크게 보기가 닫힘 (안내 글·"확인"을 가리지 않게)
     await c.phaseTo(t, 'NIGHT');
-    await k.readableOnceClear(page, k.closedNote(closeup));
+    await expect(closeup).toHaveCount(0, { timeout: 20_000 });
+    // 밤 차례 안내가 이어 뜨면 또 닫히므로, 닫혀 있으면 다시 열어 가며 까닭 글을 봄
+    await expect(async () => {
+        if (!(await closeup.isVisible().catch(() => false))) await openCloseup(page);
+        await expectReadable(k.closedNote(closeup), { timeout: 1500 });
+    }).toPass({ timeout: 60_000 });
     await expect(k.closedNote(closeup)).toHaveText(k.CLOSED_TEXT);
     await expect(k.inputIn(closeup)).toHaveCount(0);
 });

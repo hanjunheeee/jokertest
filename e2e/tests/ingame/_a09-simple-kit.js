@@ -337,6 +337,8 @@ async function toCitizenWin(t, page) {
     if (end.phase !== 'ENDED') throw new Error(`광대를 처형했는데 판이 안 끝남: ${end.phase}`);
     await pastExpulsion(page);
     const list = await waitResult(page);
+    // 폰 결과 화면은 결과판 1.5초 뒤 전면 광고 창이 덮음 → 닫아 둠 (뒤에서 결과 화면 단추를 누르거나 읽기 확인을 하므로)
+    if ((page.viewportSize()?.width ?? 1280) < 600) await ui.closeResultAd(page);
     return { joker, list };
 }
 

@@ -91,7 +91,7 @@ test('A09-H-023 [B07-1] 10명 판(사람 3 + 봇 7) 처형된 ㄱ이 탭을 닫�
     const dialog = cc.page.locator('[data-ingame-night-private-result="CONFIRM"]').getByRole('dialog', { name: '밤 조사 결과' });
     await A.calm(cc.page, () => expect(dialog).toBeVisible({ timeout: 1000 }), { names: ['단계 전환 안내', '밤 역할 안내', '알림', '내 역할 보기'], timeout: 45_000 });
     await expect(dialog).toContainText(nick(a));
-    await expect(dialog).toContainText('시민입니다');
+    await expect(dialog).toContainText('귀족입니다');
     await expectReadable(dialog.getByRole('paragraph').first());
 });
 

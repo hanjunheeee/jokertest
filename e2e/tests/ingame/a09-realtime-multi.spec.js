@@ -64,7 +64,7 @@ test('A09-H-001 6명 판(사람 2 + 봇 4, 토론 30·투표 30·재판 15) ㄴ�
     expect(theirs.label).toBe(mine.label);
     const deadline = await H.deadlineOf(t);
     expect(Math.abs(theirs.seconds - (deadline - Date.now()) / 1000), 'ㄴ 화면 남은 초').toBeLessThanOrEqual(2);
-    await H.expectMyRole(b.page, '시민');
+    await H.expectMyRole(b.page, '귀족');
 
     // ㄱ 화면: 끊김 → 돌아옴
     await H.expectStatus(a.page, nick(b), 'alive');

@@ -209,8 +209,8 @@ async function captureAlert(page, action, { timeoutMs = 10000, close = true } = 
     }
 }
 
-// 역할 이름 화면 글자
-const ROLE_LABELS = Object.freeze({ JOKER: '광대', CITIZEN: '시민', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
+// 역할 이름 화면 글자 (시민 직업 화면 이름은 "귀족", 결정 2026-11-16 셋째 8번 — 진영 이름 "시민 진영"은 그대로)
+const ROLE_LABELS = Object.freeze({ JOKER: '광대', CITIZEN: '귀족', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
 
 module.exports = {
     skipIntro, loginViaUi, loginViaApi, gotoLobby, joinRoomByCodeUi, readyUi, readRoleReveal, closeResultAd, closePhaseNotice,

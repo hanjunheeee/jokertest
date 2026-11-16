@@ -17,7 +17,7 @@ async function citizenNight(table, user) {
     return t;
 }
 
-test('A06-E-019 밤 시민 까닭 글이 진짜 보임 (6명 판) → "밤에는 시민이 채팅을 쓸 수 없습니다"가 읽히고 입력칸 없음 @game @smoke', async ({ user, table }) => {
+test('A06-E-019 밤 시민 까닭 글이 진짜 보임 (6명 판) → "밤에는 귀족이 채팅을 쓸 수 없습니다"가 읽히고 입력칸 없음 @game @smoke', async ({ user, table }) => {
     await citizenNight(table, user);
     const page = user.page;
     await k.readableOnceClear(page, k.closedNote(page));

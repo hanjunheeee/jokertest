@@ -17,8 +17,8 @@ const nick = (x) => x.account.nickname;
 const resultBoard = (page) => page.getByRole('region', { name: '가면무도회 참가자 정체' });
 const myChip = (who) => resultRow(who.page, nick(who)).getByTestId('game-result-gold-reward');
 
-// 결과판 직업 글 (판 화면과 같은 이름: 시민은 "시민" — "귀족" 안 씀)
-const RESULT_JOB = Object.freeze({ JOKER: '광대', CITIZEN: '시민' });
+// 결과판 직업 글 (판 화면과 같은 이름: 시민 직업은 "귀족" — 결정 2026-11-16 셋째 8번)
+const RESULT_JOB = Object.freeze({ JOKER: '광대', CITIZEN: '귀족' });
 
 // 봇 방장 판은 단계 시간을 가장 길게 둠 — 단계는 손잡이·"다 내면 5초"로만 넘어감 (화면을 누르거나 기다리는 동안 진짜 마감이 먼저 오면 흐름이 엇갈림)
 const PACE = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTime: 120, nightActionTime: 120 });
