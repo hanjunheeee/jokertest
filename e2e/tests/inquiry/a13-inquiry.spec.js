@@ -60,7 +60,7 @@ test('A13-E-069 금지어 든 문의 → 내 목록에서 그 낱말이 가려�
     }
 });
 
-test('A13-E-070 답 기다리는 문의 5개(DB로 넣음) → 화면에서 6번째 → "답을 기다리는 문의가 5개예요. 답을 받은 뒤에 써 주세요." 읽힘', async ({ user }) => {
+test('A13-E-070 답 기다리는 문의 5개(DB로 넣음) → 화면에서 6번째 → "답을 기다리는 문의가 5개 있어요. 답이 온 뒤에 새로 보내 주세요." 읽힘', async ({ user }) => {
     const page = user.page;
     await K.insertOpenInquiries(U(user), 5);
     await K.openInquiry(page);

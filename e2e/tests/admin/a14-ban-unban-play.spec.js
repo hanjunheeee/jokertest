@@ -8,6 +8,8 @@ const A = require('../ingame/_a04-multi');
 const k = require('./_a14-kit');
 
 const { H, U, TEXT } = k;
+// 시민 직업(CITIZEN)의 화면 이름 (2026-11-16 사용자 결정: "귀족"으로 통일)
+const CITIZEN_NAME = '귀족';
 
 test(`${H(4)} 로비 플레이어 정지 → 튕김 → 해제 → 로그인 → 5명 판 시작·역할 확인 @game @hard @smoke`, async ({ browser, players, table }) => {
     test.setTimeout(240_000);
@@ -31,12 +33,12 @@ test(`${H(4)} 로비 플레이어 정지 → 튕김 → 해제 → 로그인 →
     await expect(player.page).toHaveURL(/\/lobby/);
     await ui.skipIntro(player.page);
 
-    // 해제 뒤 바로 판: 사람 시민 + 봇 4 (첫 봇 광대)
+    // 해제 뒤 바로 판: 사람 귀족 + 봇 4 (첫 봇 광대)
     const t = await table.setup({ humans: [player], bots: 4, roles: A.plainRoles() });
     await A.expectRoles(t, { [U(player)]: 'CITIZEN' });
     const dialog = player.page.getByRole('dialog', { name: '내 역할 보기' });
     await expect(dialog).toBeVisible({ timeout: 20_000 });
-    await expectReadable(dialog.getByText(ui.ROLE_LABELS.CITIZEN, { exact: true }));
-    expect(await ui.readRoleReveal(player.page)).toBe(ui.ROLE_LABELS.CITIZEN);
+    await expectReadable(dialog.getByText(CITIZEN_NAME, { exact: true }));
+    expect(await ui.readRoleReveal(player.page)).toBe(CITIZEN_NAME);
     expect((await t.state()).players).toHaveLength(5);
 });

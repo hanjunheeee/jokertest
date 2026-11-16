@@ -184,7 +184,7 @@ test(`${E(30)} 사람 1 + 봇 4 = 5명 판 낮 → 관리자가 사람 정지 �
     }
 });
 
-test(`${E(31)} [지금 동작] 사람 1 + 봇 5 = 6명 판 → 강제 접속 종료 → 끊김 안내 → 다시 로그인 → 판 화면으로 @game`, async ({ browser, players, table }) => {
+test(`${E(31)} 사람 1 + 봇 5 = 6명 판 → 강제 접속 종료 → 끊김 안내 → 다시 로그인 → 판 화면으로 (산 채로 판에 남음, 결정 둘째 7번) @game`, async ({ browser, players, table }) => {
     const player = await k.openPlayer(players);
     const t = await A.openTable(table, { humans: [player], bots: 5, roles: A.plainRoles() });
     await N.toDay(t);

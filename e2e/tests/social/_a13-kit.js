@@ -40,7 +40,8 @@ const TEXT = Object.freeze({
     reportMemoLong: '메모는 500자까지 적을 수 있습니다.',
     reportRate: '신고가 너무 많습니다. 잠시 후 다시 시도해주세요.',
     inquiryWaiting: '답 기다림',
-    inquiryOpenLimit: '답을 기다리는 문의가 5개예요. 답을 받은 뒤에 써 주세요.',
+    // 화면이 준비한 글 (서버 글 "…5개예요. 답을 받은 뒤에 써 주세요."는 안 보이고 오류 코드로 이 글을 고름)
+    inquiryOpenLimit: '답을 기다리는 문의가 5개 있어요. 답이 온 뒤에 새로 보내 주세요.',
     replyFrom: '운영팀',
 });
 

@@ -4,13 +4,14 @@
 // 목록 시험목록/A14-관리자.md 번호 A14-E-014~020 — 돌리지 않고 모임만: npx playwright test --list tests/admin/a14-members.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
-const { ROLE_LABELS } = require('../../helpers/ui');
 const { query } = require('../../helpers/db');
 const { playToResult } = require('../room/roomHelpers');
 const k = require('./_a14-kit');
 
 const { E, U, NICK } = k;
 const searchBox = (page) => page.getByRole('search').getByLabel('찾을 회원');
+// 관리자 지난 판 화면의 직업 이름 (frontend/src/admin/domains/games/labels.js — 시민 직업은 "귀족", 2026-11-16 사용자 결정)
+const ADMIN_ROLE = Object.freeze({ JOKER: '광대', CITIZEN: '귀족' });
 
 // 회원 화면에서 찾기 → 찾은 회원 목록 줄
 async function search(page, word) {
@@ -100,9 +101,9 @@ test(`${E(18)} 목록 이메일은 가림 → 상세 "이메일 보기" → 전�
     }
 });
 
-test(`${E(19)} 그 회원이 끝까지 한 5명 판 → 지난 판에 그 판, 참가자 5명 직업·승패 @game`, async ({ browser, players, table }) => {
+test(`${E(19)} 그 회원이 끝까지 한 5명 판 → 지난 판에 그 판, 참가자 5명 직업(광대·귀족)·승패 @game`, async ({ browser, players, table }) => {
     const user = await k.openPlayer(players);
-    // 사람 시민 + 봇 광대 1·시민 3, 봇 표로 광대 처형 → 시민 승
+    // 사람 귀족 + 봇 광대 1·귀족 3, 봇 표로 광대 처형 → 시민 진영 승
     const { t, joker } = await playToResult({ user, table, kind: 'citizenWin' });
     const w = await k.openAdmin(browser);
     try {
@@ -121,7 +122,7 @@ test(`${E(19)} 그 회원이 끝까지 한 5명 판 → 지난 판에 그 판, �
         for (const who of everyone) {
             const line = people.filter({ hasText: NICK(who) });
             const isJoker = U(who) === joker;
-            await expect(line).toContainText(isJoker ? ROLE_LABELS.JOKER : ROLE_LABELS.CITIZEN);
+            await expect(line).toContainText(isJoker ? ADMIN_ROLE.JOKER : ADMIN_ROLE.CITIZEN);
             await expect(line.getByRole('cell').nth(3)).toHaveText(isJoker ? '패' : '승');
         }
         await expectReadable(people.filter({ hasText: NICK(user) }).getByRole('cell').nth(3));
