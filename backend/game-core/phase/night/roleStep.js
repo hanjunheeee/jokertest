@@ -1,14 +1,14 @@
 // 밤 역할 차례 파일
 // 역할 차례 판정 + 기록 반영, socket 밤 차례·판정 준비가 사용 (지도 05·06)
-const { getAliveActorUuidsForRole, matchesTargetLifeRule, isRoleTurnComplete } = require('./actors')
+const { getRoleNightDeciderUuids, matchesTargetLifeRule, isRoleTurnComplete } = require('./actors')
 const { NIGHT_ACTION_RESOLUTION_POLICY, NIGHT_RECOVERY_STATES, NIGHT_TURN_ORDER, EMPTY_COMPLETED_ROLES } = require('./constants')
 const { isRecoveryBlockedState, getNightProgress, ensureNightProgress } = require('./progress')
 const { isRegisteredSession } = require('../../queries/byId')
 const { assertSessionNotEnded } = require('../../core/rules/terminal')
 
-// 이 역할 사람들이 낸 대상 모으기 (빼라는 사람 빼고)
+// 이 역할 사람들이 낸 대상 모으기 (빼라는 사람 빼고, 고르고 빠진 사람 것은 넣음)
 function collectRoleNightSubmissions(session, role, excludedActorUuids = new Set()) {
-    return getAliveActorUuidsForRole(session, role)
+    return getRoleNightDeciderUuids(session, role)
         .filter((actorUuid) => !excludedActorUuids.has(actorUuid))
         .map((actorUuid) => ({
             actorUuid,
@@ -51,7 +51,7 @@ function resolveRoleNightAction(session, role, excludedActorUuids = new Set()) {
 
 // 대상이 판에 없거나 살아/죽어 있어야 하는데 아닌 사람 찾기
 function findInvalidSubmission(session, role) {
-    for (const actorUuid of getAliveActorUuidsForRole(session, role)) {
+    for (const actorUuid of getRoleNightDeciderUuids(session, role)) {
         const target = session.nightActions.get(actorUuid)
         // 건너뛴 사람은 볼 것 없음
         if (target === null || target === undefined) continue
@@ -69,8 +69,8 @@ function computeNightRoleStep(session, progress, role) {
     const hasRoleInGame = [...session.players.values()].some((player) => player.role === role)
     if (!hasRoleInGame) return { role, targetId: null, status: 'NO_ROLE' }
 
-    // 있긴 한데 오늘 밤 행동할 산 사람이 없음
-    const actors = getAliveActorUuidsForRole(session, role)
+    // 있긴 한데 오늘 밤 행동할 산 사람도, 고르고 빠진 사람도 없음
+    const actors = getRoleNightDeciderUuids(session, role)
     if (actors.length === 0) {
         return { role, targetId: null, status: 'NO_ACTOR' }
     }

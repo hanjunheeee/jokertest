@@ -1,5 +1,5 @@
 // 다 차면 5초 뒤 판정 파일
-// 표·밤 행동이 다 찬 단계의 마감을 지금+5초로 당기기 + 판 전원에게 당긴 마감 알림, 낮·재판 타이머·밤 턴이 씀
+// 표·밤 행동이 다 찬 단계의 마감을 지금+5초로 당기기 + 판에 당김 표시 적기 + 판 전원에게 당긴 마감 알림, 낮·재판 타이머·밤 턴이 씀
 // 판정은 원래 마감 길 그대로 씀 (새 판정 길이 없어 겹친 판정·멈춤 위험이 안 늘어남)
 const { isolate } = require('../../common/isolate')
 const { clearRunTimer } = require('../core/timers')
@@ -41,6 +41,9 @@ function pullRunDeadline(run, stepKey) {
 // 예 { gameId, phase: 'NIGHT', dayIndex: 1, role: 'JOKER', deadline: 1763280005000 } (낮·재판은 role null)
 function announceSettleStarted(run, phase, role = null) {
     const { session } = run
+    // 판에도 "지금 당김 중" 표시 적어 둠 (새로고침 스냅샷이 "5초 뒤 마감" 글·시간 바 펼침을 살림)
+    // 단계가 넘어가도 안 지움: 스냅샷이 단계·날짜·직업·마감이 지금과 같을 때만 실음
+    session.phaseSettle = { phase, dayIndex: session.dayIndex, role, deadline: run.deadline }
     const payload = { gameId: session.id, phase, dayIndex: session.dayIndex, role, deadline: run.deadline }
     isolate('[마감 당김 방송 실패]', { code: 'DELIVERY_ERROR', event: PHASE_SETTLE_STARTED_EVENT, gameId: session.id },
         () => emitToGameChannel(run.io, session, PHASE_SETTLE_STARTED_EVENT, payload))

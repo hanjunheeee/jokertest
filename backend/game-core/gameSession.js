@@ -32,6 +32,7 @@ const {
     getResultClosesAt,
     withResultClosesAt,
     getBoundEndedPlayerUuids,
+    hasLeftEndedSession,
     getEndedSeatProfile,
 } = require('./queries/ended')
 const { getSessionById } = require('./queries/byId')
@@ -260,6 +261,7 @@ module.exports = {
     RESULT_SCREEN_MS,
     getResultClosesAt,
     getBoundEndedPlayerUuids,
+    hasLeftEndedSession,
     getEndedSeatProfile,
     getActiveGamePresenceSnapshot,
     // 여기부터 시험 전용 (운영 코드는 안 씀)

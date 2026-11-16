@@ -35,6 +35,20 @@ function getAliveActorUuidsForRole(session, role) {
     return getEligibleNightActorUuids(session).filter((uuid) => session.players.get(uuid)?.role === role)
 }
 
+// 이 역할 밤 판정에 고름이 들어가는 사람: 산 사람 + 고른 뒤 판에서 빠진 사람
+// 빠진 사람이 이미 낸 고름은 남음 (보호를 고른 의사·암살을 고른 광대가 탈락해도 남음, 사용자 결정 2026-11-16)
+// 밤에 죽는 길은 판에서 빠지는 것뿐이라, 죽었는데 고름이 남아 있으면 고른 뒤 빠진 사람
+// 예 광대 j1이 X를 고르고 나감, j2는 남음 → ['j2', 'j1']
+function getRoleNightDeciderUuids(session, role) {
+    const uuids = getAliveActorUuidsForRole(session, role)
+    for (const actorUuid of session.nightActions.keys()) {
+        const player = session.players.get(actorUuid)
+        if (!player || player.alive === true || player.role !== role) continue
+        uuids.push(actorUuid)
+    }
+    return uuids
+}
+
 // 이 판 오늘 밤 차례 (판에 없는 역할·오늘 밤 행동 못 하는 역할은 뺌)
 // 마녀사냥꾼은 첫날 밤 차례 자체를 건너뜀 (차례 안내 방송 안 나감, 사용자 결정 2026-11-09)
 function getNightTurnOrder(session) {
@@ -51,7 +65,7 @@ function filterComposedRoles(composition) {
     return order.length > 0 ? order : NIGHT_TURN_ORDER
 }
 
-// 이 역할 사람 전부 냈는지
+// 이 역할 산 사람 전부 냈는지 (빠진 사람은 더 못 내니 안 셈)
 function isRoleTurnComplete(session, role) {
     for (const actorUuid of getAliveActorUuidsForRole(session, role)) {
         if (!session.nightActions.has(actorUuid)) return false
@@ -70,6 +84,7 @@ module.exports = {
     matchesTargetLifeRule,
     getEligibleNightActorUuids,
     getAliveActorUuidsForRole,
+    getRoleNightDeciderUuids,
     getNightTurnOrder,
     isRoleTurnComplete,
     getCurrentNightTurnRole,

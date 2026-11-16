@@ -101,7 +101,9 @@ function advanceNightTurn(run) {
     emitNightTurnEvent(run, 'night_turn_started', gameSessionCore.buildNightTurnStartedPayload(session, role, deadline))
 
     // 산 행동자 없는 턴도 무작위 시간 뒤 닫음 (역할 전멸이 새지 않게)
-    if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) {
+    // 처음부터 빈 턴인지 적어 둠 (도중에 낼 사람이 다 빠진 턴과 가르려고)
+    run.emptyFromStart = gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0
+    if (run.emptyFromStart) {
         run.timerId = run.setTimeoutFn(() => endNightTurn(run, role), computeEmptyTurnDelayMs(durationMs, run.randomFn))
         return
     }
@@ -153,7 +155,7 @@ function endNightTurn(run, role) {
 }
 
 // 지금 역할 산 행동자가 다 골랐으면 턴 마감을 지금+5초로 당기고 판 전원에 알림, 당겼으면 새 마감 시각 (아니면 null)
-// 1명이어도 같음, 5초 안엔 고른 대상 바꾸기 됨 (다시 내면 덮어씀, 5초는 다시 안 셈), 빈 턴은 무작위 타이머에 맡김
+// 1명이어도 같음, 5초 안엔 고른 대상 바꾸기 됨 (다시 내면 덮어씀, 5초는 다시 안 셈), 처음부터 빈 턴은 무작위 타이머에 맡김
 // 당긴 마감엔 바로 턴 닫기: 다 냈으니 기권 채울 것 없음
 function settleNightTurnIfComplete(gameId) {
     const run = nightTurnRuns.get(gameId)
@@ -161,8 +163,12 @@ function settleNightTurnIfComplete(gameId) {
     const { session } = run
     const role = gameSessionCore.getCurrentNightTurnRole(session)
     if (role === null || !isSubmittingNightTurn(run, role)) return null
-    if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) return null
-    if (!gameSessionCore.isRoleTurnComplete(session, role)) return null
+    // 낼 사람이 도중에 다 빠진 턴(혼자 남은 차례 주인 탈락)도 5초로 당김: 안 당기면 모두 턴 끝까지 기다림
+    if (gameSessionCore.getAliveActorUuidsForRole(session, role).length === 0) {
+        if (run.emptyFromStart) return null
+    } else if (!gameSessionCore.isRoleTurnComplete(session, role)) {
+        return null
+    }
 
     const pulled = pullRunDeadline(run, `NIGHT:${run.nightDayIndex}:${role}`)
     if (!pulled) return null

@@ -6,7 +6,8 @@ const { PHASE_RETRY_DELAY_MS, PHASE_RETRY_MAX } = require('../core/constants')
 const { dayPhaseRuns } = require('../core/state')
 const { pickRequesterUuid } = require('../core/requester')
 const { pickTimerFns, clearRunTimer, fillAbstentions } = require('../core/timers')
-const { detachGracesIfEnded } = require('../connection/grace')
+const { detachGracesIfEnded, getDisconnectGraceRun } = require('../connection/grace')
+const { isUuidConnected } = require('../connection/ownership')
 const { emitToGameChannel, deliverToParticipants } = require('../delivery/broadcast')
 const { startNightTurnSequence, stopNightTurnSequence } = require('./night/turn')
 const { startTribunalTimer, stopTribunalTimer } = require('./tribunal')
@@ -94,6 +95,12 @@ function expireDayDiscussion(run) {
     emitDayPhaseEvent(run, 'day_phase_changed', gameSessionCore.buildDayPhaseChangedPayload(session))
 }
 
+// 그 사람이 끊겨 60초 기다리는 중인지 (유예가 걸려 있고 아직 안 붙음, 유예 만료가 보는 것과 같은 기준)
+// 낮 판정이 씀: 피고로 뽑힌 사람이 이 순간 끊겨 있으면 재판을 안 엶
+function isWaitingDisconnected(io, session, uuid) {
+    return Boolean(getDisconnectGraceRun(session.id, uuid)) && !isUuidConnected(io, uuid)
+}
+
 // 투표 마감 판정이 안 됐을 때: 같은 단계 그대로면 잠깐 뒤 다시 (최대 PHASE_RETRY_MAX번, 단계가 멈추지 않게)
 function retryDayVoteLater(run, label) {
     if (!isLiveDayRun(run)) return
@@ -126,7 +133,9 @@ function expireDayVote(run) {
     const requesterUuid = pickRequesterUuid(session)
     if (!requesterUuid) return
     const prepared = callCoreOrLog(label, session.id, 'PREPARE_UNEXPECTED_ERROR',
-        () => gameSessionCore.prepareDayVoteResolution(requesterUuid, session.id, session.dayIndex))
+        () => gameSessionCore.prepareDayVoteResolution(requesterUuid, session.id, session.dayIndex, {
+            isDisconnected: (uuid) => isWaitingDisconnected(run.io, session, uuid),
+        }))
     if (!prepared) {
         retryDayVoteLater(run, label)
         return

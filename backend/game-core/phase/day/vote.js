@@ -16,7 +16,8 @@ function submitDayVote(uuid, gameId, targetId) {
     }
 
     // 지금 내가 있는 판이랑 같은지, 판이랑 판 안의 나 찾기
-    const found = findSessionForActor(uuid, normalizedGameId)
+    // 끝난 판이면 다른 검사보다 먼저 GAME_ALREADY_ENDED로 거절 (끝난 판 요청은 거절 코드 하나로)
+    const found = findSessionForActor(uuid, normalizedGameId, { checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
 

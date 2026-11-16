@@ -41,6 +41,15 @@ function getBoundEndedPlayerUuids(gameId) {
         playerSession.get(uuid) === gameId && !isForfeitedFromSession(gameId, uuid))
 }
 
+// 끝난 판에서 이미 나간 사람인지 (결과 화면 "로비로"·끊김으로 빠진 판 사람, 기권한 사람은 아님)
+// 그 판 스냅샷을 다시 물을 때 "그 판에 없음"으로 답하려고 socket 스냅샷 핸들러가 씀
+function hasLeftEndedSession(gameId, uuid) {
+    const session = gameSessions.get(gameId)
+    if (!session || session.phase !== 'ENDED' || !session.players.has(uuid)) return false
+    if (playerSession.get(uuid) === gameId || isForfeitedFromSession(gameId, uuid)) return false
+    return session.detachedUuids instanceof Set && session.detachedUuids.has(uuid)
+}
+
 // "대기방으로" 누른 사람의 방 자리 프로필 (판 시작 때 방에서 옮겨 온 값, DB 안 부름)
 // 이 끝난 판에 아직 묶인 사람만, 아니면 null
 // 예: → { nickname:'민수', accountProfilePhotoId: 3, accountProfileBorderId: null }
@@ -77,5 +86,6 @@ module.exports = {
     getResultClosesAt,
     withResultClosesAt,
     getBoundEndedPlayerUuids,
+    hasLeftEndedSession,
     getEndedSeatProfile,
 }

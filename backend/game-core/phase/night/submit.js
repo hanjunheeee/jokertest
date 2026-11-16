@@ -9,8 +9,8 @@ const { SELF_TARGET_ROLES } = require('./constants')
 // 밤 행동 대상 받기 (밤·산 사람·내 차례·대상 조건 맞을 때만)
 // 광대가 광대(나 포함)를 고르면 거절 (사용자 결정 2026-11-09)
 function submitNightAction(uuid, gameId, targetId) {
-    // 판 id 확인 + 내 판·판 안의 나 찾기 (옛 판 화면에서 보낸 것 거절)
-    const found = findActorSession(uuid, gameId)
+    // 판 id 확인 + 내 판·판 안의 나 찾기 (옛 판 화면에서 보낸 것 거절), 끝난 판이면 GAME_ALREADY_ENDED로 거절
+    const found = findActorSession(uuid, gameId, { checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
 

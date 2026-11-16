@@ -14,6 +14,15 @@ function isForfeitedFromSession(gameId, uuid) {
     return hasForfeited(session, uuid)
 }
 
+// 지금 열려 있는 판 중 이 사람이 기권 명단에 든 판이 있는지
+// 판 번호 없이 스냅샷을 물을 때만 씀 (새로고침한 화면은 판 번호를 모름), 열린 판 수만큼만 훑음
+function isForfeitedFromAnySession(uuid) {
+    for (const session of gameSessions.values()) {
+        if (hasForfeited(session, uuid)) return true
+    }
+    return false
+}
+
 // 아직 판에 참여 중인지 (빠졌거나 기권했으면 아님)
 function isParticipatingInSession(session, uuid) {
     // 판에 없거나, 나가서 빠졌거나, 기권했으면 아님
@@ -33,6 +42,7 @@ function getParticipationRevision(session) {
 module.exports = {
     hasForfeited,
     isForfeitedFromSession,
+    isForfeitedFromAnySession,
     isParticipatingInSession,
     getParticipationRevision,
 }

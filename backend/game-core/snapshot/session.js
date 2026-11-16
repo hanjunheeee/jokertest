@@ -4,18 +4,21 @@
 const { buildPlayerThemeIndices, buildSettingsFields, buildProfileFields, buildViewerRoleFields } = require('../setup/startPayload')
 const { PLAYER_THEME_PALETTE_SIZE } = require('../setup/constants')
 const { getDayPhase } = require('../phase/day/state')
+const { DAY_PHASES } = require('../phase/day/constants')
 const { buildDayVoteResolvedPayload, buildPublicDayPhaseDeadlineField } = require('../phase/day/payloads')
 const { computeHasActed, buildSelfFields, buildPublicProgress } = require('./progress')
 const { buildNightResultAppliedPayload, buildPublicNightTurnTimerFields } = require('../phase/night/payloads')
 const { buildTribunalVoteResolvedPayload } = require('../phase/tribunal/resolve')
 const { buildPublicWinResult } = require('../result/winReveal')
 const { normalizeGameId } = require('../core/registry/lookup')
-const { isForfeitedFromSession } = require('../queries/participation')
+const { isForfeitedFromSession, isForfeitedFromAnySession } = require('../queries/participation')
 const { getPlayerGameId, getSessionById } = require('../queries/byId')
 
 // 스냅샷에 낮·재판 칸 넣어도 되는지
 function canIncludeVoteFields(session) {
     if (session.phase === 'DAY' || session.phase === 'TRIBUNAL') return true
+    // 밤에도 실음: 낮 판정 뒤 새로고침해도 "왜 재판이 안 열렸나"가 보이게 (사용자 결정 2026-11-16, 밤엔 낮 판정 칸만)
+    if (session.phase === 'NIGHT') return true
     // 끝난 판은 밤에 끝난 판만 뺌: 밤 결과 날짜가 지금 날짜와 같으면 밤에 끝남
     // 첫 밤 전(1일째 낮·재판)에 끝난 판은 밤 결과가 없어도 그날 투표·재판 칸을 실음
     if (session.phase === 'ENDED') {
@@ -30,6 +33,22 @@ function buildPublicTribunalDeadlineField(session) {
     const deadline = session.tribunalDeadline
     if (!Number.isFinite(deadline) || deadline <= 0) return {}
     return { tribunalDeadline: deadline }
+}
+
+// 지금 5초 당김 중 표시 칸: socket 마감 당기기가 판에 적어 둔 표시가 지금 단계·날짜·밤 차례 직업·마감과 다 같을 때만
+// 새로고침해도 "5초 뒤 마감" 글·시간 바 펼침이 살아남게 (사용자 결정 2026-11-16), 단계가 넘어가면 저절로 안 맞아 안 실림
+// 예 { phaseSettle: { phase: 'NIGHT', dayIndex: 1, role: 'JOKER', deadline: 1763280005000 } } (낮·재판은 role null)
+function buildPublicPhaseSettleField(session, timerFields) {
+    const mark = session.phaseSettle
+    if (!mark || mark.phase !== session.phase || mark.dayIndex !== session.dayIndex) return {}
+    // 스냅샷에 실리는 마감 칸과 견줌 (그 칸이 안 실리면 표시도 안 실음)
+    const matchesDeadline = {
+        DAY: getDayPhase(session) === DAY_PHASES.VOTE && timerFields.dayPhaseDeadline === mark.deadline,
+        TRIBUNAL: timerFields.tribunalDeadline === mark.deadline,
+        NIGHT: timerFields.nightTurnRole === mark.role && timerFields.nightTurnDeadline === mark.deadline,
+    }[mark.phase]
+    if (matchesDeadline !== true) return {}
+    return { phaseSettle: { phase: mark.phase, dayIndex: mark.dayIndex, role: mark.role ?? null, deadline: mark.deadline } }
 }
 
 // 지난밤 내 개인 결과 칸 (경비원 조사·마녀사냥꾼 확인·광대 실패), 보는 사람 것만 (BE-036)
@@ -70,11 +89,14 @@ function addVoteFields(session, fields) {
         }
     }
 
-    // 오늘 재판: 끝났으면 결과까지, 아직이면 피고만
+    // 밤엔 재판 칸 안 실음 (화면은 밤에 들어설 때 재판 상태를 지움, 실시간 알림 길과 같게)
+    if (session.phase === 'NIGHT') return
+
+    // 오늘 재판: 끝났으면 결과까지(표 수는 안 실음), 아직이면 피고만
     if (!session.tribunal || session.tribunal.dayIndex !== session.dayIndex) return
     if (session.tribunal.resolved) {
-        const { defendantUuid, outcome, counts, executedUuid } = buildTribunalVoteResolvedPayload(session)
-        fields.tribunal = { defendantUuid, resolved: true, outcome, counts: { ...counts }, executedUuid }
+        const { defendantUuid, outcome, executedUuid } = buildTribunalVoteResolvedPayload(session)
+        fields.tribunal = { defendantUuid, resolved: true, outcome, executedUuid }
     } else {
         fields.tribunal = { defendantUuid: session.tribunal.defendantUuid, resolved: false }
     }
@@ -83,6 +105,12 @@ function addVoteFields(session, fields) {
 // 보는 사람 기준 판 스냅샷 (내 역할·진행·투표·재판·밤 결과)
 function buildSessionSnapshot(session, uuid) {
     const viewer = session.players.get(uuid)
+    // 새로고침해도 타이머가 이어지게 낮·밤 차례·재판 마감 시각
+    const timerFields = {
+        ...buildPublicDayPhaseDeadlineField(session),
+        ...buildPublicNightTurnTimerFields(session),
+        ...buildPublicTribunalDeadlineField(session),
+    }
     // 모두에게 같은 칸: 판 정보·사람 목록(역할 없음)·진행 표시
     const fields = {
         gameId: session.id,
@@ -98,10 +126,8 @@ function buildSessionSnapshot(session, uuid) {
         selfProgressSeq: session.selfProgressSeq ?? 0,
         // 낮이면 토론·투표 중 어느 쪽인지
         ...(session.phase === 'DAY' ? { dayPhase: getDayPhase(session) } : {}),
-        // 새로고침해도 타이머가 이어지게 낮·밤 차례·재판 마감 시각
-        ...buildPublicDayPhaseDeadlineField(session),
-        ...buildPublicNightTurnTimerFields(session),
-        ...buildPublicTribunalDeadlineField(session),
+        ...timerFields,
+        ...buildPublicPhaseSettleField(session, timerFields),
         players: buildPublicPlayers(session),
         // 나만 보는 칸: 내 역할·내가 이미 했는지·내가 낸 것
         self: {
@@ -139,6 +165,10 @@ function getSessionSnapshotForPlayer(uuid, expectedGameId) {
     if (!gameId) {
         const normalized = normalizeGameId(expectedGameId)
         if (normalized && isForfeitedFromSession(normalized, uuid)) {
+            return { ok: false, code: 'FORFEITED_FROM_SESSION' }
+        }
+        // 판 번호 없이 물었으면(새로고침한 화면) 열린 판 기권 명단에서 찾음 (못 가리면 화면이 까닭 글 없이 방 목록으로 감)
+        if (!normalized && isForfeitedFromAnySession(uuid)) {
             return { ok: false, code: 'FORFEITED_FROM_SESSION' }
         }
         return { ok: false, code: 'NOT_A_PARTICIPANT' }

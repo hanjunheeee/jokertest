@@ -136,9 +136,9 @@ function commitTribunalVoteResolution(session, resolution) {
 }
 
 // 재판 결과 방송 내용 (취소된 재판이면 이유도 붙임)
+// 표 수·처형된 사람 직업은 안 실음: 화면에 안 그려도 개발 도구로 보여 직업이 샘 (사용자 결정 2026-11-16, 직업은 판 끝 공개로만)
 function buildTribunalVoteResolvedPayload(session) {
     const tribunal = session.tribunal
-    const executedUuid = tribunal.executedUuid
     return {
         ...(tribunal.outcome === TRIBUNAL_CANCELLED
             ? { reason: tribunal.cancelReason ?? TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT }
@@ -148,10 +148,7 @@ function buildTribunalVoteResolvedPayload(session) {
         phase: session.phase,
         defendantUuid: tribunal.defendantUuid,
         outcome: tribunal.outcome,
-        counts: { guilty: tribunal.counts.guilty, notGuilty: tribunal.counts.notGuilty },
-        executedUuid,
-        // 처형된 사람 역할 공개
-        executedRole: executedUuid ? session.players.get(executedUuid)?.role ?? null : null,
+        executedUuid: tribunal.executedUuid,
     }
 }
 

@@ -5,11 +5,12 @@ const { normalizeGameId, findSessionForActor } = require('../../core/registry/lo
 const { isRegisteredSession } = require('../../queries/byId')
 const { assertSessionNotEnded, enterNightPhase } = require('../../core/rules/terminal')
 const { getDayVoteRound, getResolutionRound, getDayPhase, isVoteRoundResolved } = require('./state')
-const { DAY_PHASES } = require('./constants')
+const { DAY_PHASES, DAY_VOTE_DEFENDANT_DISCONNECTED } = require('./constants')
 const { getDayVoterUuids, tallyDayVoteOutcome, buildDayBallotSnap, dayBallotSnapsEqual } = require('./ballots')
 
 // 낮 판정 준비: 표 세서 결과 정함, 아직 확정 안 함
-function prepareDayVoteResolution(uuid, gameId, dayIndex) {
+// isDisconnected(uuid): 그 사람이 지금 끊겨 있는지 (socket 낮 마감이 넣음, 판 규칙 쪽은 연결을 몰라서 받아 씀)
+function prepareDayVoteResolution(uuid, gameId, dayIndex, { isDisconnected } = {}) {
     // 요청에 온 판 id·날짜 확인 (날짜는 판 찾기 전에 봄)
     const normalizedGameId = normalizeGameId(gameId)
     if (!normalizedGameId) return { ok: false, code: 'INVALID_GAME_ID' }
@@ -53,6 +54,12 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
 
     // 표 세기: 최다 1명이고 기권보다 많으면 재판, 동률·전원 기권·기권이 많음(ABSTAIN_MAJORITY)이면 밤 (재투표 없음, 사용자 결정 2026-11-09·11-16)
     const tally = tallyDayVoteOutcome(session)
+    // 피고로 뽑힌 사람이 이 순간 이미 끊겨 있으면 재판을 안 열고 밤으로 (사용자 결정 2026-11-16)
+    // 누가 뽑혔는지는 방송에 안 실음 (동률 때처럼 재판이 안 열리면 최다 득표자를 안 알림)
+    const absentDefendantUuid =
+        tally.outcome === 'TRIBUNAL' && typeof isDisconnected === 'function' && isDisconnected(tally.tribunalTargetUuid) === true
+            ? tally.tribunalTargetUuid
+            : null
     // 결과만 만들어 돌려줌, 판은 안 바꿈 (표 묶음은 commit 비교용)
     return {
         ok: true,
@@ -61,8 +68,10 @@ function prepareDayVoteResolution(uuid, gameId, dayIndex) {
             gameId: session.id,
             dayIndex: session.dayIndex,
             round: currentRound,
-            outcome: tally.outcome,
-            tribunalTargetUuid: tally.tribunalTargetUuid,
+            outcome: absentDefendantUuid ? DAY_VOTE_DEFENDANT_DISCONNECTED : tally.outcome,
+            tribunalTargetUuid: absentDefendantUuid ? null : tally.tribunalTargetUuid,
+            // 끊겨 있어 재판에 못 선 사람 (commit이 다시 셀 때 비교용, 방송·스냅샷엔 안 나감)
+            absentDefendantUuid,
             publicVoteCount: tally.publicVoteCount,
             publicAbstainCount: tally.publicAbstainCount,
             // 재투표 없어 늘 빈 값 (방송 칸은 옛 화면 위해 남김)
@@ -99,11 +108,13 @@ function commitDayVoteResolution(session, resolution) {
         if (!targetPlayer || !targetPlayer.alive) return { ok: false, code: 'DAY_VOTE_RESOLUTION_MISMATCH' }
     }
 
-    // 다시 세도 결과·수가 같은지
+    // 다시 세도 결과·수가 같은지 (끊긴 피고로 재판을 안 연 결과는 표로만 세면 재판이라 그 값과 비교)
     const recheck = tallyDayVoteOutcome(session)
+    const expectedOutcome = resolution.absentDefendantUuid ? 'TRIBUNAL' : resolution.outcome
+    const expectedTargetUuid = resolution.absentDefendantUuid ?? resolution.tribunalTargetUuid
     if (
-        recheck.outcome !== resolution.outcome ||
-        recheck.tribunalTargetUuid !== resolution.tribunalTargetUuid ||
+        recheck.outcome !== expectedOutcome ||
+        recheck.tribunalTargetUuid !== expectedTargetUuid ||
         recheck.publicVoteCount !== resolution.publicVoteCount ||
         recheck.publicAbstainCount !== resolution.publicAbstainCount
     ) {
@@ -131,7 +142,7 @@ function commitDayVoteResolution(session, resolution) {
             votes: new Map(),
         }
     } else {
-        // 그 외(동률·전원 기권·기권이 많음): 바로 밤으로, 밤 기록 새로
+        // 그 외(동률·전원 기권·기권이 많음·피고로 뽑힌 사람이 끊겨 있음): 바로 밤으로, 밤 기록 새로
         session.tribunal = null
         enterNightPhase(session)
     }

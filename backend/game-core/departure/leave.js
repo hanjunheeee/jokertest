@@ -4,7 +4,7 @@ const { assertSessionNotEnded, enterNightPhase } = require('../core/rules/termin
 const { commitDisconnectElimination, recordForfeit } = require('./eliminate')
 const { releasePlayerSession } = require('../core/registry/write')
 const { TRIBUNAL_PENDING, tallyTribunalBallots, buildTribunalBallotSnap } = require('../phase/tribunal/ballots')
-const { TRIBUNAL_CANCELLED, TRIBUNAL_CANCEL_REASONS } = require('../phase/tribunal/constants')
+const { TRIBUNAL_DEFENDANT_DIED } = require('../phase/tribunal/constants')
 const { getDayPhase, enterDayVotePhase, getDayVoteReadyUuids } = require('../phase/day/state')
 const { DAY_PHASES } = require('../phase/day/constants')
 const { getDayVoterUuids } = require('../phase/day/ballots')
@@ -24,7 +24,7 @@ function passHostOnLeave(session, uuid) {
     return { hostChanged: true, newHostUuid }
 }
 
-// 역할 확인·투표 준비·낮 표·밤 행동에서 나 빼기, 지운 것은 cleanup에 적음
+// 역할 확인·투표 준비·낮 표에서 나 빼기, 지운 것은 cleanup에 적음 (내가 낸 밤 고름은 남김)
 function removeFromRecords(session, uuid, cleanup) {
     // 역할 확인·투표 준비 명단에서 빼기
     if (session.roleRevealAcks instanceof Set) {
@@ -42,16 +42,17 @@ function removeFromRecords(session, uuid, cleanup) {
             cleanup.normalizedVoterUuids.push(voterUuid)
         }
     }
-    // 내 밤 행동 지우고, 나를 고른 밤 행동은 빈 값으로
+    // 나를 고른 밤 행동은 빈 값으로 (내가 나를 고른 것도)
+    // 내가 이미 낸 밤 고름은 안 지움: 탈락해도 보호·암살은 남아 밤 판정에 쓰임 (사용자 결정 2026-11-16)
     if (session.nightActions instanceof Map) {
-        session.nightActions.delete(uuid)
         for (const [actorUuid, targetId] of session.nightActions) {
             if (targetId === uuid) session.nightActions.set(actorUuid, null)
         }
     }
 }
 
-// 안 끝난 재판이면 내 재판 표 지움, 피고가 나갔으면 재판 취소하고 밤으로 (취소했으면 true)
+// 안 끝난 재판이면 내 재판 표 지움, 피고가 빠졌으면 판정 없이 재판을 닫고 밤으로 (닫았으면 true)
+// 스스로 나간 피고도, 끊겨 60초 못 돌아온 피고도 똑같이 피고 사망으로 닫음 (사용자 결정 2026-11-16, 재판 취소 결과는 이제 안 만듦)
 function removeFromTribunal(session, uuid, { wasDefendant, cleanup }) {
     const tribunal = session.tribunal
     if (!tribunal || tribunal.resolved === true) return false
@@ -59,15 +60,14 @@ function removeFromTribunal(session, uuid, { wasDefendant, cleanup }) {
         cleanup.removedTribunalVote = tribunal.votes.delete(uuid)
     }
     if (!wasDefendant) return false
-    // 피고가 나갔으면 재판 취소: 보관함 비우고 그때까지 표만 셈
+    // 피고가 빠졌으면 재판 닫기: 보관함 비우고 그때까지 표만 셈
     TRIBUNAL_PENDING.delete(session)
     const counts = tallyTribunalBallots(
         buildTribunalBallotSnap(session, tribunal),
         tribunal.defendantUuid,
     ).counts
-    // 취소 결과 기록, 처형 없이 바로 밤으로
-    tribunal.outcome = TRIBUNAL_CANCELLED
-    tribunal.cancelReason = TRIBUNAL_CANCEL_REASONS.DEFENDANT_LEFT
+    // 결과 기록(피고 사망), 처형 없이 바로 밤으로
+    tribunal.outcome = TRIBUNAL_DEFENDANT_DIED
     tribunal.counts = { guilty: counts.guilty, notGuilty: counts.notGuilty }
     tribunal.executedUuid = null
     tribunal.resolved = true
@@ -75,8 +75,8 @@ function removeFromTribunal(session, uuid, { wasDefendant, cleanup }) {
     return true
 }
 
-// 게임 중 나가기: 산 사람이면 탈락, 방장 넘기기, 남은 표·준비·밤 행동에서 빼기
-// 피고가 나가면 재판 취소하고 밤으로
+// 게임 중 나가기: 산 사람이면 탈락, 방장 넘기기, 남은 표·준비에서 빼기 (이미 낸 밤 고름은 남김)
+// 피고가 빠지면 재판을 닫고 밤으로 (나가든 끊겨 60초 못 돌아오든 피고 사망)
 function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT' } = {}) {
     // 판 없거나 끝난 판이면 거절
     if (!session) return { ok: false, code: 'SESSION_NOT_FOUND' }
@@ -131,6 +131,7 @@ function commitParticipantDeparture(session, uuid, { reason = 'PARTICIPANT_LEFT'
     // 승패 안 났을 때만 남은 기록에서 나 빼기
     if (!terminal) {
         removeFromRecords(session, uuid, cleanup)
+        // 이름은 취소지만 피고 사망으로 닫혔다는 뜻 (socket 쪽이 재판 결과 방송·밤 타이머 맞추기에 씀)
         tribunalCancelled = removeFromTribunal(session, uuid, { wasDefendant, cleanup })
     }
 

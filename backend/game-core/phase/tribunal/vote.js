@@ -16,8 +16,8 @@ function submitTribunalAbstention(uuid, gameId, dayIndex) {
 
 // 표 기록 공통: 검사 순서는 사람 표·기권 표 같음
 function recordTribunalVote(uuid, gameId, dayIndex, vote, { allowAbstain }) {
-    // 판 id 확인(공백 안 자름) + 내 판·판 안의 나 찾기
-    const found = findActorSession(uuid, gameId, { trim: false })
+    // 판 id 확인(공백 안 자름) + 내 판·판 안의 나 찾기, 끝난 판이면 GAME_ALREADY_ENDED로 거절
+    const found = findActorSession(uuid, gameId, { trim: false, checkEnded: true })
     if (!found.ok) return found
     const { session, actor } = found
 

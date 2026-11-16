@@ -4,9 +4,9 @@
 const { isObserverBusy, observeNightCommit } = require('../core/tools/observer')
 const { assertSessionNotEnded, evaluateWinCondition, finalizeGameSession } = require('../core/rules/terminal')
 const { DEATH_REASONS } = require('../result/constants')
-const { expireDeadPlayerNightEffects } = require('../phase/night/commit')
 
-// 끊긴 사람 탈락: 죽음 처리·기권 표시·밤 행동 지움, 승패 나면 판 닫기
+// 끊긴 사람 탈락: 죽음 처리·기권 표시, 승패 나면 판 닫기
+// 이미 낸 밤 고름은 안 지움 (탈락해도 보호·암살은 남음, 사용자 결정 2026-11-16)
 function commitDisconnectElimination(session, uuid) {
     // 밤 확정 관찰자 도는 중에 다시 들어오면 거절 (시험용)
     if (isObserverBusy()) return { ok: false, code: 'NIGHT_COMMIT_REENTERED' }
@@ -19,11 +19,10 @@ function commitDisconnectElimination(session, uuid) {
     if (!victim) return { ok: false, code: 'NOT_A_PARTICIPANT' }
     if (victim.alive !== true) return { ok: false, code: 'ALREADY_ELIMINATED' }
 
-    // 여기부터 진짜 바뀜: 끊김 사망, 그 사람 밤 행동 지움
+    // 여기부터 진짜 바뀜: 끊김 사망
     victim.alive = false
     victim.deathReason = DEATH_REASONS.DISCONNECT
     observeNightCommit('DISCONNECT_DEATH_FINALIZED', { gameId: session.id, victimUuid: uuid, reason: DEATH_REASONS.DISCONNECT })
-    expireDeadPlayerNightEffects(session, [uuid])
 
     // 기권 명단(참여 중 아님으로 침)·떠난 명단에 넣음
     // 떠난 명단이 다 차면 끝난 판 정리 때 판 지움
