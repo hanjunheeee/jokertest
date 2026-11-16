@@ -13,7 +13,7 @@ const { settleNightTurnIfComplete } = require('../phase/night/turn')
 const { startDayPhaseTimer, syncSessionPhaseTimers, settleDayVoteIfComplete } = require('../phase/day')
 const { settleTribunalIfComplete } = require('../phase/tribunal')
 const { stopRoleRevealTimer } = require('../phase/roleReveal')
-const { scheduleEndedSweep } = require('./end')
+const { scheduleEndedSweep, markChatEnded } = require('./end')
 
 // 탈주로 적는 이탈 이유: 산 채로 나가기·끊긴 뒤 60초 못 돌아옴 (죽은 뒤 나감·점검·결과 화면 나가기는 여기 안 옴, 결정 "탈주 벌" ①②)
 const DESERTION_REASON_BY_DEPARTURE = Object.freeze({
@@ -42,6 +42,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     step('GRACE_CANCEL_ERROR', () => cancelDisconnectGrace(session.id, uuid))
 
     // 산 채로 떠났으면 탈주 기록 (대기 시간 막힘은 부르는 순간 메모리에 걸림, DB 쓰기는 안 기다림·절대 안 던짐)
+    // 60초 탈락은 정지 중인지 먼저 물어 정지면 안 적음 (services/game/desertion.js)
     const desertionReason = applied.wasAlive ? DESERTION_REASON_BY_DEPARTURE[reason] : undefined
     if (desertionReason) {
         step('DESERTION_RECORD_ERROR', () => {
@@ -80,7 +81,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     // 기권 처리된 표는 각자에게만 (누가 누굴 찍었는지 안 새게), 던져도 뒷처리 계속
     step('SELF_PROGRESS_ERROR', () => emitSelfProgress(io, session))
 
-    // 피고가 나가 재판 취소됐으면 취소 결과 방송
+    // 피고가 빠져 재판이 피고 사망으로 닫혔으면 그 결과 방송 (값 이름만 취소, 재판 취소 결과는 이제 안 만듦)
     if (applied.tribunalCancelled) {
         step('TRIBUNAL_CANCEL_ERROR',
             () => emitToGameChannel(io, session, 'tribunal_vote_resolved', gameSessionCore.buildTribunalVoteResolvedPayload(session)))
@@ -89,6 +90,7 @@ function applyParticipantDeparture(io, session, uuid, { reason = 'PARTICIPANT_LE
     // 승부 났으면 전적 저장은 시작만 하고 타이머 정리 (지도 12-⑩)
     if (applied.terminal) {
         step('PERSIST_START_ERROR', () => persistTerminalSession(session, { completed: true }))
+        step('CHAT_END_MARK_ERROR', () => markChatEnded(session))
         step('ENDED_SWEEP_SCHEDULE_ERROR', () => scheduleEndedSweep(io, session))
         step('ROLE_REVEAL_TIMER_STOP_ERROR', () => stopRoleRevealTimer(session.id))
         step('TIMER_SYNC_ERROR', () => syncSessionPhaseTimers(io, session))
@@ -105,7 +107,7 @@ function advanceAfterDeparture(io, session, applied) {
     // 단계마다 격리, 실패는 로그만
     const step = (code, run) => isolate(label, { code, gameId: session.id }, run)
 
-    // 재판 취소면 core가 이미 밤으로 넘김, 타이머만 맞춤
+    // 피고 사망으로 재판이 닫혔으면 core가 이미 밤으로 넘김, 타이머만 맞춤
     if (applied.tribunalCancelled) {
         step('TIMER_SYNC_ERROR', () => syncSessionPhaseTimers(io, session))
         return

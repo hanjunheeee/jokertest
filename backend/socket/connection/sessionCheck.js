@@ -34,8 +34,9 @@ function isLongTokenExpired(user, now = Date.now()) {
     return exp * 1000 <= now;
 }
 
-// 끊을 때 실을 code: 정지·비활성은 그 까닭, 나머지는 세션 끝 (화면은 code 모르면 전처럼 로그아웃)
-const ACCOUNT_DISCONNECT_CODES = new Set(["ACCOUNT_BANNED", "ACCOUNT_INACTIVE"]);
+// 끊을 때 실을 code: 정지·비활성·탈퇴는 그 까닭, 나머지는 세션 끝 (화면은 code 모르면 전처럼 로그아웃)
+// 탈퇴를 세션 끝으로 바꿔 실으면 화면에 "탈퇴 완료" 대신 세션 만료 글이 뜸
+const ACCOUNT_DISCONNECT_CODES = new Set(["ACCOUNT_BANNED", "ACCOUNT_INACTIVE", "ACCOUNT_WITHDRAWN"]);
 function disconnectCodeOf(result) {
     return ACCOUNT_DISCONNECT_CODES.has(result?.code) ? result.code : "SESSION_EXPIRED";
 }

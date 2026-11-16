@@ -118,11 +118,15 @@ async function onDisconnect(io, socket, uuid) {
 
     // 끝난 판: 이 사람 정리, 마지막이면 판 끝 정리까지
     const closed = endSessionForPlayer(uuid, 'PARTICIPANT_LEFT', expectedGameId, '[GameSession 종료 처리 에러]')
-    // 던졌거나 정리된 게 없거나 판이 남았으면 끝 (답할 사람 없음)
+    // 던졌거나 정리된 게 없으면 끝 (답할 사람 없음)
     if (closed.threw) return
     const { result } = closed
     if (!result.ok) return
-    if (!result.sessionDeleted) return
+    // 판이 남았으면 남겨 둔 방장 자리만 풂 ("로비로"와 같게, 안 풀면 다시 연 방이 180초까지 방장 없이 남음)
+    if (!result.sessionDeleted) {
+        cleanupMatchmakingRooms(io, [uuid], '[ENDED 게임 끊김 시 matchmaking 정리 실패]')
+        return
+    }
 
     finalizeGameSessionEnd(io, result.session, result.reason, uuid, result.cleanupUuids)
 }

@@ -88,19 +88,23 @@ const wait = (ms) => new Promise((resolve) => {
 // 친구에게 OFFLINE 알리기
 // 단일 모드는 바로 (지금과 같음), Node 여러 개면 1.5초 미루고 그사이 다시 붙었거나 다른 Node에 붙어 있으면 안 보냄
 // (로비 → 방 Node 이동 때 친구 화면에 OFFLINE이 깜빡이는 것 막기, MN-067)
+// 친구 찾는 사이 다시 붙었으면 안 보냄 (늦은 OFFLINE이 새 접속의 ONLINE 뒤에 가면 친구 목록에 "꺼짐"으로 남음)
 async function announceOffline(io, uuid) {
-    if (!cluster.isEnabled()) return broadcastFriendStatus(io, uuid, "OFFLINE");
+    const stillOffline = () => !onlineUsers.has(uuid);
+    if (!cluster.isEnabled()) return broadcastFriendStatus(io, uuid, "OFFLINE", stillOffline);
     const delayMs = cluster.config().presenceOfflineDelayMs;
     if (delayMs > 0) await wait(delayMs);
     if (onlineUsers.has(uuid)) return;
     if (await replace.isConnectedElsewhere(uuid).catch(() => false)) return;
-    await broadcastFriendStatus(io, uuid, "OFFLINE");
+    await broadcastFriendStatus(io, uuid, "OFFLINE", stillOffline);
 }
 
 // 수락한 친구 중 접속 중인 사람에게만 보냄 (친구 계정 채널로, 접속 안 한 친구 채널은 비어 아무도 안 받음)
 // Node 여러 개면 채널 묶어 한 번에 보냄 (어댑터가 친구 수만큼 Redis에 안 보내게)
-async function broadcastFriendStatus(io, uuid, status) {
+// stillValid: 친구 찾기(DB)를 기다린 뒤 보내기 직전에 한 번 더 봄, false면 안 보냄
+async function broadcastFriendStatus(io, uuid, status, stillValid = null) {
     const friendUuids = await presenceService.getAcceptedFriendUuids(uuid);
+    if (stillValid && !stillValid()) return;
     const channels = friendUuids.map(userChannelOf).filter(Boolean);
     const payload = { uuid, status };
 

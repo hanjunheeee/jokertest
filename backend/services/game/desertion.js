@@ -165,7 +165,18 @@ const resultOf = ({ recorded, saved, nth, desertedAtMs, blockedUntilMs }, now = 
     retryAfterMs: Math.max(0, blockedUntilMs - now),
 })
 
-// 실제 적기: 메모리 횟수로 먼저 막음 → DB에서 그날 횟수 세기(읽기 1번) → 한 줄 쓰기(쓰기 1번)
+// 지금 정지 중인지 저장소에 물음 (끊는 쪽이 판에 까닭을 안 알려 주고 다른 Node가 끊기도 해서 DB로 가름)
+// 물음이 실패하면 정지 아님으로 봄 → 전처럼 탈주로 적음
+async function isBannedNow(userId, check) {
+    try {
+        return (await check(userId)) === true
+    } catch (error) {
+        console.warn('[탈주] 정지 확인 못 함 — 탈주로 적음', error?.name ?? 'Error')
+        return false
+    }
+}
+
+// 실제 적기: (60초 탈락이면 정지 확인) → 메모리 횟수로 먼저 막음 → DB에서 그날 횟수 세기(읽기 1번) → 한 줄 쓰기(쓰기 1번)
 // DB가 안 되면 로그만, 막힘은 이미 걸려 있음
 async function runRecord({ userId, gameId, reason, desertedAtMs }) {
     pruneExpired()
@@ -173,6 +184,13 @@ async function runRecord({ userId, gameId, reason, desertedAtMs }) {
     if (hasLocalRecord(userId, gameId)) {
         const until = blocks.get(userId) ?? desertedAtMs
         return resultOf({ recorded: false, saved: true, nth: null, desertedAtMs, blockedUntilMs: until })
+    }
+
+    // 끊긴 뒤 60초 탈락인데 지금 정지 중이면 탈주로 안 침: 관리자가 끊어 못 돌아온 것 (줄·막힘 없음, 사용자 결정 2026-11-16)
+    // 저장소에 정지 확인이 없으면(시험 가짜) 안 묻고 바로 아래로 (막힘이 부른 순간 걸리게)
+    const banCheck = reason === REASONS.DISCONNECT_TIMEOUT ? repo().isUserBanned : null
+    if (typeof banCheck === 'function' && await isBannedNow(userId, banCheck)) {
+        return { ok: true, recorded: false, saved: false, skipped: 'ACCOUNT_BANNED', nth: null, desertedAt: new Date(desertedAtMs), blockedUntil: null, retryAfterMs: 0 }
     }
 
     const localPrior = localCountBefore(userId, gameId, desertedAtMs)
@@ -207,6 +225,7 @@ async function runRecord({ userId, gameId, reason, desertedAtMs }) {
 // 탈주 적기 (단위 13이 산 채로 나가기·끊긴 뒤 60초 탈락 때 부름)
 // 받는 값: { userId(users.uuid), gameId, reason(REASONS 중 하나), desertedAt?(Date·ms, 없으면 지금) }
 // 돌려줌(던지지 않음): { ok:true, recorded, saved, nth, desertedAt, blockedUntil, retryAfterMs } / 받는 값이 틀리면 { ok:false, code:'INVALID_DESERTION' }
+// 정지 중인 사람의 60초 탈락이면 안 적고 { ok:true, recorded:false, saved:false, skipped:'ACCOUNT_BANNED', blockedUntil:null }
 function recordDesertion({ userId, gameId, reason, desertedAt } = {}) {
     const desertedAtMs = desertedAt === undefined ? Date.now() : toMs(desertedAt)
     if (!isText(userId) || !isText(gameId) || !REASON_VALUES.includes(reason) || !Number.isFinite(desertedAtMs)) {

@@ -49,6 +49,13 @@ function handleGetSessionSnapshot(io, socket, uuid, payload, callback) {
         return
     }
 
+    // 끝난 판에서 이미 나간 사람이 그 판을 물으면 그 판에 없음 그대로 답함 ("로비로" 답을 놓친 뒤 결과 확인)
+    // 숨기면(INTERNAL_ERROR) 화면이 나간 줄 몰라 "결과 모름"에 머묾, 그 판 사람이었던 사람에게만 답해 새는 것 없음
+    if (gameSessionCore.hasLeftEndedSession(normalizeGameId(gameId), uuid)) {
+        ack(snapshotRejectedReply('NOT_A_PARTICIPANT'))
+        return
+    }
+
     // 판 상태 받기, 유예 만료로 빠진 사람은 전용 문구로 거절
     const result = acceptCoreResult(ack, () => gameSessionCore.getSessionSnapshotForPlayer(uuid, gameId), {
         ...registryLogs('[세션 스냅샷 조회 에러]', '[세션 스냅샷 조회 registry 불일치]', uuid, gameId),

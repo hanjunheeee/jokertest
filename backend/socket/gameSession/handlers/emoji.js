@@ -6,7 +6,7 @@ const { pickGameItem, readRequest } = require('../core/requests')
 const { isEligibleRecipient } = require('../delivery/eligibility')
 const { emitToGameChannel } = require('../delivery/broadcast')
 
-// 이모티콘 보내기: 판에 있고 가진 것·팔레트에 넣은 것만, 너무 빠르면 거절 (지도 13-⑤)
+// 이모티콘 보내기: 낮에만, 판에 있고 가진 것·팔레트에 넣은 것만, 너무 빠르면 거절 (지도 13-⑤)
 function handleSendEmoji(io, socket, uuid, payload, callback) {
     // callback 없으면 처리 안 함 (답할 곳 없음)
     if (typeof callback !== 'function') return
@@ -31,6 +31,12 @@ function handleSendEmoji(io, socket, uuid, payload, callback) {
     // 끝난 판(결과 화면)도 위에서 찾아지니 따로 거절
     if (!gameSessionCore.assertSessionNotEnded(session).ok) {
         reject('GAME_ENDED')
+        return
+    }
+
+    // 낮(토론·투표)에만 됨: 역할 확인·재판·밤은 거절 (밤 말풍선은 판 전원이 봐서 신호 주고받기가 됨)
+    if (session.phase !== 'DAY') {
+        reject('INVALID_PHASE')
         return
     }
 

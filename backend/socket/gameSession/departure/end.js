@@ -29,8 +29,15 @@ function withTerminalFields(session, terminal, payload, label, fields, io = null
             : { gameId: session.id, dayIndex: session.dayIndex, ...terminalFields }
     })
     persistTerminalSession(session, { completed: true })
+    markChatEnded(session)
     if (io) isolate(label, { code: 'ENDED_SWEEP_SCHEDULE_ERROR', ...fields }, () => scheduleEndedSweep(io, session))
     return merged
+}
+
+// 판 채팅 보관 끝 표시: 승패가 난 때부터 10분만 들고 있음 (결과 화면 신고용)
+// 판을 지울 때만 붙이면 결과 화면 180초만큼 더 남고, 결과 화면을 안 닫으면 아예 안 붙음, 두 번 불려도 처음 시각 그대로
+function markChatEnded(session) {
+    isolateWithError('[판 채팅 보관 끝 표시 실패]', () => chatBuffer.markGameEnded(session?.id))
 }
 
 // 판 끝 180초 시계 걸기 (판 끝 순간 한 번, 판 끝 시각부터 하나로 셈, 결정 [임시] 4)
@@ -119,8 +126,8 @@ function finalizeGameSessionEnd(io, session, reason, leftUuid, cleanupUuids) {
     isolateWithError('[판 끝 180초 시계 정리 실패]', () => {
         if (!returnRoom.settleReturnOnSessionGone(session)) cancelEndedSweep(session?.id)
     })
-    // 판 채팅 보관은 이때부터 10분만 (결과 화면 신고용)
-    isolateWithError('[판 채팅 보관 끝 표시 실패]', () => chatBuffer.markGameEnded(session?.id))
+    // 승패 없이 지워진 판(전원 나감·점검)은 여기서 채팅 보관 끝 표시, 승패 난 판은 이미 붙어 있어 그대로
+    markChatEnded(session)
 
     // 종료 방송 받을 사람은 정리 전에 정해 둠 (다른 판·대기방으로 간 사람 빼기)
     const endContext = isolateOr(null, '[GameSession 종료 수신 문맥 구성 실패]', { code: 'END_CONTEXT_ERROR', gameId: session?.id },
@@ -176,6 +183,7 @@ returnRoom.setEndedSessionHooks({ leaveEndedSession })
 
 module.exports = {
     withTerminalFields,
+    markChatEnded,
     scheduleEndedSweep,
     cancelEndedSweep,
     leaveEndedSession,
