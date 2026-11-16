@@ -1,144 +1,56 @@
 // 부하 시험 입구 파일, 가짜 사용자로 방 만들기·입장·준비·시작·채팅·투표·밤 행동을 끝까지 돌리고 숫자 출력
-// 쓰는 법은 docs/부하시험.md (backend 폴더에서 node scripts/loadtest/run.js --games 2 --players 5)
+// 쓰는 법은 docs/게임_의도_2026-11-15/부하_준비.md·docs/부하시험.md (backend 폴더에서 node scripts/loadtest/run.js --db-env ../e2e/.env.e2e --games 2 --players 5)
+const fs = require("fs");
 const path = require("path");
-require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env"), quiet: true });
 
 const { Stats } = require("./stats");
 const { Bot, sleep } = require("./bot");
 const { playGame } = require("./game");
-const { checkTargetAllowed, assertLocalDatabase, resolveOriginHeader, REMOTE_FLAG } = require("./target");
+const { checkTargetAllowed, assertLocalDatabase, resolveOriginHeader, parseTarget } = require("./target");
+const { parseArgs, loadEnv, HELP } = require("./options");
 const { loadAccountsFile, createLocalAccounts, deleteLocalAccounts } = require("./accounts");
+const { readStatus, diffStatus, perGame, formatDbLine, readDigests, diffDigests } = require("./dbcount");
+const { startServerSampler, summarizeServer } = require("./sampler");
+const { pct, printFixed, printStageTable, printStatements, judgeFixed } = require("./report");
 
-// ── 설정값 읽기 ──
+// ── DB 부른 횟수 (시험 계정을 만든 DB에 붙어 있을 때만) ──
 
-const DEFAULTS = {
-    target: "http://127.0.0.1:4000",
-    mode: "fixed",
-    games: 2,
-    rounds: 1,
-    players: 5,
-    stages: "1,5,10,20,50",
-    holdMin: 3,
-    pollMs: 1000,
-    chatChance: 0.5,
-    rampMs: 50,
-    timeoutMs: 10000,
-    gameMaxMin: 15,
-    maxP95Ms: 500,
-    maxErrorRate: 0.01,
-    sampleMs: 5000,
-};
-
-function parseArgs(argv) {
-    const opts = {
-        ...DEFAULTS, accounts: null, allowRemote: false, internalKey: process.env.LOADTEST_INTERNAL_KEY || "", json: false,
-        frontendOrigin: process.env.LOADTEST_FRONTEND_ORIGIN || "",
+// 판 돌리기 앞뒤로 셈 값을 읽는 틀: before() → 판 → after(끝난 판 수, 동시 판 수) → { diff, …판당 값, line, statements }
+// digestSchema를 주면 문장 모양별 셈도 같이 읽음 (그 DB 것만 세어 다른 DB 일이 안 섞임)
+// 못 읽으면(권한·끊김·docker 없음) 그 숫자만 빼고 계속 돎
+function dbCounter(db, { digestSchema = null, extraAllowed = [], settleMs = 1500 } = {}) {
+    let before = null;
+    let digestsBefore = null;
+    const digests = () => {
+        if (!digestSchema) return null;
+        try { return readDigests(digestSchema, { extraAllowed }); } catch (err) { console.warn(`[부하] ${err.message}`); return null; }
     };
-    const camel = (s) => s.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase());
-    for (let i = 0; i < argv.length; i += 1) {
-        const arg = argv[i];
-        if (arg === REMOTE_FLAG) { opts.allowRemote = true; continue; }
-        if (arg === "--json") { opts.json = true; continue; }
-        if (arg === "--help" || arg === "-h") { opts.help = true; continue; }
-        if (!arg.startsWith("--")) throw new Error(`모르는 인자: ${arg}`);
-        const [name, inline] = arg.slice(2).split("=");
-        const key = camel(name);
-        if (!(key in opts)) throw new Error(`모르는 설정: --${name}`);
-        const value = inline ?? argv[++i];
-        if (value === undefined) throw new Error(`--${name} 값이 없음`);
-        opts[key] = typeof DEFAULTS[key] === "number" ? Number(value) : value;
-        if (typeof DEFAULTS[key] === "number" && !Number.isFinite(opts[key])) throw new Error(`--${name}은 숫자`);
-    }
-    if (opts.players < 5 || opts.players > 10) throw new Error("--players는 5~10");
-    if (!["fixed", "step"].includes(opts.mode)) throw new Error("--mode는 fixed 또는 step");
-    opts.stageList = String(opts.stages).split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
-    return opts;
-}
-
-const HELP = `부하 시험 (docs/부하시험.md)
-  --target <주소>          대상 (기본 ${DEFAULTS.target}), 로컬 아니면 ${REMOTE_FLAG} + --accounts 필요
-  --mode fixed|step        fixed: 판 N개 한 번에 / step: 동시 판 수를 단계로 올림
-  --games N --rounds R     fixed: 동시 판 수·몇 바퀴 (기본 2·1)
-  --players N              판당 인원 5~10 (기본 5)
-  --stages 1,5,10 --hold-min M   step: 단계별 동시 판 수·단계마다 유지 분
-  --max-p95-ms 500 --max-error-rate 0.01   step: 넘으면 멈춤
-  --poll-ms 1000 --chat-chance 0.5 --ramp-ms 50 --timeout-ms 10000 --game-max-min 15
-  --accounts <파일>        [{email,password}] 목록 (실서버용, gitignore)
-  --internal-key <키>      서버 INTERNAL_API_KEY (또는 LOADTEST_INTERNAL_KEY) → 서버 메모리·지연 같이 봄
-  --frontend-origin <주소> 소켓 Origin 헤더 (또는 LOADTEST_FRONTEND_ORIGIN), 로컬 아닌 대상은 안 주면 대상 주소, 서버 FRONTEND_URL과 맞춰야 운영 서버가 받음
-  --json                   마지막에 JSON 결과도 출력`;
-
-// ── 서버 숫자 엿보기 (/health 내부 열쇠 칸 + /internal/live) ──
-
-function startServerSampler(origin, key, sampleMs) {
-    const samples = [];
-    if (!key) return { samples, stop: () => {}, latest: () => null, enabled: false };
-    let stopped = false;
-    const headers = { "x-internal-key": key };
-    const tick = async () => {
-        try {
-            const health = await (await fetch(`${origin}/health`, { headers })).json();
-            let live = null;
-            try {
-                const res = await fetch(`${origin}/internal/live`, { headers });
-                if (res.ok) live = await res.json();
-            } catch { /* 내부 API 없으면 /health만 */ }
-            if (health?.server) samples.push({ at: Date.now(), ...health.server, live: live?.data ?? live ?? null });
-        } catch { /* 한 번 못 읽어도 계속 */ }
-    };
-    const loop = (async () => { while (!stopped) { await tick(); await sleep(sampleMs); } })();
     return {
-        samples,
-        enabled: true,
-        latest: () => samples[samples.length - 1] ?? null,
-        stop: async () => { stopped = true; await loop; },
+        async before() {
+            if (!db) return;
+            digestsBefore = digests();
+            before = await readStatus(db.sequelize).catch(() => null);
+        },
+        async after(games, concurrent) {
+            if (!db || !before) return null;
+            // 판 끝 뒤 늦게 도는 쓰기(업적·골드)가 마저 세어지게 잠깐 기다림
+            await sleep(settleMs);
+            const after = await readStatus(db.sequelize).catch(() => null);
+            if (!after) return null;
+            const diff = diffStatus(before, after);
+            const result = { diff, ...perGame(diff, games, concurrent), line: formatDbLine(diff, games, concurrent) };
+            const digestsAfter = digestsBefore ? digests() : null;
+            if (digestsAfter) {
+                const rows = diffDigests(digestsBefore, digestsAfter, games);
+                result.statementTotal = rows.reduce((sum, row) => sum + row.count, 0);
+                // 시험 DB 것만으로 낸 "판 하나가 1초에 부른 수" (서버 전체 셈은 다른 DB 일이 섞일 수 있음)
+                result.statementPerGameSecond = diff.seconds > 0 && concurrent > 0
+                    ? Math.round((result.statementTotal / diff.seconds / concurrent) * 100) / 100 : null;
+                result.statements = rows.slice(0, 40);
+            }
+            return result;
+        },
     };
-}
-
-const summarizeServer = (samples) => {
-    if (samples.length === 0) return null;
-    const max = (pick) => Math.max(...samples.map(pick));
-    return {
-        rssMbMax: max((s) => s.memoryMb.rss),
-        heapUsedMbMax: max((s) => s.memoryMb.heapUsed),
-        eventLoopP95MsMax: max((s) => s.eventLoopDelayMs.p95),
-        eventLoopMaxMs: max((s) => s.eventLoopDelayMs.max),
-        onlineUsersMax: max((s) => s.connections.onlineUsers),
-        gamesMax: max((s) => s.connections.games),
-    };
-};
-
-// ── 출력 ──
-
-const pct = (n) => `${(n * 100).toFixed(2)}%`;
-const mb = (bytes) => Math.round(bytes / 1024 / 1024);
-
-function printFixed(summary, server, clientMemory) {
-    const l = summary.latencyMs;
-    console.log("\n== 결과 ==");
-    console.log(`접속 성공률   ${pct(summary.connect.rate)} (${summary.connect.ok}/${summary.connect.ok + summary.connect.fail})`);
-    console.log(`판            시작 ${summary.games.started} · 끝까지 ${summary.games.ended} · 실패 ${summary.games.failed}`);
-    console.log(`응답 시간(ms) 평균 ${l.mean} · 95% ${l.p95} · 최대 ${l.max} (요청 ${l.count})`);
-    console.log(`오류          ${summary.errorCount} (${pct(summary.errorRate)}) ${JSON.stringify(summary.errors)}`);
-    console.log(`규칙 거절     ${JSON.stringify(summary.rejections)}`);
-    console.log(`끊김          ${summary.disconnects}`);
-    console.log("사건별(ms)    " + Object.entries(summary.byEvent).map(([e, s]) => `${e} ${s.mean}/${s.p95}/${s.max}(${s.count})`).join(" | "));
-    console.log(`시험 쪽 메모리 rss ${mb(clientMemory.rss)}MB`);
-    if (server) console.log(`서버          rss 최대 ${server.rssMbMax}MB · heap ${server.heapUsedMbMax}MB · 이벤트 루프 지연 95% 최대 ${server.eventLoopP95MsMax}ms · 접속 최대 ${server.onlineUsersMax} · 판 최대 ${server.gamesMax}`);
-    else console.log("서버          (내부 열쇠 없음 — 서버 숫자 안 봄)");
-}
-
-function printStageTable(rows) {
-    console.log("\n== 단계별 ==");
-    console.log("동시판 | 요청 | 평균ms | 95%ms | 최대ms | 오류율 | 끊김 | 판 끝/실패 | 서버rss MB | 루프지연95% ms | 판정");
-    for (const r of rows) {
-        const s = r.summary;
-        console.log([
-            String(r.concurrent).padStart(6), s.latencyMs.count, s.latencyMs.mean, s.latencyMs.p95, s.latencyMs.max,
-            pct(s.errorRate), s.disconnects, `${s.games.ended}/${s.games.failed}`,
-            r.server?.rssMbMax ?? "-", r.server?.eventLoopP95MsMax ?? "-", r.pass ? "통과" : `멈춤(${r.reason})`,
-        ].join(" | "));
-    }
 }
 
 // ── 가짜 사용자 준비 ──
@@ -155,6 +67,8 @@ async function prepareBots(origin, accounts, stats, opts) {
             await bot.connect();
             ready.push(bot);
         } catch (err) {
+            // 준비 못 한 사용자는 문제로 셈 (로그인 거절은 봇이 규칙 거절로만 세서, 안 세면 판 수만 조용히 줄어듦)
+            stats.error("setup:bot_not_ready");
             if (!opts.json) console.warn(`[부하] ${bot.index}번 준비 실패: ${err.message}`);
             await bot.close();
         }
@@ -163,32 +77,44 @@ async function prepareBots(origin, accounts, stats, opts) {
 }
 
 // 판 묶음 하나가 끝날 때까지 판을 이어서 돌림 (until 전까지 새 판 시작)
+// 실패한 판 뒤엔 잠깐 쉼 (안 쉬면 방 만들기를 퍼부어 소켓 사건 수 제한에 걸려 끊김)
 async function gameLoop(group, opts, getStats, until) {
     const results = [];
     do {
-        results.push(await playGame(group, { pollMs: opts.pollMs, chatChance: opts.chatChance, gameMaxMs: opts.gameMaxMin * 60000, stats: getStats() }));
+        const result = await playGame(group, { pollMs: opts.pollMs, chatChance: opts.chatChance, gameMaxMs: opts.gameMaxMin * 60000, stats: getStats() });
+        results.push(result);
+        if (result !== "ENDED") await sleep(opts.failPauseMs);
     } while (Date.now() < until());
     return results;
 }
 
 // fixed: 판 N개를 한 번에, rounds바퀴
-async function runFixed(groups, opts, stats, sampler) {
+async function runFixed(groups, opts, stats, sampler, counter) {
     const started = Date.now();
+    // 사용자가 모자라 못 차린 판도 실패로 셈
+    const missing = Math.max(0, opts.games - groups.length);
+    if (missing > 0) {
+        stats.gamesFailed += missing * opts.rounds;
+        console.warn(`[부하] 사용자가 모자라 ${opts.games}판 중 ${missing}판을 못 차림`);
+    }
+    await counter.before();
     for (let round = 0; round < opts.rounds; round += 1) {
         const results = await Promise.all(groups.slice(0, opts.games).map((group) => playGame(group, {
             pollMs: opts.pollMs, chatChance: opts.chatChance, gameMaxMs: opts.gameMaxMin * 60000, stats,
         })));
         console.log(`[부하] ${round + 1}바퀴 판 결과: ${results.join(" / ")}`);
     }
+    const db = await counter.after(stats.gamesEnded, Math.min(opts.games, groups.length));
     const summary = stats.summary();
     const server = summarizeServer(sampler.samples);
-    printFixed(summary, server, process.memoryUsage());
+    printFixed(summary, server, process.memoryUsage(), db?.line ?? null);
+    printStatements(db, stats.gamesEnded);
     console.log(`걸린 시간     ${Math.round((Date.now() - started) / 1000)}초`);
-    return { mode: "fixed", summary, server };
+    return { mode: "fixed", players: opts.players, summary, server, db };
 }
 
 // step: 동시 판 수를 단계로 올리며 기준 넘으면 멈춤
-async function runStep(groups, bots, opts, sampler) {
+async function runStep(groups, bots, opts, sampler, counter) {
     const rows = [];
     let maxOk = 0;
     const baseline = sampler.latest()?.memoryMb?.rss ?? null;
@@ -199,23 +125,60 @@ async function runStep(groups, bots, opts, sampler) {
         const sampleFrom = sampler.samples.length;
         const holdUntil = Date.now() + opts.holdMin * 60000;
         console.log(`[부하] 단계 시작: 동시 ${concurrent}판, ${opts.holdMin}분 유지`);
+        await counter.before();
         await Promise.all(groups.slice(0, concurrent).map((group) => gameLoop(group, opts, () => stats, () => holdUntil)));
+        const db = await counter.after(stats.gamesEnded, concurrent);
         const summary = stats.summary();
         const server = summarizeServer(sampler.samples.slice(sampleFrom));
         const reasons = [];
         if (summary.latencyMs.p95 > opts.maxP95Ms) reasons.push(`95% ${summary.latencyMs.p95}ms>${opts.maxP95Ms}`);
         if (summary.errorRate > opts.maxErrorRate) reasons.push(`오류율 ${pct(summary.errorRate)}>${pct(opts.maxErrorRate)}`);
-        const row = { concurrent, summary, server, pass: reasons.length === 0, reason: reasons.join(", ") };
+        const row = { concurrent, summary, server, db, pass: reasons.length === 0, reason: reasons.join(", ") };
         if (server && baseline !== null) row.memoryPerGameMb = Math.round(((server.rssMbMax - baseline) / concurrent) * 10) / 10;
         rows.push(row);
         printStageTable(rows);
+        if (db) console.log(db.line);
+        printStatements(db, stats.gamesEnded);
         if (!row.pass) break;
         maxOk = concurrent;
     }
     console.log(`\n버틴 최대 동시 판 수: ${maxOk}판 (사용자 ${maxOk * opts.players}명)`);
-    const perGame = rows.filter((r) => r.pass && r.memoryPerGameMb !== undefined).map((r) => r.memoryPerGameMb);
-    if (perGame.length > 0) console.log(`판당 서버 메모리 대략: ${perGame[perGame.length - 1]}MB (rss 증가 ÷ 동시 판)`);
-    return { mode: "step", maxConcurrentGames: maxOk, stages: rows };
+    const perGameMemory = rows.filter((r) => r.pass && r.memoryPerGameMb !== undefined).map((r) => r.memoryPerGameMb);
+    if (perGameMemory.length > 0) console.log(`판당 서버 메모리 대략: ${perGameMemory[perGameMemory.length - 1]}MB (rss 증가 ÷ 동시 판)`);
+    return { mode: "step", players: opts.players, maxConcurrentGames: maxOk, stages: rows };
+}
+
+// 계정 준비: 파일이 있으면 파일, 없으면(로컬만) 시험 DB에 만듦 (개발 DB면 여기서 멈춤) → { db, dbName, accounts }
+async function prepareAccounts(opts, local, needed) {
+    if (opts.accounts) return { db: null, dbName: null, accounts: loadAccountsFile(path.resolve(opts.accounts)) };
+    if (!local) throw new Error("로컬 아닌 대상은 --accounts가 필요");
+    const dbName = assertLocalDatabase(process.env.DATABASE_URL, process.env.NODE_ENV, { allowDbNames: opts.allowDbList });
+    const db = require("../../models");
+    db.sequelize.options.logging = false;
+    // 주소로 본 이름과 진짜 붙은 DB가 같은지 한 번 더 봄
+    const [[{ name: connectedName }]] = await db.sequelize.query("SELECT DATABASE() AS name");
+    if (connectedName !== dbName) throw new Error(`엉뚱한 DB에 붙음: ${connectedName}`);
+    // 만들다 실패하면 만든 데까지 지우고 멈춤 (반쯤 만든 계정이 시험 DB에 안 남게)
+    const accounts = await createLocalAccounts(db, needed).catch(async (err) => {
+        await deleteLocalAccounts(db).catch(() => {});
+        await db.sequelize.close();
+        throw new Error(`시험 계정 만들기 실패: ${err.message}`);
+    });
+    console.log(`[부하] 시험 DB ${dbName}에 시험 계정 ${accounts.length}개 만듦 (loadtest+N@example.test, 비번은 이번 실행에서만)`);
+    return { db, dbName, accounts };
+}
+
+// 시험 계정 지우기: 서버가 판 끝 기록을 아직 쓰는 중이면 외래키에 막힘 → 잠깐 쉬고 다시 (3번까지)
+async function removeAccounts(db) {
+    let removed = null;
+    for (let attempt = 1; removed === null && attempt <= 3; attempt += 1) {
+        removed = await deleteLocalAccounts(db).catch(async (err) => {
+            console.error(`[부하] 시험 계정 지우기 실패(${attempt}번째): ${err.message}`);
+            await sleep(1500);
+            return null;
+        });
+    }
+    console.log(removed === null ? "[부하] 시험 계정을 못 지움 → node scripts/loadtest/run.js --db-env <파일> --cleanup" : `[부하] 시험 계정 ${removed}개 지움`);
 }
 
 // ── 본 실행 ──
@@ -223,31 +186,42 @@ async function runStep(groups, bots, opts, sampler) {
 async function main() {
     const opts = parseArgs(process.argv.slice(2));
     if (opts.help) { console.log(HELP); return; }
+    loadEnv(opts);
+
+    // 남은 시험 계정만 지우기 (중간에 꺼져서 덜 지워졌을 때), DB 검사는 같음
+    if (opts.cleanup) {
+        const name = assertLocalDatabase(process.env.DATABASE_URL, process.env.NODE_ENV, { allowDbNames: opts.allowDbList });
+        const cleanupDb = require("../../models");
+        cleanupDb.sequelize.options.logging = false;
+        try {
+            console.log(`[부하] 시험 DB ${name}에 남은 시험 계정 ${await deleteLocalAccounts(cleanupDb)}개 지움`);
+        } finally {
+            await cleanupDb.sequelize.close();
+        }
+        return;
+    }
 
     const { origin, local } = checkTargetAllowed({
         target: opts.target, allowRemote: opts.allowRemote, accountsFile: opts.accounts, blocked: process.env.LOADTEST_BLOCKED_TARGETS,
     });
     opts.originHeader = resolveOriginHeader({ frontendOrigin: opts.frontendOrigin, targetOrigin: origin, local });
+    // 서버 숫자를 읽을 주소도 같은 검사 (개발 서버 포트·운영 목록 거부)
+    const sampleOrigins = opts.sampleUrlList.length > 0
+        ? opts.sampleUrlList.map((url) => checkTargetAllowed({
+            target: parseTarget(url).origin, allowRemote: opts.allowRemote, accountsFile: opts.accounts, blocked: process.env.LOADTEST_BLOCKED_TARGETS,
+        }).origin)
+        : [origin];
     const needed = opts.players * (opts.mode === "step" ? Math.max(...opts.stageList) : opts.games);
 
-    // 계정: 파일이 있으면 파일, 없으면(로컬만) 로컬 DB에 만들고 끝나면 지움
-    let db = null;
-    let accounts;
-    if (opts.accounts) {
-        accounts = loadAccountsFile(path.resolve(opts.accounts));
-    } else {
-        if (!local) throw new Error("로컬 아닌 대상은 --accounts가 필요");
-        assertLocalDatabase(process.env.DATABASE_URL, process.env.NODE_ENV);
-        db = require("../../models");
-        db.sequelize.options.logging = false;
-        accounts = await createLocalAccounts(db, needed);
-        console.log(`[부하] 로컬 시험 계정 ${accounts.length}개 만듦 (loadtest+N@example.test, 비번은 이번 실행에서만)`);
-    }
+    const prepared = await prepareAccounts(opts, local, needed);
+    const { db, dbName } = prepared;
+    let { accounts } = prepared;
     if (accounts.length < needed) throw new Error(`계정이 모자람: 필요 ${needed}, 있음 ${accounts.length}`);
     accounts = accounts.slice(0, needed);
 
     console.log(`[부하] 대상 ${origin} · 방식 ${opts.mode} · 판당 ${opts.players}명 · 사용자 ${needed}명 · 소켓 Origin ${opts.originHeader ?? "없음"}`);
-    const sampler = startServerSampler(origin, opts.internalKey, opts.sampleMs);
+    const sampler = startServerSampler(sampleOrigins, opts.internalKey, opts.sampleMs);
+    const counter = dbCounter(db, { digestSchema: opts.dbDigest ? dbName : null, extraAllowed: opts.allowDbList });
     const setupStats = new Stats();
     let bots = [];
     let output;
@@ -258,25 +232,35 @@ async function main() {
         for (let i = 0; i + opts.players <= bots.length; i += opts.players) groups.push(bots.slice(i, i + opts.players));
 
         output = opts.mode === "fixed"
-            ? await runFixed(groups, opts, setupStats, sampler)
-            : await runStep(groups, bots, opts, sampler);
+            ? await runFixed(groups, opts, setupStats, sampler, counter)
+            : await runStep(groups, bots, opts, sampler, counter);
+        output.setup = { accounts: accounts.length, connected: bots.length, errors: Object.fromEntries(setupStats.errors) };
+        // fixed는 통과·실패 한 줄을 찍고 실패면 종료 코드 2 (step은 단계 표의 판정을 봄)
+        if (opts.mode === "fixed") {
+            output.verdict = judgeFixed({ summary: output.summary, accounts: accounts.length, connected: bots.length, expectedGames: opts.games * opts.rounds });
+        }
     } finally {
         await Promise.all(bots.map((bot) => bot.close()));
         await sampler.stop();
         if (db) {
-            const removed = await deleteLocalAccounts(db).catch((err) => { console.error(`[부하] 시험 계정 지우기 실패: ${err.message}`); return 0; });
-            console.log(`[부하] 로컬 시험 계정 ${removed}개 지움`);
+            await removeAccounts(db);
             await db.sequelize.close();
         }
     }
+    if (opts.out && output) {
+        fs.writeFileSync(path.resolve(opts.out), JSON.stringify(output, null, 2));
+        console.log(`[부하] 결과를 ${opts.out}에 적음`);
+    }
     if (opts.json && output) console.log(JSON.stringify(output, null, 2));
+    if (output?.verdict) console.log(output.verdict.line);
+    return output?.verdict?.ok !== false;
 }
 
 if (require.main === module) {
-    main().then(() => process.exit(0)).catch((err) => {
+    main().then((ok) => process.exit(ok === false ? 2 : 0)).catch((err) => {
         console.error(`[부하] 중단: ${err.message}`);
         process.exit(1);
     });
 }
 
-module.exports = { parseArgs, summarizeServer };
+module.exports = { parseArgs, loadEnv, summarizeServer, dbCounter };

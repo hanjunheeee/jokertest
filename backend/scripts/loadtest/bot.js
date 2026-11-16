@@ -3,7 +3,10 @@
 const { io } = require("socket.io-client");
 
 // 규칙대로 거절한 것과 서버 문제를 나눔 (서버 문제만 오류율에 셈)
-const SERVER_ERROR_CODES = new Set(["INTERNAL_ERROR", "DELIVERY_ERROR"]);
+// 표 저장 실패(DB)·방 있는 서버가 죽음·서버끼리 잇는 저장소(Redis) 못 씀도 서버 문제
+const SERVER_ERROR_CODES = new Set(["INTERNAL_ERROR", "DELIVERY_ERROR", "VOTE_PERSIST_FAILED", "NODE_UNAVAILABLE", "CLUSTER_UNAVAILABLE"]);
+// 판 상태를 물었더니 내가 판에서 빠져 있음 (끊겨서 탈락·판 번호 다름)
+const LOST_CODES = new Set(["FORFEITED_FROM_SESSION", "NOT_A_PARTICIPANT", "GAME_ID_MISMATCH"]);
 
 // Node 여러 개 이동 약속 (계획 4-5, 화면 shared/constants/connectionSocket.js와 같은 값)
 // WRONG_NODE: 접속 거절 → data.node로 다시 붙음, 30초에 3번 넘으면 아무 Node로 한 번 더, 그래도 튕기면 실패
@@ -60,6 +63,7 @@ class Bot {
         }
         const elapsed = performance.now() - started;
         if (res.status >= 500) { this.stats.error(`http:login:${res.status}`); throw new Error(`로그인 ${res.status}`); }
+        // 401 = 계정이 서버 DB에 없음(다른 DB에 만듦), 423 = 계정 잠김, 429 = 로그인 요청 수 제한 (LOGIN_IP_MAX)
         if (!res.ok) { this.stats.rejection(`http:login:${res.status}`); throw new Error(`로그인 거절 ${res.status}`); }
         this.stats.latency("http:login", elapsed);
         const body = await res.json();
@@ -217,9 +221,9 @@ class Bot {
             const reply = await this.request("get_session_snapshot", { gameId });
             // 스냅샷은 답 안에 펼쳐 옴, 판에서 빠졌으면 끝 (다시 불러오는 중 같은 거절은 다음 바퀴에)
             const snapshot = reply?.ok ? reply : null;
-            if (reply?.ok === false && ["FORFEITED_FROM_SESSION", "NOT_A_PARTICIPANT", "GAME_ID_MISMATCH"].includes(reply.code)) {
-                return "LOST";
-            }
+            if (reply?.ok === false && LOST_CODES.has(reply.code)) return "LOST";
+            // 판이 서버에서 사라짐 (서버가 다시 켜짐 등): 끝까지 기다리지 않고 바로 실패로 알림
+            if (reply?.ok === false && reply.code === "SESSION_NOT_FOUND") return "VANISHED";
             if (snapshot?.phase === "ENDED") return "ENDED";
             if (snapshot?.phase) await this.act(gameId, snapshot, done, chatChance);
             await sleep(pollMs);

@@ -63,26 +63,41 @@ async function deleteLocalAccounts(db) {
     return uuids.length;
 }
 
-// 시험 계정 count개 만들기: 같은 무작위 비번 하나 (해시 한 번), 이메일 인증 끝난 상태
+// 닉네임: 가입 규칙(2~8자·한글영문숫자) 안에서 실행마다 다르게 → 'lt' + 실행 번호 3자 + 순번 3자 (예 lta1b00d)
+const nicknameOf = (runId, index) => `lt${runId}${index.toString(36).padStart(3, "0")}`;
+
+// 시험 계정 count개 만들기: 같은 무작위 비번 하나 (해시 한 번), 실제 가입이 남기는 것과 같게
+// (이메일 인증 끝·생일·전적 줄·기본 지급·약관 동의 — 빠지면 판 끝 전적 쓰기 같은 DB 일이 실제와 달라짐)
 async function createLocalAccounts(db, count) {
     await deleteLocalAccounts(db);
     const password = randomPassword();
     const { hashPassword } = require("../../utils/auth/credentials");
     const passwordHash = await hashPassword(password);
-    const runId = crypto.randomBytes(3).toString("hex");
+    const runId = crypto.randomBytes(2).toString("hex").slice(0, 3);
     const rows = Array.from({ length: count }, (_, i) => ({
         email: emailOf(i + 1),
-        nickname: `lt${runId}_${i + 1}`,
+        nickname: nicknameOf(runId, i + 1),
         password_hash: passwordHash,
+        birth_date: new Date(Date.UTC(2000, 0, 1)),
         email_verified: true,
         has_local_password: true,
     }));
     await db.User.bulkCreate(rows);
+    const created = await db.User.findAll({ where: { email: rows.map((row) => row.email) }, attributes: ["uuid"] });
+    const uuids = created.map((user) => user.uuid);
+    // 전적 줄 (가입 때 한 줄씩 생김, 없으면 판 끝 전적 더하기가 빈 손으로 끝남)
+    await db.UserStats.bulkCreate(uuids.map((uuid) => ({ user_id: uuid })), { ignoreDuplicates: true });
     // 가입과 같게 기본 사진·테두리·이모티콘 지급 (안 하면 첫 방 만들기·입장이 지급 25건을 떠안아 실제보다 느리게 잼)
     const economyService = require("../../services/economy");
-    const created = await db.User.findAll({ where: { email: rows.map((row) => row.email) }, attributes: ["uuid"] });
-    await Promise.all(created.map((user) => economyService.ensureDefaultEntitlements(user.uuid, db)));
+    // 8명씩 끊어서 (한꺼번에 수백 명을 넣으면 DB 연결 줄이 밀리고 서로 잠금이 엉킬 수 있음)
+    for (let i = 0; i < uuids.length; i += 8) {
+        await Promise.all(uuids.slice(i, i + 8).map((uuid) => economyService.ensureDefaultEntitlements(uuid, db)));
+    }
+    // 지금 약관 전부 동의 (약관 표가 비어 있으면 건너뜀)
+    const termsService = require("../../services/auth/terms");
+    const termsIds = (await termsService.getCurrentTerms()).map((terms) => terms.id);
+    for (const uuid of uuids) await termsService.recordAgreements(uuid, termsIds);
     return rows.map((row) => ({ email: row.email, password }));
 }
 
-module.exports = { EMAIL_LIKE, emailOf, randomPassword, loadAccountsFile, createLocalAccounts, deleteLocalAccounts, deleteRowsDeep };
+module.exports = { EMAIL_LIKE, emailOf, nicknameOf, randomPassword, loadAccountsFile, createLocalAccounts, deleteLocalAccounts, deleteRowsDeep };

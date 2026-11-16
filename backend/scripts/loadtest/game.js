@@ -12,12 +12,22 @@ const roomSettingsFor = (players) => ({
     nightActionTime: 30,
 });
 
+const SETUP_FAIL_LABELS = Object.freeze({ create_failed: "방 만들기 실패", join_failed: "입장 실패", start_failed: "시작 실패" });
+
+// 판을 못 차림: 봇은 규칙을 안 어겨서 차리기 거절은 전부 문제로 셈 (오류 수 + 실패한 판 수)
+// 방 만들기 거절은 코드 없이 글만 오는 것이 많아 봇 쪽 셈(규칙 거절)만으론 안 보임
+function failSetup(stats, kind, detail) {
+    stats.error(`game:${kind}`);
+    stats.gamesFailed += 1;
+    return `${SETUP_FAIL_LABELS[kind]}: ${detail}`;
+}
+
 // 판 하나 돌리기, 결과 글자 돌려줌 (ENDED·실패 이유)
 async function playGame(bots, { pollMs, chatChance, gameMaxMs, stats }) {
     const [host, ...guests] = bots;
 
     const created = await host.request("create_room", roomSettingsFor(bots.length));
-    if (!created?.ok) return `방 만들기 실패: ${created?.code ?? created?.message ?? "응답 없음"}`;
+    if (!created?.ok) return failSetup(stats, "create_failed", created?.code ?? created?.message ?? "응답 없음");
     const { roomId, roomCode, settingsVersion } = created.room;
 
     // 입장: 답 함수 없는 사건이라 room_joined 사건 오는 시간을 잼
@@ -32,7 +42,7 @@ async function playGame(bots, { pollMs, chatChance, gameMaxMs, stats }) {
     }));
     if (joined.some((ok) => !ok)) {
         await Promise.all(bots.map((bot) => bot.emit("leave_room")));
-        return "입장 실패";
+        return failSetup(stats, "join_failed", `${joined.filter((ok) => !ok).length}명`);
     }
 
     await Promise.all(bots.map((bot) => bot.request("set_ready", { isReady: true, roomId, expectedSettingsVersion: settingsVersion })));
@@ -47,7 +57,7 @@ async function playGame(bots, { pollMs, chatChance, gameMaxMs, stats }) {
     }
     if (!start?.ok) {
         await Promise.all(bots.map((bot) => bot.emit("leave_room")));
-        return `시작 실패: ${start?.code ?? start?.message ?? "응답 없음"}`;
+        return failSetup(stats, "start_failed", start?.code ?? start?.message ?? "응답 없음");
     }
     await Promise.all(startedWaits);
     stats.gamesStarted += 1;
@@ -56,10 +66,13 @@ async function playGame(bots, { pollMs, chatChance, gameMaxMs, stats }) {
     const outcomes = await Promise.all(bots.map((bot) => bot.playUntilEnded(gameId, { pollMs, chatChance, maxMs: gameMaxMs })));
     await Promise.all(bots.map((bot) => bot.request("leave_game_session", { gameId })));
 
-    if (outcomes.every((o) => o === "ENDED" || o === "LOST")) {
+    // 끝까지 간 판: 모두 끝을 봤거나(ENDED) 끊겨 탈락함(LOST), 한 명이라도 끝을 봐야 함
+    if (outcomes.every((o) => o === "ENDED" || o === "LOST") && outcomes.includes("ENDED")) {
         stats.gamesEnded += 1;
         return "ENDED";
     }
+    // 시간 넘김(TIMEOUT)·판이 사라짐(VANISHED)·전원 탈락은 문제로 셈
+    stats.error("game:not_finished");
     stats.gamesFailed += 1;
     return `끝까지 못 감: ${[...new Set(outcomes)].join(",")}`;
 }
