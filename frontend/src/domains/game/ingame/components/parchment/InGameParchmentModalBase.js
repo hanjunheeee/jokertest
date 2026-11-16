@@ -1,6 +1,6 @@
 // 양피지 창 바탕: 뒤 막·창·양피지·확인 버튼, 움직임 없이 바로 뜸
 // 단계 입장·밤 개인 결과·낮 시작 연출 글 창과 매칭 시작 막힘·이모티콘 저장 창이 사용
-import { createElement, useEffect } from "react"
+import { createElement, useEffect, useRef } from "react"
 import { useInGameModalLayer } from "../../hooks/useInGameModalLayer.js"
 import { PARCHMENT_CONFIRM_LABEL } from "../../constants/parchment/ingameParchmentConfirmButton.js"
 import { getInGameParchmentModalVariant } from "../../constants/parchment/ingameParchmentModalVariants.js"
@@ -25,6 +25,8 @@ function watchRecentBlur() {
     recentBlur = { element: event.target, at: Date.now() }
   }, true)
 }
+// 파일을 불러올 때 바로 감시 붙임 (창이 처음 뜰 때 붙이면 그보다 앞서 꺼진 단추를 못 봐서 첫 창은 초점이 몸통으로 빠졌음)
+watchRecentBlur()
 
 // 열기 전 초점 자리: 지금 초점, 몸통이면 5초 안에 초점을 잃은 단추
 function findOpener() {
@@ -36,11 +38,14 @@ function findOpener() {
 
 // 닫힐 때 열기 전 초점 자리로 되돌림 (확인 버튼에 초점을 옮긴 창만, 닫히며 초점이 몸통으로 빠지던 것 막기)
 // 그 자리가 사라졌거나 꺼졌거나 닫는 사이 다른 곳이 초점을 가져갔으면 그대로 둠, 아래 확인 버튼 초점보다 먼저 불러야 열기 전 자리를 잡음
+// 열기 전 자리는 처음 한 번만 잡아 둠 (StrictMode가 효과를 두 번 돌리면 두 번째엔 이미 확인 버튼에 초점이 있어 그 버튼을 연 자리로 잡았음)
 function useRestoreFocusOnClose(active) {
   watchRecentBlur()
+  const openerRef = useRef(null)
   useEffect(() => {
     if (!active || typeof document === "undefined") return undefined
-    const opener = findOpener()
+    if (!openerRef.current) openerRef.current = findOpener()
+    const opener = openerRef.current
     return () => {
       const current = document.activeElement
       if (current && current !== document.body) return
