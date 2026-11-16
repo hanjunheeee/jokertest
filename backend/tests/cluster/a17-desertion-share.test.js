@@ -1,7 +1,7 @@
 'use strict'
 
 // 탈주 막힘을 다른 Node도 아는지 시험 — n1 판에서 진짜로 탈주하면 n2(진짜 코드)의 방 만들기·입장이 막히는지, Redis 끊김·n2 다시 켬에도 남는지
-// 목록 A17-B-045~059 (docs/게임_의도_2026-11-15/시험목록/A17-서버-여러대.md "탈주 막힘을 다른 Node도 앎"), 돌리기: node --env-file=.env.test --test tests/cluster/a17-desertion-share.test.js
+// 목록 A17-B-045~059·192 (docs/게임_의도_2026-11-15/시험목록/A17-서버-여러대.md "탈주 막힘을 다른 Node도 앎"), 돌리기: node --env-file=.env.test --test tests/cluster/a17-desertion-share.test.js
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
@@ -299,4 +299,24 @@ test('A17-B-059 사람 칸 없는 막힘 알림은 n2가 버림, 오류 없음',
     const reply = await w.n2.createRoom('v059')
     assert.equal(reply.ok, true, `막힘: ${reply.code} ${reply.message}`)
     assert.deepEqual(errors, [])
+})
+
+// 브라우저 A17-H-023에서 나옴: Redis가 잠깐 멈추면 일하던 n1만 끊김을 느끼고 n2는 못 느낌 → n2는 다시 맞추기를 안 함
+test('A17-B-192 n1만 Redis 끊긴 동안 n1 탈주 → n1이 살아나면 끊김을 못 느낀 n2도 DB 다시 읽어 막음 (7명 판)', async (t) => {
+    const w = await setup(t)
+    const others = Array.from({ length: 6 }, (_, i) => `b192-${i}`)
+    const g = await openWith(w, w.n1, [others[0], others[1], 'd192', ...others.slice(2)])
+    w.setDown('n1', true)
+    const left = await w.n1.leaveGame('d192', g.gameId)
+    assert.equal(left.ok, true)
+    await w.settle()
+    assert.equal(w.desertionDb.rows.filter((r) => r.user_id === 'd192').length, 1, '가짜 저장소에 줄이 안 생김')
+    assert.equal(w.n2.cluster.state(), 'up', '준비: n2는 끊김을 못 느낌')
+    w.setDown('n1', false)
+    await w.settle()
+    // 다시 맞추기(0.5초 모음) 지나게
+    w.tick(1_000)
+    await w.settle()
+    moveTo(w.n1, w.n2, 'd192')
+    assertBlocked(await w.n2.createRoom('d192'), 'n2 방 만들기')
 })

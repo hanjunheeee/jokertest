@@ -93,7 +93,7 @@ function createStartup({ config, backend, parts, gate, log }) {
 
 // 상태 바뀜 처리: down이면 기다리는 RPC 끝냄, 다시 up이면 다시 맞추기 (첫 up은 켜기라 안 함)
 // 듣는 쪽에는 startup.view()가 바뀔 때만 알림 → 켜기 준비 끝나기 전 up은 안 알림
-function wireState({ backend, registries, rpc, nodes, resync, startup, log }) {
+function wireState({ backend, registries, bus, rpc, nodes, resync, startup, log }) {
     let everUp = backend.state() === "up";
     let shown = startup.view();
     const show = () => {
@@ -112,7 +112,11 @@ function wireState({ backend, registries, rpc, nodes, resync, startup, log }) {
         if (next === "up") {
             if (startup.ready()) {
                 nodes.beatNow();
-                if (everUp) resync.request();
+                if (everUp) {
+                    resync.request();
+                    // 끊긴 동안 내가 보낸 알림(탈주 막힘 등)은 버려졌음, 잠깐 멈춤은 일하던 Node만 느끼기도 해서 다른 Node에도 다시 맞추라고 알림
+                    bus.publish(BUS_TYPES.CLUSTER_RESYNC, {});
+                }
             } else {
                 // 켤 때 Redis가 없었음 → 지금 켜기 준비 (끝나야 하트비트·알림)
                 startup.late();
@@ -150,7 +154,7 @@ function buildParts({ config, backend, bootEpoch, statsProvider, registries, log
     parts.offResync = bus.on(BUS_TYPES.CLUSTER_RESYNC, () => resync.request());
     if (backend) {
         parts.startup = createStartup({ config, backend, parts, gate, log });
-        wireState({ backend, registries, rpc: parts.rpc, nodes: parts.nodes, resync, startup: parts.startup, log });
+        wireState({ backend, registries, bus, rpc: parts.rpc, nodes: parts.nodes, resync, startup: parts.startup, log });
     }
     return parts;
 }
