@@ -164,6 +164,10 @@ const createAuthStore = ({ clock = () => new Date() } = {}) => {
             return [1];
         },
         createToken: async (row) => { const entry = { id: nextId('reset'), revoked_at: null, ...row }; data.resetTokens.push(entry); return entry; },
+        // 안 쓴·안 폐기된 것 중 가장 늦게 넣은 줄 (진짜 저장소처럼 만든 시각 순, 같으면 나중 줄)
+        findLatestOpenToken: async (userId) => data.resetTokens
+            .filter((r) => r.user_id === userId && !r.used && !r.revoked_at)
+            .reduce((latest, r) => (!latest || new Date(r.created_at) >= new Date(latest.created_at) ? r : latest), null),
         findByHash: async (hash) => data.resetTokens.find((r) => r.token_hash === hash) ?? null,
         lockByHash: async (hash) => data.resetTokens.find((r) => r.token_hash === hash) ?? null,
         markUsed: async (id) => { const r = data.resetTokens.find((x) => x.id === id); r.used = true; return [1]; },

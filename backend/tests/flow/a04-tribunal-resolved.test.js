@@ -1,7 +1,7 @@
 'use strict';
 
 // 재판 결과 알림 흐름 시험: 결과 칸·직업 안 샘·밤 차례보다 먼저·판 끝·한 번만·취소 뒤 밤·결과 화면 180초 (가짜 소켓·가짜 시계)
-// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-B-154~165, 225~228, 230
+// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-B-154~165, 225~228, 230, 233~235
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -41,12 +41,16 @@ test('A04-B-155 7명 판 무죄 → executedUuid null', async (t) => {
     assert.equal(resolved.executedUuid, null);
 });
 
-test('A04-B-156 7명 판 피고 나감 → outcome CANCELLED·reason DEFENDANT_LEFT', async (t) => {
+// 스스로 나간 피고도 피고 사망으로 닫음 (사용자 결정 2026-11-16 낮), 취소 이유 칸은 안 실림
+test('A04-B-156 7명 판 피고 나감 → outcome DEFENDANT_DIED·reason 칸 없음', async (t) => {
     const { w, defendant } = await openWorld(t, { id: 'a04o156', n: 7, settings: { tribunalTime: 60 } });
     assert.equal((await W.leave(w, defendant)).ok, true);
     const resolved = W.lastResolved(w, gf.firstOf(w.session, 'JOKER'));
-    assert.equal(resolved.outcome, 'CANCELLED');
-    assert.equal(resolved.reason, 'DEFENDANT_LEFT');
+    assert.equal(resolved.outcome, 'DEFENDANT_DIED');
+    assert.equal(Object.hasOwn(resolved, 'reason'), false);
+    // 피고 사망 알림에도 표 수·직업 칸 없음
+    assert.equal(Object.hasOwn(resolved, 'counts'), false);
+    assert.equal(Object.hasOwn(resolved, 'executedRole'), false);
 });
 
 test('A04-B-157 7명 판 승부 남(광대 처형) → 판 끝 칸·phase ENDED', async (t) => {
@@ -67,7 +71,7 @@ function withoutEmptyRole(payload) {
     return rest;
 }
 
-// 158~161: 재판 동안 받은 알림·답에 남의 직업이 안 샘 (재판 결과 알림의 executedRole은 결정 대기라 뺌)
+// 158~161: 재판 동안 받은 알림·답에 남의 직업이 안 샘 (재판 결과 알림은 233에서 봄)
 [5, 7, 8, 10].forEach((n, i) => {
     test(`A04-B-${158 + i} ${n}명 판 재판 진입·표 답·내 진행·마감 당김 알림에 남의 직업 없음`, async (t) => {
         const { w } = await openWorld(t, { id: `a04k${n}`, n, settings: { tribunalTime: 60 } });
@@ -133,13 +137,13 @@ test('A04-B-225 7명 판 피고 나감 취소 → night_turn_started 옴', async
     assert.ok(names.indexOf('night_turn_started') > names.indexOf('tribunal_vote_resolved'));
 });
 
-test('A04-B-226 6명 판 피고 나감 → 판 전원 player_eliminated와 tribunal_vote_resolved CANCELLED 둘 다', async (t) => {
+test('A04-B-226 6명 판 피고 나감 → 판 전원 player_eliminated와 tribunal_vote_resolved DEFENDANT_DIED 둘 다', async (t) => {
     const { w, defendant } = await openWorld(t, { id: 'a04o226', n: 6, settings: { tribunalTime: 60 } });
     assert.equal((await W.leave(w, defendant)).ok, true);
     for (const uuid of w.uuids.filter((u) => u !== defendant)) {
         const eliminated = w.received(uuid, 'player_eliminated');
         assert.equal(eliminated.length, 1, `${uuid} 탈락 알림 수`);
-        assert.equal(W.lastResolved(w, uuid)?.outcome, 'CANCELLED', `${uuid} 취소 알림`);
+        assert.equal(W.lastResolved(w, uuid)?.outcome, 'DEFENDANT_DIED', `${uuid} 피고 사망 알림`);
     }
 });
 
@@ -169,4 +173,37 @@ test('A04-B-230 8명 판 1일 무죄 → 밤 끝 → dayIndex 2 낮', async (t) 
     const snap = await W.snapshot(w, w.uuids[0]);
     assert.equal(snap.phase, 'DAY');
     assert.equal(snap.dayIndex, 2);
+});
+
+// 233~235: 재판 결과 값에 표 수·처형된 사람 직업을 안 실음 (사용자 결정 2026-11-16 — 화면에 안 그려도 개발 도구로 보이면 직업이 샘)
+test('A04-B-233 8명 판(광대 2) 광대 처형·판 계속 → 결과 알림에 counts·executedRole 칸 없음, 남의 직업 없음', async (t) => {
+    const { w, defendant } = await openWorld(
+        t, { id: 'a04o233', n: 8, roleCounts: { JOKER: 2 }, settings: { tribunalTime: 60 } }, (s) => gf.firstOf(s, 'JOKER'),
+    );
+    await castAllAndSettle(w, 'GUILTY');
+    assert.equal(w.session.phase, 'NIGHT');
+    for (const uuid of w.uuids) {
+        const resolved = W.lastResolved(w, uuid);
+        assert.equal(resolved.executedUuid, defendant);
+        assert.deepEqual(Object.keys(resolved).sort(), ['dayIndex', 'defendantUuid', 'executedUuid', 'gameId', 'outcome', 'phase']);
+        assert.equal(JSON.stringify(resolved).includes('JOKER'), false, `${uuid}가 받은 결과에 직업 이름`);
+        assertNoForbiddenPrivateData(resolved, collectOtherPlayerRoleSecrets(w.session, uuid));
+    }
+});
+
+test('A04-B-234 7명 판 무죄 → 결과 알림에 counts·executedRole 칸 없음', async (t) => {
+    const { w } = await openWorld(t, { id: 'a04o234', n: 7, settings: { tribunalTime: 60 } });
+    await castAllAndSettle(w, 'NOT_GUILTY');
+    const resolved = W.lastResolved(w, gf.firstOf(w.session, 'JOKER'));
+    assert.equal(resolved.outcome, 'NOT_GUILTY');
+    assert.equal(Object.hasOwn(resolved, 'counts'), false);
+    assert.equal(Object.hasOwn(resolved, 'executedRole'), false);
+});
+
+test('A04-B-235 5명 판 마지막 광대 처형으로 끝난 판 스냅샷 → tribunal 칸에 결과·처형된 사람만, counts 없음', async (t) => {
+    const { w, defendant } = await openWorld(t, { id: 'a04o235', n: 5, settings: { tribunalTime: 60 } }, (s) => gf.firstOf(s, 'JOKER'));
+    await castAllAndSettle(w, 'GUILTY');
+    const snap = await W.snapshot(w, gf.nonJokers(w.session)[0]);
+    assert.equal(snap.phase, 'ENDED');
+    assert.deepEqual(snap.tribunal, { defendantUuid: defendant, resolved: true, outcome: 'GUILTY', executedUuid: defendant });
 });

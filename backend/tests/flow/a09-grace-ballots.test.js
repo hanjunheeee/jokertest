@@ -29,9 +29,14 @@ test('A09-B-163 7명 판 재판 중 끊긴 투표자가 안 냄 → 마감에 �
     const [x, d] = w.nonJokers();
     await w.toTribunal(d);
     await w.disconnect(x);
-    await w.castAll('GUILTY');
+    // 붙어 있는 5명: 유죄 3·무죄 2 (표 수는 알림에 안 실림 → 결과로 봄, 끊긴 X를 무죄로 셌다면 3:3 무죄)
+    const voters = w.others(d).filter((u) => u !== x);
+    assert.equal(voters.length, 5);
+    for (const [i, u] of voters.entries()) assert.equal((await w.cast(u, i < 3 ? 'GUILTY' : 'NOT_GUILTY')).ok, true);
     w.advanceUntil(() => w.got(d, 'tribunal_vote_resolved').length > 0);
-    assert.deepEqual(w.got(d, 'tribunal_vote_resolved').at(-1).counts, { guilty: 5, notGuilty: 0 });
+    const resolved = w.got(d, 'tribunal_vote_resolved').at(-1);
+    assert.equal(resolved.outcome, 'GUILTY');
+    assert.equal(resolved.executedUuid, d);
 });
 
 test('A09-B-164 8명 판 끊긴 광대가 안 고름 → 차례 건너뜀·암살 없음', async (t) => {
@@ -184,7 +189,10 @@ test('A09-B-174 8명 판 끊긴 사람을 낮 투표로 찍음 → ok, 표에 �
     assert.equal(reply.ok, true, `표 거절: ${reply.code}`);
     await w.voteAll(() => x, { skip: [x, voter] });
     w.advanceUntil(() => w.got(voter, 'day_vote_resolved').length > 0);
-    assert.equal(w.got(voter, 'day_vote_resolved').at(-1).tribunalTargetUuid, x);
+    // 표가 세어져 X가 최다 득표로 뽑힘 → 끊겨 있어 재판은 안 열림 (표를 안 셌다면 전원 기권 ABSTAINED)
+    const resolved = w.got(voter, 'day_vote_resolved').at(-1);
+    assert.equal(resolved.outcome, 'DEFENDANT_DISCONNECTED');
+    assert.equal(resolved.publicAbstainCount, 1);
 });
 
 test('A09-B-175 6명 판 광대가 끊긴 시민 고름 → ok, 낮에 그 사람 죽음', async (t) => {

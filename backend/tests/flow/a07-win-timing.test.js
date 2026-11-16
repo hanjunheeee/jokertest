@@ -1,7 +1,7 @@
 'use strict';
 
 // 승패 확인하는 때 서버 흐름 시험 — 밤 끝·재판 끝·산 사람 나감·60초 탈락 직후에만 승패 확인, 낮 투표 뒤·무죄·의사 살림·죽은 사람 나감은 계속
-// 목록 A07-B-122~142 (B-121은 안 씀: 밤에 광대가 0명이 되는 길이 없음 — 보고 참고), 돌리기: node --env-file=.env.test --test tests/flow/a07-win-timing.test.js
+// 목록 A07-B-121~142 (B-121은 "밤 끝 × 광대 0" 대신 광대 2명 판의 "밤 끝 × 광대 2 = 나머지 2": 밤에 광대가 0명이 되는 길이 없음), 돌리기: node --env-file=.env.test --test tests/flow/a07-win-timing.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -116,7 +116,20 @@ function assertNoEnd(ctx) {
     for (const uuid of ctx.s.players.keys()) assert.equal(endEvents(ctx.world, uuid).length, 0, `${uuid}가 판 끝 칸을 받음`);
 }
 
-// ── A07-B-122~132: 확인하는 때 4 × 그 일 뒤 산 (광대, 나머지) ──
+// ── A07-B-121~132: 확인하는 때 4 × 그 일 뒤 산 (광대, 나머지) ──
+
+// 밤 끝 (7명 판, 광대 2): 산 광대 수로 비교하는지 (광대 1명 판의 1 = 1과 갈림)
+test('A07-B-121 7명 판(광대 2) 밤 끝 광대 2 = 나머지 2 → 판 전원에게 광대 승', async (t) => {
+    const ctx = setup(t, { n: 7, jokerCount: 2 });
+    const [joker, mate] = gf.byRole(ctx.s, 'JOKER');
+    const [a, b, c] = gf.nonJokers(ctx.s);
+    dies(ctx.s, a);
+    dies(ctx.s, b);
+    // 밤 전: 광대 2 < 나머지 3 (판 계속) → 광대 둘이 같은 사람을 골라 나머지 2
+    night(ctx, { [joker]: c, [mate]: c });
+    assertEveryoneGot(ctx, 'night_result_applied', 'JOKER');
+    assert.equal(ctx.world.received(joker, 'night_result_applied').at(-1).payload.victimUuid, c);
+});
 
 // 밤 끝 (5명 판, 광대 1)
 test('A07-B-122 5명 판 밤 끝 광대 = 나머지 → 판 전원에게 광대 승', async (t) => {

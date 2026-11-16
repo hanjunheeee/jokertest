@@ -25,6 +25,7 @@ const gs = require('../../socket/gameSession');
 const mf = require('../helpers/matchmakingFixtures');
 const e2eHooks = require('../../socket/e2e/gameHooks');
 const gameCore = require('../../game-core/gameSession');
+const { getSessionById } = require('../../game-core/queries/byId');
 
 const MM = matchmaking.__testables;
 const G = gs.__testables;
@@ -240,7 +241,13 @@ async function paletteEmoji(uuid) {
     return palette.slots.find((id) => id && palette.owned.includes(id));
 }
 
-test('A02-B-276 팔레트에 이모티콘 넣은 계정(5명) → 역할 확인 중 그 이모티콘 send_emoji 됨', async (t) => {
+// 역할 확인을 바로 끝내 첫 낮으로 (이모티콘은 낮에만 됨)
+function toFirstDay(gameId) {
+    const r = gameCore.forceCompleteRoleReveal(getSessionById(gameId));
+    assert.equal(r.ok && r.transitioned, true, `첫 낮 실패: ${r.code}`);
+}
+
+test('A02-B-276 팔레트에 이모티콘 넣은 계정(5명) → 역할 확인 중엔 INVALID_PHASE, 첫 낮에 그 이모티콘 send_emoji 됨', async (t) => {
     if (noDb(t)) return;
     const uuids = await createUsers('p276', 5);
     const sender = uuids[1];
@@ -249,6 +256,8 @@ test('A02-B-276 팔레트에 이모티콘 넣은 계정(5명) → 역할 확인 
     const w = makeWorld(t);
     const { reply } = await w.openAndStart(uuids);
     assert.equal(reply.ok, true, `시작 실패: ${reply.message}`);
+    assert.equal((await w.sendEmoji(sender, reply.gameId, emoji)).code, 'INVALID_PHASE');
+    toFirstDay(reply.gameId);
     const sent = await w.sendEmoji(sender, reply.gameId, emoji);
     assert.equal(sent.ok, true, `이모티콘 거절: ${sent.code}`);
     for (const uuid of uuids) assert.equal(w.received(uuid, 'emoji_shown').length, 1, uuid);
@@ -273,7 +282,9 @@ test('A02-B-277 [지금 동작] 1명 팔레트 읽기 실패(6명) → 시작 �
     });
     const { reply } = await w.openAndStart(uuids);
     assert.equal(reply.ok, true, `시작 실패: ${reply.message}`);
-    assert.equal((await w.sendEmoji(broken, reply.gameId, emojiOfBroken)).ok, false);
+    // 첫 낮에 보냄 (역할 확인 중엔 누구나 거절이라 팔레트 탓인지 못 가림)
+    toFirstDay(reply.gameId);
+    assert.equal((await w.sendEmoji(broken, reply.gameId, emojiOfBroken)).code, 'NOT_OWNED');
     assert.equal((await w.sendEmoji(other, reply.gameId, emojiOfOther)).ok, true);
 });
 
@@ -297,7 +308,7 @@ test('A02-B-279 [지금 동작] 외형 읽기가 실패(5명) → 거절 문구,
     for (const uuid of uuids) assert.equal(w.received(uuid, 'game_started').length, 0, uuid);
 });
 
-test('A02-B-280 [지금 동작] 스킨 장착 안 한 시민(5명) → self에 accountSkinId 칸 없음', async (t) => {
+test('A02-B-280 [지금 동작] 스킨 장착 안 한 시민(5명) → self에 accountSkinId 칸 있음, 값 null', async (t) => {
     if (noDb(t)) return;
     const uuids = await createUsers('p280', 5);
     const citizen = uuids[2];
@@ -307,5 +318,7 @@ test('A02-B-280 [지금 동작] 스킨 장착 안 한 시민(5명) → self에 a
     assert.equal(reply.ok, true, `시작 실패: ${reply.message}`);
     const { self } = started.get(citizen).state;
     assert.equal(self.role, 'CITIZEN', '미리 정한 직업이 안 맞음');
-    assert.equal(Object.hasOwn(self, 'accountSkinId'), false, `accountSkinId 칸 있음(${self.accountSkinId})`);
+    // 장착 읽기가 직업마다 칸을 늘 채워(빈 직업은 null) 시민도 귀족 칸이 실림, 화면은 null·칸 없음 둘 다 기본 스킨
+    assert.equal(Object.hasOwn(self, 'accountSkinId'), true, 'accountSkinId 칸 없음');
+    assert.equal(self.accountSkinId, null);
 });

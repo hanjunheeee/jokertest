@@ -1,7 +1,7 @@
 'use strict';
 
-// 점검 시계 시험 — 시작 시각에 이 Node 진행 판·대기방 끝냄(전원 알림), 같은 상태 다시 읽어도 두 번 안 끝냄, 예약 취소면 안 끝냄
-// 목록 A18-B-111~113 (docs/게임_의도_2026-11-15/시험목록/A18-설정-배포-광고.md), 돌리기: node --env-file=.env.test --test tests/flow/a18-maintenance-clock.test.js
+// 점검 시계 시험 — 시작 시각에 이 Node 진행 판·대기방 끝냄(전원 알림), 같은 상태 다시 읽어도 두 번 안 끝냄, 예약 취소면 안 끝냄, 시작 시각 없이 켜면 안 끝냄
+// 목록 A18-B-111~113·123 (docs/게임_의도_2026-11-15/시험목록/A18-설정-배포-광고.md), 돌리기: node --env-file=.env.test --test tests/flow/a18-maintenance-clock.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -70,4 +70,24 @@ test('A18-B-113 시작 시각 30초 뒤 예약 → 10초에 점검 끔 → 30초
     await w.tickBy(25_000, 500);
     for (const uuid of g.uuids) assert.equal(maintenanceEnds(w, uuid, g.gameId), 0, `${uuid} 판 끝 알림 받음`);
     assert.notEqual(w.phaseOf(g.gameId), null, '판이 사라짐');
+});
+
+test('A18-B-123 시작 시각 없이 켠 점검(시계 붙음) → 60초 지나도 5명 판·6명 대기방 그대로(끝 알림 없음), 새 방 만들기만 MAINTENANCE로 거절', async (t) => {
+    const w = makeWorld(t);
+    const g = await w.openGame({ prefix: 'b123g', n: 5 });
+    const room = await w.openRoom({ prefix: 'b123r', n: 6, maxPlayers: 6 });
+    await w.connect('b123-new');
+    attachClock(t, w);
+    // 시작 시각 빈 채로 켬 = 바로 점검 중 (결정 2026-11-16 아침 15번: 도는 판은 안 끝내고 새 판만 막음)
+    await maintenance.reloadMaintenance({ db: fakeDb(row({ enabled: true, startsAt: null })) });
+
+    await w.tickBy(60_000, 1_000);
+    for (const uuid of g.uuids) assert.equal(maintenanceEnds(w, uuid, g.gameId), 0, `${uuid} 판 끝 알림 받음`);
+    for (const uuid of room.uuids) assert.equal(maintenanceRoomCloses(w, uuid), 0, `${uuid} 방 닫힘 알림 받음`);
+    assert.notEqual(w.phaseOf(g.gameId), null, '판이 사라짐');
+    assert.equal((await w.currentRoom(room.host))?.roomId, room.roomId, '대기방이 사라짐');
+
+    const reply = await w.createRoom('b123-new');
+    assert.equal(reply?.ok, false, `새 방이 만들어짐: ${JSON.stringify(reply)}`);
+    assert.equal(reply.code, 'MAINTENANCE');
 });

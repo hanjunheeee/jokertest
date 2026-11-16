@@ -1,7 +1,7 @@
 'use strict';
 
-// 초대 만들기 요청 시험 (HTTP 컨트롤러 길) — 가득 찬 방·대기방 없음·받는 사람이 판·다른 방·입장 처리 중·판에서 죽고 나감·자기 자신·같은 친구 다시
-// 목록 A01-B-601~608 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md "친구 초대로 들어오기"), 돌리기: node --env-file=.env.test --test tests/flow/a01b-invite-create.test.js
+// 초대 만들기 요청 시험 (HTTP 컨트롤러 길) — 가득 찬 방·대기방 없음·받는 사람이 판·다른 방·입장 처리 중·판에서 죽고 나감·판에 죽은 채 남음·자기 자신·같은 친구 다시
+// 목록 A01-B-601~608·711~712 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md "친구 초대로 들어오기"), 돌리기: node --env-file=.env.test --test tests/flow/a01b-invite-create.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -83,6 +83,40 @@ test('A01-B-606 받는 사람이 판 8명에서 죽고 나감 → 초대 만들�
     const made = await w.createInvite(room.host, victim);
     assert.equal(made.status, 201, made.error?.message);
     assert.equal(made.invite.status, 'PENDING');
+});
+
+// 판에 묶인 채 죽어 있는 사람도 새 초대를 받음 (사용자 결정 2026-11-16 낮: 산 사람만 못 받음, 수락과 같은 판정)
+// 8명 판 밤에 죽은 사람(판에서 안 나감)에게 초대 → { w, room, session, victim, made }
+async function inviteDeadWatcher(t, id) {
+    const w = makeWorld(t);
+    const room = await w.openRoom({ host: `${id}-h`, maxPlayers: 6 });
+    const session = w.seedGame({ id, n: 8 });
+    w.gf.toDay(session);
+    w.gf.toNight(session);
+    const victim = w.gf.nonJokers(session)[0];
+    w.killAtNight(session, w.gf.firstOf(session, 'JOKER'), victim);
+    w.store.befriend(room.host, victim);
+    const made = await w.createInvite(room.host, victim);
+    return { w, room, session, victim, made };
+}
+
+test('A01-B-711 받는 사람이 판 8명에서 죽은 채 판에 남아 있음 → 초대 만들어짐, 그 사람이 초대 알림 1번 받음', async (t) => {
+    const { w, victim, made } = await inviteDeadWatcher(t, 'b711');
+    assert.equal(made.status, 201, `${made.error?.code} ${made.error?.message}`);
+    assert.equal(made.invite.status, 'PENDING');
+    assert.equal(w.count(victim, 'game_invite_received'), 1);
+});
+
+test('A01-B-712 판 8명에서 죽은 채 남아 있는 사람이 받은 초대를 수락 → 들어감(준비 안 됨), 방 명단 2명', async (t) => {
+    const { w, room, victim, made } = await inviteDeadWatcher(t, 'b712');
+    assert.equal(made.status, 201, `${made.error?.code} ${made.error?.message}`);
+    const reply = await w.accept(victim, made.invite.inviteId);
+    assert.equal(reply.ok, true, `수락 거절: ${reply.code} ${reply.message}`);
+    assert.equal(reply.room.roomId, room.roomId);
+    const me = reply.room.players.find((p) => p.uuid === victim);
+    assert.ok(me, '명단에 없음');
+    assert.equal(me.isReady, false);
+    assert.equal(reply.room.players.length, 2);
 });
 
 test('A01-B-607 자기 자신 초대 → 400 "자기 자신을 초대할 수 없습니다."', async (t) => {

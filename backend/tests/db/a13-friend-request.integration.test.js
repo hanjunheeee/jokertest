@@ -70,7 +70,8 @@ test('A13-B-303 받는 사람이 정지 계정 → 403 "친구 신청을 보낼 
     assert.equal((await notificationsOf(banned)).length, 0);
 });
 
-test('A13-B-304 받는 사람이 탈퇴 계정 → 403 "친구 신청을 보낼 수 없는 계정입니다.", 신청·알림 0', async (t) => {
+// 탈퇴한 계정은 지운 표시가 붙어 계정 찾기에서 안 나옴 → 정지(403)와 달리 "없는 사람"(404)으로 막힘 (막히기는 같음, 상태 숫자만 지금 값으로)
+test('A13-B-304 받는 사람이 탈퇴 계정 → 404 "사용자를 찾을 수 없습니다.", 신청·알림 0', async (t) => {
     if (noDb(t)) return;
     const { call, minsu, cookieM } = await setup(t);
     const gone = await createUser('gone');
@@ -78,8 +79,8 @@ test('A13-B-304 받는 사람이 탈퇴 계정 → 403 "친구 신청을 보낼 
     await db.User.update({ status: 'WITHDRAWN' }, { where: { uuid: gone } });
     await db.User.destroy({ where: { uuid: gone } });
     const res = await sendRequest(call, cookieM, gone);
-    assert.equal(res.status, 403, JSON.stringify(res.body));
-    assert.equal(res.body.message, '친구 신청을 보낼 수 없는 계정입니다.');
+    assert.equal(res.status, 404, JSON.stringify(res.body));
+    assert.equal(res.body.message, '사용자를 찾을 수 없습니다.');
     assert.equal((await requestsBetween(minsu, gone)).length, 0);
     assert.equal((await notificationsOf(gone)).length, 0);
 });

@@ -1,7 +1,7 @@
 'use strict';
 
 // 탈주 기록 DB 시험 — 산 채로 나감·60초 탈락만 game_desertions에 한 판 한 줄, 몇 번째별 막힘 끝 저장 값, 메모리 비워도 DB로 셈, 죽고 끊긴 사람 판 골드
-// 목록 A09-B-401~431·444·449 (docs/게임_의도_2026-11-15/시험목록/A09-끊김-나가기-탈주.md), 돌리기: with-lock.sh testdb (시험_도우미.md 3-3)
+// 목록 A09-B-401~431·444·449~451 (docs/게임_의도_2026-11-15/시험목록/A09-끊김-나가기-탈주.md), 돌리기: with-lock.sh testdb (시험_도우미.md 3-3)
 const d = require('./a09-leave-db-helpers');
 
 const test = require('node:test');
@@ -196,6 +196,43 @@ test('A09-B-418 같은 user_id·game_id 직접 두 번 넣기 → 두 번째 gam
             return true;
         },
     );
+});
+
+// 메모리가 비면(서버 다시 켬·다른 Node) 같은 판인지 DB 유일 찾기 목차만 앎 → 겹침 오류를 알아보고 있던 줄을 돌려줘야 함
+test('A09-B-450 메모리 비운 뒤 같은 사람·판을 다시 적음 → 1줄 그대로, 두 번째 recorded false·saved true·막힘 끝 = 있던 줄', async (t) => {
+    if (noDb(t)) return;
+    h.setup(t, { timers: 'real', repo: null });
+    const [a] = await d.createUsers(1, 'r450');
+    const gameId = crypto.randomUUID();
+    const first = await desertion.recordDesertion({ userId: a, gameId, reason: 'LEFT_ALIVE' });
+    assert.equal(first.saved, true);
+    const [row] = await d.desertionRows(a, gameId);
+    desertion.__resetForTests();
+    const second = await desertion.recordDesertion({ userId: a, gameId, reason: 'DISCONNECT_TIMEOUT' });
+    assert.equal(second.saved, true, 'DB 겹침을 "못 씀"으로 봄');
+    assert.equal(second.recorded, false);
+    assert.equal(second.blockedUntil.getTime(), new Date(row.blocked_until).getTime());
+    const rows = await d.desertionRows(a, gameId);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].reason, 'LEFT_ALIVE');
+});
+
+test('A09-B-451 저장소에 같은 사람·판을 두 번 넣음 → 두 번째는 안 던지고 { created: false, row: 있던 줄 }', async (t) => {
+    if (noDb(t)) return;
+    const repository = require('../../repositories/game/desertion');
+    const [a] = await d.createUsers(1, 'r451');
+    const gameId = crypto.randomUUID();
+    const desertedAt = new Date('2026-11-16T03:00:00Z');
+    const blockedUntil = new Date(desertedAt.getTime() + 5 * MINUTE);
+    const first = await repository.insertDesertion({ userId: a, gameId, reason: 'LEFT_ALIVE', desertedAt, blockedUntil });
+    assert.equal(first.created, true);
+    const second = await repository.insertDesertion({
+        userId: a, gameId, reason: 'DISCONNECT_TIMEOUT', desertedAt: new Date(desertedAt.getTime() + MINUTE), blockedUntil: new Date(blockedUntil.getTime() + MINUTE),
+    });
+    assert.equal(second.created, false);
+    assert.equal(second.row.reason, 'LEFT_ALIVE');
+    assert.equal(new Date(second.row.blocked_until).getTime(), blockedUntil.getTime());
+    assert.equal((await d.desertionRows(a, gameId)).length, 1);
 });
 
 test('A09-B-419 다른 판이면 같은 사람 두 줄', async (t) => {

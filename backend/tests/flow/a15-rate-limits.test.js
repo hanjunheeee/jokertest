@@ -193,7 +193,8 @@ test('A15-B-193 아이디 찾기 같은 닉네임 6번째 → 429, 찾은 결과
 
 const resetRequest = (base, ip, email) => send(base, 'POST', '/auth/password-reset/request', { body: { email }, headers: from(ip) });
 
-test('A15-B-194 재설정 메일 같은 주소 4번째 → 429, 메일 3통뿐', async (t) => {
+// 2·3번째는 1분 안 다시 요청이라 메일 없이 건너뛰지만 한도엔 셈 (2026-11-16 결정 다섯째 3)
+test('A15-B-194 재설정 메일 같은 주소 4번째 → 429, 메일 1통뿐', async (t) => {
     const { base, store, mail } = await startAuthServer(t);
     await addUser(store, 'a15-194@example.com');
     const results = [];
@@ -201,7 +202,7 @@ test('A15-B-194 재설정 메일 같은 주소 4번째 → 429, 메일 3통뿐',
     assert.equal(results[2].status, 200, '3번째가 이미 막힘 (준비 실패)');
     assert.equal(results[3].status, 429);
     assert.equal(results[3].body.code, 'RATE_LIMITED');
-    assert.equal(mailsTo(mail, 'a15-194@example.com'), 3);
+    assert.equal(mailsTo(mail, 'a15-194@example.com'), 1);
 });
 
 test('A15-B-195 대소문자만 바꾼 주소도 같은 셈 — 소문자 3번 뒤 대문자 섞은 같은 주소 → 429', async (t) => {

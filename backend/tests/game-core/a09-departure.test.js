@@ -1,6 +1,6 @@
 'use strict';
 
-// 판 중 나가기·끊김 탈락 판 규칙 순수 시험 — 죽음 처리·표 정리·승패 확인·재판 취소·방장 넘김·끊긴 산 사람 표·전적 승패
+// 판 중 나가기·끊김 탈락 판 규칙 순수 시험 — 죽음 처리·표 정리·승패 확인·피고 빠진 재판 닫기·방장 넘김·끊긴 산 사람 표·전적 승패
 // 목록 docs/게임_의도_2026-11-15/시험목록/A09-끊김-나가기-탈주.md A09-B-038~060, 돌리기: node --test tests/game-core/a09-departure.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -185,9 +185,9 @@ for (const [no, label, n, roleCounts, deaths, pick, winner] of WIN_CASES) {
     });
 }
 
-// A09-B-049~050 피고가 빠지면 재판 취소·처형 없이 밤 (6명 판)
-for (const [no, label, depart] of [['A09-B-049', '나감', leave], ['A09-B-050', '60초 탈락', graceExpire]]) {
-    test(`${no} 6명 판 재판 중 피고 ${label} → 재판 취소, 단계 NIGHT, 날짜 그대로, 처형 없음`, (t) => {
+// A09-B-049~050 피고가 빠지면 처형 없이 밤 (6명 판) — 스스로 나가도, 끊겨 60초 탈락이어도 피고 사망 (사용자 결정 2026-11-16 낮)
+for (const [no, label, depart, outcome] of [['A09-B-049', '나감', leave, 'DEFENDANT_DIED'], ['A09-B-050', '60초 탈락', graceExpire, 'DEFENDANT_DIED']]) {
+    test(`${no} 6명 판 재판 중 피고 ${label} → 재판 결과 ${outcome}, 단계 NIGHT, 날짜 그대로, 처형 없음`, (t) => {
         const s = open(t, 6);
         const defendant = gf.nonJokers(s)[0];
         gf.toTribunal(s, defendant);
@@ -196,8 +196,11 @@ for (const [no, label, depart] of [['A09-B-049', '나감', leave], ['A09-B-050',
         assert.equal(result.ok, true);
         assert.equal(result.tribunalCancelled, true);
         const resolved = core.buildTribunalVoteResolvedPayload(s);
-        assert.equal(resolved.outcome, 'CANCELLED');
+        assert.equal(resolved.outcome, outcome);
+        // 취소 이유 칸은 피고 사망엔 없음
+        assert.equal(resolved.reason, undefined);
         assert.equal(resolved.executedUuid, null);
+        assert.equal(s.players.get(defendant).alive, false);
         assert.equal(s.phase, 'NIGHT');
         assert.equal(s.dayIndex, day);
         const executed = core.buildGameResultRecord(s, { completed: false }).players.filter((p) => p.death_reason === 'EXECUTION');
@@ -205,8 +208,8 @@ for (const [no, label, depart] of [['A09-B-049', '나감', leave], ['A09-B-050',
     });
 }
 
-test('A09-B-051 7명 판 판 중 방장 나감 → 방장 = 자리 순서로 방장 다음 참여 중인 사람', (t) => {
-    // 자리 가운데(4번째 자리) 시민을 방장으로 (앞자리부터 찾는 것과 바로 뒤 자리를 고르는 것이 갈리게)
+test('A09-B-051 7명 판 판 중 방장 나감 → 방장 = 맨 앞자리부터 찾아 처음 나오는 참여 중인 사람', (t) => {
+    // 자리 가운데(4번째 자리) 시민을 방장으로 (앞자리부터 찾는 것과 바로 뒤 자리를 고르는 것이 갈리게, 사용자 결정 2026-11-16: 앞자리부터)
     gf.resetCore();
     const probe = gf.startGame({ id: `a09dp-probe${seq}`, n: 7, roleCounts: { JOKER: 1 } });
     const seats = [...probe.players.keys()].map((u) => u.replace(`a09dp-probe${seq}`, ''));
@@ -223,7 +226,7 @@ test('A09-B-051 7명 판 판 중 방장 나감 → 방장 = 자리 순서로 방
     assert.notEqual(s.players.get(host).role, 'JOKER');
     const result = leave(s, host);
     assert.equal(result.ok, true);
-    assert.equal(core.buildParticipationChangedPayload(s, host).hostUuid, order[hostSeat + 1]);
+    assert.equal(core.buildParticipationChangedPayload(s, host).hostUuid, order[0]);
 });
 
 test('A09-B-052 [지금 동작] 6명 판 방장 나감, 다음 자리 사람은 처형됨(판 자리 남음) → 그 사람이 방장', (t) => {

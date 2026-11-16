@@ -1,14 +1,14 @@
 'use strict';
 
 // 요청 수 제한 시험(시험 DB 씀) — 친구 신청 10분 20번, 신고 1분 5번, 시간 지나면 다시 됨, 다른 계정은 따로 셈
-// 목록 A13-B-130~137 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md)
+// 목록 A13-B-130~137·536~537 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md)
 // 돌리기(잠금): AGENT_NAME=<이름> bash ../tools/시험도구/with-lock.sh testdb node --env-file=.env.test --env-file=.env.testdb --test --test-concurrency=1 tests/flow/a13-rate-limit.test.js
 const W = require('../db/a13-world'); // 맨 위, 모델보다 먼저 시험 DB 주소로
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
-const { createUser, login } = W;
+const { db, createUser, login } = W;
 const noDb = W.useTestDb(test);
 
 const FRIEND_LIMIT_MESSAGE = '친구 신청이 너무 많습니다. 잠시 후 다시 시도해주세요.';
@@ -115,4 +115,39 @@ test('A13-B-137 한 계정 신고가 막힌 뒤 다른 계정 → 됨', async (t
     assert.equal((await sendReports(call, cookie, 6)).status, 429);
     const second = await createUser('rl2');
     assert.notEqual((await sendReports(call, await login(second), 1)).status, 429);
+});
+
+// 친구 신청 취소 (2026-11-16 새로 만듦) — 취소로 신청 제한을 못 피함
+// 신청 → 취소를 n번 되풀이 → 신청 답 목록
+async function sendAndCancel(call, cookie, me, receiverId, n) {
+    const answers = [];
+    for (let i = 0; i < n; i += 1) {
+        const sent = await call('POST', '/friends/requests', { cookie, body: { receiverId } });
+        answers.push(sent.status);
+        if (sent.status !== 200) continue;
+        const row = await db.FriendRequest.findOne({ where: { requester_id: me, receiver_id: receiverId, status: 'PENDING' }, raw: true });
+        assert.equal((await call('PUT', `/friends/requests/${row.id}/cancel`, { cookie })).status, 200);
+    }
+    return answers;
+}
+
+test('A13-B-536 신청→취소를 20번 되풀이(전부 200) 한 뒤 21번째 신청 → 429 (취소해도 신청 셈은 안 줄어듦)', async (t) => {
+    if (noDb(t)) return;
+    const call = await freshServer(t);
+    const { me, other, cookie } = await pair();
+    const answers = await sendAndCancel(call, cookie, me, other, 20);
+    assert.deepEqual([...new Set(answers)], [200]);
+    const last = await call('POST', '/friends/requests', { cookie, body: { receiverId: other } });
+    assert.equal(last.status, 429);
+    assert.equal(last.body.message, FRIEND_LIMIT_MESSAGE);
+});
+
+test('A13-B-537 신청이 429로 막힌 동안에도 남아 있는 대기 신청 취소는 됨 → 200', async (t) => {
+    if (noDb(t)) return;
+    const call = await freshServer(t);
+    const { me, other, cookie } = await pair();
+    assert.equal((await sendRequests(call, cookie, other, 21)).status, 429);
+    const row = await db.FriendRequest.findOne({ where: { requester_id: me, receiver_id: other, status: 'PENDING' }, raw: true });
+    const res = await call('PUT', `/friends/requests/${row.id}/cancel`, { cookie });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
 });

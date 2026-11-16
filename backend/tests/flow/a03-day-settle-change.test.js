@@ -120,13 +120,13 @@ test('A03-B-278 6명 판: 다 찬 뒤 5초 중 낸 표 → 받음', async (t) =>
     assert.equal(ack.ok, true);
 });
 
-test('A03-B-279 6명 판: 재판으로 넘어간 뒤 낸 낮 표 → INVALID_PHASE', async (t) => {
+test('A03-B-279 6명 판: 재판으로 넘어간 뒤 낸 낮 표 → DAY_VOTE_ALREADY_RESOLVED', async (t) => {
     const { g, X, Y } = await fullSix(t, 'b279', (x, y) => ({ targets: [[x, 5], [y, 1]] }));
     g.advance(5_000);
     assert.equal(g.got(g.ids[0], 'day_vote_resolved')[0].phase, 'TRIBUNAL');
     const ack = await g.vote(Y, X);
     assert.equal(ack.ok, false);
-    assert.equal(ack.code, 'INVALID_PHASE');
+    assert.equal(ack.code, 'DAY_VOTE_ALREADY_RESOLVED');
 });
 
 test('A03-B-286 7명 판: 한 사람이 5초 안 세 번 바꿈 → 알림 한 번, 마지막 표(동점)로 판정', async (t) => {

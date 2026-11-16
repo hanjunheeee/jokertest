@@ -1,7 +1,7 @@
 'use strict';
 
-// 재판 중 끊김·나가기 흐름 시험: 끊긴 투표자 기권·59초 복귀·61초 탈락, 끊긴 피고(임시 10), 피고·투표자·방장 나감 (가짜 소켓·가짜 시계)
-// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-B-175~190, 229
+// 재판 중 끊김·나가기 흐름 시험: 끊긴 투표자 기권·59초 복귀·61초 탈락, 끊긴 피고(뽑힐 때 끊겨 있으면 재판 없음·재판 중 60초면 피고 사망), 피고·투표자·방장 나감 (가짜 소켓·가짜 시계)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-B-175~190, 229, 231~232
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -33,8 +33,8 @@ test('A04-B-175 7명 판 재판 중 끊긴 C가 60초 안, 재판 마감 옴 →
     await castEach(w, rest.slice(0, 3), 'GUILTY');
     await castEach(w, rest.slice(3), 'NOT_GUILTY');
     w.tick(enteredAt + 30_000 - Date.now());
+    // 표 수는 알림에 안 실림 → 결과로 봄 (끊긴 C를 무죄로 셌다면 3:3 무죄)
     const resolved = W.lastResolved(w, gf.firstOf(w.session, 'JOKER'));
-    assert.deepEqual(resolved.counts, { guilty: 3, notGuilty: 2 });
     assert.equal(resolved.outcome, 'GUILTY');
 });
 
@@ -80,7 +80,7 @@ test('A04-B-178 5명 판 끊겼다 다시 붙은 투표자 스냅샷 → phase T
     assert.equal(snap.tribunalDeadline, enteredAt + 60_000);
 });
 
-test('A04-B-179 6명 판 끊긴 사람이 낮 투표 최다 득표 → 재판 열림, 취소 안 됨', async (t) => {
+test('A04-B-179 6명 판 끊긴 사람이 낮 투표 최다 득표 → 재판 안 열림(DEFENDANT_DISCONNECTED), 밤, 그 사람은 산 채', async (t) => {
     const w = W.toFirstDay(W.setupWorld(t, { id: 'a04x179', n: 6, settings: { tribunalTime: 60 } }));
     const x = gf.nonJokers(w.session)[0];
     W.startDayVote(w);
@@ -88,9 +88,53 @@ test('A04-B-179 6명 판 끊긴 사람이 낮 투표 최다 득표 → 재판 �
     for (const uuid of w.uuids.filter((u) => u !== x)) assert.equal((await W.dayVote(w, uuid, x)).ok, true);
     // 끊긴 X가 안 내 다 찬 게 아님 → 낮 투표 마감(30초)에 판정
     w.tick(30_000);
-    assert.equal(w.session.phase, 'TRIBUNAL');
     const watcher = gf.firstOf(w.session, 'JOKER');
-    assert.equal(w.received(watcher, 'day_vote_resolved').at(-1).payload.tribunalTargetUuid, x);
+    const resolved = w.received(watcher, 'day_vote_resolved').at(-1).payload;
+    assert.equal(resolved.outcome, 'DEFENDANT_DISCONNECTED');
+    assert.equal(resolved.phase, 'NIGHT');
+    // 재판이 안 열리면 누가 뽑혔는지는 안 알림 (동률 때와 같음)
+    assert.equal(resolved.tribunalTargetUuid, null);
+    assert.equal(Object.values(resolved).includes(x), false);
+    assert.equal(W.countFor(w, watcher, 'tribunal_vote_resolved'), 0);
+    assert.ok(W.countFor(w, watcher, 'night_turn_started') >= 1, '밤 차례가 안 열림');
+    // 새로고침해도 밤·재판 없음·X는 산 채·왜 재판이 안 열렸는지가 보임
+    const snap = await W.snapshot(w, watcher);
+    assert.equal(snap.phase, 'NIGHT');
+    assert.equal(snap.tribunal, undefined);
+    assert.equal(snap.players.find((p) => p.uuid === x).isAlive, true);
+    assert.equal(snap.dayVoteResolution?.outcome, 'DEFENDANT_DISCONNECTED');
+});
+
+test('A04-B-231 7명 판 끊겼다 다시 붙은 사람이 최다 득표 → 재판 열림 (뽑히는 순간 붙어 있음)', async (t) => {
+    const w = W.toFirstDay(W.setupWorld(t, { id: 'a04x231', n: 7, settings: { tribunalTime: 60 } }));
+    const x = gf.nonJokers(w.session)[0];
+    W.startDayVote(w);
+    await W.disconnect(w, x);
+    w.tick(10_000);
+    assert.equal((await W.reconnect(w, x)).ok, true);
+    for (const uuid of w.uuids.filter((u) => u !== x)) assert.equal((await W.dayVote(w, uuid, x)).ok, true);
+    w.tick(30_000);
+    const resolved = w.received(gf.firstOf(w.session, 'JOKER'), 'day_vote_resolved').at(-1).payload;
+    assert.equal(resolved.outcome, 'TRIBUNAL');
+    assert.equal(resolved.phase, 'TRIBUNAL');
+    assert.equal(resolved.tribunalTargetUuid, x);
+});
+
+test('A04-B-232 8명 판 끊긴 사람이 뽑혀 재판 없이 밤 → 끊긴 때부터 60초에 탈락 (기다림 그대로)', async (t) => {
+    const w = W.toFirstDay(W.setupWorld(t, { id: 'a04x232', n: 8, settings: { tribunalTime: 60, nightActionTime: 120 } }));
+    const x = gf.nonJokers(w.session)[0];
+    W.startDayVote(w);
+    const disconnectedAt = Date.now();
+    await W.disconnect(w, x);
+    for (const uuid of w.uuids.filter((u) => u !== x)) assert.equal((await W.dayVote(w, uuid, x)).ok, true);
+    w.tick(30_000);
+    const watcher = gf.firstOf(w.session, 'JOKER');
+    assert.equal(w.received(watcher, 'day_vote_resolved').at(-1).payload.phase, 'NIGHT');
+    w.tick(disconnectedAt + 59_000 - Date.now());
+    assert.equal(W.countFor(w, watcher, 'player_eliminated'), 0);
+    w.tick(1_000);
+    w.tick(1_000);
+    assert.equal(w.received(watcher, 'player_eliminated').at(-1)?.payload.victimUuid, x);
     assert.equal(W.countFor(w, watcher, 'tribunal_vote_resolved'), 0);
 });
 
@@ -122,16 +166,21 @@ test('A04-B-181 8명 판 끊긴 피고 무죄 → 밤, 끊김 기다림 계속 (
     assert.equal(eliminated[0].payload.victimUuid, defendant);
 });
 
-test('A04-B-182 6명 판 재판 중 끊긴 피고 60초 지남 → CANCELLED·DEFENDANT_LEFT·밤·player_eliminated', async (t) => {
+test('A04-B-182 6명 판 재판 중 끊긴 피고 60초 지남 → 취소가 아니라 피고 사망(DEFENDANT_DIED)·밤·player_eliminated', async (t) => {
     const { w, defendant } = await openWorld(t, { id: 'a04x182', n: 6, settings: { tribunalTime: 120 } });
     await W.disconnect(w, defendant);
     w.tick(60_000);
     const watcher = gf.firstOf(w.session, 'JOKER');
     const resolved = W.lastResolved(w, watcher);
-    assert.equal(resolved?.outcome, 'CANCELLED');
-    assert.equal(resolved.reason, 'DEFENDANT_LEFT');
+    assert.equal(resolved?.outcome, 'DEFENDANT_DIED');
+    assert.equal(Object.hasOwn(resolved, 'reason'), false);
+    assert.equal(resolved.defendantUuid, defendant);
+    assert.equal(resolved.executedUuid, null);
     assert.equal(resolved.phase, 'NIGHT');
     assert.equal(W.countFor(w, watcher, 'player_eliminated'), 1);
+    assert.equal((await W.snapshot(w, watcher)).players.find((p) => p.uuid === defendant).isAlive, false);
+    const row = gf.core.buildGameResultRecord(w.session, { completed: false }).players.find((p) => p.user_id === defendant);
+    assert.equal(row.death_reason, 'DISCONNECT');
 });
 
 test('A04-B-183 7명 판 끊긴 피고가 59초에 다시 붙음 → 재판 그대로', async (t) => {
@@ -158,23 +207,28 @@ test('A04-B-184 5명 판 끊긴 피고가 마지막 광대, 재판 중 탈락 �
     }
 });
 
-test('A04-B-185 6명 판 피고가 leave_game_session → 판 전원 tribunal_vote_resolved CANCELLED, 밤', async (t) => {
+// 스스로 나간 피고도 피고 사망으로 닫음 (사용자 결정 2026-11-16 낮, 끊겨 60초 탈락한 피고와 같게)
+test('A04-B-185 6명 판 피고가 leave_game_session → 판 전원 tribunal_vote_resolved DEFENDANT_DIED, 밤', async (t) => {
     const { w, defendant } = await openWorld(t, { id: 'a04x185', n: 6, settings: { tribunalTime: 60 } });
     assert.equal((await W.leave(w, defendant)).ok, true);
     for (const uuid of w.uuids.filter((u) => u !== defendant)) {
         const resolved = W.lastResolved(w, uuid);
-        assert.equal(resolved?.outcome, 'CANCELLED', `${uuid} 취소 알림`);
+        assert.equal(resolved?.outcome, 'DEFENDANT_DIED', `${uuid} 피고 사망 알림`);
         assert.equal(resolved.phase, 'NIGHT');
     }
 });
 
-test('A04-B-186 8명 판 유죄 2·무죄 1 들어온 뒤 피고 나감 → counts 2:1', async (t) => {
+test('A04-B-186 8명 판 유죄 2·무죄 1 들어온 뒤 피고 나감 → 피고 사망 알림에 표 수 칸 없음, 처형 없음', async (t) => {
     const { w, defendant } = await openWorld(t, { id: 'a04x186', n: 8, settings: { tribunalTime: 60 } });
     const list = W.tribunalVoters(w);
     await castEach(w, list.slice(0, 2), 'GUILTY');
     await castEach(w, list.slice(2, 3), 'NOT_GUILTY');
     assert.equal((await W.leave(w, defendant)).ok, true);
-    assert.deepEqual(W.lastResolved(w, list[0]).counts, { guilty: 2, notGuilty: 1 });
+    // 유죄가 더 많았어도 피고가 나가면 처형 없음, 그때까지 표 수도 안 알림 (사용자 결정 2026-11-16)
+    const resolved = W.lastResolved(w, list[0]);
+    assert.equal(resolved.outcome, 'DEFENDANT_DIED');
+    assert.equal(resolved.executedUuid, null);
+    assert.equal(Object.hasOwn(resolved, 'counts'), false);
 });
 
 test('A04-B-187 5명 판 피고 나간 뒤 표 → INVALID_PHASE', async (t) => {
@@ -185,17 +239,20 @@ test('A04-B-187 5명 판 피고 나간 뒤 표 → INVALID_PHASE', async (t) => 
     assert.equal(reply.code, 'INVALID_PHASE');
 });
 
-test('A04-B-188 7명 판 유죄 낸 D 나감 → 결과 counts에 D 표 없음', async (t) => {
-    const { w } = await openWorld(t, { id: 'a04x188', n: 7, settings: { tribunalTime: 60 } });
+test('A04-B-188 7명 판 유죄 낸 D 나감 → 남은 표 유죄 2·무죄 2 → 무죄 (D 표가 남았다면 3:2 유죄)', async (t) => {
+    const { w, enteredAt } = await openWorld(t, { id: 'a04x188', n: 7, settings: { tribunalTime: 60 } });
     const [d] = citizenVoters(w);
     assert.equal((await W.cast(w, d, 'GUILTY')).ok, true);
     assert.equal((await W.leave(w, d)).ok, true);
     const rest = W.tribunalVoters(w);
     assert.equal(rest.length, 5);
+    // 한 명은 안 냄 → 재판 마감(60초)에 판정
     await castEach(w, rest.slice(0, 2), 'GUILTY');
-    await castEach(w, rest.slice(2), 'NOT_GUILTY');
-    w.tick(5_000);
-    assert.deepEqual(W.lastResolved(w, rest[0]).counts, { guilty: 2, notGuilty: 3 });
+    await castEach(w, rest.slice(2, 4), 'NOT_GUILTY');
+    w.tick(enteredAt + 60_000 - Date.now());
+    const resolved = W.lastResolved(w, rest[0]);
+    assert.equal(resolved.outcome, 'NOT_GUILTY');
+    assert.equal(resolved.executedUuid, null);
 });
 
 test('A04-B-189 5명 판 광대 2, 시민 투표자 1명 나감 → 산 광대 2 ≥ 나머지 2 → 판 끝, 재판 판정 없음', async (t) => {

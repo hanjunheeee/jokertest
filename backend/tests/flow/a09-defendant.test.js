@@ -1,6 +1,6 @@
 'use strict';
 
-// 끊긴 사람이 재판 피고일 때 흐름 시험 — 재판 열림·유죄 처형·무죄면 기다림 이어짐·재판 중 60초면 취소·다시 붙음·스스로 나가면 취소+탈주
+// 끊긴 사람이 재판 피고일 때 흐름 시험 — 뽑힐 때 끊겨 있으면 재판 없이 밤·재판 중 끊긴 피고 유죄 처형·무죄면 기다림 이어짐·재판 중 60초면 피고 사망·다시 붙음·스스로 나가도 피고 사망+탈주
 // 목록 docs/게임_의도_2026-11-15/시험목록/A09-끊김-나가기-탈주.md A09-B-210~217, 329, 돌리기: node --env-file=.env.test --test tests/flow/a09-defendant.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -20,17 +20,23 @@ async function openAndDisconnect(w, defendant) {
 // 판 끝 기록의 그 사람 죽은 이유
 const deathReason = (w, uuid) => core.buildGameResultRecord(w.session, { completed: false }).players.find((p) => p.user_id === uuid).death_reason;
 
-test('A09-B-210 7명 판 끊긴 C가 최다 득표 → 재판 단계, 피고 = C', async (t) => {
+test('A09-B-210 7명 판 끊긴 C가 최다 득표 → 재판 안 열리고 밤(DEFENDANT_DISCONNECTED), C는 산 채, 스냅샷에도 그 이유', async (t) => {
     const w = H.setup(t, { id: 'a09df210', n: 7 });
     w.toVote();
     const c = w.nonJokers()[0];
     await w.disconnect(c);
     await w.voteAll(() => c, { skip: [c] });
     w.advanceUntil(() => w.session.phase !== 'DAY');
-    assert.equal(w.session.phase, 'TRIBUNAL');
+    assert.equal(w.session.phase, 'NIGHT');
     const watcher = w.firstOf('JOKER');
-    assert.equal(w.got(watcher, 'day_vote_resolved').at(-1).tribunalTargetUuid, c);
-    assert.equal((await w.snapshot(watcher)).tribunal.defendantUuid, c);
+    const resolved = w.got(watcher, 'day_vote_resolved').at(-1);
+    assert.equal(resolved.outcome, 'DEFENDANT_DISCONNECTED');
+    assert.equal(resolved.tribunalTargetUuid, null);
+    assert.equal(w.got(watcher, 'tribunal_vote_resolved').length, 0);
+    assert.equal(w.isAlive(c), true);
+    const snap = await w.snapshot(watcher);
+    assert.equal(snap.tribunal, undefined);
+    assert.equal(snap.dayVoteResolution?.outcome, 'DEFENDANT_DISCONNECTED');
 });
 
 test('A09-B-211 6명 판 끊긴 피고 유죄 → 죽은 이유 EXECUTION (끊김 사망 아님)', async (t) => {
@@ -60,17 +66,21 @@ test('A09-B-212 8명 판 끊긴 피고 무죄 → 밤, 피고는 산 채·끊긴
     assert.equal(w.got(watcher, 'player_eliminated').at(-1)?.victimUuid, d);
 });
 
-test('A09-B-213 6명 판 재판 중 피고 60초 → 판 전원 tribunal_vote_resolved 취소 + 밤, 처형 없음', async (t) => {
+test('A09-B-213 6명 판 재판 중 피고 60초 → 판 전원 tribunal_vote_resolved 피고 사망(DEFENDANT_DIED) + 밤, 처형 없음', async (t) => {
     const w = H.setup(t, { id: 'a09df213', n: 6, settings: { tribunalTime: 120 } });
     const d = w.nonJokers()[0];
     const at = await openAndDisconnect(w, d);
     w.advanceTo(at + 60_000);
     for (const u of w.others(d)) {
         const resolved = w.got(u, 'tribunal_vote_resolved').at(-1);
-        assert.equal(resolved?.outcome, 'CANCELLED', u);
+        assert.equal(resolved?.outcome, 'DEFENDANT_DIED', u);
+        assert.equal(resolved.defendantUuid, d);
         assert.equal(resolved.phase, 'NIGHT');
         assert.equal(resolved.executedUuid, null);
+        // 탈락 알림도 같이 옴 (그 사람이 죽었음이 모두에게 드러남)
+        assert.equal(w.got(u, 'player_eliminated').at(-1)?.victimUuid, d);
     }
+    assert.equal(w.isAlive(d), false);
     assert.equal(deathReason(w, d), 'DISCONNECT');
 });
 
@@ -87,13 +97,14 @@ test('A09-B-214 10명 판 재판 중 피고가 다시 붙음 → 스냅샷 TRIBU
     assert.equal(w.got(w.firstOf('JOKER'), 'tribunal_vote_resolved').length, 0);
 });
 
-test('A09-B-215 5명 판 재판 중 산 피고가 스스로 나감 → 재판 취소·밤, 피고 방 만들기 → DESERTION_COOLDOWN', async (t) => {
+// 스스로 나간 피고도 피고 사망으로 닫음 (사용자 결정 2026-11-16 낮)
+test('A09-B-215 5명 판 재판 중 산 피고가 스스로 나감 → 피고 사망(DEFENDANT_DIED)·밤, 피고 방 만들기 → DESERTION_COOLDOWN', async (t) => {
     const w = H.setup(t, { id: 'a09df215', n: 5 });
     const d = w.nonJokers()[0];
     await w.toTribunal(d);
     assert.equal((await w.leave(d)).ok, true);
     const resolved = w.got(w.firstOf('JOKER'), 'tribunal_vote_resolved').at(-1);
-    assert.equal(resolved?.outcome, 'CANCELLED');
+    assert.equal(resolved?.outcome, 'DEFENDANT_DIED');
     assert.equal(resolved.phase, 'NIGHT');
     const room = await w.createRoom(d);
     assert.equal(room.code, 'DESERTION_COOLDOWN');

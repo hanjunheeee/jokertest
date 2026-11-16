@@ -1,7 +1,7 @@
 'use strict';
 
-// 로그인 없으면 막힘 요청 시험(시험 DB 씀) — 친구·알림·신고·문의 길 15개가 쿠키 없이 401, DB 줄은 안 바뀜
-// 목록 A13-B-115~129 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md)
+// 로그인 없으면 막힘 요청 시험(시험 DB 씀) — 친구·알림·신고·문의 길 18개가 쿠키 없이 401, DB 줄은 안 바뀜
+// 목록 A13-B-115~129·533~535 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md)
 // 돌리기(잠금): AGENT_NAME=<이름> bash ../tools/시험도구/with-lock.sh testdb node --env-file=.env.test --env-file=.env.testdb --test --test-concurrency=1 tests/flow/a13-auth-required.test.js
 const W = require('../db/a13-world'); // 맨 위, 모델보다 먼저 시험 DB 주소로
 const test = require('node:test');
@@ -29,6 +29,10 @@ const ROUTES = [
     ['A13-B-127', 'POST', '/reports', { targetUuid: SOME_UUID, gameId: SOME_UUID, reasonCode: 'ABUSE' }],
     ['A13-B-128', 'POST', '/inquiries', { category: 'BUG', title: '제목', body: '본문' }],
     ['A13-B-129', 'GET', '/inquiries/1'],
+    // 친구 신청 취소·친구 끊기 (2026-11-16 새로 만듦)
+    ['A13-B-533', 'GET', '/friends/requests/outgoing'],
+    ['A13-B-534', 'PUT', '/friends/requests/1/cancel'],
+    ['A13-B-535', 'DELETE', `/friends/${SOME_UUID}`],
 ];
 
 // 이 길들이 건드릴 수 있는 표 줄 수

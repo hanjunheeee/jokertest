@@ -1,7 +1,7 @@
 'use strict';
 
-// 꼭 있어야 하는 환경값 시험 — 빠진 값 이름 찾기(값 글자는 안 샘), 서명 키 약함(32자 미만·예시 모양), 시작 거부할 오류인지
-// 목록 A18-B-019~029 (docs/게임_의도_2026-11-15/시험목록/A18-설정-배포-광고.md), 돌리기: node --env-file=.env.test --test tests/unit/a18-required-env.test.js
+// 꼭 있어야 하는 환경값 시험 — 빠진 값 이름 찾기(값 글자는 안 샘), 서명 키 약함(32자 미만·예시 모양), 시작 거부할 오류인지, 운영 주소인데 개발 값이면 거부
+// 목록 A18-B-019~029·047~056 (docs/게임_의도_2026-11-15/시험목록/A18-설정-배포-광고.md), 돌리기: node --env-file=.env.test --test tests/unit/a18-required-env.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -83,6 +83,52 @@ test('A18-B-028 개발 + 필수 값 빠짐 → 거부 아님 (경고만)', () =>
 
 test('A18-B-029 개발 쪽 + NODE_ENV 오타(developmnet) → 시작 거부', () => {
     const env = { ...fullEnv(), NODE_ENV: 'developmnet' };
+    const error = errorOf(() => assertRequiredEnv(env));
+    assert.ok(error);
+    assert.equal(isStartupFatal(error, env), true);
+});
+
+// ── 047~056: 운영 주소(https + 진짜 도메인)인데 NODE_ENV가 production이 아니면 시작 거부 (결정 2026-11-16 아침 17번) ──
+// 운영 주소 본보기는 예약된 도메인(example.com), 개발·시험 주소는 localhost·IP·.test
+const PUBLIC_HTTPS = 'https://play.example.com';
+
+[
+    ['047', 'development', '개발'],
+    ['048', '', '빈 글자'],
+    ['049', 'test', '시험'],
+].forEach(([no, nodeEnv, label]) => {
+    test(`A18-B-${no} NODE_ENV ${label} + FRONTEND_URL 운영 주소(https 도메인) → 시작 거부, 오류 글엔 이름만`, () => {
+        const env = { ...fullEnv(), NODE_ENV: nodeEnv, FRONTEND_URL: PUBLIC_HTTPS };
+        const error = errorOf(() => assertRequiredEnv(env));
+        assert.ok(error, '오류가 안 남');
+        assert.equal(isStartupFatal(error, env), true);
+        assert.match(error.message, /NODE_ENV/);
+        assert.match(error.message, /FRONTEND_URL/);
+        assert.equal(error.message.includes('play.example.com'), false, '오류 글에 주소 값이 샘');
+    });
+});
+
+test('A18-B-050 NODE_ENV production + FRONTEND_URL 운영 주소 → 오류 없음', () => {
+    const env = { ...fullEnv(), NODE_ENV: 'production', FRONTEND_URL: PUBLIC_HTTPS };
+    assert.equal(errorOf(() => assertRequiredEnv(env)), null);
+});
+
+[
+    ['051', 'http://localhost:5173', 'http localhost'],
+    ['052', 'https://localhost:5173', 'https localhost'],
+    ['053', 'https://192.168.0.10:5173', 'https 안쪽 IP'],
+    ['054', 'https://front-a18.example.test', 'https .test 도메인'],
+    ['055', 'http://play.example.com', 'http 도메인'],
+].forEach(([no, url, label]) => {
+    test(`A18-B-${no} NODE_ENV development + FRONTEND_URL ${label} → 오류 없음 (개발·시험은 그대로 켜짐)`, () => {
+        const env = { ...fullEnv(), NODE_ENV: 'development', FRONTEND_URL: url };
+        assert.equal(errorOf(() => assertRequiredEnv(env)), null);
+    });
+});
+
+test('A18-B-056 개발 + 운영 주소 + JWT_SECRET 없음 → 빠진 값 경고로 안 덮이고 시작 거부', () => {
+    const env = { ...fullEnv(), NODE_ENV: 'development', FRONTEND_URL: PUBLIC_HTTPS };
+    delete env.JWT_SECRET;
     const error = errorOf(() => assertRequiredEnv(env));
     assert.ok(error);
     assert.equal(isStartupFatal(error, env), true);

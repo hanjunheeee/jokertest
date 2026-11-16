@@ -76,7 +76,8 @@ test('A01-B-541 판 6명 진행 중인 방 코드 → ROOM_ALREADY_STARTED "이�
     assert.deepEqual([...session.players.keys()].sort(), [...room.uuids].sort());
 });
 
-test('A01-B-542 판 5명 끝 + 180초 동안 아무도 "대기방으로"를 안 눌러 다시 연 방도 없어짐 → 그 코드 SESSION_ENDED "이미 끝난 게임의 방입니다."', async (t) => {
+// 다시 연 방까지 없어지면 "시작된 방" 표시도 지워져 있어 없는 코드와 같은 답 (join/startedMarks.js 주석대로, 모음 글 "목록을 지금 값으로")
+test('A01-B-542 판 5명 끝 + 180초 동안 아무도 "대기방으로"를 안 눌러 다시 연 방도 없어짐 → 그 코드 ROOM_CODE_MISMATCH "입장 코드와 일치하는 방이 없습니다."', async (t) => {
     const w = makeWorld(t);
     const room = await w.openRoom({ host: 'b542-0', guests: w.names('b542', 5).slice(1), maxPlayers: 5 });
     await w.startRoom(room);
@@ -92,7 +93,7 @@ test('A01-B-542 판 5명 끝 + 180초 동안 아무도 "대기방으로"를 안 
     await w.flush();
     w.connect('x');
     await w.joinByCode('x', room.roomCode);
-    assertFailed(w, 'x', 'SESSION_ENDED', MSG.SESSION_ENDED);
+    assertFailed(w, 'x', 'ROOM_CODE_MISMATCH', MSG.ROOM_CODE_MISMATCH);
 });
 
 // A01-B-543~548 가득 찬 방

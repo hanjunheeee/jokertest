@@ -115,8 +115,7 @@ test('A04-B-132 6명 판 다 찬 뒤 투표자 1명 나감(다시 다 참) → �
         w.tick(enteredAt + 30_000 - Date.now() - 1);
         assert.equal(resolvedCount(w, watcher), 0);
         w.tick(1);
-        const resolved = W.lastResolved(w, watcher);
-        assert.deepEqual(resolved.counts, { guilty: list.length - 1, notGuilty: 0 });
+        assert.equal(W.lastResolved(w, watcher).outcome, 'GUILTY');
     });
 });
 
@@ -158,7 +157,9 @@ test('A04-B-140 6명 판 다 찬 뒤 같은 사람이 무죄로 다시 → TRIBU
     const { w } = await openWorld(t, { id: 'a04s140', n: 6, settings: { tribunalTime: 120 } });
     const list = W.tribunalVoters(w);
     const settledAt = Date.now();
-    await castAll(w, list);
+    // 유죄 3·무죄 2 (첫 사람이 무죄로 바꿀 수 있었다면 2:3 무죄로 뒤집힘)
+    await castAll(w, list.slice(0, 3), 'GUILTY');
+    await castAll(w, list.slice(3), 'NOT_GUILTY');
     const again = await W.cast(w, list[0], 'NOT_GUILTY');
     assert.equal(again.code, 'TRIBUNAL_VOTE_ALREADY_SUBMITTED');
     const watcher = gf.firstOf(w.session, 'JOKER');
@@ -168,17 +169,16 @@ test('A04-B-140 6명 판 다 찬 뒤 같은 사람이 무죄로 다시 → TRIBU
     w.tick(5_000);
     const resolved = W.lastResolved(w, watcher);
     assert.equal(resolved.outcome, 'GUILTY');
-    assert.deepEqual(resolved.counts, { guilty: 5, notGuilty: 0 });
 });
 
-test('A04-B-141 8명 판 당김 뒤 2초에 피고 나감 → 바로 CANCELLED, 5초 시각에 두 번째 판정 없음', async (t) => {
+test('A04-B-141 8명 판 당김 뒤 2초에 피고 나감 → 바로 DEFENDANT_DIED, 5초 시각에 두 번째 판정 없음', async (t) => {
     const { w, defendant } = await openWorld(t, { id: 'a04s141', n: 8, settings: { tribunalTime: 120 } });
     await castAll(w, W.tribunalVoters(w));
     w.tick(2_000);
     assert.equal((await W.leave(w, defendant)).ok, true);
     const watcher = gf.firstOf(w.session, 'JOKER');
     assert.equal(resolvedCount(w, watcher), 1);
-    assert.equal(W.lastResolved(w, watcher).outcome, 'CANCELLED');
+    assert.equal(W.lastResolved(w, watcher).outcome, 'DEFENDANT_DIED');
     w.tick(3_000);
     assert.equal(resolvedCount(w, watcher), 1);
 });
@@ -236,14 +236,16 @@ test('A04-B-209 5명 판 재판 15초, 남은 10초에 다 참 → 마감 지금
     assert.equal(W.tribunalSettles(w, w.uuids[0]).at(-1)?.payload.deadline, lastAt + 5_000);
 });
 
-test('A04-B-210 7명 판 다 찬 뒤 판정 → 유죄+무죄 = 투표할 사람 수 (기권 없음)', async (t) => {
+test('A04-B-210 7명 판 다 찬 뒤 판정 → 낸 표 수 = 투표할 사람 수 (기권 없음), 유죄 4·무죄 2 → 유죄', async (t) => {
     const { w } = await openWorld(t, { id: 'a04s210', n: 7, settings: { tribunalTime: 120 } });
     const list = W.tribunalVoters(w);
     await castAll(w, list.slice(0, 4), 'GUILTY');
     await castAll(w, list.slice(4), 'NOT_GUILTY');
+    // 표 수는 결과 알림에 안 실림 → 판정 직전 스냅샷의 낸 사람 수로 봄
+    const { progress } = await W.snapshot(w, w.uuids[0]);
+    assert.deepEqual({ doneCount: progress.doneCount, requiredCount: progress.requiredCount }, { doneCount: list.length, requiredCount: list.length });
     w.tick(5_000);
-    const { counts } = W.lastResolved(w, w.uuids[0]);
-    assert.equal(counts.guilty + counts.notGuilty, list.length);
+    assert.equal(W.lastResolved(w, w.uuids[0]).outcome, 'GUILTY');
 });
 
 test('A04-B-211 8명 판 남은 2명이 같은 차례에 냄 → phase_settle_started 1번, 판정 1번', async (t) => {
@@ -327,4 +329,35 @@ test('A04-B-222 8명 판 1·2일 당긴 판, 3일 다 참 → 5초 당김', asyn
         w.tick(5_000);
     }
     assert.equal(W.tribunalSettles(w, w.uuids[0]).length, 3);
+});
+
+// ---------- A04-B-311~313 5초 당김 중 새로고침: 스냅샷에 "지금 당김 중" 표시 (결정 2026-11-16 아침 8번이 새로고침 뒤에도 지켜지게) ----------
+test('A04-B-311 6명 판 재판 당김 중 get_session_snapshot → phaseSettle = 재판·그날·직업 없음·당긴 마감(tribunalDeadline과 같음)', async (t) => {
+    const { w } = await openWorld(t, { id: 'a04s311', n: 6, settings: { tribunalTime: 120 } });
+    const settledAt = Date.now();
+    await castAll(w, W.tribunalVoters(w));
+    w.tick(2_000);
+    const snap = await W.snapshot(w, w.uuids[0]);
+    assert.equal(snap.ok, true);
+    assert.deepEqual(snap.phaseSettle, { phase: 'TRIBUNAL', dayIndex: 1, role: null, deadline: settledAt + 5_000 });
+    assert.equal(snap.tribunalDeadline, settledAt + 5_000);
+});
+
+test('A04-B-312 6명 판 재판 표가 하나 모자란 중 스냅샷 → phaseSettle 칸 없음', async (t) => {
+    const { w } = await openWorld(t, { id: 'a04s312', n: 6, settings: { tribunalTime: 120 } });
+    await castAll(w, W.tribunalVoters(w).slice(0, -1));
+    const snap = await W.snapshot(w, w.uuids[0]);
+    assert.equal(snap.ok, true);
+    assert.equal(snap.phase, 'TRIBUNAL');
+    assert.equal(Object.hasOwn(snap, 'phaseSettle'), false);
+});
+
+test('A04-B-313 7명 판 재판 당김 뒤 판정(무죄)으로 밤이 된 스냅샷 → 재판 당김 표시가 밤에 안 실림', async (t) => {
+    const { w } = await openWorld(t, { id: 'a04s313', n: 7, settings: { tribunalTime: 120 } });
+    await castAll(w, W.tribunalVoters(w), 'NOT_GUILTY');
+    w.tick(5_000);
+    assert.equal(w.session.phase, 'NIGHT');
+    const snap = await W.snapshot(w, w.uuids[0]);
+    assert.equal(snap.phase, 'NIGHT');
+    assert.equal(Object.hasOwn(snap, 'phaseSettle'), false);
 });

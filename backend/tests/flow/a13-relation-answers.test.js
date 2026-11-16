@@ -1,7 +1,7 @@
 'use strict';
 
-// 즐겨찾기·차단 잘못된 요청 답 시험(시험 DB 씀) — 자기 자신·값 모양·칸 없음·없는 사람·안 한 차단 풀기
-// 목록 A13-B-159~164 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md)
+// 즐겨찾기·차단 잘못된 요청 답 시험(시험 DB 씀) — 자기 자신·값 모양·칸 없음·없는 사람·안 한 차단 풀기·친구 끊기 대상
+// 목록 A13-B-159~164·561~562 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md)
 // 돌리기(잠금): AGENT_NAME=<이름> bash ../tools/시험도구/with-lock.sh testdb node --env-file=.env.test --env-file=.env.testdb --test --test-concurrency=1 tests/flow/a13-relation-answers.test.js
 const W = require('../db/a13-world'); // 맨 위, 모델보다 먼저 시험 DB 주소로
 const test = require('node:test');
@@ -68,4 +68,24 @@ test('A13-B-164 안 한 차단 풀기 → 404 "차단 기록을 찾을 수 없�
     const res = await call('DELETE', `/friends/blocks/${other}`, { cookie });
     assert.equal(res.status, 404);
     assert.equal(res.body.message, '차단 기록을 찾을 수 없습니다.');
+});
+
+// 친구 끊기 (2026-11-16 새로 만듦)
+test('A13-B-561 자기 자신과 친구 끊기 → 400 "자기 자신과는 친구를 끊을 수 없습니다."', async (t) => {
+    if (noDb(t)) return;
+    const { call, me, cookie } = await setup(t);
+    const res = await call('DELETE', `/friends/${me}`, { cookie });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.message, '자기 자신과는 친구를 끊을 수 없습니다.');
+});
+
+test('A13-B-562 없는 사람(아무 uuid)과 친구 끊기 → 404 "친구가 아닌 사용자입니다.", 내 다른 친구 줄 그대로', async (t) => {
+    if (noDb(t)) return;
+    const { call, me, cookie } = await setup(t);
+    const friend = await createUser('fr');
+    await befriend(me, friend);
+    const res = await call('DELETE', `/friends/${crypto.randomUUID()}`, { cookie });
+    assert.equal(res.status, 404);
+    assert.equal(res.body.message, '친구가 아닌 사용자입니다.');
+    assert.equal(await db.Friendship.count({ where: { requester_id: me, receiver_id: friend } }), 1);
 });

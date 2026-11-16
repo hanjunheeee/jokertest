@@ -23,12 +23,13 @@ const now = () => new Date();
 const later = () => new Date(Date.now() + 60 * 60_000);
 const U = 'users.uuid';
 
-// 목록 부록 2: 외래키 43개 (표.칸 → 부모 표.칸)
+// 목록 부록 2: 외래키 44개 (표.칸 → 부모 표.칸)
 const EXPECTED_FOREIGN_KEYS = [
     ['login_history.user_id', U], ['user_sessions.user_id', U], ['refresh_token_history.session_id', 'user_sessions.id'],
     ['user_bans.user_id', U], ['user_terms_agreements.user_id', U], ['user_terms_agreements.terms_version_id', 'terms_versions.id'],
     ['external_identities.user_id', U], ['oauth_states.user_id', U], ['password_reset_tokens.user_id', U],
-    ['game_result_players.game_id', 'game_results.id'], ['vote_participations.user_id', U], ['user_stats.user_id', U],
+    ['game_result_players.game_id', 'game_results.id'], ['game_result_players.user_id', U],
+    ['vote_participations.user_id', U], ['user_stats.user_id', U],
     ['achievement_grants.user_id', U],
     ['economy_wallets.user_id', U], ['economy_ledger_entries.user_id', U], ['economy_purchase_requests.user_id', U],
     ['economy_entitlements.user_id', U], ['economy_loadouts.user_id', U], ['economy_emoji_palettes.user_id', U],
@@ -43,9 +44,9 @@ const EXPECTED_FOREIGN_KEYS = [
     ['game_desertions.user_id', U],
 ].map(([from, to]) => `${from} -> ${to}`).sort();
 
-test('A16-B-251 외래키 전체 목록이 문서(부록 2, 43개)와 같음, oauth_states.user_id 이름은 oauth_states_ibfk_1', async (t) => {
+test('A16-B-251 외래키 전체 목록이 문서(부록 2, 44개)와 같음, oauth_states.user_id 이름은 oauth_states_ibfk_1', async (t) => {
     if (noDb(t)) return;
-    assert.equal(EXPECTED_FOREIGN_KEYS.length, 43);
+    assert.equal(EXPECTED_FOREIGN_KEYS.length, 44);
     const rows = await h.select(
         'SELECT TABLE_NAME AS t, COLUMN_NAME AS c, REFERENCED_TABLE_NAME AS rt, REFERENCED_COLUMN_NAME AS rc, CONSTRAINT_NAME AS name '
         + 'FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL',

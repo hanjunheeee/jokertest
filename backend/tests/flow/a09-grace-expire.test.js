@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const H = require('./a09-grace-harness');
 const { assertNoForbiddenPrivateData } = require('../helpers/gameSession.testUtils');
 
-const { core, desertion } = H;
+const { desertion } = H;
 
 // 단계 시간을 길게 (60초 탈락이 단계 마감과 겹치지 않게)
 const LONG = { dayDiscussionTime: 120, dayVoteTime: 120, tribunalTime: 120, nightActionTime: 120 };
@@ -180,7 +180,7 @@ test('A09-B-190 7명 판 C 3표·기권 3·끊긴 C 안 냄 → C 탈락 → 기
     assert.equal(w.session.phase, 'NIGHT');
 });
 
-test('A09-B-191 7명 판 의사가 A 보호 고르고 끊김 → 밤 안에 60초 탈락 → 광대 대상 A → 낮에 죽음', async (t) => {
+test('A09-B-191 7명 판 의사가 A 보호 고르고 끊김 → 밤 안에 60초 탈락 → 광대 대상 A → 보호는 남아 A가 삶', async (t) => {
     const w = H.setup(t, { id: 'a09ge191', n: 7, roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1 }, settings: { nightActionTime: 120 } });
     w.toDay();
     await w.toNight();
@@ -196,11 +196,15 @@ test('A09-B-191 7명 판 의사가 A 보호 고르고 끊김 → 밤 안에 60�
     assert.equal(w.session.phase, 'NIGHT');
     assert.equal(w.isAlive(doctor), false);
     await w.quickNight();
-    assert.equal(w.got(a, 'night_result_applied').at(-1)?.victimUuid, a);
-    assert.equal(w.isAlive(a), false);
+    // 탈락해도 이미 고른 보호는 적용 (사용자 결정 2026-11-16, "광대에게 지목된 의사의 선택은 적용"과 같은 생각)
+    const applied = w.got(a, 'night_result_applied').at(-1);
+    assert.ok(applied, '밤 결과 알림 없음');
+    assert.equal(applied.victimUuid, null);
+    assert.equal(w.isAlive(a), true);
 });
 
-test('A09-B-192 8명 판 광대 2, 끊긴 광대만 대상 고름 → 60초 탈락 → 그 밤 죽은 사람 없음', async (t) => {
+// 암살을 고른 광대가 광대 차례가 열려 있는 동안 탈락해도 그 암살은 남음 (사용자 결정 2026-11-16 낮 6번, 전엔 [지금 동작] "지워짐"이던 줄)
+test('A09-B-192 8명 판 광대 2, 끊긴 광대만 대상 고름 → 광대 차례 안에 60초 탈락 → 남은 광대는 안 고름 → 고른 대상이 죽음', async (t) => {
     const w = H.setup(t, { id: 'a09ge192', n: 8, roleCounts: { JOKER: 2 }, settings: { nightActionTime: 120 } });
     w.toDay();
     await w.toNight();
@@ -211,10 +215,11 @@ test('A09-B-192 8명 판 광대 2, 끊긴 광대만 대상 고름 → 60초 탈�
     await w.disconnect(j1);
     w.advanceTo(at + 60_000);
     assert.equal(w.isAlive(j1), false);
+    assert.equal(H.core.getCurrentNightTurnRole(w.session), 'JOKER', '광대 차례가 벌써 닫힘 (준비 잘못)');
     // 남은 광대는 안 고른 채 차례 마감
     w.advanceUntil(() => w.session.phase !== 'NIGHT');
-    assert.equal(w.got(j2, 'night_result_applied').at(-1)?.victimUuid, null);
-    assert.equal(w.isAlive(victim), true);
+    assert.equal(w.got(j2, 'night_result_applied').at(-1)?.victimUuid, victim);
+    assert.equal(w.isAlive(victim), false);
 });
 
 // A09-B-193~198 탈락 직후 승패 (값 6)
@@ -358,15 +363,15 @@ test('A09-B-205 [지금 동작] 6명 판 방장 끊김 → 30초 → 방장 그�
     assert.equal(w.got(viewer, 'session_participation_changed').length, 0);
 });
 
-test('A09-B-206 7명 판 방장 60초 탈락 → session_participation_changed 방장 = 자리 순서로 방장 다음 참여 중인 사람', async (t) => {
+test('A09-B-206 7명 판 방장 60초 탈락 → session_participation_changed 방장 = 맨 앞자리부터 찾아 처음 나오는 참여 중인 사람', async (t) => {
     const w = setupWithHost(t, { id: 'a09ge206', n: 7, seat: 3 });
     w.toDay();
     const order = [...w.session.players.keys()];
     const host = w.session.hostUuid;
     assert.equal(host, order[3]);
     await disconnectAndExpire(w, host);
-    const viewer = order[0];
-    assert.equal(w.got(viewer, 'session_participation_changed').at(-1)?.hostUuid, order[4]);
+    const viewer = order[1];
+    assert.equal(w.got(viewer, 'session_participation_changed').at(-1)?.hostUuid, order[0]);
 });
 
 test('A09-B-207 6명 판 토론 중 탈락 → 토론 마감 시각 안 바뀜', async (t) => {
@@ -497,4 +502,45 @@ test('A09-B-328 7명 판 끊긴 지 30초에 판 끝 → 판 끝 칸 그 사람 
     assert.equal(mine.alive, true);
     w.advanceTo(at + 61_000);
     assert.equal(desertion.getDesertionBlock(x), null);
+});
+
+// ---------- A09-B-452~454 탈락한 사람이 판 번호 없이 스냅샷을 물음 (새로고침한 화면은 판 번호를 모름) ----------
+// 판 번호를 주면 FORFEITED_FROM_SESSION인데 번호 없이 물으면 못 가려 INTERNAL_ERROR가 가던 것 → 화면이 까닭 글 없이 방 목록으로 감
+test('A09-B-452 5명 판 61초 탈락 뒤 판 번호 없이 스냅샷 → FORFEITED_FROM_SESSION, 글 "연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다."', async (t) => {
+    const w = H.setup(t, { id: 'a09ge452', n: 5, settings: LONG });
+    w.toDay();
+    const x = w.nonJokers()[0];
+    await disconnectAndExpire(w, x);
+    const fresh = w.attachSocket(x);
+    await H.gs.resyncSessionRouting(fresh, x, w.io);
+    const snap = await w.snapshot(x, {});
+    assert.equal(snap.ok, false);
+    assert.equal(snap.code, 'FORFEITED_FROM_SESSION');
+    assert.equal(snap.message, '연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다.');
+});
+
+test('A09-B-453 6명 판: 판에 든 적 없는 사람이 판 번호 없이 스냅샷 → 탈락 글이 아님 (FORFEITED_FROM_SESSION 아님)', async (t) => {
+    const w = H.setup(t, { id: 'a09ge453', n: 6, settings: LONG });
+    w.toDay();
+    await disconnectAndExpire(w, w.nonJokers()[0]);
+    const stranger = 'a09ge453-stranger';
+    const sock = H.gf.createFakeSocket(stranger, { id: `sock-${stranger}` });
+    w.io.sockets.sockets.set(sock.id, sock);
+    w.world.registry.set(stranger, sock.id);
+    const snap = await H.gf.call(H.gs.__testables.handleGetSessionSnapshot, w.io, sock, stranger, {});
+    assert.equal(snap.ok, false);
+    assert.notEqual(snap.code, 'FORFEITED_FROM_SESSION');
+});
+
+test('A09-B-454 6명 판: 앞 판에서 탈락한 사람이 그 판이 지워진 뒤 판 번호 없이 스냅샷 → 탈락 글이 아님', async (t) => {
+    const w = H.setup(t, { id: 'a09ge454', n: 6, settings: LONG });
+    w.toDay();
+    const x = w.nonJokers()[0];
+    await disconnectAndExpire(w, x);
+    // 판이 사라짐 (서버 다시 켜짐 흉내, A09-B-300과 같은 길)
+    H.gf.resetCore();
+    const fresh = w.attachSocket(x);
+    const snap = await H.gf.call(H.gs.__testables.handleGetSessionSnapshot, w.io, fresh, x, {});
+    assert.equal(snap.ok, false);
+    assert.notEqual(snap.code, 'FORFEITED_FROM_SESSION');
 });

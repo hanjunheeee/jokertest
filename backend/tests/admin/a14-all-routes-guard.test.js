@@ -1,6 +1,6 @@
 'use strict';
 
-// 로그인 없으면 관리자 전 경로가 막히는지 시험: 영역 경로 42개 하나씩·플레이어 토큰(role=ADMIN·USER)·지어낸 관리자 쿠키 → 모두 401
+// 로그인 없으면 관리자 전 경로가 막히는지 시험: 영역 경로 43개 하나씩·플레이어 토큰(role=ADMIN·USER)·지어낸 관리자 쿠키 → 모두 401
 // 목록 docs/게임_의도_2026-11-15/시험목록/A14-관리자.md A14-B-044~106 (DB 없음, 돌리기: node --env-file=.env.test --test)
 // 모델이 DB에 안 붙게 닿지 않는 주소로 (꼭 다른 require보다 먼저)
 process.env.DATABASE_URL = 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
@@ -17,7 +17,10 @@ const { generateToken } = require('../../utils/auth/credentials');
 
 // 경로 표는 라우터에서 읽음 (손으로 안 적음) — 영역 경로만, auth 3개 뺌
 const AREA_ROUTES = listAdminRoutes().filter((route) => !route.isAuth);
-const AREA_COUNT = 42;
+// 영역 경로 43개 (로그인 경로 3개까지 46개 — 쿠폰 쓴 사람 보기 GET /coupons/:id/redemptions 포함)
+const AREA_COUNT = 43;
+// 목록 번호는 044~085로 42개 → 마지막 번호가 42번째와 남은 경로를 같이 봄
+const CASE_COUNT = 42;
 // 영역 붙는 자리 19곳마다 첫 경로
 const MOUNT_FIRST = [...new Map(AREA_ROUTES.map((route) => [route.mount, route])).values()]
     .map((route) => AREA_ROUTES.find((r) => r.mount === route.mount));
@@ -44,7 +47,7 @@ const send = (agent, route, headers) => agent.request(route.method, fillPath(rou
     body: route.isWrite ? {} : undefined, headers,
 });
 
-// ── A14-B-044~085: 영역 경로 42개 (목록 기준 수) ──
+// ── A14-B-044~085: 영역 경로 43개 (번호는 42개) ──
 // 마지막 번호(085)가 42번째 뒤에 남은 경로까지 보고 나서 경로 수를 맞춰 봄 → 수가 다르면 "목록 바뀜"으로 실패
 const expectBlocked = async (route) => {
     const res = await send(accessAgent(), route);
@@ -52,8 +55,8 @@ const expectBlocked = async (route) => {
     assert.equal(res.body.code, 'ADMIN_LOGIN_REQUIRED', route.key);
     assert.equal(res.headers.get('cache-control'), 'no-store', route.key);
 };
-for (let i = 0; i < AREA_COUNT; i += 1) {
-    const last = i === AREA_COUNT - 1;
+for (let i = 0; i < CASE_COUNT; i += 1) {
+    const last = i === CASE_COUNT - 1;
     const route = AREA_ROUTES[i];
     const no = String(44 + i).padStart(3, '0');
     const label = last ? `${route ? route.key : '(경로 없음)'} 와 남은 경로 + 경로 수 ${AREA_COUNT}` : (route ? route.key : '(경로 없음)');

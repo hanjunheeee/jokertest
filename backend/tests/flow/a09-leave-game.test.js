@@ -318,6 +318,81 @@ test('A09-B-237 6명 판 광대 1·시민 5에서 시민이 하나씩 나가 1:1
     assert.equal(last.payload.winResult?.winner, 'JOKER');
 });
 
+// ---------- A09-B-455~457 결과 화면에서 같은 나가기를 또 보냄 ("로비로"의 답을 놓친 뒤 "결과 확인") ----------
+// 이미 나간 사람이 또 보낸 나가기에도 성공으로 답해야 화면이 "결과 모름"에 안 머묾
+test('A09-B-455 8명 판 판 끝 뒤 나간 사람이 같은 나가기를 또 보냄(다른 사람은 결과 화면에 남음) → 두 번 다 ok', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 8 });
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    assert.equal(s.phase, 'ENDED');
+    const [c] = gf.nonJokers(s);
+    assert.deepEqual(await w.leave(s, c), { ok: true });
+    assert.deepEqual(await w.leave(s, c), { ok: true });
+});
+
+test('A09-B-456 6명 판 판 끝 뒤 나간 사람이 새 소켓(다시 붙음)으로 같은 나가기를 또 보냄 → ok', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 6 });
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    assert.equal(s.phase, 'ENDED');
+    const [c] = gf.nonJokers(s);
+    assert.deepEqual(await w.leave(s, c), { ok: true });
+    w.connect(c);
+    assert.deepEqual(await w.leave(s, c), { ok: true });
+});
+
+test('A09-B-457 7명 판 판 끝 뒤 두 번 나가기를 보내도 남은 사람의 결과 화면 스냅샷은 그대로 (ENDED·승자 시민)', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 7 });
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    const [c, stay] = gf.nonJokers(s);
+    await w.leave(s, c);
+    await w.leave(s, c);
+    const snap = await gf.call(h.T.handleGetSessionSnapshot, w.io, w.sock(stay), stay, { gameId: s.id });
+    assert.equal(snap.ok, true);
+    assert.equal(snap.phase, 'ENDED');
+    assert.equal(snap.winResult?.winner, 'CITIZEN');
+});
+
+// ---------- A09-B-458~460 결과 화면에서 나간 뒤 "결과 확인"(그 판 스냅샷을 다시 물음) ----------
+// 화면은 이 답이 "그 판에 없음"이어야 나가기를 끝냄, INTERNAL_ERROR면 "결과 모름"에 머묾 (다른 사람이 결과 화면에 남아 판이 안 지워진 동안)
+test('A09-B-458 8명 판 판 끝 뒤 나간 사람이 그 판 스냅샷을 물음(다른 사람은 결과 화면에 남음) → NOT_A_PARTICIPANT (INTERNAL_ERROR 아님)', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 8 });
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    assert.equal(s.phase, 'ENDED');
+    const [c] = gf.nonJokers(s);
+    assert.deepEqual(await w.leave(s, c), { ok: true });
+    const snap = await w.snapshot(s, c);
+    assert.equal(snap.ok, false);
+    assert.equal(snap.code, 'NOT_A_PARTICIPANT');
+});
+
+test('A09-B-459 6명 판 결과 화면에서 끊겨 판에서 빠진 사람이 다시 붙어 그 판 스냅샷을 물음 → NOT_A_PARTICIPANT', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 6 });
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    const [c] = gf.nonJokers(s);
+    await w.disconnect(c);
+    w.connect(c);
+    const snap = await w.snapshot(s, c);
+    assert.equal(snap.ok, false);
+    assert.equal(snap.code, 'NOT_A_PARTICIPANT');
+});
+
+test('A09-B-460 7명 판 끝난 판에 든 적 없는 사람이 그 판 번호로 스냅샷을 물음 → 판 사정을 안 알려 줌 (INTERNAL_ERROR 그대로)', async (t) => {
+    const w = h.setup(t);
+    const s = w.openGame({ n: 7 });
+    w.execute(s, gf.firstOf(s, 'JOKER'));
+    const [c] = gf.nonJokers(s);
+    await w.leave(s, c);
+    const stranger = 'a09b460-stranger';
+    w.connect(stranger);
+    const snap = await w.snapshot(s, stranger);
+    assert.equal(snap.ok, false);
+    assert.equal(snap.code, 'INTERNAL_ERROR');
+});
+
 // 진짜 시계로 걸릴 수 있는 다음 단계 타이머 끄기 (가짜 시계라 안 돌지만 다음 시험에 안 넘어가게)
 function T_stop(s) {
     h.T.stopDayPhaseTimer(s.id);

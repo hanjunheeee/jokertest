@@ -1,7 +1,7 @@
 'use strict';
 
-// 초대 받는 사람·보낸 사람 방 판정 흐름 시험 — 줄·입장 중·판 중·결과 화면·탈주 대기·로비, 방이 가득 찼나(남긴 방장 칸·입장 중 자리)
-// 목록 A13-B-138~147 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md), 돌리기: node --env-file=.env.test --test tests/flow/a13-invite-readers.test.js
+// 초대 받는 사람·보낸 사람 방 판정 흐름 시험 — 줄·입장 중·판 중(산 사람·죽은 사람)·결과 화면·탈주 대기·로비, 방이 가득 찼나(남긴 방장 칸·입장 중 자리)
+// 목록 A13-B-138~147·171~173 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md), 돌리기: node --env-file=.env.test --test tests/flow/a13-invite-readers.test.js
 process.env.DATABASE_URL = 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db'; // 맨 위, 모델이 DB에 안 붙게
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -64,6 +64,34 @@ test('A13-B-141 5명 판 끝 결과 화면에 있는 사람(끝난 지 30초) �
     await w.endGame(g);
     w.tickToSinceEnd(g, 30_000);
     assert.deepEqual(availability(g.uuids[1]), { available: false, code: 'RECEIVER_IN_GAME' });
+});
+
+// ── 진행 중 판의 죽은 사람은 받음, 산 사람·결과 화면 사람은 못 받음 (사용자 결정 2026-11-16 낮) ──
+// 6명 판 첫 낮에 시민 하나를 처형 → { w, g, dead, alive }
+async function gameWithExecuted(t, prefix) {
+    const w = makeWorld(t);
+    const g = await w.openAndStart({ prefix, n: 6 });
+    const dead = w.citizensOf(g).find((uuid) => uuid !== g.host);
+    await w.day(g, dead);
+    assert.equal(w.session(g).players.get(dead).alive, false, '처형 안 됨 (준비 잘못)');
+    assert.notEqual(w.session(g).phase, 'ENDED', '판이 끝남 (준비 잘못)');
+    return { w, g, dead, alive: w.alivePlayers(g)[0] };
+}
+
+test('A13-B-171 6명 판 진행 중 처형돼 죽은 사람(판에 남아 있음) → 받을 수 있음', async (t) => {
+    const { dead } = await gameWithExecuted(t, 'b171');
+    assert.deepEqual(availability(dead), { available: true, code: null });
+});
+
+test('A13-B-172 6명 판 진행 중 산 사람(같은 판에 죽은 사람 있음) → 못 받음 RECEIVER_IN_GAME', async (t) => {
+    const { alive } = await gameWithExecuted(t, 'b172');
+    assert.deepEqual(availability(alive), { available: false, code: 'RECEIVER_IN_GAME' });
+});
+
+test('A13-B-173 6명 판에서 죽은 사람도 판이 끝나 결과 화면이면 → 못 받음 RECEIVER_IN_GAME', async (t) => {
+    const { w, g, dead } = await gameWithExecuted(t, 'b173');
+    await w.endGame(g, 'jokerLeaves');
+    assert.deepEqual(availability(dead), { available: false, code: 'RECEIVER_IN_GAME' });
 });
 
 test('A13-B-142 로비에만 있는 사람 → 받을 수 있음', async (t) => {

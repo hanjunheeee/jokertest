@@ -122,8 +122,9 @@ test('A11-B-657 verify VALID → 가짜 시계 31분 → 저장 → 400 EXPIRED,
 
 const REJECTED = [
     ['A11-B-658', '7자', 'Pass123'],
-    ['A11-B-659', '65자', 'p'.repeat(65)],
-    ['A11-B-660', '한글 25자(75바이트)', '가'.repeat(25)],
+    // 길이·바이트 값은 영문+숫자를 넣어 그 까닭 하나로만 걸리게 함
+    ['A11-B-659', '65자', `${'p'.repeat(64)}1`],
+    ['A11-B-660', '한글 24자 + a1b(75바이트)', `${'가'.repeat(24)}a1b`],
 ];
 
 for (const [id, name, pw] of REJECTED) {
@@ -142,8 +143,8 @@ for (const [id, name, pw] of REJECTED) {
 
 const ACCEPTED = [
     ['A11-B-661', '8자', 'Pass1234'],
-    ['A11-B-662', '64자', 'q'.repeat(64)],
-    ['A11-B-663', '한글 24자(72바이트)', '나'.repeat(24)],
+    ['A11-B-662', '64자', `${'q'.repeat(63)}1`],
+    ['A11-B-663', '한글 23자 + a1b(72바이트)', `${'나'.repeat(23)}a1b`],
 ];
 
 for (const [id, name, pw] of ACCEPTED) {

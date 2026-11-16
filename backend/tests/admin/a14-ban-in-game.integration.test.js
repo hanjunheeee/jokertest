@@ -1,7 +1,7 @@
 'use strict';
 
-// 판 중인 사람 정지 시험: 낮 투표 중 관리자가 정지 → 그 사람만 끊김·판 그대로·기록 / 다시 못 붙고 60초 뒤 판에서 빠짐 (진짜 관리자 요청 + 진짜 연결 처리기 + 가짜 시계 + 시험 DB)
-// 목록 docs/게임_의도_2026-11-15/시험목록/A14-관리자.md A14-B-221~222 (A14-B-223은 결정 대기라 안 씀), 돌리기: with-lock.sh testdb (시험_도우미.md 3-3)
+// 판 중인 사람 정지 시험: 낮 투표 중 관리자가 정지 → 그 사람만 끊김·판 그대로·기록 / 다시 못 붙고 60초 뒤 판에서 빠짐·탈주로 안 침 (진짜 관리자 요청 + 진짜 연결 처리기 + 가짜 시계 + 시험 DB)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A14-관리자.md A14-B-221~223, 돌리기: with-lock.sh testdb (시험_도우미.md 3-3)
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 // 모델이 읽는 주소를 시험 DB로 (값 없으면 닿지 않는 곳 → 건너뜀), 꼭 models require보다 먼저
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
@@ -16,6 +16,7 @@ const { issueSessionForUser } = require('../../services/auth/account/session');
 const { authenticateSocket } = require('../../socket/connection/auth');
 const { makeWorld } = require('../flow/a10-world');
 const sessionCheckRepository = require('../../repositories/user/sessionCheck');
+const desertion = require('../../services/game/desertion');
 
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
 
@@ -106,4 +107,43 @@ test('A14-B-222 7명 판 ㄴ 정지·끊김 → 다시 붙기 거절 → 60초 �
     }
     assert.notEqual(w.phaseOf(g.gameId), 'ENDED');
     assert.deepEqual(w.aliveOf(g.gameId).sort(), [...others].sort(), '판은 6명으로 계속');
+});
+
+// 그 사람 탈주 줄
+const desertionRows = (uuid) => db.GameDesertion.findAll({ where: { user_id: uuid }, raw: true });
+
+test('A14-B-223 7명 판 ㄴ 정지·끊김 + 정지 아닌 ㄷ도 끊김 → 60초 → 둘 다 판에서 빠짐, 탈주 줄·탈주 대기는 ㄷ만 (ㄴ은 game_desertions 0줄·대기 없음)', async (t) => {
+    if (H.noDb(t)) return;
+    const { w, g, uuids, admin } = await gameInDayVote(t, 7);
+    // 탈주 적기·정지 확인은 진짜 저장소로 (세상 기본은 가짜)
+    desertion.__setRepositoryForTests(null);
+    const [victim, plain] = [uuids[1], uuids[2]];
+    const others = uuids.filter((u) => u !== victim && u !== plain);
+    const marks = new Map(others.map((u) => [u, w.mark(u)]));
+    assert.equal((await banWeek(admin, victim)).status, 201);
+    await w.settle();
+    assert.equal(w.sock(victim).connected, false);
+    // 견줄 사람: 정지 아닌데 같은 때 끊김
+    w.sock(plain).disconnect();
+    await w.settle();
+    await w.tickBy(60_000);
+    for (const uuid of others) {
+        const gone = w.since(uuid, marks.get(uuid), 'player_eliminated').map((p) => p.victimUuid);
+        assert.deepEqual([...gone].sort(), [victim, plain].sort(), `${uuid}가 받은 탈락 알림`);
+    }
+    // 탈주 줄 쓰기는 안 기다리는 길 → 견줄 사람 줄이 생길 때까지 기다림 (그때면 ㄴ의 정지 확인도 끝남)
+    for (let i = 0; i < 400 && (await desertionRows(plain)).length === 0; i += 1) await w.settle();
+    const plainRows = await desertionRows(plain);
+    assert.equal(plainRows.length, 1, '정지 아닌 사람 탈주 줄');
+    assert.equal(plainRows[0].game_id, g.gameId);
+    assert.equal(plainRows[0].reason, 'DISCONNECT_TIMEOUT');
+    await w.settle();
+    assert.equal((await desertionRows(victim)).length, 0, '정지로 빠진 사람에게 탈주 줄이 생김');
+    // 탈주 대기는 방 만들기 답으로 봄: 정지 아닌 사람만 탈주 거절 (정지된 사람은 실제론 못 붙음 → 접속 검사 대역 그대로 두고 탈주 거절이 아닌지만 봄)
+    await w.connect(plain);
+    assert.equal((await w.createRoom(plain)).code, 'DESERTION_COOLDOWN', '정지 아닌 사람 탈주 대기');
+    await w.connect(victim);
+    const made = await w.createRoom(victim);
+    assert.notEqual(made.code, 'DESERTION_COOLDOWN', '정지로 빠진 사람에게 탈주 대기가 걸림');
+    assert.equal(made.ok, true, `방 만들기 거절: ${made.code}`);
 });

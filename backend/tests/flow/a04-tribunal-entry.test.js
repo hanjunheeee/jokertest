@@ -50,13 +50,12 @@ function tribunalWorld(t, spec) {
 
 // 111~114: 마감까지 표 0 → 무죄 0:0, 처형 없음, 밤
 [5, 7, 8, 10].forEach((n, i) => {
-    test(`A04-B-${111 + i} ${n}명 판 마감까지 표 0 → NOT_GUILTY·counts 0:0·처형 없음, 밤`, async (t) => {
+    test(`A04-B-${111 + i} ${n}명 판 마감까지 표 0 → NOT_GUILTY·처형 없음, 밤`, async (t) => {
         const { w, defendant } = tribunalWorld(t, { id: `a04z${n}`, n, settings: { tribunalTime: 30 } });
         await W.openTribunal(w, defendant);
         w.tick(30_000);
         const resolved = W.lastResolved(w, w.uuids[0]);
         assert.equal(resolved.outcome, 'NOT_GUILTY');
-        assert.deepEqual(resolved.counts, { guilty: 0, notGuilty: 0 });
         assert.equal(resolved.executedUuid, null);
         assert.equal(resolved.phase, 'NIGHT');
     });
@@ -80,8 +79,9 @@ function tribunalWorld(t, spec) {
         for (const uuid of list.slice(guilty, guilty + notGuilty)) assert.equal((await W.cast(w, uuid, 'NOT_GUILTY')).ok, true);
         w.tick(30_000);
         const resolved = W.lastResolved(w, w.uuids[0]);
+        // 표 수는 알림에 안 실림 → 결과로 봄 (안 낸 사람을 유죄나 무죄로 셌다면 결과가 뒤집히는 표 모양)
         assert.equal(resolved.outcome, outcome);
-        assert.deepEqual(resolved.counts, { guilty, notGuilty });
+        assert.equal(resolved.executedUuid, outcome === 'GUILTY' ? defendant : null);
     });
 });
 

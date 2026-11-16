@@ -56,14 +56,14 @@ test('A10-B-123 방장 혼자 공개 방 로비 입장 → 방 없어짐, public
     assert.equal(await w.currentRoom(r.host), null);
 });
 
-test('A10-B-124 방장 혼자 코드 방 로비 입장 → 다른 사람이 그 코드로 입장하면 ROOM_NOT_FOUND', async (t) => {
+test('A10-B-124 방장 혼자 코드 방 로비 입장 → 다른 사람이 그 코드로 입장하면 ROOM_CODE_MISMATCH(없는 코드와 같은 답)', async (t) => {
     const w = makeWorld(t);
     const r = await w.openRoom({ prefix: 'b124', n: 1 });
     await w.lobby(r.host);
     await w.connect('b124-x');
     const joined = await w.joinByCode('b124-x', r.roomCode);
     assert.equal(joined.event, 'room_join_failed');
-    assert.equal(joined.code, 'ROOM_NOT_FOUND');
+    assert.equal(joined.code, 'ROOM_CODE_MISMATCH');
 });
 
 test('A10-B-125 2명 방 방장 로비 입장 → 손님이 방장, 방 남음', async (t) => {

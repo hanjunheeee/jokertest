@@ -411,7 +411,8 @@ test('A11-B-869 번호 보내기 뒤 인증 줄에 번호 원문 없음, 목적 
     }
 });
 
-test('A11-B-870 A·B가 각자 번호로 같은 주소를 동시에 확인 → 그 주소 가진 계정 1개, 다른 하나 409', async (t) => {
+// 나중에 번호를 받은 쪽(B)이 앞 번호(A)를 무효로 함 (A11-B-786과 같은 설계) → A는 번호가 틀린 것으로 거절
+test('A11-B-870 A·B가 각자 번호로 같은 주소를 동시에 확인 → 나중에 받은 B만 200, A는 400 CODE_INVALID, 그 주소 가진 계정 1개', async (t) => {
     if (noDb(t)) return;
     const app = await h.startApp(t, { clock: true });
     const a = await h.createLocalUser({ prefix: 'ec' });
@@ -427,6 +428,11 @@ test('A11-B-870 A·B가 각자 번호로 같은 주소를 동시에 확인 → �
         verifyCode(app, sb, { newEmail: address, code: codeB }),
     ]);
     assert.equal(await db.User.count({ where: { email: address } }), 1);
-    const statuses = results.map((r) => r.status).sort();
-    assert.deepEqual(statuses, [200, 409], `응답: ${JSON.stringify(results.map((r) => [r.status, r.body?.code]))}`);
+    const [resA, resB] = results;
+    const seen = `응답: ${JSON.stringify(results.map((r) => [r.status, r.body?.code]))}`;
+    assert.equal(resB.status, 200, seen);
+    assert.equal(resA.status, 400, seen);
+    assert.equal(resA.body.code, 'CODE_INVALID', seen);
+    assert.equal((await h.userRow(b.uuid)).email, address);
+    assert.equal((await h.userRow(a.uuid)).email, a.email);
 });

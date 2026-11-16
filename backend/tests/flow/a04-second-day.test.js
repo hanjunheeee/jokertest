@@ -67,7 +67,7 @@ test('A04-B-169 6명 판 2일 재판에 낸 뒤 A의 내 진행 알림 → hasSu
     assert.equal(last.self.hasSubmittedTribunalVote, true);
 });
 
-test('A04-B-170 7명 판 2일 결과 counts에 A 표가 들어감 (기권으로 안 셈)', async (t) => {
+test('A04-B-170 7명 판 2일 재판 표 수에 A 표가 들어감 (기권으로 안 셈)', async (t) => {
     const w = dayWorld(t, { id: 'a04b170', n: 7 });
     const [d1, d2, a] = gf.nonJokers(w.session);
     await dayWithTribunal(w, d1, a, 'NOT_GUILTY');
@@ -77,7 +77,8 @@ test('A04-B-170 7명 판 2일 결과 counts에 A 표가 들어감 (기권으로 
     w.tick(60_000);
     const resolved = W.lastResolved(w, a);
     assert.equal(resolved.dayIndex, 2);
-    assert.deepEqual(resolved.counts, { guilty: 1, notGuilty: 0 });
+    // 표 수는 알림에 안 실림 → 결과로 봄 (A 표가 안 들어갔다면 0:0 무죄)
+    assert.equal(resolved.outcome, 'GUILTY');
 });
 
 test('A04-B-171 5명 판 A가 2일 재판에 dayIndex 1로 냄 → STALE_DAY_INDEX', async (t) => {
@@ -162,11 +163,12 @@ test('A04-B-207 6명 판 같은 방 둘째 판 시작 → 재판 상태·표 없
     assert.equal(snap.self.hasSubmittedTribunalVote, undefined);
 });
 
-test('A04-B-208 6명 판 둘째 판 재판 중 첫 판 gameId로 냄 → 거절, 둘째 판 표 없음', async (t) => {
+test('A04-B-208 6명 판 둘째 판 재판 중 첫 판 gameId로 냄 → STALE_SESSION_MISMATCH 거절, 둘째 판 표 없음', async (t) => {
     const { w, first, a } = await secondGame(t, 'a04b208');
     W.toFirstDay(w);
     await W.openTribunal(w, gf.nonJokers(w.session).find((u) => u !== a));
     const reply = await W.castRaw(w, a, { gameId: first.id, dayIndex: 1, vote: 'GUILTY' });
     assert.equal(reply.ok, false);
+    assert.equal(reply.code, 'STALE_SESSION_MISMATCH');
     assert.equal((await W.snapshot(w, a)).progress.doneCount, 0);
 });

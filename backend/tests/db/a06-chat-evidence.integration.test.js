@@ -24,6 +24,7 @@ const gs = require('../../socket/gameSession');
 const chatBuffer = require('../../services/ops/chatBuffer');
 const bannedWords = require('../../services/ops/bannedWords');
 const reportService = require('../../services/ops/report');
+const { maybeResolveTribunal } = require('../../socket/gameSession/departure/autoResolve');
 
 const T = gs.__testables;
 const schema = buildManagedSchema({ baseline, addRefreshTokenHistory, addSocialAuth, migrationRunner });
@@ -137,6 +138,27 @@ function endByExecutingJoker(session) {
     assert.equal(session.phase, 'ENDED');
 }
 
+// 위와 같되 판정을 서버가 하는 길(재판 마감 판정)로 → 판 끝 뒷일(채팅 보관 끝 표시)까지 돎, 판은 결과 화면에 그대로 남음
+// 전적 저장·업적은 이 시험 밖이라 가짜로, 판 끝 180초 시계는 시험 끝에 끔
+function endByTribunalDeadline(t, world, session) {
+    T.__setGameResultPersistForTests(async () => ({ ok: true }));
+    T.__setEvaluateAchievementsForTests(async () => {});
+    t.after(() => {
+        gs.__resetStateForTests();
+        T.__setGameResultPersistForTests(null);
+        T.__setEvaluateAchievementsForTests(null);
+    });
+    const joker = gf.firstOf(session, 'JOKER');
+    gf.toTribunal(session, joker);
+    for (const uuid of gf.nonJokers(session).filter((u) => session.players.get(u).alive)) {
+        const r = gf.core.submitTribunalVote(uuid, session.id, session.dayIndex, 'GUILTY');
+        assert.equal(r.ok, true, `재판 표 실패: ${r.code}`);
+    }
+    assert.equal(maybeResolveTribunal(world.io, session), true, '재판 판정 안 됨');
+    assert.equal(session.phase, 'ENDED');
+    assert.ok(gf.core.getEndedGameId(joker) === session.id, '판이 결과 화면에 안 남음');
+}
+
 test('A06-B-091 신고가 없으면 채팅이 DB에 안 남음: 낮·밤·죽은 사람 채팅 뒤 판 끝·10분 → 증거 0줄', async (t) => {
     if (noDb(t)) return;
     const { session, world } = await table(t, { n: 6 });
@@ -239,7 +261,8 @@ test('A06-B-097 판 끝 10분 1초 뒤 신고 → reports 1줄, 증거 0줄, 답
     const { session, world } = await table(t, { n: 5 });
     const [a, b] = gf.nonJokers(session);
     assert.equal((await say(t, world, session, a, '판 중 글')).ok, true);
-    endByExecutingJoker(session);
+    // 판을 지우지 않고 결과 화면에 둔 채로 10분 1초 (끝 표시는 승패가 난 때 붙음)
+    endByTribunalDeadline(t, world, session);
     t.mock.timers.tick(10 * MIN + 1_000);
     const result = await report(b, a, session.id);
     assert.equal((await reportRows(session.id)).length, 1);

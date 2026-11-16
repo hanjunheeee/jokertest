@@ -100,7 +100,7 @@ test('A04-B-074 7명 판 재판 끝난 뒤 같은 날 낮 투표·재판 표 →
     assert.equal(session.phase, 'NIGHT');
 });
 
-test('A04-B-075 5명 판 같은 판정 결과로 확정 두 번 → 두 번째 거절, 피고 죽음·밤 한 번', () => {
+test('A04-B-075 5명 판 같은 판정 결과로 확정 두 번 → 두 번째 TRIBUNAL_RESOLUTION_MISMATCH 거절, 피고 죽음·밤 한 번', () => {
     const session = newGame({ n: 5 });
     const defendant = gf.nonJokers(session)[0];
     openTribunal(session, defendant);
@@ -110,8 +110,8 @@ test('A04-B-075 5명 판 같은 판정 결과로 확정 두 번 → 두 번째 �
     assert.equal(first.ok, true);
     const dayAfterFirst = session.dayIndex;
     const second = core.commitTribunalVoteResolution(prepared.session, prepared.resolution);
-    assert.equal(second.ok, false);
-    assert.match(second.code, /^TRIBUNAL_/);
+    // 첫 확정으로 이미 밤이라 "재판 중인지" 검사에 먼저 걸림
+    assert.deepEqual(second, { ok: false, code: 'TRIBUNAL_RESOLUTION_MISMATCH' });
     assert.equal(session.players.get(defendant).alive, false);
     assert.equal(session.phase, 'NIGHT');
     assert.equal(session.dayIndex, dayAfterFirst);
@@ -140,7 +140,8 @@ test('A04-B-077 6명 판 1일 무죄 피고 → 2일 낮 투표 대상·투표�
     assert.equal(core.submitDayVote(defendant, session.id, other).ok, true);
 });
 
-test('A04-B-078 7명 판 표 2개 뒤 피고 나감 → CANCELLED·DEFENDANT_LEFT·처형 없음·그때까지 표 수, 밤', () => {
+// 스스로 나간 피고도 피고 사망으로 닫음 (사용자 결정 2026-11-16 낮), 취소 이유 칸은 안 실림
+test('A04-B-078 7명 판 표 2개 뒤 피고 나감 → DEFENDANT_DIED·reason 칸 없음·처형 없음·표 수 칸 없음, 밤', () => {
     const session = newGame({ n: 7 });
     const defendant = gf.nonJokers(session)[0];
     openTribunal(session, defendant);
@@ -150,10 +151,12 @@ test('A04-B-078 7명 판 표 2개 뒤 피고 나감 → CANCELLED·DEFENDANT_LEF
     const left = core.commitParticipantDeparture(session, defendant, { reason: 'PLAYER_LEFT' });
     assert.equal(left.ok, true);
     const payload = core.buildTribunalVoteResolvedPayload(session);
-    assert.equal(payload.outcome, 'CANCELLED');
-    assert.equal(payload.reason, 'DEFENDANT_LEFT');
+    assert.equal(payload.outcome, 'DEFENDANT_DIED');
+    assert.equal(Object.hasOwn(payload, 'reason'), false);
+    assert.equal(session.players.get(defendant).alive, false);
     assert.equal(payload.executedUuid, null);
-    assert.deepEqual(payload.counts, { guilty: 1, notGuilty: 1 });
+    // 그때까지 표 수는 알림에 안 실림 (사용자 결정 2026-11-16)
+    assert.equal(Object.hasOwn(payload, 'counts'), false);
     assert.equal(session.phase, 'NIGHT');
 });
 

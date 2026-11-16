@@ -1,7 +1,7 @@
 'use strict';
 
 // 낮 판정 뒤 다음 단계 시험 (판 규칙 순수) — 재판이면 같은 날 재판, 나머지는 같은 날 밤, 재투표는 없음
-// 목록 docs/게임_의도_2026-11-15/시험목록/A03-낮투표.md A03-B-108~120, 돌리기: node --test tests/game-core/a03-day-resolve.test.js
+// 목록 docs/게임_의도_2026-11-15/시험목록/A03-낮투표.md A03-B-108~120, 303~305, 돌리기: node --test tests/game-core/a03-day-resolve.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -84,4 +84,62 @@ test('A03-B-120 6명 판 동점 판정 → 같은 날 다시 투표 안 열리�
     // 같은 날 낮 표를 다시 내도 안 받음 (재투표 없음)
     const again = core.submitDayVote(uuids[2], s.id, uuids[0]);
     assert.equal(again.ok, false);
+});
+
+// B-303~305: 피고로 뽑힌 사람이 그 순간 끊겨 있으면 재판을 안 열고 밤 (사용자 결정 2026-11-16)
+// 판 규칙은 연결을 몰라 "끊겨 있는지"를 함수로 받음 (socket 낮 마감이 넣어 줌)
+test('A03-B-303 6명 판 몰표 받은 X가 끊겨 있음 → 결과 DEFENDANT_DISCONNECTED·피고 칸 null, 같은 날 밤, 재판 없음, X는 산 채', (t) => {
+    const s = newGame(t, 'rs303');
+    gf.toDay(s);
+    gf.toVote(s);
+    const uuids = aliveUuids(s);
+    const [X] = uuids;
+    for (const [voter, target] of OUTCOMES.TRIBUNAL(uuids)) assert.equal(core.submitDayVote(voter, s.id, target).ok, true);
+    const prepared = core.prepareDayVoteResolution(uuids[1], s.id, s.dayIndex, { isDisconnected: (uuid) => uuid === X });
+    assert.equal(prepared.ok, true);
+    assert.equal(prepared.resolution.outcome, 'DEFENDANT_DISCONNECTED');
+    assert.equal(prepared.resolution.tribunalTargetUuid, null);
+    assert.equal(core.commitDayVoteResolution(prepared.session, prepared.resolution).ok, true);
+    const snap = snapOf(s);
+    assert.equal(snap.phase, 'NIGHT');
+    assert.equal(snap.tribunal, undefined);
+    assert.equal(snap.dayIndex, 1);
+    assert.equal(snap.players.find((p) => p.uuid === X).isAlive, true);
+    assert.equal(snap.dayVoteResolution.outcome, 'DEFENDANT_DISCONNECTED');
+    assert.equal(snap.dayVoteResolution.tribunalTargetUuid, null);
+    // 방송 값에 뽑힌 사람이 누구인지 안 실림
+    const payload = core.buildDayVoteResolvedPayload(s, prepared.resolution);
+    assert.equal(payload.outcome, 'DEFENDANT_DISCONNECTED');
+    assert.equal(payload.tribunalTargetUuid, null);
+    assert.equal(Object.values(payload).includes(X), false);
+    assert.equal(Object.hasOwn(payload, 'absentDefendantUuid'), false);
+});
+
+test('A03-B-304 6명 판 끊긴 사람이 있어도 뽑힌 사람이 붙어 있으면 재판', (t) => {
+    const s = newGame(t, 'rs304');
+    gf.toDay(s);
+    gf.toVote(s);
+    const uuids = aliveUuids(s);
+    const [X, Y] = uuids;
+    for (const [voter, target] of OUTCOMES.TRIBUNAL(uuids)) assert.equal(core.submitDayVote(voter, s.id, target).ok, true);
+    // 끊긴 사람은 Y (뽑힌 사람은 X)
+    const prepared = core.prepareDayVoteResolution(uuids[2], s.id, s.dayIndex, { isDisconnected: (uuid) => uuid === Y });
+    assert.equal(prepared.resolution.outcome, 'TRIBUNAL');
+    assert.equal(prepared.resolution.tribunalTargetUuid, X);
+    assert.equal(core.commitDayVoteResolution(prepared.session, prepared.resolution).ok, true);
+    const snap = snapOf(s);
+    assert.equal(snap.phase, 'TRIBUNAL');
+    assert.equal(snap.tribunal.defendantUuid, X);
+});
+
+test('A03-B-305 6명 판 동점인데 동점인 사람이 끊겨 있음 → 그대로 TIE (끊김은 재판으로 갈 때만 봄)', (t) => {
+    const s = newGame(t, 'rs305');
+    gf.toDay(s);
+    gf.toVote(s);
+    const uuids = aliveUuids(s);
+    for (const [voter, target] of OUTCOMES.TIE(uuids)) assert.equal(core.submitDayVote(voter, s.id, target).ok, true);
+    const prepared = core.prepareDayVoteResolution(uuids[2], s.id, s.dayIndex, { isDisconnected: () => true });
+    assert.equal(prepared.resolution.outcome, 'TIE');
+    assert.equal(core.commitDayVoteResolution(prepared.session, prepared.resolution).ok, true);
+    assert.equal(snapOf(s).phase, 'NIGHT');
 });

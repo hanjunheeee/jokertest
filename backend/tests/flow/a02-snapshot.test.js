@@ -184,13 +184,13 @@ test('A02-B-261 [지금 동작] 의사 2(7명) 중 B가 1일 재판에서 처형
     assert.deepEqual(snap.self.allies, [b]);
 });
 
-test('A02-B-262 6명 판 밖 계정이 그 판 id로 스냅샷 요청 → NOT_A_PARTICIPANT 거절, 직업 값 없음', async (t) => {
+test('A02-B-262 6명 판 밖 계정이 그 판 id로 스냅샷 요청 → INTERNAL_ERROR 거절(판에 누가 있는지 안 새게 숨긴 코드), 직업 값 없음', async (t) => {
     const w = makeWorld(t);
     const g = await w.openAndStart({ prefix: 'b262', n: 6 });
     w.connect('b262-outsider');
     const reply = await w.snapshot('b262-outsider', { gameId: g.gameId });
     assert.equal(reply.ok, false);
-    assert.equal(reply.code, 'NOT_A_PARTICIPANT');
+    assert.equal(reply.code, 'INTERNAL_ERROR');
     const text = JSON.stringify(reply);
     for (const role of ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN']) assert.equal(text.includes(role), false, `${role} 값이 샘`);
 });

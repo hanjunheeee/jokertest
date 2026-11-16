@@ -101,7 +101,7 @@ test('A11-B-806 user_stats 판 수 7·생존 3·처형 2, 직업 통계 판 합 
     assert.equal(data.execution_count, 2);
 });
 
-test('A11-B-807 의사 승률이 가장 높음 → highest_win_rate_role = 한글 직업 이름', async (t) => {
+test('A11-B-807 의사 승률이 가장 높음 → highest_win_rate_role = "의사"', async (t) => {
     if (noDb(t)) return;
     const { app, user, session } = await loggedIn(t);
     await recordGame(user.uuid, user.nickname, 'DOCTOR', true);
@@ -109,10 +109,8 @@ test('A11-B-807 의사 승률이 가장 높음 → highest_win_rate_role = 한�
     await recordGame(user.uuid, user.nickname, 'CITIZEN', true);
     await recordGame(user.uuid, user.nickname, 'CITIZEN', false);
     const { data } = (await profile(app, session)).body;
-    assert.notEqual(data.highest_win_rate_role, 'DOCTOR');
-    assert.match(String(data.highest_win_rate_role), /^[가-힣]+$/);
-    // 목록에 이름이 안 적혀 있어 의사 이름 둘(화면 표 '의사'·서버 표 '주치의') 중 하나면 맞음으로 봄
-    assert.ok(['의사', '주치의'].includes(data.highest_win_rate_role), `의사 이름 아님: ${data.highest_win_rate_role}`);
+    // 의사 이름은 "의사" 하나로 통일 (결정 2026-11-16 아침 19번 — 옛 서버 글 "주치의"는 틀림)
+    assert.equal(data.highest_win_rate_role, '의사');
 });
 
 test('A11-B-808 쿠키 없이 프로필 → 401', async (t) => {

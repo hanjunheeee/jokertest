@@ -174,7 +174,7 @@ for (const [id, label, spec, finish] of ENDINGS) {
     });
 }
 
-test('A10-B-158 7명 판 점검 강제 종료 → 결과 화면 1명 로비 → endedGame:true, create_room은 점검 거절', async (t) => {
+test('A10-B-158 7명 판 점검 강제 종료(결과 화면 없이 판을 바로 지움) → 그 판 1명 로비 → endedGame:false, create_room은 점검 거절', async (t) => {
     const w = makeWorld(t);
     const g = await w.openGame({ prefix: 'b158', n: 7 });
     await w.toDay(g);
@@ -183,7 +183,8 @@ test('A10-B-158 7명 판 점검 강제 종료 → 결과 화면 1명 로비 → 
     await w.settle();
     const a = citizens(g)[1];
     const reply = await w.lobby(a);
-    assert.equal(reply.cleared.endedGame, true);
+    assert.equal(reply.ok, true);
+    assert.equal(reply.cleared.endedGame, false);
     const created = await w.createRoom(a);
     assert.equal(created.ok, false);
     assert.equal(created.code, 'MAINTENANCE');

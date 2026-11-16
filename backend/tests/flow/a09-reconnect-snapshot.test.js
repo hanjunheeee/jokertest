@@ -178,12 +178,13 @@ test('A09-B-148 6명 판 끊긴 시민을 광대가 암살 → 낮 → 60초 지
     assert.equal(room.ok, true, `방 만들기 거절: ${room.code}`);
 });
 
-test('A09-B-149 7명 판 끊긴 사람이 피고 → 유죄 → 붙음 → 죽은 이유 처형, 방 만들기 바로 됨(탈주 아님)', async (t) => {
+test('A09-B-149 7명 판 재판 중 끊긴 피고 → 유죄 → 붙음 → 죽은 이유 처형, 방 만들기 바로 됨(탈주 아님)', async (t) => {
     const w = H.setup(t, { id: 'a09rs149', n: 7 });
     w.toVote();
     const x = w.nonJokers()[0];
-    await w.disconnect(x);
+    // 재판이 열린 뒤 끊김 (뽑히는 순간 끊겨 있으면 재판이 안 열림)
     await w.toTribunal(x);
+    await w.disconnect(x);
     await w.castAll('GUILTY');
     w.advanceUntil(() => w.session.phase === 'NIGHT');
     const watcher = w.firstOf('JOKER');

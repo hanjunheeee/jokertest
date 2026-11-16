@@ -100,7 +100,7 @@ test('A17-B-014 n2 공개 방을 n1에서 목록으로 골라 입장 → ROOM_ON
 // 아무도 안 쓴 코드 (헷갈리는 글자 뺀 6자리)
 const UNUSED_CODE = 'ZZZZ22'
 for (const [num, at, other] of [['015', 'n1', 'n2'], ['016', 'n2', 'n1']]) {
-    test(`A17-B-${num} 아무도 안 쓴 코드를 ${at}에서 입장 → ROOM_NOT_FOUND, 다른 Node 답과 같음`, { timeout: 30000 }, async (t) => {
+    test(`A17-B-${num} 아무도 안 쓴 코드를 ${at}에서 입장 → ROOM_CODE_MISMATCH, 다른 Node 답과 같음`, { timeout: 30000 }, async (t) => {
         const w = await W.startNodes(t, B)
         w[at].connect(`b${num}-j`)
         w[other].connect(`b${num}-k`)
@@ -108,7 +108,7 @@ for (const [num, at, other] of [['015', 'n1', 'n2'], ['016', 'n2', 'n1']]) {
         const theirs = await w[other].joinByCode(`b${num}-k`, UNUSED_CODE)
         assert.equal(mine?.event, 'room_join_failed')
         assert.deepEqual(mine.payload, theirs?.payload)
-        assert.equal(mine.payload.code, 'ROOM_NOT_FOUND')
+        assert.equal(mine.payload.code, 'ROOM_CODE_MISMATCH')
     })
 }
 

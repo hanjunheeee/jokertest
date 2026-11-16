@@ -30,10 +30,11 @@ const setup = async (t, { toss = true } = {}) => {
     return { db, fake, me, order };
 };
 
-test('A12-B-130 판매 중 충전 상품 + 지금 버전 → 200 {ok, orderId, amount, orderName, clientKey}, 주문 CREATED 1줄(상품 값 복사)', async (t) => {
+test('A12-B-130 판매 중 충전 상품 + 지금 버전 → 201 {ok, orderId, amount, orderName, clientKey}, 주문 CREATED 1줄(상품 값 복사)', async (t) => {
     const c = await setup(t);
     const res = await c.order({ productId: 'dia-100', version: 3 });
-    assert.equal(res.status, 200, `상태 ${res.status}`);
+    // 주문 줄이 새로 생기는 요청이라 201 (만들어짐)
+    assert.equal(res.status, 201, `상태 ${res.status}`);
     assert.equal(res.body.ok, true);
     assert.equal(typeof res.body.orderId, 'string');
     assert.equal(res.body.amount, 1100);
@@ -76,8 +77,9 @@ for (const [id, label, version, ok] of VERSIONS) {
         }
         assert.equal(res.status, 409);
         assert.equal(res.body.code, 'PRODUCT_VERSION_MISMATCH');
-        assert.equal(res.body.currentProduct?.productId, 'dia-100', '지금 상품이 안 실림');
-        assert.equal(res.body.currentProduct?.version, 3);
+        // 지금 상품이 실리는 칸 이름은 product
+        assert.equal(res.body.product?.productId, 'dia-100', '지금 상품이 안 실림');
+        assert.equal(res.body.product?.version, 3);
         assert.equal(c.db.orders().length, 0);
     });
 }
@@ -139,13 +141,13 @@ test('A12-B-143 비밀 키는 안 나감: 응답 칸에 클라이언트 키만, 
     assert.ok(!res.text.includes('test_sk_'), '비밀 키 앞말이 답에 실림');
 });
 
-test('A12-B-144 버전 거절 응답 currentProduct = 공개 9칸만 (판매 상태·정렬 없음)', async (t) => {
+test('A12-B-144 버전 거절 응답 product = 공개 9칸만 (판매 상태·정렬 없음)', async (t) => {
     const c = await setup(t);
     const res = await c.order({ productId: 'dia-100', version: 2 });
     assert.equal(res.status, 409);
-    assert.ok(res.body.currentProduct, '응답에 currentProduct 없음');
-    assert.deepEqual(Object.keys(res.body.currentProduct).sort(), [...PUBLIC_FIELDS].sort());
-    assert.equal(res.body.currentProduct.payAmount, 1100);
+    assert.ok(res.body.product, '응답에 product 없음');
+    assert.deepEqual(Object.keys(res.body.product).sort(), [...PUBLIC_FIELDS].sort());
+    assert.equal(res.body.product.payAmount, 1100);
 });
 
 test('A12-B-145 같은 상품 주문 두 번 → 주문 id 다른 CREATED 2줄', async (t) => {

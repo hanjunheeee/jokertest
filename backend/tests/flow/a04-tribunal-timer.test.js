@@ -37,11 +37,11 @@ async function openWorld(t, spec, pickDefendant = (s) => gf.nonJokers(s)[0]) {
     });
 });
 
-test('A04-B-198 8명 판 광대 2명 표가 결과 counts에 들어감', async (t) => {
+test('A04-B-198 8명 판 광대 2명만 유죄 냄 → 유죄 (광대 표가 안 들어갔다면 0:0 무죄)', async (t) => {
     const { w } = await openWorld(t, { id: 'a04m198', n: 8, roleCounts: { JOKER: 2 }, settings: { tribunalTime: 30 } });
     for (const joker of gf.byRole(w.session, 'JOKER')) assert.equal((await W.cast(w, joker, 'GUILTY')).ok, true);
     w.tick(30_000);
-    assert.deepEqual(W.lastResolved(w, w.uuids[0]).counts, { guilty: 2, notGuilty: 0 });
+    assert.equal(W.lastResolved(w, w.uuids[0]).outcome, 'GUILTY');
 });
 
 test('A04-B-199 10명 판 의사·경비원·마녀사냥꾼 표가 다 들어가 다 찬 셈에 포함', async (t) => {
@@ -56,15 +56,18 @@ test('A04-B-199 10명 판 의사·경비원·마녀사냥꾼 표가 다 들어�
     for (const uuid of special) assert.equal((await W.cast(w, uuid, 'NOT_GUILTY')).ok, true);
     assert.equal(W.tribunalSettles(w, w.uuids[0]).length, 1);
     w.tick(5_000);
-    assert.deepEqual(W.lastResolved(w, w.uuids[0]).counts, { guilty: 0, notGuilty: 9 });
+    assert.equal(W.lastResolved(w, w.uuids[0]).outcome, 'NOT_GUILTY');
 });
 
-test('A04-B-200 8명 판 광대가 피고일 때 동료 광대가 무죄 → 무죄 1로 셈', async (t) => {
+test('A04-B-200 8명 판 광대가 피고일 때 시민 유죄 1 + 동료 광대 무죄 1 → 무죄 (동료 표가 안 들어갔다면 1:0 유죄)', async (t) => {
     const { w, defendant } = await openWorld(t, {
         id: 'a04m200', n: 8, roleCounts: { JOKER: 2 }, settings: { tribunalTime: 30 },
     }, (s) => gf.firstOf(s, 'JOKER'));
     const mate = gf.byRole(w.session, 'JOKER').find((u) => u !== defendant);
+    assert.equal((await W.cast(w, gf.nonJokers(w.session)[0], 'GUILTY')).ok, true);
     assert.equal((await W.cast(w, mate, 'NOT_GUILTY')).ok, true);
     w.tick(30_000);
-    assert.deepEqual(W.lastResolved(w, w.uuids[0]).counts, { guilty: 0, notGuilty: 1 });
+    const resolved = W.lastResolved(w, w.uuids[0]);
+    assert.equal(resolved.outcome, 'NOT_GUILTY');
+    assert.equal(resolved.executedUuid, null);
 });

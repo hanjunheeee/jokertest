@@ -1,7 +1,7 @@
 'use strict';
 
 // 판 끝 뒤 방장 자리 시험 — 방장을 안 기다림, 방장 없는 동안 방장 일 못 함, 원래 방장이 오면 방장, 로비로·끊김·로비 주소·180초면 먼저 들어온 사람이 방장, 판 중 넘겨받은 방장이 원래 방장, 방 내용에 남긴 방장, 새 사람은 방장 아님, 판 두 개는 따로
-// 목록 A08-B-093~113·123·125~128 (docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md), 돌리기: node --env-file=.env.test --test tests/flow/a08-host-seat.test.js
+// 목록 A08-B-093~113·123·125~128·221~222 (docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md), 돌리기: node --env-file=.env.test --test tests/flow/a08-host-seat.test.js
 process.env.DATABASE_URL = 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db'; // 맨 위, 모델이 DB에 안 붙게
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -252,4 +252,35 @@ test('A08-B-128 5명 판 2개(서로 다른 코드) 같은 때 끝남 → 방 2�
     assert.equal(g1.endedAt, g2.endedAt);
     assert.equal(w.roomByCode(g1.roomCode).returnHold?.reservedHostUuid, g1.host);
     assert.equal(w.roomByCode(g2.roomCode).returnHold?.reservedHostUuid, g2.host);
+});
+
+// ── 판 끝 때 끊겨 있던 방장에게는 자리를 안 남김 (반장이 정함 2026-11-16: 결과 화면 끊김은 바로 빠짐과 같은 생각) ──
+// 방장이 낮에 끊김(60초 기다림 중) → 광대가 산 채로 나가 그 안에 판 끝
+async function endedWhileHostAway(t, prefix, n) {
+    const w = makeWorld(t);
+    const g = await w.openAndStart({ prefix, n });
+    w.advanceUntil(g, (s) => s.phase === 'DAY');
+    await w.disconnect(g.host);
+    await w.endGame(g, 'jokerLeaves');
+    return { w, g };
+}
+
+test('A08-B-221 6명 판 방장 A가 끊긴 채(60초 안) 판 끝 → B "대기방으로" → B 방장, 남긴 방장 자리 없음', async (t) => {
+    const { w, g } = await endedWhileHostAway(t, 'b221', 6);
+    const b = g.uuids[1];
+    const r = await w.ret(b, g.gameId);
+    assert.equal(r.ok, true, `실패: ${r.code}`);
+    assert.equal(r.room.hostUuid, b);
+    assert.equal(r.room.reservedHostUuid, null);
+    assert.equal((await w.currentRoom(b)).hostUuid, b);
+});
+
+test('A08-B-222 5명 판 방장 A가 끊긴 채 판 끝, 아무도 안 들어감 → 판 밖 사람 코드 입장 → 그 사람 방장', async (t) => {
+    const { w, g } = await endedWhileHostAway(t, 'b222', 5);
+    const outsider = 'b222-out';
+    w.connect(outsider);
+    const joined = await w.joinCode(outsider, g.roomCode);
+    assert.equal(joined.ok, true, `막힘: ${joined.code}`);
+    assert.equal(joined.room.hostUuid, outsider);
+    assert.equal(joined.room.reservedHostUuid, null);
 });

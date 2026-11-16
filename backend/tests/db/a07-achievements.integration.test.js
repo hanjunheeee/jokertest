@@ -1,7 +1,7 @@
 'use strict';
 
 // 업적 DB 시험: 옛 판 기록을 기준 바로 밑까지 넣고 진짜 판 하나를 끝내 업적 줄·보상 장부·테두리·알림이 시험 DB에 맞게 남는지 읽음
-// 목록 docs/게임_의도_2026-11-15/시험목록/A07-승패-결과-골드.md A07-B-258~287 (돌리기: with-lock.sh testdb, 시험_도우미.md 3-3)
+// 목록 docs/게임_의도_2026-11-15/시험목록/A07-승패-결과-골드.md A07-B-258~287·301~303 (돌리기: with-lock.sh testdb, 시험_도우미.md 3-3)
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 // 모델이 읽는 주소를 시험 DB로 (값 없으면 닿지 않는 곳 → 아래에서 건너뜀), 꼭 models require보다 먼저
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
@@ -355,9 +355,8 @@ test('A07-B-280 테두리 산 사람이 30승 → 업적 기록 있음, 오류 �
 test('A07-B-281 판 수 3 받은 뒤 4판째 → 업적 줄·보상 장부 그대로', async (t) => {
     if (noDb(t)) return;
     const uuids = await createUsers(5, 'h281');
-    let a = null;
     const first = await startGame(t, { label: 'h281', uuids });
-    a = first.citizens[0];
+    const a = first.citizens[0];
     await seedGames(a, 2);
     finishCitizenWin(first.session);
     await persistAndSettle(first);
@@ -447,4 +446,45 @@ test('A07-B-287 승 9인 사람이 처형된 뒤 나가고 그 편 이김 → �
     finishCitizenWin(ctx.session);
     await persistAndSettle(ctx);
     await assertGranted(a, 'record-5-clown-story', { gold: 50, diamond: 50 });
+});
+
+// ── 탈주한 판은 "끝까지 한 판 수"에 안 셈 (결정 2026-11-16 아침 10번) ──
+
+test('A07-B-301 판 수 2인 사람이 산 채로 나가고 판이 끝까지 감 → 판 수 3 업적 없음', async (t) => {
+    if (noDb(t)) return;
+    const ctx = await startGame(t, { label: 'h301' });
+    const a = ctx.citizens[0];
+    await seedGames(a, 2);
+    assert.equal(T.applyParticipantDeparture(ctx.world.io, ctx.session, a, { reason: 'PLAYER_LEFT' }).ok, true);
+    T.stopDayPhaseTimer(ctx.session.id);
+    finishCitizenWin(ctx.session);
+    await persistAndSettle(ctx);
+    assert.equal(await grantCount(a, 'record-1-masquerade'), 0);
+});
+
+test('A07-B-302 판 수 2인 사람이 처형된 뒤 나가고 판이 끝까지 감 → 판 수 3 업적 받음 (죽은 뒤 나감은 탈주 아님)', async (t) => {
+    if (noDb(t)) return;
+    const ctx = await startGame(t, { label: 'h302' });
+    const a = ctx.citizens[0];
+    await seedGames(a, 2);
+    assert.equal(tribunal(ctx.session, a).terminal ?? null, null);
+    nightCoreOnly(ctx.session);
+    assert.equal(T.applyParticipantDeparture(ctx.world.io, ctx.session, a, { reason: 'PLAYER_LEFT' }).ok, true);
+    T.stopDayPhaseTimer(ctx.session.id);
+    finishCitizenWin(ctx.session);
+    await persistAndSettle(ctx);
+    await assertGranted(a, 'record-1-masquerade', { gold: 50, diamond: 50 });
+});
+
+test('A07-B-303 옛 판 1 + 옛 탈주 판 1(산 채로 나간 줄) + 판 하나 끝까지 함 → 판 수 2로 세어 판 수 3 업적 없음', async (t) => {
+    if (noDb(t)) return;
+    const ctx = await startGame(t, { label: 'h303' });
+    const a = ctx.citizens[0];
+    await seedGames(a, 1);
+    // 옛 탈주 판: 끝까지 간 운영 판인데 이 사람 줄만 "산 채로 나감"(죽은 이유 DISCONNECT·패)
+    const [deserted] = await seedGames(a, 1);
+    await db.GameResultPlayer.update({ death_reason: 'DISCONNECT' }, { where: { game_id: deserted, user_id: a } });
+    finishCitizenWin(ctx.session);
+    await persistAndSettle(ctx);
+    assert.equal(await grantCount(a, 'record-1-masquerade'), 0);
 });

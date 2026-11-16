@@ -38,16 +38,24 @@ test('A16-B-281 기준선 14표 중 users·login_history만 있으면 0001이 �
     assert.deepEqual(await h.listTables(), ['login_history', 'schema_migrations', 'users']);
 });
 
-test('A16-B-282 같은 모양 기준선 표가 이미 있으면 0001은 등록만, 줄 그대로, 끝까지 올라감', async (t) => {
+// 시각 칸 8곳: 기준선은 DB 기본값(지금 시각)을 기대하는데 표를 만들 때는 그 기본값이 안 생김 → 같은 모양이어도 대조에서 걸림 (모음 글 C-029)
+const BASELINE_TIME_COLUMNS = [
+    'account_find_requests: created_at', 'password_reset_tokens: created_at', 'user_sessions: connected_at', 'user_bans: created_at',
+    'login_history: login_at', 'online_presence: last_active_at', 'friend_requests: created_at', 'traffic_logs: accessed_at',
+];
+
+test('A16-B-282 [지금 동작] 같은 모양 기준선 표가 이미 있어도(이력 없음) 0001이 "기준선과 다릅니다"로 멈춤 — 걸리는 것은 시각 칸 8곳 기본값뿐, 줄 그대로', async (t) => {
     if (noDb(t)) return;
     const userId = await syncLikeBaseline();
-    const result = await apply(MIGRATIONS);
-    assert.equal(result.applied[0], '0001-legacy-baseline');
-    assert.equal((await h.historyRow('0001-legacy-baseline')).status, 'applied');
+    let message = '';
+    await assert.rejects(apply(MIGRATIONS), (error) => { message = String(error.message); return true; });
+    assert.match(message, /기존 DB 구조가 F-01 기준선과 다릅니다/);
+    // 걸린 까닭 목록 = 시각 칸 8곳의 기본값 (다른 까닭이 섞이면 실패)
+    const problems = message.split('자동 등록을 거부합니다. ')[1].split(' | ').map((line) => line.split(': 기본값 불일치')[0]);
+    assert.deepEqual(problems.sort(), [...BASELINE_TIME_COLUMNS].sort());
+    assert.equal((message.match(/기본값 불일치 \(기대 "CURRENT_TIMESTAMP" \/ 실제 null\)/g) ?? []).length, 8);
+    assert.equal((await h.historyRow('0001-legacy-baseline')).status, 'failed');
     assert.equal(await h.count('users', 'uuid = :userId', { userId }), 1);
-    const rows = await h.historyRows();
-    assert.equal(rows.length, 34);
-    assert.deepEqual([...new Set(rows.map((row) => row.status))], ['applied']);
 });
 
 test('A16-B-283 기준선과 모양이 다르면(회원 표 칸 하나 더) 0001이 멈춤, 칸·줄 그대로', async (t) => {

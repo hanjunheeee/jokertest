@@ -1,6 +1,6 @@
 'use strict';
 
-// 역할 확인 10초 시험 — 확인 눌러도 안 당겨지고 10초에 1일째 낮, 판마다 따로 셈, 역할 확인 중 채팅·투표 막힘·이모티콘 됨, 나감·끊김
+// 역할 확인 10초 시험 — 확인 눌러도 안 당겨지고 10초에 1일째 낮, 판마다 따로 셈, 역할 확인 중 채팅·투표·이모티콘 막힘, 나감·끊김
 // 목록 A02-B-213~232 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md "역할 확인 10초"), 돌리기: node --env-file=.env.test --test tests/flow/a02-role-reveal-timer.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -213,9 +213,9 @@ test('A02-B-225 7명 역할 확인 중, 산 광대 submit_joker_chat_message →
     assert.equal(anyChatReceived(w, g.uuids), false);
 });
 
-// A02-B-226~227 역할 확인 중 이모티콘 됨 (팔레트에 넣은 이모티콘, 전원 같은 팔레트)
+// A02-B-226~227 역할 확인 중 이모티콘 거절, 10초 뒤 첫 낮부터 됨 (이모티콘은 낮에만, 팔레트에 넣은 이모티콘·전원 같은 팔레트)
 for (const [no, n] of [['A02-B-226', 5], ['A02-B-227', 10]]) {
-    test(`${no} ${n}명 역할 확인 중, 팔레트에 있는 이모티콘 send_emoji → 판 전원 emoji_shown`, async (t) => {
+    test(`${no} ${n}명 역할 확인 중, 팔레트에 있는 이모티콘 send_emoji → INVALID_PHASE·받은 사람 0, 첫 낮에 다시 보내면 판 전원 emoji_shown`, async (t) => {
         const palette = { slots: ['emo-1', null], owned: ['emo-1'] };
         const w = makeWorld(t, {
             depsOverrides: {
@@ -228,6 +228,12 @@ for (const [no, n] of [['A02-B-226', 5], ['A02-B-227', 10]]) {
             },
         });
         const g = await w.openAndStart({ prefix: no.slice(4).toLowerCase(), n });
+        const rejected = await ask(G.handleSendEmoji, w, g.uuids[1], { gameId: g.gameId, itemId: 'emo-1' });
+        assert.equal(rejected.ok, false);
+        assert.equal(rejected.code, 'INVALID_PHASE');
+        for (const uuid of g.uuids) assert.equal(w.received(uuid, 'emoji_shown').length, 0, uuid);
+        // 역할 확인 10초가 지나 첫 낮
+        tick(t, 10_000);
         const reply = await ask(G.handleSendEmoji, w, g.uuids[1], { gameId: g.gameId, itemId: 'emo-1' });
         assert.equal(reply.ok, true, `이모티콘 거절: ${reply.code}`);
         for (const uuid of g.uuids) {

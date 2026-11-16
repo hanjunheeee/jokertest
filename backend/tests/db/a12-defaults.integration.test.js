@@ -64,7 +64,7 @@ test('A12-B-398 지갑 첫 읽기 동시에 둘 → 지갑 1줄 [지금 동작]'
     assert.equal(await h.models().EconomyWallet.count({ where: { user_id: user } }), 1);
 });
 
-test('A12-B-399 GET /accounts/:userId/wallet 모양 → 골드·다이아·가진 것 목록', async (t) => {
+test('A12-B-399 GET /accounts/:userId/wallet 모양 → 잔액 두 칸(골드·다이아)만, 가진 것 목록은 /entitlements 경로', async (t) => {
     if (h.noDb(t)) return;
     const base = await h.startServer(t);
     const user = await h.createUser('shape');
@@ -73,10 +73,12 @@ test('A12-B-399 GET /accounts/:userId/wallet 모양 → 골드·다이아·가�
 
     const res = await h.call(base, user, 'GET', `/economy/accounts/${user}/wallet`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.balanceGold, 30);
-    assert.equal(res.body.balanceDiamond, 4);
-    assert.ok(Array.isArray(res.body.entitlements), `가진 것 목록 없음: ${JSON.stringify(res.body)}`);
-    assert.equal(res.body.entitlements.length, 25);
+    // 지갑 답은 잔액 두 칸뿐 (가진 것은 다른 경로)
+    assert.deepEqual(res.body, { balanceGold: 30, balanceDiamond: 4 });
+    const owned = await h.call(base, user, 'GET', `/economy/accounts/${user}/entitlements`);
+    assert.equal(owned.status, 200, JSON.stringify(owned.body));
+    assert.ok(Array.isArray(owned.body.entitlements), `가진 것 목록 없음: ${JSON.stringify(owned.body)}`);
+    assert.equal(owned.body.entitlements.length, 25);
 });
 
 test('A12-B-400 관리자 보상 같은 몸 두 번 → 201 뒤 200·장부 1줄', async (t) => {

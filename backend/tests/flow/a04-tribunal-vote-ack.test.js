@@ -97,7 +97,7 @@ test('A04-B-152 6명 판 같은 계정 새 창이 붙은 뒤 옛 창에서 냄 �
     assert.equal(await hasSubmitted(w, voter), false);
 });
 
-test('A04-B-153 10명 판 다른 판 gameId로 냄 → 거절, 두 판 다 표 없음', async (t) => {
+test('A04-B-153 10명 판 다른 판 gameId로 냄 → STALE_SESSION_MISMATCH 거절, 두 판 다 표 없음', async (t) => {
     const [mine, other] = W.setupWorlds(t, [
         { id: 'a04v153a', n: 10, settings: { tribunalTime: 60 } },
         { id: 'a04v153b', n: 5, settings: { tribunalTime: 60 } },
@@ -110,12 +110,13 @@ test('A04-B-153 10명 판 다른 판 gameId로 냄 → 거절, 두 판 다 표 �
     const [voter] = W.tribunalVoters(mine);
     const reply = await W.castRaw(mine, voter, { gameId: other.session.id, dayIndex: other.session.dayIndex, vote: 'GUILTY' });
     assert.equal(reply.ok, false);
+    assert.equal(reply.code, 'STALE_SESSION_MISMATCH');
     assert.equal((await W.snapshot(mine, voter)).progress.doneCount, 0);
     const otherViewer = gf.nonJokers(other.session)[1];
     assert.equal((await W.snapshot(other, otherViewer)).progress.doneCount, 0);
 });
 
-test('A04-B-218 5명 판 판 밖 계정이 그 판 gameId로 냄 → 거절, 표 없음', async (t) => {
+test('A04-B-218 5명 판 판 밖 계정이 그 판 gameId로 냄 → NOT_IN_SESSION 거절, 표 없음', async (t) => {
     const { w } = await openWorld(t, { id: 'a04v218', n: 5, settings: { tribunalTime: 60 } });
     // 판 밖 계정: 접속은 했지만 판 참가자가 아님
     const outsider = 'a04v218-outsider';
@@ -124,5 +125,6 @@ test('A04-B-218 5명 판 판 밖 계정이 그 판 gameId로 냄 → 거절, 표
     w.registry.set(outsider, socket.id);
     const reply = await W.castRaw(w, outsider, { gameId: w.session.id, dayIndex: 1, vote: 'GUILTY' }, socket);
     assert.equal(reply.ok, false);
+    assert.equal(reply.code, 'NOT_IN_SESSION');
     assert.equal((await W.snapshot(w, w.uuids[0])).progress.doneCount, 0);
 });

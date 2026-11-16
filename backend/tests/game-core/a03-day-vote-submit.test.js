@@ -179,14 +179,14 @@ test('A03-B-087 ⑩ 밤에 표 → INVALID_PHASE', (t) => {
     assert.deepEqual(vote(s, me, target), { ok: false, code: 'INVALID_PHASE' });
 });
 
-test('A03-B-088 ⑪ 재판 중 낮 표 → INVALID_PHASE', (t) => {
+test('A03-B-088 ⑪ 재판 중 낮 표 → DAY_VOTE_ALREADY_RESOLVED (재판은 늘 낮 판정 뒤라 ⑬과 같은 코드)', (t) => {
     const s = newGame(t, 'vs88', 6);
     gf.toDay(s);
     const [defendant, me, target] = aliveUuids(s);
     // 재판은 낮 판정으로만 열림 → 도우미가 진짜 판정으로 재판에 세움
     gf.toTribunal(s, defendant);
     assert.equal(s.phase, 'TRIBUNAL');
-    assert.deepEqual(vote(s, me, target), { ok: false, code: 'INVALID_PHASE' });
+    assert.deepEqual(vote(s, me, target), { ok: false, code: 'DAY_VOTE_ALREADY_RESOLVED' });
 });
 
 test('A03-B-089 ⑫ 토론 중 표 → INVALID_DAY_PHASE', (t) => {

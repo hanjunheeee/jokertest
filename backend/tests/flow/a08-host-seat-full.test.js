@@ -1,7 +1,7 @@
 'use strict';
 
 // 판 끝 뒤 정원이 차도 원래 방장 칸은 남는지 시험 — 코드 입장·초대 수락·공개 목록 입장 모두 1칸 덜, 공개 목록 "가득", 180초·로비로면 칸 풀림
-// 목록 A08-B-114~122·124 (docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md), 돌리기: node --env-file=.env.test --test tests/flow/a08-host-seat-full.test.js
+// 목록 A08-B-114~122·124·223 (docs/게임_의도_2026-11-15/시험목록/A08-판끝-같은방.md), 돌리기: node --env-file=.env.test --test tests/flow/a08-host-seat-full.test.js
 process.env.DATABASE_URL = 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db'; // 맨 위, 모델이 DB에 안 붙게
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -116,4 +116,25 @@ test('A08-B-124 공개·정원 5·5명 판 A 빼고 4명 → 새 사람 join_pub
     const joined = await w.joinPublic(outsider, room.roomId);
     assert.equal(joined.ok, false);
     assert.equal(joined.code, 'ROOM_FULL');
+});
+
+// ── 판 끝 때 끊겨 있던 방장에게는 칸을 안 남김 (반장이 정함 2026-11-16) ──
+test('A08-B-223 6명 판(정원 6) 방장 A가 끊긴 채(60초 안) 판 끝 → 결과 화면 4명 들어감 → 새 사람 2명 코드 입장 → 6/6 (남긴 칸 없음)', async (t) => {
+    const w = makeWorld(t);
+    const g = await w.openAndStart({ prefix: 'b223', n: 6 });
+    w.advanceUntil(g, (s) => s.phase === 'DAY');
+    await w.disconnect(g.host);
+    // 광대가 산 채로 나가 60초 안에 판 끝 (나간 광대는 결과 화면에 없음)
+    await w.endGame(g, 'jokerLeaves');
+    const stayers = g.uuids.filter((uuid) => uuid !== g.host && g.roles.get(uuid) !== 'JOKER');
+    assert.equal(stayers.length, 4);
+    for (const uuid of stayers) {
+        const r = await w.ret(uuid, g.gameId);
+        assert.equal(r.ok, true, `${uuid} 대기방으로 실패: ${r.code}`);
+    }
+    for (const label of ['b223x', 'b223y']) {
+        const joined = await newcomerJoins(w, g, label);
+        assert.equal(joined.ok, true, `${label} 새 사람 막힘: ${joined.code}`);
+    }
+    assert.equal((await w.currentRoom(stayers[0])).players.length, 6);
 });

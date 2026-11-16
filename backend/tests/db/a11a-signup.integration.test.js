@@ -287,11 +287,11 @@ test('A11-B-249 서버도 같은 비번 규칙: 7자 → 400 문구, 0줄 → �
     const email = h.emailOf('b249');
     const signupProof = await proof(email);
     const nickname = h.nicknameOf('b249');
-    const short = await signup(await h.signupBody({ email, signupProof, nickname, password: 'abcdefg' }));
+    const short = await signup(await h.signupBody({ email, signupProof, nickname, password: 'abcdef1' }));
     assert.equal(short.status, 400);
     assert.equal(short.body.message, '비밀번호는 8~64자여야 합니다.');
     assert.equal(await usersWithEmail(email), 0);
-    const fixed = await signup(await h.signupBody({ email, signupProof, nickname, password: 'abcdefgh' }));
+    const fixed = await signup(await h.signupBody({ email, signupProof, nickname, password: 'abcdefg1' }));
     assert.equal(fixed.status, 200);
 });
 

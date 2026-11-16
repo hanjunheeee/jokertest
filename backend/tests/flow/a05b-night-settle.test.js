@@ -523,16 +523,18 @@ test('A05-B-680 5명: 다 고른 뒤 3초째 다른 대상 → 성공 답', (t) 
     assert.deepEqual(act(ctx, joker, b), { ok: true });
 });
 
-test('A05-B-681 5명: 5초 지나 닫힌 뒤 광대가 내면 NOT_YOUR_TURN 거절', (t) => {
+test('A05-B-681 5명: 5초 지나 닫힌 뒤 광대가 내면 INVALID_PHASE 거절 (5명 판은 광대 차례가 닫히면 바로 낮)', (t) => {
     const { ctx } = roleTurn(t, { id: 'b681', role: 'JOKER', n: 5 });
     const joker = one(ctx, 'JOKER');
     const [a, b] = citizens(ctx);
     assert.deepEqual(act(ctx, joker, a), { ok: true });
     ctx.clock.advance(5_000);
     assert.equal(turnEnded(ctx, 'JOKER', 1), true);
+    // 5명 판은 밤 차례가 광대뿐이라 닫히면 바로 낮 → 단계 검사에 먼저 걸림 (7명 이상 판이면 NOT_YOUR_TURN)
+    assert.equal(ctx.s.phase, 'DAY');
     const reply = act(ctx, joker, b);
     assert.equal(reply.ok, false);
-    assert.equal(reply.code, 'NOT_YOUR_TURN');
+    assert.equal(reply.code, 'INVALID_PHASE');
 });
 
 // ---------- A05-B-682~685 5초 알림을 판 전원이 받음 (8명, 둘째 밤) ----------
@@ -627,7 +629,8 @@ test('A05-B-692 7명: 광대 → A(5초 시작) 뒤 A가 나감 → 5초에 닫�
     assert.equal(dawnOf(ctx, b).victimUuid, null);
 });
 
-test('A05-B-693 [지금 동작] 8명 광대 2: 둘 다 A 고른 뒤 광대2가 나감 → 5초에 닫힘, A 죽음', (t) => {
+// 암살을 고른 광대가 빠져도 암살은 남음 (사용자 결정 2026-11-16 낮, 전엔 [지금 동작]이던 줄)
+test('A05-B-693 8명 광대 2: 둘 다 A 고른 뒤 광대2가 나감 → 5초에 닫힘, A 죽음', (t) => {
     const { ctx, turn } = roleTurn(t, { id: 'b693', role: 'JOKER', n: 8, jokerCount: 2 });
     const [, j2] = gf.byRole(ctx.s, 'JOKER');
     const [a, b] = citizens(ctx);
@@ -674,4 +677,55 @@ test('A05-B-699 10명 첫 밤: 마녀사냥꾼 차례 시작·5초 알림 둘 �
     assert.equal(seen(ctx, 'night_turn_started', { role: 'WITCH_HUNTER' }).length, 0);
     assert.equal(seen(ctx, 'phase_settle_started', { role: 'WITCH_HUNTER' }).length, 0);
     assert.ok(seen(ctx, 'phase_settle_started', { role: 'GUARD' }).length > 0);
+});
+
+// ---------- A05-B-701~703 5초 당김 중 새로고침: 스냅샷에 "지금 당김 중" 표시 (결정 2026-11-16 아침 8번이 새로고침 뒤에도 지켜지게) ----------
+test('A05-B-701 6명: 광대가 다 고르고 2초 뒤 시민의 스냅샷 → phaseSettle = 밤·그날·광대 차례·당긴 마감(nightTurnDeadline과 같음)', (t) => {
+    const { ctx, turn } = roleTurn(t, { id: 'b701', role: 'JOKER', n: 6 });
+    ctx.clock.advance(turn.deadline - 20_000 - ctx.clock.now());
+    const pickedAt = ctx.clock.now();
+    pickAll(ctx, 'JOKER', citizens(ctx)[0]);
+    ctx.clock.advance(2_000);
+    const snap = snapshot(ctx, citizens(ctx)[1]);
+    assert.equal(snap.ok, true);
+    assert.deepEqual(snap.phaseSettle, { phase: 'NIGHT', dayIndex: ctx.s.dayIndex, role: 'JOKER', deadline: pickedAt + 5_000 });
+    assert.equal(snap.nightTurnRole, 'JOKER');
+    assert.equal(snap.nightTurnDeadline, pickedAt + 5_000);
+});
+
+test('A05-B-702 6명: 광대가 아직 안 고른 차례 중 스냅샷 → phaseSettle 칸 없음', (t) => {
+    const { ctx } = roleTurn(t, { id: 'b702', role: 'JOKER', n: 6 });
+    ctx.clock.advance(5_000);
+    const snap = snapshot(ctx, citizens(ctx)[1]);
+    assert.equal(snap.ok, true);
+    assert.equal(snap.nightTurnRole, 'JOKER');
+    assert.equal(Object.hasOwn(snap, 'phaseSettle'), false);
+});
+
+test('A05-B-703 6명: 광대 차례가 5초 뒤 닫히고 의사 차례가 열린 스냅샷 → 광대 당김 표시가 의사 차례에 안 실림', (t) => {
+    const { ctx } = roleTurn(t, { id: 'b703', role: 'JOKER', n: 6 });
+    pickAll(ctx, 'JOKER', citizens(ctx)[0]);
+    ctx.clock.advance(5_000);
+    assert.equal(openTurn(ctx)?.role, 'DOCTOR', '의사 차례가 안 열림');
+    const snap = snapshot(ctx, citizens(ctx)[1]);
+    assert.equal(snap.nightTurnRole, 'DOCTOR');
+    assert.equal(Object.hasOwn(snap, 'phaseSettle'), false);
+});
+
+// ---------- A05-B-704 암살을 고른 광대가 밤이 끝나기 전에 탈락해도 그 암살은 남음 (사용자 결정 2026-11-16 낮, "보호를 고른 의사가 탈락해도 보호 남음"과 같은 규칙) ----------
+test('A05-B-704 8명 광대 2 (차례 120초 방): 둘 다 A 고름 → 광대 차례 닫힘 → 의사 차례 안에 광대1이 끊겨 60초 탈락 → 판 계속, 낮에 A 죽음', async (t) => {
+    const { ctx } = roleTurn(t, { id: 'b704', role: 'JOKER', n: 8, jokerCount: 2, turnSec: 120 });
+    const [j1, j2] = gf.byRole(ctx.s, 'JOKER');
+    const [a, b] = citizens(ctx);
+    pickAll(ctx, 'JOKER', a);
+    ctx.clock.advance(5_000);
+    assert.equal(openTurn(ctx)?.role, 'DOCTOR', '광대 차례가 안 닫힘 (준비 잘못)');
+    await disconnect(ctx, j1);
+    ctx.clock.advance(60_000);
+    assert.equal(ctx.s.players.get(j1).alive, false, '광대1이 탈락 안 함 (준비 잘못)');
+    assert.equal(ctx.s.phase, 'NIGHT', '밤이 벌써 끝남 (준비 잘못)');
+    runOutNight(ctx);
+    assert.equal(dawnOf(ctx, b).victimUuid, a);
+    assert.equal(dawnOf(ctx, j2).victimUuid, a);
+    assert.equal(ctx.s.players.get(a).alive, false);
 });

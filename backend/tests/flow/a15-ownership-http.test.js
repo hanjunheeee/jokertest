@@ -189,11 +189,12 @@ const withPendingRequest = (t) => {
     return request;
 };
 for (const [id, action] of [['A15-B-156', 'accept'], ['A15-B-157', 'decline']]) {
-    test(`${id} B→C 신청을 A가 PUT /friends/requests/:id/${action} → 404, 신청 대기 그대로`, async (t) => {
+    // 남의 신청은 "권한 없음"(403)으로 막힘 (막히기는 같음, 상태 숫자만 지금 값으로 — services/friend/requests.js)
+    test(`${id} B→C 신청을 A가 PUT /friends/requests/:id/${action} → 403, 신청 대기 그대로`, async (t) => {
         const request = withPendingRequest(t);
         const base = await serve(t, '/friends', '../../routes/friend.routes');
         const res = await send(base, 'PUT', `/friends/requests/${request.id}/${action}`, { cookie: cookieFor(A), body: {} });
-        assert.equal(res.status, 404);
+        assert.equal(res.status, 403);
         assert.equal(request.status, 'PENDING');
         assert.equal(request.responded_at, null);
     });

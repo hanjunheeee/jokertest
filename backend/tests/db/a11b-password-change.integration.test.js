@@ -55,8 +55,9 @@ const RULE_TEXTS = ['비밀번호는 8~64자여야 합니다.', '비밀번호는
 
 const RULE_REJECTED = [
     ['A11-B-703', '7자', 'Pass123'],
-    ['A11-B-704', '65자', 'p'.repeat(65)],
-    ['A11-B-705', '한글 25자', '가'.repeat(25)],
+    // 길이·바이트 값은 영문+숫자를 넣어 그 까닭 하나로만 걸리게 함
+    ['A11-B-704', '65자', `${'p'.repeat(64)}1`],
+    ['A11-B-705', '한글 24자 + a1b(75바이트)', `${'가'.repeat(24)}a1b`],
 ];
 
 for (const [id, name, pw] of RULE_REJECTED) {
@@ -73,7 +74,7 @@ for (const [id, name, pw] of RULE_REJECTED) {
 
 const RULE_ACCEPTED = [
     ['A11-B-706', '8자', 'Pass1234'],
-    ['A11-B-707', '64자', 'q'.repeat(64)],
+    ['A11-B-707', '64자', `${'q'.repeat(63)}1`],
 ];
 
 for (const [id, name, pw] of RULE_ACCEPTED) {

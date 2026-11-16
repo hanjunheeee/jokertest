@@ -126,7 +126,8 @@ test('A05-B-082 6명: 광대 → A, 의사 차례 중 A가 나감 → 밤 희생
     assert.deepEqual(applied.payload.deathReveals, []);
 });
 
-test('A05-B-083 [지금 동작] 7명 광대2: 광대 A → X 정해진 뒤 A가 나가도 X 죽음', async (t) => {
+// 암살을 고른 광대가 빠져도 암살은 남음 (사용자 결정 2026-11-16 낮, 전엔 [지금 동작]이던 줄)
+test('A05-B-083 7명 광대2: 광대 A → X 정해진 뒤 A가 나가도 X 죽음', async (t) => {
     const s = open(t, 7, { jokerCount: 2 });
     passDay(s);
     const [jokerA, jokerB] = gf.byRole(s, 'JOKER');

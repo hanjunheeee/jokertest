@@ -1,7 +1,7 @@
 'use strict'
 
 // 서버 여러 대 방 코드 잡기 시험 (진짜 시험 Redis + n1·n2 둘 다 진짜 코드, Node마다 Redis 앞 중계 하나)
-// 목록 A17-B-127~138 (B-133은 결정 대기라 안 씀), REDIS_URL_TEST 없으면 건너뜀
+// 목록 A17-B-127~138 (B-133은 결정 2026-11-16 오전 둘째 10번: 지금대로 같은 코드), REDIS_URL_TEST 없으면 건너뜀
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
@@ -191,6 +191,40 @@ test('A17-B-132 판 끝, 한 명 "대기방으로" 남으면 180초 뒤에도 n2
     const made = await createWithCodes(t, w.n2, 'b132-x', [g.roomCode, 'TR5X9P'])
     assert.equal(made.ok, true, `방 만들기 실패: ${made.code} ${made.message}`)
     assert.notEqual(made.room.roomCode, g.roomCode)
+})
+
+test('A17-B-133 Redis가 멈춘 채 판이 끝나도 같은 코드로 다시 엶, 살아나면 코드 키가 새 방을 가리키고 n2 사람도 들어감 (5명 판)', OPTS, async (t) => {
+    const { w, proxies } = await startPair(t)
+    // 판 타이머가 가짜 시계를 따르게 판 열기 전에 켬
+    w.useFakeClock()
+    const g = await W.openGame(w, w.n1, { prefix: 'b133', n: 5 })
+    await realWait(200)
+    proxies.n1.freeze()
+    let keyWhileFrozen
+    try {
+        await W.playToEnd(w, g)
+        await realWait(200)
+        // 멈춘 동안: Redis 코드 키는 판 동안 잡아 둔 옛 방 값 그대로 (n2 쪽 연결로 읽음)
+        keyWhileFrozen = await w.n2.readKey(key(w).roomcode(g.roomCode))
+    } finally {
+        t.mock.timers.reset()
+        proxies.n1.restore()
+    }
+    assert.equal(keyWhileFrozen, g.roomId, 'n1의 Redis가 멈춰 있는데 코드 키가 바뀜 (시험 준비 틀림)')
+    // 결과 화면 사람이 "대기방으로" → 같은 코드 방 (방 id만 새로)
+    const back = await w.n1.returnToRoom(g.uuids[1], g.gameId)
+    assert.equal(back.ok, true, `대기방으로 실패: ${back.code} ${back.message}`)
+    assert.equal(back.room.roomCode, g.roomCode)
+    assert.notEqual(back.room.roomId, g.roomId)
+    // 살아난 뒤: Redis 코드 키가 새 방을 가리킴 → 다른 Node 사람의 코드 입장이 그 방으로 감
+    await waitUntil(() => w.n1.cluster.state() === 'up', 10000)
+    await waitUntil(async () => (await w.n2.readKey(key(w).roomcode(g.roomCode))) === back.room.roomId, 10000)
+    const { first, last } = await joinFollowing(w, w.n2, 'b133-x', g.roomCode)
+    assert.equal(first?.payload?.code, 'ROOM_ON_OTHER_NODE')
+    assert.equal(first?.payload?.node, 'n1')
+    assert.equal(last?.event, 'room_joined', JSON.stringify(last?.payload))
+    assert.equal(last.payload.roomId, back.room.roomId)
+    assert.equal(last.payload.roomCode, g.roomCode)
 })
 
 test('A17-B-134 방을 지우면 코드 키도 지워져 n1 코드 입장은 "방 없음"', OPTS, async (t) => {

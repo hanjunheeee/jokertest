@@ -107,7 +107,7 @@ test('A18-B-109 점검 켜짐 → 방 만들기 거절 → 꺼짐으로 다시 �
     assert.equal(reply.ok, true, reply.message);
 });
 
-test('A18-B-110 [지금 동작] 시작 시각 없이 켠 점검 중: 6명 방 준비 됨, 진행 중 7명 판 낮 투표 표 받음', async (t) => {
+test('A18-B-110 시작 시각 없이 켠 점검 중: 6명 방 준비 됨, 진행 중 7명 판 낮 투표 표 받음', async (t) => {
     const w = makeWorld(t);
     // 진행 중 7명 판: 첫 낮 투표까지 (점검 켜기 전)
     const g = await w.openGame({ prefix: 'b110g', n: 7 });

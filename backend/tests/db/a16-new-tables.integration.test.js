@@ -61,14 +61,11 @@ test('A16-B-182 탈주 기록 칸은 다 꼭 있어야 함 (사람 빈 값·막�
     assert.equal(await h.count('game_desertions', 'user_id = :userId', { userId }), 0);
 });
 
-test('A16-B-183 [지금 동작] 탈주 시각을 안 주면 넣은 순간 시각 (±5초)', async (t) => {
+test('A16-B-183 [지금 동작] 탈주 시각을 안 주면 넣기 거절, 줄 안 생김 (DB 기본값 없음 — 코드는 늘 시각을 줌)', async (t) => {
     if (noDb(t)) return;
     const userId = await h.createUser('nt');
-    await h.insert('game_desertions', desertionRow(userId, { deserted_at: undefined }));
-    // DB 시계끼리 견줌 (시간대 차이 없게)
-    const rows = await h.select('SELECT ABS(TIMESTAMPDIFF(SECOND, deserted_at, NOW())) AS gap FROM game_desertions WHERE user_id = :userId', { userId });
-    assert.equal(rows.length, 1);
-    assert.ok(Number(rows[0].gap) <= 5, `차이 ${rows[0].gap}초`);
+    await h.expectDbReject(h.insert('game_desertions', desertionRow(userId, { deserted_at: undefined })));
+    assert.equal(await h.count('game_desertions', 'user_id = :userId', { userId }), 0);
 });
 
 test('A16-B-184 이유 칸은 30자까지 (LEFT_ALIVE 들어감, 31자 거절)', async (t) => {

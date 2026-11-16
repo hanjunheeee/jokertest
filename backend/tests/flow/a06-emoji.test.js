@@ -1,7 +1,7 @@
 'use strict';
 
-// 판 안 이모티콘 흐름 시험: 단계마다 판 전원 말풍선, 죽은 사람·안 가진 것·팔레트 밖·1초 간격·끝난 판·남의 판 거절
-// 목록 A06-B-079~090, 돌리기: node --env-file=.env.test --test tests/flow/a06-emoji.test.js
+// 판 안 이모티콘 흐름 시험: 낮에만 판 전원 말풍선(역할 확인·재판·밤 거절), 죽은 사람·안 가진 것·팔레트 밖·1초 간격·끝난 판·남의 판 거절
+// 목록 A06-B-079~090·101~105, 돌리기: node --env-file=.env.test --test tests/flow/a06-emoji.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -73,12 +73,18 @@ function assertNobodySaw(world, session) {
     for (const uuid of all(session)) assert.equal(shown(world, uuid).length, 0);
 }
 
-test('A06-B-079 역할 확인 중 이모티콘 됨 → 답 ok, 6명 모두 말풍선', async (t) => {
+// 낮이 아닌 단계 거절: 답 INVALID_PHASE, 받은 사람 0
+async function assertPhaseRejected(world, session, uuid) {
+    const reply = await emoji(world, session.id, uuid, 'emo-smile');
+    assert.equal(reply.ok, false);
+    assert.equal(reply.code, 'INVALID_PHASE');
+    assertNobodySaw(world, session);
+}
+
+test('A06-B-079 역할 확인 중 이모티콘 거절 → INVALID_PHASE, 받은 사람 0 (6명)', async (t) => {
     const { session, world } = table(t, { id: 'a06e-079', n: 6, phase: 'ROLE_REVEAL' });
     assert.equal(session.phase, 'ROLE_REVEAL');
-    const a = gf.nonJokers(session)[0];
-    assert.equal((await emoji(world, session.id, a, 'emo-smile')).ok, true);
-    assertEveryoneSaw(world, session, a, 'emo-smile');
+    await assertPhaseRejected(world, session, gf.nonJokers(session)[0]);
 });
 
 test('A06-B-080 낮 이모티콘 판 전원 5명 (uuid·itemId)', async (t) => {
@@ -88,19 +94,65 @@ test('A06-B-080 낮 이모티콘 판 전원 5명 (uuid·itemId)', async (t) => {
     assertEveryoneSaw(world, session, a, 'emo-cry');
 });
 
-test('A06-B-081 재판 중 이모티콘 7명 모두 받음', async (t) => {
+test('A06-B-081 재판 중 이모티콘 거절 → INVALID_PHASE, 받은 사람 0 (7명)', async (t) => {
     const { session, world } = table(t, { id: 'a06e-081', n: 7, phase: 'TRIBUNAL' });
     assert.equal(session.phase, 'TRIBUNAL');
-    const a = gf.nonJokers(session)[2];
+    await assertPhaseRejected(world, session, gf.nonJokers(session)[2]);
+});
+
+test('A06-B-082 밤에 산 시민 이모티콘 거절 → INVALID_PHASE, 받은 사람 0 (7명)', async (t) => {
+    const { session, world } = table(t, { id: 'a06e-082', n: 7, phase: 'NIGHT' });
+    assert.equal(session.phase, 'NIGHT');
+    await assertPhaseRejected(world, session, gf.firstOf(session, 'CITIZEN'));
+});
+
+// ---- 단계마다 되는지 (낮에만, A06-B-101~105) ----
+
+test('A06-B-101 낮 투표 단계 이모티콘 됨 → 6명 모두 말풍선', async (t) => {
+    const { session, world } = table(t, { id: 'a06e-101', n: 6 });
+    gf.toVote(session);
+    assert.equal(session.phase, 'DAY');
+    const a = gf.nonJokers(session)[0];
     assert.equal((await emoji(world, session.id, a, 'emo-smile')).ok, true);
     assertEveryoneSaw(world, session, a, 'emo-smile');
 });
 
-test('A06-B-082 밤에 산 시민 이모티콘 7명 모두 받음', async (t) => {
-    const { session, world } = table(t, { id: 'a06e-082', n: 7, phase: 'NIGHT' });
-    const citizen = gf.firstOf(session, 'CITIZEN');
-    assert.equal((await emoji(world, session.id, citizen, 'emo-smile')).ok, true);
-    assertEveryoneSaw(world, session, citizen, 'emo-smile');
+test('A06-B-102 역할 확인 중 거절 → 첫 낮이 되면 바로 됨 (거절은 간격에 안 셈, 5명)', async (t) => {
+    const { session, world } = table(t, { id: 'a06e-102', n: 5, phase: 'ROLE_REVEAL' });
+    const a = gf.nonJokers(session)[0];
+    await assertPhaseRejected(world, session, a);
+    gf.toDay(session);
+    assert.equal((await emoji(world, session.id, a, 'emo-smile')).ok, true);
+    assertEveryoneSaw(world, session, a, 'emo-smile');
+});
+
+test('A06-B-103 밤에 거절 → 다음 낮에 됨 (6명)', async (t) => {
+    const { session, world } = table(t, { id: 'a06e-103', n: 6, phase: 'NIGHT' });
+    const a = gf.firstOf(session, 'CITIZEN');
+    await assertPhaseRejected(world, session, a);
+    // 밤은 모두 건너뛰기로 판정 → 다음 낮
+    gf.skipAllNight(session);
+    assert.equal(gf.resolveNightDirect(session).committed?.ok, true);
+    assert.equal(session.phase, 'DAY');
+    assert.equal((await emoji(world, session.id, a, 'emo-cry')).ok, true);
+    assertEveryoneSaw(world, session, a, 'emo-cry');
+});
+
+test('A06-B-104 재판 중엔 피고·배심원 모두 거절 → INVALID_PHASE, 받은 사람 0 (7명)', async (t) => {
+    const { session, world } = table(t, { id: 'a06e-104', n: 7, phase: 'TRIBUNAL' });
+    const [defendant, juror] = gf.nonJokers(session);
+    await assertPhaseRejected(world, session, defendant);
+    await assertPhaseRejected(world, session, juror);
+    await assertPhaseRejected(world, session, gf.firstOf(session, 'JOKER'));
+});
+
+test('A06-B-105 밤에 죽은 사람 이모티콘도 거절, 받은 사람 0 (8명)', async (t) => {
+    const { session, world } = table(t, { id: 'a06e-105', n: 8, phase: 'NIGHT' });
+    const dead = gf.firstOf(session, 'CITIZEN');
+    kill(session, dead);
+    const reply = await emoji(world, session.id, dead, 'emo-smile');
+    assert.equal(reply.ok, false);
+    assertNobodySaw(world, session);
 });
 
 test('A06-B-083 죽은 사람 이모티콘 거절 → PLAYER_NOT_ALIVE, 받은 사람 0 (8명)', async (t) => {

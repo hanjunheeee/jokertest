@@ -644,7 +644,8 @@ test('A17-B-124 같은 이름 서버를 차례로 켜도 두 번째는 DUPLICATE
     assert.deepEqual(second, { ok: false, code: 'DUPLICATE_SERVER_ID' })
 })
 
-test('A17-B-125 강제로 꺼진 n2를 Redis 끊긴 채 같은 이름으로 다시 켜도 옛 판을 산 것으로 안 봄 → "이미 끝난 게임" (5명 판)', OPTS, async (t) => {
+// 다시 켠 n2가 옛 부팅이 쓴 키(시작 표시 포함)를 치워서 없는 코드와 같은 답 (모음 글 "목록을 지금 값으로")
+test('A17-B-125 강제로 꺼진 n2를 Redis 끊긴 채 같은 이름으로 다시 켜도 옛 판을 산 것으로 안 봄 → "방 없음" (5명 판)', OPTS, async (t) => {
     const { w, p, prefix } = await pair(t)
     const g = await W.openGame(w, w.n2, { prefix: 'b125', n: 5 })
     const k = w.n1.dirKeys()
@@ -669,8 +670,8 @@ test('A17-B-125 강제로 꺼진 n2를 Redis 끊긴 채 같은 이름으로 다�
     w.n1.connect('b125-x')
     const joined = await w.n1.joinByCode('b125-x', g.roomCode)
     assert.equal(joined?.event, 'room_join_failed', JSON.stringify(joined))
-    assert.equal(joined.payload.code, 'SESSION_ENDED', JSON.stringify(joined.payload))
-    assert.equal(joined.payload.message, '이미 끝난 게임의 방입니다.')
+    assert.equal(joined.payload.code, 'ROOM_CODE_MISMATCH', JSON.stringify(joined.payload))
+    assert.equal(joined.payload.message, '입장 코드와 일치하는 방이 없습니다.')
 })
 
 test('A17-B-126 살아 있음 표시(하트비트)가 끊긴 Node는 10초쯤 뒤 죽은 것으로 봄', OPTS, async (t) => {

@@ -1,7 +1,7 @@
 'use strict';
 
 // 서버 켤 때 DB 시험(시험 DB) — 표가 다 올라가야 운영 서버가 켜짐, 덜 올라간 개발 서버는 경고만, 켤 때 점검·금지어·탈주 막힘·판 골드를 읽음, 운영엔 시험 손잡이 길 없음, 점검으로 끝난 판은 무효
-// 목록 A18-B-301~312 (docs/게임_의도_2026-11-15/시험목록/A18-설정-배포-광고.md), 돌리기: with-lock.sh testdb (시험_도우미.md 3-3) — 서버는 자식 프로세스로 빈 포트에 띄움
+// 목록 A18-B-301~313 (docs/게임_의도_2026-11-15/시험목록/A18-설정-배포-광고.md), 돌리기: with-lock.sh testdb (시험_도우미.md 3-3) — 서버는 자식 프로세스로 빈 포트에 띄움
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 // 모델이 읽는 주소를 시험 DB로 (값 없으면 닿지 않는 곳 → 아래에서 건너뜀), 꼭 models require보다 먼저
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
@@ -108,9 +108,15 @@ async function freePort() {
 }
 
 // 서버 시작 파일을 자식으로 띄움 (작업 폴더 = 빈 임시 폴더 → dotenv가 .env를 못 읽음), 시험 끝에 끔
-// mode: 'production' | 'development'(시험 손잡이 켬)
-async function startServer(t, { mode }) {
+// mode: 'production' | 'development'(시험 손잡이 켬), preload: 서버 시작 파일보다 먼저 돌릴 글 (느린 DB 흉내용)
+async function startServer(t, { mode, preload = null }) {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'b-a18-db-'));
+    const nodeArgs = [];
+    if (preload) {
+        const preloadFile = path.join(cwd, 'preload.js');
+        fs.writeFileSync(preloadFile, preload);
+        nodeArgs.push('--require', preloadFile);
+    }
     const port = await freePort();
     const base = Object.fromEntries(OS_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
     const env = {
@@ -124,7 +130,7 @@ async function startServer(t, { mode }) {
         PORT: String(port),
         ...(mode === 'development' ? { E2E_HOOKS: '1' } : {}),
     };
-    const child = spawn(process.execPath, [INDEX], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [...nodeArgs, INDEX], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     const lines = new (require('node:events').EventEmitter)();
     const onData = (d) => { out += d; lines.emit('data'); };
@@ -141,6 +147,7 @@ async function startServer(t, { mode }) {
     const server = {
         port, url: `http://127.0.0.1:${port}`, clients, exited,
         output: () => out,
+        hasExited: () => exitCode !== undefined,
         // 출력에 그 줄이 뜰 때까지 (켤 때 읽기는 포트 연 뒤 뒤에서 끝나서 켜짐 줄보다 늦을 수 있음, 최대 ms) → 떴는지
         waitOutput: async (pattern, ms = 5_000) => {
             const until = Date.now() + ms;
@@ -348,14 +355,14 @@ test('A18-B-305 [지금 동작] 개발 + 0034 pending → 표 준비 안 됨·�
     }
 });
 
-test('A18-B-306 [지금 동작] 개발 + 0033 pending → 탈주 기록 못 읽음 경고 뒤 켜짐, 방 만들기 됨', async (t) => {
+test('A18-B-306 [지금 동작] 개발 + 0033 pending → "[탈주] 막힘 기록 못 읽음" 경고 뒤 켜짐, 방 만들기 됨', async (t) => {
     if (noDb(t)) return;
     await withoutMigrations(t, [M0033]);
     const person = await createUser('d306');
     const server = await startServer(t, { mode: 'development' });
     await assertReady(server);
-    // 목록 글은 "탈주 기록 못 읽음", 탈주 쪽 자체 경고("[탈주] 막힘 기록 못 읽음")도 같은 뜻으로 받음
-    assert.ok(await server.waitOutput(/탈주[^\n]*기록 못 읽음/), server.output().slice(-1500));
+    // 경고는 탈주 쪽이 스스로 찍음 (서버 켜기 파일의 옛 글 "[STARTUP] 탈주 기록 못 읽음"은 안 나오는 줄이라 지움)
+    assert.ok(await server.waitOutput(/\[탈주\] 막힘 기록 못 읽음/), server.output().slice(-1500));
     const s = await connectSocket(server, person);
     const created = await ask(s, 'create_room', {
         accessType: 'code', maxPlayers: 5, jokerCount: 1, dayDiscussionTime: 30, dayVoteTime: 30, nightActionTime: 30,
@@ -483,4 +490,86 @@ test('A18-B-312 점검 시작 시각에 강제 종료된 5명 판 → 끝 이유
     // 판 끝 저장이 다 돈 뒤에도 0줄인지 잠깐 더 봄
     await sleep(1_000);
     assert.equal((await rewardRows(uuids)).length, 0);
+});
+
+// ── 313: 켤 때 읽기가 느려도 포트 열기 전에 다 읽음 ──
+
+// 자식 서버에 먼저 끼울 글: 금지어·탈주 막힘·판 설정 표의 첫 읽기만 ms만큼 늦춤 (느린 DB 흉내, 서버 코드는 안 건드림)
+// 서버가 쓰는 것과 같은 sequelize 파일을 고쳐야 해서 그 자리를 그대로 적어 넣음
+const slowFirstReads = (ms) => [
+    `const Sequelize = require(${JSON.stringify(require.resolve('sequelize'))});`,
+    "const left = new Set(['banned_words', 'game_desertions', 'game_settings']);",
+    'const query = Sequelize.prototype.query;',
+    'Sequelize.prototype.query = async function slowQuery(sql, ...rest) {',
+    "    const text = typeof sql === 'string' ? sql : String(sql?.query ?? '');",
+    '    const table = /^\\s*SELECT[\\s\\S]*?FROM `(\\w+)`/i.exec(text)?.[1];',
+    `    if (left.delete(table)) await new Promise((resolve) => setTimeout(resolve, ${ms}));`,
+    '    return query.call(this, sql, ...rest);',
+    '};',
+].join('\n');
+
+// 포트가 열리는 첫 순간까지 (켜짐 줄을 안 기다리고 계속 두드림, 최대 40초), 서버가 끝나 버리면 멈춤
+async function untilPortOpen(server) {
+    const until = Date.now() + 40_000;
+    while (Date.now() < until) {
+        if (server.hasExited()) break;
+        try {
+            await fetch(`${server.url}/health`);
+            return;
+        } catch { await sleep(20); }
+    }
+    throw new Error(`포트가 안 열림: ${server.output().slice(-800)}`);
+}
+
+test('A18-B-313 금지어·탈주 막힘·판 설정 첫 읽기가 4초씩 걸려도 → 포트가 열린 첫 순간 금지어 닉네임 400, 탈주한 사람 create_room 거절, 그때 시작한 5명 판 골드 사람마다 +3', async (t) => {
+    if (noDb(t)) return;
+    const word = `zq${crypto.randomBytes(2).toString('hex')}`;
+    await db.BannedWord.create({ word, is_active: true });
+    t.after(() => db.BannedWord.destroy({ where: { word } }));
+    const renamer = await createUser('w313');
+    const deserter = await createUser('x313');
+    const now = Date.now();
+    await db.GameDesertion.create({
+        user_id: deserter.uuid, game_id: crypto.randomUUID(), reason: 'LEFT_ALIVE',
+        deserted_at: new Date(now - 60_000), blocked_until: new Date(now + 10 * 60_000),
+    });
+    await db.sequelize.query("UPDATE game_settings SET value_int = 3 WHERE `key` = 'GAME_GOLD_REWARD'");
+    t.after(() => db.sequelize.query("UPDATE game_settings SET value_int = 1 WHERE `key` = 'GAME_GOLD_REWARD'"));
+    const people = [];
+    for (let i = 0; i < 5; i += 1) people.push(await createUser(`s5${i}`));
+
+    const server = await startServer(t, { mode: 'development', preload: slowFirstReads(4_000) });
+    await untilPortOpen(server);
+
+    // 금지어: 열리자마자 그 단어 든 닉네임으로 바꾸기
+    const res = await fetch(`${server.url}/user/me/nickname`, {
+        method: 'PATCH',
+        headers: { cookie: `accessToken=${renamer.token}`, origin: FRONTEND_URL, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname: `${word}a1` }),
+    });
+    const body = await res.json().catch(() => ({}));
+
+    // 탈주 막힘: 열리자마자 탈주한 사람이 방 만들기
+    const blocked = await connectSocket(server, deserter);
+    const reply = await ask(blocked, 'create_room', {
+        accessType: 'code', maxPlayers: 5, jokerCount: 1, dayDiscussionTime: 30, dayVoteTime: 30, nightActionTime: 30,
+    });
+
+    // 판 설정: 열리자마자 시작한 판의 골드 (판 골드는 시작 때 정해짐)
+    const sockets = [];
+    for (const p of people) sockets.push(await connectSocket(server, p));
+    const game = await startGame(server, sockets);
+    await playCitizenWin(server, sockets, game);
+    const rows = await waitRewards(people.map((p) => p.uuid), 5);
+
+    // 셋을 한 번에 견줌 (하나가 틀려도 나머지 둘이 어땠는지 같이 보이게)
+    assert.deepEqual({
+        nickname: `${res.status} ${body.code}`,
+        deserterRoom: reply?.ok === false && /탈주로 \d+분 \d+초 뒤에 참여할 수 있습니다/.test(String(reply.message)) ? '탈주 대기로 거절' : JSON.stringify(reply),
+        golds: people.map((p) => rows.filter((r) => r.user_id === p.uuid).map((r) => Number(r.amount))),
+    }, {
+        nickname: '400 NICKNAME_BANNED_WORD',
+        deserterRoom: '탈주 대기로 거절',
+        golds: [[3], [3], [3], [3], [3]],
+    });
 });

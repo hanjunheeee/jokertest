@@ -316,12 +316,12 @@ test('A01-B-663 정원 6, 성공 뒤 get_kick_result { bootEpoch, requestId } �
     assert.equal(result.requestId, payload.requestId);
 });
 
-test('A01-B-664 보낸 적 없는 requestId 결과 묻기 → 결과 없음 답(ok: false), 아무도 안 빠짐', async (t) => {
+test('A01-B-664 보낸 적 없는 requestId 결과 묻기 → 결과 없음 답 { ok: true, status: UNKNOWN }, 아무도 안 빠짐', async (t) => {
     const w = makeWorld(t);
     const r = await room(w, 'b664', 3, 6);
     const bootEpoch = (await w.currentRoom(r.host)).bootEpoch;
     const result = await new Promise((resolve) => w.G.handleGetKickResult(w.io, w.sock(r.host), r.host, { bootEpoch, requestId: 'never-sent' }, resolve));
-    assert.equal(result.ok, false, `답: ${JSON.stringify(result)}`);
+    assert.deepEqual(result, { ok: true, status: 'UNKNOWN', bootEpoch, requestId: 'never-sent' });
     assert.deepEqual(await w.roster(r.host), r.uuids);
 });
 
