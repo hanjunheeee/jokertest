@@ -11,11 +11,11 @@ export const GAME_RESULT_OUTCOMES = ["win", "lose"]
 // 가짜 참가자
 const PREVIEW_PLAYERS_BASE = [
   { id: "p1", name: "한준희1234", job: "귀족" },
-  { id: "p2", name: "스미스", job: "주치의" },
+  { id: "p2", name: "스미스", job: "의사" },
   { id: "p3", name: "밀런", job: "광대" },
   { id: "p4", name: "토마스", job: "경비원" },
   { id: "p5", name: "알렉스", job: "귀족" },
-  { id: "p6", name: "리사", job: "주치의" },
+  { id: "p6", name: "리사", job: "의사" },
   { id: "p7", name: "데이비드", job: "광대" },
   { id: "p8", name: "엠마", job: "경비원" },
   { id: "p9", name: "올리버", job: "귀족" },

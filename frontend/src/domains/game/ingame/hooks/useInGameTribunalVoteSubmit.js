@@ -7,7 +7,7 @@ import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { createTribunalVoteSubmitController } from "../utils/createTribunalVoteSubmitController.js"
 import { INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE } from "../utils/voteSubmitPatch.js"
-import { onDisconnect } from "../socket/connection.js"
+import { onConnect, onDisconnect } from "../socket/connection.js"
 
 // 낼 수 있는 표
 const VALID_VOTES = new Set(["GUILTY", "NOT_GUILTY"])
@@ -118,12 +118,14 @@ export function useInGameTribunalVoteSubmit() {
     controllerRef.current?.invalidate("CONTEXT_CHANGE")
   }, [gameId, dayIndex, phase, alive, isDefendant, defendantUuid, actorUuid])
 
-  // 연결 끊기면 진행 중 제출 버림
+  // 연결 끊기면 진행 중 제출 버림, 다시 붙으면 끊김 글이 남지 않게 처음으로
   useEffect(() => {
     if (!socket) return undefined
     const offDisconnect = onDisconnect(socket, () => controllerRef.current?.invalidate("DISCONNECT"))
+    const offConnect = onConnect(socket, () => controllerRef.current?.invalidate("RECONNECT"))
     return () => {
       offDisconnect()
+      offConnect()
     }
   }, [socket])
 

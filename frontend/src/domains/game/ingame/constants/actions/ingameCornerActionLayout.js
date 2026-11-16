@@ -5,6 +5,10 @@
 export const PANEL_CLASS =
   "pointer-events-auto absolute bottom-[clamp(1.25rem,3.6vh,2rem)] right-[clamp(0.35rem,1.2vw,0.85rem)] z-10 flex items-end justify-end gap-[clamp(0.35rem,1.1vw,0.65rem)] [container-type:inline-size]"
 
+// 거절 까닭 글 자리: 버튼 줄 바로 위 오른쪽 맞춤 (패널 폭이 0이라 오른쪽 끝에 붙임), 글은 어두운 바탕 위 밝은 색
+export const ACTION_NOTICE_CLASS =
+  "pointer-events-none absolute bottom-full right-0 mb-2 w-max max-w-[min(22rem,calc(100vw-1.5rem))] rounded-md bg-black/75 px-3 py-2 text-right text-sm leading-snug text-[#ffb9ab]"
+
 // 그림 행동 버튼(기권·건너뛰기) 틀·그림·글자
 export const CORNER_ACTION_BTN_CLASS =
   "interactive-scale group relative block w-[clamp(7.2rem,22vw,9.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:opacity-45"

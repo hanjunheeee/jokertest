@@ -20,22 +20,27 @@ const isRoutingPending = (response) =>
 const FORFEITED_CODE = "FORFEITED_FROM_SESSION"
 const FORFEITED_FALLBACK_MESSAGE = "연결이 끊겨 이 게임에서 제외되었습니다. 다시 참여할 수 없습니다."
 
+// 까닭 글을 이미 띄운 계정 (판을 비우면 판 번호 없이 다시 묻는데, 그 답도 탈락이면 같은 글이 또 뜸)
+let forfeitAlertedAuthUuid = null
+
 // 끊겨서 판에서 빠졌으면 까닭 글을 알림 창으로 (안 띄우면 말없이 방 목록으로 가서 왜 나왔는지 모름)
+// 띄웠으면 true
 function alertIfForfeited(response) {
-  if (response?.code !== FORFEITED_CODE) return
+  if (response?.code !== FORFEITED_CODE) return false
   const message = typeof response.message === "string" && response.message.length > 0
     ? response.message
     : FORFEITED_FALLBACK_MESSAGE
   window.alert(message)
+  return true
 }
 
 // 판이 있는데 서버가 판 없음이라 하면 판·방 정리 (끝난 판의 결과 화면은 그대로 둠)
 // 화면 이동은 인게임 화면의 "맞는 판 아님" 검사가 맡음 (방 목록), 그 전에 빠진 까닭 글을 보여 줌
-function clearGoneSession(requestGameId, response) {
+function clearGoneSession(ctx, requestGameId, response) {
   const { gameId, state } = useInGameStore.getState()
   if (gameId !== requestGameId) return
   if (state?.phase === "ENDED") return
-  alertIfForfeited(response)
+  if (alertIfForfeited(response)) forfeitAlertedAuthUuid = ctx.authUuid
   useInGameStore.getState().clearGame()
   useMatchingStore.getState().clearRoom()
 }
@@ -50,7 +55,7 @@ function applyResponse(ctx, a, response) {
   if (isRoutingPending(response) && a.scheduleRetry()) return
   if (a.requestGameId && isSessionGoneResponse(response)) {
     a.finishRebindUnapplied(scopeOnArrival)
-    clearGoneSession(a.requestGameId, response)
+    clearGoneSession(ctx, a.requestGameId, response)
     return
   }
   if (a.hasConflictingNightObservation(response)) {
@@ -62,10 +67,15 @@ function applyResponse(ctx, a, response) {
   if (!a.requestGameId) {
     if (response?.ok !== true) {
       a.finishRebindUnapplied(scopeOnArrival)
-      alertIfForfeited(response)
+      // 방금 판을 비우며 이 계정에 띄운 글이면 또 안 띄움 (같은 판 탈락 안내는 1번), 탈락 아닌 답이 오면 띄운 기록을 지움
+      const alreadyAlerted = forfeitAlertedAuthUuid === ctx.authUuid
+      if (response?.code !== FORFEITED_CODE) forfeitAlertedAuthUuid = null
+      else if (!alreadyAlerted) alertIfForfeited(response)
       ctx.setBootstrapStatus("missing")
       return
     }
+    // 판을 다시 받았으면 띄운 기록을 지움 (다음 판에서 빠지면 그때 다시 띄움)
+    forfeitAlertedAuthUuid = null
     useInGameStore.getState().bootstrapSessionSnapshot(response, a.receiptContext)
     const recovered = Boolean(useInGameStore.getState().gameId)
     if (recovered) {
@@ -77,6 +87,8 @@ function applyResponse(ctx, a, response) {
     ctx.setBootstrapStatus(recovered ? "recovered" : "missing")
     return
   }
+  // 판에 있다는 답이면 띄운 기록을 지움 (이 판에서 빠지면 그때 다시 띄움)
+  if (response?.ok === true) forfeitAlertedAuthUuid = null
   // 스냅샷 순번이 올라갔을 때만 반영된 것으로 봄
   const seqBefore = useInGameStore.getState().snapshotSeq
   useInGameStore.getState().applySessionSnapshot(response, a.receiptContext)

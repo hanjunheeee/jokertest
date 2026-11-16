@@ -51,3 +51,10 @@ export const FRAME_IMG_CLASS =
 
 export const INGAME_PLAYER_NAMEPLATE_CLASS =
   "pointer-events-none absolute z-[11] flex items-center justify-center overflow-hidden px-[6%] text-center font-subheading text-[clamp(0.875rem,5.8cqi,1.1rem)] font-bold leading-none tracking-wide text-[#3a1a0c] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
+// 이름 글 뒤 작은 알약 띠 (이름 길이만큼 늘고 이름판 폭을 넘으면 줄임표), 띠 색은 utils/nameplateBand.js가 고름
+// 플레이어 색 10가지가 갈색 이름판 위에서 안 읽혀서 깖 (결정 2026-11-16 낮), 이름판 옆 여백(6% → 1%)을 띠 여백만큼 줄여 이름 글이 들어갈 폭은 전과 거의 같음
+export const INGAME_PLAYER_NAMEPLATE_BAND_CLASS =
+  "inline-block max-w-full truncate rounded-full px-[0.35em] py-[0.12em]"
+
+export const INGAME_PLAYER_NAMEPLATE_BAND_PLATE_CLASS = "!px-[1%]"

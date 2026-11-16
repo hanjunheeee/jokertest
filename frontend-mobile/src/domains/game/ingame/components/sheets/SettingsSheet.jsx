@@ -1,8 +1,7 @@
-// 인게임 설정 시트: 탭 줄(채팅·사운드·방관리)·고른 탭 본문·방 코드 보기 버튼, 위에 방 코드 창
+// 인게임 설정 시트: 탭 줄(채팅·사운드)·고른 탭 본문·방 코드 보기 버튼, 위에 방 코드 창
 // InGamePage 위 줄이 { open, onClose }로 엶, 탭·소리 값은 데스크톱 useInGameSettingPanel (SettingPanel과 같은 구성)
 import { useState } from "react"
 import { INGAME_SETTING_ASSETS } from "@/domains/game/ingame/constants/controls/ingameSetting/ingameSettingAssets.js"
-import { useInGameSettingIsHost } from "@/domains/game/ingame/hooks/useInGameSettingIsHost.js"
 import { useInGameSettingPanel } from "@/domains/game/ingame/hooks/useInGameSettingPanel.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import Sheet from "./frame/Sheet.jsx"
@@ -12,13 +11,12 @@ import RoomCodeSheet from "./roomCode/RoomCodeSheet.jsx"
 import SettingsBody from "./settings/SettingsBody.jsx"
 import Tabs from "./settings/Tabs.jsx"
 
-// 설정 시트가 방 코드 시트 여닫기를 들고 있음, 방장일 때만 방관리 탭
+// 설정 시트가 방 코드 시트 여닫기를 들고 있음
 export default function SettingsSheet({ open, onClose }) {
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
   const roomCode = useInGameStore((s) => s.state?.roomCode ?? null)
-  const isHost = useInGameSettingIsHost()
   const { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted } =
-    useInGameSettingPanel({ isHost })
+    useInGameSettingPanel()
 
   // 설정 시트가 닫히면 위 시트도 닫음 (다시 열 때 남아 있지 않게, 그리는 중에 바로 맞춤)
   const [prevOpen, setPrevOpen] = useState(open)

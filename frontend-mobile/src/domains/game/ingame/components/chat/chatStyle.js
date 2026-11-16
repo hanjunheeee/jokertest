@@ -59,12 +59,12 @@ export const COMPOSER_BAR_CLASS =
 export const COMPOSER_ROW_CLASS =
     "absolute inset-x-[7.6%] top-[16%] bottom-[23%] flex items-center gap-[clamp(0.15rem,1cqi,0.35rem)] pl-[clamp(0.6rem,4cqi,1.4rem)]"
 
-// 메시지 글 모양 (데스크톱 TEXT_TYPOGRAPHY_CLASS에서 글자 크기만 뺌, 크기는 chatFontSize)
-export const TEXT_CLASS = "font-subheading font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+// 메시지 글 모양 (데스크톱 TEXT_TYPOGRAPHY_CLASS에서 글자 크기만 뺌, 크기는 chatFontSize, 갈색 종이 위라 가장 짙은 갈색)
+export const TEXT_CLASS = "font-subheading font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
 
 // 입력칸: 데스크톱처럼 투명 바탕·테두리 없음, 높이 고정 한 줄(넘치면 안에서 스크롤), 글자 16px 이상은 index.css가 맞춤
 export const TEXTAREA_CLASS =
-    `block h-11 w-full resize-none overflow-y-auto border-0 bg-transparent p-0 py-[0.7rem] outline-none placeholder:text-[#4a2814] placeholder:opacity-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${TEXT_CLASS}`
+    `block h-11 w-full resize-none overflow-y-auto border-0 bg-transparent p-0 py-[0.7rem] outline-none placeholder:text-[#140c08] placeholder:opacity-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${TEXT_CLASS}`
 
 // 아이콘 버튼 (누르는 자리 44px)
 export const ICON_BTN_CLASS =

@@ -1,4 +1,4 @@
-// 플레이어 카드 한 장 (틀·사진·이름표·상태 표시)
+// 플레이어 카드 한 장 (틀·사진·이름표·상태 표시·본인 표시·같은 직업 동료 표시)
 // 카드 판·재판 연출·상점 스킨 미리보기가 같이 씀
 import {
   INGAME_PLAYER_ASSETS,
@@ -15,6 +15,11 @@ import { resolveInGamePlayerCardThemeStyles } from "../../utils/playerCardStyles
 import PlayerPortraitFrame from "@/shared/ui/PlayerPortraitFrame.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 
+// 동료 표시 모양: "나" 표시와 같은 자리(동료는 내가 아니라 안 겹침), 금색 "나"와 헷갈리지 않게 풀빛
+const ALLY_BADGE_CLASS =
+  "absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border border-[#9fe0c4] bg-[#0f3327] px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-[#d9fff0] shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+
+// allyLabel: 같은 직업 동료면 "동료 의사" 같은 글 (내 화면에만 옴, 없으면 표시 안 그림)
 export default function InGamePlayerCard({
   portraitSrc,
   frameSrc = INGAME_PLAYER_ASSETS.cardFrame,
@@ -23,6 +28,7 @@ export default function InGamePlayerCard({
   theme = null,
   voteHighlight = false,
   isSelf = false,
+  allyLabel = null,
   className = "",
 }) {
   const styles = resolveInGamePlayerCardThemeStyles(theme, voteHighlight)
@@ -44,6 +50,11 @@ export default function InGamePlayerCard({
             aria-label="본인"
           >
             나
+          </span>
+        ) : null}
+        {allyLabel && !isSelf ? (
+          <span className={ALLY_BADGE_CLASS} title={allyLabel} data-ingame-ally-badge={allyLabel}>
+            동료
           </span>
         ) : null}
 

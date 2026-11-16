@@ -1,4 +1,4 @@
-// 위쪽 시간 바 (낮 단계·남은 시간), 표가 다 차 마감이 당겨지면 저절로 펼쳐 "[5초 뒤 마감]"과 남은 초를 보임
+// 위쪽 시간 바 (낮 단계·남은 시간), 표가 다 차 마감이 당겨지거나 재판 연출 중이면 저절로 펼쳐 남은 초를 보임
 // InGamePage가 씀
 import { useState } from "react"
 import {
@@ -35,6 +35,13 @@ import InGamePhaseActionRow from "./InGamePhaseActionRow.jsx"
 import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
 import InGamePhaseTurnTimerPanel from "./InGamePhaseTurnTimerPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
+
+// 재판 연출이 떠 있는지 (재판 중·피고 있음·판정 전), 인게임 화면·채팅 틀과 같은 조건
+function selectTribunalPresentationOpen(state) {
+  return state?.phase === "TRIBUNAL"
+    && Boolean(state?.tribunal?.defendantUuid)
+    && state.tribunal.resolved !== true
+}
 
 function TimebarNode({ src, active, arrowSizeClass }) {
   return (
@@ -105,10 +112,14 @@ export default function InGameTimebar({
   className = POSITION_CLASS,
 }) {
   const [expanded, setExpanded] = useState(false)
-  const expandDisabled = timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
+  // 재판 연출 중엔 판 화면이 잠겨 펼침 단추를 못 누르고 채팅 틀(틀 안 타이머)도 숨음
+  // → 타이머 자리가 채팅이어도 시간 바를 펼쳐 남은 시간을 보임 (새로고침해 접힌 채 시작해도 보이게)
+  const tribunalOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
+  const expandDisabled = timerPlacement === INGAME_TIMER_PLACEMENT.CHAT && !tribunalOpen
   // 마감이 당겨진 동안은 접혀 있어도 펼침 (접힌 바엔 남은 시간이 안 보여서), 끝나면 고른 대로
   const settled = useInGameStore((s) => selectInGamePhaseSettled(s.state))
-  const isExpanded = expandDisabled ? false : (expanded || settled)
+  const forcedOpen = settled || tribunalOpen
+  const isExpanded = expandDisabled ? false : (expanded || forcedOpen)
 
   // 채팅 쪽 배치로 바뀌면 펼침을 접어 둠 (다시 바꿔도 접힌 채 시작)
   if (expandDisabled && expanded) setExpanded(false)
@@ -119,12 +130,12 @@ export default function InGameTimebar({
   const remainingRatio = remainingRatioProp ?? internalProgress.remainingRatio
   const remainingSec = remainingSecProp ?? internalProgress.remainingSec
   const showTimerOnTimebar =
-    timerPlacement === INGAME_TIMER_PLACEMENT.TIMEBAR && isExpanded && statusLabel
+    (timerPlacement === INGAME_TIMER_PLACEMENT.TIMEBAR || tribunalOpen) && isExpanded && statusLabel
 
   const dayLabel = `제 ${day}일`
-  // 마감이 당겨진 몇 초 동안은 접기를 안 받음 (끝나면 원래 고른 대로 돌아감)
+  // 마감이 당겨진 몇 초·재판 연출 동안은 접기를 안 받음 (끝나면 원래 고른 대로 돌아감)
   const toggleExpanded = () => {
-    if (expandDisabled || settled) return
+    if (expandDisabled || forcedOpen) return
     setExpanded((current) => !current)
   }
 

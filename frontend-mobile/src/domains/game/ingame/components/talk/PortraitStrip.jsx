@@ -5,6 +5,7 @@ import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionC
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import { useInGameEmojiBubbleStore } from "@/domains/game/ingame/store/inGameEmojiBubble.store.js"
 import { isInGameSelfPlayer } from "@/domains/game/ingame/utils/isInGameSelfPlayer.js"
+import { allyText } from "@/domains/game/ingame/utils/allyLabel.js"
 import Board from "@m/domains/game/ingame/components/board/Board.jsx"
 import CardSheet from "@m/domains/game/ingame/components/board/CardSheet.jsx"
 import EmojiPalette from "@m/domains/game/ingame/components/board/EmojiPalette.jsx"
@@ -38,6 +39,8 @@ function CollapsedStrip({ onToggle }) {
     const sheet = useCardSheet()
     const emoji = useBoardEmoji()
     const sheetPlayer = players.find((player) => player.id === sheet.targetId) ?? null
+    // 내 직업: 같은 직업 동료 표시 글("동료 의사")을 만드는 데 씀 (시민·남은 null)
+    const selfRole = actionCtx?.gameState?.self?.role ?? null
 
     return (
         <section aria-label="플레이어 초상 띠" className="flex w-full min-w-0 items-start pr-1.5">
@@ -51,6 +54,7 @@ function CollapsedStrip({ onToggle }) {
                             key={player.id}
                             player={player}
                             isSelf={isSelf}
+                            allyLabel={allyText(player, selfRole)}
                             highlight={highlight}
                             emoji={emojiByUuid[player.id] ?? null}
                             anchorRef={(node) => sheet.registerAnchor(player.id, node)}
@@ -61,7 +65,7 @@ function CollapsedStrip({ onToggle }) {
                 })}
             </div>
             <ToggleButton expanded={false} onToggle={onToggle} />
-            <CardSheet player={sheetPlayer} items={sheet.items} onClose={sheet.close} panelRef={sheet.menuRef} />
+            <CardSheet player={sheetPlayer} allyLabel={allyText(sheetPlayer, selfRole)} items={sheet.items} onClose={sheet.close} panelRef={sheet.menuRef} />
             <EmojiPalette open={emoji.open} slots={emoji.slots} onClose={emoji.closePalette} />
         </section>
     )

@@ -73,3 +73,6 @@ export const DAY_VOTE_READY_LABEL = "투표 시작 준비"
 export const DAY_VOTE_READY_SENDING_LABEL = "준비 중..."
 export const DAY_VOTE_READY_DONE_LABEL = "준비 완료"
 
+// 끊긴 채 눌렀을 때 글: 낮 표·토론 준비·밤 고르기·재판 표가 같이 씀 (누른 것은 안 나감, 사용자 결정 2026-11-16)
+export const ACTION_DISCONNECTED_TEXT = "연결이 끊겼습니다. 다시 연결된 뒤 눌러 주세요."
+

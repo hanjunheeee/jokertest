@@ -21,7 +21,7 @@ const NICK_COLOR_DEFAULT = defaultChecked("nickname-color")
 
 // 데스크톱 재판 채팅 글자 (글꼴·굵기·줄 간격·자간·색), 크기는 데스크톱 최대값에 설정 배율, 폰 하한 0.74rem
 const TEXT_CLASS =
-    "font-subheading text-[max(0.74rem,calc(0.92rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+    "font-subheading text-[max(0.74rem,calc(0.92rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
 
 // 받은 시각을 시:분으로, 이상한 값이면 안 보임
 function formatTime(sentAt) {
@@ -46,7 +46,7 @@ export default function TribunalChatRow({ playerId = null, senderName, text, sen
 
     return (
         <li className={MSG_ROW_CLASS} style={getInGameChatTextScaleStyle(textSize)}>
-            {time ? <span className={`shrink-0 opacity-60 ${TEXT_CLASS}`}>{time}</span> : null}
+            {time ? <span className={`shrink-0 ${TEXT_CLASS}`}>{time}</span> : null}
             <span className={`shrink-0 ${TEXT_CLASS} ${colorClass}`.trim()} style={colorStyle}>{senderName}:</span>
             <span className={`min-w-0 ${TEXT_CLASS} ${TEXT_WRAP_CLASS} ${colorClass}`.trim()} style={colorStyle}>
                 &quot;{text}&quot;

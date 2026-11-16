@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
-import { onDisconnect } from "../socket/connection.js"
+import { onConnect, onDisconnect } from "../socket/connection.js"
 import { emitReady } from "../socket/day.js"
+import { ACTION_DISCONNECTED_TEXT } from "../constants/actions/ingameActionPanel.js"
 
 // 준비 응답 기다리는 시간
 const ACK_TIMEOUT_MS = 5000
@@ -21,6 +22,16 @@ export function useInGameDayDiscussionReady() {
   const [error, setError] = useState(null)
   const [readyCount, setReadyCount] = useState(null)
   const [requiredCount, setRequiredCount] = useState(null)
+
+  // 서버가 준 내 준비 기록 (새로고침 뒤 스냅샷에 실려 옴)
+  // 스토어는 날이 바뀌어도 이 칸을 안 지워서, 참으로 처음 본 날의 토론에서만 믿음 (다음 날 토론에 "준비 완료"로 남지 않게)
+  // 예: 1일 토론 중 새로고침 → 스냅샷 참 → 1일엔 "준비 완료", 2일 토론엔 다시 "투표 시작 준비"
+  const serverReady = useInGameStore((s) => s.state?.self?.isDayVoteReady === true)
+  const readyScopeKey = `${gameId ?? ""}:${dayIndex ?? ""}`
+  const [serverReadyScope, setServerReadyScope] = useState(null)
+  if (!serverReady && serverReadyScope !== null) setServerReadyScope(null)
+  if (serverReady && serverReadyScope === null && dayPhase === "DAY_DISCUSSION") setServerReadyScope(readyScopeKey)
+  const serverSaysReady = serverReady && dayPhase === "DAY_DISCUSSION" && serverReadyScope === readyScopeKey
 
   // 보내는 중·준비됨·요청 세대·화면 살아 있음 (같은 틱 안에서도 바로 보이게 ref)
   const sendingRef = useRef(false)
@@ -48,12 +59,14 @@ export function useInGameDayDiscussionReady() {
     setRequiredCount(null)
   }
 
-  // 연결이 끊기거나 소켓·판이 바뀌면 처음으로
+  // 연결이 끊기거나 소켓·판이 바뀌면 처음으로, 다시 붙으면 끊김 글만 지움
   useEffect(() => {
     if (!socket) return
     const offDisconnect = onDisconnect(socket, () => invalidate())
+    const offConnect = onConnect(socket, () => setError(null))
     return () => {
       offDisconnect()
+      offConnect()
       invalidate()
     }
   }, [socket, gameId])
@@ -63,13 +76,13 @@ export function useInGameDayDiscussionReady() {
     invalidate()
   }, [gameId, dayIndex, dayPhase])
 
-  // 준비 보내기 (이미 보내는 중·준비됨이면 막기)
+  // 준비 보내기 (이미 보내는 중·준비됨이면 막기, 서버 기록이 준비됨이어도 막기)
   const submitReady = () => {
-    if (sendingRef.current || readyRef.current) return
+    if (sendingRef.current || readyRef.current || serverSaysReady) return
     const requestSocket = getSocket()
-    // 연결 없으면 오류 문구, 판 없으면 안 보냄
+    // 연결 없으면 끊김 글만 남기고 안 보냄, 판 없으면 안 보냄
     if (!requestSocket || !requestSocket.connected) {
-      setError("서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.")
+      setError(ACTION_DISCONNECTED_TEXT)
       return
     }
     if (!gameId) return
@@ -128,7 +141,8 @@ export function useInGameDayDiscussionReady() {
   const serverOwnsProgress = serverProgress?.kind === "DAY_DISCUSSION"
 
   return {
-    status,
+    // 아직 안 누른 상태로 보여도 서버 기록이 준비됨이면 준비됨 (새로고침해도 "준비 완료" 유지)
+    status: status === "idle" && serverSaysReady ? "ready" : status,
     error,
     readyCount: serverOwnsProgress ? serverProgress.doneCount : readyCount,
     requiredCount: serverOwnsProgress ? serverProgress.requiredCount : requiredCount,

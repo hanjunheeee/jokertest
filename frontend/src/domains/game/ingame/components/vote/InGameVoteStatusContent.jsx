@@ -18,6 +18,8 @@ const OUTCOME_LABELS = Object.freeze({
   // 기권이 최다 득표 이상이라 재판 없이 밤 (2026-11-16 규칙)
   ABSTAIN_MAJORITY: "기권이 많아 재판 없음",
   ABSTAINED: "전원 기권",
+  // 뽑힌 사람이 그 순간 끊겨 있어 재판 없이 밤 (글이 없으면 영어 값이 그대로 보여서 넣음)
+  DEFENDANT_DISCONNECTED: "재판 대상의 연결이 끊겨 재판 없음",
 })
 
 export const INGAME_VOTE_STATUS_UNRESOLVED_LABEL = "집계 전"

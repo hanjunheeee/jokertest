@@ -125,12 +125,13 @@ export function useKickPlayerRequest({
       getMembershipScopeId,
     })
 
-    // 옛 응답은 버림, 응답 기한이 지나면 결과 모름(잠금은 그대로, 결과 확인으로 정함)
+    // 옛 요청의 응답은 버림, 응답 기한이 지나면 결과 모름(잠금은 그대로, 결과 확인으로 정함)
+    // 보낸 뒤 연결이 끊겨 소켓이 바뀌었어도 결과 모름: 그 답 내용은 안 믿되 "보내는 중"에 멈추지 않게
     // 성공이면 성공, 아니면 서버 코드로 실패 (잠금 풂)
     emitKick(socket, request, (response) => {
-      if (!isStillCurrent()) return
+      if (!isStillCurrent({ ignoreSocket: true })) return
 
-      if (response?.timedOut === true) {
+      if (response?.timedOut === true || !isStillCurrent()) {
         setPendingTarget(null)
         applyStatus(KICK_REQUEST_STATUS.UNKNOWN)
         setErrorCode(null)

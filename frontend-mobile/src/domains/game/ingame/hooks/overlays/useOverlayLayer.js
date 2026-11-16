@@ -15,7 +15,7 @@ import { useOverlayBridge } from "./overlayBridge.js"
 import { useDeadChoice } from "./useDeadChoice.js"
 
 // 화면 틀이 읽을 잠금·역할 다시 보기 값 넘김 (useOverlayLayer 맨 끝에서만 부름, 훅 순서 그대로)
-function usePublishOverlayState({ interactionBlocked, surfaceLocked, roleReveal }) {
+function usePublishOverlayState({ interactionBlocked, surfaceLocked, overlayOpen, roleReveal }) {
     const setOverlayState = useOverlayBridge((s) => s.setOverlayState)
     const roleRevealAvailable = Boolean(roleReveal.roleInfo)
     // reopen은 그릴 때마다 새 함수라 ref에 두고 고정 함수만 넘김 (틀 다시 그리기 → 무한 반복 막기)
@@ -26,12 +26,12 @@ function usePublishOverlayState({ interactionBlocked, surfaceLocked, roleReveal 
     const reopenRoleReveal = useCallback(() => reopenRef.current?.(), [])
     // 그리기 전에 넘김: 연출이 뜨는 첫 화면부터 판·채팅·행동이 잠김 (effect면 한 번 그린 뒤라 그 사이 누를 수 있었음)
     useLayoutEffect(() => {
-        setOverlayState({ interactionBlocked, surfaceLocked, roleRevealAvailable, reopenRoleReveal })
-    }, [interactionBlocked, surfaceLocked, roleRevealAvailable, reopenRoleReveal, setOverlayState])
+        setOverlayState({ interactionBlocked, surfaceLocked, overlayOpen, roleRevealAvailable, reopenRoleReveal })
+    }, [interactionBlocked, surfaceLocked, overlayOpen, roleRevealAvailable, reopenRoleReveal, setOverlayState])
 
     // 연출 층이 빠지면 잠금 풂
     useEffect(() => () => setOverlayState({
-        interactionBlocked: false, surfaceLocked: false, roleRevealAvailable: false, reopenRoleReveal: null,
+        interactionBlocked: false, surfaceLocked: false, overlayOpen: false, roleRevealAvailable: false, reopenRoleReveal: null,
     }), [setOverlayState])
 }
 
@@ -79,7 +79,11 @@ export function useOverlayLayer() {
     const surfaceLocked = interactionBlocked || nightPrivateResult.open || deadChoice.open
         || dawnReport.open || tribunalOpen || tribunalExpulsion.open
 
-    usePublishOverlayState({ interactionBlocked, surfaceLocked, roleReveal })
+    // 겹 창 닫는 신호: 화면이 잠기는 연출 + 밤 차례 안내 (밤 차례 안내는 화면을 안 잠그지만 "닫기" 단추가 시트에 가려짐)
+    // 죽은 사람의 단계 안내는 저절로 닫히고 잠그지 않아서 여기 안 들어감 (죽은 사람 채팅·시트를 안 끊음)
+    const overlayOpen = surfaceLocked || nightTurn.open
+
+    usePublishOverlayState({ interactionBlocked, surfaceLocked, overlayOpen, roleReveal })
 
     return {
         players: gameState?.players ?? [],

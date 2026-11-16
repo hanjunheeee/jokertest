@@ -1,9 +1,14 @@
-// 채팅 입력 줄: 데스크톱 틀 아래 입력 띠 그림 위에 입력칸 + 보내기, Enter 보내기·Shift+Enter 줄바꿈, 밤에 산 시민은 까닭 한 줄
+// 채팅 입력 줄: 데스크톱 틀 아래 입력 띠 그림 위에 입력칸 + 보내기, Enter 보내기·Shift+Enter 줄바꿈, 밤에 산 시민은 까닭 한 줄, 역할 확인 동안은 꺼짐
 // ChatPanel(넓은 배치)·TalkLayout(폰 세로 바닥 자리)·CloseupSheet가 씀, 보내기·검사·오류 문구는 데스크톱 채팅 세션 훅
 import { useEffect, useRef } from "react"
 import { useKeyboardLift } from "@m/domains/game/ingame/hooks/chat/useKeyboardLift.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
-import { isNightChatInputClosed, NIGHT_CHAT_CLOSED_TEXT } from "@/domains/game/ingame/utils/inGameChatChannel.js"
+import {
+    isNightChatInputClosed,
+    isRoleRevealChatLocked,
+    NIGHT_CHAT_CLOSED_TEXT,
+    ROLE_REVEAL_CHAT_LOCKED_TEXT,
+} from "@/domains/game/ingame/utils/inGameChatChannel.js"
 import FrameSlice from "./FrameSlice.jsx"
 import SendButton from "./SendButton.jsx"
 import StatusLine from "./StatusLine.jsx"
@@ -33,6 +38,8 @@ export default function Composer({
     const keyboardLift = useKeyboardLift(barRef, lift)
     // 밤에 산 시민은 보낼 채널이 없음 → 입력칸 닫음 (서버도 거절)
     const closed = useInGameStore((s) => isNightChatInputClosed(s.state))
+    // 역할 확인 10초 동안은 채팅을 못 씀 → 입력칸·보내기를 끔 (PC와 같음)
+    const roleRevealLocked = useInGameStore((s) => isRoleRevealChatLocked(s.state))
 
     // 잠기면 치던 키보드도 내림
     useEffect(() => {
@@ -41,7 +48,7 @@ export default function Composer({
 
     // 보낸 뒤에도 초점 유지 (키보드 그대로), 못 보낼 때 거르기는 세션 훅이 함
     const send = () => {
-        if (locked || closed) return
+        if (locked || closed || roleRevealLocked) return
         onSend()
         textareaRef.current?.focus({ preventScroll: true })
     }
@@ -80,12 +87,13 @@ export default function Composer({
                                 onKeyDown={handleKeyDown}
                                 enterKeyHint="send"
                                 autoComplete="off"
-                                placeholder="TYPE HERE..."
+                                placeholder={roleRevealLocked ? ROLE_REVEAL_CHAT_LOCKED_TEXT : "TYPE HERE..."}
                                 aria-label="채팅 입력"
                                 className={TEXTAREA_CLASS}
+                                disabled={roleRevealLocked}
                             />
                         </div>
-                        <SendButton onSend={send} />
+                        <SendButton onSend={send} disabled={roleRevealLocked} />
                     </>
                 )}
             </div>

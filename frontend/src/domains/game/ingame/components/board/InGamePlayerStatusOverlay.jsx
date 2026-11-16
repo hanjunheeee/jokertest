@@ -7,13 +7,8 @@ import {
   STATUS_VISUALS,
   isStatusActive,
 } from "../../../shared/constants/ingamePlayerStatus.js"
+import { INGAME_PLAYER_STATUS_TEXT as STATUS_TEXT } from "../../constants/board/ingamePlayerStatusText.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-
-// 화면 읽기용 상태 이름 (그림만으로는 상태를 모르니)
-const STATUS_TEXT = Object.freeze({
-  dead: "사망",
-  disconnected: "연결 끊김",
-})
 
 // 생존이면 안 그림, 죽음·연결 끊김은 초상 어둡게 + 배지 + 숨김 글자
 export default function InGamePlayerStatusOverlay({ status }) {

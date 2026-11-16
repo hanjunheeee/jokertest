@@ -8,7 +8,7 @@ import { dispatchSfxEvent } from "../../../../shared/hooks/useSfxRuntime.js"
 import { createDayVoteSubmitController } from "../utils/createDayVoteSubmitController.js"
 import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/voteSubmitPatch.js"
 import { getDayVoteRound } from "../utils/dayVoteRound.js"
-import { onDisconnect } from "../socket/connection.js"
+import { onConnect, onDisconnect } from "../socket/connection.js"
 import { emitDayVote } from "../socket/day.js"
 
 // 제출 효과음: 보낸 판·날짜·회차·소켓·본인이 그대로이고 살아 있을 때만
@@ -76,6 +76,7 @@ export function useInGameDayVoteSubmit() {
 
     const controller = createDayVoteSubmitController({
       emitWithAck: (payload) => emitDayVote(socket, payload),
+      isConnected: () => socket.connected === true,
       onStateChange: setState,
       onAccepted: (sfxEvent, requestScope) => playSubmitSfx(sfxEvent, requestScope, socket),
     })
@@ -95,12 +96,14 @@ export function useInGameDayVoteSubmit() {
     controllerRef.current?.invalidate("CONTEXT_CHANGE")
   }, [gameId, phase, dayIndex, dayVoteRound])
 
-  // 연결 끊기면 진행 중 제출 버림
+  // 연결 끊기면 진행 중 제출 버림, 다시 붙으면 끊김 글이 남지 않게 처음으로
   useEffect(() => {
     if (!socket) return undefined
     const offDisconnect = onDisconnect(socket, () => controllerRef.current?.invalidate("DISCONNECT"))
+    const offConnect = onConnect(socket, () => controllerRef.current?.invalidate("RECONNECT"))
     return () => {
       offDisconnect()
+      offConnect()
     }
   }, [socket])
 

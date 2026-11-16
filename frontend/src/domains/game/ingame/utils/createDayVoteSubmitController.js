@@ -1,12 +1,14 @@
 // 낮 투표 제출 컨트롤러: 한 번에 하나만 보내고, 시간 초과·옛 응답을 걸러 상태를 정함
 // 낮 투표 훅(useInGameDayVoteSubmit)이 사용, 보내기 함수는 훅이 넘김 (socket/day.js)
 import { computeDayVoteSubmitPatch, INITIAL_DAY_VOTE_SUBMIT_STATE } from "./voteSubmitPatch.js"
+import { ACTION_DISCONNECTED_TEXT } from "../constants/actions/ingameActionPanel.js"
 
 // 응답 기다리는 시간 (넘으면 시간 초과 문구)
 export const ACK_TIMEOUT_MS = 5000
 
 // 컨트롤러 만들기 (상태는 안에 들고, 바뀔 때마다 onStateChange로 알림)
-export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIMEOUT_MS, onStateChange, onAccepted }) {
+// isConnected: 지금 연결돼 있는지 묻는 함수 (안 주면 늘 연결된 것으로 봄)
+export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIMEOUT_MS, onStateChange, onAccepted, isConnected }) {
   let state = INITIAL_DAY_VOTE_SUBMIT_STATE
   let submitting = false
   let generation = 0
@@ -36,6 +38,12 @@ export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIM
     submit({ gameId, dayIndex, targetId }) {
       if (disposed) return
       if (submitting) return
+
+      // 끊긴 채 누르면 안 보내고 끊김 글만 남김 (끊긴 소켓에 실으면 다시 붙을 때 옛 표가 나감), 전에 낸 표는 그대로
+      if (typeof isConnected === "function" && isConnected() !== true) {
+        setState({ ...state, status: "idle", error: { code: "SOCKET_DISCONNECTED", message: ACTION_DISCONNECTED_TEXT } })
+        return
+      }
 
       submitting = true
       generation += 1

@@ -1,4 +1,4 @@
-// 판 진행 이벤트 손잡이 (밤): 밤 결과 적용(낮 시작 연출 같이)·개인 결과·차례
+// 판 진행 이벤트 손잡이 (밤): 밤 결과 적용(낮 시작 연출 같이)·개인 결과·차례·행동 판정 끝
 // 판 진행 이벤트 훅(useGameSessionSocketEvents)이 구독 붙일 때마다 새로 만듦
 import { useInGameStore } from "../../store/ingameStore.js"
 import { parseNightResultAppliedPayload } from "../../utils/parseNightResultAppliedPayload.js"
@@ -94,9 +94,23 @@ export function createNightHandlers(registered) {
     useInGameStore.getState().applyNightTurnEnded(parsed)
   }
 
+  // 밤 행동 판정 끝: 아직 열린 차례가 있으면 닫음 (차례 끝 알림을 놓쳤어도 판정 뒤엔 못 고르게)
+  // 지금 판·지금 날짜 알림만 받음, 닫기는 차례 끝과 같은 스토어 동작을 씀
+  const nightActionsResolved = (payload) => {
+    if (!isCurrent()) return
+    const current = useInGameStore.getState()
+    if (!current.gameId || !current.state) return
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return
+    if (payload.gameId !== current.gameId || payload.dayIndex !== current.state.dayIndex) return
+    const openRole = current.state.nightTurnRole
+    if (typeof openRole !== "string") return
+    useInGameStore.getState().applyNightTurnEnded({ gameId: current.gameId, dayIndex: current.state.dayIndex, role: openRole })
+  }
+
   return {
     nightResultApplied,
     nightActionResult,
+    nightActionsResolved,
     nightTurnStarted,
     nightTurnEnded,
   }

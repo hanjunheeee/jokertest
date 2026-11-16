@@ -14,6 +14,8 @@ const SESSION_EVENTS = [
   ["game_phase_changed", "phaseChanged"],
   ["night_result_applied", "nightResultApplied"],
   ["night_action_result", "nightActionResult"],
+  // 밤 행동 판정 끝 (차례 끝 알림을 놓쳐도 고르기를 끄게)
+  ["night_actions_resolved", "nightActionsResolved"],
   ["day_vote_resolved", "dayVoteResolved"],
   ["day_phase_changed", "dayPhaseChanged"],
   ["session_player_connection_changed", "playerConnectionChanged"],

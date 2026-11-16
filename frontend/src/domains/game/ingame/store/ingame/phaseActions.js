@@ -27,6 +27,16 @@ function mergeAlive(players, aliveByUuid, killedUuids = new Set()) {
   })
 }
 
+// 새 낮이 되면 지난 날 토론의 내 "투표 준비" 기록 지우기 조각 (지울 게 없으면 빈 조각)
+// 안 지우면 다음 날 토론에 준비됨으로 남음 (내 진행 알림·스냅샷만 값을 넣고 아무도 안 지웠음)
+function clearDayVoteReady(state) {
+  const self = state?.self
+  if (!self || !Object.hasOwn(self, "isDayVoteReady")) return {}
+  const next = { ...self }
+  delete next.isDayVoteReady
+  return { self: next }
+}
+
 // 밤 결과 → 낮 시작 연출 (그 밤 날짜·넣기 전 명단으로 닉네임 찾음)
 function readDawnReport(current, payload) {
   return buildDawnReport({
@@ -124,7 +134,9 @@ export const phaseActions = (set) => ({
       const aliveByUuid = new Map(payload.players.map((p) => [p.uuid, p.alive]))
       const dawnReport = readDawnReport(current, payload)
       // 지난 날 내 낮 표·재판 표 기록도 지움 (안 지우면 둘째 날 기권 버튼·재판 단추가 잠김)
-      const stateWithoutVote = { ...current.state, ...clearLastDaySubmissions(current.state) }
+      // 지난 날 내 투표 준비 기록도 지움 (안 지우면 둘째 날 토론에 준비됨으로 남음)
+      const stateWithoutLastVote = { ...current.state, ...clearLastDaySubmissions(current.state) }
+      const stateWithoutVote = { ...stateWithoutLastVote, ...clearDayVoteReady(stateWithoutLastVote) }
       return {
         state: {
           ...stateWithoutVote,

@@ -89,7 +89,7 @@ export const INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET = mapFrameInsetToLayoutBox(
 
 // 크게 보기 글자·입력 높이·여백·보내기 버튼 모양
 export const CLOSEUP_TEXT_TYPOGRAPHY_CLASS =
-  "font-subheading text-[clamp(0.95rem,4.15cqi,1.28rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+  "font-subheading text-[clamp(0.95rem,4.15cqi,1.28rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
 
 export const CLOSEUP_INPUT_SINGLE_LINE_HEIGHT_CLASS =
   "max-h-[clamp(1.28rem,5.6cqi,1.75rem)]"

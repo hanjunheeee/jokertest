@@ -8,8 +8,9 @@ const ROLE_REVEAL_DISPLAY = Object.freeze({
     teamLabel: "광대 진영",
     description: "밤마다 한 명을 지목해 처치할 수 있습니다. 낮에는 정체를 들키지 않도록 시민인 척 행동하세요.",
   }),
+  // 시민 직업의 화면 이름은 "귀족"으로 통일 (사용자 결정 2026-11-16, 진영 이름 "시민 진영"은 그대로)
   CITIZEN: Object.freeze({
-    name: "시민",
+    name: "귀족",
     teamLabel: "시민 진영",
     description: "특별한 능력은 없습니다. 낮 토론과 투표로 광대를 찾아내야 합니다.",
   }),

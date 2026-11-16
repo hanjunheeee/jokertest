@@ -44,15 +44,15 @@ export const EXPANDED_ARROW_SIZE_CLASS =
 export const NODE_ACTIVE_CLASS =
   "brightness-110 drop-shadow-[0_0_10px_rgba(212,168,67,0.85)]"
 
-// 상태 글·날짜 글 (확대 틀 날짜는 조금 크게)
+// 상태 글·날짜 글 (확대 틀 날짜는 조금 크게, 날짜는 갈색 판 위라 짙은 갈색도 흐려 검정)
 export const INGAME_TIMEBAR_STATUS_CLASS =
   "pointer-events-none self-end truncate text-right font-subheading text-[clamp(0.82rem,4.1cqi,1.05rem)] font-bold leading-none tracking-wide text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const DAY_LABEL_CLASS =
-  "pointer-events-none text-center font-subheading text-[clamp(0.62rem,3.35cqi,0.9rem)] font-bold leading-none tracking-wide text-[#2a1810] [text-shadow:0_1px_0_rgba(255,255,255,0.35)]"
+  "pointer-events-none text-center font-subheading text-[clamp(0.62rem,3.35cqi,0.9rem)] font-bold leading-none tracking-wide text-black [text-shadow:0_1px_0_rgba(255,255,255,0.35)]"
 
 export const EXPANDED_DAY_LABEL_CLASS =
-  "pointer-events-none text-center font-subheading text-[clamp(0.68rem,3.62cqi,0.96rem)] font-bold leading-none tracking-wide text-[#2a1810] [text-shadow:0_1px_0_rgba(255,255,255,0.35)]"
+  "pointer-events-none text-center font-subheading text-[clamp(0.68rem,3.62cqi,0.96rem)] font-bold leading-none tracking-wide text-black [text-shadow:0_1px_0_rgba(255,255,255,0.35)]"
 
 // 틀 오른쪽 위 확대 버튼, 올리면 크게·밝게·금빛 (기본 눌림 효과보다 잘 보이게)
 export const INGAME_TIMEBAR_EXPAND_BTN_CLASS =

@@ -8,6 +8,7 @@ import {
   OVERLAY_BTN_CLASS,
   OVERLAY_BTN_IMG_CLASS,
   OVERLAY_BTN_LABEL_CLASS,
+  OVERLAY_REASON_CLASS,
   OVERLAY_SCRIM_CLASS,
   OVERLAY_WRAP_CLASS,
 } from "../../constants/board/ingamePlayerCardOverlayLayout.js"
@@ -31,15 +32,18 @@ function resolveOverlayButtonAsset(kind) {
   return PLAYER_CARD_OVERLAY_ASSETS.confirmButton
 }
 
-// 그림 버튼 하나, 못 누를 땐 이유를 title과 숨김 글자로 같이 줌 (화면 읽기·키보드도 이유를 알게)
-function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason = null, onClick }) {
+// 그림 버튼 하나, 못 누를 땐 이유를 버튼 아래 보이는 글 한 줄로 (모바일 시트와 같음, 꺼진 버튼은 흐려서 글을 버튼 밖에 둠)
+// 화면 읽기엔 버튼 설명(숨김 글자)으로 한 번만 읽히게 보이는 줄은 읽기에서 뺌, title은 마우스 올림용 그대로
+// readingName: 화면 읽기용 이름 (안 주면 보이는 글과 같음)
+function OverlayImageButton({ label, readingName = label, assetSrc, disabled = false, disabledReason = null, onClick }) {
   const reasonId = useId()
   const showReason = disabled && Boolean(disabledReason)
   return (
+    <>
     <button
       type="button"
       role="menuitem"
-      aria-label={label}
+      aria-label={readingName}
       aria-describedby={showReason ? reasonId : undefined}
       title={showReason ? disabledReason : undefined}
       className={`${OVERLAY_BTN_CLASS} ${FOCUS_RING_CLASS}`}
@@ -50,11 +54,22 @@ function OverlayImageButton({ label, assetSrc, disabled = false, disabledReason 
       <span className={OVERLAY_BTN_LABEL_CLASS}>{label}</span>
       {showReason ? <span id={reasonId} className="sr-only">{disabledReason}</span> : null}
     </button>
+    {showReason ? (
+      <p aria-hidden="true" className={OVERLAY_REASON_CLASS} data-ingame-card-menu-reason="">{disabledReason}</p>
+    ) : null}
+    </>
   )
 }
 
+// 밤 행동 버튼의 읽기 이름: 대상 이름을 앞에 붙임 (화면 읽기 프로그램이 누구에게 하는지 알게, 보이는 글은 그대로)
+// 예: ("민수", "암살") → "민수 암살", ("민수 · 동료 의사", "보호") → "민수 · 동료 의사 보호"
+function nightReadingName(targetName, label) {
+  return targetName ? `${targetName} ${label}` : label
+}
+
 // 보이는 항목만 버튼으로, 바깥 누름·Esc 닫기는 카드 메뉴 훅이 맡음
-export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
+// targetName: 이 카드 사람 이름 (동료면 "민수 · 동료 의사")
+export default function InGamePlayerCardMenu({ items = [], targetName = "", onClose, menuRef }) {
   const visibleItems = items.filter((item) => item.visible !== false)
   // 낮 투표·밤 행동 항목이 있으면 따로 취소 버튼 안 붙임
   const hasSingleCardAction = visibleItems.some(
@@ -80,6 +95,9 @@ export default function InGamePlayerCardMenu({ items = [], onClose, menuRef }) {
           <OverlayImageButton
             key={item.kind}
             label={item.label}
+            readingName={
+              item.kind === INGAME_CARD_MENU_ITEM_KINDS.NIGHT_ACTION ? nightReadingName(targetName, item.label) : item.label
+            }
             assetSrc={resolveOverlayButtonAsset(item.kind)}
             disabled={!item.enabled}
             disabledReason={item.disabledReason}

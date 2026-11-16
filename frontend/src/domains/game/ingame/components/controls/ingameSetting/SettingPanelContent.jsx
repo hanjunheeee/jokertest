@@ -6,25 +6,20 @@ import {
   SCROLL_WRAP_CLASS,
   SETTING_FOOTER_ACTIONS_WRAP_CLASS,
 } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
-import { useInGameSettingIsHost } from "../../../hooks/useInGameSettingIsHost.js"
 import { useInGameSettingPanel } from "../../../hooks/useInGameSettingPanel.js"
 import SettingChatTab from "./SettingChatTab.jsx"
 import SettingRoomCodeButton from "./SettingRoomCodeButton.jsx"
 import SettingTimerPlacementButton from "./SettingTimerPlacementButton.jsx"
-import SettingRoomTab from "./SettingRoomTab.jsx"
 import SettingSoundTab from "./SettingSoundTab.jsx"
 import SettingTabs from "./SettingTabs.jsx"
 import SidePanelHeader from "../SidePanelHeader.jsx"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
-// 고른 탭 본문 하나만 그림 (채팅·방관리 아니면 사운드)
+// 고른 탭 본문 하나만 그림 (채팅 아니면 사운드)
 function SettingTabPanel({
   activeTab, volumes, onVolumeChange, sfxMuted, onSfxMutedChange,
 }) {
   if (activeTab === "chat") return <SettingChatTab />
-  if (activeTab === "room") {
-    return <SettingRoomTab />
-  }
   return (
     <SettingSoundTab
       volumes={volumes}
@@ -36,16 +31,15 @@ function SettingTabPanel({
 }
 
 
-// 방장일 때만 방관리 탭이 보임 (useInGameSettingIsHost로 봄)
+// 탭은 채팅·사운드 둘 (방장·방장 아님 같음)
 export default function SettingPanelContent({
   onOpenRoomCode,
   timerPlacement,
   onCycleTimerPlacement,
 }) {
   const scrollRef = useRef(null)
-  const isHost = useInGameSettingIsHost()
   const { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted } =
-    useInGameSettingPanel({ isHost })
+    useInGameSettingPanel()
 
   // 탭 본문은 스크롤 칸 안, 방 코드 버튼은 칸 밖 아래에 고정
   return (

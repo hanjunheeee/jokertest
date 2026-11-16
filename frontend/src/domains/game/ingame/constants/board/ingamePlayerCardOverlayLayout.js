@@ -20,3 +20,8 @@ export const OVERLAY_BTN_IMG_CLASS =
 
 export const OVERLAY_BTN_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[10%] pb-[3%] font-subheading text-[clamp(0.68rem,4.2cqw,0.88rem)] font-bold leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+
+// 꺼진 버튼 아래 까닭 글 한 줄 (어두운 막 위 밝은 글자, 전역 p 색에 안 묻히게 색을 줄에 직접 줌)
+// 글 뒤 어두운 바탕 따로 깖: 밝은 카드 그림 위에서도 대비 4.5 넘게 (흰 그림 위 약 10:1)
+export const OVERLAY_REASON_CLASS =
+  "pointer-events-none self-center rounded-sm bg-black/55 px-[0.5em] py-[0.15em] text-center font-subheading text-[clamp(0.6rem,3.6cqw,0.78rem)] font-bold leading-snug text-[#f5e8c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"

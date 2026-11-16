@@ -1,4 +1,4 @@
-// 설정 창 항목 값 (소리·채팅·방)
+// 설정 창 항목 값 (소리·채팅), 방관리 탭은 없앰 (사용자 결정 2026-11-16)
 // 설정 탭·채팅 줄·모바일 설정 탭이 같이 씀
 export { SOUND_SETTING_VOLUMES as INGAME_SETTING_SOUND_VOLUMES } from "../../../../../../shared/constants/soundSettings.js"
 
@@ -10,13 +10,7 @@ export const INGAME_SETTING_SFX_MUTE = {
 export const INGAME_SETTING_TABS = [
   { id: "chat", label: "채팅" },
   { id: "sound", label: "사운드" },
-  { id: "room", label: "방관리", hostOnly: true },
 ]
-
-export const PREVIEW_AS_HOST = false
-
-// 방관리 탭 안내 (판이 끝나면 늘 같은 방으로 돌아가 유지 스위치가 필요 없음)
-export const INGAME_SETTING_ROOM_NOTICE = "게임이 끝나면 같은 방 코드·같은 설정으로 대기방이 다시 열립니다."
 
 export const INGAME_SETTING_DEFAULT_TAB = "chat"
 

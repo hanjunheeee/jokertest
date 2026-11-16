@@ -1,7 +1,6 @@
 // 행동 패널 훅 입구: 밤 행동·낮 준비/투표·재판 투표 요청 훅을 모아 한 값으로 냄
 // 조작 Provider(InGameActionProvider)·모바일 ActionProvider가 컨텍스트 값으로 씀 (판정은 표가 다 차면 서버가 5초 뒤 함)
 import { useCallback, useMemo, useState } from "react"
-import { getSocket } from "../../../../shared/socket/socketClient.js"
 import {
   getInGameNightActionLabel,
   getInGameNightActionType,
@@ -63,7 +62,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const dayReady = useInGameDayDiscussionReady()
   const tribunalVoteSubmit = useInGameTribunalVoteSubmit()
 
-  // 밤 차례·요청 상태·연결을 모아 버튼 잠금 한 번에 계산 (utils/actionPanelLocks.js)
+  // 밤 차례·요청 상태를 모아 버튼 잠금 한 번에 계산 (utils/actionPanelLocks.js)
   // 표가 다 차 마감이 5초 뒤로 당겨져도 잠그지 않음 (그동안 낮 표·밤 대상 바꾸기 됨)
   const nightTurnRole = selectInGameNightTurnRole(gameState ?? null)
   const isNightTurnActor = isInGameNightTurnActor(nightTurnRole, myRole)
@@ -77,7 +76,6 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     isNightTurnActor,
     dayReadyStatus: dayReady.status,
     tribunalVoteSubmit,
-    connected: Boolean(getSocket()?.connected),
   })
 
   // 고른 대상으로 투표, 기권은 null

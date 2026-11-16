@@ -4,6 +4,7 @@ import { getSocket } from "@/shared/socket/socketClient.js"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { readInGameReceiptScope, useInGameStore } from "../../store/ingameStore.js"
 import { EXIT_STATUS } from "../../constants/ingameExit.js"
+import { isSessionGoneResponse } from "../../utils/sessionEnd.js"
 import { askSnapshot } from "../../socket/session.js"
 import { isRequestScopeCurrent } from "./scope.js"
 import { startPending } from "./leave.js"
@@ -56,9 +57,10 @@ export function lookupExitOutcome(ctx) {
       if (now.socketConnected !== requestedScope.socketConnected) return
 
       // 판에서 빠졌으면 나가기 끝, 아직 참여 중이면 실패, 그 밖엔 결과 모름
+      // 빠졌는지는 스냅샷 맞추기와 같은 기준으로 봄 (탈락뿐 아니라 판 없음·그 판에 없음도 나간 것, 안 그러면 화면에 판이 남음)
       ctx.pendingRef.current = false
       ctx.clearTimer()
-      if (response?.ok === false && response?.code === "FORFEITED_FROM_SESSION") {
+      if (isSessionGoneResponse(response)) {
         ctx.settle()
         return
       }

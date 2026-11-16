@@ -1,7 +1,7 @@
-// 스냅샷의 낮 마감 시각·밤 차례 타이머·재판 마감 검사 (순수 계산, 새로고침 뒤 타이머 이어 가기용)
+// 스냅샷의 낮 마감 시각·밤 차례 타이머·재판 마감·5초 당김 표시 검사 (순수 계산, 새로고침 뒤 타이머 이어 가기용)
 // 틀리면 BAD (utils/snapshot/applySnapshot.js가 사용)
 import { KNOWN_NIGHT_TURN_ROLES } from "../nightTurn.js"
-import { BAD } from "./checks.js"
+import { BAD, isPlainObject } from "./checks.js"
 
 const EMPTY_NIGHT_TURN = Object.freeze({ nightTurnRole: null, nightTurnDeadline: null })
 
@@ -49,11 +49,30 @@ function readTribunalDeadline(response, currentState) {
   return null
 }
 
-// 낮 마감 시각 + 밤 차례 역할·마감 + 재판 마감 (하나라도 틀리면 BAD)
+// 5초 당김이 있는 단계와 그 단계 마감 칸 (서버가 표시의 deadline을 이 칸과 같은 값으로 실음)
+const SETTLE_DEADLINE_KEYS = Object.freeze({ DAY: "dayPhaseDeadline", TRIBUNAL: "tribunalDeadline", NIGHT: "nightTurnDeadline" })
+
+// 5초 당김 표시: 지금 단계·날짜·밤 차례 직업·마감과 다 같을 때만 받음 (새로고침해도 "[5초 뒤 마감]" 글·시간 바 펼침이 살아남게)
+// 없거나 안 맞으면 null, 그 칸만 버림 (스냅샷 전체를 버리진 않음)
+// 예: { phase: "NIGHT", dayIndex: 2, role: "JOKER", deadline: 1763280005000 } (낮·재판은 role null)
+function readPhaseSettle(response, timer) {
+  const raw = response.phaseSettle
+  if (!isPlainObject(raw)) return null
+  if (!Object.hasOwn(SETTLE_DEADLINE_KEYS, raw.phase) || raw.phase !== response.phase) return null
+  if (raw.dayIndex !== response.dayIndex) return null
+  if (raw.phase === "DAY" && response.dayPhase !== "DAY_VOTE") return null
+  const role = raw.phase === "NIGHT" ? raw.role : null
+  if (raw.phase === "NIGHT" && (typeof role !== "string" || role !== timer.nightTurnRole)) return null
+  if (!Number.isFinite(raw.deadline) || raw.deadline !== timer[SETTLE_DEADLINE_KEYS[raw.phase]]) return null
+  return { phase: raw.phase, dayIndex: raw.dayIndex, role, deadline: raw.deadline }
+}
+
+// 낮 마감 시각 + 밤 차례 역할·마감 + 재판 마감 (하나라도 틀리면 BAD) + 5초 당김 표시(없으면 null)
 export function readTimerFields(response, currentState) {
   const dayPhaseDeadline = readDayPhaseDeadline(response)
   if (dayPhaseDeadline === BAD) return BAD
   const nightTurn = readNightTurnTimer(response, currentState)
   if (nightTurn === BAD) return BAD
-  return { dayPhaseDeadline, ...nightTurn, tribunalDeadline: readTribunalDeadline(response, currentState) }
+  const timer = { dayPhaseDeadline, ...nightTurn, tribunalDeadline: readTribunalDeadline(response, currentState) }
+  return { ...timer, phaseSettle: readPhaseSettle(response, timer) }
 }

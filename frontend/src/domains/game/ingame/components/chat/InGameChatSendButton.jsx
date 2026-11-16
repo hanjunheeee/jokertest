@@ -9,18 +9,20 @@ import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
 
-// 누르면 onSend, 크기·자리는 variant별 모양값
+// 누르면 onSend, 크기·자리는 variant별 모양값 (disabled면 꺼지고 흐리게)
 export default function InGameChatSendButton({
   onSend,
   className = "",
+  disabled = false,
 }) {
   const variant = useChatVariant()
 
   return (
     <button
       type="button"
-      className={`${getSendBtnClass(variant)} ${className} ${INGAME_FOCUS_RING_CLASS}`.trim()}
+      className={`${getSendBtnClass(variant)} ${className} ${INGAME_FOCUS_RING_CLASS} disabled:cursor-not-allowed disabled:opacity-45`.trim()}
       aria-label="채팅 보내기"
+      disabled={disabled}
       onClick={onSend}
     >
       <PublicAsset

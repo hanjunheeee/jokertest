@@ -15,13 +15,15 @@ const SINGLE_ACTION_KINDS = new Set([KINDS.DAY_VOTE, KINDS.DAY_VOTE_CANCEL, KIND
 // 버튼 줄은 데스크톱처럼 위아래로 쌓음 (OVERLAY_ACTIONS_CLASS와 같은 방향)
 const ACTIONS_CLASS = "mx-auto flex w-full max-w-[16rem] flex-col items-stretch gap-y-2"
 
-// player가 없으면 닫힌 시트, 제목은 어느 카드인지 알리는 이름
-export default function CardSheet({ player, items, onClose, panelRef }) {
+// player가 없으면 닫힌 시트, 제목은 어느 카드인지 알리는 이름 (같은 직업 동료면 "민수 · 동료 의사")
+export default function CardSheet({ player, allyLabel = null, items, onClose, panelRef }) {
     const visibleItems = items.filter((item) => item.visible !== false)
     const showCancel = !visibleItems.some((item) => SINGLE_ACTION_KINDS.has(item.kind))
+    const nickname = player?.nickname ?? ""
+    const title = allyLabel && nickname ? `${nickname} · ${allyLabel}` : nickname
 
     return (
-        <Sheet open={player !== null} title={player?.nickname ?? ""} onClose={onClose} panelRef={panelRef} {...{ [MENU_ATTR]: "true" }}>
+        <Sheet open={player !== null} title={title} onClose={onClose} panelRef={panelRef} {...{ [MENU_ATTR]: "true" }}>
             <div role="menu" aria-label="플레이어 행동" className={ACTIONS_CLASS}>
                 {visibleItems.map((item) => (
                     <MenuButton

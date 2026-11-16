@@ -1,4 +1,4 @@
-// 이모티콘 범위(계정·신원 세대·판) 고르기와 범위 키 만들기
+// 이모티콘 범위(계정·신원 세대·판) 고르기와 범위 키 만들기, 이모티콘을 쓸 수 있는 때(낮) 보기
 // 판 보드·이모티콘 보내기 훅·이모티콘 팔레트 스토어(user)가 사용
 import { useAuthStore } from "../../../auth/store/auth.store.js"
 import { useInGameStore } from "../store/ingameStore.js"
@@ -19,6 +19,12 @@ export function selectInGameEmojiScope(inGame, authUuid, identityGeneration) {
   if (selfRow.isParticipating === false) return null
 
   return { accountId: authUuid, identityGeneration: identityGeneration ?? null, gameId }
+}
+
+// 이모티콘을 쓸 수 있는 때: 낮(토론·투표)에만 (역할 확인·재판·밤·판 끝은 안 됨, 서버도 낮이 아니면 거절)
+// 범위(위)는 판 내내 같게 두고 따로 봄: 범위를 단계마다 비우면 팔레트를 날마다 다시 받아 오게 됨
+export function isInGameEmojiPhase(state) {
+  return state?.phase === "DAY"
 }
 
 // 스토어 지금 값으로 범위 읽기 (요청 전후 비교용)

@@ -17,10 +17,11 @@ const PHASE_ACTION_ROW_CLASS = `justify-end ${BTN_ROW_CLASS}`
 // 상태별 버튼 글자, 표에 없으면 기본 글자
 const DAY_READY_LABELS = new Map([["sending", DAY_VOTE_READY_SENDING_LABEL], ["ready", DAY_VOTE_READY_DONE_LABEL]])
 
-// 지금 단계에 맞는 버튼 목록 (낮 토론일 때만 준비 버튼)
+// 지금 단계에 맞는 버튼 목록 (낮 토론일 때만 준비 버튼, 죽은 사람은 준비할 일이 없어 안 그림)
 function buildPhaseActions(ctx) {
   const phase = ctx.gameState?.phase ?? null
   if (phase !== "DAY" || ctx.dayPhase !== "DAY_DISCUSSION") return []
+  if (ctx.selfAliveForControls === false) return []
   return [{
     action: INGAME_PHASE_ACTIONS.DAY_READY,
     label: DAY_READY_LABELS.get(ctx.dayReadyStatus) ?? DAY_VOTE_READY_LABEL,

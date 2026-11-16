@@ -2,8 +2,8 @@
 // 이모지 팔레트(InGameEmojiPalette)가 사용, 보내기는 socket/session.js를 부름
 import { useCallback } from "react"
 import { getSocket } from "../../../../shared/socket/socketClient.js"
-import { isSameReceiptScope, readInGameReceiptScope } from "../store/ingameStore.js"
-import { inGameEmojiScopeKey, readEmojiScope } from "../utils/selectInGameEmojiScope.js"
+import { isSameReceiptScope, readInGameReceiptScope, useInGameStore } from "../store/ingameStore.js"
+import { inGameEmojiScopeKey, isInGameEmojiPhase, readEmojiScope } from "../utils/selectInGameEmojiScope.js"
 import { emitEmoji } from "../socket/session.js"
 
 // 보내기 결과 코드: 못 보냄·응답 실패·옛 범위
@@ -23,6 +23,8 @@ export function useInGameEmojiSend() {
 
     const requestScope = readEmojiScope()
     if (requestScope === null) return { ok: false, code: SEND_UNAVAILABLE }
+    // 낮이 아니면 안 보냄 (열려 있던 팔레트에서 늦게 눌러도 안 나가게)
+    if (!isInGameEmojiPhase(useInGameStore.getState().state)) return { ok: false, code: SEND_UNAVAILABLE }
 
     const requestSocket = getSocket()
     if (!requestSocket || requestSocket.connected !== true || typeof requestSocket.emitWithAck !== "function") {

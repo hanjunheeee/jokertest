@@ -32,7 +32,7 @@ export default function MessageRow({ message, themeStyles, nicknameColor, showTi
 
     return (
         <li className={`${MSG_ROW_CLASS} max-w-full`}>
-            {time ? <span className={`shrink-0 opacity-60 ${TEXT_CLASS}`}>{time}</span> : null}
+            {time ? <span className={`shrink-0 ${TEXT_CLASS}`}>{time}</span> : null}
             <span className={`shrink-0 ${TEXT_CLASS} ${colorClass}`.trim()} style={colorStyle}>
                 {message.senderName}:
             </span>

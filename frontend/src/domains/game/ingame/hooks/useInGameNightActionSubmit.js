@@ -6,8 +6,10 @@ import { useInGameStore } from "../store/ingameStore.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
 import { computeRoleRevealInvalidatePatch } from "../utils/roleReveal.js"
 import { computeNightActionSubmitPatch } from "../utils/nightPatches.js"
-import { onDisconnect } from "../socket/connection.js"
+import { onConnect, onDisconnect } from "../socket/connection.js"
 import { emitNightAction } from "../socket/night.js"
+import { ACTION_DISCONNECTED_TEXT } from "../constants/actions/ingameActionPanel.js"
+import { selectInGameNightTurnRole } from "../utils/nightTurn.js"
 
 // 제출 응답 기다리는 시간
 const SUBMIT_TIMEOUT_MS = 5000
@@ -17,6 +19,7 @@ export function useInGameNightActionSubmit() {
   const gameId = useInGameStore((s) => s.gameId)
   const phase = useInGameStore((s) => s.state?.phase)
   const dayIndex = useInGameStore((s) => s.state?.dayIndex)
+  const nightTurnRole = useInGameStore((s) => selectInGameNightTurnRole(s.state ?? null))
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
 
   const [status, setStatus] = useState("idle")
@@ -49,12 +52,14 @@ export function useInGameNightActionSubmit() {
     setLastSubmittedTargetId(null)
   }
 
-  // 연결 끊기거나 소켓 바뀌면 처음으로
+  // 연결 끊기거나 소켓 바뀌면 처음으로, 다시 붙으면 끊김 글만 지움
   useEffect(() => {
     if (!socket) return
     const offDisconnect = onDisconnect(socket, () => invalidate())
+    const offConnect = onConnect(socket, () => setError(null))
     return () => {
       offDisconnect()
+      offConnect()
       invalidate()
     }
   }, [socket])
@@ -64,13 +69,20 @@ export function useInGameNightActionSubmit() {
     invalidate()
   }, [gameId, phase, dayIndex])
 
+  // 밤 차례가 바뀌면 거절 글만 지움 (지난 차례 글이 행동 칸에 남지 않게, 낸 기록은 그대로, 그리는 중에 앞 값과 비교해 바로 맞춤)
+  const [errorTurnRole, setErrorTurnRole] = useState(nightTurnRole)
+  if (errorTurnRole !== nightTurnRole) {
+    setErrorTurnRole(nightTurnRole)
+    setError(null)
+  }
+
   // 대상 보내기 (응답 기다리는 중이면 막기)
   const submit = (targetId) => {
     if (ackingRef.current) return
     const requestSocket = getSocket()
-    // 연결 없으면 오류 문구, 판 없으면 안 보냄
+    // 연결 없으면 끊김 글만 남기고 안 보냄, 판 없으면 안 보냄
     if (!requestSocket || !requestSocket.connected) {
-      setError("서버 연결을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.")
+      setError(ACTION_DISCONNECTED_TEXT)
       return
     }
     if (!gameId) return

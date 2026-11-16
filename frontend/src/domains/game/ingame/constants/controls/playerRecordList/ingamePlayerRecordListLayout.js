@@ -22,7 +22,7 @@ export const PROFILE_PORTRAIT_WRAP_CLASS =
 export const PROFILE_PORTRAIT_PHOTO_WRAP_CLASS =
   "absolute left-1/2 top-[46%] z-[1] aspect-square w-[67%] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full"
 
-// 이름·전적 글 (전적은 흐리게, 숫자 폭 고정)
+// 이름·전적 글 (숫자 폭 고정, 전적은 갈색 종이 위라 흐린 흰 글이 안 보여 검정)
 export const INFO_CLASS =
   "flex min-w-0 flex-1 flex-col justify-center"
 
@@ -33,4 +33,4 @@ export const NAME_CLASS =
   "min-w-0 truncate font-display text-[clamp(0.92rem,1.18vw,1.08rem)] font-medium leading-tight tracking-normal text-white antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const STATS_CLASS =
-  "min-w-0 truncate font-subheading text-[clamp(0.78rem,1.02vw,0.92rem)] font-bold leading-none text-white/55 tabular-nums"
+  "min-w-0 truncate font-subheading text-[clamp(0.78rem,1.02vw,0.92rem)] font-bold leading-none text-black tabular-nums"

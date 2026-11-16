@@ -1,9 +1,6 @@
 // 세션 스냅샷 반영 계산: 판이 있을 때 반영·빈 스토어 채우기 (상태를 안 건드리는 순수 계산)
 // 스냅샷 액션과 시험이 사용
-import {
-  KNOWN_PHASES,
-  PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS,
-} from "../../constants/store/sessionSnapshot.js"
+import { KNOWN_PHASES } from "../../constants/store/sessionSnapshot.js"
 import { isPublicProgress } from "../store/gamePayload.js"
 import { tagDayVoteSubmissionDay } from "../store/selfActed.js"
 import { BAD, isNonEmptyString, isNonNegativeInteger, isPlainObject } from "./checks.js"
@@ -36,8 +33,8 @@ export function applySessionSnapshotPure(current, response) {
   const allies = readSelf(response.self, roster, current.state.self?.uuid)
   if (allies === BAD) return current
 
-  // 밤 결과·낮 투표 판정·재판 (역할 공개·밤엔 오면 안 됨)
-  const day = readDayFields(response, roster, !PHASES_WITHOUT_DAY_TRIBUNAL_FIELDS.has(response.phase))
+  // 밤 결과·낮 투표 판정·재판 (이 단계에서 안 받는 칸은 그 칸만 버림, 밤엔 낮 투표 판정만 받음)
+  const day = readDayFields(response, roster)
   if (day === BAD) return current
 
   // 승패·낮 단계·낮/밤 차례 타이머·역행
@@ -65,6 +62,8 @@ export function applySessionSnapshotPure(current, response) {
     nightTurnRole: timer.nightTurnRole,
     nightTurnDeadline: timer.nightTurnDeadline,
     tribunalDeadline: timer.tribunalDeadline,
+    // 5초 당김 중이면 그 표시도 (새로고침 뒤 "[5초 뒤 마감]" 글·시간 바 펼침)
+    ...(timer.phaseSettle ? { phaseSettle: timer.phaseSettle } : {}),
     hostUuid,
     roomId: orNull(response.roomId),
     roomInstanceId: orNull(response.roomInstanceId),

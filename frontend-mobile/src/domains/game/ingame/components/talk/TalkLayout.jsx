@@ -5,6 +5,7 @@ import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardI
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
 import { useInGameChatSessionContext } from "@/domains/game/ingame/components/chat/InGameChatSessionContext.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { selectInGamePhaseSettled } from "@/domains/game/ingame/utils/selectInGameTimebarStatusMessage.js"
 import ActionRow from "@m/domains/game/ingame/components/actions/ActionRow.jsx"
 import Composer from "@m/domains/game/ingame/components/chat/Composer.jsx"
 import TopBar from "@m/domains/game/ingame/components/shell/TopBar.jsx"
@@ -22,6 +23,10 @@ export default function TalkLayout({ page, compactTyping, locked }) {
     // 재판 연출이 뜨면 연출이 자기 채팅을 띄움 → 채팅방은 숨기고 입력칸은 뺌
     const tribunalOpen = useInGameStore(selectTribunalPresentationOpen)
     const [timebarOpen, setTimebarOpen] = useState(false)
+    // 표가 다 차 마감이 5초 뒤로 당겨진 동안은 접어 둔 진행 바도 저절로 펼침 (끝나면 고른 대로 돌아감, 사용자 결정 2026-11-16)
+    // 진행 바는 채팅방을 밀어 내릴 뿐 가리지 않음, 입력 중인 낮은 화면(compactTyping)에선 안 펼치고 위 단계 줄의 "5초 뒤 마감 0:04"만 보임
+    const settled = useInGameStore((s) => selectInGamePhaseSettled(s.state))
+    const timebarShown = timebarOpen || settled
     const [boardOpen, setBoardOpen] = useState(false)
     const { sidePanel } = page
     // iOS는 키보드가 떠도 화면이 안 줄어 입력줄만 올라감 → 채팅방 아래에 그만큼 비워 최신 말풍선이 안 가려지게 (안드로이드는 0)
@@ -42,9 +47,9 @@ export default function TalkLayout({ page, compactTyping, locked }) {
                     onRoleReveal={page.reopenRoleReveal}
                     roleRevealAvailable={page.roleRevealAvailable && Boolean(page.reopenRoleReveal)}
                 />
-                <PhaseLine expanded={timebarOpen} onToggle={() => setTimebarOpen((open) => !open)} />
+                <PhaseLine expanded={timebarShown} onToggle={() => setTimebarOpen((open) => !open)} />
             </div>
-            <div className={`${SLOT_CLASS} px-2 ${timebarOpen && !compactTyping ? "" : "hidden"}`} data-slot="timebar">
+            <div className={`${SLOT_CLASS} px-2 ${timebarShown && !compactTyping ? "" : "hidden"}`} data-slot="timebar">
                 {/* 늘 그려 두고 숨기기만: 펼친 순간부터 게이지를 새로 세면 막대 길이가 틀림 */}
                 <Timebar initialExpanded />
             </div>

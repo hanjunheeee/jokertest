@@ -4,14 +4,16 @@ import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { INGAME_CHAT_ASSETS } from "@/domains/game/ingame/constants/chat/ingameChatAssets.js"
 
 // 그림은 원래 비율, 누르는 자리만 44px로 키움
-export default function SendButton({ onSend }) {
+// disabled면 꺼지고 흐리게 (역할 확인 동안)
+export default function SendButton({ onSend, disabled = false }) {
     return (
         <button
             type="button"
             aria-label="채팅 보내기"
+            disabled={disabled}
             onPointerDown={(event) => event.preventDefault()}
             onClick={onSend}
-            className="relative flex h-11 w-[4.6rem] shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 transition-transform duration-200 ease-out active:scale-[0.99]"
+            className="relative flex h-11 w-[4.6rem] shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 transition-transform duration-200 ease-out active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
             style={{ outline: "none" }}
         >
             <PublicAsset src={INGAME_CHAT_ASSETS.sendButton} alt="" className="block h-auto w-full select-none" />

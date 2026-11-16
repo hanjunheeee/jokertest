@@ -1,7 +1,8 @@
-// 플레이어 기록 목록 내용 (스크롤 목록)
+// 플레이어 기록 목록 내용 (스크롤 목록·줄마다 신고 버튼과 신고 창, 재판 연출이 뜨면 신고 창 닫음)
 // PlayerRecordListPanel이 씀
 import { useRef } from "react"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
+import { useInGameStore } from "../../../store/ingameStore.js"
 import { resolvePlayerRecordListProfileAssets } from "../../../constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import {
   SCROLL_CLASS,
@@ -14,11 +15,22 @@ import ReportDialog from "@/domains/report/components/ReportDialog.jsx"
 import ReportRowButton from "@/domains/report/components/ReportRowButton.jsx"
 import { useGameReport } from "@/domains/report/hooks/useGameReport.js"
 
+// 재판 연출이 떠 있는지 (재판 중·피고 있음·판정 전), 인게임 화면·문지기·채팅 틀과 같은 조건
+function selectTribunalPresentationOpen(state) {
+  return state?.phase === "TRIBUNAL"
+    && Boolean(state?.tribunal?.defendantUuid)
+    && state.tribunal.resolved !== true
+}
+
 export default function PlayerRecordListContent() {
   const scrollRef = useRef(null)
   const { players } = useInGamePlayerSessionContext()
   // 신고 창 (나·판 id 없음은 버튼 안 보임)
   const report = useGameReport()
+  // 재판 연출이 뜨면 신고 창도 닫음: 신고 창은 body에 떠서 재판 창 위에 남아 유죄·무죄 단추를 가림
+  // 재판이 끝나도 저절로 다시 안 뜸 (그리는 중에 바로 맞춤, 채팅 크게 보기와 같은 식)
+  const tribunalPresentationOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
+  if (tribunalPresentationOpen && report.isOpen) report.close()
 
   return (
     <div className="flex h-full min-h-0 flex-col">

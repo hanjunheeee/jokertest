@@ -1,4 +1,4 @@
-// 판 시작 때 내 직업·같은 편 보여 주는 창
+// 판 시작 때 내 그림(스킨)·직업·진영·같은 편 보여 주는 창
 // InGamePage가 씀
 import {
   ALLY_CHIP_CLASS,
@@ -6,10 +6,14 @@ import {
   ALLY_SECTION_CLASS,
   DESC_CLASS,
   HEADER_CLASS,
+  HEADER_ROW_CLASS,
   NICKNAME_CLASS,
   ROLE_NAME_CLASS,
+  STANDING_IMG_CLASS,
+  TEAM_LABEL_CLASS,
 } from "../../constants/roleReveal/ingameRoleRevealLayout.js"
 import { resolveInGameRoleRevealAllies } from "../../utils/roleReveal.js"
+import PublicAsset from "@/shared/ui/PublicAsset"
 import InGameParchmentModalAnimated from "../parchment/InGameParchmentModalAnimated.jsx"
 
 export default function InGameRoleRevealOverlay({
@@ -30,11 +34,20 @@ export default function InGameRoleRevealOverlay({
       onDismiss={onClose}
       confirmLabel={primaryLabel}
     >
-      <div className={HEADER_CLASS}>
-        {roleInfo.nickname ? (
-          <p className={NICKNAME_CLASS}>{roleInfo.nickname}</p>
+      {/* 내 그림: 낀 스킨, 없으면 직업 기본 그림 (글로 직업을 알려 주니 그림 설명은 비움) */}
+      <div className={HEADER_ROW_CLASS}>
+        {roleInfo.standingSrc ? (
+          <PublicAsset src={roleInfo.standingSrc} alt="" className={STANDING_IMG_CLASS} data-ingame-role-reveal-standing="" />
         ) : null}
-        <p className={ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
+        <div className={`min-w-0 ${HEADER_CLASS}`}>
+          {roleInfo.nickname ? (
+            <p className={NICKNAME_CLASS}>{roleInfo.nickname}</p>
+          ) : null}
+          <p className={ROLE_NAME_CLASS}>{roleInfo.roleName}</p>
+          {roleInfo.teamLabel ? (
+            <p className={TEAM_LABEL_CLASS}>{roleInfo.teamLabel}</p>
+          ) : null}
+        </div>
       </div>
 
       {roleInfo.description ? (

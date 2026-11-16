@@ -1,4 +1,4 @@
-// 인게임 행동 줄 (모바일): 데스크톱 구석 패널(투표 현황·기권·건너뛰기) + 단계 행동 줄(준비·집계·판정·밤 종료)
+// 인게임 행동 줄 (모바일): 데스크톱 구석 패널(투표 현황·기권·건너뛰기) + 단계 행동 줄(준비) + 거절 까닭 글 한 줄
 // InGamePage가 씀, props 없이 데스크톱 행동 컨텍스트(InGameActionContext)로 값 읽음
 import { useActionRow } from "../../hooks/actions/useActionRow.js"
 import ImageButton from "./ImageButton.jsx"
@@ -24,6 +24,15 @@ export default function ActionRow() {
             <PhaseButton key={entry.action} {...entry} />
           ))}
         </div>
+      ) : null}
+      {row.noticeText ? (
+        <p
+          role="alert"
+          className="mt-1 w-full rounded-md bg-black/75 px-3 py-1.5 text-center text-[0.8rem] leading-snug text-[#ffb9ab]"
+          data-ingame-action-notice=""
+        >
+          {row.noticeText}
+        </p>
       ) : null}
       <VoteStatusPanel open={row.voteStatusOpen} onClose={row.closeVoteStatus} nameOf={row.nameOf} />
     </div>

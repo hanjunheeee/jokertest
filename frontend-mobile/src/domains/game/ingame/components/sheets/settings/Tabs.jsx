@@ -4,7 +4,7 @@ import { INGAME_SETTING_ASSETS } from "@/domains/game/ingame/constants/controls/
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import { SHEET_BUTTON_LOOK } from "../parts/buttonLook.js"
 
-// 받은 탭만 그림 (방장 아니면 방관리 탭은 빠진 채로 옴)
+// 받은 탭만 그림
 export default function Tabs({ tabs, activeTab, onSelect }) {
   return (
     <nav className="flex w-full gap-1.5" aria-label="인게임 설정 탭">

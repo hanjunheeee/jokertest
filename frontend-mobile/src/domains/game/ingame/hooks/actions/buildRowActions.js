@@ -21,13 +21,15 @@ const entry = (action, label, enabled, onClick, kind) => ({ action, label, enabl
 export function buildCornerActions(ctx, openVoteStatus) {
   const phase = ctx.gameState?.phase ?? null
   const actions = [entry(null, "투표 현황", true, openVoteStatus, "voteStatus")]
-  if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
+  // 죽은 사람은 표를 못 내니 기권도 안 그림 (데스크톱과 같음)
+  if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE" && ctx.selfAliveForControls !== false) {
     const disabled = !ctx.dayVoteControlsEnabled
       || ctx.dayVoteStatus === "submitting"
       || ctx.dayVoteHasSubmitted === true
     actions.push(entry(ROW_ACTIONS.DAY_VOTE_ABSTAIN, "기권", !disabled, ctx.abstainDayVote, "abstain"))
   }
-  if (phase === "NIGHT" && ctx.isNightTurnActor) {
+  // 죽은 사람은 못 고르니 건너뛰기를 안 그림 (데스크톱과 같음)
+  if (phase === "NIGHT" && ctx.isNightTurnActor && ctx.selfAliveForControls !== false) {
     const disabled = ctx.nightActionsLocked === true
       || ctx.nightActionStatus === "submitting"
       || ctx.nightActionHasSubmitted === true
@@ -43,10 +45,11 @@ function dayReadyLabel(status) {
   return DAY_VOTE_READY_LABEL
 }
 
-// 단계 행동 줄: 낮 토론 때 준비 하나 (데스크톱 InGamePhaseActionRow와 같은 조건)
+// 단계 행동 줄: 낮 토론 때 준비 하나 (데스크톱 InGamePhaseActionRow와 같은 조건, 죽은 사람은 준비할 일이 없어 안 그림)
 export function buildPhaseActions(ctx) {
   const phase = ctx.gameState?.phase ?? null
   if (phase !== "DAY" || ctx.dayPhase !== "DAY_DISCUSSION") return []
+  if (ctx.selfAliveForControls === false) return []
   const label = dayReadyLabel(ctx.dayReadyStatus)
   return [entry(ROW_ACTIONS.DAY_READY, label, Boolean(ctx.dayReadyControlsEnabled), ctx.submitDayReady, "phase")]
 }

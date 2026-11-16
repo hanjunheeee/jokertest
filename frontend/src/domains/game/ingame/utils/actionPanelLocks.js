@@ -3,7 +3,7 @@
 import { INGAME_DAY_PHASES } from "./dayPhase.js"
 
 // 낮 투표·밤 행동·토론 준비·재판 투표 버튼의 잠금과 열림 (판정은 표가 다 차면 서버가 5초 뒤 함)
-// connected: 지금 공용 소켓이 붙어 있는지 (재판 버튼만 봄)
+// 연결이 끊겨도 버튼은 안 잠금: 누르면 제출 훅이 안 보내고 "연결이 끊겼습니다" 글을 띄움 (눌러도 아무 일 없어 보이던 것 막기)
 export function computePanelLocks({
   interactionBlocked,
   gameState,
@@ -14,7 +14,6 @@ export function computePanelLocks({
   isNightTurnActor,
   dayReadyStatus,
   tribunalVoteSubmit,
-  connected,
 }) {
   const isGameEnded = gameState?.phase === "ENDED"
 
@@ -49,7 +48,7 @@ export function computePanelLocks({
   // 재판: 이미 판정됐으면 투표 잠금
   const tribunalResolveLocked = interactionBlocked || gameState?.tribunal?.resolved === true
 
-  // 재판 투표: 피고가 아니고 살아 있고 아직 안 냈을 때, 연결돼 있어야 함
+  // 재판 투표: 피고가 아니고 살아 있고 아직 안 냈을 때
   const tribunalVoteControlsEnabled =
     !interactionBlocked &&
     !isGameEnded &&
@@ -60,8 +59,7 @@ export function computePanelLocks({
     !tribunalVoteSubmit.isDefendant &&
     tribunalVoteSubmit.alive &&
     tribunalVoteSubmit.status === "idle" &&
-    !tribunalResolveLocked &&
-    connected
+    !tribunalResolveLocked
 
   return {
     dayVoteControlsEnabled,

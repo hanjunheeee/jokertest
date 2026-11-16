@@ -13,7 +13,3 @@ export const ROW_LABEL_CLASS =
 
 export const ROW_VALUE_CLASS =
   "w-9 shrink-0 text-right font-subheading app-text-scaled [--app-text-size:0.95rem] font-bold leading-none tabular-nums text-white/90"
-
-// 안내 글 (실패 아닌 알림, 데스크톱 SettingRoomTab 안내처럼 붉지 않게)
-export const NOTICE_CLASS =
-  "px-1 text-left font-subheading app-text-scaled [--app-text-size:0.82rem] leading-snug text-[#ebe2cc]/85"

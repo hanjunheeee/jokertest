@@ -16,11 +16,11 @@ function clearOnNightEntry(current) {
   return current.state?.phase === "NIGHT" ? null : { ...CLEARED_NIGHT_PRIVATE_RESULT, ...CLEARED_DAWN_REPORT }
 }
 
-// 재판 없이 밤으로 가는 판정 결과 (동표·기권이 최다 득표 이상·전원 기권)
-const NIGHT_OUTCOMES = new Set(["TIE", "ABSTAIN_MAJORITY", "ABSTAINED"])
+// 재판 없이 밤으로 가는 판정 결과 (동표·기권이 최다 득표 이상·전원 기권·피고로 뽑힌 사람이 끊겨 있음)
+const NIGHT_OUTCOMES = new Set(["TIE", "ABSTAIN_MAJORITY", "ABSTAINED", "DEFENDANT_DISCONNECTED"])
 
 export const voteActions = (set) => ({
-  // 낮 투표 판정 반영: 재판·동표/기권(밤으로), 재투표는 삭제돼 안 받음
+  // 낮 투표 판정 반영: 재판·동표/기권/끊긴 피고(밤으로), 재투표는 삭제돼 안 받음
   applyDayVoteResolvedToPhase: (gameId, dayIndex, resolution = {}) =>
     set((current) => {
       const { outcome, defendantUuid, round = 1 } = resolution
@@ -63,7 +63,7 @@ export const voteActions = (set) => ({
           },
         }
       }
-      // 동표·기권: 바로 밤으로, 낮 마감 시각·밤 개인 결과·지난 낮 시작 연출 비움
+      // 동표·기권·끊긴 피고: 바로 밤으로, 낮 마감 시각·밤 개인 결과·지난 낮 시작 연출 비움
       // 받아 둔 밤 차례는 안 지움 (밤 첫 차례 방송이 이 판정보다 먼저 올 수 있음, 낮 시작 때 이미 비워서 옛 차례는 없음)
       if (NIGHT_OUTCOMES.has(outcome)) {
         return {

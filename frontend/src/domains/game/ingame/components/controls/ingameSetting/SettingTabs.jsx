@@ -37,7 +37,7 @@ function SettingTabButton({ tab, active, onSelect }) {
   )
 }
 
-// 받은 탭만 그림 (방장 아니면 방관리 탭은 빠진 채로 옴)
+// 받은 탭만 그림
 export default function SettingTabs({ tabs, activeTab, onSelect }) {
   return (
     <nav className={TAB_NAV_CLASS} aria-label="인게임 설정 탭">

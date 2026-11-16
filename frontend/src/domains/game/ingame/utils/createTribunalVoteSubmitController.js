@@ -5,6 +5,7 @@ import {
   computeTribunalVoteAckPatch,
   INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE,
 } from "./voteSubmitPatch.js"
+import { ACTION_DISCONNECTED_TEXT } from "../constants/actions/ingameActionPanel.js"
 
 // 응답 기다리는 시간 (넘으면 시간 초과 문구)
 export const ACK_TIMEOUT_MS = 5000
@@ -13,6 +14,8 @@ export const ACK_TIMEOUT_MS = 5000
 const TIMEOUT_PATCH = { status: "idle", submittedVote: null, error: "요청 시간이 초과되었습니다.", errorCode: null }
 const NO_ACK_PATCH = { status: "idle", submittedVote: null, error: "요청에 응답하지 않습니다. 다시 시도해주세요.", errorCode: null }
 const MALFORMED_ACK_PATCH = { status: "idle", submittedVote: null, error: "제출하지 못했습니다. 다시 시도해주세요.", errorCode: null }
+// 끊긴 채 눌렀을 때 상태 조각 (표는 안 나가고 글만 남김, 눌러도 아무 일 없어 보이던 것 막기)
+const DISCONNECTED_PATCH = { status: "idle", submittedVote: null, error: ACTION_DISCONNECTED_TEXT, errorCode: null }
 
 // 컨트롤러 만들기 (상태는 안에 들고, 바뀔 때마다 onStateChange로 알림)
 export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_TIMEOUT_MS, onStateChange, getLatestContext, onAccepted }) {
@@ -41,13 +44,16 @@ export function createTribunalVoteSubmitController({ getSocket, timeoutMs = ACK_
       return state
     },
 
-    // 투표 보내기: 버렸거나 보내는 중이거나 연결이 없으면 막기
+    // 투표 보내기: 버렸거나 보내는 중이면 막기, 연결이 없으면 안 보내고 끊김 글만 남김
     submit({ gameId, dayIndex, vote, defendantUuid, actorUuid }) {
       if (disposed) return
       if (submitting) return
 
       const requestSocket = getSocket?.()
-      if (!requestSocket || !requestSocket.connected) return
+      if (!requestSocket || !requestSocket.connected) {
+        setState(DISCONNECTED_PATCH)
+        return
+      }
 
       submitting = true
       generation += 1

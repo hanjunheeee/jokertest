@@ -32,22 +32,25 @@ export function captureVerificationGuard({ socket, getMembershipScopeId, getRevi
 }
 
 // 추방 응답용: 화면이 살아 있고 훅 세대·요청 세대·계정·소켓·범위 id가 그대로여야 지금 것
+// 돌려준 함수에 { ignoreSocket: true }를 주면 소켓만 빼고 봄 ("이 요청의 답이 맞나"만 볼 때)
+// 연결이 끊기면 socket.id가 없어지거나 바뀜 → 소켓까지 보면 응답 기한 답도 버려져 "보내는 중"에 멈춤
 export function captureAckGuard({ socket, scopeId, requestGeneration, generation, refs, getMembershipScopeId }) {
   const auth = useAuthStore.getState()
   const identityGeneration = auth.identityGeneration
   const authUuid = auth.user?.uuid ?? null
   const socketId = typeof socket?.id === "string" && socket.id ? socket.id : null
 
-  return function isStillCurrent() {
+  return function isStillCurrent({ ignoreSocket = false } = {}) {
     if (!refs.mountedRef.current) return false
     if (generation !== refs.generationRef.current) return false
     if (requestGeneration !== refs.requestGenerationRef.current) return false
     const now = useAuthStore.getState()
     if (now.identityGeneration !== identityGeneration) return false
     if ((now.user?.uuid ?? null) !== authUuid) return false
+    if (scopeId !== getMembershipScopeId()) return false
+    if (ignoreSocket) return true
     if (getSocket() !== socket) return false
     if (socketId === null || socket.id !== socketId) return false
-    if (scopeId !== getMembershipScopeId()) return false
     return true
   }
 }

@@ -37,9 +37,9 @@ export const CLOSE_IMG_CLASS = "block h-10 w-10 select-none object-contain"
 export const SHEET_TITLE_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[12%] font-display app-text-scaled [--app-text-size:1.25rem] font-medium leading-none text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
-// 제목 아래 설명 한 줄 (데스크톱 옆 창 머리 설명, 양피지 위 짙은 글자)
+// 제목 아래 설명 한 줄 (데스크톱 옆 창 머리 설명, 양피지가 어두운 편이라 검정)
 export const SHEET_SUBTITLE_CLASS =
-  "mt-1.5 text-center font-subheading app-text-scaled [--app-text-size:0.85rem] font-bold leading-snug text-[#1a1008]"
+  "mt-1.5 text-center font-subheading app-text-scaled [--app-text-size:0.85rem] font-bold leading-snug text-black"
 
 // 데스크톱 옆 창 그림 (닫기·머리 판)
 export const CLOSE_BUTTON_SRC = PANEL_ASSETS.closeButton

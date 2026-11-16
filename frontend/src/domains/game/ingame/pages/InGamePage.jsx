@@ -22,6 +22,7 @@ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import InGameCornerActionPanel from "../components/actions/InGameCornerActionPanel.jsx"
 import InGameTribunalPresentationGate from "../components/tribunalPresentation/InGameTribunalPresentationGate.jsx"
 import InGameTribunalExpulsionOverlay from "../components/tribunalExpulsion/InGameTribunalExpulsionOverlay.jsx"
+import InGameInviteNotice from "../components/inviteNotice/InGameInviteNotice.jsx"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import {
   getIdentityScopeVersion,
@@ -53,7 +54,7 @@ import { useTurnProgress } from "../hooks/timebar/useTurnProgress.js"
 import { useTimerPlacement } from "../hooks/timebar/useTimerPlacement.js"
 
 // 판 조작 값(행동 줄·카드 메뉴·재판 연출이 같이 봄)을 컨텍스트로 넣음
-// 카드에서 여는 추방 창은 열 길이 없어 걷어 냄 (추방은 설정 창 방관리 탭의 추방 창만)
+// 카드에서 여는 추방 창은 열 길이 없어 걷어 냄 (판 안에는 추방 길 없음, 추방 창은 대기방만 씀)
 export function InGameActionProvider({ interactionBlocked = false, children }) {
   const actionPanelValue = useInGameActionPanel({ interactionBlocked })
   const hostUuid = useInGameStore((s) => s.hostUuid ?? null)
@@ -188,11 +189,13 @@ export default function InGamePage() {
             />
             <InGameCornerActionPanel onVoteStatusClick={() => setVoteStatusOpen(true)} />
             <InGamePlayerBoard />
+            {/* 단계 안내(잠그는 것만)·밤 차례 창이 뜨면 크게 보기를 닫게 알림: 크게 보기가 그 창보다 위에 떠서 글과 단추를 가림 */}
             <InGameChatShell
               timerPlacement={timerPlacement}
               statusLabel={timebarStatusLabel}
               remainingRatio={remainingRatio}
               remainingSec={remainingSec}
+              coverOverlayOpen={interactionBlocked || nightTurn.open}
             />
             <PlayerRecordListPanel
               open={sidePanel.recordsOpen}
@@ -214,6 +217,9 @@ export default function InGamePage() {
         </InGameActionProvider>
         </InGameChatSessionProvider>
       </InGamePlayerSessionProvider>
+
+      {/* 죽은 사람이 받은 대기방 초대 안내: 판 조작 막힘(inert) 밖이라 읽기 도구가 읽음, 연출 창보다 아래 */}
+      <InGameInviteNotice />
 
       <InGameNightTurnAnnouncementOverlay
         open={nightTurn.open}

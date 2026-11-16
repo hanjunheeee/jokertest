@@ -3,10 +3,10 @@
 
 // 글자 모양 (설정 배율 반영판 포함)
 export const TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_CLASS =
-  "font-subheading text-[clamp(0.68rem,2.75cqi,0.86rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+  "font-subheading text-[clamp(0.68rem,2.75cqi,0.86rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
 
 export const TRIBUNAL_CHAT_TEXT_TYPOGRAPHY_SCALED_CLASS =
-  "font-subheading text-[clamp(calc(0.68rem*var(--ingame-chat-text-scale,1)),calc(2.75cqi*var(--ingame-chat-text-scale,1)),calc(0.86rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#3a1a0c]"
+  "font-subheading text-[clamp(calc(0.68rem*var(--ingame-chat-text-scale,1)),calc(2.75cqi*var(--ingame-chat-text-scale,1)),calc(0.86rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
 
 export const TRIBUNAL_CHAT_TEXT_SCALED_FONT_SIZE =
   "clamp(calc(0.68rem*var(--ingame-chat-text-scale,1)),calc(2.75cqi*var(--ingame-chat-text-scale,1)),calc(0.86rem*var(--ingame-chat-text-scale,1)))"

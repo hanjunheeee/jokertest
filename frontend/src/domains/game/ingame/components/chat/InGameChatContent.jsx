@@ -1,4 +1,4 @@
-// 채팅 내용 틀: 틀 그림·메시지 목록·입력칸·보내기·상태 줄을 한 판에 배치, 밤에 산 시민은 입력칸 대신 까닭 한 줄
+// 채팅 내용 틀: 틀 그림·메시지 목록·입력칸·보내기·상태 줄을 한 판에 배치, 밤에 산 시민은 입력칸 대신 까닭 한 줄, 역할 확인 동안은 입력칸 꺼짐
 // 채팅 틀·크게 보기 창·재판 연출 채팅이 사용, 모양 차이는 variant로 나눔
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
@@ -25,7 +25,12 @@ import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlace
 import InGamePhaseTurnTimerPanel from "../timebar/InGamePhaseTurnTimerPanel.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { useInGameStore } from "../../store/ingameStore.js"
-import { isNightChatInputClosed, NIGHT_CHAT_CLOSED_TEXT } from "../../utils/inGameChatChannel.js"
+import {
+  isNightChatInputClosed,
+  isRoleRevealChatLocked,
+  NIGHT_CHAT_CLOSED_TEXT,
+  ROLE_REVEAL_CHAT_LOCKED_TEXT,
+} from "../../utils/inGameChatChannel.js"
 
 // 틀 바탕·틀 그림 모양 (보드 모양만 눌러서 크게 보기라 손가락 커서)
 const CHAT_ROOT_CLASS =
@@ -70,6 +75,8 @@ export default function InGameChatContent({
   const isBoard = variant === "board"
   // 밤에 산 시민은 보낼 채널이 없음 → 입력칸 닫음 (서버도 거절)
   const inputClosed = useInGameStore((s) => isNightChatInputClosed(s.state))
+  // 역할 확인 10초 동안은 채팅을 못 씀 → 입력칸·보내기를 끔 (눌러도 안 나가던 것을 꺼진 것으로 보이게)
+  const inputLocked = useInGameStore((s) => isRoleRevealChatLocked(s.state))
 
   // 첫 프레임 뒤에 보이게 해서 자리 잡기 전 깜빡임 막기
   useEffect(() => {
@@ -106,8 +113,9 @@ export default function InGameChatContent({
     onOpenCloseup()
   }
 
-  // 보내기 (Enter·버튼 같이 씀)
+  // 보내기 (Enter·버튼 같이 씀, 꺼진 동안은 안 보냄)
   const handleSend = () => {
+    if (inputLocked) return
     onSend()
   }
 
@@ -198,10 +206,13 @@ export default function InGameChatContent({
                 onSend={handleSend}
                 className={getInputShiftClass(variant)}
                 truncateDraftOnInput={truncateDraftOnInput}
+                disabled={inputLocked}
+                disabledHint={ROLE_REVEAL_CHAT_LOCKED_TEXT}
               />
               <InGameChatSendButton
                 onSend={handleSend}
                 className={getSendBtnShiftClass(variant)}
+                disabled={inputLocked}
               />
             </>
           )}

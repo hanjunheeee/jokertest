@@ -40,8 +40,9 @@ const SELECTION_SYNC_KEYS = new Set([
 ])
 
 // 입력칸 본체, ref로는 바깥 틀 div를 내줌 (너비 재기용)
+// disabled면 못 치게 끄고 안내 글 자리에 까닭(disabledHint)을 보임
 const InGameChatInput = forwardRef(function InGameChatInput(
-  { value, onChange, onSend, className = "", truncateDraftOnInput = true },
+  { value, onChange, onSend, className = "", truncateDraftOnInput = true, disabled = false, disabledHint = null },
   ref,
 ) {
   const variant = useChatVariant()
@@ -132,7 +133,7 @@ const InGameChatInput = forwardRef(function InGameChatInput(
     >
       {!hasText ? (
         <span className={placeholderClass} aria-hidden="true">
-          TYPE HERE...
+          {disabled && disabledHint ? disabledHint : "TYPE HERE..."}
         </span>
       ) : null}
       <textarea
@@ -149,6 +150,8 @@ const InGameChatInput = forwardRef(function InGameChatInput(
         className={textareaClass}
         style={textareaFontSizeStyle}
         aria-label="채팅 입력"
+        disabled={disabled}
+        title={disabled && disabledHint ? disabledHint : undefined}
       />
     </div>
   )

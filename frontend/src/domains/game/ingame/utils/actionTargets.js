@@ -1,7 +1,7 @@
 // 낮 투표·밤 행동 대상 목록 만들기 (상태를 안 건드리는 순수 계산)
 // 행동 대상 훅·내 생존 고르기가 사용
 import { INGAME_PLAYER_STATUS } from "../../shared/constants/ingamePlayerStatus.js"
-import { getRoleRevealDisplay } from "../constants/roleReveal/ingameRoleRevealData.js"
+import { allyReadingName } from "./allyLabel.js"
 
 // 생사: 실린 alive 값을 먼저 봄 (배지가 끊김이어도 죽은 사람은 죽음), 없으면 죽은 상태만 아니면 살아 있음
 // 예: { status: "disconnected", alive: false } → false, { status: "disconnected" } → true
@@ -29,8 +29,6 @@ export function buildDayVoteTargets(sessionPlayers, { localPlayerId } = {}) {
 export function buildNightActionTargets(players, { localPlayerId, selfTargetAllowed, role } = {}) {
   if (!Array.isArray(players)) return []
 
-  const roleName = getRoleRevealDisplay(role)?.name ?? null // 의사면 → "의사"
-
   return players
     .filter((player) => selfTargetAllowed || player.id !== localPlayerId)
     .map((player) => {
@@ -38,7 +36,7 @@ export function buildNightActionTargets(players, { localPlayerId, selfTargetAllo
       const alive = isSessionPlayerAlive(player)
       return {
         id: player.id,
-        name: player.isAlly && roleName ? `${player.nickname} · 동료 ${roleName}` : player.nickname, // → "민수 · 동료 의사"
+        name: allyReadingName(player, role), // 동료면 → "민수 · 동료 의사"
         alive,
         connected: player.status !== INGAME_PLAYER_STATUS.DISCONNECTED,
         selectable: !blockedAlly && (role === "WITCH_HUNTER" ? !alive : alive),

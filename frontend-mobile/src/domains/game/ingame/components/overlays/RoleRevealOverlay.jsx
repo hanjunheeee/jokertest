@@ -1,4 +1,4 @@
-// 내 역할 공개 창: 닉네임·역할 이름·설명·같은 직업 동료, 확인 누르면 화면에서만 닫힘, 10초 지나면 저절로 닫힘 (서버는 확인을 안 기다림)
+// 내 역할 공개 창: 내 그림(스킨)·닉네임·역할 이름·진영·설명·같은 직업 동료, 확인 누르면 화면에서만 닫힘, 10초 지나면 저절로 닫힘 (서버는 확인을 안 기다림)
 // OverlayLayer가 씀, 값은 useInGameRoleReveal(useInGameOverlayStack 안), 글자 모양은 데스크톱 상수 그대로
 import { useEffect, useLayoutEffect, useRef } from "react"
 import {
@@ -7,16 +7,24 @@ import {
     ALLY_SECTION_CLASS,
     DESC_CLASS,
     HEADER_CLASS,
+    HEADER_ROW_CLASS,
     NICKNAME_CLASS,
     ROLE_NAME_CLASS,
+    TEAM_LABEL_CLASS,
 } from "@/domains/game/ingame/constants/roleReveal/ingameRoleRevealLayout.js"
 import { resolveInGameRoleRevealAllies } from "@/domains/game/ingame/utils/roleReveal.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import ParchmentDialog from "./parchment/ParchmentDialog.jsx"
 
 // 가로 폰은 높이가 낮아 데스크톱 vw 글자가 넘침 → 가로 폰만 글자 줄임
 const LAND_NICK = "land:text-[0.95rem]"
 const LAND_ROLE = "land:text-[1.6rem] land:leading-tight"
 const LAND_DESC = "land:text-[0.85rem] land:leading-snug"
+const LAND_TEAM = "land:text-[0.8rem]"
+
+// 내 서 있는 그림: 폰 창이 작아 작게, 가로 폰은 더 작게
+const STANDING_CLASS =
+    "h-[4.5rem] w-auto shrink-0 select-none object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.35)] land:h-[3.25rem]"
 
 // 역할 공개 시간 (서버 규칙 10초)
 const AUTO_CLOSE_MS = 10_000
@@ -49,9 +57,16 @@ export default function RoleRevealOverlay({ open, onClose, roleInfo, players = [
             confirmLabel={primaryLabel}
             wrapperProps={{ "data-ingame-role-reveal": roleInfo.role }}
         >
-            <div className={HEADER_CLASS}>
-                {roleInfo.nickname ? <p className={`${NICKNAME_CLASS} ${LAND_NICK}`}>{roleInfo.nickname}</p> : null}
-                <p className={`${ROLE_NAME_CLASS} ${LAND_ROLE}`}>{roleInfo.roleName}</p>
+            {/* 내 그림: 낀 스킨, 없으면 직업 기본 그림 (글로 직업을 알려 주니 그림 설명은 비움) */}
+            <div className={HEADER_ROW_CLASS}>
+                {roleInfo.standingSrc ? (
+                    <PublicAsset src={roleInfo.standingSrc} alt="" className={STANDING_CLASS} data-ingame-role-reveal-standing="" />
+                ) : null}
+                <div className={`min-w-0 ${HEADER_CLASS}`}>
+                    {roleInfo.nickname ? <p className={`${NICKNAME_CLASS} ${LAND_NICK}`}>{roleInfo.nickname}</p> : null}
+                    <p className={`${ROLE_NAME_CLASS} ${LAND_ROLE}`}>{roleInfo.roleName}</p>
+                    {roleInfo.teamLabel ? <p className={`${TEAM_LABEL_CLASS} ${LAND_TEAM}`}>{roleInfo.teamLabel}</p> : null}
+                </div>
             </div>
 
             {roleInfo.description ? <p className={`${DESC_CLASS} ${LAND_DESC}`}>{roleInfo.description}</p> : null}

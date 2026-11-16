@@ -50,10 +50,13 @@ export function getPlayerRecordListProfileAssets(index = 0) {
 }
 
 export const PLAYER_RECORD_STATS_UNAVAILABLE_LABEL = "조회 실패"
+// 전적을 애초에 안 받는 곳(친구 목록 답엔 전적 칸이 없음)에 쓰는 글, 판 안 목록의 조회 실패와 구분
+export const PLAYER_RECORD_STATS_EMPTY_LABEL = "기록 없음"
 
-export function formatPlayerRecordStats({ totalGames, winRate } = {}) {
+// missingLabel: 숫자가 없을 때 글 (안 주면 "조회 실패" — 판 시작 때 전적을 못 읽은 경우)
+export function formatPlayerRecordStats({ totalGames, winRate, missingLabel = PLAYER_RECORD_STATS_UNAVAILABLE_LABEL } = {}) {
   if (!Number.isInteger(totalGames) || !Number.isInteger(winRate)) {
-    return PLAYER_RECORD_STATS_UNAVAILABLE_LABEL
+    return missingLabel
   }
   return `${totalGames}판 | ${winRate}%`
 }

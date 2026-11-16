@@ -41,6 +41,8 @@ const TRIBUNAL_VOTE_ERROR_TEXT = Object.freeze({
   DEFENDANT_CANNOT_VOTE: "재판에 오른 사람은 투표할 수 없습니다.",
   PLAYER_NOT_ALIVE: "죽은 사람은 투표할 수 없습니다.",
   INVALID_PHASE: "재판이 끝나 투표할 수 없습니다.",
+  // 끝난 판에 낸 표 (서버가 끝난 판 요청을 이 코드 하나로 거절함)
+  GAME_ALREADY_ENDED: "판이 끝나 투표할 수 없습니다.",
   STALE_DAY_INDEX: "지난 재판이라 투표할 수 없습니다.",
   INVALID_TRIBUNAL_VOTE: "유죄나 무죄만 고를 수 있습니다.",
   NOT_IN_SESSION: "지금 참여 중인 판이 아니라 투표할 수 없습니다.",

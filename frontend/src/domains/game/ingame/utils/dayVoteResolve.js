@@ -5,7 +5,8 @@ import { parseDayVoteRoundFields } from "./dayVoteRound.js"
 // 받는 판정 결과·다음 단계 이름과 표 수 검사
 // 재투표 삭제로 REVOTE·낮 그대로는 안 받음 (사용자 결정 2026-11-09)
 // ABSTAIN_MAJORITY = 기권이 최다 득표 이상이라 재판 없이 밤 (사용자 결정 2026-11-16)
-const RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAIN_MAJORITY", "ABSTAINED"])
+// DEFENDANT_DISCONNECTED = 피고로 뽑힌 사람이 그 순간 끊겨 있어 재판 없이 밤 (사용자 결정 2026-11-16)
+const RESOLVED_OUTCOMES = new Set(["TRIBUNAL", "TIE", "ABSTAIN_MAJORITY", "ABSTAINED", "DEFENDANT_DISCONNECTED"])
 const RESOLVED_PHASES = new Set(["NIGHT", "TRIBUNAL"])
 
 const isNonNegativeInteger = (value) => Number.isInteger(value) && value >= 0
@@ -42,8 +43,8 @@ export function parseDayVoteResolvedPayload({ payload, gameId, dayIndex }) {
     if (payload.phase !== "TRIBUNAL") return null
     if (typeof payload.tribunalTargetUuid !== "string" || payload.tribunalTargetUuid.length === 0) return null
     if (castCount <= payload.publicAbstainCount) return null
-  // 동표: 밤으로, 피고 없음, 재판과 같은 까닭으로 찍은 표가 기권보다 많음
-  } else if (payload.outcome === "TIE") {
+  // 동표·끊긴 피고: 밤으로, 피고 없음(끊긴 피고는 누구인지 안 실림), 재판과 같은 까닭으로 찍은 표가 기권보다 많음
+  } else if (payload.outcome === "TIE" || payload.outcome === "DEFENDANT_DISCONNECTED") {
     if (payload.phase !== "NIGHT") return null
     if (payload.tribunalTargetUuid !== null) return null
     if (castCount <= payload.publicAbstainCount) return null

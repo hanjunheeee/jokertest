@@ -36,5 +36,6 @@ export const HEADER_PLATE_CLASS =
 export const HEADER_TITLE_CLASS =
   "pointer-events-none absolute inset-0 flex items-start justify-center px-[12%] pt-[3.8%] font-display text-[clamp(1.18rem,1.72cqw,1.45rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
+// 머리 설명 글: 옆 창 종이가 어두운 편이라 짙은 갈색도 모자라 검정
 export const HEADER_SUBTITLE_CLASS =
-  "mt-[clamp(0.42rem,1vh,0.58rem)] text-center font-subheading text-[clamp(0.82rem,1.15cqw,0.98rem)] leading-snug font-bold text-[#1a1008]"
+  "mt-[clamp(0.42rem,1vh,0.58rem)] text-center font-subheading text-[clamp(0.82rem,1.15cqw,0.98rem)] leading-snug font-bold text-black"

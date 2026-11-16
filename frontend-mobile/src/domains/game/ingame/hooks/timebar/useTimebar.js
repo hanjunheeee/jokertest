@@ -9,14 +9,18 @@ import {
   selectInGameTimebarStatusLabel,
 } from "@/domains/game/ingame/utils/selectInGameTimebarStatusMessage.js"
 import { useTurnProgress } from "@/domains/game/ingame/hooks/timebar/useTurnProgress.js"
+import { selectTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 
 // 낮·재판·밤 차례 마감 하나로 게이지 계산, 끝남은 마감 없음
 // 처음엔 접힘(데스크톱 기본값), 카톡형은 단계 줄을 눌러 열었으니 펼친 채로 시작
 // 표가 다 차 마감이 당겨진 동안은 데스크톱처럼 저절로 펼쳐 "[5초 뒤 마감]"과 남은 초를 보임
+// 재판 연출 중에도 펼침: 화면이 잠겨 펼침 단추를 못 눌러서, 접힌 채면 남은 시간을 볼 길이 없음 (데스크톱과 같음)
 export function useTimebar(initialExpanded = false) {
   const gameState = useInGameStore((s) => s.state)
   const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
   const settled = useInGameStore((s) => selectInGamePhaseSettled(s.state))
+  const tribunalOpen = useInGameStore(selectTribunalPresentationOpen)
+  const forcedOpen = settled || tribunalOpen
   const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
   const [expanded, setExpanded] = useState(initialExpanded)
 
@@ -31,10 +35,10 @@ export function useTimebar(initialExpanded = false) {
     remainingRatio,
     remainingSec,
     settled,
-    expanded: expanded || settled,
-    // 당겨진 몇 초 동안은 접기를 안 받음 (끝나면 원래 고른 대로 돌아감)
+    expanded: expanded || forcedOpen,
+    // 당겨진 몇 초·재판 연출 동안은 접기를 안 받음 (끝나면 원래 고른 대로 돌아감)
     toggleExpanded: () => {
-      if (settled) return
+      if (forcedOpen) return
       setExpanded((current) => !current)
     },
   }

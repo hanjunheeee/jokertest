@@ -24,7 +24,8 @@ function StripEmoji({ itemId }) {
     )
 }
 
-export default function StripSlot({ player, isSelf, highlight, emoji, anchorRef, onTap, onLongPress }) {
+// allyLabel: 같은 직업 동료면 "동료 의사" 같은 글 (카드 표시·칸 읽기 이름에 씀)
+export default function StripSlot({ player, isSelf, allyLabel = null, highlight, emoji, anchorRef, onTap, onLongPress }) {
     const longPress = useLongPress(onLongPress)
 
     // 길게 누르기 뒤 손 뗄 때 오는 탭은 메뉴를 열지 않음 (카드 판 CardSlot과 같음)
@@ -44,7 +45,7 @@ export default function StripSlot({ player, isSelf, highlight, emoji, anchorRef,
             ref={anchorRef}
             type="button"
             className={SLOT_CLASS}
-            aria-label={slotLabel(player.nickname, player.status, isSelf)}
+            aria-label={slotLabel(player.nickname, player.status, isSelf, allyLabel)}
             data-strip-slot={player.id}
             onClick={handleClick}
             onContextMenu={handleContextMenu}
@@ -58,6 +59,7 @@ export default function StripSlot({ player, isSelf, highlight, emoji, anchorRef,
                 theme={player.theme}
                 voteHighlight={highlight}
                 isSelf={isSelf}
+                allyLabel={allyLabel}
                 className="pointer-events-none w-full"
             />
             {emoji ? <StripEmoji key={`${player.id}-${emoji.sentAt}`} itemId={emoji.itemId} /> : null}
