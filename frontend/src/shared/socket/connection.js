@@ -46,6 +46,16 @@ export function followWrongNode(socket, error, bounces, retryMs = NODE_BOUNCE_RE
   return count <= bounces.limit + 1 ? 0 : retryMs
 }
 
+// 다음 끊김 한 번만 받음: 서버가 끊은 것(io server disconnect)이면 run, 화면 쪽에서 끊은 것이면 그냥 지나감
+// socket.io는 서버가 끊으면 스스로 안 붙어서 관리자 강제 끊기 뒤 다시 붙을 때 씀
+export function onNextServerCut(socket, run) {
+  const onDisconnect = (reason) => {
+    socket.off("disconnect", onDisconnect)
+    if (reason === "io server disconnect") run()
+  }
+  socket.on("disconnect", onDisconnect)
+}
+
 // 강제 끊김·연결·연결 실패·서버 점검 받기, 끄는 함수 돌려줌 (끌 때는 그 이벤트 손잡이를 전부 지움)
 // 서버 점검은 안내만 받음: 끊긴 뒤 다시 연결은 socket.io 자동 재접속 그대로
 export function onConnection(socket, { forceDisconnect, connect, connectError, serverShutdown }) {

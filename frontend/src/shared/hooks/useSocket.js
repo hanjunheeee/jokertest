@@ -1,7 +1,7 @@
-// 로그인 동안 공용 소켓 연결 유지: 강제 끊김이면 로그아웃, 인증 실패면 토큰 갱신 뒤 다시 연결, 서버 점검이면 안내만, WRONG_NODE면 그 Node로
+// 로그인 동안 공용 소켓 연결 유지: 강제 끊김이면 로그아웃(관리자 끊기는 다시 붙음), 인증 실패면 토큰 갱신 뒤 다시 연결, 서버 점검이면 안내만, WRONG_NODE면 그 Node로
 // App이 씀, 연결 만들기·이벤트 받기는 shared/socket/connection.js, Node 힌트는 nodeHint.js가 맡음
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { connectSocket, followWrongNode, onConnection } from "../socket/connection.js";
+import { connectSocket, followWrongNode, onConnection, onNextServerCut } from "../socket/connection.js";
 import { clearNodeHint, createBounceCounter, readNodeHint, setNodeHintAccount } from "../socket/nodeHint.js";
 import { useAuthStore } from "../../domains/auth/store/auth.store.js";
 import { getSocket, setSocket, subscribeSocket } from "../socket/socketClient.js";
@@ -14,8 +14,12 @@ const SOCKET_URL = API_BASE_URL;
 // 서버 force_disconnect code: 같은 로그인 세션(같은 브라우저 다른 탭)에 밀림
 export const SAME_SESSION_REPLACED = "REPLACED_BY_SAME_SESSION";
 
+// 서버 force_disconnect code: 관리자 강제 끊기(정지 아님), 서버가 세션을 안 내림
+export const ADMIN_DISCONNECT = "ADMIN_DISCONNECT";
+
 // 서버 force_disconnect code → 기본 문구 (서버 문구가 없을 때)
 export const FORCE_DISCONNECT_MESSAGES = {
+    ADMIN_DISCONNECT: "운영자에 의해 연결이 종료되었습니다.",
     ACCOUNT_BANNED: "정지된 계정입니다. 운영정책을 확인해주세요.",
     ACCOUNT_INACTIVE: "이용할 수 없는 계정입니다.",
     ACCOUNT_WITHDRAWN: "회원 탈퇴가 완료되었습니다.",
@@ -59,11 +63,29 @@ function logoutToLogin(logout) {
     window.location.replace("/login");
 }
 
+// 서버가 끊은 뒤 같은 소켓으로 다시 붙음 (socket.io는 서버가 끊으면 스스로 안 붙음)
+// 화면을 닫거나 로그아웃해 끊긴 것(io client disconnect)·정리 뒤면 안 붙음
+function reconnectAfterServerCut(socket, state) {
+    if (!socket.connected) {
+        if (!state.cancelled) socket.connect();
+        return;
+    }
+    onNextServerCut(socket, () => {
+        if (!state.cancelled) socket.connect();
+    });
+}
+
 // 같은 브라우저 다른 탭이 밀어낸 것이면 안내만 (로그아웃·/login 가면 쿠키로 다시 로그인돼 탭끼리 번갈아 끊김, known 1-15)
-// 다른 기기·다른 로그인이면 알리고 로그아웃
-function handleForceDisconnect(payload, logout) {
+// 관리자 강제 끊기면 안내 뒤 그 화면에서 다시 붙음 (세션이 살아 있어 /login 가도 쿠키로 바로 로비로 돌아옴, 판이면 판에 그대로)
+// 다른 기기·다른 로그인·정지·탈퇴·세션 만료면 알리고 로그아웃
+function handleForceDisconnect(payload, logout, socket, state) {
     if (payload?.code === SAME_SESSION_REPLACED) {
         alert(payload?.message || "같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.");
+        return;
+    }
+    if (payload?.code === ADMIN_DISCONNECT) {
+        alert(payload?.message || FORCE_DISCONNECT_MESSAGES.ADMIN_DISCONNECT);
+        reconnectAfterServerCut(socket, state);
         return;
     }
     alert(payload?.message || FORCE_DISCONNECT_MESSAGES[payload?.code] || "다른 기기 또는 브라우저에서 로그인되어 현재 접속이 종료되었습니다.");
@@ -103,7 +125,7 @@ function startConnectionHandlers(socket, logout) {
     const nodeFollow = startNodeFollow(socket, () => state.cancelled);
 
     const offConnection = onConnection(socket, {
-        forceDisconnect: (payload) => handleForceDisconnect(payload, logout),
+        forceDisconnect: (payload) => handleForceDisconnect(payload, logout, socket, state),
         // 서버 점검·업데이트로 곧 끊김: 안내만 (모바일은 alert가 양피지 창), 로그아웃·끊기 안 함
         // 끊긴 뒤엔 socket.io가 알아서 다시 연결, 판 중이면 connect 뒤 판 쪽 스냅샷 다시 묻기로 복구
         serverShutdown: () => {
