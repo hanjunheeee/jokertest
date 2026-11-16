@@ -401,6 +401,34 @@ async function sendRaw(page, event, payload) {
     }, `42${JSON.stringify([event, payload])}`);
 }
 
+/**
+ * 화면 소켓 길목 (그 사람 브라우저 창 전부) — 판에 들어가기 전에 걸어야 그 뒤에 열린 소켓이 이 길로 감
+ * cut()  열린 소켓을 닫고 새 접속도 거절 → 서버가 바로 끊김을 앎 (= 그 사람이 오프라인)
+ * open() 다시 붙게 풂 → 화면 소켓이 스스로 다시 붙음 (= 온라인)
+ * 브라우저 오프라인 흉내(context.setOffline)는 이미 열린 웹소켓을 안 끊어 서버가 20~45초 뒤(핑 시간 초과)에야 끊김을 앎 → 재판 15초 마감과 엇갈려 안 씀
+ */
+async function socketLine(person) {
+    const line = { offline: false, pairs: [], context: person.context };
+    await person.context.routeWebSocket(/\/socket\.io\//, (ws) => {
+        if (line.offline) { ws.close(); return; }
+        line.pairs.push({ ws, server: ws.connectToServer() });
+    });
+    line.cut = async () => {
+        line.offline = true;
+        for (const { ws, server } of line.pairs.splice(0)) {
+            await Promise.resolve(server.close()).catch(() => {});
+            await Promise.resolve(ws.close()).catch(() => {});
+        }
+    };
+    line.open = () => { line.offline = false; };
+    return line;
+}
+
+/** 길목이 지금 사람 창에 붙어 있는지 (판 차리다 사람 창이 새로 바뀌면 빠짐 → 던져서 다시 돌게) */
+function expectLined(line, person) {
+    if (person.context !== line.context || line.pairs.length === 0) throw new Error('화면 소켓 길목이 안 붙음 (사람 창이 바뀜) — 다시 돌리기');
+}
+
 module.exports = {
     TEXT, LONG_TIMES, uuidOf, nickOf, sleep, sleepUntil, pinTimebar, seat, hostBot, toFirstDay, toVote, liveBots, openTribunal,
     botVerdict, botsVerdict, closeTribunal, toDayOf,
@@ -409,6 +437,6 @@ module.exports = {
     readable, expectTribunal, expectButtonReadable, expectVoteButtons, expectNoVoteButtons, expectNotice, expectDefendantCard, press, calm,
     expectExpelled, passExpulsion, expectNightNotice, watchAsDead, killHumanAtNight,
     expandBar, expectSettleShown, clockSeconds, watchScreen, readScreen, firstTribunalBar,
-    hookSocket, expectHooked, setNet, releaseHeld, sendRaw,
+    hookSocket, expectHooked, setNet, releaseHeld, sendRaw, socketLine, expectLined,
     day, night,
 };
