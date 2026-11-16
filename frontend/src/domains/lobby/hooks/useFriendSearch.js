@@ -90,6 +90,8 @@ export function useFriendSearch() {
       if (!isCurrentAccount(accountGeneration)) return
 
       addSentRequest(receiverId)
+      // 방금 보낸 신청이 보낸 신청 목록에 바로 보이게 다시 받음 (취소하려면 신청 번호가 필요함)
+      useFriendStore.getState().fetchOutgoingRequests()
     } catch (err) {
       if (!isCurrentAccount(accountGeneration)) return
       console.error("친구 신청 실패:", err)

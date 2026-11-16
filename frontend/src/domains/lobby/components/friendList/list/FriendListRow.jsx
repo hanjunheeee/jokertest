@@ -1,4 +1,4 @@
-// 친구 목록 한 줄 (즐겨찾기 별·초상·이름·접속 상태·오류·초대/차단 버튼)
+// 친구 목록 한 줄 (즐겨찾기 별·초상·이름·접속 상태·오류·초대/차단/끊기 버튼)
 // FriendListFolderRows·FriendListFilterResults가 친구마다 그림
 import { FRIEND_LIST_ASSETS } from "../../../constants/friendListAssets.js"
 import {
@@ -17,6 +17,9 @@ import FriendListFavoriteStar from "./FriendListFavoriteStar.jsx"
 import FriendOnlineStatus from "./row/FriendOnlineStatus.jsx"
 import FriendInviteButton from "./row/FriendInviteButton.jsx"
 import FriendBlockButton from "./row/FriendBlockButton.jsx"
+import FriendUnfriendButton from "./row/FriendUnfriendButton.jsx"
+import FriendUnfriendNotice from "./row/FriendUnfriendNotice.jsx"
+import { useUnfriendRow } from "../../../hooks/friendPanel/useUnfriendRow.js"
 import { useFriendStore } from "../../../store/friend.store.js"
 import { useGameInviteStore } from "../../../store/gameInvite.store.js"
 import { resolveAccountProfileAssets } from "../../../../../shared/utils/resolveAccountProfileAssets.js"
@@ -42,6 +45,11 @@ export default function FriendListRow({
 
   const isSendingInvite = useGameInviteStore((state) => state.sendingReceiverIds.has(id))
   const sendError = useGameInviteStore((state) => state.sendErrors[id] ?? null)
+
+  // 친구 끊기 상태·처리, 끊기 버튼은 초대 버튼이 없는 창(로비)에서만 보임 (대기방 창은 초대용이라 줄 버튼을 둘로 둠)
+  const unfriendRow = useUnfriendRow(id)
+  const confirmingUnfriend = unfriendRow.confirming
+  const showUnfriend = onInvite === null && onBlock !== null
 
   const { portraitSrc, frameSrc } = resolveAccountProfileAssets({ accountProfilePhotoId, accountProfileBorderId })
 
@@ -82,11 +90,12 @@ export default function FriendListRow({
               {sendError}
             </p>
           ) : null}
+          <FriendUnfriendNotice id={id} confirming={confirmingUnfriend} error={unfriendRow.error} />
         </div>
         {/* 초대·차단 처리 함수가 있을 때만 버튼 칸 */}
         {onInvite !== null || onBlock !== null ? (
           <div className={RECOMMENDED_ACTIONS_CLASS}>
-            {onInvite !== null ? (
+            {onInvite !== null && !confirmingUnfriend ? (
               <FriendInviteButton
                 id={id}
                 name={name}
@@ -96,9 +105,11 @@ export default function FriendListRow({
                 disabledReason={inviteDisabledReason}
               />
             ) : null}
-            {onBlock !== null ? (
+            {onBlock !== null && !confirmingUnfriend ? (
               <FriendBlockButton id={id} name={name} onBlock={onBlock} processing={blocking} />
             ) : null}
+            {/* 묻는 동안엔 확인·취소 두 버튼만 보임 (잘못 누르기 줄이기) */}
+            {showUnfriend ? <FriendUnfriendButton id={id} name={name} {...unfriendRow} /> : null}
           </div>
         ) : null}
       </div>

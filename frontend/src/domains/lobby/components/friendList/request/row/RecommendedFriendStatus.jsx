@@ -10,8 +10,8 @@ import {
 import { STATUS_TEXT } from "../../../../constants/recommendedFriend.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
-// 접속 중·접속 안 함만 색 따로, 나머지는 기본 색
-const STATUS_COLOR_CLASS = { ONLINE: "text-amber-100/85", OFFLINE: "text-white/35" }
+// 접속 중·접속 안 함만 색 따로, 나머지는 기본 색 (작은 글이라 접속 안 함도 /60까지만 흐림, 친구 줄과 같음)
+const STATUS_COLOR_CLASS = { ONLINE: "text-amber-100/85", OFFLINE: "text-white/60" }
 
 // 모르는 상태는 UNKNOWN으로 모아 글자·색을 정하고, 접속 중이 아니면 배지를 덮음
 export default function RecommendedFriendStatus({ status }) {

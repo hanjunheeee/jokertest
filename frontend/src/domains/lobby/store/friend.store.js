@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import { loadActions } from "./friend/loadActions.js";
 import { relationActions } from "./friend/relationActions.js";
+import { unfriendActions } from "./friend/unfriendActions.js";
 import { seqActions } from "./friend/seqActions.js";
 import { requestActions } from "./friend/requestActions.js";
 import { lockActions } from "./friend/lockActions.js";
@@ -16,6 +17,7 @@ export const useFriendStore = create((set, get) => ({
     ...seqActions(set, get),
     ...loadActions(set, get),
     ...relationActions(set, get),
+    ...unfriendActions(set, get),
     ...requestActions(set, get),
     ...lockActions(set, get),
 }));

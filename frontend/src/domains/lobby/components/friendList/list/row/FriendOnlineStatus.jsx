@@ -9,10 +9,10 @@ import {
 } from "../../../../constants/friendListStyle.js"
 import PublicAsset from "../../../../../../shared/ui/PublicAsset.jsx"
 
-// 오프라인이면 배지 위에 덮개를 씌우고 글자색을 흐리게 함
+// 오프라인이면 배지 위에 덮개를 씌우고 글자색을 흐리게 함 (작은 글이라 /35는 안 읽혀 /60까지만 흐림)
 export default function FriendOnlineStatus({ online }) {
   const statusText = online ? "접속 중" : "오프라인"
-  const statusColorClass = online ? "text-amber-100/85" : "text-white/35"
+  const statusColorClass = online ? "text-amber-100/85" : "text-white/60"
 
   return (
     <div className={ROW_STATUS_WRAP_CLASS}>

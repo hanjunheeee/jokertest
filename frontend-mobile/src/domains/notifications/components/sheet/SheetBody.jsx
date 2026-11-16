@@ -3,9 +3,9 @@
 import {
   CENTER_CLASS,
   EMPTY_MSG_CLASS,
-  ERROR_CLASS,
   LIST_CLASS,
   MSG_CLASS,
+  PAPER_ERROR_CLASS,
   SCROLL_CLASS,
 } from "@m/domains/notifications/constants/sheetStyle.js"
 import ActionButton from "@m/domains/notifications/components/sheet/ActionButton.jsx"
@@ -16,7 +16,7 @@ function renderMessage(sheet) {
   if (sheet.bodyState === "error") {
     return (
       <div className={CENTER_CLASS} data-notification-state="error">
-        <p className={ERROR_CLASS} role="alert">{sheet.error ?? "알림을 불러오지 못했습니다."}</p>
+        <p className={PAPER_ERROR_CLASS} role="alert">{sheet.error ?? "알림을 불러오지 못했습니다."}</p>
         <ActionButton label="다시 시도" action="retry-list" onClick={sheet.retryList} />
       </div>
     )

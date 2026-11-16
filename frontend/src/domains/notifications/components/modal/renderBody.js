@@ -3,7 +3,7 @@
 import { createElement } from "react"
 
 import {
-  ERROR_CLASS,
+  PAPER_ERROR_CLASS,
   NOTIFICATION_LIST_CLASS,
   MSG_CLASS,
   EMPTY_MSG_CLASS,
@@ -17,7 +17,8 @@ export function renderBody({ state, error, visible, onRetry, itemProps }) {
     return createElement(
       "div",
       { className: "flex flex-col items-center gap-2", "data-notification-state": "error" },
-      createElement("p", { className: ERROR_CLASS, role: "alert" }, error ?? "알림을 불러오지 못했습니다."),
+      // 창 종이 위 오류라 종이용 짙은 빨강
+      createElement("p", { className: PAPER_ERROR_CLASS, role: "alert" }, error ?? "알림을 불러오지 못했습니다."),
       renderActionButton({
         key: "retry-list",
         label: "다시 시도",

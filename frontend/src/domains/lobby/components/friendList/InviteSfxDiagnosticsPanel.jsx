@@ -31,17 +31,18 @@ export default function InviteSfxDiagnosticsPanel() {
       aria-label="QA 초대 소리 진단(읽기 전용)"
       className="app-text-scaled [--app-text-size:10px] mt-2 max-h-40 overflow-y-auto rounded border border-amber-700/60 bg-black/70 p-2 leading-tight text-amber-100"
     >
-      <p className="font-bold">
+      {/* p는 전역 글자색(검정)이 먼저 먹어 칸 색을 안 물려받음 → text-inherit로 어두운 칸의 밝은 글 */}
+      <p className="font-bold text-inherit">
         QA 진단 · 읽기 전용 (?{INVITE_SFX_QA_FLAG}=1)
       </p>
-      <p data-testid="invite-sfx-diagnostics-scope">
+      <p data-testid="invite-sfx-diagnostics-scope" className="text-inherit">
         관찰 계정: {account === null ? "없음" : `…${account.slice(-6)}`}
       </p>
-      <p data-testid="invite-sfx-diagnostics-summary">
+      <p data-testid="invite-sfx-diagnostics-summary" className="text-inherit">
         수신 {summary.arrivals} · 적격 판정 {summary.eligibleDispatches} · 재생 완료{" "}
         {summary.audiblePlaybacks}
       </p>
-      <p>재생 완료는 재생기 보고이며 실제 청음을 확인한 값이 아닙니다.</p>
+      <p className="text-inherit">재생 완료는 재생기 보고이며 실제 청음을 확인한 값이 아닙니다.</p>
       {suppressed.length > 0 ? (
         <ul data-testid="invite-sfx-diagnostics-reasons">
           {suppressed.map(([reason, count]) => (

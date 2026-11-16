@@ -20,6 +20,8 @@ const TITLE_INPUT_CLASS = MEMO_CLASS.replace("min-h-[4.2rem] ", "").replace("res
 
 export default function InquiryForm({ form, setCategory, setTitle, setBody, send, isSending }) {
   const isError = form.status === "error"
+  // 제목이 비면(빈칸만 있어도) 보내기 버튼을 끔 (눌러도 못 보내는 버튼을 켜 두지 않기)
+  const titleMissing = form.title.trim().length === 0
 
   return (
     <div className="flex min-h-0 flex-col" data-testid="inquiry-form">
@@ -51,7 +53,7 @@ export default function InquiryForm({ form, setCategory, setTitle, setBody, send
           className={`${MESSAGE_CLASS} ${MESSAGE_ERROR_CLASS}`}>{form.message}</p>
       ) : null}
 
-      <button type="button" className={`${ACTION_BTN_CLASS} ${FOCUS_RING_CLASS} mt-1 shrink-0`} disabled={isSending}
+      <button type="button" className={`${ACTION_BTN_CLASS} ${FOCUS_RING_CLASS} mt-1 shrink-0`} disabled={isSending || titleMissing}
         onClick={send} data-testid="inquiry-submit">
         <PublicAsset src={REPORT_BUTTON_ASSETS.cancel} alt="" className={ACTION_BTN_IMG_CLASS} />
         <span className={ACTION_BTN_LABEL_CLASS}>{isSending ? INQUIRY_COPY.sendingLabel : INQUIRY_COPY.submitLabel}</span>

@@ -32,6 +32,21 @@ export const declineFriendRequest = async (requestId) => {
     return await api.put(`/friends/requests/${requestId}/decline`);
 };
 
+// 내가 보낸 친구 신청 목록 (아직 답이 안 온 것만)
+export const fetchOutgoingRequests = async () => {
+    return await api.get("/friends/requests/outgoing");
+};
+
+// 보낸 친구 신청 취소
+export const cancelFriendRequest = async (requestId) => {
+    return await api.put(`/friends/requests/${requestId}/cancel`);
+};
+
+// 친구 끊기
+export const unfriendApi = async (friendId) => {
+    return await api.delete(`/friends/${encodeURIComponent(friendId)}`);
+};
+
 // 여러 신청의 처리 결과 한 번에 묻기 (id를 쉼표로 이어 보냄)
 export const fetchFriendRequestResults = async (requestIds) => {
     const ids = requestIds.map((id) => String(id)).join(",");

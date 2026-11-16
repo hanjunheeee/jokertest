@@ -1,15 +1,16 @@
-// 친구·받은 신청·즐겨찾기·차단 목록 불러오기와 친구 접속 상태 반영 액션
+// 친구·받은 신청·보낸 신청·즐겨찾기·차단 목록 불러오기와 친구 접속 상태 반영 액션
 // friend.store.js가 create 안에서 펼쳐 씀
 import {
     fetchBlockedUsers,
     fetchFavoriteFriendIds,
     fetchIncomingRequests as fetchIncomingApi,
     fetchMyFriends,
+    fetchOutgoingRequests as fetchOutgoingApi,
 } from "../../api/friend.api.js";
 import { applyFavoriteWrites, newerRemovals } from "../../utils/friend/pendingWrites.js";
 import { nextSeq } from "./state.js";
 
-// 네 목록 모두 같은 틀: 로그인 확인 → 번호표 → 응답 뒤 계정·순번 확인 → 반영, 실패도 같은 확인 뒤 오류 남김
+// 다섯 목록 모두 같은 틀: 로그인 확인 → 번호표 → 응답 뒤 계정·순번 확인 → 반영, 실패도 같은 확인 뒤 오류 남김
 export const loadActions = (set, get) => ({
     // 친구 목록: 계정이 바뀌었거나 더 새 응답이 이미 반영됐으면 버림
     fetchFriends: async () => {
@@ -107,6 +108,27 @@ export const loadActions = (set, get) => ({
             const message = error?.message ?? "차단 목록을 불러오지 못했습니다.";
             if (!get().claimSeq("blocks", ticket, { ok: false, message })) return get().supersededResult("blocks");
             set({ blocksStatus: "error", blocksError: message });
+            return { ok: false, reason: "error", message: error?.message };
+        }
+    },
+
+    // 보낸 신청 목록: 차단 목록과 같은 틀 (불러오는 동안 loading)
+    fetchOutgoingRequests: async () => {
+        const generation = get().syncAccount();
+        if (get().accountId === null) return { ok: false, reason: "anonymous" };
+        const ticket = nextSeq();
+        set({ outgoingStatus: "loading", outgoingError: null });
+        try {
+            const requests = await fetchOutgoingApi();
+            if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            if (!get().claimSeq("outgoing", ticket, { ok: true })) return get().supersededResult("outgoing");
+            set({ outgoingRequests: Array.isArray(requests) ? requests : [], outgoingStatus: "success", outgoingError: null });
+            return { ok: true };
+        } catch (error) {
+            if (!get().isCurrent(generation)) return { ok: false, reason: "stale" };
+            const message = error?.message ?? "보낸 친구 신청을 불러오지 못했습니다.";
+            if (!get().claimSeq("outgoing", ticket, { ok: false, message })) return get().supersededResult("outgoing");
+            set({ outgoingStatus: "error", outgoingError: message });
             return { ok: false, reason: "error", message: error?.message };
         }
     },

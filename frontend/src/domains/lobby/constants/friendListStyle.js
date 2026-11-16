@@ -112,14 +112,16 @@ export const STATUS_MSG_CLASS = "app-text-scaled [--app-text-size:16px]"
 
 export const STATUS_DETAIL_CLASS = "app-text-scaled [--app-text-size:14px]"
 
+// 줄 틀(어두운 비단) 위 옅은 글: /45는 작은 글에 흐려서 /60
 export const STATUS_DETAIL_MUTED_CLASS =
-  `${STATUS_DETAIL_CLASS} text-white/45`
+  `${STATUS_DETAIL_CLASS} text-white/60`
 
 export const STATUS_DETAIL_ERROR_CLASS =
   `${STATUS_DETAIL_CLASS} text-red-300/90`
 
+// 줄 없이 창 종이(중간 밝기 갈색) 위에 바로 뜨는 안내·빈 목록 글: 흰 글은 안 보여 검정 (아래 두 개도 같음)
 export const FILTER_EMPTY_CLASS =
-  `mt-6 text-center ${STATUS_MSG_CLASS} text-white/50`
+  `mt-6 text-center ${STATUS_MSG_CLASS} text-black`
 
 export const TAB_SCROLLABLE_LIST_CLASS =
   `mt-1 max-h-[12rem] overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
@@ -133,7 +135,7 @@ export const REQUEST_RESULT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[clamp(2.6rem,4.2vw,3.1rem)] pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 export const REQUEST_EMPTY_CLASS =
-  `mt-10 text-center ${STATUS_MSG_CLASS} text-white/50`
+  `mt-10 text-center ${STATUS_MSG_CLASS} text-black`
 
 export const REQUEST_BACK_BTN_CLASS = "absolute bottom-0 left-0 z-10"
 
@@ -161,10 +163,15 @@ export const ACCEPT_LIST_CLASS =
   `mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 export const ACCEPT_EMPTY_CLASS =
-  `mt-10 text-center ${STATUS_MSG_CLASS} text-white/50`
+  `mt-10 text-center ${STATUS_MSG_CLASS} text-black`
 
+// 종이 위 목록 오류 + 다시 시도: 빨강은 이 종이에서 어떤 짙기로도 안 읽혀 글 뒤만 어둡게 깔고 옅은 빨강
 export const STATUS_ERROR_CLASS =
-  `${STATUS_MSG_CLASS} text-red-300/90`
+  `rounded bg-black/60 py-1 ${STATUS_MSG_CLASS} text-red-200`
+
+// 종이 위 작은 머리글("보낸 신청 (n)"): 위 안내 글과 같은 검정
+export const PAPER_DETAIL_CLASS =
+  `${STATUS_DETAIL_CLASS} text-black`
 
 export const ACCEPT_BACK_BTN_CLASS = "mt-2"
 
@@ -207,5 +214,13 @@ export const RECOMMENDED_ACTION_BTN_CLASS =
   "block w-[clamp(2.25rem,3.45vw,2.85rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 transition-opacity hover:opacity-90"
 
 export const RECOMMENDED_SENT_BTN_CLASS = "opacity-40 cursor-default"
+
+// 글자 없는 버튼 그림 위에 얹는 글자 (받은 신청 줄 "거절"과 같은 모양, 보낸 신청 "취소"·친구 줄 "끊기"가 씀)
+export const ACTION_BTN_LABEL_CLASS =
+  "pointer-events-none absolute inset-0 flex items-center justify-center app-text-scaled [--app-text-size:13px] font-semibold text-[#f5f0e6]"
+
+// 취소·끊기 버튼은 키보드로 옮겨 왔을 때만 테두리를 보임 (확인·취소 중 어디에 있는지 보여야 해서, 문의 창 버튼과 같은 색)
+export const ACTION_BTN_FOCUS_CLASS =
+  "outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3d28d]"
 
 export const RECOMMENDED_ACTION_IMG_CLASS = "block h-auto w-full select-none"

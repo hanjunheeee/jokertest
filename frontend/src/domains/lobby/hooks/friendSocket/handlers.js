@@ -11,6 +11,12 @@ const myAccountId = () => {
     return isLoggedIn && user?.uuid ? user.uuid : null;
 };
 
+// 보낸 신청 목록은 친구 추가 탭을 연 적 있을 때만 다시 받음 (안 연 사람에게 요청을 늘리지 않기)
+const refreshOutgoingIfLoaded = () => {
+    const store = useFriendStore.getState();
+    if (store.outgoingStatus !== "idle") store.fetchOutgoingRequests();
+};
+
 // 훅이 고른 스토어 액션을 받아 사건별 처리 함수를 만듦
 export function makeFriendHandlers({ updateFriendStatus, fetchFriends, fetchIncomingRequests, removeSentRequest }) {
     return {
@@ -39,11 +45,12 @@ export function makeFriendHandlers({ updateFriendStatus, fetchFriends, fetchInco
             playFriendSfx(payload?.sfxEvent);
         },
 
-        // 관계가 바뀌면 친구·받은 신청·차단·초대를 모두 다시 받음
+        // 관계가 바뀌면 친구·받은 신청·차단·초대를 모두 다시 받음 (차단·신청 취소·친구 끊기가 이 사건으로 옴)
         relationInvalidated: () => {
             fetchFriends();
             fetchIncomingRequests();
             useFriendStore.getState().fetchBlocks();
+            refreshOutgoingIfLoaded();
             loadInviteSnapshotAndPlayNew();
         },
 
@@ -68,6 +75,7 @@ export function makeFriendHandlers({ updateFriendStatus, fetchFriends, fetchInco
             fetchFriends();
             fetchIncomingRequests();
             useFriendStore.getState().fetchFavorites();
+            refreshOutgoingIfLoaded();
             loadInviteSnapshotAndPlayNew();
         },
     };

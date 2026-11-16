@@ -1,4 +1,4 @@
-// 친구 목록 한 줄 (별·초상·이름·접속 상태·즐겨찾기/초대 오류·초대/차단 버튼)
+// 친구 목록 한 줄 (별·초상·이름·접속 상태·즐겨찾기/초대/끊기 오류·초대/차단/끊기 버튼)
 // FriendFolder·ListTab 검색 결과가 친구마다 그림
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { FRIEND_LIST_ASSETS } from "@/domains/lobby/constants/friendListAssets.js"
@@ -18,9 +18,12 @@ import ProfilePortrait from "@m/shared/ui/portrait/ProfilePortrait.jsx"
 import OnlineStatus from "../parts/OnlineStatus.jsx"
 import IconAction from "../parts/IconAction.jsx"
 import FavoriteStar from "./FavoriteStar.jsx"
+import UnfriendActions from "./UnfriendActions.jsx"
+import UnfriendNotice from "./UnfriendNotice.jsx"
+import { useUnfriendRow } from "@/domains/lobby/hooks/friendPanel/useUnfriendRow.js"
 
 // 데스크톱 FriendListRow와 같은 겹침, 즐겨찾기·초대 상태는 줄마다 스토어에서 골라 다른 줄이 다시 그려지지 않게 함
-// 초대 버튼은 방 id가 있는 곳(대기방)만, 차단 버튼은 늘 보임
+// 초대 버튼은 방 id가 있는 곳(대기방)만, 차단 버튼은 늘 보임, 끊기 버튼은 초대 버튼이 없는 곳(로비)만
 export default function FriendRow({ friend, invite = null, block = null }) {
   const { id, name } = friend
   const online = friend.online || friend.status === "ONLINE"
@@ -31,6 +34,11 @@ export default function FriendRow({ friend, invite = null, block = null }) {
   const sending = useGameInviteStore((state) => state.sendingReceiverIds.has(id))
   const sendError = useGameInviteStore((state) => state.sendErrors[id] ?? null)
   const blocking = block?.blockingIds?.has(id) ?? false
+
+  // 친구 끊기 상태·처리 (데스크톱 FriendListRow와 같은 훅), 묻는 동안엔 확인·취소 두 버튼만 보임
+  const unfriendRow = useUnfriendRow(id)
+  const confirming = unfriendRow.confirming
+  const showUnfriend = invite === null && block !== null
 
   const { portraitSrc, frameSrc } = resolveAccountProfileAssets({
     accountProfilePhotoId: friend.accountProfilePhotoId,
@@ -53,10 +61,11 @@ export default function FriendRow({ friend, invite = null, block = null }) {
           {sendError !== null ? (
             <p role="status" data-invite-error={id} className={STATUS_DETAIL_ERROR_CLASS}>{sendError}</p>
           ) : null}
+          <UnfriendNotice id={id} confirming={confirming} error={unfriendRow.error} />
         </div>
         {invite !== null || block !== null ? (
           <div className={RECOMMENDED_ACTIONS_CLASS}>
-            {invite !== null ? (
+            {invite !== null && !confirming ? (
               <IconAction
                 src={FRIEND_LIST_ASSETS.friendRequestButton}
                 label={sending ? `${name} 초대 보내는 중` : `${name} 게임 초대`}
@@ -66,7 +75,7 @@ export default function FriendRow({ friend, invite = null, block = null }) {
                 onClick={() => invite.onInvite(id)}
               />
             ) : null}
-            {block !== null ? (
+            {block !== null && !confirming ? (
               <IconAction
                 src={FRIEND_LIST_ASSETS.friendBlockButton}
                 label={blocking ? `${name} 차단 처리 중` : `${name} 차단`}
@@ -76,6 +85,7 @@ export default function FriendRow({ friend, invite = null, block = null }) {
                 onClick={() => block.onBlock(id)}
               />
             ) : null}
+            {showUnfriend ? <UnfriendActions id={id} name={name} {...unfriendRow} /> : null}
           </div>
         ) : null}
       </div>

@@ -65,6 +65,12 @@ export const ITEM_INNER_CLASS =
 export const ITEM_TITLE_CLASS =
   "font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1.55vw,0.86rem)] font-bold text-[#f5f0e6]"
 
+// 제목 줄: 왼쪽 제목, 오른쪽 받은 시각 (시각은 줄어들지 않고 제목이 줄어듦)
+export const ITEM_TITLE_ROW_CLASS = "flex min-w-0 items-baseline justify-between gap-2"
+
+export const ITEM_TIME_CLASS =
+  "shrink-0 font-body app-text-scaled [--app-text-size:clamp(0.56rem,1.2vw,0.66rem)] tabular-nums text-[#f5f0e6]/70"
+
 export const ITEM_BODY_CLASS =
   "font-body app-text-scaled [--app-text-size:clamp(0.62rem,1.35vw,0.74rem)] text-[#f5f0e6]/90"
 
@@ -91,15 +97,20 @@ export const ACTION_BTN_SECONDARY_LABEL_CLASS =
 export const ACTION_BTN_PRIMARY_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[10%] text-center font-subheading app-text-scaled [--app-text-size:clamp(0.56rem,1.05vw,0.68rem)] font-bold leading-tight text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
-// 안내·빈 목록·오류 글자
+// 안내·빈 목록 글자: 중간 밝기 양피지 위라 밝은 글은 안 보임 → 짙은 갈색 (모바일 알림 창과 같은 색)
 export const MSG_CLASS =
-  "font-body app-text-scaled [--app-text-size:clamp(0.66rem,1.45vw,0.8rem)] text-[#f5f0e6]/90"
+  "font-body app-text-scaled [--app-text-size:clamp(0.66rem,1.45vw,0.8rem)] text-[#1a1008]"
 
 export const EMPTY_MSG_CLASS =
-  "font-body app-text-scaled [--app-text-size:clamp(0.92rem,1.9vw,1.12rem)] font-medium text-[#f5f0e6]/95"
+  "font-body app-text-scaled [--app-text-size:clamp(0.92rem,1.9vw,1.12rem)] font-medium text-[#1a1008]"
 
+// 오류 글자: 어두운 알림 칸 그림 위 (줄 안 읽음 처리 오류)
 export const ERROR_CLASS =
   "font-body app-text-scaled [--app-text-size:clamp(0.62rem,1.35vw,0.74rem)] text-[#f5a89a]"
+
+// 양피지 위 오류 글자 (목록 못 받음·삭제 실패): 분홍은 종이와 밝기가 비슷해 안 보임 → 아주 짙은 빨강 (모바일과 같은 색)
+export const PAPER_ERROR_CLASS =
+  "font-body app-text-scaled [--app-text-size:clamp(0.62rem,1.35vw,0.74rem)] text-[#300600]"
 
 // 스크롤 영역과 공용 스크롤바 위치
 export const SCROLL_WRAP_CLASS =

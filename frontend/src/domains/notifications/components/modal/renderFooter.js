@@ -3,7 +3,7 @@
 import { createElement } from "react"
 
 import { useNotificationsStore } from "../../store/notifications.store.js"
-import { ERROR_CLASS, MODAL_FOOTER_CLASS } from "../../constants/notificationLayoutStyle.js"
+import { PAPER_ERROR_CLASS, MODAL_FOOTER_CLASS } from "../../constants/notificationLayoutStyle.js"
 import { renderActionButton } from "./renderActionButton.js"
 
 // 누를 때 지난 삭제 오류를 먼저 지우고 지우기 시작
@@ -27,7 +27,8 @@ export function renderFooter({ disabled, pending, error }) {
       ? createElement(
           "p",
           {
-            className: ERROR_CLASS,
+            // 바닥 줄도 창 종이 위라 종이용 짙은 빨강
+            className: PAPER_ERROR_CLASS,
             role: "alert",
             "data-notification-delete-error": "true",
           },

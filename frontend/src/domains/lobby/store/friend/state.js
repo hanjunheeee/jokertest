@@ -43,6 +43,19 @@ export const initialAccountState = () => ({
     blocksStatus: "idle",
     blocksError: null,
 
+    // 내가 보낸 대기 신청 (친구 추가 탭의 보낸 신청 목록), 한 번도 안 받았으면 idle
+    outgoingRequests: [],
+    outgoingStatus: "idle",
+    outgoingError: null,
+
+    // 보낸 신청 취소 중인 신청 id와 실패 문구 (신청 id → 문구), 줄에 보임
+    cancelPendingIds: new Set(),
+    cancelErrors: {},
+
+    // 친구 끊는 중인 친구 id와 실패 문구 (친구 id → 문구), 줄에 보임
+    unfriendPendingIds: new Set(),
+    unfriendErrors: {},
+
     friendsError: null,
     incomingError: null,
     favoritesError: null,
@@ -59,9 +72,9 @@ export const initialAccountState = () => ({
 
     acceptAllResult: emptyAcceptAllResult(),
 
-    appliedSeq: { friends: 0, incoming: 0, favorites: 0, blocks: 0 },
+    appliedSeq: { friends: 0, incoming: 0, favorites: 0, blocks: 0, outgoing: 0 },
 
-    appliedResult: { friends: null, incoming: null, favorites: null, blocks: null },
+    appliedResult: { friends: null, incoming: null, favorites: null, blocks: null, outgoing: null },
 });
 
 // 스토어 처음 상태 (계정 칸 + 계정별 상태)

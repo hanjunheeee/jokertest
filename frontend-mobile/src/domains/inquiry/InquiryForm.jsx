@@ -10,12 +10,15 @@ const CATEGORY_CLASS =
 const CATEGORY_ON = "border-[#f3d28d] bg-[#3a1410]/80 text-[#f5e8c8]"
 const CATEGORY_OFF = "border-[#3a2818]/75 bg-[#120a06]/55"
 const LABEL_CLASS = "mb-1 block font-subheading app-text-scaled [--app-text-size:0.88rem] font-bold text-[#f5e8c8]"
-// 폰 글자 16px 이상이라 입력할 때 화면이 확대되지 않음
+// 폰 글자 16px 이상이라 입력할 때 화면이 확대되지 않음, 안내 글은 /65라야 어두운 칸에서 읽힘
 const FIELD_CLASS =
-  "w-full rounded-sm border border-[#3a2818]/75 bg-[#120a06]/70 p-2 font-subheading text-base leading-snug text-white outline-none placeholder:text-white/40 focus-visible:border-[#f3d28d]"
+  "w-full rounded-sm border border-[#3a2818]/75 bg-[#120a06]/70 p-2 font-subheading text-base leading-snug text-white outline-none placeholder:text-white/65 focus-visible:border-[#f3d28d]"
 const COUNT_CLASS = "mb-1 text-right font-subheading text-[0.75rem] tabular-nums text-white/55"
 
 export default function InquiryForm({ form, setCategory, setTitle, setBody, send, isSending }) {
+  // 제목이 비면(빈칸만 있어도) 보내기 버튼을 끔 (눌러도 못 보내는 버튼을 켜 두지 않기, 데스크톱과 같음)
+  const titleMissing = form.title.trim().length === 0
+
   return (
     <div className="flex flex-col" data-testid="inquiry-form">
       <p className={LABEL_CLASS} id="m-inquiry-category-label">{INQUIRY_COPY.categoryLabel}</p>
@@ -48,7 +51,7 @@ export default function InquiryForm({ form, setCategory, setTitle, setBody, send
 
       <ImageButton look={CONFIRM_BUTTON_LOOK} src={REPORT_BUTTON_ASSETS.cancel}
         label={isSending ? INQUIRY_COPY.sendingLabel : INQUIRY_COPY.submitLabel}
-        disabled={isSending} onClick={send} data-testid="inquiry-submit" />
+        disabled={isSending || titleMissing} onClick={send} data-testid="inquiry-submit" />
     </div>
   )
 }
