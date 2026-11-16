@@ -1,242 +1,279 @@
 # 브라우저 시험 (Playwright)
 
-진짜 브라우저로 누르는 시험. 시험 전용 DB·포트로 따로 돌아서 개발 서버(4000·5173·5174)·개발 DB와 안 부딪힘.
+이 글은 진짜 브라우저로 누르는 시험(브라우저 시험)을 어디에 쓰고, 어떻게 돌리고, 어떤 도우미가 있는지 보여 줌.
+
+- 시험 전용 DB·포트로 따로 돎 → 개발 서버(4000·5173·5174)·개발 DB와 안 부딪힘
+- 기준: 브랜치 `fix/scenario-2026-11-16`, 2026-11-16 낮
+- 시험을 **쓰는 규칙**(번호·5명 판·표시·"보임" 확인)은 `docs/게임_의도_2026-11-15/시험_도우미.md`와 `_시험_공통.md`가 정본, 이 글은 폴더 안내
+
+## 1. 한눈에
+
+이 표는 시험이 쓰는 DB·주소·파일 자리를 보여 줌.
 
 | 것 | 값 |
 |---|---|
 | 시험 DB | docker `jokertest-db-1` 안 `joker_e2e` (계정 `mmc_e2e`, 이 DB만 권한) |
 | 백엔드 | `http://localhost:4100` (`scripts/start-backend.js`가 켬, 꺼지면 다시 켬) |
-| 데스크톱 화면 | `http://localhost:5273` (`scripts/serve-front.js desktop` — 기본 빌드본, `E2E_FRONT=dev`면 vite 개발 서버) |
-| 모바일 화면 | `http://localhost:5274` (`scripts/serve-front.js mobile` — 같음) |
-| 관리자 화면 | `http://localhost:5275` (`scripts/serve-front.js admin` — 늘 빌드본, `/admin-api`는 4100으로 넘김, 클라우드플레어 Access 흉내 — 아래 '관리자 시험') |
-| 비밀값 | `e2e/.env.e2e` (git 안 올라감, 처음 `npm run db:setup`이 무작위로 만듦, 토스 시험 키만 backend/.env에서 옮김) |
+| PC 화면 | `http://localhost:5273` (`scripts/serve-front.js desktop`) |
+| 모바일 화면 | `http://localhost:5274` (`scripts/serve-front.js mobile`) |
+| 관리자 화면 | `http://localhost:5275` (`scripts/serve-front.js admin`, `/admin-api`는 4100으로 넘김) |
+| 비밀값 | `e2e/.env.e2e` (git에 안 올라감, 처음 `npm run db:setup`이 무작위로 만듦) |
 | 서버 로그 | `e2e/.runtime/backend.log` (SQL까지 다 있음) |
 | 받은 메일 | `e2e/.runtime/mail/<주소>.jsonl` (진짜 메일 안 나감) |
-| 결과 | `reports/html` (npm run report), `reports/results.json`, 실패 사진·trace는 `test-results/<실행 번호>/` (실행마다 따로) |
+| 결과 | `reports/html`(`npm run report`), `reports/results.json`, 실패 사진·trace(실행 기록)는 `test-results/<실행 번호>/` |
 
-## 띄우는 법
+## 2. 돌리는 법
+
+이 장은 명령을 적음. **브라우저 시험은 고치기·부하가 끝난 뒤 한 번만 돌림** — 쓰는 동안에는 모이는지만 봄.
 
 ```bash
 cd e2e
-npm install                 # @playwright/test 1.62.1 (브라우저는 이미 있는 chromium-1234 씀)
-npm run db:setup            # 시험 DB 만들기·마이그레이션 0001~0029·시험 상품 (다시 돌려도 됨)
-npx playwright test         # 전부: desktop·mobile 동시 → 끝나면 serial(서버 꺼짐 등) 하나씩
+npm install                 # @playwright/test 1.62.1 (브라우저가 없으면 npx playwright install chromium webkit)
+npm run db:setup            # 시험 DB 만들기 + 마이그레이션(DB 표 바꾸기) 34개 + 시험 상품 (다시 돌려도 됨)
+
+# 쓰는 동안: 돌리지 않고 모이는지·개수만
+npx playwright test --list --no-deps tests/ingame/a05-x.spec.js
+node --check tests/ingame/a05-x.spec.js          # 이 폴더엔 eslint 설정이 없음
+
+# 한 번 돌릴 때: 단계별로 (CPU 보고 작업자 수 정함, 실패 파일만 한 번 다시)
+bash ../tools/시험도구/br/all.sh
 ```
 
-- 서버 셋은 Playwright가 알아서 켜고 끝나면 끔. 이미 켜 둔 걸 쓰려면 `E2E_REUSE=1`.
-- 한 파트만: `npx playwright test --no-deps tests/room` · 한 프로젝트만: `--project=mobile`
-  - `--no-deps` 꼭 붙이기: serial 프로젝트가 앞 프로젝트(desktop·mobile 등)를 먼저 돌리게 묶여 있어 안 붙이면 파일 거르기가 앞 프로젝트에 안 먹고 전부 돎 (`E2E_NODES=2`에서도 같음)
-  - 다만 `--no-deps`면 serial 시험(서버 끄기 등)이 다른 프로젝트와 같이 돌 수 있음 → serial은 `--project=serial`로 따로
-- 판 시험 빼고: `npm run test:fast` · 판 시험만: `npm run test:game`
-- 서버 꺼짐 같은 serial만: `npm run test:shutdown` (= `--project=serial --no-deps`)
-- 시험 DB 새로: `npm run db:reset` · 계정 남기기: `E2E_KEEP_ACCOUNTS=1`
-- 동시 수: `E2E_WORKERS=8` (기본 6)
+- 서버 넷(백엔드·PC·모바일·관리자 화면)은 Playwright가 켜고 끝나면 끔. 켜 둔 것을 쓰려면 `E2E_REUSE=1`
+- 한 폴더만: `npx playwright test --no-deps tests/room` · 한 프로젝트만: `--project=mobile`
+  - `--no-deps`를 꼭 붙임: serial 프로젝트가 앞 프로젝트를 먼저 돌리게 묶여 있어, 안 붙이면 파일 거르기가 앞 프로젝트에 안 먹고 전부 돎
+  - serial 시험(서버 끄기·점검)은 `--project=serial --no-deps`로 따로 (`npm run test:shutdown`)
+- 판 시험 빼고: `npm run test:fast` · 판 시험만: `npm run test:game` · 사파리만: `npm run test:safari`
+- 시험 DB 새로: `npm run db:reset`
 
 ### 바꿀 수 있는 값 (환경값)
 
 | 값 | 기본 | 무엇 |
 |---|---|---|
-| `E2E_REUSE=1` | 꺼짐 | 켜 둔 서버(4100·5273·5274) 그대로 씀 |
-| `E2E_FRONT` | `build` | 화면 서버: `build` = 빌드본 + 작은 정적 서버(CPU 적게), `dev` = vite 개발 서버(고친 화면 바로 반영) |
-| `E2E_FRONT_REBUILD=0` | 꺼짐 | build일 때 있던 빌드본(`.runtime/front/<desktop·mobile>`)을 다시 안 빌드하고 씀 |
-| `E2E_RUN_ID` | 자동(시각+무작위) | 실행 번호 — 계정 이메일 `e2e+<번호>-…@example.test`·결과 폴더 이름 |
-| `E2E_OUTPUT_DIR` | `test-results/<실행 번호>` | 실패 사진·trace 폴더 (`--output`과 같음) |
+| `E2E_WORKERS` | `6` | 동시에 도는 작업자 수 (8까지 확인함) |
+| `E2E_REUSE=1` | 꺼짐 | 켜 둔 서버(4100·5273·5274·5275)를 그대로 씀 |
+| `E2E_NODES` | `1` | 서버 수. `2`면 4100은 앞단(프록시), 4101·4102에 서버 둘 + 시험 Redis(6380) → `tests/multinode/**`도 돎 |
+| `E2E_LB` · `E2E_PROXY` · `E2E_REDIS_URL` | `rr` · `node` · `redis://127.0.0.1:6380` | 서버 여러 대일 때 나누는 법(`rr`·`least`), 앞단 종류(`node`·`nginx`), 시험 Redis 주소 |
+| `E2E_FRONT` | `build` | 화면 서버: `build` = 빌드본 + 작은 정적 서버, `dev` = vite 개발 서버(고친 화면 바로 반영) |
+| `E2E_FRONT_REBUILD=0` | 꺼짐 | 있던 빌드본을 다시 안 빌드하고 씀 (화면 코드가 더 새롭거나 빌드 값이 다르면 그래도 다시 빌드함) |
+| `E2E_RUN_ID` | 자동 | 실행 번호 — 계정 이메일 `e2e+<번호>-…@example.test`·결과 폴더 이름 |
+| `E2E_OUTPUT_DIR` | `test-results/<실행 번호>` | 실패 사진·trace 폴더 |
 | `E2E_STALE_HOURS` | `6` | 실행 시작 정리가 지우는 "오래된" 기준 시간 |
-| `E2E_KEEP_ACCOUNTS=1` | 꺼짐 | 실행 끝에 이번 실행 계정 안 지움 |
+| `E2E_KEEP_ACCOUNTS=1` | 꺼짐 | 실행 끝에 이번 실행 계정을 안 지움 |
+| `E2E_OUTSIDE_ROUTE=all` | 꺼짐 | 모든 브라우저 창에 바깥 막기 가로채기를 검 (아래 4장, 보통은 안 넣음) |
 
-### 화면 서버 (빌드본이 기본)
+## 3. 화면 서버 (빌드본이 기본)
 
-- `E2E_FRONT=build`(기본): 시작할 때 화면을 한 번 빌드(데스크톱·모바일 각각 몇 초, `VITE_API_BASE_URL=http://localhost:4100`) → `.runtime/front/<desktop·mobile>`에 두고 작은 정적 서버로 5273·5274에 줌. 그림·소리(`frontend/public` 200MB)는 베끼지 않고 public 폴더에서 바로 줌, 화면 안 주소(`/lobby` 등)는 index.html. vite 개발 서버보다 CPU를 훨씬 덜 씀(파일마다 바꾸기·감시 없음).
-- 빌드는 **개발 모드 값 그대로**(`NODE_ENV=development` → `import.meta.env.DEV === true`): 개발 전용 길·버튼·토스 테스트 키 검사가 개발 서버와 같음. 빌드라서 `version.json`(새 버전 안내용)이 생김.
-- **화면 코드를 고치면 화면 서버를 다시 켜야 반영됨**(빌드본은 안 바뀜). 고치면서 바로 보려면 `E2E_FRONT=dev`.
-- 손으로 하나만: `node scripts/serve-front.js desktop` (확인용 다른 포트: `E2E_FRONT_PORT=5283`).
+이 장은 시험이 보는 화면이 어떻게 만들어지는지 적음.
 
-### 여럿이 같이 돌릴 때 (켜 둔 서버 + `E2E_REUSE=1`)
+- 시작할 때 화면을 한 번 빌드해 `.runtime/front/<desktop·mobile·admin>`에 두고 작은 정적 서버로 줌
+  - 그림·소리(`frontend/public`)는 베끼지 않고 그 폴더에서 바로 줌
+  - 화면 안 주소(`/lobby` 등)는 index.html로 답함
+- 빌드는 **개발 모드 값**(`NODE_ENV=development` → `import.meta.env.DEV === true`)
+  - 개발 전용 길·단추·토스 시험 키 검사가 개발 서버와 같음
+  - 결과 화면 미리보기 주소(`?outcome=`)는 운영 빌드에서만 막힘 → 시험 빌드에선 열림
+- **화면 폴더의 `.env` 파일은 안 읽음** (`envDir: false`) — 개발 주소·진짜 광고 값이 시험 빌드에 섞이지 않게
+  - 백엔드 주소는 `VITE_API_BASE_URL=http://localhost:4100`을 직접 줌
+  - 모바일은 **가짜 광고 값**을 직접 줌: `VITE_AD_PROVIDER=adsense`, `VITE_ADSENSE_CLIENT=ca-pub-0000000000000000`, 단위 `1111111111`·`2222222222`
+- 화면 코드를 고치면 화면 서버를 다시 켜야 반영됨 (고치면서 바로 보려면 `E2E_FRONT=dev`)
+  - `E2E_FRONT_REBUILD=0`이어도 화면 코드가 빌드본보다 새로우면 다시 빌드함 (빌드 표시 파일 `e2e-build.json`으로 가림)
+- 손으로 하나만: `node scripts/serve-front.js desktop` (확인용 다른 포트: `E2E_FRONT_PORT=5283`)
 
-- **실행 시작 정리는 오래된 것만**: 만든 지 `E2E_STALE_HOURS`(6)시간 넘은 e2e 계정, 그만큼 안 쓴 메일 파일, `test-results/` 아래 지난 실행 폴더. 지금 도는 남의 실행 계정·메일은 안 지움(예전엔 전부 지워서 남의 시험이 깨짐 — 문제목록 ingame-c E1).
-- **실행 끝 정리는 이번 실행(`E2E_RUN_ID`) 계정만**. 지우는 사이 서버가 그 계정 기록을 새로 쓰면(판 끝 `game_result_players`·접속 기록) 외래키에 막힘 → 딸린 줄부터 다시 지움(몇 번까지). 그래도 못 지우면 경고만(시험 결과에 오류로 안 섞임), 남은 건 6시간 뒤 다음 실행이 지움.
-- 실패 사진·trace는 실행마다 `test-results/<실행 번호>/` → 서로 안 지움.
-- 역할 미리 정하기는 방·사람마다 따로 예약(아래 'game.js') → 병렬 판끼리 안 섞임.
+## 4. 바깥으로 안 나가게
 
-## 프로젝트 셋
+이 장은 시험이 진짜 광고·결제사·메일로 요청을 안 보내게 막아 둔 것을 적음.
 
-| 프로젝트 | 무엇 | 화면 |
+| 무엇 | 어떻게 막나 | 어디 |
 |---|---|---|
-| desktop | `tests/` 중 `mobile/` 밖 전부 | 1280×800, 5273 |
-| mobile | `tests/mobile/**` | 375×812 세로 + 터치 (Pixel 7 바탕), 5274 |
-| mobile-safari | `tests/mobile/**` 그대로 한 번 더 (아이폰 사파리) | 375×812 세로 + 터치 (iPhone 13 바탕, WebKit), 5274 |
-| serial | 이름에 `@serial`·`@shutdown` 붙은 시험 (어느 폴더든, `admin/phone` 빼고) | desktop·mobile·mobile-safari·admin·admin-phone 다 끝난 뒤 한 번에 하나 |
-| admin | `tests/admin/**` 중 `phone/` 밖 (관리자 화면) | 1280×800, 5275 |
-| admin-phone | `tests/admin/phone/**` (관리자 휴대폰 크기) | 375×812 + 터치, 5275 |
-| admin-phone-serial | `tests/admin/phone/**` 중 `@serial` | serial 끝난 뒤 한 번에 하나 |
+| 광고·분석 주소 (googlesyndication·doubleclick·google-analytics 등) | 크로미움 시작 값(`--host-resolver-rules`)으로 "없는 주소" 처리 → 모든 창에 걸림 | `playwright.config.js`, `helpers/outside.js` |
+| 토스 주소 (`tosspayments.com`·`toss.im`) | 위와 같음 | 같음 |
+| 모바일 광고 꾸러미(`adsbygoogle.js`) | 모바일 창마다 가로채기(route)로 **가짜 꾸러미**를 답함 → 광고 칸이 "시험 광고"로 채워짐 | `helpers/fixtures.js`가 창을 만들 때 |
+| 사파리(WebKit) | 시작 값이 없어 창마다 가로채기로 막음 | 같음 |
+| 백엔드 → 토스 승인 | 막다른 주소(`TOSS_API_BASE_URL=http://127.0.0.1:9`), 가짜 승인 서버를 쓰는 시험은 자기 주소로 덮음 | `helpers/backendEnv.js` |
+| 메일 | 파일로만 받음 (`MAIL_TEST_OUTBOX_DIR`) | 같음 |
+| 소셜 로그인 | 진짜 키를 안 넣음. 가짜 제공자는 시험이 로컬 포트에 띄움 | `tests/auth/_a11a-kit.js` |
 
-### 관리자 시험 (tests/admin)
+- 실행 시작 때 크로미움 시작 값이 진짜 먹는지 한 번 확인함. 안 먹으면 `E2E_OUTSIDE_ROUTE=all`로 바꿔 모든 창에 가로채기를 검 (경고 글이 찍힘)
+- 가로채기를 건 창은 브라우저 캐시(잠깐 저장해 두기)가 꺼짐(Playwright 규칙) → 그래서 꼭 필요한 창(모바일·사파리)에만 검
+- 시험이 자기 가로채기를 나중에 걸면 그쪽이 먼저 불림 → 광고 시험(`_a18-kit.js` `guardAds`)·충전 시험(`blockToss`)은 그대로 돎
+- **모바일 결과 화면의 한 판 끝 광고 창**: 결과판이 나오고 1.5초 뒤 뜨고, 5초 지나야 "닫기"가 나옴. 결과판을 덮으므로 단추를 누르기 전에 `ui.closeResultAd(page)`로 닫음
+- 아직 나가는 것: 글꼴 주소(`fonts.googleapis.com`·`cdn.jsdelivr.net`) — 막으면 글꼴이 바뀌어 자리·대비 확인이 달라져서 그대로 둠
 
-- 다른 프로젝트(desktop·mobile·mobile-safari)는 `admin/**`를 안 돌림. 관리자만: `npx playwright test --project=admin --project=admin-phone`
-- **문 1 (클라우드플레어 Access) 흉내**: 화면 서버(`scripts/admin-gate.js`)가 켤 때 RSA 열쇠를 새로 만들어 공개키를 `/__e2e/access-certs`로 주고(백엔드 `ADMIN_ACCESS_CERTS_URL`), 브라우저에 쿠키 `e2e_access_email`이 있을 때만 그 이메일로 서명한 표를 `Cf-Access-Jwt-Assertion`에 붙임. 쿠키 없으면 백엔드가 403 → "접근 권한 없음" 화면. 백엔드는 Access 켠 채(`required`)로 진짜 검증 코드 그대로 돎.
-- **가짜 IP**: 쿠키 `e2e_client_ip`를 화면 서버가 `X-Forwarded-For`로 넘김 → 시험마다 IP가 달라 로그인 잠금(IP 15분 20번)·로그인 요청 수(1분 10번)가 서로 안 섞임 (`allowAccess`가 무작위로 정함).
-- 도우미: `helpers/adminAccounts.js` — `createAdmin({ email })`(아이디 `e2e-<실행 번호>-…`, 실행 끝에 지움) · `otpNow(secret)` · `loginAsAdmin(page, account)` · `setAdminSessionIdle(page, 분)`(DB 세션 시각 당김) / `helpers/adminAccess.js` — `allowAccess(context, email)` · `denyAccess(context)` · `useClientIp(context, ip?)`
-- 같은 OTP 번호는 한 번만 받음 → 한 계정으로 두 번 로그인하면 `loginAsAdmin`이 다음 30초 칸까지 기다림.
-- 서버 전체에 걸리는 관리자 시험(점검·전체 공지)은 이름에 `@serial`, 주소는 `E2E.adminUrl` 직접 (serial 프로젝트는 baseURL이 데스크톱).
-- 환경값: 백엔드에 `ADMIN_TOTP_KEY`(`.env.e2e`, `db:setup`이 처음 한 번 만듦)·`ADMIN_ORIGIN=http://localhost:5275`·`ADMIN_ACCESS_TEAM_DOMAIN`·`ADMIN_ACCESS_AUD`(시험 값, `helpers/env.js`)·`ADMIN_ACCESS_CERTS_URL`을 넣음 (`helpers/backendEnv.js`, 밖의 `ADMIN_*` 값은 안 섞음).
-- 관리자 화면 코드를 고치면 화면 서버를 다시 켜야 반영(빌드본). 손으로: `node scripts/serve-front.js admin`.
+## 5. 프로젝트 일곱
 
-### 아이폰 사파리 (mobile-safari)
+이 표는 시험이 어느 프로젝트(브라우저 종류·크기 묶음)에서 도는지 보여 줌. 개수는 2026-11-16 낮 `--list` 기준(쓰는 중이라 조금씩 바뀜).
 
-모바일 시험을 WebKit(사파리 엔진)으로 한 번 더 돌림 — 기본 `npx playwright test`에 들어 있음. 처음 한 번 `npx playwright install webkit`(WebKit 26.5, playwright webkit v2336)로 브라우저 받기. 사파리만: `npm run test:safari` (= `--project=mobile-safari`), 켜 둔 서버 쓰면 `E2E_REUSE=1`. 윈도우의 WebKit은 진짜 아이폰과 글꼴·키보드·주소창 높이가 달라서, 픽셀 위치보다 동작(누르기·알림·소켓)을 보는 데 씀. 사파리에서만 깨지는 것은 `문제목록/safari.md`에 적음.
+| 프로젝트 | 무엇 | 화면 | 개수 |
+|---|---|---|---|
+| desktop | `tests/` 중 `mobile/`·`admin/` 밖 | 1280×800, 5273 | 2,032 |
+| mobile | `tests/mobile/**` | 375×812 세로 + 터치(Pixel 7 바탕), 5274 | 748 |
+| mobile-safari | 모바일 시험 중 이름에 `@safari` 붙은 것만 한 번 더 | iPhone 13 바탕(WebKit), 5274 | 64 |
+| admin | `tests/admin/**` 중 `phone/` 밖 | 1280×800, 5275 | 80 |
+| admin-phone | `tests/admin/phone/**` | 375×812 + 터치, 5275 | 12 |
+| serial | 이름에 `@serial`·`@shutdown` 붙은 것 (서버 전체에 걸림) | 앞 프로젝트가 다 끝난 뒤 한 번에 하나 | 69 |
+| admin-phone-serial | `tests/admin/phone/**` 중 `@serial` | serial 끝난 뒤 한 번에 하나 | 2 |
 
-## 2단계 파트 표 (합계 2000)
+- 합 3,007개(서버 1대) / 3,078개(`E2E_NODES=2`, `tests/multinode/**` 포함)
+- 시험 하나 제한 2분, 기다림 10초, 누르기 15초, 실패하면 한 번 다시(`retries: 1`). 더 긴 시험은 그 시험 안에서 `test.setTimeout(...)`
+- 사파리 받기: `npx playwright install webkit`. 윈도우의 WebKit은 진짜 아이폰과 글꼴·키보드·주소창 높이가 달라 동작(누르기·알림·소켓)을 보는 데 씀
 
-폴더는 만들어 둠. 시험 파일은 `tests/<파트>/*.spec.js`.
+## 6. 폴더
 
-| 파트 폴더 | 개수 | 내용 |
+이 표는 `tests/` 아래 폴더가 무엇을 보는지 보여 줌. 파일 이름은 `aNN-이름.spec.js`(NN = 목록 번호), `_`로 시작하는 파일은 그 폴더 도우미.
+
+| 폴더 | 파일 | 무엇 |
 |---|---|---|
-| ingame | 990 | 데스크톱 인게임 전부: 역할 공개(10초·확인 버튼), 낮 토론 채팅, 투표(동점·기권 → 밤, 재투표 없음), 재판(유죄·무죄·시간 초과는 기권, 재판 시간 설정 반영), 밤 행동 직업별(광대·의사·경비원·마녀사냥꾼 둘째 밤부터, 광대끼리 지목 막음), 밤 같은 직업 채팅, 죽은 사람 채팅(낮·재판·밤, 산 사람은 못 봄), 사망·처형 연출, 승패 조건, 나가기·다시 접속·끊김, 서버 꺼짐 안내, 이모티콘, 카드 메뉴, 설정·기록 시트, 진행 바·타이머, 금지어 가리기, 신고 증거 + 직업 조합과 인원(5~10명)별 승패, 동시에 여러 판, 긴 판(5일 이상), 다시 접속 여러 번, 밤 차례 알림 창, 죽은 사람이 밤 알림 창 때문에 채팅이 잠기는지 |
-| mobile | 300 | 모바일 화면 전부: 카톡형 인게임 위주(초상 띠·말풍선·시스템 줄·단계 줄·"죽은 사람끼리" 띠·"밤 · 같은 직업끼리"·시트·길게 누르기·키보드 접힘) + 로비·방·결과·상점·마이페이지 세로 화면, 가로·태블릿 칸 배치, 광고 자리 |
-| security | 300 | 취약점이 실제로 막혔는지 브라우저로 (근거: `docs/보안_점검_2026-11-09.md`의 고친 항목 전부) — 아래 '보안 파트' |
-| room | 110 | 방 만들기 설정(재판 시간 포함), 방 목록, 코드 입장, 대기방 준비, 시작 조건, 강퇴, 설정 바꾸기, 마감 방 |
-| auth | 90 | 로그인·가입(이메일 인증·약관·14세)·아이디 찾기·비번 재설정·소셜 버튼·로그아웃·세션 만료 |
-| lobby | 60 | 메뉴·친구(신청·수락·거절·즐겨찾기·삭제)·초대·알림(읽음·지우기)·공지·고객센터 |
-| result | 70 | 결과·신고(사유·중복·제한)·대기방으로·로비로·전적 |
-| store | 40 | 상점 탭·구매·이모티콘·스킨 장착·쿠폰·결제창 열고 닫기·환불 안내 |
-| mypage | 40 | 계정 관리(닉네임·이메일·비번 변경·탈퇴)·디스코드 연결 버튼·설정·서고 |
+| ingame | 139 | PC 판: 역할 확인·낮 토론·투표·재판·밤 행동·채팅·끊김과 나가기·승패·골드 |
+| mobile | 111 | 모바일 화면 전부 (대기방·판·결과·상점·계정·친구·광고) |
+| admin | 41 | 관리자 화면 (PC·휴대폰 크기) |
+| multinode | 28 | 서버 2대일 때만 (`E2E_NODES=2`) |
+| room | 25 | 방 만들기·방 목록·코드 입장·대기방·시작·추방 |
+| result | 22 | 결과 화면·"대기방으로"·"로비로"·180초 |
+| social | 18 | 친구·알림·초대·신고 |
+| security | 16 | 막아 둔 취약점이 진짜 막혔는지 |
+| lobby | 13 | 로비 들어올 때 정리·점검 안내·중복 접속 |
+| auth | 12 | 로그인·가입·아이디 찾기·비번 재설정·소셜·세션 |
+| mypage | 10 | 계정 관리(닉네임·이메일·비번 바꾸기)·탈퇴·이모티콘·끼우기 |
+| maintenance | 9 | 점검·서버 끄고 켜기·운영 값 검사 |
+| store | 8 | 상점·구매·충전·쿠폰 |
+| inquiry | 1 | 고객센터 문의 |
 
-### 보안 파트 (security 300)
+## 7. 꼭 지킬 것 (요약)
 
-| 확인할 것 | 쓰는 도우미 |
+이 장은 시험을 쓸 때 규칙을 줄여 적음. 자세한 것은 `docs/게임_의도_2026-11-15/시험_도우미.md`.
+
+- **시험 이름은 목록 번호로 시작**: `A03-E-001 …`(간단) / `A03-H-001 …`(어려움), 값 하나 = `test()` 하나
+- **판은 5명 이상** (서버가 4명 이하 판은 시작 거절, 대기방 "게임시작"도 4명 이하면 미리 꺼짐), 직업은 늘 정해 줌(`roles`)
+- **계정은 시험마다 새로** (`accounts.create()` · `user` · `players.add()`), 시험끼리 값을 나눠 쓰지 않음
+- **표시(tag)는 이름 끝에**: `@game`(판을 씀) · `@hard`(어려움) · `@realtime`(진짜 시간 기다림) · `@smoke`(파일마다 1개) · `@safari`(사파리에서도) · `@serial`·`@shutdown`(서버 전체에 걸림) · `@single-node`(서버 한 대라야 뜻 있음)
+- **"보임"은 `expectReadable`로** (`helpers/visible.js` — 보임·크기·화면 안·안 가려짐·대비). `toBeVisible`만으로 끝내지 않음
+- **기다림**: 고정 쉬기 대신 `expect(...).toHaveText` · `expect.poll`. 긴 단계는 손잡이(`t.advance()` 등)로 넘기되, **확인하려는 시간 규칙은 넘기지 않음**
+- `test.skip` · `test.only` · `test.fixme` 안 씀
+- 고르개(찾는 법): 화면 글 · `getByRole(이름)` · aria-label 먼저, 그다음 `data-testid`
+- 화면이 `window.alert`로 알리는 곳은 `ui.captureAlert(page, () => 누르기)` (PC 대화상자·모바일 양피지 안내 창 둘 다 읽음)
+- 토스 결제창은 **가로채 흉내 낸 것만** 열고 닫음. 진짜 결제·바깥 요청 없음
+- 개발 서버(4000·5173·5174)·개발 DB(`joker`·`joker_realgame`)·백엔드 시험 DB(`pluto_f01_20260909_al`)는 안 건드림
+
+### 포트
+
+| 포트 | 누가 |
 |---|---|
-| 채팅·닉네임·신고 메모·공지에 스크립트를 넣어도 실행 안 됨 (XSS) | `security.trapXss` · `xssPayloads` · `assertNoXss` |
-| 남의 판 결과·알림·주문을 주소만 바꿔서 못 봄 (IDOR) | `players.add`로 두 사람, `context.request`로 남의 id 부르기 |
-| 로그인 실패 문구로 계정이 있는지 알 수 없음 | `ui.captureAlert`, `security.readResponse` |
-| 이메일 칸 쉼표·`@` 두 개, 큰 본문·`__proto__` | `security.readResponse` (fetch 직접) |
-| 로그인·쿠폰·인증번호 요청 수 제한 | `servers.startExtraBackend()` (운영 기본 ip 제한으로 따로 띄움 — 본 서버 4100은 ip 제한을 크게 풀어 둠) |
-| 소켓 Origin 검사·이벤트 수 제한 | `security.openRawSocket({ cookie, origin })` · `emitAck` |
-| 쿠키(HttpOnly·SameSite)·보안 헤더 | `security.readResponse` · `parseSetCookie` · `cookieAttributes` |
-| 로그아웃·비번 변경 뒤 옛 세션 끊김 | `players.add` 두 context에 같은 계정, `security.loginCookie` |
-| 정지·탈퇴 계정이 못 들어옴 | `db.query`로 정지 줄 넣기 → `internal.disconnect(uuid)` |
-| 관리자 통로가 열쇠 없으면 막힘 | `internal.raw(method, path)` 열쇠 빼고는 `fetch` 직접 |
-| 운영에서 약한 JWT로 시작 거부 | `servers.startExtraBackend({ expectExit: true, overrides: { NODE_ENV: 'production', JWT_SECRET: 'short', E2E_HOOKS: undefined, MAIL_TEST_OUTBOX_DIR: undefined } })` → `code === 1` |
-| 토스 금액 위조 | `context.request`로 주문 금액 바꿔 보내기 (결제창은 `toss.js`로 열고 닫기만) |
+| 4000 · 5173 · 5174 | 사용자 개발 서버 (안 씀) |
+| 4100 (·4101~4108) | 시험 백엔드 (서버 여러 대면 4100은 앞단) |
+| 5273 · 5274 · 5275 | 시험 화면 (PC·모바일·관리자) |
+| 4150 + 작업자 번호 | `servers.startExtraBackend()` 기본 (시험 하나만 쓰는 백엔드) |
+| 4160 + 작업자 번호 | 충전 시험의 따로 띄운 백엔드 |
+| 4170 + 작업자 번호 | 충전 시험의 가짜 토스 승인 서버 / 소셜 시험의 따로 띄운 백엔드 (같은 작업자 칸에서는 한 번에 하나만 돌아 안 부딪힘) |
+| 4180 + 작업자 번호 | 소셜 시험의 가짜 제공자 |
+| 4190 ~ 4199 | 보안 시험 전용 |
+| 6380 | 시험 Redis (서버 여러 대일 때) |
 
-## 규칙 (2단계 에이전트 꼭 지킬 것)
+## 8. 도우미 (`helpers/`)
 
-- **시험 이름은 한국어 "무엇을 하면 → 무엇이 됨"**. 예: `'비번을 틀리면 → 알림이 뜨고 로그인 화면에 그대로 있음'`
-- **계정은 시험마다 새로** (`accounts.create()` · `user` · `players.add()`). 미리 만든 공용 계정·tester1 같은 개발 계정 쓰지 않음.
-- **시험끼리 상태 공유 금지**: 전역 변수·파일·`test.describe.serial`로 앞 시험 결과 이어 쓰기 금지. 한 시험 안에서 다 만들고 확인.
-- **서버 전체에 걸리는 것은 `@serial`** (이름 끝에 붙임): 점검(`maintenance_state`), 접속자 전체 공지(`target: 'online'`), 서버 꺼짐(`@shutdown`). 금지어는 시험마다 무작위 낱말이면 병렬 괜찮음.
-- **판 시험은 `@game`** 태그 (한 판 10~30초 — `npm run test:fast`에서 빠짐).
-- **고르개**: 화면 글자 · `getByRole(이름)` · aria-label 먼저. 꼭 필요할 때만 화면 코드에 `data-testid`를 **최소로** 추가(동작 안 바꿈, 고치기 직전 그 파일을 다시 읽고 남의 변경 살리기, 커밋은 `git commit -- <그 파일>`).
-- **기다림**: `page.waitForTimeout` 대신 `expect(...).toBeVisible()` · `toHaveURL` · `expect.poll`. 판 단계는 기다리지 말고 `table.advanceUntil`.
-- 화면이 `window.alert`로 알리는 곳(로그인 실패·가입 완료·서버 꺼짐 안내)은 `ui.captureAlert(page, () => 누르기)` — 데스크톱 대화상자(누르는 도중 떠도 안 멈춤)와 모바일 양피지 안내 창(`alertdialog "안내"`, 모바일은 `window.alert`를 이 창으로 바꿔 둠) 둘 다 읽고 닫음. `page.waitForEvent('dialog')`는 데스크톱에서만 됨(모바일은 안 옴).
-- 로비에 처음 오면 인트로 영상이 뜸 → `ui.gotoLobby(page)` / `ui.skipIntro(page)`.
-- 토스 결제창은 **열고 닫기만**. 카드사·간편결제 고르기, 카드 번호 입력, 결제 완료는 하지 않음.
-- 개발 서버(4000·5173·5174)·개발 DB(`joker`·`joker_realgame`)·백엔드 시험 DB(`pluto_f01_20260909_al`)는 건드리지 않음.
+이 장은 공용 도우미가 무엇을 주는지 한 줄씩 적음. 모든 시험은 `const { test, expect, ui, mail, internal, e2e, E2E } = require('../../helpers/fixtures');`로 시작함.
 
-## 병렬
-
-- 기본 workers **6**. 판 시험 3종을 `--repeat-each=8`로 돌려 **8개·12개 동시 모두 24/24 통과** 확인(2026-11-09, 16코어 PC). 8 넘겨도 빨라지지 않음 → **안전한 최대 8**.
-- 판 시험 하나 약 15~25초 (단계 넘기기 씀). 판 시험 990개 ≈ 990×20초 ÷ 8 ≈ 40분 예상.
-- 서버 하나에 판 여러 개가 동시에 돎(방·계정이 시험마다 달라서 안 섞임). 한 시험 안에서 판 여러 개도 됨(`table.setup` 여러 번).
-
-## 도우미 (`helpers/`)
-
-모든 시험은 `const { test, expect, ui, mail, internal, e2e, E2E } = require('../../helpers/fixtures');`
-
-### fixtures.js — 시험 인자
+### 시험 인자 (`fixtures.js`)
 
 | 인자 | 쓰는 법 | 돌려줌 |
 |---|---|---|
-| `accounts` | `await accounts.create({ nickname?, password?, birthDate?, emailVerified?, agreeTerms?, role? })` · `createMany(n)` | `{ uuid, email, password, nickname }` — 실제 가입과 같게(이메일 인증 끝·약관 동의·만 14세·기본 지급). `agreeTerms:false`면 재동의 창, `birthDate`로 14세 미만 |
-| `user` | 기본 `page`를 새 계정으로 로그인(API 쿠키) → 로비(인트로 넘김) | `{ account, page, context }` |
+| `accounts` | `await accounts.create({ nickname?, password?, birthDate?, emailVerified?, agreeTerms?, role? })` · `createMany(n)` | `{ uuid, email, password, nickname }` — 실제 가입과 같게(이메일 인증 끝·약관 동의·만 14세·기본 지급) |
+| `user` | 기본 `page`를 새 계정으로 로그인(API 쿠키) → 로비 | `{ account, page, context }` |
 | `players` | `await players.add({ mobile?, account?, lobby=true, login=true })` 사람 더 (각자 따로 쿠키) | `{ account, context, page }` (시험 끝에 닫힘) |
-| `bots` | `await bots.spawn(n)` 소켓 봇 (로그인·접속됨) | `E2eBot[]` |
-| `table` | `await table.setup({ humans, bots, settings, roles })` 판 차리기 | `Table` (아래) |
+| `bots` | `await bots.spawn(n)` 소켓 봇(자동 플레이어) | `E2eBot[]` |
+| `table` | `await table.setup({ humans, bots, settings, roles })` 판 차리기 | `Table` |
 | `mail` · `internal` · `e2e` · `ui` | 아래 모듈 그대로 | |
 
-로그인 화면을 거치는 것: `ui.loginViaUi(page, account)` · 쿠키만 넣는 것: `ui.loginViaApi(context, account, { rememberMe })` 후 `ui.gotoLobby(page)`.
-
-### game.js — 판 (`table.setup`)
+### 판 (`game.js` — `table.setup`)
 
 ```js
 const t = await table.setup({
-  humans: [user, p2],                 // 브라우저 사람 (코드 입장·준비완료를 화면으로 누름)
-  bots: 4,                            // 첫 봇이 방장 (최소 1)
-  settings: { jokerCount: 1, tribunalTime: 15 },   // 기본 FAST: 토론·투표·밤 30초, 재판 15초, 정원은 인원에 맞춤
-  roles: { [user.account.uuid]: 'DOCTOR' },        // 또는 ({ humans, bots }) => ({ ... })
+  humans: [user],                     // 브라우저 사람 (코드 입장·준비완료를 화면으로 누름)
+  bots: 4,                            // 첫 봇이 방장. 안 주면 5명 판이 되게 채움, 합 5명 밑이면 차리기 전에 오류
+  settings: { jokerCount: 1 },        // 기본 FAST: 토론·투표·밤 30초, 재판 15초, 정원은 인원에 맞춤
+  roles: ({ humans, bots }) => ({ [humans[0].account.uuid]: 'DOCTOR', [bots[0].account.uuid]: 'JOKER' }),
 });
 await ui.readRoleReveal(user.page);   // '의사' (확인 누름)
-t.playBots({ dayVote: user.account.uuid, tribunal: 'GUILTY', night: 'skip', deadChat: '죽은 봇' });
-await t.advanceUntil('NIGHT');        // 또는 (s) => s.players.find(...).alive === false
+t.playBots({ dayVote: user.account.uuid, tribunal: 'GUILTY', night: 'skip' });
+await t.advanceUntil('NIGHT');        // 지금 단계 마감 타이머를 바로 돌림
 const s = await t.state();            // { gameId, phase, dayIndex, dayPhase, nightTurnRole, tribunal, winResult, players:[{uuid,nickname,role,alive}] }
 ```
 
-- **역할 고정**: `roles`(또는 `e2e.setRoles({ uuid: 'JOKER' })`를 시작 전에). **방 예약**: `table.setup`은 그 방 id로 예약 → 그 방 판에만 씀. `e2e.setRoles`를 직접 부르면 정할 사람 중 대기방에 든 사람의 방을 찾아 방 예약(못 찾으면 그 사람 예약 — 그 사람이 든 판에만), 15분 안 쓰면 버림. 판 시작 때 바라는 사람에게 그 역할, 나머지는 되도록 원래 역할 그대로 — **사슬 바꿈(나→경비원, 경비원이던 봇→광대)도 맞춤**. 같은 판 안에서 역할을 서로 바꿔 끼우므로 **역할별 인원은 방 설정 그대로** — 자동 구성은 6명부터 의사, 8명 경비원, 10명 마녀사냥꾼. 작은 판에서 특수 역할이 필요하면 `settings: { roleCompositionMode: 'custom', roleCounts: { JOKER: 1, DOCTOR: 1, GUARD: 1, WITCH_HUNTER: 1 } }` (광대 수는 `jokerCount`와 같아야 함). 못 맞춘 역할은 서버 로그에 `[e2e] 역할 미리 정하기 못 맞춤`.
-- **짧은 시간**: 방 설정 최소값(토론·투표·밤 30초, 재판 15초)이 기본. 그래도 기다리지 말고 **`t.advance()`/`t.advanceUntil()`로 지금 단계 마감 타이머를 바로 돌림**(시간 설정 값은 그대로라 화면 타이머 숫자 시험도 됨). 역할 공개 10초도 바로 넘김.
-- **봇 행동 지정** (`t.playBots(plan)` 또는 봇마다 `(bot, i) => plan`): `dayChat`, `readyForVote`(기본 true), `dayVote`(`'random'`·`'abstain'`·`'skip'`·uuid·닉네임·함수), `tribunal`(`'GUILTY'`·`'NOT_GUILTY'`·`'skip'`=안 내서 마감 때 기권·함수), `night`(대상, 광대는 동료 빼고), `jokerChat`, `deadChat`(죽은 뒤 한 번), `pollMs`.
-- **처형시키기**: 봇 `dayVote: 대상, tribunal: 'GUILTY'` → `advanceUntil(대상 alive === false)`. **밤에 죽이기**: 광대 봇을 `roles`로 정하고 `night: 대상` → `advanceUntil('DAY')`. (예: `tests/ingame/execute-by-bots.spec.js`)
-- 봇 하나 직접: `t.bots[0].request('submit_game_chat_message', { gameId: t.gameId, text })`, 받은 사건 `bot.events`, `bot.waitForEvent('day_chat_message_received')`.
-- 사람이 방장인 판: 화면으로 방 만들기(`tests/room/create-room.spec.js`) → `e2e.roomOf(uuid)`로 코드 얻기 → `bot.joinByCode(code)`.
+- 직업 직접 구성: `settings: customRoleSettings({ JOKER: 1, DOCTOR: 1, GUARD: 1 })` (자동 구성은 6명부터 의사, 8명 경비원, 10명 마녀사냥꾼)
+- 정한 직업은 `t.state()`로 한 번 확인 (서버 예약이 가끔 못 맞음 → 서버 로그 `[e2e] 역할 미리 정하기 못 맞춤`)
+- 봇 표로 처형하기 전엔 `await t.assertBotsCanExecute(uuid)` — 낮 투표는 최다 득표가 기권보다 많아야 재판 (사람은 안 내면 기권으로 셈)
+- 손잡이: `t.advance()`(단계 바로 끝내기) · `t.expireGraces()`(끊김 60초 바로 끝내기) · `t.closeResults()`(결과 화면 180초 바로 닫기)
+- 결과 화면까지 기다리기: `waitResult(page)` — 밤 암살로 끝난 판의 낮 시작 연출(못 끝난 영상 "건너뛰기"·글 창 "확인")도 넘김
+- 판 끝까지: `playToResult({ user, table, kind })` · 사람이 방장인 판: `hostGame({ host, guests, botList })` — 둘 다 `tests/room/roomHelpers`
 
-### internal.js — 관리자 통로·시험 손잡이 (열쇠는 .env.e2e)
+### 나머지 한 줄씩
 
-| 함수 | 무엇 |
+| 파일 | 무엇을 줌 |
 |---|---|
-| `internal.announceTo(uuids, { title, body })` | 그 사람들에게 공지 (병렬 안전) · `internal.announce(payload)`는 `target:'online'`도 됨(@serial) |
-| `internal.disconnect(uuid)` | 정지·비활성 반영 즉시 끊기 |
-| `internal.reloadMaintenance()` · `reloadBannedWords()` | DB 표 고친 뒤 다시 읽기 (점검은 @serial) |
-| `internal.live()` | 대기방·진행 판 요약 |
-| `e2e.setRoles({uuid: ROLE}, { roomId? })` · `clearRoles([uuid…])` · `clearRoles({ roomId })` | 다음 판 시작 때 역할 (방·사람 예약, 위 'game.js'). 전부 지우기는 `clearRoles({ all: true })`(남의 예약도 지우니 @serial에서만), 인자 없는 `clearRoles()`는 던짐 |
-| `e2e.gameOf(uuid)` · `e2e.game(gameId)` | 판 요약 (역할·생존·단계) |
-| `e2e.roomOf(uuid)` | 대기방 (코드·방장·준비) |
-| `e2e.advance(gameId)` | 지금 단계 바로 끝내기 |
+| `internal.js` | `internal.announceTo(uuids)` 공지 · `internal.disconnect(uuid)` 강제 끊기 · `reloadMaintenance()`·`reloadBannedWords()` 다시 읽기 · `e2e.setRoles`·`gameOf`·`roomOf`·`advance`·`expireGraces`·`closeResults` (열쇠는 `.env.e2e`) |
+| `ui.js` | `gotoLobby` · `loginViaUi`·`loginViaApi` · `joinRoomByCodeUi` · `readyUi` · `readRoleReveal` · `closeOverlays`(연출 창 닫기 — 못 끝난 암살 영상의 "건너뛰기"도 누름) · `closeResultAd`(모바일 광고 창 닫기) · `sendChat`·`expectChat` · `captureAlert` · `ROLE_LABELS` |
+| `visible.js` | `expectReadable(locator, { large?, contrast? })` · `expectAllReadable` · `readability` — 그림 단추는 안쪽 글 칸의 글자색을 읽음, `pointer-events:none` 글도 "안 가려짐"으로 바르게 봄 |
+| `accounts.js` | 계정 만들기·지우기, `randomNickname()`·`koreanNickname()`(한글로 시작하는 겹치지 않는 닉네임). 무작위 닉네임이 겹치면 새 닉네임으로 다시 만듦 |
+| `adminAccounts.js` · `adminAccess.js` | `createAdmin()` · `loginAsAdmin(page, account)` · `openAdminWindow(browser, { phone? })`(관리자 창 + 로그인) · `adminCall`·`adminApi(adminPage, method, path, data)`(관리자 API 부르기) · `allowAccess`·`denyAccess`(Access 통과 쿠키) |
+| `maintenance.js` | `setMaintenance({ enabled, startsInMs?, message? })` — `startsInMs`를 안 주면 **시작 시각 없이** 켬(새 판만 막음) · `clearMaintenance()` (`@serial` 시험만, finally에서 꼭 끔) |
+| `servers.js` | `triggerShutdown()`(서버 끄기, 곧 다시 켜짐) · `waitBackendUp()`(`@shutdown` 시험은 finally에서 꼭) · `startExtraBackend({ port?, overrides, expectExit })`(시험 하나만 쓰는 백엔드) |
+| `security.js` | `trapXss`·`xssPayloads`·`assertNoXss` · `readResponse` · `parseSetCookie`·`cookieAttributes` · `loginCookie` · `openRawSocket` |
+| `mail.js` | `waitForCode(email)` · `waitForResetUrl(email, { since })` · `readMails(email)` · `toMobile(url)`(재설정 링크는 PC 주소로 옴) |
+| `toss.js` | `openTossWindow(page)`·`closeTossWindow(page)` — 시험이 토스 주소를 가로채 흉내 낸 창만 (안 가로채면 막혀서 안 뜸) |
+| `friends.js` | `api(person, method, path)` · `makeFriends(a, b)` · `sendRequest(from, to)` |
+| `db.js` | `query(sql, [값])` · `sqlTime()`(DB 시각은 UTC — JS `Date`를 날 SQL에 그대로 넣으면 9시간 어긋남) · `assertTestDb()` |
+| `bannedWords.js` | 금지어 넣고 빼기 (낱말은 시험마다 무작위로) |
+| `outside.js` | 바깥 막기 (4장) — 시험이 직접 부를 일은 없음 |
+| `backendEnv.js` · `env.js` | 시험 백엔드 환경값·포트·주소 |
 
-`/e2e/*` 경로는 백엔드가 `E2E_HOOKS=1`이고 운영이 아닐 때만 붙음(운영에 이 값이 있으면 시작 거부). 시험 백엔드는 4100에서만 켜 둠.
+### 실행 시작·끝 정리
 
-### mail.js — 메일 속 번호·링크
+- **시작**(`global-setup.js`): 만든 지 `E2E_STALE_HOURS`(6)시간 넘은 시험 계정·탈퇴 계정·관리자 계정, 그만큼 안 쓴 메일 파일·결과 폴더만 지움. 지금 도는 남의 실행 것은 안 건드림
+- **끝**(`global-teardown.js`): 이번 실행(`E2E_RUN_ID`) 계정만 지움
+  - 이메일 모양(`e2e+<실행 번호>-…`)으로 한 번
+  - 탈퇴·이메일 바꾸기로 이메일이 달라진 계정은 `.runtime/accounts/`에 적어 둔 계정 번호로 한 번 더
+  - 화면으로 가입한 뒤 탈퇴한 계정은 적힌 것이 없어 다음 실행 시작 정리가 지움
+- 지우기 전에 **실제로 붙은 DB 이름이 `joker_e2e`인지 서버에 물어 확인**함. 다르면 아무것도 안 지움
+- 지우는 사이 서버가 그 계정 줄을 새로 쓰면 외래키(다른 표와 잇는 칸)에 막힘 → 딸린 줄부터 다시 지움. 그래도 못 지우면 경고만
 
-`await mail.waitForCode(email)` (가입 `SIGNUP_CODE`) · `mail.waitForCode(email, 'EMAIL_CHANGE_CODE')` · `mail.waitForResetUrl(email, { since })` · `mail.readMails(email)` · 모바일은 `mail.toMobile(resetUrl)` (링크는 데스크톱 주소로 옴). 다시 보내기 시험은 `since: Date.now()`를 누르기 전에 잡아 둠.
+## 9. 견본과 옛 기록
 
-### ui.js — 화면 공통
+- 견본(베껴 쓰는 틀): `tests/result/a08-sample-close-results.spec.js`
+- `문제목록/` 폴더: 2026-11-09~10에 옛 시험을 돌리며 적은 기록 (지금 시험과 번호가 다름, 참고만)
 
-`skipIntro` · `gotoLobby` · `loginViaUi` · `loginViaApi` · `joinRoomByCodeUi(page, code)` (데스크톱 6칸·모바일 1칸 둘 다) · `readyUi` · `readRoleReveal(page)` → '광대' 등 · `closePhaseNotice` · `sendChat` · `expectChat` · `captureAlert(page, action, { timeoutMs=10000, close=true })` → 알림 문구 (데스크톱 대화상자·모바일 양피지 창 둘 다, 누르기 전부터 떠 있던 양피지 창은 빼고) · `ROLE_LABELS`.
+## 10. 알려진 문제
 
-### security.js — 보안
+- **새 계정 여럿이 동시에 처음 로그인하면 가끔 500**: DB 교착(서로 잠금을 기다리다 멈춤) 때문. 도우미(`loginViaApi`·봇 로그인)는 500일 때만 몇 번 다시 하고 `[e2e] … → 다시` 경고를 남김. 로그인 자체를 보는 시험은 `loginViaUi`(다시 안 함)를 씀
+- 비번 재설정 링크 주소는 PC(5273)로 옴 → 모바일 시험은 `mail.toMobile()`
+- 모바일 결과 화면에는 늘 광고 창이 뜸(4장) → 닫지 않고 "대기방으로"를 누르면 광고 창에 가려 못 누름
 
-`trapXss(page)`(goto 전에) → 넣을 글 `xssPayloads('표식')` → `assertNoXss(trap)` · `readResponse(url, init)` → `{ status, headers, setCookies, body }` · `parseSetCookie(line)` · `cookieAttributes(context)` · `loginCookie(account)` → `{ cookie }` · `openRawSocket({ cookie, origin, url })` → `{ connected, error, events, emitAck, close }`.
+---
 
-### servers.js — 서버
+## 개발자용 부록 — 건너뛰어도 됨
 
-`triggerShutdown()` (깃발 파일 → 서버 안에서 SIGTERM → 접속자에게 `server_shutdown` 알림 → 꺼짐, 곧 다시 켜짐) · `waitBackendUp()` (**@shutdown 시험은 finally에서 꼭**) · `startExtraBackend({ port?, defaultIpLimits=true, overrides, expectExit, timeoutMs=60000 })` (시험 하나만 쓰는 백엔드, 같은 시험 DB·포트는 준 값 또는 4150+작업자 번호, 화면 없음). 안 켜짐(시간 초과)·바로 꺼짐으로 던질 때도 띄운 node를 끄고 던짐, 시험 프로세스가 끝나도 끔.
+### 관리자 시험의 문 흉내
 
-### toss.js — 토스 결제창
+- **문 1 (클라우드플레어 Access) 흉내**: 화면 서버(`scripts/admin-gate.js`)가 켤 때 RSA 열쇠를 새로 만들어 공개키를 `/__e2e/access-certs`로 줌(백엔드 `ADMIN_ACCESS_CERTS_URL`). 브라우저에 쿠키 `e2e_access_email`이 있을 때만 그 이메일로 서명한 표를 `Cf-Access-Jwt-Assertion`에 붙임. 쿠키가 없으면 백엔드가 403 → "접근 권한 없음" 화면. 백엔드는 Access를 켠 채(`required`) 진짜 검증 코드 그대로 돎
+- **가짜 IP**: 쿠키 `e2e_client_ip`를 화면 서버가 `X-Forwarded-For`로 넘김 → 시험마다 IP가 달라 로그인 잠금(IP 15분 20번)·요청 수(1분 10번)가 서로 안 섞임 (`allowAccess`가 무작위로 정함)
+- 같은 OTP(한 번 쓰는 번호)는 한 번만 받음 → 한 계정으로 두 번 로그인하면 `loginAsAdmin`이 다음 30초 칸까지 기다림
+- 서버 전체에 걸리는 관리자 시험(점검·전체 공지)은 이름에 `@serial`, 주소는 `E2E.adminUrl` 직접 (serial 프로젝트는 기본 주소가 PC 화면) → `openAdminWindow(browser)`로 창을 엶
+- 환경값: 백엔드에 `ADMIN_TOTP_KEY`(`.env.e2e`)·`ADMIN_ORIGIN=http://localhost:5275`·`ADMIN_ACCESS_TEAM_DOMAIN`·`ADMIN_ACCESS_AUD`·`ADMIN_ACCESS_CERTS_URL`을 넣음 (`helpers/backendEnv.js`, 밖의 `ADMIN_*` 값은 안 섞음)
 
-`await toss.openTossWindow(page, { product: /다이아 10개/ })` → 토스 샌드박스 iframe(읽기만) · `await toss.closeTossWindow(page)`.
+### 시험 손잡이 경로 (`/e2e/*`)
 
-### db.js · accounts.js
+백엔드가 `E2E_HOOKS=1`이고 운영이 아닐 때만 붙음 (운영에 이 값이 있으면 시작 거부).
 
-`require('../../helpers/db').query(sql, [값])` — 시험 DB 확인·정지 줄 넣기 등 (주소가 `joker_e2e`가 아니면 던짐). 계정 지우기는 실행 끝에 이번 실행(`E2E_RUN_ID`) 것만 자동.
-
-- **시각은 UTC**: 앱은 DB에 UTC로 적음. 날 SQL 값에 JS `Date`를 그대로 넘기면 sequelize가 이 PC 시간대(KST)로 바꿔 **9시간 어긋남**(정지 시작이 9시간 뒤 → 정지 안 걸림, 문제목록 ingame-c E3). `query`는 넘긴 값 속 `Date`를 알아서 UTC 글자로 바꿈. 글자로 직접 만들 땐 `const { sqlTime } = require('../../helpers/db')` → `sqlTime()` 지금, `sqlTime(Date.now() + 3600e3)` 한 시간 뒤 → `'2026-11-09 03:25:51'`. SQL 안에서는 `UTC_TIMESTAMP()`·`NOW()`(연결 시간대가 +00:00이라 같음)도 됨.
-- `accounts.createMany(n)`·봇 계정은 **하나씩 차례로** 만듦(동시에 만들면 가끔 DB 교착 — 문제목록 ingame-c E2), 계정 하나 만들기도 교착이면 몇 번 다시.
-
-## 본보기 시험 (2026-11-09 전부 통과)
-
-| 파일 | 무엇 |
+| 경로 | 무엇 |
 |---|---|
-| `tests/auth/login.spec.js` | 로그인 성공 → 로비 · 비번 틀림 → 알림 |
-| `tests/auth/password-reset-mail.spec.js` | 재설정 메일 링크 열기 |
-| `tests/room/create-room.spec.js` | 화면으로 방 만들기 → 대기방·방 코드 |
-| `tests/ingame/role-reveal.spec.js` | 2인 판, 광대 고정 → 역할 공개 → 바로 제 1일 |
-| `tests/ingame/execute-by-bots.spec.js` | 5인 판, 봇 넷이 나를 투표·유죄 → 처형 |
-| `tests/ingame/server-shutdown.spec.js` | 서버 꺼짐 안내 (@shutdown, serial) |
-| `tests/result/game-end.spec.js` | 2인 판 끝 → 결과 화면 |
-| `tests/lobby/menu.spec.js` · `tests/mypage/open.spec.js` | 로비 메뉴 · 마이페이지 |
-| `tests/store/toss-window.spec.js` | 토스 결제창 열고 닫기 |
-| `tests/mobile/lobby.spec.js` | 모바일 로비 메뉴·광고 자리·가로 넘침 없음 |
-| `tests/security/cookies-socket.spec.js` | 쿠키 HttpOnly·SameSite, 남의 Origin 소켓 거절, 채팅 XSS 안 돎 |
+| `POST·DELETE /e2e/role-presets` | 다음 판 직업 미리 정하기·지우기 (방·사람마다 따로 예약 → 병렬 판끼리 안 섞임) |
+| `GET /e2e/users/:uuid/game` · `/room` | 그 사람 판·대기방 요약 |
+| `GET /e2e/games/:gameId` | 판 요약 (직업·생존·단계) |
+| `POST /e2e/games/:gameId/advance` | 지금 단계 마감 타이머 바로 돌리기 |
+| `POST /e2e/games/:gameId/expire-graces` | 끊김 60초 바로 끝내기 |
+| `POST /e2e/games/:gameId/close-results` | 결과 화면 180초 바로 닫기 |
 
-## 알려진 문제
+### 봇 행동 지정 (`t.playBots(plan)`)
 
-- **새 계정 여럿이 동시에 처음 로그인하면 가끔 500** — `services/auth/account/session.js`가 같은 트랜잭션에서 `user_sessions`를 user_id로 UPDATE(빈 틈 잠금) 뒤 INSERT → 서로 다른 사람끼리 InnoDB 교착(`SHOW ENGINE INNODB STATUS`로 확인). 시험 도우미(`loginViaApi`·봇 로그인)는 500일 때만 몇 번 다시 하고 `[e2e] ... → 다시` 경고를 남김. 로그인 자체를 보는 시험은 `loginViaUi`(다시 안 함)를 씀.
-- 소셜(구글·디스코드) 키는 시험 백엔드에 안 넣음 → 소셜 버튼은 누른 뒤 이동·오류 안내까지만 확인.
-- 비번 재설정 링크 주소는 데스크톱(5273) → 모바일 시험은 `mail.toMobile()`.
+- `dayChat` · `readyForVote`(기본 true) · `dayVote`(`'random'`·`'abstain'`·`'skip'`·uuid·닉네임·함수)
+- `tribunal`(`'GUILTY'`·`'NOT_GUILTY'`·`'skip'` = 안 냄)
+- `night`(대상, 광대는 동료 빼고, 마녀사냥꾼 `'random'`은 죽은 사람 중) · `jokerChat` · `deadChat`(죽은 뒤 한 번) · `pollMs`
+- `'skip'`은 안 내는 것이라 그 단계는 마감까지 감 → `t.advance()`로 넘김

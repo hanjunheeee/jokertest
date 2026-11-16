@@ -17,6 +17,10 @@ const RAISED_IP_LIMITS = Object.freeze({
     PASSWORD_RESET_CHECK_IP_MAX: '100000',
 });
 
+// 시험 백엔드가 진짜 토스(api.tosspayments.com)로 승인·조회를 안 보내게 하는 막다른 주소 (이 PC의 안 쓰는 포트 → 바로 "연결 안 됨")
+// 가짜 승인 서버를 쓰는 시험은 overrides로 TOSS_API_BASE_URL을 자기 것으로 덮음 (tests/store/fakeToss.js)
+const TOSS_DEAD_END = 'http://127.0.0.1:9';
+
 // 백엔드에 줄 환경값: 시험 DB·시험 포트·시험 손잡이, 진짜 메일·소셜 키는 안 줌 (backend/.env는 cwd를 바꿔 안 읽게 함)
 // 지금 환경에서 백엔드 설정 이름은 전부 뺌 (밖에서 넘어온 DB 주소·메일·소셜 키가 섞이지 않게)
 const BACKEND_KEY_PATTERN = /^(DATABASE_URL|JWT_|MAIL_|PASSWORD_RESET_|SIGNUP_|GOOGLE_|DISCORD_|TOSS_|INTERNAL_|GAME_|E2E_|LOGIN_|FRONTEND_|NODE_OPTIONS$|NODE_ENV$|PORT$|LOG_|SERVER_ID$|NIGHT_|CHECK_EMAIL_|REFRESH_|SOCIAL_|FIND_ID_|REDIS_|CLUSTER_|NODE_COUNT$|NODE_DEAD_|DB_MAX_CONNECTIONS$|ADMIN_)/i;
@@ -62,6 +66,7 @@ const backendEnv = (secrets, { port = E2E.backendPort, defaultIpLimits = false, 
         // 시험 손잡이 (운영이면 서버가 시작 거부)
         E2E_HOOKS: '1',
         MAIL_TEST_OUTBOX_DIR: MAIL_DIR,
+        TOSS_API_BASE_URL: TOSS_DEAD_END,
         E2E_SHUTDOWN_FLAG: SHUTDOWN_FLAG,
         ...(defaultIpLimits ? {} : RAISED_IP_LIMITS),
         LOG_DIR: 'off',
@@ -80,7 +85,9 @@ const backendEnv = (secrets, { port = E2E.backendPort, defaultIpLimits = false, 
     for (const [key, value] of Object.entries(overrides)) {
         if (value === undefined) delete env[key]; else env[key] = String(value);
     }
+    // 막다른 토스 주소는 시험 손잡이가 켜진 서버에만 둠 (운영 값으로 띄우는 시험에 남으면 "운영에 시험 값"으로 시작 거부됨)
+    if (env.TOSS_API_BASE_URL === TOSS_DEAD_END && (env.NODE_ENV === 'production' || env.E2E_HOOKS !== '1')) delete env.TOSS_API_BASE_URL;
     return env;
 };
 
-module.exports = { backendEnv, RAISED_IP_LIMITS };
+module.exports = { backendEnv, RAISED_IP_LIMITS, TOSS_DEAD_END };

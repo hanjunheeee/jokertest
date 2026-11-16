@@ -64,11 +64,29 @@ async function query(sql, replacements = []) {
     return rows;
 }
 
+// 시험 DB 이름 (scripts/setup-db.js DB_NAME과 같음)
+const TEST_DB_NAME = 'joker_e2e';
+let testDbChecked = false;
+
+/**
+ * 지금 붙은 DB가 진짜 시험 DB인지 서버에 물어 확인 (프로세스마다 한 번) — 계정·관리자 지우기 전에 부름
+ * 주소 글자만 보는 backend()의 검사에 더해, 실제로 붙은 DB 이름이 다르면 던져서 아무것도 안 지움
+ */
+async function assertTestDb() {
+    if (testDbChecked) return;
+    const { db } = backend();
+    const [rows] = await db.sequelize.query('SELECT DATABASE() AS name');
+    const name = rows?.[0]?.name;
+    if (name !== TEST_DB_NAME) throw new Error(`시험 DB(${TEST_DB_NAME})가 아닌 DB에 붙음 → 아무것도 안 지움`);
+    testDbChecked = true;
+}
+
 // 프로세스에서 한 번만 (닫은 뒤엔 같은 모델을 다시 못 엶)
 async function close() {
     if (!loaded) return;
     await loaded.db.sequelize.close();
     loaded = null;
+    testDbChecked = false;
 }
 
-module.exports = { backend, query, close, sqlTime };
+module.exports = { backend, query, close, sqlTime, assertTestDb, TEST_DB_NAME };

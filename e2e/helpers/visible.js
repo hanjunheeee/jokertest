@@ -13,6 +13,8 @@
 //   await expectReadable(page.getByText('낮이 밝았습니다'), { large: true });
 //   // 글이 없는 단추(그림 단추)는 대비를 못 셈 → 보임·화면 안·안 가려짐만 (contrast: false)
 //   await expectReadable(page.getByRole('button', { name: '설정' }), { contrast: false });
+//   // 그림 단추(그림 위에 글)도 그대로 — 글자색은 안쪽 글 칸에서, 바탕은 사진에서 (expectButtonReadable은 같은 것의 다른 이름)
+//   await expectReadable(page.getByRole('button', { name: '게임시작' }));
 //   // 여러 개 다 (예: 재판 유죄·무죄 단추 둘)
 //   await expectAllReadable(page.getByRole('dialog').getByRole('button'));
 //   // 값만 받아 직접 보기 → { ratio, color, background, large, inViewport, coveredBy, ... }
@@ -22,6 +24,10 @@
 //   - 위로 올라가며 처음 불투명한 background-color (반투명은 겹쳐 섞음)
 //   - 바탕이 그림·그라데이션이거나 body까지 불투명한 바탕이 없으면(떠 있는 창 등) 요소 사진을 찍어 픽셀 중앙값을 바탕으로 씀
 //   - method: 'dom' | 'pixels'로 한쪽만 쓰게 할 수 있음 (기본 'auto')
+// 그림 단추 (단추 안에 그림 + 글 칸이 따로 있는 것 — 대기방 "준비완료"·"게임시작" 등)
+//   - 글자색·글자 크기는 단추가 아니라 글이 실제로 그려지는 안쪽 글 칸에서 읽음 (단추에 바로 붙은 글이 없을 때만, 화면 읽기 전용으로 접어 둔 글은 건너뜀)
+//   - 그 글 칸 뒤에 그림이 깔려 있으면 바탕색은 사진으로 봄 → 단추에 바로 expectReadable을 써도 됨
+// pointer-events:none인 글·알림 칸: 가운데 점 확인 때만 잠깐 누를 수 있게 바꿔 봄 (안 그러면 늘 "가려짐"으로 나옴)
 // 못 잡는 것: pointer-events:none인 덮개(elementFromPoint가 지나침), 글자 그림자·테두리로만 읽히는 글
 const { expect } = require('@playwright/test');
 const zlib = require('node:zlib');
@@ -125,12 +131,28 @@ function medianColor({ pixels, bpp }) {
 
 // 페이지 안에서 잼: 글자색·바탕 층·투명도·글자 크기·가운데 점에 맨 위 요소
 function measureInPage(el) {
-    const style = getComputedStyle(el);
+    // 글이 실제로 그려지는 칸: 요소에 바로 붙은 글이 있으면 그 요소 그대로 (입력 칸도), 없으면 안쪽에서 눈에 보이는 첫 글 칸
+    // 예: <button><img><span>준비완료</span></button> → span (글자색이 span에 걸려 있음)
+    const hasOwnText = (node) => Array.from(node.childNodes).some((c) => c.nodeType === 3 && c.textContent.trim().length > 0);
+    const drawn = (node) => {
+        const r = node.getBoundingClientRect();
+        const s = getComputedStyle(node);
+        // 1px로 접어 둔 화면 읽기 전용 글·숨긴 칸은 눈에 안 보임
+        return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none';
+    };
+    let textEl = el;
+    if (!hasOwnText(el) && !el.matches('input, textarea, select')) {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (hasOwnText(node) && drawn(node)) { textEl = node; break; }
+        }
+    }
+    const style = getComputedStyle(textEl);
     const layers = [];
     let opacity = 1;
     let needsPixels = false;
     let foundOpaque = false;
-    for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+    for (let node = textEl; node && node.nodeType === 1; node = node.parentElement) {
         const s = getComputedStyle(node);
         opacity *= Number.parseFloat(s.opacity || '1');
         if (foundOpaque) continue;
@@ -146,11 +168,31 @@ function measureInPage(el) {
         }
     }
     if (!foundOpaque) needsPixels = true;
+    // 안쪽 글 칸 뒤에 그림이 깔렸으면(그림 단추) 스타일로는 바탕색을 모름 → 사진으로 봄
+    if (!needsPixels && textEl !== el) {
+        const tr = textEl.getBoundingClientRect();
+        const behindText = (r) => r.width > 0 && r.height > 0 && r.left < tr.right && tr.left < r.right && r.top < tr.bottom && tr.top < r.bottom;
+        for (const media of el.querySelectorAll('img, svg, canvas, video')) {
+            if (textEl.contains(media) || media.contains(textEl)) continue;
+            if (behindText(media.getBoundingClientRect())) { needsPixels = true; break; }
+        }
+    }
     const rect = el.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
-    const hit = document.elementFromPoint(cx, cy);
-    const covered = !(hit && (hit === el || el.contains(hit)));
+    const isOwn = (n) => Boolean(n && (n === el || el.contains(n)));
+    let hit = document.elementFromPoint(cx, cy);
+    // pointer-events:none인 요소는 elementFromPoint가 건너뛰어 늘 "가려짐"으로 나옴 → 잠깐 누를 수 있게 바꿔 다시 보고 바로 되돌림
+    if (!isOwn(hit) && getComputedStyle(el).pointerEvents === 'none') {
+        const before = el.getAttribute('style');
+        el.style.setProperty('pointer-events', 'auto', 'important');
+        try {
+            hit = document.elementFromPoint(cx, cy);
+        } finally {
+            if (before === null) el.removeAttribute('style'); else el.setAttribute('style', before);
+        }
+    }
+    const covered = !isOwn(hit);
     const describe = (n) => {
         if (!n) return '없음';
         const label = n.getAttribute('aria-label') || (n.innerText || '').trim().slice(0, 30);
@@ -167,6 +209,8 @@ function measureInPage(el) {
         fontSize,
         fontWeight,
         hasText: (el.innerText || el.value || '').trim().length > 0,
+        // 글자색을 읽은 곳: 'self' = 그 요소, 아니면 안쪽 글 칸
+        textFrom: textEl === el ? 'self' : describe(textEl),
         covered,
         coveredBy: covered ? describe(hit) : null,
         viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -179,7 +223,7 @@ function measureInPage(el) {
  * @param {import('@playwright/test').Locator} locator 하나만 가리켜야 함
  * @param {{ method?: 'auto'|'dom'|'pixels', large?: boolean }} [o]
  * @returns {Promise<{ ratio:number|null, minRatio:number, large:boolean, color:string, background:string, backgroundFrom:'dom'|'pixels',
- *   opacity:number, inViewport:boolean, rect:object, viewport:object, covered:boolean, coveredBy:string|null, hasText:boolean }>}
+ *   opacity:number, inViewport:boolean, rect:object, viewport:object, covered:boolean, coveredBy:string|null, hasText:boolean, textFrom:string }>}
  */
 async function readability(locator, { method = 'auto', large } = {}) {
     await locator.scrollIntoViewIfNeeded();
@@ -218,6 +262,7 @@ async function readability(locator, { method = 'auto', large } = {}) {
         covered: m.covered,
         coveredBy: m.coveredBy,
         hasText: m.hasText,
+        textFrom: m.textFrom,
     };
 }
 
@@ -274,8 +319,17 @@ async function expectAllReadable(locator, o = {}) {
     return count;
 }
 
+/**
+ * 그림 단추(그림 + 안쪽 글 칸)가 읽히는지 — expectReadable과 같은 확인 (안쪽 글 칸의 글자색·글 뒤 그림 바탕을 알아서 봄)
+ * 시험 글에서 "그림 단추를 잰다"가 드러나게 이름만 따로 둠
+ * @param {import('@playwright/test').Locator} locator 단추 하나
+ * @param {Parameters<typeof expectReadable>[1]} [o]
+ */
+const expectButtonReadable = (locator, o = {}) => expectReadable(locator, o);
+
 module.exports = {
     expectReadable,
+    expectButtonReadable,
     expectAllReadable,
     readability,
     contrastRatio,

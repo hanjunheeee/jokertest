@@ -1,7 +1,7 @@
 'use strict';
 
-// 토스 결제창 파일, 시험 키(test_ck_)로 상점 다이아 충전 결제창(토스 샌드박스 iframe)을 열고 닫기만
-// 카드·간편결제 고르기·카드 번호 입력·결제 완료는 절대 안 함 (README '토스 결제창'), store·mobile 시험이 씀
+// 토스 결제창 파일, 상점 다이아 충전 결제창(iframe)을 열고 닫기만 — 카드·간편결제 고르기·카드 번호 입력·결제 완료는 절대 안 함
+// store·mobile 충전 시험이 씀: 토스 주소는 기본으로 막혀 있어(helpers/outside.js) 시험이 먼저 가로채 흉내 창을 답해 둬야 뜸 (a12 blockToss)
 const { expect } = require('@playwright/test');
 
 const TOSS_HOST = 'tosspayments.com';
@@ -11,7 +11,7 @@ const TOSS_HOST = 'tosspayments.com';
  * @param {import('@playwright/test').Page} page 로그인된 page
  * @param {object} [o]
  * @param {string|RegExp} [o.product=/다이아 10개/] 상품 버튼 이름
- * @returns {Promise<import('@playwright/test').Frame>} 토스 결제창 frame (읽기만)
+ * @returns {Promise<import('@playwright/test').Frame>} 결제창 frame (읽기만, 시험이 가로채 답한 흉내 창)
  */
 async function openTossWindow(page, { product = /다이아 10개/, gotoStore = true } = {}) {
     if (gotoStore) await page.goto('/store');
@@ -30,7 +30,7 @@ async function waitTossFrame(page, timeoutMs = 20000) {
         if (frame) return frame;
         await page.waitForTimeout(200);
     }
-    throw new Error('토스 결제창이 안 뜸 (시험 키·네트워크 확인)');
+    throw new Error('토스 결제창이 안 뜸 (토스 주소는 기본으로 막힘 → 시험이 가로채 흉내 창을 답했는지, 서버에 토스 시험 키가 있는지 확인)');
 }
 
 /** 결제창 닫기 (창 안 닫기 버튼) → iframe이 사라질 때까지 */

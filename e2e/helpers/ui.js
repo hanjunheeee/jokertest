@@ -72,8 +72,25 @@ async function readRoleReveal(page, { close = true } = {}) {
     await expect(dialog).toBeVisible({ timeout: 20000 });
     const texts = await dialog.getByRole('paragraph').allInnerTexts();
     if (close) await dialog.getByRole('button', { name: '확인' }).click();
-    // [닉네임, 역할 이름, 설명]
-    return texts[1] ?? null;
+    // 글 순서: [닉네임, 역할 이름, 진영, 설명, (동료 줄)] — 둘째 칸이 역할 이름, 닉네임 칸이 빠진 창이면 역할 이름인 칸을 찾음
+    const roleNames = Object.values(ROLE_LABELS);
+    if (roleNames.includes(texts[1]?.trim())) return texts[1];
+    return texts.find((t) => roleNames.includes(t.trim())) ?? texts[1] ?? null;
+}
+
+/**
+ * 모바일 결과 화면의 한 판 끝 광고 창 닫기 — 결과판이 나타나고 1.5초 뒤 뜨고 5초 지나야 "닫기"가 나옴
+ * 광고 창은 결과판을 덮어 "대기방으로"·"로비로"를 못 누르게 함 → 모바일 결과 화면에서 단추를 누르기 전에 부름
+ * PC엔 광고가 없고, 이미 닫았거나 안 뜨면 appearMs 뒤 그냥 지나감 (광고 자체를 보는 시험은 부르지 않음)
+ * @returns {Promise<boolean>} 닫았으면 true
+ */
+async function closeResultAd(page, { appearMs = 4000 } = {}) {
+    const ad = page.locator('[data-interstitial-ad]');
+    const shown = await ad.waitFor({ state: 'visible', timeout: appearMs }).then(() => true, () => false);
+    if (!shown) return false;
+    await ad.getByRole('button', { name: '닫기', exact: true }).click({ timeout: 10_000 });
+    await expect(ad).toHaveCount(0);
+    return true;
 }
 
 /** 단계 전환 안내 창(낮이 되었습니다 등) 떠 있으면 닫기 */
@@ -88,6 +105,20 @@ const OVERLAY_DIALOGS = Object.freeze(['단계 전환 안내', '밤 역할 안�
 // 연출 창 한 바퀴 닫기, 하나라도 눌렀으면 참
 async function closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs }) {
     let closed = false;
+    // 낮 시작 암살 영상이 못 끝나 뜬 "건너뛰기": 12초 안에 안 끝나거나 자동 재생이 막혔을 때만 뜨는 단추 (잘 도는 영상엔 없어서 안 건드림)
+    // 영상은 저절로 안 넘어가서 안 누르면 판 화면이 계속 덮인 채임 → names와 상관없이 누름
+    const skipVideo = page.locator('[data-ingame-night-success-kill]').getByRole('button', { name: '건너뛰기', exact: true });
+    if (await skipVideo.isVisible().catch(() => false)) {
+        await skipVideo.click({ timeout: clickTimeoutMs }).catch(() => {});
+        closed = true;
+    }
+    // 그 영상이 오류로 끝나면 같은 글이 글 창으로 바뀜(살해 KILLED 종류만) → "확인"을 눌러야 넘어감
+    // 의사가 살렸을 때 글 창(SAVED)은 원래 연출이라 여기서 안 누름 (names에 '단계 전환 안내'가 있으면 아래에서 닫힘)
+    const failedVideoConfirm = page.locator('[data-ingame-dawn-report="KILLED"]').getByRole('button', { name: '확인', exact: true });
+    if (await failedVideoConfirm.isVisible().catch(() => false)) {
+        await failedVideoConfirm.click({ timeout: clickTimeoutMs }).catch(() => {});
+        closed = true;
+    }
     for (const name of names) {
         const dialog = page.getByRole('dialog', { name, exact: true });
         if (!(await dialog.isVisible().catch(() => false))) continue;
@@ -104,6 +135,7 @@ async function closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs }) 
 /**
  * 떠 있는 연출 창 닫기 (rounds 바퀴까지, 닫을 게 없으면 멈춤), keepWatching이면 사망 후 선택도 '관전 계속하기'
  * 하나 닫으면 밑에 깔린 창이 뜰 수 있어 여러 바퀴 — 모바일 _talk·인게임 c-chat 도우미가 씀
+ * 못 끝난 암살 영상의 "건너뛰기"와 영상 오류 때 글 창 "확인"도 같이 넘김 (잘 도는 영상은 그대로 둠)
  */
 async function closeOverlays(page, { keepWatching = true, rounds = 3, names = OVERLAY_DIALOGS, clickTimeoutMs = 3000, pauseMs = 0 } = {}) {
     for (let r = 0; r < rounds; r += 1) {
@@ -181,6 +213,6 @@ async function captureAlert(page, action, { timeoutMs = 10000, close = true } = 
 const ROLE_LABELS = Object.freeze({ JOKER: '광대', CITIZEN: '시민', DOCTOR: '의사', GUARD: '경비원', WITCH_HUNTER: '마녀사냥꾼' });
 
 module.exports = {
-    skipIntro, loginViaUi, loginViaApi, gotoLobby, joinRoomByCodeUi, readyUi, readRoleReveal, closePhaseNotice,
+    skipIntro, loginViaUi, loginViaApi, gotoLobby, joinRoomByCodeUi, readyUi, readRoleReveal, closeResultAd, closePhaseNotice,
     OVERLAY_DIALOGS, closeOverlays, chatLog, sendChat, expectChat, captureAlert, ROLE_LABELS,
 };

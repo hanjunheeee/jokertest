@@ -2,11 +2,12 @@
 
 // 관리자 시험 계정 파일, 시험 관리자 만들기(실행 번호 붙음)·OTP 번호·로그인 화면 거쳐 로그인·세션 시각 당기기·실행 끝 지우기
 // 관리자 브라우저 시험과 global-setup·global-teardown이 씀 — 계정은 백엔드 계정 명령 함수(createAdminAccount) 그대로 씀
+// 관리자 창 열기(openAdminWindow)·관리자 API 부르기(adminCall·adminApi)도 여기 (시험 도우미마다 따로 쓰던 것)
 const crypto = require('node:crypto');
 const path = require('node:path');
-const { expect } = require('@playwright/test');
-const { BACKEND_DIR, readSecrets } = require('./env');
-const { backend, query } = require('./db');
+const { expect, devices } = require('@playwright/test');
+const { E2E, BACKEND_DIR, readSecrets } = require('./env');
+const { backend, query, assertTestDb } = require('./db');
 const { allowAccess } = require('./adminAccess');
 const { sleep } = require('./wait');
 
@@ -101,6 +102,8 @@ async function setAdminSessionIdle(page, minutes) {
 
 // 관리자 계정과 딸린 줄 지우기 (시도·세션·기록·문의 답), 외래키에 막히면 끄기만 하고 경고
 async function deleteAdminsWhere(whereSql, replacements) {
+    // 실제로 붙은 DB가 시험 DB(joker_e2e)가 아니면 던짐 (아무것도 안 지움)
+    await assertTestDb();
     const rows = await query(`SELECT id, login_id FROM admin_users WHERE ${whereSql}`, replacements);
     let removed = 0;
     for (const { id, login_id: loginId } of rows) {
@@ -125,7 +128,62 @@ const deleteStaleAdmins = (hours = 6) => deleteAdminsWhere(
     'login_id LIKE ? AND created_at < UTC_TIMESTAMP() - INTERVAL ? HOUR', [ALL_LOGIN_LIKE, Number(hours)],
 );
 
+// 관리자 창 크기: PC 1280×800 / 휴대폰 세로 375×812 + 터치
+const ADMIN_PC_VIEW = Object.freeze({ viewport: { width: 1280, height: 800 } });
+const ADMIN_PHONE_VIEW = Object.freeze({ ...devices['Pixel 7'], viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
+
+/**
+ * 관리자 창 하나 열기 (관리자 주소, 새 관리자 계정) — serial 프로젝트처럼 기본 주소가 게임 화면인 시험에서 씀, 끝나면 close()
+ * @param {import('@playwright/test').Browser} browser
+ * @param {object} [o]
+ * @param {boolean} [o.phone=false] 휴대폰 크기로
+ * @param {object} [o.account] 쓸 관리자 계정 (안 주면 새로 만듦)
+ * @param {boolean} [o.login=true] 화면으로 로그인까지 (false면 창만)
+ * @returns {Promise<{ context, page, admin, close:()=>Promise<void> }>}
+ */
+async function openAdminWindow(browser, { phone = false, account, login = true } = {}) {
+    const context = await browser.newContext({ ...(phone ? ADMIN_PHONE_VIEW : ADMIN_PC_VIEW), baseURL: E2E.adminUrl, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
+    try {
+        const page = await context.newPage();
+        const admin = account ?? await createAdmin();
+        if (login) await loginAsAdmin(page, admin);
+        return { context, page, admin, close: () => context.close().catch(() => {}) };
+    } catch (error) {
+        await context.close().catch(() => {});
+        throw error;
+    }
+}
+
+/**
+ * 로그인한 관리자 창의 쿠키로 관리자 API 부르기 (쓰기 확인 값 x-admin-csrf는 /auth/me에서 받아 붙임) — 답이 실패여도 안 던짐
+ * @param {import('@playwright/test').Page} adminPage loginAsAdmin을 거친 page
+ * @param {string} method 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+ * @param {string} pathname '/admin-api' 뒤 경로 (예: '/game-settings')
+ * @param {object} [data] 보낼 값
+ * @returns {Promise<{ status:number, body:any }>} body는 JSON이 아니면 null
+ */
+async function adminCall(adminPage, method, pathname, data) {
+    const request = adminPage.context().request;
+    const me = await request.get(`${E2E.adminUrl}/admin-api/auth/me`);
+    if (!me.ok()) throw new Error(`관리자 세션 확인 실패 (${me.status()}) → loginAsAdmin 먼저`);
+    const { csrfToken } = await me.json();
+    const res = await request.fetch(`${E2E.adminUrl}/admin-api${pathname}`, {
+        method, data, headers: { origin: E2E.adminUrl, 'x-admin-csrf': csrfToken },
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* 몸 없음 */ }
+    return { status: res.status(), body };
+}
+
+/** 관리자 API, 성공(2xx)이어야 함 → 답 몸 (준비·되돌리기용 — 시험하려는 동작은 화면으로 누름), 실패면 상태·답을 붙여 던짐 */
+async function adminApi(adminPage, method, pathname, data) {
+    const r = await adminCall(adminPage, method, pathname, data);
+    if (!(r.status >= 200 && r.status < 300)) throw new Error(`관리자 API ${method} ${pathname} → ${r.status} ${JSON.stringify(r.body)}`);
+    return r.body;
+}
+
 module.exports = {
     createAdmin, otpNow, freshOtp, fillLogin, loginAsAdmin, setAdminSessionIdle, deleteRunAdmins, deleteStaleAdmins,
-    RUN_LOGIN_LIKE, SESSION_COOKIE,
+    openAdminWindow, adminCall, adminApi,
+    RUN_LOGIN_LIKE, SESSION_COOKIE, ADMIN_PC_VIEW, ADMIN_PHONE_VIEW,
 };

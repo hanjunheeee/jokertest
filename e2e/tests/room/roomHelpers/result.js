@@ -20,9 +20,22 @@ async function finishGame(t, { stepDelayMs = 900, maxSteps = 40 } = {}) {
     throw new Error('판이 안 끝남');
 }
 
-/** 결과 화면 본체가 보일 때까지 (연출 영상이 막히면 건너뛰기) */
+/**
+ * 결과 화면 본체가 보일 때까지 (연출 영상이 막히면 건너뛰기)
+ * 밤 암살로 끝난 판은 결과 화면 앞에 낮 시작 연출(암살 영상 + 글)이 뜸 → 영상이 못 끝나 뜬 "건너뛰기"·영상 오류 때 글 창 "확인"을 눌러 가며 결과 화면 주소까지 감
+ * 잘 도는 영상엔 단추가 없어 끝까지 그대로 돎, 처형·나가기로 끝난 판은 그냥 기다림 (연출 자체를 보는 시험은 다 본 뒤에 부름)
+ */
 async function waitResult(page) {
-    await expect(page).toHaveURL(/\/gameresult/, { timeout: 30000 });
+    const skipDawnVideo = page.locator('[data-ingame-night-success-kill]').getByRole('button', { name: '건너뛰기', exact: true });
+    // 글 창을 감싼 칸은 크기가 없어 안쪽 단추로 봄
+    const confirmDawnText = page.locator('[data-ingame-dawn-report]').getByRole('button', { name: '확인', exact: true });
+    await expect(async () => {
+        if (!/\/gameresult/.test(page.url())) {
+            if (await skipDawnVideo.isVisible().catch(() => false)) await skipDawnVideo.click({ timeout: 1000 }).catch(() => {});
+            if (await confirmDawnText.isVisible().catch(() => false)) await confirmDawnText.click({ timeout: 1000 }).catch(() => {});
+        }
+        await expect(page).toHaveURL(/\/gameresult/, { timeout: 1500 });
+    }).toPass({ timeout: 30000 });
     const list = page.getByRole('region', { name: '가면무도회 참가자 정체' });
     const skip = page.getByRole('button', { name: '건너뛰기' });
     await expect(list.or(skip)).toBeVisible({ timeout: 30000 });

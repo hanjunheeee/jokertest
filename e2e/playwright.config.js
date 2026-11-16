@@ -7,6 +7,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { defineConfig, devices } = require('@playwright/test');
 const { E2E } = require('./helpers/env');
+const { chromiumArgs } = require('./helpers/outside');
 
 // 실행 번호: 이 실행에서 만든 계정 이메일에 붙음 (끝나면 이 번호 것만 지움), 작업자도 같은 값을 물려받음
 if (!process.env.E2E_RUN_ID) process.env.E2E_RUN_ID = `${Date.now().toString(36)}${crypto.randomBytes(2).toString('hex')}`;
@@ -29,8 +30,11 @@ const mobileMatch = multi ? ['mobile/**/*.spec.js', 'multinode/mobile/**/*.spec.
 const serialIgnore = multi ? ['admin/phone/**'] : ['multinode/**', 'admin/phone/**'];
 // 글 모양 'mobile/**'는 아무 깊이에서나 맞음 → 1개일 땐 multinode/mobile도 따로 빼야 함
 const mobileIgnore = multi ? [ADMIN_TESTS] : ['multinode/**', ADMIN_TESTS];
+// 크로미움 프로젝트마다 넣는 시작 값: 광고·분석·토스 주소를 "없는 주소"로 봄 → 진짜 광고·결제사로 안 나감 (helpers/outside.js)
+// 사파리(WebKit)는 이 값이 없어 fixtures.js가 창마다 가로채기로 막음
+const noOutside = { launchOptions: { args: chromiumArgs() } };
 // 관리자 휴대폰 크기: 세로 375×812 + 터치
-const adminPhoneUse = { ...devices['Pixel 7'], viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, baseURL: E2E.adminUrl };
+const adminPhoneUse = { ...devices['Pixel 7'], ...noOutside, viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, baseURL: E2E.adminUrl };
 module.exports = defineConfig({
     testDir: './tests',
     // 판 시험은 한 판에 1~3분 → 넉넉히, 기대 기다림도 길게
@@ -65,7 +69,7 @@ module.exports = defineConfig({
             name: 'desktop',
             testIgnore: desktopIgnore,
             grepInvert: withSingleNode(/@serial|@shutdown/),
-            use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl },
+            use: { ...devices['Desktop Chrome'], ...noOutside, viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl },
         },
         {
             name: 'mobile',
@@ -74,6 +78,7 @@ module.exports = defineConfig({
             grepInvert: withSingleNode(/@serial|@shutdown/),
             use: {
                 ...devices['Pixel 7'],
+                ...noOutside,
                 // 세로 375×812 + 터치 (카톡형 인게임 기준 크기)
                 viewport: { width: 375, height: 812 },
                 isMobile: true,
@@ -106,7 +111,7 @@ module.exports = defineConfig({
             workers: 1,
             fullyParallel: false,
             dependencies: ['desktop', 'mobile', 'mobile-safari', 'admin', 'admin-phone'],
-            use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl },
+            use: { ...devices['Desktop Chrome'], ...noOutside, viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl },
         },
         {
             // 관리자 화면 PC 크기 (tests/admin/** 중 phone 밖), 5275
@@ -114,7 +119,7 @@ module.exports = defineConfig({
             testMatch: ['admin/**/*.spec.js'],
             testIgnore: ['admin/phone/**'],
             grepInvert: withSingleNode(/@serial|@shutdown/),
-            use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.adminUrl },
+            use: { ...devices['Desktop Chrome'], ...noOutside, viewport: { width: 1280, height: 800 }, baseURL: E2E.adminUrl },
         },
         {
             // 관리자 화면 휴대폰 크기 (tests/admin/phone/**)

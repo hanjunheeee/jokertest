@@ -11,6 +11,7 @@ const { setupTable } = require('./game');
 const ui = require('./ui');
 const mail = require('./mail');
 const { internal, e2e } = require('./internal');
+const { guardBrowser } = require('./outside');
 
 // 사람 하나 = 계정 + 자기 쿠키만 가진 브라우저 context + page
 const DESKTOP = { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 }, baseURL: E2E.desktopUrl, locale: 'ko-KR', timezoneId: 'Asia/Seoul' };
@@ -32,6 +33,12 @@ async function openPerson(browser, { mobile = false, account, lobby = true, logi
 }
 
 const test = base.test.extend({
+    // 브라우저(작업자마다 하나)가 만드는 창 전부에 바깥 막기: 광고·분석·토스 주소로 안 나감 (helpers/outside.js)
+    // 기본 page·user·players.add·시험이 직접 부른 browser.newContext가 다 이 브라우저를 거침
+    browser: [async ({ browser }, use) => {
+        await use(guardBrowser(browser));
+    }, { scope: 'worker' }],
+
     /**
      * 계정 만들기: await accounts.create({ nickname?, password?, birthDate?, emailVerified?, agreeTerms?, role? })
      * 계정은 실행 끝(global-teardown)에 이번 실행 것만 지움
