@@ -8,6 +8,8 @@ const { createRoomUi, botsJoinAndReady } = require('../room/roomHelpers');
 const H = require('../result/_a08-hard-kit');
 
 const SAME_BROWSER = '같은 브라우저의 다른 창에서 접속해 현재 창의 연결이 종료되었습니다.';
+// 4명일 때 방장 화면의 시작 잠김 까닭 글 (화면 gameStartMessages.js startShortageMessage)
+const START_LOCKED_4 = '5명부터 시작할 수 있습니다. (지금 4명)';
 const U = (x) => x.account?.uuid ?? x.uuid;
 
 /** 대기방 화면에 방장 단추(게임시작·방 설정 변경)가 사람 눈에 보임 */
@@ -66,7 +68,7 @@ test('A10-H-020 사람 2 + 봇 4 = 6명 방 전원 준비, 손님 A 새 탭 /lob
     await expectReadable(H.startButton(b.page).getByText('게임시작', { exact: true }));
 });
 
-test('A10-H-021 사람 2 + 봇 3 = 5명 방 전원 준비, 손님 A /lobby → 4명 → B 화면 시작 단추 꺼짐 + 까닭 글이 읽힘 @hard', async ({ user, players, bots }) => {
+test('A10-H-021 사람 2 + 봇 3 = 5명 방 전원 준비, 손님 A /lobby → 4명 → B 화면 시작 단추 꺼짐 + 까닭 글 "5명부터 시작할 수 있습니다. (지금 4명)"이 읽힘 @hard', async ({ user, players, bots }) => {
     test.setTimeout(240_000);
     const a = user;
     const b = await players.add();
@@ -80,13 +82,16 @@ test('A10-H-021 사람 2 + 봇 3 = 5명 방 전원 준비, 손님 A /lobby → 4
     await ui.gotoLobby(a.page);
     await H.expectParty(b.page, 4);
     const start = H.startButton(b.page);
+    // 5명이 안 되면 누르기 전에 꺼 둠 (결정 2026-11-16 낮 셋째 5번), 전원 준비여도 꺼짐
     await expect(start).toBeDisabled();
-    // 꺼진 까닭 글: 단추에 이어진 글 (결정「버그 7」 — 단추가 꺼진 까닭을 글로)
-    const reasonId = await start.getAttribute('aria-describedby');
-    expect(reasonId, '시작 단추에 이어진 까닭 글').toBeTruthy();
-    const reason = b.page.locator(`[id="${reasonId}"]`);
-    await expect(reason).not.toHaveText('');
+    // 꺼진 까닭 글: 버튼 줄 위 한 줄, 단추에 이어져 있음 (결정「버그 7」 — 단추가 꺼진 까닭을 글로)
+    const reason = b.page.getByTestId('start-locked-reason');
+    await expect(reason).toHaveText(START_LOCKED_4);
+    await expect(start).toHaveAttribute('aria-describedby', await reason.getAttribute('id'));
     await expectReadable(reason);
+    // 누른 적이 없으니 막힘 창도 안 뜨고 판도 안 열림
+    await expect(H.blockedDialog(b.page)).toHaveCount(0);
+    expect(await e2e.gameOf(U(b)), '판이 안 열림').toBeNull();
 });
 
 test('A10-H-022 사람 2 + 봇 3, 손님 A 탭 1 → 탭 2 /lobby → 탭 1에서 준비 누름 → B 화면에 A 없음 그대로 @hard', async ({ user, players, bots }) => {

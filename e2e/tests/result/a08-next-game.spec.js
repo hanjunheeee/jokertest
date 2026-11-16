@@ -1,6 +1,6 @@
 'use strict';
 
-// 돌아온 대기방에서 다음 판 브라우저 시험 (PC) — "다음 게임 설정 유지" 스위치 없음, 5명보다 적으면 시작 못 함·새 사람이 오면 시작, 둘째 판도·둘째 판 끝 뒤도 같은 코드, 결과 화면에 머문 사람은 둘째 판에 안 끌려감, 판 뒤 새 방은 처음 값
+// 돌아온 대기방에서 다음 판 브라우저 시험 (PC) — "다음 게임 설정 유지" 스위치 없음, 5명보다 적으면 시작 단추가 미리 꺼짐·새 사람이 오면 시작, 둘째 판도·둘째 판 끝 뒤도 같은 코드, 결과 화면에 머문 사람은 둘째 판에 안 끌려감, 판 뒤 새 방은 처음 값
 // 목록 A08-판끝-같은방.md 번호 A08-E-037~040·064·065·072
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -16,6 +16,8 @@ const startButton = (page) => page.getByRole('button', { name: '게임시작' })
 const seats = (page) => page.getByRole('img', { name: /^(준비 완료한 참가자|준비 전 참가자)$/ });
 const readySeats = (page) => page.getByRole('img', { name: '준비 완료한 참가자' });
 const leaveNotice = (page) => page.getByTestId('result-leave-notice');
+// 5명이 안 돼 "게임시작"이 미리 꺼졌을 때 방장 화면 버튼 줄 위 까닭 글
+const startLockedReason = (page) => page.getByTestId('start-locked-reason');
 const KEEP_SWITCH = '다음 게임 설정 유지';
 
 // 봇 표로 광대 봇을 처형하게 계획을 줌 (사람은 표 안 냄 = 기권, 봇 표가 기권보다 많은지 먼저 봄)
@@ -148,7 +150,7 @@ test('A08-E-037 5명 판(사람이 방장): 판 중 설정 창에 "방관리" �
     }
 });
 
-test('A08-E-038 6명 판: 사람(방장) + 봇 3만 대기방으로·준비 → 시작 단추가 꺼져 있거나 누르면 "인원 조건을 아직 충족하지 못했습니다." @game', async ({ user, bots }) => {
+test('A08-E-038 6명 판: 사람(방장) + 봇 3만 대기방으로·준비 → "게임시작"이 미리 꺼지고 까닭 글 "5명부터 시작할 수 있습니다. (지금 4명)"이 읽힘 @game', async ({ user, bots }) => {
     const t = await playHumanHosted({ user, bots, total: 6 });
     const page = user.page;
     const me = U(user);
@@ -163,14 +165,14 @@ test('A08-E-038 6명 판: 사람(방장) + 봇 3만 대기방으로·준비 → 
     await expect(seats(page)).toHaveCount(4);
     await expect(readySeats(page)).toHaveCount(4);
 
+    // 4명 이하면 누르기 전에 단추를 꺼 두고 까닭 글을 보임 (결정 2026-11-16 낮 셋째 5번) — 막힘 창은 안 뜸
     const start = startButton(page);
     await expect(start).toBeVisible();
-    if (await start.isEnabled()) {
-        await start.click();
-        const reason = blockedDialog(page).getByText(/인원 조건을 아직 충족하지 못했습니다\./);
-        await expectReadable(reason);
-    }
-    // 어느 쪽이든 판은 안 시작됨
+    await expect(start).toBeDisabled();
+    await expect(startLockedReason(page)).toHaveText('5명부터 시작할 수 있습니다. (지금 4명)');
+    await expectReadable(startLockedReason(page));
+    await expect(blockedDialog(page)).toHaveCount(0);
+    // 판은 안 시작됨
     await expect(page).toHaveURL(/\/game-matching/);
     expect(await e2e.gameOf(me), '새 판이 생기면 안 됨').toBeNull();
     const room = await waitRoom(me);
@@ -263,19 +265,20 @@ test('A08-E-065 6명 판: 사람은 결과 화면 그대로, 봇 5가 둘째 판
     expect((await t2.state())?.players.map((p) => p.uuid)).not.toContain(me);
 });
 
-test('A08-E-072 5명 판(정원 7·광대 2) 뒤 "로비로" → 게임 설정 화면은 지난 판 값이 아니라 처음 값(정원 10) @game', async ({ user, table }) => {
+test('A08-E-072 5명 판(정원 7·광대 1) 뒤 "로비로" → 게임 설정 화면은 지난 판 값이 아니라 처음 값(정원 10·광대 2) @game', async ({ user, table }) => {
     const page = user.page;
     const t = await table.setup({
         humans: [user],
         bots: 4,
-        settings: { maxPlayers: 7, jokerCount: 2 },
-        roles: ({ humans, bots }) => ({ [U(humans[0])]: 'CITIZEN', [U(bots[2])]: 'JOKER', [U(bots[3])]: 'JOKER' }),
+        // 광대는 처음 값(2)과 다른 1로 둠 → 지난 판 값이 남았는지 광대 칸으로도 가려짐
+        settings: { maxPlayers: 7, jokerCount: 1 },
+        roles: ({ humans, bots }) => ({ [U(humans[0])]: 'CITIZEN', [U(bots[3])]: 'JOKER' }),
     });
     const s = await t.state();
     const jokers = t.bots.filter((bot) => s.players.find((p) => p.uuid === U(bot))?.role === 'JOKER');
-    expect(jokers, '광대 둘 다 봇이어야 함').toHaveLength(2);
+    expect(jokers, '광대는 봇 1명이어야 함').toHaveLength(1);
 
-    // 광대 봇 둘이 나감 → 시민 승으로 판 끝
+    // 광대 봇이 나감 → 시민 승으로 판 끝
     await closeReveals([page]);
     await t.advanceUntil('DAY');
     for (const joker of jokers) {
@@ -293,7 +296,7 @@ test('A08-E-072 5명 판(정원 7·광대 2) 뒤 "로비로" → 게임 설정 �
     await selectTab(page, '일반');
     // 지난 판 정원 7이 아니라 처음 값 10
     expect(parseInt(await stepperValue(page, '최대 플레이어 수'), 10)).toBe(10);
-    // 광대 수 처음 값은 2 (A01 목록·설정 화면 처음 값) — 이 목록 줄의 "광대 1"은 처음 값이 아님
+    // 광대 수도 지난 판 1이 아니라 처음 값 2 (설정 화면 gameSetupOptions.js의 처음 값)
     expect(parseInt(await stepperValue(page, '광대(마피아) 플레이어 수'), 10)).toBe(2);
     await expect(page.getByRole('checkbox', { name: '코드로만 참가', exact: true })).toHaveAttribute('aria-checked', 'false');
     // 시간도 지난 판(토론 30초)이 아니라 처음 값 60초

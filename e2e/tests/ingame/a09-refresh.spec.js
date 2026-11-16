@@ -44,7 +44,8 @@ const PHASES = [
     },
     {
         // 재판: 봇 표로 시민 봇 하나를 피고로 세움 (나는 투표자)
-        no: 'A09-E-040', n: 7, label: '재판', phase: 'TRIBUNAL', locked: true,
+        // 재판 시간은 가장 길게: 기본 15초면 새로고침하고 다시 읽는 사이 진짜 마감이 와 밤으로 넘어갈 수 있음
+        no: 'A09-E-040', n: 7, label: '재판', phase: 'TRIBUNAL', locked: true, settings: { tribunalTime: 120 },
         go: async (t) => { await K.voteOut(t, K.U(K.botOf(t, await t.state(), 'CITIZEN'))); },
         shown: async (page) => { await expect(K.tribunalWindow(page)).toBeVisible({ timeout: 15_000 }); },
     },
@@ -60,7 +61,7 @@ for (const p of PHASES) {
     test(`${p.no} PC ${p.n}명 판 ${p.label} 중 새로고침 → 같은 단계 글, 남은 시간은 줄어든 값 @game${smoke}`, async ({ user, table }) => {
         const page = user.page;
         await K.pinTimebar(page);
-        const t = await K.seat(table, user, { n: p.n });
+        const t = await K.seat(table, user, { n: p.n, settings: p.settings ?? {} });
         await p.go(t);
         await K.expandBar(page, { locked: p.locked });
         // 화면이 그 단계까지 따라온 뒤에 남은 시간을 읽음
@@ -148,7 +149,8 @@ test('A09-E-048 PC 5명 판, 역할 확인 중 새로고침 → 판 그대로, 1
 test('A09-E-049 PC 6명 판, 피고인 내가 재판 중 새로고침 → 재판 창 피고 화면 @game', async ({ user, table }) => {
     const page = user.page;
     const me = K.U(user);
-    const t = await K.seat(table, user, { n: 6 });
+    // 재판 시간은 가장 길게: 기본 15초면 새로고침 사이 진짜 마감이 와 재판이 끝날 수 있음
+    const t = await K.seat(table, user, { n: 6, settings: { tribunalTime: 120 } });
     const { state } = await K.voteOut(t, me);
     expect(state.phase).toBe('TRIBUNAL');
     expect(state.tribunal.defendantUuid).toBe(me);

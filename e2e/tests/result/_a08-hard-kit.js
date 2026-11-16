@@ -10,6 +10,7 @@ const {
     hostGame, createRoomUi, botsJoinAndReady, waitResult, finishGame, closeReveals, stepperRow, stepperValue, selectTab,
 } = require('../room/roomHelpers');
 const N = require('../ingame/b-night/_night');
+const { expectReadable } = require('../../helpers/visible');
 
 const U = (x) => x.account.uuid;
 // 폰 크기 화면인지 (폰 375, PC 1280 — PC·모바일이 섞인 판에서 갈라 쓰기)
@@ -21,6 +22,8 @@ const TEXT = Object.freeze({
     hostSeatNotice: '방장 자리를 비워 두었습니다. 지난 판 방장이 오지 않으면 먼저 들어온 사람이 방장이 됩니다.',
     noResult: '게임 결과를 확인할 수 없습니다',
     minPlayers: '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.',
+    // 4명 이하 방장 화면의 시작 잠김 까닭 글 (화면 gameStartMessages.js startShortageMessage)
+    startLocked: /^5명부터 시작할 수 있습니다\. \(지금 [0-4]명\)$/,
     returnOffline: "연결이 끊겨 대기방으로 가지 못했습니다. 연결을 확인한 뒤 '대기방으로'를 다시 눌러 주세요.",
     exitOffline: "연결이 끊겨 로비로 가지 못했습니다. 연결을 확인한 뒤 '로비로'를 다시 눌러 주세요.",
     resultClosed: '결과 화면 시간이 지나 대기방으로 돌아갈 수 없습니다.',
@@ -41,6 +44,8 @@ const closeTimer = (page) => page.getByTestId('result-close-timer');
 const startButton = (page) => page.getByRole('button', { name: '게임시작' });
 const hostSeat = (page) => page.getByTestId('matching-reserved-host-slot');
 const blockedDialog = (page) => page.locator('[data-game-start-blocked]');
+// 5명이 안 돼 "게임시작"이 미리 꺼졌을 때 방장 화면 버튼 줄 위 까닭 글 (PC·폰 같은 표시, 손님 화면엔 없음)
+const startLockedReason = (page) => page.getByTestId('start-locked-reason');
 
 /** 사람 n명 열기 (각자 다른 계정·다른 쿠키), o.mobile이면 폰 화면 */
 async function openHumans(players, n, o = {}) {
@@ -211,9 +216,25 @@ async function closeAdIfShown(page) {
     await expect(ad).toHaveCount(0);
 }
 
-/** 사람들 화면이 결과 화면 본체까지 (연출 영상 건너뛰기 포함, 폰은 광고 창이 뜨면 닫음) */
+/**
+ * 밤 암살로 끝난 판은 결과 화면 앞에 낮 시작 연출(암살 영상 + 글)이 뜸 — 시험 브라우저가 영상을 못 틀면 글 창으로 바뀌어 "확인"을 눌러야 결과 화면으로 넘어감
+ * 영상이 막혀 뜬 "건너뛰기"·글 창 "확인"을 눌러 가며 결과 화면 주소가 될 때까지 (처형·나가기로 끝난 판은 그냥 기다림, PC·폰 같은 표시)
+ */
+async function passDawnToResult(page) {
+    const skip = page.locator('[data-ingame-night-success-kill]').getByRole('button', { name: '건너뛰기' });
+    await expect(async () => {
+        if (!/\/gameresult/.test(page.url())) {
+            if (await skip.isVisible().catch(() => false)) await skip.click({ timeout: 1000 }).catch(() => {});
+            await N.closeDawnReport(page);
+        }
+        await expect(page).toHaveURL(/\/gameresult/, { timeout: 1500 });
+    }).toPass({ timeout: 60_000 });
+}
+
+/** 사람들 화면이 결과 화면 본체까지 (낮 시작 연출·결과 영상 넘기기 포함, 폰은 광고 창이 뜨면 닫음) */
 async function allAtResult(people) {
     await Promise.all(people.map(async (p) => {
+        await passDawnToResult(p.page);
         await waitResult(p.page);
         if (isPhone(p.page)) await closeAdIfShown(p.page);
     }));
@@ -389,12 +410,17 @@ async function seatPhoneHosted(bots, host, guests, botCount) {
     return { t, joker, botList };
 }
 
-/** "게임시작"이 인원 모자람으로 막혔는지: 막힘 창 글 확인하고 닫음 (PC·폰 같은 표시) */
-async function expectStartBlocked(page) {
-    const blocked = blockedDialog(page);
-    await expect(blocked.getByRole('alert')).toHaveText(TEXT.minPlayers);
-    await blocked.getByRole('button', { name: '확인', exact: true }).click();
-    await expect(blocked).toHaveCount(0);
+/**
+ * "게임시작"이 인원 모자람으로 막혔는지 (PC·폰 같은 표시): 단추가 미리 꺼져 있고 까닭 글이 읽힘, 막힘 창은 안 뜸
+ * 결정(2026-11-16 낮 셋째 5번): 4명 이하면 누르기 전에 꺼 두고 까닭 글 → 부르기 전에 단추를 누르지 않음 (꺼진 단추는 눌림을 기다리다 시간 초과)
+ * count를 주면 글의 "지금 N명"까지 맞춰 봄
+ */
+async function expectStartBlocked(page, { count = null } = {}) {
+    await expect(startButton(page)).toBeDisabled();
+    const reason = startLockedReason(page);
+    await expect(reason).toHaveText(count === null ? TEXT.startLocked : `5명부터 시작할 수 있습니다. (지금 ${count}명)`);
+    await expectReadable(reason);
+    await expect(blockedDialog(page)).toHaveCount(0);
 }
 
 /**
@@ -487,7 +513,7 @@ async function gateSocket(page) {
 }
 
 module.exports = {
-    U, isPhone, TEXT, returnButton, lobbyButton, leaveNotice, closeTimer, startButton, hostSeat, blockedDialog,
+    U, isPhone, TEXT, returnButton, lobbyButton, leaveNotice, closeTimer, startButton, hostSeat, blockedDialog, startLockedReason,
     openHumans, rolesFor, expectRoles, findJokerBot, seatTable, seatHosted, jokerLeaves, voteOutJoker, killByNight, killByHuman, voteOutWithHumans,
     leaveGameUi, closeAdIfShown, allAtResult, pressReturn, pressLobby, leaveToLobby, botReturn, botToLobby, seatsOf, expectParty, expectRoomCodeShown,
     typeRoomCode, codeEntryAlert, createRoomOnPhone, createRoomAny, readyHumans, readyBots, startByHuman, startByBot, seatPhoneHosted, expectStartBlocked,

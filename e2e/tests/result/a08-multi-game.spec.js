@@ -163,7 +163,7 @@ test('A08-H-014 8명 판(사람 2 + 봇 6): 돌아온 대기방에서 재판 30�
     expect(room.roomCode, '서버 방 코드').toBe(t.roomCode);
 });
 
-test('A08-H-024 6명 판(사람 4 + 봇 2): 4명만 대기방으로 → 시작 못 함 → 새 사람 1 → 5명 → 시작 됨 @game @hard', async ({ players, bots }) => {
+test('A08-H-024 6명 판(사람 4 + 봇 2): 4명만 대기방으로 → "게임시작"이 미리 꺼지고 까닭 글 → 새 사람 1 → 5명 → 시작 됨 @game @hard', async ({ players, bots }) => {
     test.setTimeout(420_000);
     const [a, b, c, d] = await openHumans(players, 4);
     const { t, joker } = await seatHosted(bots, a, [b, c, d], 2);
@@ -174,8 +174,8 @@ test('A08-H-024 6명 판(사람 4 + 봇 2): 4명만 대기방으로 → 시작 �
     for (const p of [a, b, c, d]) await pressReturn(p.page);
     await expectParty(a.page, 4);
     await readyHumans([b, c, d, a]);
-    await startButton(a.page).click();
-    await expectStartBlocked(a.page);
+    // 4명 이하면 단추가 미리 꺼져 있어 누르지 않고 꺼짐·까닭 글만 봄 (결정 2026-11-16 낮 셋째 5번)
+    await expectStartBlocked(a.page, { count: 4 });
     await expect(a.page).toHaveURL(/\/game-matching/);
     expect(await e2e.gameOf(U(a)), '새 판 안 생김').toBeNull();
 

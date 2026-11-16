@@ -14,9 +14,9 @@ const N = require('../ingame/b-night/_night');
 const U = (x) => x.account.uuid;
 const seats = (page) => page.getByRole('img', { name: /^(준비 완료한 참가자|준비 전 참가자)$/ });
 const startButton = (page) => page.getByRole('button', { name: '게임시작' });
-// 입장 거절 글 조각: 판 중 / 방 없음
+// 입장 거절 글: 판 중(조각) / 방 없음(화면 글 그대로 — 없어진 방 코드는 없는 코드와 같은 답 ROOM_CODE_MISMATCH, "이미 끝난 게임" 글 아님)
 const STARTED_TEXT = '이미 게임이 시작된 방';
-const NO_ROOM_TEXT = /입장 코드가 올바르지 않습니다|방을 찾을 수 없습니다|일치하는 방이 없습니다/;
+const NO_ROOM_TEXT = '입장 코드가 올바르지 않습니다. 코드를 다시 확인해주세요.';
 
 // 서버 값으로 광대 봇 찾기 (미리 정한 직업이 가끔 안 맞음)
 async function jokerBotOf(t) {
@@ -110,7 +110,7 @@ test('A08-E-032 5명 봇 판 진행 중: 판 밖 사람이 그 코드 입력 →
 
     // 판 중엔 "이미 시작된 방" (방 없음 글이 아님)
     expect(message).toContain(STARTED_TEXT);
-    expect(message).not.toMatch(NO_ROOM_TEXT);
+    expect(message).not.toContain(NO_ROOM_TEXT);
     await expect(page).not.toHaveURL(/\/game-matching/);
     expect(await e2e.roomOf(U(user))).toBeNull();
 });
@@ -158,7 +158,7 @@ test('A08-E-035 5명 봇 판 끝, 아무도 "대기방으로" 안 누름 → 180
 
     const message = await enterCodeForAlert(page, t.roomCode);
 
-    expect(message).toMatch(NO_ROOM_TEXT);
+    expect(message).toBe(NO_ROOM_TEXT);
     expect(message).not.toContain(STARTED_TEXT);
     await expect(page).not.toHaveURL(/\/game-matching/);
 });

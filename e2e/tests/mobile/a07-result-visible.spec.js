@@ -93,17 +93,17 @@ test('A07-H-029 모바일 사람 3 + 봇 7 = 10명 판 끝 → 세 화면 모두
         // 띠: 맨 위 승패 + 이긴 진영
         await expectReadable(h.page.getByText('승리', { exact: true }), { large: true });
         await expectReadable(list.getByText('시민 진영 승리', { exact: true }));
-        // 내 줄: 골드 칸 + 직업 글 (시민은 "귀족")
+        // 내 줄: 골드 칸 + 직업 글 (시민은 "시민" — 결과판에 "귀족" 안 씀)
         await expect(myChip(h)).toHaveText('+1골드');
         await expectReadable(myChip(h));
-        await expectReadable(resultRow(h.page, nick(h)).getByText('귀족', { exact: true }));
+        await expectReadable(resultRow(h.page, nick(h)).getByText('시민', { exact: true }));
         // 남의 줄 직업 글도 (스크롤해서) 읽힘
         await expectReadable(resultRow(h.page, nick(hunterBot)).getByText('마녀사냥꾼', { exact: true }));
         await expectReadable(resultRow(h.page, nick(jokerBot)).getByText('광대', { exact: true }));
     }
 });
 
-test('A07-H-030 모바일 사람 2 + 봇 4 = 6명 판 끝 (사파리에서도) → "+1골드" 읽힘, 마녀사냥꾼 줄 "마녀사냥꾼", "MVP" 없음 @game @hard @safari', async ({ user, players, table }) => {
+test('A07-H-030 모바일 사람 2 + 봇 4 = 6명 판 끝 (사파리에서도) → "+1골드" 읽힘, 마녀사냥꾼 줄 "마녀사냥꾼"("시민"·"귀족" 아님), "MVP" 없음 @game @hard @safari', async ({ user, players, table }) => {
     test.setTimeout(300_000);
     // 첫 사람은 이 프로젝트 기기 그대로 (사파리 프로젝트면 아이폰 사파리)
     const phones = [user, await players.add({ mobile: true })];
@@ -127,6 +127,8 @@ test('A07-H-030 모바일 사람 2 + 봇 4 = 6명 판 끝 (사파리에서도) �
         await expectReadable(myChip(h));
         const hunterRow = resultRow(h.page, nick(hunterBot));
         await expectReadable(hunterRow.getByText('마녀사냥꾼', { exact: true }));
+        // 시민 이름으로 잘못 나오면 안 됨 (지금 시민 글은 "시민", 예전 글은 "귀족")
+        await expect(hunterRow.getByText('시민', { exact: true })).toHaveCount(0);
         await expect(hunterRow.getByText('귀족', { exact: true })).toHaveCount(0);
         await expect(h.page.getByText(/MVP/i)).toHaveCount(0);
     }

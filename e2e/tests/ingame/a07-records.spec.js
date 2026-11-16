@@ -96,7 +96,7 @@ test(`${id(54)} 8명 판 의사로 판 끝 → 내 직업 전적의 의사 판 �
 
 // A07-E-121~125: 직업 10승 업적 — 그 직업 9승(DB) + 이번 판을 그 직업으로 이김, 인원 5·6·7·8·10
 const JOB_WINS = [
-    { no: 121, role: 'CITIZEN', prefix: 'noble', label: '귀족(시민)', bots: ['JOKER', ...C(3)] },
+    { no: 121, role: 'CITIZEN', prefix: 'noble', label: '시민', bots: ['JOKER', ...C(3)] },
     { no: 122, role: 'JOKER', prefix: 'clown', label: '광대', bots: C(5) },
     { no: 123, role: 'DOCTOR', prefix: 'doctor', label: '의사', bots: ['JOKER', ...C(5)] },
     { no: 124, role: 'GUARD', prefix: 'guard', label: '경비원', bots: ['JOKER', ...C(6)] },
@@ -131,7 +131,7 @@ test(`${id(126)} 6명 판 승 9인 사람이 산 채로 나가고 내 편이 이
     const end = await k.execute(t, uid(t.bots[0]));
     expect(end.winResult?.winner).toBe('CITIZEN');
     await k.settled(t, t.bots[1]);
-    // 이 판이 승으로 셌다면 승 10·귀족 10승 업적을 받았을 자리 → 둘 다 없음
+    // 이 판이 승으로 셌다면 승 10·시민 10승(noble-win-10) 업적을 받았을 자리 → 둘 다 없음
     expect(await k.grantedIds(uid(user))).toEqual([GAMES_3]);
     expect(k.grantedEvents(events)).toEqual([]);
 });

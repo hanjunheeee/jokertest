@@ -174,7 +174,7 @@ test('A07-E-131 5명 판 시민 0명(광대1·의사2·경비원1·마녀사냥�
     await k.execute(t, uid(t.bots[0]));
     await expectWinner(page, 'CITIZEN');
     const withJob = (role) => k.rows(page).filter({ has: page.getByText(k.JOB_TEXT[role], { exact: true }) });
-    // 목록은 "주치의" 2줄 — 결정(의사로 통일)대로 "의사"
+    // 의사 줄은 "의사" 2줄 (결정: 의사로 통일), 시민이 없는 판이라 "시민" 줄은 0
     await expect(withJob('DOCTOR')).toHaveCount(2);
     await expect(withJob('CITIZEN')).toHaveCount(0);
 });

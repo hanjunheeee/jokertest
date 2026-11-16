@@ -98,7 +98,7 @@ test('A09-H-003 8명 판(사람 2 + 봇 6) ㄴ이 오프라인 61초 → ㄴ 화
     await H.expectForfeited(b.page, messages);
 });
 
-test('A09-H-004 7명 판(사람 2 + 봇 5) 끊긴 ㄴ을 ㄱ·봇이 찍음 → 결정대로 재판 없이 밤(뽑히는 순간 끊겨 있으면 재판 취소), ㄴ 산 채 @game @hard @realtime', async ({ user, players, table }) => {
+test('A09-H-004 7명 판(사람 2 + 봇 5) 끊긴 ㄴ을 ㄱ·봇이 찍음 → 결정대로 재판 없이 밤(뽑히는 순간 끊겨 있으면 재판을 안 엶), ㄴ 산 채 @game @hard @realtime', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const { a, b, gate } = await pairWithGate(user, players);
     const t = await H.seat(table, [a, b], { n: 7 });
@@ -106,7 +106,7 @@ test('A09-H-004 7명 판(사람 2 + 봇 5) 끊긴 ㄴ을 ㄱ·봇이 찍음 → 
     const dropAt = await H.goOffline(t, b, gate);
     await H.expectStatus(a.page, nick(b), 'disconnected');
 
-    // 봇 5 + ㄱ = 6표가 끊긴 ㄴ에게 (기권 1) → 원래면 재판, 결정은 재판 취소하고 밤
+    // 봇 5 + ㄱ = 6표가 끊긴 ㄴ에게 (기권 1) → 원래면 재판, 결정은 재판 없이 밤 (낮 판정 값 DEFENDANT_DISCONNECTED, 누가 뽑혔는지는 안 알림)
     const s = await H.pickDefendant(t, U(b), { voters: [a] });
     expect(s.phase).toBe('NIGHT');
     expect(s.dayIndex, '날짜 그대로').toBe(1);

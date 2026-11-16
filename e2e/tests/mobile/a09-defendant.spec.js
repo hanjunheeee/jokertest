@@ -1,13 +1,13 @@
 'use strict';
 
-// 모바일 끊긴 피고 브라우저 시험 — 뽑히는 순간 이미 끊겨 있는 봇이면 재판을 취소하고 밤
-// 목록 A09-끊김-나가기-탈주.md 번호 A09-E-068 (모바일 줄) — 기대값은 목록(임시 10 "재판 열림")이 아니라 사용자 결정 2026-11-16 오전 둘째 11번 (코드는 아직 옛 동작일 수 있음)
+// 모바일 끊긴 피고 브라우저 시험 — 뽑히는 순간 이미 끊겨 있는 봇이면 재판 없이 밤 (누가 뽑혔는지 안 알림)
+// 목록 A09-끊김-나가기-탈주.md 번호 A09-E-068 (모바일 줄) — 기대값은 사용자 결정 2026-11-16 오전 둘째 11번·낮 셋째 2번 (서버 낮 판정 값 DEFENDANT_DISCONNECTED)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { talk, clearOverlays } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
-test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → 재판 창 없이 밤, 그 봇은 산 채 (결정: 뽑히는 순간 끊겨 있으면 재판 취소) @game @smoke', async ({ user, table }) => {
+test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → 재판 창 없이 밤, 그 봇은 산 채, 투표 현황에 "재판 대상의 연결이 끊겨 재판 없음" (결정: 뽑히는 순간 끊겨 있으면 재판 없이 밤) @game @smoke', async ({ user, table }) => {
     const page = user.page;
     const t = await K.seat(table, user, { n: 6 });
     const bot = K.botOf(t, await t.state(), 'CITIZEN');
@@ -23,8 +23,25 @@ test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → �
 
     expect(state.phase, '재판 없이 밤').toBe('NIGHT');
     expect(K.rowOf(state, K.U(bot)).alive, '끊긴 봇은 60초 안이라 산 채').toBe(true);
+    // 낮 판정 알림: 끊긴 피고 값, 누가 뽑혔는지는 안 실림
+    const watcher = t.bots.find((b) => b !== bot && K.isUp(b));
+    const resolved = await watcher.waitForEvent('day_vote_resolved', { since, timeoutMs: 15_000 });
+    expect(resolved.outcome, '낮 판정 값').toBe('DEFENDANT_DISCONNECTED');
+    expect(resolved.tribunalTargetUuid ?? null, '뽑힌 사람은 안 알림').toBeNull();
     await expect(talk.phaseLine(page)).toContainText('밤', { timeout: 15_000 });
     await expectReadable(talk.phaseLine(page));
     await expect(K.tribunalWindow(page)).toHaveCount(0);
     await expect(talk.slot(page, bot.nickname)).toHaveAccessibleName(`${bot.nickname}, 연결 끊김`);
+    // 투표 현황 창: 왜 재판이 안 열렸는지 글 (밤 안내 창이 덮으면 닫고 엶)
+    const status = page.getByRole('dialog', { name: '투표 현황' });
+    await expect(async () => {
+        if (!(await status.isVisible())) {
+            await clearOverlays(page);
+            await page.getByRole('button', { name: '투표 현황 열기' }).click({ timeout: 2000 });
+        }
+        await expect(status).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20_000 });
+    const outcome = status.getByTestId('vote-status-outcome');
+    await expect(outcome).toHaveText('재판 대상의 연결이 끊겨 재판 없음');
+    await expectReadable(outcome);
 });

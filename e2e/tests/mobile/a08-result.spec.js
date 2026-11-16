@@ -7,7 +7,7 @@ const { expectReadable, readability } = require('../../helpers/visible');
 const { e2e } = require('../../helpers/internal');
 const ui = require('../../helpers/ui');
 const {
-    U, TEXT, returnButton, lobbyButton, leaveNotice, closeTimer, startButton, hostSeat, blockedDialog,
+    U, TEXT, returnButton, lobbyButton, leaveNotice, closeTimer, startButton, hostSeat, expectStartBlocked,
     rolesFor, findJokerBot, seatTable, seatPhoneHosted, jokerLeaves, voteOutJoker, allAtResult, pressReturn, pressLobby, leaveToLobby,
     botReturn, botToLobby, seatsOf, expectParty, expectRoomCodeShown, codeEntryAlert, createRoomOnPhone, readyHumans, readyBots,
     startByBot, readRoomSettings, secondsLeft, gateSocket,
@@ -109,7 +109,9 @@ test('A08-E-082 [모바일] 5명 판: 원래 방장 봇이 "로비로" → 먼�
     await expect(startButton(page)).toHaveCount(0);
 
     await botToLobby(host, t.gameId);
-    await expectReadable(startButton(page).getByText('게임시작', { exact: true }));
+    // 방에 나 혼자라 "게임시작"은 꺼진 채(반투명) 보임 → 단추는 보임·화면 안·안 가려짐만 보고, 글이 읽히는지는 꺼진 까닭 글로 봄 (결정 2026-11-16 낮 셋째 5번)
+    await expectReadable(startButton(page), { contrast: false });
+    await expectStartBlocked(page, { count: 1 });
     await expect(hostSeat(page)).toHaveCount(0);
     expect((await e2e.roomOf(U(user)))?.hostUuid, '서버 방장').toBe(U(user));
 });
@@ -276,7 +278,7 @@ test('A08-E-095 [모바일] 7명 봇 판 끝 → 판 밖 사람이 그 코드 �
     expect((await e2e.roomOf(U(user)))?.roomCode, '서버 방 코드').toBe(t.roomCode);
 });
 
-test('A08-E-096 [모바일] 6명 판(내가 방장): 나 + 봇 3만 대기방으로 → "게임시작"이 인원 글로 막힘 @game', async ({ user, bots }) => {
+test('A08-E-096 [모바일] 6명 판(내가 방장): 나 + 봇 3만 대기방으로 → "게임시작"이 미리 꺼지고 까닭 글 "5명부터 시작할 수 있습니다. (지금 4명)"이 읽힘 @game', async ({ user, bots }) => {
     test.setTimeout(180_000);
     const page = user.page;
     const me = U(user);
@@ -293,10 +295,8 @@ test('A08-E-096 [모바일] 6명 판(내가 방장): 나 + 봇 3만 대기방으
     await readyHumans([user]);
     await expectParty(page, 4);
 
-    await startButton(page).click();
-    const message = blockedDialog(page).getByRole('alert');
-    await expect(message).toHaveText(TEXT.minPlayers);
-    await expectReadable(message);
+    // 4명 이하면 누르기 전에 단추를 꺼 두고 버튼 줄 위에 까닭 글 (결정 2026-11-16 낮 셋째 5번) — 꺼짐·글 읽힘·막힘 시트 없음
+    await expectStartBlocked(page, { count: 4 });
     await expect(page).toHaveURL(/\/game-matching/);
     expect(await e2e.gameOf(me), '새 판 안 생김').toBeNull();
 });

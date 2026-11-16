@@ -90,6 +90,7 @@ async function botsJudge(t, voters, vote) {
 /**
  * 붙어 있는 산 봇들이 그 사람을 찍고 투표 마감(손잡이) → 낮을 벗어난 판 요약과 찍은 봇들
  * 사람은 안 냄(기권) — 최다 득표가 기권보다 많아야 재판이라 모자라면 바로 던짐
+ * 찍힌 사람이 그 순간 끊겨 있으면 표가 넉넉해도 재판 없이 밤 (낮 판정 값 DEFENDANT_DISCONNECTED) → 돌려준 단계는 부른 쪽이 봄
  */
 async function voteOut(t, targetUuid) {
     const s = await toVote(t);
@@ -178,7 +179,8 @@ const timebar = (page) => page.locator('[aria-label$="일 시간 흐름"]');
 
 /**
  * PC: 접힌 시간 바 펼치기 — 새로고침하면 다시 접힘
- * locked면 재판 창이 판을 덮어 단추를 못 누르는 때라 눌림 사건만 보냄 (남은 시간 값을 읽으려는 것)
+ * 재판 연출 중엔 시간 바가 저절로 펼쳐져 "접기" 단추만 있음 → 바로 돌아감
+ * locked는 화면이 아직 재판 상태를 못 받아 "확대" 단추가 남은 틈에만 씀: 재판 창이 곧 판을 덮으니 눌림 사건만 보냄
  */
 async function expandBar(page, { locked = false } = {}) {
     const bar = timebar(page);

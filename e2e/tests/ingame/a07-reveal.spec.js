@@ -10,8 +10,8 @@ const k = require('./_a07-simple-kit');
 const { C, uid, nick } = k;
 const id = (no) => `A07-E-${String(no).padStart(3, '0')}`;
 
-// 판 화면·결과판 어디서든 직업으로 읽힐 글 (결과판 이름 + 판 중 이름 "시민" + 지금 화면 글 "주치의")
-const JOB_WORDS = [...Object.values(k.JOB_TEXT), '시민', '주치의'];
+// 판 화면·결과판 어디서든 직업으로 읽힐 글 (지금 이름 5종 + 예전 이름 "귀족"·"주치의")
+const JOB_WORDS = [...Object.values(k.JOB_TEXT), '귀족', '주치의'];
 
 // 10명 판 직업 5종: 사람 시민 + 봇 [광대·광대·의사·경비원·마녀사냥꾼·시민 4] → 광대 봇 둘이 나가 시민 승 → 결과판
 async function openFiveJobsResult(table, user) {
@@ -42,17 +42,19 @@ async function openFiveJobsResult(table, user) {
 test(`${id(16)} 10명 판 광대2·의사·경비원·마녀사냥꾼: 결과판에 직업 이름 5종이 다 읽힘 @game`, async ({ user, table }) => {
     test.setTimeout(180_000);
     const { page, j1, doctor, guard, hunter, citizen } = await openFiveJobsResult(table, user);
-    // 목록은 의사를 "주치의"로 적음 — 결정(의사로 통일)대로 "의사"
+    // 시민은 "시민", 의사는 "의사" (결과판에 "귀족"·"주치의" 안 씀)
     for (const [bot, role] of [[j1, 'JOKER'], [citizen, 'CITIZEN'], [doctor, 'DOCTOR'], [guard, 'GUARD'], [hunter, 'WITCH_HUNTER']]) {
         await expectReadable(k.rowOf(page, nick(bot)).getByText(k.JOB_TEXT[role], { exact: true }));
     }
 });
 
-test(`${id(17)} 10명 판 마녀사냥꾼 봇 줄 이름은 "마녀사냥꾼" ("귀족" 아님) @game`, async ({ user, table }) => {
+test(`${id(17)} 10명 판 마녀사냥꾼 봇 줄 이름은 "마녀사냥꾼" ("시민"·"귀족" 아님) @game`, async ({ user, table }) => {
     test.setTimeout(180_000);
     const { page, hunter } = await openFiveJobsResult(table, user);
     const row = k.rowOf(page, nick(hunter));
     await expectReadable(row.getByText('마녀사냥꾼', { exact: true }));
+    // 시민 이름으로 잘못 나오면 안 됨 (지금 시민 글은 "시민", 예전 글은 "귀족")
+    await expect(row.getByText('시민', { exact: true })).toHaveCount(0);
     await expect(row.getByText('귀족', { exact: true })).toHaveCount(0);
     // 마녀사냥꾼 글은 그 한 줄뿐
     await expect(k.rows(page).filter({ has: page.getByText('마녀사냥꾼', { exact: true }) })).toHaveCount(1);

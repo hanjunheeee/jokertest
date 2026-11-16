@@ -148,8 +148,8 @@ test('A07-H-033 사람 2 + 봇 5 = 7명 판 결과판에서 창 넓이를 바꿈
             await expect(list.getByRole('listitem'), `${size.width}×${size.height} 줄 수`).toHaveCount(7);
             await expect(myChip(h)).toHaveText('+1골드');
             await expectReadable(myChip(h));
-            // 내 직업 글 (시민은 "귀족")
-            await expectReadable(myRow(h).getByText('귀족', { exact: true }));
+            // 내 직업 글 (시민은 "시민" — 결과판에 "귀족" 안 씀)
+            await expectReadable(myRow(h).getByText('시민', { exact: true }));
         }
     }
 });

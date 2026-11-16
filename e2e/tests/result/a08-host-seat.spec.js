@@ -18,8 +18,15 @@ const allSeats = (page) => page.getByRole('img', { name: /^(비워 둔 방장 �
 const reservedSeat = (page) => page.getByTestId('matching-reserved-host-slot');
 const reservedLabel = (page) => reservedSeat(page).getByText('방장 자리', { exact: true });
 const seatNotice = (page) => page.getByText(HOST_SEAT_NOTICE, { exact: true });
-// 대기방 머리 "앉은 수/정원" 숫자 (결정 2026-11-16 오전 2번 — 글 모양 "2/7"·"2 / 7" 둘 다 받음)
-const seatCount = (page, seated, max) => page.getByText(new RegExp(`(^|[^0-9])${seated}\\s*/\\s*${max}([^0-9]|$)`)).first();
+// 대기방 방 정보 줄의 "앉은 수/정원" 숫자 칸 (결정 2026-11-16 오전 2번 — 보이는 글 "2/7", 읽어 주는 글 "앉은 사람 2명, 정원 7명")
+const seatCount = (page) => page.getByTestId('matching-party-capacity');
+
+// 앉은 수/정원 숫자가 그 값으로 읽히는지 (보이는 글·읽어 주는 글 둘 다)
+async function expectSeatCount(page, seated, max) {
+    await expect(seatCount(page).locator('[aria-hidden="true"]')).toHaveText(`${seated}/${max}`);
+    await expect(seatCount(page)).toContainText(`앉은 사람 ${seated}명, 정원 ${max}명`);
+    await expectReadable(seatCount(page));
+}
 
 // 그림 단추가 읽히는지: 단추 자체는 보임·화면 안·안 가려짐, 대비는 단추 위에 얹은 글 칸에서 잼
 // (글자색이 그 글 칸에 걸려 있고, 그 칸은 누르기를 안 받아 가려짐 검사에서는 뺌)
@@ -214,7 +221,7 @@ test('A08-E-050 7명 판: 사람 + 봇 1 들어감(방장 자리 남김) → 인
     // 칸은 3개(방장 자리 + 2명)지만 인원은 2
     await expect(reservedSeat(page)).toHaveCount(1);
     await expect(seats(page)).toHaveCount(2);
-    await expectReadable(seatCount(page, 2, 7));
+    await expectSeatCount(page, 2, 7);
 });
 
 test('A08-E-062 6명 판: "방장 자리" 이름표 글자 대비 4.5 이상 @game', async ({ user, table }) => {
@@ -257,7 +264,7 @@ test('A08-E-075 6명 판(정원 6): 봇 5가 먼저 들어가 정원이 찼어�
     await backToRoom(page);
 
     await expect(seats(page)).toHaveCount(6);
-    await expectReadable(seatCount(page, 6, 6));
+    await expectSeatCount(page, 6, 6);
     await expectButtonReadable(startButton(page));
     const room = await waitRoom(U(user), (r) => r.players.length === 6);
     expect(room.hostUuid).toBe(U(user));

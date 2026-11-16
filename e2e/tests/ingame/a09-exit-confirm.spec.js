@@ -6,6 +6,7 @@ const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const c = require('./c-chat/_lib');
 const K = require('./_a09-simple-kit');
+const H = require('./_a09-hard-kit');
 
 // 펼친 시간 바의 낮 단계 글
 const dayLabel = (page) => K.timebar(page).getByText('[낮-토론과 투표]', { exact: true });
@@ -86,14 +87,14 @@ test('A09-E-073 PC 6명 판, 네트워크 끊고 나가기 확인 → "게임에
     test.setTimeout(180_000);
     const page = user.page;
     const me = K.U(user);
+    // 화면 소켓 길목 (판에 들어가기 전에 걺): 브라우저 오프라인 흉내는 열린 소켓을 바로 안 끊어 화면이 끊긴 줄 아는 때가 들쭉날쭉함
+    const gate = await H.socketGate(user);
     const t = await K.seat(table, user, { n: 6 });
     await K.toDay(t);
     await K.clear(page);
-    const since = Date.now();
-    await page.context().setOffline(true);
     try {
-        // 서버가 끊김을 알렸으면 화면 소켓도 끊긴 것
-        await K.droppedAt(t, me, since, { timeoutMs: 60_000 });
+        // 화면 소켓을 끊고 새 접속도 거절 → 서버가 끊김을 알렸으면 화면 소켓도 끊긴 것
+        await H.goOffline(t, user, gate);
         await K.pressExit(page, { accept: true });
         const notice = K.leaveNotice(page);
         await expectReadable(notice.getByText('게임에서 나가지 못했습니다.', { exact: true }));
@@ -104,7 +105,7 @@ test('A09-E-073 PC 6명 판, 네트워크 끊고 나가기 확인 → "게임에
         // 나가기가 안 갔으니 서버 판에선 산 채
         expect((await t.player(me)).alive).toBe(true);
     } finally {
-        await page.context().setOffline(false);
+        gate.open();
     }
 });
 

@@ -19,8 +19,10 @@ const lobbyButton = (page) => page.getByRole('button', { name: '로비로', exac
 const seats = (page) => page.getByRole('img', { name: /^(준비 완료한 참가자|준비 전 참가자)$/ });
 const settingsDialog = (page) => page.getByRole('dialog', { name: '방 설정 변경' });
 const codeOnlyBox = (page) => page.getByRole('checkbox', { name: '코드로만 참가', exact: true });
-// 대기방 머리 "앉은 수/정원" 숫자 (결정 2026-11-16 오전 2번 — 글 모양 "10/10"·"10 / 10" 둘 다 받음)
-const seatCount = (page, seated, max) => page.getByText(new RegExp(`(^|[^0-9])${seated}\\s*/\\s*${max}([^0-9]|$)`)).first();
+// 대기방 방 정보 줄의 "앉은 수/정원" 숫자 칸 (결정 2026-11-16 오전 2번 — 보이는 글 "10/10", 읽어 주는 글 "앉은 사람 10명, 정원 10명")
+const seatCount = (page) => page.getByTestId('matching-party-capacity');
+// 대기방 방 정보 줄의 방 이름 칸 (결정 2026-11-16 오전 1번)
+const roomTitle = (page) => page.getByTestId('matching-room-title');
 
 // 그림 단추가 읽히는지: 단추 자체는 보임·화면 안·안 가려짐, 대비는 단추 위에 얹은 글 칸에서 잼
 // (글자색이 그 글 칸에 걸려 있고, 그 칸은 누르기를 안 받아 가려짐 검사에서는 뺌)
@@ -202,8 +204,9 @@ test('A08-E-051 5명 판 끝 → 돌아온 대기방 이름 = 판 전 방 이름
     const page = user.page;
     await backToRoom(page);
 
-    // 방 이름은 만든 사람(방장 봇) 닉네임의 방 — 대기방 머리에 한 줄로 보임 (결정 2026-11-16 오전 1번)
-    await expectReadable(page.getByText(`${host.nickname}의 방`, { exact: true }));
+    // 방 이름은 만든 사람(방장 봇) 닉네임의 방 — 대기방 창 안 방 정보 줄에 보임 (결정 2026-11-16 오전 1번·낮 셋째 4번)
+    await expect(roomTitle(page)).toHaveText(`${host.nickname}의 방`);
+    await expectReadable(roomTitle(page));
 });
 
 test('A08-E-052 8명 판: 대기방에서 밤 60초로 바꾸고 판 → 판 끝 → 돌아온 대기방 설정 밤 60초 @game', async ({ user, bots }) => {
@@ -253,7 +256,9 @@ test('A08-E-053 10명 판 끝 → 사람 + 봇 9 전원 "대기방으로" → �
     await backToRoom(page);
 
     await expect(seats(page)).toHaveCount(10);
-    await expectReadable(seatCount(page, 10, 10));
+    await expect(seatCount(page).locator('[aria-hidden="true"]')).toHaveText('10/10');
+    await expect(seatCount(page)).toContainText('앉은 사람 10명, 정원 10명');
+    await expectReadable(seatCount(page));
     const room = await waitRoom(U(user), (r) => r.players.length === 10);
     expect(room.roomCode).toBe(t.roomCode);
 });
