@@ -1,7 +1,7 @@
 'use strict';
 
-// 낮 표 업적 평가 묶기 DB 시험 — 낮 표 한 번에 나가는 DB 문장 수·업적 평가가 낮 끝에 한 번 묶여 매겨지는지 시험 DB로 봄
-// 목록 docs/게임_의도_2026-11-15/시험목록/A03-낮투표.md A03-B-310~317, 돌리기: with-lock.sh testdb (시험_도우미.md 3-3)
+// 낮 표 업적 DB 시험 — 낮 표 한 번 DB 문장 수·낮 끝에 묶어 매기기·탈주한 판 표 빼기를 시험 DB로 봄
+// 목록 docs/게임_의도_2026-11-15/시험목록/A03-낮투표.md A03-B-310~322, 돌리기: with-lock.sh testdb (시험_도우미.md 3-3)
 const TEST_DB_URL = process.env.F01_TEST_DATABASE_URL;
 // 모델이 읽는 주소를 시험 DB로 (값 없으면 닿지 않는 곳 → 아래에서 건너뜀), 꼭 models·gameFixtures require보다 먼저
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
@@ -394,4 +394,143 @@ test('A03-B-317 여러 사람·두 낮 끝까지: 옛 참여 8인 A(1일·2일 �
     const currentOf = async (uuid) => (await achievementService.getStatusForUser(uuid)).find((s) => s.id === VOTES_10).current;
     assert.equal(await currentOf(A), 10);
     assert.equal(await currentOf(B), 9);
+});
+
+// ── A03-B-318~322 (다) 탈주한 판의 낮 표는 투표 참여 수에서 뺌 (사용자 결정 2026-11-17, 판 수와 같은 기준) ──
+
+const voteParticipationRepository = require('../../repositories/game/voteParticipation');
+
+// 옛 판 하나 + 그 판 낮 표 count번, deathReason 'DISCONNECT' = 산 채로 나간 판(탈주) → 판 id
+async function seedGameWithVotes(uuid, count, { deathReason = null, isAlive = false, won = false } = {}) {
+    const id = crypto.randomUUID();
+    const at = new Date(Date.UTC(2026, 8, 2, 0, 0));
+    await db.GameResult.create({
+        id, started_at: at, ended_at: at, winner: 'NONE', win_reason: null, day_index: count + 1, player_count: 5,
+        settings: { gameSource: { v: 1, value: 'production' } }, completed: true,
+    });
+    await db.GameResultPlayer.create({
+        game_id: id, user_id: uuid, nickname_snapshot: '옛판', role: 'CITIZEN', team: 'CITIZEN',
+        won, is_alive: isAlive, death_reason: deathReason,
+    });
+    const rows = Array.from({ length: count }, (_, i) => ({ game_id: id, day_index: i + 1, user_id: uuid, accepted_at: new Date() }));
+    if (rows.length > 0) await db.VoteParticipation.bulkCreate(rows);
+    return id;
+}
+
+// 같은 판에 다른 사람 줄 + 그 사람 표 count번 (한 판에 탈주한 사람·안 한 사람 섞기)
+async function joinGameWithVotes(gameId, uuid, count, { deathReason = null } = {}) {
+    await db.GameResultPlayer.create({
+        game_id: gameId, user_id: uuid, nickname_snapshot: '옛판', role: 'CITIZEN', team: 'CITIZEN',
+        won: false, is_alive: false, death_reason: deathReason,
+    });
+    const rows = Array.from({ length: count }, (_, i) => ({ game_id: gameId, day_index: i + 1, user_id: uuid, accepted_at: new Date() }));
+    await db.VoteParticipation.bulkCreate(rows);
+}
+
+// 업적 받음 알림은 버림 (판 없이 저장소·평가만 볼 때)
+function quietAchievements(t) {
+    achievementService.__internal.__setDepsForTests({ emitToUser: () => {} });
+    t.after(() => achievementService.__internal.__setDepsForTests(null));
+}
+
+const voteCurrentOf = async (uuid) => (await achievementService.getStatusForUser(uuid)).find((s) => s.id === VOTES_10).current;
+
+test('A03-B-318 탈주 안 한 판 3표 + 탈주한 판 2표 → 투표 참여 3 (한 명·여러 명 세기 둘 다)', async (t) => {
+    if (noDb(t)) return;
+    const [A] = await createUsers(1, 'v318');
+    await seedGameWithVotes(A, 3);
+    await seedGameWithVotes(A, 2, { deathReason: 'DISCONNECT' });
+    assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(A), 3);
+    const counts = await voteParticipationRepository.countEligibleDayVoteParticipationsForUsers([A]);
+    assert.equal(counts.get(A), 3);
+});
+
+test('A03-B-319 같은 판: A는 탈주·B는 끝까지 → A 표만 빠지고 B 표는 셈, A의 다른 판 표·죽은 뒤 나간 판 표는 셈', async (t) => {
+    if (noDb(t)) return;
+    const [A, B] = await createUsers(2, 'v319');
+    const shared = await seedGameWithVotes(A, 2, { deathReason: 'DISCONNECT' });
+    await joinGameWithVotes(shared, B, 2);
+    await seedGameWithVotes(A, 1);
+    // 처형으로 죽은 뒤 나간 판은 탈주가 아님 (판 수와 같은 기준)
+    await seedGameWithVotes(A, 1, { deathReason: 'EXECUTION' });
+    const counts = await voteParticipationRepository.countEligibleDayVoteParticipationsForUsers([A, B]);
+    assert.equal(counts.get(A), 2, 'A: 탈주 판 2표 뺌, 다른 판 1 + 죽은 뒤 나간 판 1');
+    assert.equal(counts.get(B), 2, 'B: 같은 판이라도 탈주 안 했으니 셈');
+    assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(A), 2);
+    assert.equal(await voteParticipationRepository.countEligibleDayVoteParticipations(B), 2);
+});
+
+test('A03-B-320 탈주 판 표 빼면 9·넣으면 10인 A → 업적 안 받음(진행 9), 같은 모양인데 탈주 안 한 B → 받음(진행 10)', async (t) => {
+    if (noDb(t)) return;
+    quietAchievements(t);
+    const [A, B] = await createUsers(2, 'v320');
+    await seedGameWithVotes(A, 9);
+    await seedGameWithVotes(A, 1, { deathReason: 'DISCONNECT' });
+    await seedGameWithVotes(B, 9);
+    await seedGameWithVotes(B, 1);
+    await achievementHooks.evaluateForUsers([A, B], 'no-game');
+    await settleEvaluations();
+    assert.equal(await grantCount(A, VOTES_10), 0, 'A는 탈주 판 표를 빼서 9');
+    assert.equal(await voteCurrentOf(A), 9);
+    assert.equal(await grantCount(B, VOTES_10), 1, 'B는 10');
+    assert.equal(await voteCurrentOf(B), 10);
+    // 한 명 평가 길(미리 읽기 없이)도 같은 수
+    await achievementService.evaluateAndGrantForUser(A);
+    assert.equal(await grantCount(A, VOTES_10), 0);
+});
+
+test('A03-B-321 다른 업적 숫자(판 수·생존·승리)는 그대로: 탈주 판은 판 수에서만 빠지던 대로', async (t) => {
+    if (noDb(t)) return;
+    const [A] = await createUsers(1, 'v321');
+    await seedGameWithVotes(A, 1, { isAlive: true, won: true });
+    await seedGameWithVotes(A, 1);
+    // 탈주 판: 판 수에선 빠지고(전부터) 생존·승리 숫자는 전과 같게 둠
+    await seedGameWithVotes(A, 1, { deathReason: 'DISCONNECT', isAlive: false, won: false });
+    const progress = await achievementService.loadProgress(A);
+    assert.equal(progress.completedGames, 2);
+    assert.equal(progress.survivals, 1);
+    assert.equal(progress.wins, 1);
+    assert.equal(progress.roleWinsByRole.get('CITIZEN'), 1);
+    assert.equal(progress.voteParticipations, 2);
+});
+
+test('A03-B-322 표 낸 뒤 그 판에서 나중에 탈주: 1일 낮 끝엔 이번 판 표를 아직 안 셈(8), 판 끝 뒤엔 탈주 판이라 빠짐(8) · 같은 판 B는 10 받음', async (t) => {
+    if (noDb(t)) return;
+    const ctx = await startGame(t, { label: 'v322' });
+    const [X, A, B] = ctx.citizens;
+    await seedVotes(A, 8);
+    await seedVotes(B, 8);
+    const first = openVote(ctx);
+    await vote(ctx, A, X);
+    await vote(ctx, B, X);
+    await endDay(ctx, first);
+    // 낮 끝 평가 때 A는 아직 탈주 전, 이번 판은 판 결과가 없어 안 셈
+    assert.equal(await voteCurrentOf(A), 8, '1일 낮 끝: 이번 판 표는 아직 안 셈');
+    passNight(ctx);
+    const second = openVote(ctx);
+    await vote(ctx, A, X);
+    await vote(ctx, B, X);
+    // 표 낸 뒤 산 채로 나감 = 이 판 탈주
+    assert.equal(T.applyParticipantDeparture(ctx.world.io, ctx.session, A, { reason: 'PLAYER_LEFT' }).ok, true);
+    await endDay(ctx, second);
+    assert.equal(await voteCurrentOf(A), 8, '2일 낮 끝: 아직 판 결과 없음');
+    assert.equal(await grantCount(A, VOTES_10), 0);
+    // 광대 처형으로 시민 승 → 판 끝 저장·업적
+    passNight(ctx);
+    gf.toTribunal(ctx.session, ctx.joker);
+    for (const uuid of core.getTribunalVoterUuids(ctx.session, ctx.joker)) {
+        assert.equal(core.submitTribunalVote(uuid, ctx.session.id, ctx.session.dayIndex, 'GUILTY').ok, true);
+    }
+    const prepared = core.prepareTribunalVoteResolution(B, ctx.session.id, ctx.session.dayIndex);
+    assert.equal(prepared.ok, true, `재판 준비 실패: ${prepared.code}`);
+    assert.equal(core.commitTribunalVoteResolution(prepared.session, prepared.resolution).ok, true);
+    assert.equal(ctx.session.winResult?.winner, 'CITIZEN');
+    T.persistTerminalSession(ctx.session, { completed: true });
+    await waitEconomySignals(ctx);
+    const rowA = await db.GameResultPlayer.findOne({ where: { game_id: ctx.session.id, user_id: A }, raw: true });
+    assert.equal(rowA?.death_reason, 'DISCONNECT', '판 결과에 A는 탈주로 남음');
+    assert.equal(await voteCurrentOf(A), 8, '판 끝 뒤: 탈주 판 표 2개 뺌');
+    assert.equal(await grantCount(A, VOTES_10), 0);
+    assert.equal(await voteCurrentOf(B), 10);
+    assert.equal(await grantCount(B, VOTES_10), 1);
 });

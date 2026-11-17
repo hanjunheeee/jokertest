@@ -29,16 +29,39 @@ const isCompletedGameResult = (gameResult) => gameResult?.completed === true || 
 const isEligibleGameResult = (gameResult) =>
     isCompletedGameResult(gameResult) && !["development", "test"].includes(gameResult?.settings?.gameSource?.value);
 
-// 그 사람 참여 중 업적에 셀 판의 것만 셈 (판 결과가 아직 없는 참여는 조인에서 빠짐)
+// 산 채로 판을 떠난 줄의 죽은 이유 (services/game/roleStatistics/queries.js 판 수 빼기와 같은 글자)
+const DESERTED_DEATH_REASON = "DISCONNECT";
+
+// 표 낸 사람이 그 판에서 탈주했나 (판 수에서 빼는 것과 같은 기준으로 표 수에서도 뺌)
+const isDesertedVote = (row) => row.GameResult?.GameResultPlayers?.death_reason === DESERTED_DEATH_REASON;
+
+// 판 결과에 붙여 읽을 것: 끝까지 갔나·판 설정 + 표 낸 사람 본인 판 줄의 죽은 이유 (질의는 그대로 한 번)
+const eligibilityInclude = () => [{
+    model: db.GameResult,
+    attributes: ["completed", "settings"],
+    required: true,
+    include: [{
+        model: db.GameResultPlayer,
+        attributes: ["death_reason"],
+        required: false,
+        // Op.eq 없이 col만 주면 "= " 비교가 빠진 글이 나와 꼭 붙임
+        where: { user_id: { [db.Sequelize.Op.eq]: db.Sequelize.col("VoteParticipation.user_id") } },
+    }],
+}];
+
+// 업적에 셀 표: 셀 판이고 그 판에서 탈주 안 함
+const isCountedVote = (row) => isEligibleGameResult(row.GameResult) && !isDesertedVote(row);
+
+// 그 사람 참여 중 업적에 셀 판의 것만 셈 (판 결과가 아직 없는 참여는 조인에서 빠짐, 탈주한 판 표도 뺌)
 exports.countEligibleDayVoteParticipations = async (userId) => {
     const rows = await db.VoteParticipation.findAll({
         attributes: ["game_id", "day_index"],
         where: { user_id: userId },
-        include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
+        include: eligibilityInclude(),
         raw: true,
         nest: true,
     });
-    return rows.filter((row) => isEligibleGameResult(row.GameResult)).length;
+    return rows.filter(isCountedVote).length;
 };
 
 // 여러 사람 한 번에 셈 → Map(사람 → 수), 참여 없는 사람은 0 (판 끝 업적 평가가 사람마다 읽던 것 묶기)
@@ -47,12 +70,12 @@ exports.countEligibleDayVoteParticipationsForUsers = async (userIds) => {
     const rows = await db.VoteParticipation.findAll({
         attributes: ["user_id", "game_id", "day_index"],
         where: { user_id: { [db.Sequelize.Op.in]: userIds } },
-        include: [{ model: db.GameResult, attributes: ["completed", "settings"], required: true }],
+        include: eligibilityInclude(),
         raw: true,
         nest: true,
     });
     for (const row of rows) {
-        if (counts.has(row.user_id) && isEligibleGameResult(row.GameResult)) counts.set(row.user_id, counts.get(row.user_id) + 1);
+        if (counts.has(row.user_id) && isCountedVote(row)) counts.set(row.user_id, counts.get(row.user_id) + 1);
     }
     return counts;
 };
