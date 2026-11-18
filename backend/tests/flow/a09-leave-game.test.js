@@ -179,16 +179,23 @@ test('A09-B-228 5명 판 광대 나감 → player_eliminated에 시민 승, 단�
     }
 });
 
+// 판 자리 순서에서 그 사람 빼고 맨 앞 참여 중인 사람 (판 중 방장 넘김 규칙)
+function firstSeatExcept(s, leaver) {
+    return [...s.players.values()].find((p) => p.uuid !== leaver && p.isParticipating !== false).uuid;
+}
+
 test('A09-B-229 7명 판 산 방장 나감 → session_participation_changed 방장 = 다음 참여 중인 사람', async (t) => {
     const w = h.setup(t);
     const uuids = Array.from({ length: 7 }, (_, i) => `a09b229-${i}`);
     const s = w.openGame({ uuids, roleCounts: { JOKER: 2 }, hostUuid: uuids[0] });
     gf.toDay(s);
+    // 다음 방장 = 맨 앞자리부터 처음 나오는 참여 중인 사람 (자리는 판 시작 때 섞임)
+    const heir = firstSeatExcept(s, uuids[0]);
     await w.leave(s, uuids[0]);
     for (const u of uuids.slice(1)) {
         const [changed] = w.received(u, 'session_participation_changed');
         assert.ok(changed, `${u} 참여 바뀜 알림 없음`);
-        assert.equal(changed.payload.hostUuid, uuids[1]);
+        assert.equal(changed.payload.hostUuid, heir);
     }
 });
 
@@ -198,11 +205,12 @@ test('A09-B-230 6명 판 처형된 방장 나감 → 방장 넘어감', async (t
     const s = w.openGame({ uuids, roleCounts: { JOKER: 2 }, hostUuid: uuids[0] });
     w.execute(s, uuids[0]);
     assert.notEqual(s.phase, 'ENDED');
+    const heir = firstSeatExcept(s, uuids[0]);
     await w.leave(s, uuids[0]);
     for (const u of uuids.slice(1)) {
         const changed = w.received(u, 'session_participation_changed').at(-1);
         assert.ok(changed, `${u} 참여 바뀜 알림 없음`);
-        assert.equal(changed.payload.hostUuid, uuids[1]);
+        assert.equal(changed.payload.hostUuid, heir);
     }
 });
 

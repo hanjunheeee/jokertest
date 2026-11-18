@@ -3,7 +3,7 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
-  T0, buttonByName, click, dayPhaseChanged, dayResolved, fakeSocket, fire, firstDay, nextDay, renderPage, resetAll, seat, tick,
+  T0, buttonByName, click, closeDawnReport, dayPhaseChanged, dayResolved, fakeSocket, fire, firstDay, nextDay, renderPage, resetAll, seat, tick,
 } from "./dayVoteHarness.mjs"
 
 test.afterEach(() => resetAll())
@@ -44,6 +44,7 @@ test("A03-F-238 ③ 2일 낮에 다시 뜸", async () => {
   if (night) await click(confirmIn(night))
   assert.equal(dayEntrance() === null, true)
   await fire(socket, "night_result_applied", nextDay({ n: 6, deadline: Date.now() + 60_000 }))
+  await closeDawnReport()
   assert.ok(dayEntrance(), "2일 낮 시작 창 있음")
   assert.match(dayEntrance().textContent, /낮이 되었습니다/)
   assert.match(timebar().textContent, /제 2일/)

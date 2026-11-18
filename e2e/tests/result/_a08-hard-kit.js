@@ -174,10 +174,17 @@ async function voteOutWithHumans(t, joker, voters) {
         const reply = await bot.request('cast_day_vote', { gameId: t.gameId, targetId: victim });
         expect(reply?.ok, `봇 낮 표 답 ${JSON.stringify(reply)}`).toBe(true);
     }
+    // 서버가 받은 표시: 다시 연 광대 카드 메뉴가 "투표취소" (사람을 찍어도 기권 단추는 안 잠김, 사용자 결정 2026-11-18)
     for (const h of voters) {
         const menu = await N.openCardMenu(h.page, joker.nickname);
         await menu.getByRole('menuitem', { name: '투표하기', exact: true }).click();
-        await expect(h.page.getByRole('button', { name: '기권' })).toBeDisabled();
+        await expect(menu).toBeHidden();
+        await expect(async () => {
+            const again = await N.openCardMenu(h.page, joker.nickname);
+            await expect(again.getByRole('menuitem', { name: '투표취소', exact: true })).toBeVisible({ timeout: 1500 });
+        }).toPass({ timeout: 15_000 });
+        await h.page.keyboard.press('Escape');
+        await expect(menu).toBeHidden();
     }
     // 투표 마감 → 재판 (최다 득표가 기권보다 많아야 열림)
     await t.advance();
@@ -326,12 +333,12 @@ async function codeEntryAlert(page, code, { close = true } = {}) {
     return ui.captureAlert(page, () => page.getByRole('button', { name: '참여하기' }).click(), { close });
 }
 
-/** 폰 설정 화면에서 처음 값(정원 10·자동 구성·광대 2)으로 방 만들기 → 서버 방 값 */
+/** 폰 설정 화면에서 처음 값(정원 10·자동 구성·광대 1)으로 방 만들기 → 서버 방 값 */
 function createRoomOnPhone(person) {
     return openPhoneRoom(person);
 }
 
-/** 폰 설정 화면에서 방 만들기 (oneJoker면 광대 칸을 1로 내림 — 처음 값 광대 2는 5·6명 판에서 광대 봇을 하나로 못 정함) */
+/** 폰 설정 화면에서 방 만들기 (oneJoker면 광대 칸을 1로 맞춤 — 처음 값이 이미 1이라 지금은 안 바뀜, 예전 처음 값 2 때 쓰던 것) */
 async function openPhoneRoom(person, { oneJoker = false } = {}) {
     const page = person.page;
     await page.goto('/game-setup');

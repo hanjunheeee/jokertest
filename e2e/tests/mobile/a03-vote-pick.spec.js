@@ -76,16 +76,24 @@ async function openSheet(page, nick) {
     return sheet;
 }
 
-// 사람 표: null이면 기권 단추, 아니면 그 사람 카드 '투표하기' → 기권 단추가 꺼지면 서버가 받은 것
+// 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
+// 사람이면 그 사람 카드 '투표하기' → 다시 연 그 카드 시트가 '투표취소'면 서버가 받은 것
+// (사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
 async function castMine(page, target, names) {
     if (target === null) {
         await abstainButton(page).click();
-    } else {
-        const sheet = await openSheet(page, names.get(target));
-        await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-        await expect(sheet).toBeHidden();
+        await expect(abstainButton(page)).toBeDisabled();
+        return;
     }
-    await expect(abstainButton(page)).toBeDisabled();
+    const sheet = await openSheet(page, names.get(target));
+    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
+    await expect(sheet).toBeHidden();
+    await expect(async () => {
+        if (!(await sheet.isVisible().catch(() => false))) await openSheet(page, names.get(target));
+        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await sheet.getByRole('button', { name: '닫기' }).click();
+    await expect(sheet).toBeHidden();
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -291,8 +299,8 @@ test('A03-E-149 [지금 동작] 모바일 8명 판 표 낸 뒤 새로고침 → 
     await user.page.reload();
     await expect(talk.phaseLine(user.page)).toBeVisible({ timeout: 20_000 });
     await clearOverlays(user.page);
-    // 낸 표시: 기권 꺼짐 + X 카드는 '투표취소'
-    await expect(abstainButton(user.page)).toBeDisabled();
+    // 낸 표시: X 카드는 '투표취소', 기권 단추는 켜짐 (찍은 뒤 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
+    await expect(abstainButton(user.page)).toBeEnabled();
     expect((await sheetItems(user.page, names.get(X))).all).toEqual(['투표취소']);
     // 다시 바꿈: Y '투표하기' → Y 카드가 '투표취소'
     const sheet = await openSheet(user.page, names.get(Y));

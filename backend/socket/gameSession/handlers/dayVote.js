@@ -1,11 +1,11 @@
 // 낮 투표 핸들러 파일
-// 낮 투표 제출(1라운드 참여 기록 저장, 산 사람 표가 다 차면 5초 뒤 판정), register가 등록·시험은 gameSession.js로 바로 부름
+// 낮 투표 제출(1라운드 참여 기록 저장, 산 사람 표가 다 차면 5초 뒤 판정)·표 거두기("투표취소"), register가 등록·시험은 gameSession.js로 바로 부름
 const gameSessionCore = require('../../../game-core/gameSession')
 const gameAchievementService = require('../../../services/game/achievementHooks')
 const { isolate, tryOr } = require('../../common/isolate')
 const { respond } = require('../../common/replies')
-const { pickGameTarget, acceptRequest, acceptCoreResult, registryLogs } = require('../core/requests')
-const { emitProgressAfterSubmit } = require('../delivery/progress')
+const { pickGameId, pickGameTarget, acceptRequest, acceptCoreResult, registryLogs } = require('../core/requests')
+const { emitDayVoteProgressToAll } = require('../delivery/progress')
 const { settleDayVoteIfComplete, deferDayVoteAchievement } = require('../phase/day')
 
 // 낮 투표 제출 효과음 (기록 없거나 읽다 던지면 null, 효과음 없이 답함)
@@ -42,9 +42,10 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     // 효과음은 표 기록 뒤에 읽음
     const sfxEvent = buildDayVoteSfx(uuid, gameId)
 
-    // 내 진행 상태 → ack → 산 사람 표가 다 찼으면 투표 마감 5초로 당김 (순서 고정, 저장 실패여도 표는 남아 셈)
+    // 진행 상태(판 전원 각자) → ack → 산 사람 표가 다 찼으면 투표 마감 5초로 당김 (순서 고정, 저장 실패여도 표는 남아 셈)
+    // 진행 숫자는 모두가 봄, 표 대상은 받는 사람 자기 것만 실림 (사용자 결정 2026-11-18)
     const ackThenSettle = (ackPayload) => {
-        emitProgressAfterSubmit(io, uuid, gameId, 'SELF_PROGRESS_AFTER_SUBMIT')
+        emitDayVoteProgressToAll(io, uuid, gameId, 'SELF_PROGRESS_AFTER_SUBMIT')
         ack(ackPayload)
         isolate('[낮 투표 마감 당기기 실패]', { code: 'SUBMIT_SETTLE_ERROR', gameId },
             () => settleDayVoteIfComplete(gameId))
@@ -75,6 +76,31 @@ async function handleSubmitDayVote(io, socket, uuid, payload, callback) {
     if (!deferDayVoteAchievement(gameId, dayIndex, uuid)) gameAchievementService.evaluateForUsers([uuid], gameId)
 }
 
+// 낮 표 거두기("투표취소"): 내 표 칸을 지워 안 낸 사람으로 돌림 → 진행 수 1 줄어 판 전원에게 → ack (사용자 결정 2026-11-18)
+// 요청은 { gameId }만, 검사는 표 낼 때와 같음 (판·판정 전·낮 투표 단계·산 사람)
+// 다 차서 마감이 5초로 당겨진 뒤 거둬도 받음, 당긴 마감은 그대로 (표 바꾸기와 같은 규칙, 마감이 안 낸 사람을 기권으로 채움)
+// 투표 참여 기록(업적)은 안 지움, 답 모양은 표 낼 때와 같음 { ok: true, sfxEvent } — 거둘 땐 효과음이 없어 sfxEvent는 늘 null (2026-11-18 정함)
+function handleWithdrawDayVote(io, socket, uuid, payload, callback) {
+    // callback 없으면 처리 안 함 (답할 곳 없음)
+    if (typeof callback !== 'function') return
+    // ack: callback이 던져도 밖으로 안 샘
+    const ack = (body) => respond(callback, body)
+    // 지금 소켓·요청 모양
+    const fields = acceptRequest(ack, uuid, socket, payload, pickGameId)
+    if (!fields) return
+    const { gameId } = fields
+
+    // 여기부터 진짜 바뀜: 표 칸 지우기
+    const withdrawal = acceptCoreResult(ack, () => gameSessionCore.withdrawDayVote(uuid, gameId),
+        registryLogs('[낮 투표 거두기 처리 에러]', '[낮 투표 거두기 registry 불일치]', uuid, gameId))
+    if (!withdrawal) return
+
+    // 거뒀으면 진행 상태(판 전원 각자) → ack (표 낼 때와 같은 순서), 낸 표가 없었으면 바뀐 것 없어 답만
+    if (withdrawal.withdrawn) emitDayVoteProgressToAll(io, uuid, gameId, 'SELF_PROGRESS_AFTER_WITHDRAW')
+    ack({ ok: true, sfxEvent: null })
+}
+
 module.exports = {
     handleSubmitDayVote,
+    handleWithdrawDayVote,
 }

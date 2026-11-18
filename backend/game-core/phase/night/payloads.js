@@ -29,9 +29,9 @@ function buildAssassinFailNotice() {
     return { actionType: 'ASSASSINATE', success: false }
 }
 
-// 밤 결과 적용 방송 (단계·생존 목록·죽은 사람·사망 공개·의사가 살렸는지)
-// doctorSaved는 참·거짓만 (누가 공격받았는지는 안 실음)
-function buildNightResultAppliedPayload(session, victimUuid, deathReveals = [], { doctorSaved = false } = {}) {
+// 밤 결과 적용 방송 (단계·생존 목록·죽은 사람·사망 공개)
+// 의사가 살렸는지는 안 실음: 아무도 안 죽은 밤은 의사가 살렸든 광대가 안 죽였든 같은 값 (사용자 결정 2026-11-18)
+function buildNightResultAppliedPayload(session, victimUuid, deathReveals = []) {
     return {
         gameId: session.id,
         phase: session.phase,
@@ -44,7 +44,6 @@ function buildNightResultAppliedPayload(session, victimUuid, deathReveals = [], 
             victimUuid: v,
             source,
         })),
-        doctorSaved: doctorSaved === true,
     }
 }
 

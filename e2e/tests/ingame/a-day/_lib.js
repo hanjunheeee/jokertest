@@ -122,10 +122,22 @@ async function cardAction(page, nickname, item) {
     await expect(menu).toBeHidden();
 }
 
-/** 화면으로 낮 투표 → 기권 버튼이 잠기면 보낸 것 */
+/** 화면으로 낮 투표 → 그 사람 카드 메뉴가 "투표취소"로 바뀌면 서버가 받은 것
+ * 사람을 찍어도 기권 단추는 안 잠김 (기권으로 바꾸기 됨, 사용자 결정 2026-11-18) → 기권 단추로는 못 봄 */
 async function voteUi(page, nickname) {
     await cardAction(page, nickname, '투표하기');
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    await expectVotedFor(page, nickname);
+}
+
+/** 그 사람 카드 메뉴에 "투표취소"가 보일 때까지 (메뉴 열어 보고 Esc로 닫음) */
+async function expectVotedFor(page, nickname) {
+    const menu = page.getByRole('menu', { name: '플레이어 행동' });
+    await expect(async () => {
+        if (!(await menu.isVisible().catch(() => false))) await card(page, nickname).click({ timeout: 1500 });
+        await expect(menu.getByRole('menuitem', { name: '투표취소', exact: true })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15000 });
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
 }
 
 /** 투표 현황 창 열어서 칸 값 읽기 → { votes, abstain, outcome, target } */
@@ -166,5 +178,5 @@ async function timerSeconds(page) {
 module.exports = {
     customRoles, waitState, closeNotice, keepWatching, closeReveal, toDay, toVote, botVote, botsVote, resolveVote,
     botTribunal, botsTribunal, resolveTribunal, playerOf, nickOf, uuidOf, card, selfCard, cardAction, voteUi,
-    readVoteStatus, sendChatOk, chatLog, botChat, addBannedWords, randomWord, timerSeconds, sleep,
+    expectVotedFor, readVoteStatus, sendChatOk, chatLog, botChat, addBannedWords, randomWord, timerSeconds, sleep,
 };

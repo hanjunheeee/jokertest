@@ -50,11 +50,11 @@ for (const [no, id] of REMOVED_CASES) {
   })
 }
 
-test("A01-F-033 처음 폼 상태: 코드로만 참가 꺼짐·정원 10·광대 2·토론 60·투표 60·재판 60·밤 90·자동", () => {
+test("A01-F-033 처음 폼 상태: 코드로만 참가 꺼짐·정원 10·광대 1·토론 60·투표 60·재판 60·밤 90·자동", () => {
   const form = buildDefaultFormState()
   assert.equal(form.checks["private-lobby"], false)
   assert.equal(form.ranges["max-players"], 10)
-  assert.equal(form.ranges["joker-count"], 2)
+  assert.equal(form.ranges["joker-count"], 1)
   assert.equal(form.ranges["day-discussion-time"], 60)
   assert.equal(form.ranges["day-vote-time"], 60)
   assert.equal(form.ranges["tribunal-time"], 60)

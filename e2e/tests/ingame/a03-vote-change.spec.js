@@ -51,16 +51,14 @@ async function cardMenuNames(page, nickname) {
     return names;
 }
 
-// 사람 표 내기 → 서버가 받은 표시까지 기다림 (사람 대상이면 그 카드에 "투표취소", 기권이면 기권 단추 꺼짐/찍었던 카드가 "투표하기"로)
+// 사람 표 내기 → 서버가 받은 표시까지 기다림 (사람 대상이면 그 카드에 "투표취소", 기권이면 기권 단추 꺼짐·찍었던 카드가 "투표하기"로)
+// 사람을 찍은 뒤에도 기권 단추가 켜져 있어 바로 눌러 기권으로 바꿈 ("투표취소"는 기권이 아니라 표 거두기, 사용자 결정 2026-11-18)
 async function humanVote(t, page, target, { from = null } = {}) {
     if (target === null) {
-        if (from === null) {
-            const abstain = page.getByRole('button', { name: '기권' });
-            await abstain.click();
-            await expect(abstain).toBeDisabled();
-        } else {
-            // 한 번 낸 뒤엔 기권 단추가 꺼져 있음 → 찍은 카드의 "투표취소"가 기권으로 바꾸는 길
-            await L.cardAction(page, nickOf(t, from), '투표취소');
+        const abstain = page.getByRole('button', { name: '기권' });
+        await abstain.click();
+        await expect(abstain).toBeDisabled();
+        if (from !== null) {
             await expect(async () => {
                 expect(await cardMenuNames(page, nickOf(t, from))).toContain('투표하기');
             }).toPass({ timeout: 5000 });

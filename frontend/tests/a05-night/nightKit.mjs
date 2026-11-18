@@ -187,8 +187,8 @@ export function table() {
     privateResult(fields, { day = dayIndex() } = {}) {
       send("night_action_result", { gameId, dayIndex: day, ...fields })
     },
-    // 밤 결과: 희생자(자리 번호 또는 null) → 다음 낮, 끝난 판이면 winResult
-    nightApplied({ victim = null, doctorSaved = false, dayPhaseDeadline = Date.now() + 120_000, winner = null } = {}) {
+    // 밤 결과: 희생자(자리 번호 또는 null) → 다음 낮, 끝난 판이면 winResult (의사가 살렸는지는 서버가 안 보냄, 2026-11-18)
+    nightApplied({ victim = null, dayPhaseDeadline = Date.now() + 120_000, winner = null } = {}) {
       const current = store().state
       const victimUuid = victim === null ? null : uuidOf(victim)
       const deadNow = (p) => p.alive === false || p.uuid === victimUuid
@@ -200,7 +200,6 @@ export function table() {
           players: current.players.map((p) => ({ uuid: p.uuid, isAlive: !deadNow(p) })),
           victimUuid,
           deathReveals: victimUuid ? [{ victimUuid, source: "JOKER" }] : [],
-          doctorSaved,
           winResult: { winner },
         })
         return
@@ -212,7 +211,6 @@ export function table() {
         players: current.players.map((p) => ({ uuid: p.uuid, alive: !deadNow(p) })),
         victimUuid,
         deathReveals: victimUuid ? [{ victimUuid, source: "JOKER" }] : [],
-        doctorSaved,
         dayPhaseDeadline,
       })
     },

@@ -223,7 +223,7 @@ test('A05-B-628 5명: 밤 암살로 판이 끝나면 토론 시간이 지나도 
     assert.equal(seen(ctx, 'phase_settle_started', { phase: 'DAY' }).length, 0);
 });
 
-test('A05-B-629 6명 광대 2: 광대 2·나머지 3에서 광대 → A, 의사 → A면 판이 안 끝남 (낮, doctorSaved 참)', (t) => {
+test('A05-B-629 6명 광대 2: 광대 2·나머지 3에서 광대 → A, 의사 → A면 판이 안 끝남 (낮, doctorSaved 칸 없음)', (t) => {
     const ctx = setupGame(t, { id: 'b629', n: 6, jokerCount: 2 });
     const [a, b] = citizens(ctx);
     executeAllBut(ctx, [a, b, one(ctx, 'DOCTOR')]);
@@ -234,7 +234,7 @@ test('A05-B-629 6명 광대 2: 광대 2·나머지 3에서 광대 → A, 의사 
     runOutNight(ctx);
     const [p] = got(ctx, b, 'night_result_applied');
     assert.equal(p.phase, 'DAY');
-    assert.equal(p.doctorSaved, true);
+    assert.equal(Object.hasOwn(p, 'doctorSaved'), false);
 });
 
 test('A05-B-630 6명 광대 2: 광대 둘 다 고른 5초 안에 시민이 나가 판이 끝나면 차례 끝·밤 결과 안 옴', (t) => {

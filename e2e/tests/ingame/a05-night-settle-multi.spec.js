@@ -9,7 +9,7 @@ const night = require('./b-night/_night');
 
 // 화면 글 (frontend utils/selectInGameTimebarStatusMessage.js·utils/dawnReport.js·utils/reduceInGameNightPrivateResult.js와 같은 글)
 const SETTLE_TEXT = '[5초 뒤 마감]';
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 const DAY_TEXT = '낮이 되었습니다';
 const investigateText = (nickname, roleName) => `조사 결과, ${nickname} 님의 역할은 ${roleName}입니다.`;
@@ -199,9 +199,9 @@ async function expectKilled(page, nickname, from = 0) {
     await expect(line).toHaveText(killedText(nickname));
 }
 
-/** 살림 연출: 글 창의 글이 읽힘, 그 밤 영상은 없음 */
+/** 아무 일 없음 연출(의사가 살렸든 광대가 안 죽였든 같음, 2026-11-18): 글 창의 글이 읽힘, 그 밤 영상은 없음 */
 async function expectSaved(page, from = 0) {
-    await expectReadable(page.locator('[data-ingame-dawn-report="SAVED"]').getByText(SAVED_TEXT, { exact: true }), { timeout: 20_000 });
+    await expectReadable(page.locator('[data-ingame-dawn-report="QUIET"]').getByText(SAVED_TEXT, { exact: true }), { timeout: 20_000 });
     expect((await logOf(page, from)).filter((e) => e.kind === 'kill' || e.kind === 'msg'), '살림 밤엔 암살 영상이 없음').toEqual([]);
 }
 
@@ -266,7 +266,7 @@ test('A05-H-512 광대 사람 2명 (7명, 사람 3): 첫째만 골랐을 땐 표
     expect(heard(g, 'phase_settle_started', 'JOKER', 1).length, '마감 당김 알림 수').toBe(1);
 });
 
-test('A05-H-513 광대 사람 2명 (8명): 둘 다 A → 5초 안에 한 명이 B로 바꿈 → 동률이라 아무도 안 죽고 낮에 연출 없음 @game @hard @realtime', async ({ user, players, table }) => {
+test('A05-H-513 광대 사람 2명 (8명): 둘 다 A → 5초 안에 한 명이 B로 바꿈 → 동률이라 아무도 안 죽고 낮에 "아무 일도" 글 창 @game @hard @realtime', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const humans = [user, ...(await addPeople(players, 1))];
     const g = await openGame(table, humans, { n: 8, counts: { JOKER: 2 }, roles: ['JOKER', 'JOKER'] });
@@ -285,7 +285,7 @@ test('A05-H-513 광대 사람 2명 (8명): 둘 다 A → 5초 안에 한 명이 
     expect(changedAt, '바꾼 것이 차례가 닫히기 전').toBeLessThan(span.off);
     expectFiveSeconds(span.ms);
     await waitDay(g.t, 2);
-    await each(humans, (h) => expectPlainDay(h.page, marks[humans.indexOf(h)]));
+    await each(humans, (h) => expectSaved(h.page, marks[humans.indexOf(h)]));
     expect((await g.t.state()).players.every((p) => p.alive), '아무도 안 죽음').toBe(true);
 });
 

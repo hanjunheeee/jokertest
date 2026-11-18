@@ -10,8 +10,8 @@ const k = require('./_a07-simple-kit');
 
 const { C, uid, nick } = k;
 
-// 의사가 살렸을 때 낮 시작 글 (누구였는지는 안 밝힘)
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
+// 아무도 안 죽은 밤 낮 시작 글 (의사가 살렸든 광대가 안 죽였든 같음, 사용자 결정 2026-11-18)
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 
 // 결과 화면에 이긴 진영 글이 읽힘
 async function expectWinner(page, winner) {
@@ -106,14 +106,14 @@ test('A07-E-007 7명 판 재판 무죄 → 밤 화면, 결과 화면 안 뜸 @ga
     await k.expectStillPlaying(t, page);
 });
 
-test('A07-E-008 8명 판 의사가 광대 대상을 살림 → 낮에 살려냈다는 글, 결과 화면 안 뜸 @game', async ({ user, table }) => {
+test('A07-E-008 8명 판 의사가 광대 대상을 살림 → 낮에 "아무 일도 일어나지 않았습니다" 글, 결과 화면 안 뜸 @game', async ({ user, table }) => {
     const { t, page } = await k.open(table, user, 'CITIZEN', ['JOKER', 'DOCTOR', ...C(5)], { auto: false });
     // 단계 안내 창만 저절로 닫히게 (낮 시작 글 창은 직접 봄)
     await n.recordUi(page, { autoConfirm: true, autoConfirmDawn: false });
     const [joker, doctor, target] = t.bots;
     const day2 = await k.nightKill(t, [joker], uid(target), { save: doctor });
     expect({ phase: day2.phase, day: day2.dayIndex, alive: n.aliveCount(day2) }).toEqual({ phase: 'DAY', day: 2, alive: 8 });
-    await expectReadable(page.locator('[data-ingame-dawn-report="SAVED"]').getByText(SAVED_TEXT, { exact: true }), { timeout: 30_000 });
+    await expectReadable(page.locator('[data-ingame-dawn-report="QUIET"]').getByText(SAVED_TEXT, { exact: true }), { timeout: 30_000 });
     await k.expectStillPlaying(t, page);
 });
 

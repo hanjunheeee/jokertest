@@ -501,7 +501,6 @@ function attachServer(t) {
       players: seats.map((s) => ({ uuid: s.uuid, alive: s.alive })),
       victimUuid: victim === null ? null : seats[victim].uuid,
       deathReveals: victim === null ? [] : [{ victimUuid: seats[victim].uuid, source: "JOKER" }],
-      doctorSaved: false,
       dayPhaseDeadline: now() + 60_000,
     })
     if (vote) await t.toVote()

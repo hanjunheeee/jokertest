@@ -165,9 +165,11 @@ test('A08-B-198 6명 판 둘째 판 중 방장 나감 → 둘째 판 끝 reserve
     const { w, g } = await endedGame(t, 'b198', 6);
     const g2 = await nextGame(w, g);
     w.advanceUntil(g2, (s) => s.phase === 'DAY');
+    // 넘겨받을 사람 = 방장 빼고 맨 앞자리 사람 (자리는 판 시작 때 섞임)
+    const next = [...w.session(g2).players.keys()].find((u) => u !== g2.host);
     assert.equal((await w.lobby(g2.host, g2.gameId)).ok, true);
-    const heir = w.received(g.uuids[1], 'session_participation_changed').filter((p) => p.gameId === g2.gameId).at(-1)?.hostUuid;
-    assert.equal(heir, g.uuids[1], '방장이 다음 사람에게 안 넘어감 (준비 잘못)');
+    const heir = w.received(next, 'session_participation_changed').filter((p) => p.gameId === g2.gameId).at(-1)?.hostUuid;
+    assert.equal(heir, next, '방장이 다음 사람에게 안 넘어감 (준비 잘못)');
     await w.endGame(g2);
     assert.equal(w.roomByCode(g.roomCode).returnHold?.reservedHostUuid, heir);
 });

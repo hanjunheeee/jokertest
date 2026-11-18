@@ -44,25 +44,40 @@ async function botDo(bot, event, payload, what) {
     return reply;
 }
 
-// PC 사람 낮 표: 그 사람 카드 메뉴 "투표하기" → 기권 단추가 꺼지면 서버가 받은 것 (막는 안내 창은 카드 메뉴 열기가 닫음)
+// PC 사람 낮 표: 그 사람 카드 메뉴 "투표하기" → 다시 연 메뉴가 "투표취소"면 서버가 받은 것 (막는 안내 창은 카드 메뉴 열기가 닫음)
+// PC는 사람을 찍어도 기권 단추가 안 잠김 (기권으로 바꾸기 됨, 사용자 결정 2026-11-18)
 async function votePcUi(page, nickname) {
     const menu = await N.openCardMenu(page, nickname);
     await menu.getByRole('menuitem', { name: '투표하기' }).click();
     await expect(menu).toBeHidden();
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    await expect(async () => {
+        const again = await N.openCardMenu(page, nickname);
+        await expect(again.getByRole('menuitem', { name: '투표취소', exact: true })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu', { name: '플레이어 행동' })).toBeHidden();
 }
 
-// 모바일 사람 낮 표: 초상 띠에서 그 사람 칸 → 아래 시트 "투표하기" → 기권 단추가 꺼지면 서버가 받은 것
+// 모바일 사람 낮 표: 초상 띠에서 그 사람 칸 → 아래 시트 "투표하기" → 다시 연 시트가 "투표취소"면 서버가 받은 것
+// 모바일도 사람을 찍어도 기권 단추가 안 잠김 (PC와 같음, 사용자 결정 2026-11-18)
 async function votePhoneUi(page, nickname) {
     const sheet = page.locator('[data-ingame-player-card-menu]');
-    await expect(async () => {
-        await closeOverlays(page, { keepWatching: false, rounds: 2, clickTimeoutMs: 1000 });
-        await talk.slot(page, nickname).click({ timeout: 1500 });
-        await expect(sheet).toHaveAttribute('aria-label', nickname, { timeout: 1500 });
-    }).toPass({ timeout: 25_000 });
+    const openSheet = async () => {
+        await expect(async () => {
+            await closeOverlays(page, { keepWatching: false, rounds: 2, clickTimeoutMs: 1000 });
+            await talk.slot(page, nickname).click({ timeout: 1500 });
+            await expect(sheet).toHaveAttribute('aria-label', nickname, { timeout: 1500 });
+        }).toPass({ timeout: 25_000 });
+    };
+    await openSheet();
     await sheet.getByRole('menuitem', { name: '투표하기' }).click();
     await expect(sheet).toBeHidden();
-    await expect(page.getByRole('button', { name: '기권' }).first()).toBeDisabled();
+    await expect(async () => {
+        if (!(await sheet.isVisible().catch(() => false))) await openSheet();
+        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await sheet.getByRole('button', { name: '닫기' }).click();
+    await expect(sheet).toBeHidden();
 }
 
 // 재판 유죄 (PC·모바일 같은 표시·같은 단추 이름): 재판 창 "유죄" → 단추가 사라지면 서버가 받은 것

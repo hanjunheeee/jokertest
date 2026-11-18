@@ -114,7 +114,6 @@ test("A07-F-038 6명 판: 판 끝 알림으로 받은 결과판 = 스냅샷으�
     players: endSeats.map((s) => ({ uuid: s.uuid, isAlive: s.alive })),
     victimUuid: endSeats[4].uuid,
     deathReveals: [{ victimUuid: endSeats[4].uuid, source: "JOKER" }],
-    doctorSaved: false,
     winResult: K.winResultOf(endSeats, "JOKER", gold),
     resultClosesAt,
   })

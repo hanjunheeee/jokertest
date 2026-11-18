@@ -35,7 +35,8 @@ function dayVoteItem(ctx, targetId, selfAlive) {
   const inTargets = Array.isArray(ctx.dayVoteTargets)
     && ctx.dayVoteTargets.some((target) => target.id === targetId)
   const submitting = ctx.dayVoteStatus === "submitting"
-  const votedTarget = ctx?.dayVoteHasSubmitted ? (ctx.dayVoteLastSubmittedTargetId ?? null) : null
+  // 낸 표 대상은 행동 패널 훅이 풀어 줌 (안 냈거나 기권이면 null)
+  const votedTarget = ctx.dayVoteLastSubmittedTargetId ?? null
 
   if (votedTarget === targetId) {
     const enabled = Boolean(ctx.dayVoteControlsEnabled) && !submitting

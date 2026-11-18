@@ -1,5 +1,6 @@
 // 개인 진행 상태 전송 파일
 // 내 제출 상태를 나한테만 보냄 (누가 누굴 찍었는지 안 새게), 준비·투표 핸들러·이탈 반영이 씀
+// 낮 표는 판 전원 각자에게 보냄 (몇 명 냈는지 숫자를 모두가 보게, 실리는 표 대상은 받는 사람 자기 것뿐)
 const gameSessionCore = require('../../../game-core/gameSession')
 const { isolate } = require('../../common/isolate')
 const { getSocketForUuid } = require('../connection/ownership')
@@ -49,7 +50,17 @@ function emitProgressAfterSubmit(io, uuid, gameId, code) {
     })
 }
 
+// 낮 표 제출·거두기 뒤 판 전원 각자에게 (낸 사람 수/산 사람 수 숫자 갱신, 지금 판이 그대로일 때만)
+// 각자 받는 내 칸은 자기 표뿐이라 누가 냈는지·누구를 찍었는지 안 샘 (사용자 결정 2026-11-18)
+function emitDayVoteProgressToAll(io, uuid, gameId, code) {
+    isolate('[개인 진행 상태 전송 실패]', { code, gameId }, () => {
+        const committed = gameSessionCore.getActiveSessionForDeparture(uuid, gameId)
+        if (committed) emitSelfProgress(io, committed)
+    })
+}
+
 module.exports = {
     emitSelfProgress,
     emitProgressAfterSubmit,
+    emitDayVoteProgressToAll,
 }

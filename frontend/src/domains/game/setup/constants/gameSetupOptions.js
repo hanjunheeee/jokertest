@@ -31,7 +31,7 @@ export const GENERAL_GAME_SETUP = [
     label: "광대(마피아) 플레이어 수",
     min: 1,
     max: MAX_SPECIAL_ROLE_COUNT,
-    defaultValue: 2,
+    defaultValue: 1,
   },
 ]
 

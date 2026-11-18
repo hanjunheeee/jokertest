@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
-  GAME, buttonByName, click, dayPhaseChanged, dayResolved, deferred, fakeSocket, fire, firstDay, flush,
+  GAME, buttonByName, click, closeDawnReport, dayPhaseChanged, dayResolved, deferred, fakeSocket, fire, firstDay, flush,
   isTabReachable, loginOnly, menuItems, cardOf, nextDay, pressEnter, renderPage, resetAll, rtl, seat, snapshot, useInGameStore,
 } from "./dayVoteHarness.mjs"
 
@@ -88,6 +88,7 @@ test("A03-F-162 ⑨ 2일 토론에 다시 '투표 시작 준비'", async () => {
   await fire(socket, "day_phase_changed", dayPhaseChanged({ deadline: Date.now() + 30_000 }))
   await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
   await fire(socket, "night_result_applied", nextDay({ n: 6, deadline: Date.now() + 60_000 }))
+  await closeDawnReport()
   await click(buttonByName("확인"))
   assert.equal(readyButton()?.textContent, "투표 시작 준비")
   assert.equal(readyButton().disabled, false)
@@ -131,6 +132,7 @@ test("A03-F-244 6명 판: 1일 토론 중 새로고침(내 준비 기록 참) �
   await fire(socket, "day_phase_changed", dayPhaseChanged({ deadline: Date.now() + 30_000 }))
   await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
   await fire(socket, "night_result_applied", nextDay({ n: 6, deadline: Date.now() + 60_000 }))
+  await closeDawnReport()
   if (buttonByName("확인")) await click(buttonByName("확인"))
   assert.equal(useInGameStore.getState().state.dayIndex, 2, "2일로 못 감 (준비 잘못)")
   assert.equal(readyButton()?.textContent, "투표 시작 준비")

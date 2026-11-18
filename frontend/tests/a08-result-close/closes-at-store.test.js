@@ -25,7 +25,6 @@ test("A08-F-006 6명 판: 끝난 night_result_applied → 판 상태 resultClose
     players: g.seats.map((s) => ({ uuid: s.uuid, isAlive: s.alive })),
     victimUuid: g.seats[4].uuid,
     deathReveals: [{ victimUuid: g.seats[4].uuid, source: "JOKER" }],
-    doctorSaved: false,
     winResult: K.winResultOf(g.seats, "JOKER", 1),
     resultClosesAt,
   })

@@ -11,6 +11,7 @@ import {
 } from "../../utils/snapshot/applySnapshot.js"
 import { adoptIdentityScope } from "./identityScope.js"
 import { commitWithReceipt } from "./receiptScope.js"
+import { markNightDeparture } from "../../utils/dawnReport.js"
 
 // 새 밤에 들어서는 순간인지 (같은 밤 안에서 다시 오면 아님)
 function entersNewNight(before, after) {
@@ -38,6 +39,8 @@ export const snapshotActions = (set) => ({
       adoptIdentityScope(gameId, patch.state)
       return {
         ...patch,
+        // 끊긴 동안 놓친 밤 사이 탈락도 적어 둠 (낮 시작 "아무 일도" 글을 안 띄우려고)
+        ...markNightDeparture(current, patch),
         // 새 밤으로 들어가면 지난 밤 개인 결과(조사·확인 결과)·지난 낮 시작 연출 비움 (실시간 경로와 같게)
         ...(willClear ? { ...CLEARED_NIGHT_PRIVATE_RESULT, ...CLEARED_DAWN_REPORT } : {}),
         snapshotSeq,

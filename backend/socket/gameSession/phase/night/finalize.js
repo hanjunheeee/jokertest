@@ -98,13 +98,11 @@ function finalizeNightForSession(io, session, { deps = {} } = {}) {
         }
 
         // 여기부터 진짜 바뀜 (확정됨): 뒤 실패는 로그만, 되돌리지 않음
-        // 의사가 살렸는지도 실음 (낮 시작 때 모두에게 "의사가 살렸다" 문구, 누구였는지는 안 실음)
         const appliedPayload = isolateOr(null, label, { code: 'PAYLOAD_BUILD_ERROR', ...fields },
             () => gameSessionCore.buildNightResultAppliedPayload(
                 targetSession,
                 applied.victimUuid,
                 resolution.publicDeathReveals,
-                { doctorSaved: resolution.doctorSaved === true },
             ))
         // 승부 났으면 종료 필드 붙이고 전적 저장 시작 (저장은 안 기다림)
         const nightResultAppliedPayload = withTerminalFields(targetSession, applied.terminal, appliedPayload, label, fields, io)

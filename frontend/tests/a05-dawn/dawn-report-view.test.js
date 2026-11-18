@@ -1,4 +1,4 @@
-// 낮 시작 연출 창 부품 시험: 죽음이면 암살 영상 + 글, 살림이면 글 창, 없음·닫힘이면 안 그림, 영상 오류면 글 창, 글에 직업 이름 없음
+// 낮 시작 연출 창 부품 시험: 죽음이면 암살 영상 + 글, 아무도 안 죽었으면 "아무 일 없음" 글 창, 없음·닫힘이면 안 그림, 영상 오류면 글 창, 글에 직업 이름 없음
 // 목록 시험목록/A05b-밤-알림-낮연출.md A05-F-578~586, 돌리기(frontend): node --experimental-test-module-mocks --test tests/a05-dawn/dawn-report-view.test.js
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -15,7 +15,8 @@ const { SFX_MANIFEST } = await import("../../src/shared/audio/sfxManifest.js")
 const PLAYERS = kit.NAMES.slice(0, 6).map((nickname, i) => ({ uuid: `v${i}`, nickname }))
 const A = PLAYERS[0]
 const killed = () => buildDawnReport({ gameId: "g1", nightDayIndex: 1, deathReveals: [{ victimUuid: A.uuid, source: "JOKER" }], players: PLAYERS })
-const saved = () => buildDawnReport({ gameId: "g1", nightDayIndex: 1, deathReveals: [], doctorSaved: true, players: PLAYERS })
+// 아무도 안 죽은 밤 (의사가 살렸든 광대가 안 죽였든 같은 값)
+const quiet = () => buildDawnReport({ gameId: "g1", nightDayIndex: 1, deathReveals: [], players: PLAYERS })
 
 // 인게임 화면처럼: 다 보면(onFinish) 닫힘, 연출 값이 바뀌면 key로 새로 그림
 function Host({ report, open = true }) {
@@ -56,11 +57,11 @@ test("A05-F-580 [지금 동작] 영상이 오류로 끝남 → [data-ingame-dawn
   assert.match(dialog.textContent, new RegExp(kit.killedText(A.nickname)))
 })
 
-test("A05-F-581 살림 연출 → [data-ingame-dawn-report=SAVED] 창에 살림 글, 영상 요소 없음", async () => {
-  await show(saved())
-  const dialog = kit.dawnDialog("SAVED")
-  assert.ok(dialog, "살림 글 창이 없음")
-  assert.match(dialog.textContent, new RegExp(kit.SAVED_TEXT))
+test("A05-F-581 아무 일 없음 연출 → [data-ingame-dawn-report=QUIET] 창에 아무 일 없음 글, 영상 요소 없음", async () => {
+  await show(quiet())
+  const dialog = kit.dawnDialog("QUIET")
+  assert.ok(dialog, "아무 일 글 창이 없음")
+  assert.match(dialog.textContent, new RegExp(kit.QUIET_TEXT))
   assert.equal(kit.dawnVideo(), null)
   assert.equal(document.querySelector("video"), null)
 })
@@ -78,11 +79,11 @@ test("A05-F-583 닫힌 상태(open 거짓) → 아무것도 없음", async () =>
   assert.equal(kit.dawnDialog(), null)
 })
 
-test("A05-F-584 살림 창 \"확인\" 누름 → 창 없어짐", async () => {
-  await show(saved())
-  assert.ok(kit.dawnDialog("SAVED"), "살림 창이 없음 (준비 잘못)")
-  await kit.confirmIn(kit.dawnDialog("SAVED"))
-  await kit.waitUntil(() => kit.dawnDialog() === null, { what: "살림 창 닫힘" })
+test("A05-F-584 아무 일 창 \"확인\" 누름 → 창 없어짐", async () => {
+  await show(quiet())
+  assert.ok(kit.dawnDialog("QUIET"), "아무 일 창이 없음 (준비 잘못)")
+  await kit.confirmIn(kit.dawnDialog("QUIET"))
+  await kit.waitUntil(() => kit.dawnDialog() === null, { what: "아무 일 창 닫힘" })
   assert.equal(kit.dawnDialog(), null)
 })
 

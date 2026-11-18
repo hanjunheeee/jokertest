@@ -74,16 +74,24 @@ async function openSheet(page, nick) {
     return sheet;
 }
 
-// 사람 표: null이면 기권 단추, 아니면 그 사람 카드 '투표하기' → 기권 단추가 꺼지면 서버가 받은 것
+// 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
+// 사람이면 그 사람 카드 '투표하기' → 다시 연 그 카드 시트가 '투표취소'면 서버가 받은 것
+// (사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
 async function castMine(page, target, names) {
     if (target === null) {
         await abstainButton(page).click();
-    } else {
-        const sheet = await openSheet(page, names.get(target));
-        await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-        await expect(sheet).toBeHidden();
+        await expect(abstainButton(page)).toBeDisabled();
+        return;
     }
-    await expect(abstainButton(page)).toBeDisabled();
+    const sheet = await openSheet(page, names.get(target));
+    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
+    await expect(sheet).toBeHidden();
+    await expect(async () => {
+        if (!(await sheet.isVisible().catch(() => false))) await openSheet(page, names.get(target));
+        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await sheet.getByRole('button', { name: '닫기' }).click();
+    await expect(sheet).toBeHidden();
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -145,12 +153,13 @@ async function expectFiveSeconds(watcher, fullAt, day) {
     return resolved.payload;
 }
 
-// 사람 표 바꾸기 (이미 낸 뒤): 다른 사람이면 그 카드 '투표하기', 기권이면 낸 사람 카드 '투표취소'
+// 사람 표 바꾸기 (이미 낸 뒤): 다른 사람이면 그 카드 '투표하기', 기권이면 기권 단추
+// '투표취소'는 기권이 아니라 표 거두기(안 낸 사람으로 돌아감), 찍은 뒤에도 기권 단추가 켜져 바로 누름 (PC와 같음, 사용자 결정 2026-11-18)
 async function changeMine(page, from, to, names) {
     if (to === null) {
-        const sheet = await openSheet(page, names.get(from));
-        await sheet.getByRole('menuitem', { name: '투표취소' }).click();
-        await expect(sheet).toBeHidden();
+        await expect(abstainButton(page)).toBeEnabled();
+        await abstainButton(page).click();
+        await expect(abstainButton(page)).toBeDisabled();
         return;
     }
     const sheet = await openSheet(page, names.get(to));

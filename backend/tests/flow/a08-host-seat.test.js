@@ -185,14 +185,15 @@ test('A08-B-111 6명 판 B·C 들어감 → B 나감 → 방장 칸 없음, rese
 test('A08-B-112 7명 판 중 방장 A 나감 → B 방장 → 판 끝 → reservedHostUuid = B', async (t) => {
     const w = makeWorld(t);
     const g = await w.openAndStart({ prefix: 'b112', n: 7 });
-    const b = g.uuids[1];
+    // B = 방장 빼고 맨 앞자리 사람 (판 중 방장 넘김 규칙, 자리는 판 시작 때 섞임)
+    const b = [...w.session(g).players.keys()].find((u) => u !== g.host);
     w.advanceUntil(g, (s) => s.phase === 'DAY');
     assert.equal((await w.lobby(g.host, g.gameId)).ok, true);
     const changed = w.received(b, 'session_participation_changed').at(-1);
     assert.equal(changed?.hostUuid, b, '판 중 방장이 B로 안 넘어감 (준비 잘못)');
     await w.endGame(g);
     assert.equal(w.roomByCode(g.roomCode).returnHold?.reservedHostUuid, b);
-    const r = await w.ret(g.uuids[2], g.gameId);
+    const r = await w.ret(g.uuids.find((u) => u !== g.host && u !== b), g.gameId);
     assert.equal(r.room.reservedHostUuid, b);
 });
 

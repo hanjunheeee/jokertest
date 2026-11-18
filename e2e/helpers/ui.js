@@ -117,7 +117,7 @@ async function closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs }) 
         closed = true;
     }
     // 그 영상이 오류로 끝나면 같은 글이 글 창으로 바뀜(살해 KILLED 종류만) → "확인"을 눌러야 넘어감
-    // 의사가 살렸을 때 글 창(SAVED)은 원래 연출이라 여기서 안 누름 (names에 '단계 전환 안내'가 있으면 아래에서 닫힘)
+    // 아무도 안 죽은 밤 글 창(QUIET)은 원래 연출이라 여기서 안 누름 (names에 '단계 전환 안내'가 있으면 아래에서 닫힘)
     const failedVideoConfirm = page.locator('[data-ingame-dawn-report="KILLED"]').getByRole('button', { name: '확인', exact: true });
     if (await failedVideoConfirm.isVisible().catch(() => false)) {
         await failedVideoConfirm.click({ timeout: clickTimeoutMs }).catch(() => {});

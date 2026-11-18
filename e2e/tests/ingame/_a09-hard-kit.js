@@ -27,7 +27,8 @@ const FAST = Object.freeze({ dayDiscussionTime: 30, dayVoteTime: 30, tribunalTim
 
 // 받은 판 화면 글 (화면 코드에서 확인)
 const TEXT = Object.freeze({
-    saved: '지난밤 의사가 공격받은 사람을 살려냈습니다',
+    // 아무도 안 죽은 밤 낮 시작 글 (의사가 살렸든 광대가 안 죽였든 같음, 사용자 결정 2026-11-18)
+    saved: '지난밤 아무 일도 일어나지 않았습니다',
     citizenWin: '시민 진영 승리',
     jokerWin: '광대 진영 승리',
     startBlocked: '일부 참가자와의 연결을 확인할 수 없습니다',

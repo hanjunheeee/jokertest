@@ -77,7 +77,7 @@ test('A03-B-248 6명 판: 투표 단계에도 산 사람 채팅 받음', async (
         g.advance(5_000);
         const applied = g.passNight();
         assert.equal(applied.victimUuid, null);
-        assert.equal(applied.doctorSaved, false);
+        assert.equal(Object.hasOwn(applied, 'doctorSaved'), false);
         assert.equal(g.got(actor, 'night_action_result').length, 0);
     });
 });

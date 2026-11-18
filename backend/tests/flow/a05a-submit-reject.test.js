@@ -130,7 +130,7 @@ test('A05-B-193 6명 소켓 길: 광대 차례 중 의사가 보내면 { ok: fal
     // 의사 고름이 남았다면 A가 살았을 것 → 안 남았으니 A 죽음
     const applied = ctx.world.received(joker, 'night_result_applied').at(-1).payload;
     assert.equal(applied.victimUuid, a);
-    assert.equal(applied.doctorSaved, false);
+    assert.equal(Object.hasOwn(applied, 'doctorSaved'), false);
 });
 
 test('A05-B-194 5명 소켓 길: 시민이 보내면 { ok: false }', async (t) => {

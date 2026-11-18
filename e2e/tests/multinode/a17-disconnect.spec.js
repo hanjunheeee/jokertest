@@ -50,10 +50,10 @@ test('A17-H-011 5명 판(사람 2 + 봇 3) ㄱ 탭 닫음 → 30초 뒤 서버 �
     await K9.sleepUntil(dropAt + K9.GRACE_MS + K9.SLACK_MS);
     expect((await t.player(U(a)))?.alive, '60초 뒤에도 산 채').toBe(true);
 
-    // 낮 투표: ㄱ이 새 탭에서 봇 하나를 찍음 → 기권 단추가 꺼지면 표가 들어간 것
+    // 낮 투표: ㄱ이 새 탭에서 봇 하나를 찍음 → 그 카드 메뉴가 "투표취소"면 표가 들어간 것 (dayVoteUi가 봄)
+    // 사람을 찍어도 기권 단추는 안 잠김 (기권으로 바꾸기 됨, 사용자 결정 2026-11-18)
     await K9.toVote(t);
     await A4.dayVoteUi(tab, t.bots[0].nickname);
-    await expect(tab.getByRole('button', { name: '기권' }).first()).toBeDisabled();
 });
 
 test('A17-H-012 6명 판(사람 2 + 봇 4) ㄱ 탭 닫음 → 61초 → ㄴ 화면에 ㄱ 탈락 → ㄱ이 서버 ㄴ 로비 "게임 만들기" → 탈주 막힘 글 @game @hard @realtime', async ({ crowd, bots }) => {

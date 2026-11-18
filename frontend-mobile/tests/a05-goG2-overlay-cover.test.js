@@ -77,13 +77,13 @@ test("A05-M-510 전적 시트를 연 채 밤 차례 안내가 뜸 (7명 판, 나
     assert.equal(shown("record-sheet"), false, "전적 시트가 밤 차례 안내 위에 남음")
 })
 
-test("A05-M-511 설정 시트 위 방 코드 창까지 연 채 낮 시작 글 창(의사가 살림)이 뜸 (8명 판) → 방 코드 창·설정 시트 둘 다 닫힘", async () => {
+test("A05-M-511 설정 시트 위 방 코드 창까지 연 채 낮 시작 글 창(아무 일 없음)이 뜸 (8명 판) → 방 코드 창·설정 시트 둘 다 닫힘", async () => {
     const socket = await page({ n: 8, phase: "NIGHT" })
     await open("인게임 설정")
     await open("방 코드 보기")
     assert.equal(shown("room-code-sheet"), true, "방 코드 창이 안 열림 (준비 잘못)")
-    await fire(socket, "night_result_applied", nextDay({ n: 8, doctorSaved: true, deadline: Date.now() + 60_000 }))
-    assert.equal(dawnShown("SAVED"), true, "낮 시작 글 창이 안 뜸 (준비 잘못)")
+    await fire(socket, "night_result_applied", nextDay({ n: 8, deadline: Date.now() + 60_000 }))
+    assert.equal(dawnShown("QUIET"), true, "낮 시작 글 창이 안 뜸 (준비 잘못)")
     assert.deepEqual({ roomCode: shown("room-code-sheet"), settings: shown("settings-sheet") }, { roomCode: false, settings: false })
 })
 
@@ -115,7 +115,7 @@ test("A05-M-512 전적 시트에서 신고 창까지 연 채 암살 영상이 �
     await fire(socket, "night_result_applied", {
         gameId: REAL_GAME, phase: "DAY", dayIndex: 2,
         players: Array.from({ length: 6 }, (_, i) => ({ uuid: realId(i), alive: i !== 4 })),
-        victimUuid: realId(4), deathReveals: [{ victimUuid: realId(4), source: "JOKER" }], doctorSaved: false,
+        victimUuid: realId(4), deathReveals: [{ victimUuid: realId(4), source: "JOKER" }],
         dayPhaseDeadline: Date.now() + 60_000,
     })
     assert.equal(killVideoShown(), true, "암살 영상이 안 뜸 (준비 잘못)")

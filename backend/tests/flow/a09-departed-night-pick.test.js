@@ -40,7 +40,7 @@ test('A09-B-332 6명 판 의사 1: 의사가 A 보호를 고르고 5초 당김 �
     const applied = dawnOf(w, a);
     assert.ok(applied, '밤 결과 알림 없음');
     assert.equal(applied.victimUuid, null);
-    assert.equal(applied.doctorSaved, true);
+    assert.equal(Object.hasOwn(applied, 'doctorSaved'), false);
     assert.equal(w.isAlive(a), true);
 });
 

@@ -1,6 +1,6 @@
 'use strict';
 
-// A05b 낮이 될 때 모두에게 흐름 시험 — 밤 결과 공개 값(희생자·사망 공개·doctorSaved)이 판 전원에게 같게 한 번 가는지, 새로고침엔 다시 안 가는지 봄
+// A05b 낮이 될 때 모두에게 흐름 시험 — 밤 결과 공개 값(희생자·사망 공개)이 판 전원에게 같게 한 번 가는지, doctorSaved 칸은 안 실리는지, 새로고침엔 다시 안 가는지 봄
 // 목록 A05-B-588~619·696~698 (docs/게임_의도_2026-11-15/시험목록/A05b-밤-알림-낮연출.md B-5·B-7), 돌리기: node --env-file=.env.test --test tests/flow/a05b-dawn-broadcast.test.js
 // ---- 판 차리기 도우미 (이 파일 안에서만 씀 — 공용 도우미는 못 고쳐서 같은 묶음 파일마다 같은 모양으로 둠) ----
 const test = require('node:test');
@@ -186,11 +186,11 @@ function playTurns(ctx, picks) {
 // 그 밤(밤 날짜 night) 끝에 그 사람이 받은 낮 시작 공개 값 (판정 뒤 날짜 = 밤 날짜 + 1)
 const dawn = (ctx, uuid, night) => got(ctx, uuid, 'night_result_applied', { dayIndex: night + 1 });
 
-// 연출 값 세 칸만 (희생자·사망 공개·의사가 살림)
-const show = (p) => ({ victimUuid: p.victimUuid, deathReveals: p.deathReveals, doctorSaved: p.doctorSaved });
-const killed = (a) => ({ victimUuid: a, deathReveals: [{ victimUuid: a, source: 'JOKER' }], doctorSaved: false });
-const SAVED = { victimUuid: null, deathReveals: [], doctorSaved: true };
-const NOTHING = { victimUuid: null, deathReveals: [], doctorSaved: false };
+// 연출 값 두 칸(희생자·사망 공개) + 의사 살림 칸이 실렸나 (2026-11-18부터 안 실음 → 늘 거짓)
+const show = (p) => ({ victimUuid: p.victimUuid, deathReveals: p.deathReveals, hasDoctorSaved: Object.hasOwn(p, 'doctorSaved') });
+const killed = (a) => ({ victimUuid: a, deathReveals: [{ victimUuid: a, source: 'JOKER' }], hasDoctorSaved: false });
+// 아무도 안 죽은 밤: 의사가 살렸든 광대가 안 죽였든 같은 값 (사용자 결정 2026-11-18)
+const QUIET = { victimUuid: null, deathReveals: [], hasDoctorSaved: false };
 
 // 값 안 모든 칸 이름 (깊이 끝까지)
 function allKeys(value, out = new Set()) {
@@ -211,7 +211,7 @@ function assertNoPresentation(snap) {
 
 // ---------- A05-B-588~593 [버그 5] 광대가 A를 죽이면 판 전원이 같은 공개 값 ----------
 for (const [no, n] of [[588, 5], [589, 6], [590, 7], [591, 8], [592, 9], [593, 10]]) {
-    test(`A05-B-${no} [버그 5] ${n}명: 광대가 A를 죽이면 판 전원 소켓마다 낮 시작 공개 값 1번, 희생자 A·사망 공개 [A·광대]·doctorSaved 거짓`, (t) => {
+    test(`A05-B-${no} [버그 5] ${n}명: 광대가 A를 죽이면 판 전원 소켓마다 낮 시작 공개 값 1번, 희생자 A·사망 공개 [A·광대]·doctorSaved 칸 없음`, (t) => {
         const ctx = setupGame(t, { id: `b${no}`, n });
         startNight(ctx);
         const [a] = citizens(ctx);
@@ -241,9 +241,9 @@ for (const [no, who, label] of [[594, 'citizen', '산 시민'], [595, 'joker', '
     });
 }
 
-// ---------- A05-B-599~603 의사가 살리면 판 전원이 doctorSaved 참 ----------
+// ---------- A05-B-599~603 의사가 살려도 판 전원이 아무 일 없는 밤과 같은 값 (doctorSaved 칸 없음) ----------
 for (const [no, n] of [[599, 6], [600, 7], [601, 8], [602, 9], [603, 10]]) {
-    test(`A05-B-${no} ${n}명: 의사가 살리면 판 전원 doctorSaved 참, 희생자 null, 사망 공개 []`, (t) => {
+    test(`A05-B-${no} ${n}명: 의사가 살리면 판 전원 doctorSaved 칸 없음, 희생자 null, 사망 공개 []`, (t) => {
         const ctx = setupGame(t, { id: `b${no}`, n });
         startNight(ctx);
         const [a] = citizens(ctx);
@@ -251,14 +251,14 @@ for (const [no, n] of [[599, 6], [600, 7], [601, 8], [602, 9], [603, 10]]) {
         for (const uuid of everyone(ctx)) {
             const [p] = dawn(ctx, uuid, 1);
             assert.ok(p, `${uuid}가 공개 값을 못 받음`);
-            assert.deepEqual(show(p), SAVED, `${uuid} 값`);
+            assert.deepEqual(show(p), QUIET, `${uuid} 값`);
         }
     });
 }
 
 // ---------- A05-B-604~606 의사가 살렸을 때 받는 사람 종류 (8명, 둘째 밤) ----------
 for (const [no, who, label] of [[604, 'joker', '광대'], [605, 'saved', '보호받은 사람'], [606, 'dead', '죽은 관전자']]) {
-    test(`A05-B-${no} 8명: 의사가 살린 밤 ${label}도 같은 공개 값 (doctorSaved 참)`, (t) => {
+    test(`A05-B-${no} 8명: 의사가 살린 밤 ${label}도 같은 공개 값 (doctorSaved 칸 없음)`, (t) => {
         const ctx = setupGame(t, { id: `b${no}`, n: 8 });
         const dead = citizens(ctx).at(-1);
         toSecondNight(ctx, dead);
@@ -267,20 +267,20 @@ for (const [no, who, label] of [[604, 'joker', '광대'], [605, 'saved', '보호
         const uuid = { joker: one(ctx, 'JOKER'), saved: a, dead }[who];
         const [mine] = dawn(ctx, uuid, 2);
         assert.ok(mine, `${label}가 공개 값을 못 받음`);
-        assert.deepEqual(show(mine), SAVED);
+        assert.deepEqual(show(mine), QUIET);
         assert.deepEqual(mine, dawn(ctx, c, 2)[0]);
     });
 }
 
-// ---------- A05-B-607~609 아무 일 없으면 연출 값이 다 비어 있음 (8명) ----------
-test('A05-B-607 8명: 광대가 건너뜀 → 희생자 null, 사망 공개 [], doctorSaved 거짓', (t) => {
+// ---------- A05-B-607~609 아무 일 없으면 연출 값이 다 비어 있음, 의사가 살린 밤과 같음 (8명) ----------
+test('A05-B-607 8명: 광대가 건너뜀 → 희생자 null, 사망 공개 [], doctorSaved 칸 없음', (t) => {
     const ctx = setupGame(t, { id: 'b607', n: 8 });
     startNight(ctx);
     playTurns(ctx, [['JOKER', null]]);
-    for (const uuid of everyone(ctx)) assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), NOTHING, `${uuid} 값`);
+    for (const uuid of everyone(ctx)) assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), QUIET, `${uuid} 값`);
 });
 
-test('A05-B-608 8명 광대 2: 광대 둘이 다른 대상 → 희생자 null, 사망 공개 [], doctorSaved 거짓', (t) => {
+test('A05-B-608 8명 광대 2: 광대 둘이 다른 대상 → 희생자 null, 사망 공개 [], doctorSaved 칸 없음', (t) => {
     const ctx = setupGame(t, { id: 'b608', n: 8, jokerCount: 2 });
     startNight(ctx);
     const [j1, j2] = gf.byRole(ctx.s, 'JOKER');
@@ -288,17 +288,17 @@ test('A05-B-608 8명 광대 2: 광대 둘이 다른 대상 → 희생자 null, �
     assert.deepEqual(act(ctx, j1, a), { ok: true });
     assert.deepEqual(act(ctx, j2, b), { ok: true });
     runOutNight(ctx);
-    for (const uuid of everyone(ctx)) assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), NOTHING, `${uuid} 값`);
+    for (const uuid of everyone(ctx)) assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), QUIET, `${uuid} 값`);
 });
 
-test('A05-B-609 8명: 광대가 안 내고 시간 끝 → 희생자 null, 사망 공개 [], doctorSaved 거짓', (t) => {
+test('A05-B-609 8명: 광대가 안 내고 시간 끝 → 희생자 null, 사망 공개 [], doctorSaved 칸 없음', (t) => {
     const ctx = setupGame(t, { id: 'b609', n: 8 });
     startNight(ctx);
     runOutNight(ctx);
-    for (const uuid of everyone(ctx)) assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), NOTHING, `${uuid} 값`);
+    for (const uuid of everyone(ctx)) assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), QUIET, `${uuid} 값`);
 });
 
-test('A05-B-610 7명: 광대 → A 뒤 A가 밤 중 나가면 남은 전원 희생자 null, doctorSaved 거짓', (t) => {
+test('A05-B-610 7명: 광대 → A 뒤 A가 밤 중 나가면 남은 전원 희생자 null, doctorSaved 칸 없음', (t) => {
     const ctx = setupGame(t, { id: 'b610', n: 7 });
     startNight(ctx);
     const [a] = citizens(ctx);
@@ -310,7 +310,7 @@ test('A05-B-610 7명: 광대 → A 뒤 A가 밤 중 나가면 남은 전원 희�
         const [p] = dawn(ctx, uuid, 1);
         assert.ok(p, `${uuid}가 공개 값을 못 받음`);
         assert.equal(p.victimUuid, null);
-        assert.equal(p.doctorSaved, false);
+        assert.equal(Object.hasOwn(p, 'doctorSaved'), false);
     }
 });
 
@@ -333,14 +333,14 @@ test('A05-B-611 10명 세 밤: 1밤 공개 값은 희생자 A', (t) => {
     assert.deepEqual(show(dawn(ctx, c, 1)[0]), killed(a));
 });
 
-test('A05-B-612 10명 세 밤: 2밤 공개 값은 의사 살림 (앞 밤 희생자 안 남음)', (t) => {
+test('A05-B-612 10명 세 밤: 2밤 공개 값은 아무 일 없는 밤 값 (의사가 살렸어도, 앞 밤 희생자 안 남음)', (t) => {
     const { ctx, c } = threeNights(t, 'b612');
-    assert.deepEqual(show(dawn(ctx, c, 2)[0]), SAVED);
+    assert.deepEqual(show(dawn(ctx, c, 2)[0]), QUIET);
 });
 
-test('A05-B-613 10명 세 밤: 3밤 공개 값은 다 비어 있음 (앞 밤 doctorSaved 안 남음)', (t) => {
+test('A05-B-613 10명 세 밤: 3밤 공개 값은 다 비어 있음 (2밤과 같은 값)', (t) => {
     const { ctx, c } = threeNights(t, 'b613');
-    assert.deepEqual(show(dawn(ctx, c, 3)[0]), NOTHING);
+    assert.deepEqual(show(dawn(ctx, c, 3)[0]), QUIET);
 });
 
 // ---------- A05-B-614~615 반대 차례 두 밤 (7명) ----------
@@ -355,12 +355,12 @@ function savedThenKilled(t, id) {
     return { ctx, b, c };
 }
 
-test('A05-B-614 7명 두 밤: 1밤 값은 doctorSaved 참·희생자 없음', (t) => {
+test('A05-B-614 7명 두 밤: 1밤 값은 희생자 없음·doctorSaved 칸 없음', (t) => {
     const { ctx, c } = savedThenKilled(t, 'b614');
-    assert.deepEqual(show(dawn(ctx, c, 1)[0]), SAVED);
+    assert.deepEqual(show(dawn(ctx, c, 1)[0]), QUIET);
 });
 
-test('A05-B-615 7명 두 밤: 2밤 값은 희생자 B·doctorSaved 거짓', (t) => {
+test('A05-B-615 7명 두 밤: 2밤 값은 희생자 B·doctorSaved 칸 없음', (t) => {
     const { ctx, b, c } = savedThenKilled(t, 'b615');
     assert.deepEqual(show(dawn(ctx, c, 2)[0]), killed(b));
 });
@@ -432,17 +432,17 @@ test('A05-B-697 6명: 광대가 끊긴 채 시간 끝 → 아무 일 없는 낮 
     pickAll(ctx, 'DOCTOR', citizens(ctx)[0]);
     runOutNight(ctx);
     for (const uuid of everyone(ctx).filter((u) => u !== joker)) {
-        assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), NOTHING, `${uuid} 값`);
+        assert.deepEqual(show(dawn(ctx, uuid, 1)[0]), QUIET, `${uuid} 값`);
     }
 });
 
-test('A05-B-698 7명: 의사가 같은 A를 두 밤 연달아 지켜도 두 밤 다 doctorSaved 참', (t) => {
+test('A05-B-698 7명: 의사가 같은 A를 두 밤 연달아 지켜도 두 밤 다 아무 일 없는 밤 값 (doctorSaved 칸 없음)', (t) => {
     const ctx = setupGame(t, { id: 'b698', n: 7 });
     const [a, , c] = citizens(ctx);
     startNight(ctx);
     playTurns(ctx, [['JOKER', a], ['DOCTOR', a]]);
     startNight(ctx);
     playTurns(ctx, [['JOKER', a], ['DOCTOR', a]]);
-    assert.equal(dawn(ctx, c, 1)[0].doctorSaved, true);
-    assert.equal(dawn(ctx, c, 2)[0].doctorSaved, true);
+    assert.deepEqual(show(dawn(ctx, c, 1)[0]), QUIET);
+    assert.deepEqual(show(dawn(ctx, c, 2)[0]), QUIET);
 });

@@ -228,7 +228,7 @@ test('A05-B-550 7명: 의사가 살린 밤 → 판 전원 연출 사건 0개', (
     skipToTurn(ctx, 'DOCTOR');
     pickAll(ctx, 'DOCTOR', a);
     runOutNight(ctx);
-    assert.equal(got(ctx, a, 'night_result_applied')[0].doctorSaved, true);
+    assert.equal(Object.hasOwn(got(ctx, a, 'night_result_applied')[0], 'doctorSaved'), false);
     assert.equal(goneCount(ctx), 0);
 });
 

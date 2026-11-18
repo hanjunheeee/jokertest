@@ -7,7 +7,7 @@ import {
   CLEARED_NIGHT_TURN,
 } from "../../constants/store/ingameStore.js"
 import { parseDayPhaseDeadlineField } from "../../utils/dayPhase.js"
-import { buildDawnReport, readDawnKilledUuids } from "../../utils/dawnReport.js"
+import { buildDawnReport, dawnNightKey, markNightDeparture, readDawnKilledUuids } from "../../utils/dawnReport.js"
 import { applyPlayerEliminatedPure } from "../applyPlayerEliminated.js"
 import { clearLastDaySubmissions, clearSelfActed } from "../../utils/store/selfActed.js"
 import { commitWithReceipt } from "./receiptScope.js"
@@ -38,13 +38,15 @@ function clearDayVoteReady(state) {
 }
 
 // 밤 결과 → 낮 시작 연출 (그 밤 날짜·넣기 전 명단으로 닉네임 찾음)
+// 그 밤 사이 탈락이 보였거나 판이 끝났으면 "아무 일도" 글은 안 띄움 (nightDepartureKey는 사망 반영·스냅샷이 적어 둠)
 function readDawnReport(current, payload) {
   return buildDawnReport({
     gameId: current.gameId,
     nightDayIndex: current.state.dayIndex,
     victimUuid: payload.victimUuid ?? null,
     deathReveals: payload.deathReveals,
-    doctorSaved: payload.doctorSaved === true,
+    nightDeparted: current.nightDepartureKey === dawnNightKey(current.gameId, current.state.dayIndex),
+    gameEnded: payload.phase === "ENDED",
     players: current.state.players,
   })
 }
@@ -82,8 +84,13 @@ export const phaseActions = (set) => ({
     }),
 
   // 사망 반영 (계산은 applyPlayerEliminatedPure)
+  // 밤 사이 탈락이면 그 밤을 적어 둠 (낮 시작 "아무 일도" 글을 안 띄우려고)
   applyPlayerEliminated: (parsed, receipt = null) =>
-    commitWithReceipt(receipt, set, (current) => applyPlayerEliminatedPure(current, parsed)),
+    commitWithReceipt(receipt, set, (current) => {
+      const patch = applyPlayerEliminatedPure(current, parsed)
+      if (patch === current) return current
+      return { ...patch, ...markNightDeparture(current, patch) }
+    }),
 
   // 밤 결과 적용: 끝났으면 ENDED로, 아니면 다음 낮 토론으로
   // 낮 시작 연출도 같이 넣음 (판이 끝나도 넣음 → 연출 뒤 결과 화면, 보여 줄 것 없으면 비움)
@@ -194,7 +201,7 @@ export const phaseActions = (set) => ({
       return { state: { ...current.state, ...CLEARED_NIGHT_TURN } }
     }),
 
-  // 낮 토론 → 투표 (그 낮일 때 한 번만)
+  // 낮 토론 → 투표 (그 낮일 때 한 번만, 투표 진행 수 같이)
   applyDayPhaseChanged: (parsed) =>
     set((current) => {
       // 지금 판의 그 낮이고 아직 토론 중일 때만
@@ -212,6 +219,10 @@ export const phaseActions = (set) => ({
       const dayPhaseDeadline = parseDayPhaseDeadlineField(parsed)
       if (dayPhaseDeadline === null) return current
       if (dayPhaseDeadline !== undefined) nextState.dayPhaseDeadline = dayPhaseDeadline
+      // 투표 진행 수(0 / 산 사람 수)가 실려 오면 넣음, 안 실려 왔으면 지난 날 투표 숫자만 지움 (투표 현황 창이 옛 숫자를 안 그리게)
+      // (모양·종류는 parseDayPhaseChangedPayload가 이미 봄)
+      if (parsed.progress) nextState.progress = { ...parsed.progress }
+      else if (current.state.progress?.kind === "DAY_VOTE") nextState.progress = null
 
       return { state: nextState }
     }),

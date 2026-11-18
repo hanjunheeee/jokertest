@@ -336,7 +336,7 @@ test('A09-H-014 8명 판(사람 2 + 봇 6) ㄴ 오프라인 → 30초 안에 마
     await K.createRoomOk(tab);
 });
 
-test('A09-H-015 7명 판(사람 2 + 봇 5) 의사 ㄴ이 보호 고른 뒤 오프라인 → 60초 전에 낮 → ㄱ 화면 "지난밤 의사가 공격받은 사람을 살려냈습니다" @game @hard @realtime', async ({ user, players, table }) => {
+test('A09-H-015 7명 판(사람 2 + 봇 5) 의사 ㄴ이 보호 고른 뒤 오프라인 → 60초 전에 낮 → ㄱ 화면 "지난밤 아무 일도 일어나지 않았습니다" @game @hard @realtime', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const { a, b, gate } = await pairWithGate(user, players);
     const t = await H.seat(table, [a, b], { n: 7, humanRoles: ['CITIZEN', 'DOCTOR'] });
@@ -352,7 +352,7 @@ test('A09-H-015 7명 판(사람 2 + 봇 5) 의사 ㄴ이 보호 고른 뒤 오�
     expect(Date.now() - dropAt, '60초 전에 낮').toBeLessThan(GRACE_MS);
     expect(K.rowOf(day, U(x)).alive, '보호로 살아남음').toBe(true);
     expect(K.rowOf(day, U(b)).alive).toBe(true);
-    const report = a.page.locator('[data-ingame-dawn-report="SAVED"]');
+    const report = a.page.locator('[data-ingame-dawn-report="QUIET"]');
     await expect(report).toContainText(H.TEXT.saved, { timeout: 20_000 });
     await expectReadable(report.getByText(H.TEXT.saved));
 });

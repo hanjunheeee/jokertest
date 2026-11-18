@@ -90,7 +90,7 @@ test("A05-F-162 6명 의사 화면: 의사가 살린 밤에도 결과 창 없음
   const t = kit.openNight({ n: 6, me: 0, role: "DOCTOR" })
   kit.render(createElement(PrivateResult))
   endNightWith(t, "DOCTOR", null)
-  t.nightApplied({ victim: null, doctorSaved: true })
+  t.nightApplied({ victim: null }) // 의사가 살린 밤 (서버 값은 광대가 안 죽인 밤과 같음)
   kit.act(() => { kit.useInGameStore.getState().finishDawnReport(kit.useInGameStore.getState().dawnReport?.key) })
   assert.equal(resultDialog() === null, true, "결과 창이 떠 있음")
 })

@@ -233,10 +233,14 @@ async function pickNight(page, nickname, role) {
     await expect(night.skipButton(page)).toBeDisabled();
 }
 
-/** 낮 투표를 화면으로 냄 → 기권 단추가 꺼지면 낸 것 */
+/** 낮 투표를 화면으로 냄 → 그 카드 메뉴가 '투표취소'로 바뀌면 낸 것 (찍은 뒤에도 기권 단추는 켜짐, PC와 같음, 사용자 결정 2026-11-18) */
 async function voteUi(page, nickname) {
     await pick(page, nickname, '투표하기');
-    await expect(page.locator('[data-ingame-phase-action="dayVoteAbstain"]')).toBeDisabled();
+    await expect(async () => {
+        const menu = await openMenu(page, nickname, { timeout: 5000 });
+        await expect(menuItem(menu, '투표취소')).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15000 });
+    await closeMenu(page);
 }
 
 /** 지금 내 밤 차례가 켜졌는지: 건너뛰기 단추가 눌리는 상태 (가리는 창은 닫으면서) */

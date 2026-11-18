@@ -13,7 +13,7 @@ export function createNightHandlers(registered) {
   const isCurrent = () => isRegistrationScopeCurrent(registered)
 
   // 밤 결과 적용 (지금 명단·이미 죽은 사람 기준으로 파싱, 판이 끝났으면 결과 효과음)
-  // 낮 시작 연출(살해·의사 살림)은 스토어가 결과를 넣을 때 같이 고름
+  // 낮 시작 연출(살해·아무 일도 없음)은 스토어가 결과를 넣을 때 같이 고름
   const nightResultApplied = (payload) => {
     if (!isCurrent()) return
     const current = useInGameStore.getState()

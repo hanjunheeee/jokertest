@@ -229,8 +229,8 @@ test('A03-E-148 PC 8명 판 표 낸 뒤 새로고침 → 낸 표시 남음, 다�
     await page.reload();
     await expect(L.card(page, X)).toBeVisible({ timeout: 20000 });
     await ui.closeOverlays(page);
-    // 낸 표시: 기권 꺼짐 + X 카드에 투표취소
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    // 낸 표시: X 카드에 투표취소, 기권 단추는 켜짐 (찍은 뒤 기권으로 바꾸기 됨, 사용자 결정 2026-11-18)
+    await expect(page.getByRole('button', { name: '기권' })).toBeEnabled();
     await expectVotedFor(page, X);
     // 다시 바꿀 수 있음: Y로 바꾸면 Y 카드에 투표취소
     await L.cardAction(page, Y, '투표하기');
@@ -248,9 +248,10 @@ test('A03-E-150 PC 7명 판 봇이 서로 찍어도 사람 화면엔 수·결과
     const names = [...t.bots, user].map((x) => x.account.nickname);
     const dialog = page.getByRole('dialog', { name: '투표 현황' });
 
-    // 판정 전: 현황 창은 "집계 전"만, 이름 없음
+    // 판정 전: 현황 창은 "집계 전"과 낸 사람 수("6 / 7명 투표함", 2026-11-18)만, 이름 없음
     await page.getByRole('button', { name: '투표 현황 열기' }).click();
     await expect(dialog).toContainText('집계 전');
+    await expect(dialog.getByTestId('vote-status-progress')).toHaveText('6 / 7명 투표함');
     const before = await dialog.innerText();
     for (const name of names) expect(before, '판정 전 현황 창에 이름').not.toContain(name);
     await dialog.getByRole('button', { name: '투표 현황 닫기' }).click();
@@ -309,7 +310,6 @@ test('A03-E-154 PC 7명 판 광대 2 — 사람 광대가 동료 광대에게 �
     await L.toVote(t);
     const ally = nickOf(t, U(t.bots[0]));
     await L.cardAction(page, ally, '투표하기');
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
     await expectVotedFor(page, ally);
 });
 
@@ -336,7 +336,6 @@ test('A03-E-156 PC 6명 판 키보드 ① Tab·Enter로 사람 고름 → 서버
     const onItem = await tabTo(page, "document.activeElement?.getAttribute('aria-label') === '투표하기'", { max: 15 });
     expect(onItem, 'Tab으로 투표하기에 닿음').toBe(true);
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
     await expectVotedFor(page, X);
 });
 

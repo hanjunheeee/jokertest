@@ -1,4 +1,4 @@
-// 낮 시작 연출 창: 지난밤 살해당한 사람이 있으면 암살 영상 + 글, 의사가 살렸으면 글 창
+// 낮 시작 연출 창: 지난밤 살해당한 사람이 있으면 암살 영상 + 글, 아무도 안 죽었으면 "아무 일도 일어나지 않았습니다" 글 창
 // OverlayLayer가 씀, 값은 useOverlayLayer의 dawnReport (데스크톱 InGameDawnReport와 같은 순서·글)
 import { useState } from "react"
 import { resolveNightSuccessVideo } from "@/domains/game/ingame/utils/resolveNightSuccessVideo.js"

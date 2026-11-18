@@ -218,6 +218,6 @@ test('A04-E-175 PC 6명 판 1일 피고였던 내가 무죄 → 2일 낮 투표�
     await K.day.closeNotice(page, TEXT.DAY);
     await K.toVote(t);
     await expect(page.getByRole('button', { name: '기권' })).toBeEnabled();
-    // 카드 메뉴 "투표하기"로 냄 → 기권 단추가 잠기면 서버가 받은 것
+    // 카드 메뉴 "투표하기"로 냄 → 그 카드 메뉴가 "투표취소"면 서버가 받은 것
     await K.day.voteUi(page, t.bots[1].nickname);
 });

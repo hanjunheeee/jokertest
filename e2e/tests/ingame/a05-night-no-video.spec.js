@@ -207,7 +207,9 @@ const SEATS = [
 // 지켜보기는 판 화면에 들어오자마자 걸어 둠 → 그 밤(nightDay) 날짜 글이 붙은 기록에 영상·기다림 창·낮 시작 글 창이 한 줄도 없어야 함
 function expectQuietNight(log, nightDay) {
     for (const what of ['kill', 'message', 'report']) {
-        expect(seen(log, what, { day: dayBar(nightDay) }), `${nightDay}일 밤 동안 ${what}`).toEqual([]);
+        // 같은 날짜 글의 낮(그 밤 앞 낮)에 뜬 "아무 일도" 글 창(QUIET)은 밤 일이 아니라 뺌 (2026-11-18)
+        const during = seen(log, what, { day: dayBar(nightDay) }).filter((e) => !(what === 'report' && e.value === 'QUIET'));
+        expect(during, `${nightDay}일 밤 동안 ${what}`).toEqual([]);
     }
     // 옛 기다림 창은 밤이든 낮이든 한 번도 없음
     expect(seen(log, 'wait'), `"${WAIT_TEXT}" 창`).toEqual([]);
@@ -264,8 +266,9 @@ for (const seat of GUARD_SEATS) {
         }
         const log = await readWatch(g.page);
         expectQuietNight(log, 1);
-        // 아무도 안 죽은 밤이라 낮에도 영상·낮 시작 글 창 없음
-        for (const what of ['kill', 'report']) expect(seen(log, what), `낮 시작 연출 (${what})`).toEqual([]);
+        // 아무도 안 죽은 밤이라 낮에 영상은 없고 "아무 일도" 글 창만 (조사 이야기 없음, 2026-11-18)
+        expect(seen(log, 'kill'), '낮 시작 암살 영상').toEqual([]);
+        expect(seen(log, 'report').map((e) => e.value), '낮 시작 글 창').toEqual(['QUIET']);
     });
 }
 
@@ -281,10 +284,17 @@ test('A05-E-564 10명 판 첫날 처형된 관전자 화면: 2일 밤 마녀사�
     await Promise.all([n.toDay(g.t, { dayIndex: 3 }), appear(g.page, `[aria-label="${dayBar(3)}"]`)]);
     // 확인이 실제로 됐는지: 봇 마녀사냥꾼은 개인 결과 사건을 받음
     await g.hunter.waitForEvent('night_action_result', { match: (p) => p.actionType === 'CONFIRM' && p.targetId === g.me.uuid });
+    // 아무도 안 죽은 밤이라 낮 시작 "아무 일도" 글 창이 먼저 뜸 → 닫아야 3일 낮 안내 창이 뜸 (2026-11-18)
+    await expect(async () => {
+        await n.closeDawnReport(g.page);
+        await expect(g.page.locator('[data-ingame-dawn-report]')).toHaveCount(0, { timeout: 1000 });
+    }).toPass({ timeout: 15_000 });
     // 3일 낮 안내 창이 떴다 닫힐 때까지 지켜본 뒤 기록을 봄
     await g.page.waitForFunction((day) => (window.__a05bWatch ?? []).some((e) => e.what === 'entrance:off' && e.day === day), dayBar(3), { timeout: 15_000 });
     const log = await readWatch(g.page);
     expectQuietNight(log, 2);
-    for (const what of ['kill', 'report', 'private']) expect(seen(log, what), `밤·낮 내내 ${what}`).toEqual([]);
+    for (const what of ['kill', 'private']) expect(seen(log, what), `밤·낮 내내 ${what}`).toEqual([]);
+    // 낮 시작 글 창은 "아무 일도"뿐 (확인 이야기 없음)
+    expect(seen(log, 'report').every((e) => e.value === 'QUIET'), '낮 시작 글 창 종류').toBe(true);
     await expect(g.page.getByRole('dialog', { name: '밤 조사 결과' })).toHaveCount(0);
 });

@@ -14,7 +14,7 @@ function fisherYatesShuffle(items, randomFn) {
     return result
 }
 
-// 역할 목록 섞어서 사람마다 하나씩
+// 역할 목록 섞어서 사람마다 하나씩, 돌려주는 순서 = 판 자리 순서
 function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
     const shuffled = fisherYatesShuffle(players, randomFn)
     // 숫자만 오면 광대 수로 구성 계산, 아니면 받은 구성 그대로
@@ -31,7 +31,10 @@ function assignRoles(players, jokerCountOrComposition, randomFn = Math.random) {
         ...Array(composition.CITIZEN).fill(GAME_ROLES.CITIZEN),
     ]
     // 원본 안 건드리고 역할·생존 붙인 새 사람 목록
-    return shuffled.map((player, index) => ({ ...player, role: roles[index], alive: true }))
+    const assigned = shuffled.map((player, index) => ({ ...player, role: roles[index], alive: true }))
+    // 자리 순서는 따로 한 번 더 섞기 (안 섞으면 첫 자리가 늘 광대 → 자리로 직업 짐작됨)
+    // 역할은 위 첫 섞기에서 이미 정해짐 → 이 섞기는 자리만 바꿈
+    return fisherYatesShuffle(assigned, randomFn)
 }
 
 module.exports = {

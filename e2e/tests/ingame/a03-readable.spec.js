@@ -10,7 +10,7 @@ const L = require('./a-day/_lib');
 const U = (x) => x.account.uuid;
 const nickOf = (t, uuid) => [...t.bots, ...t.humans].find((x) => U(x) === uuid).account.nickname;
 
-// 결과 값 → 현황 창 글 (화면 InGameVoteStatusContent.jsx 글)
+// 결과 값 → 현황 창 글 (화면 constants/vote/ingameVoteOutcomes.js 글)
 const OUTCOME_LABEL = Object.freeze({ TRIBUNAL: '재판 회부', TIE: '동점', ABSTAIN_MAJORITY: '기권이 많아 재판 없음', ABSTAINED: '전원 기권' });
 
 // 직업 전부 정함: 사람 시민, 첫 봇 광대, 나머지 시민 (직접 구성 광대 1)
@@ -168,7 +168,7 @@ test('A03-E-220 PC 7명 판 현황 재판 대상 닉네임이 읽힘 @game', asy
     await expectReadable(target);
 });
 
-test('A03-E-222 PC 5명 판 판정 전 현황 "집계 전"이 읽힘 @game @smoke', async ({ user, table }) => {
+test('A03-E-222 PC 5명 판 판정 전 현황 "집계 전"·"0 / 5명 투표함"이 읽힘 @game @smoke', async ({ user, table }) => {
     const t = await openTable(table, user, 5);
     const page = user.page;
     await L.toDay(t);
@@ -177,4 +177,8 @@ test('A03-E-222 PC 5명 판 판정 전 현황 "집계 전"이 읽힘 @game @smok
     const unresolved = status.getByTestId('vote-status-unresolved');
     await expect(unresolved).toHaveText('집계 전');
     await expectReadable(unresolved);
+    // 아무도 안 냈을 때 낸 사람 수 (투표 시작 알림에 실려 옴, 2026-11-18)
+    const progress = status.getByTestId('vote-status-progress');
+    await expect(progress).toHaveText('0 / 5명 투표함');
+    await expectReadable(progress);
 });

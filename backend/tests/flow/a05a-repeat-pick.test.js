@@ -88,7 +88,7 @@ async function playNight({ s, world }, plan = {}, { turnMs = 30_000, watcher = [
 // 그 사람이 그 밤(날짜)에 받은 것
 const gotOn = (world, uuid, event, dayIndex) => world.received(uuid, event).filter((e) => e.payload.dayIndex === dayIndex);
 
-test('A05-B-179 7명 소켓 길: 의사 자기 보호 두 밤 연달아, 둘째 밤 광대 → 의사 → 둘째 밤 doctorSaved 참', async (t) => {
+test('A05-B-179 7명 소켓 길: 의사 자기 보호 두 밤 연달아, 둘째 밤 광대 → 의사 → 둘째 밤 doctorSaved 칸 없음', async (t) => {
     const ctx = setup(t, 7);
     const joker = gf.firstOf(ctx.s, 'JOKER');
     const doctor = gf.firstOf(ctx.s, 'DOCTOR');
@@ -99,7 +99,7 @@ test('A05-B-179 7명 소켓 길: 의사 자기 보호 두 밤 연달아, 둘째 
     // 둘째 밤 결과 방송은 다음 낮(날짜 3)으로 실려 옴
     const [second] = gotOn(ctx.world, joker, 'night_result_applied', 3);
     assert.ok(second, '둘째 밤 결과를 못 받음');
-    assert.equal(second.payload.doctorSaved, true);
+    assert.equal(Object.hasOwn(second.payload, 'doctorSaved'), false);
 });
 
 test('A05-B-180 8명 소켓 길: 경비원이 같은 사람을 두 밤 조사 → 두 밤 각각 개인 결과 1개', async (t) => {

@@ -70,7 +70,8 @@ test('A01-E-047 공개→코드 저장 → 서버 공개 방식 code, 다시 연
 
 test('A01-E-048 광대 2→1 저장 → 서버 광대 1, 다시 연 창 광대 1', async ({ user }) => {
     const page = user.page;
-    await K.createRoomOn(user);
+    // 처음 값이 광대 1이라 만들 때 2로 올림 (2026-11-18 처음 값 2→1)
+    await K.createRoomOn(user, { jokers: 2 });
     await K.openEditor(page);
     await K.fill(page, { jokers: 1 });
     await K.saveEditor(page);

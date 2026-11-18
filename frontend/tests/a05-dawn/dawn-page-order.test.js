@@ -1,4 +1,4 @@
-// 인게임 화면 낮 시작 순서 시험(화면 전체): 누가 보든 같은 연출(죽음 영상+글 / 살림 글 창 / 없음), 연출 → "낮이 되었습니다"·결과 화면, 새로고침엔 다시 안 틂, 직업·보호받은 사람 안 드러남
+// 인게임 화면 낮 시작 순서 시험(화면 전체): 누가 보든 같은 연출(죽음 영상+글 / 아무 일 없음 글 창 / 없음), 연출 → "낮이 되었습니다"·결과 화면, 새로고침엔 다시 안 틂, 직업·보호받은 사람 안 드러남
 // 목록 시험목록/A05b-밤-알림-낮연출.md A05-F-587~632·685~690, 돌리기(frontend): node --experimental-test-module-mocks --test tests/a05-dawn/dawn-page-order.test.js
 import test from "node:test"
 import assert from "node:assert/strict"
@@ -17,10 +17,10 @@ async function nightPage({ n = 7, me = 3, roles = ROLES7, dead = n >= 7 ? [4] : 
   return g
 }
 
-// 지금 화면에 보이는 낮 시작 모습을 글자로: "영상+글:…" / "살림 창:…" / "낮이 되었습니다" / "없음"
+// 지금 화면에 보이는 낮 시작 모습을 글자로: "영상+글:…" / "아무 일 창:…" / "낮이 되었습니다" / "없음"
 function dawnLook() {
   if (kit.dawnVideo()) return `영상+글:${kit.dawnVideoMessage()}`
-  if (kit.dawnDialog("SAVED")) return `살림 창:${kit.dawnDialog("SAVED").textContent.includes(kit.SAVED_TEXT) ? "글 맞음" : "글 틀림"}`
+  if (kit.dawnDialog("QUIET")) return `아무 일 창:${kit.dawnDialog("QUIET").textContent.includes(kit.QUIET_TEXT) ? "글 맞음" : "글 틀림"}`
   if (kit.dawnDialog()) return `글 창:${kit.dawnDialog().getAttribute("data-ingame-dawn-report")}`
   if (kit.dayEntrance()) return kit.DAY_ENTRANCE_TEXT
   return "없음"
@@ -29,8 +29,9 @@ function dawnLook() {
 // ── 받는 사람 × 경우 (버그 5: 영상이 광대·당한 사람에게만 가던 것)
 const CASES = [
   ["죽음", { victim: A }, () => `영상+글:${kit.killedText(kit.NAMES[A])}`],
-  ["살림", { victim: null, saved: true }, () => "살림 창:글 맞음"],
-  ["없음", { victim: null, saved: false }, () => kit.DAY_ENTRANCE_TEXT],
+  // 의사가 살렸든 광대가 안 죽였든 같은 글 창 (사용자 결정 2026-11-18)
+  ["살림", { victim: null, saved: true }, () => "아무 일 창:글 맞음"],
+  ["광대 안 죽임", { victim: null, saved: false }, () => "아무 일 창:글 맞음"],
 ]
 const VIEWERS = [["산 시민", 3], ["광대", 0], ["당한 A", A], ["죽은 관전자", 4], ["의사", 1]]
 let no = 587
@@ -55,20 +56,22 @@ test("A05-F-602 죽음·낮: 영상이 끝나면 → \"낮이 되었습니다\" 
   assert.match(kit.dayEntrance().textContent, /낮이 되었습니다/)
 })
 
-test("A05-F-603 살림·낮: 살림 창 \"확인\" → \"낮이 되었습니다\" 창", async () => {
+test("A05-F-603 살림·낮: 아무 일 창 \"확인\" → \"낮이 되었습니다\" 창", async () => {
   const g = await nightPage({ n: 6, me: 3, dead: [] })
   await g.nightResult({ victim: null, saved: true })
-  assert.ok(kit.dawnDialog("SAVED"), "살림 창이 없음 (준비 잘못)")
+  assert.ok(kit.dawnDialog("QUIET"), "아무 일 창이 없음 (준비 잘못)")
   await kit.finishDawn()
   await kit.waitUntil(() => kit.dayEntrance() !== null, { what: "낮이 되었습니다 창" })
   assert.match(kit.dayEntrance().textContent, /낮이 되었습니다/)
 })
 
-test("A05-F-604 없음·낮: 연출 없이 바로 \"낮이 되었습니다\" 창", async () => {
+test("A05-F-604 광대 안 죽임·낮: 아무 일 창 \"확인\" → \"낮이 되었습니다\" 창", async () => {
   const g = await nightPage({ n: 6, me: 3, dead: [] })
   await g.nightResult({ victim: null, saved: false })
-  assert.ok(kit.noDawn(), "연출이 뜸")
-  assert.ok(kit.dayEntrance(), "낮이 되었습니다 창이 없음")
+  assert.ok(kit.dawnDialog("QUIET"), "아무 일 창이 없음")
+  assert.equal(kit.dayEntrance(), null)
+  await kit.finishDawn()
+  await kit.waitUntil(() => kit.dayEntrance() !== null, { what: "낮이 되었습니다 창" })
 })
 
 test("A05-F-605 죽음·판 끝(5명 광대 2): 영상이 끝나면 → 결과 화면으로 감", async () => {
@@ -127,10 +130,10 @@ test("A05-F-607 죽음·낮: 영상이 도는 동안 \"낮이 되었습니다\" 
   assert.equal(kit.dayEntrance(), null)
 })
 
-test("A05-F-608 살림·낮: 살림 창이 떠 있는 동안 \"낮이 되었습니다\" 없음", async () => {
+test("A05-F-608 살림·낮: 아무 일 창이 떠 있는 동안 \"낮이 되었습니다\" 없음", async () => {
   const g = await nightPage({ n: 6, me: 3, dead: [] })
   await g.nightResult({ victim: null, saved: true })
-  assert.ok(kit.dawnDialog("SAVED"), "살림 창이 없음 (준비 잘못)")
+  assert.ok(kit.dawnDialog("QUIET"), "아무 일 창이 없음 (준비 잘못)")
   assert.equal(kit.dayEntrance(), null)
 })
 
@@ -161,7 +164,7 @@ const RELOADS = [
   ["죽음·닫은 뒤", { victim: A }, true, "dead"],
   ["살림·연출 중", { victim: null, saved: true }, false, "alive"],
   ["살림·닫은 뒤", { victim: null, saved: true }, true, "alive"],
-  ["없음·낮", { victim: null, saved: false }, false, "alive"],
+  ["광대 안 죽임·연출 중", { victim: null, saved: false }, false, "alive"],
 ]
 RELOADS.forEach(([name, send, closeFirst, aStatus], i) => {
   test(`A05-F-${613 + i} 6명 ${name} 새로고침 → 연출 안 뜸, A 카드 상태 ${aStatus}(스냅샷대로)`, async () => {
@@ -228,14 +231,14 @@ SEATS.forEach(([name, n, victim], i) => {
   })
 })
 
-// ── 살림: 보호받은 사람(2번)이 화면 어디에도 안 드러남 (8명)
+// ── 살림: 보호받은 사람(2번)이 화면 어디에도 안 드러남, 글은 아무 일 없음 글 (8명)
 const SAVED_VIEWERS = [["산 시민", 3], ["죽은 관전자", 4], ["광대", 0]]
 SAVED_VIEWERS.forEach(([name, me], i) => {
   test(`A05-F-${626 + i} 8명 살림 · ${name} 화면 → 글·카드 어디에도 보호받은 사람 표시·이름 없음`, async () => {
     const g = await nightPage({ n: 8, me, roles: { 0: "JOKER", 1: "DOCTOR" }, dead: [4] })
     await g.nightResult({ victim: null, saved: true })
-    const dialog = kit.dawnDialog("SAVED")
-    assert.ok(dialog, "살림 창이 없음 (준비 잘못)")
+    const dialog = kit.dawnDialog("QUIET")
+    assert.ok(dialog, "아무 일 창이 없음 (준비 잘못)")
     assert.doesNotMatch(dialog.textContent, new RegExp(g.nick(A)))
     const card = kit.cardInfo(g.nick(A))
     assert.equal(card?.getAttribute("data-ingame-player-status"), "alive")
@@ -281,11 +284,11 @@ const THREE_NIGHTS = [
 ]
 const THREE_EXPECT = [
   (g) => `영상+글:${kit.killedText(g.nick(3))}`,
-  () => "살림 창:글 맞음",
-  () => kit.DAY_ENTRANCE_TEXT,
+  () => "아무 일 창:글 맞음",
+  () => "아무 일 창:글 맞음",
 ]
 THREE_NIGHTS.forEach((_, night) => {
-  test(`A05-F-${686 + night} 10명 세 밤 연달아(죽음 → 살림 → 없음) · ${night + 2}일 낮 → ${["영상+글", "살림 글", "연출 없음"][night]}`, async () => {
+  test(`A05-F-${686 + night} 10명 세 밤 연달아(죽음 → 살림 → 광대 안 죽임) · ${night + 2}일 낮 → ${["영상+글", "아무 일 글", "아무 일 글"][night]}`, async () => {
     const g = await nightPage({ n: 10, me: 5, roles: { 0: "JOKER", 1: "JOKER", 2: "DOCTOR" }, dead: [] })
     for (let i = 0; i < night; i += 1) {
       await g.nightResult(THREE_NIGHTS[i])
@@ -313,4 +316,33 @@ test("A05-F-690 6명 다른 판 id의 밤 결과 → 연출 없음", async () =>
   await g.say("night_result_applied", g.nightResultPayload({ victim: A, gameId: "a05-dawn-old-game" }))
   assert.ok(kit.noDawn(), "연출이 뜸")
   assert.equal(g.state().phase, "NIGHT")
+})
+
+// ── 그 밤 사이 끊김·나가기 탈락이 화면에 보였으면 "아무 일도" 글을 안 띄움 (거짓말 안 되게, 2026-11-18)
+// 밤 사이 seat 자리가 탈락 (서버 player_eliminated 모양)
+async function dropAtNight(g, seat) {
+  g.seats[seat].alive = false
+  await g.say("player_eliminated", {
+    gameId: g.gameId, phase: "NIGHT", dayIndex: g.dayIndex, victimUuid: g.uuid(seat),
+    players: g.seats.map((s) => ({ uuid: s.uuid, alive: s.alive })),
+  })
+}
+
+test("A05-F-704 6명 밤 사이 5번이 끊겨 탈락 + 광대 안 죽임 → 아무 일 창 없이 바로 \"낮이 되었습니다\", 5번 카드 사망", async () => {
+  const g = await nightPage({ n: 6, me: 3, dead: [] })
+  await dropAtNight(g, 5)
+  assert.equal(kit.cardInfo(g.nick(5))?.getAttribute("data-ingame-player-status"), "dead", "탈락이 안 들어감 (준비 잘못)")
+  await g.nightResult({ victim: null })
+  assert.ok(kit.noDawn(), "아무 일 창이 뜸")
+  await kit.waitUntil(() => kit.dayEntrance() !== null, { what: "낮이 되었습니다 창" })
+})
+
+test("A05-F-705 6명 1밤 사이 탈락이 보였어도 2밤에 아무도 안 죽으면 → 2밤 뒤엔 아무 일 창 뜸 (지난 밤 표시 안 남음)", async () => {
+  const g = await nightPage({ n: 6, me: 3, dead: [] })
+  await dropAtNight(g, 5)
+  await g.nightResult({ victim: null })
+  assert.ok(kit.noDawn(), "1밤 뒤 아무 일 창이 뜸 (준비 잘못)")
+  await g.dayToNight()
+  await g.nightResult({ victim: null })
+  assert.equal(dawnLook(), "아무 일 창:글 맞음")
 })

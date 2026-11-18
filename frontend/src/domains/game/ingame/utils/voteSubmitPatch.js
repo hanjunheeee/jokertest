@@ -25,6 +25,15 @@ export function computeDayVoteSubmitPatch(prevState, ackResult, submittedTargetI
   }
 }
 
+// 낮 표 거두기 응답 → 상태 조각 (받아들여지면 "안 낸" 상태, 실패면 전에 낸 표 그대로)
+// 예: { ok: true } → { status: "idle", error: null, hasSubmitted: false, lastSubmittedTargetId: null }
+export function computeDayVoteWithdrawPatch(prevState, ackResult) {
+  if (ackResult && ackResult.ok === true) {
+    return { status: "idle", error: null, hasSubmitted: false, lastSubmittedTargetId: null }
+  }
+  return computeDayVoteSubmitPatch(prevState, ackResult, null)
+}
+
 // 재판 투표 제출 처음 상태
 export const INITIAL_TRIBUNAL_VOTE_SUBMIT_STATE = {
   status: "idle",

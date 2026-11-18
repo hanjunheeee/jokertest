@@ -176,17 +176,16 @@ async function toVote(t, dayIndex = 1, { screens = true } = {}) {
 
 /**
  * 화면으로 낮 투표: 카드 메뉴 "투표하기" → 같은 카드 메뉴가 "투표취소"로 바뀌면 들어간 것
- * 기권 단추가 꺼진 것만으론 표가 들어갔는지 모름 (단계 시작 안내·연출이 떠 있는 동안에도 꺼짐 — actionPanelLocks.js interactionBlocked)
+ * 기권 단추로는 못 봄 (사람을 찍어도 기권 단추는 안 잠김 — 사용자 결정 2026-11-18, 연출 중엔 따로 꺼짐 — actionPanelLocks.js interactionBlocked)
  */
 async function dayVoteUi(page, nickname) {
     const menu = page.getByRole('menu', { name: '플레이어 행동' });
-    const abstain = page.getByRole('button', { name: '기권' }).first();
     const cancel = menu.getByRole('menuitem', { name: '투표취소', exact: true });
     await calm(page, async () => {
         if (!(await menu.isVisible().catch(() => false))) await slot(page, nickname).click({ timeout: 1500 });
         if (await cancel.isVisible().catch(() => false)) return;
         await menu.getByRole('menuitem', { name: '투표하기', exact: true }).click({ timeout: 1500 });
-        await expect(abstain).toBeDisabled({ timeout: 3000 });
+        await expect(menu).toBeHidden({ timeout: 3000 });
         // 메뉴를 다시 열어 "투표취소"로 확인 (고르면 메뉴가 닫힘, 안 닫혔으면 이번 누름이 닫고 다음 바퀴가 엶)
         await slot(page, nickname).click({ timeout: 1500 });
         await expect(cancel).toBeVisible({ timeout: 1500 });

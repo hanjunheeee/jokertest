@@ -116,17 +116,41 @@ async function closeMenu(h) {
     await expect(h.page.getByRole('menu', { name: '플레이어 행동' })).toBeHidden();
 }
 
-// 사람 표: null이면 기권 단추, 아니면 그 사람 카드 '투표하기' → 기권 단추가 꺼지면 서버가 받은 것
+// 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
+// 사람이면 그 사람 카드 '투표하기' → 그 카드 메뉴가 '투표취소'면 서버가 받은 것
+// (PC는 사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, 사용자 결정 2026-11-18)
 async function cast(h, target, names) {
-    if (target === null) await abstainButton(h.page).click();
-    else await menuPick(h, names.get(target), '투표하기');
-    await expect(abstainButton(h.page)).toBeDisabled();
+    if (target === null) {
+        await abstainButton(h.page).click();
+        await expect(abstainButton(h.page)).toBeDisabled();
+        return;
+    }
+    await menuPick(h, names.get(target), '투표하기');
+    await expectVotedFor(h, names.get(target));
 }
 
-// 이미 낸 표 바꾸기: 다른 사람이면 그 카드 '투표하기', 기권이면 낸 사람 카드 '투표취소'
+// 그 사람 카드 메뉴(모바일은 카드 시트)에 '투표취소'가 보일 때까지, 본 뒤 닫음 (PC는 Esc, 모바일은 시트 '닫기')
+async function expectVotedFor(h, nick) {
+    let menu = null;
+    await expect(async () => {
+        if (!menu || !(await menu.isVisible().catch(() => false))) menu = await openMenu(h, nick);
+        await expect(menu.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    if (isMobile(h)) await menu.getByRole('button', { name: '닫기' }).click();
+    else await h.page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+}
+
+// 이미 낸 표 바꾸기: 다른 사람이면 그 카드 '투표하기', 기권이면 기권 단추
+// '투표취소'는 기권이 아니라 표 거두기(안 낸 사람으로 돌아감, 사용자 결정 2026-11-18)
+// PC·모바일 모두 찍은 뒤에도 기권 단추가 켜져 바로 누름
 async function change(h, from, to, names) {
-    if (to === null) await menuPick(h, names.get(from), '투표취소');
-    else await menuPick(h, names.get(to), '투표하기');
+    if (to !== null) {
+        await menuPick(h, names.get(to), '투표하기');
+        return;
+    }
+    await abstainButton(h.page).click();
+    await expect(abstainButton(h.page)).toBeDisabled();
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -530,8 +554,8 @@ test('A03-H-030 6명 판(사람 2) 투표 중 새로고침 세 번 → 낸 표 �
     await cast(h1, X, names);
     for (let i = 0; i < 3; i += 1) {
         await h1.page.reload();
-        // 낸 표시: 기권 꺼짐 + X 카드는 '투표취소'
-        await expect(abstainButton(h1.page)).toBeDisabled({ timeout: 20_000 });
+        // 낸 표시: X 카드는 '투표취소' (기권 단추는 판이 다시 그려졌는지만 봄 — PC는 찍은 뒤에도 켜짐, 2026-11-18)
+        await expect(abstainButton(h1.page)).toBeVisible({ timeout: 20_000 });
         const menu = await openMenu(h1, names.get(X));
         await expect(menu.getByRole('menuitem', { name: '투표취소' })).toBeVisible();
         await closeMenu(h1);

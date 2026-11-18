@@ -1,7 +1,7 @@
 'use strict';
 
-// 역할 나누기 시험 — 자리 순서대로 광대→의사→경비원→마녀사냥꾼→시민, 누구나 광대가 될 수 있고 고르게, 지난 판 직업은 안 봄
-// 목록 A02-B-083~093 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md "역할 나누기")
+// 역할 나누기 시험 — 자리 순서로 직업 짐작 못 함(자리 따로 섞기), 누구나 광대가 될 수 있고 고르게, 지난 판 직업은 안 봄
+// 목록 A02-B-083~093·A02-B-281~282 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md "역할 나누기")
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -40,18 +40,23 @@ function rolesInSeatOrder(room, randomFn) {
     return [...c.session.players.values()].map((p) => ({ uuid: p.uuid, role: p.role }));
 }
 
-// 직업 차례 번호 (앞 차례 직업이 늘 앞자리)
-const ROLE_ORDER = ['JOKER', 'DOCTOR', 'GUARD', 'WITCH_HUNTER', 'CITIZEN'];
-
-// A02-B-083~088 자리 순서대로 직업이 J…D…G…W…C 차례 (10명은 광대 2)
+// A02-B-083~088 자리마다 광대 비율이 광대 수/인원 근처 (자리 순서로 직업 짐작 못 함, 2026-11-18 결정 — 전엔 첫 자리가 늘 광대)
 for (let n = 5; n <= 10; n += 1) {
     const no = `A02-B-${String(83 + n - 5).padStart(3, '0')}`;
     const jokers = n === 10 ? 2 : 1;
-    test(`${no} ${n}명(광대 ${jokers}) → 자리 순서대로 광대→의사→경비원→마녀사냥꾼→시민 차례`, () => {
-        const seated = rolesInSeatOrder(makeRoom(no, n, jokers), seededRandom(n * 7 + 1));
-        const order = seated.map((s) => ROLE_ORDER.indexOf(s.role)); // 예 → [0, 1, 4, 4, 4]
-        assert.ok(order.every((v) => v >= 0), '모르는 직업이 섞임');
-        assert.deepEqual(order, [...order].sort((a, b) => a - b), `차례가 어긋남: ${seated.map((s) => s.role).join(',')}`);
+    test(`${no} ${n}명(광대 ${jokers}) 씨앗 고정 5,000번 → 자리마다 광대 비율 = ${jokers}/${n} ±4%p`, () => {
+        const runs = 5_000;
+        const rand = seededRandom(n * 7 + 1);
+        const room = makeRoom(no, n, jokers);
+        const hits = Array(n).fill(0); // 자리 번호마다 광대가 앉은 횟수
+        for (let r = 0; r < runs; r += 1) {
+            rolesInSeatOrder(room, rand).forEach((s, seat) => { if (s.role === 'JOKER') hits[seat] += 1; });
+        }
+        const expected = jokers / n; // 예 5명·광대 1 → 0.2
+        hits.forEach((h, seat) => {
+            const rate = h / runs;
+            assert.ok(Math.abs(rate - expected) <= 0.04, `${seat}번 자리 광대 비율 ${(rate * 100).toFixed(2)}% (기대 ${(expected * 100).toFixed(1)}%)`);
+        });
     });
 }
 
@@ -59,9 +64,9 @@ for (let n = 5; n <= 10; n += 1) {
 function jokersOverRuns(id, n, jokerCount, runs) {
     const ever = new Set();
     for (let r = 0; r < runs; r += 1) {
-        // 벌마다 정해 둔 수 줄 (씨앗 r로 만든 n개 수)
+        // 벌마다 정해 둔 수 줄 (씨앗 r로 만든 2n개 수 — 역할 섞기 + 자리 섞기)
         const rand = seededRandom(1000 + r);
-        const seq = Array.from({ length: n }, () => rand());
+        const seq = Array.from({ length: 2 * n }, () => rand());
         for (const s of rolesInSeatOrder(makeRoom(id, n, jokerCount), sequenceRandom(seq))) {
             if (s.role === 'JOKER') ever.add(s.uuid);
         }
@@ -114,4 +119,26 @@ test('A02-B-093 7명, 같은 무작위 수 + 지난 판 직업 칸 있음/없음
     const a = rolesInSeatOrder(plain, seededRandom(93));
     const b = rolesInSeatOrder(withPast, seededRandom(93));
     assert.deepEqual(b, a);
+});
+
+test('A02-B-281 7명, 같은 무작위 함수 → 자리 순서·직업 둘 다 같음 (자리 섞기도 randomFn을 씀)', () => {
+    const a = rolesInSeatOrder(makeRoom('b271', 7, 1), seededRandom(271));
+    const b = rolesInSeatOrder(makeRoom('b271', 7, 1), seededRandom(271));
+    assert.deepEqual(b, a);
+    // 정해 둔 수(늘 0) → 결과가 하나로 정해짐: 역할 섞기 [1,2,3,4,5,6,0] 앞에서부터 광대·의사…, 자리 섞기 한 번 더 → [2,3,4,5,6,0,1]
+    const fixed = rolesInSeatOrder(makeRoom('b271', 7, 1), () => 0);
+    assert.deepEqual(fixed.map((s) => s.uuid), [2, 3, 4, 5, 6, 0, 1].map((i) => `b271-${i}`));
+    assert.equal(fixed.find((s) => s.role === 'JOKER').uuid, 'b271-1');
+    assert.notEqual(fixed[0].role, 'JOKER');
+});
+
+test('A02-B-282 5명·광대 1, 씨앗 고정 10,000번 → 첫 자리 광대 비율 18~22% (전엔 100%)', () => {
+    const rand = seededRandom(272);
+    const room = makeRoom('b272', 5, 1);
+    let firstJoker = 0;
+    for (let r = 0; r < 10_000; r += 1) {
+        if (rolesInSeatOrder(room, rand)[0].role === 'JOKER') firstJoker += 1;
+    }
+    const rate = firstJoker / 10_000;
+    assert.ok(rate >= 0.18 && rate <= 0.22, `첫 자리 광대 비율 ${(rate * 100).toFixed(2)}%`);
 });

@@ -137,7 +137,14 @@ test('A10-E-027 PC 7명 판 투표 중 /lobby → /ingame → 투표 누름 → 
     await K.botsVote(t, rest.slice(0, 3), U(target));
     const menu = await N.openCardMenu(page, target.nickname);
     await A5.menuItem(menu, '투표하기').click();
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    await expect(menu).toBeHidden();
+    // 서버가 받은 표시: 다시 연 X 카드 메뉴가 "투표취소" (사람을 찍어도 기권 단추는 안 잠김, 2026-11-18)
+    await expect(async () => {
+        const again = await N.openCardMenu(page, target.nickname);
+        await expect(again.getByRole('menuitem', { name: '투표취소', exact: true })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu', { name: '플레이어 행동' })).toBeHidden();
 
     // 투표 마감은 손잡이로 (5초 규칙을 보는 케이스가 아님)
     await t.advance();

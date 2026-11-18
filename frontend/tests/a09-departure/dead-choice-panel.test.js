@@ -68,7 +68,7 @@ test("A09-F-251 6명 판 \"관전 계속\" 고른 뒤 밤·다음 낮으로 넘�
   // 아무도 안 죽은 밤 → 2일 낮
   await t.say("night_result_applied", {
     gameId: t.gameId, phase: "DAY", dayIndex: 2, players: t.seats.map((s) => ({ uuid: s.uuid, alive: s.alive })),
-    victimUuid: null, deathReveals: [], doctorSaved: false, dayPhaseDeadline: Date.now() + 60_000,
+    victimUuid: null, deathReveals: [], dayPhaseDeadline: Date.now() + 60_000,
   })
   assert.equal(t.state().phase, "DAY")
   assert.ok(deadDialog() === null, "다음 낮에 사망 창이 다시 뜸")

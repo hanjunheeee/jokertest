@@ -25,7 +25,6 @@ function nightEndPayload(g, { victim = null, winner = "CITIZEN" } = {}) {
     players: g.seats.map((s) => ({ uuid: s.uuid, isAlive: s.alive })),
     victimUuid: victim === null ? null : g.seats[victim].uuid,
     deathReveals: victim === null ? [] : [{ victimUuid: g.seats[victim].uuid, source: "JOKER" }],
-    doctorSaved: false,
     winResult: K.winResultOf(g.seats, winner, 1),
     resultClosesAt: Date.now() + 180_000,
   }

@@ -11,7 +11,7 @@ const night = require('./b-night/_night');
 const day = require('./a-day/_lib');
 
 // 화면 글 (frontend utils/dawnReport.js·constants/ingamePhaseEntrance.js·utils/reduceInGameNightPrivateResult.js와 같은 글)
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 const DAY_TEXT = '낮이 되었습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
@@ -236,7 +236,7 @@ const killedLine = (page, nickname) => page
     .locator('[data-ingame-dawn-report-message], [data-ingame-dawn-report="KILLED"] p')
     .filter({ hasText: killedText(nickname) })
     .first();
-const savedLine = (page) => page.locator('[data-ingame-dawn-report="SAVED"]').getByText(SAVED_TEXT, { exact: true });
+const savedLine = (page) => page.locator('[data-ingame-dawn-report="QUIET"]').getByText(SAVED_TEXT, { exact: true });
 
 /** 죽음 연출: 암살 영상이 떴고(화면 기록) 글이 사람 눈에 읽힘, 글에 직업 이름 없음 */
 async function expectKilled(page, nickname, from = 0) {
@@ -249,10 +249,10 @@ async function expectKilled(page, nickname, from = 0) {
     expect(await line.innerText()).not.toMatch(ROLE_WORDS);
 }
 
-/** 살림 연출: 글 창의 글이 읽힘, 그 밤 영상은 없음, 창 어디에도 닉네임이 없음 (누가 공격받았는지 안 밝힘) */
+/** 아무 일 없음 연출(의사가 살렸든 광대가 안 죽였든 같음, 2026-11-18): 글 창의 글이 읽힘, 그 밤 영상은 없음, 창 어디에도 닉네임이 없음 */
 async function expectSaved(page, hiddenNames = [], from = 0) {
     await expectReadable(savedLine(page), { timeout: 20_000 });
-    const shown = await page.locator('[data-ingame-dawn-report="SAVED"]').getByRole('dialog').innerText();
+    const shown = await page.locator('[data-ingame-dawn-report="QUIET"]').getByRole('dialog').innerText();
     for (const name of hiddenNames) expect(shown, '살림 글 창에 닉네임이 없음').not.toContain(name);
     expect((await logOf(page, from)).filter((e) => e.kind === 'kill' || e.kind === 'msg'), '살림 밤엔 암살 영상이 없음').toEqual([]);
 }
@@ -386,7 +386,7 @@ test('A05-H-504 살림 — 사람 4 + 봇 4 = 8명: 광대·의사·보호받은
     expect((await logOf(doctor.page)).filter((e) => e.kind === 'result'), '의사 화면 개인 결과 기록').toEqual([]);
 });
 
-test('A05-H-505 경비원 조사 — 사람 3 (8명): 경비원 화면에만 조사 결과 글, 조사당한 사람·시민 화면은 밤·낮 내내 아무 창 없음 @game @hard', async ({ user, players, table }) => {
+test('A05-H-505 경비원 조사 — 사람 3 (8명): 경비원 화면에만 조사 결과 글, 조사당한 사람·시민 화면은 밤·낮 내내 결과 창 없음 (낮엔 모두 같은 "아무 일도" 글 창) @game @hard', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const humans = [user, ...(await addPeople(players, 2))];
     const g = await openGame(table, humans, { n: 8, counts: { JOKER: 1, DOCTOR: 1, GUARD: 1 }, roles: ['GUARD', 'CITIZEN', 'CITIZEN'] });
@@ -403,7 +403,8 @@ test('A05-H-505 경비원 조사 — 사람 3 (8명): 경비원 화면에만 조
     });
     await expectReadable(privateResult(guard.page).getByText(investigateText(target.account.nickname, '귀족'), { exact: true }), { timeout: 20_000 });
     for (const h of [target, citizen]) {
-        await expectPlainDay(h.page);
+        // 광대가 건너뛴 밤 → 낮 시작 "아무 일도" 글 창 (조사 이야기는 없음)
+        await expectSaved(h.page);
         expect((await logOf(h.page)).filter((e) => e.kind === 'result' || e.kind === 'wait'), '결과 창·기다림 창 기록').toEqual([]);
         await expect(privateResult(h.page)).toHaveCount(0);
     }
@@ -443,11 +444,13 @@ test('A05-H-506 마녀사냥꾼 확인 — 사람 2 (10명, 둘째 밤): 마녀�
     await expectReadable(privateResult(hunter.page).getByText(confirmText(executed.account.nickname, '귀족'), { exact: true }), { timeout: 20_000 });
     // 확인당한 죽은 사람 화면: 결과 창·영상·글 창 기록이 없음
     expect((await g.t.state()).dayIndex).toBe(3);
-    expect((await logOf(executed.page, marks[1])).filter((e) => ['result', 'kill', 'msg', 'report', 'wait'].includes(e.kind)), '죽은 사람 화면 기록').toEqual([]);
+    expect((await logOf(executed.page, marks[1])).filter((e) => ['result', 'kill', 'msg', 'wait'].includes(e.kind)), '죽은 사람 화면 기록').toEqual([]);
+    // 광대가 건너뛴 밤이라 낮 시작 글 창은 모두와 같은 "아무 일도" 하나뿐 (확인 이야기 없음)
+    expect((await logOf(executed.page, marks[1])).filter((e) => e.kind === 'report').map((e) => e.value), '죽은 사람 화면 글 창').toEqual(['QUIET']);
     await expect(privateResult(executed.page)).toHaveCount(0);
 });
 
-test('A05-H-507 세 밤 연달아 — 사람 3 (10명): 1밤 죽음 → 2밤 살림 → 3밤 아무 일 없음 → 세 화면 모두 2·3·4일 낮에 영상+글 / 살림 글 / 연출 없음 @game @hard', async ({ user, players, table }) => {
+test('A05-H-507 세 밤 연달아 — 사람 3 (10명): 1밤 죽음 → 2밤 살림 → 3밤 광대 건너뜀 → 세 화면 모두 2·3·4일 낮에 영상+글 / 아무 일 글 / 아무 일 글 @game @hard', async ({ user, players, table }) => {
     test.setTimeout(300_000);
     const humans = [user, ...(await addPeople(players, 2))];
     const g = await openGame(table, humans, { n: 10, counts: { JOKER: 1, DOCTOR: 1 }, roles: ['CITIZEN', 'CITIZEN', 'CITIZEN'] });
@@ -463,11 +466,11 @@ test('A05-H-507 세 밤 연달아 — 사람 3 (10명): 1밤 죽음 → 2밤 살
     await playNight(g, { JOKER: () => botsChoose(g, 'JOKER', second), DOCTOR: () => botsChoose(g, 'DOCTOR', second) });
     await each(humans, (h) => expectSaved(h.page, [second.nickname, first.nickname], marks[humans.indexOf(h)]));
     await each(humans, (h) => finishShow(h.page));
-    // 3밤: 광대가 건너뜀 → 4일 낮 연출 없이 "낮이 되었습니다"
+    // 3밤: 광대가 건너뜀 → 4일 낮도 2밤과 같은 "아무 일도" 글 창 (의사가 살린 밤과 구별 안 됨)
     marks = await marksOf(humans);
     await night.toTurn(g.t, 'JOKER', { dayIndex: 3 });
     await playNight(g, { JOKER: () => botsChoose(g, 'JOKER', null) });
-    await each(humans, (h) => expectPlainDay(h.page, marks[humans.indexOf(h)]));
+    await each(humans, (h) => expectSaved(h.page, [first.nickname, second.nickname], marks[humans.indexOf(h)]));
     const end = await g.t.state();
     expect(end.dayIndex).toBe(4);
     expect(end.players.filter((p) => !p.alive).map((p) => p.uuid)).toEqual([first.uuid]);
@@ -576,7 +579,7 @@ test('A05-H-523 광대 사람이 의사 사람을 노리고 의사가 자기를 
     expect((await g.t.player(doctor.account.uuid)).alive).toBe(true);
 });
 
-test('A05-H-524 광대 대상 사람이 밤 중 나감 (7명, 사람 3): 남은 두 화면은 낮에 연출 없이 "낮이 되었습니다" @game @hard', async ({ user, players, table }) => {
+test('A05-H-524 광대 대상 사람이 밤 중 나감 (7명, 사람 3): 남은 두 화면은 낮에 연출 없이("아무 일도" 글 창도 없이) "낮이 되었습니다" @game @hard', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const humans = [user, ...(await addPeople(players, 2))];
     const g = await openGame(table, humans, { n: 7, counts: { JOKER: 1 }, roles: ['CITIZEN', 'CITIZEN', 'CITIZEN'] });
@@ -588,6 +591,7 @@ test('A05-H-524 광대 대상 사람이 밤 중 나감 (7명, 사람 3): 남은 
     await expect.poll(async () => (await g.t.player(target.account.uuid))?.isParticipating, { timeout: 15_000, message: '나간 사람이 판에서 빠짐' }).toBe(false);
     await closeTurn(g, 'JOKER', 1);
     await waitState(g.t, (s) => s.phase === 'DAY' && s.dayIndex === 2, '2일 낮');
+    // 밤 사이 사람이 빠진 게 화면에 보였으니 "아무 일도" 글은 거짓 → 안 띄움 (사용자 결정 2026-11-18)
     for (const h of others) await expectPlainDay(h.page);
 });
 
@@ -701,7 +705,7 @@ test('A05-H-530 밤 중 60초 탈락은 살해 연출이 아님 (6명, 사람 2)
     expect(Math.abs(Date.now() - closedAt - 60_000), '탭을 닫은 때부터 탈락까지 60초와의 차이').toBeLessThanOrEqual(TOLERANCE_MS + 250);
     expect((await g.t.state()).phase, '탈락한 때는 아직 밤').toBe('NIGHT');
     await expectQuietNight(stayer.page, from);
-    // 아무도 안 골라 세 차례가 시간 끝까지 감 → 낮: 살해 연출·살림 글 없이 "낮이 되었습니다"
+    // 아무도 안 골라 세 차례가 시간 끝까지 감 → 낮: 살해 연출 없음, 밤 사이 탈락이 보였으니 "아무 일도" 글 창도 없이 "낮이 되었습니다"
     await waitState(g.t, (s) => s.phase === 'DAY' && s.dayIndex === 2, '2일 낮', 45_000);
     await expectPlainDay(stayer.page, from);
 });

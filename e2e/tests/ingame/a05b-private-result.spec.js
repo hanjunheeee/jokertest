@@ -10,9 +10,9 @@ const n = require('./b-night/_night');
 
 // 화면에서 찾는 표시·글 (frontend/src/domains/game/ingame 코드에서 확인한 것)
 const KILL = '[data-ingame-night-success-kill]';
-const SAVED = '[data-ingame-dawn-report="SAVED"]';
+const SAVED = '[data-ingame-dawn-report="QUIET"]';
 const PRIVATE_RESULT = '[data-ingame-night-private-result]';
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
 // 시간 바의 날짜 글 (밤은 그 날 숫자 그대로, 다음 낮은 +1) → dayBar(2) = '제 2일 시간 흐름'
 const dayBar = (dayIndex) => `제 ${dayIndex}일 시간 흐름`;

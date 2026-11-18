@@ -77,7 +77,7 @@ const {
     buildDayBallotSnap,
     dayBallotSnapsEqual,
 } = require('./phase/day/ballots')
-const { submitDayVote, readDayVoteSfx } = require('./phase/day/vote')
+const { submitDayVote, withdrawDayVote, readDayVoteSfx } = require('./phase/day/vote')
 const { getSessionDayIndex, getSessionVoteRound, acknowledgeDayVoteReady } = require('./phase/day/ready')
 const { buildDayPhaseChangedPayload, buildDayVoteResolvedPayload } = require('./phase/day/payloads')
 const { prepareDayVoteResolution, commitDayVoteResolution } = require('./phase/day/resolve')
@@ -184,8 +184,9 @@ module.exports = {
     getAliveActorUuidsForRole,
     isRoleTurnComplete,
     getCurrentNightTurnRole,
-    // 낮 표 받기·투표 효과음
+    // 낮 표 받기·거두기·투표 효과음
     submitDayVote,
+    withdrawDayVote,
     getSessionDayIndex,
     getSessionVoteRound,
     readDayVoteSfx,

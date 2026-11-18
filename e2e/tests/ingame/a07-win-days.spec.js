@@ -223,7 +223,7 @@ test('A07-H-016 사람 2 + 봇 5 = 7명 판 1일 재판 무죄 → 밤에 의사
     const day2 = await N.toDay(t, { dayIndex: 2 });
     expect(day2.players.filter((p) => !p.alive), '죽은 사람 없음').toHaveLength(0);
     for (const page of pages) {
-        await expect(page.locator('[data-ingame-dawn-report]')).toContainText('지난밤 의사가 공격받은 사람을 살려냈습니다', { timeout: 15_000 });
+        await expect(page.locator('[data-ingame-dawn-report]')).toContainText('지난밤 아무 일도 일어나지 않았습니다', { timeout: 15_000 });
     }
     await expectStillPlaying(t, pages);
 

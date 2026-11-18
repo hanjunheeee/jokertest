@@ -1,4 +1,4 @@
-// 낮 투표 제출 훅: 컨트롤러로 투표 보내기, 받아들여지면 제출 효과음
+// 낮 투표 제출 훅: 컨트롤러로 투표 보내기·표 거두기, 표가 받아들여지면 제출 효과음 (거두기는 효과음 없음)
 // 행동 패널 훅이 사용 (카드 메뉴는 행동 컨텍스트로 씀), 보내기·끊김 받기는 socket/ 함수를 부름
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { getSocket, subscribeSocket } from "../../../../shared/socket/socketClient.js"
@@ -9,7 +9,7 @@ import { createDayVoteSubmitController } from "../utils/createDayVoteSubmitContr
 import { INITIAL_DAY_VOTE_SUBMIT_STATE } from "../utils/voteSubmitPatch.js"
 import { getDayVoteRound } from "../utils/dayVoteRound.js"
 import { onConnect, onDisconnect } from "../socket/connection.js"
-import { emitDayVote } from "../socket/day.js"
+import { emitDayVote, emitWithdrawDayVote } from "../socket/day.js"
 
 // 제출 효과음: 보낸 판·날짜·회차·소켓·본인이 그대로이고 살아 있을 때만
 function playSubmitSfx(sfxEvent, requestScope, requestSocket) {
@@ -76,6 +76,7 @@ export function useInGameDayVoteSubmit() {
 
     const controller = createDayVoteSubmitController({
       emitWithAck: (payload) => emitDayVote(socket, payload),
+      emitWithdrawWithAck: (payload) => emitWithdrawDayVote(socket, payload),
       isConnected: () => socket.connected === true,
       onStateChange: setState,
       onAccepted: (sfxEvent, requestScope) => playSubmitSfx(sfxEvent, requestScope, socket),
@@ -118,6 +119,11 @@ export function useInGameDayVoteSubmit() {
     controllerRef.current?.submit({ gameId, dayIndex, targetId })
   }
 
+  // 지금 판·날짜로 낸 표 거두기 ("투표취소", 서버에서 안 낸 사람으로 돌아감)
+  const withdrawDayVote = () => {
+    controllerRef.current?.withdraw({ gameId })
+  }
+
   // 서버가 이번 날·이번 회차 제출 여부를 주면 그 값을 먼저 씀 (날마다 회차가 1이라 날짜도 봄)
   const serverOwnsSubmission = typeof serverHasSubmitted === "boolean"
     && (!Number.isInteger(serverSubmissionRound) || serverSubmissionRound === dayVoteRound)
@@ -132,5 +138,6 @@ export function useInGameDayVoteSubmit() {
     hasSubmitted: serverOwnsSubmission ? serverHasSubmitted : state.hasSubmitted,
     lastSubmittedTargetId,
     submitDayVote,
+    withdrawDayVote,
   }
 }

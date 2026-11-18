@@ -18,6 +18,9 @@ export const initialState = {
 
   // 낮 시작 연출 (밤 결과를 실시간으로 받았을 때만, 새로고침하면 다시 안 틂)
   dawnReport: null,
+
+  // 밤 사이 산 사람이 탈락(끊김·나가기)한 게 보인 밤 열쇠 "판id:날짜" (그 밤엔 "아무 일도" 글 안 띄움)
+  nightDepartureKey: null,
 }
 
 // 화면·훅이 useInGameStore(고르개)로 씀

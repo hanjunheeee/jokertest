@@ -1,34 +1,39 @@
-// 투표 현황 목록 내용
+// 투표 현황 목록 내용 (판정 전엔 "집계 전" + 투표 중 낸 사람 수, 판정 뒤엔 결과)
 // InGameVoteStatusPanel이 씀
 import {
   SCROLL_WRAP_CLASS,
+  STATUS_PROGRESS_CLASS,
   STATUS_ROW_CLASS,
   STATUS_SECTION_CLASS,
   STATUS_TERM_CLASS,
   STATUS_UNRESOLVED_CLASS,
+  STATUS_UNRESOLVED_STACK_CLASS,
   STATUS_UNRESOLVED_WRAP_CLASS,
   STATUS_VALUE_CLASS,
 } from "../../constants/vote/ingameVoteLayout.js"
+import { DAY_VOTE_OUTCOME_TEXTS } from "../../constants/vote/ingameVoteOutcomes.js"
 import { useInGameStore } from "../../store/ingameStore.js"
-
-// 판정 결과 → 화면 글 (모바일 VoteStatusContent도 같은 글)
-const OUTCOME_LABELS = Object.freeze({
-  TRIBUNAL: "재판 회부",
-  TIE: "동점",
-  // 기권이 최다 득표 이상이라 재판 없이 밤 (2026-11-16 규칙)
-  ABSTAIN_MAJORITY: "기권이 많아 재판 없음",
-  ABSTAINED: "전원 기권",
-  // 뽑힌 사람이 그 순간 끊겨 있어 재판 없이 밤 (글이 없으면 영어 값이 그대로 보여서 넣음)
-  DEFENDANT_DISCONNECTED: "재판 대상의 연결이 끊겨 재판 없음",
-})
+import { isPublicProgress } from "../../utils/store/gamePayload.js"
 
 export const INGAME_VOTE_STATUS_UNRESOLVED_LABEL = "집계 전"
 
 // 재판 대상 이름 모를 때 쓰는 이름
 const UNKNOWN_TARGET_LABEL = "알 수 없는 플레이어"
 
+// 지금 낮 투표 중이고 서버가 준 낮 투표 진행 수가 있을 때만 그 칸({ kind, doneCount, requiredCount }), 아니면 null
+// 토론 중·밤엔 안 보임 (지난 날 숫자가 남아 있어도 안 그림)
+function selectDayVoteProgress(state) {
+  if (state?.phase !== "DAY" || state.dayPhase !== "DAY_VOTE") return null
+  const progress = state.progress
+  if (!isPublicProgress(progress) || progress.kind !== "DAY_VOTE") return null
+  return progress
+}
+
 export default function InGameVoteStatusContent() {
   const dayVoteResolution = useInGameStore((s) => s.state?.dayVoteResolution ?? null)
+  // 숫자 둘만 골라 비교 (객체를 새로 만들면 그릴 때마다 바뀐 것으로 봄)
+  const progressDone = useInGameStore((s) => selectDayVoteProgress(s.state)?.doneCount ?? null)
+  const progressRequired = useInGameStore((s) => selectDayVoteProgress(s.state)?.requiredCount ?? null)
   // 재판 대상은 id 대신 판 명단의 닉네임으로 보여 줌
   const tribunalTargetNickname = useInGameStore((s) => {
     const targetUuid = s.state?.dayVoteResolution?.tribunalTargetUuid ?? null
@@ -41,9 +46,17 @@ export default function InGameVoteStatusContent() {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className={STATUS_UNRESOLVED_WRAP_CLASS}>
-          <p className={STATUS_UNRESOLVED_CLASS} data-testid="vote-status-unresolved">
-            {INGAME_VOTE_STATUS_UNRESOLVED_LABEL}
-          </p>
+          <div className={STATUS_UNRESOLVED_STACK_CLASS}>
+            <p className={STATUS_UNRESOLVED_CLASS} data-testid="vote-status-unresolved">
+              {INGAME_VOTE_STATUS_UNRESOLVED_LABEL}
+            </p>
+            {/* 투표 중 진행 수 글: 낸 사람 수 / 산 사람 수 (누가 냈는지·누구를 찍었는지는 안 보임, 사용자 결정 2026-11-18) */}
+            {progressDone !== null && progressRequired !== null ? (
+              <p className={STATUS_PROGRESS_CLASS} data-testid="vote-status-progress">
+                {`${progressDone} / ${progressRequired}명 투표함`}
+              </p>
+            ) : null}
+          </div>
         </div>
       </div>
     )
@@ -76,7 +89,7 @@ export default function InGameVoteStatusContent() {
           <div className={STATUS_ROW_CLASS}>
             <dt className={STATUS_TERM_CLASS}>결과</dt>
             <dd className={STATUS_VALUE_CLASS} data-testid="vote-status-outcome">
-              {outcome === null ? "-" : (OUTCOME_LABELS[outcome] ?? outcome)}
+              {outcome === null ? "-" : (DAY_VOTE_OUTCOME_TEXTS[outcome]?.label ?? outcome)}
             </dd>
           </div>
           <div className={STATUS_ROW_CLASS}>

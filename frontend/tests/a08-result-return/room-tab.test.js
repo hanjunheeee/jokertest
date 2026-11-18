@@ -38,12 +38,12 @@ test("A08-F-059 판 뒤 로비 → 게임 설정 화면 → 지난 판 설정이
   const sock = K.installFakeSocket()
   const me = "a08a0000-0000-4000-8000-000000000591"
   K.signIn(me, "나")
-  // 지난 판 방 설정(정원 7·광대 1)이 남아 있고, 옛 "다음 게임 설정 유지" 저장값도 브라우저에 남아 있음
+  // 지난 판 방 설정(정원 7·광대 2)이 남아 있고, 옛 "다음 게임 설정 유지" 저장값도 브라우저에 남아 있음
   K.useMatchingStore.getState().setRoom({ ...K.roomOf({ uuids: [me], max: 7 }) })
   try {
     window.localStorage.setItem(`joker:next-room-settings:v1:${me}`, JSON.stringify({
       schemaVersion: 1, accountId: me, enabled: true,
-      source: { maxPlayers: 7, jokerCount: 1, roleCompositionMode: "auto", dayDiscussionTime: 30, dayVoteTime: 30, nightActionTime: 30 },
+      source: { maxPlayers: 7, jokerCount: 2, roleCompositionMode: "auto", dayDiscussionTime: 30, dayVoteTime: 30, nightActionTime: 30 },
     }))
   } catch {
     // 저장소가 막힌 곳이면 남은 방 설정만으로 봄
@@ -51,7 +51,7 @@ test("A08-F-059 판 뒤 로비 → 게임 설정 화면 → 지난 판 설정이
   await K.renderAt("/game-setup", K.h(GameSetupPage), { shell: false })
   await K.flush()
   assert.equal(stepperValue("최대 플레이어 수"), 10)
-  assert.equal(stepperValue("광대(마피아) 플레이어 수"), 2)
+  assert.equal(stepperValue("광대(마피아) 플레이어 수"), 1)
   // 로비 입장 정리를 서버에 알림 (지난 대기방 자리 지움)
   assert.equal(sock.sentOf("enter_lobby").length, 1)
 })
@@ -67,7 +67,7 @@ test("A08-F-060 6명 판: 판 끝 알림만 와도 대기방 화면 안 열림, 
   const endPayload = {
     gameId: g.gameId, phase: "ENDED", dayIndex: 1,
     players: g.seats.map((s) => ({ uuid: s.uuid, isAlive: s.alive })),
-    victimUuid: g.seats[4].uuid, deathReveals: [{ victimUuid: g.seats[4].uuid, source: "JOKER" }], doctorSaved: false,
+    victimUuid: g.seats[4].uuid, deathReveals: [{ victimUuid: g.seats[4].uuid, source: "JOKER" }],
     winResult: K.winResultOf(g.seats, "JOKER", 1),
     resultClosesAt: Date.now() + 180_000,
   }

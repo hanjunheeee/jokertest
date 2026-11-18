@@ -98,7 +98,7 @@ for (const [no, role] of [["A05-F-175", "DOCTOR"], ["A05-F-176", "GUARD"], ["A05
     assert.equal(t.nightSubmits().length, 1, "첫 밤 보냄이 안 됨 (준비 잘못)")
     t.turnEnds(role)
     t.actionsResolved()
-    t.nightApplied({ victim: null, doctorSaved: role === "JOKER" })
+    t.nightApplied({ victim: null })
     t.dayToNight()
     t.turnStarts(role)
     const again = kit.nightMenuItem(view.container, kit.NICKS[3], role)

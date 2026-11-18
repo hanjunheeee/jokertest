@@ -165,11 +165,11 @@ test('A09-E-106 PC 8명 판, 보호를 고른 의사 봇이 60초(손잡이) 탈
     await dropAndExpire(t, doctor);
     await night.waitDead(t, K.U(doctor));
 
-    // 2일 낮: 지목된 사람은 살아 있고, 모두에게 "의사가 살려냈습니다" 글
+    // 2일 낮: 지목된 사람은 살아 있음, 밤 사이 의사 봇이 빠진 게 보였으니 "아무 일도" 글 창 없이 낮 안내 (사용자 결정 2026-11-18)
     const s = await night.toDay(t, { dayIndex: 2 });
     expect(K.rowOf(s, K.U(target)).alive, '보호받은 사람').toBe(true);
-    const report = page.locator('[data-ingame-dawn-report="SAVED"]');
-    await expectReadable(report.getByText('지난밤 의사가 공격받은 사람을 살려냈습니다'));
+    await expect(page.locator('[data-ingame-phase-entrance="DAY"]')).toBeAttached({ timeout: 20_000 });
+    await expect(page.locator('[data-ingame-dawn-report]')).toHaveCount(0);
     const rec = await night.readUi(page);
     expect(rec.dawnMessages.join(' '), '살해 글이 안 나옴').not.toContain('살해당했습니다');
     await expect(statusOf(page, target.nickname)).toHaveAttribute('data-ingame-player-status', 'alive');

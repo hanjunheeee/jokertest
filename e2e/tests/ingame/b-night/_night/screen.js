@@ -27,7 +27,7 @@ function josa(word, withFinal, withoutFinal) {
 /**
  * 화면 기록 걸기: 밤 역할 안내 창이 뜰 때마다 역할을, 내게만 오는 밤 결과 창·낮 시작 연출 글 창·암살 영상 아래 글이 뜰 때마다 종류·글을 적음, autoConfirm이면 '단계 전환 안내'는 바로 확인 누름
  * 밤에는 영상이 없음 (암살 영상은 낮이 될 때 모두에게) → kills·videos는 낮 시작 연출의 암살 영상 창이 뜬 수·튼 영상 파일
- * autoConfirmDawn이면 낮 시작 연출 글 창(의사가 살렸음 등)도 바로 확인 (그 창 글·보임을 볼 시험은 끄고 직접 확인)
+ * autoConfirmDawn이면 낮 시작 연출 글 창(아무 일도 일어나지 않았음 등)도 바로 확인 (그 창 글·보임을 볼 시험은 끄고 직접 확인)
  * (판 화면에 들어온 뒤 부름, SPA라 결과 화면까지 기록이 남음)
  */
 async function recordUi(page, { autoConfirm = true, autoConfirmDawn = false } = {}) {
@@ -48,11 +48,11 @@ async function recordUi(page, { autoConfirm = true, autoConfirmDawn = false } = 
             const priv = document.querySelector('[data-ingame-night-private-result]');
             if (priv && priv !== lastPrivate) rec.privateResults.push(priv.innerText.replace(/\s+/g, ' ').trim());
             lastPrivate = priv;
-            // 낮 시작 연출 글 창 종류 (SAVED·KILLED, 영상이 오류로 끝나 글 창으로 바뀐 때도 적힘)
+            // 낮 시작 연출 글 창 종류 (QUIET·KILLED, 영상이 오류로 끝나 글 창으로 바뀐 때도 적힘)
             const dawn = document.querySelector('[data-ingame-dawn-report]');
             if (dawn && dawn !== lastDawn) rec.dawnReports.push(dawn.getAttribute('data-ingame-dawn-report'));
             lastDawn = dawn;
-            // 의사가 살렸을 때 글 창은 '확인'을 눌러야 닫히고 그동안 '낮이 되었습니다'가 뒤에 밀림 → 원하면 같이 누름
+            // 아무도 안 죽은 밤 글 창은 '확인'을 눌러야 닫히고 그동안 '낮이 되었습니다'가 뒤에 밀림 → 원하면 같이 누름
             if (autoDawn && dawn) {
                 const btn = [...dawn.querySelectorAll('button')].find((b) => b.innerText.trim() === '확인');
                 if (btn) setTimeout(() => btn.click(), 50);

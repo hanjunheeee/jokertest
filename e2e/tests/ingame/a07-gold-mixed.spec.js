@@ -59,12 +59,18 @@ async function botDo(bot, event, payload, what) {
 // 봇이 판에서 나가기 (산 채로 나가면 죽은 것으로 바뀌고 바로 승패 확인)
 const botLeave = (t, bot) => botDo(bot, 'leave_game_session', { gameId: t.gameId }, '봇 나가기');
 
-// 사람이 화면으로 낮 표: 그 사람 카드 메뉴 "투표하기" → 기권 단추가 꺼지면 서버가 받은 것 (막는 안내 창은 카드 메뉴 열기가 닫음)
+// 사람이 화면으로 낮 표: 그 사람 카드 메뉴 "투표하기" → 다시 연 메뉴가 "투표취소"면 서버가 받은 것 (막는 안내 창은 카드 메뉴 열기가 닫음)
+// 사람을 찍어도 기권 단추는 안 잠김 (기권으로 바꾸기 됨, 사용자 결정 2026-11-18) → 기권 단추로는 못 봄
 async function voteUi(page, nickname) {
     const menu = await N.openCardMenu(page, nickname);
     await menu.getByRole('menuitem', { name: '투표하기' }).click();
     await expect(menu).toBeHidden();
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    await expect(async () => {
+        const again = await N.openCardMenu(page, nickname);
+        await expect(again.getByRole('menuitem', { name: '투표취소', exact: true })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
 }
 
 // 낮 투표 단계에서 한 사람 처형: 사람 몇은 화면으로·산 봇은 소켓으로 그 사람을 찍음 → 마감(손잡이) → 재판에서 산 봇 전원 유죄 → 마감 → 죽을 때까지

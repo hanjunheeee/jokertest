@@ -33,7 +33,7 @@ async function closeNotices(page, { names = ['단계 전환 안내', '밤 역할
     return closed;
 }
 
-/** 낮 시작 연출 글 창('의사가 살려냈습니다' 등) 뜨면 확인 (모두가 보는 창, 이름이 다른 양피지 창과 같아 표시로 찾음) */
+/** 낮 시작 연출 글 창('지난밤 아무 일도 일어나지 않았습니다' 등) 뜨면 확인 (모두가 보는 창, 이름이 다른 양피지 창과 같아 표시로 찾음) */
 async function closeDawnReport(page) {
     const report = page.locator('[data-ingame-dawn-report]');
     // 감싼 div는 크기가 없어 isVisible이 늘 거짓 → 개수로 봄

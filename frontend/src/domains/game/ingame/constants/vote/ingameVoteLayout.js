@@ -65,6 +65,12 @@ export const STATUS_UNRESOLVED_WRAP_CLASS =
 export const STATUS_UNRESOLVED_CLASS =
   "text-center font-subheading text-[clamp(1.2rem,4.2cqi,1.5rem)] font-bold text-[#e0c9a3] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
+// 투표 중 "집계 전" 아래 진행 수 줄 ("3 / 5명 투표함", 2026-11-18)
+export const STATUS_UNRESOLVED_STACK_CLASS = "flex flex-col items-center gap-2"
+
+export const STATUS_PROGRESS_CLASS =
+  "text-center font-subheading text-[clamp(1.08rem,3.75cqi,1.32rem)] font-semibold tracking-wide text-[#f8ead2] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+
 // 투표 목록 줄 안쪽·프로필 칸
 export const ROW_INNER_CLASS =
   "flex min-w-0 items-center gap-[clamp(0.27rem,1.12cqi,0.42rem)] rounded-sm border border-[#3a2818]/70 bg-[#120a06]/45 px-[clamp(0.27rem,1.12cqi,0.42rem)] py-[clamp(0.24rem,0.82cqi,0.36rem)] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"

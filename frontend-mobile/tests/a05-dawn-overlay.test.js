@@ -39,20 +39,24 @@ test("A05-M-501 [버그 5] 죽음 연출은 영상 + 글 (6명): KILLED → 암�
     assert.ok(msg.includes(`지난밤 ${NAMES[2]}님이 살해당했습니다`), `글: ${msg}`)
 })
 
-test("A05-M-502 살림 연출은 글 창 (7명): SAVED → 살림 글 창, 영상 없음", async () => {
+test("A05-M-502 아무도 안 죽은 밤(의사가 살렸든 광대가 안 죽였든)은 글 창 (7명): QUIET → '아무 일도' 글 창, 영상 없음", async () => {
     const socket = await nightPage(7)
-    await fire(socket, "night_result_applied", nextDay({ n: 7, doctorSaved: true, deadline: Date.now() + 60_000 }))
-    assert.ok(dawnBox("SAVED"), "살림 글 창이 없음")
-    assert.match(textOf(dawnBox("SAVED")), /살려/)
-    assert.ok(killVideo() === null, "살림인데 암살 영상이 뜸")
+    await fire(socket, "night_result_applied", nextDay({ n: 7, deadline: Date.now() + 60_000 }))
+    assert.ok(dawnBox("QUIET"), "아무 일 글 창이 없음")
+    assert.match(textOf(dawnBox("QUIET")), /지난밤 아무 일도 일어나지 않았습니다/)
+    assert.doesNotMatch(textOf(dawnBox("QUIET")), /살려|의사/)
+    assert.ok(killVideo() === null, "아무도 안 죽었는데 암살 영상이 뜸")
 })
 
-test("A05-M-503 아무 일 없으면 연출 없이 '낮이 되었습니다' (8명): 두 표시 없음, 낮 문구", async () => {
+test("A05-M-503 아무 일 없으면 '아무 일도' 글 창 → 확인 뒤 '낮이 되었습니다' (8명)", async () => {
     const socket = await nightPage(8)
     await fire(socket, "night_result_applied", nextDay({ n: 8, deadline: Date.now() + 60_000 }))
     assert.ok(killVideo() === null, "암살 영상이 뜸")
-    assert.ok(dawnBox() === null, "낮 시작 글 창이 뜸")
-    assert.ok(entranceText().includes("낮이 되었습니다"), `낮 문구가 없음: ${entranceText()}`)
+    assert.ok(dawnBox("QUIET"), "아무 일 글 창이 없음")
+    assert.ok(!entranceText().includes("낮이 되었습니다"), "글 창 중에 낮 문구가 먼저 뜸")
+    click(buttonNamed("확인", dawnBox("QUIET")))
+    await flush()
+    await waitUntil(() => entranceText().includes("낮이 되었습니다"), { label: "글 창 뒤 낮 문구" })
 })
 
 test("A05-M-504 연출 → '낮이 되었습니다' 차례 (6명): KILLED 연출 중 낮 문구 없음 → 닫은 뒤 낮 문구", async () => {
@@ -73,7 +77,6 @@ test("A05-M-505 [임시 9] 밤 암살로 판 끝 → 연출 뒤 결과 화면 (5
         players: Array.from({ length: 5 }, (_, i) => ({ uuid: uuidOf(i), isAlive: i !== 2 })),
         victimUuid: uuidOf(2),
         deathReveals: [{ victimUuid: uuidOf(2), source: "JOKER" }],
-        doctorSaved: false,
         winResult: { winner: "JOKER" },
         resultClosesAt: Date.now() + 180_000,
     })
@@ -83,7 +86,7 @@ test("A05-M-505 [임시 9] 밤 암살로 판 끝 → 연출 뒤 결과 화면 (5
     await waitUntil(() => router.state.location.pathname === "/gameresult", { label: "연출 뒤 결과 화면" })
 })
 
-test("A05-M-508 채팅 알림 줄 (7명): 죽음 → 채팅에 '지난밤 A님이 살해당했습니다' 줄 / 살림 → 살해 줄 없음", async () => {
+test("A05-M-508 채팅 알림 줄 (7명): 죽음 → 채팅에 '지난밤 A님이 살해당했습니다' 줄 / 아무도 안 죽음 → 살해 줄 없음", async () => {
     let socket = await nightPage(7)
     await fire(socket, "night_result_applied", nextDay({ n: 7, dead: [4], victim: 4, deadline: Date.now() + 60_000 }))
     await endKillVideo()
@@ -91,9 +94,9 @@ test("A05-M-508 채팅 알림 줄 (7명): 죽음 → 채팅에 '지난밤 A님�
     resetGame(view)
     view = null
     socket = await nightPage(7)
-    await fire(socket, "night_result_applied", nextDay({ n: 7, doctorSaved: true, deadline: Date.now() + 60_000 }))
-    const okBtn = dawnBox("SAVED") ? buttonNamed("확인", dawnBox("SAVED")) : null
+    await fire(socket, "night_result_applied", nextDay({ n: 7, deadline: Date.now() + 60_000 }))
+    const okBtn = dawnBox("QUIET") ? buttonNamed("확인", dawnBox("QUIET")) : null
     if (okBtn) click(okBtn)
     await flush()
-    assert.ok(!talkText().includes("살해당했습니다"), `살림인데 살해 줄이 있음: ${talkText()}`)
+    assert.ok(!talkText().includes("살해당했습니다"), `아무도 안 죽었는데 살해 줄이 있음: ${talkText()}`)
 })

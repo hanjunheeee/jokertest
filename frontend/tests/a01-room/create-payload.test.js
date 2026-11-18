@@ -125,7 +125,7 @@ test("A01-F-023 안 건드린 폼 → 처음 값 그대로 만들기 값", () =>
   assert.deepEqual(payloadOf(), {
     accessType: "open",
     maxPlayers: 10,
-    jokerCount: 2,
+    jokerCount: 1,
     dayDiscussionTime: 60,
     dayVoteTime: 60,
     nightActionTime: 90,

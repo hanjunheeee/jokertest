@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
-  GAME, buttonByName, click, dayPhaseChanged, dayResolved, deferred, fakeSocket, fire, firstDay, nextDay,
+  GAME, buttonByName, click, closeDawnReport, dayPhaseChanged, dayResolved, deferred, fakeSocket, fire, firstDay, nextDay,
   renderPage, resetAll, seat, useInGameStore,
 } from "./dayVoteHarness.mjs"
 
@@ -130,6 +130,7 @@ test("A03-F-100 ⑫ 2일 낮 → 1일 준비 기록 지워짐", async () => {
   await fire(socket, "day_phase_changed", dayPhaseChanged({ deadline: Date.now() + 30_000 }))
   await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
   await fire(socket, "night_result_applied", nextDay({ n: 6, deadline: Date.now() + 60_000 }))
+  await closeDawnReport()
   await click(buttonByName("확인"))
   assert.equal(state().dayIndex, 2)
   assert.equal(readyButton().textContent, "투표 시작 준비")

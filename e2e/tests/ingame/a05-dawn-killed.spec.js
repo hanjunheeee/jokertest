@@ -11,10 +11,10 @@ const n = require('./b-night/_night');
 // 화면에서 찾는 표시·글 (frontend/src/domains/game/ingame 코드에서 확인한 것)
 const KILL = '[data-ingame-night-success-kill]';
 const KILL_MESSAGE = '[data-ingame-dawn-report-message]';
-const SAVED = '[data-ingame-dawn-report="SAVED"]';
+const SAVED = '[data-ingame-dawn-report="QUIET"]';
 const DAWN_ANY = '[data-ingame-night-success-kill], [data-ingame-dawn-report]';
 const DAY_ENTRANCE = '[data-ingame-phase-entrance="DAY"]';
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const DAY_TEXT = '낮이 되었습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
 const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
@@ -280,7 +280,7 @@ test('A05-E-579 7명 판 죽음: 암살 영상이 먼저, 영상이 닫힌 뒤�
     expect(order).toEqual(['kill', 'kill:off', 'entrance']);
 });
 
-test('A05-E-580 7명 판 살림: "의사가 살려냈습니다" 창이 먼저, 확인으로 닫은 뒤에야 "낮이 되었습니다" @game', async ({ user, table }) => {
+test('A05-E-580 7명 판 살림: "아무 일도 일어나지 않았습니다" 창이 먼저, 확인으로 닫은 뒤에야 "낮이 되었습니다" @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 7 });
     await watch(g.page, { confirmBeforeDay: 2 });
     const target = g.citizens[0];
@@ -303,16 +303,20 @@ test('A05-E-580 7명 판 살림: "의사가 살려냈습니다" 창이 먼저, �
     expect(order).toEqual(['report', 'report:off', 'entrance']);
 });
 
-test('A05-E-581 7명 판 아무 일 없음: 연출 없이 바로 "낮이 되었습니다" @game', async ({ user, table }) => {
+test('A05-E-581 7명 판 아무 일 없음: "아무 일도 일어나지 않았습니다" 창이 먼저, 확인으로 닫은 뒤에야 "낮이 되었습니다" (의사가 살린 밤과 같은 창) @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 7 });
     await watch(g.page, { confirmBeforeDay: 2 });
     // 밤까지 간 뒤에 기다림을 걺 (1일 낮 안내 창을 2일 것으로 잘못 잡지 않게), 밤엔 아무도 안 고름
     await n.toTurn(g.t, 'JOKER', { dayIndex: 1 });
-    await Promise.all([n.toDay(g.t, { dayIndex: 2 }), appear(g.page, DAY_ENTRANCE)]);
+    await Promise.all([n.toDay(g.t, { dayIndex: 2 }), appear(g.page, SAVED)]);
+    const quiet = g.page.locator(SAVED);
+    await expectReadable(quiet.getByText(SAVED_TEXT, { exact: true }), { timeout: 5000 });
+    await expect(g.page.locator(DAY_ENTRANCE)).toHaveCount(0);
+    await quiet.getByRole('button', { name: '확인', exact: true }).click();
     await expectReadable(g.page.locator(DAY_ENTRANCE).getByText(DAY_TEXT), { timeout: 5000 });
     const log = await readWatch(g.page);
     expect(seen(log, 'kill')).toEqual([]);
-    expect(seen(log, 'report')).toEqual([]);
+    expect(seen(log, 'report').map((e) => e.value)).toEqual(['QUIET']);
     expect(seen(log, 'entrance', { value: 'DAY', day: dayBar(2) })).toHaveLength(1);
 });
 

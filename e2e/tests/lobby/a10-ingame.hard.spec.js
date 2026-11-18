@@ -56,11 +56,18 @@ async function lobbyBouncesToGame(page) {
     await expect(page).toHaveURL(/\/ingame/, { timeout: 15_000 });
 }
 
-/** 낮 투표 단계에서 화면 카드 메뉴로 그 사람에게 투표 → 서버가 받음 ("기권" 단추가 꺼짐) */
+/** 낮 투표 단계에서 화면 카드 메뉴로 그 사람에게 투표 → 서버가 받음 (다시 연 그 카드 메뉴가 "투표취소")
+ * 사람을 찍어도 기권 단추는 안 잠김 (기권으로 바꾸기 됨, 사용자 결정 2026-11-18) */
 async function voteUi(page, targetNickname) {
     const menu = await N.openCardMenu(page, targetNickname);
     await A5.menuItem(menu, '투표하기').click();
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    await expect(menu).toBeHidden();
+    await expect(async () => {
+        const again = await N.openCardMenu(page, targetNickname);
+        await expect(again.getByRole('menuitem', { name: '투표취소', exact: true })).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 15_000 });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu', { name: '플레이어 행동' })).toBeHidden();
 }
 
 /** 광대 봇이 첫 밤에 그 사람을 암살 → 죽을 때까지 */

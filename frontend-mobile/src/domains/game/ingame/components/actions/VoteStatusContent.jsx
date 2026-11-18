@@ -7,18 +7,9 @@ import {
   STATUS_UNRESOLVED_CLASS,
   STATUS_UNRESOLVED_WRAP_CLASS,
 } from "@/domains/game/ingame/constants/vote/ingameVoteLayout.js"
+// 결과 값 → 짧은 글은 데스크톱과 같은 표 (모바일은 까닭 글을 아직 안 띄움)
+import { DAY_VOTE_OUTCOME_TEXTS } from "@/domains/game/ingame/constants/vote/ingameVoteOutcomes.js"
 import Row from "./VoteStatusRow.jsx"
-
-// 결과 값 → 화면 글 (데스크톱 화면 파일 안 글이라 import 못 함 → 같은 글 둠)
-const OUTCOME_LABELS = Object.freeze({
-  TRIBUNAL: "재판 회부",
-  TIE: "동점",
-  // 기권이 최다 득표 이상이라 재판 없이 밤 (2026-11-16 규칙)
-  ABSTAIN_MAJORITY: "기권이 많아 재판 없음",
-  ABSTAINED: "전원 기권",
-  // 뽑힌 사람이 그 순간 끊겨 있어 재판 없이 밤 (글이 없으면 영어 값이 그대로 보여서 넣음)
-  DEFENDANT_DISCONNECTED: "재판 대상의 연결이 끊겨 재판 없음",
-})
 
 const UNRESOLVED_LABEL = "집계 전"
 
@@ -51,7 +42,7 @@ export default function VoteStatusContent({ nameOf }) {
           {/* 값이 산 사람 수(기권 포함)라 "득표" 대신 "투표 가능"으로 씀 (사용자 결정 2026-11-17, PC와 같은 글) */}
           <Row term="투표 가능" value={publicVoteCount ?? "-"} testId="vote-status-public-vote-count" />
           <Row term="기권" value={publicAbstainCount ?? "-"} testId="vote-status-public-abstain-count" />
-          <Row term="결과" value={outcome === null ? "-" : (OUTCOME_LABELS[outcome] ?? outcome)} testId="vote-status-outcome" />
+          <Row term="결과" value={outcome === null ? "-" : (DAY_VOTE_OUTCOME_TEXTS[outcome]?.label ?? outcome)} testId="vote-status-outcome" />
           <Row term="재판 대상" value={targetName} testId="vote-status-tribunal-target" />
         </dl>
       </div>

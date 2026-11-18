@@ -2,6 +2,7 @@
 // 낮 단계 바뀜 + 투표 결과 방송 내용·낮 마감 시각 칸, 상태 안 바꿈 (확정은 resolve.js)
 // socket 쪽 방송이랑 스냅샷이 사용
 const { getDayPhase, getDayVoteRound, getResolutionRound } = require('./state')
+const { buildPublicProgress } = require('../../snapshot/progress')
 
 // 낮 마감 시각 칸: 낮일 때만 실음 (값은 socket 낮 타이머가 적어 둠)
 function buildPublicDayPhaseDeadlineField(session) {
@@ -12,7 +13,8 @@ function buildPublicDayPhaseDeadlineField(session) {
     return { dayPhaseDeadline: deadline }
 }
 
-// 낮 단계 바뀜 방송 내용
+// 낮 단계 바뀜 방송 내용 (부르는 세 곳 모두 투표로 넘어간 바로 뒤)
+// 진행 수 칸(낸 사람 0명/산 사람 수, 숫자만): 화면이 지난 날 숫자 대신 이 값으로 "0 / N명 투표함"부터 그림 (사용자 결정 2026-11-18)
 function buildDayPhaseChangedPayload(session) {
     return {
         gameId: session.id,
@@ -20,6 +22,7 @@ function buildDayPhaseChangedPayload(session) {
         dayPhase: getDayPhase(session),
         round: getDayVoteRound(session),
         ...buildPublicDayPhaseDeadlineField(session),
+        progress: buildPublicProgress(session),
     }
 }
 

@@ -328,7 +328,7 @@ test('A05-B-662 8명 광대 2: A·B로 다 고름(5초 시작) → B를 고른 �
     assert.equal(dawnOf(ctx, b).victimUuid, a);
 });
 
-test('A05-B-663 7명: 광대 → A, 의사 → B 뒤 3초째 A로 → doctorSaved 참, 희생자 없음', (t) => {
+test('A05-B-663 7명: 광대 → A, 의사 → B 뒤 3초째 A로 → doctorSaved 칸 없음, 희생자 없음', (t) => {
     const { ctx } = roleTurn(t, { id: 'b663', role: 'JOKER', n: 7 });
     const doctor = one(ctx, 'DOCTOR');
     const [a, b] = citizens(ctx);
@@ -341,7 +341,7 @@ test('A05-B-663 7명: 광대 → A, 의사 → B 뒤 3초째 A로 → doctorSave
     assertClosesAt(ctx, 'DOCTOR', pickedAt + 5_000);
     runOutNight(ctx);
     const dawn = dawnOf(ctx, b);
-    assert.equal(dawn.doctorSaved, true);
+    assert.equal(Object.hasOwn(dawn, 'doctorSaved'), false);
     assert.equal(dawn.victimUuid, null);
 });
 

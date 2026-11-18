@@ -265,12 +265,12 @@ test('A08-E-065 6명 판: 사람은 결과 화면 그대로, 봇 5가 둘째 판
     expect((await t2.state())?.players.map((p) => p.uuid)).not.toContain(me);
 });
 
-test('A08-E-072 5명 판(정원 7·광대 1) 뒤 "로비로" → 게임 설정 화면은 지난 판 값이 아니라 처음 값(정원 10·광대 2) @game', async ({ user, table }) => {
+test('A08-E-072 5명 판(정원 7·광대 1) 뒤 "로비로" → 게임 설정 화면은 지난 판 값이 아니라 처음 값(정원 10·광대 1) @game', async ({ user, table }) => {
     const page = user.page;
     const t = await table.setup({
         humans: [user],
         bots: 4,
-        // 광대는 처음 값(2)과 다른 1로 둠 → 지난 판 값이 남았는지 광대 칸으로도 가려짐
+        // 광대 1은 처음 값(1)과 같음 → 지난 판 값이 남았는지는 정원·토론 시간 칸으로 가려짐 (광대 처음 값 1, 사용자 결정 2026-11-18)
         settings: { maxPlayers: 7, jokerCount: 1 },
         roles: ({ humans, bots }) => ({ [U(humans[0])]: 'CITIZEN', [U(bots[3])]: 'JOKER' }),
     });
@@ -296,8 +296,8 @@ test('A08-E-072 5명 판(정원 7·광대 1) 뒤 "로비로" → 게임 설정 �
     await selectTab(page, '일반');
     // 지난 판 정원 7이 아니라 처음 값 10
     expect(parseInt(await stepperValue(page, '최대 플레이어 수'), 10)).toBe(10);
-    // 광대 수도 지난 판 1이 아니라 처음 값 2 (설정 화면 gameSetupOptions.js의 처음 값)
-    expect(parseInt(await stepperValue(page, '광대(마피아) 플레이어 수'), 10)).toBe(2);
+    // 광대 수는 처음 값 1 (설정 화면 gameSetupOptions.js의 처음 값)
+    expect(parseInt(await stepperValue(page, '광대(마피아) 플레이어 수'), 10)).toBe(1);
     await expect(page.getByRole('checkbox', { name: '코드로만 참가', exact: true })).toHaveAttribute('aria-checked', 'false');
     // 시간도 지난 판(토론 30초)이 아니라 처음 값 60초
     await selectTab(page, '회의&투표');

@@ -50,16 +50,17 @@ export function selectItem(r, { targetId, kind, generation, closeMenu, bumpPendi
   // 한 번 고르면 메뉴 닫거나 대기 버릴 때까지 잠금 (두 번 누르기 막기)
   r.lockRef.current = true
 
-  // 재판 투표·투표 취소·밤 행동 취소: 바로 보내고 닫음
+  // 재판 투표·투표 취소(표 거두기)·밤 행동 취소: 바로 보내고 닫음
   if (!isDayKind(kind) && !isNightKind(kind)) {
     consumeRequest(r)
     live.submitTribunalVote(target.vote)
     closeMenu()
     return
   }
+  // 투표취소 = 표 거두기 (기권 표가 아니라 안 낸 사람으로 돌아감, 사용자 결정 2026-11-18)
   if (kind === KINDS.DAY_VOTE_CANCEL) {
     consumeRequest(r)
-    live.abstainDayVote?.()
+    live.withdrawDayVote?.()
     closeMenu()
     return
   }

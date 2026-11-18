@@ -7,8 +7,14 @@ const { expectReadable } = require('../../helpers/visible');
 const { sleep } = require('../../helpers/wait');
 const L = require('./a-day/_lib');
 
-// 결과 값 → 현황 창 글 (화면 InGameVoteStatusContent.jsx 글)
+// 결과 값 → 현황 창 글 (화면 constants/vote/ingameVoteOutcomes.js 글)
 const OUTCOME_LABEL = Object.freeze({ TRIBUNAL: '재판 회부', TIE: '동점', ABSTAIN_MAJORITY: '기권이 많아 재판 없음', ABSTAINED: '전원 기권' });
+// 재판 없이 밤이면 "밤이 되었습니다" 아래 뜨는 까닭 줄 (사용자 결정 2026-11-18)
+const NIGHT_REASON = Object.freeze({
+    TIE: '최다 득표가 동점이라 재판이 열리지 않았습니다',
+    ABSTAIN_MAJORITY: '기권이 많아 재판이 열리지 않았습니다',
+    ABSTAINED: '모두 기권하여 재판이 열리지 않았습니다',
+});
 
 const U = (x) => x.account.uuid;
 // uuid → 닉네임 (사람·봇 둘 다 account에 있음)
@@ -135,6 +141,8 @@ async function expectStatus(page, outcome, { abstain, target } = {}) {
 
 // 재판 없이 밤: "밤이 되었습니다" 창 → 재판 창 없음 → 현황 창 결과 글
 async function expectNight(page, outcome, opts = {}) {
+    // 밤 안내 아래 까닭 줄 (투표 현황 창을 안 열어도 왜 밤인지 보임)
+    await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toContainText(NIGHT_REASON[outcome], { timeout: 20000 });
     await L.closeNotice(page, '밤이 되었습니다');
     await expect(page.getByRole('dialog', { name: '재판' })).toHaveCount(0);
     await expectStatus(page, outcome, opts);
@@ -474,7 +482,7 @@ test('A03-E-114 PC 6명 판 5초 중 사람이 채팅 → 채팅 칸에 보임 @
     expect(resolved.outcome).toBe('TIE');
 });
 
-test('A03-E-115 PC 6명 판 5초 중 현황 창 → "집계 전" @game @realtime', async ({ user, table }) => {
+test('A03-E-115 PC 6명 판 5초 중 현황 창 → "집계 전"·"6 / 6명 투표함" @game @realtime', async ({ user, table }) => {
     const t = await openTable(table, user, 6);
     const me = U(user);
     const { plan } = tie(t, me, [3, 3, 0]);
@@ -487,6 +495,8 @@ test('A03-E-115 PC 6명 판 5초 중 현황 창 → "집계 전" @game @realtime
     const unresolved = status.getByTestId('vote-status-unresolved');
     await expect(unresolved).toHaveText('집계 전');
     await expectReadable(unresolved, { timeout: 3000 });
+    // 다 냈으니 낸 사람 수도 다 참 (2026-11-18)
+    await expect(status.getByTestId('vote-status-progress')).toHaveText('6 / 6명 투표함');
     // 본 때가 판정 전이었는지 (판정 알림이 아직 안 옴)
     expect(t.bots[0].events.some((r) => r.event === 'day_vote_resolved' && r.at >= since), '이미 판정됨').toBe(false);
     const resolved = await expectResolvedAfter5s(t, { since, filledAt });

@@ -237,6 +237,15 @@ export async function click(element) {
   await flush()
 }
 
+// 희생자 없는 밤 뒤 낮 시작 글 창("지난밤 아무 일도 일어나지 않았습니다") 떠 있으면 "확인" (닫아야 "낮이 되었습니다"가 뜸, 2026-11-18)
+export async function closeDawnReport() {
+  const report = document.querySelector("[data-ingame-dawn-report]")
+  if (!report) return
+  const scope = report.closest("[role=dialog]") ?? report
+  const confirm = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === "확인")
+  if (confirm) await click(confirm)
+}
+
 // 키보드: Tab으로 닿는지 보고 초점 → Enter (진짜 단추면 브라우저처럼 누름으로 이어짐)
 export function isTabReachable(element) {
   if (!element) return false
@@ -284,7 +293,6 @@ export const nextDay = ({ n, dayIndex = 2, dead = [], deadline, gameId = GAME } 
   players: Array.from({ length: n }, (_, i) => ({ uuid: uuidOf(i), alive: !dead.includes(i) })),
   victimUuid: null,
   deathReveals: [],
-  doctorSaved: false,
   ...(deadline !== undefined ? { dayPhaseDeadline: deadline } : {}),
 })
 

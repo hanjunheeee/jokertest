@@ -113,12 +113,13 @@ test('A10-B-192 8명 판 방장 A 처형 → A 로비 → 판 끝 뒤 다시 연
     const w = makeWorld(t);
     const g = await w.openGame({ prefix: 'b192', n: 8 });
     const a = g.host;
-    const next = g.uuids[1];
+    // 다음 사람 = A 빼고 맨 앞자리 사람 (판 중 방장 넘김 규칙, 자리는 판 시작 때 섞임)
+    const next = [...w.session(g.gameId).players.keys()].find((u) => u !== a);
     await kill(w, g, a, 'exec');
     await w.lobby(a);
     await w.voteOut(g, g.joker);
     assert.equal(w.phaseOf(g.gameId), 'ENDED', '준비: 판이 안 끝남');
-    const back = await w.returnToRoom(g.uuids[2], g.gameId);
+    const back = await w.returnToRoom(g.uuids.find((u) => u !== a && u !== next), g.gameId);
     assert.equal(back.ok, true);
     assert.equal(back.room.reservedHostUuid, next);
 });

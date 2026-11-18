@@ -1,4 +1,4 @@
-// 구석 행동 패널: 투표 현황 열기·낮 투표 기권·밤 건너뛰기 그림 버튼, 그 위에 거절 까닭 글
+// 구석 행동 패널: 투표 현황 열기·낮 투표 기권(찍은 뒤에도 기권으로 바꾸기 됨)·밤 건너뛰기 그림 버튼, 그 위에 거절 까닭 글
 // 인게임 화면이 사용, 버튼 상태·동작은 조작 컨텍스트(InGameActionContext)에서 꺼냄
 import { useContext } from "react"
 import { InGameActionContext } from "../../context/InGameActionContext.jsx"
@@ -35,8 +35,10 @@ export default function InGameCornerActionPanel({ onVoteStatusClick }) {
   // 보일 버튼도 글도 없으면 빈 패널 안 남김
   if (!showVoteStatus && !showAbstain && !showSkip && !noticeText) return null
 
-  // 이미 냈거나 보내는 중·잠김이면 기권·건너뛰기 막기
+  // 기권: 이미 기권했거나 보내는 중·잠김이면 막기 (사람을 찍은 뒤엔 눌려 기권으로 바꿈, 사용자 결정 2026-11-18)
+  // 건너뛰기: 이미 냈거나 보내는 중·잠김이면 막기
   // 두 버튼엔 단계 행동 표시(PHASE_ACTION_ATTR)를 달아 시험이 찾음
+  // 이미 기권했으면 꺼진 단추에 마우스를 올릴 때 까닭 글 "이미 기권했습니다"
   return (
     <div className={PANEL_CLASS} aria-label="투표·행동">
       {noticeText ? (
@@ -58,10 +60,11 @@ export default function InGameCornerActionPanel({ onVoteStatusClick }) {
           {...{ [PHASE_ACTION_ATTR]: "dayVoteAbstain" }}
           src={INGAME_CORNER_ACTION_ASSETS.abstain}
           label="기권"
+          title={ctx.dayVoteAbstained ? "이미 기권했습니다" : undefined}
           disabled={
             !ctx.dayVoteControlsEnabled
             || ctx.dayVoteStatus === "submitting"
-            || ctx.dayVoteHasSubmitted === true
+            || ctx.dayVoteAbstained
           }
           onClick={ctx.abstainDayVote}
         />

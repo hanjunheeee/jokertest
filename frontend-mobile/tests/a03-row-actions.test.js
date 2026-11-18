@@ -1,11 +1,11 @@
-// 모바일 행동 줄 시험: "낮 집계" 단추 없음, 5초 동안 기권 켜짐, 죽은 사람에겐 표·기권·준비 단추 없음
-// 목록 A03 모바일 A03-M-007~010 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-row-actions.test.js)
+// 모바일 행동 줄 시험: "낮 집계" 단추 없음, 5초 동안 기권 켜짐, 죽은 사람에겐 표·기권·준비 단추 없음, 낸 표에 따른 기권 단추
+// 목록 A03 모바일 A03-M-007~010·014 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-row-actions.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { click, flush, pageText } from "./a00-kit.mjs"
-import { fakeSocket, fire, renderPage, resetGame, rowButtons, seat, settle, sheetItems, stripSlot } from "./a00-game.mjs"
+import { fakeSocket, fire, renderPage, resetGame, rowButtons, seat, settle, sheetItems, stripSlot, uuidOf } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -53,4 +53,16 @@ test("A03-M-010 토론 준비 단추: 산 사람 토론 → '투표 시작 준�
     view = null
     await dayPage({ dayPhase: "DAY_DISCUSSION", dead: true })
     assert.ok(!rowNames().includes("투표 시작 준비"), `죽은 사람 행동 줄에 준비 단추가 있음: ${JSON.stringify(rowButtons())}`)
+})
+
+// 기권 단추는 PC 구석 패널과 같음: 사람을 찍은 뒤에도 눌려 기권으로 바꿈, 이미 기권했으면 꺼짐 (사용자 결정 2026-11-18)
+test("A03-M-014 낸 표에 따른 기권 단추: 2번을 찍음 → 켜짐, 이미 기권 → 꺼짐", async () => {
+    seat({ n: 6, phase: "DAY", dayPhase: "DAY_VOTE", self: { hasSubmittedDayVote: true, dayVoteTargetUuid: uuidOf(2) } })
+    view = await renderPage(fakeSocket())
+    assert.equal(rowButtons().find((b) => b.name === "기권")?.enabled, true, "사람을 찍은 뒤 기권이 꺼짐")
+    resetGame(view)
+    view = null
+    seat({ n: 6, phase: "DAY", dayPhase: "DAY_VOTE", self: { hasSubmittedDayVote: true, dayVoteTargetUuid: null } })
+    view = await renderPage(fakeSocket())
+    assert.equal(rowButtons().find((b) => b.name === "기권")?.enabled, false, "이미 기권했는데 기권이 켜짐")
 })

@@ -51,12 +51,12 @@ test("N-M-002 모바일 결과판: 8명 판 시민 직업 줄 3개 → 직업 �
     assert.equal(rows.filter((li) => textOf(li).includes("시민")).length, 0, "줄에 \"시민\" 글이 보임")
 })
 
-test("N-M-003 모바일 방 만들기 직접 지정(정원 10·처음 값 광대 2) → \"귀족: 8명 (자동 계산)\"과 \"귀족 수는 …\" 안내 글", () => {
+test("N-M-003 모바일 방 만들기 직접 지정(정원 10·처음 값 광대 1) → \"귀족: 9명 (자동 계산)\"과 \"귀족 수는 …\" 안내 글", () => {
     view = render(React.createElement(SetupPanel, { isCreating: false, onCreateGame: () => {} }))
     click(buttonNamed("역할 구성 증가"))
     const text = pageText()
     assert.ok(text.includes("직접 지정"), "직접 지정으로 안 바뀜")
-    assert.ok(text.includes("귀족: 8명 (자동 계산)"), `요약 글이 다름: ${text}`)
+    assert.ok(text.includes("귀족: 9명 (자동 계산)"), `요약 글이 다름: ${text}`)
     assert.ok(text.includes("귀족 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다."), "안내 글이 다름")
     assert.ok(!text.includes("시민:") && !text.includes("시민 수는"), "직업 이름이 \"시민\"으로 보임")
 })

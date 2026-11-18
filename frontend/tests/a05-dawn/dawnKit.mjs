@@ -85,7 +85,8 @@ export const NIGHT_ACTION_LABELS = { JOKER: "암살", DOCTOR: "보호", GUARD: "
 // 결과 화면 자리 (이동했는지 글로 확인)
 export const RESULT_PAGE_TEXT = "결과 화면 (시험 자리)"
 // 화면 글 두 가지
-export const SAVED_TEXT = "지난밤 의사가 공격받은 사람을 살려냈습니다"
+// 아무도 안 죽은 밤 글 (의사가 살렸든 광대가 안 죽였든 같음, 사용자 결정 2026-11-18)
+export const QUIET_TEXT = "지난밤 아무 일도 일어나지 않았습니다"
 export const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`
 export const DAY_ENTRANCE_TEXT = "낮이 되었습니다"
 
@@ -274,14 +275,15 @@ function attach(g) {
     g.say("night_action_result", { gameId: g.gameId, dayIndex, ...fields })
 
   // 밤 결과 값 (서버 buildNightResultAppliedPayload 모양) — victim: 이번 밤에 죽은 자리, ended: 이긴 쪽("JOKER"·"CITIZEN")
+  // saved: 의사가 살린 밤이라는 시험 뜻만 (서버는 2026-11-18부터 의사 살림 칸을 안 보냄 → 값은 광대가 안 죽인 밤과 같음)
   g.nightResultPayload = ({ victim = null, saved = false, ended = null, gameId = g.gameId, dayIndex } = {}) => {
+    void saved
     const victimUuid = victim === null ? null : g.uuid(victim)
     const aliveAfter = (s) => s.alive && s.uuid !== victimUuid
     const base = {
       gameId,
       victimUuid,
       deathReveals: victimUuid ? [{ victimUuid, source: "JOKER" }] : [],
-      doctorSaved: saved,
     }
     if (ended) {
       return {

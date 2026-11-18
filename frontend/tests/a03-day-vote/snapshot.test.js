@@ -62,9 +62,10 @@ test("A03-F-082 ⑥ 당긴 dayPhaseDeadline 스냅샷 → 남은 시간 짧음(�
   assert.ok(pulled - Date.now() <= 3_000)
 })
 
-test("A03-F-083 ⑦ hasSubmittedDayVote + 대상 → 낸 표시(기권 꺼짐·그 카드에 투표취소)", async () => {
+// 사람을 찍은 뒤엔 기권으로 바꿀 수 있어 기권 단추가 켜짐 (사용자 결정 2026-11-18, 전엔 꺼짐)
+test("A03-F-083 ⑦ hasSubmittedDayVote + 대상 → 낸 표시(기권 켜짐·그 카드에 투표취소)", async () => {
   await refreshWith(snapshot({ extra: { dayPhaseDeadline: Date.now() + 30_000 }, self: { hasSubmittedDayVote: true, dayVoteTargetUuid: uuidOf(3), dayVoteRound: 1 } }))
-  assert.equal(abstainButton()?.disabled, true)
+  assert.equal(abstainButton()?.disabled, false)
   const items = await readCardMenu(3)
   assert.deepEqual(items.map((i) => i.name), ["투표취소"])
 })

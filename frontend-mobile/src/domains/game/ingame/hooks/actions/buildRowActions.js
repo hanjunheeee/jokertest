@@ -23,9 +23,10 @@ export function buildCornerActions(ctx, openVoteStatus) {
   const actions = [entry(null, "투표 현황", true, openVoteStatus, "voteStatus")]
   // 죽은 사람은 표를 못 내니 기권도 안 그림 (데스크톱과 같음)
   if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE" && ctx.selfAliveForControls !== false) {
+    // 사람을 찍은 뒤에도 눌려 기권으로 바꿈, 이미 기권했으면 꺼짐 (사용자 결정 2026-11-18)
     const disabled = !ctx.dayVoteControlsEnabled
       || ctx.dayVoteStatus === "submitting"
-      || ctx.dayVoteHasSubmitted === true
+      || ctx.dayVoteAbstained
     actions.push(entry(ROW_ACTIONS.DAY_VOTE_ABSTAIN, "기권", !disabled, ctx.abstainDayVote, "abstain"))
   }
   // 죽은 사람은 못 고르니 건너뛰기를 안 그림 (데스크톱과 같음)

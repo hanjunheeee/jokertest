@@ -1,6 +1,10 @@
-// 낮 투표 제출 컨트롤러: 한 번에 하나만 보내고, 시간 초과·옛 응답을 걸러 상태를 정함
+// 낮 투표 제출 컨트롤러: 표 내기·거두기("투표취소")를 한 번에 하나만 보내고, 시간 초과·옛 응답을 걸러 상태를 정함
 // 낮 투표 훅(useInGameDayVoteSubmit)이 사용, 보내기 함수는 훅이 넘김 (socket/day.js)
-import { computeDayVoteSubmitPatch, INITIAL_DAY_VOTE_SUBMIT_STATE } from "./voteSubmitPatch.js"
+import {
+  computeDayVoteSubmitPatch,
+  computeDayVoteWithdrawPatch,
+  INITIAL_DAY_VOTE_SUBMIT_STATE,
+} from "./voteSubmitPatch.js"
 import { ACTION_DISCONNECTED_TEXT } from "../constants/actions/ingameActionPanel.js"
 
 // 응답 기다리는 시간 (넘으면 시간 초과 문구)
@@ -8,7 +12,9 @@ export const ACK_TIMEOUT_MS = 5000
 
 // 컨트롤러 만들기 (상태는 안에 들고, 바뀔 때마다 onStateChange로 알림)
 // isConnected: 지금 연결돼 있는지 묻는 함수 (안 주면 늘 연결된 것으로 봄)
-export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIMEOUT_MS, onStateChange, onAccepted, isConnected }) {
+export function createDayVoteSubmitController({
+  emitWithAck, emitWithdrawWithAck, timeoutMs = ACK_TIMEOUT_MS, onStateChange, onAccepted, isConnected,
+}) {
   let state = INITIAL_DAY_VOTE_SUBMIT_STATE
   let submitting = false
   let generation = 0
@@ -29,72 +35,86 @@ export function createDayVoteSubmitController({ emitWithAck, timeoutMs = ACK_TIM
     }
   }
 
+  // 표 낸 답이 받아들여졌고 효과음 봉투가 있을 때만 효과음 알림 (거두기는 효과음 없음, 2026-11-18 정함)
+  const notifyAccepted = (ackResult, requestScope) => {
+    if (ackResult?.ok !== true) return
+    const sfxEvent = ackResult.sfxEvent
+    if (sfxEvent === null || typeof sfxEvent !== "object") return
+    try {
+      onAccepted?.(sfxEvent, requestScope)
+    } catch {
+      // 효과음 알림 실패가 제출 결과 처리를 막지 않게 무시함
+    }
+  }
+
+  // 보내기 하나 (표 내기·거두기 같이 씀): 버렸거나 보내는 중이면 막기, 세대를 올려 이번 요청 응답만 받음
+  // emit: 보낼 함수(약속 돌려줌), toPatch: 응답 → 상태 조각, onFirstAnswer: 이번 요청 답을 처음 정했을 때 (표 내기만 효과음)
+  const send = (emit, toPatch, onFirstAnswer) => {
+    if (disposed) return
+    if (submitting) return
+
+    // 끊긴 채 누르면 안 보내고 끊김 글만 남김 (끊긴 소켓에 실으면 다시 붙을 때 옛 표가 나감), 전에 낸 표는 그대로
+    if (typeof isConnected === "function" && isConnected() !== true) {
+      setState({ ...state, status: "idle", error: { code: "SOCKET_DISCONNECTED", message: ACTION_DISCONNECTED_TEXT } })
+      return
+    }
+
+    submitting = true
+    generation += 1
+    const requestGeneration = generation
+    let settled = false
+
+    setState({ ...state, status: "submitting", error: null })
+
+    // 결과는 한 번만 정함: 이미 정했거나 버렸거나 더 새 요청이 있으면 무시
+    const settleOnce = (patch) => {
+      if (settled) return
+      if (disposed) return
+      if (requestGeneration !== generation) return
+      settled = true
+      clearActiveTimer()
+      submitting = false
+      setState(patch)
+    }
+
+    // 시간 초과면 실패로 정하고 전에 낸 표는 그대로 둠
+    activeTimer = setTimeout(() => {
+      settleOnce({
+        status: "idle",
+        error: { code: "ACK_TIMEOUT", message: "요청 시간이 초과되었습니다." },
+        hasSubmitted: state.hasSubmitted,
+        lastSubmittedTargetId: state.lastSubmittedTargetId,
+      })
+    }, timeoutMs)
+
+    // 응답을 상태 조각으로 정함, 이번에 처음 정했을 때만 onFirstAnswer
+    emit()
+      .then((ackResult) => {
+        const wasSettled = settled
+        settleOnce(toPatch(ackResult))
+        if (!wasSettled && settled) onFirstAnswer?.(ackResult)
+      })
+      .catch((ackResult) => {
+        settleOnce(toPatch(ackResult))
+      })
+  }
+
   return {
     getState() {
       return state
     },
 
-    // 투표 보내기: 버렸거나 보내는 중이면 막기, 세대를 올려 이번 요청 응답만 받음
+    // 투표 보내기 (기권은 targetId null)
     submit({ gameId, dayIndex, targetId }) {
-      if (disposed) return
-      if (submitting) return
+      send(() => emitWithAck({ gameId, dayIndex, targetId }),
+        (ackResult) => computeDayVoteSubmitPatch(state, ackResult, targetId),
+        (ackResult) => notifyAccepted(ackResult, { gameId, dayIndex }))
+    },
 
-      // 끊긴 채 누르면 안 보내고 끊김 글만 남김 (끊긴 소켓에 실으면 다시 붙을 때 옛 표가 나감), 전에 낸 표는 그대로
-      if (typeof isConnected === "function" && isConnected() !== true) {
-        setState({ ...state, status: "idle", error: { code: "SOCKET_DISCONNECTED", message: ACTION_DISCONNECTED_TEXT } })
-        return
-      }
-
-      submitting = true
-      generation += 1
-      const requestGeneration = generation
-      let settled = false
-
-      setState({ ...state, status: "submitting", error: null })
-
-      // 결과는 한 번만 정함: 이미 정했거나 버렸거나 더 새 요청이 있으면 무시
-      const settleOnce = (patch) => {
-        if (settled) return
-        if (disposed) return
-        if (requestGeneration !== generation) return
-        settled = true
-        clearActiveTimer()
-        submitting = false
-        setState(patch)
-      }
-
-      // 시간 초과면 실패로 정하고 전에 낸 표는 그대로 둠
-      activeTimer = setTimeout(() => {
-        settleOnce({
-          status: "idle",
-          error: { code: "ACK_TIMEOUT", message: "요청 시간이 초과되었습니다." },
-          hasSubmitted: state.hasSubmitted,
-          lastSubmittedTargetId: state.lastSubmittedTargetId,
-        })
-      }, timeoutMs)
-
-      // 받아들여졌고 효과음 봉투가 있을 때만 효과음 알림
-      const notifyAccepted = (ackResult) => {
-        if (ackResult?.ok !== true) return
-        const sfxEvent = ackResult.sfxEvent
-        if (sfxEvent === null || typeof sfxEvent !== "object") return
-        try {
-          onAccepted?.(sfxEvent, { gameId, dayIndex })
-        } catch {
-          // 효과음 알림 실패가 제출 결과 처리를 막지 않게 무시함
-        }
-      }
-
-      // 응답을 상태 조각으로 정함, 이번에 처음 정했을 때만 효과음 알림
-      emitWithAck({ gameId, dayIndex, targetId })
-        .then((ackResult) => {
-          const wasSettled = settled
-          settleOnce(computeDayVoteSubmitPatch(state, ackResult, targetId))
-          if (!wasSettled && settled) notifyAccepted(ackResult)
-        })
-        .catch((ackResult) => {
-          settleOnce(computeDayVoteSubmitPatch(state, ackResult, targetId))
-        })
+    // 낸 표 거두기 ("투표취소"): 받아들여지면 "안 낸" 상태로 (서버는 진행 수 1 줄임)
+    withdraw({ gameId }) {
+      send(() => emitWithdrawWithAck({ gameId }),
+        (ackResult) => computeDayVoteWithdrawPatch(state, ackResult))
     },
 
     // 판·연결이 바뀌면 보내던 요청 버리고 처음 상태로 되돌림

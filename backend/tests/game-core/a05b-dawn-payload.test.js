@@ -1,6 +1,6 @@
 'use strict';
 
-// A05b 낮 시작 공개 값 만들기 시험 — 밤 판정 뒤 모두에게 갈 희생자·사망 공개·doctorSaved 값을 판 규칙만으로 봄
+// A05b 낮 시작 공개 값 만들기 시험 — 밤 판정 뒤 모두에게 갈 희생자·사망 공개 값을 판 규칙만으로 봄 (doctorSaved 칸은 안 실림, 2026-11-18)
 // 목록 A05-B-501~531 (docs/게임_의도_2026-11-15/시험목록/A05b-밤-알림-낮연출.md B-1), 돌리기: node --test tests/game-core/a05b-dawn-payload.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -45,9 +45,7 @@ function runNight(s, picks = {}, { hold = [], after = {} } = {}) {
     const committed = core.commitNightResolution(prepared.session, prepared.resolution);
     assert.equal(committed.ok, true, `밤 확정 실패: ${committed.code}`);
     return core.buildNightResultAppliedPayload(
-        s, committed.victimUuid, prepared.resolution.publicDeathReveals,
-        { doctorSaved: prepared.resolution.doctorSaved === true },
-    );
+        s, committed.victimUuid, prepared.resolution.publicDeathReveals);
 }
 
 // 판 안에서 나가기 (화면의 게임 나가기와 같은 판 규칙 길)
@@ -76,7 +74,7 @@ function allKeys(value, out = new Set()) {
 
 // ---------- A05-B-501~506 광대가 A를 죽이고 아무도 못 살림 ----------
 for (const [no, n] of [[501, 5], [502, 6], [503, 7], [504, 8], [505, 9], [506, 10]]) {
-    test(`A05-B-${no} ${n}명 판: 광대가 A를 죽이고 못 살림 → 희생자 A, 사망 공개 [A·광대], doctorSaved 거짓`, () => {
+    test(`A05-B-${no} ${n}명 판: 광대가 A를 죽이고 못 살림 → 희생자 A, 사망 공개 [A·광대], doctorSaved 칸 없음`, () => {
         const s = nightGame({ id: `b${no}`, n });
         const [a, other] = citizens(s);
         const picks = { [gf.firstOf(s, 'JOKER')]: a };
@@ -86,120 +84,120 @@ for (const [no, n] of [[501, 5], [502, 6], [503, 7], [504, 8], [505, 9], [506, 1
         const payload = runNight(s, picks);
         assert.equal(payload.victimUuid, a);
         assert.deepEqual(payload.deathReveals, [{ victimUuid: a, source: 'JOKER' }]);
-        assert.equal(payload.doctorSaved, false);
+        assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
     });
 }
 
 // ---------- A05-B-507~511 의사가 광대 대상을 지킴 ----------
 for (const [no, n] of [[507, 6], [508, 7], [509, 8], [510, 9], [511, 10]]) {
-    test(`A05-B-${no} ${n}명 판: 의사가 광대 대상을 지킴 → 희생자 없음, 사망 공개 [], doctorSaved 참`, () => {
+    test(`A05-B-${no} ${n}명 판: 의사가 광대 대상을 지킴 → 희생자 없음, 사망 공개 [], doctorSaved 칸 없음`, () => {
         const s = nightGame({ id: `b${no}`, n });
         const [a] = citizens(s);
         const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: a, [gf.firstOf(s, 'DOCTOR')]: a });
         assert.equal(payload.victimUuid, null);
         assert.deepEqual(payload.deathReveals, []);
-        assert.equal(payload.doctorSaved, true);
+        assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
     });
 }
 
-test('A05-B-512 7명 판: 광대가 의사를 노리고 의사가 자기를 지킴 → 희생자 없음, doctorSaved 참', () => {
+test('A05-B-512 7명 판: 광대가 의사를 노리고 의사가 자기를 지킴 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b512', n: 7 });
     const doctor = gf.firstOf(s, 'DOCTOR');
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: doctor, [doctor]: doctor });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, true);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-513 8명 판 광대 2: 광대 둘이 다른 사람을 고름 → 희생자 없음, doctorSaved 거짓', () => {
+test('A05-B-513 8명 판 광대 2: 광대 둘이 다른 사람을 고름 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b513', n: 8, jokerCount: 2 });
     const [j1, j2] = gf.byRole(s, 'JOKER');
     const [a, b] = citizens(s);
     const payload = runNight(s, { [j1]: a, [j2]: b });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-514 8명 판 광대 2: 광대 둘 다른 대상 + 의사가 그중 하나를 지킴 → 희생자 없음, doctorSaved 거짓', () => {
+test('A05-B-514 8명 판 광대 2: 광대 둘 다른 대상 + 의사가 그중 하나를 지킴 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b514', n: 8, jokerCount: 2 });
     const [j1, j2] = gf.byRole(s, 'JOKER');
     const [a, b] = citizens(s);
     const payload = runNight(s, { [j1]: a, [j2]: b, [gf.firstOf(s, 'DOCTOR')]: a });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-515 6명 판: 광대가 건너뛰고 의사가 누군가 지킴 → 희생자 없음, doctorSaved 거짓', () => {
+test('A05-B-515 6명 판: 광대가 건너뛰고 의사가 누군가 지킴 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b515', n: 6 });
     const [a] = citizens(s);
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: null, [gf.firstOf(s, 'DOCTOR')]: a });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-516 7명 판: 광대가 안 내고 시간 끝(건너뛰기로 채움) + 의사가 지킴 → 희생자 없음, doctorSaved 거짓', () => {
+test('A05-B-516 7명 판: 광대가 안 내고 시간 끝(건너뛰기로 채움) + 의사가 지킴 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b516', n: 7 });
     const joker = gf.firstOf(s, 'JOKER');
     const [a] = citizens(s);
     const payload = runNight(s, { [joker]: a, [gf.firstOf(s, 'DOCTOR')]: a }, { hold: [joker] });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-517 10명 판 의사 2: 의사 둘이 다른 사람을 지킴 → 못 살림, 희생자 A, doctorSaved 거짓', () => {
+test('A05-B-517 10명 판 의사 2: 의사 둘이 다른 사람을 지킴 → 못 살림, 희생자 A, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b517', n: 10, roleCounts: { JOKER: 1, DOCTOR: 2 } });
     const [d1, d2] = gf.byRole(s, 'DOCTOR');
     const [a, b] = citizens(s);
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: a, [d1]: a, [d2]: b });
     assert.equal(payload.victimUuid, a);
     assert.deepEqual(payload.deathReveals, [{ victimUuid: a, source: 'JOKER' }]);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-518 10명 판 의사 2: 의사 둘이 광대 대상을 같이 지킴 → 희생자 없음, doctorSaved 참', () => {
+test('A05-B-518 10명 판 의사 2: 의사 둘이 광대 대상을 같이 지킴 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b518', n: 10, roleCounts: { JOKER: 1, DOCTOR: 2 } });
     const [d1, d2] = gf.byRole(s, 'DOCTOR');
     const [a] = citizens(s);
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: a, [d1]: a, [d2]: a });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, true);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-519 9명 판 의사 2: 의사1 건너뜀, 의사2가 광대 대상 지킴 → doctorSaved 참', () => {
+test('A05-B-519 9명 판 의사 2: 의사1 건너뜀, 의사2가 광대 대상 지킴 → doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b519', n: 9, roleCounts: { JOKER: 1, DOCTOR: 2 } });
     const [d1, d2] = gf.byRole(s, 'DOCTOR');
     const [a] = citizens(s);
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: a, [d1]: null, [d2]: a });
     assert.equal(payload.victimUuid, null);
-    assert.equal(payload.doctorSaved, true);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-520 8명 판 광대 2: 광대 둘이 같은 대상 + 의사가 그 사람을 지킴 → doctorSaved 참', () => {
+test('A05-B-520 8명 판 광대 2: 광대 둘이 같은 대상 + 의사가 그 사람을 지킴 → doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b520', n: 8, jokerCount: 2 });
     const [j1, j2] = gf.byRole(s, 'JOKER');
     const [a] = citizens(s);
     const payload = runNight(s, { [j1]: a, [j2]: a, [gf.firstOf(s, 'DOCTOR')]: a });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, true);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-521 7명 판: 광대 대상이 밤 끝나기 전에 나감 → 희생자 없음, doctorSaved 거짓', () => {
+test('A05-B-521 7명 판: 광대 대상이 밤 끝나기 전에 나감 → 희생자 없음, doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b521', n: 7 });
     const [a] = citizens(s);
     // 광대 차례가 닫힌 뒤(아직 밤) A가 나감
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: a }, { after: { JOKER: () => leave(s, a) } });
     assert.equal(payload.victimUuid, null);
     assert.deepEqual(payload.deathReveals, []);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
-test('A05-B-522 [지금 동작] 6명 판: 의사가 지킨 광대 대상이 밤 중 나감 → doctorSaved 거짓', () => {
+test('A05-B-522 [지금 동작] 6명 판: 의사가 지킨 광대 대상이 밤 중 나감 → doctorSaved 칸 없음', () => {
     const s = nightGame({ id: 'b522', n: 6 });
     const [a] = citizens(s);
     // 의사 차례까지 닫힌 뒤(아직 밤) A가 나감
@@ -208,7 +206,7 @@ test('A05-B-522 [지금 동작] 6명 판: 의사가 지킨 광대 대상이 밤 
         { [gf.firstOf(s, 'JOKER')]: a, [gf.firstOf(s, 'DOCTOR')]: a },
         { after: { DOCTOR: () => leave(s, a) } },
     );
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
 });
 
 // ---------- A05-B-523~528 공개 값에 직업이 안 실림 ----------
@@ -257,11 +255,27 @@ test('A05-B-530 10명 판 둘째 밤: 경비원 조사 대상 B·마녀사냥꾼
     assert.deepEqual(payload.players.find((p) => p.uuid === c), { uuid: c, alive: false });
 });
 
-test('A05-B-531 6명 판: 의사가 광대 대상 아닌 B를 지킴 → 희생자 A, doctorSaved 거짓, B는 대상으로 안 실림', () => {
+test('A05-B-531 6명 판: 의사가 광대 대상 아닌 B를 지킴 → 희생자 A, doctorSaved 칸 없음, B는 대상으로 안 실림', () => {
     const s = nightGame({ id: 'b531', n: 6 });
     const [a, b] = citizens(s);
     const payload = runNight(s, { [gf.firstOf(s, 'JOKER')]: a, [gf.firstOf(s, 'DOCTOR')]: b });
     assert.equal(payload.victimUuid, a);
-    assert.equal(payload.doctorSaved, false);
+    assert.equal(Object.hasOwn(payload, 'doctorSaved'), false);
     assert.equal(mentions(payload, b, ['players']), false);
+});
+
+// ---------- A05-B-705 아무도 안 죽은 밤은 의사가 살렸든 광대가 안 죽였든 같은 값 (사용자 결정 2026-11-18) ----------
+test('A05-B-705 7명 판: 의사가 살린 밤과 광대가 건너뛴 밤의 공개 값이 똑같음 (값으로도 못 가림)', () => {
+    // 같은 판 id·같은 사람 수로 두 번 차려 한 번은 의사가 살리고, 한 번은 광대가 건너뜀
+    const play = (jokerPick) => {
+        const s = nightGame({ id: 'b705', n: 7 });
+        const [a] = citizens(s);
+        return runNight(s, { [gf.firstOf(s, 'JOKER')]: jokerPick(a), [gf.firstOf(s, 'DOCTOR')]: a });
+    };
+    const saved = play((a) => a);
+    const skipped = play(() => null);
+    assert.equal(Object.hasOwn(saved, 'doctorSaved'), false);
+    // 판 id는 차릴 때마다 번호가 붙어 다르니 빼고 봄
+    const withoutGameId = ({ gameId, ...rest }) => rest;
+    assert.deepEqual(withoutGameId(saved), withoutGameId(skipped));
 });

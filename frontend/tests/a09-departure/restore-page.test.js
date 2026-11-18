@@ -54,13 +54,14 @@ test("A09-F-246 8명 판 의사 2명 중 하나가 다시 붙음 → 동료 의�
   assert.ok(text.includes(t.nick(5)), text)
 })
 
-test("A09-F-247 6명 판 3번에 표 낸 뒤 다시 붙음 → 기권 단추 꺼짐, 3번 카드엔 \"투표하기\" 대신 \"투표취소\"", async () => {
+// 사람을 찍은 뒤엔 기권으로 바꿀 수 있어 기권 단추가 켜짐 (사용자 결정 2026-11-18, 전엔 꺼짐)
+test("A09-F-247 6명 판 3번에 표 낸 뒤 다시 붙음 → 기권 단추 켜짐(기권으로 바꾸기 됨), 3번 카드엔 \"투표하기\" 대신 \"투표취소\"", async () => {
   const t = K.seat({ n: 6, me: 1, jokers: [0] })
   await reconnectPage(t, { self: { hasSubmittedDayVote: true, dayVoteTargetUuid: t.uuid(3), dayVoteRound: 1 } })
   await K.dismissOverlays()
   const abstain = document.querySelector('[data-ingame-phase-action="dayVoteAbstain"]')
   assert.ok(abstain !== null, "기권 단추 없음")
-  assert.equal(abstain.disabled, true)
+  assert.equal(abstain.disabled, false)
   const items = await K.cardMenuButtons(t.nick(3))
   assert.ok(items.some((i) => i.label === "투표취소"), JSON.stringify(items))
   assert.equal(items.some((i) => i.label === "투표하기"), false)

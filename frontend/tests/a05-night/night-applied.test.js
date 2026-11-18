@@ -30,7 +30,7 @@ test("A05-F-061 6명 암살 반영: 희생자 A 죽음, 산 사람 5, 단계 낮
 
 test("A05-F-062 6명 의사가 살림 반영(victimUuid null): 아무도 안 죽음", () => {
   const t = kit.openNight({ n: 6, me: 0, role: "CITIZEN" })
-  t.nightApplied({ victim: null, doctorSaved: true })
+  t.nightApplied({ victim: null }) // 의사가 살린 밤 (서버 값은 광대가 안 죽인 밤과 같음)
   assert.equal(aliveCount(t), 6)
   assert.equal(t.store().state.phase, "DAY")
 })

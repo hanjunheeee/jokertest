@@ -103,7 +103,8 @@ test('A09-E-044 PC 8명 판(직접 구성 의사 2), 새로고침 뒤 내 직업
     expect(K.roleOf(await t.state(), me)).toBe('DOCTOR');
 });
 
-test('A09-E-046 PC 6명 판, 표 낸 뒤 새로고침 → 내 표 표시 그대로 (찍은 카드에 "투표취소", 기권 단추 꺼짐) @game', async ({ user, table }) => {
+// 사람을 찍은 뒤엔 기권으로 바꿀 수 있어 기권 단추가 켜짐 (사용자 결정 2026-11-18, 전엔 꺼짐)
+test('A09-E-046 PC 6명 판, 표 낸 뒤 새로고침 → 내 표 표시 그대로 (찍은 카드에 "투표취소", 기권 단추 켜짐) @game', async ({ user, table }) => {
     const page = user.page;
     const t = await K.seat(table, user, { n: 6 });
     const target = K.botOf(t, await t.state(), 'CITIZEN');
@@ -111,7 +112,7 @@ test('A09-E-046 PC 6명 판, 표 낸 뒤 새로고침 → 내 표 표시 그대�
     await K.clear(page);
     await L.voteUi(page, target.nickname);
     await reloadIngame(page, 6);
-    await expect(page.getByRole('button', { name: '기권' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '기권' })).toBeEnabled();
     const menu = await night.openCardMenu(page, target.nickname);
     await expect(menu.getByRole('menuitem', { name: '투표취소' })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: '투표하기' })).toHaveCount(0);

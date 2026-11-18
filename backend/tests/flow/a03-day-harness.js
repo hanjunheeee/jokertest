@@ -184,6 +184,8 @@ function makeTable(session, world, clock) {
 
         // 화면이 보내는 것들 (답을 그대로 돌려줌)
         vote: (uuid, targetId) => gf.call(T.handleSubmitDayVote, world.io, sock(uuid), uuid, { gameId, targetId }),
+        // 낸 표 거두기 ("투표취소")
+        withdraw: (uuid) => gf.call(T.handleWithdrawDayVote, world.io, sock(uuid), uuid, { gameId }),
         ready: (uuid) => gf.call(T.handleAcknowledgeDayVoteReady, world.io, sock(uuid), uuid, { gameId }),
         leave: (uuid) => gf.call(T.handleLeaveGameSession, world.io, sock(uuid), uuid, { gameId }),
         snapshot: (uuid) => gf.call(T.handleGetSessionSnapshot, world.io, sock(uuid), uuid, { gameId }),

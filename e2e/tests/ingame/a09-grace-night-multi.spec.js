@@ -20,7 +20,7 @@ async function closeAndExpire(t, person) {
     await K.expire(t, U(person));
 }
 
-test('A09-H-032 7명 판(사람 2 + 봇 5, 직접 구성 광대 1·의사 1·경비원 1) 의사 ㄴ이 보호를 고름 → 의사 차례가 닫힌 뒤 탭 닫음 → 손잡이 탈락 → 결정대로 보호는 남아 낮에 ㄱ 화면 "지난밤 의사가 공격받은 사람을 살려냈습니다" @game @hard', async ({ user, players, table }) => {
+test('A09-H-032 7명 판(사람 2 + 봇 5, 직접 구성 광대 1·의사 1·경비원 1) 의사 ㄴ이 보호를 고름 → 의사 차례가 닫힌 뒤 탭 닫음 → 손잡이 탈락 → 결정대로 보호는 남아 X가 삶, 밤 사이 ㄴ이 빠진 게 보였으니 ㄱ 화면엔 "아무 일도" 글 창 없이 "낮이 되었습니다" @game @hard', async ({ user, players, table }) => {
     test.setTimeout(240_000);
     const [a, b] = await H.openPeople(user, players, 2);
     // 경비원을 넣음: 의사 차례가 닫힌 뒤에도 밤이 이어져야 그 밤 안에 탈락시킬 수 있음 (7명 자동 구성엔 의사 뒤 차례가 없음)
@@ -41,9 +41,9 @@ test('A09-H-032 7명 판(사람 2 + 봇 5, 직접 구성 광대 1·의사 1·경
     const day = await night.toDay(t, { dayIndex: 2 });
     expect(K.rowOf(day, U(b)).alive, '의사 ㄴ은 탈락').toBe(false);
     expect(K.rowOf(day, U(x)).alive, '보호가 남아 X가 살아남음').toBe(true);
-    const report = a.page.locator('[data-ingame-dawn-report="SAVED"]');
-    await expect(report).toContainText(H.TEXT.saved, { timeout: 20_000 });
-    await expectReadable(report.getByText(H.TEXT.saved));
+    // 밤 사이 ㄴ이 판에서 빠진 게 화면에 보였으니 "아무 일도" 글은 거짓 → 안 띄우고 바로 낮 안내 (사용자 결정 2026-11-18)
+    await expect(a.page.locator('[data-ingame-phase-entrance="DAY"]')).toBeAttached({ timeout: 20_000 });
+    await expect(a.page.locator('[data-ingame-dawn-report]')).toHaveCount(0);
 });
 
 test('A09-H-033 8명 판(사람 2 + 봇 6, 광대 2) 광대 ㄴ만 대상을 고름 → 광대 차례가 닫힌 뒤 탭 닫음 → 손잡이 탈락 → 결정대로 암살은 남아 낮에 ㄱ 화면 "지난밤 X님이 살해당했습니다" @game @hard @smoke', async ({ user, players, table }) => {
@@ -80,10 +80,10 @@ test('A09-H-033 8명 판(사람 2 + 봇 6, 광대 2) 광대 ㄴ만 대상을 고
         if (seen?.dawnMessages.includes(killedText)) return true;
         return ((await killedWindow.textContent({ timeout: 500 }).catch(() => null)) ?? '').trim() === killedText;
     }, { timeout: 30_000, message: 'ㄱ 화면 살해 글' }).toBe(true);
-    // 의사가 살렸다는 글 창은 아님
+    // "아무 일도" 글 창은 아님
     const rec = await night.readUi(a.page);
     expect(rec.kills > 0 || rec.dawnReports.includes('KILLED'), '낮 시작 살해 연출').toBe(true);
-    expect(rec.dawnReports, '의사가 살렸다는 글 창').not.toContain('SAVED');
+    expect(rec.dawnReports, '아무 일 글 창').not.toContain('QUIET');
     await H.expectStatus(a.page, nick(x), 'dead', 20_000);
 });
 

@@ -69,9 +69,7 @@ function settleNight(s) {
     assert.equal(prepared.ok, true, `밤 판정 준비 거절(${prepared.code})`);
     const committed = core.commitNightResolution(prepared.session, prepared.resolution);
     assert.equal(committed.ok, true, `밤 확정 거절(${committed.code})`);
-    const view = core.buildNightResultAppliedPayload(s, committed.victimUuid, prepared.resolution.publicDeathReveals, {
-        doctorSaved: prepared.resolution.doctorSaved,
-    });
+    const view = core.buildNightResultAppliedPayload(s, committed.victimUuid, prepared.resolution.publicDeathReveals);
     return { view, results: prepared.resolution.privateResults };
 }
 
@@ -90,7 +88,7 @@ for (const [no, label, reason] of [
         pick(s, gf.firstOf(s, 'JOKER'), a);
         const { view } = settleNight(s);
         assert.equal(view.victimUuid, null);
-        assert.equal(view.doctorSaved, true);
+        assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
         assert.equal(s.players.get(a).alive, true);
     });
 }
@@ -167,7 +165,7 @@ test('A05-B-208 6명: 의사가 자기 보호를 고르고 빠짐 → 그 고름
     pick(s, gf.firstOf(s, 'JOKER'), a);
     const { view } = settleNight(s);
     assert.equal(view.victimUuid, a);
-    assert.equal(view.doctorSaved, false);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
 });
 
 // ── 의사 2명 (8명 직접{광대1·의사2}, 첫 밤): 둘 다 살아 있을 때와 같은 규칙 (같은 사람이어야 보호, A05-B-037~040) ──
@@ -187,7 +185,7 @@ test('A05-B-209 8명 의사2: 의사 A가 X 보호를 고른 뒤 빠지고 의�
     pick(g.s, g.doctorB, null);
     const { view } = settleNight(g.s);
     assert.equal(view.victimUuid, null);
-    assert.equal(view.doctorSaved, true);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
 });
 
 test('A05-B-210 8명 의사2: 의사 A가 X 보호를 고른 뒤 빠지고 의사 B는 Y 보호 → 갈려서 보호 없음, 광대가 고른 X 죽음', (t) => {
@@ -198,7 +196,7 @@ test('A05-B-210 8명 의사2: 의사 A가 X 보호를 고른 뒤 빠지고 의�
     pick(g.s, g.doctorB, g.b);
     const { view } = settleNight(g.s);
     assert.equal(view.victimUuid, g.a);
-    assert.equal(view.doctorSaved, false);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
 });
 
 // ── 경비원·마녀사냥꾼: 결과는 그 직업 산 사람에게만 감 — 받을 사람이 없으면 판에 영향 없음 ──

@@ -45,9 +45,7 @@ function runNight(s, actions = []) {
     assert.equal(prepared.ok, true, `밤 판정 준비 거절(${prepared.code})`);
     const committed = core.commitNightResolution(prepared.session, prepared.resolution);
     assert.equal(committed.ok, true, `밤 확정 거절(${committed.code})`);
-    const view = core.buildNightResultAppliedPayload(s, committed.victimUuid, prepared.resolution.publicDeathReveals, {
-        doctorSaved: prepared.resolution.doctorSaved,
-    });
+    const view = core.buildNightResultAppliedPayload(s, committed.victimUuid, prepared.resolution.publicDeathReveals);
     return { view, results: prepared.resolution.privateResults };
 }
 
@@ -59,39 +57,39 @@ function sixAtNight(t) {
     return { s, joker: gf.firstOf(s, 'JOKER'), doctor: gf.firstOf(s, 'DOCTOR'), citizenA, citizenB };
 }
 
-test('A05-B-065 6명: 의사가 광대 대상을 지킴 → 희생자 없음, doctorSaved 참, 광대에게 암살 실패', (t) => {
+test('A05-B-065 6명: 의사가 광대 대상을 지킴 → 희생자 없음, doctorSaved 칸 없음, 광대에게 암살 실패', (t) => {
     const g = sixAtNight(t);
     const { view, results } = runNight(g.s, [[g.joker, g.citizenA], [g.doctor, g.citizenA]]);
     assert.equal(view.victimUuid, null);
     assert.deepEqual(view.deathReveals, []);
-    assert.equal(view.doctorSaved, true);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
     assert.deepEqual(results.get(g.joker), { actionType: 'ASSASSINATE', success: false });
 });
 
-test('A05-B-066 6명: 의사가 딴 사람을 지킴 → A 죽음, doctorSaved 거짓, 광대 개인 결과 없음', (t) => {
+test('A05-B-066 6명: 의사가 딴 사람을 지킴 → A 죽음, doctorSaved 칸 없음, 광대 개인 결과 없음', (t) => {
     const g = sixAtNight(t);
     const { view, results } = runNight(g.s, [[g.joker, g.citizenA], [g.doctor, g.citizenB]]);
     assert.equal(view.victimUuid, g.citizenA);
-    assert.equal(view.doctorSaved, false);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
     assert.equal(results.has(g.joker), false);
 });
 
-test('A05-B-067 6명: 광대 건너뛰고 의사가 지킴 → 희생자 없음, doctorSaved 거짓, 개인 결과 0개', (t) => {
+test('A05-B-067 6명: 광대 건너뛰고 의사가 지킴 → 희생자 없음, doctorSaved 칸 없음, 개인 결과 0개', (t) => {
     const g = sixAtNight(t);
     const { view, results } = runNight(g.s, [[g.joker, null], [g.doctor, g.citizenA]]);
     assert.equal(view.victimUuid, null);
-    assert.equal(view.doctorSaved, false);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
     assert.equal(results.size, 0);
 });
 
-test('A05-B-068 7명 광대2: 광대 A→X·B→Y 동률, 의사가 X 지킴 → 희생자 없음, doctorSaved 거짓', (t) => {
+test('A05-B-068 7명 광대2: 광대 A→X·B→Y 동률, 의사가 X 지킴 → 희생자 없음, doctorSaved 칸 없음', (t) => {
     const s = open(t, 7, { jokerCount: 2 });
     passDay(s);
     const [jokerA, jokerB] = gf.byRole(s, 'JOKER');
     const [x, y] = gf.byRole(s, 'CITIZEN');
     const { view } = runNight(s, [[jokerA, x], [jokerB, y], [gf.firstOf(s, 'DOCTOR'), x]]);
     assert.equal(view.victimUuid, null);
-    assert.equal(view.doctorSaved, false);
+    assert.equal(Object.hasOwn(view, 'doctorSaved'), false);
 });
 
 test('A05-B-069 6명: 의사는 살려도 개인 결과 없음', (t) => {

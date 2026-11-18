@@ -7,8 +7,14 @@ const { expectReadable } = require('../../helpers/visible');
 const { sleep } = require('../../helpers/wait');
 const L = require('./a-day/_lib');
 
-// 결과 값 → 현황 창 글 (화면 InGameVoteStatusContent.jsx 글)
+// 결과 값 → 현황 창 글 (화면 constants/vote/ingameVoteOutcomes.js 글)
 const OUTCOME_LABEL = Object.freeze({ TRIBUNAL: '재판 회부', TIE: '동점', ABSTAIN_MAJORITY: '기권이 많아 재판 없음', ABSTAINED: '전원 기권' });
+// 재판 없이 밤이면 "밤이 되었습니다" 아래 뜨는 까닭 줄 (사용자 결정 2026-11-18)
+const NIGHT_REASON = Object.freeze({
+    TIE: '최다 득표가 동점이라 재판이 열리지 않았습니다',
+    ABSTAIN_MAJORITY: '기권이 많아 재판이 열리지 않았습니다',
+    ABSTAINED: '모두 기권하여 재판이 열리지 않았습니다',
+});
 
 const U = (x) => x.account.uuid;
 // uuid → 닉네임 (사람·봇 둘 다 account에 있음)
@@ -103,6 +109,8 @@ async function expectStatus(page, outcome, { abstain, target } = {}) {
 
 // 재판 없이 밤: "밤이 되었습니다" 창 → 재판 창 없음 → 현황 창 결과 글
 async function expectNight(page, outcome, opts = {}) {
+    // 밤 안내 아래 까닭 줄 (투표 현황 창을 안 열어도 왜 밤인지 보임)
+    await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toContainText(NIGHT_REASON[outcome], { timeout: 20000 });
     await L.closeNotice(page, '밤이 되었습니다');
     await expect(page.getByRole('dialog', { name: '재판' })).toHaveCount(0);
     await expectStatus(page, outcome, opts);

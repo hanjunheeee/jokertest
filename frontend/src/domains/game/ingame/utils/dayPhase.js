@@ -1,5 +1,6 @@
 // 낮 세부 단계(토론·투표) 고르기와 낮 단계 바뀜 알림·낮 마감 시각 칸 검사
 // 낮 이벤트 처리·행동 패널·카드 메뉴·밤 결과 검사·투표 판정 검사·단계 진행 액션이 사용
+import { isPublicProgress } from "./store/gamePayload.js"
 
 // 낮 세부 단계 이름
 export const INGAME_DAY_PHASES = Object.freeze({
@@ -23,7 +24,8 @@ export function parseDayPhaseDeadlineField(payload) {
   return deadline
 }
 
-// 낮 투표 시작 알림 검사: 지금 판·날짜이고 투표 단계·회차 모양이 맞을 때만 돌려줌 (마감 시각은 있을 때만)
+// 낮 투표 시작 알림 검사: 지금 판·날짜이고 투표 단계·회차 모양이 맞을 때만 돌려줌 (마감 시각·진행 수는 있을 때만)
+// 진행 수는 낮 투표 것(0 / 산 사람 수)만 받음, 모양이 틀리면 칸만 버림 (알림은 그대로 받음)
 export function parseDayPhaseChangedPayload({ payload, gameId, dayIndex }) {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null
 
@@ -40,11 +42,17 @@ export function parseDayPhaseChangedPayload({ payload, gameId, dayIndex }) {
   const dayPhaseDeadline = parseDayPhaseDeadlineField(payload)
   if (dayPhaseDeadline === null) return null
 
+  // 진행 수 모양 검사는 다른 알림과 같은 isPublicProgress, 여기선 종류만 더 봄
+  const progress = isPublicProgress(payload.progress) && payload.progress.kind === "DAY_VOTE"
+    ? { ...payload.progress }
+    : null
+
   return {
     gameId: payloadGameId,
     dayIndex: payloadDayIndex,
     dayPhase,
     round,
     ...(dayPhaseDeadline !== undefined ? { dayPhaseDeadline } : {}),
+    ...(progress ? { progress } : {}),
   }
 }

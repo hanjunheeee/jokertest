@@ -78,7 +78,7 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     tribunalVoteSubmit,
   })
 
-  // 고른 대상으로 투표, 기권은 null
+  // 고른 대상으로 투표, 기권은 null (기권도 낸 표로 셈)
   const submitDayVote = () => {
     if (!selectedDayVoteTargetId) return
     dayVoteSubmit.submitDayVote(selectedDayVoteTargetId)
@@ -94,6 +94,12 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
   const skipNightAction = () => {
     nightActionSubmit.submit(null)
   }
+
+  // 낸 표 풀기는 여기 한곳 (구석 패널·카드 메뉴·모바일 행동 줄이 같이 읽음)
+  // 기권도 대상이 null이라 "안 냄"과 가르려면 낸 적이 있는지까지 봄
+  const dayVoteHasSubmitted = dayVoteSubmit.hasSubmitted === true
+  const dayVoteLastSubmittedTargetId = dayVoteHasSubmitted ? (dayVoteSubmit.lastSubmittedTargetId ?? null) : null
+  const dayVoteAbstained = dayVoteHasSubmitted && dayVoteLastSubmittedTargetId === null
 
   // 서버가 이미 행동했다고 하거나, 이번에 낸 적이 있으면 제출한 것으로 봄
   const nightActionHasSubmitted =
@@ -128,10 +134,13 @@ export function useInGameActionPanel({ interactionBlocked = false } = {}) {
     submitDayReady: dayReady.submitReady,
     submitDayVote,
     abstainDayVote,
+    // 낸 표 거두기 ("투표취소": 안 낸 사람으로 돌아감, 진행 수 1 줄어듦)
+    withdrawDayVote: dayVoteSubmit.withdrawDayVote,
     dayVoteStatus: dayVoteSubmit.status,
     dayVoteError: dayVoteSubmit.error,
-    dayVoteHasSubmitted: dayVoteSubmit.hasSubmitted,
-    dayVoteLastSubmittedTargetId: dayVoteSubmit.lastSubmittedTargetId,
+    dayVoteHasSubmitted,
+    dayVoteLastSubmittedTargetId,
+    dayVoteAbstained,
     submitTribunalVote: tribunalVoteSubmit.submitTribunalVote,
     tribunalVoteStatus: tribunalVoteSubmit.status,
     tribunalVoteError: tribunalVoteSubmit.error,

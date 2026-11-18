@@ -1,6 +1,6 @@
 'use strict';
 
-// 의사가 살렸을 때 낮에 모두가 보는 "지난밤 의사가 공격받은 사람을 살려냈습니다" 창 브라우저 시험 (누가 공격받았는지는 안 밝힘), PC 사람 1명 + 봇
+// 의사가 살렸을 때 낮에 모두가 보는 "지난밤 아무 일도 일어나지 않았습니다" 창 브라우저 시험 (의사가 살린 것도 누가 공격받았는지도 안 밝힘 — 아무도 안 죽은 밤과 같은 창, 사용자 결정 2026-11-18), PC 사람 1명 + 봇
 // 목록 A05b-밤-알림-낮연출.md A05-E-523~540·586~587·591 (21개) — 쓰는 동안엔 안 돌림: npx playwright test --list tests/ingame/a05-dawn-saved.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -10,11 +10,12 @@ const n = require('./b-night/_night');
 
 // 화면에서 찾는 표시·글 (frontend/src/domains/game/ingame 코드에서 확인한 것)
 const KILL = '[data-ingame-night-success-kill]';
-const SAVED = '[data-ingame-dawn-report="SAVED"]';
+// 아무도 안 죽은 밤 글 창 (의사가 살렸든 광대가 안 죽였든 같은 종류 QUIET)
+const SAVED = '[data-ingame-dawn-report="QUIET"]';
 const DAWN_ANY = '[data-ingame-night-success-kill], [data-ingame-dawn-report]';
 const DAY_ENTRANCE = '[data-ingame-phase-entrance="DAY"]';
 const PRIVATE_RESULT = '[data-ingame-night-private-result]';
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
 // 시간 바의 날짜 글 (밤은 그 날 숫자 그대로, 다음 낮은 +1) → dayBar(2) = '제 2일 시간 흐름'
 const dayBar = (dayIndex) => `제 ${dayIndex}일 시간 흐름`;
@@ -243,7 +244,7 @@ async function expectSavedDialog(g) {
 // 그 밤·낮 내내 화면 기록: 살림 창은 days의 낮마다 한 번씩만, 암살 영상·영상 위 글은 한 번도 없음
 async function expectOnlySaved(page, days) {
     const log = await readWatch(page);
-    expect(seen(log, 'report').map((e) => `${e.value} ${e.day}`)).toEqual(days.map((day) => `SAVED ${dayBar(day)}`));
+    expect(seen(log, 'report').map((e) => `${e.value} ${e.day}`)).toEqual(days.map((day) => `QUIET ${dayBar(day)}`));
     expect(seen(log, 'kill')).toEqual([]);
     expect(seen(log, 'message')).toEqual([]);
 }
@@ -253,7 +254,7 @@ for (const seat of SEATS) {
     for (const size of [6, 8, 10]) {
         no += 1;
         const smoke = no === 523 ? ' @smoke' : '';
-        test(`A05-E-${no} ${size}명 판 ${seat.label} 화면: 낮이 될 때 "지난밤 의사가 공격받은 사람을 살려냈습니다"가 읽힘, 보호받은 사람 이름·표시 없음 @game${smoke}`, async ({ user, table }) => {
+        test(`A05-E-${no} ${size}명 판 ${seat.label} 화면: 낮이 될 때 "지난밤 아무 일도 일어나지 않았습니다"가 읽힘, 보호받은 사람 이름·표시 없음 @game${smoke}`, async ({ user, table }) => {
             // 10명 판은 차리고 넘기는 데 오래 걸림 → 이 시험만 넉넉히 (설정은 안 바꿈)
             if (size === 10) test.setTimeout(180_000);
             const g = await openGame(table, user, { size, humanRole: seat.role });
@@ -269,17 +270,19 @@ for (const seat of SEATS) {
     }
 }
 
-test('A05-E-538 7명 판 시민 화면: 2일 밤 의사가 광대 대상을 지킴 → 3일 낮에 살림 글 @game', async ({ user, table }) => {
+test('A05-E-538 7명 판 시민 화면: 2일 밤 의사가 광대 대상을 지킴 → 3일 낮에 아무 일 글 @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 7 });
     await watch(g.page);
-    // 1일 밤은 아무도 안 고름 → 2일 낮 (연출 없음)
-    await n.toDay(g.t, { dayIndex: 2 });
+    // 1일 밤은 아무도 안 고름 → 2일 낮도 같은 "아무 일도" 글 창 (의사가 살린 밤과 구별 안 됨)
+    await Promise.all([n.toDay(g.t, { dayIndex: 2 }), appear(g.page, SAVED)]);
+    await expectSavedDialog(g);
+    await passDawn(g.page);
     await saveAndDawn(g, g.citizens[0], 2);
     await expectSavedDialog(g);
-    await expectOnlySaved(g.page, [3]);
+    await expectOnlySaved(g.page, [2, 3]);
 });
 
-test('A05-E-539 6명 판 의사 화면: 광대가 나를 노리고 내가 나를 지킴 → 밤 동안엔 아무 표시 없고 낮에 살림 글 @game', async ({ user, table }) => {
+test('A05-E-539 6명 판 의사 화면: 광대가 나를 노리고 내가 나를 지킴 → 밤 동안엔 아무 표시 없고 낮에 아무 일 글 @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 6, humanRole: 'DOCTOR' });
     await watch(g.page);
     await n.toTurn(g.t, 'JOKER', { dayIndex: 1 });
@@ -296,7 +299,7 @@ test('A05-E-539 6명 판 의사 화면: 광대가 나를 노리고 내가 나를
     await n.expectCard(g.page, g.me.nickname, 'alive');
 });
 
-test('A05-E-540 8명 판 의사 화면: 1·2일 밤 광대와 내가 둘 다 A → 2일 낮도 3일 낮도 살림 글 @game', async ({ user, table }) => {
+test('A05-E-540 8명 판 의사 화면: 1·2일 밤 광대와 내가 둘 다 A → 2일 낮도 3일 낮도 아무 일 글 @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 8, humanRole: 'DOCTOR' });
     await watch(g.page);
     const target = g.citizens[0];
@@ -324,7 +327,7 @@ for (const [caseNo, seat] of [[586, seatOf('citizen')], [587, seatOf('joker')]])
         await saveAndDawn(g, target, 1);
         await expectSavedDialog(g);
         await passDawn(g.page);
-        // 광대 화면엔 살림 창 뒤에 내게만 오는 "암살 실패" 창이 뜸 → 닫아야 판이 보임
+        // 광대 화면엔 아무 일 창 뒤에 내게만 오는 "암살 실패" 창이 뜸 → 닫아야 판이 보임
         if (seat.key === 'joker') {
             const result = g.page.locator(PRIVATE_RESULT);
             await result.getByRole('button', { name: '확인', exact: true }).click();
@@ -340,7 +343,7 @@ for (const [caseNo, seat] of [[586, seatOf('citizen')], [587, seatOf('joker')]])
     });
 }
 
-test('A05-E-591 6명 판: 살림 글 창의 "확인" 단추가 읽히고 누르면 창이 닫힘 @game', async ({ user, table }) => {
+test('A05-E-591 6명 판: 아무 일 글 창의 "확인" 단추가 읽히고 누르면 창이 닫힘 @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 6 });
     await watch(g.page);
     await saveAndDawn(g, g.citizens[0], 1);

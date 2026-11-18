@@ -31,7 +31,7 @@ test("A05-F-164 6명 밤 결과 희생자 A(서연) → A 카드 \"사망\" 표�
 test("A05-F-165 6명 의사가 살린 밤 결과 → 사망 표시 카드 0", () => {
   const t = kit.openNight({ n: 6, me: 0, role: "CITIZEN" })
   const view = kit.mountTable()
-  t.nightApplied({ victim: null, doctorSaved: true })
+  t.nightApplied({ victim: null }) // 의사가 살린 밤 (서버 값은 광대가 안 죽인 밤과 같음)
   assert.deepEqual(deadCards(view.container), [])
 })
 

@@ -1,6 +1,6 @@
 'use strict';
 
-// 낮 시작 연출 모바일 브라우저 시험 — 밤엔 누구 화면에도 영상·기다림 창이 없고, 낮이 될 때 죽음은 영상 + 글·살림은 글 창을 누가 보든 똑같이 보는지 (받은 버그 5)
+// 낮 시작 연출 모바일 브라우저 시험 — 밤엔 누구 화면에도 영상·기다림 창이 없고, 낮이 될 때 죽음은 영상 + 글·아무도 안 죽은 밤(의사가 살렸든 광대가 안 죽였든)은 "아무 일도" 글 창을 누가 보든 똑같이 보는지 (받은 버그 5, 2026-11-18)
 // 목록 A05b-밤-알림-낮연출.md 번호 A05-E-625~662·679~681·683~685 (44개) — 5초 규칙은 a05-night-settle.spec.js가 봄, 여기 밤 차례는 손잡이로 닫음
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
@@ -9,9 +9,9 @@ const { talk, getExecuted } = require('./_talk');
 const night = require('../ingame/b-night/_night');
 
 // 화면 글 (frontend utils/dawnReport.js·constants/ingamePhaseEntrance.js와 같은 글)
-const SAVED_TEXT = '지난밤 의사가 공격받은 사람을 살려냈습니다';
-const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
+const SAVED_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const DAY_TEXT = '낮이 되었습니다';
+const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
 const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 
@@ -217,7 +217,7 @@ const killedLine = (page, nickname) => page
     .locator('[data-ingame-dawn-report-message], [data-ingame-dawn-report="KILLED"] p')
     .filter({ hasText: killedText(nickname) })
     .first();
-const savedLine = (page) => page.locator('[data-ingame-dawn-report="SAVED"]').getByText(SAVED_TEXT, { exact: true });
+const savedLine = (page) => page.locator('[data-ingame-dawn-report="QUIET"]').getByText(SAVED_TEXT, { exact: true });
 
 /**
  * 죽음 연출: 암살 영상이 떴고(화면 기록) 글이 사람 눈에 읽힘, 글에 직업 이름 없음
@@ -235,23 +235,15 @@ async function expectKilled(page, nickname, from = 0) {
 }
 
 /**
- * 살림 연출: 글 창의 글이 읽힘, 영상은 없음, 창 어디에도 닉네임이 없음 (누가 공격받았는지 안 밝힘)
+ * 아무 일 없음 연출(의사가 살렸든 광대가 안 죽였든 같은 글 창, 2026-11-18): 글 창의 글이 읽힘, 영상은 없음, 창 어디에도 닉네임이 없음
  * @returns {Promise<object>} 글 줄의 읽힘 값
  */
 async function expectSaved(page, hiddenNames = [], from = 0) {
     const seenAs = await expectReadable(savedLine(page), { timeout: 20_000 });
-    const shown = await page.locator('[data-ingame-dawn-report="SAVED"]').getByRole('dialog').innerText();
+    const shown = await page.locator('[data-ingame-dawn-report="QUIET"]').getByRole('dialog').innerText();
     for (const name of hiddenNames) expect(shown, '살림 글 창에 닉네임이 없음').not.toContain(name);
     expect((await logOf(page, from)).filter((e) => e.kind === 'kill' || e.kind === 'msg'), '살림 밤엔 암살 영상이 없음').toEqual([]);
     return seenAs;
-}
-
-/** 연출 없이 낮: "낮이 되었습니다"가 읽히고, 기록에 연출이 하나도 없음 */
-async function expectPlainDay(page, from = 0) {
-    await expectReadable(dayEntrance(page).getByText(DAY_TEXT, { exact: true }), { timeout: 20_000 });
-    const shows = (await logOf(page, from)).filter((e) => ['kill', 'msg', 'report'].includes(e.kind));
-    expect(shows, '연출 기록').toEqual([]);
-    await expect(showMarks(page)).toHaveCount(0);
 }
 
 /** 밤 동안 연출 흔적 없음: 화면이 그 차례까지 따라온 뒤, 기록·화면에 영상·글 창·기다림 창이 없음 */
@@ -312,19 +304,19 @@ for (const c of KILLED_CASES) {
     });
 });
 
-// ── 아무 일 없음: 연출 없이 "낮이 되었습니다" (A05-E-642~644, 8명, 사람 = 시민) ──
+// ── 아무 일 없음: 의사가 살린 밤과 같은 "아무 일도" 글 창 (A05-E-642~644, 8명, 사람 = 시민) ──
 const NONE_CASES = [
     { no: 642, how: '광대가 건너뜀', counts: COUNTS[8], plan: () => ({ JOKER: null }) },
     { no: 643, how: '광대 2명이 서로 다른 사람을 고름', counts: { JOKER: 2, DOCTOR: 1, GUARD: 1 }, plan: (g) => ({ JOKER: [P(g.cast.CITIZEN[0]), P(g.cast.CITIZEN[1])] }) },
     { no: 644, how: '광대가 안 고르고 시간 끝', counts: COUNTS[8], plan: () => ({}) },
 ];
 for (const c of NONE_CASES) {
-    test(`A05-E-${c.no} 아무 일 없음 · ${c.how} (8명 시민 화면): 연출 없이 "${DAY_TEXT}"가 읽힘 @game`, async ({ user, table }) => {
+    test(`A05-E-${c.no} 아무 일 없음 · ${c.how} (8명 시민 화면): "${SAVED_TEXT}"가 읽힘 @game`, async ({ user, table }) => {
         const g = await openGame({ user, table }, { n: 8, seat: 'CITIZEN', counts: c.counts });
         await night.toTurn(g.t, 'JOKER', { dayIndex: 1 });
         const end = await playNight(g, c.plan(g));
         expect(end.players.every((p) => p.alive), '아무도 안 죽음').toBe(true);
-        await expectPlainDay(g.page);
+        await expectSaved(g.page);
     });
 }
 
@@ -497,17 +489,19 @@ test('A05-E-680 조사당한 사람 화면엔 아무것도 없음 (8명 시민 �
     await night.toTurn(g.t, 'JOKER', { dayIndex: 1 });
     // 봇 경비원이 사람을 조사함
     await playNight(g, { JOKER: null, GUARD: g.human });
-    await expectPlainDay(g.page);
+    // 광대가 건너뛴 밤 → 모두와 같은 "아무 일도" 글 창 (조사 이야기는 없음)
+    await expectSaved(g.page);
     expect((await logOf(g.page)).filter((e) => e.kind === 'result'), '결과 창 기록').toEqual([]);
     await expect(g.page.locator('[data-ingame-night-private-result]')).toHaveCount(0);
 });
 
 // ── 둘째 밤 죽음 (A05-E-681, 7명) ──
-test('A05-E-681 둘째 밤 죽음 (7명 시민 화면): 첫 밤은 아무 일 없고, 2일 밤 암살 → 3일 낮 영상 + 글 @game', async ({ user, table }) => {
+test('A05-E-681 둘째 밤 죽음 (7명 시민 화면): 첫 밤은 아무 일 없고("아무 일도" 글 창), 2일 밤 암살 → 3일 낮 영상 + 글 @game', async ({ user, table }) => {
     const g = await openGame({ user, table }, { n: 7, seat: 'CITIZEN' });
     await night.toTurn(g.t, 'JOKER', { dayIndex: 1 });
     await playNight(g, { JOKER: null });
-    await expectPlainDay(g.page);
+    await expectSaved(g.page);
+    await finishShow(g.page);
     const from = (await logOf(g.page)).length;
     const victim = await killNight(g, 'CITIZEN', { dayIndex: 2 });
     await expectKilled(g.page, victim.nickname, from);

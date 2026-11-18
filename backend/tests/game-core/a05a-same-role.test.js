@@ -60,9 +60,7 @@ function runNight(s, actions = []) {
     assert.equal(prepared.ok, true, `밤 판정 준비 거절(${prepared.code})`);
     const committed = core.commitNightResolution(prepared.session, prepared.resolution);
     assert.equal(committed.ok, true, `밤 확정 거절(${committed.code})`);
-    const view = core.buildNightResultAppliedPayload(s, committed.victimUuid, prepared.resolution.publicDeathReveals, {
-        doctorSaved: prepared.resolution.doctorSaved,
-    });
+    const view = core.buildNightResultAppliedPayload(s, committed.victimUuid, prepared.resolution.publicDeathReveals);
     return { view, results: prepared.resolution.privateResults };
 }
 

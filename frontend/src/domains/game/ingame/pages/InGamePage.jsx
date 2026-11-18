@@ -95,7 +95,7 @@ export default function InGamePage() {
   })
   const expulsionBusy = tribunalExpulsion.open || tribunalExpulsion.pending
 
-  // 낮 시작 연출 (밤에 죽은 사람·의사 살림): 남아 있으면 pending, 추방 영상이 끝난 뒤 열림
+  // 낮 시작 연출 (밤에 죽은 사람·아무 일도 없음): 남아 있으면 pending, 추방 영상이 끝난 뒤 열림
   // 차례: 낮 시작 연출 → "낮이 되었습니다"·밤 개인 결과, 판이 끝났으면 연출 → 결과 화면
   const dawnReport = useInGameStore(selectDawnReport)
   const dawnReportPending = dawnReport !== null

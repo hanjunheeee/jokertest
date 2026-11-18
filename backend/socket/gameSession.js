@@ -61,7 +61,7 @@ const {
     handleSubmitGameChatMessage,
 } = require('./gameSession/handlers/chat')
 const { handleSendEmoji } = require('./gameSession/handlers/emoji')
-const { handleSubmitDayVote } = require('./gameSession/handlers/dayVote')
+const { handleSubmitDayVote, handleWithdrawDayVote } = require('./gameSession/handlers/dayVote')
 const { handleCastTribunalVote } = require('./gameSession/handlers/tribunal')
 const { handleLeaveGameSession, onDisconnect } = require('./gameSession/handlers/leave')
 const { handleGetSessionSnapshot } = require('./gameSession/handlers/snapshot')
@@ -112,6 +112,7 @@ module.exports = {
         finalizeNightForSession,
         endNightTurn,
         handleSubmitDayVote,
+        handleWithdrawDayVote,
         handleCastTribunalVote,
         handleLeaveGameSession,
         handleGetSessionSnapshot,

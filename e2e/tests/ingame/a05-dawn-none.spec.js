@@ -1,6 +1,7 @@
 'use strict';
 
-// 밤에 아무도 안 죽고 의사가 살린 것도 아니면 낮 시작 연출 없이 "낮이 되었습니다"만 뜨는지 보는 브라우저 시험, PC 사람 1명 + 봇
+// 밤에 아무도 안 죽으면(광대가 안 죽임) 낮 시작 때 "지난밤 아무 일도 일어나지 않았습니다" 글 창 → 확인 → "낮이 되었습니다"인지 보는 브라우저 시험, PC 사람 1명 + 봇
+// 의사가 살린 밤과 같은 글 창 (사용자 결정 2026-11-18), 밤 사이 누가 나가 판에서 빠진 밤은 글 창 없이 "낮이 되었습니다"만
 // 목록 A05b-밤-알림-낮연출.md A05-E-541~550 (10개) — 쓰는 동안엔 안 돌림: npx playwright test --list tests/ingame/a05-dawn-none.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -10,6 +11,8 @@ const n = require('./b-night/_night');
 
 // 화면에서 찾는 표시·글 (frontend/src/domains/game/ingame 코드에서 확인한 것)
 const DAWN_ANY = '[data-ingame-night-success-kill], [data-ingame-dawn-report]';
+const QUIET = '[data-ingame-dawn-report="QUIET"]';
+const QUIET_TEXT = '지난밤 아무 일도 일어나지 않았습니다';
 const DAY_ENTRANCE = '[data-ingame-phase-entrance="DAY"]';
 const DAY_TEXT = '낮이 되었습니다';
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
@@ -225,6 +228,21 @@ async function quietJokerTurn(g, way) {
     // 'timeout': 아무도 안 고름 → 아래에서 차례 마감(시간 끝)으로 넘어감
 }
 
+// 낮이 됨: "아무 일도" 글 창이 읽히고(암살 영상은 없음), 닫기 전엔 낮 안내가 안 뜨고, 확인하면 "낮이 되었습니다"가 읽힘
+async function expectQuietDay(g) {
+    await Promise.all([n.toDay(g.t, { dayIndex: 2 }), appear(g.page, QUIET)]);
+    const dialog = g.page.locator(QUIET);
+    await expectReadable(dialog.locator('p'), { timeout: 5000 });
+    await expect(dialog.locator('p')).toHaveText(QUIET_TEXT);
+    await expect(g.page.locator(DAY_ENTRANCE)).toHaveCount(0);
+    // 죽은 사람 화면의 낮 안내 창은 2초 뒤 스스로 닫힘 → 확인을 누르는 순간부터 붙는지 봄
+    await Promise.all([appear(g.page, DAY_ENTRANCE), dialog.getByRole('button', { name: '확인', exact: true }).click()]);
+    await expectReadable(g.page.locator(DAY_ENTRANCE).getByText(DAY_TEXT), { timeout: 3000 });
+    const log = await readWatch(g.page);
+    for (const what of ['kill', 'message']) expect(seen(log, what), `암살 연출 (${what})`).toEqual([]);
+    expect(seen(log, 'report').map((e) => e.value), '낮 시작 글 창').toEqual(['QUIET']);
+}
+
 // 낮이 됨: 낮 시작 연출(영상·글 창)은 한 번도 없고 "낮이 되었습니다"가 읽힘
 async function expectPlainDay(g) {
     // 죽은 사람 화면의 낮 안내 창은 2초 뒤 스스로 닫힘 → 붙는 순간부터 바로 봄
@@ -240,21 +258,22 @@ for (const way of WAYS) {
     for (const seat of SEATS) {
         no += 1;
         const smoke = no === 541 ? ' @smoke' : '';
-        test(`A05-E-${no} 8명 판 ${way.label} · ${seat.label} 화면: 낮 시작 연출 없이 "낮이 되었습니다"가 읽힘 @game${smoke}`, async ({ user, table }) => {
+        test(`A05-E-${no} 8명 판 ${way.label} · ${seat.label} 화면: "지난밤 아무 일도 일어나지 않았습니다" 글 창 → 확인 → "낮이 되었습니다"가 읽힘 @game${smoke}`, async ({ user, table }) => {
             const g = await openGame(table, user, { size: 8, humanRole: seat.role, counts: way.counts });
             // 2일 낮 안내 창은 스스로 안 닫음 (직접 봄)
             await watch(g.page, { confirmBeforeDay: 2 });
             if (seat.key === 'spectator') await getExecuted(g);
             const aliveBefore = n.aliveCount(await g.t.state());
             await quietJokerTurn(g, way);
-            await expectPlainDay(g);
+            await expectQuietDay(g);
             // 아무도 안 죽음
             expect(n.aliveCount(await g.t.state())).toBe(aliveBefore);
         });
     }
 }
 
-test('A05-E-550 7명 판 시민 화면: 광대가 고른 A가 밤 중에 나가면 낮 시작 연출 없음 @game', async ({ user, table }) => {
+// 밤 사이 A가 판에서 빠진 게 화면에 보였으니 "아무 일도" 글은 거짓 → 안 띄움 (사용자 결정 2026-11-18)
+test('A05-E-550 7명 판 시민 화면: 광대가 고른 A가 밤 중에 나가면 낮 시작 연출 없음("아무 일도" 글 창도 없음) @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 7 });
     await watch(g.page, { confirmBeforeDay: 2 });
     const [leaver] = g.citizenBots;

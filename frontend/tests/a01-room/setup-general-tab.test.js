@@ -40,9 +40,9 @@ test("A01-F-102 처음 값: 정원 칸 10", () => {
   assert.equal(H.stepperValue(MAX), 10)
 })
 
-test("A01-F-103 처음 값: 광대 칸 2", () => {
+test("A01-F-103 처음 값: 광대 칸 1", () => {
   renderPanel()
-  assert.equal(H.stepperValue(JOKER), 2)
+  assert.equal(H.stepperValue(JOKER), 1)
 })
 
 const EDGE_CASES = [

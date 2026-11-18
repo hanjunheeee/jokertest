@@ -279,15 +279,14 @@ export function dayResolved({ outcome, alive, abstain, target = null, dayIndex =
 // 마감 당김(5초) 알림
 export const settle = ({ deadline, dayIndex = 1, phase = "DAY", role = null } = {}) =>
     ({ gameId: GAME, phase, dayIndex, role, deadline })
-// 밤 결과 → 다음 낮 (아무도 안 죽음, 죽은 자리는 dead)
-export const nextDay = ({ n, dayIndex = 2, dead = [], deadline, victim = null, doctorSaved = false } = {}) => ({
+// 밤 결과 → 다음 낮 (아무도 안 죽음, 죽은 자리는 dead) — 의사가 살렸는지는 서버가 안 보냄 (2026-11-18)
+export const nextDay = ({ n, dayIndex = 2, dead = [], deadline, victim = null } = {}) => ({
     gameId: GAME,
     phase: "DAY",
     dayIndex,
     players: Array.from({ length: n }, (_, i) => ({ uuid: uuidOf(i), alive: !dead.includes(i) })),
     victimUuid: victim === null ? null : uuidOf(victim),
     deathReveals: victim === null ? [] : [{ victimUuid: uuidOf(victim), source: "JOKER" }],
-    doctorSaved,
     ...(deadline !== undefined ? { dayPhaseDeadline: deadline } : {}),
 })
 // 낮 토론 → 투표로

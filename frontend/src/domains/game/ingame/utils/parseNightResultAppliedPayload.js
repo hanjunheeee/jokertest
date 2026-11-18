@@ -1,13 +1,13 @@
-// 밤 결과 적용 방송 검사: 판 끝 또는 다음 낮, 명단·죽은 사람이 맞을 때만 (낮 시작 연출용 사망 공개·의사 살림도 같이 읽음)
+// 밤 결과 적용 방송 검사: 판 끝 또는 다음 낮, 명단·죽은 사람이 맞을 때만 (낮 시작 연출용 사망 공개도 같이 읽음)
 // 밤 이벤트 손잡이(hooks/sessionEvents/nightHandlers.js)가 사용
 import { normalizePublicWinResult, readResultClosesAtField } from "./normalizePublicWinResult.js"
 import { parseDayPhaseDeadlineField } from "./dayPhase.js"
 import { normalizeInGameNightDeathReveals } from "./nightDeathReveals.js"
 
-// 낮 시작 연출 칸: 사망 공개(이번 밤에 새로 죽은 사람만)·의사 살림 (옛 서버라 없으면 공개는 칸째 빼고 살림은 거짓)
-// 예: deathReveals [{ victimUuid: "a", source: "JOKER" }], doctorSaved 없음 → { deathReveals: [...], doctorSaved: false }
+// 낮 시작 연출 칸: 사망 공개(이번 밤에 새로 죽은 사람만), 옛 서버라 없으면 칸째 뺌
+// 예: deathReveals [{ victimUuid: "a", source: "JOKER" }] → { deathReveals: [...] }
 function readDawnFields(payload, deadNowUuids, previouslyDeadUuids) {
-  const fields = { doctorSaved: payload.doctorSaved === true }
+  const fields = {}
   const knownDead = previouslyDeadUuids instanceof Set ? previouslyDeadUuids : new Set()
   if (Array.isArray(payload.deathReveals)) {
     fields.deathReveals = normalizeInGameNightDeathReveals(payload.deathReveals)

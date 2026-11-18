@@ -134,24 +134,24 @@ test('A05-B-166 6명 암살 성공: victimUuid A, deathReveals [{ A, JOKER }], p
     assert.equal(applied.players.find((p) => p.uuid === g.a).alive, false);
 });
 
-test('A05-B-167 6명 의사가 살림: victimUuid null, deathReveals [], doctorSaved 참', async (t) => {
+test('A05-B-167 6명 의사가 살림: victimUuid null, deathReveals [], doctorSaved 칸 없음', async (t) => {
     const g = six(t);
     await playNight(g, { JOKER: [[g.joker, g.a]], DOCTOR: [[g.doctor, g.a]] });
     const applied = lastApplied(g.world, g.b);
     assert.equal(applied.victimUuid, null);
     assert.deepEqual(applied.deathReveals, []);
-    assert.equal(applied.doctorSaved, true);
+    assert.equal(Object.hasOwn(applied, 'doctorSaved'), false);
 });
 
-test('A05-B-168 6명 광대 건너뜀(아무 일 없음): victimUuid null, doctorSaved 거짓', async (t) => {
+test('A05-B-168 6명 광대 건너뜀(아무 일 없음): victimUuid null, doctorSaved 칸 없음', async (t) => {
     const g = six(t);
     await playNight(g, { JOKER: [[g.joker, null]] });
     const applied = lastApplied(g.world, g.b);
     assert.equal(applied.victimUuid, null);
-    assert.equal(applied.doctorSaved, false);
+    assert.equal(Object.hasOwn(applied, 'doctorSaved'), false);
 });
 
-test('A05-B-169 7명 광대2 동률: victimUuid null, doctorSaved 거짓', async (t) => {
+test('A05-B-169 7명 광대2 동률: victimUuid null, doctorSaved 칸 없음', async (t) => {
     const ctx = setup(t, 7, { jokerCount: 2 });
     passDay(ctx.s);
     const [jokerA, jokerB] = gf.byRole(ctx.s, 'JOKER');
@@ -159,7 +159,7 @@ test('A05-B-169 7명 광대2 동률: victimUuid null, doctorSaved 거짓', async
     await playNight(ctx, { JOKER: [[jokerA, x], [jokerB, y]] });
     const applied = lastApplied(ctx.world, jokerA);
     assert.equal(applied.victimUuid, null);
-    assert.equal(applied.doctorSaved, false);
+    assert.equal(Object.hasOwn(applied, 'doctorSaved'), false);
 });
 
 test('A05-B-170 6명 다음 낮 값: 단계 낮, 날짜 +1, 새 낮 마감 시각 실림', async (t) => {

@@ -104,7 +104,7 @@ test('A08-H-021 7명 판(사람 3 + 봇 4): ㄱ 처형 뒤 나감 · ㄴ 산 채
 test('A08-H-022 6명 판(사람 2 + 봇 4): 판 전 방장 ㄱ이 ㄴ을 2번 추방(다시 들어와 판) → 판 끝 → 대기방에서 1번 더 추방 → ㄴ 코드 입장은 추방 거절 글 @game @hard', async ({ players, bots }) => {
     test.setTimeout(420_000);
     const [a, b] = await openHumans(players, 2);
-    // 광대 1 (설정 화면 처음 값은 광대 2라 광대 봇을 하나로 못 정함)
+    // 광대 1 (설정 화면 처음 값과 같음, 확실히 하려고 직접 맞춤)
     const room = await createRoomUi(a, { jokers: 1 });
     for (let i = 0; i < 2; i += 1) {
         await joinRoomByCodeUi(b.page, room.roomCode);

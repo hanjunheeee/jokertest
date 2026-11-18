@@ -98,10 +98,10 @@ test('A01-E-027 "게임 만들기" 빠르게 세 번 → 이 사람 방은 1개'
     await expect.poll(async () => (await K.listedTitled(probe, K.titleOf(user))).length).toBe(1);
 });
 
-test('A01-E-028 안 건드리고 만듦 → 정원 10·광대 2·토론 60·투표 60·밤 90·자동', async ({ user }) => {
+test('A01-E-028 안 건드리고 만듦 → 정원 10·광대 1·토론 60·투표 60·밤 90·자동', async ({ user }) => {
     const room = await K.createRoomOn(user);
     expect(room.settings).toMatchObject({
-        maxPlayers: 10, jokerCount: 2, dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90, roleCompositionMode: 'auto',
+        maxPlayers: 10, jokerCount: 1, dayDiscussionTime: 60, dayVoteTime: 60, nightActionTime: 90, roleCompositionMode: 'auto',
     });
 });
 

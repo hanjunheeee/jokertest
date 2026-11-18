@@ -20,6 +20,14 @@ async function confirmEntrances() {
     await flush()
   }
 }
+// 희생자 없는 밤 뒤 "지난밤 아무 일도 일어나지 않았습니다" 글 창을 "확인"으로 닫음 (닫아야 낮 안내가 뜸, 2026-11-18)
+async function confirmDawnReport() {
+  const box = document.querySelector("[data-ingame-dawn-report]")
+  const ok = box ? [...(box.closest("[role=dialog]") ?? box).querySelectorAll("button")].find((b) => b.textContent.trim() === "확인") : null
+  if (!ok) return
+  await RTL.act(async () => { RTL.fireEvent.click(ok) })
+  await flush()
+}
 // 판 화면 + 처음 안내 닫고 크게 보기 엶 (비교엔 참거짓만 넣음 — 화면 요소를 넣으면 실패 글 만들다 메모리가 터짐)
 async function tableWithCloseup(options) {
   const t = await openTable({ view: "page", ...options })
@@ -48,6 +56,8 @@ test("A05-F-697 7명 판 밤 산 의사 나: 크게 보기를 연 채 밤 차례
 test("A05-F-698 5명 판 밤 산 나: 크게 보기를 연 채 \"낮이 되었습니다\" 안내가 뜸 → 크게 보기 닫힘", async () => {
   const t = await tableWithCloseup({ n: 5, me: 3, roles: { 0: "JOKER" }, phase: "NIGHT" })
   await t.nextDay()
+  // 희생자 없는 밤이라 "아무 일도" 글 창이 먼저 뜸 → 닫아야 낮 안내
+  await confirmDawnReport()
   assert.equal(entrancePhase(), "DAY", "낮 안내가 안 뜸 (준비 잘못)")
   assert.equal(t.closeup() !== null, false, "크게 보기가 낮 안내 위에 남음")
 })
