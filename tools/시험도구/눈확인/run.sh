@@ -13,19 +13,31 @@ if [ -z "${EYE_LOCKED:-}" ]; then
   exec bash "$TOOLS/with-lock.sh" e2e bash "$HERE/run.sh" "$@"
 fi
 
-# CPU 5초마다 (PowerShell 한 번에 한 줄: 시각 CPU%)
+# CPU 한 번 재기 → 0~100 숫자 한 줄 (맥·리눅스: 모든 프로세스 %cpu 합 ÷ 코어 수, 윈도우: PowerShell)
+cpu_now() {
+  case "$(uname -s)" in
+    Darwin|Linux)
+      n="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+      ps -A -o %cpu= 2>/dev/null | awk -v n="$n" '{s+=$1} END {v=s/n; if (v>100) v=100; printf "%d\n", v+0.5}' ;;
+    *)
+      powershell -NoProfile -Command '[math]::Round((Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average)' 2>/dev/null | tr -d '\r' ;;
+  esac
+}
+
+# CPU 5초마다 (한 번에 한 줄: 시각 CPU%)
 : > "$OUT/cpu.txt"
 ( while :; do
-    c="$(powershell -NoProfile -Command '[math]::Round((Get-CimInstance Win32_Processor | Measure-Object LoadPercentage -Average).Average)' 2>/dev/null | tr -d '\r')"
+    c="$(cpu_now)"
     echo "$(date +%H:%M:%S) ${c:-0}" >> "$OUT/cpu.txt"
     sleep 5
   done ) &
 MON=$!
-trap 'kill $MON 2>/dev/null' EXIT
+trap 'kill $MON 2>/dev/null; wait $MON 2>/dev/null' EXIT
 
 # 터미널에서 돌리면 Enter를 받음 (뒤에서 돌리면 신호 파일만)
 node "$HERE/run.js" "$@"
 rc=$?
-kill $MON 2>/dev/null
+# wait로 거둬야 맥 bash가 "Terminated: 15" 줄을 안 찍음
+kill $MON 2>/dev/null; wait $MON 2>/dev/null
 awk '{n++; s+=$2; if ($2>m) m=$2} END {if (n) printf "CPU 평균 %d%% 최고 %d%% (표본 %d개, %s)\n", s/n, m, n, FILENAME}' "$OUT/cpu.txt"
 exit $rc

@@ -35,6 +35,8 @@ class Session {
         this.tasks = [];
         this.bots = [];
         this.closed = false;
+        /** 자동으로 누르는 중인 일 수 (맥: 0이 되면 창을 다시 줄여 보임) */
+        this.acting = 0;
     }
 
     get headless() { return this.windows.headless; }
@@ -90,11 +92,17 @@ class Session {
         const scale = this.windows.scaleOf(kind);
         const options = { ...(mobile ? MOBILE : DESKTOP), ...contextOptions };
         if (scale !== 1) options.deviceScaleFactor = scale;
+        // 창에 꽉 차게 보기(EYE_FULL=1): PC 큰 창은 화면 크기를 고정하지 않음 → 창을 키우면 화면도 같이 커짐 (1280×800 기준 확인은 아님)
+        if (process.env.EYE_FULL === '1' && !this.headless && !mobile && kind === 'big' && !contextOptions.viewport) {
+            options.viewport = null;
+            delete options.deviceScaleFactor;
+        }
         const context = await browser.newContext(options);
         this.keep(() => context.close().catch(() => {}));
         const page = await context.newPage();
         const acc = account ?? (login ? await accountsLib.createAccount(accountOptions) : null);
-        const entry = { account: acc, context, page, kind, label: label ?? `사람${this.people.length + 1}` };
+        // mobile·dsf: 맥에서 창을 줄여 보일 때 화면 흉내 값을 그대로 다시 주려고 적어 둠
+        const entry = { account: acc, context, page, kind, label: label ?? `사람${this.people.length + 1}`, mobile: Boolean(options.isMobile), dsf: options.deviceScaleFactor ?? 1 };
         this.people.push(entry);
         this.watchAlerts(page);
         if (this.hidden) await this.windows.hide(entry);
@@ -116,6 +124,23 @@ class Session {
     async show() {
         this.hidden = false;
         return this.windows.arrange(this.people);
+    }
+
+    /**
+     * 보이는 창을 자동으로 누를 때 감싸는 것 (맥: 줄여 보이는 창을 잠깐 제 배율로 → 끝나면 다시 줄임, 윈도우·창 없는 모드는 그냥 fn)
+     * 보여 준 뒤에 누르는 일(show·엮인 장면 prepare는 run.js가 감쌈, 뒤 작업은 장면이 직접 감쌈)에 씀
+     * @example await s.act(() => page.getByRole('button', { name: '내 역할 보기' }).click())
+     */
+    async act(fn) {
+        if (this.hidden) return fn();
+        this.acting += 1;
+        if (this.acting === 1) await this.windows.wake(this.people);
+        try {
+            return await fn();
+        } finally {
+            this.acting -= 1;
+            if (this.acting === 0 && !this.closed) await this.windows.rest(this.people);
+        }
     }
 
     async close() {

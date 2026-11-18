@@ -33,7 +33,7 @@ async function isUp(url) {
     }
 }
 
-// PID 묶음 통째로 끔 (윈도우는 자식까지 taskkill /T)
+// PID 묶음 통째로 끔 (윈도우는 자식까지 taskkill /T, 그 밖은 -pid로 묶음째 — start()가 detached로 띄워 PID가 묶음 번호임)
 function killTree(pid) {
     try {
         if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
@@ -41,11 +41,12 @@ function killTree(pid) {
     } catch { /* 이미 꺼짐 */ }
 }
 
-// 그 PID가 지금도 e2e 서버 스크립트인지 (남의 프로세스를 끄지 않게)
+// 그 PID가 지금도 e2e 서버 스크립트인지 (남의 프로세스를 끄지 않게) — 맥·리눅스는 ps, 윈도우는 PowerShell로 명령 줄을 읽음
 function isOurServer(pid) {
-    if (process.platform !== 'win32') return true;
     try {
-        const out = execFileSync('powershell', ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").CommandLine`], { encoding: 'utf8' });
+        const out = process.platform === 'win32'
+            ? execFileSync('powershell', ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").CommandLine`], { encoding: 'utf8' })
+            : execFileSync('ps', ['-o', 'command=', '-p', String(Number(pid))], { encoding: 'utf8' });
         return /e2e[\/]scripts[\/](start-backend|serve-front)\.js|scripts[\/](start-backend|serve-front)\.js/.test(out);
     } catch {
         return false;
@@ -97,7 +98,8 @@ class Servers {
         for (const key of DROP_ENV) delete env[key];
         const logPath = path.join(RUN_DIR, `server-${name}.log`);
         const out = fs.openSync(logPath, 'a');
-        const child = spawn(process.execPath, def.args, { cwd: E2E_DIR, env, stdio: ['ignore', out, out], windowsHide: true });
+        // 맥·리눅스는 따로 뗀 묶음(detached)으로 띄움 → 끌 때 -pid로 자식 백엔드·vite까지 같이 꺼짐
+        const child = spawn(process.execPath, def.args, { cwd: E2E_DIR, env, stdio: ['ignore', out, out], windowsHide: true, detached: process.platform !== 'win32' });
         this.started.set(name, { child, pid: child.pid });
         this.writePids();
         this.log(`${name}: 켜는 중 (PID ${child.pid}, 기록 ${path.relative(RUN_DIR, logPath)})`);

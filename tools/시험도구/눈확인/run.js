@@ -66,7 +66,9 @@ function prepare(index, { session = null, hidden = false } = {}) {
     rec.promise = (async () => {
         try {
             for (const name of scene.needs ?? []) await servers.ensure(name);
-            if (scene.prepare) await withTimeout(Promise.resolve().then(() => scene.prepare(s)), scene.timeoutMs ?? 240_000, `${scene.id} 준비`);
+            // 이어 받은 판은 창이 보이는 채로 굴림 → s.act로 감쌈 (맥: 줄여 보이던 창을 잠깐 제 배율로)
+            const work = () => scene.prepare(s);
+            if (scene.prepare) await withTimeout(Promise.resolve().then(() => (session ? s.act(work) : work())), scene.timeoutMs ?? 240_000, `${scene.id} 준비`);
             rec.state = scene.manual ? '손으로' : '준비됨';
         } catch (error) {
             rec.state = '실패';
@@ -84,7 +86,7 @@ async function reveal(rec) {
     rec.overlap = await rec.s.show().catch(() => 0);
     if (rec.state === '실패' || !rec.scene.show) return;
     try {
-        await withTimeout(Promise.resolve().then(() => rec.scene.show(rec.s)), rec.scene.showTimeoutMs ?? 60_000, `${rec.scene.id} 보여 주기`);
+        await withTimeout(Promise.resolve().then(() => rec.s.act(() => rec.scene.show(rec.s))), rec.scene.showTimeoutMs ?? 60_000, `${rec.scene.id} 보여 주기`);
     } catch (error) {
         rec.state = '실패';
         rec.error = firstLine(error);
