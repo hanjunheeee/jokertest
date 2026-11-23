@@ -12,6 +12,7 @@ import { useTribunalIntro } from "../../../hooks/overlays/useTribunalIntro.js"
 import DefendantCard from "./DefendantCard.jsx"
 import TribunalChat from "./TribunalChat.jsx"
 import TribunalActions from "./TribunalActions.jsx"
+import { TRIBUNAL_PRESENTATION_FIXED_CLASS } from "@m/domains/game/ingame/constants/tribunalPresentationLayer.js"
 import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardInset.js"
 
 // intro는 카드 가운데 크게, split은 세로면 위 줄(카드 왼쪽·버튼 오른쪽), 가로 폰이면 왼쪽 칸
@@ -65,7 +66,7 @@ export default function TribunalOverlay({
 
     return (
         <div
-            className="fixed inset-0 z-[55] safe-pt safe-pb safe-px"
+            className={TRIBUNAL_PRESENTATION_FIXED_CLASS}
             role="presentation"
             data-ingame-tribunal-presentation=""
             data-ingame-tribunal-layout={layoutPhase}

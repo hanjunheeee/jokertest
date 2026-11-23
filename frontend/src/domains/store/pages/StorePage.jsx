@@ -10,6 +10,7 @@ import StorePanel from "../components/panel/StorePanel.jsx"
 import StoreCurrencyBalance from "../components/StoreCurrencyBalance.jsx"
 import StoreCouponButton from "../components/StoreCouponButton.jsx"
 import { STORE_ASSETS } from "../../../shared/constants/storeAssets.js"
+import { STORE_SHOW_COUPON_BUTTON } from "../constants/storeLayoutStyle.js"
 import MotionBackButton from "@/shared/ui/MotionBackButton.jsx"
 import { BACK_BUTTON_PAGE_POSITION_CLASS } from "@/shared/constants/navigationLayout.js"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
@@ -51,7 +52,7 @@ export default function StorePage() {
         status={economyStatus}
         onRetry={retryEconomySummary}
       />
-      <StoreCouponButton visible={introDone} />
+      <StoreCouponButton visible={introDone && STORE_SHOW_COUPON_BUTTON} />
       <StorePanel visible={introDone} />
 
       {/* 로비로 돌아가기, 영상 중엔 누르기 막음 */}

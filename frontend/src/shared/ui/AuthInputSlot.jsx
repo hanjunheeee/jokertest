@@ -32,10 +32,12 @@ export default function AuthInputSlot({
   if (passwordToggle) inputType = passwordVisible ? "text" : "password"
 
   return (
-    <div className={`relative w-full ${compact ? "origin-top -mb-0.5 scale-[0.97]" : ""}`}>
-      <PublicAsset src={LOGIN_ASSETS.input} alt="" className="block h-auto w-full select-none" />
+    <div
+      className={`relative w-full min-w-0 max-w-full overflow-hidden ${compact ? "origin-top -mb-1 scale-[0.96]" : ""}`}
+    >
+      <PublicAsset src={LOGIN_ASSETS.input} alt="" className="block h-auto w-full max-w-full select-none" />
 
-      <div className="absolute inset-0 flex items-center gap-2 px-[9%] py-2">
+      <div className="absolute inset-0 box-border flex min-w-0 items-center gap-1.5 overflow-hidden px-[9%] py-2">
         {/* 앞 아이콘은 넘겼을 때만 */}
         {leadingIcon ? (
           <span className={`pointer-events-none flex items-center ${compact ? "scale-95" : ""}`}>{leadingIcon}</span>

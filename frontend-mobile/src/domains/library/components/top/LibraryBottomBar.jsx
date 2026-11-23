@@ -8,7 +8,7 @@ import {
     INNER_REVEAL_TRANSITION,
 } from "@/domains/library/constants/libraryEntranceMotion.js"
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
-import { BOTTOM_BACK_BTN_CLASS } from "@m/shared/ui/button/BottomBackFixed.jsx"
+import { BOTTOM_BACK_BTN_CLASS } from "@m/shared/ui/button/bottomBackStyles.js"
 import BookmarkTabs from "@m/domains/library/components/top/BookmarkTabs.jsx"
 
 // flex 흐름: 책 프레임 아래 전용 줄 (fixed 아님 → 책이 침범하지 않음)

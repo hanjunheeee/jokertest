@@ -25,7 +25,7 @@ export const PANEL_FRAME_STYLE = {
 
 // 폰은 화면 폭 전체, 태블릿·가로는 가운데 폭 제한
 export const PANEL_CLASS =
-  "fixed inset-x-0 bottom-0 mx-auto flex max-h-[88svh] w-full flex-col overflow-hidden text-[#1a1008] shadow-[0_-10px_30px_rgba(0,0,0,0.6)] md:max-w-xl land:max-w-lg land:max-h-[96svh]"
+  "fixed inset-x-0 bottom-0 mx-auto flex max-h-[88svh] w-full flex-col overflow-hidden text-[#1a1008] md:max-w-xl land:max-w-lg land:max-h-[96svh]"
 
 // 닫기 버튼 (누르는 자리 44px, 머리 판 오른쪽)
 export const CLOSE_BTN_CLASS =

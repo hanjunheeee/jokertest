@@ -16,6 +16,7 @@ import {
   GAME_RESULT_BG_CLASS,
   GAME_RESULT_PAGE_CLASS,
   GAME_RESULT_SHELL_CLASS,
+  GAME_RESULT_SHOW_MVP_PANEL,
 } from "../constants/gameResultLayout.js"
 import GameResultBanner from "./GameResultBanner.jsx"
 import GameResultMvpPanel from "./GameResultMvpPanel.jsx"
@@ -81,8 +82,8 @@ export default function GameResultShell({
               selfUuid={selfUuid}
             />
           </motion.div>
-          {/* MVP 있을 때만 */}
-          {mvp ? (
+          {/* MVP 있을 때만 (플래그로 임시 숨김 가능) */}
+          {GAME_RESULT_SHOW_MVP_PANEL && mvp ? (
             <motion.div
               initial={INNER_REVEAL_INIT}
               animate={INNER_REVEAL_ANIMATE}

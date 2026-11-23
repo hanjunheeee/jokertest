@@ -27,7 +27,7 @@ import PublicAsset from "@/shared/ui/PublicAsset"
 
 // 틀 바탕·틀 그림 모양 (보드 모양만 눌러서 크게 보기라 손가락 커서)
 const CHAT_ROOT_CLASS =
-  "group relative w-full [container-type:inline-size]"
+  "group relative w-full overflow-visible [container-type:inline-size]"
 
 const CHAT_ROOT_BOARD_CLASS =
   `${CHAT_ROOT_CLASS} cursor-pointer`
@@ -55,6 +55,7 @@ export default function InGameChatContent({
   embeddedPhaseTimerStatusLabel = null,
   embeddedPhaseTimerRemainingRatio = 0,
   embeddedPhaseTimerRemainingSec = null,
+  embeddedPhaseTimerShowResourcesWithoutLabel = false,
 }) {
   const [layoutReady, setLayoutReady] = useState(false)
 
@@ -136,10 +137,17 @@ export default function InGameChatContent({
         {showEmbeddedPhaseTimer ? (
           <InGamePhaseTurnTimerPanel
             placement={INGAME_TIMER_PLACEMENT.CHAT}
-            embeddedLayout={variant === "closeup" ? "closeup" : "board"}
+            embeddedLayout={
+              variant === "closeup"
+                ? "closeup"
+                : variant === "tribunal"
+                  ? "tribunal"
+                  : "board"
+            }
             statusLabel={embeddedPhaseTimerStatusLabel}
             remainingRatio={embeddedPhaseTimerRemainingRatio}
             remainingSec={embeddedPhaseTimerRemainingSec}
+            showResourcesWithoutLabel={embeddedPhaseTimerShowResourcesWithoutLabel}
           />
         ) : null}
 

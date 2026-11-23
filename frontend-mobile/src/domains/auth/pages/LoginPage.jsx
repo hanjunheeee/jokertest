@@ -39,7 +39,11 @@ export default function LoginPage() {
 
   // 보통 화면: 가입 모드면 가입 칸·넓은 액자, 아니면 로그인 칸
   return (
-    <Scene onSubmit={page.handleSubmit} frameSize={page.isSignupMode ? "signup" : "default"}>
+    <Scene
+      onSubmit={page.handleSubmit}
+      frameSize={page.isSignupMode ? "signup" : "default"}
+      showBrandLogo={!page.isSignupMode}
+    >
       {/* 소셜 로그인 실패로 돌아왔으면 위에 실패 문구 */}
       {socialView.mode === "socialError" && <SocialErrorBanner message={socialView.message} />}
 

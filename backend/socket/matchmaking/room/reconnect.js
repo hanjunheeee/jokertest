@@ -10,6 +10,7 @@ const { isCanonicalSocket, detachSocketFromChannel, isSeatedInRoom, hasRoomMembe
 const { scheduleRoomRetention, cancelRoomRetention, markPresenceConfirmed } = require('./leave')
 const { buildRoomPayload } = require('./view')
 const { deps } = require('../core/deps')
+const { logMatchingFlow } = require('../debug/matchingFlowLog')
 
 // 재접속한 소켓을 원래 방 채널에 다시 붙임 (자리 그대로일 때만)
 async function resyncRoomChannelOnReconnect(socket, uuid) {
@@ -62,8 +63,12 @@ async function resyncRoomChannelOnReconnect(socket, uuid) {
         return
     }
 
-    // join 사이 자리 그대로면 끝
-    if (stillOwnsCapturedSeat()) return
+    // join 사이 자리 그대로면 방에 있음 확인(끊김 유예 취소) 후 끝
+    if (stillOwnsCapturedSeat()) {
+        markPresenceConfirmed(uuid)
+        cancelRoomRetention(uuid)
+        return
+    }
 
     // 그사이 나갔거나 강퇴·새 탭에 밀렸으면 방금 붙인 채널 도로 뗌
     detachSocketFromChannel(
@@ -117,6 +122,7 @@ function handleGetCurrentRoom(uuid, callback) {
     // 초대 입장 처리 중이면 아직 방 없음 + 기다리라고 (pending)
     const attempt = getAdmissionAttempt(uuid)
     if (attempt) {
+        logMatchingFlow('get_current_room', { uuid, pending: true, reason: 'admission' })
         callback({ ok: true, room: null, pending: true })
         return
     }
@@ -126,9 +132,11 @@ function handleGetCurrentRoom(uuid, callback) {
     // 방 없음, 방 만들기·입장·매칭 처리 중이면 pending
     if (!roomId) {
         if (pendingRoomTransitions.has(uuid)) {
+            logMatchingFlow('get_current_room', { uuid, pending: true, reason: 'transition' })
             callback({ ok: true, room: null, pending: true })
             return
         }
+        logMatchingFlow('get_current_room', { uuid, room: null, reason: 'no_player_room' })
         callback({ ok: true, room: null })
         return
     }
@@ -139,6 +147,7 @@ function handleGetCurrentRoom(uuid, callback) {
     if (!room || !room.players.has(uuid)) {
         playerRoom.delete(uuid)
         cancelRoomRetention(uuid)
+        logMatchingFlow('get_current_room', { uuid, roomId, room: null, reason: 'stale_mapping' })
         callback({ ok: true, room: null })
         return
     }
@@ -147,7 +156,9 @@ function handleGetCurrentRoom(uuid, callback) {
     markPresenceConfirmed(uuid)
     cancelRoomRetention(uuid)
 
-    callback({ ok: true, room: buildRoomPayload(room) })
+    const payload = buildRoomPayload(room)
+    logMatchingFlow('get_current_room', { uuid, roomId: payload.roomId, playerCount: payload.players?.length })
+    callback({ ok: true, room: payload })
 }
 
 module.exports = {

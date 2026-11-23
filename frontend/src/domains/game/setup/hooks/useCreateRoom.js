@@ -2,14 +2,17 @@
 // hooks/useGameSetupPage가 씀
 // 요청 때 계정·소켓·소속 범위를 잡아 두고(createRoomScope), 응답 올 때 하나라도 바뀌었으면 그 응답은 버림
 // 요청 한 번 흐름(Node 옮기기·생긴 방 찾기)은 createRoomRequest
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { useAuthStore } from "@/domains/auth/store/auth.store.js"
+import { clearRejoinGameId } from "@/domains/game/shared/utils/partyMatchingRejoin.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { CREATE_ROOM_ERROR_MSGS } from "../../shared/constants/gameSetupSocket.js"
-import { leaveRoom } from "../../matching/socket/room.js"
+import { askRoom } from "../../shared/socket/room.js"
 import { captureScope, isScopeCurrent } from "./createRoomScope.js"
 import { runCreate } from "./createRoomRequest.js"
+import { traceMatchingFlow } from "@/domains/game/matching/debug/matchingFlowTrace.js"
 
 // 화면 살아 있는지 표시
 function useMountedRef() {
@@ -23,16 +26,19 @@ function useMountedRef() {
   return mountedRef
 }
 
-// 방 들어가기: 끝난 판 지우고 방 넣고 대기방으로
-// 그사이 화면을 떠났으면 방을 안 넣고 서버 방에서 나감 (딴 화면에 있는데 방에 묶이지 않게)
-function enterOrLeave(room, mountedRef, navigate) {
-  if (!mountedRef.current) {
-    leaveRoom()
-    return
-  }
+// 방 만들기 성공 후 대기방으로 (마운트 여부와 무관 — StrictMode 정리 타이밍에도 서버·스토어 맞춤)
+function enterAfterCreate(room, navigate) {
   useInGameStore.getState().clearGame()
-  useMatchingStore.getState().setRoom(room)
-  navigate("/game-matching")
+  clearRejoinGameId(useAuthStore.getState().user?.uuid)
+  const store = useMatchingStore.getState()
+  store.setRoom(room)
+  store.markLocalRoomTrust()
+  traceMatchingFlow("create_enter_matching", {
+    roomId: useMatchingStore.getState().roomId,
+    isInRoom: useMatchingStore.getState().isInRoom,
+    trustUntil: useMatchingStore.getState().roomLocalTrustUntil,
+  })
+  queueMicrotask(() => navigate("/game-matching", { replace: true }))
 }
 
 // 방 만들기 상태·동작
@@ -54,8 +60,13 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
   // 방 들어가기: 범위가 바뀌었으면 안 들어감
   const enterRoom = (room, scope = null) => {
     if (scope !== null && !isCurrent(scope)) return
-    enterOrLeave(room, mountedRef, navigate)
+    enterAfterCreate(room, navigate)
   }
+
+  // 만드는 중 화면을 나가면 범위만 끊어 응답이 와도 대기방으로 안 감
+  const abandonScope = useCallback(() => {
+    scopeRef.current = null
+  }, [])
 
   // 만드는 중 표시 끔 (마지막 요청이 끝날 때)
   const release = () => {
@@ -77,9 +88,28 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
     setIsCreating(true)
     const scope = captureScope(socket, accountId, identityGeneration)
     scopeRef.current = scope
-    await runCreate(socket, settings, scope, { scopeRef, isCurrent, enterRoom, showError, release })
+    const outcome = await runCreate(socket, settings, scope, { scopeRef, isCurrent, enterRoom, showError, release })
+
+    // enterAfterCreate가 이미 이동 예약함; 스토어만 채워진 경우만 한 번 더
+    if (outcome === "entered") return
+    if (useMatchingStore.getState().isInRoom) {
+      queueMicrotask(() => navigate("/game-matching", { replace: true }))
+      return
+    }
+    // 응답은 못 받았는데 서버에 방만 있는 경우
+    if (outcome !== "failed") {
+      const afterSocket = getSocket()
+      if (!afterSocket) return
+      try {
+        const res = await askRoom(afterSocket)
+        if (res?.ok && res.room) enterAfterCreate(res.room, navigate)
+      } catch {
+        // runCreate 쪽에서 이미 안내함
+      }
+    }
   }
 
-  // isBusy: 지금 만드는 중인지 (뒤로 가기 확인용)
-  return { isCreating, createGame, isBusy: () => creatingRef.current }
+  const isBusy = useCallback(() => creatingRef.current, [])
+
+  return { isCreating, createGame, isBusy, abandonScope }
 }

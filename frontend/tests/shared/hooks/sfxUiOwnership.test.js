@@ -241,7 +241,7 @@ test("AC-06 언마운트 뒤에는 capture가 제거되어 아무 소리도 나�
   assert.deepEqual(after.kinds(), [])
 })
 
-test("AC-01 나가기 확인은 confirm 반환 경계가 소유하고 기존 leave 계약을 유지한다", () => {
+test("AC-01 나가기 확인은 confirm 반환 경계가 소유하고 기존 leave 계약을 유지한다", async () => {
   const decisions = []
   const leaves = []
 
@@ -250,20 +250,20 @@ test("AC-01 나가기 확인은 confirm 반환 경계가 소유하고 기존 lea
     requestLeave: () => leaves.push("leave"),
     onDecision: (kind) => decisions.push(kind),
   })
-  assert.equal(approve(), true)
+  assert.equal(await approve(), true)
 
   const cancel = createExitConfirmController({
     confirm: () => false,
     requestLeave: () => leaves.push("leave"),
     onDecision: (kind) => decisions.push(kind),
   })
-  assert.equal(cancel(), false)
+  assert.equal(await cancel(), false)
 
   assert.deepEqual(decisions, ["ui-confirm", "ui-cancel"])
   assert.deepEqual(leaves, ["leave"])
 })
 
-test("AC-06 소리 통지가 던져도 나가기 판단과 leave 호출은 바뀌지 않는다", () => {
+test("AC-06 소리 통지가 던져도 나가기 판단과 leave 호출은 바뀌지 않는다", async () => {
   const leaves = []
   const controller = createExitConfirmController({
     confirm: () => true,
@@ -273,6 +273,6 @@ test("AC-06 소리 통지가 던져도 나가기 판단과 leave 호출은 바�
     },
   })
 
-  assert.equal(controller(), true)
+  assert.equal(await controller(), true)
   assert.deepEqual(leaves, ["leave"])
 })

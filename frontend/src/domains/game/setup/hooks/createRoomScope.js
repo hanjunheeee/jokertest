@@ -21,7 +21,10 @@ export function isScopeCurrent(scopeRef, scope) {
   if ((auth.user?.uuid ?? null) !== scope.accountId) return false
   if (auth.identityGeneration !== scope.identityGeneration) return false
   const socket = getSocket()
-  if (socket !== scope.socket) return false
-  if ((socket?.id ?? null) !== scope.socketId) return false
+  if (!socket) return false
+  const socketId = socket.id ?? null
+  if (socketId !== scope.socketId) return false
+  // 재연결로 인스턴스만 바뀐 경우 범위의 소켓 참조 갱신 (같은 id면 동일 연결로 봄)
+  if (socket !== scope.socket) scope.socket = socket
   return isSameScope(readScope(), scope.membership)
 }

@@ -22,11 +22,10 @@ const BASIC_EMOJI = Object.freeze({
 // 칸 고르개 (화면 글자·aria-label 먼저, 카톡형 칸 표시는 data-* 그대로)
 const talk = {
     layout: (page) => page.locator('[data-talk-layout]'),
-    strip: (page) => page.getByRole('region', { name: '플레이어 초상 띠' }),
-    slot: (page, nickname) => talk.strip(page).getByRole('button', { name: new RegExp(`^${nickname}(,|$)`) }),
-    mySlot: (page) => talk.strip(page).getByRole('button', { name: /, 나(,|$)/ }),
     board: (page) => page.getByRole('region', { name: '플레이어 카드' }),
-    boardSlot: (page, nickname) => talk.board(page).getByRole('button', { name: new RegExp(`^${nickname}(,|$)`) }),
+    slot: (page, nickname) => talk.board(page).getByRole('button', { name: new RegExp(`^${nickname}(,|$)`) }),
+    mySlot: (page) => talk.board(page).getByRole('button', { name: /, 나(,|$)/ }),
+    boardSlot: (page, nickname) => talk.slot(page, nickname),
     chat: (page) => page.getByRole('region', { name: '채팅', exact: true }),
     log: (page) => talk.chat(page).getByRole('log', { name: '채팅 내역' }),
     lines: (page) => talk.log(page).locator('li[data-talk-line]'),
@@ -35,7 +34,6 @@ const talk = {
     system: (page) => talk.log(page).locator('li[data-talk-line="system"]'),
     phaseLine: (page) => page.locator('[data-talk-phase-line]'),
     timebarSlot: (page) => page.locator('[data-talk-layout] [data-slot="timebar"]'),
-    boardSlotArea: (page) => page.locator('[data-talk-layout] [data-slot="board"]'),
     input: (page) => page.getByRole('textbox', { name: '채팅 입력' }),
     send: (page) => page.getByRole('button', { name: '채팅 보내기' }),
     actionRow: (page) => page.locator('[data-ingame-action-row]'),
@@ -63,6 +61,12 @@ async function startTalkGame(table, humans, { bots = 4, roles, settings, closeRe
         for (const h of list) await ui.readRoleReveal(h.page);
     }
     return t;
+}
+
+/** 폰 가로(넓은 배치): 카드 판·카드 메뉴·이모티콘 팔레트 (세로 카톡형에는 카드 나열 없음) */
+async function useWideBoard(page) {
+    await page.setViewportSize({ width: 812, height: 375 });
+    await expect(talk.board(page)).toBeVisible({ timeout: 20000 });
 }
 
 /** 단계 넘기기 → 사람 화면 단계 줄이 맞을 때까지 → 연출 창 닫기 */
@@ -185,4 +189,5 @@ async function nicknameOf(t, uuid) {
 module.exports = {
     talk, clearOverlays, startTalkGame, goPhase, toDay, toVote, toNight, say, botSay, botNightSay, botEmoji, botLeave,
     getExecuted, executeBot, jokerBot, overflowX, bgColor, nicknameOf, sleep, BASIC_EMOJI, CHAT_GAP_MS, EMOJI_GAP_MS,
+    useWideBoard,
 };

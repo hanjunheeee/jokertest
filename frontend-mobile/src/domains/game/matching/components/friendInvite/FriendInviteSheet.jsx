@@ -6,7 +6,7 @@ import FriendInviteRow from "./FriendInviteRow.jsx"
 
 // 친구 없음 글 (데스크톱 EMPTY_CLASS 색)
 const EMPTY_CLASS =
-  "mb-2 shrink-0 text-center font-subheading app-text-scaled [--app-text-size:0.8rem] font-bold text-white/70"
+  "mb-2 mt-2 shrink-0 translate-y-1 text-center font-subheading app-text-scaled [--app-text-size:0.8rem] font-bold text-white/70"
 
 // 친구 초대 창
 export default function FriendInviteSheet({ open, onClose, friends = [], invitingIds = new Set(), onInviteFriend }) {

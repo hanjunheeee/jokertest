@@ -17,7 +17,7 @@ export function buildCreateRoomPayload({ checks, ranges, roleComposition, specif
     maxPlayers: ranges["max-players"],
     jokerCount: ranges["joker-count"],
     lightsOut: checks["lights-out"],
-    soulBetting: checks["soul-betting"],
+    soulBetting: false,
     dayDiscussionTime: ranges["day-discussion-time"],
     dayVoteTime: ranges["day-vote-time"],
     nightActionTime: ranges["night-action-time"],

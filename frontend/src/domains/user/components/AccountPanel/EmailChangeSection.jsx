@@ -3,12 +3,15 @@
 import { LockIcon, MailIcon } from "@/shared/ui/InputIcons.jsx"
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import {
-  DIVIDER_SECTION_CLASS, INPUT_WRAP_CLASS, PANEL_FORM_CLASS, PANEL_FORM_HEADING_CLASS,
+  DIVIDER_SECTION_CLASS,
+  INPUT_WRAP_CLASS,
+  PANEL_FORM_CLASS,
+  PANEL_FORM_HEADING_CLASS,
+  PANEL_INLINE_LINK_CLASS,
+  PANEL_MUTED_TEXT_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import AccountPanelFormActions from "@/domains/user/components/AccountPanel/AccountPanelFormActions.jsx"
 import { useEmailChangeForm } from "@/domains/user/hooks/member/useEmailChangeForm.js"
-
-const CURRENT_EMAIL_CLASS = "font-subheading app-text-scaled [--app-text-size:clamp(0.62rem,0.85vw,0.72rem)] text-black/70 break-all"
 
 export default function EmailChangeSection({ account, onChanged }) {
   const form = useEmailChangeForm({ account, onChanged })
@@ -17,7 +20,7 @@ export default function EmailChangeSection({ account, onChanged }) {
   return (
     <section className={DIVIDER_SECTION_CLASS}>
       <h3 className={PANEL_FORM_HEADING_CLASS}>이메일 변경</h3>
-      <p className={CURRENT_EMAIL_CLASS}>지금 이메일: {account?.email || "불러오는 중"}</p>
+      <p className={PANEL_MUTED_TEXT_CLASS}>지금 이메일: {account?.email || "불러오는 중"}</p>
 
       <form onSubmit={codeStage ? form.verifyCode : form.sendCode} className={PANEL_FORM_CLASS}>
         <div className={INPUT_WRAP_CLASS}>
@@ -65,7 +68,7 @@ export default function EmailChangeSection({ account, onChanged }) {
           confirmDisabled={form.loading || !account}
         />
         {codeStage ? (
-          <button type="button" className="auth-text-link self-start" onClick={form.sendCode} disabled={form.loading}>
+          <button type="button" className={PANEL_INLINE_LINK_CLASS} onClick={form.sendCode} disabled={form.loading}>
             인증번호 다시 받기
           </button>
         ) : null}

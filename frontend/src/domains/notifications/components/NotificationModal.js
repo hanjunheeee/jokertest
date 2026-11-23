@@ -1,6 +1,7 @@
 // 알림 창 (목록·읽음·보러 가기·읽은 메시지 삭제)
 // 로비 친구 영역(LobbyFriendArea.jsx)이 씀, 항목·본문·바닥 줄은 modal/ 아래
 import { createElement } from "react"
+import { AnimatePresence } from "framer-motion"
 
 import { useNotificationsStore } from "../store/notifications.store.js"
 import { resolveBodyState, selectVisibleNotifications } from "../utils/visibleNotifications.js"
@@ -27,8 +28,6 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
   // 훅은 닫혀 있어도 돌림, 닫힐 때 포커스 되돌리기 위함
   useRestoreFocus(open)
   useAutoMarkRead(open, status, generalChecks)
-
-  if (!open) return null
 
   const visible = selectVisibleNotifications(items, generalChecks)
   const bodyState = resolveBodyState(status, visible.length)
@@ -58,29 +57,36 @@ export default function NotificationModal({ open, onClose, onNavigate }) {
   })
 
   return createElement(
-    NotificationModalShell,
-    {
-      onDismiss: onClose,
-      wrapperProps: { "data-notification-modal": "true" },
-    },
-    createElement(
-      "div",
-      { className: MODAL_BODY_COLUMN_CLASS },
-      createElement(
-        NotificationScrollArea,
-        {
-          bodyState,
-          centered: bodyState !== "list",
-        },
-        renderBody({
-          state: bodyState,
-          error,
-          visible,
-          onRetry: () => useNotificationsStore.getState().loadSnapshot(),
-          itemProps,
-        }),
-      ),
-      renderFooter({ disabled: deleteDisabled, pending: deleteReadPending, error: deleteReadError }),
-    ),
+    AnimatePresence,
+    null,
+    open
+      ? createElement(
+          NotificationModalShell,
+          {
+            key: "notification-modal",
+            onDismiss: onClose,
+            wrapperProps: { "data-notification-modal": "true" },
+          },
+          createElement(
+            "div",
+            { className: MODAL_BODY_COLUMN_CLASS },
+            createElement(
+              NotificationScrollArea,
+              {
+                bodyState,
+                centered: bodyState !== "list",
+              },
+              renderBody({
+                state: bodyState,
+                error,
+                visible,
+                onRetry: () => useNotificationsStore.getState().loadSnapshot(),
+                itemProps,
+              }),
+            ),
+            renderFooter({ disabled: deleteDisabled, pending: deleteReadPending, error: deleteReadError }),
+          ),
+        )
+      : null,
   )
 }

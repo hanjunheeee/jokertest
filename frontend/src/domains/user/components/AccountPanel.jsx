@@ -4,7 +4,9 @@ import { motion } from "framer-motion"
 import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   CONTENT_CLASS,
+  CONTENT_BOTTOM_SPACER_CLASS,
   FRAME_CONTENT_CLASS,
+  FRAME_CONTENT_HEIGHT,
   FRAME_IMG_CLASS,
   FRAME_INSET,
   FRAME_SHELL_CLASS,
@@ -52,7 +54,7 @@ export default function AccountPanel() {
 
         <div
           className={FRAME_CONTENT_CLASS}
-          style={FRAME_INSET}
+          style={{ height: FRAME_CONTENT_HEIGHT, ...FRAME_INSET }}
         >
           <div className={SCROLL_CLASS}>
             <div className={CONTENT_CLASS}>
@@ -77,6 +79,7 @@ export default function AccountPanel() {
               <WithdrawSection account={account} />
 
               <DiscordAccountLink />
+              <div className={CONTENT_BOTTOM_SPACER_CLASS} aria-hidden="true" />
             </div>
           </div>
         </div>

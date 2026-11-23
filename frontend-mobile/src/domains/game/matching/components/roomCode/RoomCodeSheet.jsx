@@ -24,10 +24,15 @@ const CELL_CLASS =
 // 복사 버튼 (데스크톱 ROOM_CODE_ACTION_BTN_LABEL_CLASS 글자, 못 쓰면 반투명)
 const COPY_LOOK = {
   button:
-    "relative flex h-11 w-[min(46%,15.25rem)] min-w-0 cursor-pointer items-center justify-center overflow-hidden border-0 bg-transparent p-0 leading-none transition-transform active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
+    "relative flex h-9 w-[min(38%,11.25rem)] min-w-0 cursor-pointer items-center justify-center overflow-hidden border-0 bg-transparent p-0 leading-none transition-transform active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100",
   img: "pointer-events-none absolute inset-0 h-full w-full select-none object-fill",
   label:
-    "relative z-[1] whitespace-nowrap font-subheading app-text-scaled [--app-text-size:1rem] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
+    "relative z-[1] whitespace-nowrap font-subheading app-text-scaled [--app-text-size:0.88rem] font-bold tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]",
+}
+
+const COPY_FOOTER_INSET = {
+  ...FOOTER_INSET,
+  paddingBottom: "5.25%",
 }
 
 // 방코드 창 (roomCode는 확인된 방에서만 값 있음)
@@ -83,7 +88,7 @@ export default function RoomCodeSheet({ open, onClose, roomCode }) {
         </div>
 
         {/* 복사 버튼은 틀 아래쪽 칸 (데스크톱 footer 자리) */}
-        <div className="absolute inset-x-0 bottom-0 flex justify-center" style={FOOTER_INSET}>
+        <div className="absolute inset-x-0 bottom-0 flex translate-y-1 justify-center land:translate-y-0.5" style={COPY_FOOTER_INSET}>
           <ImageButton
             look={COPY_LOOK}
             label={copied ? "복사됨" : "방코드 복사"}

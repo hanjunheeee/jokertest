@@ -5,6 +5,13 @@
 const KNOWN_WINNERS = new Set(["CITIZEN", "JOKER"])
 const KNOWN_TEAMS = new Set(["CITIZEN", "JOKER"])
 
+// null 또는 비지 않은 문자열만 허용 (없으면 칸 안 붙임)
+function normalizeOptionalAccountItemId(value) {
+  if (value === null) return null
+  if (typeof value === "string" && value.length > 0) return value
+  return undefined
+}
+
 // 직업 공개 목록: 모양이 틀리거나 같은 사람이 두 번이면 그 항목만 뺌
 function normalizeRoleReveals(rawReveals) {
   if (!Array.isArray(rawReveals)) return []
@@ -24,14 +31,19 @@ function normalizeRoleReveals(rawReveals) {
     }
     seenUuids.add(raw.uuid)
     // 살아 있는 사람은 죽은 이유 비움
-    normalized.push({
+    const entry = {
       uuid: raw.uuid,
       nickname: raw.nickname,
       role: raw.role,
       team: raw.team,
       alive: raw.alive,
       deathReason: raw.alive ? null : (raw.deathReason ?? null),
-    })
+    }
+    const photoId = normalizeOptionalAccountItemId(raw.accountProfilePhotoId)
+    if (photoId !== undefined) entry.accountProfilePhotoId = photoId
+    const borderId = normalizeOptionalAccountItemId(raw.accountProfileBorderId)
+    if (borderId !== undefined) entry.accountProfileBorderId = borderId
+    normalized.push(entry)
   }
   return normalized
 }

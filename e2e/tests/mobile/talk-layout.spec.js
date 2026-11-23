@@ -1,31 +1,29 @@
-// 모바일 카톡형 인게임 배치: 폰 세로(375×812)에서 위 줄·단계 줄·초상 띠·채팅방·행동 줄·입력칸이 한 줄로 쌓이는지
+// 모바일 카톡형 인게임 배치: 폰 세로(375×812)에서 위 줄·단계 줄·채팅방·행동 줄·입력칸이 한 줄로 쌓이는지 (초상 띠·카드 나열 없음)
 const { test, expect } = require('../../helpers/fixtures');
 const { talk, startTalkGame, overflowX } = require('./_talk');
 
 test.describe('카톡형 배치 (폰 세로)', () => {
-    test('폰 세로로 판에 들어가면 → 위 줄·단계 줄·초상 띠·채팅방·행동 줄·입력칸이 다 보임 @game', async ({ user, table }) => {
+    test('폰 세로로 판에 들어가면 → 위 줄·단계 줄·채팅방·행동 줄·입력칸이 다 보임 @game', async ({ user, table }) => {
         await startTalkGame(table, user, { bots: 2 });
         const { page } = user;
         await expect(talk.layout(page)).toBeVisible();
         await expect(page.getByRole('button', { name: '게임 나가기' })).toBeVisible();
         await expect(talk.phaseLine(page)).toBeVisible();
-        await expect(talk.strip(page)).toBeVisible();
+        await expect(page.getByRole('region', { name: '플레이어 초상 띠' })).toHaveCount(0);
         await expect(talk.chat(page)).toBeVisible();
         await expect(talk.actionRow(page)).toBeVisible();
         await expect(talk.input(page)).toBeVisible();
         await expect(talk.send(page)).toBeVisible();
     });
 
-    test('폰 세로 판 화면은 → 위에서 아래로 위 줄·초상 띠·채팅방·행동 줄·입력칸 순서 @game', async ({ user, table }) => {
+    test('폰 세로 판 화면은 → 위에서 아래로 위 줄·채팅방·행동 줄·입력칸 순서 @game', async ({ user, table }) => {
         await startTalkGame(table, user, { bots: 2 });
         const { page } = user;
         const top = (await talk.phaseLine(page).boundingBox()).y;
-        const strip = (await talk.strip(page).boundingBox()).y;
         const chat = (await talk.chat(page).boundingBox()).y;
         const actions = (await talk.actionRow(page).boundingBox()).y;
         const input = (await talk.input(page).boundingBox()).y;
-        expect(top).toBeLessThan(strip);
-        expect(strip).toBeLessThan(chat);
+        expect(top).toBeLessThan(chat);
         expect(chat).toBeLessThan(actions);
         expect(actions).toBeLessThan(input);
     });
@@ -39,9 +37,7 @@ test.describe('카톡형 배치 (폰 세로)', () => {
         await startTalkGame(table, user, { bots: 2 });
         const { page } = user;
         const chat = await talk.chat(page).boundingBox();
-        const strip = await talk.strip(page).boundingBox();
         const actions = await talk.actionRow(page).boundingBox();
-        expect(chat.height).toBeGreaterThan(strip.height);
         expect(chat.height).toBeGreaterThan(actions.height);
         expect(chat.height).toBeGreaterThan(812 * 0.3);
     });
@@ -56,14 +52,11 @@ test.describe('카톡형 배치 (폰 세로)', () => {
         }
     });
 
-    test('단계 줄·보내기 버튼·초상 띠 칸은 → 누르는 높이 44px 이상 @game', async ({ user, table }) => {
+    test('단계 줄·보내기 버튼은 → 누르는 높이 44px 이상 @game', async ({ user, table }) => {
         await startTalkGame(table, user, { bots: 2 });
         const { page } = user;
         expect((await talk.phaseLine(page).boundingBox()).height).toBeGreaterThanOrEqual(44);
         expect((await talk.send(page).boundingBox()).height).toBeGreaterThanOrEqual(44);
-        const slot = await talk.mySlot(page).boundingBox();
-        expect(slot.width).toBeGreaterThanOrEqual(44);
-        expect(slot.height).toBeGreaterThanOrEqual(44);
     });
 
     test('입력칸은 → 화면 바닥 가까이 있고 TYPE HERE... 안내 글이 보임 @game', async ({ user, table }) => {

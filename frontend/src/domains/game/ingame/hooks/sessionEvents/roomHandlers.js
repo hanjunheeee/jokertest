@@ -6,6 +6,7 @@ import { useInGameStore } from "../../store/ingameStore.js"
 import { useInGameEmojiBubbleStore } from "../../store/inGameEmojiBubble.store.js"
 import { createGameEndedHandler, createSessionEndFinalizer } from "../../utils/sessionEnd.js"
 import { currentAccountId, refreshCaches, isRegistrationScopeCurrent } from "./scope.js"
+import { traceMatchingFlow } from "../../../matching/debug/matchingFlowTrace.js"
 
 // 사건 모양 검사용 (배열·null 빼고 객체만)
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
@@ -27,6 +28,16 @@ export function createRoomHandlers(registered, navigate) {
   const gameEnded = createGameEndedHandler({
     getCurrentGameId: () => useInGameStore.getState().gameId,
     finalize: buildFinalizer(navigate),
+    shouldFinalize: () => {
+      const path = window.location.pathname
+      return path === "/ingame" || path === "/gameresult"
+    },
+    onIgnore: (payload) => {
+      traceMatchingFlow("game_ended_ignored_off_ingame", {
+        gameId: payload?.gameId,
+        path: window.location.pathname,
+      })
+    },
   })
 
   // 내가 지금 방에서 추방됨: 방 비우고, 판에도 없으면 멀티 화면으로

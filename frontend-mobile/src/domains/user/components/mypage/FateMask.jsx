@@ -3,8 +3,8 @@
 
 import { motion } from "framer-motion"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
+import { MY_PAGE_FATE_DESC_INSET } from "@m/domains/user/constants/myPageMobileLayout.js"
 import {
-    FATE_MASK_DESC_INSET,
     FATE_MASK_FRAME_IMG_CLASS,
     FATE_MASK_HIGHLIGHT_CLASS,
     FATE_MASK_TEXT_SHADOW,
@@ -30,7 +30,7 @@ export default function FateMask({ description }) {
         >
             <PublicAsset src={MY_PAGE_ASSETS.fateMaskFrame} alt="" className={FATE_MASK_FRAME_IMG_CLASS} />
 
-            <p className={DESC_CLASS} style={{ ...FATE_MASK_DESC_INSET, textShadow: FATE_MASK_TEXT_SHADOW }}>
+            <p className={DESC_CLASS} style={{ ...MY_PAGE_FATE_DESC_INSET, textShadow: FATE_MASK_TEXT_SHADOW }}>
                 <span>
                     {prefix ? `${prefix} ` : null}
                     <span className={FATE_MASK_HIGHLIGHT_CLASS}>[{highlight}]</span>

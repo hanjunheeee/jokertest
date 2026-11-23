@@ -9,21 +9,27 @@ import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { useNextRoomSettingsStore } from "@/domains/game/setup/store/nextRoomSettingsStore.js"
 import {
   CREATE_ROOM_ERROR_MSGS,
-  CURRENT_ROOM_MAX_POLL_ATTEMPTS,
   CURRENT_ROOM_POLL_INTERVAL_MS,
 } from "@/domains/game/shared/constants/gameSetupSocket.js"
+import { RESULT_RETURN_CREATE_POLL_ATTEMPTS } from "../constants/resultReturnMatchingTiming.js"
+import { waitForResultMatchingRoom } from "./waitForResultMatchingRoom.js"
 import { resolveNextGameCreateRoomPayload } from "@/domains/game/setup/utils/resolveNextGameCreateRoomPayload.js"
-import { persistRejoinGameId } from "@/domains/game/shared/utils/partyMatchingRejoin.js"
+import { clearRejoinGameId, persistRejoinGameId } from "@/domains/game/shared/utils/partyMatchingRejoin.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { askRoom, createRoom } from "@/domains/game/shared/socket/room.js"
 import { askSnapshot } from "../socket/room.js"
+import { resetInGameNavigationDedupe } from "@/domains/game/matching/utils/navigateToInGame.js"
+import {
+  beginBlockInGameNavFromResultReturn,
+  clearBlockInGameNavFromResultReturn,
+} from "@/domains/game/matching/utils/resultReturnInGameNavBlock.js"
 
 // 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // 방 만들기 응답을 못 받았을 때: 방이 생겼는지 몇 번 물어봄 (서버가 만드는 중이면 기다렸다 다시)
-const findRoom = async (socket, isCurrent) => {
-  for (let attempt = 0; attempt < CURRENT_ROOM_MAX_POLL_ATTEMPTS; attempt += 1) {
+const findRoom = async (socket, isCurrent, maxAttempts = RESULT_RETURN_CREATE_POLL_ATTEMPTS) => {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (!isCurrent()) return null
     try {
       const res = await askRoom(socket)
@@ -38,16 +44,6 @@ const findRoom = async (socket, isCurrent) => {
     }
   }
   return null
-}
-
-// 이미 들어가 있는 방 묻기 (응답 없으면 방 없다고 봄)
-const askCurrentRoom = async (socket) => {
-  try {
-    const res = await askRoom(socket)
-    return res?.ok && res.room ? res.room : null
-  } catch {
-    return null
-  }
 }
 
 // 방장: 유지한 설정(없으면 기본값)으로 다음 판 방 만들기, 거절이면 { message }
@@ -112,16 +108,25 @@ export function useGameResultReturnToMatching() {
 
     // 방에 들어감: 판 정보는 이때 지움 (실패하면 결과 화면이 그대로 남게)
     const enterRoom = (room) => {
+      resetInGameNavigationDedupe()
       useInGameStore.getState().clearGame()
+      clearRejoinGameId(accountId)
       useMatchingStore.getState().setRoom(room)
+      useMatchingStore.getState().markLocalRoomTrust()
       navigate("/game-matching", { replace: true })
     }
 
     inFlightRef.current = true
     setIsReturning(true)
+    resetInGameNavigationDedupe()
+    beginBlockInGameNavFromResultReturn()
     try {
-      // 이미 방에 들어가 있으면 그 방으로
-      const room = await askCurrentRoom(socket)
+      const resolvedEndedGameId = await resolvePartyGameId(socket, endedGameId)
+      if (!isCurrent()) return
+      const room = await waitForResultMatchingRoom(socket, {
+        endedGameId: resolvedEndedGameId,
+        isCurrent,
+      })
       if (!isCurrent()) return
       if (room) {
         enterRoom(room)
@@ -138,18 +143,19 @@ export function useGameResultReturnToMatching() {
       }
 
       // 참가자: 끝난 판 id를 기억하고 방장 방 기다리러 감
-      const partyGameId = await resolvePartyGameId(socket, endedGameId)
       if (!isCurrent()) return
-      if (partyGameId) persistRejoinGameId(accountId, partyGameId)
+      if (resolvedEndedGameId) persistRejoinGameId(accountId, resolvedEndedGameId)
+      resetInGameNavigationDedupe()
       useInGameStore.getState().clearGame()
       navigate("/game-matching", {
         replace: true,
         state: {
           awaitRoomAfterGameResult: true,
-          ...(partyGameId ? { endedGameId: partyGameId } : {}),
+          ...(resolvedEndedGameId ? { endedGameId: resolvedEndedGameId } : {}),
         },
       })
     } finally {
+      clearBlockInGameNavFromResultReturn()
       // 끝나면 누르는 중 표시 풂
       inFlightRef.current = false
       if (mountedRef.current) setIsReturning(false)

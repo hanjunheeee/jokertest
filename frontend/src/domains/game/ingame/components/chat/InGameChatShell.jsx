@@ -8,6 +8,7 @@ import {
 import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
 import { useInGameChatSessionContext } from "./InGameChatSessionContext.js"
 import { useInGameStore } from "../../store/ingameStore.js"
+import { selectInGameEntryPreparingActive } from "../../utils/selectInGameEntryPreparing.js"
 import InGameChatCloseupOverlay from "./InGameChatCloseupOverlay.jsx"
 import InGameChatContent from "./InGameChatContent.jsx"
 
@@ -27,7 +28,9 @@ export default function InGameChatShell({
 }) {
   const [closeupOpen, setCloseupOpen] = useState(false)
   const tribunalPresentationOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
+  const entryPreparingActive = useInGameStore((s) => selectInGameEntryPreparingActive(s.state))
   const chatProps = useInGameChatSessionContext()
+  const hasStatusLabel = typeof statusLabel === "string" && statusLabel.length > 0
 
   // 재판 연출이 뜨면 크게 보기도 닫음 (끝난 뒤 저절로 다시 뜨지 않게)
   if (tribunalPresentationOpen && closeupOpen) setCloseupOpen(false)
@@ -35,11 +38,11 @@ export default function InGameChatShell({
   // 재판 연출이 자기 채팅을 띄우므로 겹치지 않게 숨김
   if (tribunalPresentationOpen) return null
 
-  // 틀 안 타이머는 채팅 자리이고 단계 글이 있을 때만 (끝난 판·역할 공개엔 없음)
+  // 틀 안 타이머: 채팅 자리 + (단계 글 또는 입장 준비 중 빈 명패)
   const showEmbeddedPhaseTimer =
     timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
-    && typeof statusLabel === "string"
-    && statusLabel.length > 0
+    && (hasStatusLabel || entryPreparingActive)
+  const embeddedPhaseTimerShowResourcesWithoutLabel = entryPreparingActive && !hasStatusLabel
 
   return (
     <>
@@ -56,6 +59,7 @@ export default function InGameChatShell({
           embeddedPhaseTimerStatusLabel={statusLabel}
           embeddedPhaseTimerRemainingRatio={remainingRatio}
           embeddedPhaseTimerRemainingSec={remainingSec}
+          embeddedPhaseTimerShowResourcesWithoutLabel={embeddedPhaseTimerShowResourcesWithoutLabel}
         />
       </aside>
 
@@ -67,6 +71,7 @@ export default function InGameChatShell({
         embeddedPhaseTimerStatusLabel={statusLabel}
         embeddedPhaseTimerRemainingRatio={remainingRatio}
         embeddedPhaseTimerRemainingSec={remainingSec}
+        embeddedPhaseTimerShowResourcesWithoutLabel={embeddedPhaseTimerShowResourcesWithoutLabel}
       />
     </>
   )

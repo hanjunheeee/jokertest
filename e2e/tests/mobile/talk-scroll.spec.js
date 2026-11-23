@@ -83,23 +83,15 @@ test.describe('채팅방 스크롤', () => {
         expect(btn.y + btn.height).toBeLessThanOrEqual(panel.y + panel.height);
     });
 
-    test('채팅방을 위로 올려도 → 위 줄·초상 띠·입력칸은 제자리에 그대로 있음 @game', async ({ user, table }) => {
+    test('채팅방을 위로 올려도 → 위 줄·입력칸은 제자리에 그대로 있음 @game', async ({ user, table }) => {
         await chattyDay(table, user);
-        const before = await talk.strip(user.page).boundingBox();
+        const topBefore = (await talk.phaseLine(user.page).boundingBox()).y;
         const inputBefore = await talk.input(user.page).boundingBox();
         await scrollUp(user.page);
         await sleep(200);
-        expect((await talk.strip(user.page).boundingBox()).y).toBe(before.y);
+        expect((await talk.phaseLine(user.page).boundingBox()).y).toBe(topBefore);
         expect((await talk.input(user.page).boundingBox()).y).toBe(inputBefore.y);
         expect(await user.page.evaluate(() => window.scrollY)).toBe(0);
-    });
-
-    test('맨 아래를 보던 중 카드 판을 크게 펼쳐 채팅방이 줄어도 → 여전히 최신 말이 보임 @game', async ({ user, table }) => {
-        await chattyDay(table, user);
-        await user.page.getByRole('button', { name: '카드 판 크게 보기' }).click();
-        await expect(talk.board(user.page)).toBeVisible();
-        await expect.poll(async () => (await scrollState(user.page)).gap).toBeLessThanOrEqual(48);
-        await expect(talk.lines(user.page).last()).toBeInViewport();
     });
 
     test('맨 아래를 보던 중 내가 말하면 → 내 말풍선이 바로 보임 @game', async ({ user, table }) => {

@@ -9,5 +9,12 @@ export const ROOM_MESSAGES = Object.freeze({
   PARTY_ROOM_GONE: '방장의 새 방에 들어갈 수 없습니다. 방 목록으로 이동합니다.',
   PARTY_WAIT_TIMEOUT: '방장의 새 방을 기다리는 시간이 지났습니다. 방 목록으로 이동합니다.',
   DELETE_FAILED: '방을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.',
-  DELETE_CONFIRM: '방을 삭제하면 모든 참가자가 나가게 됩니다. 삭제하시겠습니까?',
+  DELETE_CONFIRM:
+    "방을 삭제하면 모든 참가자가 나가게 됩니다.\n삭제하시겠습니까?",
+  SESSION_LOST:
+    "대기방 연결이 끊어졌습니다.\n로비로 이동합니다.",
+  ROOM_GONE:
+    "대기방에서 나가졌거나 방이 더 이상 유효하지 않습니다.\n로비로 이동합니다.",
+  ROOM_DISBANDED:
+    "방이 삭제되었습니다.\n로비로 이동합니다.",
 })

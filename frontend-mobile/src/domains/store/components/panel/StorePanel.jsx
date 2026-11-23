@@ -28,7 +28,7 @@ export default function StorePanel({ visible, panel }) {
 
     return (
         <motion.div
-            className="relative z-20 flex min-h-0 flex-1 flex-col px-2 pt-1 pb-2"
+            className="relative z-20 flex min-h-0 flex-1 flex-col px-2 pb-1 pt-[max(0.35rem,env(safe-area-inset-top))]"
             initial={{ opacity: 0, y: 10 }}
             animate={visible ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
             transition={UI_REVEAL_TRANSITION}

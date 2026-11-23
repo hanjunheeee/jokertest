@@ -2,6 +2,7 @@
 // AdBanner(하단 줄)·InterstitialAd(한 판 끝 창)가 씀, 스크립트 실패·광고 없음이면 onEmpty로 알림
 import { useEffect, useRef } from "react"
 import { AD_CONFIG } from "@m/shared/ads/currentAdConfig.js"
+import { INTERSTITIAL_PLACEHOLDER_CLASS } from "@m/shared/ads/interstitialAdStyle.js"
 import { loadAdScript, requestAdFill } from "@m/shared/ads/loadAdScript.js"
 
 // 자리별 크기: 하단은 320×50 고정, 한 판 끝은 폭 맞춤·높이 250 이상
@@ -57,8 +58,9 @@ export default function AdSlot({ name, mode, onEmpty }) {
     }, [mode])
 
     if (mode === "placeholder") {
+        const placeholderClass = name === "interstitial" ? INTERSTITIAL_PLACEHOLDER_CLASS : PLACEHOLDER_CLASS
         return (
-            <div className={`${PLACEHOLDER_CLASS} ${size.box}`} data-ad-placeholder={name}>
+            <div className={`${placeholderClass} ${size.box}`} data-ad-placeholder={name}>
                 광고 자리 (개발 화면만)
             </div>
         )

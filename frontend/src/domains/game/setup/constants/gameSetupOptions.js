@@ -40,14 +40,6 @@ export const GENERAL_GAME_SETUP = [
     description: "광대들은 서로의 정체를 모르며, 서로를 죽일 수도 있습니다.",
     defaultChecked: false,
   },
-  {
-    id: "soul-betting",
-    type: "checkbox",
-    label: "영혼의 베팅 활성화",
-    description:
-      "사망자는 다음 희생자에게 [영혼석]을 베팅하여 보상을 얻을 수 있습니다.",
-    defaultChecked: false,
-  },
 ]
 
 // 직업별 밤 시간 칸 범위 (전체 밤 시간과 같음)

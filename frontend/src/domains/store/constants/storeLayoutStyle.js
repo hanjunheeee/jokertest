@@ -1,6 +1,9 @@
 // 상점 화면 모양 class (패널·상품 칸·위 줄·분류 목록·설명 칸·보유 재화)
 // components/ 아래 상점 패널·상품 칸·설명 칸·분류 목록·보유 재화 컴포넌트가 씀
 
+/** 임시: 상점 쿠폰 입력 버튼 노출 (다시 켤 때 true) */
+export const STORE_SHOW_COUPON_BUTTON = false
+
 // 패널 자리·틀 그림 안쪽 여백·내용 칸 나누기
 export const STORE_PANEL_CLASS =
   "absolute left-1/2 top-[44%] z-20 w-[min(62rem,85vw)] -translate-x-1/2 -translate-y-1/2"

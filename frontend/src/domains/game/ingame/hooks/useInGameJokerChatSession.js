@@ -9,6 +9,7 @@ import {
   CHAT_OFFLINE_MESSAGE,
   isBrowserOffline,
   mapJokerChatSanitizeCodeToMessage,
+  isSilentChatSendSanitizeCode,
   sanitizeJokerChatText,
 } from "../utils/chatText.js"
 import { canReadRoleNightChat, isJokerNightChatEligible } from "../utils/selfAlive.js"
@@ -108,6 +109,7 @@ export function useInGameJokerChatSession({ getPlayerById } = {}) {
 
     const sanitized = sanitizeJokerChatText(requestDraft)
     if (!sanitized.ok) {
+      if (isSilentChatSendSanitizeCode(sanitized.code)) return
       dispatch({
         type: "ACK",
         gameId: requestGameId,

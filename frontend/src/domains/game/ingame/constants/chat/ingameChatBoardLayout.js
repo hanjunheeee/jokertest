@@ -8,17 +8,17 @@ import { EMBEDDED_TIMER_LIST_OFFSET_FRAME } from "./ingameChatTimerLayout.js"
 
 // 틀 그림 기준 목록·입력·상태 줄 자리 (% 값)
 const MSG_LIST_INSET_FRAME = {
-  top: 8,
-  left: 3 + CONTENT_SHIFT_LEFT_FRAME,
-  right: 5,
-  height: 68,
+  top: 17.2,
+  left: 4 + CONTENT_SHIFT_LEFT_FRAME,
+  right: 6,
+  height: 66.5,
 }
 
 const TEXT_FIELD_INSET_FRAME = {
-  bottom: 7,
-  left: 4,
-  right: 5,
-  height: 11,
+  bottom: 2.2,
+  left: 3.2,
+  right: 6.2,
+  height: 11.5,
 }
 
 const STATUS_LINE_INSET_FRAME = {

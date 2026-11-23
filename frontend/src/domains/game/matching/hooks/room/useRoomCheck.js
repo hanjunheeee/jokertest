@@ -7,10 +7,18 @@ import { getSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
 import { dispatchUiSfx } from '@/shared/hooks/useSfxRuntime.js'
-import { FAILED_RECHECK_MS, PENDING_MAX_RETRIES, PENDING_RETRY_MS } from '../../constants/roomTiming.js'
+import {
+  EMPTY_ROOM_MAX_RETRIES,
+  EMPTY_ROOM_RETRY_MS,
+  FAILED_RECHECK_MS,
+  MATCHING_DISCONNECT_EXIT_MS,
+  PENDING_MAX_RETRIES,
+  PENDING_RETRY_MS,
+} from '../../constants/roomTiming.js'
 import { ROOM_MESSAGES } from '../../constants/roomMessages.js'
 import { onConnection } from '../../socket/events.js'
 import { askRoom } from '../../socket/room.js'
+import { traceMatchingFlow } from '../../debug/matchingFlowTrace.js'
 
 // 방 확인 효과 (소켓·방 삭제 콜백 바뀌면 다시 붙음)
 export function useRoomCheck(ctx, socket, onRoomDeleted) {
@@ -30,12 +38,13 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
       identityRef.current = { socket, uuid: useAuthStore.getState().user?.uuid ?? null }
     }
     const isSameIdentity = () =>
-      identityRef.current.socket === socket
-      && identityRef.current.uuid === (useAuthStore.getState().user?.uuid ?? null)
+      identityRef.current.uuid === (useAuthStore.getState().user?.uuid ?? null)
 
     // 확인 묶음(series) 상태: 묶음 id·요청 버전이 바뀌면 옛 응답 버림
     let cancelled = false
+    let serverConfirmedRoom = false
     let retryTimer = null
+    let disconnectExitTimer = null
     let seriesId = 0
     let reqVer = 0
     let inFlight = false
@@ -84,11 +93,11 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
     }
 
     // 확인 한 번 보내기
-    const attempt = (id, retryCount) => {
+    const attempt = (id, retryCount, emptyRetryCount = 0) => {
       if (cancelled || id !== seriesId) return
 
-      // 지금 소켓이 아니거나 끊겼거나 계정이 바뀌었으면 연결 기다림
-      if (socket !== getSocket() || !socket.connected || !window.navigator.onLine) {
+      const activeSocket = getSocket()
+      if (!activeSocket?.connected || !window.navigator.onLine) {
         setSyncStatus('waiting_socket')
         return
       }
@@ -96,12 +105,15 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
         setSyncStatus('waiting_socket')
         return
       }
+      identityRef.current.socket = activeSocket
 
       // 보낼 때 값 잡아 둠, 응답 올 때 하나라도 바뀌었으면 버림
       reqVer += 1
       const ver = reqVer
-      const reqSocket = socket
-      const reqRoomId = useMatchingStore.getState().roomId
+      const reqSocket = activeSocket
+      const matching = useMatchingStore.getState()
+      const reqRoomId = matching.roomId
+      const clientInRoom = matching.isInRoom === true
       const reqUuid = useAuthStore.getState().user?.uuid
       const reqApplyGen = applyGenRef.current
       const reqMember = memberGenRef.current
@@ -111,18 +123,43 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
         reqSocket !== getSocket() ||
         id !== seriesId ||
         ver !== reqVer ||
-        !mountedRef.current ||
-        useMatchingStore.getState().roomId !== reqRoomId ||
         useAuthStore.getState().user?.uuid !== reqUuid ||
         applyGenRef.current !== reqApplyGen ||
         memberGenRef.current !== reqMember
+
+      // 방 id는 만들기 직후 세대가 바뀔 수 있음 — 응답 방 id가 지금 스토어와 같으면 살림
+      const isRoomMismatch = () => {
+        const currentRoomId = useMatchingStore.getState().roomId
+        if (reqRoomId === currentRoomId) return false
+        if (reqRoomId == null || currentRoomId == null) {
+          return useMatchingStore.getState().roomLocalTrustUntil <= Date.now()
+        }
+        return true
+      }
 
       inFlight = true
       askRoom(reqSocket)
         .then((response) => {
           // 마지막으로 보낸 확인의 응답일 때만 진행 중 표시 끔
           if (ver === reqVer) inFlight = false
-          if (isStale()) return
+          if (isStale() || isRoomMismatch()) {
+            const responseRoomId = response?.room?.roomId ?? response?.room?.id ?? null
+            const storeRoomId = useMatchingStore.getState().roomId
+            if (
+              response?.ok && response.room
+              && responseRoomId != null
+              && (responseRoomId === storeRoomId || useMatchingStore.getState().roomLocalTrustUntil > Date.now())
+            ) {
+              traceMatchingFlow("room_check_apply_despite_mismatch", {
+                reqRoomId,
+                storeRoomId,
+                responseRoomId,
+              })
+            } else {
+              if (isStale()) traceMatchingFlow("room_check_stale_drop", { reqRoomId, ver })
+              return
+            }
+          }
 
           // 서버가 거절하면 실패
           if (!response?.ok) {
@@ -130,9 +167,31 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
             return
           }
 
-          // 방 있음: 확인된 방으로 넣음
+          // 방 있음: 확인된 방으로 넣음 (목록에 내 자리 없으면 방 없음과 같이 처리)
           if (response.room) {
-            applyVerified(() => useMatchingStore.getState().setRoom(response.room))
+            const seatedUuid = useAuthStore.getState().user?.uuid ?? null
+            const listed = Array.isArray(response.room.players) ? response.room.players : []
+            if (seatedUuid && !listed.some((player) => player?.uuid === seatedUuid)) {
+              traceMatchingFlow("room_check_not_seated", {
+                reqRoomId,
+                responseRoomId: response.room.roomId ?? response.room.id ?? null,
+              })
+              applyVerified(() => useMatchingStore.getState().clearRoom())
+              advance()
+              onRoomDeleted?.({
+                reason: "room_check_empty",
+                trustUntil: useMatchingStore.getState().roomLocalTrustUntil,
+                reqRoomId,
+                serverConfirmedRoom,
+              })
+              return
+            }
+            serverConfirmedRoom = true
+            traceMatchingFlow("room_check_verified", { roomId: response.room.roomId ?? response.room.id })
+            applyVerified(() => {
+              useMatchingStore.getState().setRoom(response.room)
+              useMatchingStore.getState().clearLocalRoomTrust()
+            })
             advance()
             setSyncStatus('verified')
             prompted = false
@@ -144,11 +203,20 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
             if (retryCount < PENDING_MAX_RETRIES) {
               retryTimer = window.setTimeout(() => {
                 retryTimer = null
-                attempt(id, retryCount + 1)
+                attempt(id, retryCount + 1, emptyRetryCount)
               }, PENDING_RETRY_MS)
               return
             }
             fail(id)
+            return
+          }
+
+          // 클라에는 방이 있는데 서버만 아직 없음: 바로 목록으로 보내지 않고 잠깐 재확인
+          if ((reqRoomId || clientInRoom) && emptyRetryCount < EMPTY_ROOM_MAX_RETRIES) {
+            retryTimer = window.setTimeout(() => {
+              retryTimer = null
+              attempt(id, retryCount, emptyRetryCount + 1)
+            }, EMPTY_ROOM_RETRY_MS)
             return
           }
 
@@ -157,9 +225,41 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
             if (mountedRef.current) setSyncStatus('verified')
             return
           }
+          // 시작 직후: 서버 방은 없어졌는데 game_started가 뒤따를 수 있음 (방을 먼저 비우면 안 됨)
+          if (ctx.startingRef.current) {
+            traceMatchingFlow("room_check_defer_clear", { reason: "starting_ref", reqRoomId })
+            scheduleRecheck()
+            return
+          }
+          if (useMatchingStore.getState().roomLocalTrustUntil > Date.now()) {
+            traceMatchingFlow("room_check_defer_clear", {
+              reason: "local_trust",
+              reqRoomId,
+              trustUntil: useMatchingStore.getState().roomLocalTrustUntil,
+            })
+            scheduleRecheck()
+            return
+          }
+          const trustUntil = useMatchingStore.getState().roomLocalTrustUntil
+          const hadRoom = Boolean(reqRoomId) && clientInRoom
+          traceMatchingFlow("room_check_empty", {
+            reqRoomId,
+            clientInRoom,
+            emptyRetryCount,
+            serverConfirmedRoom,
+            trustUntil,
+            hadRoom,
+          })
           applyVerified(() => useMatchingStore.getState().clearRoom())
           advance()
-          onRoomDeleted?.()
+          if (hadRoom) {
+            onRoomDeleted?.({
+              reason: "room_check_empty",
+              trustUntil,
+              reqRoomId,
+              serverConfirmedRoom,
+            })
+          }
         })
         .catch(() => {
           // 응답 못 받으면(시간 초과 등) 실패
@@ -204,17 +304,44 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
     }
 
     // 다시 연결되면 확인, 끊기면 보낸 요청 무효화
-    const handleConnect = () => startSeries({ resetPrompt: true })
+    const clearDisconnectExitTimer = () => {
+      if (disconnectExitTimer !== null) {
+        window.clearTimeout(disconnectExitTimer)
+        disconnectExitTimer = null
+      }
+    }
+
+    const scheduleDisconnectExit = () => {
+      clearDisconnectExitTimer()
+      if (!useMatchingStore.getState().isInRoom) return
+      disconnectExitTimer = window.setTimeout(() => {
+        disconnectExitTimer = null
+        if (cancelled) return
+        const active = getSocket()
+        if (active?.connected) return
+        if (!useMatchingStore.getState().isInRoom) return
+        traceMatchingFlow("room_check_disconnect_exit", { reason: "socket_stale" })
+        applyVerified(() => useMatchingStore.getState().clearRoom())
+        onRoomDeleted?.({ reason: "socket_stale" })
+      }, MATCHING_DISCONNECT_EXIT_MS)
+    }
+
+    const handleConnect = () => {
+      clearDisconnectExitTimer()
+      startSeries({ resetPrompt: true })
+    }
     const handleDisconnect = () => {
       stopCheck()
       dropRequests()
       setSyncStatus('waiting_socket')
+      scheduleDisconnectExit()
     }
     // 브라우저가 오프라인 되면 끊긴 것과 같게 처리
     const handleOffline = () => {
       stopCheck()
       dropRequests()
       setSyncStatus('waiting_socket')
+      scheduleDisconnectExit()
     }
     // 온라인 돌아오면 지금 소켓이 붙어 있을 때만 다시 확인
     const handleOnline = () => {
@@ -234,6 +361,7 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
       invalidateRef.current = null
       stopCheck()
       dropRequests()
+      clearDisconnectExitTimer()
       off()
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('online', handleOnline)

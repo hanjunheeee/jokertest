@@ -42,7 +42,10 @@ export default function GameResultPage() {
   const { requestExit } = useInGameExit({ destination: "/lobby" })
   const { requestReturnToMatching, isReturning } = useGameResultReturnToMatching()
 
-  const bootstrapStatus = useInGameSessionSnapshotSync()
+  const freezeSnapshotSync = useInGameStore(
+    (s) => s.state?.phase === "ENDED" && Boolean(s.state?.winResult),
+  )
+  const bootstrapStatus = useInGameSessionSnapshotSync({ enabled: !freezeSnapshotSync })
 
   const hasLiveSession = useInGameStore((s) => Boolean(s.state) && s.state.phase !== "ENDED")
   const previewRequested =
@@ -58,13 +61,14 @@ export default function GameResultPage() {
 
   const bootstrapPending = bootstrapStatus === "checking" && !holdExpired
 
-  // 결과 종류가 바뀌면 연출을 다시 봄 (그리는 중에 앞 값과 비교해 바로 맞춤)
+  // 미리보기·다른 판 결과로 바뀔 때만 연출을 다시 봄 (실판 스냅샷 흔들림은 useGameResultData에서 고정)
   const outcome = view?.outcome ?? null
   const [introOutcome, setIntroOutcome] = useState(outcome)
-  if (outcome !== null && outcome !== introOutcome) {
+  useEffect(() => {
+    if (outcome === null || outcome === introOutcome) return
     setIntroOutcome(outcome)
     setIntroComplete(false)
-  }
+  }, [outcome, introOutcome])
 
   if (!view && bootstrapPending) return null
 

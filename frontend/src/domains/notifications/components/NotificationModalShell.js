@@ -1,6 +1,7 @@
 // 알림 창 껍데기 (어두운 바탕·틀 그림·제목·닫기 버튼, 틀 그림 실패 때 대체 틀)
 // 알림 창(NotificationModal.js)이 내용을 넣어 씀
 import { createElement, useEffect, useState } from "react"
+import { motion } from "framer-motion"
 
 import { dispatchUiSfx } from "../../../shared/hooks/useSfxRuntime.js"
 import { publicAsset } from "../../../shared/utils/publicAsset.js"
@@ -17,6 +18,8 @@ import {
   MODAL_PANEL_CLASS,
   MODAL_TITLE_CLASS,
   MODAL_WRAP_CLASS,
+  NOTIFICATION_PANEL_MOTION,
+  NOTIFICATION_PANEL_TRANSITION,
 } from "../constants/notificationLayoutStyle.js"
 
 // Esc로 닫기, 닫기 함수가 있을 때만 키 들음
@@ -118,20 +121,28 @@ export default function NotificationModalShell({
         contentNode,
       )
 
-  // 바탕 버튼을 누르면 닫힘, 창 본체는 그 위에 띄움
+  // 바탕 버튼을 누르면 닫힘, 창 본체는 그 위에 띄움 (친구 목록 패널과 같은 페이드·슬라이드)
   return createElement(
     "div",
     wrapperProps,
-    createElement("button", {
+    createElement(motion.button, {
       type: "button",
       "aria-label": "알림 닫기",
       className: MODAL_BACKDROP_CLASS,
       "data-sfx-kind": "ui-cancel",
       onClick: onDismiss,
+      initial: { opacity: 0 },
+      animate: { opacity: 1 },
+      exit: { opacity: 0 },
+      transition: NOTIFICATION_PANEL_TRANSITION,
     }),
     createElement(
-      "div",
-      { className: MODAL_WRAP_CLASS },
+      motion.div,
+      {
+        className: MODAL_WRAP_CLASS,
+        ...NOTIFICATION_PANEL_MOTION,
+        transition: NOTIFICATION_PANEL_TRANSITION,
+      },
       createElement(
         "div",
         {

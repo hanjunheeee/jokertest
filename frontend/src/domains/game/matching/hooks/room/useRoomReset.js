@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
+import { traceMatchingFlow } from '../../debug/matchingFlowTrace.js'
 
 // 세 요청(저장·시작·준비) 모두 무효화하고 소속 세대 올림 (이벤트 구독도 다시 붙음)
 const dropAll = (ctx) => {
@@ -49,12 +50,28 @@ export function useRoomReset(ctx) {
   useEffect(() => {
     const unsubscribe = useMatchingStore.subscribe((state, prevState) => {
       if (state.roomId === prevState.roomId) return
-      dropAll(ctx)
       if (!ctx.mountedRef.current) return
       ctx.setPending((prev) => (prev && prev.roomId !== state.roomId ? null : prev))
       ctx.setNotice(null)
 
       if (ctx.applyingRef.current) return
+
+      // 게임 시작 등으로 방만 비워질 때 memberGen 올리면 game_started 수신 가드가 끊김
+      if (state.roomId == null) {
+        traceMatchingFlow("room_reset_room_cleared", {
+          prevRoomId: prevState.roomId,
+          memberGen: ctx.memberGenRef.current,
+        })
+        recheck(ctx)
+        return
+      }
+
+      traceMatchingFlow("room_reset_room_changed", {
+        prevRoomId: prevState.roomId,
+        nextRoomId: state.roomId,
+        memberGen: ctx.memberGenRef.current,
+      })
+      dropAll(ctx)
       recheck(ctx)
     })
     return () => unsubscribe?.()

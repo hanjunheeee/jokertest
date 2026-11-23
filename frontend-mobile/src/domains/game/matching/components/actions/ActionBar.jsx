@@ -1,5 +1,5 @@
-// 대기방 바닥 줄: 안내 띠 + 준비·시작·삭제(방장) / 준비·나가기(참가자)
-// GameMatchingPage가 ShellBottom 안에 넣어 씀, 버튼 글자·그림·순서·잠금은 데스크톱 MatchingPopupPanel 아래 버튼 줄과 같음
+// 대기방 매칭 틀 바로 아래: 안내 띠 + 준비·시작·삭제(방장) / 준비·나가기(참가자)
+// GameMatchingPage가 MatchingBoard 아래에 씀, 버튼 글자·그림·순서·잠금은 데스크톱 MatchingPopupPanel 아래 버튼 줄과 같음
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
 import NoticeBanner from "./NoticeBanner.jsx"
@@ -12,7 +12,7 @@ function readyLabelOf(isSettingReady, isReady) {
   return MATCHING_POPUP_COPY.readyOn
 }
 
-// 바닥 줄 (page = useMatchingPage 값 묶음)
+// 틀 아래 줄 (page = useMatchingPage 값 묶음)
 export default function ActionBar({ page }) {
   const {
     isHost, isReady, isSettingReady, isRoomVerified, isStarting,
@@ -32,7 +32,7 @@ export default function ActionBar({ page }) {
   const hasResultNotice = typeof resultNotice === "string" && resultNotice.length > 0
 
   return (
-    <div className="flex flex-col gap-2 px-3 pt-2 pb-2 land:flex-row land:items-center land:py-1.5">
+    <div className="mt-1.5 flex w-full max-w-[40rem] flex-col gap-2 px-1 pt-0.5 pb-0 land:mt-1 land:max-w-[min(100%,calc((100svh-9.75rem)*1.354))] land:flex-row land:items-center">
       {hasPendingSettingsResult || hasResultNotice ? (
         <div className="flex flex-col gap-1.5 land:min-w-0 land:flex-1">
           {hasPendingSettingsResult ? (

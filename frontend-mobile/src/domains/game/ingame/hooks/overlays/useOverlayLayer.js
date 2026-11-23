@@ -15,6 +15,7 @@ import { useInGameOverlayStack } from "@/domains/game/ingame/hooks/useInGameOver
 import { useInGameTribunalExpulsionPresentation } from "@/domains/game/ingame/hooks/useInGameTribunalExpulsionPresentation.js"
 import { useInGameResultNavigation } from "@/domains/game/ingame/hooks/useInGameResultNavigation.js"
 import { nightWaitCoversSelf } from "@/domains/game/ingame/utils/selfAlive.js"
+import { isWideChatLayout } from "@m/domains/game/ingame/hooks/chat/useWideChat.js"
 import { isTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 import { useOverlayBridge } from "./overlayBridge.js"
 import { useDeadChoice } from "./useDeadChoice.js"
@@ -59,7 +60,13 @@ export function useOverlayLayer() {
 
     const tribunalExpulsion = useInGameTribunalExpulsionPresentation({ hold: false })
     const expulsionBusy = tribunalExpulsion.open || tribunalExpulsion.pending
-    const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack({
+    const {
+        roleReveal,
+        phaseEntrance,
+        nightTurn,
+        entryPreparingActive,
+        interactionBlocked,
+    } = useInGameOverlayStack({
         deathRevealActive: expulsionBusy,
     })
 
@@ -87,14 +94,16 @@ export function useOverlayLayer() {
 
     // 재판 연출 열림 조건 (문지기 컴포넌트와 같음)
     const tribunalOpen = isTribunalPresentationOpen(gameState)
+    const tribunalLocksSurface = tribunalOpen && isWideChatLayout()
 
     const surfaceLocked = interactionBlocked || nightPrivateResult.open || deadChoice.open
-        || nightSuccess.open || waitCovers || tribunalOpen || tribunalExpulsion.open
+        || nightSuccess.open || waitCovers || tribunalLocksSurface || tribunalExpulsion.open
 
     usePublishOverlayState({ interactionBlocked, surfaceLocked, roleReveal })
 
     return {
         players: gameState?.players ?? [],
+        entryPreparingActive,
         roleReveal,
         phaseEntrance,
         nightTurn,

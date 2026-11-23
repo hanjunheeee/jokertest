@@ -8,7 +8,6 @@ function state(overrides = {}) {
     checks: {
       "private-lobby": false,
       "lights-out": false,
-      "soul-betting": false,
       "vote-reveal": true,
       ...overrides.checks,
     },

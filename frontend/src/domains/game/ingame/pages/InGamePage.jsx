@@ -23,6 +23,7 @@ import InGameTimebar from "../components/timebar/InGameTimebar.jsx"
 import InGameCornerActionPanel from "../components/actions/InGameCornerActionPanel.jsx"
 import InGameTribunalPresentationGate from "../components/tribunalPresentation/InGameTribunalPresentationGate.jsx"
 import InGameTribunalExpulsionOverlay from "../components/tribunalExpulsion/InGameTribunalExpulsionOverlay.jsx"
+import InGameEntryPreparingOverlay from "../components/entryPreparing/InGameEntryPreparingOverlay.jsx"
 import { mapGamePhaseToTimebarPhaseId } from "../constants/timebar/ingameTimebarAssets.js"
 import {
   getIdentityScopeVersion,
@@ -96,7 +97,13 @@ export default function InGamePage() {
   const tribunalExpulsion = useInGameTribunalExpulsionPresentation({
     hold: false,
   })
-  const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack({
+  const {
+    roleReveal,
+    phaseEntrance,
+    nightTurn,
+    entryPreparingActive,
+    interactionBlocked,
+  } = useInGameOverlayStack({
     deathRevealActive: tribunalExpulsion.open || tribunalExpulsion.pending,
   })
 
@@ -159,7 +166,7 @@ export default function InGamePage() {
   const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
   const timebarStatusLabel = selectInGameTimebarStatusLabel(gameState)
   const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
-  const { timerPlacement, cycleTimerPlacement } = useTimerPlacement()
+  const { timerPlacement, setTimerPlacement } = useTimerPlacement()
 
   const isValidGameSession = isValidInGameSession(gameId, gameState)
 
@@ -196,6 +203,7 @@ export default function InGamePage() {
               timerPlacement={timerPlacement}
               remainingRatio={remainingRatio}
               remainingSec={remainingSec}
+              showResourcesWithoutLabel={entryPreparingActive}
             />
             <InGameCornerActionPanel onVoteStatusClick={() => setVoteStatusOpen(true)} />
             <InGamePlayerBoard />
@@ -213,7 +221,7 @@ export default function InGamePage() {
               open={sidePanel.settingsOpen}
               onClose={sidePanel.close}
               timerPlacement={timerPlacement}
-              onCycleTimerPlacement={cycleTimerPlacement}
+              onTimerPlacementChange={setTimerPlacement}
               interactionLocked={surfaceLocked}
             />
             <InGameVoteStatusPanel
@@ -226,6 +234,7 @@ export default function InGamePage() {
         </InGameChatSessionProvider>
       </InGamePlayerSessionProvider>
 
+      <InGameEntryPreparingOverlay open={entryPreparingActive} />
       <InGameNightTurnAnnouncementOverlay
         open={nightTurn.open && !nightPresentationWaitOpen}
         announcement={nightTurn.announcement}

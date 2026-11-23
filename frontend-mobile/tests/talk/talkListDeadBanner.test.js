@@ -29,9 +29,9 @@ test("죽은 뒤: '죽은 사람끼리' 띠, 밤 같은 직업 띠는 안 보임
     view.unmount()
 })
 
-test("밤 산 사람: '밤 · 같은 직업끼리' 띠만", () => {
+test("밤 산 사람: 밤·같은 직업 띠는 안 보임", () => {
     const view = show({ lines: [], joker: true, dead: false })
     assert.equal(view.container.querySelector("[data-dead-chat-banner]"), null)
-    assert.ok(view.container.textContent.includes("밤 · 같은 직업끼리"))
+    assert.equal(view.container.textContent.includes("밤 · 같은 직업끼리"), false)
     view.unmount()
 })

@@ -12,7 +12,13 @@ import MyPageActions from "@m/domains/user/components/mypage/MyPageActions.jsx"
 import ProfileEditSheet from "@m/domains/user/components/profileEdit/ProfileEditSheet.jsx"
 import WearSheet from "@m/domains/user/components/wear/WearSheet.jsx"
 import { MY_PAGE_SHEETS, useMyPageSheet } from "@m/domains/user/hooks/mypage/useMyPageSheet.js"
-import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
+import {
+    MY_PAGE_CONTENT_WRAP,
+    MY_PAGE_FATE_WRAPPER_EXTRA,
+    MY_PAGE_INNER_STACK,
+    MY_PAGE_BODY_SCALE,
+    MY_PAGE_SCROLL_PAD_CLASS,
+} from "@m/domains/user/constants/myPageMobileLayout.js"
 import { MY_PAGE_UI_FADE } from "@/domains/user/constants/myPageLayoutStyle.js"
 import { useMyProfile } from "@/shared/hooks/useMyProfile.js"
 
@@ -28,46 +34,44 @@ export default function MyPage() {
     // 프로필 수정·스킨&카드 착용 시트는 주소 ?sheet=로 열고 닫음 (폰 뒤로 가기로 닫히게)
     return (
         <ScreenFrame title="마이페이지" backAtBottom onBack={() => navigate("/lobby")}>
-            <div className="mx-auto flex w-full max-w-[26rem] flex-col gap-3 px-4 pb-4 md:max-w-[30rem] land:max-w-[52rem] lg:max-w-[52rem]">
+            <div className={`${MY_PAGE_CONTENT_WRAP} ${MY_PAGE_SCROLL_PAD_CLASS}`}>
                 {showNotice ? <StaleNotice hasProfile={Boolean(profile)} error={error} onRetry={retry} /> : null}
 
                 {ready ? (
-                    // 세로: 띠 → 가면 → 기록 (데스크톱 순서), 가로·lg: 왼쪽 띠·기록 / 오른쪽 가면 (lg 세로 한 줄이면 기록이 바닥 메뉴에 가림)
-                    <div className="flex flex-col gap-3 land:grid land:grid-cols-2 land:items-start land:gap-x-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+                    // 세로: 프로필(원본) → 가면·기록·4버튼 (한 스크롤, 본문만 살짝 확대)
+                    <div className={MY_PAGE_INNER_STACK}>
                         <div className="land:col-start-1 land:row-start-1 lg:col-start-1 lg:row-start-1">
                             <ProfileCard profile={profile} />
                         </div>
-                        {/* 가면·기록은 데스크톱 본문처럼 서서히 나타남 (띠는 바로) */}
-                        {description ? (
+                        <div className={MY_PAGE_BODY_SCALE}>
+                            {description ? (
+                                <motion.div
+                                    className={`${MY_PAGE_FATE_WRAPPER_EXTRA} land:col-start-2 land:row-span-2 land:row-start-1 lg:col-start-2 lg:row-span-2 lg:row-start-1`}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={MY_PAGE_UI_FADE}
+                                >
+                                    <FateMask description={description} />
+                                </motion.div>
+                            ) : null}
                             <motion.div
-                                className="mt-3 land:col-start-2 land:row-span-2 land:mt-0 land:row-start-1 lg:col-start-2 lg:row-span-2 lg:mt-0 lg:row-start-1"
+                                className={`land:col-start-1 land:row-start-2 lg:col-start-1 lg:row-start-2 ${description ? "" : "mt-2.5"} land:mt-0 lg:mt-0`}
                                 initial={{ opacity: 0 }}
                                 animate={{ opacity: 1 }}
                                 transition={MY_PAGE_UI_FADE}
                             >
-                                <FateMask description={description} />
+                                <BloodRecord stats={stats} />
                             </motion.div>
-                        ) : null}
-                        <motion.div
-                            className={`land:col-start-1 land:row-start-2 lg:col-start-1 lg:row-start-2 ${description ? "" : "mt-3"} land:mt-0 lg:mt-0`}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            transition={MY_PAGE_UI_FADE}
-                        >
-                            <BloodRecord stats={stats} />
-                        </motion.div>
+                            <MyPageActions
+                                onAccount={() => navigate("/account")}
+                                onProfileEdit={() => openSheet(MY_PAGE_SHEETS.profileEdit)}
+                                onSkinCardWear={() => openSheet(MY_PAGE_SHEETS.skinCardWear)}
+                                onEmoticons={() => navigate("/mypage/emoticons")}
+                            />
+                        </div>
                     </div>
                 ) : null}
             </div>
-
-            <ShellBottom>
-                <MyPageActions
-                    onAccount={() => navigate("/account")}
-                    onProfileEdit={() => openSheet(MY_PAGE_SHEETS.profileEdit)}
-                    onSkinCardWear={() => openSheet(MY_PAGE_SHEETS.skinCardWear)}
-                    onEmoticons={() => navigate("/mypage/emoticons")}
-                />
-            </ShellBottom>
 
             <ProfileEditSheet {...sheetProps(MY_PAGE_SHEETS.profileEdit)} />
             <WearSheet {...sheetProps(MY_PAGE_SHEETS.skinCardWear)} />

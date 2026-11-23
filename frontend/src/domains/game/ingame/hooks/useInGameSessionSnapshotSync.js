@@ -22,7 +22,8 @@ export {
 } from "./snapshotSync/rebindPending.js"
 
 // 스냅샷 다시 묻기 붙이고 처음 판 복구 상태 돌려줌 (checking·ready·recovered·missing·failed)
-export function useInGameSessionSnapshotSync() {
+// enabled false면 묻지 않음 (결과 화면에서 이미 winResult가 있을 때 연출·승패가 흔들리지 않게)
+export function useInGameSessionSnapshotSync({ enabled = true } = {}) {
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
   const gameId = useInGameStore((s) => s.gameId)
   const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
@@ -62,6 +63,11 @@ export function useInGameSessionSnapshotSync() {
 
   // 소켓·판·계정·신원이 바뀔 때마다 이번 범위로 묻기를 새로 붙임 (소켓·계정 없으면 안 물음)
   useEffect(() => {
+    if (!enabled) {
+      setIdentityRebindPending(false)
+      setBootstrapStatus(useInGameStore.getState().gameId ? "ready" : "checking")
+      return undefined
+    }
     // 소켓·계정이 없으면(로그아웃 등) 다시 묶을 일이 없어 기다림 표시도 끔
     if (!socket || !authUuid) {
       setIdentityRebindPending(false)
@@ -156,7 +162,7 @@ export function useInGameSessionSnapshotSync() {
       nightObservationsRef.current = new Map()
       cancelScheduledRetry()
     }
-  }, [socket, gameId, authUuid, identityGeneration, identityScopeVersion])
+  }, [enabled, socket, gameId, authUuid, identityGeneration, identityScopeVersion])
 
   return bootstrapStatus
 }

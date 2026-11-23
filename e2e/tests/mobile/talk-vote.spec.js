@@ -1,10 +1,11 @@
 // 모바일 낮 투표·투표 현황: 투표 시작 준비 → 카드 시트 투표하기·투표취소 → 기권 → 투표 현황 창(집계 전·재판 회부·동점·기권 다수)
 const { test, expect } = require('../../helpers/fixtures');
-const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays, goPhase } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays, goPhase, useWideBoard } = require('./_talk');
 
 const citizenMe = (user) => ({ bots }) => ({ [user.account.uuid]: 'CITIZEN', [bots[0].account.uuid]: 'JOKER' });
 
 async function openSheet(page, nickname) {
+    await useWideBoard(page);
     await talk.slot(page, nickname).click();
     const sheet = page.getByRole('dialog', { name: nickname });
     await expect(sheet).toBeVisible();

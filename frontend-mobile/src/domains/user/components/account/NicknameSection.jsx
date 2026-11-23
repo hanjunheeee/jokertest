@@ -5,6 +5,7 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import FormActions from "./FormActions.jsx"
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 import { UserIcon } from "@m/shared/ui/input/InputIcons.jsx"
+import { ACCOUNT_SECTION_CLASS, ACCOUNT_SECTION_FORM_CLASS } from "@m/domains/user/constants/accountFormLayout.js"
 import SectionTitle from "./SectionTitle.jsx"
 
 // 보낼 때 확인 소리 후 폼 처리로 넘김, 보내는 중엔 버튼 잠금
@@ -17,10 +18,10 @@ export default function NicknameSection({ nickname, setNickname, nicknameMsg, ni
     }
 
     return (
-        <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
+        <section className={ACCOUNT_SECTION_CLASS}>
             <SectionTitle>닉네임 변경</SectionTitle>
 
-            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-1.5">
+            <form onSubmit={handleSubmit} className={ACCOUNT_SECTION_FORM_CLASS}>
                 <InputSlot
                     name="nickname"
                     value={nickname}

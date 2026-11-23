@@ -8,6 +8,7 @@ import {
   useInGameStore,
 } from "../store/ingameStore.js"
 import { useAuthStore } from "../../../auth/store/auth.store.js"
+import { useMatchingStore } from "../../matching/store/matchingStore.js"
 
 // 끝난 판 결과 화면으로 한 번만 이동
 export function useInGameResultNavigation({ hold = false } = {}) {
@@ -22,6 +23,9 @@ export function useInGameResultNavigation({ hold = false } = {}) {
     if (phase !== "ENDED") return
     if (!hasWinResult) return
     if (hold) return
+    if (typeof window !== "undefined" && window.location.pathname !== "/ingame") return
+    // 대기방 복귀 직후 잘못 /ingame이 잠깐 보여도 결과 연출로 다시 끌려가지 않게
+    if (useMatchingStore.getState().isInRoom) return
     // 다른 계정이 받은 판 결과면 안 옮김
     const auth = useAuthStore.getState()
     if (isTerminalResultFromOtherAccount(readInGameReceiptScope({

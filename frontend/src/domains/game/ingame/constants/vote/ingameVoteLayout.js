@@ -41,7 +41,7 @@ export const VOTE_CLOSE_BTN_IMG_CLASS =
   "block h-auto w-[clamp(3rem,9.5cqi,3.9rem)] select-none"
 
 export const INGAME_VOTE_TITLE_CLASS =
-  "pointer-events-none absolute left-1/2 top-[clamp(2.15rem,6.2cqi,2.65rem)] z-[2] w-[clamp(9rem,36cqi,12rem)] -translate-x-1/2 text-center font-display text-[clamp(1.32rem,4.95cqi,1.72rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+  "pointer-events-none absolute left-1/2 top-[clamp(1.65rem,4.9cqi,2.05rem)] z-[2] w-[clamp(9rem,36cqi,12rem)] -translate-x-1/2 text-center font-display text-[clamp(1.32rem,4.95cqi,1.72rem)] font-medium leading-none tracking-normal text-[#f5e8c8] antialiased [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 
 export const SUBTITLE_CLASS =
   "mb-[clamp(0.55rem,1.6cqi,0.75rem)] shrink-0 text-center font-subheading text-[clamp(0.95rem,3.2cqi,1.2rem)] font-bold leading-snug text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"

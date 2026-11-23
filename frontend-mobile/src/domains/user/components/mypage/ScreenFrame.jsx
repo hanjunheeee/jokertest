@@ -5,7 +5,7 @@ import { motion } from "framer-motion"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import BottomBackFixed from "@m/shared/ui/button/BottomBackFixed.jsx"
+import { useShellBackButton } from "@m/shared/layouts/mobileShellBack.jsx"
 import CloseButton from "@m/shared/ui/button/CloseButton.jsx"
 import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
 import TopBar from "@m/shared/ui/top/TopBar.jsx"
@@ -25,7 +25,7 @@ const TOP_CLOSE_BTN_CLASS =
 
 const TOP_CLOSE_ICON_CLASS = "block h-10 w-10 select-none object-contain"
 
-// backAtBottom: 우하단 뒤로 (마이페이지·계정관리), closeAtTopRight: 우상단 닫기 (이모티콘)
+// backAtBottom: shell 하단 줄 뒤로 (마이페이지·계정관리), closeAtTopRight: 우상단 닫기 (이모티콘)
 // fillViewport: 본문만 스크롤(이모티콘 목록 등), 틀 바깥 mobile-shell__page는 안 움직임
 export default function ScreenFrame({
     title,
@@ -36,6 +36,10 @@ export default function ScreenFrame({
     fillViewport = false,
 }) {
     const hideBack = backAtBottom || closeAtTopRight
+
+    useShellBackButton(
+        backAtBottom && onBack ? { onClick: onBack, label: `${title}에서 뒤로` } : {},
+    )
 
     const handleTopClose = () => {
         dispatchUiSfx("ui-cancel")
@@ -81,7 +85,6 @@ export default function ScreenFrame({
                 />
             ) : null}
 
-            {backAtBottom ? <BottomBackFixed onClick={onBack} /> : null}
         </div>
     )
 }

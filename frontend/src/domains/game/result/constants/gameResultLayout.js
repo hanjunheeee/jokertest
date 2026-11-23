@@ -2,6 +2,9 @@
 // 결과 컴포넌트·GameResultIntroVideo·GameResultPage가 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "@/shared/constants/customScrollbarStyles.js"
 
+/** 임시: MVP 패널 노출 (다시 켤 때 true) */
+export const GAME_RESULT_SHOW_MVP_PANEL = false
+
 // 화면·배경·본체
 export const GAME_RESULT_PAGE_CLASS = "relative h-svh w-full overflow-hidden bg-black"
 

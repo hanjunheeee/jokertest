@@ -1,7 +1,12 @@
 // 인게임 배경: 낮 그림과 밤 그림을 겹쳐 두고 단계 따라 서서히 바꿈
 // 인게임 화면·재판 연출 미리보기 화면이 사용
 import { motion } from "framer-motion"
-import { INGAME_ASSETS } from "../constants/ingameAssets.js"
+import {
+  INGAME_ASSETS,
+  INGAME_BG_BOTTOM_SHADE_CLASS,
+  INGAME_BG_OVERLAY_OPACITY,
+  INGAME_BG_ROOT_CLASS,
+} from "../constants/ingameAssets.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { publicAsset } from "@/shared/utils/publicAsset"
 import { BG_FADE_TRANSITION } from "@/shared/constants/pageTransitions.js"
@@ -15,12 +20,12 @@ export default function InGameBackground() {
   const isNight = phase === "NIGHT"
 
   return (
-    <div className="absolute inset-0" aria-hidden="true">
+    <div className={INGAME_BG_ROOT_CLASS} aria-hidden="true">
       <motion.img
         src={publicAsset(INGAME_ASSETS.bg)}
         alt=""
         initial={{ opacity: 0 }}
-        animate={{ opacity: isNight ? 0 : 1 }}
+        animate={{ opacity: isNight ? 0 : INGAME_BG_OVERLAY_OPACITY }}
         transition={BG_FADE_TRANSITION}
         className={INGAME_BG_IMAGE_CLASS}
         draggable={false}
@@ -29,11 +34,12 @@ export default function InGameBackground() {
         src={publicAsset(INGAME_ASSETS.bgNight)}
         alt=""
         initial={{ opacity: 0 }}
-        animate={{ opacity: isNight ? 1 : 0 }}
+        animate={{ opacity: isNight ? INGAME_BG_OVERLAY_OPACITY : 0 }}
         transition={BG_FADE_TRANSITION}
         className={INGAME_BG_IMAGE_CLASS}
         draggable={false}
       />
+      <div className={INGAME_BG_BOTTOM_SHADE_CLASS} />
     </div>
   )
 }

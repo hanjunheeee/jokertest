@@ -1,6 +1,6 @@
 // 모바일 죽은 뒤: 사망 후 선택 창(관전·나가기), "죽은 사람끼리" 띠·회색 말풍선(낮·밤), 산 사람은 못 봄, 죽은 사람 행동 막힘
 const { test, expect } = require('../../helpers/fixtures');
-const { talk, startTalkGame, goPhase, getExecuted, say, botSay, clearOverlays, bgColor, sleep } = require('./_talk');
+const { talk, startTalkGame, goPhase, getExecuted, say, botSay, clearOverlays, bgColor, sleep, useWideBoard } = require('./_talk');
 
 const body = (li) => li.locator('p.whitespace-pre-wrap');
 const citizenMe = (user) => ({ bots }) => ({ [user.account.uuid]: 'CITIZEN', [bots[0].account.uuid]: 'JOKER' });
@@ -54,11 +54,6 @@ test.describe('죽은 사람끼리 채팅', () => {
         await deadMe(table, user);
         await expect(talk.deadBanner(user.page)).toBeVisible();
         await expect(talk.nightBanner(user.page)).toHaveCount(0);
-    });
-
-    test('내가 죽으면 → 초상 띠 내 칸 이름이 "닉네임, 나, 사망" @game', async ({ user, table }) => {
-        await deadMe(table, user);
-        await expect(talk.mySlot(user.page)).toHaveAccessibleName(`${user.account.nickname}, 나, 사망`);
     });
 
     test('내가 죽으면 → 채팅방에 내 죽음 시스템 줄이 뜸 @game', async ({ user, table }) => {
@@ -122,6 +117,7 @@ test.describe('죽은 사람 행동 막힘', () => {
     test('죽은 내가 낮 투표에 봇 칸을 누르면 → "투표하기"가 꺼지고 "사망한 플레이어는 행동할 수 없습니다"가 보임 @game', async ({ user, table }) => {
         const t = await deadMe(table, user);
         await goPhase(t, user.page, (s) => s.dayIndex === 2 && s.dayPhase === 'DAY_VOTE');
+        await useWideBoard(user.page);
         await talk.slot(user.page, t.bots[1].nickname).click();
         const sheet = user.page.getByRole('dialog', { name: t.bots[1].nickname });
         await expect(sheet.getByRole('menuitem', { name: '투표하기' })).toBeDisabled();
@@ -134,8 +130,9 @@ test.describe('죽은 사람 행동 막힘', () => {
         await expect(user.page.getByRole('button', { name: '기권' })).toBeDisabled();
     });
 
-    test('죽은 내가 이모티콘을 보내 봐도 → 판에 이모티콘이 안 뜸 @game', async ({ user, table }) => {
+    test('죽은 내가 이모티콘을 보내 봐도 → 채팅방에 이모티콘이 안 뜸 @game', async ({ user, table }) => {
         await deadMe(table, user);
+        await useWideBoard(user.page);
         await talk.mySlot(user.page).dispatchEvent('contextmenu');
         const palette = talk.palette(user.page);
         if (await palette.isVisible().catch(() => false)) {
@@ -143,7 +140,6 @@ test.describe('죽은 사람 행동 막힘', () => {
         }
         await sleep(1500);
         await expect(talk.log(user.page).locator('[data-talk-emoji]')).toHaveCount(0);
-        await expect(talk.mySlot(user.page).locator('[data-ingame-emoji-bubble]')).toHaveCount(0);
     });
 });
 

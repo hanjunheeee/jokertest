@@ -400,7 +400,9 @@ module.exports = {
 
         const describeRequests = await queryInterface.describeTable(FRIEND_REQUESTS_TABLE);
         if (!Object.hasOwn(describeRequests, PENDING_PAIR_COLUMN)) {
-            // generated STORED 컬럼은 queryInterface.addColumn이 표현하지 못해 원시 SQL을 쓴다.
+            // generated 컬럼은 queryInterface.addColumn이 표현하지 못해 원시 SQL을 쓴다.
+            // MySQL 8.4+에서 외래 키가 걸린 칸을 참조하는 STORED 생성 칸은 ER_CANNOT_ADD_FOREIGN(1215)로
+            // 실패한다 — VIRTUAL은 동일 유일 인덱스 계약을 만족하고 이 제한을 피한다.
             // LEAST/GREATEST로 방향을 지워 A→B와 B→A를 같은 키로 만든다. status가 PENDING이
             // 아니면 NULL이라 유일 제약의 대상이 아니다(terminal 이력은 몇 개든 남는다).
             await db.query(
@@ -410,7 +412,7 @@ module.exports = {
                      CASE WHEN status = 'PENDING'
                           THEN CONCAT(LEAST(requester_id, receiver_id), ':', GREATEST(requester_id, receiver_id))
                           ELSE NULL END
-                   ) STORED`,
+                   ) VIRTUAL`,
             );
         }
 

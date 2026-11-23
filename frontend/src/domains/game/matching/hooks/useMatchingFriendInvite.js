@@ -29,14 +29,12 @@ export function useMatchingFriendInvite({ roomId = null, isRoomVerified = true }
   const canInvite = roomId !== null
 
   // 자격을 잃으면 창도 닫음 (되찾아도 저절로 다시 안 열리게)
-  const [prevCanInvite, setPrevCanInvite] = useState(canInvite)
-  if (prevCanInvite !== canInvite) {
-    setPrevCanInvite(canInvite)
+  useEffect(() => {
     if (!canInvite) {
       setModalOpen(false)
       setSendError(null)
     }
-  }
+  }, [canInvite])
 
   const isOpen = modalOpen && canInvite
 

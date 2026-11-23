@@ -2,6 +2,14 @@
 // ChatPanel(넓은 배치)·TalkLayout(폰 세로 바닥 자리)·CloseupSheet가 씀, 보내기·검사·오류 문구는 데스크톱 채팅 세션 훅
 import { useEffect, useRef } from "react"
 import { useKeyboardLift } from "@m/domains/game/ingame/hooks/chat/useKeyboardLift.js"
+import { MOBILE_TALK_CHAT_ASSETS } from "@m/domains/game/ingame/constants/chat/mobileTalkChatAssets.js"
+import {
+    TALK_CHAT_COMPOSER_BAR_CLASS,
+    TALK_CHAT_COMPOSER_ROW_CLASS,
+    TALK_CHAT_TEXTAREA_OFFSET_CLASS,
+    TALK_CHAT_TEXTAREA_WRAP_CLASS,
+} from "@m/domains/game/ingame/constants/chat/mobileTalkChatLayout.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import FrameSlice from "./FrameSlice.jsx"
 import SendButton from "./SendButton.jsx"
 import StatusLine from "./StatusLine.jsx"
@@ -21,6 +29,7 @@ export default function Composer({
     withStatus = false,
     lift = true,
     locked = false,
+    variant = "classic",
 }) {
     const barRef = useRef(null)
     const textareaRef = useRef(null)
@@ -45,19 +54,37 @@ export default function Composer({
         send()
     }
 
+    const isTalk = variant === "talk"
+    const barClass = isTalk ? TALK_CHAT_COMPOSER_BAR_CLASS : COMPOSER_BAR_CLASS
+    const rowClass = isTalk ? TALK_CHAT_COMPOSER_ROW_CLASS : COMPOSER_ROW_CLASS
+
     return (
         <div
             ref={barRef}
-            className={COMPOSER_BAR_CLASS}
+            className={barClass}
             style={keyboardLift > 0 ? { transform: `translateY(-${keyboardLift}px)` } : undefined}
             data-chat-composer
+            data-chat-composer-variant={variant}
             data-chat-interactive
             inert={locked || undefined}
         >
-            <FrameSlice slice={FRAME_SLICE.composer} />
-            {withStatus ? <StatusLine status={status} error={error} placeStyle={DIVIDER_PLACE} /> : null}
-            <div className={COMPOSER_ROW_CLASS}>
-                <div className="relative min-w-0 flex-1" onClick={() => textareaRef.current?.focus()}>
+            {isTalk ? (
+                <PublicAsset
+                    src={MOBILE_TALK_CHAT_ASSETS.composerBar}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
+                />
+            ) : (
+                <>
+                    <FrameSlice slice={FRAME_SLICE.composer} />
+                    {withStatus ? <StatusLine status={status} error={error} placeStyle={DIVIDER_PLACE} /> : null}
+                </>
+            )}
+            <div className={rowClass}>
+                <div
+                    className={isTalk ? TALK_CHAT_TEXTAREA_WRAP_CLASS : "relative min-w-0 flex-1"}
+                    onClick={() => textareaRef.current?.focus()}
+                >
                     <textarea
                         ref={textareaRef}
                         rows={1}
@@ -68,10 +95,12 @@ export default function Composer({
                         autoComplete="off"
                         placeholder="TYPE HERE..."
                         aria-label="채팅 입력"
-                        className={TEXTAREA_CLASS}
+                        className={
+                            isTalk ? `${TEXTAREA_CLASS} ${TALK_CHAT_TEXTAREA_OFFSET_CLASS}` : TEXTAREA_CLASS
+                        }
                     />
                 </div>
-                <SendButton onSend={send} />
+                <SendButton onSend={send} variant={variant} />
             </div>
         </div>
     )

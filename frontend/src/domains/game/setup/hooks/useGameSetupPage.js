@@ -1,6 +1,6 @@
 // 게임 설정 화면 훅: 저장된 다음 게임 설정 복원·방 만들기·뒤로 가기
 // GameSetupPage가 씀
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
@@ -31,22 +31,23 @@ export function useGameSetupPage() {
     return () => cancelAnimationFrame(frame)
   }, [])
 
-  const { isCreating, createGame, isBusy } = useCreateRoom({ navigate, accountId, identityGeneration })
+  const { isCreating, createGame, isBusy, abandonScope } = useCreateRoom({ navigate, accountId, identityGeneration })
 
   // 만드는 중에 나가면 방이 생길 수 있다고 한 번 물음
-  const goBackToMultiplay = () => {
+  const goBackToMultiplay = useCallback(() => {
     if (isBusy()) {
       const confirmed = window.confirm(
         "방 생성 요청이 진행 중입니다. 방이 생성될 수 있지만 현재 화면에서 나가시겠습니까?"
       )
       dispatchUiSfx(confirmed ? "ui-confirm" : "ui-cancel")
       if (!confirmed) return
+      abandonScope()
       navigate("/multiplay")
       return
     }
     dispatchUiSfx("ui-cancel")
     navigate("/multiplay")
-  }
+  }, [isBusy, navigate])
 
   return {
     uiVisible,

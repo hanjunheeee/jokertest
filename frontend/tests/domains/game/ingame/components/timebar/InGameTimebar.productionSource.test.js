@@ -5,10 +5,11 @@ import { readFile } from "node:fs/promises"
 const componentUrl = new URL("../../../../../../src/domains/game/ingame/components/timebar/InGameTimebar.jsx", import.meta.url)
 const pageUrl = new URL("../../../../../../src/domains/game/ingame/pages/InGamePage.jsx", import.meta.url)
 
-test("확대 시 타이머바·게이지 컴포넌트를 마운트하고 텍스트 status 줄은 그리지 않는다", async () => {
+test("시간 바는 명패+시간패널 타이머를 마운트하고 텍스트 status 줄은 그리지 않는다", async () => {
   const source = await readFile(componentUrl, "utf8")
   assert.match(source, /InGamePhaseTurnTimerPanel/)
-  assert.match(source, /frameExpanded/)
+  assert.match(source, /INGAME_TIMEBAR_ASSETS\.frame/)
+  assert.doesNotMatch(source, /frameExpanded/)
   assert.doesNotMatch(source, /INGAME_TIMEBAR_STATUS_CLASS/)
 })
 
@@ -21,7 +22,7 @@ test("문구를 컴포넌트가 스스로 만들거나 store·소켓에서 읽�
   assert.doesNotMatch(source, /socket/i)
 })
 
-test("타임바는 phaseTurnDeadline prop으로 확대 타이머를 구동한다", async () => {
+test("타임바는 phaseTurnDeadline prop으로 단계 타이머를 구동한다", async () => {
   const source = await readFile(componentUrl, "utf8")
   assert.match(source, /phaseTurnDeadline/)
   assert.match(source, /InGamePhaseTurnTimerPanel/)
@@ -29,11 +30,11 @@ test("타임바는 phaseTurnDeadline prop으로 확대 타이머를 구동한다
   assert.doesNotMatch(source, /useInGameStore/)
 })
 
-test("시간흐름바 우측 상단에 확대 버튼 에셋이 배치된다", async () => {
+test("시간흐름바에 확대 버튼이 없다", async () => {
   const source = await readFile(componentUrl, "utf8")
-  assert.match(source, /INGAME_TIMEBAR_ASSETS\.expandButton/)
-  assert.match(source, /data-ingame-timebar-expand/)
-  assert.match(source, /INGAME_TIMEBAR_EXPAND_BTN_CLASS/)
+  assert.doesNotMatch(source, /INGAME_TIMEBAR_ASSETS\.expandButton/)
+  assert.doesNotMatch(source, /data-ingame-timebar-expand/)
+  assert.doesNotMatch(source, /INGAME_TIMEBAR_EXPAND_BTN_CLASS/)
 })
 
 test("기존 day/phase 표시 로직(제 N일 라벨·단계 노드·활성 노드 판정)은 그대로 남아 있다", async () => {

@@ -20,7 +20,10 @@ export function useResultPage() {
     // "로비로" 버튼은 이름대로 로비로 감 (판 중 나가기는 멀티 화면)
     const { requestExit } = useInGameExit({ destination: "/lobby" })
     const { requestReturnToMatching, isReturning } = useGameResultReturnToMatching()
-    const bootstrapStatus = useInGameSessionSnapshotSync()
+    const freezeSnapshotSync = useInGameStore(
+        (s) => s.state?.phase === "ENDED" && Boolean(s.state?.winResult),
+    )
+    const bootstrapStatus = useInGameSessionSnapshotSync({ enabled: !freezeSnapshotSync })
 
     // 진행 중인 판이 있으면 ?outcome= 미리보기는 안 씀
     const hasLiveSession = useInGameStore((s) => Boolean(s.state) && s.state.phase !== "ENDED")

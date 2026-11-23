@@ -2,7 +2,7 @@
 // pages/SettingPage.jsx가 씀
 import BackButton from "@m/shared/ui/button/BackButton.jsx"
 
-// hideBack: 우하단 BottomBackFixed만 씀 — 줄 높이는 유지해 탭·목록이 안 올라가게
+// hideBack: 위 뒤로 없음(shell 하단만). 미사용 시 SettingPage에서 TopBar 제거 가능
 export default function SettingTopBar({ onBack, hideBack = false }) {
     if (hideBack) {
         return <header className="flex h-14 shrink-0 land:h-12 land:w-14" aria-hidden="true" />

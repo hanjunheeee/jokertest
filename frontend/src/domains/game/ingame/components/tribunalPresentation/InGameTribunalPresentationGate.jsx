@@ -13,6 +13,11 @@ import {
 import { resolveInGameTribunalPresentationNotice } from "../../utils/resolveInGameTribunalPresentationNotice.js"
 import { pickInGameJobPortrait } from "../../utils/pickInGameJobPortrait.js"
 import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
+import { INGAME_TIMER_PLACEMENT } from "../../constants/timebar/ingameTimerPlacement.js"
+import { useTurnProgress } from "../../hooks/timebar/useTurnProgress.js"
+import { useTimerPlacement } from "../../hooks/timebar/useTimerPlacement.js"
+import { selectInGameTimebarStatusLabel } from "../../utils/selectInGameTimebarStatusMessage.js"
+import { selectInGameTimebarPhaseDeadline } from "../../utils/timebar/phaseDeadline.js"
 import InGameTribunalPresentationOverlay from "./InGameTribunalPresentationOverlay.jsx"
 
 // 보드 목록에 피고가 없을 때 쓰는 이름
@@ -86,6 +91,17 @@ export default function InGameTribunalPresentationGate() {
 
   const chatProps = useInGameChatSessionContext()
 
+  const gameState = useInGameStore((s) => s.state ?? null)
+  const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
+  const timebarStatusLabel = selectInGameTimebarStatusLabel(gameState)
+  const { timerPlacement } = useTimerPlacement()
+  const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
+
+  const showEmbeddedPhaseTimer =
+    timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
+    && typeof timebarStatusLabel === "string"
+    && timebarStatusLabel.length > 0
+
   // 재판 아니면 안 띄움
   if (!open || !defendant) return null
 
@@ -100,6 +116,10 @@ export default function InGameTribunalPresentationGate() {
       onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
       onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
       chatProps={chatProps}
+      showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+      embeddedPhaseTimerStatusLabel={timebarStatusLabel}
+      embeddedPhaseTimerRemainingRatio={remainingRatio}
+      embeddedPhaseTimerRemainingSec={remainingSec}
       devResolveLabel={devResolveLabel}
       devResolveEnabled={devResolveEnabled}
       onDevResolve={() => ctx?.resolveTribunalVote?.()}

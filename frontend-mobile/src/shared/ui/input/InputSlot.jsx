@@ -23,7 +23,7 @@ function inputTypeOf(type, passwordToggle, passwordVisible) {
 export default function InputSlot({
   look = "login", type = "text", name, value, onChange, placeholder, autoComplete, leadingIcon,
   passwordToggle = false, disabled = false, inputMode, inputTestId, ariaLabel, inputClassName = "",
-  datePlaceholderClassName = "",
+  datePlaceholderClassName = "", inputRef, autoCapitalize, maxLength,
 }) {
   const style = typeof look === "string" ? INPUT_SLOT_LOOKS[look] : look
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -47,12 +47,15 @@ export default function InputSlot({
             </span>
           ) : null}
           <input
+            ref={inputRef}
             type={inputType}
             name={name}
             value={value}
             onChange={onChange}
             placeholder={placeholder}
             autoComplete={autoComplete}
+            autoCapitalize={autoCapitalize}
+            maxLength={maxLength}
             disabled={disabled}
             inputMode={inputMode}
             aria-label={style.namedByPlaceholder ? ariaLabel ?? placeholder : ariaLabel}

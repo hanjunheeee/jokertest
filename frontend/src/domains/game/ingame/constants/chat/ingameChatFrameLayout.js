@@ -3,7 +3,7 @@
 import { INGAME_CHAT_FRAME_SCALE } from "./ingameChatAssets.js"
 
 // 내용 왼쪽 시작을 더 미는 값 (틀 기준 %)
-export const CONTENT_SHIFT_LEFT_FRAME = 7
+export const CONTENT_SHIFT_LEFT_FRAME = 4
 
 // 틀 기준 자리(top·bottom·left·right·height)를 배율 맞춰 % 글로 바꿈
 export function mapFrameInsetToLayoutBox(

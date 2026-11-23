@@ -1,9 +1,13 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import { act } from "react"
+import { register } from "node:module"
 import { JSDOM } from "jsdom"
 
-const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { pretendToBeVisual: true })
+const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", {
+  pretendToBeVisual: true,
+  url: "http://localhost/",
+})
 
 function installDomGlobal(name, value) {
   Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
@@ -20,6 +24,8 @@ installDomGlobal("requestAnimationFrame", dom.window.requestAnimationFrame.bind(
 installDomGlobal("cancelAnimationFrame", dom.window.cancelAnimationFrame.bind(dom.window))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
+register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
+
 const navigateCalls = []
 mock.module("react-router-dom", {
   namedExports: { useNavigate: () => (...args) => navigateCalls.push(args) },
@@ -28,6 +34,7 @@ mock.module("react-router-dom", {
 const { renderHook } = await import("@testing-library/react")
 const { useInGameStore } = await import("../../../../../src/domains/game/ingame/store/ingameStore.js")
 const { useInGameResultNavigation } = await import("../../../../../src/domains/game/ingame/hooks/useInGameResultNavigation.js")
+const { useMatchingStore } = await import("../../../../../src/domains/game/matching/store/matchingStore.js")
 
 const WIN_RESULT = {
   winner: "CITIZEN",
@@ -53,8 +60,10 @@ function seed({ phase, winResult = null }) {
 
 function reset() {
   navigateCalls.length = 0
+  dom.window.history.pushState({}, "", "/ingame")
   act(() => {
     useInGameStore.setState({ gameId: null, state: null })
+    useMatchingStore.setState({ isInRoom: false, roomId: null, players: [] })
   })
 }
 
@@ -118,6 +127,30 @@ test("리렌더를 반복해도 navigate는 한 번만 호출된다", () => {
   rerender({ hold: false })
 
   assert.equal(navigateCalls.length, 1)
+  unmount()
+})
+
+test("/ingame 이 아니면 ENDED여도 결과로 이동하지 않는다", () => {
+  reset()
+  seed({ phase: "ENDED", winResult: WIN_RESULT })
+  dom.window.history.pushState({}, "", "/game-matching")
+
+  const { unmount } = renderHook(() => useInGameResultNavigation({ hold: false }))
+
+  assert.equal(navigateCalls.length, 0)
+  unmount()
+})
+
+test("대기방에 들어간 상태면 ENDED여도 /ingame에서 결과로 이동하지 않는다", () => {
+  reset()
+  seed({ phase: "ENDED", winResult: WIN_RESULT })
+  act(() => {
+    useMatchingStore.setState({ isInRoom: true, roomId: "room-1", players: [] })
+  })
+
+  const { unmount } = renderHook(() => useInGameResultNavigation({ hold: false }))
+
+  assert.equal(navigateCalls.length, 0)
   unmount()
 })
 

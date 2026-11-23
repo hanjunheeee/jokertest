@@ -5,7 +5,15 @@ import Modal from "./Modal.jsx"
 import { CLOSE_STYLE, FRAME_ASSETS, FRAME_STYLE, TITLE_CLASS, TITLE_STYLE } from "./voteFrameStyle.js"
 
 // 제목은 틀 위쪽 판 자리, 닫기는 오른쪽 위 (둘 다 틀 테두리 안에 겹침)
-export default function VoteFrameModal({ open, onClose, title, closeLabel, testId, children }) {
+export default function VoteFrameModal({
+  open,
+  onClose,
+  title,
+  closeLabel,
+  testId,
+  backdropClassName,
+  children,
+}) {
   return (
     <Modal
       open={open}
@@ -13,6 +21,7 @@ export default function VoteFrameModal({ open, onClose, title, closeLabel, testI
       closeLabel={closeLabel}
       ariaLabel={title}
       testId={testId}
+      backdropClassName={backdropClassName}
       className="flex max-h-full flex-col text-white"
       style={FRAME_STYLE}
     >

@@ -19,7 +19,6 @@ test.describe('다시 접속', () => {
         await reloadIngame(user.page);
         await expect(talk.phaseLine(user.page)).toContainText('제 1일');
         await expect(talk.phaseLine(user.page)).toContainText('낮 토론');
-        await expect(talk.strip(user.page).locator('[data-strip-slot]')).toHaveCount(3);
     });
 
     test('새로 고침하면 → 그 전에 오간 낮 말이 채팅방에 다시 보임 @game', async ({ user, table }) => {
@@ -49,12 +48,11 @@ test.describe('다시 접속', () => {
         await expect(talk.nightBanner(user.page)).toBeVisible();
     });
 
-    test('죽은 뒤 새로 고침해도 → "죽은 사람끼리" 띠와 내 칸 "사망"이 그대로 @game', async ({ user, table }) => {
+    test('죽은 뒤 새로 고침해도 → "죽은 사람끼리" 띠가 그대로 @game', async ({ user, table }) => {
         const t = await startTalkGame(table, user, { bots: 4, roles: citizenMe(user) });
         await getExecuted(t, user.account.uuid, { pages: [user.page] });
         await reloadIngame(user.page);
         await expect(talk.deadBanner(user.page)).toBeVisible();
-        await expect(talk.mySlot(user.page)).toHaveAccessibleName(/사망/);
     });
 
     test('판 도중 로비 주소로 가도 → 판이 남아 있어 인게임 화면으로 돌아옴 @game', async ({ user, table }) => {

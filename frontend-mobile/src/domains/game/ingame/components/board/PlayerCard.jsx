@@ -1,5 +1,5 @@
 // 플레이어 카드 그림: 초상·상태 표시·테마 테두리·카드 틀·이름판·"나" 표시
-// CardSlot·StripSlot·재판 DefendantCard가 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
+// CardSlot·재판 DefendantCard가 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
 import {
     FRAME_IMG_CLASS,
     FRAME_SHADOW_LAYER_CLASS,

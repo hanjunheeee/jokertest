@@ -30,12 +30,11 @@ test.describe('대기방 설정 바꾸기', () => {
         expect(await h.stepperValue(user.page, '광대(마피아) 플레이어 수')).toBe('1');
     });
 
-    test('편집 창에서는 → 방 만든 뒤 못 바꾸는 칸(불 꺼진 무도회·영혼의 베팅·투표 공개)이 안 보임', async ({ user }) => {
+    test('편집 창에서는 → 방 만든 뒤 못 바꾸는 칸(불 꺼진 무도회·투표 공개)이 안 보임', async ({ user }) => {
         const { page } = user;
         await h.createRoomUi(user);
         await openEdit(page);
         await expect(page.getByRole('checkbox', { name: '불이 꺼진 무도회' })).toHaveCount(0);
-        await expect(page.getByRole('checkbox', { name: '영혼의 베팅 활성화' })).toHaveCount(0);
         await h.selectTab(page, '회의&투표');
         await expect(page.getByRole('checkbox', { name: '투표 공개 여부' })).toHaveCount(0);
     });

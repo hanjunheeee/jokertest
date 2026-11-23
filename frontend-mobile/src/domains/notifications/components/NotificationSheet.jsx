@@ -1,8 +1,10 @@
 // 모바일 알림 창 (목록·읽음·보러 가기·읽은 메시지 삭제), 데스크톱 NotificationModal 자리
 // 로비가 { open, onClose }로 엶, 새 알림은 앱 루트 소켓 훅이 스토어에 넣어 바로 보임
 import { useEffect, useRef } from "react"
+import { motion } from "framer-motion"
 
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
+import { FRIEND_PANEL_TRANSITION } from "@/domains/lobby/constants/friendListStyle.js"
 import { NOTIFICATION_ASSETS } from "@m/domains/notifications/constants/notificationAssets.js"
 import CloseButton from "@m/shared/ui/button/CloseButton.jsx"
 import SheetPortal from "@m/shared/ui/sheet/SheetPortal.jsx"
@@ -31,7 +33,6 @@ export default function NotificationSheet({ open, onClose }) {
   const closeButtonRef = useRef(null)
   const sheet = useNotificationSheet({ open, onClose })
 
-  // 열리면 닫기 버튼에 포커스 (데스크톱과 같음)
   useEffect(() => {
     if (open) closeButtonRef.current?.focus()
   }, [open])
@@ -39,9 +40,24 @@ export default function NotificationSheet({ open, onClose }) {
   return (
     <SheetPortal open={open} onClose={onClose}>
       <div key="notification-sheet" data-notification-modal="true">
-        {/* 바탕을 누르면 닫힘 */}
-        <button type="button" aria-label="알림 닫기" className={BACKDROP_CLASS} data-sfx-kind="ui-cancel" onClick={onClose} />
-        <div className={WRAP_CLASS}>
+        <motion.button
+          type="button"
+          aria-label="알림 닫기"
+          className={BACKDROP_CLASS}
+          data-sfx-kind="ui-cancel"
+          onClick={onClose}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={FRIEND_PANEL_TRANSITION}
+        />
+        <motion.div
+          className={WRAP_CLASS}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 10 }}
+          transition={FRIEND_PANEL_TRANSITION}
+        >
           <div role="dialog" aria-modal="true" aria-label="알림" className={PANEL_CLASS}>
             <div aria-hidden="true" className={FRAME_CLASS} style={FRAME_STYLE} />
             <div className={TITLE_WRAP_CLASS} style={TITLE_WRAP_STYLE} data-notification-heading-wrap="true">
@@ -70,7 +86,7 @@ export default function NotificationSheet({ open, onClose }) {
               />
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </SheetPortal>
   )

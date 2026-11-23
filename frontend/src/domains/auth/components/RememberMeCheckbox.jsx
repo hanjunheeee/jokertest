@@ -14,7 +14,7 @@ export default function RememberMeCheckbox({ checked, onChange, label = "로그�
       role="checkbox"
       aria-checked={checked}
       onClick={toggle}
-      className="group flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0"
+      className="group flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 text-left"
     >
       <span className="interactive-scale-sm relative flex h-4 w-4 shrink-0 items-center justify-center">
         <PublicAsset src={LOGIN_ASSETS.checkbox} alt="" className="pointer-events-none h-4 w-4 select-none" />
@@ -28,7 +28,9 @@ export default function RememberMeCheckbox({ checked, onChange, label = "로그�
         ) : null}
       </span>
 
-      <span className="font-subheading app-text-scaled [--app-text-size:13px] font-bold text-text-body">{label}</span>
+      <span className="min-w-0 truncate font-subheading app-text-scaled [--app-text-size:12px] font-bold text-text-body">
+        {label}
+      </span>
     </button>
   )
 }

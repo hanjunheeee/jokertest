@@ -22,6 +22,12 @@ import { SHEET_BUTTON_LOOK } from "../parts/buttonLook.js"
 const CELL_CLASS =
   "flex aspect-square h-[92%] w-[13%] items-center justify-center font-subheading text-[min(6vw,2.1rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
 
+// 복사 버튼: 틀 아래 칸에 맞추되 살짝 아래 (대기방 RoomCodeSheet와 같음)
+const COPY_FOOTER_INSET = {
+  ...FOOTER_INSET,
+  paddingBottom: "5.25%",
+}
+
 // 방 코드 창 (roomCode는 판 상태 값)
 export default function RoomCodeSheet({ open, onClose, roomCode }) {
   const copyErrorId = useId()
@@ -75,7 +81,7 @@ export default function RoomCodeSheet({ open, onClose, roomCode }) {
         </div>
 
         {/* 복사 버튼은 틀 아래쪽 칸 (데스크톱 footer 자리) */}
-        <div className="absolute inset-x-0 bottom-0 flex justify-center" style={FOOTER_INSET}>
+        <div className="absolute inset-x-0 bottom-0 flex translate-y-1 justify-center land:translate-y-0.5" style={COPY_FOOTER_INSET}>
           <ImageButton
             look={SHEET_BUTTON_LOOK}
             label={copied ? "복사됨" : "방코드 복사"}

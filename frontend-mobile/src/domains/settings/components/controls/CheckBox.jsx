@@ -12,9 +12,9 @@ export default function CheckBox({ checked, onChange, ariaLabel }) {
             aria-checked={checked}
             aria-label={ariaLabel}
             onClick={() => onChange(!checked)}
-            className="-mr-2 flex size-12 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0"
+            className="-mr-1 flex size-10 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 land:size-12 land:-mr-2"
         >
-            <span className="relative block w-8">
+            <span className="relative block w-7 land:w-8">
                 <PublicAsset src={SETTING_ASSETS.checkbox} alt="" className="block h-auto w-full select-none" />
                 {/* 켜졌을 때만 체크 표시 */}
                 {checked ? (

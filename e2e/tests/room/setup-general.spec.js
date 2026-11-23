@@ -11,7 +11,7 @@ test.describe('방 만들기 일반 탭', () => {
         expect(await h.stepperValue(page, '최대 플레이어 수')).toBe('10');
         expect(await h.stepperValue(page, '광대(마피아) 플레이어 수')).toBe('2');
         await expect(page.getByRole('checkbox', { name: '불이 꺼진 무도회' })).toHaveAttribute('aria-checked', 'false');
-        await expect(page.getByRole('checkbox', { name: '영혼의 베팅 활성화' })).toHaveAttribute('aria-checked', 'false');
+        await expect(page.getByRole('checkbox', { name: '영혼의 베팅 활성화' })).toHaveCount(0);
         expect(await h.stepperValue(page, '역할 구성')).toBe('자동');
     });
 
@@ -66,11 +66,6 @@ test.describe('방 만들기 일반 탭', () => {
     test('불이 꺼진 무도회를 켜고 만들면 → 서버 방 lightsOut 켜짐', async ({ user }) => {
         const room = await h.createRoomUi(user, { lightsOut: true });
         expect(room.settings.lightsOut).toBe(true);
-    });
-
-    test('영혼의 베팅을 켜고 만들면 → 서버 방 soulBetting 켜짐', async ({ user }) => {
-        const room = await h.createRoomUi(user, { soulBetting: true });
-        expect(room.settings.soulBetting).toBe(true);
     });
 
     test('역할 구성을 직접 지정으로 바꾸면 → 광대 수 줄이 숨고 역할별 인원 줄·시민 자동 계산 글이 보임', async ({ user }) => {

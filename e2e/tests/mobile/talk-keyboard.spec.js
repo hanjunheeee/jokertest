@@ -1,4 +1,4 @@
-// 모바일 카톡형 입력칸·키보드: 낮은 화면에서 입력하면 진행 바·초상 띠를 접어 채팅방 자리를 냄, 연출 창 동안 입력 잠금
+// 모바일 카톡형 입력칸·키보드: 낮은 화면에서 입력하면 진행 바를 접어 채팅방 자리를 냄, 연출 창 동안 입력 잠금
 const { test, expect } = require('../../helpers/fixtures');
 const { talk, startTalkGame, toDay, toVote, clearOverlays, say } = require('./_talk');
 
@@ -13,11 +13,11 @@ async function dayGame(table, user) {
 }
 
 test.describe('키보드 올라옴 (낮은 화면)', () => {
-    test('키보드로 화면이 낮아진 채 입력칸을 누르면 → 초상 띠가 접혀 안 보임 @game', async ({ user, table }) => {
+    test('키보드로 화면이 낮아진 채 입력칸을 누르면 → 진행 바를 접고 compact 모드 @game', async ({ user, table }) => {
         await dayGame(table, user);
         await user.page.setViewportSize(KEYBOARD_UP);
         await talk.input(user.page).focus();
-        await expect(talk.boardSlotArea(user.page)).toBeHidden();
+        await expect(talk.timebarSlot(user.page)).toBeHidden();
         await expect(user.page.locator('[data-compact-typing]')).toHaveCount(1);
     });
 
@@ -26,8 +26,8 @@ test.describe('키보드 올라옴 (낮은 화면)', () => {
         await user.page.setViewportSize(KEYBOARD_UP);
         const before = (await talk.chat(user.page).boundingBox()).height;
         await talk.input(user.page).focus();
-        await expect(talk.boardSlotArea(user.page)).toBeHidden();
-        expect((await talk.chat(user.page).boundingBox()).height).toBeGreaterThan(before + 30);
+        await expect(talk.timebarSlot(user.page)).toBeHidden();
+        expect((await talk.chat(user.page).boundingBox()).height).toBeGreaterThan(before + 10);
     });
 
     test('진행 바를 펼쳐 둔 채 낮은 화면에서 입력하면 → 진행 바도 잠깐 접힘 @game', async ({ user, table }) => {
@@ -39,32 +39,30 @@ test.describe('키보드 올라옴 (낮은 화면)', () => {
         await expect(talk.timebarSlot(user.page)).toBeHidden();
     });
 
-    test('입력을 끝내 초점이 빠지면 → 접혔던 초상 띠·펼친 진행 바가 다시 보임 @game', async ({ user, table }) => {
+    test('입력을 끝내 초점이 빠지면 → 펼쳐 둔 진행 바가 다시 보임 @game', async ({ user, table }) => {
         await dayGame(table, user);
         await talk.phaseLine(user.page).click();
         await user.page.setViewportSize(KEYBOARD_UP);
         await talk.input(user.page).focus();
-        await expect(talk.boardSlotArea(user.page)).toBeHidden();
+        await expect(talk.timebarSlot(user.page)).toBeHidden();
         await talk.input(user.page).blur();
-        await expect(talk.boardSlotArea(user.page)).toBeVisible();
         await expect(talk.timebarSlot(user.page)).toBeVisible();
         await expect(user.page.locator('[data-compact-typing]')).toHaveCount(0);
     });
 
-    test('키보드가 내려가 화면 높이가 돌아오면 → 초점이 있어도 초상 띠가 다시 보임 @game', async ({ user, table }) => {
+    test('키보드가 내려가 화면 높이가 돌아오면 → 초점이 있어도 진행 바가 다시 보임 @game', async ({ user, table }) => {
         await dayGame(table, user);
         await user.page.setViewportSize(KEYBOARD_UP);
         await talk.input(user.page).focus();
-        await expect(talk.boardSlotArea(user.page)).toBeHidden();
+        await expect(talk.timebarSlot(user.page)).toBeHidden();
         await user.page.setViewportSize({ width: 375, height: 812 });
-        await expect(talk.boardSlotArea(user.page)).toBeVisible();
+        await expect(talk.timebarSlot(user.page)).toBeVisible();
     });
 
-    test('키 큰 화면(812)에서 입력칸을 누르면 → 자리가 넉넉해서 초상 띠를 안 접음 @game', async ({ user, table }) => {
+    test('키 큰 화면(812)에서 입력칸을 누르면 → 자리가 넉넉해서 진행 바를 안 접음 @game', async ({ user, table }) => {
         await dayGame(table, user);
         await talk.input(user.page).focus();
         await expect(talk.input(user.page)).toBeFocused();
-        await expect(talk.boardSlotArea(user.page)).toBeVisible();
         await expect(user.page.locator('[data-compact-typing]')).toHaveCount(0);
     });
 
@@ -72,7 +70,6 @@ test.describe('키보드 올라옴 (낮은 화면)', () => {
         await dayGame(table, user);
         await user.page.setViewportSize(KEYBOARD_UP);
         await talk.input(user.page).focus();
-        await expect(talk.boardSlotArea(user.page)).toBeHidden();
         await expect(talk.phaseLine(user.page)).toBeInViewport();
         await expect(talk.actionRow(user.page)).toBeInViewport();
         await expect(talk.input(user.page)).toBeInViewport();
@@ -84,7 +81,7 @@ test.describe('키보드 올라옴 (낮은 화면)', () => {
         await talk.input(user.page).fill('접힌 채 보냄');
         await talk.send(user.page).click();
         await expect(talk.mine(user.page).filter({ hasText: '접힌 채 보냄' })).toBeInViewport();
-        await expect(talk.boardSlotArea(user.page)).toBeHidden();
+        await expect(talk.timebarSlot(user.page)).toBeHidden();
     });
 
 });

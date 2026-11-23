@@ -4,15 +4,17 @@ import Backdrop from "@m/domains/auth/components/login/scene/Backdrop.jsx"
 import TopBar from "@m/domains/auth/components/login/scene/TopBar.jsx"
 import ParchmentFrame from "@m/domains/auth/components/login/scene/ParchmentFrame.jsx"
 import SoundCorner from "@m/domains/auth/components/login/scene/SoundCorner.jsx"
+import BrandLogo from "@m/domains/auth/components/login/scene/BrandLogo.jsx"
 
 // 액자가 화면보다 길면 페이지째 굴림 (틀 main이 세로 스크롤 맡음)
-export default function Scene({ children, onSubmit, frameSize = "default" }) {
+export default function Scene({ children, onSubmit, frameSize = "default", showBrandLogo = false }) {
   return (
     <div className="relative flex min-h-full w-full flex-col overflow-x-hidden">
       <Backdrop />
       <TopBar />
+      {showBrandLogo ? <BrandLogo /> : null}
 
-      <div className="relative z-10 flex flex-1 items-center justify-center px-3 pb-2 pt-1 land:py-2! md:px-6 md:pb-8">
+      <div className="relative z-10 flex flex-1 items-center justify-center px-3 pb-2 pt-0 land:py-2! md:px-6 md:pb-8">
         <ParchmentFrame onSubmit={onSubmit} frameSize={frameSize}>{children}</ParchmentFrame>
       </div>
 

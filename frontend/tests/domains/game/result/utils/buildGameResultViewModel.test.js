@@ -9,7 +9,8 @@ register(new URL("../../../../helpers/jsxNodeLoaderHooks.mjs", import.meta.url))
 const { buildGameResultViewModel } = await import("../../../../../src/domains/game/result/utils/buildGameResultViewModel.js")
 const { INGAME_PLAYER_ALIVE_FRAME_VARIANTS } = await import("../../../../../src/domains/game/ingame/constants/board/ingamePlayerAssets.js")
 const { INGAME_PLAYER_STATUS } = await import("../../../../../src/domains/game/shared/constants/ingamePlayerStatus.js")
-const { getPlayerRecordListProfileAssets } = await import("../../../../../src/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js")
+const { resolvePlayerRecordListProfileAssets } = await import("../../../../../src/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js")
+const { resolveAccountProfilePhotoSrc, resolveAccountProfileBorderSrc } = await import("../../../../../src/shared/utils/resolveAccountProfileAssets.js")
 const { pickInGameJobPortrait } = await import("../../../../../src/domains/game/ingame/utils/pickInGameJobPortrait.js")
 const { pickJobPortrait } = await import("../../../../../src/shared/utils/pickJobPortrait.js")
 
@@ -164,7 +165,37 @@ test("portraitSrc는 MVP 카드용 pickInGameJobPortrait(슬롯 index 순환) �
   )
 })
 
-test("profilePhotoSrc·profileBorderSrc는 전적목록과 같은 shopItem 프로필 순환을 따른다", () => {
+test("reveals에 accountProfile*Id가 있으면 해당 계정 프로필 사진·테두리를 쓴다", () => {
+  const reveals = baseReveals().map((r, index) => ({
+    ...r,
+    accountProfilePhotoId: ["player-profile-금빛가면", "player-profile-기사", "player-profile-사냥꾼", "player-profile-영주", "player-profile-악당"][index],
+    accountProfileBorderId: ["profile-border-귀족", "profile-border-주치의", "profile-border-경비원", "profile-border-평민", "profile-border-광대"][index],
+  }))
+  const { players } = buildGameResultViewModel({ winner: "JOKER", reveals, mvp: null }, "u-joker")
+
+  assert.deepEqual(
+    players.map((p) => p.profilePhotoSrc),
+    reveals.map((r) => resolveAccountProfilePhotoSrc(r.accountProfilePhotoId)),
+  )
+  assert.deepEqual(
+    players.map((p) => p.profileBorderSrc),
+    reveals.map((r) => resolveAccountProfileBorderSrc(r.accountProfileBorderId)),
+  )
+})
+
+test("reveals에 프로필이 없으면 rosterPlayers 명단의 accountProfile*Id로 채운다", () => {
+  const winResult = winResultOf("JOKER")
+  const rosterPlayers = [
+    { uuid: "u-joker", nickname: "밀런", accountProfilePhotoId: "player-profile-악당", accountProfileBorderId: "profile-border-광대" },
+  ]
+  const { players } = buildGameResultViewModel(winResult, "u-joker", null, { rosterPlayers })
+
+  const joker = players.find((p) => p.id === "u-joker")
+  assert.equal(joker.profilePhotoSrc, resolveAccountProfilePhotoSrc("player-profile-악당"))
+  assert.equal(joker.profileBorderSrc, resolveAccountProfileBorderSrc("profile-border-광대"))
+})
+
+test("프로필 id가 없으면 resolvePlayerRecordListProfileAssets 폴백(줄 순서)을 쓴다", () => {
   const { players } = buildGameResultViewModel(winResultOf("JOKER"), "u-joker")
 
   assert.deepEqual(
@@ -172,7 +203,7 @@ test("profilePhotoSrc·profileBorderSrc는 전적목록과 같은 shopItem 프�
       profilePhotoSrc: p.profilePhotoSrc,
       profileBorderSrc: p.profileBorderSrc,
     })),
-    players.map((_, index) => getPlayerRecordListProfileAssets(index)),
+    players.map((_, index) => resolvePlayerRecordListProfileAssets({}, index)),
   )
 })
 

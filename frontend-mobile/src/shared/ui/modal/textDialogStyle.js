@@ -1,5 +1,5 @@
 // 글 위주 창 안쪽 class (본문·버튼 줄·버튼 셋·오류·성공·입력 칸)
-// 모바일 약관·탈퇴 확인·쿠폰·새 버전 안내가 씀, 누르는 칸은 높이 44px
+// 모바일 약관·탈퇴 확인·새 버전 안내가 씀 (쿠폰 입력칸 스타일은 CouponDialog도 공유), 누르는 칸은 높이 44px
 
 export const DIALOG_TEXT_CLASS = "font-subheading leading-relaxed app-text-scaled [--app-text-size:0.9rem]"
 export const DIALOG_META_CLASS = "font-subheading text-[#5a4630] app-text-scaled [--app-text-size:0.78rem]"

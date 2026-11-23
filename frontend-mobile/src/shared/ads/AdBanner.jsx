@@ -5,7 +5,7 @@ import AdSlot from "@m/shared/ads/AdSlot.jsx"
 import { slotMode } from "@m/shared/ads/adConfig.js"
 import { AD_CONFIG, AD_IS_DEV } from "@m/shared/ads/currentAdConfig.js"
 
-// 높이·띄움은 index.css의 .mobile-ad-banner (fixed 뒤로 버튼이 --mobile-ad-h만큼 올라감)
+// 높이·띄움은 index.css의 .mobile-ad-banner (shell 크롬·본문 높이 계산에 --mobile-ad-h 사용)
 export default function AdBanner() {
     const [empty, setEmpty] = useState(false)
     const mode = slotMode(AD_CONFIG, "banner", AD_IS_DEV)

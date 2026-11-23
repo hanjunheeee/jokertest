@@ -2,7 +2,10 @@
 // ChatPanel이 씀, 기준은 index.css의 land:·md: 와 같음
 import { useSyncExternalStore } from "react"
 
-const WIDE_QUERY = "(orientation: landscape) and (max-height: 540px) and (min-width: 560px), (min-width: 48rem)"
+export const WIDE_CHAT_MEDIA_QUERY =
+    "(orientation: landscape) and (max-height: 540px) and (min-width: 560px), (min-width: 48rem)"
+
+const WIDE_QUERY = WIDE_CHAT_MEDIA_QUERY
 
 // matchMedia 구독 (바뀌면 다시 그림)
 function subscribe(onChange) {
@@ -17,4 +20,9 @@ function getSnapshot() {
 
 export function useWideChat() {
     return useSyncExternalStore(subscribe, getSnapshot, () => false)
+}
+
+export function isWideChatLayout() {
+    if (typeof window === "undefined") return false
+    return window.matchMedia(WIDE_CHAT_MEDIA_QUERY).matches
 }

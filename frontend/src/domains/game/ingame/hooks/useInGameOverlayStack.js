@@ -5,9 +5,11 @@ import { useInGamePhaseEntrance } from "./useInGamePhaseEntrance.js"
 import { useInGameNightTurnAnnouncement } from "./useInGameNightTurnAnnouncement.js"
 import { useInGameStore } from "../store/ingameStore.js"
 import { selectInGameSelfAlive } from "../utils/selfAlive.js"
+import { selectInGameEntryPreparingActive } from "../utils/selectInGameEntryPreparing.js"
 
 export function useInGameOverlayStack({ deathRevealActive = false } = {}) {
   const roleReveal = useInGameRoleReveal()
+  const entryPreparingActive = useInGameStore((s) => selectInGameEntryPreparingActive(s.state))
   // 죽은 사람은 밤 차례 안내 안 띄우고 단계 안내는 저절로 닫힘 (할 행동이 없고 죽은 사람 채팅을 안 막게)
   const selfDead = useInGameStore((s) => selectInGameSelfAlive(s.state ?? null) === false)
 
@@ -23,6 +25,7 @@ export function useInGameOverlayStack({ deathRevealActive = false } = {}) {
     roleReveal,
     phaseEntrance,
     nightTurn,
-    interactionBlocked: phaseEntrance.blocking,
+    entryPreparingActive,
+    interactionBlocked: phaseEntrance.blocking || entryPreparingActive,
   }
 }

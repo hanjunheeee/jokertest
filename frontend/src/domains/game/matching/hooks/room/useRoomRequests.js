@@ -12,6 +12,9 @@ import { READY_EVENT, classifyReady } from '../../utils/roomVersion.js'
 import { roomSfx } from '../../utils/roomSfx.js'
 import { canSend } from '../../utils/request.js'
 import { sendDeleteRoom, sendReady, sendStart } from '../../socket/room.js'
+import { appConfirm } from '@/shared/utils/appConfirm.js'
+import { traceMatchingFlow } from '../../debug/matchingFlowTrace.js'
+import { useInGameStore } from '../../../ingame/store/ingameStore.js'
 
 // 응답이 옛것인지 보는 검사 만들기: 보낼 때 잡은 버전·소속·소켓·방·계정이 하나라도 바뀌면 옛것
 const staleCheck = (ctx, verRef, { ver, socket, roomId, uuid, member }) => () => {
@@ -28,7 +31,7 @@ const staleCheck = (ctx, verRef, { ver, socket, roomId, uuid, member }) => () =>
 }
 
 // 시작·준비·방 삭제 요청 함수 묶음
-export function useRoomRequests(ctx) {
+export function useRoomRequests(ctx, { onRoomDeleted } = {}) {
   const {
     syncStatus, startingRef, readyingRef, startVerRef, readyVerRef, memberGenRef, readyAggRef,
     setIsStarting, setIsSettingReady, setStartBlocked, resync, bump, clearStart, clearReady,
@@ -46,14 +49,27 @@ export function useRoomRequests(ctx) {
       alert(GAME_START_MESSAGES.SOCKET_UNAVAILABLE)
       return
     }
-    if (!window.confirm(ROOM_MESSAGES.DELETE_CONFIRM)) return
+    if (!(await appConfirm(ROOM_MESSAGES.DELETE_CONFIRM))) return
+    useMatchingStore.getState().suppressRoomRecover()
     deletingRef.current = true
     setIsDeleting(true)
     try {
       const response = await sendDeleteRoom(socket)
-      // 성공이면 방 삭제 방송이 화면을 옮김, 실패만 알림
       if (response?.ok === false && ctx.mountedRef.current) {
         alert(response.message ?? ROOM_MESSAGES.DELETE_FAILED)
+        return
+      }
+      if (response?.ok !== false) {
+        queueMicrotask(() => {
+          if (!ctx.mountedRef.current) return
+          if (window.location.pathname !== "/game-matching") return
+          if (!useMatchingStore.getState().isInRoom) {
+            onRoomDeleted?.({ reason: "room_deleted_event", silent: true })
+            return
+          }
+          useMatchingStore.getState().clearRoom()
+          onRoomDeleted?.({ reason: "room_deleted_event" })
+        })
       }
     } catch {
       if (ctx.mountedRef.current) alert(ROOM_MESSAGES.DELETE_FAILED)
@@ -91,20 +107,45 @@ export function useRoomRequests(ctx) {
 
     startingRef.current = true
     setIsStarting(true)
+    traceMatchingFlow("start_game_request", {
+      roomId,
+      settingsVersion,
+      member,
+      socketId: socket.id ?? null,
+    })
     try {
       const response = await sendStart(socket, {
         roomId,
         expectedSettingsVersion: settingsVersion,
       })
-      // 그사이 바뀌었으면 응답 버림
-      if (isStale()) return
+      traceMatchingFlow("start_game_response", {
+        ok: response?.ok,
+        code: response?.code,
+        gameId: response?.gameId,
+        stale: isStale(),
+        memberGen: memberGenRef.current,
+      })
+      // 그사이 바뀌었으면 응답 버림 (game_started로 방이 비워진 뒤 ACK는 late_ok로 처리)
+      if (isStale()) {
+        const activeGameId = useInGameStore.getState().gameId
+        if (response?.ok && response?.gameId && activeGameId === response.gameId) {
+          traceMatchingFlow("start_game_response_late_ok", { gameId: activeGameId })
+          return
+        }
+        traceMatchingFlow("start_game_response_dropped", { reason: "stale", activeGameId })
+        return
+      }
 
       // 실패: 방 상태가 바뀐 거면 방 다시 확인
       if (!response?.ok) {
         if (response?.code === 'ROOM_STATE_CHANGED') resync()
         setStartBlocked(response?.message ?? GAME_START_MESSAGES.FALLBACK)
       }
-    } catch {
+    } catch (err) {
+      traceMatchingFlow("start_game_response_error", {
+        stale: isStale(),
+        message: err instanceof Error ? err.message : String(err),
+      })
       // 응답 못 받으면 시간 초과 안내
       if (!isStale()) setStartBlocked(GAME_START_MESSAGES.REQUEST_TIMEOUT)
     } finally {

@@ -69,6 +69,10 @@ export default function InGameTribunalPresentationOverlay({
   onVoteGuilty,
   onVoteNotGuilty,
   chatProps = null,
+  showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerStatusLabel = null,
+  embeddedPhaseTimerRemainingRatio = 0,
+  embeddedPhaseTimerRemainingSec = null,
   devResolveLabel = null,
   devResolveEnabled = false,
   onDevResolve = null,
@@ -184,7 +188,13 @@ export default function InGameTribunalPresentationOverlay({
                     animate={reduceMotion ? undefined : "visible"}
                     exit="hidden"
                   >
-                    <InGameTribunalPresentationChatPanel {...chatProps} />
+                    <InGameTribunalPresentationChatPanel
+                      {...chatProps}
+                      showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+                      embeddedPhaseTimerStatusLabel={embeddedPhaseTimerStatusLabel}
+                      embeddedPhaseTimerRemainingRatio={embeddedPhaseTimerRemainingRatio}
+                      embeddedPhaseTimerRemainingSec={embeddedPhaseTimerRemainingSec}
+                    />
                   </motion.div>
                 ) : null}
               </AnimatePresence>

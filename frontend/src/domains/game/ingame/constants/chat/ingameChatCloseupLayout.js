@@ -43,17 +43,17 @@ export const CLOSE_BTN_CLASS =
 
 // 틀 그림 기준 목록·입력·상태 줄 자리 (판 위 채팅보다 넓음)
 const MSG_LIST_INSET_FRAME_CLOSEUP = {
-  top: 8,
-  left: 4 + CONTENT_SHIFT_LEFT_FRAME,
+  top: 17.8,
+  left: 5 + CONTENT_SHIFT_LEFT_FRAME,
   right: 7,
-  height: 65,
+  height: 64.5,
 }
 
 const TEXT_FIELD_INSET_FRAME_CLOSEUP = {
-  bottom: 4,
-  left: 5,
-  right: 5,
-  height: 14,
+  bottom: 1.6,
+  left: 3.8,
+  right: 6.5,
+  height: 13.5,
 }
 
 const STATUS_LINE_INSET_FRAME_CLOSEUP = {
@@ -101,13 +101,13 @@ export const CLOSEUP_TEXT_WRAP_TRIM_CLASS =
   "pl-[clamp(0.35rem,1.5cqi,0.6rem)] pr-[clamp(1.1rem,4.8cqi,2.1rem)]"
 
 export const CLOSEUP_INPUT_SHIFT_CLASS =
-  "ml-[clamp(2rem,10cqi,3.25rem)]"
+  "ml-[clamp(1.65rem,8.5cqi,2.85rem)]"
 
 export const CLOSEUP_SEND_BTN_CLASS =
-  "interactive-scale relative block w-[clamp(5.75rem,38cqi,8.25rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
+  "interactive-scale relative block w-[clamp(5.5rem,32cqi,7.75rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
 
 export const CLOSEUP_SEND_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.88rem,4.75cqi,1.18rem)] font-bold text-[#e9b582] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.82rem,4.2cqi,1.1rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
 
 export const CLOSEUP_SEND_BTN_SHIFT_CLASS =
-  "-translate-x-[clamp(1.85rem,9.5cqi,2.85rem)]"
+  "-translate-x-[clamp(1.65rem,8.5cqi,2.55rem)]"

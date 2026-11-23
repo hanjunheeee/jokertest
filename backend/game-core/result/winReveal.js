@@ -22,6 +22,18 @@ function buildPublicWinResult(session) {
     return { ...session.winResult, reveals: buildRoleReveals(session), ...(mvp ? { mvp } : {}) }
 }
 
+// 계정 프로필 사진·테두리 (게임 시작 시점 loadout, 없으면 null)
+function buildRevealProfileFields(player) {
+    return {
+        ...(Object.hasOwn(player, 'accountProfilePhotoId')
+            ? { accountProfilePhotoId: player.accountProfilePhotoId }
+            : {}),
+        ...(Object.hasOwn(player, 'accountProfileBorderId')
+            ? { accountProfileBorderId: player.accountProfileBorderId }
+            : {}),
+    }
+}
+
 // 전원 역할·팀·생존·죽은 이유 공개
 function buildRoleReveals(session) {
     return [...session.players.values()].map((player) => ({
@@ -31,6 +43,7 @@ function buildRoleReveals(session) {
         team: ROLE_DEFINITIONS[player.role]?.team ?? null,
         alive: player.alive,
         deathReason: player.alive ? null : (player.deathReason ?? null),
+        ...buildRevealProfileFields(player),
     }))
 }
 

@@ -13,6 +13,7 @@ import {
   CHAT_OFFLINE_MESSAGE,
   isBrowserOffline,
   mapJokerChatSanitizeCodeToMessage,
+  isSilentChatSendSanitizeCode,
   sanitizeJokerChatText,
 } from "../utils/chatText.js"
 import { isStaleRoleRevealAckResponse } from "../utils/staleAck.js"
@@ -160,6 +161,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
 
     const sanitized = sanitizeJokerChatText(requestDraft)
     if (!sanitized.ok) {
+      if (isSilentChatSendSanitizeCode(sanitized.code)) return
       dispatch({
         type: "LOCAL_ERROR",
         gameId: requestGameId,
@@ -247,6 +249,14 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
   }
 
   const view = selectGameChatView(state, ownedGameId, authUuid, viewChannel)
+  // 밤 직업 채널로 보기가 바뀌어도 낮 대화 목록은 DAY에 그대로 (화면에서 섞어서 보여 줌)
+  const dayChannelMessages = selectGameChatMessages(
+    state,
+    ownedGameId,
+    authUuid,
+    INGAME_CHAT_CHANNELS.DAY,
+    getPlayerById,
+  )
 
   return {
     draft: view.draft,
@@ -254,6 +264,7 @@ export function useInGameGameChatSession({ getPlayerById } = {}) {
       dispatch({ type: "DRAFT", gameId: ownedGameId, authUuid, channel: viewChannel, draft }),
     // 죽은 사람 채널이면 낮 채팅도 섞음 (줄마다 채널, 화면이 죽은 사람 말을 회색으로)
     messages: selectGameChatMessages(state, ownedGameId, authUuid, viewChannel, getPlayerById),
+    dayChannelMessages,
     isDeadChat: viewChannel === INGAME_CHAT_CHANNELS.DEAD,
     send,
     status: view.status,

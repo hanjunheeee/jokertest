@@ -12,6 +12,7 @@ import {
 import { createSessionEndFinalizer } from "../utils/sessionEnd.js"
 import { createExitConfirmController, isPopNavigationBlocked } from "../utils/exitConfirm.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import { appConfirm } from "@/shared/utils/appConfirm.js"
 import { EXIT_STATUS } from "../constants/ingameExit.js"
 import { sendLeave as sendLeaveNow } from "./exit/leave.js"
 import { lookupExitOutcome } from "./exit/outcome.js"
@@ -120,11 +121,12 @@ export function useInGameExit({ destination = "/multiplay" } = {}) {
   // 확인 창에서 고르면 나가기 보내기 (기다리는 중·끝났으면 막기, 고른 쪽 효과음)
   const requestExit = useCallback(() => {
     if (pendingRef.current || settledRef.current) return false
-    return createExitConfirmController({
-      confirm: window.confirm,
+    void createExitConfirmController({
+      confirm: appConfirm,
       requestLeave: sendLeave,
       onDecision: (kind) => dispatchUiSfx(kind),
     })()
+    return true
   }, [sendLeave])
 
   // 실패하면 확인 창 없이 다시 보내기

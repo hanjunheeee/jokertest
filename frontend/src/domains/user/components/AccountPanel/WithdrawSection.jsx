@@ -4,7 +4,11 @@ import { LockIcon, MailIcon } from "@/shared/ui/InputIcons.jsx"
 import AuthInputSlot from "@/shared/ui/AuthInputSlot.jsx"
 import CenterDialog from "@/shared/ui/dialog/CenterDialog.jsx"
 import {
-  DIVIDER_SECTION_CLASS, INPUT_WRAP_CLASS, PANEL_FORM_CLASS, PANEL_FORM_HEADING_CLASS,
+  DIVIDER_SECTION_CLASS,
+  INPUT_WRAP_CLASS,
+  PANEL_FORM_CLASS,
+  PANEL_FORM_HEADING_CLASS,
+  PANEL_GUIDE_TEXT_CLASS,
 } from "@/domains/user/constants/accountPanelStyle.js"
 import AccountPanelFormActions from "@/domains/user/components/AccountPanel/AccountPanelFormActions.jsx"
 import {
@@ -12,15 +16,13 @@ import {
 } from "@/domains/auth/components/terms/termsStyle.js"
 import { WITHDRAW_NOTICE_LINES, useWithdrawForm } from "@/domains/user/hooks/member/useWithdrawForm.js"
 
-const GUIDE_CLASS = "font-subheading app-text-scaled [--app-text-size:clamp(0.6rem,0.8vw,0.7rem)] text-black/70"
-
 export default function WithdrawSection({ account }) {
   const form = useWithdrawForm({ account })
 
   return (
     <section className={DIVIDER_SECTION_CLASS}>
       <h3 className={PANEL_FORM_HEADING_CLASS}>회원 탈퇴</h3>
-      <p className={GUIDE_CLASS}>
+      <p className={PANEL_GUIDE_TEXT_CLASS}>
         {form.usesPassword ? "본인 확인을 위해 비밀번호를 입력해주세요." : "본인 확인을 위해 계정 이메일을 그대로 입력해주세요."}
       </p>
 

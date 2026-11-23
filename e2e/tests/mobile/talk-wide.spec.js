@@ -28,7 +28,7 @@ for (const size of SIZES) {
             await wideDay(table, user, size);
             await expect(talk.layout(user.page)).toHaveCount(0);
             for (const name of ['top', 'timebar', 'board', 'chat', 'actions']) await expect(slot(user.page, name)).toBeVisible();
-            await expect(talk.strip(user.page)).toHaveCount(0);
+            await expect(user.page.getByRole('region', { name: '플레이어 초상 띠' })).toHaveCount(0);
         });
 
         test(`${size.name} 판 화면은 → 가로로 넘치지 않음 @game`, async ({ user, table }) => {
@@ -97,7 +97,7 @@ test.describe('세로 ↔ 가로 돌리기', () => {
         await expect(talk.board(user.page)).toBeVisible();
         await user.page.setViewportSize({ width: 375, height: 812 });
         await expect(talk.layout(user.page)).toBeVisible();
-        await expect(talk.strip(user.page)).toBeVisible();
+        await expect(user.page.getByRole('region', { name: '플레이어 초상 띠' })).toHaveCount(0);
     });
 
     test('세로에서 오간 말은 → 가로로 돌려도 채팅 칸에 그대로 보임 @game', async ({ user, table }) => {

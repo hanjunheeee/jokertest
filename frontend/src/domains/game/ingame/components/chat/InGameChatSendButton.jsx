@@ -1,10 +1,7 @@
-// 채팅 보내기 버튼: 그림 위에 '보내기' 글자
+// 채팅 보내기 버튼 (글자는 리소스에 포함, aria-label만 제공)
 // 채팅 내용 틀(InGameChatContent)이 사용, 모양은 variant 따라
 import { INGAME_CHAT_ASSETS } from "../../constants/chat/ingameChatAssets.js"
-import {
-  getSendBtnClass,
-  getSendBtnLabelClass,
-} from "../../constants/chat/ingameChatLayout.js"
+import { getSendBtnClass } from "../../constants/chat/ingameChatLayout.js"
 import { useChatVariant } from "./InGameChatVariantContext.jsx"
 import PublicAsset from "@/shared/ui/PublicAsset"
 import { INGAME_FOCUS_RING_CLASS } from "../../constants/ingameFocusRing.js"
@@ -28,12 +25,6 @@ export default function InGameChatSendButton({
         alt=""
         className="block h-auto w-full select-none"
       />
-      <span
-        className={getSendBtnLabelClass(variant)}
-        aria-hidden="true"
-      >
-        보내기
-      </span>
     </button>
   )
 }

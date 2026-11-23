@@ -81,7 +81,7 @@ mock.module("@/shared/socket/socketClient.js", {
 
 const { act, render, cleanup, fireEvent } = await import("@testing-library/react")
 const { default: InGamePhaseActionRow } = await import("../../../../../../src/domains/game/ingame/components/timebar/InGamePhaseActionRow.jsx")
-const { INGAME_PHASE_ACTIONS } = await import("../../../../../../src/domains/game/ingame/constants/timebar/ingamePhaseActions.js")
+const { INGAME_PHASE_ACTIONS, PHASE_ACTION_ATTR } = await import("../../../../../../src/domains/game/ingame/constants/timebar/ingamePhaseActions.js")
 const { default: InGameCornerActionPanel } = await import("../../../../../../src/domains/game/ingame/components/actions/InGameCornerActionPanel.jsx")
 const { InGameActionContext } = await import("../../../../../../src/domains/game/ingame/context/InGameActionContext.jsx")
 const { InGamePlayerSessionProvider } = await import("../../../../../../src/domains/game/ingame/components/InGamePlayerSessionProvider.jsx")
@@ -200,25 +200,15 @@ test("AC-01②: 낮 투표 — dayVoteResolveControlsEnabled가 false면 집계�
   assert.equal(ctx.resolveDayVote.mock.callCount(), 0, "잠긴 집계 버튼이 요청을 보냈다")
 })
 
-test("AC-01③: 재판 — 재판 판정 버튼이 뜨고 활성일 때만 resolveTribunalVote를 1회 부른다", () => {
-  const enabled = makeCtx({
-    gameState: { phase: "TRIBUNAL" }, tribunalResolveControlsEnabled: true,
+test("AC-01③: 재판 — 시간 흐름 단계 행동 줄에 재판 판정 버튼을 두지 않는다", () => {
+  const ctx = makeCtx({
+    gameState: { phase: "TRIBUNAL" },
+    tribunalResolveControlsEnabled: true,
   })
-  let view = renderRow(enabled)
-  assert.deepEqual(renderedActions(view.container), [INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE],
-    "재판에 판정 버튼 말고 다른 단계의 버튼이 새어 나왔다")
-  fireEvent.click(buttonFor(view.container, INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE))
-  assert.equal(enabled.resolveTribunalVote.mock.callCount(), 1)
-  cleanup()
-
-  const locked = makeCtx({
-    gameState: { phase: "TRIBUNAL" }, tribunalResolveControlsEnabled: false, tribunalResolveLocked: true,
-  })
-  view = renderRow(locked)
-  const button = buttonFor(view.container, INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE)
-  assert.equal(button.disabled, true)
-  fireEvent.click(button)
-  assert.equal(locked.resolveTribunalVote.mock.callCount(), 0, "잠긴 판정 버튼이 요청을 보냈다")
+  const view = renderRow(ctx)
+  assert.deepEqual(renderedActions(view.container), [],
+    "재판 중에는 단계 행동 버튼이 없어야 한다")
+  assert.equal(view.container.querySelector(`[${PHASE_ACTION_ATTR}="${INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE}"]`), null)
 })
 
 test("AC-01④: 밤 — 내 역할 턴이면 밤 종료만 뜨고(건너뛰기는 우측 하단 패널) resolveNight을 1회 부른다", () => {

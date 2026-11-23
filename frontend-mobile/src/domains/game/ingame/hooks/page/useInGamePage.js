@@ -8,6 +8,7 @@ import {
   isValidInGameSession,
   shouldRedirectOutOfInGame,
 } from "@/domains/game/ingame/utils/selectInGameSessionGuard.js"
+import { traceMatchingFlow } from "@/domains/game/matching/debug/matchingFlowTrace.js"
 import { useInGameExit } from "@/domains/game/ingame/hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInGameSessionSnapshotSync.js"
 import { useInGameSidePanel } from "@/domains/game/ingame/hooks/useInGameSidePanel.js"
@@ -40,11 +41,19 @@ export function useInGamePage() {
   // 스냅샷 확인이 끝났는데 맞는 판이 아니면 멀티플레이 화면으로
   useEffect(() => {
     if (!shouldRedirectOutOfInGame({ snapshotSyncStatus, gameId, gameState })) return
+    traceMatchingFlow("ingame_redirect_multiplay", {
+      snapshotSyncStatus,
+      gameId,
+      hasState: Boolean(gameState),
+      stateId: gameState?.id ?? null,
+      valid: isValidInGameSession(gameId, gameState),
+    })
     navigate("/multiplay", { replace: true })
   }, [gameId, gameState, navigate, snapshotSyncStatus])
 
   return {
     isValidGameSession,
+    snapshotSyncStatus,
     sidePanel,
     interactionBlocked,
     surfaceLocked,

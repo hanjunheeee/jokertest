@@ -1,6 +1,5 @@
 // 위쪽 시간 바 (낮 단계·남은 시간)
 // InGamePage가 씀
-import { useState } from "react"
 import {
   DAY_TIMEBAR_ACTIVE_PHASE,
   INGAME_DAY_TIMEBAR_PHASES,
@@ -9,16 +8,8 @@ import {
 } from "../../constants/timebar/ingameTimebarAssets.js"
 import {
   ARROW_SIZE_CLASS,
-  COLLAPSE_BTN_LABEL,
   DAY_LABEL_CLASS,
   DAY_LABEL_INSET,
-  EXPANDED_ARROW_SIZE_CLASS,
-  EXPANDED_DAY_LABEL_CLASS,
-  EXPANDED_DAY_LABEL_INSET,
-  EXPANDED_TRACK_INSET,
-  EXPAND_BTN_IMG_CLASS,
-  EXPAND_BTN_LABEL,
-  INGAME_TIMEBAR_EXPAND_BTN_CLASS,
   NODE_ACTIVE_CLASS,
   NODE_GAP_CLASS,
   NODE_SIZE_CLASS,
@@ -100,45 +91,39 @@ export default function InGameTimebar({
   remainingRatio: remainingRatioProp,
   remainingSec: remainingSecProp,
   className = POSITION_CLASS,
+  showResourcesWithoutLabel = false,
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const expandDisabled = timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
-  const isExpanded = expandDisabled ? false : expanded
-
-  // 채팅 쪽 배치로 바뀌면 펼침을 접어 둠 (다시 바꿔도 접힌 채 시작)
-  if (expandDisabled && expanded) setExpanded(false)
-
   // 바깥에서 진행 값을 받으면 안에서 또 세지 않음
   const ownsProgress = remainingRatioProp === undefined && remainingSecProp === undefined
   const internalProgress = useTurnProgress(ownsProgress ? phaseTurnDeadline : null)
   const remainingRatio = remainingRatioProp ?? internalProgress.remainingRatio
   const remainingSec = remainingSecProp ?? internalProgress.remainingSec
+  const hasStatusLabel = typeof statusLabel === "string" && statusLabel.length > 0
   const showTimerOnTimebar =
-    timerPlacement === INGAME_TIMER_PLACEMENT.TIMEBAR && isExpanded && statusLabel
+    timerPlacement === INGAME_TIMER_PLACEMENT.TIMEBAR
+    && (hasStatusLabel || showResourcesWithoutLabel)
 
   const dayLabel = `제 ${day}일`
-  const toggleExpanded = () => {
-    if (expandDisabled) return
-    setExpanded((current) => !current)
-  }
 
   return (
     <div
-      className={`${className} ${STACK_CLASS}`.trim()}
+      className={`${className} ${STACK_CLASS} overflow-visible`.trim()}
       aria-label={`${dayLabel} 시간 흐름`}
     >
-      <div className="relative w-full leading-none">
+      <div className="relative w-full overflow-visible leading-none">
         {showTimerOnTimebar ? (
           <InGamePhaseTurnTimerPanel
             statusLabel={statusLabel}
             remainingRatio={remainingRatio}
             remainingSec={remainingSec}
             placement={INGAME_TIMER_PLACEMENT.TIMEBAR}
+            embeddedLayout="timebar"
+            showResourcesWithoutLabel={showResourcesWithoutLabel}
           />
         ) : null}
 
         <PublicAsset
-          src={isExpanded ? INGAME_TIMEBAR_ASSETS.frameExpanded : INGAME_TIMEBAR_ASSETS.frame}
+          src={INGAME_TIMEBAR_ASSETS.frame}
           alt=""
           className="block h-auto w-full select-none"
           aria-hidden="true"
@@ -147,28 +132,11 @@ export default function InGameTimebar({
         <TimebarTrack
           activePhaseId={activePhaseId}
           dayLabel={dayLabel}
-          dayLabelClass={isExpanded ? EXPANDED_DAY_LABEL_CLASS : DAY_LABEL_CLASS}
-          dayLabelInset={isExpanded ? EXPANDED_DAY_LABEL_INSET : DAY_LABEL_INSET}
-          trackInset={isExpanded ? EXPANDED_TRACK_INSET : TRACK_INSET}
-          arrowSizeClass={isExpanded ? EXPANDED_ARROW_SIZE_CLASS : ARROW_SIZE_CLASS}
+          dayLabelClass={DAY_LABEL_CLASS}
+          dayLabelInset={DAY_LABEL_INSET}
+          trackInset={TRACK_INSET}
+          arrowSizeClass={ARROW_SIZE_CLASS}
         />
-
-        {expandDisabled ? null : (
-          <button
-            type="button"
-            className={INGAME_TIMEBAR_EXPAND_BTN_CLASS}
-            aria-label={isExpanded ? COLLAPSE_BTN_LABEL : EXPAND_BTN_LABEL}
-            aria-expanded={isExpanded}
-            data-ingame-timebar-expand=""
-            onClick={toggleExpanded}
-          >
-            <PublicAsset
-              src={INGAME_TIMEBAR_ASSETS.expandButton}
-              alt=""
-              className={EXPAND_BTN_IMG_CLASS}
-            />
-          </button>
-        )}
       </div>
 
       <InGamePhaseActionRow />

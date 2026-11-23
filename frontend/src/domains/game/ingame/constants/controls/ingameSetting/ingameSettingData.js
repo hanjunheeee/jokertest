@@ -47,3 +47,9 @@ export const INGAME_SETTING_CHAT_CHECKBOXES = [
     defaultChecked: true,
   },
 ]
+
+/** 채팅 탭 체크 한 줄 — 켜면 타이머:채팅, 끄면 타이머:시간바 */
+export const INGAME_SETTING_TIMER_PLACEMENT_CHAT_LABEL = "채팅에 타이머 표시"
+
+/** 임시: 설정 채팅 탭 «채팅에 타이머 표시» 항목 노출 (다시 켤 때 true) */
+export const INGAME_SETTING_SHOW_TIMER_PLACEMENT_OPTION = false

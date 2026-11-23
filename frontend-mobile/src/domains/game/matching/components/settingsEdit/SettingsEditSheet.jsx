@@ -6,10 +6,16 @@ import { motion } from "framer-motion"
 import { GAME_SETUP_ASSETS } from "@/domains/game/setup/constants/gameSetupAssets.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import CloseButton from "@m/shared/ui/button/CloseButton.jsx"
 import { useSetupForm } from "@m/domains/game/shared/hooks/useSetupForm.js"
 import SettingsTabs from "./SettingsTabs.jsx"
 import SettingsItemList from "./SettingsItemList.jsx"
-import { ACTION_LOOK } from "../../constants/settingsEditStyle.js"
+import {
+  ACTION_LOOK,
+  SETTINGS_EDIT_CLOSE_BTN_CLASS,
+  SETTINGS_EDIT_CLOSE_ICON_CLASS,
+  SETTINGS_EDIT_OVERLAY_CLASS,
+} from "../../constants/settingsEditStyle.js"
 
 // 설정 변경 화면 (폼 값은 열 때마다 방 설정에서 새로 채움), 처음 탭은 일반
 export default function SettingsEditSheet({
@@ -36,9 +42,17 @@ export default function SettingsEditSheet({
 
   // 화면 틀(container) 밖 body에 띄워 바닥 줄까지 덮음
   return createPortal(
-    <div className="fixed inset-0 z-[62] bg-black/70">
+    <div className={SETTINGS_EDIT_OVERLAY_CLASS}>
+      <CloseButton
+        label="설정 변경 닫기"
+        onClick={onCancel}
+        data-sfx-kind="ui-cancel"
+        disabled={isSaving}
+        className={SETTINGS_EDIT_CLOSE_BTN_CLASS}
+        iconClassName={SETTINGS_EDIT_CLOSE_ICON_CLASS}
+      />
       <motion.div
-        className="mx-auto flex h-full w-full max-w-2xl flex-col gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] land:max-w-none land:px-4 land:pt-2 land:pb-2"
+        className="mx-auto flex h-full w-full max-w-2xl flex-col gap-2 px-3 pt-[max(3.15rem,env(safe-area-inset-top,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] land:max-w-none land:px-4 land:pt-12 land:pb-2"
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={UI_REVEAL_TRANSITION}

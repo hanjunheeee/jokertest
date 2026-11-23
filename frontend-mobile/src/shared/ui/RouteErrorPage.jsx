@@ -9,11 +9,25 @@ const BTN_CLASS =
 export default function RouteErrorPage() {
     const error = useRouteError()
     const notFound = !error || (isRouteErrorResponse(error) && error.status === 404)
+    const devDetail = import.meta.env.DEV && !notFound
+        ? (error instanceof Error
+            ? error.message
+            : isRouteErrorResponse(error)
+                ? error.statusText || String(error.status)
+                : typeof error === "string"
+                    ? error
+                    : error != null
+                        ? JSON.stringify(error)
+                        : "")
+        : ""
 
     return (
         <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-black px-6 text-center text-[#f5f0e6]">
             <h1 className="font-subheading text-xl font-bold">{notFound ? "없는 화면입니다" : "화면을 여는 중 문제가 생겼습니다"}</h1>
             <p className="text-sm text-white/70">{notFound ? "주소를 다시 확인해 주세요." : "다시 읽거나 처음 화면으로 돌아가 주세요."}</p>
+            {devDetail ? (
+                <p className="max-w-md break-all text-left font-mono text-xs text-red-300/90" role="status">{devDetail}</p>
+            ) : null}
             <div className="flex gap-2">
                 {notFound ? null : (
                     <button type="button" className={BTN_CLASS} onClick={() => window.location.reload()}>다시 읽기</button>

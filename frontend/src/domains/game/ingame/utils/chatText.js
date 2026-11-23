@@ -34,6 +34,11 @@ export function mapJokerChatSanitizeCodeToMessage(code) {
   return SANITIZE_CODE_MESSAGES[code] ?? FALLBACK_MESSAGE
 }
 
+/** 빈 글 보내기 등 — 안내 문구 없이 조용히 막음 */
+export function isSilentChatSendSanitizeCode(code) {
+  return code === "EMPTY_MESSAGE"
+}
+
 // 인터넷이 끊겼을 때 보내기 막는 문구
 export const CHAT_OFFLINE_MESSAGE = "인터넷 연결이 끊겨 보내지 못했습니다. 연결되면 다시 보내 주세요."
 

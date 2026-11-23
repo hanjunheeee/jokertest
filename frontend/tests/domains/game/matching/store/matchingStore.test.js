@@ -32,6 +32,16 @@ test("clearRoom은 방과 매칭 검색 상태를 함께 초기화한다", () =>
     }
 })
 
+test("suppressRoomRecover는 일정 시간 동안 목록→대기방 복구를 막는다", () => {
+    const initialState = useMatchingStore.getState()
+    try {
+        useMatchingStore.getState().suppressRoomRecover(1000)
+        assert.ok(useMatchingStore.getState().roomRecoverSuppressUntil > Date.now())
+    } finally {
+        useMatchingStore.setState(initialState, true)
+    }
+})
+
 test("known 3장: 같은 사람 입장 방송이 두 번 와도 자리는 하나 (새 값으로 바뀜)", () => {
     useMatchingStore.setState({ players: [{ uuid: "p1", isReady: false }] })
     useMatchingStore.getState().addPlayer({ uuid: "p1", isReady: true })

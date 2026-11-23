@@ -6,7 +6,7 @@ import { getSocket, subscribeSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useRoomCore } from './useRoomCore.js'
 import { usePartyRejoin } from './usePartyRejoin.js'
-import { useRoomEvents } from './useRoomEvents.js'
+import { useGameStartedSocket, useRoomEvents } from './useRoomEvents.js'
 import { useRoomCheck } from './useRoomCheck.js'
 import { useRoomReset } from './useRoomReset.js'
 import { useRoomRequests } from './useRoomRequests.js'
@@ -28,12 +28,13 @@ export function useRoom({
   // 상태 묶음 만들고 효과 훅 차례로 붙임 (순서 바꾸지 않기)
   const ctx = useRoomCore({ endedGameId, awaitPartyRoomRejoin })
   usePartyRejoin(ctx, socket, endedGameId, awaitPartyRoomRejoin, onPartyRejoinFailed)
-  useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarted })
+  useGameStartedSocket(ctx, { socket, onGameStarted })
+  useRoomEvents(ctx, { socket, roomId, onRoomDeleted })
   useRoomCheck(ctx, socket, onRoomDeleted)
   useRoomReset(ctx)
 
   // 요청 함수
-  const { deleteRoom, isDeleting, startGame, setReady } = useRoomRequests(ctx)
+  const { deleteRoom, isDeleting, startGame, setReady } = useRoomRequests(ctx, { onRoomDeleted })
   const { saveRoomSettings, verifyRoomSettingsResult } = useSettingsSave(ctx)
 
   return {

@@ -1,11 +1,9 @@
 // 대기방 자리 계산: 방 상태로 자리 목록 만들기·자리를 줄로 나누기
 // useMatchingPage·PlayerSlotGrid·MatchingPartySlots가 씀
-import { PARTY_SLOTS_DUMMY_10 } from "../constants/gameMatchingAssets.js"
-
 // 한 줄 칸 수
 export const PLAYER_SLOT_COLUMNS = 5
 
-// 방에 있으면 사람 자리, 파티 방 기다리는 중이면 빈 목록, 그 밖엔 미리보기용 가짜 자리
+// 방에 있으면 사람 자리, 방 밖이면 빈 목록 (가짜 준비 자리는 멀티플레이 안내용이라 대기방 URL에선 쓰지 않음)
 export function buildSlots({ isInRoom, players, awaiting }) {
   if (isInRoom) {
     return players.map((player) => ({
@@ -15,7 +13,8 @@ export function buildSlots({ isInRoom, players, awaiting }) {
       accountProfileBorderId: player.accountProfileBorderId,
     }))
   }
-  return awaiting ? [] : PARTY_SLOTS_DUMMY_10
+  void awaiting
+  return []
 }
 
 // 한 줄에 columns개씩 끊음

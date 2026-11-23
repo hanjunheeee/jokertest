@@ -415,7 +415,7 @@ test("F-23(AC-02) · 설정 항목 정의·폼/요청 키·store 상태 키가 �
 
   assert.deepEqual(GAME_SETUP_TABS.map((tab) => tab.id), ["general", "meeting"])
   assert.deepEqual(GENERAL_GAME_SETUP.map((item) => item.id),
-    ["private-lobby", "max-players", "joker-count", "lights-out", "soul-betting"],
+    ["private-lobby", "max-players", "joker-count", "lights-out"],
     "일반 탭 설정 항목 정의가 바뀌었다")
   assert.deepEqual(MEETING_GAME_SETUP.map((item) => item.id), [
     "day-discussion-time", "day-vote-time", "tribunal-time", "night-action-time",
@@ -589,7 +589,7 @@ test("편집 패널은 서버 확정 설정에서 시작하고, D-12·관전자 
 
   const text = container.textContent
   assert.equal(text.includes("관전"), false, "편집 화면에 관전자 항목이 있다")
-  for (const hidden of ["불이 꺼진 무도회", "영혼의 베팅", "투표 공개"]) {
+  for (const hidden of ["불이 꺼진 무도회", "투표 공개"]) {
     assert.equal(text.includes(hidden), false, `편집 화면에 ${hidden}가 남아 있다`)
   }
   assert.equal(text.includes("최대 플레이어 수"), true, "편집 대상 항목이 사라졌다")
@@ -1063,7 +1063,7 @@ async function assertEditPanelShowsCleanSettings(container, where) {
   const privateLobby = container.querySelector("button[role='checkbox'][aria-label='코드로만 참가']")
   assert.ok(privateLobby, `${where}: 코드로만 참가 항목이 사라졌다`)
   assert.equal(privateLobby.getAttribute("aria-checked"), "false")
-  for (const hidden of ["불이 꺼진 무도회", "영혼의 베팅 활성화", "투표 공개 여부"]) {
+  for (const hidden of ["불이 꺼진 무도회", "투표 공개 여부"]) {
     assert.equal(setupRow(container, hidden), null, `${where}: 편집 화면에 ${hidden}가 남아 있다`)
   }
 

@@ -1,5 +1,8 @@
 // 대기방 화면: 배경·팝업·인원 머리말·뒤로/친구 초대·방장 버튼·강퇴 창·설정 편집
 // /game-matching 라우트가 씀, 값과 동작은 모두 useMatchingPage에서 받음
+import { Navigate } from "react-router-dom"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { shouldLeaveMatchingForInGame } from "../utils/shouldLeaveMatchingForInGame.js"
 import MatchingBackground from "../components/MatchingBackground.jsx"
 import MatchingPartyHeader from "../components/MatchingPartyHeader.jsx"
 import MatchingPageControls from "../components/MatchingPageControls.jsx"
@@ -17,6 +20,11 @@ import SettingsPendingNotice from "../components/settingsEdit/SettingsPendingNot
 import SettingsEditOverlay from "../components/settingsEdit/SettingsEditOverlay.jsx"
 
 export default function GameMatchingPage() {
+  const activeInGame = useInGameStore((s) => shouldLeaveMatchingForInGame(s.gameId, s.state))
+  const pageState = useMatchingPage()
+  if (activeInGame) return <Navigate to="/ingame" replace />
+  if (!pageState.canStayOnMatchingPage) return <Navigate to="/multiplay" replace />
+
   const {
     uiVisible,
     waitingMessage,
@@ -76,7 +84,7 @@ export default function GameMatchingPage() {
     invitingIds,
     inviteFriend,
     friendInviteError,
-  } = useMatchingPage()
+  } = pageState
 
   return (
     <div className="relative h-svh w-full overflow-hidden bg-black">

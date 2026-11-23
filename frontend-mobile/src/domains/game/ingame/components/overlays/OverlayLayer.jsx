@@ -11,6 +11,7 @@ import PhaseEntranceOverlay from "./PhaseEntranceOverlay.jsx"
 import RoleRevealOverlay from "./RoleRevealOverlay.jsx"
 import NightSuccessOverlay from "./nightSuccess/NightSuccessOverlay.jsx"
 import TribunalGate from "./tribunal/TribunalGate.jsx"
+import InGameEntryPreparingOverlay from "@/domains/game/ingame/components/entryPreparing/InGameEntryPreparingOverlay.jsx"
 
 // .mobile-shell이 container 틀이라 fixed가 그 안에 갇힘 → body로 꺼냄 (그리는 순서는 데스크톱 InGamePage와 같음)
 export default function OverlayLayer() {
@@ -18,6 +19,7 @@ export default function OverlayLayer() {
 
     return createPortal(
         <div data-ingame-overlay-layer="">
+            <InGameEntryPreparingOverlay open={o.entryPreparingActive} />
             <TribunalGate />
             <NightTurnOverlay
                 open={o.nightTurn.open && !o.waitOpen}

@@ -21,8 +21,10 @@ export default function GameResultPage() {
 
     const hasResult = page.stage === "result"
     return (
-        <>
-            {hasResult ? <ResultBoard {...page.view} /> : <Unavailable />}
+        <div className="flex h-svh w-full flex-col bg-black">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                {hasResult ? <ResultBoard {...page.view} /> : <Unavailable />}
+            </div>
             <ResultActions
                 hasResult={hasResult}
                 isReturning={page.isReturning}
@@ -31,6 +33,6 @@ export default function GameResultPage() {
                 onLeaveUnavailable={page.leaveUnavailable}
             />
             <InterstitialAd open={ad.open} mode={ad.mode} onClose={ad.close} />
-        </>
+        </div>
     )
 }

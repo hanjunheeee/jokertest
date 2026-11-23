@@ -3,6 +3,7 @@
 
 import { useNavigate } from "react-router-dom"
 import AccountPanel from "@m/domains/user/components/account/AccountPanel.jsx"
+import { ACCOUNT_FRAME_WRAP_CLASS } from "@m/domains/user/constants/accountFormLayout.js"
 import ScreenFrame from "@m/domains/user/components/mypage/ScreenFrame.jsx"
 
 // 뒤로는 마이페이지로 (데스크톱과 같음)
@@ -11,7 +12,7 @@ export default function AccountPage() {
 
     return (
         <ScreenFrame title="계정 관리" backAtBottom onBack={() => navigate("/mypage")}>
-            <div className="mx-auto flex w-full max-w-[20.5rem] flex-1 items-center px-3 pb-5 pt-1 land:max-w-[20rem]">
+            <div className={ACCOUNT_FRAME_WRAP_CLASS}>
                 <AccountPanel />
             </div>
         </ScreenFrame>

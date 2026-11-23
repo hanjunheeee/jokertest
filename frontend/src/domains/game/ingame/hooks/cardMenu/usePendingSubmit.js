@@ -16,7 +16,10 @@ export function usePendingSubmit(r, { cancelPending, closeMenu }) {
     const live = r.latestContextRef.current
     if (!live) { cancelPending(); return }
     if (pending.generation !== r.generationRef.current) { cancelPending(); return }
-    if (r.openPlayerIdRef.current !== pending.targetId) { cancelPending(); return }
+    if (!pending.fromRoster && r.openPlayerIdRef.current !== pending.targetId) {
+      cancelPending()
+      return
+    }
 
     // 범위가 바뀌었거나 항목이 잠겼으면 대기 버리고 닫음
     if (!isSameMenuScope(pending.scope, readMenuScope())) { cancelPending(); closeMenu(); return }
@@ -27,12 +30,14 @@ export function usePendingSubmit(r, { cancelPending, closeMenu }) {
     const selected = pending.kind === KINDS.DAY_VOTE ? live.selectedDayVoteTargetId : live.selectedNightTargetId
     if (selected !== pending.targetId) return
 
-    // 소비한 것으로 적고 한 번만 보낸 뒤 닫음
+    // 소비한 것으로 적고 한 번만 보낸 뒤 잠금 풀고 (목록 시트는 열린 채로) 카드 메뉴만 닫음
     // eslint-disable-next-line react-hooks/immutability -- r은 ref 묶음이라 .current 고치기는 정상 (효과 안에서만)
     r.consumedRef.current = pending.requestId
+    const fromRoster = pending.fromRoster
     r.pendingRef.current = null
+    r.lockRef.current = false
     if (pending.kind === KINDS.DAY_VOTE) live.submitDayVote()
     else live.submitNightAction()
-    closeMenu()
+    if (!fromRoster) closeMenu()
   })
 }

@@ -1,4 +1,4 @@
-// 단계 행동 줄: 낮 준비·낮 집계·재판 판정·밤 종료 글자 버튼
+// 단계 행동 줄: 낮 준비·낮 집계·밤 종료 글자 버튼 (재판 판정은 시간 바에서 제외 — 서버 마감)
 // 시간 흐름 바(InGameTimebar)가 사용, 상태·동작은 조작 컨텍스트에서 꺼냄
 import { useContext } from "react"
 import { InGameActionContext } from "../../context/InGameActionContext.jsx"
@@ -18,13 +18,6 @@ const PHASE_ACTION_ROW_CLASS = `justify-end ${BTN_ROW_CLASS}`
 const DAY_READY_LABELS = new Map([["sending", DAY_VOTE_READY_SENDING_LABEL], ["ready", DAY_VOTE_READY_DONE_LABEL]])
 const DAY_VOTE_RESOLVE_LABELS = new Map([["resolving", "집계 중..."], ["resolved", "집계 완료"]])
 const NIGHT_RESOLVE_LABELS = new Map([["resolving", "판정 중..."], ["resolved", "판정 완료"]])
-
-// 재판은 끝남이 판정 중보다 먼저
-function tribunalResolveLabel(ctx) {
-  if (ctx.gameState?.tribunal?.resolved === true) return "판정 완료"
-  if (ctx.tribunalResolveLocked) return "판정 중..."
-  return "재판 판정"
-}
 
 // 지금 단계에 맞는 버튼 목록, 글자는 보내는 중·끝남 따라 바뀜
 function buildPhaseActions(ctx) {
@@ -48,16 +41,6 @@ function buildPhaseActions(ctx) {
       label: DAY_VOTE_RESOLVE_LABELS.get(ctx.dayVoteResolveStatus) ?? "낮 집계",
       enabled: Boolean(ctx.dayVoteResolveControlsEnabled),
       onClick: ctx.resolveDayVote,
-    })
-  }
-
-  // 재판: 판정 버튼 (끝났으면 판정 완료)
-  if (phase === "TRIBUNAL") {
-    actions.push({
-      action: INGAME_PHASE_ACTIONS.TRIBUNAL_RESOLVE,
-      label: tribunalResolveLabel(ctx),
-      enabled: Boolean(ctx.tribunalResolveControlsEnabled),
-      onClick: ctx.resolveTribunalVote,
     })
   }
 

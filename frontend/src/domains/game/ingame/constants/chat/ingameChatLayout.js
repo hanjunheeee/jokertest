@@ -191,7 +191,7 @@ export const INPUT_VIEWPORT_MULTILINE_CLASS =
 
 // 입력칸 왼쪽 띄움과 종류별 고르기
 const INPUT_SHIFT_CLASS =
-  "ml-[clamp(1.4rem,7.6cqi,2.35rem)]"
+  "ml-[clamp(1.05rem,6cqi,2rem)]"
 
 export function getInputShiftClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_INPUT_SHIFT_CLASS
@@ -202,13 +202,13 @@ export function getInputShiftClass(variant = "board") {
 
 // 보내기 버튼 모양과 종류별 고르기
 const SEND_BTN_SHIFT_CLASS =
-  "-translate-x-[clamp(1.15rem,6.2cqi,1.85rem)]"
+  "-translate-x-[clamp(0.35rem,2.1cqi,0.65rem)]"
 
 const SEND_BTN_CLASS =
-  "interactive-scale relative block w-[clamp(3.45rem,24cqi,4.75rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
+  "interactive-scale relative block w-[clamp(3.05rem,17cqi,4.45rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0"
 
 const SEND_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.56rem,3.1cqi,0.74rem)] font-bold text-[#e9b582] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[clamp(0.54rem,2.95cqi,0.72rem)] font-bold text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.8)]"
 
 export function getSendBtnClass(variant = "board") {
   if (variant === "tribunal") return TRIBUNAL_CHAT_SEND_BTN_CLASS
@@ -236,7 +236,7 @@ export const TEXT_FIELD_ROW_CLASS =
   "absolute flex min-h-0 items-center gap-[clamp(0.15rem,1cqi,0.35rem)]"
 
 export const MSG_LIST_CONTAINER_CLASS =
-  "absolute min-h-0 [mask-image:linear-gradient(to_bottom,transparent_0%,#000_5%,#000_100%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,#000_5%,#000_100%)]"
+  "absolute min-h-0 [mask-image:linear-gradient(to_bottom,transparent_0%,#000_14%,#000_100%)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0%,#000_14%,#000_100%)]"
 
 export const MSG_LIST_SCROLL_WRAP_CLASS =
   "relative h-full min-h-0 w-full overflow-hidden"
@@ -245,7 +245,7 @@ export const MSG_LIST_SCROLL_CLASS =
   `h-full min-h-0 cursor-grab select-none overflow-x-hidden overflow-y-auto overscroll-contain touch-none ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
 
 export const MSG_LIST_INNER_CLASS =
-  "flex min-h-full select-none flex-col items-start gap-[0.52em] pl-[clamp(0.08rem,0.75cqi,0.18rem)] pt-[clamp(0.38rem,1.6cqi,0.55rem)] pb-[clamp(0.18rem,1cqi,0.28rem)]"
+  "flex min-h-full select-none flex-col items-start gap-[0.52em] pl-[clamp(0.08rem,0.75cqi,0.18rem)] pt-[clamp(1.1rem,5.2cqi,1.65rem)] pb-[clamp(0.18rem,1cqi,0.28rem)]"
 
 export const MSG_LIST_SPACER_CLASS =
   "min-h-0 flex-1 list-none"

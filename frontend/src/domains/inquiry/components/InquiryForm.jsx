@@ -3,7 +3,12 @@
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { REPORT_BUTTON_ASSETS } from "@/domains/report/constants/reportAssets.js"
 import {
-  ACTION_BTN_CLASS, ACTION_BTN_IMG_CLASS, ACTION_BTN_LABEL_CLASS, MEMO_CLASS, MEMO_COUNT_CLASS, MESSAGE_CLASS,
+  INQUIRY_SUBMIT_BTN_CLASS,
+  INQUIRY_SUBMIT_BTN_IMG_CLASS,
+  INQUIRY_SUBMIT_BTN_LABEL_CLASS,
+} from "@/domains/inquiry/constants/inquiryLayoutStyle.js"
+import {
+  MEMO_CLASS, MEMO_COUNT_CLASS, MESSAGE_CLASS,
   MESSAGE_ERROR_CLASS, REASON_BTN_CLASS, REASON_OFF_CLASS, REASON_ON_CLASS,
 } from "@/domains/report/constants/reportLayout.js"
 import { INQUIRY_BODY_MAX, INQUIRY_CATEGORIES, INQUIRY_COPY, INQUIRY_TITLE_MAX } from "../api/inquiry.api.js"
@@ -51,10 +56,18 @@ export default function InquiryForm({ form, setCategory, setTitle, setBody, send
           className={`${MESSAGE_CLASS} ${MESSAGE_ERROR_CLASS}`}>{form.message}</p>
       ) : null}
 
-      <button type="button" className={`${ACTION_BTN_CLASS} ${FOCUS_RING_CLASS} mt-1 shrink-0`} disabled={isSending}
-        onClick={send} data-testid="inquiry-submit">
-        <PublicAsset src={REPORT_BUTTON_ASSETS.cancel} alt="" className={ACTION_BTN_IMG_CLASS} />
-        <span className={ACTION_BTN_LABEL_CLASS}>{isSending ? INQUIRY_COPY.sendingLabel : INQUIRY_COPY.submitLabel}</span>
+      <button
+        type="button"
+        className={`${INQUIRY_SUBMIT_BTN_CLASS} ${FOCUS_RING_CLASS}`}
+        disabled={isSending}
+        onClick={send}
+        data-testid="inquiry-submit"
+        aria-label={isSending ? INQUIRY_COPY.sendingLabel : INQUIRY_COPY.submitLabel}
+      >
+        <PublicAsset src={REPORT_BUTTON_ASSETS.cancel} alt="" className={INQUIRY_SUBMIT_BTN_IMG_CLASS} />
+        <span className={INQUIRY_SUBMIT_BTN_LABEL_CLASS} aria-hidden="true">
+          {isSending ? INQUIRY_COPY.sendingLabel : INQUIRY_COPY.submitLabel}
+        </span>
       </button>
     </div>
   )

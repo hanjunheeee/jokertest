@@ -24,10 +24,10 @@ export default function RoomInvitePage() {
       <div className="relative z-10 flex flex-1 flex-col">
         <TopBar onBack={goBackToModeSelect} />
 
-        {/* 키보드가 올라와도 틀이 보이게 위쪽 가까이 둠 */}
-        <div className="flex flex-1 flex-col items-center justify-start px-3 pb-4 pt-[8svh] land:justify-center land:pt-0 md:justify-center md:pt-0">
+        {/* 남는 영역 가운데 + 살짝 아래 (하단 뒤로 줄·광고 여백 감안) */}
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-3 pb-[calc(2.25rem+env(safe-area-inset-bottom,0px))] pt-0">
           <motion.div
-            className={FRAME_WIDTH_CLASS}
+            className={`${FRAME_WIDTH_CLASS} translate-y-[clamp(0.75rem,4.5vh,2.25rem)]`}
             initial="hidden"
             animate={uiVisible ? "visible" : "hidden"}
             variants={PARCHMENT_FRAME_VARIANTS}

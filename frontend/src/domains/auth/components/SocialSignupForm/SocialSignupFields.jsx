@@ -9,6 +9,7 @@ import { LOGIN_ASSETS } from "@/shared/constants/loginAssets.js"
 import {
   SIGNUP_HINT_TEXT_CLASS,
   SUBMIT_BTN_CLASS,
+  SUBMIT_BTN_INTERACTION_CLASS,
   SUBMIT_BTN_WRAP_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 
@@ -91,6 +92,7 @@ export default function SocialSignupFields({
           src={LOGIN_ASSETS.signupButton}
           label={isSubmitting ? "처리 중..." : "가입 완료"}
           className={SUBMIT_BTN_CLASS}
+          interactionClassName={SUBMIT_BTN_INTERACTION_CLASS}
         />
       </div>
 

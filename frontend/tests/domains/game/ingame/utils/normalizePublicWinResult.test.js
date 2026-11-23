@@ -44,3 +44,24 @@ test("깨진 reveal 원소는 건너뛰고 나머지만 남긴다", () => {
 test("extra 키는 버린다", () => {
   assert.deepEqual(normalizePublicWinResult({ winner: "CITIZEN", extra: true }), { winner: "CITIZEN" })
 })
+
+test("reveals에 유효한 accountProfile*Id가 있으면 보존한다", () => {
+  const result = normalizePublicWinResult({
+    winner: "JOKER",
+    reveals: [{
+      ...VALID_REVEALS[0],
+      accountProfilePhotoId: "player-profile-금빛가면",
+      accountProfileBorderId: "profile-border-광대",
+    }],
+  })
+  assert.equal(result.reveals[0].accountProfilePhotoId, "player-profile-금빛가면")
+  assert.equal(result.reveals[0].accountProfileBorderId, "profile-border-광대")
+})
+
+test("reveals의 accountProfilePhotoId가 null이면 null로 보존한다", () => {
+  const result = normalizePublicWinResult({
+    winner: "JOKER",
+    reveals: [{ ...VALID_REVEALS[0], accountProfilePhotoId: null }],
+  })
+  assert.equal(result.reveals[0].accountProfilePhotoId, null)
+})

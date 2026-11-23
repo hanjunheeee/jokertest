@@ -8,6 +8,7 @@ import { isPublicProgress, normalizeGameState, pickHostUuid } from "../../utils/
 import { tagDayVoteSubmissionDay } from "../../utils/store/selfActed.js"
 import { clearQueue } from "./nightSuccessRecords.js"
 import { isConfirmedWin } from "./terminalScope.js"
+import { resetInGameNavigationDedupe } from "../../../matching/utils/navigateToInGame.js"
 
 // 사건 모양 검사용 (배열·null 빼고 객체만)
 const isPlainObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
@@ -151,11 +152,13 @@ export const sessionActions = (set) => ({
   setGameError: (error) => set({ error }),
 
   // 판 정보 전부 비우기
-  clearGame: () =>
+  clearGame: () => {
+    resetInGameNavigationDedupe()
     set({
       gameId: null, state: null, hostUuid: null, error: null,
       ...CLEARED_NIGHT_PRIVATE_RESULT,
       ...clearQueue(),
       nightPresentationWait: null,
-    }),
+    })
+  },
 })

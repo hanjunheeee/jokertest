@@ -17,6 +17,7 @@ const { autoJoinPartyToRoom } = require('./join')
 const { markPartyOriginToken, markPartyOriginObject, isInEndedGame } = require('./partyOrigin')
 const { isRoomRoutingEnabled, rejectCreateOnDrainingNode } = require('../cluster/roomRouting')
 const { reserveRoomCode, releaseRoomCode } = require('../cluster/roomDirectory')
+const { logMatchingFlow } = require('../debug/matchingFlowLog')
 
 // 기다리는 사이 바뀌었을 때 거절 문구 (채널 넣기 전·뒤 둘 다 씀)
 const DISCONNECTED_MESSAGE = '연결이 끊어져 방을 생성하지 못했습니다.'
@@ -192,7 +193,9 @@ function registerRoom(io, socket, uuid, room) {
 // 성공 답은 try 밖에서, 답장이 던져도 "생성 실패"가 또 안 나감 (지도 09-⑨)
 async function answerAndCallParty(io, uuid, room, callback) {
     try {
-        callback({ ok: true, room: buildRoomPayload(room) })
+        const payload = buildRoomPayload(room)
+        logMatchingFlow('create_room_ack', { uuid, roomId: payload.roomId, code: payload.roomCode })
+        callback({ ok: true, room: payload })
     } catch (ackError) {
         console.error('[방 생성 ack 실패]', ackError)
     }
