@@ -43,7 +43,7 @@ export function useMatchingPage() {
 
   const {
     isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom,
-    accessType, settings, settingsVersion, title, minPlayers, roomLocalTrustUntil,
+    accessType, settings, settingsVersion, title, minPlayers, roomLocalTrustUntil, roomRevision,
   } = useMatchingStore()
   // 방장·내 준비 여부는 방 상태에서 계산
   const isHost = isInRoom && myUuid === hostUuid
@@ -69,9 +69,16 @@ export function useMatchingPage() {
     navigate("/multiplay", { replace: true })
   }, [navigate, clearRoom])
 
-  // 판 끝 뒤 파티 방 기다림은 없앤 쪽이라 awaiting은 늘 false
+  // 방 값 없이 들어왔으면(새로고침·주소 바로 입력) 첫 방 확인 답이 올 때까지 머묾 (판 끝 뒤 파티 방 기다림은 없앤 쪽)
+  // 서버는 끊긴 뒤 15초 안에 get_current_room을 물어야 자리를 남김 → 바로 목록으로 가면 방 확인을 못 물어 자리를 잃음
+  // 방 확인이 방을 넣거나(setRoom) 비우면(clearRoom) 방 반영 횟수가 올라 기다림 끝 (방 없음이면 그때 목록으로)
+  const [entryRoomRevision] = useState(() => {
+    const matching = useMatchingStore.getState()
+    return matching.isInRoom ? null : matching.roomRevision
+  })
+  const awaitingEntryRoomCheck = entryRoomRevision !== null && roomRevision === entryRoomRevision
   const canStayOnMatchingPage = resolveCanStayOnMatchingPage({
-    awaiting: false, isInRoom, roomId, players, myUuid, roomLocalTrustUntil,
+    awaiting: awaitingEntryRoomCheck, isInRoom, roomId, players, myUuid, roomLocalTrustUntil,
   })
 
   // 방이 사라지면 목록으로, 판 id가 있으면 인게임으로
