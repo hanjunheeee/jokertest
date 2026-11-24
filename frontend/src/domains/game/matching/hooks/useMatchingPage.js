@@ -142,8 +142,11 @@ export function useMatchingPage() {
   })
 
   // 방에 안 앉았는데 대기방 URL만 남은 경우 멀티플레이로 (퇴장·삭제 후 화면 고착 방지)
+  // 판이 시작됐으면 안 나감: game_started가 방을 비우고 인게임 이동을 거는데, 라우터 주소 반영(transition)보다
+  // 방 비움 그리기가 먼저 와서 여기서 목록 이동이 인게임 이동을 덮어씀 (화면도 판이 있으면 인게임으로 보냄)
+  const activeInGame = shouldLeaveMatchingForInGame(inGameId, inGameState)
   useEffect(() => {
-    if (canStayOnMatchingPage) return
+    if (canStayOnMatchingPage || activeInGame) return
     if (location.pathname !== "/game-matching") return
     if (roomLocalTrustUntil > Date.now()) return
     traceMatchingFlow("matching_page_orphan_exit", {
@@ -154,7 +157,7 @@ export function useMatchingPage() {
     })
     exitToMultiplay({ reason: "orphan_matching", silent: true })
   }, [
-    canStayOnMatchingPage, location.pathname, roomLocalTrustUntil,
+    canStayOnMatchingPage, activeInGame, location.pathname, roomLocalTrustUntil,
     isInRoom, roomId, players.length, exitToMultiplay,
   ])
 

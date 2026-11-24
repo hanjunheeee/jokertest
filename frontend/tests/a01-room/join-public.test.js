@@ -51,11 +51,27 @@ const SERVER_TEXT = [
 for (const [id, code, message] of SERVER_TEXT) {
   test(`${id} 공개 입장 실패 ${code} "${message}" → 알림 글 같음`, async () => {
     const ctx = await setup()
+    // 이미 참여 중 거절이면 방을 먼저 되찾아 보므로, 방 없음 답이 와야 알림이 뜸
+    if (code === "ALREADY_IN_ROOM") ctx.fake.answer("get_current_room", { ok: true, room: null })
     await joinAndFail(ctx, { code, message })
     assert.deepEqual(ctx.dialogs.alerts, [message])
     assert.equal(ctx.view.result.current.isJoining, false)
   })
 }
+
+// 방 확인 답이 끝내 안 오면 방 확인 제한 시간(5초)이 지난 뒤에 알림, 그동안은 들어가는 중 그대로
+test("A01-F-759 공개 입장 실패 ALREADY_IN_ROOM + 방 확인 답 안 옴 → 5초 뒤 알림, 그 전엔 알림 없음", async (t) => {
+  const ctx = await setup()
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  await joinAndFail(ctx, { code: "ALREADY_IN_ROOM", message: "이미 참여 중인 방이 있습니다." })
+  assert.deepEqual(ctx.dialogs.alerts, [])
+  assert.equal(ctx.view.result.current.isJoining, true)
+  await act(async () => { t.mock.timers.tick(4999); await flush() })
+  assert.deepEqual(ctx.dialogs.alerts, [])
+  await act(async () => { t.mock.timers.tick(1); await flush() })
+  assert.deepEqual(ctx.dialogs.alerts, ["이미 참여 중인 방이 있습니다."])
+  assert.equal(ctx.view.result.current.isJoining, false)
+})
 
 // ALREADY_IN_ROOM은 먼저 서버에 내 방을 다시 물음 (방 확인 답에 내가 앉은 방이 있으면 알림 없이 대기방으로)
 test("A01-F-739 공개 입장 실패 ALREADY_IN_ROOM + 방 확인 답에 내가 앉은 방 → 알림 없이 대기방(/game-matching), 방 명단 들어감", async () => {

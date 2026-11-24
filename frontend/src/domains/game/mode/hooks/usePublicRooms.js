@@ -35,12 +35,16 @@ function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms
     navigate("/game-matching")
   }
   // 입장 실패: 내가 보낸 입장 중일 때만 풀고 알림
+  // ALREADY_IN_ROOM은 서버에 내 방을 먼저 물음 → 있으면 대기방으로, 없으면 알림
+  // 묻는 동안 들어가는 중을 안 풂 (먼저 풀면 failJoin이 내 입장 아님으로 보고 알림을 버림)
   const handleJoinFailed = async (answer = {}) => {
     if (!isCurrent()) return
     if (answer.code === ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM) {
-      clearJoin()
       const recovered = await recoverMatchingRoom(navigate)
-      if (recovered) return
+      if (recovered) {
+        clearJoin()
+        return
+      }
     }
     failJoin(answer)
   }
@@ -70,7 +74,6 @@ function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms
 export function usePublicRooms() {
   const navigate = useNavigate()
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
-  const isInRoom = useMatchingStore((s) => s.isInRoom)
 
   // 화면 떠남 표시 (목록 묻기·들어가기 둘 다 봄)
   const disposedRef = useRef(false)
@@ -89,17 +92,19 @@ export function usePublicRooms() {
     return attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms, navigate })
   }, [socket, fetchRooms, applyRoomList, navigate, clearJoin, failJoin])
 
-  // 방 만들기 직후 스토어만 비었을 때 서버 소속이면 대기방으로 복구
+  // 방 만들기 직후 스토어만 비었을 때 서버 소속이면 대기방으로 복구 (화면 열릴 때·소켓 바뀔 때만)
+  // 화면에 있는 동안 방이 비는 것(로비 입장 정리 답·뒤로 가기)은 안 따라감 → 방금 나온 대기방으로 되끌려 가지 않게
+  // 방 있음 여부로 다시 돌면 복구가 방을 넣는 순간 정리가 돌아 이동을 버림 → 화면 떠남·소켓 바뀜만 봄
   useEffect(() => {
-    if (!socket?.connected || isInRoom || disposedRef.current) return undefined
-    let cancelled = false
+    if (!socket?.connected || disposedRef.current) return
+    if (useMatchingStore.getState().isInRoom) return
+    const isAlive = () => !disposedRef.current && getSocket() === socket
     void recoverMatchingRoom((to, opts) => {
-      if (!cancelled && !disposedRef.current) navigate(to, opts)
+      if (isAlive()) navigate(to, opts)
     }).then((recovered) => {
-      if (recovered && !cancelled && !disposedRef.current) clearJoin()
+      if (recovered && isAlive()) clearJoin()
     })
-    return () => { cancelled = true }
-  }, [socket, isInRoom, navigate, clearJoin])
+  }, [socket, navigate, clearJoin])
 
   return { rooms, refreshRooms: fetchRooms, joinPublicRoom, isJoining }
 }
