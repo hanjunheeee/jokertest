@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>여러 계정</title>
+<!-- 여러 계정 겉 화면 파일, 위는 고른 칸의 게임 화면, 아래 띠는 칸 단추·모두 보기·새로고침·PC/폰·이름표·칸 수·소리 -->
+<!-- server.js가 multi.localhost 주소로 보냄, 칸(iframe)은 p<n>.multi.localhost라 쿠키·저장소가 칸마다 따로 -->
+<style>
+  :root {
+    --bg: #0e0f12; --bar: #17191f; --line: #2a2d36; --text: #e6e6e9; --dim: #8b8f9a;
+    --accent: #d4a537; --accent-ink: #1a1408; --ok: #4caf7a; --bad: #d9534f;
+    --bar-h: 68px; --head-h: 24px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.35 "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif; overflow: hidden; }
+  #stage { position: absolute; left: 0; top: 0; right: 0; bottom: var(--bar-h); overflow: hidden; }
+  .cell { position: absolute; overflow: hidden; }
+  .cell.hidden { visibility: hidden; pointer-events: none; z-index: 0; }
+  .cell.shown { z-index: 1; }
+  .head { display: none; height: var(--head-h); align-items: center; gap: 6px; padding: 0 6px; background: var(--bar); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+  .grid .head { display: flex; }
+  .grid .cell { border: 1px solid var(--line); border-radius: 6px; }
+  .grid .cell.active { border-color: var(--accent); }
+  .head b { color: var(--accent); }
+  .head .name { overflow: hidden; text-overflow: ellipsis; }
+  .head .path { color: var(--dim); overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .head button { all: unset; cursor: pointer; padding: 1px 6px; border-radius: 4px; color: var(--text); background: #2a2d36; font-size: 12px; }
+  .head button:hover { background: #3a3e4a; }
+  .view { position: absolute; left: 0; right: 0; bottom: 0; top: 0; }
+  .grid .view { top: var(--head-h); }
+  .box { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .box iframe { display: block; border: 0; background: #000; width: 100%; height: 100%; }
+  .box.phone { padding: 10px; background: #050506; border: 2px solid #34363d; border-radius: 40px; }
+  .box.phone iframe { border-radius: 30px; }
+  .pick { display: none; position: absolute; inset: 0; cursor: pointer; }
+  .grid .pick { display: block; }
+  .pick:hover { background: rgba(212, 165, 55, .08); }
+  .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); }
+
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; height: var(--bar-h); display: flex; align-items: center; gap: 10px; padding: 0 10px; background: var(--bar); border-top: 1px solid var(--line); }
+  #slots { display: flex; gap: 6px; overflow-x: auto; min-width: 0; flex: 1; scrollbar-width: thin; }
+  .slot { flex: 0 0 auto; display: grid; grid-template-columns: auto 1fr; column-gap: 7px; align-items: center; min-width: 108px; max-width: 160px; height: 52px; padding: 4px 10px 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: #1f2229; color: var(--text); cursor: pointer; text-align: left; font: inherit; }
+  .slot:hover { border-color: #4a4e5a; }
+  .slot b { grid-row: span 2; font-size: 20px; color: var(--dim); }
+  .slot .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot .meta { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot.out .name { color: var(--dim); font-weight: 400; }
+  .slot.active { border-color: var(--accent); background: #2a2414; }
+  .slot.active b { color: var(--accent); }
+  #tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  #tools button, #tools select { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: #1f2229; color: var(--text); font: inherit; cursor: pointer; }
+  #tools button:hover, #tools select:hover { border-color: #4a4e5a; }
+  #tools button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #tools label { color: var(--dim); display: flex; align-items: center; gap: 4px; }
+  #status { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 11px; min-width: 150px; }
+  #status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 5px; }
+  #status .dot.ok { background: var(--ok); }
+  @media (max-width: 1100px) { #status .keys { display: none; } }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="bar">
+  <div id="slots" role="tablist" aria-label="계정 칸"></div>
+  <div id="tools">
+    <button id="gridBtn" type="button" aria-pressed="false" title="전부 작게 보기 (Alt+G 또는 G)">모두 보기</button>
+    <button id="reloadBtn" type="button" title="고른 칸만 새로고침">새로고침</button>
+    <button id="modeBtn" type="button" title="고른 칸을 PC 화면 ↔ 폰 화면으로 (그 칸을 새로고침함)">폰으로</button>
+    <button id="labelBtn" type="button" title="고른 칸 이름표 붙이기 (칸 단추를 두 번 눌러도 됨)">이름표</button>
+    <label>칸 <select id="countSel" aria-label="계정 수"></select></label>
+    <label>소리 <select id="soundSel" aria-label="소리">
+      <option value="active">고른 칸만</option>
+      <option value="all">모두</option>
+      <option value="none">끔</option>
+    </select></label>
+  </div>
+  <div id="status">
+    <span><span id="apiDot" class="dot"></span><span id="apiText">백엔드 확인 중</span></span>
+    <span class="keys">Alt+숫자 칸 바꾸기 · Alt+G 모두 보기</span>
+  </div>
+</div>
+<script>
+/*__MULTI_CONFIG__*/
+(() => {
+  'use strict';
+  const CFG = window.__MULTI || { port: Number(location.port) || 80, api: '?', max: 10 };
+  const PHONE = { w: 390, h: 844, pad: 10, border: 2 };
+  const stage = document.getElementById('stage');
+  const slotsEl = document.getElementById('slots');
+  const gridBtn = document.getElementById('gridBtn');
+  const modeBtn = document.getElementById('modeBtn');
+  const countSel = document.getElementById('countSel');
+  const soundSel = document.getElementById('soundSel');
+
+  const slotOrigin = (n) => `http://p${n}.multi.localhost:${CFG.port}`;
+  const ORIGIN_RE = new RegExp(`^http://p(\\d{1,2})\\.multi\\.localhost:${CFG.port}$`);
+
+  // 이 브라우저에만 남기는 편의 값 (고른 칸·모두 보기·칸마다 마지막 화면 주소) — 못 쓰면 그냥 처음 값
+  const local = {
+    get(key, fallback) { try { const v = JSON.parse(localStorage.getItem(`multi.${key}`)); return v ?? fallback; } catch { return fallback; } },
+    set(key, value) { try { localStorage.setItem(`multi.${key}`, JSON.stringify(value)); } catch { /* 저장 못 함 */ } },
+  };
+
+  let state = { count: 6, sound: 'active', slots: [] };
+  let active = local.get('active', 1);
+  let grid = local.get('grid', false);
+  const lastPath = local.get('paths', {});
+  const info = {}; // 칸 번호 → { path, name, loggedIn }
+  const cells = new Map(); // 칸 번호 → { el, box, iframe, nameEl, pathEl }
+
+  const slotState = (n) => state.slots[n - 1] || { mode: 'desktop', label: '' };
+  const titleOf = (n) => slotState(n).label || info[n]?.name || '로그인 전';
+
+  async function saveState(patch) {
+    const res = await fetch('/__api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...state, ...patch }) });
+    if (res.ok) state = await res.json();
+  }
+
+  const post = (n, msg) => {
+    const c = cells.get(n);
+    try { c?.iframe.contentWindow?.postMessage({ __multi: true, ...msg }, slotOrigin(n)); } catch { /* 아직 안 뜸 */ }
+  };
+
+  // 칸 하나 만들기 (한 번 만든 칸은 칸 수를 줄이기 전까지 안 지움 → 소켓이 안 끊김)
+  function makeCell(n) {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.dataset.slot = String(n);
+    const head = document.createElement('div');
+    head.className = 'head';
+    head.innerHTML = `<b>${n}</b><span class="name"></span><span class="path"></span>`;
+    const reload = document.createElement('button');
+    reload.type = 'button'; reload.textContent = '새로고침'; reload.title = `${n}번 칸 새로고침`;
+    reload.addEventListener('click', (e) => { e.stopPropagation(); reloadSlot(n); });
+    const mode = document.createElement('button');
+    mode.type = 'button'; mode.className = 'mode';
+    mode.addEventListener('click', (e) => { e.stopPropagation(); toggleMode(n); });
+    head.append(reload, mode);
+    const view = document.createElement('div');
+    view.className = 'view';
+    const box = document.createElement('div');
+    box.className = 'box';
+    const iframe = document.createElement('iframe');
+    iframe.title = `${n}번 칸 게임 화면`;
+    iframe.allow = 'autoplay; clipboard-read; clipboard-write; fullscreen';
+    iframe.src = slotOrigin(n) + (lastPath[n] || '/');
+    box.appendChild(iframe);
+    const pick = document.createElement('div');
+    pick.className = 'pick';
+    pick.title = `${n}번 칸 크게 보기`;
+    pick.addEventListener('click', () => { setGrid(false); select(n); });
+    view.append(box, pick);
+    el.append(head, view);
+    stage.appendChild(el);
+    const cell = { el, box, iframe, nameEl: head.querySelector('.name'), pathEl: head.querySelector('.path'), modeEl: mode };
+    cells.set(n, cell);
+    return cell;
+  }
+
+  // 칸 수만큼 칸을 맞춤 (고른 칸 먼저, 나머지는 조금씩 띄워 한꺼번에 무겁지 않게)
+  function syncCells() {
+    for (const [n, c] of cells) if (n > state.count) { c.el.remove(); cells.delete(n); }
+    const want = [];
+    for (let n = 1; n <= state.count; n += 1) if (!cells.has(n)) want.push(n);
+    want.sort((a, b) => (a === active ? -1 : b === active ? 1 : a - b));
+    want.forEach((n, i) => { if (i === 0) makeCell(n); else setTimeout(() => { if (n <= state.count && !cells.has(n)) { makeCell(n); layout(); drawBar(); } }, i * 400); });
+  }
+
+  // 자리 잡기: 한 칸 보기는 고른 칸만 꽉 차게(나머지는 숨김, 크기 그대로 살아 있음), 모두 보기는 격자에 작게
+  // PC 칸은 늘 무대 크기 그대로 그리고 줄여만 보임 → 화면을 오가도 게임 화면 크기가 안 바뀜
+  function layout() {
+    const W = stage.clientWidth;
+    const H = stage.clientHeight;
+    const ns = [...cells.keys()].sort((a, b) => a - b);
+    document.body.classList.toggle('grid', grid);
+    if (!grid) {
+      for (const n of ns) place(n, 0, 0, W, H, 0, W, H);
+    } else {
+      const head = 24;
+      let best = { cols: 1, s: 0 };
+      for (let cols = 1; cols <= ns.length; cols += 1) {
+        const rows = Math.ceil(ns.length / cols);
+        const cw = (W - (cols + 1) * 6) / cols;
+        const ch = (H - (rows + 1) * 6) / rows;
+        const s = Math.min(cw / W, (ch - head) / H);
+        if (s > best.s) best = { cols, s };
+      }
+      const rows = Math.ceil(ns.length / best.cols);
+      const cw = (W - (best.cols + 1) * 6) / best.cols;
+      const ch = (H - (rows + 1) * 6) / rows;
+      ns.forEach((n, i) => place(n, 6 + (i % best.cols) * (cw + 6), 6 + Math.floor(i / best.cols) * (ch + 6), cw, ch, head, W, H));
+    }
+    for (const n of ns) {
+      const c = cells.get(n);
+      const shown = grid || n === active;
+      c.el.classList.toggle('hidden', !shown);
+      c.el.classList.toggle('shown', shown);
+      c.el.classList.toggle('active', n === active);
+    }
+  }
+
+  function place(n, x, y, w, h, head, W, H) {
+    const c = cells.get(n);
+    Object.assign(c.el.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+    const vw = w;
+    const vh = h - head;
+    const phone = slotState(n).mode === 'mobile';
+    c.box.classList.toggle('phone', phone);
+    let bw; let bh;
+    if (phone) {
+      bw = PHONE.w + 2 * (PHONE.pad + PHONE.border);
+      bh = PHONE.h + 2 * (PHONE.pad + PHONE.border);
+      c.iframe.style.width = `${PHONE.w}px`;
+      c.iframe.style.height = `${PHONE.h}px`;
+    } else {
+      bw = W; bh = H;
+      c.iframe.style.width = '100%';
+      c.iframe.style.height = '100%';
+    }
+    const margin = phone ? (head ? 4 : 12) : 0;
+    const s = Math.min(1, (vw - 2 * margin) / bw, (vh - 2 * margin) / bh);
+    Object.assign(c.box.style, {
+      width: `${bw}px`, height: `${bh}px`,
+      left: `${Math.max(0, (vw - bw * s) / 2)}px`, top: `${Math.max(0, (vh - bh * s) / 2)}px`,
+      transform: s === 1 ? 'none' : `scale(${s})`,
+    });
+  }
+
+  // 칸 단추는 칸 수가 바뀔 때만 새로 만들고 평소엔 글만 바꿈 (두 번 누르기가 안 끊기게)
+  function drawBar() {
+    if (slotsEl.children.length !== state.count) {
+      slotsEl.textContent = '';
+      for (let n = 1; n <= state.count; n += 1) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'slot';
+        b.dataset.slot = String(n);
+        b.setAttribute('role', 'tab');
+        b.title = `${n}번 칸 (Alt+${n === 10 ? '0' : n}) — 두 번 누르면 이름표`;
+        const num = document.createElement('b'); num.textContent = String(n);
+        const nm = document.createElement('span'); nm.className = 'name';
+        const meta = document.createElement('span'); meta.className = 'meta';
+        b.append(num, nm, meta);
+        b.addEventListener('click', () => { setGrid(false); select(n); });
+        b.addEventListener('dblclick', () => editLabel(n));
+        slotsEl.appendChild(b);
+      }
+    }
+    [...slotsEl.children].forEach((b, i) => {
+      const n = i + 1;
+      b.setAttribute('aria-selected', String(n === active && !grid));
+      b.classList.toggle('active', n === active);
+      b.classList.toggle('out', !slotState(n).label && !info[n]?.name);
+      b.querySelector('.name').textContent = titleOf(n);
+      b.querySelector('.meta').textContent = `${slotState(n).mode === 'mobile' ? '폰' : 'PC'} · ${info[n]?.path || '…'}`;
+    });
+    for (const [n, c] of cells) {
+      c.nameEl.textContent = titleOf(n);
+      c.pathEl.textContent = info[n]?.path || '';
+      c.modeEl.textContent = slotState(n).mode === 'mobile' ? '→ PC' : '→ 폰';
+      c.modeEl.title = `${n}번 칸을 ${slotState(n).mode === 'mobile' ? 'PC' : '폰'} 화면으로`;
+    }
+    gridBtn.setAttribute('aria-pressed', String(grid));
+    modeBtn.textContent = slotState(active).mode === 'mobile' ? 'PC로' : '폰으로';
+    soundSel.value = state.sound;
+  }
+
+  // 소리: 고른 칸만 / 모두 / 끔 — 칸 안 도우미(slot.js)에 말로 전함
+  function syncSound() {
+    for (const n of cells.keys()) post(n, { type: 'mute', muted: state.sound === 'none' || (state.sound === 'active' && n !== active) });
+  }
+
+  function select(n) {
+    if (n < 1 || n > state.count) return;
+    active = n;
+    local.set('active', n);
+    layout(); drawBar(); syncSound();
+    const c = cells.get(n);
+    if (c && !grid) { c.iframe.focus(); post(n, { type: 'focus' }); }
+  }
+
+  function setGrid(on) {
+    grid = Boolean(on);
+    local.set('grid', grid);
+    layout(); drawBar();
+  }
+
+  function reloadSlot(n) {
+    const c = cells.get(n);
+    if (!c) return;
+    // 지금 보던 화면 주소로 다시 엶 (= 그 칸 새로고침)
+    c.iframe.src = slotOrigin(n) + (info[n]?.path || lastPath[n] || '/');
+  }
+
+  async function toggleMode(n) {
+    const next = slotState(n).mode === 'mobile' ? 'desktop' : 'mobile';
+    if (!confirm(`${n}번 칸을 ${next === 'mobile' ? '폰' : 'PC'} 화면으로 바꿈 (그 칸만 새로고침됨, 로그인은 그대로)`)) return;
+    const slots = state.slots.map((s, i) => (i === n - 1 ? { ...s, mode: next } : s));
+    await saveState({ slots });
+    layout(); drawBar(); reloadSlot(n);
+  }
+
+  async function editLabel(n) {
+    const v = prompt(`${n}번 칸 이름표 (비우면 로그인 닉네임이 보임)`, slotState(n).label);
+    if (v === null) return;
+    const slots = state.slots.map((s, i) => (i === n - 1 ? { ...s, label: v.trim().slice(0, 24) } : s));
+    await saveState({ slots });
+    drawBar();
+  }
+
+  async function setCount(count) {
+    if (count < state.count) {
+      const gone = [];
+      for (let n = count + 1; n <= state.count; n += 1) gone.push(n);
+      if (!confirm(`${gone.join('·')}번 칸을 닫음 — 그 칸 계정은 게임에서 끊김. 계속?`)) { countSel.value = String(state.count); return; }
+    }
+    await saveState({ count });
+    fillCountSel();
+    if (active > state.count) active = 1;
+    syncCells(); layout(); drawBar(); syncSound();
+  }
+
+  function fillCountSel() {
+    countSel.textContent = '';
+    const opts = new Set([5, 6, 7, 8, 9, 10, state.count]);
+    [...opts].sort((a, b) => a - b).forEach((v) => {
+      const o = document.createElement('option');
+      o.value = String(v); o.textContent = `${v}개`;
+      countSel.appendChild(o);
+    });
+    countSel.value = String(state.count);
+  }
+
+  // 단축키 (겉 화면에 초점이 있을 때): 숫자·Alt+숫자 → 칸, G·Alt+G → 모두 보기, Esc → 모두 보기 끝
+  function onKey(key) {
+    if (key === 'grid') { setGrid(!grid); return; }
+    const n = key === '0' ? 10 : Number(key);
+    setGrid(false);
+    select(n);
+  }
+  window.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey) return;
+    if (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return;
+    const d = /^Digit([0-9])$/.exec(e.code);
+    if (d) { e.preventDefault(); onKey(d[1]); return; }
+    if (e.code === 'KeyG') { e.preventDefault(); onKey('grid'); return; }
+    if (e.code === 'Escape' && grid) setGrid(false);
+  });
+
+  // 칸에서 온 말: 단축키(Alt+숫자), 지금 화면 주소·닉네임, 처음 떴음
+  window.addEventListener('message', (e) => {
+    const m = ORIGIN_RE.exec(e.origin);
+    if (!m || !e.data || e.data.__multi !== true) return;
+    const n = Number(m[1]);
+    if (e.data.type === 'key') onKey(String(e.data.key));
+    else if (e.data.type === 'hello') syncSound();
+    else if (e.data.type === 'info') {
+      const before = JSON.stringify(info[n] || null);
+      info[n] = { path: e.data.path, name: e.data.name, loggedIn: e.data.loggedIn };
+      if (e.data.path && lastPath[n] !== e.data.path) { lastPath[n] = e.data.path; local.set('paths', lastPath); }
+      if (before !== JSON.stringify(info[n])) drawBar();
+    }
+  });
+
+  gridBtn.addEventListener('click', () => setGrid(!grid));
+  document.getElementById('reloadBtn').addEventListener('click', () => reloadSlot(active));
+  modeBtn.addEventListener('click', () => toggleMode(active));
+  document.getElementById('labelBtn').addEventListener('click', () => editLabel(active));
+  countSel.addEventListener('change', () => setCount(Number(countSel.value)));
+  soundSel.addEventListener('change', async () => { await saveState({ sound: soundSel.value }); syncSound(); });
+  new ResizeObserver(() => layout()).observe(stage);
+
+  async function pollHealth() {
+    const dot = document.getElementById('apiDot');
+    const text = document.getElementById('apiText');
+    try {
+      const h = await (await fetch('/__api/health', { cache: 'no-store' })).json();
+      dot.classList.toggle('ok', h.apiAlive);
+      text.textContent = h.apiAlive ? `백엔드 붙음 ${h.api}` : `백엔드 안 붙음 ${h.api}`;
+    } catch {
+      dot.classList.remove('ok');
+      text.textContent = '도구 서버 꺼짐';
+    }
+  }
+
+  (async () => {
+    state = await (await fetch('/__api/state', { cache: 'no-store' })).json();
+    if (active > state.count) active = 1;
+    fillCountSel();
+    syncCells(); layout(); drawBar();
+    if (!grid) cells.get(active)?.iframe.focus();
+    pollHealth();
+    setInterval(pollHealth, 5000);
+  })();
+})();
+</script>
+</body>
+</html>
