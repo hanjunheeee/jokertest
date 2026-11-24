@@ -1,27 +1,29 @@
 // 모바일 나가기 확인 창 글 시험: 산 사람은 패배·골드·탈주 제한 글, 죽은 사람은 벌 없음 글
 // 목록 A09 모바일 A09-M-005·006 (돌리기: frontend-mobile 폴더에서 node --test tests/a09-exit-confirm.test.js)
+// 판 중 위 줄 "게임 나가기" 단추는 2026-11-24 새 배치에서 없어짐 (사용자 결정 전) → 산 사람은 뒤로 가기, 죽은 사람은 사망 후 선택 창 "게임 나가기"로 확인 창을 띄움
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
+import { act } from "./helpers/dom.mjs"
 import { buttonNamed, click, flush } from "./a00-kit.mjs"
-import { confirms, fakeSocket, renderPage, resetGame, seat } from "./a00-game.mjs"
+import { confirms, fakeSocket, renderPage, resetGame, router, seat } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
 
-// 위 줄 "게임 나가기"를 눌러 뜬 확인 창 글 (죽은 사람은 먼저 관전 계속을 고름)
+// 나가기를 골라 뜬 확인 창 글 (산 사람은 뒤로 가기, 죽은 사람은 사망 후 선택 창의 "게임 나가기")
 async function pressExit({ dead }) {
     const socket = fakeSocket()
     seat({ n: 7, phase: "DAY", dayPhase: "DAY_DISCUSSION", dead: dead ? [0] : [], deadline: Date.now() + 60_000 })
-    view = await renderPage(socket)
+    view = await renderPage(socket, { before: ["/multiplay"] })
     if (dead) {
-        const keep = buttonNamed("관전 계속하기")
-        assert.ok(keep, "사망 후 선택 창이 없음")
-        click(keep)
-        await flush()
+        const panel = document.querySelector('[role="dialog"][aria-label="사망 후 선택"]')
+        assert.ok(panel, "사망 후 선택 창이 없음")
+        click(buttonNamed("게임 나가기", panel))
+    } else {
+        await act(async () => { await router.navigate(-1) })
     }
-    click(buttonNamed("게임 나가기"))
     await flush()
     assert.ok(confirms.length > 0, "나가기 확인 창이 안 뜸")
     return confirms.at(-1)

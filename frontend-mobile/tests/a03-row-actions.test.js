@@ -4,8 +4,8 @@ import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { click, flush, pageText } from "./a00-kit.mjs"
-import { fakeSocket, fire, renderPage, resetGame, rowButtons, seat, settle, sheetItems, stripSlot, uuidOf } from "./a00-game.mjs"
+import { buttonNamed, click, flush, pageText } from "./a00-kit.mjs"
+import { fakeSocket, fire, openRoster, renderPage, resetGame, rosterItems, rosterRow, rowButtons, seat, settle, uuidOf } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -35,13 +35,17 @@ test("A03-M-008 5초 중 행동 줄: 당김 중 → '낮 집계' 없음, 기권 
     assert.equal(abstain.enabled, true, "5초 동안 기권이 꺼짐")
 })
 
-// 카드 시트의 '투표하기'는 PC 카드 메뉴와 같은 항목이라 죽은 사람에겐 꺼진 채 까닭 글과 같이 보임 (PC A13-F-246과 같은 규칙) → 눌리는 것이 없으면 됨
-test("A03-M-009 죽은 사람 행동 줄: 죽은 나 → 기권 단추 없음, 카드를 눌러도 눌리는 '투표하기' 없음", async () => {
+// 플레이어 목록 줄의 '투표하기'는 PC 카드 메뉴와 같은 항목이라 죽은 사람에겐 꺼진 채 까닭 글과 같이 보임 (PC A13-F-246과 같은 규칙) → 눌리는 것이 없으면 됨
+// 폰 세로는 카드 띠 대신 플레이어 목록 시트 줄에 같은 항목이 붙음 (2026-11-24 새 배치)
+test("A03-M-009 죽은 사람 행동 줄: 죽은 나 → 기권 단추 없음, 플레이어 목록을 열어도 눌리는 '투표하기' 없음", async () => {
     await dayPage({ dead: true })
     assert.ok(!rowNames().includes("기권"), `죽은 사람 행동 줄에 기권이 있음: ${JSON.stringify(rowButtons())}`)
-    click(stripSlot(2))
+    // 사망 후 선택 창이 먼저 떠서 화면을 막음 → 관전 계속
+    click(buttonNamed("관전 계속하기"))
     await flush()
-    assert.ok(!sheetItems().some((item) => item.name === "투표하기" && item.enabled), `카드 시트: ${JSON.stringify(sheetItems())}`)
+    await openRoster()
+    assert.ok(rosterRow(2), "목록에 2번 자리 줄이 없음")
+    assert.ok(!rosterItems(2).some((item) => item.name === "투표하기" && item.enabled), `목록 줄: ${JSON.stringify(rosterItems(2))}`)
 })
 
 test("A03-M-010 토론 준비 단추: 산 사람 토론 → '투표 시작 준비', 죽은 사람 → 없음", async () => {

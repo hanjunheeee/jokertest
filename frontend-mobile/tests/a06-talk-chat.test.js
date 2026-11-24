@@ -1,4 +1,4 @@
-// 모바일 판 중 채팅 시험: 밤 입력 줄 열림·닫힘(시민만 닫힘), 채팅방 띠(같은 직업끼리·죽은 사람끼리), 줄 모양, 시각 순 목록, 재판 중 숨기기
+// 모바일 판 중 채팅 시험: 밤 입력 줄 열림·닫힘(시민만 닫힘), 채팅방 띠(죽은 사람끼리, "밤 · 같은 직업끼리" 띠는 지금 없음), 줄 모양, 시각 순 목록, 재판 중 막기만
 // 목록 A06 모바일 A06-M-001~010 (돌리기: frontend-mobile 폴더에서 node --test tests/a06-talk-chat.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render } from "./helpers/dom.mjs"
@@ -47,9 +47,12 @@ test("A06-M-003 [단위 2] 밤 죽은 시민 입력 줄 열림: 글칸 있음, �
     assert.ok(!textOf(shellBottom()).includes("밤에는 귀족이 채팅을 쓸 수 없습니다"), "죽은 시민에게 닫힘 까닭 글")
 })
 
-test("A06-M-004 밤 의사 채팅방에 '밤 · 같은 직업끼리' 띠", async () => {
+// "밤 · 같은 직업끼리" 띠는 2026-11-24 새 배치에서 없어짐 (사용자 결정 전) → 지금 코드대로 띠 없음, 같은 직업 채팅 글칸은 열림
+test("A06-M-004 [지금 동작] 밤 의사 채팅방: '밤 · 같은 직업끼리' 띠 없음, 글칸은 열림", async () => {
     await nightPage({ role: "DOCTOR" })
-    assert.ok(textOf(talkList()).includes("밤 · 같은 직업끼리"), `채팅방 머리: ${textOf(talkList()).slice(0, 80)}`)
+    assert.ok(talkList(), "채팅방이 없음")
+    assert.ok(!textOf(talkList()).includes("밤 · 같은 직업끼리"), `채팅방 머리: ${textOf(talkList()).slice(0, 80)}`)
+    assert.ok(chatInput(), "밤 의사에게 글칸이 없음")
 })
 
 test("A06-M-005 [단위 2] 밤 산 시민 채팅방엔 '밤 · 같은 직업끼리' 띠 없음", async () => {
@@ -105,16 +108,17 @@ test("A06-M-009 말·알림·이모티콘이 시각 순으로 한 목록: 말 2�
     assert.deepEqual(lines.map((l) => `${l.kind}@${l.at}`), ["chat@1000", "emoji@2000", "system@3000", "chat@4000"])
 })
 
-test("A06-M-010 재판 중 채팅방은 숨기기만 (8명): 재판 시작 → 채팅방 숨김(빠지지 않음), 재판 끝 → 그사이 온 처형 알림 줄 있음", async () => {
+test("A06-M-010 재판 중 채팅방은 막기만 (8명): 재판 시작 → 채팅방 그대로(빠지지 않음)·연출 동안 눌리지 않음, 재판 끝 → 그사이 온 처형 알림 줄 있음", async () => {
     const socket = fakeSocket()
     seat({ n: 8, phase: "DAY", dayPhase: "DAY_VOTE", deadline: Date.now() + 60_000 })
     view = await renderPage(socket)
     const listBefore = talkList()
     await fire(socket, "day_vote_resolved", tribunalEntry({ n: 8, defendant: 5 }))
-    assert.ok(tribunalBox(), "재판 창이 없음")
-    assert.ok(chatSlot()?.classList.contains("invisible"), "재판 중 채팅방이 안 숨겨짐")
+    assert.ok(tribunalBox(), "피고 등장 연출이 없음")
+    assert.ok(chatSlot()?.hasAttribute("inert"), "연출 중 채팅방이 눌림(inert 아님)")
     assert.ok(talkList() === listBefore, "재판 중 채팅방이 빠졌다가 새로 그려짐")
     await fire(socket, "tribunal_vote_resolved", tribunalResolved({ defendant: 5, outcome: "GUILTY" }))
-    assert.ok(!chatSlot().classList.contains("invisible"), "재판 뒤에도 채팅방이 숨겨짐")
+    assert.ok(!chatSlot().hasAttribute("inert"), "재판 뒤에도 채팅방이 막힘")
+    assert.ok(talkList() === listBefore, "재판 뒤 채팅방이 새로 그려짐")
     assert.ok(textOf(talkList()).includes(`${NAMES[5]}님이 죽었습니다`), `처형 알림 줄이 없음: ${textOf(talkList())}`)
 })

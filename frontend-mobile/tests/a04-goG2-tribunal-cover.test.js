@@ -1,13 +1,14 @@
 // 모바일 재판 창을 가리는 겹 창 시험: 투표 현황 창·설정 시트(방 코드 창)·전적 시트(신고 창)를 연 채 재판이 열리면 닫힘, 재판 뒤 저절로 다시 안 뜸
 // 목록 A04 모바일 A04-M-013~018 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-goG2-tribunal-cover.test.js)
+// 폰 세로 재판 창 = 피고 등장 연출 → 채팅방 "최후의 변론" 단추로 연 시트(유죄·무죄) (2026-11-24 새 배치)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { buttonNamed, click, flush } from "./a00-kit.mjs"
 import {
-    NAMES, confirmEntrances, dayResolved, fakeSocket, fire, renderPage, resetGame, seat, tribunalBox, tribunalEntry, tribunalResolved,
-    useAuthStore, useInGameStore,
+    NAMES, confirmEntrances, dayResolved, fakeSocket, fire, openTribunalSheet, renderPage, resetGame, seat, tribunalBox, tribunalEntry,
+    tribunalResolved, tribunalSheet, useAuthStore, useInGameStore,
 } from "./a00-game.mjs"
 
 // 역할 창을 이미 본 것으로 (uuid 모양 판을 따로 차릴 때 씀, seat가 하는 일과 같음)
@@ -20,7 +21,8 @@ afterEach(() => { resetGame(view); view = null })
 const statusDialog = () => document.querySelector('[role="dialog"][aria-label="투표 현황"]')
 const voteStatusShown = () => statusDialog() !== null
 const shown = (id) => document.querySelector(`[data-testid="${id}"]`) !== null
-const tribunalShown = () => tribunalBox() !== null
+// 재판 창: 피고 등장 연출이나 최후의 변론 시트 중 하나라도 떠 있음
+const tribunalShown = () => tribunalBox() !== null || tribunalSheet() !== null
 const outcomeText = () => statusDialog()?.querySelector('[data-testid="vote-status-outcome"]')?.textContent.trim() ?? null
 
 // n명 판 1일 낮 투표 화면 (나는 0번 자리 시민)
@@ -37,11 +39,14 @@ async function open(name) {
     click(button)
     await flush()
 }
-// 재판 열기 (피고 = 3번 자리) → 재판 창과 유죄·무죄 단추가 있는지까지 봄
+// 재판 열기 (피고 = 3번 자리) → 피고 등장 연출이 뜨는지 봄, 연출이 닫히면 최후의 변론 시트를 열어 유죄·무죄 단추가 있는지까지 봄
 async function openTribunal(socket, n) {
     await fire(socket, "day_vote_resolved", tribunalEntry({ n, defendant: 3 }))
-    assert.ok(tribunalShown(), "재판 창이 안 뜸 (준비 잘못)")
-    for (const name of ["유죄", "무죄"]) assert.ok(buttonNamed(name, tribunalBox()), `재판 창에 ${name} 단추가 없음`)
+    assert.ok(tribunalBox(), "재판 창이 안 뜸 (준비 잘못)")
+}
+async function openTribunalVotes() {
+    await openTribunalSheet()
+    for (const name of ["유죄", "무죄"]) assert.ok(buttonNamed(name, tribunalSheet()), `재판 창에 ${name} 단추가 없음`)
 }
 // 재판 끝(무죄) → 밤, "밤이 되었습니다" 안내는 확인으로 닫음
 async function closeTribunal(socket) {
@@ -56,12 +61,15 @@ test("A04-M-013 투표 현황 창을 연 채 재판이 열림 (6명 판) → 투
     assert.ok(voteStatusShown(), "투표 현황 창이 안 열림 (준비 잘못)")
     await openTribunal(socket, 6)
     assert.equal(voteStatusShown(), false, "투표 현황 창이 재판 창 위에 남음")
+    await openTribunalVotes()
+    assert.equal(voteStatusShown(), false, "최후의 변론 시트를 열자 투표 현황 창이 다시 뜸")
 })
 
 test("A04-M-014 재판이 끝나도 투표 현황 창은 저절로 다시 안 뜸 (7명 판) → 밤에 창 없음, 다시 열면 결과 \"재판 회부\"", async () => {
     const socket = await dayVotePage(7)
     await open("투표 현황 열기")
     await openTribunal(socket, 7)
+    await openTribunalVotes()
     await closeTribunal(socket)
     assert.equal(voteStatusShown(), false, "재판이 끝나자 투표 현황 창이 저절로 다시 뜸")
     await open("투표 현황 열기")
@@ -82,6 +90,8 @@ test("A04-M-016 설정 시트를 연 채 재판이 열림 (8명 판) → 설정 
     assert.ok(shown("settings-sheet"), "설정 시트가 안 열림 (준비 잘못)")
     await openTribunal(socket, 8)
     assert.equal(shown("settings-sheet"), false, "설정 시트가 재판 창 위에 남음")
+    await openTribunalVotes()
+    assert.equal(shown("settings-sheet"), false, "최후의 변론 시트를 열자 설정 시트가 다시 뜸")
     await closeTribunal(socket)
     assert.equal(shown("settings-sheet"), false, "재판이 끝나자 설정 시트가 저절로 다시 뜸")
 })

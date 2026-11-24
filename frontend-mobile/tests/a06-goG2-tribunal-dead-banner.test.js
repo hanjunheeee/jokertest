@@ -1,12 +1,13 @@
 // 모바일 재판 창 채팅의 "죽은 사람끼리" 띠 시험: 죽은 사람 화면엔 있음(채팅방 띠와 같은 글·모양), 산 사람 화면엔 없음
 // 목록 A06 모바일 A06-M-011·012 (돌리기: frontend-mobile 폴더에서 node --test tests/a06-goG2-tribunal-dead-banner.test.js)
+// 재판 창 안 채팅은 넓은 배치(폰 가로·태블릿) 재판 연출 창에만 있음, 폰 세로는 채팅방 그대로 씀 (2026-11-24 새 배치) → 띠 비교는 폰 세로 채팅방 띠 ↔ 넓은 배치 재판 창 채팅 띠
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { act } from "./helpers/dom.mjs"
-import { flush } from "./a00-kit.mjs"
-import { fakeSocket, fire, renderPage, resetGame, seat, tribunalBox, tribunalEntry } from "./a00-game.mjs"
+import { buttonNamed, click, flush } from "./a00-kit.mjs"
+import { fakeSocket, fire, renderPage, resetGame, seat, tribunalBox, tribunalEntry, wideLayout } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -21,11 +22,20 @@ const bannerOf = (root) => {
 
 // n명 판 1일 재판 화면 (피고 = 3번 자리, 나는 0번 자리), 재판 창 채팅이 열릴 때까지 기다림
 async function tribunalChatPage({ n, dead = [] }) {
+    // 폰 세로 채팅방 띠 (죽은 사람이면 "죽은 사람끼리")
+    seat({ n, phase: "DAY", dayPhase: "DAY_VOTE", dead })
+    view = await renderPage(fakeSocket())
+    const talkBanner = bannerOf(document.querySelector("[data-talk-list]"))
+    resetGame(view)
+    // 같은 판을 넓은 배치로 → 재판
+    wideLayout(true)
     const socket = fakeSocket()
     seat({ n, phase: "DAY", dayPhase: "DAY_VOTE", dead })
     view = await renderPage(socket)
-    // 재판 전 채팅방 띠 (죽은 사람이면 "죽은 사람끼리")
-    const talkBanner = bannerOf(document.querySelector("[data-talk-list]"))
+    if (dead.includes(0)) {
+        click(buttonNamed("관전 계속하기"))
+        await flush()
+    }
     await fire(socket, "day_vote_resolved", tribunalEntry({ n, defendant: 3 }))
     assert.ok(tribunalBox() !== null, "재판 창이 안 뜸 (준비 잘못)")
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_100)) })

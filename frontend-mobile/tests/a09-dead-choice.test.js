@@ -1,11 +1,13 @@
 // 모바일 사망 후 선택 창·나가기 안내 시험: 죽은 사람에게 벌 없음 글, 산 사람 나가기 실패엔 사망 글 없이 다시 시도, 나가는 중 글·단추 잠김
 // 목록 A09 모바일 A09-M-001~004 (돌리기: frontend-mobile 폴더에서 node --test tests/a09-dead-choice.test.js)
+// 판 중 위 줄 "게임 나가기" 단추는 2026-11-24 새 배치에서 없어짐 (사용자 결정 전) → 산 사람은 뒤로 가기로 나가기 확인을 띄움 (useInGameExit가 뒤로 가기를 막고 확인)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { buttonNamed, click, flush, textOf, waitUntil } from "./a00-kit.mjs"
-import { answerConfirm, fakeSocket, renderPage, resetGame, seat } from "./a00-game.mjs"
+import { act } from "./helpers/dom.mjs"
+import { buttonNamed, flush, textOf, waitUntil } from "./a00-kit.mjs"
+import { answerConfirm, confirms, fakeSocket, renderPage, resetGame, router, seat } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -18,14 +20,15 @@ const leavePanel = () => document.querySelector('[role="dialog"][aria-label="게
 async function dayPage({ dead = false, leaveAck = { ok: false, code: "INTERNAL_ERROR" } } = {}) {
     const socket = fakeSocket({ acks: { leave_game_session: leaveAck } })
     seat({ n: 6, phase: "DAY", dayPhase: "DAY_DISCUSSION", dead: dead ? [0] : [], deadline: Date.now() + 60_000 })
-    view = await renderPage(socket)
+    view = await renderPage(socket, { before: ["/multiplay"] })
     return socket
 }
-// 산 사람이 위 줄 "게임 나가기" → 확인 창에서 "확인"
+// 산 사람이 뒤로 가기 → 나가기 확인 창에서 "확인"
 async function pressLeave() {
     answerConfirm(true)
-    click(buttonNamed("게임 나가기"))
+    await act(async () => { await router.navigate(-1) })
     await flush()
+    assert.ok(confirms.length > 0, "뒤로 가기에 나가기 확인 창이 안 뜸 (준비 잘못)")
 }
 
 test("A09-M-001 모바일 사망 창 글: 죽은 사람 → '사망한 뒤라 나가도 탈주가 아니며, 골드는 판이 끝나면 그대로 받습니다.'", async () => {

@@ -193,6 +193,12 @@ function Elsewhere() {
     return h("p", { "data-elsewhere": window.location.pathname }, "다른 화면")
 }
 
+// jsdom 주소를 바꿈 (페이지는 안 옮김), 예: "/ingame" → window.location.pathname "/ingame"
+function syncUrl(location) {
+    try { realWindowOf().history.replaceState(null, "", `${location.pathname}${location.search ?? ""}`) } catch { /* 주소 못 바꿈 무시 */ }
+}
+const realWindowOf = () => realWindow ?? globalThis.window
+
 // 화면 하나를 그 주소에 그리기 (before = 앞 기록, 뒤로 가기 시험용), 나머지 주소는 "다른 화면"
 export let router = null
 // parchment = 앱처럼 alert를 양피지 안내 창으로 (main.jsx installParchmentAlert + App의 ParchmentAlertHost)
@@ -210,6 +216,9 @@ export async function renderRoute(socket, element, { path, before = [], parchmen
         ],
         { initialEntries: [...before, path], initialIndex: before.length },
     )
+    // 브라우저 주소도 판 주소를 따라가게 (BrowserRouter처럼, src가 window.location.pathname을 봄 — 예: 결과 화면 이동은 "/ingame"일 때만)
+    syncUrl(router.state.location)
+    router.subscribe((state) => syncUrl(state.location))
     let view
     await act(async () => {
         view = render(h(React.Fragment, null, withParchment ? h(ParchmentAlertHost) : null, h(RouterProvider, { router })))
@@ -242,6 +251,8 @@ export async function tick(ms) {
 export function resetGame(view) {
     restoreLocation()
     view?.unmount()
+    wideLayout(false)
+    syncUrl({ pathname: "/" })
     mock.timers.reset()
     setSocket(null)
     useInGameStore.getState().clearGame()
@@ -308,9 +319,40 @@ export function isHiddenByLayout(el) {
     return false
 }
 
-// 초상 띠 칸 (자리 번호로)
-export const stripSlot = (i) => document.querySelector(`[data-strip-slot="${uuidOf(i)}"]`)
-// 열린 카드 시트의 항목 → [{ name, enabled, kind }] (안 열렸으면 [])
+// 넓은 배치(폰 가로·태블릿) 켜기·끄기: 화면 크기 묻기(matchMedia)가 넓은 배치 조건에만 참으로 답함 (끄면 폰 세로 = 카톡형)
+// 넓은 배치에만 카드 판(Board)·카드 시트·재판 연출 창 채팅이 있음, 시험 끝에 resetGame이 끔
+const { WIDE_CHAT_MEDIA_QUERY } = await import("@m/domains/game/ingame/hooks/chat/useWideChat.js")
+const narrowMatchMedia = window.matchMedia
+export function wideLayout(on) {
+    window.matchMedia = on
+        ? (query) => ({ ...narrowMatchMedia(query), matches: query === WIDE_CHAT_MEDIA_QUERY })
+        : narrowMatchMedia
+}
+
+// 카드 판 칸 (넓은 배치, 자리 번호로)
+export const boardSlot = (i) => document.querySelector(`[data-board-slot="${uuidOf(i)}"]`)
+
+// 폰 세로 플레이어 목록 시트 (낮 "플레이어 목록"·밤 "직업 행동" 단추로 엶, 줄마다 카드 메뉴와 같은 항목 단추)
+export const rosterSheet = () => document.querySelector('[data-testid="player-roster-sheet"]')
+export const rosterRow = (i) => rosterSheet()?.querySelector(`[data-roster-player="${uuidOf(i)}"]`) ?? null
+export async function openRoster() {
+    const button = document.querySelector('[data-testid="player-roster-open"]')
+    if (!button) throw new Error("플레이어 목록 단추 없음")
+    act(() => { button.click() })
+    await flush()
+    if (!rosterSheet()) throw new Error("플레이어 목록 시트가 안 열림")
+}
+// 목록 줄의 항목 → [{ name, enabled, kind }] (줄이 없으면 [])
+export function rosterItems(i) {
+    const row = rosterRow(i)
+    if (!row) return []
+    return [...row.querySelectorAll('[role="menuitem"]')]
+        .map((b) => ({ name: b.getAttribute("aria-label"), enabled: !b.disabled, kind: b.getAttribute("data-card-menu-kind") }))
+}
+// 목록 줄의 이름 항목 단추 (없으면 null)
+export const rosterItem = (i, name) => rosterRow(i)?.querySelector(`[role="menuitem"][aria-label="${name}"]`) ?? null
+
+// 넓은 배치 카드 시트의 항목 → [{ name, enabled, kind }] (안 열렸으면 [])
 export function sheetItems() {
     const menu = document.querySelector('[data-ingame-player-card-menu] [role="menu"]')
     if (!menu) return []
@@ -366,8 +408,23 @@ export function selfProgress({ phase, dayIndex = 1, self, done = 1, required = 5
     }
 }
 
-// 재판 창(연출) 안
+// 재판 창(연출) 안: 폰 세로는 피고 등장 연출(단추 없음, 잠시 뒤 저절로 닫힘), 넓은 배치는 유죄·무죄·채팅이 든 연출 창
 export const tribunalBox = () => document.querySelector("[data-ingame-tribunal-presentation]")
+// 폰 세로 "최후의 변론" 시트 (피고 카드·유죄·무죄·안내·거절 까닭 글)
+export const tribunalSheet = () => document.querySelector('[data-testid="tribunal-presentation-sheet"]')
+const { INTRO_HOLD_MS } = await import("@/domains/game/ingame/constants/tribunalPresentation/ingameTribunalPresentationLayout.js")
+const { TRIBUNAL_TALK_EXIT_MS } = await import("@m/domains/game/ingame/hooks/overlays/useTribunalTalkSequence.js")
+// 폰 세로 재판: 피고 등장 연출이 저절로 닫힐 때까지(진짜 시계) 기다린 뒤 채팅방 "최후의 변론" 단추로 시트를 엶
+export async function openTribunalSheet() {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, INTRO_HOLD_MS + TRIBUNAL_TALK_EXIT_MS + 50)) })
+    await flush()
+    const button = document.querySelector('[data-testid="tribunal-presentation-open"]')
+    if (!button) throw new Error("최후의 변론 단추 없음")
+    act(() => { button.click() })
+    await flush()
+    if (!tribunalSheet()) throw new Error("최후의 변론 시트가 안 열림")
+    return tribunalSheet()
+}
 
 // 화면 틀 바닥 자리 (입력칸 등)
 export const shellBottom = () => document.querySelector("[data-shell-bottom]")
@@ -380,17 +437,13 @@ export async function dayToNight(socket, { n, dayIndex }) {
     await fire(socket, "day_phase_changed", dayPhaseChanged({ dayIndex, deadline: Date.now() + 60_000 }))
     await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: n, abstain: n, dayIndex }))
 }
-// 카드 띠의 칸을 눌러 시트 항목 읽고 닫음 → [{ name, enabled, kind }]
+// 플레이어 목록 시트를 열어 그 자리 줄의 항목 읽고 닫음 → [{ name, enabled, kind }]
 export async function readSheet(i) {
-    const slot = stripSlot(i)
-    if (!slot) throw new Error(`띠 칸 없음: ${i}`)
-    act(() => { slot.click() })
+    await openRoster()
+    if (!rosterRow(i)) throw new Error(`목록 줄 없음: ${i}`)
+    const items = rosterItems(i)
+    act(() => { document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })) })
     await flush()
-    const items = sheetItems()
-    if (items.length > 0) {
-        act(() => { document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })) })
-        await flush()
-    }
     return items
 }
 // 단계 전환 안내 창("낮이 되었습니다"·"밤이 되었습니다" 등)이 떠 있으면 사람처럼 "확인"으로 닫음
@@ -403,6 +456,16 @@ export async function confirmEntrances(max = 3) {
         act(() => { ok.click() })
         await flush()
     }
+}
+
+// 밤 차례 안내 창("광대의 시간입니다")이 떠 있으면 사람처럼 "확인"으로 닫음 (떠 있는 동안 화면 위 시트가 안 열림)
+export async function closeNightTurn() {
+    const box = document.querySelector("[data-night-turn-role] [role=\"dialog\"]")
+    if (!box) return
+    const ok = [...box.querySelectorAll("button")].find((b) => b.textContent.trim() === "확인")
+    if (!ok) return
+    act(() => { ok.click() })
+    await flush()
 }
 
 // 판이 끝난 상태로 (결과 화면용): 지금 판 값에 winResult·닫힘 시각을 붙임, roles = 자리별 직업
