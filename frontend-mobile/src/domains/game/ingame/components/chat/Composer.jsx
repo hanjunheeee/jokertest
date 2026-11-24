@@ -29,6 +29,9 @@ const DIVIDER_PLACE = dividerStyle(FRAME_SLICE.composer)
 const NIGHT_CLOSED_TEXT_CLASS =
     "mr-[clamp(0.6rem,4cqi,1.4rem)] w-full truncate rounded bg-black/75 px-2 py-1.5 text-center text-[0.8rem] font-semibold text-[#f2e6cf]"
 
+// 역할 확인 동안 안내 글(placeholder): "TYPE HERE..."보다 길어 입력칸(한 줄 높이)을 넘치지 않게 글자만 줄임 (밤 닫힘 글과 같은 크기)
+const ROLE_LOCKED_PLACEHOLDER_CLASS = "placeholder:text-[0.8rem] placeholder:tracking-normal"
+
 // lift가 꺼지면 키보드 비킴은 부르는 쪽이 맡음, withStatus면 상태 줄도 여기 그림
 // locked: 화면 잠금(연출·사망 선택·밤 대기) 동안 입력 막기 (바닥 자리로 portal 돼 화면 inert 밖이라 따로 막음)
 export default function Composer({
@@ -116,9 +119,9 @@ export default function Composer({
                                 autoComplete="off"
                                 placeholder={roleRevealLocked ? ROLE_REVEAL_CHAT_LOCKED_TEXT : "TYPE HERE..."}
                                 aria-label="채팅 입력"
-                                className={
+                                className={`${
                                     isTalk ? `${TEXTAREA_CLASS} ${TALK_CHAT_TEXTAREA_OFFSET_CLASS}` : TEXTAREA_CLASS
-                                }
+                                }${roleRevealLocked ? ` ${ROLE_LOCKED_PLACEHOLDER_CLASS}` : ""}`}
                                 disabled={roleRevealLocked}
                             />
                         </div>

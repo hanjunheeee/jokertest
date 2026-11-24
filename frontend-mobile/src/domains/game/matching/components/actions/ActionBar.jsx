@@ -13,9 +13,9 @@ function readyLabelOf(isSettingReady, isReady) {
   return MATCHING_POPUP_COPY.readyOn
 }
 
-// 시작 단추가 꺼진 까닭 글: 어두운 바탕에 밝은 글자 (전역 p 글자색이 검정이라 색을 직접 줌), 가로 화면에선 버튼 줄 왼쪽
+// 시작 단추가 꺼진 까닭 글: 어두운 바탕에 밝은 글자 (전역 p 글자색이 검정이라 색을 직접 줌), 세로·가로 모두 버튼 줄 바로 위
 const START_LOCKED_REASON_CLASS =
-  "rounded-sm border border-[#3a2818]/70 bg-[#120a06]/85 px-2 py-1 text-center font-subheading app-text-scaled [--app-text-size:0.82rem] font-bold leading-snug text-[#f5f0e6] land:min-w-0 land:flex-1"
+  "rounded-sm border border-[#3a2818]/70 bg-[#120a06]/85 px-2 py-1 text-center font-subheading app-text-scaled [--app-text-size:0.82rem] font-bold leading-snug text-[#f5f0e6]"
 
 // 틀 아래 줄 (page = useMatchingPage 값 묶음)
 export default function ActionBar({ page }) {
@@ -64,44 +64,47 @@ export default function ActionBar({ page }) {
         </div>
       ) : null}
 
-      {showStartReason ? (
-        <p id={startReasonId} role="status" data-testid="start-locked-reason" className={START_LOCKED_REASON_CLASS}>
-          {startLockedReason}
-        </p>
-      ) : null}
+      {/* 까닭 글 + 버튼 줄 묶음: 가로 화면에서 까닭 글을 버튼 줄 옆에 두면 판 폭(버튼 줄 폭)이 모자라 글이 세로로 찌그러짐 → 위아래로 쌓음 */}
+      <div className="flex w-full flex-col gap-2 land:min-w-0">
+        {showStartReason ? (
+          <p id={startReasonId} role="status" data-testid="start-locked-reason" className={START_LOCKED_REASON_CLASS}>
+            {startLockedReason}
+          </p>
+        ) : null}
 
-      <div
-        className={`mx-auto grid w-full max-w-[34rem] gap-2 ${isHost ? "grid-cols-3" : "grid-cols-2"} land:max-w-[28rem]`}
-      >
-        <ImageButton look={ACTION_BUTTON_LOOK} label={readyLabel} src={readySrc} onClick={toggleReady} disabled={readyDisabled} />
-        {isHost ? (
-          <>
+        <div
+          className={`mx-auto grid w-full max-w-[34rem] gap-2 ${isHost ? "grid-cols-3" : "grid-cols-2"} land:max-w-[28rem]`}
+        >
+          <ImageButton look={ACTION_BUTTON_LOOK} label={readyLabel} src={readySrc} onClick={toggleReady} disabled={readyDisabled} />
+          {isHost ? (
+            <>
+              <ImageButton
+                look={ACTION_BUTTON_LOOK}
+                label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
+                src={GAME_MATCHING_ASSETS.startGameButton}
+                onClick={startGame}
+                disabled={isStarting || showStartReason}
+                aria-describedby={showStartReason ? startReasonId : undefined}
+               
+              />
+              <ImageButton
+                look={ACTION_BUTTON_LOOK}
+                label={MATCHING_POPUP_COPY.deleteRoom}
+                src={GAME_MATCHING_ASSETS.deleteRoomButton}
+                onClick={deleteRoom}
+               
+              />
+            </>
+          ) : (
             <ImageButton
               look={ACTION_BUTTON_LOOK}
-              label={isStarting ? MATCHING_POPUP_COPY.startingGame : MATCHING_POPUP_COPY.startGame}
-              src={GAME_MATCHING_ASSETS.startGameButton}
-              onClick={startGame}
-              disabled={isStarting || showStartReason}
-              aria-describedby={showStartReason ? startReasonId : undefined}
-             
-            />
-            <ImageButton
-              look={ACTION_BUTTON_LOOK}
-              label={MATCHING_POPUP_COPY.deleteRoom}
+              label={MATCHING_POPUP_COPY.leaveRoom}
               src={GAME_MATCHING_ASSETS.deleteRoomButton}
-              onClick={deleteRoom}
+              onClick={handleBack}
              
             />
-          </>
-        ) : (
-          <ImageButton
-            look={ACTION_BUTTON_LOOK}
-            label={MATCHING_POPUP_COPY.leaveRoom}
-            src={GAME_MATCHING_ASSETS.deleteRoomButton}
-            onClick={handleBack}
-           
-          />
-        )}
+          )}
+        </div>
       </div>
     </div>
   )
