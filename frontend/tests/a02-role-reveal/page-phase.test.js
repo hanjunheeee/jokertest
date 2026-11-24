@@ -1,5 +1,5 @@
 // 판 화면 부품 시험(jsdom): 역할 확인 단계의 판 화면 전체를 그려 채팅 칸·이모티콘·투표/준비 단추·역할 창 닫힘·둘째 판 창을 봄 (화면 부품)
-// 목록 A02-F-187~192 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md)
+// 목록 A02-F-187~192·227~229 (docs/게임_의도_2026-11-15/시험목록/A02-판시작-역할.md)
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
@@ -110,4 +110,39 @@ test("A02-F-192 첫 판 의사(동료 B) 끝 → 둘째 판 시민 → 창 다�
   assert.match(text, /귀족/)
   assert.doesNotMatch(text, new RegExp(b.nickname))
   assert.doesNotMatch(text, /동료/)
+})
+
+// 입장 준비 덮개: 역할 확인(ROLE_REVEAL) 동안 화면을 어둡게 하고 "가면무도회에 입장하는 중입니다." (역할 창은 위에 그대로)
+const ENTRY_TEXT = "가면무도회에 입장하는 중입니다."
+const entryCover = () => document.querySelector("[data-ingame-entry-preparing]")
+
+test("A02-F-227 역할 확인 단계 판 화면 → 입장 준비 덮개(상태 알림·바쁨) + \"가면무도회에 입장하는 중입니다.\", 역할 창을 닫아도 남음", async () => {
+  await pageInRoleReveal()
+  assert.ok(entryCover() !== null, "덮개 없음")
+  assert.equal(entryCover().getAttribute("role"), "status")
+  assert.equal(entryCover().getAttribute("aria-busy"), "true")
+  assert.equal(entryCover().textContent, ENTRY_TEXT)
+  await dismissOverlays()
+  await waitUntil(() => revealDialog() === null, { what: "역할 창 닫힘" })
+  assert.ok(entryCover() !== null, "역할 창을 닫자 덮개가 사라짐")
+})
+
+test("A02-F-228 입장 준비 덮개가 뜬 채 첫 낮 알림 → 덮개 없어짐", async () => {
+  const { gameId } = await pageInRoleReveal()
+  assert.ok(entryCover() !== null, "덮개가 처음부터 없음 (준비 잘못)")
+  RTL.act(() => {
+    useInGameStore.getState().applyPhaseChanged({ gameId, phase: "DAY", dayIndex: 1, dayPhaseDeadline: Date.now() + 60_000 })
+  })
+  await waitUntil(() => entryCover() === null, { what: "덮개 닫힘" })
+  assert.equal(document.body.textContent.includes(ENTRY_TEXT), false)
+})
+
+test("A02-F-229 역할 확인 단계 시간 바 → 단계 글 없이도 빈 명패 + 타이머 판(role=timer) 보임", async () => {
+  await pageInRoleReveal()
+  const timebar = document.querySelector('[aria-label$="시간 흐름"]')
+  assert.ok(timebar !== null, "시간 바 없음")
+  const strip = timebar.querySelector("[data-ingame-chat-phase-timer-strip]")
+  assert.ok(strip !== null, "명패+타이머 판 없음")
+  assert.equal(strip.querySelector("p")?.textContent, "")
+  assert.ok(strip.querySelector('[role="timer"]') !== null, "타이머 숫자 칸 없음")
 })

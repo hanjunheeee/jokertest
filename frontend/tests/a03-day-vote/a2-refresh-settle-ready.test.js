@@ -102,13 +102,14 @@ test("A03-F-252 6명 판: 당김 알림을 받은 화면이 스냅샷을 다시 
   assert.equal(selectInGameTimebarStatusLabel(now()), SETTLE_LABEL)
 })
 
-test("A03-F-253 6명 판 화면: 5초 당김 중 새로고침 → 시간 바가 저절로 펼쳐지고 '[5초 뒤 마감]'과 남은 00:03", async () => {
+// 펼침 단추는 없어짐 (시간 바에 늘 명패+타이머)
+test("A03-F-253 6명 판 화면: 5초 당김 중 새로고침 → 시간 바에 펼침 단추 없이 '[5초 뒤 마감]'과 남은 00:03", async () => {
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: T0 })
   loginOnly()
   const socket = fakeSocket({ acks: { get_session_snapshot: settledSnapshot(T0 + 3_000) } })
   await renderPage(socket)
   assert.equal(now()?.dayPhaseDeadline, T0 + 3_000, "스냅샷이 안 들어감")
-  assert.equal(expandButton()?.getAttribute("aria-expanded"), "true")
+  assert.equal(expandButton(), null)
   assert.ok(timebar().hasAttribute("data-ingame-phase-settle") || timebar().querySelector("[data-ingame-phase-settle]") !== null)
   assert.match(timebar().textContent, /\[5초 뒤 마감\]/)
   assert.equal(clock(), "00:03")

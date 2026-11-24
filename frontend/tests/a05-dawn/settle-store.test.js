@@ -119,8 +119,7 @@ test("A05-F-570 새로고침 스냅샷 nightTurnDeadline = 지금+4초 → 남�
     n: 6, me: 0, roles: { 0: "JOKER" }, dayIndex: 2, nightTurnRole: "JOKER", nightTurnDeadline: T0 + 4_000,
   })
   await g.timebar()
-  // 접힌 시간 바엔 남은 시간이 안 보여 펼침
-  await kit.click(document.querySelector("[data-ingame-timebar-expand]"))
+  // 시간 바엔 늘 명패+타이머가 있음 (펼침 단추 없어짐)
   assert.match(kit.bodyText(), /00:04/)
 })
 

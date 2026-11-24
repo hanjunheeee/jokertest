@@ -3,7 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
-  LocationText, MemoryRouter, React, RTL, Route, Routes, installSocket, loginAs, renderActionContext, resetAll,
+  LocationText, React, RTL, installSocket, loginAs, renderActionContext, resetAll,
   useInGameStore,
 } from "./a02Render.mjs"
 import { autoCounts, buildGameStarted, firstOf, nextGameId, seatPlayers } from "./a02Fixtures.mjs"
@@ -16,11 +16,17 @@ const { buildInGamePlayerCardMenuItems, INGAME_CARD_MENU_ITEM_KINDS: KINDS } = a
 )
 const { useMatchingPage } = await import("../../src/domains/game/matching/hooks/useMatchingPage.js")
 const { useMatchingStore } = await import("../../src/domains/game/matching/store/matchingStore.js")
+const { resetInGameNavigationDedupe } = await import("../../src/domains/game/matching/utils/navigateToInGame.js")
+const { registerMatchingRouterNavigate } = await import("../../src/domains/game/matching/utils/matchingRouterNavigate.js")
+const { createMemoryRouter, RouterProvider } = await import("react-router-dom")
 const h = React.createElement
 
 test.afterEach(() => {
   resetAll()
   useMatchingStore.getState().clearRoom()
+  resetInGameNavigationDedupe()
+  registerMatchingRouterNavigate(null)
+  window.history.replaceState(null, "", "/")
 })
 
 // 6명 판 의사로 시작 알림까지 (역할 확인 단계, 산 사람)
@@ -76,8 +82,11 @@ function RoomProbe() {
   return h("p", null, page.isRoomVerified ? "대기방 확인됨" : "대기방")
 }
 
-// 방에 앉아 대기방 화면을 그림 (주소 /room), /ingame 으로 가면 주소 글을 보임
+// 방에 앉아 대기방 화면을 그림 (주소 /game-matching), /ingame 으로 가면 주소 글을 보임
+// 앱처럼 데이터 라우터를 쓰고 그 라우터의 navigate를 대기방 이동 함수(matchingRouterNavigate)에 끼움
+// 대기방→판 이동은 브라우저 주소(window.location)가 /game-matching일 때만 함 → jsdom 주소도 맞춤
 function mountWaitingRoom() {
+  window.history.replaceState(null, "", "/game-matching")
   const socket = installSocket()
   loginAs(ME)
   RTL.act(() => {
@@ -86,14 +95,12 @@ function mountWaitingRoom() {
       players: SEATS.map((p) => ({ uuid: p.uuid, nickname: p.nickname, isReady: true })),
     })
   })
-  RTL.render(
-    h(MemoryRouter, { initialEntries: ["/room"] },
-      h(Routes, null,
-        h(Route, { path: "/room", element: h(RoomProbe) }),
-        h(Route, { path: "/ingame", element: h(LocationText) }),
-      ),
-    ),
-  )
+  const router = createMemoryRouter([
+    { path: "/game-matching", element: h(RoomProbe) },
+    { path: "*", element: h(LocationText) },
+  ], { initialEntries: ["/game-matching"] })
+  registerMatchingRouterNavigate((to, options) => router.navigate(to, options))
+  RTL.render(h(RouterProvider, { router }))
   return socket
 }
 

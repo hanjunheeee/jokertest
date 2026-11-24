@@ -134,11 +134,11 @@ test("A01-F-663 \"방 나가기\" 클릭 → leave_room 1번", async () => {
   assert.equal(fake.sentOf("leave_room").length, 1)
 })
 
-test("A01-F-664 \"방 삭제하기\" 클릭 → 확인 창 글 \"방을 삭제하면 모든 참가자가 나가게 됩니다. 삭제하시겠습니까?\"", async () => {
+test("A01-F-664 \"방 삭제하기\" 클릭 → 확인 창 글 \"방을 삭제하면 모든 참가자가 나가게 됩니다.(줄바꿈)삭제하시겠습니까?\"", async () => {
   const { dialogs } = await openPage()
   dialogs.confirmAnswer = false
   await act(async () => { fireEvent.click(button("방 삭제하기")); await flush() })
-  assert.deepEqual(dialogs.confirms, ["방을 삭제하면 모든 참가자가 나가게 됩니다. 삭제하시겠습니까?"])
+  assert.deepEqual(dialogs.confirms, ["방을 삭제하면 모든 참가자가 나가게 됩니다.\n삭제하시겠습니까?"])
 })
 
 test("A01-F-665 손님 화면에 room_deleted → 대기방 화면 사라지고 방 목록", async () => {

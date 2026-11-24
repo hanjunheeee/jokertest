@@ -3,7 +3,7 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
-  T0, buttonByName, click, closeDawnReport, dayPhaseChanged, dayResolved, fakeSocket, fire, firstDay, nextDay, renderPage, resetAll, seat, tick,
+  T0, click, closeDawnReport, dayPhaseChanged, dayResolved, fakeSocket, fire, firstDay, nextDay, renderPage, resetAll, seat, tick,
 } from "./dayVoteHarness.mjs"
 
 test.afterEach(() => resetAll())
@@ -52,8 +52,8 @@ test("A03-F-238 ③ 2일 낮에 다시 뜸", async () => {
 
 test("A03-F-239 ④ 창 떠 있어도 시간 줄 남은 시간이 줄어듦", async () => {
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: T0 })
-  // 시간 바는 역할 공개 때 미리 펼쳐 둠 (창이 뜨면 판 화면은 못 누름)
-  await firstDayPage({ beforeDay: () => click(buttonByName("시간흐름바 확대")) })
+  // 시간 바엔 늘 명패+타이머가 있음 (펼침 단추 없어짐)
+  await firstDayPage()
   assert.ok(dayEntrance())
   const clock = () => timebar().querySelector('[role="timer"]')?.textContent
   assert.equal(clock(), "01:00")

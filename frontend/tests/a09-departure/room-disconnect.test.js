@@ -57,6 +57,7 @@ test("A09-F-272 8명 방 내가 끊겼다 붙었는데 방이 없어짐(get_curr
   roomAnswer.current = { ok: true, room: null }
   await K.dropConnection(fake)
   await K.restoreConnection(fake)
-  await K.waitUntil(() => K.path() === "/multiplay", { what: "방 목록으로" })
+  // 서버 방 없음이면 350ms마다 8번 다시 물은 뒤 비움 (약 2.8초) → 기다림을 그만큼 늘림
+  await K.waitUntil(() => K.path() === "/multiplay", { what: "방 목록으로", timeoutMs: 5_000 })
   assert.equal(K.path(), "/multiplay")
 })

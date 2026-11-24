@@ -11,6 +11,7 @@
 // 서버 알림 값 모양은 커밋된 백엔드 시험·서버 코드(backend/game-core·socket/gameSession) 그대로 만듦
 import { mock } from "node:test"
 import "../helpers/domSetup.mjs"
+import { syncWindowPath, resetWindowPath } from "../helpers/syncWindowPath.mjs"
 
 // jsdom에 없는 크기 감시 흉내 (채팅 칸이 씀, 크기는 안 재서 아무것도 안 함)
 class NoopResizeObserver {
@@ -302,6 +303,8 @@ function attachRender(t) {
         ],
       },
     ], { initialEntries: ["/ingame"] })
+    // 앱(브라우저 라우터)처럼 window 주소도 같이 옮김 (판 끝 정리·결과 화면 이동이 window 주소를 봄)
+    syncWindowPath(t.router)
     // 화면 이동 기록 (이동 신호가 몇 번 났는지 셈)
     t.navigations = []
     let lastKey = t.router.state.location.key
@@ -582,6 +585,7 @@ export function resetTable() {
   useInGameStore.setState({ snapshotSeq: 0 })
   useAuthStore.getState().logout()
   setSocket(null)
+  resetWindowPath()
   try {
     globalThis.window?.sessionStorage?.clear()
   } catch {

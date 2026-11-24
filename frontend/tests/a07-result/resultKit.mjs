@@ -20,6 +20,7 @@ if (typeof globalThis.ResizeObserver !== "function") {
 }
 
 export const React = await import("react")
+const { syncWindowPath, resetWindowPath } = await import("../helpers/syncWindowPath.mjs")
 export const RTL = await import("@testing-library/react")
 const { MotionGlobalConfig } = await import("framer-motion")
 // 창 움직임을 바로 끝냄 (안 끝나면 메모리가 바닥남)
@@ -345,6 +346,8 @@ export async function renderAt(path, element, { shell = true, before = [], extra
     ? [{ element: h(Shell), errorElement: h(Catcher), children }]
     : children.map((c) => ({ ...c, errorElement: h(Catcher) }))
   const router = createMemoryRouter(routes, { initialEntries: [...before, path], initialIndex: before.length })
+  // 앱(브라우저 라우터)처럼 window 주소도 같이 옮김 (판 끝 정리·결과 화면 이동이 window 주소를 봄)
+  syncWindowPath(router)
   let lastKey = router.state.location.key
   router.subscribe((state) => {
     if (state.location.key === lastKey) return
@@ -443,6 +446,7 @@ export function resetAll() {
   try { globalThis.window?.sessionStorage?.clear() } catch { /* 막힌 환경이면 그냥 둠 */ }
   try { globalThis.window?.localStorage?.clear() } catch { /* 막힌 환경이면 그냥 둠 */ }
   installFakeFetch()
+  resetWindowPath()
   current = null
   if (renderError) throw renderError
 }

@@ -3,7 +3,7 @@
 import test, { mock } from "node:test"
 import assert from "node:assert/strict"
 import {
-  T0, buttonByName, click, dayResolved, fakeSocket, fire, loginOnly, renderPage, resetAll, seat, settle, snapshot, tick, uuidOf,
+  T0, dayResolved, fakeSocket, fire, loginOnly, renderPage, resetAll, seat, settle, snapshot, tick, uuidOf,
 } from "./dayVoteHarness.mjs"
 
 test.afterEach(() => resetAll())
@@ -12,6 +12,7 @@ const SETTLE_LABEL = "[5초 뒤 마감]"
 const timebar = () => document.querySelector('[aria-label$="시간 흐름"]')
 const clock = () => timebar()?.querySelector('[role="timer"]')?.textContent ?? null
 const expandButton = () => timebar()?.querySelector("[data-ingame-timebar-expand]")
+const SETTLE_ATTR = "data-ingame-phase-settle"
 
 // 가짜 시계(T0)로 6명 판 1일 화면, 투표 마감은 40초 뒤
 async function timebarPage({ dayPhase = "DAY_VOTE" } = {}) {
@@ -43,11 +44,15 @@ test("A03-F-136 ⑤ 당김 없음 → '[5초 뒤 마감]' 글 없음", async () 
   assert.equal(document.body.textContent.includes(SETTLE_LABEL), false)
 })
 
-test("A03-F-137 ⑥ 당기면 접힌 시간 바가 저절로 펼침", async () => {
+// 펼침 단추는 없어짐(시간 바에 늘 명패+타이머) → 당기기 전에도 남은 초가 보이고, 당기면 바에 당김 표시가 붙음
+test("A03-F-137 ⑥ 당기기 전에도 시간 바에 남은 초 보임(펼침 단추 없음), 당기면 바에 당김 표시", async () => {
   const socket = await timebarPage()
-  assert.equal(expandButton().getAttribute("aria-expanded"), "false")
+  assert.equal(expandButton(), null)
+  assert.equal(clock(), "00:40")
+  assert.equal(timebar().hasAttribute(SETTLE_ATTR), false)
   await fire(socket, "phase_settle_started", settle({ deadline: T0 + 5_000 }))
-  assert.equal(expandButton().getAttribute("aria-expanded"), "true")
+  assert.equal(timebar().hasAttribute(SETTLE_ATTR), true)
+  assert.equal(clock(), "00:05")
 })
 
 test("A03-F-138 ⑦ 토론 중 → '[5초 뒤 마감]' 없음", async () => {
@@ -69,7 +74,6 @@ test("A03-F-140 ⑨ 새로고침 스냅샷의 짧은 마감 → 남은 초 00:03
   loginOnly()
   const socket = fakeSocket({ acks: { get_session_snapshot: snapshot({ extra: { dayPhaseDeadline: T0 + 3_000 } }) } })
   await renderPage(socket)
-  await click(buttonByName("시간흐름바 확대"))
   assert.equal(clock(), "00:03")
 })
 

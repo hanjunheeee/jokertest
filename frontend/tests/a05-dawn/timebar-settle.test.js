@@ -55,12 +55,13 @@ test("A05-F-659 5초 알림 뒤 가짜 시계 3초 → 남은 0:02", async () =>
   assert.doesNotMatch(kit.bodyText(), /0:05/)
 })
 
-test("A05-F-660 접어 둔 시간 바 + 5초 알림 → 펼쳐지고 \"[5초 뒤 마감]\" 있음", async () => {
+// 펼침 단추는 없어짐 (시간 바에 늘 명패+타이머) → 알림 전엔 원래 남은 시간, 알림 뒤엔 "[5초 뒤 마감]"
+test("A05-F-660 시간 바(펼침 단추 없음) + 5초 알림 → \"[5초 뒤 마감]\" 있음", async () => {
   const g = await turnBar({ me: 3, role: "JOKER" })
-  assert.equal(expandButton()?.getAttribute("aria-expanded"), "false", "처음에 펼쳐져 있음 (준비 잘못)")
+  assert.equal(expandButton(), null, "펼침 단추가 남아 있음")
+  assert.match(kit.bodyText(), /0:30/, "알림 전 남은 시간이 안 보임 (준비 잘못)")
   assert.equal(kit.bodyText().includes(SETTLE_TEXT), false)
   await g.settle({ role: "JOKER", deadline: T0 + 5_000 })
-  assert.equal(expandButton()?.getAttribute("aria-expanded"), "true")
   assert.match(kit.bodyText(), /\[5초 뒤 마감\]/)
 })
 
@@ -93,7 +94,6 @@ test("A05-F-664 새로고침 스냅샷의 당긴 마감(남은 3초) → 시간 
   kit.useFakeClock(T0)
   const g = await kit.openGame({ n: 8, me: 3, roles: ROLES8, dead: [4], dayIndex: 2, nightTurnRole: "JOKER", nightTurnDeadline: T0 + 3_000 })
   await g.timebar()
-  // 스냅샷엔 당긴 마감만 있어 바가 접혀 있음 → 펼쳐서 남은 시간을 봄
-  await kit.click(expandButton())
+  // 시간 바엔 늘 명패+타이머가 있음 (펼침 단추 없어짐)
   assert.match(kit.bodyText(), /0:03/)
 })

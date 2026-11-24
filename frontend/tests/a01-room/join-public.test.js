@@ -57,6 +57,34 @@ for (const [id, code, message] of SERVER_TEXT) {
   })
 }
 
+// ALREADY_IN_ROOM은 먼저 서버에 내 방을 다시 물음 (방 확인 답에 내가 앉은 방이 있으면 알림 없이 대기방으로)
+test("A01-F-739 공개 입장 실패 ALREADY_IN_ROOM + 방 확인 답에 내가 앉은 방 → 알림 없이 대기방(/game-matching), 방 명단 들어감", async () => {
+  const ctx = await setup()
+  const room = roomOf({ n: 4, max: 6, uuids: ["host", "g2", "g3", "me"] })
+  ctx.fake.answer("get_current_room", { ok: true, room })
+  await joinAndFail(ctx, { code: "ALREADY_IN_ROOM", message: "이미 참여 중인 방이 있습니다." })
+  await act(async () => { await flush(20) })
+  assert.deepEqual(ctx.dialogs.alerts, [])
+  assert.equal(ctx.view.result.current.isJoining, false)
+  assert.equal(ctx.where.path, "/game-matching")
+  assert.deepEqual(useMatchingStore.getState().players.map((p) => p.uuid), ["host", "g2", "g3", "me"])
+})
+
+test("A01-F-740 방 목록을 열 때 서버에 내 방이 남아 있음(스토어만 빔) → 대기방(/game-matching)으로 되돌아감", async () => {
+  signIn("me", "나")
+  installDialogs(dom)
+  const fake = useFakeSocket()
+  fake.answer("get_public_rooms", { ok: true, rooms: [] })
+  fake.answer("get_current_room", { ok: true, room: roomOf({ n: 2, max: 6, uuids: ["host", "me"] }) })
+  const where = { path: null }
+  function Where() { where.path = useLocation().pathname; return null }
+  const wrapper = ({ children }) => h(MemoryRouter, { initialEntries: ["/multiplay"] }, h(Where), children)
+  renderHook(() => usePublicRooms(), { wrapper })
+  await act(async () => { await flush(20) })
+  assert.equal(where.path, "/game-matching")
+  assert.equal(useMatchingStore.getState().roomId, "room-1")
+})
+
 test("A01-F-581 글 없는 실패 → \"공개 방에 참여할 수 없습니다.\"", async () => {
   const ctx = await setup()
   await joinAndFail(ctx, { code: "SOMETHING" })

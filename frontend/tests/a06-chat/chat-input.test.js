@@ -7,7 +7,6 @@ import { openTable, resetTable, goOffline } from "./a06Kit.mjs"
 test.afterEach(resetTable)
 
 const TOO_LONG = "메시지는 150자 이하로 입력해주세요."
-const EMPTY = "메시지를 입력해주세요."
 const BAD_CHAR = "사용할 수 없는 문자가 포함되어 있습니다."
 const gameSent = (t) => t.sentOf("submit_game_chat_message")
 const chatEvents = (t) => gameSent(t).length + t.sentOf("submit_joker_chat_message").length
@@ -16,16 +15,18 @@ const chatEvents = (t) => gameSent(t).length + t.sentOf("submit_joker_chat_messa
 const dayTable = (options = {}) =>
   openTable({ n: 6, me: 1, roles: { 0: "JOKER", 5: "DOCTOR" }, phase: "DAY", view: "page", ...options })
 
+// 빈 글(빈 엔터·공백만)은 안내 글 없이 조용히 막음 (SILENT: 상태 줄 없음·사건 0)
+const SILENT = Symbol("silent")
 const CHECKS = [
   ["A06-F-131", "151자", "a".repeat(151), TOO_LONG],
   ["A06-F-132", "150자", "b".repeat(150), null],
-  ["A06-F-133", "빈 엔터", "", EMPTY],
-  ["A06-F-134", "공백만", "    ", EMPTY],
+  ["A06-F-133", "빈 엔터", "", SILENT],
+  ["A06-F-134", "공백만", "    ", SILENT],
   ["A06-F-135", "한글 151자", "한".repeat(151), TOO_LONG],
   ["A06-F-136", "글 방향 바꿈 글자(U+202E) 든 글", "안녕‮요", BAD_CHAR],
 ]
 for (const [id, label, text, message] of CHECKS) {
-  const expectText = message === null ? "사건 1번·글 그대로" : `"${message}"·사건 0`
+  const expectText = message === null ? "사건 1번·글 그대로" : message === SILENT ? "안내 글 없이 사건 0" : `"${message}"·사건 0`
   test(`${id} 보내기 전 글 검사(입력칸 아래 상태 줄): ${label} → ${expectText}`, async () => {
     const t = await dayTable()
     if (text.length > 0) await t.type(text)
@@ -33,6 +34,9 @@ for (const [id, label, text, message] of CHECKS) {
     if (message === null) {
       assert.deepEqual(gameSent(t), [{ gameId: t.gameId, text }])
       assert.equal(t.statusText("board"), null)
+    } else if (message === SILENT) {
+      assert.equal(t.statusText("board"), null)
+      assert.equal(chatEvents(t), 0)
     } else {
       assert.equal(t.statusText("board"), message)
       assert.equal(chatEvents(t), 0)

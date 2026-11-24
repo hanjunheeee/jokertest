@@ -60,12 +60,13 @@ test("A06-F-175 의사 밤 → 낮: 밤 줄 뒤 낮 시작 → 목록에 밤 줄
   assert.equal(t.rows("board").some((row) => row.includes("밤에만한말")), false)
 })
 
-test("A06-F-176 의사 낮 → 밤: 낮 줄 뒤 밤 시작 → 목록에 낮 줄 없음, 입력 열림", async () => {
+// 밤에 산 직업은 목록에 낮 채팅 + 직업 채팅을 시간 순으로 섞어 보임 (보내기는 직업 채널)
+test("A06-F-176 의사 낮 → 밤: 낮 줄 뒤 밤 시작 → 목록에 낮 줄 그대로, 입력 열림", async () => {
   const t = await openTable({ n: 6, me: 1, myRole: "DOCTOR", roles: { 0: "JOKER", 2: "DOCTOR" }, phase: "DAY", view: "page" })
   await t.dayChat(3, "낮에한말")
   assert.ok(t.rows("board").some((row) => row.includes("낮에한말")), "낮 줄이 처음부터 안 보임")
   await t.toNight()
-  assert.equal(t.rows("board").some((row) => row.includes("낮에한말")), false)
+  assert.equal(t.rows("board").some((row) => row.includes("낮에한말")), true)
   assert.ok(t.input("board") !== null, "밤 의사 입력칸이 없음")
 })
 

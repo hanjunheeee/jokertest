@@ -12,6 +12,7 @@
 // 조심: 비교에 화면 요소·React 요소를 그대로 넣지 않음(틀리면 메모리가 넘침) → 참거짓·글자로 바꿔 비교
 import { mock } from "node:test"
 import "../helpers/domSetup.mjs"
+import { syncWindowPath, resetWindowPath } from "../helpers/syncWindowPath.mjs"
 
 // jsdom에 없는 크기 감시 (채팅 칸이 씀) → 아무것도 안 함
 if (typeof globalThis.ResizeObserver !== "function") {
@@ -343,6 +344,8 @@ function attach(g) {
         ],
       },
     ], { initialEntries: ["/ingame"] })
+    // 앱(브라우저 라우터)처럼 window 주소도 같이 옮김 (판 끝 정리·결과 화면 이동이 window 주소를 봄)
+    syncWindowPath(g.router)
     await RTL.act(async () => {
       g.view = RTL.render(h(RouterProvider, { router: g.router }))
     })
@@ -488,6 +491,7 @@ export function resetAll() {
   })
   useAuthStore.getState().logout()
   setSocket(null)
+  resetWindowPath()
   try { window.sessionStorage.clear() } catch { /* 저장소 막힘은 그냥 둠 */ }
   try { window.localStorage.clear() } catch { /* 저장소 막힘은 그냥 둠 */ }
 }

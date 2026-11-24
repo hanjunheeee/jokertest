@@ -3,6 +3,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
+import { syncWindowPath, resetWindowPath } from "../helpers/syncWindowPath.mjs"
 
 const React = await import("react")
 const rtl = await import("@testing-library/react")
@@ -21,6 +22,7 @@ const h = React.createElement
 window.alert = () => {}
 test.afterEach(() => {
   resetAll()
+  resetWindowPath()
   useInGameStore.getState().clearGame()
   try { window.sessionStorage.clear() } catch { /* 저장소 막힘 무시 */ }
 })
@@ -64,6 +66,8 @@ async function openBoard(n, { dead = [], interactionBlocked = false } = {}) {
     { path: "/ingame", element: h(EventsRoot, null, board) },
     { path: "*", element: h("p", null, "다른 화면") },
   ], { initialEntries: ["/ingame"] })
+  // 앱(브라우저 라우터)처럼 window 주소도 같이 옮김 (판 끝 정리가 window 주소를 봄)
+  syncWindowPath(router)
   await rtl.act(async () => { rtl.render(h(RouterProvider, { router })); await settle() })
   return socket
 }

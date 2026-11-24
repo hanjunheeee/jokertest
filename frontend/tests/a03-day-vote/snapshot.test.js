@@ -96,7 +96,6 @@ test("A03-F-087 ⑪ 투표 단계 마감 스냅샷 → 시간 줄이 투표 마�
   mock.timers.enable({ apis: ["setTimeout", "Date"], now: T0 })
   const { state } = await refreshWith(snapshot({ extra: { dayPhaseDeadline: T0 + 25_000 } }))
   assert.equal(state?.dayPhase, "DAY_VOTE")
-  await click(buttonByName("시간흐름바 확대"))
   assert.equal(document.querySelector('[role="timer"]')?.textContent, "00:25")
 })
 

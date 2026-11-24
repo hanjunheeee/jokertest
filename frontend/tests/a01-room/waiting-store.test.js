@@ -1,5 +1,5 @@
 // 화면 상태 시험: 대기방 값 — 들어옴·나감·방장 바뀜·준비 바뀜 알림 반영(옛 알림은 버림), 방 삭제, 준비 답, 삭제 확인 창, 손님 나가기
-// 목록 A01-F-588~603 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md), 돌리기: node --experimental-test-module-mocks --test tests/a01-room/waiting-store.test.js
+// 목록 A01-F-588~603·741~745 (docs/게임_의도_2026-11-15/시험목록/A01b-입장-준비-추방-초대.md), 돌리기: node --experimental-test-module-mocks --test tests/a01-room/waiting-store.test.js
 import test from "node:test"
 import assert from "node:assert/strict"
 import { dom } from "../helpers/domSetup.mjs"
@@ -10,9 +10,10 @@ const { MemoryRouter, useLocation } = await import("react-router-dom")
 const { useMatchingPage } = await import("../../src/domains/game/matching/hooks/useMatchingPage.js")
 const { useMatchingStore } = await import("../../src/domains/game/matching/store/matchingStore.js")
 const { useFakeSocket, signIn, resetAll, roomOf, installDialogs, installFakeFetch, HOLD, flush } = await import("./a01b-helpers.mjs")
+const { setAppConfirmHandler } = await import("../../src/shared/utils/appConfirm.js")
 
 const h = React.createElement
-test.afterEach(() => { cleanup(); resetAll() })
+test.afterEach(() => { cleanup(); resetAll(); setAppConfirmHandler(null) })
 
 // 대기방 화면 훅 그리기 (지금 주소는 where.path로 봄), verified면 방 확인 답을 바로 줌
 async function setup({ me = "host", room = roomOf({ n: 5, max: 6 }), verified = true } = {}) {
@@ -126,11 +127,11 @@ test("A01-F-599 [지금 동작] 방 확인 전 준비 누름 → set_ready 보�
   assert.equal(fake.sentOf("set_ready").length, 0)
 })
 
-test("A01-F-600 방 삭제 확인 창 \"방을 삭제하면 모든 참가자가 나가게 됩니다. 삭제하시겠습니까?\" 취소 → delete_room 0번", async () => {
+test("A01-F-600 방 삭제 확인 창 \"방을 삭제하면 모든 참가자가 나가게 됩니다.(줄바꿈)삭제하시겠습니까?\" 취소 → delete_room 0번", async () => {
   const { fake, view, dialogs } = await setup()
   dialogs.confirmAnswer = false
   await act(async () => { await view.result.current.deleteRoom() })
-  assert.deepEqual(dialogs.confirms, ["방을 삭제하면 모든 참가자가 나가게 됩니다. 삭제하시겠습니까?"])
+  assert.deepEqual(dialogs.confirms, ["방을 삭제하면 모든 참가자가 나가게 됩니다.\n삭제하시겠습니까?"])
   assert.equal(fake.sentOf("delete_room").length, 0)
 })
 
@@ -153,5 +154,64 @@ test("A01-F-603 손님 \"방 나가기\" → leave_room 1번, /multiplay", async
   fake.answer("get_current_room", { ok: true, room: null })
   await act(async () => { view.result.current.handleBack(); await flush() })
   assert.equal(fake.sentOf("leave_room").length, 1)
+  assert.equal(where.path, "/multiplay")
+})
+
+// 앱 확인 창(appConfirm): 손잡이를 끼우면(모바일 양피지 창) window.confirm 대신 그쪽에 물음
+test("A01-F-741 앱 확인 창 손잡이를 끼움 → 방 삭제 확인 글이 손잡이로 감(브라우저 확인 창 안 뜸), 손잡이가 취소 → delete_room 0번", async () => {
+  const { fake, view, dialogs } = await setup()
+  const asked = []
+  setAppConfirmHandler(async (message) => { asked.push(message); return false })
+  await act(async () => { await view.result.current.deleteRoom() })
+  assert.deepEqual(asked, ["방을 삭제하면 모든 참가자가 나가게 됩니다.\n삭제하시겠습니까?"])
+  assert.deepEqual(dialogs.confirms, [])
+  assert.equal(fake.sentOf("delete_room").length, 0)
+})
+
+test("A01-F-742 앱 확인 창 손잡이가 확인(약속으로 true) → delete_room 1번", async () => {
+  const { fake, view } = await setup()
+  fake.answer("delete_room", { ok: true })
+  setAppConfirmHandler(() => Promise.resolve(true))
+  await act(async () => { await view.result.current.deleteRoom() })
+  assert.equal(fake.sentOf("delete_room").length, 1)
+})
+
+// 새로고침·주소 바로 입력: 방 값 없이 대기방에 들어오면 첫 방 확인 답이 올 때까지 머묾 (바로 목록으로 가면 서버 15초 안에 방 확인을 못 물어 자리를 잃음)
+async function setupRefresh({ me = "guest-2" } = {}) {
+  signIn(me)
+  installDialogs(dom)
+  installFakeFetch()
+  const fake = useFakeSocket()
+  fake.answer("get_current_room", HOLD)
+  const where = { path: null }
+  function Where() { where.path = useLocation().pathname; return null }
+  const wrapper = ({ children }) => h(MemoryRouter, { initialEntries: ["/game-matching"] }, h(Where), children)
+  const view = renderHook(() => useMatchingPage(), { wrapper })
+  await act(async () => { await flush() })
+  return { fake, view, where }
+}
+
+test("A01-F-743 새로고침(방 값 없음) → 첫 방 확인 답 오기 전엔 대기방(/game-matching)에 머묾, 방 확인 1번 보냄", async () => {
+  const { fake, view, where } = await setupRefresh()
+  assert.equal(useMatchingStore.getState().isInRoom, false)
+  assert.equal(fake.sentOf("get_current_room").length, 1)
+  assert.equal(where.path, "/game-matching")
+  assert.equal(view.result.current.canStayOnMatchingPage, true)
+})
+
+test("A01-F-744 새로고침 → 방 확인 답에 내가 앉은 방 → 대기방에 그대로, 방 명단 들어감", async () => {
+  const { fake, view, where } = await setupRefresh({ me: "guest-2" })
+  const room = roomOf({ n: 4, max: 6 })
+  await act(async () => { fake.release("get_current_room", { ok: true, room }); await flush() })
+  assert.equal(where.path, "/game-matching")
+  assert.equal(useMatchingStore.getState().roomId, "room-1")
+  assert.equal(view.result.current.isRoomVerified, true)
+  assert.equal(view.result.current.canStayOnMatchingPage, true)
+})
+
+test("A01-F-745 새로고침 → 방 확인 답 방 없음 → 그때 방 목록(/multiplay)", async () => {
+  const { fake, where } = await setupRefresh()
+  assert.equal(where.path, "/game-matching", "답 오기 전에 목록으로 감 (준비 잘못)")
+  await act(async () => { fake.release("get_current_room", { ok: true, room: null }); await flush() })
   assert.equal(where.path, "/multiplay")
 })
