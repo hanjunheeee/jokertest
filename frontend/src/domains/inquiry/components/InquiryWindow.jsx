@@ -58,7 +58,13 @@ export default function InquiryWindow({ open, onClose, targetId = null, api }) {
 
           <div className="absolute inset-0 z-[2] flex min-h-0 flex-col" style={PANEL_INSET}>
             <ViewTabs view={state.view} showList={state.showList} showForm={state.showForm} />
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-1">
+            <div
+              className={
+                state.view === "detail"
+                  ? "flex min-h-0 flex-1 flex-col overflow-hidden pr-1"
+                  : "flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pr-1"
+              }
+            >
               {state.view === "form" ? <InquiryForm {...state} /> : null}
               {state.view === "detail" ? <InquiryDetail detail={state.detail} onBack={state.showList} /> : null}
               {state.view === "list" ? (

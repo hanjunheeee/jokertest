@@ -17,6 +17,7 @@ import {
   selectResultExitFailureNotice,
 } from "../utils/exitConfirm.js"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
+import { appConfirm } from "@/shared/utils/appConfirm.js"
 import { EXIT_STATUS } from "../constants/ingameExit.js"
 import { sendLeave as sendLeaveNow } from "./exit/leave.js"
 import { lookupExitOutcome } from "./exit/outcome.js"
@@ -137,8 +138,9 @@ export function useInGameExit({
       gameState: useInGameStore.getState().state ?? null,
       selfUuid: useAuthStore.getState().user?.uuid ?? null,
     })
+    // 확인 창은 앱 확인 창 (기본 window.confirm, 모바일은 양피지 창), 고른 결과는 약속으로 돌려줌
     return createExitConfirmController({
-      confirm: (text) => window.confirm(text),
+      confirm: appConfirm,
       requestLeave: sendLeave,
       onDecision: (kind) => dispatchUiSfx(kind),
       message,

@@ -1,5 +1,5 @@
-// 위 줄 보유 재화 (골드·다이아, 불러오는 중 ··· / 실패면 재시도 버튼)
-// top/StoreTopBar가 경제 스토어 값을 넣어 씀
+// 보유 재화 (골드·다이아, 불러오는 중 ··· / 실패면 재시도 버튼)
+// StoreTopBar(하단 줄)가 경제 스토어 값을 넣어 씀
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { STORE_ASSETS } from "@/shared/constants/storeAssets.js"
 import {

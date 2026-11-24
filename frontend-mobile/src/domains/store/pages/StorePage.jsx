@@ -1,4 +1,4 @@
-// 상점 화면 (/store): 입장 영상 뒤 위 줄(뒤로·재화·소리) + 상점 판, 일괄구매 확인·확대 보기는 창
+// 상점 화면 (/store): 입장 영상 뒤 상품 판, 그 아래 줄(뒤로·쿠폰·보유 재화), 일괄구매·확대 창
 // app/routes/index.jsx가 씀, 상태·구매 흐름은 데스크톱 useStorePanel·storePurchase 그대로
 import { useNavigate } from "react-router-dom"
 import { useVideoIntro } from "@/shared/hooks/useVideoIntro.js"
@@ -24,6 +24,8 @@ export default function StorePage() {
         <div className="relative flex h-full w-full flex-col overflow-hidden bg-black">
             <StoreBackdrop videoRef={bgVideoRef} introDone={introDone} onSkip={skipIntro} />
 
+            <StorePanel visible={introDone} panel={panel} />
+
             <StoreTopBar
                 visible={introDone}
                 onBack={() => navigate("/lobby")}
@@ -32,7 +34,6 @@ export default function StorePage() {
                 economyStatus={economyStatus}
                 onRetryEconomy={retryEconomySummary}
             />
-            <StorePanel visible={introDone} panel={panel} />
 
             <StoreSheets panel={panel} />
         </div>

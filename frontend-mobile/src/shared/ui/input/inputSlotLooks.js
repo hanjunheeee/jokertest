@@ -1,5 +1,6 @@
 // 입력 칸 모양 모음 (화면마다 여백·글자·보기 버튼 class 한 벌씩)
 // InputSlot이 이름으로 고름
+import { ACCOUNT_FORM_CONTROL_ALIGN_CLASS } from "@m/domains/user/constants/accountFormLayout.js"
 // 입력 글자는 16px 이상(iOS 확대 막기), 작게 보일 건 안내 글자만
 const LOGIN_TEXT =
   "font-subheading text-white placeholder:text-white/55 app-input-text placeholder:app-text-scaled placeholder:[--app-text-size:11px]"
@@ -36,13 +37,24 @@ export const INPUT_SLOT_LOOKS = {
   },
   // 계정 관리 (데스크톱 계정 칸처럼 왼쪽 여백 9%, 보기 버튼 없으면 오른쪽 여백 칸)
   account: {
+    wrap: `relative h-8 ${ACCOUNT_FORM_CONTROL_ALIGN_CLASS}`,
+    img: IMG_BLOCK,
+    row: "absolute inset-0 flex items-center gap-0.5 pl-[7%] pr-[1.5%]",
+    input: "h-full min-w-0 flex-1 bg-transparent outline-none",
+    text:
+      "font-subheading text-white app-input-text app-text-scaled [--app-text-size:0.875rem] placeholder:text-white/55 placeholder:app-text-scaled placeholder:[--app-text-size:11px]",
+    toggle: `flex size-9 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 ${TOGGLE_COLOR}`,
+    spacer: "w-2 shrink-0",
+    namedByPlaceholder: true,
+  },
+  // 상점 쿠폰 양피지 창 (입력창1.webp)
+  coupon: {
     wrap: "relative h-10 w-full",
     img: IMG_BLOCK,
-    row: "absolute inset-0 flex items-center gap-1.5 pl-[8.5%] pr-0.5",
-    input: "h-full min-w-0 flex-1 bg-transparent outline-none",
-    text: "font-subheading text-white app-input-text",
-    toggle: `-my-0.5 flex size-11 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 ${TOGGLE_COLOR}`,
-    spacer: "w-2.5 shrink-0",
+    row: "absolute inset-0 flex items-center pl-[7%] pr-[3%]",
+    input: "h-full min-w-0 flex-1 bg-transparent uppercase tracking-wide outline-none",
+    text:
+      "font-subheading text-white app-input-text app-text-scaled [--app-text-size:0.9rem] placeholder:text-white/55 placeholder:app-text-scaled placeholder:[--app-text-size:11px]",
     namedByPlaceholder: true,
   },
 }

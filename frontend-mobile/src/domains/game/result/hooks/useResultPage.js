@@ -32,7 +32,11 @@ export function useResultPage() {
     const exitNotice = selectResultExitFailureNotice(exitStatus, exitErrorCode)
     // 예: "return"이고 정원 참 → "대기방 정원이 가득 차 들어갈 수 없습니다.", 누른 적 없으면 null
     const leaveNotice = { exit: exitNotice, return: returnError }[noticeSource] ?? null
-    const bootstrapStatus = useInGameSessionSnapshotSync()
+    // 판이 끝나 승패 값이 이미 있으면 판 상태를 다시 묻지 않음 (연출·승패가 흔들리지 않게)
+    const freezeSnapshotSync = useInGameStore(
+        (s) => s.state?.phase === "ENDED" && Boolean(s.state?.winResult),
+    )
+    const bootstrapStatus = useInGameSessionSnapshotSync({ enabled: !freezeSnapshotSync })
 
     // 진행 중인 판이 있으면 ?outcome= 미리보기는 안 씀
     const hasLiveSession = useInGameStore((s) => Boolean(s.state) && s.state.phase !== "ENDED")

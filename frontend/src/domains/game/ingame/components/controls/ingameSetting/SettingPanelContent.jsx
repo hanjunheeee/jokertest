@@ -1,4 +1,4 @@
-// 설정 창 내용: 머리·탭 줄·고른 탭 본문·아래 타이머 위치·방 코드 보기 버튼
+// 설정 창 내용: 머리·탭 줄·고른 탭 본문·아래 방 코드 보기 버튼
 // 설정 창(SettingPanel)이 사용, 탭·소리 값은 useInGameSettingPanel이 줌
 import { useRef } from "react"
 import {
@@ -9,7 +9,6 @@ import {
 import { useInGameSettingPanel } from "../../../hooks/useInGameSettingPanel.js"
 import SettingChatTab from "./SettingChatTab.jsx"
 import SettingRoomCodeButton from "./SettingRoomCodeButton.jsx"
-import SettingTimerPlacementButton from "./SettingTimerPlacementButton.jsx"
 import SettingSoundTab from "./SettingSoundTab.jsx"
 import SettingTabs from "./SettingTabs.jsx"
 import SidePanelHeader from "../SidePanelHeader.jsx"
@@ -17,9 +16,22 @@ import Scrollbar from "@/shared/ui/Scrollbar.jsx"
 
 // 고른 탭 본문 하나만 그림 (채팅 아니면 사운드)
 function SettingTabPanel({
-  activeTab, volumes, onVolumeChange, sfxMuted, onSfxMutedChange,
+  activeTab,
+  volumes,
+  onVolumeChange,
+  sfxMuted,
+  onSfxMutedChange,
+  timerPlacement,
+  onTimerPlacementChange,
 }) {
-  if (activeTab === "chat") return <SettingChatTab />
+  if (activeTab === "chat") {
+    return (
+      <SettingChatTab
+        timerPlacement={timerPlacement}
+        onTimerPlacementChange={onTimerPlacementChange}
+      />
+    )
+  }
   return (
     <SettingSoundTab
       volumes={volumes}
@@ -35,7 +47,7 @@ function SettingTabPanel({
 export default function SettingPanelContent({
   onOpenRoomCode,
   timerPlacement,
-  onCycleTimerPlacement,
+  onTimerPlacementChange,
 }) {
   const scrollRef = useRef(null)
   const { activeTab, setActiveTab, visibleTabs, volumes, setVolume, sfxMuted, setSfxMuted } =
@@ -59,6 +71,8 @@ export default function SettingPanelContent({
             onVolumeChange={setVolume}
             sfxMuted={sfxMuted}
             onSfxMutedChange={setSfxMuted}
+            timerPlacement={timerPlacement}
+            onTimerPlacementChange={onTimerPlacementChange}
           />
         </div>
 
@@ -66,10 +80,6 @@ export default function SettingPanelContent({
       </div>
 
       <div className={SETTING_FOOTER_ACTIONS_WRAP_CLASS}>
-        <SettingTimerPlacementButton
-          timerPlacement={timerPlacement}
-          onCycle={onCycleTimerPlacement}
-        />
         <SettingRoomCodeButton onClick={() => onOpenRoomCode?.()} />
       </div>
     </div>

@@ -43,7 +43,7 @@ export const PARTY_SLOTS_DUMMY = [
   { id: 4, ready: false },
 ]
 
-// 가짜 자리 10칸 (방에 없을 때 미리보기, chunkPlayerSlots가 씀)
+// 가짜 자리 10칸 (지금 부르는 곳 없음, 대기방 밖 자리는 빈 목록)
 export const PARTY_SLOTS_DUMMY_10 = [
   { id: 1, ready: true },
   { id: 2, ready: true },

@@ -5,6 +5,7 @@ export const LOGIN_ASSETS = {
   frame: "/frame/로그인 프레임.webp",
 
   ageRating: "/logo/전체이용가 표시.webp".normalize("NFD"),
+  brandLogo: "/logo/가면무도회 로고4.webp".normalize("NFD"),
   input: "/button/입력창1.webp",
   checkbox: "/button/체크박스.webp",
 

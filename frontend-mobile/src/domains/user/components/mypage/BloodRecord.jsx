@@ -18,7 +18,13 @@ export default function BloodRecord({ stats }) {
 
             <div className={`pointer-events-none absolute flex flex-col justify-evenly gap-[0.2em] ${BLOOD_RECORD_CONTENT_WASH_CLASS}`} style={BLOOD_RECORD_CONTENT_INSET}>
                 {(stats ?? []).map((row, index) => (
-                    <StatRow key={row.label} label={row.label} value={row.value} showDivider={index > 0} />
+                    <StatRow
+                        key={row.label}
+                        rowIndex={index}
+                        label={row.label}
+                        value={row.value}
+                        showDivider={index > 0}
+                    />
                 ))}
             </div>
         </div>

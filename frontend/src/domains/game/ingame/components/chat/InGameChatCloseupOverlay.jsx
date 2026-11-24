@@ -31,6 +31,7 @@ export default function InGameChatCloseupOverlay({
   embeddedPhaseTimerStatusLabel = null,
   embeddedPhaseTimerRemainingRatio = 0,
   embeddedPhaseTimerRemainingSec = null,
+  embeddedPhaseTimerShowResourcesWithoutLabel = false,
 }) {
   // 열렸을 때 맨 위 창이면 Esc로 닫기(닫는 소리 같이), 초점은 창 안으로 옮기고 가둠
   const dialogRef = useRef(null)
@@ -96,6 +97,7 @@ export default function InGameChatCloseupOverlay({
                 embeddedPhaseTimerStatusLabel={embeddedPhaseTimerStatusLabel}
                 embeddedPhaseTimerRemainingRatio={embeddedPhaseTimerRemainingRatio}
                 embeddedPhaseTimerRemainingSec={embeddedPhaseTimerRemainingSec}
+                embeddedPhaseTimerShowResourcesWithoutLabel={embeddedPhaseTimerShowResourcesWithoutLabel}
               />
             </motion.div>
           </div>

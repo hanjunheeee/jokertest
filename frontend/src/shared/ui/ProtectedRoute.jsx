@@ -8,6 +8,7 @@ import {
     useAuthStore,
 } from "@/domains/auth/store/auth.store"
 import { useGameSessionSocketEvents } from "@/domains/game/ingame/hooks/useGameSessionSocketEvents"
+import { useNavigateToInGameFromMatching } from "@/domains/game/matching/hooks/useNavigateToInGameFromMatching.js"
 import { registerAccountCacheStores } from "@/domains/user/utils/accountCacheRefresh.js"
 import { useUserProfileStore } from "@/domains/user/store/user.store"
 import { useEconomyStore } from "@/domains/economy/store/economy.store"
@@ -40,6 +41,7 @@ export default function ProtectedRoute() {
     const routeState = resolveProtectedRouteState({ isAuthenticated, sessionBootstrap })
 
     useGameSessionSocketEvents()
+    useNavigateToInGameFromMatching()
 
     useEffect(() => {
         // 일부러 로그아웃한 게 아닐 때만 로그인 필요 알림

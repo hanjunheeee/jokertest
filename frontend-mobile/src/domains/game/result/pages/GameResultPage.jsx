@@ -9,7 +9,7 @@ import ResultActions from "../components/actions/ResultActions.jsx"
 import InterstitialAd from "@m/shared/ads/InterstitialAd.jsx"
 import { useInterstitialAd } from "@m/shared/ads/useInterstitialAd.js"
 
-// 남은 시간 칸: 스크롤해도 위에 붙어 있게 sticky, 승패 띠를 안 가리게 제 높이만큼 자리 차지
+// 남은 시간 칸: 스크롤 칸 안에서 위에 붙어 있게 sticky, 승패 띠를 안 가리게 제 높이만큼 자리 차지
 const CLOSE_TIMER_ROW_CLASS = "pointer-events-none sticky top-0 z-30 flex justify-end px-3 pt-2"
 const CLOSE_TIMER_CLASS =
     "flex items-baseline gap-1.5 rounded-sm border border-[#c8a878]/60 bg-[#120a06]/85 px-3 py-1.5 font-subheading text-[#f5e6c8] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
@@ -47,9 +47,11 @@ export default function GameResultPage() {
 
     const hasResult = page.stage === "result"
     return (
-        <>
-            {hasResult ? <CloseTimer closesAt={page.closesAt} /> : null}
-            {hasResult ? <ResultBoard {...page.view} /> : <Unavailable />}
+        <div className="flex h-svh w-full flex-col bg-black">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                {hasResult ? <CloseTimer closesAt={page.closesAt} /> : null}
+                {hasResult ? <ResultBoard {...page.view} /> : <Unavailable />}
+            </div>
             <ResultActions
                 hasResult={hasResult}
                 isReturning={page.isReturning}
@@ -61,6 +63,6 @@ export default function GameResultPage() {
                 onLeaveUnavailable={page.leaveUnavailable}
             />
             <InterstitialAd open={ad.open} mode={ad.mode} onClose={ad.close} />
-        </>
+        </div>
     )
 }

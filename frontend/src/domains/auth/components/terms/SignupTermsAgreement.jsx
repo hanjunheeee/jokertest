@@ -12,11 +12,13 @@ import {
 function AgreementRow({ checked, onChange, label, required, onView, className = AGREEMENT_ROW_CLASS }) {
   return (
     <div className={className}>
-      <RememberMeCheckbox
-        checked={checked}
-        onChange={onChange}
-        label={<>{required === true ? <span className={AGREEMENT_REQUIRED_CLASS}>(필수) </span> : null}{required === false ? "(선택) " : null}{label}</>}
-      />
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <RememberMeCheckbox
+          checked={checked}
+          onChange={onChange}
+          label={<>{required === true ? <span className={AGREEMENT_REQUIRED_CLASS}>(필수) </span> : null}{required === false ? "(선택) " : null}{label}</>}
+        />
+      </div>
       {onView ? (
         <button type="button" className={AGREEMENT_VIEW_BTN_CLASS} onClick={onView}>보기</button>
       ) : null}

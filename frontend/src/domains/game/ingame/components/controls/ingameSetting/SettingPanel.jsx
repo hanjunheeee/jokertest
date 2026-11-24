@@ -11,7 +11,7 @@ export default function SettingPanel({
   open,
   onClose,
   timerPlacement,
-  onCycleTimerPlacement,
+  onTimerPlacementChange,
   interactionLocked = false,
 }) {
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
@@ -35,7 +35,7 @@ export default function SettingPanel({
         <SettingPanelContent
           onOpenRoomCode={() => setRoomCodeOpen(true)}
           timerPlacement={timerPlacement}
-          onCycleTimerPlacement={onCycleTimerPlacement}
+          onTimerPlacementChange={onTimerPlacementChange}
         />
       </SidePanel>
 

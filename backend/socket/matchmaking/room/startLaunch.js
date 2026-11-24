@@ -11,18 +11,27 @@ const { holdRoomCodeForGame } = require('../cluster/roomDirectory')
 const { emitPublicRoomList } = require('./view')
 const e2eGameHooks = require('../../e2e/gameHooks')
 const gameSettings = require('../../../services/ops/gameSettings')
+const { logMatchingFlow } = require('../debug/matchingFlowLog')
 
 // 준비 단계 실패 답 (부를 때마다 새 객체)
 const internalErrorResponse = () => ({ ok: false, code: 'INTERNAL_ERROR', message: '게임을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.' })
 
 // 판 띄우기: 준비 → 장부에 넣기 → 방송 → 방장 ack (기다림 없음, 순서 그대로 한 번에)
 function launchGame(io, room, roomId, captured, callback) {
+    logMatchingFlow('launch_game_begin', { roomId, playerCount: room?.players?.size })
     const respond = respondOnce(callback)
     const ready = prepareLaunch(io, roomId, captured, respond)
-    if (!ready) return
+    if (!ready) {
+        logMatchingFlow('launch_game_prepare_failed', { roomId })
+        return
+    }
     const released = commitLaunch(room, roomId, captured, ready.session, respond)
-    if (!released) return
+    if (!released) {
+        logMatchingFlow('launch_game_commit_failed', { roomId })
+        return
+    }
     broadcastStart(io, ready)
+    logMatchingFlow('launch_game_broadcast_done', { roomId, gameId: ready.session.id })
     announceReleasedSeats(io, released, ready.uuidToSockets)
     respond({ ok: true, gameId: ready.session.id })
 }
@@ -152,9 +161,20 @@ function broadcastStart(io, { session, uuidToSockets, payloadsByUuid }) {
         const payload = payloadsByUuid.get(u)
         for (const s of uuidToSockets.get(u) ?? []) {
             try {
+                logMatchingFlow('emit_game_started', {
+                    gameId: session.id,
+                    uuid: u,
+                    socketId: s.id,
+                })
                 s.emit('game_started', payload)
             } catch (err) {
                 console.error('[game_started 전달 실패]', err)
+                logMatchingFlow('emit_game_started_failed', {
+                    gameId: session.id,
+                    uuid: u,
+                    socketId: s.id,
+                    message: err instanceof Error ? err.message : String(err),
+                })
             }
         }
     })

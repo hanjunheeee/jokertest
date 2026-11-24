@@ -16,6 +16,10 @@ export default function InGameTribunalPresentationChatPanel({
   error = null,
   truncateDraftOnInput = false,
   isDeadChat = false,
+  showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerStatusLabel = null,
+  embeddedPhaseTimerRemainingRatio = 0,
+  embeddedPhaseTimerRemainingSec = null,
 }) {
   return (
     <div
@@ -33,6 +37,10 @@ export default function InGameTribunalPresentationChatPanel({
         error={error}
         truncateDraftOnInput={truncateDraftOnInput}
         isDeadChat={isDeadChat}
+        showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+        embeddedPhaseTimerStatusLabel={embeddedPhaseTimerStatusLabel}
+        embeddedPhaseTimerRemainingRatio={embeddedPhaseTimerRemainingRatio}
+        embeddedPhaseTimerRemainingSec={embeddedPhaseTimerRemainingSec}
       />
     </div>
   )

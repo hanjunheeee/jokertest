@@ -1,6 +1,6 @@
 // 로비 알림 버튼 (안 읽은 수 배지)
 // BottomBar가 씀
-import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
+import { LOBBY_MOBILE_ASSETS } from "@m/domains/lobby/constants/lobbyMobileAssets.js"
 import { selectUnreadCount } from "@/domains/notifications/utils/visibleNotifications.js"
 import { useNotificationsStore } from "@/domains/notifications/store/notifications.store.js"
 import { useSettingsStore } from "@/domains/settings/store/settingsStore.js"
@@ -21,9 +21,9 @@ export default function NotificationButton({ open, onOpen }) {
             onClick={onOpen}
             data-notification-entry="true"
             data-notification-unread-count={String(unread)}
-            className="interactive-scale relative flex h-12 w-14 shrink-0 items-center justify-center md:h-16 md:w-20"
+            className="interactive-scale relative flex h-14 w-16 shrink-0 items-center justify-center md:h-[4.5rem] md:w-[5.5rem]"
         >
-            <PublicAsset src={LOBBY_ASSETS.notificationEntryButton} alt="" className="block h-auto w-full select-none" />
+            <PublicAsset src={LOBBY_MOBILE_ASSETS.notificationButton} alt="" className="block h-auto w-full select-none" />
             <CountBadge count={unread} />
         </button>
     )

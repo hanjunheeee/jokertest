@@ -35,3 +35,6 @@ export const sendDeleteRoom = (socket) =>
 
 // 방 나가기: 응답 안 기다림, 지금 소켓으로 보냄
 export const leaveRoom = () => getSocket()?.emit('leave_room')
+
+// 개발용 대기방 흐름 기록을 서버 터미널에도 보냄 (응답 안 기다림, debug/matchingFlowTrace가 씀)
+export const sendMatchingFlowTrace = (socket, body) => socket.emit('debug_matching_flow', body)

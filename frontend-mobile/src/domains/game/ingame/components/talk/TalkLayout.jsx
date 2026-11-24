@@ -1,76 +1,122 @@
-// 카톡형 화면 (폰 세로 전용): 위 줄(버튼 + 단계 줄) → 펼친 진행 바 → 초상 띠 → 채팅방 → 행동 줄, 입력칸은 화면 바닥 자리
+// 카톡형 화면 (폰 세로 전용): 위 줄 → 진행 바(명패+시간패널) → 채팅방 → 행동 줄, 입력칸은 화면 바닥 자리
 // InGamePage가 폰 세로(useWideChat 거짓)일 때만 씀, 폰 가로·태블릿은 지금 배치 그대로
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardInset.js"
+import { useCardSheet } from "@m/domains/game/ingame/hooks/board/useCardSheet.js"
+import PlayerRosterSheet from "@m/domains/game/ingame/components/roster/PlayerRosterSheet.jsx"
 import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
 import { useInGameChatSessionContext } from "@/domains/game/ingame/components/chat/InGameChatSessionContext.js"
-import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
-import { selectInGamePhaseSettled } from "@/domains/game/ingame/utils/selectInGameTimebarStatusMessage.js"
 import ActionRow from "@m/domains/game/ingame/components/actions/ActionRow.jsx"
 import Composer from "@m/domains/game/ingame/components/chat/Composer.jsx"
 import TopBar from "@m/domains/game/ingame/components/shell/TopBar.jsx"
 import Timebar from "@m/domains/game/ingame/components/timebar/Timebar.jsx"
-import PhaseLine from "./PhaseLine.jsx"
-import PortraitStrip from "./PortraitStrip.jsx"
-import { selectTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
+import TribunalSheet from "@m/domains/game/ingame/components/overlays/tribunal/TribunalSheet.jsx"
+import TribunalTalkPresentation from "@m/domains/game/ingame/components/overlays/tribunal/TribunalTalkPresentation.jsx"
+import { useTribunalPresentation } from "@m/domains/game/ingame/hooks/overlays/useTribunalPresentation.js"
+import { selectOverlayOpen, useOverlayBridge } from "@m/domains/game/ingame/hooks/overlays/overlayBridge.js"
 import TalkList from "./TalkList.jsx"
 
 const SLOT_CLASS = "relative min-w-0 shrink-0"
 
-// page: useInGamePage 값, compactTyping: 낮은 화면에서 입력 중이면 띠·진행 바 접어 채팅방 자리 냄
+// page: useInGamePage 값, compactTyping: 낮은 화면에서 입력 중이면 진행 바 접어 채팅방 자리 냄
 export default function TalkLayout({ page, compactTyping, locked }) {
     const session = useInGameChatSessionContext()
-    // 재판 연출이 뜨면 연출이 자기 채팅을 띄움 → 채팅방은 숨기고 입력칸은 뺌
-    const tribunalOpen = useInGameStore(selectTribunalPresentationOpen)
-    const [timebarOpen, setTimebarOpen] = useState(false)
-    // 표가 다 차 마감이 5초 뒤로 당겨진 동안은 접어 둔 진행 바도 저절로 펼침 (끝나면 고른 대로 돌아감, 사용자 결정 2026-11-16)
-    // 진행 바는 채팅방을 밀어 내릴 뿐 가리지 않음, 입력 중인 낮은 화면(compactTyping)에선 안 펼치고 위 단계 줄의 "5초 뒤 마감 0:04"만 보임
-    const settled = useInGameStore((s) => selectInGamePhaseSettled(s.state))
-    const timebarShown = timebarOpen || settled
-    const [boardOpen, setBoardOpen] = useState(false)
+    const tribunal = useTribunalPresentation()
     const { sidePanel } = page
-    // iOS는 키보드가 떠도 화면이 안 줄어 입력줄만 올라감 → 채팅방 아래에 그만큼 비워 최신 말풍선이 안 가려지게 (안드로이드는 0)
     const keyboardInset = useKeyboardInset()
+    const cardSheet = useCardSheet()
+    const [rosterOpen, setRosterOpen] = useState(false)
+    const [tribunalDismissed, setTribunalDismissed] = useState(false)
+    const [tribunalSheetOpen, setTribunalSheetOpen] = useState(false)
+    const defendantId = tribunal.defendant?.id ?? null
+    // 연출 창("밤이 되었습니다"·밤 차례·낮 시작 글 창·암살 영상·사망 선택)이 뜨면 목록·재판 시트도 닫음: 시트가 "확인" 단추를 가림
+    // 연출이 끝나도 저절로 다시 안 뜸 (그리는 중에 바로 맞춤, 기록·설정 시트와 같은 식)
+    const overlayOpen = useOverlayBridge(selectOverlayOpen)
+    if (overlayOpen && rosterOpen) setRosterOpen(false)
+    if (overlayOpen && tribunalSheetOpen) setTribunalSheetOpen(false)
+
+    // 재판이 열리고 닫히거나 피고가 바뀌면 연출 닫음·시트 열림을 처음으로 (그리는 중에 바로 맞춤, effect 안 setState 대신)
+    const tribunalKey = `${tribunal.active}:${defendantId}`
+    const [seenTribunalKey, setSeenTribunalKey] = useState(tribunalKey)
+    if (seenTribunalKey !== tribunalKey) {
+        setSeenTribunalKey(tribunalKey)
+        setTribunalDismissed(false)
+        setTribunalSheetOpen(false)
+    }
+
+    const tribunalOverlayOpen = tribunal.active && !tribunalDismissed
+    const composerLocked = locked || tribunalOverlayOpen
+    const dismissTribunalOverlay = useCallback(() => setTribunalDismissed(true), [])
 
     return (
         <div
-            className={`relative flex h-full min-h-0 w-full flex-col ${locked ? "pointer-events-none" : ""}`.trim()}
+            className={`relative z-10 flex h-full min-h-0 w-full flex-col ${locked ? "pointer-events-none" : ""}`.trim()}
             inert={locked || undefined}
             data-talk-layout=""
         >
-            {/* 재판 연출이 위 줄·진행 바 높이를 재서 자리 잡음 → data-slot 이름 그대로 */}
-            <div className={`${SLOT_CLASS} flex items-center gap-1 pr-2`} data-slot="top">
+            <div className={`${SLOT_CLASS} px-1.5`} data-slot="top">
                 <TopBar
-                    onExit={page.requestExit}
                     onRecords={sidePanel.openRecords}
                     onSettings={sidePanel.openSettings}
                     onRoleReveal={page.reopenRoleReveal}
                     roleRevealAvailable={page.roleRevealAvailable && Boolean(page.reopenRoleReveal)}
                 />
-                <PhaseLine expanded={timebarShown} onToggle={() => setTimebarOpen((open) => !open)} />
             </div>
-            <div className={`${SLOT_CLASS} px-2 ${timebarShown && !compactTyping ? "" : "hidden"}`} data-slot="timebar">
-                {/* 늘 그려 두고 숨기기만: 펼친 순간부터 게이지를 새로 세면 막대 길이가 틀림 */}
-                <Timebar initialExpanded />
+            <div className={`${SLOT_CLASS} px-0.5 ${compactTyping ? "hidden" : ""}`} data-slot="timebar">
+                <Timebar />
             </div>
-            <div className={`${SLOT_CLASS} ${compactTyping ? "hidden" : ""}`} data-slot="board">
-                <PortraitStrip expanded={boardOpen} onToggle={() => setBoardOpen((open) => !open)} />
-            </div>
-            {/* 재판 중엔 숨기기만 함 → 그동안 생긴 처형 알림·이모티콘 기록이 안 날아감 (빼 버리면 다시 그릴 때 처음부터) */}
-            <div className={`relative min-h-0 min-w-0 flex-1 flex-col px-1.5 pt-1 ${tribunalOpen ? "invisible flex" : "flex"}`}
+            <div
+                className={`relative flex min-h-0 min-w-0 flex-1 flex-col overflow-visible px-0.5 pt-0.5 ${tribunalOverlayOpen ? "pointer-events-none" : ""}`.trim()}
                 style={keyboardInset > 0 ? { paddingBottom: keyboardInset } : undefined}
                 data-slot="chat"
+                inert={tribunalOverlayOpen || undefined}
             >
-                <TalkList />
+                <TalkList
+                    onPlayerRoster={() => setRosterOpen(true)}
+                    onTribunalOpen={
+                        tribunal.active && tribunalDismissed
+                            ? () => setTribunalSheetOpen(true)
+                            : null
+                    }
+                />
             </div>
             <div className={`${SLOT_CLASS} px-1.5 pb-1`} data-slot="actions">
                 <ActionRow />
             </div>
-            {tribunalOpen ? null : (
-                <ShellBottom>
-                    <Composer draft={session.draft} onDraftChange={session.onDraftChange} onSend={session.onSend} locked={locked} />
-                </ShellBottom>
-            )}
+            <PlayerRosterSheet
+                open={rosterOpen}
+                onClose={() => setRosterOpen(false)}
+                getItems={cardSheet.getItems}
+                rosterSelect={cardSheet.rosterSelect}
+            />
+            <ShellBottom>
+                <div className="relative z-10 px-0.5">
+                    <Composer
+                        variant="talk"
+                        draft={session.draft}
+                        onDraftChange={session.onDraftChange}
+                        onSend={session.onSend}
+                        locked={composerLocked}
+                    />
+                </div>
+            </ShellBottom>
+            <TribunalTalkPresentation
+                open={tribunalOverlayOpen}
+                onDismiss={dismissTribunalOverlay}
+                defendant={tribunal.defendant}
+            />
+            <TribunalSheet
+                open={tribunalSheetOpen && tribunal.active}
+                onClose={() => setTribunalSheetOpen(false)}
+                defendant={tribunal.defendant}
+                showVoteButtons={tribunal.showVoteButtons}
+                noticeText={tribunal.noticeText}
+                voteButtonsEnabled={tribunal.voteButtonsEnabled}
+                voteSubmitting={tribunal.voteSubmitting}
+                onVoteGuilty={tribunal.onVoteGuilty}
+                onVoteNotGuilty={tribunal.onVoteNotGuilty}
+                voteErrorText={tribunal.voteErrorText}
+            />
         </div>
     )
 }

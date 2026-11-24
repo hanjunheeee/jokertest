@@ -5,6 +5,9 @@ import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useInGameStore } from "../../ingame/store/ingameStore.js"
 import { buildGameResultViewModel } from "../utils/buildGameResultViewModel.js"
 
+// 판 명단이 없을 때 쓰는 빈 목록 (매번 새 배열이면 스토어 구독이 계속 다시 그림)
+const NO_ROSTER = []
+
 // 판 결과·내 uuid·내 진영 읽어 화면 값 만들기
 export function useGameResultData() {
   const winResult = useInGameStore((s) => s.state?.winResult ?? null)
@@ -13,10 +16,12 @@ export function useGameResultData() {
   const gameId = useInGameStore((s) => s.gameId ?? null)
   const ended = useInGameStore((s) => s.state?.phase === "ENDED")
   const accountId = useAuthStore((s) => s.user?.uuid ?? null)
+  // 판 명단: 공개 목록에 프로필 사진·테두리가 없을 때 보조
+  const rosterPlayers = useInGameStore((s) => s.state?.players ?? NO_ROSTER)
 
   const built = useMemo(
-    () => (winResult ? buildGameResultViewModel(winResult, selfUuid, selfTeam) : null),
-    [winResult, selfUuid, selfTeam],
+    () => (winResult ? buildGameResultViewModel(winResult, selfUuid, selfTeam, { rosterPlayers }) : null),
+    [winResult, selfUuid, selfTeam, rosterPlayers],
   )
 
   // 마지막으로 그린 결과를 판·계정과 같이 적어 둠 (그리는 중에 앞 값과 비교해 바로 맞춤)

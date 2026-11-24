@@ -1,84 +1,194 @@
-// 채팅 틀 안쪽 단계 타이머 모양: 타이머 자리·층, 타이머 켜면 메시지 목록 내리는 값
-// 단계 타이머 묶음(InGamePhaseTurnTimerPanel)·판 위 채팅 모양 상수가 사용
-import {
-  CONTENT_SHIFT_LEFT_FRAME,
-  mapFrameInsetToLayoutBox,
-} from "./ingameChatFrameLayout.js"
-import { INGAME_TIMEBAR_ASSETS } from "../timebar/ingameTimebarAssets.js"
+// 명패+시간패널: 통합 채팅 패널(텍스트만) · 시간 바 위 스트립(옛 프레임 그림)
+// 단계 타이머 묶음(InGamePhaseTurnTimerPanel)이 사용
+import { mapFrameInsetToLayoutBox } from "./ingameChatFrameLayout.js"
+import { INGAME_CHAT_USE_UNIFIED_PANEL } from "./ingameChatAssets.js"
 
-// 타이머 켜면 메시지 목록 위를 이만큼 내리고 높이도 같은 만큼 줄임 (틀 기준 %)
-export const EMBEDDED_TIMER_LIST_OFFSET_FRAME = 12
+// 통합 패널이면 목록을 추가로 내리지 않음 (명패·타이머가 틀 안에 있음)
+export const EMBEDDED_TIMER_LIST_OFFSET_FRAME = INGAME_CHAT_USE_UNIFIED_PANEL ? 0 : 9
 
-const EMBEDDED_TIMER_STACK_INSET_FRAME_BOARD = {
-  top: 0.5,
-  left: 2 + CONTENT_SHIFT_LEFT_FRAME,
-  right: 10,
-  height: 21,
+/** 통합 패널 상단 명패·타이머 텍스트 영역 (틀 기준) */
+const UNIFIED_PANEL_HEADER_INSET_FRAME = {
+  top: 1.2,
+  left: 4.5,
+  right: 4.5,
+  height: 11.5,
 }
 
-const EMBEDDED_TIMER_STACK_INSET_FRAME_CLOSEUP = {
-  top: -5,
-  left: 2 + CONTENT_SHIFT_LEFT_FRAME,
-  right: 10,
-  height: 22,
+/** 채팅 틀 위에 겹치는 옛 스트립 (시간 바 전용) */
+const EMBEDDED_TIMER_STACK_INSET_FRAME_TIMEBAR = {
+  top: -9.5,
+  left: 14,
+  right: 0,
 }
 
-// 채팅 틀 안, 메시지 목록 위 층
-const EMBEDDED_TIMER_WRAP_CLASS =
-  "pointer-events-none absolute z-[4] flex min-h-0 flex-col items-center justify-end gap-0 [container-type:inline-size]"
+const LEGACY_STRIP_STACK_INSET_FRAME_BOARD = {
+  top: -4,
+  left: 4.5,
+  right: 4.5,
+}
 
-const EMBEDDED_TIMER_WRAP_CLASS_CLOSEUP =
-  `${EMBEDDED_TIMER_WRAP_CLASS} -translate-y-[4%]`
+const LEGACY_STRIP_STACK_INSET_FRAME_CLOSEUP = {
+  top: -3.5,
+  left: 5,
+  right: 5,
+}
 
-const EMBEDDED_PHASE_HEADER_WRAP_BOARD =
-  "pointer-events-none relative z-[5] w-[clamp(10.2rem,86cqi,14.5rem)] shrink-0 -translate-y-[22%]"
+const LEGACY_STRIP_SRC =
+  "/frame/ingame-chatting/명패+시간패널 프레임.png"
 
-const EMBEDDED_PHASE_HEADER_WRAP_CLOSEUP =
-  "pointer-events-none relative z-[5] w-[clamp(20rem,46cqi,33rem)] shrink-0 -translate-y-[6%]"
+const UNIFIED_HEADER_WRAP_CLASS =
+  "pointer-events-none absolute z-[6] flex min-h-0 items-stretch justify-center [container-type:inline-size]"
 
-const EMBEDDED_PHASE_HEADER_TITLE_CLOSEUP =
-  "pointer-events-none absolute inset-0 flex items-start justify-center px-[9%] pt-[10.5%] text-center font-subheading text-[clamp(1rem,3.15cqi,1.48rem)] font-bold leading-tight tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+const LEGACY_STRIP_WRAP_CLASS =
+  "pointer-events-none absolute z-[6] flex min-h-0 items-center justify-center [container-type:inline-size]"
 
-const EMBEDDED_TIMER_BODY_BOARD =
-  "relative z-[4] mt-[clamp(-0.35rem,-1.6cqi,-0.15rem)] w-full h-[clamp(2.05rem,11.5cqi,3.15rem)] shrink-0 [container-type:inline-size]"
+const LEGACY_STRIP_WRAP_CLASS_TIMEBAR =
+  "pointer-events-none absolute z-[6] flex min-h-0 items-center justify-end [container-type:inline-size]"
 
-/** 클로즈업: 고정 높이·너비 비율 — flex-1로 세로 늘어나며 게이지가 찌그러지지 않게 */
-const EMBEDDED_TIMER_BODY_CLOSEUP =
-  "relative z-[4] mx-auto mt-[clamp(-0.45rem,-1.1cqi,-0.2rem)] w-[min(100%,clamp(32rem,92cqi,58rem))] h-[clamp(2.85rem,7.2cqi,4.1rem)] shrink-0 [container-type:inline-size]"
+const UNIFIED_FRAME_IMAGE_CLASS =
+  "block h-auto w-full select-none"
 
-/** 클로즈업 MM:SS — 크게, 시계 칸 쪽으로 약간 왼쪽 */
-const EMBEDDED_TIMER_DIGITS_CLASS_CLOSEUP =
-  "pointer-events-none absolute right-[7%] top-1/2 z-[4] -translate-y-1/2 font-display text-[clamp(1.05rem,4.65cqi,1.55rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+const LEGACY_STRIP_CLASS_BOARD =
+  "pointer-events-none relative z-[6] mx-auto w-[92%] -translate-y-[28%] shrink-0 [container-type:inline-size]"
 
-/** 클로즈업: 너비(cqi)만 키우면 max에 막혀 잘 안 커짐 → 타이머 틀 높이 % 기준 */
-const EMBEDDED_TIMER_MARKER_CLASS_CLOSEUP =
-  "pointer-events-none absolute top-1/2 z-[3] block h-[clamp(2.1rem,82%,4.15rem)] w-auto max-w-none -translate-x-1/2 -translate-y-1/2 select-none transition-opacity duration-300 ease-linear"
+const LEGACY_STRIP_CLASS_CLOSEUP =
+  "pointer-events-none relative z-[6] mx-auto w-[92%] -translate-y-[26%] shrink-0 [container-type:inline-size]"
 
-/**
- * @param {"board" | "closeup"} [embeddedLayout]
- */
-export function getEmbeddedChatTimerLayout(embeddedLayout = "board") {
+const UNIFIED_STATUS_CLASS_PANEL =
+  "pointer-events-none absolute left-[21%] top-[46%] z-[2] flex w-[37%] -translate-y-1/2 items-center justify-center px-[3%] text-center font-display text-[clamp(0.78rem,4.35cqi,1.14rem)] font-medium leading-tight tracking-normal text-[#2a1810] antialiased [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(42,24,16,0.4)]"
+
+const UNIFIED_DIGITS_CLASS_PANEL =
+  "pointer-events-none absolute right-[7.5%] top-[48%] z-[2] w-[20%] -translate-y-1/2 text-center font-display text-[clamp(0.78rem,4.35cqi,1.12rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+
+const UNIFIED_STATUS_CLASS_CLOSEUP =
+  "pointer-events-none absolute left-[21%] top-[46%] z-[2] flex w-[37%] -translate-y-1/2 items-center justify-center px-[4%] text-center font-display text-[clamp(1.38rem,5.65cqi,2.28rem)] font-medium leading-tight tracking-normal text-[#2a1810] antialiased [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(42,24,16,0.4)]"
+
+const UNIFIED_DIGITS_CLASS_CLOSEUP =
+  "pointer-events-none absolute right-[7.5%] top-[48%] z-[2] w-[21%] -translate-y-1/2 text-center font-display text-[clamp(1.05rem,5.1cqi,1.68rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+
+const LEGACY_STATUS_CLASS_BOARD =
+  "pointer-events-none absolute left-[5%] top-1/2 z-[2] flex w-[58%] translate-x-[7%] translate-y-[calc(-50%+0.22em)] items-center justify-center px-[5%] text-center font-subheading text-[clamp(0.76rem,4.15cqi,1.1rem)] font-bold leading-tight tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
+const LEGACY_DIGITS_CLASS_BOARD =
+  "pointer-events-none absolute right-[6.5%] top-1/2 z-[2] w-[23%] -translate-x-[5%] translate-y-[calc(-50%+0.1em)] text-center font-display text-[clamp(0.8rem,4.4cqi,1.16rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+
+const LEGACY_STATUS_CLASS_CLOSEUP =
+  "pointer-events-none absolute left-[5%] top-1/2 z-[2] flex w-[58%] translate-x-[7%] translate-y-[calc(-50%+0.22em)] items-center justify-center px-[6%] text-center font-subheading text-[clamp(1.22rem,4.55cqi,1.95rem)] font-bold leading-tight tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
+const LEGACY_DIGITS_CLASS_CLOSEUP =
+  "pointer-events-none absolute right-[6.5%] top-1/2 z-[2] w-[24%] -translate-x-[5%] translate-y-[calc(-50%+0.2em)] text-center font-display text-[clamp(1.18rem,5.35cqi,1.82rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+
+const LEGACY_STRIP_CLASS_TIMEBAR =
+  "pointer-events-none relative z-[6] w-[min(100%,clamp(11.8rem,100cqi,17.2rem))] -translate-y-[40%] shrink-0 [container-type:inline-size]"
+
+const LEGACY_STATUS_CLASS_TIMEBAR =
+  "pointer-events-none absolute left-[5%] top-1/2 z-[2] flex w-[58%] translate-x-[7%] translate-y-[calc(-50%+0.22em)] items-center justify-center px-[5%] text-center font-subheading text-[clamp(0.74rem,4.05cqi,1.08rem)] font-bold leading-tight tracking-wide text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
+
+const LEGACY_DIGITS_CLASS_TIMEBAR =
+  "pointer-events-none absolute right-[6.5%] top-1/2 z-[2] w-[23%] -translate-x-[5%] translate-y-[calc(-50%+0.22em)] text-center font-display text-[clamp(0.78rem,4.25cqi,1.14rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
+
+function mapTimebarTimerStackInset(inset) {
+  return {
+    top: `${inset.top}%`,
+    left: `${inset.left}%`,
+    right: `${inset.right}%`,
+  }
+}
+
+function chatPanelHeaderLayout(embeddedLayout) {
+  const isCloseup = embeddedLayout === "closeup"
+  return {
+    stackInset: mapFrameInsetToLayoutBox(UNIFIED_PANEL_HEADER_INSET_FRAME),
+    wrapClass: UNIFIED_HEADER_WRAP_CLASS,
+    showStripFrameImage: false,
+    unifiedFrameSrc: null,
+    unifiedStripClass: "relative h-full w-full",
+    unifiedFrameImageClass: UNIFIED_FRAME_IMAGE_CLASS,
+    unifiedStatusClass: isCloseup ? UNIFIED_STATUS_CLASS_CLOSEUP : UNIFIED_STATUS_CLASS_PANEL,
+    unifiedDigitsClass: isCloseup ? UNIFIED_DIGITS_CLASS_CLOSEUP : UNIFIED_DIGITS_CLASS_PANEL,
+  }
+}
+
+function legacyStripLayout(embeddedLayout) {
   if (embeddedLayout === "closeup") {
     return {
-      stackInset: mapFrameInsetToLayoutBox(EMBEDDED_TIMER_STACK_INSET_FRAME_CLOSEUP),
-      wrapClass: EMBEDDED_TIMER_WRAP_CLASS_CLOSEUP,
-      phaseHeaderWrapClass: EMBEDDED_PHASE_HEADER_WRAP_CLOSEUP,
-      phaseHeaderTitleClass: EMBEDDED_PHASE_HEADER_TITLE_CLOSEUP,
-      timerBodyClass: EMBEDDED_TIMER_BODY_CLOSEUP,
-      timerDigitsClass: EMBEDDED_TIMER_DIGITS_CLASS_CLOSEUP,
-      timerMarkerClass: EMBEDDED_TIMER_MARKER_CLASS_CLOSEUP,
-      phaseHeaderPlateSrc: INGAME_TIMEBAR_ASSETS.phaseHeaderPlateChatCloseup,
+      stackInset: mapFrameInsetToLayoutBox(LEGACY_STRIP_STACK_INSET_FRAME_CLOSEUP),
+      wrapClass: LEGACY_STRIP_WRAP_CLASS,
+      showStripFrameImage: true,
+      unifiedFrameSrc: LEGACY_STRIP_SRC,
+      unifiedStripClass: LEGACY_STRIP_CLASS_CLOSEUP,
+      unifiedFrameImageClass: UNIFIED_FRAME_IMAGE_CLASS,
+      unifiedStatusClass: LEGACY_STATUS_CLASS_CLOSEUP,
+      unifiedDigitsClass: LEGACY_DIGITS_CLASS_CLOSEUP,
+    }
+  }
+  return {
+    stackInset: mapFrameInsetToLayoutBox(LEGACY_STRIP_STACK_INSET_FRAME_BOARD),
+    wrapClass: LEGACY_STRIP_WRAP_CLASS,
+    showStripFrameImage: true,
+    unifiedFrameSrc: LEGACY_STRIP_SRC,
+    unifiedStripClass: LEGACY_STRIP_CLASS_BOARD,
+    unifiedFrameImageClass: UNIFIED_FRAME_IMAGE_CLASS,
+    unifiedStatusClass: LEGACY_STATUS_CLASS_BOARD,
+    unifiedDigitsClass: LEGACY_DIGITS_CLASS_BOARD,
+  }
+}
+
+const MOBILE_STRIP_WRAP_CLASS =
+  "pointer-events-none relative z-[6] flex w-full justify-center [container-type:inline-size]"
+
+const MOBILE_STRIP_CLASS =
+  "pointer-events-none relative z-[6] mx-auto w-[min(100%,94cqi)] shrink-0 [container-type:inline-size]"
+
+function mobileStripLayout() {
+  return {
+    wrapClass: MOBILE_STRIP_WRAP_CLASS,
+    showStripFrameImage: true,
+    unifiedFrameSrc: LEGACY_STRIP_SRC,
+    unifiedStripClass: MOBILE_STRIP_CLASS,
+    unifiedFrameImageClass: UNIFIED_FRAME_IMAGE_CLASS,
+    unifiedStatusClass: LEGACY_STATUS_CLASS_BOARD,
+    unifiedDigitsClass: LEGACY_DIGITS_CLASS_BOARD,
+  }
+}
+
+function resolveEmbeddedChatTimerLayout(embeddedLayout = "board") {
+  if (embeddedLayout === "mobile") {
+    return mobileStripLayout()
+  }
+
+  if (embeddedLayout === "timebar") {
+    return {
+      stackInset: mapTimebarTimerStackInset(EMBEDDED_TIMER_STACK_INSET_FRAME_TIMEBAR),
+      wrapClass: LEGACY_STRIP_WRAP_CLASS_TIMEBAR,
+      showStripFrameImage: true,
+      unifiedFrameSrc: LEGACY_STRIP_SRC,
+      unifiedStripClass: LEGACY_STRIP_CLASS_TIMEBAR,
+      unifiedFrameImageClass: UNIFIED_FRAME_IMAGE_CLASS,
+      unifiedStatusClass: LEGACY_STATUS_CLASS_TIMEBAR,
+      unifiedDigitsClass: LEGACY_DIGITS_CLASS_TIMEBAR,
     }
   }
 
-  return {
-    stackInset: mapFrameInsetToLayoutBox(EMBEDDED_TIMER_STACK_INSET_FRAME_BOARD),
-    wrapClass: EMBEDDED_TIMER_WRAP_CLASS,
-    phaseHeaderWrapClass: EMBEDDED_PHASE_HEADER_WRAP_BOARD,
-    phaseHeaderTitleClass: null,
-    phaseHeaderPlateSrc: INGAME_TIMEBAR_ASSETS.phaseHeaderPlate,
-    timerBodyClass: EMBEDDED_TIMER_BODY_BOARD,
-    timerDigitsClass: null,
-    timerMarkerClass: null,
+  if (INGAME_CHAT_USE_UNIFIED_PANEL) {
+    if (embeddedLayout === "closeup") return chatPanelHeaderLayout("closeup")
+    return chatPanelHeaderLayout("board")
   }
+
+  if (embeddedLayout === "tribunal") {
+    return legacyStripLayout("board")
+  }
+
+  if (embeddedLayout === "closeup") {
+    return legacyStripLayout("closeup")
+  }
+
+  return legacyStripLayout("board")
+}
+
+/**
+ * @param {"board" | "closeup" | "tribunal" | "timebar" | "mobile"} [embeddedLayout]
+ */
+export function getEmbeddedChatTimerLayout(embeddedLayout = "board") {
+  return resolveEmbeddedChatTimerLayout(embeddedLayout)
 }

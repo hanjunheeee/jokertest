@@ -1,10 +1,14 @@
 // 판 끝 처리기·판 없음 응답 판단과 판 정리 후 이동 만들기
 // 방 이벤트 처리·스냅샷 묻기·나가기 훅이 사용
 
-// 판 끝 알림이 지금 판 것일 때만 정리함
-export function createGameEndedHandler({ getCurrentGameId, finalize }) {
+// 판 끝 알림이 지금 판 것일 때만 정리함 (대기방·목록에 있을 땐 이동·방 비우기 안 함)
+export function createGameEndedHandler({ getCurrentGameId, finalize, shouldFinalize, onIgnore }) {
   return (payload) => {
     if (!payload || payload.gameId !== getCurrentGameId()) return
+    if (typeof shouldFinalize === "function" && !shouldFinalize()) {
+      onIgnore?.(payload)
+      return
+    }
     finalize()
   }
 }

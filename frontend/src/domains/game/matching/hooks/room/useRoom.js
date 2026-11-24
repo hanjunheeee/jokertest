@@ -1,11 +1,11 @@
 // 대기방 훅 조립: 방 확인·방송 반영·요청을 묶어 화면에 돌려줌
 // hooks/useMatchingRoom.js(입구)를 거쳐 useMatchingPage가 씀
-// 효과 순서(살아 있음 → 방 이벤트 → 방 확인 → 계정·방 바뀜)는 원래 한 파일일 때와 같게 둠
+// 효과 순서(살아 있음 → 게임 시작 → 방 이벤트 → 방 확인 → 계정·방 바뀜)는 원래 한 파일일 때와 같게 둠
 import { useSyncExternalStore } from 'react'
 import { getSocket, subscribeSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useRoomCore } from './useRoomCore.js'
-import { useRoomEvents } from './useRoomEvents.js'
+import { useGameStartedSocket, useRoomEvents } from './useRoomEvents.js'
 import { useRoomCheck } from './useRoomCheck.js'
 import { useRoomReset } from './useRoomReset.js'
 import { useRoomRequests } from './useRoomRequests.js'
@@ -20,12 +20,13 @@ export function useRoom({ onRoomDeleted, onGameStarted }) {
 
   // 상태 묶음 만들고 효과 훅 차례로 붙임 (순서 바꾸지 않기)
   const ctx = useRoomCore()
-  useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarted })
+  useGameStartedSocket(ctx, { socket, onGameStarted })
+  useRoomEvents(ctx, { socket, roomId, onRoomDeleted })
   useRoomCheck(ctx, socket, onRoomDeleted)
   useRoomReset(ctx)
 
   // 요청 함수
-  const { deleteRoom, isDeleting, startGame, setReady } = useRoomRequests(ctx)
+  const { deleteRoom, isDeleting, startGame, setReady } = useRoomRequests(ctx, { onRoomDeleted })
   const { saveRoomSettings, verifyRoomSettingsResult } = useSettingsSave(ctx)
 
   return {

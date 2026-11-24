@@ -6,6 +6,7 @@ import { clearNodeHint, createBounceCounter, readNodeHint, setNodeHintAccount } 
 import { useAuthStore } from "../../domains/auth/store/auth.store.js";
 import { getSocket, setSocket, subscribeSocket } from "../socket/socketClient.js";
 import { refreshAccessToken } from "../api/client.js";
+import { registerMatchingFlowSocket } from "../../domains/game/matching/debug/matchingFlowTrace.js";
 import { API_BASE_URL } from "../env.js";
 import { SERVER_SHUTDOWN_NOTICE } from "../constants/connectionSocket.js";
 
@@ -194,6 +195,7 @@ export function useSocket() {
 
         // 다른 영역도 socketClient.js로 같은 소켓을 꺼내 씀 (이 훅의 돌려주는 값도 여기서 바뀜)
         setSocket(socket);
+        registerMatchingFlowSocket(socket);
 
         // 강제 끊김·점검 안내·재인증·WRONG_NODE 받기 시작
         const stopHandlers = startConnectionHandlers(socket, logout);

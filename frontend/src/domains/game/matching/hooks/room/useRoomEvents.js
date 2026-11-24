@@ -1,5 +1,5 @@
 // 방 안 방송 받아서 대기방 상태에 반영
-// hooks/room/useRoom이 씀, 방에 있을 때만 붙고 소속이 바뀌면(eventGen) 다시 붙음
+// hooks/room/useRoom이 씀: game_started는 방 id 없어도 붙이고, 나머지는 방 있을 때만
 // 옛 방·옛 소속·옛 설정 버전 이벤트는 버리고, 판정이 애매하면 방을 다시 확인함
 import { useEffect } from 'react'
 import { getSocket } from '@/shared/socket/socketClient.js'
@@ -9,30 +9,124 @@ import { useAuthStore } from '@/domains/auth/store/auth.store'
 import { dispatchSfxEvent } from '@/shared/hooks/useSfxRuntime.js'
 import { READY_EVENT, classifyReady } from '../../utils/roomVersion.js'
 import { roomSfx, startSfx } from '../../utils/roomSfx.js'
-import { onRoomEvents } from '../../socket/events.js'
+import { onGameStarted as subscribeGameStarted, onRoomEvents } from '../../socket/events.js'
+import { traceMatchingFlow } from '../../debug/matchingFlowTrace.js'
 
-// 방 안 방송 받기 효과
-export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarted }) {
+function createReceiptGuard(socket, ctx) {
+  const attachedSocket = socket
+  const attachedUuid = useAuthStore.getState().user?.uuid ?? null
+  const attachedMembership = ctx.memberGenRef.current
+  let owned = true
+  const isCurrent = () =>
+    owned
+    && attachedSocket === getSocket()
+    && (useAuthStore.getState().user?.uuid ?? null) === attachedUuid
+    && ctx.memberGenRef.current === attachedMembership
+  const release = () => {
+    owned = false
+  }
+  return { isCurrent, release }
+}
+
+// game_started: room_deleted 직후 memberGen이 올라가도 같은 소켓·계정이면 받음
+function createGameStartReceiptGuard(socket) {
+  const attachedSocket = socket
+  const attachedUuid = useAuthStore.getState().user?.uuid ?? null
+  let owned = true
+  const isCurrent = () =>
+    owned
+    && attachedSocket === getSocket()
+    && (useAuthStore.getState().user?.uuid ?? null) === attachedUuid
+  const release = () => {
+    owned = false
+  }
+  return { isCurrent, release }
+}
+
+// 게임 시작 방송: 방 확인이 방을 먼저 비운 뒤에도 받게 소켓만 있으면 붙임
+export function useGameStartedSocket(ctx, { socket, onGameStarted }) {
   useEffect(() => {
-    // 소켓·방 없으면 안 붙음
-    if (!socket || !roomId) return
+    if (!socket) {
+      traceMatchingFlow("game_started_subscribe_skip", { reason: "no_socket" })
+      return undefined
+    }
+
+    const { clearRoom } = useMatchingStore.getState()
+    const { applyVerified, clearStart } = ctx
+    const { isCurrent, release } = createGameStartReceiptGuard(socket)
+    const attachedSocketId = socket.id ?? null
+    const memberGen = ctx.memberGenRef.current
+    const eventGen = ctx.eventGen
+
+    traceMatchingFlow("game_started_subscribe", {
+      socketId: attachedSocketId,
+      memberGen,
+      eventGen,
+    })
+
+    const handleStarted = (payload) => {
+      const gameIdInPayload = payload?.gameId ?? payload?.state?.id ?? null
+      traceMatchingFlow("game_started_event", {
+        gameIdInPayload,
+        memberGen: ctx.memberGenRef.current,
+        eventGen: ctx.eventGen,
+        socketId: socket.id ?? null,
+        attachedSocketId,
+        sameSocket: getSocket() === socket,
+      })
+      if (!isCurrent()) {
+        traceMatchingFlow("game_started_ignored", {
+          reason: "receipt_guard",
+          gameIdInPayload,
+          attachedSocketId,
+          currentSocketId: getSocket()?.id ?? null,
+          uuid: useAuthStore.getState().user?.uuid ?? null,
+        })
+        return
+      }
+      useMatchingStore.getState().clearLocalRoomTrust()
+      clearStart()
+      const { hostUuid, roomId: matchingRoomId } = useMatchingStore.getState()
+      traceMatchingFlow("game_started_apply_before", {
+        gameIdInPayload,
+        matchingRoomId,
+        hostUuid,
+      })
+      useInGameStore.getState().setGamePayload({ ...payload, hostUuid })
+      applyVerified(clearRoom)
+      const gameId = useInGameStore.getState().gameId
+      traceMatchingFlow("game_started_apply_after", {
+        gameId,
+        matchingRoomIdAfter: useMatchingStore.getState().roomId,
+        isInRoom: useMatchingStore.getState().isInRoom,
+      })
+      onGameStarted?.(payload)
+      traceMatchingFlow("game_started_onGameStarted_called", { gameId })
+
+      const sfx = startSfx(gameId, payload, useAuthStore.getState())
+      if (sfx) dispatchSfxEvent(sfx)
+    }
+
+    const off = subscribeGameStarted(socket, handleStarted)
+    return () => {
+      traceMatchingFlow("game_started_unsubscribe", { socketId: attachedSocketId, eventGen })
+      release()
+      off()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, ctx.eventGen, onGameStarted])
+}
+
+// 방 안 나머지 방송 (입장·퇴장·준비 등) — roomId 있을 때만
+export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted }) {
+  useEffect(() => {
+    if (!socket || !roomId) return undefined
 
     const { addPlayer, removePlayer, updateHost, setPlayerReady, clearRoom, applyRoomSettings } =
       useMatchingStore.getState()
-    const { memberGenRef, readyAggRef, bumpRef, resync, applyVerified, clearStart } = ctx
+    const { readyAggRef, bumpRef, resync, applyVerified } = ctx
+    const { isCurrent, release } = createReceiptGuard(socket, ctx)
 
-    // 붙인 소켓·계정·소속이 그대로일 때만 반영
-    const attachedSocket = socket
-    const attachedUuid = useAuthStore.getState().user?.uuid ?? null
-    const attachedMembership = memberGenRef.current
-    let owned = true
-    const isCurrent = () =>
-      owned
-      && attachedSocket === getSocket()
-      && (useAuthStore.getState().user?.uuid ?? null) === attachedUuid
-      && memberGenRef.current === attachedMembership
-
-    // 같은 방 인스턴스·서버 부팅 방송인지 (값이 안 오면 통과)
     const isSameInstance = ({ roomInstanceId, bootEpoch }) => {
       const identity = useMatchingStore.getState()
       if (typeof roomInstanceId === "string" && typeof identity.roomInstanceId === "string"
@@ -42,13 +136,11 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       return true
     }
 
-    // 반영하고 방 반영 세대 올림 (확인 중이던 요청은 다시 시작)
     const apply = (fn) => {
       fn()
       bumpRef.current?.()
     }
 
-    // 입장: 사람 넣음
     const handleJoined = ({ player, canStart, roomId: eventRoomId, roomInstanceId, bootEpoch }) => {
       if (!isCurrent()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return
@@ -58,7 +150,6 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       apply(() => addPlayer(player, canStart))
     }
 
-    // 퇴장: 같은 방·같은 방 인스턴스·서버 부팅이고, 소속 id가 오면 지금 앉은 그 사람일 때만
     const handleLeft = ({ uuid, canStart, membershipId, roomId: eventRoomId, roomInstanceId, bootEpoch }) => {
       if (!isCurrent()) return
       if (eventRoomId !== undefined && eventRoomId !== roomId) return
@@ -68,11 +159,17 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
         if (!seated) return
         if (typeof seated.membershipId === "string" && seated.membershipId !== membershipId) return
       }
+      const myUuid = useAuthStore.getState().user?.uuid ?? null
+      if (myUuid && uuid === myUuid) {
+        traceMatchingFlow("room_self_left_event", { roomId, eventRoomId })
+        applyVerified(clearRoom)
+        onRoomDeleted?.({ reason: "self_left_room", roomId })
+        return
+      }
       readyAggRef.current += 1
       apply(() => removePlayer(uuid, canStart))
     }
 
-    // 방장 바뀜: 같은 방 인스턴스·서버 부팅일 때만, 설정 버전이 다르면 방 다시 확인
     const handleHost = ({
       hostUuid, canStart, roomId: eventRoomId, settingsVersion, roomInstanceId, bootEpoch,
     }) => {
@@ -84,13 +181,11 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       if (settingsVersion !== undefined && settingsVersion !== known) resync()
     }
 
-    // 설정 바뀜: 지금 버전보다 새것만 반영
     const handleSettings = (payload) => {
       if (!isCurrent()) return
       if (!payload || payload.roomId !== roomId) return
       const known = useMatchingStore.getState().settingsVersion
       const incoming = payload.settingsVersion
-      // 둘 다 버전 숫자일 때 같거나 옛것이면 버림 (숫자 아니면 그냥 반영)
       if (Number.isSafeInteger(incoming) && Number.isSafeInteger(known)) {
         if (incoming < known) return
         if (incoming === known) return
@@ -99,7 +194,6 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       apply(() => applyRoomSettings(payload))
     }
 
-    // 준비 바뀜: 옛것이면 버림, 더 새 설정이면 방 다시 확인, 반영하면 효과음
     const handleReady = ({
       uuid, isReady, canStart, sfxEvent, roomId: eventRoomId, settingsVersion, readyRevision,
     }) => {
@@ -117,25 +211,13 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       if (sfx) dispatchSfxEvent(sfx)
     }
 
-    // 방 삭제: 방 비우고 화면에 알림
     const handleDeleted = () => {
       if (!isCurrent()) return
+      const trustUntil = useMatchingStore.getState().roomLocalTrustUntil
+      const roomId = useMatchingStore.getState().roomId
+      traceMatchingFlow("room_deleted_event", { roomId, trustUntil })
       applyVerified(clearRoom)
-      onRoomDeleted?.()
-    }
-
-    // 게임 시작: 판 정보 넣고 방 비운 뒤 화면 넘김, 시작 효과음
-    const handleStarted = (payload) => {
-      if (!isCurrent()) return
-      clearStart()
-      const { hostUuid } = useMatchingStore.getState()
-      useInGameStore.getState().setGamePayload({ ...payload, hostUuid })
-      applyVerified(clearRoom)
-      onGameStarted?.(payload)
-
-      const gameId = useInGameStore.getState().gameId
-      const sfx = startSfx(gameId, payload, useAuthStore.getState())
-      if (sfx) dispatchSfxEvent(sfx)
+      onRoomDeleted?.({ reason: "room_deleted_event", trustUntil, roomId })
     }
 
     const off = onRoomEvents(socket, {
@@ -144,15 +226,13 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted, onGameStarte
       host: handleHost,
       ready: handleReady,
       deleted: handleDeleted,
-      started: handleStarted,
       settings: handleSettings,
     })
 
-    // 떠날 때 옛 핸들러 반영 막고 뗌
     return () => {
-      owned = false
+      release()
       off()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, roomId, ctx.eventGen, onRoomDeleted, onGameStarted])
+  }, [socket, roomId, ctx.eventGen, onRoomDeleted])
 }

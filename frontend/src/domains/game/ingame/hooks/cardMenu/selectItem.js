@@ -18,15 +18,15 @@ function consumeRequest(r) {
 }
 
 // r: 카드 메뉴 훅의 ref 묶음, generation: 항목을 만들 때의 메뉴 세대
-export function selectItem(r, { targetId, kind, generation, closeMenu, bumpPending }) {
+export function selectItem(r, { targetId, kind, generation, closeMenu, bumpPending, fromRoster = false }) {
   // 잠김·대기 중·내려감·다른 카드·옛 세대·조작 막힘·판 끝이면 무시
   if (r.lockRef.current) return
   if (r.pendingRef.current !== null) return
   if (!r.mountedRef.current) return
   const live = r.latestContextRef.current
   if (!live) return
-  if (r.openPlayerIdRef.current !== targetId) return
-  if (generation !== r.generationRef.current) return
+  if (!fromRoster && r.openPlayerIdRef.current !== targetId) return
+  if (!fromRoster && generation !== r.generationRef.current) return
   if (live.interactionBlocked) return
   if (live.gameState?.phase === "ENDED") return
 
@@ -76,6 +76,13 @@ export function selectItem(r, { targetId, kind, generation, closeMenu, bumpPendi
   r.requestIdRef.current = requestId
   if (kind === KINDS.DAY_VOTE) live.setSelectedDayVoteTargetId(targetId)
   else live.setSelectedNightTargetId(targetId)
-  r.pendingRef.current = { kind, targetId, requestId, generation, scope: liveScope }
+  r.pendingRef.current = {
+    kind,
+    targetId,
+    requestId,
+    generation: r.generationRef.current,
+    scope: liveScope,
+    fromRoster,
+  }
   bumpPending()
 }

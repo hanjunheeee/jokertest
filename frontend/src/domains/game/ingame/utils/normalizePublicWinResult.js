@@ -10,6 +10,13 @@ function normalizeGoldReward(value) {
   return Number.isInteger(value) && value > 0 ? value : 0
 }
 
+// null 또는 비지 않은 문자열만 허용 (없으면 칸 안 붙임)
+function normalizeOptionalAccountItemId(value) {
+  if (value === null) return null
+  if (typeof value === "string" && value.length > 0) return value
+  return undefined
+}
+
 // 직업 공개 목록: 모양이 틀리거나 같은 사람이 두 번이면 그 항목만 뺌
 function normalizeRoleReveals(rawReveals) {
   if (!Array.isArray(rawReveals)) return []
@@ -28,8 +35,8 @@ function normalizeRoleReveals(rawReveals) {
       continue
     }
     seenUuids.add(raw.uuid)
-    // 살아 있는 사람은 죽은 이유 비움
-    normalized.push({
+    // 살아 있는 사람은 죽은 이유 비움, 프로필 사진·테두리는 왔을 때만 붙임
+    const entry = {
       uuid: raw.uuid,
       nickname: raw.nickname,
       role: raw.role,
@@ -37,7 +44,12 @@ function normalizeRoleReveals(rawReveals) {
       alive: raw.alive,
       deathReason: raw.alive ? null : (raw.deathReason ?? null),
       goldReward: normalizeGoldReward(raw.goldReward),
-    })
+    }
+    const photoId = normalizeOptionalAccountItemId(raw.accountProfilePhotoId)
+    if (photoId !== undefined) entry.accountProfilePhotoId = photoId
+    const borderId = normalizeOptionalAccountItemId(raw.accountProfileBorderId)
+    if (borderId !== undefined) entry.accountProfileBorderId = borderId
+    normalized.push(entry)
   }
   return normalized
 }

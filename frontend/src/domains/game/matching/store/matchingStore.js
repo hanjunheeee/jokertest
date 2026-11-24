@@ -1,6 +1,8 @@
 // 대기방 상태 저장소: 지금 방·사람·방장·설정, 빠른 매칭 찾는 중 표시
 // 대기방·mode·setup·result 훅, 인게임·로비 초대 수락·효과음 런타임이 씀
 import { create } from 'zustand'
+import { normalizeRoomPayload } from '../utils/normalizeRoomPayload.js'
+import { LOCAL_ROOM_TRUST_MS, ROOM_RECOVER_SUPPRESS_MS } from '../constants/roomTiming.js'
 
 // 이 계정이 지금 방에 앉은 소속 id (없으면 null)
 export function selectRoomMembershipId(state, uuid) {
@@ -59,23 +61,40 @@ export const useMatchingStore = create((set) => ({
     // 방 반영 횟수
     roomRevision: 0,
 
+    // 방 만든 직후 서버 확인 전까지 목록으로 튕기지 않게 (타임스탬프)
+    roomLocalTrustUntil: 0,
+
+    // 나가기·삭제 직후 멀티플레이 복구가 옛 방으로 다시 끌어오지 않게 (타임스탬프)
+    roomRecoverSuppressUntil: 0,
+
     // 빠른 매칭 찾기 켜기·끄기
     startSearch: () => set({ isSearching: true}),
     stopSearch: () => set({isSearching: false}),
 
     // 확인된 방 통째로 넣기 (안 온 값은 기본값)
     // 방 이름은 같은 방이면 안 바뀜 → 이번 값에 title 칸이 없어도 같은 방이면 앞 이름을 둠 (다른 방이면 지움)
-    setRoom: ({
-        roomId, roomCode, players, hostUuid, canStart = false,
-        accessType = null, settings = null, settingsVersion = null,
-        roomInstanceId = null, bootEpoch = null, title = null, minPlayers = null,
-    }) =>
+    // roomId/id 등 필드 이름 차이는 normalizeRoomPayload가 맞춤, title·minPlayers는 받은 값에서 따로 꺼냄
+    setRoom: (raw) => {
+        const room = normalizeRoomPayload(raw)
+        if (!room) return
+        const title = raw.title ?? null
+        const minPlayers = raw.minPlayers ?? null
         set((s) => ({
-            isSearching: false, isInRoom: true, roomId, roomCode, players, hostUuid, canStart,
-            title: title ?? (s.isInRoom && s.roomId === roomId ? s.title : null),
-            accessType, settings, settingsVersion, roomInstanceId, bootEpoch, minPlayers,
+            isSearching: false, isInRoom: true, ...room,
+            title: title ?? (s.isInRoom && s.roomId === room.roomId ? s.title : null),
+            minPlayers,
             roomRevision: s.roomRevision + 1,
-        })),
+        }))
+    },
+
+    // 방 만들기·복구 직후 잠깐 로컬 방 상태를 믿음
+    markLocalRoomTrust: () =>
+        set({ roomLocalTrustUntil: Date.now() + LOCAL_ROOM_TRUST_MS }),
+
+    clearLocalRoomTrust: () => set({ roomLocalTrustUntil: 0 }),
+
+    suppressRoomRecover: (durationMs = ROOM_RECOVER_SUPPRESS_MS) =>
+        set({ roomRecoverSuppressUntil: Date.now() + durationMs }),
 
     // 설정 바뀜 방송 반영: 온 값만 바꾸고 나머지는 그대로 둠
     applyRoomSettings: ({ settings, settingsVersion, accessType, players, canStart, hostUuid }) =>
@@ -128,6 +147,7 @@ export const useMatchingStore = create((set) => ({
             canStart: false, minPlayers: null,
             roomInstanceId: null, bootEpoch: null,
             accessType: null, settings: null, settingsVersion: null,
+            roomLocalTrustUntil: 0,
             roomRevision: s.roomRevision + 1,
         })),
 }))

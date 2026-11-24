@@ -10,5 +10,18 @@ export const CHECK_TIMEOUT_MS = 5000
 export const PENDING_RETRY_MS = 700
 export const PENDING_MAX_RETRIES = 3
 
+// 클라에는 방이 있는데 서버가 아직 room:null인 경우 (방 만든 직후 등) 다시 묻기
+export const EMPTY_ROOM_RETRY_MS = 350
+export const EMPTY_ROOM_MAX_RETRIES = 8
+
+// 방 만든 직후 서버 get_current_room이 잠깐 비어도 목록으로 안 보냄 (ms)
+export const LOCAL_ROOM_TRUST_MS = 20000
+
+// 방 나가기·삭제 직후 서버가 잠깐 옛 방을 돌려줘도 목록 복구(대기방 재이동) 안 함 (ms)
+export const ROOM_RECOVER_SUPPRESS_MS = 8000
+
 // 방 확인 실패 뒤 조용히 다시 확인하는 간격
 export const FAILED_RECHECK_MS = 5000
+
+// 소켓 끊김 후에도 로컬에만 방이 남아 있을 때 로비로 보내기 전 대기 (서버 유예 15초 + 여유)
+export const MATCHING_DISCONNECT_EXIT_MS = 20_000

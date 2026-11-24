@@ -21,7 +21,19 @@ function buildPublicWinResult(session) {
     return { ...session.winResult, reveals: buildRoleReveals(session) }
 }
 
-// 전원 역할·팀·생존·죽은 이유·받은 판 골드 공개 (탈주·점검 강제 종료면 골드 0, DB 안 봄)
+// 계정 프로필 사진·테두리 (게임 시작 시점 loadout, 없으면 null)
+function buildRevealProfileFields(player) {
+    return {
+        ...(Object.hasOwn(player, 'accountProfilePhotoId')
+            ? { accountProfilePhotoId: player.accountProfilePhotoId }
+            : {}),
+        ...(Object.hasOwn(player, 'accountProfileBorderId')
+            ? { accountProfileBorderId: player.accountProfileBorderId }
+            : {}),
+    }
+}
+
+// 전원 역할·팀·생존·죽은 이유·받은 판 골드·프로필 사진·테두리 공개 (탈주·점검 강제 종료면 골드 0, DB 안 봄)
 function buildRoleReveals(session) {
     return [...session.players.values()].map((player) => ({
         uuid: player.uuid,
@@ -31,6 +43,7 @@ function buildRoleReveals(session) {
         alive: player.alive,
         deathReason: player.alive ? null : (player.deathReason ?? null),
         goldReward: resolveGameGoldReward(session, player),
+        ...buildRevealProfileFields(player),
     }))
 }
 

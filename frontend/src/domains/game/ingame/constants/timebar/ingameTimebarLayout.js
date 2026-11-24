@@ -3,7 +3,7 @@
 
 // 바 자리(오른쪽 위)와 세로 쌓기, 보드·옆 패널·재판 연출보다 위·전면 덮개보다 아래
 export const POSITION_CLASS =
-  "pointer-events-auto absolute top-[clamp(0.45rem,1.8vh,1.1rem)] right-[clamp(0.35rem,1.2cqw,0.85rem)] z-[58] w-[clamp(18rem,38cqw,30rem)] [container-type:inline-size]"
+  "pointer-events-auto absolute top-[clamp(0.85rem,2.55vh,1.5rem)] right-[clamp(0.35rem,1.2cqw,0.85rem)] z-[58] w-[clamp(18rem,38cqw,30rem)] overflow-visible [container-type:inline-size]"
 
 export const STACK_CLASS =
   "flex flex-col items-stretch gap-[clamp(0.3rem,1.2cqi,0.55rem)]"
@@ -32,13 +32,12 @@ export const NODE_GAP_CLASS =
 
 export const TRACK_NODES_LAYER_CLASS = "z-[5]"
 
-// 지금 단계 위 화살표 (접힘·확대), 타이머 숫자보다 위 층
+// 지금 단계 노드 아래 화살표 (위를 가리킴 — 명패+타이머에 가리지 않게)
 export const ARROW_SIZE_CLASS =
-  "pointer-events-none absolute bottom-[calc(100%+0.1rem)] left-1/2 z-[5] block h-auto w-[clamp(0.92rem,5.2cqi,1.42rem)] -translate-x-1/2 select-none"
+  "pointer-events-none absolute top-[calc(100%+0.12rem)] left-1/2 z-[7] block h-auto w-[clamp(0.92rem,5.2cqi,1.42rem)] -translate-x-1/2 rotate-180 select-none"
 
-// 확대 틀도 접힘과 같은 바 폭 기준이라 최대값을 키워야 실제로 커짐
-export const EXPANDED_ARROW_SIZE_CLASS =
-  "pointer-events-none absolute bottom-[calc(100%+0.08rem)] left-1/2 z-[5] block h-auto w-[clamp(0.88rem,4.6cqi,1.38rem)] -translate-x-1/2 select-none"
+// @deprecated 확대 틀 제거됨
+export const EXPANDED_ARROW_SIZE_CLASS = ARROW_SIZE_CLASS
 
 // 지금 단계 빛남
 export const NODE_ACTIVE_CLASS =

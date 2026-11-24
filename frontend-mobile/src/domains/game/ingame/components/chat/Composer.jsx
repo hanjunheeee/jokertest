@@ -9,6 +9,14 @@ import {
     NIGHT_CHAT_CLOSED_TEXT,
     ROLE_REVEAL_CHAT_LOCKED_TEXT,
 } from "@/domains/game/ingame/utils/inGameChatChannel.js"
+import { MOBILE_TALK_CHAT_ASSETS } from "@m/domains/game/ingame/constants/chat/mobileTalkChatAssets.js"
+import {
+    TALK_CHAT_COMPOSER_BAR_CLASS,
+    TALK_CHAT_COMPOSER_ROW_CLASS,
+    TALK_CHAT_TEXTAREA_OFFSET_CLASS,
+    TALK_CHAT_TEXTAREA_WRAP_CLASS,
+} from "@m/domains/game/ingame/constants/chat/mobileTalkChatLayout.js"
+import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import FrameSlice from "./FrameSlice.jsx"
 import SendButton from "./SendButton.jsx"
 import StatusLine from "./StatusLine.jsx"
@@ -32,6 +40,7 @@ export default function Composer({
     withStatus = false,
     lift = true,
     locked = false,
+    variant = "classic",
 }) {
     const barRef = useRef(null)
     const textareaRef = useRef(null)
@@ -60,25 +69,43 @@ export default function Composer({
         send()
     }
 
+    const isTalk = variant === "talk"
+    const barClass = isTalk ? TALK_CHAT_COMPOSER_BAR_CLASS : COMPOSER_BAR_CLASS
+    const rowClass = isTalk ? TALK_CHAT_COMPOSER_ROW_CLASS : COMPOSER_ROW_CLASS
+
     return (
         <div
             ref={barRef}
-            className={COMPOSER_BAR_CLASS}
+            className={barClass}
             style={keyboardLift > 0 ? { transform: `translateY(-${keyboardLift}px)` } : undefined}
             data-chat-composer
+            data-chat-composer-variant={variant}
             data-chat-interactive
             inert={locked || undefined}
         >
-            <FrameSlice slice={FRAME_SLICE.composer} />
-            {withStatus ? <StatusLine status={status} error={error} placeStyle={DIVIDER_PLACE} /> : null}
-            <div className={COMPOSER_ROW_CLASS}>
+            {isTalk ? (
+                <PublicAsset
+                    src={MOBILE_TALK_CHAT_ASSETS.composerBar}
+                    alt=""
+                    className="pointer-events-none absolute inset-0 h-full w-full select-none object-fill"
+                />
+            ) : (
+                <>
+                    <FrameSlice slice={FRAME_SLICE.composer} />
+                    {withStatus ? <StatusLine status={status} error={error} placeStyle={DIVIDER_PLACE} /> : null}
+                </>
+            )}
+            <div className={rowClass}>
                 {closed ? (
                     <p role="status" className={NIGHT_CLOSED_TEXT_CLASS} data-night-chat-closed="">
                         {NIGHT_CHAT_CLOSED_TEXT}
                     </p>
                 ) : (
                     <>
-                        <div className="relative min-w-0 flex-1" onClick={() => textareaRef.current?.focus()}>
+                        <div
+                            className={isTalk ? TALK_CHAT_TEXTAREA_WRAP_CLASS : "relative min-w-0 flex-1"}
+                            onClick={() => textareaRef.current?.focus()}
+                        >
                             <textarea
                                 ref={textareaRef}
                                 rows={1}
@@ -89,11 +116,13 @@ export default function Composer({
                                 autoComplete="off"
                                 placeholder={roleRevealLocked ? ROLE_REVEAL_CHAT_LOCKED_TEXT : "TYPE HERE..."}
                                 aria-label="채팅 입력"
-                                className={TEXTAREA_CLASS}
+                                className={
+                                    isTalk ? `${TEXTAREA_CLASS} ${TALK_CHAT_TEXTAREA_OFFSET_CLASS}` : TEXTAREA_CLASS
+                                }
                                 disabled={roleRevealLocked}
                             />
                         </div>
-                        <SendButton onSend={send} disabled={roleRevealLocked} />
+                        <SendButton onSend={send} variant={variant} disabled={roleRevealLocked} />
                     </>
                 )}
             </div>

@@ -67,6 +67,10 @@ export default function InGameTribunalPresentationOverlay({
   onVoteGuilty,
   onVoteNotGuilty,
   chatProps = null,
+  showEmbeddedPhaseTimer = false,
+  embeddedPhaseTimerStatusLabel = null,
+  embeddedPhaseTimerRemainingRatio = 0,
+  embeddedPhaseTimerRemainingSec = null,
 }) {
   const reduceMotion = useReducedMotion()
   // 연출 동안 초점을 창 안으로 옮기고 가둠 (아래 화면은 잠겨 있음, Esc로는 안 닫힘)
@@ -179,7 +183,13 @@ export default function InGameTribunalPresentationOverlay({
                     animate={reduceMotion ? undefined : "visible"}
                     exit="hidden"
                   >
-                    <InGameTribunalPresentationChatPanel {...chatProps} />
+                    <InGameTribunalPresentationChatPanel
+                      {...chatProps}
+                      showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+                      embeddedPhaseTimerStatusLabel={embeddedPhaseTimerStatusLabel}
+                      embeddedPhaseTimerRemainingRatio={embeddedPhaseTimerRemainingRatio}
+                      embeddedPhaseTimerRemainingSec={embeddedPhaseTimerRemainingSec}
+                    />
                   </motion.div>
                 ) : null}
               </AnimatePresence>

@@ -9,6 +9,8 @@ import { getSocket, subscribeSocket } from "@/shared/socket/socketClient.js"
 import { onRoomList } from "../socket/rooms.js"
 import { usePublicRoomList } from "./usePublicRoomList.js"
 import { usePublicRoomJoin } from "./usePublicRoomJoin.js"
+import { ROOM_JOIN_ERROR_CODES } from "../constants/roomJoinMessages.js"
+import { recoverMatchingRoom } from "@/domains/game/matching/utils/recoverMatchingRoom.js"
 
 // 붙인 소켓에 목록 갱신·입장 결과·다시 연결 방송 붙이고 목록 새로 물음, 떼는 함수 돌려줌
 function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms, navigate }) {
@@ -33,8 +35,13 @@ function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms
     navigate("/game-matching")
   }
   // 입장 실패: 내가 보낸 입장 중일 때만 풀고 알림
-  const handleJoinFailed = (answer = {}) => {
+  const handleJoinFailed = async (answer = {}) => {
     if (!isCurrent()) return
+    if (answer.code === ROOM_JOIN_ERROR_CODES.ALREADY_IN_ROOM) {
+      clearJoin()
+      const recovered = await recoverMatchingRoom(navigate)
+      if (recovered) return
+    }
     failJoin(answer)
   }
   // 다시 연결되면 목록 새로 물음
@@ -63,6 +70,7 @@ function attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms
 export function usePublicRooms() {
   const navigate = useNavigate()
   const socket = useSyncExternalStore(subscribeSocket, getSocket, getSocket)
+  const isInRoom = useMatchingStore((s) => s.isInRoom)
 
   // 화면 떠남 표시 (목록 묻기·들어가기 둘 다 봄)
   const disposedRef = useRef(false)
@@ -80,6 +88,18 @@ export function usePublicRooms() {
     if (!socket) return undefined
     return attachRoomList(socket, { applyRoomList, clearJoin, failJoin, fetchRooms, navigate })
   }, [socket, fetchRooms, applyRoomList, navigate, clearJoin, failJoin])
+
+  // 방 만들기 직후 스토어만 비었을 때 서버 소속이면 대기방으로 복구
+  useEffect(() => {
+    if (!socket?.connected || isInRoom || disposedRef.current) return undefined
+    let cancelled = false
+    void recoverMatchingRoom((to, opts) => {
+      if (!cancelled && !disposedRef.current) navigate(to, opts)
+    }).then((recovered) => {
+      if (recovered && !cancelled && !disposedRef.current) clearJoin()
+    })
+    return () => { cancelled = true }
+  }, [socket, isInRoom, navigate, clearJoin])
 
   return { rooms, refreshRooms: fetchRooms, joinPublicRoom, isJoining }
 }

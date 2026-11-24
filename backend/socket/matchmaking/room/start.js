@@ -10,6 +10,7 @@ const { resolveRoleComposition } = require('../../../game-core/core/rules/roleCo
 const { hasPendingAdmission } = require('../admission/attempts')
 const { loadStartPalettes } = require('./startPalettes')
 const { launchGame } = require('./startLaunch')
+const { logMatchingFlow } = require('../debug/matchingFlowLog')
 
 // 프로필 읽는 사이 방장·명단·자리·준비·설정 버전이 그대로인지
 function isStartStillValid(room, hostUuid, playersAtCapture, versionAtCapture) {
@@ -84,11 +85,19 @@ async function captureStartProfiles(room, hostUuid, playersAtCapture, versionAtC
 async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSocketId) {
     if (typeof callback !== 'function') return
 
+    logMatchingFlow('start_game_received', {
+        uuid,
+        socketId: socket?.id,
+        roomId: payload?.roomId,
+        expectedSettingsVersion: payload?.expectedSettingsVersion,
+    })
+
     // 계정의 지금 소켓인지 (새 탭에 밀린 옛 소켓 막기, 확인 함수 없으면 통과), 기다린 뒤 한 번 더 봄
     const isCanonicalSocket = () =>
         typeof getCurrentSocketId !== 'function' || getCurrentSocketId(uuid) === socket?.id
     const requestFailure = checkStartRequest(uuid, payload, isCanonicalSocket)
     if (requestFailure) {
+        logMatchingFlow('start_game_rejected', { uuid, ...requestFailure })
         callback(requestFailure)
         return
     }
@@ -108,10 +117,12 @@ async function handleStartGame(io, socket, uuid, payload, callback, getCurrentSo
     }
     const captureFailure = checkAfterCapture({ socket, uuid, roomId, room, captured, playersAtCapture, expectedSettingsVersion, isCanonicalSocket })
     if (captureFailure) {
+        logMatchingFlow('start_game_capture_rejected', { uuid, roomId, ...captureFailure })
         callback(captureFailure)
         return
     }
 
+    logMatchingFlow('start_game_launch', { uuid, roomId })
     launchGame(io, room, roomId, captured, callback)
 }
 

@@ -1,5 +1,5 @@
 // 대기방 가운데 판: 위 줄(방장 버튼·초대코드 공유) + 매칭 팝업 틀 그림(제목·안내 글·자리 그림·기다림 글)
-// GameMatchingPage가 씀, 틀·글·자리는 데스크톱 MatchingPopupPanel·MatchingPopupContent 그대로 (아래 버튼 줄만 바닥으로 뺌)
+// GameMatchingPage가 씀, 틀·글·자리는 데스크톱 MatchingPopupPanel·MatchingPopupContent 그대로 (버튼 줄은 틀 바로 아래 ActionBar)
 import { motion } from "framer-motion"
 import { GAME_MATCHING_ASSETS, MATCHING_POPUP_COPY } from "@/domains/game/matching/constants/gameMatchingAssets.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"

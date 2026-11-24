@@ -1,6 +1,16 @@
 // 알림 창 Tailwind 클래스 모음 (바탕·틀·항목·버튼·스크롤)
 // 알림 창 컴포넌트와 modal/ 아래 그리기 파일이 씀
 import { CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS } from "../../../shared/constants/customScrollbarStyles.js"
+import { FRIEND_PANEL_TRANSITION } from "../../lobby/constants/friendListStyle.js"
+
+// 친구 목록 패널·모바일 친구 시트와 같은 스르륵 올라오는 움직임
+export const NOTIFICATION_PANEL_TRANSITION = FRIEND_PANEL_TRANSITION
+
+export const NOTIFICATION_PANEL_MOTION = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: 10 },
+}
 import { MATCHING_BTN_FOCUS_CLASS, MATCHING_BTN_IMG_SCALE_CLASS } from "../../../shared/constants/matchingPopupStyles.js"
 
 // 바탕·창 틀·제목

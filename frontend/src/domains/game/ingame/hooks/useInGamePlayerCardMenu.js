@@ -122,6 +122,19 @@ export function useInGamePlayerCardMenu() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeMenu])
 
+  // 모바일 플레이어 목록 시트: 카드 열기와 고르기를 한 번에 하므로 세대·열린 카드 검사 없음
+  const runRosterSelect = useCallback((targetId, kind) => {
+    selectItem(r, {
+      targetId,
+      kind,
+      generation: generationRef.current,
+      closeMenu,
+      bumpPending: () => setPendingTick((tick) => tick + 1),
+      fromRoster: true,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeMenu])
+
   // 지금 세대로 항목 만들고 onSelect 붙임
   const getItems = useCallback((playerId) => {
     const live = latestContextRef.current
@@ -180,5 +193,6 @@ export function useInGamePlayerCardMenu() {
     getItems,
     registerAnchor,
     menuRef,
+    runRosterSelect,
   }
 }

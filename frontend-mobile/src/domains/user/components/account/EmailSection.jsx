@@ -4,23 +4,27 @@ import { useEmailChangeForm } from "@/domains/user/hooks/member/useEmailChangeFo
 import FormActions from "./FormActions.jsx"
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 import { LockIcon, MailIcon } from "@m/shared/ui/input/InputIcons.jsx"
+import {
+  ACCOUNT_FORM_TEXT_CLASS,
+  ACCOUNT_SECTION_CLASS,
+  ACCOUNT_SECTION_FORM_CLASS,
+} from "@m/domains/user/constants/accountFormLayout.js"
 import SectionTitle from "./SectionTitle.jsx"
 
-const CURRENT_CLASS = "break-all font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]"
+const CURRENT_CLASS = `${ACCOUNT_FORM_TEXT_CLASS} break-all font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]`
 // 글자 링크 색은 로그인 화면 글자 링크와 같은 짙은 호박색 (양피지 위에서 읽히게)
-const LINK_CLASS =
-  "inline-flex min-h-11 cursor-pointer items-center self-start border-0 bg-transparent px-1 font-subheading font-bold text-amber-950 underline underline-offset-2 app-text-scaled [--app-text-size:0.8rem] disabled:opacity-50"
+const LINK_CLASS = `${ACCOUNT_FORM_TEXT_CLASS} inline-flex min-h-7 cursor-pointer items-center border-0 bg-transparent px-0 font-subheading font-bold text-amber-950 underline underline-offset-2 app-text-scaled [--app-text-size:0.8rem] disabled:opacity-50`
 
 export default function EmailSection({ account, onChanged }) {
   const form = useEmailChangeForm({ account, onChanged })
   const codeStage = form.stage === "codeSent"
 
   return (
-    <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
+    <section className={ACCOUNT_SECTION_CLASS}>
       <SectionTitle>이메일 변경</SectionTitle>
       <p className={CURRENT_CLASS}>지금 이메일: {account?.email || "불러오는 중"}</p>
 
-      <form onSubmit={codeStage ? form.verifyCode : form.sendCode} className="flex w-full flex-col gap-1.5">
+      <form onSubmit={codeStage ? form.verifyCode : form.sendCode} className={ACCOUNT_SECTION_FORM_CLASS}>
         <InputSlot
           type="email"
           name="newEmail"

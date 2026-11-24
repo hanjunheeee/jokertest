@@ -4,8 +4,25 @@ import { useInGamePlayerCardMenu } from "@/domains/game/ingame/hooks/useInGamePl
 
 // 항목 없는 카드는 데스크톱처럼 안 열림, 같은 카드 다시 누르면 닫힘
 export function useCardSheet() {
-    const { openPlayerId, openMenu, closeMenu, getItems, registerAnchor, menuRef } = useInGamePlayerCardMenu()
+    const {
+        openPlayerId,
+        openMenu,
+        closeMenu,
+        getItems,
+        registerAnchor,
+        menuRef,
+        runRosterSelect,
+    } = useInGamePlayerCardMenu()
     const items = openPlayerId === null ? [] : getItems(openPlayerId)
 
-    return { targetId: openPlayerId, items, open: openMenu, close: closeMenu, registerAnchor, menuRef }
+    return {
+        targetId: openPlayerId,
+        items,
+        open: openMenu,
+        close: closeMenu,
+        registerAnchor,
+        menuRef,
+        getItems,
+        rosterSelect: runRosterSelect,
+    }
 }

@@ -15,11 +15,13 @@ import { useAppTextScaleSync } from "@/app/useAppTextScaleSync.js"
 import { useSfxRuntime } from "@/shared/hooks/useSfxRuntime.js"
 import GlobalBgmLayer from "@/shared/ui/GlobalBgmLayer.jsx"
 import ParchmentAlertHost from "@m/shared/ui/modal/parchment/ParchmentAlertHost.jsx"
+import ParchmentConfirmHost from "@m/shared/ui/modal/parchment/ParchmentConfirmHost.jsx"
 // 약관 재동의 창·새 버전 안내 띠 (라우터 바깥에 한 번만)
 import TermsReconsent from "@m/domains/auth/components/terms/TermsReconsent.jsx"
 import UpdateNotice from "@m/shared/ui/UpdateNotice.jsx"
 // 점검 큰 안내 (판 안·대기방·로비 어디서든)
 import MaintenanceNotice from "@m/domains/maintenance/MaintenanceNotice.jsx"
+import { registerMatchingRouterNavigate } from "@/domains/game/matching/utils/matchingRouterNavigate.js"
 
 export default function App() {
     // 라우터가 그려지기 전에 세션 확인 중으로 둠 (데스크톱 FE-010과 같게)
@@ -40,10 +42,16 @@ export default function App() {
         bootstrapSession({ getMe: getMeApi, getMyProfile: getMyProfileApi, store: useAuthStore })
     }, [])
 
+  useEffect(() => {
+    registerMatchingRouterNavigate((to, options) => router.navigate(to, options))
+    return () => registerMatchingRouterNavigate(null)
+  }, [])
+
     return (
         <>
             <GlobalBgmLayer />
             <ParchmentAlertHost />
+            <ParchmentConfirmHost />
             <RouterProvider router={router} />
             <TermsReconsent />
             <UpdateNotice router={router} />

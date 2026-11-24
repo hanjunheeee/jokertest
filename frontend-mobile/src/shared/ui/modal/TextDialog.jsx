@@ -1,5 +1,5 @@
 // 글 위주 가운데 창 (어두운 뒤판·밝은 양피지 창·제목, closable이 거짓이면 뒤판·Esc로 못 닫음)
-// 약관 전체 보기·재동의·탈퇴 확인·쿠폰 입력·새 버전 안내 창이 씀 (모바일)
+// 약관 전체 보기·재동의·탈퇴 확인·새 버전 안내 창이 씀 (모바일)
 import { motion } from "framer-motion"
 import SheetPortal from "@m/shared/ui/sheet/SheetPortal.jsx"
 import { BACKDROP_CLASS, PANEL_MOTION, WRAP_CLASS } from "./centerModalStyle.js"

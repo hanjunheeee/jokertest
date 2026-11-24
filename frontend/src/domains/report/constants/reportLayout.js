@@ -38,11 +38,13 @@ export const MESSAGE_CLASS = "mb-1 shrink-0 text-center font-subheading app-text
 export const MESSAGE_OK_CLASS = "text-[#e8f0dc]"
 export const MESSAGE_ERROR_CLASS = "text-[#ffb3a7]"
 
-// 아래 버튼 둘 (그림 깔고 글자)
-export const ACTIONS_CLASS = "mt-auto grid shrink-0 grid-cols-2 gap-[clamp(0.35rem,1.4cqi,0.6rem)]"
+// 아래 버튼 둘 (그림 비율 유지, 가운데 나란히)
+export const ACTIONS_CLASS =
+  "mt-auto flex shrink-0 flex-wrap items-center justify-center gap-[clamp(0.45rem,1.6cqi,0.75rem)]"
 export const ACTION_BTN_CLASS =
-  "interactive-scale group relative block w-full cursor-pointer border-0 bg-transparent p-0 leading-none disabled:cursor-default disabled:opacity-80"
-export const ACTION_BTN_IMG_CLASS = "block h-[2.6rem] w-full select-none object-fill"
+  "interactive-scale group relative block w-[clamp(6.5rem,25.5cqi,8.35rem)] shrink-0 cursor-pointer border-0 bg-transparent p-0 leading-none disabled:cursor-default disabled:opacity-80"
+export const ACTION_BTN_IMG_CLASS =
+  "block h-auto w-full select-none transition-transform duration-200 ease-out group-hover:scale-[1.03] group-active:scale-[0.97] group-disabled:transform-none"
 export const ACTION_BTN_LABEL_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[8%] text-center font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,2.3cqi,0.9rem)] font-bold leading-none text-[#f5f0e6] [text-shadow:0_1px_2px_rgba(0,0,0,0.85)]"
 

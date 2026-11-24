@@ -2,6 +2,7 @@
 // app/routes/index.jsx가 씀, 방 만들기·뒤로 가기는 데스크톱 useGameSetupPage 그대로
 import { useGameSetupPage } from "@/domains/game/setup/hooks/useGameSetupPage.js"
 import { useLobbyEntryCleanup } from "@/domains/game/shared/hooks/useLobbyEntryCleanup.js"
+import { useShellBackButton } from "@m/shared/layouts/mobileShellBack.jsx"
 import SetupBackground from "../components/SetupBackground.jsx"
 import SetupTopBar from "../components/top/SetupTopBar.jsx"
 import SetupPanel from "../components/SetupPanel.jsx"
@@ -15,11 +16,18 @@ export default function GameSetupPage() {
     initialFormState, formResetKey,
   } = useGameSetupPage()
 
+  // 뒤로 효과음은 useGameSetupPage가 직접 내서 sfxOwner (기본 취소음과 두 번 안 울리게)
+  useShellBackButton({
+    onClick: goBackToMultiplay,
+    label: "방 만들기에서 뒤로",
+    sfxOwner: true,
+  })
+
   return (
-    <div className="relative h-full w-full overflow-hidden bg-black">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
       <SetupBackground />
-      <div className="relative mx-auto flex h-full w-full max-w-2xl flex-col gap-2 px-3 pb-3 land:max-w-none land:px-4 land:pb-2">
-        <SetupTopBar visible={uiVisible} onBack={goBackToMultiplay} />
+      <div className="relative z-10 mx-auto flex min-h-0 flex-1 w-full max-w-2xl flex-col gap-2 px-3 pb-3 land:max-w-none land:px-4 land:pb-2">
+        <SetupTopBar visible={uiVisible} />
         <SetupPanel
           visible={uiVisible}
           isCreating={isCreating}

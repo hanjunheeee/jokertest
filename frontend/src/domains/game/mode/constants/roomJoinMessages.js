@@ -1,3 +1,8 @@
+// 방 목록·코드 입장 실패 코드 (서버 roomJoinErrors와 동일 문자열)
+export const ROOM_JOIN_ERROR_CODES = {
+  ALREADY_IN_ROOM: "ALREADY_IN_ROOM",
+}
+
 // 방 코드 입장 실패 안내 문구 (서버 실패 코드별)
 // hooks/useRoomInvitePage가 씀 (실패 코드별 문구·응답 없음 문구)
 export const JOIN_FAILURE_MSGS = {

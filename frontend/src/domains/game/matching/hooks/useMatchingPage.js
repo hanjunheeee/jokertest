@@ -1,16 +1,22 @@
 // 대기방 화면 훅: 방·강퇴·친구 초대·설정 편집 훅을 묶어 화면 값으로 돌려줌
 // GameMatchingPage가 씀(모바일도 같음), 판 끝나고 같은 방으로 돌아와도 처음 만든 방과 같은 길
 import { useCallback, useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useMatchingRoom } from "./useMatchingRoom"
 import { useMatchingRoomKick } from "./useMatchingRoomKick.js"
 import { useMatchingFriendInvite } from "./useMatchingFriendInvite.js"
 import { useSettingsEdit } from "./useSettingsEdit.js"
 import { useMatchingStore } from "../store/matchingStore"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { buildSlots } from "../utils/chunkPlayerSlots.js"
 import { leaveRoom } from "../socket/room.js"
 import { resolveMinStartPlayers, startNotReadyMessage, startShortageMessage } from "../constants/gameStartMessages.js"
+import { traceMatchingFlow } from "../debug/matchingFlowTrace.js"
+import { navigateToInGameFromMatching } from "../utils/navigateToInGame.js"
+import { shouldLeaveMatchingForInGame } from "../utils/shouldLeaveMatchingForInGame.js"
+import { matchingRoomExitMessage, shouldForceMatchingLobbyExit } from "../utils/matchingRoomExit.js"
+import { canStayOnMatchingPage as resolveCanStayOnMatchingPage } from "../utils/canStayOnMatchingPage.js"
 
 // 판 끝 뒤 방장 자리를 비워 둔 동안 자리 아래 안내 (방장 없으면 시작·설정·추방 단추도 아무에게 안 보임)
 const HOST_SEAT_RESERVED_MESSAGE =
@@ -28,6 +34,7 @@ function pickStartLockedReason({ isHost, lacksPlayers, someoneNotReady, partyCou
 // 대기방 화면 값·동작 묶음
 export function useMatchingPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const myUuid = useAuthStore((s) => s.user?.uuid)
 
   const [uiVisible, setUiVisible] = useState(false)
@@ -36,16 +43,85 @@ export function useMatchingPage() {
 
   const {
     isInRoom, players, roomId, roomCode, hostUuid, canStart, clearRoom,
-    accessType, settings, settingsVersion, title, minPlayers,
+    accessType, settings, settingsVersion, title, minPlayers, roomLocalTrustUntil,
   } = useMatchingStore()
   // 방장·내 준비 여부는 방 상태에서 계산
   const isHost = isInRoom && myUuid === hostUuid
   const myPlayer = players.find((player) => player.uuid === myUuid)
   const isReady = Boolean(myPlayer?.isReady)
 
-  // 방이 사라지면 목록으로, 게임 시작하면 인게임으로
-  const handleRoomDeleted = useCallback(() => navigate("/multiplay"), [navigate])
-  const handleGameStarted = useCallback(() => navigate("/ingame"), [navigate])
+  // 판이 이미 시작됐으면 대기방에서 인게임으로 넘김 (game_started·구독·ACK 보충이 같은 길)
+  const inGameId = useInGameStore((s) => s.gameId)
+  const inGameState = useInGameStore((s) => s.state)
+  const goInGameFromMatching = useCallback((source = "matching_page") => {
+    const { gameId, state } = useInGameStore.getState()
+    if (!shouldLeaveMatchingForInGame(gameId, state)) return
+    navigateToInGameFromMatching(navigate, { gameId, source })
+  }, [navigate])
+
+  // 방 목록으로 나감 (나간 까닭 글은 silent가 아니면 알림)
+  const exitToMultiplay = useCallback((meta) => {
+    useMatchingStore.getState().suppressRoomRecover()
+    if (useMatchingStore.getState().isInRoom) clearRoom()
+    const message = meta?.silent ? null : matchingRoomExitMessage(meta)
+    if (message) window.alert(message)
+    traceMatchingFlow("navigate_multiplay", meta ?? { reason: "exit_matching" })
+    navigate("/multiplay", { replace: true })
+  }, [navigate, clearRoom])
+
+  // 판 끝 뒤 파티 방 기다림은 없앤 쪽이라 awaiting은 늘 false
+  const canStayOnMatchingPage = resolveCanStayOnMatchingPage({
+    awaiting: false, isInRoom, roomId, players, myUuid, roomLocalTrustUntil,
+  })
+
+  // 방이 사라지면 목록으로, 판 id가 있으면 인게임으로
+  const handleRoomDeleted = useCallback((meta) => {
+    traceMatchingFlow("matching_page_room_deleted", {
+      ...meta,
+      inGameId: useInGameStore.getState().gameId,
+    })
+    const forceLobby = shouldForceMatchingLobbyExit(meta)
+    const { gameId: activeGameId, state: activeState } = useInGameStore.getState()
+    if (shouldLeaveMatchingForInGame(activeGameId, activeState)) {
+      traceMatchingFlow("matching_page_room_deleted_goto_ingame", { inGameId: activeGameId })
+      goInGameFromMatching()
+      return
+    }
+    const trustUntil = meta?.trustUntil ?? useMatchingStore.getState().roomLocalTrustUntil
+    if (!forceLobby && trustUntil > Date.now()) {
+      traceMatchingFlow("block_navigate_multiplay", { reason: "local_trust", meta })
+      return
+    }
+    exitToMultiplay(meta)
+  }, [goInGameFromMatching, exitToMultiplay])
+  const handleGameStarted = useCallback((payload) => {
+    traceMatchingFlow("matching_page_on_game_started", {
+      gameId: payload?.gameId ?? useInGameStore.getState().gameId,
+      reactPathname: location.pathname,
+      historyPathname: typeof window !== "undefined" ? window.location.pathname : "",
+    })
+    goInGameFromMatching()
+  }, [goInGameFromMatching, location.pathname])
+
+  // game_started 직후 navigate가 누락돼도 판이 생기면 대기방에서 인게임으로 넘김
+  useEffect(() => {
+    if (!shouldLeaveMatchingForInGame(inGameId, inGameState)) return
+    if (location.pathname !== "/game-matching") return
+    goInGameFromMatching()
+  }, [inGameId, inGameState, location.pathname, goInGameFromMatching])
+
+  // setGamePayload는 렌더 전에 올 수 있어 구독으로 즉시 이동
+  useEffect(() => {
+    let prevGameId = useInGameStore.getState().gameId
+    return useInGameStore.subscribe((state) => {
+      const nextGameId = state.gameId
+      if (nextGameId === prevGameId) return
+      prevGameId = nextGameId
+      if (!shouldLeaveMatchingForInGame(nextGameId, state.state)) return
+      if (window.location.pathname !== "/game-matching") return
+      goInGameFromMatching()
+    })
+  }, [goInGameFromMatching])
 
   // 방 확인·방송·요청
   const {
@@ -57,6 +133,31 @@ export function useMatchingPage() {
     onRoomDeleted: handleRoomDeleted,
     onGameStarted: handleGameStarted,
   })
+
+  // 방에 안 앉았는데 대기방 URL만 남은 경우 멀티플레이로 (퇴장·삭제 후 화면 고착 방지)
+  useEffect(() => {
+    if (canStayOnMatchingPage) return
+    if (location.pathname !== "/game-matching") return
+    if (roomLocalTrustUntil > Date.now()) return
+    traceMatchingFlow("matching_page_orphan_exit", {
+      roomLocalTrustUntil,
+      isInRoom,
+      roomId,
+      partyCount: players.length,
+    })
+    exitToMultiplay({ reason: "orphan_matching", silent: true })
+  }, [
+    canStayOnMatchingPage, location.pathname, roomLocalTrustUntil,
+    isInRoom, roomId, players.length, exitToMultiplay,
+  ])
+
+  // 판이 끝났는데 인게임 상태만 남아 있으면 대기방에서 정리 (game_ended는 이 경로에선 안 밀어줌)
+  useEffect(() => {
+    const { gameId, state } = useInGameStore.getState()
+    if (typeof gameId === "string" && gameId.length > 0 && state?.phase === "ENDED") {
+      useInGameStore.getState().clearGame()
+    }
+  }, [])
 
   // 강퇴 (방 확인 끝나야 가능, 줄 "추방"이 바로 강퇴)
   const {
@@ -96,11 +197,11 @@ export function useMatchingPage() {
   }, [])
 
   // 뒤로: 방 나가기 알리고 방 지운 뒤 목록으로
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
+    useMatchingStore.getState().suppressRoomRecover()
     leaveRoom()
-    clearRoom()
-    navigate("/multiplay")
-  }
+    exitToMultiplay({ reason: "user_back", silent: true })
+  }, [exitToMultiplay])
 
   // 준비 누르면 지금과 반대로 요청
   const toggleReady = () => setReady(!isReady)
@@ -136,6 +237,7 @@ export function useMatchingPage() {
 
   // 화면에 넘길 값 (canViewRoomCode·roomId·canStart·room* 셋은 페이지가 안 씀)
   return {
+    canStayOnMatchingPage,
     uiVisible,
     waitingMessage,
     roomCodeOpen: roomCodeOpen && canViewRoomCode,

@@ -5,9 +5,14 @@ import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"
 import FormActions from "./FormActions.jsx"
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 import { LockIcon } from "@m/shared/ui/input/InputIcons.jsx"
+import {
+  ACCOUNT_FORM_TEXT_CLASS,
+  ACCOUNT_SECTION_CLASS,
+  ACCOUNT_SECTION_FORM_CLASS,
+} from "@m/domains/user/constants/accountFormLayout.js"
 import SectionTitle from "./SectionTitle.jsx"
 
-const GUIDE_CLASS = "font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]"
+const GUIDE_CLASS = `${ACCOUNT_FORM_TEXT_CLASS} font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]`
 
 // 보낼 때 확인 소리 후 폼 처리로 넘김, 보내는 중엔 버튼 잠금
 // 소셜로만 가입한 계정은 현재 비번이 없어 늘 틀림 → 칸을 안 그림 (이메일 바꾸기·탈퇴 칸과 같은 기준)
@@ -21,7 +26,7 @@ export default function PasswordSection({ account, pwForm, handlePwChange, pwMsg
 
     if (account?.hasLocalPassword === false) {
         return (
-            <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
+            <section className={ACCOUNT_SECTION_CLASS}>
                 <SectionTitle>비밀번호 변경</SectionTitle>
                 <p className={GUIDE_CLASS}>소셜 로그인 계정은 비밀번호가 없습니다.</p>
             </section>
@@ -29,10 +34,10 @@ export default function PasswordSection({ account, pwForm, handlePwChange, pwMsg
     }
 
     return (
-        <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
+        <section className={ACCOUNT_SECTION_CLASS}>
             <SectionTitle>비밀번호 변경</SectionTitle>
 
-            <form onSubmit={handleSubmit} className="flex w-full flex-col gap-1.5">
+            <form onSubmit={handleSubmit} className={ACCOUNT_SECTION_FORM_CLASS}>
                 <InputSlot
                     name="currentPassword"
                     value={pwForm.currentPassword}

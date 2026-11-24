@@ -7,6 +7,7 @@ import {
   SIGNUP_HINT_TEXT_CLASS,
   MODE_SWITCH_CLASS,
   SUBMIT_BTN_CLASS,
+  SUBMIT_BTN_INTERACTION_CLASS,
   SUBMIT_BTN_WRAP_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import AuthImageButton from "@/domains/auth/components/AuthImageButton.jsx"
@@ -52,6 +53,7 @@ export default function SignupForm({
             src={LOGIN_ASSETS.signupButton}
             label="회원가입"
             className={SUBMIT_BTN_CLASS}
+            interactionClassName={SUBMIT_BTN_INTERACTION_CLASS}
             disabled={!canSubmitSignup}
           />
         </div>

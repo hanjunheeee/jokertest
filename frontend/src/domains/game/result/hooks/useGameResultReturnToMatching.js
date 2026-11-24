@@ -15,6 +15,11 @@ import { askRoom } from "@/domains/game/shared/socket/room.js"
 import { leaveRoom } from "@/domains/game/matching/socket/room.js"
 import { askSnapshot, returnToRoom } from "../socket/room.js"
 import { computeResultSecondsLeft, onResultClosed, readResultClosesAt } from "../socket/resultClose.js"
+import { resetInGameNavigationDedupe } from "@/domains/game/matching/utils/navigateToInGame.js"
+import {
+  beginBlockInGameNavFromResultReturn,
+  clearBlockInGameNavFromResultReturn,
+} from "@/domains/game/matching/utils/resultReturnInGameNavBlock.js"
 
 // "대기방으로" 실패 안내 (서버 거절 코드별, 모르는 코드는 서버 글 → 기본 글)
 const RETURN_FAILURE_MESSAGES = Object.freeze({
@@ -108,9 +113,12 @@ export function useGameResultReturnToMatching() {
       mountedRef.current && (useAuthStore.getState().user?.uuid ?? null) === accountId
 
     // 방에 들어감: 판 정보는 이때 지움 (실패하면 결과 화면이 그대로 남게)
+    // 인게임 이동 중복 막기 기록 지움, 방금 받은 방 값을 잠깐 믿게 표시 (대기방 화면이 옛 방 값으로 되돌리지 않게)
     const enterRoom = (room) => {
+      resetInGameNavigationDedupe()
       useInGameStore.getState().clearGame()
       useMatchingStore.getState().setRoom(room)
+      useMatchingStore.getState().markLocalRoomTrust?.()
       navigate("/game-matching", { replace: true })
     }
 
@@ -131,6 +139,9 @@ export function useGameResultReturnToMatching() {
     inFlightRef.current = true
     setIsReturning(true)
     setReturnError(null)
+    // 돌아가는 동안 대기방 → 인게임 자동 이동 막음 (끝난 판 값이 남아 /ingame ↔ /gameresult 오가는 것 막기)
+    resetInGameNavigationDedupe()
+    beginBlockInGameNavFromResultReturn()
     try {
       let response
       try {
@@ -156,6 +167,7 @@ export function useGameResultReturnToMatching() {
       }
       setReturnError(describeReturnFailure(response, readResultClosesAt(useInGameStore.getState().state)))
     } finally {
+      clearBlockInGameNavFromResultReturn()
       // 끝나면 누르는 중 표시 풂
       inFlightRef.current = false
       if (mountedRef.current) setIsReturning(false)

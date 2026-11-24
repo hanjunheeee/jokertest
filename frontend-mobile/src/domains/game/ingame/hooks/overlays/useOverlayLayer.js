@@ -10,6 +10,7 @@ import { useInGameNightPrivateResult } from "@/domains/game/ingame/hooks/useInGa
 import { useInGameOverlayStack } from "@/domains/game/ingame/hooks/useInGameOverlayStack.js"
 import { useInGameTribunalExpulsionPresentation } from "@/domains/game/ingame/hooks/useInGameTribunalExpulsionPresentation.js"
 import { useInGameResultNavigation } from "@/domains/game/ingame/hooks/useInGameResultNavigation.js"
+import { isWideChatLayout } from "@m/domains/game/ingame/hooks/chat/useWideChat.js"
 import { isTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 import { useOverlayBridge } from "./overlayBridge.js"
 import { useDeadChoice } from "./useDeadChoice.js"
@@ -55,7 +56,13 @@ export function useOverlayLayer() {
         },
     }
 
-    const { roleReveal, phaseEntrance, nightTurn, interactionBlocked } = useInGameOverlayStack({
+    const {
+        roleReveal,
+        phaseEntrance,
+        nightTurn,
+        entryPreparingActive,
+        interactionBlocked,
+    } = useInGameOverlayStack({
         deathRevealActive: expulsionBusy,
         dawnReportActive: dawnReportPending,
     })
@@ -74,10 +81,12 @@ export function useOverlayLayer() {
     })
 
     // 재판 연출 열림 조건 (문지기 컴포넌트와 같음)
+    // 세로 카톡형은 재판 중에도 채팅방·시트를 씀 → 화면 잠금은 전면 연출을 띄우는 넓은 배치에서만
     const tribunalOpen = isTribunalPresentationOpen(gameState)
+    const tribunalLocksSurface = tribunalOpen && isWideChatLayout()
 
     const surfaceLocked = interactionBlocked || nightPrivateResult.open || deadChoice.open
-        || dawnReport.open || tribunalOpen || tribunalExpulsion.open
+        || dawnReport.open || tribunalLocksSurface || tribunalExpulsion.open
 
     // 겹 창 닫는 신호: 화면이 잠기는 연출 + 밤 차례 안내 (밤 차례 안내는 화면을 안 잠그지만 "닫기" 단추가 시트에 가려짐)
     // 죽은 사람의 단계 안내는 저절로 닫히고 잠그지 않아서 여기 안 들어감 (죽은 사람 채팅·시트를 안 끊음)
@@ -87,6 +96,7 @@ export function useOverlayLayer() {
 
     return {
         players: gameState?.players ?? [],
+        entryPreparingActive,
         roleReveal,
         phaseEntrance,
         nightTurn,

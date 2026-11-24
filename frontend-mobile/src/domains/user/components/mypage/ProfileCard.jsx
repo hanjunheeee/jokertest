@@ -4,6 +4,7 @@
 import { useEffect } from "react"
 import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
 import { MY_PAGE_ASSETS } from "@/domains/user/constants/myPageAssets.js"
+import { MY_PAGE_PROFILE_ROOT_EXTRA } from "@m/domains/user/constants/myPageMobileLayout.js"
 import {
     BANNER_FRAME_IMG_CLASS,
     LABEL_TEXT_CLASS,
@@ -22,7 +23,7 @@ export default function ProfileCard({ profile }) {
     }, [])
 
     return (
-        <div className={`${ROOT_CLASS} mt-3 w-full`}>
+        <div className={`${ROOT_CLASS} w-full ${MY_PAGE_PROFILE_ROOT_EXTRA}`}>
             <PublicAsset src={MY_PAGE_ASSETS.myPageButtonFrame} alt="" className={BANNER_FRAME_IMG_CLASS} />
 
             <BannerPortrait as="div" />

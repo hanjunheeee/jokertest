@@ -22,8 +22,8 @@ function inputTypeOf(type, passwordToggle, passwordVisible) {
 // look = inputSlotLooks 이름 또는 같은 모양 객체 (한 화면만 쓰는 모양은 그 화면이 객체로 넘김)
 export default function InputSlot({
   look = "login", type = "text", name, value, onChange, placeholder, autoComplete, leadingIcon,
-  passwordToggle = false, disabled = false, inputMode, maxLength, inputTestId, ariaLabel, inputClassName = "",
-  datePlaceholderClassName = "",
+  passwordToggle = false, disabled = false, inputMode, inputTestId, ariaLabel, inputClassName = "",
+  datePlaceholderClassName = "", inputRef, autoCapitalize, maxLength,
 }) {
   const style = typeof look === "string" ? INPUT_SLOT_LOOKS[look] : look
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -47,15 +47,17 @@ export default function InputSlot({
             </span>
           ) : null}
           <input
+            ref={inputRef}
             type={inputType}
             name={name}
             value={value}
             onChange={onChange}
             placeholder={placeholder}
             autoComplete={autoComplete}
+            autoCapitalize={autoCapitalize}
+            maxLength={maxLength}
             disabled={disabled}
             inputMode={inputMode}
-            maxLength={maxLength}
             aria-label={style.namedByPlaceholder ? ariaLabel ?? placeholder : ariaLabel}
             data-testid={inputTestId}
             className={`${style.input} w-full ${toneOf(style, type, value)} ${inputClassName} ${

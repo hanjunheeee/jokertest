@@ -66,8 +66,9 @@ export function createExitConfirmController({ confirm, requestLeave, onDecision,
     }
   }
 
-  return () => {
-    if (!confirm(message)) {
+  return async () => {
+    const accepted = await confirm(message)
+    if (!accepted) {
       announce("ui-cancel")
       return false
     }

@@ -1,6 +1,7 @@
 // 로비 배경 (정지 그림 + 첫 진입 영상 + 영상 건너뛰기 칸)
 // LobbyPage가 맨 아래 층에 그림
 import { LOBBY_ASSETS } from "@/shared/constants/lobbyAssets.js"
+import { LOBBY_MOBILE_ASSETS } from "@m/domains/lobby/constants/lobbyMobileAssets.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { publicAsset } from "@/shared/utils/publicAsset.js"
 
@@ -11,7 +12,7 @@ const LAYER_CLASS = "pointer-events-none fixed inset-0 h-full w-full object-cove
 export default function LobbyBackground({ bgVideoRef, uiVisible, onSkipIntro }) {
     return (
         <>
-            <PublicAsset src={LOBBY_ASSETS.bgImage} alt="" aria-hidden="true" className={`${LAYER_CLASS} z-0`} />
+            <PublicAsset src={LOBBY_MOBILE_ASSETS.bgImage} alt="" aria-hidden="true" className={`${LAYER_CLASS} z-0`} />
             <video
                 ref={bgVideoRef}
                 src={publicAsset(LOBBY_ASSETS.bgVideo)}

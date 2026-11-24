@@ -1,6 +1,8 @@
-// 방 목록 화면 (/multiplay): 위 줄(뒤로·멀티플레이·소리) + 방 만들기/코드로 참가 + 방 카드(안에 쪽 넘김) + 바닥 입장 버튼, 들어올 때 남은 판·대기방 자리 정리
+// 방 목록 화면 (/multiplay): 위 줄(멀티플레이·소리) + 방 만들기/코드로 참가 + 방 카드(쪽 넘김·입장) + shell 뒤로, 들어올 때 남은 판·대기방 자리 정리
 // app/routes/index.jsx가 씀, 목록 받기·입장은 데스크톱 usePublicRooms 그대로
+import { useCallback } from "react"
 import { useNavigate } from "react-router-dom"
+import { useShellBackButton } from "@m/shared/layouts/mobileShellBack.jsx"
 import { ROOM_LIST_ASSETS } from "@/domains/game/mode/constants/roomListAssets.js"
 import { usePublicRooms } from "@/domains/game/mode/hooks/usePublicRooms.js"
 import { useLobbyEntryCleanup } from "@/domains/game/shared/hooks/useLobbyEntryCleanup.js"
@@ -21,6 +23,12 @@ export default function MultiplayEntryPage() {
   useLobbyEntryCleanup()
   const { rooms, joinPublicRoom, isJoining } = usePublicRooms()
 
+  const goBackToGameMode = useCallback(() => {
+    navigate("/gameMode")
+  }, [navigate])
+
+  useShellBackButton({ onClick: goBackToGameMode, label: "방 목록에서 뒤로" })
+
   // 코드 방을 골랐으면 방 id를 실어 코드 입력 화면으로
   const joinByCode = (roomId) =>
     navigate("/roomInvite", { state: typeof roomId === "string" ? { roomId } : null })
@@ -28,19 +36,14 @@ export default function MultiplayEntryPage() {
   const list = useRoomListPaging({ rooms, isJoining, onEnterRoom: joinPublicRoom, onJoinByCode: joinByCode })
 
   return (
-    <div className="relative flex min-h-full flex-col">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <ModeBackdrop />
 
-      <div className="relative z-10 flex flex-1 flex-col">
-        <TopBar
-          onBack={() => navigate("/gameMode")}
-          backLabel="게임 모드 선택으로 돌아가기"
-          title={<TitleBadge />}
-          right={<SoundMenu look="mode" />}
-        />
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        <TopBar hideBack title={<TitleBadge />} right={<SoundMenu look="mode" />} />
 
-        <div className="mx-auto flex w-full max-w-[48rem] flex-col gap-3 px-4 pb-4 land:px-6">
-          <nav className="grid grid-cols-2 gap-3 land:flex land:gap-3 md:flex" aria-label="방 목록 작업">
+        <div className="mx-auto flex min-h-0 w-full max-w-[48rem] flex-1 flex-col gap-3 px-4 pb-4 pt-1 land:px-6 land:pb-3">
+          <nav className="grid shrink-0 grid-cols-2 gap-3 land:flex land:gap-3 md:flex" aria-label="방 목록 작업">
             <ImageButton look="plate" src={ROOM_LIST_ASSETS.optionButton} label="방 만들기" onClick={() => navigate("/game-setup")} className="w-full land:w-40 md:w-48" />
             <ImageButton look="plate" src={ROOM_LIST_ASSETS.optionButton} label="코드로 참가" onClick={() => joinByCode()} className="w-full land:w-40 md:w-48" />
           </nav>
@@ -49,12 +52,15 @@ export default function MultiplayEntryPage() {
             rooms={list.pageRooms}
             selectedRoomId={list.selectedRoomId}
             onSelectRoom={list.selectRoom}
-            footer={<Pager currentPage={list.currentPage} pageCount={list.pageCount} onPrev={list.goPrev} onNext={list.goNext} />}
+            footer={
+              <>
+                <Pager currentPage={list.currentPage} pageCount={list.pageCount} onPrev={list.goPrev} onNext={list.goNext} />
+                <EnterBar label={list.enterLabel} disabled={list.enterDisabled} onEnter={list.enterRoom} />
+              </>
+            }
           />
         </div>
       </div>
-
-      <EnterBar label={list.enterLabel} disabled={list.enterDisabled} onEnter={list.enterRoom} />
     </div>
   )
 }

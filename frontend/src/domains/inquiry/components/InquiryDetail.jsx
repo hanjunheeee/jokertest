@@ -1,6 +1,11 @@
 // 문의 하나 보기 (데스크톱): 종류·상태·날짜·제목·내용 + 운영팀 답들, 불러오는 중·못 찾음 안내, 목록으로
 // InquiryWindow가 씀
-import { MESSAGE_CLASS, MESSAGE_ERROR_CLASS, REASON_BTN_CLASS, REASON_OFF_CLASS } from "@/domains/report/constants/reportLayout.js"
+import { MESSAGE_CLASS, MESSAGE_ERROR_CLASS } from "@/domains/report/constants/reportLayout.js"
+import {
+  INQUIRY_BACK_BTN_CLASS,
+  INQUIRY_DETAIL_ROOT_CLASS,
+  INQUIRY_DETAIL_SCROLL_CLASS,
+} from "@/domains/inquiry/constants/inquiryLayoutStyle.js"
 import { formatInquiryDate, INQUIRY_COPY, inquiryCategoryLabel, inquiryStatusLabel } from "../api/inquiry.api.js"
 
 const FOCUS_RING_CLASS =
@@ -28,30 +33,32 @@ export default function InquiryDetail({ detail, onBack }) {
   const replies = Array.isArray(inquiry?.replies) ? inquiry.replies : []
 
   return (
-    <div className="flex flex-col gap-2" data-testid="inquiry-detail">
-      <button type="button" onClick={onBack} className={`${REASON_BTN_CLASS} ${REASON_OFF_CLASS} self-start px-3 ${FOCUS_RING_CLASS}`}>
+    <div className={INQUIRY_DETAIL_ROOT_CLASS} data-testid="inquiry-detail">
+      <div className={INQUIRY_DETAIL_SCROLL_CLASS}>
+        {detail?.status === "loading" ? <p role="status" className={SMALL_CLASS}>{INQUIRY_COPY.loading}</p> : null}
+        {detail?.status === "error" ? (
+          <p role="alert" data-testid="inquiry-detail-error" className={`${MESSAGE_CLASS} ${MESSAGE_ERROR_CLASS}`}>{detail.message}</p>
+        ) : null}
+        {inquiry ? (
+          <>
+            <p className={SMALL_CLASS}>
+              {inquiryCategoryLabel(inquiry.category)} · {inquiryStatusLabel(inquiry.status)} · {formatInquiryDate(inquiry.createdAt)}
+            </p>
+            <h3 className={`${BODY_CLASS} font-bold text-[#f5e8c8]`}>{inquiry.title}</h3>
+            <p className={`${BOX_CLASS} ${BODY_CLASS}`}>{inquiry.body}</p>
+            {replies.length > 0 ? (
+              <ul className="flex flex-col gap-1.5" aria-label="운영팀 답">
+                {replies.map((reply) => <ReplyBox key={reply.id} reply={reply} />)}
+              </ul>
+            ) : (
+              <p className={SMALL_CLASS}>{INQUIRY_COPY.noReply}</p>
+            )}
+          </>
+        ) : null}
+      </div>
+      <button type="button" onClick={onBack} className={`${INQUIRY_BACK_BTN_CLASS} ${FOCUS_RING_CLASS}`}>
         {INQUIRY_COPY.back}
       </button>
-      {detail?.status === "loading" ? <p role="status" className={SMALL_CLASS}>{INQUIRY_COPY.loading}</p> : null}
-      {detail?.status === "error" ? (
-        <p role="alert" data-testid="inquiry-detail-error" className={`${MESSAGE_CLASS} ${MESSAGE_ERROR_CLASS}`}>{detail.message}</p>
-      ) : null}
-      {inquiry ? (
-        <>
-          <p className={SMALL_CLASS}>
-            {inquiryCategoryLabel(inquiry.category)} · {inquiryStatusLabel(inquiry.status)} · {formatInquiryDate(inquiry.createdAt)}
-          </p>
-          <h3 className={`${BODY_CLASS} font-bold text-[#f5e8c8]`}>{inquiry.title}</h3>
-          <p className={`${BOX_CLASS} ${BODY_CLASS}`}>{inquiry.body}</p>
-          {replies.length > 0 ? (
-            <ul className="flex flex-col gap-1.5" aria-label="운영팀 답">
-              {replies.map((reply) => <ReplyBox key={reply.id} reply={reply} />)}
-            </ul>
-          ) : (
-            <p className={SMALL_CLASS}>{INQUIRY_COPY.noReply}</p>
-          )}
-        </>
-      ) : null}
     </div>
   )
 }

@@ -11,6 +11,7 @@ const { getSettingsVersion } = require('../settings/receipts')
 const { disposeRoom } = require('./dispose')
 const { emitPublicRoomList, computeCanStart } = require('./view')
 const { nextHostAfterLeave } = require('./returnRoom')
+const { logMatchingFlow } = require('../debug/matchingFlowLog')
 
 // "방에 있음" 확인 순번 시계 (벽시계 대신 하나씩 올림)
 let roomPresenceTick = 0
@@ -162,6 +163,7 @@ function notifyRoomDeparture(io, outcome, departingSockets = []) {
 
 // 나가기 확정 + 알림 한 번에 (나가기 사건·15초 끊김 만료가 씀)
 function removeFromRoom(io, socket, uuid) {
+    logMatchingFlow('leave_room', { uuid, socketId: socket?.id, roomId: playerRoom.get(uuid) })
     const outcome = commitRoomDeparture(io, socket, uuid, 'LEFT_ROOM')
     notifyRoomDeparture(io, outcome, socket ? [socket] : [])
 }

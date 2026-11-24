@@ -7,11 +7,19 @@ import { LABEL_CLASS, STACK_ROW_CLASS, VALUE_CLASS } from "../../constants/setti
 export default function SliderRow({ label, min, max, value, onChange }) {
     return (
         <div className={STACK_ROW_CLASS}>
-            <div className="flex items-baseline justify-between gap-4">
+            <div className="flex items-baseline justify-between gap-2 land:gap-4">
                 <span className={LABEL_CLASS}>{label}</span>
                 <span className={VALUE_CLASS} aria-hidden="true">{value}</span>
             </div>
-            <RangeSlider ariaLabel={label} min={min} max={max} value={value} onChange={onChange} />
+            <RangeSlider
+                ariaLabel={label}
+                min={min}
+                max={max}
+                value={value}
+                onChange={onChange}
+                knobClassName="w-5 land:w-6"
+                edge={{ startPx: 10, endPx: 10 }}
+            />
         </div>
     )
 }

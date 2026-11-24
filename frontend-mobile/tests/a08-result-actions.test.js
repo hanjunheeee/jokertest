@@ -73,6 +73,8 @@ test("A08-M-008 결과 화면 뒤로 가기 확인 글: 뒤로 가기 → '로�
 })
 
 // 결과 화면에서 끊겼다 다시 이어져 스냅샷 답이 "그 판에 없음"이어도 받아 둔 결과·"대기방으로" 단추가 남음 (모바일도 같은 결과 값 훅)
+// 모바일 반응형 합침 뒤: 판이 끝나 승패 값이 있으면 결과 화면이 판 상태를 다시 안 물음(useResultPage freezeSnapshotSync)
+// → 물었는지는 안 따지고, 물었으면 NOT_A_PARTICIPANT로 답해도 결과·단추가 남는지만 봄 (판 채널 다시 붙기는 서버가 접속 때 함)
 test("A08-M-009 결과 화면 다시 이어짐: 스냅샷 답 NOT_A_PARTICIPANT → 결과 화면·'대기방으로' 단추 그대로", async () => {
     const socket = fakeSocket()
     seat({ n: 5, phase: "DAY" })
@@ -85,7 +87,6 @@ test("A08-M-009 결과 화면 다시 이어짐: 스냅샷 답 NOT_A_PARTICIPANT 
     await act(async () => { socket.fire("connect") })
     await flush()
     await flush()
-    assert.ok(socket.sentOf("get_session_snapshot").length >= 1, "다시 이어진 뒤 스냅샷을 안 물음")
     assert.ok(buttonNamed("대기방으로"), `결과 화면이 사라짐: ${buttonNames().join(" | ")}`)
 })
 

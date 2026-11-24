@@ -75,8 +75,8 @@ export default function SignupEmailVerification({
 
   return (
     <div className={EMAIL_VERIFICATION_BLOCK_CLASS}>
-      <div className="flex items-center justify-between gap-1">
-        <span className={EMAIL_VERIFICATION_TITLE_CLASS}>이메일 인증</span>
+      <div className="flex min-w-0 items-center justify-between gap-1">
+        <span className={`${EMAIL_VERIFICATION_TITLE_CLASS} min-w-0 shrink`}>이메일 인증</span>
         {/* 받기·재발송 버튼: 처음엔 보내는 중만 잠금, 그 뒤엔 canResend로 */}
         {!isVerified && (
           <AuthImageButton

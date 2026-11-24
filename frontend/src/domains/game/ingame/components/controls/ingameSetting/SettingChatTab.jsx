@@ -3,8 +3,11 @@
 import {
   INGAME_SETTING_CHAT_CHECKBOXES,
   INGAME_SETTING_CHAT_SLIDER,
+  INGAME_SETTING_TIMER_PLACEMENT_CHAT_LABEL,
+  INGAME_SETTING_SHOW_TIMER_PLACEMENT_OPTION,
 } from "../../../constants/controls/ingameSetting/ingameSettingData.js"
 import { TAB_BODY_CLASS } from "../../../constants/controls/ingameSetting/ingameSettingLayout.js"
+import { INGAME_TIMER_PLACEMENT } from "../../../constants/timebar/ingameTimerPlacement.js"
 import { useSettingsStore } from "../../../../../settings/store/settingsStore.js"
 import SettingCheckboxRow from "./SettingCheckboxRow.jsx"
 import SettingSliderRow from "./SettingSliderRow.jsx"
@@ -17,7 +20,10 @@ function defaultChatChecks() {
 }
 
 // 바꾸면 settingsStore에 바로 씀, 채팅 줄·입력창이 그 값을 읽음
-export default function SettingChatTab() {
+export default function SettingChatTab({
+  timerPlacement = INGAME_TIMER_PLACEMENT.TIMEBAR,
+  onTimerPlacementChange = null,
+}) {
   const storedTextSize = useSettingsStore((s) => s.chatTextSize)
   const setChatTextSize = useSettingsStore((s) => s.setChatTextSize)
   const storedChecks = useSettingsStore((s) => s.chatChecks)
@@ -26,6 +32,7 @@ export default function SettingChatTab() {
   // 저장 값이 없거나 일부만 있으면 기본값으로 채움
   const textSize = storedTextSize ?? INGAME_SETTING_CHAT_SLIDER.defaultValue
   const checks = { ...defaultChatChecks(), ...(storedChecks ?? {}) }
+  const timerInChat = timerPlacement === INGAME_TIMER_PLACEMENT.CHAT
 
   return (
     <div className={TAB_BODY_CLASS}>
@@ -45,6 +52,19 @@ export default function SettingChatTab() {
           onChange={(next) => setChatCheck(id, next)}
         />
       ))}
+
+      {INGAME_SETTING_SHOW_TIMER_PLACEMENT_OPTION
+      && typeof onTimerPlacementChange === "function" ? (
+        <SettingCheckboxRow
+          label={INGAME_SETTING_TIMER_PLACEMENT_CHAT_LABEL}
+          checked={timerInChat}
+          onChange={(next) => {
+            onTimerPlacementChange(
+              next ? INGAME_TIMER_PLACEMENT.CHAT : INGAME_TIMER_PLACEMENT.TIMEBAR,
+            )
+          }}
+        />
+      ) : null}
     </div>
   )
 }

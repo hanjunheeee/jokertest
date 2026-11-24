@@ -10,6 +10,7 @@ import NightTurnOverlay from "./NightTurnOverlay.jsx"
 import PhaseEntranceOverlay from "./PhaseEntranceOverlay.jsx"
 import RoleRevealOverlay from "./RoleRevealOverlay.jsx"
 import TribunalGate from "./tribunal/TribunalGate.jsx"
+import InGameEntryPreparingOverlay from "@/domains/game/ingame/components/entryPreparing/InGameEntryPreparingOverlay.jsx"
 
 // .mobile-shell이 container 틀이라 fixed가 그 안에 갇힘 → body로 꺼냄 (그리는 순서는 데스크톱 InGamePage와 같음)
 export default function OverlayLayer() {
@@ -17,6 +18,7 @@ export default function OverlayLayer() {
 
     return createPortal(
         <div data-ingame-overlay-layer="">
+            <InGameEntryPreparingOverlay open={o.entryPreparingActive} />
             <TribunalGate />
             <NightTurnOverlay
                 open={o.nightTurn.open}
@@ -40,8 +42,9 @@ export default function OverlayLayer() {
                 label={o.nightPrivateResult.label}
                 onConfirm={o.nightPrivateResult.confirm}
             />
+            {/* 열쇠 기본값은 추방 연출("none")과 겹치지 않게 따로 (같은 부모 안 같은 열쇠면 React가 둘을 헷갈림) */}
             <DawnReportOverlay
-                key={o.dawnReport.report?.key ?? "none"}
+                key={o.dawnReport.report?.key ?? "dawn-none"}
                 report={o.dawnReport.report}
                 open={o.dawnReport.open}
                 onFinish={o.dawnReport.finish}

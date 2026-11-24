@@ -1,11 +1,26 @@
-// 채팅 보내기 버튼: 데스크톱 보내기 그림 위에 '보내기' 글자 (막힘·전송 중 글자 없음, 데스크톱과 같음)
+// 채팅 보내기 버튼: 리소스 그림만 (접근성용 aria-label)
 // Composer가 씀, 누를 때 입력칸 초점을 안 뺏어서 키보드가 안 내려감
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import { INGAME_CHAT_ASSETS } from "@/domains/game/ingame/constants/chat/ingameChatAssets.js"
+import { MOBILE_TALK_CHAT_ASSETS } from "@m/domains/game/ingame/constants/chat/mobileTalkChatAssets.js"
+import {
+    TALK_CHAT_SEND_BTN_CLASS,
+    TALK_CHAT_SEND_IMG_CLASS,
+} from "@m/domains/game/ingame/constants/chat/mobileTalkChatLayout.js"
 
-// 그림은 원래 비율, 누르는 자리만 44px로 키움
-// disabled면 꺼지고 흐리게 (역할 확인 동안)
-export default function SendButton({ onSend, disabled = false }) {
+const CLASSIC_BTN_CLASS =
+    "relative flex h-11 w-[4.6rem] shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 transition-transform duration-200 ease-out active:scale-[0.99]"
+
+const CLASSIC_IMG_CLASS = "block h-auto w-full select-none"
+
+// 꺼졌을 때 흐리게 (두 모양 같이)
+const DISABLED_CLASS = "disabled:cursor-not-allowed disabled:opacity-45"
+
+// variant talk: 카톡형 보내기 그림 (83×37), disabled면 꺼지고 흐리게 (역할 확인 동안)
+export default function SendButton({ onSend, variant = "classic", disabled = false }) {
+    const isTalk = variant === "talk"
+    const src = isTalk ? MOBILE_TALK_CHAT_ASSETS.sendButton : INGAME_CHAT_ASSETS.sendButton
+
     return (
         <button
             type="button"
@@ -13,16 +28,10 @@ export default function SendButton({ onSend, disabled = false }) {
             disabled={disabled}
             onPointerDown={(event) => event.preventDefault()}
             onClick={onSend}
-            className="relative flex h-11 w-[4.6rem] shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 transition-transform duration-200 ease-out active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45"
+            className={`${isTalk ? TALK_CHAT_SEND_BTN_CLASS : CLASSIC_BTN_CLASS} ${DISABLED_CLASS}`}
             style={{ outline: "none" }}
         >
-            <PublicAsset src={INGAME_CHAT_ASSETS.sendButton} alt="" className="block h-auto w-full select-none" />
-            <span
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 flex items-center justify-center font-subheading text-[0.74rem] font-bold text-[#e9b582] [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
-            >
-                보내기
-            </span>
+            <PublicAsset src={src} alt="" className={isTalk ? TALK_CHAT_SEND_IMG_CLASS : CLASSIC_IMG_CLASS} />
         </button>
     )
 }

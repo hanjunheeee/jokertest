@@ -4,6 +4,7 @@ import { useRef } from "react"
 import {
   SCROLL_AREA_CLASS,
   SCROLL_WRAP_CLASS,
+  SIGNUP_SCROLL_COLUMN_CLASS,
   SIGNUP_SCROLLBAR_CLASS,
 } from "@/domains/auth/constants/signupLayoutStyle.js"
 import Scrollbar from "@/shared/ui/Scrollbar.jsx"
@@ -17,11 +18,11 @@ export default function SignupScrollArea({ children }) {
       <div
         ref={scrollRef}
         data-signup-scroll-area=""
-        className={`${SCROLL_AREA_CLASS} flex flex-col gap-1.5`}
+        className={SCROLL_AREA_CLASS}
         role="region"
         aria-label="회원가입 입력"
       >
-        {children}
+        <div className={SIGNUP_SCROLL_COLUMN_CLASS}>{children}</div>
       </div>
       <Scrollbar scrollRef={scrollRef} className={SIGNUP_SCROLLBAR_CLASS} />
     </div>

@@ -34,7 +34,7 @@ export const ACTION_BTN_IMG_CLASS =
   "block h-auto w-full select-none"
 
 export const ACTION_BTN_LABEL_CLASS =
-  "pointer-events-none absolute inset-0 flex items-center justify-center px-[10%] pb-[3%] font-subheading text-[clamp(0.82rem,3.8vw,1.05rem)] font-bold leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
+  "pointer-events-none absolute inset-0 flex translate-y-[0.18em] items-center justify-center px-[10%] pb-[1.5%] font-subheading text-[clamp(0.82rem,3.8vw,1.05rem)] font-bold leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]"
 
 // 안내 글
 export const NOTICE_CLASS =
@@ -45,10 +45,10 @@ export const INTRO_HOLD_MS = 1000
 
 // 오른쪽 채팅 칸
 export const CHAT_WRAP_CLASS =
-  "pointer-events-auto relative w-[34rem] shrink-0"
+  "pointer-events-auto relative w-[34rem] shrink-0 overflow-visible"
 
 export const CHAT_PANEL_CLASS =
-  "relative w-full [container-type:inline-size]"
+  "relative w-full overflow-visible [container-type:inline-size]"
 
 // 채팅 칸 폭은 감싸는 칸에 맞춤
 export function getChatPanelStyle() {

@@ -18,20 +18,29 @@ export default function InGameParchmentConfirmButton({
   className = CONFIRM_BTN_CLASS_TIGHT,
   buttonRef,
   sfxKind = "ui-confirm",
+  type = "button",
+  disabled = false,
+  assetSrc = BTN_ASSET,
 }) {
+  const focusClass = className.includes("focus-visible:")
+    ? `outline-none ${className}`
+    : `${className} ${INGAME_FOCUS_RING_CLASS}`
+  const stateClass = disabled ? "cursor-not-allowed opacity-55" : "cursor-pointer"
+
   return createElement(
     "button",
     {
-      type: "button",
+      type,
       ref: buttonRef,
       "aria-label": label,
+      disabled,
       // 초점 테두리를 따로 정한 모양이 아니면 공용 초점 테두리를 붙임
-      className: className.includes("focus-visible:") ? `outline-none ${className}` : `${className} ${INGAME_FOCUS_RING_CLASS}`,
+      className: `${focusClass} ${stateClass}`.trim(),
       "data-sfx-kind": sfxKind,
       onClick,
     },
     createElement("img", {
-      src: publicAsset(BTN_ASSET),
+      src: publicAsset(assetSrc),
       alt: "",
       draggable: false,
       className: IMG_CLASS,

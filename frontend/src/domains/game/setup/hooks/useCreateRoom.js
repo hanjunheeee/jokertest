@@ -2,14 +2,17 @@
 // hooks/useGameSetupPage가 씀
 // 요청 때 계정·소켓·소속 범위를 잡아 두고(createRoomScope), 응답 올 때 하나라도 바뀌었으면 그 응답은 버림
 // 요청 한 번 흐름(Node 옮기기·생긴 방 찾기)은 createRoomRequest
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMatchingStore } from "@/domains/game/matching/store/matchingStore.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { CREATE_ROOM_ERROR_MSGS } from "../../shared/constants/gameSetupSocket.js"
+import { askRoom } from "../../shared/socket/room.js"
 import { leaveRoom } from "../../matching/socket/room.js"
 import { captureScope, isScopeCurrent } from "./createRoomScope.js"
 import { runCreate } from "./createRoomRequest.js"
+import { traceMatchingFlow } from "@/domains/game/matching/debug/matchingFlowTrace.js"
 
 // 화면 살아 있는지 표시
 function useMountedRef() {
@@ -23,7 +26,7 @@ function useMountedRef() {
   return mountedRef
 }
 
-// 방 들어가기: 끝난 판 지우고 방 넣고 대기방으로
+// 방 들어가기: 끝난 판 지우고 방 넣고 대기방으로 (서버 확인 전 잠깐 목록으로 안 튕기게 로컬 방을 믿음)
 // 그사이 화면을 떠났으면 방을 안 넣고 서버 방에서 나감 (딴 화면에 있는데 방에 묶이지 않게)
 function enterOrLeave(room, mountedRef, navigate) {
   if (!mountedRef.current) {
@@ -31,8 +34,15 @@ function enterOrLeave(room, mountedRef, navigate) {
     return
   }
   useInGameStore.getState().clearGame()
-  useMatchingStore.getState().setRoom(room)
-  navigate("/game-matching")
+  const store = useMatchingStore.getState()
+  store.setRoom(room)
+  store.markLocalRoomTrust()
+  traceMatchingFlow("create_enter_matching", {
+    roomId: useMatchingStore.getState().roomId,
+    isInRoom: useMatchingStore.getState().isInRoom,
+    trustUntil: useMatchingStore.getState().roomLocalTrustUntil,
+  })
+  queueMicrotask(() => navigate("/game-matching", { replace: true }))
 }
 
 // 방 만들기 상태·동작
@@ -83,12 +93,36 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
     setCreateError(null)
     const scope = captureScope(socket, accountId, identityGeneration)
     scopeRef.current = scope
-    await runCreate(socket, settings, scope, { scopeRef, isCurrent, enterRoom, showError, release })
+    const outcome = await runCreate(socket, settings, scope, { scopeRef, isCurrent, enterRoom, showError, release })
+
+    // enterOrLeave가 이미 이동 예약함; 스토어만 채워진 경우만 한 번 더
+    // 화면을 떠났거나 계정이 바뀌었으면 아무것도 안 함 (딴 화면·딴 계정을 대기방으로 끌고 가지 않게)
+    if (outcome === "entered") return
+    if (!mountedRef.current) return
+    if ((useAuthStore.getState().user?.uuid ?? null) !== accountId) return
+    if (useMatchingStore.getState().isInRoom) {
+      queueMicrotask(() => navigate("/game-matching", { replace: true }))
+      return
+    }
+    // 응답은 못 받았는데 서버에 방만 있는 경우 (재연결로 소켓 id만 바뀌어 범위가 끊긴 때 등)
+    if (outcome !== "failed") {
+      const afterSocket = getSocket()
+      if (!afterSocket) return
+      try {
+        const res = await askRoom(afterSocket)
+        if ((useAuthStore.getState().user?.uuid ?? null) !== accountId) return
+        if (res?.ok && res.room) enterOrLeave(res.room, mountedRef, navigate)
+      } catch {
+        // runCreate 쪽에서 이미 안내함
+      }
+    }
   }
 
   // isBusy: 지금 만드는 중인지 (뒤로 가기 확인용)
+  const isBusy = useCallback(() => creatingRef.current, [])
+
   return {
-    isCreating, createGame, isBusy: () => creatingRef.current,
+    isCreating, createGame, isBusy,
     createError, dismissCreateError: () => setCreateError(null),
   }
 }

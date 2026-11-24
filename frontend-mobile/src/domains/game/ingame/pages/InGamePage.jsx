@@ -53,14 +53,13 @@ function WideLayout({ page, compactTyping }) {
     >
       <div className={`${SLOT_CLASS} [grid-area:top]`} data-slot="top">
         <TopBar
-          onExit={page.requestExit}
           onRecords={sidePanel.openRecords}
           onSettings={sidePanel.openSettings}
           onRoleReveal={page.reopenRoleReveal}
           roleRevealAvailable={page.roleRevealAvailable && Boolean(page.reopenRoleReveal)}
         />
       </div>
-      <div className={`${SLOT_CLASS} px-2 land:pt-1 [grid-area:time] ${compactTyping ? TYPING_TIME_CLASS : ""}`} data-slot="timebar">
+      <div className={`${SLOT_CLASS} px-0.5 land:pt-0 [grid-area:time] ${compactTyping ? TYPING_TIME_CLASS : ""}`} data-slot="timebar">
         <Timebar />
       </div>
       <div
@@ -88,12 +87,17 @@ export default function InGamePage() {
   // 받은 이모티콘 기록은 배치와 상관없이 늘 (가로로 돌린 동안 온 것도 채팅방에 남게)
   useRecordEmojiHistory()
 
-  if (!page.isValidGameSession) return null
+  if (!page.isValidGameSession) {
+    if (page.snapshotSyncStatus === "checking") {
+      return <div className="h-full w-full bg-black" data-ingame-bootstrap="" />
+    }
+    return null
+  }
 
   const { sidePanel, surfaceLocked, interactionBlocked } = page
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-black" data-compact-typing={compactTyping || undefined}>
+    <div className="relative z-10 h-full w-full overflow-hidden bg-transparent" data-compact-typing={compactTyping || undefined}>
       <Background />
 
       <InGamePlayerSessionProvider>

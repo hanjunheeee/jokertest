@@ -1,11 +1,20 @@
-// 말풍선 한 줄: 남의 말은 왼쪽(초상 + 닉네임 + 말풍선), 내 말은 오른쪽, 이모티콘이면 말풍선 대신 큰 이모티콘
+// 말풍선 한 줄: 남의 말은 왼쪽, 내 말은 오른쪽 (묶음 첫 줄에 초상·닉네임), 이모티콘이면 말풍선 대신 크게
 // TalkList가 말·이모티콘 줄마다 씀, 묶음 첫 줄만 초상·닉네임
 // 닉네임은 테마 색 그대로 + 색에 맞는 띠 (판 채팅 줄과 같은 규칙, 남색·검붉은 테마도 어두운 채팅방에서 읽힘)
 import { CHAT_NAME_BAND_CLASS, resolveChatNameBand } from "@/domains/game/ingame/utils/chatNameBand.js"
 import { findInGameEmoticonItem } from "@/domains/game/ingame/utils/findInGameEmoticonItem.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import TalkAvatar from "./TalkAvatar.jsx"
-import { AVATAR_SIZE_CLASS, BUBBLE_TEXT_CLASS, bubbleClass, formatTime, NAME_CLASS, TIME_CLASS } from "./talkStyle.js"
+import {
+    AVATAR_WIDTH_SPACER_CLASS,
+    BUBBLE_TEXT_CLASS,
+    MINE_ROW_CLASS,
+    OTHER_ROW_CLASS,
+    bubbleClass,
+    formatTime,
+    NAME_CLASS,
+    TIME_CLASS,
+} from "./talkStyle.js"
 
 // 이모티콘 줄: 말풍선 틀 없이 그림만 크게 (카톡 이모티콘처럼)
 function EmojiBody({ itemId }) {
@@ -31,29 +40,41 @@ function NameText({ name, themeColor, dead }) {
 }
 
 // groupStart: 묶음 첫 줄 (초상·닉네임 보임), player·themeColor는 참가자 정보 (없으면 기본 테두리)
-export default function TalkBubble({ line, groupStart, player, themeColor, showTime }) {
+export default function TalkBubble({ line, groupStart, player, playerIndex = 0, themeColor, showTime }) {
     const time = showTime ? formatTime(line.at) : null
     const timeNode = time ? <span className={TIME_CLASS}>{time}</span> : null
 
     if (line.mine) {
         return (
-            <li className={`flex justify-end gap-1.5 pl-12 ${groupStart ? "mt-2" : "mt-0.5"}`} data-talk-line="mine">
-                <div className="flex min-w-0 items-end gap-1">
-                    {timeNode}
-                    <Body line={line} />
+            <li className={`flex items-start justify-end gap-1.5 ${MINE_ROW_CLASS} ${groupStart ? "mt-2.5" : "mt-1"}`} data-talk-line="mine">
+                <div className="flex min-w-0 flex-col items-end">
+                    {groupStart ? (
+                        <p className={`${NAME_CLASS} max-w-full text-right`}>
+                            <NameText name={line.name} themeColor={themeColor} dead={line.dead} />
+                        </p>
+                    ) : null}
+                    <div className="flex w-full min-w-0 max-w-full items-end justify-end gap-1">
+                        {timeNode}
+                        <Body line={line} />
+                    </div>
                 </div>
+                {groupStart ? <TalkAvatar player={player} playerIndex={playerIndex} /> : (
+                    <span aria-hidden className={AVATAR_WIDTH_SPACER_CLASS} />
+                )}
             </li>
         )
     }
 
     return (
-        <li className={`flex items-start gap-1.5 pr-10 ${groupStart ? "mt-2" : "mt-0.5"}`} data-talk-line="other">
-            {groupStart ? <TalkAvatar player={player} themeColor={themeColor} /> : <span aria-hidden className={`${AVATAR_SIZE_CLASS} shrink-0`} />}
-            <div className="min-w-0">
+        <li className={`flex items-start gap-1.5 ${OTHER_ROW_CLASS} ${groupStart ? "mt-2.5" : "mt-1"}`} data-talk-line="other">
+            {groupStart ? <TalkAvatar player={player} playerIndex={playerIndex} /> : (
+                <span aria-hidden className={AVATAR_WIDTH_SPACER_CLASS} />
+            )}
+            <div className="min-w-0 max-w-full flex-1">
                 {groupStart ? (
                     <p className={NAME_CLASS}><NameText name={line.name} themeColor={themeColor} dead={line.dead} /></p>
                 ) : null}
-                <div className="flex min-w-0 items-end gap-1">
+                <div className="flex w-full min-w-0 max-w-full items-end gap-1">
                     <Body line={line} />
                     {timeNode}
                 </div>

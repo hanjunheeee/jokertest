@@ -136,6 +136,20 @@ const MODAL_VARIANTS = Object.freeze({
     confirmButtonClass: CONFIRM_BTN_CLASS_RAISED_FOCUS,
     focusConfirmOnMount: true,
   }),
+  interstitialAd: Object.freeze({
+    animation: "none",
+    backdropClass: "fixed inset-0 z-[120] cursor-default border-0 bg-black/82 p-0",
+    wrapClass:
+      "pointer-events-none fixed inset-0 z-[121] flex items-center justify-center overflow-hidden px-4 safe-pt safe-pb safe-px",
+    panelClass: "pointer-events-auto max-w-full",
+    dialogLabel: "광고",
+    backdropLabel: "광고 닫기",
+    parchmentFrameClass: FRAME_CLASS,
+    parchmentFallbackFrameClass: FALLBACK_FRAME_CLASS,
+    parchmentContentClass: "",
+    confirmButtonClass: CONFIRM_BTN_CLASS_RAISED_FOCUS,
+    focusConfirmOnMount: true,
+  }),
 })
 
 // 종류 이름으로 설정 꺼내기

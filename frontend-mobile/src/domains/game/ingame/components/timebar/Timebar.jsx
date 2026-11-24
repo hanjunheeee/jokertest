@@ -1,46 +1,39 @@
-// 인게임 진행 바 (모바일): 날짜·단계 노드 틀, 펼치면 단계 머리 + 타이머 게이지·MM:SS
-// InGamePage가 씀, props 없이 데스크톱 스토어·timebar utils로 값 읽음 (단계 버튼은 ActionRow로 옮김)
-import PublicAsset from "@/shared/ui/PublicAsset.jsx"
-import { INGAME_TIMEBAR_ASSETS } from "@/domains/game/ingame/constants/timebar/ingameTimebarAssets.js"
+// 모바일 명패+시간패널 스트립만 (시간 흐름바 틀·펼치기 없음)
+// InGamePage·TalkLayout이 씀
+import { INGAME_TIMER_PLACEMENT } from "@/domains/game/ingame/constants/timebar/ingameTimerPlacement.js"
+import InGamePhaseTurnTimerPanel from "@/domains/game/ingame/components/timebar/InGamePhaseTurnTimerPanel.jsx"
 import { PHASE_SETTLE_ATTR } from "@/domains/game/ingame/constants/timebar/ingamePhaseActions.js"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { selectInGameEntryPreparingActive } from "@/domains/game/ingame/utils/selectInGameEntryPreparing.js"
 import { useTimebar } from "../../hooks/timebar/useTimebar.js"
-import TimebarTrack from "./TimebarTrack.jsx"
-import PhaseHeader from "./PhaseHeader.jsx"
-import ExpandedTimer from "./ExpandedTimer.jsx"
-import ExpandButton from "./ExpandButton.jsx"
 
-// 데스크톱 상수가 칸 폭 기준 크기(cqi)를 쓰므로 inline-size 컨테이너로 감쌈
-export default function Timebar({ initialExpanded = false }) {
-  const bar = useTimebar(initialExpanded)
-  const dayLabel = `제 ${bar.day}일`
-  // 데스크톱과 같이 상태 글이 있을 때만 단계 머리·타이머를 그림
-  const showTimer = bar.expanded && Boolean(bar.statusLabel)
+const ROOT_CLASS = "w-full px-0 py-0 [container-type:inline-size]"
+
+export default function Timebar() {
+  const bar = useTimebar(false)
+  const entryPreparingActive = useInGameStore((s) => selectInGameEntryPreparingActive(s.state))
+  const hasLabel = typeof bar.statusLabel === "string" && bar.statusLabel.length > 0
+  const showStrip = hasLabel || entryPreparingActive
   // 표가 다 차 마감이 5초 뒤로 당겨진 동안만 붙는 표시 (데스크톱 시간 바와 같음, 시험이 찾음)
   const settleMark = bar.settled ? { [PHASE_SETTLE_ATTR]: "" } : {}
 
   return (
     <div
-      className={`mx-auto w-full max-w-[30rem] px-1 pt-3 [container-type:inline-size] land:max-w-[22rem] ${showTimer ? "pb-0.5" : ""}`}
-      aria-label={`${dayLabel} 시간 흐름`}
-      data-ingame-timebar=""
+      className={ROOT_CLASS}
+      data-ingame-phase-timer-mobile=""
+      aria-label="단계 타이머"
       {...settleMark}
     >
-      <div className="relative w-full leading-none">
-        {showTimer ? <PhaseHeader label={bar.statusLabel} /> : null}
-        {showTimer ? (
-          <ExpandedTimer remainingRatio={bar.remainingRatio} remainingSec={bar.remainingSec} />
-        ) : null}
-
-        <PublicAsset
-          src={bar.expanded ? INGAME_TIMEBAR_ASSETS.frameExpanded : INGAME_TIMEBAR_ASSETS.frame}
-          alt=""
-          aria-hidden="true"
-          className="block h-auto w-full select-none"
+      {showStrip ? (
+        <InGamePhaseTurnTimerPanel
+          statusLabel={bar.statusLabel}
+          remainingRatio={bar.remainingRatio}
+          remainingSec={bar.remainingSec}
+          placement={INGAME_TIMER_PLACEMENT.TIMEBAR}
+          embeddedLayout="mobile"
+          showResourcesWithoutLabel={entryPreparingActive && !hasLabel}
         />
-
-        <TimebarTrack dayLabel={dayLabel} activePhaseId={bar.activePhaseId} expanded={bar.expanded} />
-        <ExpandButton expanded={bar.expanded} onToggle={bar.toggleExpanded} />
-      </div>
+      ) : null}
     </div>
   )
 }

@@ -12,15 +12,15 @@ export default function BottomBar({ notificationsOpen, onOpenNotifications, frie
     return (
         <ShellBottom>
             <motion.div
-                className="relative z-10 flex items-end justify-between gap-2 px-3 pb-2 pt-1 land:px-6 land:pb-1 md:px-8 md:pb-4"
+                className="relative z-10 flex w-full min-w-0 items-end justify-between gap-2 px-3 pb-2 pt-1 land:px-6 land:pb-1 md:px-8 md:pb-4"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={UI_REVEAL_TRANSITION}
             >
                 <NotificationButton open={notificationsOpen} onOpen={onOpenNotifications} />
-                <div className="flex min-w-0 items-center gap-2">
-                    <FriendsButton open={friendListOpen} onOpen={onOpenFriendList} />
+                <div className="ml-auto flex shrink-0 items-center gap-2">
                     <SoundControl look="lobby" />
+                    <FriendsButton open={friendListOpen} onOpen={onOpenFriendList} />
                 </div>
             </motion.div>
         </ShellBottom>

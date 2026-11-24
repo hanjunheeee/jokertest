@@ -8,21 +8,26 @@ import TextDialog from "@m/shared/ui/modal/TextDialog.jsx"
 import {
   DIALOG_ACTIONS_CLASS, DIALOG_DANGER_BTN_CLASS, DIALOG_SECONDARY_BTN_CLASS, DIALOG_TEXT_CLASS,
 } from "@m/shared/ui/modal/textDialogStyle.js"
+import {
+  ACCOUNT_FORM_TEXT_CLASS,
+  ACCOUNT_SECTION_CLASS,
+  ACCOUNT_SECTION_FORM_CLASS,
+} from "@m/domains/user/constants/accountFormLayout.js"
 import SectionTitle from "./SectionTitle.jsx"
 
-const GUIDE_CLASS = "font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]"
+const GUIDE_CLASS = `${ACCOUNT_FORM_TEXT_CLASS} font-subheading text-black/70 app-text-scaled [--app-text-size:0.75rem]`
 
 export default function WithdrawSection({ account }) {
   const form = useWithdrawForm({ account })
 
   return (
-    <section className="flex flex-col gap-1.5 border-b border-[#8b6a3e]/30 pb-3">
+    <section className={ACCOUNT_SECTION_CLASS}>
       <SectionTitle>회원 탈퇴</SectionTitle>
       <p className={GUIDE_CLASS}>
         {form.usesPassword ? "본인 확인을 위해 비밀번호를 입력해주세요." : "본인 확인을 위해 계정 이메일을 그대로 입력해주세요."}
       </p>
 
-      <form onSubmit={form.openConfirm} className="flex w-full flex-col gap-1.5">
+      <form onSubmit={form.openConfirm} className={ACCOUNT_SECTION_FORM_CLASS}>
         {form.usesPassword ? (
           <InputSlot
             name="withdrawPassword"

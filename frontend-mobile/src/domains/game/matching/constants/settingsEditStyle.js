@@ -1,6 +1,14 @@
-// 대기방 설정 변경 화면 모양: 양피지 본문 배경·탭 버튼·저장/취소 버튼
+// 대기방 설정 변경 화면 모양: 양피지 본문 배경·탭 버튼·저장/취소 버튼·닫기·덮개
 // settingsEdit 아래 컴포넌트가 씀, 모바일 방 설정 화면(GameSetupPage)과 같은 모양 (데스크톱은 같은 GameSetupPanel 편집 모드)
 import { publicAsset } from "@/shared/utils/publicAsset.js"
+
+// 설정 변경만 덮개를 더 짙게 (대기방 배경 가림)
+export const SETTINGS_EDIT_OVERLAY_CLASS = "fixed inset-0 z-[62] bg-black/88"
+
+// 우상단 닫기 (회의&투표 탭 위·마이페이지 닫기와 같은 자리)
+export const SETTINGS_EDIT_CLOSE_BTN_CLASS =
+  "interactive-scale fixed z-[63] right-3 top-[max(0.65rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center border-0 bg-transparent p-0 land:top-2"
+export const SETTINGS_EDIT_CLOSE_ICON_CLASS = "block h-10 w-10 select-none object-contain"
 
 // 양피지 그림 (서버 파일 이름이 NFC·NFD 어느 쪽이어도 보이게 두 겹), 가운데 종이 부분만
 const PARCHMENT = "/frame/양피지 모달.webp"

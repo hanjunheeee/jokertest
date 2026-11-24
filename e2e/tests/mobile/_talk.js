@@ -26,20 +26,24 @@ const slotName = (nickname) => new RegExp(`^${nickname}( · 동료 [^,]+)?(,|$)`
 // 칸 고르개 (화면 글자·aria-label 먼저, 카톡형 칸 표시는 data-* 그대로)
 const talk = {
     layout: (page) => page.locator('[data-talk-layout]'),
-    strip: (page) => page.getByRole('region', { name: '플레이어 초상 띠' }),
-    slot: (page, nickname) => talk.strip(page).getByRole('button', { name: slotName(nickname) }),
-    mySlot: (page) => talk.strip(page).getByRole('button', { name: /, 나(,|$)/ }),
+    // 세로 카톡형엔 카드 나열(초상 띠)이 없음 → 칸은 넓은 배치 카드 판에서 찾음 (세로에서 쓰려면 useWideBoard 먼저)
     board: (page) => page.getByRole('region', { name: '플레이어 카드' }),
-    boardSlot: (page, nickname) => talk.board(page).getByRole('button', { name: slotName(nickname) }),
+    slot: (page, nickname) => talk.board(page).getByRole('button', { name: slotName(nickname) }),
+    mySlot: (page) => talk.board(page).getByRole('button', { name: /, 나(,|$)/ }),
+    boardSlot: (page, nickname) => talk.slot(page, nickname),
+    // 세로 카톡형 플레이어 목록·직업 행동 시트 (채팅 틀 오른쪽 위 단추로 엶, 줄마다 data-roster-player=uuid)
+    rosterOpen: (page) => page.locator('[data-testid="player-roster-open"]'),
+    roster: (page) => page.locator('[data-testid="player-roster-sheet"]'),
+    rosterRow: (page, uuid) => talk.roster(page).locator(`[data-roster-player="${uuid}"]`),
     chat: (page) => page.getByRole('region', { name: '채팅', exact: true }),
     log: (page) => talk.chat(page).getByRole('log', { name: '채팅 내역' }),
     lines: (page) => talk.log(page).locator('li[data-talk-line]'),
     mine: (page) => talk.log(page).locator('li[data-talk-line="mine"]'),
     others: (page) => talk.log(page).locator('li[data-talk-line="other"]'),
     system: (page) => talk.log(page).locator('li[data-talk-line="system"]'),
-    phaseLine: (page) => page.locator('[data-talk-phase-line]'),
+    // 단계 글: 위 단계 줄(PhaseLine)이 빠지고 명패+시간패널 한 줄로 바뀜 → "[낮-토론과 투표]"·"[밤-…]"·"[5초 뒤 마감]" (날짜 글은 없음)
+    phaseLine: (page) => page.locator('[data-ingame-phase-timer-mobile]'),
     timebarSlot: (page) => page.locator('[data-talk-layout] [data-slot="timebar"]'),
-    boardSlotArea: (page) => page.locator('[data-talk-layout] [data-slot="board"]'),
     input: (page) => page.getByRole('textbox', { name: '채팅 입력' }),
     send: (page) => page.getByRole('button', { name: '채팅 보내기' }),
     actionRow: (page) => page.locator('[data-ingame-action-row]'),
@@ -69,6 +73,12 @@ async function startTalkGame(table, humans, { bots = 4, roles, settings, closeRe
     return t;
 }
 
+/** 폰 가로(넓은 배치): 카드 판·카드 메뉴·이모티콘 팔레트 (세로 카톡형에는 카드 나열 없음) */
+async function useWideBoard(page) {
+    await page.setViewportSize({ width: 812, height: 375 });
+    await expect(talk.board(page)).toBeVisible({ timeout: 20000 });
+}
+
 /** 단계 넘기기 → 사람 화면 단계 줄이 맞을 때까지 → 연출 창 닫기 */
 async function goPhase(t, pages, target, { line, stepDelayMs = 400, keepWatching = true } = {}) {
     const s = await t.advanceUntil(target, { stepDelayMs });
@@ -83,14 +93,15 @@ async function goPhase(t, pages, target, { line, stepDelayMs = 400, keepWatching
 }
 
 /** 낮 토론까지 (제 1일) */
-function toDay(t, pages, o = {}) { return goPhase(t, pages, 'DAY', { line: '낮 토론', ...o }); }
-/** 낮 투표까지 (산 사람 화면은 기권 단추가 뜰 때까지, 죽은 사람 화면엔 기권 단추가 없어 내 칸의 사망 표시로 대신 봄) */
+function toDay(t, pages, o = {}) { return goPhase(t, pages, 'DAY', { line: '낮', ...o }); }
+/** 낮 투표까지 (산 사람 화면은 기권 단추가 뜰 때까지, 죽은 사람 화면엔 기권 단추가 없어 내 칸의 사망 표시·"죽은 사람끼리" 띠로 대신 봄) */
 function toVote(t, pages, o = {}) {
     return goPhase(t, pages, 'DAY_VOTE', o).then(async (s) => {
         const list = Array.isArray(pages) ? pages : [pages];
         for (const page of list) {
             const abstain = page.getByRole('button', { name: '기권' });
-            const deadSelf = page.getByRole('button', { name: /, 나, 사망$/ });
+            // 내 칸은 넓은 배치 카드 판에만 있음 → 세로 카톡형은 채팅방 "죽은 사람끼리" 띠로 봄
+            const deadSelf = page.getByRole('button', { name: /, 나, 사망$/ }).or(talk.deadBanner(page));
             await expect(abstain.or(deadSelf).first()).toBeVisible({ timeout: 15000 });
         }
         return s;
@@ -196,4 +207,5 @@ async function nicknameOf(t, uuid) {
 module.exports = {
     talk, clearOverlays, startTalkGame, goPhase, toDay, toVote, toNight, say, botSay, botNightSay, botEmoji, botLeave,
     getExecuted, executeBot, jokerBot, overflowX, bgColor, nicknameOf, sleep, BASIC_EMOJI, CHAT_GAP_MS, EMOJI_GAP_MS,
+    useWideBoard,
 };

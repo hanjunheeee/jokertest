@@ -36,8 +36,8 @@ export const TITLE_PLATE_CLASS = "block h-auto w-full select-none"
 export const TITLE_CLASS =
   "pointer-events-none absolute inset-0 flex items-center justify-center px-[10%] text-center font-display app-text-scaled [--app-text-size:clamp(1rem,4.8cqw,1.65rem)] font-medium leading-none tracking-normal text-[#f5f0e6] antialiased [text-shadow:0_1px_1px_rgba(0,0,0,0.45)] -translate-y-[0.05rem]"
 
-// 닫기: 데스크톱처럼 오른쪽 위 모서리 장식 위 (가운데 790,65px), 누르는 칸 44px
-export const CLOSE_STYLE = { top: `calc(${at(65)} - 1.375rem)`, right: `calc(${at(33)} - 1.375rem)` }
+// 닫기: 오른쪽 위 모서리 장식 위, 누르는 칸 44px (right 여유 조금 더 → 왼쪽으로 살짝)
+export const CLOSE_STYLE = { top: `calc(${at(65)} - 1.375rem)`, right: `calc(${at(33)} - 1.375rem + 0.5rem)` }
 
 // 바탕·창 자리 (데스크톱 MODAL_BACKDROP_CLASS·MODAL_WRAP_CLASS 자리)
 export const BACKDROP_CLASS =

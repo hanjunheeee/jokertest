@@ -19,6 +19,7 @@ const { handleAcceptGameInvite } = require('./admission/accept')
 const { handleGetGameInviteResult } = require('./admission/result')
 // 점검 중 거절 (방 만들기·시작·코드 입장·자동 매칭·판 끝 뒤 같은 방으로)
 const { rejectDuringMaintenance } = require('./join/maintenanceGate')
+const { logMatchingFlow } = require('./debug/matchingFlowLog')
 
 // 방 지우기 답 함수: 답 함수만 보낸 요청도 받음 (payload 자리에 함수)
 function pickDeleteRoomCallback(payload, callback) {
@@ -79,6 +80,11 @@ function registerLobbyEvents(io, socket, uuid) {
             console.error('\x1b[31m[공개 방 참가 에러]\x1b[0m', err)
         )
     )
+    // 화면이 보내는 방 만들기·대기방 확인 흐름 기록 (운영에선 DEBUG_MATCHING_FLOW=1일 때만)
+    socket.on('debug_matching_flow', (payload) => {
+        if (process.env.NODE_ENV === 'production' && process.env.DEBUG_MATCHING_FLOW !== '1') return
+        logMatchingFlow(`client:${payload?.step ?? 'unknown'}`, { uuid, ...payload })
+    })
 }
 
 // 방 안 행동: 방장 지우기·시작, 준비, 설정 저장·결과 묻기, 나가기, 강퇴

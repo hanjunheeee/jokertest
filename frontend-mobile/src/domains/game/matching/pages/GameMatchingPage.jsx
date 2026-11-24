@@ -1,9 +1,13 @@
-// 대기방 화면 (/game-matching): 배경·위 줄(방 이름·앉은 수/정원·인원)·방장 버튼/초대코드·매칭 틀·바닥 준비/시작 줄·창들
+// 대기방 화면 (/game-matching): 배경·위 줄(방 이름·앉은 수/정원·인원)·방장 버튼/초대코드·매칭 틀·준비/시작 줄·창들
 // app/routes/index.jsx가 씀, 값과 동작은 모두 데스크톱 useMatchingPage에서 받음
+import { Navigate } from "react-router-dom"
 import { useMatchingPage } from "@/domains/game/matching/hooks/useMatchingPage.js"
-import ShellBottom from "@m/shared/ui/ShellBottom.jsx"
+import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { shouldLeaveMatchingForInGame } from "@/domains/game/matching/utils/shouldLeaveMatchingForInGame.js"
+import { useShellBackButton } from "@m/shared/layouts/mobileShellBack.jsx"
 import MatchingBackdrop from "../components/layout/MatchingBackdrop.jsx"
 import MatchingTopBar from "../components/layout/MatchingTopBar.jsx"
+import MatchingFriendInviteBar from "../components/layout/MatchingFriendInviteBar.jsx"
 import MatchingBoard from "../components/layout/MatchingBoard.jsx"
 import HostActions from "../components/layout/HostActions.jsx"
 import ActionBar from "../components/actions/ActionBar.jsx"
@@ -15,7 +19,17 @@ import SettingsEditSheet from "../components/settingsEdit/SettingsEditSheet.jsx"
 
 // 대기방 페이지
 export default function GameMatchingPage() {
+  const activeInGame = useInGameStore((s) => shouldLeaveMatchingForInGame(s.gameId, s.state))
   const page = useMatchingPage()
+
+  useShellBackButton({
+    onClick: page.handleBack,
+    label: "대기방에서 뒤로",
+    enabled: page.uiVisible,
+  })
+
+  if (activeInGame) return <Navigate to="/ingame" replace />
+  if (!page.canStayOnMatchingPage) return <Navigate to="/multiplay" replace />
 
   // 친구 버튼은 열고 닫기 둘 다 (데스크톱 친구 버튼과 같음)
   const toggleFriendInvite = () => {
@@ -36,13 +50,9 @@ export default function GameMatchingPage() {
           partyCount={page.partyCount}
           partyMax={page.partyMax}
           roomTitle={page.roomTitle}
-          onBack={page.handleBack}
-          canOpenFriendInvite={page.canOpenFriendInvite}
-          friendInviteOpen={page.friendInviteModalOpen}
-          onToggleFriendInvite={toggleFriendInvite}
         />
 
-        <div className="flex flex-1 flex-col justify-center px-3 pb-3 land:px-6 land:pb-1 md:px-8">
+        <div className="flex flex-1 flex-col items-center justify-center px-3 pb-3 land:px-6 land:pb-1 md:px-8">
           <MatchingBoard
             visible={page.uiVisible}
             slots={page.slots}
@@ -61,12 +71,16 @@ export default function GameMatchingPage() {
               />
             }
           />
+          <ActionBar page={page} />
         </div>
       </div>
 
-      <ShellBottom>
-        <ActionBar page={page} />
-      </ShellBottom>
+      <MatchingFriendInviteBar
+        visible={page.uiVisible}
+        enabled={page.canOpenFriendInvite}
+        open={page.friendInviteModalOpen}
+        onToggle={toggleFriendInvite}
+      />
 
       <RoomCodeSheet open={page.roomCodeOpen} onClose={page.closeRoomCode} roomCode={page.roomCode} />
       <FriendInviteSheet

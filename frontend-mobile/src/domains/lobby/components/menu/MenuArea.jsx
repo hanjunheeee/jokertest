@@ -7,7 +7,7 @@ import MenuNav from "@m/domains/lobby/components/menu/MenuNav.jsx"
 // 세로: 로고 위·메뉴 아래 한 열(가운데 정렬), 폰 가로: 로고 왼쪽·메뉴 오른쪽
 export default function MenuArea() {
     return (
-        <section className="flex flex-1 flex-col items-center justify-center gap-[clamp(0.6rem,2.4svh,1.45rem)] land:flex-row land:items-center land:justify-center land:gap-4">
+        <section className="flex flex-1 flex-col items-center justify-center gap-[clamp(0.5rem,2svh,1.25rem)] px-1 land:flex-row land:items-center land:justify-center land:gap-5">
             <PublicAsset
                 src={LOBBY_ASSETS.logo}
                 alt="The Joker"
