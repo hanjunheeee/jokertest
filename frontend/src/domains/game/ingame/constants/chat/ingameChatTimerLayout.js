@@ -54,14 +54,15 @@ const LEGACY_STRIP_CLASS_BOARD =
 const LEGACY_STRIP_CLASS_CLOSEUP =
   "pointer-events-none relative z-[6] mx-auto w-[92%] -translate-y-[26%] shrink-0 [container-type:inline-size]"
 
+// 명패 글자색: 명패 종이가 중간 밤색이라 #2a1810이면 대비 3.8 → 거의 검은 밤색(#050302)으로 4.6
 const UNIFIED_STATUS_CLASS_PANEL =
-  "pointer-events-none absolute left-[21%] top-[46%] z-[2] flex w-[37%] -translate-y-1/2 items-center justify-center px-[3%] text-center font-display text-[clamp(0.78rem,4.35cqi,1.14rem)] font-medium leading-tight tracking-normal text-[#2a1810] antialiased [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(42,24,16,0.4)]"
+  "pointer-events-none absolute left-[21%] top-[46%] z-[2] flex w-[37%] -translate-y-1/2 items-center justify-center px-[3%] text-center font-display text-[clamp(0.78rem,4.35cqi,1.14rem)] font-medium leading-tight tracking-normal text-[#050302] antialiased [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(42,24,16,0.4)]"
 
 const UNIFIED_DIGITS_CLASS_PANEL =
   "pointer-events-none absolute right-[7.5%] top-[48%] z-[2] w-[20%] -translate-y-1/2 text-center font-display text-[clamp(0.78rem,4.35cqi,1.12rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
 
 const UNIFIED_STATUS_CLASS_CLOSEUP =
-  "pointer-events-none absolute left-[21%] top-[46%] z-[2] flex w-[37%] -translate-y-1/2 items-center justify-center px-[4%] text-center font-display text-[clamp(1.38rem,5.65cqi,2.28rem)] font-medium leading-tight tracking-normal text-[#2a1810] antialiased [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(42,24,16,0.4)]"
+  "pointer-events-none absolute left-[21%] top-[46%] z-[2] flex w-[37%] -translate-y-1/2 items-center justify-center px-[4%] text-center font-display text-[clamp(1.38rem,5.65cqi,2.28rem)] font-medium leading-tight tracking-normal text-[#050302] antialiased [text-shadow:0_1px_0_rgba(255,255,255,0.55),0_0_1px_rgba(42,24,16,0.4)]"
 
 const UNIFIED_DIGITS_CLASS_CLOSEUP =
   "pointer-events-none absolute right-[7.5%] top-[48%] z-[2] w-[21%] -translate-y-1/2 text-center font-display text-[clamp(1.05rem,5.1cqi,1.68rem)] font-bold tabular-nums leading-none tracking-wide text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"

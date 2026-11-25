@@ -55,8 +55,9 @@ export const TERMS_PARCHMENT_TEXT_INSET_CLASS =
   "px-[clamp(0.35rem,0.85vw,0.65rem)]"
 
 // 전체 보기 본문 (줄바꿈 그대로, 길면 스크롤)
+// 버전 줄 글자 90%: 80%면 양피지 위 대비 4.2라 덜 읽힘 (90% → 5.1)
 export const TERMS_PARCHMENT_META_CLASS =
-  `shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,1.1vw,0.8rem)] text-[#3a1a0c]/80 ${TERMS_PARCHMENT_TEXT_INSET_CLASS}`
+  `shrink-0 font-subheading app-text-scaled [--app-text-size:clamp(0.68rem,1.1vw,0.8rem)] text-[#3a1a0c]/90 ${TERMS_PARCHMENT_TEXT_INSET_CLASS}`
 
 export const TERMS_PARCHMENT_BODY_CLASS =
   `whitespace-pre-wrap py-0.5 font-subheading app-text-scaled [--app-text-size:clamp(0.78rem,1.2vw,0.9rem)] font-semibold leading-relaxed text-[#2a1208] ${TERMS_PARCHMENT_TEXT_INSET_CLASS}`

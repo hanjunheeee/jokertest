@@ -2,7 +2,7 @@
 // /game-matching 라우트가 씀, 값과 동작은 모두 useMatchingPage에서 받음
 import { Navigate } from "react-router-dom"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
-import { shouldLeaveMatchingForInGame } from "../utils/shouldLeaveMatchingForInGame.js"
+import { hasCurrentInGame, shouldLeaveMatchingForInGame } from "../utils/shouldLeaveMatchingForInGame.js"
 import MatchingBackground from "../components/MatchingBackground.jsx"
 import MatchingPartyHeader from "../components/MatchingPartyHeader.jsx"
 import MatchingPageControls from "../components/MatchingPageControls.jsx"
@@ -21,9 +21,11 @@ import SettingsEditOverlay from "../components/settingsEdit/SettingsEditOverlay.
 
 export default function GameMatchingPage() {
   const activeInGame = useInGameStore((s) => shouldLeaveMatchingForInGame(s.gameId, s.state))
+  // 끝난 판(ENDED)이라도 지금 판이 있으면 목록으로 안 보냄: 시작 직후 끝난 판은 인게임 이동 뒤 결과 화면으로 감
+  const hasGame = useInGameStore((s) => hasCurrentInGame(s.gameId, s.state))
   const pageState = useMatchingPage()
   if (activeInGame) return <Navigate to="/ingame" replace />
-  if (!pageState.canStayOnMatchingPage) return <Navigate to="/multiplay" replace />
+  if (!pageState.canStayOnMatchingPage) return hasGame ? null : <Navigate to="/multiplay" replace />
 
   const {
     uiVisible,

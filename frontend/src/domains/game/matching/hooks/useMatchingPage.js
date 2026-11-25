@@ -14,7 +14,7 @@ import { leaveRoom } from "../socket/room.js"
 import { resolveMinStartPlayers, startNotReadyMessage, startShortageMessage } from "../constants/gameStartMessages.js"
 import { traceMatchingFlow } from "../debug/matchingFlowTrace.js"
 import { navigateToInGameFromMatching } from "../utils/navigateToInGame.js"
-import { shouldLeaveMatchingForInGame } from "../utils/shouldLeaveMatchingForInGame.js"
+import { hasCurrentInGame, shouldLeaveMatchingForInGame } from "../utils/shouldLeaveMatchingForInGame.js"
 import { matchingRoomExitMessage, shouldForceMatchingLobbyExit } from "../utils/matchingRoomExit.js"
 import { canStayOnMatchingPage as resolveCanStayOnMatchingPage } from "../utils/canStayOnMatchingPage.js"
 
@@ -144,7 +144,9 @@ export function useMatchingPage() {
   // 방에 안 앉았는데 대기방 URL만 남은 경우 멀티플레이로 (퇴장·삭제 후 화면 고착 방지)
   // 판이 시작됐으면 안 나감: game_started가 방을 비우고 인게임 이동을 거는데, 라우터 주소 반영(transition)보다
   // 방 비움 그리기가 먼저 와서 여기서 목록 이동이 인게임 이동을 덮어씀 (화면도 판이 있으면 인게임으로 보냄)
-  const activeInGame = shouldLeaveMatchingForInGame(inGameId, inGameState)
+  // 판이 곧바로 끝나도(시작 직후 광대 나감 등 ENDED) 안 나감: 그 판 결과 화면 이동이 뒤따름
+  // (대기방에 남은 끝난 판은 아래 처음 한 번 정리가 지워서 그 뒤엔 다시 나감)
+  const activeInGame = hasCurrentInGame(inGameId, inGameState)
   useEffect(() => {
     if (canStayOnMatchingPage || activeInGame) return
     if (location.pathname !== "/game-matching") return

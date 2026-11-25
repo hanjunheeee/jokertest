@@ -3,7 +3,7 @@
 import { Navigate } from "react-router-dom"
 import { useMatchingPage } from "@/domains/game/matching/hooks/useMatchingPage.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
-import { shouldLeaveMatchingForInGame } from "@/domains/game/matching/utils/shouldLeaveMatchingForInGame.js"
+import { hasCurrentInGame, shouldLeaveMatchingForInGame } from "@/domains/game/matching/utils/shouldLeaveMatchingForInGame.js"
 import { useShellBackButton } from "@m/shared/layouts/mobileShellBack.jsx"
 import MatchingBackdrop from "../components/layout/MatchingBackdrop.jsx"
 import MatchingTopBar from "../components/layout/MatchingTopBar.jsx"
@@ -20,6 +20,8 @@ import SettingsEditSheet from "../components/settingsEdit/SettingsEditSheet.jsx"
 // 대기방 페이지
 export default function GameMatchingPage() {
   const activeInGame = useInGameStore((s) => shouldLeaveMatchingForInGame(s.gameId, s.state))
+  // 끝난 판(ENDED)이라도 지금 판이 있으면 목록으로 안 보냄: 시작 직후 끝난 판은 인게임 이동 뒤 결과 화면으로 감 (데스크톱과 같음)
+  const hasGame = useInGameStore((s) => hasCurrentInGame(s.gameId, s.state))
   const page = useMatchingPage()
 
   useShellBackButton({
@@ -29,7 +31,7 @@ export default function GameMatchingPage() {
   })
 
   if (activeInGame) return <Navigate to="/ingame" replace />
-  if (!page.canStayOnMatchingPage) return <Navigate to="/multiplay" replace />
+  if (!page.canStayOnMatchingPage) return hasGame ? null : <Navigate to="/multiplay" replace />
 
   // 친구 버튼은 열고 닫기 둘 다 (데스크톱 친구 버튼과 같음)
   const toggleFriendInvite = () => {

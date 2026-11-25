@@ -4,7 +4,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react"
 import { getInGameParchmentModalVariant } from "@/domains/game/ingame/constants/parchment/ingameParchmentModalVariants.js"
 import ConfirmButton from "@m/shared/ui/modal/parchment/ConfirmButton.jsx"
 import ParchmentFrame from "@m/shared/ui/modal/parchment/ParchmentFrame.jsx"
-import { PARCHMENT_ALERT_MSG_CLASS } from "@m/shared/ui/modal/parchment/parchmentAlertStyle.js"
+import { PARCHMENT_ALERT_MSG_CLASS, toParchmentHostLayer } from "@m/shared/ui/modal/parchment/parchmentAlertStyle.js"
 import {
   dismissParchmentAlert,
   getParchmentAlertMessage,
@@ -13,7 +13,6 @@ import {
 import SheetPortal from "@m/shared/ui/sheet/SheetPortal.jsx"
 
 const VARIANT = getInGameParchmentModalVariant("gameStartBlocked")
-const toFixed = (className) => className.replace(/^absolute /, "fixed ")
 
 export default function ParchmentAlertHost() {
   const message = useSyncExternalStore(subscribeParchmentAlert, getParchmentAlertMessage, () => null)
@@ -32,11 +31,11 @@ export default function ParchmentAlertHost() {
         <button
           type="button"
           aria-label={VARIANT.backdropLabel}
-          className={toFixed(VARIANT.backdropClass)}
+          className={toParchmentHostLayer(VARIANT.backdropClass)}
           data-sfx-kind="ui-cancel"
           onClick={close}
         />
-        <div className={toFixed(VARIANT.wrapClass)}>
+        <div className={toParchmentHostLayer(VARIANT.wrapClass)}>
           <div role="alertdialog" aria-modal="true" aria-live="assertive" aria-label="안내" className={VARIANT.panelClass}>
             <ParchmentFrame>
               <p className={PARCHMENT_ALERT_MSG_CLASS}>{message}</p>

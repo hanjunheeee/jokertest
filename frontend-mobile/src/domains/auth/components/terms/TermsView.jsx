@@ -5,7 +5,7 @@ import { termsLabelOf } from "@/domains/auth/utils/terms.js"
 import ConfirmButton from "@m/shared/ui/modal/parchment/ConfirmButton.jsx"
 import ParchmentTextDialog from "@m/shared/ui/modal/parchment/ParchmentTextDialog.jsx"
 import { PARCHMENT_ALERT_MSG_CLASS } from "@m/shared/ui/modal/parchment/parchmentAlertStyle.js"
-import { DIALOG_META_CLASS, TEXT_BTN_CLASS } from "@m/shared/ui/modal/textDialogStyle.js"
+import { TEXT_BTN_CLASS } from "@m/shared/ui/modal/textDialogStyle.js"
 
 const COMPACT_BTN = "!w-[6.6rem]"
 const COMPACT_LABEL = "px-0.5 !text-[0.84rem] leading-none whitespace-nowrap"
@@ -13,7 +13,8 @@ const COMPACT_LABEL = "px-0.5 !text-[0.84rem] leading-none whitespace-nowrap"
 const BODY_PANEL_CLASS =
     "max-h-[min(44svh,22rem)] w-full min-h-0 overflow-y-auto overscroll-contain whitespace-pre-wrap px-0.5 py-1 text-left font-subheading font-semibold leading-relaxed text-[#2a1208] app-text-scaled [--app-text-size:0.86rem] land:max-h-[min(52svh,26rem)]"
 
-const META_CLASS = `${DIALOG_META_CLASS} w-full text-left text-[#3a1a0c]/80`
+// 버전 줄: 공용 메타 글자색(#5a4630)과 겹쳐 그쪽이 이겨 대비 3.5 → 글자색 하나만 두고 90% (양피지 위 5.2)
+const META_CLASS = "w-full text-left font-subheading text-[#3a1a0c]/90 app-text-scaled [--app-text-size:0.78rem]"
 
 const effectiveDateText = (iso) => {
     const date = new Date(iso)

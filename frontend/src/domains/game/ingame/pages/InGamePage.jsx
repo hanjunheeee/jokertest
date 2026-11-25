@@ -116,8 +116,10 @@ export default function InGamePage() {
     dawnReportActive: dawnReportPending,
   })
 
+  // 밤인 동안도 미룸: 서버가 내 결과를 밤 결과(낮 시작 연출)보다 먼저 보내서, 그 틈에 창이 한 번 그려졌다
+  // 연출에 가려 닫히고 연출 뒤 다시 떠 밤마다 두 번 뜸 → 밤 결과가 들어와 낮이 된 뒤 연출 다음에 한 번만
   const nightPrivateResult = useInGameNightPrivateResult({
-    hold: roleReveal.open || expulsionBusy || dawnReportPending,
+    hold: roleReveal.open || expulsionBusy || dawnReportPending || gameState?.phase === "NIGHT",
   })
 
   // 결과 화면 이동은 추방 영상·낮 시작 연출이 끝난 뒤로 미룸 (밤 암살로 판이 끝나면 연출 뒤 결과 화면)

@@ -22,6 +22,10 @@ const CANCEL_TONE_KINDS = new Set([KINDS.DAY_VOTE_CANCEL, KINDS.NIGHT_ACTION_CAN
 const ALLY_BADGE_CLASS =
     "ml-1.5 inline-block whitespace-nowrap rounded-full border border-[#9fe0c4] bg-[#0f3327] px-1.5 py-0.5 align-middle text-[0.62rem] font-semibold tracking-wide text-[#d9fff0] [text-shadow:none]"
 
+// 상태 글(사망·연결 끊김): 글자색은 그대로, 동료 표시처럼 어두운 바탕을 깔아 양피지 위에서 읽히게 (바탕 없으면 대비 2 안팎)
+const STATUS_BADGE_CLASS =
+    "mt-0.5 inline-block rounded-full bg-[#2a1810] px-1.5 py-0.5 text-[0.72rem] font-semibold leading-tight text-[#c8a878]"
+
 const STATUS_LABEL = {
     [INGAME_PLAYER_STATUS.DEAD]: "사망",
     [INGAME_PLAYER_STATUS.DISCONNECTED]: "연결 끊김",
@@ -60,7 +64,7 @@ export default function RosterRow({ player, index, items, localPlayerId, rosterS
                         ) : null}
                     </p>
                     {statusLabel ? (
-                        <p className="mt-0.5 text-[0.72rem] font-semibold text-[#c8a878]">{statusLabel}</p>
+                        <p className={STATUS_BADGE_CLASS}>{statusLabel}</p>
                     ) : null}
                 </div>
                 {visibleItems.length > 0 ? (

@@ -5,7 +5,7 @@ import { getInGameParchmentModalVariant } from "@/domains/game/ingame/constants/
 import { MODAL_ASSETS } from "@/domains/game/matching/constants/friendInviteModalAssets.js"
 import ConfirmButton from "@m/shared/ui/modal/parchment/ConfirmButton.jsx"
 import ParchmentFrame from "@m/shared/ui/modal/parchment/ParchmentFrame.jsx"
-import { PARCHMENT_CONFIRM_MSG_CLASS } from "@m/shared/ui/modal/parchment/parchmentAlertStyle.js"
+import { PARCHMENT_CONFIRM_MSG_CLASS, toParchmentHostLayer } from "@m/shared/ui/modal/parchment/parchmentAlertStyle.js"
 import {
   getParchmentConfirmState,
   resolveParchmentConfirm,
@@ -14,7 +14,6 @@ import {
 import SheetPortal from "@m/shared/ui/sheet/SheetPortal.jsx"
 
 const VARIANT = getInGameParchmentModalVariant("gameStartBlocked")
-const toFixed = (className) => className.replace(/^absolute /, "fixed ")
 
 export default function ParchmentConfirmHost() {
   const pending = useSyncExternalStore(subscribeParchmentConfirm, getParchmentConfirmState, () => null)
@@ -34,11 +33,11 @@ export default function ParchmentConfirmHost() {
         <button
           type="button"
           aria-label={VARIANT.backdropLabel}
-          className={toFixed(VARIANT.backdropClass)}
+          className={toParchmentHostLayer(VARIANT.backdropClass)}
           data-sfx-kind="ui-cancel"
           onClick={cancel}
         />
-        <div className={toFixed(VARIANT.wrapClass)}>
+        <div className={toParchmentHostLayer(VARIANT.wrapClass)}>
           <div
             role="alertdialog"
             aria-modal="true"

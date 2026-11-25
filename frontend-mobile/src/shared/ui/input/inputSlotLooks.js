@@ -41,8 +41,9 @@ export const INPUT_SLOT_LOOKS = {
     img: IMG_BLOCK,
     row: "absolute inset-0 flex items-center gap-0.5 pl-[7%] pr-[1.5%]",
     input: "h-full min-w-0 flex-1 bg-transparent outline-none",
+    // 입력 글자 14px(app-text-scaled)이 16px 규칙(app-input-text)을 덮어 빼 둠, 안내 글자만 작게
     text:
-      "font-subheading text-white app-input-text app-text-scaled [--app-text-size:0.875rem] placeholder:text-white/55 placeholder:app-text-scaled placeholder:[--app-text-size:11px]",
+      "font-subheading text-white app-input-text placeholder:text-white/55 placeholder:app-text-scaled placeholder:[--app-text-size:11px]",
     toggle: `flex size-9 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 ${TOGGLE_COLOR}`,
     spacer: "w-2 shrink-0",
     namedByPlaceholder: true,
