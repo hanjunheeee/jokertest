@@ -4,7 +4,7 @@
 // 목록 A09-끊김-나가기-탈주.md 번호 A09-E-078·120 (모바일 줄)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, clearOverlays } = require('./_talk');
+const { talk, clearOverlays, expectPlayerStatus, expectRosterCount } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
 // 밀려난 화면에 뜨는 안내 글 (다른 곳 로그인 알림 또는 세션 끝 알림)
@@ -14,7 +14,7 @@ const REPLACED_TEXT = /다른 기기 또는 브라우저에서 로그인|세션�
 async function seatAtDay(table, user, n) {
     const t = await K.seat(table, user, { n });
     await K.toDay(t);
-    await expect(talk.phaseLine(user.page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(user.page)).toContainText('낮', { timeout: 15_000 });
     await clearOverlays(user.page);
     return t;
 }
@@ -25,7 +25,7 @@ async function openOtherPhone(players, user, n) {
     await other.page.goto('/ingame');
     await expect(other.page).toHaveURL(/\/ingame/, { timeout: 20_000 });
     await expect(talk.layout(other.page)).toBeVisible({ timeout: 20_000 });
-    await expect(talk.strip(other.page).locator('[data-strip-slot]')).toHaveCount(n, { timeout: 30_000 });
+    await expectRosterCount(other.page, n, { timeout: 30_000 });
     return other;
 }
 
@@ -38,8 +38,8 @@ test('A09-E-078 모바일 7명 판, 다른 폰으로 로그인 → 새 화면에
     // 새 화면: 같은 날·같은 단계, 내 칸이 산 채
     await clearOverlays(other.page);
     await expect(talk.phaseLine(other.page)).toContainText('제 1일');
-    await expect(talk.phaseLine(other.page)).toContainText('낮 토론');
-    await expect(talk.mySlot(other.page)).toHaveAccessibleName(`${user.account.nickname}, 나`);
+    await expect(talk.phaseLine(other.page)).toContainText('낮');
+    await expectPlayerStatus(other.page, user.account.nickname, null);
     const row = await t.player(me);
     expect(row.alive).toBe(true);
     expect(row.isParticipating).toBe(true);

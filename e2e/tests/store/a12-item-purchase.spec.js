@@ -131,7 +131,8 @@ test('A12-E-025 산 뒤 새로고침 → "보유중" 그대로', async ({ user }
     await expect(st.detail(page).getByText(DONE)).toBeVisible();
     await page.reload();
     await ui.skipIntro(page);
-    await expect(page.getByRole('button', { name: '쿠폰 입력' })).toBeVisible();
+    // 입장 영상이 끝난 표시: "보유 재화" 칸이 눌리는 상태 (합친 뒤 "쿠폰 입력" 단추는 숨김)
+    await expect(page.getByLabel('보유 재화', { exact: true })).toHaveCSS('pointer-events', 'auto');
     await st.pickCategory(page, '스킨');
     await st.pickItem(page, SKIN.slot);
     await expect(buyButton(page, '보유중')).toBeDisabled();

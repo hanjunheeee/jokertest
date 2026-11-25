@@ -4,7 +4,7 @@
 // 목록 A09-끊김-나가기-탈주.md 번호 A09-E-024·026·028·108 (모바일 줄) — 처형까지는 봇 표와 손잡이로 감
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable, expectAllReadable } = require('../../helpers/visible');
-const { talk, getExecuted } = require('./_talk');
+const { talk, getExecuted, expectRosterCount, expectPlayerStatus } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
 // 판 앉히고 봇 표로 내가 처형될 때까지 (사망 창은 열린 채로 둠)
@@ -51,8 +51,8 @@ test('A09-E-028 모바일 6명 판, 처형된 뒤 탭 닫고 다시 판 화면 �
     await dialog.getByRole('button', { name: '관전 계속하기' }).click();
     await expect(dialog).toBeHidden();
     await expect(tab).toHaveURL(/\/ingame/);
-    await expect(talk.mySlot(tab)).toHaveAccessibleName(/사망/);
-    await expect(talk.strip(tab).locator('[data-strip-slot]')).toHaveCount(6);
+    await expectPlayerStatus(tab, user.account.nickname, '사망');
+    await expectRosterCount(tab, 6);
     // 판 자리는 남아 있음 (죽은 채 참여 중)
     const row = await t.player(me);
     expect(row.alive).toBe(false);

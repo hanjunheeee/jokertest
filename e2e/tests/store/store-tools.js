@@ -77,11 +77,14 @@ async function createTopupOrder(uuid, o = {}) {
     return { orderId, paymentKey, amount: product.pay_amount };
 }
 
-/** 상점 열기 (입장 영상 건너뛰기) → 쿠폰 버튼이 보일 때까지 */
+/**
+ * 상점 열기 (입장 영상 건너뛰기) → 입장 영상이 끝나 "보유 재화" 칸이 눌리는 상태가 될 때까지
+ * 합친 뒤 "쿠폰 입력" 단추는 숨김(frontend store/constants/storeLayoutStyle.js STORE_SHOW_COUPON_BUTTON=false)이라 준비 표시로 못 씀
+ */
 async function gotoStore(page, path = '/store') {
     await page.goto(path);
     await skipIntro(page);
-    await expect(page.getByRole('button', { name: '쿠폰 입력' })).toBeVisible();
+    await expect(page.getByLabel('보유 재화', { exact: true })).toHaveCSS('pointer-events', 'auto');
 }
 
 /** 분류 고르기 (이미 눌린 분류를 또 누르면 풀리므로 안 눌렸을 때만) */

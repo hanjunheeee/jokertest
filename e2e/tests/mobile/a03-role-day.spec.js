@@ -4,7 +4,7 @@
 // 목록 A03-낮투표.md A03-E-245~265 (모바일 몫), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a03-role-day.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { ROLE_LABELS } = require('../../helpers/ui');
-const { talk, startTalkGame, toDay, toVote } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, openRoster, closeRoster, playerItems } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -57,33 +57,15 @@ async function openVote(table, user, n, { humanRoles, settings } = {}) {
 
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
-const sheetOf = (page) => page.locator('[data-ingame-player-card-menu]');
-
-// 초상 띠 칸을 눌러 그 사람 카드 시트 열기
-async function openSheet(page, nick) {
-    await talk.slot(page, nick).click();
-    const sheet = sheetOf(page);
-    await expect(sheet).toHaveAttribute('aria-label', nick);
-    return sheet;
-}
 
 // 밤 행동 단추 이름 (낮엔 하나도 없어야 함)
 const NIGHT_ACTION_NAMES = ['암살', '보호', '조사', '확인', '건너뛰기'];
 
-// 카드 시트 항목 이름 목록 (누를 수 있는 것만 enabled에) → 시트 닫음
+// 세로 카톡형: 카드 판 대신 플레이어 목록 시트 줄마다 행동 단추 — 그 사람 줄 항목 이름 목록 (누를 수 있는 것만 enabled에) → 목록 닫음
 async function sheetItems(page, nick) {
-    const sheet = await openSheet(page, nick);
-    const items = sheet.getByRole('menuitem');
-    const all = [];
-    const enabled = [];
-    for (let i = 0; i < await items.count(); i += 1) {
-        const name = await items.nth(i).getAttribute('aria-label');
-        all.push(name);
-        if (await items.nth(i).isEnabled()) enabled.push(name);
-    }
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
-    return { all, enabled };
+    const items = await playerItems(page, nick);
+    await closeRoster(page);
+    return items;
 }
 
 // ── 시험 ──
@@ -110,15 +92,17 @@ CASES.forEach(({ n, role }, i) => {
         for (const name of NIGHT_ACTION_NAMES) {
             await expect(talk.actionRow(user.page).getByRole('button', { name, exact: true })).toHaveCount(0);
         }
-        // 남의 카드마다 항목은 '투표하기' 하나뿐이고 누를 수 있음
+        // 남의 줄마다 항목은 '투표하기' 하나뿐이고 누를 수 있음
         for (const bot of t.bots) {
             const items = await sheetItems(user.page, bot.nickname);
             expect(items.all, `${bot.nickname} 카드 항목`).toEqual(['투표하기']);
             expect(items.enabled).toEqual(['투표하기']);
         }
-        // 내 칸은 시트가 안 열림 (열렸으면 덮개가 다음 누름을 막아 남의 시트가 안 열림)
-        await talk.mySlot(user.page).click();
-        await openSheet(user.page, t.bots[0].nickname);
-        await sheetOf(user.page).getByRole('button', { name: '닫기' }).click();
+        // 내 줄("(나)")엔 행동 단추가 없음
+        await openRoster(user.page);
+        const mine = talk.roster(user.page).locator('li[data-roster-player]').filter({ hasText: ' (나)' });
+        await expect(mine).toHaveCount(1);
+        await expect(mine.getByRole('menuitem')).toHaveCount(0);
+        await closeRoster(user.page);
     });
 });

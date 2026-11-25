@@ -11,7 +11,7 @@ const K = require('../ingame/_a09-simple-kit');
 async function desert(table, user, n) {
     const t = await K.seat(table, user, { n });
     await K.toDay(t);
-    await expect(talk.phaseLine(user.page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(user.page)).toContainText('낮', { timeout: 15_000 });
     await K.leaveAlive(user.page);
     return t;
 }

@@ -6,6 +6,7 @@ const { expect } = require('@playwright/test');
 const ui = require('../../helpers/ui');
 const { expectReadable } = require('../../helpers/visible');
 const night = require('../ingame/b-night/_night');
+const { openRoster, closeRoster, rosterRowOf, expectPlayerStatus, talk } = require('./_talk');
 
 const { ACTION_LABELS, TURN_MESSAGES, ROLE_NAMES } = night;
 // 밤 차례가 도는 순서 (서버와 같음)
@@ -146,9 +147,9 @@ async function botPick(t, bot, targetId) {
     if (!r?.ok) throw new Error(`봇 밤 행동 거절: ${r?.code}`);
 }
 
-// 폰 초상 띠 칸: 칸 이름(닉네임·동료·사망 글)이 바뀌어도 찾게 카드의 닉네임 표시로 고름 (PC 카드 고르개와 같은 방식)
-const phoneCard = (page, nickname) => page.locator('[data-strip-slot]').filter({ has: page.locator(`[data-ingame-player-nickname="${nickname}"]`) });
-/** 그 사람 카드 (폰은 초상 띠 칸, PC는 판 카드) */
+// 폰(세로 카톡형)엔 카드 판·초상 띠가 없음 → 플레이어 목록 시트(밤엔 "직업 행동")의 그 사람 줄이 카드 메뉴 대신 (frontend-mobile roster/RosterRow.jsx)
+const phoneCard = (page, nickname) => rosterRowOf(page, nickname);
+/** 그 사람 카드 (폰은 목록 시트 줄 — 목록을 먼저 열어야 보임, PC는 판 카드) */
 const card = (page, nickname) => (isPhone(page) ? phoneCard(page, nickname) : night.cardButton(page, nickname));
 const cardMenu = (page) => page.getByRole('menu', { name: '플레이어 행동' });
 // 메뉴 항목은 단추에 보이는 글로 고름 (PC 밤 행동 단추는 읽기 이름이 "닉네임 암살"처럼 대상 이름이 앞에 붙어 이름으로 안 고름)
@@ -199,8 +200,12 @@ async function clearBlockers(page, { rounds = 4 } = {}) {
     }
 }
 
-/** 열린 카드 메뉴 닫기 (없으면 그냥 지나감) */
+/** 열린 카드 메뉴 닫기 (없으면 그냥 지나감, 폰은 목록 시트 닫기) */
 async function closeMenu(page) {
+    if (isPhone(page)) {
+        if (await talk.roster(page).isVisible().catch(() => false)) await closeRoster(page);
+        return;
+    }
     const menu = cardMenu(page);
     if (!(await menu.isVisible().catch(() => false))) return;
     await page.keyboard.press('Escape');
@@ -209,6 +214,16 @@ async function closeMenu(page) {
 
 /** 카드를 눌러 메뉴 열기 → 메뉴 (가리는 창이 있으면 닫으면서 다시, 추방 영상이 끝날 때까지도 기다림) */
 async function openMenu(page, nickname, { timeout = 45000 } = {}) {
+    // 폰: 목록 시트를 열고 그 사람 줄 (줄 안 menuitem이 카드 메뉴 항목, 연출 창이 목록을 닫으면 다시 엶)
+    if (isPhone(page)) {
+        const row = phoneCard(page, nickname);
+        await expect(async () => {
+            await clearBlockers(page);
+            await openRoster(page, { timeout: 3000 });
+            await expect(row).toHaveCount(1, { timeout: 1000 });
+        }).toPass({ timeout });
+        return row;
+    }
     const menu = cardMenu(page);
     await expect(async () => {
         await clearBlockers(page);
@@ -224,6 +239,8 @@ async function pick(page, nickname, label) {
     const item = menuItem(menu, label);
     await expect(item).toBeEnabled();
     await item.click();
+    // 폰 목록 시트는 고른 뒤에도 열려 있음 → 닫음
+    if (isPhone(page)) await closeMenu(page);
     await expect(menu).toBeHidden();
 }
 
@@ -258,6 +275,15 @@ async function expectMyTurn(page, { timeout = 45000 } = {}) {
  * 카드 누르기가 성공한 뒤에만 봄 (창에 가려 못 누른 것을 '없음'으로 잘못 보지 않게)
  */
 async function menuItemState(page, nickname, role) {
+    // 폰: 목록 시트 그 줄의 단추 (항목 없는 줄은 단추 칸이 안 그려짐 → '없음')
+    if (isPhone(page)) {
+        const row = await openMenu(page, nickname);
+        const item = menuItem(row, ACTION_LABELS[role]);
+        let state = '없음';
+        if ((await item.count()) > 0) state = (await item.isEnabled()) ? '있음' : '잠김';
+        await closeMenu(page);
+        return state;
+    }
     const menu = cardMenu(page);
     await closeMenu(page);
     await expect(async () => {
@@ -314,6 +340,7 @@ async function waitNoticeGone(page) {
 }
 
 /** 화면에 그 날 낮·밤이 왔는지 (폰은 위 단계 줄 "제 N일", PC는 진행 바 이름) */
+// 폰(세로 카톡형) 날짜 글은 사용자가 아직 안 정함("제 N일" 안 보임) → 폰 줄은 고치지 않고 그대로 둠 (옛 단계 줄 표시를 찾음)
 async function expectDayShown(page, dayIndex, { timeout = 30000 } = {}) {
     const mark = isPhone(page)
         ? page.locator('[data-talk-phase-line]').filter({ hasText: `제 ${dayIndex}일` })
@@ -368,8 +395,13 @@ async function expectNoResult(page, dayIndex, seen = 0) {
     expect((await night.readUi(page)).privateResults).toHaveLength(seen);
 }
 
-/** 그 사람 카드 상태(alive·dead)가 될 때까지 (낮 시작 연출은 넘기며) */
+/** 그 사람 카드 상태(alive·dead)가 될 때까지 (낮 시작 연출은 넘기며, 폰은 목록 줄 상태 글 "사망"·없음) */
 async function expectCardStatus(page, nickname, status, { timeout = 45000 } = {}) {
+    if (isPhone(page)) {
+        await settleDawn(page, { timeout });
+        await expectPlayerStatus(page, nickname, status === 'dead' ? '사망' : null, { timeout });
+        return;
+    }
     const mark = page.locator(`[data-ingame-player-nickname="${nickname}"]`);
     await expect(async () => {
         await passDawn(page);
@@ -380,17 +412,34 @@ async function expectCardStatus(page, nickname, status, { timeout = 45000 } = {}
 /** 그 사람 카드가 사망으로 바뀌고 눈에 보이는지 (가리는 창은 닫고 봄, 폰은 칸 이름에 "사망") */
 async function expectDeadShown(page, nickname) {
     await expectCardStatus(page, nickname, 'dead');
+    // 폰: 목록 줄 "사망" 글이 읽힘 (양피지 틀 위 글이라 대비는 사진으로 잼)
+    if (isPhone(page)) {
+        await expect(async () => {
+            await clearBlockers(page);
+            await openRoster(page, { timeout: 3000 });
+            await expectReadable(phoneCard(page, nickname).getByText('사망', { exact: true }), { method: 'pixels', timeout: 2000 });
+        }).toPass({ timeout: 30000 });
+        await closeMenu(page);
+        return;
+    }
     await expect(async () => {
         await clearBlockers(page);
         await expectReadable(card(page, nickname), { contrast: false, timeout: 2000 });
     }).toPass({ timeout: 30000 });
-    if (isPhone(page)) await expect(card(page, nickname)).toHaveAttribute('aria-label', /사망/);
 }
 
 /** 그 낮이 화면에 오고 연출이 끝난 뒤 사망 카드가 count개인지 (밤에 아무도 안 죽었나 볼 때) */
 async function expectDeadCount(page, dayIndex, count) {
     await expectDayShown(page, dayIndex);
     await settleDawn(page);
+    // 폰: 목록 시트의 "사망" 글 수
+    if (isPhone(page)) {
+        await clearBlockers(page);
+        const sheet = await openRoster(page);
+        await expect(sheet.getByText('사망', { exact: true })).toHaveCount(count);
+        await closeMenu(page);
+        return;
+    }
     await expect(deadCards(page)).toHaveCount(count);
 }
 

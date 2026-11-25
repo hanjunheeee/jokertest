@@ -4,7 +4,7 @@
 // 목록 A09-끊김-나가기-탈주.md 번호 A09-E-068 (모바일 줄) — 기대값은 사용자 결정 2026-11-16 오전 둘째 11번·낮 셋째 2번 (서버 낮 판정 값 DEFENDANT_DISCONNECTED)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, clearOverlays } = require('./_talk');
+const { talk, clearOverlays, expectPlayerStatus } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
 test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → 재판 창 없이 밤, 그 봇은 산 채, 투표 현황에 "재판 대상의 연결이 끊겨 재판 없음" (결정: 뽑히는 순간 끊겨 있으면 재판 없이 밤) @game @smoke', async ({ user, table }) => {
@@ -18,7 +18,7 @@ test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → �
     const since = Date.now();
     K.dropBot(bot);
     await K.droppedAt(t, K.U(bot), since);
-    await expect(talk.slot(page, bot.nickname)).toHaveAccessibleName(`${bot.nickname}, 연결 끊김`, { timeout: 15_000 });
+    await expectPlayerStatus(page, bot.nickname, '연결 끊김', { timeout: 15_000 });
     const { state } = await K.voteOut(t, K.U(bot));
 
     expect(state.phase, '재판 없이 밤').toBe('NIGHT');
@@ -35,7 +35,7 @@ test('A09-E-068 모바일 6명 판, 이미 끊긴 봇이 피고로 뽑힘 → �
         await expectReadable(talk.phaseLine(page), { timeout: 1500 });
     }).toPass({ timeout: 15_000 });
     await expect(K.tribunalWindow(page)).toHaveCount(0);
-    await expect(talk.slot(page, bot.nickname)).toHaveAccessibleName(`${bot.nickname}, 연결 끊김`);
+    await expectPlayerStatus(page, bot.nickname, '연결 끊김');
     // 투표 현황 창: 왜 재판이 안 열렸는지 글 (밤 안내 창이 덮으면 닫고 엶)
     const status = page.getByRole('dialog', { name: '투표 현황' });
     await expect(async () => {

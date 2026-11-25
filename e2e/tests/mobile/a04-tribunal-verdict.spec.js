@@ -3,16 +3,16 @@
 // 모바일 재판 판정 결과 시험: 아무도 안 내면 무죄, 유죄면 추방 글, 무죄면 밤 안내, 피고 카드 사망 표시, 처형 직업·표 수가 화면에 안 나옴
 // 목록 A04-E-039·044·046·049·051·053 (시험목록/A04-재판.md "브라우저 — 간단" 모바일 몫)
 const { test, expect } = require('../../helpers/fixtures');
-const { talk } = require('./_talk');
+const { talk, expectPlayerStatus } = require('./_talk');
 const A = require('../ingame/_a04-multi');
 
 const { trial } = A;
 
-// 화면에 보이는 글 전부에서 위 단계 줄만 뺌 (밤 차례 이름 "밤 광대"·남은 시간은 처형 정보가 아님)
+// 화면에 보이는 글 전부에서 명패+시간패널 줄만 뺌 (밤 차례 이름 "밤-광대"·남은 시간은 처형 정보가 아님)
 function screenText(page) {
     return page.evaluate(() => {
         let text = document.body.innerText;
-        for (const el of document.querySelectorAll('[data-talk-phase-line]')) text = text.replace(el.innerText, ' ');
+        for (const el of document.querySelectorAll('[data-ingame-phase-timer-mobile]')) text = text.replace(el.innerText, ' ');
         return text;
     });
 }
@@ -52,13 +52,13 @@ test('A04-E-046 무죄면 추방 글 없이 밤 안내가 뜸 (모바일 5명) @
     await expect(page.getByText(trial.expelText(d.nickname))).toHaveCount(0);
 });
 
-test('A04-E-049 유죄면 피고 카드가 사망 표시로 바뀜 (모바일 7명) @game', async ({ user, table }) => {
+// 세로 카톡형엔 카드 판이 없음 → 플레이어 목록 그 줄의 상태 글로 봄
+test('A04-E-049 유죄면 피고 목록 줄이 사망 표시로 바뀜 (모바일 7명) @game', async ({ user, table }) => {
     const page = user.page;
     const { t, d } = await A.startTrial(table, { humans: [user], bots: 6 });
     await A.pressVote(page, 'GUILTY');
     await A.endTribunal(t);
-    await expect(trial.seat(page, d.nickname)).toHaveAttribute('data-ingame-player-status', 'dead', { timeout: 20000 });
-    await expect(talk.slot(page, d.nickname)).toHaveAccessibleName(/사망/);
+    await expectPlayerStatus(page, d.nickname, '사망', { timeout: 20000 });
 });
 
 test('A04-E-051 처형된 사람이 광대여도 화면 글에 "광대"가 안 나옴 (모바일 6명, 광대 2) @game', async ({ user, table }) => {

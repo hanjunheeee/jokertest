@@ -5,7 +5,7 @@
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { closeOverlays } = require('../../helpers/ui');
-const { talk, clearOverlays, say, botSay } = require('./_talk');
+const { talk, clearOverlays, say, botSay, expectRosterCount } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
 const revealDialog = (page) => page.getByRole('dialog', { name: '내 역할 보기' });
@@ -35,7 +35,7 @@ function expectCountedDown(before, after, elapsedMs) {
 
 // 단계: 판 인원 · 단계 줄 글 · 서버 단계 · 그 단계까지 가는 법
 const PHASES = [
-    { no: 'A09-E-042', n: 6, label: '낮', line: '낮 토론', phase: 'DAY', go: (t) => K.toDay(t) },
+    { no: 'A09-E-042', n: 6, label: '낮', line: '낮', phase: 'DAY', go: (t) => K.toDay(t) },
     { no: 'A09-E-043', n: 7, label: '밤', line: '밤', phase: 'NIGHT', go: (t) => K.toNight(t, 1) },
 ];
 
@@ -56,7 +56,7 @@ PHASES.forEach((p, i) => {
         await expectReadable(talk.phaseLine(page));
         const after = await phaseLineSeconds(page);
         expectCountedDown(before, after, Date.now() - readAt);
-        await expect(talk.strip(page).locator('[data-strip-slot]')).toHaveCount(p.n);
+        await expectRosterCount(page, p.n);
         expect((await t.state()).phase, '서버 단계').toBe(p.phase);
     });
 });
@@ -67,7 +67,7 @@ test('A09-E-045 모바일 10명 판(광대 2), 새로고침 뒤 내 직업 "광�
     const t = await K.seat(table, user, { n: 10, role: 'JOKER', settings: { jokerCount: 2 } });
     const partner = K.botOf(t, await t.state(), 'JOKER');
     await K.toDay(t);
-    await expect(talk.phaseLine(page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(page)).toContainText('낮', { timeout: 15_000 });
     await reloadIngame(page);
     // 떠 있는 안내 창을 닫으며 위 줄 "내 역할 보기"로 역할 창 다시 엶
     const dialog = revealDialog(page);
@@ -88,7 +88,7 @@ test('A09-E-052 모바일 6명 판, 새로고침 뒤 앞 채팅 줄 그대로 @g
     const page = user.page;
     const t = await K.seat(table, user, { n: 6 });
     await K.toDay(t);
-    await expect(talk.phaseLine(page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(page)).toContainText('낮', { timeout: 15_000 });
     await clearOverlays(page);
     const tag = Math.random().toString(36).slice(2, 7);
     const mine = `새로고침 전 내 말 ${tag}`;

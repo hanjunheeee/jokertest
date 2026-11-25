@@ -12,7 +12,7 @@ const H = require('../ingame/_a09-hard-kit');
 async function seatAtDay(table, user, n) {
     const t = await K.seat(table, user, { n });
     await K.toDay(t);
-    await expect(talk.phaseLine(user.page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(user.page)).toContainText('낮', { timeout: 15_000 });
     return t;
 }
 
@@ -41,7 +41,7 @@ test('A09-E-006 모바일 5명 판, 확인 창에서 취소 → 판 화면·단�
     await expect(page).toHaveURL(/\/ingame/);
     await expect(talk.layout(page)).toBeVisible();
     await expect(talk.phaseLine(page)).toContainText('제 1일');
-    await expect(talk.phaseLine(page)).toContainText('낮 토론');
+    await expect(talk.phaseLine(page)).toContainText('낮');
     await expectReadable(talk.phaseLine(page));
     const after = await t.state();
     expect(`${after.phase}/${after.dayPhase}/${after.dayIndex}`).toBe(`${before.phase}/${before.dayPhase}/${before.dayIndex}`);

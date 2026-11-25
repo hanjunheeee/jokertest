@@ -3,7 +3,7 @@
 // 모바일 낮 표 바꾸기 진짜 시간 시험: (X→Y · X→기권 · 기권→X) × (다 차기 전 · 5초 안), 결과는 마지막 표대로·5초 안 바꿔도 마감 안 늘어남
 // 목록 A03-낮투표.md A03-E-086·088·090·092·094·096 (모바일 몫), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a03-vote-change.spec.js
 const { test, expect } = require('../../helpers/fixtures');
-const { talk, startTalkGame, toDay, toVote } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, openPlayer, pickPlayer, closeRoster, trialAny, expectTrialOf } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -64,18 +64,12 @@ const uuidOf = (who) => who.account.uuid;
 
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
-const sheetOf = (page) => page.locator('[data-ingame-player-card-menu]');
-
-// 초상 띠 칸을 눌러 그 사람 카드 시트 열기
-async function openSheet(page, nick) {
-    await talk.slot(page, nick).click();
-    const sheet = sheetOf(page);
-    await expect(sheet).toHaveAttribute('aria-label', nick);
-    return sheet;
-}
+// 세로 카톡형: 카드 판 대신 플레이어 목록 시트 줄마다 행동 단추 (카드 메뉴와 같은 항목·이름) — _talk.js openPlayer·pickPlayer
+// 그 사람 줄 열기 (목록 시트를 열고 줄을 줌, 줄 안 menuitem이 카드 메뉴 항목)
+const openSheet = (page, nick) => openPlayer(page, nick);
 
 // 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
-// 사람이면 그 사람 카드 '투표하기' → 다시 연 그 카드 시트가 '투표취소'면 서버가 받은 것
+// 사람이면 목록 그 사람 줄 '투표하기' → 그 줄이 '투표취소'면 서버가 받은 것
 // (사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
 async function castMine(page, target, names) {
     if (target === null) {
@@ -83,15 +77,7 @@ async function castMine(page, target, names) {
         await expect(abstainButton(page)).toBeDisabled();
         return;
     }
-    const sheet = await openSheet(page, names.get(target));
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
-    await expect(async () => {
-        if (!(await sheet.isVisible().catch(() => false))) await openSheet(page, names.get(target));
-        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
-    }).toPass({ timeout: 15_000 });
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
+    await pickPlayer(page, names.get(target), '투표하기', { after: '투표취소' });
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -123,10 +109,9 @@ const OUTCOME_TEXT = Object.freeze({
 // 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지만 봄
 // (닫히는 움직임 동안 글을 읽으면 맞았다 틀렸다 함 — a03-vote-pick.spec.js와 같은 방식)
 async function expectOutcome(page, panel, kind, targetNick) {
-    const tribunal = page.locator('[data-ingame-tribunal-presentation]');
+    const tribunal = trialAny(page);
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible({ timeout: 15_000 });
-        await expect(tribunal).toContainText(targetNick);
+        await expectTrialOf(page, targetNick);
         await expect(panel).toBeHidden();
         return;
     }
@@ -153,7 +138,7 @@ async function expectFiveSeconds(watcher, fullAt, day) {
     return resolved.payload;
 }
 
-// 사람 표 바꾸기 (이미 낸 뒤): 다른 사람이면 그 카드 '투표하기', 기권이면 기권 단추
+// 사람 표 바꾸기 (이미 낸 뒤): 다른 사람이면 목록 그 사람 줄 '투표하기', 기권이면 기권 단추
 // '투표취소'는 기권이 아니라 표 거두기(안 낸 사람으로 돌아감), 찍은 뒤에도 기권 단추가 켜져 바로 누름 (PC와 같음, 사용자 결정 2026-11-18)
 async function changeMine(page, from, to, names) {
     if (to === null) {
@@ -162,9 +147,7 @@ async function changeMine(page, from, to, names) {
         await expect(abstainButton(page)).toBeDisabled();
         return;
     }
-    const sheet = await openSheet(page, names.get(to));
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
+    await pickPlayer(page, names.get(to), '투표하기', { after: '투표취소' });
 }
 
 // ── 시험 ──

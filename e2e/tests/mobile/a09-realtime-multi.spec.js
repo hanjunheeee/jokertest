@@ -4,7 +4,7 @@
 // 목록 A09-끊김-나가기-탈주.md A09-H-002·041, 60초는 손잡이 없이 진짜로 기다림 — 모이는지만: npx playwright test --list tests/mobile/a09-realtime-multi.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
-const { talk } = require('./_talk');
+const { talk, expectPlayerStatus } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 const H = require('../ingame/_a09-hard-kit');
 
@@ -16,7 +16,7 @@ async function openDay(user, players, table) {
     const gate = await H.socketGate(b);
     const t = await H.seat(table, [a, b], { n: 7 });
     await K.toDay(t);
-    for (const p of [a, b]) await expect(talk.phaseLine(p.page)).toContainText('낮 토론', { timeout: 15_000 });
+    for (const p of [a, b]) await expect(talk.phaseLine(p.page)).toContainText('낮', { timeout: 15_000 });
     return { a, b, gate, t };
 }
 
@@ -33,7 +33,7 @@ async function expectStillIn(t, person) {
     expect(row.alive).toBe(true);
     expect(row.isParticipating).toBe(true);
     await expect(person.page).toHaveURL(/\/ingame/);
-    await expect(talk.phaseLine(person.page)).toContainText('낮 토론', { timeout: 20_000 });
+    await expect(talk.phaseLine(person.page)).toContainText('낮', { timeout: 20_000 });
 }
 
 test('A09-H-002 모바일 7명 판(사람 2 + 봇 5) ㄴ이 오프라인 → 59초 안에 온라인 → 판 그대로 이어짐, ㄱ 채팅에 끊김 알림 @game @hard @realtime', async ({ user, players, table }) => {
@@ -57,6 +57,6 @@ test('A09-H-041 모바일 7명 판(사람 2 + 봇 5) ㄴ이 오프라인 30초 �
     const backAt = await H.goOnline(t, b, gate, { at: dropAt + 30_000 });
     expect(backAt - dropAt).toBeLessThan(GRACE_MS);
     await expectStillIn(t, b);
-    // 남은 사람 화면 초상 띠에도 ㄴ 칸 그대로
-    await expect(talk.slot(a.page, nick(b))).toHaveCount(1);
+    // 남은 사람 화면 플레이어 목록에도 ㄴ 줄 그대로 (끊김 표시 없이)
+    await expectPlayerStatus(a.page, nick(b), null);
 });

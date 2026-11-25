@@ -9,6 +9,7 @@ const { e2e } = require('../../helpers/internal');
 const { Table } = require('../../helpers/game');
 const { sleep } = require('../../helpers/wait');
 const { expectReadable } = require('../../helpers/visible');
+const { pickPlayer } = require('../mobile/_talk');
 
 const uuidOf = (x) => x.account.uuid;
 const nickOf = (x) => x.nickname ?? x.account.nickname;
@@ -29,10 +30,15 @@ const TEXT = Object.freeze({
 // 서버가 끝난 재판 표를 거절할 때 화면 글 (frontend utils/voteSubmitPatch.js)
 const LATE_VOTE_TEXTS = Object.freeze(['재판이 끝나 투표할 수 없습니다.', '재판이 이미 판정되어 투표할 수 없습니다.']);
 
-// 고르개: PC·모바일 둘 다 같은 표시(data-*)·이름을 씀
+// 모바일(세로 카톡형) 재판: 고발 연출(1초 남짓) 뒤 채팅 틀 "최후의 변론" 단추 → 시트 안에 피고 카드·유죄·무죄·안내 글
+// (frontend-mobile overlays/tribunal/TribunalTalkPresentation.jsx·TribunalSheet.jsx, talk/TalkList.jsx)
+const MOBILE_TRIAL = '[data-ingame-tribunal-presentation], [data-testid="tribunal-presentation-open"], [data-testid="tribunal-presentation-sheet"]';
+const trialSheet = (page) => page.getByTestId('tribunal-presentation-sheet');
+
+// 고르개: PC·모바일 둘 다 같은 표시(data-*)·이름을 씀 (모바일 재판 창은 연출·"최후의 변론" 단추·시트 중 하나라도 있으면 열린 것)
 const trial = {
-    win: (page) => page.locator('[data-ingame-tribunal-presentation]'),
-    button: (page, vote) => page.getByRole('button', { name: VOTE_LABEL[vote], exact: true }),
+    win: (page) => (isMobile(page) ? page.locator(MOBILE_TRIAL).first() : page.locator('[data-ingame-tribunal-presentation]')),
+    button: (page, vote) => (isMobile(page) ? trialSheet(page) : page).getByRole('button', { name: VOTE_LABEL[vote], exact: true }),
     done: (page) => page.getByText(TEXT.done, { exact: true }),
     defendantNotice: (page) => page.getByText(TEXT.defendant, { exact: true }),
     deadNotice: (page) => page.getByText(TEXT.dead, { exact: true }),
@@ -40,20 +46,36 @@ const trial = {
     // 재판 채팅 칸: PC는 역할 없는 칸이라 이름표(aria-label)로 찾음
     chat: (page) => page.locator('[aria-label="최후의 반론 채팅"]'),
     chatLog: (page) => trial.chat(page).getByRole('log', { name: '채팅 내역' }),
-    // 피고 카드: 모바일은 재판 카드 표시, PC는 재판 창 안 플레이어 카드
-    card: (page) => (isMobile(page) ? page.locator('[data-tribunal-defendant]') : trial.win(page).locator('[data-ingame-player-nickname]').first()),
+    // 피고 카드: 모바일은 재판 시트 안 카드 표시, PC는 재판 창 안 플레이어 카드
+    card: (page) => (isMobile(page) ? trialSheet(page).locator('[data-tribunal-defendant]') : trial.win(page).locator('[data-ingame-player-nickname]').first()),
     expulsion: (page) => page.locator('[data-ingame-tribunal-expulsion]'),
     expelText: (nickname) => `[${nickname}]님이 가면무도회에서 추방당하셨습니다.`,
     nightNotice: (page) => page.getByRole('dialog', { name: '단계 전환 안내' }).filter({ hasText: TEXT.night }),
     deadChoice: (page) => page.getByRole('dialog', { name: '사망 후 선택' }),
-    // 모바일 위 단계 줄 ("제 1일 · 재판 진행 0:14")
-    phaseLine: (page) => page.locator('[data-talk-phase-line]'),
+    // 모바일 명패+시간패널 한 줄 ("[재판] 00:14" 꼴, 날짜 글 없음 — frontend-mobile timebar/Timebar.jsx)
+    phaseLine: (page) => page.locator('[data-ingame-phase-timer-mobile]'),
     // PC 시간 바 상태 글 (재판 연출 중엔 시간 바가 늘 펼쳐져 있고, 마감이 당겨지면 그 글이 "[5초 뒤 마감]"으로 바뀜 — 새로고침해도 그대로)
     settleLabel: (page) => page.getByText(`[${TEXT.settle}]`, { exact: true }),
     // 판 카드 상태 표시 (alive·dead·disconnected), 재판 창 카드와 겹치면 판 쪽이 먼저
     // 판에서 빠진 사람(스스로 나감·끊겨 60초 못 돌아옴)은 dead — 재판 중 빠진 피고도 사망으로 처리됨
     seat: (page, nickname) => page.locator(`[data-ingame-player-nickname="${nickname}"]`).first(),
 };
+
+/**
+ * 재판 단추·안내 글이 보이게 열기: 모바일은 "최후의 변론" 시트를 엶(열려 있으면 그대로), PC는 재판 창에 다 있어 할 것 없음
+ * 연출 창이 뜨면 시트가 닫히므로 안내 창을 닫아 가며 다시 엶
+ */
+async function openTrial(page, { timeout = 25000 } = {}) {
+    if (!isMobile(page)) return;
+    const sheet = trialSheet(page);
+    await expect(async () => {
+        if (!(await sheet.isVisible().catch(() => false))) {
+            await ui.closeOverlays(page, { keepWatching: true, rounds: 1, clickTimeoutMs: 1000 });
+            await page.getByTestId('tribunal-presentation-open').click({ timeout: 1500 });
+        }
+        await expect(sheet).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout });
+}
 
 /**
  * 사람 눈에 읽히는지 (helpers/visible.js): 바탕색은 요소 사진으로 잼
@@ -179,6 +201,11 @@ async function toVote(t, dayIndex = 1, { screens = true } = {}) {
  * 기권 단추로는 못 봄 (사람을 찍어도 기권 단추는 안 잠김 — 사용자 결정 2026-11-18, 연출 중엔 따로 꺼짐 — actionPanelLocks.js interactionBlocked)
  */
 async function dayVoteUi(page, nickname) {
+    // 모바일 세로 카톡형: 카드 판이 없어 플레이어 목록 시트 줄 "투표하기" → 그 줄이 "투표취소"면 들어간 것
+    if (isMobile(page)) {
+        await calm(page, () => pickPlayer(page, nickname, '투표하기', { after: '투표취소' }));
+        return;
+    }
     const menu = page.getByRole('menu', { name: '플레이어 행동' });
     const cancel = menu.getByRole('menuitem', { name: '투표취소', exact: true });
     await calm(page, async () => {
@@ -238,6 +265,8 @@ async function startTrial(table, { humans, bots, settings = {}, roles = plainRol
     const d = pick(t);
     await toTribunal(t, d, { humansVote });
     for (const h of humans) await expect(trial.win(h.page)).toBeVisible({ timeout: 15000 });
+    // 모바일(세로 카톡형)은 유죄·무죄·안내 글이 "최후의 변론" 시트 안에만 있음 → 열어 둠 (PC는 할 것 없음)
+    for (const h of humans) await openTrial(h.page);
     return { t, d };
 }
 
@@ -251,8 +280,9 @@ async function botsTribunal(t, plan, bots = []) {
     }
 }
 
-/** 화면으로 재판 표: 단추 누르고 완료 글까지 */
+/** 화면으로 재판 표: (모바일은 시트 열고) 단추 누르고 완료 글까지 */
 async function pressVote(page, vote) {
+    await openTrial(page);
     await trial.button(page, vote).click();
     await expect(trial.done(page)).toBeVisible();
 }
@@ -266,6 +296,7 @@ async function endTribunal(t) {
 
 /** 유죄·무죄 단추가 사람 눈에 읽히는지: 단추 자리(보임·화면 안·안 가려짐) + 그림 위 글 대비 */
 async function expectButtonsReadable(page) {
+    await openTrial(page);
     for (const vote of ['GUILTY', 'NOT_GUILTY']) {
         const button = trial.button(page, vote);
         await expectReadable(button, { contrast: false });
@@ -277,6 +308,7 @@ async function expectButtonsReadable(page) {
 
 /** 피고 카드가 보이고 닉네임이 적혀 있는지 (그림 카드라 대비는 안 봄) */
 async function expectCardReadable(page, nickname) {
+    await openTrial(page);
     await expectReadable(trial.card(page), { contrast: false });
     await expect(trial.card(page)).toContainText(nickname);
 }
@@ -297,8 +329,11 @@ async function expectExpelReadable(page, nickname) {
     await readable(await waitExpelText(page, nickname));
 }
 
-/** 안내 글(피고·사망·완료)이 읽히는지 — 글 칸이 누름 통과라 가려짐 검사는 뺌 */
-const expectNoticeReadable = (locator, o = {}) => readable(locator, { uncovered: false, ...o });
+/** 안내 글(피고·사망·완료)이 읽히는지 — 글 칸이 누름 통과라 가려짐 검사는 뺌 (모바일은 글이 시트 안이라 시트부터 엶) */
+async function expectNoticeReadable(locator, o = {}) {
+    await openTrial(locator.page());
+    return readable(locator, { uncovered: false, ...o });
+}
 
 /**
  * "5초 뒤 마감"이 보이는지: 모바일은 위 단계 줄(재판 덮개 아래라 글만 봄), PC는 펼쳐진 시간 바 글
@@ -454,7 +489,12 @@ async function leaveFromDeadChoice(page) {
     await calm(page, () => expect(dialog).toBeVisible({ timeout: 1000 }), { keepWatching: false, timeout: 45000 });
     page.once('dialog', (d) => { d.accept().catch(() => {}); });
     await dialog.getByRole('button', { name: '게임 나가기' }).click();
-    await expect(page).not.toHaveURL(/\/ingame/, { timeout: 15000 });
+    // 모바일은 합친 뒤 확인 창이 양피지 확인 창(alertdialog "확인")으로 뜸 (PC는 위 브라우저 확인 창) → 뜨면 확인
+    const parchment = page.getByRole('alertdialog', { name: '확인', exact: true });
+    await expect(async () => {
+        if (await parchment.isVisible().catch(() => false)) await parchment.getByRole('button', { name: '확인', exact: true }).click({ timeout: 1000 });
+        await expect(page).not.toHaveURL(/\/ingame/, { timeout: 1000 });
+    }).toPass({ timeout: 15000 });
 }
 
 /** 화면으로 새 방 만들기 (기본 설정) → 서버 방 요약 — PC·모바일 같은 주소·단추 */
@@ -517,7 +557,7 @@ const uniq = (prefix) => `${prefix}${Math.random().toString(36).slice(2, 7)}`;
 
 module.exports = {
     uuidOf, nickOf, isMobile, readable, pinTimebar, VOTE_LABEL, TEXT, LATE_VOTE_TEXTS, trial, slot, waitState, playerOf, aliveUuids, livingHumans, votersOf,
-    calm, plainRoles, expectRoles, ROOMY_TIMES, openTable, afterStart, toVote, dayVoteUi, botsDayVote, toTribunal, startTrial, botsTribunal, pressVote, endTribunal,
+    openTrial, calm, plainRoles, expectRoles, ROOMY_TIMES, openTable, afterStart, toVote, dayVoteUi, botsDayVote, toTribunal, startTrial, botsTribunal, pressVote, endTribunal,
     expectButtonsReadable, expectCardReadable, waitExpelText, expectExpelReadable, expectNoticeReadable, expectSettleShown, expectNoSettle, closedAt, sleepUntil, TOLERANCE_MS, expectNear,
     tribunalDeadline, clockSeconds, socketLog, repliesOf, expectVoteAccepted, socketGate, navigationType, expectResult, dawnReport, passDawn, keepWatching,
     leaveByBack, leaveFromDeadChoice, createRoomFromLobby, reopen, startNextGame, sayInTrial, uniq, sleep,

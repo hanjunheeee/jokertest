@@ -1,7 +1,7 @@
 'use strict';
 
 // 대기방 방장 넘김·방 삭제·나가기·끊김 15초 브라우저 시험 (PC, 간단) — 방장은 나갈 때만 먼저 들어온 사람에게, 끊김은 15초 자리 남김
-// 목록 A01b-입장-준비-추방-초대.md 번호 A01-E-626~638 (사람 1 + 봇, 판 안 씀, 15초는 늘 진짜로 기다림 @realtime)
+// 목록 A01b-입장-준비-추방-초대.md 번호 A01-E-626~638·641 (사람 1 + 봇, 판 안 씀, 15초는 늘 진짜로 기다림 @realtime)
 const { test, expect, e2e } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { findRoomRow } = require('./roomHelpers');
@@ -196,4 +196,23 @@ test('A01-E-638 사람이 새로고침해도 자리 그대로 — 대기방 다�
     expect((await e2e.roomOf(U(user)))?.roomId, '20초 뒤에도 같은 방').toBe(room.roomId);
     await K.expectParty(page, 4, { timeout: 500 });
     await expect(page).toHaveURL(/\/game-matching/);
+});
+
+// 합친 뒤 동작: 방 값 없이 대기방 주소로 들어오면(새로고침) 첫 방 확인 답이 올 때까지 머묾 — 방을 막 만든 직후 서버가 잠깐 빈 방을 답해도 다시 물음
+// (frontend matching/hooks/useMatchingPage.js "첫 방 확인 답까지 머묾", room/useRoomCheck.js 빈 답 다시 묻기 350ms×8)
+test('A01-E-641 방장이 방을 만들자마자 새로고침 → 방 목록으로 안 튕기고 대기방·방장 단추 그대로, 5초 지켜봐도 그대로 (정원 5 · 사람 방장 혼자)', async ({ user, bots }) => {
+    const page = user.page;
+    const { room } = await hostRoom(user, bots, { maxPlayers: 5 });
+
+    await page.reload();
+    await expect(page).toHaveURL(/\/game-matching/);
+    await expectHostButtons(page, { timeout: 10_000 });
+    // 잠깐 뒤 튕기는 것까지 보려고 5초 동안 0.25초마다 주소를 봄
+    const until = Date.now() + 5_000;
+    while (Date.now() < until) {
+        expect(page.url(), '대기방 주소 그대로').toMatch(/\/game-matching/);
+        await K.sleepUntil(Date.now() + 250);
+    }
+    expect((await e2e.roomOf(U(user)))?.roomId, '같은 방').toBe(room.roomId);
+    await K.expectParty(page, 1, { timeout: 500 });
 });

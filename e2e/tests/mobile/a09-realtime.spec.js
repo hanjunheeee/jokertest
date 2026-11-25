@@ -5,7 +5,7 @@
 // 오프라인은 화면 소켓 길목을 끊어 만듦: 브라우저 오프라인 흉내(setOffline)는 열린 소켓을 바로 안 끊어 서버가 20~45초 뒤에야 앎 → 30초 투표 마감과 엇갈림
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, clearOverlays } = require('./_talk');
+const { talk, clearOverlays, expectPlayerStatus, expectRosterCount } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 const H = require('../ingame/_a09-hard-kit');
 
@@ -20,7 +20,7 @@ const RETURN_LEAD_MS = 3000;
 async function seatAtDay(table, user, n) {
     const t = await K.seat(table, user, { n });
     await K.toDay(t);
-    await expect(talk.phaseLine(user.page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(user.page)).toContainText('낮', { timeout: 15_000 });
     await clearOverlays(user.page);
     return t;
 }
@@ -45,8 +45,8 @@ test('A09-E-089 모바일 6명 판, 오프라인 59초 → 온라인 → 산 채
     await expect(page).toHaveURL(/\/ingame/);
     await expect(talk.layout(page)).toBeVisible({ timeout: 20_000 });
     await clearOverlays(page);
-    await expect(talk.strip(page).locator('[data-strip-slot]')).toHaveCount(6, { timeout: 30_000 });
-    await expect(talk.mySlot(page)).toHaveAccessibleName(`${user.account.nickname}, 나`);
+    await expectRosterCount(page, 6, { timeout: 30_000 });
+    await expectPlayerStatus(page, user.account.nickname, null);
     await expectReadable(talk.phaseLine(page));
 
     // 60초(+1.5초)가 지나도 판에 산 채로 남아 있음

@@ -11,6 +11,7 @@ const {
 } = require('../room/roomHelpers');
 const N = require('../ingame/b-night/_night');
 const { expectReadable } = require('../../helpers/visible');
+const { answerNextConfirm } = require('../room/_a01b-kick-kit');
 
 const U = (x) => x.account.uuid;
 // 폰 크기 화면인지 (폰 375, PC 1280 — PC·모바일이 섞인 판에서 갈라 쓰기)
@@ -261,16 +262,14 @@ async function pressReturn(page) {
     await expect(page).toHaveURL(/\/game-matching/, { timeout: 20_000 });
 }
 
-/** 결과 화면 "로비로" → 브라우저 확인 창 글 돌려줌 (accept면 확인, 아니면 취소) */
+/**
+ * 결과 화면 "로비로" → 확인 창 글 돌려줌 (accept면 확인, 아니면 취소)
+ * PC는 브라우저 확인 창, 모바일은 합친 뒤 양피지 확인 창(appConfirm) — 둘 다 answerNextConfirm이 받음
+ */
 async function pressLobby(page, { accept = true } = {}) {
-    const asked = page.waitForEvent('dialog', { timeout: 10_000 });
-    const clicking = lobbyButton(page).click();
-    const dialog = await asked;
-    const message = dialog.message();
-    if (accept) await dialog.accept();
-    else await dialog.dismiss();
-    await clicking;
-    return message;
+    const asked = answerNextConfirm(page, accept);
+    await lobbyButton(page).click();
+    return asked;
 }
 
 /** 결과 화면 "로비로" → 확인 → 로비 화면 */

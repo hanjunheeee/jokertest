@@ -5,28 +5,22 @@
 const { test, expect } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
 const { toTurn } = require('../ingame/b-night/_night');
-const { talk, clearOverlays } = require('./_talk');
+const { talk, clearOverlays, openPlayer, closeRoster } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
-// 띠 카드 눌러 카드 시트 열기 (연출 창이 막으면 닫으면서 다시)
+// 세로 카톡형: 카드 띠 대신 플레이어 목록 시트(밤엔 "직업 행동")의 그 사람 줄 열기 (연출 창이 막으면 닫으면서 다시)
 async function openSheet(page, nickname) {
-    const sheet = talk.cardSheet(page);
+    let row = null;
     await expect(async () => {
         await clearOverlays(page);
-        if (!(await sheet.isVisible().catch(() => false))) await talk.slot(page, nickname).click({ timeout: 1500 });
-        await expect(sheet).toBeVisible({ timeout: 1500 });
-        await expect(sheet.getByRole('heading', { name: nickname })).toBeVisible({ timeout: 1000 });
+        row = await openPlayer(page, nickname);
     }).toPass({ timeout: 25_000 });
-    return sheet;
+    return row;
 }
 
-async function closeSheet(page) {
-    const sheet = talk.cardSheet(page);
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toHaveCount(0);
-}
+const closeSheet = (page) => closeRoster(page);
 
-// 그 카드 시트에서 눌러지는 "투표하기" 항목 수
+// 그 사람 줄에서 눌러지는 "투표하기" 항목 수
 async function pressableVoteItems(page, nickname) {
     const sheet = await openSheet(page, nickname);
     const count = await sheet.locator('[role="menuitem"][aria-label="투표하기"]:not([disabled])').count();
@@ -74,7 +68,7 @@ test('A09-E-072 [B07-1] 모바일 10명 판 마녀사냥꾼, 둘째 밤 내 차�
     const pick = sheet.getByRole('menuitem', { name: '확인', exact: true });
     await expect(pick).toBeEnabled();
     await pick.click();
-    // 서버가 받으면 같은 카드 시트가 "취소하기"로 바뀜
+    // 서버가 받으면 같은 줄이 "취소하기"로 바뀜
     await expect(async () => {
         const again = await openSheet(page, dead.nickname);
         await expect(again.getByRole('menuitem', { name: '취소하기', exact: true })).toBeVisible({ timeout: 1500 });

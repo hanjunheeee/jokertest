@@ -2,12 +2,12 @@
 
 // PC 사람과 모바일 사람이 섞인 판을 처음부터 끝까지 하는 브라우저 시험 (어려움) — 각자 자기 화면으로 낮 투표·재판을 하고, 두 화면 종류 모두 같은 승자·직업·"+1골드"를 봄
 // 목록 A07-승패-결과-골드.md 번호 A07-H-005 (모바일 프로젝트에서 PC 창 3개를 따로 엶), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a07-mixed-full-game.spec.js
-const { test, expect } = require('../../helpers/fixtures');
+const { test, expect, E2E } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { customRoleSettings } = require('../../helpers/game');
 const { closeOverlays } = require('../../helpers/ui');
 const { resultRow, closeReveals } = require('../room/roomHelpers');
-const { talk } = require('./_talk');
+const { talk, pickPlayer, openTrialSheet } = require('./_talk');
 const N = require('../ingame/b-night/_night');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: A07 승패·결과 묶음) ──
@@ -58,30 +58,24 @@ async function votePcUi(page, nickname) {
     await expect(page.getByRole('menu', { name: '플레이어 행동' })).toBeHidden();
 }
 
-// 모바일 사람 낮 표: 초상 띠에서 그 사람 칸 → 아래 시트 "투표하기" → 다시 연 시트가 "투표취소"면 서버가 받은 것
+// 모바일 사람 낮 표: 세로 카톡형 플레이어 목록 시트 그 사람 줄 "투표하기" → 그 줄이 "투표취소"면 서버가 받은 것
 // 모바일도 사람을 찍어도 기권 단추가 안 잠김 (PC와 같음, 사용자 결정 2026-11-18)
 async function votePhoneUi(page, nickname) {
-    const sheet = page.locator('[data-ingame-player-card-menu]');
-    const openSheet = async () => {
-        await expect(async () => {
-            await closeOverlays(page, { keepWatching: false, rounds: 2, clickTimeoutMs: 1000 });
-            await talk.slot(page, nickname).click({ timeout: 1500 });
-            await expect(sheet).toHaveAttribute('aria-label', nickname, { timeout: 1500 });
-        }).toPass({ timeout: 25_000 });
-    };
-    await openSheet();
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
     await expect(async () => {
-        if (!(await sheet.isVisible().catch(() => false))) await openSheet();
-        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
-    }).toPass({ timeout: 15_000 });
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
+        await closeOverlays(page, { keepWatching: false, rounds: 2, clickTimeoutMs: 1000 });
+        await pickPlayer(page, nickname, '투표하기', { after: '투표취소' });
+    }).toPass({ timeout: 25_000 });
 }
 
-// 재판 유죄 (PC·모바일 같은 표시·같은 단추 이름): 재판 창 "유죄" → 단추가 사라지면 서버가 받은 것
+// 재판 유죄: PC는 재판 창 "유죄", 모바일(세로 카톡형)은 "최후의 변론" 시트 "유죄" → 단추가 사라지면 서버가 받은 것
 async function guiltyUi(page) {
+    if (page.url().startsWith(E2E.mobileUrl)) {
+        const sheet = await openTrialSheet(page);
+        await sheet.getByRole('button', { name: '유죄', exact: true }).click();
+        await expect(sheet.getByRole('button', { name: '유죄', exact: true })).toHaveCount(0);
+        await sheet.getByRole('button', { name: '최후의 변론 닫기' }).click();
+        return;
+    }
     const guilty = page.locator('[data-ingame-tribunal-presentation]').getByRole('button', { name: '유죄', exact: true });
     await expect(async () => {
         await closeOverlays(page, { keepWatching: false, rounds: 1, names: ['단계 전환 안내', '알림'], clickTimeoutMs: 1000 });

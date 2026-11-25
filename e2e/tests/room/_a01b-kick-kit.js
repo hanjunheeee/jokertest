@@ -23,7 +23,8 @@ const TEXT = Object.freeze({
     alreadyLeft: '이미 방에서 나간 참가자입니다.',
     emptyTargets: '추방할 수 있는 참가자가 없습니다.',
     codeKicked: '이 방에서 3번 추방되어 더 이상 들어갈 수 없습니다.',
-    deleteConfirm: '방을 삭제하면 모든 참가자가 나가게 됩니다. 삭제하시겠습니까?',
+    // 합친 뒤 글: 두 줄로 나눔 (frontend matching/constants/roomMessages.js DELETE_CONFIRM, appConfirm으로 띄움)
+    deleteConfirm: '방을 삭제하면 모든 참가자가 나가게 됩니다.\n삭제하시겠습니까?',
     // 단추 꺼진 까닭 글은 방 확인 상태마다 다르나 끝은 같음 (끊김·확인 중·확인 실패)
     lockedReasonEnd: /추방할 수 없습니다\.$/,
 });
@@ -173,14 +174,38 @@ async function codeEntryAlert(page, code) {
     return ui.captureAlert(page, () => page.getByRole('button', { name: '참여하기' }).click());
 }
 
-/** 브라우저 확인 창(window.confirm) 글을 받고 accept면 확인·아니면 취소 → 글 */
+/**
+ * 확인 창 글을 받고 accept면 확인·아니면 취소 → 글
+ * PC는 브라우저 확인 창(window.confirm), 모바일은 합친 뒤 appConfirm이 양피지 확인 창(alertdialog "확인")으로 뜸 (frontend-mobile shared/ui/modal/parchment/ParchmentConfirmHost.jsx) → 먼저 뜬 쪽을 받음 (30초까지)
+ */
 function answerNextConfirm(page, accept) {
-    return new Promise((resolve) => {
-        page.once('dialog', (dialog) => {
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const onDialog = (dialog) => {
+            if (done) return;
+            done = true;
             const message = dialog.message();
-            const done = accept ? dialog.accept() : dialog.dismiss();
-            done.catch(() => {}).finally(() => resolve(message));
-        });
+            const answer = accept ? dialog.accept() : dialog.dismiss();
+            answer.catch(() => {}).finally(() => resolve(message));
+        };
+        page.once('dialog', onDialog);
+        const box = page.getByRole('alertdialog', { name: '확인', exact: true });
+        const deadline = Date.now() + 30_000;
+        (async () => {
+            while (!done && Date.now() < deadline) {
+                if (await box.isVisible().catch(() => false)) {
+                    done = true;
+                    page.off('dialog', onDialog);
+                    // 글 칸은 줄바꿈을 그대로 둠 → textContent로 읽어 창 글과 같게 견줌
+                    const message = await box.locator('p').first().textContent();
+                    await box.getByRole('button', { name: accept ? '확인' : '취소', exact: true }).click();
+                    resolve(message);
+                    return;
+                }
+                await sleep(100);
+            }
+            if (!done) reject(new Error('확인 창이 안 뜸 (30초)'));
+        })().catch(reject);
     });
 }
 

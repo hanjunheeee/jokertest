@@ -6,7 +6,7 @@ const { test, expect } = require('../../helpers/fixtures');
 const ui = require('../../helpers/ui');
 const { e2e } = require('../../helpers/internal');
 const { playToResult } = require('../room/roomHelpers');
-const { talk, startTalkGame, toDay, toVote, clearOverlays } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, clearOverlays, openPlayer, pickPlayer, closeRoster } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -67,18 +67,12 @@ const uuidOf = (who) => who.account.uuid;
 
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
-const sheetOf = (page) => page.locator('[data-ingame-player-card-menu]');
-
-// 초상 띠 칸을 눌러 그 사람 카드 시트 열기
-async function openSheet(page, nick) {
-    await talk.slot(page, nick).click();
-    const sheet = sheetOf(page);
-    await expect(sheet).toHaveAttribute('aria-label', nick);
-    return sheet;
-}
+// 세로 카톡형: 카드 판 대신 플레이어 목록 시트 줄마다 행동 단추 (카드 메뉴와 같은 항목·이름) — _talk.js openPlayer·pickPlayer
+// 그 사람 줄 열기 (목록 시트를 열고 줄을 줌, 줄 안 menuitem이 카드 메뉴 항목)
+const openSheet = (page, nick) => openPlayer(page, nick);
 
 // 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
-// 사람이면 그 사람 카드 '투표하기' → 다시 연 그 카드 시트가 '투표취소'면 서버가 받은 것
+// 사람이면 목록 그 사람 줄 '투표하기' → 그 줄이 '투표취소'면 서버가 받은 것
 // (사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
 async function castMine(page, target, names) {
     if (target === null) {
@@ -86,15 +80,7 @@ async function castMine(page, target, names) {
         await expect(abstainButton(page)).toBeDisabled();
         return;
     }
-    const sheet = await openSheet(page, names.get(target));
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
-    await expect(async () => {
-        if (!(await sheet.isVisible().catch(() => false))) await openSheet(page, names.get(target));
-        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
-    }).toPass({ timeout: 15_000 });
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
+    await pickPlayer(page, names.get(target), '투표하기', { after: '투표취소' });
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -178,7 +164,7 @@ test('A03-E-200 모바일 7명 판 1일에 표 낸 사람 → 2일 화면에 낸
     await castBots(t, new Map(t.bots.map((b) => [uuidOf(b), null])));
     await waitNight(t);
     await toDayVote(t, user.page, 2);
-    // 2일: 기권 켜짐, X 카드는 다시 '투표하기'
+    // 2일: 기권 켜짐, 목록 X 줄은 다시 '투표하기'
     await expect(abstainButton(user.page)).toBeEnabled();
     const sheet = await openSheet(user.page, names.get(X));
     await expect(sheet.getByRole('menuitem', { name: '투표하기' })).toBeEnabled();

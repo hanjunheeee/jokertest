@@ -62,7 +62,9 @@ async function checkRoleReveal({ t, page, me }) {
     await expect(box, '역할 확인 중 입력칸').toBeDisabled({ timeout: 3000 });
     await expect(c.sendButton(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
     await expect(box).toHaveAttribute('title', REVEAL_LOCKED_TEXT);
-    await expectReadable(k.boardChat(page).getByText(REVEAL_LOCKED_TEXT, { exact: true }), { ...k.STATUS_READABLE, timeout: 3000 });
+    // 합친 뒤 동작: 역할 확인 동안엔 입장 준비 덮개가 판 전체를 어둡게 덮음(frontend entryPreparing/InGameEntryPreparingOverlay.jsx) → 까닭 글은 덮개 아래에 있는지만 보고, 덮개 글이 읽히는지 봄
+    await expect(k.boardChat(page).getByText(REVEAL_LOCKED_TEXT, { exact: true })).toBeVisible({ timeout: 3000 });
+    await expectReadable(page.locator('[data-ingame-entry-preparing]').getByText('가면무도회에 입장하는 중입니다.', { exact: true }), { timeout: 3000 });
     // 그래도 눌러 봄: 꺼진 칸은 글도 Enter도 안 받음
     await box.fill(text, { force: true, timeout: 1000 }).catch(() => {});
     await box.press('Enter', { timeout: 1000 }).catch(() => {});

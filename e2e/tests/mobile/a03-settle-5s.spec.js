@@ -4,7 +4,9 @@
 // 목록 A03-낮투표.md A03-E-073~078·080·082·084·098·100·102·104·107·109·112 (모바일 몫), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a03-settle-5s.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { sleep } = require('../../helpers/wait');
-const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays, getExecuted } = require('./_talk');
+const {
+    talk, startTalkGame, toDay, toVote, toNight, clearOverlays, getExecuted, openPlayer, pickPlayer, closeRoster, trialAny, expectTrialOf,
+} = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -65,18 +67,12 @@ const uuidOf = (who) => who.account.uuid;
 
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
-const sheetOf = (page) => page.locator('[data-ingame-player-card-menu]');
-
-// 초상 띠 칸을 눌러 그 사람 카드 시트 열기
-async function openSheet(page, nick) {
-    await talk.slot(page, nick).click();
-    const sheet = sheetOf(page);
-    await expect(sheet).toHaveAttribute('aria-label', nick);
-    return sheet;
-}
+// 세로 카톡형: 카드 판 대신 플레이어 목록 시트 줄마다 행동 단추 (카드 메뉴와 같은 항목·이름) — _talk.js openPlayer·pickPlayer
+// 그 사람 줄 열기 (목록 시트를 열고 줄을 줌, 줄 안 menuitem이 카드 메뉴 항목)
+const openSheet = (page, nick) => openPlayer(page, nick);
 
 // 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
-// 사람이면 그 사람 카드 '투표하기' → 다시 연 그 카드 시트가 '투표취소'면 서버가 받은 것
+// 사람이면 목록 그 사람 줄 '투표하기' → 그 줄이 '투표취소'면 서버가 받은 것
 // (사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
 async function castMine(page, target, names) {
     if (target === null) {
@@ -84,15 +80,7 @@ async function castMine(page, target, names) {
         await expect(abstainButton(page)).toBeDisabled();
         return;
     }
-    const sheet = await openSheet(page, names.get(target));
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
-    await expect(async () => {
-        if (!(await sheet.isVisible().catch(() => false))) await openSheet(page, names.get(target));
-        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
-    }).toPass({ timeout: 15_000 });
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
+    await pickPlayer(page, names.get(target), '투표하기', { after: '투표취소' });
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -138,10 +126,9 @@ const OUTCOME_TEXT = Object.freeze({
 // 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 결과 글·기권 수는 statusAfterTribunal로 밤에 다시 열어 봄
 // (닫히는 움직임 동안 글을 읽으면 맞았다 틀렸다 함 — a03-vote-pick.spec.js와 같은 방식)
 async function expectOutcome(page, panel, kind, targetNick) {
-    const tribunal = page.locator('[data-ingame-tribunal-presentation]');
+    const tribunal = trialAny(page);
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible({ timeout: 15_000 });
-        await expect(tribunal).toContainText(targetNick);
+        await expectTrialOf(page, targetNick);
         await expect(panel).toBeHidden();
         return;
     }
@@ -216,7 +203,7 @@ async function castBotsLast(t, plan) {
     return fullAt;
 }
 
-// 몰표 모양에서 사람이 마지막 표: 봇이 먼저 다 내고, 사람이 X 카드 '투표하기'를 누르는 순간이 다 찬 때
+// 몰표 모양에서 사람이 마지막 표: 봇이 먼저 다 내고, 사람이 목록 X 줄 '투표하기'를 누르는 순간이 다 찬 때
 async function humanLastMass(t, user, { atRemainingMs = null, deadline = null } = {}) {
     const names = await namesOf(t);
     const n = t.humans.length + t.bots.length;
@@ -229,7 +216,9 @@ async function humanLastMass(t, user, { atRemainingMs = null, deadline = null } 
     if (atRemainingMs !== null) await sleep(Math.max(0, deadline - atRemainingMs - Date.now()));
     const fullAt = Date.now();
     await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
+    // 목록 시트는 고른 뒤에도 열려 있음 → 그 줄이 '투표취소'로 바뀌면 들어간 것, 목록 닫음
+    await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible();
+    await closeRoster(user.page);
     return { names, X, fullAt };
 }
 
@@ -239,7 +228,8 @@ async function expectSettleLine(page) {
     expect(await phaseClock(page)).toBeLessThanOrEqual(5);
 }
 
-const tribunalOf = (page) => page.locator('[data-ingame-tribunal-presentation]');
+// 재판이 열린 표시 (세로 카톡형: 고발 연출·"최후의 변론" 단추·시트 중 하나)
+const tribunalOf = (page) => trialAny(page).first();
 
 // ── 시험 ──
 
@@ -253,8 +243,7 @@ const tribunalOf = (page) => page.locator('[data-ingame-tribunal-presentation]')
         await expectSettleLine(user.page);
         const resolved = await expectFiveSeconds(t.bots[1], fullAt, 1);
         expect(resolved.outcome).toBe('TRIBUNAL');
-        await expect(tribunalOf(user.page)).toBeVisible({ timeout: 3_000 });
-        await expect(tribunalOf(user.page)).toContainText(names.get(X));
+        await expectTrialOf(user.page, names.get(X), { timeout: 3_000 });
     });
 });
 
@@ -343,8 +332,7 @@ test('A03-E-104 모바일 6명 판 5초 중 새로고침 → 남은 초 5 이하
     // 새로고침 뒤 단계 줄 시계가 5초 이하 (당긴 마감·당김 표시가 판 값에도 실려 "5초 뒤 마감" 글도 다시 뜸 — 5초가 짧아 여기선 남은 초만 봄)
     await expect.poll(() => phaseClock(user.page).catch(() => null), { timeout: 4_000 }).toBeLessThanOrEqual(5);
     await expectFiveSeconds(t.bots[1], fullAt, 1);
-    await expect(tribunalOf(user.page)).toBeVisible({ timeout: 10_000 });
-    await expect(tribunalOf(user.page)).toContainText(names.get(X));
+    await expectTrialOf(user.page, names.get(X), { timeout: 10_000 });
 });
 
 test('A03-E-107 모바일 7명 판 2일(사람 죽음): 산 사람 다 냄 → 죽은 사람 화면에도 "5초 뒤 마감"·결과 @game @realtime', async ({ user, table }) => {
@@ -388,5 +376,5 @@ test('A03-E-112 ③ 모바일 8명 판 마지막 표가 사람 → 5초 뒤 판�
     const { names, X, fullAt } = await humanLastMass(t, user);
     await expectSettleLine(user.page);
     await expectFiveSeconds(t.bots[1], fullAt, 1);
-    await expect(tribunalOf(user.page)).toContainText(names.get(X), { timeout: 3_000 });
+    await expectTrialOf(user.page, names.get(X), { timeout: 3_000 });
 });

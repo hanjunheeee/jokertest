@@ -5,7 +5,10 @@
 const { test, expect } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, startTalkGame, toDay, toVote, toNight, clearOverlays, getExecuted, executeBot } = require('./_talk');
+const {
+    talk, startTalkGame, toDay, toVote, toNight, clearOverlays, getExecuted, executeBot,
+    rosterRowOf, openRoster, closeRoster, openPlayer, playerItems, pickPlayer, openTrialSheet,
+} = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -66,18 +69,9 @@ const uuidOf = (who) => who.account.uuid;
 
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
-const sheetOf = (page) => page.locator('[data-ingame-player-card-menu]');
-
-// 초상 띠 칸을 눌러 그 사람 카드 시트 열기 (같은 직업 동료 시트는 이름이 "닉네임 · 동료 광대")
-async function openSheet(page, nick) {
-    await talk.slot(page, nick).click();
-    const sheet = sheetOf(page);
-    await expect(sheet).toHaveAttribute('aria-label', new RegExp(`^${nick}( · 동료 .+)?$`));
-    return sheet;
-}
-
+// 세로 카톡형: 카드 판 대신 플레이어 목록 시트 줄마다 행동 단추 (카드 메뉴와 같은 항목·이름) — _talk.js openPlayer·pickPlayer
 // 사람 표: null이면 기권 단추 → 기권 단추가 꺼지면 서버가 받은 것
-// 사람이면 그 사람 카드 '투표하기' → 다시 연 그 카드 시트가 '투표취소'면 서버가 받은 것
+// 사람이면 목록 그 사람 줄 '투표하기' → 그 줄이 '투표취소'면 서버가 받은 것
 // (사람을 찍어도 기권 단추가 안 잠김 — 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
 async function castMine(page, target, names) {
     if (target === null) {
@@ -85,15 +79,7 @@ async function castMine(page, target, names) {
         await expect(abstainButton(page)).toBeDisabled();
         return;
     }
-    const sheet = await openSheet(page, names.get(target));
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
-    await expect(async () => {
-        if (!(await sheet.isVisible().catch(() => false))) await openSheet(page, names.get(target));
-        await expect(sheet.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
-    }).toPass({ timeout: 15_000 });
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
+    await pickPlayer(page, names.get(target), '투표하기', { after: '투표취소' });
 }
 
 // 봇 표 (계획에 있는 봇만, 서버 답 ok까지)
@@ -139,11 +125,15 @@ const OUTCOME_TEXT = Object.freeze({
 // 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
 // (전엔 닫히는 움직임 동안 글을 읽어 맞았다 틀렸다 함 — A03-E-025·151·211·221)
 async function expectOutcome(page, panel, kind, targetNick) {
-    const tribunal = page.locator('[data-ingame-tribunal-presentation]');
+    // 세로 카톡형 재판: 고발 연출(1초 남짓) 뒤 "최후의 변론" 시트 → 시트 설명 "피고: 닉네임"
+    const tribunal = page.locator('[data-ingame-tribunal-presentation], [data-testid="tribunal-presentation-open"], [data-testid="tribunal-presentation-sheet"]');
     if (kind === 'TRIBUNAL') {
-        await expect(tribunal).toBeVisible({ timeout: 15_000 });
-        await expect(tribunal).toContainText(targetNick);
+        await expect(tribunal.first()).toBeVisible({ timeout: 15_000 });
         await expect(panel).toBeHidden();
+        const sheet = await openTrialSheet(page);
+        await expect(sheet).toContainText(`피고: ${targetNick}`);
+        await sheet.getByRole('button', { name: '최후의 변론 닫기' }).click();
+        await expect(sheet).toBeHidden();
         return;
     }
     await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
@@ -164,29 +154,14 @@ async function statusAfterTribunal(t, page) {
     return panel;
 }
 
-// 카드 시트 닫기 (시트 안 '닫기')
-async function closeSheet(page) {
-    const sheet = sheetOf(page);
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toBeHidden();
-}
-
-// 카드 시트의 항목 이름 목록 (누를 수 있는 것만 enabled에)
+// 목록 줄의 항목 이름 목록 (누를 수 있는 것만 enabled에), 본 뒤 목록 닫음
 async function sheetItems(page, nick) {
-    const sheet = await openSheet(page, nick);
-    const items = sheet.getByRole('menuitem');
-    const all = [];
-    const enabled = [];
-    for (let i = 0; i < await items.count(); i += 1) {
-        const name = await items.nth(i).getAttribute('aria-label');
-        all.push(name);
-        if (await items.nth(i).isEnabled()) enabled.push(name);
-    }
-    await closeSheet(page);
-    return { all, enabled };
+    const items = await playerItems(page, nick);
+    await closeRoster(page);
+    return items;
 }
 
-// 누를 수 있는 '투표하기'가 있는 사람 닉네임 목록 (내 칸은 시트가 안 열려 빠짐)
+// 누를 수 있는 '투표하기'가 있는 사람 닉네임 목록
 async function votableNicks(page, nicks) {
     const out = [];
     for (const nick of nicks) {
@@ -195,11 +170,14 @@ async function votableNicks(page, nicks) {
     return out.sort();
 }
 
-// 내 칸을 눌러도 시트가 안 열림: 내 칸 누른 뒤 남의 칸을 누르면 그 사람 시트가 열림 (내 시트가 열렸으면 덮개가 막음)
+// 내 줄("(나)")엔 행동 단추가 없음 (남의 줄엔 있음)
 async function expectOwnSlotHasNoSheet(page, otherNick) {
-    await talk.mySlot(page).click();
-    await openSheet(page, otherNick);
-    await closeSheet(page);
+    await openRoster(page);
+    const mine = talk.roster(page).locator('li[data-roster-player]').filter({ hasText: ' (나)' });
+    await expect(mine).toHaveCount(1);
+    await expect(mine.getByRole('menuitem')).toHaveCount(0);
+    await expect(rosterRowOf(page, otherNick).getByRole('menuitem').first()).toBeVisible();
+    await closeRoster(page);
 }
 
 // 1일에 봇 하나를 봇 표로 처형(앞 단계라 손잡이로 빨리) → 2일 투표까지
@@ -217,8 +195,8 @@ async function dayTwoVoteAfter(t, page, { killMe = false, victim = null } = {}) 
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_DISCUSSION');
     await clearOverlays(page);
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_VOTE');
-    // 낮 안내가 뜬 뒤 닫히고 판 화면이 투표 단계가 될 때까지 (산 사람은 기권 단추, 죽은 나는 내 칸 사망 표시)
-    const ready = page.getByRole('button', { name: '기권' }).or(page.getByRole('button', { name: /, 나, 사망$/ })).first();
+    // 낮 안내가 뜬 뒤 닫히고 판 화면이 투표 단계가 될 때까지 (산 사람은 기권 단추, 죽은 나는 채팅방 "죽은 사람끼리" 띠)
+    const ready = page.getByRole('button', { name: '기권' }).or(talk.deadBanner(page)).first();
     await expect(async () => {
         await clearOverlays(page);
         await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toHaveCount(0, { timeout: 1_000 });
@@ -247,7 +225,9 @@ test('A03-E-141 모바일 7명 판 2일(봇 1명 죽음) → 죽은 사람 카�
     await expectRoles(t, roles);
     const victim = t.bots[0];
     await dayTwoVoteAfter(t, user.page, { victim: uuidOf(victim) });
-    await expect(talk.slot(user.page, victim.nickname)).toHaveAttribute('aria-label', /사망/);
+    await openRoster(user.page);
+    await expect(rosterRowOf(user.page, victim.nickname)).toContainText('사망');
+    await closeRoster(user.page);
     expect((await sheetItems(user.page, victim.nickname)).enabled).not.toContain('투표하기');
     // 산 봇 5명은 그대로 고를 수 있음
     const alive = t.bots.slice(1).map((b) => b.nickname);
@@ -260,13 +240,12 @@ test('A03-E-143 모바일 7명 판 2일 내가 죽음 → 기권 단추 없음·
     const t = await startTalkGame(table, user, { bots: 6, roles });
     await expectRoles(t, roles);
     await dayTwoVoteAfter(t, user.page, { killMe: true });
-    // 화면도 투표 단계로 바뀐 뒤 봄: 죽은 사람은 기권 단추가 없어, 산 봇 카드 시트의 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글)
+    // 화면도 투표 단계로 바뀐 뒤 봄: 죽은 사람은 기권 단추가 없어, 목록의 산 봇 줄 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글)
     await expect(async () => {
-        const sheet = sheetOf(user.page);
-        if (!(await sheet.isVisible())) await talk.slot(user.page, t.bots[0].nickname).click({ timeout: 1500 });
-        await expect(sheet.getByText('사망한 플레이어는 행동할 수 없습니다')).toBeVisible({ timeout: 1000 });
+        const row = await openPlayer(user.page, t.bots[0].nickname);
+        await expect(row.getByText('사망한 플레이어는 행동할 수 없습니다')).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 15_000 });
-    await closeSheet(user.page);
+    await closeRoster(user.page);
     // 기권 단추: 죽은 사람에겐 안 그림
     await expect(abstainButton(user.page)).toHaveCount(0);
     expect(await votableNicks(user.page, t.bots.map((b) => b.nickname))).toEqual([]);
@@ -284,11 +263,11 @@ test('A03-E-147 모바일 5명 판 토론 중 → "토론 중입니다. 투표�
     const t = await startTalkGame(table, user, { bots: 4, roles });
     await expectRoles(t, roles);
     await toDay(t, user.page);
-    // 토론 중엔 기권 단추 없음, 카드 시트의 '투표하기'는 꺼진 채 까닭 글
+    // 토론 중엔 기권 단추 없음, 목록 줄의 '투표하기'는 꺼진 채 까닭 글
     await expect(abstainButton(user.page)).toHaveCount(0);
-    const sheet = await openSheet(user.page, t.bots[0].nickname);
-    await expect(sheet.getByRole('menuitem', { name: '투표하기' })).toBeDisabled();
-    await expect(sheet.getByText('토론 중입니다. 투표는 아직 열리지 않았습니다.')).toBeVisible();
+    const row = await openPlayer(user.page, t.bots[0].nickname);
+    await expect(row.getByRole('menuitem', { name: '투표하기' })).toBeDisabled();
+    await expect(row.getByText('토론 중입니다. 투표는 아직 열리지 않았습니다.')).toBeVisible();
 });
 
 test('A03-E-149 [지금 동작] 모바일 8명 판 표 낸 뒤 새로고침 → 낸 표시 남음, 다시 바꿀 수 있음 @game', async ({ user, table }) => {
@@ -299,13 +278,11 @@ test('A03-E-149 [지금 동작] 모바일 8명 판 표 낸 뒤 새로고침 → 
     await user.page.reload();
     await expect(talk.phaseLine(user.page)).toBeVisible({ timeout: 20_000 });
     await clearOverlays(user.page);
-    // 낸 표시: X 카드는 '투표취소', 기권 단추는 켜짐 (찍은 뒤 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
+    // 낸 표시: X 줄은 '투표취소', 기권 단추는 켜짐 (찍은 뒤 기권으로 바꾸기 됨, PC와 같음, 사용자 결정 2026-11-18)
     await expect(abstainButton(user.page)).toBeEnabled();
     expect((await sheetItems(user.page, names.get(X))).all).toEqual(['투표취소']);
-    // 다시 바꿈: Y '투표하기' → Y 카드가 '투표취소'
-    const sheet = await openSheet(user.page, names.get(Y));
-    await sheet.getByRole('menuitem', { name: '투표하기' }).click();
-    await expect(sheet).toBeHidden();
+    // 다시 바꿈: Y '투표하기' → Y 줄이 '투표취소'
+    await pickPlayer(user.page, names.get(Y), '투표하기', { close: false });
     await expect.poll(async () => (await sheetItems(user.page, names.get(Y))).all).toEqual(['투표취소']);
 });
 

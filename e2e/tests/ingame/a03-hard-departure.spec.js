@@ -2,10 +2,10 @@
 
 // 낮 투표 중 누가 나가거나 끊길 때 어려움 시험: 탭 닫기(60초 기다림이라 다 찬 것 아님)·"나가기"(다 차면 5초)·찍힌 사람 나감·마지막 표 뒤 끊김·59초 안 돌아옴·60초 탈락
 // 목록 A03-낮투표.md A03-H-007·008·009·020·021·032, 돌리지 않고 모임만: npx playwright test --list tests/ingame/a03-hard-departure.spec.js
-const { test, expect } = require('../../helpers/fixtures');
+const { test, expect, E2E } = require('../../helpers/fixtures');
 const ui = require('../../helpers/ui');
 const D = require('./a-day/_lib');
-const { talk } = require('../mobile/_talk');
+const { talk, openPlayer, closeRoster, trialAny, expectTrialOf } = require('../mobile/_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 사람 여럿 낮 투표 묶음 — PC·모바일 화면 섞임) ──
 
@@ -52,7 +52,9 @@ const isMobile = (h) => h.mobile === true;
 
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
-const tribunalOf = (page) => page.locator('[data-ingame-tribunal-presentation]');
+// 재판 창: PC는 재판 연출 창, 모바일(세로 카톡형)은 고발 연출·"최후의 변론" 단추·시트 중 하나
+const onPhone = (page) => page.url().startsWith(E2E.mobileUrl);
+const tribunalOf = (page) => (onPhone(page) ? trialAny(page).first() : page.locator('[data-ingame-tribunal-presentation]'));
 
 const noticeOf = (page) => page.getByRole('dialog', { name: '단계 전환 안내' });
 
@@ -81,14 +83,10 @@ async function openVoteMany(table, humans, n, { settings } = {}) {
     return t;
 }
 
-// 카드 메뉴 열기: PC는 판 카드 메뉴, 모바일은 초상 띠 칸 → 카드 시트
+// 카드 메뉴 열기: PC는 판 카드 메뉴, 모바일은 플레이어 목록 시트의 그 사람 줄
 async function openMenu(h, nick) {
-    if (isMobile(h)) {
-        await talk.slot(h.page, nick).click();
-        const sheet = h.page.locator('[data-ingame-player-card-menu]');
-        await expect(sheet).toHaveAttribute('aria-label', nick);
-        return sheet;
-    }
+    // 모바일 세로 카톡형: 카드 판 대신 플레이어 목록 시트의 그 사람 줄 (줄 안 menuitem이 카드 메뉴 항목)
+    if (isMobile(h)) return openPlayer(h.page, nick);
     await D.card(h.page, nick).click();
     const menu = h.page.getByRole('menu', { name: '플레이어 행동' });
     await expect(menu).toBeVisible();
@@ -99,6 +97,8 @@ async function openMenu(h, nick) {
 async function menuPick(h, nick, item) {
     const menu = await openMenu(h, nick);
     await menu.getByRole('menuitem', { name: item }).click();
+    // 모바일 목록 시트는 고른 뒤에도 열려 있음 → 닫음
+    if (isMobile(h)) await closeRoster(h.page);
     await expect(menu).toBeHidden();
 }
 
@@ -115,14 +115,14 @@ async function cast(h, target, names) {
     await expectVotedFor(h, names.get(target));
 }
 
-// 그 사람 카드 메뉴(모바일은 카드 시트)에 '투표취소'가 보일 때까지, 본 뒤 닫음 (PC는 Esc, 모바일은 시트 '닫기')
+// 그 사람 카드 메뉴(모바일은 목록 시트 줄)에 '투표취소'가 보일 때까지, 본 뒤 닫음 (PC는 Esc, 모바일은 목록 닫기)
 async function expectVotedFor(h, nick) {
     let menu = null;
     await expect(async () => {
         if (!menu || !(await menu.isVisible().catch(() => false))) menu = await openMenu(h, nick);
         await expect(menu.getByRole('menuitem', { name: '투표취소' })).toBeVisible({ timeout: 1500 });
     }).toPass({ timeout: 15_000 });
-    if (isMobile(h)) await menu.getByRole('button', { name: '닫기' }).click();
+    if (isMobile(h)) await closeRoster(h.page);
     else await h.page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
 }
@@ -170,8 +170,9 @@ const OUTCOME_TEXT = Object.freeze({
 async function expectOutcome(page, panel, kind, targetNick) {
     await expect(panel.getByTestId('vote-status-outcome')).toHaveText(OUTCOME_TEXT[kind], { timeout: 15_000 });
     if (kind === 'TRIBUNAL') {
-        await expect(tribunalOf(page)).toBeVisible();
-        await expect(tribunalOf(page)).toContainText(targetNick);
+        // 모바일은 시트 설명 "피고: 닉네임"으로 봄
+        if (onPhone(page)) await expectTrialOf(page, targetNick);
+        else await expect(tribunalOf(page)).toContainText(targetNick);
         return;
     }
     await expect(noticeOf(page)).toContainText('밤이 되었습니다');

@@ -5,7 +5,7 @@
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, getExecuted } = require('./_talk');
+const { talk, getExecuted, openRoster, closeRoster, rosterRowOf, expectPlayerStatus } = require('./_talk');
 const night = require('../ingame/b-night/_night');
 
 // 화면 글 (frontend utils/dawnReport.js·constants/ingamePhaseEntrance.js와 같은 글)
@@ -131,24 +131,24 @@ async function openGame({ user, table }, { n, seat, counts = COUNTS[n] }) {
     return { t, page, role, human: P(user), cast };
 }
 
-/** 카드 시트 열기: 초상 띠 칸 누름 (막는 안내 창은 닫으면서) → 메뉴 */
-async function openMenu(page, slot) {
-    const menu = page.getByRole('menu', { name: '플레이어 행동' });
+/** 세로 카톡형: 목록 시트(밤엔 "직업 행동")를 열고 그 사람 줄 (막는 안내 창은 닫으면서) → 줄 (줄 안 menuitem이 카드 메뉴 항목) */
+async function openMenu(page, nickname) {
+    const row = rosterRowOf(page, nickname);
     await expect(async () => {
         await ui.closeOverlays(page, { names: BLOCKERS, rounds: 2, clickTimeoutMs: 1500 });
-        if (!(await menu.isVisible().catch(() => false))) await slot.click({ timeout: 1500 });
-        await expect(menu).toBeVisible({ timeout: 1000 });
+        await openRoster(page, { timeout: 3000 });
+        await expect(row).toHaveCount(1, { timeout: 1000 });
     }).toPass({ timeout: 25_000 });
-    return menu;
+    return row;
 }
 
-/** 모바일 밤 행동: 초상 띠 칸 → 카드 시트의 '암살'·'보호'·'조사' */
-async function pick(page, slot, label) {
-    const menu = await openMenu(page, slot);
-    const item = menu.getByRole('menuitem', { name: label, exact: true });
+/** 모바일 밤 행동: 목록 그 사람 줄의 '암살'·'보호'·'조사' (목록은 고른 뒤에도 열려 있어 닫음) */
+async function pick(page, nickname, label) {
+    const row = await openMenu(page, nickname);
+    const item = row.getByRole('menuitem', { name: label, exact: true });
     await expect(item).toBeEnabled();
     await item.click();
-    await expect(menu).toBeHidden();
+    await closeRoster(page);
 }
 
 /**
@@ -163,8 +163,7 @@ async function act(g, role, choice, dayIndex) {
     }
     if (g.role !== role) return;
     const target = Array.isArray(choice) ? choice[0] : choice;
-    const slot = target.uuid === g.human.uuid ? talk.mySlot(g.page) : talk.slot(g.page, target.nickname);
-    await pick(g.page, slot, ACTION[role]);
+    await pick(g.page, target.nickname, ACTION[role]);
     // 화면에서 누른 것이 서버에 닿아 "다 골랐음" 알림이 판에 퍼진 뒤에 차례를 닫음 (봇이 받은 알림으로 봄)
     await g.t.bots[0].waitForEvent('phase_settle_started', {
         match: (p) => p?.role === role && p?.dayIndex === dayIndex,
@@ -249,7 +248,8 @@ async function expectSaved(page, hiddenNames = [], from = 0) {
 /** 밤 동안 연출 흔적 없음: 화면이 그 차례까지 따라온 뒤, 기록·화면에 영상·글 창·기다림 창이 없음 */
 async function expectQuietNight(page, role) {
     // 단계 줄: 그 직업 차례 글, 다 골라 마감이 당겨졌으면 "5초 뒤 마감"
-    await expect(talk.phaseLine(page)).toContainText(new RegExp(`밤 ${ui.ROLE_LABELS[role]}|5초 뒤 마감`), { timeout: 15_000 });
+    // 명패 글 "[밤-의사]" 꼴 (합친 뒤 명패+시간패널)
+    await expect(talk.phaseLine(page)).toContainText(new RegExp(`밤-${ui.ROLE_LABELS[role]}|5초 뒤 마감`), { timeout: 15_000 });
     const shows = (await logOf(page)).filter((e) => ['kill', 'msg', 'report', 'wait'].includes(e.kind));
     expect(shows, '밤 동안 연출 기록').toEqual([]);
     await expect(showMarks(page)).toHaveCount(0);
@@ -392,7 +392,7 @@ test('A05-E-652 채팅 알림 줄 · 살림 · 산 시민 7명: 채팅에 살해
         await g.page.reload();
         // 새로고침 뒤 기록은 문서가 열릴 때부터 새로 적힘 → 판 화면이 다 그려진 뒤에도 연출이 한 번도 없어야 함
         await expect(g.page).toHaveURL(/\/ingame/);
-        await expect(talk.slot(g.page, victim.nickname)).toHaveAccessibleName(`${victim.nickname}, 사망`, { timeout: 20_000 });
+        await expectPlayerStatus(g.page, victim.nickname, '사망', { timeout: 20_000 });
         await expect(talk.phaseLine(g.page)).toContainText('낮');
         const shows = (await logOf(g.page)).filter((e) => ['kill', 'msg', 'report'].includes(e.kind));
         expect(shows, '새로고침 뒤 연출 기록').toEqual([]);
@@ -423,36 +423,35 @@ test('A05-E-658 살림 글 창이 먼저, 닫힌 뒤에 "낮이 되었습니다"
 });
 
 // ── 명단에서 직업·보호 표시 안 드러남 (A05-E-659~660, 7명) ──
-test('A05-E-659 죽음 뒤 죽은 사람 칸은 "사망"뿐, 직업 이름 없음 (7명 시민 화면) @game', async ({ user, table }) => {
+test('A05-E-659 죽음 뒤 죽은 사람 목록 줄은 "사망"뿐, 직업 이름 없음 (7명 시민 화면) @game', async ({ user, table }) => {
     const g = await openGame({ user, table }, { n: 7, seat: 'CITIZEN' });
     const victim = await killNight(g, 'CITIZEN');
     await expectKilled(g.page, victim.nickname);
     await finishShow(g.page);
     await closeDayEntrance(g.page);
-    const slot = talk.slot(g.page, victim.nickname);
-    await expect(slot).toHaveAccessibleName(`${victim.nickname}, 사망`);
-    await expect(slot.locator('[data-ingame-player-status]')).toHaveAttribute('data-ingame-player-status', 'dead');
-    expect(await slot.innerText()).not.toMatch(ROLE_WORDS);
+    await expectPlayerStatus(g.page, victim.nickname, '사망');
+    await openRoster(g.page);
+    expect(await rosterRowOf(g.page, victim.nickname).innerText()).not.toMatch(ROLE_WORDS);
+    await closeRoster(g.page);
 });
 
-test('A05-E-660 살림 뒤 보호받은 사람 칸이 다른 산 사람 칸과 같은 모양 (7명 시민 화면) @game', async ({ user, table }) => {
+test('A05-E-660 살림 뒤 보호받은 사람 목록 줄이 다른 산 사람 줄과 같은 모양 (7명 시민 화면) @game', async ({ user, table }) => {
     const g = await openGame({ user, table }, { n: 7, seat: 'CITIZEN' });
     const saved = await savedNight(g, 'CITIZEN');
     await expectSaved(g.page, [saved.nickname]);
     await finishShow(g.page);
     await closeDayEntrance(g.page);
-    // 칸 모양 = 상태 값 + 닉네임을 뺀 이름·글 + 안쪽 요소 수 (표시가 붙으면 달라짐)
-    const shapeOf = (nickname) => talk.slot(g.page, nickname).evaluate((el, name) => ({
-        label: (el.getAttribute('aria-label') || '').replace(name, ''),
-        status: el.querySelector('[data-ingame-player-status]')?.getAttribute('data-ingame-player-status') ?? null,
+    // 줄 모양 = 닉네임을 뺀 글 + 안쪽 요소 수 (보호 표시가 붙으면 달라짐) — 세로 카톡형엔 카드 칸이 없어 목록 시트 줄로 봄
+    const shapeOf = (nickname) => rosterRowOf(g.page, nickname).evaluate((el, name) => ({
         text: (el.innerText || '').replace(name, '').trim(),
         parts: el.querySelectorAll('*').length,
     }), nickname);
     const other = P(g.cast.CITIZEN[0]);
-    await expect(talk.slot(g.page, saved.nickname)).toHaveAccessibleName(saved.nickname);
+    await expectPlayerStatus(g.page, saved.nickname, null);
+    await openRoster(g.page);
     const savedShape = await shapeOf(saved.nickname);
-    expect(savedShape.status).toBe('alive');
     expect(savedShape).toEqual(await shapeOf(other.nickname));
+    await closeRoster(g.page);
 });
 
 // ── 작은 폰(360×640)에서 연출 글이 보임 (A05-E-661~662, 6명) ──

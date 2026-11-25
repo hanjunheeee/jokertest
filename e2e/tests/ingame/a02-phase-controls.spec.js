@@ -46,6 +46,9 @@ const CHAT_LOCKED_HINT = '역할 확인이 끝나면 채팅할 수 있습니다'
 // 말풍선 칸 (카드 위, 이모티콘이 판에 나가면 그려짐)
 const bubbleOn = (page, nickname) => night.cardButton(page, nickname).locator('[data-ingame-emoji-bubble]');
 const emojiPalette = (page) => page.getByRole('group', { name: '이모티콘 팔레트' });
+// 입장 준비 덮개: 역할 확인(ROLE_REVEAL) 동안 판 전체를 어둡게 덮고 누르기를 받음, 역할 창은 그 위 (합친 뒤 동작 — frontend entryPreparing/InGameEntryPreparingOverlay.jsx)
+const ENTRY_TEXT = '가면무도회에 입장하는 중입니다.';
+const entryCover = (page) => page.locator('[data-ingame-entry-preparing]');
 
 // A02-E-089~090: 역할 확인 중 채팅 막힘 — 입력칸·보내기가 꺼지고 입력칸 자리에 까닭 글 (결정 "확인 10초: 채팅 못 씀")
 for (const [no, n] of [[89, 5], [90, 8]]) {
@@ -69,8 +72,9 @@ test('A02-E-091 6명 역할 확인 중, 내 카드 오른쪽 누름 → 이모�
     await closeReveal(page);
     // 판 화면이 다 그려진 뒤에 봄 (안 그려져서 "없음"이 맞는 것 막기)
     await expect(page.locator('[data-ingame-player-nickname]')).toHaveCount(6);
-    // 내 카드 오른쪽 누름 → 팔레트가 안 열림, 말풍선도 안 그려짐
-    await mine.click({ button: 'right' });
+    // 내 카드 자리 오른쪽 누름 → 입장 준비 덮개가 받아 팔레트가 안 열림, 말풍선도 안 그려짐 (덮개가 카드를 가려 force로 그 자리를 누름)
+    await expect(entryCover(page)).toBeVisible();
+    await mine.click({ button: 'right', force: true });
     await expect(emojiPalette(page)).toHaveCount(0);
     await expect(bubbleOn(page, user.account.nickname)).toHaveCount(0);
     expect(eventAt(t.bots[0], 'emoji_shown'), '판 사람에게 이모티콘이 나감').toBeNull();
@@ -106,19 +110,25 @@ test('A02-E-093 5명 역할 확인 중 → 투표·준비 단추 없음 @game', 
         await expect(page.getByRole('button', { name, exact: true }), name).toHaveCount(0);
     }
     await expect(page.locator('[data-ingame-phase-action="dayReady"], [data-ingame-phase-action="dayVoteAbstain"]')).toHaveCount(0);
-    // 남의 카드를 눌러도 투표 항목 없음
-    await night.cardButton(page, t.bots[0].nickname).click();
+    // 남의 카드 자리를 눌러도 투표 항목 없음 (입장 준비 덮개가 카드를 가려 force로 그 자리를 누름 — 누름은 덮개가 받음)
+    await expect(entryCover(page)).toBeVisible();
+    await night.cardButton(page, t.bots[0].nickname).click({ force: true });
     await expect(page.getByRole('menuitem', { name: '투표하기' })).toHaveCount(0);
     await expectStillRoleReveal(t);
 });
 
-test('A02-E-094 6명, 확인 → 역할 창 사라짐, 판 카드가 안 가려지고 읽힘 @game', async ({ user, table }) => {
+// 합친 뒤 동작: 역할 확인 동안엔 입장 준비 덮개가 판을 덮음 → 확인 뒤엔 덮개 글이 읽히고, 첫 낮이 되면 덮개가 걷혀 판 카드가 안 가려짐
+test('A02-E-094 6명, 확인 → 역할 창 사라지고 "가면무도회에 입장하는 중입니다." 덮개가 읽힘, 첫 낮엔 덮개 없이 판 카드가 안 가려지고 읽힘 @game', async ({ user, table }) => {
     const page = user.page;
     const t = await openTable(table, user, 6);
     await closeReveal(page);
+    await expectReadable(entryCover(page).getByText(ENTRY_TEXT, { exact: true }));
+    await expectStillRoleReveal(t);
+    await t.advanceUntil('DAY');
+    await day.closeNotice(page, '낮이 되었습니다');
+    await expect(entryCover(page)).toHaveCount(0);
     const nicknames = [user.account.nickname, ...t.bots.map((b) => b.nickname)];
     for (const nick of nicknames) await expectReadable(night.cardStatus(page, nick).getByText(nick, { exact: true }));
-    await expectStillRoleReveal(t);
 });
 
 test('A02-E-095 5명, 첫 낮 뒤 20초 → 역할 창 다시 안 뜸 @game @realtime', async ({ user, table }) => {

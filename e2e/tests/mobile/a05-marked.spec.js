@@ -114,7 +114,8 @@ test('A05-E-140 모바일 6명 광대 봇이 의사 사람을 노린 밤: 의사
             await expect(page.locator('[data-ingame-night-success-kill], [data-ingame-dawn-report], [data-ingame-dawn-report-message]')).toHaveCount(0);
             await expect(kit.resultDialog(page)).toHaveCount(0);
             await expect(page.getByRole('dialog').filter({ hasText: /암살|살해|지목|공격/ })).toHaveCount(0);
-            await expect(page.locator(`[data-ingame-player-nickname="${nickOf(user)}"]`)).toHaveAttribute('data-ingame-player-status', 'alive');
+            // 세로 카톡형엔 카드 판이 없음 → 직업 행동 목록의 내 줄에 "사망" 표시 없음
+            await kit.expectCardStatus(page, nickOf(user), 'alive', { timeout: 10_000 });
             // 밤이 시작된 뒤 지금까지 영상·낮 시작 글·결과 창이 한 번도 안 떴음 (화면 기록)
             const rec = await night.readUi(page);
             expect({ kills: rec.kills, videos: rec.videos, dawnMessages: rec.dawnMessages, privateResults: rec.privateResults })

@@ -179,23 +179,16 @@ async function pinTimebar(page) {
 const timebar = (page) => page.locator('[aria-label$="일 시간 흐름"]');
 
 /**
- * PC: 접힌 시간 바 펼치기 — 새로고침하면 다시 접힘
- * 재판 연출 중엔 시간 바가 저절로 펼쳐져 "접기" 단추만 있음 → 바로 돌아감
- * locked는 화면이 아직 재판 상태를 못 받아 "확대" 단추가 남은 틈에만 씀: 재판 창이 곧 판을 덮으니 눌림 사건만 보냄
+ * PC: 시간 바 위 명패+타이머 판이 보일 때까지 (이름은 옛 "펼치기" 그대로 둠 — 부르는 곳이 많아서)
+ * 합친 뒤 시간 바엔 확대·접기 단추가 없음: 자리가 시간 바면(pinTimebar) 늘 보이고, 재판 연출 중엔 자리와 상관없이 보임 (frontend timebar/InGameTimebar.jsx)
+ * locked는 예전 "재판 창이 덮기 전 틈" 자리라 받기만 함 (누를 단추가 없어 할 일이 같음)
  */
 async function expandBar(page, { locked = false } = {}) {
-    const bar = timebar(page);
-    const open = bar.locator('button[aria-label="시간흐름바 확대"]');
-    const close = bar.locator('button[aria-label="시간흐름바 접기"]');
+    const board = timebar(page).locator('[data-ingame-phase-timer="timebar-embedded"]');
+    // 예전처럼 판을 가리는 안내 창은 닫으면서 기다림 (잠긴 화면이면 건드리지 않음)
     await expect(async () => {
-        if ((await close.count()) > 0) return;
-        if (locked) {
-            await open.dispatchEvent('click', {}, { timeout: 1500 });
-        } else {
-            await clear(page);
-            await open.click({ timeout: 1500 });
-        }
-        await expect(close).toHaveCount(1, { timeout: 1000 });
+        if (!locked) await clear(page);
+        await expect(board).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 20_000 });
 }
 
@@ -218,8 +211,8 @@ const cardOf = (page, nickname) => page.locator(`[data-ingame-player-nickname="$
 const badgeOf = (page, nickname) => cardOf(page, nickname).locator('img[src*="ingame-status"]');
 
 /**
- * 동작이 띄운 확인 창(window.confirm) 글 받기 — accept면 확인, 아니면 취소 (그 사이 뜬 알림 창은 닫기만)
- * PC·모바일 둘 다 브라우저 확인 창이라 글만 봄
+ * 동작이 띄운 확인 창 글 받기 — accept면 확인, 아니면 취소 (그 사이 뜬 알림 창은 닫기만)
+ * PC는 브라우저 확인 창(window.confirm), 모바일은 합친 뒤 양피지 확인 창(appConfirm, alertdialog "확인" — frontend-mobile shared/ui/modal/parchment/ParchmentConfirmHost.jsx)
  * 동작에는 "확인 창이 이미 떴는지" 묻는 함수를 넘김 (다시 누르기를 멈출 때 씀)
  * @returns {Promise<string>} 확인 창 글
  */
@@ -231,10 +224,25 @@ async function withConfirm(page, action, { accept }) {
         (accept ? dialog.accept() : dialog.dismiss()).catch(() => {});
     };
     page.on('dialog', onDialog);
+    // 양피지 확인 창: 뜨면 글(줄바꿈 그대로 textContent)을 받고 확인·취소
+    const parchment = page.getByRole('alertdialog', { name: '확인', exact: true });
+    let watching = true;
+    const watcher = (async () => {
+        while (watching && message === null) {
+            if (await parchment.isVisible().catch(() => false)) {
+                const text = await parchment.locator('p').first().textContent().catch(() => null);
+                const clicked = await parchment.getByRole('button', { name: accept ? '확인' : '취소', exact: true }).click({ timeout: 1000 }).then(() => true, () => false);
+                if (clicked && text !== null) message = text;
+            }
+            await sleep(100);
+        }
+    })();
     try {
         await action(() => message !== null);
         await expect.poll(() => message, { timeout: 10_000, message: '확인 창이 뜸' }).not.toBeNull();
     } finally {
+        watching = false;
+        await watcher;
         page.off('dialog', onDialog);
     }
     return message;

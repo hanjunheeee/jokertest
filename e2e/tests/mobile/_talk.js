@@ -73,6 +73,130 @@ async function startTalkGame(table, humans, { bots = 4, roles, settings, closeRe
     return t;
 }
 
+// ── 세로 카톡형 플레이어 목록 시트 (카드 판 대신, 줄마다 카드 메뉴와 같은 행동 단추) ──
+// 줄 = li[data-roster-player=uuid], 이름 글 "닉네임"(+ " (나)"·동료 표시), 상태 글 "사망"·"연결 끊김", 행동 칸 group "닉네임 행동" 안 menuitem
+// (frontend-mobile components/roster/PlayerRosterSheet.jsx·RosterRow.jsx) — 고르면 시트는 그대로 열려 있고 단추 글만 바뀜 (투표하기 → 투표취소)
+
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** 목록 시트 안 그 사람 줄 (이름 글이 닉네임으로 시작, 뒤에 " (나)"·동료 표시만 붙음) */
+function rosterRowOf(page, nickname) {
+    const name = page.locator('p').filter({ hasText: new RegExp(`^${escapeRe(nickname)}( \\(나\\)|동료 |$)`) });
+    return talk.roster(page).locator('li[data-roster-player]').filter({ has: name });
+}
+
+/** 목록 시트 열기 (열려 있으면 그대로, 앞을 막는 연출 창은 닫아 가며) → 시트 */
+async function openRoster(page, { timeout = 25_000 } = {}) {
+    const sheet = talk.roster(page);
+    await expect(async () => {
+        if (!(await sheet.isVisible().catch(() => false))) {
+            await clearOverlays(page, { keepWatching: false, rounds: 1 });
+            await talk.rosterOpen(page).click({ timeout: 1500 });
+        }
+        await expect(sheet).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout });
+    return sheet;
+}
+
+/** 목록 시트 닫기 (시트 머리 닫기 단추) */
+async function closeRoster(page) {
+    const sheet = talk.roster(page);
+    if (await sheet.isVisible().catch(() => false)) await sheet.getByRole('button', { name: '플레이어 목록 닫기' }).click();
+    await expect(sheet).toBeHidden();
+}
+
+/** 목록을 열고 그 사람 줄 → 줄 (안의 menuitem이 카드 메뉴 항목: 투표하기·투표취소·암살 …) */
+async function openPlayer(page, nickname) {
+    await openRoster(page);
+    const row = rosterRowOf(page, nickname);
+    await expect(row).toHaveCount(1);
+    return row;
+}
+
+/** 그 사람 줄 행동 이름 { all, enabled } (목록은 열어 둔 채) */
+async function playerItems(page, nickname) {
+    const row = await openPlayer(page, nickname);
+    const items = row.getByRole('menuitem');
+    const all = [];
+    const enabled = [];
+    for (let i = 0; i < await items.count(); i += 1) {
+        const name = await items.nth(i).getAttribute('aria-label');
+        all.push(name);
+        if (await items.nth(i).isEnabled()) enabled.push(name);
+    }
+    return { all, enabled };
+}
+
+/**
+ * 목록에서 그 사람 줄 행동 누르기 → 그 줄 단추가 after로 바뀌면 서버가 받은 것 (예: '투표하기' → '투표취소')
+ * after를 안 주면 누르기만 함, close면 끝나고 목록 닫음
+ */
+async function pickPlayer(page, nickname, label, { after = null, close = true } = {}) {
+    const row = await openPlayer(page, nickname);
+    await row.getByRole('menuitem', { name: label, exact: true }).click();
+    if (after) {
+        await expect(async () => {
+            const again = await openPlayer(page, nickname);
+            await expect(again.getByRole('menuitem', { name: after, exact: true })).toBeVisible({ timeout: 1500 });
+        }).toPass({ timeout: 15_000 });
+    }
+    if (close) await closeRoster(page);
+}
+
+const PLAYER_STATUS = Object.freeze(['사망', '연결 끊김']);
+
+/**
+ * 목록 시트에서 그 사람 상태 글 확인 (옛 초상 띠 칸 읽기 이름 ", 사망"·", 연결 끊김" 대신)
+ * status: '사망' | '연결 끊김' | null(살아 있고 붙어 있음 → 상태 글 없음), 연출 창이 목록을 닫아도 다시 열며 봄, 본 뒤 목록 닫음
+ */
+async function expectPlayerStatus(page, nickname, status, { timeout = 15_000 } = {}) {
+    await expect(async () => {
+        await openRoster(page, { timeout: 5_000 });
+        const row = rosterRowOf(page, nickname);
+        await expect(row).toHaveCount(1, { timeout: 1_000 });
+        for (const word of PLAYER_STATUS) {
+            await expect(row.getByText(word, { exact: true })).toHaveCount(word === status ? 1 : 0, { timeout: 1_000 });
+        }
+    }).toPass({ timeout });
+    await closeRoster(page);
+}
+
+/** 목록 시트 줄 수가 n인지 (판 자리 수, 옛 초상 띠 칸 수 대신), 본 뒤 목록 닫음 */
+async function expectRosterCount(page, n, { timeout = 30_000 } = {}) {
+    await expect(async () => {
+        const sheet = await openRoster(page, { timeout: 5_000 });
+        await expect(sheet.locator('li[data-roster-player]')).toHaveCount(n, { timeout: 1_000 });
+    }).toPass({ timeout });
+    await closeRoster(page);
+}
+
+// ── 세로 카톡형 재판: 고발 연출(1초 남짓) 뒤 채팅 틀 "최후의 변론" 단추 → 시트 안에 피고 카드·유죄·무죄·안내 글 ──
+
+/** 재판 시트 열기 (열려 있으면 그대로, 고발 연출이 끝나 "최후의 변론" 단추가 뜰 때까지) → 시트 */
+async function openTrialSheet(page, { timeout = 25_000 } = {}) {
+    const sheet = page.getByTestId('tribunal-presentation-sheet');
+    await expect(async () => {
+        if (!(await sheet.isVisible().catch(() => false))) {
+            await clearOverlays(page, { keepWatching: false, rounds: 1 });
+            await page.getByTestId('tribunal-presentation-open').click({ timeout: 1500 });
+        }
+        await expect(sheet).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout });
+    return sheet;
+}
+
+/** 재판이 열린 표시: 고발 연출·"최후의 변론" 단추·시트 중 하나 (재판이 없으면 셋 다 없음) */
+const trialAny = (page) => page.locator('[data-ingame-tribunal-presentation], [data-testid="tribunal-presentation-open"], [data-testid="tribunal-presentation-sheet"]');
+
+/** 재판이 열렸고 피고가 그 사람인지: 시트 설명 "피고: 닉네임"을 보고 시트를 닫음 */
+async function expectTrialOf(page, nickname, { timeout = 15_000 } = {}) {
+    await expect(trialAny(page).first()).toBeVisible({ timeout });
+    const sheet = await openTrialSheet(page);
+    await expect(sheet).toContainText(`피고: ${nickname}`);
+    await sheet.getByRole('button', { name: '최후의 변론 닫기' }).click();
+    await expect(sheet).toBeHidden();
+}
+
 /** 폰 가로(넓은 배치): 카드 판·카드 메뉴·이모티콘 팔레트 (세로 카톡형에는 카드 나열 없음) */
 async function useWideBoard(page) {
     await page.setViewportSize({ width: 812, height: 375 });
@@ -207,5 +331,6 @@ async function nicknameOf(t, uuid) {
 module.exports = {
     talk, clearOverlays, startTalkGame, goPhase, toDay, toVote, toNight, say, botSay, botNightSay, botEmoji, botLeave,
     getExecuted, executeBot, jokerBot, overflowX, bgColor, nicknameOf, sleep, BASIC_EMOJI, CHAT_GAP_MS, EMOJI_GAP_MS,
-    useWideBoard,
+    useWideBoard, rosterRowOf, openRoster, closeRoster, openPlayer, playerItems, pickPlayer, openTrialSheet,
+    trialAny, expectTrialOf, expectPlayerStatus, expectRosterCount,
 };

@@ -6,6 +6,7 @@ const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable, readability, waitFullyShown } = require('../../helpers/visible');
 const { e2e } = require('../../helpers/internal');
 const ui = require('../../helpers/ui');
+const { answerNextConfirm } = require('../room/_a01b-kick-kit');
 const {
     U, TEXT, returnButton, lobbyButton, leaveNotice, closeTimer, startButton, hostSeat, expectStartBlocked,
     rolesFor, findJokerBot, seatTable, seatPhoneHosted, jokerLeaves, voteOutJoker, allAtResult, pressReturn, pressLobby, leaveToLobby,
@@ -244,11 +245,10 @@ test('A08-E-092 [모바일] 6명 판: 봇 1은 결과 화면 그대로 → 내 �
 test('A08-E-093 [모바일] 5명 판: 결과 화면에서 뒤로 가기 → 확인 창 글 "로비로 나가시겠습니까?" @game', async ({ user, table }) => {
     await phoneResult(user, table, 5);
     const page = user.page;
-    const asked = page.waitForEvent('dialog', { timeout: 10_000 });
+    // 합친 뒤 모바일 확인 창은 양피지 확인 창(appConfirm) → 브라우저 창·양피지 창 둘 다 받는 도우미로 취소
+    const asked = answerNextConfirm(page, false);
     await page.evaluate(() => window.history.back());
-    const dialog = await asked;
-    expect(dialog.message()).toBe(TEXT.lobbyConfirm);
-    await dialog.dismiss();
+    expect(await asked).toBe(TEXT.lobbyConfirm);
     await expect(page).toHaveURL(/\/gameresult/);
     await expect(returnButton(page)).toBeVisible();
 });

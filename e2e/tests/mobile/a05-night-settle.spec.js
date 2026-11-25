@@ -6,7 +6,7 @@ const { test, expect, ui } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
 const { expectReadable } = require('../../helpers/visible');
 const { sleep } = require('../../helpers/wait');
-const { talk } = require('./_talk');
+const { talk, openRoster, closeRoster, rosterRowOf } = require('./_talk');
 const night = require('../ingame/b-night/_night');
 
 const SETTLE_TEXT = '5초 뒤 마감';
@@ -30,7 +30,8 @@ const COUNTS = {
 // 카드 누르기·단계 줄을 막는 안내 창 (확인 하나로 닫힘)
 const BLOCKERS = ['내 역할 보기', '단계 전환 안내', '밤 역할 안내', '밤 조사 결과'];
 
-const settleLabel = (page) => talk.phaseLine(page).getByText(SETTLE_TEXT, { exact: true });
+// 명패 글은 "[5초 뒤 마감]" (합친 뒤 명패+시간패널)
+const settleLabel = (page) => talk.phaseLine(page).getByText(`[${SETTLE_TEXT}]`, { exact: true });
 const showMarks = (page) => page.locator('[data-ingame-night-success-kill], [data-ingame-dawn-report]');
 // 봇·사람 → { uuid, nickname }
 const P = (x) => ({ uuid: (x.account ?? x).uuid, nickname: (x.account ?? x).nickname });
@@ -128,15 +129,15 @@ async function tidy(page) {
     }).toPass({ timeout: 15_000 });
 }
 
-/** 카드 시트 열기: 초상 띠 칸 누름 (막는 안내 창은 닫으면서) → 메뉴 */
-async function openMenu(page, slot) {
-    const menu = page.getByRole('menu', { name: '플레이어 행동' });
+/** 세로 카톡형: "직업 행동" 목록 시트를 열고 그 사람 줄 (막는 안내 창은 닫으면서) → 줄 (줄 안 menuitem이 카드 메뉴 항목) */
+async function openMenu(page, nickname) {
+    const row = rosterRowOf(page, nickname);
     await expect(async () => {
         await ui.closeOverlays(page, { names: BLOCKERS, rounds: 2, clickTimeoutMs: 1500 });
-        if (!(await menu.isVisible().catch(() => false))) await slot.click({ timeout: 1500 });
-        await expect(menu).toBeVisible({ timeout: 1000 });
+        await openRoster(page, { timeout: 3000 });
+        await expect(row).toHaveCount(1, { timeout: 1000 });
     }).toPass({ timeout: 25_000 });
-    return menu;
+    return row;
 }
 
 /** 화면이 그 행동을 실제로 받은 시각 (from번째 기록 뒤 첫 누름, 없으면 null) */
@@ -145,19 +146,20 @@ async function pressedAt(page, from) {
     return press ? press.at : null;
 }
 
-/** 열린 카드 시트에서 행동 누름 → 누른 시각(ms) */
+/** 열린 목록 줄에서 행동 누름 → 누른 시각(ms), 목록은 고른 뒤에도 열려 있어 닫음 */
 async function choose(menu, label) {
     const item = menu.getByRole('menuitem', { name: label, exact: true });
     await expect(item).toBeEnabled();
     const clickedAt = Date.now();
     await item.click();
+    await closeRoster(menu.page());
     await expect(menu).toBeHidden();
     return clickedAt;
 }
 
-/** 모바일 밤 행동: 초상 띠 칸 → 카드 시트의 '암살'·'보호'·'조사'·'확인' → 누른 시각(ms) */
-async function pick(page, slot, label) {
-    return choose(await openMenu(page, slot), label);
+/** 모바일 밤 행동: "직업 행동" 목록 그 사람 줄의 '암살'·'보호'·'조사'·'확인' → 누른 시각(ms) */
+async function pick(page, nickname, label) {
+    return choose(await openMenu(page, nickname), label);
 }
 
 /** 내 밤 차례를 화면 "건너뛰기"로 넘김 */
@@ -268,7 +270,7 @@ for (const c of SOLO_CASES) {
         }
         await reachTurn(g, c.role, c.dayIndex);
         const from = (await logOf(g.page)).length;
-        const clickedAt = await pick(g.page, talk.slot(g.page, target.nickname), ACTION[c.role]);
+        const clickedAt = await pick(g.page, target.nickname, ACTION[c.role]);
         // "고른 직후"는 화면이 누름을 받은 때부터 잼 (기록이 없으면 시험이 누르기 시작한 때)
         const pressed = (await pressedAt(g.page, from)) ?? clickedAt;
         await expectReadable(settleLabel(g.page));
@@ -286,7 +288,7 @@ test(`A05-E-667 광대 사람 + 봇 동료 (6명, 광대 2): 봇이 나중에 �
     const target = P(g.cast.CITIZEN.at(-1));
     await reachTurn(g, 'JOKER', 1);
     const from = (await logOf(g.page)).length;
-    await pick(g.page, talk.slot(g.page, target.nickname), '암살');
+    await pick(g.page, target.nickname, '암살');
     // 내 선택이 들어간 뒤(건너뛰기 꺼짐)에도 동료가 안 골라서 5초 표시가 없음
     await expect(talk.phaseAction(g.page, 'nightSkip')).toBeDisabled();
     await expectNoSettleYet(g.page, from);
@@ -308,7 +310,7 @@ test('A05-E-668 남은 시간이 5초보다 짧을 때 고르면 (5명, 밤 30�
     await tidy(g.page);
     // 진짜로 기다림: 남은 4.5초에 카드 시트를 열고 남은 3초에 누름 (30초 차례)
     await sleep(Math.max(0, started.deadline - 4500 - Date.now()));
-    const menu = await openMenu(g.page, talk.slot(g.page, target.nickname));
+    const menu = await openMenu(g.page, target.nickname);
     await sleep(Math.max(0, started.deadline - 3000 - Date.now()));
     const clickedAt = await choose(menu, '암살');
     expect(started.deadline - clickedAt, '누른 때 남은 시간이 5초보다 짧음').toBeLessThan(5000);
@@ -325,9 +327,9 @@ test('A05-E-669 5초 안에 대상을 바꾸면 바꾼 사람이 죽음 (6명): 
     const g = await openGame({ user, table }, { n: 6, role: 'JOKER' });
     const [a, b] = [P(g.cast.CITIZEN[0]), P(g.cast.CITIZEN[1])];
     await reachTurn(g, 'JOKER', 1);
-    await pick(g.page, talk.slot(g.page, a.nickname), '암살');
+    await pick(g.page, a.nickname, '암살');
     await expectReadable(settleLabel(g.page));
-    await pick(g.page, talk.slot(g.page, b.nickname), '암살');
+    await pick(g.page, b.nickname, '암살');
     // 광대 차례가 진짜 5초 뒤 닫힘 → 의사 차례는 봇이 건너뛰기 → 다시 5초 뒤 낮
     await waitTurn(g.t, 'DOCTOR', 1);
     await botsChoose(g, 'DOCTOR');
@@ -346,7 +348,7 @@ test('A05-E-670 봇 동료 광대가 나가서 다 참 (8명, 광대 2): 나간 
     const ally = g.cast.JOKER[0];
     await reachTurn(g, 'JOKER', 1);
     const from = (await logOf(g.page)).length;
-    await pick(g.page, talk.slot(g.page, target.nickname), '암살');
+    await pick(g.page, target.nickname, '암살');
     await expect(talk.phaseAction(g.page, 'nightSkip')).toBeDisabled();
     await expectNoSettleYet(g.page, from);
     // 안 고른 동료가 판에서 나감 → 남은 광대(사람)는 이미 골라서 다 참
@@ -371,21 +373,19 @@ test(`A05-E-671 시민 화면에도 "${SETTLE_TEXT}"가 읽힘 (6명): 봇 광�
     expectFiveSeconds((await settleSpan(g.page, from)).ms);
 });
 
-// 세로 폰도 당김 5초 동안은 접어 둔 진행 바가 저절로 펼쳐짐 (사용자 결정 2026-11-16 아침 8, frontend-mobile TalkLayout.jsx)
-test(`A05-E-672 접어 둔 시간 줄이 다 고르면 저절로 펼쳐지고 "${SETTLE_TEXT}"가 보임 (5명) @game @realtime`, async ({ user, table }) => {
+// 세로 폰 명패+시간패널은 접고 펼치기 없이 늘 보임 (합친 뒤 새 시간 막대, frontend-mobile timebar/Timebar.jsx) → 다 고르면 그 자리 글이 "[5초 뒤 마감]"으로 바뀜
+test(`A05-E-672 늘 보이는 명패+시간패널이 다 고르면 "${SETTLE_TEXT}"로 바뀌어 읽힘 (5명) @game @realtime`, async ({ user, table }) => {
     const g = await openGame({ user, table }, { n: 5, role: 'JOKER' });
     const target = P(g.cast.CITIZEN.at(-1));
     await reachTurn(g, 'JOKER', 1);
     await tidy(g.page);
-    // 진행 바를 한 번도 안 펼침 (접힌 채)
-    await expect(talk.phaseLine(g.page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(talk.timebarSlot(g.page)).toBeHidden();
+    // 고르기 전: 시간 칸이 보이고 5초 글·당김 표시 없음
+    await expect(talk.timebarSlot(g.page)).toBeVisible();
     await expect(talk.phaseLine(g.page)).not.toContainText(SETTLE_TEXT);
-    await pick(g.page, talk.slot(g.page, target.nickname), '암살');
+    await expect(g.page.locator('[data-ingame-phase-settle]')).toHaveCount(0);
+    await pick(g.page, target.nickname, '암살');
     await expectReadable(settleLabel(g.page));
     await expect(g.page.locator('[data-ingame-phase-settle]')).toHaveCount(1);
-    // 한 번도 안 펼쳤던 진행 바가 펼쳐져 보임 (단계 줄도 "펼침"으로 읽힘)
-    await expect(talk.phaseLine(g.page)).toHaveAttribute('aria-expanded', 'true');
     await expect(talk.timebarSlot(g.page)).toBeVisible();
 });
 
@@ -395,7 +395,7 @@ test('A05-E-673 5초 중 새로고침 (6명): 고르고 1초 뒤 새로고침 �
     const host = g.t.bots[0];
     await reachTurn(g, 'JOKER', 1);
     const from = (await logOf(g.page)).length;
-    await pick(g.page, talk.slot(g.page, target.nickname), '암살');
+    await pick(g.page, target.nickname, '암살');
     let on = null;
     await expect.poll(async () => {
         on = (await logOf(g.page, from)).find((e) => e.kind === 'settleOn') ?? null;
@@ -442,14 +442,14 @@ for (const c of NO_END_CASES) {
         await night.toTurn(g.t, actor ? c.role : 'JOKER', { dayIndex: c.dayIndex });
         await g.page.locator('[data-ingame-phase-entrance="NIGHT"]').waitFor({ state: 'attached', timeout: 5000 }).catch(() => {});
         await tidy(g.page);
-        await expect(talk.phaseLine(g.page)).toContainText(`밤 ${ui.ROLE_LABELS[actor ? c.role : 'JOKER']}`);
+        await expect(talk.phaseLine(g.page)).toContainText(`[밤-${ui.ROLE_LABELS[actor ? c.role : 'JOKER']}]`);
         // 내 차례면 조작 줄에 "건너뛰기"는 있음 (조작 줄이 그려진 것 확인)
         if (actor) await expect(talk.phaseAction(g.page, 'nightSkip')).toBeVisible();
         await expect(talk.actionRow(g.page)).toBeVisible();
         await expect(talk.actionRow(g.page)).not.toContainText('밤 종료');
         await expect(g.page.getByRole('button', { name: /밤 종료/ })).toHaveCount(0);
         if (actor) {
-            const menu = await openMenu(g.page, talk.slot(g.page, target.nickname));
+            const menu = await openMenu(g.page, target.nickname);
             await expect(menu.getByRole('menuitem', { name: ACTION[c.role], exact: true })).toBeVisible();
             await expect(menu.getByRole('menuitem', { name: /밤 종료/ })).toHaveCount(0);
         }
@@ -465,7 +465,7 @@ test('A05-E-682 둘째 밤에도 5초 (7명 광대 사람): 2일 밤 고른 때�
     await passNight(g, 1);
     await reachTurn(g, 'JOKER', 2);
     const from = (await logOf(g.page)).length;
-    await pick(g.page, talk.slot(g.page, target.nickname), '암살');
+    await pick(g.page, target.nickname, '암살');
     await expectReadable(settleLabel(g.page));
     const span = await settleSpan(g.page, from);
     expectFiveSeconds(span.ms);

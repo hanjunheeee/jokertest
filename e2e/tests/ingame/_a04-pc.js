@@ -269,14 +269,11 @@ async function killHumanAtNight(t, user, joker) {
 // ───────── 시간 바 ─────────
 
 /**
- * 접힌 시간 바 펼치기 (남은 시간·단계 글은 펼친 바에만 보임) — 판 화면이 안 잠긴 때(낮, 안내 창 닫은 뒤) 부름
- * 재판 연출 중·마감이 당겨진 5초 동안은 바가 저절로 펼쳐져 있어 "확대" 단추가 없음(이름이 "접기") → 그때 불러도 누르지 않고 지나감
+ * 시간 바 위 명패+타이머 판이 보일 때까지 (이름은 옛 "펼치기" 그대로 둠 — 부르는 곳이 많아서)
+ * 합친 뒤 시간 바엔 확대·접기 단추가 없음: 자리가 시간 바면(pinTimebar) 단계 글·남은 시간이 늘 바 위에 보이고, 재판 연출 중엔 자리와 상관없이 보임 (frontend timebar/InGameTimebar.jsx)
  */
 async function expandBar(page) {
-    const bar = timebar(page);
-    const open = bar.getByRole('button', { name: '시간흐름바 확대' });
-    if (await open.isVisible().catch(() => false)) await open.click();
-    await expect(bar.getByRole('button', { name: '시간흐름바 접기' })).toBeVisible();
+    await expect(timebar(page).locator('[data-ingame-phase-timer="timebar-embedded"]')).toBeVisible();
 }
 
 /** 시간 바 "[5초 뒤 마감]"이 읽히고 남은 시간이 5초 이하 (재판 중 시간 바는 잠긴 판 화면 안이라 가려짐 검사는 뺌, 재판 중엔 바가 늘 펼쳐져 있음) */

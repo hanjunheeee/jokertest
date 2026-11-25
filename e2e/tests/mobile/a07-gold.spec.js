@@ -149,13 +149,24 @@ async function deadWatcherBoard(table, user, n) {
     return { t, list };
 }
 
-// 브라우저 확인 창(window.confirm)을 수락하며 fn을 돌림 (나가기·"로비로" 확인)
+// 확인 창을 수락하며 fn을 돌림 (나가기·"로비로" 확인)
+// 브라우저 확인 창(window.confirm) + 합친 뒤 모바일 양피지 확인 창(appConfirm, alertdialog "확인")도 뜨면 "확인"
 async function acceptingConfirm(page, fn) {
     const onDialog = (dialog) => { dialog.accept().catch(() => {}); };
     page.on('dialog', onDialog);
+    const parchment = page.getByRole('alertdialog', { name: '확인', exact: true });
+    let running = true;
+    const clicker = (async () => {
+        while (running) {
+            if (await parchment.isVisible().catch(() => false)) await parchment.getByRole('button', { name: '확인', exact: true }).click({ timeout: 1000 }).catch(() => {});
+            await new Promise((r) => { setTimeout(r, 150); });
+        }
+    })();
     try {
         return await fn();
     } finally {
+        running = false;
+        await clicker;
         page.off('dialog', onDialog);
     }
 }

@@ -106,7 +106,13 @@ test('A04-E-050 PC 8명 판 피고 = 광대(광대 2 중 1) 유죄 → 판정 �
     await K.closeTribunal(t);
     await K.expectExpelled(page, defendant.nickname);
     // 추방 글이 떠 있는 동안 화면 전체 글 (밤 차례 안내는 연출이 끝난 뒤에야 뜸)
-    expect(await page.locator('body').innerText()).not.toContain('광대');
+    // 명패+타이머 판의 단계 글 "[밤-광대]"는 지금 밤 차례 이름이라 뺌 (합친 뒤 판이 늘 보임 — 처형 정보가 아님, 모바일 A04 같은 시험과 같은 식)
+    const shown = await page.evaluate(() => {
+        let text = document.body.innerText;
+        for (const el of document.querySelectorAll('[data-ingame-phase-timer]')) text = text.replace(el.innerText, ' ');
+        return text;
+    });
+    expect(shown).not.toContain('광대');
     await K.passExpulsion(page);
     await K.night.expectCard(page, defendant.nickname, 'dead');
     await expect(K.night.cardButton(page, defendant.nickname)).not.toContainText('광대');

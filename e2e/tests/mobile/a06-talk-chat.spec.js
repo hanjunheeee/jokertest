@@ -448,7 +448,7 @@ test('A06-E-146 죽은 사람 이모티콘 (8명 판): 처형된 뒤 내 초상�
     const page = user.page;
     await getExecuted(t, user);
     // 이모티콘은 낮에만이라 다음 낮까지 감 (밤이라서 막힌 것과 죽어서 막힌 것을 가르려고)
-    await m.goPhase(t, page, 'DAY', { line: '낮 토론' });
+    await m.goPhase(t, page, 'DAY', { line: '낮' });
     await ready(page);
 
     // 길게 누르기 0.45초 규칙만큼 진짜로 누르고 있음
@@ -610,7 +610,7 @@ test('A06-E-155 둘째 밤 시민 (7명 판): 2일 밤에도 입력 줄은 닫�
     const firstNight = await m.toNight(t, page);
     await readableOnScreen(page, closedReason(page));
 
-    await m.goPhase(t, page, (s) => s.phase === 'DAY' && s.dayIndex > firstNight.dayIndex, { line: '낮 토론' });
+    await m.goPhase(t, page, (s) => s.phase === 'DAY' && s.dayIndex > firstNight.dayIndex, { line: '낮' });
     await ready(page);
     await m.goPhase(t, page, (s) => s.phase === 'NIGHT' && s.dayIndex > firstNight.dayIndex, { line: '밤' });
     await expect(talk.phaseLine(page)).toContainText('제 2일');
@@ -638,7 +638,7 @@ test('A06-E-157 죽은 사람도 낮 말을 읽음 (8명 판): 처형된 뒤 산
     const t = await seat(table, user, { botRoles: EIGHT });
     const page = user.page;
     await getExecuted(t, user);
-    await m.goPhase(t, page, 'DAY', { line: '낮 토론' });
+    await m.goPhase(t, page, 'DAY', { line: '낮' });
     await ready(page);
 
     const text = uniq('산봇낮말');
@@ -653,7 +653,7 @@ test('A06-E-158 밤 → 낮 (6명 판 사람 의사): 밤에 쓴 글은 낮 채�
     const nightText = uniq('밤의말');
     await say(page, nightText);
 
-    await m.goPhase(t, page, (s) => s.phase === 'DAY' && s.dayIndex > night.dayIndex, { line: '낮 토론' });
+    await m.goPhase(t, page, (s) => s.phase === 'DAY' && s.dayIndex > night.dayIndex, { line: '낮' });
     await ready(page);
     // 낮 표지 글이 보일 만큼 화면이 낮을 따라온 뒤에도 밤 글이 없음
     const dayText = uniq('낮의말');

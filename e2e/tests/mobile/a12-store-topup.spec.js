@@ -81,11 +81,14 @@ async function makeProduct(kind, { pay, grant, bonus = 0 }) {
     return { productId, name, version: 1 };
 }
 
-/** 모바일 상점 열기 (입장 영상 건너뛰기 → 위 줄 "쿠폰"이 보일 때까지) */
+/**
+ * 모바일 상점 열기 (입장 영상 건너뛰기 → 아래 줄 "보유 재화" 칸이 눌리는 상태가 될 때까지)
+ * 합친 뒤 "쿠폰" 단추는 숨김(frontend store/constants/storeLayoutStyle.js STORE_SHOW_COUPON_BUTTON=false)이라 준비 표시로 못 씀
+ */
 async function gotoStore(page, path = '/store') {
     await page.goto(path);
     await ui.skipIntro(page);
-    await expect(page.getByRole('button', { name: '쿠폰', exact: true })).toBeVisible();
+    await expect(page.getByLabel('보유 재화', { exact: true })).toHaveCSS('pointer-events', 'auto');
 }
 
 /** 상점 → 인게임 재화 → 그 상품 고름 */

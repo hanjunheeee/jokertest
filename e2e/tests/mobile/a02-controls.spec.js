@@ -18,7 +18,8 @@ async function openRevealPhase(table, user) {
     await expect(dialog).toBeVisible({ timeout: 20_000 });
     await dialog.getByRole('button', { name: '확인' }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(talk.mySlot(user.page)).toBeVisible();
+    // 세로 카톡형엔 카드 판(내 칸)이 없음 → 카톡형 화면이 그려졌는지로 봄
+    await expect(talk.layout(user.page)).toBeVisible();
     return t;
 }
 

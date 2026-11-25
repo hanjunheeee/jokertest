@@ -4,7 +4,7 @@
 // 목록 A09-끊김-나가기-탈주.md 번호 A09-E-100 (모바일 줄) — 최소 인원 규칙 없음(승패 조건까지 계속)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
-const { talk, clearOverlays } = require('./_talk');
+const { talk, clearOverlays, expectPlayerStatus } = require('./_talk');
 const K = require('../ingame/_a09-simple-kit');
 
 test('A09-E-100 모바일 8명 판, 봇 2명이 나가도 판이 다음 단계로 계속 @game @smoke', async ({ user, table }) => {
@@ -13,7 +13,7 @@ test('A09-E-100 모바일 8명 판, 봇 2명이 나가도 판이 다음 단계�
     const gone = K.botsOf(t, await t.state(), 'CITIZEN').slice(0, 2);
     expect(gone).toHaveLength(2);
     await K.toDay(t);
-    await expect(talk.phaseLine(page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(page)).toContainText('낮', { timeout: 15_000 });
     await clearOverlays(page);
 
     for (const bot of gone) {
@@ -22,7 +22,7 @@ test('A09-E-100 모바일 8명 판, 봇 2명이 나가도 판이 다음 단계�
     }
     // 나간 봇 칸은 사망, 판은 안 끝남
     for (const bot of gone) {
-        await expect(talk.slot(page, bot.nickname)).toHaveAccessibleName(`${bot.nickname}, 사망`, { timeout: 15_000 });
+        await expectPlayerStatus(page, bot.nickname, '사망', { timeout: 15_000 });
     }
     const now = await t.state();
     expect(now.phase, '승부가 안 났으니 판 계속').not.toBe('ENDED');

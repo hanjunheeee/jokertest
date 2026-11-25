@@ -4,7 +4,7 @@
 // 목록 A02-판시작-역할.md 번호 A02-E-158~162 (앞 단계는 손잡이로 넘김, 시간 규칙을 보는 시험 아님)
 const { test, expect } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
-const { talk, clearOverlays } = require('./_talk');
+const { talk, clearOverlays, openPlayer, closeRoster, rosterRowOf } = require('./_talk');
 const { toTurn } = require('../ingame/b-night/_night');
 
 // 밤 단추 이름 (화면 getInGameNightActionLabel 글)
@@ -27,23 +27,17 @@ async function openPairGame(table, user, { n, role, settings }) {
     return { t, partner, citizen };
 }
 
-// 띠 카드 눌러 카드 시트 열기 (연출 창이 막으면 닫으면서 다시)
+// 세로 카톡형: 카드 띠 대신 플레이어 목록 시트(밤엔 "직업 행동")의 그 사람 줄 열기 (연출 창이 막으면 닫으면서 다시)
 async function openSheet(page, nickname) {
-    const sheet = talk.cardSheet(page);
+    let row = null;
     await expect(async () => {
         await clearOverlays(page);
-        if (!(await sheet.isVisible().catch(() => false))) await talk.slot(page, nickname).click({ timeout: 1500 });
-        await expect(sheet).toBeVisible({ timeout: 1500 });
-        await expect(sheet.getByRole('heading', { name: nickname })).toBeVisible({ timeout: 1000 });
+        row = await openPlayer(page, nickname);
     }).toPass({ timeout: 25_000 });
-    return sheet;
+    return row;
 }
 
-async function closeSheet(page) {
-    const sheet = talk.cardSheet(page);
-    await sheet.getByRole('button', { name: '닫기' }).click();
-    await expect(sheet).toHaveCount(0);
-}
+const closeSheet = (page) => closeRoster(page);
 
 // 1일 밤 내 차례까지 (낮은 아무도 안 찍어 재판 없이 밤)
 async function toMyTurn(t, page, role) {
@@ -51,7 +45,7 @@ async function toMyTurn(t, page, role) {
     await expect(talk.phaseLine(page)).toContainText('밤', { timeout: 15_000 });
 }
 
-// 동료 카드 밤 단추가 눌러지고, 누르면 서버가 받아 "취소하기"로 바뀜
+// 동료 줄 밤 단추가 눌러지고, 누르면 서버가 받아 "취소하기"로 바뀜
 async function expectAllyPressable(page, role, partnerNick) {
     const sheet = await openSheet(page, partnerNick);
     const button = sheet.getByRole('menuitem', { name: NIGHT_LABEL[role], exact: true });
@@ -63,18 +57,14 @@ async function expectAllyPressable(page, role, partnerNick) {
     }).toPass({ timeout: 15_000 });
 }
 
-// 광대: 시민 카드엔 암살 눌러짐(메뉴가 막힌 게 아님을 먼저 봄) → 동료 카드엔 눌러지는 암살 없음
-// 동료 광대 카드는 항목이 없어 시트가 아예 안 열림 (화면 utils/playerCardMenu.js) → 열리길 기다리지 않고 잠깐만 봄
+// 광대: 시민 줄엔 암살 눌러짐(목록이 막힌 게 아님을 먼저 봄) → 동료 줄엔 눌러지는 암살 없음
+// 동료 광대 줄은 행동 항목이 없음 (화면 utils/playerCardMenu.js — 줄에 단추 칸이 안 그려짐)
 async function expectAllyBlocked(page, partnerNick, citizenNick) {
-    let sheet = await openSheet(page, citizenNick);
+    const sheet = await openSheet(page, citizenNick);
     await expect(sheet.getByRole('menuitem', { name: '암살', exact: true })).toBeEnabled();
+    const kill = rosterRowOf(page, partnerNick).getByRole('menuitem', { name: '암살', exact: true });
+    expect((await kill.count()) === 0 || (await kill.isDisabled()), '동료 광대 줄의 암살 단추가 꺼져 있거나 없음').toBe(true);
     await closeSheet(page);
-    sheet = talk.cardSheet(page);
-    await clearOverlays(page);
-    await talk.slot(page, partnerNick).click();
-    await sheet.waitFor({ state: 'visible', timeout: 1500 }).catch(() => {});
-    const kill = sheet.getByRole('menuitem', { name: '암살', exact: true });
-    expect((await kill.count()) === 0 || (await kill.isDisabled()), '동료 광대 카드의 암살 단추가 꺼져 있거나 없음').toBe(true);
 }
 
 const DOCTOR_PAIR = customRoleSettings({ JOKER: 1, DOCTOR: 2 });

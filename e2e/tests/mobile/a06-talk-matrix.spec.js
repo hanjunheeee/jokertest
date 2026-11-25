@@ -184,7 +184,7 @@ async function deadGame(table, user, role) {
     await keepWatching(user.page);
     await killAtNight(t, deadBot.account.uuid);
     await expect(talk.phaseLine(user.page)).toContainText('제 2일', { timeout: 20000 });
-    await expect(talk.phaseLine(user.page)).toContainText('낮 토론', { timeout: 20000 });
+    await expect(talk.phaseLine(user.page)).toContainText('낮', { timeout: 20000 });
     await ready(user.page);
     return { t, deadBot };
 }

@@ -131,10 +131,10 @@ test('A04-E-100 PC 7명 판 재판 120초, 다 찬 지 1초 뒤 새로고침 →
     await page.reload();
     await K.expectTribunal(page);
     await K.calm(page);
-    // 재판 연출 중엔 시간 바가 늘 펼쳐져 있음 (새로고침해 접힌 채로 시작해도) → "시간흐름바 확대" 단추는 없고, 누르지 않고 펼쳐져 있는지 봄
+    // 재판 연출 중엔 시간 바 위에 명패+타이머 판이 늘 보임 (합친 뒤 시간 바엔 확대·접기 단추가 아예 없음)
     const bar = K.timebar(page);
-    await expect(bar.getByRole('button', { name: '시간흐름바 접기' })).toHaveAttribute('aria-expanded', 'true', { timeout: 2000 });
-    await expect(bar.getByRole('button', { name: '시간흐름바 확대' })).toHaveCount(0);
+    await expect(bar.locator('[data-ingame-phase-timer="timebar-embedded"]')).toBeVisible({ timeout: 2000 });
+    await expect(bar.getByRole('button', { name: /^시간흐름바 (확대|접기)$/ })).toHaveCount(0);
     // 당김 표시도 새로고침 뒤 살아 있음: "[5초 뒤 마감]" 글 + 남은 시간 5초 이하 (남은 몇 초 안에 다 봐야 해서 글은 보이는지만 봄)
     await expect(bar.getByText(TEXT.SETTLE, { exact: true })).toBeVisible({ timeout: 2000 });
     await expect(K.barTimer(page)).toHaveText(/^00:0[0-5]$/, { timeout: 2000 });

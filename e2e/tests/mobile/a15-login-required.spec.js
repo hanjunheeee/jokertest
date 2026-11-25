@@ -8,7 +8,8 @@ const { test, expect } = require('../../helpers/fixtures');
 const GUARDED = [
     ['A15-E-023', '/lobby', (page) => page.getByRole('navigation', { name: '로비 메뉴' })],
     // 모바일 상점 위 줄 "쿠폰" 단추
-    ['A15-E-024', '/store', (page) => page.getByRole('button', { name: '쿠폰', exact: true })],
+    // 합친 뒤 "쿠폰" 단추는 숨김 → 상점이 열린 표시는 "보유 재화" 칸
+    ['A15-E-024', '/store', (page) => page.getByLabel('보유 재화', { exact: true })],
 ];
 
 for (const [id, path, ownContent] of GUARDED) {

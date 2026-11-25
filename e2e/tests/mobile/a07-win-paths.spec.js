@@ -283,7 +283,7 @@ test('A07-E-094 모바일 6명 판 광대가 고른 사람을 의사가 살림 �
 
     const day2 = await N.toDay(t, { dayIndex: 2 });
     expect(day2.players.filter((p) => !p.alive), '죽은 사람 없음').toHaveLength(0);
-    await expect(talk.phaseLine(page)).toContainText('낮 토론', { timeout: 15_000 });
+    await expect(talk.phaseLine(page)).toContainText('낮', { timeout: 15_000 });
     await expectStillPlaying(t, page);
 });
 

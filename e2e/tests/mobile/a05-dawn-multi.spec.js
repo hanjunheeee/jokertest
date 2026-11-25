@@ -5,7 +5,7 @@
 const { test, expect, ui } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
 const { expectReadable } = require('../../helpers/visible');
-const { talk } = require('./_talk');
+const { talk, openRoster, closeRoster, rosterRowOf } = require('./_talk');
 const night = require('../ingame/b-night/_night');
 
 // 화면 글 (frontend utils/dawnReport.js·utils/selectInGameTimebarStatusMessage.js와 같은 글)
@@ -23,7 +23,8 @@ const BLOCKERS = ['내 역할 보기', '단계 전환 안내', '밤 역할 안�
 
 const showMarks = (page) => page.locator('[data-ingame-night-success-kill], [data-ingame-dawn-report]');
 // 5초 글: 모바일은 위 단계 줄, PC는 펼쳐진 시간 바 머리
-const mobileSettleLabel = (page) => talk.phaseLine(page).getByText('5초 뒤 마감', { exact: true });
+// 명패 글은 "[5초 뒤 마감]" (합친 뒤 명패+시간패널)
+const mobileSettleLabel = (page) => talk.phaseLine(page).getByText('[5초 뒤 마감]', { exact: true });
 const desktopSettleLabel = (page) => page.getByText('[5초 뒤 마감]', { exact: true }).first();
 // 봇·사람 → { uuid, nickname }
 const P = (x) => ({ uuid: (x.account ?? x).uuid, nickname: (x.account ?? x).nickname });
@@ -128,18 +129,18 @@ async function openGame(table, humans, { n, counts, roles }) {
     return { t, humans, cast };
 }
 
-/** 모바일 밤 행동: 초상 띠 칸 누름 (막는 안내 창은 닫으면서) → 카드 시트의 '암살' */
-async function pick(page, slot, label) {
-    const menu = page.getByRole('menu', { name: '플레이어 행동' });
+/** 모바일 밤 행동: "직업 행동" 목록 시트 그 사람 줄의 '암살' (막는 안내 창은 닫으면서), 목록은 고른 뒤에도 열려 있어 닫음 */
+async function pick(page, nickname, label) {
+    const row = rosterRowOf(page, nickname);
     await expect(async () => {
         await ui.closeOverlays(page, { names: BLOCKERS, rounds: 2, clickTimeoutMs: 1500 });
-        if (!(await menu.isVisible().catch(() => false))) await slot.click({ timeout: 1500 });
-        await expect(menu).toBeVisible({ timeout: 1000 });
+        await openRoster(page, { timeout: 3000 });
+        await expect(row).toHaveCount(1, { timeout: 1000 });
     }).toPass({ timeout: 25_000 });
-    const item = menu.getByRole('menuitem', { name: label, exact: true });
+    const item = row.getByRole('menuitem', { name: label, exact: true });
     await expect(item).toBeEnabled();
     await item.click();
-    await expect(menu).toBeHidden();
+    await closeRoster(page);
 }
 
 /** 그 직업 봇이 모두 고름 (target 없으면 건너뛰기) */
@@ -217,7 +218,7 @@ test('A05-H-509 [임시 9] 모바일 사람 3 + 봇 3 = 6명 밤 암살로 판 �
     expect((await leaver.request('leave_game_session', { gameId: g.t.gameId }))?.ok, '시민 봇 나가기').toBe(true);
     await night.toTurn(g.t, 'JOKER', { dayIndex: 1 });
     await botsChoose(g, 'JOKER', victim);
-    await pick(joker.page, talk.slot(joker.page, victim.nickname), '암살');
+    await pick(joker.page, victim.nickname, '암살');
     // 사람 광대가 누른 것이 서버에 닿아 "다 골랐음" 알림이 퍼진 뒤에 차례를 닫음
     await g.t.bots[0].waitForEvent('phase_settle_started', { match: (p) => p?.role === 'JOKER' && p?.dayIndex === 1, timeoutMs: 15_000 });
     await g.t.advance();
@@ -246,7 +247,7 @@ test('A05-H-529 PC 광대 + 모바일 광대 (6명, 광대 2): 둘째가 고르�
     await night.toNight(g.t, { dayIndex: 1 });
     await waitState(g.t, (s) => s.phase === 'NIGHT' && s.nightTurnRole === 'JOKER', '광대 차례');
     const marks = await each(humans, async (h) => (await logOf(h.page)).length);
-    await pick(mobile.page, talk.slot(mobile.page, target.nickname), '암살');
+    await pick(mobile.page, target.nickname, '암살');
     // 모바일 광대만 골랐을 땐 두 화면 다 5초 표시가 없음
     await expect(talk.phaseAction(mobile.page, 'nightSkip')).toBeDisabled();
     for (const [i, h] of humans.entries()) {
