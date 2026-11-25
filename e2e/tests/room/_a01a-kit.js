@@ -294,9 +294,10 @@ async function expectStartLocked(who) {
  * 시작이 막힘 + 대기방 그대로, 판 없음
  * 인원 모자람(MSG.MIN_PLAYERS)·준비 안 됨(MSG.NOT_READY)이면 단추가 미리 꺼져 있어 막힘 창이 안 뜸 → 꺼짐 + 까닭 글로 봄 (부르는 쪽은 "게임시작"을 누르지 않음)
  * 그 밖(구성 안 맞음·끊김·점검)은 누른 뒤 뜬 막힘 창 글이 그 글이고 읽힘
+ * sheet: 미리 안 끄는 화면(모바일 상대 화면 — "게임시작"을 눌러 서버 거절 글이 막힘 창에 뜸)이면 인원·준비 거절도 막힘 창 글로 봄
  */
-async function expectStartRejected(who, message) {
-    if (message === MSG.MIN_PLAYERS || message === MSG.NOT_READY) {
+async function expectStartRejected(who, message, { sheet = false } = {}) {
+    if (!sheet && (message === MSG.MIN_PLAYERS || message === MSG.NOT_READY)) {
         await expectStartLocked(who);
     } else {
         const alert = blockedDialog(who.page).getByRole('alert');

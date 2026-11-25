@@ -124,7 +124,7 @@ const OUTCOME_TEXT = Object.freeze({
 });
 
 // 판정 뒤 화면: 현황 결과 글 + 재판이면 재판 창(피고 이름), 밤이면 밤 안내·재판 창 없음
-// 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
+// 재판이면 모바일(상대 화면)은 현황 창이 저절로 안 닫혀 재판 단추를 덮음 → 재판 시트를 열 때(openTrialSheet) 닫음 → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
 // (전엔 닫히는 움직임 동안 글을 읽어 맞았다 틀렸다 함 — A03-E-025·151·211·221)
 async function expectOutcome(page, panel, kind, targetNick) {
     const tribunal = trialAny(page);

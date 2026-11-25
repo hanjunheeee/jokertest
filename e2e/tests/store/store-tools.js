@@ -79,7 +79,7 @@ async function createTopupOrder(uuid, o = {}) {
 
 /**
  * 상점 열기 (입장 영상 건너뛰기) → 입장 영상이 끝나 "보유 재화" 칸이 눌리는 상태가 될 때까지
- * 합친 뒤 "쿠폰 입력" 단추는 숨김(frontend store/constants/storeLayoutStyle.js STORE_SHOW_COUPON_BUTTON=false)이라 준비 표시로 못 씀
+ * 쿠폰 단추는 화면 기본이 숨김(빌드 값 VITE_STORE_COUPON_BUTTON, 시험 빌드는 켬)이라 켜짐에 기대지 않게 "보유 재화" 칸을 준비 표시로 씀
  */
 async function gotoStore(page, path = '/store') {
     await page.goto(path);

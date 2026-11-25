@@ -51,8 +51,7 @@ PHASES.forEach((p, i) => {
         expect(before, '새로고침 전 남은 초').toBeGreaterThan(0);
 
         await reloadIngame(page);
-        await expect(talk.phaseLine(page)).toContainText('제 1일', { timeout: 15_000 });
-        await expect(talk.phaseLine(page)).toContainText(p.line);
+        await expect(talk.phaseLine(page)).toContainText(p.line, { timeout: 15_000 });
         await expectReadable(talk.phaseLine(page));
         const after = await phaseLineSeconds(page);
         expectCountedDown(before, after, Date.now() - readAt);

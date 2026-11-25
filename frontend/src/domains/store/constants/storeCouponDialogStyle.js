@@ -36,10 +36,11 @@ export const COUPON_INPUT_ROW_CLASS =
 export const COUPON_INPUT_FIELD_CLASS =
   "min-w-0 flex-1 bg-transparent font-subheading app-text-scaled [--app-text-size:clamp(0.82rem,1.1vw,0.9rem)] uppercase tracking-wide text-white outline-none placeholder:text-white/55"
 
+// 성공·실패 글자색: 양피지 바탕(약 #bc9b6a)에서 대비 4.5 넘게 짙게 (#2E6B3A·#9C3D32는 2.5 남짓이라 PC 쿠폰 시험 A12-E-056~060이 못 읽음)
 export const COUPON_DIALOG_SUCCESS_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.82rem)] font-bold leading-snug text-[#2E6B3A]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.82rem)] font-bold leading-snug text-[#143319]"
 
 export const COUPON_DIALOG_ERROR_CLASS =
-  "font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.82rem)] font-bold leading-snug text-[#9C3D32]"
+  "font-subheading app-text-scaled [--app-text-size:clamp(0.72rem,1vw,0.82rem)] font-bold leading-snug text-[#5A1710]"
 
 export const COUPON_CANCEL_BTN_ASSET = MODAL_ASSETS.cancelButton

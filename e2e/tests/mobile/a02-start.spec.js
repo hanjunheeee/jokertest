@@ -1,17 +1,17 @@
 'use strict';
 
-// 모바일 사람 방장 시작 브라우저 시험 — 폰 화면으로 방 만들고 봇 모아 시작하면 역할 창, 4명이면 시작 단추 꺼짐 + 까닭 글 + 역할 확인 중 광대가 나가면 시민 승
+// 모바일 사람 방장 시작 브라우저 시험 — 폰 화면으로 방 만들고 봇 모아 시작하면 역할 창, 4명이면 "게임시작" 뒤 막힘 창 거절 글 + 역할 확인 중 광대가 나가면 시민 승
 // 목록 A02-판시작-역할.md 번호 A02-E-177~180 (사파리도: E-177)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { e2e } = require('../../helpers/internal');
 const ui = require('../../helpers/ui');
-const { botsJoinAndReady, waitResult } = require('../room/roomHelpers');
+const { botsJoinAndReady, waitResult, blockedDialog } = require('../room/roomHelpers');
 const { botLeave } = require('./_talk');
 
 const revealDialog = (page) => page.getByRole('dialog', { name: '내 역할 보기' });
-// 인원이 모자라 "게임시작"이 꺼졌을 때 까닭 글 (단위 18, 화면 gameStartMessages.js 글)
-const START_LOCKED_TEXT = '5명부터 시작할 수 있습니다. (지금 4명)';
+// 인원이 모자라 시작을 거절할 때 서버 글 (막힘 창에 그대로)
+const START_REJECTED_TEXT = '게임을 시작하기 위한 인원 조건을 아직 충족하지 못했습니다.';
 
 // 폰 설정 화면에서 처음 값(정원 10·자동 구성)으로 방 만들기 → 서버 방 요약
 async function createRoomOnPhone(user) {
@@ -63,15 +63,15 @@ test('A02-E-178 모바일 사람 방장 10명 시작 → 역할 창 뜸 @game', 
     await startAndSeeReveal(user, list, room);
 });
 
-// 5명보다 적으면 방장 화면의 "게임시작"이 미리 꺼지고 까닭 글이 보임 (결정 2026-11-16 낮 5번)
-test('A02-E-179 모바일 사람 방장 4명 전원 준비 → "게임시작" 단추 꺼짐, 까닭 글 읽힘, 대기방 그대로', async ({ user, bots }) => {
+// 5명보다 적으면 시작 안 됨 — 모바일(상대 화면)은 "게임시작"을 미리 안 끄고, 누르면 서버 거절 글이 막힘 창에 뜸 (frontend-mobile matching/components/startBlocked/StartBlockedSheet.jsx)
+test('A02-E-179 모바일 사람 방장 4명 전원 준비 → "게임시작" → 막힘 창 인원 조건 글 읽힘, 대기방 그대로', async ({ user, bots }) => {
     const page = user.page;
     const room = await createRoomOnPhone(user);
     const list = await bots.spawn(3);
     await fillRoom(user, list, room);
-    await expect(page.getByRole('button', { name: '게임시작' })).toBeDisabled();
-    const reason = page.getByTestId('start-locked-reason');
-    await expect(reason).toHaveText(START_LOCKED_TEXT);
+    await page.getByRole('button', { name: '게임시작' }).click();
+    const reason = blockedDialog(page).getByRole('alert');
+    await expect(reason).toHaveText(START_REJECTED_TEXT);
     await expectReadable(reason);
     await expect(page).toHaveURL(/\/game-matching/);
     expect(await e2e.gameOf(user.account.uuid), '판이 안 생김').toBeNull();

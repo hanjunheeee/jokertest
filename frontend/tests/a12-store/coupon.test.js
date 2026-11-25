@@ -1,19 +1,19 @@
 // 상점 쿠폰 입력 창 시험: 됨이면 보상 글 + 지갑 다시 받음, 안 되면 서버 글 그대로 (이미 씀·기간 끝·시작 전·다 씀·형식·요청 너무 많음)
-// 목록 A12-상점-결제.md A12-F-128~134·177 (docs/회원기능_2026-11-09.md 32줄, 운영받침 쿠폰 오류 코드)
-// 상점 화면의 "쿠폰 입력" 단추는 지금 숨김(STORE_SHOW_COUPON_BUTTON = false, 아직 정하지 않음) → 쿠폰 창은 단추 부품을 보이게 직접 그려서 봄
+// 목록 A12-상점-결제.md A12-F-128~134·177·178 (docs/회원기능_2026-11-09.md 32줄, 운영받침 쿠폰 오류 코드)
+// 상점 "쿠폰 입력" 단추는 기본 숨김, 빌드 값 VITE_STORE_COUPON_BUTTON=1 이면 보임 (PC·모바일 같은 값) → 쿠폰 창은 단추 부품을 보이게 직접 그려서 봄
 import test from "node:test"
 import assert from "node:assert/strict"
 import "../helpers/domSetup.mjs"
 
 const kit = await import("./storeKit.mjs")
 const { default: StoreCouponButton } = await import("../../src/domains/store/components/StoreCouponButton.jsx")
-const { STORE_SHOW_COUPON_BUTTON } = await import("../../src/domains/store/constants/storeLayoutStyle.js")
+const { STORE_SHOW_COUPON_BUTTON, isStoreCouponButtonShown } = await import("../../src/domains/store/constants/storeLayoutStyle.js")
 
 test.afterEach(() => kit.reset())
 
 const REDEEM = "/economy/coupons/redeem"
 
-// 쿠폰 단추 부품을 보이게 그림 (상점 화면에선 지금 숨김이라)
+// 쿠폰 단추 부품만 보이게 그림 (상점 화면 전체를 안 그려도 되게)
 async function renderCouponButton() {
   kit.rtl.render(kit.h(kit.MemoryRouter, { initialEntries: ["/store"] }, kit.h(StoreCouponButton, { visible: true })))
   await kit.flush()
@@ -72,11 +72,20 @@ test("A12-F-134 요청 너무 많음(429) → 서버 글 \"쿠폰 입력이 너�
   assert.equal(resultText("alert"), message)
 })
 
-// [아직 안 정함] 쿠폰 단추 숨김 (STORE_SHOW_COUPON_BUTTON = false) — 다시 켜면 이 시험을 "단추 보임"으로 바꿈
-test("A12-F-177 [지금 동작] 상점 화면(입장 영상 뒤) → \"쿠폰 입력\" 단추 안 보임 (쿠폰 단추 숨김)", async () => {
+// 쿠폰 단추는 기본 숨김 (빌드 값 VITE_STORE_COUPON_BUTTON 없음 — node 시험엔 import.meta.env가 없음)
+test("A12-F-177 상점 화면(입장 영상 뒤), 빌드 값 없음 → \"쿠폰 입력\" 단추 안 보임 (기본 숨김)", async () => {
   assert.equal(STORE_SHOW_COUPON_BUTTON, false)
   kit.start({ gold: 1000 })
   await kit.renderStorePage()
   assert.ok(document.querySelector('[aria-label="보유 재화"]') !== null, "상점 화면이 안 그려짐 (준비 잘못)")
   assert.equal(kit.buttonNamed("쿠폰 입력"), null)
+})
+
+// 켜는 값: VITE_STORE_COUPON_BUTTON=1 일 때만 보임 (켠 단추가 쿠폰 창을 여는 것은 위 A12-F-128~134가 봄)
+test("A12-F-178 쿠폰 단추 빌드 값 → \"1\"이면 보임, 없음·\"0\"·\"true\"면 숨김", () => {
+  assert.equal(isStoreCouponButtonShown({ VITE_STORE_COUPON_BUTTON: "1" }), true)
+  assert.equal(isStoreCouponButtonShown({}), false)
+  assert.equal(isStoreCouponButtonShown(undefined), false)
+  assert.equal(isStoreCouponButtonShown({ VITE_STORE_COUPON_BUTTON: "0" }), false)
+  assert.equal(isStoreCouponButtonShown({ VITE_STORE_COUPON_BUTTON: "true" }), false)
 })

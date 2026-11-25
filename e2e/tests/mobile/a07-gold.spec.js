@@ -1,27 +1,24 @@
 'use strict';
 
-// 모바일 판 골드 브라우저 시험 — 결과판 내 줄 "+1골드"(이긴 편·진 편·죽은 사람), 값 0·2, 남의 줄엔 없음, 상점 잔액·로비 지갑 값, 산 채로 나가면 못 받고 죽은 뒤 나가면 받음
-// 목록 A07-승패-결과-골드.md 번호 A07-E-077~083·090~092·140 (판 값 바꾸는 080·081은 @serial이라 serial 프로젝트에서 휴대폰 창으로 돎), 돌리지 않고 모임만: npx playwright test --list --no-deps tests/mobile/a07-gold.spec.js
+// 모바일 판 골드 브라우저 시험 — 판 끝 지갑 +1골드(이긴 편·진 편·죽은 사람), 값 0·2, 상점 잔액·로비 지갑 값, 산 채로 나가면 (모바일 결과 줄엔 골드 칸 없음) 못 받고 죽은 뒤 나가면 받음
+// 목록 A07-승패-결과-골드.md 번호 A07-E-077~081·090~092·140 (판 값 바꾸는 080·081은 @serial이라 serial 프로젝트에서 휴대폰 창으로 돎), 돌리지 않고 모임만: npx playwright test --list --no-deps tests/mobile/a07-gold.spec.js
 const { test, expect, E2E } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { customRoleSettings } = require('../../helpers/game');
 const { query } = require('../../helpers/db');
 const { skipIntro, closeOverlays } = require('../../helpers/ui');
 const { createAdmin, loginAsAdmin } = require('../../helpers/adminAccounts');
-const { resultRow } = require('../room/roomHelpers');
 const { wallet, balance } = require('../store/store-tools');
 const { startTalkGame, getExecuted, toDay } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: A07 승패·결과 묶음) ──
 
 const U = (x) => x.account.uuid;
-const nick = (x) => x.account.nickname;
 const resultBoard = (page) => page.getByRole('region', { name: '가면무도회 참가자 정체' });
 
 // 봇 방장 판은 단계 시간을 가장 길게 둠 — 단계는 손잡이·"다 내면 5초"로만 넘어감 (화면을 누르거나 기다리는 동안 진짜 마감이 먼저 오면 흐름이 엇갈림)
 const PACE = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTime: 120, nightActionTime: 120 });
 const goldChip = (page) => page.getByTestId('game-result-gold-reward');
-const myChip = (who) => resultRow(who.page, nick(who)).getByTestId('game-result-gold-reward');
 
 // 서버가 정한 직업이 바라는 대로인지 (예약이 가끔 못 맞음 → 판이 다른 쪽으로 끝나는 것 막기)
 function expectRoles(s, wanted) {
@@ -171,13 +168,13 @@ async function acceptingConfirm(page, fn) {
     }
 }
 
-// 산 사람이 판에서 나가기: 위 줄 "게임 나가기" → 확인 창 수락 → 방 찾기 화면 (막는 안내 창은 닫으면서)
+// 산 사람이 판에서 나가기: 모바일(상대 화면) 위 줄엔 "게임 나가기"가 없음 → 브라우저 뒤로 가기 → 같은 나가기 확인 창 수락 → 방 찾기 화면 (막는 안내 창은 닫으면서)
 async function leaveAliveUi(page) {
     await acceptingConfirm(page, () => expect(async () => {
         if (!/\/multiplay/.test(page.url())) {
             await passCovers(page);
             await closeOverlays(page, { keepWatching: false, rounds: 2, clickTimeoutMs: 1000 });
-            await page.locator('[aria-label="인게임 컨트롤"]').getByRole('button', { name: '게임 나가기' }).click({ timeout: 1500 }).catch(() => {});
+            await page.evaluate(() => window.history.back());
         }
         await expect(page).toHaveURL(/\/multiplay/, { timeout: 4000 });
     }).toPass({ timeout: 30_000 }));
@@ -216,7 +213,7 @@ async function setGoldByApi(adminPage, goldReward) {
     expect(res.status(), `판 골드 값 ${goldReward} 저장`).toBe(200);
 }
 
-// ── 내 줄 "+1골드" (A07-E-077~079) ──
+// ── 판 골드 받음 (A07-E-077~079) — 모바일(상대 화면) 결과 줄엔 골드 칸이 없음 → 지갑(DB)으로 봄 ──
 
 const RECEIVER_CASES = [
     ['A07-E-077', '이긴 편 산 사람', 5, citizenWinBoard, '@game @smoke'],
@@ -225,9 +222,10 @@ const RECEIVER_CASES = [
 ];
 
 for (const [no, who, n, play, tags] of RECEIVER_CASES) {
-    test(`${no} 모바일 ${n}명 판 ${who} → 결과판 내 줄 "+1골드" ${tags}`, async ({ user, table }) => {
+    test(`${no} 모바일 ${n}명 판 ${who} → 결과판까지 가고 지갑 +1골드 ${tags}`, async ({ user, table }) => {
+        const before = await goldOf(U(user));
         await play(table, user, n);
-        await expect(myChip(user)).toHaveText('+1골드');
+        await expectGold(U(user), before + 1);
     });
 }
 
@@ -251,14 +249,13 @@ test('A07-E-080 모바일 판 골드 값 0 → 6명 판 끝 골드 칸 없음, �
     }
 });
 
-test('A07-E-081 모바일 판 골드 값 2 → 5명 판 끝 내 줄 "+2골드" @game @serial', async ({ browser, players, table }) => {
+test('A07-E-081 모바일 판 골드 값 2 → 5명 판 끝 지갑 +2골드 @game @serial', async ({ browser, players, table }) => {
     const admin = await openAdmin(browser);
     try {
         await setGoldByApi(admin.page, 2);
         const phone = await players.add({ mobile: true });
         const before = await goldOf(U(phone));
         await citizenWinBoard(table, phone, 5);
-        await expect(myChip(phone)).toHaveText('+2골드');
         await expectGold(U(phone), before + 2);
     } finally {
         await setGoldByApi(admin.page, 1);
@@ -266,20 +263,7 @@ test('A07-E-081 모바일 판 골드 값 2 → 5명 판 끝 내 줄 "+2골드" @
     }
 });
 
-// ── 골드 칸 자리·보임 ──
-
-test('A07-E-082 모바일 7명 판 결과판 → 골드 칸은 내 줄 1개뿐 (남의 줄엔 없음) @game', async ({ user, table }) => {
-    const { list } = await citizenWinBoard(table, user, 7);
-    await expect(list.getByRole('listitem')).toHaveCount(7);
-    await expect(goldChip(user.page)).toHaveCount(1);
-    await expect(myChip(user)).toHaveCount(1);
-});
-
-test('A07-E-083 모바일 8명 판 결과판 골드 글이 사람 눈에 읽힘 @game @safari', async ({ user, table }) => {
-    await citizenWinBoard(table, user, 8);
-    await expect(myChip(user)).toHaveText('+1골드');
-    await expectReadable(myChip(user));
-});
+// A07-E-082(결과판 골드 칸은 내 줄 1개뿐)·083(골드 글 읽힘)은 지움: 모바일(상대 화면) 결과 줄엔 판 골드 칸이 없음 (커밋 d71ab651)
 
 // ── 지갑에 들어옴 ──
 

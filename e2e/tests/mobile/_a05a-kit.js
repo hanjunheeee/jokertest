@@ -339,11 +339,11 @@ async function waitNoticeGone(page) {
     await expect(page.locator('[data-night-turn-role]')).toHaveCount(0, { timeout: 8000 });
 }
 
-/** 화면에 그 날 낮·밤이 왔는지 (폰은 위 단계 줄 "제 N일", PC는 진행 바 이름) */
-// 폰(세로 카톡형) 날짜 글은 사용자가 아직 안 정함("제 N일" 안 보임) → 폰 줄은 고치지 않고 그대로 둠 (옛 단계 줄 표시를 찾음)
+/** 화면에 그 날 낮이 왔는지 (폰은 명패 줄 "[낮", PC는 진행 바 이름 "제 N일") */
+// 폰(모바일 상대 화면) 세로 명패 줄엔 날짜 글이 없음("[낮-토론과 투표]"만) → 밤 뒤 낮이 왔는지만 봄 (날짜는 부르는 쪽이 서버 값으로)
 async function expectDayShown(page, dayIndex, { timeout = 30000 } = {}) {
     const mark = isPhone(page)
-        ? page.locator('[data-talk-phase-line]').filter({ hasText: `제 ${dayIndex}일` })
+        ? page.locator('[data-ingame-phase-timer-mobile]').filter({ hasText: '[낮' })
         : page.locator(`[aria-label="제 ${dayIndex}일 시간 흐름"]`);
     await expect(mark.first()).toBeAttached({ timeout });
 }
@@ -399,7 +399,11 @@ async function expectNoResult(page, dayIndex, seen = 0) {
 async function expectCardStatus(page, nickname, status, { timeout = 45000 } = {}) {
     if (isPhone(page)) {
         await settleDawn(page, { timeout });
-        await expectPlayerStatus(page, nickname, status === 'dead' ? '사망' : null, { timeout });
+        // 내가 죽은 밤이면 연출 뒤 "사망 후 선택" 창(정한 연출, 맨 위 겹)이 목록 단추를 덮음 → 가리는 창을 닫아 가며 봄 (관전 계속)
+        await expect(async () => {
+            await clearBlockers(page);
+            await expectPlayerStatus(page, nickname, status === 'dead' ? '사망' : null, { timeout: 5000 });
+        }).toPass({ timeout });
         return;
     }
     const mark = page.locator(`[data-ingame-player-nickname="${nickname}"]`);

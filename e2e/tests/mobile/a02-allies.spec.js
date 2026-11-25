@@ -1,6 +1,6 @@
 'use strict';
 
-// 모바일 역할 확인 창의 같은 직업 동료 브라우저 시험 — 동료 줄이 보이나·없어야 할 때 없나·10명 짝 판에서 남의 직업이 안 새나(띠 카드의 "동료" 표시는 같은 직업 상대 한 장만)
+// 모바일 역할 확인 창의 같은 직업 동료 브라우저 시험 — 동료 줄이 보이나·없어야 할 때 없나·10명 짝 판에서 남의 직업이 안 새나(플레이어 목록 줄에 직업 글 없음)
 // 목록 A02-판시작-역할.md 번호 A02-E-135~157 (사파리도: E-135·E-147·E-153)
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -101,7 +101,7 @@ const SECRET_CASES = [
 SECRET_CASES.forEach(([no, role]) => {
     const label = ROLE_LABELS[role];
     const tags = ['@game', ...(no === 'A02-E-153' ? ['@safari'] : [])].join(' ');
-    test(`${no} 모바일 10명 짝 판 ${label} → 같은 직업 상대 말고 "동료" 없음, 띠 카드에 직업 글 없음 ${tags}`, async ({ user, table }) => {
+    test(`${no} 모바일 10명 짝 판 ${label} → 같은 직업 상대 말고 "동료" 없음, 플레이어 목록에 직업 글 없음 ${tags}`, async ({ user, table }) => {
         const { partner } = await openGame(table, user, { n: 10, role, settings: FULL_PAIR, pair: true });
         const dialog = await openReveal(user.page);
         if (role === 'CITIZEN') {
@@ -112,25 +112,11 @@ SECRET_CASES.forEach(([no, role]) => {
             await expect(dialog.getByText(`동료 ${label}`, { exact: true })).toBeVisible();
             await expect(dialog.getByRole('listitem')).toHaveText([partner.nickname]);
         }
-        // 세로 카톡형엔 카드 띠가 없음 → 플레이어 목록 시트 10줄: 같은 직업 상대 한 줄에만 "동료 ○○" 표시, 나머지는 닉네임만 — 시민은 표시가 하나도 없음
+        // 세로 카톡형엔 카드 띠가 없음 → 플레이어 목록 시트 10줄, 모바일(상대 화면)은 줄에 동료 표시가 없음 → 줄 글에 직업 이름이 하나도 없음 (남의 직업이 새지 않음)
         const roster = await openRoster(user.page);
-        const badges = roster.locator('[data-ingame-ally-badge]');
         await expect(roster.locator('li[data-roster-player]')).toHaveCount(10);
-        if (role === 'CITIZEN') {
-            await expect(rosterRowOf(user.page, partner.nickname)).toHaveCount(1);
-            await expect(badges).toHaveCount(0);
-        } else {
-            await expect(badges).toHaveCount(1);
-            await expect(badges).toHaveAttribute('data-ingame-ally-badge', `동료 ${label}`);
-            await expect(rosterRowOf(user.page, partner.nickname).locator('[data-ingame-ally-badge]')).toHaveCount(1);
-        }
-        // 동료 표시 말고는 눈에 보이는 글에 직업 이름이 없음 (남의 직업이 새지 않음)
-        const rosterText = await roster.locator('ul').evaluate((ul) => {
-            const copy = ul.cloneNode(true);
-            for (const b of copy.querySelectorAll('[data-ingame-ally-badge]')) b.remove();
-            return copy.innerText;
-        });
-        expect(rosterText).not.toMatch(ROLE_WORDS);
+        await expect(rosterRowOf(user.page, partner.nickname)).toHaveCount(1);
+        expect(await roster.locator('ul').innerText()).not.toMatch(ROLE_WORDS);
         await closeRoster(user.page);
     });
 });

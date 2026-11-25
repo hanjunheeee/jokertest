@@ -108,7 +108,8 @@ test.describe('A11a 모바일', () => {
         expect(await fontPx(page.getByPlaceholder('비밀번호를 입력하세요', { exact: true }))).toBeGreaterThanOrEqual(16);
         await K.openSignup(page);
         const area = K.signupArea(page);
-        expect(await fontPx(area.getByPlaceholder('비밀번호를 입력하세요 (8~64자, 영문·숫자 포함)', { exact: true }))).toBeGreaterThanOrEqual(16);
+        // 모바일(상대 화면) 가입 비번 칸 자리 글은 로그인 칸과 같은 "비밀번호를 입력하세요"
+        expect(await fontPx(area.getByPlaceholder('비밀번호를 입력하세요', { exact: true }))).toBeGreaterThanOrEqual(16);
         expect(await fontPx(area.getByPlaceholder('비밀번호를 다시 입력하세요'))).toBeGreaterThanOrEqual(16);
     });
 

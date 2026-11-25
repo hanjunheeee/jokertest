@@ -66,6 +66,8 @@ const NO_ENV_FILES = Object.freeze({ envDir: false });
 const BUILD_MARK = 'e2e-build.json';
 // 이 빌드에 들어간 광고 값 (모바일만 가짜 광고 값, 나머지는 없음)
 const adsOf = (name) => (name === 'mobile' ? FAKE_AD_ENV.VITE_ADSENSE_CLIENT : null);
+// 상점 쿠폰 단추: 화면 기본은 숨김, 시험 빌드(데스크톱·모바일)는 켜서 쿠폰 브라우저 시험이 돎 (frontend store/constants/storeLayoutStyle.js)
+const couponOf = (name) => (name === 'desktop' || name === 'mobile' ? '1' : null);
 
 // 파일·폴더 묶음에서 가장 늦게 고친 시각 (node_modules·dist는 안 봄)
 function newestMtime(targets) {
@@ -92,7 +94,7 @@ function staleReason(name, app) {
     if (!fs.existsSync(path.join(app.outDir, app.entry ?? 'index.html'))) return '빌드본 없음';
     let mark = null;
     try { mark = JSON.parse(fs.readFileSync(path.join(app.outDir, BUILD_MARK), 'utf8')); } catch { return '빌드 표시 없음 (예전 방식 빌드본)'; }
-    if (mark?.envFiles !== false || (mark.ads ?? null) !== adsOf(name)) return '빌드 값이 다름 (.env·광고 값)';
+    if (mark?.envFiles !== false || (mark.ads ?? null) !== adsOf(name) || (mark.coupon ?? null) !== couponOf(name)) return '빌드 값이 다름 (.env·광고·쿠폰 단추 값)';
     if (!(newestMtime([...app.sources, app.config]) <= mark.builtAt)) return '화면 코드가 빌드본보다 새로움';
     return null;
 }
@@ -197,6 +199,8 @@ async function main() {
     // 모바일 광고: 가짜 광고 값으로 빌드 (값이 없으면 개발 빌드라 회색 "광고 자리" 상자, 진짜 값이면 진짜 광고 요청이 나감)
     // 광고 꾸러미 요청은 시험 쪽이 가짜로 답함 (helpers/outside.js)
     if (name === 'mobile') Object.assign(process.env, FAKE_AD_ENV);
+    // 쿠폰 단추 켬 (데스크톱·모바일 시험 빌드만)
+    if (couponOf(name)) process.env.VITE_STORE_COUPON_BUTTON = couponOf(name);
     // tailwind 등이 지금 폴더 기준으로 찾는 것 맞추기 (예전 'cd frontend && vite'와 같게)
     process.chdir(app.dir);
 
@@ -221,7 +225,7 @@ async function main() {
             log(name, '빌드 시작…');
             await vite.build({ configFile: app.config, root: app.dir, mode: 'development', logLevel: 'warn', ...NO_ENV_FILES });
             // 시작 시각을 적음 (빌드 도중 고친 파일은 "빌드본보다 새로움"으로 잡히게)
-            fs.writeFileSync(path.join(app.outDir, BUILD_MARK), `${JSON.stringify({ builtAt: started, ads: adsOf(name), envFiles: false })}\n`);
+            fs.writeFileSync(path.join(app.outDir, BUILD_MARK), `${JSON.stringify({ builtAt: started, ads: adsOf(name), coupon: couponOf(name), envFiles: false })}\n`);
             log(name, `빌드 끝 (${Math.round((Date.now() - started) / 1000)}초)`);
         }
         // 관리자만 앞단(Access 흉내·/admin-api 넘기기)을 붙임

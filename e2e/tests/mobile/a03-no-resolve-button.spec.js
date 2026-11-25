@@ -121,7 +121,7 @@ async function deadOnDayTwo(table, user, n) {
     return t;
 }
 
-// 2일 투표까지 (죽은 나) — 죽은 사람에겐 기권 단추가 없어, 목록의 산 봇 줄 꺼진 "투표하기" 까닭 글로 화면이 투표 단계인지 봄 (토론이면 토론 안내 글)
+// 2일 투표까지 (죽은 나) — 죽은 사람의 기권 단추는 꺼져 있어, 목록의 산 봇 줄 꺼진 "투표하기" 까닭 글로 화면이 투표 단계인지 봄 (토론이면 토론 안내 글)
 async function toDayTwoVote(t, page) {
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_VOTE');
     await clearOverlays(page);
@@ -130,7 +130,8 @@ async function toDayTwoVote(t, page) {
         await expect(row.getByText('사망한 플레이어는 행동할 수 없습니다')).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 15_000 });
     await closeRoster(page);
-    await expect(abstainButton(page)).toHaveCount(0);
+    // 모바일(상대 화면)은 죽은 사람에게도 기권 단추를 그리되 꺼 둠
+    await expect(abstainButton(page)).toBeDisabled();
 }
 
 // 살아 있는 사람 전부 몰표로 다 내서 "5초 뒤 마감"이 보일 때까지 (사람 빼고 봇만이면 me 없이)
@@ -159,7 +160,7 @@ test('A03-E-117 모바일 6명 판 토론 · 산 나 → "낮 집계" 단추 없
 test('A03-E-119 모바일 7명 판 토론 · 죽은 나(2일) → "낮 집계" 단추 없음 @game', async ({ user, table }) => {
     test.setTimeout(240_000);
     await deadOnDayTwo(table, user, 7);
-    await expect(talk.phaseLine(user.page)).toContainText('제 2일');
+    await expect(talk.phaseLine(user.page)).toContainText('[낮');
     await expectNoResolveButton(user.page);
 });
 

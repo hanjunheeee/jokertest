@@ -172,17 +172,50 @@ async function expectRosterCount(page, n, { timeout = 30_000 } = {}) {
 
 // ── 세로 카톡형 재판: 고발 연출(1초 남짓) 뒤 채팅 틀 "최후의 변론" 단추 → 시트 안에 피고 카드·유죄·무죄·안내 글 ──
 
-/** 재판 시트 열기 (열려 있으면 그대로, 고발 연출이 끝나 "최후의 변론" 단추가 뜰 때까지) → 시트 */
+/**
+ * 투표 현황 창이 떠 있으면 닫음 → 닫았으면 참
+ * 모바일(상대 화면)은 재판 연출이 떠도 현황 창을 저절로 안 닫아서 "최후의 변론" 단추를 덮음
+ */
+async function closeVoteStatus(page) {
+    const panel = page.getByRole('dialog', { name: '투표 현황' });
+    if (!(await panel.isVisible().catch(() => false))) return false;
+    await panel.getByRole('button', { name: '투표 현황 닫기' }).click({ timeout: 1500 }).catch(() => {});
+    return true;
+}
+
+/** 재판 시트 열기 (열려 있으면 그대로, 고발 연출이 끝나 "최후의 변론" 단추가 뜰 때까지, 덮는 투표 현황 창은 닫음) → 시트 */
 async function openTrialSheet(page, { timeout = 25_000 } = {}) {
     const sheet = page.getByTestId('tribunal-presentation-sheet');
     await expect(async () => {
         if (!(await sheet.isVisible().catch(() => false))) {
+            await closeVoteStatus(page);
             await clearOverlays(page, { keepWatching: false, rounds: 1 });
             await page.getByTestId('tribunal-presentation-open').click({ timeout: 1500 });
         }
         await expect(sheet).toBeVisible({ timeout: 1500 });
     }).toPass({ timeout });
     return sheet;
+}
+
+/** 재판 시트가 열려 있으면 닫음 (시트 머리 "최후의 변론 닫기") */
+async function closeTrialSheet(page) {
+    const sheet = page.getByTestId('tribunal-presentation-sheet');
+    if (await sheet.isVisible().catch(() => false)) await sheet.getByRole('button', { name: '최후의 변론 닫기' }).click();
+    await expect(sheet).toBeHidden();
+}
+
+/**
+ * 세로 카톡형 재판 중 채팅: 재판 창 안 채팅 칸은 없고, 말은 채팅방·바닥 입력 줄 그대로 씀 (frontend-mobile talk/TalkLayout.jsx)
+ * 고발 연출(피고 지목 글·초상, 1.5초 남짓) 동안만 채팅방이 잠기고 입력 줄이 꺼짐 → 연출이 끝나 "최후의 변론" 단추가 뜨고 입력 줄이 풀릴 때까지
+ * 죽은 사람은 입력 줄이 죽은 사람끼리 채널로 풀림
+ */
+async function waitTrialTalk(page, { timeout = 20_000 } = {}) {
+    await expect(page.getByTestId('tribunal-presentation-open')).toBeVisible({ timeout });
+    await expect(page.locator('[data-ingame-tribunal-presentation]')).toHaveCount(0, { timeout });
+    await closeTrialSheet(page);
+    await expect(talk.input(page)).toBeEnabled({ timeout });
+    // 잠금은 입력 줄을 끄지 않고 감싼 칸에 inert를 검 → inert 밖인지로 봄
+    await expect.poll(() => talk.input(page).evaluate((el) => !el.closest('[inert]')), { timeout, message: '입력 줄이 잠긴 칸 밖' }).toBe(true);
 }
 
 /** 재판이 열린 표시: 고발 연출·"최후의 변론" 단추·시트 중 하나 (재판이 없으면 셋 다 없음) */
@@ -201,6 +234,15 @@ async function expectTrialOf(page, nickname, { timeout = 15_000 } = {}) {
 async function useWideBoard(page) {
     await page.setViewportSize({ width: 812, height: 375 });
     await expect(talk.board(page)).toBeVisible({ timeout: 20000 });
+}
+
+/**
+ * 그 날·단계인지: 모바일(상대 화면) 세로 명패 줄엔 날짜 글이 없음("[낮-토론과 투표]"만, 커밋 d71ab651)
+ * → 날짜는 서버 판 값(dayIndex)으로, 화면은 명패 단계 글("[낮"·"[밤")로 봄
+ */
+async function expectDayLine(page, t, day, { word = '낮', timeout = 15_000 } = {}) {
+    await expect.poll(async () => (await t.state())?.dayIndex, { timeout, message: `서버 날짜 제 ${day}일` }).toBe(day);
+    await expect(talk.phaseLine(page)).toContainText(`[${word}`, { timeout });
 }
 
 /** 단계 넘기기 → 사람 화면 단계 줄이 맞을 때까지 → 연출 창 닫기 */
@@ -332,5 +374,5 @@ module.exports = {
     talk, clearOverlays, startTalkGame, goPhase, toDay, toVote, toNight, say, botSay, botNightSay, botEmoji, botLeave,
     getExecuted, executeBot, jokerBot, overflowX, bgColor, nicknameOf, sleep, BASIC_EMOJI, CHAT_GAP_MS, EMOJI_GAP_MS,
     useWideBoard, rosterRowOf, openRoster, closeRoster, openPlayer, playerItems, pickPlayer, openTrialSheet,
-    trialAny, expectTrialOf, expectPlayerStatus, expectRosterCount,
+    closeTrialSheet, waitTrialTalk, trialAny, expectTrialOf, expectPlayerStatus, expectRosterCount, closeVoteStatus, expectDayLine,
 };

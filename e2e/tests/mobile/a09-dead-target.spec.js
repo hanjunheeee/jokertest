@@ -47,7 +47,7 @@ test('A09-E-070 [B07-1] 모바일 8명 판, 죽고 끊긴 봇 카드에 다음 �
     const s = await K.toVote(t);
     expect(s.dayIndex).toBe(2);
     expect(K.rowOf(s, K.U(dead)).alive).toBe(false);
-    await expect(talk.phaseLine(page)).toContainText('제 2일', { timeout: 15_000 });
+    await expect(talk.phaseLine(page)).toContainText('[낮', { timeout: 15_000 });
     await expect(page.getByRole('button', { name: '기권' }).first()).toBeVisible({ timeout: 15_000 });
     // 산 봇 카드엔 눌러지는 "투표하기"가 있음 (시트 읽는 법이 맞는지 먼저 봄)
     expect(await pressableVoteItems(page, living.nickname), '산 봇 카드의 투표하기').toBe(1);

@@ -1,8 +1,16 @@
 // 상점 화면 모양 class (패널·상품 칸·위 줄·분류 목록·설명 칸·보유 재화)
 // components/ 아래 상점 패널·상품 칸·설명 칸·분류 목록·보유 재화 컴포넌트가 씀
 
-/** 임시: 상점 쿠폰 입력 버튼 노출 (다시 켤 때 true) */
-export const STORE_SHOW_COUPON_BUTTON = false
+/**
+ * 상점 쿠폰 입력 단추 보이기 (PC StorePage·모바일 StoreTopBar 같이 씀), 쿠폰 기능은 그대로 살아 있고 단추만 가림
+ * 기본은 숨김, 빌드 때 VITE_STORE_COUPON_BUTTON=1 이면 보임 (시험 화면 빌드 e2e/scripts/serve-front.js가 켬)
+ * @example isStoreCouponButtonShown({ VITE_STORE_COUPON_BUTTON: "1" }) // true
+ * @example isStoreCouponButtonShown({}) // false
+ */
+export const isStoreCouponButtonShown = (env) => env?.VITE_STORE_COUPON_BUTTON === "1"
+
+// node 시험엔 import.meta.env가 없어 ?. 로 읽음 (없으면 숨김)
+export const STORE_SHOW_COUPON_BUTTON = isStoreCouponButtonShown(import.meta.env)
 
 // 패널 자리·틀 그림 안쪽 여백·내용 칸 나누기
 export const STORE_PANEL_CLASS =

@@ -25,19 +25,18 @@ test('A01-E-612 모바일 [버그 7] "추방" 한 번 → 시트 닫힘·자리 
     expect(asked, '확인 창 안 뜸').toEqual([]);
 });
 
-// 정원마다 꽉 찬 방 (값 4개 = 번호 4개)
+// 정원마다 꽉 찬 방 (값 4개 = 번호 4개) — 모바일(상대 화면)엔 "n/정원" 칸이 없어 파티 인원 글·서버 자리로 봄
 [5, 7, 8, 10].forEach((max, i) => {
     test(`A01-E-${613 + i} 모바일 정원 ${max} 꽉 찬 방 → 봇 하나 한 번에 빠짐·인원 ${max - 1} (사람 방장 + 봇 ${max - 1})`, async ({ user, bots }) => {
         const page = user.page;
         const { list } = await hostRoom(user, bots, { maxPlayers: max, botCount: max - 1 });
-        await expect(K.capacity(page)).toHaveText(`${max}/${max}`);
+        await K.expectParty(page, max);
 
         await K.openKick(page);
         await K.kickRowButton(page, list.at(-1)).click();
 
         await expect(K.kickDialog(page)).toHaveCount(0);
         await K.expectParty(page, max - 1);
-        await expect(K.capacity(page)).toHaveText(`${max - 1}/${max}`);
         expect(await K.seatsOf(U(user))).toHaveLength(max - 1);
     });
 });
@@ -48,7 +47,8 @@ test('A01-E-617 모바일 [버그 7] 대상이 먼저 나가면 실패 글이 �
     expect(r.ratio, '글자·바탕 대비').toBeGreaterThanOrEqual(4.5);
 });
 
-test('A01-E-618 모바일 [버그 7] 방 확인이 풀리면 꺼진 까닭 글이 보임 — 폰은 마우스 올림 없음 (정원 6 · 사람 방장) @safari', async ({ user, bots }) => {
+// 모바일(상대 화면)은 꺼진 까닭을 화면 글 대신 단추 title로만 둠 (frontend-mobile matching/components/layout/HostActions.jsx)
+test('A01-E-618 모바일 [버그 7] 방 확인이 풀리면 "참가자 추방" 꺼짐·title에 까닭 (정원 6 · 사람 방장) @safari', async ({ user, bots }) => {
     const page = user.page;
     const gate = await K.socketGate(page);
     await hostRoom(user, bots, { maxPlayers: 6, botCount: 0 });
@@ -58,8 +58,7 @@ test('A01-E-618 모바일 [버그 7] 방 확인이 풀리면 꺼진 까닭 글�
     await gate.cut();
 
     await expect(K.kickButton(page)).toBeDisabled();
-    await expect(K.lockedReason(page)).toHaveText(TEXT.lockedReasonEnd);
-    await expectReadable(K.lockedReason(page));
+    await expect(K.kickButton(page)).toHaveAttribute('title', '방 정보를 서버에서 확인하는 중입니다');
 });
 
 test('A01-E-619 모바일 혼자 있는 방 → "추방할 수 있는 참가자가 없습니다."가 보임 (정원 5 · 사람 방장만)', async ({ user, bots }) => {

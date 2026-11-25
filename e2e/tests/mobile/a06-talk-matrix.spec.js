@@ -1,6 +1,6 @@
 'use strict';
 
-// 모바일 채팅방 표(브라우저): 단계 4 × 나 5 칸마다 입력 줄 열림·닫힘, 띠, 글을 받은 봇을 폰 세로 카톡형에서 확인
+// 모바일 채팅방 표(브라우저): 단계 4 × 나 5 칸마다 "죽은 사람끼리" 띠, 글을 받은 봇을 폰 세로 카톡형에서 확인 (모바일 상대 화면엔 밤 띠·밤 시민 닫힘 없음 → 밤 시민은 보내도 봇 0)
 // 목록 A06-E-113~130 (값 18, PC 표 A06-E-001~018과 같은 판) — 쓰는 동안엔 안 돌림: npx playwright test --list tests/mobile/a06-talk-matrix.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
@@ -16,9 +16,6 @@ const SLOW = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTi
 const DAY_EVT = 'day_chat_message_received';
 const DEAD_EVT = 'dead_chat_message_received';
 const ROLE_EVT = 'joker_chat_message';
-const NIGHT_CLOSED = '밤에는 귀족이 채팅을 쓸 수 없습니다';
-// 역할 확인 동안 꺼진 입력 줄의 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
-const REVEAL_LOCKED = '역할 확인이 끝나면 채팅할 수 있습니다';
 const ROLE_NAME = ui.ROLE_LABELS;
 
 // 산 사람 칸: 7명 판 직접 구성 광대 2·의사 2·시민 3 — 봇 자리 직업 (맨 끝 봇은 늘 시민 = 재판 피고)
@@ -69,7 +66,6 @@ const hears = (bot, event, text) => bot.waitForEvent(event, { match: (p) => p?.t
 const settle = (t, bots = t.bots) => Promise.all(bots.map((b) => b.snapshot(t.gameId)));
 
 const tribunalChat = (page) => page.getByRole('region', { name: '최후의 반론 채팅' });
-const closedReason = (page) => page.getByText(NIGHT_CLOSED, { exact: true });
 
 /** 조건에 맞는 봇만 (서버 판 값 기준) → 예: 산 광대 봇 */
 async function pick(t, match) {
@@ -118,14 +114,6 @@ async function readableOnScreen(page, locator) {
 async function say(page, text) {
     await ready(page);
     await m.say(page, text);
-}
-
-/** 재판 창 "최후의 반론" 채팅으로 말하기 */
-async function sayInTribunal(page, text) {
-    const box = tribunalChat(page);
-    await box.getByRole('textbox', { name: '채팅 입력' }).fill(text);
-    await box.getByRole('button', { name: '채팅 보내기' }).click();
-    await expect(box.getByRole('log', { name: '채팅 내역' })).toContainText(text);
 }
 
 /** 봇 표로 한 사람을 재판에 세움 (사람은 안 내서 기권으로 셈) → 표 낸 봇들 */
@@ -183,7 +171,7 @@ async function deadGame(table, user, role) {
     await execute(t, user.account.uuid);
     await keepWatching(user.page);
     await killAtNight(t, deadBot.account.uuid);
-    await expect(talk.phaseLine(user.page)).toContainText('제 2일', { timeout: 20000 });
+    await expect.poll(async () => (await t.state())?.dayIndex, { timeout: 20000, message: '서버 날짜 제 2일' }).toBe(2);
     await expect(talk.phaseLine(user.page)).toContainText('낮', { timeout: 20000 });
     await ready(user.page);
     return { t, deadBot };
@@ -197,17 +185,15 @@ async function expectDeadOnly(t, deadBot, text) {
     for (const b of alive) expect(heardAny(b, text), `산 봇 ${b.nickname}이 죽은 사람 글을 받음`).toBe(false);
 }
 
-// 역할 확인 칸: 입력 줄·보내기가 꺼져 있고 까닭 글이 보임, 글을 치고 엔터를 쳐도 봇 0
+// 역할 확인 칸: 입장 준비 덮개가 화면을 덮음, 글을 치고 엔터를 쳐도 봇 0
+// 모바일(상대 화면)은 입력 줄을 끄지 않고 덮개(frontend-mobile overlays/EntryPreparingOverlay.jsx)로 막음
 async function revealCell({ user, table }, cell) {
     const t = await aliveGame(table, user, cell.me);
     const page = user.page;
     const text = uniq('확인중');
     const input = talk.input(page);
-    // 역할 확인 10초 동안: 입력 줄·보내기 단추가 꺼져 있고 입력 줄 자리 글이 까닭으로 바뀜 (frontend-mobile Composer.jsx)
-    await expect(input, '역할 확인 중 입력 줄').toBeDisabled({ timeout: 3000 });
-    await expect(talk.send(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
-    await expect(input).toHaveAttribute('placeholder', REVEAL_LOCKED);
-    // 그래도 쳐 봄: 꺼진 칸은 글도 Enter도 안 받음 (막혀도 기다리지 않게 짧게)
+    await expect(page.locator('[data-ingame-entry-preparing]'), '역할 확인 중 입장 준비 덮개').toBeVisible({ timeout: 3000 });
+    // 그래도 덮개 너머로 억지로 쳐 봄 (막혀도 기다리지 않게 짧게)
     await input.fill(text, { force: true, timeout: 1000 }).catch(() => {});
     await input.press('Enter', { timeout: 1000 }).catch(() => {});
     // 역할 확인 10초는 손잡이로 안 넘김 → 엔터를 친 때가 아직 그 10초 안이어야 이 칸을 본 것
@@ -228,7 +214,6 @@ async function dayCell({ user, table }, cell) {
         const { t, deadBot } = await deadGame(table, user, cell.me);
         const page = user.page;
         await readableOnScreen(page, talk.deadBanner(page));
-        await expect(talk.nightBanner(page)).toHaveCount(0);
         const text = uniq('죽은낮말');
         await say(page, text);
         await expectDeadOnly(t, deadBot, text);
@@ -238,14 +223,14 @@ async function dayCell({ user, table }, cell) {
     const page = user.page;
     await m.toDay(t, page);
     await ready(page);
-    await expect(talk.nightBanner(page)).toHaveCount(0);
     await expect(talk.deadBanner(page)).toHaveCount(0);
     const text = uniq('낮말');
     await say(page, text);
     await Promise.all(t.bots.map((b) => hears(b, DAY_EVT, text)));
 }
 
-// 재판 칸: 카톡 채팅방은 숨고 재판 창 채팅으로 말함
+// 재판 칸: 합친 뒤 세로 카톡형은 재판 창 안 채팅 칸이 없음 → 고발 연출 뒤 채팅방·바닥 입력 줄 그대로 말함 (frontend-mobile talk/TalkLayout.jsx)
+// 규칙은 같게 봄: 산 사람 글은 봇 전원이, 죽은 사람 글은 죽은 봇만 받음, "죽은 사람끼리" 띠는 죽은 사람 채팅방에만
 async function tribunalCell({ user, table }, cell) {
     if (cell.dead) {
         const { t, deadBot } = await deadGame(table, user, cell.me);
@@ -253,13 +238,14 @@ async function tribunalCell({ user, table }, cell) {
         // 재판 앞(둘째 낮) 채팅방엔 "죽은 사람끼리" 띠가 읽힘
         await readableOnScreen(page, talk.deadBanner(page));
         await toTribunal(t, t.bots[t.bots.length - 2].account.uuid);
-        const box = tribunalChat(page);
-        await expect(box).toBeVisible({ timeout: 20000 });
+        await m.waitTrialTalk(page);
+        await expect(tribunalChat(page)).toHaveCount(0);
+        await expect(page.getByRole('textbox', { name: '채팅 입력' })).toHaveCount(1);
         const text = uniq('죽은반론');
-        await sayInTribunal(page, text);
+        await say(page, text);
         await expectDeadOnly(t, deadBot, text);
-        // 재판 창 채팅에도 "죽은 사람끼리" 띠 1개가 읽힘 (결정 2026-11-16 낮 넷째 4번, frontend-mobile TribunalChat.jsx)
-        const banner = box.locator('[data-dead-chat-banner]');
+        // 재판 중 채팅방에도 "죽은 사람끼리" 띠 1개가 읽힘 (결정 2026-11-16 낮 넷째 4번)
+        const banner = talk.chat(page).locator('[data-dead-chat-banner]');
         await expect(banner).toHaveCount(1);
         await expect(banner).toHaveText('죽은 사람끼리');
         await readableOnScreen(page, banner);
@@ -270,14 +256,14 @@ async function tribunalCell({ user, table }, cell) {
     await m.toDay(t, page);
     await ready(page);
     await toTribunal(t, t.bots[t.bots.length - 1].account.uuid);
-    const box = tribunalChat(page);
-    await expect(box).toBeVisible({ timeout: 20000 });
-    // 재판 중엔 바닥 입력 줄을 뺌 → 입력칸은 재판 창 것 하나
+    await m.waitTrialTalk(page);
+    // 옛 재판 창 채팅 칸은 없고 입력칸은 채팅방 바닥 것 하나
+    await expect(tribunalChat(page)).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: '채팅 입력' })).toHaveCount(1);
-    // 산 사람 재판 창엔 "죽은 사람끼리" 띠 없음
-    await expect(box.locator('[data-dead-chat-banner]')).toHaveCount(0);
+    // 산 사람 채팅방엔 재판 중에도 "죽은 사람끼리" 띠 없음
+    await expect(talk.chat(page).locator('[data-dead-chat-banner]')).toHaveCount(0);
     const text = uniq('반론');
-    await sayInTribunal(page, text);
+    await say(page, text);
     await Promise.all(t.bots.map((b) => hears(b, DAY_EVT, text)));
 }
 
@@ -289,8 +275,6 @@ async function nightCell({ user, table }, cell) {
         await m.toNight(t, page);
         await ready(page);
         await readableOnScreen(page, talk.deadBanner(page));
-        await expect(talk.nightBanner(page)).toHaveCount(0);
-        await expect(closedReason(page)).toHaveCount(0);
         const text = uniq('죽은밤말');
         await say(page, text);
         await expectDeadOnly(t, deadBot, text);
@@ -300,19 +284,17 @@ async function nightCell({ user, table }, cell) {
     const page = user.page;
     await m.toNight(t, page);
     if (cell.me === 'CITIZEN') {
-        await readableOnScreen(page, closedReason(page));
-        await expect(talk.input(page)).toHaveCount(0);
-        await expect(talk.send(page)).toHaveCount(0);
-        await expect(talk.nightBanner(page)).toHaveCount(0);
-        // 칸이 없어 화면으로는 못 보냄 → 그 밤 봇이 받은 같은 직업 글 중 내 것이 없음
+        // 모바일(상대 화면)은 밤 시민 입력 줄을 닫지 않음 → 쳐서 보내도 어느 봇에게도 안 감
+        await ready(page);
+        const text = uniq('밤시민');
+        await talk.input(page).fill(text);
+        await talk.input(page).press('Enter');
+        await m.sleep(1000);
         await settle(t);
-        for (const b of t.bots) {
-            expect(b.events.filter((r) => r.event === ROLE_EVT && r.payload?.senderUuid === user.account.uuid)).toHaveLength(0);
-        }
+        for (const b of t.bots) expect(heardAny(b, text), `봇 ${b.nickname}이 밤 시민 글을 받음`).toBe(false);
         return;
     }
     await ready(page);
-    await readableOnScreen(page, talk.nightBanner(page));
     await expect(talk.deadBanner(page)).toHaveCount(0);
     const text = uniq('밤말');
     await say(page, text);
@@ -328,13 +310,13 @@ const RUN = { REVEAL: revealCell, DAY: dayCell, TRIBUNAL: tribunalCell, NIGHT: n
 
 // 칸마다 기대 한 줄 (시험 이름에 붙임)
 function expectation(cell) {
-    if (cell.phase === 'REVEAL') return '입력 줄 꺼짐·까닭 글 보임·엔터를 쳐도 봇 0';
-    if (cell.dead && cell.phase === 'TRIBUNAL') return '재판 앞 채팅방엔 "죽은 사람끼리" 띠가 읽히고 재판 창 채팅에도 띠가 읽히고 보내면 죽은 봇만 받음';
+    if (cell.phase === 'REVEAL') return '입장 준비 덮개·엔터를 쳐도 봇 0';
+    if (cell.dead && cell.phase === 'TRIBUNAL') return '재판 앞·재판 중 채팅방에 "죽은 사람끼리" 띠가 읽히고 바닥 입력 줄로 보내면 죽은 봇만 받음';
     if (cell.dead) return '"죽은 사람끼리" 띠가 읽히고 죽은 봇만 받음';
-    if (cell.phase === 'NIGHT' && cell.me === 'CITIZEN') return '입력 줄 없음·까닭 글이 읽힘·띠 없음·봇 0';
-    if (cell.phase === 'NIGHT') return '"밤 · 같은 직업끼리" 띠가 읽히고 같은 직업 봇만 받음';
-    if (cell.phase === 'TRIBUNAL') return '재판 창에 "죽은 사람끼리" 띠 없고 재판 창 채팅으로 보내면 봇 전원이 받음';
-    return '띠 없이 보내면 봇 전원이 받음';
+    if (cell.phase === 'NIGHT' && cell.me === 'CITIZEN') return '보내도 봇 0';
+    if (cell.phase === 'NIGHT') return '같은 직업 봇만 받음';
+    if (cell.phase === 'TRIBUNAL') return '재판 중 채팅방에 "죽은 사람끼리" 띠 없고 바닥 입력 줄로 보내면 봇 전원이 받음';
+    return '"죽은 사람끼리" 띠 없이 보내면 봇 전원이 받음';
 }
 
 for (const cell of CELLS) {

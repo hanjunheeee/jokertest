@@ -2,11 +2,11 @@
 
 // 모바일 사람 5명이 한 판을 처음부터 끝까지 하는 브라우저 시험 (어려움) — 세로 카톡형 화면으로 낮 투표(플레이어 목록)·재판("최후의 변론" 시트)·밤 암살("직업 행동" 목록)을 해서 판을 끝내고 결과판을 사람마다 봄
 // 목록 A07-승패-결과-골드.md 번호 A07-H-041~042 (PC 5명 판 A07-H-001~002를 모바일로 옮김, 단계 넘기기 손잡이는 토론·밤 차례 기다림에만), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a07-full-game.spec.js
+// 모바일 결과 줄엔 판 골드 칸이 없음(상대 화면) → 판 골드는 지갑(DB)으로만 봄
 const { test, expect, e2e } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
 const { Table } = require('../../helpers/game');
 const ui = require('../../helpers/ui');
-const { resultRow } = require('../room/roomHelpers');
 const { wallet } = require('../store/store-tools');
 const R = require('../room/_a01a-kit');
 const N = require('../ingame/b-night/_night');
@@ -17,7 +17,6 @@ const { clearOverlays, pickPlayer, openTrialSheet } = require('./_talk');
 const U = (x) => x.account.uuid;
 const nick = (x) => x.account.nickname;
 const resultBoard = (page) => page.getByRole('region', { name: '가면무도회 참가자 정체' });
-const myChip = (who) => resultRow(who.page, nick(who)).getByTestId('game-result-gold-reward');
 const abstainButton = (page) => page.getByRole('button', { name: '기권' });
 
 async function openPhones(players, n) {
@@ -136,7 +135,7 @@ async function expectGold(uuid, amount) {
 
 // ── 사람만 5명 (모두 모바일 세로 375×812) ──
 
-test('A07-H-041 모바일 사람 5명 판 처음부터 끝까지 시민 승 — 목록으로 낮 투표·"최후의 변론" 시트 유죄 → 다섯 화면 "시민 진영 승리", 이긴 편 "승리"·진 편 "패배", 전원 "+1골드"·지갑 +1 @game @hard @smoke', async ({ players }) => {
+test('A07-H-041 모바일 사람 5명 판 처음부터 끝까지 시민 승 — 목록으로 낮 투표·"최후의 변론" 시트 유죄 → 다섯 화면 "시민 진영 승리", 이긴 편 "승리"·진 편 "패배", 전원 지갑 +1골드 @game @hard @smoke', async ({ players }) => {
     test.setTimeout(480_000);
     const people = await openPhones(players, 5);
     const [joker, ...citizens] = people;
@@ -160,15 +159,15 @@ test('A07-H-041 모바일 사람 5명 판 처음부터 끝까지 시민 승 — 
         const list = await toResult(h.page);
         await expectReadable(list.getByText('시민 진영 승리', { exact: true }));
         await expectReadable(h.page.getByText(h === joker ? '패배' : '승리', { exact: true }), { large: true, uncovered: false });
-        await expect(myChip(h)).toHaveText('+1골드');
     }
     for (const [i, h] of people.entries()) await expectGold(U(h), before[i] + 1);
 });
 
-test('A07-H-042 모바일 사람 5명 판(광대 2) 처음부터 끝까지 광대 승 — 1일 밤 광대 둘이 "직업 행동" 목록으로 같은 시민 암살 → 다섯 화면 "광대 진영 승리", 전원 "+1골드" @game @hard', async ({ players }) => {
+test('A07-H-042 모바일 사람 5명 판(광대 2) 처음부터 끝까지 광대 승 — 1일 밤 광대 둘이 "직업 행동" 목록으로 같은 시민 암살 → 다섯 화면 "광대 진영 승리", 전원 지갑 +1골드 @game @hard', async ({ players }) => {
     test.setTimeout(480_000);
     const people = await openPhones(players, 5);
     const [j1, j2, victim] = people;
+    const before = await Promise.all(people.map((h) => goldOf(U(h))));
     const roles = Object.fromEntries(people.map((h, i) => [U(h), i < 2 ? 'JOKER' : 'CITIZEN']));
     const t = await hostPhoneGame({ host: j1, guests: people.slice(1), roles, settings: { jokers: 2 } });
     expectRoles(await t.state(), roles);
@@ -184,7 +183,7 @@ test('A07-H-042 모바일 사람 5명 판(광대 2) 처음부터 끝까지 광�
         const list = await toResult(h.page);
         await expectReadable(list.getByText('광대 진영 승리', { exact: true }));
         await expectReadable(h.page.getByText(i < 2 ? '승리' : '패배', { exact: true }), { large: true, uncovered: false });
-        // 죽은 시민도 판 끝까지 있었으니 받음
-        await expect(myChip(h)).toHaveText('+1골드');
     }
+    // 죽은 시민도 판 끝까지 있었으니 받음
+    for (const [i, h] of people.entries()) await expectGold(U(h), before[i] + 1);
 });

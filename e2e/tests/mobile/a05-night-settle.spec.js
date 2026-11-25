@@ -60,7 +60,9 @@ async function watch(page) {
             seen('msg', '[data-ingame-dawn-report-message]', text);
             seen('report', '[data-ingame-dawn-report]', (el) => el.getAttribute('data-ingame-dawn-report'));
             // 마감이 당겨진 동안만 시간 줄에 붙는 표시 → 켜짐·꺼짐을 따로 적음
-            const settled = document.querySelector('[data-ingame-phase-settle]') !== null;
+            // 모바일(상대 화면)은 data-ingame-phase-settle 표시가 없고 명패 줄 글이 "[5초 뒤 마감]"으로 바뀜 → 둘 중 하나
+            const settled = document.querySelector('[data-ingame-phase-settle]') !== null
+                || (document.querySelector('[data-ingame-phase-timer-mobile]')?.textContent || '').includes('5초 뒤 마감');
             if (settled !== (last.settled === true)) push(settled ? 'settleOn' : 'settleOff', '');
             last.settled = settled;
         };
@@ -382,10 +384,9 @@ test(`A05-E-672 늘 보이는 명패+시간패널이 다 고르면 "${SETTLE_TEX
     // 고르기 전: 시간 칸이 보이고 5초 글·당김 표시 없음
     await expect(talk.timebarSlot(g.page)).toBeVisible();
     await expect(talk.phaseLine(g.page)).not.toContainText(SETTLE_TEXT);
-    await expect(g.page.locator('[data-ingame-phase-settle]')).toHaveCount(0);
     await pick(g.page, target.nickname, '암살');
+    // 모바일(상대 화면)엔 data-ingame-phase-settle 표시가 없어 명패 줄 글로만 봄
     await expectReadable(settleLabel(g.page));
-    await expect(g.page.locator('[data-ingame-phase-settle]')).toHaveCount(1);
     await expect(talk.timebarSlot(g.page)).toBeVisible();
 });
 

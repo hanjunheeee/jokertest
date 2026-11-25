@@ -119,7 +119,7 @@ async function closeAd(page) {
     }).toPass({ timeout: 15_000 });
 }
 
-test('A07-H-005 PC 사람 3 + 모바일 사람 2 + 봇 2 = 7명 판 처음부터 끝까지 → PC·모바일 화면 모두 "시민 진영 승리"·같은 직업·내 줄 "+1골드" @game @hard @smoke', async ({ players, table }) => {
+test('A07-H-005 PC 사람 3 + 모바일 사람 2 + 봇 2 = 7명 판 처음부터 끝까지 → PC·모바일 화면 모두 "시민 진영 승리"·같은 직업, PC 화면 내 줄 "+1골드" @game @hard @smoke', async ({ players, table }) => {
     test.setTimeout(480_000);
     const pcs = [];
     for (let i = 0; i < 3; i += 1) pcs.push(await players.add({ mobile: false }));
@@ -164,6 +164,8 @@ test('A07-H-005 PC 사람 3 + 모바일 사람 2 + 봇 2 = 7명 판 처음부터
         for (const p of end.players) {
             await expect(resultRow(h.page, p.nickname).getByText(RESULT_JOB[p.role], { exact: true }), `${p.nickname} 직업`).toHaveCount(1);
         }
+        // 판 골드 칸은 PC 결과 줄에만 (모바일 상대 화면 결과 줄엔 골드 칸 없음)
+        if (phones.includes(h)) continue;
         await expect(myChip(h)).toHaveText('+1골드');
         await expectReadable(myChip(h));
     }

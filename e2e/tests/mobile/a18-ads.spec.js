@@ -12,8 +12,6 @@ const K = require('../maintenance/_a18-kit');
 
 // 결과 화면 버튼 (모바일 그림 버튼은 aria-label)
 const toRoomButton = (page) => page.getByRole('button', { name: '대기방으로', exact: true });
-const closeTimer = (page) => page.getByTestId('result-close-timer');
-const timerSeconds = async (page) => Number(await closeTimer(page).getAttribute('data-seconds-left'));
 
 /**
  * 광고 가로챈 휴대폰 사람으로 5명 판(사람 1 + 봇 4, 봇 광대 처형 → 시민 승) → 결과판이 보이고 광고 창이 열린 때까지
@@ -123,14 +121,13 @@ test('A18-E-018 모바일 광고 창 열림 → 2초에 뒤로 가기 → 창·�
     expect(await page.evaluate(() => window.__a18NoReload === true), '새로고침 안 됨').toBe(true);
 });
 
-test('A18-E-019 모바일 광고 창이 열린 동안 결과 화면 남은 시간이 계속 줄어듦, 닫은 뒤 "대기방으로" → 같은 방 대기방 @game', async ({ players, table }) => {
+// 모바일(상대 화면) 결과 화면엔 남은 시간 칸이 없음(커밋 d71ab651) → 광고 창이 떠 있어도 결과 화면이 그대로인지·닫은 뒤 같은 방으로 가는지만 봄
+test('A18-E-019 모바일 광고 창이 열린 동안 결과 화면 그대로, 닫은 뒤 "대기방으로" → 같은 방 대기방 @game', async ({ players, table }) => {
     test.setTimeout(180_000);
     const { phone, t } = await resultWithAd(players, table);
     const page = phone.page;
-    const first = await timerSeconds(page);
-    expect(first, '남은 시간 칸').toBeGreaterThan(0);
-    await expect.poll(() => timerSeconds(page), { timeout: 5_000, message: '광고 창 뒤 남은 시간이 줄어듦' }).toBeLessThan(first);
     await expect(K.adDialog(page)).toBeVisible();
+    await expect(page).toHaveURL(/\/gameresult/);
 
     await expect(K.adClose(page)).toBeVisible({ timeout: 10_000 });
     await K.adClose(page).click();

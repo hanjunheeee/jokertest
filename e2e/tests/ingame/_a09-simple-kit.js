@@ -8,6 +8,7 @@ const { sleep } = require('../../helpers/wait');
 const night = require('./b-night/_night');
 const L = require('./a-day/_lib');
 const { openSetup, openRoomList, findRoomRow, waitResult } = require('../room/roomHelpers');
+const { E2E } = require('../../helpers/env');
 
 // 산 사람 나가기 확인 창에 꼭 있어야 하는 줄 (결정 "나가기 창": 패배·골드·탈주 제한)
 const EXIT_ALIVE_LINES = Object.freeze([
@@ -248,7 +249,23 @@ async function withConfirm(page, action, { accept }) {
     return message;
 }
 
-/** 위 줄 "게임 나가기" 누르고 확인 창 글 받기 (연출 창이 판을 막으면 닫으면서) */
+// 모바일 화면(5274)인지 — 폰 세로·넓은 배치 모두 위 줄에 "게임 나가기"가 없음
+const isPhonePage = (page) => page.url().startsWith(E2E.mobileUrl);
+
+/**
+ * 판 나가기 한 번 누르기: PC는 위 줄 "게임 나가기", 모바일(상대 화면)은 위 줄에 그 단추가 없어 브라우저 뒤로 가기
+ * 모바일 뒤로 가기는 useInGameExit의 useBlocker가 막고 같은 나가기 확인 창을 띄움 → 창이 뜰 때까지 잠깐 기다린 뒤 다시
+ */
+async function pressExitOnce(page, confirmed) {
+    if (!isPhonePage(page)) {
+        await exitButton(page).click({ timeout: 1500 });
+        return;
+    }
+    await page.evaluate(() => window.history.back());
+    await expect.poll(() => confirmed(), { timeout: 3000, message: '뒤로 가기 → 나가기 확인 창' }).toBe(true);
+}
+
+/** 판 나가기(PC 위 줄 단추·모바일 뒤로 가기) 누르고 확인 창 글 받기 (연출 창이 판을 막으면 닫으면서) */
 function pressExit(page, { accept }) {
     // 확인 창이 뜨면 다시 안 누름: 사파리는 확인 창이 떠 있는 동안 누르기가 안 끝나 1.5초를 넘기면 실패로 보이는데,
     // 그사이 확인을 눌러 이미 방 목록으로 갔으면 단추가 없어 다시 누르기가 25초 내내 실패함
@@ -257,7 +274,7 @@ function pressExit(page, { accept }) {
             if (confirmed()) return;
             await clear(page);
             try {
-                await exitButton(page).click({ timeout: 1500 });
+                await pressExitOnce(page, confirmed);
             } catch (err) {
                 if (!confirmed()) throw err;
             }

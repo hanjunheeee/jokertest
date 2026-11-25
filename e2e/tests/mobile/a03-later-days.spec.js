@@ -6,7 +6,7 @@ const { test, expect } = require('../../helpers/fixtures');
 const ui = require('../../helpers/ui');
 const { e2e } = require('../../helpers/internal');
 const { playToResult } = require('../room/roomHelpers');
-const { talk, startTalkGame, toDay, toVote, clearOverlays, openPlayer, pickPlayer, closeRoster } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, clearOverlays, openPlayer, pickPlayer, closeRoster, expectDayLine } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -120,6 +120,7 @@ async function expectFiveSeconds(watcher, fullAt, day) {
 const noticeOf = (page) => page.getByRole('dialog', { name: '단계 전환 안내' });
 
 // 다음 날 투표까지: 밤 차례는 손잡이로 넘기고(앞 단계) "낮이 되었습니다" 확인 → 토론 넘기기 → 기권 단추
+// 아무도 안 죽은 밤이면 "지난밤 아무 일도 일어나지 않았습니다" 창(이름 같음)이 먼저 → 확인으로 넘김
 async function toDayVote(t, page, day) {
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === day);
     await expect(async () => {
@@ -127,13 +128,14 @@ async function toDayVote(t, page, day) {
         if (await notice.isVisible() && (await notice.innerText()).includes('밤이 되었습니다')) {
             await notice.getByRole('button', { name: '확인' }).click();
         }
+        await ui.closeQuietDawn(page);
         await expect(notice).toContainText('낮이 되었습니다', { timeout: 1_000 });
     }).toPass({ timeout: 30_000 });
     await noticeOf(page).getByRole('button', { name: '확인' }).click();
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === day && s.dayPhase === 'DAY_VOTE');
     await clearOverlays(page);
     await expect(abstainButton(page)).toBeVisible();
-    await expect(talk.phaseLine(page)).toContainText(`제 ${day}일`);
+    await expectDayLine(page, t, day);
 }
 
 // 모두 기권으로 다 냄 (사람 먼저, 마지막 봇 직전 시각 = 다 찬 때)
@@ -193,7 +195,6 @@ test('A03-E-207 모바일 6명 판 1일 "5초 뒤 마감" → 2일 투표 시작
     await waitNight(t);
     await toDayVote(t, user.page, 2);
     await expect(talk.phaseLine(user.page)).not.toContainText('5초 뒤 마감');
-    await expect(user.page.locator('[data-ingame-phase-settle]')).toHaveCount(0);
 });
 
 test('A03-E-209 모바일 5명 판 같은 방 두 번째 판 첫 낮 다 내면 5초·결과 @game @realtime', async ({ user, table }) => {

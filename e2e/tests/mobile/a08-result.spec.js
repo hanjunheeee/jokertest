@@ -1,17 +1,17 @@
 'use strict';
 
-// 모바일 판 끝 뒤 같은 방 브라우저 시험 — 폰 결과 화면 남은 시간·"대기방으로"(같은 코드·설정·방장 자리)·"로비로"(확인 글·실패 안내·잠김)·새로고침·다음 판
-// 목록 A08-판끝-같은방.md 번호 A08-E-076~100 (사파리도: 076·079·083·087, 180초는 손잡이 closeResults로 넘김)
+// 모바일 판 끝 뒤 같은 방 브라우저 시험 — 폰 결과 화면 "대기방으로"(같은 코드·설정·방장 자리)·"로비로"(확인 글·실패 안내·잠김)·새로고침·다음 판
+// 목록 A08-판끝-같은방.md 번호 A08-E-078~100 (076·077·087·088·098은 지움, 사파리도: 079·083, 180초는 손잡이 closeResults로 넘김)
 const { test, expect } = require('../../helpers/fixtures');
-const { expectReadable, readability, waitFullyShown } = require('../../helpers/visible');
+const { expectReadable } = require('../../helpers/visible');
 const { e2e } = require('../../helpers/internal');
 const ui = require('../../helpers/ui');
 const { answerNextConfirm } = require('../room/_a01b-kick-kit');
 const {
-    U, TEXT, returnButton, lobbyButton, leaveNotice, closeTimer, startButton, hostSeat, expectStartBlocked,
+    U, TEXT, returnButton, lobbyButton, leaveNotice, startButton, hostSeat, expectStartBlocked,
     rolesFor, findJokerBot, seatTable, seatPhoneHosted, jokerLeaves, voteOutJoker, allAtResult, pressReturn, pressLobby, leaveToLobby,
     botReturn, botToLobby, seatsOf, expectParty, expectRoomCodeShown, codeEntryAlert, createRoomOnPhone, readyHumans, readyBots,
-    startByBot, readRoomSettings, secondsLeft, gateSocket,
+    startByBot, readRoomSettings, gateSocket,
 } = require('../result/_a08-hard-kit');
 
 // 사람 1 + 봇(total-1) 봇 방장 판 → 봇 표로 광대 봇 처형(시민 승, 탈주 없음) → 폰 결과 화면
@@ -22,30 +22,25 @@ async function phoneResult(user, table, total, settings = {}) {
     return seated;
 }
 
+// 판 화면 설정 시트 열기: 역할 확인 동안엔 입장 준비 덮개(화면 전체)가, 그 뒤엔 "낮이 되었습니다" 창이 설정 단추를 덮음
+// → 덮개가 사라질 때까지 기다리고 뜬 안내 창은 닫은 뒤 누름 (탭 줄이 보이면 열린 것)
+async function openIngameSettings(page) {
+    await expect(page.locator('[data-ingame-entry-preparing]')).toHaveCount(0, { timeout: 30_000 });
+    const tabs = page.getByRole('navigation', { name: '인게임 설정 탭' });
+    await expect(async () => {
+        await ui.closeOverlays(page, { rounds: 2, keepWatching: false });
+        await page.getByRole('button', { name: '인게임 설정', exact: true }).click({ timeout: 1500 });
+        await expect(tabs).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 30_000 });
+    return tabs;
+}
+
 // 결과 화면 단추에 적힌 글 (그림 단추라 글 칸을 따로 봄 — 글자색·가려짐)
 const returnLabel = (page) => returnButton(page).getByText('대기방으로', { exact: true });
 const lobbyLabel = (page) => lobbyButton(page).getByText('로비로', { exact: true });
 
-test('A08-E-076 [모바일] 5명 판 끝 → 결과 화면 남은 시간 칸이 읽힘, 숫자 1~180 @game @smoke @safari', async ({ user, table }) => {
-    await phoneResult(user, table, 5);
-    const timer = closeTimer(user.page);
-    // 남은 시간 줄은 눌림을 안 받게 해 둔 칸이라 가려짐 검사는 못 씀 → 보임·화면 안·대비만
-    await expectReadable(timer, { uncovered: false });
-    await expect(timer).toContainText(/\d+초/);
-    const left = await secondsLeft(user.page);
-    expect(left).toBeGreaterThanOrEqual(1);
-    expect(left).toBeLessThanOrEqual(180);
-});
-
-test('A08-E-077 [모바일] 6명 판 끝 → 남은 시간 칸이 화면 오른쪽 위 @game', async ({ user, table }) => {
-    await phoneResult(user, table, 6);
-    const page = user.page;
-    await expect(closeTimer(page)).toBeVisible();
-    const box = await closeTimer(page).boundingBox();
-    const view = page.viewportSize();
-    expect(box.x + box.width / 2, '가운데가 오른쪽 절반').toBeGreaterThan(view.width / 2);
-    expect(box.y + box.height / 2, '가운데가 위쪽 4분의 1').toBeLessThan(view.height / 4);
-});
+// A08-E-076(결과 화면 남은 시간 칸 읽힘)·077(남은 시간 칸 오른쪽 위)은 지움: 모바일(상대 화면) 결과 화면엔 남은 시간 칸이 없음 (커밋 d71ab651)
+// 서버가 닫으면 로비로 가는 것은 A08-E-078(손잡이)·A08-H-032(진짜 180초)가 봄
 
 test('A08-E-078 [모바일] 5명 판: 결과 화면이 닫히면 로비로 @game', async ({ user, table }) => {
     const { t } = await phoneResult(user, table, 5);
@@ -91,13 +86,12 @@ test('A08-E-080 [모바일] 8명 판(코드 방·정원 8·광대 2·시간 바�
     expect(room.settings, '서버 방 설정').toMatchObject(wanted);
 });
 
-test('A08-E-081 [모바일] 6명 판: 내가 먼저 "대기방으로" → "방장 자리" 칸·안내 글이 읽힘 @game', async ({ user, table }) => {
+test('A08-E-081 [모바일] 6명 판: 내가 먼저 "대기방으로" → 방장 자리 안내 글이 읽히고 "게임시작" 없음 @game', async ({ user, table }) => {
     await phoneResult(user, table, 6);
     const page = user.page;
     // 원래 방장 봇은 결과 화면에 그대로 → 방장 자리를 비워 둠
     await pressReturn(page);
-    // 이름표는 눌림을 안 받게 해 둔 글이라 가려짐 검사는 못 씀
-    await expectReadable(hostSeat(page).getByText('방장 자리', { exact: true }), { uncovered: false });
+    // 모바일(상대 화면)은 비워 둔 방장 자리가 이름 없는 빈 실루엣 → 판 아래 안내 글로 봄
     await expectReadable(page.getByText(TEXT.hostSeatNotice, { exact: true }));
     await expect(startButton(page)).toHaveCount(0);
 });
@@ -161,31 +155,7 @@ test('A08-E-086 [모바일] 6명 판: 연결이 끊긴 채 "대기방으로" →
     await expect(page).toHaveURL(/\/gameresult/);
 });
 
-test('A08-E-087 [모바일] 5명 판: 답이 늦는 동안 "대기방으로"를 누르면 "로비로"가 꺼짐 @game @safari', async ({ user, table }) => {
-    const page = user.page;
-    const gate = await gateSocket(page);
-    await phoneResult(user, table, 5);
-    // 서버 답을 4초 늦춤 (화면이 답을 기다리는 시간 8초 안)
-    gate.delayMs = 4000;
-    await returnButton(page).click();
-    await expect(lobbyButton(page)).toBeDisabled();
-    await expect(returnButton(page)).toBeDisabled();
-    await expect(page.getByText('이동 중..', { exact: true })).toBeVisible();
-    gate.delayMs = 0;
-    await expect(page).toHaveURL(/\/game-matching/, { timeout: 20_000 });
-});
-
-test('A08-E-088 [모바일] 5명 판: 답이 늦는 동안 "로비로" 확인 → "대기방으로"가 꺼짐 @game', async ({ user, table }) => {
-    const page = user.page;
-    const gate = await gateSocket(page);
-    await phoneResult(user, table, 5);
-    gate.delayMs = 4000;
-    expect(await pressLobby(page)).toBe(TEXT.lobbyConfirm);
-    await expect(returnButton(page)).toBeDisabled();
-    await expect(lobbyButton(page)).toBeDisabled();
-    gate.delayMs = 0;
-    await expect(page).toHaveURL(/\/lobby/, { timeout: 20_000 });
-});
+// A08-E-087·088(답이 늦는 동안 다른 단추가 꺼짐)은 지움: 모바일(상대 화면) 결과 단추는 누르는 중에도 안 꺼짐(누른 뒤 다시 누름은 훅이 무시, frontend-mobile result/components/actions/ResultActions.jsx)
 
 test('A08-E-089 [모바일] 5명 판: 결과 화면 새로고침 → "게임 결과를 확인할 수 없습니다" + "로비로 돌아가기" 하나 @game', async ({ user, table }) => {
     await phoneResult(user, table, 5);
@@ -216,8 +186,7 @@ test('A08-E-091 [모바일] 5명 판(내가 방장): 판 중 설정 시트에 "�
     const page = user.page;
     await seatPhoneHosted(bots, user, [], 4);
     await ui.readRoleReveal(page);
-    await page.getByRole('button', { name: '인게임 설정', exact: true }).click();
-    const tabs = page.getByRole('navigation', { name: '인게임 설정 탭' });
+    const tabs = await openIngameSettings(page);
     await expect(tabs.getByText('채팅', { exact: true })).toBeVisible();
     await expect(page.getByText('다음 게임 설정 유지')).toHaveCount(0);
     // 결정(2026-11-16 아침 12번): 방관리 탭째 없앰
@@ -278,7 +247,7 @@ test('A08-E-095 [모바일] 7명 봇 판 끝 → 판 밖 사람이 그 코드 �
     expect((await e2e.roomOf(U(user)))?.roomCode, '서버 방 코드').toBe(t.roomCode);
 });
 
-test('A08-E-096 [모바일] 6명 판(내가 방장): 나 + 봇 3만 대기방으로 → "게임시작"이 미리 꺼지고 까닭 글 "5명부터 시작할 수 있습니다. (지금 4명)"이 읽힘 @game', async ({ user, bots }) => {
+test('A08-E-096 [모바일] 6명 판(내가 방장): 나 + 봇 3만 대기방으로 → "게임시작"을 누르면 막힘 창에 인원 조건 거절 글이 읽힘, 새 판 안 생김 @game', async ({ user, bots }) => {
     test.setTimeout(180_000);
     const page = user.page;
     const me = U(user);
@@ -295,7 +264,7 @@ test('A08-E-096 [모바일] 6명 판(내가 방장): 나 + 봇 3만 대기방으
     await readyHumans([user]);
     await expectParty(page, 4);
 
-    // 4명 이하면 누르기 전에 단추를 꺼 두고 버튼 줄 위에 까닭 글 (결정 2026-11-16 낮 셋째 5번) — 꺼짐·글 읽힘·막힘 시트 없음
+    // 4명 이하면 시작 안 됨 — 모바일(상대 화면)은 "게임시작"을 눌러야 막힘 창에 서버 거절 글 (expectStartBlocked가 화면에 맞춰 봄)
     await expectStartBlocked(page, { count: 4 });
     await expect(page).toHaveURL(/\/game-matching/);
     expect(await e2e.gameOf(me), '새 판 안 생김').toBeNull();
@@ -314,23 +283,12 @@ test('A08-E-097 [모바일] 5명 판: 같은 방 둘째 판의 방 코드 = 첫 
     expect((await e2e.game(t2.gameId))?.roomCode, '서버 둘째 판 방 코드').toBe(t.roomCode);
     // 판 화면 설정 시트 "방 코드 보기"에도 같은 코드
     await ui.readRoleReveal(page);
-    await page.getByRole('button', { name: '인게임 설정', exact: true }).click();
+    await openIngameSettings(page);
     await page.getByTestId('setting-room-code').click();
     await expect(page.getByRole('group', { name: `방코드 ${t.roomCode}`, exact: true })).toBeVisible();
 });
 
-test('A08-E-098 [모바일] 6명 판: "방장 자리" 이름표 글자 대비 4.5 이상 @game', async ({ user, table }) => {
-    await phoneResult(user, table, 6);
-    const page = user.page;
-    await pressReturn(page);
-    const label = hostSeat(page).getByText('방장 자리', { exact: true });
-    await expect(label).toBeVisible();
-    // 대기방 판은 들어올 때 0.9초 동안 서서히 나타남 → 다 나타난 뒤 잼 (들어오자마자 재면 투명도 0.1 장면이라 바탕이 어둡게 잡힘)
-    await waitFullyShown(label);
-    const r = await readability(label);
-    expect(r.inViewport, '화면 안').toBe(true);
-    expect(r.ratio, `글자 ${r.color} · 바탕 ${r.background}`).toBeGreaterThanOrEqual(4.5);
-});
+// A08-E-098("방장 자리" 이름표 글자 대비)은 지움: 모바일(상대 화면)엔 그 이름표가 없음
 
 test('A08-E-099 [모바일] 5명 판: 실패 안내가 떠도 두 단추가 안 가려짐 @game', async ({ user, table }) => {
     const page = user.page;

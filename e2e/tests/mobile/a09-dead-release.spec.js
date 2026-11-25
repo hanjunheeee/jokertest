@@ -65,7 +65,8 @@ test('A09-E-108 모바일 7명 판, 처형 뒤 사망 창 글·단추가 읽힘 
     await seatAndDie(table, user, 7);
     const dialog = await K.waitDeadChoice(page);
     await expectReadable(dialog.getByText('당신은 사망했습니다.', { exact: true }));
-    await expectReadable(dialog.getByText(K.EXIT_DEAD_LINE, { exact: true }));
+    // 모바일(상대 화면) 사망 창 둘째 줄 (벌 없음 글은 나가기 확인 창에만 — A09-E-004가 봄)
+    await expectReadable(dialog.getByText('남은 경기를 계속 지켜보거나, 지금 게임에서 나갈 수 있습니다.', { exact: true }));
     await expectReadable(dialog.getByRole('button', { name: '관전 계속하기' }));
     await expectReadable(dialog.getByRole('button', { name: '게임 나가기' }));
     expect(await expectAllReadable(dialog.getByRole('button'))).toBe(2);

@@ -133,7 +133,8 @@ async function shareSession(from, to) {
 
 // ── 비번 찾기·재설정 화면 ──
 const RESET_EMAIL_BOX = '가입할 때 등록한 이메일을 입력하세요';
-const newPasswordBox = (page) => page.getByPlaceholder('8~64자 비밀번호 (영문·숫자 포함)', { exact: true });
+// PC는 "8~64자 비밀번호 (영문·숫자 포함)", 모바일(상대 화면)은 "8~64자 비밀번호"
+const newPasswordBox = (page) => page.getByPlaceholder(/^8~64자 비밀번호( \(영문·숫자 포함\))?$/);
 const newPasswordConfirmBox = (page) => page.getByPlaceholder('비밀번호를 다시 입력하세요', { exact: true });
 
 // 요청 화면에서 주소 넣고 보냄 → 응답 상태 번호
@@ -247,7 +248,8 @@ const currentPwBox = (page) => pwSection(page).getByPlaceholder('현재 비밀�
 async function fillPasswordChange(page, { current, next, confirm = next }) {
     const s = pwSection(page);
     await currentPwBox(page).fill(current);
-    await s.getByPlaceholder('새 비밀번호 (8~64자, 영문·숫자 포함)', { exact: true }).fill(next);
+    // PC는 "새 비밀번호 (8~64자, 영문·숫자 포함)", 모바일(상대 화면)은 "새 비밀번호"
+    await s.getByPlaceholder(/^새 비밀번호( \(8~64자, 영문·숫자 포함\))?$/).fill(next);
     await s.getByPlaceholder('새 비밀번호 확인', { exact: true }).fill(confirm);
     return s.getByRole('button', { name: '변경', exact: true });
 }

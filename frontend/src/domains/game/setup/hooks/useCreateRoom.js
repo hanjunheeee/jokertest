@@ -42,7 +42,8 @@ function enterOrLeave(room, mountedRef, navigate) {
     isInRoom: useMatchingStore.getState().isInRoom,
     trustUntil: useMatchingStore.getState().roomLocalTrustUntil,
   })
-  queueMicrotask(() => navigate("/game-matching", { replace: true }))
+  // 설정 화면을 기록에 남김 (대기방에서 뒤로 가면 게임 설정 화면, replace 하면 로비로 감)
+  queueMicrotask(() => navigate("/game-matching"))
 }
 
 // 방 만들기 상태·동작
@@ -101,7 +102,7 @@ export function useCreateRoom({ navigate, accountId, identityGeneration }) {
     if (!mountedRef.current) return
     if ((useAuthStore.getState().user?.uuid ?? null) !== accountId) return
     if (useMatchingStore.getState().isInRoom) {
-      queueMicrotask(() => navigate("/game-matching", { replace: true }))
+      queueMicrotask(() => navigate("/game-matching"))
       return
     }
     // 응답은 못 받았는데 서버에 방만 있는 경우 (재연결로 소켓 id만 바뀌어 범위가 끊긴 때 등)

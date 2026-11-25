@@ -1,6 +1,7 @@
 'use strict';
 
-// 모바일 판 중 채팅(브라우저, 폰 세로 카톡형 + 폰 가로): 밤 띠·시민 닫힘·죽은 사람 띠·재판 창 채팅·글 검사·이모티콘·새로고침·화면 돌리기
+// 모바일 판 중 채팅(브라우저, 폰 세로 카톡형 + 폰 가로): 같은 직업 말풍선·밤 시민 글 막힘·죽은 사람 띠·재판 창 채팅·글 검사·이모티콘·새로고침·화면 돌리기
+// 모바일(상대 화면, 커밋 d71ab651)엔 "밤 · 같은 직업끼리" 띠·밤 시민 입력 줄 닫힘·까닭 글이 없음 → 밤 시민은 "보내도 아무 봇도 못 받음"으로 봄
 // 목록 A06-E-131~160 (30개) — 쓰는 동안엔 안 돌림: npx playwright test --list tests/mobile/a06-talk-chat.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { customRoleSettings } = require('../../helpers/game');
@@ -17,9 +18,6 @@ const SLOW = Object.freeze({ dayDiscussionTime: 150, dayVoteTime: 90, tribunalTi
 const DAY_EVT = 'day_chat_message_received';
 const ROLE_EVT = 'joker_chat_message';
 const EMOJI_EVT = 'emoji_shown';
-const NIGHT_CLOSED = '밤에는 귀족이 채팅을 쓸 수 없습니다';
-// 역할 확인 동안 꺼진 입력 줄의 까닭 글 (frontend utils/inGameChatChannel.js ROLE_REVEAL_CHAT_LOCKED_TEXT)
-const REVEAL_LOCKED = '역할 확인이 끝나면 채팅할 수 있습니다';
 const NIGHT_NOTICE = '밤이 되었습니다';
 const TOO_LONG = '메시지는 150자 이하로 입력해주세요.';
 const OFFLINE = '인터넷 연결이 끊겨 보내지 못했습니다. 연결되면 다시 보내 주세요.';
@@ -46,7 +44,6 @@ const hears = (bot, event, text) => bot.waitForEvent(event, { match: (p) => p?.t
 const settle = (t, bots = t.bots) => Promise.all(bots.map((b) => b.snapshot(t.gameId)));
 
 const tribunalChat = (page) => page.getByRole('region', { name: '최후의 반론 채팅' });
-const closedReason = (scope) => scope.getByText(NIGHT_CLOSED, { exact: true });
 const wideChat = (page) => page.getByRole('complementary', { name: '채팅' });
 const talkSlot = (page) => page.locator('[data-talk-layout] [data-slot="chat"]');
 // 말풍선 글 칸 (줄 안의 글 한 덩어리)
@@ -88,6 +85,24 @@ async function ready(page) {
         await m.clearOverlays(page);
         expect(await talk.input(page).evaluate((el) => !el.closest('[inert]'), null, { timeout: 1000 })).toBe(true);
     }).toPass({ timeout: 40000 });
+}
+
+/**
+ * 밤 시민이 글을 쳐서 보내 봄 → 어느 봇에게도 안 감 (모바일은 입력 줄을 닫지 않고 까닭 글도 없음, 막는 건 채팅 세션·서버)
+ * scope: 입력 줄이 있는 칸 (크게 보기 시트 등), 기본은 화면 전체
+ */
+async function nightCitizenSendsNothing(t, page, scope = page) {
+    // 크게 보기 시트가 열려 있으면 입력 줄이 둘(판 채팅 칸·시트) → 화면 전체 입력 줄을 보는 ready 대신 연출 창만 닫음
+    if (scope === page) await ready(page);
+    else await m.clearOverlays(page);
+    const text = uniq('밤시민');
+    const input = scope.getByRole('textbox', { name: '채팅 입력' }).first();
+    await input.fill(text);
+    await input.press('Enter');
+    // 서버가 받았다면 봇에게 갈 만큼 기다린 뒤 봄 (봇마다 같은 소켓으로 묻고 답 받기)
+    await m.sleep(1000);
+    await settle(t);
+    for (const b of t.bots) expect(heardAny(b, text), `봇 ${b.nickname}이 밤 시민 글을 받음`).toBe(false);
 }
 
 /** 늦게 뜬 안내 창이 가릴 수 있음 → 창을 닫아 가며 진짜 읽히는지 */
@@ -141,9 +156,11 @@ async function getExecuted(t, user) {
     await keepWatching(user.page);
 }
 
-/** 내 초상 칸을 누르고 있기 (뗄 때는 page.mouse.up) — 앱은 0.45초 대고 있으면 팔레트를 엶 */
+/** 내 카드 칸을 누르고 있기 (뗄 때는 page.mouse.up) — 앱은 0.45초 대고 있으면 팔레트를 엶 (넓은 배치 카드 판) */
 async function holdMySlot(page) {
-    // 초상 띠는 가로로 넘기는 줄이라 내 칸이 화면 밖일 수 있음 → 먼저 끌어옴
+    // 모바일(상대 화면)은 이모티콘 팔레트가 넓은 배치 카드 판(내 칸 길게 누름)에만 있음 → 폰 가로로 돌려 둠
+    if (!(await talk.board(page).isVisible().catch(() => false))) await m.useWideBoard(page);
+    // 카드 판 안에서 내 칸이 화면 밖일 수 있음 → 먼저 끌어옴
     await talk.mySlot(page).scrollIntoViewIfNeeded();
     const box = await talk.mySlot(page).boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -171,11 +188,11 @@ async function wideToNight(t, page) {
     await m.clearOverlays(page);
 }
 
-test('A06-E-131 밤 의사 (6명 판 직접 의사 2): "밤 · 같은 직업끼리" 띠가 읽히고 의사 봇 글이 붉은 말풍선 @game @safari @smoke', async ({ user, table }) => {
+test('A06-E-131 밤 의사 (6명 판 직접 의사 2): 의사 봇 밤 글이 붉은 말풍선으로 보임 @game @safari @smoke', async ({ user, table }) => {
     const t = await seat(table, user, { role: 'DOCTOR', botRoles: ['JOKER', 'DOCTOR', 'CITIZEN', 'CITIZEN', 'CITIZEN'], counts: { JOKER: 1, DOCTOR: 2 } });
     const page = user.page;
     await m.toNight(t, page);
-    await readableOnScreen(page, talk.nightBanner(page));
+    await ready(page);
 
     const text = uniq('의사봇말');
     expect((await m.botNightSay(t, 1, text))?.ok).toBe(true);
@@ -184,13 +201,11 @@ test('A06-E-131 밤 의사 (6명 판 직접 의사 2): "밤 · 같은 직업끼�
     expect(await m.bgColor(bubble(line))).toBe(RED_OTHER);
 });
 
-test('A06-E-132 밤 시민 (6명 판): "밤 · 같은 직업끼리" 띠 없음 + 까닭 글이 읽힘 @game @safari', async ({ user, table }) => {
+test('A06-E-132 밤 시민 (6명 판): 글을 쳐서 보내도 어느 봇에게도 안 감 @game @safari', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
     await m.toNight(t, page);
-    await readableOnScreen(page, closedReason(page));
-    await expect(talk.nightBanner(page)).toHaveCount(0);
-    await expect(talk.input(page)).toHaveCount(0);
+    await nightCitizenSendsNothing(t, page);
 });
 
 test('A06-E-133 처형된 뒤 (8명 판): "죽은 사람끼리" 띠가 읽힘 @game', async ({ user, table }) => {
@@ -198,26 +213,25 @@ test('A06-E-133 처형된 뒤 (8명 판): "죽은 사람끼리" 띠가 읽힘 @g
     const page = user.page;
     await getExecuted(t, user);
     await readableOnScreen(page, talk.deadBanner(page));
-    await expect(talk.nightBanner(page)).toHaveCount(0);
 });
 
-test('A06-E-134 재판 중 (6명 판): 채팅방은 숨고 재판 창 반론 채팅으로 보내면 봇 전원이 받음 @game', async ({ user, table }) => {
+// 합친 뒤 세로 카톡형: 재판 창 안 "최후의 반론 채팅" 칸이 없어짐 → 고발 연출 뒤 채팅방·바닥 입력 줄 그대로 말함 (frontend-mobile talk/TalkLayout.jsx)
+test('A06-E-134 재판 중 (6명 판): 고발 연출 뒤 채팅방이 그대로 보이고 바닥 입력 줄로 보내면 봇 전원이 받음 @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
     await m.toDay(t, page);
     await ready(page);
     await toTribunal(t, t.bots[4].account.uuid);
 
-    const box = tribunalChat(page);
-    await expect(box).toBeVisible({ timeout: 20000 });
-    // 채팅방은 빼지 않고 숨기기만 (그사이 온 알림을 안 놓치게) → 눈에는 안 보임
-    await expect(talkSlot(page)).toHaveClass(/invisible/);
-    await expect(talk.log(page)).toBeHidden();
+    await m.waitTrialTalk(page);
+    // 재판 중에도 채팅방은 숨지 않음, 옛 재판 창 채팅 칸은 없음
+    await expect(talkSlot(page)).not.toHaveClass(/invisible/);
+    await expect(talk.log(page)).toBeVisible();
+    await expect(tribunalChat(page)).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: '채팅 입력' })).toHaveCount(1);
 
     const text = uniq('반론');
-    await box.getByRole('textbox', { name: '채팅 입력' }).fill(text);
-    await box.getByRole('button', { name: '채팅 보내기' }).click();
-    await expect(box.getByRole('log', { name: '채팅 내역' })).toContainText(text);
+    await m.say(page, text);
     await Promise.all(t.bots.map((b) => hears(b, DAY_EVT, text)));
 });
 
@@ -236,20 +250,22 @@ test('A06-E-135 재판 끝 뒤 (6명 판): 봇이 처형되면 재판 창이 닫
     await readableOnScreen(page, notice.locator('p'));
 });
 
-test('A06-E-136 재판 창 151자 (6명 판): 오류 글이 읽히고 봇 0 @game', async ({ user, table }) => {
+test('A06-E-136 재판 중 151자 (6명 판): 채팅방 입력 줄 아래 오류 글이 읽히고 봇 0 @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
     await m.toDay(t, page);
     await ready(page);
     await toTribunal(t, t.bots[4].account.uuid);
 
-    const box = tribunalChat(page);
-    await expect(box).toBeVisible({ timeout: 20000 });
+    // 재판 중 말은 채팅방 바닥 입력 줄로 (A06-E-134와 같은 배치)
+    await m.waitTrialTalk(page);
     const text = `${uniq('긴글')}${'가'.repeat(151)}`.slice(0, 151);
-    await box.getByRole('textbox', { name: '채팅 입력' }).fill(text);
-    await box.getByRole('button', { name: '채팅 보내기' }).click();
-    await expectReadable(box.getByText(TOO_LONG, { exact: true }));
-    await expect(box.getByRole('log', { name: '채팅 내역' })).not.toContainText(text);
+    await talk.input(page).fill(text);
+    await talk.send(page).click();
+    const alert = talk.chat(page).getByRole('alert');
+    await expect(alert).toHaveText(TOO_LONG);
+    await expectReadable(alert);
+    await expect(talk.log(page)).not.toContainText(text);
     await settle(t);
     for (const b of t.bots) expect(heardAny(b, text), `봇 ${b.nickname}이 151자 글을 받음`).toBe(false);
 });
@@ -364,16 +380,14 @@ test('A06-E-141 인터넷 끊김 (5명 판): 끊긴 채 보내면 끊김 문구�
     }
 });
 
-test('A06-E-142 역할 확인 중 보냄 (5명 판): 입력 줄·보내기가 꺼져 있고 까닭 글이 보임, 글을 치고 엔터를 쳐도 봇 0 @game', async ({ user, table }) => {
+test('A06-E-142 역할 확인 중 보냄 (5명 판): 입장 준비 덮개가 화면을 덮고, 글을 치고 엔터를 쳐도 봇 0 @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: FIVE });
     const page = user.page;
     const text = uniq('확인중');
     const input = talk.input(page);
-    // 역할 확인 10초 동안: 입력 줄·보내기 단추가 꺼져 있고 입력 줄 자리 글이 까닭으로 바뀜 (frontend-mobile Composer.jsx)
-    await expect(input, '역할 확인 중 입력 줄').toBeDisabled({ timeout: 3000 });
-    await expect(talk.send(page), '역할 확인 중 보내기 단추').toBeDisabled({ timeout: 3000 });
-    await expect(input).toHaveAttribute('placeholder', REVEAL_LOCKED);
-    // 그래도 쳐 봄: 꺼진 칸은 글도 Enter도 안 받음 (막혀도 기다리지 않게 짧게)
+    // 역할 확인 10초 동안: 모바일(상대 화면)은 입력 줄을 끄지 않고 입장 준비 덮개가 화면 전체를 덮음 (frontend-mobile overlays/EntryPreparingOverlay.jsx)
+    await expect(page.locator('[data-ingame-entry-preparing]'), '역할 확인 중 입장 준비 덮개').toBeVisible({ timeout: 3000 });
+    // 그래도 덮개 너머로 억지로 쳐 봄 (막혀도 기다리지 않게 짧게)
     await input.fill(text, { force: true, timeout: 1000 }).catch(() => {});
     await input.press('Enter', { timeout: 1000 }).catch(() => {});
     // 역할 확인 10초는 손잡이로 안 넘김 → 엔터를 친 때가 아직 그 10초 안이어야 이 케이스를 본 것
@@ -425,7 +439,7 @@ test('A06-E-144 내 칸 길게 누르기 (5명 판): 내 초상을 0.45초 넘�
     await expect(talk.palette(page).getByRole('button', { name: `${BASIC_EMOJI.hello.name} 보내기` })).toBeEnabled();
 });
 
-test('A06-E-145 받은 이모티콘 (5명 판): 봇이 보내면 채팅방에 큰 이모티콘 줄 + 그 봇 초상 띠 칸에 작게 @game', async ({ user, table }) => {
+test('A06-E-145 받은 이모티콘 (5명 판): 봇이 보내면 채팅방에 큰 이모티콘 줄 @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: FIVE });
     const page = user.page;
     await m.toDay(t, page);
@@ -434,8 +448,7 @@ test('A06-E-145 받은 이모티콘 (5명 판): 봇이 보내면 채팅방에 �
     const sender = t.bots[1];
     const reply = await sender.request('send_emoji', { gameId: t.gameId, itemId: BASIC_EMOJI.tears.id });
     expect(reply?.ok).toBe(true);
-    // 띠 칸 이모티콘은 잠깐 떴다 사라짐 → 먼저 봄
-    await expect(talk.slot(page, sender.nickname).locator(`[data-ingame-emoji-bubble="${BASIC_EMOJI.tears.id}"]`)).toBeVisible();
+    // 세로 카톡형엔 초상 띠가 없음(카드 판은 넓은 배치에만) → 채팅방 줄로만 봄
     // 채팅방 줄은 계속 남음: 말풍선 틀 없이 큰 이모티콘 + 보낸 봇 닉네임
     const line = talk.others(page).filter({ has: page.locator(`[data-talk-emoji="${BASIC_EMOJI.tears.id}"]`) });
     await expectReadable(line.locator('[data-talk-emoji]'), { contrast: false });
@@ -463,21 +476,17 @@ test('A06-E-146 죽은 사람 이모티콘 (8명 판): 처형된 뒤 내 초상�
         expect(b.events.filter((r) => r.event === EMOJI_EVT && r.payload?.uuid === user.account.uuid)).toHaveLength(0);
     }
     await expect(talk.mySlot(page).locator('[data-ingame-emoji-bubble]')).toHaveCount(0);
-    await expect(talk.log(page).locator('[data-talk-emoji]')).toHaveCount(0);
 });
 
-test('A06-E-147 새로고침 뒤 밤 시민 (6명 판): 밤에 새로고침해도 입력 줄은 닫힌 채 까닭 글이 읽힘 @game @safari', async ({ user, table }) => {
+test('A06-E-147 새로고침 뒤 밤 시민 (6명 판): 밤에 새로고침해도 밤 화면이 이어지고, 보내도 어느 봇에게도 안 감 @game @safari', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
     await m.toNight(t, page);
-    await readableOnScreen(page, closedReason(page));
 
     await page.reload();
     await expect(talk.layout(page)).toBeVisible({ timeout: 20000 });
-    await expect(talk.phaseLine(page)).toContainText('밤', { timeout: 20000 });
-    await readableOnScreen(page, closedReason(page));
-    await expect(talk.input(page)).toHaveCount(0);
-    await expect(talk.nightBanner(page)).toHaveCount(0);
+    await expect(talk.phaseLine(page)).toContainText('[밤', { timeout: 20000 });
+    await nightCitizenSendsNothing(t, page);
 });
 
 test('A06-E-148 새로고침 뒤 채팅방 (5명 판): 말 2줄은 남고 이모티콘 줄은 사라짐 @game', async ({ user, table }) => {
@@ -523,15 +532,14 @@ test('A06-E-149 세로 → 가로 → 세로 (5명 판): 화면을 돌려도 말
     await expectReadable(emojiLine, { contrast: false });
 });
 
-test('A06-E-150 폰 가로 밤 시민 (6명 판): 가로 배치에서도 입력 줄 대신 까닭 글이 읽힘 @game', async ({ user, table }) => {
+test('A06-E-150 폰 가로 밤 시민 (6명 판): 가로 배치에서 보내도 어느 봇에게도 안 감 @game', async ({ user, table }) => {
     await user.page.setViewportSize(LANDSCAPE);
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
     await m.toDay(t, page, { line: undefined });
     await wideToNight(t, page);
     await expect(talk.layout(page)).toHaveCount(0);
-    await readableOnScreen(page, closedReason(wideChat(page)));
-    await expect(talk.input(page)).toHaveCount(0);
+    await nightCitizenSendsNothing(t, page, wideChat(page));
 });
 
 test('A06-E-151 폰 가로 밤 의사 (6명 판 직접 의사 2): 가로 배치에서 보내면 의사 봇만 받음 @game', async ({ user, table }) => {
@@ -604,18 +612,16 @@ test('A06-E-154 내 글 오른쪽·남 글 왼쪽 (5명 판): 낮 토론에서 �
     expect(theirBox.x + theirBox.width / 2).toBeLessThan(middle);
 });
 
-test('A06-E-155 둘째 밤 시민 (7명 판): 2일 밤에도 입력 줄은 닫히고 까닭 글이 읽힘 @game', async ({ user, table }) => {
+test('A06-E-155 둘째 밤 시민 (7명 판): 2일 밤에도 보내면 어느 봇에게도 안 감 @game', async ({ user, table }) => {
     const t = await seat(table, user, { botRoles: SEVEN });
     const page = user.page;
     const firstNight = await m.toNight(t, page);
-    await readableOnScreen(page, closedReason(page));
 
     await m.goPhase(t, page, (s) => s.phase === 'DAY' && s.dayIndex > firstNight.dayIndex, { line: '낮' });
     await ready(page);
     await m.goPhase(t, page, (s) => s.phase === 'NIGHT' && s.dayIndex > firstNight.dayIndex, { line: '밤' });
-    await expect(talk.phaseLine(page)).toContainText('제 2일');
-    await readableOnScreen(page, closedReason(page));
-    await expect(talk.input(page)).toHaveCount(0);
+    await expect(talk.phaseLine(page)).toContainText('[밤');
+    await nightCitizenSendsNothing(t, page);
 });
 
 test('A06-E-156 좁은 화면 입력 (5명 판, 높이 560): 글칸을 눌러 입력하는 동안 입력 줄이 화면 안에서 읽힘 @game', async ({ user, table }) => {
@@ -660,10 +666,9 @@ test('A06-E-158 밤 → 낮 (6명 판 사람 의사): 밤에 쓴 글은 낮 채�
     expect((await m.botSay(t, 1, dayText))?.ok).toBe(true);
     await expect(talk.others(page).filter({ hasText: dayText })).toBeVisible();
     await expect(talk.log(page)).not.toContainText(nightText);
-    await expect(talk.nightBanner(page)).toHaveCount(0);
 });
 
-test('A06-E-159 폰 가로 크게 보기 시트 (6명 판): 밤에 시트를 열면 시트 입력 줄 자리에 까닭 글이 읽힘 @game', async ({ user, table }) => {
+test('A06-E-159 폰 가로 크게 보기 시트 (6명 판): 밤에 시트 입력 줄로 보내도 어느 봇에게도 안 감 @game', async ({ user, table }) => {
     await user.page.setViewportSize(LANDSCAPE);
     const t = await seat(table, user, { botRoles: SIX });
     const page = user.page;
@@ -681,23 +686,22 @@ test('A06-E-159 폰 가로 크게 보기 시트 (6명 판): 밤에 시트를 열
     await expect(async () => {
         await m.clearOverlays(page);
         if (!(await sheet.isVisible().catch(() => false))) await openSheet();
-        await expectReadable(closedReason(sheet), { timeout: 1500 });
+        await expect(sheet.getByRole('textbox', { name: '채팅 입력' })).toBeVisible({ timeout: 1500 });
     }).toPass({ timeout: 45_000 });
-    await expect(sheet.getByRole('textbox', { name: '채팅 입력' })).toHaveCount(0);
+    await nightCitizenSendsNothing(t, page, sheet);
 });
 
-test('A06-E-160 무죄 → 밤 (7명 판): 재판이 무죄로 끝나 밤이 되면 의사 화면에 "밤 · 같은 직업끼리" 띠가 읽힘 @game @safari', async ({ user, table }) => {
+test('A06-E-160 무죄 → 밤 (7명 판): 재판이 무죄로 끝나 밤이 되면 의사 화면 명패가 밤이고 "최후의 변론" 단추가 사라짐 @game @safari', async ({ user, table }) => {
     const t = await seat(table, user, { role: 'DOCTOR', botRoles: ['JOKER', 'CITIZEN', 'CITIZEN', 'CITIZEN', 'CITIZEN', 'CITIZEN'] });
     const page = user.page;
     await m.toDay(t, page);
     await ready(page);
-    await expect(talk.nightBanner(page)).toHaveCount(0);
 
     const defendant = t.bots[5];
     await judge(t, defendant.account.uuid, 'NOT_GUILTY');
     expect((await t.player(defendant.account.uuid)).alive).toBe(true);
     expect((await t.state()).phase).toBe('NIGHT');
 
-    await expect(talk.phaseLine(page)).toContainText('밤', { timeout: 20000 });
-    await readableOnScreen(page, talk.nightBanner(page));
+    await expect(talk.phaseLine(page)).toContainText('[밤', { timeout: 20000 });
+    await expect(page.getByTestId('tribunal-presentation-open')).toHaveCount(0, { timeout: 20000 });
 });

@@ -1,6 +1,6 @@
 'use strict';
 
-// 모바일 방 만들기 브라우저 시험 — 정원 5·7·10 × 공개/코드, 지운 3칸 없음, 정원·광대·시간 칸 끝값, 재판이 투표 따라감, 직접 지정 합 넘음, 방 이름·코드 읽힘, 폭 360·375·412
+// 모바일 방 만들기 브라우저 시험 — 정원 5·7·10 × 공개/코드, 지운 3칸 없음, 정원·광대·시간 칸 끝값, 재판이 투표 따라감, 직접 지정 합 넘음, 파티 인원·코드 읽힘, 폭 360·375·412
 // 목록 A01a-방만들기-설정-시작.md 번호 A01-E-101~115 (사파리도: E-101·113), 돌리지 않고 모임만: npx playwright test --list tests/mobile/a01-create.spec.js
 const { test, expect } = require('../../helpers/fixtures');
 const { expectReadable } = require('../../helpers/visible');
@@ -67,11 +67,13 @@ test('A01-E-111 모바일 정원 7 + 광대2·의사2·경비원2·마녀사냥�
     await expect(createButton(page)).toBeDisabled();
 });
 
-test('A01-E-112 모바일 대기방 위 줄 "닉네임의 방"·코드 6자리 읽힘', async ({ user }) => {
+// 모바일(상대 화면) 대기방 위 줄엔 방 이름이 없고 파티 인원만 (frontend-mobile matching/components/layout/MatchingTopBar.jsx)
+test('A01-E-112 모바일 대기방 위 줄 "파티 인원 1명"·"초대코드 공유" 창 코드 6자리 읽힘', async ({ user }) => {
     const page = user.page;
     const room = await K.createRoomOn(user);
-    await expect(K.roomTitle(page)).toHaveText(K.titleOf(user));
-    await expectReadable(K.roomTitle(page));
+    const party = page.getByText('파티 인원 1명');
+    await expect(party).toBeVisible();
+    await expectReadable(party);
     const shown = await K.openShownCode(page);
     expect(shown.code).toBe(room.roomCode);
     await expectReadable(shown.cell);

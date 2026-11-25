@@ -3,7 +3,7 @@
 // 모바일 재판 중 피고가 빠지는 시험: 피고 봇이 스스로 나가면 그 사람 사망·밤, 끊긴 봇이 피고로 뽑히면 재판 없이 밤, 재판 도중 끊긴 피고가 60초 탈락하면 그 사람 사망·밤
 // 목록 A04-E-103·107·110 (시험목록/A04-재판.md "브라우저 — 간단" 모바일 몫) — 사용자 결정(2026-11-16 오전 끊긴 피고, 낮 스스로 나간 피고)대로 씀: "재판 취소"가 아니라 피고 사망
 const { test, expect } = require('../../helpers/fixtures');
-const { talk, expectPlayerStatus } = require('./_talk');
+const { talk, expectPlayerStatus, closeTrialSheet } = require('./_talk');
 const A = require('../ingame/_a04-multi');
 
 const { trial } = A;
@@ -61,6 +61,8 @@ test('A04-E-110 재판 도중 끊긴 피고 봇이 60초 탈락하면 재판 창
     const page = user.page;
     const { t, d } = await A.startTrial(table, { humans: [user], bots: 5 });
     d.socket.disconnect();
+    // startTrial이 열어 둔 "최후의 변론" 시트가 목록 단추를 덮음 → 사람처럼 시트를 닫고 목록을 엶
+    await closeTrialSheet(page);
     await expectPlayerStatus(page, d.nickname, '연결 끊김', { timeout: 10000 });
     // 60초 규칙 자체를 보는 시험이 아니라 손잡이로 끊김 기다림을 끝냄
     const expired = await t.expireGraces();

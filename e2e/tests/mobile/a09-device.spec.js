@@ -37,7 +37,6 @@ test('A09-E-078 모바일 7명 판, 다른 폰으로 로그인 → 새 화면에
     await expect(page).toHaveURL(/\/login/, { timeout: 20_000 });
     // 새 화면: 같은 날·같은 단계, 내 칸이 산 채
     await clearOverlays(other.page);
-    await expect(talk.phaseLine(other.page)).toContainText('제 1일');
     await expect(talk.phaseLine(other.page)).toContainText('낮');
     await expectPlayerStatus(other.page, user.account.nickname, null);
     const row = await t.player(me);

@@ -332,21 +332,21 @@ for (const c of NONE_CASES) {
     });
 });
 
-// ── 채팅 알림 줄 (A05-E-650~652, 7명) ──
+// ── 채팅 알림 줄 (A05-E-650~652, 7명) — 모바일(상대 화면) 채팅방 알림 줄은 "○○님이 죽었습니다" (frontend-mobile utils/talk/playerNotices.js) ──
 [['CITIZEN', 650], ['DEAD', 651]].forEach(([seat, no]) => {
-    test(`A05-E-${no} 채팅 알림 줄 · 죽음 · ${SEAT_NAME[seat]} 7명: 채팅에 "지난밤 ○○님이 살해당했습니다" 줄이 읽힘 @game${no === 650 ? ' @safari' : ''}`, async ({ user, table }) => {
+    test(`A05-E-${no} 채팅 알림 줄 · 죽음 · ${SEAT_NAME[seat]} 7명: 채팅에 "○○님이 죽었습니다" 줄이 읽힘 @game${no === 650 ? ' @safari' : ''}`, async ({ user, table }) => {
         const g = await openGame({ user, table }, { n: 7, seat });
         const victim = await killNight(g, seat);
         await expectKilled(g.page, victim.nickname);
         await finishShow(g.page);
         await closeDayEntrance(g.page);
-        const line = talk.system(g.page).filter({ hasText: killedText(victim.nickname) });
+        const line = talk.system(g.page).filter({ hasText: `${victim.nickname}님이 죽었습니다` });
         await expect(line).toHaveCount(1);
         await expectReadable(line.locator('p'));
     });
 });
 
-test('A05-E-652 채팅 알림 줄 · 살림 · 산 시민 7명: 채팅에 살해 줄이 없음 @game', async ({ user, table }) => {
+test('A05-E-652 채팅 알림 줄 · 살림 · 산 시민 7명: 채팅에 "죽었습니다" 줄이 없음 @game', async ({ user, table }) => {
     const g = await openGame({ user, table }, { n: 7, seat: 'CITIZEN' });
     await savedNight(g, 'CITIZEN');
     await expectSaved(g.page);
@@ -354,7 +354,7 @@ test('A05-E-652 채팅 알림 줄 · 살림 · 산 시민 7명: 채팅에 살해
     await closeDayEntrance(g.page);
     // 낮 화면까지 온 뒤에 봄 (단계 줄이 낮)
     await expect(talk.phaseLine(g.page)).toContainText('낮');
-    await expect(talk.system(g.page).filter({ hasText: '살해당했습니다' })).toHaveCount(0);
+    await expect(talk.system(g.page).filter({ hasText: '죽었습니다' })).toHaveCount(0);
 });
 
 // ── 밤 암살로 판 끝: 연출 뒤 결과 화면 (A05-E-653~654, 5명 광대 2) ──
@@ -479,6 +479,9 @@ test('A05-E-679 경비원 사람은 낮에 조사 결과 글을 봄 (8명): 조�
     const doctor = P(g.cast.DOCTOR[0]);
     await night.toTurn(g.t, 'JOKER', { dayIndex: 1 });
     await playNight(g, { JOKER: null, GUARD: doctor });
+    // 광대가 건너뛴 밤 → "아무 일도" 글 창이 먼저, 확인으로 닫아야 내 조사 결과가 이어 뜸 (결과는 낮 시작 연출 다음)
+    await expectSaved(g.page);
+    await finishShow(g.page);
     const result = g.page.locator('[data-ingame-night-private-result]');
     await expectReadable(result.getByText(`조사 결과, ${doctor.nickname} 님의 역할은 의사입니다.`, { exact: true }), { timeout: 20_000 });
 });

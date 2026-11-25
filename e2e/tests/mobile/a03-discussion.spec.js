@@ -5,7 +5,7 @@
 const { test, expect } = require('../../helpers/fixtures');
 const ui = require('../../helpers/ui');
 const { sleep } = require('../../helpers/wait');
-const { talk, startTalkGame, toDay, toVote, clearOverlays, getExecuted, say, CHAT_GAP_MS } = require('./_talk');
+const { talk, startTalkGame, toDay, toVote, clearOverlays, getExecuted, say, CHAT_GAP_MS, expectDayLine } = require('./_talk');
 
 // ── 이 파일 도우미 (공용으로 올릴 후보: 모바일 낮 투표 묶음) ──
 
@@ -75,14 +75,14 @@ async function openGame(table, user, n, settings) {
     return t;
 }
 
-// "낮이 되었습니다" 창이 뜰 때까지 (앞에 남은 "밤이 되었습니다"·밤 안내는 닫으며)
+// "낮이 되었습니다" 창이 뜰 때까지 (앞에 남은 "밤이 되었습니다"·밤 안내·"지난밤 아무 일도 일어나지 않았습니다" 창은 닫으며)
 async function waitDayNotice(page) {
     await expect(async () => {
         const notice = noticeOf(page);
         if (await notice.isVisible() && (await notice.innerText()).includes('밤이 되었습니다')) {
             await notice.getByRole('button', { name: '확인' }).click();
         }
-        await ui.closeOverlays(page, { rounds: 1, names: ['밤 역할 안내', '알림'], keepWatching: false });
+        await ui.closeOverlays(page, { rounds: 1, names: ['밤 역할 안내', '알림'], keepWatching: false, quietDawn: true });
         await expect(notice).toContainText('낮이 되었습니다', { timeout: 1_000 });
     }).toPass({ timeout: 30_000 });
 }
@@ -145,7 +145,7 @@ test('A03-E-163 모바일 8명 판 2일에도 "낮이 되었습니다" 창 → �
     // 1일 투표는 아무도 안 내 밤 → 밤 차례는 손잡이로 넘김
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2);
     await waitDayNotice(user.page);
-    await expect(talk.phaseLine(user.page)).toContainText('제 2일');
+    await expectDayLine(user.page, t, 2);
     await expectNoticeBlocksThenOpens(user.page);
 });
 
@@ -187,15 +187,16 @@ test('A03-E-172 모바일 5명 판 준비 단추 글 "투표 시작 준비" → 
     await expect(readyButton(user.page)).toHaveText('준비 완료');
 });
 
-test('A03-E-174 모바일 7명 판 2일 죽은 나 → 준비 단추 없음 @game', async ({ user, table }) => {
+test('A03-E-174 모바일 7명 판 2일 죽은 나 → 준비 단추 꺼짐 @game', async ({ user, table }) => {
     test.setTimeout(240_000);
     const t = await openGame(table, user, 7);
     await getExecuted(t, uuidOf(user), { pages: [user.page] });
     await t.stopBots();
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_DISCUSSION');
     await clearOverlays(user.page);
-    await expect(talk.phaseLine(user.page)).toContainText('제 2일');
-    await expect(readyButton(user.page)).toHaveCount(0);
+    await expectDayLine(user.page, t, 2);
+    // 모바일(상대 화면)은 죽은 사람에게도 준비 단추를 그리되 꺼 둠 (frontend-mobile ingame/hooks/actions/buildRowActions.js)
+    await expect(readyButton(user.page)).toBeDisabled();
 });
 
 test('A03-E-176 모바일 6명 판 준비 안 한 봇이 나감 → 나머지 다 준비 → 바로 투표 @game', async ({ user, table }) => {

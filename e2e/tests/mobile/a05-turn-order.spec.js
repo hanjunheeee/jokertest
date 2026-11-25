@@ -83,7 +83,8 @@ test('A05-E-150 모바일 6명 의사 봇 첫날 처형: 첫 밤 시민 화면�
     await expectReadable(notice, { timeout: 2500 });
 
     // 의사 차례가 지나 낮이 될 때까지 걸린 시간 (허용 폭 ±1.5초)
-    await talk.phaseLine(page).filter({ hasText: '제 2일' }).waitFor({ state: 'attached', timeout: 25_000 });
+    // 모바일 명패 줄엔 날짜 글이 없음 → 밤 다음 낮 명패 "[낮"이 뜰 때까지
+    await talk.phaseLine(page).filter({ hasText: '[낮' }).waitFor({ state: 'attached', timeout: 25_000 });
     const waited = Date.now() - openedAt;
     expect(waited).toBeGreaterThanOrEqual(6000 - 1500);
     expect(waited).toBeLessThanOrEqual(18_000 + 1500);

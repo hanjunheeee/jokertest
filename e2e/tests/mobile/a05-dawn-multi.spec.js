@@ -11,7 +11,6 @@ const night = require('../ingame/b-night/_night');
 // 화면 글 (frontend utils/dawnReport.js·utils/selectInGameTimebarStatusMessage.js와 같은 글)
 const killedText = (nickname) => `지난밤 ${nickname}님이 살해당했습니다`;
 const WAIT_TEXT = '진행을 기다리는 중입니다.';
-const ROLE_WORDS = /광대|귀족|시민|의사|경비원|마녀사냥꾼/; // 시민 직업 화면 이름 "귀족"과 옛 이름 "시민" 둘 다
 // 5초 규칙 허용 폭 (±1.5초, 더 늘리지 않음)
 const FIVE_MIN_MS = 3500;
 const FIVE_MAX_MS = 6500;
@@ -55,7 +54,9 @@ async function watch(page) {
             seen('msg', '[data-ingame-dawn-report-message]', text);
             seen('report', '[data-ingame-dawn-report]', (el) => el.getAttribute('data-ingame-dawn-report'));
             // 마감이 당겨진 동안만 시간 줄에 붙는 표시 → 켜짐·꺼짐을 따로 적음
-            const settled = document.querySelector('[data-ingame-phase-settle]') !== null;
+            // 모바일(상대 화면)은 data-ingame-phase-settle 표시가 없고 명패 줄 글이 "[5초 뒤 마감]"으로 바뀜 → 둘 중 하나
+            const settled = document.querySelector('[data-ingame-phase-settle]') !== null
+                || (document.querySelector('[data-ingame-phase-timer-mobile]')?.textContent || '').includes('5초 뒤 마감');
             if (settled !== (last.settled === true)) push(settled ? 'settleOn' : 'settleOff', '');
             last.settled = settled;
             const waiting = (document.body?.textContent || '').includes('진행을 기다리는 중입니다.');
@@ -160,8 +161,8 @@ async function expectKilled(page, nickname) {
         .filter({ hasText: killedText(nickname) })
         .first();
     await expectReadable(line);
+    // 글이 정확히 이 한 줄이라 직업 글이 끼지 않음 (영상이 끝나면 글이 사라져 다시 읽지 않음)
     await expect(line).toHaveText(killedText(nickname));
-    expect(await line.innerText()).not.toMatch(ROLE_WORDS);
 }
 
 /** 밤 동안 연출 흔적 없음: 기록·화면에 영상·글 창·기다림 창이 없음 */

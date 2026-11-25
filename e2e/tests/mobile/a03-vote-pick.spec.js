@@ -122,15 +122,15 @@ const OUTCOME_TEXT = Object.freeze({
 });
 
 // 판정 뒤 화면: 현황 결과 글 + 재판이면 재판 창(피고 이름), 밤이면 밤 안내·재판 창 없음
-// 재판이면 재판 연출이 뜨면서 현황 창이 닫힘(재판 단추를 가려서 — frontend-mobile useActionRow) → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
+// 재판이면 모바일(상대 화면)은 현황 창이 저절로 안 닫혀 재판 단추를 덮음 → 재판 시트를 열 때(openTrialSheet) 닫음 → 창 닫힘까지 보고, 결과 글은 statusAfterTribunal로 밤에 다시 열어 봄
 // (전엔 닫히는 움직임 동안 글을 읽어 맞았다 틀렸다 함 — A03-E-025·151·211·221)
 async function expectOutcome(page, panel, kind, targetNick) {
     // 세로 카톡형 재판: 고발 연출(1초 남짓) 뒤 "최후의 변론" 시트 → 시트 설명 "피고: 닉네임"
     const tribunal = page.locator('[data-ingame-tribunal-presentation], [data-testid="tribunal-presentation-open"], [data-testid="tribunal-presentation-sheet"]');
     if (kind === 'TRIBUNAL') {
         await expect(tribunal.first()).toBeVisible({ timeout: 15_000 });
-        await expect(panel).toBeHidden();
         const sheet = await openTrialSheet(page);
+        await expect(panel).toBeHidden();
         await expect(sheet).toContainText(`피고: ${targetNick}`);
         await sheet.getByRole('button', { name: '최후의 변론 닫기' }).click();
         await expect(sheet).toBeHidden();
@@ -234,20 +234,20 @@ test('A03-E-141 모바일 7명 판 2일(봇 1명 죽음) → 죽은 사람 카�
     expect(await votableNicks(user.page, alive)).toEqual([...alive].sort());
 });
 
-test('A03-E-143 모바일 7명 판 2일 내가 죽음 → 기권 단추 없음·누를 수 있는 투표 없음 @game', async ({ user, table }) => {
+test('A03-E-143 모바일 7명 판 2일 내가 죽음 → 기권 단추 꺼짐·누를 수 있는 투표 없음 @game', async ({ user, table }) => {
     test.setTimeout(240_000);
     const roles = rolePlan(7);
     const t = await startTalkGame(table, user, { bots: 6, roles });
     await expectRoles(t, roles);
     await dayTwoVoteAfter(t, user.page, { killMe: true });
-    // 화면도 투표 단계로 바뀐 뒤 봄: 죽은 사람은 기권 단추가 없어, 목록의 산 봇 줄 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글)
+    // 화면도 투표 단계로 바뀐 뒤 봄: 죽은 사람의 기권 단추는 꺼져 있어, 목록의 산 봇 줄 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글)
     await expect(async () => {
         const row = await openPlayer(user.page, t.bots[0].nickname);
         await expect(row.getByText('사망한 플레이어는 행동할 수 없습니다')).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 15_000 });
     await closeRoster(user.page);
-    // 기권 단추: 죽은 사람에겐 안 그림
-    await expect(abstainButton(user.page)).toHaveCount(0);
+    // 기권 단추: 모바일(상대 화면)은 죽은 사람에게도 그리되 꺼 둠
+    await expect(abstainButton(user.page)).toBeDisabled();
     expect(await votableNicks(user.page, t.bots.map((b) => b.nickname))).toEqual([]);
 });
 

@@ -4,6 +4,7 @@
 // result/a08-*(어려움)·mobile/a08-*.spec.js가 씀 (이름이 .spec이 아니라 시험으로 안 돎, PC·폰 화면 둘 다)
 const { expect } = require('@playwright/test');
 const { e2e } = require('../../helpers/internal');
+const { E2E } = require('../../helpers/env');
 const { Table } = require('../../helpers/game');
 const ui = require('../../helpers/ui');
 const {
@@ -45,7 +46,10 @@ const lobbyButton = (page) => page.getByRole('button', { name: '로비로', exac
 const leaveNotice = (page) => page.getByTestId('result-leave-notice');
 const closeTimer = (page) => page.getByTestId('result-close-timer');
 const startButton = (page) => page.getByRole('button', { name: '게임시작' });
-const hostSeat = (page) => page.getByTestId('matching-reserved-host-slot');
+// 비워 둔 방장 자리: PC는 자리 칸(data-testid), 모바일(상대 화면)은 이름 없는 빈 실루엣이라 판 아래 기다림 글로 봄 (frontend matching/hooks/useMatchingPage.js 안내 글)
+const hostSeat = (page) => (page.url().startsWith(E2E.mobileUrl)
+    ? page.getByText(TEXT.hostSeatNotice, { exact: true })
+    : page.getByTestId('matching-reserved-host-slot'));
 const blockedDialog = (page) => page.locator('[data-game-start-blocked]');
 // 5명이 안 돼 "게임시작"이 미리 꺼졌을 때 방장 화면 버튼 줄 위 까닭 글 (PC·폰 같은 표시, 손님 화면엔 없음)
 const startLockedReason = (page) => page.getByTestId('start-locked-reason');
@@ -440,6 +444,17 @@ async function seatPhoneHosted(bots, host, guests, botCount) {
  * count를 주면 글의 "지금 N명"까지 맞춰 봄
  */
 async function expectStartBlocked(page, { count = null } = {}) {
+    // 모바일(상대 화면)은 "게임시작"을 미리 안 끔 → 누르면 서버 거절 글이 막힘 창에 뜸, 확인으로 닫음 (판·방은 그대로)
+    if (page.url().startsWith(E2E.mobileUrl)) {
+        await startButton(page).click();
+        const alert = blockedDialog(page).getByRole('alert');
+        // 인원 수를 알면 인원 모자람 글, 모르면 인원·준비 거절 글 중 하나
+        await expect(alert).toHaveText(count === null ? new RegExp(`^(${TEXT.minPlayers}|아직 준비하지 않은 참가자가 있습니다\\.)$`) : TEXT.minPlayers);
+        await expectReadable(alert);
+        await blockedDialog(page).getByRole('button', { name: '확인' }).click();
+        await expect(blockedDialog(page)).toHaveCount(0);
+        return;
+    }
     await expect(startButton(page)).toBeDisabled();
     const reason = startLockedReason(page);
     await expect(reason).toHaveText(count === null ? TEXT.startLocked : `5명부터 시작할 수 있습니다. (지금 ${count}명)`);

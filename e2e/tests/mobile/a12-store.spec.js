@@ -26,7 +26,7 @@ const blockReason = (page) => st.detail(page).getByTestId('purchase-block-reason
 
 /**
  * 모바일 상점 열기 (입장 영상 건너뛰기 → 아래 줄 "보유 재화" 칸이 눌리는 상태가 될 때까지)
- * 합친 뒤 "쿠폰" 단추는 숨김(frontend store/constants/storeLayoutStyle.js STORE_SHOW_COUPON_BUTTON=false)이라 준비 표시로 못 씀
+ * 쿠폰 단추는 화면 기본이 숨김(빌드 값 VITE_STORE_COUPON_BUTTON, 시험 빌드는 켬)이라 켜짐에 기대지 않게 "보유 재화" 칸을 준비 표시로 씀
  */
 async function gotoStore(page, path = '/store') {
     await page.goto(path);
@@ -135,21 +135,21 @@ for (const [id, gold, enabled] of [['A12-E-082', 499, false], ['A12-E-083', 500,
     });
 }
 
-test('A12-E-084 다른 탭에서 같은 스킨을 먼저 삼 → 이 탭에서 구매 → "이미 보유한 상품입니다."가 단추 아래 읽힘 (모바일)', async ({ user }) => {
+test('A12-E-084 다른 탭에서 같은 스킨을 먼저 삼 → 이 탭에서 구매 → "이미 보유한 상품입니다."가 구매 결과 줄에 읽힘 (모바일)', async ({ user }) => {
     const { page, account, context } = user;
     await st.grant(account.uuid, 'GOLD', 1000);
     await openItem(page, '스킨', SKIN.slot);
     const other = await context.newPage();
     await openItem(other, '스킨', SKIN.slot);
     await buyButton(other).click();
-    await expect(st.detail(other).getByText(M.done)).toBeVisible();
+    // 모바일(상대 화면) 구매 결과 줄은 상품 설명 칸 밖(상점 패널 위, frontend-mobile store/components/panel/StorePanel.jsx)
+    await expect(other.getByText(M.done)).toBeVisible();
 
     // 새 탭이 붙어 이 탭에 뜬 안내 창부터 닫음 (화면을 덮음)
     await closeOtherTabNotice(page);
     await buyButton(page).click();
-    const notice = st.detail(page).getByText(M.owned);
+    const notice = page.getByText(M.owned);
     await expectReadable(notice);
-    await expectRightBelow(notice, buyButton(page));
 });
 
 test('A12-E-085 구매 요청만 인터넷 끊김 → 우리말 끊김 글이 읽힘, "Failed to fetch" 같은 영어 없음 (모바일) @safari', async ({ user }) => {
@@ -158,7 +158,7 @@ test('A12-E-085 구매 요청만 인터넷 끊김 → 우리말 끊김 글이 �
     await openItem(page, '스킨', SKIN.slot);
     await page.route(BULK_URL, (route) => route.abort('internetdisconnected'));
     await buyButton(page).click();
-    await expectReadable(st.detail(page).getByText(M.network));
+    await expectReadable(page.getByText(M.network));
     await expect(page.getByText(/Failed to fetch|Load failed|NetworkError/i)).toHaveCount(0);
 });
 
@@ -180,7 +180,7 @@ test('A12-E-087 구매 직전 로그인 쿠키 지움 → 구매 → 다시 로�
     await expect(page).toHaveURL(/\/login/);
     await ui.loginViaUi(page, account);
     await gotoStore(page);
-    await expectReadable(st.detail(page).getByText(M.authLost));
+    await expectReadable(page.getByText(M.authLost));
 });
 
 for (const [id, width, height] of [['A12-E-088', 375, 667], ['A12-E-089', 390, 844], ['A12-E-090', 360, 640]]) {
@@ -203,7 +203,7 @@ test('A12-E-092 남작 테두리 삼 → "보유중", 골드 200 줄어듦 (모�
     await st.grant(account.uuid, 'GOLD', 1000);
     await openItem(page, '프로필 테두리', '남작 200');
     await buyButton(page).click();
-    await expect(st.detail(page).getByText(M.done)).toBeVisible();
+    await expect(page.getByText(M.done)).toBeVisible();
     await expect(buyButton(page, '보유중')).toBeDisabled();
     await expect(st.balance(page, '골드', 800)).toBeVisible();
     expect(await st.owned(account.uuid)).toContain('profile-border-남작');
@@ -292,6 +292,7 @@ test('A12-E-107 [지금 동작] 착용 시트 → 안 산 스킨(귀족-블러�
     await expect(sheet).toBeVisible();
     const locked = sheet.getByRole('button', { name: '귀족-블러드, 미보유', exact: true });
     await expect(locked).toBeDisabled();
-    await locked.click({ force: true });
+    // 꺼진 칸은 화면 밖일 수 있어 누름 사건만 보냄 (꺼져 있으니 안 골라짐)
+    await locked.dispatchEvent('click');
     await expect(locked).toHaveAttribute('aria-pressed', 'false');
 });

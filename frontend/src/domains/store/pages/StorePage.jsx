@@ -52,6 +52,7 @@ export default function StorePage() {
         status={economyStatus}
         onRetry={retryEconomySummary}
       />
+      {/* 쿠폰 단추는 기본 숨김, 빌드 값 VITE_STORE_COUPON_BUTTON=1 이면 보임 (모바일 위 줄과 같은 값) */}
       <StoreCouponButton visible={introDone && STORE_SHOW_COUPON_BUTTON} />
       <StorePanel visible={introDone} />
 

@@ -43,9 +43,9 @@ function isCloseupLikeVariant(variant) {
   return variant === "closeup" || variant === "tribunal"
 }
 
-// 판 위 채팅 기본 글자 모양 (갈색 종이 위라 가장 짙은 갈색이어야 읽힘, 크게 보기·재판 글자도 같은 색)
+// 판 위 채팅 기본 글자 모양 (갈색 종이 위라 가장 짙은 색이어야 읽힘, 리메이크 틀 아래쪽 바탕에서 #140c08은 대비 4.45라 검정 — 크게 보기·재판 글자는 그대로)
 export const TEXT_TYPOGRAPHY_CLASS =
-  "font-subheading text-[clamp(0.72rem,3.2cqi,0.92rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
+  "font-subheading text-[clamp(0.72rem,3.2cqi,0.92rem)] font-bold leading-[1.35] tracking-[0.04em] text-[#000]"
 
 // 종류별 글자 모양 고르기
 export function getInGameChatTextTypographyClass(variant = "board") {
@@ -59,7 +59,7 @@ export function getInGameChatTextTypographyClass(variant = "board") {
 export const INGAME_CHAT_TEXT_SCALE_CSS_VAR = "--ingame-chat-text-scale"
 
 const TEXT_TYPOGRAPHY_SCALED_CLASS =
-  "font-subheading text-[clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"
+  "font-subheading text-[clamp(calc(0.72rem*var(--ingame-chat-text-scale,1)),calc(3.2cqi*var(--ingame-chat-text-scale,1)),calc(0.92rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#000]"
 
 const CLOSEUP_TEXT_TYPOGRAPHY_SCALED_CLASS =
   "font-subheading text-[clamp(calc(0.95rem*var(--ingame-chat-text-scale,1)),calc(4.15cqi*var(--ingame-chat-text-scale,1)),calc(1.28rem*var(--ingame-chat-text-scale,1)))] font-bold leading-[1.35] tracking-[0.04em] text-[#140c08]"

@@ -8,6 +8,7 @@ const ui = require('../../helpers/ui');
 const { e2e } = require('../../helpers/internal');
 const { expectReadable } = require('../../helpers/visible');
 const { customRoleSettings } = require('../../helpers/game');
+const { E2E } = require('../../helpers/env');
 const { api, botApi } = require('../../helpers/friends');
 const { openFriendPanel, openTab } = require('../lobby/lobbyHelpers');
 const { openRoomList, findRoomRow } = require('./roomHelpers');
@@ -127,8 +128,20 @@ async function roomSize(hostUuid) {
  */
 const seatBadges = (page) => page.locator('xpath=//div[img]/span[normalize-space(.)="준비완료" or normalize-space(.)="대기중"]');
 
-/** 자리 글이 그 차례대로 보일 때까지 → expectSeats(page, seats(R, 4, W)) */
+// 모바일(상대 화면) 자리: 이름·글 없이 실루엣 그림만, 준비한 자리 칸에만 data-ready (frontend-mobile matching/components/slots/SlotGrid.jsx)
+// 자리 칸 = 매칭 틀 안내 글 바로 다음 칸의 줄들 안 그림 칸
+const PHONE_SLOTS = 'xpath=//p[normalize-space(.)="무도회 속에 숨어든 광대를 찾아 떠나시겠습니까?"]/following-sibling::div[1]/div/div[img]';
+const isPhone = (page) => page.url().startsWith(E2E.mobileUrl);
+/** 모바일 자리 칸들을 PC 자리 글 목록 모양으로 (준비 = "준비완료", 아니면 "대기중") */
+const phoneSeatTexts = (page) => page.locator(PHONE_SLOTS)
+    .evaluateAll((els) => els.map((el) => (el.hasAttribute('data-ready') ? '준비완료' : '대기중')));
+
+/** 자리 글이 그 차례대로 보일 때까지 → expectSeats(page, seats(R, 4, W)), 모바일은 실루엣 준비 표시로 봄 */
 async function expectSeats(page, list, { timeout = 15_000 } = {}) {
+    if (isPhone(page)) {
+        await expect.poll(() => phoneSeatTexts(page), { timeout, message: '자리 준비 표시 (모바일 실루엣)' }).toEqual(list);
+        return;
+    }
     await expect(seatBadges(page)).toHaveText(list, { timeout });
 }
 

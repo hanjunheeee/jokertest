@@ -40,7 +40,6 @@ test('A09-E-006 모바일 5명 판, 확인 창에서 취소 → 판 화면·단�
     await K.pressExit(page, { accept: false });
     await expect(page).toHaveURL(/\/ingame/);
     await expect(talk.layout(page)).toBeVisible();
-    await expect(talk.phaseLine(page)).toContainText('제 1일');
     await expect(talk.phaseLine(page)).toContainText('낮');
     await expectReadable(talk.phaseLine(page));
     const after = await t.state();
