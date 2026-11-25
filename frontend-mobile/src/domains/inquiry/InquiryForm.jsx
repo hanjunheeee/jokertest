@@ -16,9 +16,6 @@ import {
 } from "@m/domains/inquiry/inquiryMobileStyle.js"
 
 export default function InquiryForm({ form, setCategory, setTitle, setBody, send, isSending }) {
-  // 제목이 비면(빈칸만 있어도) 보내기 버튼을 끔 (눌러도 못 보내는 버튼을 켜 두지 않기, 데스크톱과 같음)
-  const titleMissing = form.title.trim().length === 0
-
   return (
     <div className="flex flex-col" data-testid="inquiry-form">
       <p className={INQUIRY_LABEL_CLASS} id="m-inquiry-category-label">{INQUIRY_COPY.categoryLabel}</p>
@@ -51,7 +48,7 @@ export default function InquiryForm({ form, setCategory, setTitle, setBody, send
 
       <ImageButton look={INQUIRY_SUBMIT_BUTTON_LOOK} src={REPORT_BUTTON_ASSETS.cancel}
         label={isSending ? INQUIRY_COPY.sendingLabel : INQUIRY_COPY.submitLabel}
-        disabled={isSending || titleMissing} onClick={send} data-testid="inquiry-submit" />
+        disabled={isSending} onClick={send} data-testid="inquiry-submit" />
     </div>
   )
 }

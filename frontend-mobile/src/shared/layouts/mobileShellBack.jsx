@@ -18,8 +18,7 @@ export function useShellBackContext() {
 }
 
 /** 마운트 동안 shell 하단 줄에 뒤로 버튼 표시. enabled·onClick 없으면 등록 안 함. */
-// sfxOwner: onClick이 소리를 직접 내면 true (버튼 기본 취소음과 두 번 안 울리게, 방 설정 뒤로)
-export function useShellBackButton({ onClick, label = "뒤로 가기", enabled = true, sfxOwner = false } = {}) {
+export function useShellBackButton({ onClick, label = "뒤로 가기", enabled = true } = {}) {
     const ctx = useContext(ShellBackContext)
     const setBack = ctx?.setBack
 
@@ -29,7 +28,7 @@ export function useShellBackButton({ onClick, label = "뒤로 가기", enabled =
             setBack(null)
             return undefined
         }
-        setBack({ onClick, label, sfxOwner })
+        setBack({ onClick, label })
         return () => setBack(null)
-    }, [enabled, onClick, label, sfxOwner, setBack])
+    }, [enabled, onClick, label, setBack])
 }

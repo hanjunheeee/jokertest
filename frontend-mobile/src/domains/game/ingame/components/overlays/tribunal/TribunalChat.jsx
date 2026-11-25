@@ -1,33 +1,32 @@
-// 재판 '최후의 반론' 채팅 칸: 데스크톱 채팅 틀 그림을 목록 칸·입력 줄로 잘라 깔고 그 안에 메시지 목록·입력칸·보내기, 죽은 뒤엔 "죽은 사람끼리" 띠
+// 재판 '최후의 반론' 채팅 칸: 데스크톱 채팅 틀 그림을 목록 칸·입력 줄로 잘라 깔고 그 안에 메시지 목록·입력칸·보내기
 // 재판 연출 창(TribunalOverlay)이 씀, 값은 채팅 세션 컨텍스트, 틀 자르기·입력 줄 모양은 채팅 담당 부품을 불러 씀 (고치지 않음)
 import { useEffect, useRef } from "react"
 import { MSG_LIST_SPACER_CLASS } from "@/domains/game/ingame/constants/chat/ingameChatLayout.js"
 import FrameSlice from "../../chat/FrameSlice.jsx"
 import SendButton from "../../chat/SendButton.jsx"
-import StatusLine from "../../chat/StatusLine.jsx"
 import {
     COMPOSER_ROW_CLASS,
     FRAME_ROOT_CLASS,
     FRAME_SLICE,
     TEXTAREA_CLASS,
-    dividerStyle,
     listInsetStyle,
 } from "../../chat/chatStyle.js"
-import { DEAD_BANNER_CLASS, DEAD_BANNER_TEXT } from "../../talk/talkStyle.js"
 import TribunalChatRow from "./TribunalChatRow.jsx"
 
 // 입력 줄 높이 (입력 띠 양피지 안에 입력칸 44px가 들어가는 높이, 채팅 입력 줄과 같음)
 const BAR_CLASS = "relative h-[75px] w-full shrink-0 overflow-hidden"
 
-// 오류·전송 중 글 자리: 입력 줄 위 나무 띠 (채팅 입력 줄과 같은 자리·흰 글)
-// 목록 아래 양피지는 가장자리가 어두워 짙은 글도 대비 4.5가 안 나옴 (검정도 4.1)
-const DIVIDER_PLACE = dividerStyle(FRAME_SLICE.composer)
+// 오류 먼저, 보내는 중이면 전송 중 (데스크톱 상태 줄과 같은 글)
+function statusText(status, error) {
+    if (error) return error
+    if (status === "sending") return "전송 중"
+    return null
+}
 
 // 칸 최소 높이는 0: 키보드로 화면이 낮아지면 목록만 줄고 입력 줄은 화면 안에 남게 함
 // Enter 보내기 (한글 조합 중·Shift+Enter는 제외), 새 메시지 오면 맨 아래로
 // 글자 수는 자르지 않음: 데스크톱·일반 입력줄처럼 채팅 세션 훅이 검사하고 오류 글을 띄움
-// isDeadChat: 죽은 사람끼리 말하는 중 (채팅 세션이 알려 줌, 산 사람 화면엔 거짓)
-export default function TribunalChat({ draft = "", messages = [], onDraftChange, onSend, status = null, error = null, isDeadChat = false }) {
+export default function TribunalChat({ draft = "", messages = [], onDraftChange, onSend, status = null, error = null }) {
     const listRef = useRef(null)
 
     useEffect(() => {
@@ -43,14 +42,13 @@ export default function TribunalChat({ draft = "", messages = [], onDraftChange,
         event.preventDefault()
         send()
     }
+    const line = statusText(status, error)
 
     return (
         <section className={`${FRAME_ROOT_CLASS} flex min-h-0 flex-1 flex-col`} aria-label="최후의 반론 채팅">
             <div className="relative min-h-0 flex-1 overflow-hidden">
                 <FrameSlice slice={FRAME_SLICE.list} />
                 <div className="absolute flex flex-col" style={listInsetStyle(FRAME_SLICE.list)}>
-                    {/* 죽은 뒤엔 죽은 사람끼리 말함 → 채팅방 띠와 같은 글·모양으로 알림 (데스크톱 재판 창 채팅에도 같은 표시가 있음) */}
-                    {isDeadChat ? <p className={DEAD_BANNER_CLASS} data-dead-chat-banner="">{DEAD_BANNER_TEXT}</p> : null}
                     <ul
                         ref={listRef}
                         role="log"
@@ -60,14 +58,14 @@ export default function TribunalChat({ draft = "", messages = [], onDraftChange,
                     >
                         <li aria-hidden className={MSG_LIST_SPACER_CLASS} />
                         {messages.map((m) => (
-                            <TribunalChatRow key={m.id} playerId={m.playerId} senderName={m.senderName} text={m.text} sentAt={m.sentAt} channel={m.channel} />
+                            <TribunalChatRow key={m.id} playerId={m.playerId} senderName={m.senderName} text={m.text} sentAt={m.sentAt} />
                         ))}
                     </ul>
+                    {line ? <p className="shrink-0 px-1 text-[11px] font-bold text-[#7a2a12]">{line}</p> : null}
                 </div>
             </div>
             <div className={BAR_CLASS}>
                 <FrameSlice slice={FRAME_SLICE.composer} />
-                <StatusLine status={status} error={error} placeStyle={DIVIDER_PLACE} />
                 <div className={COMPOSER_ROW_CLASS}>
                     <div className="relative min-w-0 flex-1">
                         <textarea

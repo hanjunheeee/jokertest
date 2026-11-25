@@ -16,17 +16,16 @@ export default function MobileShellChrome({ bottomSlotRef }) {
         >
             <div id={SHELL_BOTTOM_SLOT_ID} ref={bottomSlotRef} className="mobile-shell__chrome-slot" />
             {back ? (
-                <ShellChromeBack onClick={back.onClick} label={back.label} sfxOwner={back.sfxOwner} />
+                <ShellChromeBack onClick={back.onClick} label={back.label} />
             ) : null}
         </div>
     )
 }
 
-// sfxOwner면 기본 취소음 막음 (onClick이 소리를 직접 냄)
-function ShellChromeBack({ onClick, label, sfxOwner = false }) {
+function ShellChromeBack({ onClick, label }) {
     return (
         <div className="mobile-shell__chrome-back shrink-0">
-            <BackButton onClick={onClick} label={label} sfxOwner={sfxOwner} className={BOTTOM_BACK_BTN_CLASS} iconClassName={BACK_ICON_CLASS} />
+            <BackButton onClick={onClick} label={label} className={BOTTOM_BACK_BTN_CLASS} iconClassName={BACK_ICON_CLASS} />
         </div>
     )
 }

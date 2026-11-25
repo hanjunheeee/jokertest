@@ -7,7 +7,7 @@ import {
 } from "@/domains/game/ingame/constants/actions/ingameActionPanel.js"
 
 // 단계 행동 표시 값 (데스크톱 data-ingame-phase-action 값과 같게, 시험이 찾음)
-// 낮 집계·재판 판정·밤 종료는 없어짐 (판정은 표가 다 차면 서버가 5초 뒤 함)
+// 낮 집계·재판 판정·밤 종료는 서버에서 없앰 (표가 다 차면 서버가 5초 뒤 판정)
 export const ROW_ACTIONS = Object.freeze({
   DAY_READY: "dayReady",
   DAY_VOTE_ABSTAIN: "dayVoteAbstain",
@@ -21,16 +21,13 @@ const entry = (action, label, enabled, onClick, kind) => ({ action, label, enabl
 export function buildCornerActions(ctx, openVoteStatus) {
   const phase = ctx.gameState?.phase ?? null
   const actions = [entry(null, "투표 현황", true, openVoteStatus, "voteStatus")]
-  // 죽은 사람은 표를 못 내니 기권도 안 그림 (데스크톱과 같음)
-  if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE" && ctx.selfAliveForControls !== false) {
-    // 사람을 찍은 뒤에도 눌려 기권으로 바꿈, 이미 기권했으면 꺼짐 (사용자 결정 2026-11-18)
+  if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
     const disabled = !ctx.dayVoteControlsEnabled
       || ctx.dayVoteStatus === "submitting"
-      || ctx.dayVoteAbstained
+      || ctx.dayVoteHasSubmitted === true
     actions.push(entry(ROW_ACTIONS.DAY_VOTE_ABSTAIN, "기권", !disabled, ctx.abstainDayVote, "abstain"))
   }
-  // 죽은 사람은 못 고르니 건너뛰기를 안 그림 (데스크톱과 같음)
-  if (phase === "NIGHT" && ctx.isNightTurnActor && ctx.selfAliveForControls !== false) {
+  if (phase === "NIGHT" && ctx.isNightTurnActor) {
     const disabled = ctx.nightActionsLocked === true
       || ctx.nightActionStatus === "submitting"
       || ctx.nightActionHasSubmitted === true
@@ -46,11 +43,13 @@ function dayReadyLabel(status) {
   return DAY_VOTE_READY_LABEL
 }
 
-// 단계 행동 줄: 낮 토론 때 준비 하나 (데스크톱 InGamePhaseActionRow와 같은 조건, 죽은 사람은 준비할 일이 없어 안 그림)
+// 단계 행동 줄: 낮 준비 (데스크톱 InGamePhaseActionRow와 같은 조건)
 export function buildPhaseActions(ctx) {
   const phase = ctx.gameState?.phase ?? null
-  if (phase !== "DAY" || ctx.dayPhase !== "DAY_DISCUSSION") return []
-  if (ctx.selfAliveForControls === false) return []
-  const label = dayReadyLabel(ctx.dayReadyStatus)
-  return [entry(ROW_ACTIONS.DAY_READY, label, Boolean(ctx.dayReadyControlsEnabled), ctx.submitDayReady, "phase")]
+  const actions = []
+  if (phase === "DAY" && ctx.dayPhase === "DAY_DISCUSSION") {
+    const label = dayReadyLabel(ctx.dayReadyStatus)
+    actions.push(entry(ROW_ACTIONS.DAY_READY, label, Boolean(ctx.dayReadyControlsEnabled), ctx.submitDayReady, "phase"))
+  }
+  return actions
 }

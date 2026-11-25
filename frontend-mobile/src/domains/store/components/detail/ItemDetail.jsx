@@ -1,4 +1,4 @@
-// 고른 상품 설명 칸 (그림·이름·태그·분류·등급·가격·구매 버튼, 단추 바로 아래 꺼진 까닭·구매 결과 안내), 상품 칸 목록 아래 늘 보임
+// 고른 상품 설명 칸 (그림·이름·태그·분류·등급·가격·구매 버튼), 상품 칸 목록 아래 늘 보임
 // panel/StorePanel이 고른 상품이 있을 때 씀 (데스크톱 StoreSelectedItemDetail 자리)
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import {
@@ -20,15 +20,8 @@ import PurchaseButton from "./PurchaseButton.jsx"
 const SECTION_CLASS =
     "mt-2 shrink-0 rounded-md bg-[#1a0f0a]/22 px-2 py-1.5 [box-shadow:inset_0_1px_0_rgba(245,240,230,0.10),_0_6px_18px_rgba(0,0,0,0.16)]"
 
-// 단추 아래 안내 자리: 안내가 하나도 없으면 자리도 안 생김
-const NOTICE_WRAP_CLASS = "mt-1 flex flex-col gap-1 empty:hidden"
-// 꺼진 까닭 줄: 칸 바탕이 반투명이라 글자색·바탕색을 둘 다 정해 늘 보이게 (결과 안내 칸과 같은 색)
-const BLOCK_REASON_CLASS = "rounded border border-[#9c793d] bg-[#241a10] px-2 py-1 text-sm text-[#f3dfb4]"
-
-// 보유 표시·버튼 글자·잠금·꺼진 까닭은 부르는 쪽이 데스크톱 StorePanel과 같은 식으로 계산해 넘김
-export default function ItemDetail({
-    item, displayIcon, onPurchaseClick, purchaseDisabled = false, purchaseLabel = null, owned = false, blockReason = null, children = null,
-}) {
+// 보유 표시·버튼 글자·잠금은 부르는 쪽이 데스크톱 StorePanel과 같은 식으로 계산해 넘김
+export default function ItemDetail({ item, displayIcon, onPurchaseClick, purchaseDisabled = false, purchaseLabel = null, owned = false }) {
     return (
         <section className={SECTION_CLASS} aria-label="선택한 아이템 정보">
             <div className={STORE_DETAIL_ROW_CLASS}>
@@ -51,12 +44,6 @@ export default function ItemDetail({
                     <div className={DETAIL_PRICE_ROW_CLASS}>
                         <DetailPrice item={item} />
                         <PurchaseButton onClick={onPurchaseClick} disabled={purchaseDisabled} owned={owned} label={purchaseLabel} className="ml-auto w-28" />
-                    </div>
-
-                    {/* 꺼진 까닭·구매 결과 안내는 구매 단추 바로 아래 (판 맨 위는 단추와 멀어 못 봄) */}
-                    <div className={NOTICE_WRAP_CLASS}>
-                        {blockReason ? <p role="status" data-testid="purchase-block-reason" className={BLOCK_REASON_CLASS}>{blockReason}</p> : null}
-                        {children}
                     </div>
                 </div>
             </div>

@@ -1,5 +1,5 @@
-// 모바일 판 화면 초대 안내 시험: 죽은 사람이 판 화면에 있는 채 초대를 받으면 "로비로 가면 수락" 안내 한 줄(role="status"), 같은 초대 두 번이면 하나, 로비에선 안 뜸
-// 목록 A13-M-509~512 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md), 결정 2026-11-16 낮 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goU-ingame-invite-notice.test.js)
+// 모바일 판 화면 초대 안내 시험: 판 화면·로비 어디서 초대를 받아도 판 화면 안내 줄은 없고 초대는 받은 초대 목록(스토어)에만 (합친 화면: 판 화면 초대 안내 없앰)
+// 목록 A13-M-509·511·512, 합친 화면(2026-11-24 되돌림)에 맞춤 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md), 결정 2026-11-16 낮 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goU-ingame-invite-notice.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, act } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -16,8 +16,6 @@ afterEach(() => {
     view = null
     useGameInviteStore.getState().__resetForTests()
 })
-
-const NOTICE_TEXT = "민수 님이 대기방으로 초대했습니다. 게임에서 나가 로비로 가면 수락할 수 있습니다."
 
 // 서버가 보내는 초대 줄 (받는 사람 = 나)
 function inviteRow(receiverId, { id = "inv-1", senderName = "민수", revision = 1, seq = "5" } = {}) {
@@ -51,25 +49,13 @@ async function deadOnInGame({ before = [] } = {}) {
 }
 
 const noticeBoxes = () => [...document.querySelectorAll("[data-ingame-invite-notice]")]
-const statusTexts = () => [...document.querySelectorAll('[role="status"]')].map((el) => el.textContent.replace(/닫기$/, "").trim()).filter(Boolean)
 
-test("A13-M-509 모바일 판 화면에서 초대 사건 → 안내 한 줄 보임 (role=status, 보낸 사람 이름)", async () => {
-    const me = await deadOnInGame()
-    assert.equal(noticeBoxes().length, 0)
-    await inviteArrives(me, inviteRow(me))
-    assert.equal(noticeBoxes().length, 1)
-    assert.ok(statusTexts().includes(NOTICE_TEXT), statusTexts().join(" / "))
-})
-
-test("A13-M-510 모바일 같은 초대가 두 번 와도 안내 하나, 닫으면 사라짐", async () => {
+test("A13-M-509 모바일 판 화면에서 초대 사건 → 판 화면 안내 줄 없음, 초대는 받은 초대 목록(스토어)에만", async () => {
     const me = await deadOnInGame()
     await inviteArrives(me, inviteRow(me))
-    await inviteArrives(me, inviteRow(me))
-    assert.equal(noticeBoxes().length, 1)
-    const close = document.querySelector('[aria-label="초대 안내 닫기"]')
-    act(() => { close.click() })
-    await flush()
     assert.equal(noticeBoxes().length, 0)
+    assert.equal(document.body.textContent.includes("로비로 가면 수락"), false)
+    assert.deepEqual(useGameInviteStore.getState().invites.map((i) => i.inviteId), ["inv-1"])
 })
 
 test("A13-M-511 모바일 판 화면 오기 전부터 있던 초대 → 안내 없음", async () => {

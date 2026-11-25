@@ -13,11 +13,8 @@ const CLASSIC_BTN_CLASS =
 
 const CLASSIC_IMG_CLASS = "block h-auto w-full select-none"
 
-// 꺼졌을 때 흐리게 (두 모양 같이)
-const DISABLED_CLASS = "disabled:cursor-not-allowed disabled:opacity-45"
-
-// variant talk: 카톡형 보내기 그림 (83×37), disabled면 꺼지고 흐리게 (역할 확인 동안)
-export default function SendButton({ onSend, variant = "classic", disabled = false }) {
+// variant talk: 카톡형 보내기 그림 (83×37)
+export default function SendButton({ onSend, variant = "classic" }) {
     const isTalk = variant === "talk"
     const src = isTalk ? MOBILE_TALK_CHAT_ASSETS.sendButton : INGAME_CHAT_ASSETS.sendButton
 
@@ -25,10 +22,9 @@ export default function SendButton({ onSend, variant = "classic", disabled = fal
         <button
             type="button"
             aria-label="채팅 보내기"
-            disabled={disabled}
             onPointerDown={(event) => event.preventDefault()}
             onClick={onSend}
-            className={`${isTalk ? TALK_CHAT_SEND_BTN_CLASS : CLASSIC_BTN_CLASS} ${DISABLED_CLASS}`}
+            className={isTalk ? TALK_CHAT_SEND_BTN_CLASS : CLASSIC_BTN_CLASS}
             style={{ outline: "none" }}
         >
             <PublicAsset src={src} alt="" className={isTalk ? TALK_CHAT_SEND_IMG_CLASS : CLASSIC_IMG_CLASS} />

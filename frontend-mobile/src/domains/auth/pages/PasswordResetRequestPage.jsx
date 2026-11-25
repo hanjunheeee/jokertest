@@ -5,7 +5,6 @@ import { useResetRequest } from "@/domains/auth/hooks/recovery/useResetRequest.j
 import RecoveryScene from "@m/domains/auth/components/recovery/scene/RecoveryScene.jsx"
 import ResetRequestForm from "@m/domains/auth/components/recovery/ResetRequestForm.jsx"
 import ResetRequestSentDialog from "@m/domains/auth/components/recovery/ResetRequestSentDialog.jsx"
-import SupportLink from "@m/domains/auth/components/SupportLink.jsx"
 
 // 접수 안내는 양피지 창, 입력 칸은 그대로 유지
 export default function PasswordResetRequestPage() {
@@ -28,14 +27,11 @@ export default function PasswordResetRequestPage() {
         formError={request.formError}
         onRetry={request.backToIdle}
       />
-      {/* 로그인 못 하는 사람이 연락할 곳 (주소 없으면 안 보임) */}
-      <SupportLink />
       <ResetRequestSentDialog
         open={request.status === "sent"}
         onConfirm={request.backToIdle}
         onResend={request.handleResend}
         resendDisabled={request.status === "submitting"}
-        resendWaitSec={request.resendWaitSec}
       />
     </RecoveryScene>
   )

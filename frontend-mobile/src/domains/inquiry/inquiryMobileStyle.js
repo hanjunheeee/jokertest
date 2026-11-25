@@ -17,9 +17,9 @@ export const INQUIRY_CATEGORY_OFF = INQUIRY_TAB_OFF
 export const INQUIRY_LABEL_CLASS =
   "mb-0.5 block font-subheading app-text-scaled [--app-text-size:0.8rem] font-bold text-[#f5e8c8]"
 
-// 폰 입력 확대 방지용 16px 유지, 패딩·칸만 축소, 안내 글은 /65라야 어두운 칸에서 읽힘
+// 폰 입력 확대 방지용 16px 유지, 패딩·칸만 축소
 export const INQUIRY_FIELD_CLASS =
-  "w-full rounded-sm border border-[#3a2818]/75 bg-[#120a06]/70 p-1.5 font-subheading text-base leading-snug text-white outline-none placeholder:text-white/65 focus-visible:border-[#f3d28d]"
+  "w-full rounded-sm border border-[#3a2818]/75 bg-[#120a06]/70 p-1.5 font-subheading text-base leading-snug text-white outline-none placeholder:text-white/40 focus-visible:border-[#f3d28d]"
 export const INQUIRY_BODY_MIN_H = "min-h-[6rem]"
 export const INQUIRY_COUNT_CLASS = "mb-0.5 text-right font-subheading text-[0.7rem] tabular-nums text-white/55"
 

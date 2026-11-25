@@ -1,8 +1,8 @@
 // 카톡형 채팅방 한 줄 목록 만들기: 채팅 말·시스템 알림·이모티콘을 시각 순으로 섞음
 // useTalkFeed가 씀, 순수 함수라 tests/talk에서 바로 시험
 
-// 밤 같은 직업 채널 이름 (줄 채널이 이것이면 조커 말풍선), 시민은 밤 채팅 없음
-const ROLE_CHANNELS = new Set(["JOKER", "DOCTOR", "GUARD", "WITCH_HUNTER"])
+// 밤 같은 직업 채널 이름 (줄 채널이 이것이면 조커 말풍선)
+const ROLE_CHANNELS = new Set(["JOKER", "CITIZEN", "DOCTOR", "GUARD", "WITCH_HUNTER"])
 
 // 줄 모양: 채널이 붙어 있으면 그것으로 (죽은 사람 = 회색, 같은 직업 = 조커색), 없으면 목록 전체 joker 값
 // 예: { channel: "DEAD" } → { joker: false, dead: true }, { channel: "JOKER" } → { joker: true, dead: false }

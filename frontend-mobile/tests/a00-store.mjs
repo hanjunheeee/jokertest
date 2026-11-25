@@ -1,4 +1,4 @@
-// M-1 모바일 상점 시험 몫 도우미: 가짜 경제 서버(지갑·가진 것·내역·상품·열린 주문)·모바일 상점 화면 그리기·설명 칸·구매 단추 찾기
+// M-1 모바일 상점 시험 몫 도우미: 가짜 경제 서버(지갑·가진 것·내역·상품·열린 주문)·모바일 상점 화면 그리기·설명 칸·구매 단추·판 위 안내 찾기
 // frontend-mobile/tests/a12-*.test.js(M-1 몫)가 a00-kit·a00-game 다음에 부름, 공용 아님 (답 모양은 PC 시험 a12-store/storeKit.mjs와 같음)
 import { React, act } from "./helpers/dom.mjs"
 import { click, flush, textOf } from "./a00-kit.mjs"
@@ -92,6 +92,18 @@ export const buyButton = () => detail()?.querySelector("button") ?? null
 export const reasonEl = () => detail()?.querySelector('[data-testid="purchase-block-reason"]') ?? null
 export const belowButton = () => buyButton()?.parentElement?.nextElementSibling ?? null
 export const belowText = () => textOf(belowButton())
+// 판 위 안내 자리 (합친 화면: 구매 결과·재화 안내는 상품 칸 위, 단추 아래 아님)
+// 판 = 분류 목록(aside)이 든 줄의 부모, 안내 = 판에서 그 줄 앞 칸들
+const mainRow = () => document.querySelector('[aria-label="카테고리 목록"]')?.closest("aside")?.parentElement ?? null
+const topBoxes = () => {
+    const row = mainRow()
+    if (!row?.parentElement) return []
+    return [...row.parentElement.children].filter((el) => el !== row)
+}
+// 구매 결과 안내 상자 (PurchaseFeedback, 없으면 null)
+export const purchaseNotice = () => topBoxes().find((el) => el.getAttribute("role") === "status") ?? null
+// 판 위 안내 글 전부 (구매 결과 + 골드 구매·충전 안내)
+export const topText = () => topBoxes().map(textOf).join(" ").trim()
 // 화면에 그 글이 몇 번 나오나 (겹침 확인)
 export const countText = (text) => document.body.textContent.split(text).length - 1
 // 구매 단추 누르기

@@ -1,4 +1,4 @@
-// 대기방 모바일 화면 모양: 위 줄 아이콘 버튼·방 이름 줄·방장/초대코드 버튼·바닥 버튼·매칭 틀 안 글자·자리 그림·준비 글
+// 대기방 모바일 화면 모양: 위 줄 아이콘 버튼·방장/초대코드 버튼·바닥 버튼·매칭 틀 안 글자·자리 그림
 // 대기방 위 줄·방장 버튼·가운데 틀·자리·바닥 줄이 씀, 글자 모양은 데스크톱 matchingPopupStyles 최소 크기 기준
 
 // 뒤로 가기 그림 (데스크톱 MotionBackButton 그림)
@@ -42,17 +42,9 @@ export const ACTION_BUTTON_LOOK = {
 // 파티 인원 머리말 (데스크톱 PARTY_* 글자·그림)
 export const PARTY_TEXT_CLASS =
   "truncate font-subheading app-text-scaled [--app-text-size:1.1rem] font-bold text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
-// 인원 숫자: 어두운 배경 위라 진한 빨강(text-text-main)은 안 보여 밝은 빨강 (데스크톱과 같음)
 export const PARTY_COUNT_CLASS =
-  "font-display app-text-scaled [--app-text-size:1.3rem] font-medium leading-none text-[#ff8f87] tabular-nums antialiased"
+  "font-display app-text-scaled [--app-text-size:1.3rem] font-medium leading-none text-text-main tabular-nums antialiased"
 export const PARTY_ICON_CLASS = "block h-7 w-auto shrink-0 select-none object-contain opacity-95"
-
-// 위 줄 방 정보 줄: 방 이름(길면 말줄임) + 앉은 수/정원 (인원 머리말 위 작은 한 줄)
-export const ROOM_INFO_ROW_CLASS =
-  "flex min-w-0 items-baseline gap-1.5 font-subheading app-text-scaled [--app-text-size:0.78rem] font-bold leading-tight text-[#f5f0e6] [text-shadow:0_1px_3px_rgba(0,0,0,0.85)]"
-// 방 이름 h1은 전역 h1 빨강이 먼저 먹어 줄 글자색을 안 물려받음 → 직접 줌
-export const ROOM_TITLE_CLASS = "min-w-0 truncate text-[#f5f0e6]"
-export const ROOM_CAPACITY_CLASS = "shrink-0 font-display font-medium tabular-nums"
 
 // 매칭 틀 안 제목·안내·기다림 글 (틀 폭 cqw 기준, 데스크톱 틀 폭 대비 글자 비율)
 export const BOARD_TITLE_CLASS =
@@ -66,12 +58,3 @@ export const BOARD_WAITING_CLASS =
 export const SLOT_LARGE_CLASS = "block h-auto w-[13.8cqw] shrink-0 select-none object-contain"
 export const SLOT_COMPACT_CLASS = "block h-auto w-[10.8cqw] shrink-0 select-none object-contain"
 export const SLOT_NOT_READY_OFFSET_CLASS = "-translate-y-[1.4cqw]"
-
-// 자리 준비 글: 실루엣 아래쪽에 겹쳐 둠 (칸 높이를 안 바꿔 틀 안에서 안 넘침), 준비완료 = 밝은 바탕 · 대기중 = 어두운 바탕
-// 글자 크기는 옆 칸 글과 안 겹치게 칸 폭에 맞춤 (두 줄 이상일 때 칸이 좁아 더 작게)
-const SEAT_BADGE_BASE =
-  "pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-sm border px-[0.25em] py-[0.15em] font-subheading font-bold leading-none tracking-tighter"
-export const SEAT_BADGE_LARGE_CLASS = `${SEAT_BADGE_BASE} text-[max(0.68rem,2.6cqw)]`
-export const SEAT_BADGE_COMPACT_CLASS = `${SEAT_BADGE_BASE} text-[max(0.58rem,2.2cqw)]`
-export const SEAT_BADGE_READY_CLASS = "border-[#6b4321]/60 bg-[#f5e6c8]/90 text-[#1a1008]"
-export const SEAT_BADGE_WAITING_CLASS = "border-[#3a2818]/70 bg-[#120a06]/85 text-[#f5f0e6]"

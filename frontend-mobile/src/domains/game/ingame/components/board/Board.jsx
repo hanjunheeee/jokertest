@@ -5,7 +5,6 @@ import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionC
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import { useInGameEmojiBubbleStore } from "@/domains/game/ingame/store/inGameEmojiBubble.store.js"
 import { isInGameSelfPlayer } from "@/domains/game/ingame/utils/isInGameSelfPlayer.js"
-import { allyText } from "@/domains/game/ingame/utils/allyLabel.js"
 import { useBoardEmoji } from "@m/domains/game/ingame/hooks/board/useBoardEmoji.js"
 import { useCardSheet } from "@m/domains/game/ingame/hooks/board/useCardSheet.js"
 import { BOARD_ROOT_CLASS, BOARD_ROW_CLASS, BOARD_ROW_STYLE, boardColumns } from "./boardStyle.js"
@@ -21,8 +20,6 @@ export default function Board() {
     const sheet = useCardSheet()
     const emoji = useBoardEmoji()
     const sheetPlayer = players.find((player) => player.id === sheet.targetId) ?? null
-    // 내 직업: 같은 직업 동료 표시 글("동료 의사")을 만드는 데 씀 (시민·남은 null)
-    const selfRole = actionCtx?.gameState?.self?.role ?? null
 
     return (
         <section aria-label="플레이어 카드" className={BOARD_ROOT_CLASS} style={{ "--cols": boardColumns(players.length) }}>
@@ -37,7 +34,6 @@ export default function Board() {
                             key={player.id}
                             player={player}
                             isSelf={isSelf}
-                            allyLabel={allyText(player, selfRole)}
                             highlight={highlight}
                             emoji={emojiByUuid[player.id] ?? null}
                             anchorRef={(node) => sheet.registerAnchor(player.id, node)}
@@ -47,7 +43,7 @@ export default function Board() {
                     )
                 })}
             </div>
-            <CardSheet player={sheetPlayer} allyLabel={allyText(sheetPlayer, selfRole)} items={sheet.items} onClose={sheet.close} panelRef={sheet.menuRef} />
+            <CardSheet player={sheetPlayer} items={sheet.items} onClose={sheet.close} panelRef={sheet.menuRef} />
             <EmojiPalette open={emoji.open} slots={emoji.slots} onClose={emoji.closePalette} />
         </section>
     )

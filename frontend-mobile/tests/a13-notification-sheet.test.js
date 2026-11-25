@@ -1,5 +1,5 @@
-// 모바일 알림 시트 시험: 보이는 읽은 알림이 없으면 "읽은 메시지 삭제" 꺼짐, 하나라도 있으면 켜짐 + 알림 줄의 받은 시각
-// 목록 A13 모바일 A13-M-001·007·008 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-notification-sheet.test.js)
+// 모바일 알림 시트 시험: 보이는 읽은 알림이 없으면 "읽은 메시지 삭제" 꺼짐, 하나라도 있으면 켜짐 + 알림 줄엔 받은 시각 칸 없음
+// 목록 A13 모바일 A13-M-001·008, 합친 화면(2026-11-24 되돌림: 받은 시각 칸 없음)에 맞춤 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-notification-sheet.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, act } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -43,22 +43,7 @@ test("A13-M-001 알림 시트 '읽은 메시지 삭제' 켜지는 때: 보이는
     assert.equal(buttonNamed("읽은 메시지 삭제").disabled, false, "읽은 알림 1개인데 꺼짐")
 })
 
-// ── 007~008: 알림 줄의 받은 시각 (PC 알림 줄과 같은 규칙) ──
-
-test("A13-M-007 알림 줄 받은 시각: createdAt 2026-11-16T01:00Z → 제목과 같은 줄에 time 칸 '11월 16일 10:00'(한국 시각)", async () => {
-    await openSheet([note("t1")])
-    const row = document.querySelector('[data-notification-id="t1"]')
-    assert.ok(row, "알림 줄이 없음")
-    const time = row.querySelector("time")
-    assert.ok(time, "알림 줄에 받은 시각 칸(time)이 없음")
-    assert.equal(textOf(time), "11월 16일 10:00")
-    assert.equal(time.getAttribute("datetime"), "2026-11-16T01:00:00.000Z")
-    // 제목과 같은 줄: 제목 글이 시각 칸과 같은 칸 안에 있음
-    const title = [...row.querySelectorAll("p")].find((p) => textOf(p) === "제목 t1")
-    assert.ok(title, "제목이 없음")
-    assert.ok(title.parentElement === time.parentElement, "받은 시각이 제목 줄에 없음")
-    assert.ok(textOf(row).includes("본문 t1"), "본문이 없음")
-})
+// ── 008: 알림 줄의 받은 시각 칸 (합친 화면은 시각 칸을 안 그림) ──
 
 test("A13-M-008 받은 시각 값이 없는 알림(createdAt null) → time 칸 없음, 제목·본문은 그대로", async () => {
     await openSheet([{ ...note("t2"), createdAt: null }])

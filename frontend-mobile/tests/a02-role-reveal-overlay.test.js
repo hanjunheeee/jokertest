@@ -1,4 +1,4 @@
-// 모바일 역할 공개 창 시험: 같은 직업 동료 줄(닉네임), 시민·혼자인 직업은 동료 없음, 10초에 저절로 닫힘
+// 모바일 역할 공개 창 시험: 같은 직업 동료 줄(닉네임, 줄 머리 글은 직업과 상관없이 "동료 광대" — 지금 화면 글), 시민·혼자인 직업은 동료 없음, 10초에 저절로 닫힘
 // 목록 A02 모바일 A02-M-001~008 (돌리기: frontend-mobile 폴더에서 node --test tests/a02-role-reveal-overlay.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render, act } from "./helpers/dom.mjs"
@@ -45,13 +45,15 @@ const ALLY_CASES = [
     ["A02-M-003", "경비원", "GUARD", 8],
     ["A02-M-004", "마녀사냥꾼", "WITCH_HUNTER", 10],
 ]
+// 동료 줄 머리 글은 상대 화면(RoleRevealOverlay)에 "동료 광대"로 박혀 있음 → 의사·경비원·마녀사냥꾼도 같은 글 (지금 화면대로 봄)
 for (const [id, label, role, n] of ALLY_CASES) {
-    test(`${id} 모바일 역할 창 동료 줄: ${label} 2명(${n}명 판) → "동료 ${label}" 줄 + 상대 닉네임 "나"`, () => {
+    test(`${id} 모바일 역할 창 동료 줄: ${label} 2명(${n}명 판) → "동료 광대" 줄 + 상대 닉네임 "나"`, () => {
         const box = drawReveal(role, ["u1"], n)
         assert.ok(box, "역할 창이 없음")
         assert.equal(box.getAttribute("data-ingame-role-reveal"), role)
         const text = textOf(box)
-        assert.ok(text.includes(`동료 ${label}`), `"동료 ${label}" 줄이 없음: ${text}`)
+        assert.ok(text.includes(label), `직업 이름 "${label}"이 없음: ${text}`)
+        assert.ok(text.includes("동료 광대"), `"동료 광대" 줄이 없음: ${text}`)
         const chips = [...box.querySelectorAll("li")].map((li) => textOf(li))
         assert.deepEqual(chips, ["나"])
     })

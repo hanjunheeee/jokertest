@@ -7,17 +7,16 @@ import {
 
 // 상태별 문구·색, idle이면 없음
 const MESSAGES = {
-  checking: { text: "이메일 확인 중...", tone: "text-text-body" },
+  checking: { text: "이메일 확인 중...", tone: "text-white/70" },
   available: { text: "사용할 수 있는 이메일입니다.", tone: EMAIL_CHECK_MSG_AVAILABLE_CLASS },
   duplicate: { text: "이미 사용 중인 이메일입니다.", tone: EMAIL_CHECK_MSG_ERROR_CLASS },
   error: { text: "중복 확인에 실패했습니다. 다시 시도해주세요.", tone: EMAIL_CHECK_MSG_ERROR_CLASS },
 }
 
-// 좁은 폰에선 낱말 단위 줄바꿈 허용 (데스크톱은 한 줄 고정), errorMessage는 막힘(429) 때 서버 글
-export default function EmailCheckMessage({ status, errorMessage = null }) {
-  const found = MESSAGES[status]
-  if (!found) return null
-  const message = status === "error" && errorMessage ? { ...found, text: errorMessage } : found
+// 좁은 폰에선 낱말 단위 줄바꿈 허용 (데스크톱은 한 줄 고정)
+export default function EmailCheckMessage({ status }) {
+  const message = MESSAGES[status]
+  if (!message) return null
 
   return (
     <p aria-live="polite" className={`min-w-0 flex-1 break-keep text-left leading-tight app-text-scaled [--app-text-size:13px] ${message.tone}`}>

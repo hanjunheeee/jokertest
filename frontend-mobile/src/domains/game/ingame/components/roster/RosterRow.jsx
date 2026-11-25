@@ -1,4 +1,4 @@
-// 플레이어 목록 한 줄: 초상·닉네임·같은 직업 동료 표시·상태, 행동 가능하면 카드 메뉴와 같은 버튼
+// 플레이어 목록 한 줄: 초상·닉네임·상태, 행동 가능하면 카드 메뉴와 같은 버튼
 import { useContext } from "react"
 import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionContext.jsx"
 import { INGAME_PLAYER_STATUS } from "@/domains/game/shared/constants/ingamePlayerStatus.js"
@@ -6,7 +6,6 @@ import { THEME_TEXT_RENDER_CLASS } from "@/shared/constants/ingamePlayerTheme.js
 import { useInGamePlayerSessionContext } from "@/domains/game/ingame/components/InGamePlayerSessionContext.js"
 import { resolvePlayerRecordListProfileAssets } from "@/domains/game/ingame/constants/controls/playerRecordList/ingamePlayerRecordListData.js"
 import { isInGameSelfPlayer } from "@/domains/game/ingame/utils/isInGameSelfPlayer.js"
-import { allyText } from "@/domains/game/ingame/utils/allyLabel.js"
 import MenuButton from "@m/domains/game/ingame/components/board/MenuButton.jsx"
 import { INGAME_CARD_MENU_ITEM_KINDS as KINDS } from "@/domains/game/ingame/constants/board/playerCardMenu.js"
 import Portrait from "@m/domains/game/ingame/components/sheets/parts/Portrait.jsx"
@@ -17,14 +16,6 @@ const ROW_CLASS =
 const HIGHLIGHT_CLASS = "rounded-sm bg-[#f3dcb0]/15 ring-1 ring-[#b08a4a]/50"
 
 const CANCEL_TONE_KINDS = new Set([KINDS.DAY_VOTE_CANCEL, KINDS.NIGHT_ACTION_CANCEL, KINDS.TRIBUNAL_GUILTY])
-
-// 동료 표시: 카드 판 "동료" 표시와 같은 풀빛 (금색 "나"와 헷갈리지 않게, 양피지 위에서도 읽히게 어두운 바탕)
-const ALLY_BADGE_CLASS =
-    "ml-1.5 inline-block whitespace-nowrap rounded-full border border-[#9fe0c4] bg-[#0f3327] px-1.5 py-0.5 align-middle text-[0.62rem] font-semibold tracking-wide text-[#d9fff0] [text-shadow:none]"
-
-// 상태 글(사망·연결 끊김): 글자색은 그대로, 동료 표시처럼 어두운 바탕을 깔아 양피지 위에서 읽히게 (바탕 없으면 대비 2 안팎)
-const STATUS_BADGE_CLASS =
-    "mt-0.5 inline-block rounded-full bg-[#2a1810] px-1.5 py-0.5 text-[0.72rem] font-semibold leading-tight text-[#c8a878]"
 
 const STATUS_LABEL = {
     [INGAME_PLAYER_STATUS.DEAD]: "사망",
@@ -42,8 +33,6 @@ export default function RosterRow({ player, index, items, localPlayerId, rosterS
         player.id === actionCtx?.selectedDayVoteTargetId
         || player.id === actionCtx?.selectedNightTargetId
     const statusLabel = STATUS_LABEL[player.status] ?? null
-    // 같은 직업 동료면 "동료 의사" 같은 글 (내 화면에만 옴, 시민·남은 null, 카드 판과 같은 계산)
-    const allyLabel = isSelf ? null : allyText(player, actionCtx?.gameState?.self?.role ?? null)
     const disabledHints = [...new Set(
         visibleItems.filter((item) => !item.enabled && item.disabledReason).map((item) => item.disabledReason),
     )]
@@ -59,12 +48,9 @@ export default function RosterRow({ player, index, items, localPlayerId, rosterS
                     >
                         {player.nickname}
                         {isSelf ? " (나)" : ""}
-                        {allyLabel ? (
-                            <span className={ALLY_BADGE_CLASS} data-ingame-ally-badge={allyLabel}>{allyLabel}</span>
-                        ) : null}
                     </p>
                     {statusLabel ? (
-                        <p className={STATUS_BADGE_CLASS}>{statusLabel}</p>
+                        <p className="mt-0.5 text-[0.72rem] font-semibold text-[#c8a878]">{statusLabel}</p>
                     ) : null}
                 </div>
                 {visibleItems.length > 0 ? (

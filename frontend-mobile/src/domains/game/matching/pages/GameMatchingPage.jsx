@@ -1,4 +1,4 @@
-// 대기방 화면 (/game-matching): 배경·위 줄(방 이름·앉은 수/정원·인원)·방장 버튼/초대코드·매칭 틀·준비/시작 줄·창들
+// 대기방 화면 (/game-matching): 배경·위 줄·방장 버튼/초대코드·매칭 틀·준비/시작 줄·창들
 // app/routes/index.jsx가 씀, 값과 동작은 모두 데스크톱 useMatchingPage에서 받음
 import { Navigate } from "react-router-dom"
 import { useMatchingPage } from "@/domains/game/matching/hooks/useMatchingPage.js"
@@ -47,12 +47,7 @@ export default function GameMatchingPage() {
       <MatchingBackdrop visible={page.uiVisible} />
 
       <div className="relative flex flex-1 flex-col">
-        <MatchingTopBar
-          visible={page.uiVisible}
-          partyCount={page.partyCount}
-          partyMax={page.partyMax}
-          roomTitle={page.roomTitle}
-        />
+        <MatchingTopBar visible={page.uiVisible} partyCount={page.partyCount} />
 
         <div className="flex flex-1 flex-col items-center justify-center px-3 pb-3 land:px-6 land:pb-1 md:px-8">
           <MatchingBoard
@@ -67,7 +62,6 @@ export default function GameMatchingPage() {
                 canEditSettings={page.canEditSettings}
                 isKickHost={page.isKickHost}
                 canKick={page.canKick}
-                kickLockedReason={page.kickLockedReason}
                 onOpenSettings={page.openSettings}
                 onOpenKickModal={page.openKickModal}
               />
@@ -91,7 +85,6 @@ export default function GameMatchingPage() {
         friends={page.inviteFriends}
         invitingIds={page.invitingIds}
         onInviteFriend={page.inviteFriend}
-        errorMessage={page.friendInviteError}
       />
       <KickSheet page={page} />
       <StartBlockedSheet message={page.startBlockedMessage} onClose={page.dismissStartBlockedMessage} />

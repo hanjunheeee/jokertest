@@ -1,9 +1,9 @@
-// 모드 선택 화면 (/gameMode): 위 줄 소리 + 모드 카드 + 빠른 매칭 덮개, 뒤로는 shell 하단, 들어올 때 남은 판·대기방 자리 정리
+// 모드 선택 화면 (/gameMode): 위 줄 소리 + 모드 카드, 뒤로는 shell 하단
 // app/routes/index.jsx가 씀, 동작은 데스크톱 GameModePage와 같음 (랜덤 매칭은 준비중 잠금)
 import { useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { useMatchmakingSearch } from "@/domains/game/mode/hooks/useMatchmakingSearch.js"
 import { useLobbyEntryCleanup } from "@/domains/game/shared/hooks/useLobbyEntryCleanup.js"
+import { useMatchmakingSearch } from "@/domains/game/mode/hooks/useMatchmakingSearch.js"
 import ModeBackdrop from "@m/domains/game/mode/components/common/ModeBackdrop.jsx"
 import { useShellBackButton } from "@m/shared/layouts/mobileShellBack.jsx"
 import SoundMenu from "@m/shared/ui/sound/SoundMenu.jsx"
@@ -14,7 +14,7 @@ import SearchOverlay from "@m/domains/game/mode/components/modeSelect/SearchOver
 // 모드 선택 화면
 export default function GameModePage() {
   const navigate = useNavigate()
-  // 들어올 때 서버가 남은 판·대기방 자리를 지움 (판 중 산 사람이면 판 화면으로)
+  // 들어올 때 서버에 enter_lobby를 보내 남은 판·대기방 자리를 정리 (판 중 산 사람이면 판 화면으로, 서버 로비 입장 정리와 맞춤)
   useLobbyEntryCleanup()
   const { isSearching, startQuickMatch, cancelQuickMatch } = useMatchmakingSearch()
 

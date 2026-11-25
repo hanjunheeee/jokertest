@@ -1,4 +1,4 @@
-// 결과 화면 상태 묶음: 그릴 값(실제 판·미리보기) 고르기, 새로고침 직후 기다림, 연출 끝남, 버튼 동작·떠나기 실패 안내·닫힘 시각
+// 결과 화면 상태 묶음: 그릴 값(실제 판·미리보기) 고르기, 새로고침 직후 기다림, 연출 끝남, 버튼 동작
 // pages/GameResultPage가 씀 (데스크톱 GameResultPage 안 state·effect를 모바일 쪽으로 옮긴 것, 데스크톱은 안 고침)
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
@@ -11,7 +11,6 @@ import {
     useGameResultReturnToMatching,
 } from "@/domains/game/result/hooks/useGameResultReturnToMatching.js"
 import { useInGameExit } from "@/domains/game/ingame/hooks/useInGameExit.js"
-import { selectResultExitFailureNotice } from "@/domains/game/ingame/utils/exitConfirm.js"
 import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInGameSessionSnapshotSync.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 
@@ -21,18 +20,11 @@ export function useResultPage() {
     const [searchParams] = useSearchParams()
     const live = useGameResultData()
     const preview = useGameResultPreview()
-    // "로비로" 버튼은 이름대로 로비로 감 (판 중 나가기는 멀티 화면), 실패 안내는 버튼 위에 그려 알림 창은 끔
-    const { requestExit, exitStatus, exitErrorCode, isExitPending } =
-        useInGameExit({ destination: "/lobby", alertExitFailure: false })
-    const { requestReturnToMatching, isReturning, returnError, clearReturnError } = useGameResultReturnToMatching()
-    // 서버가 준 닫힘 시각, 서버가 닫으면 로비로
-    const { closesAt } = useGameResultCloseTimer()
-    // 안내는 마지막에 누른 버튼 것만 (exit·return)
-    const [noticeSource, setNoticeSource] = useState(null)
-    const exitNotice = selectResultExitFailureNotice(exitStatus, exitErrorCode)
-    // 예: "return"이고 정원 참 → "대기방 정원이 가득 차 들어갈 수 없습니다.", 누른 적 없으면 null
-    const leaveNotice = { exit: exitNotice, return: returnError }[noticeSource] ?? null
-    // 판이 끝나 승패 값이 이미 있으면 판 상태를 다시 묻지 않음 (연출·승패가 흔들리지 않게)
+    // "로비로" 버튼은 이름대로 로비로 감 (판 중 나가기는 멀티 화면)
+    const { requestExit } = useInGameExit({ destination: "/lobby" })
+    const { requestReturnToMatching, isReturning } = useGameResultReturnToMatching()
+    // 서버가 결과 화면을 닫으면(game_result_closed, 판 끝 180초) 판·방을 지우고 로비로 (남은 초 표시는 안 함)
+    useGameResultCloseTimer()
     const freezeSnapshotSync = useInGameStore(
         (s) => s.state?.phase === "ENDED" && Boolean(s.state?.winResult),
     )
@@ -63,17 +55,9 @@ export function useResultPage() {
     else if (view && introDoneFor !== outcome) stage = "intro"
     else if (view) stage = "result"
 
-    // 대기방으로: 로비로 가는 중엔 막음 / 로비로: 대기방 가는 중엔 막음 (늦은 답이 반대쪽으로 끌고 가지 않게)
+    // 대기방으로 (누르는 중이면 무시)
     const returnToMatching = () => {
-        if (isReturning || isExitPending) return
-        setNoticeSource("return")
-        requestReturnToMatching()
-    }
-    const exitToLobby = () => {
-        if (isReturning) return
-        setNoticeSource("exit")
-        clearReturnError()
-        requestExit()
+        if (!isReturning) requestReturnToMatching()
     }
 
     // 결과 없을 때 "로비로 돌아가기" 버튼: 데스크톱과 같이 /lobby로
@@ -87,11 +71,7 @@ export function useResultPage() {
         completeIntro,
         returnToMatching,
         isReturning,
-        isExitPending,
-        exitToLobby,
+        exitToLobby: requestExit,
         leaveUnavailable,
-        leaveNotice,
-        noticeSource,
-        closesAt,
     }
 }

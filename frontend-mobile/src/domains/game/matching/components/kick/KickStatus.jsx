@@ -1,40 +1,82 @@
-// 추방 진행 표시: 실패/결과 모름 글·결과 확인 버튼·다시 확인 중 안내 (확인 칸 없음, 누르면 바로 보냄)
+// 추방 진행 표시: 확인 칸(대상 이름·추방·취소)·실패/결과 모름 글·결과 확인 버튼·다시 확인 중 안내
 // KickSheet가 씀, 글·표시 조건·test id는 데스크톱 SettingKickPlayerModalContent와 같음
+import { useEffect, useRef } from "react"
+import { GAME_MATCHING_ASSETS } from "@/domains/game/matching/constants/gameMatchingAssets.js"
+import { PLAYER_ASSETS } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerAssets.js"
 import { KICK_REQUEST_STATUS } from "@/domains/game/ingame/constants/ingameKick.js"
-import {
-  INGAME_KICK_PLAYER_MODAL_COPY as COPY,
-  resolveKickErrorMessage,
-} from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
-import { ERROR_CLASS, NOTE_CLASS } from "../../constants/voteFrameStyle.js"
+import { resolveKickErrorMessage } from "@/domains/game/ingame/constants/controls/kickPlayer/ingameKickPlayerData.js"
+import ImageButton from "@m/shared/ui/button/ImageButton.jsx"
+import { CONFIRM_BUTTON_LOOK as CONFIRM_LOOK, ERROR_CLASS, NOTE_CLASS } from "../../constants/voteFrameStyle.js"
 
 // 진행 표시 묶음 (값은 useMatchingRoomKick에서 받아 그리기만 함)
-export default function KickStatus({ status, errorCode, canLookupResult, isAwaitingResolution, onLookupResult }) {
+export default function KickStatus({
+  targets, pendingTarget, status, errorCode, isSending, canLookupResult, isAwaitingResolution,
+  onCancelConfirm, onConfirmKick, onLookupResult,
+}) {
+  const confirmRef = useRef(null)
+
+  // 목록 아래쪽 사람을 골라도 확인 칸이 보이게 끌어옴 (폰은 목록이 길어 위 칸이 화면 밖일 수 있음)
+  useEffect(() => {
+    if (pendingTarget) confirmRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" })
+  }, [pendingTarget])
+
   return (
     <>
+      {/* 고른 대상 있으면 확인 칸, 추방은 지금 목록을 같이 넘겨 다시 확인 */}
+      {pendingTarget ? (
+        <div
+          ref={confirmRef}
+          role="alertdialog"
+          aria-label="추방 확인"
+          data-testid="kick-confirm"
+          className="mb-2 flex flex-col gap-2 rounded-lg border border-[#b50000]/60 bg-[#3a1410]/70 p-3"
+        >
+          <p className="text-center font-subheading app-text-scaled [--app-text-size:0.95rem] font-bold text-[#f5f0e6]">
+            <span data-testid="kick-confirm-target">{pendingTarget.nickname || pendingTarget.uuid}</span>
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <ImageButton
+              look={CONFIRM_LOOK}
+              label="추방"
+              src={PLAYER_ASSETS.kickActionButton}
+              disabled={isSending}
+              onClick={() => onConfirmKick?.(targets)}
+              data-testid="kick-confirm-accept"
+            />
+            <ImageButton
+              look={CONFIRM_LOOK}
+              label="취소"
+              src={GAME_MATCHING_ASSETS.startGameButton}
+              sfxKind="ui-cancel"
+              onClick={() => onCancelConfirm?.()}
+              data-testid="kick-confirm-cancel"
+            />
+          </div>
+        </div>
+      ) : null}
+
       {status === KICK_REQUEST_STATUS.FAILED ? (
-        <p role="alert" data-testid="kick-error" data-kick-error-code={errorCode ?? ""} className={ERROR_CLASS}>
-          {resolveKickErrorMessage(errorCode)}
-        </p>
+        <p role="alert" data-testid="kick-error" className={ERROR_CLASS}>{resolveKickErrorMessage(errorCode)}</p>
       ) : null}
       {status === KICK_REQUEST_STATUS.UNKNOWN ? (
         <p role="alert" data-testid="kick-unknown" className={ERROR_CLASS}>
-          {COPY.unknownResult}
+          결과를 확인할 수 없습니다. 목록을 다시 확인한 뒤 새로 시도해주세요.
         </p>
       ) : null}
-      {/* 결과 묻기 버튼은 결과를 모를 때만 (영수증 남은 동안, 보내는 중·성공 땐 안 보임) */}
-      {canLookupResult && status !== KICK_REQUEST_STATUS.SUCCEEDED && status !== KICK_REQUEST_STATUS.SENDING ? (
+      {/* 결과 묻기 버튼은 성공 전까지만 */}
+      {canLookupResult && status !== KICK_REQUEST_STATUS.SUCCEEDED ? (
         <button
           type="button"
           data-testid="kick-lookup-result"
           onClick={() => onLookupResult?.()}
           className="my-1 min-h-11 cursor-pointer rounded border border-[#c9b892]/60 bg-transparent px-3 font-bold text-[#f5f0e6]"
         >
-          {COPY.lookupResultLabel}
+          결과 확인
         </button>
       ) : null}
       {isAwaitingResolution ? (
         <p role="status" data-testid="kick-awaiting-resolution" className={`${NOTE_CLASS} text-[#e6dcc8]`}>
-          {COPY.awaitingResolution}
+          현재 참가자 목록을 서버에서 다시 확인하는 중입니다. 확인이 끝나야 새로 지목할 수 있습니다.
         </p>
       ) : null}
     </>

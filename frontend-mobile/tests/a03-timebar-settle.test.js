@@ -32,14 +32,14 @@ test("A03-M-006 당김 없음: 보통 투표 → '[5초 뒤 마감]'·'5초 뒤 
     await votePage({ settled: false })
     assert.ok(timebar(), "시간 줄이 없음")
     assert.ok(!pageText().includes("5초 뒤 마감"), "당김이 없는데 5초 글이 보임")
-    assert.ok(!timebar().hasAttribute("data-ingame-phase-settle"))
 })
 
-test("A03-M-011 당기면 시간 줄에 남은 초: 당김 알림 → 시간 줄(화면에 보임)·남은 초 5 이하", async () => {
+// 당김 표시 칸 값(data-ingame-phase-settle)은 지금 화면에 없음 → 명패 글·남은 초로만 봄
+test("A03-M-011 당기면 시간 줄에 남은 초: 당김 알림 → 시간 줄(화면에 보임)·명패 '[5초 뒤 마감]'·남은 초 5 이하", async () => {
     await votePage({ settled: true })
     const bar = timebar()
     assert.ok(bar, "시간 줄이 없음")
-    assert.ok(bar.hasAttribute("data-ingame-phase-settle"), "당김 표시가 없음")
+    assert.ok(textOf(bar).includes("[5초 뒤 마감]"), `시간 줄 글: ${textOf(bar)}`)
     // 남은 시간 MM:SS (타이머 칸 role=timer)
     const clock = textOf(bar.querySelector("[role=timer]")).match(/(\d{2}):(\d{2})/)
     assert.ok(clock, `시간 줄의 남은 시간이 없음: ${textOf(bar)}`)

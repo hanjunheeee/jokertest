@@ -13,7 +13,6 @@ import Background from "@m/domains/game/ingame/components/shell/Background.jsx"
 import TopBar from "@m/domains/game/ingame/components/shell/TopBar.jsx"
 import Timebar from "@m/domains/game/ingame/components/timebar/Timebar.jsx"
 import TalkLayout from "@m/domains/game/ingame/components/talk/TalkLayout.jsx"
-import InviteNotice from "@m/domains/game/ingame/components/shell/InviteNotice.jsx"
 import { useWideChat } from "@m/domains/game/ingame/hooks/chat/useWideChat.js"
 import { useCompactTyping } from "@m/domains/game/ingame/hooks/page/useCompactTyping.js"
 import { useInGamePage } from "@m/domains/game/ingame/hooks/page/useInGamePage.js"
@@ -114,8 +113,6 @@ export default function InGamePage() {
           </ActionProvider>
         </InGameChatSessionProvider>
       </InGamePlayerSessionProvider>
-      {/* 죽은 사람이 받은 대기방 초대 안내: 판 조작 막힘(inert) 밖이라 읽기 도구가 읽음, 연출·시트보다 아래 */}
-      <InviteNotice />
     </div>
   )
 }

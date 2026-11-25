@@ -1,5 +1,6 @@
-// 모바일 판 중 채팅 시험: 밤 입력 줄 열림·닫힘(시민만 닫힘), 채팅방 띠(죽은 사람끼리, "밤 · 같은 직업끼리" 띠는 지금 없음), 줄 모양, 시각 순 목록, 재판 중 막기만
-// 목록 A06 모바일 A06-M-001~010 (돌리기: frontend-mobile 폴더에서 node --test tests/a06-talk-chat.test.js)
+// 모바일 판 중 채팅 시험: 밤 입력 줄 열림(의사·죽은 시민), 채팅방 띠(죽은 사람끼리, "밤 · 같은 직업끼리" 띠는 지금 없음), 줄 모양, 시각 순 목록, 재판 중 막기만
+// 목록 A06 모바일 A06-M-002~010 (돌리기: frontend-mobile 폴더에서 node --test tests/a06-talk-chat.test.js)
+// 밤 산 시민 입력칸 닫힘 규칙은 지금 화면에 없음 → 그 시험(A06-M-001)은 뺌
 import "./helpers/mobileLoader.mjs"
 import { React, render } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -15,7 +16,6 @@ const { default: TalkBubble } = await import("@m/domains/game/ingame/components/
 let view = null
 afterEach(() => { resetGame(view); view = null })
 
-const composer = () => shellBottom()?.querySelector("[data-chat-composer]") ?? null
 const chatInput = () => shellBottom()?.querySelector('textarea[aria-label="채팅 입력"]') ?? null
 const talkList = () => document.querySelector("[data-talk-list]")
 const chatSlot = () => document.querySelector('[data-talk-layout] [data-slot="chat"]')
@@ -27,14 +27,6 @@ async function nightPage({ role, dead = false }) {
     view = await renderPage(socket)
     return socket
 }
-
-test("A06-M-001 [단위 2] 밤 산 시민 입력 줄 닫힘: 글칸·보내기 없음, 까닭 글 '밤에는 귀족이 채팅을 쓸 수 없습니다'", async () => {
-    await nightPage({ role: "CITIZEN" })
-    assert.ok(composer(), "입력 줄이 없음")
-    assert.ok(chatInput() === null, "밤 시민에게 글칸이 있음")
-    assert.ok(!composer().querySelector("button"), "밤 시민에게 보내기 단추가 있음")
-    assert.equal(textOf(composer().querySelector("[data-night-chat-closed]")), "밤에는 귀족이 채팅을 쓸 수 없습니다")
-})
 
 test("A06-M-002 밤 산 의사 입력 줄 열림: 글칸 있음", async () => {
     await nightPage({ role: "DOCTOR" })

@@ -13,18 +13,18 @@ afterEach(() => { resetGame(view); view = null })
 
 const timebar = () => document.querySelector("[data-ingame-phase-timer-mobile]")
 
-test("A05-M-506 시간 줄 '5초 뒤 마감' (7명): 밤 차례 시간 줄 + phase_settle_started(NIGHT) → [data-ingame-phase-settle], '5초 뒤 마감' 글·남은 초 5 이하", async () => {
+// 당김 표시 칸 값(data-ingame-phase-settle)은 지금 화면에 없음 → 명패 글·남은 초로만 봄
+test("A05-M-506 시간 줄 '5초 뒤 마감' (7명): 밤 차례 시간 줄 + phase_settle_started(NIGHT) → 명패 '5초 뒤 마감' 글·남은 초 5 이하", async () => {
     const socket = fakeSocket()
     seat({ n: 7, role: "DOCTOR", phase: "NIGHT" })
     view = await renderPage(socket)
     await fire(socket, "night_turn_started", turnStarted({ role: "JOKER", seconds: 60 }))
     const bar = timebar()
     assert.ok(bar, "시간 줄이 없음")
-    assert.ok(!bar.hasAttribute("data-ingame-phase-settle"), "당기기 전부터 당김 표시가 있음")
     assert.ok(!textOf(bar).includes("5초 뒤 마감"), `당기기 전부터 5초 글: ${textOf(bar)}`)
     await fire(socket, "phase_settle_started", settle({ phase: "NIGHT", dayIndex: 1, role: "JOKER", deadline: Date.now() + 5_000 }))
-    const settled = document.querySelector("[data-ingame-phase-timer-mobile][data-ingame-phase-settle]")
-    assert.ok(settled, "당김 표시가 없음")
+    const settled = timebar()
+    assert.ok(settled, "당긴 뒤 시간 줄이 없음")
     assert.ok(textOf(settled).includes("5초 뒤 마감"), `시간 줄 글: ${textOf(settled)}`)
     const clock = textOf(settled.querySelector("[role=timer]")).match(/(\d{2}):(\d{2})/)
     assert.ok(clock, `시간 줄의 남은 시간이 없음: ${textOf(settled)}`)

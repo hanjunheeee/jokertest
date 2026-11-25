@@ -1,14 +1,15 @@
-// 모바일 재판 창 시험: 피고 카드·유죄·무죄, [버그 8] 둘째 날 단추, 피고·죽은 사람·완료 안내, 거절·시간 초과 글, "재판 판정" 단추 없음, 명단에 피고 없을 때
-// 목록 A04 모바일 A04-M-001~008·011 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-tribunal-gate.test.js)
-// 폰 세로 재판: 피고 등장 연출(이름·카드, 단추 없음)이 잠시 뒤 저절로 닫히고, 채팅방 "최후의 변론" 단추로 연 시트에 피고 카드·유죄·무죄·안내·거절 글 (2026-11-24 새 배치)
+// 모바일 재판 창 시험: 피고 카드·유죄·무죄, [버그 8] 둘째 날 단추, 피고·죽은 사람·완료 안내, "재판 판정" 단추 없음, 명단에 피고 없을 때
+// 목록 A04 모바일 A04-M-001~005·008·011 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-tribunal-gate.test.js)
+// 폰 세로 재판: 피고 등장 연출(이름·카드, 단추 없음)이 잠시 뒤 저절로 닫히고, 채팅방 "최후의 변론" 단추로 연 시트에 피고 카드·유죄·무죄·안내 글 (2026-11-24 새 배치)
+// 표 거절·시간 초과 글 자리는 지금 시트에 없음 → 그 시험(A04-M-006·007)은 뺌
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
-import { test, afterEach, mock } from "node:test"
+import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
 import { buttonNamed, buttonNames, click, flush, pageText, textOf } from "./a00-kit.mjs"
 import {
     NAMES, GAME, confirmEntrances, dayPhaseChanged, fakeSocket, fire, nextDay, openTribunalSheet, renderPage, resetGame, rowButtons, seat, selfProgress,
-    tick, tribunalBox, tribunalEntry, tribunalResolved, tribunalSheet, useInGameStore,
+    tribunalBox, tribunalEntry, tribunalResolved, tribunalSheet, useInGameStore,
 } from "./a00-game.mjs"
 
 let view = null
@@ -89,31 +90,6 @@ test("A04-M-005 완료 글 (6명 판): 냄 → '투표가 완료되었습니다.
     await fire(socket, "session_self_progress", selfProgress({ phase: "TRIBUNAL", dayIndex: 1, self: { hasSubmittedTribunalVote: true }, required: 5 }))
     assert.ok(sheetText().includes("투표가 완료되었습니다."), `완료 글이 없음: ${sheetText()}`)
     assert.ok(!inSheet("유죄") && !inSheet("무죄"), "낸 뒤에도 단추가 남음")
-})
-
-test("A04-M-006 [버그 8] 거절 까닭 글 (7명 판): TRIBUNAL_ALREADY_RESOLVED → 시트에 role=alert '재판이 이미 판정되어 투표할 수 없습니다.'", async () => {
-    await tribunalPage({ n: 7, defendant: 3, acks: { cast_tribunal_vote: { ok: false, code: "TRIBUNAL_ALREADY_RESOLVED" } } })
-    await openTribunalSheet()
-    click(inSheet("유죄"))
-    await flush()
-    const alert = tribunalSheet().querySelector('[data-ingame-tribunal-vote-error][role="alert"]')
-    assert.ok(alert, `거절 글이 없음: ${pageText().slice(0, 300)}`)
-    assert.equal(textOf(alert), "재판이 이미 판정되어 투표할 수 없습니다.")
-})
-
-test("A04-M-007 응답 없음 글 (10명 판): 5초 → '요청 시간이 초과되었습니다.'", async () => {
-    await tribunalPage({ n: 10, defendant: 3, acks: { cast_tribunal_vote: "never" } })
-    await openTribunalSheet()
-    mock.timers.enable({ apis: ["setTimeout"] })
-    click(inSheet("유죄"))
-    await tick(4_999)
-    assert.ok(!pageText().includes("요청 시간이 초과되었습니다."), "5초 전에 시간 초과 글이 뜸")
-    await tick(1)
-    mock.timers.reset()
-    await flush()
-    const alert = tribunalSheet()?.querySelector("[data-ingame-tribunal-vote-error]")
-    assert.ok(alert, "시간 초과 글이 없음")
-    assert.equal(textOf(alert), "요청 시간이 초과되었습니다.")
 })
 
 test("A04-M-008 '재판 판정' 단추 없음 (6명 판): 재판 중 행동 줄·피고 등장 연출·최후의 변론 시트 → '재판 판정' 없음", async () => {

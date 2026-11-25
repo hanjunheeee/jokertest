@@ -10,10 +10,10 @@ import {
 } from "@m/domains/auth/components/signup/signupAuxButtonLook.js"
 
 // 문구는 왼쪽, 중복확인 버튼은 오른쪽 고정 폭
-export default function EmailCheck({ status, errorMessage = null, onCheck }) {
+export default function EmailCheck({ status, onCheck }) {
   return (
     <div className="mx-auto flex w-[88%] items-center justify-between gap-1.5">
-      <EmailCheckMessage status={status} errorMessage={errorMessage} />
+      <EmailCheckMessage status={status} />
       <ImageButton
         look={SIGNUP_AUX_BUTTON_LOOK}
         onClick={onCheck}

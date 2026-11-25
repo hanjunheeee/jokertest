@@ -1,10 +1,10 @@
-// 모바일 로비 프로필 배너 시험 [버그 1]: 톱니는 장식(단추 아님, 눌러도 주소 그대로), "계정 설정" 단추 없음, 배너 누르면 마이페이지
-// 목록 A11b 모바일 A11-M-501·502 (돌리기: frontend-mobile 폴더에서 node --test tests/a11-lobby-gear.test.js)
+// 모바일 로비 프로필 배너 시험: 톱니는 "계정 설정" 단추(누르면 계정 관리 /account), 배너 누르면 마이페이지
+// 목록 A11b 모바일 A11-M-501·502, 합친 화면(2026-11-24 되돌림)에 맞춤 (돌리기: frontend-mobile 폴더에서 node --test tests/a11-lobby-gear.test.js)
 import "./helpers/mobileLoader.mjs"
-import { React, act } from "./helpers/dom.mjs"
+import { React } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { buttonNamed, buttonNames, click, flush, waitUntil } from "./a00-kit.mjs"
+import { buttonNamed, click, flush, waitUntil } from "./a00-kit.mjs"
 import { economyRoutes, fakeSocket, renderRoute, resetGame, router, serve, useAuthStore } from "./a00-game.mjs"
 
 const { default: LobbyPage } = await import("@m/domains/lobby/pages/LobbyPage.jsx")
@@ -20,27 +20,21 @@ async function openLobby() {
     view = await renderRoute(fakeSocket(), React.createElement(LobbyPage), { path: "/lobby" })
     await waitUntil(() => buttonNamed("마이페이지") !== null, { label: "프로필 배너" })
 }
-// 배너 위에 겹친 톱니 그림 자리 (배너 단추 옆 형제)
-function gearSpot() {
-    const banner = buttonNamed("마이페이지")
-    return [...banner.parentElement.children].find((el) => el !== banner) ?? null
-}
 
-test("A11-M-501 [버그 1] 모바일 로비 톱니는 장식: 톱니 그림 누름 → 주소 그대로, 톱니 자리 aria-hidden·단추 아님", async () => {
+test("A11-M-501 모바일 로비 톱니 = '계정 설정' 단추: 배너 옆 겹친 단추, 누르면 /account", async () => {
     await openLobby()
-    const gear = gearSpot()
-    assert.ok(gear, "톱니 자리가 없음")
-    assert.equal(gear.getAttribute("aria-hidden"), "true")
-    assert.notEqual(gear.tagName, "BUTTON", "톱니가 단추임")
-    assert.equal(gear.querySelector("button"), null, "톱니 안에 단추가 있음")
-    act(() => { gear.dispatchEvent(new window.MouseEvent("click", { bubbles: true })) })
+    const gear = buttonNamed("계정 설정")
+    assert.ok(gear, "톱니 단추가 없음")
+    const banner = buttonNamed("마이페이지")
+    assert.equal(gear.parentElement, banner.parentElement, "톱니가 배너 옆에 없음")
+    assert.equal(banner.contains(gear), false, "톱니가 배너 단추 안에 있음")
+    click(gear)
     await flush()
-    assert.equal(router.state.location.pathname, "/lobby", "톱니를 눌렀는데 주소가 바뀜")
+    assert.equal(router.state.location.pathname, "/account")
 })
 
-test("A11-M-502 [버그 1] 모바일 '계정 설정' 단추 없음: 로비 그림 → '계정 설정' 이름 단추 0개, 배너 누름 → /mypage", async () => {
+test("A11-M-502 모바일 배너 누름 → /mypage", async () => {
     await openLobby()
-    assert.ok(!buttonNames().some((n) => n.includes("계정 설정")), `로비 단추: ${buttonNames().join(" | ")}`)
     click(buttonNamed("마이페이지"))
     await flush()
     assert.equal(router.state.location.pathname, "/mypage")

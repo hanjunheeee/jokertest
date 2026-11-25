@@ -1,4 +1,4 @@
-// 재판(최후의 변론) 화면 값: 피고·유무죄·안내·표 거절 까닭 (데스크톱 TribunalGate와 같은 판단, 판정은 서버가 5초 뒤 함)
+// 재판(최후의 변론) 화면 값: 피고·유무죄·안내·판정 (데스크톱 TribunalGate와 같은 판단)
 // TribunalGate(가로), TalkLayout 시트(세로 카톡형)가 씀
 import { useContext, useMemo } from "react"
 import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionContext.jsx"
@@ -50,13 +50,6 @@ export function useTribunalPresentation() {
             hasSubmitted,
             status: ctx?.tribunalVoteStatus ?? "idle",
         })
-    // 서버가 표를 거절했거나 응답이 없으면 그 까닭 글 (다시 누르면 지워짐)
-    // 연출 창·시트는 단추가 보일 때 안내 글을 안 그려서 따로 띄움
-    const voteErrorText = ctx?.tribunalVoteStatus !== "submitting"
-        && typeof ctx?.tribunalVoteError === "string"
-        && ctx.tribunalVoteError.trim().length > 0
-        ? ctx.tribunalVoteError
-        : null
 
     return {
         active,
@@ -67,6 +60,6 @@ export function useTribunalPresentation() {
         voteSubmitting: ctx?.tribunalVoteStatus === "submitting",
         onVoteGuilty: () => ctx?.submitTribunalVote?.("GUILTY"),
         onVoteNotGuilty: () => ctx?.submitTribunalVote?.("NOT_GUILTY"),
-        voteErrorText,
+        // 재판 판정 단추 값(devResolve*)은 안 줌: 서버에서 판정 요청을 없앰 (표가 다 차면 서버가 5초 뒤 판정)
     }
 }

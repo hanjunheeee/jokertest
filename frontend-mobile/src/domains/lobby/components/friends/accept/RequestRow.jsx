@@ -51,9 +51,10 @@ export default function RequestRow({ request, processing, targeted, error = null
       actions={actions}
       targeted={targeted}
       rowProps={{ "data-request-id": requestId, "data-notification-target": targeted ? "true" : undefined }}
-      notes={error !== null ? (
+    >
+      {error !== null ? (
         <p role="alert" data-request-error={requestId} className={STATUS_DETAIL_ERROR_CLASS}>{error}</p>
       ) : null}
-    />
+    </RowShell>
   )
 }

@@ -1,4 +1,4 @@
-// 모바일 대기방 추방 시험 [버그 7]: 잠긴 까닭이 폰 화면 글로 보이고, 줄의 "추방" 한 번에 바로 보내고, 실패·결과 모름 글이 보임
+// 모바일 대기방 추방 시험 [버그 7]: 확인 전엔 추방 단추가 꺼지고 title로 까닭, 줄의 "추방" 한 번에 바로 보내고, 실패·결과 모름 글이 보임
 // 목록 A01b 모바일 A01-M-501~505 (돌리기: frontend-mobile 폴더에서 node --test tests/a01-kick-sheet.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render } from "./helpers/dom.mjs"
@@ -30,19 +30,24 @@ function kickPage(extra = {}) {
     }
 }
 
-test("A01-M-501 [버그 7] 방 확인 전 방장: 폰 화면에 잠긴 까닭 글이 보이고 추방 단추는 꺼짐", () => {
+test("A01-M-501 방 확인 전 방장: 추방 단추 꺼짐 + 단추 title '방 정보를 서버에서 확인하는 중입니다' (화면 까닭 글 칸은 없음)", () => {
     view = render(React.createElement(HostActions, {
         visible: true, hidden: false, canEditSettings: true, isKickHost: true, canKick: false,
         onOpenSettings: () => {}, onOpenKickModal: () => {},
     }))
-    const reason = view.container.querySelector('[data-testid="kick-locked-reason"]')
-    assert.ok(reason, "잠긴 까닭 글이 없음")
-    assert.ok(textOf(reason).length > 0, "까닭 글이 빔")
-    const kick = buttonNamed("참가자 추방", view.container) ?? [...view.container.querySelectorAll("button")].find((b) => /추방/.test(textOf(b)))
+    const kick = [...view.container.querySelectorAll("button")].find((b) => /추방/.test(textOf(b)))
     assert.ok(kick, `추방 단추가 없음: ${buttonNames(view.container).join(" | ")}`)
     assert.equal(kick.disabled, true, "확인 전인데 추방 단추가 켜짐")
-    // 단추가 그 글을 가리킴 (읽어 주는 도구가 같이 읽음)
-    assert.equal(kick.getAttribute("aria-describedby"), reason.id)
+    assert.equal(kick.getAttribute("title"), "방 정보를 서버에서 확인하는 중입니다")
+    assert.ok(view.container.querySelector('[data-testid="kick-locked-reason"]') === null, "까닭 글 칸이 있음")
+    // 확인이 끝나면 켜지고 title 없음
+    view.rerender(React.createElement(HostActions, {
+        visible: true, hidden: false, canEditSettings: true, isKickHost: true, canKick: true,
+        onOpenSettings: () => {}, onOpenKickModal: () => {},
+    }))
+    const ready = [...view.container.querySelectorAll("button")].find((b) => /추방/.test(textOf(b)))
+    assert.equal(ready.disabled, false)
+    assert.equal(ready.getAttribute("title"), null)
 })
 
 test("A01-M-502 [버그 7] 줄의 '추방' 한 번 = 바로 보냄, 확인 칸·'취소' 없음", () => {

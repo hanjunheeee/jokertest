@@ -1,13 +1,11 @@
-// 상점 판 (재화 목록 상태·상품 칸·고른 상품 설명과 단추 아래 구매 안내·분류 목록), 상태는 데스크톱 useStorePanel을 페이지가 넘김
+// 상점 판 (구매 알림·재화 안내·상품 칸·고른 상품 설명·분류 목록), 상태는 데스크톱 useStorePanel을 페이지가 넘김
 // pages/StorePage가 씀 (데스크톱 StorePanel 자리)
 import { motion } from "framer-motion"
 import { getItemDisplayIcon } from "@/domains/store/constants/storeItems.js"
 import { PANEL_SCROLL_AREA_CLASS } from "@/domains/store/constants/storeLayoutStyle.js"
 import { storePurchase } from "@/domains/store/store/storePurchase.store.js"
-import { useEconomyStore } from "@/domains/economy/store/economy.store.js"
-import {
-    isRealPurchaseCategory, panelPurchaseBlockOf, splitCurrencyFeedbackPanel, topupReturnNotesOf,
-} from "@/domains/store/utils/storePanel.js"
+// 구매 단추 잠금은 지금 공용 계산 purchaseBlockOf의 disabled (예전 isPurchaseDisabled 자리, 받는 값 같음)
+import { isRealPurchaseCategory, purchaseBlockOf } from "@/domains/store/utils/storePanel.js"
 import { UI_REVEAL_TRANSITION } from "@/shared/constants/pageTransitions.js"
 import PurchaseFeedback from "../feedback/PurchaseFeedback.jsx"
 import CurrencyFeedback from "../feedback/CurrencyFeedback.jsx"
@@ -25,36 +23,9 @@ const GRID_COLUMN_CLASS = "order-2 flex min-h-0 min-w-0 flex-1 flex-col md:order
 const SIDEBAR_CLASS =
     "order-1 shrink-0 md:order-2 md:w-[26%] md:border-l md:border-[#2a1810]/28 md:pl-3 land:order-2 land:w-[10.5rem] land:border-l land:border-[#2a1810]/28 land:pl-2"
 
-// 결제 실패 복귀 덧붙임 글 칸 (재화 안내 칸과 같은 색, 줄마다 글자색을 정해 바탕에 묻히지 않게)
-const RETURN_NOTES_CLASS = "rounded border border-[#9c793d] bg-[#241a10] p-2 text-sm text-[#f3dfb4]"
-
-// 구매 결과 안내 묶음: 일반 구매 결과·골드 구매/충전 결과·결제 실패 복귀 덧붙임 글 (데스크톱 PurchaseResults와 같음)
-function PurchaseResults({ panel, resultOnly }) {
-    const returnNotes = topupReturnNotesOf(panel.currencyPanel.currency)
-    return (
-        <>
-            {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}
-            {panel.purchaseState.kind === "GOLD" ? null : (
-                <PurchaseFeedback state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
-            )}
-            <CurrencyFeedback panel={resultOnly} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
-            {returnNotes.length ? (
-                <div role="status" data-testid="topup-return-notes" className={RETURN_NOTES_CLASS}>
-                    {returnNotes.map((note) => <p key={note} className="text-[#f3dfb4]">{note}</p>)}
-                </div>
-            ) : null}
-        </>
-    )
-}
-
 // 영상 끝나기 전엔 숨기고 누르기 막음, 일괄구매 중엔 보유 표시·기본 지급 문구를 끔 (데스크톱과 같음)
 export default function StorePanel({ visible, panel }) {
     const { activeCategory, currentItem, bulkMode, ownedItemIds } = panel
-    const balanceGold = useEconomyStore((state) => state.balanceGold)
-    // 단추 잠금과 꺼진 까닭 (잔액 미리 검사 포함)
-    const block = currentItem ? panelPurchaseBlockOf(panel, balanceGold) : null
-    // 고른 상품이 있으면 구매 결과는 단추 아래, 판 위엔 재화 목록 상태만 (없으면 전부 판 위)
-    const { listOnly, resultOnly } = splitCurrencyFeedbackPanel(panel)
 
     return (
         <motion.div
@@ -67,12 +38,11 @@ export default function StorePanel({ visible, panel }) {
             inert={!visible || undefined}
         >
             <div className={PANEL_CLASS}>
-                {currentItem ? null : (
-                    <div className="mb-2 flex flex-col gap-1 empty:hidden">
-                        <PurchaseResults panel={panel} resultOnly={resultOnly} />
-                    </div>
+                {/* 골드 구매 기록이면 재화 안내가 대신 보임 */}
+                {panel.purchaseState.kind === "GOLD" ? null : (
+                    <PurchaseFeedback className="mb-2" state={panel.purchaseState} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
                 )}
-                <CurrencyFeedback className="mb-2" panel={listOnly} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
+                <CurrencyFeedback className="mb-2" panel={panel} onCheck={storePurchase.check} onRetry={storePurchase.retry} />
                 <div className={MAIN_ROW_CLASS}>
                     <div className={GRID_COLUMN_CLASS}>
                         <div className={PANEL_SCROLL_AREA_CLASS}>
@@ -103,11 +73,16 @@ export default function StorePanel({ visible, panel }) {
                                 onPurchaseClick={panel.handlePurchaseClick}
                                 owned={!bulkMode && ownedItemIds.has(currentItem.id)}
                                 purchaseLabel={bulkMode ? null : panel.purchaseLabel}
-                                purchaseDisabled={block.disabled}
-                                blockReason={block.reason}
-                            >
-                                <PurchaseResults panel={panel} resultOnly={resultOnly} />
-                            </ItemDetail>
+                                purchaseDisabled={purchaseBlockOf({
+                                    currentItem,
+                                    bulkMode,
+                                    bulkSelectedIds: panel.bulkSelectedIds,
+                                    ownedItemIds,
+                                    purchaseLocked: panel.purchaseLocked,
+                                    economyStatus: panel.economyStatus,
+                                    currencyBlocked: panel.currencyBlocked,
+                                }).disabled}
+                            />
                         ) : null}
                     </div>
 

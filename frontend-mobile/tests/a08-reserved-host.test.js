@@ -1,4 +1,4 @@
-// 모바일 판 끝 뒤 대기방 시험: 비워 둔 방장 자리 칸("방장 자리"·읽기 이름), 판 중 설정 시트에 방관리 탭·"다음 게임 설정 유지" 없음
+// 모바일 판 끝 뒤 대기방 시험: 비워 둔 방장 자리(맨 앞 빈 실루엣 + 판 아래 기다림 글), 판 중 설정 시트에 방관리 탭·"다음 게임 설정 유지" 없음
 // 목록 A08 모바일 A08-M-006·007 (돌리기: frontend-mobile 폴더에서 node --test tests/a08-reserved-host.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React } from "./helpers/dom.mjs"
@@ -37,17 +37,18 @@ function reopenedRoom() {
     }
 }
 
-test("A08-M-006 방장 자리 칸: reservedHostUuid 있음 → 자리 칸 '방장 자리', 화면 읽기 이름 '비워 둔 방장 자리'", async () => {
+test("A08-M-006 방장 자리 비움: reservedHostUuid 있음·2명 → 자리 실루엣 3칸(맨 앞 빈 방장 자리, 글·읽기 이름 없음) + 판 아래 '방장 자리를 비워 두었습니다…' 글", async () => {
     const room = reopenedRoom()
     const socket = fakeSocket({ acks: { get_current_room: { ok: true, room } } })
     useAuthStore.setState({ isLoggedIn: true, user: { uuid: "pB", nickname: "나래" } })
     useMatchingStore.getState().setRoom(room)
     view = await renderRoute(socket, React.createElement(GameMatchingPage), { path: "/game-matching" })
     await flush(10)
-    const slot = document.querySelector("[data-reserved-host]")
-    assert.ok(slot, "비워 둔 방장 자리 칸이 없음")
-    assert.equal(textOf(slot), "방장 자리")
-    assert.equal(slot.getAttribute("aria-label"), "비워 둔 방장 자리")
+    const seats = [...document.querySelectorAll("div.items-end.justify-center > div.flex-col.items-center")]
+    assert.equal(seats.length, 3, "방장 자리 칸을 더한 자리 수가 아님")
+    assert.equal(textOf(seats[0]), "")
+    assert.ok(document.querySelector("[data-reserved-host]") === null, "방장 자리 표시 칸이 있음")
+    assert.ok(textOf(document.body).includes("방장 자리를 비워 두었습니다. 지난 판 방장이 오지 않으면 먼저 들어온 사람이 방장이 됩니다."), "기다림 글이 없음")
 })
 
 test("A08-M-007 설정 시트에 스위치 없음 [결정: 방관리 탭째 없앰]: 방장 판 중 설정 → '방관리' 탭·'다음 게임 설정 유지' 없음", async () => {

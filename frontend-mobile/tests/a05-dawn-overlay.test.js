@@ -1,4 +1,4 @@
-// 모바일 낮 시작 연출 시험 [버그 5]: 죽음은 영상 + 글(모두에게), 살림은 글 창, 없으면 "낮이 되었습니다"만, 연출 뒤 낮 문구·결과 화면, 채팅 알림 줄
+// 모바일 낮 시작 연출 시험 [버그 5]: 죽음은 영상 + 글(모두에게), 아무도 안 죽으면 글 창, 연출 뒤 낮 문구·결과 화면, 채팅 알림 줄("○○님이 죽었습니다")
 // 목록 A05b 모바일 A05-M-501~505·508 (돌리기: frontend-mobile 폴더에서 node --test tests/a05-dawn-overlay.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
@@ -86,11 +86,13 @@ test("A05-M-505 [임시 9] 밤 암살로 판 끝 → 연출 뒤 결과 화면 (5
     await waitUntil(() => router.state.location.pathname === "/gameresult", { label: "연출 뒤 결과 화면" })
 })
 
-test("A05-M-508 채팅 알림 줄 (7명): 죽음 → 채팅에 '지난밤 A님이 살해당했습니다' 줄 / 아무도 안 죽음 → 살해 줄 없음", async () => {
+// 지금 채팅방 알림 줄은 죽음마다 "○○님이 죽었습니다" 한 가지 ("지난밤 …살해당했습니다" 줄은 상대 화면에 없음, 그 글은 연출 창에만)
+test("A05-M-508 채팅 알림 줄 (7명): 죽음 → 채팅에 'A님이 죽었습니다' 줄, '살해당했습니다' 줄 없음 / 아무도 안 죽음 → 죽음 줄 없음", async () => {
     let socket = await nightPage(7)
     await fire(socket, "night_result_applied", nextDay({ n: 7, dead: [4], victim: 4, deadline: Date.now() + 60_000 }))
     await endKillVideo()
-    assert.ok(talkText().includes(`지난밤 ${NAMES[4]}님이 살해당했습니다`), `채팅방: ${talkText()}`)
+    assert.ok(talkText().includes(`${NAMES[4]}님이 죽었습니다`), `채팅방: ${talkText()}`)
+    assert.ok(!talkText().includes("살해당했습니다"), `채팅방에 연출 글이 들어감: ${talkText()}`)
     resetGame(view)
     view = null
     socket = await nightPage(7)
@@ -98,5 +100,5 @@ test("A05-M-508 채팅 알림 줄 (7명): 죽음 → 채팅에 '지난밤 A님�
     const okBtn = dawnBox("QUIET") ? buttonNamed("확인", dawnBox("QUIET")) : null
     if (okBtn) click(okBtn)
     await flush()
-    assert.ok(!talkText().includes("살해당했습니다"), `아무도 안 죽었는데 살해 줄이 있음: ${talkText()}`)
+    assert.ok(!talkText().includes("죽었습니다"), `아무도 안 죽었는데 죽음 줄이 있음: ${talkText()}`)
 })

@@ -1,5 +1,5 @@
-// 모바일 대기방 친구 초대 창 실패 글 시험: 목록 받기 실패·초대 보내기 실패 글이 창 안에 보이는지
-// 목록 A13 모바일 A13-M-011·012 — PC 친구 초대 창과 같게(errorMessage 글, 브라우저 시험 A13-E-083 "가득 글") (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goK3-invite-error.test.js)
+// 모바일 대기방 친구 초대 창 실패 시험: 초대 보내기가 거절되면 줄은 "초대하기" 그대로 (합친 화면: 창 안 실패 글 칸 없음)
+// 목록 A13 모바일 A13-M-012, 합친 화면(2026-11-24 되돌림)에 맞춤 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goK3-invite-error.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -57,27 +57,21 @@ async function openInviteSheet() {
     await flush(5)
 }
 
-const alertTexts = () => [...document.querySelectorAll('[role="alert"]')].map((el) => textOf(el))
-
-test("A13-M-011 친구 목록 받기 실패 → 초대 창 안에 그 실패 글(role=alert)", async () => {
-    useFriendStore.setState({ friends: [], friendsError: "친구 목록을 불러오지 못했습니다.", fetchFriends: async () => {} })
-    await openInviteSheet()
-    assert.ok(alertTexts().includes("친구 목록을 불러오지 못했습니다."), `실패 글이 안 보임: ${JSON.stringify(alertTexts())}`)
-})
-
-test("A13-M-012 초대 보내기가 '가득 참'으로 거절 → 초대 창 안에 그 글(role=alert), 줄은 '초대중'이 안 됨", async () => {
+test("A13-M-012 초대 보내기가 '가득 참'으로 거절 → 줄은 '초대중'이 안 되고 '라온 게임 초대' 그대로, 창 안 실패 글 칸은 없음", async () => {
     useFriendStore.setState({
         friends: [{ id: "f1", name: "라온", online: true }],
         friendsError: null,
         fetchFriends: async () => {},
     })
-    useGameInviteStore.setState({ sendInvite: async () => ({ ok: false, reason: "error", message: FULL_MESSAGE }) })
+    let asked = 0
+    useGameInviteStore.setState({ sendInvite: async () => { asked += 1; return { ok: false, reason: "error", message: FULL_MESSAGE } } })
     await openInviteSheet()
-    assert.deepEqual(alertTexts().filter((t) => t === FULL_MESSAGE), [], "누르기 전부터 실패 글이 있음")
     const invite = buttonNamed("라온 게임 초대")
     assert.ok(invite, "라온 줄 초대 단추가 없음")
     click(invite)
     await flush(5)
-    assert.ok(alertTexts().includes(FULL_MESSAGE), `가득 참 글이 안 보임: ${JSON.stringify(alertTexts())}`)
+    assert.equal(asked, 1, "초대를 안 보냄")
     assert.ok(buttonNamed("라온 게임 초대"), "거절됐는데 줄이 '초대중'으로 바뀜")
+    assert.ok(buttonNamed("라온 초대 보내는 중") === null)
+    assert.equal(textOf(document.body).includes(FULL_MESSAGE), false, "창 안에 실패 글이 보임")
 })

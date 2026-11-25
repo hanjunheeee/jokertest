@@ -8,7 +8,6 @@ import Composer from "./Composer.jsx"
 import ExpandButton from "./ExpandButton.jsx"
 import FrameSlice from "./FrameSlice.jsx"
 import MessageList from "./MessageList.jsx"
-import { selectOverlayOpen, useOverlayBridge } from "@m/domains/game/ingame/hooks/overlays/overlayBridge.js"
 import { selectTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 import { FRAME_ROOT_CLASS, FRAME_SLICE, listInsetStyle } from "./chatStyle.js"
 
@@ -22,9 +21,7 @@ export default function ChatPanel() {
     const closeCloseup = useCallback(() => setCloseupOpen(false), [])
 
     // 재판 연출이 뜨면 크게 보기도 닫음 (안 닫으면 재판 끝나고 저절로 다시 뜸, 그리는 중에 바로 맞춤)
-    // 다른 연출 창(단계 안내·밤 차례·낮 시작 글 창·암살 영상·사망 선택)도 같음: 크게 보기가 body에 떠서 그 창과 "확인" 단추를 가림
-    const overlayOpen = useOverlayBridge(selectOverlayOpen)
-    if ((tribunalOpen || overlayOpen) && closeupOpen) setCloseupOpen(false)
+    if (tribunalOpen && closeupOpen) setCloseupOpen(false)
 
     // 재판 연출이 자기 채팅을 띄우므로 겹치지 않게 숨김
     if (tribunalOpen) return null

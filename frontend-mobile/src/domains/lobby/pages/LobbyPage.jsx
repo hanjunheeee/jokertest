@@ -1,10 +1,10 @@
-// 모바일 로비 화면 (/lobby): 배경·인트로 영상, 위 프로필·재화, 가운데 메뉴, 바닥 알림·친구·소리, 들어올 때 남은 판·대기방 자리 정리
+// 모바일 로비 화면 (/lobby): 배경·인트로 영상, 위 프로필·재화, 가운데 메뉴, 바닥 알림·친구·소리
 // app/routes/index.jsx가 씀
 import { useNavigate, useSearchParams } from "react-router-dom"
+import { useLobbyEntryCleanup } from "@/domains/game/shared/hooks/useLobbyEntryCleanup.js"
 import { useLobbyIntro } from "@/domains/lobby/hooks/useLobbyIntro.js"
 import { useLobbyNotificationPanels } from "@/domains/lobby/hooks/useLobbyNotificationPanels.js"
 import { useMyProfile } from "@/shared/hooks/useMyProfile.js"
-import { useLobbyEntryCleanup } from "@/domains/game/shared/hooks/useLobbyEntryCleanup.js"
 import { useFriendsReopen } from "@m/domains/lobby/hooks/useFriendsReopen.js"
 import LobbyBackground from "@m/domains/lobby/components/LobbyBackground.jsx"
 import RevealLayer from "@m/domains/lobby/components/RevealLayer.jsx"
@@ -17,7 +17,7 @@ import NotificationSheet from "@m/domains/notifications/components/NotificationS
 // 열림 상태·주소 대상 처리는 데스크톱 훅 그대로, 배치만 모바일 한 열
 export default function LobbyPage() {
     const navigate = useNavigate()
-    // 들어올 때 서버가 남은 판·대기방 자리를 지움 (판 중 산 사람이면 판 화면으로)
+    // 들어올 때 서버에 enter_lobby를 보내 남은 판·대기방 자리를 정리 (판 중 산 사람이면 판 화면으로, 서버 로비 입장 정리와 맞춤)
     useLobbyEntryCleanup()
     const [searchParams] = useSearchParams()
     const { profile, loading: profileLoading } = useMyProfile()
@@ -34,6 +34,7 @@ export default function LobbyPage() {
                     profile={profile}
                     loading={profileLoading}
                     onMyPage={() => navigate("/mypage")}
+                    onAccount={() => navigate("/account")}
                 />
                 <MenuArea />
             </RevealLayer>

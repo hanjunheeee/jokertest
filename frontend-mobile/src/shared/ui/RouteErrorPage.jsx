@@ -23,8 +23,7 @@ export default function RouteErrorPage() {
 
     return (
         <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-black px-6 text-center text-[#f5f0e6]">
-            {/* 제목 색을 직접 줌: 전역 h1 빨강이 바탕 글자색을 덮어 검은 바탕에서 안 보임 */}
-            <h1 className="font-subheading text-xl font-bold text-[#f5f0e6]">{notFound ? "없는 화면입니다" : "화면을 여는 중 문제가 생겼습니다"}</h1>
+            <h1 className="font-subheading text-xl font-bold">{notFound ? "없는 화면입니다" : "화면을 여는 중 문제가 생겼습니다"}</h1>
             <p className="text-sm text-white/70">{notFound ? "주소를 다시 확인해 주세요." : "다시 읽거나 처음 화면으로 돌아가 주세요."}</p>
             {devDetail ? (
                 <p className="max-w-md break-all text-left font-mono text-xs text-red-300/90" role="status">{devDetail}</p>

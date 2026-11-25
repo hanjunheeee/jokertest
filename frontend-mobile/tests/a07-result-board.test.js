@@ -1,5 +1,5 @@
-// 모바일 결과판 시험: MVP 자리 없음, 마녀사냥꾼 이름, 내 줄에만 "+1골드"(못 받으면 없음), 10명 빈 칸 없음, 이긴 진영 띠·패배 띠
-// 목록 A07 모바일 A07-M-001~008 (돌리기: frontend-mobile 폴더에서 node --test tests/a07-result-board.test.js)
+// 모바일 결과판 시험: MVP 자리 없음, 마녀사냥꾼 이름, 골드 칸 없음, 10명 빈 칸 없음, 이긴 진영 띠·패배 띠
+// 목록 A07 모바일 A07-M-001·002·004·006~008 (돌리기: frontend-mobile 폴더에서 node --test tests/a07-result-board.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render, act } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -54,25 +54,9 @@ test("A07-M-002 마녀사냥꾼 이름: 마녀사냥꾼 줄 → '마녀사냥꾼
     assert.ok(textOf(row).includes("마녀사냥꾼"), `줄 글: ${textOf(row)}`)
 })
 
-test("A07-M-003 내 줄 '+1골드': 내 골드 1 → 내 줄 '+1골드'", () => {
-    drawBoard({ roles: EIGHT, winner: "CITIZEN", gold: [1] })
-    const mine = rows().find((li) => textOf(li).includes(NAMES[0]))
-    assert.ok(mine, "내 줄이 없음")
-    const badge = mine.querySelector('[data-testid="game-result-gold-reward"]')
-    assert.ok(badge, "내 줄에 골드 표시가 없음")
-    assert.equal(textOf(badge), "+1골드")
-})
-
 test("A07-M-004 못 받으면 골드 없음: 내 골드 0 → 골드 칸 0", () => {
     drawBoard({ roles: EIGHT, winner: "JOKER", gold: [0] })
     assert.equal(goldBadges().length, 0)
-})
-
-test("A07-M-005 남의 줄 골드 없음: 전원 1 → 골드 칸 1개(내 줄)", () => {
-    drawBoard({ roles: EIGHT, winner: "CITIZEN", gold: Array(8).fill(1) })
-    const badges = goldBadges()
-    assert.equal(badges.length, 1)
-    assert.ok(textOf(badges[0].closest("li")).includes(NAMES[0]), "골드 칸이 내 줄이 아님")
 })
 
 test("A07-M-006 10명 결과판 빈 칸 없음: 10명 → 줄 10개, 이름 빈 줄 0", () => {

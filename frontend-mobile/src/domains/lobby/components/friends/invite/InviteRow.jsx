@@ -10,7 +10,6 @@ import IconAction from "../parts/IconAction.jsx"
 export default function InviteRow({ invite, processing, error, targeted, onAccept, onDecline }) {
   const state = describeState(invite)
   const { inviteId } = invite
-  const hasError = error !== null && error !== undefined
 
   const actions = state.actionable ? (
     <>
@@ -41,15 +40,11 @@ export default function InviteRow({ invite, processing, error, targeted, onAccep
         "data-invite-status": invite.status,
         "data-notification-target": targeted ? "true" : undefined,
       }}
-      notes={(
-        <>
-          {/* 실패 글이 있으면 그 글이 까닭이라 끝난 글은 안 겹침 (데스크톱 GameInviteRow와 같음) */}
-          {state.actionable || hasError ? null : <p data-invite-ended="true" className={STATUS_DETAIL_MUTED_CLASS}>{state.text}</p>}
-          {hasError ? (
-            <p role="status" data-invite-error={inviteId} className={STATUS_DETAIL_ERROR_CLASS}>{error}</p>
-          ) : null}
-        </>
-      )}
-    />
+    >
+      {state.actionable ? null : <p data-invite-ended="true" className={STATUS_DETAIL_MUTED_CLASS}>{state.text}</p>}
+      {error !== null && error !== undefined ? (
+        <p role="status" data-invite-error={inviteId} className={STATUS_DETAIL_ERROR_CLASS}>{error}</p>
+      ) : null}
+    </RowShell>
   )
 }

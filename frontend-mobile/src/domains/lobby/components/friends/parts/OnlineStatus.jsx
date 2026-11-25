@@ -18,13 +18,12 @@ const LOOK = {
   recommended: { wrap: RECOMMENDED_STATUS_WRAP_CLASS, badge: RECOMMENDED_STATUS_BADGE_CLASS, overlay: RECOMMENDED_OFFLINE_OVERLAY_CLASS },
 }
 
-// 글자 크기만 폰에서 읽히게 11px
+// 글자색은 데스크톱 그대로, 글자 크기만 폰에서 읽히게 11px
 const TEXT_CLASS = "app-text-scaled [--app-text-size:11px] leading-none"
 
-// 오프라인은 흐린 흰 글이 어두운 줄 그림 위에서도 안 읽혀 조금 진하게
 const COLOR_CLASS = {
   ONLINE: "text-amber-100/85",
-  OFFLINE: "text-white/60",
+  OFFLINE: "text-white/35",
   UNKNOWN: "text-white/50",
 }
 

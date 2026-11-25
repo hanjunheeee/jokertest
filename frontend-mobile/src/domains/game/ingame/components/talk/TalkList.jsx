@@ -23,10 +23,13 @@ import { startsGroup } from "@m/domains/game/ingame/utils/talk/buildTalkFeed.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import SystemLine from "./SystemLine.jsx"
 import TalkBubble from "./TalkBubble.jsx"
-import { DEAD_BANNER_CLASS, DEAD_BANNER_TEXT } from "./talkStyle.js"
 
 const SCROLL_CLASS =
     `relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-0 pb-1 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
+
+// 죽은 사람끼리 띠 (회색, 말풍선 색과 맞춤)
+const DEAD_BANNER_CLASS =
+    "flex shrink-0 items-center justify-center gap-1.5 border-b border-[#8a8a8a]/50 bg-[#2e2e2e]/85 py-1 text-[0.72rem] font-semibold tracking-wide text-[#dcdcdc]"
 
 const NEW_BUTTON_CLASS =
     "absolute bottom-2 left-1/2 z-10 h-11 -translate-x-1/2 cursor-pointer rounded-full border border-[#b08a4a]/70 bg-black/80 px-3 text-[0.72rem] text-[#f3dcb0] shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
@@ -104,7 +107,7 @@ export default function TalkList({ onPlayerRoster = null, onTribunalOpen = null 
                 </button>
             ) : null}
             <div className={TALK_CHAT_LIST_INSET_CLASS}>
-                {dead ? <p className={DEAD_BANNER_CLASS} data-dead-chat-banner="">{DEAD_BANNER_TEXT}</p> : null}
+                {dead ? <p className={DEAD_BANNER_CLASS} data-dead-chat-banner="">죽은 사람끼리</p> : null}
                 <div ref={scrollRef} className={SCROLL_CLASS} style={{ fontSize: chatFontSize(textScale, 0.95) }}>
                     <ul role="log" aria-label="채팅 내역" className="flex min-h-full flex-col justify-end">
                         {lines.map((line, index) => {

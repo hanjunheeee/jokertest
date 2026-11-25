@@ -1,5 +1,5 @@
 // 연출 양피지 창: 화면 덮개 + 가운데 양피지 + 확인 버튼, 펼침·커지기 움직임 고름
-// 역할 공개·단계 입장·밤 차례·밤 개인 결과·낮 시작 연출 글 창이 씀 (덮개 짙기·z순서·움직임·이름은 데스크톱 variant 그대로)
+// 역할 공개·단계 입장·밤 차례·밤 개인 결과·밤 성공 창이 씀 (덮개 짙기·z순서·움직임·이름은 데스크톱 variant 그대로)
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { useEffect, useRef } from "react"
 import { dispatchUiSfx } from "@/shared/hooks/useSfxRuntime.js"

@@ -10,7 +10,7 @@ export default function RecordRow({ playerId = null, name, totalGames, winRate, 
   const { getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
   const themeStyles = playerId ? getThemeStylesByPlayerId(playerId) : null
 
-  // 전적 글은 formatPlayerRecordStats가 만듦 (숫자 없으면 조회 실패), 갈색 종이 위라 흐린 흰 글 대신 검정 (데스크톱과 같음)
+  // 전적 글은 formatPlayerRecordStats가 만듦 (숫자 없으면 조회 실패)
   return (
     <li className="flex min-h-[4rem] min-w-0 items-center gap-3 border-b border-[#3a2818]/70 py-2 last:border-b-0">
       <Portrait photoSrc={profilePhotoSrc} frameSrc={profileBorderSrc} className="h-[3.25rem] w-[3.25rem]" />
@@ -22,7 +22,7 @@ export default function RecordRow({ playerId = null, name, totalGames, winRate, 
           {name}
         </p>
         <p
-          className="min-w-0 truncate font-subheading app-text-scaled [--app-text-size:0.88rem] font-bold leading-none tabular-nums text-black"
+          className="min-w-0 truncate font-subheading app-text-scaled [--app-text-size:0.88rem] font-bold leading-none tabular-nums text-white/55"
           data-testid={playerId ? `player-record-stats-${playerId}` : undefined}
         >
           {formatPlayerRecordStats({ totalGames, winRate })}

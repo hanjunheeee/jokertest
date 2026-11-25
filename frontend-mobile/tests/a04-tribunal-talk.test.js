@@ -50,15 +50,17 @@ test("A04-M-009 재판 연출 중 채팅방은 막기만 (8명 판): 재판 진�
 })
 
 
-// "제 2일" 날짜 글은 지금 폰 세로 화면에 없음 (사용자 결정 전) → 시간 줄 명패·당김 표시만 봄
-test("A04-M-010 시간 줄 '5초 뒤 마감' (5명 판): 2일 재판 당김 → 시간 줄 명패 '[5초 뒤 마감]'·당김 표시", async () => {
+// "제 2일" 날짜 글·당김 표시 칸 값(data-ingame-phase-settle)은 지금 폰 세로 화면에 없음 → 시간 줄 명패 글·남은 초만 봄
+test("A04-M-010 시간 줄 '5초 뒤 마감' (5명 판): 2일 재판 당김 → 시간 줄 명패 '[5초 뒤 마감]'·남은 초 5 이하", async () => {
     const socket = await dayVotePage(5, 2)
     await fire(socket, "day_vote_resolved", tribunalEntry({ n: 5, defendant: 2, dayIndex: 2 }))
     await fire(socket, "phase_settle_started", settle({ phase: "TRIBUNAL", dayIndex: 2, deadline: Date.now() + 5_000 }))
     const bar = document.querySelector("[data-ingame-phase-timer-mobile]")
     assert.ok(bar, "시간 줄이 없음")
-    assert.ok(bar.hasAttribute("data-ingame-phase-settle"), "당김 표시가 없음")
     assert.ok(textOf(bar).includes("[5초 뒤 마감]"), `시간 줄 글: ${textOf(bar)}`)
+    const clock = textOf(bar.querySelector("[role=timer]")).match(/(\d{2}):(\d{2})/)
+    assert.ok(clock, `시간 줄의 남은 시간이 없음: ${textOf(bar)}`)
+    assert.ok(Number(clock[1]) * 60 + Number(clock[2]) <= 5, `남은 초가 5보다 큼: ${clock[0]}`)
 })
 
 test("A04-M-012 처형 직업·표 수 안 보임 (10명 판): 결과에 executedRole·counts → 추방 연출·채팅 알림 줄에 직업·수 없음", async () => {

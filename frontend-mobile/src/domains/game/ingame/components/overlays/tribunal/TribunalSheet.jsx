@@ -1,14 +1,10 @@
-// 세로 카톡형: 최후의 변론을 닫을 수 있는 양피지 시트 (피고 카드·유무죄·표 거절 까닭, 판정은 서버가 5초 뒤 함)
+// 세로 카톡형: 최후의 변론을 닫을 수 있는 양피지 시트 (피고 카드·유무죄)
 // TalkLayout이 채팅 위에 띄움, 값은 useTribunalPresentation
-import { NOTICE_CLASS } from "@/domains/game/ingame/constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
 import Sheet from "@m/domains/game/ingame/components/sheets/frame/Sheet.jsx"
 import DefendantCard from "./DefendantCard.jsx"
 import TribunalActions from "./TribunalActions.jsx"
 
 const TITLE = "최후의 변론"
-
-// 안내·거절 까닭 글: 흰 글이라 양피지 위에선 안 읽혀 어두운 칸을 깖 (가로 연출 창의 맨 위 거절 글과 같은 모양)
-const SHEET_NOTICE_CLASS = `${NOTICE_CLASS} max-w-full rounded-md bg-black/70 px-4 py-2`
 
 export default function TribunalSheet({
     open,
@@ -20,7 +16,9 @@ export default function TribunalSheet({
     voteSubmitting,
     onVoteGuilty,
     onVoteNotGuilty,
-    voteErrorText = null,
+    devResolveLabel,
+    devResolveEnabled,
+    onDevResolve,
 }) {
     if (!defendant) return null
 
@@ -44,13 +42,10 @@ export default function TribunalSheet({
                         voteDisabled={!voteButtonsEnabled || voteSubmitting}
                         onVoteGuilty={onVoteGuilty}
                         onVoteNotGuilty={onVoteNotGuilty}
-                        noticeClassName={SHEET_NOTICE_CLASS}
+                        devResolveLabel={devResolveLabel}
+                        devResolveEnabled={devResolveEnabled}
+                        onDevResolve={onDevResolve}
                     />
-                    {voteErrorText ? (
-                        <p role="alert" className={SHEET_NOTICE_CLASS} data-ingame-tribunal-vote-error="">
-                            {voteErrorText}
-                        </p>
-                    ) : null}
                 </div>
             </div>
         </Sheet>

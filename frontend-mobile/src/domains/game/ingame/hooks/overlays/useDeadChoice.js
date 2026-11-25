@@ -8,7 +8,6 @@ import {
 } from "@/domains/game/ingame/store/ingameStore.js"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { selectInGameDeadParticipantChoice } from "@/domains/game/ingame/utils/selectInGameDeadParticipantChoice.js"
-import { selectInGameSelfAlive } from "@/domains/game/ingame/utils/selfAlive.js"
 import { useOverlayBridge } from "./overlayBridge.js"
 
 // 나가기 손잡이를 아직 못 받았을 때 값 (나가기 버튼만 막힘)
@@ -21,7 +20,7 @@ const NO_EXIT = Object.freeze({
     exitAttemptId: 0,
 })
 
-// blocked = 앞 연출(역할 공개·낮 시작 연출·밤 개인 결과)이 열려 있음
+// blocked = 앞 연출(역할·밤 성공·밤 결과·대기)이 열려 있음
 export function useDeadChoice({ blocked = false } = {}) {
     const gameId = useInGameStore((s) => s.gameId)
     const gameState = useInGameStore((s) => s.state)
@@ -50,8 +49,6 @@ export function useDeadChoice({ blocked = false } = {}) {
 
     return {
         open: (needsDeadChoice || needsExitRecovery) && !blocked,
-        // 산 사람이 나가기에 실패해 열렸으면 사망 글 대신 나가기 안내만 (데스크톱과 같음)
-        selfDead: selectInGameSelfAlive(gameState) === false,
         keepWatching,
         leave: exit.requestExit,
         retry: exit.retryExit,

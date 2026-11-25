@@ -14,10 +14,9 @@ export const DIALOG_DANGER_BTN_CLASS = `${BTN_BASE} bg-[#9C3D32] text-white acti
 
 export const DIALOG_ERROR_CLASS = "font-subheading font-bold text-[#9C3D32] app-text-scaled [--app-text-size:0.82rem]"
 export const DIALOG_SUCCESS_CLASS = "font-subheading font-bold text-[#2E6B3A] app-text-scaled [--app-text-size:0.82rem]"
-// 안내 글(예: 쿠폰 코드 예시)은 기본 반투명 글자색이 흰 칸에서 흐려 /70으로 정함
 export const DIALOG_INPUT_CLASS =
-  "min-h-11 w-full rounded border border-[#8b6a3e] bg-white/70 px-3 font-subheading uppercase tracking-wider text-[#2b1d10] outline-none placeholder:text-[#2b1d10]/70 app-text-scaled [--app-text-size:1rem] focus:border-[#5a3a1e]"
+  "min-h-11 w-full rounded border border-[#8b6a3e] bg-white/70 px-3 font-subheading uppercase tracking-wider text-[#2b1d10] outline-none app-text-scaled [--app-text-size:1rem] focus:border-[#5a3a1e]"
 
-// 글자 링크 모양 버튼 (보기·다시 불러오기), 가입 양피지 위에도 놓여 짙은 호박색
+// 글자 링크 모양 버튼 (보기·다시 불러오기)
 export const TEXT_BTN_CLASS =
-  "inline-flex min-h-11 shrink-0 cursor-pointer items-center border-0 bg-transparent px-2 font-subheading font-bold text-amber-950 underline underline-offset-2 app-text-scaled [--app-text-size:0.85rem]"
+  "inline-flex min-h-11 shrink-0 cursor-pointer items-center border-0 bg-transparent px-2 font-subheading font-bold text-amber-800 underline underline-offset-2 app-text-scaled [--app-text-size:0.85rem]"

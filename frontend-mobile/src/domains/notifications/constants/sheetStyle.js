@@ -75,15 +75,8 @@ export const ITEM_SLOT_IMG_CLASS = "pointer-events-none absolute inset-0 h-full 
 export const ITEM_INNER_CLASS =
   "relative flex flex-col items-stretch justify-start pb-3 pl-[5%] pr-[6%] pt-4 text-left"
 
-// 제목 줄: 왼쪽 제목, 오른쪽 받은 시각 (시각은 안 줄고 한 줄로, 긴 제목은 제 칸 안에서 줄 바꿈)
-export const ITEM_TITLE_ROW_CLASS = "flex w-full min-w-0 shrink-0 grow-0 items-baseline justify-between gap-2"
-
 export const ITEM_TITLE_CLASS =
-  "m-0 min-w-0 flex-1 break-words font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-tight text-[#f5f0e6]"
-
-// 받은 시각: 색을 직접 줌 (어두운 칸 그림 위라 물려받은 글자색이 어두우면 안 보임)
-export const ITEM_TIME_CLASS =
-  "shrink-0 whitespace-nowrap font-body app-text-scaled [--app-text-size:0.68rem] tabular-nums leading-tight text-[#f5f0e6]/70"
+  "m-0 shrink-0 grow-0 break-words font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-tight text-[#f5f0e6]"
 
 export const ITEM_BODY_CLASS =
   "m-0 shrink-0 grow-0 break-words font-body app-text-scaled [--app-text-size:0.78rem] leading-snug text-[#f5f0e6]/90"
@@ -107,14 +100,10 @@ export const ACTION_LABEL_PRIMARY_CLASS =
 // 바닥 줄: 읽은 메시지 삭제 (오른쪽 정렬)
 export const FOOTER_CLASS = "relative z-[2] mt-1.5 flex w-full shrink-0 flex-col items-end gap-1"
 
-// 안내·빈 목록 글자: 중간 밝기 양피지 위라 밝은 글은 안 보임 → 짙은 갈색
-export const MSG_CLASS = "m-0 font-body app-text-scaled [--app-text-size:0.85rem] text-[#1a1008]"
+// 안내·빈 목록·오류 글자 (데스크톱 MSG·EMPTY_MSG·ERROR 색)
+export const MSG_CLASS = "m-0 font-body app-text-scaled [--app-text-size:0.85rem] text-[#f5f0e6]/90"
 
 export const EMPTY_MSG_CLASS =
-  "m-0 font-body app-text-scaled [--app-text-size:1.05rem] font-medium text-[#1a1008]"
+  "m-0 font-body app-text-scaled [--app-text-size:1.05rem] font-medium text-[#f5f0e6]/95"
 
-// 오류 글자: 어두운 알림 칸 그림 위 (줄 안 읽음 처리 오류)
 export const ERROR_CLASS = "m-0 break-words font-body app-text-scaled [--app-text-size:0.78rem] text-[#f5a89a]"
-
-// 양피지 위 오류 글자 (목록 못 받음·삭제 실패): 분홍은 종이와 밝기가 비슷해 안 보임 → 아주 짙은 빨강
-export const PAPER_ERROR_CLASS = "m-0 break-words font-body app-text-scaled [--app-text-size:0.78rem] text-[#300600]"

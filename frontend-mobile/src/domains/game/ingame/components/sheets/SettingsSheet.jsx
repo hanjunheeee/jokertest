@@ -11,7 +11,7 @@ import RoomCodeSheet from "./roomCode/RoomCodeSheet.jsx"
 import SettingsBody from "./settings/SettingsBody.jsx"
 import Tabs from "./settings/Tabs.jsx"
 
-// 설정 시트가 방 코드 시트 여닫기를 들고 있음
+// 설정 시트가 방 코드 시트 여닫기를 들고 있음 (방관리 탭은 서버에서 다음 게임 설정 유지를 없애 뺌)
 export default function SettingsSheet({ open, onClose }) {
   const [roomCodeOpen, setRoomCodeOpen] = useState(false)
   const roomCode = useInGameStore((s) => s.state?.roomCode ?? null)

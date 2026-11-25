@@ -13,7 +13,6 @@ import Timebar from "@m/domains/game/ingame/components/timebar/Timebar.jsx"
 import TribunalSheet from "@m/domains/game/ingame/components/overlays/tribunal/TribunalSheet.jsx"
 import TribunalTalkPresentation from "@m/domains/game/ingame/components/overlays/tribunal/TribunalTalkPresentation.jsx"
 import { useTribunalPresentation } from "@m/domains/game/ingame/hooks/overlays/useTribunalPresentation.js"
-import { selectOverlayOpen, useOverlayBridge } from "@m/domains/game/ingame/hooks/overlays/overlayBridge.js"
 import TalkList from "./TalkList.jsx"
 
 const SLOT_CLASS = "relative min-w-0 shrink-0"
@@ -29,11 +28,6 @@ export default function TalkLayout({ page, compactTyping, locked }) {
     const [tribunalDismissed, setTribunalDismissed] = useState(false)
     const [tribunalSheetOpen, setTribunalSheetOpen] = useState(false)
     const defendantId = tribunal.defendant?.id ?? null
-    // 연출 창("밤이 되었습니다"·밤 차례·낮 시작 글 창·암살 영상·사망 선택)이 뜨면 목록·재판 시트도 닫음: 시트가 "확인" 단추를 가림
-    // 연출이 끝나도 저절로 다시 안 뜸 (그리는 중에 바로 맞춤, 기록·설정 시트와 같은 식)
-    const overlayOpen = useOverlayBridge(selectOverlayOpen)
-    if (overlayOpen && rosterOpen) setRosterOpen(false)
-    if (overlayOpen && tribunalSheetOpen) setTribunalSheetOpen(false)
 
     // 재판이 열리고 닫히거나 피고가 바뀌면 연출 닫음·시트 열림을 처음으로 (그리는 중에 바로 맞춤, effect 안 setState 대신)
     const tribunalKey = `${tribunal.active}:${defendantId}`
@@ -115,7 +109,9 @@ export default function TalkLayout({ page, compactTyping, locked }) {
                 voteSubmitting={tribunal.voteSubmitting}
                 onVoteGuilty={tribunal.onVoteGuilty}
                 onVoteNotGuilty={tribunal.onVoteNotGuilty}
-                voteErrorText={tribunal.voteErrorText}
+                devResolveLabel={tribunal.devResolveLabel}
+                devResolveEnabled={tribunal.devResolveEnabled}
+                onDevResolve={tribunal.onDevResolve}
             />
         </div>
     )
