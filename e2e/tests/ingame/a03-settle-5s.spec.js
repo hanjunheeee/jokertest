@@ -402,8 +402,12 @@ test('A03-E-106 PC 7명 판 2일 사람이 죽음 → 산 사람 다 냄 → 죽
     await L.keepWatching(page);
     await L.waitState(t, (g) => g.phase === 'NIGHT' && L.playerOf(g, me)?.alive === false, { timeout: 30000 });
     // 밤은 앞 단계라 손잡이로 넘김, 죽은 사람 화면의 단계 안내는 저절로 닫힘
+    // 그 앞 "지난밤 아무 일도 일어나지 않았습니다" 창(이름 같음, 죽은 사람도 봄)은 확인을 눌러야 닫혀서 넘김
     await t.advanceUntil((g) => g.phase === 'DAY' && g.dayIndex === 2);
-    await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toHaveCount(0, { timeout: 15000 });
+    await expect(async () => {
+        await ui.closeQuietDawn(page);
+        await expect(page.getByRole('dialog', { name: '단계 전환 안내' })).toHaveCount(0, { timeout: 2000 });
+    }).toPass({ timeout: 20000 });
 
     // 2일: 산 봇 6 동점 X 3·Y 3, 마지막 봇이 낸 때부터 5초
     const day2 = await openVote(t, { dayIndex: 2, alivePages: [] });

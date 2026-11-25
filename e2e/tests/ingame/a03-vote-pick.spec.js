@@ -73,8 +73,13 @@ async function executeThenDay2(t, page, victimUuid, { humanDies }) {
     else await reachNotice(page, '밤이 되었습니다');
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_DISCUSSION');
     // 산 사람은 2일 "낮이 되었습니다" 닫음, 죽은 사람 창은 저절로 닫힘
-    if (humanDies) await expect(page.getByRole('dialog', { name: '단계 전환 안내', exact: true })).toHaveCount(0, { timeout: 15000 });
-    else await reachNotice(page, '낮이 되었습니다');
+    // 그 앞 "지난밤 아무 일도 일어나지 않았습니다" 창(이름 같음, 죽은 사람도 봄)은 확인을 눌러야 닫혀서 넘김
+    if (humanDies) {
+        await expect(async () => {
+            await ui.closeQuietDawn(page);
+            await expect(page.getByRole('dialog', { name: '단계 전환 안내', exact: true })).toHaveCount(0, { timeout: 2000 });
+        }).toPass({ timeout: 20000 });
+    } else await reachNotice(page, '낮이 되었습니다');
 }
 
 // 2일 토론 → 투표 (손잡이), 사람 화면에 기권 단추까지

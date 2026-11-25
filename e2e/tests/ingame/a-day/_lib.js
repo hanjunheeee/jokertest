@@ -4,7 +4,7 @@
 // 봇 행동은 playBots(뒤에서 도는 것) 대신 소켓 요청을 하나씩 보내고 답을 기다림 → 단계 넘기기와 엇갈리지 않음
 const { expect } = require('../../../helpers/fixtures');
 const bannedWords = require('../../../helpers/bannedWords');
-const { chatLog } = require('../../../helpers/ui');
+const { chatLog, closeQuietDawn } = require('../../../helpers/ui');
 const { customRoleSettings } = require('../../../helpers/game');
 const { sleep } = require('../../../helpers/bots');
 
@@ -19,8 +19,15 @@ async function waitState(t, match, { timeout = 20000, message = '판 상태 기�
 }
 
 /** 단계 전환 안내 창(낮이 되었습니다·밤이 되었습니다) 뜰 때까지 → 확인 눌러 닫음 */
+// 낮 안내를 기다릴 땐 그 앞 "지난밤 아무 일도 일어나지 않았습니다" 창(이름 같음)을 먼저 확인으로 닫음 (그 창을 닫아야 낮 안내가 뜸)
 async function closeNotice(page, text) {
     const dialog = page.getByRole('dialog', { name: '단계 전환 안내' });
+    if (text === '낮이 되었습니다') {
+        await expect(async () => {
+            await closeQuietDawn(page);
+            await expect(dialog).toContainText(text, { timeout: 1000 });
+        }).toPass({ timeout: 20000 });
+    }
     await expect(dialog).toBeVisible({ timeout: 20000 });
     if (text) await expect(dialog).toContainText(text);
     await dialog.getByRole('button', { name: '확인' }).click();

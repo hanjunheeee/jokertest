@@ -2,7 +2,7 @@
 
 // 둘째 날 재판 브라우저 시험 (PC, 받은 버그 8): 1일 재판에서 누른 사람이 2일·3일 재판에서도 단추를 보고 누름(새로고침 없이), 2일 표가 서버에 들어감, 피고였던 사람·처형된 사람·덮개 창
 // 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-E-067~071·074·076·077·117·118·120·122·123·165·166·169·175
-const { test, expect } = require('../../helpers/fixtures');
+const { test, expect, ui } = require('../../helpers/fixtures');
 const K = require('./_a04-pc');
 
 const { TEXT, uuidOf } = K;
@@ -170,6 +170,8 @@ test('A04-E-166 PC 8명 판(나 경비원) 밤 조사 결과 창을 안 닫은 �
     await K.night.toTurn(t, 'GUARD', { dayIndex: 1 });
     await K.night.nightActUi(page, t.bots[1].nickname, '조사');
     await K.toDayOf(t, 2);
+    // 아무도 안 죽은 밤 → "지난밤 아무 일도 일어나지 않았습니다" 창을 확인해야 그 뒤에 조사 결과 창이 뜸 (내 결과는 낮 시작 연출 다음)
+    await ui.confirmQuietDawn(page);
     const result = page.getByRole('dialog', { name: '밤 조사 결과', exact: true });
     await expect(result).toBeVisible({ timeout: 20000 });
     await K.openTribunal(t, uuidOf(t.bots[2]));

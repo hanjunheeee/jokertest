@@ -199,10 +199,11 @@ async function expectSettled(t, page, { since, filledAt, dayIndex = 1 }) {
 // ── 둘째 날 이후 ──
 
 // 밤 차례 안내 같은 창을 닫으며 "낮이 되었습니다" 창이 뜨길 기다려 닫음 (둘째 날부터는 앞에 다른 창이 먼저 뜰 수 있음)
+// 아무도 안 죽은 밤이면 "지난밤 아무 일도 일어나지 않았습니다" 창이 먼저 뜸 → 확인으로 넘김 (quietDawn)
 async function closeDayNotice(page) {
     const notice = page.getByRole('dialog', { name: '단계 전환 안내' });
     await expect(async () => {
-        await ui.closeOverlays(page, { names: ['밤 역할 안내', '알림', '밤 조사 결과'] });
+        await ui.closeOverlays(page, { names: ['밤 역할 안내', '알림', '밤 조사 결과'], quietDawn: true });
         await expect(notice).toContainText('낮이 되었습니다', { timeout: 1000 });
     }).toPass({ timeout: 30000 });
     await notice.getByRole('button', { name: '확인' }).click();

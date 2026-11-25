@@ -2,7 +2,7 @@
 
 // 재판 창 채팅 브라우저 시험 (PC): 봇 글이 재판 창 채팅에 보임, 피고도 말함, 죽은 사람 글은 산 사람 화면에 없음, 죽은 사람 화면엔 "죽은 사람끼리", 5초 동안에도 채팅 됨
 // 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-E-085·087·089·090·173
-const { test, expect } = require('../../helpers/fixtures');
+const { test, expect, ui } = require('../../helpers/fixtures');
 const c = require('./c-chat/_lib');
 const K = require('./_a04-pc');
 
@@ -64,8 +64,11 @@ test('A04-E-089 PC 8명 판 2일 재판 중 죽은 봇이 글을 씀 → 산 투
     await K.closeTribunal(t);
     await K.passExpulsion(page);
     await K.toDayOf(t, 2);
+    // 1일 밤엔 아무도 안 죽음 → "지난밤 아무 일도 일어나지 않았습니다" 창을 확인으로 닫음 (안 닫으면 재판 창을 덮음)
+    await ui.confirmQuietDawn(page);
     await K.openTribunal(t, uuidOf(second));
     await K.expectTribunal(page, second.nickname);
+    await K.calm(page);
     await chatReady(page);
     const deadText = c.uniq('죽은글');
     const aliveText = c.uniq('산글');

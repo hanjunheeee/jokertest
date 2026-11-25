@@ -71,6 +71,15 @@ function installWatch(opts) {
                 [...document.querySelectorAll('[data-ingame-phase-entrance] button')].find((b) => b.textContent.trim() === '확인')?.click();
             }, 50);
         }
+        // confirmQuiet: 아무도 안 죽은 밤 글 창("지난밤 아무 일도 일어나지 않았습니다")도 스스로 확인
+        // 그 창을 닫아야 낮 안내·내 결과 창이 이어 뜸 (그 창 글을 직접 보는 시험은 안 켬)
+        if (opts.confirmQuiet && q('[data-ingame-dawn-report="QUIET"]') && !last.quieting) {
+            last.quieting = true;
+            setTimeout(() => {
+                last.quieting = false;
+                [...document.querySelectorAll('[data-ingame-dawn-report="QUIET"] button')].find((b) => b.textContent.trim() === '확인')?.click();
+            }, 50);
+        }
     };
     // 카드 메뉴 단추(암살·보호·조사·확인)를 누른 시각 — 5초 규칙을 "고른 때부터" 재려고
     document.addEventListener('click', (event) => {
@@ -82,9 +91,9 @@ function installWatch(opts) {
 }
 
 // 지켜보기 걸기 (판 화면에 들어온 뒤) — reload면 새로고침한 새 문서에도 다시 걸림(기록은 새 문서에서 새로 시작)
-// confirmBeforeDay: 그 날 앞의 단계 안내 창은 스스로 확인 (기본 = 전부), timer: 남은 시간도 적음
+// confirmBeforeDay: 그 날 앞의 단계 안내 창은 스스로 확인 (기본 = 전부), timer: 남은 시간도 적음, confirmQuiet: 아무 일도 없음 글 창도 스스로 확인
 async function watch(page, { reload = false, ...opts } = {}) {
-    const all = { confirmBeforeDay: 99, timer: false, waitText: WAIT_TEXT, ...opts };
+    const all = { confirmBeforeDay: 99, timer: false, waitText: WAIT_TEXT, confirmQuiet: false, ...opts };
     if (reload) await page.addInitScript(installWatch, all);
     await page.evaluate(installWatch, all);
 }
@@ -207,7 +216,7 @@ const waitDayNoticeGone = (page, day) => page.waitForFunction(
 
 test('A05-E-565 8명 판 경비원 화면: 봇 의사를 조사 → 낮에 조사 결과 글(봇 닉네임·"의사")이 읽힘 @game @smoke', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 8, humanRole: 'GUARD' });
-    await watch(g.page);
+    await watch(g.page, { confirmQuiet: true });
     const target = who(g.doctor);
     // 광대·의사 봇은 가만히 있음(시간 끝) → 경비원 차례에 화면으로 조사
     await n.toTurn(g.t, 'GUARD', { dayIndex: 1 });
@@ -222,7 +231,7 @@ test('A05-E-565 8명 판 경비원 화면: 봇 의사를 조사 → 낮에 조�
 
 test('A05-E-566 8명 판 시민 화면: 봇 경비원이 나를 조사해도 밤·낮 내내 결과 창·글 없음 @game', async ({ user, table }) => {
     const g = await openGame(table, user, { size: 8 });
-    await watch(g.page);
+    await watch(g.page, { confirmQuiet: true });
     await n.toTurn(g.t, 'GUARD', { dayIndex: 1 });
     await botPick(g, g.guard, g.me.uuid);
     await Promise.all([n.toDay(g.t, { dayIndex: 2 }), appear(g.page, `[aria-label="${dayBar(2)}"]`)]);
@@ -239,7 +248,7 @@ test('A05-E-567 10명 판 마녀사냥꾼 화면: 2일 밤 죽은 봇을 확인 
     // 10명 판 + 처형 + 두 밤이라 이 시험만 넉넉히 (설정은 안 바꿈)
     test.setTimeout(180_000);
     const g = await openGame(table, user, { size: 10, humanRole: 'WITCH_HUNTER' });
-    await watch(g.page);
+    await watch(g.page, { confirmQuiet: true });
     // 1일 낮에 시민 봇 하나를 처형해 둠 (2일 밤에 확인할 죽은 사람)
     const dead = g.citizens[0];
     await executeAtDay(g.t, dead.uuid);
@@ -257,7 +266,7 @@ test('A05-E-568 10명 판 죽은 관전자 화면: 봇 마녀사냥꾼이 나를
     // 10명 판 + 처형 + 두 밤이라 이 시험만 넉넉히 (설정은 안 바꿈)
     test.setTimeout(180_000);
     const g = await openGame(table, user, { size: 10 });
-    await watch(g.page);
+    await watch(g.page, { confirmQuiet: true });
     await getExecuted(g);
     await n.toTurn(g.t, 'WITCH_HUNTER', { dayIndex: 2 });
     await botPick(g, g.hunter, g.me.uuid);

@@ -262,7 +262,11 @@ for (const seat of GUARD_SEATS) {
         if (g.guard) {
             await g.guard.waitForEvent('night_action_result', { match: (p) => p.actionType === 'INVESTIGATE' && p.targetId === target.uuid });
         } else {
-            await expect(g.page.locator(PRIVATE_RESULT)).toHaveCount(1);
+            // 내 결과 창은 낮 시작 연출 다음에 뜸 (밤 동안 미룸, 2026-11-25) → "아무 일도" 글 창을 확인으로 닫은 뒤 봄
+            await expect(async () => {
+                await n.closeDawnReport(g.page);
+                await expect(g.page.locator(PRIVATE_RESULT)).toHaveCount(1, { timeout: 1000 });
+            }).toPass({ timeout: 15_000 });
         }
         const log = await readWatch(g.page);
         expectQuietNight(log, 1);

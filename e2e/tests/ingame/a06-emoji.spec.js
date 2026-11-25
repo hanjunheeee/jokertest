@@ -164,8 +164,13 @@ test('A06-E-094 역할 확인 중 이모티콘 안 됨 (6명 판) → 역할 확
     const page = user.page;
     const me = user.account;
     await ui.readRoleReveal(page);
-    // 역할 확인 동안: 내 카드를 우클릭해도 팔레트가 안 뜸
-    await n.cardButton(page, me.nickname).click({ button: 'right' });
+    // 역할 확인 동안: 판 화면은 입장 준비 덮개(역할 확인 단계 내내 화면 전체를 덮음)에 덮여 있음
+    // → 내 카드 자리를 사람처럼 우클릭해도 덮개가 받아서 팔레트가 안 뜸 (카드 단추를 직접 누르는 길은 없음)
+    const cover = page.locator('[data-ingame-entry-preparing]');
+    await expect(cover).toBeVisible();
+    const box = await n.cardButton(page, me.nickname).boundingBox();
+    expect(box, '내 카드 자리').not.toBeNull();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
     await expect(palette(page)).toHaveCount(0);
     // 봇이 서버로 바로 보내도 거절됨
     const reply = await botEmoji(t, 1, 'emoji-basic-grin');
@@ -182,6 +187,8 @@ test('A06-E-094 역할 확인 중 이모티콘 안 됨 (6명 판) → 역할 확
     await t.advanceUntil('DAY');
     await a.closeNotice(page, '낮이 되었습니다');
     await c.readyToChat(page);
+    // 덮개가 사라진 뒤 같은 카드를 우클릭
+    await expect(cover).toHaveCount(0);
     await openPalette(page, me.nickname);
 });
 

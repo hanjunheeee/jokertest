@@ -107,8 +107,11 @@ async function closePhaseNotice(page) {
 const OVERLAY_DIALOGS = Object.freeze(['단계 전환 안내', '밤 역할 안내', '알림', '밤 조사 결과', '내 역할 보기']);
 
 // 연출 창 한 바퀴 닫기, 하나라도 눌렀으면 참
-async function closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs }) {
+async function closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs, quietDawn = false }) {
     let closed = false;
+    // quietDawn: "지난밤 아무 일도 일어나지 않았습니다" 글 창(QUIET)도 "확인" — 그 창을 닫아야 "낮이 되었습니다"가 뜸
+    // 창 이름이 "단계 전환 안내"와 같아서, 낮 안내를 기다리는 도우미는 이 칸으로만 이 창을 넘김 (창이 뜨는 것 자체는 정한 연출)
+    if (quietDawn && await closeQuietDawn(page, { clickTimeoutMs })) closed = true;
     // 낮 시작 암살 영상이 못 끝나 뜬 "건너뛰기": 12초 안에 안 끝나거나 자동 재생이 막혔을 때만 뜨는 단추 (잘 도는 영상엔 없어서 안 건드림)
     // 영상은 저절로 안 넘어가서 안 누르면 판 화면이 계속 덮인 채임 → names와 상관없이 누름
     const skipVideo = page.locator('[data-ingame-night-success-kill]').getByRole('button', { name: '건너뛰기', exact: true });
@@ -141,11 +144,31 @@ async function closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs }) 
  * 하나 닫으면 밑에 깔린 창이 뜰 수 있어 여러 바퀴 — 모바일 _talk·인게임 c-chat 도우미가 씀
  * 못 끝난 암살 영상의 "건너뛰기"와 영상 오류 때 글 창 "확인"도 같이 넘김 (잘 도는 영상은 그대로 둠)
  */
-async function closeOverlays(page, { keepWatching = true, rounds = 3, names = OVERLAY_DIALOGS, clickTimeoutMs = 3000, pauseMs = 0 } = {}) {
+async function closeOverlays(page, { keepWatching = true, rounds = 3, names = OVERLAY_DIALOGS, clickTimeoutMs = 3000, pauseMs = 0, quietDawn = false } = {}) {
     for (let r = 0; r < rounds; r += 1) {
-        if (!(await closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs }))) return;
+        if (!(await closeOverlaysOnce(page, { keepWatching, names, clickTimeoutMs, quietDawn }))) return;
         if (pauseMs > 0) await sleep(pauseMs);
     }
+}
+
+/**
+ * 아무도 안 죽은 밤 글 창("지난밤 아무 일도 일어나지 않았습니다", QUIET) 떠 있으면 "확인" → 눌렀으면 참
+ * 이 창을 닫아야 "낮이 되었습니다" 안내가 뜸 (결정 2026-11-18) — 낮 안내를 기다리는 도우미가 먼저 부름
+ */
+async function closeQuietDawn(page, { clickTimeoutMs = 3000 } = {}) {
+    const ok = page.locator('[data-ingame-dawn-report="QUIET"]').getByRole('button', { name: '확인', exact: true });
+    if (!(await ok.isVisible().catch(() => false))) return false;
+    await ok.click({ timeout: clickTimeoutMs }).catch(() => {});
+    return true;
+}
+
+/** 아무도 안 죽은 밤이 확실할 때: 그 글 창이 뜰 때까지 기다려 "확인" → 창이 사라짐까지 */
+async function confirmQuietDawn(page, { timeout = 20000 } = {}) {
+    const box = page.locator('[data-ingame-dawn-report="QUIET"]');
+    const ok = box.getByRole('button', { name: '확인', exact: true });
+    await expect(ok).toBeVisible({ timeout });
+    await ok.click();
+    await expect(box).toHaveCount(0);
 }
 
 /** 채팅 내역 칸 (page 또는 그 안 영역) */
@@ -218,5 +241,5 @@ const ROLE_LABELS = Object.freeze({ JOKER: '광대', CITIZEN: '귀족', DOCTOR: 
 
 module.exports = {
     skipIntro, loginViaUi, loginViaApi, gotoLobby, joinRoomByCodeUi, readyUi, readRoleReveal, closeResultAd, closePhaseNotice,
-    OVERLAY_DIALOGS, closeOverlays, chatLog, sendChat, expectChat, captureAlert, ROLE_LABELS,
+    OVERLAY_DIALOGS, closeOverlays, closeQuietDawn, confirmQuietDawn, chatLog, sendChat, expectChat, captureAlert, ROLE_LABELS,
 };

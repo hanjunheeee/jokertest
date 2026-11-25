@@ -166,11 +166,15 @@ test('A09-E-106 PC 8명 판, 보호를 고른 의사 봇이 60초(손잡이) 탈
     await night.waitDead(t, K.U(doctor));
 
     // 2일 낮: 지목된 사람은 살아 있음, 밤 사이 의사 봇이 빠진 게 보였으니 "아무 일도" 글 창 없이 낮 안내 (사용자 결정 2026-11-18)
+    // 화면 기록(recordUi)이 낮 안내를 뜨자마자 확인으로 닫아서 화면에 남은 창 대신 기록으로 봄 (이 밤 뒤로 적힌 것만)
+    const before = await night.readUi(page);
+    const [entranceFrom, dawnFrom] = [before.entrances.length, before.dawnReports.length];
     const s = await night.toDay(t, { dayIndex: 2 });
     expect(K.rowOf(s, K.U(target)).alive, '보호받은 사람').toBe(true);
-    await expect(page.locator('[data-ingame-phase-entrance="DAY"]')).toBeAttached({ timeout: 20_000 });
+    await expect.poll(async () => (await night.readUi(page)).entrances.slice(entranceFrom), { timeout: 20_000, message: '"낮이 되었습니다" 안내가 뜸' }).toContain('DAY');
     await expect(page.locator('[data-ingame-dawn-report]')).toHaveCount(0);
     const rec = await night.readUi(page);
+    expect(rec.dawnReports.slice(dawnFrom), '낮 시작 글 창(아무 일도 등) 없음').toEqual([]);
     expect(rec.dawnMessages.join(' '), '살해 글이 안 나옴').not.toContain('살해당했습니다');
     await expect(statusOf(page, target.nickname)).toHaveAttribute('data-ingame-player-status', 'alive');
 });

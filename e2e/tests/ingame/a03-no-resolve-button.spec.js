@@ -51,8 +51,12 @@ async function humanDiesThenDay2(t, page) {
     await L.keepWatching(page);
     await t.advanceUntil((s) => s.phase === 'DAY' && s.dayIndex === 2 && s.dayPhase === 'DAY_DISCUSSION');
     // 죽은 사람 단계 안내는 저절로 닫힘
+    // 그 앞 "지난밤 아무 일도 일어나지 않았습니다" 창(이름 같음, 죽은 사람도 봄)은 확인을 눌러야 닫혀서 넘김
     await expect(page.locator('[aria-label="제 2일 시간 흐름"]')).toBeVisible({ timeout: 20000 });
-    await expect(page.getByRole('dialog', { name: '단계 전환 안내', exact: true })).toHaveCount(0, { timeout: 15000 });
+    await expect(async () => {
+        await ui.closeQuietDawn(page);
+        await expect(page.getByRole('dialog', { name: '단계 전환 안내', exact: true })).toHaveCount(0, { timeout: 2000 });
+    }).toPass({ timeout: 20000 });
 }
 
 // 죽은 사람 화면이 투표 단계로 바뀔 때까지: 죽으면 준비·기권 단추가 없어, 산 봇 카드의 꺼진 "투표하기" 까닭 글로 봄 (토론이면 토론 안내 글) → 메뉴 닫음

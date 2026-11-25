@@ -13,6 +13,8 @@ async function openDay(t, day, defendant) {
     await A.toVote(t, day);
     await A.toTribunal(t, defendant);
     for (const h of t.humans) await expect(trial.win(h.page)).toBeVisible({ timeout: 15000 });
+    // 아무도 안 죽은 밤 뒤엔 "지난밤 아무 일도 일어나지 않았습니다"·"낮이 되었습니다" 창(이름 "단계 전환 안내")이 늦게 떠 재판 단추를 덮을 수 있음 → 닫음
+    for (const h of t.humans) await A.calm(h.page, () => expect(h.page.getByRole('dialog', { name: '단계 전환 안내' })).toHaveCount(0, { timeout: 1000 }));
 }
 
 // 사람마다 단추가 읽히는지 본 뒤 같은 표를 누름

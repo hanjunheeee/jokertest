@@ -87,15 +87,26 @@ test('A06-E-072 151자 거절 글이 보임 (5명 판) → "메시지는 150자 
     expect(t.bots.filter((b) => k.chatFrom(b, user.account.uuid)).length, '사람 채팅을 받은 봇 수').toBe(0);
 });
 
-test('A06-E-073 빈 엔터 (5명 판) → "메시지를 입력해주세요."가 뜨고 받은 봇 0 @game', async ({ user, table }) => {
+// 합친 뒤 지금 동작: 빈 글은 안내 글 없이 조용히 막음 (화면 isSilentChatSendSanitizeCode, 화면 시험 A06-F-133과 같음 — 반장 결정 2026-11-25)
+test('A06-E-073 빈 엔터 (5명 판) → 안내 글 없이 조용히 막힘("메시지를 입력해주세요." 없음), 받은 봇 0 @game', async ({ user, table }) => {
     const t = await dayTable(table, user, 5);
     const page = user.page;
     const box = await c.readyToChat(page);
     await expect(box).toHaveValue('');
     await box.press('Enter');
-    await expectStatus(page, EMPTY_TEXT);
+    // 상태 줄에 안내 글이 안 뜸
+    await expect(k.statusAlert(k.boardChat(page))).toHaveCount(0);
+    await expect(page.getByText(EMPTY_TEXT)).toHaveCount(0);
+    // 그 뒤에 보낸 글이 봇에게 감 → 빈 엔터가 나갔다면 그보다 먼저 갔음, 봇마다 내 채팅은 이 글 하나뿐
+    const marker = c.uniq('뒤글');
+    await c.say(page, marker);
+    await expectAllBotsHear(t, marker);
     await k.settleBots(t);
-    expect(t.bots.filter((b) => k.chatFrom(b, user.account.uuid)).length, '사람 채팅을 받은 봇 수').toBe(0);
+    for (const bot of t.bots) {
+        const mine = bot.events.filter((r) => r.event === k.DAY_EVT && r.payload?.senderUuid === user.account.uuid);
+        expect(mine.map((r) => r.payload.text), `${bot.nickname}가 받은 내 채팅`).toEqual([marker]);
+    }
+    await expect(page.getByText(EMPTY_TEXT)).toHaveCount(0);
 });
 
 test('A06-E-074 한글 150자 (6명 판) → 봇이 한글 150자 그대로 받음 @game', async ({ user, table }) => {

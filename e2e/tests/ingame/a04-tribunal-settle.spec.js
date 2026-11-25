@@ -2,7 +2,7 @@
 
 // 재판 "다 누르면 5초 뒤 판정" 브라우저 시험 (PC, 진짜 시간): "[5초 뒤 마감]" 글, 5초(±1.5초) 뒤 창 닫힘, 남은 시간이 짧으면 원래 마감, 끊긴 봇·나간 봇·새로고침·2일 재판
 // 목록 docs/게임_의도_2026-11-15/시험목록/A04-재판.md A04-E-023~028·031~036·100·170 — 손잡이로 재판을 넘기지 않음(그 5초를 건너뜀)
-const { test, expect } = require('../../helpers/fixtures');
+const { test, expect, ui } = require('../../helpers/fixtures');
 const K = require('./_a04-pc');
 
 const { TEXT, uuidOf } = K;
@@ -156,6 +156,8 @@ test('A04-E-170 PC 8명 판 1일 처형된 봇이 끊김, 2일 재판 산 사람
     executed.socket.disconnect();
     await K.passExpulsion(page);
     await K.toDayOf(t, 2);
+    // 1일 밤엔 아무도 안 죽음 → "지난밤 아무 일도 일어나지 않았습니다" 창을 확인으로 닫음 (안 닫으면 재판 단추를 덮음)
+    await ui.confirmQuietDawn(page);
     // 2일: 산 사람(나 + 산 봇, 피고 빼고)이 다 냄
     await K.watchScreen(page);
     const { deadline } = await K.openTribunal(t, uuidOf(second));
