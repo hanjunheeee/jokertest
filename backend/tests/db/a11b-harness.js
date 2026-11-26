@@ -126,7 +126,7 @@ async function startApp(t, { clock = false } = {}) {
         }
         const res = await fetch(`${url}${path}`, { method, headers, body: payload });
         const text = await res.text();
-        let json = null;
+        let json;
         try { json = JSON.parse(text); } catch { json = null; }
         return { status: res.status, body: json, text, headers: res.headers, setCookies: res.headers.getSetCookie() };
     }

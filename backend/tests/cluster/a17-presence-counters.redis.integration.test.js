@@ -137,7 +137,7 @@ async function startApp(t, method, routePath, handlers) {
     app.use(express.json())
     app.use((req, res, next) => { req.user = { uuid: req.headers['x-user'], sessionId: 's-1' }; next() })
     app[method](routePath, ...handlers)
-    app.use((err, req, res, next) => res.status(err.status ?? 500).json({ code: err.code ?? 'ERR', message: err.message }))
+    app.use((err, req, res, next) => { void next; res.status(err.status ?? 500).json({ code: err.code ?? 'ERR', message: err.message }) })
     const server = http.createServer(app)
     const { url } = await listenOnFetchablePort(server, { pickPort: () => HIGH_PORT_MIN + crypto.randomInt(HIGH_PORT_MAX - HIGH_PORT_MIN + 1) })
     t.after(() => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()) }))

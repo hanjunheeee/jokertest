@@ -38,7 +38,7 @@ function createJoinChannelGuard(io, socket, uuid) {
 }
 
 // 명단 추가 = 입장 확정, 그 뒤 방송 제외 풀고 알림
-function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, { channel, progress }) {
+function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile, onSeated, onBroadcast }, { channel, progress }) {
     const player = {
         uuid,
         nickname: user.nickname,
@@ -51,10 +51,11 @@ function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, { 
     progress.committed = true
     socket.data.activeRoomId = room.id
 
-    // 확정 뒤에야 방송 제외 풂 (지도 01-⑥)
+    // 확정 뒤에야 방송 제외 풀고 끝난 판 묶임 정리 (지도 01-⑥)
     channel.release()
+    onSeated?.()
 
-    // 나한테 방 정보, 방 사람들한테 (나 빼고) 새 사람, 목록 갱신
+    // 나한테 방 정보, 방 사람들한테 (나 빼고) 새 사람, 방장 바뀜 알림, 목록 갱신
     // 확정 뒤라 알림마다 따로 잡음 (하나 던져도 나머지 보내고, 화면엔 실패 대신 입장이 감)
     try {
         socket.emit('room_joined', buildRoomPayload(room))
@@ -70,6 +71,7 @@ function commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, { 
     } catch (emitErr) {
         console.error('[코드 참가 방송 실패]', emitErr)
     }
+    onBroadcast?.()
     emitPublicRoomList(io)
 }
 

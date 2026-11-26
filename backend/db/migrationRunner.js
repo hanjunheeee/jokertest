@@ -20,8 +20,11 @@ const checksumOf = (migration) => {
     return crypto.createHash('sha256').update(source).digest('hex');
 };
 
-// 이력 표가 없을 때만 만듦 (이름 유일, 상태 running·applied·failed)
-const ensureMetaTable = async (queryInterface, Sequelize) => {
+// 이력 표가 없을 때만 만듦 (이름 유일, 상태 running·applied·failed), (queryInterface, Sequelize) 또는 (sequelize) 둘 다 받음
+const ensureMetaTable = async (queryInterfaceOrSequelize, SequelizeArg) => {
+    const isSequelize = SequelizeArg === undefined && typeof queryInterfaceOrSequelize?.getQueryInterface === 'function';
+    const queryInterface = isSequelize ? queryInterfaceOrSequelize.getQueryInterface() : queryInterfaceOrSequelize;
+    const Sequelize = isSequelize ? queryInterfaceOrSequelize.constructor : SequelizeArg;
     const tables = await queryInterface.showAllTables();
     if (tables.includes(META_TABLE)) return;
 
@@ -234,6 +237,7 @@ module.exports = {
     META_TABLE,
     LOCK_NAME,
     checksumOf,
+    ensureMetaTable,
     getStatus,
     applyMigrations,
     resolveFailure,

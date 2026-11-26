@@ -9,7 +9,7 @@ const { getSettingsVersion } = require('../settings/receipts')
 const { emitPublicRoomList, computeCanStart } = require('../room/view')
 const { BOOT_EPOCH } = require('../core/constants')
 const { disposeRoom } = require('../room/dispose')
-const { nextHostAfterLeave } = require('../room/returnRoom')
+const { nextHostAfterLeave, restoreReservedHostIfEnded } = require('../room/returnRoom')
 
 // 명단에 넣었던 입장 시도 되돌리기 (내가 넣은 것일 때만, 방 사람들한테 알림)
 function removePublished(io, socket, attempt) {
@@ -18,11 +18,12 @@ function removePublished(io, socket, attempt) {
     const room = gameRooms.get(attempt.roomId)
 
     const stillMine = isStillMine(room, attempt)
-    // 여기부터 진짜 바뀜: 명단·소속에서 뺌
+    // 여기부터 진짜 바뀜: 명단·소속에서 빼고 예약 방장이 아직 끝난 판에 있으면 예약 되돌림
     if (stillMine) {
         releasePublished(attempt)
         room.players.delete(attempt.accountUuid)
         playerRoom.delete(attempt.accountUuid)
+        if (attempt.claimedReservedHost) restoreReservedHostIfEnded(room, attempt.accountUuid)
     }
 
     // 이 시도의 소켓이면 채널 떼기, 다른 길로 다시 앉았으면 그대로 둠

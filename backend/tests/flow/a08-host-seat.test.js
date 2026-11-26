@@ -6,7 +6,8 @@ process.env.DATABASE_URL = 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db'
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { makeWorld } = require('./a08-world');
+const { makeWorld, MM, core } = require('./a08-world');
+const { BOOT_EPOCH } = require('../../socket/matchmaking/core/constants');
 
 const rosterOf = (room) => room.players.map((p) => p.uuid);
 
@@ -284,4 +285,103 @@ test('A08-B-222 5명 판 방장 A가 끊긴 채 판 끝, 아무도 안 들어감
     assert.equal(joined.ok, true, `막힘: ${joined.code}`);
     assert.equal(joined.room.hostUuid, outsider);
     assert.equal(joined.room.reservedHostUuid, null);
+});
+
+// ── 원래 방장이 끝난 판을 안 나간 채 코드·공개방·초대 수락으로 복귀 대기방에 들어올 때 ──
+// 초대 수락 한 번 끝까지 밀기 (수락 기록 문 열어 줌)
+async function acceptInviteToRoom(w, receiverUuid, inviteId, room) {
+    w.invites.set(inviteId, { known: true, roomId: room.roomId, roomInstanceId: room.roomInstanceId, bootEpoch: BOOT_EPOCH });
+    const pending = w.ask(MM.handleAcceptGameInvite, receiverUuid, { inviteId });
+    for (let i = 0; i < 10 && w.inviteGates.length === 0; i += 1) await w.flush();
+    assert.equal(w.inviteGates.length, 1, '초대 수락 기록 대기 문이 안 열림');
+    w.inviteGates.shift()();
+    return pending;
+}
+
+test('A08-B-224 6명 판 B·C 먼저 복귀 후 원래 방장 A가 끝난 판 안 나간 채 코드 입장 → A 방장·예약 해제·host_changed·끝난 판 정리', async (t) => {
+    const { w, g } = await endedGame(t, 'b224', 6);
+    const [b, c] = [g.uuids[1], g.uuids[2]];
+    await returnInOrder(w, g, [b, c]);
+    const joined = await w.joinCode(g.host, g.roomCode);
+    assert.equal(joined.ok, true, `코드 입장 실패: ${joined.code}`);
+    assert.equal(joined.room.hostUuid, g.host);
+    assert.equal(joined.room.reservedHostUuid, null);
+    assert.equal(core.getEndedGameId(g.host), null);
+    for (const uuid of [b, c]) {
+        const notice = lastHostChanged(w, uuid);
+        assert.ok(notice, `${uuid} 방장 바뀜 알림 없음`);
+        assert.equal(notice.hostUuid, g.host);
+        assert.equal(notice.reservedHostUuid, null);
+    }
+    const updated = await w.updateSettings(g.host, { dayDiscussionTime: 90 });
+    assert.equal(updated.ok, true, `방장 설정 변경 실패: ${updated.code}`);
+});
+
+test('A08-B-225 5명 판 빈 복귀 대기방에 원래 방장 A가 끝난 판 안 나간 채 코드 입장 → 바로 방장·예약 해제·끝난 판 정리', async (t) => {
+    const { w, g } = await endedGame(t, 'b225', 5);
+    const joined = await w.joinCode(g.host, g.roomCode);
+    assert.equal(joined.ok, true, `코드 입장 실패: ${joined.code}`);
+    assert.equal(joined.room.hostUuid, g.host);
+    assert.equal(joined.room.reservedHostUuid, null);
+    assert.equal(core.getEndedGameId(g.host), null);
+});
+
+test('A08-B-226 공개·6명 판 B 복귀 후 원래 방장 A가 끝난 판 안 나간 채 공개방 입장 → A 방장·예약 해제·host_changed·끝난 판 정리', async (t) => {
+    const { w, g } = await endedGame(t, 'b226', 6, { accessType: 'open' });
+    const b = g.uuids[1];
+    const r = await w.ret(b, g.gameId);
+    assert.equal(r.ok, true);
+    const joined = await w.joinPublic(g.host, r.room.roomId);
+    assert.equal(joined.ok, true, `공개방 입장 실패: ${joined.code}`);
+    assert.equal(joined.room.hostUuid, g.host);
+    assert.equal(joined.room.reservedHostUuid, null);
+    assert.equal(core.getEndedGameId(g.host), null);
+    const notice = lastHostChanged(w, b);
+    assert.ok(notice, 'B 방장 바뀜 알림 없음');
+    assert.equal(notice.hostUuid, g.host);
+    assert.equal(notice.reservedHostUuid, null);
+});
+
+test('A08-B-227 6명 판 B 복귀 후 원래 방장 A가 끝난 판 안 나간 채 초대 수락 → A 방장·예약 해제·host_changed·끝난 판 정리', async (t) => {
+    const { w, g } = await endedGame(t, 'b227', 6);
+    const b = g.uuids[1];
+    const r = await w.ret(b, g.gameId);
+    assert.equal(r.ok, true);
+    const reply = await acceptInviteToRoom(w, g.host, 'inv-b227', r.room);
+    assert.equal(reply.ok, true, `초대 수락 실패: ${reply.code}`);
+    assert.equal(reply.room.hostUuid, g.host);
+    assert.equal(reply.room.reservedHostUuid, null);
+    assert.equal(core.getEndedGameId(g.host), null);
+    const notice = lastHostChanged(w, b);
+    assert.ok(notice, 'B 방장 바뀜 알림 없음');
+    assert.equal(notice.hostUuid, g.host);
+    assert.equal(notice.reservedHostUuid, null);
+});
+
+test('A08-B-228 6명 판 B 복귀 후 원래 방장 A 초대 수락 영수증이 실패하면 예약 방장·끝난 판 묶임 그대로 유지', async (t) => {
+    const { w, g } = await endedGame(t, 'b228', 6);
+    const b = g.uuids[1];
+    const r = await w.ret(b, g.gameId);
+    assert.equal(r.ok, true);
+    const matchmaking = require('../../socket/matchmaking');
+    matchmaking.__setGameInviteServiceForTests({
+        cancelPendingInvitesForRoom: async () => {},
+        getAttemptOutcome: async ({ inviteId }) => w.invites.get(inviteId) ?? { known: false },
+        recordAcceptDecision: async () => {},
+        recordEntryInterrupted: async () => {},
+        finalizeAcceptedEntry: async ({ publish, unpublish }) => {
+            const pub = publish();
+            if (!pub.ok) return pub;
+            unpublish();
+            return { ok: false, code: 'RECEIPT_FAILED' };
+        },
+    });
+    w.invites.set('inv-b228', { known: true, roomId: r.room.roomId, roomInstanceId: r.room.roomInstanceId, bootEpoch: BOOT_EPOCH });
+    const reply = await w.ask(MM.handleAcceptGameInvite, g.host, { inviteId: 'inv-b228' });
+    assert.equal(reply.ok, false);
+    const roomAfter = await w.currentRoom(b);
+    assert.equal(roomAfter.hostUuid, null);
+    assert.equal(roomAfter.reservedHostUuid, g.host);
+    assert.equal(core.getEndedGameId(g.host), g.gameId);
+    assert.equal(lastHostChanged(w, b), undefined);
 });

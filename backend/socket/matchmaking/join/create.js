@@ -189,8 +189,8 @@ function registerRoom(io, socket, uuid, room) {
 function answerCreated(room, callback) {
     try {
         const payload = buildRoomPayload(room)
-        // 이 함수엔 uuid 안 넘어옴, 만든 사람 = 방장이라 room.hostUuid 씀 (uuid 그대로 쓰면 ReferenceError로 성공 답 안 나감)
-        logMatchingFlow('create_room_ack', { uuid: room.hostUuid, roomId: payload.roomId, code: payload.roomCode })
+        // 이 함수엔 uuid 안 넘어옴, 만든 사람 = 방장이라 room.hostUuid 씀, 비공개 방 코드 평문은 남기지 않음
+        logMatchingFlow('create_room_ack', { uuid: room.hostUuid, roomId: payload.roomId, hasCode: Boolean(payload.roomCode) })
         callback({ ok: true, room: payload })
     } catch (ackError) {
         console.error('[방 생성 ack 실패]', ackError)

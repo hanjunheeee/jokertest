@@ -9,25 +9,28 @@ const { releaseRoomTransition } = require('../join/transition')
 const { rejectIfDeserted } = require('../join/guards')
 const { deps } = require('../core/deps')
 const { computeCanStart, emitPublicRoomList, buildRoomPayload } = require('../room/view')
+const { leaveReturnEndedSession, emitHostChanged } = require('../room/returnRoom')
 const { scheduleLateJoinCleanup, removePublished } = require('./release')
 const { isRoomRoutingEnabled, findInviteRoomOwner } = require('../cluster/roomRouting')
 const { createRespondOnce, reserveAcceptRequest, detachUnlessSeated } = require('./acceptContext')
 const { pickInvitedRoom, reserveSeat, startAcceptDecision, rejectIfAttemptLost, loadAccountProfile, rejectIfProfileUnusable, rejectIfSocketReplaced } = require('./acceptSteps')
 const { finalizeAcceptedEntry, rollbackFailedReceipt, isPublicationStillOwned, rollbackUnconfirmed } = require('./acceptPublish')
 
-// 성공: 시도·되돌릴 권리·방송 제외 다 풂 (검증 다 끝난 뒤라 이제 방 방송 받음)
+// 성공: 시도·되돌릴 권리·방송 제외 다 풀고 복귀 대기방 끝난 판 묶임 정리 (검증 다 끝난 뒤라 이제 방 방송 받음)
 function finishAccept(ctx, room, seated) {
     const { io, socket, uuid, attempt } = ctx
     roomAdmissionAttempts.delete(uuid)
     releasePublished(attempt)
     ctx.releaseExclusion()
+    leaveReturnEndedSession(io, socket, uuid, room.returnHold?.gameId)
 
-    // 방 사람들한테 (나 빼고) 새 사람, 목록 갱신, 나한테 방 정보
+    // 방 사람들한테 (나 빼고) 새 사람, 방장 바뀜 알림, 목록 갱신, 나한테 방 정보
     channelMembership.emitToChannel(
         io, room.id, 'player_joined_room',
         { player: { ...seated }, canStart: computeCanStart(room) },
         { senderSocket: socket },
     )
+    if (attempt.hostChanged && room.players.size > 1) emitHostChanged(io, room)
     emitPublicRoomList(io)
     ctx.respond({ ok: true, room: buildRoomPayload(room), inviteId: ctx.inviteId, attemptId: ctx.attemptId })
 }

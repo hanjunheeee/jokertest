@@ -49,8 +49,9 @@ function createPublish(ctx, room, player) {
         playerRoom.set(uuid, current.id)
         attempt.phase = 'published'
         publishedAdmissions.set(uuid, attempt)
-        // 판 끝 뒤 빈 채 남은 방에 처음 들어오면 이 사람이 방장 (방장 칸 비고 남겨 둔 자리도 없을 때만)
-        claimHostIfVacant(current, uuid)
+        // 복귀 대기방 예약 방장이거나 빈 채 남은 방에 처음 들어오면 이 사람이 방장
+        attempt.claimedReservedHost = current.returnHold?.reservedHostUuid === uuid
+        attempt.hostChanged = claimHostIfVacant(current, uuid)
         socket.data.activeRoomId = current.id
         return { ok: true }
     }

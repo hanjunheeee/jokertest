@@ -6,7 +6,7 @@ const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { releaseRoomTransition } = require('./transition')
 const { deps } = require('../core/deps')
 const { loadPlayerProfile } = require('../room/view')
-const { claimHostIfVacant } = require('../room/returnRoom')
+const { claimHostIfVacant, leaveReturnEndedSession, emitHostChanged } = require('../room/returnRoom')
 const { isJoinLimitShared, takeSharedJoinAttempt } = require('./entryLimits')
 const { isRoomRoutingEnabled, rejectIfRoomOnOtherNode } = require('../cluster/roomRouting')
 const { TOO_MANY_JOIN_ATTEMPTS, TOO_MANY_JOIN_ATTEMPTS_MESSAGE, reserveJoin, pickRoomForJoin } = require('./joinChecks')
@@ -43,9 +43,14 @@ async function handleJoinRoomByCode(io, socket, uuid, roomCode, expectedRoom = n
         progress.joinedRoomId = room.id
         if (rejectIfConnectionChanged(io, socket, uuid, room, ctx)) return
         if (rejectIfRoomChanged(socket, uuid, room, ctx)) return
-        // 판 끝 뒤 다시 연 방이 빈 채 방장 칸도 비었으면 이 사람이 방장 (확정과 사이에 await 없음)
-        claimHostIfVacant(room, uuid)
-        commitJoinedPlayer(io, socket, uuid, room, { user, accountProfile }, ctx)
+        // 복귀 대기방 예약 방장이거나 빈 채 방장 칸도 비었으면 이 사람이 방장 (확정과 사이에 await 없음)
+        const hostChanged = claimHostIfVacant(room, uuid)
+        commitJoinedPlayer(io, socket, uuid, room, {
+            user,
+            accountProfile,
+            onSeated: () => leaveReturnEndedSession(io, socket, uuid, room.returnHold?.gameId),
+            onBroadcast: () => { if (hostChanged && room.players.size > 1) emitHostChanged(io, room) },
+        }, ctx)
     } catch (err) {
         // 확정 전 실패면 붙은 채널 떼고 실패 알림
         // 확정 뒤면 명단에 이미 있어서 실패 알림 안 보냄 (명단엔 있는데 화면은 실패 보는 어긋남 막기)

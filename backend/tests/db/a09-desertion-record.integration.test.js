@@ -12,7 +12,7 @@ const gameSettings = require('../../services/ops/gameSettings');
 const { abortGamesForMaintenance } = require('../../socket/gameSession/departure/maintenanceAbort');
 
 const { db, h, noDb } = d;
-const { gf, desertion, MINUTE, HOUR, DAY, kst } = h;
+const { gf, desertion, MINUTE, DAY, kst } = h;
 
 test.before(d.prepareDb);
 test.after(async () => {

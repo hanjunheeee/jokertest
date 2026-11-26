@@ -45,7 +45,7 @@ function makeWorld(t, { now = START_MS, realDb = false } = {}) {
             // 수락 기록은 시험이 풀 때까지 기다림 (입장 처리 중 상태 만들기용)
             recordAcceptDecision: () => new Promise((resolve) => inviteGates.push(resolve)),
             recordEntryInterrupted: async () => {},
-            finalizeAcceptedEntry: async () => ({ ok: true }),
+            finalizeAcceptedEntry: async ({ publish }) => (typeof publish === 'function' ? publish() : { ok: true }),
         },
     });
     // 낮 표 기록·업적은 늘 가짜 (이 영역 밖), 판 저장·탈주는 DB 시험만 진짜

@@ -227,7 +227,7 @@ async function startNode(t, b, { id, prefix, env = {} }) {
             if (internal) headers['x-internal-key'] = INTERNAL_KEY
             const res = await fetch(`${url}${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
             const text = await res.text()
-            let parsed = null
+            let parsed
             try { parsed = JSON.parse(text) } catch { parsed = text }
             return { status: res.status, body: parsed }
         },

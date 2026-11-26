@@ -276,6 +276,6 @@ test('A05-B-705 7명 판: 의사가 살린 밤과 광대가 건너뛴 밤의 공
     const skipped = play(() => null);
     assert.equal(Object.hasOwn(saved, 'doctorSaved'), false);
     // 판 id는 차릴 때마다 번호가 붙어 다르니 빼고 봄
-    const withoutGameId = ({ gameId, ...rest }) => rest;
+    const withoutGameId = (p) => { const copy = { ...p }; delete copy.gameId; return copy; };
     assert.deepEqual(withoutGameId(saved), withoutGameId(skipped));
 });

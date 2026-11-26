@@ -29,7 +29,7 @@ function runChild() {
             log: quietLog,
         });
         const realSetInterval = global.setInterval;
-        global.setInterval = (fn, ms, ...rest) => {
+        global.setInterval = (fn, ms) => {
             captured.push({ fn, ms });
             return { unref() {}, ref() {}, hasRef: () => false };
         };

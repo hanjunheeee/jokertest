@@ -8,9 +8,8 @@ const kickReceiptStore = require('../../kickReceiptStore')
 const channelMembership = require('../../channelMembership')
 const { ROOM_JOIN_ERROR_CODES } = require('../../roomJoinErrors')
 const { gameRooms, playerRoom, pendingRoomTransitions, matchmakingQueue } = require('../core/state')
-const { BOOT_EPOCH } = require('../core/constants')
 const { getSupportedRoomSizes } = require('../core/config')
-const { INIT_SETTINGS_VERSION, getSettingsVersion } = require('../settings/receipts')
+const { INIT_SETTINGS_VERSION } = require('../settings/receipts')
 const { countRoomOccupancy } = require('../admission/attempts')
 const { acquireRoomTransition, releaseRoomTransition, getGeneration } = require('../join/transition')
 const { rejectIfDeserted, isRoomCodeReserved } = require('../join/guards')
@@ -22,6 +21,10 @@ const { buildRoomPayload, computeCanStart, emitPublicRoomList } = require('./vie
 const { disposeRoom } = require('./dispose')
 const { findLiveSocket } = require('./membership')
 const { restoreRoomKicks, isKickLimitReached, KICK_LIMIT_MESSAGE } = require('./kickLimit')
+const {
+    isHostReserved, reservedSeatsFor, nextHostAfterLeave, claimHostIfVacant,
+    restoreReservedHostIfEnded, emitHostChanged, endHostReservation,
+} = require('./returnHostSeat')
 
 // "대기방으로" 거절 코드 중 입장 거절 표에 없는 것 (Node가 비우는 중이라 방을 안 염)
 const RETURN_TO_ROOM_ERROR_CODES = Object.freeze({
@@ -56,28 +59,14 @@ function setEndedSessionHooks(hooks) {
     Object.assign(endedSessionHooks, hooks)
 }
 
-// 방장 자리를 남겨 두는 중인지 (원래 방장이 아직 안 들어왔고 180초 안)
-function isHostReserved(room) {
-    return typeof room?.returnHold?.reservedHostUuid === 'string'
-}
-
-// 정원에서 더 빼 둘 자리 수: 방장 자리를 남겨 두는 중이면 원래 방장 말고는 1칸 덜 들어옴 (결정 [임시] 3)
-// 예: 정원 7·5명 앉음·방장 자리 남김 → 다른 사람은 5 + 1 >= 7 아니라 들어옴, 6명 앉으면 막힘
-function reservedSeatsFor(room, uuid) {
-    return isHostReserved(room) && room.returnHold.reservedHostUuid !== uuid ? 1 : 0
-}
-
-// 방장이 빠진 뒤 다음 방장: 방장 자리를 남겨 두는 중이면 비워 둠(null), 아니면 먼저 들어온 사람, 아무도 없으면 null
-function nextHostAfterLeave(room) {
-    if (isHostReserved(room)) return null
-    return room.players.keys().next().value ?? null
-}
-
-// 방장 칸이 비어 있고 남겨 둔 자리도 없으면 들어오는 사람이 방장 (빈 채 남은 같은 방에 처음 들어온 사람), 바꿨으면 true
-function claimHostIfVacant(room, uuid) {
-    if (room.hostUuid != null || isHostReserved(room)) return false
-    room.hostUuid = uuid
-    return true
+// 복귀 대기방에 앉은 뒤 끝난 판 묶임 풀기 (판 채널 떼기·마지막이면 판 끝 정리), 실패해도 자리는 그대로
+function leaveReturnEndedSession(io, socket, uuid, gameId) {
+    if (!gameId) return
+    try {
+        endedSessionHooks.leaveEndedSession?.(io, uuid, 'RETURNED_TO_ROOM', gameId, { socket })
+    } catch (err) {
+        console.error('[대기방으로 돌아가기 끝난 판 정리 실패]', err)
+    }
 }
 
 // 이 판이 다시 연 방이 있는지 (판이 지워져도 180초 시계는 방 때문에 계속 돎)
@@ -161,32 +150,6 @@ function reopenRoomAfterGame(io, session) {
     else releaseHeldRoomCode(session.roomId)
     emitPublicRoomList(io)
     return room
-}
-
-// 방장 바뀜·남겨 둔 방장 자리 끝 알림 (방 사람들에게, 실패는 로그만)
-function emitHostChanged(io, room) {
-    const { id: roomId, hostUuid } = room
-    const reservedHostUuid = room.returnHold?.reservedHostUuid ?? null
-    try {
-        channelMembership.emitToChannel(io, roomId, 'host_changed', {
-            hostUuid, reservedHostUuid, canStart: computeCanStart(room), roomId,
-            roomInstanceId: room.instanceId ?? null, bootEpoch: BOOT_EPOCH, settingsVersion: getSettingsVersion(room),
-        })
-    } catch (err) {
-        console.error('[방장 변경 방송 실패]', err)
-    }
-}
-
-// 남겨 둔 방장 자리 끝내기: 방장 칸이 비었으면 먼저 들어온 사람이 방장, 아무도 없으면 다음에 들어오는 사람이 방장
-// 끝냈으면 true (원래 방장이 "로비로"·결과 화면 끊김·180초 지남)
-function endHostReservation(io, room) {
-    if (!isHostReserved(room)) return false
-    room.returnHold.reservedHostUuid = null
-    if (room.players.size === 0) return true
-    if (room.hostUuid == null) room.hostUuid = room.players.keys().next().value
-    emitHostChanged(io, room)
-    emitPublicRoomList(io)
-    return true
 }
 
 // 이 사람이 원래 방장으로 자리를 남겨 둔 방이 있으면 그 자리 끝냄 (끝난 판에서 빠질 때, room/sessionCleanup이 부름)
@@ -273,17 +236,8 @@ function seatReturningPlayer(io, socket, uuid, gameId, room, channel) {
     socket.data.activeRoomId = room.id
     channel.release()
 
-    const wasReservedHost = room.returnHold?.reservedHostUuid === uuid
-    if (wasReservedHost) {
-        room.returnHold.reservedHostUuid = null
-        room.hostUuid = uuid
-    }
-    const hostChanged = wasReservedHost || claimHostIfVacant(room, uuid)
-
-    // 끝난 판 묶임 풂 (판 채널 떼기·마지막이면 판 끝 정리), 실패해도 자리는 그대로
-    try { endedSessionHooks.leaveEndedSession?.(io, uuid, 'RETURNED_TO_ROOM', gameId, { socket }) } catch (err) {
-        console.error('[대기방으로 돌아가기 끝난 판 정리 실패]', err)
-    }
+    const hostChanged = claimHostIfVacant(room, uuid)
+    leaveReturnEndedSession(io, socket, uuid, gameId)
     return { player, hostChanged }
 }
 
@@ -377,6 +331,9 @@ module.exports = {
     reservedSeatsFor,
     nextHostAfterLeave,
     claimHostIfVacant,
+    restoreReservedHostIfEnded,
+    leaveReturnEndedSession,
+    emitHostChanged,
     hasReturnRoom,
     reopenRoomAfterGame,
     releaseReservedHostFor,

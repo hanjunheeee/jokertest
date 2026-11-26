@@ -64,7 +64,7 @@ async function startApp(t, node, routes) {
     app.use(express.json())
     app.use((req, res, next) => { req.user = { uuid: req.headers['x-user'], sessionId: 's-1' }; next() })
     for (const r of routes) app[r.method](r.path, ...r.handlers)
-    app.use((err, req, res, next) => res.status(err.status ?? 500).json({ code: err.code ?? 'ERR', message: err.message }))
+    app.use((err, req, res, next) => { void next; res.status(err.status ?? 500).json({ code: err.code ?? 'ERR', message: err.message }) })
     const server = http.createServer(app)
     // 포트는 crypto로 고름 (시험 세상이 Math.random을 0으로 고정하면 늘 같은 포트가 나옴)
     const { url } = await listenOnFetchablePort(server, { pickPort: () => HIGH_PORT_MIN + crypto.randomInt(HIGH_PORT_MAX - HIGH_PORT_MIN + 1) })

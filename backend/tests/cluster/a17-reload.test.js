@@ -67,7 +67,7 @@ async function startN1App(t, b = B.n1) {
     const internal = b.x['controllers/ops/internal']
     app.post('/internal/maintenance/reload', internal.reloadMaintenance)
     app.post('/internal/banned-words/reload', internal.reloadBannedWords)
-    app.use((err, req, res, next) => res.status(err.status ?? 500).json({ ok: false, code: err.code ?? 'ERROR' }))
+    app.use((err, req, res, next) => { void next; res.status(err.status ?? 500).json({ ok: false, code: err.code ?? 'ERROR' }) })
     const server = http.createServer(app)
     const { url } = await listenOnFetchablePort(server)
     t.after(() => new Promise((resolve) => server.close(() => resolve())))

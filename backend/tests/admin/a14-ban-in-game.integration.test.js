@@ -21,7 +21,7 @@ const desertion = require('../../services/game/desertion');
 process.env.DATABASE_URL = TEST_DB_URL || 'mysql://blocked:blocked@127.0.0.1:1/blocked_test_db';
 
 const { db } = H;
-const ctx = H.useAdminFile();
+H.useAdminFile();
 
 // 로그인 (진짜 세션 발급) → { token }
 async function login(uuid) {
