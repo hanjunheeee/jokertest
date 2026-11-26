@@ -6,6 +6,7 @@ import { logoutApi } from "@/domains/auth/api/auth.api"
 import { useAuthStore } from "@/domains/auth/store/auth.store"
 import { LOBBY_MENU_ROUTES } from "@/domains/lobby/constants/lobbyMenu.js"
 import { INQUIRY_PARAM, toInquiryIdText } from "@/shared/constants/notificationTargets.js"
+import { appConfirm } from "@/shared/utils/appConfirm.js"
 
 // 서버 로그아웃 실패 때 묻는 글 (확인 = 이 기기에서만 로그아웃)
 const LOGOUT_FAILED_CONFIRM =
@@ -17,7 +18,7 @@ async function logoutOrAsk() {
     await logoutApi()
     return true
   } catch {
-    return typeof window.confirm === "function" && window.confirm(LOGOUT_FAILED_CONFIRM)
+    return Boolean(await appConfirm(LOGOUT_FAILED_CONFIRM))
   }
 }
 

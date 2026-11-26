@@ -12,11 +12,13 @@ export function useRoomCore() {
   // 방 확인 상태: waiting_socket / checking / verified / failed
   const [syncStatus, setSyncStatus] = useState('waiting_socket')
 
-  // 시작·준비 요청 중 표시 (ref는 연타 막기, state는 화면 표시)
+  // 시작·준비·삭제 요청 중 표시 (ref는 연타·방장 본인 삭제 알림 막기, state는 화면 표시)
   const [isStarting, setIsStarting] = useState(false)
   const [isSettingReady, setIsSettingReady] = useState(false)
   const startingRef = useRef(false)
   const readyingRef = useRef(false)
+  const deletingRef = useRef(false)
+  const selfDeletedRef = useRef(false)
   const mountedRef = useRef(true)
 
   // 요청 버전: 올리면 그 전 요청의 응답은 버림
@@ -119,6 +121,7 @@ export function useRoomCore() {
     syncStatus, setSyncStatus,
     isStarting, setIsStarting, startingRef,
     isSettingReady, setIsSettingReady, readyingRef,
+    deletingRef, selfDeletedRef,
     mountedRef,
     startVerRef, readyVerRef, settingsVerRef,
     isSaving, setIsSaving, savingRef,

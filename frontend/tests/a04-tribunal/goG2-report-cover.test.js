@@ -128,3 +128,17 @@ test("A04-F-287 7명 판: 재판이 끝나도(무죄 → 밤) 신고 창은 저�
   assert.ok(tribunalDialog() === null, "재판 창이 안 닫힘 (준비 잘못)")
   assert.equal(reportShown(), false, "재판이 끝나자 신고 창이 저절로 다시 뜸")
 })
+
+test("A04-F-288 6명 판: 전적 창에서 신고 창을 연 채 전원 기권으로 밤 안내(화면 잠금)가 뜸 → 신고 창 닫힘, 확인 뒤에도 저절로 안 뜸", async () => {
+  const page = await dayVotePage(6)
+  await openReport()
+  await page.say("day_vote_resolved", {
+    gameId: GAME, dayIndex: 1, phase: "NIGHT", round: 1, outcome: "ABSTAINED", tribunalTargetUuid: null,
+    publicVoteCount: page.n, publicAbstainCount: page.n, revoteExcludedUuids: [],
+  })
+  assert.equal(reportShown(), false, "신고 창이 밤 안내 위에 남음")
+  const confirm = [...document.querySelectorAll("[data-ingame-phase-entrance] button")].find((b) => b.textContent.trim() === "확인")
+  assert.ok(confirm, "밤 안내 확인 단추가 없음")
+  await press(confirm)
+  assert.equal(reportShown(), false, "밤 안내를 닫자 신고 창이 저절로 다시 뜸")
+})

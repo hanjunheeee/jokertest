@@ -1,6 +1,6 @@
 // 대기방 요청: 게임 시작·준비 바꾸기·방 삭제
 // hooks/room/useRoom이 씀, 방 확인이 끝나야 보내고 응답이 옛것이면 버림
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { getSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
@@ -33,12 +33,11 @@ const staleCheck = (ctx, verRef, { ver, socket, roomId, uuid, member }) => () =>
 // 시작·준비·방 삭제 요청 함수 묶음
 export function useRoomRequests(ctx, { onRoomDeleted } = {}) {
   const {
-    syncStatus, startingRef, readyingRef, startVerRef, readyVerRef, memberGenRef, readyAggRef,
+    syncStatus, startingRef, readyingRef, deletingRef, selfDeletedRef,
+    startVerRef, readyVerRef, memberGenRef, readyAggRef,
     setIsStarting, setIsSettingReady, setStartBlocked, resync, bump, clearStart, clearReady,
   } = ctx
 
-  // 방 삭제 보내는 중 (연타 막기)
-  const deletingRef = useRef(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
   // 방 삭제: 연결 없으면 알리고, 한 번 확인받은 뒤 보냄 (모두 나가게 되니까, FE-033)
@@ -52,6 +51,7 @@ export function useRoomRequests(ctx, { onRoomDeleted } = {}) {
     if (!(await appConfirm(ROOM_MESSAGES.DELETE_CONFIRM))) return
     useMatchingStore.getState().suppressRoomRecover()
     deletingRef.current = true
+    selfDeletedRef.current = false
     setIsDeleting(true)
     try {
       const response = await sendDeleteRoom(socket)
@@ -60,15 +60,14 @@ export function useRoomRequests(ctx, { onRoomDeleted } = {}) {
         return
       }
       if (response?.ok !== false) {
+        selfDeletedRef.current = true
         queueMicrotask(() => {
           if (!ctx.mountedRef.current) return
-          if (window.location.pathname !== "/game-matching") return
-          if (!useMatchingStore.getState().isInRoom) {
-            onRoomDeleted?.({ reason: "room_deleted_event", silent: true })
-            return
+          if (!useMatchingStore.getState().isInRoom && window.location.pathname !== "/game-matching") return
+          if (useMatchingStore.getState().isInRoom) {
+            ctx.applyVerified(() => useMatchingStore.getState().clearRoom())
           }
-          useMatchingStore.getState().clearRoom()
-          onRoomDeleted?.({ reason: "room_deleted_event" })
+          onRoomDeleted?.({ reason: "room_deleted_event", silent: true })
         })
       }
     } catch {

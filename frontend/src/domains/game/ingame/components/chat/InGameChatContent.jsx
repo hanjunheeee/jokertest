@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
   INGAME_CHAT_ASSETS,
+  INGAME_CHAT_USE_UNIFIED_PANEL,
   FRAME_ASPECT,
   INPUT_MAX_LENGTH,
 } from "../../constants/chat/ingameChatAssets.js"
@@ -50,42 +51,10 @@ const NIGHT_CLOSED_TEXT_CLASS =
 const CHAT_FRAME_IMAGE_CLASS =
   "pointer-events-none absolute inset-0 h-full w-full select-none object-fill transition-[filter,transform] duration-200 ease-out group-hover:scale-[1.004] group-hover:brightness-[1.04]"
 
-// 채팅 한 판 그리기, variant는 컨텍스트로 아래 부품에 내려 줌 (틀 안 타이머는 board·closeup)
-export default function InGameChatContent({
-  variant = "board",
-  draft,
-  messages,
-  onDraftChange,
-  onSend,
-  onOpenCloseup = null,
-  status = null,
-  error = null,
-  truncateDraftOnInput = true,
-  isDeadChat = false,
-  showEmbeddedPhaseTimer = false,
-  embeddedPhaseTimerStatusLabel = null,
-  embeddedPhaseTimerRemainingRatio = 0,
-  embeddedPhaseTimerRemainingSec = null,
-  embeddedPhaseTimerShowResourcesWithoutLabel = false,
-}) {
-  const [layoutReady, setLayoutReady] = useState(false)
-
-  // 입력칸 너비, 메시지 줄 최대 너비 기준으로 씀
+// 입력칸 너비를 재서 메시지 줄 최대 너비에 반영함
+function useTextFieldWidth(inputWrapRef, layoutReady, inputClosed) {
   const [textFieldWidth, setTextFieldWidth] = useState(0)
-  const inputWrapRef = useRef(null)
-  const isBoard = variant === "board"
-  // 밤에 산 시민은 보낼 채널이 없음 → 입력칸 닫음 (서버도 거절)
-  const inputClosed = useInGameStore((s) => isNightChatInputClosed(s.state))
-  // 역할 확인 10초 동안은 채팅을 못 씀 → 입력칸·보내기를 끔 (눌러도 안 나가던 것을 꺼진 것으로 보이게)
-  const inputLocked = useInGameStore((s) => isRoleRevealChatLocked(s.state))
 
-  // 첫 프레임 뒤에 보이게 해서 자리 잡기 전 깜빡임 막기
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setLayoutReady(true))
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  // 입력칸 너비 재기, 틀·창 크기 바뀔 때마다 다시 잼
   useLayoutEffect(() => {
     const inputWrap = inputWrapRef.current
     if (!inputWrap) return undefined
@@ -105,40 +74,101 @@ export default function InGameChatContent({
       observer.disconnect()
       window.removeEventListener("resize", syncWidth)
     }
-  }, [layoutReady, inputClosed])
+  }, [inputWrapRef, layoutReady, inputClosed])
 
-  // 보드 모양에서 빈 곳 누르면 크게 보기, 목록·입력 줄 누름은 제외
+  return textFieldWidth
+}
+
+// 하단 입력 줄 그리기 (밤 산 시민은 닫힘 문구, 그 밖엔 입력칸과 보내기 단추)
+function ChatTextFieldRow({
+  variant,
+  useUnifiedFrame,
+  inputClosed,
+  inputLocked,
+  inputWrapRef,
+  draft,
+  onDraftChange,
+  truncateDraftOnInput,
+  onSend,
+}) {
+  return (
+    <div
+      className={TEXT_FIELD_ROW_CLASS}
+      style={getTextFieldInset(variant, { withEmbeddedPhaseTimer: useUnifiedFrame })}
+      data-chat-interactive
+    >
+      {inputClosed ? (
+        <p role="status" className={NIGHT_CLOSED_TEXT_CLASS} data-night-chat-closed="">
+          {NIGHT_CHAT_CLOSED_TEXT}
+        </p>
+      ) : (
+        <>
+          <InGameChatInput
+            ref={inputWrapRef}
+            value={draft}
+            onChange={(event) =>
+              onDraftChange(
+                truncateDraftOnInput
+                  ? event.target.value.slice(0, INPUT_MAX_LENGTH)
+                  : event.target.value,
+              )
+            }
+            onSend={onSend}
+            className={getInputShiftClass(variant)}
+            truncateDraftOnInput={truncateDraftOnInput}
+            disabled={inputLocked}
+            disabledHint={ROLE_REVEAL_CHAT_LOCKED_TEXT}
+          />
+          <InGameChatSendButton
+            onSend={onSend}
+            className={getSendBtnShiftClass(variant)}
+            disabled={inputLocked}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+// 채팅 한 판 그리기, 타이머가 없을 때는 빈 명패·시계 상자가 없는 틀을 씀
+export default function InGameChatContent({
+  variant = "board", draft, messages, onDraftChange, onSend, onOpenCloseup = null,
+  status = null, error = null, truncateDraftOnInput = true, isDeadChat = false,
+  showEmbeddedPhaseTimer = false, embeddedPhaseTimerStatusLabel = null,
+  embeddedPhaseTimerRemainingRatio = 0, embeddedPhaseTimerRemainingSec = null,
+  embeddedPhaseTimerShowResourcesWithoutLabel = false,
+}) {
+  const [layoutReady, setLayoutReady] = useState(false)
+  const inputWrapRef = useRef(null)
+  const isBoard = variant === "board"
+  const inputClosed = useInGameStore((s) => isNightChatInputClosed(s.state))
+  const inputLocked = useInGameStore((s) => isRoleRevealChatLocked(s.state))
+  const textFieldWidth = useTextFieldWidth(inputWrapRef, layoutReady, inputClosed)
+  const useUnifiedFrame = showEmbeddedPhaseTimer && INGAME_CHAT_USE_UNIFIED_PANEL
+  const frameSrc = useUnifiedFrame ? INGAME_CHAT_ASSETS.frame : INGAME_CHAT_ASSETS.frameWithoutTimer
+  const listInset = getMsgListInset(variant, { withEmbeddedPhaseTimer: showEmbeddedPhaseTimer })
+  const timerLayout = variant === "closeup" ? "closeup" : (variant === "tribunal" ? "tribunal" : "board")
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setLayoutReady(true))
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
   const handleRootClick = (event) => {
-    if (!isBoard || !onOpenCloseup) return
-    if (event.target.closest("[data-chat-interactive]")) return
-    onOpenCloseup()
+    if (isBoard && onOpenCloseup && !event.target.closest("[data-chat-interactive]")) onOpenCloseup()
   }
-
-  // 보내기 (Enter·버튼 같이 씀, 꺼진 동안은 안 보냄)
   const handleSend = () => {
-    if (inputLocked) return
-    onSend()
+    if (!inputLocked) onSend()
   }
 
-  // 글자 수 자르기는 truncateDraftOnInput일 때만 (지금 부르는 쪽은 전부 끔)
   return (
     <InGameChatVariantContext.Provider value={variant}>
       <div
         className={isBoard ? CHAT_ROOT_BOARD_CLASS : CHAT_ROOT_CLASS}
-        style={{
-          aspectRatio: FRAME_ASPECT,
-          opacity: layoutReady ? 1 : 0,
-          transition: "opacity 0.15s ease-out",
-        }}
+        style={{ aspectRatio: FRAME_ASPECT, opacity: layoutReady ? 1 : 0, transition: "opacity 0.15s ease-out" }}
         onClick={handleRootClick}
       >
-        <PublicAsset
-          src={INGAME_CHAT_ASSETS.frame}
-          alt=""
-          className={CHAT_FRAME_IMAGE_CLASS}
-        />
-
-        {/* 키보드로도 크게 보기 열기 (평소엔 숨김, Tab으로 오면 보임) */}
+        <PublicAsset src={frameSrc} alt="" className={CHAT_FRAME_IMAGE_CLASS} />
         {isBoard && onOpenCloseup ? (
           <button
             type="button"
@@ -149,87 +179,30 @@ export default function InGameChatContent({
             채팅 크게 보기
           </button>
         ) : null}
-
         {showEmbeddedPhaseTimer ? (
           <InGamePhaseTurnTimerPanel
             placement={INGAME_TIMER_PLACEMENT.CHAT}
-            embeddedLayout={
-              variant === "closeup"
-                ? "closeup"
-                : variant === "tribunal"
-                  ? "tribunal"
-                  : "board"
-            }
+            embeddedLayout={timerLayout}
             statusLabel={embeddedPhaseTimerStatusLabel}
             remainingRatio={embeddedPhaseTimerRemainingRatio}
             remainingSec={embeddedPhaseTimerRemainingSec}
             showResourcesWithoutLabel={embeddedPhaseTimerShowResourcesWithoutLabel}
           />
         ) : null}
-
-        <div
-          className={MSG_LIST_CONTAINER_CLASS}
-          style={getMsgListInset(variant, {
-            withEmbeddedPhaseTimer: showEmbeddedPhaseTimer,
-          })}
-          data-chat-interactive
-        >
-          <InGameChatMessageList
-            messages={messages}
-            textFieldWidth={textFieldWidth}
-          />
+        <div className={MSG_LIST_CONTAINER_CLASS} style={listInset} data-chat-interactive>
+          <InGameChatMessageList messages={messages} textFieldWidth={textFieldWidth} />
         </div>
-
-        {/* 죽은 뒤엔 죽은 사람끼리 말함 (목록 칸 흐림에 안 묻히게 따로 둠) */}
         {isDeadChat ? (
-          <div
-            className="pointer-events-none absolute"
-            style={getMsgListInset(variant, { withEmbeddedPhaseTimer: showEmbeddedPhaseTimer })}
-          >
+          <div className="pointer-events-none absolute" style={listInset}>
             <p className={DEAD_CHAT_BADGE_CLASS} data-dead-chat-badge="">죽은 사람끼리</p>
           </div>
         ) : null}
-
-        <div
-          className={TEXT_FIELD_ROW_CLASS}
-          style={getTextFieldInset(variant)}
-          data-chat-interactive
-        >
-          {inputClosed ? (
-            <p role="status" className={NIGHT_CLOSED_TEXT_CLASS} data-night-chat-closed="">
-              {NIGHT_CHAT_CLOSED_TEXT}
-            </p>
-          ) : (
-            <>
-              <InGameChatInput
-                ref={inputWrapRef}
-                value={draft}
-                onChange={(event) =>
-                  onDraftChange(
-                    truncateDraftOnInput
-                      ? event.target.value.slice(0, INPUT_MAX_LENGTH)
-                      : event.target.value,
-                  )
-                }
-                onSend={handleSend}
-                className={getInputShiftClass(variant)}
-                truncateDraftOnInput={truncateDraftOnInput}
-                disabled={inputLocked}
-                disabledHint={ROLE_REVEAL_CHAT_LOCKED_TEXT}
-              />
-              <InGameChatSendButton
-                onSend={handleSend}
-                className={getSendBtnShiftClass(variant)}
-                disabled={inputLocked}
-              />
-            </>
-          )}
-        </div>
-
-        <div
-          className={STATUS_LINE_WRAP_CLASS}
-          style={getStatusLineInset(variant)}
-        >
+        <ChatTextFieldRow
+          variant={variant} useUnifiedFrame={useUnifiedFrame}
+          inputClosed={inputClosed} inputLocked={inputLocked} inputWrapRef={inputWrapRef}
+          draft={draft} onDraftChange={onDraftChange} truncateDraftOnInput={truncateDraftOnInput} onSend={handleSend}
+        />
+        <div className={STATUS_LINE_WRAP_CLASS} style={getStatusLineInset(variant)}>
           <InGameChatStatusLine status={status} error={error} />
         </div>
       </div>

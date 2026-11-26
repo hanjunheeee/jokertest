@@ -21,6 +21,9 @@ export const NODE_ERROR_CODES = {
 // 다른 Node로 옮겨 다시 붙기 기다리는 시간
 export const NODE_MOVE_TIMEOUT_MS = 10000
 
+// 첫 소켓 연결 악수 제한 시간 (기본 20초 멈춤 막기)
+export const SOCKET_CONNECT_TIMEOUT_MS = 5000
+
 // WRONG_NODE 튕김 한도: 30초에 3번 넘으면 힌트 버리고 아무 Node로 (고리 막기)
 export const NODE_BOUNCE_LIMIT = 3
 export const NODE_BOUNCE_WINDOW_MS = 30000

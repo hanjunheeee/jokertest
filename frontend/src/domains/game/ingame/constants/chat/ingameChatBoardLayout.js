@@ -6,15 +6,30 @@ import {
 } from "./ingameChatFrameLayout.js"
 import { EMBEDDED_TIMER_LIST_OFFSET_FRAME } from "./ingameChatTimerLayout.js"
 
-// 틀 그림 기준 목록·입력·상태 줄 자리 (% 값)
+// 명패 없는 틀(인게임-채팅창프레임2) 기준 목록·입력·상태 줄 자리 (% 값)
 const MSG_LIST_INSET_FRAME = {
+  top: 8,
+  left: 3 + CONTENT_SHIFT_LEFT_FRAME,
+  right: 5,
+  height: 68,
+}
+
+const TEXT_FIELD_INSET_FRAME = {
+  bottom: 7,
+  left: 4,
+  right: 5,
+  height: 11,
+}
+
+// 명패·시계가 포함된 리메이크 틀 기준 목록·입력 자리 (% 값)
+const UNIFIED_MSG_LIST_INSET_FRAME = {
   top: 17.2,
   left: 4 + CONTENT_SHIFT_LEFT_FRAME,
   right: 6,
   height: 66.5,
 }
 
-const TEXT_FIELD_INSET_FRAME = {
+const UNIFIED_TEXT_FIELD_INSET_FRAME = {
   bottom: 2.2,
   left: 3.2,
   right: 6.2,
@@ -81,12 +96,12 @@ export const INGAME_CHAT_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
   MSG_LIST_INSET_FRAME,
 )
 
-// 채팅 틀 안 타이머 켰을 때 목록 자리 (타이머만큼 내리고 줄임)
+// 채팅 틀 안 타이머 켰을 때 목록·입력 자리 (리메이크 틀 기준)
 const MSG_LIST_INSET_FRAME_WITH_TIMER = {
-  top: MSG_LIST_INSET_FRAME.top + EMBEDDED_TIMER_LIST_OFFSET_FRAME,
-  left: MSG_LIST_INSET_FRAME.left,
-  right: MSG_LIST_INSET_FRAME.right,
-  height: MSG_LIST_INSET_FRAME.height - EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+  top: UNIFIED_MSG_LIST_INSET_FRAME.top + EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+  left: UNIFIED_MSG_LIST_INSET_FRAME.left,
+  right: UNIFIED_MSG_LIST_INSET_FRAME.right,
+  height: UNIFIED_MSG_LIST_INSET_FRAME.height - EMBEDDED_TIMER_LIST_OFFSET_FRAME,
 }
 
 export const MSG_LIST_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
@@ -95,6 +110,10 @@ export const MSG_LIST_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
 
 export const INGAME_CHAT_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(
   TEXT_FIELD_INSET_FRAME,
+)
+
+export const INGAME_CHAT_TEXT_FIELD_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
+  UNIFIED_TEXT_FIELD_INSET_FRAME,
 )
 
 export const INGAME_CHAT_STATUS_LINE_INSET = mapFrameInsetToLayoutBox(

@@ -20,7 +20,7 @@ function selectTribunalPresentationOpen(state) {
 }
 
 // 크게 보기 열림은 여기서만 들고 있음, 타이머 값은 인게임 화면이 넘김
-// coverOverlayOpen: 단계 안내·밤 차례 창이 떠 있음 (인게임 화면이 알려 줌, 죽은 사람의 저절로 닫히는 안내는 거짓)
+// coverOverlayOpen: 전면 잠금·단계 안내(죽은 사람 안내 포함)·밤 차례 창이 떠 있음
 export default function InGameChatShell({
   timerPlacement = INGAME_TIMER_PLACEMENT.TIMEBAR,
   statusLabel = null,
@@ -34,8 +34,7 @@ export default function InGameChatShell({
   const chatProps = useInGameChatSessionContext()
   const hasStatusLabel = typeof statusLabel === "string" && statusLabel.length > 0
 
-  // 재판 연출이 뜨면 크게 보기도 닫음 (끝난 뒤 저절로 다시 뜨지 않게)
-  // 단계 안내·밤 차례 창도 같음: 크게 보기(z-62)가 그 창(z-60) 위에 남아 글과 "확인" 단추를 가림
+  // 재판·아침 연출·밤 결과·사망 선택·단계 안내·밤 차례 창이 뜨면 크게 보기 닫기 (창 가림·닫기 먹통 막기)
   if ((tribunalPresentationOpen || coverOverlayOpen) && closeupOpen) setCloseupOpen(false)
 
   // 재판 연출이 자기 채팅을 띄우므로 겹치지 않게 숨김

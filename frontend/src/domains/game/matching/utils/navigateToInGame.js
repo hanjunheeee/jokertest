@@ -1,4 +1,5 @@
-// 대기방 → 인게임 이동 (game_started·구독·ACK 보충이 같이 씀)
+// 대기방에서 판 시작 뒤 인게임 화면으로 한 번만 이동시키는 함수
+// useMatchingPage(game_started·스토어 구독·효과)·useGameResultReturnToMatching이 씀
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import { traceMatchingFlow } from "../debug/matchingFlowTrace.js"
 import { matchingRouterNavigate } from "./matchingRouterNavigate.js"
@@ -10,10 +11,12 @@ const INGAME_PATH = "/ingame"
 
 let lastInGameNavGameId = null
 
+// 같은 판 이동 중복 막기 기억 지움 (결과 화면 복귀·시험 정리 때 씀)
 export function resetInGameNavigationDedupe() {
   lastInGameNavGameId = null
 }
 
+// 대기방에서 활성 판 화면(/ingame)으로 이동 (같은 gameId 중복 호출은 막음)
 export function navigateToInGameFromMatching(navigate, { gameId, source }) {
   if (typeof gameId !== "string" || gameId.length === 0) {
     traceMatchingFlow("navigate_ingame_skipped", { reason: "no_game_id", source })
@@ -33,9 +36,14 @@ export function navigateToInGameFromMatching(navigate, { gameId, source }) {
     })
     return false
   }
+  if (lastInGameNavGameId === gameId) {
+    traceMatchingFlow("navigate_ingame_skipped", { reason: "dedupe", gameId, source })
+    return false
+  }
   const pathname = typeof window !== "undefined" ? window.location.pathname : ""
-  // 주소는 /ingame인데 Outlet은 아직 대기방이면 라우터만 다시 맞춤
+  // 주소만 먼저 /ingame이고 아직 이 판 이동을 안 거친 경우에만 라우터를 한 번 다시 맞춤
   if (pathname === INGAME_PATH) {
+    lastInGameNavGameId = gameId
     traceMatchingFlow("navigate_ingame_resync", { gameId, source })
     matchingRouterNavigate(INGAME_PATH, { replace: true })
     navigate(INGAME_PATH, { replace: true })
@@ -43,10 +51,6 @@ export function navigateToInGameFromMatching(navigate, { gameId, source }) {
   }
   if (pathname !== MATCHING_PATH) {
     traceMatchingFlow("navigate_ingame_skipped", { reason: "not_on_matching", gameId, source, pathname })
-    return false
-  }
-  if (lastInGameNavGameId === gameId) {
-    traceMatchingFlow("navigate_ingame_skipped", { reason: "dedupe", gameId, source })
     return false
   }
   lastInGameNavGameId = gameId

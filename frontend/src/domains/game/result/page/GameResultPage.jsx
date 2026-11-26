@@ -69,10 +69,19 @@ function ResultCloseTimer({ closesAt }) {
 // 대기방으로·로비로 동작과 실패 안내 (안내는 마지막에 누른 버튼 것만)
 // "로비로"는 이름대로 로비로 감 (판 중 나가기는 멀티 화면), 실패 안내는 이 화면이 그려 알림 창은 끔
 function useResultLeave() {
-  const { requestExit, exitStatus, exitErrorCode, isExitPending } =
+  const { requestExit, exitStatus, exitErrorCode, exitAttemptId, isExitPending } =
     useInGameExit({ destination: "/lobby", alertExitFailure: false })
   const { requestReturnToMatching, isReturning, returnError, clearReturnError } = useGameResultReturnToMatching()
   const [noticeSource, setNoticeSource] = useState(null)
+  const [seenExitAttemptId, setSeenExitAttemptId] = useState(exitAttemptId)
+  // 브라우저 뒤로 가기(useBlocker)가 requestExit를 불러도 실패 안내가 보이게 시도 번호 바뀜을 따라감
+  if (exitAttemptId !== seenExitAttemptId) {
+    setSeenExitAttemptId(exitAttemptId)
+    if (exitAttemptId > 0) setNoticeSource("exit")
+  }
+  useEffect(() => {
+    if (exitAttemptId > 0) clearReturnError()
+  }, [exitAttemptId, clearReturnError])
   const exitNotice = selectResultExitFailureNotice(exitStatus, exitErrorCode)
   // 예: "exit"이고 연결 끊김 실패 → "연결이 끊겨 로비로 가지 못했습니다…", 누른 적 없으면 null
   const notice = { exit: exitNotice, return: returnError }[noticeSource] ?? null

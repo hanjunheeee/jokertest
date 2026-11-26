@@ -1,6 +1,6 @@
 // 공개 방 들어가기 요청·제한 시간·입장 실패 처리
 // usePublicRooms가 씀, 다른 Node 방이라는 거절이면 그 Node로 옮긴 뒤 같은 방에 한 번만 다시 들어가기
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { getSocket } from "@/shared/socket/socketClient.js"
 import { NODE_MOVE_MESSAGES } from "@/shared/constants/connectionSocket.js"
 import { joinPublic } from "../socket/rooms.js"
@@ -24,25 +24,39 @@ function ownerNodeHandlers(sendJoin, clearJoin) {
 // disposedRef: 화면 떠남 표시 (떠난 뒤엔 상태 안 바꿈)
 export function usePublicRoomJoin(disposedRef) {
   const [isJoining, setIsJoining] = useState(false)
-  // 들어가는 중 표시·제한 시간 타이머
+  // 들어가는 중 표시·미연결 대기 취소·제한 시간 타이머
   const joiningRef = useRef(false)
+  const cancelSendRef = useRef(null)
+  const stopPendingSend = useCallback(() => {
+    cancelSendRef.current?.()
+    cancelSendRef.current = null
+  }, [])
   const { stop: stopJoinTimer, start: startJoinTimer } = useJoinTimer()
   // 이번 들어가기 { roomId, moved } (Node 옮긴 뒤 다시 보낼 때 씀, 옮기기는 한 번만)
   const attemptRef = useRef(null)
 
-  // 들어가는 중 표시·제한 시간 지움
+  // 언마운트 때 미연결 대기·제한 시간 타이머 지움
+  useEffect(() => () => {
+    stopPendingSend()
+    stopJoinTimer()
+    joiningRef.current = false
+  }, [stopPendingSend, stopJoinTimer])
+
+  // 들어가는 중 표시·미연결 대기·제한 시간 지움
   const clearJoin = useCallback(() => {
     joiningRef.current = false
     attemptRef.current = null
+    stopPendingSend()
     stopJoinTimer()
     if (!disposedRef.current) setIsJoining(false)
-  }, [disposedRef, stopJoinTimer])
+  }, [disposedRef, stopPendingSend, stopJoinTimer])
 
-  // 공개 방 들어가기 보내고 제한 시간 걸기 (처음·Node 옮긴 뒤 다시 보내기 같이 씀)
+  // 공개 방 들어가기 보내고 제한 시간 걸기 (미연결이면 connect 대기 손잡이를 잡아 두어 시간 초과 때 지움)
   const sendJoin = useCallback((socket, roomId) => {
-    joinPublic(socket, roomId)
+    stopPendingSend()
+    cancelSendRef.current = joinPublic(socket, roomId)
     startJoinTimer(clearJoin)
-  }, [clearJoin, startJoinTimer])
+  }, [clearJoin, startJoinTimer, stopPendingSend])
 
   // 입장 실패: 다시 누를 수 있게 풀고 알림 (내가 보낸 입장 중일 때만, FE-032)
   // 다른 Node 방이라는 거절이면 처음 한 번만 그 Node로 옮겨 다시 보냄
@@ -51,12 +65,12 @@ export function usePublicRoomJoin(disposedRef) {
     const moving = retryOnceOnOwnerNode(answer, attemptRef, {
       isAlive: () => !disposedRef.current && joiningRef.current,
       ...ownerNodeHandlers(sendJoin, clearJoin),
-      stopTimer: stopJoinTimer,
+      stopTimer: () => { stopPendingSend(); stopJoinTimer() },
     })
     if (moving) return
     clearJoin()
     alert(answer.message ?? NODE_MOVE_MESSAGES[answer.code] ?? "공개 방에 참여할 수 없습니다.")
-  }, [disposedRef, clearJoin, sendJoin, stopJoinTimer])
+  }, [disposedRef, clearJoin, sendJoin, stopPendingSend, stopJoinTimer])
 
   // 공개 방 들어가기: 이미 들어가는 중이거나 소켓 없으면 안 보냄, 응답 방송이 안 오면 제한 시간 뒤 풂
   const joinPublicRoom = useCallback((roomId) => {

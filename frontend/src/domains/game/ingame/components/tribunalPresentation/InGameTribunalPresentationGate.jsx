@@ -6,8 +6,12 @@ import { useInGameChatSessionContext } from "../chat/InGameChatSessionContext.js
 import { useInGameStore } from "../../store/ingameStore.js"
 import { useInGamePlayerSessionContext } from "../InGamePlayerSessionContext.js"
 import { NOTICE_CLASS } from "../../constants/tribunalPresentation/ingameTribunalPresentationLayout.js"
+import { INGAME_CHAT_USE_UNIFIED_PANEL } from "../../constants/chat/ingameChatAssets.js"
+import { useTurnProgress } from "../../hooks/timebar/useTurnProgress.js"
 import { resolveInGameTribunalPresentationNotice } from "../../utils/resolveInGameTribunalPresentationNotice.js"
 import { pickInGameJobPortrait } from "../../utils/pickInGameJobPortrait.js"
+import { selectInGameTimebarStatusLabel } from "../../utils/selectInGameTimebarStatusMessage.js"
+import { selectInGameTimebarPhaseDeadline } from "../../utils/timebar/phaseDeadline.js"
 import { INGAME_PLAYER_STATUS } from "../../../shared/constants/ingamePlayerStatus.js"
 import InGameTribunalPresentationOverlay from "./InGameTribunalPresentationOverlay.jsx"
 
@@ -18,23 +22,15 @@ const UNKNOWN_DEFENDANT_NICKNAME = "알 수 없는 플레이어"
 const VOTE_ERROR_WRAP_CLASS = "pointer-events-none absolute inset-x-0 top-[8%] z-[57] flex justify-center px-4"
 const VOTE_ERROR_TEXT_CLASS = `${NOTICE_CLASS} max-w-[min(32rem,90%)] rounded-md bg-black/70 px-4 py-2`
 
-// 재판 중·피고 있음·판정 전일 때만 띄움 (채팅 틀·인게임 화면도 같은 조건)
-export default function InGameTribunalPresentationGate() {
-  const ctx = useContext(InGameActionContext)
-  const phase = useInGameStore((s) => s.state?.phase ?? null)
-  const defendantUuid = useInGameStore((s) => s.state?.tribunal?.defendantUuid ?? null)
-  const tribunalResolved = useInGameStore((s) => s.state?.tribunal?.resolved === true)
+// 보드 명단 또는 스토어 명단에서 피고 표시 정보 찾기 (없으면 기본 초상화)
+function useTribunalDefendant(defendantUuid) {
   const { players } = useInGamePlayerSessionContext()
   const storeDefendantNickname = useInGameStore((s) => {
     const found = (s.state?.players ?? []).find((player) => player?.uuid === defendantUuid)
     return typeof found?.nickname === "string" && found.nickname.length > 0 ? found.nickname : null
   })
 
-  const open = phase === "TRIBUNAL" && Boolean(defendantUuid) && !tribunalResolved
-
-  // 피고는 보드 플레이어 목록에서 찾음 (카드 그림·이름 같이 쓰려고)
-  // 못 찾아도 기본 그림으로 띄움: 채팅 틀은 재판 중이면 숨으므로, 안 띄우면 채팅이 둘 다 사라짐
-  const defendant = useMemo(() => {
+  return useMemo(() => {
     if (!defendantUuid) return null
     const found = players.find((player) => player.id === defendantUuid)
     if (found) return found
@@ -46,6 +42,16 @@ export default function InGameTribunalPresentationGate() {
       theme: null,
     }
   }, [defendantUuid, players, storeDefendantNickname])
+}
+
+// 재판 중·피고 있음·판정 전일 때만 띄움 (채팅 틀·인게임 화면도 같은 조건)
+export default function InGameTribunalPresentationGate() {
+  const ctx = useContext(InGameActionContext)
+  const phase = useInGameStore((s) => s.state?.phase ?? null)
+  const defendantUuid = useInGameStore((s) => s.state?.tribunal?.defendantUuid ?? null)
+  const tribunalResolved = useInGameStore((s) => s.state?.tribunal?.resolved === true)
+  const defendant = useTribunalDefendant(defendantUuid)
+  const open = phase === "TRIBUNAL" && Boolean(defendantUuid) && !tribunalResolved
 
   const tribunalVoteHasSubmitted = ctx?.tribunalVoteHasSubmitted === true
 
@@ -79,6 +85,14 @@ export default function InGameTribunalPresentationGate() {
     : null
 
   const chatProps = useInGameChatSessionContext()
+  const gameState = useInGameStore((s) => s.state ?? null)
+  const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
+  const timebarStatusLabel = selectInGameTimebarStatusLabel(gameState)
+  const { remainingRatio, remainingSec } = useTurnProgress(open ? phaseTurnDeadline : null)
+  const showEmbeddedPhaseTimer =
+    INGAME_CHAT_USE_UNIFIED_PANEL
+    && typeof timebarStatusLabel === "string"
+    && timebarStatusLabel.length > 0
 
   // 재판 아니면 안 띄움
   if (!open || !defendant) return null
@@ -95,6 +109,10 @@ export default function InGameTribunalPresentationGate() {
         onVoteGuilty={() => ctx?.submitTribunalVote?.("GUILTY")}
         onVoteNotGuilty={() => ctx?.submitTribunalVote?.("NOT_GUILTY")}
         chatProps={chatProps}
+        showEmbeddedPhaseTimer={showEmbeddedPhaseTimer}
+        embeddedPhaseTimerStatusLabel={timebarStatusLabel}
+        embeddedPhaseTimerRemainingRatio={remainingRatio}
+        embeddedPhaseTimerRemainingSec={remainingSec}
       />
       {voteErrorText ? (
         <div className={VOTE_ERROR_WRAP_CLASS}>

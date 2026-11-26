@@ -14,17 +14,24 @@ export const captureScope = (socket, accountId, identityGeneration) => ({
   membership: readScope(),
 })
 
-// 잡아 둔 범위가 지금도 그대로인지 (마지막 요청 하나만 살아 있음)
-export function isScopeCurrent(scopeRef, scope) {
+// 계정·활성 요청·소속 범위가 그대로인지 (재연결로 소켓 id만 바뀐 경우는 통과)
+export function isScopeOwnerCurrent(scopeRef, scope) {
   if (scope === null || scopeRef.current !== scope) return false
   const auth = useAuthStore.getState()
+  if (!auth.isLoggedIn) return false
   if ((auth.user?.uuid ?? null) !== scope.accountId) return false
   if (auth.identityGeneration !== scope.identityGeneration) return false
+  return isSameScope(readScope(), scope.membership)
+}
+
+// 잡아 둔 범위가 지금도 그대로인지 (마지막 요청 하나만 살아 있음)
+export function isScopeCurrent(scopeRef, scope) {
+  if (!isScopeOwnerCurrent(scopeRef, scope)) return false
   const socket = getSocket()
   if (!socket) return false
   const socketId = socket.id ?? null
   if (socketId !== scope.socketId) return false
   // 재연결로 인스턴스만 바뀐 경우 범위의 소켓 참조 갱신 (같은 id면 동일 연결로 봄)
   if (socket !== scope.socket) scope.socket = socket
-  return isSameScope(readScope(), scope.membership)
+  return true
 }

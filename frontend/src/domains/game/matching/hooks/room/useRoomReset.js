@@ -14,6 +14,8 @@ const dropAll = (ctx) => {
   ctx.clearSaving()
   ctx.startVerRef.current += 1
   ctx.readyVerRef.current += 1
+  ctx.deletingRef.current = false
+  ctx.selfDeletedRef.current = false
   ctx.clearStart()
   ctx.clearReady()
 }

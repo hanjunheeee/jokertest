@@ -5,6 +5,7 @@ import {
   INGAME_CHAT_MESSAGE_LIST_INSET,
   INGAME_CHAT_STATUS_LINE_INSET,
   INGAME_CHAT_TEXT_FIELD_INSET,
+  INGAME_CHAT_TEXT_FIELD_INSET_WITH_TIMER,
   MSG_LIST_INSET_WITH_TIMER,
 } from "./ingameChatBoardLayout.js"
 import {
@@ -18,6 +19,7 @@ import {
   CLOSEUP_SEND_BTN_SHIFT_CLASS,
   INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET,
   INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET,
+  INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET_WITH_TIMER,
   CLOSEUP_TEXT_TYPOGRAPHY_CLASS,
   CLOSEUP_TEXT_WRAP_TRIM_CLASS,
 } from "./ingameChatCloseupLayout.js"
@@ -269,9 +271,16 @@ export function getMsgListInset(variant = "board", options = {}) {
   return INGAME_CHAT_MESSAGE_LIST_INSET
 }
 
-export function getTextFieldInset(variant = "board") {
-  return isCloseupLikeVariant(variant)
-    ? INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET
+// 종류·타이머 유무에 맞는 입력 줄 자리 고르기
+export function getTextFieldInset(variant = "board", options = {}) {
+  const { withEmbeddedPhaseTimer = false } = options
+  if (isCloseupLikeVariant(variant)) {
+    return withEmbeddedPhaseTimer
+      ? INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET_WITH_TIMER
+      : INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET
+  }
+  return withEmbeddedPhaseTimer
+    ? INGAME_CHAT_TEXT_FIELD_INSET_WITH_TIMER
     : INGAME_CHAT_TEXT_FIELD_INSET
 }
 

@@ -144,12 +144,14 @@ export default defineConfig([
     },
   },
 
-  // 시험: node + jsdom에서 돌아서 두 환경 전역을 다 씀, 엄격 규칙은 안 걸음
+  // 시험: node + jsdom에서 돌아서 두 환경 전역을 다 씀, 시험 도우미 use* 오탐과 _임시 변수는 끔
   {
     files: TESTS,
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {
       'react-refresh/only-export-components': 'off',
+      'react-hooks/rules-of-hooks': 'off',
+      'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_', ignoreRestSiblings: true }],
     },
   },
 

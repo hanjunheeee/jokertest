@@ -10,6 +10,7 @@ import {
   CURRENT_ROOM_POLL_INTERVAL_MS,
 } from "../../shared/constants/gameSetupSocket.js"
 import { askRoom, createRoom } from "../../shared/socket/room.js"
+import { isScopeOwnerCurrent } from "./createRoomScope.js"
 
 // 잠깐 기다리기
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -25,7 +26,7 @@ const followCreateNode = (response) => new Promise((resolve) => {
   if (!moving) resolve(null)
 })
 
-// 만들기 응답을 못 받았을 때: 방이 생겼는지 몇 번 물어봄 (서버가 만드는 중이면 기다렸다 다시)
+// 범위 소켓을 지금 공용 소켓으로 맞춤 (재연결로 소켓 id가 바뀐 경우 복구 조회에 반영)
 function syncScopeSocket(scope) {
   const socket = getSocket()
   if (!socket) return null
@@ -34,18 +35,24 @@ function syncScopeSocket(scope) {
   return socket
 }
 
-async function recoverRoom(scope, { isCurrent, enterRoom, showError }) {
-  const socket = syncScopeSocket(scope) ?? scope?.socket ?? null
+// 만들기 응답을 못 받았을 때: 방이 생겼는지 몇 번 물어봄 (서버가 만드는 중이면 기다렸다 다시)
+async function recoverRoom(scope, { scopeRef, isCurrent, enterRoom, showError }) {
+  if (!isScopeOwnerCurrent(scopeRef, scope)) return
+  const socket = syncScopeSocket(scope)
   if (!socket || !isCurrent(scope)) {
     showError(CREATE_ROOM_ERROR_MSGS.NETWORK)
     return
   }
 
   for (let attempt = 0; attempt < CURRENT_ROOM_MAX_POLL_ATTEMPTS; attempt += 1) {
-    if (!isCurrent(scope)) return
+    if (!isScopeOwnerCurrent(scopeRef, scope)) return
+    const activeSocket = syncScopeSocket(scope)
+    if (!activeSocket || !isCurrent(scope)) break
     try {
-      const res = await askRoom(socket)
-      if (!isCurrent(scope)) return
+      const res = await askRoom(activeSocket)
+      if (!isScopeOwnerCurrent(scopeRef, scope)) return
+      syncScopeSocket(scope)
+      if (!isCurrent(scope)) break
 
       if (res?.ok && res.room) {
         enterRoom(res.room, scope)
@@ -63,6 +70,7 @@ async function recoverRoom(scope, { isCurrent, enterRoom, showError }) {
     }
   }
 
+  if (!isScopeOwnerCurrent(scopeRef, scope)) return
   showError(CREATE_ROOM_ERROR_MSGS.NETWORK)
 }
 
@@ -96,9 +104,9 @@ export async function runCreate(socket, settings, scope, { scopeRef, isCurrent, 
     enterRoom(response.room, scope)
     outcome = "entered"
   } catch {
-    // 응답 못 받으면 방이 생겼는지 찾기
-    if (!isCurrent(scope)) return outcome
-    await recoverRoom(scope, { isCurrent, enterRoom, showError })
+    // 응답 못 받으면 계정·활성 요청이 그대로일 때 소켓 재연결까지 반영해 방이 생겼는지 찾기
+    if (!isScopeOwnerCurrent(scopeRef, scope)) return outcome
+    await recoverRoom(scope, { scopeRef, isCurrent, enterRoom, showError })
     outcome = useMatchingStore.getState().isInRoom ? "entered" : "failed"
   } finally {
     // 내 요청이 마지막 요청일 때만 만드는 중 표시 끔

@@ -214,10 +214,12 @@ export function useRoomEvents(ctx, { socket, roomId, onRoomDeleted }) {
     const handleDeleted = () => {
       if (!isCurrent()) return
       const trustUntil = useMatchingStore.getState().roomLocalTrustUntil
-      const roomId = useMatchingStore.getState().roomId
-      traceMatchingFlow("room_deleted_event", { roomId, trustUntil })
+      const currentRoomId = useMatchingStore.getState().roomId
+      // 방장이 직접 삭제를 누른 경우에는 방장 본인에게 중복 알림을 띄우지 않음 (손님은 그대로 알림)
+      const silent = Boolean(ctx.deletingRef.current || ctx.selfDeletedRef.current)
+      traceMatchingFlow("room_deleted_event", { roomId: currentRoomId, trustUntil, silent })
       applyVerified(clearRoom)
-      onRoomDeleted?.({ reason: "room_deleted_event", trustUntil, roomId })
+      onRoomDeleted?.({ reason: "room_deleted_event", trustUntil, roomId: currentRoomId, silent })
     }
 
     const off = onRoomEvents(socket, {

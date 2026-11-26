@@ -41,15 +41,30 @@ export const PANEL_INNER_CLASS =
 export const CLOSE_BTN_CLASS =
   "interactive-scale absolute right-[clamp(-0.35rem,-0.8cqi,-0.1rem)] top-[clamp(-0.15rem,0.6cqi,0.25rem)] z-20 block w-[clamp(4rem,10cqi,6rem)] cursor-pointer border-0 bg-transparent p-0 leading-none"
 
-// 틀 그림 기준 목록·입력·상태 줄 자리 (판 위 채팅보다 넓음)
+// 명패 없는 틀 기준 목록·입력·상태 줄 자리 (판 위 채팅보다 넓음)
 const MSG_LIST_INSET_FRAME_CLOSEUP = {
+  top: 8,
+  left: 4 + CONTENT_SHIFT_LEFT_FRAME,
+  right: 7,
+  height: 65,
+}
+
+const TEXT_FIELD_INSET_FRAME_CLOSEUP = {
+  bottom: 4,
+  left: 5,
+  right: 5,
+  height: 14,
+}
+
+// 명패·시계가 포함된 리메이크 틀 기준 목록·입력 자리
+const UNIFIED_MSG_LIST_INSET_FRAME_CLOSEUP = {
   top: 17.8,
   left: 5 + CONTENT_SHIFT_LEFT_FRAME,
   right: 7,
   height: 64.5,
 }
 
-const TEXT_FIELD_INSET_FRAME_CLOSEUP = {
+const UNIFIED_TEXT_FIELD_INSET_FRAME_CLOSEUP = {
   bottom: 1.6,
   left: 3.8,
   right: 6.5,
@@ -69,10 +84,10 @@ export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET = mapFrameInsetToLayoutBox(
 )
 
 const MSG_LIST_INSET_FRAME_CLOSEUP_WITH_TIMER = {
-  top: MSG_LIST_INSET_FRAME_CLOSEUP.top + EMBEDDED_TIMER_LIST_OFFSET_FRAME,
-  left: MSG_LIST_INSET_FRAME_CLOSEUP.left,
-  right: MSG_LIST_INSET_FRAME_CLOSEUP.right,
-  height: MSG_LIST_INSET_FRAME_CLOSEUP.height - EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+  top: UNIFIED_MSG_LIST_INSET_FRAME_CLOSEUP.top + EMBEDDED_TIMER_LIST_OFFSET_FRAME,
+  left: UNIFIED_MSG_LIST_INSET_FRAME_CLOSEUP.left,
+  right: UNIFIED_MSG_LIST_INSET_FRAME_CLOSEUP.right,
+  height: UNIFIED_MSG_LIST_INSET_FRAME_CLOSEUP.height - EMBEDDED_TIMER_LIST_OFFSET_FRAME,
 }
 
 export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
@@ -81,6 +96,10 @@ export const INGAME_CHAT_CLOSEUP_MESSAGE_LIST_INSET_WITH_TIMER = mapFrameInsetTo
 
 export const INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET = mapFrameInsetToLayoutBox(
   TEXT_FIELD_INSET_FRAME_CLOSEUP,
+)
+
+export const INGAME_CHAT_CLOSEUP_TEXT_FIELD_INSET_WITH_TIMER = mapFrameInsetToLayoutBox(
+  UNIFIED_TEXT_FIELD_INSET_FRAME_CLOSEUP,
 )
 
 export const INGAME_CHAT_CLOSEUP_STATUS_LINE_INSET = mapFrameInsetToLayoutBox(

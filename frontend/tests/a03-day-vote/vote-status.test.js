@@ -1,10 +1,10 @@
-// 투표 현황 창(결과 문구·재판 대상·기권 칸·여닫기) 화면 부품 시험 — 인게임 화면을 그리고 판정 알림을 넣어 봄
-// 목록 A03-낮투표.md 번호 A03-F-121~131, 229~230
+// 투표 현황 창(결과 문구·재판 대상·기권 칸·여닫기·낮 종료 시 닫힘) 화면 부품 시험 — 인게임 화면을 그리고 판정 알림을 넣어 봄
+// 목록 A03-낮투표.md 번호 A03-F-121~131, 229~230, 286~287
 import test from "node:test"
 import assert from "node:assert/strict"
 import {
-  NAMES, buttonByName, click, dayPhaseChanged, dayResolved, fakeSocket, fire, nextDay, renderPage, resetAll,
-  seat, uuidOf,
+  GAME, NAMES, buttonByName, click, closeDawnReport, dayPhaseChanged, dayResolved, fakeSocket, fire, nextDay,
+  renderPage, resetAll, seat, uuidOf,
 } from "./dayVoteHarness.mjs"
 
 test.afterEach(() => resetAll())
@@ -30,9 +30,18 @@ async function openStatusPage({ n = 6 } = {}) {
   await click(buttonByName("투표 현황 열기"))
   return socket
 }
+// 판정 뒤(재판 회부면 무죄 판정으로 밤 전환 뒤) 투표 현황 창을 열어 결과 칸을 읽음
 async function resultText(n, spec) {
   const socket = await openStatusPage({ n })
   await fire(socket, "day_vote_resolved", dayResolved(spec))
+  if (spec.outcome === "TRIBUNAL") {
+    await fire(socket, "tribunal_vote_resolved", {
+      gameId: GAME, dayIndex: spec.dayIndex ?? 1, phase: "NIGHT",
+      defendantUuid: spec.target, outcome: "NOT_GUILTY", executedUuid: null,
+    })
+  }
+  await confirmEntrances()
+  if (!statusDialog()) await click(buttonByName("투표 현황 열기"))
   return { socket, outcome: cell("outcome"), text: statusDialog()?.textContent ?? "" }
 }
 
@@ -74,8 +83,11 @@ test("A03-F-127 ⑦ 재판 대상 이름 못 찾음 → '알 수 없는 플레�
 test("A03-F-128 ⑧ 2일 새 결과로 바뀜 (1일 전원 기권 → 2일 동점)", async () => {
   const socket = await openStatusPage({ n: 6 })
   await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
+  await confirmEntrances()
+  if (!statusDialog()) await click(buttonByName("투표 현황 열기"))
   assert.equal(cell("outcome"), "전원 기권")
   await fire(socket, "night_result_applied", nextDay({ n: 6, deadline: Date.now() + 60_000 }))
+  await closeDawnReport()
   await fire(socket, "day_phase_changed", dayPhaseChanged({ dayIndex: 2, deadline: Date.now() + 30_000 }))
   await fire(socket, "day_vote_resolved", dayResolved({ outcome: "TIE", alive: 6, abstain: 0, dayIndex: 2 }))
   await confirmEntrances()
@@ -119,4 +131,29 @@ test("A03-F-230 ② 열린 채 같은 자리 다시 누르면 닫힘 (창이 덮
   assert.ok(backdrop, "창 밖 덮개가 있음")
   await click(backdrop)
   assert.equal(statusDialog() === null, true)
+})
+
+test("A03-F-286 낮 투표 중 열어 둔 투표 현황 창 → 재판으로 넘어가면 닫히고, 재판이 끝나도 저절로 다시 안 뜸", async () => {
+  const socket = await openStatusPage({ n: 6 })
+  assert.equal(statusDialog() !== null, true, "투표 현황 창이 안 열림 (준비 잘못)")
+  await fire(socket, "day_vote_resolved", dayResolved({
+    outcome: "TRIBUNAL", alive: 6, abstain: 0, target: uuidOf(2), tribunalDeadline: Date.now() + 60_000,
+  }))
+  assert.equal(statusDialog() === null, true, "재판으로 넘어갔는데 투표 현황 창이 남음")
+  await fire(socket, "tribunal_vote_resolved", {
+    gameId: GAME, dayIndex: 1, phase: "NIGHT", defendantUuid: uuidOf(2), outcome: "NOT_GUILTY", executedUuid: null,
+  })
+  await confirmEntrances()
+  assert.equal(statusDialog() === null, true, "재판 종료 뒤 투표 현황 창이 저절로 다시 뜸")
+})
+
+test("A03-F-287 낮 투표 중 열어 둔 투표 현황 창 → 밤으로 넘어가면 닫히고, 밤 안내 확인 뒤 다시 열면 결과 보임", async () => {
+  const socket = await openStatusPage({ n: 6 })
+  assert.equal(statusDialog() !== null, true, "투표 현황 창이 안 열림 (준비 잘못)")
+  await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
+  assert.equal(statusDialog() === null, true, "밤으로 넘어갔는데 투표 현황 창이 남음")
+  await confirmEntrances()
+  assert.equal(statusDialog() === null, true, "밤 안내 확인 뒤 투표 현황 창이 저절로 다시 뜸")
+  await click(buttonByName("투표 현황 열기"))
+  assert.equal(cell("outcome"), "전원 기권")
 })

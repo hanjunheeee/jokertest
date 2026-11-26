@@ -4,6 +4,8 @@ import { useCallback, useMemo, useState } from "react"
 import { InGamePlayerSessionProvider } from "../components/InGamePlayerSessionProvider.jsx"
 import InGameBackground from "../components/InGameBackground.jsx"
 import InGameTribunalPresentationOverlay from "../components/tribunalPresentation/InGameTribunalPresentationOverlay.jsx"
+import { INGAME_CHAT_USE_UNIFIED_PANEL } from "../constants/chat/ingameChatAssets.js"
+import { INGAME_TIMEBAR_TRIBUNAL_STATUS_MESSAGE } from "../constants/timebar/ingameTimebarAssets.js"
 import {
   buildPreviewChatMsgs,
   buildPreviewDefendant,
@@ -21,7 +23,7 @@ export default function TribunalPresentationPreviewPage() {
     buildPreviewChatMsgs(),
   )
   // 다시 보기마다 피고 새로 만듦
-  const defendant = useMemo(() => buildPreviewDefendant(), [replayKey])
+  const [defendant, setDefendant] = useState(() => buildPreviewDefendant())
 
   // 보내기는 화면 목록 뒤에 붙이기만 함 (빈 글은 무시)
   const chatProps = useMemo(
@@ -51,10 +53,11 @@ export default function TribunalPresentationPreviewPage() {
     [draft, previewMessages],
   )
 
-  // 다시 보기: 입력·채팅 처음으로, key를 바꿔 연출을 처음부터
+  // 다시 보기: 입력·채팅·피고 처음으로, key를 바꿔 연출을 처음부터
   const replay = useCallback(() => {
     setDraft("")
     setPreviewMessages(buildPreviewChatMsgs())
+    setDefendant(buildPreviewDefendant())
     setReplayKey((current) => current + 1)
   }, [])
 
@@ -78,6 +81,9 @@ export default function TribunalPresentationPreviewPage() {
           onVoteGuilty={() => {}}
           onVoteNotGuilty={() => {}}
           chatProps={chatProps}
+          showEmbeddedPhaseTimer={INGAME_CHAT_USE_UNIFIED_PANEL}
+          embeddedPhaseTimerStatusLabel={INGAME_TIMEBAR_TRIBUNAL_STATUS_MESSAGE}
+          embeddedPhaseTimerRemainingSec={60}
         />
       </InGamePlayerSessionProvider>
 

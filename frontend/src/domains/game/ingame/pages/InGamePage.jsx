@@ -72,165 +72,101 @@ export function InGameActionProvider({ interactionBlocked = false, children }) {
   )
 }
 
-export default function InGamePage() {
-  const sidePanel = useInGameSidePanel()
-  const [voteStatusOpen, setVoteStatusOpen] = useState(false)
-  const gameId = useInGameStore((s) => s.gameId)
-  const gameState = useInGameStore((s) => s.state)
-  const navigate = useNavigate()
-  const {
-    requestExit, retryExit, resolveExitOutcome, exitStatus, exitErrorCode, exitAttemptId,
-  } = useInGameExit()
-  const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
-  const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
-  const identityScopeVersion = useSyncExternalStore(
-    subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion,
-  )
-  const choiceScopeKey = `${authUuid}|${identityGeneration}|${gameId}|${identityScopeVersion}`
+// 죽은 참가자 관전·나가기 복구 선택 창 상태 묶음
+function useDeadChoiceModalState({ gameState, authUuid, identityGeneration, gameId, exit, blocked }) {
+  const scopeVer = useSyncExternalStore(subscribeIdentityScope, getIdentityScopeVersion, getIdentityScopeVersion)
+  const choiceScopeKey = `${authUuid}|${identityGeneration}|${gameId}|${scopeVer}`
   const [keepWatchingScope, setKeepWatchingScope] = useState(null)
   const keepWatchingChosen = keepWatchingScope !== null && keepWatchingScope === choiceScopeKey
-  const snapshotSyncStatus = useInGameSessionSnapshotSync()
-  const identityRebindPending = useInGameSnapshotRebindPending()
-  const tribunalExpulsion = useInGameTribunalExpulsionPresentation({
-    hold: false,
-  })
-  const expulsionBusy = tribunalExpulsion.open || tribunalExpulsion.pending
-
-  // 낮 시작 연출 (밤에 죽은 사람·아무 일도 없음): 남아 있으면 pending, 추방 영상이 끝난 뒤 열림
-  // 차례: 낮 시작 연출 → "낮이 되었습니다"·밤 개인 결과, 판이 끝났으면 연출 → 결과 화면
-  const dawnReport = useInGameStore(selectDawnReport)
-  const dawnReportPending = dawnReport !== null
-  const dawnReportOpen = dawnReportPending && !expulsionBusy
-  const finishDawnReport = () => {
-    if (dawnReport) useInGameStore.getState().finishDawnReport(dawnReport.key)
-  }
-
-  const {
-    roleReveal,
-    phaseEntrance,
-    nightTurn,
-    entryPreparingActive,
-    interactionBlocked,
-  } = useInGameOverlayStack({
-    deathRevealActive: expulsionBusy,
-    dawnReportActive: dawnReportPending,
-  })
-
-  // 밤인 동안도 미룸: 서버가 내 결과를 밤 결과(낮 시작 연출)보다 먼저 보내서, 그 틈에 창이 한 번 그려졌다
-  // 연출에 가려 닫히고 연출 뒤 다시 떠 밤마다 두 번 뜸 → 밤 결과가 들어와 낮이 된 뒤 연출 다음에 한 번만
-  const nightPrivateResult = useInGameNightPrivateResult({
-    hold: roleReveal.open || expulsionBusy || dawnReportPending || gameState?.phase === "NIGHT",
-  })
-
-  // 결과 화면 이동은 추방 영상·낮 시작 연출이 끝난 뒤로 미룸 (밤 암살로 판이 끝나면 연출 뒤 결과 화면)
-  useInGameResultNavigation({
-    hold: identityRebindPending || expulsionBusy || dawnReportPending,
-  })
-
   const needsDeadChoice = selectInGameDeadParticipantChoice(gameState, authUuid) && !keepWatchingChosen
   // 산 사람이 나가기에 실패해도 이 창이 열려서 사망 글은 죽은 사람에게만
   const selfDead = selectInGameSelfAlive(gameState) === false
-
-  const exitRecoveryKey = `${choiceScopeKey}|${exitAttemptId}`
+  const exitRecoveryKey = `${choiceScopeKey}|${exit.exitAttemptId}`
   const [acknowledgedExitRecovery, setAcknowledgedExitRecovery] = useState(null)
-  const needsExitRecovery = exitStatus !== "idle" && acknowledgedExitRecovery !== exitRecoveryKey
+  const needsExitRecovery = exit.exitStatus !== "idle" && acknowledgedExitRecovery !== exitRecoveryKey
 
   const handleKeepWatching = () => {
     setKeepWatchingScope(choiceScopeKey)
     setAcknowledgedExitRecovery(exitRecoveryKey)
   }
 
-  const deadChoiceOpen = (needsDeadChoice || needsExitRecovery)
-    && !roleReveal.open
-    && !dawnReportPending
-    && !nightPrivateResult.open
+  return { selfDead, deadChoiceOpen: (needsDeadChoice || needsExitRecovery) && !blocked, handleKeepWatching }
+}
 
-  const tribunalPresentationOpen =
-    gameState?.phase === "TRIBUNAL"
-    && Boolean(gameState?.tribunal?.defendantUuid)
-    && gameState.tribunal.resolved !== true
-
-  const surfaceLocked =
-    interactionBlocked || nightPrivateResult.open || deadChoiceOpen
-    || dawnReportOpen
-    || tribunalPresentationOpen || tribunalExpulsion.open
-
-  const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
-  const timebarStatusLabel = selectInGameTimebarStatusLabel(gameState)
-  const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
-  const { timerPlacement, setTimerPlacement } = useTimerPlacement()
-
-  const isValidGameSession = isValidInGameSession(gameId, gameState)
-
-  useEffect(() => {
-    if (!shouldRedirectOutOfInGame({ snapshotSyncStatus, gameId, gameState })) return
-    navigate("/multiplay", { replace: true })
-  }, [gameId, gameState, navigate, snapshotSyncStatus])
-
-  if (!isValidGameSession) return null
-
+// 판 안 조작 표면 (전면 연출 중에는 inert로 잠금)
+function InGamePlaySurface({
+  surfaceLocked,
+  onExitClick,
+  sidePanel,
+  roleReveal,
+  gameState,
+  timebarStatusLabel,
+  phaseTurnDeadline,
+  timerPlacement,
+  onTimerPlacementChange,
+  remainingRatio,
+  remainingSec,
+  entryPreparingActive,
+  coverOverlayOpen,
+  voteStatusOpen,
+  setVoteStatusOpen,
+}) {
   return (
-    <div className="relative h-svh w-full overflow-hidden bg-black">
-      <InGameBackground />
+    <div
+      className={`absolute inset-0 ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
+      inert={surfaceLocked || undefined}
+    >
+      <InGameTopControls
+        onExitClick={onExitClick}
+        onMenuClick={sidePanel.openRecords}
+        onSettingsClick={sidePanel.openSettings}
+        onOpenRoleReveal={roleReveal.reopen}
+        roleRevealAvailable={Boolean(roleReveal.roleInfo)}
+      />
+      <InGameTimebar
+        day={gameState?.dayIndex}
+        activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
+        statusLabel={timebarStatusLabel}
+        phaseTurnDeadline={phaseTurnDeadline}
+        timerPlacement={timerPlacement}
+        remainingRatio={remainingRatio}
+        remainingSec={remainingSec}
+        showResourcesWithoutLabel={entryPreparingActive}
+      />
+      <InGameCornerActionPanel onVoteStatusClick={() => setVoteStatusOpen(true)} />
+      <InGamePlayerBoard />
+      <InGameChatShell
+        timerPlacement={timerPlacement}
+        statusLabel={timebarStatusLabel}
+        remainingRatio={remainingRatio}
+        remainingSec={remainingSec}
+        coverOverlayOpen={coverOverlayOpen}
+      />
+      <PlayerRecordListPanel
+        open={sidePanel.recordsOpen}
+        onClose={sidePanel.close}
+        interactionLocked={surfaceLocked}
+      />
+      <SettingPanel
+        open={sidePanel.settingsOpen}
+        onClose={sidePanel.close}
+        timerPlacement={timerPlacement}
+        onTimerPlacementChange={onTimerPlacementChange}
+        interactionLocked={surfaceLocked}
+      />
+      <InGameVoteStatusPanel open={voteStatusOpen} onClose={() => setVoteStatusOpen(false)} />
+    </div>
+  )
+}
 
-      <InGamePlayerSessionProvider>
-        <InGameChatSessionProvider>
-        <InGameActionProvider interactionBlocked={interactionBlocked}>
-          <div
-            className={`absolute inset-0 ${surfaceLocked ? "pointer-events-none" : ""}`.trim()}
-            inert={surfaceLocked || undefined}
-          >
-            <InGameTopControls
-              onExitClick={requestExit}
-              onMenuClick={sidePanel.openRecords}
-              onSettingsClick={sidePanel.openSettings}
-              onOpenRoleReveal={roleReveal.reopen}
-              roleRevealAvailable={Boolean(roleReveal.roleInfo)}
-            />
-            <InGameTimebar
-              day={gameState?.dayIndex}
-              activePhaseId={mapGamePhaseToTimebarPhaseId(gameState?.phase)}
-              statusLabel={timebarStatusLabel}
-              phaseTurnDeadline={phaseTurnDeadline}
-              timerPlacement={timerPlacement}
-              remainingRatio={remainingRatio}
-              remainingSec={remainingSec}
-              showResourcesWithoutLabel={entryPreparingActive}
-            />
-            <InGameCornerActionPanel onVoteStatusClick={() => setVoteStatusOpen(true)} />
-            <InGamePlayerBoard />
-            {/* 단계 안내(잠그는 것만)·밤 차례 창이 뜨면 크게 보기를 닫게 알림: 크게 보기가 그 창보다 위에 떠서 글과 단추를 가림 */}
-            <InGameChatShell
-              timerPlacement={timerPlacement}
-              statusLabel={timebarStatusLabel}
-              remainingRatio={remainingRatio}
-              remainingSec={remainingSec}
-              coverOverlayOpen={interactionBlocked || nightTurn.open}
-            />
-            <PlayerRecordListPanel
-              open={sidePanel.recordsOpen}
-              onClose={sidePanel.close}
-            />
-            <SettingPanel
-              open={sidePanel.settingsOpen}
-              onClose={sidePanel.close}
-              timerPlacement={timerPlacement}
-              onTimerPlacementChange={setTimerPlacement}
-              interactionLocked={surfaceLocked}
-            />
-            <InGameVoteStatusPanel
-              open={voteStatusOpen}
-              onClose={() => setVoteStatusOpen(false)}
-            />
-          </div>
-          <InGameTribunalPresentationGate />
-        </InGameActionProvider>
-        </InGameChatSessionProvider>
-      </InGamePlayerSessionProvider>
-
-      {/* 죽은 사람이 받은 대기방 초대 안내: 판 조작 막힘(inert) 밖이라 읽기 도구가 읽음, 연출 창보다 아래 */}
-      <InGameInviteNotice />
-
+// 판 바깥에 깔리는 전면 안내·연출 창 모음
+function InGameOverlayLayers({
+  entryPreparingActive, nightTurn, phaseEntrance, roleReveal, players,
+  nightPrivateResult, dawnReport, dawnReportOpen, onFinishDawnReport,
+  deadChoiceOpen, selfDead, onKeepWatching, exit, tribunalExpulsion,
+}) {
+  return (
+    <>
       <InGameEntryPreparingOverlay open={entryPreparingActive} />
       <InGameNightTurnAnnouncementOverlay
         open={nightTurn.open}
@@ -246,7 +182,7 @@ export default function InGamePage() {
         open={roleReveal.open}
         onClose={roleReveal.close}
         roleInfo={roleReveal.roleInfo}
-        players={gameState?.players}
+        players={players}
       />
       <InGameNightPrivateResultOverlay
         open={nightPrivateResult.open}
@@ -258,23 +194,117 @@ export default function InGamePage() {
         key={dawnReport?.key ?? "none"}
         report={dawnReport}
         open={dawnReportOpen}
-        onFinish={finishDawnReport}
+        onFinish={onFinishDawnReport}
       />
       <InGameDeadParticipantChoice
         open={deadChoiceOpen}
         selfDead={selfDead}
-        onKeepWatching={handleKeepWatching}
-        onLeave={requestExit}
-        onRetry={retryExit}
-        onResolveOutcome={resolveExitOutcome}
-        exitStatus={exitStatus}
-        exitErrorCode={exitErrorCode}
+        onKeepWatching={onKeepWatching}
+        onLeave={exit.requestExit}
+        onRetry={exit.retryExit}
+        onResolveOutcome={exit.resolveExitOutcome}
+        exitStatus={exit.exitStatus}
+        exitErrorCode={exit.exitErrorCode}
       />
       <InGameTribunalExpulsionOverlay
         open={tribunalExpulsion.open}
         presentationId={tribunalExpulsion.presentationId}
         message={tribunalExpulsion.message}
         onComplete={tribunalExpulsion.consume}
+      />
+    </>
+  )
+}
+
+// 인게임 전체 화면과 단계 전환·덮개 창 상태 동기화
+export default function InGamePage() {
+  const sidePanel = useInGameSidePanel()
+  const [voteStatusOpen, setVoteStatusOpen] = useState(false)
+  const gameId = useInGameStore((s) => s.gameId)
+  const gameState = useInGameStore((s) => s.state)
+  const navigate = useNavigate()
+  const exit = useInGameExit()
+  const authUuid = useAuthStore((s) => s.user?.uuid ?? null)
+  const identityGeneration = useAuthStore((s) => s.identityGeneration ?? null)
+  const snapshotSyncStatus = useInGameSessionSnapshotSync()
+  const identityRebindPending = useInGameSnapshotRebindPending()
+  const tribunalExpulsion = useInGameTribunalExpulsionPresentation({ hold: false })
+  const expulsionBusy = tribunalExpulsion.open || tribunalExpulsion.pending
+
+  // 낮 시작 연출: 추방 영상이 끝난 뒤 열림 → 닫히면 낮 안내·밤 개인 결과·결과 화면으로 이어짐
+  const dawnReport = useInGameStore(selectDawnReport)
+  const dawnReportPending = dawnReport !== null
+  const dawnReportOpen = dawnReportPending && !expulsionBusy
+  const finishDawnReport = () => {
+    if (dawnReport) useInGameStore.getState().finishDawnReport(dawnReport.key)
+  }
+
+  const { roleReveal, phaseEntrance, nightTurn, entryPreparingActive, interactionBlocked } =
+    useInGameOverlayStack({ deathRevealActive: expulsionBusy, dawnReportActive: dawnReportPending })
+
+  // 밤 동안은 미뤄서 낮 시작 연출 뒤에 한 번만 띄움
+  const nightPrivateResult = useInGameNightPrivateResult({
+    hold: roleReveal.open || expulsionBusy || dawnReportPending || gameState?.phase === "NIGHT",
+  })
+  useInGameResultNavigation({ hold: identityRebindPending || expulsionBusy || dawnReportPending })
+
+  const { selfDead, deadChoiceOpen, handleKeepWatching } = useDeadChoiceModalState({
+    gameState, authUuid, identityGeneration, gameId, exit,
+    blocked: roleReveal.open || dawnReportPending || nightPrivateResult.open,
+  })
+
+  const tribunalPresentationOpen =
+    gameState?.phase === "TRIBUNAL" && Boolean(gameState?.tribunal?.defendantUuid) && gameState.tribunal.resolved !== true
+  const surfaceLocked =
+    interactionBlocked || nightPrivateResult.open || deadChoiceOpen || dawnReportOpen
+    || tribunalPresentationOpen || tribunalExpulsion.open
+
+  // 낮이 끝나 재판·밤 등으로 넘어갈 때 열어 둔 투표 현황 창 닫기
+  const currentPhase = gameState?.phase ?? null
+  const [prevPhase, setPrevPhase] = useState(currentPhase)
+  if (prevPhase !== currentPhase) {
+    setPrevPhase(currentPhase)
+    if (prevPhase === "DAY" && voteStatusOpen) setVoteStatusOpen(false)
+  }
+
+  // 전면 잠금·단계 안내(죽은 사람 2초 안내 포함)·밤 차례 창이 뜨면 채팅 크게 보기 닫기
+  const coverOverlayOpen = surfaceLocked || phaseEntrance.open || nightTurn.open
+  const phaseTurnDeadline = useInGameStore((s) => selectInGameTimebarPhaseDeadline(s.state ?? null))
+  const timebarStatusLabel = selectInGameTimebarStatusLabel(gameState)
+  const { remainingRatio, remainingSec } = useTurnProgress(phaseTurnDeadline)
+  const { timerPlacement, setTimerPlacement } = useTimerPlacement()
+
+  useEffect(() => {
+    if (shouldRedirectOutOfInGame({ snapshotSyncStatus, gameId, gameState })) navigate("/multiplay", { replace: true })
+  }, [gameId, gameState, navigate, snapshotSyncStatus])
+
+  if (!isValidInGameSession(gameId, gameState)) return null
+
+  return (
+    <div className="relative h-svh w-full overflow-hidden bg-black">
+      <InGameBackground />
+      <InGamePlayerSessionProvider>
+        <InGameChatSessionProvider>
+          <InGameActionProvider interactionBlocked={interactionBlocked}>
+            <InGamePlaySurface
+              surfaceLocked={surfaceLocked} onExitClick={exit.requestExit} sidePanel={sidePanel}
+              roleReveal={roleReveal} gameState={gameState} timebarStatusLabel={timebarStatusLabel}
+              phaseTurnDeadline={phaseTurnDeadline} timerPlacement={timerPlacement}
+              onTimerPlacementChange={setTimerPlacement} remainingRatio={remainingRatio}
+              remainingSec={remainingSec} entryPreparingActive={entryPreparingActive}
+              coverOverlayOpen={coverOverlayOpen} voteStatusOpen={voteStatusOpen} setVoteStatusOpen={setVoteStatusOpen}
+            />
+            <InGameTribunalPresentationGate />
+          </InGameActionProvider>
+        </InGameChatSessionProvider>
+      </InGamePlayerSessionProvider>
+      <InGameInviteNotice />
+      <InGameOverlayLayers
+        entryPreparingActive={entryPreparingActive} nightTurn={nightTurn} phaseEntrance={phaseEntrance}
+        roleReveal={roleReveal} players={gameState?.players} nightPrivateResult={nightPrivateResult}
+        dawnReport={dawnReport} dawnReportOpen={dawnReportOpen} onFinishDawnReport={finishDawnReport}
+        deadChoiceOpen={deadChoiceOpen} selfDead={selfDead} onKeepWatching={handleKeepWatching}
+        exit={exit} tribunalExpulsion={tribunalExpulsion}
       />
     </div>
   )

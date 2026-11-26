@@ -7,6 +7,7 @@ import { getSocket } from '@/shared/socket/socketClient.js'
 import { useMatchingStore } from '../../store/matchingStore'
 import { useAuthStore } from '@/domains/auth/store/auth.store'
 import { dispatchUiSfx } from '@/shared/hooks/useSfxRuntime.js'
+import { appConfirm } from '@/shared/utils/appConfirm.js'
 import {
   EMPTY_ROOM_MAX_RETRIES,
   EMPTY_ROOM_RETRY_MS,
@@ -75,7 +76,7 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
     }
 
     // 확인 실패: 한 번만 다시 확인할지 물음, 취소했거나 이미 물었으면 잠시 뒤 다시 확인
-    const fail = (id) => {
+    const fail = async (id) => {
       if (cancelled || id !== seriesId) return
       setSyncStatus('failed')
       if (prompted) {
@@ -83,7 +84,8 @@ export function useRoomCheck(ctx, socket, onRoomDeleted) {
         return
       }
       prompted = true
-      const confirmed = window.confirm(ROOM_MESSAGES.CHECK_RETRY)
+      const confirmed = Boolean(await appConfirm(ROOM_MESSAGES.CHECK_RETRY))
+      if (cancelled || id !== seriesId) return
       dispatchUiSfx(confirmed ? 'ui-confirm' : 'ui-cancel')
       if (confirmed) {
         startSeries({ resetPrompt: false })

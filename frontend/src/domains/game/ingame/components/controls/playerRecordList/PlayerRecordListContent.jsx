@@ -1,4 +1,4 @@
-// 플레이어 기록 목록 내용 (스크롤 목록·줄마다 신고 버튼과 신고 창, 재판 연출이 뜨면 신고 창 닫음)
+// 플레이어 기록 목록 내용 (스크롤 목록·줄마다 신고 버튼과 신고 창, 화면 잠금·재판 연출 시 신고 창 닫음)
 // PlayerRecordListPanel이 씀
 import { useRef } from "react"
 import { useInGamePlayerSessionContext } from "../../InGamePlayerSessionContext.js"
@@ -22,15 +22,15 @@ function selectTribunalPresentationOpen(state) {
     && state.tribunal.resolved !== true
 }
 
-export default function PlayerRecordListContent() {
+// 전적 목록과 신고 창 그리기 (화면이 잠기면 body에 뜬 신고 창도 바로 닫기)
+export default function PlayerRecordListContent({ interactionLocked = false }) {
   const scrollRef = useRef(null)
   const { players } = useInGamePlayerSessionContext()
   // 신고 창 (나·판 id 없음은 버튼 안 보임)
   const report = useGameReport()
-  // 재판 연출이 뜨면 신고 창도 닫음: 신고 창은 body에 떠서 재판 창 위에 남아 유죄·무죄 단추를 가림
-  // 재판이 끝나도 저절로 다시 안 뜸 (그리는 중에 바로 맞춤, 채팅 크게 보기와 같은 식)
+  // 화면 잠금(단계 안내·아침 연출·재판 등)이 켜지면 body에 뜬 신고 창도 닫아 위 연출 가림 막기
   const tribunalPresentationOpen = useInGameStore((s) => selectTribunalPresentationOpen(s.state))
-  if (tribunalPresentationOpen && report.isOpen) report.close()
+  if ((interactionLocked || tribunalPresentationOpen) && report.isOpen) report.close()
 
   return (
     <div className="flex h-full min-h-0 flex-col">

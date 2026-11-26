@@ -5,16 +5,18 @@ import {
   CONNECTION_SOCKET_EVENTS,
   NODE_BOUNCE_RETRY_MS,
   NODE_ERROR_CODES,
+  SOCKET_CONNECT_TIMEOUT_MS,
 } from "../constants/connectionSocket.js"
 import { clearNodeHint, isNodeId, saveNodeHint } from "./nodeHint.js"
 
 const { FORCE_DISCONNECT, SERVER_SHUTDOWN } = CONNECTION_SOCKET_EVENTS
 
-// 쿠키 인증으로 웹소켓만 써서 연결, Node 힌트가 있을 때만 ?node= 붙임 (단일 서버는 힌트가 없어 예전과 같음)
+// 쿠키 인증으로 웹소켓만 써서 연결(첫 악수 제한 5초), Node 힌트가 있을 때만 ?node= 붙임
 export const connectSocket = (url, { node = null } = {}) =>
   io(url, {
     withCredentials: true,
     transports: ["websocket"],
+    timeout: SOCKET_CONNECT_TIMEOUT_MS,
     ...(isNodeId(node) ? { query: { node } } : {}),
   })
 

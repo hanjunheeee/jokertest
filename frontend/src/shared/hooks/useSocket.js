@@ -169,6 +169,17 @@ function useClearHintOnLogout(isLoggedIn) {
     }, [isLoggedIn]);
 }
 
+// StrictMode가 같은 차례에 정리 → 다시 연결을 돌릴 때 연결 중인 소켓을 끊지 않고 이어 쓰기
+function takePendingSocket(reuseRef, isLoggedIn, accountUuid) {
+    const pending = reuseRef.current;
+    reuseRef.current = null;
+    if (!pending) return null;
+    pending.reused = true;
+    if (isLoggedIn && pending.accountUuid === accountUuid) return pending.socket;
+    pending.socket.disconnect();
+    return null;
+}
+
 // 로그인이면 연결, 로그아웃·계정이 바뀌면 끊고 다시 연결 (계정 uuid도 의존값)
 export function useSocket() {
     const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
@@ -181,15 +192,17 @@ export function useSocket() {
     const socketInstance = useSyncExternalStore(subscribeSocket, getSocket);
 
     const socketRef = useRef(null);
+    const reuseRef = useRef(null);
 
     useClearHintOnLogout(isLoggedIn);
 
     useEffect(() => {
-        if (!isLoggedIn) return;
+        const reused = takePendingSocket(reuseRef, isLoggedIn, accountUuid);
+        if (!isLoggedIn) return undefined;
 
         // 이 계정 힌트가 있으면 그 Node로 바로 (새로고침해도 판·방 Node로), 없으면 예전과 같은 연결
         setNodeHintAccount(accountUuid);
-        const socket = connectSocket(SOCKET_URL, { node: readNodeHint() });
+        const socket = reused ?? connectSocket(SOCKET_URL, { node: readNodeHint() });
 
         socketRef.current = socket;
 
@@ -200,15 +213,20 @@ export function useSocket() {
         // 강제 끊김·점검 안내·재인증·WRONG_NODE 받기 시작
         const stopHandlers = startConnectionHandlers(socket, logout);
 
-        // 정리: 늦게 온 갱신 무시, 받기 끄고 끊고 공용 소켓 비움
+        // 정리: 받기·공용 소켓은 바로 내리고, StrictMode 재실행이 아니면 마이크로태스크에 끊음
         return () => {
             stopHandlers();
 
-            socket.disconnect();
-
             socketRef.current = null;
 
-            setSocket(null);
+            if (getSocket() === socket) setSocket(null);
+
+            const pending = { socket, accountUuid, reused: false };
+            reuseRef.current = pending;
+            queueMicrotask(() => {
+                if (reuseRef.current === pending) reuseRef.current = null;
+                if (!pending.reused) socket.disconnect();
+            });
         };
     }, [isLoggedIn, accountUuid, logout]);
 
