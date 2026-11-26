@@ -23,18 +23,16 @@ const { U } = K;
 // 화면 글 (frontend constants/actions/ingameActionPanel.js ACTION_DISCONNECTED_TEXT, frontend-mobile 채팅 글자 수 오류)
 const DISCONNECTED_TEXT = '연결이 끊겼습니다. 다시 연결된 뒤 눌러 주세요.';
 const TOO_LONG = '메시지는 150자 이하로 입력해주세요.';
-const DEAD_BAND = '죽은 사람끼리';
 const VOTE_10 = 'record-2-extra-mask';
 const GAMES_3 = 'record-1-masquerade';
 
 const inviteNotice = (page) => page.locator('[data-ingame-invite-notice]');
-const tribunalChat = (page) => page.getByRole('region', { name: '최후의 반론 채팅' });
 const settingsSheet = (page) => page.getByRole('dialog', { name: '인게임 설정' });
 const voteStatus = (page) => page.getByRole('dialog', { name: '투표 현황' });
 const sameText = (page, text) => page.getByText(text, { exact: true });
 
 /**
- * 폰 1일 재판 (바-20·21이 같이 씀): 8자 닉네임 봇이 피고, 재판 창 채팅에 피고·봇 말 두 줄
+ * 폰 1일 재판 (바-20·21이 같이 씀): 8자 닉네임 봇이 피고, 채팅방에 피고·봇 말 두 줄
  * 같은 판을 이어 받으면 그대로 돌려줌
  */
 async function phoneTrial(s) {
@@ -43,9 +41,7 @@ async function phoneTrial(s) {
         const page = tr.me.page;
         await A.toVote(tr.t, 1);
         await A.toTribunal(tr.t, tr.long);
-        await expect(A.trial.win(page)).toBeVisible({ timeout: 15_000 });
-        // 카드가 위로 줄고 채팅이 열린 모양까지 (몇 초)
-        await expect(A.trial.win(page)).toHaveAttribute('data-ingame-tribunal-layout', 'split', { timeout: 15_000 }).catch(() => {});
+        await m.waitTrialTalk(page);
         await m.botSay(tr.t, tr.t.bots.indexOf(tr.long), '저는 억울합니다');
         await m.botSay(tr.t, 1, '변명은 그만 들을게요');
         tr.trial = true;
@@ -228,10 +224,12 @@ module.exports = [
         needs: ['mobile'],
         async prepare(s) {
             const tr = await phoneTrial(s);
+            await A.openTrial(tr.me.page);
             const name = A.trial.card(tr.me.page).getByText(tr.long.nickname, { exact: true });
+            await expect(name).toBeVisible({ timeout: 5_000 });
             const clipped = await name.evaluate((el) => el.scrollWidth > el.clientWidth).catch(() => null);
-            s.note(`6명 폰 판 1일 재판 — 피고 = 8자 닉네임 봇 "${tr.long.nickname}"`);
-            s.note('피고 카드 이름이 안 잘리고 유죄·무죄 단추가 안 밀려 화면 안에 있어야 함 · 재판 창 채팅엔 피고·봇 말 두 줄');
+            s.note(`6명 폰 판 1일 재판("최후의 변론" 시트 엶) — 피고 = 8자 닉네임 봇 "${tr.long.nickname}"`);
+            s.note('피고 카드 이름이 안 잘리고 유죄·무죄 단추가 안 밀려 화면 안에 있어야 함 · 시트 뒤 채팅방엔 피고·봇 말 두 줄');
             s.note(`도구 확인: 피고 이름 ${clipped === null ? '칸 못 찾음' : clipped ? '잘림 (이상)' : '안 잘림'}`);
         },
         still: (s) => A.trial.win(s.main).isVisible(),
@@ -242,13 +240,14 @@ module.exports = [
         needs: ['mobile'],
         async prepare(s) {
             const tr = await phoneTrial(s);
-            const box = tribunalChat(tr.me.page);
-            await expect(box).toBeVisible({ timeout: 20_000 });
+            const page = tr.me.page;
+            // 합친 뒤 세로 카톡형: 재판 중 말은 채팅방 바닥 입력 줄 그대로 씀 (e2e A06-E-136과 같은 방식)
+            await m.waitTrialTalk(page);
             const text = `${A.uniq('긴글')}${'가'.repeat(151)}`.slice(0, 151);
-            await box.getByRole('textbox', { name: '채팅 입력' }).fill(text);
-            await box.getByRole('button', { name: '채팅 보내기' }).click();
-            await expect(sameText(box, TOO_LONG)).toBeVisible({ timeout: 10_000 });
-            s.note('폰 재판 창 채팅에 151자를 보냄 — 오류 글 "메시지는 150자 이하로 입력해주세요."가 나무 띠 위에서 읽혀야 함');
+            await m.talk.input(page).fill(text);
+            await m.talk.send(page).click();
+            await expect(m.talk.chat(page).getByRole('alert')).toHaveText(TOO_LONG, { timeout: 10_000 });
+            s.note('폰 재판 중 채팅방 입력 줄에 151자를 보냄 — 오류 글 "메시지는 150자 이하로 입력해주세요."가 입력칸 위에서 읽혀야 함');
         },
         still: (s) => A.trial.win(s.main).isVisible(),
     },
@@ -284,17 +283,16 @@ module.exports = [
             const s2 = await t.state();
             s.state.victim = t.bots.find((b) => b !== joker && b !== tr.long && A.playerOf(s2, U(b))?.alive);
             s.note('폰 판 2일 낮 투표 — 나는 1일 밤에 죽어 관전 중, 설정 시트를 열어 둠');
-            s.note(`보여 줄 때 봇들이 ${s.state.victim.nickname}을 재판에 세움 → 설정 시트(겹 창)가 닫히고, 재판 창 채팅 위에 "죽은 사람끼리" 표시가 보여야 함`);
+            s.note(`보여 줄 때 봇들이 ${s.state.victim.nickname}을 재판에 세움 → 설정 시트(겹 창)가 닫히고, 채팅방 위에 "죽은 사람끼리" 표시가 보여야 함`);
         },
         async show(s) {
             const { t, me } = s.state.phone;
             const page = me.page;
             await A.toTribunal(t, s.state.victim, { humansVote: false });
-            await expect(A.trial.win(page)).toBeVisible({ timeout: 15_000 });
-            await expect(A.trial.win(page)).toHaveAttribute('data-ingame-tribunal-layout', 'split', { timeout: 15_000 }).catch(() => {});
-            await K.sleep(1000);
+            await m.waitTrialTalk(page);
+            await K.sleep(500);
             const sheetOpen = await settingsSheet(page).isVisible().catch(() => false);
-            const band = await sameText(tribunalChat(page), DEAD_BAND).isVisible().catch(() => false);
+            const band = await m.talk.deadBanner(page).isVisible().catch(() => false);
             s.note(`도구 확인: 설정 시트 ${sheetOpen ? '남음 (이상)' : '닫힘'}, 재판 채팅 "죽은 사람끼리" ${band ? '보임' : '안 보임 (이상)'}`);
         },
         still: (s) => A.trial.win(s.main).isVisible(),
