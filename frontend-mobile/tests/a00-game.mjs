@@ -380,12 +380,13 @@ export function tribunalEntry({ n, defendant, dayIndex = 1, seconds = 60 }) {
 // role·counts: 옛 서버처럼 그 칸이 실려 와도 화면에 안 새는지 볼 때만 넣음 (안 주면 지금 서버처럼 칸 없음)
 // DEFENDANT_DIED = 재판 도중 끊긴 피고가 탈락해 죽음(이유 칸 없음)
 export function tribunalResolved({ defendant, outcome, dayIndex = 1, role, counts }) {
-    const executedUuid = outcome === "GUILTY" ? uuidOf(defendant) : null
+    const defUuid = typeof defendant === "number" ? uuidOf(defendant) : defendant
+    const executedUuid = outcome === "GUILTY" ? defUuid : null
     return {
         gameId: GAME,
         dayIndex,
         phase: "NIGHT",
-        defendantUuid: uuidOf(defendant),
+        defendantUuid: defUuid,
         outcome,
         executedUuid,
         ...(counts !== undefined ? { counts } : {}),

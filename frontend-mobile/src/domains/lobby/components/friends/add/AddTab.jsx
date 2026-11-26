@@ -1,18 +1,21 @@
-// 친구 추가 탭 (닉네임 검색·검색 결과 또는 검색 중·오류·결과 없음·뒤로)
+// 친구 추가 탭 (닉네임 검색·검색 결과 또는 보낸 신청 목록·뒤로)
 // SheetBody가 request 탭일 때 그림
 import { FILTER_MSGS } from "@/domains/lobby/constants/friendListFilter.js"
 import { REQUEST_EMPTY_CLASS } from "@/domains/lobby/constants/friendListStyle.js"
+import { useOutgoingRequests } from "@/domains/lobby/hooks/friendPanel/useOutgoingRequests.js"
 import { useFriendSearch } from "@/domains/lobby/hooks/useFriendSearch.js"
 import { SCROLL_CLASS } from "../sheetStyle.js"
 import SearchBar from "../parts/SearchBar.jsx"
 import BackRow from "../parts/BackRow.jsx"
 import CandidateRow from "./CandidateRow.jsx"
+import OutgoingList from "./OutgoingList.jsx"
 
-// 데스크톱 FriendRequestTab과 같은 갈래: 검색어가 없으면 목록을 안 그리고, 결과가 없을 때만 오류·검색 중·결과 없음 한 줄
-export default function AddTab({ onBack, onBlock, blockingIds }) {
+// 검색 중이면 검색 결과를, 검색하지 않을 땐 보낸 신청 목록을 그림
+export default function AddTab({ onBack, onBlock, blockingIds, blockErrors = {} }) {
   const {
     query, setQuery, results, searching, isSearching, sentIds, sendingIds, sendErrors, errorMsg, handleSearch, handleSend,
   } = useFriendSearch()
+  const { outgoingRequests, outgoingError, cancelingIds, cancelErrors, handleCancel } = useOutgoingRequests()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -38,6 +41,7 @@ export default function AddTab({ onBack, onBlock, blockingIds }) {
                   sent={sentIds.has(candidate.id)}
                   sending={sendingIds?.has?.(candidate.id) === true}
                   sendError={sendErrors?.[candidate.id] ?? null}
+                  blockError={blockErrors?.[candidate.id] ?? null}
                   blocking={blockingIds.has(candidate.id)}
                   onSend={handleSend}
                   onBlock={onBlock}
@@ -45,7 +49,15 @@ export default function AddTab({ onBack, onBlock, blockingIds }) {
               ))
             )}
           </ul>
-        ) : null}
+        ) : (
+          <OutgoingList
+            requests={outgoingRequests}
+            error={outgoingError}
+            cancelingIds={cancelingIds}
+            cancelErrors={cancelErrors}
+            onCancel={handleCancel}
+          />
+        )}
       </div>
       <BackRow onBack={onBack} />
     </div>

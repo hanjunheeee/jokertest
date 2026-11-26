@@ -1,5 +1,5 @@
-// 모바일 대기방 시험: 위 줄 "파티 인원 N명"·자리 실루엣 수, 준비한 자리만 준비 실루엣(data-ready), 방장 "게임시작"은 미리 안 꺼짐
-// 목록 A01a 모바일 A01-M-H2·H6·H7·H11, A01b 모바일 A01-M-H3 — 결정(2026-11-16 오전 둘째 1·2·3번)·모음 글 C-019, 합친 화면(2026-11-24 되돌림)에 맞춤 (돌리기: frontend-mobile 폴더에서 node --test tests/a01-goH-waiting-room.test.js)
+// 모바일 대기방 시험: 방 이름·앉은 수/정원·파티 인원 머리말, 자리별 준비완료/대기중 배지, 방장 시작 단추 사전 잠금·까닭 글
+// 목록 A01a·A01b 모바일 대기방 의도 일치 검증용 시험 파일
 import "./helpers/mobileLoader.mjs"
 import { React } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -17,11 +17,12 @@ afterEach(() => {
     useMatchingStore.getState().clearRoom?.()
 })
 
-// 서버 방 값 모양: 정원 8, 3명 앉음(방장 가람은 준비함), title은 넣을 때만
+// 서버 방 값 모양: 정원 8, 3명 앉음(방장 가람은 준비함)
 function roomOf(extra = {}) {
     return {
         roomId: "room-m2",
         roomCode: "AB12CD",
+        title: "가람의 방",
         players: [
             { uuid: "pA", nickname: "가람", isReady: true, membershipId: "m-pA" },
             { uuid: "pB", nickname: "나래", isReady: false, membershipId: "m-pB" },
@@ -39,7 +40,7 @@ function roomOf(extra = {}) {
     }
 }
 
-// 방장 가람으로 대기방 화면을 그림
+// 방장 가람으로 대기방 화면 렌더링
 async function openWaitingRoom(room) {
     const socket = fakeSocket({ acks: { get_current_room: { ok: true, room } } })
     useAuthStore.setState({ isLoggedIn: true, user: { uuid: "pA", nickname: "가람" } })
@@ -49,29 +50,34 @@ async function openWaitingRoom(room) {
 }
 
 const byTestId = (id) => document.querySelector(`[data-testid="${id}"]`)
-// 판 안 자리 칸 (한 줄 5칸 줄 안의 실루엣 칸)
+// 판 안 자리 칸 목록
 const seats = () => [...document.querySelectorAll("div.items-end.justify-center > div.flex-col.items-center")]
-// 자리 그림이 준비 실루엣인지 (주소에 "미준비"가 없으면 준비)
+// 자리 그림이 준비 실루엣인지 확인
 const seatReady = (seat) => !decodeURIComponent(seat.querySelector("img").getAttribute("src")).normalize("NFC").includes("미준비")
 
-test("A01-M-H2 정원 8 방에 3명 → 자리 칸 3개 그대로, 위 줄 '파티 인원 3명' (앉은 수/정원 글 칸은 없음)", async () => {
+test("A01-M-H2 정원 8 방에 3명 → 머리말에 방 이름 '가람의 방'·'파티 인원 3명'·정원 '3/8' 모두 표시", async () => {
     await openWaitingRoom(roomOf())
-    const header = document.querySelector('[aria-label="파티 인원 3명"]')
-    assert.ok(header, "위 줄 인원 머리말이 없음")
-    assert.equal(textOf(header), "파티 인원 3명")
-    assert.equal(byTestId("matching-party-capacity"), null, "앉은 수/정원 칸이 있음")
+    assert.equal(textOf(byTestId("matching-room-title")), "가람의 방")
+    const party = document.querySelector('[aria-label="파티 인원 3명"]')
+    assert.ok(party, "위 줄 인원 머리말이 없음")
+    assert.equal(textOf(party), "파티 인원 3명")
+    const cap = byTestId("matching-party-capacity")
+    assert.ok(cap, "앉은 수/정원 칸이 없음")
+    assert.equal(textOf(cap.querySelector('[aria-hidden="true"]')), "3/8")
+    assert.ok(textOf(cap).includes("앉은 사람 3명, 정원 8명"))
     assert.equal(seats().length, 3)
 })
 
-test("A01-M-H3 자리 그림: 준비한 사람만 준비 실루엣·data-ready, 자리 칸에 '준비완료'·'대기중' 글은 없음", async () => {
+test("A01-M-H3 자리 그림: 준비한 사람은 준비 실루엣·data-ready·'준비완료', 미준비는 '대기중' 배지 표시", async () => {
     await openWaitingRoom(roomOf())
     const list = seats()
     assert.deepEqual(list.map(seatReady), [true, false, false])
     assert.deepEqual(list.map((seat) => seat.hasAttribute("data-ready")), [true, false, false])
-    assert.deepEqual(list.map((seat) => textOf(seat)), ["", "", ""])
+    assert.deepEqual(list.map((seat) => textOf(seat)), ["준비완료", "대기중", "대기중"])
+    assert.deepEqual(list.map((seat) => seat.querySelector("img").getAttribute("alt")), ["준비 완료한 참가자", "준비 전 참가자", "준비 전 참가자"])
 })
 
-// 방장 가람 + 손님 n-1명 방, 앞에서부터 readyCount명이 준비함 (전원 준비면 서버처럼 canStart 참)
+// 방장 가람 + 손님 n-1명 방 생성
 function roomWith(n, readyCount = 0) {
     const names = ["가람", "나래", "다솜", "라온", "마루"]
     const ids = ["pA", "pB", "pC", "pD", "pE"]
@@ -80,6 +86,18 @@ function roomWith(n, readyCount = 0) {
         canStart: n >= 5 && readyCount >= n,
     })
 }
+
+test("A01-M-H4 3명 방 방장: '게임시작' 사전 잠금 + '5명부터 시작할 수 있습니다. (지금 3명)' 표시", async () => {
+    await openWaitingRoom(roomWith(3, 3))
+    assert.equal(buttonNamed("게임시작").disabled, true)
+    assert.equal(textOf(byTestId("start-locked-reason")), "5명부터 시작할 수 있습니다. (지금 3명)")
+})
+
+test("A01-M-H5 5명 중 3명 준비 방장: '게임시작' 사전 잠금 + '모두 준비해야 시작할 수 있습니다. (준비 3/5)' 표시", async () => {
+    await openWaitingRoom(roomWith(5, 3))
+    assert.equal(buttonNamed("게임시작").disabled, true)
+    assert.equal(textOf(byTestId("start-locked-reason")), "모두 준비해야 시작할 수 있습니다. (준비 3/5)")
+})
 
 test("A01-M-H6 5명 방 전원 준비 방장: '게임시작' 켜짐, 까닭 글 없음", async () => {
     await openWaitingRoom(roomWith(5, 5))
@@ -98,7 +116,14 @@ test("A01-M-H7 3명 방 손님: '게임시작' 단추도 까닭 글도 없음", 
     assert.equal(byTestId("start-locked-reason"), null)
 })
 
-test("A01-M-H11 방 값 minPlayers 4 + 4명 전원 준비(canStart 참) 방장: '게임시작' 켜짐, 까닭 글 없음", async () => {
+test("A01-M-H11 방 값 minPlayers 4 반영: 3명이면 '4명부터…' 잠금, 4명 전원 준비면 켜짐", async () => {
+    await openWaitingRoom({ ...roomWith(3, 3), canStart: false, minPlayers: 4 })
+    assert.equal(buttonNamed("게임시작").disabled, true)
+    assert.equal(textOf(byTestId("start-locked-reason")), "4명부터 시작할 수 있습니다. (지금 3명)")
+    resetGame(view)
+    view = null
+    useMatchingStore.getState().clearRoom?.()
+
     await openWaitingRoom({ ...roomWith(4, 4), canStart: true, minPlayers: 4 })
     assert.equal(buttonNamed("게임시작").disabled, false)
     assert.equal(byTestId("start-locked-reason"), null)

@@ -1,5 +1,5 @@
-// 역할 구성 구역: 자동/직접 지정 고르기 + 직접 지정이면 역할별 인원 줄·시민 수 요약·오류
-// 방 설정 역할 배정 탭·대기방 설정 변경 시트(일반 탭 아래)가 씀, 글·범위 계산은 데스크톱 RoleCompositionSection과 같음
+// 역할 구성 구역: 자동/직접 지정 고르기 + 직접 지정이면 역할별 인원 줄·귀족 수 요약·오류 표시
+// 방 설정 화면·대기방 설정 변경 시트가 사용, 글·범위 계산은 데스크톱 RoleCompositionSection과 같음
 import { useEffect, useRef } from "react"
 import {
   CITIZEN_ROLE_LABEL,
@@ -63,14 +63,14 @@ export default function RoleComposition({ look: lookName, roleComposition, maxPl
 
       {isCustom ? (
         <div ref={summaryRef} className={role.summary} data-setup-role-composition-summary>
-          <p className={role.line}>
+          <p className={`${role.line} ${role.note}`}>
             {CITIZEN_ROLE_LABEL}: {citizenCount === null ? "-" : `${citizenCount}명`} (자동 계산)
           </p>
-          <p className={role.line}>
+          <p className={`${role.line} ${role.note}`}>
             지정한 인원 합계: {Number.isInteger(fixedRoleCount) ? fixedRoleCount : "-"} / {maxPlayers}명
           </p>
           <p className={`${role.line} ${role.note}`}>
-            시민 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
+            귀족 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다.
           </p>
           {validation.ok ? null : (
             <p role="alert" className={`${role.line} ${role.error}`}>

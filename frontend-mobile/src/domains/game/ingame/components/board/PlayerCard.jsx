@@ -1,5 +1,5 @@
-// 플레이어 카드 그림: 초상·상태 표시·테마 테두리·카드 틀·이름판·"나" 표시
-// CardSlot·재판 DefendantCard가 씀 (데스크톱 InGamePlayerCard를 화면 부품이라 못 불러 같은 상수로 다시 그림)
+// 플레이어 카드 그림: 초상·상태 표시·테마 테두리·카드 틀·이름판·"나" 표시·같은 직업 "동료" 배지
+// CardSlot·재판 DefendantCard가 씀 (데스크톱 InGamePlayerCard와 같은 상수·표시 규칙)
 import {
     FRAME_IMG_CLASS,
     FRAME_SHADOW_LAYER_CLASS,
@@ -18,10 +18,14 @@ import StatusOverlay from "./StatusOverlay.jsx"
 const SELF_BADGE_CLASS =
     "absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#f3d28d] bg-[#3a1a0c] px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-[#ffe2ad] shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
 
+// 동료 배지: 금색 "나" 배지와 구별되는 짙은 풀빛 바탕·밝은 민트 글자
+const ALLY_BADGE_CLASS =
+    "absolute left-1/2 top-0 z-20 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border border-[#9fe0c4] bg-[#0f3327] px-1.5 py-0.5 text-[0.6rem] font-semibold tracking-wide text-[#d9fff0] shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+
 // 내 카드 금색 고리 (데스크톱 InGamePlayerCard와 같은 class)
 const SELF_RING_CLASS = "ring-2 ring-[#f3d28d]/80 ring-offset-2 ring-offset-black/40 rounded-full"
 
-// 틀 비율은 그림이 정함 (폭은 className으로), withE2e 끄면 시험 표시 안 붙임 (재판 피고 카드가 판 카드와 같은 선택자로 겹치지 않게)
+// 틀 비율은 그림이 정함 (폭은 className으로), withE2e 끄면 시험 표시 안 붙임
 export default function PlayerCard({
     portraitSrc,
     frameSrc = INGAME_PLAYER_ASSETS.cardFrame,
@@ -30,6 +34,8 @@ export default function PlayerCard({
     theme = null,
     voteHighlight = false,
     isSelf = false,
+    allyLabel = null,
+    fitName = false,
     withE2e = true,
     className = "",
 }) {
@@ -48,6 +54,11 @@ export default function PlayerCard({
                 </div>
                 <StatusOverlay status={status} />
                 {isSelf ? <span className={SELF_BADGE_CLASS} aria-label="본인">나</span> : null}
+                {allyLabel && !isSelf ? (
+                    <span className={ALLY_BADGE_CLASS} title={allyLabel} data-ingame-ally-badge={allyLabel}>
+                        동료
+                    </span>
+                ) : null}
                 <div className="relative z-10 w-full overflow-visible">
                     {styles ? (
                         <FrameStroke frameSrc={displayFrameSrc} color={styles.color} scale={styles.frameStrokeScale} />
@@ -55,7 +66,7 @@ export default function PlayerCard({
                     <PublicAsset src={displayFrameSrc} alt="" className={FRAME_SHADOW_LAYER_CLASS} aria-hidden="true" />
                     <PublicAsset src={displayFrameSrc} alt="" className={FRAME_IMG_CLASS} />
                 </div>
-                <Nameplate nickname={nickname} theme={theme} voteHighlight={voteHighlight} />
+                <Nameplate nickname={nickname} theme={theme} voteHighlight={voteHighlight} fitName={fitName} />
             </div>
         </div>
     )

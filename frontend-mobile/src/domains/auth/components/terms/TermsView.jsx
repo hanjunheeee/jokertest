@@ -13,7 +13,7 @@ const COMPACT_LABEL = "px-0.5 !text-[0.84rem] leading-none whitespace-nowrap"
 const BODY_PANEL_CLASS =
     "max-h-[min(44svh,22rem)] w-full min-h-0 overflow-y-auto overscroll-contain whitespace-pre-wrap px-0.5 py-1 text-left font-subheading font-semibold leading-relaxed text-[#2a1208] app-text-scaled [--app-text-size:0.86rem] land:max-h-[min(52svh,26rem)]"
 
-const META_CLASS = `${DIALOG_META_CLASS} w-full text-left text-[#3a1a0c]/80`
+const META_CLASS = `${DIALOG_META_CLASS} w-full text-left`
 
 const effectiveDateText = (iso) => {
     const date = new Date(iso)

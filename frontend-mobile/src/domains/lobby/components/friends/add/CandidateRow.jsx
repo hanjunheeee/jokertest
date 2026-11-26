@@ -7,8 +7,10 @@ import IconAction from "../parts/IconAction.jsx"
 import { STATUS_DETAIL_ERROR_CLASS } from "@/domains/lobby/constants/friendListStyle.js"
 
 // 이미 신청한 상대는 신청 버튼을 흐리게 하고 다시 안 보냄 (데스크톱 RecommendedFriendActions와 같음)
-// 보내는 중엔 신청 버튼 잠금, 실패하면 이름 아래 문구 (데스크톱 FriendRequestResultsList의 sendErrors)
-export default function CandidateRow({ candidate, sent, sending = false, sendError = null, blocking, onSend, onBlock }) {
+// 보내는 중엔 신청 버튼 잠금, 실패하면 이름 아래·줄 아래에 문구 표시
+export default function CandidateRow({
+  candidate, sent, sending = false, sendError = null, blockError = null, blocking, onSend, onBlock,
+}) {
   const { id, name } = candidate
 
   const actions = (
@@ -37,6 +39,9 @@ export default function CandidateRow({ candidate, sent, sending = false, sendErr
       borderId={candidate.accountProfileBorderId}
       actions={actions}
       rowProps={{ "data-candidate-id": id }}
+      footer={blockError !== null ? (
+        <p role="alert" data-block-error={id} className={STATUS_DETAIL_ERROR_CLASS}>{blockError}</p>
+      ) : null}
     >
       <OnlineStatus status={candidate.status} />
       {sendError !== null ? (

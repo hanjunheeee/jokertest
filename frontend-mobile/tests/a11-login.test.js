@@ -105,3 +105,16 @@ test("A11-M-006 모바일 인증 칸 오류 줄: 틀린 번호 → 인증 칸 �
     const input = document.querySelector('[data-testid="signup-code-input"]') ?? field("signupEmailCode")
     assert.ok(input.compareDocumentPosition(notice) & window.Node.DOCUMENT_POSITION_FOLLOWING, "안내 줄이 인증 칸 위에 있음")
 })
+
+test("A11-M-007 모바일 가입 인증번호 칸 6자리 제한: signup-code-input maxLength가 6", async () => {
+    serve({
+        [SEND]: { status: 200, body: { ok: true, resendAfterSec: 60, expiresInSec: 600 } },
+    })
+    await openLogin()
+    await toSignupForm({ email: "m1-limit@example.com" })
+    click(document.querySelector('[data-testid="signup-code-send"]'))
+    await flush(5)
+    const input = document.querySelector('[data-testid="signup-code-input"]') ?? field("signupEmailCode")
+    assert.ok(input, "인증번호 칸이 안 열림")
+    assert.equal(input.getAttribute("maxlength"), "6")
+})

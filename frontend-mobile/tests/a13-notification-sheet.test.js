@@ -14,7 +14,10 @@ let view = null
 afterEach(() => {
     resetGame(view)
     view = null
-    act(() => { useAuthStore.getState().logout() })
+    act(() => {
+        useAuthStore.getState().logout()
+        useNotificationsStore.getState().syncAccount()
+    })
 })
 
 // 서버가 주는 알림 한 줄 (PC 시험 a13Kit note 모양)
@@ -52,4 +55,23 @@ test("A13-M-008 받은 시각 값이 없는 알림(createdAt null) → time 칸 
     assert.equal(row.querySelectorAll("time").length, 0)
     assert.ok(textOf(row).includes("제목 t2"), "제목이 없음")
     assert.ok(textOf(row).includes("본문 t2"), "본문이 없음")
+})
+
+test("A13-M-009 알림 시트 빈 목록·목록 오류 글자색 → 양피지 바탕 위 고대비 진한 색 사용", async () => {
+    await openSheet([])
+    const emptyText = document.querySelector('[data-notification-state="empty"] p')
+    assert.ok(emptyText, "빈 목록 문구가 없음")
+    assert.match(emptyText.className, /text-\[#1a1008\]/)
+    resetGame(view)
+    view = null
+
+    serve({ "GET /notifications": { status: 500, body: {} } })
+    act(() => { useAuthStore.getState().login({ uuid: "m1-note-err", nickname: "가면손님" }) })
+    useNotificationsStore.getState().syncAccount()
+    await act(async () => { await useNotificationsStore.getState().loadSnapshot() })
+    view = await renderRoute(fakeSocket(), React.createElement(NotificationSheet, { open: true, onClose: () => {} }), { path: "/lobby" })
+    await flush(5)
+    const errText = document.querySelector('[data-notification-state="error"] p')
+    assert.ok(errText, "목록 오류 문구가 없음")
+    assert.match(errText.className, /text-\[#300600\]/)
 })

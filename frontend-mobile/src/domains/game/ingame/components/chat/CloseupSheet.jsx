@@ -9,7 +9,13 @@ import { useKeyboardInset } from "@m/domains/game/ingame/hooks/chat/useKeyboardI
 import Composer from "./Composer.jsx"
 import FrameSlice from "./FrameSlice.jsx"
 import MessageList from "./MessageList.jsx"
-import { FRAME_ROOT_CLASS, FRAME_SLICE, listInsetStyle } from "./chatStyle.js"
+import {
+    DEAD_CHAT_BADGE_CLASS,
+    DEAD_CHAT_BADGE_TEXT,
+    FRAME_ROOT_CLASS,
+    FRAME_SLICE,
+    listInsetStyle,
+} from "./chatStyle.js"
 import { useDialogFocus } from "@m/shared/hooks/useDialogFocus.js"
 import { useEscapeClose } from "@m/shared/hooks/useEscapeClose.js"
 
@@ -73,6 +79,13 @@ export default function CloseupSheet({ open, onClose, session }) {
                             <div className="relative min-h-0 flex-1 overflow-hidden">
                                 <FrameSlice slice={FRAME_SLICE.list} />
                                 <MessageList messages={session.messages} insetStyle={LIST_INSET} fontBase={1.12} />
+                                {session.isDeadChat ? (
+                                    <div className="pointer-events-none absolute" style={LIST_INSET}>
+                                        <p className={DEAD_CHAT_BADGE_CLASS} data-dead-chat-badge="" data-dead-chat-banner="">
+                                            {DEAD_CHAT_BADGE_TEXT}
+                                        </p>
+                                    </div>
+                                ) : null}
                             </div>
                             <Composer
                                 draft={session.draft}

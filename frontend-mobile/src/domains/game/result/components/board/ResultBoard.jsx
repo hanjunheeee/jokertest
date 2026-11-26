@@ -23,9 +23,9 @@ const reveal = (delay) => ({
     transition: { ...INNER_REVEAL_TRANSITION, delay },
 })
 
-// 세로: 한 열, 가로·lg: 두 열
+// 세로: 한 열(우상단 시계 자리 비켜 pt-10), 가로·lg: 두 열
 const GRID_CLASS =
-    "mx-auto flex w-full max-w-[30rem] flex-col gap-3 px-4 pt-3 pb-2 md:max-w-[34rem] land:grid land:max-w-[52rem] land:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] land:items-start land:gap-5 land:px-5 lg:max-w-[60rem] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start lg:gap-10 lg:pt-6"
+    "mx-auto flex w-full max-w-[30rem] flex-col gap-3 px-4 pt-10 pb-2 md:max-w-[34rem] land:grid land:max-w-[52rem] land:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] land:items-start land:gap-5 land:px-5 land:pt-10 lg:max-w-[60rem] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-start lg:gap-10 lg:pt-12"
 
 // 결과 본체 (배경도 승패 따라 바뀜)
 export default function ResultBoard({ outcome, winningTeam, players, selfUuid = null }) {

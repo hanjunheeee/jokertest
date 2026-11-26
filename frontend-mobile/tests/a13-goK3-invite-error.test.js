@@ -1,5 +1,5 @@
-// 모바일 대기방 친구 초대 창 실패 시험: 초대 보내기가 거절되면 줄은 "초대하기" 그대로 (합친 화면: 창 안 실패 글 칸 없음)
-// 목록 A13 모바일 A13-M-012, 합친 화면(2026-11-24 되돌림)에 맞춤 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goK3-invite-error.test.js)
+// 모바일 대기방 친구 초대 창 실패 시험: 초대 보내기가 거절되면 줄은 "초대하기" 그대로이고 창 안에 거절 까닭 글이 뜸
+// 목록 A13 모바일 A13-M-012 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goK3-invite-error.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -57,7 +57,7 @@ async function openInviteSheet() {
     await flush(5)
 }
 
-test("A13-M-012 초대 보내기가 '가득 참'으로 거절 → 줄은 '초대중'이 안 되고 '라온 게임 초대' 그대로, 창 안 실패 글 칸은 없음", async () => {
+test("A13-M-012 초대 보내기가 '가득 참'으로 거절 → 줄은 '초대중'이 안 되고 '라온 게임 초대' 그대로, 창 안에 거절 까닭 글 표시", async () => {
     useFriendStore.setState({
         friends: [{ id: "f1", name: "라온", online: true }],
         friendsError: null,
@@ -73,5 +73,5 @@ test("A13-M-012 초대 보내기가 '가득 참'으로 거절 → 줄은 '초대
     assert.equal(asked, 1, "초대를 안 보냄")
     assert.ok(buttonNamed("라온 게임 초대"), "거절됐는데 줄이 '초대중'으로 바뀜")
     assert.ok(buttonNamed("라온 초대 보내는 중") === null)
-    assert.equal(textOf(document.body).includes(FULL_MESSAGE), false, "창 안에 실패 글이 보임")
+    assert.equal(textOf(document.body).includes(FULL_MESSAGE), true, "창 안에 실패 글이 안 보임")
 })

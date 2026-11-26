@@ -1,12 +1,11 @@
-// 모바일 밤 안내와 열어 둔 창 시험: 죽은 사람의 밤 안내는 설정 시트를 그대로 둠, 투표 현황 창은 밤 안내가 떠도·확인 뒤에도 그대로
-// 목록 A05b 모바일 A05-M-513·514 (돌리기: frontend-mobile 폴더에서 node --test tests/a05-goG2-overlay-cover.test.js)
-// 연출이 뜨면 설정·전적 시트(방 코드·신고 창)·채팅 크게 보기를 저절로 닫던 규칙은 지금 화면에 없음 → 그 시험(A05-M-509~512·515~518)은 뺌
+// 모바일 밤 안내·전면 연출 시트 닫힘·밤 진입 사유 4가지 시험
+// 목록 A05b 모바일 A05-M-513~516 (돌리기: frontend-mobile 폴더에서 node --test tests/a05-goG2-overlay-cover.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { buttonNamed, click, flush } from "./a00-kit.mjs"
-import { confirmEntrances, dayResolved, fakeSocket, fire, renderPage, resetGame, seat, useInGameStore } from "./a00-game.mjs"
+import { buttonNamed, click, flush, textOf, waitUntil } from "./a00-kit.mjs"
+import { confirmEntrances, dayResolved, fakeSocket, fire, nextDay, renderPage, resetGame, seat, useInGameStore } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -54,4 +53,35 @@ test("A05-M-514 투표 현황 창은 밤 안내가 떠도 그대로 (5명 판): 
     assert.equal(voteStatusShown(), true, "투표 현황 창이 닫힘")
     await confirmEntrances()
     assert.equal(voteStatusShown(), true, "확인 뒤 투표 현황 창이 닫힘")
+})
+
+test("A05-M-515 산 사람의 전면 연출(밤 안내·낮 시작 결과)이 뜨면 열어 둔 시트·투표 현황 창이 닫힘", async () => {
+    const socket = await page({ n: 6, phase: "DAY", dayPhase: "DAY_VOTE" })
+    await open("인게임 설정")
+    assert.equal(shown("settings-sheet"), true, "설정 시트가 안 열림")
+    await toNight(socket, 6)
+    await waitUntil(() => !shown("settings-sheet"), { label: "잠그는 밤 안내 시 설정 시트 닫힘" })
+    await confirmEntrances()
+    await open("투표 현황 열기")
+    assert.equal(voteStatusShown(), true, "투표 현황 창이 안 열림")
+    await fire(socket, "night_result_applied", nextDay({ n: 6, dayIndex: 2, deadline: Date.now() + 60_000 }))
+    await waitUntil(() => !voteStatusShown(), { label: "낮 시작 결과 연출 시 투표 현황 창 닫힘" })
+})
+
+test("A05-M-516 밤 진입 안내 창 사유 4가지 표시: 동점·기권 과반·전원 기권·피고 연결 끊김", async () => {
+    const cases = [
+        ["TIE", 0, "최다 득표가 동점이라 재판이 열리지 않았습니다"],
+        ["ABSTAIN_MAJORITY", 5, "기권이 많아 재판이 열리지 않았습니다"],
+        ["ABSTAINED", 6, "모두 기권하여 재판이 열리지 않았습니다"],
+        ["DEFENDANT_DISCONNECTED", 1, "재판 대상의 연결이 끊겨 재판이 열리지 않았습니다"],
+    ]
+    for (const [outcome, abstain, expected] of cases) {
+        const socket = await page({ n: 6, phase: "DAY", dayPhase: "DAY_VOTE" })
+        await fire(socket, "day_vote_resolved", dayResolved({ outcome, alive: 6, abstain }))
+        const reasonEl = document.querySelector("[data-ingame-phase-entrance-reason]")
+        assert.ok(reasonEl, `${outcome} 밤 안내에 사유 줄이 없음`)
+        assert.equal(textOf(reasonEl), expected)
+        resetGame(view)
+        view = null
+    }
 })

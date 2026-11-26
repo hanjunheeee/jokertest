@@ -100,10 +100,15 @@ export const ACTION_LABEL_PRIMARY_CLASS =
 // 바닥 줄: 읽은 메시지 삭제 (오른쪽 정렬)
 export const FOOTER_CLASS = "relative z-[2] mt-1.5 flex w-full shrink-0 flex-col items-end gap-1"
 
-// 안내·빈 목록·오류 글자 (데스크톱 MSG·EMPTY_MSG·ERROR 색)
-export const MSG_CLASS = "m-0 font-body app-text-scaled [--app-text-size:0.85rem] text-[#f5f0e6]/90"
+// 안내·빈 목록 글자: 중간 밝기 양피지 위라 짙은 갈색으로 대비 확보 (데스크톱 notificationLayoutStyle과 같음)
+export const MSG_CLASS = "m-0 font-body app-text-scaled [--app-text-size:0.85rem] text-[#1a1008]"
 
 export const EMPTY_MSG_CLASS =
-  "m-0 font-body app-text-scaled [--app-text-size:1.05rem] font-medium text-[#f5f0e6]/95"
+  "m-0 font-body app-text-scaled [--app-text-size:1.05rem] font-medium text-[#1a1008]"
 
+// 어두운 알림 슬롯(ItemActions) 위 오류 글자
 export const ERROR_CLASS = "m-0 break-words font-body app-text-scaled [--app-text-size:0.78rem] text-[#f5a89a]"
+
+// 양피지 바탕 위 오류 글자 (목록 못 받음·삭제 실패): 아주 짙은 적갈색으로 대비 확보
+export const PAPER_ERROR_CLASS =
+  "m-0 break-words font-body font-semibold app-text-scaled [--app-text-size:0.85rem] text-[#300600]"

@@ -1,4 +1,4 @@
-// 세로 카톡형: 최후의 변론을 닫을 수 있는 양피지 시트 (피고 카드·유무죄)
+// 세로 카톡형: 최후의 변론을 닫을 수 있는 양피지 시트 (피고 카드·유무죄·표 거절 사유)
 // TalkLayout이 채팅 위에 띄움, 값은 useTribunalPresentation
 import Sheet from "@m/domains/game/ingame/components/sheets/frame/Sheet.jsx"
 import DefendantCard from "./DefendantCard.jsx"
@@ -6,12 +6,20 @@ import TribunalActions from "./TribunalActions.jsx"
 
 const TITLE = "최후의 변론"
 
+// 양피지 바탕(#ead9b5 계열) 위 대비 4.5 이상 짙은 갈색 글자
+const SHEET_NOTICE_CLASS =
+    "text-center font-subheading text-[clamp(0.85rem,2.9vw,0.98rem)] font-bold leading-snug text-[#2c1d11]"
+const SHEET_ERROR_CLASS =
+    "text-center font-subheading text-[0.85rem] font-bold leading-snug text-[#2c1d11]"
+
+// 피고 카드·유무죄 단추·거절 알림을 양피지 시트 안에 표시
 export default function TribunalSheet({
     open,
     onClose,
     defendant,
     showVoteButtons,
     noticeText,
+    voteErrorText = null,
     voteButtonsEnabled,
     voteSubmitting,
     onVoteGuilty,
@@ -39,6 +47,7 @@ export default function TribunalSheet({
                     <TribunalActions
                         showVoteButtons={showVoteButtons}
                         noticeText={noticeText}
+                        noticeClassName={SHEET_NOTICE_CLASS}
                         voteDisabled={!voteButtonsEnabled || voteSubmitting}
                         onVoteGuilty={onVoteGuilty}
                         onVoteNotGuilty={onVoteNotGuilty}
@@ -46,6 +55,11 @@ export default function TribunalSheet({
                         devResolveEnabled={devResolveEnabled}
                         onDevResolve={onDevResolve}
                     />
+                    {voteErrorText ? (
+                        <p role="alert" className={SHEET_ERROR_CLASS} data-ingame-tribunal-vote-error="">
+                            {voteErrorText}
+                        </p>
+                    ) : null}
                 </div>
             </div>
         </Sheet>

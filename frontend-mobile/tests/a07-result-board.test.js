@@ -54,6 +54,15 @@ test("A07-M-002 마녀사냥꾼 이름: 마녀사냥꾼 줄 → '마녀사냥꾼
     assert.ok(textOf(row).includes("마녀사냥꾼"), `줄 글: ${textOf(row)}`)
 })
 
+test("A07-M-003 판 골드 받음: 전원 1골드여도 내 줄에만 '+1골드' 1개 표시", () => {
+    drawBoard({ roles: EIGHT, winner: "CITIZEN", gold: Array(8).fill(1) })
+    const badges = goldBadges()
+    assert.equal(badges.length, 1, "골드 배지가 내 줄 하나가 아님")
+    assert.equal(textOf(badges[0]), "+1골드")
+    const myRow = rows().find((li) => textOf(li).includes(NAMES[0]))
+    assert.ok(myRow?.contains(badges[0]), "골드 배지가 내 줄에 없음")
+})
+
 test("A07-M-004 못 받으면 골드 없음: 내 골드 0 → 골드 칸 0", () => {
     drawBoard({ roles: EIGHT, winner: "JOKER", gold: [0] })
     assert.equal(goldBadges().length, 0)

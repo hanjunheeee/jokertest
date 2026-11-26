@@ -51,12 +51,15 @@ test("A01-M-002 모바일 정원 경계: 10에서 + 꺼짐, 5까지 내리면 �
     assert.equal(buttonNamed("최대 플레이어 수 감소").disabled, true, "정원 5인데 − 가 켜짐")
 })
 
-test("A01-M-003 모바일 직접 지정 합 넘음: 정원 5 + 광대2·의사2·경비원1·마녀사냥꾼1 → 오류 글, '게임 만들기' 꺼짐", () => {
+test("A01-M-003 모바일 직접 지정 합 넘음: '귀족 수는…' 통일 + 밝은 받침·진한 글자 오류 + '게임 만들기' 꺼짐", () => {
     drawPanel()
     pressTimes("최대 플레이어 수 감소", 5)
     // 역할 구성: 자동 → 직접 지정
     click(buttonNamed("역할 구성 증가"))
-    assert.ok(pageText().includes("직접 지정"), "직접 지정으로 안 바뀜")
+    const summaryText = pageText()
+    assert.ok(summaryText.includes("직접 지정"), "직접 지정으로 안 바뀜")
+    assert.ok(summaryText.includes("귀족 수는 게임 시작 시점의 실제 참가 인원에서 지정한 역할을 뺀 나머지로 정해집니다."), "귀족 수 안내 글이 없음")
+    assert.ok(!summaryText.includes("시민 수는"), "'시민 수는' 옛 문구가 남아 있음")
     pressTimes("광대 인원 증가", 1)
     pressTimes("의사 인원 증가", 2)
     pressTimes("경비원 인원 증가", 1)
@@ -64,5 +67,6 @@ test("A01-M-003 모바일 직접 지정 합 넘음: 정원 5 + 광대2·의사2�
     const alert = document.querySelector("[data-setup-role-composition-summary] [role=alert]")
     assert.ok(alert, "오류 글이 없음")
     assert.ok(alert.textContent.trim().length > 0, "오류 글이 빔")
+    assert.ok(alert.className.includes("text-[#300600]") && alert.className.includes("bg-[#fff8ec]/92"), `오류 대비 클래스 누락: ${alert.className}`)
     assert.equal(buttonNamed("게임 만들기").disabled, true, "'게임 만들기'가 켜짐")
 })

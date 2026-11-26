@@ -9,7 +9,7 @@ import { slotLabel } from "@m/domains/game/ingame/utils/talk/slotLabel.js"
 const SLOT_STYLE = { width: CARD_WIDTH }
 
 // onLongPress가 없으면 길게 누르기·우클릭은 기본 동작 막기만 함
-export default function CardSlot({ player, isSelf, highlight, emoji, anchorRef, onTap, onLongPress }) {
+export default function CardSlot({ player, isSelf, allyLabel = null, highlight, emoji, anchorRef, onTap, onLongPress }) {
     const longPress = useLongPress(onLongPress)
 
     // 길게 누르기 뒤 손 뗄 때 오는 탭은 시트를 열지 않음
@@ -30,7 +30,7 @@ export default function CardSlot({ player, isSelf, highlight, emoji, anchorRef, 
             type="button"
             className={SLOT_CLASS}
             style={SLOT_STYLE}
-            aria-label={slotLabel(player.nickname, player.status, isSelf)}
+            aria-label={slotLabel(player.nickname, player.status, isSelf, allyLabel)}
             data-board-slot={player.id}
             onClick={handleClick}
             onContextMenu={handleContextMenu}
@@ -44,6 +44,7 @@ export default function CardSlot({ player, isSelf, highlight, emoji, anchorRef, 
                 theme={player.theme}
                 voteHighlight={highlight}
                 isSelf={isSelf}
+                allyLabel={allyLabel}
                 className="pointer-events-none w-full"
             />
             {emoji ? <EmojiBubble key={`${player.id}-${emoji.sentAt}`} itemId={emoji.itemId} /> : null}

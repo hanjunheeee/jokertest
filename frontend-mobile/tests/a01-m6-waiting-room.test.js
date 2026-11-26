@@ -104,12 +104,20 @@ test("A01-M-602 준비한 참가자 '준비취소' 누름 → set_ready {isReady
     assert.ok(buttonNamed("준비완료"), `단추: ${buttonNames().join(" | ")}`)
 })
 
-test("A01-M-603 3명 방 방장 '게임시작'은 미리 안 꺼짐 → 누르면 start_game 보냄, 답 기다리는 동안 '시작 중'·꺼짐", async () => {
+test("A01-M-603 3명 방 방장은 사전 잠금, 5명 전원 준비면 켜짐 → 누르면 start_game 보냄, 답 기다리는 동안 '시작 중'·꺼짐", async () => {
+    await openRoom()
+    assert.equal(buttonNamed("게임시작").disabled, true, "3명인데 시작 단추가 켜짐")
+    assert.equal(textOf(document.querySelector('[data-testid="start-locked-reason"]')), "5명부터 시작할 수 있습니다. (지금 3명)")
+    resetGame(view)
+    view = null
+    useMatchingStore.getState().clearRoom?.()
+
     const answer = later()
-    const socket = await openRoom({ acks: { start_game: () => answer.promise } })
+    const readyFive = ["pA", "pB", "pC", "pD", "pE"]
+    const socket = await openRoom({ room: roomOf({ ids: readyFive, ready: readyFive, canStart: true }), acks: { start_game: () => answer.promise } })
     const start = buttonNamed("게임시작")
     assert.ok(start, `단추: ${buttonNames().join(" | ")}`)
-    assert.equal(start.disabled, false, "3명인데 미리 꺼짐")
+    assert.equal(start.disabled, false, "5명 전원 준비인데 꺼짐")
     assert.ok(document.querySelector('[data-testid="start-locked-reason"]') === null)
     click(start)
     await flush(3)
@@ -121,9 +129,10 @@ test("A01-M-603 3명 방 방장 '게임시작'은 미리 안 꺼짐 → 누르�
     await flush(5)
 })
 
-test("A01-M-604 게임시작 서버 거절 → 시작 막힘 창(제목·서버 글), '확인' 누르면 창 닫히고 '게임시작' 다시 켜짐", async () => {
-    const refusal = "게임을 시작하기 위한 인원 조건을 만족하지 않습니다."
-    await openRoom({ acks: { start_game: { ok: false, code: "NOT_ENOUGH_PLAYERS", message: refusal } } })
+test("A01-M-604 5명 전원 준비 후 게임시작 서버 거절(역할 구성 불일치 등) → 시작 막힘 창(제목·서버 글), '확인' 누르면 닫힘", async () => {
+    const refusal = "설정한 역할 구성이 현재 인원과 맞지 않습니다. 인원을 더 모아주세요."
+    const readyFive = ["pA", "pB", "pC", "pD", "pE"]
+    await openRoom({ room: roomOf({ ids: readyFive, ready: readyFive, canStart: true }), acks: { start_game: { ok: false, code: "ROLE_COMPOSITION_MISMATCH", message: refusal } } })
     click(buttonNamed("게임시작"))
     await flush(5)
     const box = document.querySelector("[data-game-start-blocked] [role=dialog]")
@@ -170,7 +179,7 @@ test("A01-M-606 참가자 '방 나가기' → leave_room 보내고 방 목록(/m
     assert.equal(useMatchingStore.getState().isInRoom, false)
 })
 
-test("A01-M-607 추방 시트: 줄 '추방' 한 번에 kick_room_player 보냄, 답 기다리는 동안 확인 칸(kick-confirm)에 그 이름·꺼진 '추방'·'취소', 그 줄 '보내는 중', 답 ok면 시트 닫힘", async () => {
+test("A01-M-607 추방 시트: 줄 '추방' 한 번에 kick_room_player 즉시 보냄, 보내는 동안 확인 상자(kick-confirm)·결과 확인 없이 그 줄 '보내는 중', 답 ok면 시트 닫힘", async () => {
     const answer = later()
     const socket = await openRoom({ acks: { kick_room_player: () => answer.promise } })
     click(buttonNamed("참가자 추방"))
@@ -187,37 +196,40 @@ test("A01-M-607 추방 시트: 줄 '추방' 한 번에 kick_room_player 보냄, 
     assert.equal(sent[0].targetUuid, "pB")
     assert.equal(sent[0].targetMembershipId, "m-pB")
     assert.equal(sent[0].roomId, "room-m6")
-    // 보내는 동안: 확인 칸이 뜨지만 "추방"은 꺼져 있고 "취소"는 눌러도 아무 일 없음 (공용 훅이 취소 함수를 안 넘김)
-    const confirm = document.querySelector('[data-testid="kick-confirm"]')
-    assert.ok(confirm, "보내는 동안 확인 칸이 없음")
-    assert.equal(textOf(confirm.querySelector('[data-testid="kick-confirm-target"]')), "나래")
-    assert.equal(confirm.querySelector('[data-testid="kick-confirm-accept"]').disabled, true)
-    const cancel = confirm.querySelector('[data-testid="kick-confirm-cancel"]')
-    assert.equal(cancel.disabled, false)
-    click(cancel)
-    await flush(2)
-    assert.ok(document.querySelector('[data-testid="kick-confirm"]'), "취소를 누르니 확인 칸이 사라짐")
-    assert.equal(socket.sentOf("kick_room_player").length, 1)
+    assert.equal(document.querySelector('[data-testid="kick-confirm"]'), null, "보내는 동안 먹통 확인 칸이 뜸")
+    assert.equal(document.querySelector('[data-testid="kick-lookup-result"]'), null, "보내는 동안 결과 확인 단추가 뜸")
     assert.ok(buttonNamed("추방 보내는 중"), `단추: ${buttonNames(sheet).join(" | ")}`)
     await act(async () => { answer.give({ ok: true }) })
     await flush(5)
     assert.ok(document.querySelector('[data-testid="kick-sheet"]') === null, "추방 성공인데 시트가 남음")
 })
 
-test("A01-M-608 친구 초대 시트: 바닥 '친구 초대' → 창 '친구초대', 친구 없음 글 / 친구 줄 '라온 게임 초대' → 보내고 성공하면 '초대중..' 잠김", async () => {
+test("A01-M-608 친구 초대 시트: 친구 없음 글 / 거절되면 창 안 role=alert 사유 표시 / 성공하면 '초대중..' 잠김", async () => {
     useFriendStore.setState({ friends: [], friendsError: null, fetchFriends: async () => {} })
     await openRoom()
     click(buttonNamed("친구 초대"))
     await flush(5)
     assert.ok(textOf(document.body).includes("친구초대"), "초대 창 제목이 없음")
     assert.ok(textOf(document.body).includes("초대할 친구가 없습니다."), "친구 없음 글이 없음")
-    // 친구가 들어오면 줄과 초대 단추
-    const asked = []
+
+    const roomFullMsg = "방이 가득 차 초대를 보낼 수 없습니다."
     act(() => {
         useFriendStore.setState({ friends: [{ id: "f1", name: "라온", online: true }] })
-        useGameInviteStore.setState({ sendInvite: async (friendId, key) => { asked.push([friendId, key]); return { ok: true } } })
+        useGameInviteStore.setState({ sendInvite: async () => ({ ok: false, reason: "error", message: roomFullMsg }) })
     })
     await flush(3)
+    click(buttonNamed("라온 게임 초대"))
+    await flush(5)
+    const alert = document.querySelector('[role="dialog"][aria-label="친구초대"] [role="alert"]')
+    assert.ok(alert, "초대 거절 안내 글이 없음")
+    assert.equal(textOf(alert), roomFullMsg)
+    assert.ok(buttonNamed("라온 게임 초대"), "거절됐는데 줄이 잠김")
+
+    const asked = []
+    act(() => {
+        useGameInviteStore.setState({ sendInvite: async (friendId, key) => { asked.push([friendId, key]); return { ok: true } } })
+    })
+    await flush(2)
     click(buttonNamed("라온 게임 초대"))
     await flush(5)
     assert.deepEqual(asked, [["f1", "room-m6:f1"]])

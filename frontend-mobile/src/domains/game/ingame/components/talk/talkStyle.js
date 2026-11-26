@@ -1,5 +1,5 @@
-// 카톡형 채팅방 공통 모양: 말풍선 색(남·나·조커·죽은 사람), 글자 모양, 초상 크기
-// components/talk 아래 부품들이 씀, 색은 지금 그림(양피지·금빛·어두운 나무)에서 고름
+// 카톡형 채팅방 공통 모양: 말풍선 색(남·나·조커·죽은 사람), 글자 모양, 초상 크기, "죽은 사람끼리" 띠
+// components/talk 아래 부품들과 재판 창 채팅(TribunalChat, 띠만)이 씀, 색은 지금 그림(양피지·금빛·어두운 나무)에서 고름
 
 // 말풍선 바탕 (꼬리 쪽 모서리만 덜 둥글게)
 // max-w + overflow-wrap:anywhere: 공백 없는 긴 영문도 줄바꿈 (데스크톱 TEXT_WRAP_CLASS와 같음)
@@ -21,6 +21,11 @@ export function bubbleClass(line) {
     if (line.joker) return line.mine ? BUBBLE_CLASS.jokerMine : BUBBLE_CLASS.jokerOther
     return line.mine ? BUBBLE_CLASS.mine : BUBBLE_CLASS.other
 }
+
+// 죽은 사람끼리 띠 (회색, 채팅방과 재판 창 채팅이 같은 글·모양 사용)
+export const DEAD_BANNER_TEXT = "죽은 사람끼리"
+export const DEAD_BANNER_CLASS =
+    "flex shrink-0 items-center justify-center gap-1.5 border-b border-[#8a8a8a]/50 bg-[#2e2e2e]/85 py-1 text-[0.72rem] font-semibold tracking-wide text-[#dcdcdc]"
 
 // 말풍선 글 (지금 채팅 글과 같은 글꼴, 굵기만 조금 낮춤)
 export const BUBBLE_TEXT_CLASS = "font-subheading font-semibold leading-[1.4] tracking-[0.02em]"

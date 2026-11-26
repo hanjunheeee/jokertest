@@ -24,7 +24,7 @@ export default function StorePage() {
         <div className="relative flex h-full w-full flex-col overflow-hidden bg-black">
             <StoreBackdrop videoRef={bgVideoRef} introDone={introDone} onSkip={skipIntro} />
 
-            <StorePanel visible={introDone} panel={panel} />
+            <StorePanel visible={introDone} panel={panel} balanceGold={balanceGold} />
 
             <StoreTopBar
                 visible={introDone}

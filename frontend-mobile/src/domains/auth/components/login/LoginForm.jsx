@@ -7,6 +7,7 @@ import { LockIcon, MailIcon } from "@m/shared/ui/input/InputIcons.jsx"
 import { HEADER_TEXT_CLASS } from "@m/domains/auth/components/login/ui/styles.js"
 import LoginOptions from "@m/domains/auth/components/login/LoginOptions.jsx"
 import SocialButtons from "@m/domains/auth/components/login/SocialButtons.jsx"
+import SupportLink from "@m/domains/auth/components/SupportLink.jsx"
 
 // 제출은 바깥 액자 form이 받음 (로그인 버튼이 type=submit), name이 formData 키와 같아야 함
 export default function LoginForm({ formData, rememberMe, onChange, onRememberMeChange, onSwitchToSignup }) {
@@ -46,6 +47,7 @@ export default function LoginForm({ formData, rememberMe, onChange, onRememberMe
 
       <SocialButtons rememberMe={rememberMe} />
       <ModeSwitch question="계정이 없으신가요?" actionLabel="회원가입" onSwitch={onSwitchToSignup} />
+      <SupportLink />
     </>
   )
 }

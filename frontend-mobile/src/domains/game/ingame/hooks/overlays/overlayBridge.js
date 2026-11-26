@@ -1,5 +1,5 @@
-// 연출 층과 화면 틀 사이 값 주고받는 작은 저장소 (조작 잠금·역할 다시 보기·나가기 손잡이)
-// OverlayLayer가 잠금·역할 값을 넣고, 화면 틀(InGamePage)이 읽음; 나가기 손잡이는 틀이 넣고 사망 선택 창이 읽음
+// 연출 층과 화면 틀 사이 값 주고받는 작은 저장소 (조작 잠금·연출 창 뜸·역할 다시 보기·나가기 손잡이)
+// OverlayLayer가 잠금·연출·역할 값을 넣고, 화면 틀(InGamePage)·겹 창(시트·투표 현황·크게 보기)이 읽음
 import { useEffect } from "react"
 import { create } from "zustand"
 
@@ -9,6 +9,10 @@ export const useOverlayBridge = create((set) => ({
     interactionBlocked: false,
     // 연출이 화면을 덮는 중이라 판·채팅·행동 줄 누름 막음 (데스크톱 surfaceLocked)
     surfaceLocked: false,
+    // 연출 창이 떠 있음 (화면 잠김 + 밤 차례 안내): body에 띄운 시트·크게 보기 닫는 신호
+    overlayOpen: false,
+    // 투표 현황 창을 가리는 전면 연출(재판·낮 시작 결과·밤 차례·역할 공개·사망 선택·추방, 밤 단계 안내는 제외)
+    voteStatusCoverOpen: false,
     // 내 역할 다시 보기 가능 여부·여는 함수 (위 줄 역할 버튼용)
     roleRevealAvailable: false,
     reopenRoleReveal: null,
@@ -36,6 +40,8 @@ export function usePublishOverlayExit(exit) {
     useEffect(() => () => setExit(null), [setExit])
 }
 
-// 화면 틀이 잠금 값만 읽을 때 씀
+// 화면 틀·겹 창이 잠금·닫힘 신호만 읽을 때 씀
 export const selectSurfaceLocked = (s) => s.surfaceLocked
 export const selectInteractionBlocked = (s) => s.interactionBlocked
+export const selectOverlayOpen = (s) => s.overlayOpen
+export const selectVoteStatusCoverOpen = (s) => s.voteStatusCoverOpen

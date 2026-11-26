@@ -5,6 +5,7 @@ import { useFindId } from "@/domains/auth/hooks/recovery/useFindId.js"
 import RecoveryScene from "@m/domains/auth/components/recovery/scene/RecoveryScene.jsx"
 import FindIdForm from "@m/domains/auth/components/recovery/FindIdForm.jsx"
 import FindIdResult from "@m/domains/auth/components/recovery/FindIdResult.jsx"
+import SupportLink from "@m/domains/auth/components/SupportLink.jsx"
 
 // 찾았으면 가린 이메일, 아니면 입력 칸 (데스크톱과 같음)
 export default function FindIdPage() {
@@ -33,6 +34,7 @@ export default function FindIdPage() {
           onRetry={find.backToIdle}
         />
       )}
+      <SupportLink className="mt-1" />
     </RecoveryScene>
   )
 }

@@ -1,5 +1,5 @@
-// 결과 화면 상태 묶음: 그릴 값(실제 판·미리보기) 고르기, 새로고침 직후 기다림, 연출 끝남, 버튼 동작
-// pages/GameResultPage가 씀 (데스크톱 GameResultPage 안 state·effect를 모바일 쪽으로 옮긴 것, 데스크톱은 안 고침)
+// 결과 화면 상태 묶음: 그릴 값 고르기, 새로고침 직후 기다림, 연출 끝남, 닫힘 시계, 떠나기 실패 안내와 단추 동작
+// pages/GameResultPage가 사용, 데스크톱 결과·나가기 훅들을 조합함
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { GAME_RESULT_OUTCOMES } from "@/domains/game/result/constants/gameResultPreviewData.js"
@@ -13,24 +13,30 @@ import {
 import { useInGameExit } from "@/domains/game/ingame/hooks/useInGameExit.js"
 import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInGameSessionSnapshotSync.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
+import { selectResultExitFailureNotice } from "@/domains/game/ingame/utils/exitConfirm.js"
 
-// 화면 단계(wait·intro·result·unavailable)와 버튼 동작 돌려줌
+// 화면 단계(wait·intro·result·unavailable)와 닫힘 시각·떠나기 안내·단추 동작 반환
 export function useResultPage() {
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const live = useGameResultData()
     const preview = useGameResultPreview()
-    // "로비로" 버튼은 이름대로 로비로 감 (판 중 나가기는 멀티 화면)
-    const { requestExit } = useInGameExit({ destination: "/lobby" })
-    const { requestReturnToMatching, isReturning } = useGameResultReturnToMatching()
-    // 서버가 결과 화면을 닫으면(game_result_closed, 판 끝 180초) 판·방을 지우고 로비로 (남은 초 표시는 안 함)
-    useGameResultCloseTimer()
+    // "로비로" 실패 안내는 단추 줄 위에 인라인으로 그리므로 알림 창은 끔
+    const { requestExit, exitStatus, exitErrorCode, isExitPending } =
+        useInGameExit({ destination: "/lobby", alertExitFailure: false })
+    const { requestReturnToMatching, isReturning, returnError, clearReturnError } =
+        useGameResultReturnToMatching()
+    const { closesAt } = useGameResultCloseTimer()
+    const [noticeSource, setNoticeSource] = useState(null)
+    const exitNotice = selectResultExitFailureNotice(exitStatus, exitErrorCode)
+    const leaveNotice = { exit: exitNotice, return: returnError }[noticeSource] ?? null
+
     const freezeSnapshotSync = useInGameStore(
         (s) => s.state?.phase === "ENDED" && Boolean(s.state?.winResult),
     )
     const bootstrapStatus = useInGameSessionSnapshotSync({ enabled: !freezeSnapshotSync })
 
-    // 진행 중인 판이 있으면 ?outcome= 미리보기는 안 씀
+    // 진행 중인 판이 있으면 ?outcome= 미리보기는 쓰지 않음
     const hasLiveSession = useInGameStore((s) => Boolean(s.state) && s.state.phase !== "ENDED")
     const previewRequested =
         !hasLiveSession && GAME_RESULT_OUTCOMES.includes(searchParams.get("outcome"))
@@ -45,7 +51,7 @@ export function useResultPage() {
     }, [view, bootstrapStatus])
     const bootstrapPending = bootstrapStatus === "checking" && !holdExpired
 
-    // 연출은 승패 값마다 한 번 (승패가 바뀌면 다시 재생, effect 대신 끝난 승패를 기억)
+    // 연출은 승패 값마다 한 번만 재생함
     const [introDoneFor, setIntroDoneFor] = useState(null)
     const outcome = view?.outcome ?? null
     const completeIntro = () => setIntroDoneFor(outcome)
@@ -55,23 +61,37 @@ export function useResultPage() {
     else if (view && introDoneFor !== outcome) stage = "intro"
     else if (view) stage = "result"
 
-    // 대기방으로 (누르는 중이면 무시)
+    // 대기방으로 이동 요청 (양쪽 중 하나라도 진행 중이면 무시)
     const returnToMatching = () => {
-        if (!isReturning) requestReturnToMatching()
+        if (isReturning || isExitPending) return
+        setNoticeSource("return")
+        requestReturnToMatching()
     }
 
-    // 결과 없을 때 "로비로 돌아가기" 버튼: 데스크톱과 같이 /lobby로
+    // 로비로 나가기 요청 (대기방 이동 중이면 무시, 이전 복귀 오류는 지움)
+    const exitToLobby = () => {
+        if (isReturning) return
+        setNoticeSource("exit")
+        clearReturnError()
+        requestExit()
+    }
+
+    // 결과 없을 때 로비로 이동
     const leaveUnavailable = () => navigate("/lobby", { replace: true })
 
     return {
         stage,
         view,
-        // 판 없이 ?outcome= 로 본 미리보기인지 (한 판 끝 광고 판 번호 고를 때 씀)
         isPreview: !live && previewRequested,
+        closesAt,
+        leaveNotice,
+        noticeSource,
         completeIntro,
         returnToMatching,
         isReturning,
-        exitToLobby: requestExit,
+        isExitPending,
+        leaveLocked: isReturning || isExitPending,
+        exitToLobby,
         leaveUnavailable,
     }
 }

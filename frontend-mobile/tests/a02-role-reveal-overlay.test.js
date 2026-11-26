@@ -1,5 +1,5 @@
-// 모바일 역할 공개 창 시험: 같은 직업 동료 줄(닉네임, 줄 머리 글은 직업과 상관없이 "동료 광대" — 지금 화면 글), 시민·혼자인 직업은 동료 없음, 10초에 저절로 닫힘
-// 목록 A02 모바일 A02-M-001~008 (돌리기: frontend-mobile 폴더에서 node --test tests/a02-role-reveal-overlay.test.js)
+// 모바일 역할 공개 창 시험: 내 스킨 그림·진영·같은 직업 동료 줄("동료 {직업 이름}"), 시민·혼자인 직업은 동료 없음, 10초에 저절로 닫힘
+// 목록 A02 모바일 A02-M-001~009 (돌리기: frontend-mobile 폴더에서 node --test tests/a02-role-reveal-overlay.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render, act } from "./helpers/dom.mjs"
 import { test, afterEach, mock } from "node:test"
@@ -45,15 +45,16 @@ const ALLY_CASES = [
     ["A02-M-003", "경비원", "GUARD", 8],
     ["A02-M-004", "마녀사냥꾼", "WITCH_HUNTER", 10],
 ]
-// 동료 줄 머리 글은 상대 화면(RoleRevealOverlay)에 "동료 광대"로 박혀 있음 → 의사·경비원·마녀사냥꾼도 같은 글 (지금 화면대로 봄)
+// 줄 머리 글은 내 직업 이름 (결정 2026-11-16: 같은 직업끼리 보임). 광대만 "동료 광대"
 for (const [id, label, role, n] of ALLY_CASES) {
-    test(`${id} 모바일 역할 창 동료 줄: ${label} 2명(${n}명 판) → "동료 광대" 줄 + 상대 닉네임 "나"`, () => {
+    test(`${id} 모바일 역할 창 동료 줄: ${label} 2명(${n}명 판) → "동료 ${label}" 줄 + 상대 닉네임 "나"`, () => {
         const box = drawReveal(role, ["u1"], n)
         assert.ok(box, "역할 창이 없음")
         assert.equal(box.getAttribute("data-ingame-role-reveal"), role)
         const text = textOf(box)
         assert.ok(text.includes(label), `직업 이름 "${label}"이 없음: ${text}`)
-        assert.ok(text.includes("동료 광대"), `"동료 광대" 줄이 없음: ${text}`)
+        assert.ok(text.includes(`동료 ${label}`), `"동료 ${label}" 줄이 없음: ${text}`)
+        if (label !== "광대") assert.ok(!text.includes("동료 광대"), `다른 직업인데 "동료 광대"가 보임: ${text}`)
         const chips = [...box.querySelectorAll("li")].map((li) => textOf(li))
         assert.deepEqual(chips, ["나"])
     })
@@ -87,4 +88,17 @@ test("A02-M-008 모바일 10초 저절로 닫힘: 10,000ms → 창 없음", asyn
     mock.timers.reset()
     // 닫힘 움직임은 진짜 시계로 끝남 → 사라질 때까지 기다림 (끝내 남으면 실패)
     await waitUntil(() => document.querySelector("[data-ingame-role-reveal]") === null, { label: "10초 뒤 창 닫힘" })
+})
+
+test("A02-M-009 모바일 역할 창 내 서 있는 그림·진영 표시: 광대·의사 → standing 그림과 진영 이름 표시", () => {
+    const jokerBox = drawReveal("JOKER", ["u1"], 6)
+    const jokerImg = jokerBox.querySelector("[data-ingame-role-reveal-standing]")
+    assert.ok(jokerImg, "광대 역할 창에 서 있는 그림이 없음")
+    assert.ok((jokerImg.getAttribute("src") ?? "").length > 0, "서 있는 그림 경로가 비어 있음")
+    assert.ok(textOf(jokerBox).includes("광대 진영"), `진영 글이 없음: ${textOf(jokerBox)}`)
+    view.unmount()
+    view = null
+    const doctorBox = drawReveal("DOCTOR", [], 6)
+    assert.ok(doctorBox.querySelector("[data-ingame-role-reveal-standing]"), "의사 역할 창에 서 있는 그림이 없음")
+    assert.ok(textOf(doctorBox).includes("시민 진영"), `시민 진영 글이 없음: ${textOf(doctorBox)}`)
 })

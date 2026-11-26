@@ -46,7 +46,7 @@ export default function TermsReconsent() {
             ))}
           </ul>
           {error ? (
-            <p role="alert" className={`${DIALOG_ERROR_CLASS} text-center text-[#7a2010]`}>
+            <p role="alert" className={`${DIALOG_ERROR_CLASS} text-center`}>
               {error}
             </p>
           ) : null}

@@ -27,16 +27,30 @@ function drawActions(props) {
 }
 const both = (root) => [buttonNamed("대기방으로", root), buttonNamed("로비로", root)]
 
-test("A08-M-001 대기방으로 누르는 중: isReturning → '대기방으로' aria-busy, 글자는 그대로, 두 단추는 안 꺼짐 (누름은 훅이 무시)", () => {
+test("A08-M-001 대기방으로 누르는 중·실패 안내: isReturning → '이동 중..'·aria-busy·두 단추 잠금, leaveNotice → 인라인 배너 표시", () => {
     const bottom = drawActions({ isReturning: true })
-    const [toRoom, toLobby] = both(bottom)
+    const toRoom = buttonNamed("이동 중..", bottom)
+    const toLobby = buttonNamed("로비로", bottom)
     assert.ok(toRoom && toLobby, `단추: ${buttonNames(bottom).join(" | ")}`)
     assert.equal(toRoom.getAttribute("aria-busy"), "true")
-    assert.equal(textOf(toRoom), "대기방으로")
     assert.equal(toLobby.getAttribute("aria-busy"), null)
-    assert.equal(toRoom.disabled, false)
-    assert.equal(toLobby.disabled, false)
+    assert.equal(toRoom.disabled, true)
+    assert.equal(toLobby.disabled, true)
     assert.ok(bottom.querySelector('[data-testid="result-leave-notice"]') === null, "실패 안내 칸이 있음")
+
+    view.rerender(React.createElement(ShellBottomSlotContext.Provider, { value: bottom },
+        React.createElement(ResultActions, {
+            hasResult: true, isReturning: false, isExitPending: false,
+            leaveNotice: "대기방 정원이 가득 차 들어갈 수 없습니다.", noticeSource: "return",
+            onReturnToMatching: () => {}, onExitToLobby: () => {}, onLeaveUnavailable: () => {},
+        })))
+    const notice = bottom.querySelector('[data-testid="result-leave-notice"]')
+    assert.ok(notice, "실패 안내 배너가 없음")
+    assert.equal(notice.getAttribute("data-notice-source"), "return")
+    assert.equal(textOf(notice), "대기방 정원이 가득 차 들어갈 수 없습니다.")
+    const [againRoom, againLobby] = both(bottom)
+    assert.equal(againRoom.disabled, false)
+    assert.equal(againLobby.disabled, false)
 })
 
 test("A08-M-004 결과 없음이면 단추 하나: '로비로 돌아가기' 하나, '대기방으로' 없음", () => {

@@ -1,4 +1,4 @@
-// 모바일 행동 줄 시험: "낮 집계" 단추 없음, 5초 동안 기권 켜짐, 죽은 사람에겐 기권·준비 단추가 꺼진 채(눌리는 표 없음), 표를 낸 뒤엔 기권 꺼짐
+// 모바일 행동 줄 시험: "낮 집계" 단추 없음, 5초 동안 기권 켜짐, 죽은 사람에겐 기권·준비 단추 꺼짐, 사람 찍은 뒤에도 기권 전환 켜짐
 // 목록 A03 모바일 A03-M-007~010·014 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-row-actions.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
@@ -62,11 +62,11 @@ test("A03-M-010 토론 준비 단추: 산 사람 토론 → '투표 시작 준�
     assert.ok(!deadReady || deadReady.enabled === false, `죽은 사람 행동 줄에 눌리는 준비 단추가 있음: ${JSON.stringify(rowButtons())}`)
 })
 
-// 지금 화면 기권 단추: 표를 낸 뒤엔(사람을 찍었든 기권했든) 꺼짐 (useActionRow buildCornerActions의 dayVoteHasSubmitted 조건)
-test("A03-M-014 낸 표에 따른 기권 단추: 2번을 찍음 → 꺼짐, 이미 기권 → 꺼짐, 아직 안 냄 → 켜짐", async () => {
+// 사람을 찍은 뒤에도 기권으로 바로 바꿀 수 있게 켜 두고, 이미 기권했을 때만 끔 (결정.md:429)
+test("A03-M-014 낸 표에 따른 기권 단추: 2번을 찍음 → 켜짐(기권 전환 가능), 이미 기권 → 꺼짐, 아직 안 냄 → 켜짐", async () => {
     seat({ n: 6, phase: "DAY", dayPhase: "DAY_VOTE", self: { hasSubmittedDayVote: true, dayVoteTargetUuid: uuidOf(2) } })
     view = await renderPage(fakeSocket())
-    assert.equal(rowButtons().find((b) => b.name === "기권")?.enabled, false, "사람을 찍은 뒤 기권이 켜짐")
+    assert.equal(rowButtons().find((b) => b.name === "기권")?.enabled, true, "사람을 찍은 뒤 기권 전환이 막힘")
     resetGame(view)
     view = null
     seat({ n: 6, phase: "DAY", dayPhase: "DAY_VOTE", self: { hasSubmittedDayVote: true, dayVoteTargetUuid: null } })

@@ -7,7 +7,7 @@ import BackRow from "../parts/BackRow.jsx"
 import BlockedRow from "./BlockedRow.jsx"
 
 // 데스크톱 FriendBlockTab과 같은 순서·문구, 목록은 탭을 열 때마다 시트가 새로 받음
-export default function BlockTab({ onBack, blockedUsers, status, error, processingIds, onUnblock, onRefresh }) {
+export default function BlockTab({ onBack, blockedUsers, status, error, processingIds, rowErrors = {}, onUnblock, onRefresh }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className={`${ACCEPT_TOOLBAR_CLASS} !mt-0 !pr-0`}>
@@ -18,13 +18,19 @@ export default function BlockTab({ onBack, blockedUsers, status, error, processi
           <p role="status" data-block-list-error="true" className={ACCEPT_EMPTY_CLASS}>{error}</p>
         ) : null}
         <ul className="mt-2" aria-label="차단한 사용자">
-          {blockedUsers.length === 0 ? (
+          {blockedUsers.length === 0 && error !== null ? null : blockedUsers.length === 0 ? (
             <li className={ACCEPT_EMPTY_CLASS}>
               {status === "loading" ? "차단 목록을 불러오는 중입니다." : "차단한 사용자가 없습니다."}
             </li>
           ) : (
             blockedUsers.map((user) => (
-              <BlockedRow key={user.id} user={user} processing={processingIds.has(user.id)} onUnblock={onUnblock} />
+              <BlockedRow
+                key={user.id}
+                user={user}
+                processing={processingIds.has(user.id)}
+                error={rowErrors[user.id] ?? null}
+                onUnblock={onUnblock}
+              />
             ))
           )}
         </ul>

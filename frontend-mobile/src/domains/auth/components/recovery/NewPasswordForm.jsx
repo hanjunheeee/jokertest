@@ -21,7 +21,7 @@ export default function NewPasswordForm({ status, password, setPassword, passwor
           name="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="8~64자 비밀번호"
+          placeholder="8~64자 비밀번호 (영문·숫자 포함)"
           autoComplete="new-password"
           leadingIcon={<LockIcon />}
           passwordToggle

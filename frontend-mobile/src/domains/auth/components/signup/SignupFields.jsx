@@ -7,7 +7,7 @@ import EmailCheck from "@m/domains/auth/components/signup/EmailCheck.jsx"
 
 // 중복확인은 이 칸에서만 쓰여서 훅을 여기서 부름 (데스크톱과 같음), name이 formData 키와 같아야 함
 export default function SignupFields({ formData, onChange }) {
-  const { status: emailCheckStatus, check: handleCheckEmail } = useEmailCheck(formData.email)
+  const { status: emailCheckStatus, errorMessage: emailCheckError, check: handleCheckEmail } = useEmailCheck(formData.email)
 
   return (
     <>
@@ -20,14 +20,14 @@ export default function SignupFields({ formData, onChange }) {
         placeholder="이메일을 입력하세요"
         autoComplete="email"
       />
-      <EmailCheck status={emailCheckStatus} onCheck={handleCheckEmail} />
+      <EmailCheck status={emailCheckStatus} errorMessage={emailCheckError} onCheck={handleCheckEmail} />
       <InputSlot
         name="password"
         value={formData.password}
         onChange={onChange}
         leadingIcon={<LockIcon />}
         passwordToggle
-        placeholder="비밀번호를 입력하세요"
+        placeholder="비밀번호를 입력하세요 (8~64자, 영문·숫자 포함)"
         autoComplete="new-password"
       />
       <InputSlot

@@ -1,6 +1,5 @@
-// 모바일 판 중 채팅 시험: 밤 입력 줄 열림(의사·죽은 시민), 채팅방 띠(죽은 사람끼리, "밤 · 같은 직업끼리" 띠는 지금 없음), 줄 모양, 시각 순 목록, 재판 중 막기만
-// 목록 A06 모바일 A06-M-002~010 (돌리기: frontend-mobile 폴더에서 node --test tests/a06-talk-chat.test.js)
-// 밤 산 시민 입력칸 닫힘 규칙은 지금 화면에 없음 → 그 시험(A06-M-001)은 뺌
+// 모바일 판 중 채팅 시험: 밤 산 귀족 입력 잠금, 역할 확인 10초 입력 잠금, 의사·죽은 시민 열림, 죽은 사람끼리 띠, 줄 모양, 시각 순, 재판 중 막기
+// 목록 A06 모바일 A06-M-001~011 (돌리기: frontend-mobile 폴더에서 node --test tests/a06-talk-chat.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, render } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -27,6 +26,24 @@ async function nightPage({ role, dead = false }) {
     view = await renderPage(socket)
     return socket
 }
+
+test("A06-M-001 밤 산 귀족(시민) 입력 줄 잠금: 글칸 대신 '밤에는 귀족이 채팅을 쓸 수 없습니다' 안내 표시", async () => {
+    await nightPage({ role: "CITIZEN" })
+    assert.equal(chatInput(), null, "밤 산 귀족에게 입력칸이 열림")
+    const closed = shellBottom()?.querySelector("[data-night-chat-closed]")
+    assert.ok(closed, "밤 귀족 잠금 안내 줄이 없음")
+    assert.equal(closed.getAttribute("role"), "status")
+    assert.equal(textOf(closed), "밤에는 귀족이 채팅을 쓸 수 없습니다")
+})
+
+test("A06-M-011 역할 확인 단계 채팅 입력 잠금: 글칸과 보내기 단추가 disabled 상태", async () => {
+    seat({ n: 6, role: "CITIZEN", phase: "ROLE_REVEAL", dayIndex: 0 })
+    view = await renderPage(fakeSocket())
+    const input = chatInput()
+    assert.ok(input, "역할 확인 단계에 입력칸이 없음")
+    assert.equal(input.disabled, true, "역할 확인 중인데 입력칸이 잠기지 않음")
+    assert.ok(input.placeholder.includes("역할 확인"), `잠금 안내 placeholder가 아님: ${input.placeholder}`)
+})
 
 test("A06-M-002 밤 산 의사 입력 줄 열림: 글칸 있음", async () => {
     await nightPage({ role: "DOCTOR" })

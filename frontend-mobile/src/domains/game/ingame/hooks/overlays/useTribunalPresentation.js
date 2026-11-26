@@ -1,4 +1,4 @@
-// 재판(최후의 변론) 화면 값: 피고·유무죄·안내·판정 (데스크톱 TribunalGate와 같은 판단)
+// 재판(최후의 변론) 화면 값: 피고·유무죄·안내·거절 사유 (데스크톱 TribunalGate와 같은 판단)
 // TribunalGate(가로), TalkLayout 시트(세로 카톡형)가 씀
 import { useContext, useMemo } from "react"
 import { InGameActionContext } from "@/domains/game/ingame/context/InGameActionContext.jsx"
@@ -11,6 +11,7 @@ import { INGAME_PLAYER_STATUS } from "@/domains/game/shared/constants/ingamePlay
 const NO_PLAYERS = []
 const UNKNOWN_DEFENDANT_NICKNAME = "알 수 없는 플레이어"
 
+// 피고 정보·유무죄 단추·안내 문구·표 거절 사유 묶음 반환
 export function useTribunalPresentation() {
     const ctx = useContext(InGameActionContext)
     const players = useContext(InGamePlayerSessionContext)?.players ?? NO_PLAYERS
@@ -50,16 +51,21 @@ export function useTribunalPresentation() {
             hasSubmitted,
             status: ctx?.tribunalVoteStatus ?? "idle",
         })
+    const rawVoteError = ctx?.tribunalVoteError
+    const voteErrorText =
+        ctx?.tribunalVoteStatus !== "submitting" && typeof rawVoteError === "string" && rawVoteError.trim().length > 0
+            ? rawVoteError
+            : null
 
     return {
         active,
         defendant,
         showVoteButtons,
         noticeText,
+        voteErrorText,
         voteButtonsEnabled: Boolean(ctx?.tribunalVoteControlsEnabled),
         voteSubmitting: ctx?.tribunalVoteStatus === "submitting",
         onVoteGuilty: () => ctx?.submitTribunalVote?.("GUILTY"),
         onVoteNotGuilty: () => ctx?.submitTribunalVote?.("NOT_GUILTY"),
-        // 재판 판정 단추 값(devResolve*)은 안 줌: 서버에서 판정 요청을 없앰 (표가 다 차면 서버가 5초 뒤 판정)
     }
 }

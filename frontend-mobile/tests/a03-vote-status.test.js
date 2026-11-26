@@ -1,5 +1,5 @@
-// 모바일 투표 현황 창 시험: 낮 판정 결과 글 5가지([버그 9]·연결 끊김 포함, 공용 표 글), 다음 날 낮이면 "집계 전", 이름표 줄, 닫기·다시 열기
-// 목록 A03 모바일 A03-M-001~004·012·013·601·602 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-vote-status.test.js)
+// 모바일 투표 현황 창 시험: 판정 전 진행 수("N / M명 투표함"), 낮 판정 결과 글 5가지, 이름표("투표 가능"), 미발견 피고 안내 이름
+// 목록 A03 모바일 A03-M-001~004·012·013·601~603 (돌리기: frontend-mobile 폴더에서 node --test tests/a03-vote-status.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
@@ -51,6 +51,7 @@ test("A03-M-012 새 날 현황: 1일 결과(전원 기권) 뒤 2일 낮 → '집
     await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAINED", alive: 6, abstain: 6 }))
     assert.equal(cell("outcome"), "전원 기권", "1일 결과가 먼저 안 보임")
     await fire(socket, "night_result_applied", nextDay({ n: 6, dayIndex: 2, deadline: Date.now() + 60_000 }))
+    await confirmEntrances()
     if (!statusDialog()) {
         click(buttonNamed("투표 현황 열기"))
         await flush()
@@ -59,8 +60,8 @@ test("A03-M-012 새 날 현황: 1일 결과(전원 기권) 뒤 2일 낮 → '집
     assert.equal(cell("outcome"), null, "2일 낮인데 1일 결과가 남음")
 })
 
-// 지금 화면 첫 줄 이름표는 "득표" ("투표 가능" 이름표는 상대 화면에 없음), 값은 서버 publicVoteCount 그대로
-test("A03-M-013 7명 판 1표 6기권 판정 뒤 → 이름표 '득표'·'기권'·'결과'·'재판 대상', 값 7·6·'기권이 많아 재판 없음'·'없음'", async () => {
+// 첫 줄 이름표는 의도 문서(결정.md:320)와 PC 화면대로 "투표 가능", 값은 서버 publicVoteCount 그대로
+test("A03-M-013 7명 판 1표 6기권 판정 뒤 → 이름표 '투표 가능'·'기권'·'결과'·'재판 대상', 값 7·6·'기권이 많아 재판 없음'·'없음'", async () => {
     const socket = await openStatus(7)
     await fire(socket, "day_vote_resolved", dayResolved({ outcome: "ABSTAIN_MAJORITY", alive: 7, abstain: 6 }))
     const terms = [...(statusDialog()?.querySelectorAll("dt") ?? [])].map((dt) => dt.textContent.trim())
@@ -72,7 +73,7 @@ test("A03-M-013 7명 판 1표 6기권 판정 뒤 → 이름표 '득표'·'기권
             outcome: cell("outcome"),
             target: cell("tribunal-target"),
         },
-        { terms: ["득표", "기권", "결과", "재판 대상"], voteValue: "7", abstainValue: "6", outcome: "기권이 많아 재판 없음", target: "없음" },
+        { terms: ["투표 가능", "기권", "결과", "재판 대상"], voteValue: "7", abstainValue: "6", outcome: "기권이 많아 재판 없음", target: "없음" },
     )
 })
 
@@ -96,4 +97,26 @@ test("A03-M-602 투표 현황 창 닫기 (5명 판): 닫기 단추 → 창 없�
     await flush()
     assert.ok(statusDialog(), "다시 안 열림")
     assert.equal(cell("unresolved"), "집계 전")
+})
+
+test("A03-M-603 집계 전 투표 진행 수('3 / 6명 투표함') 표시 및 명단 밖 재판 대상 생 UUID 미노출", async () => {
+    const socket = fakeSocket()
+    seat({
+        n: 6,
+        phase: "DAY",
+        dayPhase: "DAY_VOTE",
+        state: { progress: { kind: "DAY_VOTE", doneCount: 3, requiredCount: 6 } },
+    })
+    view = await renderPage(socket)
+    click(buttonNamed("투표 현황 열기"))
+    await flush()
+    assert.equal(cell("unresolved"), "집계 전")
+    assert.equal(cell("progress"), "3 / 6명 투표함")
+    await fire(socket, "day_vote_resolved", dayResolved({ outcome: "TRIBUNAL", alive: 6, abstain: 0, target: "uuid-missing-999", tribunalDeadline: Date.now() + 60_000 }))
+    await fire(socket, "tribunal_vote_resolved", tribunalResolved({ defendant: "uuid-missing-999", outcome: "NOT_GUILTY" }))
+    await confirmEntrances()
+    click(buttonNamed("투표 현황 열기"))
+    await flush()
+    assert.equal(cell("tribunal-target"), "알 수 없는 플레이어")
+    assert.ok(!statusDialog().textContent.includes("uuid-missing-999"), "생 UUID가 보임")
 })

@@ -1,16 +1,17 @@
-// 카드 판 이모티콘: 판 범위 키·인게임 팔레트 불러오기·팔레트 열림 상태
+// 카드 판 이모티콘: 판 범위 키·인게임 팔레트 불러오기·팔레트 열림 상태 (이모티콘은 낮에만)
 // Board가 씀 (데스크톱 InGamePlayerBoard 안 effect 두 개를 그대로 옮김)
 import { useCallback, useEffect, useState } from "react"
 import { useAuthStore } from "@/domains/auth/store/auth.store.js"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
 import {
     inGameEmojiScopeKey,
+    isInGameEmojiPhase,
     readEmojiScope,
     selectInGameEmojiScope,
 } from "@/domains/game/ingame/utils/selectInGameEmojiScope.js"
 import { useEmojiPaletteStore } from "@/domains/user/store/emojiPalette.store.js"
 
-// 팔레트 칸·열기·닫기 (내 판이 아니면 canOpen false)
+// 팔레트 칸·열기·닫기 (내 판이 아니거나 낮이 아니면 canOpen false)
 export function useBoardEmoji() {
     const slots = useEmojiPaletteStore((state) => state.gameSlots)
     const gameId = useInGameStore((state) => state.gameId)
@@ -30,14 +31,16 @@ export function useBoardEmoji() {
         useEmojiPaletteStore.getState().loadForGame(readEmojiScope())
     }, [scopeKey])
 
-    const canOpen = scopeKey !== null
+    // 낮(토론·투표)에만 열림: 역할 확인·재판·밤엔 못 열고 열려 있던 팔레트도 닫음
+    const canOpen = scopeKey !== null && isInGameEmojiPhase(gameState)
     const open = canOpen && openScopeKey === scopeKey
+    if (!canOpen && openScopeKey !== null) setOpenScopeKey(null)
 
-    // 내 판일 때만 엶
+    // 내 판의 낮일 때만 엶
     const openPalette = useCallback(() => {
-        if (scopeKey === null) return
+        if (!canOpen) return
         setOpenScopeKey(scopeKey)
-    }, [scopeKey])
+    }, [canOpen, scopeKey])
 
     const closePalette = useCallback(() => setOpenScopeKey(null), [])
 

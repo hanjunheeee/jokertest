@@ -1,10 +1,10 @@
-// 모바일 판 화면 초대 안내 시험: 판 화면·로비 어디서 초대를 받아도 판 화면 안내 줄은 없고 초대는 받은 초대 목록(스토어)에만 (합친 화면: 판 화면 초대 안내 없앰)
-// 목록 A13-M-509·511·512, 합친 화면(2026-11-24 되돌림)에 맞춤 (docs/게임_의도_2026-11-15/시험목록/A13-친구-알림-초대.md), 결정 2026-11-16 낮 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goU-ingame-invite-notice.test.js)
+// 모바일 판 화면 초대 안내 시험: 죽은 사람이 판 화면에서 새 초대를 받으면 "로비로 가면 수락" 안내 줄이 뜨고 닫기로 닫히며, 기존 초대·로비에서는 안 뜸
+// 목록 A13-M-509·511·512, 결정 2026-11-16 낮 여섯째 4번 (돌리기: frontend-mobile 폴더에서 node --test tests/a13-goU-ingame-invite-notice.test.js)
 import "./helpers/mobileLoader.mjs"
 import { React, act } from "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { flush } from "./a00-kit.mjs"
+import { buttonNamed, click, flush } from "./a00-kit.mjs"
 import { fakeSocket, renderPage, renderRoute, resetGame, seat, uuidOf } from "./a00-game.mjs"
 
 const { useGameInviteStore } = await import("@/domains/lobby/store/gameInvite.store.js")
@@ -50,12 +50,15 @@ async function deadOnInGame({ before = [] } = {}) {
 
 const noticeBoxes = () => [...document.querySelectorAll("[data-ingame-invite-notice]")]
 
-test("A13-M-509 모바일 판 화면에서 초대 사건 → 판 화면 안내 줄 없음, 초대는 받은 초대 목록(스토어)에만", async () => {
+test("A13-M-509 모바일 판 화면에서 죽은 사람이 새 초대 수신 → '로비로 가면 수락' 안내 줄 표시, 닫기 누르면 사라짐", async () => {
     const me = await deadOnInGame()
     await inviteArrives(me, inviteRow(me))
-    assert.equal(noticeBoxes().length, 0)
-    assert.equal(document.body.textContent.includes("로비로 가면 수락"), false)
+    assert.equal(noticeBoxes().length, 1)
+    assert.equal(document.body.textContent.includes("로비로 가면 수락"), true)
     assert.deepEqual(useGameInviteStore.getState().invites.map((i) => i.inviteId), ["inv-1"])
+    click(buttonNamed("초대 안내 닫기"))
+    await flush()
+    assert.equal(noticeBoxes().length, 0)
 })
 
 test("A13-M-511 모바일 판 화면 오기 전부터 있던 초대 → 안내 없음", async () => {

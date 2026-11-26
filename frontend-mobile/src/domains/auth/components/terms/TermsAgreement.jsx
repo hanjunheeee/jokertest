@@ -56,14 +56,14 @@ export default function TermsAgreement({ signupTerms }) {
       {terms.map((item) => (
         <div key={item.id} className={ROW_CLASS}>
           <CheckRow checked={agreedIds.includes(item.id)} onChange={() => toggle(item.id)}>
-            {item.required ? <span className="text-[#9C3D32]">(필수) </span> : "(선택) "}{termsLabelOf(item)} 동의
+            {item.required ? <span className="text-[#52100a]">(필수) </span> : "(선택) "}{termsLabelOf(item)} 동의
           </CheckRow>
           <button type="button" className={TEXT_BTN_CLASS} onClick={() => openTerms(item.id)}>보기</button>
         </div>
       ))}
       <div className={ROW_CLASS}>
         <CheckRow checked={ageConfirmed} onChange={setAgeConfirmed}>
-          <span className="text-[#9C3D32]">(필수) </span>만 14세 이상입니다
+          <span className="text-[#52100a]">(필수) </span>만 14세 이상입니다
         </CheckRow>
       </div>
       <TermsView terms={viewing} onClose={closeTerms} />

@@ -37,7 +37,7 @@ function reopenedRoom() {
     }
 }
 
-test("A08-M-006 방장 자리 비움: reservedHostUuid 있음·2명 → 자리 실루엣 3칸(맨 앞 빈 방장 자리, 글·읽기 이름 없음) + 판 아래 '방장 자리를 비워 두었습니다…' 글", async () => {
+test("A08-M-006 방장 자리 비움: reservedHostUuid 있음·2명 → 자리 3칸(맨 앞 '방장 자리' 이름표·비워 둔 방장 자리 + 2명 '대기중') + 기다림 글", async () => {
     const room = reopenedRoom()
     const socket = fakeSocket({ acks: { get_current_room: { ok: true, room } } })
     useAuthStore.setState({ isLoggedIn: true, user: { uuid: "pB", nickname: "나래" } })
@@ -46,8 +46,12 @@ test("A08-M-006 방장 자리 비움: reservedHostUuid 있음·2명 → 자리 �
     await flush(10)
     const seats = [...document.querySelectorAll("div.items-end.justify-center > div.flex-col.items-center")]
     assert.equal(seats.length, 3, "방장 자리 칸을 더한 자리 수가 아님")
-    assert.equal(textOf(seats[0]), "")
-    assert.ok(document.querySelector("[data-reserved-host]") === null, "방장 자리 표시 칸이 있음")
+    const reserved = document.querySelector('[data-testid="matching-reserved-host-slot"]')
+    assert.equal(reserved, seats[0], "맨 앞 자리가 예약석이 아님")
+    assert.ok(reserved.hasAttribute("data-reserved-host"))
+    assert.equal(reserved.querySelector("img")?.getAttribute("alt"), "비워 둔 방장 자리")
+    assert.equal(textOf(seats[0]), "방장 자리")
+    assert.deepEqual([textOf(seats[1]), textOf(seats[2])], ["대기중", "대기중"])
     assert.ok(textOf(document.body).includes("방장 자리를 비워 두었습니다. 지난 판 방장이 오지 않으면 먼저 들어온 사람이 방장이 됩니다."), "기다림 글이 없음")
 })
 

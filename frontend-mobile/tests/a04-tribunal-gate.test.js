@@ -1,15 +1,14 @@
-// 모바일 재판 창 시험: 피고 카드·유죄·무죄, [버그 8] 둘째 날 단추, 피고·죽은 사람·완료 안내, "재판 판정" 단추 없음, 명단에 피고 없을 때
-// 목록 A04 모바일 A04-M-001~005·008·011 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-tribunal-gate.test.js)
-// 폰 세로 재판: 피고 등장 연출(이름·카드, 단추 없음)이 잠시 뒤 저절로 닫히고, 채팅방 "최후의 변론" 단추로 연 시트에 피고 카드·유죄·무죄·안내 글 (2026-11-24 새 배치)
-// 표 거절·시간 초과 글 자리는 지금 시트에 없음 → 그 시험(A04-M-006·007)은 뺌
+// 모바일 재판 창 시험: 피고 카드·유죄·무죄, [버그 8] 둘째 날 단추, 피고·죽은 사람·완료 안내, 표 거절 사유 표시, 명단에 피고 없을 때
+// 목록 A04 모바일 A04-M-001~008·011 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-tribunal-gate.test.js)
+// 폰 세로 재판: 피고 등장 연출 뒤 채팅방 "최후의 변론" 시트에 피고 카드·유죄·무죄·안내·표 거절 알림, 가로 배치는 전면 재판 창에 표시
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { buttonNamed, buttonNames, click, flush, pageText, textOf } from "./a00-kit.mjs"
+import { buttonNamed, buttonNames, click, flush, pageText, textOf, waitUntil } from "./a00-kit.mjs"
 import {
     NAMES, GAME, confirmEntrances, dayPhaseChanged, fakeSocket, fire, nextDay, openTribunalSheet, renderPage, resetGame, rowButtons, seat, selfProgress,
-    tribunalBox, tribunalEntry, tribunalResolved, tribunalSheet, useInGameStore,
+    tribunalBox, tribunalEntry, tribunalResolved, tribunalSheet, useInGameStore, wideLayout,
 } from "./a00-game.mjs"
 
 let view = null
@@ -90,6 +89,37 @@ test("A04-M-005 완료 글 (6명 판): 냄 → '투표가 완료되었습니다.
     await fire(socket, "session_self_progress", selfProgress({ phase: "TRIBUNAL", dayIndex: 1, self: { hasSubmittedTribunalVote: true }, required: 5 }))
     assert.ok(sheetText().includes("투표가 완료되었습니다."), `완료 글이 없음: ${sheetText()}`)
     assert.ok(!inSheet("유죄") && !inSheet("무죄"), "낸 뒤에도 단추가 남음")
+})
+
+test("A04-M-006 세로 최후의 변론 시트 표 거절 사유 표시 (7명 판): 거절 응답 → role='alert' 거절 문구 표시", async () => {
+    await tribunalPage({
+        n: 7,
+        defendant: 3,
+        acks: { cast_tribunal_vote: { ok: false, code: "TRIBUNAL_ALREADY_RESOLVED", message: "재판이 이미 판정되어 투표할 수 없습니다." } },
+    })
+    await openTribunalSheet()
+    click(inSheet("유죄"))
+    await flush()
+    await waitUntil(() => document.querySelector("[data-ingame-tribunal-vote-error]"), { label: "세로 시트 표 거절 사유" })
+    const err = document.querySelector("[data-ingame-tribunal-vote-error]")
+    assert.equal(err.getAttribute("role"), "alert")
+    assert.ok(textOf(err).length > 0, "거절 사유 글이 비어 있음")
+})
+
+test("A04-M-007 가로 전면 재판 창 표 거절 사유 표시 (7명 판): 거절 응답 → role='alert' 거절 문구 표시", async () => {
+    wideLayout(true)
+    const socket = fakeSocket({
+        acks: { cast_tribunal_vote: { ok: false, code: "TRIBUNAL_ALREADY_RESOLVED", message: "재판이 이미 판정되어 투표할 수 없습니다." } },
+    })
+    seat({ n: 7, phase: "DAY", dayPhase: "DAY_VOTE" })
+    view = await renderPage(socket)
+    await fire(socket, "day_vote_resolved", tribunalEntry({ n: 7, defendant: 3 }))
+    click(buttonNamed("유죄", tribunalBox()))
+    await flush()
+    await waitUntil(() => document.querySelector("[data-ingame-tribunal-vote-error]"), { label: "가로 재판 창 표 거절 사유" })
+    const err = document.querySelector("[data-ingame-tribunal-vote-error]")
+    assert.equal(err.getAttribute("role"), "alert")
+    assert.ok(textOf(err).length > 0, "거절 사유 글이 비어 있음")
 })
 
 test("A04-M-008 '재판 판정' 단추 없음 (6명 판): 재판 중 행동 줄·피고 등장 연출·최후의 변론 시트 → '재판 판정' 없음", async () => {

@@ -40,6 +40,8 @@ test("A11-M-505 비번 칸 모양: 재설정 새 비번 칸 16px 이상 글자 c
     const current = field("currentPassword")
     assert.ok(current, "계정 관리 현재 비번 칸이 없음")
     assert.equal(current.getAttribute("autocomplete"), "current-password")
+    assert.ok(current.classList.contains("app-input-text"), `현재 비번 칸에 app-input-text가 없음: ${current.className}`)
+    assert.equal(current.classList.contains("app-text-scaled"), false, `app-text-scaled가 16px 고정을 덮어씀: ${current.className}`)
 })
 
 test("A11-M-506 소셜 전용 계정 칸: hasLocalPassword false → 탈퇴는 이메일 칸, 이메일 바꾸기에 비번 칸 없음", async () => {

@@ -47,7 +47,12 @@ export default function GameMatchingPage() {
       <MatchingBackdrop visible={page.uiVisible} />
 
       <div className="relative flex flex-1 flex-col">
-        <MatchingTopBar visible={page.uiVisible} partyCount={page.partyCount} />
+        <MatchingTopBar
+          visible={page.uiVisible}
+          roomTitle={page.roomTitle}
+          partyCount={page.partyCount}
+          partyMax={page.partyMax}
+        />
 
         <div className="flex flex-1 flex-col items-center justify-center px-3 pb-3 land:px-6 land:pb-1 md:px-8">
           <MatchingBoard
@@ -62,6 +67,7 @@ export default function GameMatchingPage() {
                 canEditSettings={page.canEditSettings}
                 isKickHost={page.isKickHost}
                 canKick={page.canKick}
+                kickLockedReason={page.kickLockedReason}
                 onOpenSettings={page.openSettings}
                 onOpenKickModal={page.openKickModal}
               />
@@ -85,6 +91,7 @@ export default function GameMatchingPage() {
         friends={page.inviteFriends}
         invitingIds={page.invitingIds}
         onInviteFriend={page.inviteFriend}
+        errorMessage={page.friendInviteError}
       />
       <KickSheet page={page} />
       <StartBlockedSheet message={page.startBlockedMessage} onClose={page.dismissStartBlockedMessage} />

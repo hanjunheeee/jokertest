@@ -24,7 +24,7 @@ const FRAME_WIDTH_CLASS =
 export default function MatchingBoard({ visible, slots, waitingMessage = "", onRoomCodeOpen, leading = null }) {
   return (
     <div className={`mx-auto flex flex-col gap-1.5 ${FRAME_WIDTH_CLASS}`}>
-      <div className="flex min-h-11 items-center justify-between gap-1.5">
+      <div className="flex min-h-11 items-start justify-between gap-1.5">
         {leading}
         {/* 초대코드 공유 (누르면 방코드 창, 데스크톱 틀 오른쪽 위 버튼) */}
         <motion.div

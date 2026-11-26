@@ -69,7 +69,7 @@ test("A08-M-602 '대기방으로' → return_to_room {gameId} 1번, 답에 방 �
     assert.equal(useInGameStore.getState().gameId, null, "판 값이 남음")
 })
 
-test("A08-M-603 '대기방으로' 거절(SESSION_ENDED) + 방도 없음 → 결과 화면 그대로, 실패 글 칸 없음, 단추 aria-busy 풀림", async () => {
+test("A08-M-603 '대기방으로' 거절(SESSION_ENDED) + 방도 없음 → 결과 화면 그대로, result-leave-notice(return) 표시, 단추 풀림", async () => {
     const socket = await openResult({ return_to_room: { ok: false, code: "SESSION_ENDED" }, get_current_room: { ok: true, room: null } })
     await skipIntro()
     await act(async () => { buttonNamed("대기방으로").click() })
@@ -77,11 +77,14 @@ test("A08-M-603 '대기방으로' 거절(SESSION_ENDED) + 방도 없음 → 결�
     assert.equal(socket.sentOf("return_to_room").length, 1)
     assert.equal(elsewhere(), null, `다른 화면으로 감: ${elsewhere()}`)
     assert.equal(rows().length, 5, "결과판이 사라짐")
-    assert.ok(document.querySelector('[data-testid="result-leave-notice"]') === null, "실패 안내 칸이 있음")
+    const notice = document.querySelector('[data-testid="result-leave-notice"]')
+    assert.ok(notice, "실패 안내 칸이 없음")
+    assert.equal(notice.getAttribute("data-notice-source"), "return")
+    assert.equal(textOf(notice), "연결이 끊겨 이 판에서 빠졌습니다. '로비로'를 눌러 주세요.")
     assert.equal(buttonNamed("대기방으로").getAttribute("aria-busy"), null)
 })
 
-test("A08-M-604 '로비로' → 확인 창 '로비로 나가시겠습니까?': 취소면 안 나감, 확인이면 leave_game_session 보내고 로비(/lobby)", async () => {
+test("A08-M-604 '로비로' → 확인 창 '로비로 나가시겠습니까?': 오프라인이면 result-leave-notice(exit), 연결 후 확인이면 /lobby", async () => {
     const socket = await openResult({ leave_game_session: { ok: true } })
     await skipIntro()
     answerConfirm(false)
@@ -89,7 +92,17 @@ test("A08-M-604 '로비로' → 확인 창 '로비로 나가시겠습니까?': �
     await flush(3)
     assert.equal(confirms.at(-1), "로비로 나가시겠습니까?")
     assert.equal(socket.sentOf("leave_game_session").length, 0, "취소했는데 나가기를 보냄")
-    assert.equal(rows().length, 5)
+
+    socket.connected = false
+    answerConfirm(true)
+    await act(async () => { buttonNamed("로비로").click() })
+    await flush(3)
+    const exitNotice = document.querySelector('[data-testid="result-leave-notice"]')
+    assert.ok(exitNotice, "로비로 오프라인 안내가 없음")
+    assert.equal(exitNotice.getAttribute("data-notice-source"), "exit")
+    assert.equal(textOf(exitNotice), "연결이 끊겨 로비로 가지 못했습니다. 연결을 확인한 뒤 '로비로'를 다시 눌러 주세요.")
+
+    socket.connected = true
     answerConfirm(true)
     await act(async () => { buttonNamed("로비로").click() })
     await flush(5)
@@ -122,12 +135,18 @@ test("A08-M-606 서버가 이 판 결과 화면을 닫음(game_result_closed) �
     assert.equal(useMatchingStore.getState().isInRoom, false, "방 값이 남음")
 })
 
-test("A08-M-607 다른 판 id의 game_result_closed → 무시, 결과 화면 그대로 (남은 초 칸은 없음)", async () => {
+test("A08-M-607 우상단 180초 타이머 표시 + 다른 판 id의 game_result_closed 무시", async () => {
     const socket = await openResult()
     await skipIntro()
+    await flush(3)
+    const timer = document.querySelector('[data-testid="result-close-timer"]')
+    assert.ok(timer, "우상단 180초 타이머가 없음")
+    const sec = Number(timer.getAttribute("data-seconds-left"))
+    assert.ok(sec >= 175 && sec <= 180, `남은 초 범위 이상: ${sec}`)
+    assert.ok(textOf(timer).includes("남은 시간") && /\d+초/.test(textOf(timer)), `타이머 글: ${textOf(timer)}`)
+
     await act(async () => { socket.fire("game_result_closed", { gameId: "g-other", reason: "RESULT_TIMEOUT" }) })
     await flush(3)
     assert.equal(elsewhere(), null)
     assert.equal(rows().length, 5)
-    assert.ok(document.querySelector('[data-testid="result-close-timer"]') === null, "남은 초 칸이 있음")
 })

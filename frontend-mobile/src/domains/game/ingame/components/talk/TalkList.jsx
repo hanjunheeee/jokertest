@@ -23,13 +23,10 @@ import { startsGroup } from "@m/domains/game/ingame/utils/talk/buildTalkFeed.js"
 import PublicAsset from "@/shared/ui/PublicAsset.jsx"
 import SystemLine from "./SystemLine.jsx"
 import TalkBubble from "./TalkBubble.jsx"
+import { DEAD_BANNER_CLASS, DEAD_BANNER_TEXT } from "./talkStyle.js"
 
 const SCROLL_CLASS =
     `relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-0 pb-1 ${CUSTOM_SCROLLBAR_HIDE_NATIVE_CLASS}`
-
-// 죽은 사람끼리 띠 (회색, 말풍선 색과 맞춤)
-const DEAD_BANNER_CLASS =
-    "flex shrink-0 items-center justify-center gap-1.5 border-b border-[#8a8a8a]/50 bg-[#2e2e2e]/85 py-1 text-[0.72rem] font-semibold tracking-wide text-[#dcdcdc]"
 
 const NEW_BUTTON_CLASS =
     "absolute bottom-2 left-1/2 z-10 h-11 -translate-x-1/2 cursor-pointer rounded-full border border-[#b08a4a]/70 bg-black/80 px-3 text-[0.72rem] text-[#f3dcb0] shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
@@ -45,6 +42,7 @@ function StatusLine({ status, error }) {
     )
 }
 
+// 단계에 맞는 참가자 목록·직업 행동 단추 그림과 이름 고르기
 function talkRosterControl(ctx) {
     const phase = ctx?.gameState?.phase ?? null
     if (phase === "NIGHT") {
@@ -59,23 +57,10 @@ function talkRosterControl(ctx) {
     }
 }
 
-export default function TalkList({ onPlayerRoster = null, onTribunalOpen = null }) {
-    const actionCtx = useContext(InGameActionContext)
-    const rosterControl = useMemo(() => talkRosterControl(actionCtx), [actionCtx])
-    const rosterOpenable = Boolean(onPlayerRoster && rosterControl.src)
-    const scrollRef = useRef(null)
-    const { lines, dead, session } = useTalkFeed()
-    const { players, getPlayerById, getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
-    const { textScale, showTime, nicknameColor } = useChatDisplaySettings()
-    const { unseen, scrollToBottom } = useStickToBottom(scrollRef, lines)
-
+// 채팅 틀 위 최후의 변론·플레이어 목록(직업 행동) 단추 묶음
+function TalkHeaderButtons({ onTribunalOpen, onPlayerRoster, rosterControl, phase }) {
     return (
-        <section aria-label="채팅" className={TALK_CHAT_FRAME_ROOT_CLASS} data-talk-list="">
-            <PublicAsset
-                src={MOBILE_TALK_CHAT_ASSETS.frame}
-                alt=""
-                className={TALK_CHAT_FRAME_IMAGE_CLASS}
-            />
+        <>
             {typeof onTribunalOpen === "function" ? (
                 <button
                     type="button"
@@ -93,12 +78,12 @@ export default function TalkList({ onPlayerRoster = null, onTribunalOpen = null 
                     <span className={TALK_CHAT_TRIBUNAL_BTN_LABEL_CLASS}>최후의 변론</span>
                 </button>
             ) : null}
-            {rosterOpenable ? (
+            {onPlayerRoster && rosterControl.src ? (
                 <button
                     type="button"
                     aria-label={rosterControl.label}
                     data-testid="player-roster-open"
-                    data-roster-mode={actionCtx?.gameState?.phase === "NIGHT" ? "night" : "day"}
+                    data-roster-mode={phase === "NIGHT" ? "night" : "day"}
                     className={TALK_CHAT_ROSTER_BTN_CLASS}
                     onClick={onPlayerRoster}
                     style={{ outline: "none" }}
@@ -106,8 +91,31 @@ export default function TalkList({ onPlayerRoster = null, onTribunalOpen = null 
                     <PublicAsset src={rosterControl.src} alt="" className="block h-14 w-14 select-none object-contain" />
                 </button>
             ) : null}
+        </>
+    )
+}
+
+// 카톡형 채팅방 목록과 죽은 사람끼리 배너 표시
+export default function TalkList({ onPlayerRoster = null, onTribunalOpen = null }) {
+    const actionCtx = useContext(InGameActionContext)
+    const rosterControl = useMemo(() => talkRosterControl(actionCtx), [actionCtx])
+    const scrollRef = useRef(null)
+    const { lines, dead, session } = useTalkFeed()
+    const { players, getPlayerById, getThemeStylesByPlayerId } = useInGamePlayerSessionContext()
+    const { textScale, showTime, nicknameColor } = useChatDisplaySettings()
+    const { unseen, scrollToBottom } = useStickToBottom(scrollRef, lines)
+
+    return (
+        <section aria-label="채팅" className={TALK_CHAT_FRAME_ROOT_CLASS} data-talk-list="">
+            <PublicAsset src={MOBILE_TALK_CHAT_ASSETS.frame} alt="" className={TALK_CHAT_FRAME_IMAGE_CLASS} />
+            <TalkHeaderButtons
+                onTribunalOpen={onTribunalOpen}
+                onPlayerRoster={onPlayerRoster}
+                rosterControl={rosterControl}
+                phase={actionCtx?.gameState?.phase ?? null}
+            />
             <div className={TALK_CHAT_LIST_INSET_CLASS}>
-                {dead ? <p className={DEAD_BANNER_CLASS} data-dead-chat-banner="">죽은 사람끼리</p> : null}
+                {dead ? <p className={DEAD_BANNER_CLASS} data-dead-chat-banner="">{DEAD_BANNER_TEXT}</p> : null}
                 <div ref={scrollRef} className={SCROLL_CLASS} style={{ fontSize: chatFontSize(textScale, 0.95) }}>
                     <ul role="log" aria-label="채팅 내역" className="flex min-h-full flex-col justify-end">
                         {lines.map((line, index) => {

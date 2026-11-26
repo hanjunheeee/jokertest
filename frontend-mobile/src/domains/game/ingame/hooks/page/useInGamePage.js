@@ -1,6 +1,5 @@
 // 인게임 화면 로직 훅: 옆 창(기록·설정)·나가기·스냅샷 맞추기·잘못된 판이면 밖으로·화면 잠금 값
-// 모바일 InGamePage가 씀, 데스크톱 InGamePage 본문을 같은 순서·조건으로 옮김
-// 연출 훅(역할·단계·밤·추방·결과 이동)·사망 선택은 상태가 한 벌이어야 해서 OverlayLayer가 부르고 잠금 값은 overlayBridge로 받음
+// 모바일 InGamePage가 씀, 전면 연출이 뜨면 열어 둔 기록·설정 시트를 닫음
 import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useInGameStore } from "@/domains/game/ingame/store/ingameStore.js"
@@ -14,10 +13,12 @@ import { useInGameSessionSnapshotSync } from "@/domains/game/ingame/hooks/useInG
 import { useInGameSidePanel } from "@/domains/game/ingame/hooks/useInGameSidePanel.js"
 import {
   selectInteractionBlocked,
+  selectOverlayOpen,
   selectSurfaceLocked,
   useOverlayBridge,
   usePublishOverlayExit,
 } from "@m/domains/game/ingame/hooks/overlays/overlayBridge.js"
+import { isTribunalPresentationOpen } from "@m/domains/game/ingame/utils/tribunalOpen.js"
 
 // 화면이 그릴 값 묶음
 export function useInGamePage() {
@@ -33,8 +34,14 @@ export function useInGamePage() {
   // 연출 층이 계산한 잠금·역할 다시 보기 값 (데스크톱 interactionBlocked·surfaceLocked와 같은 조건)
   const interactionBlocked = useOverlayBridge(selectInteractionBlocked)
   const surfaceLocked = useOverlayBridge(selectSurfaceLocked)
+  const overlayOpen = useOverlayBridge(selectOverlayOpen)
   const roleRevealAvailable = useOverlayBridge((s) => s.roleRevealAvailable)
   const reopenRoleReveal = useOverlayBridge((s) => s.reopenRoleReveal)
+
+  // 재판·잠그는 단계 안내·낮 시작 결과·밤 차례 연출이 뜨면 기록·설정 시트를 닫음 (죽은 사람의 잠그지 않는 밤 안내는 유지)
+  if ((isTribunalPresentationOpen(gameState) || overlayOpen) && sidePanel.openPanel !== null) {
+    sidePanel.close()
+  }
 
   const isValidGameSession = isValidInGameSession(gameId, gameState)
 

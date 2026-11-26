@@ -22,9 +22,10 @@ export function buildCornerActions(ctx, openVoteStatus) {
   const phase = ctx.gameState?.phase ?? null
   const actions = [entry(null, "투표 현황", true, openVoteStatus, "voteStatus")]
   if (phase === "DAY" && ctx.dayPhase === "DAY_VOTE") {
+    // 사람을 찍은 뒤에도 기권으로 바꿀 수 있게 이미 기권했을 때만 꺼짐
     const disabled = !ctx.dayVoteControlsEnabled
       || ctx.dayVoteStatus === "submitting"
-      || ctx.dayVoteHasSubmitted === true
+      || ctx.dayVoteAbstained === true
     actions.push(entry(ROW_ACTIONS.DAY_VOTE_ABSTAIN, "기권", !disabled, ctx.abstainDayVote, "abstain"))
   }
   if (phase === "NIGHT" && ctx.isNightTurnActor) {

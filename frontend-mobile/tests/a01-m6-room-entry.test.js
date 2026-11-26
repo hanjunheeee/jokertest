@@ -92,7 +92,7 @@ test("A01-M-614 방 목록 위 줄: '방 만들기' → /game-setup, '코드로 
     assert.equal(elsewhere(), "/roomInvite")
 })
 
-test("A01-M-615 코드로 참가: 'ab12cd' 입력 → '참여하기' → join_room_by_code {roomCode:'AB12CD'}, room_joined 오면 대기방", async () => {
+test("A01-M-615 코드로 참가: 'ab12cd' 입력 → '참여하기' 누른 동안 잠금(중복 전송 방지), room_joined 오면 대기방", async () => {
     const socket = await open(RoomInvitePage, "/roomInvite")
     const input = document.querySelector('input[aria-label="방 코드 6자리"]')
     assert.ok(input, "코드 칸이 없음")
@@ -104,6 +104,9 @@ test("A01-M-615 코드로 참가: 'ab12cd' 입력 → '참여하기' → join_ro
     typeInto(input, "ab12cd")
     click(buttonNamed("참여하기"))
     await flush(3)
+    assert.equal(buttonNamed("참여하기").disabled, true, "입장 요청 중인데 '참여하기'가 안 잠김")
+    click(buttonNamed("참여하기"))
+    await flush(2)
     assert.deepEqual(socket.sentOf("join_room_by_code"), [{ roomCode: "AB12CD" }])
     await act(async () => { socket.fire("room_joined", joinedRoom("r9")) })
     await flush(5)
@@ -111,7 +114,7 @@ test("A01-M-615 코드로 참가: 'ab12cd' 입력 → '참여하기' → join_ro
     assert.equal(useMatchingStore.getState().roomId, "r9")
 })
 
-test("A01-M-616 코드로 참가 실패: room_join_failed(서버 글) → 양피지 알림 창에 그 글, 화면은 코드 입력 그대로", async () => {
+test("A01-M-616 코드로 참가 실패: room_join_failed → 양피지 알림 창 + 상단 entry-failure-notice 표시, 확인으로 닫힘", async () => {
     const socket = await open(RoomInvitePage, "/roomInvite", {}, { parchment: true })
     typeInto(document.querySelector('input[aria-label="방 코드 6자리"]'), "zz99zz")
     click(buttonNamed("참여하기"))
@@ -119,7 +122,14 @@ test("A01-M-616 코드로 참가 실패: room_join_failed(서버 글) → 양피
     assert.equal(socket.sentOf("join_room_by_code").length, 1)
     await act(async () => { socket.fire("room_join_failed", { code: "M6_TEST_REFUSED", message: "시험용 거절 글입니다." }) })
     await flush(3)
+    assert.equal(buttonNamed("참여하기").disabled, false, "실패 뒤에도 '참여하기'가 잠겨 있음")
     assert.equal(parchmentText()?.includes("시험용 거절 글입니다."), true, `알림: ${parchmentText()}`)
+    const notice = document.querySelector('[data-testid="entry-failure-notice"]')
+    assert.ok(notice, "상단 실패 안내 띠가 없음")
+    assert.equal(notice.querySelector("span")?.textContent, "시험용 거절 글입니다.")
+    click(notice.querySelector("button"))
+    await flush(2)
+    assert.equal(document.querySelector('[data-testid="entry-failure-notice"]'), null, "확인을 눌렀는데 안내 띠가 남음")
     assert.equal(elsewhere(), null)
     assert.equal(router.state.location.pathname, "/roomInvite")
 })

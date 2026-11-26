@@ -3,6 +3,7 @@
 import InputSlot from "@m/shared/ui/input/InputSlot.jsx"
 
 // 만료·잠김이면 입력 칸만 잠그고, 버튼은 canVerify로 따로 잠금 (데스크톱과 같음), 버튼 색도 데스크톱 그대로 높이만 44px
+// 인증번호는 6자리라 그 넘게 못 치게 함 (maxLength)
 export default function CodeRow({ stage, code, canVerify, isVerifying, onCodeChange, onVerify }) {
   return (
     <div className="flex items-center gap-2">
@@ -10,6 +11,7 @@ export default function CodeRow({ stage, code, canVerify, isVerifying, onCodeCha
         <InputSlot
           type="text"
           inputMode="numeric"
+          maxLength={6}
           name="signupEmailCode"
           inputTestId="signup-code-input"
           value={code}

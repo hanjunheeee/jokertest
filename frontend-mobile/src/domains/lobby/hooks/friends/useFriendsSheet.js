@@ -16,7 +16,7 @@ export function useFriendsSheet({ open, onClose, roomId = null, isRoomVerified =
 
   const [view, setView] = usePanelView(open, targetRequestId, targetInviteId)
   const sync = useFriendListSync(open)
-  const { blockingIds, handleBlockUser, handleUnblockUser } = useBlockActions()
+  const { blockingIds, blockErrors, handleBlockUser, handleUnblockUser } = useBlockActions()
   const { invite, inviteList } = usePanelInvites({ open, roomId, isRoomVerified })
 
   // 탭 바꾸기, 차단 탭은 열 때마다 서버 목록을 다시 받음
@@ -38,7 +38,7 @@ export function useFriendsSheet({ open, onClose, roomId = null, isRoomVerified =
     targetRequestId,
     targetInviteId,
     sync,
-    block: { onBlock: handleBlockUser, onUnblock: handleUnblockUser, blockingIds },
+    block: { onBlock: handleBlockUser, onUnblock: handleUnblockUser, blockingIds, blockErrors },
     invite,
     inviteList,
   }

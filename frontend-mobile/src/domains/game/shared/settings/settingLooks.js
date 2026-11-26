@@ -22,9 +22,9 @@ export const SETTING_LOOKS = {
     role: {
       wrap: "flex flex-col",
       summary: "flex flex-col gap-1 py-3 text-center",
-      line: "font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-snug text-[#2a1810]",
-      note: "",
-      error: "text-[#8c1c13]",
+      line: "font-subheading app-text-scaled [--app-text-size:0.9rem] font-bold leading-snug",
+      note: "text-[#2a1810]",
+      error: "self-center rounded bg-[#fff8ec]/92 px-2 py-0.5 text-[#300600]",
       scrollOnCustom: true,
       scrollToSummary: true,
     },

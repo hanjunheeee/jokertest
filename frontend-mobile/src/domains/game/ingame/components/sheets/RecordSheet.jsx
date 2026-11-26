@@ -8,11 +8,11 @@ import { useGameReport } from "@/domains/report/hooks/useGameReport.js"
 import ReportRowButton from "@m/domains/report/ReportRowButton.jsx"
 import ReportSheet from "@m/domains/report/ReportSheet.jsx"
 
-// 전적 값이 둘 다 온 사람만 숫자를 넘김 (아니면 조회 실패 글)
+// 전적 값이 둘 다 온 사람만 숫자를 넘김 (시트가 닫히면 신고 창도 함께 내려감)
 export default function RecordSheet({ open, onClose }) {
   const { players } = useInGamePlayerSessionContext()
-  // 신고 창 (나·판 id 없음은 버튼 안 보임)
   const report = useGameReport()
+  if (!open && report.isOpen) report.close()
 
   return (
     <Sheet
@@ -26,7 +26,6 @@ export default function RecordSheet({ open, onClose }) {
     >
       <ul aria-label="플레이어 전적 목록" className="flex flex-col">
         {players.map((player, index) => {
-          // 그 사람 사진·테두리, 없을 때만 줄 순서 기본 그림 (데스크톱과 같음)
           const profile = resolvePlayerRecordListProfileAssets(player, index)
           const hasRecord = Object.hasOwn(player, "accountTotalGames") && Object.hasOwn(player, "accountWinRate")
           return (
@@ -49,7 +48,7 @@ export default function RecordSheet({ open, onClose }) {
           )
         })}
       </ul>
-      <ReportSheet dialog={report} />
+      {open ? <ReportSheet dialog={report} /> : null}
     </Sheet>
   )
 }

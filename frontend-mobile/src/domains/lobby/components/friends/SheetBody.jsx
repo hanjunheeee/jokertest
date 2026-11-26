@@ -12,7 +12,14 @@ export default function SheetBody({ sheet }) {
   const onBack = () => sheet.selectView("list")
 
   if (view === "request") {
-    return <AddTab onBack={onBack} onBlock={block.onBlock} blockingIds={block.blockingIds} />
+    return (
+      <AddTab
+        onBack={onBack}
+        onBlock={block.onBlock}
+        blockingIds={block.blockingIds}
+        blockErrors={block.blockErrors}
+      />
+    )
   }
 
   if (view === "accept") {
@@ -23,6 +30,8 @@ export default function SheetBody({ sheet }) {
         incomingError={sync.incomingError}
         incomingLoaded={sync.incomingLoaded === true}
         requestErrors={sync.requestErrors}
+        blockErrors={block.blockErrors}
+        blockingIds={block.blockingIds}
         onDecline={sync.handleDeclineRequest ?? null}
         processingRequestIds={sync.processingRequestIds}
         acceptAllResult={sync.acceptAllResult}
@@ -47,6 +56,7 @@ export default function SheetBody({ sheet }) {
         status={sync.blocksStatus}
         error={sync.blocksError}
         processingIds={block.blockingIds}
+        rowErrors={block.blockErrors}
         onUnblock={block.onUnblock}
         onRefresh={sync.handleRefreshBlocks}
       />

@@ -1,12 +1,11 @@
-// 모바일 투표 현황 창과 낮 판정 시험: 재판 없는 판정(동점)이면 열어 둔 투표 현황 창이 그대로 남고 결과 글이 바뀜
-// 목록 A04 모바일 A04-M-015 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-goG2-tribunal-cover.test.js)
-// 재판이 열리면 겹 창(투표 현황·설정·전적·신고)을 저절로 닫던 규칙은 지금 화면에 없음 → 그 시험(A04-M-013·014·016~018)은 뺌
+// 모바일 재판 전환과 열어 둔 겹 창 시험: 재판이 열리면 투표 현황·설정·전적·참가자 목록 시트가 닫히고, 동점 판정이면 투표 현황 창이 유지됨
+// 목록 A04 모바일 A04-M-013·015 (돌리기: frontend-mobile 폴더에서 node --test tests/a04-goG2-tribunal-cover.test.js)
 import "./helpers/mobileLoader.mjs"
 import "./helpers/dom.mjs"
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
-import { buttonNamed, click, flush } from "./a00-kit.mjs"
-import { dayResolved, fakeSocket, fire, renderPage, resetGame, seat, tribunalBox, tribunalSheet } from "./a00-game.mjs"
+import { buttonNamed, click, flush, waitUntil } from "./a00-kit.mjs"
+import { dayResolved, fakeSocket, fire, openRoster, renderPage, resetGame, rosterSheet, seat, tribunalBox, tribunalEntry, tribunalSheet } from "./a00-game.mjs"
 
 let view = null
 afterEach(() => { resetGame(view); view = null })
@@ -31,6 +30,21 @@ async function open(name) {
     click(button)
     await flush()
 }
+
+test("A04-M-013 재판 진입 시 열어 둔 투표 현황·설정·참가자 목록 시트가 저절로 닫힘 (6명 판)", async () => {
+    const socket = await dayVotePage(6)
+    await open("투표 현황 열기")
+    await open("인게임 설정")
+    await openRoster()
+    assert.ok(statusDialog(), "투표 현황 창이 안 열림")
+    assert.ok(document.querySelector('[data-testid="settings-sheet"]'), "설정 시트가 안 열림")
+    assert.ok(rosterSheet(), "참가자 목록 시트가 안 열림")
+    await fire(socket, "day_vote_resolved", tribunalEntry({ n: 6, defendant: 2 }))
+    assert.equal(tribunalShown(), true, "재판 연출이 안 뜸")
+    await waitUntil(() => statusDialog() === null && document.querySelector('[data-testid="settings-sheet"]') === null && rosterSheet() === null, {
+        label: "재판 시작 시 열어 둔 시트 닫힘",
+    })
+})
 
 test("A04-M-015 재판 없는 판정이면 투표 현황 창 그대로 (5명 판): 동점 → 밤 → 창 남고 결과 \"동점\"", async () => {
     const socket = await dayVotePage(5)
